@@ -20,8 +20,11 @@
  * `sync-core-mirrors --check`（工作区口径）和 `check-web-overlay` 兜。
  *
  * 用法：
- *   node scripts/check-core-mirrors.mjs [--json] [--ref <git-ref>] [--working-tree]
+ *   node scripts/check-core-mirrors.mjs [--json] [--ref <git-ref>] [--working-tree] [--explain]
  *   node scripts/check-core-mirrors.mjs --baseline <git-ref>
+ *   --explain：漂移时多打「归属 + 修复是否已在暂存区」两行（判定与退出码不变）：
+ *     暂存镜像 == HEAD 事实源 → 等提交；暂存事实源 == HEAD 镜像 → 提交事实源即闭合；
+ *     都不等 → 才需要真的重生成。归属取两侧各自最后一次提交。
  *     只把「本次要推的提交相对基线新引入的漂移」算失败，基线上本来就红的改成显式警告放行。
  *     这是给 pre-push 用的：闸门该拦住把漂移推上去的人，而不该让后面所有提交都发不出去
  *     ——漂移已经在 main 上时，拦别人既救不了它，还会逼人用 NAVHUB_SKIP_PREPUSH 绕过整条钩子。
@@ -31,8 +34,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { checkMirrors, overlayPathOf, parseManifest, sourcePathOf } from "./lib/core-mirror.mjs";
-import { readBlobs, refExists } from "./lib/git-blobs.mjs";
+import { checkMirrors, normalize, overlayPathOf, parseManifest, sourcePathOf, stripBanner } from "./lib/core-mirror.mjs";
+import { gitBuf, readBlobs, refExists } from "./lib/git-blobs.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST = join(ROOT, "scripts", "core-mirrors.json");
@@ -97,6 +100,94 @@ export function verdictWithBaseline(nowFailures, baseFailures) {
   return { ...split, rc: split.introduced.length > 0 ? 1 : 0, passWithWarning: nowFailures.length > 0 && split.introduced.length === 0 };
 }
 
+/**
+ * 纯函数：一条漂移「谁带来的、修复是不是已经在暂存区」。
+ *
+ * 为什么值得单独一层：这条闸门读 HEAD，红灯时最容易出现的两个误判是
+ *   · 修复其实已经躺在某个会话的暂存区里（2026-10-28 实测：另一位会话已经把镜像
+ *     重生成并 add，我这边 HEAD 照样红）——此时该说「等提交」，不该让人再生成一遍；
+ *   · 事实源和镜像都被手改过，重生成会把真正的修复覆盖掉——此时该让人先看清楚归属。
+ * 判据只认字节：
+ *   · 暂存镜像正文 == HEAD 事实源 → 镜像已在暂存区重生成，提交带上镜像即闭合；
+ *   · 暂存事实源正文 == HEAD 镜像正文 → 事实源落后于镜像（镜像先被更新/手改），
+ *     把事实源一起提交即闭合；
+ *   · 两者都不等 → 暂存区里没有能闭合这次漂移的改动，需要真的重生成。
+ * 归属取两侧各自最后一次提交，**不做「谁新谁旧」的方向推断**：日期会被 rebase/统一
+ * 提交时间抹平，推断错了比不推断更糟。
+ *
+ * @param {{name:string,source:string,overlay:string}} failure
+ * @param {{headFile:Function,stagedFile:Function,lastCommit:Function}} io
+ */
+export function explainFailure(failure, io) {
+  const headSource = io.headFile(failure.source);
+  const headMirrorRaw = io.headFile(failure.overlay);
+  const headMirrorBody = headMirrorRaw === null ? null : stripBanner(headMirrorRaw);
+  const stagedSource = io.stagedFile(failure.source);
+  const stagedMirror = io.stagedFile(failure.overlay);
+
+  let closedBy = null;
+  if (headSource !== null && stagedMirror !== null && normalize(stripBanner(stagedMirror)) === normalize(headSource)) {
+    closedBy = "mirror-regenerated";
+  } else if (headMirrorBody !== null && stagedSource !== null && normalize(stagedSource) === normalize(headMirrorBody)) {
+    closedBy = "source-synced";
+  }
+
+  const hint =
+    closedBy === "mirror-regenerated"
+      ? `修复已在暂存区：镜像已按 HEAD 事实源重新生成，提交时把 ${failure.overlay} 一起带上即可`
+      : closedBy === "source-synced"
+        ? `修复已在暂存区：暂存的事实源正文与 HEAD 镜像一致，把 ${failure.source} 一起提交即闭合`
+        : "暂存区里没有能闭合这次漂移的改动；修复：node scripts/sync-core-mirrors.mjs，然后把事实源与镜像一起提交";
+
+  return {
+    name: failure.name,
+    closedBy,
+    hint,
+    sourceCommit: io.lastCommit(failure.source),
+    mirrorCommit: io.lastCommit(failure.overlay),
+  };
+}
+
+function formatCommit(info) {
+  return info === null || info === undefined ? "（无提交记录）" : `${info.commit} ${info.author} ${info.date}`;
+}
+
+/** explainFailure 的结果 → 给人看的两三行 */
+export function renderExplain(explain) {
+  return [
+    `     归属：事实源最后改动 ${formatCommit(explain.sourceCommit)}；镜像最后改动 ${formatCommit(explain.mirrorCommit)}`,
+    `     ${explain.closedBy === null ? "缺少闭合" : "已可闭合"}：${explain.hint}`,
+  ];
+}
+
+/** 真 git 的 io：HEAD / 索引 / 最后提交 */
+export function gitExplainIo({ cwd = ROOT } = {}) {
+  const show = (spec) => {
+    try {
+      return gitBuf(["show", spec], { cwd }).toString("utf8");
+    } catch {
+      return null;
+    }
+  };
+  return {
+    headFile: (p) => show(`HEAD:${p}`),
+    stagedFile: (p) => show(`:${p}`),
+    lastCommit: (p) => {
+      try {
+        // \x1f 分隔：作者名里可以有空格和竖线，不能拿可见字符当分隔符
+        const out = gitBuf(["log", "-1", "--format=%h%x1f%an%x1f%ad", "--date=short", "--", p], { cwd })
+          .toString("utf8")
+          .trim();
+        if (out === "") return null;
+        const [commit, author, date] = out.split("\x1f");
+        return { commit, author, date };
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
 
 /** 读 HEAD（或任意 ref）的已入库副本 */
 export function run({ ref = "HEAD" } = {}) {
@@ -131,6 +222,7 @@ function main(argv) {
   const ref = refIdx >= 0 ? argv[refIdx + 1] : "HEAD";
   const baseIdx = argv.indexOf("--baseline");
   const baseline = baseIdx >= 0 ? argv[baseIdx + 1] : undefined;
+  const wantExplain = argv.includes("--explain");
   if (baseIdx >= 0 && (baseline === undefined || baseline.startsWith("--"))) {
     // 给了旗标却没值：宁可rc 2，也不要在「比较对象未知」时悄悄当成「没有基线」再放行
     console.error("❌ --baseline 需要一个 git ref 作值（例：--baseline origin/main）");
@@ -159,6 +251,18 @@ function main(argv) {
     : null;
   const verdict = baseFailures === null ? null : verdictWithBaseline(failures, baseFailures);
 
+  // 只有真有漂移时才去问 git：绿灯时多跑 3×N 次 git 只是让钩子变慢
+  let explanations = null;
+  if (wantExplain && failures.length > 0) {
+    try {
+      const io = gitExplainIo({ cwd: ROOT });
+      explanations = failures.map((f) => explainFailure(f, io));
+    } catch (error) {
+      // 归属信息拿不到不能改变判定：主结论已经算出来了，这里只降级成一句说明
+      console.warn(`⚠️ --explain 拿不到归属信息：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   // 钩子传进来的是 merge-base 的 40 位 sha；提示语要能一眼读完，展示一律截到 10 位
   const baseLabel = baseline === undefined ? "" : /^[0-9a-f]{12,40}$/.test(baseline) ? baseline.slice(0, 10) : baseline;
   if (asJson) {
@@ -170,6 +274,7 @@ function main(argv) {
           legs: ["core", "overlay"],
           ok: result.ok,
           failures,
+          explain: explanations,
           baseline:
             baseFailures === null
               ? null
@@ -192,6 +297,13 @@ function main(argv) {
       `⚠️ ${failures.length} 个 core 镜像漂移在基线 ${baseLabel} 上就已经以同样的根因存在，不是 ${out.ref} 新引入的：闸门放行，但这条红是真的。`,
     );
     for (const f of failures) console.warn(`   · ${f.name}：${f.reasons.join("；")}`);
+    if (explanations) {
+      console.warn("   归属（--explain）：");
+      for (const e of explanations) {
+        console.warn(`      · ${e.name}`);
+        for (const line of renderExplain(e)) console.warn(line);
+      }
+    }
     console.warn(`   谁该修：把 ${baseLabel} 上那条漂移带进来的提交作者。`);
     console.warn("   怎么修：node scripts/sync-core-mirrors.mjs，然后把 core 事实源与镜像一起提交。");
     console.warn("   CI 不带 --baseline，那侧仍按 HEAD 严格判红——左移是为了早发现，不是给 main 减绿。");
@@ -212,6 +324,13 @@ function main(argv) {
               : "（本次新引入）";
       console.error(`   ${f.name}${mark}`);
       for (const r of f.reasons) console.error(`      - ${r}`);
+    }
+    if (explanations) {
+      console.error("\n   归属（--explain）：");
+      for (const e of explanations) {
+        console.error(`      · ${e.name}`);
+        for (const line of renderExplain(e)) console.error(line);
+      }
     }
     console.error("\n   为什么要拦：apps/web 是独立安装的 vendored 底座，import 不到 @navhub/core，");
     console.error("   所以 packages/core 的纯算法必须在覆盖层留一份逐字节副本。只改事实源不重生成，");

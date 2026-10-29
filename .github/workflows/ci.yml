@@ -107,6 +107,13 @@ jobs:
       # 上传步骤靠 if-no-files-found: warn 静默通过——分片和遥测同时失效了三轮。
       - name: 单元/接口测试（分片 ${{ matrix.shard }}/3）
         run: pnpm test --shard=${{ matrix.shard }}/3 --reporter=default --reporter=junit --outputFile.junit=junit-sqlite-${{ matrix.shard }}.xml
+      # 红灯用例名进 Step Summary：无 token 时 job 日志读不到（/actions/jobs/{id}/logs
+      # 恒 403）、本机也拉不到 artifact 内容，「哪一例红了」此前实际不可读。
+      # 只读解析，不判定对错——测试红绿由测试步骤负责；本步骤只在产物缺失时红
+      # （遥测链路断了必须看得见，与 upload-artifact 的 error 口径一致）。
+      - name: 红灯光谱（Step Summary）
+        if: ${{ !cancelled() }}
+        run: node scripts/junit-summary.mjs junit-sqlite-${{ matrix.shard }}.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() }}
         with:
@@ -618,6 +625,11 @@ jobs:
             echo "::error::报错抽样：$(grep -m 3 -E 'Error: |expect\(|Test timeout|Target crashed' /tmp/e2e.log | tr '\n' '|')"
             exit "$rc"
           fi
+      # 同单元测试：失败用例名进 Step Summary。awk 抽 list reporter 的兜底仍保留
+      # （它在测试步骤内部、红灯时立即发 ::error::），这里补的是结构化、可累积的账。
+      - name: 红灯光谱（Step Summary）
+        if: ${{ !cancelled() }}
+        run: node scripts/junit-summary.mjs junit-e2e-${{ matrix.shard }}.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() }}
         with:

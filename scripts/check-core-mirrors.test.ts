@@ -10,7 +10,16 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
-import { assess, run, runWorkingTree, splitDrift, trackedPathsOf, verdictWithBaseline } from "./check-core-mirrors.mjs";
+import {
+  assess,
+  explainFailure,
+  renderExplain,
+  run,
+  runWorkingTree,
+  splitDrift,
+  trackedPathsOf,
+  verdictWithBaseline,
+} from "./check-core-mirrors.mjs";
 import { composeMirror } from "./lib/core-mirror.mjs";
 
 const SCRIPT = resolve("scripts/check-core-mirrors.mjs");
@@ -178,6 +187,120 @@ describe("splitDrift / verdictWithBaseline：只拦本次推送新引入的漂�
   });
 });
 
+describe("explainFailure：漂移归属与「修复是否已在暂存区」", () => {
+  const FAILURE = {
+    name: "demo",
+    source: "packages/core/src/demo.ts",
+    overlay: "apps/web-overlay/src/lib/demo.ts",
+  };
+
+  function ioOf({
+    head = {},
+    staged = {},
+    commits = {},
+  }: {
+    head?: Record<string, string>;
+    staged?: Record<string, string>;
+    commits?: Record<string, { commit: string; author: string; date: string }>;
+  }) {
+    return {
+      headFile: (p: string) => (p in head ? head[p] : null),
+      stagedFile: (p: string) => (p in staged ? staged[p] : null),
+      lastCommit: (p: string) => commits[p] ?? null,
+    };
+  }
+
+  it("事实源已提交、镜像没重生成，但重生成的镜像躺在暂存区 → 「等提交」，不是「再去生成一遍」", () => {
+    const v2 = "export const v = 2\n";
+    const e = explainFailure(
+      FAILURE,
+      ioOf({
+        head: {
+          [FAILURE.source]: v2,
+          [FAILURE.overlay]: mirrorOf(FAILURE.source, SOURCE),
+        },
+        staged: { [FAILURE.overlay]: mirrorOf(FAILURE.source, v2) },
+      }),
+    );
+    expect(e.closedBy).toBe("mirror-regenerated");
+    expect(e.hint).toContain("修复已在暂存区");
+    expect(e.hint).toContain(FAILURE.overlay);
+  });
+
+  it("镜像先被更新（HEAD 镜像比事实源新），暂存的事实源与镜像正文一致 → 提交事实源即闭合", () => {
+    const v2 = "export const v = 2\n";
+    const e = explainFailure(
+      FAILURE,
+      ioOf({
+        head: {
+          [FAILURE.source]: SOURCE,
+          [FAILURE.overlay]: mirrorOf(FAILURE.source, v2),
+        },
+        staged: { [FAILURE.source]: v2 },
+      }),
+    );
+    expect(e.closedBy).toBe("source-synced");
+    expect(e.hint).toContain(FAILURE.source);
+  });
+
+  it("暂存区里没有能闭合这次漂移的改动 → 明确说「需要真的重生成」", () => {
+    const e = explainFailure(
+      FAILURE,
+      ioOf({
+        head: {
+          [FAILURE.source]: "export const v = 2\n",
+          [FAILURE.overlay]: mirrorOf(FAILURE.source, SOURCE),
+        },
+        staged: {},
+      }),
+    );
+    expect(e.closedBy).toBeNull();
+    expect(e.hint).toContain("sync-core-mirrors.mjs");
+  });
+
+  it("CRLF 的暂存镜像与 LF 的 HEAD 事实源仍算闭合（换行不是漂移）", () => {
+    const v2 = "export const v = 2\n";
+    const e = explainFailure(
+      FAILURE,
+      ioOf({
+        head: { [FAILURE.source]: v2, [FAILURE.overlay]: mirrorOf(FAILURE.source, SOURCE) },
+        staged: { [FAILURE.overlay]: mirrorOf(FAILURE.source, v2).replace(/\n/g, "\r\n") },
+      }),
+    );
+    expect(e.closedBy).toBe("mirror-regenerated");
+  });
+
+  it("overlay 在 HEAD 缺失时，只凭「暂存镜像 == HEAD 事实源」也能判定已在暂存区", () => {
+    const e = explainFailure(
+      FAILURE,
+      ioOf({
+        head: { [FAILURE.source]: SOURCE },
+        staged: { [FAILURE.overlay]: mirrorOf(FAILURE.source, SOURCE) },
+      }),
+    );
+    expect(e.closedBy).toBe("mirror-regenerated");
+  });
+
+  it("归属取两侧各自最后一次提交；渲染不出「undefined」", () => {
+    const e = explainFailure(
+      FAILURE,
+      ioOf({
+        head: { [FAILURE.source]: SOURCE, [FAILURE.overlay]: "// 手改\n" },
+        commits: {
+          [FAILURE.source]: { commit: "abc1234", author: "Alice", date: "2026-10-28" },
+          [FAILURE.overlay]: { commit: "def5678", author: "Bob", date: "2026-10-27" },
+        },
+      }),
+    );
+    const lines = renderExplain(e).join("\n");
+    expect(lines).toContain("abc1234 Alice 2026-10-28");
+    expect(lines).toContain("def5678 Bob 2026-10-27");
+    expect(lines).not.toContain("undefined");
+    const noCommits = renderExplain(explainFailure(FAILURE, ioOf({ head: { [FAILURE.source]: SOURCE } }))).join("\n");
+    expect(noCommits).toContain("（无提交记录）");
+  });
+});
+
 describe("真实 CLI：--baseline 的失败关闭", () => {
   const cli = (args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8" });
 
@@ -191,6 +314,15 @@ describe("真实 CLI：--baseline 的失败关闭", () => {
     const res = cli(["--baseline", "no-such-baseline-ref-9f3c21"]);
     expect(res.status).toBe(2);
     expect(res.stderr).toContain("跑不起来");
+  });
+
+  it("--explain 只增字段不改判定：JSON 有 explain，退出码仍由 ok 决定", () => {
+    const res = cli(["--explain", "--json"]);
+    const body = JSON.parse(res.stdout);
+    expect(body).toHaveProperty("explain");
+    if (body.ok) expect(body.explain).toBeNull();
+    else expect(Array.isArray(body.explain)).toBe(true);
+    expect(res.status).toBe(body.ok ? 0 : 1);
   });
 });
 

@@ -13,7 +13,7 @@
  * 用 `NAVHUB_PRECOMMIT_FILES` 注入改动集、`NAVHUB_PRECOMMIT_DRYRUN=1` 只看不跑。
  */
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -120,5 +120,21 @@ describe("pre-commit 选测：改动 → 测试文件", () => {
 
   it("只改文档：一个测试都不跑（SKIP）", () => {
     expect(select(["docs/BACKUP-RUNBOOK.md"])).toEqual([]);
+  });
+});
+
+describe("选测器把 git 环境与夹具测试隔离", () => {
+  // 事故（2026-10-29）：safe-commit 的 GIT_INDEX_FILE 被 vitest 子进程继承，夹具仓库里的
+  // `git add` 写进了本次提交的临时索引 → 钩子判「本次提交不含测试文件」，提交被自己拦下。
+  // 生成物是 .git/hooks 下的脚本，只能对生成源与产物同时钉：漏掉任何一侧，重装即失守。
+  it("生成源里给 vitest 子进程剥掉了 GIT_INDEX_FILE / GIT_DIR / GIT_WORK_TREE", () => {
+    const src = readFileSync(join(ROOT, "scripts", "install-git-hooks.mjs"), "utf8");
+    for (const name of ["GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE"]) {
+      expect(src, `生成源没有剥 ${name}`).toContain(`delete childEnv.${name};`);
+    }
+    const payload = readFileSync(PAYLOAD, "utf8");
+    for (const name of ["GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE"]) {
+      expect(payload, `生成物没有剥 ${name}（重装没生效？）`).toContain(`delete childEnv.${name};`);
+    }
   });
 });

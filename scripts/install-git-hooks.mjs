@@ -139,6 +139,11 @@ node scripts/check-upstream-ref.mjs || exit 1
 # 未提交的 worker-budget.ts，本地全绿、CI 两个作业同时崩）。--staged 只查本次暂存集。
 node scripts/check-committed-refs.mjs --staged || exit 1
 
+# 提交原子性：本次提交的**测试**不得依赖「改了但没提交」的源码（2026-10-29 事故：
+# 测试先提交、源码还在暂存区，本地全绿、CI 26 例红）。与上一枚互补——那枚管「从未
+# 入库」，这枚管「HEAD 里还是旧版本」。只审测试文件，成本是几次 git 调用。
+node scripts/check-commit-atomicity.mjs --staged || exit 1
+
 # CI 工作流变更时校验合并门禁（秒级，仅本次提交涉及 .github/workflows/ 才跑）。
 # 门禁脚本读的就是 ci.yml 的聚合关系：改坏了只有 CI 会红，而 CI 自己正是被改的
 # 那一方——等于没有守门人。放在 typecheck 之前，成本只有一次 YAML 解析。
@@ -531,9 +536,17 @@ const selector = [
   'logStream.write("# " + new Date().toISOString() + "  targets=" + Array.from(targets).join(",") + "\\n");',
   '// 传**具体测试文件**而不是目录：收窄的结果必须真的决定跑什么，',
   '// 否则「只跑了 8 个」只是一句日志，vitest 照样把整棵目录跑一遍。',
+  '// 夹具测试会 spawn git 建临时仓库（check-committed-refs / commit-atomicity / commit-closure…）。',
+  '// safe-commit 用独立索引提交，钩子里继承着 GIT_INDEX_FILE——fixture 的 git add 会写进',
+  '// **本次提交的那个临时索引**，把提交集冲掉。实测（2026-10-29）：钩子跑自己的门禁测试，',
+  '// 报「本次提交不含测试文件」，safe-commit 随后校验文件集失败。子进程一律拿干净的 git 环境。',
+  'const childEnv = Object.assign({}, process.env, a11yScope.length > 0 ? { NAVHUB_A11Y_SCOPE: a11yScope.join(",") } : {});',
+  'delete childEnv.GIT_INDEX_FILE;',
+  'delete childEnv.GIT_DIR;',
+  'delete childEnv.GIT_WORK_TREE;',
   'const child = spawn(process.execPath, [vitestEntry, "run"].concat(testFiles), {',
   '  stdio: ["inherit", "pipe", "pipe"],',
-  '  env: Object.assign({}, process.env, a11yScope.length > 0 ? { NAVHUB_A11Y_SCOPE: a11yScope.join(",") } : {}),',
+  '  env: childEnv,',
   '});',
   'child.stdout.on("data", (chunk) => { process.stdout.write(chunk); logStream.write(chunk); });',
   'child.stderr.on("data", (chunk) => { process.stderr.write(chunk); logStream.write(chunk); });',

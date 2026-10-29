@@ -55,8 +55,12 @@ describe("根布局取数不得把静态页拖成动态", () => {
     expect(source).not.toMatch(/import\s*\{[^}]*readStorageFresh[^}]*\}\s*from/);
   });
 
-  it("读侧挂 HUB_CACHE_TAG，站点配置写成功后按同一标签失效", () => {
+  it("读侧挂 HUB_CACHE_TAG，站点配置写成功后立即过期同一标签", () => {
     expect(overlayFile("src/lib/github.ts")).toContain("tags: [HUB_CACHE_TAG]");
-    expect(overlayFile("src/app/api/site/route.ts")).toContain("revalidateTag(HUB_CACHE_TAG, 'max')");
+    // 必须是 expire: 0（立即过期）。Next 16 带 profile 的 'max' 是 SWR：
+    // 实测保存 logo 后第一次刷新仍是旧图，不符合「保存后刷新即见新值」。
+    const route = overlayFile("src/app/api/site/route.ts");
+    expect(route).toContain("revalidateTag(HUB_CACHE_TAG, { expire: 0 })");
+    expect(route).not.toContain("revalidateTag(HUB_CACHE_TAG, 'max')");
   });
 });

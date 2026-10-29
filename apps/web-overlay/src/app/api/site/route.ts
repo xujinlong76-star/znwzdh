@@ -126,9 +126,12 @@ export async function POST(request: Request) {
     invalidateContentCache(SITE_CONTENT_PATH)
     // 前台品牌配置改走带标签的 Data Cache（见 site-config-source.ts），写后必须按标签
     // 失效，否则已静态化的页面要等 revalidate 窗口才换新品牌。
+    // 这里必须是立即过期（expire: 0），不能用 'max'：Next 16 里带 profile 的
+    // revalidateTag 是 stale-while-revalidate——下一次读仍拿到旧值，实测「保存 logo →
+    // 刷新还是旧图，再刷才变」。站点设置的写很少，值得用一次回源换立刻生效。
     // 包 try：数据已写入，缓存层异常不能把成功谎报成失败（同 /api/hub 代理的做法）。
     try {
-      revalidateTag(HUB_CACHE_TAG, 'max')
+      revalidateTag(HUB_CACHE_TAG, { expire: 0 })
     } catch (err) {
       console.warn('[site] revalidateTag failed:', err)
     }

@@ -1,0 +1,138 @@
+{
+  "startedAt": "2026-10-29T20:22:12.388Z",
+  "assertions": [
+    {
+      "name": "凭证登录成功（管理端会话可用）",
+      "ok": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "会话里确有 admin 用户",
+      "ok": true,
+      "detail": {
+        "user": "admin"
+      }
+    },
+    {
+      "name": "写入站点设置 logo 成功",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": "{\"success\":true,\"settings\":{\"basic\":{\"title\":\"山羊胡网址导航大全\",\"description\":\"AI 原生的网址导航 —— 支持中文语义检索、拼音与关键词混合召回\",\"keywords\":\"网址导航,导航站,AI 导航,语义检索,书签\"},\"appearance\":{\"l"
+      }
+    },
+    {
+      "name": "回读站点设置已是新 logo",
+      "ok": true,
+      "detail": {
+        "logo": "/icons/icon-192.png"
+      }
+    },
+    {
+      "name": "保存后刷新收敛到站点设置里的 logo（DOM 内全部匹配）",
+      "ok": true,
+      "detail": {
+        "state": [
+          {
+            "src": "/icons/icon-192.png",
+            "visible": false
+          },
+          {
+            "src": "/icons/icon-192.png",
+            "visible": true
+          }
+        ],
+        "attempts": 1,
+        "elapsedMs": 1393
+      }
+    },
+    {
+      "name": "至少一处后台 logo 实际可见",
+      "ok": true,
+      "detail": {
+        "state": [
+          {
+            "src": "/icons/icon-192.png",
+            "visible": false
+          },
+          {
+            "src": "/icons/icon-192.png",
+            "visible": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "清空 logo 成功",
+      "ok": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "回读站点设置 logo 已清空",
+      "ok": true,
+      "detail": {
+        "logo": ""
+      }
+    },
+    {
+      "name": "清空后刷新收敛到内置图而不是空 src",
+      "ok": true,
+      "detail": {
+        "state": [
+          {
+            "src": "/assets/images/alogo.webp",
+            "visible": false
+          },
+          {
+            "src": "/assets/images/alogo.webp",
+            "visible": true
+          }
+        ],
+        "attempts": 1,
+        "elapsedMs": 1547
+      }
+    },
+    {
+      "name": "页面无未捕获异常",
+      "ok": true,
+      "detail": {
+        "pageErrors": []
+      }
+    }
+  ],
+  "errors": [],
+  "customLogo": {
+    "state": [
+      {
+        "src": "/icons/icon-192.png",
+        "visible": false
+      },
+      {
+        "src": "/icons/icon-192.png",
+        "visible": true
+      }
+    ],
+    "attempts": 1,
+    "elapsedMs": 1393
+  },
+  "fallbackLogo": {
+    "state": [
+      {
+        "src": "/assets/images/alogo.webp",
+        "visible": false
+      },
+      {
+        "src": "/assets/images/alogo.webp",
+        "visible": true
+      }
+    ],
+    "attempts": 1,
+    "elapsedMs": 1547
+  },
+  "finishedAt": "2026-10-29T20:22:26.284Z",
+  "ok": true
+}

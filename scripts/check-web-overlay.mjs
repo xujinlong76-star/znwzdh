@@ -38,9 +38,15 @@
  * 比对逻辑住在 scripts/lib/overlay-drift.mjs（纯函数、有单测）。
  */
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { diffOverlay, findOwnedOrphans, isExcluded } from "./lib/overlay-drift.mjs";
+import {
+  diffOverlay,
+  findOwnedOrphans,
+  findUnbaselinedMirrorFiles,
+  isExcluded,
+  walkTree,
+} from "./lib/overlay-drift.mjs";
 
 const ROOT = resolve(".");
 const OVERLAY = join(ROOT, "apps", "web-overlay");
@@ -143,6 +149,44 @@ try {
   console.log(`[check] OK：${tracked.length} 个 git 跟踪的自研文件全部在 overlay 中`);
 } catch {
   // 无 git 环境（Docker 构建上下文）时跳过该项；失败分支在上面已直接 exit(1)
+}
+
+// ---------- 第三向：镜像关键路径新增文件必须显式决策（失败） ----------
+// 上游派生文件不受 git 跟踪，前两向都看不见它们。这里用 upstream-baseline.json
+// 登记已知的上游关键面（投稿审核 / 数据管理 / 图标下载 / 层级管理 / 4 条 BFF），
+// 任何**新增**的关键路径文件都要么收编进 overlay、要么更新基线，避免又一次
+// 「能跑、能改、下次 vendor 就没了」。
+const BASELINE_FILE = join(OVERLAY, "upstream-baseline.json");
+if (existsSync(BASELINE_FILE)) {
+  try {
+    const baseline = JSON.parse(readFileSync(BASELINE_FILE, "utf8"));
+    const mirrorFiles = existsSync(TARGET) ? walkTree(TARGET) : [];
+    const fresh = findUnbaselinedMirrorFiles({
+      mirrorRelPaths: mirrorFiles,
+      overlayRelPaths: overlayFiles,
+      baselineFiles: baseline.files ?? [],
+      criticalPrefixes: baseline.criticalPrefixes ?? [],
+    }).filter(inScope);
+
+    const mirrorSet = new Set(mirrorFiles);
+    const stale = (baseline.files ?? []).filter((rel) => !mirrorSet.has(rel) && !overlayFiles.includes(rel));
+
+    if (fresh.length > 0) {
+      console.error(`[check] ${fresh.length} 个关键路径新增文件既不在 overlay、也不在上游基线中：`);
+      for (const rel of fresh) console.error("  - " + rel);
+      console.error("[check] 二选一：");
+      console.error("  · 要维护它（会改代码）→ 复制到 apps/web-overlay/ 同路径收编");
+      console.error("  · 确认是上游原样文件 → node scripts/gen-overlay-baseline.mjs --update 登记");
+      process.exit(1);
+    }
+    if (stale.length > 0 && !STAGED) {
+      console.warn(`[check] 提示：基线里有 ${stale.length} 条已不存在（上游升级/已收编），可跑 gen-overlay-baseline.mjs --update 清理`);
+    }
+    console.log(`[check] OK：关键路径无新增未登记文件（基线 ${(baseline.files ?? []).length} 条）`);
+  } catch (error) {
+    console.error("[check] 上游基线读取失败（upstream-baseline.json 不是合法 JSON）：" + (error instanceof Error ? error.message : String(error)));
+    process.exit(1);
+  }
 }
 
 // ---------- 反向：web -> overlay（告警，不判失败） ----------

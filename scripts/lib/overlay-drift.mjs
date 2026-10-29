@@ -35,6 +35,7 @@ export function isExcluded(rel) {
   for (const s of EXCLUDE_SUFFIX) if (norm.endsWith(s)) return true;
   if (norm === "next-env.d.ts") return true; // next 生成文件
   if (norm === "UPSTREAM.md") return true; // vendor-web 生成的元数据（每次带时间戳/commit，不参与镜像比对）
+  if (norm === "upstream-baseline.json") return true; // overlay 专属元数据（上游派生文件基线），不进入镜像
   return false;
 }
 
@@ -196,3 +197,30 @@ export function findOwnedOrphans(trackedRelPaths, overlayRelPaths) {
     .filter((rel) => rel && rel !== "UPSTREAM.md" && !isExcluded(rel))
     .filter((rel) => !known.has(rel));
 }
+
+/**
+ * 第三向（收紧）：镜像里「既不在 overlay、也不在上游基线」的关键路径文件。
+ *
+ * `findOwnedOrphans` 只看 git 跟踪的文件，而上游派生文件天然不跟踪——
+ * 结果是 `src/app/admin/submissions/page.tsx`（投稿审核）、`src/app/api/favicon/`
+ * 这类运营关键面完全处于所有权盲区：能跑、能改，但改动会在下次 vendor 时消失，
+ * 且没有一条检查会报警。这里用一份「上游基线快照」把已知的上游派生文件登记下来，
+ * 任何**新增**的关键路径文件都必须走一次显式决策（收编进 overlay，或更新基线）。
+ *
+ * @param {object} args
+ * @param {string[]} args.mirrorRelPaths 镜像（apps/web）相对路径
+ * @param {Iterable<string>} args.overlayRelPaths
+ * @param {Iterable<string>} args.baselineFiles 基线里已登记的上游派生文件
+ * @param {string[]} args.criticalPrefixes 只看这些前缀下的新增文件
+ */
+export function findUnbaselinedMirrorFiles({ mirrorRelPaths, overlayRelPaths, baselineFiles, criticalPrefixes }) {
+  const known = new Set(overlayRelPaths);
+  const baseline = new Set(baselineFiles);
+  const fresh = [];
+  for (const rel of mirrorRelPaths) {
+    if (!rel || isExcluded(rel) || known.has(rel) || baseline.has(rel)) continue;
+    if (criticalPrefixes.some((prefix) => rel.startsWith(prefix))) fresh.push(rel);
+  }
+  return fresh.sort();
+}
+

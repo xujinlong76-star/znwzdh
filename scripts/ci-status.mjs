@@ -75,13 +75,85 @@ function gitRemote() {
 
 function usage(message) {
   if (message) console.error("❌ " + message);
-  console.error("用法：node scripts/ci-status.mjs [--limit=N] [--json]");
+  console.error("用法：node scripts/ci-status.mjs [--limit=N] [--json] [--logs]");
+  console.error("  --logs  拉取失败作业的日志片段（需要 GITHUB_TOKEN，未鉴权时 GitHub 返回 403）");
   process.exit(2);
+}
+
+
+/**
+ * 拉取一次运行里失败作业的日志片段。
+ *
+ * 为什么需要：`/actions/jobs/{id}/logs` 需要鉴权（未鉴权 403），而本机通常没有 gh。
+ * 没有日志时，CI 红了只能看到「哪个作业失败」，看不到「哪条用例」——
+ * 本轮三次排查都卡在这一步，最后靠本地干净 worktree 复现绕开。
+ *
+ * 输出策略：只打失败行 ±2 行上下文，避免把几万行日志刷屏。
+ */
+const LOG_PATTERNS = /(FAIL |✘|×|AssertionError|error TS\d+|Error: |✗)/;
+
+export function extractFailureLines(logText, context = 2, maxLines = 80) {
+  const lines = String(logText).split("\n");
+  const keep = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    if (!LOG_PATTERNS.test(lines[i])) continue;
+    for (let d = -context; d <= context; d++) {
+      const j = i + d;
+      if (j >= 0 && j < lines.length) keep.add(j);
+    }
+  }
+  const picked = [...keep].sort((a, b) => a - b).map((i) => lines[i]);
+  return picked.slice(0, maxLines);
+}
+
+async function printFailureLogs(slug, runId, headers, asJson) {
+  if (!process.env.GITHUB_TOKEN) {
+    console.error("\n⚠️  --logs 需要 GITHUB_TOKEN（GitHub 对日志接口强制鉴权，未鉴权恒 403）。");
+    console.error("   配置：export GITHUB_TOKEN=ghp_xxx（只需 repo 读权限）后重试。");
+    return;
+  }
+
+  const jobsRes = await fetch(`https://api.github.com/repos/${slug}/actions/runs/${runId}/jobs?per_page=20`, { headers });
+  if (!jobsRes.ok) {
+    console.error(`\n❌ 取作业列表失败：${jobsRes.status} ${jobsRes.statusText}`);
+    return;
+  }
+  const jobs = (await jobsRes.json()).jobs ?? [];
+  const failed = jobs.filter((j) => j.conclusion === "failure");
+  if (failed.length === 0) {
+    console.log("\n没有失败的作业，无需拉日志。");
+    return;
+  }
+
+  const report = [];
+  for (const job of failed) {
+    const logRes = await fetch(`https://api.github.com/repos/${slug}/actions/jobs/${job.id}/logs`, { headers });
+    if (!logRes.ok) {
+      report.push({ job: job.name, error: `HTTP ${logRes.status}`, lines: [] });
+      continue;
+    }
+    const text = await logRes.text();
+    report.push({ job: job.name, error: null, lines: extractFailureLines(text) });
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify({ runId, failures: report }, null, 2));
+    return;
+  }
+  for (const r of report) {
+    console.log(`\n──── ${r.job} ${r.error ? `（日志不可读：${r.error}）` : ""}`);
+    if (r.lines.length === 0) {
+      console.log("  （未匹配到失败行，可能是构建工具输出格式不同）");
+      continue;
+    }
+    for (const line of r.lines) console.log("  " + line.replace(/\u001b\[[0-9;]*m/g, ""));
+  }
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const asJson = args.includes("--json");
+  const withLogs = args.includes("--logs");
   const limitArg = args.find((a) => a.startsWith("--limit="));
   const limit = limitArg ? Number(limitArg.slice("--limit=".length)) : 5;
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) usage("--limit 需为 1~50 的整数");
@@ -127,6 +199,11 @@ async function main() {
       );
       console.log(`   ${run.url}`);
     }
+  }
+
+  if (withLogs && runs.length > 0) {
+    const target = runs.find((r) => r.conclusion === "failure") ?? runs[0];
+    await printFailureLogs(slug, target.id, headers, asJson);
   }
 
   const latestMain = runs.find((r) => r.branch === "main" || r.branch === "master");

@@ -21,7 +21,7 @@
  * ⚠️ 全量档**不能与其它任务并行**：机器满载会让墙钟型断言假红
  * （已实测：`backup-restore-job` 的耗时用例在并发下误报）。
  */
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
 const env = {
@@ -81,22 +81,51 @@ function skip(label, reason) {
   }
 })();
 
+
+/* ------------------------------------------------------------------ *
+ * --changed：按改动文件挑门禁
+ *
+ * 为什么需要：默认档已有 11 步，改一行文档也要跑全套。`--changed` 用
+ * `git diff --name-only` 判断哪些门禁真的可能被影响，其余**显式 skip**
+ * （进最后的「未执行」清单，不伪装成通过）。
+ * ------------------------------------------------------------------ */
+const CHANGED_MODE = process.argv.includes("--changed");
+
+function changedFiles() {
+  try {
+    const base = process.env.VERIFY_BASE || "HEAD";
+    const out = execFileSync("git", ["diff", "--name-only", base], { encoding: "utf8" });
+    return out.split("\n").map((l) => l.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+const CHANGED = CHANGED_MODE ? changedFiles() : null;
+const touches = (prefix) => (CHANGED ?? []).some((f) => f.startsWith(prefix));
+
+/** 条件门禁：--changed 模式下不相关就 skip，其余模式一律执行 */
+function gate(label, cmd, args, shouldRun) {
+  if (!CHANGED_MODE || shouldRun) run(label, cmd, args);
+  else skip(label, `--changed：本次改动未触及相关文件（${CHANGED.length} 个变更）`);
+}
+
 // 语法解析门禁放最前：秒级，先把「少一个括号」这类错误挡在 tsc 之前。
 run("语法解析", "node", ["scripts/check-syntax.mjs"]);
-run("覆盖层同步", "node", ["scripts/check-web-overlay.mjs"]);
+gate("覆盖层同步", "node", ["scripts/check-web-overlay.mjs"], touches("apps/web-overlay/") || touches("apps/web/"));
 // 网关策略表由枢纽注册声明生成；枢纽新增路由没重跑生成器 = 网关按旧白名单放行/拒绝，
 // 这类分叉只在真实请求时才暴露，所以必须在这里挡住。
-run("网关路由策略新鲜度", "node", ["scripts/gen-hub-route-policy.mjs", "--check"]);
-run("CI 合并门禁", "node", ["scripts/check-ci-gate.mjs"]);
+gate("网关路由策略新鲜度", "node", ["scripts/gen-hub-route-policy.mjs", "--check"], touches("apps/api/src/routes/") || touches("packages/core/src/route-policy"));
+gate("CI 合并门禁", "node", ["scripts/check-ci-gate.mjs"], touches(".github/workflows/") || touches("scripts/check-ci-gate"));
 run("提交完整性（已跟踪文件不引用未入库文件）", "node", ["scripts/check-committed-refs.mjs"]);
 run("依赖边界（vendored 底座 / 分层单向）", "node", ["scripts/check-import-boundaries.mjs"]);
 run("同构副本一致性", "node", ["scripts/sync-vendored.mjs", "--check"]);
-run("core 镜像一致", "node", ["scripts/sync-core-mirrors.mjs", "--check"]);
-run("扩展校验", "node", ["scripts/check-extensions.mjs"]);
+gate("core 镜像一致", "node", ["scripts/sync-core-mirrors.mjs", "--check"], touches("packages/core/src/") || touches("apps/web-overlay/src/lib/"));
+gate("扩展校验", "node", ["scripts/check-extensions.mjs"], touches("extensions/"));
 // 后端 lint 已是硬门禁（error + --max-warnings 0），必须进这条链：
 // 只在 CI 单独跑的规则等于没有规则，本地会一路绿灯直到推上去才红。
-run("后端 lint", "pnpm", ["lint:backend"]);
-run("类型检查", "node", ["scripts/typecheck.mjs"]);
+gate("后端 lint", "pnpm", ["lint:backend"], touches("apps/api/") || touches("packages/"));
+gate("类型检查", "node", ["scripts/typecheck.mjs"], touches("apps/api/") || touches("packages/"));
 
 // 口径提示：typecheck 只覆盖 @navhub/*（apps/web 是 vendored 底座），前端
 // tsc / eslint / next build 在 CI 的 test-web 作业里，e2e 在 test-e2e 作业里。

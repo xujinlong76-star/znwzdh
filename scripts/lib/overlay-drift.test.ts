@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   diffOverlay,
   findOwnedOrphans,
+  findUnbaselinedMirrorFiles,
   isBinary,
   isExcluded,
   normBuildInjectedConfig,
@@ -321,5 +322,59 @@ describe("构建期就地改写的 tsconfig 归一", () => {
     expect(normBuildInjectedConfig("tsconfig.json", Buffer.from(once, "utf8"))).toBe(once);
     if (!existsSync(b)) return; // CI 的根测试不 vendor apps/web
     expect(once).toBe(normBuildInjectedConfig("tsconfig.json", readFileSync(b)));
+  });
+});
+
+describe("findUnbaselinedMirrorFiles：关键路径的所有权盲区", () => {
+  const criticalPrefixes = ["src/app/admin/submissions/", "src/app/api/favicon/"];
+
+  it("基线内的上游派生文件不算新增", () => {
+    const fresh = findUnbaselinedMirrorFiles({
+      mirrorRelPaths: ["src/app/admin/submissions/page.tsx"],
+      overlayRelPaths: [],
+      baselineFiles: ["src/app/admin/submissions/page.tsx"],
+      criticalPrefixes,
+    });
+    expect(fresh).toEqual([]);
+  });
+
+  it("关键路径下的新增文件必须显式决策", () => {
+    const fresh = findUnbaselinedMirrorFiles({
+      mirrorRelPaths: ["src/app/admin/submissions/review/page.tsx", "src/app/api/favicon/route.ts"],
+      overlayRelPaths: [],
+      baselineFiles: [],
+      criticalPrefixes,
+    });
+    expect(fresh).toEqual(["src/app/admin/submissions/review/page.tsx", "src/app/api/favicon/route.ts"]);
+  });
+
+  it("已收编进 overlay 的文件不再计入（收编即所有权转移）", () => {
+    const fresh = findUnbaselinedMirrorFiles({
+      mirrorRelPaths: ["src/app/api/favicon/route.ts"],
+      overlayRelPaths: ["src/app/api/favicon/route.ts"],
+      baselineFiles: [],
+      criticalPrefixes,
+    });
+    expect(fresh).toEqual([]);
+  });
+
+  it("关键路径之外的上游文件不产生噪音", () => {
+    const fresh = findUnbaselinedMirrorFiles({
+      mirrorRelPaths: ["src/components/upstream-widget.tsx", "src/app/category/page.tsx"],
+      overlayRelPaths: [],
+      baselineFiles: [],
+      criticalPrefixes,
+    });
+    expect(fresh).toEqual([]);
+  });
+
+  it("构建产物/生成文件不参与判定", () => {
+    const fresh = findUnbaselinedMirrorFiles({
+      mirrorRelPaths: ["src/app/admin/submissions/.next-tmp.js", "src/app/api/favicon/route.tsbuildinfo"],
+      overlayRelPaths: [],
+      baselineFiles: [],
+      criticalPrefixes,
+    });
+    expect(fresh).toEqual([]);
   });
 });

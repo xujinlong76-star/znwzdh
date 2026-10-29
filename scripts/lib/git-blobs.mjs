@@ -71,6 +71,19 @@ export function refExists(ref, { cwd = process.cwd() } = {}) {
 }
 
 /**
+ * 仓库是不是浅克隆（`actions/checkout` 默认 `fetch-depth: 1`，只有一个提交）。
+ *
+ * 为什么要和 `refExists` 配对着用：「读不到 `HEAD~1`」有两种完全不同的原因 ——
+ * ref 写错了，还是历史上根本没有上一个提交。只报后者会让人去查 ref，
+ * 而真凶在 workflow 的那行 `fetch-depth`（2026-10-29 CI 上 `test-impact --diff`
+ * 就是这么常驻红的：本地永远复现不了，因为本地是全量克隆）。
+ */
+export function isShallow({ cwd = process.cwd() } = {}) {
+  const r = spawnSync("git", ["rev-parse", "--is-shallow-repository"], { cwd });
+  return r.status === 0 && r.stdout.toString("utf8").trim() === "true";
+}
+
+/**
  * 列出 `ref` 下某个目录里匹配正则的文件（`git ls-tree -r`）。
  * @param {string} ref
  * @param {string} subDir 仓库根相对目录

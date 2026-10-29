@@ -10,9 +10,9 @@
  *                                      真实边：import / 路径字面量 / 镜像 / 目录扫描）。
  *   --why <test> --base <ref>          同上，改动集取自 `git diff --name-only <ref>`。
  *
- *   --diff <base> [--limit 6]          回放 <base>..HEAD 最近 N 个改了源码的提交：
- *                                      每个提交对比「图命中 / 选择器实际会跑 / 按词根
- *                                      与整棵会选多少」。**图命中但选择器没跑 = rc1**，
+ *   --diff <base> [--limit 6]          回放 <base>..HEAD 最近 N 个**改了图看得见的文件**
+ *                                      的提交：每个提交对比「图命中 / 选择器实际会跑 /
+ *                                      按词根与整棵会选多少」。**图命中但选择器没跑 = rc1**，
  *                                      那才是真的漏跑（其余差异是词根兜底的宽度，供审阅）。
  *   --stats                            图的规模与耗时。
  *
@@ -20,16 +20,19 @@
  * （NAVHUB_PRECOMMIT_FILES + NAVHUB_PRECOMMIT_DRYRUN=1），不跑任何测试；
  * 词根口径靠 NAVHUB_PRECOMMIT_NO_GRAPH=1 让选择器跳过图、只走旧启发式。
  *
+ * 「读不到 base」分两种原因报（浅克隆 / ref 不存在）：CI 的 checkout 默认 `fetch-depth: 1`，
+ * 那里 `HEAD~1` 是真的不存在，把这句说成 ref 笔误会让人去查一个没写错的参数。
+ *
  * 退出码：0 = 可达/一致；1 = 测试不可达、改动文件不在图里、或有「图命中却没被跑」；
  *         2 = 用法错误或 git 读不了。
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { canonicalPath, graphFor, impactedWithPaths } from "./lib/test-impact.mjs";
+import { isShallow, refExists } from "./lib/git-blobs.mjs";
+import { canonicalPath, graphFor, graphVisibleFiles, impactedWithPaths } from "./lib/test-impact.mjs";
 
 const P = "[test-impact] ";
-const CODE_RE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 const SELECTOR = ".git/hooks/navhub-precommit-tests.mjs";
 
 function git(args, opts = {}) {
@@ -153,7 +156,7 @@ function commitsSince(base, want) {
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter(Boolean);
-    const source = changed.filter((f) => CODE_RE.test(f));
+    const source = graphVisibleFiles(changed);
     if (source.length === 0) continue;
     out.push({ sha, subject, changed, source });
     if (out.length >= want) break;
@@ -162,6 +165,19 @@ function commitsSince(base, want) {
 }
 
 function runDiff(graph, opts) {
+  if (!refExists(opts.diff)) {
+    // 两种「读不到」的下一步完全不同，所以不能共用一句报错。
+    if (isShallow()) {
+      console.error(
+        `${P}${opts.diff} 读不到，而这个仓库是浅克隆（git rev-parse --is-shallow-repository = true）：` +
+          "CI 的 actions/checkout 默认 fetch-depth: 1，历史里只有一个提交，`HEAD~1` 真的不存在。" +
+          "要在这里回放就给那一步加 fetch-depth（不是改这条断言）",
+      );
+    } else {
+      console.error(`${P}${opts.diff} 不是本仓库里真实存在的 ref（拼错、或还没 fetch）`);
+    }
+    return 2;
+  }
   let commits;
   try {
     commits = commitsSince(opts.diff, opts.limit);
@@ -170,7 +186,7 @@ function runDiff(graph, opts) {
     return 2;
   }
   if (commits.length === 0) {
-    console.log(`${P}${opts.diff}..HEAD 没有改源码的提交可回放`);
+    console.log(`${P}${opts.diff}..HEAD 没有改动图看得见的文件（前缀表之外的东西，如锁文件、data/）`);
     return 0;
   }
 
@@ -187,7 +203,7 @@ function runDiff(graph, opts) {
   for (const { sha, subject, changed, source } of commits) {
     const hits = impactedWithPaths(graph, changed).tests;
     const short = sha.slice(0, 8);
-    let line = `${short} ${subject.slice(0, 36)} | 改动 ${source.length} 源码 → 图 ${hits.length}`;
+    let line = `${short} ${subject.slice(0, 36)} | 改动 ${source.length} 图可见文件 → 图 ${hits.length}`;
     if (selectorReady) {
       const picked = runSelector(changed);
       const notRun = hits.filter((t) => !picked.includes(t));

@@ -99,6 +99,18 @@ function isRepoRelative(lit) {
 }
 
 /**
+ * 一笔提交里「图可能有节点」的那些路径 = 回放的可见集。
+ *
+ * 与前缀表同源，所以 `--diff` 不再按代码后缀筛：只改 `.github/workflows/ci.yml`
+ * 或 `docker/Dockerfile.api` 的提交此前在回放里等于没改（2026-10-29 实测：
+ * 一笔 ci.yml-only 提交把「--diff HEAD~1 该给出图命中数」打红）。
+ * 一张表三处用（抽取正则 / 仓库相对判定 / 回放可见集）——分处写迟早只加一半。
+ */
+export function graphVisibleFiles(files) {
+  return files.filter((f) => isRepoRelative(String(f).replace(/\\/g, "/")));
+}
+
+/**
  * `resolve(ROOT, "scripts", "check-large-files.mjs")` 这类**分段拼接**的路径。
  * 单看每个字符串都不带 `/`，上一条正则抽不出来；合起来才是路径。
  * 真实例子：scripts/check-large-files.test.ts:21 —— 漏了它，改脚本时图命中 0，

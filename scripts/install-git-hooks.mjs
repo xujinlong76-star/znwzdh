@@ -172,6 +172,17 @@ if git diff --cached --name-only --diff-filter=ACM | grep -qE '(^|/).*\\.test\\.
   node scripts/fix-mock-hygiene.mjs || { echo "  ↑ 跑 node scripts/fix-mock-hygiene.mjs --apply 自动补齐"; exit 1; }
 fi
 
+# 清理动作覆盖：本次动了被登记的文件才查。清理函数漏一条出口（尤其提前 return）
+# 就是「删了还在」；判据是「每条 return 之前都见到清理调用」。
+if git diff --cached --name-only --diff-filter=ACM | grep -qE 'offline-video-cache\\.ts$'; then
+  node scripts/check-cleanup-coverage.mjs || exit 1
+fi
+
+# 事实源判据：读路径不许「按计数选源」（把影子副本当正本，返回幻影数据）。
+if git diff --cached --name-only --diff-filter=ACM | grep -qE '(storage|routes/videos)\\.ts$'; then
+  node scripts/check-source-truth.mjs || exit 1
+fi
+
 node scripts/typecheck.mjs || exit 1
 
 # 变更相关测试：选测依据是本次提交集（git diff --cached），不是工作区改动集。

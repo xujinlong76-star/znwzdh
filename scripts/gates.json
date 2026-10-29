@@ -112,6 +112,22 @@
       "why": "跨模块 vi.mock 必须带 vi.resetModules() 兜底；修法机械，报错时直接给 --apply 提示"
     },
     {
+      "name": "cleanup-coverage",
+      "when": "staged",
+      "script": "scripts/check-cleanup-coverage.mjs",
+      "blocks": true,
+      "test": "scripts/check-cleanup-coverage.test.ts",
+      "why": "清理动作漏一条出口（尤其是提前 return）就是「删了还在」；登记制 + 每条 return 都见清理"
+    },
+    {
+      "name": "source-truth",
+      "when": "staged",
+      "script": "scripts/check-source-truth.mjs",
+      "blocks": true,
+      "test": "scripts/check-source-truth.test.ts",
+      "why": "读路径按计数选源会把影子副本当正本（KV 74 条 vs 表 5578 条）；判据必须是显式开关"
+    },
+    {
       "name": "typecheck",
       "when": "staged",
       "script": "scripts/typecheck.mjs",

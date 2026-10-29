@@ -61,6 +61,124 @@
     "/custom": 869376,
     "/auth/error": 868352,
     "/_not-found": 867328,
-    "/_global-error": 487424
-  }
+    "/_global-error": 487424,
+    "/marketplace/[slug]/preview": 1018880,
+    "/category/[slug]": 934912,
+    "/category/[slug]/p/[n]": 934912,
+    "/admin/plugin-health": 914432,
+    "/admin/data/restore": 849920,
+    "/me/account": 821248,
+    "/me/workspaces": 816128,
+    "/me/settings": 807936,
+    "/me/plugins": 802816,
+    "/me/vault": 801792,
+    "/me/notifications": 772096,
+    "/offline": 769024,
+    "/sites": 764928,
+    "/sites/p/[n]": 764928,
+    "/category": 757760
+  },
+  "_raise_log": [
+    {
+      "at": "2026-10-29T00:29:15.238Z",
+      "sha": "cbf2614",
+      "source": "report",
+      "distDir": ".next",
+      "bundler": "turbopack",
+      "builtAt": "2026-10-29T00:16:08.351Z",
+      "reason": "15 条路由此前只吃 default(1241KB)，实测最高 970KB；按 CI 干净树实测值+5% 落成显式条目，等于逐条收紧并可审计",
+      "changes": [
+        {
+          "route": "/marketplace/[slug]/preview",
+          "from": 1270784,
+          "to": 1018880,
+          "measured": 970023
+        },
+        {
+          "route": "/category/[slug]",
+          "from": 1270784,
+          "to": 934912,
+          "measured": 889942
+        },
+        {
+          "route": "/category/[slug]/p/[n]",
+          "from": 1270784,
+          "to": 934912,
+          "measured": 889942
+        },
+        {
+          "route": "/admin/plugin-health",
+          "from": 1270784,
+          "to": 914432,
+          "measured": 870225
+        },
+        {
+          "route": "/admin/data/restore",
+          "from": 1270784,
+          "to": 849920,
+          "measured": 808805
+        },
+        {
+          "route": "/me/account",
+          "from": 1270784,
+          "to": 821248,
+          "measured": 781786
+        },
+        {
+          "route": "/me/workspaces",
+          "from": 1270784,
+          "to": 816128,
+          "measured": 776475
+        },
+        {
+          "route": "/me/settings",
+          "from": 1270784,
+          "to": 807936,
+          "measured": 768832
+        },
+        {
+          "route": "/me/plugins",
+          "from": 1270784,
+          "to": 802816,
+          "measured": 764458
+        },
+        {
+          "route": "/me/vault",
+          "from": 1270784,
+          "to": 801792,
+          "measured": 762777
+        },
+        {
+          "route": "/me/notifications",
+          "from": 1270784,
+          "to": 772096,
+          "measured": 734490
+        },
+        {
+          "route": "/offline",
+          "from": 1270784,
+          "to": 769024,
+          "measured": 732300
+        },
+        {
+          "route": "/sites",
+          "from": 1270784,
+          "to": 764928,
+          "measured": 728186
+        },
+        {
+          "route": "/sites/p/[n]",
+          "from": 1270784,
+          "to": 764928,
+          "measured": 728186
+        },
+        {
+          "route": "/category",
+          "from": 1270784,
+          "to": 757760,
+          "measured": 721150
+        }
+      ]
+    }
+  ]
 }

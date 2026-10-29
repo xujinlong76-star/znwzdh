@@ -29,7 +29,8 @@ export async function GET() {
     let totalScore = 0
 
     categories.forEach(cat => {
-      ;(cat.items || []).forEach(item => {
+      const allItems = [...(cat.items || []), ...(cat.subCategories || []).flatMap(s => s.items || [])]
+      allItems.forEach(item => {
         totalVideos++
         const score = item.videoConfig?.qualityScore
         if (typeof score === 'number' && score > 0) {

@@ -11,10 +11,35 @@ interface CachedMedia {
   cachedAt: number
 }
 
-// 内存 LRU 缓存，最多缓存 120 张常用封面
+// 内存 LRU 缓存，最多缓存 800 张常用封面
 const MEDIA_CACHE = new Map<string, CachedMedia>()
-const MAX_CACHE_SIZE = 120
+const MAX_CACHE_SIZE = 800
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 小时
+
+// 并发控制与在途请求合并，防止首屏 50+ 封面同时轰炸打爆 Node.js Socket 导致 68 秒 HMR 卡死
+const inFlightRequests = new Map<string, Promise<CachedMedia | null>>()
+let activeFetches = 0
+const MAX_CONCURRENT_UPSTREAM = 6
+const fetchWaitQueue: (() => void)[] = []
+
+async function acquireFetchSlot(): Promise<void> {
+  if (activeFetches < MAX_CONCURRENT_UPSTREAM) {
+    activeFetches++
+    return
+  }
+  return new Promise<void>((resolve) => {
+    fetchWaitQueue.push(() => {
+      activeFetches++
+      resolve()
+    })
+  })
+}
+
+function releaseFetchSlot(): void {
+  activeFetches--
+  const next = fetchWaitQueue.shift()
+  if (next) next()
+}
 
 export async function GET(request: Request) {
   try {
@@ -72,44 +97,70 @@ export async function GET(request: Request) {
       })
     }
 
-    // 4. 发起上游抓取并伪造来源以绕过防盗链
-    const upstreamHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+    // 4. 发起上游抓取（带 6 路并发限流与在途 Promise 合并）
+    let mediaResult: CachedMedia | null = null
+
+    if (inFlightRequests.has(cacheKey)) {
+      mediaResult = await inFlightRequests.get(cacheKey)!
+    } else {
+      const fetchPromise = (async () => {
+        await acquireFetchSlot()
+        try {
+          const upstreamHeaders: Record<string, string> = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+          }
+
+          if (parsedUrl.hostname.includes('hdslb.com') || parsedUrl.hostname.includes('bilibili.com')) {
+            upstreamHeaders['Referer'] = 'https://www.bilibili.com/'
+            upstreamHeaders['Origin'] = 'https://www.bilibili.com'
+          } else if (parsedUrl.hostname.includes('ytimg.com') || parsedUrl.hostname.includes('youtube.com')) {
+            upstreamHeaders['Referer'] = 'https://www.youtube.com/'
+          }
+
+          const upstreamRes = await fetch(rawUrl, {
+            headers: upstreamHeaders,
+            signal: AbortSignal.timeout(6000)
+          })
+
+          if (!upstreamRes.ok) {
+            return null
+          }
+
+          const arrayBuffer = await upstreamRes.arrayBuffer()
+          const buffer = Buffer.from(arrayBuffer)
+          const contentType = upstreamRes.headers.get('content-type') || 'image/jpeg'
+          const etag = `"${createHash('md5').update(buffer).digest('hex')}"`
+
+          const item: CachedMedia = {
+            buffer,
+            contentType,
+            etag,
+            cachedAt: Date.now()
+          }
+
+          // 写入内存缓存
+          if (MEDIA_CACHE.size >= MAX_CACHE_SIZE) {
+            const oldestKey = MEDIA_CACHE.keys().next().value
+            if (oldestKey) MEDIA_CACHE.delete(oldestKey)
+          }
+          MEDIA_CACHE.set(cacheKey, item)
+          return item
+        } finally {
+          releaseFetchSlot()
+          inFlightRequests.delete(cacheKey)
+        }
+      })()
+
+      inFlightRequests.set(cacheKey, fetchPromise)
+      mediaResult = await fetchPromise
     }
 
-    if (parsedUrl.hostname.includes('hdslb.com') || parsedUrl.hostname.includes('bilibili.com')) {
-      upstreamHeaders['Referer'] = 'https://www.bilibili.com/'
-      upstreamHeaders['Origin'] = 'https://www.bilibili.com'
-    } else if (parsedUrl.hostname.includes('ytimg.com') || parsedUrl.hostname.includes('youtube.com')) {
-      upstreamHeaders['Referer'] = 'https://www.youtube.com/'
+    if (!mediaResult) {
+      return new Response('Upstream fetch failed or timed out', { status: 502 })
     }
 
-    const upstreamRes = await fetch(rawUrl, {
-      headers: upstreamHeaders,
-      signal: AbortSignal.timeout(8000)
-    })
-
-    if (!upstreamRes.ok) {
-      return new Response(`Upstream returned HTTP ${upstreamRes.status}`, { status: 502 })
-    }
-
-    const arrayBuffer = await upstreamRes.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-    const contentType = upstreamRes.headers.get('content-type') || 'image/jpeg'
-    const etag = `"${createHash('md5').update(buffer).digest('hex')}"`
-
-    // 写入内存缓存
-    if (MEDIA_CACHE.size >= MAX_CACHE_SIZE) {
-      const oldestKey = MEDIA_CACHE.keys().next().value
-      if (oldestKey) MEDIA_CACHE.delete(oldestKey)
-    }
-    MEDIA_CACHE.set(cacheKey, {
-      buffer,
-      contentType,
-      etag,
-      cachedAt: now
-    })
+    const { buffer, contentType, etag } = mediaResult
 
     const clientEtag = request.headers.get('if-none-match')
     if (clientEtag === etag) {

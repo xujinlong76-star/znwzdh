@@ -251,6 +251,42 @@ describe("event-stream 分支：逐段回调、done 为权威终稿", () => {
     expect(out.final.reply).toBe("好");
   });
 
+  it("未知帧类型既不追草稿也不当终稿（协议演进必须显式加白名单）", async () => {
+    const deltas: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        sseResponse([
+          frame({ type: "status", text: "内部状态" }),
+          frame({ type: "done", ok: true, reply: "终稿" }),
+        ]),
+      ),
+    );
+    const out = await streamCopilotChat("a", undefined, { onDelta: (t) => deltas.push(t) });
+    expect(deltas).toEqual([]);
+    expect(out.final.reply).toBe("终稿");
+  });
+
+  it("done 形状非法（reply 非字符串）不算终稿：宁可报失败也不把坏形状交给抽屉", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse([frame({ type: "done", ok: true, reply: 123 })])));
+    await expect(streamCopilotChat("a")).rejects.toThrow(/终稿/);
+  });
+
+  it("done 之后同块里的 delta 与第二个 done 都被丢弃：终稿以第一个 done 为准", async () => {
+    const deltas: string[] = [];
+    // 四帧拼成一个 TCP 块：客户端必须在解析到第一个 done 时就停手
+    const chunk = [
+      frame({ type: "delta", text: "草稿" }),
+      frame({ type: "done", ok: true, reply: "终稿一" }),
+      frame({ type: "delta", text: "尾巴" }),
+      frame({ type: "done", ok: true, reply: "终稿二" }),
+    ].join("");
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse([chunk])));
+    const out = await streamCopilotChat("a", undefined, { onDelta: (t) => deltas.push(t) });
+    expect(deltas).toEqual(["草稿"]);
+    expect(out.final.reply).toBe("终稿一");
+  });
+
   it("读取被 abort 时把原始错误抛出去（抽屉靠它区分「用户停止」与「故障」）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => {
       const err = new DOMException("The user aborted a request.", "AbortError");
@@ -310,21 +346,28 @@ describe("降级不开流：按 content-type 分流回一次性 JSON", () => {
 });
 
 describe("与中枢的帧契约逐字对齐", () => {
-  it("中枢写出的每种帧类型，客户端都认得", () => {
-    const body = route.slice(route.indexOf("async function streamCopilotReply"), route.indexOf("async function streamCopilotReply") + 9000);
-    expect(body.length).toBeGreaterThan(100);
-    const serverTypes = new Set([...body.matchAll(/type:\s*"(\w+)"/g)].map((m) => m[1]));
-    // 客户端只认这三种；中枢新增第四种却没人处理，就是「静默丢内容」
-    expect([...serverTypes].sort()).toEqual(["delta", "done", "reasoning"]);
+  it("帧类型以 core 单一事实源为准，服务端写入与客户端解析共用同一份", () => {
+    const coreFrame = readFileSync(join(repoRoot(), "packages", "core", "src", "copilot-frame.ts"), "utf8");
+    // 白名单只有三种；新增第四种必须先改这里，客户端解析才会认
+    expect(coreFrame).toMatch(/export const COPILOT_FRAME_TYPES = \["delta", "reasoning", "done"\] as const/);
+
+    // 服务端：写入函数受共享类型约束，不接受 payload: unknown 式的自由形状
+    expect(route).toMatch(/import type \{ CopilotFrame,/);
+    expect(route).toMatch(/const write = \(payload: CopilotFrame\)/);
+
+    // 客户端：解析必须经过共享 schema，不许自己 JSON.parse + 字面量类型判断
     const client = readFileSync(join(ROOT, "src/lib/copilot-stream.ts"), "utf8");
-    expect(client).toMatch(/frame\?\.type === 'delta'/);
-    expect(client).toMatch(/'reasoning'/);
-    expect(client).toMatch(/=== 'done'/);
+    expect(client).toMatch(/import \{ parseCopilotFrame, type CopilotFrame \} from '\.\/copilot-frame'/);
+    expect(client).toMatch(/return parseCopilotFrame\(dataLines\.join\('\\n'\)\)/);
   });
 
-  it("流式只在模型真能跑时开启：额度/未配置仍回一次性 JSON", () => {
+  it("流式只在模型真能跑时开启：额度/未配置仍回一次性 JSON（可用性看整个候选池）", () => {
     expect(route).toMatch(
-      /if \(stream && prep\.quotaInfo === null && llmProviderReady\(prep\.llm\.provider\)\) \{\s*\n\s*return streamCopilotReply\(/,
+      /if \(stream && prep\.quotaInfo === null && llmProviderReadyAny\(prep\.llm\)\) \{\s*\n\s*return streamCopilotReply\(/,
+    );
+    // 非流式路径同样按候选池判定，否则主模型缺密钥时备用池永远走不到
+    expect(route).toMatch(
+      /if \(prep\.quotaInfo === null && llmProviderReadyAny\(prep\.llm\)\) \{\s*\n\s*const \{ candidates \}/,
     );
   });
 

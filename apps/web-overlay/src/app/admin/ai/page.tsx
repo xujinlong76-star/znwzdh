@@ -7,7 +7,7 @@
  * 密钥加密落库、只回显掩码，保存后立即刷新能力位（无需重启）。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Bot, CheckCircle2, Cpu, ListChecks, Loader2, Plus, RefreshCw, RotateCcw, Save, Trash2, XCircle } from 'lucide-react'
+import { AlertTriangle, Bot, CheckCircle2, Coins, Cpu, ListChecks, Loader2, Plus, RefreshCw, RotateCcw, Save, Trash2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 import { LlmConfigFields, type LlmFormValue } from '@/components/ai/llm-config-form'
 import { AiObservabilityPanel } from '@/components/ai/ai-observability-panel'
+import { AiPriceBookPanel } from '@/components/ai/ai-price-book-panel'
 import { EnrichmentReviewPanel } from '@/components/ai/enrichment-review-panel'
 import {
   fetchAdminLlmConfig,
@@ -87,7 +88,7 @@ export default function AdminAiPage() {
   const [confirmReset, setConfirmReset] = useState(false)
   const [testResult, setTestResult] = useState<HubLlmTestResult | null>(null)
   const [fallbacks, setFallbacks] = useState<FallbackForm[]>([])
-  const [activeTab, setActiveTab] = useState<'config' | 'observability' | 'enrich'>('config')
+  const [activeTab, setActiveTab] = useState<'config' | 'observability' | 'prices' | 'enrich'>('config')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -317,6 +318,19 @@ export default function AdminAiPage() {
         </button>
         <button
           type="button"
+          aria-label="切换到模型单价簿"
+          onClick={() => setActiveTab('prices')}
+          className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === 'prices'
+              ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 font-semibold'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Coins className="h-4 w-4 text-emerald-500" />
+          模型单价簿
+        </button>
+        <button
+          type="button"
           aria-label="切换到富化结果字段级审核"
           onClick={() => setActiveTab('enrich')}
           className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
@@ -332,6 +346,8 @@ export default function AdminAiPage() {
 
       {activeTab === 'enrich' ? (
         <EnrichmentReviewPanel />
+      ) : activeTab === 'prices' ? (
+        <AiPriceBookPanel />
       ) : activeTab === 'observability' ? (
         <AiObservabilityPanel />
       ) : (

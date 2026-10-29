@@ -14,7 +14,7 @@
  *   4. 适配器不支持版本（github / sqlite 返回 null）时自动降级为无版本写入，
  *      与改造前行为一致，不会因为拿不到版本就写不进去。
  */
-import { commitFile, getFileContent, getStorageVersion } from './github'
+import { commitFile, getFileContent, getStorageVersion, readStorageFresh } from './github'
 import { isVersionConflict } from './video-write-guard'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 
@@ -37,9 +37,24 @@ export type MutateOutcome<T> =
 
 export { isVersionConflict } from './video-write-guard'
 
+/** 计算视频库全库条目总数（包含直接条目与子分类条目） */
+export function countVideoLibraryItems(data: NavigationData): number {
+  return (data.navigationItems ?? []).reduce((acc, cat) => {
+    const direct = cat.items?.length || 0
+    const sub = (cat.subCategories || []).reduce((sAcc, sub) => sAcc + (sub.items?.length || 0), 0)
+    return acc + direct + sub
+  }, 0)
+}
+
 /** 读取视频库，并把结构收敛成「一定存在 navigationItems 数组」 */
 export async function readVideoLibrary(): Promise<NavigationData> {
-  const raw = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData | null | undefined
+  const fresh = await readStorageFresh<NavigationData>(VIDEOS_FILE_PATH)
+    .catch(() => {
+      // fresh 读失败不算数据丢失：下一行有 getFileContent 兜底回落到事实源，
+      // 这里只把「fresh 读不到」表达成 null，让 ?? 走回落分支。
+      return null
+    })
+  const raw = fresh ?? ((await getFileContent(VIDEOS_FILE_PATH)) as NavigationData | null | undefined)
   if (!raw || typeof raw !== 'object') return { navigationItems: [] }
   if (!Array.isArray(raw.navigationItems)) return { ...raw, navigationItems: [] }
   return raw
@@ -64,6 +79,18 @@ export async function mutateVideoLibrary<T>(
     const version = await getStorageVersion(VIDEOS_FILE_PATH)
     const plan = await mutate(data)
     if (plan.skip) return { ok: true, result: plan.result, attempts: attempt }
+
+    // 防破坏性数据丢失守卫：禁止将拥有丰富视频或分类的库抹平/截断
+    const initialCount = countVideoLibraryItems(data)
+    const nextCount = countVideoLibraryItems(plan.next)
+    if (initialCount >= 100 && nextCount < initialCount * 0.8) {
+      throw new Error(`[video-library-store] 变更被安全拦截：条目总数从 ${initialCount} 骤降至 ${nextCount}，疑似分类或条目被意外抹除！`)
+    }
+    const initialCats = data.navigationItems?.length || 0
+    const nextCats = plan.next.navigationItems?.length || 0
+    if (initialCats > 0 && nextCats < initialCats) {
+      throw new Error(`[video-library-store] 变更被安全拦截：分类数从 ${initialCats} 减少至 ${nextCats}！`)
+    }
 
     try {
       await commitFile(
@@ -144,6 +171,13 @@ export function findVideoByExternalId(data: NavigationData, externalId: string):
       const config = item.videoConfig
       if (!config) continue
       if (config.bvid === externalId || config.videoId === externalId) return item
+    }
+    for (const sub of category.subCategories ?? []) {
+      for (const item of sub.items ?? []) {
+        const config = item.videoConfig
+        if (!config) continue
+        if (config.bvid === externalId || config.videoId === externalId) return item
+      }
     }
   }
   return null

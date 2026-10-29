@@ -15,6 +15,12 @@ export const FAVORITES_PLAYLIST_ID = 'video-favorites'
 const STORAGE_KEY = 'devops_user_video_playlists_v1'
 export const PLAYLIST_UPDATE_EVENT = 'devops:playlists:updated'
 
+let _cachedPlaylists: UserPlaylist[] | null = null;
+
+export function invalidatePlaylistsCache(): void {
+  _cachedPlaylists = null;
+}
+
 function getStorage(): Storage | null {
   if (typeof window !== 'undefined' && window.localStorage) {
     return window.localStorage
@@ -59,6 +65,7 @@ function initializeDefaultPlaylists(): UserPlaylist[] {
  * Retrieves all user playlists, ensuring default system lists exist.
  */
 export function getUserPlaylists(): UserPlaylist[] {
+  if (_cachedPlaylists) return _cachedPlaylists
   const storage = getStorage()
   if (!storage) return initializeDefaultPlaylists()
 
@@ -82,6 +89,7 @@ export function getUserPlaylists(): UserPlaylist[] {
         updatedAt: new Date().toISOString(),
       })
     }
+    _cachedPlaylists = lists
     return lists
   } catch {
     return initializeDefaultPlaylists()
@@ -89,6 +97,7 @@ export function getUserPlaylists(): UserPlaylist[] {
 }
 
 function savePlaylists(lists: UserPlaylist[]): void {
+  _cachedPlaylists = lists
   const storage = getStorage()
   if (!storage) return
   try {

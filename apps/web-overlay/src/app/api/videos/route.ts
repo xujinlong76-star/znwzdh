@@ -8,6 +8,7 @@ import {
     type VideoCursor,
 } from '@/lib/video-pagination'
 import { mutateVideoLibrary } from '@/lib/video-library-store'
+import { withSignedVideoIcons } from '@/lib/media-proxy'
 import type { NavigationItem, NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'

@@ -155,41 +155,42 @@ export function VideoBilibiliHdPlayer({
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [deliveryStage, setDeliveryStage] = useState<DeliveryStage>('direct')
   const [userPreferIframe, setUserPreferIframe] = useState<boolean>(false)
-  const [accessKey, setAccessKey] = useState<string>('')
-  const [accessKeyDraft, setAccessKeyDraft] = useState<string>('')
+  const [accessKey, setAccessKey] = useState<string>(() => {
+    if (typeof window === 'undefined') return ''
+    try {
+      return window.localStorage.getItem(BILI_ACCESS_KEY_STORAGE) || ''
+    } catch {
+      return ''
+    }
+  })
+  const [accessKeyDraft, setAccessKeyDraft] = useState<string>(() => {
+    if (typeof window === 'undefined') return ''
+    try {
+      return window.localStorage.getItem(BILI_ACCESS_KEY_STORAGE) || ''
+    } catch {
+      return ''
+    }
+  })
   const [showKeyPanel, setShowKeyPanel] = useState<boolean>(false)
   const [showEnginePanel, setShowEnginePanel] = useState<boolean>(false)
-  const [selectedEngine, setSelectedEngine] = useState<string>(preferredEngine || 'auto')
+  const [selectedEngine, setSelectedEngine] = useState<string>(() => {
+    if (preferredEngine) return preferredEngine
+    if (typeof window === 'undefined') return 'auto'
+    try {
+      const savedEngine = window.localStorage.getItem(BILI_SELECTED_ENGINE_STORAGE)
+      if (savedEngine && BILI_ENGINE_OPTIONS.some(o => o.id === savedEngine)) {
+        return savedEngine
+      }
+    } catch {
+      // ignore
+    }
+    return 'auto'
+  })
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null)
   const [streamErrorNotice, setStreamErrorNotice] = useState<string | null>(null)
   const [refreshTick, setRefreshTick] = useState<number>(0)
 
-  // 初始化读取本地保存的 access_key、播放模式与首选解析线路
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const savedKey = window.localStorage.getItem(BILI_ACCESS_KEY_STORAGE) || ''
-      setAccessKey(savedKey)
-      setAccessKeyDraft(savedKey)
-      const savedMode = window.localStorage.getItem(BILI_PLAY_MODE_STORAGE)
-      if (savedMode === 'iframe') {
-        setUserPreferIframe(true)
-      }
-      if (!preferredEngine) {
-        const savedEngine = window.localStorage.getItem(BILI_SELECTED_ENGINE_STORAGE)
-        if (savedEngine && BILI_ENGINE_OPTIONS.some(o => o.id === savedEngine)) {
-          setSelectedEngine(savedEngine)
-          if (savedEngine === 'iframe') {
-            setUserPreferIframe(true)
-          }
-        }
-      }
-    } catch {
-      // 忽略隐私模式 localStorage 异常
-    }
-  }, [preferredEngine])
-
-  // 外部 preferredEngine prop 变化时同步更新
+  // 外部 preferredEngine 变更时同步更新，不自增 refreshTick 避免挂载即打断请求
   useEffect(() => {
     if (preferredEngine && preferredEngine !== selectedEngine) {
       setSelectedEngine(preferredEngine)
@@ -199,10 +200,9 @@ export function VideoBilibiliHdPlayer({
       } else {
         setUserPreferIframe(false)
         setDeliveryStage('direct')
-        setRefreshTick(t => t + 1)
       }
     }
-  }, [preferredEngine])
+  }, [preferredEngine, selectedEngine])
 
   // 请求服务端 /api/videos/bili-parse 解析高清视频流
   useEffect(() => {
@@ -232,7 +232,7 @@ export function VideoBilibiliHdPlayer({
     if (selectedEngine && selectedEngine !== 'auto') {
       params.set('engine', selectedEngine)
     }
-    if (refreshTick > 0 || (selectedEngine && selectedEngine !== 'auto')) {
+    if (refreshTick > 0) {
       params.set('refresh', '1')
     }
 

@@ -50,6 +50,9 @@ export function PredictivePrefetchProvider({ children }: { children: React.React
     }
 
     const onPointerMove = (e: PointerEvent) => {
+      // 已达到最大预连接数量时，彻底跳过 pointermove 监听，0 开销 0 强制重排
+      if (connectedOriginsRef.current.size >= MAX_PRECONNECTS) return
+
       const now = performance.now()
       if (now - lastTimeRef.current < THROTTLE_MS) return
       lastTimeRef.current = now
@@ -61,8 +64,10 @@ export function PredictivePrefetchProvider({ children }: { children: React.React
 
         // 仅当速度达到阈值且非停滞时扫描周围 <a> 标签
         if (vector.speed >= 0.15) {
+          // 限制只检测视口附近前 12 个链接，杜绝几百个 DOM 元素的 getBoundingClientRect 触发重排
           const links = document.querySelectorAll<HTMLAnchorElement>('a[href^="http"]')
-          for (let i = 0; i < links.length; i++) {
+          const maxCheck = Math.min(links.length, 12)
+          for (let i = 0; i < maxCheck; i++) {
             const a = links[i]
             if (!a) continue
 
@@ -93,6 +98,7 @@ export function PredictivePrefetchProvider({ children }: { children: React.React
     }
 
     const onPointerDown = (e: PointerEvent) => {
+      if (connectedOriginsRef.current.size >= MAX_PRECONNECTS) return
       // 物理按下瞬间 (Mousedown) 提前于 Click 触发即刻预连接
       const target = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>('a[href^="http"]')
       if (target && target.href) {

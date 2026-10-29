@@ -2871,6 +2871,40 @@ export interface HubAiScenarioStat {
   count: number
   tokens: number
   avgLatencyMs: number
+  errorCalls?: number
+  /** 场景成本（元）；窗口内该场景一条带单价的调用都没有时为 null，不是 0 */
+  costRmb?: number | null
+  pricedCalls?: number
+}
+
+/** 分模型读数：多模型/备用池下成本与失败率必须能拆开看 */
+export interface HubAiModelStat {
+  model: string
+  count: number
+  tokens: number
+  errorCalls: number
+  costRmb: number | null
+  pricedCalls: number
+}
+
+/** 成本覆盖率：有多少调用带了调用时单价快照、覆盖多少 token */
+export interface HubAiCostCoverage {
+  totalCalls: number
+  pricedCalls: number
+  unpricedCalls: number
+  totalTokens: number
+  pricedTokens: number
+}
+
+/** 画布生成质量（首过率）：来自 canvas_generate 事件 */
+export interface HubAiCanvasQuality {
+  windowDays: number
+  generations: number
+  cleanGenerations: number
+  fallbackGenerations: number
+  droppedWidgets: number
+  /** cleanGenerations / generations；无样本时为 null */
+  firstPassRate: number | null
 }
 
 export interface HubAiHourlyTrendPoint {
@@ -2928,16 +2962,54 @@ export interface HubAiObservabilityResponse {
    */
   estimatedCostRmb: number | null
   costUnitPriceRmb?: number | null
+  /**
+   * 成本口径：
+   *   - snapshot：调用时按「分模型单价簿」快照折算的合计（首选）；
+   *   - legacy：没有快照时用旧版单一价 × 全部 token 的近似估算；
+   *   - none：两档都未配置，estimatedCostRmb 为 null。
+   */
+  costSource?: 'snapshot' | 'legacy' | 'none'
+  costCoverage?: HubAiCostCoverage | null
+  canvasQuality?: HubAiCanvasQuality | null
   /** 当前真正生效的模型名；没配到就回 null，由界面写「未采集到模型名」 */
   activeModel: string | null
   quota?: HubAiQuotaSnapshot | null
   byScenario: HubAiScenarioStat[]
+  byModel?: HubAiModelStat[]
   hourlyTrend: HubAiHourlyTrendPoint[]
   recentLogs: HubAiInvocationLog[]
 }
 
 export async function fetchAdminAiObservability(window = '24h'): Promise<HubAiObservabilityResponse> {
   return getJson<HubAiObservabilityResponse>(`/api/admin/ai/observability?window=${encodeURIComponent(window)}`)
+}
+
+/* ------------------------------------------------------------------ *
+ * 分模型单价簿（¥/1K tokens，输入/输出分开）
+ * ------------------------------------------------------------------ */
+
+export interface HubLlmModelPrice {
+  model: string
+  promptPer1kRmb: number
+  completionPer1kRmb: number
+  updatedAt: number
+}
+
+export interface HubAdminAiPricesResponse {
+  prices: HubLlmModelPrice[]
+  /** 旧版单一价：单价簿没命中的模型回落到它；null = 未配置 */
+  legacyUnitPriceRmb: number | null
+}
+
+export async function fetchAdminAiPrices(): Promise<HubAdminAiPricesResponse> {
+  return getJson<HubAdminAiPricesResponse>('/api/admin/ai/prices')
+}
+
+/** 全量替换单价簿（PUT 语义：缺席的模型会被删除） */
+export async function saveAdminAiPrices(
+  items: Array<{ model: string; promptPer1kRmb: number; completionPer1kRmb: number }>,
+): Promise<HubAdminAiPricesResponse> {
+  return sendJson<HubAdminAiPricesResponse>('/api/admin/ai/prices', 'PUT', { items })
 }
 
 /* ------------------------------------------------------------------ *

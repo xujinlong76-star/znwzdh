@@ -114,23 +114,29 @@ export function scoreVideoItem(
 ): number {
   let score = 0
 
-  const itemKeywords = extractTechKeywords(`${item.title} ${item.description || ''}`)
-  if (Array.isArray(item.tags)) {
-    for (const t of item.tags) {
-      itemKeywords.add(t.toLowerCase())
+  const hasTargetKeywords = Boolean(targetKeywords && targetKeywords.size > 0)
+  const hasUserKeywords = userProfile.preferredKeywords.size > 0
+
+  // 性能优化：无目标词且用户尚未沉淀偏好时，跳过对几千部视频的高开销大正则分词与集合交集运算，秒级直接基于质量分与时效排序
+  if (hasTargetKeywords || hasUserKeywords) {
+    const itemKeywords = extractTechKeywords(`${item.title} ${item.description || ''}`)
+    if (Array.isArray(item.tags)) {
+      for (const t of item.tags) {
+        itemKeywords.add(t.toLowerCase())
+      }
     }
-  }
 
-  // 1. Content similarity (if comparing with a target video)
-  if (targetKeywords && targetKeywords.size > 0) {
-    const similarity = computeJaccardSimilarity(targetKeywords, itemKeywords)
-    score += similarity * 40
-  }
+    // 1. Content similarity (if comparing with a target video)
+    if (hasTargetKeywords) {
+      const similarity = computeJaccardSimilarity(targetKeywords!, itemKeywords)
+      score += similarity * 40
+    }
 
-  // 2. User behavioral interest match
-  if (userProfile.preferredKeywords.size > 0) {
-    const interestMatch = computeJaccardSimilarity(userProfile.preferredKeywords, itemKeywords)
-    score += interestMatch * 35
+    // 2. User behavioral interest match
+    if (hasUserKeywords) {
+      const interestMatch = computeJaccardSimilarity(userProfile.preferredKeywords, itemKeywords)
+      score += interestMatch * 35
+    }
   }
 
   // Author loyalty bonus

@@ -149,6 +149,7 @@ export async function saveOfflineVideo(item: NavigationSubItem): Promise<void> {
       const metaStore = tx.objectStore(META_STORE)
 
       videoStore.put(item)
+      _offlineIdSet?.add(item.id)
       metaStore.put({ key: 'lastSyncedAt', value: new Date().toISOString() })
 
       tx.oncomplete = () => resolve()
@@ -187,9 +188,47 @@ export async function getOfflineVideo(id: string): Promise<NavigationSubItem | n
 /**
  * Checks if a specific video is stored in offline cache.
  */
+let _offlineIdSet: Set<string> | null = null
+
+/**
+ * 失效 id 集合缓存。
+ *
+ * 这个缓存是为了让 `isOfflineVideo` 不必每次扫全表；但它必须在**每次写路径**上失效，
+ * 否则增删之后读到的还是旧集合——2026-10-30 实测 `removeOfflineVideo` 之后
+ * `isOfflineVideo` 仍返回 true（缓存里还有那个 id），离线缓存的「删」等于没删。
+ */
+function invalidateOfflineIdSet(): void {
+  _offlineIdSet = null
+  _offlineFetchPromise = null
+}
+let _offlineFetchPromise: Promise<Set<string>> | null = null
+
+export async function getOfflineVideoIdSet(): Promise<Set<string>> {
+  if (_offlineIdSet) return _offlineIdSet
+  if (_offlineFetchPromise) return _offlineFetchPromise
+
+  _offlineFetchPromise = listOfflineVideos()
+    .then((items) => {
+      _offlineIdSet = new Set(items.map((v) => v.id))
+      _offlineFetchPromise = null
+      return _offlineIdSet
+    })
+    .catch(() => {
+      _offlineIdSet = new Set()
+      _offlineFetchPromise = null
+      return _offlineIdSet
+    })
+
+  return _offlineFetchPromise
+}
+
 export async function isOfflineVideo(id: string): Promise<boolean> {
-  const item = await getOfflineVideo(id)
-  return item !== null
+  try {
+    const set = await getOfflineVideoIdSet()
+    return set.has(id)
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -223,6 +262,9 @@ export async function removeOfflineVideo(id: string): Promise<void> {
   const idb = getIndexedDB()
   if (!idb) {
     lsRemove(id)
+    // 提前 return 的分支也必须失效缓存——否则「没有 IndexedDB 的环境」下
+    // 删完仍命中旧 id 集合（2026-10-30 实测的那条红就是这个分支）。
+    invalidateOfflineIdSet()
     return
   }
 
@@ -238,6 +280,8 @@ export async function removeOfflineVideo(id: string): Promise<void> {
     })
   } catch {
     lsRemove(id)
+  } finally {
+    invalidateOfflineIdSet()
   }
 }
 
@@ -250,6 +294,7 @@ export async function cacheVideoBatch(items: NavigationSubItem[]): Promise<numbe
   const idb = getIndexedDB()
   if (!idb) {
     items.forEach(item => lsSave(item))
+    invalidateOfflineIdSet()
     return items.length
   }
 
@@ -273,6 +318,8 @@ export async function cacheVideoBatch(items: NavigationSubItem[]): Promise<numbe
   } catch {
     items.forEach(item => lsSave(item))
     return items.length
+  } finally {
+    invalidateOfflineIdSet()
   }
 }
 
@@ -328,6 +375,7 @@ export async function clearOfflineCache(): Promise<void> {
   const idb = getIndexedDB()
   if (!idb) {
     lsClear()
+    invalidateOfflineIdSet()
     return
   }
 
@@ -343,5 +391,7 @@ export async function clearOfflineCache(): Promise<void> {
     })
   } catch {
     lsClear()
+  } finally {
+    invalidateOfflineIdSet()
   }
 }

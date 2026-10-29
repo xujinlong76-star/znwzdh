@@ -737,11 +737,20 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
     }
 
     cat.items = currentItems
+    cat.subCategories = subCategories
     categorySummaries.push(summary)
   }
 
   // 若不是 Dry-Run，将更新结果和审计记录落盘
   if (!dryRun && (additions.length > 0 || newReplacements.length > 0)) {
+    const afterCount = categories.reduce((acc, c) => {
+      const dir = (c.items || []).length
+      const subs = (c.subCategories || []).reduce((sAcc, s) => sAcc + (s.items || []).length, 0)
+      return acc + dir + subs
+    }, 0)
+    if (existingExternalIds.size >= 100 && afterCount < existingExternalIds.size) {
+      throw new Error(`[video-harvester] 采集后全库条目数异常缩减 (${existingExternalIds.size} -> ${afterCount})，终止写盘保护现有数据`)
+    }
     data.replacementHistory = capReplacementHistory([...newReplacements, ...replacementHistory])
     try {
       await commitFile(

@@ -38,9 +38,14 @@ export default async function AdminLayout({
     redirect('/auth/signin')
   }
 
+  // 后台侧边栏 logo 走站点设置（与前台、manifest、后台 favicon 同一口径）；
+  // 没配品牌图时回退内置图，避免后台回到「上传了 logo 但后台还是上游图」的观感。
+  const settings = await readSiteSettings()
+
   return (
     <>
       <AdminLayoutClient
+        brandLogo={settings.appearance.logo || '/assets/images/alogo.webp'}
         user={{
           name: session.user.name,
           email: session.user.email,

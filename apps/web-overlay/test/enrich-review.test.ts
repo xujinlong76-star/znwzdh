@@ -107,6 +107,30 @@ describe('buildEnrichReviewRows', () => {
     expect(icon.reason).toContain('第三方图标服务')
   })
 
+  // 页面没声明 icon 时抽取层会猜根路径 /favicon.ico：值可用，但来源说明不能被吞掉，
+  // 否则运营看到的就是「页面抓取」——等于替页面作证（AI-4c 浏览器实测 B-3 的单元侧）
+  it('可用但带来源说明的字段（favicon 推测值）保留 note，且仍可勾选', () => {
+    const rows = buildEnrichReviewRows(
+      fields({
+        icon: {
+          value: 'https://example.com/favicon.ico',
+          source: 'heuristic',
+          note: '页面没有声明图标，按站点根 /favicon.ico 推测',
+        },
+      }),
+    )
+    const icon = rows.find((r) => r.key === 'icon')!
+    expect(icon.available).toBe(true)
+    expect(icon.note).toBe('页面没有声明图标，按站点根 /favicon.ico 推测')
+
+    // 不可用的行不重复显示 note：note 只服务「值可用但需要提醒」的场景
+    const missing = buildEnrichReviewRows(
+      fields({ tags: { value: [], source: 'missing', note: '模型没有给出标签' } }),
+    ).find((r) => r.key === 'tags')!
+    expect(missing.note).toBeNull()
+    expect(missing.reason).toBe('模型没有给出标签')
+  })
+
   it('默认勾选 = 可用的字段，missing 一律不勾', () => {
     const rows = buildEnrichReviewRows(
       fields({ tags: { value: [], source: 'missing', note: '没有标签' } }),

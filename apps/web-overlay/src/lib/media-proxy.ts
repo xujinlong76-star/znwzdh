@@ -14,6 +14,12 @@ function getMediaProxySecret(): string {
   if (process.env.MEDIA_PROXY_SECRET) {
     return process.env.MEDIA_PROXY_SECRET
   }
+  if (process.env.AUTH_SECRET) {
+    return process.env.AUTH_SECRET
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    return 'navhub-media-proxy-dev-secret-stable'
+  }
   if (!_ephemeralSecret) {
     // 动态生成进程级安全随机密钥，彻底杜绝仓库硬编码静态默认密钥被利用伪造 HMAC
     _ephemeralSecret = randomBytes(32).toString('hex')

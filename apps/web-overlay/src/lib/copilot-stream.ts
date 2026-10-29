@@ -15,6 +15,7 @@
  *     前端按 content-type 分流，降级横幅的口径与旧版完全一致。
  */
 import { getApiToken, hubUrl, type CopilotChatResponse } from './navhub-api'
+import { parseCopilotFrame, type CopilotFrame } from './copilot-frame'
 
 export interface CopilotCitation {
   siteId: string
@@ -44,12 +45,6 @@ export interface CopilotStreamOptions {
   signal?: AbortSignal
   onDelta?: (text: string) => void
   onReasoning?: (text: string) => void
-}
-
-interface SseFrame {
-  type?: string
-  text?: string
-  [key: string]: unknown
 }
 
 /** 带状态码的错误：describeDegrade 靠 status 区分「中枢没起来」与「鉴权/限流」 */
@@ -97,21 +92,21 @@ function frameBoundary(buffer: string): { index: number; length: number } | null
  *
  * 以 `:` 开头的是注释（`: connected` 与每 10 秒一次 `: ping` 心跳，用来防止
  * 中间层掐掉首 token 之前的空闲连接），不是数据。
- * 解析失败返回 null 而不是抛错：丢一块草稿不影响正确性，权威正文始终由 done 覆盖；
- * 真出了传输问题，表现为「没有 done」，由那一条统一报错。
+ *
+ * 类型白名单与 JSON 校验统一走 `parseCopilotFrame`（事实源在
+ * packages/core/src/copilot-frame.ts，本目录的 copilot-frame.ts 是受
+ * sync-core-mirrors 生成的镜像）：未知 `type` 或非法形状一律返回 null，
+ * 丢一块草稿不影响正确性，权威正文始终由 done 覆盖；真出传输问题表现为
+ * 「没有 done」，由那一条统一报错。
  */
-function parseFrame(block: string): SseFrame | null {
+function parseFrame(block: string): CopilotFrame | null {
   const dataLines: string[] = []
   for (const line of block.split(/\r?\n/)) {
     if (!line || line.startsWith(':')) continue
     if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''))
   }
   if (dataLines.length === 0) return null
-  try {
-    return JSON.parse(dataLines.join('\n')) as SseFrame
-  } catch {
-    return null
-  }
+  return parseCopilotFrame(dataLines.join('\n'))
 }
 
 export async function streamCopilotChat(
@@ -174,7 +169,10 @@ export async function streamCopilotChat(
         } else if (frame?.type === 'reasoning' && typeof frame.text === 'string') {
           options.onReasoning?.(frame.text)
         } else if (frame?.type === 'done') {
+          // 第一个 done 即权威终稿：同一缓冲里后续再出现的 delta / 第二个 done
+          // 一律丢弃（协议上服务端只发一个；重复只可能是代理或上游串帧）
           final = frame as unknown as CopilotReplyBody
+          break
         }
         boundary = frameBoundary(buffer)
       }

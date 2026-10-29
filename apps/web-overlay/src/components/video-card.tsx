@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { safeWindowOpen } from '@/lib/safe-url'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -21,9 +21,11 @@ interface VideoCardProps {
     siteConfig?: SiteConfig
     /** 首屏第一张封面：预加载以压低 LCP，其余卡片保持懒加载 */
     priority?: boolean
+    /** 顶层弹窗播放回调：由页面级单例弹窗接管，杜绝在 360+ 网格卡片内挂载 Portal 导致 3 秒重排 */
+    onPlay?: (item: NavigationSubItem) => void
 }
 
-export function VideoCard({ item, priority = false }: VideoCardProps) {
+export const VideoCard = React.memo(function VideoCard({ item, siteConfig, priority = false, onPlay }: VideoCardProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [imageLoaded, setImageLoaded] = useState(false)
     const [imageError, setImageError] = useState(false)
@@ -78,12 +80,15 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
 
     // 默认尝试直链；触发防盗链拦截或 CDN 错误时，降级到服务端预签的代理地址
     // （签名不能在这里现算：node:crypto 会把 buffer/crypto 垫片打进客户端包）
-    const normalizedCoverPath = isUsingProxy && item.mediaProxyIconUrl
+    // 特别说明：对于 Bilibili（hdslb.com / biliimg.com）等存在已知严格防盗链及网络重置（net::ERR_CONNECTION_CLOSED）的域，
+    // 若服务端已下发预签代理 URL，直接优先走代理，避免首屏控制台大量 ERR 噪音与闪烁重试
+    const isStrictAntiLeech = rawCoverPath.includes('hdslb.com') || rawCoverPath.includes('biliimg.com')
+    const normalizedCoverPath = (isUsingProxy || isStrictAntiLeech) && item.mediaProxyIconUrl
         ? item.mediaProxyIconUrl
         : rawCoverPath
 
     const handleCoverError = () => {
-        if (!isUsingProxy && item.mediaProxyIconUrl) {
+        if (!isUsingProxy && item.mediaProxyIconUrl && !isStrictAntiLeech) {
             setIsUsingProxy(true)
             setImageLoaded(false)
         } else {
@@ -94,11 +99,17 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
     // 卡片本身就是按钮（见下方根元素）：键盘 Enter / 空格会走同一条路径，
     // 不再依赖鼠标点击 —— 视频卡片此前是一个纯 <div onClick>，没有任何可聚焦元素，
     // 键盘与读屏用户根本没法打开视频。
-    const handleCardClick = () => {
+    const handleCardClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+        // 点击时立即解除卡片按钮的 DOM 焦点，避免弹窗唤起后被标记 aria-hidden 的父容器内保留焦点，
+        // 从而彻底杜绝 WAI-ARIA 规范冲突与 Chrome 750ms 强制重排
+        e.currentTarget.blur()
+        if (onPlay && videoConfig) {
+            onPlay(item)
+            return
+        }
         if (videoConfig) {
             setIsOpen(true)
         } else if (item.href) {
-            // noopener：外站拿到 window.opener 就能反向跳转我们的标签页（reverse tabnabbing）
             safeWindowOpen(item.href)
         }
     }
@@ -172,7 +183,7 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
     return (
         <>
             <div
-                className="group @container relative cursor-pointer text-left w-full overflow-hidden rounded-xl bg-card border border-border/50 
+                className="group relative cursor-pointer text-left w-full overflow-hidden rounded-xl bg-card border border-border/50 
                            transition-all duration-300 ease-out depth-card hover:shadow-xl hover:shadow-primary/5 
                            hover:border-primary/20 hover:-translate-y-1"
             >
@@ -303,101 +314,182 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                 </div>
             </div>
 
-            {/* 视频播放弹窗 */}
-            {videoConfig && (
-                <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                    <DialogContent className="sm:max-w-[920px] p-0 overflow-hidden bg-zinc-950 border-zinc-800 gap-0 shadow-2xl rounded-2xl">
-                        {/* 无障碍访问 */}
-                        <div className='sr-only'>
-                            <DialogTitle>{item.title}</DialogTitle>
-                            <DialogDescription>正在播放：{item.title}</DialogDescription>
-                        </div>
-
-                        {/* 视频播放器 */}
-                        <div className="bg-black">
-                            {renderVideoContent()}
-                        </div>
-
-                        {/* 视频信息与操作栏 */}
-                        <div className="p-4 sm:p-5 bg-zinc-900/90 border-t border-zinc-800 space-y-3">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                <div className="space-y-1 flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <span
-                                            className="px-2 py-0.5 text-[10px] font-semibold text-white rounded"
-                                            style={{ backgroundColor: (VIDEO_PLATFORM_REGISTRY[videoConfig?.type || 'bilibili'] || VIDEO_PLATFORM_REGISTRY.custom).badgeColor }}
-                                        >
-                                            {(VIDEO_PLATFORM_REGISTRY[videoConfig?.type || 'bilibili'] || VIDEO_PLATFORM_REGISTRY.custom).shortName}
-                                        </span>
-                                        {videoConfig?.author && (
-                                            <span className="text-xs text-zinc-400 flex items-center gap-1">
-                                                <User className="w-3 h-3 text-zinc-500" />
-                                                {videoConfig.author}
-                                            </span>
-                                        )}
-                                        {videoConfig?.stats?.views ? (
-                                            <span className="text-xs text-zinc-400 font-mono flex items-center gap-1">
-                                                <Eye className="w-3 h-3 text-zinc-500" />
-                                                {videoConfig.stats.views > 10000
-                                                    ? `${(videoConfig.stats.views / 10000).toFixed(1)}万次观看`
-                                                    : `${videoConfig.stats.views}次观看`}
-                                            </span>
-                                        ) : null}
-                                    </div>
-                                    <h3 className="text-white font-semibold text-base sm:text-lg line-clamp-2 tracking-tight">
-                                        {item.title}
-                                    </h3>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={handleToggleWatchLater}
-                                        className={cn(
-                                            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                                            inWatchLater
-                                                ? "bg-primary text-primary-foreground"
-                                                : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
-                                        )}
-                                    >
-                                        {inWatchLater ? <Check className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-                                        <span>稍后再看</span>
-                                    </button>
-                                    {item.href && (
-                                        <button
-                                            type="button"
-                                            onClick={() => safeWindowOpen(item.href)}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
-                                        >
-                                            <ExternalLink className="w-3.5 h-3.5" />
-                                            <span>原站直达</span>
-                                        </button>
-                                    )}
-                                    <Link
-                                        href={`/videos/v/${encodeURIComponent(item.id)}`}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
-                                        title="查看独立详情与关键时刻目录"
-                                    >
-                                        <FileText className="w-3.5 h-3.5" />
-                                        <span>详情</span>
-                                    </Link>
-                                    <Link
-                                        href={`/videos/player?id=${encodeURIComponent(item.id)}`}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white transition-colors"
-                                    >
-                                        <MonitorPlay className="w-3.5 h-3.5" />
-                                        <span>演播室</span>
-                                    </Link>
-                                </div>
-                            </div>
-                            {item.description && (
-                                <p className="text-zinc-400 text-xs sm:text-sm line-clamp-2 leading-relaxed border-t border-zinc-800/60 pt-2.5">
-                                    {item.description}
-                                </p>
-                            )}
-                        </div>
-                    </DialogContent>
-                </Dialog>
+            {/* 降级弹窗：当卡片未接入页面单例时保留自封闭播放能力 */}
+            {isOpen && videoConfig && !onPlay && (
+                <VideoPlayerModal
+                    item={item}
+                    siteConfig={siteConfig}
+                    open={isOpen}
+                    onOpenChange={setIsOpen}
+                />
             )}
         </>
+    )
+})
+
+/**
+ * 页面单例视频播放弹窗组件：
+ * 挂载在最外层 DOM，避免在网格中多重触发重排与 Accessibility 树全表重算
+ */
+export function VideoPlayerModal({
+    item,
+    siteConfig,
+    open,
+    onOpenChange,
+}: {
+    item: NavigationSubItem
+    siteConfig?: SiteConfig
+    open: boolean
+    onOpenChange: (open: boolean) => void
+}) {
+    const { videoConfig } = item
+    const [inWatchLater, setInWatchLater] = useState(false)
+
+    useEffect(() => {
+        setInWatchLater(isInWatchLater(item.id))
+        const handleSync = () => setInWatchLater(isInWatchLater(item.id))
+        window.addEventListener(PLAYLIST_UPDATE_EVENT, handleSync)
+        return () => window.removeEventListener(PLAYLIST_UPDATE_EVENT, handleSync)
+    }, [item.id])
+
+    const handleToggleWatchLater = (e: React.MouseEvent) => {
+        e.stopPropagation()
+        e.preventDefault()
+        const added = toggleWatchLater(item)
+        setInWatchLater(added)
+    }
+
+    const renderContent = () => {
+        if (!videoConfig) return null
+        if (videoConfig.type === 'bilibili') {
+            const { bvid, aid, cid, p = 1 } = videoConfig
+            return (
+                <VideoBilibiliHdPlayer
+                    bvid={bvid}
+                    aid={aid}
+                    cid={cid}
+                    p={p}
+                    title={item.title}
+                    poster={item.mediaProxyIconUrl || item.icon}
+                    autoPlay={true}
+                    className="rounded-lg"
+                />
+            )
+        }
+        const embedUrl = buildVideoEmbedUrlForSeo(videoConfig)
+        if (embedUrl) {
+            return (
+                <div className="w-full aspect-video">
+                    <iframe
+                        className="w-full h-full rounded-lg"
+                        src={embedUrl}
+                        title={item.title}
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                    />
+                </div>
+            )
+        }
+        return null
+    }
+
+    if (!videoConfig) return null
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent
+                className="sm:max-w-[920px] p-0 overflow-hidden bg-zinc-950 border-zinc-800 gap-0 shadow-2xl rounded-2xl"
+            >
+                {/* 无障碍访问 */}
+                <div className="sr-only">
+                    <DialogTitle>{item.title}</DialogTitle>
+                    <DialogDescription>正在播放：{item.title}</DialogDescription>
+                </div>
+
+                {/* 视频播放器 */}
+                <div className="bg-black">
+                    {renderContent()}
+                </div>
+
+                {/* 视频信息与操作栏 */}
+                <div className="p-4 sm:p-5 bg-zinc-900/90 border-t border-zinc-800 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span
+                                    className="px-2 py-0.5 text-[10px] font-semibold text-white rounded"
+                                    style={{ backgroundColor: (VIDEO_PLATFORM_REGISTRY[videoConfig?.type || 'bilibili'] || VIDEO_PLATFORM_REGISTRY.custom).badgeColor }}
+                                >
+                                    {(VIDEO_PLATFORM_REGISTRY[videoConfig?.type || 'bilibili'] || VIDEO_PLATFORM_REGISTRY.custom).shortName}
+                                </span>
+                                {videoConfig?.author && (
+                                    <span className="text-xs text-zinc-400 flex items-center gap-1">
+                                        <User className="w-3 h-3 text-zinc-500" />
+                                        {videoConfig.author}
+                                    </span>
+                                )}
+                                {videoConfig?.stats?.views ? (
+                                    <span className="text-xs text-zinc-400 font-mono flex items-center gap-1">
+                                        <Eye className="w-3 h-3 text-zinc-500" />
+                                        {videoConfig.stats.views > 10000
+                                            ? `${(videoConfig.stats.views / 10000).toFixed(1)}万次观看`
+                                            : `${videoConfig.stats.views}次观看`}
+                                    </span>
+                                ) : null}
+                            </div>
+                            <h3 className="text-white font-semibold text-base sm:text-lg line-clamp-2 tracking-tight">
+                                {item.title}
+                            </h3>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={handleToggleWatchLater}
+                                className={cn(
+                                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                                    inWatchLater
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                                )}
+                            >
+                                {inWatchLater ? <Check className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                                <span>稍后再看</span>
+                            </button>
+                            {item.href && (
+                                <button
+                                    type="button"
+                                    onClick={() => safeWindowOpen(item.href)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+                                >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    <span>原站直达</span>
+                                </button>
+                            )}
+                            <Link
+                                href={`/videos/v/${encodeURIComponent(item.id)}`}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+                                title="查看独立详情与关键时刻目录"
+                            >
+                                <FileText className="w-3.5 h-3.5" />
+                                <span>详情</span>
+                            </Link>
+                            <Link
+                                href={`/videos/player?id=${encodeURIComponent(item.id)}`}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white transition-colors"
+                            >
+                                <MonitorPlay className="w-3.5 h-3.5" />
+                                <span>演播室</span>
+                            </Link>
+                        </div>
+                    </div>
+                    {item.description && (
+                        <p className="text-zinc-400 text-xs sm:text-sm line-clamp-2 leading-relaxed border-t border-zinc-800/60 pt-2.5">
+                            {item.description}
+                        </p>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
     )
 }

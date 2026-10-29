@@ -295,6 +295,7 @@ export interface NavigationCategory {
   items?: NavigationSubItem[]
   enabled?: boolean
   harvestPolicy?: VideoHarvestPolicy
+  totalCount?: number
 }
 
 export interface NavigationItem {
@@ -306,6 +307,7 @@ export interface NavigationItem {
   subCategories?: NavigationCategory[]
   enabled?: boolean
   harvestPolicy?: VideoHarvestPolicy
+  totalCount?: number
 }
 
 export interface NavigationData {

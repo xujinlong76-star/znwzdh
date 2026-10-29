@@ -452,13 +452,28 @@ export class AutonomousAIHarvesterController {
           cat_systems_perf: '系统底层与高性能计算',
           cat_database_bigdata: '现代存储引擎与海量数据架构',
           cat_tools_indie: '开源神器与独立开发出海',
+          cat_mobile_multiplatform: '移动端与跨平台全栈开发',
+          cat_security_network: '网络安全与攻防工程',
+          cat_algorithms_interview: '算法精粹与系统设计',
+          cat_game_graphics: '游戏开发与 3D 图形渲染',
+          cat_embedded_iot: '嵌入式系统与物联网硬件',
+          cat_qa_performance: '软件测试与自动化效能工程',
         }
+        const catTitle = domainTitleMap[topic.domain] || 'AI 自动拓展技术分类'
         targetCat = {
           id: topic.domain,
-          title: domainTitleMap[topic.domain] || 'AI 自动拓展技术分类',
+          title: catTitle,
           icon: 'Bot',
           items: [],
-          subCategories: [],
+          subCategories: [
+            {
+              id: `sub_${topic.domain}_core`,
+              title: `${catTitle}核心精选`,
+              parentId: topic.domain,
+              enabled: true,
+              items: [],
+            },
+          ],
         }
         updatedCategories.push(targetCat)
       }

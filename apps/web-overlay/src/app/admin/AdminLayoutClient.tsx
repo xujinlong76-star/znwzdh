@@ -57,6 +57,8 @@ import { useTheme } from "next-themes"
 
 interface AdminLayoutClientProps {
   children: React.ReactNode
+  /** 站点设置里的品牌 logo；服务端已按「有配置用配置、没有回退内置图」解析 */
+  brandLogo: string
   user: {
     name?: string | null
     email?: string | null
@@ -197,7 +199,7 @@ const menuItems = [
   }
 ]
 
-export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
+export function AdminLayoutClient({ children, brandLogo, user }: AdminLayoutClientProps) {
   const pathname = usePathname()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -377,7 +379,7 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
               <SheetHeader className="p-4 border-b border-border/50 text-left">
                 <SheetTitle className="flex items-center gap-2">
                   <div className="relative w-7 h-7 overflow-hidden rounded-md">
-                    <img src="/assets/images/alogo.webp" alt="Logo" className="object-cover" />
+                    <img src={brandLogo} alt="Logo" className="object-cover" />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-sm font-bold leading-none">山羊胡</span>
@@ -396,7 +398,7 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
 
           <Link href="/admin" className="flex items-center gap-2">
             <div className="relative w-6 h-6 overflow-hidden rounded-md">
-              <img src="/assets/images/alogo.webp" alt="Logo" className="object-cover" />
+              <img src={brandLogo} alt="Logo" className="object-cover" />
             </div>
             <span className="text-xs sm:text-sm font-bold tracking-tight">山羊胡控制台</span>
           </Link>
@@ -460,7 +462,7 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
                     isSidebarCollapsed && "flex-col"
                   )}>
                     <div className="relative w-8 h-8 overflow-hidden rounded-md">
-                      <img src="/assets/images/alogo.webp" alt="Logo" className="object-cover" />
+                      <img src={brandLogo} alt="Logo" className="object-cover" />
                     </div>
                     {!isSidebarCollapsed && (
                       <div className="flex flex-col">

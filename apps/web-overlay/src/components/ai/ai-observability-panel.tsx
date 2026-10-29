@@ -56,6 +56,9 @@ interface HubCopilotEventSummary {
   citations?: number
   citationClicks?: number
   citationClickRate?: number | null
+  /** AI-6：回答里无法核验的链接总数与引用有效率（可验证 / 全部引用链接） */
+  unverifiedLinks?: number
+  citationValidityRate?: number | null
 }
 
 function waitMsText(ms: number | null): string {
@@ -282,15 +285,24 @@ export function AiObservabilityPanel() {
             )}
           </div>
           {/* 单价没配就直说：报一个凭空写的 ¥ 数只会让运维者按假账做决策 */}
-          <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-            {data?.costUnitPriceRmb ? (
+          <div className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+            {data?.costSource === 'snapshot' ? (
               <>
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                <span>单价 ¥{data.costUnitPriceRmb}/1K tokens（总消耗折算，不区分输入输出）</span>
+                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                <span>
+                  按调用时单价快照折算
+                  {data.costCoverage
+                    ? `：${data.costCoverage.pricedCalls}/${data.costCoverage.totalCalls} 次调用有单价，覆盖 ${(data.costCoverage.pricedTokens / 1000).toFixed(1)}k / ${(data.costCoverage.totalTokens / 1000).toFixed(1)}k tokens`
+                    : ''}
+                </span>
               </>
+            ) : data?.costSource === 'legacy' ? (
+              <span>
+                按旧版单一价 ¥{data.costUnitPriceRmb}/1K tokens 估算（输入输出同价；在「模型单价簿」配置分模型单价后更准）
+              </span>
             ) : (
               <span>
-                尚未填写单价：在「模型参数与备用池配置」的成本单价（或
+                尚未填写单价：在「模型单价簿」按模型配置输入/输出单价（或
                 <code className="mx-1">NAVHUB_LLM_COST_PER_1K_TOKENS</code>）设好后才能折算
               </span>
             )}
@@ -431,6 +443,19 @@ export function AiObservabilityPanel() {
                     ? '无引用样本'
                     : `${(copilot.citationClickRate * 100).toFixed(1)}%`}
               </span>
+              <span>
+                引用有效率{' '}
+                {copilot.citationValidityRate === undefined
+                  ? '未采集'
+                  : copilot.citationValidityRate === null
+                    ? '无引用样本'
+                    : `${(copilot.citationValidityRate * 100).toFixed(1)}%`}
+              </span>
+              {copilot.unverifiedLinks !== undefined && copilot.unverifiedLinks > 0 && (
+                <span className="text-amber-600 dark:text-amber-400">
+                  无法核验链接 {copilot.unverifiedLinks.toLocaleString()} 条
+                </span>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               停止发生在调模型前 {copilot.cancelStage.pre_llm} 次、调模型后 {copilot.cancelStage.llm} 次；
@@ -565,6 +590,124 @@ export function AiObservabilityPanel() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* 分模型成本与用量：备用池换家时，主模型的价格与失败率不适用 */}
+      <div className="rounded-xl border bg-card p-5 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Coins className="h-4 w-4 text-emerald-500" />
+              分模型成本与用量
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              按实际应答模型拆分；只有带调用时单价快照的调用才计入成本，未覆盖的模型显示「无价」而不是 ¥0
+            </p>
+          </div>
+          {data?.costCoverage && (
+            <Badge variant="outline" className="text-[11px]">
+              成本覆盖 {data.costCoverage.pricedCalls}/{data.costCoverage.totalCalls} 次调用
+            </Badge>
+          )}
+        </div>
+        {data?.byModel && data.byModel.length > 0 ? (
+          <div className="overflow-x-auto no-scrollbar touch-pan-x">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="py-2 px-3 font-medium">模型</th>
+                  <th className="py-2 px-3 font-medium text-right">调用</th>
+                  <th className="py-2 px-3 font-medium text-right">Token</th>
+                  <th className="py-2 px-3 font-medium text-right">异常</th>
+                  <th className="py-2 px-3 font-medium text-right">有价调用</th>
+                  <th className="py-2 px-3 font-medium text-right">成本</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {data.byModel.map((m) => (
+                  <tr key={m.model} className="hover:bg-muted/30 transition-colors">
+                    <td className="py-2 px-3">
+                      <code className="text-[11px] bg-muted/60 px-1.5 py-0.5 rounded">{m.model}</code>
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums">{m.count.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{(m.tokens / 1000).toFixed(1)}k</td>
+                    <td className="py-2 px-3 text-right tabular-nums">
+                      {m.errorCalls > 0 ? (
+                        <span className="text-destructive">{m.errorCalls}</span>
+                      ) : (
+                        <span className="text-muted-foreground">0</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                      {m.pricedCalls}/{m.count}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums">
+                      {m.costRmb === null ? (
+                        <span className="text-muted-foreground">无价</span>
+                      ) : (
+                        `¥${m.costRmb.toFixed(4)}`
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">窗口内尚无调用样本。</p>
+        )}
+      </div>
+
+      {/* 画布生成质量：首过 = 全部卡片通过 schema 校验且未用保底布局 */}
+      <div className="rounded-xl border bg-card p-5 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-purple-500" />
+              画布生成质量（首过率）
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              首过 = 生成的模块全部通过 schema 校验且未使用保底布局；issue 与丢弃数来自对每张卡片的逐字段校验
+            </p>
+          </div>
+          {data?.canvasQuality && (
+            <Badge variant="outline" className="text-[11px]">
+              最近 {data.canvasQuality.windowDays} 天 · {data.canvasQuality.generations} 次生成
+            </Badge>
+          )}
+        </div>
+        {!data?.canvasQuality ? (
+          <p className="text-xs text-muted-foreground">该中枢未返回画布质量读数（旧版中枢）。</p>
+        ) : data.canvasQuality.generations === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            窗口内尚无画布生成样本——首过率在第一次生成后出现，不预填。
+          </p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-4">
+            <div>
+              <p className="text-[11px] text-muted-foreground">首过率</p>
+              <p className="text-lg font-semibold tabular-nums">
+                {data.canvasQuality.firstPassRate === null
+                  ? '—'
+                  : `${(data.canvasQuality.firstPassRate * 100).toFixed(1)}%`}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] text-muted-foreground">首过 / 总生成</p>
+              <p className="text-lg font-semibold tabular-nums">
+                {data.canvasQuality.cleanGenerations} / {data.canvasQuality.generations}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] text-muted-foreground">丢弃卡片</p>
+              <p className="text-lg font-semibold tabular-nums">{data.canvasQuality.droppedWidgets}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-muted-foreground">保底布局</p>
+              <p className="text-lg font-semibold tabular-nums">{data.canvasQuality.fallbackGenerations}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 底部调用流水实时日志表 */}

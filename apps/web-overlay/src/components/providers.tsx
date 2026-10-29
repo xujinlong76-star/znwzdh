@@ -11,7 +11,7 @@ import { GlobalAiGateway } from '@/components/ai/global-ai-gateway'
 import { GlobalSpotlightGateway } from '@/components/search/global-spotlight-gateway'
 import { FluidGlassCanvas } from '@/components/theme/fluid-glass-canvas'
 import { VideoPlayerProvider } from '@/contexts/VideoPlayerContext'
-import { VideoMiniPlayer } from '@/components/video-mini-player'
+import { VideoMiniPlayerSlot } from '@/components/video-mini-player-slot'
 
 // sonner 与主题试用条都不是首屏必需：把它们的 JS 从根布局公共 chunk 移到
 // 水合后的独立 chunk。主题试用本身只在用户主动试用时才有内容。
@@ -51,7 +51,9 @@ export function Providers({
             <FluidGlassCanvas />
             <VideoPlayerProvider>
               {children}
-              <VideoMiniPlayer />
+              {/* 只在真的有播放时挂载：迷你播放器（含 B站播放器）不进公共 chunk，
+                  非视频路由的首屏不再为它付字节 */}
+              <VideoMiniPlayerSlot />
             </VideoPlayerProvider>
             {/* 主题免安装即时沙箱试用悬浮横条 */}
             <ThemeTryoutRibbon />

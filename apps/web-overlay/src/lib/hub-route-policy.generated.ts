@@ -16,6 +16,8 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "POST", path: "/api/admin/ai/config/reset", scope: "admin" },
   { method: "POST", path: "/api/admin/ai/config/test", scope: "admin" },
   { method: "GET", path: "/api/admin/ai/observability", scope: "admin" },
+  { method: "GET", path: "/api/admin/ai/prices", scope: "admin" },
+  { method: "PUT", path: "/api/admin/ai/prices", scope: "admin" },
   { method: "GET", path: "/api/admin/audit", scope: "admin" },
   { method: "POST", path: "/api/admin/audit/apply", scope: "write" },
   { method: "GET", path: "/api/admin/audit/export", scope: "admin" },

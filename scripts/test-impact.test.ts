@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { isShallow } from "./lib/git-blobs.mjs";
 import { buildGraph, canonicalPath, graphFor, impactedTests, impactedWithPaths, pathLiteralDeps } from "./lib/test-impact.mjs";
 
 const ROOT = process.cwd();
@@ -302,20 +303,30 @@ describe("CLI：--why / --diff", () => {
     expect(res.out).toContain("不在影响面内");
   });
 
-  it("--diff：回放 HEAD~1，rc0 且输出形态合法", () => {
+  it("--diff：回放 HEAD~1 —— 按克隆深度说真话，不假设 HEAD~1 存在", () => {
     /**
-     * 刻意**不钉「→ 图 」**：`--diff HEAD~1` 回放的是真实仓库的上一笔提交，
-     * 而上一笔可能只改 ci.yml / 文档（没有源码改动）——2026-10-29 实测
-     * 「只改 ci.yml 的提交」就把这条断言打红了。钉死历史内容的测试在多会话
-     * 并行下必然反复假红。
+     * 「HEAD~1 存不存在」本身就是环境事实，所以这条必须分两支：
+     *   - **浅克隆**（CI 的 actions/checkout 默认 `fetch-depth: 1`，历史里只有一个提交）
+     *     ⇒ rc2 + 点名浅克隆与 fetch-depth。把它钉成 rc0 的写法在 CI 必红
+     *     （2026-10-29 run40897350154 · test-sqlite 分片 2/3）：77d0d52a 之前 `--diff`
+     *     把「读不到 base」当成「没有可回放」静默 rc0，浅克隆这件事从未被说出来。
+     *   - **全量克隆**（本机）⇒ rc0 + 说清回放了什么：有图命中就给数，
+     *     没有就明说「没有改动图看得见的文件」。
      *
-     * 契约本身是：rc 0 + 说清回放了什么（有源码改动就给图命中数，
-     * 没有就明说「没有改源码的提交可回放」）。
+     * 刻意不钉具体数字，也不钉上一笔提交的内容——真实仓库的 HEAD 由多个会话共同推进，
+     * 钉历史必然反复假红（同日实测：一笔只改 ci.yml 的提交就把「必须有图命中数」打红过）。
+     * 两支各自的可复现版本在 `scripts/test-impact-diff.test.ts`（一次性仓库 + 真浅克隆）。
      */
     const res = cli(["--diff", "HEAD~1", "--limit", "1", "--no-selector"]);
+    if (isShallow({ cwd: ROOT })) {
+      expect(res.status, res.out).toBe(2);
+      expect(res.out).toContain("浅克隆");
+      expect(res.out).toContain("fetch-depth");
+      return;
+    }
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("回放");
-    const wellFormed = res.out.includes("→ 图 ") || res.out.includes("没有改源码的提交可回放");
+    const wellFormed = res.out.includes("→ 图 ") || res.out.includes("没有改动图看得见的文件");
     expect(wellFormed, `输出既没有图命中数、也没有「无可回放」说明：\n${res.out}`).toBe(true);
   });
 });

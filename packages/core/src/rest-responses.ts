@@ -854,6 +854,59 @@ export const CategoryImpactResponse = z.looseObject({
 });
 
 /* ------------------------------------------------------------------ *
+ * 视频库只读查询（/api/videos）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 视频条目：列表与详情共用同一形状。
+ * `videoConfig`（章节树/字幕）只在详情或 `compact=0` 时返回，内部形状归视频域维护，
+ * 这里只约束它会以对象出现，不把章节协议复制进契约。
+ */
+export const VideoItemPayload = z.looseObject({
+  id: z.string(),
+  categoryId: z.string(),
+  title: z.string(),
+  href: z.string(),
+  description: z.string().nullable(),
+  icon: z.string().nullable(),
+  enabled: z.boolean(),
+  sort: z.number().int(),
+  platform: z.string().nullable(),
+  externalId: z.string().nullable(),
+  author: z.string().nullable(),
+  durationSec: z.number().nullable(),
+  publishedAt: z.string().nullable(),
+  qualityScore: z.number().nullable(),
+  freshnessScore: z.number().nullable(),
+  healthStatus: z.string().nullable(),
+  sourceType: z.string().nullable(),
+  pinned: z.boolean(),
+  updatedAt: z.number(),
+  // 详情/compact=0 才出现；脏数据缺 config 时服务端归一成 null，不是省略
+  videoConfig: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+
+/**
+ * GET /api/videos：分页壳。
+ * `source` 必须如实标注本次供数走了关系表（db）还是 KV 文档（kv）——
+ * 灰度期靠它核对读路径是否真的切过去，而不是只看响应有没有数据。
+ */
+export const VideoListResponse = z.looseObject({
+  source: z.enum(["db", "kv"]),
+  total: z.number().int(),
+  limit: z.number().int(),
+  offset: z.number().int(),
+  returned: z.number().int(),
+  items: z.array(VideoItemPayload),
+});
+
+/** GET /api/videos/{id}：详情，始终带完整 videoConfig 之外的条目字段 */
+export const VideoDetailResponse = z.looseObject({
+  source: z.enum(["db", "kv"]),
+  item: VideoItemPayload,
+});
+
+/* ------------------------------------------------------------------ *
  * 绑定表
  * ------------------------------------------------------------------ */
 
@@ -907,6 +960,9 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
     name: "NotificationDeliveryListResponse",
   },
   "GET /api/categories/{id}/impact": { schema: CategoryImpactResponse, name: "CategoryImpactResponse" },
+  // 视频库只读查询：列表/详情共用条目形状，来源字段由服务端如实标注
+  "GET /api/videos": { schema: VideoListResponse, name: "VideoListResponse" },
+  "GET /api/videos/{id}": { schema: VideoDetailResponse, name: "VideoDetailResponse" },
 
   /* 写侧：创建返回 201，更新/删除返回 200；收藏创建在幂等命中时回 200 */
   "POST /api/sites": { schema: SitePayload, name: "SitePayload", status: "201" },

@@ -868,6 +868,72 @@ export interface CategoryImpactResponse {
 }
 
 /**
+ * GET /api/videos
+ */
+export interface VideoListResponse {
+  source: "db" | "kv";
+  total: number;
+  limit: number;
+  offset: number;
+  returned: number;
+  items: ({
+    id: string;
+    categoryId: string;
+    title: string;
+    href: string;
+    description: string | null;
+    icon: string | null;
+    enabled: boolean;
+    sort: number;
+    platform: string | null;
+    externalId: string | null;
+    author: string | null;
+    durationSec: number | null;
+    publishedAt: string | null;
+    qualityScore: number | null;
+    freshnessScore: number | null;
+    healthStatus: string | null;
+    sourceType: string | null;
+    pinned: boolean;
+    updatedAt: number;
+    videoConfig?: Record<string, unknown> | null;
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/videos/{id}
+ */
+export interface VideoDetailResponse {
+  source: "db" | "kv";
+  item: {
+    id: string;
+    categoryId: string;
+    title: string;
+    href: string;
+    description: string | null;
+    icon: string | null;
+    enabled: boolean;
+    sort: number;
+    platform: string | null;
+    externalId: string | null;
+    author: string | null;
+    durationSec: number | null;
+    publishedAt: string | null;
+    qualityScore: number | null;
+    freshnessScore: number | null;
+    healthStatus: string | null;
+    sourceType: string | null;
+    pinned: boolean;
+    updatedAt: number;
+    videoConfig?: Record<string, unknown> | null;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
  * POST /api/plugins/{slug}/install
  */
 export interface PluginInstallResponse {
@@ -1205,6 +1271,8 @@ export interface RestContractRoutes {
   "GET /api/sites": SiteListResponse;
   "GET /api/sites/{id}": SitePayload;
   "GET /api/tags": TagListResponse;
+  "GET /api/videos": VideoListResponse;
+  "GET /api/videos/{id}": VideoDetailResponse;
   "PATCH /api/collections/{id}": CollectionPayload;
   "PATCH /api/collections/{id}/items/{siteId}": CollectionItemMutationResponse;
   "PATCH /api/favorites/folders/{id}": FavoriteFolderUpdateResponse;

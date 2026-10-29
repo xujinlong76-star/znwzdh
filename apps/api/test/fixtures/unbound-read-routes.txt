@@ -97,10 +97,6 @@ GET /api/tokens
 GET /api/trash
 GET /api/user/ai/config
 GET /api/vault/sync
-# 视频库只读接口（阶段二）：响应形状仍随视频域迭代，先纳入基线（未加契约绑定）。
-# 补上 RESPONSE_SCHEMA_BINDINGS 后，必须把对应的 GET/HEAD 键从本文件删除。
-GET /api/videos
-GET /api/videos/{id}
 GET /api/workspaces
 GET /api/workspaces/{id}/members
 HEAD /api/admin/ai/config
@@ -226,6 +222,7 @@ HEAD /api/tokens
 HEAD /api/trash
 HEAD /api/user/ai/config
 HEAD /api/vault/sync
+# GET 已绑定 VideoListResponse / VideoDetailResponse；HEAD 由 Fastify 自动生成，仍无契约
 HEAD /api/videos
 HEAD /api/videos/{id}
 HEAD /api/workspaces

@@ -134,7 +134,10 @@ function emitCiAnnotations(violations) {
     console.log(
       annotationLine({
         title: "首屏预算超限总数",
-        message: `共 ${violations.length} 条，这里只标注前 ${MAX_ANNOTATIONS} 条；完整列表见作业日志。`,
+        message:
+          `共 ${violations.length} 条，这里只标注前 ${MAX_ANNOTATIONS} 条；` +
+          "完整列表在同作业下一步「首屏预算账（Step Summary + artifact）」的账里——" +
+          "作业日志要 Actions 权限才读得到，别把它当成能核对的通道。",
       }),
     );
   }

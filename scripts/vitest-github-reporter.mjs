@@ -100,7 +100,10 @@ export function annotationLines(failures) {
     lines.push(
       annotationLine({
         title: "vitest 失败总数",
-        message: "共 " + failures.length + " 个失败，这里只标注前 " + shown.length + " 个；完整列表见作业日志。",
+        message:
+          "共 " + failures.length + " 个失败，这里只标注前 " + shown.length + " 个；" +
+          "完整列表在本作业的 junit artifact（`junit-*.xml`），test-sqlite / test-e2e 还写成" +
+          "「红灯光谱（Step Summary）」——作业日志要 Actions 权限才读得到，别拿它当能核对的通道。",
       }),
     );
   }

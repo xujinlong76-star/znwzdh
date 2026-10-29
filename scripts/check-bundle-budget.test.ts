@@ -214,6 +214,35 @@ describe("check-bundle-budget：CI 注解（超限结论要能被只读 annotati
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("超限条数超过注解上限：逐条标注截断，但总数注解把完整列表指到**读得到**的通道", () => {
+    // 本仓库的 token 缺 Actions:read ⇒ 作业日志接口 404。所以「完整列表见作业日志」
+    // 是一句无法兑现的话；总数注解必须指同作业的「首屏预算账」Step Summary。
+    const root = makeRoot();
+    try {
+      write(root, "scripts/bundle-budget.json", JSON.stringify({ default: 10_000, routes: {} }));
+      const dist = "apps/web/fixture-dist";
+      // 21 条路由只靠共享的 framework chunk 就全部超限：逐路由 manifest 缺文件时
+      // 该路由只算框架体积，夹具因此不需要 21 份产物文件。
+      const routeKeys = Array.from({ length: 21 }, (_, i) => [`/r${i}/page`, {}]);
+      write(
+        root,
+        `${dist}/build-manifest.json`,
+        JSON.stringify({ rootMainFiles: ["/_next/static/chunks/framework.js"], pagesChunkGroupBootstrapParams: Object.fromEntries(routeKeys) }),
+      );
+      write(root, `${dist}/static/chunks/framework.js`, bytes(1_200_000));
+
+      const { code, out } = runGate(root, { GITHUB_ACTIONS: "true" });
+      expect(code).toBe(1);
+      // 20 条逐路由 + 1 条总数：注解条数被夹在 MAX_ANNOTATIONS 之内
+      expect(out.split("\n").filter((l) => l.startsWith("::error"))).toHaveLength(21);
+      expect(out).toContain("共 21 条，这里只标注前 20 条");
+      expect(out).toContain("首屏预算账");
+      expect(out).not.toContain("完整列表见作业日志");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("check-bundle-budget：webpack 兼容", () => {

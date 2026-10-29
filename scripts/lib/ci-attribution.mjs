@@ -80,6 +80,19 @@ const WARNING_HEAD_STEP_HINT =
   "需要 CI 产物时先备齐（例如 next build 之后再跑预算门禁）。别照着警告文案改代码。";
 
 /**
+ * 失败级注解，但红的是 `scripts/check-*.mjs` 这类自建门禁 —— 层的默认入口复现不出这条红。
+ * 真实 run 40923501074 的「前端门禁」：归因头已经正确写成预算注解，
+ * 修复入口却仍是 `node scripts/typecheck.mjs`（tsc 全绿，白跑一遍才知道判据在别处）。
+ * 只认 `scripts/check-*`：`node apps/api/src/migrate.ts` 那种「跑起来就崩」的步骤
+ * 仍归运行时/契约层的入口，换成原命令反而少了前置步骤。
+ */
+const GATE_SCRIPT_COMMAND = /^node\s+scripts\/check-[\w.-]+\.mjs\b/;
+
+const GATE_STEP_HINT =
+  "红的是这一步自己的判定：本地原样复跑上面这条命令（先备齐它依赖的产物——预算门禁要在 next build 之后跑）。" +
+  "这类门禁的 --report 与自解释注解通常直接点名该改哪一条。";
+
+/**
  * 某些信号的正确动作与「层的默认第一步」不同，差别大到会浪费人 20 分钟时必须覆盖。
  * 命令仍受上面那条约束：必须能在仓库根目录原样执行、不带占位符——所以这里给的是
  * 「先确认到底哪几个 job 红」的只读命令，复跑本身是 Actions 页面的按钮，写在 note 里。
@@ -118,6 +131,10 @@ export function fixHintFor(row) {
   const haystack = [String(row?.firstError ?? ""), ...(Array.isArray(row?.signals) ? row.signals : [])].join(" ");
   const override = SIGNAL_FIX_HINTS.find((o) => o.test.test(haystack));
   if (override) return { layer, command: override.command, note: override.note };
+  const stepCommand = gateStepCommand(row?.step);
+  if (GATE_SCRIPT_COMMAND.test(stepCommand)) {
+    return { layer, command: stepCommand, note: GATE_STEP_HINT };
+  }
   const hint = LAYER_FIX_HINTS[layer];
   return {
     layer,

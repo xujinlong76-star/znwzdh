@@ -707,6 +707,26 @@ describe("fixHint：每层一条可执行入口", () => {
     expect(fixHintFor({ layer: "环境", firstError: "EADDRINUSE 127.0.0.1:4000" }).command).toBe("node scripts/doctor.mjs");
   });
 
+  it("红的是自建门禁那一步时，修复入口给那一步的原命令而不是层默认入口", () => {
+    // 真实 run 40923501074 的「前端门禁」：归因头已是预算注解，入口却还指向 typecheck
+    const hint = fixHintFor({
+      layer: "构建",
+      headLevel: "failure",
+      step: "Run node scripts/check-bundle-budget.mjs",
+      firstError: "scripts/bundle-budget.json:54 · 首屏预算超限 /videos/player",
+    });
+    expect(hint.command).toBe("node scripts/check-bundle-budget.mjs");
+    expect(hint.note).toContain("红的是这一步自己的判定");
+    // 反向例：非 scripts/check-* 的步骤不抢入口（跑起来就崩的那类仍归层默认前置）
+    expect(
+      fixHintFor({ layer: "契约", step: "Run node apps/api/src/migrate.ts", firstError: "TypeError: x" }).command,
+    ).toBe(LAYER_FIX_HINTS.契约.command);
+    // 带旗标的原命令整条印出去，不吞参数
+    expect(fixHintFor({ layer: "构建", step: "Run node scripts/check-isr-routes.mjs --json", firstError: "x" }).command).toBe(
+      "node scripts/check-isr-routes.mjs --json",
+    );
+  });
+
   it("文本段按层去重、只列出现的层，同一层多个文件并列", () => {
     const text = renderFixHints([
       { layer: "运行时", firstError: "a.test.ts · x · boom" },

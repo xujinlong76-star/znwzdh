@@ -223,7 +223,9 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 
 ## 5. 红灯归因 runbook
 
-通用第一步：**先看红在哪一步**（作业页里红色步骤名），再看 annotation（无 token 时作业日志接口 403，annotation 是跨机器唯一可读通道）。本地复现优先 `pnpm verify`（覆盖 7 项里的 5 项）。
+通用第一步：**先看红在哪一步**（作业页里红色步骤名），再看 annotation —— 日志这一条通道经常读不到：
+无 token 时作业日志接口 403，**有 token 但缺 `Actions:read` 时是 404**（本仓库 token 实测，产物 zip 同口径），
+所以 annotation 才是跨机器唯一稳定的可读通道（见 §5.2）。本地复现优先 `pnpm verify`（覆盖 7 项里的 5 项）。
 
 | 作业 | 第一反应 | 假红 / 归因陷阱 |
 |---|---|---|
@@ -270,6 +272,11 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 2. 降级时 `fixHint` 不再用「层默认入口」（那层本身是从警告文案推出来的），而是取
    **红的那一步**的原命令——Actions 把 `run:` 步骤命名成 `Run <命令>`，所以步骤名就是一行
    可执行的复现命令（`uses:` 步骤不是命令，此时仍落回层默认入口）。
+3. 就算归因头是失败级注解，**红的那一步是自建门禁（`node scripts/check-*.mjs`）时入口也换成那一步的原命令**：
+   层的默认入口（`typecheck` / `doctor`）复现不出这类红。真实 run 40923501074 修好级别后仍错在这一处——
+   头已经正确写成「首屏预算超限 /videos/player」，入口却还是 `node scripts/typecheck.mjs`（而 tsc 全绿）。
+   只对 `scripts/check-*` 生效：`node apps/api/src/migrate.ts` 那种「跑起来就崩」的步骤，
+   原命令少了前置准备（迁移要先有库），仍归层默认入口。
 
 为什么单独立这条：真实 run 40868398091…40919239730 里「前端门禁」连着 11 轮红在同一步，
 那一步的失败级注解只有被剥掉的 `Process completed with exit code 1.`，于是归因头落到
@@ -277,6 +284,10 @@ eslint 的 `'Route' is defined but never used`（**警告**，CI 不卡）上，
 存在的 lint 红；真红是 `node scripts/check-bundle-budget.mjs` 的预算超限。
 读日志/产物要 Actions 权限（本仓库 token 实测 404），annotation 是唯一跨机器可读的通道——
 所以**任何只把结论打在 stdout 的门禁都必须自带失败级注解**，否则它的红在归因表里就是隐形的。
+
+同一条约束也管注解**自己**的文案：被截断时那句「完整列表见……」不许指向作业日志（读了 404 只会让人
+怀疑自己缺权限）。只准指可核对的通道——预算是下一步「首屏预算账（Step Summary + artifact）」的账，
+测试是 `junit-*.xml` 产物（test-sqlite / test-e2e 另有「红灯光谱」Step Summary）。
 
 ---
 

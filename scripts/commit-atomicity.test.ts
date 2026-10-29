@@ -10,6 +10,8 @@
  *   · 被 gitignore 覆盖的生成物（apps/web/src） ⇒ 必须绿
  *   · 注释里的路径字面量                       ⇒ 必须绿
  *   · 镜像测试（apps/web/test）的 `@/x` 归一到 overlay 事实源 ⇒ 必须红
+ *   · 测试 → **非代码**文件（ci.yml / css / Dockerfile）  ⇒ 脏了没提交必须红，举例不敏感
+ *   · 测试 → **分段拼接**路径（`resolve(ROOT, "scripts", "x.mjs")`） ⇒ 同上，但写字类目标必须绿
  *
  * 源码 → 源码的伴随改动（2026-10-29 第二起，7de79c31）另有一组：
  *   · 提交的路由 → `@navhub/store` barrel → 第二跳定义文件改签名未提交 ⇒ 必须红
@@ -29,7 +31,7 @@ import {
   mentionsSymbol,
   reexportClosure,
 } from "./lib/commit-atomicity.mjs";
-import { resolveSpecifier, WORKSPACE_ALIAS_ROOTS } from "./lib/source-refs.mjs";
+import { joinedPathLiterals, resolveSpecifier, WORKSPACE_ALIAS_ROOTS } from "./lib/source-refs.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts/check-commit-atomicity.mjs");
@@ -377,6 +379,110 @@ describe("提交原子性：测试 → 非代码文件", () => {
     expect(extractPathLiterals('readFileSync(resolve(ROOT, ".github/workflows/probe-ci.yml"), "utf8")')).toEqual([
       ".github/workflows/probe-ci.yml",
     ]);
+  });
+});
+
+/**
+ * 分段拼接路径：`resolve(ROOT, "scripts", "x.mjs")` 每段都不带 `/`，整串正则抽不出来。
+ * 选测 2026-10-29 就认得这一路，提交原子性此前是盲区——同一份抽取口径必须两处都吃到，
+ * 否则「测试读的是分段路径」这种提交照样本地绿、CI 检出提交树红。
+ *
+ * 判据与整串那一路**相反**：只否写入，不要求读到调用名。
+ * 本仓门禁测试的主流写法是先拼成变量再读（`const SCRIPT = resolve(…)` + `readFileSync(SCRIPT)`），
+ * 套上 isReadArgument 会砍掉 17/26 条真实存在的分段边，其中 16 条是真依赖（2026-10-30 实测）。
+ * 反向的一半也必须钉住：夹具往临时目录写文件时拼出的路径可能与仓库里的真文件同名，
+ * 那种「写字类目标」不是读取依赖——去掉否决后这一例会变红。
+ */
+describe("提交原子性：测试 → 分段拼接路径", () => {
+  const JOINED_READ = [
+    'import { readFileSync } from "node:fs"',
+    'import { resolve } from "node:path"',
+    "const ROOT = process.cwd()",
+    'const TARGET = resolve(ROOT, "scripts", "probe-check.mjs")',
+    "export const body = readFileSync(TARGET, \"utf8\")",
+    "",
+  ].join("\n");
+
+  function joinedRepo(source = "export const v = 1\n") {
+    // 测试文件必须在 init 之后写入：makeRepo 里就带上它会让随后的 `git add` 变成空操作，
+    // 提交集为空 → 门禁「无测试可审」直接放行，用例假绿（首轮就这么错过去两例）。
+    return makeRepo({ "scripts/probe-check.mjs": source });
+  }
+
+  it("先拼成变量再读、目标脏了没提交 → 必须红并点名目标", () => {
+    const dir = joinedRepo();
+    write(dir, "scripts/probe-check.mjs", "export const v = 2\n");
+    write(dir, "scripts/probe-joined.test.ts", JOINED_READ);
+    git(dir, ["add", "scripts/probe-joined.test.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain("scripts/probe-joined.test.ts");
+    expect(res.out).toContain("scripts/probe-check.mjs");
+  });
+
+  it("非代码接线的分段写法（.github + workflows + ci.yml）同样算依赖 → 必须红", () => {
+    const dir = makeRepo({ ".github/workflows/probe-ci.yml": "jobs:\n  test:\n    steps: []\n" });
+    write(dir, ".github/workflows/probe-ci.yml", "jobs:\n  test:\n    steps:\n      - run: pnpm test\n");
+    write(
+      dir,
+      "scripts/probe-ci.test.ts",
+      [
+        'import { readFileSync } from "node:fs"',
+        'import { join } from "node:path"',
+        "const ROOT = process.cwd()",
+        'const CI = join(ROOT, ".github", "workflows", "probe-ci.yml")',
+        'export const body = readFileSync(CI, "utf8")',
+        "",
+      ].join("\n"),
+    );
+    git(dir, ["add", "scripts/probe-ci.test.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain(".github/workflows/probe-ci.yml");
+  });
+
+  it("分段路径是写字类目标 → 必须绿（去掉写入否决这例会红）", () => {
+    const dir = joinedRepo();
+    write(dir, "scripts/probe-check.mjs", "export const v = 2\n");
+    write(
+      dir,
+      "scripts/probe-write.test.ts",
+      [
+        'import { writeFileSync } from "node:fs"',
+        'import { join } from "node:path"',
+        'const tmp = process.cwd() + "/tmp-dir"',
+        'writeFileSync(join(tmp, "scripts", "probe-check.mjs"), "made up")',
+        "",
+      ].join("\n"),
+    );
+    git(dir, ["add", "scripts/probe-write.test.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+  });
+
+  it("依赖与测试同批提交 → 必须绿", () => {
+    const dir = joinedRepo();
+    write(dir, "scripts/probe-check.mjs", "export const v = 2\n");
+    write(dir, "scripts/probe-joined.test.ts", JOINED_READ);
+    git(dir, ["add", "scripts/probe-joined.test.ts", "scripts/probe-check.mjs"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+  });
+
+  it("抽取器给出「调用之前的文本」，写/读否决由调用方判", () => {
+    const rows = joinedPathLiterals(
+      'const A = resolve(ROOT, "scripts", "a.mjs");\nwriteFileSync(join(d, "scripts", "b.mjs"), x);',
+    );
+    expect(rows.map((r) => r.path)).toEqual(["scripts/a.mjs", "scripts/b.mjs"]);
+    expect(rows[0].before).toContain("const A =");
+    expect(rows[1].before.endsWith("writeFileSync(")).toBe(true);
+    // 首段是变量时不参与拼接：只认带引号的段，且必须落在仓库根前缀表里
+    expect(joinedPathLiterals('join(overlayRoot, "src", "app", "page.tsx")')).toEqual([]);
+    expect(joinedPathLiterals('resolve(dir, "..", "..", "apps", "api", "src", "x.ts")')).toEqual([]);
   });
 });
 

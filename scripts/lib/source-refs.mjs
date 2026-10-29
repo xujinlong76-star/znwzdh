@@ -295,6 +295,52 @@ export function extractSpecifiers(source) {
   return [...found.values()].sort((a, b) => a.line - b.line || a.spec.localeCompare(b.spec));
 }
 
+/**
+ * `resolve(ROOT, "scripts", "check-large-files.mjs")` 这类**分段拼接**的路径。
+ *
+ * 单看每个字符串都不带 `/`，`PATH_LITERAL_RE` 那类整串正则抽不出来；合起来才是路径。
+ * 真实例子：scripts/check-large-files.test.ts:21 —— 漏了它，改脚本时图命中 0，
+ * 只能靠词根回退兜（回退不报错，但它也不保证覆盖到别的东西）。
+ *
+ * 分段写法只认仓库根前缀：拼出来的 overlay 相对路径要靠运行时 overlayRoot，不猜。
+ * 首段是变量（ROOT / dir / __dirname）时不参与拼接——它没有引号，抽不到就是抽不到，
+ * 剩下的字面量段仍按「相对仓库根的写法」处理；不确定就不猜。
+ *
+ * 返回 `[{path, before}]`：`before` 是调用起点之前的源码，调用方用它判断
+ * 「这次拼接是被读还是被写」。提交原子性只关心读（写进临时目录的 `join(...)`
+ * 拼出的仓库路径是假依赖），选测不需要它就忽略。
+ */
+const JOIN_CALL_RE = /\b(?:join|resolve)\s*\(([^()]*)\)/g;
+const QUOTED_IN_JOIN_RE = /["'`]([^"'`]*)["'`]/g;
+const PATH_LIKE_PREFIX_RE = new RegExp(`^(?:${REPO_RELATIVE_PREFIXES.map(escapeRegExp).join("|")})/`);
+
+export function joinedPathLiterals(text) {
+  const out = [];
+  for (const call of String(text ?? "").matchAll(JOIN_CALL_RE)) {
+    const segments = [];
+    let usable = true;
+    for (const quoted of call[1].matchAll(QUOTED_IN_JOIN_RE)) {
+      const raw = quoted[1].replace(/\\/g, "/");
+      // 绝对路径、盘符、`..` 都会让「拼起来是哪」依赖运行时工作目录——不确定就不猜。
+      if (!raw || raw === "." || raw === ".." || raw.startsWith("/") || /^[A-Za-z]:/.test(raw)) {
+        usable = false;
+        break;
+      }
+      const seg = raw.replace(/^\/+|\/+$/g, "");
+      if (!seg) {
+        usable = false;
+        break;
+      }
+      segments.push(seg);
+    }
+    if (!usable || segments.length < 2) continue;
+    const path = segments.join("/");
+    if (!PATH_LIKE_PREFIX_RE.test(path)) continue;
+    out.push({ path, before: String(text).slice(0, call.index) });
+  }
+  return out;
+}
+
 /** package.json 的 scripts 里 `node scripts/xxx.mjs` 这类引用 */
 export function extractScriptRefs(scripts) {
   const refs = [];

@@ -95,6 +95,17 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   （`isReadArgument`：函数实参，或 `*Path|File|Dir:` 结尾的配置键；对象键 / 数组元素 / 赋值 /
   `write(...)` 不算）。实测本仓 12 个 ci.yml 读者、4 个 css 读者、1 个 Dockerfile 读者全部保留，
   夹具举例全部排除；前提见 docs/TESTING-CONVENTIONS.md「夹具路径不得撞真实路径」。
+- **测试 → 分段拼接路径**（2026-10-30 补齐，同属 `commit-atomicity`）：
+  `const SCRIPT = resolve(ROOT, "scripts", "check-large-files.mjs")` 再 `readFileSync(SCRIPT)`——
+  每段都不带 `/`，整串正则抽不出来。选测早在 2026-10-29 就认这一路（`source-refs.mjs` 的
+  `joinedPathLiterals`，与图共用），原子性此前是盲区：分段写法读的正是接线/脚本这类契约文件，
+  不原子提交照样本地绿、CI 红。
+  判据与整串那一路**相反**：只否写字类调用，不要求「处在读取调用的实参位」。实测真实仓库里
+  这条独有边共 110 个目标、但只有 **23 个**是「存在且入库」的文件（其余 87 个是夹具临时树里的
+  假路径，永远不会脏，也就永远咬不到人）；若按 `isReadArgument` 筛，26 条真实存在的分段边会被
+  砍掉 17 条、其中 16 条是真依赖——先拼后读是本仓门禁测试的主流写法。写入否决保住的是反向的一半：
+  夹具往临时目录 `writeFileSync(join(tmp, "scripts", "x.mjs"), …)` 拼出的路径与仓库真文件同名，
+  那不是读取依赖（`commit-atomicity.test.ts` 正反面各钉一例，去掉否决那例即红）。
 - **双向对账**：
   - 登记了但接线里没有 ⇒ 「以为在拦，其实没跑」；
   - 接线里有但清单没登记 ⇒ 下次改钩子时会被人顺手删掉，且没人知道它拦过什么。

@@ -207,6 +207,14 @@ dry-run），`scripts/test-impact.test.ts` 固定图的语义（三类边、目�
 `check-client-node-imports.test.ts` 用文件路径做键）。代码文件的名字在测试里几乎只表示「我要读它」，
 非代码文件的名字常常只是举例，所以判据按后缀类型不对称。
 
+**分段拼接写法走反向判据**（2026-10-30 补）：`resolve(ROOT, "scripts", "x.mjs")` 这种每段都不带 `/`
+的路径由 `source-refs.mjs` 的 `joinedPathLiterals` 抽，选测与提交原子性共用同一份。这一路**不要求**
+「处在读取调用的实参位」，只**否决写字类调用**：先拼成变量再读是本仓门禁测试的主流写法，套读取门槛会
+砍掉 26 条真实分段边里的 17 条（16 条是真依赖）。噪声由「目标必须真实存在且入库」这一条兜住——
+全仓分段独有目标 110 个，存在且入库的只有 23 个，其余是夹具临时树里的假路径、永远不会脏。
+反过来说：**夹具里分段拼出的路径如果撞上仓库真文件，它就会被当真依赖算**。所以夹具沿用同一条约定，
+探针名照旧（`scripts/probe-check.mjs`、`.github/workflows/probe-ci.yml`），别用真名。
+
 **残留的一类假敏感**：别名目标必须用真名（`@navhub/core` 只能解析到 `packages/core/src/index.ts`、
 镜像表只能叫 `scripts/core-mirrors.json`），这类夹具改不了名，撞上别人未提交的改动时门禁会拦。
 核对断言确实不依赖该文件内容后走 `NAVHUB_ALLOW_DIRTY_TEST_DEPS=1`——放行时门禁会逐条打印跳过了什么，

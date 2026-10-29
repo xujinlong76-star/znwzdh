@@ -33,6 +33,7 @@ import {
   escapeRegExp,
   extractSpecifiers,
   isRepoRelativePath,
+  joinedPathLiterals,
   normalizePath,
   REPO_RELATIVE_PREFIXES,
   resolveSpecifier,
@@ -109,40 +110,11 @@ export function graphVisibleFiles(files) {
 }
 
 /**
- * `resolve(ROOT, "scripts", "check-large-files.mjs")` 这类**分段拼接**的路径。
- * 单看每个字符串都不带 `/`，上一条正则抽不出来；合起来才是路径。
- * 真实例子：scripts/check-large-files.test.ts:21 —— 漏了它，改脚本时图命中 0，
- * 只能靠词根回退兜（回退不报错，但它也不保证覆盖到别的东西）。
- * 分段写法只认仓库根前缀：拼出来的 overlay 相对路径要靠运行时 overlayRoot，不猜。
+ * 分段拼接路径的抽取口径与提交原子性共用一份（`source-refs.joinedPathLiterals`）。
+ * 图侧不需要「这次是读还是写」，所以把 before 丢掉只留路径。
  */
-const JOIN_CALL_RE = /\b(?:join|resolve)\s*\(([^()]*)\)/g;
-const QUOTED_RE = /["'`]([^"'`]*)["'`]/g;
-const PATH_LIKE_PREFIX_RE = new RegExp(`^(?:${REPO_RELATIVE_PREFIXES.map(escapeRe).join("|")})/`);
-
 function joinedLiteralDeps(text) {
-  const deps = new Set();
-  for (const call of String(text).matchAll(JOIN_CALL_RE)) {
-    const segments = [];
-    let usable = true;
-    for (const quoted of call[1].matchAll(QUOTED_RE)) {
-      const raw = quoted[1].replace(/\\/g, "/");
-      // 绝对路径、盘符、`..` 都会让「拼起来是哪」依赖运行时工作目录——不确定就不猜。
-      if (!raw || raw === "." || raw === ".." || raw.startsWith("/") || /^[A-Za-z]:/.test(raw)) {
-        usable = false;
-        break;
-      }
-      const seg = raw.replace(/^\/+|\/+$/g, "");
-      if (!seg) {
-        usable = false;
-        break;
-      }
-      segments.push(seg);
-    }
-    if (!usable || segments.length < 2) continue;
-    const joined = segments.join("/");
-    if (PATH_LIKE_PREFIX_RE.test(joined)) deps.add(joined);
-  }
-  return deps;
+  return new Set(joinedPathLiterals(text).map(({ path }) => path));
 }
 
 /** apps/web/src ↔ apps/web-overlay/src 视为同一节点（镜像） */

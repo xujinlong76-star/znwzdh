@@ -11,12 +11,18 @@
  *   - 这枚管「引用了入库过的文件，但工作区版本与 HEAD 不同、且不在本次提交集」。
  *   两者互补：前者的目标根本没进过 HEAD，后者的目标在 HEAD 里只是旧版本。
  *
- * 依赖的两种形态都要认：
+ * 依赖的三种形态都要认：
  *   1) 模块说明符：`import … from "@/lib/x"` / `../src/x`；
  *   2) 路径字面量：`readFileSync(resolve(ROOT, "src/app/admin/x.ts"))`，
- *      以及**非代码**目标 `readFileSync(join(ROOT, ".github/workflows/ci.yml"))`。
- * 本仓大量门禁测试是第 2 种形态（读源码/接线做钉子断言），只查 import 会漏掉事故里
+ *      以及**非代码**目标 `readFileSync(join(ROOT, ".github/workflows/ci.yml"))`；
+ *   3) 分段拼接：`const SCRIPT = resolve(ROOT, "scripts", "check-large-files.mjs")`
+ *      再 `readFileSync(SCRIPT)`——每段都不带 `/`，第 2 路的整串正则抽不出来。
+ * 本仓大量门禁测试是第 2/3 种形态（读源码/接线做钉子断言），只查 import 会漏掉事故里
  * 最典型的一类（admin-category-impact 就是直接读 page.tsx）。
+ *
+ * 第 3 路的取舍（2026-10-30 实测）：**只否写入，不要求读到调用名**。
+ * 「真实存在且受版本控制」的分段边全仓只有 23 条（其余是夹具里的假路径，永远不会脏），
+ * 而按 `isReadArgument` 筛会砍掉 17 条、其中 16 条是真依赖——先拼后读是本仓主流写法。
  *
  * 口径：
  *   - 测试：只审**测试文件**（*.test.* / *.spec.*）：普通源码允许依赖脏文件（那是并行开发），
@@ -34,6 +40,7 @@ import {
   escapeRegExp,
   extractSpecifiers,
   isRepoRelativePath,
+  joinedPathLiterals,
   normalizePath,
   REPO_RELATIVE_PREFIXES,
   resolveSpecifier,
@@ -104,17 +111,28 @@ const PROP_VALUE_RE = /([A-Za-z_$][\w$]*(?:Path|File|Dir))\s*:\s*$/;
 const CALLEE_RE = /([\w$]+)\s*\(\s*(?:[^\s(),[\]{}][^(),[\]{}]*?\s*,\s*)?$/;
 
 /**
+ * 「这一处是不是写字类调用的目标」：被调用名（或配置键名）落在写字族里。
+ * 分段拼接那一路只用它做**否决**，不反过来要求「必须是读」——
+ * 实测本仓门禁测试的主流写法是 `const SCRIPT = resolve(ROOT, "scripts", "x.mjs")`
+ * 先拼后读，按「必须读到调用名」筛会砍掉 17/26 条真实存在的边，其中 16 条是真依赖。
+ */
+export function isWriteTarget(textBefore) {
+  const callee = CALLEE_RE.exec(textBefore)?.[1];
+  if (callee && WRITE_CALLEE_RE.test(callee)) return true;
+  const key = PROP_VALUE_RE.exec(textBefore)?.[1];
+  return !!key && WRITE_CALLEE_RE.test(key);
+}
+
+/**
  * 「这一处字面量是不是被当作输入读的」——只看字面量之前的文本，不跨行找左括号。
  * 代价：`readFileSync(\n  ".github/workflows/ci.yml"\n)` 这种把路径单独起一行的写法读不出来；
  * 本仓没有这种形态，且漏判的方向是「不拦」，不会假红。
  */
 export function isReadArgument(textBeforeLiteral) {
-  const callee = CALLEE_RE.exec(textBeforeLiteral)?.[1];
-  if (callee && WRITE_CALLEE_RE.test(callee)) return false;
+  if (isWriteTarget(textBeforeLiteral)) return false;
   if (CALL_ARG_RE.test(textBeforeLiteral)) return true;
-  // 键名本身是写字类（`{ writeFile: "…" }`）时不算读取目标
-  const key = PROP_VALUE_RE.exec(textBeforeLiteral)?.[1];
-  return !!key && !WRITE_CALLEE_RE.test(key);
+  // 键名形态：`{ dockerfilePath: "…" }` 算读取目标
+  return PROP_VALUE_RE.test(textBeforeLiteral);
 }
 
 /**
@@ -200,9 +218,17 @@ export function collectDependencies(source, file, { exists, pathLiterals = true 
   }
   if (!pathLiterals) return deps;
   // 注释里的示例路径不是依赖（同 extractSpecifiers 的口径）
-  for (const literal of extractPathLiterals(stripComments(source))) {
+  const code = stripComments(source);
+  for (const literal of extractPathLiterals(code)) {
     const rel = literalToRepoPath(literal, file);
     if (rel && exists(rel)) add(rel, literal);
+  }
+  // 分段拼接：`resolve(ROOT, "scripts", "x.mjs")` 每段都不带 `/`，上面那一路抽不出来。
+  // 只否掉写字类调用（夹具往临时目录写时拼出的仓库同名路径是假依赖），不要求「读到调用名」
+  // ——先拼成变量再 read 是本仓主流写法，加读取门槛会把 17/26 条真边一起砍掉。
+  for (const { path, before } of joinedPathLiterals(code)) {
+    if (isWriteTarget(before)) continue;
+    if (exists(path)) add(path, path);
   }
   return deps;
 }

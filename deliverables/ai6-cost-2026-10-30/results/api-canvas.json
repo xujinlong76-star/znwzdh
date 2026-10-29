@@ -1,0 +1,110 @@
+{
+  "clean": {
+    "status": 200,
+    "json": {
+      "success": true,
+      "layout": {
+        "version": 1,
+        "updatedAt": 1793302999241,
+        "title": "实测工作台",
+        "description": "一张合法卡",
+        "rationale": "用于首过率成功样本",
+        "widgets": [
+          {
+            "id": "ai-widget-1793302999241-1",
+            "type": "markdown-notes",
+            "customTitle": "备忘",
+            "colSpan": 4,
+            "rowSpan": 2,
+            "config": {},
+            "createdAt": 1793302999242
+          }
+        ]
+      },
+      "droppedTypes": [],
+      "fallbackUsed": false,
+      "canvasIssues": [],
+      "canvasIssueTotal": 0,
+      "model": "stub-model-1",
+      "usage": {
+        "promptTokens": 120,
+        "completionTokens": 260,
+        "totalTokens": 380
+      },
+      "latencyMs": 4
+    }
+  },
+  "fallback": {
+    "status": 200,
+    "json": {
+      "success": true,
+      "layout": {
+        "version": 1,
+        "updatedAt": 1793302999342,
+        "title": "全是幻觉",
+        "description": "一个合法模块都没给",
+        "rationale": "只有本部署没有的类型",
+        "widgets": [
+          {
+            "id": "ai-widget-1793302999342-1",
+            "type": "quick-search",
+            "customTitle": "多引擎聚合快捷搜索",
+            "colSpan": 6,
+            "rowSpan": 1,
+            "config": {},
+            "createdAt": 1793302999343
+          },
+          {
+            "id": "ai-widget-1793302999342-2",
+            "type": "favorites-dock",
+            "customTitle": "星标快捷启动坞",
+            "colSpan": 4,
+            "rowSpan": 1,
+            "config": {},
+            "createdAt": 1793302999343
+          },
+          {
+            "id": "ai-widget-1793302999342-3",
+            "type": "markdown-notes",
+            "customTitle": "极客随手备忘便签",
+            "colSpan": 5,
+            "rowSpan": 2,
+            "config": {},
+            "createdAt": 1793302999343
+          }
+        ]
+      },
+      "droppedTypes": [
+        "weather-widget",
+        "not-a-real-widget"
+      ],
+      "fallbackUsed": true,
+      "canvasIssues": [
+        {
+          "index": 0,
+          "type": "weather-widget",
+          "field": "structure",
+          "key": "type",
+          "action": "dropped",
+          "message": "本部署没有「weather-widget」这张卡片，整条已丢弃"
+        },
+        {
+          "index": 1,
+          "type": "not-a-real-widget",
+          "field": "structure",
+          "key": "type",
+          "action": "dropped",
+          "message": "本部署没有「not-a-real-widget」这张卡片，整条已丢弃"
+        }
+      ],
+      "canvasIssueTotal": 2,
+      "model": "stub-model-1",
+      "usage": {
+        "promptTokens": 120,
+        "completionTokens": 260,
+        "totalTokens": 380
+      },
+      "latencyMs": 7
+    }
+  }
+}

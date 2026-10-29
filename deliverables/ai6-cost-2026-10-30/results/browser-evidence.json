@@ -1,0 +1,245 @@
+{
+  "startedAt": "2026-10-29T19:42:58.154Z",
+  "steps": [
+    {
+      "step": "login",
+      "at": "2026-10-29T19:43:15.398Z",
+      "url": "http://127.0.0.1:3420/admin/ai"
+    },
+    {
+      "step": "price-book-saved",
+      "at": "2026-10-29T19:43:17.647Z",
+      "savedRows": [
+        "stub-model-1"
+      ],
+      "screenshot": "C:\\Users\\许进龙\\Desktop\\web\\deliverables\\ai6-cost-2026-10-30\\results\\shot-price-book.png"
+    },
+    {
+      "step": "test-connections",
+      "at": "2026-10-29T19:43:18.213Z",
+      "first": "连通成功 · 44ms",
+      "second": "连通成功 · 5ms",
+      "test2Detail": "模型：stub-model-2 · 回复预览：pong（stub 连通正常）"
+    },
+    {
+      "step": "config-saved",
+      "at": "2026-10-29T19:43:19.141Z",
+      "model": "stub-model-1",
+      "base": "http://127.0.0.1:8929/v1"
+    },
+    {
+      "step": "observability",
+      "at": "2026-10-29T19:43:20.149Z",
+      "costCaption": "按调用时单价快照折算：3/4 次调用有单价，覆盖 0.9k / 1.0k tokens",
+      "modelTable": [
+        [
+          "stub-model-1",
+          "3",
+          "0.9k",
+          "0",
+          "3/3",
+          "¥0.0042"
+        ],
+        [
+          "stub-model-2",
+          "1",
+          "0.1k",
+          "0",
+          "0/1",
+          "无价"
+        ]
+      ],
+      "screenshots": [
+        "C:\\Users\\许进龙\\Desktop\\web\\deliverables\\ai6-cost-2026-10-30\\results\\shot-observability-cost.png",
+        "C:\\Users\\许进龙\\Desktop\\web\\deliverables\\ai6-cost-2026-10-30\\results\\shot-canvas-quality.png"
+      ],
+      "recentLogs": 4
+    }
+  ],
+  "assertions": [
+    {
+      "name": "单价簿初始为空且提示回退语义",
+      "ok": true,
+      "detail": {
+        "legacyBefore": "旧版单一价未配置"
+      }
+    },
+    {
+      "name": "空模型名被前端拦下",
+      "ok": true
+    },
+    {
+      "name": "负数单价被前端拦下",
+      "ok": true
+    },
+    {
+      "name": "重复模型被前端拦下",
+      "ok": true,
+      "detail": {
+        "dupBanner": "模型「stub-model-1」重复出现：同一次保存里同名只能有一条",
+        "dupRows": [
+          "stub-model-1",
+          "stub-model-1"
+        ]
+      }
+    },
+    {
+      "name": "单价簿保存成功后回到已保存状态",
+      "ok": true,
+      "detail": {
+        "savedRows": [
+          "stub-model-1"
+        ]
+      }
+    },
+    {
+      "name": "GET /api/admin/ai/prices 返回刚保存的单价",
+      "ok": true,
+      "detail": {
+        "prices": [
+          {
+            "model": "stub-model-1",
+            "promptPer1kRmb": 0.002,
+            "completionPer1kRmb": 0.006,
+            "updatedAt": 1793302997490
+          }
+        ],
+        "legacyUnitPriceRmb": null
+      }
+    },
+    {
+      "name": "stub-model-1 测试连接成功",
+      "ok": true,
+      "detail": {
+        "test1": "连通成功 · 44ms"
+      }
+    },
+    {
+      "name": "第二次测试连接由 stub-model-2 应答（无单价样本）",
+      "ok": true,
+      "detail": {
+        "test2": "连通成功 · 5ms",
+        "test2Detail": "模型：stub-model-2 · 回复预览：pong（stub 连通正常）"
+      }
+    },
+    {
+      "name": "干净画布生成成功且未用保底",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "fallbackUsed": false,
+        "widgets": 1
+      }
+    },
+    {
+      "name": "全幻觉画布走保底并记账",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "fallbackUsed": true,
+        "issues": 2
+      }
+    },
+    {
+      "name": "成本卡显示「按调用时单价快照折算」",
+      "ok": true,
+      "detail": {
+        "costCaption": "按调用时单价快照折算：3/4 次调用有单价，覆盖 0.9k / 1.0k tokens"
+      }
+    },
+    {
+      "name": "成本覆盖显示 3/4 次调用",
+      "ok": true,
+      "detail": {
+        "sample": "覆盖 0.9k / 1.0k tokens"
+      }
+    },
+    {
+      "name": "总额按快照折算为 ¥0.0042",
+      "ok": true,
+      "detail": {
+        "estimated": 0.0042,
+        "costSource": "snapshot",
+        "coverage": {
+          "totalCalls": 4,
+          "pricedCalls": 3,
+          "unpricedCalls": 1,
+          "totalTokens": 1000,
+          "pricedTokens": 880
+        }
+      }
+    },
+    {
+      "name": "分模型表：stub-model-1 全部有价、¥0.0042",
+      "ok": true,
+      "detail": {
+        "row1": [
+          "stub-model-1",
+          "3",
+          "0.9k",
+          "0",
+          "3/3",
+          "¥0.0042"
+        ]
+      }
+    },
+    {
+      "name": "分模型表：stub-model-2 显示「无价」而不是 ¥0",
+      "ok": true,
+      "detail": {
+        "row2": [
+          "stub-model-2",
+          "1",
+          "0.1k",
+          "0",
+          "0/1",
+          "无价"
+        ]
+      }
+    },
+    {
+      "name": "画布首过率 50.0%（1/2）",
+      "ok": true,
+      "detail": {
+        "sample": "画布生成质量（首过率）\n\n首过 = 生成的模块全部通过 schema 校验且未使用保底布局；issue 与丢弃数来自对每张卡片的逐字段校验\n\n最近 1 天 · 2 次生成\n\n首过率\n\n50.0%\n\n首过 / 总生成\n\n1 / 2\n\n丢弃卡片\n\n2\n\n保底布局\n\n1\n\n最近调用流"
+      }
+    },
+    {
+      "name": "画布保底 1 次、丢弃 2 张",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "copilot 引用有效率一行存在（无样本时如实写未采集）",
+      "ok": true,
+      "detail": {
+        "sample": "引用有效率 无引用样本"
+      }
+    },
+    {
+      "name": "observability 接口数值与页面一致",
+      "ok": true,
+      "detail": {
+        "costSource": "snapshot",
+        "coverage": {
+          "totalCalls": 4,
+          "pricedCalls": 3,
+          "unpricedCalls": 1,
+          "totalTokens": 1000,
+          "pricedTokens": 880
+        },
+        "canvasQuality": {
+          "windowDays": 1,
+          "generations": 2,
+          "cleanGenerations": 1,
+          "fallbackGenerations": 1,
+          "droppedWidgets": 2,
+          "firstPassRate": 0.5
+        }
+      }
+    }
+  ],
+  "errors": [],
+  "finishedAt": "2026-10-29T19:43:20.403Z",
+  "ok": true
+}

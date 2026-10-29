@@ -1,0 +1,306 @@
+{
+  "window": "1d",
+  "hasData": true,
+  "totalCalls": 4,
+  "successCalls": 4,
+  "errorCalls": 0,
+  "successRate": 100,
+  "avgLatencyMs": 15,
+  "p95LatencyMs": 44,
+  "totalTokens": 1000,
+  "promptTokens": 320,
+  "completionTokens": 680,
+  "thinkingCalls": 2,
+  "estimatedCostRmb": 0.0042,
+  "costUnitPriceRmb": null,
+  "costSource": "snapshot",
+  "costCoverage": {
+    "totalCalls": 4,
+    "pricedCalls": 3,
+    "unpricedCalls": 1,
+    "totalTokens": 1000,
+    "pricedTokens": 880
+  },
+  "canvasQuality": {
+    "windowDays": 1,
+    "generations": 2,
+    "cleanGenerations": 1,
+    "fallbackGenerations": 1,
+    "droppedWidgets": 2,
+    "firstPassRate": 0.5
+  },
+  "activeModel": "stub-model-1",
+  "quota": {
+    "windowHours": 24,
+    "identity": {
+      "calls": {
+        "limit": 300,
+        "used": null
+      },
+      "tokens": {
+        "limit": 1500000,
+        "used": null
+      }
+    },
+    "anonymous": {
+      "calls": {
+        "limit": 60,
+        "used": 2
+      },
+      "tokens": {
+        "limit": 300000,
+        "used": 240
+      }
+    },
+    "system": {
+      "calls": {
+        "limit": 5000,
+        "used": 4
+      },
+      "tokens": {
+        "limit": 4000000,
+        "used": 1000
+      }
+    }
+  },
+  "byScenario": [
+    {
+      "scenario": "ai_config_test",
+      "name": "模型连通性探测",
+      "count": 2,
+      "tokens": 240,
+      "avgLatencyMs": 25,
+      "errorCalls": 0,
+      "costRmb": 0.00056,
+      "pricedCalls": 1
+    },
+    {
+      "scenario": "canvas",
+      "name": "自然语言工作台规划生成",
+      "count": 2,
+      "tokens": 760,
+      "avgLatencyMs": 6,
+      "errorCalls": 0,
+      "costRmb": 0.0036,
+      "pricedCalls": 2
+    }
+  ],
+  "byModel": [
+    {
+      "model": "stub-model-1",
+      "count": 3,
+      "tokens": 880,
+      "errorCalls": 0,
+      "costRmb": 0.00416,
+      "pricedCalls": 3
+    },
+    {
+      "model": "stub-model-2",
+      "count": 1,
+      "tokens": 120,
+      "errorCalls": 0,
+      "costRmb": null,
+      "pricedCalls": 0
+    }
+  ],
+  "hourlyTrend": [
+    {
+      "time": "00:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "01:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "02:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "03:00",
+      "calls": 4,
+      "tokens": 1000,
+      "latencyMs": 15
+    },
+    {
+      "time": "04:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "05:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "06:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "07:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "08:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "09:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "10:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "11:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "12:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "13:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "14:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "15:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "16:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "17:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "18:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "19:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "20:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "21:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "22:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    },
+    {
+      "time": "23:00",
+      "calls": 0,
+      "tokens": 0,
+      "latencyMs": 0
+    }
+  ],
+  "recentLogs": [
+    {
+      "id": "ai-log-fba886a5-b3b4-4ea8-bf0f-3935e08edef9",
+      "timestamp": 1793302999342,
+      "scenario": "canvas",
+      "model": "stub-model-1",
+      "source": "system",
+      "latencyMs": 7,
+      "tokens": 380,
+      "promptTokens": 120,
+      "completionTokens": 260,
+      "status": "success",
+      "thinking": true
+    },
+    {
+      "id": "ai-log-6e48d2e5-1b4c-45d3-8b7e-dcf8a814709f",
+      "timestamp": 1793302999240,
+      "scenario": "canvas",
+      "model": "stub-model-1",
+      "source": "system",
+      "latencyMs": 4,
+      "tokens": 380,
+      "promptTokens": 120,
+      "completionTokens": 260,
+      "status": "success",
+      "thinking": true
+    },
+    {
+      "id": "ai-log-138a0897-fa42-4318-b3d6-b5648aa5fbbc",
+      "timestamp": 1793302998169,
+      "scenario": "ai_config_test",
+      "model": "stub-model-2",
+      "source": "system",
+      "latencyMs": 5,
+      "tokens": 120,
+      "promptTokens": 40,
+      "completionTokens": 80,
+      "status": "success",
+      "thinking": false
+    },
+    {
+      "id": "ai-log-9e424291-dd3b-49a8-8100-f6f13742fca7",
+      "timestamp": 1793302997994,
+      "scenario": "ai_config_test",
+      "model": "stub-model-1",
+      "source": "system",
+      "latencyMs": 44,
+      "tokens": 120,
+      "promptTokens": 40,
+      "completionTokens": 80,
+      "status": "success",
+      "thinking": false
+    }
+  ]
+}

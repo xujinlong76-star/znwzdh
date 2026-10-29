@@ -21,6 +21,8 @@ const HUB = process.env.AI4C_HUB || "http://127.0.0.1:8915";
 const ADMIN_TOKEN = process.env.NAVHUB_ADMIN_TOKEN || "ai4c-local-admin-token";
 const STUB_LLM = process.env.AI4C_STUB_LLM || "http://127.0.0.1:8922";
 const SITE = process.env.AI4C_STUB_SITE || "http://127.0.0.1:8923";
+// 同一隔离库里跑第二遍会撞「该网址已存在」（409），URL 带 run 参数保持每次唯一
+const RUN = Date.now().toString(36);
 
 const rows = [];
 const record = (id, pass, detail) => {
@@ -78,6 +80,9 @@ async function llmStats() {
 
 /* ------------------------------ 浏览器 ------------------------------ */
 
+// 假模型的调用计数是进程级的：同一次启动里跑多遍时只认增量
+const statsStart = await llmStats();
+
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 page.setDefaultNavigationTimeout(180_000);
@@ -124,7 +129,7 @@ record("G-2 面板明说不会二次调用模型", panelText.includes("不会再
 /* ---------------------- 场景 A：勾选子集 + 改写标题 ---------------------- */
 
 const beforeA = await llmStats();
-await page.fill('[aria-label="富化审核网址"]', `${SITE}/rich`);
+await page.fill('[aria-label="富化审核网址"]', `${SITE}/rich?run=${RUN}`);
 await page.getByRole("button", { name: "解析并审核" }).click();
 await page.waitForSelector('[aria-label="采用标题"]', { timeout: 120_000 });
 await page.waitForSelector("text=结果来源", { timeout: 30_000 });
@@ -214,7 +219,7 @@ await page.screenshot({ path: resolve(OUT, "review-rich-created.png"), fullPage:
 /* --------------------- 场景 B：missing 行禁用 + 原因可见 --------------------- */
 
 const beforeB = await llmStats();
-await page.fill('[aria-label="富化审核网址"]', `${SITE}/bare`);
+await page.fill('[aria-label="富化审核网址"]', `${SITE}/bare?run=${RUN}`);
 await page.getByRole("button", { name: "解析并审核" }).click();
 await page.waitForSelector('[aria-label="采用标签"]', { timeout: 120_000 });
 await page.waitForTimeout(500);
@@ -281,7 +286,10 @@ record("B-9 落库：图标为空（推测值被拒绝后不写入）", siteB.st
 });
 
 const afterAll = await llmStats();
-record("Z-1 全程模型调用次数 = 2（两次解析各一次，两次建站 0 次）", afterAll.calls === 2, { calls: afterAll.calls });
+record("Z-1 本次运行模型调用次数 = 2（两次解析各一次，两次建站 0 次）", afterAll.calls - statsStart.calls === 2, {
+  delta: afterAll.calls - statsStart.calls,
+  totalSinceStart: afterAll.calls,
+});
 record("Z-2 无 console error", consoleErrors.length === 0, { errors: consoleErrors.slice(0, 5) });
 
 await page.screenshot({ path: resolve(OUT, "review-bare.png"), fullPage: true }).catch(() => {});

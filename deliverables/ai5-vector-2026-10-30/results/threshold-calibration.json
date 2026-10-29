@@ -1,0 +1,1242 @@
+{
+  "model": "Xenova/bge-small-zh-v1.5",
+  "sites": 50,
+  "queries": 37,
+  "relevantPairs": 64,
+  "noisePairs": 1786,
+  "relevant": {
+    "min": 0.2703,
+    "p10": 0.449,
+    "p25": 0.5356,
+    "median": 0.6112,
+    "p75": 0.6659,
+    "max": 0.7508
+  },
+  "noise": {
+    "min": 0.0967,
+    "p25": 0.2964,
+    "median": 0.3517,
+    "p75": 0.4061,
+    "p90": 0.4553,
+    "p95": 0.4904,
+    "max": 0.6268
+  },
+  "sweep": [
+    {
+      "threshold": 0,
+      "relevantKeptPct": 100,
+      "noiseKept": 1786,
+      "noiseKeptPct": 100,
+      "queriesWithNoRelevantInTop5": 0
+    },
+    {
+      "threshold": 0.1,
+      "relevantKeptPct": 100,
+      "noiseKept": 1784,
+      "noiseKeptPct": 99.89,
+      "queriesWithNoRelevantInTop5": 0
+    },
+    {
+      "threshold": 0.2,
+      "relevantKeptPct": 100,
+      "noiseKept": 1725,
+      "noiseKeptPct": 96.58,
+      "queriesWithNoRelevantInTop5": 0
+    },
+    {
+      "threshold": 0.25,
+      "relevantKeptPct": 100,
+      "noiseKept": 1593,
+      "noiseKeptPct": 89.19,
+      "queriesWithNoRelevantInTop5": 0
+    },
+    {
+      "threshold": 0.3,
+      "relevantKeptPct": 98.4,
+      "noiseKept": 1314,
+      "noiseKeptPct": 73.57,
+      "queriesWithNoRelevantInTop5": 0
+    },
+    {
+      "threshold": 0.35,
+      "relevantKeptPct": 98.4,
+      "noiseKept": 910,
+      "noiseKeptPct": 50.95,
+      "queriesWithNoRelevantInTop5": 0
+    },
+    {
+      "threshold": 0.4,
+      "relevantKeptPct": 96.9,
+      "noiseKept": 485,
+      "noiseKeptPct": 27.16,
+      "queriesWithNoRelevantInTop5": 0
+    },
+    {
+      "threshold": 0.45,
+      "relevantKeptPct": 89.1,
+      "noiseKept": 200,
+      "noiseKeptPct": 11.2,
+      "queriesWithNoRelevantInTop5": 1
+    },
+    {
+      "threshold": 0.5,
+      "relevantKeptPct": 81.3,
+      "noiseKept": 78,
+      "noiseKeptPct": 4.37,
+      "queriesWithNoRelevantInTop5": 2
+    },
+    {
+      "threshold": 0.55,
+      "relevantKeptPct": 65.6,
+      "noiseKept": 24,
+      "noiseKeptPct": 1.34,
+      "queriesWithNoRelevantInTop5": 8
+    },
+    {
+      "threshold": 0.6,
+      "relevantKeptPct": 54.7,
+      "noiseKept": 4,
+      "noiseKeptPct": 0.22,
+      "queriesWithNoRelevantInTop5": 9
+    }
+  ],
+  "perQuery": [
+    {
+      "query": "写代码的地方",
+      "relevant": [
+        "github",
+        "gitee"
+      ],
+      "top5": [
+        {
+          "id": "github",
+          "sim": 0.6204270842616815
+        },
+        {
+          "id": "gitee",
+          "sim": 0.5913793386088798
+        },
+        {
+          "id": "notion",
+          "sim": 0.5897024747826908
+        },
+        {
+          "id": "stackoverflow",
+          "sim": 0.5881194643591209
+        },
+        {
+          "id": "v2ex",
+          "sim": 0.5858768865186381
+        }
+      ],
+      "bestRel": 0.6204270842616815,
+      "bestNoise": 0.5897024747826908
+    },
+    {
+      "query": "代码托管",
+      "relevant": [
+        "github",
+        "gitee"
+      ],
+      "top5": [
+        {
+          "id": "gitee",
+          "sim": 0.6971572963378599
+        },
+        {
+          "id": "github",
+          "sim": 0.6890744581701678
+        },
+        {
+          "id": "notion",
+          "sim": 0.536136742535299
+        },
+        {
+          "id": "stackoverflow",
+          "sim": 0.48916793489993926
+        },
+        {
+          "id": "runoob",
+          "sim": 0.47249490248381554
+        }
+      ],
+      "bestRel": 0.6971572963378599,
+      "bestNoise": 0.536136742535299
+    },
+    {
+      "query": "前端开发文档",
+      "relevant": [
+        "mdn",
+        "runoob"
+      ],
+      "top5": [
+        {
+          "id": "mdn",
+          "sim": 0.6858775481183684
+        },
+        {
+          "id": "runoob",
+          "sim": 0.611239155583415
+        },
+        {
+          "id": "juejin",
+          "sim": 0.5987271588356926
+        },
+        {
+          "id": "notion",
+          "sim": 0.5951314304681239
+        },
+        {
+          "id": "kdocs",
+          "sim": 0.5626989208691917
+        }
+      ],
+      "bestRel": 0.6858775481183684,
+      "bestNoise": 0.5987271588356926
+    },
+    {
+      "query": "学编程的教程",
+      "relevant": [
+        "runoob",
+        "geektime"
+      ],
+      "top5": [
+        {
+          "id": "runoob",
+          "sim": 0.6544504421239744
+        },
+        {
+          "id": "stackoverflow",
+          "sim": 0.5161852264902151
+        },
+        {
+          "id": "dedao",
+          "sim": 0.4789857551356069
+        },
+        {
+          "id": "copilot",
+          "sim": 0.47751204906299244
+        },
+        {
+          "id": "geektime",
+          "sim": 0.4593665193096993
+        }
+      ],
+      "bestRel": 0.6544504421239744,
+      "bestNoise": 0.5161852264902151
+    },
+    {
+      "query": "程序员社区",
+      "relevant": [
+        "v2ex",
+        "juejin",
+        "stackoverflow"
+      ],
+      "top5": [
+        {
+          "id": "v2ex",
+          "sim": 0.6797469833901008
+        },
+        {
+          "id": "stackoverflow",
+          "sim": 0.668087068742018
+        },
+        {
+          "id": "juejin",
+          "sim": 0.538154318609597
+        },
+        {
+          "id": "copilot",
+          "sim": 0.5266791703052229
+        },
+        {
+          "id": "notion",
+          "sim": 0.5230419791549664
+        }
+      ],
+      "bestRel": 0.6797469833901008,
+      "bestNoise": 0.5266791703052229
+    },
+    {
+      "query": "问问题找答案",
+      "relevant": [
+        "zhihu",
+        "stackoverflow"
+      ],
+      "top5": [
+        {
+          "id": "zhihu",
+          "sim": 0.6809602630342626
+        },
+        {
+          "id": "stackoverflow",
+          "sim": 0.5222325256168814
+        },
+        {
+          "id": "tongyi",
+          "sim": 0.5087610552401284
+        },
+        {
+          "id": "dedao",
+          "sim": 0.4699621537812792
+        },
+        {
+          "id": "xiaohongshu",
+          "sim": 0.46298972326410887
+        }
+      ],
+      "bestRel": 0.6809602630342626,
+      "bestNoise": 0.5087610552401284
+    },
+    {
+      "query": "看视频弹幕",
+      "relevant": [
+        "bilibili"
+      ],
+      "top5": [
+        {
+          "id": "bilibili",
+          "sim": 0.5439542813688845
+        },
+        {
+          "id": "youku",
+          "sim": 0.5113847341850027
+        },
+        {
+          "id": "douyin",
+          "sim": 0.45539694688682886
+        },
+        {
+          "id": "dedao",
+          "sim": 0.39862560890627724
+        },
+        {
+          "id": "netease-music",
+          "sim": 0.3940872129824298
+        }
+      ],
+      "bestRel": 0.5439542813688845,
+      "bestNoise": 0.5113847341850027
+    },
+    {
+      "query": "短视频",
+      "relevant": [
+        "douyin",
+        "bilibili"
+      ],
+      "top5": [
+        {
+          "id": "douyin",
+          "sim": 0.619785250140747
+        },
+        {
+          "id": "youku",
+          "sim": 0.498095521416996
+        },
+        {
+          "id": "36kr",
+          "sim": 0.43319970748366704
+        },
+        {
+          "id": "bilibili",
+          "sim": 0.4324520021133367
+        },
+        {
+          "id": "geektime",
+          "sim": 0.43042519060091483
+        }
+      ],
+      "bestRel": 0.619785250140747,
+      "bestNoise": 0.498095521416996
+    },
+    {
+      "query": "网上购物",
+      "relevant": [
+        "taobao",
+        "jd",
+        "pdd"
+      ],
+      "top5": [
+        {
+          "id": "taobao",
+          "sim": 0.638193675481381
+        },
+        {
+          "id": "jd",
+          "sim": 0.5495406087046713
+        },
+        {
+          "id": "pdd",
+          "sim": 0.5467082205350948
+        },
+        {
+          "id": "eleme",
+          "sim": 0.5249455633703979
+        },
+        {
+          "id": "kuaidi",
+          "sim": 0.5162921743343656
+        }
+      ],
+      "bestRel": 0.638193675481381,
+      "bestNoise": 0.5249455633703979
+    },
+    {
+      "query": "买数码产品",
+      "relevant": [
+        "jd",
+        "taobao"
+      ],
+      "top5": [
+        {
+          "id": "jd",
+          "sim": 0.5433369000274005
+        },
+        {
+          "id": "pdd",
+          "sim": 0.4682641322062445
+        },
+        {
+          "id": "sspai",
+          "sim": 0.4675176616980089
+        },
+        {
+          "id": "36kr",
+          "sim": 0.4408552578426739
+        },
+        {
+          "id": "taobao",
+          "sim": 0.44039347945285195
+        }
+      ],
+      "bestRel": 0.5433369000274005,
+      "bestNoise": 0.4682641322062445
+    },
+    {
+      "query": "买菜外卖",
+      "relevant": [
+        "meituan",
+        "eleme"
+      ],
+      "top5": [
+        {
+          "id": "eleme",
+          "sim": 0.6389337669613259
+        },
+        {
+          "id": "meituan",
+          "sim": 0.6189774718442728
+        },
+        {
+          "id": "dianping",
+          "sim": 0.4425548127168395
+        },
+        {
+          "id": "runoob",
+          "sim": 0.43990572863231614
+        },
+        {
+          "id": "jd",
+          "sim": 0.4351310652425429
+        }
+      ],
+      "bestRel": 0.6389337669613259,
+      "bestNoise": 0.4425548127168395
+    },
+    {
+      "query": "评分看电影",
+      "relevant": [
+        "douban"
+      ],
+      "top5": [
+        {
+          "id": "douban",
+          "sim": 0.6001336867073808
+        },
+        {
+          "id": "dianping",
+          "sim": 0.4543246597721501
+        },
+        {
+          "id": "youku",
+          "sim": 0.4270280476360034
+        },
+        {
+          "id": "dedao",
+          "sim": 0.39773212886326564
+        },
+        {
+          "id": "zhihu",
+          "sim": 0.390235618925282
+        }
+      ],
+      "bestRel": 0.6001336867073808,
+      "bestNoise": 0.4543246597721501
+    },
+    {
+      "query": "美妆穿搭种草",
+      "relevant": [
+        "xiaohongshu"
+      ],
+      "top5": [
+        {
+          "id": "xiaohongshu",
+          "sim": 0.5023564555278099
+        },
+        {
+          "id": "taobao",
+          "sim": 0.4017414960232344
+        },
+        {
+          "id": "runoob",
+          "sim": 0.3476916699446244
+        },
+        {
+          "id": "meituan",
+          "sim": 0.34333957892323363
+        },
+        {
+          "id": "midjourney",
+          "sim": 0.33303775115719536
+        }
+      ],
+      "bestRel": 0.5023564555278099,
+      "bestNoise": 0.4017414960232344
+    },
+    {
+      "query": "听歌",
+      "relevant": [
+        "netease-music",
+        "qq-music"
+      ],
+      "top5": [
+        {
+          "id": "netease-music",
+          "sim": 0.5158105054552301
+        },
+        {
+          "id": "qq-music",
+          "sim": 0.46232831404691144
+        },
+        {
+          "id": "ximalaya",
+          "sim": 0.40434454494275857
+        },
+        {
+          "id": "youku",
+          "sim": 0.4030829999090192
+        },
+        {
+          "id": "dedao",
+          "sim": 0.39334872803452503
+        }
+      ],
+      "bestRel": 0.5158105054552301,
+      "bestNoise": 0.40434454494275857
+    },
+    {
+      "query": "听播客",
+      "relevant": [
+        "ximalaya"
+      ],
+      "top5": [
+        {
+          "id": "ximalaya",
+          "sim": 0.5861753682277064
+        },
+        {
+          "id": "netease-music",
+          "sim": 0.5061108402358206
+        },
+        {
+          "id": "geektime",
+          "sim": 0.5044143015247546
+        },
+        {
+          "id": "dedao",
+          "sim": 0.47756884917952463
+        },
+        {
+          "id": "youku",
+          "sim": 0.4725705302676683
+        }
+      ],
+      "bestRel": 0.5861753682277064,
+      "bestNoise": 0.5061108402358206
+    },
+    {
+      "query": "火车票",
+      "relevant": [
+        "12306"
+      ],
+      "top5": [
+        {
+          "id": "12306",
+          "sim": 0.6823723427793981
+        },
+        {
+          "id": "ctrip",
+          "sim": 0.5012961439451964
+        },
+        {
+          "id": "meituan",
+          "sim": 0.3895759551708936
+        },
+        {
+          "id": "kuaidi",
+          "sim": 0.36230901365913065
+        },
+        {
+          "id": "pdd",
+          "sim": 0.36072268014762704
+        }
+      ],
+      "bestRel": 0.6823723427793981,
+      "bestNoise": 0.5012961439451964
+    },
+    {
+      "query": "订酒店机票",
+      "relevant": [
+        "ctrip"
+      ],
+      "top5": [
+        {
+          "id": "ctrip",
+          "sim": 0.7285124221567243
+        },
+        {
+          "id": "12306",
+          "sim": 0.5337201261410103
+        },
+        {
+          "id": "meituan",
+          "sim": 0.4528585100948919
+        },
+        {
+          "id": "dianping",
+          "sim": 0.41100073475564874
+        },
+        {
+          "id": "amap",
+          "sim": 0.37950406246778373
+        }
+      ],
+      "bestRel": 0.7285124221567243,
+      "bestNoise": 0.5337201261410103
+    },
+    {
+      "query": "租房买房",
+      "relevant": [
+        "lianjia"
+      ],
+      "top5": [
+        {
+          "id": "lianjia",
+          "sim": 0.6022702988477097
+        },
+        {
+          "id": "xiaohongshu",
+          "sim": 0.42921769232928186
+        },
+        {
+          "id": "alipay",
+          "sim": 0.40856403273040176
+        },
+        {
+          "id": "jd",
+          "sim": 0.3935016260600171
+        },
+        {
+          "id": "taobao",
+          "sim": 0.37903167318026343
+        }
+      ],
+      "bestRel": 0.6022702988477097,
+      "bestNoise": 0.42921769232928186
+    },
+    {
+      "query": "找餐厅",
+      "relevant": [
+        "dianping"
+      ],
+      "top5": [
+        {
+          "id": "dianping",
+          "sim": 0.6272096737999661
+        },
+        {
+          "id": "meituan",
+          "sim": 0.6012141743604658
+        },
+        {
+          "id": "eleme",
+          "sim": 0.5464945300060331
+        },
+        {
+          "id": "kuaidi",
+          "sim": 0.4489318550831147
+        },
+        {
+          "id": "ctrip",
+          "sim": 0.44394662174162114
+        }
+      ],
+      "bestRel": 0.6272096737999661,
+      "bestNoise": 0.6012141743604658
+    },
+    {
+      "query": "地图导航",
+      "relevant": [
+        "amap"
+      ],
+      "top5": [
+        {
+          "id": "amap",
+          "sim": 0.709214267508742
+        },
+        {
+          "id": "baidu",
+          "sim": 0.4472374734011034
+        },
+        {
+          "id": "ctrip",
+          "sim": 0.43734542133382664
+        },
+        {
+          "id": "geektime",
+          "sim": 0.4185554531513952
+        },
+        {
+          "id": "runoob",
+          "sim": 0.41736664793561795
+        }
+      ],
+      "bestRel": 0.709214267508742,
+      "bestNoise": 0.4472374734011034
+    },
+    {
+      "query": "查快递",
+      "relevant": [
+        "kuaidi"
+      ],
+      "top5": [
+        {
+          "id": "kuaidi",
+          "sim": 0.6849053723242648
+        },
+        {
+          "id": "jd",
+          "sim": 0.5251403131708886
+        },
+        {
+          "id": "taobao",
+          "sim": 0.48815678382816224
+        },
+        {
+          "id": "12306",
+          "sim": 0.46804055873356865
+        },
+        {
+          "id": "eleme",
+          "sim": 0.46468655829712857
+        }
+      ],
+      "bestRel": 0.6849053723242648,
+      "bestNoise": 0.5251403131708886
+    },
+    {
+      "query": "今天天气",
+      "relevant": [
+        "weather"
+      ],
+      "top5": [
+        {
+          "id": "weather",
+          "sim": 0.5356276529346671
+        },
+        {
+          "id": "ruanyifeng",
+          "sim": 0.3621491820233423
+        },
+        {
+          "id": "zhihu",
+          "sim": 0.3269409551728785
+        },
+        {
+          "id": "youku",
+          "sim": 0.3163706784034441
+        },
+        {
+          "id": "weibo",
+          "sim": 0.31329600833507054
+        }
+      ],
+      "bestRel": 0.5356276529346671,
+      "bestNoise": 0.3621491820233423
+    },
+    {
+      "query": "在线设计海报",
+      "relevant": [
+        "canva",
+        "figma"
+      ],
+      "top5": [
+        {
+          "id": "canva",
+          "sim": 0.6658769449849304
+        },
+        {
+          "id": "figma",
+          "sim": 0.5890144522244243
+        },
+        {
+          "id": "midjourney",
+          "sim": 0.4769549912784857
+        },
+        {
+          "id": "huxiu",
+          "sim": 0.4741610954410126
+        },
+        {
+          "id": "36kr",
+          "sim": 0.4386900527872104
+        }
+      ],
+      "bestRel": 0.6658769449849304,
+      "bestNoise": 0.4769549912784857
+    },
+    {
+      "query": "UI 设计工具",
+      "relevant": [
+        "figma",
+        "canva"
+      ],
+      "top5": [
+        {
+          "id": "figma",
+          "sim": 0.7024831311354515
+        },
+        {
+          "id": "canva",
+          "sim": 0.5928405777388999
+        },
+        {
+          "id": "midjourney",
+          "sim": 0.5633475537316516
+        },
+        {
+          "id": "notion",
+          "sim": 0.4873315368433658
+        },
+        {
+          "id": "deepseek",
+          "sim": 0.4694001439430737
+        }
+      ],
+      "bestRel": 0.7024831311354515,
+      "bestNoise": 0.5633475537316516
+    },
+    {
+      "query": "记笔记软件",
+      "relevant": [
+        "notion",
+        "kdocs"
+      ],
+      "top5": [
+        {
+          "id": "notion",
+          "sim": 0.6221239092092804
+        },
+        {
+          "id": "copilot",
+          "sim": 0.4405721799911782
+        },
+        {
+          "id": "tencent-cloud",
+          "sim": 0.42834344328351004
+        },
+        {
+          "id": "sspai",
+          "sim": 0.4273083974514792
+        },
+        {
+          "id": "midjourney",
+          "sim": 0.4148078065432925
+        }
+      ],
+      "bestRel": 0.6221239092092804,
+      "bestNoise": 0.4405721799911782
+    },
+    {
+      "query": "AI 聊天助手",
+      "relevant": [
+        "chatgpt",
+        "claude",
+        "tongyi"
+      ],
+      "top5": [
+        {
+          "id": "chatgpt",
+          "sim": 0.6703689364904158
+        },
+        {
+          "id": "deepseek",
+          "sim": 0.5958523058587691
+        },
+        {
+          "id": "copilot",
+          "sim": 0.5883934687071763
+        },
+        {
+          "id": "claude",
+          "sim": 0.5621141404734585
+        },
+        {
+          "id": "tongyi",
+          "sim": 0.5607534895243873
+        }
+      ],
+      "bestRel": 0.6703689364904158,
+      "bestNoise": 0.5958523058587691
+    },
+    {
+      "query": "AI 画图",
+      "relevant": [
+        "midjourney"
+      ],
+      "top5": [
+        {
+          "id": "midjourney",
+          "sim": 0.6506497631409087
+        },
+        {
+          "id": "canva",
+          "sim": 0.5833981216856527
+        },
+        {
+          "id": "copilot",
+          "sim": 0.5682091565354629
+        },
+        {
+          "id": "chatgpt",
+          "sim": 0.5373273507768113
+        },
+        {
+          "id": "claude",
+          "sim": 0.5185484297166867
+        }
+      ],
+      "bestRel": 0.6506497631409087,
+      "bestNoise": 0.5833981216856527
+    },
+    {
+      "query": "AI 写代码",
+      "relevant": [
+        "copilot",
+        "deepseek"
+      ],
+      "top5": [
+        {
+          "id": "copilot",
+          "sim": 0.6775315407948521
+        },
+        {
+          "id": "claude",
+          "sim": 0.6268172799852534
+        },
+        {
+          "id": "chatgpt",
+          "sim": 0.6200311819807389
+        },
+        {
+          "id": "deepseek",
+          "sim": 0.6159920443521206
+        },
+        {
+          "id": "github",
+          "sim": 0.585128335311153
+        }
+      ],
+      "bestRel": 0.6775315407948521,
+      "bestNoise": 0.6268172799852534
+    },
+    {
+      "query": "云服务器",
+      "relevant": [
+        "aliyun",
+        "tencent-cloud"
+      ],
+      "top5": [
+        {
+          "id": "aliyun",
+          "sim": 0.6913058271964659
+        },
+        {
+          "id": "tencent-cloud",
+          "sim": 0.6785226286039807
+        },
+        {
+          "id": "gitee",
+          "sim": 0.6156376607873332
+        },
+        {
+          "id": "tongyi",
+          "sim": 0.5184108089830908
+        },
+        {
+          "id": "netease-music",
+          "sim": 0.5098170556790493
+        }
+      ],
+      "bestRel": 0.6913058271964659,
+      "bestNoise": 0.6156376607873332
+    },
+    {
+      "query": "科技新闻",
+      "relevant": [
+        "36kr",
+        "huxiu"
+      ],
+      "top5": [
+        {
+          "id": "ruanyifeng",
+          "sim": 0.5062786800924917
+        },
+        {
+          "id": "huxiu",
+          "sim": 0.5053956448933052
+        },
+        {
+          "id": "36kr",
+          "sim": 0.44900519222546326
+        },
+        {
+          "id": "weibo",
+          "sim": 0.4254343456968879
+        },
+        {
+          "id": "csdn",
+          "sim": 0.3997879883377256
+        }
+      ],
+      "bestRel": 0.5053956448933052,
+      "bestNoise": 0.5062786800924917
+    },
+    {
+      "query": "效率工具",
+      "relevant": [
+        "sspai",
+        "notion"
+      ],
+      "top5": [
+        {
+          "id": "notion",
+          "sim": 0.4987572215961032
+        },
+        {
+          "id": "figma",
+          "sim": 0.43031690622021773
+        },
+        {
+          "id": "sspai",
+          "sim": 0.4280351120565974
+        },
+        {
+          "id": "midjourney",
+          "sim": 0.3984177922404174
+        },
+        {
+          "id": "copilot",
+          "sim": 0.3937274703867689
+        }
+      ],
+      "bestRel": 0.4987572215961032,
+      "bestNoise": 0.43031690622021773
+    },
+    {
+      "query": "技术博客",
+      "relevant": [
+        "ruanyifeng",
+        "csdn",
+        "juejin"
+      ],
+      "top5": [
+        {
+          "id": "ruanyifeng",
+          "sim": 0.6367040221154581
+        },
+        {
+          "id": "csdn",
+          "sim": 0.6146602831014231
+        },
+        {
+          "id": "geektime",
+          "sim": 0.5771141090706708
+        },
+        {
+          "id": "juejin",
+          "sim": 0.56640096882897
+        },
+        {
+          "id": "v2ex",
+          "sim": 0.5415777614381013
+        }
+      ],
+      "bestRel": 0.6367040221154581,
+      "bestNoise": 0.5771141090706708
+    },
+    {
+      "query": "知识付费课程",
+      "relevant": [
+        "dedao",
+        "geektime"
+      ],
+      "top5": [
+        {
+          "id": "dedao",
+          "sim": 0.7508032173614659
+        },
+        {
+          "id": "runoob",
+          "sim": 0.5052071164925197
+        },
+        {
+          "id": "alipay",
+          "sim": 0.47921440280006894
+        },
+        {
+          "id": "36kr",
+          "sim": 0.4679452259357009
+        },
+        {
+          "id": "geektime",
+          "sim": 0.46743617184618175
+        }
+      ],
+      "bestRel": 0.7508032173614659,
+      "bestNoise": 0.5052071164925197
+    },
+    {
+      "query": "手机支付",
+      "relevant": [
+        "alipay"
+      ],
+      "top5": [
+        {
+          "id": "alipay",
+          "sim": 0.6245005696565658
+        },
+        {
+          "id": "dedao",
+          "sim": 0.4476571166794192
+        },
+        {
+          "id": "tencent-cloud",
+          "sim": 0.43532377423440316
+        },
+        {
+          "id": "jd",
+          "sim": 0.42773990625954267
+        },
+        {
+          "id": "gitee",
+          "sim": 0.42301770296359703
+        }
+      ],
+      "bestRel": 0.6245005696565658,
+      "bestNoise": 0.4476571166794192
+    },
+    {
+      "query": "看电影电视剧",
+      "relevant": [
+        "youku",
+        "bilibili"
+      ],
+      "top5": [
+        {
+          "id": "youku",
+          "sim": 0.4260544172000554
+        },
+        {
+          "id": "douban",
+          "sim": 0.31179782846654425
+        },
+        {
+          "id": "bilibili",
+          "sim": 0.27027955168282414
+        },
+        {
+          "id": "dedao",
+          "sim": 0.25664918285437543
+        },
+        {
+          "id": "jd",
+          "sim": 0.25540875857340023
+        }
+      ],
+      "bestRel": 0.4260544172000554,
+      "bestNoise": 0.31179782846654425
+    },
+    {
+      "query": "新闻热点",
+      "relevant": [
+        "weibo",
+        "36kr"
+      ],
+      "top5": [
+        {
+          "id": "weibo",
+          "sim": 0.6013180133943757
+        },
+        {
+          "id": "huxiu",
+          "sim": 0.5030453467569954
+        },
+        {
+          "id": "weather",
+          "sim": 0.47136775830466915
+        },
+        {
+          "id": "36kr",
+          "sim": 0.45826995299831547
+        },
+        {
+          "id": "dianping",
+          "sim": 0.44320037131103673
+        }
+      ],
+      "bestRel": 0.6013180133943757,
+      "bestNoise": 0.5030453467569954
+    },
+    {
+      "query": "搜索资料",
+      "relevant": [
+        "baidu"
+      ],
+      "top5": [
+        {
+          "id": "baidu",
+          "sim": 0.626824473822185
+        },
+        {
+          "id": "huxiu",
+          "sim": 0.5103820017854004
+        },
+        {
+          "id": "kuaidi",
+          "sim": 0.5063161133657083
+        },
+        {
+          "id": "dedao",
+          "sim": 0.49705690648241974
+        },
+        {
+          "id": "notion",
+          "sim": 0.48182524613436944
+        }
+      ],
+      "bestRel": 0.626824473822185,
+      "bestNoise": 0.5103820017854004
+    }
+  ]
+}

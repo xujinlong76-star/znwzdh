@@ -1,0 +1,31 @@
+{
+  "startedAt": "2026-10-29T19:47:04.450Z",
+  "assertions": [
+    {
+      "name": "单价簿在 legacy 已配置时显示单一价徽标",
+      "ok": true
+    },
+    {
+      "name": "legacy 来源：成本卡写明单一价并指引单价簿",
+      "ok": true,
+      "detail": {
+        "sample": "按旧版单一价 ¥0.003/1K tokens 估算（输入输出同价；在「模型单价簿」配置分模型单价后更准）"
+      }
+    },
+    {
+      "name": "none 来源：金额显示「未配置」且不报假 ¥ 数",
+      "ok": true,
+      "detail": {
+        "sample": "预估折合资费\n未配置\n尚未填写单价：在「模型单价簿」按模型配置输入/输出单价（或NAVHUB_LLM_COST_PER_1K_TOKENS）设好后才能折算\nAI 额度闸门（24 小时滚动窗口）\n上限由 NAVHUB_LLM_QUOTA_* 配置，改完需重启中枢\n单身份档\n按人计量\n\n登录用户与带匿名标识的访客，每人各自计数\n\n次数: 上限 300 次（按人分别计量）\nToken: 上限 1,500"
+      }
+    },
+    {
+      "name": "none 来源：指向模型单价簿 / 环境变量",
+      "ok": true,
+      "detail": null
+    }
+  ],
+  "errors": [],
+  "finishedAt": "2026-10-29T19:47:11.538Z",
+  "ok": true
+}

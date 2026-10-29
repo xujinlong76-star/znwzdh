@@ -154,15 +154,29 @@ async function main() {
   if (!pub.first429At) {
     console.log('– 阶段 4 跳过：阶段 1 没能打穿额度，「代理有没有被豁免」在这种额度下不可判（不谎报为通过）');
   } else {
-    const proxied = await hammer(`${opts.webBase}/api/hub/sites?page=1&pageSize=1`, {
+    /**
+     * 打 **scope=public** 的路由（/api/categories），不是 /api/sites。
+     *
+     * /api/sites 在枢纽的 scope 是 read，而代理对 read/write/admin 一律要求管理员会话
+     * （b8c0ef36 的安全边界）。匿名打它会停在策略门禁上：401 HUB_ROUTE_FORBIDDEN，
+     * **请求根本没到限流器**。于是这条检查永远看不到 429，把「门禁生效」误报成
+     * 「代理被豁免」——2026-10-29 的 CI 红就是这么来的（实测 401×60）。
+     * 只有 public 路由能穿过门禁，才真的能观察到限流是否作用在代理上。
+     */
+    const proxied = await hammer(`${opts.webBase}/api/hub/categories`, {
       count: opts.hammer,
       headers: {},
     });
     console.log(`· 阶段 4 /api/hub 代理 ${opts.hammer} 次（不带凭据）→ ${summarizeStatuses(proxied.statuses)}`);
     if (!proxied.first429At) {
+      const codes = [...proxied.statuses.keys()];
+      const allBlocked = codes.length > 0 && codes.every((c) => c === 401 || c === 403);
       failures.push(
-        `阶段 4 不成立：浏览器侧 /api/hub/* 代理猛打 ${opts.hammer} 次一次 429 都没有（同一时刻直连中枢会被挡）—— ` +
-          `要么代理自己附带了 ${HEADER}（把全站访客标成内部流量），要么豁免判据放宽到了 IP 段。这是安全边界，不是性能问题`,
+        allBlocked
+          ? `阶段 4 不成立：代理把 ${opts.hammer} 次匿名请求全部挡成 ${codes.join('/')}—— 请求没到限流器，` +
+              `这条检查观察不到豁免。检查目标必须选 scope=public 的路由（见本段注释），换回 read 路由就会重现这个假红`
+          : `阶段 4 不成立：浏览器侧 /api/hub/* 代理猛打 ${opts.hammer} 次一次 429 都没有（同一时刻直连中枢会被挡）—— ` +
+              `要么代理自己附带了 ${HEADER}（把全站访客标成内部流量），要么豁免判据放宽到了 IP 段。这是安全边界，不是性能问题`,
       );
     }
   }

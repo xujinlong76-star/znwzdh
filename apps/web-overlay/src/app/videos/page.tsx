@@ -6,6 +6,7 @@ import { getProcessedData } from '@/lib/data-loader'
 import { getFileContent, readStorageFresh } from '@/lib/github'
 import { withSignedVideoIcons } from '@/lib/media-proxy'
 import { pageShareMetadata } from '@/lib/seo/metadata'
+import type { NavigationData } from '@/types/navigation'
 
 /**
  * NavHub 改动：数据改为从中枢异步读取（原为 import 构建期静态 JSON），

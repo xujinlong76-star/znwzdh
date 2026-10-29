@@ -114,6 +114,13 @@ jobs:
       - name: 红灯光谱（Step Summary）
         if: ${{ !cancelled() }}
         run: node scripts/junit-summary.mjs junit-sqlite-${{ matrix.shard }}.xml
+      # 跨轮对比：junit-summary 只说「这一次红了什么」，说不出「是不是这一轮才红的」。
+      # 本步骤拿 docs/ci-red-ledger.json 对账，台账之外的红（含同用例换因）直接判红。
+      # 分片视角只看得见自己那一片，所以 check 模式不判定「已修复」——修复由
+      # 全量产物下的人工/定时 --update 落账。
+      - name: 红灯台账（跨轮对比）
+        if: ${{ !cancelled() }}
+        run: node scripts/ci-red-ledger.mjs --from junit-sqlite-${{ matrix.shard }}.xml --require-no-new
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() }}
         with:
@@ -630,6 +637,12 @@ jobs:
       - name: 红灯光谱（Step Summary）
         if: ${{ !cancelled() }}
         run: node scripts/junit-summary.mjs junit-e2e-${{ matrix.shard }}.xml
+      # 同单元测试：与 docs/ci-red-ledger.json 对账，台账之外的红判失败。
+      # E2E 的 flake 历史上很常见（见 2026-10-23 的徽章 toast 间歇红），
+      # 台账正是为了让「每轮都红的已知项」不再淹没「本轮新引入的红」。
+      - name: 红灯台账（跨轮对比）
+        if: ${{ !cancelled() }}
+        run: node scripts/ci-red-ledger.mjs --from junit-e2e-${{ matrix.shard }}.xml --require-no-new
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() }}
         with:

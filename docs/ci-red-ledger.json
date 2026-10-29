@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-29",
+  "entries": [
+    {
+      "id": "apps/web/test/admin-category-impact.test.ts :: 接线：先预览影响，再确认，最后才停用 > 管理页停用路径按 impact → prompt → PATCH 的顺序接线",
+      "file": "apps/web/test/admin-category-impact.test.ts",
+      "case": "接线：先预览影响，再确认，最后才停用 > 管理页停用路径按 impact → prompt → PATCH 的顺序接线",
+      "signature": "expected -1 to be greater than -1",
+      "message": "expected -1 to be greater than -1",
+      "owner": "待提交该源码的会话（xujinlong76-star）",
+      "firstSeen": "2026-10-29",
+      "lastSeen": "2026-10-29",
+      "expiresAt": "2026-11-05",
+      "note": "管理页停用接线源码未提交（impact→prompt→PATCH），测试已提交、源码在别人暂存区（commit atomicity 闸门已能拦同型事故，但历史提交无法追补）"
+    },
+    {
+      "id": "apps/web/test/admin-category-impact.test.ts :: 接线：先预览影响，再确认，最后才停用 > 取消或名字不一致时不发送停用请求",
+      "file": "apps/web/test/admin-category-impact.test.ts",
+      "case": "接线：先预览影响，再确认，最后才停用 > 取消或名字不一致时不发送停用请求",
+      "signature": "expected '\\'use client\\'\\n\\n/**\\n * 管理端：分类树与 SK…' to contain 'if (typed === null) return'",
+      "message": "expected '\\'use client\\'\\n\\n/**\\n * 管理端：分类树与 SK…' to contain 'if (typed === null) return'",
+      "owner": "待提交该源码的会话（xujinlong76-star）",
+      "firstSeen": "2026-10-29",
+      "lastSeen": "2026-10-29",
+      "expiresAt": "2026-11-05",
+      "note": "管理页停用接线源码未提交（impact→prompt→PATCH），测试已提交、源码在别人暂存区（commit atomicity 闸门已能拦同型事故，但历史提交无法追补）"
+    },
+    {
+      "id": "apps/web/test/admin-category-impact.test.ts :: 接线：先预览影响，再确认，最后才停用 > 写完后的 reload 绕过 60s 浏览器缓存（否则行状态会晚 60 秒才变）",
+      "file": "apps/web/test/admin-category-impact.test.ts",
+      "case": "接线：先预览影响，再确认，最后才停用 > 写完后的 reload 绕过 60s 浏览器缓存（否则行状态会晚 60 秒才变）",
+      "signature": "expected '\\'use client\\'\\n\\n/**\\n * 管理端：分类树与 SK…' to contain '\\'/api/categories?ts=\\' + Date.now()'",
+      "message": "expected '\\'use client\\'\\n\\n/**\\n * 管理端：分类树与 SK…' to contain '\\'/api/categories?ts=\\' + Date.now()'",
+      "owner": "待提交该源码的会话（xujinlong76-star）",
+      "firstSeen": "2026-10-29",
+      "lastSeen": "2026-10-29",
+      "expiresAt": "2026-11-05",
+      "note": "管理页停用接线源码未提交（impact→prompt→PATCH），测试已提交、源码在别人暂存区（commit atomicity 闸门已能拦同型事故，但历史提交无法追补）"
+    },
+    {
+      "id": "apps/web/test/url-hygiene.test.ts :: 这一批补齐的出口：确实换成了公共安全闸 > src/app/admin/videos/[id]/items/page.tsx 用上了 safeHref(item.href",
+      "file": "apps/web/test/url-hygiene.test.ts",
+      "case": "这一批补齐的出口：确实换成了公共安全闸 > src/app/admin/videos/[id]/items/page.tsx 用上了 safeHref(item.href",
+      "signature": "src/app/admin/videos/[id]/items/page.tsx: expected '\\'use client\\'\\n\\nexport const runtim…' to contain 'safeHref(item.href'",
+      "message": "src/app/admin/videos/[id]/items/page.tsx: expected '\\'use client\\'\\n\\nexport const runtim…' to contain 'safeHref(item.href'",
+      "owner": "待提交该源码的会话（xujinlong76-star）",
+      "firstSeen": "2026-10-29",
+      "lastSeen": "2026-10-29",
+      "expiresAt": "2026-11-05",
+      "note": "items 页 safeHref 改造的源码仍在并行会话暂存区未提交（HEAD blob 里没有 safeHref），本地该用例绿"
+    }
+  ]
+}

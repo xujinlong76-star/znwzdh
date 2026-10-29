@@ -137,6 +137,22 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 | `audit` | 必须 `--registry=https://registry.npmjs.org`；已知例外 `GHSA-vfj7-8cjw-p6xm`（braces，dev-only）用 `--ignore` | 改 `.npmrc` 或去掉 `--registry` 会得到假红 |
 | 覆盖率（新增） | 退出码 **2 = 找不到产物**（查 `reportsDirectory` / 清理开关 / `--max-age`）；**1 = 真低于阈值**（`--zero 20` 定位文件） | 禁止在同一 PR 里下调阈值；要么补测，要么单独 PR 说明 |
 
+### 5.1 红灯台账（跨轮对比）
+
+`test-sqlite` 与 `test-e2e` 在 `红灯光谱` 之后各跑一次
+`node scripts/ci-red-ledger.mjs --from <junit> --require-no-new`，对照跟踪路径上的
+`docs/ci-red-ledger.json`：
+
+- **新增 / 换因**（同一用例、错误指纹变了）→ 步骤红。分片视角只看得到自己那一片，所以
+  check 模式**不判定「已修复」**；修复要等全量产物下 `--update` 才会从台账移除。
+- **已知红**只进 Step Summary，不额外判红（它已经由测试步骤判过了）。
+- **台账缺失 / 形状不合法 → rc 2**（不能把「没账」当成「没有新红」）。
+- 过期账：`--strict-ttl` 时过期未修判红（默认只报告）。
+
+维护方式：修完一批已知红后全量跑一次并
+`node scripts/ci-red-ledger.mjs --from <全部分片的 junit> --update --ttl-days 7`，
+把结果连同 owner 一起提交。**不要**为了变绿手工删条目——删条目等于宣称已修复。
+
 ---
 
 ## 6. 部署前 Go/No-Go

@@ -307,12 +307,13 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 | --- | --- | --- | --- |
 | POST | `/api/submissions` | 匿名投稿 → `status=pending, source=submission` 入审核队列；重复 URL **409** | **5 次/小时/IP** |
 | GET | `/api/submissions` | **审核队列数据源**（`status=pending\|approved\|rejected\|all`，非法值 400）：只返回 `source=submission` 的站点，返回与 GitHub 通道同形状（`success` + `submissions`，`number` = `site.id` 的数值 hash），非法 → 400 | read |
-| PATCH | `/api/submissions/:number` | **审核**（`action: approve\|reject`，`reason?`）：按 hash number 反查真实 site id → 改 `active/archived` → 落 `submission.approve/reject` 审计；`:number` 找不到 → 404 | write |
+| PATCH | `/api/submissions/:number` | **审核**（`action: approve\|reject`，`reason?`）：按 hash number 反查真实 site id → 改 `active/archived` → 落 `submission.approve/reject` 审计；`:number` 找不到 → 404 | admin |
 | POST | `/api/enrich` | 仅抓取 + 富化（不入库），返回 `provenance` | 20/min |
 | POST | `/api/sites/auto` | **一步到位**：抓取 + 富化 + 分类解析 + 入库（`source: "ai"`） | 15/min |
 
 > **收编意义**：审核队列原走 Next 自己的 `/api/submissions/[number]` 路由（GitHub 通道），山羊胡回退通道此前直接拿 hash number 调 `/api/sites/:id` → **必然 404，审核按钮静默失效**。现在两端统一走中枢的 GET/PATCH，审核动作**落审计**（此前无审计）。
 > hash 规则两端必须一致：中枢 `submissionNumber()` 与前端 `hashNumericId()` 同为 djb2 变体（`((hash<<5)-hash)+ch`），有测试锁定（见 `投稿审核收编中枢` describe）。
+> **权限**：审核是实例域动作，因此是 `admin` 而不是 `write`。这条路由曾登记为「个人 write 令牌唯一例外」，理由写「作者改自己的投稿」——该能力从未实现（处理体只接受 approve/reject 且无归属校验），例外等于让投稿人自审自批并发布进索引（2026-10-28 移除；`PERSONAL_TOKEN_WRITE_ROUTES` 现为空）。
 
 `/api/sites/auto` 的分类解析链：调用方指定 → 富化建议**唯一**匹配已有类目（标题或 SKOS altLabel）→ 否则落「未分类」并记一条 `category_gap` 提案。
 建议名不再自动建成类目：那是层级坍塌的入口（模型每次发挥就多一根一级根），改由人工在 `admin/taxonomy` 选定父级后采纳；重名歧义（实测「语言」×3）也走提案而不是静默挑一个。

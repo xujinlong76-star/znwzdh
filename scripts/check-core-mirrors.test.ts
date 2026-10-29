@@ -327,10 +327,12 @@ describe("真实 CLI：--baseline 的失败关闭", () => {
 });
 
 describe("真实仓库 plumbing", () => {
-  it("HEAD 模式把 13 条腿的 blob 全读到，且一条「web 缺失」都不许有", () => {
+  it("HEAD 模式把每条腿的 blob 全读到，且一条「web 缺失」都不许有", () => {
     const { contents, result } = run();
-    expect(contents.size).toBe(26);
-    expect(result.plans).toHaveLength(13);
+    // 钉**关系**不钉条数：镜像对本来就会加（13 → 14 时这条把仓库自己拦下）。
+    // 要钉的是「每条腿的两个 blob 都读到了」与「没有 web 缺失」。
+    expect(result.plans.length).toBeGreaterThanOrEqual(13);
+    expect(contents.size).toBe(result.plans.length * 2);
     const text = JSON.stringify(result.plans.map((p: { reasons: string[] }) => p.reasons));
     expect(text).not.toContain("web 缺失");
   });

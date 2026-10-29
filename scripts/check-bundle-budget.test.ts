@@ -139,6 +139,83 @@ globalThis.__RSC_MANIFEST["/hot/page"] = { clientModules: {
   });
 });
 
+describe("check-bundle-budget：CI 注解（超限结论要能被只读 annotations 的归因工具看见）", () => {
+  /** 门禁模式（非 --json）跑一遍，返回退出码与合并后的输出 */
+  function runGate(root: string, env: Record<string, string>): { code: number; out: string } {
+    const res = spawnSync(process.execPath, [SCRIPT], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, NEXT_DIST_DIR: "fixture-dist", ...env },
+    });
+    return { code: res.status ?? -1, out: (res.stdout ?? "") + (res.stderr ?? "") };
+  }
+
+  /** 一份「/ 超预算」的最小产物；预算写成多行 JSON，注解才锚得到具体阈值行 */
+  function makeOverBudgetRoot(): string {
+    const root = makeRoot();
+    write(root, "scripts/bundle-budget.json", JSON.stringify({ default: 10_000, routes: { "/": 1000 } }, null, 2));
+    const dist = "apps/web/fixture-dist";
+    write(
+      root,
+      `${dist}/build-manifest.json`,
+      JSON.stringify({ rootMainFiles: ["/_next/static/chunks/framework.js"], pagesChunkGroupBootstrapParams: { "/page": {} } }),
+    );
+    // 1.2 MB 对 1000 B 的阈值：差得足够远，kb() 取整后两条数字仍然分得开（否则注解文案自相矛盾）
+    write(root, `${dist}/static/chunks/framework.js`, bytes(1_200_000));
+    write(
+      root,
+      `${dist}/server/app/page_client-reference-manifest.js`,
+      `globalThis.__RSC_MANIFEST = {"/page": { clientModules: {} }};`,
+    );
+    return root;
+  }
+
+  it("GITHUB_ACTIONS=true：每条超限写一条失败级注解，锚在阈值行上", () => {
+    const root = makeOverBudgetRoot();
+    try {
+      const { code, out } = runGate(root, { GITHUB_ACTIONS: "true" });
+      expect(code).toBe(1);
+      // 行号 4 是 routes["/"] 在那份多行 JSON 里的真实位置：注解点得进去才知道改哪一条
+      expect(out).toContain("::error file=scripts/bundle-budget.json,line=4,title=首屏预算超限 /::");
+      expect(out).toContain("实测 1172 KB > 预算 1 KB");
+      expect(out).toContain("node scripts/check-bundle-budget.mjs --report");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("本地不打印注解：否则每次跑门禁都多出 ::error 噪音（测试自己也可能跑在 CI 里，所以显式关掉）", () => {
+    const root = makeOverBudgetRoot();
+    try {
+      const { code, out } = runGate(root, { GITHUB_ACTIONS: "false" });
+      expect(code).toBe(1);
+      expect(out).not.toContain("::error");
+      // 结论仍然完整地在人读的清单里：注解是给工具的第二通道，不是替代
+      expect(out).toContain("  - /: 1172 KB > 1 KB");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("--json 的 stdout 永远是纯 JSON：CI 里也不能把注解混进机器可读通道", () => {
+    // 采集方（bundle-budget-summary.mjs 与测试自己）直接 JSON.parse(stdout)，
+    // 注解行一旦走进来就是「账读不出来」级别的红。
+    const root = makeOverBudgetRoot();
+    try {
+      const res = spawnSync(process.execPath, [SCRIPT, "--json"], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, NEXT_DIST_DIR: "fixture-dist", GITHUB_ACTIONS: "true" },
+      });
+      const parsed = JSON.parse(res.stdout);
+      expect(parsed.violations).toHaveLength(1);
+      expect(res.stdout).not.toContain("::error");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("check-bundle-budget：webpack 兼容", () => {
   it("无 build-manifest 时回退 app-build-manifest 并排除异步 chunk", () => {
     const root = makeRoot();

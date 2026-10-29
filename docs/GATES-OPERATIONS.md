@@ -229,7 +229,7 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 |---|---|---|
 | `test-sqlite` | 按步骤定位：typecheck → lint:backend（`continue-on-error`，不会红）→ vendor → vitest → build。`Cannot find package '@/lib/auth'` = 忘了 `node scripts/vendor-web.mjs`；build 红 = 声明导出/入口路径坏 | `lint:backend` 是 warning 级，红了也不是它 |
 | `test-postgres` | 先看是 `test:pg:suite` 还是 `test:pg` 红。suite 报「未设置 `NAVHUB_TEST_DATABASE_URL` —— 拒绝执行」= **作业配置坏了**，不是代码；有 URL 仍红 = 真跨方言缺陷 | 把变量设成 `DATABASE_URL` 是死变量，套件整体 skip → 假绿，绝不能这样「修」 |
-| `test-web` | 按步骤序：tsc → eslint（warning 不卡）→ `next build` → bundle budget → `check-isr-routes`。budget 红**不许上调** `scripts/bundle-budget.json`；ISR 红 = 某收录型路由从 ● 退化成 ƒ，或页面签名读了 `searchParams` | `next.config` 的 `ignoreBuildErrors` 只影响 build，不影响 tsc 步骤 |
+| `test-web` | 按步骤序：tsc → eslint（warning 不卡）→ `next build` → bundle budget → `check-isr-routes`。budget 红**不许上调** `scripts/bundle-budget.json`；2026-10-30 起每条超限路由单独写一条 `::error file=scripts/bundle-budget.json,line=<阈值行>::`（本地不打），所以没 token 也能从 annotation 直接看出是哪几条路由超了多少；ISR 红 = 某收录型路由从 ● 退化成 ƒ，或页面签名读了 `searchParams` | `next.config` 的 `ignoreBuildErrors` 只影响 build，不影响 tsc 步骤。**eslint 那一步红不起来**（基线 0 error / 800+ warning），annotation 里的警告文案不是判红原因 |
 | `check-web-overlay` | 报错会列出不一致文件：先问「是不是直接改了 `apps/web`」。事实源是 `apps/web-overlay/`，改 overlay 后重跑 `node scripts/vendor-web.mjs`；再查 `sync-core-mirrors --check` 与 `check-upstream-ref` | `apps/web` 是 gitignore 生成物，全新检出必须 vendor 后才能比对 |
 | `check-isr-live` | 读 3 条 `::error::` 做三层归因：①判据数字（rc / sitemap 条目数 / 红行数）②输出尾部 600 字符 ③收录面族计数。族整族归零但抽到的页全绿 = sitemap 生成侧问题；`120s 内没有 /site/*` = 中枢失联或 seed 空，看 `tail /tmp/hub.log /tmp/web.log` | 限流阶段 `rc=2` = 缺 `NAVHUB_INTERNAL_TOKEN`；「预检失败…是降级壳」= web 没吃到豁免，先查 3000 端口占用者，别怀疑业务代码；**不要**重启 web 来「修」（凭据是模块顶层常量，只在启动时读一次） |
 | `test-e2e` | 读 annotation 的「失败用例：」清单与「报错抽样」，本地 `node scripts/e2e-local.mjs -- <spec> --grep "<标题>"` 单跑；下载 `playwright-report` 产物 | 全量共享 server，超时类红灯先看是否被前一个 spec 拖慢，不一定是断言错 |
@@ -260,6 +260,23 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 维护方式：修完一批已知红后全量跑一次并
 `node scripts/ci-red-ledger.mjs --from <全部分片的 junit> --update --ttl-days 7`，
 把结果连同 owner 一起提交。**不要**为了变绿手工删条目——删条目等于宣称已修复。
+
+### 5.2 归因头的级别：警告不许冒充判红原因
+
+`explain-ci-failure.mjs` 的取头规则（`scripts/lib/ci-attribution.mjs`）：
+
+1. **失败级注解优先**，一个失败级都没有才降级用警告级，并在行上标 `headLevel: "warning"`、
+   表里写成 `（警告级·非判红原因）…`；
+2. 降级时 `fixHint` 不再用「层默认入口」（那层本身是从警告文案推出来的），而是取
+   **红的那一步**的原命令——Actions 把 `run:` 步骤命名成 `Run <命令>`，所以步骤名就是一行
+   可执行的复现命令（`uses:` 步骤不是命令，此时仍落回层默认入口）。
+
+为什么单独立这条：真实 run 40868398091…40919239730 里「前端门禁」连着 11 轮红在同一步，
+那一步的失败级注解只有被剥掉的 `Process completed with exit code 1.`，于是归因头落到
+eslint 的 `'Route' is defined but never used`（**警告**，CI 不卡）上，两轮提交在清根本不
+存在的 lint 红；真红是 `node scripts/check-bundle-budget.mjs` 的预算超限。
+读日志/产物要 Actions 权限（本仓库 token 实测 404），annotation 是唯一跨机器可读的通道——
+所以**任何只把结论打在 stdout 的门禁都必须自带失败级注解**，否则它的红在归因表里就是隐形的。
 
 ---
 

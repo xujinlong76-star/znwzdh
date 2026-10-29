@@ -63,6 +63,23 @@ function runtimeCommand(firstError) {
 }
 
 /**
+ * 步骤名里那条自建门禁命令。
+ *
+ * Actions 把 `run:` 步骤命名成 `Run <命令原文>`，所以「哪一步红的」本身就是一行
+ * 可执行的复现命令——比从警告文案猜出来的层靠谱。只认 node/pnpm/bash/python 开头：
+ * `Run actions/checkout@v7` 不是命令，不能当成修复入口印出去。
+ */
+const GATE_STEP_COMMAND = /^\s*(?:Run\s+)?((?:node|pnpm|bash|python)\s+\S.*?)\s*$/;
+
+function gateStepCommand(step) {
+  return String(step ?? "").match(GATE_STEP_COMMAND)?.[1] ?? "";
+}
+
+const WARNING_HEAD_STEP_HINT =
+  "归因头只有警告级注解（不判红），真红来自这一步自己的退出码：本地原样复跑上面这条命令。" +
+  "需要 CI 产物时先备齐（例如 next build 之后再跑预算门禁）。别照着警告文案改代码。";
+
+/**
  * 某些信号的正确动作与「层的默认第一步」不同，差别大到会浪费人 20 分钟时必须覆盖。
  * 命令仍受上面那条约束：必须能在仓库根目录原样执行、不带占位符——所以这里给的是
  * 「先确认到底哪几个 job 红」的只读命令，复跑本身是 Actions 页面的按钮，写在 note 里。
@@ -90,6 +107,14 @@ const SIGNAL_FIX_HINTS = [
 /** 单行失败对应的修复入口：{ layer, command, note } */
 export function fixHintFor(row) {
   const layer = FAILURE_LAYERS.includes(row?.layer) ? row.layer : "未知";
+  // 归因头只剩警告级注解时，连「层」都是从警告文案推的，默认入口更不可信。
+  // 判红来自这一步自己的退出码 ⇒ 唯一诚实的下一步是本地原样复跑那一步。
+  if (row?.headLevel === "warning") {
+    const command = gateStepCommand(row?.step);
+    if (command) {
+      return { layer, command, note: WARNING_HEAD_STEP_HINT };
+    }
+  }
   const haystack = [String(row?.firstError ?? ""), ...(Array.isArray(row?.signals) ? row.signals : [])].join(" ");
   const override = SIGNAL_FIX_HINTS.find((o) => o.test.test(haystack));
   if (override) return { layer, command: override.command, note: override.note };
@@ -381,6 +406,10 @@ function firstLine(text) {
  * 例外：「No files were found with the provided path」是 upload-artifact 的
  * 产物缺失警告。它永远排在真实失败注解之前，且描述的是**结果**（测试崩了所以没产物），
  * 真实 run 里它把归因头挤成了「junit-sqlite-*.xml 不存在」，比没有归因头更误导。
+ *
+ * 注意这里**不**按 annotation_level 过滤掉 warning：警告正文用来判层仍有用
+ * （tsc/eslint 的注解级别各家不一，缺级别字段的一律按失败处理）。
+ * 「警告不许冒充判红原因」由 summarizeJob 的取头优先级负责。
  */
 export function usableAnnotations(annotations) {
   return (Array.isArray(annotations) ? annotations : []).filter((a) => {
@@ -391,6 +420,11 @@ export function usableAnnotations(annotations) {
   });
 }
 
+/** 注解级别：GitHub 缺字段时按失败处理（历史夹具与本仓工具都这么写） */
+function annotationLevel(a) {
+  return String(a?.annotation_level ?? "failure");
+}
+
 /** 注解挂在 workflow 文件上而不是源码/测试上：它描述的是 CI 配置，不是失败点 */
 function isWorkflowPath(path) {
   return /^\.github(?:\/|$)/.test(String(path ?? "").trim());
@@ -399,6 +433,23 @@ function isWorkflowPath(path) {
 /** 优先源码/测试上的注解，其次才是 .github 上的；同优先级保持原顺序 */
 function primaryAnnotation(usable) {
   return usable.find((a) => !isWorkflowPath(a.path)) ?? usable[0] ?? null;
+}
+
+/**
+ * 判红原因只能来自**失败级**注解：警告级注解（ESLint 在 CI 里不卡门禁，
+ * 基线是 0 error / 834 warning）不会让作业变红，把它当归因头等于指了一条不存在的路。
+ *
+ * 真实代价（run 40868398091..40919239730，连续 11 轮）：Web 作业唯一的失败级注解是
+ * `Process completed with exit code 1.`（包装，被剥掉），于是归因头落到了
+ * `apps/web/.../collections/page.tsx:19 · 'Route' is defined but never used` 这条**警告**上。
+ * 两轮提交（7c0b8742 / cd946585）在清不存在的 lint 红，真红是 step 10
+ * `node scripts/check-bundle-budget.mjs` 的预算超限。
+ *
+ * 所以：取头只看失败级；一个失败级都没有时才降级用警告级，并把它标出来。
+ */
+function pickAnnotationPool(usable) {
+  const failures = usable.filter((a) => annotationLevel(a) === "failure");
+  return { pool: failures.length > 0 ? failures : usable, hasFailureLevel: failures.length > 0 };
 }
 
 /** `路径:行 · 用例名 · 首行错误`——三样都有时才拼，缺的留空 */
@@ -438,12 +489,16 @@ function stackNearPath(logText, annotation) {
  * `[navhub] 审计写入失败: Error: simulated audit failure` 是刻意的失败注入），
  * 按行序取第一处错误会把它当成根因。真实 run 里踩过——归因头指向了模拟错误，
  * 而真正的失败用例在注解里。
+ *
+ * 注解内部还有一层优先级：**失败级优先于警告级**。ESLint 在 CI 里不卡门禁
+ * （基线 0 error / 834 warning），警告不是判红原因；只看行序会把警告当根因
+ * （见 pickAnnotationPool 里记的那次 11 轮的误诊）。
  */
 export function summarizeJob(job, { logText = "", annotations = [] } = {}) {
   const usable = usableAnnotations(annotations);
-  const annotationText = usable
-    .map((a) => [a.title, a.message, a.raw_details].filter(Boolean).join(" "))
-    .join("\n");
+  const { pool, hasFailureLevel } = pickAnnotationPool(usable);
+  const textOf = (list) => list.map((a) => [a.title, a.message, a.raw_details].filter(Boolean).join(" ")).join("\n");
+  const annotationText = textOf(pool);
   const aggregate = AGGREGATE_JOB.test(String(job?.name ?? ""));
   let layer;
   let signals;
@@ -456,23 +511,26 @@ export function summarizeJob(job, { logText = "", annotations = [] } = {}) {
     if (layer === "未知") ({ layer, signals } = classifyFailure(annotationText + "\n" + logText));
   }
   const { firstError, stackLine, tail } = extractAttribution(logText);
-  const primary = primaryAnnotation(usable);
+  const primary = primaryAnnotation(pool);
   // 挂在 .github 上的注解没有文件信息（真实 run：tsc 注解只给了 863 行，看不出是哪个组件）；
   // 这种情况下日志里的 `src/x.tsx(863,41): error TS7006` 更具体，让日志先说话。
   const useAnnotationHead = Boolean(primary) && !isWorkflowPath(primary.path);
   const head = useAnnotationHead ? annotationHead(primary) : firstError || (primary ? annotationHead(primary) : "");
+  const step = failingStep(job);
   const row = {
     id: job?.id ?? null,
     name: job?.name ?? "(unknown job)",
     conclusion: job?.conclusion ?? "unknown",
-    step: failingStep(job),
+    step,
     layer,
     firstError: head || firstError,
     stackLine: useAnnotationHead ? stackNearPath(logText, primary) : stackLine,
     tail,
     signals,
     annotationCount: Array.isArray(annotations) ? annotations.length : 0,
-    superseded: isSupersededCancel(annotationText + "\n" + logText),
+    // 「这个归因头能不能当判红原因」：warning=只有警告级注解可用，不许据此改代码。
+    headLevel: primary ? (hasFailureLevel ? "failure" : "warning") : "",
+    superseded: isSupersededCancel(textOf(usable) + "\n" + logText),
   };
   return { ...row, fixHint: fixHintFor(row) };
 }
@@ -482,8 +540,14 @@ export function renderAttributionTable(rows) {
   const cell = (value) => String(value ?? "").replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
   const lines = ["| job | 失败步骤 | 归因层 | 归因头 | 信号 |", "| --- | --- | --- | --- | --- |"];
   for (const row of rows) {
+    // 警告级归因头必须在表里就写明「非判红原因」：只把它藏在 JSON 字段里，
+    // 读表的人（和人）照样会照着警告去改代码。
+    const head =
+      row.headLevel === "warning"
+        ? "（警告级·非判红原因）" + cell(row.firstError)
+        : cell(row.firstError) || "（日志里没有可识别的错误行）";
     lines.push(
-      `| ${cell(row.name)} | ${cell(row.step)} | ${cell(row.layer)} | ${cell(row.firstError) || "（日志里没有可识别的错误行）"} | ${cell(row.signals.join(", "))} |`,
+      `| ${cell(row.name)} | ${cell(row.step)} | ${cell(row.layer)} | ${head} | ${cell(row.signals.join(", "))} |`,
     );
   }
   return lines.join("\n");

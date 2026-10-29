@@ -346,6 +346,66 @@ describe("summarizeJob：一个 job 一行归因头", () => {
     expect(row.firstError).not.toContain("No files were found");
   });
 
+  it("警告级注解不许冒充判红原因：真实 run #40916902103 的「前端门禁」作业", () => {
+    // 那一步的失败级注解只有 `Process completed with exit code 1.`（包装，会被剥掉），
+    // 剩下全是 eslint 警告（基线 0 error / 834 warning，警告不卡门禁）。按行序取头就把
+    // 人引去清不存在的 lint 红——连着 11 轮如此，真红是 step 10 的首屏预算超限。
+    const budgetJob = {
+      id: 9,
+      name: "前端门禁（Web typecheck / lint / build）",
+      conclusion: "failure",
+      steps: [
+        { name: "Run pnpm --filter navsphere build", conclusion: "success" },
+        { name: "Run node scripts/check-bundle-budget.mjs", conclusion: "failure" },
+      ],
+    };
+    const row = summarizeJob(budgetJob, {
+      annotations: [
+        { annotation_level: "failure", path: ".github", start_line: 26, message: "Process completed with exit code 1." },
+        {
+          annotation_level: "warning",
+          path: "apps/web/src/app/admin/collections/page.tsx",
+          start_line: 19,
+          message: "'Route' is defined but never used. Allowed unused vars must match /^_/u",
+        },
+      ],
+    });
+    expect(row.headLevel).toBe("warning");
+    // 修复入口取「红的那一步」的原命令，而不是从警告文案推出来的层默认入口
+    expect(row.fixHint.command).toBe("node scripts/check-bundle-budget.mjs");
+    expect(row.fixHint.note).toContain("别照着警告文案改代码");
+    expect(renderAttributionTable([row])).toContain("（警告级·非判红原因）");
+  });
+
+  it("失败级注解在场时，警告既不参与取头也不触发步骤改写", () => {
+    // 覆盖面必须只针对「只剩警告」这一种情形：真实测试红里警告与失败注解同时存在，
+    // 若把步骤命令抢过来，归因头明明指向具体用例、却让人去复跑整条 job。
+    const row = summarizeJob(job, {
+      annotations: [
+        { annotation_level: "warning", path: "packages/store/test/a.test.ts", start_line: 3, message: "Unexpected any." },
+        {
+          annotation_level: "failure",
+          path: "packages/store/test/b.test.ts",
+          start_line: 8,
+          title: "用例 B",
+          message: "expected false to be true",
+        },
+      ],
+    });
+    expect(row.headLevel).toBe("failure");
+    expect(row.firstError).toContain("packages/store/test/b.test.ts:8");
+    expect(row.fixHint.command).toBe("node node_modules/vitest/vitest.mjs run packages/store/test/b.test.ts");
+  });
+
+  it("红的那一步不是命令（uses 步骤）时不编造修复入口", () => {
+    const row = summarizeJob(
+      { id: 3, name: "x", conclusion: "failure", steps: [{ name: "Run actions/checkout@v7", conclusion: "failure" }] },
+      { annotations: [{ annotation_level: "warning", path: "a.ts", start_line: 1, message: "某个警告" }] },
+    );
+    expect(row.headLevel).toBe("warning");
+    expect(row.fixHint.command).toBe(LAYER_FIX_HINTS.未知.command);
+  });
+
   it("只有 workflow 上的注解时仍然用它，不因为降级而丢归因头", () => {
     const row = summarizeJob(job, {
       annotations: [{ annotation_level: "failure", path: ".github", start_line: 7, message: "Run failed: 镜像冒烟构建" }],

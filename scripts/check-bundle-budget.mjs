@@ -38,6 +38,11 @@
  * 预算来源：`scripts/bundle-budget.json`。改预算必须同时更新提案文档里的目标值，
  * 否则「预算」会变成给现状背书的数字。
  *
+ * CI 里超限逐条写失败级注解（`GITHUB_ACTIONS=true` 才打，本地零噪音）：这条门禁的结论
+ * 只有退出码，正文全在 job 日志里，而日志/产物接口要 Actions 权限——跨轮归因唯一可读的
+ * 通道是 annotations。2026-10-30 那次「前端门禁」连红 11 轮、归因头一直指着 eslint 警告，
+ * 缺的就是这一条。详见 docs/GATES-OPERATIONS.md §5.2。
+ *
  * 为什么 --raise 要卡「提交可定位 + 首屏源码干净 + 产物不过期」三条：预算是给未来
  * 提交定的线，而 CI 只认提交。拿未提交的工作区产物定基线，等于把「本地恰好绿」写进
  * 契约——下一轮 CI 照样红，且没人能复现那个数字是哪棵树产出来的。三条里任何一条
@@ -53,6 +58,7 @@
 import { readFileSync, statSync, existsSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { annotationLine, MAX_ANNOTATIONS } from "./vitest-github-reporter.mjs";
 
 const distDir = process.env.NEXT_DIST_DIR ?? ".next";
 const root = process.cwd();
@@ -84,9 +90,55 @@ if (fromGiven && !hasFlag("--raise")) {
 }
 
 
-const budgets = existsSync(budgetPath)
-  ? JSON.parse(readFileSync(budgetPath, "utf8"))
-  : { default: 700 * 1024, routes: {} };
+const budgetText = existsSync(budgetPath) ? readFileSync(budgetPath, "utf8") : null;
+// 空文件仍然让 JSON.parse 抛（预算契约读不出来时必须红，不能退成内置默认值把门禁放宽）
+const budgets = budgetText === null ? { default: 700 * 1024, routes: {} } : JSON.parse(budgetText);
+/** 注解要指向阈值所在行，所以原文留一份（只在 CI 分支里用） */
+const budgetRaw = budgetText ?? "";
+
+/** 路由阈值在 bundle-budget.json 里的行号；没单独配置就指 default 那一行 */
+function budgetEntryLine(route) {
+  const lines = budgetRaw.split(/\r?\n/);
+  const key = JSON.stringify(route) + ":";
+  const hit = lines.findIndex((l) => l.includes(key));
+  if (hit >= 0) return hit + 1;
+  const d = lines.findIndex((l) => /^\s*"default"\s*:/.test(l));
+  return d >= 0 ? d + 1 : 1;
+}
+
+/**
+ * CI 里把每条超限再写成一条失败级注解；本地一个都不打（口径同 vitest-github-reporter）。
+ *
+ * 为什么不能只靠 stdout：门禁的结论走退出码，正文只在 job 日志里，而读日志/产物要 Actions
+ * 权限（本仓库的 token 实测 404），跨轮归因只吃 annotations 这一个通道。
+ * 2026-10-30 的代价：「前端门禁」连着 11 轮红在同一步，annotations 里只有 eslint 的**警告级**
+ * 文案，归因头就一直指着「未用导入」，两轮提交在清根本不存在的 lint 红。
+ * 锚在阈值行（而不是 .github）有两个用处：注解点得进去改哪一条，且「失败级 + 真实路径」
+ * 才满足 explain-ci-failure 的取头条件。
+ */
+function emitCiAnnotations(violations) {
+  if (process.env.GITHUB_ACTIONS !== "true") return;
+  for (const v of violations.slice(0, MAX_ANNOTATIONS)) {
+    console.log(
+      annotationLine({
+        file: "scripts/bundle-budget.json",
+        line: budgetEntryLine(v.route),
+        title: `首屏预算超限 ${v.route}`,
+        message:
+          `实测 ${kb(v.bytes)} > 预算 ${kb(v.limit)}（超 ${kb(v.bytes - v.limit)}）。` +
+          "先优化再按真实产物重定基线：node scripts/check-bundle-budget.mjs --report",
+      }),
+    );
+  }
+  if (violations.length > MAX_ANNOTATIONS) {
+    console.log(
+      annotationLine({
+        title: "首屏预算超限总数",
+        message: `共 ${violations.length} 条，这里只标注前 ${MAX_ANNOTATIONS} 条；完整列表见作业日志。`,
+      }),
+    );
+  }
+}
 
 const kb = (n) => (n / 1024).toFixed(0) + " KB";
 
@@ -709,6 +761,9 @@ if (reportMode) {
 if (violations.length > 0 && !reportMode && !raiseMode) {
   console.error(`\n[bundle] ${violations.length} 条路由超出预算：`);
   for (const v of violations) console.error(`  - ${v.route}: ${kb(v.bytes)} > ${kb(v.limit)}`);
+  // --json 的 stdout 要被机器解析，注解行（走 stdout）在该模式下必须闭嘴；
+  // CI 的门禁步骤本来就不带 --json，采集走 bundle-budget-summary.mjs 的 --report --json。
+  if (!jsonMode) emitCiAnnotations(violations);
   console.error("[bundle] 先看只读建议：node scripts/check-bundle-budget.mjs --report（超了先优化，确需上调再 --raise --reason=）");
   process.exit(1);
 }

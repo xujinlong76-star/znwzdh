@@ -98,6 +98,18 @@ export function planGates({ contractDirty = false, scopeDirty = false } = {}) {
       run: true,
       skipReason: "",
     },
+    {
+      id: "deps-integrity-prepush",
+      title: "依赖未被装残",
+      run: true,
+      skipReason: "",
+    },
+    {
+      id: "mock-hygiene-prepush",
+      title: "跨模块 mock 都带 vi.resetModules() 兜底",
+      run: true,
+      skipReason: "",
+    },
   ];
 }
 
@@ -157,6 +169,22 @@ function runScopeGate() {
 
 function runClientGraphGate() {
   runNode(["scripts/check-client-node-imports.mjs"]);
+}
+
+/**
+ * 依赖完整性：pre-commit 只看本次提交，pre-push 时再扫一遍全仓。
+ * 装残的包会让几百个测试套件同时报「找不到模块」，推送前认出来比推上去再红便宜。
+ */
+function runDepsIntegrityGate() {
+  runNode(["scripts/check-deps-integrity.mjs"]);
+}
+
+/**
+ * mock 卫生：pre-commit 只查本次提交集，**分多次提交累积出的缺口**要在这里兜住
+ * （甲提交加了 vi.mock、乙提交才补 afterAll——分开看都对，合起来漏）。
+ */
+function runMockHygieneGate() {
+  runNode(["scripts/fix-mock-hygiene.mjs"]);
 }
 
 /**
@@ -246,6 +274,8 @@ const RUNNERS = {
   "client-node-imports": runClientGraphGate,
   "core-mirrors": runCoreMirrorGate,
   "test-mirror-pairs": runTestMirrorPairGate,
+  "deps-integrity-prepush": runDepsIntegrityGate,
+  "mock-hygiene-prepush": runMockHygieneGate,
 };
 
 const FIX_HINTS = {
@@ -257,6 +287,10 @@ const FIX_HINTS = {
     "修复：node scripts/sync-core-mirrors.mjs 重新生成镜像，并把 core 事实源与两份镜像一起提交（只改事实源不重生成 = 前端在跑旧算法）",
   "test-mirror-pairs":
     "修复：node scripts/vendor-web.mjs 重生成 apps/web/test 那份，然后把 overlay 与镜像**同批提交**（只提交 overlay 侧 = HEAD 上两份守卫互相矛盾，CI 因先跑 vendor-web 看不见）",
+  "deps-integrity-prepush":
+    "修复：这是安装被中断留下的、与代码无关。先看有没有进程占着这些目录，然后 npm pack <name>@<version> 解压补缺失文件（别覆盖占用中的 .node），或确认无安装进程后 pnpm install --frozen-lockfile",
+  "mock-hygiene-prepush":
+    "修复：node scripts/fix-mock-hygiene.mjs --apply 自动补 afterAll(() => vi.resetModules())",
 };
 
 /**

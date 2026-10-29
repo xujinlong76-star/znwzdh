@@ -14,18 +14,17 @@ import { hasImpl, pairMirrorDrift, planGates } from "./prepush-gates.mjs";
  * 测试镜像配对同因：`10e38d3a`（mobile-nav）与 `d7cf72d6`（sync-health-card）两次「只提交 overlay 侧守卫」
  * 都过了工作区口径的闸，HEAD 上留下两份自相矛盾的守卫副本，而 CI 先跑 vendor-web 把它盖掉了。
  */
-const REF_GATES = ["client-node-imports", "core-mirrors", "test-mirror-pairs"];
+const REF_GATES = ["client-node-imports", "core-mirrors", "test-mirror-pairs", "deps-integrity-prepush", "mock-hygiene-prepush"];
 
 describe("planGates：干净就查，脏就跳过并说明", () => {
-  it("工作区干净时五枚闸门都跑", () => {
+  it("工作区干净时所有闸门都跑", () => {
     const plan = planGates({ contractDirty: false, scopeDirty: false });
-    expect(plan.map((gate) => [gate.id, gate.run])).toEqual([
-      ["rest-contracts", true],
-      ["scope-explicit", true],
-      ["client-node-imports", true],
-      ["core-mirrors", true],
-      ["test-mirror-pairs", true],
-    ]);
+    // 钉**语义**不钉枚数与全量清单：闸门本来就要增（2026-10-29 加两枚时被这条拦下）。
+    // 要钉的是「每枚都跑、且都不带跳过理由」，以及两枚脏敏闸门的 id 仍在。
+    expect(plan.length).toBeGreaterThanOrEqual(5);
+    expect(plan.map((gate) => [gate.id, gate.run])).toContainEqual(["rest-contracts", true]);
+    expect(plan.map((gate) => [gate.id, gate.run])).toContainEqual(["scope-explicit", true]);
+    expect(plan.every((gate) => gate.run)).toBe(true);
     expect(plan.every((gate) => gate.skipReason === "")).toBe(true);
   });
 

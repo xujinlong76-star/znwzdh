@@ -145,7 +145,7 @@
       "script": "scripts/prepush-gates.mjs",
       "blocks": true,
       "test": "scripts/prepush-gates.test.ts",
-      "why": "五枚「只有 CI 才知道」的闸门左移（下五项），失败信息带修复命令"
+      "why": "「只有 CI 才知道」的闸门左移（见下），失败信息带修复命令"
     },
     {
       "name": "rest-contracts",
@@ -192,6 +192,22 @@
       "blocks": true,
       "test": "scripts/prepush-gates.test.ts",
       "why": "只提交 overlay 侧测试会让 HEAD 上两份副本互相矛盾，且 CI 因先重建镜像而看不见"
+    },
+    {
+      "name": "deps-integrity-prepush",
+      "when": "prepush",
+      "runner": "prepush-gates",
+      "blocks": true,
+      "test": "scripts/check-deps-integrity.test.ts",
+      "why": "装残的包让几百个套件同时报「找不到模块」；pre-commit 只看本次提交，推送前再扫一遍全仓"
+    },
+    {
+      "name": "mock-hygiene-prepush",
+      "when": "prepush",
+      "runner": "prepush-gates",
+      "blocks": true,
+      "test": "scripts/fix-mock-hygiene.test.ts",
+      "why": "分多次提交累积出的缺口（甲加 vi.mock、乙才补 afterAll）只有推送前扫全仓才看得见"
     },
     {
       "name": "test-sqlite",

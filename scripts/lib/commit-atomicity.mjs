@@ -285,7 +285,7 @@ export function findAtomicityViolations({ commitSet, readCommitted, exists, isDi
  *   2. staged 源码的提交版本里**真的出现了那个符号名**。
  * 两个条件同时成立才拦——也就是「你调的那个 API，它在你没提交的另一半里变了」。
  */
-const SOURCE_FILE_RE =
+export const SOURCE_FILE_RE =
   /^(?:apps\/api\/|packages\/[A-Za-z0-9._-]+\/src\/|apps\/web-overlay\/src\/|scripts\/).*\.(?:ts|tsx|mts|cts|mjs|cjs)$/;
 
 const DECL_RE =
@@ -451,4 +451,200 @@ export function findSourceCompanionViolations({
     }
   }
   return violations;
+}
+
+/**
+ * HEAD 自洽性（字段级、方向翻转）——「提交树里的消费者」读的是「只存在于工作区的字段」。
+ *
+ * 为什么既有两路都看不见（2026-10-30 实测）：
+ *   - `findAtomicityViolations` 只审**测试文件**，普通源码当消费者时不管；
+ *   - `findSourceCompanionViolations` 的方向是「本次提交集 → 脏目标」，且粒度是**导出声明**
+ *     （`changedExportNames` 只认被删/改的 `export function|const|interface …`）。
+ *   真实形状是 `context.ts`（已提交）读 `config.search.semanticMinSimilarity`，而生产者
+ *   `apps/api/src/config.ts` 里那个字段只在工作区：接口名那行没动，只是**成员表多了一行**，
+ *   导出级判据永远返回空集 → 本地 typecheck 读工作区绿，CI 检出提交树红在 TS2353/TypeError。
+ *   10-29→10-30 那批常驻红（3 片 SQLite typecheck + PG + ISR live + 2 片 E2E）全是这一型，
+ *   当时是靠人读 annotation 反推出来的。
+ *
+ * 于是这里把两件事都反过来：
+ *   1. 方向：遍历**脏的生产者**（工作区 ≠ 索引），看**提交树里的消费者**是否已在读它新加的字段；
+ *   2. 粒度：补到**成员名**（对象字面量键 / 接口与类型成员）。
+ *
+ * 为什么默认只报不拦：共享工作区常年有在途脏源码，做成硬闸门会把无关提交永久锁死
+ * （同 findSourceCompanionViolations 拒绝「闭包里有脏文件就拦」的理由）。它的价值是
+ * **当场点名缺的那一半**，省掉「红灯归属」这一整轮排查。
+ */
+const MEMBER_STOPWORDS = new Set([
+  "case",
+  "default",
+  "else",
+  "return",
+  "break",
+  "continue",
+  "do",
+  "if",
+  "for",
+  "while",
+  "switch",
+  "try",
+  "catch",
+  "finally",
+  "await",
+  "yield",
+  "new",
+  "typeof",
+  "keyof",
+  "extends",
+  "import",
+  "export",
+  "function",
+  "const",
+  "let",
+  "var",
+  "class",
+  "interface",
+  "type",
+  "enum",
+]);
+
+/**
+ * 逐行抽「成员名」：`foo:` / `foo?:` / `readonly foo:`（对象字面量键与接口/类型成员）。
+ *
+ * 刻意宽松到键名粒度——字段级判据要的就是「多出来的那个名字」。
+ * 假阳性由调用侧两道闸收住：`\.name` 必须真出现在别的文件里，且那个文件得**依赖**生产者。
+ */
+export function memberNamesOf(text) {
+  const names = new Set();
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("//") || line.startsWith("/*") || line.startsWith("*")) continue;
+    const m = /^(?:(?:readonly|public|private|protected|override|static|abstract)\s+)*([A-Za-z_$][\w$]*)\s*\??\s*:(?![:=])/.exec(
+      line,
+    );
+    if (!m) continue;
+    if (MEMBER_STOPWORDS.has(m[1])) continue;
+    names.add(m[1]);
+  }
+  return names;
+}
+
+/** `git diff` 里**新增行**带来的成员名（`+` 行；文件头 `+++` 不算正文） */
+export function addedMemberNames(diffText) {
+  const names = new Set();
+  for (const raw of String(diffText).split(/\r?\n/)) {
+    if (!raw.startsWith("+") || raw.startsWith("+++")) continue;
+    for (const n of memberNamesOf(raw.slice(1))) names.add(n);
+  }
+  return names;
+}
+
+function isCommentBody(text) {
+  const t = String(text).trim();
+  return t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") || t.startsWith("#");
+}
+
+/** `.name` 的词边界引用（`?.name` 也算：`?` 不是词字符） */
+
+/**
+ * @param {object} io
+ * @param {{file:string, unstagedDiff:string}[]} io.producers
+ *        脏生产者：`unstagedDiff` = 工作区相对**索引**的 diff。用「相对索引」而不是「相对 HEAD」
+ *        是刻意的：文件进了本次提交集但字段没暂存，同样是不自洽的提交树。
+ * @param {(file:string)=>Set<string>} io.committedMembersOf
+ *        该文件**提交版本**里已有的成员名（惰性问：只有 grep 到引用的生产者才需要读它的 blob——
+ *        批量预读 40 个生产者实测 1.4s，惰性只读 3 个是 0.1s）。已有同名成员 → 提交树能满足消费者，不算孤儿。
+ * @param {(tokens:string[])=>{file:string,line:number,text:string}[]} io.grepCommitted
+ *        在提交树里批量搜 `.token`（一次 `git grep --cached`，不是每 token 起一次进程）
+ * @param {(consumer:string, producer:string)=>boolean} io.dependsOn
+ *        消费者是否（经 import / 再导出闭包）依赖生产者——没有这条边就不是它少提交的那一半
+ * @param {number} [io.maxHitFiles]
+ *        「可归因」的门槛：某个字段名的引用点散落在太多文件时，逐文件算依赖边的成本失控
+ *        （每换一个消费者都要读它的提交版本）。默认 12——泛名字（`title`、`id`）落不进这一档，
+ *        于是**故意不报**，宁可漏报也不把门禁做成几十秒。漏掉的那批经 `onSkip` 记账。
+ * @param {(member:string, files:number)=>void} [io.onSkip]
+ * @returns {{producer:string, member:string, consumers:{file:string,line:number,text:string}[], consumerCount:number}[]}
+ */
+export function findHeadConsumerOrphans({
+  producers,
+  committedMembersOf,
+  grepCommitted,
+  dependsOn,
+  maxConsumers = 8,
+  maxHitFiles = 12,
+  onSkip,
+}) {
+  const candidates = [];
+  const seenCandidate = new Set();
+  for (const p of [...producers].sort((a, b) => a.file.localeCompare(b.file))) {
+    if (!SOURCE_FILE_RE.test(p.file) || TEST_FILE_RE.test(p.file)) continue;
+    if (typeof p.unstagedDiff !== "string") continue;
+    for (const member of [...addedMemberNames(p.unstagedDiff)].sort()) {
+      const key = `${p.file}\0${member}`;
+      if (seenCandidate.has(key)) continue;
+      seenCandidate.add(key);
+      candidates.push({ producer: p.file, member });
+    }
+  }
+  if (candidates.length === 0) return [];
+
+  const hits = grepCommitted([...new Set(candidates.map((c) => `.${c.member}`))]) ?? [];
+  /**
+   * 把引用点按「成员名」分桶，一次扫描完成。
+   *
+   * 为什么不在这里对每个候选跑一遍 `hits.filter(re.test)`：候选 × 引用行是 95 × 1 万 =
+   * 百万次正则（实测 1s+，全花在这）。改成从每行里抽出所有 `.标识符`，桶查表一次到位。
+   */
+  const byMember = new Map();
+  for (const h of hits) {
+    if (isCommentBody(h.text)) continue;
+    for (const m of String(h.text).matchAll(/\.[A-Za-z_$][\w$]*/g)) {
+      const name = m[0].slice(1);
+      if (!byMember.has(name)) byMember.set(name, []);
+      byMember.get(name).push(h);
+    }
+  }
+
+  const out = [];
+  const membersCache = new Map();
+  for (const c of candidates) {
+    // 提交版本里已有同名成员 → 消费者读得到，不是「少提交的那一半」
+    if (!membersCache.has(c.producer)) {
+      let already = new Set();
+      try {
+        already = committedMembersOf?.(c.producer) ?? new Set();
+      } catch {
+        already = new Set();
+      }
+      membersCache.set(c.producer, new Set([...already].map((n) => String(n))));
+    }
+    if (membersCache.get(c.producer).has(c.member)) continue;
+
+    const matched = (byMember.get(c.member) ?? []).filter((h) => h.file !== c.producer);
+    if (matched.length === 0) continue;
+    const hitFiles = new Set(matched.map((h) => h.file));
+    if (hitFiles.size > maxHitFiles) {
+      onSkip?.(c.member, hitFiles.size);
+      continue;
+    }
+    const consumers = [];
+    const seenHit = new Set();
+    for (const h of matched) {
+      const hk = `${h.file}:${h.line}`;
+      if (seenHit.has(hk)) continue;
+      seenHit.add(hk);
+      if (!dependsOn(h.file, c.producer)) continue;
+      consumers.push(h);
+    }
+    if (consumers.length === 0) continue;
+    consumers.sort((a, b) =>
+      `${a.file}:${String(a.line).padStart(6, "0")}`.localeCompare(`${b.file}:${String(b.line).padStart(6, "0")}`),
+    );
+    out.push({
+      producer: c.producer,
+      member: c.member,
+      consumers: consumers.slice(0, maxConsumers),
+      consumerCount: consumers.length,
+    });
+  }
+  return out.sort((a, b) => `${a.producer}#${a.member}`.localeCompare(`${b.producer}#${b.member}`));
 }

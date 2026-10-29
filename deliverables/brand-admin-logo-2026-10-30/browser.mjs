@@ -3,6 +3,7 @@
  *
  * 隔离栈：web 127.0.0.1:3420 → hub 127.0.0.1:8920（空库）。
  * 判据来自真实浏览器的 DOM（img src）与真实 /api/site 写入，不做源码断言。
+ * 从仓库根目录运行：node deliverables/brand-admin-logo-2026-10-30/browser.mjs
  */
 import { chromium } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -38,17 +39,23 @@ try {
 
   // 1) 配置品牌 logo
   const save = await context.request.post(BASE + '/api/site', { data: { appearance: { logo: LOGO } } })
-  assert('写入站点设置 logo 成功', save.status() === 200, { status: save.status(), body: await save.text().then((t) => t.slice(0, 200)) })
+  assert('写入站点设置 logo 成功', save.status() === 200, { status: save.status(), body: (await save.text()).slice(0, 160) })
+  const saved = await (await context.request.get(BASE + '/api/site')).json()
+  assert('回读站点设置已是新 logo', saved?.settings?.appearance?.logo === LOGO, {
+    logo: saved?.settings?.appearance?.logo,
+  })
 
-  // 2) 后台侧栏使用该图
+  // 2) 后台侧栏使用该图。
+  // 1440 桌面视口下 DOM 里有两处 Logo（移动端顶栏 + 桌面侧栏），移动端抽屉内容未展开时惰性挂载。
+  // 用 attached 而非 visible 等待：第一处是隐藏的移动端顶栏，等它 visible 会永远超时。
   await page.goto(BASE + '/admin', { waitUntil: 'domcontentloaded', timeout: 180_000 })
-  await page.waitForSelector('img[alt="Logo"]', { timeout: 180_000 })
+  await page.waitForSelector('img[alt="Logo"]', { state: 'attached', timeout: 60_000 })
   const srcs = await page.locator('img[alt="Logo"]').evaluateAll((els) =>
     els.map((el) => ({ src: el.getAttribute('src'), visible: Boolean(el.offsetWidth || el.offsetHeight) })),
   )
   assert(
-    '后台三处 logo 全部换成站点设置里的图',
-    srcs.length === 3 && srcs.every((s) => s.src === LOGO),
+    '后台 DOM 里的 logo 全部换成站点设置里的图',
+    srcs.length >= 2 && srcs.every((s) => s.src === LOGO),
     { srcs },
   )
   assert('至少一处后台 logo 实际可见', srcs.some((s) => s.visible), { srcs })
@@ -58,15 +65,16 @@ try {
   const clear = await context.request.post(BASE + '/api/site', { data: { appearance: { logo: '' } } })
   assert('清空 logo 成功', clear.status() === 200, { status: clear.status() })
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 120_000 })
-  await page.waitForSelector('img[alt="Logo"]', { timeout: 120_000 })
+  await page.waitForSelector('img[alt="Logo"]', { state: 'attached', timeout: 60_000 })
   const fallbackSrcs = await page.locator('img[alt="Logo"]').evaluateAll((els) =>
     els.map((el) => el.getAttribute('src')),
   )
   assert(
     '未配置 logo 时回退内置图而不是空 src',
-    fallbackSrcs.length === 3 && fallbackSrcs.every((s) => s === FALLBACK),
+    fallbackSrcs.length >= 2 && fallbackSrcs.every((s) => s === FALLBACK),
     { fallbackSrcs },
   )
+  assert('回读站点设置 logo 已清空', (await (await context.request.get(BASE + '/api/site')).json())?.settings?.appearance?.logo === '', {})
   await page.screenshot({ path: join(OUT, 'shot-admin-logo-fallback.png') })
 
   assert('页面无未捕获异常', pageErrors.length === 0, { pageErrors })

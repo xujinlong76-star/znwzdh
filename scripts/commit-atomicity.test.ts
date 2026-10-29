@@ -16,6 +16,15 @@
  * 源码 → 源码的伴随改动（2026-10-29 第二起，7de79c31）另有一组：
  *   · 提交的路由 → `@navhub/store` barrel → 第二跳定义文件改签名未提交 ⇒ 必须红
  *   · 改的是没被用到的导出 / 只删注释 / 只新增导出 ⇒ 必须绿（符号级判据）
+ *
+ * HEAD 自洽性（**方向反过来**：已提交的消费者读只在本地存在的字段）另有一组
+ * （2026-10-30，那批 9 条常驻红的根因就是它）：
+ *   · 提交树里的源码读「只在工作区的字段」      ⇒ 必须**报**，但 rc 仍是 0（只报不拦）
+ *   · 生产者 `git add` 进索引                   ⇒ 必须自动消失（判据量的是工作区 − 索引）
+ *   · 同名字段本来就在提交树里、只改了实现       ⇒ 必须不报（字段级判据不看「文件脏」）
+ *   · 引用它的文件与生产者之间没有依赖边         ⇒ 必须不报（去掉这条边判据，那例会红）
+ *   · 经 barrel 再导出才依赖到生产者             ⇒ 必须报
+ *   · `--strict-head-consumers`                 ⇒ 报完退出 1；`NAVHUB_SKIP_HEAD_CONSUMERS=1` ⇒ 整段静默
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -24,10 +33,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  addedMemberNames,
   aliasRootsFor,
   changedExportNames,
   extractPathLiterals,
+  findHeadConsumerOrphans,
   isReadArgument,
+  memberNamesOf,
   mentionsSymbol,
   reexportClosure,
 } from "./lib/commit-atomicity.mjs";
@@ -58,6 +70,8 @@ function gitEnv(extra: Record<string, string> = {}) {
   // 「必须红」的用例就会静默变绿（2026-10-29 实际踩到，4 例同时假绿）。
   delete env.NAVHUB_ALLOW_DIRTY_TEST_DEPS;
   delete env.NAVHUB_ALLOW_DIRTY_SOURCE_DEPS;
+  // HEAD 自洽性的总闸同理：本机为了别的提交关掉它，「必须报」的夹具就会假绿。
+  delete env.NAVHUB_SKIP_HEAD_CONSUMERS;
   return { ...env, ...extra };
 }
 
@@ -87,13 +101,13 @@ function write(cwd: string, name: string, content: string) {
   writeFileSync(join(cwd, name), content, "utf8");
 }
 
-function run(cwd: string, env: Record<string, string> = {}) {
-  const res = spawnSync(process.execPath, [SCRIPT, "--staged"], {
+function run(cwd: string, env: Record<string, string> = {}, extra: string[] = []) {
+  const res = spawnSync(process.execPath, [SCRIPT, "--staged", ...extra], {
     cwd,
     encoding: "utf8",
     env: gitEnv(env),
   });
-  return { status: res.status, out: `${res.stdout}${res.stderr}` };
+  return { status: res.status, out: `${res.stdout}${res.stderr}`, stdout: res.stdout ?? "" };
 }
 
 describe("提交原子性门禁", () => {

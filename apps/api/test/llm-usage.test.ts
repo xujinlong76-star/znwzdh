@@ -173,7 +173,13 @@ describe("aggregateLlmUsage 聚合语义", () => {
  */
 describe("本地免密钥网关（allowPrivateNetwork）", () => {
   const stubCtx = {
-    repo: { recordLlmUsage: async () => undefined },
+    // 没有单价配置的最小上下文：单价解析按「未采集」走，不把 stderr 打成噪声
+    repo: {
+      recordLlmUsage: async () => undefined,
+      getLlmModelPrice: async () => null,
+      getSystemState: async () => null,
+    },
+    config: { costPer1kTokensRmb: 0 },
   } as unknown as AppContext;
 
   function localResolved(allowPrivateNetwork = true): ResolvedLlm {

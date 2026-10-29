@@ -61,6 +61,11 @@ export interface EnrichReviewRow {
   available: boolean
   /** 不可用时的原因（直接展示给运营） */
   reason: string | null
+  /**
+   * 可用但需要提醒的说明（如 favicon 是按根路径猜的）。
+   * 不并入 reason：勾选框该是可用的，运营只是要知道值不是页面声明的。
+   */
+  note: string | null
 }
 
 function valueOf(fields: HubEnrichmentFields, key: EnrichReviewKey): string | string[] | null {
@@ -104,6 +109,7 @@ export function buildEnrichReviewRows(fields: HubEnrichmentFields): EnrichReview
       value,
       available,
       reason,
+      note: available ? (field.note ?? null) : null,
     }
   })
 }

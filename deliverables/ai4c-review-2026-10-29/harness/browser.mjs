@@ -117,11 +117,6 @@ await page.goto(`${BASE}/admin/ai`, { waitUntil: "domcontentloaded" });
 await page.getByRole("button", { name: /切换到富化结果字段级审核/ }).click();
 await page.waitForSelector('[aria-label="富化审核网址"]', { timeout: 90_000 });
 record("G-1 审核入口可打开（Tab 渲染出面板）", true, {});
-// 类目下拉是异步拉取的：不等它有选项就解析，建议匹配会落空（假红灯）
-await page.waitForFunction(
-  () => document.querySelectorAll("#enrich-review-category option").length > 1,
-  { timeout: 60_000 },
-);
 
 const panelText = await page.locator("body").innerText();
 record("G-2 面板明说不会二次调用模型", panelText.includes("不会再次调用模型"), {});
@@ -133,6 +128,13 @@ await page.fill('[aria-label="富化审核网址"]', `${SITE}/rich`);
 await page.getByRole("button", { name: "解析并审核" }).click();
 await page.waitForSelector('[aria-label="采用标题"]', { timeout: 120_000 });
 await page.waitForSelector("text=结果来源", { timeout: 30_000 });
+// 类目下拉在预览之后才渲染，且选项是面板挂载时异步拉取的：
+// 不等它有选项就读 value，建议匹配会落空（假红灯）
+await page.waitForFunction(
+  () => document.querySelectorAll("#enrich-review-category option").length > 1,
+  null,
+  { timeout: 60_000 },
+);
 const afterPreviewA = await llmStats();
 record("A-1 解析触发一次模型调用", afterPreviewA.calls - beforeA.calls === 1, {
   delta: afterPreviewA.calls - beforeA.calls,
@@ -163,9 +165,19 @@ record("A-6 建站没有第二次模型调用", afterCreateA.calls === beforeCre
   after: afterCreateA.calls,
 });
 
+/**
+ * 从成功卡片取站点 id。
+ *
+ * 标题里可能自带全角括号（如「人工改写标题（AI-4C）」），用「已创建：…（…）」
+ * 的非贪婪匹配会先抓到标题里的括号——只认 UUID 形状。
+ */
+function createdSiteId(text) {
+  const matches = [...text.matchAll(/已创建：[\s\S]*?（([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})）/g)];
+  return matches.at(-1)?.[1] ?? "";
+}
+
 const createdText = await page.locator("body").innerText();
-const idMatch = createdText.match(/已创建：.*?（([^）]+)）/);
-const siteAId = idMatch?.[1] ?? "";
+const siteAId = createdSiteId(createdText);
 record("A-7 成功卡片带出站点 id", Boolean(siteAId), { siteAId });
 
 const wireA = createRequests.at(-1) ?? "";
@@ -207,13 +219,24 @@ await page.getByRole("button", { name: "解析并审核" }).click();
 await page.waitForSelector('[aria-label="采用标签"]', { timeout: 120_000 });
 await page.waitForTimeout(500);
 const bareText = await page.locator("body").innerText();
-record("B-1 missing 徽章出现两次以上（标签/图标）", (bareText.match(/未获取/g) ?? []).length >= 2, {
+record("B-1 missing 徽章出现（标签未获取）", (bareText.match(/未获取/g) ?? []).length >= 1, {
   missingBadges: (bareText.match(/未获取/g) ?? []).length,
 });
 record("B-2 标签 missing 的原因可见", bareText.includes("模型没有给出标签"), {});
-record("B-3 图标 missing 的原因可见", bareText.includes("页面没有声明图标"), {});
+// 页面没声明 icon 时，抽取层会猜根路径 /favicon.ico：价值真实存在，但来源必须如实说「规则推测」
+record(
+  "B-3 未声明图标 → 标为规则推测，并说明是按 /favicon.ico 猜的",
+  bareText.includes("规则推测") && bareText.includes("页面没有声明图标，按站点根 /favicon.ico 推测"),
+  {},
+);
 record("B-4 标签勾选框被禁用", await page.getByLabel("采用标签").isDisabled(), {});
-record("B-5 图标勾选框被禁用", await page.getByLabel("采用图标").isDisabled(), {});
+record(
+  "B-5 图标行可用（推测值）且默认勾选，未被禁用",
+  !(await page.getByLabel("采用图标").isDisabled()) && (await page.getByLabel("采用图标").isChecked()),
+  {},
+);
+// 运营拒绝「猜的」图标：取消勾选，落库时不应带 iconKey
+await page.getByLabel("采用图标").uncheck();
 const afterPreviewB = await llmStats();
 record("B-6 第二次解析也只多一次模型调用", afterPreviewB.calls - beforeB.calls === 1, {
   delta: afterPreviewB.calls - beforeB.calls,
@@ -246,15 +269,16 @@ await page.locator("#enrich-review-category").selectOption(leaf.id);
 await page.getByRole("button", { name: "按所选字段建站" }).click();
 await page.waitForSelector("text=已创建：", { timeout: 60_000 });
 const createdTextB = await page.locator("body").innerText();
-const idMatchB = createdTextB.match(/已创建：.*?（([^）]+)）/);
-const siteBId = idMatchB?.[1] ?? "";
+const siteBId = createdSiteId(createdTextB);
 record("B-7 missing 行不影响其余字段建站", Boolean(siteBId) && siteBId !== siteAId, { siteBId, siteAId });
 
 const siteB = await hubFetch(`/api/sites/${encodeURIComponent(siteBId)}`);
 record("B-8 落库：标签为空（missing 不写空值）", siteB.status === 200 && (siteB.body?.tags ?? []).length === 0, {
   tags: siteB.body?.tags,
 });
-record("B-9 落库：图标为空", siteB.status === 200 && !siteB.body?.iconKey, { iconKey: siteB.body?.iconKey });
+record("B-9 落库：图标为空（推测值被拒绝后不写入）", siteB.status === 200 && !siteB.body?.iconKey, {
+  iconKey: siteB.body?.iconKey,
+});
 
 const afterAll = await llmStats();
 record("Z-1 全程模型调用次数 = 2（两次解析各一次，两次建站 0 次）", afterAll.calls === 2, { calls: afterAll.calls });

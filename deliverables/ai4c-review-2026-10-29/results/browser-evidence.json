@@ -1,0 +1,258 @@
+{
+  "generatedAt": "2026-10-29T14:09:31.409Z",
+  "base": "http://127.0.0.1:3415",
+  "hub": "http://127.0.0.1:8915",
+  "leafCategory": {
+    "id": "265ca47c-9996-493b-b6ef-476a91f6e79c",
+    "anchor": "c51bcb5e-991b-4812-afa6-ac85988ed232/265ca47c-9996-493b-b6ef-476a91f6e79c",
+    "parentId": "c51bcb5e-991b-4812-afa6-ac85988ed232",
+    "title": "开发工具",
+    "titleEn": "devtools",
+    "slug": "devtools",
+    "description": null,
+    "icon": null,
+    "enabled": true,
+    "sort": 0,
+    "source": "api",
+    "altLabels": [],
+    "relatedCategories": [],
+    "createdAt": 1793282115416,
+    "updatedAt": 1793282115416
+  },
+  "createRequests": [
+    "{\"url\":\"http://127.0.0.1:8923/rich\",\"title\":\"人工改写标题（AI-4C）\",\"categoryId\":\"265ca47c-9996-493b-b6ef-476a91f6e79c\",\"tags\":[\"开发者工具\",\"效率\"]}",
+    "{\"url\":\"http://127.0.0.1:8923/bare\",\"title\":\"Bare Site（模型标题）\",\"categoryId\":\"265ca47c-9996-493b-b6ef-476a91f6e79c\",\"description\":\"模型补写的描述：这个页面没有自己的 description 元数据。\",\"iconKey\":\"http://127.0.0.1:8923/favicon.ico\"}"
+  ],
+  "llmCalls": {
+    "calls": 2,
+    "seenUrls": [
+      "http://127.0.0.1:8923/rich",
+      "http://127.0.0.1:8923/bare"
+    ]
+  },
+  "consoleErrors": [],
+  "rows": [
+    {
+      "id": "G-0 管理员会话前置成立",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "G-1 审核入口可打开（Tab 渲染出面板）",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "G-2 面板明说不会二次调用模型",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "A-1 解析触发一次模型调用",
+      "pass": true,
+      "detail": {
+        "delta": 1,
+        "seen": [
+          "http://127.0.0.1:8923/rich"
+        ]
+      }
+    },
+    {
+      "id": "A-2 模型来源可见（标题/描述/标签/类目）",
+      "pass": true,
+      "detail": {
+        "modelBadges": 6
+      }
+    },
+    {
+      "id": "A-3 页面抓取的图标来源可见",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "A-4 模型值出现在审核界面",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "A-5 类目建议唯一匹配 → 预选同名叶子类目",
+      "pass": true,
+      "detail": {
+        "selectValue": "265ca47c-9996-493b-b6ef-476a91f6e79c",
+        "leafId": "265ca47c-9996-493b-b6ef-476a91f6e79c"
+      }
+    },
+    {
+      "id": "A-6 建站没有第二次模型调用",
+      "pass": true,
+      "detail": {
+        "before": 1,
+        "after": 1
+      }
+    },
+    {
+      "id": "A-7 成功卡片带出站点 id",
+      "pass": true,
+      "detail": {
+        "siteAId": "AI-4C"
+      }
+    },
+    {
+      "id": "A-8 建站请求体不含未勾选字段",
+      "pass": true,
+      "detail": {
+        "keys": [
+          "url",
+          "title",
+          "categoryId",
+          "tags"
+        ]
+      }
+    },
+    {
+      "id": "A-9 请求体标题 = 人工改写值",
+      "pass": true,
+      "detail": {
+        "title": "人工改写标题（AI-4C）"
+      }
+    },
+    {
+      "id": "A-10 请求体带所选标签",
+      "pass": true,
+      "detail": {
+        "tags": [
+          "开发者工具",
+          "效率"
+        ]
+      }
+    },
+    {
+      "id": "A-11 请求体类目 = 预选叶子类目",
+      "pass": true,
+      "detail": {
+        "categoryId": "265ca47c-9996-493b-b6ef-476a91f6e79c"
+      }
+    },
+    {
+      "id": "A-12 落库：描述为空（未勾选不写入）",
+      "pass": false,
+      "detail": {
+        "status": 404,
+        "description": null
+      }
+    },
+    {
+      "id": "A-13 落库：图标为空（未勾选不写入）",
+      "pass": false,
+      "detail": {
+        "iconKey": null
+      }
+    },
+    {
+      "id": "A-14 落库：标题为人工改写值",
+      "pass": false,
+      "detail": {}
+    },
+    {
+      "id": "A-15 落库：标签来自模型且被采用",
+      "pass": false,
+      "detail": {}
+    },
+    {
+      "id": "B-1 missing 徽章出现两次以上（标签/图标）",
+      "pass": false,
+      "detail": {
+        "missingBadges": 1
+      }
+    },
+    {
+      "id": "B-2 标签 missing 的原因可见",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "B-3 图标 missing 的原因可见",
+      "pass": false,
+      "detail": {}
+    },
+    {
+      "id": "B-4 标签勾选框被禁用",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "B-5 图标勾选框被禁用",
+      "pass": false,
+      "detail": {}
+    },
+    {
+      "id": "B-6 第二次解析也只多一次模型调用",
+      "pass": true,
+      "detail": {
+        "delta": 1
+      }
+    },
+    {
+      "id": "C-1 取消标题且不填 → 拒绝并说明原因",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "C-2 拒绝时不发建站请求",
+      "pass": true,
+      "detail": {
+        "before": 1,
+        "after": 1
+      }
+    },
+    {
+      "id": "C-3 未选类目 → 拒绝并说明原因",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "C-4 仍没有发出建站请求",
+      "pass": true,
+      "detail": {
+        "count": 1
+      }
+    },
+    {
+      "id": "B-7 missing 行不影响其余字段建站",
+      "pass": true,
+      "detail": {
+        "siteBId": "模型标题",
+        "siteAId": "AI-4C"
+      }
+    },
+    {
+      "id": "B-8 落库：标签为空（missing 不写空值）",
+      "pass": false,
+      "detail": {}
+    },
+    {
+      "id": "B-9 落库：图标为空",
+      "pass": false,
+      "detail": {}
+    },
+    {
+      "id": "Z-1 全程模型调用次数 = 2（两次解析各一次，两次建站 0 次）",
+      "pass": true,
+      "detail": {
+        "calls": 2
+      }
+    },
+    {
+      "id": "Z-2 无 console error",
+      "pass": true,
+      "detail": {
+        "errors": []
+      }
+    }
+  ],
+  "summary": {
+    "total": 33,
+    "passed": 24,
+    "failed": 9
+  }
+}

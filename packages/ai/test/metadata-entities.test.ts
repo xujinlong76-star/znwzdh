@@ -40,3 +40,37 @@ describe("元数据：第三方 HTML 的数字实体", () => {
     expect(meta.description).toBe("A B'C");
   });
 });
+
+/**
+ * 图标来源：声明的 vs 按根路径猜的。
+ *
+ * 富化审核（AI-4c）把每个字段的来源展示给运营：页面没写 link rel=icon 时，
+ * 抽取层会把 /favicon.ico 当成候选——这是「猜的」，不保证存在。若仍标成
+ * scraped（页面抓取），审核界面就等于替页面作证，运营也没法据此拒绝。
+ */
+describe("元数据：图标来源", () => {
+  it("页面声明了 icon → declared", () => {
+    const html =
+      "<html><head><title>t</title>" +
+      "<link rel=\"icon\" href=\"/assets/icon.png\"></head><body></body></html>";
+    const meta = extractMetadata(html, "https://example.com/page");
+    expect(meta.icon).toBe("https://example.com/assets/icon.png");
+    expect(meta.iconSource).toBe("declared");
+  });
+
+  it("没有声明 icon → fallback 到根路径 /favicon.ico，并如实标 fallback", () => {
+    const html = "<html><head><title>t</title></head><body></body></html>";
+    const meta = extractMetadata(html, "https://example.com/page");
+    expect(meta.icon).toBe("https://example.com/favicon.ico");
+    expect(meta.iconSource).toBe("fallback");
+  });
+
+  it("apple-touch-icon 也算页面声明", () => {
+    const html =
+      "<html><head><title>t</title>" +
+      "<link rel=\"apple-touch-icon\" href=\"/apple.png\"></head><body></body></html>";
+    const meta = extractMetadata(html, "https://example.com/");
+    expect(meta.icon).toBe("https://example.com/apple.png");
+    expect(meta.iconSource).toBe("declared");
+  });
+});

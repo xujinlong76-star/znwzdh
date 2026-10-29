@@ -223,6 +223,7 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
   let html = "";
   let finalUrl = rawUrl;
   let iconUrl: string | null = null;
+  let iconSource: "declared" | "fallback" | null = null;
   let imageUrl: string | null = null;
   let metaTitle: string | null = null;
   let metaDesc: string | null = null;
@@ -245,12 +246,24 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
     metaTitle = meta.title;
     metaDesc = meta.description;
     iconUrl = meta.icon;
+    iconSource = meta.iconSource;
     imageUrl = meta.image;
     lang = meta.lang;
   }
 
   const fallbackTitle = metaTitle ?? hostnameOf(finalUrl);
   const fallbackText = [metaTitle, metaDesc, finalUrl].filter(Boolean).join(" ");
+
+  /**
+   * 图标字段的来源必须按「页面声明的」与「按根路径猜的」分开：
+   * `/favicon.ico` 回退不保证存在，标成 scraped 等于替页面作证。
+   */
+  const iconField: EnrichmentField<string | null> =
+    iconSource === "fallback" && iconUrl
+      ? { value: iconUrl, source: "heuristic", note: "页面没有声明图标，按站点根 /favicon.ico 推测" }
+      : iconUrl
+        ? { value: iconUrl, source: "scraped" }
+        : { value: null, source: "missing", note: "没有抓到页面，无法确认图标" };
 
   // ---- 3. LLM 富化（可选） ----
   const llm = { ...DEFAULT_LLM, ...options.llm };
@@ -286,9 +299,7 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
               ? { value: payload.tags, source: "llm" }
               : { value: [], source: "missing", note: "模型没有给出标签" },
             category: { value: payload.category, source: "llm" },
-            icon: iconUrl
-              ? { value: iconUrl, source: "scraped" }
-              : { value: null, source: "missing", note: "页面没有声明图标" },
+            icon: iconField,
           },
           warnings,
         };
@@ -327,9 +338,7 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
       category: heuristicCategoryName
         ? { value: heuristicCategoryName, source: "heuristic" }
         : { value: null, source: "missing", note: "关键词规则无法判断类目" },
-      icon: iconUrl
-        ? { value: iconUrl, source: "scraped" }
-        : { value: null, source: "missing", note: "页面没有图标，也没有可回退的 favicon 地址" },
+      icon: iconField,
     },
     warnings,
   };

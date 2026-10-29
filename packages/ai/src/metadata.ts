@@ -10,6 +10,14 @@ export interface ExtractedMetadata {
   title: string | null;
   description: string | null;
   icon: string | null;
+  /**
+   * 图标的来源性质：
+   *  - declared —— 页面自己声明的 link rel=icon / apple-touch-icon；
+   *  - fallback —— 页面没声明，按站点根 /favicon.ico 猜的（不保证存在）；
+   *  - null     —— HTTP 抓取没成功，连猜都猜不了。
+   * 富化审核要按来源如实标注：把「猜的」当「抓到的」展示，等于替页面作证。
+   */
+  iconSource: "declared" | "fallback" | null;
   image: string | null;
   siteName: string | null;
   lang: string | null;
@@ -96,10 +104,14 @@ export function extractMetadata(html: string, pageUrl: string): ExtractedMetadat
 
   const image = metaContent(head, "og:image") ?? metaContent(head, "twitter:image");
 
+  const declaredIcon = absolutize(iconCandidate, pageUrl);
+  const fallbackIcon = declaredIcon ? null : absolutize("/favicon.ico", pageUrl);
+
   return {
     title,
     description,
-    icon: absolutize(iconCandidate, pageUrl) ?? absolutize("/favicon.ico", pageUrl),
+    icon: declaredIcon ?? fallbackIcon,
+    iconSource: declaredIcon ? "declared" : fallbackIcon ? "fallback" : null,
     image: absolutize(image, pageUrl),
     siteName: metaContent(head, "og:site_name"),
     lang: firstMatch(head, /<html[^>]+lang=["\']([^"\']+)/i),

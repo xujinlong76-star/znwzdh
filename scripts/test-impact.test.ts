@@ -302,10 +302,20 @@ describe("CLI：--why / --diff", () => {
     expect(res.out).toContain("不在影响面内");
   });
 
-  it("--diff：回放 HEAD~1，rc0 并给出图命中数", () => {
+  it("--diff：回放 HEAD~1，rc0 且输出形态合法", () => {
+    /**
+     * 刻意**不钉「→ 图 」**：`--diff HEAD~1` 回放的是真实仓库的上一笔提交，
+     * 而上一笔可能只改 ci.yml / 文档（没有源码改动）——2026-10-29 实测
+     * 「只改 ci.yml 的提交」就把这条断言打红了。钉死历史内容的测试在多会话
+     * 并行下必然反复假红。
+     *
+     * 契约本身是：rc 0 + 说清回放了什么（有源码改动就给图命中数，
+     * 没有就明说「没有改源码的提交可回放」）。
+     */
     const res = cli(["--diff", "HEAD~1", "--limit", "1", "--no-selector"]);
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("回放");
-    expect(res.out).toContain("→ 图 ");
+    const wellFormed = res.out.includes("→ 图 ") || res.out.includes("没有改源码的提交可回放");
+    expect(wellFormed, `输出既没有图命中数、也没有「无可回放」说明：\n${res.out}`).toBe(true);
   });
 });

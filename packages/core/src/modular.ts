@@ -2,6 +2,7 @@
  * 模块化前端系统核心协议与布局计算算法 (Modular Layout Core Engine)
  */
 
+import { z } from 'zod'
 import { validateAndCleanPluginManifest, type PluginManifestValidation } from './plugin-manifest.ts'
 
 export type WidgetCategory = 'tools' | 'efficiency' | 'analytics' | 'content' | 'ai'
@@ -646,5 +647,271 @@ export function compactWidgetsGrid<T extends { colSpan: number }>(widgets: T[]):
   }
 
   return compacted
+}
+
+/* ------------------------- AI 画布结果的逐类型校验 ------------------------- */
+
+/** 一次生成最多采纳多少张卡：模型跑飞时不该产出上百张卡片 */
+export const MAX_CANVAS_WIDGETS = 24
+
+/**
+ * 校验台账的一条记录。
+ *
+ * 为什么要有这个结构：模型输出是外部输入，而画布是「用户点一下就整套替换」的写入口。
+ * 老实现只做两件事——丢掉不认识的 type、把跨度统一夹到 1~12/1~4。前者只报类型名，
+ * 后者会把 `colSpan: 1` 塞给一张最小 4 列的卡、把 `rowSpan: 9` 塞给最高 3 行的卡，
+ * 夹完就算成功，用户看不出「规划」和「落地」之间被动过哪些手脚。
+ * 现在每一处改动都必须记账，并由调用方展示。
+ */
+export interface CanvasWidgetIssue {
+  /** 模型返回数组里的下标（保底布局本身不产生条目） */
+  index: number
+  type: string
+  field: 'span' | 'config' | 'customTitle' | 'structure'
+  /** 被改动的字段：跨度记 colSpan / rowSpan，配置记具体 key */
+  key: string
+  /** 一句话说明「原本是什么、改成了什么、为什么」 */
+  message: string
+  action: 'adjusted' | 'defaulted' | 'dropped'
+}
+
+export interface CanvasWidgetsValidation {
+  widgets: WidgetInstanceData[]
+  /** 本部署没有对应卡片的类型（按出现顺序去重） */
+  droppedTypes: string[]
+  issues: CanvasWidgetIssue[]
+  /** true = 没有任何合法模块可用，返回的是保底布局，必须对用户明说 */
+  usedFallback: boolean
+}
+
+/** 配置里承担「去哪取数」的字段：值必须是可内嵌/可请求的地址 */
+const URL_LIKE_CONFIG_KEYS = new Set(['url', 'apiurl', 'feedurl'])
+
+/**
+ * 只放行 http(s) 绝对地址与同源相对路径。
+ * `//host` 是协议相对的**外部**地址，不能跟着 `/` 一起放过。
+ */
+function isSafeConfigUrl(value: string): boolean {
+  if (value.startsWith('/') && !value.startsWith('//')) return true
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function canvasFieldSchema(item: WidgetConfigSchemaItem): z.ZodTypeAny {
+  switch (item.type) {
+    case 'select': {
+      const values = (item.options ?? []).map((option) => String(option.value))
+      return z.enum((values.length > 0 ? values : ['__no_option_defined__']) as [string, ...string[]])
+    }
+    case 'boolean':
+      // 字符串 "true"/"false" 由 coerceFieldValue 统一成布尔；这里不接受 z.coerce.boolean()，
+      // 它会把 "false" 变成 true（非空字符串都是 true）。
+      return z.boolean()
+    case 'number':
+      return z.number().finite()
+    case 'text':
+    default:
+      return z.string().trim().max(300)
+  }
+}
+
+function coerceFieldValue(item: WidgetConfigSchemaItem, value: unknown): unknown {
+  if (item.type === 'number' && typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : value
+  }
+  if (item.type === 'boolean' && typeof value === 'string') {
+    const t = value.trim().toLowerCase()
+    if (t === 'true') return true
+    if (t === 'false') return false
+  }
+  if (item.type === 'text' && typeof value === 'string') return value.trim()
+  return value
+}
+
+function normalizeCanvasConfig(
+  rawConfig: unknown,
+  meta: ModularWidgetMeta,
+  index: number,
+  addIssue: (issue: Omit<CanvasWidgetIssue, 'index' | 'type' | 'field'>) => void,
+): Record<string, unknown> {
+  const schema = meta.configSchema ?? []
+  const rawIsObject = Boolean(rawConfig) && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
+  const raw = (rawIsObject ? rawConfig : {}) as Record<string, unknown>
+
+  if (!rawIsObject && rawConfig !== undefined && rawConfig !== null) {
+    addIssue({
+      key: 'config',
+      action: 'defaulted',
+      message: '配置不是对象，已按默认值重建',
+    })
+  }
+
+  if (schema.length === 0) {
+    const extra = Object.keys(raw)
+    if (extra.length > 0) {
+      addIssue({
+        key: 'config',
+        action: 'dropped',
+        message: `该模块没有可配字段，模型给的 ${extra.length} 个字段已丢弃（${extra.slice(0, 4).join('、')}）`,
+      })
+    }
+    return {}
+  }
+
+  const known = new Set(schema.map((item) => item.key))
+  for (const key of Object.keys(raw)) {
+    if (known.has(key)) continue
+    addIssue({ key, action: 'dropped', message: `配置字段「${key}」不属于该模块，已丢弃` })
+  }
+
+  const config: Record<string, unknown> = {}
+  for (const item of schema) {
+    if (!(item.key in raw)) {
+      // 缺字段是提示词允许的正常情形（「需要外部输入时留空」），静默回默认值
+      config[item.key] = item.defaultValue
+      continue
+    }
+    const candidate = coerceFieldValue(item, raw[item.key])
+    const parsed = canvasFieldSchema(item).safeParse(candidate)
+    if (!parsed.success) {
+      config[item.key] = item.defaultValue
+      addIssue({
+        key: item.key,
+        action: 'defaulted',
+        message: `「${item.label}」的值 ${JSON.stringify(candidate)?.slice(0, 60) ?? 'undefined'} 不合法，已回退默认值`,
+      })
+      continue
+    }
+    let value: unknown = parsed.data
+    const urlKey = URL_LIKE_CONFIG_KEYS.has(item.key.toLowerCase())
+    if (urlKey && typeof value === 'string' && value !== '' && !isSafeConfigUrl(value)) {
+      config[item.key] = item.defaultValue
+      addIssue({
+        key: item.key,
+        action: 'dropped',
+        message: `「${item.label}」不是 http(s) 或同源相对地址，已清空（伪协议/私有协议不进画布）`,
+      })
+      continue
+    }
+    config[item.key] = value
+  }
+  return config
+}
+
+/** 保底布局：拿不到任何合法模块时使用，调用方必须据此标注「未按原规划生成」 */
+function fallbackCanvasWidgets(idPrefix: string): WidgetInstanceData[] {
+  const widgets: WidgetInstanceData[] = []
+  for (const [offset, type] of ['quick-search', 'favorites-dock', 'markdown-notes'].entries()) {
+    const meta = BUILTIN_WIDGET_CATALOG[type]
+    // 目录改名时这里跳过而不是抛错：保底布局的意义就是「至少给点能用的」
+    if (!meta) continue
+    widgets.push({
+      id: `${idPrefix}-${offset + 1}`,
+      type,
+      customTitle: meta.title,
+      colSpan: meta.defaultColSpan,
+      rowSpan: meta.defaultRowSpan,
+      config: {},
+      createdAt: Date.now(),
+    })
+  }
+  return widgets
+}
+
+/**
+ * 把模型返回的画布规划校验成可落地的模块实例。
+ *
+ * 逐类型校验：合法类型来自模块目录；跨度按该类型自己的 min/max 夹紧；
+ * config 按目录里声明的字段类型逐字段校验，非法值回默认而不是整卡作废；
+ * 内嵌/取数类字段拒绝伪协议。任何改动都进 issues 台账。
+ */
+export function validateCanvasWidgets(input: unknown, opts: { idPrefix: string }): CanvasWidgetsValidation {
+  const issues: CanvasWidgetIssue[] = []
+  const droppedTypes: string[] = []
+  const widgets: WidgetInstanceData[] = []
+  const addIssue = (index: number, type: string, field: CanvasWidgetIssue['field'], detail: Omit<CanvasWidgetIssue, 'index' | 'type' | 'field'>) => {
+    issues.push({ index, type, field, ...detail })
+  }
+
+  const rawWidgets = Array.isArray((input as { widgets?: unknown } | undefined)?.widgets)
+    ? ((input as { widgets: unknown[] }).widgets)
+    : null
+  if (!rawWidgets) {
+    addIssue(0, '(无)', 'structure', {
+      key: 'widgets',
+      action: 'dropped',
+      message: '模型没有返回模块数组（widgets 缺失或不是数组）',
+    })
+  }
+
+  const list = rawWidgets ?? []
+  if (list.length > MAX_CANVAS_WIDGETS) {
+    addIssue(MAX_CANVAS_WIDGETS, '(溢出)', 'structure', {
+      key: 'widgets',
+      action: 'dropped',
+      message: `模块数量 ${list.length} 超过上限 ${MAX_CANVAS_WIDGETS}，多余部分已丢弃`,
+    })
+  }
+
+  list.slice(0, MAX_CANVAS_WIDGETS).forEach((entry, index) => {
+    const candidate = entry as { type?: unknown; customTitle?: unknown; colSpan?: unknown; rowSpan?: unknown; config?: unknown }
+    if (!candidate || typeof candidate !== 'object') {
+      addIssue(index, '(非法条目)', 'structure', { key: 'widget', action: 'dropped', message: '该条目不是对象，已丢弃' })
+      return
+    }
+    const type = String(candidate.type ?? '').trim()
+    const meta = BUILTIN_WIDGET_CATALOG[type]
+    if (!meta) {
+      const label = type || '(空类型)'
+      if (!droppedTypes.includes(label)) droppedTypes.push(label)
+      addIssue(index, label, 'structure', { key: 'type', action: 'dropped', message: `本部署没有「${label}」这张卡片，整条已丢弃` })
+      return
+    }
+
+    const spanOf = (value: unknown, min: number, max: number, fallback: number, field: string, label: string): number => {
+      const n = typeof value === 'string' ? Number(value) : (value as number)
+      if (typeof n !== 'number' || !Number.isFinite(n)) {
+        addIssue(index, type, 'span', { key: field, action: 'defaulted', message: `${label} 不是数字，已用默认值 ${fallback}` })
+        return fallback
+      }
+      const clamped = clampWidgetSpan(Math.round(n), min, max)
+      if (clamped !== Math.round(n)) {
+        addIssue(index, type, 'span', {
+          key: field,
+          action: 'adjusted',
+          message: `${label} ${Math.round(n)} 超出该卡支持的 ${min}~${max}，已改为 ${clamped}`,
+        })
+      }
+      return clamped
+    }
+
+    const customTitle =
+      typeof candidate.customTitle === 'string' && candidate.customTitle.trim()
+        ? candidate.customTitle.trim().slice(0, 60)
+        : undefined
+    if (candidate.customTitle !== undefined && customTitle === undefined) {
+      addIssue(index, type, 'customTitle', { key: 'customTitle', action: 'dropped', message: '自定义标题不是有效文本，已改用卡片默认标题' })
+    }
+
+    widgets.push({
+      id: `${opts.idPrefix}-${index + 1}`,
+      type,
+      ...(customTitle ? { customTitle } : {}),
+      colSpan: spanOf(candidate.colSpan, meta.minColSpan, meta.maxColSpan, meta.defaultColSpan, 'colSpan', '宽度'),
+      rowSpan: spanOf(candidate.rowSpan, meta.minRowSpan, meta.maxRowSpan, meta.defaultRowSpan, 'rowSpan', '高度'),
+      config: normalizeCanvasConfig(candidate.config, meta, index, (detail) => addIssue(index, type, 'config', detail)),
+      createdAt: Date.now(),
+    })
+  })
+
+  if (widgets.length === 0) {
+    return { widgets: fallbackCanvasWidgets(opts.idPrefix), droppedTypes, issues, usedFallback: true }
+  }
+  return { widgets, droppedTypes, issues, usedFallback: false }
 }
 

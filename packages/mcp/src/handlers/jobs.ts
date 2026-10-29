@@ -2,8 +2,9 @@
  * 任务域工具：入队 / 查询后台任务。
  * run_job 需要 admin（会触发全站扫描）；list_jobs 只需 read。
  */
+import { validateJobPayload } from "@navhub/core";
 import { ListJobsInput, RunJobInput, requireScope, type ToolContext } from "../tools.ts";
-import { ok, type Handler, type HandlerDeps } from "./shared.ts";
+import { fail, ok, type Handler, type HandlerDeps } from "./shared.ts";
 
 export const jobHandlers = {
   async run_job(deps: HandlerDeps, args: unknown, tc: ToolContext) {
@@ -11,8 +12,12 @@ export const jobHandlers = {
     // run_job 需要 admin：它会触发全站扫描（健康巡检/重算/重建索引）
     requireScope(tc, "admin");
     const input = RunJobInput.parse(args ?? {});
-    const jobId = await ctx.repo.enqueueJob(input.kind, input.payload ?? {});
-    await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "job.enqueue", target: jobId, diff: { kind: input.kind, payload: input.payload ?? {} } });
+    const payload = validateJobPayload(input.kind, input.payload);
+    if (!payload.ok) {
+      return fail("任务参数无效: " + payload.issues.map((issue) => `${issue.path.join(".") || "payload"}: ${issue.message}`).join("; "));
+    }
+    const jobId = await ctx.repo.enqueueJob(input.kind, payload.payload);
+    await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "job.enqueue", target: jobId, diff: { kind: input.kind, payload: payload.payload } });
     return ok({ queued: true, jobId, kind: input.kind, note: "任务已入队，Runner 会在 30 秒内执行。用 list_jobs 工具（或 GET /api/jobs）查询执行状态。" });
   },
 

@@ -11,6 +11,7 @@ import {
   maskApiKey,
   resetLlmCapabilityCache,
   type LlmProvider,
+  type LlmStreamEvent,
 } from "../src/llm.ts";
 
 /** 端口不参与请求（fetch 全部注入 mock），只用于通过断言里的 URL 形态 */
@@ -242,6 +243,25 @@ describe("网关：chatCompletion", () => {
 });
 
 describe("网关：流式解析", () => {
+  function sseResponse(chunks: string[], status = 200): Response {
+    const encoder = new TextEncoder();
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+          controller.close();
+        },
+      }),
+      { status, headers: { "Content-Type": "text/event-stream" } },
+    );
+  }
+
+  async function collect(gen: AsyncGenerator<LlmStreamEvent, void, unknown>) {
+    const events: LlmStreamEvent[] = [];
+    for await (const event of gen) events.push(event);
+    return events;
+  }
+
   it("extractSseDelta 只认 data 行，忽略 [DONE] 与坏 JSON", () => {
     expect(extractSseDelta('data: {"choices":[{"delta":{"content":"你"}}]}')).toBe("你");
     expect(extractSseDelta("data: [DONE]")).toBeNull();
@@ -249,27 +269,71 @@ describe("网关：流式解析", () => {
     expect(extractSseDelta("data: {oops")).toBeNull();
   });
 
-  it("chatStream 逐段产出增量文本", async () => {
+  it("chatStream 逐段产出正文，并在末尾带上模型名与真实用量", async () => {
     const sse =
-      'data: {"choices":[{"delta":{"content":"你"}}]}\n\n' +
+      'data: {"model":"stream-model","choices":[{"delta":{"content":"你"}}]}\n\n' +
       'data: {"choices":[{"delta":{"content":"好"}}]}\n\n' +
+      'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}\n\n' +
       "data: [DONE]\n\n";
-    const fetchImpl: typeof fetch = async () =>
-      new Response(
-        new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(sse));
-            controller.close();
-          },
-        }),
-        { status: 200, headers: { "Content-Type": "text/event-stream" } },
-      );
+    const { calls, fetchImpl } = captureFetch(() => sseResponse([sse]));
 
-    const chunks: string[] = [];
-    for await (const delta of chatStream(provider(), { messages: [{ role: "user", content: "hi" }], fetchImpl })) {
-      chunks.push(delta);
-    }
-    expect(chunks.join("")).toBe("你好");
+    const events = await collect(chatStream(provider(), { messages: [{ role: "user", content: "hi" }], fetchImpl }));
+
+    expect(events.filter((e) => e.type === "delta").map((e) => (e as { text: string }).text).join("")).toBe("你好");
+    expect(events.at(-1)).toEqual({
+      type: "end",
+      model: "stream-model",
+      usage: { promptTokens: 7, completionTokens: 2, totalTokens: 9 },
+      thinkingApplied: false,
+    });
+    expect(calls[0].body.stream).toBe(true);
+    // 拿真实用量：请求必须显式要求 include_usage（OpenAI 兼容口径）
+    expect(calls[0].body.stream_options).toEqual({ include_usage: true });
+  });
+
+  it("stream_options 被端点拒收时去参重试一次，并记住不再带（用量记 0 也不让流失败）", async () => {
+    const { calls, fetchImpl } = captureFetch((call) =>
+      call === 1
+        ? jsonResponse({ error: { message: "Unsupported parameter: stream_options" } }, 400)
+        : sseResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n']),
+    );
+    const strict = provider({ model: "stream-usage-strict" });
+
+    const events = await collect(chatStream(strict, { messages: [{ role: "user", content: "hi" }], fetchImpl }));
+    expect(events.filter((e) => e.type === "delta").map((e) => (e as { text: string }).text).join("")).toBe("ok");
+    expect(calls).toHaveLength(2);
+    expect(calls[0].body.stream_options).toEqual({ include_usage: true });
+    expect(calls[1].body.stream_options).toBeUndefined();
+
+    // 能力记忆生效：下一次直接不带，不再白撞一次 400
+    await collect(chatStream(strict, { messages: [{ role: "user", content: "hi" }], fetchImpl }));
+    expect(calls).toHaveLength(3);
+    expect(calls[2].body.stream_options).toBeUndefined();
+  });
+
+  it("reasoning_content 进入独立事件，bug 不混进正文", async () => {
+    const sse =
+      'data: {"choices":[{"delta":{"reasoning_content":"先想"}}]}\n\n' +
+      'data: {"choices":[{"delta":{"content":"答案"}}]}\n\n' +
+      "data: [DONE]\n\n";
+    const { fetchImpl } = captureFetch(() => sseResponse([sse]));
+
+    const events = await collect(chatStream(provider(), { messages: [{ role: "user", content: "hi" }], fetchImpl }));
+    expect(events.filter((e) => e.type === "reasoning").map((e) => (e as { text: string }).text).join("")).toBe("先想");
+    expect(events.filter((e) => e.type === "delta").map((e) => (e as { text: string }).text).join("")).toBe("答案");
+  });
+
+  it("内联 <think> 标签被切在两个分块里也不漏进正文", async () => {
+    const sse =
+      'data: {"choices":[{"delta":{"content":"<thi"}}]}\n\n' +
+      'data: {"choices":[{"delta":{"content":"nk>暗中推理</thi"}}]}\n\n' +
+      'data: {"choices":[{"delta":{"content":"nk>最终答案"}}]}\n\n' +
+      "data: [DONE]\n\n";
+    const { fetchImpl } = captureFetch(() => sseResponse([sse]));
+
+    const events = await collect(chatStream(provider(), { messages: [{ role: "user", content: "hi" }], fetchImpl }));
+    expect(events.filter((e) => e.type === "reasoning").map((e) => (e as { text: string }).text).join("")).toBe("暗中推理");
+    expect(events.filter((e) => e.type === "delta").map((e) => (e as { text: string }).text).join("")).toBe("最终答案");
   });
 });
 

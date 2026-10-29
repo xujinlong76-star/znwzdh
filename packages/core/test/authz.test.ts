@@ -6,7 +6,9 @@ import { evaluateInstanceWrite, isPersonalWritePath, pathnameOf } from "../src/a
  *
  * 背景：`scopeSatisfies` 是一维等级，个人令牌拿到 write 后会同时通过
  * `POST /api/sites`、`PATCH /api/categories/:id`、`POST /api/jobs` 的门槛。
- * 这组用例把「write 在用户域可用、在实例域不可用」钉成矩阵。
+ * 这组用例把「write 不等于实例域通行证」钉成矩阵：唯一的例外入口是
+ * route-policy 的登记清单，而该清单在 2026-10-28 之后是空的
+ * （原先唯一一条「作者改自己的投稿」与实现不符，见 route-policy.ts）。
  */
 describe("evaluateInstanceWrite：个人令牌不得触达实例写面", () => {
   it("个人 write 令牌访问站点/类目/任务写端点 → 拒绝", () => {
@@ -27,13 +29,18 @@ describe("evaluateInstanceWrite：个人令牌不得触达实例写面", () => {
     }
   });
 
-  it("个人 write 令牌访问投稿修改 → 放行（用户域例外）", () => {
+  it("个人 write 令牌访问投稿审批 → 拒绝（曾经的唯一例外已清空）", () => {
+    // P0 回归锁：这条登记的理由是「作者改自己的投稿」，但该能力从未实现
+    // （处理体只有 approve/reject 且无归属校验），例外实际把实例域的审批动作
+    // 交给了个人令牌 ⇒ 自审自批。路由已提为 admin，清单清空。
+    // 保留 required:"write" 这一格：即使有人把路由重新降成 write，没登记就没放行。
     const decision = evaluateInstanceWrite({
       ownerScoped: true,
       required: "write",
       path: "/api/submissions/42",
     });
-    expect(decision.allowed).toBe(true);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe("personal_token_instance_write");
   });
 
   it("实例令牌（owner 为空）不受影响", () => {
@@ -54,11 +61,16 @@ describe("evaluateInstanceWrite：个人令牌不得触达实例写面", () => {
     expect(evaluateInstanceWrite({ ownerScoped: true, required: "write", path: "https://evil.example/api/sites" }).allowed).toBe(false);
   });
 
-  it("按段匹配而不是前缀：只放行真正的投稿编号路径", () => {
+  it("清单为空时 isPersonalWritePath 不认任何路径（含投稿编号路径）", () => {
+    // 按段匹配 vs 按前缀匹配这条性质本身由 test/route-policy.test.ts 的
+    // matchesRoutePath 用例钉住；这里只钉「没有登记就没有放行」。
+    // 新登记一条例外时，apps/api/test/route-policy.test.ts 会要求它命中且只命中
+    // 一条 write 级真实路由，并且不许退化成前缀放行。
     expect(isPersonalWritePath("/api/sites")).toBe(false);
     expect(isPersonalWritePath("/api/submissions")).toBe(false);
-    expect(isPersonalWritePath("/api/submissions/9")).toBe(true);
-    // 前缀匹配会连带放行未来新增的 /api/submissions/export；按段匹配不会
-    expect(isPersonalWritePath("/api/submissions/export/deep")).toBe(false);
+    expect(isPersonalWritePath("/api/submissions/9")).toBe(false);
+    expect(isPersonalWritePath("/api/submissions/9/extra")).toBe(false);
+    // 绝对 URL 不是站内路径：pathnameOf 返回空串，按拒绝处理
+    expect(isPersonalWritePath("https://evil.example/api/submissions/9")).toBe(false);
   });
 });

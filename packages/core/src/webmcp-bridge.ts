@@ -36,8 +36,20 @@ export interface WebMcpToolDefinition {
 
 export type WebMcpToolHandler = (params: Record<string, unknown>) => Promise<unknown> | unknown;
 
+/** 注册结果：区分「表满」与「跨 owner 同名」——前者 429，后者 409 */
+export type WebMcpRegistrationResult =
+  | { ok: true }
+  | { ok: false; reason: "full" | "conflict" };
+
+interface RegisteredWebMcpTool {
+  def: WebMcpToolDefinition;
+  handler: WebMcpToolHandler;
+  /** null = 内置/实例级工具，对所有调用方可见；非空 = 某个终端用户注册的私有工具 */
+  owner: string | null;
+}
+
 export class WebMcpBridge {
-  private tools: Map<string, { def: WebMcpToolDefinition; handler: WebMcpToolHandler }> = new Map();
+  private tools: Map<string, RegisteredWebMcpTool> = new Map();
   private allowedOrigins: Set<string>;
   /** 动态注册表上限：防止 /api/tools/synthesize 被滥用导致内存无限增长 */
   private readonly maxTools: number;
@@ -50,16 +62,42 @@ export class WebMcpBridge {
   }
 
   /**
-   * 注册自定义 MCP 工具
+   * 注册自定义 MCP 工具（内置/实例级入口）。
+   *
+   * 同名且同 owner 时覆盖（内置工具允许重复注册，行为与旧版一致）；
+   * **跨 owner 同名直接拒绝**——否则任意调用方都能用同名工具覆盖别人的实现
+   * （tool poisoning：注册一个名为 list_categories 的工具，等别人来调用）。
+   *
+   * @returns 注册成功返回 true；跨 owner 同名或达到 maxTools 上限返回 false
    */
+  public registerTool(def: WebMcpToolDefinition, handler: WebMcpToolHandler, owner: string | null = null): boolean {
+    return this.registerOwnedTool(def, handler, owner).ok;
+  }
+
   /**
-   * 注册自定义 MCP 工具。
-   * @returns 注册成功返回 true；同名覆盖返回 true；达到 maxTools 上限且为新工具时返回 false（调用方应回 429）
+   * 带 owner 的注册入口：返回结构化结果，调用方可据此回 409（冲突）或 429（表满）。
    */
-  public registerTool(def: WebMcpToolDefinition, handler: WebMcpToolHandler): boolean {
-    if (!this.tools.has(def.name) && this.tools.size >= this.maxTools) return false;
-    this.tools.set(def.name, { def, handler });
-    return true;
+  public registerOwnedTool(
+    def: WebMcpToolDefinition,
+    handler: WebMcpToolHandler,
+    owner: string | null = null,
+  ): WebMcpRegistrationResult {
+    const normalized = owner && owner.length > 0 ? owner : null;
+    const existing = this.tools.get(def.name);
+    if (existing && existing.owner !== normalized) return { ok: false, reason: "conflict" };
+    if (!existing && this.tools.size >= this.maxTools) return { ok: false, reason: "full" };
+    this.tools.set(def.name, { def, handler, owner: normalized });
+    return { ok: true };
+  }
+
+  /** 查询工具归属：undefined = 不存在；null = 公共工具；string = 私有工具 */
+  public ownerOf(name: string): string | null | undefined {
+    const tool = this.tools.get(name);
+    return tool ? tool.owner : undefined;
+  }
+
+  private visibleTo(tool: RegisteredWebMcpTool, caller: string | null): boolean {
+    return tool.owner === null || tool.owner === caller;
   }
 
   public get toolCount(): number {
@@ -71,16 +109,20 @@ export class WebMcpBridge {
   }
 
   /**
-   * 列出所有可用工具
+   * 列出调用方可见的工具：公共工具 + 自己注册的私有工具。
+   * caller 为 null 时只返回公共工具——匿名调用方看不到别人的私有工具。
    */
-  public listTools(): WebMcpToolDefinition[] {
-    return Array.from(this.tools.values()).map((t) => t.def);
+  public listTools(caller: string | null = null): WebMcpToolDefinition[] {
+    return Array.from(this.tools.values())
+      .filter((t) => this.visibleTo(t, caller))
+      .map((t) => t.def);
   }
 
   /**
-   * 核心 JSON-RPC 2.0 请求处理器
+   * 核心 JSON-RPC 2.0 请求处理器。
+   * @param caller 调用方身份；私有工具只对注册者可见/可调用
    */
-  public async handleRpc(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+  public async handleRpc(request: JsonRpcRequest, caller: string | null = null): Promise<JsonRpcResponse> {
     if (!request || request.jsonrpc !== '2.0') {
       return {
         jsonrpc: '2.0',
@@ -97,7 +139,7 @@ export class WebMcpBridge {
           jsonrpc: '2.0',
           id,
           result: {
-            tools: this.listTools(),
+            tools: this.listTools(caller),
           },
         };
       }
@@ -119,7 +161,8 @@ export class WebMcpBridge {
         }
 
         const registered = this.tools.get(toolName);
-        if (!registered) {
+        // 不可见与不存在返回同一个错误：不向调用方泄露「这个私有工具存在」
+        if (!registered || !this.visibleTo(registered, caller)) {
           return {
             jsonrpc: '2.0',
             id,

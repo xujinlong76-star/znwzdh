@@ -779,6 +779,81 @@ export const PluginStarResponse = z.looseObject({
 export const OkResponse = z.looseObject({ ok: z.literal(true) });
 
 /* ------------------------------------------------------------------ *
+ * 通知中心（站内信 + 投递台账）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 一条站内通知。`readAt` 为 null 表示未读；`body` 可空（只有标题的提醒）。
+ * identity 是服务端规范化后的收件人键，前端只当不透明串用。
+ */
+export const NotificationItemPayload = z.looseObject({
+  id: z.string(),
+  identity: z.string(),
+  kind: z.string(),
+  title: z.string(),
+  body: z.string().nullable(),
+  readAt: z.number().nullable(),
+  createdAt: z.number(),
+});
+
+/** GET /api/me/notifications 与 GET /api/admin/notifications 共用的分页壳 */
+export const NotificationListResponse = z.looseObject({
+  items: z.array(NotificationItemPayload),
+  hasMore: z.boolean(),
+  unread: z.number().int(),
+  nextOffset: z.number().int(),
+});
+
+/** GET /api/me/notifications/unread-count：角标轮询的最小载荷 */
+export const NotificationUnreadCountResponse = z.looseObject({
+  ok: z.literal(true),
+  unread: z.number().int(),
+});
+
+/**
+ * GET /api/admin/notifications/deliveries：投递台账。
+ * status/attempts/nextAttemptAt 是重试判据，缺一个后台就只能看不能判。
+ */
+export const NotificationDeliveryItemPayload = z.looseObject({
+  id: z.string(),
+  identity: z.string(),
+  channel: z.string(),
+  kind: z.string(),
+  status: z.enum(["pending", "delivered", "deferred", "failed"]),
+  attempts: z.number().int(),
+  nextAttemptAt: z.number().nullable(),
+  lastError: z.string().nullable(),
+  createdAt: z.number(),
+  deliveredAt: z.number().nullable(),
+});
+
+export const NotificationDeliveryListResponse = z.looseObject({
+  items: z.array(NotificationDeliveryItemPayload),
+  hasMore: z.boolean(),
+  nextOffset: z.number().int(),
+});
+
+/**
+ * GET /api/categories/{id}/impact：删类目前的影响面预演。
+ * 四个计数必须是服务端算好的数——前端自己遍历全树会把「能不能删」的判断
+ * 变成一次客户端复制，两侧口径一旦分叉就等于没有护栏。
+ */
+export const CategoryImpactResponse = z.looseObject({
+  category: z.looseObject({
+    id: z.string(),
+    title: z.string(),
+    slug: z.string().nullable(),
+    enabled: z.boolean(),
+    parentId: z.string().nullable(),
+    anchor: z.string(),
+  }),
+  childCategories: z.number().int(),
+  descendantCategories: z.number().int(),
+  directSites: z.number().int(),
+  subtreeSites: z.number().int(),
+});
+
+/* ------------------------------------------------------------------ *
  * 绑定表
  * ------------------------------------------------------------------ */
 
@@ -820,6 +895,18 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/favorites": { schema: FavoritesListResponse, name: "FavoritesListResponse" },
   "GET /api/collections": { schema: CollectionListResponse, name: "CollectionListResponse" },
   "GET /api/collections/{slug}": { schema: CollectionDetailResponse, name: "CollectionDetailResponse" },
+  // 通知中心：用户面与管理端共用分页壳（管理端多一个收件人维度，形状一致）
+  "GET /api/me/notifications": { schema: NotificationListResponse, name: "NotificationListResponse" },
+  "GET /api/admin/notifications": { schema: NotificationListResponse, name: "NotificationListResponse" },
+  "GET /api/me/notifications/unread-count": {
+    schema: NotificationUnreadCountResponse,
+    name: "NotificationUnreadCountResponse",
+  },
+  "GET /api/admin/notifications/deliveries": {
+    schema: NotificationDeliveryListResponse,
+    name: "NotificationDeliveryListResponse",
+  },
+  "GET /api/categories/{id}/impact": { schema: CategoryImpactResponse, name: "CategoryImpactResponse" },
 
   /* 写侧：创建返回 201，更新/删除返回 200；收藏创建在幂等命中时回 200 */
   "POST /api/sites": { schema: SitePayload, name: "SitePayload", status: "201" },

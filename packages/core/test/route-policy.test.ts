@@ -53,11 +53,17 @@ describe("classifyRoute：优先级与默认方向", () => {
     }
   });
 
-  it("登记的个人写路由先于 write 默认规则", () => {
+  it("个人写例外清单为空 ⇒ 投稿审批落回 write 默认规则（拒绝）", () => {
+    // 这里钉的是 2026-10-28 的越权修复：`PATCH /api/submissions/:number` 曾被登记成
+    // 「作者改自己的投稿」例外，但该能力从未实现（处理体只有 approve/reject 且无归属校验），
+    // 效果是把实例域的审核动作放行给个人令牌。路由改为 admin，例外清空。
+    // 「登记优先于默认」这条规则本身因此暂时无例可验；一旦清单非空，
+    // apps/api/test/route-policy.test.ts 会要求每条登记都命中真实的 write 级路由。
+    expect([...PERSONAL_TOKEN_WRITE_ROUTES]).toEqual([]);
     const d = classifyRoute({ method: "PATCH", path: "/api/submissions/:number", declaredScope: "write" });
-    expect(d.mutationClass).toBe("user-write");
-    expect(d.basis).toBe("personal-write-registered");
-    expect(d.personalTokenAllowed).toBe(true);
+    expect(d.mutationClass).toBe("instance-write");
+    expect(d.basis).toBe("instance-default");
+    expect(d.personalTokenAllowed).toBe(false);
   });
 
   it("public 级写路由默认按用户域放行", () => {
@@ -122,8 +128,8 @@ describe("策略表形状", () => {
 });
 
 describe("isPersonalUserWritePath 与 personalTokenMayWrite 同源", () => {
-  it("投稿修改路径放行，其它路径一律不放行", () => {
-    expect(isPersonalUserWritePath("/api/submissions/42")).toBe(true);
+  it("清单为空时不放行任何路径（含投稿修改路径）", () => {
+    expect(isPersonalUserWritePath("/api/submissions/42")).toBe(false);
     expect(isPersonalUserWritePath("/api/submissions")).toBe(false);
     expect(isPersonalUserWritePath("/api/submissions/42/extra")).toBe(false);
     expect(isPersonalUserWritePath("/api/sites")).toBe(false);
@@ -131,7 +137,7 @@ describe("isPersonalUserWritePath 与 personalTokenMayWrite 同源", () => {
   });
 
   it("personalTokenMayWrite 只看 write/admin 这一格", () => {
-    expect(personalTokenMayWrite({ method: "PATCH", path: "/api/submissions/42", declaredScope: "write" })).toBe(true);
+    expect(personalTokenMayWrite({ method: "PATCH", path: "/api/submissions/42", declaredScope: "write" })).toBe(false);
     expect(personalTokenMayWrite({ method: "PATCH", path: "/api/submissions/42", declaredScope: "admin" })).toBe(false);
     expect(classify({ method: "PATCH", path: "/api/submissions/42", declaredScope: "admin" }).mutationClass).toBe("instance-write");
   });

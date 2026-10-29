@@ -19,6 +19,13 @@ let dir: string;
 let ctx: AppContext;
 let handlers: ReturnType<typeof createHandlers>;
 
+/**
+ * 真跑探活链路的用例超时（DNS/HTTP 都按真实超时退避）。
+ * vitest 默认 testTimeout 是 5000ms，本例实测 4.5s，任何负载下都会随机假红
+ * （报错只有一句 "Test timed out in 5000ms"，看不出是慢还是回归）。
+ */
+const SLOW_PROBE_MS = 30_000;
+
 const FULL: ToolContext = { actor: "mcp:test", scopes: ["read", "write"], has: () => true };
 const READONLY: ToolContext = {
   actor: "mcp:readonly", scopes: ["read"],
@@ -254,7 +261,7 @@ describe("健康巡检", () => {
     expect(Array.isArray(body.broken)).toBe(true);
     // 所有测试用 URL 都不会真正联网成功，因此 broken 应等于 checked
     expect(body.healthy + body.broken.length).toBe(body.checked);
-  });
+  }, SLOW_PROBE_MS);
 });
 
 describe("Phase 4 新工具", () => {
@@ -368,6 +375,16 @@ describe("Phase 4 新工具", () => {
     const body = payload(res);
     expect(body.queued).toBe(true);
     expect(body.kind).toBe("recompute_rank");
+  });
+
+  it("run_job 拒绝拼错的危险任务参数且不入队", async () => {
+    const admin: ToolContext = { actor: "mcp:admin", scopes: ["read", "write", "admin"], has: () => true };
+    const before = (await ctx.repo.listJobs(undefined, 200)).filter((job) => job.kind === "data_retention").length;
+    const res = await handlers.run_job({ kind: "data_retention", payload: { applz: true } }, admin);
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text).toContain("任务参数无效");
+    const after = (await ctx.repo.listJobs(undefined, 200)).filter((job) => job.kind === "data_retention").length;
+    expect(after).toBe(before);
   });
 
   it("只读 token 调用新写工具被拒绝", async () => {

@@ -111,7 +111,8 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
      且先剥注释；`resolve(ROOT, "scripts", "x.mjs")` 这种**分段拼接**也认（真实盲区：
      `check-large-files.test.ts` 就是这么写的）；
    - **镜像边**：`scripts/core-mirrors.json` 登记的 core ↔ overlay 镜像，改任一侧都影响消费另一侧的测试。
-   从改动文件做**反向 BFS**（谁传递地引用了它），命中测试根的测试全部入选。
+   从改动文件做**反向 BFS**（谁传递地引用了它），命中测试根的测试全部入选。测试根与 vitest include
+   对齐——`packages/*/test` 也算：CI 的 `vitest run --shard` 会跑它们，漏在图外时改 core 只能靠词根兜底。
    目录依赖（测试扫描某个目录）**只对起点生效**，否则改一个 api 路由会把「扫 apps/api/test」的
    web 测试也串进来；
 3. 图没命中时按**词根回退**：文件名/父目录名的词干出现在测试文件名里就选中（`plugins` → `plugin`），
@@ -140,10 +141,27 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
 | `NAVHUB_PRECOMMIT_E2E=1` | 跑完 vitest 再跑**本次暂存的** Playwright 用例；没暂存 spec 就跳过 |
 | `NAVHUB_PRECOMMIT_DRYRUN=1` | 只打印将运行哪些文件（`DRYRUN_FILES=[...]`），不真跑 |
 | `NAVHUB_PRECOMMIT_FILES=a,b` | 覆盖「暂存集」，供自检注入（正常提交别设） |
+| `NAVHUB_PRECOMMIT_NO_GRAPH=1` | 跳过图、只走旧词根口径。给 `test-impact --diff` 当对照臂，正常提交别设 |
 
 选测器本身有两层测试：`scripts/precommit-select.test.ts` 固定「改动 → 选中哪些文件」（走生成物的
 dry-run），`scripts/test-impact.test.ts` 固定图的语义（三类边、目录依赖只对起点生效、注释不算依赖、
 真实仓库验收口径）。改选测逻辑后先跑它们，别靠人肉核对。
+
+**选测可解释性**（`scripts/test-impact.mjs`，2026-10-29 补）：图给的是文件名，没有理由——
+漏选不报错，图选错了也看不出来。两个方向各一把工具：
+
+- `node scripts/test-impact.mjs --why <test> --changed <file...>`（或 `--base <ref>`）：打印改动到
+  该测试的**最短依赖链**，链上每一跳都是图里的真实边，链首是改动文件、链尾是测试。测试不可达
+  （或改动拼错/已删除）时 rc1——「为什么没被选中」同样要能回答。
+  实测：`--why apps/api/test/plugins-api.test.ts --changed apps/api/src/routes/backup.ts` 打出
+  `backup.ts → server.ts → plugins-api.test.ts`（2 跳）。
+- `node scripts/test-impact.mjs --diff <base> [--limit 6] [--no-selector]`：回放 `<base>..HEAD`
+  最近 N 个改了源码的提交，逐一对比「图命中 / 选择器实际会跑 / 按词根或整棵会选多少」。
+  **图命中但选择器没跑 ⇒ rc1**（这是执行面的漏跑）；词根/整棵额外选的只计数并举例（兜底宽度，
+  供审阅）。选择器用注入式 dry-run 跑（不真跑测试），词根臂靠 `NAVHUB_PRECOMMIT_NO_GRAPH=1`。
+  实测定标（2026-10-29）：`9460971c` 图 9 / 选择器 9（词根口径 49）；`7de79c31` 图 101 / 选择器 101
+  （词根额外 2）——图与执行面一致，词根口径明显更宽。
+- `node scripts/test-impact.mjs --stats`：图的规模（扫描文件 / 测试数 / 引用边）与分根计数。
 
 **a11y 门禁的范围**：暂存了 `apps/web-overlay/src/**/*.tsx` 时，钩子会设
 `NAVHUB_A11Y_SCOPE=<这些文件>`，`field-names` 只检查它们。

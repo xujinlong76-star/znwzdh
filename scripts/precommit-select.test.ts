@@ -60,6 +60,18 @@ describe("pre-commit 选测：改动 → 测试文件", () => {
     expect(files.length).toBeLessThan(128);
   });
 
+  it("NAVHUB_PRECOMMIT_NO_GRAPH=1 只走旧词根口径（test-impact --diff 的对照臂）", () => {
+    // 回放工具拿它当「旧启发式会选什么」的真值，而不是在 CLI 里再实现一份词根逻辑。
+    // 两边一旦漂移，这个开关会先红。
+    const withGraph = select(["apps/api/src/routes/backup.ts"]);
+    const noGraph = select(["apps/api/src/routes/backup.ts"], { NAVHUB_PRECOMMIT_NO_GRAPH: "1" });
+    expect(withGraph).toContain("apps/api/test/plugins-api.test.ts");
+    expect(noGraph).not.toContain("apps/api/test/plugins-api.test.ts");
+    expect(noGraph).toContain("apps/api/test/backup-async-api.test.ts");
+    expect(noGraph.length).toBeGreaterThan(0);
+    expect(noGraph.length).toBeLessThan(withGraph.length);
+  });
+
   it("改 check-bundle-budget.mjs：通用词根不许把同前缀族整族拖进来", () => {
     // 曾经的过度匹配：词根 check 命中 scripts 下 11/N 个测试文件名，「按名字收窄」
     // 于是选出 12 个——离整棵只差一点，收窄等于没做。判据是词根的**广度**，

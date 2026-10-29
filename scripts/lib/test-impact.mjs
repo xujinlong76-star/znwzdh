@@ -46,8 +46,18 @@ const BASE_SCAN_DIRS = [
   "e2e",
 ];
 
-/** 能出现在选测结果里的测试根（= vitest.config.ts 的 include，去掉不可运行的 overlay/test） */
+/**
+ * 能出现在选测结果里的测试根（= vitest.config.ts 的 include，去掉不可运行的 overlay/test）。
+ * `packages/*\/test` 也在其中：CI 的 `vitest run --shard` 会跑它们。漏在图外时，改 core
+ * 源码只能靠词根兜底选 core 自己的测试——兜底不报错，也不保证覆盖。
+ */
 const RESULT_TEST_ROOTS = ["apps/api/test/", "apps/web/test/", "apps/web-overlay/scripts/", "scripts/"];
+const PACKAGES_TEST_RE = /^packages\/[^/]+\/test\//;
+
+function isResultTestFile(file) {
+  if (!TEST_FILE_RE.test(file)) return false;
+  return PACKAGES_TEST_RE.test(file) || RESULT_TEST_ROOTS.some((prefix) => file.startsWith(prefix));
+}
 
 const ALIAS_ROOTS = {
   "@/": "apps/web-overlay/src",
@@ -229,8 +239,7 @@ export function buildGraph({ root = process.cwd() } = {}) {
 
   for (const file of files) {
     const canon = canonicalPath(file);
-    const isResultTest = TEST_FILE_RE.test(file) && RESULT_TEST_ROOTS.some((prefix) => file.startsWith(prefix));
-    if (isResultTest) testFiles.add(canon);
+    if (isResultTestFile(file)) testFiles.add(canon);
 
     let text;
     try {
@@ -286,13 +295,19 @@ export function graphFor(root = process.cwd()) {
 }
 
 /**
- * 哪些测试（传递地）依赖 changedFiles。
- * 纯反向 BFS：从改动文件出发，沿「谁引用了我」走到底。
- * @returns {string[]} 仓库相对、posix、排好序
+ * 哪些测试（传递地）依赖 changedFiles，以及「为什么」。
+ *
+ * 纯反向 BFS：从改动文件出发，沿「谁引用了我」走到底。BFS 先到先得 ⇒ 父指针给出的
+ * 是一条**边数最短**的依赖链（链首是改动文件，链尾是测试）。目录依赖的父指针指向
+ * 触发它的那个真实改动文件，否则链会以 `dir:apps/api/test` 这种合成节点开头，
+ * 「为什么选这条」就没法读了。
+ *
+ * @returns {{tests:string[], paths:Map<string,string[]>}}
  */
-export function impactedTests(graph, changedFiles) {
+export function impactedWithPaths(graph, changedFiles) {
   const start = [...new Set((changedFiles ?? []).map(canonicalPath).filter(Boolean))];
   const visited = new Set(start);
+  const parent = new Map();
   const queue = start.slice();
   const hits = new Set();
 
@@ -308,10 +323,10 @@ export function impactedTests(graph, changedFiles) {
   for (const file of start) {
     for (const dir of ancestorDirs(file)) {
       for (const dep of graph.reverse.get("dir:" + dir) ?? []) {
-        if (!visited.has(dep)) {
-          visited.add(dep);
-          queue.push(dep);
-        }
+        if (visited.has(dep)) continue;
+        visited.add(dep);
+        parent.set(dep, file);
+        queue.push(dep);
       }
     }
   }
@@ -322,9 +337,31 @@ export function impactedTests(graph, changedFiles) {
     for (const dep of graph.reverse.get(node) ?? []) {
       if (visited.has(dep)) continue;
       visited.add(dep);
+      parent.set(dep, node);
       queue.push(dep);
     }
   }
 
-  return [...hits].sort();
+  const tests = [...hits].sort();
+  const paths = new Map();
+  for (const test of tests) {
+    const chain = [];
+    const guard = new Set();
+    let cur = test;
+    while (cur !== undefined && !guard.has(cur)) {
+      guard.add(cur);
+      chain.push(cur);
+      cur = parent.get(cur);
+    }
+    paths.set(test, chain.reverse());
+  }
+  return { tests, paths };
+}
+
+/**
+ * 哪些测试（传递地）依赖 changedFiles。
+ * @returns {string[]} 仓库相对、posix、排好序
+ */
+export function impactedTests(graph, changedFiles) {
+  return impactedWithPaths(graph, changedFiles).tests;
 }

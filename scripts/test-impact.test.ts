@@ -7,11 +7,12 @@
  * 这里把图的语义逐条钉住：import 边、测试里的路径字面量（含 resolve(ROOT, "scripts", "x.mjs")
  * 这种分段拼接）、core↔overlay 镜像边，以及真实仓库的验收口径。
  */
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { buildGraph, canonicalPath, graphFor, impactedTests, pathLiteralDeps } from "./lib/test-impact.mjs";
+import { buildGraph, canonicalPath, graphFor, impactedTests, impactedWithPaths, pathLiteralDeps } from "./lib/test-impact.mjs";
 
 const ROOT = process.cwd();
 const tempRoots: string[] = [];
@@ -110,6 +111,67 @@ describe("图的三类边", () => {
   });
 });
 
+describe("依赖链（--why 的数据来源）", () => {
+  it("链从改动文件起、到测试止，每一跳都是真实的反向边", () => {
+    const root = makeRepo({
+      "apps/api/src/a.ts": "export const a = 1;\n",
+      "apps/api/src/b.ts": 'import { a } from "./a.ts";\n',
+      "apps/api/test/b.test.ts": 'import { b } from "../src/b.ts";\n',
+      "apps/api/test/unrelated.test.ts": "export const x = 1;\n",
+    });
+    const graph = buildGraph({ root });
+    const { tests, paths } = impactedWithPaths(graph, ["apps/api/src/a.ts"]);
+    expect(tests).toEqual(["apps/api/test/b.test.ts"]);
+    const chain = paths.get("apps/api/test/b.test.ts");
+    expect(chain).toEqual(["apps/api/src/a.ts", "apps/api/src/b.ts", "apps/api/test/b.test.ts"]);
+    for (let i = 0; i + 1 < chain.length; i += 1) {
+      expect(graph.reverse.get(chain[i])?.has(chain[i + 1]), `${chain[i]} → ${chain[i + 1]} 不是图里的边`).toBe(true);
+    }
+  });
+
+  it("目录依赖的链首是真实改动文件，不是 dir: 合成节点", () => {
+    const root = makeRepo({
+      "apps/api/test/a.test.ts": "export const a = 1;\n",
+      "apps/api/test/sweeper.test.ts": 'const dir = "apps/api/test";\n',
+    });
+    const graph = buildGraph({ root });
+    const chain = impactedWithPaths(graph, ["apps/api/test/a.test.ts"]).paths.get("apps/api/test/sweeper.test.ts");
+    expect(chain).toEqual(["apps/api/test/a.test.ts", "apps/api/test/sweeper.test.ts"]);
+    expect(chain.some((n) => n.startsWith("dir:"))).toBe(false);
+  });
+
+  it("真实仓库：backup.ts 到 plugins-api.test.ts 的链可逐跳核对", () => {
+    const graph = graphFor(ROOT);
+    const changed = "apps/api/src/routes/backup.ts";
+    const test = "apps/api/test/plugins-api.test.ts";
+    const chain = impactedWithPaths(graph, [changed]).paths.get(test);
+    expect(chain, "链不存在").toBeTruthy();
+    expect(chain[0]).toBe(changed);
+    expect(chain[chain.length - 1]).toBe(test);
+    for (let i = 0; i + 1 < chain.length; i += 1) {
+      expect(graph.reverse.get(chain[i])?.has(chain[i + 1]), `断链：${chain[i]} → ${chain[i + 1]}`).toBe(true);
+    }
+  });
+});
+
+describe("packages/*/test 也是图里的测试根", () => {
+  it("改 core 源码：core 自己的测试也在影响面里（CI 会跑它们）", () => {
+    const root = makeRepo({
+      "packages/core/src/a.ts": "export const a = 1;\n",
+      "packages/core/src/index.ts": 'export * from "./a.ts";\n',
+      "packages/core/test/a.test.ts": 'import { a } from "../src/a.ts";\n',
+      "apps/web/test/a.test.ts": 'import { a } from "@navhub/core";\n',
+    });
+    const hit = impactedTests(buildGraph({ root }), ["packages/core/src/a.ts"]);
+    expect(hit).toEqual(["apps/web/test/a.test.ts", "packages/core/test/a.test.ts"]);
+  });
+
+  it("真实仓库的图里确实包含 packages 测试", () => {
+    const tests = [...graphFor(ROOT).testFiles];
+    expect(tests.some((t) => t.startsWith("packages/core/test/"))).toBe(true);
+  });
+});
+
 describe("目录依赖只对起点生效", () => {
   const files = {
     "apps/api/src/a.ts": "export const a = 1;\n",
@@ -166,5 +228,42 @@ describe("真实仓库的验收口径", () => {
 
   it("同根重复调用返回同一张图（选测器一次提交只建一次）", () => {
     expect(graphFor(ROOT)).toBe(graphFor(ROOT));
+  });
+});
+
+describe("CLI：--why / --diff", () => {
+  function cli(args: string[]): { status: number; out: string } {
+    try {
+      const out = execFileSync(process.execPath, ["scripts/test-impact.mjs", ...args], {
+        cwd: ROOT,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return { status: 0, out };
+    } catch (error) {
+      const e = error as { status?: number; stdout?: string; stderr?: string };
+      return { status: e.status ?? -1, out: `${e.stdout ?? ""}${e.stderr ?? ""}` };
+    }
+  }
+
+  it("--why：打印改动 → 测试的最短链（链上每一跳都能在图里核对）", () => {
+    const res = cli(["--why", "apps/api/test/plugins-api.test.ts", "--changed", "apps/api/src/routes/backup.ts"]);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("apps/api/src/routes/backup.ts");
+    expect(res.out).toContain("→ apps/api/src/server.ts");
+    expect(res.out).toContain("→ apps/api/test/plugins-api.test.ts");
+  });
+
+  it("--why：不可达的测试 rc1，而不是静默给个空结果", () => {
+    const res = cli(["--why", "apps/api/test/plugins-api.test.ts", "--changed", "scripts/check-large-files.mjs"]);
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain("不在影响面内");
+  });
+
+  it("--diff：回放 HEAD~1，rc0 并给出图命中数", () => {
+    const res = cli(["--diff", "HEAD~1", "--limit", "1", "--no-selector"]);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("回放");
+    expect(res.out).toContain("→ 图 ");
   });
 });

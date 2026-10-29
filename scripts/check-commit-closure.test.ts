@@ -17,7 +17,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { declares, findGaps, namedImports, posixNormalize } from "./check-commit-closure.mjs";
+import { codeMask, collectDeps, declares, findGaps, namedImports, posixNormalize } from "./check-commit-closure.mjs";
 
 const FILES: Record<string, string> = {
   "src/a.ts": 'import { need } from "./b.ts";\nimport * as ns from "./barrel.ts";\nconsole.log(need, ns.throughBarrel);\n',
@@ -120,5 +120,64 @@ describe("闭包判定", () => {
   it("文件不存在时报出来，而不是静默跳过", () => {
     const { problems } = run(["src/nope.ts"], {});
     expect(problems.join("\n")).toContain("文件不存在");
+  });
+});
+
+describe("字符串与注释里的伪导入", () => {
+  it("模板串里的 import 不算依赖（video-evolution-v10 的 ./math.ts 假阳性）", () => {
+    const src = "const files = { '/index.ts': `import { multiply } from './math.ts'` }\n";
+    expect(collectDeps(src)).toEqual([]);
+  });
+
+  it("行注释与块注释里的 import 不算依赖", () => {
+    const src = [
+      "// import { x } from './gone.ts'",
+      "/* import y from './also-gone.ts' */",
+      "export const a = 1",
+    ].join("\n");
+    expect(collectDeps(src)).toEqual([]);
+  });
+
+  it("真实导入不被掩码误伤", () => {
+    const src = "import { a } from './b.ts'\nconst s = './c.ts'\n";
+    expect(collectDeps(src).map((d) => d.spec)).toEqual(["./b.ts"]);
+  });
+
+  it("codeMask 只标字符串与注释", () => {
+    const src = "a // x\nb 'y'\n";
+    const mask = codeMask(src);
+    expect(mask[src.indexOf("//")]).toBe(1);
+    expect(mask[src.indexOf("'y'")]).toBe(1);
+    expect(mask[src.indexOf("a")]).toBe(0);
+  });
+});
+
+describe("被 .gitignore 覆盖的依赖", () => {
+  it("不在 HEAD 但被忽略 → 记提示，不算缺口", () => {
+    const head = { "src/barrel.ts": FILES["src/barrel.ts"], "src/c.ts": FILES["src/c.ts"] };
+    const { problems, notes } = findGaps({
+      candidates: ["src/a.ts"],
+      root,
+      readFile: (rel: string) => FILES[rel],
+      headOfFile: (rel: string) => (rel in head ? head[rel] : null),
+      dirtyOf: () => false,
+      ignoredOf: (rel: string) => rel === "src/b.ts",
+    });
+    expect(problems).toEqual([]);
+    expect(notes.join("\n")).toContain("src/b.ts");
+  });
+
+  it("不被忽略时仍是缺口", () => {
+    const head = { "src/barrel.ts": FILES["src/barrel.ts"], "src/c.ts": FILES["src/c.ts"] };
+    const { problems, notes } = findGaps({
+      candidates: ["src/a.ts"],
+      root,
+      readFile: (rel: string) => FILES[rel],
+      headOfFile: (rel: string) => (rel in head ? head[rel] : null),
+      dirtyOf: () => false,
+      ignoredOf: () => false,
+    });
+    expect(notes).toEqual([]);
+    expect(problems.join("\n")).toContain("src/b.ts");
   });
 });

@@ -88,19 +88,80 @@ export function resolveSpecifier(fromFile, spec, root = process.cwd()) {
   ) ?? null;
 }
 
+/**
+ * 标出「非代码」区间（字符串 / 模板串 / 注释），返回 1 = 非代码 的掩码。
+ *
+ * 为什么需要：`video-evolution-v10.test.ts` 用**字符串**描述沙箱里的文件内容
+ *   '/index.ts': `import { multiply } from './math.ts'`
+ * 首版正则把它当真实导入，报「解析不到 ./math.ts」——而仓库里根本没有、也不该有
+ * 这个文件。注释里的示例同理。
+ *
+ * 模板串整体按非代码处理（不展开 `${}`）：在插值里写静态 import 的情形不存在，
+ * 为它做完整词法分析不划算。
+ */
+export function codeMask(src) {
+  const mask = new Uint8Array(src.length);
+  const n = src.length;
+  let i = 0;
+  while (i < n) {
+    const ch = src[i];
+    const next = src[i + 1];
+    if (ch === "/" && next === "/") {
+      const end = src.indexOf("\n", i);
+      const stop = end === -1 ? n : end;
+      mask.fill(1, i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const end = src.indexOf("*/", i + 2);
+      const stop = end === -1 ? n : end + 2;
+      mask.fill(1, i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      let j = i + 1;
+      while (j < n) {
+        if (src[j] === "\\") {
+          j += 2;
+          continue;
+        }
+        if (src[j] === quote) {
+          j += 1;
+          break;
+        }
+        // 未闭合的单行引号：止于行尾，避免一个笔误把后文整段吞掉
+        if (quote !== "`" && src[j] === "\n") break;
+        j += 1;
+      }
+      mask.fill(1, i, j);
+      i = j;
+      continue;
+    }
+    i += 1;
+  }
+  return mask;
+}
+
 /** 收集一个文件里所有的依赖说明符 → { spec, namespaceAlias, names } */
 export function collectDeps(src) {
   const deps = [];
-  const push = (spec, alias, inner) => {
-    if (spec) deps.push({ spec, namespaceAlias: alias ?? null, names: namedImports(inner) });
+  const mask = codeMask(src);
+  const push = (spec, alias, inner, at) => {
+    if (!spec) return;
+    // 落在字符串/注释里的 "import" 是文档或测试夹具，不是依赖
+    if (at !== undefined && mask[at]) return;
+    deps.push({ spec, namespaceAlias: alias ?? null, names: namedImports(inner) });
   };
   NAMED_IMPORT_RE.lastIndex = 0;
   let m;
-  while ((m = NAMED_IMPORT_RE.exec(src))) push(m[4], m[1], m[2]);
+  while ((m = NAMED_IMPORT_RE.exec(src))) push(m[4], m[1], m[2], m.index);
   EXPORT_FROM_RE.lastIndex = 0;
-  while ((m = EXPORT_FROM_RE.exec(src))) push(m[1], null, null);
+  while ((m = EXPORT_FROM_RE.exec(src))) push(m[1], null, null, m.index);
   SIDE_EFFECT_RE.lastIndex = 0;
-  while ((m = SIDE_EFFECT_RE.exec(src))) push(m[1], null, null);
+  while ((m = SIDE_EFFECT_RE.exec(src))) push(m[1], null, null, m.index);
   return deps;
 }
 
@@ -177,10 +238,11 @@ function parseArgs(argv) {
 }
 
 /** 纯函数核心：给定候选集与查询函数，返回缺口列表（便于单测） */
-export function findGaps({ candidates, root, readFile, headOfFile, dirtyOf }) {
+export function findGaps({ candidates, root, readFile, headOfFile, dirtyOf, ignoredOf }) {
   const relOf = (abs) => (isAbsolute(abs) ? abs.split(sep).join("/").slice(root.length + 1) : abs.split(sep).join("/"));
   const inSet = new Set(candidates);
   const problems = [];
+  const notes = [];
   const queue = [...candidates];
   const visited = new Set();
 
@@ -207,7 +269,11 @@ export function findGaps({ candidates, root, readFile, headOfFile, dirtyOf }) {
       if (inSet.has(rel) || visited.has(rel)) continue;
       const head = headOfFile(rel);
       if (head === null) {
-        problems.push(file + " → " + rel + "：不在 HEAD，必须加入本次提交集");
+        // .gitignore 覆盖的目标是构建期生成物（典型：apps/web/src/** 由 vendor 从
+        // overlay 搬出来）。干净检出里它会被重新生成，不要求入库——与
+        // check-committed-refs 同口径，否则每切一次 overlay 切片都会假红。
+        if (ignoredOf && ignoredOf(rel)) notes.push(file + " → " + rel);
+        else problems.push(file + " → " + rel + "：不在 HEAD，必须加入本次提交集");
         continue;
       }
       if (!dirtyOf(rel)) continue;
@@ -224,7 +290,27 @@ export function findGaps({ candidates, root, readFile, headOfFile, dirtyOf }) {
       }
     }
   }
-  return { problems: [...new Set(problems)], fileCount: visited.size };
+  return { problems: [...new Set(problems)], notes: [...new Set(notes)], fileCount: visited.size };
+}
+
+/**
+ * 目标是否被 .gitignore 覆盖。缓存结果：一次切片里同一目标常被多个文件引用，
+ * 而每次 `git check-ignore` 都要起一个进程。
+ */
+function makeIgnoredOf() {
+  const cache = new Map();
+  return (rel) => {
+    if (cache.has(rel)) return cache.get(rel);
+    let ignored = false;
+    try {
+      execFileSync("git", ["check-ignore", "-q", "--", rel], { stdio: "ignore" });
+      ignored = true;
+    } catch {
+      ignored = false;
+    }
+    cache.set(rel, ignored);
+    return ignored;
+  };
 }
 
 function main() {
@@ -233,13 +319,18 @@ function main() {
     console.error("用法: node scripts/check-commit-closure.mjs -- <path> [...]  |  --paths-file <file>");
     process.exit(2);
   }
-  const { problems, fileCount } = findGaps({
+  const { problems, notes, fileCount } = findGaps({
     candidates,
     root: process.cwd(),
     readFile: (p) => readFileSync(p, "utf8"),
     headOfFile: headOf,
     dirtyOf: isDirty,
+    ignoredOf: makeIgnoredOf(),
   });
+  if (notes.length > 0) {
+    console.log("· 已忽略（构建期生成，不要求入库）：" + notes.length + " 处");
+    for (const n of notes) console.log("  · " + n);
+  }
   if (problems.length > 0) {
     console.error("✗ 闭包不完整（" + problems.length + " 条）：");
     for (const p of problems) console.error("  · " + p);

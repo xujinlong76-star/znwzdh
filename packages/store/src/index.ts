@@ -16,3 +16,6 @@ export * from "./data-inventory.ts";
 // copilot 事件的读取侧（取消数 / 放弃前等待时长）：写在 repository/events.ts，
 // 但 Repository 类上没有对应方法，管理端路由需要这个函数，故在此显式具名导出
 export { copilotEventSummary, COPILOT_EVENT_READ_CAP } from "./repository/events.ts";
+// 收藏写路径的归属越界信号（BOLA）：apps/api 的 POST /api/favorites 需要 instanceof 它
+// 才能把「别人的文件夹」映射成 400，而不是笼统的 500。
+export { FavoriteFolderNotOwnedError } from "./repository/favorites.ts";

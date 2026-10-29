@@ -5,6 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { FavoriteFolderNotOwnedError } from "@navhub/store";
 import {identityTrusted, parseIntParam, resolveCanonicalIdentity, requestIdentityOf, userDomainWriteAllowed } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
@@ -115,13 +116,19 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const site = await ctx.repo.getSite(body.data.siteId);
     if (!site) { reply.code(404); return { error: "站点不存在" }; }
-    const { favorite, existed } = await ctx.repo.addFavorite({
+    const added = await ctx.repo.addFavorite({
       userId: canonical,
       siteId: body.data.siteId,
       folderId: body.data.folderId ?? null,
       note: body.data.note ?? null,
       tags: body.data.tags ?? null,
+    }).catch((err: unknown) => {
+      // 收藏夹不属于当前身份：与 PATCH 同口径回 400，而不是让它静默落库成跨用户挂载
+      if (err instanceof FavoriteFolderNotOwnedError) return null;
+      throw err;
     });
+    if (!added) { reply.code(400); return { error: "收藏夹不存在" }; }
+    const { favorite, existed } = added;
     await ctx.repo.recordEvent("favorite", { siteId: body.data.siteId, meta: { identity: canonical } }).catch(() => undefined);
     reply.code(existed ? 200 : 201);
     return { favorite, existed };

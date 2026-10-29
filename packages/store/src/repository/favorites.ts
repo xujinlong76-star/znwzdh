@@ -8,6 +8,7 @@ import {
   rowToFavorite,
   rowToFolder,
 } from "./dialect.ts";
+import { chunkList, inPredicate } from "../sql-in.ts";
 
 /**
  * 收藏同步（M1）：批量 ops + 版本游标 + 墓碑软删。
@@ -158,9 +159,61 @@ export async function listFavoritesPage(
   };
 }
 
+/**
+ * 收藏夹越界（BOLA / OWASP API1:2023）。
+ *
+ * `favorites.folder_id` 是裸 text 列、没有指向 favorite_folders 的外键（schema.ts:341），
+ * 所以「别人的文件夹 id」能被库原样收下——写进去就是跨用户数据串门。
+ * REST 单条写入把它映射成 400；批量同步侧不抛（见 applyFavoriteOps 的降级口径）。
+ */
+export class FavoriteFolderNotOwnedError extends Error {
+  readonly userId: string;
+  readonly folderId: string;
+  constructor(userId: string, folderId: string) {
+    super(`收藏夹不存在或不属于该用户：user=${userId} folder=${folderId}`);
+    this.name = "FavoriteFolderNotOwnedError";
+    this.userId = userId;
+    this.folderId = folderId;
+  }
+}
+
+/**
+ * 一次取回「这些 id 里属于该用户的子集」。
+ *
+ * 用分片 IN 而不是 `WHERE user_id = ?` 全量拉：后者的行数由该用户的文件夹总数决定，
+ * 而这里只需要 ops 真正引用到的那几个 id。
+ */
+async function ownedFolderIds(
+  repo: Repository,
+  userId: string,
+  ids: Array<string | null | undefined>,
+): Promise<Set<string>> {
+  const unique = [...new Set(ids.filter((id): id is string => typeof id === "string" && id.length > 0))];
+  const owned = new Set<string>();
+  for (const part of chunkList(unique)) {
+    const { sql, params } = inPredicate("id", part);
+    const rows = await repo.raw(
+      `SELECT id FROM favorite_folders WHERE user_id = ? AND ${sql}`,
+      [userId, ...params],
+    );
+    for (const row of rows) owned.add(String(row.id));
+  }
+  return owned;
+}
+
+/** 不属于自己（或已删除/悬空）的夹子 id 一律当「未归档」，null 原样保留（= 移出文件夹） */
+function ownedFolderIdOrNone(folderId: string | null | undefined, owned: Set<string>): string | null {
+  return typeof folderId === "string" && folderId && owned.has(folderId) ? folderId : null;
+}
+
 export async function addFavorite(repo: Repository, input: { userId: string; siteId: string; folderId?: string | null; note?: string | null; tags?: string[] | null }): Promise<{ favorite: FavoriteRecord; existed: boolean }> {
   const id = randomUUID();
   const now = Date.now();
+  // 归属校验（run112）：这一路此前完全不查 folder 属于谁，只有 PATCH 查——
+  // 「同一资源的 POST 不设防、PATCH 设防」正是 BOLA 的经典形态。
+  if (input.folderId && !(await ownedFolderIds(repo, input.userId, [input.folderId])).has(input.folderId)) {
+    throw new FavoriteFolderNotOwnedError(input.userId, input.folderId);
+  }
   // 幂等写入：并发双写靠 UNIQUE(user_id, site_id) 兜底，不再「先查后插」——
   // 先查后插在双写竞态下会撞唯一索引抛 500（本可返回 existed:true）。
   const changes = await repo.runCount(
@@ -176,8 +229,8 @@ export async function addFavorite(repo: Repository, input: { userId: string; sit
   // 于是用户重新收藏后列表里依然看不到 —— 必须显式清墓碑并覆盖字段。
   if (row.deleted_at != null) {
     await repo.run(
-      "UPDATE favorites SET deleted_at = NULL, folder_id = ?, note = ?, updated_at = ? WHERE user_id = ? AND site_id = ?",
-      [input.folderId ?? null, input.note ?? null, now, input.userId, input.siteId],
+      "UPDATE favorites SET deleted_at = NULL, folder_id = ?, note = ?, tags = ?, updated_at = ? WHERE user_id = ? AND site_id = ?",
+      [input.folderId ?? null, input.note ?? null, normalizeFavoriteTags(input.tags), now, input.userId, input.siteId],
     );
     row = (await repo.raw(
       "SELECT * FROM favorites WHERE user_id = ? AND site_id = ? LIMIT 1",
@@ -240,6 +293,11 @@ async function currentVersion(repo: Repository, userId: string, since: number): 
  * 逐条按 `at` 与该行 updated_at 比较：不大于存量就跳过（旧事件不能覆盖新状态）。
  * 全部包在一个事务里：批量同步要么整体生效，要么整体回滚，避免客户端重放时
  * 看到「一半已应用、水位却已推进」的中间态。
+ *
+ * 文件夹归属（run112）：ops 里的 folderId 同样来自客户端，可能是别人的夹子或已删的夹子。
+ * 这里**不抛错**——整批回滚会让客户端无限重放同一批不可修复的 op，水位永远推不动。
+ * 口径：add 把外夹降级成 null（收藏照样落库，只是未归档）；update 跳过 folder_id 字段
+ * （保持原值），其余字段照常生效。两种都只损失「归档位置」这一项信息。
  */
 export async function applyFavoriteOps(
   repo: Repository,
@@ -248,6 +306,7 @@ export async function applyFavoriteOps(
 ): Promise<{ applied: number; version: number }> {
   return repo.withTransaction(async () => {
     let applied = 0;
+    const ownedFolders = await ownedFolderIds(repo, userId, ops.map((op) => op.folderId));
     for (const op of ops) {
       const at = typeof op.at === "number" && Number.isFinite(op.at) ? Math.trunc(op.at) : Date.now();
       const row = (await repo.raw(
@@ -266,7 +325,7 @@ export async function applyFavoriteOps(
             randomUUID(),
             userId,
             op.siteId,
-            op.op === "add" ? op.folderId ?? null : null,
+            op.op === "add" ? ownedFolderIdOrNone(op.folderId, ownedFolders) : null,
             op.op === "add" ? op.note ?? null : null,
             op.op === "add" ? normalizeFavoriteTags(op.tags) : null,
             at,
@@ -292,10 +351,11 @@ export async function applyFavoriteOps(
       if (op.op === "add") {
         // add 是"全量覆盖"语义：清墓碑并写全字段（没传就是 null）
         sets.push("deleted_at = NULL", "folder_id = ?", "note = ?", "tags = ?");
-        params.push(op.folderId ?? null, op.note ?? null, normalizeFavoriteTags(op.tags));
+        params.push(ownedFolderIdOrNone(op.folderId, ownedFolders), op.note ?? null, normalizeFavoriteTags(op.tags));
       } else {
         // update 是"局部补丁"语义：只改传入的字段，未传的保持原值
-        if (op.folderId !== undefined) {
+        // folderId 为 null = 移出文件夹（合法）；非空但不属于自己 = 整个字段跳过，保持原值
+        if (op.folderId !== undefined && (op.folderId === null || ownedFolders.has(op.folderId))) {
           sets.push("folder_id = ?");
           params.push(op.folderId);
         }

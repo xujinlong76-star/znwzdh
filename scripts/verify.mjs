@@ -184,6 +184,10 @@ function runGuardTier() {
 function runStandardTier() {
   // 语法解析门禁放最前：秒级，先把「少一个括号」这类错误挡在 tsc 之前。
   run("语法解析", "node", ["scripts/check-syntax.mjs"]);
+  // 依赖完整性同样秒级，而且它挡的是**环境损坏**而非代码问题：包装残了会让
+  // 几百个测试套件同时报「找不到模块 / resolve entry 失败」，看起来像代码全坏。
+  // 先在这里认出「是依赖残了」，省掉一整轮无谓的排查（2026-10-29 一天两次）。
+  run("依赖完整性", "node", ["scripts/check-deps-integrity.mjs"]);
   gate("覆盖层同步", "node", ["scripts/check-web-overlay.mjs"], touches("apps/web-overlay/") || touches("apps/web/"));
   // 网关策略表由枢纽注册声明生成；枢纽新增路由没重跑生成器 = 网关按旧白名单放行/拒绝，
   // 这类分叉只在真实请求时才暴露，所以必须在这里挡住。

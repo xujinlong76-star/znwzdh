@@ -1,4 +1,4 @@
-import { buildFtsQuery, hanToTokens } from "@navhub/core";
+import { buildPgTsQuery, hanToTokens } from "@navhub/core";
 import type { FtsHit, FullTextStore } from "./fts.ts";
 import { escapeLike } from "./sql-like.ts";
 
@@ -28,6 +28,9 @@ export interface PgFtsLike {
 
 /** PostgreSQL 文本检索配置名 */
 const CFG = "simple";
+
+/** 语法错误只告警一次，避免每次搜索都刷日志 */
+let pgFtsWarned = false;
 
 export class PgFtsStore implements FullTextStore {
   readonly kind = "pg-tsvector" as const;
@@ -59,12 +62,13 @@ export class PgFtsStore implements FullTextStore {
   async search(query: string, limit: number): Promise<FtsHit[]> {
     await this.init();
     if (limit <= 0) return [];
-    const match = buildFtsQuery(query);
+    const match = buildPgTsQuery(query);
     if (!match) return [];
 
-    // 复用与 SQLite 相同的 token 构造（中文加引号、英文前缀），
-    // 仅把 OR 语法换成 PostgreSQL 的 | 。
-    const tsquery = match.replace(/ OR /g, " | ");
+    // buildPgTsQuery 直接产出 PostgreSQL 语法（单引号词元 + :* 前缀 + | 连接）。
+    // 此前这里复用 FTS5 的 `"term"*`，to_tsquery 会抛语法错误、被下面的 catch
+    // 吞成空结果——standard 模式的全文通道因此静默失效。
+    const tsquery = match;
     // 转义 LIKE 通配符：`%` / `_` 是用户输入，不能当模式元字符
     const phrase = escapeLike(query.replace(/\s+/g, ""));
     const vec = vectorExpr("s.fts_tokens");
@@ -85,8 +89,17 @@ export class PgFtsStore implements FullTextStore {
       const res = await this.db.query(sql, [tsquery, phrase, limit]);
       const rows = res.rows as Array<{ site_id: unknown }>;
       return rows.map((r, i) => ({ siteId: String(r.site_id), rank: i + 1 }));
-    } catch {
-      // tsquery 语法异常（例如查询串全是标点）不应让整次搜索失败
+    } catch (err) {
+      // tsquery 语法异常（例如查询串全是标点）不应让整次搜索失败。
+      // 但**必须留下痕迹**：静默 return [] 会让「语法写错」与「真的没命中」
+      // 在日志里长得一样——此前 FTS5 语法误用到 PG 就是这么潜伏下来的。
+      if (!pgFtsWarned) {
+        pgFtsWarned = true;
+        console.warn(
+          "[navhub-fts-pg] to_tsquery 解析失败，全文通道降级为空（后续同类错误不再打印）：",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
       return [];
     }
   }

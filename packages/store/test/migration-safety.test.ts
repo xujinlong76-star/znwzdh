@@ -75,4 +75,36 @@ describe("迁移安全", () => {
     expect(indexes).toContain("sites_url_uniq_v2");
     expect(indexes).not.toContain("sites_url_idx");
   });
+
+  it("CREATE 失败时旧索引仍在：先建后删必须是受控步骤", async () => {
+    // 造出「旧索引在位、新索引不存在」的现场
+    await repo.run("DROP INDEX IF EXISTS sites_url_uniq_v2");
+    await repo.run("CREATE UNIQUE INDEX IF NOT EXISTS sites_url_idx ON sites(url) WHERE deleted_at IS NULL");
+
+    // 只让 v2 的 CREATE 失败，其余语句照常执行
+    const real = db.sqlite!;
+    const sqlite = new Proxy(real, {
+      get(target, prop) {
+        if (prop === "exec") {
+          return (sql: string) => {
+            if (sql.includes("sites_url_uniq_v2")) throw new Error("injected create failure");
+            return target.exec(sql);
+          };
+        }
+        const value = Reflect.get(target, prop);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    await migrateSiteIndexes({ dialect: db.dialect, sqlite } as never);
+
+    const indexes = (await repo.raw("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'sites'")).map(
+      (r) => String(r.name),
+    );
+    // 新索引建不上时，旧索引不能被删掉，否则 url 唯一性出现空窗
+    expect(indexes).toContain("sites_url_idx");
+    expect(indexes).not.toContain("sites_url_uniq_v2");
+    const failures = await repo.raw("SELECT step FROM migration_failures");
+    expect(failures.some((r) => String(r.step).includes("sites_url_uniq_v2"))).toBe(true);
+  });
 });

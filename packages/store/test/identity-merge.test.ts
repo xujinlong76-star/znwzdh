@@ -10,6 +10,7 @@ import { Repository } from "../src/repository.ts";
  *  - 文件夹/history/events 改归属，源不再残留；
  *  - 源画像删除、别名可解析；
  *  - user_workspace_blobs 与 crdt:<identity> 同步迁移；
+ *  - 投稿归属（submission_owners）随 canonical 身份迁移；
  *  - 插件 install_count / star_count 在合并时保持严格守恒（不重复 +1、重叠时扣减 1）；
  *  - 重复合并幂等（返回 alreadyMerged 与首次统计）。
  */
@@ -18,6 +19,8 @@ describe("身份合并：匿名数据并入登录身份", () => {
   let repo: Repository;
   const anon = "anon-11111111-1111-1111-1111-111111111111";
   const user = "github:u-merge";
+  /** 被匿名身份「投稿」过的站点 id：合并后归属应随 canonical 身份 */
+  let submissionSiteId = "";
 
   beforeAll(async () => {
     db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
@@ -59,6 +62,14 @@ describe("身份合并：匿名数据并入登录身份", () => {
       now,
     ]);
     await repo.saveUserVault("crdt:" + anon, JSON.stringify({ ops: ["op-1"] }));
+
+    // 投稿归属：合并后审核通知与注销都按 canonical 身份查它
+    submissionSiteId = s1.id;
+    await repo.run("INSERT INTO submission_owners (site_id, identity, created_at) VALUES (?,?,?)", [
+      submissionSiteId,
+      anon,
+      now,
+    ]);
   });
 
   afterAll(async () => {
@@ -97,6 +108,10 @@ describe("身份合并：匿名数据并入登录身份", () => {
     ]);
     const crdtTarget = await repo.getUserVault("crdt:" + user);
     expect(crdtTarget?.payload).toContain("op-1");
+
+    // 投稿归属必须跟着 canonical 身份走，否则合并后再也找不到（注销也删不到）
+    const ownerRows = await repo.raw("SELECT identity FROM submission_owners WHERE site_id = ?", [submissionSiteId]);
+    expect(ownerRows.map((r) => String(r.identity))).toEqual([user]);
 
     expect(await repo.getUserProfile(anon)).toBeNull();
     expect(await repo.resolveIdentity(anon)).toBe(user);

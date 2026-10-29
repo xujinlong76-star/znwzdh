@@ -88,7 +88,7 @@ export const sites = sqliteTable("sites", {
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 }, (t) => [
-  uniqueIndex("sites_url_idx").on(t.url),
+  uniqueIndex("sites_url_uniq_v2").on(t.url),
   index("sites_category_idx").on(t.categoryId),
   index("sites_status_idx").on(t.status),
   index("sites_pinyin_full_idx").on(t.pinyinFull),

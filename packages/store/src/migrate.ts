@@ -297,12 +297,35 @@ export async function migrateWorkspaceBlobs(db: {
  */
 export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   await ensureMigrationFailures(db);
+  /**
+   * sites.url 的唯一索引换名：**先建后删，且只有建成功才删旧索引**。
+   *
+   * 索引名改为 v2 是刻意的——旧名可能被部署脚本引用，直接复用会让「是否已建」
+   * 无法判断；新名 + IF NOT EXISTS 天然幂等。
+   *
+   * 这两句不能放进下面的语句表：那张表逐条 try/catch 且失败后继续执行，
+   * CREATE 失败时 DROP 仍会跑，唯一性会在「旧索引已删、新索引没建上」的
+   * 状态下静默消失——正是本次要修的空窗。
+   */
+  const createSitesUrlUnique =
+    "CREATE UNIQUE INDEX IF NOT EXISTS sites_url_uniq_v2 ON sites(url) WHERE deleted_at IS NULL";
+  let uniqueIndexReady = false;
+  try {
+    await execSql(db, createSitesUrlUnique);
+    uniqueIndexReady = true;
+  } catch (err) {
+    // 建不上就保留旧索引（若有），留痕后下一轮启动再试
+    await recordMigrationFailure(db, createSitesUrlUnique, err);
+  }
+  if (uniqueIndexReady) {
+    try {
+      await execSql(db, "DROP INDEX IF EXISTS sites_url_idx");
+    } catch (err) {
+      // 新索引已经在位，旧索引删不掉只是冗余，不影响唯一性
+      await recordMigrationFailure(db, "DROP INDEX IF EXISTS sites_url_idx", err);
+    }
+  }
   const statements = [
-    // 先建后删：CREATE 失败时旧索引仍在，唯一性不会出现空窗。
-    // 索引名改为 v2 是刻意的——旧名可能被部署脚本引用，直接复用会让「是否已建」
-    // 无法判断；新名 + IF NOT EXISTS 天然幂等。
-    "CREATE UNIQUE INDEX IF NOT EXISTS sites_url_uniq_v2 ON sites(url) WHERE deleted_at IS NULL",
-    "DROP INDEX IF EXISTS sites_url_idx",
     "CREATE INDEX IF NOT EXISTS sites_deleted_at_idx ON sites(deleted_at) WHERE deleted_at IS NOT NULL",
     // 存储层补索引（旧库补齐；幂等 IF NOT EXISTS；与 driver.ts DDL 保持一致）
     "CREATE INDEX IF NOT EXISTS sites_source_status_idx ON sites(source, status)",

@@ -44,32 +44,39 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
   const offset = Math.max(0, filter.offset ?? 0);
 
   let facetIds: string[] | null = null;
+  let facetPred: { sql: string; params: unknown[] } | null = null;
   if (filter.facets && Object.keys(filter.facets).length > 0) {
     facetIds = await repo.filterSiteIdsByFacets(filter.facets);
     if (facetIds.length === 0) return [];
-    if (facetIds.length <= SQL_IN_CHUNK) {
-      const predicate = inPredicate("s.id", facetIds);
-      where.push(predicate.sql);
-      params.push(...predicate.params);
+    // 首选：整个 id 列表绑成一个参数（sqlite 走 json_each、pg 走 ANY），
+    // 任意规模都是一条语句，绕开语句级绑参上限，也就不需要下面的分片归并。
+    // 老 SQLite 没有 JSON1 时探测失败返回 null，行为退回下面的老路径。
+    facetPred = await repo.collectionIn("s.id", facetIds);
+    if (facetPred) {
+      where.push(facetPred.sql);
+      params.push(...facetPred.params);
     }
   }
   const baseWhere = where.join(" AND ");
   const baseParams = [...params];
 
-  if (facetIds === null || facetIds.length <= SQL_IN_CHUNK) {
+  // 单语句路径的三个前提：没有分面过滤 / 集合谓词已吸收全部 id / id 少到装得下一片
+  if (facetPred !== null || facetIds === null || facetIds.length <= SQL_IN_CHUNK) {
     const sqlText = repo.selectSitesSql() +
       " WHERE " + baseWhere +
       " GROUP BY s.id" +
-      " ORDER BY s.sort ASC, s.weight DESC" +
+      " ORDER BY s.sort ASC, s.weight DESC, s.id ASC" +
       " LIMIT ? OFFSET ?";
     const rows = await repo.raw(sqlText, [...baseParams, limit, offset]);
     return rows.map(rowToSite);
   }
 
-  // 分面交集超过一片（热门分面值能覆盖上千站点）时，不能把 id 全绑进一条语句：
-  // 参数上限是语句级的（见 sql-in.ts），超限就是 500 而不是变慢。
+  // 回退路径（仅当集合谓词探测失败：老 SQLite 没有 JSON1）：候选 id 装不进
+  // 一条语句的绑参预算（语句级上限，见 sql-in.ts，超限是 500 而不是变慢）。
   // 分片各取「本页候选」（只取排序键与 id，成本远低于整行），在 JS 里按同一条
   // ORDER BY 归并分页，最后用内部已分片的 getSitesByIds 取整行。
+  // 注意：这里不做 Promise.all——sqlite 是同步驱动，并发派发不产生并行；
+  // 真正的提速来自上面的单语句路径（一次执行，无归并），本循环只是能力兜底。
   const window = offset + limit;
   const ranked: Array<{ id: string; sort: number; weight: number }> = [];
   for (const part of chunkList(facetIds)) {
@@ -84,7 +91,9 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
       ranked.push({ id: String(r.id), sort: Number(r.sort) || 0, weight: Number(r.weight) || 0 });
     }
   }
-  ranked.sort((a, b) => a.sort - b.sort || b.weight - a.weight);
+  // 与单语句路径同一套排序（含 id 决胜）：缺 id 决胜时跨片并列的页边界会抖动，
+  // 同一份数据两次查询可能切出不同的页。
+  ranked.sort((a, b) => a.sort - b.sort || b.weight - a.weight || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const pageIds = ranked.slice(offset, offset + limit).map((r) => r.id);
   if (pageIds.length === 0) return [];
   const siteMap = await repo.getSitesByIds(pageIds);
@@ -613,6 +622,18 @@ export async function filterSiteIdsByFacets(
   const perCondition = await Promise.all(
     conditions.map(async ({ key, vals }) => {
       const sites = new Set<string>();
+      // 主路径：整片值绑成一个参数（json_each / ANY），一条语句查完。
+      // facet_value 是「分面取值」，热门值能覆盖上千行——与 s.id 同一预算风险。
+      const pred = await repo.collectionIn("facet_value", vals);
+      if (pred) {
+        const rows = (await repo.raw(
+          `SELECT DISTINCT site_id FROM site_facets WHERE facet_key = ? AND ${pred.sql}`,
+          [key, ...pred.params],
+        )) as Array<{ site_id: unknown }>;
+        for (const r of rows) sites.add(String(r.site_id));
+        return sites;
+      }
+      // 回退路径：仅 JSON1 探测失败（老 SQLite 构建）时走，分片 + 并集归并。
       for (const part of chunkList(vals)) {
         const placeholders = part.map(() => "?").join(", ");
         const rows = (await repo.raw(

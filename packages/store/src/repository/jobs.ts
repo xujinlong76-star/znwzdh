@@ -151,12 +151,15 @@ export async function cancelJob(repo: Repository, id: string): Promise<boolean> 
    * 恢复任务的最长退避是 4 分钟、共 3 次尝试，不支持取消意味着用户最多要干等 7 分钟。
    *
    * 不允许取消 `done` / `failed`：那是历史结果，改状态会让「谁在什么时候成功过」失真。
+   *
+   * 返回**真实影响行数**：旧实现无条件 return true，任务已经 done/failed 时
+   * 管理端仍显示「已取消」，而数据库里什么都没变——排查时会被这条假回执带偏。
    */
-  await repo.run(
-    "UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('pending', 'running', 'retrying')",
+  const rows = await repo.raw(
+    "UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('pending', 'running', 'retrying') RETURNING id",
     [now, id],
   );
-  return true;
+  return rows.length > 0;
 }
 
 export async function retryJob(repo: Repository, id: string): Promise<JobRecord | null> {
@@ -191,28 +194,53 @@ export async function pruneJobs(repo: Repository, olderThanDays = 7, statuses: s
   return { pruned };
 }
 
-export async function purgeExpiredDeletedSites(repo: Repository, olderThanMs: number): Promise<number> {
+export async function purgeExpiredDeletedSites(
+  repo: Repository,
+  olderThanMs: number,
+): Promise<{ purged: number; ids: string[] }> {
   const threshold = Date.now() - olderThanMs;
   const rows = await repo.raw("SELECT id FROM sites WHERE deleted_at IS NOT NULL AND deleted_at < ?", [threshold]);
-  let count = 0;
+  const ids: string[] = [];
   for (const r of rows) {
     if (r.id) {
       await repo.purgeSite(String(r.id));
-      count++;
+      ids.push(String(r.id));
     }
   }
-  return count;
+  // 返回被清掉的 id：调用方要据此同步删除向量表（purgeSite 只管关系型表，
+  // 向量由 @navhub/store 的 vector store 持有，API 层才有实例）。
+  return { purged: ids.length, ids };
 }
 
-export async function reapStaleJobs(repo: Repository, timeoutMs = 15 * 60 * 1000): Promise<number> {
+/**
+ * 回收「心跳已停」的任务。
+ *
+ * 旧实现把所有 `running` 且超过阈值的行直接改成 `failed`——一次 Worker 重启
+ * （部署、OOM、容器迁移）就会把正在跑的任务永久判死：不重试、不告警，
+ * 管理端只看到一条「执行超时」的失败记录，没有任何恢复路径。
+ *
+ * 新语义按 attempts 分流（与 JobRunner 的 MAX_JOB_ATTEMPTS 对齐）：
+ *   - 还有重试额度 → 回到 `pending` 并立即到期（下一轮 tick 重新认领）；
+ *   - 额度耗尽     → 落 `failed` 终态，交给上层告警。
+ *
+ * 安全性：`completeJob` 的 CAS 条件要求 `status = 'running'`，所以被回收后
+ * 迟到的执行结果不会把 pending/failed 覆盖成 done。
+ */
+export async function reapStaleJobs(
+  repo: Repository,
+  timeoutMs = 15 * 60 * 1000,
+  maxAttempts = 3,
+): Promise<number> {
   const cutoff = Date.now() - timeoutMs;
   const now = Date.now();
-  // 单条原子 UPDATE：先 SELECT 再逐条 UPDATE 的旧实现在并发 reaper 下会重复计数；
-  // 执行中的任务由 heartbeatJob 持续刷新 updated_at，长任务不会被误判为僵尸。
   const rows = await repo.raw(
-    "UPDATE jobs SET status = 'failed', error = '任务执行超时或 Worker 异常中断', updated_at = ? " +
-      "WHERE status = 'running' AND updated_at < ? RETURNING id",
-    [now, cutoff],
+    "UPDATE jobs SET " +
+      "status = CASE WHEN attempts < ? THEN 'pending' ELSE 'failed' END, " +
+      "next_run_at = CASE WHEN attempts < ? THEN ? ELSE NULL END, " +
+      "error = CASE WHEN attempts < ? THEN 'Worker 中断，已重新排队' ELSE '任务执行超时或 Worker 异常中断' END, " +
+      "updated_at = ? " +
+      "WHERE status = 'running' AND updated_at < ? RETURNING id, status",
+    [maxAttempts, maxAttempts, now, maxAttempts, now, cutoff],
   );
   return rows.length;
 }

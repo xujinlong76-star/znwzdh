@@ -185,6 +185,9 @@ export async function mergeIdentity(
     //      源身份的行不改归属就会永远读不到、邮件/推送也会继续发往旧地址。
     await repo.run("UPDATE notifications SET identity = ? WHERE identity = ?", [target, source]);
     await repo.run("UPDATE notification_outbox SET identity = ? WHERE identity = ?", [target, source]);
+    // 投稿归属：审核通知与注销都按 canonical 身份查它。site_id 是主键，
+    // 同一站点只会有一行，改 identity 不会冲突。
+    await repo.run("UPDATE submission_owners SET identity = ? WHERE identity = ?", [target, source]);
 
     // 4) 画像：源画像删除；目标画像保留，后续用合并后的事件刷新
     await repo.run("DELETE FROM user_profiles WHERE user_id = ?", [source]);

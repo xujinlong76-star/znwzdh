@@ -88,3 +88,44 @@ export function buildFtsQuery(q: string): string | null {
 function quote(term: string): string {
   return '"' + term.replace(/"/g, '""') + '"';
 }
+
+/**
+ * 把用户查询转成 PostgreSQL `to_tsquery` 表达式（查询期调用，standard 模式）。
+ *
+ * 为什么不能复用 `buildFtsQuery`：FTS5 与前缀语法不同——
+ *   - FTS5：`"term"*`（双引号短语 + 尾星号）
+ *   - tsquery：`'term':*`（单引号词元 + `:*`），连接符是 `|` 而不是 `OR`
+ * 直接把 FTS5 串喂给 `to_tsquery` 会抛 `syntax error in tsquery`，
+ * 而调用方（fts-pg）为了不让标点查询拖垮整次搜索，会把异常吞成「零命中」——
+ * 结果就是 standard 模式的全文通道静默失效。
+ *
+ * 词元规则与 SQLite 侧保持一致（同一套 CJK 二元分词 + 拉丁词），只换组装语法：
+ *   - 中文：`'启动'`（simple 配置不做词干化，二元组原样命中）
+ *   - 拉丁：`'copilot':*`（前缀匹配）
+ *   - 连接：`|`（任一命中即可，rank 由 ts_rank 负责）
+ */
+export function buildPgTsQuery(q: string): string | null {
+  const terms: string[] = [];
+  for (const run of hanRuns(q)) {
+    const chars = [...run];
+    if (chars.length === 1) {
+      terms.push(quotePg(chars[0]!));
+      continue;
+    }
+    for (let i = 0; i < chars.length - 1; i++) terms.push(quotePg(chars[i]! + chars[i + 1]!));
+  }
+  const latin = q.match(/[A-Za-z0-9_+#.-]{2,}/g) ?? [];
+  for (const w of latin) terms.push(quotePg(w) + ":*");
+
+  const unique = [...new Set(terms)];
+  if (unique.length === 0) return null;
+  return unique.join(" | ");
+}
+
+/**
+ * tsquery 词元引号：单引号包裹，内部单引号按 PostgreSQL 规则双写。
+ * 不用双引号——那不是 tsquery 的合法词元分隔符。
+ */
+function quotePg(term: string): string {
+  return "'" + term.replace(/'/g, "''") + "'";
+}

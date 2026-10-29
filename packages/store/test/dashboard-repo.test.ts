@@ -165,22 +165,34 @@ describe("Dashboard Repository & Search Extensions", () => {
     expect(checkpoint.ok).toBe(true);
   });
 
-  it("reapStaleJobs 自动回收超时处于 running 状态的僵尸任务", async () => {
+  it("reapStaleJobs 回收僵尸任务：有重试额度回 pending，耗尽才 failed", async () => {
     await repo.run("DELETE FROM jobs");
     const id = await repo.enqueueJob("zombie_test", { test: true });
     const claimed = await repo.claimNextJob();
     expect(claimed?.id).toBe(id);
     expect(claimed?.status).toBe("running");
+    expect(claimed?.attempts).toBe(1);
 
     // 伪造更新时间为 20 分钟前
     const twentyMinsAgo = Date.now() - 20 * 60 * 1000;
     await repo.run("UPDATE jobs SET updated_at = ? WHERE id = ?", [twentyMinsAgo, id]);
 
-    // 执行超时回收
-    const reaped = await repo.reapStaleJobs(15 * 60 * 1000);
+    // 第一次回收：attempts=1 < 3，应回到 pending 等下一轮认领，而不是直接判死
+    const reaped = await repo.reapStaleJobs(15 * 60 * 1000, 3);
     expect(reaped).toBe(1);
 
-    const reapedJob = await repo.getJob(id);
+    let reapedJob = await repo.getJob(id);
+    expect(reapedJob?.status).toBe("pending");
+    expect(reapedJob?.error).toContain("重新排队");
+    expect(reapedJob?.nextRunAt).toBeGreaterThan(0);
+
+    // 额度耗尽（attempts=3）再回收 → failed 终态
+    await repo.run("UPDATE jobs SET status = 'running', attempts = 3, updated_at = ? WHERE id = ?", [
+      twentyMinsAgo,
+      id,
+    ]);
+    expect(await repo.reapStaleJobs(15 * 60 * 1000, 3)).toBe(1);
+    reapedJob = await repo.getJob(id);
     expect(reapedJob?.status).toBe("failed");
     expect(reapedJob?.error).toContain("超时");
   });

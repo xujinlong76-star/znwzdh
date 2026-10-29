@@ -127,6 +127,12 @@ export interface CopilotEventSummary {
   degradedBy: Array<{ reason: string; count: number }>;
   quotaLimited: number;
   thinkingBy: Array<{ thinking: string; count: number }>;
+  /** 本窗口 copilot 回答里「参考来源」的总条数（分母） */
+  citations: number;
+  /** 来源为 copilot_citation 的 click 事件数（分子） */
+  citationClicks: number;
+  /** citationClicks / citations，保留 3 位小数；无引用样本时为 null */
+  citationClickRate: number | null;
 }
 
 function percentile(sorted: number[], q: number): number | null {
@@ -165,6 +171,7 @@ export async function copilotEventSummary(
   const cancelStage = { pre_llm: 0, llm: 0 };
   let degraded = 0;
   let quotaLimited = 0;
+  let citations = 0;
   const degradedBy = new Map<string, number>();
   const thinkingBy = new Map<string, number>();
   const waits: number[] = [];
@@ -198,11 +205,36 @@ export async function copilotEventSummary(
     }
 
     asks += 1;
+    const cited = Number(meta.citations);
+    if (Number.isFinite(cited) && cited > 0) citations += cited;
     const reason = meta.degraded;
     if (reason != null && reason !== "" && reason !== "null") {
       degraded += 1;
       const key = String(reason);
       degradedBy.set(key, (degradedBy.get(key) ?? 0) + 1);
+    }
+  }
+
+  /**
+   * 引用点击（分子）：kind=click 且 meta.source=copilot_citation。
+   * 与上面同一条「取回内存解析」的路子：like 只是把窗口内的点击先缩到候选集，
+   * 真正的判定在解析后的 source 字段上（meta 里出现这个子串的脏行不会被误计）。
+   */
+  const clickRows = await repo.raw(
+    "SELECT meta FROM events WHERE kind = 'click' AND created_at >= ? AND meta LIKE ? ORDER BY id DESC LIMIT ?",
+    [since, "%copilot_citation%", COPILOT_EVENT_READ_CAP],
+  );
+  let citationClicks = 0;
+  for (const row of clickRows) {
+    const rawMeta = row.meta;
+    if (typeof rawMeta !== "string" || !rawMeta) continue;
+    try {
+      const parsed = JSON.parse(rawMeta);
+      if (parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).source === "copilot_citation") {
+        citationClicks += 1;
+      }
+    } catch {
+      // 脏行跳过：读数宁少不假
     }
   }
 
@@ -227,5 +259,8 @@ export async function copilotEventSummary(
     degradedBy: tallyTop(degradedBy, 8).map(({ key, count }) => ({ reason: key, count })),
     quotaLimited,
     thinkingBy: tallyTop(thinkingBy, 5).map(({ key, count }) => ({ thinking: key, count })),
+    citations,
+    citationClicks,
+    citationClickRate: citations > 0 ? Math.round((citationClicks / citations) * 1000) / 1000 : null,
   };
 }

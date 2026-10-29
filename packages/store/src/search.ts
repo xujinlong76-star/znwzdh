@@ -626,7 +626,7 @@ export class SearchEngine {
           CASE WHEN lower(title) LIKE ? ESCAPE '!' THEN 0
                WHEN lower(title) LIKE ? ESCAPE '!' THEN 1
                ELSE 2 END,
-          weight DESC, sort ASC
+          weight DESC, sort ASC, id ASC
         LIMIT ?`,
       [...multiTokenParams, ...likeParams, containsLike(lowered), containsLike(tokens[0] || lowered), limit],
     );
@@ -698,7 +698,7 @@ export class SearchEngine {
                WHEN pinyin_full = ? THEN 0
                WHEN pinyin_initials LIKE ? ESCAPE '!' THEN 1
                ELSE 2 END,
-          weight DESC, sort ASC
+          weight DESC, sort ASC, id ASC
         LIMIT ?`,
       [pattern, initialPattern, initials, full, initialPattern, limit],
     );
@@ -828,7 +828,7 @@ export class SearchEngine {
       `SELECT id, url, title, description, category_id AS categoryid,
               pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
          FROM sites WHERE ${wheres.join(" AND ")}
-        ORDER BY featured DESC, trend_score DESC, weight DESC, sort ASC LIMIT ? OFFSET ?`,
+        ORDER BY featured DESC, trend_score DESC, weight DESC, sort ASC, id ASC LIMIT ? OFFSET ?`,
       params,
     );
     const hasMore = rows.length > limit;

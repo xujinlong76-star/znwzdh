@@ -121,8 +121,12 @@ export function parseExtendedPreferences(raw: unknown): ExtendedUserPreferences 
 export async function listCustomHistoryRetention(
   repo: Repository,
 ): Promise<Array<{ identity: string; retentionDays: number }>> {
+  // 列名必须是 identity：user_settings 的主键是 identity（见 migrate.ts 的 DDL），
+  // 不存在 user_id。此前写成 user_id，SQLite 直接抛 "no such column"，
+  // 而调用方（jobs 的 data_retention）把异常吞成 summary.error——用户的保留期
+  // 选择因此从未生效，且任务表面上「成功」。
   const rows = await repo.raw(
-    "SELECT user_id, preferences_json FROM user_settings WHERE preferences_json LIKE '%historyRetentionDays%'",
+    "SELECT identity, preferences_json FROM user_settings WHERE preferences_json LIKE '%historyRetentionDays%'",
   );
   const out: Array<{ identity: string; retentionDays: number }> = [];
   for (const row of rows) {
@@ -130,7 +134,7 @@ export async function listCustomHistoryRetention(
       const parsed = JSON.parse(String(row.preferences_json ?? "{}")) as { historyRetentionDays?: unknown };
       const days = Number(parsed.historyRetentionDays);
       if (Number.isFinite(days) && days > 0 && days !== 180) {
-        out.push({ identity: String(row.user_id), retentionDays: Math.trunc(days) });
+        out.push({ identity: String(row.identity), retentionDays: Math.trunc(days) });
       }
     } catch {
       // 坏 JSON：跳过该用户，不因自动清理解析失败而中断整轮任务

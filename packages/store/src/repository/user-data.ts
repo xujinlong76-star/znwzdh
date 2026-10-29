@@ -19,6 +19,7 @@ import type {
 import { getSearchHistoryAll, type SearchHistoryItem } from "./history.ts";
 import type { UserSettingsRecord } from "./settings.ts";
 import type { UserLlmConfigRecord } from "./llm-config.ts";
+import { genericDeleteDomains } from "../data-inventory.ts";
 
 /**
  * LIKE 前缀转义：identity 里可能出现 `_`（GitHub 用户名）或 `%`，
@@ -279,16 +280,18 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
       userRow: await count("SELECT COUNT(*) AS c FROM users WHERE id = ? AND id LIKE '%:%'", [identity]),
     };
 
-    await repo.run("DELETE FROM favorites WHERE user_id = ?", [identity]);
-    await repo.run("DELETE FROM favorite_folders WHERE user_id = ?", [identity]);
-    await repo.run("DELETE FROM search_history WHERE user_id = ?", [identity]);
-    await repo.run("DELETE FROM events WHERE identity = ?", [identity]);
-    await repo.run("DELETE FROM user_profiles WHERE user_id = ?", [identity]);
+    // 通用路径：清单里 disposition=delete 的表按 owner 列精确删除
+    // （收藏/收藏夹/历史/事件/画像/LLM 配置/设置/评价/会话/通知/令牌）。
+    // 新增用户表时只需登记到 data-inventory.ts，这里自动覆盖；表名/列名来自
+    // 冻结的内部常量（不是用户输入），不构成 SQL 注入面。
+    for (const domain of genericDeleteDomains()) {
+      await repo.run("DELETE FROM " + domain.table + " WHERE " + domain.ownerColumns[0] + " = ?", [identity]);
+    }
+    // 以下是「一个表多种归属形态」的特例，通用循环覆盖不到：
+    // 默认金库 + CRDT 编辑日志（`crdt:<id>` 是独立行，精确匹配删不到）
     await repo.run("DELETE FROM user_vault_sync WHERE user_id = ?", [identity]);
-    // CRDT 编辑日志是另一行（`crdt:<id>`）：精确匹配删不到，注销后会永久残留
     await repo.run("DELETE FROM user_vault_sync WHERE user_id = ?", ["crdt:" + identity]);
-    await repo.run("DELETE FROM user_llm_configs WHERE identity = ?", [identity]);
-    await repo.run("DELETE FROM user_settings WHERE identity = ?", [identity]);
+    // 身份别名/合并记录：alias/canonical、source/target 双列归属
     await repo.run("DELETE FROM identity_aliases WHERE alias = ? OR canonical = ?", [identity, identity]);
     await repo.run("DELETE FROM identity_merges WHERE source = ? OR target = ?", [identity, identity]);
 
@@ -313,12 +316,8 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
 
     await repo.run("DELETE FROM plugin_installs WHERE identity = ?", [identity]);
     await repo.run("DELETE FROM plugin_stars WHERE identity = ?", [identity]);
-    // 正文属于用户内容：注销后不得继续公开可见（原先整表漏删，评价会留在插件页上）
-    await repo.run("DELETE FROM plugin_reviews WHERE identity = ?", [identity]);
-    // 会话与用量：会话直接删；用量保留聚合价值但抹掉身份（可逆性为零，等同匿名化）
-    await repo.run("DELETE FROM sessions WHERE user_id = ?", [identity]);
-    await repo.run("DELETE FROM notifications WHERE identity = ?", [identity]);
-    await repo.run("DELETE FROM api_tokens WHERE owner_identity = ?", [identity]);
+    // 评价/会话/通知/个人令牌已由上面的通用循环删除（见 data-inventory.ts）。
+    // 用量保留聚合价值但抹掉身份（可逆性为零，等同匿名化）。
     await repo.run("UPDATE llm_usage SET identity = NULL WHERE identity = ?", [identity]);
     // 本人名下的工作区记录（workspaces:<id> 与成员名册）。其他成员的工作区不受影响。
     // 新表为主；同时清 vault 里的历史残留（迁移失败/未跑到的部署也能删干净）。

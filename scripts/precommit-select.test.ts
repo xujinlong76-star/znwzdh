@@ -105,7 +105,10 @@ describe("pre-commit 选测：改动 → 测试文件", () => {
     // （precommit-select 就是用 execFileSync 跑生成物来断言的）。
     const files = select(["scripts/install-git-hooks.mjs"]);
     expect(files).toContain("scripts/precommit-select.test.ts");
-    expect(files.length).toBeLessThanOrEqual(8);
+    // 2026-10-29 起也是 9：check-hooks-fresh.test.ts 用真实 install-git-hooks.mjs 验
+    // 「镜像 prepare 的 import 闭包 ⊆ Dockerfile COPY」，是图上的真依赖，不是噪声。
+    expect(files).toContain("scripts/check-hooks-fresh.test.ts");
+    expect(files.length).toBeLessThanOrEqual(9);
   });
 
   it("改 src/jobs.ts：必须带上 backup-restore-job（复数归一回归）", () => {

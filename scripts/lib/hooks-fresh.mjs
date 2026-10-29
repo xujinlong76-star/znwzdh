@@ -15,7 +15,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export const MANIFEST_VERSION = 1;
 export const MANIFEST_NAME = ".navhub-hooks.json";
@@ -92,3 +92,100 @@ export function checkFresh({ hooksDir, sourcePath, manifestPath = join(hooksDir,
   }
   return { problems, manifestPath };
 }
+
+/**
+ * 镜像 prepare 阶段能不能跑起来：install-git-hooks.mjs 的**相对 import 闭包**
+ * 必须全被 Dockerfile 的 COPY 覆盖。
+ *
+ * 为什么需要：Dockerfile.api / .web 都只 COPY 了 install-git-hooks.mjs 单个文件，
+ * 靠根 package.json 的 prepare 在镜像里执行它。给它加一个 `./lib/x.mjs` 的 import，
+ * 本机全绿，docker build 却在 install 阶段 ERR_MODULE_NOT_FOUND —— 2026-10-29 就这么红过
+ * （9460971c 引入 ./lib/hooks-fresh.mjs，docker-smoke 的「构建 API 镜像」直接失败）。
+ */
+export const PREPARE_ENTRY = "scripts/install-git-hooks.mjs";
+
+/** 镜像 prepare 依赖的 Dockerfile；有哪个判哪个（不存在的跳过） */
+export const PREPARE_DOCKERFILES = ["docker/Dockerfile.api", "docker/Dockerfile.web"];
+
+const RELATIVE_IMPORT_RE =
+  /(?:from\s*|import\s*\(\s*|import\s+)["'](\.{1,2}\/[^"']+)["']/g;
+
+/** 抽出源码里的相对 import 说明符（静态 import / re-export / 动态 import()） */
+export function relativeImports(source) {
+  const out = new Set();
+  for (const match of String(source).matchAll(RELATIVE_IMPORT_RE)) out.add(match[1]);
+  return [...out];
+}
+
+/** 从入口沿相对 import 递归；路径统一成正斜杠的仓库相对形式 */
+export function importClosure({ entry, readFile, exists, resolvePath = (from, spec) => join(dirname(from), spec) }) {
+  const files = new Set();
+  const missing = new Set();
+  const queue = [entry.replace(/\\/g, "/")];
+  while (queue.length > 0) {
+    const file = queue.shift();
+    if (files.has(file) || missing.has(file)) continue;
+    let text;
+    try {
+      text = readFile(file);
+    } catch {
+      missing.add(file);
+      continue;
+    }
+    files.add(file);
+    for (const spec of relativeImports(text)) {
+      const target = resolvePath(file, spec).replace(/\\/g, "/");
+      if (!exists(target)) missing.add(target);
+      else if (!files.has(target)) queue.push(target);
+    }
+  }
+  return { files: [...files].sort(), missing: [...missing].sort() };
+}
+
+/** Dockerfile 里 COPY 的**源**路径（去掉 --from/--chown 之类的 flag 与末尾斜杠） */
+export function copiedSources(dockerfileText) {
+  const out = [];
+  for (const raw of String(dockerfileText).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!/^COPY\s/i.test(line)) continue;
+    const tokens = line
+      .split(/\s+/)
+      .slice(1)
+      .filter((token) => !token.startsWith("--"));
+    if (tokens.length < 2) continue;
+    for (const src of tokens.slice(0, -1)) {
+      out.push(src.replace(/^\.\//, "").replace(/\/+$/, ""));
+    }
+  }
+  return out;
+}
+
+/**
+ * 对照检查：闭包里的每个文件都要被某个 COPY 源覆盖（整目录 COPY 也算）。
+ * Dockerfile 不存在时返回 skipped —— 调用方据此决定是否打印。
+ */
+export function prepareClosureProblems({ dockerfilePath, entry, readFile, exists }) {
+  let text;
+  try {
+    text = readFile(dockerfilePath);
+  } catch {
+    return { problems: [], skipped: true, files: [] };
+  }
+  const copies = copiedSources(text);
+  const closes = copies.some((src) => src === "");
+  const { files, missing } = importClosure({ entry, readFile, exists });
+  const problems = [];
+  for (const file of missing) {
+    problems.push(`${PREPARE_ENTRY} 的相对 import 解析不到：${file}`);
+  }
+  for (const file of files) {
+    const covered = closes || copies.some((src) => file === src || file.startsWith(`${src}/`));
+    if (!covered) {
+      problems.push(
+        `${dockerfilePath} 没把 ${file} 拷进镜像 —— prepare 阶段会 ERR_MODULE_NOT_FOUND（补一行 COPY ${file}）`,
+      );
+    }
+  }
+  return { problems, skipped: false, files };
+}
+

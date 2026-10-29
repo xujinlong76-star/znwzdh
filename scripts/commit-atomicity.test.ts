@@ -35,11 +35,14 @@ afterAll(() => {
  * 任何 spawn git 的夹具测试都有这个雷，所以入口只留这一处、统一剥掉。
  */
 function gitEnv(extra: Record<string, string> = {}) {
-  const env = { ...process.env, ...extra };
+  const env = { ...process.env };
   delete env.GIT_INDEX_FILE;
   delete env.GIT_DIR;
   delete env.GIT_WORK_TREE;
-  return env;
+  // 门禁自己的豁免开关同样不能泄漏进夹具：本机为了提交别的东西设了它，
+  // 「必须红」的用例就会静默变绿（2026-10-29 实际踩到，4 例同时假绿）。
+  delete env.NAVHUB_ALLOW_DIRTY_TEST_DEPS;
+  return { ...env, ...extra };
 }
 
 function git(cwd: string, args: string[]) {

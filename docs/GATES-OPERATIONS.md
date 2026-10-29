@@ -73,6 +73,11 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 - **钩子新鲜度**：`hooks-fresh` 门禁在 pre-commit 里比对 `.git/hooks/.navhub-hooks.json`
   与四个生成物 + 模板源 hash。改了 `scripts/install-git-hooks.mjs` 却没重装 ⇒ 提交被拦，
   提示 `node scripts/install-git-hooks.mjs`——否则钩子里的新检查一次都不会跑。
+- **镜像 prepare 闭包**（同日新增，同属 `hooks-fresh`）：两个 Dockerfile 只拷 `install-git-hooks.mjs`
+  进镜像、靠根 `prepare` 执行它，所以它的**相对 import 闭包**必须同时被 COPY。
+  2026-10-29 实战：给它加了 `./lib/hooks-fresh.mjs` 的 import 却没改 Dockerfile，本机全绿，
+  `docker-smoke` 的「构建 API 镜像」在 install 阶段 `ERR_MODULE_NOT_FOUND` 直接红。
+  门禁按「Dockerfile 的 COPY 源 ⊇ 闭包」判定，漏拷会点名文件并给出要补的 COPY 行。
 - **双向对账**：
   - 登记了但接线里没有 ⇒ 「以为在拦，其实没跑」；
   - 接线里有但清单没登记 ⇒ 下次改钩子时会被人顺手删掉，且没人知道它拦过什么。

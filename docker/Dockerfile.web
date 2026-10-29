@@ -22,6 +22,8 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # 根 package.json 的 prepare 钩子会执行它（镜像里没有 .git，脚本只打印一行跳过）
 COPY scripts/install-git-hooks.mjs ./scripts/
+# 它的相对 import 闭包（scripts/lib/hooks-fresh.mjs）同样要进镜像；漏拷 = prepare 阶段直接失败。
+COPY scripts/lib/hooks-fresh.mjs ./scripts/lib/
 # 覆盖层的清单（vendor 之后它才是最终清单；这里先只放清单供解析）
 COPY apps/web-overlay/package.json ./apps/web/package.json
 RUN pnpm install --frozen-lockfile --filter "./apps/web"

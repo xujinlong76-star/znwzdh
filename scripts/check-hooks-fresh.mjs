@@ -8,10 +8,9 @@
  *
  * 它只在 pre-commit 里跑（没有钩子目录时无提交可言，直接放行）。
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { checkFresh } from "./lib/hooks-fresh.mjs";
+import { checkFresh, PREPARE_DOCKERFILES, PREPARE_ENTRY, prepareClosureProblems } from "./lib/hooks-fresh.mjs";
 
 const P = "[hooks-fresh] ";
 
@@ -33,12 +32,37 @@ if (!existsSync(opts.hooksDir)) {
   process.exit(0);
 }
 
-const { problems, manifestPath } = checkFresh({ hooksDir: opts.hooksDir, sourcePath: opts.source });
+const root = process.cwd();
+const problems = [];
+const checked = [];
+
+// ① 镜像 prepare 阶段：install-git-hooks.mjs 的相对 import 闭包必须被 Dockerfile COPY 覆盖
+for (const name of PREPARE_DOCKERFILES) {
+  const res = prepareClosureProblems({
+    dockerfilePath: name,
+    entry: PREPARE_ENTRY,
+    readFile: (path) => readFileSync(resolve(root, path), "utf8"),
+    exists: (path) => existsSync(resolve(root, path)),
+  });
+  if (!res.skipped) {
+    checked.push(name);
+    problems.push(...res.problems);
+  }
+}
+
+// ② 本机钩子：生成物必须仍是当前模板的产物
+const fresh = checkFresh({ hooksDir: opts.hooksDir, sourcePath: opts.source });
+problems.push(...fresh.problems);
+
 if (problems.length > 0) {
-  console.error(`${P}❌ 本机钩子与模板不同源（清单 ${manifestPath}）：`);
+  console.error(`${P}❌ 钩子链有 ${problems.length} 处问题（安装清单 ${fresh.manifestPath}）：`);
   for (const p of problems) console.error(`   - ${p}`);
-  console.error(`${P}原因通常是改了 install-git-hooks.mjs 却没重装——钩子里的新检查一次都不会跑。`);
+  console.error(`${P}常见原因：改了 install-git-hooks.mjs 却没重装（钩子里的新检查一次都不会跑）；`);
+  console.error(`${P}或给它加了相对 import 却没同步 Dockerfile 的 COPY（镜像 install 阶段直接起不来）。`);
   process.exit(1);
 }
 
-console.log(`${P}✅ 钩子与模板同源：pre-commit / pre-push / 选测器 / node 定位 4 个生成物均与安装清单一致。`);
+console.log(
+  `${P}✅ 钩子与模板同源：pre-commit / pre-push / 选测器 / node 定位 4 个生成物均与安装清单一致；` +
+    `镜像 prepare 闭包已覆盖（${checked.join(" / ")}）。`,
+);

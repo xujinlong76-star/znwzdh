@@ -61,7 +61,7 @@
       "script": "scripts/check-hooks-fresh.mjs",
       "blocks": true,
       "test": "scripts/check-hooks-fresh.test.ts",
-      "why": "改了 install-git-hooks.mjs 却没重装时，钩子里所有检查跑的还是旧生成物——新闸门一次都没执行"
+      "why": "改了 install-git-hooks.mjs 却没重装时钩子跑的是旧生成物；它的相对 import 闭包漏拷进 Dockerfile 时镜像 prepare 直接起不来（2026-10-29 docker-smoke 真红）"
     },
     {
       "name": "ci-gate",

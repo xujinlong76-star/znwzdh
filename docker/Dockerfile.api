@@ -47,6 +47,9 @@ COPY apps/api/package.json ./apps/api/
 # `prepare: Error: Cannot find module '/app/scripts/install-git-hooks.mjs'` 直接失败。
 # 脚本本身无副作用（仓库里没有 .git 时只打印一行跳过）。
 COPY scripts/install-git-hooks.mjs ./scripts/
+# 它 import 的相对模块也必须在镜像里（否则同样是 prepare 阶段 ERR_MODULE_NOT_FOUND）。
+# 闭包完整性由 check-hooks-fresh.mjs 在 pre-commit 兜底：加相对 import 而漏拷，提交前就红。
+COPY scripts/lib/hooks-fresh.mjs ./scripts/lib/
 
 # 只装中枢与 MCP 传输及其依赖：前端的 next/react 等不进这个镜像。
 #

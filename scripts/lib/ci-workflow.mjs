@@ -90,8 +90,13 @@ export function cascadeProblems(jobBlock, { anchor, products }) {
       `找不到产物生产者步骤 id: ${anchor}——级联判据挂在它上面，改名/删除会让守卫静默失效`,
     );
   }
+  // 两种守卫都算：
+  //  - `!= 'skipped'`：锚点跑过（成功或失败）就干活——产物读取型的**只读账**用它
+  //    （预算门禁红灯时账仍要出，这是有意为之）。
+  //  - `== 'success'`：只认锚点成功——比上面更严，给「锚点失败时产物是半份、
+  //    读了只会再判一次假红」的步骤用（test-web 的 check-isr-routes 正是这种）。
   const guardRe = new RegExp(
-    `if:\\s*\\$\\{\\{[^\\n]*steps\\.${anchor}\\.outcome != 'skipped'`,
+    `if:\\s*\\$\\{\\{[^\\n]*steps\\.${anchor}\\.outcome (?:!= 'skipped'|== 'success')`,
   );
   for (const step of steps) {
     // 判定前先剥掉 YAML 注释行：注释里解释口径时会顺带写出 `upload-artifact`、
@@ -107,9 +112,11 @@ export function cascadeProblems(jobBlock, { anchor, products }) {
     const label =
       step.match(/- name: ([^\n]+)/)?.[1] ??
       step.match(/\n\s+name: ([^\n]+)/)?.[1] ??
+      // `- run:` 步骤常常没有 name（test-web 的三条门禁就是），此时能点名的只有命令本身
+      step.match(/- run: ([^\n]+)/)?.[1] ??
       "产物读取步骤";
     problems.push(
-      `「${label}」没有以 steps.${anchor}.outcome != 'skipped' 为条件：` +
+      `「${label}」没有以 steps.${anchor}.outcome 为条件（!= 'skipped' 或更严的 == 'success'）：` +
         "生产者被上游（typecheck/安装/lint）跳过时它仍会跑，产物缺失又判一次红——一次根因多处红",
     );
   }

@@ -103,9 +103,26 @@ describe("check-ci-gate 第 6 项：级联红收敛", () => {
     // test-web 的账读的是 next build 产物（2026-10-29 泛化）：锚点是 web-build
     expect(source).toContain("id: web-build");
     expect(source).toContain("!cancelled() && steps.web-build.outcome != 'skipped'");
+    // ISR 门禁挂在同一个锚点上，但用更严的 == 'success'（2026-10-30）
+    expect(source).toContain("!cancelled() && steps.web-build.outcome == 'success'");
     const res = runGate(REAL_CI, GATE_TEST);
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("级联红已按产物生产者 outcome 收敛");
+  });
+
+  it("ISR 那一步的条件被删 ⇒ 红：预算常驻红会把整步 skipped，撤防不报错", () => {
+    // 2026-10-29 起首屏预算红是常驻的（视频线在途），默认条件 ⇒ 下一步 `check-isr-routes`
+    // 每轮 skipped，而 skipped 不判红：作业结论里只看见预算那一步，看不出 ISR 门禁
+    // 已经连续几天没判过任何东西。登记表把它的锚点补上之后，删条件必须当场红。
+    const source = readFileSync(REAL_CI, "utf8");
+    const guardLine = /[ \t]*if: \$\{\{ !cancelled\(\) && steps\.web-build\.outcome == 'success' \}\}\r?\n/;
+    expect(source).toMatch(guardLine);
+    const weakened = source.replace(guardLine, "");
+    expect(weakened).not.toMatch(guardLine);
+    const res = runGate(writeFixture("ci-web-isr-unguarded.yml", weakened), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("test-web");
+    expect(res.out).toContain("node scripts/check-isr-routes.mjs");
   });
 
   it("test-web 的守卫退回 if: always() ⇒ 红，账步骤与它的上传各点名一次", () => {

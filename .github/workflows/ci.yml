@@ -221,7 +221,15 @@ jobs:
       # CI 构建同样没有 NAVHUB_SITE_URL，所以这一条就是在证明「构建期不需要 origin
       # 也能预渲染 /sites」：静态渲染链（根布局 metadataBase + 站点目录）一旦把
       # siteOrigin() 的 headers() 兜底放回来，/sites 退化成 ƒ，这里立刻红灯。
+      #
+      # 条件必须是 `!cancelled() && web-build.outcome == 'success'`（2026-10-30 加）：
+      # 默认条件意味着**上一步红 = 这一步 skipped**，而 skipped 不判红。自 10-29 起
+      # 预算门禁常驻红，于是这条 ISR 门禁每轮都被整步跳过——它已经连着几天没判过任何东西，
+      # 而作业结论看不出来（红的还是预算那一步，像是「只有预算有问题」）。撤防不报错，
+      # 是最贵的一种失效。锚点用 `== 'success'` 而不是账那两步的 `!= 'skipped'`：
+      # build 真失败时 `.next` 是半份产物，ISR 读它只会再判一次假红。
       - run: node scripts/check-isr-routes.mjs
+        if: ${{ !cancelled() && steps.web-build.outcome == 'success' }}
       # 首屏预算账（只读）：把 check-bundle-budget --report 的三类发现 + 产物出处写成一份
       # 跨轮可对比的账。为什么门禁之外还要它：门禁只答「超没超」，不答「哪几条路由该补
       # 专属预算、哪几条其实可以下调」——那 15+58 条此前只活在本地一次 --report 的 stdout 里。

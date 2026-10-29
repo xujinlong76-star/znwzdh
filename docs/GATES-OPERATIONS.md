@@ -128,6 +128,14 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 - **判据**（不限于 junit）：任何**读上游产物、且产物缺失时会把自己判红**的收尾步骤，必须以
   `if: ${{ !cancelled() && steps.<锚点 id>.outcome != 'skipped' }}` 为条件。锚点跑过（成功或失败）
   时照常执行——那是它们该干活的时候；`skipped` 说明根因在上游，这里不掺和。
+- **更严的一型：`== 'success'`**（2026-10-30，`test-web` 的 `check-isr-routes`）。守卫的两种写法
+  都算挂了，选哪种取决于「锚点失败时产物还能不能读」：只读账（预算账）读得到就照出，
+  而 ISR 门禁读的是 `.next` 的预渲染清单——`next build` 红的时候那是半份产物，读它只会
+  在真根因之上再叠一层假红。**这一型同时解决反向问题**：没有 `if:` 的步骤按默认条件执行，
+  于是**上一步红 = 这一步 skipped**，而 skipped 不判红。预算红自 10-29 起常驻，
+  ISR 门禁因此每轮被整步跳过——作业结论里只看见预算那一步，看不出它已经连续几天没判过任何东西。
+  撤防不报错，是最贵的一种失效；登记表把它的锚点补上后，删条件会当场红
+  （`check-ci-gate.test.ts`「ISR 那一步的条件被删」）。
 - **豁免**：`if-no-files-found: warn|ignore` 的上传缺文件也不会自己判红 ⇒ 不是级联源，不逼着挂守卫。
   这是一条**会随改法失效**的豁免：把它改成 `error` 的那一刻它就变成级联源，守卫要求随即生效
   （`test-e2e` 的 `playwright-report` 正走这条路，所以它列在 products 里）。
@@ -231,7 +239,7 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 |---|---|---|
 | `test-sqlite` | 按步骤定位：typecheck → lint:backend（`continue-on-error`，不会红）→ vendor → vitest → build。`Cannot find package '@/lib/auth'` = 忘了 `node scripts/vendor-web.mjs`；build 红 = 声明导出/入口路径坏 | `lint:backend` 是 warning 级，红了也不是它 |
 | `test-postgres` | 先看是 `test:pg:suite` 还是 `test:pg` 红。suite 报「未设置 `NAVHUB_TEST_DATABASE_URL` —— 拒绝执行」= **作业配置坏了**，不是代码；有 URL 仍红 = 真跨方言缺陷 | 把变量设成 `DATABASE_URL` 是死变量，套件整体 skip → 假绿，绝不能这样「修」 |
-| `test-web` | 按步骤序：tsc → eslint（warning 不卡）→ `next build` → bundle budget → `check-isr-routes`。budget 红**不许上调** `scripts/bundle-budget.json`；2026-10-30 起每条超限路由单独写一条 `::error file=scripts/bundle-budget.json,line=<阈值行>::`（本地不打），所以没 token 也能从 annotation 直接看出是哪几条路由超了多少；ISR 红 = 某收录型路由从 ● 退化成 ƒ，或页面签名读了 `searchParams` | `next.config` 的 `ignoreBuildErrors` 只影响 build，不影响 tsc 步骤。**eslint 那一步红不起来**（基线 0 error / 800+ warning），annotation 里的警告文案不是判红原因 |
+| `test-web` | 按步骤序：tsc → eslint（warning 不卡）→ `next build` → bundle budget → `check-isr-routes`。budget 红**不许上调** `scripts/bundle-budget.json`；2026-10-30 起每条超限路由单独写一条 `::error file=scripts/bundle-budget.json,line=<阈值行>::`（本地不打），所以没 token 也能从 annotation 直接看出是哪几条路由超了多少；ISR 红 = 某收录型路由从 ● 退化成 ƒ，或页面签名读了 `searchParams`。**budget 红不再跳过 ISR 那一步**（它带 `if: !cancelled() && steps.web-build.outcome == 'success'`）：10-29～10-30 之间预算常驻红，ISR 每轮 `skipped` 而 skipped 不判红 —— 读那几轮的结论时，「只有预算红」不等于「ISR 门禁判过且通过」 | `next.config` 的 `ignoreBuildErrors` 只影响 build，不影响 tsc 步骤。**eslint 那一步红不起来**（基线 0 error / 800+ warning），annotation 里的警告文案不是判红原因 |
 | `check-web-overlay` | 报错会列出不一致文件：先问「是不是直接改了 `apps/web`」。事实源是 `apps/web-overlay/`，改 overlay 后重跑 `node scripts/vendor-web.mjs`；再查 `sync-core-mirrors --check` 与 `check-upstream-ref` | `apps/web` 是 gitignore 生成物，全新检出必须 vendor 后才能比对 |
 | `check-isr-live` | 读 3 条 `::error::` 做三层归因：①判据数字（rc / sitemap 条目数 / 红行数）②输出尾部 600 字符 ③收录面族计数。族整族归零但抽到的页全绿 = sitemap 生成侧问题；`120s 内没有 /site/*` = 中枢失联或 seed 空，看 `tail /tmp/hub.log /tmp/web.log` | 限流阶段 `rc=2` = 缺 `NAVHUB_INTERNAL_TOKEN`；「预检失败…是降级壳」= web 没吃到豁免，先查 3000 端口占用者，别怀疑业务代码；**不要**重启 web 来「修」（凭据是模块顶层常量，只在启动时读一次） |
 | `test-e2e` | 读 annotation 的「失败用例：」清单与「报错抽样」，本地 `node scripts/e2e-local.mjs -- <spec> --grep "<标题>"` 单跑；下载 `playwright-report` 产物 | 全量共享 server，超时类红灯先看是否被前一个 spec 拖慢，不一定是断言错 |

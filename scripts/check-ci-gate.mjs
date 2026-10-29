@@ -118,7 +118,13 @@ const CASCADE_RULES = [
   { job: "test-e2e", anchor: "e2e", products: [/junit-summary\.mjs/, /ci-red-ledger\.mjs/, /junit-e2e-/, /playwright-report/] },
   // 预算账读的是 next build 的产物：锚点是 build 而不是 lint/门禁步骤，
   // 因为「预算门禁红灯时账仍要出」是有意为之，只有 build 没跑成才算级联。
-  { job: "test-web", anchor: "web-build", products: [/bundle-budget-summary\.mjs/, /bundle-budget-report/] },
+  // check-isr-routes 也挂在 web-build 上（2026-10-30）：它读的同样是 `.next`，
+  // 而它此前没有 `if:` —— 预算常驻红灯时按默认条件被整步跳过，等于 ISR 门禁天天撤防。
+  {
+    job: "test-web",
+    anchor: "web-build",
+    products: [/bundle-budget-summary\.mjs/, /bundle-budget-report/, /check-isr-routes\.mjs/],
+  },
 ];
 for (const rule of CASCADE_RULES) {
   const found = jobs.find((j) => j.name === rule.job);

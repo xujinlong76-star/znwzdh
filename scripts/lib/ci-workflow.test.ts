@@ -36,6 +36,26 @@ describe("cascadeProblems：判据是「产物生产者跑过没有」", () => {
     expect(cascadeProblems(job(" ${{ !cancelled() && steps.vitest.outcome != 'skipped' }}"), RULE)).toEqual([]);
   });
 
+  it("更严的 == 'success' 也算挂了守卫：锚点失败时产物是半份，读了只再多判一次假红", () => {
+    // test-web 的 check-isr-routes 用的就是这一型：`next build` 红的时候 `.next`
+    // 不可信，让它跑等于给真根因再叠一层 ISR 红；而它必须**不等价于**没有条件，
+    // 否则预算门禁红灯（build 是成功的）会把它整步 skipped——撤防不报错。
+    expect(cascadeProblems(job(" ${{ !cancelled() && steps.vitest.outcome == 'success' }}"), RULE)).toEqual([]);
+  });
+
+  it("只有 `- run:` 没有 name 的消费者 ⇒ 红时用命令本身点名", () => {
+    const unnamed =
+      "  test-y:\n" +
+      "    steps:\n" +
+      "      - name: 前端构建\n" +
+      "        id: web-build\n" +
+      "        run: pnpm --filter navsphere build\n" +
+      "      - run: node scripts/check-isr-routes.mjs\n";
+    const problems = cascadeProblems(unnamed, { anchor: "web-build", products: [/check-isr-routes\.mjs/] });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("node scripts/check-isr-routes.mjs");
+  });
+
   it("只写 !cancelled() ⇒ 红，并点名消费者步骤", () => {
     const problems = cascadeProblems(job(" ${{ !cancelled() }}"), RULE);
     expect(problems).toHaveLength(1);

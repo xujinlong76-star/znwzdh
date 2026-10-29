@@ -13,7 +13,8 @@
  *     由 scripts/lib/source-refs.mjs 解析（含 `@/`、`@navhub/<pkg>` 别名与扩展名回退）。
  *   - **路径字面量边**：守卫型测试不 import 源码，而是 readFileSync / spawn 它。
  *     真实例子：`apps/web/test/restore-page-guard.test.ts` 里 `"src/app/…/page.tsx"`
- *     （相对 overlay 根）、`scripts/check-bundle-budget.test.ts` 里 spawn 的脚本路径。
+ *     （相对 overlay 根）、`scripts/check-bundle-budget.test.ts` 里 spawn 的脚本路径、
+ *     `scripts/check-ci-gate.test.ts` 里读的 `.github/workflows/ci.yml`（非代码文件也是节点）。
  *     只从测试文件里抽（源码里的路径字符串多半是文案，抽了全是噪声）。
  *   - **镜像边**：`scripts/core-mirrors.json` 登记的 core ↔ overlay 逐字节镜像。
  *     两侧是同一份实现的两个落点，改任一侧，消费另一侧的测试都会受影响。
@@ -76,19 +77,37 @@ const ALIAS_ROOTS = {
  * 两种写法都要认：
  *   - 仓库相对（`scripts/check-x.mjs`、`packages/core/src/x.ts`）；
  *   - overlay 相对（`src/app/.../page.tsx`）——守卫型测试普遍用 `join(overlayRoot, "src/…")`。
+ *
+ * 前缀表里那三类**非代码**（`.github/`、`docker/`、`docs/`）是 2026-10-29 补的盲区：
+ * 它们不在 BASE_SCAN_DIRS、也没代码后缀，于是「改 CI 接线」在选测眼里等于没改——
+ * `scripts/check-ci-gate.test.ts` 真读 `.github/workflows/ci.yml`，改 ci.yml 却不选它。
+ * 一张表两处用（抽取正则 + 判「仓库相对还是 overlay 相对」）：分两处写迟早只加一半。
  */
-const PATH_LITERAL_RE = /["'`]((?:apps|packages|scripts|types|e2e|src|app)\/[A-Za-z0-9_@./[\]-]+)["'`]/g;
+export const REPO_RELATIVE_PREFIXES = ["apps", "packages", "scripts", "types", "e2e", ".github", "docker", "docs"];
+const OVERLAY_RELATIVE_PREFIXES = ["src", "app"];
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PATH_LITERAL_RE = new RegExp(
+  `["'\`]((?:${[...REPO_RELATIVE_PREFIXES, ...OVERLAY_RELATIVE_PREFIXES]
+    .map(escapeRe)
+    .join("|")})/[A-Za-z0-9_@./[\\]-]+)["'\`]`,
+  "g",
+);
 const FILE_LIKE_RE = /\.(tsx?|mts|cts|mjs|cjs|jsx?|json|md|ya?ml|xml|css|txt)$/;
+
+function isRepoRelative(lit) {
+  return REPO_RELATIVE_PREFIXES.some((p) => lit.startsWith(p + "/"));
+}
 
 /**
  * `resolve(ROOT, "scripts", "check-large-files.mjs")` 这类**分段拼接**的路径。
  * 单看每个字符串都不带 `/`，上一条正则抽不出来；合起来才是路径。
  * 真实例子：scripts/check-large-files.test.ts:21 —— 漏了它，改脚本时图命中 0，
  * 只能靠词根回退兜（回退不报错，但它也不保证覆盖到别的东西）。
+ * 分段写法只认仓库根前缀：拼出来的 overlay 相对路径要靠运行时 overlayRoot，不猜。
  */
 const JOIN_CALL_RE = /\b(?:join|resolve)\s*\(([^()]*)\)/g;
 const QUOTED_RE = /["'`]([^"'`]*)["'`]/g;
-const PATH_LIKE_PREFIX_RE = /^(?:apps|packages|scripts|types|e2e)\//;
+const PATH_LIKE_PREFIX_RE = new RegExp(`^(?:${REPO_RELATIVE_PREFIXES.map(escapeRe).join("|")})/`);
 
 function joinedLiteralDeps(text) {
   const deps = new Set();
@@ -206,7 +225,7 @@ export function pathLiteralDeps(text) {
     const lit = m[1].replace(/\/+$/, "");
     if (!lit) continue;
     // overlay 相对写法（"src/app/…"）只在裸 src/ 开头时成立；仓库相对写法原样使用
-    if (!lit.startsWith("apps/") && !lit.startsWith("packages/") && !lit.startsWith("scripts/") && !lit.startsWith("types/") && !lit.startsWith("e2e/")) {
+    if (!isRepoRelative(lit)) {
       deps.add("apps/web-overlay/" + lit);
       continue;
     }
@@ -267,8 +286,12 @@ export function buildGraph({ root = process.cwd() } = {}) {
     //     无关文件拖进来（实测：改 install-git-hooks.mjs 时 4 个 web 测试仅因注释提及入选）。
     if (TEST_FILE_RE.test(file)) {
       for (const dep of pathLiteralDeps(stripComments(text))) {
-        if (FILE_LIKE_RE.test(dep)) deps.add(canonicalPath(dep));
-        else deps.add("dir:" + canonicalPath(dep));
+        const canon = canonicalPath(dep);
+        // 有没有后缀不能用来判「文件还是目录」：`docker/Dockerfile.api` 没有后缀，
+        // 落到 dir: 分支后这条边永远匹配不上（改动文件只会以自身路径命中文件节点）。
+        // 用真实存在性兜底——存在就是文件，不存在才按「测试扫这个目录」记账。
+        if (FILE_LIKE_RE.test(canon) || isFile(root, canon)) deps.add(canon);
+        else deps.add("dir:" + canon);
       }
     }
 

@@ -4,8 +4,9 @@
  * 为什么需要单独的测试：选测收窄是「少跑」的策略，**漏选不会报错**——它只会安静地
  * 少跑几条。precommit-select.test.ts 从生成物的 dry-run 观察结果，能证明「选中了什么」，
  * 但证明不了「为什么选中」与三类边的边界（尤其目录依赖只对起点生效、注释里的路径不算）。
- * 这里把图的语义逐条钉住：import 边、测试里的路径字面量（含 resolve(ROOT, "scripts", "x.mjs")
- * 这种分段拼接）、core↔overlay 镜像边，以及真实仓库的验收口径。
+ * 这里把图的语义逐条钉住：import 边、测试里的路径字面量（含 `.github/workflows/ci.yml`
+ * 这类**非代码文件**，以及 resolve(ROOT, "scripts", "x.mjs") 这种分段拼接）、
+ * core↔overlay 镜像边，以及真实仓库的验收口径。
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -108,6 +109,39 @@ describe("图的三类边", () => {
     // 改 core 侧：overlay 的消费者同样受影响（两侧是同一份实现的两个落点）
     expect(impactedTests(graph, ["packages/core/src/rank.ts"])).toEqual(["apps/web/test/rank.test.ts"]);
     expect(impactedTests(graph, ["apps/web-overlay/src/lib/rank.ts"])).toEqual(["apps/web/test/rank.test.ts"]);
+  });
+
+  /**
+   * 盲区（2026-10-29）：测试**读的非代码文件**不在图里。
+   * `.github/workflows/ci.yml`、`docker/Dockerfile.api` 既不在 BASE_SCAN_DIRS、`Dockerfile.*`
+   * 连后缀都没有 ⇒ 改 CI 接线时选测等于没改动，而读它们的正是门禁自己的测试。
+   * 两条判据分开钉：带后缀的按文件；无后缀但**真实存在**的也按文件
+   * （落到 `dir:` 分支的话，那条边永远匹配不上「改这个文件本身」）。
+   */
+  it("非代码文件也是节点：.github / docker 的字面量按仓库根记账", () => {
+    const root = makeRepo({
+      ".github/workflows/ci.yml": "jobs:\n  test:\n",
+      "docker/Dockerfile.api": "FROM node\n",
+      "scripts/check-ci-gate.test.ts": 'const a = ".github/workflows/ci.yml";\n',
+      "scripts/check-hooks-fresh.test.ts": 'const b = "docker/Dockerfile.api";\n',
+    });
+    const graph = buildGraph({ root });
+    expect(impactedTests(graph, [".github/workflows/ci.yml"])).toEqual(["scripts/check-ci-gate.test.ts"]);
+    expect(impactedTests(graph, ["docker/Dockerfile.api"])).toEqual(["scripts/check-hooks-fresh.test.ts"]);
+    // 仓库根前缀不许被当成 overlay 相对写法（加了 apps/web-overlay/ 前缀就是死边）
+    expect(pathLiteralDeps('const p = ".github/workflows/ci.yml";').has(".github/workflows/ci.yml")).toBe(true);
+    expect(pathLiteralDeps('const p = "docker/Dockerfile.api";').has("apps/web-overlay/docker/Dockerfile.api")).toBe(false);
+  });
+
+  it("带斜杠的目录字面量仍按目录记账（改目录下任何文件都命中）", () => {
+    const root = makeRepo({
+      ".github/workflows/ci.yml": "jobs:\n",
+      ".github/workflows/release.yml": "jobs:\n",
+      "scripts/wf-scan.test.ts": 'const dir = ".github/workflows/";\n',
+    });
+    expect(impactedTests(buildGraph({ root }), [".github/workflows/release.yml"])).toEqual([
+      "scripts/wf-scan.test.ts",
+    ]);
   });
 });
 
@@ -224,6 +258,14 @@ describe("真实仓库的验收口径", () => {
     expect(Array.isArray(hit)).toBe(true);
     expect(hit).not.toContain("apps/api/test/backup-async-api.test.ts");
     expect(impactedTests(graph, [])).toEqual([]);
+  });
+
+  it("改 CI 接线 / Dockerfile：读它们的门禁测试必须被选中（2026-10-29 前恒为 0）", () => {
+    const ci = impactedTests(graph, [".github/workflows/ci.yml"]);
+    expect(ci).toContain("scripts/check-ci-gate.test.ts");
+    expect(ci).toContain("scripts/check-gates-registry.test.ts");
+    expect(ci.some((t) => t.startsWith("apps/web/test/"))).toBe(true);
+    expect(impactedTests(graph, ["docker/Dockerfile.api"])).toContain("scripts/check-hooks-fresh.test.ts");
   });
 
   it("同根重复调用返回同一张图（选测器一次提交只建一次）", () => {

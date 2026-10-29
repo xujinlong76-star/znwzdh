@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { z } from "zod"
 import { Card, CardContent, CardHeader, CardTitle } from "@/registry/new-york/ui/card"
 import { Input } from "@/registry/new-york/ui/input"
@@ -21,8 +21,17 @@ import {
   FormLabel,
   FormMessage,
 } from "@/registry/new-york/ui/form"
-import { loadSiteSettings, saveSiteSettings, uploadSiteAsset, SiteSettingsError, type AssetKind } from "@/services/siteConfigService"
-import type { SiteSettings, SiteSettingsPatch } from "@/lib/site-settings"
+import {
+  deleteSiteAsset,
+  listSiteAssets,
+  loadSiteSettings,
+  saveSiteSettings,
+  uploadSiteAsset,
+  SiteSettingsError,
+  type AssetKind,
+  type SiteAsset,
+} from "@/services/siteConfigService"
+import { pwaAssetField, type SiteSettings, type SiteSettingsPatch } from "@/lib/site-settings"
 
 /**
  * 站点设置中心。
@@ -56,6 +65,10 @@ const uiSchema = z.object({
   appearance: z.object({
     logo: assetInput,
     favicon: assetInput,
+    appleTouchIcon: assetInput,
+    pwaIcon192: pwaAssetField("pwaIcon192"),
+    pwaIcon512: pwaAssetField("pwaIcon512"),
+    pwaMaskable512: pwaAssetField("pwaMaskable512"),
     theme: z.enum(["light", "dark", "system"]),
     themeColor: z
       .string()
@@ -81,7 +94,7 @@ type UiValues = z.infer<typeof uiSchema>
 
 const EMPTY: UiValues = {
   basic: { title: "", description: "", keywords: "", ogImage: "" },
-  appearance: { logo: "", favicon: "", theme: "system", themeColor: "" },
+  appearance: { logo: "", favicon: "", appleTouchIcon: "", pwaIcon192: "", pwaIcon512: "", pwaMaskable512: "", theme: "system", themeColor: "" },
   navigation: { linkTarget: "_blank" },
   footer: { text: "", icp: "" },
 }
@@ -98,7 +111,7 @@ const TAB_FIELDS: Record<string, Array<keyof UiValues>> = {
 /** tab → 该 tab 实际要提交的字段（share 只提交 ogImage，不碰同段的 title/description） */
 const TAB_PATCH_FIELDS: Record<string, Record<string, string[]>> = {
   basic: { basic: ["title", "description", "keywords"] },
-  appearance: { appearance: ["logo", "favicon", "theme", "themeColor"] },
+  appearance: { appearance: ["logo", "favicon", "appleTouchIcon", "pwaIcon192", "pwaIcon512", "pwaMaskable512", "theme", "themeColor"] },
   share: { basic: ["ogImage"] },
   navigation: { navigation: ["linkTarget"] },
   footer: { footer: ["text", "icp"] },
@@ -115,6 +128,10 @@ function toFormValues(s: SiteSettings): UiValues {
     appearance: {
       logo: s.appearance.logo ?? "",
       favicon: s.appearance.favicon ?? "",
+      appleTouchIcon: s.appearance.appleTouchIcon ?? "",
+      pwaIcon192: s.appearance.pwaIcon192 ?? "",
+      pwaIcon512: s.appearance.pwaIcon512 ?? "",
+      pwaMaskable512: s.appearance.pwaMaskable512 ?? "",
       theme: s.appearance.theme,
       themeColor: s.appearance.themeColor ?? "",
     },
@@ -133,6 +150,11 @@ export default function SiteSettings() {
   const [saving, setSaving] = useState(false)
   const [banner, setBanner] = useState<string | null>(null)
   const [uploading, setUploading] = useState<string | null>(null)
+  const [assets, setAssets] = useState<SiteAsset[]>([])
+  const [assetsLoading, setAssetsLoading] = useState(false)
+  const [assetsError, setAssetsError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [deletingAsset, setDeletingAsset] = useState<string | null>(null)
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const form = useForm<UiValues>({
@@ -157,9 +179,22 @@ export default function SiteSettings() {
     [form],
   )
 
+  const loadAssets = useCallback(async () => {
+    setAssetsLoading(true)
+    setAssetsError(null)
+    try {
+      setAssets(await listSiteAssets())
+    } catch (err) {
+      setAssetsError(err instanceof Error ? err.message : "读取资产清单失败")
+    } finally {
+      setAssetsLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     void load()
-  }, [load])
+    void loadAssets()
+  }, [load, loadAssets])
 
   const buildPatch = (name: string): SiteSettingsPatch => {
     const values = form.getValues()
@@ -197,6 +232,7 @@ export default function SiteSettings() {
       form.reset(toFormValues(settings))
       setDegraded(false)
       setMissing(false)
+      await loadAssets()
       toast({ title: "已保存", description: "站点设置已写入中枢" })
     } catch (err: unknown) {
       if (err instanceof SiteSettingsError && err.issues.length) {
@@ -217,21 +253,51 @@ export default function SiteSettings() {
     const input = fileRefs.current[kind]
     const file = input?.files?.[0]
     if (!file) return
+    const fieldPath = kind === "ogImage" ? "basic.ogImage" : `appearance.${kind}` as const
+    form.clearErrors(fieldPath)
     setUploading(kind)
     setBanner(null)
     try {
       const { url } = await uploadSiteAsset(kind, file)
       field.onChange(url)
+      await loadAssets()
       toast({ title: "已上传", description: `${file.name} → ${url}` })
     } catch (err: unknown) {
-      setBanner(err instanceof Error ? err.message : "上传失败")
+      const message = err instanceof Error ? err.message : "上传失败"
+      form.setError(fieldPath, { type: "upload", message })
+      setBanner(message)
     } finally {
       setUploading(null)
       if (input) input.value = ""
     }
   }
 
+  const removeAsset = async (path: string) => {
+    setDeletingAsset(path)
+    setAssetsError(null)
+    try {
+      await deleteSiteAsset(path)
+      setAssets((current) => current.filter((asset) => asset.path !== path))
+      setPendingDelete(null)
+      toast({ title: "资产已删除", description: "服务端已核验无已保存引用；浏览器已有的图片缓存可能仍保留" })
+    } catch (err) {
+      setAssetsError(err instanceof Error ? err.message : "删除资产失败")
+    } finally {
+      setDeletingAsset(null)
+    }
+  }
+
   const saveDisabled = !loaded || degraded || saving
+  const watchedValues = useWatch({ control: form.control, defaultValue: EMPTY })
+  const assetReferences: Array<[string, string]> = [
+    ["Logo", watchedValues.appearance?.logo ?? ""],
+    ["Favicon", watchedValues.appearance?.favicon ?? ""],
+    ["Apple Touch Icon", watchedValues.appearance?.appleTouchIcon ?? ""],
+    ["PWA 192", watchedValues.appearance?.pwaIcon192 ?? ""],
+    ["PWA 512", watchedValues.appearance?.pwaIcon512 ?? ""],
+    ["PWA Maskable", watchedValues.appearance?.pwaMaskable512 ?? ""],
+    ["默认分享大图", watchedValues.basic?.ogImage ?? ""],
+  ]
 
   /**
    * 刻意写成普通函数而不是组件：组件定义在渲染函数内部，每次重渲染都是新的
@@ -258,7 +324,7 @@ export default function SiteSettings() {
     </div>
   )
 
-  /** logo / favicon / ogImage 三处同构：URL 输入 + 位图上传 + 预览。同 saveButton，不能用组件形式。 */
+  /** 品牌图字段同构：URL 输入 + 位图上传 + 预览。同 saveButton，不能用组件形式。 */
   const assetField = ({
     section,
     field,
@@ -280,14 +346,15 @@ export default function SiteSettings() {
           <FormLabel>{label}</FormLabel>
           <div className="flex flex-wrap items-center gap-2">
             <FormControl>
-              <Input placeholder="输入图片 URL 或点右侧上传" className="min-w-[240px] flex-1" {...f} />
+              <Input placeholder={kind.startsWith("pwa") ? "上传本字段 PNG，或留空使用默认图标" : "输入图片 URL 或点右侧上传"} className="min-w-[240px] flex-1" {...f} />
             </FormControl>
             <input
               ref={(el) => {
                 fileRefs.current[kind] = el
               }}
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/x-icon"
+              accept={kind.startsWith("pwa") || kind === "appleTouchIcon" ? "image/png" : "image/png,image/jpeg,image/webp,image/x-icon,image/vnd.microsoft.icon"}
+              aria-label={`上传 ${label}`}
               className="hidden"
               onChange={() => void onPickFile(kind, f)}
             />
@@ -300,6 +367,16 @@ export default function SiteSettings() {
             >
               {uploading === kind ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
               上传
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={`清空 ${label}`}
+              disabled={!f.value || uploading !== null || saveDisabled}
+              onClick={() => { f.onChange(""); form.clearErrors(`${section}.${field}` as never) }}
+            >
+              清空
             </Button>
           </div>
           {f.value && (
@@ -447,6 +524,34 @@ export default function SiteSettings() {
                       kind: "favicon",
                       label: "Favicon",
                       hint: "浏览器标签页与站点图标；建议 32×32。留空回退 /icons/icon-192.png",
+                    })}
+                    {assetField({
+                      section: "appearance",
+                      field: "appleTouchIcon",
+                      kind: "appleTouchIcon",
+                      label: "Apple Touch Icon",
+                      hint: "iOS「添加到主屏幕」图标；上传必须是 180×180 PNG。留空回退内置图标",
+                    })}
+                    {assetField({
+                      section: "appearance",
+                      field: "pwaIcon192",
+                      kind: "pwaIcon192",
+                      label: "PWA 图标（192×192）",
+                      hint: "必须上传 192×192 PNG；仅接受本字段上传生成的站内 URL，不接受外链。清空并保存后使用默认图标。",
+                    })}
+                    {assetField({
+                      section: "appearance",
+                      field: "pwaIcon512",
+                      kind: "pwaIcon512",
+                      label: "PWA 图标（512×512）",
+                      hint: "必须上传 512×512 PNG；仅接受本字段上传生成的站内 URL，不接受外链。清空并保存后使用默认图标。",
+                    })}
+                    {assetField({
+                      section: "appearance",
+                      field: "pwaMaskable512",
+                      kind: "pwaMaskable512",
+                      label: "PWA 自适应图标（Maskable）",
+                      hint: "上传 512×512 PNG（可透明）。系统自动将整图等比缩入中心 288×288 区域，在 512×512 白色背景上留边，使角点也位于半径 204.8 的安全圆内；不会检测图案的语义安全区。仅接受本字段上传生成的 URL，清空并保存后使用默认图标。",
                     })}
                     <FormField
                       control={form.control}
@@ -596,6 +701,75 @@ export default function SiteSettings() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+            <div>
+              <CardTitle>已上传资源</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                清单直接来自中枢 KV 文档（最多显示 500 项）。已保存配置或当前表单引用的资源不可删除；先替换并保存，再清理旧图。
+              </p>
+            </div>
+            <Button type="button" variant="outline" size="sm" disabled={assetsLoading} onClick={() => void loadAssets()}>
+              {assetsLoading ? "读取中…" : "刷新清单"}
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {assetsError && <div role="alert" className="rounded-md border border-destructive/40 p-3 text-xs text-destructive">{assetsError}</div>}
+            {!assetsLoading && !assetsError && assets.length === 0 && (
+              <p className="text-sm text-muted-foreground">还没有上传过品牌图片。</p>
+            )}
+            {assets.map((asset) => {
+              const url = `/api/site/asset/${asset.name}`
+              const references = assetReferences.filter(([, value]) => {
+                try { return decodeURIComponent(new URL(value, "http://navhub.invalid").pathname) === url } catch { return false }
+              }).map(([label]) => label)
+              const persisted = asset.references
+              const canDelete = loaded && !degraded && !assetsError && !assetsLoading && !saving && persisted.length === 0 && references.length === 0
+              const confirming = pendingDelete === asset.path
+              return (
+                <div key={asset.path} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center">
+                  <img src={url} alt="" className="h-12 w-12 shrink-0 rounded bg-muted object-contain" />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="break-all text-sm font-medium">{asset.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      存储文档 {Math.max(1, Math.round(asset.bytes / 1024))} KB · {asset.mime || "历史资源"}
+                      {asset.width && asset.height ? ` · ${asset.width}×${asset.height}` : ""}
+                      {` · 更新于 ${new Date(asset.updatedAt).toLocaleString("zh-CN")}`}
+                    </div>
+                    <div className={persisted.length || references.length ? "text-xs text-emerald-600" : "text-xs text-amber-600"}>
+                      {persisted.length > 0 && <div>已保存配置引用：{persisted.join("、")}</div>}
+                      {references.length > 0 && <div>当前表单引用：{references.join("、")}</div>}
+                      {persisted.length === 0 && references.length === 0 && "未发现品牌设置引用；删除时服务端会再次核验"}
+                    </div>
+                  </div>
+                  {canDelete && (
+                    confirming ? (
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          disabled={deletingAsset !== null}
+                          onClick={() => void removeAsset(asset.path)}
+                        >
+                          {deletingAsset === asset.path ? "删除中…" : "确认永久删除"}
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" disabled={deletingAsset !== null} onClick={() => setPendingDelete(null)}>
+                          取消
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setPendingDelete(asset.path)}>
+                        清理孤儿
+                      </Button>
+                    )
+                  )}
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
       </div>
     </>
   )

@@ -22,7 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
     icons: {
       icon,
       shortcut: icon,
-      apple: '/icons/apple-touch-icon.png',
+      apple: settings.appearance.appleTouchIcon || '/icons/apple-touch-icon.png',
     }
   }
 }

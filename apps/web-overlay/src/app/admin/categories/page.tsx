@@ -21,6 +21,11 @@ import { FolderTree } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { LoadErrorNotice } from '@/components/admin/load-error-notice'
 import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
+import {
+  deactivationPrompt,
+  matchesCategoryName,
+  type CategoryImpact,
+} from '@/lib/admin-category-impact'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface CategoryRow {
@@ -81,7 +86,9 @@ export default function AdminCategoriesPage() {
   const load = useCallback(() => {
     setLoading(true)
     setLoadError(null)
-    void hubGet<CategoryRow[]>('/api/categories')
+    // GET /api/categories 带 60s 浏览器缓存：增删改后 reload 会拿回写之前的列表
+    // （实测停用成功、行里仍显示「启用」）。加一次性参数绕过 HTTP 缓存，服务端忽略它。
+    void hubGet<CategoryRow[]>('/api/categories?ts=' + Date.now())
       .then((data) => setCats(Array.isArray(data) ? data : []))
       .catch((err) => {
         // 失败仍然回落到空列表，但必须留下错误态（见 lib/admin-load-failure.ts）
@@ -368,12 +375,42 @@ async function renameCat(cat: CategoryRow, setBusyId: (id: string | null) => voi
   }
 }
 
+/** 启停类目。停用会改变对外可达性：先看服务端影响面，再手抄类目名确认。 */
 async function toggleEnabled(cat: CategoryRow, setBusyId: (id: string | null) => void, load: () => void) {
+  // 启用是恢复性操作，不会让任何 URL 失效，不需要二次确认
+  if (!cat.enabled) {
+    await patchEnabled(cat, true, setBusyId, load)
+    return
+  }
+
+  setBusyId(cat.id)
+  const impact = await hubGet<CategoryImpact>('/api/categories/' + cat.id + '/impact').catch((e) => {
+    window.alert('读取停用影响失败，未做任何修改：' + String(e))
+    return null
+  })
+  setBusyId(null)
+  if (!impact) return
+
+  const typed = window.prompt(deactivationPrompt(impact))
+  if (typed === null) return
+  if (!matchesCategoryName(typed, impact)) {
+    window.alert('输入的类目名不一致，已取消停用')
+    return
+  }
+  await patchEnabled(cat, false, setBusyId, load)
+}
+
+async function patchEnabled(
+  cat: CategoryRow,
+  enabled: boolean,
+  setBusyId: (id: string | null) => void,
+  load: () => void
+) {
   setBusyId(cat.id)
   try {
-    await hubSend('/api/categories/' + cat.id, 'PATCH', { enabled: !cat.enabled })
+    await hubSend('/api/categories/' + cat.id, 'PATCH', { enabled })
   } catch (e) {
-    window.alert('操作失败：' + String(e))
+    window.alert((enabled ? '启用' : '停用') + '失败：' + String(e))
   } finally {
     setBusyId(null)
     load()

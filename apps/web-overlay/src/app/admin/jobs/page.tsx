@@ -34,6 +34,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { hubGet, hubSend } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 import { telemetryState } from '@/lib/telemetry-status'
+import { NotificationDeliveryPanel } from '@/components/admin/notification-delivery-panel'
 
 interface Job {
   id: string
@@ -44,6 +45,17 @@ interface Job {
   error: string | null
   createdAt: number
   updatedAt: number
+}
+
+interface RetentionPreview {
+  mode: 'rollup' | 'cleanup'
+  apply: boolean
+  rows?: number
+  groups?: number
+  scanned?: number
+  truncated?: boolean[]
+  telemetry: { days: number; healthChecks: number; llmUsage: number }
+  userRetention: { usersAffected?: number; rowsDeleted?: number; error?: string }
 }
 
 const KIND_CONFIG: Record<
@@ -125,6 +137,12 @@ export default function AdminJobsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [actingJobId, setActingJobId] = useState<string | null>(null)
   const [pruning, setPruning] = useState(false)
+  const [retentionMode, setRetentionMode] = useState<'rollup' | 'cleanup'>('rollup')
+  const [telemetryDays, setTelemetryDays] = useState(90)
+  const [retentionPreview, setRetentionPreview] = useState<RetentionPreview | null>(null)
+  const [retentionBusy, setRetentionBusy] = useState<'preview' | 'apply' | null>(null)
+  const [retentionError, setRetentionError] = useState<string | null>(null)
+  const [targetSiteId, setTargetSiteId] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -219,7 +237,10 @@ export default function AdminJobsPage() {
   const enqueue = async (kind: string) => {
     setEnqueuing(kind)
     try {
-      await hubSend('/api/hub/jobs', 'POST', { kind })
+      const needsSite = kind === 'refetch_metadata' || kind === 'site_self_healing'
+      const siteId = targetSiteId.trim()
+      if (needsSite && !siteId) throw new Error('请先填写目标站点 ID')
+      await hubSend('/api/hub/jobs', 'POST', needsSite ? { kind, payload: { siteId } } : { kind })
       await load()
     } catch (err) {
       // 以前只 console.error：点「触发」后列表毫无变化，用户会以为按钮坏了
@@ -227,6 +248,45 @@ export default function AdminJobsPage() {
       alert('触发任务失败: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setEnqueuing(null)
+    }
+  }
+
+  const previewRetention = async () => {
+    setRetentionBusy('preview')
+    setRetentionError(null)
+    try {
+      const preview = await hubSend<RetentionPreview>('/api/hub/jobs/retention/preview', 'POST', {
+        mode: retentionMode,
+        apply: false,
+        maxDays: 30,
+        telemetryDays,
+      })
+      setRetentionPreview(preview)
+    } catch (err) {
+      setRetentionPreview(null)
+      setRetentionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRetentionBusy(null)
+    }
+  }
+
+  const applyRetention = async () => {
+    if (!retentionPreview || retentionMode !== 'rollup' || retentionPreview.userRetention.error) return
+    const message = `确认按刚才的预演执行数据保留吗？\n\n将聚合 ${retentionPreview.rows ?? 0} 行过期明细，并清理 ${retentionPreview.telemetry.healthChecks + retentionPreview.telemetry.llmUsage} 行过期遥测与 ${retentionPreview.userRetention.rowsDeleted ?? 0} 行用户历史。\n\n任务只会入队，实际结果请在下方队列中确认。`
+    if (!confirm(message)) return
+    setRetentionBusy('apply')
+    setRetentionError(null)
+    try {
+      await hubSend('/api/hub/jobs', 'POST', {
+        kind: 'data_retention',
+        payload: { mode: 'rollup', apply: true, maxDays: 30, telemetryDays },
+      })
+      setRetentionPreview(null)
+      await load()
+    } catch (err) {
+      setRetentionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRetentionBusy(null)
     }
   }
 
@@ -416,6 +476,114 @@ export default function AdminJobsPage() {
         </Card>
       </div>
 
+      <Card>
+        <CardHeader className="p-4 pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
+            <History className="w-4 h-4 text-primary" />
+            数据保留：先预演，再执行
+          </CardTitle>
+          <CardDescription className="text-xs">
+            预演不建聚合表、不删除事件、遥测或用户历史。只有 rollup 支持在确认后入队执行；原样 cleanup 请走带归档的 CLI。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-4 pt-2 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <label className="space-y-1.5 text-xs">
+              <span className="font-medium">处理模式</span>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={retentionMode}
+                disabled={retentionBusy !== null}
+                onChange={(event) => {
+                  setRetentionMode(event.target.value as 'rollup' | 'cleanup')
+                  setRetentionPreview(null)
+                  setRetentionError(null)
+                }}
+              >
+                <option value="rollup">rollup：保留日统计，删除过期明细</option>
+                <option value="cleanup">cleanup：原样明细清理预演</option>
+              </select>
+            </label>
+            <label className="space-y-1.5 text-xs">
+              <span className="font-medium">遥测保留天数</span>
+              <input
+                type="number"
+                min={1}
+                max={3650}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={telemetryDays}
+                disabled={retentionBusy !== null}
+                onChange={(event) => {
+                  setTelemetryDays(Math.max(1, Math.min(3650, Number(event.target.value) || 1)))
+                  setRetentionPreview(null)
+                  setRetentionError(null)
+                }}
+              />
+            </label>
+            <div className="flex items-end">
+              <Button className="w-full" variant="outline" disabled={retentionBusy !== null} onClick={() => void previewRetention()}>
+                <Search className={`w-3.5 h-3.5 mr-1.5 ${retentionBusy === 'preview' ? 'animate-pulse' : ''}`} />
+                {retentionBusy === 'preview' ? '正在只读预演…' : '第一步：只读预演'}
+              </Button>
+            </div>
+          </div>
+
+          {retentionError && (
+            <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              操作失败：{retentionError}
+            </div>
+          )}
+
+          {retentionPreview && (
+            <div aria-live="polite" className="rounded-md border bg-muted/20 p-3 space-y-3">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <div className="text-muted-foreground">过期明细</div>
+                  <div className="text-lg font-semibold">{retentionPreview.mode === 'rollup' ? retentionPreview.rows ?? 0 : retentionPreview.scanned ?? 0}</div>
+                  <div>{retentionPreview.mode === 'rollup' ? `将写入 ${retentionPreview.groups ?? 0} 个日聚合` : '仅统计，不提供任务内删除'}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">巡检历史</div>
+                  <div className="text-lg font-semibold">{retentionPreview.telemetry.healthChecks}</div>
+                  <div>超过 {retentionPreview.telemetry.days} 天</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">LLM 用量</div>
+                  <div className="text-lg font-semibold">{retentionPreview.telemetry.llmUsage}</div>
+                  <div>超过 {retentionPreview.telemetry.days} 天</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">用户搜索历史</div>
+                  <div className="text-lg font-semibold">{retentionPreview.userRetention.rowsDeleted ?? 0}</div>
+                  <div>{retentionPreview.userRetention.error ?? `涉及 ${retentionPreview.userRetention.usersAffected ?? 0} 个显式配置用户`}</div>
+                </div>
+              </div>
+              {retentionPreview.truncated?.some(Boolean) && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">本轮达到处理上限，仅覆盖部分过期数据；执行后需继续预演下一轮。</p>
+              )}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t pt-3">
+                <p className="text-xs text-muted-foreground">以上是预演快照。配置变更后须重新预演，执行结果以队列终态为准。</p>
+                <Button
+                  variant={retentionMode === 'rollup' ? 'default' : 'outline'}
+                  disabled={retentionBusy !== null || retentionMode !== 'rollup' || Boolean(retentionPreview.userRetention.error)}
+                  title={
+                    retentionMode === 'cleanup'
+                      ? '原样删除必须先由 CLI 写归档，任务内不可执行'
+                      : retentionPreview.userRetention.error
+                        ? '用户历史影响范围未能完整统计，请修正配置后重新预演'
+                        : undefined
+                  }
+                  onClick={() => void applyRetention()}
+                >
+                  <Play className="w-3.5 h-3.5 mr-1.5" />
+                  {retentionBusy === 'apply' ? '正在入队…' : retentionMode === 'rollup' ? '第二步：确认并入队执行' : 'cleanup 仅支持预演'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* 快捷入队操作面板 */}
       <Card>
         <CardHeader className="p-4 pb-2">
@@ -427,18 +595,30 @@ export default function AdminJobsPage() {
             点击入队后由 Runner 在后台以指数退避重试安全消费，不影响前端请求。
           </CardDescription>
         </CardHeader>
-        <CardContent className="p-4 pt-2">
+        <CardContent className="p-4 pt-2 space-y-3">
+          <label className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
+            <span className="shrink-0 font-medium">目标站点 ID（元数据刷新 / 死链自愈）</span>
+            <input
+              className="flex h-9 w-full sm:max-w-md rounded-md border border-input bg-background px-3 text-sm"
+              value={targetSiteId}
+              disabled={Boolean(enqueuing)}
+              onChange={(event) => setTargetSiteId(event.target.value)}
+              placeholder="输入站点 ID 后再触发定向任务"
+            />
+          </label>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
             {Object.entries(KIND_CONFIG).map(([kind, cfg]) => {
               const Icon = cfg.icon
               const isEnqueuingThis = enqueuing === kind
+              const needsSite = kind === 'refetch_metadata' || kind === 'site_self_healing'
               return (
                 <Button
                   key={kind}
                   variant="outline"
                   size="sm"
                   className="h-auto py-2 px-2.5 flex flex-col items-start text-left justify-center hover:border-primary/50 transition-all"
-                  disabled={Boolean(enqueuing)}
+                  disabled={Boolean(enqueuing) || (needsSite && !targetSiteId.trim())}
+                  title={needsSite && !targetSiteId.trim() ? '请先填写目标站点 ID' : undefined}
                   onClick={() => void enqueue(kind)}
                 >
                   <div className="flex items-center gap-1.5 w-full mb-1">
@@ -454,6 +634,9 @@ export default function AdminJobsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 通知与投递审计：管理员收件箱 + outbox 逐渠道状态 */}
+      <NotificationDeliveryPanel />
 
       {/* 任务列表明细 */}
       <div className="space-y-3">

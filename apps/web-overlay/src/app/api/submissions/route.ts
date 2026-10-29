@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-guard'
+import { auth } from '@/lib/auth'
+import { canonicalUserId } from '@/lib/me-identity'
+import { hubIdentitySecret, identitySignatureHeaders } from '@/lib/identity-signature'
 import { sanitizeForwardedFor } from '@/lib/hub-proxy'
 import {
     SubmissionData,
@@ -9,7 +12,7 @@ import {
     parseSubmissionFromIssueBody
 } from '@/types/submission'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 
 const GITHUB_API = 'https://api.github.com'
@@ -59,6 +62,15 @@ async function submitToHub(data: SubmissionData, request: NextRequest): Promise<
     const xff = sanitizeForwardedFor(request.headers.get('x-forwarded-for'))
     if (xff) {
         headers['x-forwarded-for'] = xff
+    }
+    const session = await auth()
+    const identity = canonicalUserId(session?.user)
+    const secret = hubIdentitySecret()
+    // 无签名密钥时按匿名投稿，不借用管理凭据或客户端自称身份。
+    if (identity && secret) {
+        const signedIdentity = identity.slice(0, 64)
+        headers['x-navhub-user-id'] = signedIdentity
+        Object.assign(headers, await identitySignatureHeaders(secret, signedIdentity))
     }
 
     const res = await fetch(HUB_BASE + '/api/submissions', {

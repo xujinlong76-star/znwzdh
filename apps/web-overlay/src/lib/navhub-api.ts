@@ -15,6 +15,8 @@
 
 import { isNotFound, type DegradedHandler } from './degrade'
 import { getIdentity } from './identity'
+import { enqueueClickReport, readClickOutbox, removeClickReports, type ClickOutboxEntry } from './offline-recent'
+import { readLocalUserSettings } from './user-settings'
 import type { PluginDiffResult, PluginManifest, PluginKind } from './plugins/plugin-manifest'
 // 响应形状来自中枢契约的生成物（scripts/generate-rest-contract-types.mjs）：
 // 手抄一份接口曾经是最大的漂移面——中枢改了字段，前端照旧编译通过、运行时 undefined。
@@ -441,9 +443,34 @@ export interface ClickReportContext {
   position?: number
   /** 页面停留秒数（由调用方在离开时补报时使用） */
   dwellSeconds?: number
+  /**
+   * 幂等键：同一次用户动作的重试（含离线出箱重放）必须复用同一个值。
+   * 不传则由 reportClick 生成；直接调用 buildClickEventBody 的调用方不传即不带，
+   * 保持这个纯函数的既有输出形状。
+   */
+  eventId?: string
+  /** 客户端点击时刻（毫秒）：离线补报时它才是「用户什么时候点的」 */
+  clientCreatedAt?: number
 }
 
 const CLICK_CHANNELS = new Set(['exact', 'fts', 'pinyin', 'semantic', 'personal'])
+
+/** 与中枢 telemetry schema 同一形状约束，超界的键会被服务端整条拒收 */
+const CLICK_EVENT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+
+/**
+ * 一次点击动作的幂等键。
+ *
+ * 为什么要自己生成而不是让服务端返回 id：重试发生在「请求根本没到中枢」的时候
+ * （断网、进程被杀、页面被卸载），那之后没有任何地方能给出可复用的键。
+ * http 内网直连 :8787 没有 crypto.randomUUID（非安全上下文），退回时间+随机串——
+ * 幂等只要求「同一次动作的几次尝试共用一个键」，不要求不可猜或全局唯一。
+ */
+export function newClickEventId(): string {
+  const uuid = globalThis.crypto?.randomUUID?.()
+  if (typeof uuid === 'string' && uuid) return uuid
+  return 'c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12)
+}
 
 /** 纯函数：把点击上下文收敛成 /api/events 能接受且长度有界的 payload */
 export function buildClickEventBody(
@@ -460,13 +487,179 @@ export function buildClickEventBody(
   if (typeof context?.dwellSeconds === 'number' && Number.isFinite(context.dwellSeconds) && context.dwellSeconds >= 0) {
     body.dwellSeconds = Math.min(3600, context.dwellSeconds)
   }
+  const eventId = context?.eventId?.trim()
+  if (eventId && CLICK_EVENT_ID_RE.test(eventId)) body.eventId = eventId
+  if (typeof context?.clientCreatedAt === 'number' && Number.isFinite(context.clientCreatedAt)) {
+    body.clientCreatedAt = Math.floor(context.clientCreatedAt)
+  }
   return body
 }
 
-/** 点击上报（fire-and-forget，失败静默） */
+/**
+ * 点击证据投递：sendBeacon 只在「无凭据可带」时用，其余走 keepalive fetch。
+ *
+ * 三条通道规则（决定这里不能沿用普通 sendJson）：
+ *   1. `navigator.sendBeacon` 是页面卸载后仍能保证送达的通道，但它带不了自定义
+ *      header——身份（Bearer / X-Navhub-Anon-Id）会整个丢失，事件变成无主数据，
+ *      既进不了画像也无法按身份清理。所以它只在「匿名、无 token、且页面确实正在
+ *      离开」时使用；可见状态下没有任何卸载压力，keepalive fetch 反而能拿到送达回执。
+ *   2. `fetch(keepalive: true)` 能带 header 且活过卸载，代价是每源 64 KB 在途配额，
+ *      所以它只用于点击这一类几十字节的事件，不用于批量写。
+ *   3. 两条都没送达 = 数据已经没了。端侧必须落盘（出箱），回到线上再补，
+ *      否则「99.8% 的站点 visit_count 为 0」这类读数永远解释不清是没人点还是没收到。
+ *
+ * 返回是否送达（HTTP 2xx）；网络异常在此不抛，由调用方决定入队。
+ */
+async function deliverClickEvent(body: Record<string, unknown>, identity?: string): Promise<boolean> {
+  const url = hubUrl('/api/events')
+  const payload = JSON.stringify(body)
+  const hasCredentials = Boolean(getApiToken()) || Boolean(identity)
+  // 规则 1 的收紧：匿名直投只在**页面正在离开**时走 beacon。可见状态下 beacon 换不到
+  // 送达回执（返回 false 只能入队重来），还会顺手丢掉 anonId；keepalive fetch 两样都保。
+  if (!hasCredentials && isDocumentGoingAway()) {
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        // sendBeacon 返回 false 表示载荷被浏览器丢弃（配额/大小），不能当成功
+        if (navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }))) return true
+      }
+    } catch {
+      // 落到 fetch 兜底
+    }
+  }
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+        ...anonHeaders(identity),
+      },
+      body: payload,
+      keepalive: true,
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** 页面是否正在离开（卸载前的最后一段时间）。SSR / 测试环境都按「没离开」处理 */
+function isDocumentGoingAway(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.visibilityState === 'hidden'
+}
+
+/**
+ * 投递漏斗信号（kind=click_delivery）：只在「差点丢了」的时刻发一条。
+ *
+ * 不进出箱、不重试：它是观测数据本身，补送它等于给漏斗加噪声。失败静默——
+ * 观测失败不该影响真正要保护的那条点击证据。
+ */
+function reportClickDelivery(outcome: 'success' | 'failed' | 'deleted', code: string): void {
+  if (typeof window === 'undefined') return
+  if (!readLocalUserSettings().telemetryEnabled) return
+  const body: Record<string, unknown> = {
+    kind: 'click_delivery',
+    outcome,
+    code,
+    eventId: newClickEventId(),
+    clientCreatedAt: Date.now(),
+  }
+  void deliverClickEvent(body).catch(() => {
+    // 观测信号投递失败就算了：它只在「差点丢了」时发，不参与证据链
+  })
+}
+
+/** 出箱排空互斥位：多个组件同时触发 flush，也只允许一条串行队列在跑 */
+let clickOutboxDraining = false
+
+/** 补送触发器是否已安装：同一页面只装一次，避免每张卡片点击都挂一对监听 */
+let clickOutboxTriggersInstalled = false
+
+/**
+ * 装上「回到线上 / 页面回到前台」两个补送触发器。
+ *
+ * 为什么必须挂在事件上而不是定时器：出箱里的条目是用户真实点过的证据，
+ * 定时器要么太密（后台标签页里空转）要么太稀（用户半小时后才回来看）；
+ * `online` 与 `visibilitychange` 恰好是「刚才送不出去的原因消失了」的时刻。
+ * 不挂 `pagehide`：那时页面正在离开，只能发不能读，补送交给下一次进入。
+ */
+function ensureOutboxDrainTriggers(): void {
+  if (clickOutboxTriggersInstalled || typeof window === 'undefined') return
+  const target = window as unknown as {
+    addEventListener?: (type: string, listener: () => void) => void
+    removeEventListener?: (type: string, listener: () => void) => void
+  }
+  if (typeof target.addEventListener !== 'function') return
+  clickOutboxTriggersInstalled = true
+  const drain = () => {
+    void flushClickOutbox().catch(() => {
+      // 补送失败留待下一次触发：这两个事件本身还会再来
+    })
+  }
+  target.addEventListener('online', drain)
+  target.addEventListener('visibilitychange', () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') drain()
+  })
+}
+
+/**
+ * 排空端侧点击出箱（机会主义触发：每次新点击后顺带一次，不挂定时器、不进 Service Worker）。
+ *
+ * 串行、旧→新、只删已确认的：一条没送达就停在这里，别把后面 19 条都烧成失败重试。
+ * 服务端按 eventId 去重，所以中途崩在删除之前也只会多送一次、不会多计一次。
+ * 返回确认送达的条数。
+ */
+export async function flushClickOutbox(): Promise<number> {
+  if (typeof window === 'undefined' || clickOutboxDraining) return 0
+  clickOutboxDraining = true
+  try {
+    const pending: ClickOutboxEntry[] = await readClickOutbox(20)
+    if (pending.length === 0) return 0
+    // 用户中途关了遥测开关：这些带查询词的证据既不该再发，也不该继续留在本机
+    if (!readLocalUserSettings().telemetryEnabled) {
+      await removeClickReports(pending.map((e) => e.eventId))
+      reportClickDelivery('deleted', 'consent_off')
+      return 0
+    }
+    const confirmed: string[] = []
+    for (const entry of pending) {
+      if (!(await deliverClickEvent(entry.body, entry.identity))) break
+      confirmed.push(entry.eventId)
+    }
+    await removeClickReports(confirmed)
+    if (confirmed.length > 0) reportClickDelivery('success', 'drained')
+    return confirmed.length
+  } catch {
+    return 0
+  } finally {
+    clickOutboxDraining = false
+  }
+}
+
+/** 点击上报（fire-and-forget，失败落端侧出箱，永不冒泡到页面逻辑） */
 export function reportClick(siteId: string, identity?: string, context?: ClickReportContext): void {
-  void sendJson('/api/events', 'POST', buildClickEventBody(siteId, context), undefined, anonHeaders(identity)).catch(() => {
+  const eventId = context?.eventId?.trim() || newClickEventId()
+  const clientCreatedAt = context?.clientCreatedAt ?? Date.now()
+  const body = buildClickEventBody(siteId, { ...context, eventId, clientCreatedAt })
+  ensureOutboxDrainTriggers()
+  void (async () => {
+    const delivered = await deliverClickEvent(body, identity)
+    if (delivered) return
+    // 只在「确实没送达」时落盘，且落盘前先问同意开关：
+    // 关掉遥测还往 IndexedDB 写带查询词的流水，等于把「已关闭」变成只对服务端生效的谎。
+    if (typeof window === 'undefined') return
+    if (!readLocalUserSettings().telemetryEnabled) return
+    await enqueueClickReport({ eventId, body, queuedAt: clientCreatedAt, identity }).catch(() => {
+      // 出箱落盘失败不算事件丢失：内存态上报已尽力送达，落盘只是离线补送的机会
+    })
+    reportClickDelivery('failed', 'enqueued')
+  })().catch(() => {
     // 点击上报是 fire-and-forget：离线、被拦截、匿名模式都算正常，不该冒泡到页面逻辑
+  })
+  void flushClickOutbox().catch(() => {
+    // 出箱刷新失败留待下次触发：fire-and-forget，失败不该冒泡到页面逻辑
   })
 }
 
@@ -2257,6 +2450,72 @@ export async function fetchAdminLlmConfig(): Promise<HubAdminLlmConfigResponse> 
   return getJson('/api/admin/ai/config')
 }
 
+/* ------------------------- 富化结果字段级审核 ------------------------- */
+
+/**
+ * `/api/enrich` 的字段级来源（AI-4c）。
+ *
+ * 为什么不直接写 `Partial<EnrichmentResult>`：web 侧没有 @navhub/core 的运行时
+ * 依赖，类型也不能从 apps/api 拉进来；这里只声明审核界面实际消费的子集。
+ * 「字段名必须与中枢一致」由 test/enrich-review.test.ts 的契约守卫钉住
+ * （读 apps/api/src/enrich-fields.ts 的 ENRICH_FIELD_KEYS 做比对）。
+ */
+export type EnrichFieldSource = 'llm' | 'scraped' | 'heuristic' | 'missing'
+
+export interface HubEnrichField<T> {
+  value: T
+  source: EnrichFieldSource
+  note?: string
+}
+
+export interface HubEnrichmentFields {
+  title: HubEnrichField<string>
+  description: HubEnrichField<string>
+  tags: HubEnrichField<string[]>
+  category: HubEnrichField<string | null>
+  icon: HubEnrichField<string | null>
+}
+
+export interface HubEnrichPreview {
+  url: string
+  httpStatus: number | null
+  title: string
+  description: string
+  tags: string[]
+  keywords: string[]
+  suggestedCategory: string
+  suggestedFacets: unknown[]
+  suggestedRelations: unknown[]
+  iconUrl: string | null
+  imageUrl: string | null
+  lang: string | null
+  provenance: 'llm' | 'heuristic'
+  fields: HubEnrichmentFields
+  warnings: string[]
+  /** 额度到顶时中枢只做抓取，不调模型 */
+  aiSkipped?: 'quota'
+}
+
+/** 解析一个 URL：抓取 +（可用时）AI 归纳，回传逐字段来源。会真实抓取目标站。 */
+export async function enrichSitePreview(url: string): Promise<HubEnrichPreview> {
+  return sendJson('/api/enrich', 'POST', { url })
+}
+
+export interface ReviewedSiteDraft {
+  url: string
+  title: string
+  categoryId: string
+  description?: string
+  tags?: string[]
+  iconKey?: string
+}
+
+/** 按审核结果直接建站（不带 enrich:true —— 不再二次调用模型/抓取） */
+export async function createSiteFromReview(draft: ReviewedSiteDraft): Promise<HubSite> {
+  return sendJson('/api/sites', 'POST', draft)
+}
+
+
 export async function saveAdminLlmConfig(input: HubLlmConfigInput): Promise<{ config: HubLlmConfigView }> {
   return sendJson('/api/admin/ai/config', 'PUT', input)
 }
@@ -2824,8 +3083,21 @@ export async function applySiteHealingAction(data: {
   action: 'wayback' | 'replacement' | 'dismiss'
   targetUrl?: string
   targetTitle?: string
-}): Promise<{ ok: boolean; action: string; site?: any }> {
-  return sendJson<{ ok: boolean; action: string; site?: any }>('/api/admin/audit/apply', 'POST', data)
+}): Promise<{
+  ok: boolean
+  action: string
+  site?: any
+  /** 目标 URL 已在站内收录时：中枢把原站点归档并返回既有条目，这里带上关联结果 */
+  merged?: { siteId: string; title: string; url: string }
+  archivedSiteId?: string
+}> {
+  return sendJson<{
+    ok: boolean
+    action: string
+    site?: any
+    merged?: { siteId: string; title: string; url: string }
+    archivedSiteId?: string
+  }>('/api/admin/audit/apply', 'POST', data)
 }
 
 /**

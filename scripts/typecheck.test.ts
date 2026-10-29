@@ -43,8 +43,11 @@ describe("TS 7 类型检查门禁（scripts/typecheck.mjs）", () => {
 
   it("后端 lint 必须在 verify 链里，且门禁不许把跳过说成通过", () => {
     const verify = readFileSync(join(ROOT, "scripts/verify.mjs"), "utf8");
-    // 只在 CI 单独跑的规则等于没有规则：本地一路绿灯，推上去才红
-    expect(verify).toMatch(/(?:run|gate)\("后端 lint", "pnpm", \["lint:backend"\]/);
+    // 只在 CI 单独跑的规则等于没有规则：本地一路绿灯，推上去才红。
+    // 断言的是「链里有后端 lint 这一步」，不是它的调用形态——曾经是
+    // `gate("后端 lint", "pnpm", ["lint:backend"])`，后来 pnpm 的运行前依赖自检
+    // 在本机会 EPERM，改成直接调 eslint 并按 api/store 拆成两步。
+    expect(verify).toMatch(/gate\("后端 lint[^"]*", "(?:pnpm|node)", \[/);
     // 「全部验证项 100% 通过」是旧口径：首屏预算依赖构建产物，本地经常根本没执行这一步
     expect(verify).not.toContain("全部验证项 100% 通过");
     expect(verify).toContain("不代表通过");

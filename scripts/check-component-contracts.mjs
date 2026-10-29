@@ -21,17 +21,49 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(ROOT, "apps/web-overlay/src");
 const AS_JSON = process.argv.includes("--json");
 
-/** 解析 `export interface XProps { ... }` → { 属性名: 是否必填 } */
+/**
+ * 解析 `export interface XProps { ... }` → { 属性名: 是否必填 }。
+ *
+ * 必须按**花括号深度**取属性：嵌套对象类型的字段不是顶层 props。
+ * 真实反例（2026-10-29）：`DashboardStatusDonutProps` 里的
+ *   `statusCodes?: { s2xx: number; s3xx: number }`
+ * 被逐行正则当成两个必填顶层 props，于是报「必填但从没传过」——而调用方
+ * 根本不该传 s2xx，它是 statusCodes 的字段。首轮跑出的 20 条告警全是这类。
+ */
 export function parsePropsInterface(source, componentName) {
-  const re = new RegExp(`export\\s+interface\\s+${componentName}Props\\s*\\{([\\s\\S]*?)\\n\\}`, "m");
-  const m = source.match(re);
+  const startRe = new RegExp(`export\\s+interface\\s+${componentName}Props\\s*\\{`, "m");
+  const m = startRe.exec(source);
   if (!m) return null;
+  // 用括号配对找接口体，而不是非贪婪正则——嵌套对象的收尾 `}` 也可能是行首
+  let i = m.index + m[0].length;
+  let depth = 1;
+  let body = "";
+  while (i < source.length && depth > 0) {
+    const ch = source[i];
+    if (ch === "{") depth += 1;
+    else if (ch === "}") depth -= 1;
+    if (depth > 0) body += ch;
+    i += 1;
+  }
   const props = new Map();
-  for (const raw of m[1].split("\n")) {
+  let nest = 0;
+  let parens = 0;
+  for (const raw of body.split("\n")) {
     const line = raw.trim();
     if (!line || line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")) continue;
-    const pm = line.match(/^([A-Za-z_$][\w$]*)(\?)?\s*:/);
-    if (pm) props.set(pm[1], !pm[2]);
+    // 花括号深度 0 且圆括号深度 0 才算顶层：嵌套对象的字段（statusCodes.s2xx）与
+    // 多行函数签名的形参（( \n passphrase: string, \n )）都不是 props
+    if (nest === 0 && parens === 0) {
+      // 允许 `readonly foo?: string` —— readonly 不是属性名
+      const pm = line.match(/^(?:readonly\s+)?([A-Za-z_$][\w$]*)(\?)?\s*:/);
+      if (pm) props.set(pm[1], !pm[2]);
+    }
+    for (const ch of line) {
+      if (ch === "{") nest += 1;
+      else if (ch === "}") nest = Math.max(0, nest - 1);
+      else if (ch === "(") parens += 1;
+      else if (ch === ")") parens = Math.max(0, parens - 1);
+    }
   }
   return props;
 }

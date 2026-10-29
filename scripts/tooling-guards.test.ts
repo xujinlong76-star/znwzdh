@@ -124,6 +124,48 @@ describe("组件契约：props 解析", () => {
     expect(props?.get("b")).toBe(false);
   });
 
+  it("嵌套对象的字段不是顶层 props（2026-10-29 一次跑出 20 条误报的根因）", () => {
+    const src = [
+      "export interface FooProps {",
+      "  statusCodes?: {",
+      "    s2xx: number",
+      "    s3xx: number",
+      "  }",
+      "  total?: number",
+      "}",
+    ].join("\n");
+    const props = parsePropsInterface(src, "Foo");
+    // s2xx / s3xx 是 statusCodes 的字段，调用方本来就不该传
+    expect(props?.has("s2xx")).toBe(false);
+    expect(props?.has("s3xx")).toBe(false);
+    // statusCodes 本身是顶层 props，且是可选的
+    expect(props?.get("statusCodes")).toBe(false);
+    expect(props?.get("total")).toBe(false);
+  });
+
+  it("多行函数签名的形参不是顶层 props", () => {
+    const src = [
+      "export interface FooProps {",
+      "  sync: (",
+      "    passphrase: string,",
+      "  ) => Promise<void>",
+      "  open: boolean",
+      "}",
+    ].join("\n");
+    const props = parsePropsInterface(src, "Foo");
+    // passphrase 是 sync 的形参，不是 props
+    expect(props?.has("passphrase")).toBe(false);
+    expect(props?.get("sync")).toBe(true);
+    expect(props?.get("open")).toBe(true);
+  });
+
+  it("readonly 前缀不进属性名", () => {
+    const src = ["export interface FooProps {", "  readonly id: string", "}"].join("\n");
+    const props = parsePropsInterface(src, "Foo");
+    expect(props?.get("id")).toBe(true);
+    expect(props?.has("readonly")).toBe(false);
+  });
+
   it("属性解析跳过回调体里的关键字（首版 97 处误报的根因）", () => {
     const attrs = ' onClick={() => { if (x) return 1 }} title="hi" count={3}';
     const passed = parseJsxProps(attrs);

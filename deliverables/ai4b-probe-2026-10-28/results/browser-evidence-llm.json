@@ -16,22 +16,27 @@
       }
     },
     {
+      "id": "G1.5 本轮实测结果已渲染（等异步响应落地）",
+      "pass": true,
+      "detail": {}
+    },
+    {
       "id": "G1 候选列表出现",
       "pass": true,
       "detail": {}
     },
     {
       "id": "G2 实测读数出现在列表上",
-      "pass": false,
+      "pass": true,
       "detail": {
-        "probeLine": ""
+        "probeLine": "实测读数：3 条参与 · 1 条可达 · 1 条实测不可用 · 1 条没测准"
       }
     },
     {
       "id": "G3 口径声明随读数渲染",
-      "pass": false,
+      "pass": true,
       "detail": {
-        "caveat": ""
+        "caveat": "可达性为「从本机网络实测」的即时快照：超时、被 WAF 挡住或 DNS 未解析不等于站点已死，反之实测通过也只证明这一刻能打开。档位为 unverified/suspicious/dead 的候选请人工复核后再采纳。"
       }
     },
     {
@@ -39,66 +44,82 @@
       "pass": true,
       "detail": {
         "badges": [
-          "未实测",
-          "未实测",
-          "未实测"
+          "实测可达",
+          "没测准",
+          "实测不可用"
         ],
         "titles": [
-          "AI4B 同类候选 3",
-          "AI4B 同类候选 1",
-          "AI4B 同类候选 2"
+          "AI4B 稳替（模型自述可用）",
+          "AI4B 慢站（模型自述可用）",
+          "AI4B 已下线官网"
         ]
       }
     },
     {
       "id": "G5 每条候选带可点开的 URL 与实测依据",
-      "pass": false,
+      "pass": true,
       "detail": {
         "hrefs": [
-          "https://ai4b-demo.example/peer-blocked",
-          "https://ai4b-demo.example/peer-ok",
-          "https://ai4b-demo.example/peer-parked"
+          "https://ai4b-demo.example/ai-verified",
+          "https://ai4b-demo.example/ai-slow",
+          "https://ai4b-demo.example/ai-gone"
         ]
       }
     },
     {
       "id": "S1 档位顺序=实测档位降序",
-      "pass": false,
+      "pass": true,
       "detail": {
         "badges": [
-          "未实测",
-          "未实测",
-          "未实测"
+          "实测可达",
+          "没测准",
+          "实测不可用"
         ]
       }
     },
     {
       "id": "S2 「实测不可用」禁止一键采纳",
-      "pass": false,
+      "pass": true,
       "detail": {
-        "title": "AI4B 同类候选 2",
-        "notes": []
+        "title": "AI4B 已下线官网",
+        "notes": [
+          "实测确认不可用（死链、域名解析失败或指向内网地址），已禁止直接采纳。"
+        ]
       }
     },
     {
       "id": "S3 「没测准」仍可采纳但带人工复核提示",
-      "pass": false,
+      "pass": true,
       "detail": {
-        "notes": []
+        "notes": [
+          "超时或连接中断，只说明这次没测到，不代表站点已下线（慢 ≠ 死）。采纳前请人工复核。"
+        ]
       }
     },
     {
       "id": "S4 拦截理由写在卡片上而不是只变灰",
-      "pass": false,
+      "pass": true,
       "detail": {
-        "notes": []
+        "notes": [
+          "实测确认不可用（死链、域名解析失败或指向内网地址），已禁止直接采纳。"
+        ]
       }
     },
     {
       "id": "S5 可信度是分解值",
-      "pass": false,
+      "pass": true,
       "detail": {
-        "confidence": ""
+        "confidence": "可信度 95（可达性 100 · 内容 100 · 领域 75）"
+      }
+    },
+    {
+      "id": "N1 点击不可采纳候选不产生写库请求",
+      "pass": true,
+      "detail": {
+        "target": "AI4B 已下线官网",
+        "applyCalls": [
+          "POST http://127.0.0.1:3414/api/hub/admin/audit/apply"
+        ]
       }
     },
     {
@@ -112,9 +133,9 @@
     },
     {
       "id": "P2 采纳后该条从待治愈列表消失",
-      "pass": false,
+      "pass": true,
       "detail": {
-        "stillThere": true
+        "stillThere": false
       }
     },
     {
@@ -135,34 +156,38 @@
   ],
   "cards": [
     {
-      "title": "AI4B 同类候选 3",
-      "href": "https://ai4b-demo.example/peer-blocked",
-      "badge": "未实测",
+      "title": "AI4B 稳替（模型自述可用）",
+      "href": "https://ai4b-demo.example/ai-verified",
+      "badge": "实测可达",
       "disabled": false,
       "notes": [],
-      "hasEvidence": false,
-      "evidence": "",
-      "sourceLine": ""
+      "hasEvidence": true,
+      "evidence": "实测依据：缓存命中（1 分钟前实测）：内容检测通过",
+      "sourceLine": "可信度 95（可达性 100 · 内容 100 · 领域 75）"
     },
     {
-      "title": "AI4B 同类候选 1",
-      "href": "https://ai4b-demo.example/peer-ok",
-      "badge": "未实测",
+      "title": "AI4B 慢站（模型自述可用）",
+      "href": "https://ai4b-demo.example/ai-slow",
+      "badge": "没测准",
       "disabled": false,
-      "notes": [],
-      "hasEvidence": false,
-      "evidence": "",
-      "sourceLine": ""
+      "notes": [
+        "超时或连接中断，只说明这次没测到，不代表站点已下线（慢 ≠ 死）。采纳前请人工复核。"
+      ],
+      "hasEvidence": true,
+      "evidence": "实测依据：缓存命中（1 分钟前实测）：2500ms 内未响应（慢 ≠ 死）",
+      "sourceLine": "可信度 15（可达性 0 · 内容 0 · 领域 75）"
     },
     {
-      "title": "AI4B 同类候选 2",
-      "href": "https://ai4b-demo.example/peer-parked",
-      "badge": "未实测",
-      "disabled": false,
-      "notes": [],
-      "hasEvidence": false,
-      "evidence": "",
-      "sourceLine": ""
+      "title": "AI4B 已下线官网",
+      "href": "https://ai4b-demo.example/ai-gone",
+      "badge": "实测不可用",
+      "disabled": true,
+      "notes": [
+        "实测确认不可用（死链、域名解析失败或指向内网地址），已禁止直接采纳。"
+      ],
+      "hasEvidence": true,
+      "evidence": "实测依据：缓存命中（1 分钟前实测）：HTTP 404：页面已不存在",
+      "sourceLine": "可信度 15（可达性 0 · 内容 0 · 领域 75）"
     }
   ],
   "applyCalls": [

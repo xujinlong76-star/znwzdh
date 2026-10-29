@@ -67,7 +67,8 @@
     "verify:full": "node scripts/verify.mjs --full",
     "verify:web": "node scripts/vendor-web.mjs && pnpm --filter navsphere exec tsc --noEmit && pnpm --filter navsphere exec eslint .",
     "verify:all": "node scripts/verify.mjs --full && pnpm lint && playwright test",
-    "verify:guards": "node scripts/verify-guard.mjs --all"
+    "verify:guards": "node scripts/verify-guard.mjs --all",
+    "video:catalog:reconcile": "node --experimental-strip-types apps/api/src/video-catalog-main.ts --check --json"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

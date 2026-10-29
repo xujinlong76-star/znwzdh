@@ -18,6 +18,14 @@ packages:
 #  - protobufjs:       生成 protobuf 代码（onnxruntime 依赖）
 #  - sharp:            Next.js 图片优化用的原生模块（vendored 前端需要）
 #  - msw / workerd:    vendored 前端的测试/边缘运行时依赖，非必需但允许其安装脚本
+# pnpm 10+ 在 exec/run 前会先核对 node_modules 是否「最新」，不一致就自动 pnpm install。
+# 本机这一步必炸：一是 wmic 被拦（runDepsStatusCheck 拿不到进程表），二是自动安装要
+# 原子重命名 better-sqlite3 目录、而它正被测试进程占用 → EPERM（2026-10-29 实测）。
+# 于是 `pnpm lint/test/typecheck` 全都跑不起来，只能绕着走。
+# 关掉这层自检：CI 本来就先 `pnpm install --frozen-lockfile`，不需要 run 前再核一次；
+# 本地依赖真不一致时直接跑 install 就行，不必每次 exec 都偷偷装一遍。
+verifyDepsBeforeRun: false
+
 allowBuilds:
   better-sqlite3: true
   esbuild: true

@@ -19,6 +19,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:net";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -171,8 +172,48 @@ function checkGit() {
   }
 }
 
-function checkStaleArtifacts() {
-  const dirs = [".next-e2e", "test-results", "playwright-report"];
+/**
+ * 依赖树健康（2026-10-29 实测事故）：一次被打断的自动 install 会先把
+ * `node_modules/.bin` 与 `.modules.yaml` 移走再重链接它自己的目录；重链接
+ * 因活进程占着 native binding 失败（EPERM）时，这两样就回不来了。
+ * 症状极具误导性：`pnpm test` 报 command-not-found、任何 pnpm 子命令都想
+ * 再做一次 install，而单个包的内容其实完好。
+ */
+function checkDependencyTree() {
+  const binDir = join(ROOT, "node_modules/.bin");
+  const modulesYaml = join(ROOT, "node_modules/.modules.yaml");
+  const missing = [];
+  if (!existsSync(binDir)) missing.push("node_modules/.bin");
+  if (!existsSync(modulesYaml)) missing.push("node_modules/.modules.yaml");
+  if (missing.length === 0) {
+    report("OK", "依赖树", "node_modules/.bin 与 .modules.yaml 都在");
+  } else if (!existsSync(join(ROOT, "node_modules"))) {
+    report("OK", "依赖树", "尚未安装依赖");
+  } else {
+    report(
+      "WARN",
+      "依赖树",
+      `缺少 ${missing.join("、")}；裸 \`vitest\` 等命令会找不到，且任何 pnpm 子命令都会想做一次 install`,
+      "先停掉持有 native binding 的进程（如 8787 中枢），再 pnpm install --frozen-lockfile --offline",
+    );
+  }
+
+  // 原生模块能否真的加载：包目录存在不等于可用（EHOST 遇到过「目录在、binding 没了」）
+  try {
+    const requireFromStore = createRequire(join(ROOT, "packages/store/package.json"));
+    requireFromStore("better-sqlite3");
+    report("OK", "SQLite 驱动", "better-sqlite3 可加载");
+  } catch (error) {
+    report(
+      "WARN",
+      "SQLite 驱动",
+      `better-sqlite3 加载失败：${error instanceof Error ? error.message.split("\n")[0] : String(error)}`,
+      "依赖 SQLite 的测试会整片失败；确认 packages/store/node_modules/better-sqlite3 存在且有 prebuilds/ 或 build/",
+    );
+  }
+}
+
+function checkStaleArtifacts() {  const dirs = [".next-e2e", "test-results", "playwright-report"];
   const existing = dirs.filter((d) => existsSync(join(ROOT, d)));
   if (existing.length === 0) {
     report("OK", "构建残留", "无 .next-e2e / test-results / playwright-report");
@@ -204,6 +245,7 @@ async function main() {
   checkE2EDb();
   checkPgvector();
   checkGit();
+  checkDependencyTree();
   checkStaleArtifacts();
   checkWorkspaceFiles();
 

@@ -122,10 +122,16 @@ record("G0 报告里有待治愈站点", hasIssue, { brokenTitle: BROKEN_TITLE }
 
 // 点「AI 平替推荐」（限定在异常卡片那一段，页面上可能有多枚同名按钮时取第一条）
 await page.locator(dialog).getByRole("button", { name: "AI 平替推荐" }).first().click();
-const listText = await page
-  .locator(dialog)
-  .waitFor({ state: "visible" })
-  .then(() => page.locator(dialog).innerText());
+/**
+ * 不能点完就立刻读：请求是异步的，读早了拿到的是报告自带的「建议替换」——
+ * 那一份没有实测档位（徽章全是「未实测」），会把这轮验证测成一片假红。
+ * 以「实测读数：」出现为这一轮结果落地的判据。
+ */
+const probeArrived = await page
+  .waitForFunction((dlg) => document.querySelector(dlg)?.innerText.includes("实测读数："), dialog, { timeout: 90_000 })
+  .then(() => true, () => false);
+record("G1.5 本轮实测结果已渲染（等异步响应落地）", probeArrived, {});
+const listText = await page.locator(dialog).innerText();
 record("G1 候选列表出现", listText.includes("候选平替方案："), {});
 record("G2 实测读数出现在列表上", listText.includes("实测读数："), {
   probeLine: (listText.match(/实测读数：[^\n]*/) || [""])[0],

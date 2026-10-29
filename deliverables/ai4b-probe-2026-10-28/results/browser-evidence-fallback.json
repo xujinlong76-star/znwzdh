@@ -1,0 +1,197 @@
+{
+  "mode": "fallback",
+  "rows": [
+    {
+      "id": "G-0 登录态与 admin 代理前置成立",
+      "pass": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "id": "G0 报告里有待治愈站点",
+      "pass": true,
+      "detail": {
+        "brokenTitle": "AI4B 旧工具（已失效）"
+      }
+    },
+    {
+      "id": "G1.5 本轮实测结果已渲染（等异步响应落地）",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "G1 候选列表出现",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "G2 实测读数出现在列表上",
+      "pass": true,
+      "detail": {
+        "probeLine": "实测读数：3 条参与 · 1 条可达 · 1 条实测不可用 · 1 条没测准"
+      }
+    },
+    {
+      "id": "G3 口径声明随读数渲染",
+      "pass": true,
+      "detail": {
+        "caveat": "可达性为「从本机网络实测」的即时快照：超时、被 WAF 挡住或 DNS 未解析不等于站点已死，反之实测通过也只证明这一刻能打开。档位为 unverified/suspicious/dead 的候选请人工复核后再采纳。"
+      }
+    },
+    {
+      "id": "G4 三条候选都带档位徽章",
+      "pass": true,
+      "detail": {
+        "badges": [
+          "实测可达",
+          "被挡住，内容未验证",
+          "疑似停放页/空壳"
+        ],
+        "titles": [
+          "AI4B 同类候选 1",
+          "AI4B 同类候选 3",
+          "AI4B 同类候选 2"
+        ]
+      }
+    },
+    {
+      "id": "G5 每条候选带可点开的 URL 与实测依据",
+      "pass": true,
+      "detail": {
+        "hrefs": [
+          "https://ai4b-demo.example/peer-ok",
+          "https://ai4b-demo.example/peer-blocked",
+          "https://ai4b-demo.example/peer-parked"
+        ]
+      }
+    },
+    {
+      "id": "S1 兜底来源如实标注",
+      "pass": true,
+      "detail": {
+        "sourceLines": [
+          "可信度 97（可达性 100 · 内容 100 · 领域 85）",
+          "可信度 62（可达性 60 · 内容 50 · 领域 85）",
+          "可信度 17（可达性 0 · 内容 0 · 领域 85）"
+        ]
+      }
+    },
+    {
+      "id": "S2 「疑似停放页」禁止一键采纳",
+      "pass": true,
+      "detail": {
+        "badges": [
+          "实测可达",
+          "被挡住，内容未验证",
+          "疑似停放页/空壳"
+        ],
+        "disabled": [
+          false,
+          false,
+          true
+        ]
+      }
+    },
+    {
+      "id": "S3 「被挡住」允许采纳但要求人工确认",
+      "pass": true,
+      "detail": {
+        "badges": [
+          "实测可达",
+          "被挡住，内容未验证",
+          "疑似停放页/空壳"
+        ]
+      }
+    },
+    {
+      "id": "S4 没有模型参与时如实说明",
+      "pass": true,
+      "detail": {
+        "notice": "本次没有模型参与（未配置密钥或调用失败），以下结果是同分类高活跃站点兜底，未经模型筛选。 已实测 3 条：1 条可达、1 条不可用、1 条没测准（慢 ≠ 死）"
+      }
+    },
+    {
+      "id": "N1 点击不可采纳候选不产生写库请求",
+      "pass": true,
+      "detail": {
+        "target": "AI4B 同类候选 2",
+        "applyCalls": [
+          "POST http://127.0.0.1:3414/api/hub/admin/audit/apply"
+        ]
+      }
+    },
+    {
+      "id": "P1 实测可达候选仍可一键采纳",
+      "pass": true,
+      "detail": {
+        "applyCalls": [
+          "POST http://127.0.0.1:3414/api/hub/admin/audit/apply"
+        ]
+      }
+    },
+    {
+      "id": "P2 采纳后该条从待治愈列表消失",
+      "pass": true,
+      "detail": {
+        "stillThere": false
+      }
+    },
+    {
+      "id": "Z1 无 console error",
+      "pass": true,
+      "detail": {
+        "consoleErrors": []
+      }
+    },
+    {
+      "id": "Z2 浏览器没有替候选 URL 发过请求",
+      "pass": true,
+      "detail": {
+        "outboundCount": 0,
+        "outbound": []
+      }
+    }
+  ],
+  "cards": [
+    {
+      "title": "AI4B 同类候选 1",
+      "href": "https://ai4b-demo.example/peer-ok",
+      "badge": "实测可达",
+      "disabled": false,
+      "notes": [],
+      "hasEvidence": true,
+      "evidence": "实测依据：缓存命中（0 分钟前实测）：内容检测通过",
+      "sourceLine": "可信度 97（可达性 100 · 内容 100 · 领域 85）"
+    },
+    {
+      "title": "AI4B 同类候选 3",
+      "href": "https://ai4b-demo.example/peer-blocked",
+      "badge": "被挡住，内容未验证",
+      "disabled": false,
+      "notes": [
+        "站点在线但拒绝了本机请求（WAF/403/429 等），内容是否正常没有验证。采纳前请人工打开确认。"
+      ],
+      "hasEvidence": true,
+      "evidence": "实测依据：缓存命中（0 分钟前实测）：HTTP 403：被 WAF/反爬挡住，内容未验证",
+      "sourceLine": "可信度 62（可达性 60 · 内容 50 · 领域 85）"
+    },
+    {
+      "title": "AI4B 同类候选 2",
+      "href": "https://ai4b-demo.example/peer-parked",
+      "badge": "疑似停放页/空壳",
+      "disabled": true,
+      "notes": [
+        "实测返回的是停放/占位内容，不是真正的替代站点，已禁止直接采纳。"
+      ],
+      "hasEvidence": true,
+      "evidence": "实测依据：缓存命中（0 分钟前实测）：页面内容为域名停放页",
+      "sourceLine": "可信度 17（可达性 0 · 内容 0 · 领域 85）"
+    }
+  ],
+  "applyCalls": [
+    "POST http://127.0.0.1:3414/api/hub/admin/audit/apply"
+  ],
+  "outbound": [],
+  "consoleErrors": []
+}

@@ -718,15 +718,29 @@ describe("identity 路由收紧（鉴权开启后拒绝纯匿名调用）", () =
       payload: { provider: "github", providerId: "real-1", username: "real" },
     });
     expect(u.statusCode).toBe(200);
-    const syn = await authApp.inject({
-      method: "POST", url: "/api/tools/synthesize", headers: { authorization: "Bearer " + raw },
-      payload: {
-        kind: "site_search",
-        siteSearchSpec: {
-          siteId: "auth-real", siteName: "持票",
-          searchUrlTemplate: "https://example.com/search?q={query}",
-        },
+
+    /**
+     * 注册动态工具 = 写进程级共享状态：read 令牌必须被拒。
+     * 旧用例在这里用 read 令牌断言 200，等于把「只读凭据可注入任意 URL/方法」
+     * 的漏洞写成了契约——P1 工具供应链加固后改为 403，并补 write 令牌的正例。
+     */
+    const synthPayload = {
+      kind: "site_search",
+      siteSearchSpec: {
+        siteId: "auth-real", siteName: "持票",
+        searchUrlTemplate: "https://example.com/search?q={query}",
       },
+    };
+    const denied = await authApp.inject({
+      method: "POST", url: "/api/tools/synthesize", headers: { authorization: "Bearer " + raw },
+      payload: synthPayload,
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const writeRaw = await mintToken("工具注册", "write");
+    const syn = await authApp.inject({
+      method: "POST", url: "/api/tools/synthesize", headers: { authorization: "Bearer " + writeRaw },
+      payload: synthPayload,
     });
     expect(syn.statusCode).toBe(200);
     expect(syn.json().registered).toBe(true);

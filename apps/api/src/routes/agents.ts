@@ -21,7 +21,8 @@ import { guardedFetch } from "@navhub/ai";
 import { webMcp } from "./visual.ts";
 
 import type { AppContext } from "../context.ts";
-import { identityAllowed } from "./shared.ts";
+import { identityAllowed, requestIdentityOf } from "./shared.ts";
+import { scopeSatisfies } from "../auth.ts";
 
 /** 动态 REST 工具允许的方法；HEAD/OPTIONS/TRACE 不注册，避免无意义的合成工具。 */
 const REST_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
@@ -148,6 +149,20 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   app.post("/api/tools/synthesize", { config: { scope: "public" } }, async (req, reply) => {
     // 公共写入面：开放模式保持可用；开启鉴权后必须带有效 token（防注册表被匿名滥用）。
     if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    /**
+     * 注册工具 = 写进程级共享状态。鉴权模式下只允许 write/admin：
+     * 只读令牌若能注册，就等价于把「任意 URL/方法」注入到所有客户端可见的工具表，
+     * 形成 tool poisoning + SSRF 跳板。开放模式（个人/NAS）维持原行为。
+     */
+    if (ctx.config.authRequired) {
+      const scopes = req.auth?.scopes ?? [];
+      if (!scopeSatisfies(scopes, "write")) {
+        reply.code(403);
+        return { error: "注册动态工具需要 write 权限（当前令牌不足）" };
+      }
+    }
+    // 私有工具按注册者隔离：同一 owner 才能覆盖同名工具，其他人既看不到也调不到。
+    const owner = requestIdentityOf(req as never);
     const body = z.object({
       kind: z.enum(["rest", "site_search", "openapi"]).default("rest"),
       restSpec: z.object({
@@ -183,15 +198,22 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
 
     if (body.data.kind === "site_search" && body.data.siteSearchSpec) {
       const syn = synthesizeSiteSearchTool(body.data.siteSearchSpec);
-      if (!webMcp.registerTool(syn.definition, (p) => syn.handler(p))) {
-        reply.code(429);
-        return { error: "工具注册表已满（上限 " + webMcp.maxToolCount + "），请联系管理员清理" };
+      const reg = webMcp.registerOwnedTool(syn.definition, (p) => syn.handler(p), owner);
+      if (!reg.ok) {
+        reply.code(reg.reason === "conflict" ? 409 : 429);
+        return {
+          error:
+            reg.reason === "conflict"
+              ? "同名工具已被其他身份注册（工具名在同一实例内必须唯一）"
+              : "工具注册表已满（上限 " + webMcp.maxToolCount + "），请联系管理员清理",
+        };
       }
       return {
         ok: true,
         kind: "site_search",
         tool: syn.definition,
         registered: true,
+        owner,
       };
     }
 
@@ -200,9 +222,14 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       // 只注册受支持的方法；写请求同样走 guardedFetch 的逐跳 SSRF 校验。
       const specs = allSpecs.filter(isSupportedRestSpec);
       const tools = [];
+      let conflicts = 0;
       for (const s of specs) {
         const syn = synthesizeRestTool(s, { fetchFn: guardedToolFetch });
-        if (!webMcp.registerTool(syn.definition, (p) => syn.handler(p))) break;
+        const reg = webMcp.registerOwnedTool(syn.definition, (p) => syn.handler(p), owner);
+        if (!reg.ok) {
+          if (reg.reason === "conflict") { conflicts++; continue; }
+          break;
+        }
         tools.push(syn.definition);
       }
       return {
@@ -212,7 +239,9 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         tools,
         registered: tools.length > 0,
         skipped: allSpecs.length - specs.length,
-        capped: tools.length < specs.length,
+        conflicts,
+        capped: tools.length + conflicts < specs.length,
+        owner,
       };
     }
 
@@ -222,15 +251,22 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         return { error: "动态 REST 工具仅支持 GET/POST/PUT/PATCH/DELETE 请求" };
       }
       const syn = synthesizeRestTool(body.data.restSpec, { fetchFn: guardedToolFetch });
-      if (!webMcp.registerTool(syn.definition, (p) => syn.handler(p))) {
-        reply.code(429);
-        return { error: "工具注册表已满（上限 " + webMcp.maxToolCount + "），请联系管理员清理" };
+      const reg = webMcp.registerOwnedTool(syn.definition, (p) => syn.handler(p), owner);
+      if (!reg.ok) {
+        reply.code(reg.reason === "conflict" ? 409 : 429);
+        return {
+          error:
+            reg.reason === "conflict"
+              ? "同名工具已被其他身份注册（工具名在同一实例内必须唯一）"
+              : "工具注册表已满（上限 " + webMcp.maxToolCount + "），请联系管理员清理",
+        };
       }
       return {
         ok: true,
         kind: "rest",
         tool: syn.definition,
         registered: true,
+        owner,
       };
     }
 

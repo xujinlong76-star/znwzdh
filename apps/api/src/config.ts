@@ -393,6 +393,17 @@ function assertSecurityConstraints(
     );
   }
 
+  // 内网 + 开放模式是个人/NAS 部署的合法默认，但当 8787 被直接发布到宿主机时，
+  // 这条默认等价于「同网段任何人都能匿名读写管理面」。不能靠改默认值阻断启动
+  // （会打挂存量部署），至少要让人在日志里看见「你正在开放模式下运行」。
+  if (isProd && !config.authRequired && isLocalPublic) {
+    console.warn(
+      "[navhub] 警告：开放模式（NAVHUB_AUTH_REQUIRED=0）且 publicUrl 为本机地址——" +
+        "web 网关已按能力白名单拦截匿名管理请求，但直连 8787 的调用方仍拥有全部 scope。" +
+        "请勿把 8787 直接暴露到公网；公网部署请设 NAVHUB_AUTH_REQUIRED=1 并配置 ≥32 字符的 NAVHUB_IDENTITY_SECRET。"
+    );
+  }
+
   // 4. 量化格式合法性预检
   if (!VALID_EMBEDDING_DTYPES.has(config.embedding.dtype)) {
     throw new Error(`NAVHUB_EMBEDDING_DTYPE 非法: ${config.embedding.dtype}`);

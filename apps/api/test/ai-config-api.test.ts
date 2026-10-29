@@ -12,6 +12,7 @@ import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { SYSTEM_LLM_CONFIG_KEY, resolveLlm } from "../src/llm-config.ts";
+import { BUILTIN_WIDGET_CATALOG } from "@navhub/core";
 
 let dir: string;
 let ctx: AppContext;
@@ -444,6 +445,84 @@ describe("用户级配置（个人设置）", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  /**
+   * 让模型按给定 JSON 布局返回一次。canvas 每次请求只发一次 fetch，
+   * 所以这里不需要网络，也不需要真模型。
+   */
+  async function generateCanvasWithLayout(anonId: string, content: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          model: "agnes-3.0-flash",
+          choices: [{ message: { role: "assistant", content: JSON.stringify(content) } }],
+          usage: { prompt_tokens: 30, completion_tokens: 60, total_tokens: 90 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )) as typeof fetch;
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/user/ai/canvas/generate",
+        headers: { "x-navhub-anon-id": anonId },
+        payload: { prompt: "规划一个工作台" },
+      });
+      return { status: res.statusCode, body: res.json() as Record<string, any> };
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  const configDefault = (type: string, key: string) =>
+    BUILTIN_WIDGET_CATALOG[type]?.configSchema?.find((c) => c.key === key)?.defaultValue;
+
+  it("AI 画布：越界跨度/非法类型/伪协议逐条记账，而不是静默换一张卡", async () => {
+    const radar = BUILTIN_WIDGET_CATALOG["hyperbolic-radar"];
+    const { status, body } = await generateCanvasWithLayout("anon-test-canvas-dirty", {
+      title: "混合脏数据",
+      widgets: [
+        { type: "hyperbolic-radar", colSpan: 2, rowSpan: 1, config: {} },
+        { type: "not-a-real-widget", colSpan: 4, rowSpan: 1, config: {} },
+        { type: "rss-feed", colSpan: 4, rowSpan: 2, config: { feedUrl: "javascript:alert(1)", title: "订阅" } },
+      ],
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.fallbackUsed).toBe(false);
+    expect(body.droppedTypes).toEqual(["not-a-real-widget"]);
+    expect(body.layout.widgets).toHaveLength(2);
+    // 按这张卡自己的 min 收敛，而不是统一夹到 1
+    expect(body.layout.widgets[0].colSpan).toBe(radar.minColSpan);
+    // 伪协议不进画布：回目录默认值，并留下可解释的丢弃记录
+    expect(body.layout.widgets[1].config.feedUrl).toBe(configDefault("rss-feed", "feedUrl"));
+    const marks = body.canvasIssues.map((i: any) => `${i.field}:${i.action}`);
+    expect(marks).toContain("span:adjusted");
+    expect(marks).toContain("config:dropped");
+    expect(body.canvasIssueTotal).toBeGreaterThanOrEqual(body.canvasIssues.length);
+    expect(body.canvasIssueTotal).toBeGreaterThan(0);
+  });
+
+  it("AI 画布：一张合法卡都没拿到 ⇒ 返回保底布局并明说 fallbackUsed", async () => {
+    const { body } = await generateCanvasWithLayout("anon-test-canvas-fallback", {
+      title: "全是幻觉",
+      widgets: [
+        { type: "weather-widget", colSpan: 4, rowSpan: 1 },
+        { type: "", colSpan: 4, rowSpan: 1 },
+      ],
+    });
+    expect(body.success).toBe(true);
+    expect(body.fallbackUsed).toBe(true);
+    expect(body.layout.widgets.length).toBeGreaterThan(0);
+    for (const w of body.layout.widgets) {
+      const meta = BUILTIN_WIDGET_CATALOG[w.type as string];
+      expect(meta).toBeTruthy();
+      expect(w.colSpan).toBe(meta.defaultColSpan);
+      expect(w.rowSpan).toBe(meta.defaultRowSpan);
+    }
+    expect(body.droppedTypes.length).toBeGreaterThan(0);
+    expect(body.canvasIssueTotal).toBeGreaterThan(0);
   });
 
   it("GET /api/admin/ai/observability 聚合效能与 Token 消耗指标", async () => {

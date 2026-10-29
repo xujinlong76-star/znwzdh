@@ -9,6 +9,27 @@ import { deleteAssetDoc, listAssetDocs, readStoragePath, readStorageVersion, wri
 
 import type { AppContext } from "../context.ts";
 
+/**
+ * `/api/storage` 的请求体上限。
+ *
+ * 全局 bodyLimit 是 4 MB（见 server.ts），而视频库文档实测已 6.37 MB ——
+ * 超过后 Fastify 在**解析阶段**直接返回 413（FST_ERR_CTP_BODY_TOO_LARGE），
+ * 前端只看到「保存失败」，既不知道原因也无从处理。
+ *
+ * 这里按路由放开到 32 MB（`NAVHUB_STORAGE_BODY_LIMIT_MB` 可调，范围 8–256），
+ * 并在 75% 处返回可读的 422：容量问题必须显式暴露给运维，而不是伪装成网络错误。
+ */
+const STORAGE_BODY_LIMIT_MB = (() => {
+  const raw = Number(process.env.NAVHUB_STORAGE_BODY_LIMIT_MB);
+  if (!Number.isFinite(raw) || raw < 8) return 32;
+  return Math.min(Math.floor(raw), 256);
+})();
+const STORAGE_BODY_LIMIT = STORAGE_BODY_LIMIT_MB * 1024 * 1024;
+/** 软上限：留出余量给 JSON 转义、并发写入与临时副本 */
+const STORAGE_SOFT_LIMIT = Math.floor(STORAGE_BODY_LIMIT * 0.75);
+/** 超过此值打警告（旧的全局上限就是 4MB，8MB 意味着已翻倍） */
+const STORAGE_WARN_BYTES = 8 * 1024 * 1024;
+
 export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -28,7 +49,9 @@ export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
 
   // 快照写入会按「本次未出现」删除前端托管站点/类目，是一次全量覆盖。
   // 仅管理面（admin）可触发，避免 write 级内容编辑凭据误删整站导航。
-  app.put("/api/storage", { config: { scope: "admin" } }, async (req, reply) => {
+  //
+  // bodyLimit 必须按路由覆盖：全局是 4MB，而视频库这类整包文档已经超过它。
+  app.put("/api/storage", { config: { scope: "admin" }, bodyLimit: STORAGE_BODY_LIMIT }, async (req, reply) => {
     const body = z.object({
       path: z.string().min(1),
       content: z.string(),
@@ -44,6 +67,33 @@ export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
+    /**
+     * 体积守卫：先于写入判定，返回可读的 422。
+     *
+     * 不依赖 bodyLimit 的 413，是因为 Fastify 的 413 在解析层抛出、不带业务语义，
+     * 前端无法区分「文档太大」与「网络中断」；而这里能给出实际体积与处置建议。
+     */
+    const contentBytes = Buffer.byteLength(body.data.content, "utf8");
+    if (contentBytes > STORAGE_SOFT_LIMIT) {
+      reply.code(422);
+      return {
+        error: "content_too_large",
+        detail:
+          `内容 ${(contentBytes / 1024 / 1024).toFixed(2)}MB 超过软上限 ` +
+          `${(STORAGE_SOFT_LIMIT / 1024 / 1024).toFixed(0)}MB（硬上限 ${STORAGE_BODY_LIMIT_MB}MB）。` +
+          `请归档历史条目、拆分文档，或调大 NAVHUB_STORAGE_BODY_LIMIT_MB。`,
+        bytes: contentBytes,
+        softLimitBytes: STORAGE_SOFT_LIMIT,
+        hardLimitBytes: STORAGE_BODY_LIMIT,
+      };
+    }
+    if (contentBytes > STORAGE_WARN_BYTES) {
+      req.log.warn(
+        { path: body.data.path, bytes: contentBytes },
+        "[storage] 单次写入超过 8MB：整包序列化与影子表同步开销显著，建议尽快分片",
+      );
+    }
+
     try {
       const result = await writeStoragePath(ctx, body.data.path, body.data.content, {
         ifVersion: body.data.ifVersion,
@@ -55,7 +105,7 @@ export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
         reply.code(409);
         return { error: "version_conflict", detail: err.message, currentVersion: err.currentVersion };
       }
-      reply.code(400);
+      reply.code((err as { statusCode?: number })?.statusCode ?? 400);
       return { error: "写入失败", detail: err instanceof Error ? err.message : String(err) };
     }
   });

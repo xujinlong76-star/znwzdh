@@ -5,6 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { identityAllowed, requestIdentityOf } from "./shared.ts";
 import {
   synthesizeRestTool,
   synthesizeSiteSearchTool,
@@ -297,6 +298,15 @@ export const visualRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       },
     },
     async (req, reply) => {
+    /**
+     * 鉴权模式下必须是持票调用方：这个端点会执行**进程级共享**的工具表，
+     * 包括用户注册的私有工具。匿名可达时，任何人都能枚举/调用别人的工具。
+     * 开放模式（个人/NAS）保持原行为。
+     */
+    if (!identityAllowed(ctx, req as never)) {
+      reply.code(401);
+      return { error: "需要 Bearer token 才能调用 MCP 端点" };
+    }
     // JSON-RPC 批量请求会逐项执行工具；不设上限时一个 4MB body 就能让单请求
     // 放大成数万次仓储调用。这里只做体积闸门，协议校验仍交给 handleRpc。
     if (!req.body || typeof req.body !== "object") {
@@ -307,7 +317,8 @@ export const visualRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       reply.code(413);
       return { error: "PAYLOAD_TOO_LARGE", message: "MCP 请求体超过 256KB 上限" };
     }
-    const rpcRes = await webMcp.handleRpc(req.body as JsonRpcRequest);
+    // caller 决定可见工具集：公共工具 + 自己注册的私有工具
+    const rpcRes = await webMcp.handleRpc(req.body as JsonRpcRequest, requestIdentityOf(req as never));
     return rpcRes;
   });
 

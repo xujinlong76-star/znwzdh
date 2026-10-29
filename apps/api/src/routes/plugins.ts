@@ -21,7 +21,8 @@ import {
   evaluatePluginAudit,
   autoRemediatePluginManifest,
 } from "../ai-plugin-auditor.ts";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { ADMIN_NOTIFICATION_IDENTITY } from "../notifications.ts";
 import {
   validateAndCleanPluginManifest,
   validatePluginManifestWithCatalog,
@@ -1116,30 +1117,42 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const callerAuth = (req as { auth?: { actor?: string; kind?: string; scopes?: string[] } }).auth;
       // F0：发布必须能建立作者归属。不能用 req.auth.actor 兜底——开放模式下它是
       // anonymous，会把所有匿名投稿都算成同一个作者，/mine 与作者页随之失真。
-      const identity = extractPluginIdentity(req);
-      if (!identity) {
+      const rawIdentity = extractPluginIdentity(req);
+      if (!rawIdentity) {
         return badRequest(reply, "缺少用户身份标识，无法建立作者归属");
+      }
+      const identity = await ctx.repo.resolveIdentity(rawIdentity);
+      if (rawIdentity === ADMIN_NOTIFICATION_IDENTITY || identity === ADMIN_NOTIFICATION_IDENTITY) {
+        return forbidden(reply, "保留身份不能发布插件");
       }
       const actorName = callerAuth?.actor || identity;
       const actorKind = callerAuth?.kind || "user";
 
       try {
-                const createdPlugin = await ctx.repo.createPlugin(
-          {
-            manifest: validated.manifest,
-            author: validated.manifest.author || identity,
-            authorKind: actorKind,
-            ownerIdentity: identity,
-            source: "user",
-            status: "pending",
-            forkedFromSlug: validated.manifest.forkedFrom || null,
-          },
-          {
-            actor: actorName,
-            actorKind,
-            ip: req.ip,
+        const createdPlugin = await ctx.repo.withTransaction(async () => {
+          const created = await ctx.repo.createPlugin(
+            {
+              manifest: validated.manifest,
+              author: validated.manifest.author || identity,
+              authorKind: actorKind,
+              ownerIdentity: identity,
+              source: "user",
+              status: "pending",
+              forkedFromSlug: validated.manifest.forkedFrom || null,
+            },
+            { actor: actorName, actorKind, ip: req.ip },
+          );
+          for (const recipient of [identity, ADMIN_NOTIFICATION_IDENTITY]) {
+            await ctx.repo.emitNotification({
+              identity: recipient,
+              idempotencyKey: `plugin:${created.id}:pending:${created.version}`,
+              kind: "plugin_pending",
+              title: recipient === identity ? "插件已提交审核" : "有新插件待审核",
+              body: JSON.stringify({ pluginId: created.id, version: created.version }),
+            });
           }
-        );
+          return created;
+        });
 
         // AI 智能自动化审核与即时上架流水线
         if (shouldAutoAudit) {
@@ -1528,25 +1541,44 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       return badRequest(reply, "请指定合法的审核操作（approve / reject / delist）");
     }
 
-    const existing = await ctx.repo.getPluginBySlug(slug);
-    if (!existing) return notFound(reply, `插件不存在: ${slug}`);
-
-    if (body.data.action === "approve" && existing.status === "published" && !existing.pendingVersion) {
-      return conflict(reply, "该插件已处于上架状态，请勿重复通过");
-    }
-
     const callerAuth = req.auth;
+    const transitionId = randomUUID();
     try {
-      const reviewed = await ctx.repo.reviewPlugin(
-        slug,
-        body.data.action,
-        body.data.note ?? null,
-        {
+      const result = await ctx.repo.withTransaction(async () => {
+        await ctx.repo.raw(
+          "SELECT id FROM plugins WHERE slug = ?" + (ctx.repo.db.dialect === "pg" ? " FOR UPDATE" : ""),
+          [slug],
+        );
+        const existing = await ctx.repo.getPluginBySlug(slug);
+        if (!existing) return { status: "missing" as const };
+        if (body.data.action === "approve" && existing.status === "published" && !existing.pendingVersion) {
+          return { status: "duplicate" as const };
+        }
+        const reviewed = await ctx.repo.reviewPlugin(slug, body.data.action, body.data.note ?? null, {
           actor: callerAuth?.actor || "admin",
           actorKind: callerAuth?.kind || "admin",
           ip: req.ip,
+        });
+        // Shadow release 审核可保持 published；待审版本的消费同样是一次转换。
+        const changed = existing.status !== reviewed.status || existing.version !== reviewed.version ||
+          existing.pendingVersion !== reviewed.pendingVersion;
+        const owner = existing.ownerIdentity ? await ctx.repo.resolveIdentity(existing.ownerIdentity) : null;
+        if (changed && owner && owner !== ADMIN_NOTIFICATION_IDENTITY) {
+          const kind = { approve: "plugin_approved", reject: "plugin_rejected", delist: "plugin_delisted" }[body.data.action];
+          const title = { approve: "插件审核已通过", reject: "插件审核未通过", delist: "插件已下架" }[body.data.action];
+          await ctx.repo.emitNotification({
+            identity: owner,
+            idempotencyKey: `plugin:${reviewed.id}:review:${existing.pendingVersion ?? existing.version}:${transitionId}`,
+            kind,
+            title,
+            body: JSON.stringify({ pluginId: reviewed.id, version: existing.pendingVersion ?? existing.version }),
+          });
         }
-      );
+        return { status: "reviewed" as const, plugin: reviewed };
+      });
+      if (result.status === "missing") return notFound(reply, `插件不存在: ${slug}`);
+      if (result.status === "duplicate") return conflict(reply, "该插件已处于上架状态，请勿重复通过");
+      const reviewed = result.plugin;
       // 上架 -> 建/重建语义索引；驳回/下架 -> 摘掉向量（检索仍以 published 为准）
       if (body.data.action === "approve") {
         await indexPluginsBatch(ctx, [indexItemFromManifest(reviewed.slug, reviewed.manifest)]);

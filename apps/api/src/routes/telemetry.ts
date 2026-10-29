@@ -60,6 +60,11 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       position: z.number().int().min(1).max(200).optional(),
       dwellSeconds: z.number().min(0).max(3600).optional(),
       interactionType: z.enum(["click", "copy", "bounce"]).optional(),
+      /**
+       * 点击来源：搜索结果与 AI 回复里的引用是两种不同的行为。
+       * 没有这个字段，「引用点击率」的分子与普通站点点击混在一起，永远算不出来。
+       */
+      source: z.enum(["search", "copilot_citation"]).optional(),
       /** 业务分支结果（vault_* 必带；其余 kind 可选） */
       outcome: z.enum(EVENT_OUTCOMES).optional(),
       /** 原因码：conflict 的成因、HTTP 状态、失败类别。长度受限，不是内容字段 */
@@ -86,13 +91,14 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     const recordedIdentity = telemetryEnabled ? identity : null;
 
     const meta =
-      recordedIdentity || body.data.pluginSlug || body.data.outcome || body.data.code || body.data.position !== undefined
+      recordedIdentity || body.data.pluginSlug || body.data.outcome || body.data.code || body.data.position !== undefined || body.data.source
         ? {
             ...(recordedIdentity ? { identity: recordedIdentity } : {}),
             ...(body.data.pluginSlug ? { slug: body.data.pluginSlug } : {}),
             ...(body.data.outcome ? { outcome: body.data.outcome } : {}),
             ...(body.data.code ? { code: body.data.code } : {}),
             ...(body.data.position !== undefined ? { position: body.data.position } : {}),
+            ...(body.data.source ? { source: body.data.source } : {}),
           }
         : undefined;
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）

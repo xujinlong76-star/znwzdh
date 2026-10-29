@@ -29,6 +29,7 @@ import {
   summarizePluginManifest,
   BUILTIN_WIDGET_CATALOG,
   WIDGET_TYPE_NAMES,
+  validateCanvasWidgets,
 } from "@navhub/core";
 import { identityTrusted, requestIdentityOf, unauthorized, resolveCanonicalIdentity } from "./shared.ts";
 import { checkLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
@@ -394,20 +395,15 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   });
 
   /**
-   * 合法模块类型以 core 的模块目录为唯一真相。
+   * 合法模块类型、每类型的跨度上下限、每类型的 config 字段形态，全部由 core 的模块目录派生
+   * （提示词与校验共用同一份目录，见 validateCanvasWidgets）。
    *
    * 此前这里手写了一份 14 项清单，其中 6 项（clock / notes / metrics / trending /
    * weather / iframe）是早已改名的旧标识，而前端真正认识的 trending-radar、
    * markdown-notes、system-metrics、weather-clock、iframe-embed、clock-pomodoro、
    * live-api、declarative-widget 全部缺失。模型按提示词里的旧名输出后，
-   * 卡片会被下面的 `.filter(VALID_WIDGET_TYPES.has(...))` 静默丢掉——
-   * 用户只看到「AI 生成的排版比规划的少几张」，没有任何错误线索。
-   */
-  const VALID_WIDGET_TYPES = new Set(Object.keys(BUILTIN_WIDGET_CATALOG));
-
-  /**
-   * 提示词里的组件清单同样由 core 模块目录派生。
-   * 手写清单正是上一轮漂移的源头：模型被教了 6 个前端根本不认识的类型名。
+   * 卡片会被静默丢掉——用户只看到「AI 生成的排版比规划的少几张」，没有任何错误线索。
+   * 现在非法类型与每一处被改动的字段都进 issues 台账，由前端如实展示。
    */
   function widgetCatalogPromptLines(): string[] {
     return Object.values(BUILTIN_WIDGET_CATALOG).map((meta) => {
@@ -530,49 +526,21 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         let parsed: any;
         try {
           parsed = JSON.parse(rawJson);
-        } catch (jsonErr) {
+        } catch {
           throw new LlmError("invalid_response", "模型返回的 JSON 解析失败", 200, rawJson);
         }
 
         const title = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : "AI 规划工作台";
         const description = typeof parsed.description === "string" ? parsed.description.trim() : "";
         const rationale = typeof parsed.rationale === "string" ? parsed.rationale.trim() : "";
-
-        const rawWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
         const now = Date.now();
-        const legalWidgets = rawWidgets.filter(
-          (w: any) => w && typeof w === "object" && VALID_WIDGET_TYPES.has(String(w.type)),
-        );
-        // 丢掉非法类型时留下名字：静默丢卡只会让用户以为模型「规划得少」
-        const droppedTypes = Array.from(
-          new Set(
-            rawWidgets
-              .filter((w: any) => w && typeof w === "object" && !VALID_WIDGET_TYPES.has(String(w.type)))
-              .map((w: any) => String(w.type).trim() || "(空类型)"),
-          ),
-        ).slice(0, 12);
-        const widgets = legalWidgets.map((w: any, index: number) => {
-          const colSpan = Math.min(12, Math.max(1, Number(w.colSpan) || 4));
-          const rowSpan = Math.min(4, Math.max(1, Number(w.rowSpan) || 2));
-          return {
-            id: `ai-widget-${now}-${index + 1}`,
-            type: String(w.type),
-            customTitle: typeof w.customTitle === "string" ? w.customTitle.trim() : undefined,
-            colSpan,
-            rowSpan,
-            config: typeof w.config === "object" && w.config !== null ? w.config : {},
-            createdAt: now,
-          };
-        });
 
-        // 如果模型返回的组件列表全非法，至少提供一个通用保底组件
-        if (widgets.length === 0) {
-          widgets.push(
-            { id: `ai-widget-${now}-1`, type: "quick-search", customTitle: "快捷搜索", colSpan: 12, rowSpan: 1, config: {}, createdAt: now },
-            { id: `ai-widget-${now}-2`, type: "favorites-dock", customTitle: "常用收藏", colSpan: 8, rowSpan: 2, config: {}, createdAt: now },
-            { id: `ai-widget-${now}-3`, type: "markdown-notes", customTitle: "备忘随手记", colSpan: 4, rowSpan: 2, config: {}, createdAt: now },
-          );
-        }
+        /**
+         * 逐类型校验交给 core：合法类型、跨度上下限、config 字段形态都由模块目录派生，
+         * 每一处改动记进 issues。此前这里只夹跨度、只丢非法类型，改动对用户不可见，
+         * 「模型规划了 8 张、画布上只剩 5 张」没有任何解释。
+         */
+        const validation = validateCanvasWidgets(parsed, { idPrefix: `ai-widget-${now}` });
 
         const layout = {
           version: 1,
@@ -580,13 +548,17 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           title,
           description,
           rationale,
-          widgets,
+          widgets: validation.widgets,
         };
 
         return {
           success: true,
           layout,
-          droppedTypes,
+          droppedTypes: validation.droppedTypes,
+          // 保底布局必须让调用方知道：它不是「模型规划的结果」
+          fallbackUsed: validation.usedFallback,
+          canvasIssues: validation.issues.slice(0, 20),
+          canvasIssueTotal: validation.issues.length,
           model: result.model,
           usage: result.usage,
           latencyMs: result.latencyMs,

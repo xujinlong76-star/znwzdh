@@ -19,6 +19,7 @@ import { indexSite } from "../index-site.ts";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
+import { probeCandidates, type StructuredReplacementCandidate } from "../candidate-probe.ts";
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
@@ -216,6 +217,12 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
    * 降级不是失败：同分类的活跃站点本来就是可用答案，所以额度耗尽时仍回 200
    * 平替列表，只是 `aiDegraded` 与 `retryAfterSeconds` 要如实带上，
    * 前端才不会把「今天到顶了」渲染成「模型坏了」。
+   *
+   * [AI-4b] 补的是另一半诚实：**每条候选都实测**。改造前这条路由一个探活请求都不发，
+   * 模型说什么就返回什么——停放页、拼错的域名、已下线的官网都能顶着「智能平替」的标签
+   * 被一键写进 `sites` 并置为 active。现在三条出口（额度降级 / 模型成功 / 模型失败）
+   * 都走同一套候选探活（档位、可信度、耗时与口径声明随响应返回），
+   * 排序按实测档位，不可达的不删除而是标注 —— 分歧本身就是要给运营看的信息。
    */
   app.post(
     "/api/sites/:id/recommend-alternative",
@@ -228,22 +235,41 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       return { ok: false, error: "站点不存在" };
     }
 
-    // 默认回退候选
+    // 默认回退候选（站内同类目活跃站点：领域匹配按「同类目 85」计）
     const peers = await ctx.repo.listSites({ categoryId: site.categoryId, status: "active", limit: 10 });
-    const fallbackList = peers.slice(0, 3).map((p) => ({
+    const fallbackCandidates: StructuredReplacementCandidate[] = peers.slice(0, 3).map((p) => ({
       title: p.title,
       url: p.url,
       reason: `同属于分类【${site.categoryId}】的高活跃度替代站点`,
+      source: "catalog" as const,
+      domainFit: 85,
     }));
+
+    /**
+     * 统一出口：先实测再返回。
+     *
+     * 三个分支各自 return 一份「recommendations」是这套代码此前的毛病 —— 探活只补进
+     * 成功分支的话，额度降级那条路（恰恰是运营最常看到的列表）仍然全是未验的。
+     */
+    const respondWithProbe = async (
+      candidates: StructuredReplacementCandidate[],
+      extra: Record<string, unknown>,
+    ) => {
+      const probed = await probeCandidates(candidates);
+      return {
+        ok: true,
+        siteId: site.id,
+        recommendations: probed.candidates,
+        probe: probed.summary,
+        ...extra,
+      };
+    };
 
     const identity = identityTrusted(ctx, req as never) ? requestIdentityOf(req as never) : null;
     const quota = await checkLlmQuota(ctx, identity);
     if (!quota.ok) {
-      return {
-        ok: true,
-        siteId: site.id,
+      return respondWithProbe(fallbackCandidates, {
         model: "fallback-heuristics",
-        recommendations: fallbackList,
         aiDegraded: "quota" as const,
         quota: {
           scope: quota.error.scope,
@@ -252,7 +278,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           used: quota.error.used,
           retryAfterSeconds: Math.max(1, Math.ceil(quota.error.retryAfterMs / 1000)),
         },
-      };
+      });
     }
 
     let degradedReason: string | null = null;
@@ -289,12 +315,13 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           });
           const parsed = z.array(RecSchema).safeParse(items);
           if (parsed.success && parsed.data.length > 0) {
-            return {
-              ok: true,
-              siteId: site.id,
-              model: llm.provider.model,
-              recommendations: parsed.data.slice(0, 3),
-            };
+            // 模型自述的「知名度高、稳定可用」不充当证据：领域匹配给 75，可达性交给实测
+            const llmCandidates: StructuredReplacementCandidate[] = parsed.data.slice(0, 3).map((r) => ({
+              ...r,
+              source: "ai" as const,
+              domainFit: 75,
+            }));
+            return respondWithProbe(llmCandidates, { model: llm.provider.model });
           }
           // 模型回了但结构不可用：这也是一次降级，不能与「模型不可用」混为一谈
           degradedReason = "invalid-model-output";
@@ -308,13 +335,10 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       degradedReason = err instanceof Error ? err.name.toLowerCase() : "unknown";
     }
 
-    return {
-      ok: true,
-      siteId: site.id,
+    return respondWithProbe(fallbackCandidates, {
       model: "fallback-heuristics",
-      recommendations: fallbackList,
       aiDegraded: "error" as const,
       ...(degradedReason ? { degradedReason } : {}),
-    };
+    });
   });
 };

@@ -238,6 +238,20 @@ describe("/api/me/sessions（T8 会话治理）", () => {
 });
 
 describe("/api/me/notifications（T13 站内通知）", () => {
+  it("独立未读数仅包含本人，已读后归零且未授权不可读", async () => {
+    const identity = "github:u-count";
+    const own = await ctx.repo.createNotification({ identity, kind: "test", title: "mine" });
+    await ctx.repo.createNotification({ identity: "github:u-count-other", kind: "test", title: "other" });
+    const url = "/api/me/notifications/unread-count";
+    expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+    const count = await app.inject({ method: "GET", url, headers: headersFor(identity) });
+    expect(count.statusCode).toBe(200);
+    expect(count.json()).toEqual({ ok: true, unread: 1 });
+    expect(count.headers["cache-control"]).toContain("no-store");
+    await app.inject({ method: "POST", url: `/api/me/notifications/${own.id}/read`, headers: headersFor(identity) });
+    expect((await app.inject({ method: "GET", url, headers: headersFor(identity) })).json().unread).toBe(0);
+  });
+
   it("列表/未读数/单条已读/全部已读 + 身份隔离", async () => {
     await ctx.repo.createNotification({ identity: USER, kind: "sync_failed", title: "收藏同步失败", body: "b1" });
     await ctx.repo.createNotification({ identity: USER, kind: "backup_due", title: "该备份数据了" });

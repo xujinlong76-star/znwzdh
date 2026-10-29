@@ -34,6 +34,7 @@ import { requestIdentityOf, identityTrusted, userDomainWriteAllowed, isSafeAvata
 import { verifyIdentityHeaders } from "../identity-signature.ts";
 import { invalidateProfileThrottle, refreshUserProfile } from "../profile-service.ts";
 import { recordUserCenterMetric } from "../user-center-metrics.ts";
+import { ADMIN_NOTIFICATION_IDENTITY } from "../notifications.ts";
 
 /** 前端生成的匿名 id 形态：anon-<uuid>；限制长度避免异常值写入别名表 */
 const ANON_ID_RE = /^anon-[A-Za-z0-9_-]{8,80}$/;
@@ -73,6 +74,13 @@ const settingsPatchSchema = z
 
 export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
+
+  app.addHook("preHandler", async (req, reply) => {
+    const identity = requestIdentityOf(req as never);
+    if (identity && await ctx.repo.resolveIdentity(identity) === ADMIN_NOTIFICATION_IDENTITY) {
+      return reply.code(403).send({ error: "管理员收件箱仅可通过管理接口访问" });
+    }
+  });
 
   // 用户域写面第二轴：只读个人令牌不得调用 /api/me/* 的任何非读方法；
   // favorites 档额外允许收藏批量同步（/api/me/favorites/sync），其余写面仍需 write。
@@ -916,6 +924,11 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         name: z.string().trim().min(1).max(40),
         /** 权限档位（P1 按域收敛）：read=只读；favorites=只读+收藏写；write=全部用户域写 */
         permission: z.enum(["read", "favorites", "write"]).optional(),
+        /**
+         * 注意 write 的边界：只覆盖**用户域**（收藏/历史/画像/金库/工作区/CRDT）。
+         * 实例级写面（站点/类目/标签/合集/任务/插件治理）由 server.ts 的
+         * evaluateInstanceWrite 拦截——个人令牌即使带 write 也会 403。
+         */
         /** 兼容旧客户端：write:true 等价 permission=write（permission 显式给定时优先） */
         write: z.boolean().optional(),
       })
@@ -987,6 +1000,15 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   });
 
   /* --------------------------- 站内通知（T13） --------------------------- */
+
+  app.get("/api/me/notifications/unread-count", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信" }; }
+    const identity = requestIdentityOf(req as never);
+    if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+    const canonical = await ctx.repo.resolveIdentity(identity);
+    reply.header("cache-control", "private, no-store");
+    return { ok: true, unread: await ctx.repo.countUnreadNotifications(canonical) };
+  });
 
   /** 通知列表：默认含已读；?unread=1 只看未读。附带未读数供面板角标。 */
   app.get("/api/me/notifications", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req, reply) => {
@@ -1194,8 +1216,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         try {
           const recent = await ctx.repo.hasRecentNotification(canonical, "sync_failed", 60 * 60_000);
           if (!recent) {
-            await ctx.repo.createNotification({
+            await ctx.repo.emitNotification({
               identity: canonical,
+              idempotencyKey: `sync_failed:${Math.floor(Date.now() / (60 * 60_000))}`,
               kind: "sync_failed",
               title: "收藏同步失败",
               body: "本机收藏暂时没能同步到云端（网络或服务波动）。你的收藏仍安全保存在本机，稍后会自动重试；也可打开收藏页手动重试。",
@@ -1344,6 +1367,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
     const canonicalTarget = await ctx.repo.resolveIdentity(target);
     const resolvedSource = await ctx.repo.resolveIdentity(parsed.data.anonId);
+    if (canonicalTarget === ADMIN_NOTIFICATION_IDENTITY || resolvedSource === ADMIN_NOTIFICATION_IDENTITY) {
+      reply.code(403);
+      return { error: "保留身份不能作为合并的来源或目标" };
+    }
     if (resolvedSource === canonicalTarget) {
       recordUserCenterMetric("identityMerge.alreadyMerged");
       return {

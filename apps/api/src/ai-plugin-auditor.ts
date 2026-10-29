@@ -32,6 +32,7 @@ import { checkLlmQuota } from "./llm-quota.ts";
 import { callLlm } from "./llm-usage.ts";
 import { indexPluginsBatch, indexItemFromManifest, removePluginIndex } from "./index-plugin.ts";
 import type { PluginRecord } from "@navhub/store";
+import { ADMIN_NOTIFICATION_IDENTITY } from "./notifications.ts";
 
 export interface AuditCheckItem {
   name: string;
@@ -627,6 +628,36 @@ export async function evaluatePluginAudit(
 }
 
 /**
+ * 自动审核真正改变了插件可见性时通知作者。
+ * 已上架插件的复审只刷新审核备注，不产生状态迁移，不重复打扰作者；
+ * 匿名作者不走站内通知（通知面板对匿名身份不展示，写给他们的消息永远读不到）。
+ */
+async function notifyAutoAuditDecision(
+  ctx: AppContext,
+  plugin: PluginRecord,
+  decision: "approve" | "reject",
+  ownerIdentity: string | null | undefined,
+): Promise<void> {
+  const owner = ownerIdentity?.trim();
+  if (!owner || owner === ADMIN_NOTIFICATION_IDENTITY || owner === "anonymous" || owner.startsWith("anon-")) return;
+  const approved = decision === "approve";
+  try {
+    await ctx.repo.emitNotification({
+      identity: owner,
+      idempotencyKey: `plugin:${plugin.id}:auto:${decision}:${plugin.version}`,
+      kind: approved ? "plugin_approved" : "plugin_rejected",
+      title: approved ? "插件审核已通过（AI 自动审核）" : "插件审核未通过（AI 自动审核）",
+      body: approved
+        ? `插件「${plugin.slug}」已自动上架，可在插件市场检索与安装。`
+        : `插件「${plugin.slug}」未通过自动审核，请到插件管理页查看审核意见，修改后重新提交。`,
+    });
+  } catch (err) {
+    // 通知失败不能反噬审核结论：审核已落库，这里只记录。
+    console.error("[plugin-audit] 自动审核结果通知写入失败:", err);
+  }
+}
+
+/**
  * 执行完整的自动审核并根据判定上架/更新插件
  */
 export async function executeAutoAuditAndPublish(
@@ -691,6 +722,9 @@ export async function executeAutoAuditAndPublish(
               ip: options.actorIp || "127.0.0.1",
             }
           );
+    if (plugin.status !== "published") {
+      await notifyAutoAuditDecision(ctx, updated, "approve", plugin.ownerIdentity ?? options.identity);
+    }
     // 即刻全量构建语义向量与 FTS5 索引，全网可公开检索与安装
     await indexPluginsBatch(ctx, [indexItemFromManifest(updated.slug, updated.manifest)]);
     return { plugin: updated, audit: auditRes };
@@ -708,6 +742,7 @@ export async function executeAutoAuditAndPublish(
     );
     // 驳回后必须撤掉检索索引：否则「已上架 → 复审驳回」的插件仍会出现在
     // 语义搜索与市场列表里，状态与可见性自相矛盾。
+    await notifyAutoAuditDecision(ctx, updated, "reject", plugin.ownerIdentity ?? options.identity);
     await removePluginIndex(ctx, plugin.slug);
     return { plugin: updated, audit: auditRes };
   }

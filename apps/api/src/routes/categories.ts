@@ -137,6 +137,48 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   });
 
   /**
+   * 停用影响预览（只读）：这个类目一旦 enabled=false，会牵动多少下级与站点。
+   *
+   * 计数口径与类目页同源：
+   * - 树来自 `listCategories()`，子树用物化路径 `anchor` 前缀聚合；
+   * - 站点数来自 `categorySiteCounts()`（单主指针、active + enabled、未删），
+   *   与 `/category/{slug}` 页面的达标计数一致（search 的 categoryId 过滤会展开后代）。
+   *
+   * 只返回**事实**，不在这里判断「几个公开 URL 会 404」：收录门槛
+   * （MIN_SITES_FOR_CATEGORY_INDEX）只存在于 web 侧，由调用方用同一个常量推。
+   * 不设缓存：站点归类和类目状态随时在变，确认框里的数字必须是最新的。
+   */
+  app.get("/api/categories/:id/impact", { config: { scope: "public" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const category = await ctx.repo.getCategory(id);
+    if (!category) {
+      return notFound(reply, "类目不存在");
+    }
+    const [all, counts] = await Promise.all([
+      ctx.repo.listCategories(),
+      ctx.repo.categorySiteCounts(),
+    ]);
+    const siteCount = new Map(counts.map((row) => [row.categoryId, row.sites] as const));
+    const inSubtree = (anchor: string) =>
+      anchor === category.anchor || anchor.startsWith(category.anchor + "/");
+    const subtree = all.filter((c) => inSubtree(c.anchor));
+    return {
+      category: {
+        id: category.id,
+        title: category.title,
+        slug: category.slug ?? null,
+        enabled: category.enabled,
+        parentId: category.parentId ?? null,
+        anchor: category.anchor,
+      },
+      childCategories: all.filter((c) => c.parentId === category.id).length,
+      descendantCategories: Math.max(0, subtree.length - 1),
+      directSites: siteCount.get(category.id) ?? 0,
+      subtreeSites: subtree.reduce((sum, c) => sum + (siteCount.get(c.id) ?? 0), 0),
+    };
+  });
+
+  /**
    * 创建类目。
    *
    * slug 由服务端按英文名/标题生成，**不接受客户端传入**：URL 是对外资产，

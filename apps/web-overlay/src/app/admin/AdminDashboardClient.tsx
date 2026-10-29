@@ -16,7 +16,6 @@ import {
   ExternalLink,
   Flame,
   Folders,
-  FolderTree,
   Gauge,
   Globe,
   HardDrive,

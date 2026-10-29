@@ -184,7 +184,7 @@ function unstagedChanges() {
 /**
  * 一次 `git grep --cached` 搜完所有 token。
  *
- * 两个必须合在一起的口径（数字是 `tmp` 探针同机 A/B 各 3 轮复测出来的，见 docs/GATES-OPERATIONS.md）：
+ * 两个必须合在一起的口径（同机各 3 轮 A/B 复测，复现命令见 docs/GATES-OPERATIONS.md）：
  *   - **一条 `-E` 交替**而不是 N 个 `-F`：多 `-F` 模式在 git 里是逐个扫的，耗时随 token 数线性
  *     （17 个 = 311–331ms，35 个 = 1057–1092ms）；一条 `\.a\b|\.b\b|…` 与 token 数基本无关
  *     （80–103ms）。差值从 3.4x 涨到 11x——候选越多越必须合。

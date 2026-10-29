@@ -25,47 +25,53 @@ export function isManualOnlyJob(block) {
  * → 红灯光谱/红灯台账/upload-artifact 三步仍按 `!cancelled()` 执行，「缺 junit」再判一次红。
  * 一处根因变四处红：真正的根因被淹没，而「遥测链路断了」这条本应刺眼的告警也变成狼来了。
  *
- * 判据：读取 junit 产物的收尾步骤必须以 `steps.<测试步骤 id>.outcome != 'skipped'` 为条件。
- * 测试步骤真的跑过（成功或失败）时照常执行——那是它们该干活的时候。
+ * 判据不限于 junit（2026-10-29 第二形态）：test-web 的「首屏预算账」带 `if: always()`，
+ * lint 一红 → build 被跳过 → `.next` 不存在 → 账脚本与它那步 `if-no-files-found: error`
+ * 的上传各自再红一次。凡是**读上游产物、且产物缺失时会把自己判红**的收尾步骤都算级联源，
+ * 所以判据是「锚点步骤 outcome != 'skipped'」而不是「锚点必须是测试步骤」。
+ *
+ * 反向豁免：`if-no-files-found: warn|ignore` 的上传缺文件也不会自己判红，
+ * 它不是级联源（硬要求它挂守卫，等于让门禁去管一件不会出事的事）。
  *
  * @param {string} jobBlock 单个作业的 YAML 片段
- * @param {string} testStepId 产出 junit 的测试步骤 id（如 vitest / e2e）
+ * @param {{anchor: string, products: RegExp[]}} rule
+ *   anchor   —— 产物的生产者步骤 id（它被跳过 ⇒ 根因在上游，这里不掺和）
+ *   products —— 认定「这一步正在读该产物」的正则集合
  * @returns {string[]} 问题清单（空数组 = 通过）
  */
-export function telemetryCascadeProblems(jobBlock, testStepId) {
+export function cascadeProblems(jobBlock, { anchor, products }) {
   const problems = [];
   const steps = String(jobBlock).split(/\n(?= {6}- )/);
-  const idRe = new RegExp(`^\\s*id: ${testStepId}\\s*$`, "m");
-  if (!steps.some((step) => idRe.test(step))) {
+  const anchorRe = new RegExp(`^\\s*id: ${anchor}\\s*$`, "m");
+  if (!steps.some((step) => anchorRe.test(step))) {
     problems.push(
-      `找不到产出 junit 的测试步骤 id: ${testStepId}——级联判据挂在它上面，改名/删除会让守卫静默失效`,
+      `找不到产物生产者步骤 id: ${anchor}——级联判据挂在它上面，改名/删除会让守卫静默失效`,
     );
   }
   const guardRe = new RegExp(
-    `if:\\s*\\$\\{\\{[^\\n]*steps\\.${testStepId}\\.outcome != 'skipped'`,
+    `if:\\s*\\$\\{\\{[^\\n]*steps\\.${anchor}\\.outcome != 'skipped'`,
   );
   for (const step of steps) {
     // 判定前先剥掉 YAML 注释行：注释里解释口径时会顺带写出 `upload-artifact`、
-    // `junit-summary.mjs` 这些字样，直接整块正则会把**测试步骤**误判成遥测步骤
+    // `junit-summary.mjs` 这些字样，直接整块正则会把**生产者步骤自己**误判成消费者
     // （2026-10-29 实测：test-sqlite 的 vitest 步骤带着解释注释，被判成
     // 「没有以 steps.vitest.outcome != 'skipped' 为条件」——而它正是产出 junit 的那一步）。
     const code = step
       .split("\n")
       .filter((line) => !/^\s*#/.test(line))
       .join("\n");
-    const isTelemetry =
-      /junit-summary\.mjs/.test(code) ||
-      /ci-red-ledger\.mjs/.test(code) ||
-      (/upload-artifact/.test(code) && /junit-/.test(code));
-    if (!isTelemetry) continue;
+    // 生产者不是消费者：它的 run 行里本来就带着产物文件名（--outputFile.junit=junit-…）。
+    if (anchorRe.test(code)) continue;
+    if (!products.some((re) => re.test(code))) continue;
+    if (/if-no-files-found:\s*(?:warn|ignore)/.test(code)) continue;
     if (guardRe.test(code)) continue;
     const label =
       step.match(/- name: ([^\n]+)/)?.[1] ??
-      step.match(/name: (junit-[^\n]+)/)?.[1] ??
-      "遥测步骤";
+      step.match(/\n\s+name: ([^\n]+)/)?.[1] ??
+      "产物读取步骤";
     problems.push(
-      `「${label}」没有以 steps.${testStepId}.outcome != 'skipped' 为条件：` +
-        "测试步骤被上游（typecheck/安装）跳过时它仍会跑，缺 junit 又判一次红——一次根因多处红",
+      `「${label}」没有以 steps.${anchor}.outcome != 'skipped' 为条件：` +
+        "生产者被上游（typecheck/安装/lint）跳过时它仍会跑，产物缺失又判一次红——一次根因多处红",
     );
   }
   return problems;

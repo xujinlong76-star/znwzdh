@@ -210,6 +210,7 @@ jobs:
       # 基线（2026-10-16 本地实测，Next 15 时代）：0 错误 259 警告（警告不卡门禁）。
       - run: pnpm --filter navsphere exec eslint .
       - run: pnpm --filter navsphere build
+        id: web-build
       # 首屏 JS 预算硬门禁：build 产物已就绪。阈值在 scripts/bundle-budget.json，
       # 不允许为了过门禁上调——超了先优化，再按真实产物重新定基线。
       - run: node scripts/check-bundle-budget.mjs
@@ -224,19 +225,24 @@ jobs:
       # 首屏预算账（只读）：把 check-bundle-budget --report 的三类发现 + 产物出处写成一份
       # 跨轮可对比的账。为什么门禁之外还要它：门禁只答「超没超」，不答「哪几条路由该补
       # 专属预算、哪几条其实可以下调」——那 15+58 条此前只活在本地一次 --report 的 stdout 里。
-      # `if: always()` 是必须的：预算门禁红灯的时候正是最需要这份账的时候（超了哪几条、
-      # 差多少、产物是不是过期）。账自己不判定，数字全部来自 --report --json，
-      # 所以不会出现第二套预算口径。
+      # 账自己不判定，数字全部来自 --report --json，所以不会出现第二套预算口径。
+      #
+      # 条件不能写成 `if: always()`（2026-10-29 改）：always() 的**本意**是「预算门禁红灯时
+      # 也要出账」，但它顺带把「build 根本没跑成」也算进来了 —— lint 一红，build 被跳过、
+      # `.next` 不存在，账脚本和它那步 `if-no-files-found: error` 的上传各自再判一次红，
+      # 一次根因三处红。锚点因此是 web-build：build 跑过（成功或失败）⇒ 账照常出；
+      # build 被上游跳过 ⇒ 账闭嘴，红灯留在真正的根因上。同 test-sqlite/test-e2e 的 junit 口径。
       - name: 首屏预算账（Step Summary + artifact）
-        if: always()
+        if: ${{ !cancelled() && steps.web-build.outcome != 'skipped' }}
         run: node scripts/bundle-budget-summary.mjs --out-json "$RUNNER_TEMP/bundle-budget-report.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: always()
+        if: ${{ !cancelled() && steps.web-build.outcome != 'skipped' }}
         with:
           name: bundle-budget-report
           path: ${{ runner.temp }}/bundle-budget-report.json
-          # 这里必须是 error，不是 warn：本仓 junit 那几步用的是 warn，实测最近 3 个 run
-          # 的 artifact 总数都是 0——「上传步骤绿灯、实际什么都没传」正是这种账最坏的失效方式。
+          # 这里必须是 error，不是 warn：warn 曾让 junit 那几步「上传绿灯、实际什么都没传」
+          # 空转三轮没人发现（run 40671824883）。缺产物要么是链路断了、要么是上游没跑成，
+          # 两种都不该被静默吞掉——后者由上面的 outcome 守卫挡在门外。
           if-no-files-found: error
           retention-days: 30
 

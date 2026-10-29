@@ -21,14 +21,17 @@
  *   - 后端 lint 必须有一条**阻塞通道** —— 本地 verify 视其为硬门禁，而 CI 的
  *     该步骤带 `continue-on-error`（退出码被吞，作业仍绿）。两者可以并存，前提是
  *     同一个断言也在被 ci-passed 聚合的阻塞作业里跑一遍（见 LINT_GATE_TEST）。
- *   - **级联红收敛**（2026-10-29）：读 junit 产物的收尾步骤（红灯光谱 / 红灯台账 /
- *     upload-artifact）必须以「测试步骤真的跑过」为条件（`steps.<id>.outcome != 'skipped'`）。
- *     只写 `!cancelled()` 时，typecheck 一红就会连带四处红，真根因被淹没。
+ *   - **级联红收敛**（2026-10-29）：读上游产物的收尾步骤（红灯光谱 / 红灯台账 /
+ *     upload-artifact / 首屏预算账）必须以「生产者真的跑过」为条件
+ *     （`steps.<锚点 id>.outcome != 'skipped'`）。只写 `!cancelled()` 或 `always()` 时，
+ *     上游一红就会连带多处红，真根因被淹没。与上面「不再维护硬编码作业清单」不矛盾：
+ *     聚合关系能从 YAML 推出来，而「这一步读的是哪个步骤的产物」推不出来，
+ *     所以级联规则按作业登记，登记表漏了一个作业会在那一步的红里显出来。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseWorkflow, telemetryCascadeProblems } from "./lib/ci-workflow.mjs";
+import { parseWorkflow, cascadeProblems } from "./lib/ci-workflow.mjs";
 
 /** 允许测试注入替代文件，验证「删掉关键作业确实会红」 */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -101,18 +104,27 @@ if (lintStepSuppressed && !existsSync(LINT_GATE_TEST)) {
 // 级联红收敛：一次根因只留一处红。2026-10-29 实战——typecheck 一红，
 // 测试步骤被跳过、junit 不存在，而「红灯光谱/红灯台账/上传 junit」三步仍按
 // !cancelled() 执行，各自再判一次红，真根因被四处红淹没。
-const CASCADE_JOBS = [
-  { job: "test-sqlite", testStepId: "vitest" },
-  { job: "test-e2e", testStepId: "e2e" },
+//
+// 登记表 = 每个作业「产物生产者是谁 + 产物叫什么」。加新作业时只改这张表，
+// 判定本身（含注释剥离、ignore 豁免）在 lib/ci-workflow.mjs 里只有一份。
+// playwright-report 那步今天是 `if-no-files-found: ignore`、被豁免判据放过，仍列进
+// products 是为了盯住它的**改法**：谁把它换成 error（junit 那几步就是这么改的），
+// 它当场变成级联源、必须挂守卫。
+const CASCADE_RULES = [
+  { job: "test-sqlite", anchor: "vitest", products: [/junit-summary\.mjs/, /ci-red-ledger\.mjs/, /junit-sqlite-/] },
+  { job: "test-e2e", anchor: "e2e", products: [/junit-summary\.mjs/, /ci-red-ledger\.mjs/, /junit-e2e-/, /playwright-report/] },
+  // 预算账读的是 next build 的产物：锚点是 build 而不是 lint/门禁步骤，
+  // 因为「预算门禁红灯时账仍要出」是有意为之，只有 build 没跑成才算级联。
+  { job: "test-web", anchor: "web-build", products: [/bundle-budget-summary\.mjs/, /bundle-budget-report/] },
 ];
-for (const { job, testStepId } of CASCADE_JOBS) {
-  const found = jobs.find((j) => j.name === job);
+for (const rule of CASCADE_RULES) {
+  const found = jobs.find((j) => j.name === rule.job);
   if (!found) {
-    problems.push(`找不到 ${job} 作业：级联红校验失去对象`);
+    problems.push(`找不到 ${rule.job} 作业：级联红校验失去对象`);
     continue;
   }
-  for (const p of telemetryCascadeProblems(found.block, testStepId)) {
-    problems.push(`${job}：${p}`);
+  for (const p of cascadeProblems(found.block, rule)) {
+    problems.push(`${rule.job}：${p}`);
   }
 }
 
@@ -125,7 +137,7 @@ if (problems.length > 0) {
 console.log(
   `✅ CI 合并门禁：解析 ${jobs.length - 1} 个作业，ci-passed 聚合 ${aggregated.length} 个作业，逐个读取结果，` +
     "PG 走 test:pg:suite，" +
-    "级联红已按测试步骤 outcome 收敛，" +
+    `级联红已按产物生产者 outcome 收敛（${CASCADE_RULES.length} 个作业登记），` +
     (lintStepSuppressed ? "后端 lint 由阻塞作业里的同口径断言把关。" : "后端 lint 步骤本身即为阻塞。"),
 );
 if (manualOnly.length > 0) {

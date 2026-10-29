@@ -186,13 +186,17 @@ describe("CI 接线（源码级钉子）", () => {
   const raw = readFileSync(join(process.cwd(), ".github", "workflows", "ci.yml"), "utf8");
   const wf = raw.replace(/\r\n/g, "\n");
 
-  it("预算门禁之后跑账脚本，且 if: always()——红灯时才是最需要账的时候", () => {
+  it("预算门禁之后跑账脚本，且条件是「build 跑过」而不是 always()——红灯时仍要账，但别把级联算第二次红", () => {
     const gate = wf.indexOf("run: node scripts/check-bundle-budget.mjs\n");
     const ledger = wf.indexOf("node scripts/bundle-budget-summary.mjs");
     expect(gate).toBeGreaterThan(-1);
     expect(ledger).toBeGreaterThan(gate);
     const block = wf.slice(ledger, ledger + 700);
-    expect(block).toContain("if: always()");
+    // always() 的本意（预算门禁红灯时也要出账）保留：build 成功、门禁失败 ⇒ 守卫成立 ⇒ 账照出。
+    // 被换掉的是另一半：lint/tsc 一红 → build 被跳过 → `.next` 不存在 → 账与上传各自再红一次。
+    expect(block).toContain("if: ${{ !cancelled() && steps.web-build.outcome != 'skipped' }}");
+    expect(block).not.toContain("if: always()");
+    expect(wf).toMatch(/- run: pnpm --filter navsphere build\n        id: web-build\n/);
   });
 
   it("artifact 传的就是脚本写的那个文件，且缺文件必须 error（junit 同理，见 workflow-actions 的接线钉子）", () => {

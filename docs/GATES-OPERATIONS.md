@@ -101,13 +101,28 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 `红灯光谱` / `红灯台账` / `upload-artifact` 三步仍按 `!cancelled()` 执行，「缺 junit」各自再判一次红。
 **一个根因变成四处红**：真根因被淹没，而「遥测链路断了」这条本应刺眼的告警也变成了狼来了。
 
-- **判据**：读 junit 产物的收尾步骤必须以 `if: ${{ !cancelled() && steps.<测试步骤 id>.outcome != 'skipped' }}`
-  为条件。测试步骤跑过（成功或失败）时照常执行——那是它们该干活的时候；`skipped` 说明根因在上游，这里不掺和。
-- **已接线的作业**：`test-sqlite`（`id: vitest`）、`test-e2e`（`id: e2e`），清单写在
-  `scripts/check-ci-gate.mjs` 的 `CASCADE_JOBS`。新增分片/测试作业时在此登记一行，并给测试步骤补 `id:`。
-- **反向也管**：解析时先剥 YAML 注释行。步骤注释里解释口径会写出 `upload-artifact`、`junit-summary.mjs`
-  这些字样，整块正则会把**产出 junit 的测试步骤自己**判成遥测步骤——门禁把自己人判红，比漏判更快失去信任。
-- **测试**：`scripts/check-ci-gate.test.ts` 的第 6 组（现状绿 + 删守卫红 + 删 `id:` 红 + 注释不误判）。
+同日第二形态（test-web）：`if: always()` 的本意是「预算门禁红灯时也要出账」，但它把
+「build 根本没跑成」也算进来了——lint 一红 → build 被跳过 → `.next` 不存在 →
+账脚本与它那步 `if-no-files-found: error` 的上传各自再红一次。
+
+- **判据**（不限于 junit）：任何**读上游产物、且产物缺失时会把自己判红**的收尾步骤，必须以
+  `if: ${{ !cancelled() && steps.<锚点 id>.outcome != 'skipped' }}` 为条件。锚点跑过（成功或失败）
+  时照常执行——那是它们该干活的时候；`skipped` 说明根因在上游，这里不掺和。
+- **豁免**：`if-no-files-found: warn|ignore` 的上传缺文件也不会自己判红 ⇒ 不是级联源，不逼着挂守卫。
+  这是一条**会随改法失效**的豁免：把它改成 `error` 的那一刻它就变成级联源，守卫要求随即生效
+  （`test-e2e` 的 `playwright-report` 正走这条路，所以它列在 products 里）。
+- **已接线的作业**（`scripts/check-ci-gate.mjs` 的 `CASCADE_RULES`，每项 = 锚点 + 产物名正则）：
+  `test-sqlite`（`id: vitest`）、`test-e2e`（`id: e2e`）、`test-web`（`id: web-build`）。
+  新增分片/测试/产物型作业时在此登记一行，并给生产者步骤补 `id:`。
+  登记表是硬编码的，与「作业清单不硬编码」不冲突：聚合关系能从 YAML 推出来，
+  「这一步读的是哪个步骤的产物」推不出来。
+- **反向也管**（判定把自己人判红的三种形态）：① 解析时先剥 YAML 注释行——注释里解释口径会写出
+  `upload-artifact`、`junit-summary.mjs` 这些字样；② 锚点步骤自己不算消费者——它的 `run` 行本来就
+  带着产物名（`--outputFile.junit=junit-….xml`），不排除就会要求「测试步骤以自己的 outcome 为条件」；
+  ③ 豁免按 `if-no-files-found` 判定，不按「是不是上传步骤」判定。
+- **测试**：`scripts/check-ci-gate.test.ts` 的第 6 组（真实 ci.yml：现状绿 + 三处守卫各自回退必红 +
+  锚点 `id:` 消失必红 + 注释不误判）；`scripts/lib/ci-workflow.test.ts`（判定的三个分支用合成片段
+  逐个钉正反两面——真实 ci.yml 上每个分支只走一条路，「现状绿」证明不了另两条真的存在）。
 
 ---
 

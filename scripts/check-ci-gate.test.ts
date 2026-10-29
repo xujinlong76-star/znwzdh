@@ -86,21 +86,48 @@ describe("check-ci-gate 第 5 项：后端 lint 的阻塞通道", () => {
  * 第 6 项：级联红收敛（2026-10-29，run 40835496871）。
  *
  * typecheck 一红 → 测试步骤被跳过 → junit 不存在 → 红灯光谱/台账/上传三步仍按
- * `!cancelled()` 跑，各自再判一次红。四处红淹没一个根因，所以「读 junit 的收尾步骤
- * 必须以测试步骤 outcome 为条件」必须是可执行断言，而不是 ci.yml 里一段会被顺手删掉的注释。
+ * `!cancelled()` 跑，各自再判一次红。四处红淹没一个根因，所以「读产物的收尾步骤
+ * 必须以生产者 outcome 为条件」必须是可执行断言，而不是 ci.yml 里一段会被顺手删掉的注释。
  *
- * 这一组还钉住一个**反向**坑：判定不能把测试步骤自己当遥测步骤。HEAD 上就是这么坏的
+ * 这一组还钉住一个**反向**坑：判定不能把生产者步骤自己当消费者。HEAD 上就是这么坏的
  * （步骤注释里写了「与 upload-artifact 的口径一致」，门禁对着干净的 ci.yml 报红），
  * 所以「现状绿」和「注释里出现 upload-artifact 依然绿」是两条独立断言。
+ * 判定的三个分支（锚点自我排除 / 注释剥离 / ignore 豁免）在真实 ci.yml 上各只走一条路，
+ * 因此它们本身的正反面在 scripts/lib/ci-workflow.test.ts 用合成片段逐个钉。
  */
 describe("check-ci-gate 第 6 项：级联红收敛", () => {
-  it("仓库现状：读 junit 的收尾步骤都带 outcome 守卫 ⇒ 绿", () => {
+  it("仓库现状：读产物的收尾步骤都带 outcome 守卫 ⇒ 绿", () => {
     const source = readFileSync(REAL_CI, "utf8");
     expect(source).toContain("!cancelled() && steps.vitest.outcome != 'skipped'");
     expect(source).toContain("!cancelled() && steps.e2e.outcome != 'skipped'");
+    // test-web 的账读的是 next build 产物（2026-10-29 泛化）：锚点是 web-build
+    expect(source).toContain("id: web-build");
+    expect(source).toContain("!cancelled() && steps.web-build.outcome != 'skipped'");
     const res = runGate(REAL_CI, GATE_TEST);
     expect(res.status, res.out).toBe(0);
-    expect(res.out).toContain("级联红已按测试步骤 outcome 收敛");
+    expect(res.out).toContain("级联红已按产物生产者 outcome 收敛");
+  });
+
+  it("test-web 的守卫退回 if: always() ⇒ 红，账步骤与它的上传各点名一次", () => {
+    const source = readFileSync(REAL_CI, "utf8");
+    const guard = `!cancelled() && steps.web-build.outcome != 'skipped'`;
+    expect(source.split(guard).length - 1).toBe(2);
+    const weakened = source.replaceAll(guard, "always()");
+    const res = runGate(writeFixture("ci-web-unguarded.yml", weakened), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    // lint 一红 → build 被跳过 → `.next` 不存在：这两步各自再判一次红就是三处红，
+    // 所以两处都得点名，不能只报第一条。
+    expect(res.out).toContain("首屏预算账");
+    expect(res.out).toContain("bundle-budget-report");
+  });
+
+  it("web-build 这个锚点被改名 ⇒ 红：test-web 的守卫静默失效必须看得见", () => {
+    const orphaned = readFileSync(REAL_CI, "utf8").replace(/^(\s*)id: web-build\s*\r?\n/m, "");
+    expect(orphaned).not.toContain("id: web-build");
+    const res = runGate(writeFixture("ci-web-no-build-id.yml", orphaned), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("test-web");
+    expect(res.out).toContain("级联判据挂在它上面");
   });
 
   it("SQLite 的守卫被删回 !cancelled() ⇒ 红，并点名「红灯光谱」", () => {

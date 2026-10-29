@@ -242,7 +242,7 @@ describe("真实 CLI", () => {
 });
 
 describe("仓库接线", () => {
-  it("ci.yml 的分片与 E2E 作业都在测试步之后跑台账（--require-no-new）", () => {
+  it("ci.yml 的分片与 E2E 作业都在测试步之后跑台账（--require-no-new + --strict-ttl）", () => {
     const yml = readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8").replace(/\r\n/g, "\n");
     const sqlite = yml.indexOf("node scripts/ci-red-ledger.mjs --from junit-sqlite-${{ matrix.shard }}.xml");
     expect(sqlite).toBeGreaterThan(-1);
@@ -251,6 +251,16 @@ describe("仓库接线", () => {
     const e2e = yml.indexOf("node scripts/ci-red-ledger.mjs --from junit-e2e-${{ matrix.shard }}.xml");
     expect(e2e).toBeGreaterThan(-1);
     expect(yml.indexOf("PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit-e2e-${{ matrix.shard }}.xml")).toBeLessThan(e2e);
+
+    // TTL 到期升级必须真接在 CI 上：`--strict-ttl` 只在测试里绿、没进 workflow 等于没做。
+    // 按「run 行」取整行再断言两个旗标，防止旗标被挪到别的命令上。
+    const sqliteLine = yml.split("\n").find((l) => l.includes("node scripts/ci-red-ledger.mjs --from junit-sqlite-"));
+    const e2eLine = yml.split("\n").find((l) => l.includes("node scripts/ci-red-ledger.mjs --from junit-e2e-"));
+    for (const [label, line] of [["test-sqlite", sqliteLine], ["test-e2e", e2eLine]] as const) {
+      expect(line, `${label} 的台账步骤整行没找到`).toBeTruthy();
+      expect(line).toContain("--require-no-new");
+      expect(line, `${label} 的台账步骤缺 --strict-ttl（过期红不会升级）`).toContain("--strict-ttl");
+    }
   });
 
   it("跟踪路径上的台账存在且形状合法（坏账会把所有红都当已知）", () => {

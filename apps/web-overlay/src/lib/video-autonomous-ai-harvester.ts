@@ -15,6 +15,7 @@ import type {
 import type { VideoQuizQuestion } from '@/lib/video-quiz-generator'
 import { CURATED_TRENDING_TOPICS, type TrendingTechTopic } from '@/lib/video-trending-harvester'
 import { calculateFreshnessScore } from '@/lib/video-scoring'
+import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
 import { videoExternalKey } from '@/lib/video-identity'
 
 export interface AIEvaluationResult {
@@ -390,6 +391,11 @@ export class AutonomousAIHarvesterController {
       }
 
       // 2. Run AI Metadata Synthesis
+      //
+      // 合成元数据默认关闭：generateAISanitizedMetadata 是模板生成，不是模型输出。
+      // 关掉时只写真实抓到的字段（标题/作者/时长/发布时间），章节与字幕留空，
+      // 前端走「暂无章节」分支 —— 宁可少一块内容，也不要让用户把模板当视频原文。
+      const synthetic = syntheticMetadataEnabled()
       const meta = generateAISanitizedMetadata(
         topic.recommendedTitle,
         `系统化讲解 ${topic.keyword}。`,
@@ -397,16 +403,22 @@ export class AutonomousAIHarvesterController {
         evalResult.conceptTags
       )
 
-      this.addLog('ai_thought', `AI 成功为 "${meta.cleanTitle}" 生成 ${meta.chapters.length} 个结构化章节、${meta.transcripts.length} 条中文字幕与 ${meta.quizzes.length} 道课后测验`)
+      this.addLog(
+        'ai_thought',
+        synthetic
+          ? `已为 "${meta.cleanTitle}" 生成 ${meta.chapters.length} 个示例章节、${meta.transcripts.length} 条示例字幕与 ${meta.quizzes.length} 道课后测验（synthetic=true，UI 需标注）`
+          : `已跳过 "${meta.cleanTitle}" 的合成章节/字幕（NAVHUB_VIDEO_SYNTHETIC_METADATA 未开启）`,
+      )
 
       let targetCat = updatedCategories.find(c => c.id === topic.domain)
       if (!targetCat) {
         const domainTitleMap: Record<string, string> = {
           cat_ai_engineering: 'AI 与大模型工程',
-          cat_fullstack_architecture: '现代全栈与架构演进',
+          cat_fullstack_architecture: '现代全栈与微服务架构',
           cat_devops_cloud: '云原生与 DevOps 实战',
           cat_systems_perf: '系统底层与高性能计算',
-          cat_tools_indie: '开源神器与独立开发',
+          cat_database_bigdata: '现代存储引擎与海量数据架构',
+          cat_tools_indie: '开源神器与独立开发出海',
         }
         targetCat = {
           id: topic.domain,
@@ -423,7 +435,7 @@ export class AutonomousAIHarvesterController {
           id: `ai_auto_${topic.bvidFallback}_${Date.now()}`,
           title: meta.cleanTitle,
           href: `https://www.bilibili.com/video/${topic.bvidFallback}`,
-          description: meta.overview,
+          description: synthetic ? meta.overview : '',
           // 不写封面：此前这里对所有 AI 采集内容都用同一张 Unsplash 图，
           // 等于把图库内容伪装成「有配图」。留空后前端走平台占位。
           enabled: true,
@@ -448,8 +460,10 @@ export class AutonomousAIHarvesterController {
             trendKeyword: topic.keyword,
             pinned: false,
             healthStatus: 'healthy',
-            chapters: meta.chapters,
-            transcript: meta.transcripts,
+            // 合成元数据默认不写：模板章节/字幕会被误认为视频原文
+            ...(synthetic
+              ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true }
+              : {}),
             // stats 留空：原来写死 views:195000 / likes:14200 等，与真实播放量无关，
             // 却会被 calculateQualityScore 当输入用。
           },

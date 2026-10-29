@@ -6,10 +6,26 @@
  * 客户端需要的代理地址一律由页面在服务端签好后下发（见 withSignedVideoIcons）。
  */
 
-import { createHmac } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 
-const MEDIA_PROXY_SECRET = process.env.MEDIA_PROXY_SECRET || 'navhub-media-secret-key-default-2026'
+let _ephemeralSecret: string | null = null
+function getMediaProxySecret(): string {
+  if (process.env.MEDIA_PROXY_SECRET) {
+    return process.env.MEDIA_PROXY_SECRET
+  }
+  if (!_ephemeralSecret) {
+    // 动态生成进程级安全随机密钥，彻底杜绝仓库硬编码静态默认密钥被利用伪造 HMAC
+    _ephemeralSecret = randomBytes(32).toString('hex')
+    if (process.env.NODE_ENV === 'production') {
+      console.warn(
+        '[navhub][安全警告] 未配置 MEDIA_PROXY_SECRET，当前正使用进程级随机密钥。' +
+        '若需保障多实例集群或重启后签名一致，请在环境变量中设置 MEDIA_PROXY_SECRET。'
+      )
+    }
+  }
+  return _ephemeralSecret
+}
 
 // 白名单允许代理的图床域名
 const ALLOWED_MEDIA_DOMAINS = [
@@ -51,7 +67,7 @@ export function isSafeMediaHost(hostname: string): boolean {
  * 为合法的图片 URL 生成防篡改 HMAC-SHA256 签名
  */
 export function generateMediaSignature(rawUrl: string): string {
-  const hmac = createHmac('sha256', MEDIA_PROXY_SECRET)
+  const hmac = createHmac('sha256', getMediaProxySecret())
   hmac.update(rawUrl)
   return hmac.digest('hex').slice(0, 16)
 }

@@ -1,3 +1,4 @@
+export type VideoPlatformType = 'bilibili' | 'youtube' | 'douyin' | 'kuaishou' | 'xigua' | 'xiaohongshu' | 'tencent' | 'youku' | 'vimeo' | 'ted' | 'dailymotion' | 'peertube' | 'custom'
 // Raw types for JSON data (before validation)
 export interface VideoStats {
   views?: number
@@ -11,7 +12,7 @@ export interface VideoHarvestPolicy {
   enabled: boolean
   keywords: string[]
   syncSiteHotTrends?: boolean
-  platforms?: ('bilibili' | 'youtube')[]
+  platforms?: VideoPlatformType[]
   maxItems?: number
   minQualityScore?: number
   minDurationSec?: number
@@ -67,7 +68,7 @@ export function chapterStartSec(chapter: VideoChapter): number {
 }
 
 export interface VideoMirrorSource {
-  platform: 'bilibili' | 'youtube' | 'custom'
+  platform: VideoPlatformType
   id: string
   /**
    * 播放地址。**可选**：`resolveAvailableMirrors()` 从不填它 —— 播放器用
@@ -120,6 +121,11 @@ export interface VideoConfigRaw {
   lastVerifiedAt?: number
   /** 连续探测失败次数：达到阈值才允许自动删除（见 video-deadlink-sweeper） */
   failStreak?: number
+  /**
+   * 章节树 / 字幕 / 测验是否由模板合成（而非视频真实内容）。
+   * 为 true 时 UI 必须标注「示例大纲（非视频原字幕）」，不得呈现为 AI 提炼的真实内容。
+   */
+  synthetic?: boolean
   qualityScore?: number
   freshnessScore?: number
   sourceType?: 'manual' | 'auto_trend' | 'auto_topic' | 'webhook'
@@ -131,6 +137,12 @@ export interface VideoConfigRaw {
   mirrors?: VideoMirrorSource[]
   danmaku?: VideoDanmakuItem[]
   transcript?: VideoTranscriptItem[]
+  seoSlug?: string
+  seoTitle?: string
+  seoDescription?: string
+  seoKeywords?: string[]
+  indexable?: boolean
+  lastIndexedAt?: number
 }
 
 export interface NavigationSubItemRaw {
@@ -209,7 +221,7 @@ export interface VideoConfig {
    * 之前这里只有两个值，而 `video-deadlink-sweeper` 里写着 `config.type || 'custom'` ——
    * 那个兜底分支在类型上永远不可达，等于「非 B 站/YouTube 的内容无处可放」。
    */
-  type: 'bilibili' | 'youtube' | 'custom'
+  type: VideoPlatformType
   videoId?: string // simplified ID for youtube or bvid for bilibili
   bvid?: string
   aid?: string
@@ -229,11 +241,22 @@ export interface VideoConfig {
   healthStatus?: 'healthy' | 'outdated' | 'broken' | 'unverified'
   /** 连续探测失败次数：达到阈值才允许自动删除（见 video-deadlink-sweeper） */
   failStreak?: number
+  /**
+   * 章节树 / 字幕 / 测验是否由模板合成（而非视频真实内容）。
+   * 为 true 时 UI 必须标注「示例大纲（非视频原字幕）」，不得呈现为 AI 提炼的真实内容。
+   */
+  synthetic?: boolean
   stats?: VideoStats
   chapters?: VideoChapter[]
   mirrors?: VideoMirrorSource[]
   danmaku?: VideoDanmakuItem[]
   transcript?: VideoTranscriptItem[]
+  seoSlug?: string
+  seoTitle?: string
+  seoDescription?: string
+  seoKeywords?: string[]
+  indexable?: boolean
+  lastIndexedAt?: number
 }
 
 export interface NavigationCategoryRaw {

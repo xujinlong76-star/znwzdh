@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { runVideoHarvestAndRotation } from '@/lib/video-harvester'
 import { getFileContent, readStorageFresh } from '@/lib/github'
+import { videoTaskQueue } from '@/lib/video-task-queue'
 import { videoMetricsSnapshot } from '@/lib/video-harvest-metrics'
 import { readDocResilient } from '@/lib/video-doc-read'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
@@ -122,14 +123,43 @@ export async function POST(request: Request) {
     }
     const { dryRun = false, categoryId, forceKeywords } = body
 
-    const report = await runVideoHarvestAndRotation({
-      dryRun,
-      categoryId,
-      forceKeywords,
-      accessToken: authCheck.githubToken || undefined
-    })
+    /**
+     * 与异步任务入口共用同一把租约锁。
+     *
+     * 此前本端点直接跑采集、完全不取锁：手动点击与 Cron 撞车时，两边各自搜索、
+     * 各自整包写，只能靠 `ifVersion` 冲突重放兜底 —— 而重放的代价是**重新发起
+     * 全部网络搜索**（每轮 25s 预算），不是简单重试写入。
+     *
+     * TTL 给到 10 分钟：12 个分类 × 25s 预算的最坏情况是 300s，默认 5 分钟会
+     * 在任务跑完前过期，互斥就失效了。
+     */
+    const lockOwner = `harvest_sync_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const lock = videoTaskQueue.acquireLock(lockOwner, 10 * 60 * 1000)
+    if (!lock.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'harvest_in_progress',
+          message: lock.error ?? '已有采集任务正在执行，请稍后重试',
+          retryable: true,
+        },
+        { status: 409 }
+      )
+    }
 
-    return NextResponse.json({ success: true, report })
+    try {
+      const report = await runVideoHarvestAndRotation({
+        dryRun,
+        categoryId,
+        forceKeywords,
+        accessToken: authCheck.githubToken || undefined
+      })
+
+      return NextResponse.json({ success: true, report })
+    } finally {
+      // owner 必须与 acquire 时一致，否则锁只能等 TTL 自然过期
+      videoTaskQueue.releaseLock(lockOwner)
+    }
   } catch (error) {
     console.error('Failed to run video harvest and rotation:', error)
     return NextResponse.json(

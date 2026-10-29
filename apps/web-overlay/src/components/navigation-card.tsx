@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
 import { tagSlug } from '@/lib/seo/tag-slug'
 import { recordOfflineVisit } from '@/lib/offline-recent'
+import { getIdentity } from '@/lib/identity'
+import { reportClick } from '@/lib/navhub-api'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
 
 interface NavigationCardProps {
@@ -65,6 +67,8 @@ export function NavigationCard({
   const handleLinkClick = (e: React.MouseEvent) => {
     if (!selectable) {
       recordOfflineVisit({ id: item.id, title: item.title, href: item.href, icon: item.icon })
+      // 快照是「我能回看」，事件是「系统能学」：少了这行，sites.visit_count 永远是 0
+      reportClick(item.id, getIdentity())
       return
     }
     e.preventDefault()

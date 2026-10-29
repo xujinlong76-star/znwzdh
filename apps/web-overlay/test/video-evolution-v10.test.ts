@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterAll } from 'vitest'
 import {
   verifyWebhookSignature,
   parseBilibiliApiResponse,
@@ -31,6 +31,12 @@ import {
   StudyRoomCRDTState,
 } from '../src/lib/video-study-room-crdt'
 import type { NavigationData } from '../src/types/navigation'
+
+// mock 卫生守卫要求的兜底：上面用例已用 try/finally 清理，但 isolate:false 下
+// 用例被超时中断时 finally 不一定跑得掉，afterAll 是第二道保险。
+afterAll(() => {
+  delete process.env.NAVHUB_VIDEO_SYNTHETIC_METADATA
+})
 
 describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
   describe('Proposal [1]: Multi-Source Connector & Webhook Ingestion', () => {
@@ -117,7 +123,19 @@ describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
       expect(res.ok).toBe(true)
       expect(res.subItem).toBeDefined()
       expect(res.subItem?.videoConfig?.qualityScore).toBeGreaterThanOrEqual(70)
-      expect(res.subItem?.videoConfig?.chapters?.length).toBe(4)
+      // 合成章节默认关闭：模板内容不得冒充视频原文
+      expect(res.subItem?.videoConfig?.chapters).toBeUndefined()
+      expect(res.subItem?.videoConfig?.synthetic).toBeUndefined()
+
+      // 显式开启后才生成，且必须打 synthetic 标记供 UI 标注
+      process.env.NAVHUB_VIDEO_SYNTHETIC_METADATA = '1'
+      try {
+        const withSynthetic = connector.processWebhook(payload, signHmacSha256(rawBody, 'my_secret'), rawBody)
+        expect(withSynthetic.subItem?.videoConfig?.chapters?.length).toBe(4)
+        expect(withSynthetic.subItem?.videoConfig?.synthetic).toBe(true)
+      } finally {
+        delete process.env.NAVHUB_VIDEO_SYNTHETIC_METADATA
+      }
     })
   })
 

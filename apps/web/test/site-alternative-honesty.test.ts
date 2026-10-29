@@ -191,4 +191,20 @@ describe("界面层：档位说得出、拦得住", () => {
     expect(handler).toMatch(/if \(probe && !probe\.hasVerified\) \{\s*\n\s*toast\.warning/);
     expect(handler).toContain("本轮未实测，采纳前请人工打开确认");
   });
+
+  it("目标已在站内时如实说「已归档并关联既有条目」，不谎称站点被替换", () => {
+    const handler = modal.slice(modal.indexOf("const handleApplyAlternative"), modal.indexOf("const handleFetchAiAlternatives"));
+    // 必须是真的条件分支：只写个 res.merged 的引用（如 `false && res.merged`）骗不过这条
+    expect(handler).toMatch(/if \(res\.merged\) \{/);
+    expect(handler).toMatch(/toast\.info\([^)]*已在站内收录/);
+    // 两种结果的先后：先判 merged，再报「已成功替换」
+    expect(handler.indexOf("res.merged")).toBeLessThan(handler.indexOf("已成功替换为平替站点"));
+    // 中枢契约要带这两个字段，否则前端永远走不到合并分支
+    const api = readFileSync(resolve(overlayRoot(), "src/lib/navhub-api.ts"), "utf8");
+    const start = api.indexOf("export async function applySiteHealingAction");
+    const nextExport = api.indexOf("\nexport ", start + 10);
+    const fn = api.slice(start, nextExport === -1 ? undefined : nextExport);
+    expect(fn).toContain("merged?: { siteId: string; title: string; url: string }");
+    expect(fn).toContain("archivedSiteId?: string");
+  });
 });

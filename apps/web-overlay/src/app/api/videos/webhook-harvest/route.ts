@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { verifyAdminSession } from '@/lib/auth'
 import { mutateVideoLibrary } from '@/lib/video-library-store'
 import type { NavigationData } from '@/types/navigation'
 import {
@@ -24,8 +25,8 @@ export async function GET() {
       code: 0,
       data: {
         status: configured ? 'active' : 'disabled',
-        // 不配置密钥时明确告知：该端点不会接受任何写入
-        hint: configured ? undefined : '未配置 NAVHUB_VIDEO_WEBHOOK_SECRET，本端点已关闭',
+        // 不配置密钥时明确告知：该端点不会接受任何外部匿名写入
+        hint: configured ? undefined : '未配置 NAVHUB_VIDEO_WEBHOOK_SECRET，外部 Webhook 端点已关闭（管理员会话仍可在控制台直接调试）',
         endpoint: '/api/videos/webhook-harvest',
         supportedSources: ['bilibili', 'youtube', 'github_trending', 'custom'],
         signatureAlgorithm: 'HMAC-SHA256 over raw body (Header: X-Hub-Signature-256, 必须带 sha256= 前缀)',
@@ -42,7 +43,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    if (!WEBHOOK_SECRET) {
+    const adminCheck = await verifyAdminSession().catch(() => ({ ok: false as const }))
+    const isAdmin = Boolean(adminCheck.ok)
+
+    if (!WEBHOOK_SECRET && !isAdmin) {
       return NextResponse.json(
         { code: 503, message: 'Webhook 入口未启用：缺少 NAVHUB_VIDEO_WEBHOOK_SECRET' },
         { status: 503 }
@@ -74,7 +78,10 @@ export async function POST(request: Request) {
       )
     }
 
-    const processRes = connector.processWebhook(body, signature, rawBody)
+    const isTestCall = isAdmin && (request.headers.get('x-admin-test') === '1' || !WEBHOOK_SECRET || !signature)
+    const processRes = isTestCall
+      ? connector.processAdminTestPayload(body)
+      : connector.processWebhook(body, signature, rawBody)
 
     if (!processRes.ok || !processRes.subItem) {
       // 签名失败是鉴权问题（401），内容未过审是 422 —— 分开才能被监控区分

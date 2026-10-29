@@ -13,6 +13,7 @@ import {
   Check,
 } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
+import { VideoBilibiliHdPlayer } from '@/components/video-bilibili-hd-player'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,7 +53,7 @@ export function VideoMiniPlayer() {
 
   let embedUrl = ''
   if (platform === 'bilibili') {
-    embedUrl = `//player.bilibili.com/player.html?bvid=${encodeURIComponent(sourceId)}&page=1&autoplay=${isPlaying ? '1' : '0'}`
+    embedUrl = `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(sourceId)}&page=1&high_quality=1&autoplay=${isPlaying ? '1' : '0'}`
   } else if (platform === 'youtube') {
     embedUrl = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(sourceId)}?autoplay=${isPlaying ? '1' : '0'}`
   } else {
@@ -137,14 +138,29 @@ export function VideoMiniPlayer() {
 
       {/* Video Embed Frame */}
       <div className="relative aspect-video w-full bg-black">
-        <iframe
-          src={embedUrl}
-          className="w-full h-full border-0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-          title={activeVideo.title}
-        />
+        {platform === 'bilibili' ? (
+          <VideoBilibiliHdPlayer
+            key={`${activeVideo.id}-${sourceId}`}
+            bvid={/^\d+$/.test(sourceId) ? undefined : sourceId}
+            aid={/^\d+$/.test(sourceId) ? sourceId : activeVideo.videoConfig.aid}
+            cid={activeVideo.videoConfig.cid}
+            p={activeVideo.videoConfig.p || 1}
+            title={activeVideo.title}
+            poster={activeVideo.icon}
+            autoPlay={isPlaying}
+            compact={true}
+            className="w-full h-full"
+          />
+        ) : (
+          <iframe
+            src={embedUrl}
+            className="w-full h-full border-0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+            title={activeVideo.title}
+          />
+        )}
 
         {/* Hover Overlay Controls */}
         <div

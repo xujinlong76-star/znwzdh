@@ -1,4 +1,4 @@
-import type { NavigationData, NavigationSubItem, VideoReplacementRecord } from '@/types/navigation'
+import type { NavigationData, NavigationSubItem, VideoPlatformType, VideoReplacementRecord } from '@/types/navigation'
 import { videoLog } from './video-log'
 import { recordSweepRun } from '@/lib/video-harvest-metrics'
 
@@ -7,7 +7,7 @@ export const PRUNE_AFTER_CONSECUTIVE_FAILURES = 2
 export interface ProbeResult {
   videoId: string
   title: string
-  platform: 'bilibili' | 'youtube' | 'custom'
+  platform: VideoPlatformType
   healthy: boolean
   /**
    * 探活三态。

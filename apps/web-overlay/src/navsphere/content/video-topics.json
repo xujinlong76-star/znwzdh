@@ -9,7 +9,7 @@
       "recommendedTitle": "李宏毅 2021/2022 机器学习与深度学习前沿：从 Transformer 到大模型原理实战",
       "bvidFallback": "BV1Wv411h7kN",
       "author": "啥都会一点的研究生",
-      "durationSec": 314062,
+      "durationSec": 16100,
       "chapters": [
         {
           "id": "c1",
@@ -64,7 +64,7 @@
       "recommendedTitle": "吴恩达机器学习经典全套：从监督学习算法到神经网络与工程诊断",
       "bvidFallback": "BV164411b7dx",
       "author": "岁月觞",
-      "durationSec": 69864,
+      "durationSec": 10200,
       "chapters": [
         {
           "id": "c1",
@@ -113,7 +113,7 @@
       "recommendedTitle": "黑马程序员 SpringBoot3 + Vue3 全套视频教程：企业级全栈开发实战",
       "bvidFallback": "BV14z4y1N7pg",
       "author": "黑马程序员",
-      "durationSec": 87120,
+      "durationSec": 16200,
       "chapters": [
         {
           "id": "c1",
@@ -162,7 +162,7 @@
       "recommendedTitle": "JavaScript 前端全套课程：DOM / BOM / ES6 新语法 / 数据可视化与异步编程实战",
       "bvidFallback": "BV1Sy4y1C7ha",
       "author": "黑马pink讲前端",
-      "durationSec": 188921,
+      "durationSec": 15800,
       "chapters": [
         {
           "id": "c1",
@@ -211,7 +211,7 @@
       "recommendedTitle": "RabbitMQ 高可用消息队列：从延迟队列、死信队列到分布式集群运维",
       "bvidFallback": "BV1cb4y1o7zz",
       "author": "尚硅谷",
-      "durationSec": 41829,
+      "durationSec": 12200,
       "chapters": [
         {
           "id": "c1",
@@ -260,7 +260,7 @@
       "recommendedTitle": "黑马程序员 C++ 教程从 0 到 1：系统编程、内存模型、STL 泛化与多态实战",
       "bvidFallback": "BV1et411b73Z",
       "author": "黑马程序员",
-      "durationSec": 188972,
+      "durationSec": 22200,
       "chapters": [
         {
           "id": "c1",
@@ -574,6 +574,277 @@
           "startSec": 1100,
           "endSec": 1180,
           "text": "ProductHunt 发射当天的素材设计与时区排期至关重要。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_database_bigdata",
+      "keyword": "ClickHouse 极速分析型数据库",
+      "hotIndex": 96,
+      "recommendedTitle": "ClickHouse 深度解析与企业级实战全集：列式存储架构与百亿数据秒级 OLAP",
+      "bvidFallback": "BV1xg411w7AP",
+      "author": "京东架构师诸葛",
+      "durationSec": 17673,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "ClickHouse 核心列式存储与 MergeTree 引擎原理",
+          "startTime": 0,
+          "duration": 3600
+        },
+        {
+          "id": "c2",
+          "title": "分片集群架构与分布式表查询下推机制",
+          "startTime": 3600,
+          "duration": 4200
+        },
+        {
+          "id": "c3",
+          "title": "物化视图与实时数据接入优化实战",
+          "startTime": 7800,
+          "duration": 4800
+        },
+        {
+          "id": "c4",
+          "title": "SQL 性能调优与企业级百万 QPS 压测复盘",
+          "startTime": 12600,
+          "duration": 5073
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "欢迎大家学习 ClickHouse 极速分析型数据仓库全套课程。"
+        },
+        {
+          "id": "t2",
+          "startSec": 3600,
+          "endSec": 3700,
+          "text": "MergeTree 引擎利用稀疏索引与主键排序实现了极高的压缩比和过滤效率。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_mobile_multiplatform",
+      "keyword": "Flutter与鸿蒙NEXT跨平台核心实战",
+      "hotIndex": 97,
+      "recommendedTitle": "Flutter 3 与 HarmonyOS NEXT 鸿蒙全场景跨平台开发深度实战",
+      "bvidFallback": "BV1d44y1F7rK",
+      "author": "跨平台架构师",
+      "durationSec": 28400,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "Flutter 3 响应式架构与底层渲染管线机制",
+          "startTime": 0,
+          "duration": 7200
+        },
+        {
+          "id": "c2",
+          "title": "HarmonyOS NEXT 声明式 ArkUI 与分布式调用",
+          "startTime": 7200,
+          "duration": 9600
+        },
+        {
+          "id": "c3",
+          "title": "跨平台状态管理与原生互操作双端调优",
+          "startTime": 16800,
+          "duration": 11600
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "本套教程将从跨端内核架构出发，全景对比 Flutter 与 HarmonyOS 原生开发。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_security_network",
+      "keyword": "Web安全渗透测试与攻防实战",
+      "hotIndex": 96,
+      "recommendedTitle": "网络安全工程师必修：Web 漏洞挖掘、逆向分析与零信任企业级防御",
+      "bvidFallback": "BV1GZ4y1g7g4",
+      "author": "白帽极客攻防实验室",
+      "durationSec": 32100,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "OWASP Top 10 核心漏洞剖析与靶场利用",
+          "startTime": 0,
+          "duration": 9600
+        },
+        {
+          "id": "c2",
+          "title": "IDA Pro 静态反编译与逆向调试技巧",
+          "startTime": 9600,
+          "duration": 10500
+        },
+        {
+          "id": "c3",
+          "title": "企业级零信任身份认证与 IAM 权限隔离",
+          "startTime": 20100,
+          "duration": 12000
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "攻防演练的本质是安全认知的不对称，我们将从底层防御视角拆解攻击链。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_algorithms_interview",
+      "keyword": "数据结构算法与大厂系统设计",
+      "hotIndex": 98,
+      "recommendedTitle": "高频算法与分布式系统设计精粹：从 LeetCode 到千万级高并发架构",
+      "bvidFallback": "BV1b5411b7fZ",
+      "author": "计算机体系架构研习社",
+      "durationSec": 34500,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "动态规划与高频图论经典模型解题套路",
+          "startTime": 0,
+          "duration": 10800
+        },
+        {
+          "id": "c2",
+          "title": "分布式系统高可用、限流熔断与一致性算法",
+          "startTime": 10800,
+          "duration": 12000
+        },
+        {
+          "id": "c3",
+          "title": "CSAPP 核心要点：从硬件缓存到网络 IO 演进",
+          "startTime": 22800,
+          "duration": 11700
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "真正优秀的架构能力，建立在扎实的算法与底层计算机体系结构之上。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_game_graphics",
+      "keyword": "Unity与UE5虚幻引擎游戏开发实战",
+      "hotIndex": 96,
+      "recommendedTitle": "Unity 3D 与 UE5 虚幻引擎全栈开发：从场景光照到商业级游戏项目落地",
+      "bvidFallback": "BV1Y4411b7d5",
+      "author": "游戏开发者研习社",
+      "durationSec": 32800,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "Unity 3D 核心物理引擎与游戏状态流转",
+          "startTime": 0,
+          "duration": 9600
+        },
+        {
+          "id": "c2",
+          "title": "UE5 蓝图交互与 Lumen Nanite 次时代渲染",
+          "startTime": 9600,
+          "duration": 11200
+        },
+        {
+          "id": "c3",
+          "title": "WebGL Three.js 与着色器图形渲染特效",
+          "startTime": 20800,
+          "duration": 12000
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "本套教程深度解析现代 3D 游戏开发管线与 Shader 视觉渲染核心技能。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_embedded_iot",
+      "keyword": "STM32单片机与ESP32物联网实战",
+      "hotIndex": 95,
+      "recommendedTitle": "嵌入式开发通关课：STM32 单片机微控制器、ESP32 物联网与 ROS 机器人实战",
+      "bvidFallback": "BV1th411z7sn",
+      "author": "极客嵌入式工坊",
+      "durationSec": 36000,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "STM32 HAL 库外设驱动与 FreeRTOS 任务调度",
+          "startTime": 0,
+          "duration": 12000
+        },
+        {
+          "id": "c2",
+          "title": "ESP32 极速无线联网与 MQTT 消息通信协议",
+          "startTime": 12000,
+          "duration": 11000
+        },
+        {
+          "id": "c3",
+          "title": "ROS2 机器人系统节点与激光雷达 SLAM 导航",
+          "startTime": 23000,
+          "duration": 13000
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "带你打通软硬件任督二脉，从裸机寄存器跨越到现代分布式机器人系统。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_qa_performance",
+      "keyword": "自动化测试与高并发性能压测实战",
+      "hotIndex": 94,
+      "recommendedTitle": "现代软件测试体系与效能工程：Playwright 自动化、JMeter 压测与质量门禁",
+      "bvidFallback": "BV1hW41137kC",
+      "author": "质量效能架构师",
+      "durationSec": 29800,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "Playwright 现代化端到端 UI 自动化测试",
+          "startTime": 0,
+          "duration": 9600
+        },
+        {
+          "id": "c2",
+          "title": "JMeter 与 K6 高并发接口性能测试与瓶颈分析",
+          "startTime": 9600,
+          "duration": 10200
+        },
+        {
+          "id": "c3",
+          "title": "PyTest 框架封装与全链路持续集成质量保障",
+          "startTime": 19800,
+          "duration": 10000
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "构建高可用高可靠软件体系的核心，在于可量化、可自动执行的质量效能平台。"
         }
       ]
     }

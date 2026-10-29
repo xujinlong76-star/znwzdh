@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import { safeHref } from '@/lib/safe-url'
+import { jsonLdScript } from '@/lib/seo/json-ld'
+import { buildVideoEmbedUrlForSeo } from '@/lib/video-seo'
+import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
 import {
   chapterStartSec,
   type NavigationData,
@@ -80,6 +84,7 @@ import {
   BrainCircuit,
   Webhook,
   Box,
+  Shuffle,
 } from 'lucide-react'
 import { Button } from "@/registry/new-york/ui/button"
 import Link from 'next/link'
@@ -104,6 +109,7 @@ import { saveStudyNote, listStudyNotes, exportNotesAsMarkdown, type VideoStudyNo
 import { getStoredDanmaku, saveDanmakuItem } from '@/lib/video-danmaku-engine'
 import { getP2PStreamCoordinator } from '@/lib/p2p-stream-loader'
 // 常驻组件：随播放器一起在首屏渲染，保持静态导入
+import { VideoBilibiliHdPlayer, BILI_ENGINE_OPTIONS } from '@/components/video-bilibili-hd-player'
 import { VideoHeatmapTimeline } from '@/components/video-heatmap-timeline'
 import { VideoKaraokeSubtitles } from '@/components/video-karaoke-subtitles'
 import { VideoNetworkSentinel } from '@/components/video-network-sentinel'
@@ -191,7 +197,9 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     const [availableMirrors, setAvailableMirrors] = useState<VideoMirrorSource[]>([])
     const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null)
     const [inWatchLater, setInWatchLater] = useState(false)
+    const [currentTimeSec, setCurrentTimeSec] = useState<number>(0)
     const [chapterSeekSec, setChapterSeekSec] = useState<number | null>(null)
+    const [biliEngine, setBiliEngine] = useState<string>('auto')
     const [showPosterDialog, setShowPosterDialog] = useState<boolean>(false)
 
     // WebGPU 画质超分辨率与锐化
@@ -636,7 +644,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             videoId: selectedVideo.id,
             videoTitle: selectedVideo.title,
-            timeSec: chapterSeekSec || 0,
+            timeSec: currentTimeSec || chapterSeekSec || 0,
             userNote: newNoteText.trim(),
             codeSnippet: sandboxCode.includes('DevOps code sandbox running') ? undefined : sandboxCode,
             createdAt: new Date().toISOString(),
@@ -652,7 +660,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         if (e) e.preventDefault()
         if (!selectedVideo || !newDanmakuText.trim()) return
         const created = saveDanmakuItem(selectedVideo.id, {
-            timeSec: chapterSeekSec || 0,
+            timeSec: currentTimeSec || chapterSeekSec || 0,
             text: newDanmakuText.trim(),
             isPitfallWarning: isPitfallDanmaku,
             color: isPitfallDanmaku ? '#f97316' : '#ffffff',
@@ -760,29 +768,29 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         const sourceId = activeMirror?.sourceId || selectedVideo.videoConfig.bvid || selectedVideo.videoConfig.videoId || ''
 
         if (platform === 'bilibili') {
-            const queryParams: string[] = ['isOutside=true', 'p=1', 'autoplay=1']
-            if (sourceId.startsWith('BV') || sourceId.startsWith('bv')) {
-                queryParams.push(`bvid=${sourceId}`)
-            } else if (/^\d+$/.test(sourceId)) {
-                queryParams.push(`aid=${sourceId}`)
-            } else {
-                queryParams.push(`bvid=${sourceId}`)
-            }
-            if (chapterSeekSec !== null && chapterSeekSec > 0) {
-                queryParams.push(`t=${chapterSeekSec}`)
-            }
-            const src = `//player.bilibili.com/player.html?${queryParams.join('&')}`
+            const isAid = /^\d+$/.test(sourceId)
+            const resolvedBvid = !isAid ? (sourceId || selectedVideo.videoConfig.bvid) : undefined
+            const resolvedAid = isAid ? sourceId : selectedVideo.videoConfig.aid
 
             return (
                 <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl relative">
-                    <iframe
-                        key={`${selectedVideo.id}-${activeMirror?.id || 'primary'}-${chapterSeekSec || 0}`}
-                        src={src}
-                        scrolling="no"
-                        frameBorder="0"
-                        allowFullScreen={true}
-                        className="w-full h-full border-0"
-                    ></iframe>
+                    <VideoBilibiliHdPlayer
+                        key={`${selectedVideo.id}-${activeMirror?.id || 'primary'}`}
+                        bvid={resolvedBvid}
+                        aid={resolvedAid}
+                        cid={selectedVideo.videoConfig.cid}
+                        p={selectedVideo.videoConfig.p || 1}
+                        title={selectedVideo.title}
+                        poster={selectedVideo.icon}
+                        autoPlay={true}
+                        seekSec={chapterSeekSec}
+                        preferredEngine={biliEngine}
+                        onEngineChange={(eng) => setBiliEngine(eng)}
+                        onTimeUpdateSec={(curSec) => {
+                            setCurrentTimeSec(Math.floor(curSec))
+                        }}
+                        className="w-full h-full"
+                    />
                 </div>
             )
         }
@@ -807,23 +815,75 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             )
         }
 
-        if (platform === 'custom') {
+        const embedUrl =
+            buildVideoEmbedUrlForSeo({
+                ...selectedVideo.videoConfig,
+                type: platform,
+                videoId: sourceId,
+            }) || (platform === 'custom' ? safeHref(sourceId || selectedVideo.href) : undefined)
+
+        if (embedUrl && /\.(mp4|webm|ogg)(\?.*)?$/i.test(embedUrl)) {
+            return (
+                <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl relative">
+                    <video
+                        key={`${selectedVideo.id}-${activeMirror?.id || 'direct'}`}
+                        src={embedUrl}
+                        poster={selectedVideo.icon}
+                        controls
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-contain"
+                        onTimeUpdate={(e) => setCurrentTimeSec(Math.floor(e.currentTarget.currentTime))}
+                    />
+                </div>
+            )
+        }
+
+        if (embedUrl) {
             return (
                 <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl relative">
                     <iframe
-                        key={`${selectedVideo.id}-${activeMirror?.id || 'custom'}`}
+                        key={`${selectedVideo.id}-${activeMirror?.id || platform}`}
                         className="w-full h-full"
-                        src={sourceId}
+                        src={embedUrl}
                         title={selectedVideo.title}
                         frameBorder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         allowFullScreen
+                        referrerPolicy="strict-origin-when-cross-origin"
                     ></iframe>
                 </div>
             )
         }
 
-        return null
+        const platformMeta = VIDEO_PLATFORM_REGISTRY[platform] || VIDEO_PLATFORM_REGISTRY.custom
+        return (
+            <div className="w-full aspect-video bg-slate-950 rounded-xl overflow-hidden shadow-2xl flex flex-col items-center justify-center p-6 text-center space-y-3 border border-border/50">
+                <PlayCircle className="w-12 h-12 text-primary/70" />
+                <p className="text-sm font-medium text-foreground">{selectedVideo.title}</p>
+                <p className="text-xs text-muted-foreground">
+                    当前视频来自 {platformMeta.name}，支持跳转至独立 SEO 详情页或原站播放
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                    {selectedVideo.href && (
+                        <a
+                            href={safeHref(selectedVideo.href)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90"
+                        >
+                            前往 {platformMeta.shortName} 观看 ↗
+                        </a>
+                    )}
+                    <Link
+                        href={`/videos/v/${encodeURIComponent(selectedVideo.id)}`}
+                        className="px-3.5 py-1.5 rounded-lg border border-border text-xs hover:bg-accent"
+                    >
+                        打开 SEO 收录详情页
+                    </Link>
+                </div>
+            </div>
+        )
     }
 
     const renderVideoItem = (item: NavigationSubItem) => {
@@ -927,7 +987,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             {videoSchema && (
                 <script
                     type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(videoSchema) }}
+                    dangerouslySetInnerHTML={{ __html: jsonLdScript(videoSchema) }}
                 />
             )}
 
@@ -1148,6 +1208,44 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                     </DropdownMenu>
                                 )}
 
+                                {/* B 站 6 级备用解析引擎手动切换 */}
+                                {Boolean(selectedVideo && (selectedVideo.videoConfig?.type === 'bilibili' || selectedVideo.videoConfig?.bvid || selectedVideo.videoConfig?.aid)) && (
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-8 gap-1.5 text-xs text-[#FB7299] border-[#FB7299]/30 hover:bg-[#FB7299]/10 cursor-pointer"
+                                                title="手动选择 B 站备用解析接口"
+                                            >
+                                                <Shuffle className="w-3.5 h-3.5" />
+                                                <span>B站换源: {BILI_ENGINE_OPTIONS.find(o => o.id === biliEngine)?.shortLabel || '自动优选'}</span>
+                                                <ChevronDown className="w-3 h-3 opacity-60" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="start" className="w-64 text-xs">
+                                            <div className="px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground border-b">
+                                                B 站 6 级备用解析引擎（点击手动切换）
+                                            </div>
+                                            {BILI_ENGINE_OPTIONS.map(opt => (
+                                                <DropdownMenuItem
+                                                    key={opt.id}
+                                                    onClick={() => setBiliEngine(opt.id)}
+                                                    className="flex items-center justify-between py-1.5 cursor-pointer"
+                                                >
+                                                    <div className="flex flex-col min-w-0 pr-2">
+                                                        <span className="font-medium text-foreground">{opt.name}</span>
+                                                        <span className="text-[10px] text-muted-foreground truncate">{opt.desc}</span>
+                                                    </div>
+                                                    {(biliEngine === opt.id || (!biliEngine && opt.id === 'auto')) && (
+                                                        <Check className="w-3.5 h-3.5 text-[#FB7299] shrink-0" />
+                                                    )}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                )}
+
                                 {/* 稍后再看 */}
                                 <Button
                                     variant={inWatchLater ? 'default' : 'outline'}
@@ -1170,6 +1268,22 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                     <ListCollapse className="w-3.5 h-3.5 text-primary" />
                                     <span>AI 章节 ({chapters.length})</span>
                                 </Button>
+
+                                {/* 独立 SEO 收录落地页入口 */}
+                                {selectedVideo && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 gap-1.5 text-xs"
+                                        asChild
+                                        title="查看搜索引擎收录专用的结构化语义落地页 (/videos/v/[id])"
+                                    >
+                                        <Link href={`/videos/v/${encodeURIComponent(selectedVideo.id)}`}>
+                                            <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                                            <span>SEO 收录页</span>
+                                        </Link>
+                                    </Button>
+                                )}
 
                                 {/* 演练沙箱入口 */}
                                 <Button

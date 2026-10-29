@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
-import { Webhook, Radio, Send, CheckCircle2, ShieldCheck, Copy, Check, Terminal, ExternalLink } from 'lucide-react'
+import { Webhook, Radio, Send, Copy, Check, Terminal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/clipboard'
 
@@ -19,8 +19,34 @@ export function VideoMultisourceWebhookDialog({
   const [copied, setCopied] = useState<boolean>(false)
   const [isDispatching, setIsDispatching] = useState<boolean>(false)
   const [responseLog, setResponseLog] = useState<string | null>(null)
+  const [endpointStatus, setEndpointStatus] = useState<{ configured: boolean; text: string }>({
+    configured: false,
+    text: '正在检查端点状态...',
+  })
 
   const webhookEndpoint = typeof window !== 'undefined' ? `${window.location.origin}/api/videos/webhook-harvest` : '/api/videos/webhook-harvest'
+
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    fetch('/api/videos/webhook-harvest')
+      .then(res => res.json())
+      .then(res => {
+        if (!active) return
+        if (res?.data?.status === 'active') {
+          setEndpointStatus({ configured: true, text: 'Active / 200 OK' })
+        } else {
+          setEndpointStatus({ configured: false, text: '仅管理员测试 (未配置外部密钥)' })
+        }
+      })
+      .catch(() => {
+        if (!active) return
+        setEndpointStatus({ configured: false, text: '离线' })
+      })
+    return () => {
+      active = false
+    }
+  }, [open])
 
   const samplePayload = {
     event: 'video_published',
@@ -47,14 +73,14 @@ export function VideoMultisourceWebhookDialog({
 
   const handleSendTestWebhook = async () => {
     setIsDispatching(true)
-    setResponseLog('📡 正在向服务端 Webhook 路由发送测试负载...')
+    setResponseLog('📡 正在向服务端 Webhook 路由发送测试负载（带管理员安全调试上下文）...')
 
     try {
       const res = await fetch('/api/videos/webhook-harvest', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-hub-signature-256': 'navhub_video_webhook_secret_2026',
+          'x-admin-test': '1',
         },
         body: JSON.stringify(samplePayload),
       })
@@ -93,8 +119,13 @@ export function VideoMultisourceWebhookDialog({
                 <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
                 <span>对外监听接收端点 (Webhook Listener)</span>
               </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Active / 200 OK
+              <span className={cn(
+                "px-2 py-0.5 rounded text-[10px] font-mono border",
+                endpointStatus.configured
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+              )}>
+                {endpointStatus.text}
               </span>
             </div>
             <div className="flex items-center gap-2">

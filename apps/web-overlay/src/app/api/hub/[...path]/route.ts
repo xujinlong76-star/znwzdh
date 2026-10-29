@@ -19,6 +19,7 @@ import {
   upstreamTimeoutMs,
 } from '@/lib/hub-proxy'
 import { hubIdentitySecret, identityFromRequest, identitySignatureHeaders, signIdentity } from '@/lib/identity-signature'
+import { decideHubRequest } from '@/lib/hub-route-policy'
 
 /**
  * /api/hub/* 代理：把请求转发到 NavHub 中枢。
@@ -62,20 +63,28 @@ function bodyLimitFor(cleanPath: string[]): number {
 async function forward(request: NextRequest, path: string[]): Promise<Response> {
   const url = new URL(request.url)
   const cleanPath = path[0] === 'api' ? path.slice(1) : path
+  const method = request.method.toUpperCase()
   const normalizedBase = HUB_BASE.endsWith('/api') ? HUB_BASE.slice(0, -4) : HUB_BASE
   const target = normalizedBase + '/api/' + cleanPath.join('/') + url.search
 
-  // 管理面隧道守卫（安全边界）：/api/hub/admin/* 是中枢管理 API 经 web 域名的
-  // 唯一公网入口——此前匿名访客可经此隧道直达中枢管理接口（hub 开放模式下
-  // 匿名拥有全部 scope），web 侧 /api/admin/* 的 requireAdmin 只护住了 GitHub
-  // 读写，护不住这条隧道。这里强制管理员会话；已登录管理员在下方自动注入
-  // 服务端管理凭据，行为不变。
-  if (cleanPath[0] === 'admin') {
+  // 能力判决（安全边界）：此前只护住 /admin/*，其余路径在枢纽「开放模式」
+  // （匿名=全量 scope）下可被匿名直达——实测可下载全站备份、读 Token 名册、
+  // 执行 VACUUM 与批量写入。策略表来自枢纽自己的 config.scope 声明：
+  // public 放行，read/write/admin 一律要求管理员会话，清单外默认拒绝。
+  // 见 lib/hub-route-policy.ts 与 test/hub-route-policy.test.ts。
+  const policy = decideHubRequest(cleanPath, method)
+  if (policy.access === 'deny') {
+    return NextResponse.json(
+      { error: '接口未在网关策略中登记，已拒绝', code: 'HUB_ROUTE_UNCLASSIFIED', detail: policy.reason },
+      { status: 403, headers: { 'cache-control': 'no-store' } },
+    )
+  }
+  if (policy.access === 'admin') {
     const gate = await verifyAdminSession()
     if (!gate.ok) {
       return NextResponse.json(
-        { error: gate.error ?? '需要管理员身份' },
-        { status: gate.status ?? 403 },
+        { error: gate.error ?? '需要管理员身份', code: 'HUB_ROUTE_FORBIDDEN' },
+        { status: gate.status ?? 403, headers: { 'cache-control': 'no-store' } },
       )
     }
   }
@@ -115,7 +124,6 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const xff = sanitizeForwardedFor(request.headers.get('x-forwarded-for'))
   if (xff) headers['x-forwarded-for'] = xff
 
-  const method = request.method.toUpperCase()
   const hasBody = method !== 'GET' && method !== 'HEAD'
   // 先看声明长度：request.text() 会把整个请求体读进内存，事后再判 1MB 上限
   // 等于先让任意大包把进程内存打满（chunked 无 content-length 时靠下面的兜底）。

@@ -1,15 +1,18 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { cn } from '@/lib/utils'
 import { safeWindowOpen } from '@/lib/safe-url'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { PlayCircle, Clock, Check, Download, Bookmark } from 'lucide-react'
+import { PlayCircle, Clock, Check, Download, Bookmark, Play, Eye, User, ExternalLink, Sparkles, MonitorPlay } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { formatDuration } from '@/lib/video-format'
 import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 import { saveOfflineVideo, isOfflineVideo } from '@/lib/offline-video-cache'
+import { VideoBilibiliHdPlayer } from '@/components/video-bilibili-hd-player'
 import Image from 'next/image'
+import Link from 'next/link'
 
 interface VideoCardProps {
     item: NavigationSubItem
@@ -64,10 +67,12 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
             : `/${item.icon}`
         : item.icon || ''
 
-    // 处理可能以 // 开头的 URL
+    // 处理可能以 // 或 http:// 开头的 URL，统一升级为 https:// 防止 Mixed Content 警告
     const rawCoverPath = coverPath.startsWith('//')
         ? `https:${coverPath}`
-        : coverPath
+        : coverPath.startsWith('http://')
+            ? `https://${coverPath.slice('http://'.length)}`
+            : coverPath
 
     // 默认尝试直链；触发防盗链拦截或 CDN 错误时，降级到服务端预签的代理地址
     // （签名不能在这里现算：node:crypto 会把 buffer/crypto 垫片打进客户端包）
@@ -101,25 +106,17 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
 
         if (videoConfig.type === 'bilibili') {
             const { bvid, aid, cid, p = 1 } = videoConfig
-            const queryParams: string[] = ['isOutside=true', `p=${p}`, 'autoplay=1']
-            if (bvid) {
-                queryParams.push(`bvid=${bvid}`)
-            } else if (aid) {
-                queryParams.push(`aid=${aid}`)
-                if (cid) queryParams.push(`cid=${cid}`)
-            }
-            const src = `//player.bilibili.com/player.html?${queryParams.join('&')}`
-
             return (
-                <div className="w-full aspect-video">
-                    <iframe
-                        src={src}
-                        scrolling="no"
-                        frameBorder="0"
-                        allowFullScreen={true}
-                        className="w-full h-full rounded-lg border-0"
-                    ></iframe>
-                </div>
+                <VideoBilibiliHdPlayer
+                    bvid={bvid}
+                    aid={aid}
+                    cid={cid}
+                    p={p}
+                    title={item.title}
+                    poster={normalizedCoverPath || undefined}
+                    autoPlay={true}
+                    className="rounded-lg"
+                />
             )
         }
 
@@ -145,20 +142,26 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
     // 获取平台标识
     const getPlatformBadge = () => {
         return (
-            <div className="absolute top-2 left-2 flex items-center gap-1.5 z-10">
+            <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
                 {videoConfig?.type === 'bilibili' && (
-                    <span className="px-2 py-0.5 text-xs font-medium bg-pink-500/90 text-white rounded-md backdrop-blur-sm">
+                    <span className="px-2 py-0.5 text-[11px] font-semibold bg-[#FB7299] text-white rounded-md shadow-xs backdrop-blur-md tracking-tight">
                         bilibili
                     </span>
                 )}
                 {videoConfig?.type === 'youtube' && (
-                    <span className="px-2 py-0.5 text-xs font-medium bg-red-600/90 text-white rounded-md backdrop-blur-sm">
+                    <span className="px-2 py-0.5 text-[11px] font-semibold bg-[#FF0000] text-white rounded-md shadow-xs backdrop-blur-md tracking-tight">
                         YouTube
                     </span>
                 )}
                 {videoConfig?.sourceType === 'auto_trend' && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/90 text-white rounded-md backdrop-blur-sm">
-                        🔥 热点
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/95 text-amber-950 dark:text-amber-100 rounded-md shadow-xs backdrop-blur-md">
+                        🔥 热门
+                    </span>
+                )}
+                {videoConfig?.qualityScore && videoConfig.qualityScore >= 90 && (
+                    <span className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold bg-violet-600/90 text-white rounded-md shadow-xs backdrop-blur-md">
+                        <Sparkles className="w-2.5 h-2.5" />
+                        精选
                     </span>
                 )}
             </div>
@@ -212,13 +215,13 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                     )}
 
                     {/* 播放按钮遮罩 */}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-300 
-                                    flex items-center justify-center">
-                        <div className="w-14 h-14 rounded-full bg-white/90 dark:bg-white/80 
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/35 backdrop-blur-[1px] transition-all duration-300 
+                                    flex items-center justify-center pointer-events-none">
+                        <div className="w-12 h-12 rounded-full bg-white/95 dark:bg-white/90 text-primary 
                                         flex items-center justify-center opacity-0 group-hover:opacity-100 
                                         transform scale-75 group-hover:scale-100 transition-all duration-300
-                                        shadow-lg">
-                            <PlayCircle className="w-8 h-8 text-primary fill-primary/20" />
+                                        shadow-xl">
+                            <Play className="w-5 h-5 ml-0.5 fill-current" />
                         </div>
                     </div>
 
@@ -227,7 +230,7 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
 
                     {/* 时长角标 */}
                     {videoConfig?.durationSec ? (
-                        <span className="absolute bottom-2 right-2 px-1.5 py-0.5 text-[11px] font-mono font-medium bg-black/75 text-white rounded backdrop-blur-xs z-10">
+                        <span className="absolute bottom-2.5 right-2.5 px-2 py-0.5 text-[11px] font-mono font-medium bg-black/80 text-white/95 rounded-md backdrop-blur-md shadow-xs z-10">
                             {formatDuration(videoConfig.durationSec)}
                         </span>
                     ) : null}
@@ -237,29 +240,33 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                 </div>
 
                 {/* 标题区域 */}
-                <div className="p-[var(--density-card-padding,0.75rem)] space-y-1.5">
+                <div className="p-3.5 space-y-1.5">
                     {/* button 只允许 phrasing content：标题用 span，
                         卡片名由可见文本提供，封面 alt 留空避免重复朗读 */}
-                    <span className="block font-medium text-sm leading-snug line-clamp-2 
-                                   group-hover:text-primary transition-colors duration-200">
+                    <span className="block font-semibold text-sm leading-snug line-clamp-2 text-foreground 
+                                   group-hover:text-primary transition-colors duration-200 min-h-[2.5rem]">
                         {item.title}
                     </span>
 
                     {videoConfig?.author && (
-                        <div className="text-[11px] text-muted-foreground/80 flex items-center justify-between">
-                            <span className="truncate">{videoConfig.author}</span>
+                        <div className="text-[11px] text-muted-foreground/80 flex items-center justify-between pt-0.5">
+                            <span className="truncate flex items-center gap-1.5 font-medium text-foreground/80 max-w-[65%]">
+                                <User className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                                <span className="truncate">{videoConfig.author}</span>
+                            </span>
                             {videoConfig.stats?.views ? (
-                                <span className="shrink-0 font-mono">
+                                <span className="shrink-0 font-mono text-[11px] text-muted-foreground/75 tabular-nums flex items-center gap-1">
+                                    <Eye className="w-3 h-3 opacity-70" />
                                     {videoConfig.stats.views > 10000
-                                        ? `${(videoConfig.stats.views / 10000).toFixed(1)}万次观看`
-                                        : `${videoConfig.stats.views}次观看`}
+                                        ? `${(videoConfig.stats.views / 10000).toFixed(1)}万次`
+                                        : `${videoConfig.stats.views}次`}
                                 </span>
                             ) : null}
                         </div>
                     )}
 
                     {item.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-1">
+                        <p className="text-xs text-muted-foreground/75 line-clamp-1 leading-relaxed">
                             {item.description}
                         </p>
                     )}
@@ -267,15 +274,15 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                 </button>
 
                 {/* 右上角快捷操作：稍后再看 / 离线缓存 */}
-                <div className="absolute top-2 right-2 flex items-center gap-1 z-20">
+                <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-20">
                     <button
                         type="button"
                         onClick={handleToggleWatchLater}
                         title={inWatchLater ? '已加入稍后再看' : '稍后再看'}
-                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${
+                        className={`p-1.5 rounded-lg backdrop-blur-md transition-all duration-200 ${
                             inWatchLater
                                 ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-black/60 text-white/80 hover:bg-black/80 hover:text-white'
+                                : 'bg-black/60 text-white/80 hover:bg-black/85 hover:text-white'
                         }`}
                     >
                         {inWatchLater ? <Check className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
@@ -284,10 +291,10 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                         type="button"
                         onClick={handleSaveOffline}
                         title={isSavedOffline ? '已离线缓存' : '离线缓存'}
-                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${
+                        className={`p-1.5 rounded-lg backdrop-blur-md transition-all duration-200 ${
                             isSavedOffline
                                 ? 'bg-emerald-600 text-white shadow-md'
-                                : 'bg-black/60 text-white/80 hover:bg-black/80 hover:text-white'
+                                : 'bg-black/60 text-white/80 hover:bg-black/85 hover:text-white'
                         }`}
                     >
                         <Download className="w-3.5 h-3.5" />
@@ -298,7 +305,7 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
             {/* 视频播放弹窗 */}
             {videoConfig && (
                 <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                    <DialogContent className="sm:max-w-[900px] p-0 overflow-hidden bg-black border-zinc-800 gap-0">
+                    <DialogContent className="sm:max-w-[920px] p-0 overflow-hidden bg-zinc-950 border-zinc-800 gap-0 shadow-2xl rounded-2xl">
                         {/* 无障碍访问 */}
                         <div className='sr-only'>
                             <DialogTitle>{item.title}</DialogTitle>
@@ -306,15 +313,75 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                         </div>
 
                         {/* 视频播放器 */}
-                        {renderVideoContent()}
+                        <div className="bg-black">
+                            {renderVideoContent()}
+                        </div>
 
-                        {/* 视频信息 */}
-                        <div className="p-4 bg-zinc-900">
-                            <h3 className="text-white font-medium text-base line-clamp-2">
-                                {item.title}
-                            </h3>
+                        {/* 视频信息与操作栏 */}
+                        <div className="p-4 sm:p-5 bg-zinc-900/90 border-t border-zinc-800 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="space-y-1 flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        {videoConfig?.type === 'bilibili' && (
+                                            <span className="px-2 py-0.5 text-[10px] font-semibold bg-[#FB7299] text-white rounded">bilibili</span>
+                                        )}
+                                        {videoConfig?.type === 'youtube' && (
+                                            <span className="px-2 py-0.5 text-[10px] font-semibold bg-[#FF0000] text-white rounded">YouTube</span>
+                                        )}
+                                        {videoConfig?.author && (
+                                            <span className="text-xs text-zinc-400 flex items-center gap-1">
+                                                <User className="w-3 h-3 text-zinc-500" />
+                                                {videoConfig.author}
+                                            </span>
+                                        )}
+                                        {videoConfig?.stats?.views ? (
+                                            <span className="text-xs text-zinc-400 font-mono flex items-center gap-1">
+                                                <Eye className="w-3 h-3 text-zinc-500" />
+                                                {videoConfig.stats.views > 10000
+                                                    ? `${(videoConfig.stats.views / 10000).toFixed(1)}万次观看`
+                                                    : `${videoConfig.stats.views}次观看`}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                    <h3 className="text-white font-semibold text-base sm:text-lg line-clamp-2 tracking-tight">
+                                        {item.title}
+                                    </h3>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={handleToggleWatchLater}
+                                        className={cn(
+                                            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                                            inWatchLater
+                                                ? "bg-primary text-primary-foreground"
+                                                : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                                        )}
+                                    >
+                                        {inWatchLater ? <Check className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                                        <span>稍后再看</span>
+                                    </button>
+                                    {item.href && (
+                                        <button
+                                            type="button"
+                                            onClick={() => safeWindowOpen(item.href)}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+                                        >
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                            <span>原站直达</span>
+                                        </button>
+                                    )}
+                                    <Link
+                                        href="/videos/player"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white transition-colors"
+                                    >
+                                        <MonitorPlay className="w-3.5 h-3.5" />
+                                        <span>全功能工作台</span>
+                                    </Link>
+                                </div>
+                            </div>
                             {item.description && (
-                                <p className="text-zinc-400 text-sm mt-2 line-clamp-2">
+                                <p className="text-zinc-400 text-xs sm:text-sm line-clamp-2 leading-relaxed border-t border-zinc-800/60 pt-2.5">
                                     {item.description}
                                 </p>
                             )}

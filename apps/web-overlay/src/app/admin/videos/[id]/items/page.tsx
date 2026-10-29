@@ -1,9 +1,7 @@
 'use client'
 
-export const runtime = 'edge'
-
-import { useState, useEffect } from 'react'
-import { safeWindowOpen } from '@/lib/safe-url'
+import { useState, useEffect, useMemo } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from "@/registry/new-york/ui/button"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
@@ -25,11 +23,13 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Badge } from "@/registry/new-york/ui/badge"
 import { describeDegrade } from '@/lib/degrade'
 import { formatDuration } from '@/lib/video-format'
-import { Pin, PinOff, Sparkles, Loader2 } from 'lucide-react'
+import { Pin, PinOff, Sparkles, Loader2, ArrowLeft, FolderOpen, Layers, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
 
-interface EditingItem {
-    index: number
-    item: NavigationSubItem
+interface FlatVideoItem extends NavigationSubItem {
+    subCategoryId?: string
+    subCategoryTitle?: string
+    originalIndex: number
+    isSubCategoryItem: boolean
 }
 
 function LoadingSkeleton() {
@@ -74,14 +74,109 @@ export default function VideoItemsPage() {
     const [navigation, setNavigation] = useState<NavigationItem | null>(null)
     const [searchQuery, setSearchQuery] = useState("")
     const [enabledFilter, setEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
-    const [editingItem, setEditingItem] = useState<EditingItem | null>(null)
-    const [deletingItem, setDeletingItem] = useState<EditingItem | null>(null)
+    const [selectedSubCategory, setSelectedSubCategory] = useState<string>('all')
+    const [targetSubCategoryId, setTargetSubCategoryId] = useState<string>('')
+    const [currentPage, setCurrentPage] = useState(1)
+    const pageSize = 30
+
+    const [editingItem, setEditingItem] = useState<FlatVideoItem | null>(null)
+    const [deletingItem, setDeletingItem] = useState<FlatVideoItem | null>(null)
     const [isLoading, setIsLoading] = useState(true)
-    // 拉取失败必须能持续显示：失败时 navigation 停在 null，
-    // 页面会渲染成「视频分类不存在」—— 把故障说成「这个分类真的没有」
     const [loadError, setLoadError] = useState<unknown>(null)
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
     const [isHarvesting, setIsHarvesting] = useState(false)
+
+    useEffect(() => {
+        if (!params?.id) {
+            router.push('/admin/videos')
+            return
+        }
+        fetchNavigation()
+    }, [params?.id, router])
+
+    const fetchNavigation = async () => {
+        setIsLoading(true)
+        try {
+            if (!params?.id) throw new Error('Navigation ID not found')
+            const response = await fetch(`/api/videos/${params.id}`)
+            if (!response.ok) throw new Error('Failed to fetch')
+
+            const data = await response.json()
+            setNavigation(data)
+            if (data.subCategories && data.subCategories.length > 0 && !targetSubCategoryId) {
+                setTargetSubCategoryId(data.subCategories[0].id)
+            }
+            setLoadError(null)
+        } catch (error) {
+            console.error(error)
+            toast({
+                title: "错误",
+                description: describeDegrade(error).message,
+                variant: "destructive"
+            })
+            setLoadError(error)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const allFlatItems: FlatVideoItem[] = useMemo(() => {
+        if (!navigation) return []
+        const list: FlatVideoItem[] = []
+
+        // 直属条目
+        ;(navigation.items || []).forEach((it, idx) => {
+            list.push({
+                ...it,
+                subCategoryTitle: '直属大类',
+                originalIndex: idx,
+                isSubCategoryItem: false,
+            })
+        })
+
+        // 各二级分类条目
+        ;(navigation.subCategories || []).forEach(sub => {
+            ;(sub.items || []).forEach((it, idx) => {
+                list.push({
+                    ...it,
+                    subCategoryId: sub.id,
+                    subCategoryTitle: sub.title,
+                    originalIndex: idx,
+                    isSubCategoryItem: true,
+                })
+            })
+        })
+
+        return list
+    }, [navigation])
+
+    const filteredItems = useMemo(() => {
+        return allFlatItems.filter(item => {
+            const matchesSearch =
+                item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                item.href.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (item.videoConfig?.author && item.videoConfig.author.toLowerCase().includes(searchQuery.toLowerCase()))
+
+            const matchesEnabled =
+                enabledFilter === 'all' ? true :
+                enabledFilter === 'enabled' ? item.enabled :
+                enabledFilter === 'disabled' ? !item.enabled : true
+
+            const matchesSub =
+                selectedSubCategory === 'all' ? true :
+                selectedSubCategory === 'direct' ? !item.isSubCategoryItem :
+                item.subCategoryId === selectedSubCategory
+
+            return matchesSearch && matchesEnabled && matchesSub
+        })
+    }, [allFlatItems, searchQuery, enabledFilter, selectedSubCategory])
+
+    const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize))
+    const pagedItems = useMemo(() => {
+        const start = (currentPage - 1) * pageSize
+        return filteredItems.slice(start, start + pageSize)
+    }, [filteredItems, currentPage, pageSize])
 
     const handleRunCategoryHarvest = async () => {
         if (!params?.id) return
@@ -113,7 +208,7 @@ export default function VideoItemsPage() {
         }
     }
 
-    const toggleItemPin = async (index: number, item: NavigationSubItem) => {
+    const toggleItemPin = async (item: FlatVideoItem) => {
         const currentlyPinned = Boolean(item.videoConfig?.pinned)
         const updatedItem: NavigationSubItem = {
             ...item,
@@ -123,69 +218,23 @@ export default function VideoItemsPage() {
                 pinned: !currentlyPinned
             }
         }
-        await updateItem(index, updatedItem)
+        await updateItem(item, updatedItem)
         toast({
             title: !currentlyPinned ? '已锁定防替换' : '已解除锁定',
             description: !currentlyPinned ? '该视频将免于全自动优胜劣汰轮换' : '该视频将参与正常保鲜度轮换'
         })
     }
 
-    useEffect(() => {
-        if (!params?.id) {
-            router.push('/admin/videos')
-            return
-        }
-        fetchNavigation()
-    }, [params?.id, router])
-
-    const fetchNavigation = async () => {
-        setIsLoading(true)
-        try {
-            if (!params?.id) throw new Error('Navigation ID not found')
-            const navigationId = params.id
-
-            // We reuse the generic navigation structure but fetch from videos.json via a different API endpoint logic if we were strictly separating, 
-            // but here we might need a specific endpoint to fetch a single video category wrapper.
-            // Wait, we need an endpoint to get a single video category to list its items.
-            // We can reuse the same pattern: GET /api/videos -> list all categories. 
-            // But we need GET /api/videos/[id] -> get specific category.
-
-            // Since we haven't created GET /api/videos/[id] specifically for one item yet (only PUT/DELETE), let's double check.
-            // Ah, we created DELETE and PUT in /api/videos/[id]/route.ts. We missed GET.
-            // We should add GET to /api/videos/[id]/route.ts or just fetch all and filter client side (less efficient).
-            // Let's add GET to /api/videos/[id]/route.ts first.
-
-            // Assuming GET is available now (we will add it next):
-            const response = await fetch(`/api/videos/${navigationId}`)
-            if (!response.ok) throw new Error('Failed to fetch')
-
-            const data = await response.json()
-            setNavigation(data)
-            setLoadError(null)
-        } catch (error) {
-            console.error(error)
-            // 原来只弹一个 5 秒的 toast：「获取数据失败」消失之后，
-            // 页面就停在「视频分类不存在」—— 请求失败被说成了「分类真的没有」。
-            toast({
-                title: "错误",
-                description: describeDegrade(error).message,
-                variant: "destructive"
-            })
-            setLoadError(error)
-        } finally {
-            setIsLoading(false)
-        }
-    }
-
     const addItem = async (values: NavigationSubItem) => {
         try {
             if (!params?.id) throw new Error('Navigation ID not found')
-            const navigationId = params.id
-
-            const response = await fetch(`/api/videos/${navigationId}/items`, {
+            const response = await fetch(`/api/videos/${params.id}/items`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(values)
+                body: JSON.stringify({
+                    item: values,
+                    subCategoryId: targetSubCategoryId === 'direct' ? undefined : targetSubCategoryId
+                })
             })
 
             if (!response.ok) throw new Error('Failed to save')
@@ -193,7 +242,7 @@ export default function VideoItemsPage() {
             await fetchNavigation()
             toast({
                 title: "成功",
-                description: "添加成功"
+                description: "添加视频成功"
             })
             setIsAddDialogOpen(false)
         } catch (error) {
@@ -205,15 +254,17 @@ export default function VideoItemsPage() {
         }
     }
 
-    const updateItem = async (index: number, values: NavigationSubItem) => {
+    const updateItem = async (target: FlatVideoItem, values: NavigationSubItem) => {
         try {
             if (!params?.id) throw new Error('Navigation ID not found')
-            const navigationId = params.id
-
-            const response = await fetch(`/api/videos/${navigationId}/items`, {
+            const response = await fetch(`/api/videos/${params.id}/items`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ index, item: values })
+                body: JSON.stringify({
+                    index: target.originalIndex,
+                    subCategoryId: target.isSubCategoryItem ? target.subCategoryId : undefined,
+                    item: values
+                })
             })
 
             if (!response.ok) throw new Error('Failed to save')
@@ -233,15 +284,16 @@ export default function VideoItemsPage() {
         }
     }
 
-    const deleteItem = async (index: number) => {
+    const deleteItem = async (target: FlatVideoItem) => {
         try {
             if (!params?.id) throw new Error('Navigation ID not found')
-            const navigationId = params.id
-
-            const response = await fetch(`/api/videos/${navigationId}/items`, {
+            const response = await fetch(`/api/videos/${params.id}/items`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ index })
+                body: JSON.stringify({
+                    index: target.originalIndex,
+                    subCategoryId: target.isSubCategoryItem ? target.subCategoryId : undefined
+                })
             })
 
             if (!response.ok) throw new Error('Failed to delete')
@@ -261,21 +313,6 @@ export default function VideoItemsPage() {
         }
     }
 
-    const filteredItems = navigation?.items?.filter(item => {
-        const matchesSearch =
-            item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.href.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.description?.toLowerCase().includes(searchQuery.toLowerCase())
-
-        const matchesEnabled =
-            enabledFilter === "all" ? true :
-                enabledFilter === "enabled" ? item.enabled :
-                    enabledFilter === "disabled" ? !item.enabled :
-                        true
-
-        return matchesSearch && matchesEnabled
-    }) || []
-
     if (isLoading) {
         return <LoadingSkeleton />
     }
@@ -284,7 +321,7 @@ export default function VideoItemsPage() {
         const notice = describeDegrade(loadError)
         return (
             <div role="status" className="mx-auto max-w-xl rounded-md border border-red-200 bg-red-50 px-6 py-16 text-center dark:border-red-900 dark:bg-red-950/20">
-                <h2 className="mb-2 text-lg font-medium text-red-700 dark:text-red-300">视频分类数据没能加载出来</h2>
+                <h2 className="mb-2 text-lg font-medium text-red-700 dark:text-red-300">视频分类数据加载失败</h2>
                 <p className="mb-6 text-sm text-red-600 dark:text-red-400">{notice.message}</p>
                 <Button variant="outline" onClick={() => void fetchNavigation()}>重试</Button>
             </div>
@@ -300,57 +337,48 @@ export default function VideoItemsPage() {
     }
 
     return (
-        <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-4 flex-1 w-full sm:w-auto">
+        <div className="space-y-5">
+            {/* 顶栏信息 */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-border/80 bg-card">
+                <div className="flex items-center gap-3">
                     <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => router.back()}
-                        className="h-8 w-8"
-                        title="返回"
+                        onClick={() => router.push('/admin/videos')}
+                        className="h-8.5 w-8.5 shrink-0"
+                        title="返回分类列表"
                     >
-                        <Icons.arrowLeft className="h-4 w-4" />
+                        <ArrowLeft className="h-4 w-4" />
                     </Button>
                     <div>
-                        <div className="text-sm text-muted-foreground mb-1">
-                            {navigation?.title}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h1 className="text-base sm:text-lg font-bold text-foreground">
+                                {navigation.title}
+                            </h1>
+                            <Badge variant="outline" className="text-xs bg-primary/5 text-primary border-primary/20">
+                                共 {allFlatItems.length} 部视频
+                            </Badge>
+                            <Badge variant="outline" className="text-xs bg-muted text-muted-foreground">
+                                {navigation.subCategories?.length || 0} 个二级分类
+                            </Badge>
                         </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                            支持按二级分类筛选、直属条目管理、一键解析加收、锁定防置换及视频编辑
+                        </p>
                     </div>
-                    <div className="relative flex-1 max-w-sm">
-                        <Icons.search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input aria-label="搜索视频"
-                            placeholder="搜索视频..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-8"
-                        />
-                        {searchQuery && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setSearchQuery("")}
-                                className="absolute right-1 top-1 h-7 w-7 p-0"
-                            >
-                                <Icons.x className="h-4 w-4" />
-                            </Button>
-                        )}
-                    </div>
-                    <Select
-                        value={enabledFilter}
-                        onValueChange={(value: 'all' | 'enabled' | 'disabled') => setEnabledFilter(value)}
-                    >
-                        <SelectTrigger aria-label="按状态筛选" className="w-[140px]">
-                            <SelectValue placeholder="按状态筛选" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">全部</SelectItem>
-                            <SelectItem value="enabled">已启用</SelectItem>
-                            <SelectItem value="disabled">已禁用</SelectItem>
-                        </SelectContent>
-                    </Select>
                 </div>
-                <div className="flex items-center gap-2">
+
+                <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => router.push(`/admin/videos/${params.id}/categories`)}
+                        className="gap-1.5 text-xs h-9 bg-primary/5 hover:bg-primary/10 text-primary border-primary/20"
+                    >
+                        <FolderOpen className="h-3.5 w-3.5" />
+                        <span>二级分类治理 ({navigation.subCategories?.length || 0})</span>
+                    </Button>
+
                     <Button
                         variant="outline"
                         size="sm"
@@ -361,37 +389,171 @@ export default function VideoItemsPage() {
                         {isHarvesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                         <span>{isHarvesting ? '采集中...' : '分类自动采集'}</span>
                     </Button>
+
                     <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                         <DialogTrigger asChild>
-                            <Button className="h-9">
-                                <Icons.plus className="mr-2 h-4 w-4" />
-                                添加视频
+                            <Button className="h-9 gap-1.5 text-xs">
+                                <Icons.plus className="h-4 w-4" />
+                                <span>添加视频</span>
                             </Button>
                         </DialogTrigger>
                         <DialogContent className="max-w-2xl">
                             <DialogHeader>
-                                <DialogTitle>添加视频</DialogTitle>
+                                <DialogTitle>添加视频条目</DialogTitle>
                             </DialogHeader>
-                            <AddVideoItemForm
-                                onSubmit={async (values) => {
-                                    await addItem(values)
-                                }}
-                                onCancel={() => setIsAddDialogOpen(false)}
-                            />
+                            <div className="space-y-3 pt-2">
+                                {navigation.subCategories && navigation.subCategories.length > 0 && (
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                                            <FolderOpen className="h-3.5 w-3.5 text-primary" />
+                                            <span>归属二级分类:</span>
+                                        </label>
+                                        <Select value={targetSubCategoryId} onValueChange={setTargetSubCategoryId}>
+                                            <SelectTrigger className="w-full" aria-label="归属二级分类">
+                                                <SelectValue placeholder="选择所属子分类" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {navigation.subCategories.map(sub => (
+                                                    <SelectItem key={sub.id} value={sub.id}>
+                                                        {sub.title} ({sub.items?.length || 0}部视频)
+                                                    </SelectItem>
+                                                ))}
+                                                <SelectItem value="direct">直属于大类主列表</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+                                <AddVideoItemForm
+                                    onSubmit={async (values) => {
+                                        await addItem(values)
+                                    }}
+                                    onCancel={() => setIsAddDialogOpen(false)}
+                                />
+                            </div>
                         </DialogContent>
                     </Dialog>
                 </div>
             </div>
 
-            {navigation?.items && navigation.items.length > 0 ? (
-                <div className="grid gap-2">
-                    {filteredItems.map((item, index) => (
+            {/* 综合筛选与搜索控制栏 */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-1">
+                    <div className="relative flex-1 min-w-[200px] max-w-sm">
+                        <Icons.search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            aria-label="搜索视频"
+                            placeholder="搜索视频标题、UP主、链接或描述..."
+                            value={searchQuery}
+                            onChange={(e) => {
+                                setSearchQuery(e.target.value)
+                                setCurrentPage(1)
+                            }}
+                            className="pl-8 text-xs h-9"
+                        />
+                        {searchQuery && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    setSearchQuery("")
+                                    setCurrentPage(1)
+                                }}
+                                className="absolute right-1 top-1 h-7 w-7 p-0"
+                            >
+                                <Icons.x className="h-3.5 w-3.5" />
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* 二级子分类筛选器 */}
+                    <Select
+                        value={selectedSubCategory}
+                        onValueChange={(val) => {
+                            setSelectedSubCategory(val)
+                            setCurrentPage(1)
+                        }}
+                    >
+                        <SelectTrigger className="w-[180px] text-xs h-9" aria-label="按二级分类筛选">
+                            <SelectValue placeholder="全部分类" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">全部二级分类 ({allFlatItems.length})</SelectItem>
+                            {navigation.subCategories?.map(sub => (
+                                <SelectItem key={sub.id} value={sub.id}>
+                                    {sub.title} ({sub.items?.length || 0})
+                                </SelectItem>
+                            ))}
+                            {(navigation.items?.length || 0) > 0 && (
+                                <SelectItem value="direct">直属条目 ({navigation.items?.length || 0})</SelectItem>
+                            )}
+                        </SelectContent>
+                    </Select>
+
+                    {/* 状态筛选 */}
+                    <Select
+                        value={enabledFilter}
+                        onValueChange={(value: 'all' | 'enabled' | 'disabled') => {
+                            setEnabledFilter(value)
+                            setCurrentPage(1)
+                        }}
+                    >
+                        <SelectTrigger aria-label="按状态筛选" className="w-[110px] text-xs h-9">
+                            <SelectValue placeholder="状态" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">全部状态</SelectItem>
+                            <SelectItem value="enabled">已启用</SelectItem>
+                            <SelectItem value="disabled">已禁用</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <div className="text-xs text-muted-foreground font-medium ml-1">
+                        筛选出 <span className="text-foreground font-semibold">{filteredItems.length}</span> 部
+                    </div>
+                </div>
+
+                {/* 分页控制指示 */}
+                {totalPages > 1 && (
+                    <div className="flex items-center gap-2 self-end lg:self-center">
+                        <span className="text-xs text-muted-foreground">
+                            第 {currentPage} / {totalPages} 页
+                        </span>
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                aria-label="上一页"
+                                disabled={currentPage <= 1}
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                aria-label="下一页"
+                                disabled={currentPage >= totalPages}
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* 视频条目列表 */}
+            {pagedItems.length > 0 ? (
+                <div className="grid gap-2.5">
+                    {pagedItems.map((item) => (
                         <div
                             key={item.id}
-                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-lg border bg-card text-card-foreground shadow-sm hover:border-primary/50 transition-colors"
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl border border-border/80 bg-card text-card-foreground shadow-xs hover:border-primary/50 transition-colors"
                         >
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-primary/10 overflow-hidden relative">
+                            <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
+                                <div className="flex items-center justify-center w-14 h-14 rounded-lg bg-primary/10 overflow-hidden relative shrink-0">
                                     {item.icon ? (
                                         <img src={item.icon} alt={item.title} className="w-full h-full object-cover" />
                                     ) : (
@@ -399,36 +561,42 @@ export default function VideoItemsPage() {
                                     )}
                                     {item.videoConfig && (
                                         <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                                            <div className="w-4 h-4 bg-white rounded-full flex items-center justify-center">
-                                                <div className="w-0 h-0 border-t-4 border-t-transparent border-l-6 border-l-black border-b-4 border-b-transparent ml-0.5"></div>
+                                            <div className="w-4 h-4 bg-white/90 rounded-full flex items-center justify-center shadow-xs">
+                                                <div className="w-0 h-0 border-t-3 border-t-transparent border-l-5 border-l-black border-b-3 border-b-transparent ml-0.5"></div>
                                             </div>
                                         </div>
                                     )}
                                 </div>
-                                <div>
+                                <div className="min-w-0 flex-1 space-y-1">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="font-medium leading-none">{item.title}</span>
+                                        <span className="font-semibold text-sm leading-tight text-foreground line-clamp-1">{item.title}</span>
                                         {!item.enabled && (
-                                            <Badge variant="secondary" className="text-xs">已禁用</Badge>
+                                            <Badge variant="secondary" className="text-[11px] h-4.5 px-1.5">已禁用</Badge>
+                                        )}
+                                        {item.subCategoryTitle && (
+                                            <Badge variant="outline" className="text-[11px] h-4.5 px-1.5 bg-primary/5 text-primary border-primary/20">
+                                                <Layers className="w-2.5 h-2.5 mr-1" />
+                                                {item.subCategoryTitle}
+                                            </Badge>
                                         )}
                                         {item.videoConfig && (
-                                            <Badge variant="outline" className="text-xs h-5 px-1.5">
-                                                {item.videoConfig.type === 'bilibili' ? 'Bilibili' : 'YouTube'}
+                                            <Badge variant="outline" className="text-[11px] h-4.5 px-1.5">
+                                                {item.videoConfig.type === 'bilibili' ? 'B站' : 'YouTube'}
                                             </Badge>
                                         )}
                                         {item.videoConfig?.pinned ? (
-                                            <Badge variant="outline" className="text-[11px] h-5 px-1.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30">
-                                                📌 锁定防替换
+                                            <Badge variant="outline" className="text-[11px] h-4.5 px-1.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30">
+                                                📌 锁定防置换
                                             </Badge>
                                         ) : (
-                                            <Badge variant="outline" className="text-[11px] h-5 px-1.5 text-muted-foreground">
+                                            <Badge variant="outline" className="text-[11px] h-4.5 px-1.5 text-muted-foreground">
                                                 自动轮换
                                             </Badge>
                                         )}
                                         {item.videoConfig?.freshnessScore !== undefined && (
                                             <Badge
                                                 variant="outline"
-                                                className={`text-[11px] h-5 px-1.5 ${
+                                                className={`text-[11px] h-4.5 px-1.5 ${
                                                     item.videoConfig.freshnessScore >= 75
                                                         ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
                                                         : item.videoConfig.freshnessScore >= 50
@@ -440,117 +608,144 @@ export default function VideoItemsPage() {
                                             </Badge>
                                         )}
                                         {item.videoConfig?.sourceType === 'auto_trend' && (
-                                            <Badge variant="outline" className="text-[11px] h-5 px-1.5 text-amber-600 border-amber-500/30">
+                                            <Badge variant="outline" className="text-[11px] h-4.5 px-1.5 text-amber-600 border-amber-500/30">
                                                 🔥 热点
                                             </Badge>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1 flex-wrap">
+
+                                    <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                                         {item.videoConfig?.author && (
-                                            <span>UP主: <strong className="text-foreground font-normal">{item.videoConfig.author}</strong></span>
+                                            <span>UP主: <strong className="text-foreground font-medium">{item.videoConfig.author}</strong></span>
                                         )}
                                         {item.videoConfig?.durationSec ? (
                                             <span>时长: {formatDuration(item.videoConfig.durationSec)}</span>
                                         ) : null}
-                                        {item.videoConfig?.publishedAt && (
-                                            <span>发布: {new Date(item.videoConfig.publishedAt).toLocaleDateString()}</span>
+                                        {item.videoConfig?.stats?.views ? (
+                                            <span>播放: {(item.videoConfig.stats.views / 10000).toFixed(1)}万</span>
+                                        ) : null}
+                                        {item.href && (
+                                            <a
+                                                // 外链必须过安全闸：`safeHref` 会拒绝 javascript:/data:、
+                                                // 协议相对路径与含控制字符的串，回落到 '#'。
+                                                // 保留 <a> 而不是改成 safeWindowOpen 按钮：链接要支持
+                                                // 中键新标签与右键复制地址，那是管理端常用操作。
+                                                href={safeHref(item.href, '#')}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex items-center gap-1 text-primary hover:underline"
+                                            >
+                                                <span>打开原站</span>
+                                                <ExternalLink className="h-3 w-3" />
+                                            </a>
                                         )}
-                                    </div>
-                                    {item.description && (
-                                        <div className="text-xs text-muted-foreground mt-1 line-clamp-1 max-w-[220px] sm:max-w-[450px]">
-                                            {item.description}
-                                        </div>
-                                    )}
-                                    <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-[220px] sm:max-w-[400px] font-mono">
-                                        {item.href}
                                     </div>
                                 </div>
                             </div>
+
                             <div className="flex items-center gap-1 self-end sm:self-center shrink-0">
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    className={`h-8 w-8 ${item.videoConfig?.pinned ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}
-                                    onClick={() => toggleItemPin(index, item)}
-                                    title={item.videoConfig?.pinned ? "已锁定（点击解锁）" : "未锁定（点击锁定防替换）"}
+                                    onClick={() => toggleItemPin(item)}
+                                    title={item.videoConfig?.pinned ? "已锁定（点击解锁自动轮换）" : "未锁定（点击锁定防止被淘汰）"}
+                                    className={`h-8 w-8 ${item.videoConfig?.pinned ? 'text-amber-500 hover:text-amber-600 bg-amber-500/10' : 'text-muted-foreground'}`}
                                 >
-                                    {item.videoConfig?.pinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
+                                    {item.videoConfig?.pinned ? <Pin className="h-4 w-4 fill-current" /> : <PinOff className="h-4 w-4" />}
                                 </Button>
                                 <Button
                                     variant="ghost"
                                     size="icon"
+                                    onClick={() => setEditingItem(item)}
+                                    title="编辑视频信息"
                                     className="h-8 w-8"
-                                    onClick={() => safeWindowOpen(item.href)}
-                                    title="访问链接"
-                                >
-                                    <Icons.globe className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => setEditingItem({ index, item })}
-                                    title="编辑"
                                 >
                                     <Icons.pencil className="h-4 w-4" />
                                 </Button>
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => setDeletingItem({ index, item })}
-                                    title="删除"
+                                    onClick={() => setDeletingItem(item)}
+                                    title="删除视频"
+                                    className="h-8 w-8 text-destructive hover:text-destructive"
                                 >
                                     <Icons.trash className="h-4 w-4" />
                                 </Button>
                             </div>
                         </div>
                     ))}
-                    {filteredItems.length === 0 && (
-                        <div className="text-center py-10 text-muted-foreground">
-                            {navigation?.items?.length === 0 ? (
-                                <p>暂无视频</p>
-                            ) : (
-                                <p>未找到匹配的视频</p>
-                            )}
-                        </div>
-                    )}
                 </div>
             ) : (
-                <div className="text-center py-10 text-muted-foreground">
-                    暂无视频
+                <div className="text-center py-16 border rounded-xl border-dashed bg-card/50">
+                    <Icons.video className="h-8 w-8 mx-auto text-muted-foreground/60 mb-2" />
+                    <h3 className="text-sm font-semibold text-foreground">没有找到匹配的视频条目</h3>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                        {searchQuery ? "请尝试更改搜索词或重置筛选条件" : "该分类下暂无视频条目，点击上方「添加视频」开始收录。"}
+                    </p>
                 </div>
             )}
 
+            {/* 分页控制底部 */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-2">
+                    <span className="text-xs text-muted-foreground">
+                        共 {filteredItems.length} 部视频，当前显示第 {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredItems.length)} 部
+                    </span>
+                    <div className="flex items-center gap-1">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage <= 1}
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            className="h-8 text-xs gap-1"
+                        >
+                            <ChevronLeft className="h-3.5 w-3.5" />
+                            <span>上一页</span>
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPage >= totalPages}
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            className="h-8 text-xs gap-1"
+                        >
+                            <span>下一页</span>
+                            <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* 编辑模态框 */}
             <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle>编辑视频</DialogTitle>
+                        <DialogTitle>编辑视频条目</DialogTitle>
                     </DialogHeader>
-                    <AddVideoItemForm
-                        defaultValues={editingItem?.item}
-                        onSubmit={(values) => {
-                            if (editingItem) {
-                                return updateItem(editingItem.index, values)
-                            }
-                            return Promise.resolve()
-                        }}
-                        onCancel={() => setEditingItem(null)}
-                    />
+                    {editingItem && (
+                        <AddVideoItemForm
+                            defaultValues={editingItem}
+                            onSubmit={async (values) => {
+                                await updateItem(editingItem, values)
+                            }}
+                            onCancel={() => setEditingItem(null)}
+                        />
+                    )}
                 </DialogContent>
             </Dialog>
 
+            {/* 删除确认框 */}
             <Dialog open={!!deletingItem} onOpenChange={(open) => !open && setDeletingItem(null)}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>删除确认</DialogTitle>
                         <DialogDescription>
-                            确定要删除视频 &ldquo;{deletingItem?.item.title}&rdquo; 吗？此操作无法撤销。
+                            确定要删除视频 &ldquo;{deletingItem?.title}&rdquo; 吗？此操作无法撤销。
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
                         <Button
-                            variant="ghost"
+                            variant="outline"
                             onClick={() => setDeletingItem(null)}
                         >
                             取消
@@ -559,7 +754,7 @@ export default function VideoItemsPage() {
                             variant="destructive"
                             onClick={() => {
                                 if (deletingItem) {
-                                    deleteItem(deletingItem.index)
+                                    deleteItem(deletingItem)
                                 }
                             }}
                         >

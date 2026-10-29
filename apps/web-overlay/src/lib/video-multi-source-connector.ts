@@ -12,10 +12,14 @@ import {
   type AISanitizedCourse,
 } from '@/lib/video-autonomous-ai-harvester'
 import { verifyHmacSha256 } from '@/lib/webhook-signature'
-import type { NavigationItem, NavigationSubItem } from '@/types/navigation'
+import { calculateFreshnessScore } from '@/lib/video-scoring'
+import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
+import { enrichVideoItemSeo } from '@/lib/video-seo'
+import { detectVideoPlatform } from '@/lib/video-multi-platform-harvester'
+import type { NavigationItem, NavigationSubItem, VideoPlatformType } from '@/types/navigation'
 
 export interface RawExternalCandidate {
-  source: 'bilibili' | 'youtube' | 'github_trending' | 'webhook'
+  source: VideoPlatformType | 'github_trending' | 'webhook'
   externalId: string
   title: string
   description?: string
@@ -34,7 +38,7 @@ export interface RawExternalCandidate {
 export interface WebhookPayload {
   event: 'video_published' | 'trending_alert' | 'manual_dispatch'
   timestamp: number
-  source: 'bilibili' | 'youtube' | 'github' | 'custom'
+  source: VideoPlatformType | 'github'
   data: {
     id: string
     title: string
@@ -231,6 +235,8 @@ export class MultiSourceConnector {
       durationSec || 1200,
       evalResult.conceptTags
     )
+    // 合成元数据默认关闭：模板章节/字幕不得冒充视频原文（见 video-metadata-policy.ts）
+    const synthetic = syntheticMetadataEnabled()
 
     /**
      * 平台由来源决定，不再一律当 B 站。
@@ -239,17 +245,18 @@ export class MultiSourceConnector {
      * `bvid: 'BV1whDefault'` —— 于是所有 webhook 来源在去重时都被判成同一条视频，
      * 且点开永远指向一个不存在的稿件。没有真实 BV 号就不要伪造。
      */
-    const platform: 'bilibili' | 'youtube' | 'custom' = id.startsWith('BV')
+    const detected = detectVideoPlatform(url)
+    const platform: VideoPlatformType = id.startsWith('BV')
       ? 'bilibili'
-      : payload.source === 'youtube'
-        ? 'youtube'
-        : 'custom'
+      : payload.source && payload.source !== 'github' && payload.source !== 'custom'
+        ? payload.source
+        : detected?.platform || 'custom'
 
-    const subItem: NavigationSubItem = {
+    const subItem: NavigationSubItem = enrichVideoItemSeo({
       id: `wh_${platform}_${id}_${Date.now()}`,
       title: meta.cleanTitle,
       href: url,
-      description: meta.overview,
+      description: synthetic ? meta.overview : (description ?? ''),
       // 不写封面：webhook 载荷里没有封面字段，此前统一塞同一张 Unsplash 图，
       // 等于给所有外部内容伪造配图。留空后前端走平台占位。
       enabled: true,
@@ -264,17 +271,105 @@ export class MultiSourceConnector {
         ...(payload.timestamp ? { publishedAt: new Date(payload.timestamp).toISOString() } : {}),
         harvestedAt: Date.now(),
         qualityScore: evalResult.aiQualityScore,
-        freshnessScore: 100,
+        // 按真实发布时间计算保鲜分。
+        // 写死 100 会让任何老内容都「满分新鲜」，淘汰门槛（worstScore < 45）永不成立，
+        // 整条保鲜衰减链路因此失效 —— 与本文件「发布时间未知就不写 publishedAt」的
+        // 处理自相矛盾。时间未知时 calculateFreshnessScore 走保守分支（质量分 × 0.8）。
+        freshnessScore: calculateFreshnessScore(
+          payload.timestamp ? new Date(payload.timestamp).toISOString() : undefined,
+          evalResult.aiQualityScore,
+          90,
+          title
+        ),
         sourceType: 'webhook',
         healthStatus: 'healthy',
-        chapters: meta.chapters,
-        transcript: meta.transcripts,
+        // 合成元数据默认不写：模板章节/字幕会被误认为视频原文
+        ...(synthetic ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true } : {}),
       },
-    }
+    })
 
     return {
       ok: true,
       message: 'Webhook 处理成功，已通过规则初筛（关键词 / 时长 / 互动加权）',
+      subItem,
+      evaluation: evalResult,
+    }
+  }
+
+  /**
+   * 管理员控制台调试通道：对已通过会话鉴权的管理员，支持在未配置或已配置外部密钥的情况下执行完整 AI 审核与结构化提取。
+   */
+  processAdminTestPayload(
+    payload: WebhookPayload
+  ): { ok: boolean; message: string; subItem?: NavigationSubItem; evaluation?: AIEvaluationResult } {
+    const { id, title, description, author, durationSec, url } = payload.data
+    const evalResult = evaluateVideoWithAIModel({
+      title,
+      description,
+      author,
+      durationSec: durationSec || 1200,
+    })
+
+    if (!evalResult.isApproved) {
+      return {
+        ok: false,
+        message: `AI 审核未通过: ${evalResult.rejectReason}`,
+        evaluation: evalResult,
+      }
+    }
+
+    const meta = generateAISanitizedMetadata(
+      title,
+      description,
+      durationSec || 1200,
+      evalResult.conceptTags
+    )
+    // 合成元数据默认关闭：模板章节/字幕不得冒充视频原文（见 video-metadata-policy.ts）
+    const synthetic = syntheticMetadataEnabled()
+
+    const detected = detectVideoPlatform(url)
+    const platform: VideoPlatformType = id.startsWith('BV')
+      ? 'bilibili'
+      : payload.source && payload.source !== 'github' && payload.source !== 'custom'
+        ? payload.source
+        : detected?.platform || 'custom'
+
+    const subItem: NavigationSubItem = enrichVideoItemSeo({
+      id: `wh_${platform}_${id}_${Date.now()}`,
+      title: meta.cleanTitle,
+      href: url,
+      description: synthetic ? meta.overview : (description ?? ''),
+      enabled: true,
+      videoConfig: {
+        type: platform,
+        ...(platform === 'bilibili' ? { bvid: id } : {}),
+        ...(platform !== 'bilibili' ? { videoId: id } : {}),
+        p: 1,
+        author: author || 'Webhook 创作者',
+        durationSec: durationSec || 1200,
+        ...(payload.timestamp ? { publishedAt: new Date(payload.timestamp).toISOString() } : {}),
+        harvestedAt: Date.now(),
+        qualityScore: evalResult.aiQualityScore,
+        // 按真实发布时间计算保鲜分。
+        // 写死 100 会让任何老内容都「满分新鲜」，淘汰门槛（worstScore < 45）永不成立，
+        // 整条保鲜衰减链路因此失效 —— 与本文件「发布时间未知就不写 publishedAt」的
+        // 处理自相矛盾。时间未知时 calculateFreshnessScore 走保守分支（质量分 × 0.8）。
+        freshnessScore: calculateFreshnessScore(
+          payload.timestamp ? new Date(payload.timestamp).toISOString() : undefined,
+          evalResult.aiQualityScore,
+          90,
+          title
+        ),
+        sourceType: 'webhook',
+        healthStatus: 'healthy',
+        // 合成元数据默认不写：模板章节/字幕会被误认为视频原文
+        ...(synthetic ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true } : {}),
+      },
+    })
+
+    return {
+      ok: true,
+      message: '管理员测试 Webhook 处理成功：AI 审核与元数据清洗均已通过',
       subItem,
       evaluation: evalResult,
     }

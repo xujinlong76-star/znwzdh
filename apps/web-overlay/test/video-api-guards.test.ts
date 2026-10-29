@@ -64,10 +64,41 @@ describe('Cron 端点：fail-closed 且不接受 ?secret=', () => {
     expect(code).not.toContain("'data/navigation.json'")
   })
 
-  it('health-sweep 落盘的是 updatedData（prune 与 healthStatus 才生效）', () => {
+  it('health-sweep 走统一写入入口，不再整包覆盖', () => {
+    // 历史实现直接 commitFile 整包覆盖：巡检跑几十秒，期间采集写入的新条目会被抹掉。
+    // 现在必须走 mutateVideoLibrary（带 ifVersion + 冲突重放），且只回写健康字段。
     const code = stripComments(src('app/api/cron/video-health-sweep/route.ts'))
-    expect(code).toMatch(/const\s*\{\s*report,\s*updatedData\s*\}/)
-    expect(code).toMatch(/JSON\.stringify\(updatedData/)
+    expect(code).not.toMatch(/\bcommitFile\s*\(/)
+    expect(code).toMatch(/mutateVideoLibrary\s*(?:<[^>]*>)?\s*\(/)
+    expect(code).toMatch(/applyPatches\s*\(/)
+  })
+})
+
+describe('Webhook 入库不得写死保鲜分', () => {
+  const code = stripComments(src('lib/video-multi-source-connector.ts'))
+
+  it('不存在 freshnessScore: 100 这类常量', () => {
+    // 写死 100 会让任何老内容都「满分新鲜」，淘汰门槛（worstScore < 45）永不成立
+    expect(code).not.toMatch(/freshnessScore\s*:\s*100\b/)
+  })
+
+  it('改用 calculateFreshnessScore 按真实发布时间推导', () => {
+    expect(code).toMatch(/calculateFreshnessScore\s*\(/)
+  })
+})
+
+describe('采集入口：并发互斥与平台诚实性', () => {
+  it('同步采集入口持有与异步任务相同的租约锁，且 owner 配对释放', () => {
+    const code = stripComments(src('app/api/videos/harvest/route.ts'))
+    expect(code).toMatch(/acquireLock\s*\(/)
+    expect(code).toMatch(/releaseLock\s*\(\s*lockOwner\s*\)/)
+    // 旧写法 owner 用 Date.now() 现拼，release 永远对不上 → 锁只能等 TTL
+    expect(code).toMatch(/const\s+lockOwner\s*=/)
+  })
+
+  it('platforms 含 youtube 时显式记录「未实现」，不再静默返回空结果', () => {
+    const code = stripComments(src('lib/video-harvester.ts'))
+    expect(code).toMatch(/YouTube 采集通道尚未实现/)
   })
 })
 
@@ -117,9 +148,9 @@ describe('单条编辑不得丢弃顶层字段', () => {
   const code = stripComments(src('app/api/videos/[id]/items/route.ts'))
 
   it('写盘时展开原数据，只替换 navigationItems', () => {
-    const stringifies = code.match(/JSON\.stringify\([^)]*navigationItems[^)]*\)/g) ?? []
-    expect(stringifies.length).toBeGreaterThanOrEqual(3)
-    for (const call of stringifies) {
+    const matches = code.match(/(\.\.\.data,\s*navigationItems|JSON\.stringify\([^)]*navigationItems[^)]*\))/g) ?? []
+    expect(matches.length).toBeGreaterThanOrEqual(3)
+    for (const call of matches) {
       expect(call, `写盘语句丢了顶层字段：${call}`).toMatch(/\.\.\.data/)
     }
   })

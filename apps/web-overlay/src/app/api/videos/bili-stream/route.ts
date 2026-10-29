@@ -36,16 +36,37 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
   }
 
   try {
-    const upstreamRes = await fetch(targetUrl, {
-      method,
-      headers: fetchHeaders,
-      redirect: 'follow',
-    })
+    let currentUrl = targetUrl
+    let upstreamRes: Response | null = null
 
-    if (!upstreamRes.ok && upstreamRes.status !== 206) {
+    // 手动逐跳校验重定向，防范通过开放重定向发起的内网 SSRF 探测
+    for (let hop = 0; hop < 3; hop++) {
+      if (!isAllowedBilivideoStreamHost(currentUrl)) {
+        return NextResponse.json(
+          { error: '重定向跳转目标域名不在 B 站官方 CDN 白名单中' },
+          { status: 403 }
+        )
+      }
+
+      upstreamRes = await fetch(currentUrl, {
+        method,
+        headers: fetchHeaders,
+        redirect: 'manual',
+      })
+
+      if (upstreamRes.status >= 300 && upstreamRes.status < 400) {
+        const location = upstreamRes.headers.get('location')
+        if (!location) break
+        currentUrl = new URL(location, currentUrl).toString()
+        continue
+      }
+      break
+    }
+
+    if (!upstreamRes || (!upstreamRes.ok && upstreamRes.status !== 206)) {
       return NextResponse.json(
-        { error: `上游视频流节点返回 HTTP ${upstreamRes.status}` },
-        { status: upstreamRes.status }
+        { error: `上游视频流节点返回 HTTP ${upstreamRes?.status || 502}` },
+        { status: upstreamRes?.status || 502 }
       )
     }
 

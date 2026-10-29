@@ -12,7 +12,16 @@ import {
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/registry/new-york/ui/input'
 import { Label } from '@/registry/new-york/ui/label'
-import type { VideoHarvestPolicy } from '@/types/navigation'
+import type { VideoHarvestPolicy, VideoPlatformType } from '@/types/navigation'
+
+const HARVEST_PLATFORM_OPTIONS: Array<{ id: VideoPlatformType; label: string }> = [
+  { id: 'bilibili', label: '哔哩哔哩 (WBI)' },
+  { id: 'dailymotion', label: 'Dailymotion' },
+  { id: 'peertube', label: 'PeerTube (全球联邦)' },
+  { id: 'youtube', label: 'YouTube' },
+  { id: 'ted', label: 'TED Talks' },
+  { id: 'vimeo', label: 'Vimeo' },
+]
 
 interface HarvestPolicyDialogProps {
   open: boolean
@@ -32,12 +41,27 @@ export function HarvestPolicyDialog({
   const [enabled, setEnabled] = useState(policy?.enabled ?? true)
   const [keywords, setKeywords] = useState((policy?.keywords || []).join(', '))
   const [syncSiteHotTrends, setSyncSiteHotTrends] = useState(policy?.syncSiteHotTrends ?? true)
+  const [selectedPlatforms, setSelectedPlatforms] = useState<VideoPlatformType[]>(
+    policy?.platforms && policy.platforms.length > 0
+      ? policy.platforms
+      : ['bilibili', 'dailymotion', 'peertube']
+  )
   const [maxItems, setMaxItems] = useState(policy?.maxItems ?? 12)
   const [minQualityScore, setMinQualityScore] = useState(policy?.minQualityScore ?? 60)
   const [minDurationSec, setMinDurationSec] = useState(policy?.minDurationSec ?? 180)
   const [freshnessHalfLifeDays, setFreshnessHalfLifeDays] = useState(policy?.freshnessHalfLifeDays ?? 90)
   const [autoReplaceOutdated, setAutoReplaceOutdated] = useState(policy?.autoReplaceOutdated ?? true)
   const [saving, setSaving] = useState(false)
+
+  const togglePlatform = (plat: VideoPlatformType) => {
+    setSelectedPlatforms((prev) =>
+      prev.includes(plat)
+        ? prev.length > 1
+          ? prev.filter((p) => p !== plat)
+          : prev
+        : [...prev, plat]
+    )
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -51,7 +75,7 @@ export function HarvestPolicyDialog({
         enabled,
         keywords: parsedKeywords,
         syncSiteHotTrends,
-        platforms: ['bilibili', 'youtube'],
+        platforms: selectedPlatforms.length > 0 ? selectedPlatforms : ['bilibili'],
         maxItems: Number(maxItems) || 12,
         minQualityScore: Number(minQualityScore) || 60,
         minDurationSec: Number(minDurationSec) || 180,
@@ -120,6 +144,29 @@ export function HarvestPolicyDialog({
             <Label htmlFor="policy-hot-sync" className="text-xs cursor-pointer">
               自动融合本站热门站点与精选专题热词 (推荐)
             </Label>
+          </div>
+
+          <div className="space-y-1.5 pt-1">
+            <Label className="text-xs font-medium">启用多平台采集源通道</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {HARVEST_PLATFORM_OPTIONS.map((opt) => {
+                const active = selectedPlatforms.includes(opt.id)
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => togglePlatform(opt.id)}
+                    className={`px-2.5 py-1.5 rounded-md border text-xs text-left transition-colors ${
+                      active
+                        ? 'border-primary bg-primary/10 text-primary font-medium'
+                        : 'border-border bg-background text-muted-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    {active ? '✓ ' : ''}{opt.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 pt-1">

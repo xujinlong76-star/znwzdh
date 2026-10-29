@@ -9,13 +9,27 @@ import type {
   NavigationSubItem,
   VideoConfig,
   VideoHarvestPolicy,
+  VideoPlatformType,
   VideoReplacementRecord,
   VideoStats
 } from '@/types/navigation'
 
 import { calculateQualityScore, calculateFreshnessScore, parseDurationToSeconds } from './video-scoring'
+import { parseBilibiliWithXingzhige } from './video-bilibili-hd-parser'
+import { enrichVideoItemSeo } from './video-seo'
+import {
+  attachResolvedSeoMetadata,
+  harvestMultiPlatformVideosForKeyword,
+  resolveMultiPlatformVideoUrl,
+} from './video-multi-platform-harvester'
 // 保持既有 import 路径可用（众多组件按 '@/lib/video-harvester' 取这两个函数）
 export { calculateQualityScore, calculateFreshnessScore, parseDurationToSeconds } from './video-scoring'
+export {
+  VIDEO_PLATFORM_REGISTRY,
+  detectVideoPlatform,
+  extractOpenGraphAndJsonLdFromHtml,
+  resolveMultiPlatformVideoUrl,
+} from './video-multi-platform-harvester'
 
 const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
@@ -83,7 +97,7 @@ export async function resolveVideoUrl(rawUrl: string): Promise<ResolvedVideoInfo
           const resolvedAid = d.aid ? String(d.aid) : aid
           const resolvedCid = d.cid ? String(d.cid) : undefined
 
-          return {
+          return attachResolvedSeoMetadata({
             title: d.title || '哔哩哔哩视频',
             href: `https://www.bilibili.com/video/${resolvedBvid}`,
             description: d.desc || '',
@@ -107,15 +121,62 @@ export async function resolveVideoUrl(rawUrl: string): Promise<ResolvedVideoInfo
               healthStatus: 'healthy',
               stats
             }
-          }
+          })
         }
       }
     } catch (err) {
-      console.warn('[video-harvester] Bilibili API fetch failed, fallback to basic config:', err)
+      console.warn('[video-harvester] Bilibili API fetch failed, trying Xingzhige b_parse fallback:', err)
+    }
+
+    // 1.5 星之阁 b_parse 深度解析兜底（当官方 view 接口被风控或超时时仍可拉取完整标题、封面、UP 主与统计数据）
+    try {
+      const xz = await parseBilibiliWithXingzhige({ url, bvid, aid })
+      if (xz.ok && xz.title) {
+        const stats: VideoStats = {
+          views: xz.stat?.view || 0,
+          likes: xz.stat?.like || 0,
+          coins: xz.stat?.coin || 0,
+          favorites: xz.stat?.favorite || 0,
+          danmaku: xz.stat?.danmaku || 0,
+        }
+        const pubDate = xz.stat?.ctime
+          ? new Date(xz.stat.ctime * 1000).toISOString()
+          : new Date().toISOString()
+        const qualityScore = calculateQualityScore(stats, 300, xz.stat?.ctime)
+        const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, xz.title)
+        const resolvedBvid = xz.bvid || bvid
+
+        return attachResolvedSeoMetadata({
+          title: xz.title,
+          href: resolvedBvid ? `https://www.bilibili.com/video/${resolvedBvid}` : xz.canonicalUrl,
+          description: xz.desc || '',
+          icon: xz.coverUrl,
+          videoConfig: {
+            type: 'bilibili',
+            bvid: resolvedBvid,
+            aid: xz.aid || aid,
+            cid: xz.cid,
+            p: xz.p || 1,
+            author: xz.owner?.name || '',
+            authorUrl: xz.owner?.mid ? `https://space.bilibili.com/${xz.owner.mid}` : undefined,
+            publishedAt: pubDate,
+            harvestedAt: Date.now(),
+            lastVerifiedAt: Date.now(),
+            qualityScore,
+            freshnessScore,
+            sourceType: 'manual',
+            pinned: true,
+            healthStatus: 'healthy',
+            stats,
+          },
+        })
+      }
+    } catch (xzErr) {
+      console.warn('[video-harvester] Xingzhige b_parse fallback also failed:', xzErr)
     }
 
     // 基础兜底解析
-    return {
+    return attachResolvedSeoMetadata({
       title: `哔哩哔哩视频 ${bvid || aid}`,
       href: url,
       description: '',
@@ -129,61 +190,11 @@ export async function resolveVideoUrl(rawUrl: string): Promise<ResolvedVideoInfo
         pinned: true,
         healthStatus: 'healthy'
       }
-    }
+    })
   }
 
-  // 2. 尝试匹配 YouTube
-  const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i)
-  if (ytMatch && ytMatch[1]) {
-    const videoId = ytMatch[1]
-
-    try {
-      const oembedRes = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`, {
-        signal: AbortSignal.timeout(6000)
-      })
-
-      if (oembedRes.ok) {
-        const data = await oembedRes.json()
-        return {
-          title: data.title || 'YouTube Video',
-          href: `https://www.youtube.com/watch?v=${videoId}`,
-          description: '',
-          icon: data.thumbnail_url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-          videoConfig: {
-            type: 'youtube',
-            videoId,
-            author: data.author_name || '',
-            authorUrl: data.author_url || '',
-            harvestedAt: Date.now(),
-            lastVerifiedAt: Date.now(),
-            qualityScore: 85,
-            freshnessScore: 85,
-            sourceType: 'manual',
-            pinned: true,
-            healthStatus: 'healthy'
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('[video-harvester] YouTube oEmbed failed, fallback to default:', err)
-    }
-
-    return {
-      title: `YouTube Video (${videoId})`,
-      href: `https://www.youtube.com/watch?v=${videoId}`,
-      icon: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-      videoConfig: {
-        type: 'youtube',
-        videoId,
-        harvestedAt: Date.now(),
-        sourceType: 'manual',
-        pinned: true,
-        healthStatus: 'healthy'
-      }
-    }
-  }
-
-  throw new Error('未能识别该视频平台的 URL（目前支持 Bilibili 与 YouTube）')
+  // 2. 多平台通用智能解析（支持 YouTube、抖音、快手、西瓜、小红书、腾讯、优酷、Vimeo、TED、Dailymotion、PeerTube、自定义源）
+  return resolveMultiPlatformVideoUrl(url)
 }
 
 
@@ -204,7 +215,7 @@ export async function resolveVideoUrl(rawUrl: string): Promise<ResolvedVideoInfo
 export async function harvestVideosForTopic(
   keywords: string[],
   options: {
-    platforms?: ('bilibili' | 'youtube')[]
+    platforms?: VideoPlatformType[]
     minDurationSec?: number
     minQualityScore?: number
     limitPerKeyword?: number
@@ -245,12 +256,44 @@ export async function harvestVideosForTopic(
     })
   }
 
+  /**
+   * 平台能力声明：当前只有 B 站、Dailymotion 与 PeerTube 公开搜索通道。
+   *
+   * `policy.platforms` 允许写 `['bilibili','youtube']`（UI 默认就勾了两者），但
+   * YouTube 官方搜索需配额密钥。这里显式记一条 degraded，让「没实现」在报告里可见。
+   */
+  if (platforms.includes('youtube')) {
+    failures?.push({
+      keyword: '(全局)',
+      reason: 'YouTube 采集通道尚未实现：policy.platforms 含 youtube，但当前只有 B 站搜索，该平台本次无候选',
+    })
+  }
+
   const harvestOne = async (kw: string): Promise<void> => {
-    if (!platforms.includes('bilibili')) return
     if (Date.now() > deadline) {
       failures?.push({ keyword: kw, reason: '超出本次采集时间预算，未执行' })
       return
     }
+
+    // 多平台扩展通道（Dailymotion / PeerTube SepiaSearch）
+    if (platforms.includes('dailymotion') || platforms.includes('peertube')) {
+      const multiItems = await harvestMultiPlatformVideosForKeyword(kw, {
+        platforms,
+        minDurationSec,
+        minQualityScore,
+        limitPerKeyword,
+        failures,
+      })
+      for (const mItem of multiItems) {
+        const extId = mItem.videoConfig?.videoId || mItem.id
+        if (!seenIds.has(extId)) {
+          seenIds.add(extId)
+          results.push(mItem)
+        }
+      }
+    }
+
+    if (!platforms.includes('bilibili')) return
 
     try {
       // 请求 B 站综合排序搜索接口（必须带 wbi 签名，否则风控返回 -352/-412 或空结果）
@@ -324,31 +367,33 @@ export async function harvestVideosForTopic(
 
         seenIds.add(bvid)
         taken++
-        results.push({
-          id: `harvest_${bvid}_${Date.now()}`,
-          title: cleanTitle,
-          href: `https://www.bilibili.com/video/${bvid}`,
-          description: cleanDesc,
-          icon: cover,
-          enabled: true,
-          videoConfig: {
-            type: 'bilibili',
-            bvid,
-            aid: item.aid ? String(item.aid) : undefined,
-            author: item.author || '',
-            durationSec,
-            ...(pubDate ? { publishedAt: pubDate } : {}),
-            harvestedAt: Date.now(),
-            lastVerifiedAt: Date.now(),
-            qualityScore,
-            freshnessScore,
-            sourceType: 'auto_trend',
-            trendKeyword: kw,
-            pinned: false,
-            healthStatus: 'healthy',
-            stats
-          }
-        })
+        results.push(
+          enrichVideoItemSeo({
+            id: `harvest_${bvid}_${Date.now()}`,
+            title: cleanTitle,
+            href: `https://www.bilibili.com/video/${bvid}`,
+            description: cleanDesc,
+            icon: cover,
+            enabled: true,
+            videoConfig: {
+              type: 'bilibili',
+              bvid,
+              aid: item.aid ? String(item.aid) : undefined,
+              author: item.author || '',
+              durationSec,
+              ...(pubDate ? { publishedAt: pubDate } : {}),
+              harvestedAt: Date.now(),
+              lastVerifiedAt: Date.now(),
+              qualityScore,
+              freshnessScore,
+              sourceType: 'auto_trend',
+              trendKeyword: kw,
+              pinned: false,
+              healthStatus: 'healthy',
+              stats
+            }
+          })
+        )
       }
 
       if (taken === 0) {
@@ -538,8 +583,10 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
     }
 
     const currentItems = cat.items || []
+    const subCategories = cat.subCategories || []
+    const allCategoryItems = [...currentItems, ...subCategories.flatMap(s => s.items || [])]
 
-    // 重新计算并刷新分类内所有项目的保鲜分
+    // 重新计算并刷新分类内所有项目的保鲜分（含 directItems 和 subCategories）
     for (const item of currentItems) {
       if (item.videoConfig) {
         item.videoConfig.freshnessScore = calculateFreshnessScore(
@@ -550,16 +597,28 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
         )
       }
     }
+    for (const sub of subCategories) {
+      for (const item of sub.items || []) {
+        if (item.videoConfig) {
+          item.videoConfig.freshnessScore = calculateFreshnessScore(
+            item.videoConfig.publishedAt,
+            item.videoConfig.qualityScore || 75,
+            policy.freshnessHalfLifeDays || 90,
+            item.title
+          )
+        }
+      }
+    }
 
-    const avgFreshness = currentItems.length > 0
-      ? Math.round(currentItems.reduce((acc, it) => acc + (it.videoConfig?.freshnessScore || 70), 0) / currentItems.length)
+    const avgFreshness = allCategoryItems.length > 0
+      ? Math.round(allCategoryItems.reduce((acc, it) => acc + (it.videoConfig?.freshnessScore || 70), 0) / allCategoryItems.length)
       : 100
 
     const summary = {
       categoryId: cat.id,
       categoryTitle: cat.title,
       policyEnabled: Boolean(policy.enabled),
-      currentCount: currentItems.length,
+      currentCount: allCategoryItems.length,
       maxCapacity: policy.maxItems || 12,
       averageFreshness: avgFreshness,
       addedCount: 0,
@@ -604,9 +663,15 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
       const candidateScore = candidate.videoConfig?.freshnessScore || 80
       const candidateKey = videoExternalKey(candidate.videoConfig)
 
-      // 1. 若分类未满，直接增加
-      if (currentItems.length < maxItems) {
-        currentItems.push(candidate)
+      // 1. 若分类未满，直接增加（优先放入对应子分类）
+      if (allCategoryItems.length < maxItems) {
+        if (subCategories.length > 0) {
+          const targetSub = subCategories[0]
+          targetSub.items = [...(targetSub.items || []), candidate]
+        } else {
+          currentItems.push(candidate)
+        }
+        allCategoryItems.push(candidate)
         if (candidateKey) existingExternalIds.add(candidateKey)
         additions.push({ categoryTitle: cat.title, item: candidate })
         summary.addedCount++
@@ -615,21 +680,37 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
 
       // 2. 若分类已满且开启自动替换，寻找最应当淘汰的非锁定旧条目
       if (policy.autoReplaceOutdated) {
-        // 找出所有未被锁定的旧项目
-        const replaceableItemsWithIndex = currentItems
-          .map((item, index) => ({ item, index }))
-          .filter(e => !e.item.videoConfig?.pinned)
+        interface ReplaceableRef {
+          item: NavigationSubItem
+          container: NavigationSubItem[]
+          index: number
+        }
+        const replaceableList: ReplaceableRef[] = []
 
-        if (replaceableItemsWithIndex.length === 0) continue
+        currentItems.forEach((item, index) => {
+          if (!item.videoConfig?.pinned) {
+            replaceableList.push({ item, container: currentItems, index })
+          }
+        })
 
-        // 寻找有效分最低的项
-        replaceableItemsWithIndex.sort((a, b) => {
+        subCategories.forEach((sub) => {
+          const items = sub.items || []
+          items.forEach((item, index) => {
+            if (!item.videoConfig?.pinned) {
+              replaceableList.push({ item, container: items, index })
+            }
+          })
+        })
+
+        if (replaceableList.length === 0) continue
+
+        replaceableList.sort((a, b) => {
           const scoreA = a.item.videoConfig?.freshnessScore ?? 60
           const scoreB = b.item.videoConfig?.freshnessScore ?? 60
           return scoreA - scoreB
         })
 
-        const worst = replaceableItemsWithIndex[0]
+        const worst = replaceableList[0]
         if (!worst) continue
 
         const worstScore = worst.item.videoConfig?.freshnessScore ?? 60
@@ -639,7 +720,7 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
           const replacedOldItem = { ...worst.item }
 
           // 执行平滑替换
-          currentItems[worst.index] = candidate
+          worst.container[worst.index] = candidate
           if (candidateKey) existingExternalIds.add(candidateKey)
 
           const rec: VideoReplacementRecord = {
@@ -667,15 +748,23 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
   // 若不是 Dry-Run，将更新结果和审计记录落盘
   if (!dryRun && (additions.length > 0 || newReplacements.length > 0)) {
     data.replacementHistory = capReplacementHistory([...newReplacements, ...replacementHistory])
-    await commitFile(
-      VIDEOS_FILE_PATH,
-      JSON.stringify(data, null, 2),
-      `Auto harvest & rotation: +${additions.length} new, ~${newReplacements.length} replaced`,
-      accessToken,
-      3,
-      // 版本号来自实时查询；null 表示该后端不支持版本校验（github/sqlite）
-      version ?? undefined
-    )
+    try {
+      await commitFile(
+        VIDEOS_FILE_PATH,
+        JSON.stringify(data, null, 2),
+        `Auto harvest & rotation: +${additions.length} new, ~${newReplacements.length} replaced`,
+        accessToken,
+        3,
+        // 版本号来自实时查询；null 表示该后端不支持版本校验（github/sqlite）
+        version ?? undefined
+      )
+    } catch (commitErr) {
+      console.warn('[video-harvester] 写入存储后端失败，降级为临时应用模式:', commitErr)
+      degradedKeywords.push({
+        keyword: '(存储写盘)',
+        reason: commitErr instanceof Error ? commitErr.message : '存储写入失败',
+      })
+    }
 
     // 内联历史有容量上限（capReplacementHistory），独立文件是**不截断**的权威副本：
     // 回滚记录不会因为超过上限而永久丢失。失败不影响主流程（主数据已落盘）。

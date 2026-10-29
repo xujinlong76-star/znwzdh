@@ -181,7 +181,13 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
         targetTitle: alt.title,
       })
       if (res.ok) {
-        toast.success(`已成功替换为平替站点：${alt.title}`)
+        // 兜底候选本来就来自站内，目标 URL 大概率已被收录：中枢会把原站点归档并关联既有条目。
+        // 这时说「已替换为平替」是假话——站点并没有移动，只是这台失效入口被归档了。
+        if (res.merged) {
+          toast.info(`该候选已在站内收录（${res.merged.title}）：原失效站点已归档，导航指向既有条目`)
+        } else {
+          toast.success(`已成功替换为平替站点：${alt.title}`)
+        }
         loadReport()
       }
     } catch {

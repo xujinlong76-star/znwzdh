@@ -1,4 +1,5 @@
 import type { VideoConfig, VideoMirrorSource } from '@/types/navigation'
+import { VIDEO_PLATFORM_REGISTRY } from './video-platform-registry'
 
 export interface FailoverEvent {
   videoId: string
@@ -28,11 +29,17 @@ export function resolveAvailableMirrors(videoConfig: VideoConfig): VideoMirrorSo
 
   // Primary source
   const primaryId = videoConfig.bvid || videoConfig.videoId || 'primary'
+  const platformShort = VIDEO_PLATFORM_REGISTRY[videoConfig.type]?.shortName || videoConfig.type
   sources.push({
     id: `primary-${videoConfig.type}-${primaryId}`,
     platform: videoConfig.type,
     sourceId: primaryId,
-    label: videoConfig.type === 'bilibili' ? 'Bilibili 主线路' : 'YouTube 主线路',
+    label:
+      videoConfig.type === 'bilibili'
+        ? 'Bilibili 主线路'
+        : videoConfig.type === 'youtube'
+          ? 'YouTube 主线路'
+          : `${platformShort} 主线路`,
     priority: 0,
     isDirectStream: false,
   })

@@ -100,10 +100,13 @@ describe("失败分支必须排在「不存在 / 空列表」之前", () => {
     const src = code(ITEMS);
     const failAt = src.indexOf("if (loadError && !navigation)");
     const notFoundAt = src.indexOf("视频分类不存在");
-    const emptyAt = src.indexOf("filteredItems.length === 0", failAt);
+    // 该页后来加了分页：空态判断从 `filteredItems.length === 0` 变成
+    // `pagedItems.length > 0 ? 列表 : 空态`（先切片再判断）。守卫要守的是
+    // 「失败分支排在空态之前」，不是某个具体变量名，所以跟着改符号。
+    const emptyAt = src.indexOf("pagedItems.length > 0", failAt);
     expect(failAt).toBeGreaterThan(-1);
     expect(notFoundAt).toBeGreaterThan(failAt);
-    expect(emptyAt).toBeGreaterThan(failAt);
+    expect(emptyAt, "空态分支没找到（分页后再改名就要同步这里）").toBeGreaterThan(failAt);
   });
 
   it("子分类条目页：失败分支早于条目列表与空列表", () => {

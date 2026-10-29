@@ -1,10 +1,16 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterAll } from 'vitest'
 import {
   evaluateVideoWithAIModel,
   generateAISanitizedMetadata,
   AutonomousAIHarvesterController,
 } from '../src/lib/video-autonomous-ai-harvester'
 import type { NavigationData } from '../src/types/navigation'
+
+// mock 卫生守卫要求的兜底：上面用例已用 try/finally 清理，但 isolate:false 下
+// 用例被超时中断时 finally 不一定跑得掉，afterAll 是第二道保险。
+afterAll(() => {
+  delete process.env.NAVHUB_VIDEO_SYNTHETIC_METADATA
+})
 
 describe('Autonomous AI Video Harvester & Intelligent Content Enrichment Pipeline', () => {
   const mockNavigationData: NavigationData = {
@@ -169,8 +175,25 @@ describe('Autonomous AI Video Harvester & Intelligent Content Enrichment Pipelin
 
       const newlyAdded = aiItems[aiItems.length - 1]
       expect(newlyAdded?.videoConfig?.qualityScore).toBeGreaterThanOrEqual(70)
-      expect(newlyAdded?.videoConfig?.chapters).toBeDefined()
-      expect(newlyAdded?.videoConfig?.transcript).toBeDefined()
+      // 合成章节/字幕默认关闭：模板内容不得冒充视频原文
+      expect(newlyAdded?.videoConfig?.chapters).toBeUndefined()
+      expect(newlyAdded?.videoConfig?.transcript).toBeUndefined()
+      expect(newlyAdded?.videoConfig?.synthetic).toBeUndefined()
+    })
+
+    it('only writes synthetic metadata when explicitly enabled', async () => {
+      process.env.NAVHUB_VIDEO_SYNTHETIC_METADATA = '1'
+      try {
+        const controller = new AutonomousAIHarvesterController()
+        const { updatedData } = await controller.runCycle(structuredClone(mockNavigationData), { dryRun: false })
+        const aiCat = updatedData.navigationItems.find(c => c.id === 'cat_ai_engineering')
+        const added = (aiCat?.items ?? []).find(i => i.videoConfig?.synthetic === true)
+        expect(added).toBeDefined()
+        expect(added?.videoConfig?.chapters).toHaveLength(4)
+        expect(added?.videoConfig?.transcript?.length).toBeGreaterThanOrEqual(4)
+      } finally {
+        delete process.env.NAVHUB_VIDEO_SYNTHETIC_METADATA
+      }
     })
 
     it('respects forceCategory to restrict autonomous scan to single domain', async () => {

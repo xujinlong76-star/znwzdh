@@ -10,6 +10,7 @@ import { Button } from '@/registry/new-york/ui/button'
 import { Flame, Sparkles, CheckCircle2, RefreshCw, Terminal, Layers } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 import { cn } from '@/lib/utils'
+import { ensureAdminSession } from '@/lib/client-auto-auth'
 
 interface VideoAutoHarvestDialogProps {
   open: boolean
@@ -28,38 +29,80 @@ export function VideoAutoHarvestDialog({
 
   const handleStartHarvest = async () => {
     setIsHarvesting(true)
-    setLogs(['[Harvester] 启动全网多源技术热点雷达...', '[Harvester] 正在扫描 Bilibili、YouTube 及 GitHub Trending...'])
-
-    await new Promise(r => setTimeout(r, 600))
-    setLogs(prev => [...prev, '[Filter] 过滤短视频片段与低质量内容 (时长 >= 180s, 质量分 >= 80)...'])
-
-    await new Promise(r => setTimeout(r, 700))
-    setLogs(prev => [
-      ...prev,
-      `[AI Enrichment] 已捕获 ${CURATED_TRENDING_TOPICS.length} 个技术热点，正在自动提取章节、大纲与中文字幕...`,
+    setLogs([
+      '[Harvester] 启动全网多源技术热点雷达...',
+      '[Auth] 正在验证管理员调度会话安全通行凭证...',
     ])
 
-    await new Promise(r => setTimeout(r, 600))
-    const res: TrendingHarvestResult = {
-      timestamp: Date.now(),
-      harvestedCount: CURATED_TRENDING_TOPICS.length,
-      categoriesEnriched: ['AI 与大模型工程', '现代全栈与架构演进', '云原生与 DevOps 实战', '系统底层与高性能计算', '开源神器与独立开发'],
-      topDiscoveredVideos: CURATED_TRENDING_TOPICS.map(t => ({
-        title: t.recommendedTitle,
-        category: t.domain,
-        author: t.author,
-        hotIndex: t.hotIndex,
-        durationSec: t.durationSec,
-      })),
+    // 自动激活管理员会话（本地开发与免密模式下无缝签发）
+    await ensureAdminSession()
+
+    setLogs(prev => [
+      ...prev,
+      '[Harvester] 正在扫描全网开发者前沿高分视频 (B站/YouTube/技术社区)...',
+    ])
+
+    try {
+      // 1. 发起真实全网热点采集与过时内容平滑轮换
+      const response = await fetch('/api/videos/harvest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: false }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`服务端采集调度返回 HTTP ${response.status}`)
+      }
+
+      const json = await response.json()
+      const report = json.report
+
+      setLogs(prev => [
+        ...prev,
+        `[Analysis] 扫描全部分类已完成，捕获候选视频 ${report?.totalHarvestedCount || 0} 部。`,
+        `[Filter & AI Scoring] 质量模型审核完成，新增优质视频 ${report?.totalAddedCount || 0} 部，淘汰过时内容 ${report?.totalReplacedCount || 0} 部。`,
+      ])
+
+      const res: TrendingHarvestResult = {
+        timestamp: report?.timestamp || Date.now(),
+        harvestedCount: (report?.totalAddedCount || 0) + (report?.totalReplacedCount || 0),
+        categoriesEnriched: (report?.categorySummaries || [])
+          .filter((c: any) => c.addedCount > 0 || c.replacedCount > 0)
+          .map((c: any) => c.categoryTitle),
+        topDiscoveredVideos: (report?.additions || []).slice(0, 8).map((a: any) => ({
+          title: a.item?.title || '新采集视频',
+          category: a.categoryTitle,
+          author: a.item?.videoConfig?.author || '开发者讲师',
+          hotIndex: a.item?.videoConfig?.qualityScore || 85,
+          durationSec: a.item?.videoConfig?.durationSec || 600,
+        })),
+      }
+
+      // 如果新增和替换均为0，展示库内最新热点视频
+      if (res.topDiscoveredVideos.length === 0 && CURATED_TRENDING_TOPICS.length > 0) {
+        res.topDiscoveredVideos = CURATED_TRENDING_TOPICS.slice(0, 5).map(t => ({
+          title: t.recommendedTitle,
+          category: t.domain,
+          author: t.author,
+          hotIndex: t.hotIndex,
+          durationSec: t.durationSec,
+        }))
+      }
+
+      setLogs(prev => [
+        ...prev,
+        `✅ [Completed] 热点采集入库成功！网站视频库已同步至最新演进状态。`,
+      ])
+      setResult(res)
+      if (onHarvestCompleted) onHarvestCompleted()
+    } catch (err: any) {
+      setLogs(prev => [
+        ...prev,
+        `❌ [Error] 采集流水线异常: ${err?.message || err}`,
+      ])
+    } finally {
+      setIsHarvesting(false)
     }
-
-    setLogs(prev => [
-      ...prev,
-      `✅ [Completed] 热点采集入库成功！新增 ${res.harvestedCount} 部高分视频教程，网站视频内容已全面更新至最新状态。`,
-    ])
-    setResult(res)
-    setIsHarvesting(false)
-    if (onHarvestCompleted) onHarvestCompleted()
   }
 
   return (

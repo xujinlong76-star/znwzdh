@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { getFileContent } from '@/lib/github'
+import { getFileContent, readStorageFresh } from '@/lib/github'
 import { mutateVideoLibrary } from '@/lib/video-library-store'
 import type { NavigationItem, NavigationData } from '@/types/navigation'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
@@ -15,7 +16,7 @@ export async function GET(
 ) {
     try {
         const { id } = await params
-        const data = await getFileContent(VIDEOS_FILE_PATH)
+        const data = ((await readStorageFresh(VIDEOS_FILE_PATH)) ?? (await getFileContent(VIDEOS_FILE_PATH))) as NavigationData
         const item = data.navigationItems.find((item: NavigationItem) => item.id === id)
 
         if (!item) {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { getFileContent } from '@/lib/github'
+import { getFileContent, readStorageFresh } from '@/lib/github'
 import {
     decodeVideoCursor,
     encodeVideoCursor,
@@ -11,6 +11,7 @@ import { mutateVideoLibrary } from '@/lib/video-library-store'
 import type { NavigationItem, NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
@@ -72,7 +73,7 @@ function parseCount(raw: string | null): number | undefined {
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url)
-        const data = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
+        const data = ((await readStorageFresh(VIDEOS_FILE_PATH)) ?? (await getFileContent(VIDEOS_FILE_PATH))) as NavigationData
         const categories: NavigationItem[] = Array.isArray(data?.navigationItems)
             ? data.navigationItems
             : []

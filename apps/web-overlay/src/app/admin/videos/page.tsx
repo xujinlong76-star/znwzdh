@@ -8,6 +8,8 @@ import { VideoCategoryCard } from "./components/VideoCategoryCard"
 import { AddVideoCategoryForm } from "./components/AddVideoCategoryForm"
 import { HarvestModal } from "./components/HarvestModal"
 import { ReplacementHistoryDialog } from "./components/ReplacementHistoryDialog"
+import { VideoTelemetryDashboard } from "./components/VideoTelemetryDashboard"
+import { VideoSeoGovernancePanel } from "./components/VideoSeoGovernancePanel"
 import { Input } from "@/registry/new-york/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/registry/new-york/ui/dialog"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
@@ -195,6 +197,26 @@ export default function VideosAdminPage() {
                     </div>
                 </div>
             </div>
+
+            {/* 视频时效质量与后台长任务遥测看板 */}
+            <VideoTelemetryDashboard
+                categories={items}
+                onTriggerHarvest={(catId) => {
+                    setIsHarvestModalOpen(true)
+                }}
+                onRefreshCategories={() => {
+                    mutate()
+                    mutateOverview()
+                }}
+            />
+
+            {/* 搜索引擎收录 (SEO) 与多平台分布治理看板 */}
+            <VideoSeoGovernancePanel
+                onRefresh={() => {
+                    mutate()
+                    mutateOverview()
+                }}
+            />
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2 sm:gap-4 flex-1 w-full sm:w-auto">

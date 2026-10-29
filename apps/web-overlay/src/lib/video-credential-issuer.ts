@@ -151,24 +151,40 @@ export function issueVerifiableCertificate(params: {
 }
 
 /**
+ * XML/SVG 实体安全转义，防止 XSS 与 XML 标签逃逸
+ */
+export function escapeXml(str?: string | null): string {
+  if (!str) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+/**
  * Generates high-resolution SVG Certificate vector markup.
  */
 export function renderCertificateSvg(cert: VerifiableCertificate): string {
-  const name = cert.studentName || cert.recipientName
-  const certId = cert.certificateId || cert.credentialId
-  const badgesStr = cert.badges.map(b => b.name).join(' · ') || '全链路技能通关'
+  const name = escapeXml(cert.studentName || cert.recipientName)
+  const courseTitle = escapeXml(cert.courseTitle)
+  const certId = escapeXml(cert.certificateId || cert.credentialId)
+  const badgesStr = escapeXml(cert.badges.map(b => b.name).join(' · ') || '全链路技能通关')
+  const signaturePrefix = escapeXml(cert.signatureHash.slice(0, 32))
+  const issueDate = escapeXml(cert.issuedAt.slice(0, 10))
 
   return `
 <svg width="1000" height="700" viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg" data-issuer="antigravity">
   <defs>
     <linearGradient id="certBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#09090b" />
-      <stop offset="100%" stop-color="#18181b" />
+      <stop offset="0%" style="stop-color:#09090b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#18181b;stop-opacity:1" />
     </linearGradient>
     <linearGradient id="goldBorder" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fbbf24" />
-      <stop offset="50%" stop-color="#f59e0b" />
-      <stop offset="100%" stop-color="#d97706" />
+      <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#f59e0b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#d97706;stop-opacity:1" />
     </linearGradient>
   </defs>
 
@@ -198,7 +214,7 @@ export function renderCertificateSvg(cert: VerifiableCertificate): string {
     已完成以下专业级工程实战技术课程全套训战并通过考核：
   </text>
   <text x="500" y="395" font-family="system-ui, sans-serif" font-size="22" font-weight="600" fill="#f4f4f5" text-anchor="middle">
-    《${cert.courseTitle}》
+    《${courseTitle}》
   </text>
 
   <!-- Badges -->
@@ -210,8 +226,8 @@ export function renderCertificateSvg(cert: VerifiableCertificate): string {
   <!-- Footer Info -->
   <g transform="translate(100, 560)">
     <text x="0" y="0" font-family="monospace" font-size="11" fill="#71717a">证书编号: ${certId}</text>
-    <text x="0" y="20" font-family="monospace" font-size="10" fill="#52525b">数字指纹: ${cert.signatureHash.slice(0, 32)}...</text>
-    <text x="0" y="40" font-family="system-ui" font-size="11" fill="#71717a">颁发日期: ${cert.issuedAt.slice(0, 10)}</text>
+    <text x="0" y="20" font-family="monospace" font-size="10" fill="#52525b">数字指纹: ${signaturePrefix}...</text>
+    <text x="0" y="40" font-family="system-ui" font-size="11" fill="#71717a">颁发日期: ${issueDate}</text>
   </g>
 
   <g transform="translate(900, 570)" text-anchor="end">

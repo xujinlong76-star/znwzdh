@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 import { cn } from '@/lib/utils'
+import { ensureAdminSession } from '@/lib/client-auto-auth'
 import type {
   AutonomousHarvestLogEntry,
   AutonomousHarvestCycleReport,
@@ -54,7 +55,8 @@ export function VideoAutonomousHarvestConsole({
   useEffect(() => {
     if (!open) return
     setIsLoadingStats(true)
-    fetch('/api/videos/ai-autonomous-harvest')
+    ensureAdminSession()
+      .then(() => fetch('/api/videos/ai-autonomous-harvest'))
       .then(res => res.json())
       .then(json => {
         if (json.code === 0 && json.data) {
@@ -87,6 +89,7 @@ export function VideoAutonomousHarvestConsole({
     ])
 
     try {
+      await ensureAdminSession()
       const response = await fetch('/api/videos/ai-autonomous-harvest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -168,10 +171,17 @@ export function VideoAutonomousHarvestConsole({
               >
                 <option value="all">全领域自动拓展</option>
                 <option value="cat_ai_engineering">AI 与大模型工程</option>
-                <option value="cat_fullstack_architecture">现代全栈与架构演进</option>
+                <option value="cat_fullstack_architecture">现代全栈与微服务架构</option>
                 <option value="cat_devops_cloud">云原生与 DevOps 实战</option>
                 <option value="cat_systems_perf">系统底层与高性能计算</option>
-                <option value="cat_tools_indie">开源神器与独立开发</option>
+                <option value="cat_database_bigdata">现代存储引擎与海量数据架构</option>
+                <option value="cat_tools_indie">开源神器与独立开发出海</option>
+                <option value="cat_mobile_multiplatform">移动端与跨平台全栈开发</option>
+                <option value="cat_security_network">网络安全与攻防工程</option>
+                <option value="cat_algorithms_interview">算法精粹与系统设计</option>
+                <option value="cat_game_graphics">游戏开发与 3D 图形渲染</option>
+                <option value="cat_embedded_iot">嵌入式系统与物联网硬件</option>
+                <option value="cat_qa_performance">软件测试与自动化效能工程</option>
               </select>
             </div>
 

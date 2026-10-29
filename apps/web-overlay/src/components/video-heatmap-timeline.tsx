@@ -111,9 +111,9 @@ export function VideoHeatmapTimeline({
       >
         <defs>
           <linearGradient id="heatGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#10b981" stop-opacity="0.6" />
-            <stop offset="60%" stop-color="#06b6d4" stop-opacity="0.3" />
-            <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.0" />
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.6" />
+            <stop offset="60%" stopColor="#06b6d4" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
           </linearGradient>
         </defs>
 

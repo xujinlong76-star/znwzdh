@@ -5,7 +5,9 @@ import { Button } from "@/registry/new-york/ui/button"
 import { Input } from "@/registry/new-york/ui/input"
 import { Label } from "@/registry/new-york/ui/label"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
-import type { NavigationSubItem, VideoConfig } from '@/types/navigation'
+import type { NavigationSubItem, VideoConfig, VideoPlatformType } from '@/types/navigation'
+import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
+import { enrichVideoItemSeo } from '@/lib/video-seo'
 import { Sparkles, Loader2, Check } from 'lucide-react'
 
 export interface AddVideoItemFormProps {
@@ -105,10 +107,15 @@ export function AddVideoItemForm({
 
     setSubmitting(true)
     try {
+      const normalizedPlatform: VideoPlatformType =
+        videoType in VIDEO_PLATFORM_REGISTRY
+          ? (videoType as VideoPlatformType)
+          : 'bilibili'
+
       const videoConfig: VideoConfig = {
-        type: videoType === 'youtube' ? 'youtube' : 'bilibili',
+        type: normalizedPlatform,
         videoId: videoId.trim() || undefined,
-        bvid: videoType === 'bilibili' && videoId.trim() ? videoId.trim() : undefined,
+        bvid: normalizedPlatform === 'bilibili' && videoId.trim() ? videoId.trim() : undefined,
         aid: aid.trim() || undefined,
         cid: cid.trim() || undefined,
         author: author.trim() || undefined,
@@ -124,7 +131,7 @@ export function AddVideoItemForm({
         stats: defaultValues?.videoConfig?.stats,
       }
 
-      const item: NavigationSubItem = {
+      const rawItem: NavigationSubItem = {
         id: defaultValues?.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `video_${Date.now()}`),
         title: title.trim(),
         href: href.trim(),
@@ -134,6 +141,7 @@ export function AddVideoItemForm({
         videoConfig,
       }
 
+      const item = enrichVideoItemSeo(rawItem)
       await onSubmit(item)
     } finally {
       setSubmitting(false)
@@ -151,7 +159,7 @@ export function AddVideoItemForm({
         <div className="flex items-center gap-2">
           <Input
             aria-label="粘贴视频链接一键解析"
-            placeholder="粘贴 B 站 (BV...) 或 YouTube 链接一键提取..."
+            placeholder="支持 B站/YouTube/抖音/快手/西瓜/小红书/腾讯/优酷/Vimeo/TED/Dailymotion/PeerTube..."
             value={resolveUrl}
             onChange={(e) => setResolveUrl(e.target.value)}
             className="text-xs h-8 bg-background"
@@ -206,8 +214,11 @@ export function AddVideoItemForm({
             value={videoType}
             onChange={(e) => setVideoType(e.target.value)}
           >
-            <option value="bilibili">哔哩哔哩 (Bilibili)</option>
-            <option value="youtube">YouTube</option>
+            {Object.values(VIDEO_PLATFORM_REGISTRY).map((plat) => (
+              <option key={plat.id} value={plat.id}>
+                {plat.name}
+              </option>
+            ))}
           </select>
         </div>
 

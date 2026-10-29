@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { walkAndCopy } from "./walk-copy.mjs";
+import { PRUNED_GENERATED_DIRS, pruneGeneratedDirs, walkAndCopy } from "./walk-copy.mjs";
 
 /**
  * vendor-web.mjs 的搬运逻辑单测。
@@ -162,5 +162,64 @@ describe("walkAndCopy", () => {
 
     expect(read(dst, "src/lib/github.ts")).toBe("navhub");
     expect(read(dst, "src/lib/new.ts")).toBe("upstream-new");
+  });
+});
+
+describe("pruneGeneratedDirs", () => {
+  /**
+   * 锁的是 2026-10-29 run 40870005591 的一整族红灯。
+   *
+   * CI 里 apps/web 的依赖顺序是：`pnpm install --frozen-lockfile`（apps/web/package.json
+   * 被 git 跟踪，所以这一步真的会装出 apps/web/node_modules）→ `node scripts/vendor-web.mjs`。
+   * 旧的 vendor 无条件 `rmSync(node_modules)`，把刚装好的依赖整棵删掉；此后没有任何步骤
+   * 会再装（0dc15faf 起 pnpm-workspace.yaml 写了 verifyDepsBeforeRun: false，运行前自检
+   * 不再偷偷重装），于是 navsphere 的 tsc、根 vitest 跑的 apps/web/test 镜像、Playwright
+   * 的 next start 全报 Cannot find package 'next' / 'react'。
+   *
+   * 逐文件拷贝本来就按名字跳过 node_modules / .next，删掉这棵树对覆盖写入毫无帮助——
+   * 所以生成物里只准清构建缓存 .next。
+   */
+  it("keeps installed dependencies and prunes only the build cache", () => {
+    const target = makeTree(makeRoot(), {
+      "node_modules/next/package.json": '{"name":"next"}',
+      "node_modules/next/dist/bin/next": "#!/usr/bin/env node",
+      ".next/BUILD_ID": "stale",
+      "src/app/page.tsx": "stale-page",
+    });
+
+    pruneGeneratedDirs(target, { log: vi.fn() });
+
+    expect(exists(target, "node_modules/next/dist/bin/next")).toBe(true);
+    expect(exists(target, ".next/BUILD_ID")).toBe(false);
+    // 其余文件不受影响
+    expect(read(target, "src/app/page.tsx")).toBe("stale-page");
+  });
+
+  it("lists no install artifacts in the prune set", () => {
+    // 行为用例已经覆盖"装了依赖的目录还在"，这条再钉住清单本身：
+    // 一旦有人把 node_modules 加回 PRUNED_GENERATED_DIRS，CI 的四个作业会立刻整族红，
+    // 而红因（依赖没装）离改动点很远——这里提前拦住。
+    expect(PRUNED_GENERATED_DIRS).toEqual([".next"]);
+  });
+
+  it("is a no-op when nothing was generated yet", () => {
+    const target = makeTree(makeRoot(), { "package.json": "{}" });
+    const log = vi.fn();
+
+    pruneGeneratedDirs(target, { log });
+
+    expect(log).not.toHaveBeenCalled();
+    expect(read(target, "package.json")).toBe("{}");
+  });
+
+  it("wires vendor-web.mjs to the prune helper instead of rm-ing node_modules", () => {
+    // 调用点只能这么钉：真实跑一次 vendor-web.mjs 会重写 apps/web/，而 apps/web 与
+    // apps/web-overlay 里此刻有别人在途的未提交改动（§2c 禁止覆盖他人改动），
+    // 所以这里只读源码断言——它同样是"谁删了依赖"这条红因的第一现场。
+    const src = readFileSync(new URL("../vendor-web.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
+    expect(src).toContain("pruneGeneratedDirs(TARGET");
+    expect(src).not.toMatch(/rmSync\(join\(TARGET,\s*generated\)/);
+    expect(src).not.toMatch(/\[\s*"node_modules",\s*".next"\s*\]/);
   });
 });

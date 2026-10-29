@@ -21,6 +21,38 @@ import { join, relative, sep } from "node:path";
 const SKIP_ENTRIES = new Set(["node_modules", ".next"]);
 const DEFAULT_DEADLINE_MS = 20_000;
 
+/**
+ * vendor 之后仍要清掉的生成物。
+ *
+ * 只列 `.next`：那是上一次构建留下的缓存，留着可能让 `next build` 读到旧产物。
+ * `node_modules` 不在列内。CI 里 apps/web 的依赖是 `pnpm install --frozen-lockfile`
+ * 装的，而四个作业（测试分片 / 前端门禁 / E2E / ISR 抽查）都是 install 先跑、
+ * `node scripts/vendor-web.mjs` 后跑——vendor 是 install 之后唯一会动这个目录的步骤。
+ * 2026-10-29 实测：把它整棵删掉后 `pnpm --filter navsphere exec tsc --noEmit`、
+ * 根 vitest 跑的 apps/web/test 镜像、Playwright 的 `next start` 全报
+ * Cannot find package 'next' / 'react'（run 40870005591）。此前之所以没暴露，
+ * 是因为 pnpm 运行前的依赖自检会偷偷把目录装回来。
+ * 逐文件拷贝本来就会跳过这两个名字（见 SKIP_ENTRIES），删不删都不影响覆盖式写入。
+ */
+export const PRUNED_GENERATED_DIRS = [".next"];
+
+/**
+ * 清掉目标目录里的陈旧构建缓存（不动已安装的依赖）。
+ *
+ * @param {string} targetDir vendor 目标（apps/web）
+ * @param {object} [options]
+ * @param {Function} [options.log=noop] 日志输出
+ */
+export function pruneGeneratedDirs(targetDir, { log = () => {} } = {}) {
+  for (const dir of PRUNED_GENERATED_DIRS) {
+    const p = join(targetDir, dir);
+    if (existsSync(p)) {
+      log("[vendor] removing stale " + dir);
+      rmSync(p, { recursive: true, force: true });
+    }
+  }
+}
+
 function defaultSleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }

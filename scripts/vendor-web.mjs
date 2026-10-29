@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, relative } from "node:path";
-import { walkAndCopy } from "./lib/walk-copy.mjs";
+import { walkAndCopy, pruneGeneratedDirs } from "./lib/walk-copy.mjs";
 
 const ROOT = resolve(".");
 const TARGET = join(ROOT, "apps", "web");
@@ -152,15 +152,9 @@ try {
 // 注意：不用 cpSync(src, dst, { recursive: true }) 一次性拷目录——
 // 在部分 Windows 环境下递归 cpSync 会 EIO（Access is denied），而单文件
 // cpSync 正常；这里复用与 overlay 相同的逐文件 walkAndCopy，可靠且跨平台。
-// 另：先删掉本地生成的 node_modules/.next（pnpm 的 junction 会让任何
-// 覆盖式拷贝失败；上游 tarball 本来就没有这两个目录）。
-for (const generated of ["node_modules", ".next"]) {
-  const p = join(TARGET, generated);
-  if (existsSync(p)) {
-    console.log("[vendor] removing stale " + generated);
-    rmSync(p, { recursive: true, force: true });
-  }
-}
+// 另：walkAndCopy 本身按名字跳过 node_modules / .next，因此只清构建缓存 .next，
+// 不动 node_modules（CI 的 install 早于 vendor，删了就没有任何东西再装回来）。
+pruneGeneratedDirs(TARGET, { log: console.log });
 const upstreamCounter = { count: 0 };
 walkAndCopy(inner, TARGET, { targetRoot: TARGET, skipRel: ownedRelPaths, counter: upstreamCounter, log: console.log });
 console.log("[vendor] copied upstream: " + upstreamCounter.count + " files");

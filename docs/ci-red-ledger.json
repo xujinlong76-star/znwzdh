@@ -1,18 +1,5 @@
 {
   "version": 1,
   "updatedAt": "2026-10-29",
-  "entries": [
-    {
-      "id": "apps/web/test/url-hygiene.test.ts :: 这一批补齐的出口：确实换成了公共安全闸 > src/app/admin/videos/[id]/items/page.tsx 用上了 safeHref(item.href",
-      "file": "apps/web/test/url-hygiene.test.ts",
-      "case": "这一批补齐的出口：确实换成了公共安全闸 > src/app/admin/videos/[id]/items/page.tsx 用上了 safeHref(item.href",
-      "signature": "src/app/admin/videos/[id]/items/page.tsx: expected '\\'use client\\'\\n\\nexport const runtim…' to contain 'safeHref(item.href'",
-      "message": "src/app/admin/videos/[id]/items/page.tsx: expected '\\'use client\\'\\n\\nexport const runtim…' to contain 'safeHref(item.href'",
-      "owner": "视频线（源码未提交）",
-      "firstSeen": "2026-10-29",
-      "lastSeen": "2026-10-29",
-      "expiresAt": "2026-11-05",
-      "note": "items 页 safeHref 改造的源码仍在并行会话暂存区未提交（HEAD blob 里没有 safeHref，工作区与索引各有 1 处），本地该用例绿"
-    }
-  ]
+  "entries": []
 }

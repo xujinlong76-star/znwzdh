@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { mutateVideoLibrary, readVideoLibrary } from '@/lib/video-library-store'
-import { auditVideoSeoReadiness, enrichVideoItemSeo } from '@/lib/video-seo'
+import { auditVideoSeoReadiness, enrichVideoItemSeo, submitUrlsToIndexNow } from '@/lib/video-seo'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-multi-platform-harvester'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import type { NavigationSubItem } from '@/types/navigation'
@@ -150,9 +150,9 @@ export async function POST(request: Request) {
 
     // 可选：如果配置了 IndexNow Key，则主动向 Bing / Yandex / IndexNow 推送最新视频落地页
     let indexNowSubmitted = 0
-    const indexNowKey = body?.indexNowKey || process.env.NAVHUB_INDEXNOW_KEY
+    const indexNowKey = body?.indexNowKey || process.env.NAVHUB_INDEXNOW_KEY || process.env.INDEXNOW_KEY
     const siteOrigin = configuredSiteOrigin()
-    if (indexNowKey && siteOrigin) {
+    if (siteOrigin) {
       try {
         const freshData = await readVideoLibrary()
         const urlList: string[] = [`${siteOrigin}/videos/sitemap.xml`]
@@ -166,20 +166,11 @@ export async function POST(request: Request) {
             }
           }
         }
-        const host = new URL(siteOrigin).host
-        const pingRes = await fetch('https://api.indexnow.org/indexnow', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json; charset=utf-8' },
-          body: JSON.stringify({
-            host,
-            key: String(indexNowKey),
-            urlList: urlList.slice(0, 500),
-          }),
-          signal: AbortSignal.timeout(6000),
+        const pingResult = await submitUrlsToIndexNow(urlList, {
+          key: indexNowKey,
+          siteOrigin,
         })
-        if (pingRes.ok) {
-          indexNowSubmitted = Math.min(urlList.length, 500)
-        }
+        indexNowSubmitted = pingResult.submitted
       } catch {
         // IndexNow 推送失败不影响主流程
       }

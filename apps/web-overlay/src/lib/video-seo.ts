@@ -679,3 +679,88 @@ function escapeXml(unsafe: string): string {
     }
   })
 }
+
+export interface IndexNowSubmitOptions {
+  key?: string
+  siteOrigin?: string
+  keyLocation?: string
+  fetchImpl?: typeof fetch
+}
+
+export interface IndexNowSubmitResult {
+  submitted: number
+  ok: boolean
+  status?: number
+  error?: string
+}
+
+/**
+ * 主动向 IndexNow (Bing / Yandex / Naver / Seznam 共用协议端点) 提交最新生成的可索引落地页 URL
+ */
+export async function submitUrlsToIndexNow(
+  urls: string[],
+  options: IndexNowSubmitOptions = {}
+): Promise<IndexNowSubmitResult> {
+  const cleanUrls = Array.from(new Set(urls.map((u) => (u || '').trim()).filter(Boolean)))
+  if (cleanUrls.length === 0) {
+    return { submitted: 0, ok: true }
+  }
+
+  const key = (
+    options.key ||
+    process.env.NAVHUB_INDEXNOW_KEY ||
+    process.env.INDEXNOW_KEY ||
+    ''
+  ).trim()
+
+  if (!key) {
+    return {
+      submitted: 0,
+      ok: false,
+      error: '未配置 INDEXNOW_KEY 或 NAVHUB_INDEXNOW_KEY，跳过搜索引擎主动推送',
+    }
+  }
+
+  const firstUrl = cleanUrls[0]
+  let host = ''
+  try {
+    host = new URL(options.siteOrigin || firstUrl).host
+  } catch {
+    return { submitted: 0, ok: false, error: '无效的主机名或 siteOrigin' }
+  }
+
+  const batch = cleanUrls.slice(0, 500)
+  const fetchFn = options.fetchImpl || fetch
+
+  try {
+    const res = await fetchFn('https://api.indexnow.org/indexnow', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'User-Agent': 'NavHub-IndexNow-Agent/1.0',
+      },
+      body: JSON.stringify({
+        host,
+        key,
+        keyLocation: options.keyLocation || `https://${host}/${key}.txt`,
+        urlList: batch,
+      }),
+      signal: AbortSignal.timeout(8000),
+    })
+
+    const isOk = res.ok || res.status === 200 || res.status === 202
+    return {
+      submitted: isOk ? batch.length : 0,
+      ok: isOk,
+      status: res.status,
+      error: isOk ? undefined : `IndexNow 响应异常 HTTP ${res.status}`,
+    }
+  } catch (err) {
+    return {
+      submitted: 0,
+      ok: false,
+      error: err instanceof Error ? err.message : 'IndexNow 请求异常',
+    }
+  }
+}
+

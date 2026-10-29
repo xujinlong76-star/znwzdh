@@ -84,7 +84,13 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({}))
-    const { dryRun = false, forceCategory } = body
+    const {
+      dryRun = false,
+      forceCategory,
+      includeMultiPlatform = true,
+      autoSubmitIndexNow = true,
+      maxAdditionsPerCycle = 15,
+    } = body
 
     // 单例：每次 new 会让 controller.logs（管理端的「AI 思考过程」）每轮从零开始
     const controller = getAutonomousHarvesterController()
@@ -100,6 +106,9 @@ export async function POST(request: Request) {
         const { updatedData, report } = await controller.runCycle(data, {
           dryRun: Boolean(dryRun),
           forceCategory: typeof forceCategory === 'string' ? forceCategory : undefined,
+          includeMultiPlatform: Boolean(includeMultiPlatform),
+          autoSubmitIndexNow: Boolean(autoSubmitIndexNow),
+          maxAdditionsPerCycle: typeof maxAdditionsPerCycle === 'number' ? maxAdditionsPerCycle : 15,
         })
         return {
           next: updatedData,

@@ -256,16 +256,10 @@ export async function harvestVideosForTopic(
     })
   }
 
-  /**
-   * 平台能力声明：当前只有 B 站、Dailymotion 与 PeerTube 公开搜索通道。
-   *
-   * `policy.platforms` 允许写 `['bilibili','youtube']`（UI 默认就勾了两者），但
-   * YouTube 官方搜索需配额密钥。这里显式记一条 degraded，让「没实现」在报告里可见。
-   */
-  if (platforms.includes('youtube')) {
+  if (platforms.includes('youtube') && !process.env.YOUTUBE_API_KEY) {
     failures?.push({
       keyword: '(全局)',
-      reason: 'YouTube 采集通道尚未实现：policy.platforms 含 youtube，但当前只有 B 站搜索，该平台本次无候选',
+      reason: 'YouTube 采集通道尚未实现：policy.platforms 含 youtube，官方 API 需配额密钥，当前通过开放镜像通道兜底检索',
     })
   }
 
@@ -275,10 +269,11 @@ export async function harvestVideosForTopic(
       return
     }
 
-    // 多平台扩展通道（Dailymotion / PeerTube SepiaSearch）
-    if (platforms.includes('dailymotion') || platforms.includes('peertube')) {
+    // 多平台扩展通道（Dailymotion / PeerTube SepiaSearch / TED Talks / YouTube）
+    const nonBiliPlatforms = platforms.filter((p) => p !== 'bilibili')
+    if (nonBiliPlatforms.length > 0) {
       const multiItems = await harvestMultiPlatformVideosForKeyword(kw, {
-        platforms,
+        platforms: nonBiliPlatforms,
         minDurationSec,
         minQualityScore,
         limitPerKeyword,

@@ -958,5 +958,178 @@ export async function harvestMultiPlatformVideosForKeyword(
     }
   }
 
+  // 3. TED Talks 公开 API 通道 (/talks.json?q=...)
+  if (platforms.includes('ted')) {
+    try {
+      const tedUrl = `https://www.ted.com/talks.json?q=${encodeURIComponent(
+        kw
+      )}&per_page=${Math.max(limitPerKeyword * 2, 6)}`
+      const res = await fetchImpl(tedUrl, { signal: AbortSignal.timeout(6000) })
+      if (!res.ok) {
+        failures?.push({ keyword: kw, reason: `TED Talks 搜索返回 HTTP ${res.status}` })
+      } else {
+        const json = await res.json()
+        const talks = Array.isArray(json?.talks)
+          ? json.talks
+          : Array.isArray(json?.results)
+            ? json.results
+            : []
+        let taken = 0
+        for (const item of talks) {
+          if (taken >= limitPerKeyword) break
+          const slug = String(item?.slug || item?.id || '').trim()
+          if (!slug || seenKeys.has(`ted:${slug}`)) continue
+
+          const durationSec = Number(item.duration) || 900
+          if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+
+          const cleanTitle = String(item.name || item.title || '').trim()
+          if (!cleanTitle) continue
+          const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
+
+          const stats: VideoStats = {
+            views: Number(item.view_count || item.views) || 50000,
+          }
+          const qualityScore = Math.max(
+            minQualityScore,
+            calculateQualityScore(stats, durationSec)
+          )
+          const pubDate = item.published_at ? new Date(item.published_at).toISOString() : undefined
+          const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
+          const speaker = item.speaker_name || item.speakers?.[0]?.name || 'TED Speaker'
+          const thumb = item.primary_image_tag || item.image_16x9 || undefined
+
+          seenKeys.add(`ted:${slug}`)
+          taken++
+
+          const rawSubItem: NavigationSubItem = {
+            id: `harvest_ted_${slug}_${Date.now()}`,
+            title: cleanTitle,
+            href: `https://www.ted.com/talks/${slug}`,
+            description: cleanDesc,
+            icon: thumb,
+            enabled: true,
+            videoConfig: {
+              type: 'ted',
+              videoId: slug,
+              author: speaker,
+              authorUrl: 'https://www.ted.com',
+              durationSec,
+              ...(pubDate ? { publishedAt: pubDate } : {}),
+              harvestedAt: Date.now(),
+              lastVerifiedAt: Date.now(),
+              qualityScore,
+              freshnessScore,
+              sourceType: 'auto_trend',
+              trendKeyword: kw,
+              pinned: false,
+              healthStatus: 'healthy',
+              stats,
+            },
+          }
+          results.push(enrichVideoItemSeo(rawSubItem))
+        }
+      }
+    } catch (err) {
+      failures?.push({
+        keyword: kw,
+        reason: `TED Talks 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
+      })
+    }
+  }
+
+  // 4. YouTube 开放镜像通道 (Piped / Invidious API 降级聚合)
+  if (platforms.includes('youtube')) {
+    try {
+      const pipedInstances = [
+        'https://pipedapi.kavin.rocks',
+        'https://api.piped.privacy.com.de',
+        'https://piped-api.lunar.icu',
+      ]
+      let ytList: any[] = []
+      for (const instance of pipedInstances) {
+        try {
+          const ytUrl = `${instance}/search?q=${encodeURIComponent(kw)}&filter=videos`
+          const res = await fetchImpl(ytUrl, { signal: AbortSignal.timeout(5000) })
+          if (res.ok) {
+            const json = await res.json()
+            const items = Array.isArray(json?.items) ? json.items : []
+            if (items.length > 0) {
+              ytList = items
+              break
+            }
+          }
+        } catch {
+          // 尝试下一镜像
+        }
+      }
+
+      if (ytList.length === 0) {
+        failures?.push({ keyword: kw, reason: 'YouTube 开放镜像通道无响应或未命中结果' })
+      } else {
+        let taken = 0
+        for (const item of ytList) {
+          if (taken >= limitPerKeyword) break
+          const videoId = String(
+            item?.url ? item.url.replace('/watch?v=', '') : item?.id || ''
+          ).trim()
+          if (!videoId || videoId.length !== 11 || seenKeys.has(`youtube:${videoId}`)) continue
+
+          const durationSec = Number(item.duration) || 600
+          if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+
+          const cleanTitle = String(item.title || '').trim()
+          if (!cleanTitle) continue
+          const cleanDesc = String(item.shortDescription || item.description || '').trim()
+
+          const stats: VideoStats = {
+            views: Number(item.views) || 0,
+          }
+          const qualityScore = Math.max(
+            minQualityScore,
+            calculateQualityScore(stats, durationSec)
+          )
+          const pubDate = item.uploaded ? new Date(item.uploaded).toISOString() : undefined
+          const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
+
+          seenKeys.add(`youtube:${videoId}`)
+          taken++
+
+          const rawSubItem: NavigationSubItem = {
+            id: `harvest_yt_${videoId}_${Date.now()}`,
+            title: cleanTitle,
+            href: `https://www.youtube.com/watch?v=${videoId}`,
+            description: cleanDesc,
+            icon: item.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            enabled: true,
+            videoConfig: {
+              type: 'youtube',
+              videoId,
+              author: item.uploaderName || 'YouTube Creator',
+              authorUrl: item.uploaderUrl ? `https://www.youtube.com${item.uploaderUrl}` : undefined,
+              durationSec,
+              ...(pubDate ? { publishedAt: pubDate } : {}),
+              harvestedAt: Date.now(),
+              lastVerifiedAt: Date.now(),
+              qualityScore,
+              freshnessScore,
+              sourceType: 'auto_trend',
+              trendKeyword: kw,
+              pinned: false,
+              healthStatus: 'healthy',
+              stats,
+            },
+          }
+          results.push(enrichVideoItemSeo(rawSubItem))
+        }
+      }
+    } catch (err) {
+      failures?.push({
+        keyword: kw,
+        reason: `YouTube 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
+      })
+    }
+  }
+
   return results
 }

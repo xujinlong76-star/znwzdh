@@ -17,6 +17,9 @@ import { CURATED_TRENDING_TOPICS, type TrendingTechTopic } from '@/lib/video-tre
 import { calculateFreshnessScore } from '@/lib/video-scoring'
 import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
 import { videoExternalKey } from '@/lib/video-identity'
+import { enrichVideoItemSeo, submitUrlsToIndexNow } from '@/lib/video-seo'
+import { harvestMultiPlatformVideosForKeyword } from '@/lib/video-multi-platform-harvester'
+import { configuredSiteOrigin } from '@/lib/seo/origin'
 
 export interface AIEvaluationResult {
   aiQualityScore: number // 0 - 100
@@ -45,6 +48,16 @@ export interface AutonomousHarvestLogEntry {
   details?: Record<string, any>
 }
 
+export interface AutonomousHarvestRunOptions {
+  dryRun?: boolean
+  forceCategory?: string
+  includeMultiPlatform?: boolean
+  autoSubmitIndexNow?: boolean
+  maxAdditionsPerCycle?: number
+  limitPerKeyword?: number
+  fetchImpl?: typeof fetch
+}
+
 export interface AutonomousHarvestCycleReport {
   cycleId: string
   startedAt: number
@@ -53,6 +66,7 @@ export interface AutonomousHarvestCycleReport {
   aiApprovedCount: number
   aiRejectedCount: number
   categoriesEnriched: string[]
+  indexNowSubmitted?: number
   logs: AutonomousHarvestLogEntry[]
   newCourses: Array<{
     title: string
@@ -60,6 +74,8 @@ export interface AutonomousHarvestCycleReport {
     author: string
     aiScore: number
     durationSec: number
+    platform?: string
+    landingUrl?: string
   }>
 }
 
@@ -112,15 +128,21 @@ export function evaluateVideoWithAIModel(rawVideo: {
     'Microservices', 'SaaS', 'Stripe', 'RAG', 'Vector', 'Prompt', 'Linux', 'DevOps', 'CI/CD',
     'SpringBoot', 'RabbitMQ', 'Kafka', 'Redis', 'MySQL', 'PostgreSQL', 'C++', 'Git', 'Nginx',
     'Transformer', 'PyTorch', 'TensorFlow', 'FastAPI', 'Golang', 'WebAssembly', 'gRPC',
+    'Claude', 'OpenAI', 'LangChain', 'LangGraph', 'CrewAI', 'Ollama', 'vLLM', 'TensorRT',
+    'GraphQL', 'Protobuf', 'Tailwind', 'Vite', 'Node.js', 'Deno', 'Bun', 'Tauri', 'Electron',
+    'ClickHouse', 'TiDB', 'Elasticsearch', 'MongoDB', 'SQLite', 'DuckDB', 'PolarDB',
+    'Prometheus', 'Grafana', 'OpenTelemetry', 'Envoy', 'Istio', 'Helm', 'Terraform', 'Ansible',
     // 中文技术概念（缺失这一段是「中文内容全被拒」的直接原因）
     '机器学习', '深度学习', '神经网络', '大模型', '算法', '架构', '微服务', '分布式',
     '并发', '内核', '内存模型', '消息队列', '版本控制', '前端', '后端', '全栈',
     '性能优化', '系统编程', '容器化', '云原生', '可观测性', '向量检索', '提示工程',
     '独立开发', '出海', '数据分析', '自动化测试', '高可用', '负载均衡', '缓存',
+    '逆向工程', '渗透测试', '密码学', '零信任', '服务网格', '无服务器', '边缘计算',
+    '代码重构', '单元测试', '音视频', 'Web3', '区块链', '物联网', '嵌入式',
   ]
 
   const matchedTags: string[] = []
-  const fullText = `${title} ${desc}`
+  const fullText = `${title} ${desc} ${rawVideo.author || ''}`
   const haystack = fullText.toLowerCase()
   for (const kw of techKeywords) {
     if (haystack.includes(kw.toLowerCase())) {
@@ -330,18 +352,28 @@ export class AutonomousAIHarvesterController {
    */
   async runCycle(
     currentData: NavigationData,
-    options: { dryRun?: boolean; forceCategory?: string } = {}
+    options: AutonomousHarvestRunOptions = {}
   ): Promise<{ updatedData: NavigationData; report: AutonomousHarvestCycleReport }> {
     const cycleId = `cycle-${Date.now()}`
     const startedAt = Date.now()
-    this.addLog('info', `[Autonomous Cycle: ${cycleId}] 启动全流程自主采集流水线...`)
+    const maxAdditions = options.maxAdditionsPerCycle ?? 15
+    const fetchFn = options.fetchImpl || fetch
+    const siteOrigin = configuredSiteOrigin()
+
+    this.addLog('info', `[Autonomous Cycle: ${cycleId}] 启动全流程全自动自主采集流水线...`)
 
     // 复合键 `platform:externalId`，见 lib/video-identity.ts
     const existingIds = new Set<string>()
-    currentData.navigationItems.forEach(cat => {
-      ;(cat.items || []).forEach(it => {
+    currentData.navigationItems.forEach((cat) => {
+      ;(cat.items || []).forEach((it) => {
         const key = videoExternalKey(it.videoConfig)
         if (key) existingIds.add(key)
+      })
+      ;(cat.subCategories || []).forEach((sub) => {
+        ;(sub.items || []).forEach((it) => {
+          const key = videoExternalKey(it.videoConfig)
+          if (key) existingIds.add(key)
+        })
       })
     })
 
@@ -351,22 +383,24 @@ export class AutonomousAIHarvesterController {
     let approved = 0
     let rejected = 0
 
-    const updatedCategories = currentData.navigationItems.map(cat => ({
+    const updatedCategories = currentData.navigationItems.map((cat) => ({
       ...cat,
-      // items 在 NavigationItem 上是可选的：裸展开会在缺字段的分类上抛
-      // "undefined is not iterable"（tsc 也一直报 TS2488，被 ignoreBuildErrors 掩盖）
       items: [...(cat.items || [])],
+      subCategories: (cat.subCategories || []).map((sub) => ({
+        ...sub,
+        items: [...(sub.items || [])],
+      })),
     }))
 
+    // 阶段 1：精选热点选题池自主评估与入库
     for (const topic of CURATED_TRENDING_TOPICS) {
       if (options.forceCategory && topic.domain !== options.forceCategory) continue
+      if (newCourses.length >= maxAdditions) break
       scanned++
 
       this.addLog('ai_thought', `AI 正在扫描候选视频: "${topic.recommendedTitle}" (来自领域: ${topic.domain})`)
 
       // 1. Run AI Evaluation
-      // 不再传伪造的 stats：这里原来写死 views:180000 / likes:12000 / coins:6000，
-      // 让「投币点赞比」「收藏播放比」这两个评分维度变成固定值。
       const evalResult = evaluateVideoWithAIModel({
         title: topic.recommendedTitle,
         description: `深度探讨 ${topic.keyword}，包含完整的代码实践与技术架构。`,
@@ -381,7 +415,10 @@ export class AutonomousAIHarvesterController {
       }
 
       approved++
-      this.addLog('approved', `AI 审核通过: "${topic.recommendedTitle}" - 综合教学价值评分: ${evalResult.aiQualityScore}分 (${evalResult.pedagogicalValue})`)
+      this.addLog(
+        'approved',
+        `AI 审核通过: "${topic.recommendedTitle}" - 综合教学价值评分: ${evalResult.aiQualityScore}分 (${evalResult.pedagogicalValue})`
+      )
 
       // Check duplicate
       const topicKey = `bilibili:${topic.bvidFallback}`
@@ -391,10 +428,6 @@ export class AutonomousAIHarvesterController {
       }
 
       // 2. Run AI Metadata Synthesis
-      //
-      // 合成元数据默认关闭：generateAISanitizedMetadata 是模板生成，不是模型输出。
-      // 关掉时只写真实抓到的字段（标题/作者/时长/发布时间），章节与字幕留空，
-      // 前端走「暂无章节」分支 —— 宁可少一块内容，也不要让用户把模板当视频原文。
       const synthetic = syntheticMetadataEnabled()
       const meta = generateAISanitizedMetadata(
         topic.recommendedTitle,
@@ -410,7 +443,7 @@ export class AutonomousAIHarvesterController {
           : `已跳过 "${meta.cleanTitle}" 的合成章节/字幕（NAVHUB_VIDEO_SYNTHETIC_METADATA 未开启）`,
       )
 
-      let targetCat = updatedCategories.find(c => c.id === topic.domain)
+      let targetCat = updatedCategories.find((c) => c.id === topic.domain)
       if (!targetCat) {
         const domainTitleMap: Record<string, string> = {
           cat_ai_engineering: 'AI 与大模型工程',
@@ -430,46 +463,46 @@ export class AutonomousAIHarvesterController {
         updatedCategories.push(targetCat)
       }
 
-      if (!options.dryRun) {
-        const subItem: NavigationSubItem = {
-          id: `ai_auto_${topic.bvidFallback}_${Date.now()}`,
-          title: meta.cleanTitle,
-          href: `https://www.bilibili.com/video/${topic.bvidFallback}`,
-          description: synthetic ? meta.overview : '',
-          // 不写封面：此前这里对所有 AI 采集内容都用同一张 Unsplash 图，
-          // 等于把图库内容伪装成「有配图」。留空后前端走平台占位。
-          enabled: true,
-          videoConfig: {
-            type: 'bilibili',
-            bvid: topic.bvidFallback,
-            p: 1,
-            author: topic.author,
-            durationSec: topic.durationSec,
-            // 发布时间未知就不写：原来写 new Date() 把所有老课程标成「今天发布」，
-            // 保鲜分再写死 99 → 「过时内容轮换」永远不会触发。
-            ...(topic.publishedAt ? { publishedAt: topic.publishedAt } : {}),
-            harvestedAt: Date.now(),
-            qualityScore: evalResult.aiQualityScore,
-            freshnessScore: calculateFreshnessScore(
-              topic.publishedAt,
-              evalResult.aiQualityScore,
-              90,
-              topic.recommendedTitle
-            ),
-            sourceType: 'auto_trend',
-            trendKeyword: topic.keyword,
-            pinned: false,
-            healthStatus: 'healthy',
-            // 合成元数据默认不写：模板章节/字幕会被误认为视频原文
-            ...(synthetic
-              ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true }
-              : {}),
-            // stats 留空：原来写死 views:195000 / likes:14200 等，与真实播放量无关，
-            // 却会被 calculateQualityScore 当输入用。
-          },
-        }
+      const subItemId = `ai_auto_${topic.bvidFallback}_${Date.now()}`
+      const rawSubItem: NavigationSubItem = {
+        id: subItemId,
+        title: meta.cleanTitle,
+        href: `https://www.bilibili.com/video/${topic.bvidFallback}`,
+        description: synthetic ? meta.overview : '',
+        enabled: true,
+        videoConfig: {
+          type: 'bilibili',
+          bvid: topic.bvidFallback,
+          p: 1,
+          author: topic.author,
+          durationSec: topic.durationSec,
+          ...(topic.publishedAt ? { publishedAt: topic.publishedAt } : {}),
+          harvestedAt: Date.now(),
+          qualityScore: evalResult.aiQualityScore,
+          freshnessScore: calculateFreshnessScore(
+            topic.publishedAt,
+            evalResult.aiQualityScore,
+            90,
+            topic.recommendedTitle
+          ),
+          sourceType: 'auto_trend',
+          trendKeyword: topic.keyword,
+          pinned: false,
+          healthStatus: 'healthy',
+          ...(synthetic
+            ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true }
+            : {}),
+        },
+      }
 
-        targetCat.items.push(subItem)
+      const enrichedItem = enrichVideoItemSeo(rawSubItem, targetCat.title)
+
+      if (!options.dryRun) {
+        if (targetCat.subCategories && targetCat.subCategories.length > 0) {
+          targetCat.subCategories[0].items.push(enrichedItem)
+        } else {
+          targetCat.items.push(enrichedItem)
+        }
         existingIds.add(topicKey)
       }
 
@@ -480,7 +513,142 @@ export class AutonomousAIHarvesterController {
         author: topic.author,
         aiScore: evalResult.aiQualityScore,
         durationSec: topic.durationSec,
+        platform: 'bilibili',
+        landingUrl: siteOrigin ? `${siteOrigin}/videos/v/${encodeURIComponent(subItemId)}` : undefined,
       })
+    }
+
+    // 阶段 2：多平台动态检索与 AI 智能富化扩展（支持 YouTube / Dailymotion / PeerTube / TED）
+    if (options.includeMultiPlatform !== false && newCourses.length < maxAdditions) {
+      this.addLog('info', '正在执行多平台动态扩展采集 (YouTube / Dailymotion / PeerTube / TED)...')
+
+      for (const cat of updatedCategories) {
+        if (options.forceCategory && cat.id !== options.forceCategory) continue
+        if (newCourses.length >= maxAdditions) break
+
+        const policy = cat.harvestPolicy
+        const kwList = policy?.keywords?.length
+          ? policy.keywords.slice(0, 3)
+          : [cat.title]
+        const platforms = policy?.platforms?.length
+          ? policy.platforms.filter((p) => p !== 'bilibili')
+          : (['dailymotion', 'peertube', 'ted', 'youtube'] as any)
+
+        for (const kw of kwList) {
+          if (newCourses.length >= maxAdditions) break
+          try {
+            this.addLog(
+              'ai_thought',
+              `AI 正在多平台检索前沿实战视频: "${kw}" (覆盖平台: ${platforms.join(', ')})`
+            )
+            const multiCandidates = await harvestMultiPlatformVideosForKeyword(
+              kw,
+              {
+                platforms,
+                minDurationSec: policy?.minDurationSec || 180,
+                minQualityScore: policy?.minQualityScore || 60,
+                limitPerKeyword: options.limitPerKeyword || 2,
+              },
+              fetchFn
+            )
+
+            for (const cand of multiCandidates) {
+              if (newCourses.length >= maxAdditions) break
+              scanned++
+              const candKey = videoExternalKey(cand.videoConfig)
+              if (!candKey || existingIds.has(candKey)) continue
+
+              const evalRes = evaluateVideoWithAIModel({
+                title: cand.title,
+                description: cand.description,
+                author: cand.videoConfig?.author,
+                durationSec: cand.videoConfig?.durationSec,
+                stats: cand.videoConfig?.stats,
+              })
+
+              if (!evalRes.isApproved) {
+                rejected++
+                this.addLog('rejected', `AI 拒绝入库: "${cand.title}" - 原因: ${evalRes.rejectReason}`)
+                continue
+              }
+
+              approved++
+              this.addLog(
+                'approved',
+                `AI 审核通过: "${cand.title}" (平台: ${cand.videoConfig?.type}) - 综合评分: ${evalRes.aiQualityScore}分 (${evalRes.pedagogicalValue})`
+              )
+
+              const enrichedCand = enrichVideoItemSeo(
+                {
+                  ...cand,
+                  videoConfig: {
+                    ...cand.videoConfig!,
+                    qualityScore: evalRes.aiQualityScore,
+                    freshnessScore: calculateFreshnessScore(
+                      cand.videoConfig?.publishedAt,
+                      evalRes.aiQualityScore,
+                      90,
+                      cand.title
+                    ),
+                  },
+                },
+                cat.title
+              )
+
+              if (!options.dryRun) {
+                if (cat.subCategories && cat.subCategories.length > 0) {
+                  cat.subCategories[0].items.push(enrichedCand)
+                } else {
+                  cat.items.push(enrichedCand)
+                }
+                existingIds.add(candKey)
+              }
+
+              categoriesEnriched.add(cat.title)
+              newCourses.push({
+                title: cand.title,
+                categoryTitle: cat.title,
+                author: cand.videoConfig?.author || '技术创作者',
+                aiScore: evalRes.aiQualityScore,
+                durationSec: cand.videoConfig?.durationSec || 600,
+                platform: cand.videoConfig?.type,
+                landingUrl: siteOrigin ? `${siteOrigin}/videos/v/${encodeURIComponent(cand.id)}` : undefined,
+              })
+            }
+          } catch (err) {
+            this.addLog(
+              'info',
+              `多平台检索关键词 "${kw}" 异常: ${err instanceof Error ? err.message : '网络故障'}`
+            )
+          }
+        }
+      }
+    }
+
+    // 阶段 3：全自动 IndexNow 搜索引擎主动提交通道
+    let indexNowSubmitted = 0
+    if (!options.dryRun && options.autoSubmitIndexNow !== false && newCourses.length > 0 && siteOrigin) {
+      try {
+        const landingUrls: string[] = [`${siteOrigin}/videos/sitemap.xml`]
+        for (const course of newCourses) {
+          if (course.landingUrl) landingUrls.push(course.landingUrl)
+        }
+        const pingRes = await submitUrlsToIndexNow(landingUrls, {
+          siteOrigin,
+          fetchImpl: fetchFn,
+        })
+        indexNowSubmitted = pingRes.submitted
+        if (pingRes.ok) {
+          this.addLog(
+            'success',
+            `[SEO IndexNow] 成功向搜索引擎主动提交 ${indexNowSubmitted} 个新收录视频落地页 (Bing / Yandex)`
+          )
+        } else if (pingRes.error) {
+          this.addLog('info', `[SEO IndexNow] 提示: ${pingRes.error}`)
+        }
+      } catch (err) {
+        this.addLog('info', `[SEO IndexNow] 提交网络异常: ${err instanceof Error ? err.message : '失败'}`)
+      }
     }
 
     const report: AutonomousHarvestCycleReport = {
@@ -491,6 +659,7 @@ export class AutonomousAIHarvesterController {
       aiApprovedCount: approved,
       aiRejectedCount: rejected,
       categoriesEnriched: Array.from(categoriesEnriched),
+      indexNowSubmitted,
       logs: this.getLogs(),
       newCourses,
     }

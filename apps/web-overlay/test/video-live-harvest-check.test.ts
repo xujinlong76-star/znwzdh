@@ -93,7 +93,7 @@ describe('实机触发采集功能并验证自动化采集管线', () => {
 
     expect(report.scannedCandidatesCount).toBeGreaterThan(0)
     expect(report.logs.length).toBeGreaterThan(0)
-  }, 30000)
+  }, 120_000) // 实机网络往返：负载下 30s 不够（2026-10-29 并行会话期间实测超时）
 
   it('4. 触发策略型定向采集与保鲜轮换 (runVideoHarvestAndRotation Dry-Run)', async () => {
     const report = await runVideoHarvestAndRotation({
@@ -109,5 +109,5 @@ describe('实机触发采集功能并验证自动化采集管线', () => {
     console.log(`  降级/跳过关键词数: ${report.degradedKeywords.length}`)
 
     expect(report.totalCheckedCategories).toBeGreaterThanOrEqual(1)
-  }, 30000)
+  }, 120_000) // 实机网络往返：负载下 30s 不够（2026-10-29 并行会话期间实测超时）
 })

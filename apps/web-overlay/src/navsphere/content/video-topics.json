@@ -847,6 +847,666 @@
           "text": "构建高可用高可靠软件体系的核心，在于可量化、可自动执行的质量效能平台。"
         }
       ]
+    },
+    {
+      "domain": "cat_game_graphics",
+      "keyword": "WebGPU WGSL 图形渲染实战",
+      "hotIndex": 96,
+      "recommendedTitle": "WebGPU 与 WGSL 图形编程实战：现代 GPU 硬件渲染管线、计算着色器与实时光线追踪",
+      "bvidFallback": "BV185411z7cM",
+      "author": "图形渲染极客",
+      "durationSec": 17100,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "WebGPU 架构核心演进与 Vulkan/Metal 对齐原理",
+          "startTime": 0,
+          "duration": 3600
+        },
+        {
+          "id": "c2",
+          "title": "WGSL 着色语言语法、顶点着色器与片元着色器编写",
+          "startTime": 3600,
+          "duration": 4200
+        },
+        {
+          "id": "c3",
+          "title": "计算着色器 Compute Shader 与大规模并行粒子仿真",
+          "startTime": 7800,
+          "duration": 4500
+        },
+        {
+          "id": "c4",
+          "title": "延迟渲染管线与 PBR 基于物理的材质光照模型",
+          "startTime": 12300,
+          "duration": 4800
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "WebGPU 作为下一代 Web 图形标准，彻底释放了底层 GPU 硬件并行计算能力。"
+        },
+        {
+          "id": "t2",
+          "startSec": 3600,
+          "endSec": 3700,
+          "text": "WGSL 强类型着色器语言让渲染管线状态在编译期即可得到严格校验。"
+        },
+        {
+          "id": "t3",
+          "startSec": 12300,
+          "endSec": 12400,
+          "text": "PBR 光照模型结合 WebGPU Compute Shader 能够实现接近次世代主机的实时渲染画质。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_game_graphics",
+      "keyword": "Godot 4 独立游戏开发架构实战",
+      "hotIndex": 94,
+      "recommendedTitle": "Godot 4 引擎独立游戏实战：场景树架构设计、C# 脚本、2D/3D 物理与跨平台打包发行",
+      "bvidFallback": "BV1e4411b7xY",
+      "author": "独立游戏工坊",
+      "durationSec": 14800,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "Godot 4 节点与场景树 (SceneTree) 架构思想",
+          "startTime": 0,
+          "duration": 3200
+        },
+        {
+          "id": "c2",
+          "title": "C# 现代脚本开发与高性能 ECS 实体组件设计",
+          "startTime": 3200,
+          "duration": 3800
+        },
+        {
+          "id": "c3",
+          "title": "2D/3D 物理碰撞、状态机与动画混合树实现",
+          "startTime": 7000,
+          "duration": 4200
+        },
+        {
+          "id": "c4",
+          "title": "跨平台渲染优化、多平台打包与 Steam 接入发布",
+          "startTime": 11200,
+          "duration": 3600
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "Godot 4 的万物皆节点理念为独立游戏开发者提供了极高自由度的模块化设计能力。"
+        },
+        {
+          "id": "t2",
+          "startSec": 3200,
+          "endSec": 3300,
+          "text": "通过 C# 编写核心游戏逻辑，既保证了开发效率，又拥有卓越的运算性能。"
+        },
+        {
+          "id": "t3",
+          "startSec": 11200,
+          "endSec": 11300,
+          "text": "跨平台渲染管线与自适应分辨率机制让游戏能够无缝运行在 PC、移动端与 Web 平台。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_embedded_iot",
+      "keyword": "FreeRTOS STM32 内核源码与多任务实战",
+      "hotIndex": 95,
+      "recommendedTitle": "FreeRTOS 实时嵌入式操作系统全景精讲：内核任务调度、队列信号量、内存管理与工业总线实战",
+      "bvidFallback": "BV1P5411z7bX",
+      "author": "嵌入式极客基地",
+      "durationSec": 18600,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "ARM Cortex-M 体系结构与 FreeRTOS 任务上下文切换",
+          "startTime": 0,
+          "duration": 4200
+        },
+        {
+          "id": "c2",
+          "title": "任务状态机、抢占式优先级调度与时间片轮转机制",
+          "startTime": 4200,
+          "duration": 4500
+        },
+        {
+          "id": "c3",
+          "title": "消息队列、二值信号量、互斥锁与优先级反转解决",
+          "startTime": 8700,
+          "duration": 5100
+        },
+        {
+          "id": "c4",
+          "title": "Heap 内存管理算法与 CAN / RS485 工业通信实战",
+          "startTime": 13800,
+          "duration": 4800
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "深入理解 PendSV 中断与汇编级上下文切换是掌握 FreeRTOS 内核的基石。"
+        },
+        {
+          "id": "t2",
+          "startSec": 8700,
+          "endSec": 8800,
+          "text": "优先级继承机制有效避免了多任务高频抢占中的优先级反转死锁隐患。"
+        },
+        {
+          "id": "t3",
+          "startSec": 13800,
+          "endSec": 13900,
+          "text": "在工业现场恶劣环境下，双总线隔离与严密内存池防护是嵌入式设备高可靠运行的保证。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_embedded_iot",
+      "keyword": "Rust 嵌入式 ESP32 裸机实战",
+      "hotIndex": 93,
+      "recommendedTitle": "Rust 现代嵌入式开发通关指南：ESP32 / RISC-V 架构、no_std 裸机编程与内存安全外设驱动",
+      "bvidFallback": "BV1F4411b7wZ",
+      "author": "硬核系统玩家",
+      "durationSec": 14800,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "Rust 嵌入式生态概览：no_std 环境与交叉编译链路",
+          "startTime": 0,
+          "duration": 3000
+        },
+        {
+          "id": "c2",
+          "title": "PAC 外设访问包与 Embedded-HAL 硬件抽象层设计",
+          "startTime": 3000,
+          "duration": 3600
+        },
+        {
+          "id": "c3",
+          "title": "ESP32-C3 RISC-V 芯片 GPIO、I2C 与 SPI 驱动开发",
+          "startTime": 6600,
+          "duration": 4200
+        },
+        {
+          "id": "c4",
+          "title": "Embassy 异步运行时：Rust 零成本抽象在低功耗 IoT 中的落地",
+          "startTime": 10800,
+          "duration": 4000
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "Rust 的编译期所有权模型彻底终结了嵌入式 C 语言中指针越界与悬垂引用的噩梦。"
+        },
+        {
+          "id": "t2",
+          "startSec": 6600,
+          "endSec": 6700,
+          "text": "通过 Embedded-HAL 特质约束，编写的外设驱动可以在不同微控制器平台间无缝移植。"
+        },
+        {
+          "id": "t3",
+          "startSec": 10800,
+          "endSec": 10900,
+          "text": "Embassy 异步框架让嵌入式协程开发如同 Node.js 或 Go 一样优雅，且不消耗堆内存。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_qa_performance",
+      "keyword": "Playwright Web 自动化测试体系实战",
+      "hotIndex": 97,
+      "recommendedTitle": "Playwright 现代化端到端自动化测试：企业级 Page Object 模式、API 联动与并发测试矩阵",
+      "bvidFallback": "BV1k5411z7aL",
+      "author": "测试效能专家",
+      "durationSec": 16400,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "Playwright 双向 CDP 协议优势与现代浏览器多上下文隔离",
+          "startTime": 0,
+          "duration": 3600
+        },
+        {
+          "id": "c2",
+          "title": "自动等待机制、网络拦截 Mock 与持久化登录凭据注入",
+          "startTime": 3600,
+          "duration": 4200
+        },
+        {
+          "id": "c3",
+          "title": "企业级 Page Object Model (POM) 设计模式与业务组件抽象",
+          "startTime": 7800,
+          "duration": 4500
+        },
+        {
+          "id": "c4",
+          "title": "GitHub Actions 多节点并行分片执行与 Allure 质量大屏看板",
+          "startTime": 12300,
+          "duration": 4100
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "Playwright 凭借天生事件驱动的自动重试与精准元素等待，极大降低了 UI 测试的不稳定性。"
+        },
+        {
+          "id": "t2",
+          "startSec": 7800,
+          "endSec": 7900,
+          "text": "通过 POM 模式将页面元素与业务交互解耦，即使前端 UI 频繁重构也能从容维护。"
+        },
+        {
+          "id": "t3",
+          "startSec": 12300,
+          "endSec": 12400,
+          "text": "结合 CI 并行分片执行，百条端到端用例可以在 5 分钟内完成回归，守护发布安全。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_qa_performance",
+      "keyword": "Linux 性能分析 eBPF 火焰图排查",
+      "hotIndex": 98,
+      "recommendedTitle": "Linux 系统底层性能剖析与调优精粹：Brendan Gregg 方法论、eBPF 动态追踪与 CPU/内存火焰图实战",
+      "bvidFallback": "BV1c4411b7vK",
+      "author": "性能调优实验室",
+      "durationSec": 17600,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "USE 与 RED 性能分析方法论与 Linux 内核指标监控矩阵",
+          "startTime": 0,
+          "duration": 3800
+        },
+        {
+          "id": "c2",
+          "title": "CPU 瓶颈排查：调度延迟、软中断过高与 On-CPU/Off-CPU 火焰图",
+          "startTime": 3800,
+          "duration": 4600
+        },
+        {
+          "id": "c3",
+          "title": "内存与 I/O 调优：Page Cache、SWAP 交换抖动与 Disk I/O 延迟追踪",
+          "startTime": 8400,
+          "duration": 4800
+        },
+        {
+          "id": "c4",
+          "title": "BCC 与 bpftrace 实战：免重启内核级探针与网络协议栈瓶颈定位",
+          "startTime": 13200,
+          "duration": 4400
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "性能调优不能靠猜测，必须遵循 USE 方法论全面度量系统的利用率、饱和度与错误率。"
+        },
+        {
+          "id": "t2",
+          "startSec": 3800,
+          "endSec": 3900,
+          "text": "火焰图直观展现了代码调用栈的采样分布，帮助开发者在数秒内锁定热点消耗函数。"
+        },
+        {
+          "id": "t3",
+          "startSec": 13200,
+          "endSec": 13300,
+          "text": "eBPF 技术使得我们在零业务侵入的前提下，安全动态监控生产环境内核调用链路。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_ai_engineering",
+      "keyword": "DeepSeek V3 R1 架构推理与私有化部署",
+      "hotIndex": 99,
+      "recommendedTitle": "DeepSeek V3 / R1 核心架构深度解密：MoE 稀疏专家模型、MLA 多头潜在注意力与私有化全流程实战",
+      "bvidFallback": "BV1Z5411z7uP",
+      "author": "AI架构师内参",
+      "durationSec": 18700,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "DeepSeek-V3 架构创新：MLA 潜在注意机制与显存极致优化",
+          "startTime": 0,
+          "duration": 4500
+        },
+        {
+          "id": "c2",
+          "title": "DeepSeekMoE 无辅助损失负载均衡与大模型低成本训练技术",
+          "startTime": 4500,
+          "duration": 4800
+        },
+        {
+          "id": "c3",
+          "title": "DeepSeek-R1 推理增强技术：纯强化学习让模型涌现自主深度思考",
+          "startTime": 9300,
+          "duration": 5200
+        },
+        {
+          "id": "c4",
+          "title": "Ollama / vLLM 生产级私有化高并发部署与企业知识库 RAG 融合",
+          "startTime": 14500,
+          "duration": 4200
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "DeepSeek 的多头潜在注意力（MLA）在大幅压缩 KV Cache 的同时保留了强大的表达能力。"
+        },
+        {
+          "id": "t2",
+          "startSec": 9300,
+          "endSec": 9400,
+          "text": "DeepSeek-R1 证明了无需海量冷启动微调，通过纯强化学习即可让模型自主生成长思维链并提升数学与代码推理水平。"
+        },
+        {
+          "id": "t3",
+          "startSec": 14500,
+          "endSec": 14600,
+          "text": "借助 vLLM 的 PagedAttention 与量化技术，企业可以用极低成本在单机多卡环境提供高并发推理服务。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_ai_engineering",
+      "keyword": "Anthropic MCP 协议 Agent 架构实战",
+      "hotIndex": 98,
+      "recommendedTitle": "Model Context Protocol (MCP) 与多智能体协同实战：连接企业系统、开发工具与上下文通信协议设计",
+      "bvidFallback": "BV1a4411b7tJ",
+      "author": "Agent智能体前沿",
+      "durationSec": 15200,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "MCP 协议规范演进：标准化大模型与本地及远程工具的互联通道",
+          "startTime": 0,
+          "duration": 3200
+        },
+        {
+          "id": "c2",
+          "title": "开发你的第一个 MCP Server：JSON-RPC 2.0、Resources 与 Tools 接口",
+          "startTime": 3200,
+          "duration": 3800
+        },
+        {
+          "id": "c3",
+          "title": "多智能体协作与 LangGraph 编排：状态机驱动的复杂软件工程任务分发",
+          "startTime": 7000,
+          "duration": 4600
+        },
+        {
+          "id": "c4",
+          "title": "企业级权限控制、敏感信息脱敏与审计日志在 Agent 系统中的工程实践",
+          "startTime": 11600,
+          "duration": 3600
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "MCP 正在成为大语言模型时代的 USB-C 标准，统一了不同客户端与后端数据源的对接方式。"
+        },
+        {
+          "id": "t2",
+          "startSec": 3200,
+          "endSec": 3300,
+          "text": "通过规范暴露的 Tools 与 Prompts，Agent 可以精准调用外部 API 并保持严密的上下文管理。"
+        },
+        {
+          "id": "t3",
+          "startSec": 11600,
+          "endSec": 11700,
+          "text": "在工业级智能体系统中，严格的权限隔离与确定性审计追踪是模型安全落地不可逾越的红线。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_database_bigdata",
+      "keyword": "pgvector Milvus 向量数据库架构实战",
+      "hotIndex": 96,
+      "recommendedTitle": "现代向量数据库与混合检索架构全通关：PostgreSQL pgvector、Milvus、HNSW 索引与多模态 RAG",
+      "bvidFallback": "BV1u5411z7rQ",
+      "author": "数据架构实验室",
+      "durationSec": 16400,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "向量检索高维空间几何原理：欧氏距离、余弦相似度与内积运算",
+          "startTime": 0,
+          "duration": 3600
+        },
+        {
+          "id": "c2",
+          "title": "HNSW 分层可导航小世界图算法与 IVF-PQ 乘积量化压缩实战",
+          "startTime": 3600,
+          "duration": 4500
+        },
+        {
+          "id": "c3",
+          "title": "PostgreSQL pgvector 插件实战：SQL 混合多维条件过滤与高性能检索",
+          "startTime": 8100,
+          "duration": 4200
+        },
+        {
+          "id": "c4",
+          "title": "千万级向量集群 Milvus 生产运维、动态分片与分级缓存调优",
+          "startTime": 12300,
+          "duration": 4100
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "向量数据库是让大模型获得外挂记忆与实时知识库检索的核心支撑组件。"
+        },
+        {
+          "id": "t2",
+          "startSec": 3600,
+          "endSec": 3700,
+          "text": "HNSW 索引通过多层跳跃式图搜索，在海量高维向量中实现了毫秒级的近似最近邻查找。"
+        },
+        {
+          "id": "t3",
+          "startSec": 8100,
+          "endSec": 8200,
+          "text": "pgvector 的最大优势在于无需维护双写一致性，在一个关系型数据库内同时完成结构化元数据过滤与语义向量相似度排序。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_security_network",
+      "keyword": "Cilium eBPF 云原生网络安全实战",
+      "hotIndex": 97,
+      "recommendedTitle": "Cilium eBPF 云原生服务网格与安全深度实践：告别 iptables 性能瓶颈、网络策略与零信任防御",
+      "bvidFallback": "BV1T4411b7sS",
+      "author": "云原生安全实战",
+      "durationSec": 16000,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "传统 iptables / IPVS 在大规模 Kubernetes 集群中的性能瓶颈剖析",
+          "startTime": 0,
+          "duration": 3400
+        },
+        {
+          "id": "c2",
+          "title": "Cilium eBPF 数据面架构原理：XDP 高速包转发与 Socket 层直接路由",
+          "startTime": 3400,
+          "duration": 4200
+        },
+        {
+          "id": "c3",
+          "title": "七层应用感知网络策略 (L7 Policy) 与微服务零信任 Mutual TLS 落地",
+          "startTime": 7600,
+          "duration": 4600
+        },
+        {
+          "id": "c4",
+          "title": "Hubble 实时网络与安全可观测性：全链路延迟监控与攻击威胁追踪",
+          "startTime": 12200,
+          "duration": 3800
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "eBPF 技术允许我们在 Linux 内核级别直接运行沙箱程序，彻底颠覆了传统的容器网络转发模式。"
+        },
+        {
+          "id": "t2",
+          "startSec": 3400,
+          "endSec": 3500,
+          "text": "Cilium 通过在套接字层直接重定向流量，跳过了复杂的 TCP/IP 协议栈开销，延迟逼近物理网络极限。"
+        },
+        {
+          "id": "t3",
+          "startSec": 12200,
+          "endSec": 12300,
+          "text": "Hubble 提供了细粒度的网络拓扑视图与安全警报，让每一次跨 Pod 异常调用都无处遁形。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_systems_perf",
+      "keyword": "io_uring 高性能网络编程 C10M 实战",
+      "hotIndex": 96,
+      "recommendedTitle": "Linux 高性能网络与异步 I/O 终极指南：从 epoll 边缘触发到 io_uring 零拷贝与 C10M 架构",
+      "bvidFallback": "BV1R5411z7hN",
+      "author": "系统架构底座",
+      "durationSec": 16400,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "阻塞 I/O 到多路复用：select/poll 局限与 epoll 红黑树/就绪链表",
+          "startTime": 0,
+          "duration": 3800
+        },
+        {
+          "id": "c2",
+          "title": "epoll 水平触发 (LT) 与边缘触发 (ET) 惊群效应与状态机处理",
+          "startTime": 3800,
+          "duration": 4200
+        },
+        {
+          "id": "c3",
+          "title": "io_uring 核心架构：SQ 与 CQ 共享环形缓冲区与零系统调用",
+          "startTime": 8000,
+          "duration": 4600
+        },
+        {
+          "id": "c4",
+          "title": "内存零拷贝技术 (sendfile/splice) 与 DPDK 用户态协议栈展望",
+          "startTime": 12600,
+          "duration": 3800
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "网络 I/O 模型的演进本质上是系统调用开销与内存拷贝次数的持续优化历程。"
+        },
+        {
+          "id": "t2",
+          "startSec": 8000,
+          "endSec": 8100,
+          "text": "io_uring 使得应用程序与内核通过无锁环形队列直接交互，彻底解放了 CPU 切换成本。"
+        },
+        {
+          "id": "t3",
+          "startSec": 12600,
+          "endSec": 12700,
+          "text": "零拷贝与内核旁路技术让千万级高并发连接（C10M）在现代服务器硬件上成为现实。"
+        }
+      ]
+    },
+    {
+      "domain": "cat_fullstack_architecture",
+      "keyword": "Next.js 15 React 19 架构实战",
+      "hotIndex": 98,
+      "recommendedTitle": "Next.js 15 企业级全栈架构与 React 19 前沿精讲：React Compiler、Server Actions 与流式渲染深度落地",
+      "bvidFallback": "BV1M4411b7qE",
+      "author": "全栈架构风向标",
+      "durationSec": 16000,
+      "chapters": [
+        {
+          "id": "c1",
+          "title": "React 19 核心升级：React Compiler 自动记忆化与 Async Transition",
+          "startTime": 0,
+          "duration": 3600
+        },
+        {
+          "id": "c2",
+          "title": "Next.js 15 App Router 架构革新：缓存策略默认变更与请求生命周期",
+          "startTime": 3600,
+          "duration": 4200
+        },
+        {
+          "id": "c3",
+          "title": "Server Actions 安全防护、渐进式表单增强与乐观更新 (Optimistic UI)",
+          "startTime": 7800,
+          "duration": 4200
+        },
+        {
+          "id": "c4",
+          "title": "Streaming SSR、Partial Prerendering (PPR) 与微前端架构落地",
+          "startTime": 12000,
+          "duration": 4000
+        }
+      ],
+      "transcripts": [
+        {
+          "id": "t1",
+          "startSec": 0,
+          "endSec": 60,
+          "text": "React 19 引入的 React Compiler 将前端开发者从繁重的 useMemo 与 useCallback 心智负担中彻底解救出来。"
+        },
+        {
+          "id": "t2",
+          "startSec": 3600,
+          "endSec": 3700,
+          "text": "Next.js 15 对 Fetch 请求缓存机制做出了更符合直觉的调整，使数据流向更加透明可控。"
+        },
+        {
+          "id": "t3",
+          "startSec": 12000,
+          "endSec": 12100,
+          "text": "部分预渲染（PPR）融合了静态极速加载与动态按需流式呈现的优点，打造极致用户体验。"
+        }
+      ]
     }
   ]
 }

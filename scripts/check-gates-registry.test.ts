@@ -71,10 +71,13 @@ describe("门禁清单：现状与双向对照", () => {
     const res = run();
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("门禁清单一致");
-    expect(res.out).toContain("pre-commit 12 枚");
-    expect(res.out).toContain("CI 9 个作业");
+    // 钉**形状**不钉数值：门禁本来就会增减，把「12 枚」「9 个」写死等于
+    // 每加一枚门禁都要回来改测试——2026-10-29 加两枚时实测被自己拦下。
+    expect(res.out).toMatch(/pre-commit \d+ 枚/);
+    expect(res.out).toMatch(/pre-push 外层 \d+ 枚 \+ 内层 \d+ 枚/);
+    expect(res.out).toMatch(/CI \d+ 个作业/);
     expect(res.out).toContain("登记的测试文件全部存在");
-    expect(res.out).toContain("2 枚无专属测试，已声明理由");
+    expect(res.out).toMatch(/\d+ 枚无专属测试，已声明理由/);
   });
 
   it("登记的测试文件不存在 ⇒ 红（写了 test 却没东西验证这枚门禁）", () => {

@@ -162,6 +162,16 @@ fi
 # 解析级快速门禁：只查 staged 的 TS/TSX，秒级；tsc 之前先把标点级错误挡住
 node scripts/check-syntax.mjs --staged || exit 1
 
+# 依赖完整性：秒级。装残的包会让几百个测试套件同时报「找不到模块 / resolve entry 失败」，
+# 看起来像代码全坏（2026-10-29 一天两次）。先在这里认出「是依赖残了」，省掉一整轮排查。
+node scripts/check-deps-integrity.mjs || exit 1
+
+# mock 卫生：本次动了测试文件才查。跨模块 vi.mock 必须带 vi.resetModules() 兜底
+# （isolate:false 下假模块会漏给同 worker 的后续文件）。修法是机械的，直接给可执行提示。
+if git diff --cached --name-only --diff-filter=ACM | grep -qE '(^|/).*\\.test\\.tsx?$'; then
+  node scripts/fix-mock-hygiene.mjs || { echo "  ↑ 跑 node scripts/fix-mock-hygiene.mjs --apply 自动补齐"; exit 1; }
+fi
+
 node scripts/typecheck.mjs || exit 1
 
 # 变更相关测试：选测依据是本次提交集（git diff --cached），不是工作区改动集。

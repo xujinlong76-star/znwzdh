@@ -18,7 +18,10 @@
       "script": "scripts/check-web-overlay.mjs",
       "args": "--staged",
       "blocks": true,
-      "test": ["apps/web/test/overlay-drift-gate.test.ts", "scripts/lib/overlay-drift.test.ts"],
+      "test": [
+        "apps/web/test/overlay-drift-gate.test.ts",
+        "scripts/lib/overlay-drift.test.ts"
+      ],
       "why": "本次提交涉及的 overlay 文件必须与 apps/web 镜像对齐；全仓库判定交给 CI（别人的半成品不该挡住我的提交）"
     },
     {
@@ -68,7 +71,10 @@
       "when": "staged",
       "script": "scripts/check-ci-gate.mjs",
       "blocks": true,
-      "test": ["scripts/check-ci-gate.test.ts", "apps/web/test/ci-gate.test.ts"],
+      "test": [
+        "scripts/check-ci-gate.test.ts",
+        "apps/web/test/ci-gate.test.ts"
+      ],
       "why": "ci-passed 的聚合关系被改坏时，只有 CI 会红——而 CI 自己正是被改的那一方；读 junit 的收尾步骤还兼管级联红（一次根因只留一处红，2026-10-29 run40835496871）"
     },
     {
@@ -89,6 +95,22 @@
       "why": "标点级错误在 tsc 之前挡住，秒级"
     },
     {
+      "name": "deps-integrity",
+      "when": "staged",
+      "script": "scripts/check-deps-integrity.mjs",
+      "blocks": true,
+      "test": "scripts/check-deps-integrity.test.ts",
+      "why": "装残的包会让几百个测试套件同时报「找不到模块」，看起来像代码全坏；秒级先认出「是依赖残了」"
+    },
+    {
+      "name": "mock-hygiene-fix",
+      "when": "staged",
+      "script": "scripts/fix-mock-hygiene.mjs",
+      "blocks": true,
+      "test": "scripts/fix-mock-hygiene.test.ts",
+      "why": "跨模块 vi.mock 必须带 vi.resetModules() 兜底；修法机械，报错时直接给 --apply 提示"
+    },
+    {
       "name": "typecheck",
       "when": "staged",
       "script": "scripts/typecheck.mjs",
@@ -101,7 +123,10 @@
       "when": "staged",
       "script": "navhub-precommit-tests.mjs",
       "blocks": true,
-      "test": ["scripts/precommit-select.test.ts", "scripts/test-impact.test.ts"],
+      "test": [
+        "scripts/precommit-select.test.ts",
+        "scripts/test-impact.test.ts"
+      ],
       "why": "按模块图选出的相关测试；生成物在 .git/hooks 下（生成源 scripts/install-git-hooks.mjs）"
     },
     {
@@ -126,7 +151,10 @@
       "when": "prepush",
       "runner": "prepush-gates",
       "blocks": true,
-      "test": ["scripts/generate-rest-contract-types.test.ts", "scripts/prepush-gates.test.ts"],
+      "test": [
+        "scripts/generate-rest-contract-types.test.ts",
+        "scripts/prepush-gates.test.ts"
+      ],
       "why": "契约生成物与 core 事实源同源；改 core 不重生成是常态漏网"
     },
     {
@@ -134,7 +162,10 @@
       "when": "prepush",
       "runner": "prepush-gates",
       "blocks": true,
-      "test": ["apps/api/test/route-policy.test.ts", "scripts/prepush-gates.test.ts"],
+      "test": [
+        "apps/api/test/route-policy.test.ts",
+        "scripts/prepush-gates.test.ts"
+      ],
       "why": "写路由漏写 scope 会静默变成匿名可写"
     },
     {
@@ -166,7 +197,10 @@
       "when": "ci",
       "job": "test-sqlite",
       "blocks": true,
-      "test": ["apps/web/test/ci-gate.test.ts", "scripts/ci-red-ledger.test.ts"],
+      "test": [
+        "apps/web/test/ci-gate.test.ts",
+        "scripts/ci-red-ledger.test.ts"
+      ],
       "why": "SQLite 全量测试（分片）；红灯台账在这里做跨轮对比"
     },
     {
@@ -190,7 +224,10 @@
       "when": "ci",
       "job": "check-web-overlay",
       "blocks": true,
-      "test": ["apps/web/test/ci-gate.test.ts", "apps/web/test/overlay-drift-gate.test.ts"],
+      "test": [
+        "apps/web/test/ci-gate.test.ts",
+        "apps/web/test/overlay-drift-gate.test.ts"
+      ],
       "why": "全仓库镜像对齐（本地只查暂存集）"
     },
     {

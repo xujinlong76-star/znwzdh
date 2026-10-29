@@ -144,13 +144,18 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
     notes.push("embedding 已被配置关闭，语义通道不可用");
   }
 
-  const search = new SearchEngine({
-    db,
-    repo,
-    fts,
-    vectors,
-    embed: embedding ? (text: string) => embedding!.encode(text) : null,
-  });
+  const search = new SearchEngine(
+    {
+      db,
+      repo,
+      fts,
+      vectors,
+      embed: embedding ? (text: string) => embedding!.encode(text) : null,
+    },
+    // semanticMinSimilarity 是 SearchEngineOptions（第二个参数），不是 SearchEngineDeps——
+    // 放错对象会被 TS2353 挡下（2026-10-29 实测）。
+    { semanticMinSimilarity: config.search.semanticMinSimilarity },
+  );
 
   try {
     await search.initLinUCB();

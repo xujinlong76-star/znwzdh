@@ -148,6 +148,7 @@ export interface SearchResponse {
     pinyinMs: number;
     semanticMs: number;
     skippedSemantic: boolean;
+    semanticFiltered: number;
   };
   inferredFacets?: Record<string, string[]>;
   inferredTag?: string;

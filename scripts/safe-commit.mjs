@@ -128,9 +128,20 @@ function fail(message, code = 1) {
   throw new SafeCommitAbort(message, code);
 }
 
-/** 本脚本在 .git/ 下留下的三个临时文件：收口时一律清掉 */
+/**
+ * 本脚本在 .git/ 下的临时文件：收口时一律清掉。
+ *
+ * `SAFE_COMMIT_MSG` 必须**按 PID 唯一**：它原先是个固定文件名，
+ * 两个并发的 safe-commit 会互删对方的 message（一个在 git commit -F 读它时
+ * 另一个刚好 cleanup）→ `fatal: could not read log file`。
+ * 2026-10-29 实测被这个竞态咬过一次。
+ */
+function msgFileName() {
+  return `SAFE_COMMIT_MSG.${process.pid}`;
+}
+
 function cleanupOwnFiles(cwd) {
-  for (const name of ["index.safe-commit", "index.safe-commit.lock", "SAFE_COMMIT_MSG"]) {
+  for (const name of ["index.safe-commit", "index.safe-commit.lock", msgFileName()]) {
     try {
       unlinkSync(join(cwd, ".git", name));
     } catch {
@@ -263,7 +274,7 @@ function main() {
    * input 会被忽略——那会让 git 打开编辑器并卡住（非交互环境下表现为挂死）。
    * 写到 `.git/` 下还有个好处：不会出现在 `git status` 里。
    */
-  const msgPath = join(cwd, ".git", "SAFE_COMMIT_MSG");
+  const msgPath = join(cwd, ".git", msgFileName());
   writeFileSync(msgPath, message, "utf8");
   try {
     /**

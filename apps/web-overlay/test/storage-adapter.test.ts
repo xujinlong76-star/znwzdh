@@ -197,8 +197,8 @@ describe("连接熔断器", () => {
 
 describe("读请求的 Data Cache（next.revalidate）", () => {
   /** 取最近一次 fetch 的 init（含 next 扩展字段） */
-  function lastInit(fetchImpl: ReturnType<typeof vi.fn>): RequestInit & { next?: { revalidate?: number } } {
-    return fetchImpl.mock.calls.at(-1)?.[1] as RequestInit & { next?: { revalidate?: number } };
+  function lastInit(fetchImpl: ReturnType<typeof vi.fn>): RequestInit & { next?: { revalidate?: number; tags?: string[] } } {
+    return fetchImpl.mock.calls.at(-1)?.[1] as RequestInit & { next?: { revalidate?: number; tags?: string[] } };
   }
 
   it("默认 read 带 next.revalidate=60（首页 TTFB 不再每次打穿中枢）", async () => {
@@ -223,6 +223,34 @@ describe("读请求的 Data Cache（next.revalidate）", () => {
     spyConsole();
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch, revalidateS: 0 });
+
+    await adapter.read("site.json");
+    expect(lastInit(fetchImpl).next).toBeUndefined();
+    expect(lastInit(fetchImpl).cache).toBe("no-store");
+  });
+
+  it("tags 只在真的进 Data Cache 时附加（写侧 revalidateTag 的抓手）", async () => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({
+      baseUrl: BASE,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      tags: ["navhub-hub"],
+    });
+
+    await adapter.read("site.json");
+    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60, tags: ["navhub-hub"] });
+  });
+
+  it("revalidateS=0 时 tags 不生效：实时读不进缓存，写后无需失效", async () => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({
+      baseUrl: BASE,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      revalidateS: 0,
+      tags: ["navhub-hub"],
+    });
 
     await adapter.read("site.json");
     expect(lastInit(fetchImpl).next).toBeUndefined();

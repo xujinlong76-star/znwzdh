@@ -1,6 +1,8 @@
+import { revalidateTag } from 'next/cache'
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, invalidateContentCache, readStorageFresh } from '@/lib/github'
+import { HUB_CACHE_TAG } from '@/lib/server/hub-cache'
 import { StorageError } from '@/lib/storage-adapter'
 import {
   SITE_CONTENT_PATH,
@@ -122,6 +124,14 @@ export async function POST(request: Request) {
     )
     // 写成功后立刻丢掉进程内微缓存：否则「保存 → 重新读取」在 2.5 秒内拿到的还是旧值
     invalidateContentCache(SITE_CONTENT_PATH)
+    // 前台品牌配置改走带标签的 Data Cache（见 site-config-source.ts），写后必须按标签
+    // 失效，否则已静态化的页面要等 revalidate 窗口才换新品牌。
+    // 包 try：数据已写入，缓存层异常不能把成功谎报成失败（同 /api/hub 代理的做法）。
+    try {
+      revalidateTag(HUB_CACHE_TAG, 'max')
+    } catch (err) {
+      console.warn('[site] revalidateTag failed:', err)
+    }
 
     return NextResponse.json(
       {

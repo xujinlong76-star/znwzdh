@@ -21,7 +21,13 @@ import { fileURLToPath } from "node:url";
 vi.mock("@/lib/github", () => ({
   // 不给真实实现：测试环境默认 STORAGE_ADAPTER=http，真读一次会打 :8787，
   // 中枢在不在会让 siteName 的取值随环境漂移。
+  // getFileContentWithStatus 是 site-config-source 的读口（带标签的缓存读），
+  // 两个出口必须返回同一份假数据，否则品牌断言走的是另一条链路。
   getFileContent: vi.fn(async () => ({ basic: { title: "NavSphere导航" } })),
+  getFileContentWithStatus: vi.fn(async () => ({
+    data: { basic: { title: "NavSphere导航" } },
+    degraded: false,
+  })),
 }));
 
 const { FALLBACK_BRAND, normalizeBrandName, pageShareMetadata } = await import("../src/lib/seo/metadata");

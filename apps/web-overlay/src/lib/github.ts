@@ -26,6 +26,7 @@ import {
   StorageError,
   type StorageAdapter,
 } from "@/lib/storage-adapter";
+import { HUB_CACHE_TAG } from "@/lib/server/hub-cache";
 
 /** 惰性单例：避免每个请求都重建适配器（会重复读环境变量与构造闭包） */
 let cached: StorageAdapter | null = null;
@@ -81,6 +82,9 @@ function httpAdapterConfig(revalidateS: number) {
       // 读请求进 Next Data Cache（配合路由级 revalidate 变 ISR）；
       // 详见 storage-adapter.ts 里 HttpAdapterOptions.revalidateS 的注释
       revalidateS,
+      // 与 /api/hub、lib/server/hub.ts 共用同一个粗粒度标签：任何写成功后
+      // revalidateTag 都能把这些缓存读一起失效，保存后刷新即见新值。
+      tags: [HUB_CACHE_TAG],
     },
   };
 }

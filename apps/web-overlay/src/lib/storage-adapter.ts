@@ -111,6 +111,12 @@ export interface HttpAdapterOptions {
    * 注意：只给 GET 读加，写（PUT）永远不过缓存。
    */
   revalidateS?: number;
+  /**
+   * 读请求的 Data Cache 标签（可选）。只在真的进 Data Cache（revalidateS > 0）
+   * 时附加：写侧按标签 revalidateTag 才能让「保存后刷新即见新值」与
+   * 「ISR 页面保持静态」同时成立——没有标签的条目只能等 revalidate 窗口过期。
+   */
+  tags?: string[];
 }
 
 export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
@@ -119,6 +125,7 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
   const timeout = opts.timeoutMs ?? 15_000;
   const cooldownMs = opts.cooldownMs ?? 5_000;
   const revalidateS = opts.revalidateS ?? 60;
+  const tags = opts.tags ?? [];
 
   /**
    * 连接熔断器（进程内，按适配器实例；0 = 未跳闸）。
@@ -199,7 +206,9 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
         ...init,
         headers: headers(),
         signal: controller.signal,
-        ...(isRead && revalidateS > 0 ? { next: { revalidate: revalidateS } } : { cache: "no-store" as const }),
+        ...(isRead && revalidateS > 0
+          ? { next: { revalidate: revalidateS, ...(tags.length > 0 ? { tags } : {}) } }
+          : { cache: "no-store" as const }),
       });
     } catch (err) {
       // 只有 fetch 自身抛出才算连接级故障。必须与下面的「响应处理」分开

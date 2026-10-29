@@ -41,3 +41,22 @@ describe("爬虫面动态段 ISR", () => {
     );
   });
 });
+
+/**
+ * 根布局挂在所有静态页的渲染树里：里面任何一次 no-store 取数都会让整棵树
+ * 在运行时被判成动态（实测 /category/[slug]/p/[n] 500 "Page changed from
+ * static to dynamic"，见 2026-10-29 的 ISR 抽查）。品牌配置因此必须走
+ * 带标签的 Data Cache，「保存后刷新即见新值」由写侧 revalidateTag 保证。
+ */
+describe("根布局取数不得把静态页拖成动态", () => {
+  it("品牌配置走缓存读（getFileContentWithStatus），不引入 readStorageFresh", () => {
+    const source = overlayFile("src/lib/site-config-source.ts");
+    expect(source).toContain("getFileContentWithStatus(SITE_CONTENT_PATH)");
+    expect(source).not.toMatch(/import\s*\{[^}]*readStorageFresh[^}]*\}\s*from/);
+  });
+
+  it("读侧挂 HUB_CACHE_TAG，站点配置写成功后按同一标签失效", () => {
+    expect(overlayFile("src/lib/github.ts")).toContain("tags: [HUB_CACHE_TAG]");
+    expect(overlayFile("src/app/api/site/route.ts")).toContain("revalidateTag(HUB_CACHE_TAG, 'max')");
+  });
+});

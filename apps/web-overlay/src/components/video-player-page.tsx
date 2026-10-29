@@ -107,10 +107,9 @@ import { parseWebVTT, searchTranscript, exportTranscriptAsMarkdown } from '@/lib
 import { saveStudyNote, listStudyNotes, exportNotesAsMarkdown, type VideoStudyNote } from '@/lib/video-frame-clipper'
 import { getStoredDanmaku, saveDanmakuItem } from '@/lib/video-danmaku-engine'
 import { getP2PStreamCoordinator } from '@/lib/p2p-stream-loader'
-// 常驻组件：随播放器一起在首屏渲染，保持静态导入
-import { VideoBilibiliHdPlayer, BILI_ENGINE_OPTIONS } from '@/components/video-bilibili-hd-player'
+// 换源下拉框无条件渲染，常量本身零依赖，静态导入不会拖进播放器
+import { BILI_ENGINE_OPTIONS } from '@/lib/bili-engine-options'
 import { VideoHeatmapTimeline } from '@/components/video-heatmap-timeline'
-import { VideoKaraokeSubtitles } from '@/components/video-karaoke-subtitles'
 import { VideoNetworkSentinel } from '@/components/video-network-sentinel'
 import { VideoVoiceIndicator } from '@/components/video-voice-indicator'
 import { VideoTelestratorCanvas } from '@/components/video-telestrator-canvas'
@@ -178,6 +177,9 @@ const VideoBilingualTtsDialog = dynamic(() => import('@/components/video-bilingu
 const VideoConceptGraphDialog = dynamic(() => import('@/components/video-concept-graph-dialog').then(m => m.VideoConceptGraphDialog), { ssr: false })
 const VideoSandboxRunnerPane = dynamic(() => import('@/components/video-sandbox-runner-pane').then(m => m.VideoSandboxRunnerPane), { ssr: false })
 const VideoCrdtStudyRoomDialog = dynamic(() => import('@/components/video-crdt-study-room-dialog').then(m => m.VideoCrdtStudyRoomDialog), { ssr: false })
+// 播放器只在 bilibili 分支挂载、字幕只在有转写稿时挂载：这两块移出首屏图
+const VideoBilibiliHdPlayer = dynamic(() => import('@/components/video-bilibili-hd-player').then(m => m.VideoBilibiliHdPlayer), { ssr: false })
+const VideoKaraokeSubtitles = dynamic(() => import('@/components/video-karaoke-subtitles').then(m => m.VideoKaraokeSubtitles), { ssr: false })
 
 interface VideoPlayerPageProps {
     navigationData: NavigationData

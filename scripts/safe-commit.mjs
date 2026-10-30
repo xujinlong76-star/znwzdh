@@ -288,22 +288,28 @@ function main() {
     const reasonInMessage = verdict.allow && !scopeCheck.ok;
 
     if (!scopeCheck.ok && verdict.needReason) {
-      console.error(`\n❌ 主题域与文件域不一致：${scopeCheck.reason}`);
-      for (const p of scopeCheck.outsiders) console.error(`  · ${p}`);
-      console.error(`\n  处理：`);
-      console.error(`    1) 确属同一次改动 → 把 subject 的 scope 改对（如 feat(api,store)）`);
-      console.error(`    2) 竞态卷入了别人的文件 → 只提交你自己的那几个路径`);
-      console.error(`    3) 确需跨域 → NAVHUB_ALLOW_CROSS_SCOPE='<为什么必须跨域>' 重跑，`);
-      console.error(`       且把这句话原样写进提交说明正文（git 历史要能查到理由）`);
-      console.error(`       只写 1/true 不算——理由不能为空`);
-      process.exit(1);
+      // 必须走 fail() 而不是 process.exit(1)：exit 不执行 finally，
+      // `.git/index.safe-commit` 会留在原地，下一次运行（含别人的）把它当成
+      // 「另一次 safe-commit 正在运行」——本文件上面那段注释记过这个坑，
+      // 而 2026-10-30 这道守卫刚升级成阻断就用 exit 把它请回来了（我当场撞上一次）。
+      fail(
+        `主题域与文件域不一致：${scopeCheck.reason}\n` +
+          scopeCheck.outsiders.map((p) => `  · ${p}`).join("\n") +
+          `\n  处理：\n` +
+          `    1) 确属同一次改动 → 把 subject 的 scope 改对（如 feat(api,store)）\n` +
+          `    2) 竞态卷入了别人的文件 → 只提交你自己的那几个路径\n` +
+          `    3) 确需跨域 → NAVHUB_ALLOW_CROSS_SCOPE='<为什么必须跨域>' 重跑，\n` +
+          `       且把这句话原样写进提交说明正文（git 历史要能查到理由）\n` +
+          `       只写 1/true 不算——理由不能为空`,
+      );
     }
     if (!scopeCheck.ok && verdict.needInMessage) {
-      console.error(`\n❌ 跨域放行要求「理由出现在提交说明正文里」：`);
-      console.error(`   NAVHUB_ALLOW_CROSS_SCOPE 的理由是：${override}`);
-      console.error(`   但提交说明里找不到这句话。请把它原样写进 message 正文后再提交——`);
-      console.error(`   放行理由必须留痕，否则下次没人知道当时为什么放行。`);
-      process.exit(1);
+      fail(
+        `跨域放行要求「理由出现在提交说明正文里」：\n` +
+          `   NAVHUB_ALLOW_CROSS_SCOPE 的理由是：${override}\n` +
+          `   但提交说明里找不到这句话。请把它原样写进 message 正文后再提交——\n` +
+          `   放行理由必须留痕，否则下次没人知道当时为什么放行。`,
+      );
     }
     if (!scopeCheck.ok) {
       console.warn(`\n⚠ 主题域与文件域不一致（已按理由放行）：${scopeCheck.reason}`);

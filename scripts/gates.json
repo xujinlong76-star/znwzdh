@@ -77,7 +77,7 @@
         "scripts/ci-defused.test.ts",
         "apps/web/test/ci-gate.test.ts"
       ],
-      "why": "ci-passed 的聚合关系被改坏时，只有 CI 会红——而 CI 自己正是被改的那一方；读上游产物的收尾步骤还兼管级联红（一次根因只留一处红，2026-10-29 run40835496871；判据不限于 junit，test-web 的预算账同受管）。2026-10-30 起还核对登记表覆盖面：带 if-no-files-found: error 上传的阻塞作业没登记就直接红，不再等事故发现。第 7 项钉「撤防账」的接线：默认条件是「上一步红 ⇒ 后面每步 skipped」而 skipped 不判红，所以每个接入作业必须有 if: always() 的读数步骤、门禁形状的步骤必须有 id 并登进 scripts/lib/ci-defused.mjs（现状 8 作业 / 25 道门禁；只拦接线，运行结果全绿也会留一条 ::notice + Step Summary 痕迹，否则「没接线」与「跑过且全绿」同形）"
+      "why": "ci-passed 的聚合关系被改坏时，只有 CI 会红——而 CI 自己正是被改的那一方；读上游产物的收尾步骤还兼管级联红（一次根因只留一处红，2026-10-29 run40835496871；判据不限于 junit，test-web 的预算账同受管）。2026-10-30 起还核对登记表覆盖面：带 if-no-files-found: error 上传的阻塞作业没登记就直接红，不再等事故发现。第 7 项钉「撤防账」的接线：默认条件是「上一步红 ⇒ 后面每步 skipped」而 skipped 不判红，所以每个接入作业必须有 if: always() 的读数步骤、门禁形状的步骤必须有 id 并登进 scripts/lib/ci-defused.mjs（现状 8 作业 / 26 道门禁，含 test-sqlite 那道登记为软门禁的 backend-lint；只拦接线，运行结果全绿也会留一条 ::notice + Step Summary 痕迹，否则「没接线」与「跑过且全绿」同形）"
     },
     {
       "name": "gates-registry",

@@ -58,7 +58,11 @@ afterAll(() => {
 describe("check-ci-gate 第 5 项：后端 lint 的阻塞通道", () => {
   it("仓库现状：CI 步骤允许失败，但阻塞作业里有同口径断言 ⇒ 绿", () => {
     const source = readFileSync(REAL_CI, "utf8");
-    expect(source).toMatch(/- run: pnpm run lint:backend\s*\n\s*continue-on-error: true/);
+    // 允许 run 与 continue-on-error 之间夹一行 id（那一步 2026-10-30 起有 id，
+    // 撤防账靠它点名软门禁）——YAML 键序不影响语义，判据不该依赖相邻
+    expect(source).toMatch(
+      /- run: pnpm run lint:backend\s*\n(?:\s*id:\s*[A-Za-z0-9_-]+\s*\n)?\s*continue-on-error:\s*true/,
+    );
     const res = runGate(REAL_CI, GATE_TEST);
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("后端 lint 由阻塞作业里的同口径断言把关");
@@ -71,15 +75,17 @@ describe("check-ci-gate 第 5 项：后端 lint 的阻塞通道", () => {
     expect(res.out).toContain("backend-lint-gate.test.ts");
   });
 
-  it("工作流自己收紧（去掉 continue-on-error）⇒ 绿，不逼着留第二通道", () => {
-    const tightened = readFileSync(REAL_CI, "utf8").replace(
-      /- run: pnpm run lint:backend(\s*\n\s*)continue-on-error: true/,
-      "- run: pnpm run lint:backend",
-    );
+  it("工作流自己收紧（去掉 continue-on-error）⇒ 第 5 项不再逼第二通道；登记表由第 7 项催同步", () => {
+    const tightened = readFileSync(REAL_CI, "utf8").replace(/\n\s*continue-on-error:\s*true/, "");
     expect(tightened).not.toContain("continue-on-error: true");
     const fixture = writeFixture("ci-tightened.yml", tightened);
     const res = runGate(fixture, join(dir, "does-not-exist.test.ts"));
-    expect(res.status, res.out).toBe(0);
+    // 第 5 项：那步已经不软了，退出码不再被吞 ⇒ 不该再要求阻塞作业里有同口径断言
+    expect(res.out).not.toContain("同口径断言");
+    // 第 7 项：登记表还标着 soft: true ⇒ 有人必须把那一行摘掉。
+    // 改工作流不许让账说假话——「红了不判红」这句从此不成立，还留着就是给下一轮埋雷。
+    expect(res.status, res.out).not.toBe(0);
+    expect(res.out).toContain("登记为软门禁，但作业里已经没有 continue-on-error 了");
   });
 });
 
@@ -263,7 +269,9 @@ describe("check-ci-gate 第 7 项：撤防账接线", () => {
   it("仓库现状：8 个接入作业各有读数步骤 ⇒ 绿，✅ 行把记账范围说出来", () => {
     const res = runGate(REAL_CI, GATE_TEST);
     expect(res.status, res.out).toBe(0);
-    expect(res.out).toContain("撤防账已接线（8 个作业 / 25 道门禁");
+    // 26 道（2026-10-30 起含 test-sqlite 的软门禁 backend-lint）：这个数字是「有读数步骤盯着的门禁」，
+    // 加一道门禁就要同步这里，否则范围被夸大/缩小都没人看见
+    expect(res.out).toContain("撤防账已接线（8 个作业 / 26 道门禁");
     expect(source().split("run: node scripts/ci-defused-gates.mjs").length - 1).toBe(8);
   });
 

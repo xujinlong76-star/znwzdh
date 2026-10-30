@@ -213,7 +213,11 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   `outcome=failure` 而 `conclusion=success`，而「会不会挡住后面」只由 conclusion 决定（runner 的跳过
   等价于 `success()`）。拿 outcome 当判据会把「允许失败」的那一步点成根因——它其实一路放行。
   2026-10-30 直证：`scripts/ci-defused.test.ts` 里把 `outcomeOf` 拆成 outcome 优先后，
-  `web-budget` 那一步（软失败）被写成了根因，用例当场红。
+  `web-budget` 那一步（夹具里的软失败）被写成了根因，用例当场红。
+  这条判据在 CI 里也有**活体样本**：`test-sqlite` 的后端 lint（`id: backend-lint`，带
+  `continue-on-error: true`）按 `soft: true` 登记 ⇒ 它红了算「跑过」，只有被上游红跳过时才进撤防账。
+  登记表的 `soft` 与 YAML 的 `continue-on-error` 必须一致，两个方向各有判据：去掉 flag 不摘 `soft`
+  ⇒ 报「它会判红也会挡路」；补了 flag 不标 `soft` ⇒ 报「把被吞掉的退出码讲成门禁判红」。
 - **只报不拦**（rc 恒 0，`--strict` 才非零）：把「有门禁没跑成」变成第二处红，等于把 2.2 刚压下去的
   级联红请回来。运行期出 `::warning title=CI 门禁撤防::` + Step Summary 表格；
   第 7 项拦的是**接线**（读数步骤在不在、条件是不是 `always()`、`toJSON(steps)` 传没传、
@@ -228,27 +232,49 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   - **日志可读**：`/actions/jobs/{id}/logs` 返回 302 到签名 URL，必须 `redirect: "manual"` 再自己接
     `location`——按默认 follow 会把 Authorization 头带到 blob 域上，拿到的是 404/403，容易被误读成
     「这个 token 没有 Actions:read」。本仓 `explain-ci-failure.mjs` 就是这么读的。
+  - **日志里读到的不是写出去的原样**：runner 会把 `::warning title=CI 门禁撤防::正文` 改写成
+    `##[warning]正文`——**`title` 整段被吃掉**——并给每行前面加 `2026-10-30T05:47:20.2193330Z ` 时间戳。
+    按原文找注解、按「行首是 `·`」找逐步骤行，两条在真日志上都命中不了，症状是**数字读得出、
+    id 却写成「未列出」**（而全部夹具绿，因为夹具没有时间戳）。读侧因此先剥时间戳，
+    注解形状同时认 `::…title=CI 门禁撤防::` 与 `##[warning]` / `##[notice]` 两种前缀。
   - **注解这轮读不到**：同一轮里 13 个作业的 `/check-runs/{id}/annotations` 全返回 0 条，
     而日志里 `::notice` / `::warning` 的正文确实打出来了（runner 已解释该命令）。
     所以 `::notice` 按「人能在 UI 注解面板看到」来定位，不许把它当跨机器唯一通道；
     要机器读，读日志与 Step Summary。
+- **读回这一档**：`node scripts/explain-ci-failure.mjs --defused [--run <id> | --sha <sha> | --branch <名>] [--json]`。
+  和默认归因模式的唯一区别是**取日志的对象**：归因只取失败作业（红灯在那儿），而这一档取**全部**作业——
+  绿色作业那句「N 道门禁全部跑过」才是「门禁判过没有」的唯一痕迹。逐作业一行，读不到也占一行并写明是哪种读不到
+  （`日志没取到：…` / `账失效（steps 上下文没传进来）` / `作业没有登记表` / `日志里没有撤防账`）。
+  退出码：**0** 每个作业都读到且没撤防；**1** 有作业没跑成或有作业的账读不到；**2** jobs 清单本身没取到
+  （这一档不产出失败归因表，也不把撤防写成红灯层）。run 41010267114 实测 13 个作业 ⇒
+  「跑过 26 道 / 没跑成 4 道 / 2 个作业的账读不到」，并把 test-web 那行读成
+  `1/5 道跑过，4 道没跑成（web-lint、web-build、web-budget、web-isr） · 根因 web-typecheck`。
+  绿色那行也带**软门禁计数**（`3 道门禁全部跑过（软门禁 1 道：红了不判红、也不挡路）`）：写侧在
+  `softNote` 里说破了，读侧不带上就等于把这句吞回去——「全部跑过」只证明「执行过」，
+  带 `continue-on-error` 的那道红了既不在 `failedGates` 里也不在撤防列表里。
 - **已接线**：`test-sqlite`、`test-postgres`、`test-web`、`test-e2e`、`check-isr-live`、
-  `check-web-overlay`、`docker-smoke`、`audit`（**8 作业 / 25 道门禁**；`docker-smoke` 的两个
+  `check-web-overlay`、`docker-smoke`、`audit`（**8 作业 / 26 道门禁**；`docker-smoke` 的两个
   `docker build` 没有准备步骤，`check-isr-live` 有 7 个 `env` 准备步骤——它们红不是产品红，
   是「检查没跑成」，所以两个数分开报）。
   **仍未接线**（事实，不是提问）：只剩 `seo-audit-prod`（手动/定时作业，多一处红不阻塞合并）
   和 `ci-passed`（只做聚合，没有门禁）——这两个刻意不登记。
 - **两处刻意不登记**：`test-sqlite` 的 `id: pkg-build`（最后一步，2/3 片按矩阵合法跳过，登记了每轮都报假撤防；
   给 id 是为了它当根因时点得出名）；`check-isr-live` 的「失败时留下预览站日志」（带 `if: failure()`，
-  全绿时 skipped 是设计如此）。后端 `lint:backend` 带 `continue-on-error`，红被吞掉、不挡路，
-  真给它补了 id 也不会读错（见上面的 conclusion 优先）。
+  全绿时 skipped 是设计如此）。
+  后端 `lint:backend` **不再是豁免**——2026-10-30 给它补了 `id: backend-lint` 并按软门禁口径登记
+  （`soft: true`）：覆盖面判据仍不逼 `continue-on-error` 的步骤登记，但一旦登记，`soft` 就必须和 YAML 对齐，
+  这样「conclusion 优先」这条判据在 CI 里有一块活体样本，而不只活在夹具里。
 - **反向也管**：① 判定前先剥 YAML 注释——注释里解释口径会写 `always()` / `toJSON(steps)` / 脚本名，
   真删掉 `if:` 与 `env:` 两行必须当场红；② 未登记的作业跑了读数脚本也红（接线跑在账前面 = 每轮白跑一步）；
   ③ 读数步骤被挪到门禁之前也红（它打完账才跑的那步永远进不了账）。
-- **测试**：`scripts/ci-defused.test.ts`（42 例：读数 / 接线与覆盖面 / CLI，含 8 条消融自证——
-  逐条把判据拆掉，确认对应用例真的会转红）与 `scripts/check-ci-gate.test.ts` 的第 7 组
+- **测试**：`scripts/ci-defused.test.ts`（64 例：读数 / 接线与覆盖面 / CLI / 日志读回 / 软门禁活体样本，
+  含 15 条消融自证——
+  逐条把判据拆掉，确认对应用例真的会转红；日志读回那组里供了一份 run 41010267114 的**逐字日志片段**，
+  防止夹具形状和 runner 改写后的真形状分家）与 `scripts/check-ci-gate.test.ts` 的第 7 组
   （9 例：现状绿 + 删读数 / 条件退回默认 / 不传 steps / 改名 id / 门禁无 id / 新接入作业的准备步骤 id 被删 /
-  未登记作业跑脚本 / 注释不误判，各自必红）。
+  未登记作业跑脚本 / 注释不误判，各自必红），以及 `scripts/explain-ci-failure.test.ts` 的
+  `main --defused` 组（5 例：绿色作业也取日志 / 全绿出 0 / 单作业读不到只影响那一行 /
+  jobs 取不到出 2 / `--json` 的 summary 数字与门禁-准备步骤分账）。
 
 ---
 
@@ -258,7 +284,7 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 
 | 作业 | 是否进聚合 | 作用 |
 |---|---|---|
-| `test-sqlite` | ✅ | typecheck + 后端 lint（`continue-on-error`）+ vendor + 全量 vitest + build |
+| `test-sqlite` | ✅ | typecheck + 后端 lint（`continue-on-error`，撤防账里是唯一的软门禁）+ vendor + 全量 vitest + build |
 | `test-postgres` | ✅ | pgvector 服务容器 + `test:pg:suite` + `test:pg` |
 | `test-web` | ✅ | vendor + tsc + eslint + `next build` + 首屏预算 + ISR 路由门禁 |
 | `check-web-overlay` | ✅ | 语法 + vendor + overlay 字节比对 + core 镜像 + 上游 ref + 扩展 |
@@ -319,13 +345,16 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 
 ## 5. 红灯归因 runbook
 
-通用第一步：**先看红在哪一步**（作业页里红色步骤名），再看 annotation —— 日志这一条通道经常读不到：
-无 token 时作业日志接口 403，**有 token 但缺 `Actions:read` 时是 404**（本仓库 token 实测，产物 zip 同口径），
-所以 annotation 才是跨机器唯一稳定的可读通道（见 §5.2）。本地复现优先 `pnpm verify`（覆盖 7 项里的 5 项）。
+通用第一步：**先看红在哪一步**（作业页里红色步骤名），再看 annotation。
+跨机器读日志**是**可行的（2026-10-30 校正，run 41010267114 直证）：`/actions/jobs/{id}/logs` 返回 302 到
+签名 URL，必须 `redirect: "manual"` 再自己接 `location`——默认 follow 会把 Authorization 头带到 blob 域上，
+拿到非 200，这条路径原先被误读成「token 缺 `Actions:read`，日志读不到」。真要报错的是
+`/jobs/{id}/summary`（那个才需要 `actions:read`），而同一轮 13 个作业的 `/check-runs/{id}/annotations`
+返回 0 条 ⇒ **注解只给人看 UI，机器可读的是日志**（见 §2.3）。本地复现优先 `pnpm verify`（覆盖 7 项里的 5 项）。
 
 | 作业 | 第一反应 | 假红 / 归因陷阱 |
 |---|---|---|
-| `test-sqlite` | 按步骤定位：typecheck → lint:backend（`continue-on-error`，不会红）→ vendor → vitest → build。`Cannot find package '@/lib/auth'` = 忘了 `node scripts/vendor-web.mjs`；build 红 = 声明导出/入口路径坏 | `lint:backend` 是 warning 级，红了也不是它 |
+| `test-sqlite` | 按步骤定位：typecheck → lint:backend（`continue-on-error`，不会红）→ vendor → vitest → build。`Cannot find package '@/lib/auth'` = 忘了 `node scripts/vendor-web.mjs`；build 红 = 声明导出/入口路径坏 | `lint:backend`（`id: backend-lint`）是 warning 级，红了也不是它；它在撤防账里登记为**软门禁**——红了算「跑过」，只有被上游红跳过时才点名 |
 | `test-postgres` | 先看是 `test:pg:suite` 还是 `test:pg` 红。suite 报「未设置 `NAVHUB_TEST_DATABASE_URL` —— 拒绝执行」= **作业配置坏了**，不是代码；有 URL 仍红 = 真跨方言缺陷 | 把变量设成 `DATABASE_URL` 是死变量，套件整体 skip → 假绿，绝不能这样「修」 |
 | `test-web` | 按步骤序：tsc → eslint（warning 不卡）→ `next build` → bundle budget → `check-isr-routes`。budget 红**不许上调** `scripts/bundle-budget.json`；2026-10-30 起每条超限路由单独写一条 `::error file=scripts/bundle-budget.json,line=<阈值行>::`（本地不打），所以没 token 也能从 annotation 直接看出是哪几条路由超了多少；ISR 红 = 某收录型路由从 ● 退化成 ƒ，或页面签名读了 `searchParams`。**budget 红不再跳过 ISR 那一步**（它带 `if: !cancelled() && steps.web-build.outcome == 'success'`）：10-29～10-30 之间预算常驻红，ISR 每轮 `skipped` 而 skipped 不判红 —— 读那几轮的结论时，「只有预算红」不等于「ISR 门禁判过且通过」 | `next.config` 的 `ignoreBuildErrors` 只影响 build，不影响 tsc 步骤。**eslint 那一步红不起来**（基线 0 error / 800+ warning），annotation 里的警告文案不是判红原因 |
 | `check-web-overlay` | 报错会列出不一致文件：先问「是不是直接改了 `apps/web`」。事实源是 `apps/web-overlay/`，改 overlay 后重跑 `node scripts/vendor-web.mjs`；再查 `sync-core-mirrors --check` 与 `check-upstream-ref` | `apps/web` 是 gitignore 生成物，全新检出必须 vendor 后才能比对 |

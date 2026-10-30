@@ -93,10 +93,15 @@ function main() {
   const { defused, failed, blocker } = findDefused({ entry, conclusions: read.value });
   const summaryPath = String(process.env.GITHUB_STEP_SUMMARY ?? "").trim();
   const envTotal = (entry.env ?? []).length;
+  // 软门禁必须在这行里说破：`全部跑过` 只说明「这一步执行了」，
+  // 而带 continue-on-error 的那道红了也不会出现在 failed 里——不写这句，
+  // 「3 道全部跑过」会被读成「后端 lint 过了」，而它其实可能正带着几十条告警。
+  const softTotal = (entry.gates ?? []).filter((g) => g.soft).length;
+  const softNote = softTotal > 0 ? `（软门禁 ${softTotal} 道：红了不判红、也不挡路）` : "";
   if (defused.length === 0) {
     const head = `${gateTotal} 道门禁全部跑过`;
     const redNote = failed.length > 0 ? `（其中 ${failed.length} 道判红，见那一步自己）` : "";
-    console.log(`${label} ${opts.job}：${head}${redNote}`);
+    console.log(`${label} ${opts.job}：${head}${redNote}${softNote}`);
     // 全绿也要留痕：没有这一行，「跑过且全绿」和「根本没接线」在跨轮视角是同一种形状
     // （2026-10-30 直证：tip 2ca11031 那一轮 13 个作业的注解池总数为 0）。
     // Step Summary 单独不够：`/actions/jobs/{id}/summary` 实测 404（要 actions:read），
@@ -104,14 +109,16 @@ function main() {
     // （run 41010267114 直证）⇒ 日志才是可机器读的那条，注解这轮 REST 返回 0 条。
     // ::notice 仍然发：归因层（ci-attribution 的 usableAnnotations）显式排除 notice 级，
     // 它不会冒充判红原因；本仓的先例是 check-isr-live 的「限流豁免四阶段成立」。
-    console.log(`::notice title=CI 门禁撤防::${opts.job} ${head}${redNote}（在册准备步骤 ${envTotal} 个）`);
+    console.log(
+      `::notice title=CI 门禁撤防::${opts.job} ${head}${redNote}${softNote}（在册准备步骤 ${envTotal} 个）`,
+    );
     if (summaryPath) {
       appendFileSync(
         summaryPath,
         [
           `### 撤防账 · ${opts.job}`,
           "",
-          `**${head}**${redNote}——跑过的门禁 id：${(entry.gates ?? []).map((g) => `\`${g.id}\``).join("、")}；在册准备步骤 ${envTotal} 个。`,
+          `**${head}**${redNote}${softNote}——跑过的门禁 id：${(entry.gates ?? []).map((g) => `\`${g.id}\``).join("、")}；在册准备步骤 ${envTotal} 个。`,
           "",
           "作业结论只说明「没新增红」；这一行才说明「门禁真的判过」。",
           "",

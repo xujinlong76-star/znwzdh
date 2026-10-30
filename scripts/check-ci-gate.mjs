@@ -106,8 +106,10 @@ if (!pgJob) {
 
 // 后端 lint 的阻塞通道：CI 那一步允许失败，就必须在被聚合的阻塞作业里有同一份断言，
 // 否则「本地 verify 红 / CI 绿」会长期并存，每一轮都要重新猜哪边才算数。
+// 中间允许一行 `id:`（YAML 键序不影响语义，但那步 2026-10-30 起有 id 了）——
+// 只允许这一行，不许把「紧邻」放宽成「同一步骤里任何位置」，否则跨步骤误判。
 const lintStepSuppressed =
-  /- run: pnpm run lint:backend\s*\n\s*continue-on-error:\s*true/.test(source);
+  /- run: pnpm run lint:backend\s*\n(?:\s*id:\s*[A-Za-z0-9_-]+\s*\n)?\s*continue-on-error:\s*true/.test(source);
 if (lintStepSuppressed && !existsSync(LINT_GATE_TEST)) {
   problems.push(
     "ci.yml 的 `pnpm run lint:backend` 带 continue-on-error（退出码被吞），" +

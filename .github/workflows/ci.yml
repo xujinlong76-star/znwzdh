@@ -93,7 +93,11 @@ jobs:
       # 首轮只开 no-unused-vars / no-empty / no-console 且全部为 warning，
       # 所以这里 continue-on-error：告警看得见，但不阻塞合并。
       # 全量清完告警后再去掉这一行并收紧规则。
+      # id 是 2026-10-30 补的：这是本仓唯一的软门禁，`outcome=failure` 而 `conclusion=success`，
+      # 撤防账（第 7 项）因此拿它当**活体样本**——判据若退回 outcome 优先，这里就会当场把
+      # 「红了也不判红」的一步写成根因。去 continue-on-error 时记得同步改登记表的 soft 标记。
       - run: pnpm run lint:backend
+        id: backend-lint
         continue-on-error: true
       # apps/web/test/*.test.ts 打的是存储接缝：github.ts 顶层 import @/lib/auth 与
       # @/navsphere/content/*.json。这些同属 gitignore 的生成物（来自上游），全新检出

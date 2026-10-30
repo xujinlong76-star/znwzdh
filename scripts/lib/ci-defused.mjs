@@ -45,6 +45,17 @@ export const DEFUSED_GATES = [
     ],
     gates: [
       { id: "typecheck", label: "根 typecheck（packages/* + apps/api）" },
+      {
+        id: "backend-lint",
+        label: "后端 eslint（lint:backend）",
+        // 本仓唯一的软门禁：outcome=failure 而 conclusion=success。登记它是为了让
+        // 「conclusion 优先」这条判据有一块活体样本——判据若退回 outcome 优先，
+        // CI 里这一步就会被当场写成根因，而它其实一路放行（这比夹具里的自证多一个读者）。
+        // 它的红不归这里管：阻塞面在 apps/api/test/backend-lint-gate.test.ts，
+        // 这对配对由 check-ci-gate.mjs 第 5 项守住。
+        soft: true,
+        note: "带 continue-on-error ⇒ 自己红不判红、也不挡后面的路；它进账只有一种形状：被上游红跳过",
+      },
       { id: "vitest", label: "单元/接口测试（SQLite，分片）" },
     ],
   },
@@ -302,6 +313,29 @@ export function defusedWiringProblems(jobBlock, entry) {
       );
     }
   }
+
+  // 软/硬口径必须和工作流那一步一致。两个方向各管一种撒谎：
+  //   - 登记成 soft 而 `continue-on-error` 被去掉 ⇒ 它现在会判红也会挡路，
+  //     账里那句「红了不算红」成了假话（软门禁被硬化的那一刻必须人来改登记表）；
+  //   - 登记成硬门禁而那步还软 ⇒ 它 outcome=failure / conclusion=success，
+  //     读数会把一次被吞掉的退出码讲成「门禁判红」，还会把它点成根因。
+  for (const gate of entry.gates ?? []) {
+    const at = indexOf(gate.id);
+    if (at < 0) continue; // 「找不到 id」上面那条已经报了
+    const softInYaml = /continue-on-error:\s*true/.test(steps[at]);
+    if (gate.soft && !softInYaml) {
+      problems.push(
+        `${entry.job}: ${gate.id} 登记为软门禁，但作业里已经没有 continue-on-error 了——` +
+          "它会判红也会挡路，请把登记表里的 soft 摘掉",
+      );
+    }
+    if (!gate.soft && softInYaml) {
+      problems.push(
+        `${entry.job}: ${gate.id} 在作业里带 continue-on-error，登记表却当它是硬门禁——` +
+          "它红了不判红也不挡路，请补 soft: true（否则读数会把被吞掉的退出码讲成门禁判红）",
+      );
+    }
+  }
   return problems;
 }
 
@@ -309,11 +343,11 @@ export function defusedWiringProblems(jobBlock, entry) {
  * 登记表自身的覆盖面（判据从 YAML 推出来，不等事故）：
  * **门禁形状的步骤必须有 id 且必须进登记表**，否则它能整步 skipped 而没人报得出名字。
  *
- * 豁免：`continue-on-error: true` 的步骤不登记——它红了也不会挡住别人（红被吞掉），
- * 也不会因上游而撤防自己的判定，硬要求登记等于让门禁管一件不会出事的事。
- * 今天的 test-sqlite 后端 lint 就是这一类（命令形状另说）。
- * 真给它补了 id 也不会读错：`outcomeOf` 取 conclusion（那类步骤 outcome=failure
- * 而 conclusion=success），所以它既不进 failed 也不会被点成根因。
+ * 豁免：`continue-on-error: true` 的步骤**不逼登记**——它红了也不会挡住别人（红被吞掉），
+ * 硬要求登记等于让门禁管一件不会出事的事。但**自愿登记是允许的**，且必须带 `soft: true`
+ * （`defusedWiringProblems` 盯那步在 YAML 里到底还软不软）：今天的 `test-sqlite` 后端 lint
+ * 就是这么登记的——判据取 conclusion，所以它 outcome=failure 而 conclusion=success 时
+ * 既不进 failed 也不会被点成根因，而它被上游跳过时账里点得出名字。
  * 读数步骤自己也不算门禁（它只报账）。
  */
 export function defusedCoverageProblems(jobBlock, entry) {
@@ -349,4 +383,197 @@ export function defusedCoverageProblems(jobBlock, entry) {
     }
   }
   return problems;
+}
+
+/**
+ * 把作业日志正文里的「撤防账」读回来。
+ *
+ * 为什么要有这一条：账是 `ci-defused-gates.mjs` 在作业里打到 stdout 的，跨机器只有
+ * 日志读得到（2026-10-30 run 41010267114 直证：`/actions/jobs/{id}/logs` 用
+ * redirect:"manual" 接签名 URL 有正文；`/jobs/{id}/summary` 要 actions:read；
+ * 同一轮 13 个作业的 annotations 返回 0 条）。而 `explain-ci-failure.mjs` 原先只给
+ * **失败作业**取日志 ⇒ 绿色作业的账等于没说过。这里只做「读」，判定仍在作业里。
+ *
+ * 认三种落法（同一次运行的三种形状）：
+ *   `[撤防账] <job>：N 道门禁全部跑过`
+ *   `[撤防账] <job>：N 道门禁里 M 道没跑成`（后面跟逐步骤行 + `根因：…`）
+ *   `::notice|::warning title=CI 门禁撤防::<job> …`（单行全量：计数 + id 列表 + 根因）
+ * 单行的注解形状信息最全，优先用它；只有 stdout 形状时再从相邻行里补 id 与根因。
+ *
+ * 日志里读到的**不是**写出去的原样（run 41010267114 的 test-web 日志逐行直证）：
+ *   - 工作流命令 `::warning title=CI 门禁撤防::正文` 被 runner 改写为
+ *     `##[warning]正文` —— **`title` 整段丢掉**，所以按 `title=…::` 找在真日志上永远不命中；
+ *   - 每行前面还有 `2026-10-30T05:47:20.2193330Z ` 时间戳 ⇒ 任何「行首是 `·`」的锚定匹配都会落空
+ *     （真实表现：账读出来了、id 却写成「未列出」，而夹具里没有时间戳、测试全绿）。
+ * 因此读前先剥时间戳，注解形状同时认 `::…title=CI 门禁撤防::` 与 `##[warning]|##[notice]` 两种前缀。
+ */
+const DEFUSED_ANNOTATION = "title=CI 门禁撤防::";
+/** runner 改写后的注解前缀：`title` 被吃掉，只剩级别标记 */
+const RENDERED_ANNOTATION = /^##\[(?:warning|notice)\]/;
+/** GitHub 日志行首的时间戳（精确到 7 位小数，末尾固定 Z） */
+const LOG_TIMESTAMP = /^[\d-]{10}T[\d:.]+Z\s+/;
+
+function readCounts(text) {
+  const all = /(\d+)\s*道门禁全部跑过/.exec(text);
+  if (all) return { gateTotal: Number(all[1]), defused: 0 };
+  const part = /(\d+)\s*道门禁里\s*(\d+)\s*道没跑成/.exec(text);
+  if (part) return { gateTotal: Number(part[1]), defused: Number(part[2]) };
+  return { gateTotal: null, defused: null };
+}
+
+function readBlocker(text) {
+  // label 用惰性匹配：登记名里带全角括号（test-sqlite 的「根 typecheck（packages/* + apps/api）」），
+  // 贪婪的 `[^（]+` 会停在第一个括号上 ⇒ 根因整条读不出来。
+  const hit = /根因：(.+?)（id:\s*([A-Za-z0-9_-]+)）(判红|被取消)/.exec(text);
+  if (hit) return { blocker: hit[2], blockerLabel: hit[1].trim(), blockerKind: hit[3] };
+  if (/根因读不出来/.test(text)) return { blocker: null, blockerLabel: "读不出来", blockerKind: "" };
+  return { blocker: null, blockerLabel: null, blockerKind: "" };
+}
+
+function readIds(text) {
+  const hit = /没跑成的步骤 id：([^；\n]+)/.exec(text);
+  if (!hit) return [];
+  return hit[1]
+    .split("、")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export function parseDefusedTrace(logText) {
+  const base = {
+    found: false,
+    // 账行在但读不出判定（steps 上下文没传进来 / 作业压根没登记）——这跟「没有账」是两回事
+    broken: "",
+    job: "",
+    gateTotal: null,
+    defused: null,
+    ran: null,
+    envTotal: null,
+    ids: [],
+    envIds: [],
+    blocker: null,
+    blockerLabel: null,
+    blockerKind: "",
+    green: false,
+    failedGates: 0,
+    softTotal: 0,
+    line: "",
+  };
+  const text = String(logText ?? "").replace(/\x1b\[[0-9;]*m/g, "");
+  // 「道门禁」只在账里出现：日志被 runner 改写后已经没有 `title=CI 门禁撤防::` 原文，
+  // 只按那个串入口就会把整份真日志判成「没有账」。
+  if (!/撤防账|CI 门禁撤防|道门禁/.test(text)) return base;
+  // 先剥行首时间戳再匹配：runner 每行前面都有 `2026-10-30T05:47:20.2193330Z `，
+  // 锚定「行首是 `·`」的逐步骤行不剥就永远命中不了（真日志实测就是这个形状）。
+  const lines = text.split(/\r?\n/).map((l) => l.replace(LOG_TIMESTAMP, ""));
+
+  // 单行注解信息最全（计数 + id 列表 + 根因都在一行），优先用它；stdout 头行只当兜底
+  let annotation = null;
+  for (const l of lines) {
+    let body = "";
+    const at = l.indexOf(DEFUSED_ANNOTATION);
+    if (at >= 0) body = l.slice(at + DEFUSED_ANNOTATION.length);
+    else if (RENDERED_ANNOTATION.test(l) && l.includes("道门禁")) body = l.replace(RENDERED_ANNOTATION, "");
+    else continue;
+    // 账失效那行写成 `<job>：…`，正常那行写成 `<job> …` ⇒ 两种都要认出 job
+    annotation = { job: body.match(/^([A-Za-z0-9_.-]+)(?=\s|[：:])/)?.[1] ?? "", body };
+  }
+  let headIdx = -1;
+  let stdoutJob = "";
+  let stdoutHead = "";
+  for (let i = 0; i < lines.length; i += 1) {
+    const hit = /\[撤防账\]\s*([A-Za-z0-9_.-]+)：(.*)$/.exec(lines[i]);
+    if (hit) {
+      headIdx = i;
+      stdoutJob = hit[1];
+      stdoutHead = hit[2];
+      break;
+    }
+  }
+  const job = annotation?.job || stdoutJob;
+  const counts = readCounts(stdoutHead || annotation?.body || "");
+  if (!job || counts.gateTotal === null) {
+    // 出不了数的那两种形状必须带上原因：「读不到」和「没撤防」同形就是这轮要消灭的东西
+    const invalid = lines.find((l) => l.includes("撤防账失效"));
+    const unregistered = lines.find((l) => l.includes("没有撤防登记表"));
+    const why = invalid
+      ? "账失效（steps 上下文没传进来）"
+      : unregistered
+        ? "作业没有登记表（这一步在跑一件没人记账的事）"
+        : "";
+    return { ...base, broken: why, job, line: String(invalid ?? unregistered ?? "").slice(0, 240) };
+  }
+
+  // 逐步骤行只在 stdout 形状里出现：`  · label（id: x）— 状态`
+  // 必须按「以 · 开头」筛，`根因：…（id: y）判红` 那行也有 id，混进来就是把根因报成撤防。
+  const ids = annotation ? readIds(annotation.body) : [];
+  if (ids.length === 0 && headIdx >= 0) {
+    for (let i = headIdx + 1; i < lines.length; i += 1) {
+      const hit = /^\s*·.*（id:\s*([A-Za-z0-9_-]+)）/.exec(lines[i]);
+      if (!hit) break;
+      ids.push(hit[1]);
+    }
+  }
+  const blockText = annotation?.body ?? lines.slice(headIdx, headIdx + 20).join("\n");
+  const { blocker, blockerLabel, blockerKind } = readBlocker(blockText);
+  // 注解行里的「没跑成的步骤 id」是**全部**撤防步骤（准备步骤也在里面），
+  // 而「M 道没跑成」只数门禁 ⇒ 读侧按登记表把两类分开，否则 id 列表会比数字长，
+  // 让人以为门禁红了其实是 install/vendor 没跑成。
+  const entry = defusedEntryFor(job);
+  const envSet = new Set((entry?.env ?? []).map((s) => s.id));
+  const gateIds = entry ? ids.filter((id) => !envSet.has(id)) : ids;
+  const envIds = entry ? ids.filter((id) => envSet.has(id)) : [];
+  const whole = stdoutHead || annotation?.body || "";
+  const failedGates = Number(/其中\s*(\d+)\s*道判红/.exec(whole)?.[1] ?? 0);
+  // 软门禁的数目必须跟着读回来：`N 道门禁全部跑过` 只说明「执行过」，
+  // 而带 continue-on-error 的那道红了也不在 failedGates 里 —— 不带上这句，
+  // 「3 道全部跑过」会被读成「后端 lint 过了」，而它可能正带着几十条告警。
+  const softTotal = Number(/软门禁\s*(\d+)\s*道/.exec(whole)?.[1] ?? 0);
+  // 缺省要成 null：`Number(null)===0` 会把「这行没写准备步骤」读成「一个都没登记」
+  const envHit = /在册准备步骤\s*(\d+)\s*个/.exec(annotation?.body ?? "");
+
+  return {
+    found: true,
+    broken: "",
+    job,
+    gateTotal: counts.gateTotal,
+    defused: counts.defused,
+    ran: counts.gateTotal - counts.defused,
+    envTotal: envHit ? Number(envHit[1]) : null,
+    ids: gateIds,
+    envIds,
+    blocker,
+    blockerLabel,
+    blockerKind,
+    green: counts.defused === 0,
+    failedGates,
+    softTotal,
+    line: whole.slice(0, 240),
+  };
+}
+
+/** 逐作业一行的账（--defused 的文本输出；空数组也要出一行说明，别让调用方对着空白猜） */
+export function renderDefusedTable(rows) {
+  if (!rows?.length) return ["（没有作业可读——jobs 清单是空的）"];
+  const width = Math.max(...rows.map((r) => String(r.name ?? "").length), 4);
+  return rows.map((r) => {
+    const name = String(r.name ?? "").padEnd(width);
+    if (!r.found) {
+      const why = r.error
+        ? `日志没取到：${r.error}`
+        : r.broken
+          ? r.broken
+          : "日志里没有撤防账（这一步没接线，或整步没跑）";
+      return `${name} ${r.conclusion || "?"} — ${why}`;
+    }
+    if (r.green) {
+      const note = r.failedGates > 0 ? `，其中 ${r.failedGates} 道判红` : "";
+      const soft = r.softTotal ? `（软门禁 ${r.softTotal} 道：红了不判红、也不挡路）` : "";
+      const env = r.envTotal === null ? "" : `（准备步骤 ${r.envTotal} 个在册）`;
+      return `${name} ${r.conclusion || "?"} — ${r.gateTotal} 道门禁全部跑过${note}${soft}${env}`;
+    }
+    const blocker = r.blocker ? `根因 ${r.blocker}` : "根因读不出来";
+    const env = r.envIds?.length ? `；准备步骤没跑成：${r.envIds.join("、")}` : "";
+    return `${name} ${r.conclusion || "?"} — ${r.ran}/${r.gateTotal} 道跑过，${r.defused} 道没跑成（${r.ids.join("、") || "id 未列出"}）${env} · ${blocker}`;
+  });
 }

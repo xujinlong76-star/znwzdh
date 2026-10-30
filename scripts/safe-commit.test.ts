@@ -200,6 +200,54 @@ describe("集成：pathspec 隔离", () => {
     expect(out).toContain("提交内容与预期完全一致");
   });
 
+  it("主题域守卫拦下时也不留独立索引（升级成阻断时它用的是 process.exit）", () => {
+    /**
+     * 上面那条测的是「空提交」这条失败路径。4-0 的主题域守卫 2026-10-30 从告警升级成
+     * 阻断时写成了 `process.exit(1)` ⇒ finally 跑不到 ⇒ `.git/index.safe-commit` 留在原地，
+     * 下一次运行（包括并行会话的）在 120s 内会被「另一次 safe-commit 正在运行」挡住。
+     * 本轮我按提示改对 subject 再提交，就是被这个残留挡住的——守卫自己把重跑路径堵了。
+     */
+    const head = git(["rev-parse", "HEAD"]);
+    writeFileSync(join(repo, "mine.ts"), "export const a = 5;\n");
+    writeFileSync(join(repo, ".msg6"), "feat(tooling): 主题域写 tooling，但文件在仓库根\n");
+    const blocked = spawnSync(process.execPath, [SCRIPT, "--msg-file", ".msg6", "--", "mine.ts"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: cleanEnv(),
+    });
+    expect(blocked.status, "域外文件必须拦下提交").not.toBe(0);
+    expect(blocked.stderr).toContain("主题域与文件域不一致");
+    expect(git(["rev-parse", "HEAD"])).toBe(head);
+    for (const name of ["index.safe-commit", "index.safe-commit.lock"]) {
+      expect(existsSync(join(repo, ".git", name)), `守卫拦下后 .git/${name} 不该留在原地`).toBe(false);
+    }
+
+    // 改对 subject 立刻重跑：必须真的走到提交，而不是被自己的残留挡住两分钟
+    writeFileSync(join(repo, ".msg7"), "fix: 主题域改对之后重跑\n");
+    const retry = spawnSync(process.execPath, [SCRIPT, "--msg-file", ".msg7", "--", "mine.ts"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: cleanEnv(),
+    });
+    expect(retry.status, retry.stderr).toBe(0);
+    expect(retry.stdout).toContain("提交内容与预期完全一致");
+    expect(`${retry.stdout}${retry.stderr}`).not.toContain("另一次 safe-commit 正在运行");
+  });
+
+  it("跨域放行但理由没写进 message ⇒ 同样拦下，同样不留残留", () => {
+    // 第二条 exit 路径（needInMessage）也必须走 fail()，否则守卫自己制造并发假象
+    writeFileSync(join(repo, "mine.ts"), "export const a = 6;\n");
+    writeFileSync(join(repo, ".msg8"), "feat(tooling): 跨域了但正文没写放行理由\n");
+    const res = spawnSync(process.execPath, [SCRIPT, "--msg-file", ".msg8", "--", "mine.ts"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...cleanEnv(), NAVHUB_ALLOW_CROSS_SCOPE: "同一轮工具加固必须连 docs 一起提交" },
+    });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain("理由出现在提交说明正文里");
+    expect(existsSync(join(repo, ".git", "index.safe-commit"))).toBe(false);
+  });
+
   it("钩子拦下提交后不留独立索引（Windows 上 git 退出后句柄滞留，unlink 会失败）", () => {
     /**
      * 回归 2026-10-29（Windows 实测）：钩子拦下提交时，git 进程虽然退出了，

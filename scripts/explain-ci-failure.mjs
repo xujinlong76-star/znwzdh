@@ -25,6 +25,14 @@
  *   node scripts/explain-ci-failure.mjs --sha <sha> --save [路径]
  *     把与 --json 同形的快照落盘（默认 tmp/ci-explain-<run>-<sha12>-<时间戳>.json）。
  *     多会话并行时，事后复盘不依赖 Actions 保留期：日志会在 90 天后过期。
+ *   node scripts/explain-ci-failure.mjs --defused [--run <id> | --sha <sha>] [--json]
+ *     逐作业读日志里的「撤防账」：N 道门禁跑过 / M 道没跑成 + 是谁挡的。
+ *     这条走的是**全部**作业而不是失败作业 —— 撤防账在绿色作业里同样有话要说
+ *     （作业结论只说明「没新增红」，那行账才说明「门禁真的判过」），
+ *     而跨机器只有日志读得到：`/jobs/{id}/summary` 要 actions:read，
+ *     annotations 那一轮 13 个作业全返回 0 条（2026-10-30 run 41010267114 直证）。
+ *     退出码：0 = 每个作业的账都读到且没有撤防；1 = 有撤防，或有作业的账读不到
+ *     （读不到 = 「没接线」与「跑过且全绿」又同形了，那正是要显式记账的东西）。
  *   每条失败行都带 fixHint（按归因层给出的一条可执行修复命令）；文本模式另有
  *   「修复入口」段按层去重。JSON 里 failures[].fixHint 与 diff 四桶同形。
  *
@@ -55,6 +63,7 @@ import {
   summarizeJob,
   waitForRunConclusion,
 } from "./lib/ci-attribution.mjs";
+import { parseDefusedTrace, renderDefusedTable } from "./lib/ci-defused.mjs";
 
 const API = "https://api.github.com";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -304,6 +313,31 @@ export async function collectAttribution(client, repo, run) {
 }
 
 /**
+ * 撤防账视角：逐**全部**作业读日志里那一行账（判据与解读在 lib/ci-defused.mjs）。
+ *
+ * 与 collectAttribution 的差别只有两处，且都是刻意的：
+ *   1. 不过滤 `isFailedJob` —— 绿色作业的账才是这里要看的东西；
+ *   2. 不取注解 —— 那一轮 13 个作业的 annotations 返回 0 条，日志才有正文。
+ * 单个作业日志取不到不拖垮整轮：该行标 error，其余照常出账。
+ */
+export async function collectDefused(client, repo, run) {
+  const jobsData = await client.api(`/repos/${repo}/actions/runs/${run.id}/jobs?per_page=100&filter=latest`);
+  const jobs = jobsData?.jobs ?? [];
+  const rows = [];
+  for (const job of jobs) {
+    let error = "";
+    let logText = "";
+    try {
+      logText = await client.fetchJobLog(repo, job.id);
+    } catch (inner) {
+      error = messageOf(inner);
+    }
+    rows.push({ id: job.id, name: job.name ?? String(job.id), conclusion: job.conclusion ?? "", ...parseDefusedTrace(logText), error });
+  }
+  return rows;
+}
+
+/**
  * 快照文件名：run id + 短 sha + 本地时间戳。
  * 放 tmp/ 而不是仓库根：快照是排障中间产物，不该污染工作树，也不该进提交。
  */
@@ -447,6 +481,47 @@ export async function main(argv, { clientFactory = createClient } = {}) {
     });
     run = result.run;
     waitMeta = { timedOut: result.timedOut, waitedMs: result.waitedMs, polls: result.polls, pollErrors: result.pollErrors };
+  }
+
+  // ---- --defused：撤防账视角（全部作业，只读日志里的那一行账）----
+  if (argv.includes("--defused")) {
+    const runMeta = { id: run.id, head_sha: run.head_sha, conclusion: run.conclusion ?? null, html_url: run.html_url };
+    let jobs;
+    try {
+      jobs = await collectDefused(client, repo, run);
+    } catch (error) {
+      const why = messageOf(error);
+      if (argv.includes("--json")) console.log(JSON.stringify({ mode: "defused", repo, run: runMeta, error: why }, null, 2));
+      else console.error("[explain-ci] 撤防账读不了：jobs 清单没取到 —— " + why + "（这不是「没有撤防」）");
+      return 2;
+    }
+    const missing = jobs.filter((r) => !r.found);
+    const defusedRows = jobs.filter((r) => r.found && r.defused > 0);
+    const gatesRan = jobs.reduce((n, r) => n + (r.found ? r.ran : 0), 0);
+    const gatesDefused = jobs.reduce((n, r) => n + (r.found && r.defused ? r.defused : 0), 0);
+    if (argv.includes("--json")) {
+      console.log(
+        JSON.stringify(
+          { mode: "defused", repo, run: runMeta, summary: { jobs: jobs.length, gatesRan, gatesDefused, unreadable: missing.map((r) => r.name) }, jobs },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.log("仓库 " + repo + " · run #" + run.id + " · " + String(run.head_sha).slice(0, 12) + " · 撤防账");
+      console.log(run.html_url);
+      if (waitMeta) console.log("已等待 " + Math.round(waitMeta.waitedMs / 1000) + "s · run 结论：" + (run.conclusion ?? "仍未结束"));
+      console.log("\n" + renderDefusedTable(jobs).join("\n"));
+      console.log(
+        "\n合计：" + jobs.length + " 个作业 · 跑过 " + gatesRan + " 道门禁 · 没跑成 " + gatesDefused + " 道" +
+          (missing.length > 0 ? " · " + missing.length + " 个作业的账读不到（" + missing.map((r) => r.name).join("、") + "）" : "") +
+          "。读不到 ≠ 没撤防：作业结论只说明「没新增红」，那行账才说明门禁判过没有。",
+      );
+      for (const r of defusedRows) {
+        if (r.blocker) console.log("\n" + r.name + " 的根因：" + (r.blockerLabel ?? "") + "（id: " + r.blocker + "）" + (r.blockerKind || ""));
+      }
+    }
+    return defusedRows.length > 0 || missing.length > 0 ? 1 : 0;
   }
 
   let rows = [];

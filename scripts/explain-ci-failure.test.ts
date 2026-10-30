@@ -1255,3 +1255,177 @@ describe("main：失败也要落部分快照，绝不空白退出", () => {
     }
   });
 });
+
+/**
+ * `--defused`：撤防账视角。
+ *
+ * 与默认归因模式的唯一区别是**取日志的对象**——归因只取失败作业的日志（那里有红灯），
+ * 而账在绿色作业里同样有话要说（「5 道门禁全部跑过」这句才是「门禁判过没有」的证据）。
+ * 2026-10-30 那轮 run 41010267114 就是靠手动脚本读到的，这组用例把它变成工具的一档。
+ * 日志形状的真读回在 `scripts/ci-defused.test.ts` 那组里对着 CLI 真实 stdout 钉住，
+ * 这里只钉作业级接线：取哪些作业、读不到时怎么说、退出码怎么分档。
+ */
+describe("main --defused：逐作业读日志里的撤防账", () => {
+  const run = {
+    id: 12345,
+    head_sha: "abcdef1234567890abcdef1234567890abcdef12",
+    html_url: "https://example.invalid/run",
+    conclusion: "failure",
+    head_branch: "main",
+  };
+  const capture = () => {
+    const logs: string[] = [];
+    const errors: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => logs.push(args.map(String).join(" ")));
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => errors.push(args.map(String).join(" ")));
+    return { logs, errors, restore: () => vi.restoreAllMocks() };
+  };
+  const tokenGuard = <T>(fn: () => Promise<T>): Promise<T> => {
+    const previous = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = "test-token";
+    return fn().finally(() => {
+      if (previous === undefined) delete process.env.GITHUB_TOKEN;
+      else process.env.GITHUB_TOKEN = previous;
+    });
+  };
+
+  // 用 runner 改写后的真实形状（`##[notice]` / `##[warning]`，title 被吃掉，行首带时间戳）：
+  // 这才是 `--defused` 在生产里读到的样子。`::…title=CI 门禁撤防::` 原文那份由
+  // scripts/ci-defused.test.ts 的真日志夹具负责，两边不能只供一种形状。
+  const GREEN =
+    "2026-10-30T05:47:20.2193330Z [撤防账] test-web：5 道门禁全部跑过\n" +
+    "2026-10-30T05:47:20.2219023Z ##[notice]test-web 5 道门禁全部跑过（在册准备步骤 2 个）\n";
+  const DEFUSED =
+    "2026-10-30T05:47:20.2193330Z [撤防账] test-postgres：3 道门禁里 2 道没跑成\n" +
+    "2026-10-30T05:47:20.2195016Z   · 跨方言套件（id: pg-suite）— 被跳过\n" +
+    "2026-10-30T05:47:20.2195789Z   · 标准模式基准（id: pg-bench）— 被跳过\n" +
+    "2026-10-30T05:47:20.2198490Z   根因：pnpm install --frozen-lockfile（id: pg-install）判红——默认条件下排在它后面的每一步都会被跳过\n" +
+    "2026-10-30T05:47:20.2219023Z ##[warning]test-postgres 3 道门禁里 2 道没跑成；没跑成的步骤 id：pg-install、pg-suite、pg-bench；根因：pnpm install --frozen-lockfile（id: pg-install）判红——默认条件下排在它后面的每一步都会被跳过\n";
+
+  /** 三个作业：绿、撤防、以及刻意没接线的 seo-audit-prod */
+  function fakeJobs(opts: { logOf?: (name: string) => string; throwOn?: string } = {}) {
+    const jobs = [
+      { id: 1, name: "test-web", conclusion: "success" },
+      { id: 2, name: "test-postgres", conclusion: "success" },
+      { id: 3, name: "seo-audit-prod", conclusion: "success" },
+    ];
+    const seen: string[] = [];
+    return {
+      seen,
+      client: () =>
+        ({
+          api: async (path: string) => {
+            if (path.includes("/actions/runs?")) return { workflow_runs: [run] };
+            return { jobs };
+          },
+          fetchJobLog: async (_repo: string, jobId: number) => {
+            const job = jobs.find((j) => j.id === jobId)!;
+            seen.push(job.name);
+            if (opts.throwOn === job.name) throw new TypeError("terminated");
+            return opts.logOf?.(job.name) ?? "";
+          },
+        }) as never,
+    };
+  }
+
+  it("绿色作业也取日志：那行「全部跑过」是门禁判过的唯一痕迹", async () => {
+    const cap = capture();
+    const f = fakeJobs({ logOf: (name) => (name === "test-web" ? GREEN : name === "test-postgres" ? DEFUSED : "") });
+    try {
+      const rc = await tokenGuard(() => main(["--repo", "a/b", "--defused"], { clientFactory: f.client }));
+      // 三条作业都取过日志（默认归因模式只会取失败的那条，这里一条红的都没有）
+      expect(f.seen.sort()).toEqual(["seo-audit-prod", "test-postgres", "test-web"]);
+      const out = cap.logs.join("\n");
+      expect(out).toContain("5 道门禁全部跑过");
+      expect(out).toContain("准备步骤 2 个在册");
+      expect(out).toContain("2 道没跑成");
+      expect(out).toContain("根因 pg-install");
+      expect(out).toContain("没有撤防账");
+      // 只报不拦：这一档不产出失败归因表，也不许把撤防写成红灯层
+      expect(out).not.toContain("按层统计");
+      // 有撤防 ⇒ 1；「读不到账」也算发现，不许和全绿同形
+      expect(rc).toBe(1);
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("每个作业都读到且没有撤防 ⇒ 0（全绿那一轮同样出账）", async () => {
+    const cap = capture();
+    const f = fakeJobs({ logOf: (name) => (name === "test-web" ? GREEN : GREEN.replace(/test-web/g, "test-postgres")) });
+    try {
+      const rc = await tokenGuard(() => main(["--repo", "a/b", "--defused"], { clientFactory: f.client }));
+      expect(rc).toBe(0);
+      expect(cap.logs.join("\n")).toContain("没跑成 0 道");
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("日志取不到 ⇒ 该行写「日志没取到」而不是「没撤防」，退出码 1", async () => {
+    const cap = capture();
+    const f = fakeJobs({ logOf: () => GREEN, throwOn: "test-postgres" });
+    try {
+      const rc = await tokenGuard(() => main(["--repo", "a/b", "--defused"], { clientFactory: f.client }));
+      expect(rc).toBe(1);
+      const out = cap.logs.join("\n");
+      expect(out).toContain("日志没取到：terminated");
+      // 取不到只影响那一行：另一条作业的账照常读出来
+      expect(out).toContain("5 道门禁全部跑过");
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("jobs 清单没取到 ⇒ 退出码 2 并说「这不是没有撤防」，--json 也不空白", async () => {
+    const cap = capture();
+    try {
+      const rc = await tokenGuard(() =>
+        main(
+          ["--repo", "a/b", "--defused", "--json"],
+          {
+            clientFactory: () =>
+              ({
+                api: async (path: string) => {
+                  if (path.includes("/actions/runs?")) return { workflow_runs: [run] };
+                  throw new Error("GitHub API 403 /repos/a/b/actions/runs/12345/jobs");
+                },
+                fetchJobLog: async () => "",
+              }) as never,
+          },
+        ),
+      );
+      expect(rc).toBe(2);
+      const stdout = JSON.parse(cap.logs.at(-1) ?? "");
+      expect(stdout.mode).toBe("defused");
+      expect(stdout.error).toContain("403");
+      expect(stdout.run.id).toBe(12345);
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("--json 出 mode/summary/jobs：逐作业一份，机器核对不必再抓日志", async () => {
+    const cap = capture();
+    const f = fakeJobs({ logOf: (name) => (name === "test-web" ? GREEN : name === "test-postgres" ? DEFUSED : "") });
+    try {
+      const rc = await tokenGuard(() => main(["--repo", "a/b", "--defused", "--json"], { clientFactory: f.client }));
+      expect(rc).toBe(1);
+      const stdout = JSON.parse(cap.logs.at(-1) ?? "");
+      expect(stdout.summary.jobs).toBe(3);
+      expect(stdout.summary.gatesRan).toBe(5 + 1);
+      expect(stdout.summary.gatesDefused).toBe(2);
+      expect(stdout.summary.unreadable).toEqual(["seo-audit-prod"]);
+      const web = stdout.jobs.find((j: { name: string }) => j.name === "test-web");
+      expect(web.defused).toBe(0);
+      const pg = stdout.jobs.find((j: { name: string }) => j.name === "test-postgres");
+      // 注解那行的 id 列表里带着 pg-install（准备步骤），而「2 道没跑成」只数门禁
+      // ⇒ 读侧必须按登记表把两类分开，否则数字和 id 列表会对不上
+      expect(pg.ids).toEqual(["pg-suite", "pg-bench"]);
+      expect(pg.envIds).toEqual(["pg-install"]);
+      expect(pg.blocker).toBe("pg-install");
+    } finally {
+      cap.restore();
+    }
+  });
+});

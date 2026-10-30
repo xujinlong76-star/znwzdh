@@ -41,6 +41,7 @@ export function shouldImproveDescription(
   if (!after) return false;
   // 从「没有描述」到「有描述」是量级差异，不该被长度门槛挡住
   if (!before) return true;
+  // source-truth-ok: 描述长度对比是「描述是否变好」的判定，与数据源选择无关
   return after.length > before.length + DESCRIPTION_IMPROVE_MARGIN;
 }
 

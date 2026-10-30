@@ -566,6 +566,7 @@ export async function loadVideoCatalogFromDb(ctx: AppContext): Promise<Record<st
   }
 
   // 分页读到的条目数与 COUNT(*) 不一致：宁可回落文档，也不返回残缺的视频库
+  // source-truth-ok: 同源完整性检查（分页读到的条数 vs COUNT(*)），防截断不是选源
   if (items.length < itemCount) {
     console.warn(
       `[video-catalog] 关系表条目数 ${itemCount}，实际读到 ${items.length}，已回落文档读取以避免截断`,

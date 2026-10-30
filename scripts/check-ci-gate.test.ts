@@ -1,5 +1,6 @@
 /**
- * `scripts/check-ci-gate.mjs` 的两项守卫（第 5 项 2026-10-25 run47，第 6 项 2026-10-29）。
+ * `scripts/check-ci-gate.mjs` 的三项守卫（第 5 项 2026-10-25 run47，第 6 项 2026-10-29，
+ * 第 7 项 2026-10-30）。
  *
  * 第 5 项管的是「后端 lint 到底哪边说了算」：CI 的那一步带 continue-on-error，
  * 退出码会被吞掉，所以同一份断言必须在被 ci-passed 聚合的阻塞作业里也跑一遍。
@@ -216,5 +217,143 @@ describe("check-ci-gate 第 6 项：级联红收敛", () => {
     expect(res.status).not.toBe(0);
     expect(res.out).toContain("check-web-overlay");
     expect(res.out).toContain("没在级联登记表里登记");
+  });
+});
+
+/**
+ * 第 7 项：撤防账的接线（2026-10-30）。
+ *
+ * 默认条件是「上一步红 ⇒ 后面每一步 skipped」，而 skipped 不判红 ⇒ 作业结论只说明
+ * 「没新增红」，不说明「门禁判过没有」。实战吃过的一次：10-29 起首屏预算常驻红，
+ * test-web 的 ISR 路由门禁被整步跳过连着几天，结论一直写成「前端只有预算问题」。
+ * `11108bf2` 补的是那一步的守卫；本项钉的是「其余没跑成的步骤必须点名」这件事
+ * **还接在线上**——读数步骤在不在、条件是不是 always()、登记表里的 id 真不真存在、
+ * 门禁形状的步骤有没有 id。
+ *
+ * 只钉接线、不判运行结果：把「有门禁没跑成」变成第二处红，等于把第 6 项刚压下去的
+ * 级联红请回来。所以这里没有「撤防发生 ⇒ 脚本红」的用例，那类账是运行期的 ::warning。
+ */
+describe("check-ci-gate 第 7 项：撤防账接线", () => {
+  /** 夹具一律用 LF 派生（CI 检出的那份文件就是 LF）；CRLF 由上面第 5/6 项读真实文件覆盖 */
+  function source(): string {
+    return readFileSync(REAL_CI, "utf8").replace(/\r\n/g, "\n");
+  }
+
+  /**
+   * 按 run 里的字样定位它所属的整步（步骤起始行固定 6 空格 + "- "，到下一步或下一作业为止），
+   * 交给 fn 改写。在**单步**范围内增删行，才不会牵动别的作业——撤防账是逐作业判定的。
+   * 步骤尾部要一起取：ci.yml 里 `id:` 常常写在 `run:` 之后（YAML 键序不固定）。
+   */
+  function editStep(runNeedle: string, fn: (step: string[]) => string[], src = source()): string {
+    const lines = src.split("\n");
+    const at = lines.findIndex((l) => l.includes(runNeedle));
+    expect(at, `夹具里找不到步骤：${runNeedle}`).toBeGreaterThan(-1);
+    let start = at;
+    while (start > 0 && !/^ {6}- /.test(lines[start])) start -= 1;
+    let end = lines.length;
+    for (let i = at + 1; i < lines.length; i += 1) {
+      if (/^ {6}- /.test(lines[i]) || /^ {2}\S/.test(lines[i])) {
+        end = i;
+        break;
+      }
+    }
+    return [...lines.slice(0, start), ...fn(lines.slice(start, end)), ...lines.slice(end)].join("\n");
+  }
+
+  it("仓库现状：4 个接入作业各有读数步骤 ⇒ 绿，✅ 行把记账范围说出来", () => {
+    const res = runGate(REAL_CI, GATE_TEST);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("撤防账已接线");
+    expect(source().split("run: node scripts/ci-defused-gates.mjs").length - 1).toBe(4);
+  });
+
+  it("删掉 test-web 的读数步骤 ⇒ 红：登记表只是愿望", () => {
+    const weakened = editStep("ci-defused-gates.mjs --job test-web", () => []);
+    expect(weakened).not.toContain("--job test-web");
+    const res = runGate(writeFixture("ci-web-no-reporter.yml", weakened), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("test-web");
+    expect(res.out).toContain("撤防账没接线");
+  });
+
+  it("读数步骤的条件退回默认 ⇒ 红：它自己就是最大的那条撤防", () => {
+    const weakened = editStep("ci-defused-gates.mjs --job test-e2e", (step) =>
+      step.filter((l) => !/^ {8}if: \$\{\{ always\(\) \}\}$/.test(l)),
+    );
+    expect(weakened).not.toBe(source());
+    const res = runGate(writeFixture("ci-e2e-reporter-not-always.yml", weakened), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("test-e2e");
+    expect(res.out).toContain("条件不是 always()");
+  });
+
+  it("steps 上下文没传进来 ⇒ 红：账每次只会报「读不到」，却没人看", () => {
+    const weakened = editStep("ci-defused-gates.mjs --job test-sqlite", (step) =>
+      step.filter((l) => !/NAVHUB_STEP_CONCLUSIONS| {8}env:/.test(l)),
+    );
+    expect(weakened).not.toContain(
+      "NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}\n        run: node scripts/ci-defused-gates.mjs --job test-sqlite",
+    );
+    const res = runGate(writeFixture("ci-sqlite-no-steps-context.yml", weakened), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("test-sqlite");
+    expect(res.out).toContain("toJSON(steps)");
+  });
+
+  it("登记表里的 id 被改名 ⇒ 红：账还在等它，YAML 里已经没有这一步", () => {
+    const renamed = editStep("node scripts/check-bundle-budget.mjs", (step) =>
+      step.map((l) => (l === "        id: web-budget" ? "        id: web-budget-v2" : l)),
+    );
+    expect(renamed).not.toContain("id: web-budget\n");
+    const res = runGate(writeFixture("ci-web-budget-renamed.yml", renamed), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("id: web-budget 在作业里找不到");
+  });
+
+  it("新加一道门禁不给 id ⇒ 红：它被上游跳过时报不出名字", () => {
+    const injected = source().replace(
+      "      - run: node scripts/check-extensions.mjs\n",
+      "      - run: node scripts/check-brand-newgate.mjs\n      - run: node scripts/check-extensions.mjs\n",
+    );
+    expect(injected).toContain("check-brand-newgate.mjs");
+    const res = runGate(writeFixture("ci-overlay-gate-no-id.yml", injected), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("check-brand-newgate.mjs");
+    expect(res.out).toContain("没有 id");
+  });
+
+  it("未登记的作业跑读数脚本 ⇒ 红：接线跑在账前面，那一步每轮都白跑", () => {
+    // test-postgres 有明确的撤防场景（install/vendor 红 ⇒ 套件整步 skipped），
+    // 但今天没登记。直接把 test-web 那一步的形状搬过去 ⇒ 必须点名，
+    // 而不是让「脚本自己发的 ::warning」成为唯一线索（无 token 时注解才是可读通道）。
+    const withRogue = source().replace(
+      "      - run: pnpm test:pg:suite\n",
+      [
+        "      - run: pnpm test:pg:suite",
+        "      - name: 撤防账（没跑成的门禁要点名）",
+        "        id: defused-gates",
+        "        if: ${{ always() }}",
+        "        env:",
+        "          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}",
+        "        run: node scripts/ci-defused-gates.mjs --job test-postgres",
+      ].join("\n") + "\n",
+    );
+    expect(withRogue).toContain("--job test-postgres");
+    const res = runGate(writeFixture("ci-pg-rogue-reporter.yml", withRogue), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("test-postgres");
+    expect(res.out).toContain("DEFUSED_GATES 里没有它");
+  });
+
+  it("注释里出现 ci-defused-gates.mjs ⇒ 不误判成「已接线」（判定只看代码行）", () => {
+    // 与第 6 项「遥测判定先剥 YAML 注释」同一条铁律：解释口径的注释常提到脚本名。
+    // 反向也要成立——否则「给某作业写一行注释」就能骗过门禁。
+    const annotated = source().replace(
+      "      - run: pnpm test:pg:suite\n",
+      "      # 撤防账见 scripts/ci-defused-gates.mjs（本作业暂未登记）\n      - run: pnpm test:pg:suite\n",
+    );
+    expect(annotated).toContain("# 撤防账见 scripts/ci-defused-gates.mjs");
+    const res = runGate(writeFixture("ci-pg-comment-only.yml", annotated), GATE_TEST);
+    expect(res.status, res.out).toBe(0);
   });
 });

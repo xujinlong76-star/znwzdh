@@ -196,6 +196,38 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   每个分支只走一条路，「现状绿」证明不了另两条真的存在；覆盖面那五条同理，HEAD 上三个作业全登记了）。
   覆盖面那条已做过消融自证：删掉 `problems.push(...uncoveredReaders)` → 新用例转红（1 failed / 10 passed）。
 
+### 2.3 撤防账：门禁没跑成要在作业里点名（`check-ci-gate.mjs` 第 7 项）
+
+「撤防」= 步骤配了会判红的门禁，却因为上游红而根本没执行。GitHub 的默认条件是 `success()`，
+也就是**上一步红 ⇒ 后面每一步 skipped**，而 `skipped` 不判红 ⇒ 作业结论只说明「没新增红」，
+不说明「门禁判过没有」。本仓库吃过的那次：首屏预算自 10-29 起常驻红，紧跟其后的
+`node scripts/check-isr-routes.mjs` 每轮被整步跳过，连着几天没判过任何东西，
+而近几轮的结论一直写成「前端门禁只有预算问题」——那句结论不成立。
+`11108bf2` 修的是**那一步的守卫**；守卫是逐条挂的，撤防是整片发生的，所以还需要一笔账。
+
+- **口径**：每个接入作业末尾加一步 `if: ${{ always() }}` 的读数，把 `toJSON(steps)` 交给
+  `scripts/ci-defused-gates.mjs --job <作业名>`。登记表在 `scripts/lib/ci-defused.mjs` 的
+  `DEFUSED_GATES`（`env` = 准备步骤，只用来点根因；`gates` = 门禁，没跑成就是撤防）。
+  `steps` 上下文只包含**写了 `id:` 的步骤** ⇒ 门禁形状的步骤必须有 id 并登进表，否则它被跳过时报不出名字。
+- **只报不拦**（rc 恒 0，`--strict` 才非零）：把「有门禁没跑成」变成第二处红，等于把 2.2 刚压下去的
+  级联红请回来。运行期出 `::warning title=CI 门禁撤防::` + Step Summary 表格；
+  第 7 项拦的是**接线**（读数步骤在不在、条件是不是 `always()`、`toJSON(steps)` 传没传、
+  登记表里的 id 真不真存在、覆盖面够不够），不是运行结果。
+- **为什么账必须在工作流里算**：本仓库 `permissions: contents: read`，没有 `actions:read`
+  ⇒ `/actions/jobs/{id}/logs` 与 artifact zip 恒 404，跨机器唯一可读通道是 annotation + Step Summary。
+  结论只打在 stdout 的门禁，别人读不到就等于没说。
+- **已接线**：`test-sqlite`、`test-web`、`test-e2e`、`check-web-overlay`（4 作业 / 15 道门禁）。
+  **未接线**（事实，不是提问）：`test-postgres`、`check-isr-live`、`docker-smoke`、`audit`——
+  它们的撤防目前仍靠作业结论人肉判断。
+- **两处刻意不登记**：`test-sqlite` 的 `id: pkg-build`（最后一步，2/3 片按矩阵合法跳过，登记了每轮都报假撤防；
+  给 id 是为了它当根因时点得出名）；后端 `lint:backend`（带 `continue-on-error`，红被吞掉、不挡路）。
+- **反向也管**：① 判定前先剥 YAML 注释——注释里解释口径会写 `always()` / `toJSON(steps)` / 脚本名，
+  真删掉 `if:` 与 `env:` 两行必须当场红；② 未登记的作业跑了读数脚本也红（接线跑在账前面 = 每轮白跑一步）；
+  ③ 读数步骤被挪到门禁之前也红（它打完账才跑的那步永远进不了账）。
+- **测试**：`scripts/ci-defused.test.ts`（35 例：读数 / 接线与覆盖面 / CLI，含 7 条消融自证——
+  逐条把判据拆掉，确认对应用例真的会转红）与 `scripts/check-ci-gate.test.ts` 的第 7 组
+  （现状绿 + 删读数 / 条件退回默认 / 不传 steps / 改名 id / 门禁无 id / 未登记作业跑脚本各自必红 + 注释不误判）。
+
 ---
 
 ## 3. 当前门禁全景

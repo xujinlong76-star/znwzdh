@@ -85,6 +85,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        id: sqlite-install
       # 覆盖层比对在 check-web-overlay 作业里单独跑（全新检出需先 vendor，见那里）
       - run: pnpm run typecheck
         id: typecheck
@@ -100,6 +101,7 @@ jobs:
       # "Cannot find package '@/lib/auth'" 整作业失败。vendor 只重建 apps/web，
       # 而 typecheck / build 都 --filter "@navhub/*"，故不受影响。
       - run: node scripts/vendor-web.mjs
+        id: sqlite-vendor
       # JUnit 供 scripts/test-telemetry.mjs 统计 flake 与失败用例（人类可读的
       # default reporter 仍然保留，日志体验不变）。
       # 不能写 `pnpm test -- --shard=...`：pnpm 会把那个 `--` 原样透传给 vitest，
@@ -142,8 +144,21 @@ jobs:
           retention-days: 7
       # 打包构建闸门：tsc 能过但声明导出/入口路径坏了只有 build 能发现。
       # 只在第 1 片跑：三片各 build 一次是纯浪费，且构建与分片无关。
+      # 有 id 但不进撤防登记表：它是最后一步、且 2/3 片按矩阵条件合法跳过，
+      # 登记了反而每轮都报一条假撤防；给 id 是为了让它当**根因**时被点得出名。
       - if: matrix.shard == 1
         run: pnpm build
+        id: pkg-build
+      # 撤防账（2026-10-30）：默认条件是「上一步红 ⇒ 后面每一步 skipped」，而 skipped 不判红，
+      # 于是作业结论只说明「没新增红」，不说明「门禁判过没有」。这一步把没跑成的门禁点名，
+      # 并说出是谁挡的。条件必须是 always()——换成默认条件，它自己就成了撤防账最大的那条撤防。
+      # 只报不拦（rc 恒 0）：判红等于把刚压下去的「一次根因多处红」请回来。
+      - name: 撤防账（没跑成的门禁要点名）
+        id: defused-gates
+        if: ${{ always() }}
+        env:
+          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}
+        run: node scripts/ci-defused-gates.mjs --job test-sqlite
 
   test-postgres:
     timeout-minutes: 20
@@ -197,23 +212,28 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        id: web-install
       # apps/web 是 gitignore 的 vendored 底座：先重建（上游 + overlay 覆写），
       # 否则 tsc/lint/build 面对的是不存在的目录（与 check-web-overlay 同款前置）
       - run: node scripts/vendor-web.mjs
+        id: web-vendor
       # 三门禁。背景：NavHub 自研的 166 个 overlay 文件（/admin 全部页面、
       # /api/hub 代理、navhub-api 等）此前零门禁——根 typecheck 只覆盖
       # @navhub/*，next.config 也 ignoreBuildErrors/ignoreDuringBuilds。
       # 现状基线（2026-10-16 本地实测）：tsc 0 错误、lint 0 错误 259 警告
       # （警告不卡门禁）、next build 通过——故直接按硬门禁启用。
       - run: pnpm --filter navsphere exec tsc --noEmit
+        id: web-typecheck
       # Next 16 移除了 `next lint`（eslint-config-next@16 改为扁平配置 + ESLint CLI）。
       # 基线（2026-10-16 本地实测，Next 15 时代）：0 错误 259 警告（警告不卡门禁）。
       - run: pnpm --filter navsphere exec eslint .
+        id: web-lint
       - run: pnpm --filter navsphere build
         id: web-build
       # 首屏 JS 预算硬门禁：build 产物已就绪。阈值在 scripts/bundle-budget.json，
       # 不允许为了过门禁上调——超了先优化，再按真实产物重新定基线。
       - run: node scripts/check-bundle-budget.mjs
+        id: web-budget
       # ISR 硬门禁：收录型路由（分类/分页/插件详情/站点详情/标签/合集/站点目录）必须是 ●，
       # 并且页面签名不得读 searchParams。动机：这类路由带 revalidate +
       # generateStaticParams，读了 searchParams 的未预渲染参数在按需生成时直接抛
@@ -229,6 +249,7 @@ jobs:
       # 是最贵的一种失效。锚点用 `== 'success'` 而不是账那两步的 `!= 'skipped'`：
       # build 真失败时 `.next` 是半份产物，ISR 读它只会再判一次假红。
       - run: node scripts/check-isr-routes.mjs
+        id: web-isr
         if: ${{ !cancelled() && steps.web-build.outcome == 'success' }}
       # 首屏预算账（只读）：把 check-bundle-budget --report 的三类发现 + 产物出处写成一份
       # 跨轮可对比的账。为什么门禁之外还要它：门禁只答「超没超」，不答「哪几条路由该补
@@ -253,6 +274,16 @@ jobs:
           # 两种都不该被静默吞掉——后者由上面的 outcome 守卫挡在门外。
           if-no-files-found: error
           retention-days: 30
+      # 撤防账：把「本作业里没跑成的门禁」点名，并说出是谁挡的。
+      # 这一步的存在理由写在 test-sqlite 的同名步骤上（默认条件 ⇒ 上一步红就整步 skipped，
+      # 而 skipped 不判红）；对 test-web 尤其重要——10-29 起预算常驻红，
+      # ISR 路由门禁被连着几天整步跳过，作业结论却一直只说「预算有问题」。
+      - name: 撤防账（没跑成的门禁要点名）
+        id: defused-gates
+        if: ${{ always() }}
+        env:
+          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}
+        run: node scripts/ci-defused-gates.mjs --job test-web
 
   # --live 抽查此前只存在于 seo-audit-prod（workflow_dispatch + 需要仓库变量
   # NAVHUB_SITE_URL），也就是**每个 PR 都没跑过**：ISR 快照「跑起来之后」是不是
@@ -594,29 +625,47 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        id: overlay-install
       # 语法快速门禁：解析级检查，不依赖 vendor，几秒内定位标点级错误
       - run: node scripts/check-syntax.mjs
+        id: gate-syntax
       # 依赖完整性：装残的包会让几百个测试套件同时报「找不到模块」，看起来像代码全坏
       # （2026-10-29 本地一天两次）。CI 也跑，否则干净检出后 node_modules 损坏时无从发现。
       - run: node scripts/check-deps-integrity.mjs
+        id: gate-deps-integrity
       # 视频链路的作用域化类型门禁：自动发现 src/lib/video-*.ts 与 webhook-*.ts
       # （70 个），断言 0 错误。整棵 overlay 的 ignoreBuildErrors 暂时关不掉
       # （21600+ 既有错误），但这条链路必须保持干净 —— 否则「类型不存在却一路绿灯」
       # 那类问题（HarvestRunReport）会再次发生。只读 apps/web-overlay，不需要 vendor。
       - run: node scripts/typecheck-video-scope.mjs
+        id: gate-video-scope
       # apps/web 是 gitignore 的生成物：全新检出只剩 12 个已跟踪文件，直接比对必然"缺失"
       # （这正是 main 长期红灯的原因）。先用 vendor 重建 apps/web = 上游 + overlay，
       # overlay 覆写优先，之后比对即为真；顺带也 smoke test 了 Docker/vendor 这条路径。
       - run: node scripts/vendor-web.mjs
+        id: overlay-vendor
       # overlay 是 Docker 构建与 vendor 的事实源；apps/web 改了没同步回去会在这里失败
       - run: node scripts/check-web-overlay.mjs
+        id: gate-overlay
       # core 纯算法的前端运行时副本必须与 packages/core 事实源逐字节一致
       # （历史事故：13 个镜像里 9 个悄悄漂移，knowledge-graph 前端缺 computeGraphCentrality）
       - run: node scripts/sync-core-mirrors.mjs --check
+        id: gate-core-mirrors
       # 上游底座 ref 三处声明（vendor 脚本 / Dockerfile / UPSTREAM.md）同源，且产物未漂移
       - run: node scripts/check-upstream-ref.mjs
+        id: gate-upstream-ref
       # 验证浏览器扩展 (Chrome Manifest V3) 与桌面扩展 (Raycast) 的规范与文件完整性
       - run: node scripts/check-extensions.mjs
+        id: gate-extensions
+      # 撤防账：这个作业是七道门禁排成的一列，默认条件下最前面任何一道红
+      # 都会把后面几道整步跳过——「overlay 与镜像同源」这种历史反复出事的判定
+      # 一旦静默 skip，作业结论里根本看不出来。
+      - name: 撤防账（没跑成的门禁要点名）
+        id: defused-gates
+        if: ${{ always() }}
+        env:
+          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}
+        run: node scripts/ci-defused-gates.mjs --job check-web-overlay
 
   test-e2e:
     timeout-minutes: 30
@@ -636,8 +685,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        id: e2e-install
       - run: node scripts/vendor-web.mjs
+        id: e2e-vendor
       - name: 安装 Playwright Chromium
+        id: e2e-playwright
         run: pnpm exec playwright install --with-deps chromium
       - name: 执行 Playwright E2E 测试
         id: e2e
@@ -691,6 +743,15 @@ jobs:
           # "No files were found" 注解，掩盖真正的告警；失败时报告仍会被上传。
           if-no-files-found: ignore
           retention-days: 14
+      # 撤防账：E2E 只有一道门禁，但它前面排着 install / vendor / Playwright 安装三步——
+      # 任一步红都会把整片用例跳过，而作业结论里只看得到那一步红，看不出「E2E 根本没跑」。
+      # 这一作业历史上吃过两次「分片空转」（junit 0 产物、两片各跑全量），读数必须自带。
+      - name: 撤防账（没跑成的门禁要点名）
+        id: defused-gates
+        if: ${{ always() }}
+        env:
+          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}
+        run: node scripts/ci-defused-gates.mjs --job test-e2e
 
   docker-smoke:
     timeout-minutes: 30

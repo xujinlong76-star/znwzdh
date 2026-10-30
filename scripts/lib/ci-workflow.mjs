@@ -18,6 +18,11 @@ export function isManualOnlyJob(block) {
   return cond.includes("workflow_dispatch") || cond.includes("schedule");
 }
 
+/** 把一个作业的 YAML 片段按步骤切开（步骤行固定 6 个空格缩进 + `- `） */
+export function splitJobSteps(jobBlock) {
+  return String(jobBlock ?? "").split(/\n(?= {6}- )/);
+}
+
 /** 剥掉整行 YAML 注释：注释里解释口径时常会写出 `upload-artifact`、`if-no-files-found: error` */
 export function stripYamlCommentLines(block) {
   return String(block ?? "")
@@ -83,7 +88,7 @@ export function readerJobCoverageProblems(jobs, registeredJobNames) {
  */
 export function cascadeProblems(jobBlock, { anchor, products }) {
   const problems = [];
-  const steps = String(jobBlock).split(/\n(?= {6}- )/);
+  const steps = splitJobSteps(jobBlock);
   const anchorRe = new RegExp(`^\\s*id: ${anchor}\\s*$`, "m");
   if (!steps.some((step) => anchorRe.test(step))) {
     problems.push(

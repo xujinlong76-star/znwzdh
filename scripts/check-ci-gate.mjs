@@ -30,11 +30,23 @@
  *     登记表的**覆盖面**是可推出来的（2026-10-30 补）：带 `if-no-files-found: error`
  *     上传的作业就是自己声明了「产物缺失我会判红」，这类作业没登记 ⇒ 直接红。
  *     此前这句只写在注释里（「漏登记会在那一步的红里显出来」），实际要靠事故才发现。
+ *   - **撤防账的接线**（2026-10-30 第 7 项）：默认条件是「上一步红 ⇒ 后面每一步 skipped」，
+ *     而 skipped 不判红 ⇒ 作业结论只说明「没新增红」，不说明「门禁判过没有」。
+ *     每个接入的作业必须有那步 `if: always()` 的读数步骤，登记表里的 id 必须都真实存在
+ *     且排在读数步骤之前；门禁形状的步骤必须有 id 并登进表（否则它被跳过时报不出名字）。
+ *     这一项只钉**接线**，不判运行结果：把「有门禁没跑成」变成第二处红，
+ *     等于把刚压下去的级联红请回来。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseWorkflow, cascadeProblems, readerJobCoverageProblems } from "./lib/ci-workflow.mjs";
+import { parseWorkflow, cascadeProblems, readerJobCoverageProblems, stripYamlCommentLines } from "./lib/ci-workflow.mjs";
+import {
+  DEFUSED_GATES,
+  defusedCoverageProblems,
+  defusedEntryFor,
+  defusedWiringProblems,
+} from "./lib/ci-defused.mjs";
 
 /** 允许测试注入替代文件，验证「删掉关键作业确实会红」 */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -144,6 +156,33 @@ const uncoveredReaders = readerJobCoverageProblems(
 );
 problems.push(...uncoveredReaders);
 
+// 撤防账（第 7 项）：门禁步骤没跑成（skipped / 取消 / id 被改名删除）必须在作业里点名。
+// 这里只钉接线：读数步骤在不在、条件是不是 always()、登记表里的 id 真不真存在、
+// 门禁形状的步骤有没有 id。运行结果不判红——那是级联红刚被压下去的那件事。
+let defusedGateCount = 0;
+for (const entry of DEFUSED_GATES) {
+  const found = jobs.find((j) => j.name === entry.job);
+  if (!found) {
+    problems.push(`找不到 ${entry.job} 作业：撤防登记表失去对象`);
+    continue;
+  }
+  defusedGateCount += (entry.gates ?? []).length;
+  for (const p of defusedWiringProblems(found.block, entry)) problems.push(p);
+  problems.push(...defusedCoverageProblems(found.block, entry));
+}
+
+// 反方向：ci.yml 里调用了读数脚本、登记表里却没有这个作业 = 接线跑在账前面，
+// 那一步每次都在报「未登记」，而没人会去读它（与 gates.json 的双向对照同一个口径）。
+for (const job of jobs) {
+  if (job.name === "ci-passed") continue;
+  if (!/ci-defused-gates\.mjs/.test(stripYamlCommentLines(job.block))) continue;
+  if (defusedEntryFor(job.name)) continue;
+  problems.push(
+    `作业 ${job.name} 跑了 scripts/ci-defused-gates.mjs，但 scripts/lib/ci-defused.mjs 的 DEFUSED_GATES 里没有它——` +
+      "读数每次都会报「未登记」，等于白跑一步；要么补登记，要么撤掉这一步",
+  );
+}
+
 if (problems.length > 0) {
   console.error("❌ CI 合并门禁校验失败：");
   for (const p of problems) console.error("   - " + p);
@@ -154,6 +193,7 @@ console.log(
   `✅ CI 合并门禁：解析 ${jobs.length - 1} 个作业，ci-passed 聚合 ${aggregated.length} 个作业，逐个读取结果，` +
     "PG 走 test:pg:suite，" +
     `级联红已按产物生产者 outcome 收敛（${CASCADE_RULES.length} 个作业登记，覆盖面按 error 上传核对），` +
+    `撤防账已接线（${DEFUSED_GATES.length} 个作业 / ${defusedGateCount} 道门禁有读数步骤），` +
     (lintStepSuppressed ? "后端 lint 由阻塞作业里的同口径断言把关。" : "后端 lint 步骤本身即为阻塞。"),
 );
 if (manualOnly.length > 0) {

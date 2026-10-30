@@ -12,6 +12,11 @@
  * 把 always() 换成默认条件 ⇒ 本地 verify 红），不是运行结果。
  * 想在本地拿非零退出做一次性核对：`--strict`。
  *
+ * 全绿同样要出账（2026-10-30 补）：只在本步骤 stdout 上留话，等于跨机器什么都没有——
+ * 无 actions:read 时日志与 `/jobs/{id}/summary` 都是 404，而那轮注解池实测为 0 条，
+ * 「没接线」与「跑过且全绿」就是同一种形状。所以绿色路径也发一条 ::notice 并写 Step Summary
+ * （notice 级被归因层显式排除，不会冒充判红原因）。
+ *
  * 用法（CI 内）：
  *   - name: 撤防账
  *     id: defused-gates
@@ -83,8 +88,32 @@ function main() {
   }
 
   const { defused, failed, blocker } = findDefused({ entry, conclusions: read.value });
+  const summaryPath = String(process.env.GITHUB_STEP_SUMMARY ?? "").trim();
+  const envTotal = (entry.env ?? []).length;
   if (defused.length === 0) {
-    console.log(`${label} ${opts.job}：${gateTotal} 道门禁全部跑过${failed.length > 0 ? `（其中 ${failed.length} 道判红，见那一步自己）` : ""}`);
+    const head = `${gateTotal} 道门禁全部跑过`;
+    const redNote = failed.length > 0 ? `（其中 ${failed.length} 道判红，见那一步自己）` : "";
+    console.log(`${label} ${opts.job}：${head}${redNote}`);
+    // 全绿也要留痕：没有这一行，「跑过且全绿」和「根本没接线」在跨轮视角是同一种形状
+    // （2026-10-30 直证：tip 2ca11031 那一轮 13 个作业的注解池总数为 0）。
+    // 只写 Step Summary 不够——无 actions:read 时 `/jobs/{id}/summary` 与日志一样是 404，
+    // 所以同时发一条 ::notice：归因层（ci-attribution 的 usableAnnotations）显式排除
+    // notice 级，它不会冒充判红原因；本仓的先例是 check-isr-live 的「限流豁免四阶段成立」。
+    console.log(`::notice title=CI 门禁撤防::${opts.job} ${head}${redNote}（在册准备步骤 ${envTotal} 个）`);
+    if (summaryPath) {
+      appendFileSync(
+        summaryPath,
+        [
+          `### 撤防账 · ${opts.job}`,
+          "",
+          `**${head}**${redNote}——跑过的门禁 id：${(entry.gates ?? []).map((g) => `\`${g.id}\``).join("、")}；在册准备步骤 ${envTotal} 个。`,
+          "",
+          "作业结论只说明「没新增红」；这一行才说明「门禁真的判过」。",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+    }
     return 0;
   }
 
@@ -111,7 +140,6 @@ function main() {
     `::warning title=CI 门禁撤防::${opts.job} ${head}${envNote}；没跑成的步骤 id：${gateNames}；${blockerText}`,
   );
 
-  const summaryPath = String(process.env.GITHUB_STEP_SUMMARY ?? "").trim();
   if (summaryPath) {
     const rows = defused
       .map((d) => `| ${d.label} | \`${d.id}\` | ${TOTAL_LABEL[d.outcome] ?? d.outcome} | ${d.note ?? "—"} |`)

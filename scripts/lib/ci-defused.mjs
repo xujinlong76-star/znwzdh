@@ -49,6 +49,15 @@ export const DEFUSED_GATES = [
     ],
   },
   {
+    job: "test-postgres",
+    reporterStepId: "defused-gates",
+    env: [{ id: "pg-install", label: "pnpm install --frozen-lockfile" }],
+    gates: [
+      { id: "pg-suite", label: "跨方言套件（pg-dialect + rollup-pg，带环境守卫）" },
+      { id: "pg-bench", label: "标准模式 12 项真实数据库方言基准（pnpm test:pg）" },
+    ],
+  },
+  {
     job: "test-web",
     reporterStepId: "defused-gates",
     env: [
@@ -78,6 +87,29 @@ export const DEFUSED_GATES = [
     gates: [{ id: "e2e", label: "Playwright E2E（分片）" }],
   },
   {
+    job: "check-isr-live",
+    reporterStepId: "defused-gates",
+    // 这个作业的门禁全都挂在一套一次性预览站上（迁移/种子/中枢/next start）。
+    // env 因此比别的作业多：它们的红不是「产品红」，而是「检查没跑成」——
+    // 根因点名必须指得出是哪一层脚手架塌了（2026-10-23 起吃过 EADDRINUSE、
+    // drain 30s 占端口、next-server 的 CWD 三类各一次）。
+    env: [
+      { id: "isr-install", label: "pnpm install --frozen-lockfile" },
+      { id: "isr-vendor", label: "vendor 重建 apps/web" },
+      { id: "isr-migrate", label: "中枢迁移 apps/api/src/migrate.ts（仓库根为 CWD）" },
+      { id: "isr-seed", label: "种子库 pnpm seed" },
+      { id: "isr-fixtures", label: "补门禁自检标签 seed-isr-fixtures（仅一次性 CI 库）" },
+      { id: "isr-hub", label: "启动中枢（后台，8787）" },
+      { id: "isr-web", label: "启动 Web 产物（next start，CWD 必须是 apps/web）" },
+    ],
+    gates: [
+      { id: "isr-build", label: "next build（构建期给 origin）" },
+      { id: "isr-live", label: "ISR 线上抽查 --live（三层契约 + sitemap 族下限）" },
+      { id: "isr-linkgraph", label: "站内链接图的 sitemap 族下限" },
+      { id: "isr-rate-limit", label: "限流豁免集成检查（小额度中枢四阶段）" },
+    ],
+  },
+  {
     job: "check-web-overlay",
     reporterStepId: "defused-gates",
     env: [
@@ -92,6 +124,27 @@ export const DEFUSED_GATES = [
       { id: "gate-core-mirrors", label: "sync-core-mirrors --check（core 镜像一致）" },
       { id: "gate-upstream-ref", label: "check-upstream-ref（上游 ref 存在）" },
       { id: "gate-extensions", label: "check-extensions（扩展清单 schema）" },
+    ],
+  },
+  {
+    // 这两道的命令形状不在 GATE_STEP_RE 里（`docker build` / `pnpm ... audit` 都不是
+    // check-*.mjs 那一类），所以覆盖面判据推不出它们——登记是人为判断：
+    // 它们是这两个作业里**唯一**的判定，红会吞掉同作业后面的判定。
+    job: "docker-smoke",
+    reporterStepId: "defused-gates",
+    env: [],
+    gates: [
+      { id: "docker-api", label: "docker build Dockerfile.api" },
+      { id: "docker-web", label: "docker build Dockerfile.web" },
+    ],
+  },
+  {
+    job: "audit",
+    reporterStepId: "defused-gates",
+    env: [{ id: "audit-install", label: "pnpm install --frozen-lockfile" }],
+    gates: [
+      { id: "audit-full", label: "全量依赖审计（含 dev，--audit-level high 阻断）" },
+      { id: "audit-prod", label: "生产面依赖审计（--prod）" },
     ],
   },
 ];
@@ -111,7 +164,11 @@ export function trackedSteps(entry) {
 
 function outcomeOf(stepValue) {
   if (!stepValue || typeof stepValue !== "object") return null;
-  return String(stepValue.outcome ?? stepValue.conclusion ?? "").trim() || null;
+  // conclusion 优先：带 `continue-on-error: true` 的步骤 outcome=failure 而 conclusion=success，
+  // 而「会不会挡住后面」只由 conclusion 决定（runner 按 if 条件的等价物跳过步骤）。
+  // 拿 outcome 当判据会把「允许失败」的步骤点成根因——它其实一路放行。
+  // outcome 只作兜底：夹具与旧读数可能只给 outcome。
+  return String(stepValue.conclusion ?? stepValue.outcome ?? "").trim() || null;
 }
 
 function hasStepId(stepBlock, id) {
@@ -125,6 +182,8 @@ function hasStepId(stepBlock, id) {
  *   conclusions —— GitHub 的 steps 上下文（`{ "<id>": { outcome, conclusion } }`）
  * @returns {{defused:object[], failed:object[], blocker:object|null, ran:string[], tracked:string[]}}
  *   defused[].outcome：'skipped' | 'cancelled' | 'absent'（登记表有、上下文里没有 = id 被改名/删除）
+ *   判据一律取 conclusion（没有该字段才回退 outcome）：`continue-on-error` 的步骤
+ *   outcome=failure 而 conclusion=success，用 outcome 会把放行的一步点成根因。
  *   failed：跑过并判红的门禁——它不是撤防，它是红（由那一步自己负责，这里只拿来点根因）
  *   blocker.kind：'failure' | 'cancelled' | 'unknown'（挡住它的步骤没有 id，读不出来）
  */
@@ -253,6 +312,8 @@ export function defusedWiringProblems(jobBlock, entry) {
  * 豁免：`continue-on-error: true` 的步骤不登记——它红了也不会挡住别人（红被吞掉），
  * 也不会因上游而撤防自己的判定，硬要求登记等于让门禁管一件不会出事的事。
  * 今天的 test-sqlite 后端 lint 就是这一类（命令形状另说）。
+ * 真给它补了 id 也不会读错：`outcomeOf` 取 conclusion（那类步骤 outcome=failure
+ * 而 conclusion=success），所以它既不进 failed 也不会被点成根因。
  * 读数步骤自己也不算门禁（它只报账）。
  */
 export function defusedCoverageProblems(jobBlock, entry) {

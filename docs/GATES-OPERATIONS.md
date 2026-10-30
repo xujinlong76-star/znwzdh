@@ -209,24 +209,40 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   `scripts/ci-defused-gates.mjs --job <作业名>`。登记表在 `scripts/lib/ci-defused.mjs` 的
   `DEFUSED_GATES`（`env` = 准备步骤，只用来点根因；`gates` = 门禁，没跑成就是撤防）。
   `steps` 上下文只包含**写了 `id:` 的步骤** ⇒ 门禁形状的步骤必须有 id 并登进表，否则它被跳过时报不出名字。
+- **判据一律取 `conclusion`，没有该字段才回退 `outcome`**：带 `continue-on-error: true` 的步骤
+  `outcome=failure` 而 `conclusion=success`，而「会不会挡住后面」只由 conclusion 决定（runner 的跳过
+  等价于 `success()`）。拿 outcome 当判据会把「允许失败」的那一步点成根因——它其实一路放行。
+  2026-10-30 直证：`scripts/ci-defused.test.ts` 里把 `outcomeOf` 拆成 outcome 优先后，
+  `web-budget` 那一步（软失败）被写成了根因，用例当场红。
 - **只报不拦**（rc 恒 0，`--strict` 才非零）：把「有门禁没跑成」变成第二处红，等于把 2.2 刚压下去的
   级联红请回来。运行期出 `::warning title=CI 门禁撤防::` + Step Summary 表格；
   第 7 项拦的是**接线**（读数步骤在不在、条件是不是 `always()`、`toJSON(steps)` 传没传、
   登记表里的 id 真不真存在、覆盖面够不够），不是运行结果。
+- **全绿同样要出账**：`defused.length === 0` 时除了 stdout，还写一条 `::notice title=CI 门禁撤防::`
+  并把「N 道门禁全部跑过」追加进 `GITHUB_STEP_SUMMARY`。原因是「根本没接线」和「跑过且全绿」
+  在跨轮视角里原本是同一种形状（tip `2ca11031` 那一轮 13 个作业的注解池总数为 0）。
+  notice 不会冒充判红原因：归因层 `usableAnnotations` 显式排除 `annotation_level === "notice"`。
+  `--strict` 也不罚全绿的那一轮——严格档拦的是真撤防。
 - **为什么账必须在工作流里算**：本仓库 `permissions: contents: read`，没有 `actions:read`
   ⇒ `/actions/jobs/{id}/logs` 与 artifact zip 恒 404，跨机器唯一可读通道是 annotation + Step Summary。
   结论只打在 stdout 的门禁，别人读不到就等于没说。
-- **已接线**：`test-sqlite`、`test-web`、`test-e2e`、`check-web-overlay`（4 作业 / 15 道门禁）。
-  **未接线**（事实，不是提问）：`test-postgres`、`check-isr-live`、`docker-smoke`、`audit`——
-  它们的撤防目前仍靠作业结论人肉判断。
+- **已接线**：`test-sqlite`、`test-postgres`、`test-web`、`test-e2e`、`check-isr-live`、
+  `check-web-overlay`、`docker-smoke`、`audit`（**8 作业 / 25 道门禁**；`docker-smoke` 的两个
+  `docker build` 没有准备步骤，`check-isr-live` 有 7 个 `env` 准备步骤——它们红不是产品红，
+  是「检查没跑成」，所以两个数分开报）。
+  **仍未接线**（事实，不是提问）：只剩 `seo-audit-prod`（手动/定时作业，多一处红不阻塞合并）
+  和 `ci-passed`（只做聚合，没有门禁）——这两个刻意不登记。
 - **两处刻意不登记**：`test-sqlite` 的 `id: pkg-build`（最后一步，2/3 片按矩阵合法跳过，登记了每轮都报假撤防；
-  给 id 是为了它当根因时点得出名）；后端 `lint:backend`（带 `continue-on-error`，红被吞掉、不挡路）。
+  给 id 是为了它当根因时点得出名）；`check-isr-live` 的「失败时留下预览站日志」（带 `if: failure()`，
+  全绿时 skipped 是设计如此）。后端 `lint:backend` 带 `continue-on-error`，红被吞掉、不挡路，
+  真给它补了 id 也不会读错（见上面的 conclusion 优先）。
 - **反向也管**：① 判定前先剥 YAML 注释——注释里解释口径会写 `always()` / `toJSON(steps)` / 脚本名，
   真删掉 `if:` 与 `env:` 两行必须当场红；② 未登记的作业跑了读数脚本也红（接线跑在账前面 = 每轮白跑一步）；
   ③ 读数步骤被挪到门禁之前也红（它打完账才跑的那步永远进不了账）。
-- **测试**：`scripts/ci-defused.test.ts`（35 例：读数 / 接线与覆盖面 / CLI，含 7 条消融自证——
+- **测试**：`scripts/ci-defused.test.ts`（42 例：读数 / 接线与覆盖面 / CLI，含 8 条消融自证——
   逐条把判据拆掉，确认对应用例真的会转红）与 `scripts/check-ci-gate.test.ts` 的第 7 组
-  （现状绿 + 删读数 / 条件退回默认 / 不传 steps / 改名 id / 门禁无 id / 未登记作业跑脚本各自必红 + 注释不误判）。
+  （9 例：现状绿 + 删读数 / 条件退回默认 / 不传 steps / 改名 id / 门禁无 id / 新接入作业的准备步骤 id 被删 /
+  未登记作业跑脚本 / 注释不误判，各自必红）。
 
 ---
 

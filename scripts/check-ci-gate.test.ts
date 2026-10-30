@@ -260,11 +260,11 @@ describe("check-ci-gate 第 7 项：撤防账接线", () => {
     return [...lines.slice(0, start), ...fn(lines.slice(start, end)), ...lines.slice(end)].join("\n");
   }
 
-  it("仓库现状：4 个接入作业各有读数步骤 ⇒ 绿，✅ 行把记账范围说出来", () => {
+  it("仓库现状：8 个接入作业各有读数步骤 ⇒ 绿，✅ 行把记账范围说出来", () => {
     const res = runGate(REAL_CI, GATE_TEST);
     expect(res.status, res.out).toBe(0);
-    expect(res.out).toContain("撤防账已接线");
-    expect(source().split("run: node scripts/ci-defused-gates.mjs").length - 1).toBe(4);
+    expect(res.out).toContain("撤防账已接线（8 个作业 / 25 道门禁");
+    expect(source().split("run: node scripts/ci-defused-gates.mjs").length - 1).toBe(8);
   });
 
   it("删掉 test-web 的读数步骤 ⇒ 红：登记表只是愿望", () => {
@@ -322,38 +322,51 @@ describe("check-ci-gate 第 7 项：撤防账接线", () => {
     expect(res.out).toContain("没有 id");
   });
 
-  it("未登记的作业跑读数脚本 ⇒ 红：接线跑在账前面，那一步每轮都白跑", () => {
-    // test-postgres 有明确的撤防场景（install/vendor 红 ⇒ 套件整步 skipped），
-    // 但今天没登记。直接把 test-web 那一步的形状搬过去 ⇒ 必须点名，
-    // 而不是让「脚本自己发的 ::warning」成为唯一线索（无 token 时注解才是可读通道）。
-    const withRogue = source().replace(
-      "      - run: pnpm test:pg:suite\n",
-      [
-        "      - run: pnpm test:pg:suite",
-        "      - name: 撤防账（没跑成的门禁要点名）",
-        "        id: defused-gates",
-        "        if: ${{ always() }}",
-        "        env:",
-        "          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}",
-        "        run: node scripts/ci-defused-gates.mjs --job test-postgres",
-      ].join("\n") + "\n",
+  it("新接入作业的准备步骤 id 被删 ⇒ 红：登记表失去对象，账会把「没跑成」记成「读不到」", () => {
+    // 上一轮只有 test-web 的 web-budget 被点名过；这轮把同样口径套到新接的 4 个作业上，
+    // 挑 check-isr-live 的 isr-hub（中枢启动）——它是 env 准备步骤，不是门禁：
+    // 删掉 id 后 `toJSON(steps)` 里没这个键，撤防账就再也说不出「预览站没起来」这句话。
+    const weakened = editStep("nohup node apps/api/src/main.ts > /tmp/hub.log", (step) =>
+      step.filter((l) => !/^ {8}id: isr-hub$/.test(l)),
     );
-    expect(withRogue).toContain("--job test-postgres");
-    const res = runGate(writeFixture("ci-pg-rogue-reporter.yml", withRogue), GATE_TEST);
+    expect(weakened).not.toContain("id: isr-hub");
+    const res = runGate(writeFixture("ci-isr-hub-id-gone.yml", weakened), GATE_TEST);
     expect(res.status).not.toBe(0);
-    expect(res.out).toContain("test-postgres");
+    expect(res.out).toContain("check-isr-live");
+    expect(res.out).toContain("id: isr-hub 在作业里找不到");
+  });
+
+  it("未登记的作业跑读数脚本 ⇒ 红：接线跑在账前面，那一步每轮都白跑", () => {
+    // 2ca11031 那轮用 test-postgres 当「暂未登记的作业」；它现已接线，改用今天唯一
+    // 刻意不登记的 seo-audit-prod（手动/定时作业，多一处红不阻塞合并）。
+    // 把 test-web 那一步的形状搬过去 ⇒ 必须点名，而不是让「脚本自己发的 ::warning」
+    // 成为唯一线索（无 token 时注解才是可读通道）。
+    const withRogue = editStep("node scripts/seo-audit.mjs", (step) => [
+      ...step,
+      "      - name: 撤防账（没跑成的门禁要点名）",
+      "        id: defused-gates",
+      "        if: ${{ always() }}",
+      "        env:",
+      "          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}",
+      "        run: node scripts/ci-defused-gates.mjs --job seo-audit-prod",
+    ]);
+    expect(withRogue).toContain("--job seo-audit-prod");
+    const res = runGate(writeFixture("ci-seo-rogue-reporter.yml", withRogue), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("seo-audit-prod");
     expect(res.out).toContain("DEFUSED_GATES 里没有它");
   });
 
   it("注释里出现 ci-defused-gates.mjs ⇒ 不误判成「已接线」（判定只看代码行）", () => {
     // 与第 6 项「遥测判定先剥 YAML 注释」同一条铁律：解释口径的注释常提到脚本名。
     // 反向也要成立——否则「给某作业写一行注释」就能骗过门禁。
-    const annotated = source().replace(
-      "      - run: pnpm test:pg:suite\n",
-      "      # 撤防账见 scripts/ci-defused-gates.mjs（本作业暂未登记）\n      - run: pnpm test:pg:suite\n",
-    );
+    // 钉在未登记的作业上：登记表里有它的话，这条断言就成了空断言。
+    const annotated = editStep("node scripts/seo-audit.mjs", (step) => [
+      "      # 撤防账见 scripts/ci-defused-gates.mjs（本作业刻意不登记）",
+      ...step,
+    ]);
     expect(annotated).toContain("# 撤防账见 scripts/ci-defused-gates.mjs");
-    const res = runGate(writeFixture("ci-pg-comment-only.yml", annotated), GATE_TEST);
+    const res = runGate(writeFixture("ci-seo-comment-only.yml", annotated), GATE_TEST);
     expect(res.status, res.out).toBe(0);
   });
 });

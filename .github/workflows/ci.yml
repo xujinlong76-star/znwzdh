@@ -190,6 +190,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        id: pg-install
       # 只跑 PG 套件（SQLite 套件在 test-sqlite job 已覆盖）。
       # 两个 e2e 套件共用同一实例但各自独占 schema，可并行：
       #   pg-dialect —— Repository 断言跨方言一致（public schema）
@@ -197,8 +198,20 @@ jobs:
       # 用带环境守卫的入口：NAVHUB_TEST_DATABASE_URL 缺失时直接失败，
       # 而不是让两个套件整体 skip 后仍然绿灯（2026-10-24 实测过这个假绿）。
       - run: pnpm test:pg:suite
+        id: pg-suite
       # 标准模式 12 项真实数据库方言基准检验（同样只认 NAVHUB_TEST_DATABASE_URL）
       - run: pnpm test:pg
+        id: pg-bench
+      # 撤防账：这个作业只有两道判定，而第二道完全靠第一道放行——install 或 service 容器
+      # 一红，`pg-suite` / `pg-bench` 按默认条件整步 skipped，而 skipped 不判红 ⇒
+      # 「PG 方言从没验过」和「PG 方言全绿」在作业结论里是同一种形状。
+      # 存在理由与口径写在 test-sqlite 的同名步骤上（只报不拦、条件必须 always()）。
+      - name: 撤防账（没跑成的门禁要点名）
+        id: defused-gates
+        if: ${{ always() }}
+        env:
+          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}
+        run: node scripts/ci-defused-gates.mjs --job test-postgres
 
   test-web:
     timeout-minutes: 25
@@ -302,19 +315,24 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        id: isr-install
       - run: node scripts/vendor-web.mjs
+        id: isr-vendor
       # migrate 与 seed 都以仓库根为 CWD：config.ts 的 NAVHUB_SQLITE_PATH 默认是
       # cwd 相对的 ./data/navhub.db（见根 package.json 的 //seed 注释）。
       # seed 不建表，所以必须先 migrate；空库会让 sitemap 为空，--live 每个族
       # 只会打「跳过」，正是 --min-checked 要拦的静默通过。
       - run: node apps/api/src/migrate.ts
+        id: isr-migrate
       - run: pnpm seed
+        id: isr-seed
       # 种子库里最大的标签只挂 5 个站点，低于 MIN_SITES_FOR_TAG_INDEX=10，
       # 于是 /tags/{slug} 永远进不了 sitemap、在门禁里永远打「跳过」—— 一整族是
       # 永久盲区。这一步往一次性预览库补一个挂满 15 个站点的标签（slug=gate-selfcheck），
       # 让 /tags/ 真的有样本可抽。脚本自带护栏：必须显式 NAVHUB_ISR_FIXTURE_DB=1，
       # 否则拒绝运行（防止误写真实库）。
       - name: 补门禁自检标签（仅一次性 CI 库）
+        id: isr-fixtures
         run: node scripts/seed-isr-fixtures.mjs
         env:
           NAVHUB_ISR_FIXTURE_DB: 1
@@ -342,6 +360,7 @@ jobs:
       # 步骤如果旧进程没死透，新进程 binds 不上却照样通过就绪探测（打的是旧进程），
       # 于是红灯归因全错。端口是否让开由后面的步骤自己确认。
       - name: 启动中枢（后台）
+        id: isr-hub
         run: |
           nohup node apps/api/src/main.ts > /tmp/hub.log 2>&1 &
           echo $! > /tmp/hub.pid
@@ -350,6 +369,7 @@ jobs:
       # 构建期**给** origin：这个 job 测的是产物跑起来的行为，
       # 「无 origin 能否预渲染」由 test-web 里那条 check-isr-routes 负责，两条互补。
       - run: pnpm --filter navsphere build
+        id: isr-build
         env:
           NAVHUB_SITE_URL: http://localhost:3000
       # 把构建期烤出的 sitemap/robots 快照连同路由缓存一起删掉，逼第一次请求走
@@ -367,11 +387,13 @@ jobs:
       # —— 每个请求都非 2xx，就绪探测等满 120s 后红灯（2026-10-23 实测：
       # 根目录起 → curl 拿不到 sitemap.xml；apps/web 起 → 立刻 137 条 /site 57 条）。
       - name: 启动 Web 产物（next start，后台）
+        id: isr-web
         working-directory: apps/web
         run: nohup node node_modules/next/dist/bin/next start -p 3000 > /tmp/web.log 2>&1 &
         env:
           NAVHUB_SITE_URL: http://localhost:3000
       - name: ISR 线上抽查
+        id: isr-live
         # 就绪判据要盯「中枢喂进来的条目」（/site/{id}），不是任意 <loc>：
         # 中枢没起时 sitemap 仍会给出 9 条纯静态条目、照样含 <loc>，探测会误判就绪，
         # 然后门禁只在 3 页上红——红在无关处，日志里看不出现在这个原因。
@@ -440,6 +462,7 @@ jobs:
       # 而族下限一经传入即断言，两者互不绑架。此前这段逻辑只活在 workflow_dispatch
       # 的 seo-audit-prod 里，普通 PR 从没执行过。
       - name: 站内链接图的 sitemap 族下限
+        id: isr-linkgraph
         run: |
           node scripts/link-graph.mjs --from-sitemap --base=http://localhost:3000 \
             --max-urls=4000 --no-probe --out=/tmp/link-graph.json \
@@ -466,6 +489,7 @@ jobs:
               "$rc" "${fams%,}"
           fi
       - name: 限流豁免集成检查（小额度下只重启中枢）
+        id: isr-rate-limit
         # 为什么单独立一条而不是复用上面那轮：豁免的因果链需要一个「公开请求会被打穿」
         # 的额度才存在（生产 300/min，CI 里几十次请求根本撞不到），所以这里把中枢按
         # 小额度重启一次，让四阶段各自能真的红。
@@ -612,6 +636,18 @@ jobs:
             echo "===== $f"
             tail -80 "$f" 2>/dev/null || echo "（没有这一份日志）"
           done
+      # 撤防账：这个作业的判定全挂在一次性预览站上（装依赖 → vendor → 迁移 → 种子 →
+      # 建产物 → next start），任何一环红都会把后面的判定整步 skipped，而 skipped 不判红
+      # ⇒ 「线上形态验过」和「预览站压根没起来」在作业结论里同形。
+      # env 因此登记了 7 个准备步骤：它们红不是产品红，是「检查没跑成」，必须分得开。
+      # 上面那步「失败时留下预览站日志」刻意不登记——它带 `if: failure()`，
+      # 全绿时 skipped 是**设计如此**，登记了每轮都出一条假撤防。
+      - name: 撤防账（没跑成的门禁要点名）
+        id: defused-gates
+        if: ${{ always() }}
+        env:
+          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}
+        run: node scripts/ci-defused-gates.mjs --job check-isr-live
 
   check-web-overlay:
     timeout-minutes: 15
@@ -762,9 +798,20 @@ jobs:
       # CI 此前从不构建镜像：Dockerfile 坏了只有用户拉镜像时才发现。
       # 这里只验证"能构建出镜像"，不推送；Web 镜像的上游底座在 Dockerfile 内自取。
       - name: 构建 API 镜像
+        id: docker-api
         run: docker build -f docker/Dockerfile.api -t navhub/api:ci .
       - name: 构建 Web 镜像
+        id: docker-web
         run: docker build -f docker/Dockerfile.web -t navhub/web:ci .
+      # 撤防账：这两道是**互不替代**的——API 镜像一红，Web 镜像按默认条件 skipped，
+      # 作业结论只说「docker-smoke 红了」，不说「Web 镜像从没构建过」。
+      # 命令形状（docker build）不在覆盖面判据的正则里 ⇒ 登记是人为判断，理由写在登记表上。
+      - name: 撤防账（没跑成的门禁要点名）
+        id: defused-gates
+        if: ${{ always() }}
+        env:
+          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}
+        run: node scripts/ci-defused-gates.mjs --job docker-smoke
 
   audit:
     timeout-minutes: 10
@@ -778,6 +825,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        id: audit-install
       # 依赖高危漏洞阻断（此前为 continue-on-error 软门禁，已收紧）。
       # 例外 GHSA-vfj7-8cjw-p6xm（braces，经 vendored eslint toolchain 间接引入，
       # dev-only 且上游尚未发布修复版——npm 最新仍是 3.0.3，override 无版本可钉）：
@@ -786,9 +834,20 @@ jobs:
       # 其实测 NPM_CONFIG_REGISTRY 环境变量覆盖对 audit 不生效，会报 endpoint 不存在。
       # 全量审计：含 dev 依赖（构建链漏洞同样能打进产物）
       - run: pnpm --registry=https://registry.npmjs.org audit --audit-level high --ignore GHSA-vfj7-8cjw-p6xm
+        id: audit-full
       # 生产面审计：只看法务/线上真正可触达的依赖，dev-only 告警不阻断交付
       # （--prod 会忽略 devDependencies 树，因此不需要 --ignore）
       - run: pnpm --registry=https://registry.npmjs.org audit --prod --audit-level high
+        id: audit-prod
+      # 撤防账：全量审计一红，生产面审计按默认条件 skipped ⇒「生产面依赖查过了」
+      # 这句话其实没被执行过，而作业结论看不出来。两道审计口径不同（含 dev / 只 --prod），
+      # 少跑一道不是等价信息。
+      - name: 撤防账（没跑成的门禁要点名）
+        id: defused-gates
+        if: ${{ always() }}
+        env:
+          NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}
+        run: node scripts/ci-defused-gates.mjs --job audit
 
   # 运行时线上检查：只对着**真实生产域名**跑，不进 PR 门禁。
   # 与 check-isr-live 的分工：那个作业在 CI 内自建预览（migrate + seed + next start），

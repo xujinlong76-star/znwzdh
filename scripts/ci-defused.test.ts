@@ -57,12 +57,15 @@ function entryOf(job: string): Entry {
 /** 造一份 steps 读数：登记的 id 默认全 success，按参数改成 failure / skipped / 缺失 */
 function conclusionsOf(
   entry: Entry,
-  opts: { fail?: string[]; skip?: string[]; absent?: string[]; cancel?: string[] } = {},
+  opts: { fail?: string[]; softFail?: string[]; skip?: string[]; absent?: string[]; cancel?: string[] } = {},
 ) {
-  const map: Record<string, { outcome: string }> = {};
+  const map: Record<string, { outcome: string; conclusion?: string }> = {};
   for (const step of lib.trackedSteps(entry)) {
     if (opts.absent?.includes(step.id)) continue;
     if (opts.fail?.includes(step.id)) map[step.id] = { outcome: "failure" };
+    // `continue-on-error: true` 的步骤：outcome=failure，conclusion=success。
+    // runner 按 conclusion 决定要不要跳过后面 ⇒ 它既不是红也不算挡住别人。
+    else if (opts.softFail?.includes(step.id)) map[step.id] = { outcome: "failure", conclusion: "success" };
     else if (opts.skip?.includes(step.id)) map[step.id] = { outcome: "skipped" };
     else if (opts.cancel?.includes(step.id)) map[step.id] = { outcome: "cancelled" };
     else map[step.id] = { outcome: "success", conclusion: "success" };
@@ -196,16 +199,62 @@ describe("撤防账：读数（findDefused）", () => {
     const res = lib.findDefused({ entry, conclusions });
     expect(res.blocker?.id).toBe("pkg-build");
   });
+
+  it("带 continue-on-error 的步骤（outcome=failure / conclusion=success）不算判红、也不当根因", () => {
+    // runner 决定「后面要不要跳过」看的是 conclusion。拿 outcome 当判据会把一步
+    // 明明放行过的步骤点成根因——那等于给一个不存在的原因记账。
+    const entry = entryOf("test-web");
+    const res = lib.findDefused({
+      entry,
+      conclusions: conclusionsOf(entry, { softFail: ["web-lint"] }),
+    });
+    expect(res.failed).toEqual([]);
+    expect(res.defused).toEqual([]);
+    expect(res.blocker).toBeNull();
+    expect(res.ran).toContain("web-lint");
+  });
+
+  it("软失败后面真有一道 skipped 时，根因不许赖在软失败那一步", () => {
+    // 撤防照报（web-isr 确实没跑成），但根因必须说「读不出来」：
+    // 账上唯一那些「红」的步骤 conclusion 都是 success，它没挡路，真凶多半是没有 id 的一环。
+    const entry = entryOf("test-web");
+    const res = lib.findDefused({
+      entry,
+      conclusions: conclusionsOf(entry, { softFail: ["web-budget"], skip: ["web-isr"] }),
+    });
+    expect(res.defused.map((d) => d.id)).toEqual(["web-isr"]);
+    expect(res.failed).toEqual([]);
+    expect(res.blocker?.kind).toBe("unknown");
+    expect(res.blocker?.id).toBeNull();
+  });
 });
 
 describe("撤防账：接线（对真实 ci.yml 的作业片段派生夹具）", () => {
-  const WIRED = ["test-sqlite", "test-web", "test-e2e", "check-web-overlay"];
+  // 8 个阻塞作业全部接线（2026-10-30 第二轮补齐 test-postgres / check-isr-live /
+  // docker-smoke / audit）。没接的只剩 seo-audit-prod（手动/定时，多一处红不阻塞合并）
+  // 和 ci-passed（只做聚合）——口径见 docs/GATES-OPERATIONS.md §2.3。
+  const WIRED = [
+    "test-sqlite",
+    "test-postgres",
+    "test-web",
+    "test-e2e",
+    "check-isr-live",
+    "check-web-overlay",
+    "docker-smoke",
+    "audit",
+  ];
 
-  it("仓库现状：四个接入作业的接线与覆盖面全部通过", () => {
+  it("仓库现状：八个接入作业的接线与覆盖面全部通过", () => {
     for (const job of WIRED) {
       expect(lib.defusedWiringProblems(jobBlock(job), entryOf(job)), job).toEqual([]);
       expect(lib.defusedCoverageProblems(jobBlock(job), entryOf(job)), job).toEqual([]);
     }
+  });
+
+  it("登记表覆盖的正好是这八个阻塞作业 ⇒ 增删作业必须在这里改口", () => {
+    // 覆盖面判据是「按作业」跑的：作业不在 DEFUSED_GATES 里，它里面的门禁 skipped 就无人记账。
+    // 把范围钉成一条断言，避免「新作业接了读数步骤但没登记」被反向检查之外的空隙漏掉。
+    expect(lib.DEFUSED_GATES.map((e) => e.job).sort()).toEqual([...WIRED].sort());
   });
 
   it("工作区是 CRLF 时判定不变（autocrlf 检出与 CI 检出必须同口径）", () => {
@@ -428,6 +477,20 @@ describe("撤防账：判据自证（逐条拆掉，对应用例必须转红）"
     expect(lib.defusedWiringProblems(weakened, entryOf("test-web")).join("\n")).toContain("条件不是 always()");
     expect(patched.defusedWiringProblems(weakened, entryOf("test-web"))).toEqual([]);
   });
+
+  it("拆掉「conclusion 优先」⇒ 允许失败的步骤被点成根因", async () => {
+    const patched = await importPatchedLib(
+      'return String(stepValue.conclusion ?? stepValue.outcome ?? "").trim() || null;',
+      'return String(stepValue.outcome ?? stepValue.conclusion ?? "").trim() || null;',
+      "outcome-first",
+    );
+    const entry = entryOf("test-web");
+    const conclusions = conclusionsOf(entry, { softFail: ["web-budget"], skip: ["web-isr"] });
+    // 判据在位时：web-budget 的 conclusion=success ⇒ 它不挡路，根因只能报「读不出来」
+    expect(lib.findDefused({ entry, conclusions }).blocker?.kind).toBe("unknown");
+    // 判据拆掉后：同一份读数里它成了根因——一个不存在的原因被写进账
+    expect(patched.findDefused({ entry, conclusions }).blocker?.id).toBe("web-budget");
+  });
 });
 
 describe("撤防账：CLI（ci-defused-gates.mjs）", () => {
@@ -451,6 +514,34 @@ describe("撤防账：CLI（ci-defused-gates.mjs）", () => {
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("5 道门禁全部跑过");
     expect(res.out).not.toContain("::warning");
+  });
+
+  it("全绿也留痕：Step Summary 与 ::notice 都要有（否则「没接线」和「跑过且全绿」同形）", () => {
+    // 2026-10-30 直证：tip 2ca11031 那一轮 13 个作业的注解池总数为 0，
+    // 也就是说绿色路径跨机器读不到任何东西——账出没出过，只能靠人信一次。
+    const summaryPath = join(dir, "summary-green.md");
+    const res = runCli(
+      ["--job", "test-web"],
+      {
+        NAVHUB_STEP_CONCLUSIONS: JSON.stringify(conclusionsOf(entryOf("test-web"))),
+        GITHUB_STEP_SUMMARY: summaryPath,
+      },
+    );
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("::notice title=CI 门禁撤防::");
+    expect(res.out).toContain("5 道门禁全部跑过");
+    const summary = readFileSync(summaryPath, "utf8").replace(/\r\n/g, "\n");
+    expect(summary).toContain("撤防账 · test-web");
+    expect(summary).toContain("`web-isr`"); // 跑过的门禁 id 逐个列出来，才算「判过」的证据
+    expect(summary).toContain("门禁真的判过");
+  });
+
+  it("全绿 + --strict ⇒ 仍是 0：严格档只把真撤防当失败，不罚平安的那一轮", () => {
+    const res = runCli(["--job", "audit", "--strict"], {
+      NAVHUB_STEP_CONCLUSIONS: JSON.stringify(conclusionsOf(entryOf("audit"))),
+    });
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("2 道门禁全部跑过");
   });
 
   it("有撤防 ⇒ rc 仍然 0（只报不拦），但注解与 Step Summary 都点名", () => {
@@ -501,7 +592,10 @@ describe("撤防账：CLI（ci-defused-gates.mjs）", () => {
   });
 
   it("传了未登记的作业 ⇒ 红字说清「这一步在跑一件没人记账的事」，不静默", () => {
-    const res = runCli(["--job", "test-postgres"], {
+    // 今天唯一真没登记的是 seo-audit-prod：手动/定时作业，多一处红不阻塞合并（口径同第 6 项
+    // 的覆盖面收窄）。用一个真实存在但刻意不登记的作业名，而不是随手编一个——
+    // 将来谁给它接上读数步骤，这条会立刻变成「已登记」的失败，逼人来把口径改掉。
+    const res = runCli(["--job", "seo-audit-prod"], {
       NAVHUB_STEP_CONCLUSIONS: JSON.stringify({ typecheck: { outcome: "skipped" } }),
     });
     expect(res.status, res.out).toBe(0);

@@ -1340,23 +1340,62 @@ describe("main --defused：逐作业读日志里的撤防账", () => {
       expect(out).toContain("准备步骤 2 个在册");
       expect(out).toContain("2 道没跑成");
       expect(out).toContain("根因 pg-install");
-      expect(out).toContain("没有撤防账");
+      // 没账的作业按 ci.yml 分成两档：seo-audit-prod 在真实工作流里没有被料步骤 ⇒ 接线外
+      expect(out).toContain("接线外");
+      expect(out).toContain("1 个作业本就没有账");
       // 只报不拦：这一档不产出失败归因表，也不许把撤防写成红灯层
       expect(out).not.toContain("按层统计");
-      // 有撤防 ⇒ 1；「读不到账」也算发现，不许和全绿同形
+      // 有撤防 ⇒ 1；「本该有账却读不到」也算发现，不许和全绿同形
       expect(rc).toBe(1);
     } finally {
       cap.restore();
     }
   });
 
-  it("每个作业都读到且没有撤防 ⇒ 0（全绿那一轮同样出账）", async () => {
+  it("接线外的作业不参与判红 ⇒ 全绿那一轮真的能拿到 0（run 41024897432 之前做不到）", async () => {
     const cap = capture();
-    const f = fakeJobs({ logOf: (name) => (name === "test-web" ? GREEN : GREEN.replace(/test-web/g, "test-postgres")) });
+    // 两个在册作业都有账且没撤防，第三个（seo-audit-prod）压根没有读数步骤 ⇒ 日志里没有账
+    const f = fakeJobs({
+      logOf: (name) => (name === "seo-audit-prod" ? "" : name === "test-web" ? GREEN : GREEN.replace(/test-web/g, "test-postgres")),
+    });
     try {
       const rc = await tokenGuard(() => main(["--repo", "a/b", "--defused"], { clientFactory: f.client }));
       expect(rc).toBe(0);
-      expect(cap.logs.join("\n")).toContain("没跑成 0 道");
+      const out = cap.logs.join("\n");
+      expect(out).toContain("没跑成 0 道");
+      expect(out).toContain("1 个作业本就没有账（接线外：seo-audit-prod）");
+      expect(out).not.toContain("本该有账的作业读不到");
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("在册作业没写出账 ⇒ 说「本该有账却读不到」并判 1（接线外不许替它背书）", async () => {
+    const cap = capture();
+    const f = fakeJobs({ logOf: (name) => (name === "test-web" ? GREEN : "") });
+    try {
+      const rc = await tokenGuard(() => main(["--repo", "a/b", "--defused"], { clientFactory: f.client }));
+      expect(rc).toBe(1);
+      const out = cap.logs.join("\n");
+      expect(out).toContain("1 个本该有账的作业读不到（test-postgres）");
+      // 同一轮里接线外的 seo-audit-prod 仍然只是「本就没有账」，两类不同形
+      expect(out).toContain("1 个作业本就没有账（接线外：seo-audit-prod）");
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("本地 ci.yml 读不到 ⇒ 每个没账的作业都按缺账保守记，并把口径说在外面", async () => {
+    const cap = capture();
+    const f = fakeJobs({ logOf: (name) => (name === "test-web" ? GREEN : "") });
+    try {
+      const rc = await tokenGuard(() =>
+        main(["--repo", "a/b", "--defused"], { clientFactory: f.client, workflowYaml: "" }),
+      );
+      expect(rc).toBe(1);
+      const out = cap.logs.join("\n");
+      expect(out).toContain("[接线期望缺失]");
+      expect(out).toContain("按缺账保守记");
     } finally {
       cap.restore();
     }
@@ -1415,7 +1454,12 @@ describe("main --defused：逐作业读日志里的撤防账", () => {
       expect(stdout.summary.jobs).toBe(3);
       expect(stdout.summary.gatesRan).toBe(5 + 1);
       expect(stdout.summary.gatesDefused).toBe(2);
-      expect(stdout.summary.unreadable).toEqual(["seo-audit-prod"]);
+      // seo-audit-prod 在 ci.yml 里没有被料步骤 ⇒ 它归 unwired（接线外），不再冒充 unreadable
+      expect(stdout.summary.unreadable).toEqual([]);
+      expect(stdout.summary.unwired).toEqual(["seo-audit-prod"]);
+      expect(stdout.summary.unwiredBasis).toBe("ci.yml");
+      const seo = stdout.jobs.find((j: { name: string }) => j.name === "seo-audit-prod");
+      expect(seo.wired).toBe(false);
       const web = stdout.jobs.find((j: { name: string }) => j.name === "test-web");
       expect(web.defused).toBe(0);
       const pg = stdout.jobs.find((j: { name: string }) => j.name === "test-postgres");
@@ -1424,6 +1468,37 @@ describe("main --defused：逐作业读日志里的撤防账", () => {
       expect(pg.ids).toEqual(["pg-suite", "pg-bench"]);
       expect(pg.envIds).toEqual(["pg-install"]);
       expect(pg.blocker).toBe("pg-install");
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("文本档末尾给出去读厚度的命令：合计只说「读到几道」，不说「本该几道」", async () => {
+    const cap = capture();
+    const f = fakeJobs({
+      logOf: (name) => (name === "seo-audit-prod" ? "" : name === "test-web" ? GREEN : GREEN.replace(/test-web/g, "test-postgres")),
+    });
+    try {
+      await tokenGuard(() => main(["--repo", "a/b", "--defused"], { clientFactory: f.client }));
+      const out = cap.logs.join("\n");
+      expect(out).toContain("要看账的厚度");
+      expect(out).toContain("node scripts/check-defused-thickness.mjs --from snap.json");
+      // 带的是这一轮真实 run 号 ⇒ 照抄就能跑，不用人再去拼命令
+      expect(out).toContain("--defused --run 12345 --json");
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("消融：提示写进 --json 就毁了机器读的通道（最后一行必须还能直接 JSON.parse）", async () => {
+    const cap = capture();
+    const f = fakeJobs({
+      logOf: (name) => (name === "seo-audit-prod" ? "" : name === "test-web" ? GREEN : GREEN.replace(/test-web/g, "test-postgres")),
+    });
+    try {
+      await tokenGuard(() => main(["--repo", "a/b", "--defused", "--json"], { clientFactory: f.client }));
+      expect(cap.logs.join("\n")).not.toContain("要看账的厚度");
+      expect(() => JSON.parse(cap.logs.at(-1) ?? "")).not.toThrow();
     } finally {
       cap.restore();
     }

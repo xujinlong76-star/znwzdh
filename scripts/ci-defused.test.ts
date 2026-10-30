@@ -1015,3 +1015,79 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
     expect(patched.parseDefusedTrace(log).blocker).toBeNull();
   });
 });
+
+/**
+ * 「谁本该有账」这一档（2026-10-30 实测 run 41024897432 补的）。
+ *
+ * 现象：`--defused` 把 13 个作业里读不到账的 2 个一律算成发现，而那 2 个是结构性无账——
+ * `seo-audit-prod` 整作业被 `if:` 挡住、`ci-passed` 是汇总作业。于是文档写的
+ * 「退出码 0 = 每个作业的账都读到且没撤防」在任何 push 轮都不可达。
+ * 判据不另立名单，直接从 ci.yml 现推：有登记表那步 `id: defused-gates` 的作业才该有账。
+ */
+describe("接线期望（defusedWiring）：谁本该有账", () => {
+  it("登记表里 8 个作业在真实 ci.yml 里都带读数步骤 ⇒ 它们读不到账才是发现", () => {
+    const wiring = lib.defusedWiring(realCi);
+    for (const entry of lib.DEFUSED_GATES) {
+      const w = wiring.find((x) => x.key === entry.job);
+      expect(w, `ci.yml 里没有作业 ${entry.job}`).toBeTruthy();
+      expect(w!.wired, `${entry.job} 应带 id: ${entry.reporterStepId}`).toBe(true);
+    }
+  });
+
+  it("结构性无账的两个作业被认成接线外，并各带自己的 if 条件", () => {
+    const wiring = lib.defusedWiring(realCi);
+    const dispatch = wiring.find((x) => x.key === "seo-audit-prod");
+    expect(dispatch, "ci.yml 里没有 seo-audit-prod").toBeTruthy();
+    expect(dispatch!.wired).toBe(false);
+    expect(dispatch!.cond).toContain("workflow_dispatch");
+    const passed = wiring.find((x) => x.key === "ci-passed");
+    expect(passed!.wired).toBe(false);
+    // 汇总作业的 `if: always()` 不是「被条件跳过」，文案要分开（见 unwiredReason）
+    expect(passed!.cond).toBe("always()");
+  });
+
+  it("GitHub 渲染后的作业名（矩阵已代入）能对上作业 key；对不上要返回 null", () => {
+    const wiring = lib.defusedWiring(realCi);
+    expect(lib.matchDefusedWiring(wiring, "测试（SQLite 默认方言，分片 2/3）")?.key).toBe("test-sqlite");
+    expect(lib.matchDefusedWiring(wiring, "浏览器 E2E 自动化测试（Playwright，分片 1/2）")?.key).toBe("test-e2e");
+    expect(lib.matchDefusedWiring(wiring, "CI 整体通过 (All Checks Passed)")?.key).toBe("ci-passed");
+    // 用 key 也能命中（夹具与本地自测给的是作业 key 而不是显示名）
+    expect(lib.matchDefusedWiring(wiring, "test-web")?.key).toBe("test-web");
+    // 对不上（本地 ci.yml 与被读那一轮不同）必须交回 null，由调用方按缺账保守记
+    expect(lib.matchDefusedWiring(wiring, "某个本地 ci.yml 里没有的作业")).toBeNull();
+  });
+
+  it("四种「读不到账」各行其话：接线外两种不计入判红，缺账两种照报", () => {
+    const out = lib
+      .renderDefusedTable([
+        {
+          name: "运行时线上检查",
+          conclusion: "skipped",
+          found: false,
+          wired: false,
+          wiredCond: "github.event_name == 'workflow_dispatch' && vars.NAVHUB_SITE_URL != ''",
+        },
+        { name: "CI 整体通过", conclusion: "failure", found: false, wired: false, wiredCond: "always()" },
+        { name: "前端门禁", conclusion: "success", found: false, wired: true, wiredCond: "" },
+        { name: "对不上 ci.yml", conclusion: "success", found: false, wired: null },
+      ] as never)
+      .join("\n");
+    expect(out).toContain("接线外：整作业按条件跳过");
+    expect(out).toContain("接线外：汇总作业（if: always() 只合并结果");
+    expect(out).toContain("日志里没有撤防账（这一步没接线，或整步没跑）");
+    expect(out).toContain("按缺账保守记");
+    // 接线外不许写成「没跑成」：那是撤防的形状，会把人引去找根因
+    expect(out.split("\n")[0]).not.toContain("没跑成");
+  });
+
+  it("拆掉「reporterStepId 取自登记表」⇒ 有账的作业被说成接线外（漏报那一半）", async () => {
+    const patched = await importPatchedLib(
+      'const reporterStepId = defusedEntryFor(job.name)?.reporterStepId ?? "defused-gates";',
+      'const reporterStepId = "never-wired";',
+      "wiring-ignores-registry",
+    );
+    // 登记表换成一个不存在的步骤 id 后，连 test-sqlite 都被判成「本就没有账」
+    expect(patched.defusedWiring(realCi).find((x) => x.key === "test-sqlite")!.wired).toBe(false);
+    expect(lib.defusedWiring(realCi).find((x) => x.key === "test-sqlite")!.wired).toBe(true);
+  });
+});

@@ -24,7 +24,7 @@
  * 不是运行结果。
  */
 
-import { splitJobSteps, stripYamlCommentLines } from "./ci-workflow.mjs";
+import { parseWorkflow, splitJobSteps, stripYamlCommentLines } from "./ci-workflow.mjs";
 
 /**
  * 「这一步在判定对错」的形状：命令本身是门禁脚本 / 类型检查 / lint / 构建 / 测试。
@@ -163,6 +163,58 @@ export const DEFUSED_GATES = [
 /** @returns {object|null} 按作业名取登记表 */
 export function defusedEntryFor(jobName) {
   return DEFUSED_GATES.find((e) => e.job === jobName) ?? null;
+}
+
+/**
+ * 「这个作业**本来就该有账**吗」——从 ci.yml 现推，不靠人记。
+ *
+ * 为什么需要（2026-10-30 实测 run 41024897432）：`--defused` 把 13 个作业里
+ * 读不到账的 2 个都写成「日志里没有撤防账（这一步没接线，或整步没跑）」并算进退出码，
+ * 而那 2 个是结构性无账——`seo-audit-prod` 整作业按
+ * `if: github.event_name == 'workflow_dispatch' && vars.NAVHUB_SITE_URL != ''` 跳过、
+ * `ci-passed` 是汇总作业没有门禁步骤。于是退出码契约里写的「0 = 每个作业都读到且没撤防」
+ * 在任何 push 轮都不可达：绿色轮也拿不到 0。
+ * 判据必须是「期望有账却读不到」才算发现；期望本来就没有账，那是接线范围，不是撤防。
+ *
+ * `wired` 只看 YAML 里有没有那一步 `id: <reporterStepId>`（登记表按作业 key 取，
+ * 取不到就退回默认的 defused-gates）：这一步在 ⇒ 日志理应有账 ⇒ 读不到是真信号；
+ * 这一步不在 ⇒ 读不到是结构，不参与判红。
+ *
+ * `namePattern`：GitHub 侧的作业名是渲染后的 `name:`，矩阵表达式
+ * （`${{ matrix.shard }}`）在 YAML 里是字面量，只能换成通配再匹配。
+ */
+export function defusedWiring(source) {
+  const { jobs } = parseWorkflow(source);
+  return jobs.map((job) => {
+    const block = stripYamlCommentLines(job.block);
+    const rawName = block.match(/^ {4}name:\s*(.+)$/m)?.[1]?.trim() ?? job.name;
+    const reporterStepId = defusedEntryFor(job.name)?.reporterStepId ?? "defused-gates";
+    return {
+      key: job.name,
+      name: rawName.replace(/\$\{\{[^}]*\}\}/g, "…"),
+      namePattern: nameToPattern(rawName),
+      cond: block.match(/^ {4}if:\s*(.+)$/m)?.[1]?.trim() ?? "",
+      wired: new RegExp(`^\\s*id:\\s*${reporterStepId}\\s*$`, "m").test(block),
+    };
+  });
+}
+
+function nameToPattern(rawName) {
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = String(rawName ?? "").split(/\$\{\{[^}]*\}\}/);
+  return new RegExp("^" + parts.map(escape).join("[0-9A-Za-z._/-]+") + "$");
+}
+
+/**
+ * GitHub 返回的作业名对上 ci.yml 里的作业块。
+ * 认不出来（本地 ci.yml 与被读那一轮不同）时返回 null——调用方必须按「缺账」保守处理，
+ * 不能因为对不上就把一个可能真被摘掉读数步骤的作业说成结构性无账。
+ */
+export function matchDefusedWiring(wiring, githubJobName) {
+  const name = String(githubJobName ?? "");
+  return (
+    (wiring ?? []).find((w) => w.key === name || w.namePattern.test(name)) ?? null
+  );
 }
 
 /** 登记表里被盯住的步骤（env 在前，门禁在后：同一份读数里两者都要能点名） */
@@ -552,6 +604,19 @@ export function parseDefusedTrace(logText) {
   };
 }
 
+/**
+ * 「接线外」的形状要说破差别：汇总作业永远不会有账；条件作业在这一轮是整作业被跳过
+ * （换一种触发方式它会跑，但仍然没有读数步骤）；没写 if 的作业才是真没人记账。
+ * 三种都写成「这一步没接线」并把它们算进退出码，等于宣布 rc=0 不可达。
+ */
+function unwiredReason(row) {
+  const cond = String(row.wiredCond ?? "");
+  if (/^always\(\)$/.test(cond)) return "接线外：汇总作业（if: always() 只合并结果，没有门禁步骤可记账）⇒ 不计入判红";
+  if (cond && row.conclusion === "skipped") return `接线外：整作业按条件跳过（if: ${cond}），本来就没有读数步骤 ⇒ 不计入判红`;
+  if (cond) return `接线外：ci.yml 里这个作业没有读数步骤（if: ${cond}）⇒ 不计入判红`;
+  return "接线外：ci.yml 里这个作业没有读数步骤 ⇒ 不计入判红";
+}
+
 /** 逐作业一行的账（--defused 的文本输出；空数组也要出一行说明，别让调用方对着空白猜） */
 export function renderDefusedTable(rows) {
   if (!rows?.length) return ["（没有作业可读——jobs 清单是空的）"];
@@ -559,11 +624,16 @@ export function renderDefusedTable(rows) {
   return rows.map((r) => {
     const name = String(r.name ?? "").padEnd(width);
     if (!r.found) {
+      // 「读不到账」有三种形状，判法不同：日志取不到（网络/权限）、有账但失效（broken）、
+      // 以及压根没有账。最后一种再分两半——ci.yml 里这作业没有读数步骤（接线外，不算发现），
+      // 或有步骤却没写出账（真撤防）。一刀切判红就是 run 41024897432 那个 rc=0 不可达的根因。
       const why = r.error
         ? `日志没取到：${r.error}`
         : r.broken
           ? r.broken
-          : "日志里没有撤防账（这一步没接线，或整步没跑）";
+          : r.wired === false
+            ? unwiredReason(r)
+            : `日志里没有撤防账（这一步没接线，或整步没跑）${r.wired === null ? "；本地 ci.yml 对不上这个作业名，按缺账保守记" : ""}`;
       return `${name} ${r.conclusion || "?"} — ${why}`;
     }
     if (r.green) {

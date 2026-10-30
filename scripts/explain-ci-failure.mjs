@@ -31,8 +31,12 @@
  *     （作业结论只说明「没新增红」，那行账才说明「门禁真的判过」），
  *     而跨机器只有日志读得到：`/jobs/{id}/summary` 要 actions:read，
  *     annotations 那一轮 13 个作业全返回 0 条（2026-10-30 run 41010267114 直证）。
- *     退出码：0 = 每个作业的账都读到且没有撤防；1 = 有撤防，或有作业的账读不到
+ *     退出码：0 = 每个**本该有账**的作业都读到且没有撤防；1 = 有撤防，或本该有账的作业读不到
  *     （读不到 = 「没接线」与「跑过且全绿」又同形了，那正是要显式记账的东西）。
+ *     「本该有账」由本地 .github/workflows/ci.yml 现推：作业块里有 `id: defused-gates`
+ *     那一步才算。接线外的作业（整作业按 `if:` 跳过、汇总作业没有门禁步骤）单列一档、
+ *     不参与判红——否则 run 41024897432 那种 13 作业里 2 个结构性无账的形状，
+ *     会让 0 在任何 push 轮都不可达。ci.yml 读不到时全部按缺账保守记（宁可多报）。
  *   每条失败行都带 fixHint（按归因层给出的一条可执行修复命令）；文本模式另有
  *   「修复入口」段按层去重。JSON 里 failures[].fixHint 与 diff 四桶同形。
  *
@@ -48,7 +52,7 @@
  *         3 = 等待超时（run 仍未结束）。
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -63,11 +67,29 @@ import {
   summarizeJob,
   waitForRunConclusion,
 } from "./lib/ci-attribution.mjs";
-import { parseDefusedTrace, renderDefusedTable } from "./lib/ci-defused.mjs";
+import {
+  defusedWiring,
+  matchDefusedWiring,
+  parseDefusedTrace,
+  renderDefusedTable,
+} from "./lib/ci-defused.mjs";
 
 const API = "https://api.github.com";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const WORKFLOW_FILE = join(REPO_ROOT, ".github", "workflows", "ci.yml");
 const MAX_LOG_BYTES = 8 * 1024 * 1024;
+
+/**
+ * 接线期望的来源就是这份工作流本身（不是另一份人手抄的名单）。
+ * 读不到就返回空串 ⇒ 全部按「缺账」保守记账，不会因为拿不到期望就把作业说成结构性无账。
+ */
+function readWorkflowSource() {
+  try {
+    return existsSync(WORKFLOW_FILE) ? readFileSync(WORKFLOW_FILE, "utf8") : "";
+  } catch {
+    return "";
+  }
+}
 /**
  * 只对传输层失败重试：DNS/TLS 瞬断是常态（本仓库一次会话里遇到三次），HTTP 4xx 不重试。
  * undici 的瞬断报错文案是 `terminated`（对端提前关连接）——真实 run #40609230621 里
@@ -319,8 +341,14 @@ export async function collectAttribution(client, repo, run) {
  *   1. 不过滤 `isFailedJob` —— 绿色作业的账才是这里要看的东西；
  *   2. 不取注解 —— 那一轮 13 个作业的 annotations 返回 0 条，日志才有正文。
  * 单个作业日志取不到不拖垮整轮：该行标 error，其余照常出账。
+ *
+ * `wiring` 是「这个作业本该有账吗」的期望（由 ci.yml 现推，见 lib 的 defusedWiring）：
+ * 读不到账的作业里，只有**期望有账**的那些算发现；`wired: false` 的那些是接线范围之外
+ * （整作业按 `if:` 跳过、或汇总作业根本没有门禁步骤），把它们算进退出码就等于
+ * 宣布 rc=0 永远达不到。`wiring` 为空（本地读不到 ci.yml）时全按缺账保守记，
+ * 宁可多报也不把真被摘掉读数步骤的作业说成结构。
  */
-export async function collectDefused(client, repo, run) {
+export async function collectDefused(client, repo, run, wiring = []) {
   const jobsData = await client.api(`/repos/${repo}/actions/runs/${run.id}/jobs?per_page=100&filter=latest`);
   const jobs = jobsData?.jobs ?? [];
   const rows = [];
@@ -332,7 +360,16 @@ export async function collectDefused(client, repo, run) {
     } catch (inner) {
       error = messageOf(inner);
     }
-    rows.push({ id: job.id, name: job.name ?? String(job.id), conclusion: job.conclusion ?? "", ...parseDefusedTrace(logText), error });
+    const match = matchDefusedWiring(wiring, job.name ?? "");
+    rows.push({
+      id: job.id,
+      name: job.name ?? String(job.id),
+      conclusion: job.conclusion ?? "",
+      ...parseDefusedTrace(logText),
+      wired: match ? match.wired : null,
+      wiredCond: match?.cond ?? "",
+      error,
+    });
   }
   return rows;
 }
@@ -438,7 +475,7 @@ async function resolveBaseline(client, repo, value) {
  * 「429 打满重试」或「jobs 清单整段取不到」，而这两条恰恰是假绿灯的最后一道闸，
  * 不该只能靠人肉断网验证。
  */
-export async function main(argv, { clientFactory = createClient } = {}) {
+export async function main(argv, { clientFactory = createClient, workflowYaml = null } = {}) {
   const repo = resolveRepo(argValue(argv, "--repo"));
   if (!repo) {
     console.error("[explain-ci] 无法确定仓库：请在 git 仓库内运行，或用 --repo owner/repo 指定");
@@ -486,23 +523,41 @@ export async function main(argv, { clientFactory = createClient } = {}) {
   // ---- --defused：撤防账视角（全部作业，只读日志里的那一行账）----
   if (argv.includes("--defused")) {
     const runMeta = { id: run.id, head_sha: run.head_sha, conclusion: run.conclusion ?? null, html_url: run.html_url };
+    // 「本该有账吗」由 ci.yml 现推（有 `id: defused-gates` 那一步才算），不是另一份手抄名单
+    const wiring = defusedWiring(workflowYaml ?? readWorkflowSource());
     let jobs;
     try {
-      jobs = await collectDefused(client, repo, run);
+      jobs = await collectDefused(client, repo, run, wiring);
     } catch (error) {
       const why = messageOf(error);
       if (argv.includes("--json")) console.log(JSON.stringify({ mode: "defused", repo, run: runMeta, error: why }, null, 2));
       else console.error("[explain-ci] 撤防账读不了：jobs 清单没取到 —— " + why + "（这不是「没有撤防」）");
       return 2;
     }
-    const missing = jobs.filter((r) => !r.found);
+    // 读不到账分两档：`wired === false` 是接线范围之外（整作业按 if 跳过 / 汇总作业没有门禁步骤），
+    // 只有「本该有账却读不到」才算发现。混成一档 ⇒ rc=0 在任何 push 轮都不可达（run 41024897432 实测）。
+    const unwired = jobs.filter((r) => !r.found && r.wired === false);
+    const missing = jobs.filter((r) => !r.found && r.wired !== false);
     const defusedRows = jobs.filter((r) => r.found && r.defused > 0);
     const gatesRan = jobs.reduce((n, r) => n + (r.found ? r.ran : 0), 0);
     const gatesDefused = jobs.reduce((n, r) => n + (r.found && r.defused ? r.defused : 0), 0);
     if (argv.includes("--json")) {
       console.log(
         JSON.stringify(
-          { mode: "defused", repo, run: runMeta, summary: { jobs: jobs.length, gatesRan, gatesDefused, unreadable: missing.map((r) => r.name) }, jobs },
+          {
+            mode: "defused",
+            repo,
+            run: runMeta,
+            summary: {
+              jobs: jobs.length,
+              gatesRan,
+              gatesDefused,
+              unreadable: missing.map((r) => r.name),
+              unwired: unwired.map((r) => r.name),
+              unwiredBasis: wiring.length ? "ci.yml" : "本地 ci.yml 读不到：每个作业都按缺账保守记",
+            },
+            jobs,
+          },
           null,
           2,
         ),
@@ -514,13 +569,25 @@ export async function main(argv, { clientFactory = createClient } = {}) {
       console.log("\n" + renderDefusedTable(jobs).join("\n"));
       console.log(
         "\n合计：" + jobs.length + " 个作业 · 跑过 " + gatesRan + " 道门禁 · 没跑成 " + gatesDefused + " 道" +
-          (missing.length > 0 ? " · " + missing.length + " 个作业的账读不到（" + missing.map((r) => r.name).join("、") + "）" : "") +
-          "。读不到 ≠ 没撤防：作业结论只说明「没新增红」，那行账才说明门禁判过没有。",
+          (missing.length > 0 ? " · " + missing.length + " 个本该有账的作业读不到（" + missing.map((r) => r.name).join("、") + "）" : "") +
+          (unwired.length > 0 ? " · " + unwired.length + " 个作业本就没有账（接线外：" + unwired.map((r) => r.name).join("、") + "）" : "") +
+          "。读不到 ≠ 没撤防：作业结论只说明「没新增红」，那行账才说明门禁判过没有。" +
+          // 接线期望取自**本地** ci.yml，而被读的那一轮可能是旧工作流：口径要说清来源，
+          // 否则读 2ca11031 之前的历史轮会把「那时候还没接线」报成「现在该有账却读不到」。
+          (missing.length > 0 ? "\n[口径] 接线期望取自本地 .github/workflows/ci.yml；读早于接线的历史轮会按本地口径多报（run 40973366906 实测：那轮账还没上线）。" : "") +
+          (wiring.length ? "" : "\n[接线期望缺失] 本地 .github/workflows/ci.yml 没读到 ⇒ 每个读不到账的作业都按缺账保守记（可能多报，不漏报）。"),
       );
       for (const r of defusedRows) {
         if (r.blocker) console.log("\n" + r.name + " 的根因：" + (r.blockerLabel ?? "") + "（id: " + r.blocker + "）" + (r.blockerKind || ""));
       }
+      // 合计只说「读到几道」，不说「本该有几道」——账自洽地变薄时这一档看不出（判据在厚度棘轮那一档）。
+      console.log(
+        "\n要看账的厚度（跑过 + 没跑成 是否等于登记表期望）：" +
+          "node scripts/explain-ci-failure.mjs --defused --run " + run.id + " --json > snap.json" +
+          " && node scripts/check-defused-thickness.mjs --from snap.json",
+      );
     }
+    // 0 = 每个「本该有账」的作业都读到且没撤防；接线外的作业不参与（否则 0 不可达）
     return defusedRows.length > 0 || missing.length > 0 ? 1 : 0;
   }
 

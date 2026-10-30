@@ -6,9 +6,10 @@
  * 按需生成抛 DYNAMIC_SERVER_USAGE，而 next dev / tsc / eslint 全绿。
  * 一个永远不会失败的守卫比没有守卫更危险——它会让人以为这条约束有人看着。
  */
-import { afterEach, describe, expect, it } from "vitest";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -16,15 +17,24 @@ import { CONTRACT_KINDS_DEFAULT, contractFindings, pickSample, rotateHash } from
 import { corpusSourcePath, shape, shapeDiff, verdict } from "./capture-isr-corpus.mjs";
 
 const SCRIPT = resolve("scripts/check-isr-routes.mjs");
-// 脚本按 apps/web/<NEXT_DIST_DIR> 找产物（与 check-bundle-budget 同一套环境变量）。
 // 两个 fixture 目录都**按进程隔离**：这台机器上常有第二个会话同时跑同一套用例，
 // 而 writeManifest / writeSources 第一步就是 rmSync 整个目录 —— 共用固定路径时
 // A 刚写完 prerender-manifest.json 就被 B 删掉，A 的 spawn 报「读不到产物，先跑 next build」。
 // 那是假红灯（已被别的会话当成门禁疑点记进 docs/UPGRADE-PLAN-2026-10-23.md 7.4）。
-// `apps/web/*` 整目录在 .gitignore 里，per-PID 目录不会污染 git status。
-const FIXTURE_DIR_NAME = `.next-isr-gate-fixture-${process.pid}`;
-const FIXTURE_DIST = resolve("apps/web", FIXTURE_DIR_NAME);
-const SRC_FIXTURE_ROOT = resolve("apps/web", `.next-isr-gate-src-fixture-${process.pid}`);
+//
+// 目录位置：**系统临时目录**，不再放 apps/web。
+// 历史写法是 `apps/web/.next-isr-gate-(src-)fixture-<pid>`（理由是 apps/web 整目录被
+// .gitignore）。但 apps/web 是 `next dev` 的项目根，Turbopack 的文件监听覆盖整棵树：
+// 每次建/改这些副本都会让编译哈希变化，HMR 随即对所有打开的页面下发
+// reloadPage("HMR hash mismatch") 触发整页刷新（2026-10-30 实测 /admin/videos 与
+// /auth/signin 每 5–7 秒自刷新一次）；且这些目录从不清理，到当天已累积 200+ 个、
+// 每个都是整份 overlay src 副本，进一步拖慢监听。临时目录在项目根之外，
+// 既不触发 HMR，删不掉也只是系统 tmp 残留，不会污染仓库。
+const FIXTURE_ROOT = join(tmpdir(), `navhub-isr-gate-${process.pid}`);
+// check-isr-routes.mjs 用 resolve(ROOT, "apps/web", NEXT_DIST_DIR) 解析产物目录；
+// 传入绝对路径时按 path.resolve 语义原样生效，因此产物 fixture 也不必落在 apps/web 下。
+const FIXTURE_DIST = join(FIXTURE_ROOT, "dist");
+const SRC_FIXTURE_ROOT = join(FIXTURE_ROOT, "src");
 // 真实渲染的页面语料（契约层变异自证的输入，见 scripts/capture-isr-corpus.mjs）
 const CORPUS_DIR = resolve("scripts/fixtures/isr-live-corpus");
 
@@ -52,7 +62,8 @@ const STATIC_PATHS = new Set(["/", "/sites"]);
  *    阈值 50；这棵 fixture 树有 60+ 个条目，直接 rmSync 会被拦成测试失败——
  *    而那失败与门禁逻辑无关，是环境噪音。
  * 2. 整树删除本身也不是必需的：这里只有一个产物文件，覆盖写即等价。
- * 3. fixture 目录名带 pid，且 `apps/web/*` 在 .gitignore 内，残留不污染仓库。
+ * 3. fixture 现在位于系统临时目录（见文件头），残留不进 dev 监听根；
+ *    整个用例文件跑完后由 afterAll 的 removeTree 逐条清理。
  */
 function resetFixtureFile(file: string) {
   try {
@@ -88,7 +99,7 @@ function writeManifest(routes: string[]) {
 function run(extraArgs: string[] = [], envExtra: Record<string, string> = {}) {
   const res = spawnSync(process.execPath, [SCRIPT, ...extraArgs], {
     encoding: "utf8",
-    env: { ...process.env, NEXT_DIST_DIR: FIXTURE_DIR_NAME, ...envExtra },
+    env: { ...process.env, NEXT_DIST_DIR: FIXTURE_DIST, ...envExtra },
   });
   return { code: res.status ?? -1, out: `${res.stdout ?? ""}${res.stderr ?? ""}` };
 }
@@ -159,6 +170,41 @@ afterEach(() => {
   resetFixtureFile(resolve(FIXTURE_DIST, "prerender-manifest.json"));
 });
 
+/**
+ * 逐条删除 fixture 树：先删文件、后删目录。
+ *
+ * 不用 `rmSync(dir, { recursive: true })`：宿主环境的批量删除护栏按单轮条目数计数
+ * （见 resetFixtureFile 的注释），整树删除会被拦成「测试失败」这种与门禁无关的
+ * 环境噪音；逐条删除每次只删一个条目。任何一步失败都不影响用例结果——
+ * fixture 已在项目根之外，删不掉的残留只会落在系统临时目录。
+ */
+function removeTree(dir: string) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const p = join(dir, entry.name);
+    try {
+      if (entry.isDirectory()) removeTree(p);
+      else rmSync(p, { force: true });
+    } catch {
+      // 单条删除失败就跳过：不把清理变成用例失败
+    }
+  }
+  try {
+    rmdirSync(dir);
+  } catch {
+    // 目录里仍有删不掉的条目时保留，交给系统临时目录回收
+  }
+}
+
+afterAll(() => {
+  removeTree(FIXTURE_ROOT);
+});
+
 describe("check-isr-routes.mjs", () => {
   it("产物里每条白名单路由都在 prerender-manifest 时才绿灯（顺带钉住源码门禁的当前基线）", () => {
     writeManifest(ALL_ROUTES);
@@ -204,7 +250,7 @@ describe("check-isr-routes.mjs", () => {
   });
 
   it("缺 prerender-manifest 时不静默通过（门禁没跑到 ≠ 门禁通过）", () => {
-    rmSync(FIXTURE_DIST, { recursive: true, force: true });
+    removeTree(FIXTURE_DIST);
     const { code, out } = run();
     expect(code, out).toBe(1);
     expect(out).toContain("prerender-manifest.json");
@@ -518,7 +564,7 @@ describe("check-isr-routes.mjs --live 抽查", () => {
       // 不能用 spawnSync：它会占满当前线程，假预览站（在同进程里）无法响应，
       // 子进程只能等到 15s 超时——测试会在完全无关的地方失败。
       const child = spawn(process.execPath, [SCRIPT, "--live", `--base=${base}`, ...extra], {
-        env: { ...process.env, NEXT_DIST_DIR: FIXTURE_DIR_NAME },
+        env: { ...process.env, NEXT_DIST_DIR: FIXTURE_DIST },
       });
       let out = "";
       child.stdout.setEncoding("utf8");

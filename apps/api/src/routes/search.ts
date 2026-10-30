@@ -85,6 +85,16 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     req?: FastifyRequest,
   ) {
     /**
+     * 榜单读取快照：本次请求**开头**的时刻。
+     *
+     * 下面先 `recordEvent("search")` 再读热榜（`:183` 与 `:202` 的顺序），所以按原样读
+     * 就会把「这一次输入」算进「大家都在搜」——面板 200ms 防抖意味着同一串字在一分钟内
+     * 能把自己灌成榜首。用请求开头的时刻做**不含上界**，本次写入（created_at ≥ 快照）
+     * 一律不进本次榜单；同毫秒的并发写入也会被排除，这是有意的偏向：宁可漏一条也不喂自己。
+     */
+    const snapshotAt = Date.now();
+
+    /**
      * 请求的有效身份：**一个** identity 同时服务个性化、搜索历史与事件归属。
      *
      * 取法：requestIdentityOf（与 preValidation 验签同一条 identityOf 链路：
@@ -200,7 +210,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         // 会把一次「无结果」变成 500）。两读各自降级为空，并用独立 counter 留痕——
         // 与写入失败分开，否则「没写进去」和「没读出来」在运维面上同形。
         const [topRead, zeroRead] = await Promise.allSettled([
-          ctx.repo.topQueries(180, 30),
+          ctx.repo.suggestableTopQueries(180, 30, { before: snapshotAt }),
           ctx.repo.zeroResultQueries(180, 30),
         ]);
         suggestionsDegraded = topRead.status === "rejected" || zeroRead.status === "rejected";
@@ -209,7 +219,9 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         const zero = zeroRead.status === "fulfilled" ? zeroRead.value : [];
         const zeroSet = new Set(zero.map((z) => z.query));
         suggestions = top.filter((t) => !zeroSet.has(t.query) && t.query !== q).slice(0, 5).map((t) => t.query);
-        popular = top.filter((t) => !zeroSet.has(t.query)).slice(0, 8).map((t) => t.query);
+        // popular 同样排除本次 q：suggestions 一直排着，两条并列的口径不一致时，
+        // 用户会在「大家都在搜」里看到自己刚搜过、并且什么都没搜到的那个词。
+        popular = top.filter((t) => !zeroSet.has(t.query) && t.query !== q).slice(0, 8).map((t) => t.query);
       }
       if (identity && isFirstPage && searchHistoryEnabled && !isProbe) {
         await ctx.repo.recordSearch(identity, q, result.hits.length).catch(() => recordSearchWriteFailure("history"));

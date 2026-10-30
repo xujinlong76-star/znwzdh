@@ -1234,6 +1234,23 @@ export class Repository {
     return analyticsRepo.topQueries(this, days, limit);
   }
 
+  /**
+   * 可推荐热榜（前端建议位专用）——与 topQueries 故意不同口径：
+   * 按身份数排序、过形状闸与人数门槛，且不把本次请求自己写入的行算进榜单。
+   */
+  async suggestableTopQueries(
+    days = 30,
+    limit = 20,
+    opts: analyticsRepo.SuggestableTopQueriesOptions = {},
+  ): Promise<Array<{ query: string; count: number; identities: number }>> {
+    return analyticsRepo.suggestableTopQueries(this, days, limit, opts);
+  }
+
+  /** 建议位形状闸的独立出口（运维/测试问「这个词为什么被毙」）。 */
+  suggestQueryRejection(query: string): string | null {
+    return analyticsRepo.suggestQueryRejection(query);
+  }
+
   async zeroResultQueries(days = 30, limit = 20): Promise<Array<{ query: string; count: number; lastAt: number }>> {
     return analyticsRepo.zeroResultQueries(this, days, limit);
   }

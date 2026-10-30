@@ -163,11 +163,16 @@ describe("检索接口", () => {
 
   /* ---- 零结果兜底 ---- */
 
-  it("零结果时返回 suggestions 与 popular（来自历史搜索，剔除同样搜不到的词）", async () => {
-    // 把这两个词的 count 顶到最前（topQueries 按 count 降序，同 count 顺序不稳，
-    // slice(0,5) 可能截断——用次数保证它们进前 5）
-    for (let i = 0; i < 5; i++) await app.inject({ method: "GET", url: "/api/search?q=" + encodeURIComponent("天气") });
-    for (let i = 0; i < 4; i++) await app.inject({ method: "GET", url: "/api/search?q=" + encodeURIComponent("包管理") });
+  it("零结果时返回 suggestions 与 popular（来自多人历史，剔除同样搜不到的词与本次查询）", async () => {
+    // 把这两个词的「人数」顶到最前：run129 起建议位按**去重身份数**排序并要 ≥2 人，
+    // 同一身份连发不再算人气（那是示例 chip 的刷量形状，见 gap[0]），所以两个 anonId 交替发。
+    // topQueries 口径不变，管理后台仍看真实次数分布。
+    for (let i = 0; i < 6; i++) {
+      await app.inject({ method: "GET", url: "/api/search?q=" + encodeURIComponent("天气") + `&anonId=hot-a${i % 2}` });
+    }
+    for (let i = 0; i < 4; i++) {
+      await app.inject({ method: "GET", url: "/api/search?q=" + encodeURIComponent("包管理") + `&anonId=hot-b${i % 2}` });
+    }
     // 再制造一条零结果历史（进 zero 集合，应被剔除）
     await app.inject({ method: "GET", url: "/api/search?q=" + encodeURIComponent("搜不到的词甲") });
 

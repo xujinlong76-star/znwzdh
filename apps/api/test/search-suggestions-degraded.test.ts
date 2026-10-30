@@ -2,6 +2,8 @@
  * 搜索建议读失败不能打崩检索（run59）。
  *
  * 缺陷：零结果分支用 `Promise.all([topQueries, zeroResultQueries])` 取建议；
+ * （run129 起热榜读函数换成 suggestableTopQueries——运维口径 topQueries 仍归 stats.ts 专用，
+ *  本测试的 spy 目标同步换名，断言强度一条没减。）
  * 任一读失败会抛出，早已算出的检索结果一起 5xx。用户看到的是「搜索坏了」，
  * 而实际只是建议区读不出来，且服务端没有任何计数能区分这两件事。
  *
@@ -61,8 +63,10 @@ beforeAll(async () => {
   await app.ready();
   const cat = await ctx.repo.createCategory({ title: "建议降级测试类目" });
   await ctx.repo.createSite({ url: "https://degradedhit-run59.example.com", title: "degradedhit 可命中站点", categoryId: cat.id });
-  // 造一条热词，证明健康路径的建议不是空的
-  await ctx.repo.recordEvent("search", { query: HOT_QUERY });
+  // 造一条热词，证明健康路径的建议不是空的。run129 起建议位按去重身份数排（≥2 人），
+  // 所以两个身份各写一行——同一身份刷量正是本 gap 要挡掉的形状。
+  await ctx.repo.recordEvent("search", { query: HOT_QUERY, identity: "degraded-person-a" });
+  await ctx.repo.recordEvent("search", { query: HOT_QUERY, identity: "degraded-person-b" });
 });
 
 afterAll(async () => {
@@ -84,8 +88,8 @@ describe("搜索建议读侧降级", () => {
     expect(await degradedCount()).toBe(before);
   });
 
-  it("topQueries 读失败：检索仍 200，建议降级为空并计数一次", async () => {
-    const spy = vi.spyOn(ctx.repo, "topQueries").mockRejectedValue(new Error("simulated suggestions read failure"));
+  it("建议读失败：检索仍 200，建议降级为空并计数一次", async () => {
+    const spy = vi.spyOn(ctx.repo, "suggestableTopQueries").mockRejectedValue(new Error("simulated suggestions read failure"));
     try {
       const before = await degradedCount();
       const res = await search("degraded-none-top-fail");
@@ -109,7 +113,7 @@ describe("搜索建议读侧降级", () => {
       expect(res.statusCode).toBe(200);
       const body = res.json() as { hits: unknown[]; suggestions: string[]; popular: string[]; suggestionsDegraded?: boolean };
       expect(body.hits).toEqual([]);
-      // topQueries 仍成功：建议不该因为另一路失败而清空
+      // 建议读仍成功：建议不该因为另一路失败而清空
       expect(body.suggestions).toContain(HOT_QUERY);
       expect(body.suggestionsDegraded).toBe(true);
       expect(await degradedCount()).toBe(before + 1);
@@ -119,7 +123,7 @@ describe("搜索建议读侧降级", () => {
   });
 
   it("有命中的查询不读建议：hits 完整且计数不动", async () => {
-    const spy = vi.spyOn(ctx.repo, "topQueries").mockImplementation(() => {
+    const spy = vi.spyOn(ctx.repo, "suggestableTopQueries").mockImplementation(() => {
       throw new Error("有命中时不应读建议");
     });
     try {

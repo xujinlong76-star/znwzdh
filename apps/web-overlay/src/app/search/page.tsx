@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { loadSearchPage } from '@/lib/server/search'
-import { normalizeSearchPage, normalizeSearchQuery } from '@/lib/search-page'
+import { normalizeSearchPage, normalizeSearchQuery, normalizeSearchTag } from '@/lib/search-page'
 import { SearchResults } from './search-results'
 
 /**
@@ -25,11 +25,18 @@ interface SearchPageProps {
 export async function generateMetadata({ searchParams }: SearchPageProps): Promise<Metadata> {
   const sp = await searchParams
   const q = normalizeSearchQuery(sp.q)
+  const tag = normalizeSearchTag(sp.tag)
   // 查询词进标题前先截断：不把用户输入的长串原样铺到浏览器标签/分享卡里
-  const title = q ? `搜索：${q.slice(0, 40)}` : '搜索站点'
+  const title = q
+    ? `搜索：${q.slice(0, 40)}`
+    : tag
+      ? `标签：${tag.slice(0, 40)}`
+      : '搜索站点'
   const description = q
-    ? `站内检索“${q.slice(0, 60)}”的匹配站点，支持中文、拼音与语义检索。`
-    : '按关键词检索站内收录的全部站点，支持中文、拼音与语义检索。'
+    ? `站内检索“${q.slice(0, 60)}”的匹配站点${tag ? `，限标签「${tag.slice(0, 40)}」` : ''}，支持中文、拼音与语义检索。`
+    : tag
+      ? `浏览标签「${tag.slice(0, 40)}」下的全部收录站点。`
+      : '按关键词检索站内收录的全部站点，支持中文、拼音与语义检索。'
 
   // 显式写 `title:` / `description:`（不用对象简写）：
   // test/route-titles.test.ts 靠正则识别标题来源，简写会被判定成「这个路由没有标题」。
@@ -44,7 +51,9 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const sp = await searchParams
   const q = normalizeSearchQuery(sp.q)
   const page = normalizeSearchPage(sp.page)
-  const { result, failed } = q ? await loadSearchPage(q, page) : { result: null, failed: false }
+  const tag = normalizeSearchTag(sp.tag)
+  // 只有标签没有关键词也是有效查询：展示该标签下的站点，与标签页同口径但保留分页
+  const { result, failed } = q || tag ? await loadSearchPage(q, page, tag) : { result: null, failed: false }
 
-  return <SearchResults q={q} page={page} result={result} failed={failed} />
+  return <SearchResults q={q} page={page} tag={tag} result={result} failed={failed} />
 }

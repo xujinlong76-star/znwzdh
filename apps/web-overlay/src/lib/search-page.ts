@@ -24,6 +24,13 @@ export const SEARCH_QUERY_MAX_LENGTH = 256
 
 export const SEARCH_MAX_PAGE_LINKS = 5
 
+/**
+ * 与中枢 /api/search 的 `tag: z.string().max(40)` 同值。
+ * 中枢按 slug / 名称 / 别名三路匹配，所以这里只做长度与空白归一，不做 slug 化——
+ * 名称里带空格是合法的（如「开发工具」），不能把它折成连字符。
+ */
+export const SEARCH_TAG_MAX_LENGTH = 40
+
 function first(raw: string | string[] | undefined): string {
   return Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
 }
@@ -38,6 +45,17 @@ export function normalizeSearchQuery(raw: string | string[] | undefined): string
     .trim()
 }
 
+/** 标签归一：同查询词的去控制字符/折叠空白；空串表示「没有标签筛选」 */
+export function normalizeSearchTag(raw: string | string[] | undefined): string | null {
+  const tag = first(raw)
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, SEARCH_TAG_MAX_LENGTH)
+    .trim()
+  return tag || null
+}
+
 export function searchMaxPage(): number {
   return Math.floor(SEARCH_MAX_OFFSET / SEARCH_PAGE_SIZE) + 1
 }
@@ -49,25 +67,29 @@ export function normalizeSearchPage(raw: string | string[] | undefined): number 
   return Math.min(n, searchMaxPage())
 }
 
-/** 结果页 URL：第 1 页省略 page，空查询就是 /search */
-export function searchHref(input: { q?: string; page?: number } = {}): string {
+/** 结果页 URL：第 1 页省略 page，空查询且无标签就是 /search */
+export function searchHref(input: { q?: string; page?: number; tag?: string | null } = {}): string {
   const q = normalizeSearchQuery(input.q)
+  const tag = normalizeSearchTag(input.tag ?? undefined)
   const page = normalizeSearchPage(input.page === undefined ? undefined : String(input.page))
   const params = new URLSearchParams()
   if (q) params.set('q', q)
+  if (tag) params.set('tag', tag)
   if (page > 1) params.set('page', String(page))
   const qs = params.toString()
   return qs ? `/search?${qs}` : '/search'
 }
 
 /** 中枢取数路径：offset 由页码推出；status=active 与分类页/标签页同口径 */
-export function searchApiPath(q: string, page: number): string {
+export function searchApiPath(q: string, page: number, tag?: string | null): string {
   const params = new URLSearchParams({
     q: normalizeSearchQuery(q),
     status: 'active',
     limit: String(SEARCH_PAGE_SIZE),
     offset: String((normalizeSearchPage(String(page)) - 1) * SEARCH_PAGE_SIZE),
   })
+  const normalizedTag = normalizeSearchTag(tag ?? undefined)
+  if (normalizedTag) params.set('tag', normalizedTag)
   return `/api/search?${params.toString()}`
 }
 

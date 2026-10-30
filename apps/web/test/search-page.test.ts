@@ -12,8 +12,10 @@ import {
   SEARCH_MAX_OFFSET,
   SEARCH_PAGE_SIZE,
   SEARCH_QUERY_MAX_LENGTH,
+  SEARCH_TAG_MAX_LENGTH,
   normalizeSearchPage,
   normalizeSearchQuery,
+  normalizeSearchTag,
   searchApiPath,
   searchHref,
   searchMaxPage,
@@ -87,6 +89,34 @@ describe('/search 的 URL 状态', () => {
     expect(searchPageWindow(10, false)).toEqual([6, 7, 8, 9, 10])
     expect(searchPageWindow(1, false)).toEqual([1])
   })
+
+  it('标签归一：与查询词同一套去噪，空串表示「没有标签筛选」', () => {
+    expect(normalizeSearchTag(' ai\u0000  工具 ')).toBe('ai 工具')
+    expect(normalizeSearchTag('x'.repeat(SEARCH_TAG_MAX_LENGTH + 10))).toHaveLength(SEARCH_TAG_MAX_LENGTH)
+    // 中枢按 slug/名称/别名三路匹配，名称里的空格必须原样保留，不能 slug 化
+    expect(normalizeSearchTag('开发工具')).toBe('开发工具')
+    expect(normalizeSearchTag(['ai', 'web'])).toBe('ai')
+    expect(normalizeSearchTag(undefined)).toBeNull()
+    expect(normalizeSearchTag('   ')).toBeNull()
+  })
+
+  it('标签进 URL 与取数路径：只浏览某个标签也是合法查询', () => {
+    expect(searchHref({ tag: 'ai' })).toBe('/search?tag=ai')
+    expect(searchHref({ q: 'react', tag: 'ai' })).toBe('/search?q=react&tag=ai')
+    expect(searchHref({ q: 'react', tag: 'ai', page: 3 })).toBe('/search?q=react&tag=ai&page=3')
+    // 换标签时调用点不传 page，页码自然回到第 1 页
+    expect(searchHref({ tag: 'ai' })).not.toContain('page=')
+    const tagged = new URLSearchParams(searchApiPath('', 1, 'ai').split('?')[1])
+    expect(tagged.get('q')).toBe('')
+    expect(tagged.get('tag')).toBe('ai')
+    const untagged = new URLSearchParams(searchApiPath('react', 1).split('?')[1])
+    expect(untagged.get('tag')).toBeNull()
+  })
+
+  it('标签上限与中枢 zod 契约同值', () => {
+    const api = repoFile('apps/api/src/routes/search.ts')
+    expect(api).toContain(`tag: z.string().max(${SEARCH_TAG_MAX_LENGTH})`)
+  })
 })
 
 describe('/search 页面契约', () => {
@@ -109,6 +139,29 @@ describe('/search 页面契约', () => {
     const view = overlaySource('src/app/search/search-results.tsx')
     expect(view).toContain('semanticOnly')
     expect(view).toContain('均为语义近似，无关键词命中')
+    // 标签筛选/兜底路径的 contributions 是 {}，空对象 every() 恒真，必须要求通道非空
+    expect(view).toContain("channels.length > 0 && channels.every((channel) => channel === 'semantic')")
+  })
+
+  it('标签筛选贯通：解析 → 取数 → 视图，提交关键词时保留筛选', () => {
+    const page = overlaySource('src/app/search/page.tsx')
+    expect(page).toContain('normalizeSearchTag(sp.tag)')
+    expect(page).toContain('q || tag ?')
+    expect(page).toContain('loadSearchPage(q, page, tag)')
+    expect(page).toContain('tag={tag}')
+
+    expect(overlaySource('src/lib/server/search.ts')).toContain('searchApiPath(q, page, tag)')
+
+    const view = overlaySource('src/app/search/search-results.tsx')
+    // 结果行的标签是筛选入口：点标签看该标签下的全部站点
+    expect(view).toContain('href={searchHref({ tag })}')
+    expect(view).toContain('标签：{tag}')
+    expect(view).toContain('去掉筛选')
+    // 隐藏域不进无障碍树，标成装饰性控件（field-names 门禁同口径）
+    expect(view).toContain('<input type="hidden" name="tag" value={tag} aria-hidden="true" />')
+    // 分页与重试不得丢标签
+    expect(view).toContain('searchHref({ q, page: page - 1, tag })')
+    expect(view).toContain('searchHref({ q, page, tag })')
   })
 
   it('/me/history 的「再次搜索」指向真实存在的 /search，而不是无人消费的 /?q=', () => {

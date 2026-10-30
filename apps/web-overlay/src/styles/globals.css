@@ -28,7 +28,7 @@
 @source '../components/plugins/**/*.{js,ts,jsx,tsx,mdx}';
 
 /* app 路由树：一级目录（被 .gitignore 的 apps/web/src/app/* 忽略）+ 二级特殊子树。 */
-@source '../app/{actions,admin,algorithms,auth,category,collections,components,custom,favorites,feed.xml,fonts,graph,hot,import,me,offline,preferences,s,site,sites,styles,submit,tags,types}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../app/{actions,admin,algorithms,auth,category,collections,components,custom,favorites,feed.xml,fonts,graph,hot,import,me,offline,preferences,s,search,site,sites,styles,submit,tags,types}/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../app/api/{admin,auth,cron,csp-report,extension,favicon,favicon-im,health,hub,me,media,navigation,og,resource,rss,site,site-config,submissions,videos,weather,website-metadata}/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../app/videos/{player,v,feed.xml,sitemap.xml}/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../app/admin/data/**/*.{js,ts,jsx,tsx,mdx}';

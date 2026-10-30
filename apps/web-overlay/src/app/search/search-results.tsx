@@ -22,6 +22,7 @@ import type { HubSearchHit, HubSearchResult } from '@/lib/navhub-api'
 interface SearchResultsProps {
   q: string
   page: number
+  tag: string | null
   result: HubSearchResult | null
   failed: boolean
 }
@@ -57,7 +58,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   )
 }
 
-function FailedNotice({ q, page }: { q: string; page: number }) {
+function FailedNotice({ q, page, tag }: { q: string; page: number; tag: string | null }) {
   return (
     <div
       role="status"
@@ -65,7 +66,10 @@ function FailedNotice({ q, page }: { q: string; page: number }) {
     >
       <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
       <span>检索服务本次没有响应（不是「没有收录这个站点」）。稍后重试，或先按分类 / 标签浏览。</span>
-      <Link href={searchHref({ q, page })} className="font-medium underline underline-offset-2 hover:no-underline">
+      <Link
+        href={searchHref({ q, page, tag })}
+        className="font-medium underline underline-offset-2 hover:no-underline"
+      >
         重试
       </Link>
     </div>
@@ -172,9 +176,15 @@ function ResultRow({ hit, q }: { hit: HubSearchHit; q: string }) {
           ) : null}
           <div className="flex flex-wrap items-center gap-1.5">
             {site.tags?.slice(0, 4).map((tag) => (
-              <span key={tag} className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
+              // 标签即筛选：点一下看该标签下的全部站点。不保留当前关键词——
+              // 「按这个标签浏览」比「在本次查询里再收窄」更符合点击标签的预期。
+              <Link
+                key={tag}
+                href={searchHref({ tag })}
+                className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/20"
+              >
                 {tag}
-              </span>
+              </Link>
             ))}
             {channels.map((channel) => (
               <span key={channel} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
@@ -198,25 +208,40 @@ function ResultRow({ hit, q }: { hit: HubSearchHit; q: string }) {
 function EmptyResults({
   q,
   page,
+  tag,
   suggestions,
   popular,
 }: {
   q: string
   page: number
+  tag: string | null
   suggestions: string[]
   popular: string[]
 }) {
   return (
     <section className="space-y-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-6">
       <p className="text-sm font-medium text-foreground">
-        {page > 1 ? `第 ${page} 页没有更多结果。` : `没有找到与“${q}”匹配的站点。`}
+        {page > 1
+          ? `第 ${page} 页没有更多结果。`
+          : tag
+            ? q
+              ? `没有找到与“${q}”匹配、且带标签「${tag}」的站点。`
+              : `标签「${tag}」下暂时没有站点。`
+            : `没有找到与“${q}”匹配的站点。`}
       </p>
-      {page > 1 ? (
-        <Link href={searchHref({ q })} className="text-xs text-primary hover:underline">
-          回到第 1 页
-        </Link>
-      ) : null}
-      {suggestions.length > 0 ? (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {page > 1 ? (
+          <Link href={searchHref({ q, tag })} className="text-xs text-primary hover:underline">
+            回到第 1 页
+          </Link>
+        ) : null}
+        {tag ? (
+          <Link href={searchHref({ q })} className="text-xs text-primary hover:underline">
+            去掉标签筛选
+          </Link>
+        ) : null}
+      </div>
+      {q && !tag && suggestions.length > 0 ? (
         <div className="space-y-1.5">
           <p className="text-xs text-muted-foreground">换个词试试</p>
           <div className="flex flex-wrap gap-1.5">
@@ -263,20 +288,30 @@ function EmptyResults({
   )
 }
 
-function Pagination({ q, page, hasMore }: { q: string; page: number; hasMore: boolean }) {
+function Pagination({
+  q,
+  page,
+  tag,
+  hasMore,
+}: {
+  q: string
+  page: number
+  tag: string | null
+  hasMore: boolean
+}) {
   const pages = searchPageWindow(page, hasMore)
   const linkClass = 'px-3 py-1.5 text-xs rounded-md border border-border/70 hover:bg-muted/50'
   return (
     <nav aria-label="搜索结果分页" className="flex flex-wrap items-center gap-2 pt-2">
       {page > 1 ? (
-        <Link href={searchHref({ q, page: page - 1 })} className={linkClass}>
+        <Link href={searchHref({ q, page: page - 1, tag })} className={linkClass}>
           上一页
         </Link>
       ) : null}
       {pages.map((n) => (
         <Link
           key={n}
-          href={searchHref({ q, page: n })}
+          href={searchHref({ q, page: n, tag })}
           aria-current={n === page ? 'page' : undefined}
           className={
             n === page
@@ -288,7 +323,7 @@ function Pagination({ q, page, hasMore }: { q: string; page: number; hasMore: bo
         </Link>
       ))}
       {hasMore && page < searchMaxPage() ? (
-        <Link href={searchHref({ q, page: page + 1 })} className={linkClass}>
+        <Link href={searchHref({ q, page: page + 1, tag })} className={linkClass}>
           下一页
         </Link>
       ) : null}
@@ -296,7 +331,7 @@ function Pagination({ q, page, hasMore }: { q: string; page: number; hasMore: bo
   )
 }
 
-export function SearchResults({ q, page, result, failed }: SearchResultsProps) {
+export function SearchResults({ q, page, tag, result, failed }: SearchResultsProps) {
   const hits = result?.hits ?? []
   const hasMore = result?.hasMore === true
   const relations = (result?.relationHits ?? []).filter((rel) => rel.sourceSite).slice(0, 3)
@@ -306,9 +341,15 @@ export function SearchResults({ q, page, result, failed }: SearchResultsProps) {
   const semanticsOff = result !== null && result.semanticAvailable === false
   // 语义 KNN 对任何输入都会返回最近邻，乱码查询也会"有结果"。
   // 整页没有一条关键词命中时如实说明，别让用户以为这些就是匹配项。
+  // 通道必须非空：标签筛选 / 兜底路径返回的 contributions 是 {}，空对象的
+  // every() 恒为 true，会把「按标签列出」误标成「全是语义近似」。
   const semanticOnly =
     hits.length > 0 &&
-    hits.every((hit) => Object.keys(hit.contributions ?? {}).every((channel) => channel === 'semantic'))
+    hits.every((hit) => {
+      const channels = Object.keys(hit.contributions ?? {})
+      return channels.length > 0 && channels.every((channel) => channel === 'semantic')
+    })
+  const resultLabel = q ? (tag ? `“${q}” 在标签「${tag}」下` : `“${q}” 的结果`) : tag ? `标签「${tag}」下的站点` : ''
 
   return (
     <>
@@ -338,6 +379,9 @@ export function SearchResults({ q, page, result, failed }: SearchResultsProps) {
                   className="h-10 w-full rounded-xl border border-border/70 bg-background/90 pl-9 pr-3 text-sm shadow-xs transition-colors hover:border-border focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
                 />
               </div>
+              {/* 提交关键词时保留进行中的标签筛选；要去掉标签用输入框上方的筛选条。
+                  type=hidden 不进无障碍树，按装饰性控件标注，field-names 门禁同口径。 */}
+              {tag ? <input type="hidden" name="tag" value={tag} aria-hidden="true" /> : null}
               <button
                 type="submit"
                 className="h-10 shrink-0 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -347,7 +391,22 @@ export function SearchResults({ q, page, result, failed }: SearchResultsProps) {
             </form>
           </header>
 
-          {q === '' ? (
+          {tag ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 font-medium text-primary">
+                标签：{tag}
+              </span>
+              <Link
+                href={searchHref({ q })}
+                className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground hover:underline"
+              >
+                去掉筛选
+                <span aria-hidden>×</span>
+              </Link>
+            </div>
+          ) : null}
+
+          {q === '' && !tag ? (
             <section className="space-y-3 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
               <p className="text-sm text-muted-foreground">输入关键词开始搜索；也可以先按分类或标签浏览。</p>
               <nav aria-label="浏览入口" className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs">
@@ -372,7 +431,7 @@ export function SearchResults({ q, page, result, failed }: SearchResultsProps) {
                   {failed
                     ? '检索服务本次没有响应'
                     : hits.length > 0
-                      ? `“${q}” 的结果：本页 ${hits.length} 条${semanticOnly ? '（均为语义近似，无关键词命中）' : ''}${hasMore ? '，还有更多' : '，已到最后一页'}。`
+                      ? `${resultLabel}：本页 ${hits.length} 条${semanticOnly ? '（均为语义近似，无关键词命中）' : ''}${hasMore ? '，还有更多' : '，已到最后一页'}。`
                       : '没有找到匹配结果'}
                 </p>
                 {semanticsOff && !failed ? (
@@ -382,12 +441,12 @@ export function SearchResults({ q, page, result, failed }: SearchResultsProps) {
                 ) : null}
               </div>
 
-              {failed ? <FailedNotice q={q} page={page} /> : null}
+              {failed ? <FailedNotice q={q} page={page} tag={tag} /> : null}
 
               {!failed && didYouMean ? (
                 <div className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-foreground">
                   <span>您是不是想搜：</span>
-                  <Link href={searchHref({ q: didYouMean })} className="font-bold text-primary underline hover:text-primary/80">
+                  <Link href={searchHref({ q: didYouMean, tag })} className="font-bold text-primary underline hover:text-primary/80">
                     {didYouMean}
                   </Link>
                   <span>？</span>
@@ -403,11 +462,11 @@ export function SearchResults({ q, page, result, failed }: SearchResultsProps) {
               ) : null}
 
               {!failed && hits.length === 0 ? (
-                <EmptyResults q={q} page={page} suggestions={suggestions} popular={popular} />
+                <EmptyResults q={q} page={page} tag={tag} suggestions={suggestions} popular={popular} />
               ) : null}
 
               {!failed && hits.length > 0 && (page > 1 || hasMore) ? (
-                <Pagination q={q} page={page} hasMore={hasMore} />
+                <Pagination q={q} page={page} tag={tag} hasMore={hasMore} />
               ) : null}
             </>
           )}

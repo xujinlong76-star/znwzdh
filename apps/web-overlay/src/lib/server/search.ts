@@ -13,7 +13,8 @@ import { searchApiPath } from '@/lib/search-page'
 export async function loadSearchPage(
   q: string,
   page: number,
+  tag?: string | null,
 ): Promise<{ result: HubSearchResult | null; failed: boolean }> {
-  const result = await hubGet<HubSearchResult>(searchApiPath(q, page))
+  const result = await hubGet<HubSearchResult>(searchApiPath(q, page, tag))
   return { result, failed: result === null }
 }

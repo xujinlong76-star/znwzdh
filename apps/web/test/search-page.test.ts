@@ -164,6 +164,20 @@ describe('/search 页面契约', () => {
     expect(view).toContain('searchHref({ q, page, tag })')
   })
 
+  it('中枢放宽筛选时必须如实说明：全站结果不能冒充「在标签下」', () => {
+    const view = overlaySource('src/app/search/search-results.tsx')
+    // 中枢零命中会带 fallback=filter 重试（结果已不满足标签）
+    expect(view).toContain("result?.fallback === 'filter'")
+    expect(view).toContain('const tagApplied = tag !== null && !filterRelaxed')
+    expect(view).toContain('已放宽为更宽的结果')
+    expect(view).toContain('不保证符合该标签')
+    // 放宽后不再显示生效中的标签筛选条，也不再随分页传递标签
+    expect(view).toContain('{tagApplied ? <input type="hidden" name="tag"')
+    // 模糊放宽（前缀→包含/逐词 OR）同样留痕
+    expect(view).toContain("result?.fallback === 'fuzzy'")
+    expect(view).toContain('已放宽匹配范围')
+  })
+
   it('/me/history 的「再次搜索」指向真实存在的 /search，而不是无人消费的 /?q=', () => {
     const src = overlaySource('src/app/me/history/page.tsx')
     expect(src).not.toContain('/?q=')

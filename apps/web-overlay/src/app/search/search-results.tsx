@@ -349,7 +349,20 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
       const channels = Object.keys(hit.contributions ?? {})
       return channels.length > 0 && channels.every((channel) => channel === 'semantic')
     })
-  const resultLabel = q ? (tag ? `“${q}” 在标签「${tag}」下` : `“${q}” 的结果`) : tag ? `标签「${tag}」下的站点` : ''
+  // 中枢在「带筛选却零命中」时会自动放宽筛选重试并标记 fallback=filter。
+  // 此时结果已不满足标签条件，不能再把它们说成「在标签 X 下」——那是错误归因。
+  const filterRelaxed = tag !== null && result?.fallback === 'filter'
+  const tagApplied = tag !== null && !filterRelaxed
+  const fuzzy = result?.fallback === 'fuzzy'
+  const resultLabel = q
+    ? filterRelaxed
+      ? `“${q}” 的结果（标签「${tag}」等筛选没有命中，已放宽）`
+      : tag
+        ? `“${q}” 在标签「${tag}」下`
+        : `“${q}” 的结果`
+    : tag
+      ? `标签「${tag}」下的站点`
+      : ''
 
   return (
     <>
@@ -381,7 +394,7 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
               </div>
               {/* 提交关键词时保留进行中的标签筛选；要去掉标签用输入框上方的筛选条。
                   type=hidden 不进无障碍树，按装饰性控件标注，field-names 门禁同口径。 */}
-              {tag ? <input type="hidden" name="tag" value={tag} aria-hidden="true" /> : null}
+              {tagApplied ? <input type="hidden" name="tag" value={tag} aria-hidden="true" /> : null}
               <button
                 type="submit"
                 className="h-10 shrink-0 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -391,7 +404,7 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
             </form>
           </header>
 
-          {tag ? (
+          {tagApplied ? (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 font-medium text-primary">
                 标签：{tag}
@@ -402,6 +415,22 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
               >
                 去掉筛选
                 <span aria-hidden>×</span>
+              </Link>
+            </div>
+          ) : null}
+
+          {filterRelaxed ? (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-400"
+            >
+              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+              <span>标签「{tag}」等筛选没有命中，已放宽为更宽的结果；下面的站点不保证符合该标签。</span>
+              <Link
+                href={searchHref({ q })}
+                className="font-medium underline underline-offset-2 hover:no-underline"
+              >
+                去掉筛选
               </Link>
             </div>
           ) : null}
@@ -431,7 +460,7 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
                   {failed
                     ? '检索服务本次没有响应'
                     : hits.length > 0
-                      ? `${resultLabel}：本页 ${hits.length} 条${semanticOnly ? '（均为语义近似，无关键词命中）' : ''}${hasMore ? '，还有更多' : '，已到最后一页'}。`
+                      ? `${resultLabel}：本页 ${hits.length} 条${semanticOnly ? '（均为语义近似，无关键词命中）' : ''}${fuzzy ? '（已放宽匹配范围）' : ''}${hasMore ? '，还有更多' : '，已到最后一页'}。`
                       : '没有找到匹配结果'}
                 </p>
                 {semanticsOff && !failed ? (
@@ -446,7 +475,7 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
               {!failed && didYouMean ? (
                 <div className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-foreground">
                   <span>您是不是想搜：</span>
-                  <Link href={searchHref({ q: didYouMean, tag })} className="font-bold text-primary underline hover:text-primary/80">
+                  <Link href={searchHref({ q: didYouMean, tag: tagApplied ? tag : null })} className="font-bold text-primary underline hover:text-primary/80">
                     {didYouMean}
                   </Link>
                   <span>？</span>
@@ -462,11 +491,17 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
               ) : null}
 
               {!failed && hits.length === 0 ? (
-                <EmptyResults q={q} page={page} tag={tag} suggestions={suggestions} popular={popular} />
+                <EmptyResults
+                  q={q}
+                  page={page}
+                  tag={tagApplied ? tag : null}
+                  suggestions={suggestions}
+                  popular={popular}
+                />
               ) : null}
 
               {!failed && hits.length > 0 && (page > 1 || hasMore) ? (
-                <Pagination q={q} page={page} tag={tag} hasMore={hasMore} />
+                <Pagination q={q} page={page} tag={tagApplied ? tag : null} hasMore={hasMore} />
               ) : null}
             </>
           )}

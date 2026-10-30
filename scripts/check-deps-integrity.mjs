@@ -136,26 +136,58 @@ function main() {
   const findings = [];
   for (const pkg of pkgs) {
     if (pkg.tmpLeftover) {
-      findings.push({ name: pkg.name, path: pkg.path, problems: [{ kind: "tmp-leftover", detail: "失败的原子重命名残留目录（可安全删除）" }] });
+      findings.push({ name: pkg.name, path: pkg.path, warning: true, problems: [{ kind: "tmp-leftover", detail: "失败的原子重命名残留目录（可安全删除，不阻断）" }] });
+      continue;
+    }
+    /**
+     * `.bak` 之类的备份目录：只要**主包是健康的**，它就是陈旧产物而不是「依赖残缺」。
+     * 2026-10-30 实测：better-sqlite3 主包完整，.bak 里只剩一个被进程占用的 .node，
+     * 硬报「残缺」会把每次提交都挡住，而真正的问题（如果有）会在主包上体现。
+     */
+    const isBackup = /\.(bak|old|orig|tmp)$/i.test(pkg.name) || /\.(bak|old|orig)$/i.test(pkg.path);
+    if (isBackup) {
+      const primary = pkg.path.replace(/\.(bak|old|orig|tmp)$/i, "");
+      const primaryHealthy = existsSync(join(primary, "package.json"));
+      findings.push({
+        name: pkg.name,
+        path: pkg.path,
+        warning: primaryHealthy,
+        problems: [{
+          kind: "stale-backup",
+          detail: primaryHealthy
+            ? "备份/残留目录，主包健康（不阻断，可安全删除）"
+            : "备份目录且主包缺失（阻断）",
+        }],
+      });
       continue;
     }
     const problems = inspectPackage(pkg.path, pkg.name);
     if (problems.length > 0) findings.push({ name: pkg.name, path: pkg.path, problems });
   }
 
+  const blocking = findings.filter((f) => !f.warning);
   if (AS_JSON) {
-    console.log(JSON.stringify({ scanned: pkgs.length, broken: findings.length, findings }, null, 2));
-    process.exit(findings.length > 0 ? 1 : 0);
+    console.log(JSON.stringify({ scanned: pkgs.length, broken: blocking.length, findings }, null, 2));
+    process.exit(blocking.length > 0 ? 1 : 0);
   }
 
   if (findings.length === 0) {
     console.log(`✅ 依赖完整性：${pkgs.length} 个包全部入口可解析`);
     return;
   }
-  console.error(`❌ 依赖完整性：${pkgs.length} 个包里有 ${findings.length} 个残缺`);
-  for (const f of findings) {
-    for (const p of f.problems) console.error(`   [${p.kind}] ${f.name}  ${p.detail}`);
-    console.error(`      ${f.path}`);
+  const warnings = findings.filter((f) => f.warning);
+  if (blocking.length > 0) {
+    console.error(`❌ 依赖完整性：${pkgs.length} 个包里有 ${blocking.length} 个残缺`);
+    for (const f of blocking) {
+      for (const p of f.problems) console.error(`   [${p.kind}] ${f.name}  ${p.detail}`);
+      console.error(`      ${f.path}`);
+    }
+  } else {
+    console.log(`✅ 依赖完整性：${pkgs.length} 个包入口可解析（${warnings.length} 个陈旧残留不阻断）`);
+    for (const f of warnings) {
+      for (const p of f.problems) console.log(`   ⚠ [${p.kind}] ${f.name}  ${p.detail}`);
+    }
+    return;
   }
   console.error(`
 处理：这类问题与代码无关，是安装被中断留下的。

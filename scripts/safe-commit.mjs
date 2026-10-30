@@ -55,7 +55,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { checkCommitScope } from "./lib/commit-scope.mjs";
+import { checkCommitScope, evaluateScopeOverride } from "./lib/commit-scope.mjs";
 
 /** 陈旧索引锁的判定阈值：活锁一般几秒内释放，超过这个时长基本是崩溃残留 */
 const STALE_LOCK_MS = 2 * 60 * 1000;
@@ -274,24 +274,41 @@ function main() {
    * 装进来的却是并行会话的 `ci-defused` 文件集（HEAD 竞态下索引串了）。
    *
    * 映射表跑过三轮实战全对，从「告警」升级为「阻断」。确需跨域时用
-   * `NAVHUB_ALLOW_CROSS_SCOPE=1` 显式放行（必须写进提交说明里说清楚）。
+   * `NAVHUB_ALLOW_CROSS_SCOPE=<理由>` 显式放行——**理由不能为空**，
+   * 且必须原样出现在提交说明正文里（git 历史可审计）。与 `cleanup-noop: <理由>`、
+   * `source-truth-ok: <理由>` 同一套纪律：静默豁免等于把守卫变成摆设。
    */
   {
     const subjectText = message.split("\n")[0];
     const relFiles = paths.map((p) => p.replace(/\\/g, "/"));
     const scopeCheck = checkCommitScope(subjectText, relFiles);
-    if (!scopeCheck.ok && process.env.NAVHUB_ALLOW_CROSS_SCOPE !== "1") {
+    const override = (process.env.NAVHUB_ALLOW_CROSS_SCOPE ?? "").trim();
+    const verdict = evaluateScopeOverride({ scopeOk: scopeCheck.ok, override, message });
+    const hasReason = !verdict.needReason;
+    const reasonInMessage = verdict.allow && !scopeCheck.ok;
+
+    if (!scopeCheck.ok && verdict.needReason) {
       console.error(`\n❌ 主题域与文件域不一致：${scopeCheck.reason}`);
       for (const p of scopeCheck.outsiders) console.error(`  · ${p}`);
       console.error(`\n  处理：`);
       console.error(`    1) 确属同一次改动 → 把 subject 的 scope 改对（如 feat(api,store)）`);
       console.error(`    2) 竞态卷入了别人的文件 → 只提交你自己的那几个路径`);
-      console.error(`    3) 确需跨域 → NAVHUB_ALLOW_CROSS_SCOPE=1 重跑（并在提交说明里写清为什么）`);
+      console.error(`    3) 确需跨域 → NAVHUB_ALLOW_CROSS_SCOPE='<为什么必须跨域>' 重跑，`);
+      console.error(`       且把这句话原样写进提交说明正文（git 历史要能查到理由）`);
+      console.error(`       只写 1/true 不算——理由不能为空`);
+      process.exit(1);
+    }
+    if (!scopeCheck.ok && verdict.needInMessage) {
+      console.error(`\n❌ 跨域放行要求「理由出现在提交说明正文里」：`);
+      console.error(`   NAVHUB_ALLOW_CROSS_SCOPE 的理由是：${override}`);
+      console.error(`   但提交说明里找不到这句话。请把它原样写进 message 正文后再提交——`);
+      console.error(`   放行理由必须留痕，否则下次没人知道当时为什么放行。`);
       process.exit(1);
     }
     if (!scopeCheck.ok) {
-      console.warn(`\n⚠ 主题域与文件域不一致（NAVHUB_ALLOW_CROSS_SCOPE=1 已放行）：${scopeCheck.reason}`);
+      console.warn(`\n⚠ 主题域与文件域不一致（已按理由放行）：${scopeCheck.reason}`);
       for (const p of scopeCheck.outsiders) console.warn(`  · ${p}`);
+      console.warn(`  放行理由（已写进提交说明）：${override}`);
     } else {
       console.log(`✓ ${scopeCheck.reason}`);
     }

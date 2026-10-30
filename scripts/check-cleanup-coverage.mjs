@@ -199,7 +199,7 @@ function main() {
   }
 
   if (all.length === 0) {
-    console.log(`✅ 清理动作覆盖：${rules.length} 条规则，每条出口都有清理调用`);
+    console.log(`✅ 清理动作覆盖：${rules.length} 条规则，每条出口都有清理调用` + (useChanged ? `（--changed：另有 ${CLEANUP_RULES.length - rules.length} 条规则与本次提交无关，未查）` : ``));
     return;
   }
   console.log(`❌ 清理动作覆盖：${all.length} 处出口没有清理调用：`);

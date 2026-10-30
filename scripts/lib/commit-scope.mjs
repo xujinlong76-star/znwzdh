@@ -77,3 +77,24 @@ export function checkCommitScope(subject, files) {
     outsiders,
   };
 }
+
+/**
+ * 跨域放行的判定：**理由不能为空，且必须出现在提交说明正文里**。
+ *
+ * 与 `cleanup-noop: <理由>`、`source-truth-ok: <理由>` 同一套纪律——
+ * 静默豁免等于把守卫变成摆设。只写 1/true/yes 不算理由。
+ *
+ * 返回 `{ allow, needReason, needInMessage, reason }`：
+ *   - 不跨域 → `allow: true`（根本不需要放行）；
+ *   - 跨域但没理由 → `needReason`；
+ *   - 跨域有理由但没写进 message → `needInMessage`；
+ *   - 跨域且理由已留痕 → `allow: true`。
+ */
+export function evaluateScopeOverride({ scopeOk, override, message }) {
+  if (scopeOk) return { allow: true, reason: null };
+  const r = String(override ?? '').trim();
+  const hasReason = r.length >= 8 && !/^(1|true|yes|on)$/i.test(r);
+  if (!hasReason) return { allow: false, needReason: true, reason: r };
+  if (!String(message ?? '').includes(r)) return { allow: false, needInMessage: true, reason: r };
+  return { allow: true, reason: r };
+}

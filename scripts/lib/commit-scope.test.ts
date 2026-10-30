@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 // @ts-expect-error —— .mjs 无类型声明
-import { checkCommitScope, fileMatchesScope, SCOPE_DIRS } from "./commit-scope.mjs";
+import { checkCommitScope, evaluateScopeOverride, fileMatchesScope, SCOPE_DIRS } from "./commit-scope.mjs";
 
 describe("主题域 ↔ 文件域：真错位要报", () => {
   it("写 tooling 却装了 ci.yml 与 docs ⇒ 报（正是 6dbadb83 的形态）", () => {
@@ -76,5 +76,53 @@ describe("主题域 ↔ 文件域：映射表形状", () => {
 
   it("fileMatchesScope 对未知 scope 返回 null（判不了）", () => {
     expect(fileMatchesScope("a/b.ts", "nope")).toBeNull();
+  });
+});
+
+describe("跨域放行：理由必须非空且留痕", () => {
+  it("不跨域 ⇒ 放行，且不需要理由", () => {
+    const v = evaluateScopeOverride({ scopeOk: true, override: "", message: "" });
+    expect(v.allow).toBe(true);
+    expect(v.reason).toBeNull();
+  });
+
+  it("跨域且没给理由 ⇒ 挡下（needReason）", () => {
+    const v = evaluateScopeOverride({ scopeOk: false, override: "", message: "x" });
+    expect(v.allow).toBe(false);
+    expect(v.needReason).toBe(true);
+  });
+
+  it("只写 1 / true / yes 不算理由", () => {
+    for (const r of ["1", "true", "TRUE", "yes", "on"]) {
+      const v = evaluateScopeOverride({ scopeOk: false, override: r, message: r });
+      expect(v.needReason, r).toBe(true);
+    }
+  });
+
+  it("理由太短不算（至少 8 字符）", () => {
+    const v = evaluateScopeOverride({ scopeOk: false, override: "因为", message: "因为" });
+    expect(v.needReason).toBe(true);
+  });
+
+  it("有理由但没写进提交说明 ⇒ 挡下（needInMessage）", () => {
+    const v = evaluateScopeOverride({
+      scopeOk: false,
+      override: "这是同一处改动的两个域",
+      message: "feat(tooling): 改了点东西",
+    });
+    expect(v.allow).toBe(false);
+    expect(v.needInMessage).toBe(true);
+    expect(v.reason).toBe("这是同一处改动的两个域");
+  });
+
+  it("理由写进了提交说明 ⇒ 放行", () => {
+    const msg = "feat(tooling): 改了点东西" + String.fromCharCode(10) + "跨域原因：这是同一处改动的两个域";
+    const v = evaluateScopeOverride({
+      scopeOk: false,
+      override: "这是同一处改动的两个域",
+      message: msg,
+    });
+    expect(v.allow).toBe(true);
+    expect(v.reason).toBe("这是同一处改动的两个域");
   });
 });

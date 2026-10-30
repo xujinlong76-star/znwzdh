@@ -177,7 +177,7 @@ function main() {
   }
 
   if (all.length === 0) {
-    console.log(`✅ 事实源判据：覆盖 ${scanned} 个文件，没有「按计数选源」的启发式`);
+    console.log(`✅ 事实源判据：覆盖 ${scanned} 个文件，没有「按计数选源」的启发式` + (useChanged ? `（--changed：登记全集 ${SOURCE_TRUTH_FILES.length} 条规则里，与本次无关的已跳过）` : ``));
     return;
   }
   console.log(`❌ 事实源判据：${all.length} 处出现了「按计数/长度比较」来选源：`);

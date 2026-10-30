@@ -186,7 +186,7 @@ function runDiff(graph, opts) {
     return 2;
   }
   if (commits.length === 0) {
-    console.log(`${P}${opts.diff}..HEAD 没有改动图看得见的文件（前缀表之外的东西，如锁文件、data/）`);
+    console.log(`${P}${opts.diff}..HEAD 没有改动图看得见的文件（无可回放：前缀表之外的东西，如锁文件、data/）`);
     return 0;
   }
 

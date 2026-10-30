@@ -91,6 +91,13 @@ describe("站点列表页必须有搜索入口", () => {
     expect(palette).toBeLessThan(empty);
     expect(palette).toBeLessThan(grid);
   });
+
+  it("标签页被 100 条上限截断时，给出去 /search?tag= 的分页出口（不是回目录绕路）", () => {
+    const board = overlaySource("src/components/tag-results-board.tsx");
+    // 截断提示里必须是真能翻到剩余站点的通道：/sites 目录需要用户自己再按标签找回来
+    expect(board).toContain("查看该标签下的全部站点");
+    expect(board).toContain("/search?tag=${encodeURIComponent(slug)}");
+  });
 });
 
 describe("有意的例外：不要顺手加错地方", () => {

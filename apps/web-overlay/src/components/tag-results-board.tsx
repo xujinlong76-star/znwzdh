@@ -234,12 +234,17 @@ export function TagResultsBoard({
       {truncated && !degraded && (
         // 取数上限截断时必须说出来：否则用户翻到底以为「这个标签就这些站点」，
         // 而后面还有 —— 页面上没有任何一条通道能到达它们。
+        // /search?tag= 真能走到底（20 条一页，offset 上限 1000），是 SSR 100 条
+        // 之外唯一的分页出口；回 /sites 目录再按标签找回来是死路。
         <p className="text-xs text-muted-foreground leading-relaxed">
-          本页最多列出 100 个站点，「{slug}」还有更多收录没有显示在这里。可以用上面的搜索框换关键词继续找，或到
-          <Link href="/sites" className="underline underline-offset-2 hover:no-underline mx-1">
-            全部站点目录
+          本页最多列出 100 个站点，「{slug}」还有更多收录没有显示在这里。可以
+          <Link
+            href={`/search?tag=${encodeURIComponent(slug)}`}
+            className="underline underline-offset-2 hover:no-underline mx-1"
+          >
+            查看该标签下的全部站点（分页）
           </Link>
-          按收录顺序浏览。
+          ，或用上面的搜索框换关键词继续找。
         </p>
       )}
     </div>

@@ -195,6 +195,15 @@ describe('/search 页面契约', () => {
     expect(view).toContain('已放宽匹配范围')
   })
 
+  it('检索算子自带用法提示：不写出来没人会试 #标签 / @分类', () => {
+    const view = overlaySource('src/app/search/search-results.tsx')
+    expect(view).toContain('#标签')
+    expect(view).toContain('@分类')
+    // 示例必须真实可用（hub 实测 #开源 react、@开发工具 编辑器都有命中）
+    expect(view).toContain('#开源 react')
+    expect(view).toContain('@开发工具 编辑器')
+  })
+
   it('/me/history 的「再次搜索」指向真实存在的 /search，而不是无人消费的 /?q=', () => {
     const src = overlaySource('src/app/me/history/page.tsx')
     expect(src).not.toContain('/?q=')

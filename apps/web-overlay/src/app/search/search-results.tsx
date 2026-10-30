@@ -405,6 +405,14 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
                 搜索
               </button>
             </form>
+            {/* 检索算子是中枢最有用却最不显眼的能力：不写出来没人会试。
+                示例必须真实可点回结果（#开源 react / @开发工具 编辑器都实测有命中）。 */}
+            <p className="text-[11px] text-muted-foreground">
+              支持 <code className="rounded bg-muted px-1 py-0.5">#标签</code>、
+              <code className="rounded bg-muted px-1 py-0.5">@分类</code> 限定范围，例如{' '}
+              <code className="rounded bg-muted px-1 py-0.5">#开源 react</code>、
+              <code className="rounded bg-muted px-1 py-0.5">@开发工具 编辑器</code>。
+            </p>
           </header>
 
           {tagApplied ? (

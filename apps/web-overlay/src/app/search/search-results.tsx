@@ -26,6 +26,7 @@ interface SearchResultsProps {
   tag: string | null
   result: HubSearchResult | null
   failed: boolean
+  unavailable: HubSearchHit[]
 }
 
 /** 只展示「为什么这条会被搜到」里不直观的通道；exact/fts 是用户预期内的 */
@@ -165,8 +166,11 @@ function ResultRow({ hit, q }: { hit: HubSearchHit; q: string }) {
             )}
             {host ? <span className="text-[11px] text-muted-foreground">{host}</span> : null}
             {site.status === 'broken' ? (
-              <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                快照自愈
+              <span
+                title="最近一次健康巡检被对方站点拒绝（常见 401/403 反爬），不代表站点已下线"
+                className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+              >
+                巡检打不开
               </span>
             ) : null}
           </div>
@@ -289,6 +293,33 @@ function EmptyResults({
   )
 }
 
+/**
+ * 字面匹配但最近巡检打不开的站点。
+ *
+ * 与正常结果分区展示而不是混排：巡检失败（401/403 反爬）不代表站点真的
+ * 下线，混进正常结果会让用户以为它们"匹配度低"；整段藏起来又会造成
+ * 「大站搜不到」。名字照常可点，说明如实给出。
+ */
+function UnavailableSection({ hits, q }: { hits: HubSearchHit[]; q: string }) {
+  return (
+    <section aria-label="最近巡检打不开的匹配站点" className="space-y-2">
+      <div
+        role="status"
+        className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-400"
+      >
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <span>
+          以下 {hits.length} 个站点与你的查询字面匹配，但最近一次健康巡检被对方站点拒绝（常见 401/403
+          反爬）。这不代表站点已下线，点击通常仍可正常打开；巡检恢复后会自动回到正常结果。
+        </span>
+      </div>
+      <ul className="space-y-2">
+        {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} /> : null))}
+      </ul>
+    </section>
+  )
+}
+
 function Pagination({
   q,
   page,
@@ -332,7 +363,7 @@ function Pagination({
   )
 }
 
-export function SearchResults({ q, page, tag, result, failed }: SearchResultsProps) {
+export function SearchResults({ q, page, tag, result, failed, unavailable }: SearchResultsProps) {
   const hits = result?.hits ?? []
   const hasMore = result?.hasMore === true
   const relations = (result?.relationHits ?? []).filter((rel) => rel.sourceSite).slice(0, 3)
@@ -480,7 +511,9 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
                     ? '检索服务本次没有响应'
                     : hits.length > 0
                       ? `${resultLabel}：本页 ${hits.length} 条${semanticOnly ? '（均为语义近似，无关键词命中）' : ''}${fuzzy ? '（已放宽匹配范围）' : ''}${hasMore ? '，还有更多' : '，已到最后一页'}。`
-                      : '没有找到匹配结果'}
+                      : unavailable.length > 0
+                        ? `没有可直接展示的正常站点；有 ${unavailable.length} 个字面匹配的站点最近巡检打不开（见下方）`
+                        : '没有找到匹配结果'}
                 </p>
                 {semanticsOff && !failed ? (
                   <span className="text-[11px] text-muted-foreground">
@@ -515,7 +548,9 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
                 </ul>
               ) : null}
 
-              {!failed && hits.length === 0 ? (
+              {/* 有巡检打不开的字面命中时不说「没有找到」：下方分区就是匹配项，
+                  先摆「零结果」再摆匹配行会自相矛盾 */}
+              {!failed && hits.length === 0 && unavailable.length === 0 ? (
                 <EmptyResults
                   q={q}
                   page={page}
@@ -523,6 +558,10 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
                   suggestions={suggestions}
                   popular={popular}
                 />
+              ) : null}
+
+              {!failed && unavailable.length > 0 ? (
+                <UnavailableSection hits={unavailable} q={q} />
               ) : null}
 
               {!failed && hits.length > 0 && (page > 1 || hasMore) ? (

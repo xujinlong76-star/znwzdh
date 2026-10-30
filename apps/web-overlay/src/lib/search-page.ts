@@ -80,11 +80,22 @@ export function searchHref(input: { q?: string; page?: number; tag?: string | nu
   return qs ? `/search?${qs}` : '/search'
 }
 
-/** 中枢取数路径：offset 由页码推出；status=active 与分类页/标签页同口径 */
-export function searchApiPath(q: string, page: number, tag?: string | null): string {
+/**
+ * 中枢取数路径：offset 由页码推出；status 默认 active（与分类页/标签页同口径）。
+ *
+ * status 之所以可换：全站有十余个站点因对方 401/403 反爬被巡检标成 broken，
+ * 其中不乏 ChatGPT、npm 这类大站。active 把它们全部藏起来，用户搜准确名字
+ * 反而零命中。调用方正是在「正常结果没有字面命中」时补取 broken 如实分区展示。
+ */
+export function searchApiPath(
+  q: string,
+  page: number,
+  tag?: string | null,
+  opts: { status?: 'active' | 'broken' } = {},
+): string {
   const params = new URLSearchParams({
     q: normalizeSearchQuery(q),
-    status: 'active',
+    status: opts.status ?? 'active',
     limit: String(SEARCH_PAGE_SIZE),
     offset: String((normalizeSearchPage(String(page)) - 1) * SEARCH_PAGE_SIZE),
   })

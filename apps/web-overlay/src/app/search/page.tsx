@@ -53,7 +53,10 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const page = normalizeSearchPage(sp.page)
   const tag = normalizeSearchTag(sp.tag)
   // 只有标签没有关键词也是有效查询：展示该标签下的站点，与标签页同口径但保留分页
-  const { result, failed } = q || tag ? await loadSearchPage(q, page, tag) : { result: null, failed: false }
+  const { result, failed, unavailable } =
+    q || tag ? await loadSearchPage(q, page, tag) : { result: null, failed: false, unavailable: [] }
 
-  return <SearchResults q={q} page={page} tag={tag} result={result} failed={failed} />
+  return (
+    <SearchResults q={q} page={page} tag={tag} result={result} failed={failed} unavailable={unavailable} />
+  )
 }

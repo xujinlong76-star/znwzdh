@@ -74,6 +74,16 @@ describe('/search 的 URL 状态', () => {
     expect(params.get('offset')).toBe(String(2 * SEARCH_PAGE_SIZE))
   })
 
+  it('巡检异常的补取只换 status，其余参数与主查询同口径', () => {
+    const broken = new URLSearchParams(searchApiPath('ChatGPT', 1, 'ai', { status: 'broken' }).split('?')[1])
+    expect(broken.get('status')).toBe('broken')
+    expect(broken.get('q')).toBe('ChatGPT')
+    expect(broken.get('tag')).toBe('ai')
+    expect(broken.get('offset')).toBe('0')
+    // 不传 opts 时仍是 active：正常检索不该把巡检打不开的站点混进来
+    expect(new URLSearchParams(searchApiPath('ChatGPT', 1).split('?')[1]).get('status')).toBe('active')
+  })
+
   it('offset 上限与中枢 zod 契约同值（改一处必须改另一处）', () => {
     const api = repoFile('apps/api/src/routes/search.ts')
     expect(api).toContain(`offset: z.coerce.number().int().min(0).max(${SEARCH_MAX_OFFSET})`)
@@ -202,6 +212,31 @@ describe('/search 页面契约', () => {
     // 示例必须真实可用（hub 实测 #开源 react、@开发工具 编辑器都有命中）
     expect(view).toContain('#开源 react')
     expect(view).toContain('@开发工具 编辑器')
+  })
+
+  it('巡检打不开的站点不静默消失：第 1 页补取 broken，按字面命中过滤并如实分区展示', () => {
+    const server = overlaySource('src/lib/server/search.ts')
+    expect(server).toContain("searchApiPath(q, page, tag, { status: 'broken' })")
+    expect(server).toContain('isLexicalHit')
+    // 只有第 1 页非空查询才补取（翻页语义与空检索不该多打一次中枢）
+    expect(server).toContain('page === 1 && q')
+    // 只在 broken 池里挑字面命中：语义近邻不算
+    expect(server).toContain('hit.site && isLexicalHit(hit)')
+    // 主结果已经展示过的同名站点不再重复出现（Cursor 有两条记录）
+    expect(server).toContain('shownTitles')
+    // 补取失败保持空列表：整页的「服务没响应」只由主查询决定
+    expect(server).toContain('broken?.hits')
+
+    const page = overlaySource('src/app/search/page.tsx')
+    expect(page).toContain('unavailable')
+
+    const view = overlaySource('src/app/search/search-results.tsx')
+    expect(view).toContain('巡检打不开')
+    expect(view).toContain('401/403')
+    expect(view).toContain('不代表站点已下线')
+    // 有匹配的不可用站点时不得同时渲染「没有找到」空态，否则自相矛盾
+    expect(view).toContain('hits.length === 0 && unavailable.length === 0')
+    expect(view).toContain('<UnavailableSection hits={unavailable} q={q} />')
   })
 
   it('/me/history 的「再次搜索」指向真实存在的 /search，而不是无人消费的 /?q=', () => {

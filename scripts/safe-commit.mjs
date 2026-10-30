@@ -266,6 +266,37 @@ function main() {
     return;
   }
 
+  /**
+   * 4-0) 提交前先核对**主题域 ↔ 文件域**（阻断式）。
+   *
+   * 这道判据必须在 commit 之前跑——放在之后只能「事后告警」，commit 已经落地了。
+   * 2026-10-30 的 `6dbadb83` 就是那种事后才发现的错位：message 写 `feat(tooling)`，
+   * 装进来的却是并行会话的 `ci-defused` 文件集（HEAD 竞态下索引串了）。
+   *
+   * 映射表跑过三轮实战全对，从「告警」升级为「阻断」。确需跨域时用
+   * `NAVHUB_ALLOW_CROSS_SCOPE=1` 显式放行（必须写进提交说明里说清楚）。
+   */
+  {
+    const subjectText = message.split("\n")[0];
+    const relFiles = paths.map((p) => p.replace(/\\/g, "/"));
+    const scopeCheck = checkCommitScope(subjectText, relFiles);
+    if (!scopeCheck.ok && process.env.NAVHUB_ALLOW_CROSS_SCOPE !== "1") {
+      console.error(`\n❌ 主题域与文件域不一致：${scopeCheck.reason}`);
+      for (const p of scopeCheck.outsiders) console.error(`  · ${p}`);
+      console.error(`\n  处理：`);
+      console.error(`    1) 确属同一次改动 → 把 subject 的 scope 改对（如 feat(api,store)）`);
+      console.error(`    2) 竞态卷入了别人的文件 → 只提交你自己的那几个路径`);
+      console.error(`    3) 确需跨域 → NAVHUB_ALLOW_CROSS_SCOPE=1 重跑（并在提交说明里写清为什么）`);
+      process.exit(1);
+    }
+    if (!scopeCheck.ok) {
+      console.warn(`\n⚠ 主题域与文件域不一致（NAVHUB_ALLOW_CROSS_SCOPE=1 已放行）：${scopeCheck.reason}`);
+      for (const p of scopeCheck.outsiders) console.warn(`  · ${p}`);
+    } else {
+      console.log(`✓ ${scopeCheck.reason}`);
+    }
+  }
+
   /** 4) 提交。不带 pathspec：独立索引里本来就只有「HEAD + 我的改动」。 */
   const before = git(["rev-parse", "HEAD"]);
   /**
@@ -365,30 +396,12 @@ function main() {
     );
   }
   /**
-   * 第二道核对：**主题域 ↔ 文件域**。
+   * 提交后核对**文件集**与预期一致。
    *
-   * 上面的 pathspec 核对在 HEAD 竞态下会跟着一起错（它读的也是同一个索引）——
-   * 2026-10-30 的 `6dbadb83` 就是这么错位的：message 写 `feat(tooling)`，
-   * 装进来的却是并行会话的 `ci-defused` 文件集。主题与文件域的对照是独立判据，
-   * 写的是 tooling、装的是 ci.yml + docs/，一眼就能看出来。
-   *
-   * 只**告警不阻断**：scope 映射表覆盖不全时误报的代价（挡住合法提交）
-   * 大于漏报的代价（多看一眼 message）。要升级成阻断，等映射表跑稳再说。
+   * 主题域 ↔ 文件域的核对已前移到 commit 之前（阻断式，见上面 4-0）。
+   * 这里只看「装进来的文件是不是我指定的那几个」——它读的是 HEAD 的真实 tree，
+   * 与路径清单独立，抓的是竞态卷入。
    */
-  const subjectText = message.split("\n")[0];
-  // 路径归一化到仓库相对的正斜杠形式——Windows 上 cwd 用反斜杠，
-  // 直接 replace(cwd + "/") 剥不掉前缀，守卫会把绝对路径全判成「域外」（自己踩过）。
-  const relFiles = committed.map((p) =>
-    resolve(p).replace(/\\/g, "/").replace(new RegExp("^" + resolve(cwd).replace(/\\/g, "/").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/"), ""),
-  );
-  const scopeCheck = checkCommitScope(subjectText, relFiles);
-  if (!scopeCheck.ok) {
-    console.error(`\n⚠ 主题域与文件域不一致：${scopeCheck.reason}`);
-    for (const p of scopeCheck.outsiders) console.error(`  · ${p}`);
-    console.error(`  ↑ 若确属同一次改动，把 scope 改对；若是竞态卷入了别人的文件，reset --soft HEAD~1 重来。`);
-  } else {
-    console.log(`✓ ${scopeCheck.reason}`);
-  }
   console.log(`✓ 提交内容与预期完全一致（${committed.length} 个文件）\n`);
   } finally {
     // 无论成功、失败还是抛错，本脚本在 .git/ 下的临时文件都要收走

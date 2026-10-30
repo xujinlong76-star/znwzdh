@@ -136,11 +136,30 @@ export function resolveRuleFiles(rule, root = ROOT) {
 
 function main() {
   const asJson = process.argv.includes("--json");
+  /**
+   * `--changed`：只扫位置参数里给的文件，不扫登记目录全集。
+   * pre-commit 用这个档——与 mock-hygiene 同一套纪律：
+   * **pre-commit 的检查范围应当等于本次提交集**，全仓口径归全量测试。
+   */
+  const changedIdx = process.argv.indexOf("--changed");
+  const useChanged = changedIdx !== -1;
+  const norm = (p) => String(p).split("\\").join("/");
+  const explicit = useChanged
+    ? new Set(process.argv.slice(changedIdx + 1).filter((a) => !a.startsWith("--")).map(norm))
+    : null;
+
   const all = [];
   let scanned = 0;
   for (const rule of SOURCE_TRUTH_FILES) {
-    const files = resolveRuleFiles(rule);
+    const files = resolveRuleFiles(rule).filter((p) => {
+      if (!explicit) return true;
+      const n = norm(p);
+      return [...explicit].some((e) => n === e || n.endsWith("/" + e));
+    });
     if (files.length === 0) {
+      // `--changed` 过滤后这条规则与本次提交无关：静默跳过，不算「登记失效」。
+      // 只有全量模式下空目录才是登记有问题。
+      if (explicit) continue;
       all.push({ file: rule.file || rule.dir, error: "登记的文件/目录不存在或为空" });
       continue;
     }
@@ -158,7 +177,7 @@ function main() {
   }
 
   if (all.length === 0) {
-    console.log(`✅ 事实源判据：${SOURCE_TRUTH_FILES.length} 条规则覆盖 ${scanned} 个文件，没有「按计数选源」的启发式`);
+    console.log(`✅ 事实源判据：覆盖 ${scanned} 个文件，没有「按计数选源」的启发式`);
     return;
   }
   console.log(`❌ 事实源判据：${all.length} 处出现了「按计数/长度比较」来选源：`);

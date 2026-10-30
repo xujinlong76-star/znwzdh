@@ -168,8 +168,22 @@ export function checkSource(src, rule) {
 
 function main() {
   const asJson = process.argv.includes("--json");
+  /**
+   * `--changed`：只扫位置参数里给的文件，不扫登记表全集。
+   * pre-commit 用这个档——与 mock-hygiene 同一套纪律：
+   * **pre-commit 的检查范围应当等于本次提交集**，全仓口径归全量测试。
+   */
+  const changedIdx = process.argv.indexOf("--changed");
+  const useChanged = changedIdx !== -1;
+  const explicit = useChanged
+    ? process.argv.slice(changedIdx + 1).filter((a) => !a.startsWith("--")).map((p) => p.replace(/\\/g, "/"))
+    : null;
+  const rules = explicit
+    ? CLEANUP_RULES.filter((r) => explicit.some((p) => p === r.file || p.endsWith("/" + r.file)))
+    : CLEANUP_RULES;
+
   const all = [];
-  for (const rule of CLEANUP_RULES) {
+  for (const rule of rules) {
     const p = join(ROOT, rule.file);
     if (!existsSync(p)) {
       all.push({ file: rule.file, error: "登记的文件不存在" });
@@ -185,7 +199,7 @@ function main() {
   }
 
   if (all.length === 0) {
-    console.log(`✅ 清理动作覆盖：${CLEANUP_RULES.length} 条规则，每条出口都有清理调用`);
+    console.log(`✅ 清理动作覆盖：${rules.length} 条规则，每条出口都有清理调用`);
     return;
   }
   console.log(`❌ 清理动作覆盖：${all.length} 处出口没有清理调用：`);

@@ -119,7 +119,8 @@
       "script": "scripts/check-cleanup-coverage.mjs",
       "blocks": true,
       "test": "scripts/check-cleanup-coverage.test.ts",
-      "why": "清理动作漏一条出口（尤其是提前 return）就是「删了还在」；登记制 + 每条 return 都见清理"
+      "why": "清理动作漏一条出口（尤其是提前 return）就是「删了还在」；登记制 + 每条 return 都见清理；只查本次提交集（--changed），全仓口径归全量测试",
+      "args": "--changed"
     },
     {
       "name": "source-truth",
@@ -127,7 +128,8 @@
       "script": "scripts/check-source-truth.mjs",
       "blocks": true,
       "test": "scripts/check-source-truth.test.ts",
-      "why": "读路径按计数选源会把影子副本当正本（KV 74 条 vs 表 5578 条）；判据必须是显式开关"
+      "why": "读路径按计数选源会把影子副本当正本（KV 74 条 vs 表 5578 条）；判据必须是显式开关；只查本次提交集（--changed），全仓口径归全量测试",
+      "args": "--changed"
     },
     {
       "name": "typecheck",

@@ -214,6 +214,17 @@ describe('/search 页面契约', () => {
     expect(view).toContain('@开发工具 编辑器')
   })
 
+  it('负向过滤（-词）会悄悄缩小结果：用法要写出来，生效时要点名排除了什么', () => {
+    const view = overlaySource('src/app/search/search-results.tsx')
+    // 算子提示里补上 -词 与一个真实可用的示例
+    expect(view).toContain('-词')
+    expect(view).toContain('排除关键词')
+    expect(view).toContain('笔记 -广告')
+    // 中枢在 excludedTerms 里回报被排除的词；视图必须取出来并如实说明
+    expect(view).toContain('result?.excludedTerms')
+    expect(view).toContain('已排除关键词：{excluded.join')
+  })
+
   it('巡检打不开的站点不静默消失：第 1 页补取 broken，按字面命中过滤并如实分区展示', () => {
     const server = overlaySource('src/lib/server/search.ts')
     expect(server).toContain("searchApiPath(q, page, tag, { status: 'broken' })")

@@ -370,6 +370,7 @@ export function SearchResults({ q, page, tag, result, failed, unavailable }: Sea
   const suggestions = result?.suggestions ?? []
   const popular = result?.popular ?? []
   const didYouMean = result?.didYouMean
+  const excluded = result?.excludedTerms ?? []
   const semanticsOff = result !== null && result.semanticAvailable === false
   // 语义 KNN 对任何输入都会返回最近邻，乱码查询也会"有结果"。
   // 整页没有一条关键词命中时如实说明，别让用户以为这些就是匹配项。
@@ -440,9 +441,11 @@ export function SearchResults({ q, page, tag, result, failed, unavailable }: Sea
                 示例必须真实可点回结果（#开源 react / @开发工具 编辑器都实测有命中）。 */}
             <p className="text-[11px] text-muted-foreground">
               支持 <code className="rounded bg-muted px-1 py-0.5">#标签</code>、
-              <code className="rounded bg-muted px-1 py-0.5">@分类</code> 限定范围，例如{' '}
+              <code className="rounded bg-muted px-1 py-0.5">@分类</code> 限定范围，
+              <code className="rounded bg-muted px-1 py-0.5">-词</code> 排除关键词；例如{' '}
               <code className="rounded bg-muted px-1 py-0.5">#开源 react</code>、
-              <code className="rounded bg-muted px-1 py-0.5">@开发工具 编辑器</code>。
+              <code className="rounded bg-muted px-1 py-0.5">@开发工具 编辑器</code>、
+              <code className="rounded bg-muted px-1 py-0.5">笔记 -广告</code>。
             </p>
           </header>
 
@@ -528,6 +531,11 @@ export function SearchResults({ q, page, tag, result, failed, unavailable }: Sea
                 <p className="text-[11px] text-muted-foreground">
                   已理解查询条件：{inferred.join('、')}。
                 </p>
+              ) : null}
+
+              {/* 负向过滤同样会让结果变少：不说出来用户只会觉得「怎么搜不到」 */}
+              {!failed && excluded.length > 0 ? (
+                <p className="text-[11px] text-muted-foreground">已排除关键词：{excluded.join('、')}。</p>
               ) : null}
 
               {!failed && didYouMean ? (

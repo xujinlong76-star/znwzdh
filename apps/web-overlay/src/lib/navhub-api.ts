@@ -2943,6 +2943,26 @@ export interface HubAiQuotaSnapshot {
   system: { calls: HubAiQuotaMeter; tokens: HubAiQuotaMeter }
 }
 
+export interface HubAiDailyModelPoint {
+  model: string
+  calls: number
+  tokens: number
+  /** 该模型当日已知成本（元）；无价快照为 null，绝不折算成 0 */
+  costRmb: number | null
+}
+
+/** 按本地自然日分桶：日堆叠柱 + 累计花费线的数据源（day 为 YYYY-MM-DD，升序） */
+export interface HubAiDailyTrendPoint {
+  day: string
+  calls: number
+  tokens: number
+  errorCalls: number
+  /** 当日已知成本合计；一条带价调用都没有时为 null */
+  costRmb: number | null
+  pricedCalls: number
+  models: HubAiDailyModelPoint[]
+}
+
 export interface HubAiObservabilityResponse {
   hasData?: boolean
   window: string
@@ -2977,6 +2997,10 @@ export interface HubAiObservabilityResponse {
   byScenario: HubAiScenarioStat[]
   byModel?: HubAiModelStat[]
   hourlyTrend: HubAiHourlyTrendPoint[]
+  /** 按本地自然日×模型分桶（日堆叠柱 + 累计花费线）；旧中枢不返回时为 undefined */
+  dailyTrend?: HubAiDailyTrendPoint[]
+  /** 明细样本被截断：日柱/分位数只反映最近一批样本，与窗口合计对不上 */
+  truncated?: boolean
   recentLogs: HubAiInvocationLog[]
 }
 

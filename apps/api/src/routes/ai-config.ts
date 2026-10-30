@@ -235,6 +235,21 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       byScenario,
       byModel: agg.byModel,
       hourlyTrend,
+      /**
+       * 按本地自然日 × 模型分桶：日堆叠柱 + 累计花费线的数据源。
+       * costRmb 为 null 表示当天没有带价快照的调用——「未知」不折成 0。
+       */
+      dailyTrend: agg.daily.map((d) => ({
+        day: d.day,
+        calls: d.calls,
+        tokens: d.tokens,
+        errorCalls: d.errorCalls,
+        costRmb: d.costRmb,
+        pricedCalls: d.pricedCalls,
+        models: d.byModel,
+      })),
+      /** 明细样本被截断时日柱与窗口合计对不上，界面必须如实标注 */
+      truncated: agg.truncated,
       recentLogs,
     };
   });

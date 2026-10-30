@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { LlmDailyCostChart } from '@/components/ai/llm-daily-cost-chart'
 import {
   fetchAdminAiObservability,
   hubGet,
@@ -472,6 +473,9 @@ export function AiObservabilityPanel() {
           </>
         )}
       </div>
+
+      {/* 每日调用量与累计花费：按天×模型堆叠柱 + 快照口径累计成本线（补上「随时间怎么变」的连续时间轴） */}
+      <LlmDailyCostChart daily={data?.dailyTrend} truncated={data?.truncated} />
 
       {/* 中部图表区：24小时走势 + 业务场景分布 */}
       <div className="grid gap-6 lg:grid-cols-3">

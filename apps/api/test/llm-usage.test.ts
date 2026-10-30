@@ -146,6 +146,64 @@ describe("aggregateLlmUsage 聚合语义", () => {
     expect(agg.hourly.reduce((a, h) => a + h.calls, 0)).toBe(1);
   });
 
+  it("日×模型分桶：按本地自然日升序，无价日 costRmb 为 null 而不是 0", async () => {
+    await ctx.repo.run("DELETE FROM llm_usage");
+    // 用同一次取样的「此刻」推两天的正午：跨午夜执行也不会把三条拆到三天
+    const ref = new Date();
+    const day = (offsetDays: number) => {
+      const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() + offsetDays, 12, 0, 0);
+      return d.getTime();
+    };
+    // 两条昨天（一条带价 ¥1、一条无价且失败）、一条今天（模型 B，带价 ¥1）
+    await ctx.repo.recordLlmUsage({
+      scenario: "daily_a", source: "system", model: "mA", promptTokens: 1000, ok: true,
+      price: { promptPer1kRmb: 1, completionPer1kRmb: 2, source: "book" },
+    });
+    await ctx.repo.recordLlmUsage({ scenario: "daily_b", source: "system", model: "mA", ok: false, errorCode: "timeout" });
+    await ctx.repo.recordLlmUsage({
+      scenario: "daily_c", source: "system", model: "mB", completionTokens: 500, ok: true,
+      price: { promptPer1kRmb: 1, completionPer1kRmb: 2, source: "book" },
+    });
+    await ctx.repo.run("UPDATE llm_usage SET created_at = ? WHERE scenario IN ('daily_a','daily_b')", [day(-1)]);
+    await ctx.repo.run("UPDATE llm_usage SET created_at = ? WHERE scenario = 'daily_c'", [day(0)]);
+
+    const agg = await ctx.repo.aggregateLlmUsage({ since: day(-2) });
+    expect(agg.daily).toHaveLength(2);
+    expect(agg.daily[0].day < agg.daily[1].day).toBe(true);
+    expect(agg.daily[0].day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    const [yesterday, today] = agg.daily;
+    expect(yesterday.calls).toBe(2);
+    expect(yesterday.errorCalls).toBe(1);
+    // 无价调用不折算成 0：当日已知成本只有带价那条
+    expect(yesterday.costRmb).toBe(1);
+    expect(yesterday.pricedCalls).toBe(1);
+    expect(yesterday.byModel).toHaveLength(1);
+    expect(yesterday.byModel[0]).toMatchObject({ model: "mA", calls: 2, costRmb: 1 });
+
+    expect(today.calls).toBe(1);
+    expect(today.costRmb).toBe(1);
+    expect(today.byModel[0]).toMatchObject({ model: "mB", calls: 1, costRmb: 1 });
+    expect(agg.daily.reduce((a, d) => a + d.calls, 0)).toBe(3);
+    expect(agg.truncated).toBe(false);
+  });
+
+  it("明细行超过 maxRows 时 truncated=true，日柱只覆盖最近一批样本", async () => {
+    await ctx.repo.run("DELETE FROM llm_usage");
+    const since = Date.now() - 60_000;
+    for (let i = 0; i < 105; i++) {
+      await ctx.repo.recordLlmUsage({ scenario: "enrich", source: "system", model: "m", ok: true });
+    }
+    const cut = await ctx.repo.aggregateLlmUsage({ since, maxRows: 100 });
+    expect(cut.truncated).toBe(true);
+    expect(cut.totalCalls).toBe(105);
+    // 截断从最旧一端丢：分桶样本只剩 100 条
+    expect(cut.daily.reduce((a, d) => a + d.calls, 0)).toBe(100);
+    const full = await ctx.repo.aggregateLlmUsage({ since });
+    expect(full.truncated).toBe(false);
+    expect(full.daily.reduce((a, d) => a + d.calls, 0)).toBe(105);
+  });
+
   it("pruneLlmUsage 删除窗口之前的行并返回条数", async () => {
     await ctx.repo.run("DELETE FROM llm_usage");
     await ctx.repo.recordLlmUsage({ scenario: "enrich", source: "system", model: "m", ok: true });

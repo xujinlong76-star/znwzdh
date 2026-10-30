@@ -98,6 +98,27 @@ export interface LlmUsageAggregate {
   bySource: Array<{ source: string; count: number; tokens: number }>;
   /** 最近 24 小时（本地时区）真实分桶；没有调用的小时为 0 */
   hourly: Array<{ hour: number; calls: number; tokens: number; avgLatencyMs: number }>;
+  /**
+   * 按本地自然日 × 模型分桶（日堆叠柱 + 累计花费线的数据源）。
+   * 与 hourly 同一批明细行、同一套本地时区分桶语义；`costRmb` 为 null 表示
+   * 当天一条带价调用都没有——「未知」不落 0。按 day 升序。
+   */
+  daily: Array<{
+    /** 本地日期 YYYY-MM-DD */
+    day: string;
+    calls: number;
+    tokens: number;
+    errorCalls: number;
+    /** 该日已知成本合计（元）；全无单价快照时为 null */
+    costRmb: number | null;
+    pricedCalls: number;
+    byModel: Array<{ model: string; calls: number; tokens: number; costRmb: number | null }>;
+  }>;
+  /**
+   * 明细行被 maxRows 截断时为 true：daily / 分位数 / hourly 只反映
+   * 最近 maxRows 条（截断从最旧一端丢），日柱与合计会对不上——界面必须如实标注。
+   */
+  truncated: boolean;
   /** 统计窗口内最早一条的时间；无数据为 null */
   firstAt: number | null;
 }
@@ -203,7 +224,8 @@ export async function aggregateLlmUsage(
   );
 
   const rows = await repo.raw(
-    "SELECT created_at, latency_ms, prompt_tokens, completion_tokens, ok FROM llm_usage WHERE created_at >= ? AND created_at <= ? ORDER BY created_at DESC LIMIT ?",
+    // model / cost_rmb 一并取：日×模型分桶与日成本线同源同批样本（见 daily 的注释）
+    "SELECT created_at, latency_ms, prompt_tokens, completion_tokens, ok, model, cost_rmb FROM llm_usage WHERE created_at >= ? AND created_at <= ? ORDER BY created_at DESC LIMIT ?",
     [since, until, maxRows],
   );
 
@@ -276,9 +298,20 @@ export async function aggregateLlmUsage(
     });
   }
 
-  // 延迟分位数与小时分桶：来自明细行
+  // 延迟分位数、小时分桶与日×模型分桶：都来自同一批明细行（同一个本地时区口径）
   const latencies: number[] = [];
   const buckets = new Map<number, { calls: number; tokens: number; latency: number }>();
+  const dayMap = new Map<
+    string,
+    {
+      calls: number;
+      tokens: number;
+      errorCalls: number;
+      cost: number | null;
+      pricedCalls: number;
+      models: Map<string, { calls: number; tokens: number; cost: number | null }>;
+    }
+  >();
   // firstAt 取聚合里的 MIN(created_at)：明细行有 LIMIT，不能用来判断窗口起点
   let firstAt: number | null = null;
   for (const row of grouped) {
@@ -291,12 +324,40 @@ export async function aggregateLlmUsage(
     const lat = num(row.latency_ms);
     const tokens = num(row.prompt_tokens) + num(row.completion_tokens);
     if (lat > 0) latencies.push(lat);
-    const hour = new Date(at).getHours();
+    const atDate = new Date(at);
+    const hour = atDate.getHours();
     const b = buckets.get(hour) ?? { calls: 0, tokens: 0, latency: 0 };
     b.calls += 1;
     b.tokens += tokens;
     b.latency += lat;
     buckets.set(hour, b);
+
+    // 日×模型：本地自然日（与 hourly 的本地小时同一时区口径）。
+    // 不用 SQL 的日期函数分桶：sqlite 与 PG 的时区语义不同（见本函数总注释）。
+    const day = `${atDate.getFullYear()}-${String(atDate.getMonth() + 1).padStart(2, "0")}-${String(atDate.getDate()).padStart(2, "0")}`;
+    const cost = row.cost_rmb == null ? null : num(row.cost_rmb);
+    const d = dayMap.get(day) ?? {
+      calls: 0,
+      tokens: 0,
+      errorCalls: 0,
+      cost: null,
+      pricedCalls: 0,
+      models: new Map<string, { calls: number; tokens: number; cost: number | null }>(),
+    };
+    d.calls += 1;
+    d.tokens += tokens;
+    if (!(row.ok === true || num(row.ok) === 1)) d.errorCalls += 1;
+    if (cost !== null) {
+      d.cost = (d.cost ?? 0) + cost;
+      d.pricedCalls += 1;
+    }
+    const modelKey = String(row.model ?? "unknown");
+    const dm = d.models.get(modelKey) ?? { calls: 0, tokens: 0, cost: null };
+    dm.calls += 1;
+    dm.tokens += tokens;
+    if (cost !== null) dm.cost = (dm.cost ?? 0) + cost;
+    d.models.set(modelKey, dm);
+    dayMap.set(day, d);
   }
   latencies.sort((a, b) => a - b);
 
@@ -355,6 +416,28 @@ export async function aggregateLlmUsage(
       .map(([source, v]) => ({ source, count: v.count, tokens: v.tokens }))
       .sort((a, b) => b.count - a.count),
     hourly,
+    // 日×模型升序输出；单日内的模型按调用数降序。堆叠柱的图例/堆叠顺序由
+    // 前端按窗口合计统一排（每日各自排序会让同一模型在不同日换层）
+    daily: Array.from(dayMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([day, v]) => ({
+        day,
+        calls: v.calls,
+        tokens: v.tokens,
+        errorCalls: v.errorCalls,
+        costRmb: v.cost === null ? null : Number(v.cost.toFixed(6)),
+        pricedCalls: v.pricedCalls,
+        byModel: Array.from(v.models.entries())
+          .map(([model, mv]) => ({
+            model,
+            calls: mv.calls,
+            tokens: mv.tokens,
+            costRmb: mv.cost === null ? null : Number(mv.cost.toFixed(6)),
+          }))
+          .sort((a, b) => b.calls - a.calls || a.model.localeCompare(b.model)),
+      })),
+    // 明细行被 LIMIT 截断（从最旧一端丢）：daily / hourly / 分位数只反映最近 maxRows 条
+    truncated: totalCalls > rows.length,
     firstAt,
   };
 }

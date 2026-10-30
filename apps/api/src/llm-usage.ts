@@ -42,6 +42,19 @@ export interface CallLlmOptions {
    * 共享这一个预算；耗尽即失败，见 packages/ai/src/deadline.ts 的说明。
    */
   deadlineAt?: number;
+  /**
+   * 备用池轮换退避的接缝（默认真实等待 + `Math.random` 抖动）。
+   * 与 `fetchImpl` 同类的注入点，供守卫测试断言等待行为而不测墙钟。
+   */
+  backoff?: Partial<LlmBackoffHooks>;
+  /**
+   * 轮换预算（默认进程级共享的那只）。
+   *
+   * 之所以留注入点：它是「过去 windowMs 内重试/成功比」的滑动窗口，判定结果取决于
+   * 时序与别的用例留下的事件——同一文件里的多个轮换用例会互相抢同一份配额
+   * （实测第 6 次轮换被判「不可重试」，红的是测试顺序而不是代码）。生产路径不传。
+   */
+  retryBudget?: RetryBudget;
 }
 
 /**
@@ -61,6 +74,93 @@ export const INTERACTIVE_LLM_BUDGET_MS = 120_000;
  * 窗口内重试占比超过阈值即停止轮换，让请求快速失败。
  */
 const fallbackRetryBudget = new RetryBudget({ ratio: 0.2, minRetries: 5, windowMs: 10_000, maxRetries: 50 });
+
+/** 本地退避：首家用 500ms 量级，每失败一家翻倍，单次封顶 10s（备用池最多 3 家） */
+const LLM_BACKOFF_BASE_MS = 500;
+const LLM_BACKOFF_MAX_MS = 10_000;
+/** 等待之后至少要给下一次请求留出的余量；放不下就不值得再等 */
+const LLM_RETRY_MIN_HEADROOM_MS = 1_000;
+
+export interface LlmRetryPlan {
+  /** 是否继续轮换下一个候选 */
+  proceed: boolean;
+  /** 继续之前需要等待的毫秒数；proceed=false 时恒为 0 */
+  waitMs: number;
+  /** 等待值的来源：服务端建议 / 本地指数退避 / 决定不再重试 */
+  source: "server" | "backoff" | "stop";
+}
+
+/**
+ * 轮换备用池之前的等待决策。
+ *
+ * 三条判据按优先级：
+ *  1. 服务端给了 `retryAfterMs` 就按它等。比服务端允许的时间更早重试不会成功，
+ *     且失败请求同样计入配额（越打越糟）；建议值超出本进程能承受的封顶时
+ *     **不缩短后照打**，而是放弃轮换——把 90s 压成 10s 再发一次，只是用一次
+ *     注定失败的请求换一点虚假进度。
+ *  2. 没下发头时按指数退避 + 抖动（抖动取值区间为 `[0.5×上限, 上限]`）。轮换是
+ *     进程级行为，没有抖动时同一时刻的成千个请求会齐步走进同一家备用网关。
+ *  3. 端到端预算优先于以上两条：等待吃的是用户等待时间，剩余预算连一次带余量
+ *     的请求都放不下时，等下去只会把失败推迟到用户已经离开之后。
+ */
+export function planLlmRetryWait(input: {
+  retryAfterMs?: number;
+  /** 本次请求内已失败的候选数（从 1 开始） */
+  failures: number;
+  deadlineAt?: number;
+  now?: number;
+  random?: () => number;
+}): LlmRetryPlan {
+  const random = input.random ?? Math.random;
+  const remaining = input.deadlineAt === undefined ? Number.POSITIVE_INFINITY : input.deadlineAt - (input.now ?? Date.now());
+  const serverMs =
+    typeof input.retryAfterMs === "number" && Number.isFinite(input.retryAfterMs) && input.retryAfterMs >= 0
+      ? Math.round(input.retryAfterMs)
+      : undefined;
+
+  let waitMs: number;
+  if (serverMs !== undefined) {
+    if (serverMs > LLM_BACKOFF_MAX_MS) return { proceed: false, waitMs: 0, source: "stop" };
+    waitMs = serverMs;
+  } else {
+    const attempt = Math.max(1, Math.floor(input.failures));
+    const ceiling = Math.min(LLM_BACKOFF_BASE_MS * 2 ** (attempt - 1), LLM_BACKOFF_MAX_MS);
+    waitMs = Math.round(ceiling * (0.5 + random() * 0.5));
+  }
+
+  if (Number.isFinite(remaining) && remaining <= waitMs + LLM_RETRY_MIN_HEADROOM_MS) {
+    return { proceed: false, waitMs: 0, source: "stop" };
+  }
+  return { proceed: true, waitMs, source: serverMs !== undefined ? "server" : "backoff" };
+}
+
+/**
+ * 可中断的等待。signal 已中断或等待期间中断时返回 false。
+ *
+ * 监听器在正常醒来时主动移除：这是常驻进程，每次重试挂一个不清理的 abort
+ * 监听器会随请求数线性泄漏。
+ */
+export async function sleepAbortable(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (ms <= 0) return !signal?.aborted;
+  if (signal?.aborted) return false;
+  return await new Promise<boolean>((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve(true);
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** 等待实现与抖动源的可注入接缝：守卫测试据此断言「等了、等了多久」而不测墙钟 */
+export interface LlmBackoffHooks {
+  sleep: (ms: number, signal?: AbortSignal) => Promise<boolean>;
+  random: () => number;
+}
 
 /**
  * 封装带用量记录的模型调用
@@ -86,8 +186,14 @@ export async function callLlm(
     { provider: resolved.provider, source: resolved.source },
     ...resolved.fallbacks.map((fb) => ({ provider: fb, source: "fallback" })),
   ];
+  const backoff: LlmBackoffHooks = {
+    sleep: opts.backoff?.sleep ?? sleepAbortable,
+    random: opts.backoff?.random ?? Math.random,
+  };
+  const budget = opts.retryBudget ?? fallbackRetryBudget;
 
   let lastError: unknown = null;
+  let failures = 0;
   for (const { provider, source } of candidates) {
     /**
      * 总预算耗尽 ⇒ 不再发起任何请求。闸门放在最前：备用池轮换是「用户等待时间的乘法」，
@@ -99,6 +205,24 @@ export async function callLlm(
     }
     // 无密钥但显式放行内网的本地网关（Ollama 等）同样可调用
     if (!llmProviderReady(provider)) continue;
+    /**
+     * 换下一家之前先等（决策见 planLlmRetryWait）。等待放在轮次开头而不是失败的
+     * catch 里：最后一家失败之后已经没有候选可打，在那里等待等于让用户白等。
+     */
+    if (failures > 0) {
+      const plan = planLlmRetryWait({
+        retryAfterMs: lastError instanceof LlmError ? lastError.retryAfterMs : undefined,
+        failures,
+        deadlineAt: opts.deadlineAt,
+        random: backoff.random,
+      });
+      if (!plan.proceed) break;
+      /**
+       * 等待期间用户按下「停止」⇒ 立刻停，与上面 aborted 分支同一口径：
+       * 不打下一家，也不再多记一行失败用量。
+       */
+      if (!(await backoff.sleep(plan.waitMs, opts.signal))) break;
+    }
     // 深度思考：调用点显式指定优先，否则用该 provider 的配置默认值（产品默认开）
     const thinking = opts.thinking ?? provider.thinking ?? true;
     const chatOpts: ChatOptions = { ...baseChatOpts, thinking };
@@ -109,7 +233,7 @@ export async function callLlm(
     try {
       const res = await chatCompletion(effectiveProvider, chatOpts);
       const latencyMs = res.latencyMs || (Date.now() - startedAt);
-      fallbackRetryBudget.recordSuccess();
+      budget.recordSuccess();
 
       await ctx.repo.recordLlmUsage({
         scenario: opts.scenario,
@@ -165,9 +289,10 @@ export async function callLlm(
        *  - 预算耗尽意味着池子整体不健康（重试占比过高），再轮换是放大故障而不是吸收故障。
        */
       if (!isRetryableLlmCode(errorCode, err instanceof LlmError ? err.status : undefined)) break;
-      if (!fallbackRetryBudget.canRetry()) break;
-      fallbackRetryBudget.recordRetry();
-      // 继续尝试备用模型池
+      if (!budget.canRetry()) break;
+      budget.recordRetry();
+      // 这里只记「决定再打一家」；实际等待在下一轮开头做，见上面的 planLlmRetryWait
+      failures += 1;
     }
   }
 
@@ -209,14 +334,31 @@ export async function* callLlmStream(
     { provider: resolved.provider, source: resolved.source },
     ...resolved.fallbacks.map((fb) => ({ provider: fb, source: "fallback" })),
   ];
+  const backoff: LlmBackoffHooks = {
+    sleep: opts.backoff?.sleep ?? sleepAbortable,
+    random: opts.backoff?.random ?? Math.random,
+  };
+  const budget = opts.retryBudget ?? fallbackRetryBudget;
 
   let lastError: unknown = null;
+  let failures = 0;
   for (const { provider, source } of candidates) {
     if (opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) {
       lastError ??= new LlmError("timeout", "模型流式调用已超出总预算");
       break;
     }
     if (!llmProviderReady(provider)) continue;
+    /** 与非流式同一套等待决策（见 callLlm）；此时还没有字节出门，等待可被「停止」打断 */
+    if (failures > 0) {
+      const plan = planLlmRetryWait({
+        retryAfterMs: lastError instanceof LlmError ? lastError.retryAfterMs : undefined,
+        failures,
+        deadlineAt: opts.deadlineAt,
+        random: backoff.random,
+      });
+      if (!plan.proceed) break;
+      if (!(await backoff.sleep(plan.waitMs, opts.signal))) break;
+    }
     const thinking = opts.thinking ?? provider.thinking ?? true;
     const chatOpts: ChatOptions = { ...baseChatOpts, thinking };
     const effectiveProvider: LlmProvider = opts.timeoutMs
@@ -230,7 +372,7 @@ export async function* callLlmStream(
         // 两家模型的推理过程拼成一段，比失败更糟
         if (event.type === "delta" || event.type === "reasoning") emitted = true;
         if (event.type === "end") {
-          fallbackRetryBudget.recordSuccess();
+          budget.recordSuccess();
           await ctx.repo.recordLlmUsage({
             scenario: opts.scenario,
             source,
@@ -269,8 +411,9 @@ export async function* callLlmStream(
       // 已经把内容发出去再换模型 = 两段回答拼接，只能原样失败
       if (emitted) throw err;
       if (!isRetryableLlmCode(errorCode, err instanceof LlmError ? err.status : undefined)) throw err;
-      if (!fallbackRetryBudget.canRetry()) throw err;
-      fallbackRetryBudget.recordRetry();
+      if (!budget.canRetry()) throw err;
+      budget.recordRetry();
+      failures += 1;
     }
   }
 

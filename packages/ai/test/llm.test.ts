@@ -9,6 +9,7 @@ import {
   chatStream,
   extractSseDelta,
   maskApiKey,
+  parseRetryAfterMs,
   resetLlmCapabilityCache,
   type LlmProvider,
   type LlmStreamEvent,
@@ -415,5 +416,94 @@ describe("网关：错误类型", () => {
     expect(err.code).toBe("http");
     expect(err.status).toBe(500);
     expect(err.detail).toBe("upstream");
+    // 没下发等待建议时保持 undefined，不能用 0 冒充「服务端说可以立刻重试」
+    expect(err.retryAfterMs).toBeUndefined();
+  });
+});
+
+describe("网关：Retry-After 解析", () => {
+  const NOW = Date.parse("2026-10-30T04:00:00.000Z");
+  const H = (init: Record<string, string>) => new Headers(init);
+
+  it("retry-after 的秒数形态（整数 / 0 / 小数）", () => {
+    expect(parseRetryAfterMs(H({ "retry-after": "30" }), NOW)).toBe(30_000);
+    expect(parseRetryAfterMs(H({ "retry-after": "0" }), NOW)).toBe(0);
+    expect(parseRetryAfterMs(H({ "retry-after": "2.5" }), NOW)).toBe(2_500);
+    expect(parseRetryAfterMs(H({ "retry-after": " 12 " }), NOW)).toBe(12_000);
+  });
+
+  it("retry-after-ms 给毫秒粒度且优先于 retry-after（网关两者同时下发的既有口径）", () => {
+    expect(parseRetryAfterMs(H({ "retry-after-ms": "2000", "retry-after": "30" }), NOW)).toBe(2_000);
+    // 毫秒头是脏值时退回秒头，而不是直接判定「没有建议」
+    expect(parseRetryAfterMs(H({ "retry-after-ms": "abc", "retry-after": "10" }), NOW)).toBe(10_000);
+  });
+
+  it("HTTP 日期按绝对时间点折算；已经过去的时间点折算为 0", () => {
+    expect(parseRetryAfterMs(H({ "retry-after": new Date(NOW + 45_000).toUTCString() }), NOW)).toBe(45_000);
+    expect(parseRetryAfterMs(H({ "retry-after": new Date(NOW - 60_000).toUTCString() }), NOW)).toBe(0);
+  });
+
+  it("脏值一律 undefined：缺失、空、负数、科学计数法、超过 3 天", () => {
+    expect(parseRetryAfterMs(H({}), NOW)).toBeUndefined();
+    for (const v of ["", "   ", "-5", "abc", "1e9", "not-a-date", "300000", "259201"]) {
+      expect(parseRetryAfterMs(H({ "retry-after": v }), NOW)).toBeUndefined();
+    }
+    // 3 天整仍在界限内（判据是「超过」而不是「达到」）
+    expect(parseRetryAfterMs(H({ "retry-after": "259200" }), NOW)).toBe(259_200_000);
+  });
+
+  it("非 IMF-fixdate 形态的日期不端给 Date.parse（V8 会把 -5 也解析成年份）", () => {
+    // 同样超 3 天的 HTTP-date 与超 3 天的秒数同口径：按脏数据处理
+    expect(parseRetryAfterMs(H({ "retry-after": new Date(NOW + 4 * 86_400_000).toUTCString() }), NOW)).toBeUndefined();
+    expect(parseRetryAfterMs(H({ "retry-after": "Wednesday, 30-Oct-26 04:00:45 GMT" }), NOW)).toBeUndefined();
+  });
+
+  it("429 把等待建议挂在 LlmError 上（备用池轮换的等待判据来源）", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify({ error: "slow down" }), {
+        status: 429,
+        headers: { "content-type": "application/json", "retry-after": "20" },
+      });
+    const err = await chatCompletion(provider(), {
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl,
+    }).catch((e) => e as LlmError);
+    expect(err).toBeInstanceOf(LlmError);
+    expect(err.code).toBe("rate_limit");
+    expect(err.retryAfterMs).toBe(20_000);
+  });
+
+  it("503 带等待建议；401 即便下发该头也不带（不可重试的状态码不该诱导等待）", async () => {
+    const gated: typeof fetch = async () =>
+      new Response("{}", { status: 503, headers: { "retry-after": "7" } });
+    const blocked = await chatCompletion(provider(), { messages: [{ role: "user", content: "hi" }], fetchImpl: gated }).catch(
+      (e) => e as LlmError,
+    );
+    expect(blocked.retryAfterMs).toBe(7_000);
+
+    const unauthorized: typeof fetch = async () =>
+      new Response("{}", { status: 401, headers: { "retry-after": "99" } });
+    const auth = await chatCompletion(provider(), {
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl: unauthorized,
+    }).catch((e) => e as LlmError);
+    expect(auth.code).toBe("auth");
+    expect(auth.retryAfterMs).toBeUndefined();
+  });
+
+  it("流式分支同口径：429 的 retry-after 也挂在抛出的 LlmError 上", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify({ error: "slow down" }), {
+        status: 429,
+        headers: { "content-type": "application/json", "retry-after-ms": "1500" },
+      });
+    const gen = chatStream(provider(), { messages: [{ role: "user", content: "hi" }], fetchImpl });
+    const err = await gen
+      .next()
+      .then(() => null)
+      .catch((e) => e as LlmError);
+    expect(err).not.toBeNull();
+    expect(err?.code).toBe("rate_limit");
+    expect(err?.retryAfterMs).toBe(1_500);
   });
 });

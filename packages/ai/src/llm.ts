@@ -142,13 +142,27 @@ export class LlmError extends Error {
   readonly status?: number;
   /** 服务端返回的可读片段（截断，不含请求头/密钥） */
   readonly detail?: string;
+  /**
+   * 上游等待建议（毫秒），来自 `retry-after` / `retry-after-ms` 响应头。
+   *
+   * 只有服务端真的下发了可解析的头才有值；没下发时保持 undefined，
+   * 由调用方退回本地退避策略——不能用猜出来的数冒充服务端意愿。
+   */
+  readonly retryAfterMs?: number;
 
-  constructor(code: LlmErrorCode, message: string, status?: number, detail?: string) {
+  constructor(
+    code: LlmErrorCode,
+    message: string,
+    status?: number,
+    detail?: string,
+    retryAfterMs?: number,
+  ) {
     super(message);
     this.name = "LlmError";
     this.code = code;
     this.status = status;
     this.detail = detail;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -325,11 +339,68 @@ async function readErrorDetail(res: Response): Promise<string> {
   }
 }
 
-function httpError(res: Response, detail: string): LlmError {
+/**
+ * `Retry-After` 的等待建议上限（秒）。RFC 9110 §10.2.3 禁止发送超过 3 天的
+ * HTTP-date，超过这个量级的建议按脏数据处理，不能让一次请求挂起半天。
+ */
+const RETRY_AFTER_MAX_SECONDS = 259_200;
+
+/** 非负秒数形态（整数或小数，负数与 `1e3` 之类的科学计数法都不认） */
+function parseRetryAfterSeconds(value: string | null): number | undefined {
+  const raw = value?.trim();
+  if (!raw || !/^\d+(?:\.\d+)?$/.test(raw)) return undefined;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds > RETRY_AFTER_MAX_SECONDS) return undefined;
+  return Math.round(seconds * 1000);
+}
+
+/**
+ * IMF-fixdate（RFC 9110 §5.6.7 的首选格式，如 `Wed, 30 Oct 2026 04:00:45 GMT`）。
+ * 只认这一种形态：V8 的 `Date.parse` 对 `-5`、`1e9` 这类脏值也会返回一个数，
+ * 直接端上去解析会把「读不懂的等待建议」变成一个凭空捏造的时间点。
+ */
+const IMF_FIXDATE = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/i;
+
+/**
+ * 从响应头取「服务端建议的等待毫秒数」。
+ *
+ * 形态与优先级按 Azure OpenAI 配额文档的口径：`retry-after-ms`（毫秒）优先，
+ * 其次 `retry-after` 的两种标准形态——非负秒数、HTTP 日期（按绝对时间点算）。
+ * 全部解析不出来时返回 undefined，调用方退回本地退避；不要用凭空猜的等待
+ * 冒充服务端意愿。
+ *
+ * 超过 3 天的建议按脏数据处理（RFC 9110 本就禁止发送超过 3 天的 HTTP-date），
+ * 不能让一次请求因一个失智的头挂起半天。
+ *
+ * `now` 可注入：HTTP-date 换算的是「距今多久」，测试不能依赖真实时钟。
+ */
+export function parseRetryAfterMs(headers: Headers, now: number = Date.now()): number | undefined {
+  const msRaw = headers.get("retry-after-ms")?.trim();
+  if (msRaw && /^\d+(?:\.\d+)?$/.test(msRaw)) {
+    const ms = Number(msRaw);
+    if (Number.isFinite(ms) && ms <= RETRY_AFTER_MAX_SECONDS * 1000) return Math.round(ms);
+  }
+  const seconds = parseRetryAfterSeconds(headers.get("retry-after"));
+  if (seconds !== undefined) return seconds;
+  const raw = headers.get("retry-after")?.trim();
+  if (!raw || !IMF_FIXDATE.test(raw)) return undefined;
+  const at = Date.parse(raw);
+  if (!Number.isFinite(at)) return undefined;
+  const delta = Math.round(at - now);
+  if (delta > RETRY_AFTER_MAX_SECONDS * 1000) return undefined;
+  return Math.max(0, delta);
+}
+
+function httpError(res: Response, detail: string, now: number = Date.now()): LlmError {
   const status = res.status;
+  /**
+   * 只在「这个状态码本来就值得再试」时才附上等待建议（与 isRetryableLlmCode
+   * 的可重试集合对齐）：401 的 Retry-After 传下去只会诱导一次无意义的轮换。
+   */
+  const retryAfterMs = status === 429 || status >= 500 ? parseRetryAfterMs(res.headers, now) : undefined;
   if (status === 401 || status === 403) return new LlmError("auth", "模型鉴权失败（HTTP " + status + "）", status, detail);
-  if (status === 429) return new LlmError("rate_limit", "模型限流（HTTP 429）", status, detail);
-  return new LlmError("http", "模型返回 HTTP " + status, status, detail);
+  if (status === 429) return new LlmError("rate_limit", "模型限流（HTTP 429）", status, detail, retryAfterMs);
+  return new LlmError("http", "模型返回 HTTP " + status, status, detail, retryAfterMs);
 }
 
 /** 合并外部 AbortSignal 与内部超时 */

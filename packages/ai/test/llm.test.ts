@@ -311,6 +311,32 @@ describe("网关：流式解析", () => {
     expect(calls[2].body.stream_options).toBeUndefined();
   });
 
+  it("能力记忆按 baseUrl|model 隔离：A 端点拒收不代表 B 端点也拒收", async () => {
+    const calls: Array<{ model: string; stream_options?: unknown }> = [];
+    const fetchImpl = (async (_url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body) as { model: string; stream_options?: unknown };
+      calls.push(body);
+      if (body.model === "iso-a" && body.stream_options) {
+        return jsonResponse({ error: { message: "Unsupported parameter: stream_options" } }, 400);
+      }
+      return sseResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n']);
+    }) as unknown as typeof fetch;
+
+    const a = { ...provider({ model: "iso-a" }) };
+    const b = { ...provider({ model: "iso-b" }), baseUrl: "http://203.0.113.9/v1" };
+
+    await collect(chatStream(a, { messages: [{ role: "user", content: "hi" }], fetchImpl }));
+    await collect(chatStream(a, { messages: [{ role: "user", content: "hi" }], fetchImpl }));
+    expect(calls[0].stream_options).toEqual({ include_usage: true });
+    // 第一次 400 后去参重试（calls[1]），第二次请求直接不带（calls[2]）
+    expect(calls[1].stream_options).toBeUndefined();
+    expect(calls[2].stream_options).toBeUndefined();
+
+    // 另一个端点不受 A 的记忆影响：仍然先尝试要 usage
+    await collect(chatStream(b, { messages: [{ role: "user", content: "hi" }], fetchImpl }));
+    expect(calls[3].stream_options).toEqual({ include_usage: true });
+  });
+
   it("reasoning_content 进入独立事件，bug 不混进正文", async () => {
     const sse =
       'data: {"choices":[{"delta":{"reasoning_content":"先想"}}]}\n\n' +

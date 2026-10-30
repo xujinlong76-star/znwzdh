@@ -16,7 +16,7 @@ import { llmProviderReadyAny, resolveLlm, type ResolvedLlm } from "../llm-config
 import { checkLlmQuota } from "../llm-quota.ts";
 import { callLlm, callLlmStream, INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
 import { citationOfSite, groundCopilotReply, type CopilotCitation } from "../copilot-grounding.ts";
-import { identityTrusted, requestIdentityOf, setupSseStream } from "./shared.ts";
+import { identityTrusted, requestIdentityOf, setupSseStream, startSseHeartbeat } from "./shared.ts";
 
 /**
  * 把「客户端半路挂断」翻译成 AbortSignal，供 `callLlm` 中断模型调用。
@@ -382,6 +382,14 @@ function replyFromGrounded(
   };
 }
 
+/** 是否值得发起模型调用：额度没超，且候选池里至少有一个可用提供方。 */
+export function canAttemptCopilotModel(
+  quotaInfo: CopilotQuotaInfo | null,
+  resolved: ResolvedLlm,
+): boolean {
+  return quotaInfo === null && llmProviderReadyAny(resolved);
+}
+
 /**
  * 本地混合检索兜底。
  *
@@ -485,8 +493,7 @@ async function streamCopilotReply(
   };
   // 首个 token 之前可能先做检索与排队：注释心跳防止中间层把空闲连接掐掉
   comment("connected");
-  const heartbeat = setInterval(() => comment("ping"), 10_000);
-  heartbeat.unref();
+  const heartbeat = startSseHeartbeat(comment);
 
   let rawContent = "";
   let reasoningContent = "";
@@ -561,7 +568,7 @@ async function streamCopilotReply(
     write({ type: "done", ...(final ?? buildFallbackBody(prep)) });
     return reply;
   } finally {
-    clearInterval(heartbeat);
+    heartbeat.stop();
     cleanupAbort();
     if (!reply.raw.writableEnded) {
       try {
@@ -615,12 +622,12 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
      * 「能跑」看整个候选池：主模型没配密钥但备用池可用时仍应尝试，而不是
      * 直接告诉用户未配置。
      */
-    if (stream && prep.quotaInfo === null && llmProviderReadyAny(prep.llm)) {
+    if (stream && canAttemptCopilotModel(prep.quotaInfo, prep.llm)) {
       return streamCopilotReply(ctx, reply, prep, clientSignal, cleanupAbort);
     }
 
     try {
-      if (prep.quotaInfo === null && llmProviderReadyAny(prep.llm)) {
+      if (canAttemptCopilotModel(prep.quotaInfo, prep.llm)) {
         const { candidates } = prep;
         const res = await callLlm(ctx, prep.llm, {
           scenario: "copilot",
@@ -672,7 +679,7 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
      * 「用户按了停止」在大盘里长成「降级答案成功」，取消率永远量不出来。
      */
     if (clientSignal.aborted) {
-      const reachedLlm = prep.quotaInfo === null && llmProviderReadyAny(prep.llm);
+      const reachedLlm = canAttemptCopilotModel(prep.quotaInfo, prep.llm);
       prep.recordCopilot("copilot_cancel", { stage: reachedLlm ? "llm" : "pre_llm" });
       reply.code(499);
       return { ok: false, error: "请求已取消", code: "client_closed" };

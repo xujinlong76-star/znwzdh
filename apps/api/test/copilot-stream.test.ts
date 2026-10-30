@@ -28,6 +28,7 @@ import { loadConfig } from "../src/config.ts";
 import { callLlmStream } from "../src/llm-usage.ts";
 import { checkLlmQuota } from "../src/llm-quota.ts";
 import { llmProviderReadyAny, resetSystemLlmConfig, saveSystemLlmConfig, type ResolvedLlm } from "../src/llm-config.ts";
+import { canAttemptCopilotModel } from "../src/routes/copilot.ts";
 
 const TARGET_URL = "https://obsidian.md";
 const HALLUCINATED_HOST = "hallucinated.example.com";
@@ -478,6 +479,42 @@ describe("SSE 出口：逐段增量 + 权威终稿", () => {
     expect(llmProviderReadyAny({ provider: { apiKey: null, allowPrivateNetwork: true }, fallbacks: [] })).toBe(true);
     expect(llmProviderReadyAny({ provider: unready, fallbacks: [unready] })).toBe(false);
     expect(llmProviderReadyAny(null)).toBe(false);
+
+    // 路由实际使用的判定：额度与候选池两轴，任一不满足都不调模型
+    const resolvedReady = { provider: ready, fallbacks: [] } as unknown as ResolvedLlm;
+    const resolvedPoolReady = { provider: unready, fallbacks: [ready] } as unknown as ResolvedLlm;
+    const resolvedUnready = { provider: unready, fallbacks: [unready] } as unknown as ResolvedLlm;
+    expect(canAttemptCopilotModel(null, resolvedReady)).toBe(true);
+    expect(canAttemptCopilotModel(null, resolvedPoolReady)).toBe(true);
+    expect(canAttemptCopilotModel(null, resolvedUnready)).toBe(false);
+    expect(
+      canAttemptCopilotModel(
+        { scope: "anonymous", metric: "calls", limit: 1, used: 1, retryAfterSeconds: 60 },
+        resolvedReady,
+      ),
+    ).toBe(false);
+  });
+
+  it("流式正文整段等于「用户已取消」⇒ done 标记 upstream_cancelled，并记取消事件", async () => {
+    hub.setPlan({ kind: "sse", chunks: [contentChunk("用户已取消"), DONE] });
+    const cancelBefore = (await eventRows("copilot_cancel")).length;
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/copilot/chat",
+      payload: { message: "离线 Markdown 编辑器", stream: true },
+    });
+
+    const done = framesOf(res.body).at(-1);
+    expect(done).toMatchObject({ type: "done", ok: false, code: "upstream_cancelled" });
+    expect(String(done?.error)).toContain("上游模型中断");
+
+    await until("取消事件落库", 2000, async () => (await eventRows("copilot_cancel")).length > cancelBefore);
+    const meta = JSON.parse((await eventRows("copilot_cancel")).at(-1)!.meta ?? "{}") as Record<string, unknown>;
+    expect(meta.stage).toBe("llm");
+    // 记账现状：网关在收到 end 时已按成功写行，哨兵判断发生在路由层之后。
+    // 这条用例只钉「用户可见契约」（不能把取消当模型回答）；成功率的记账口径
+    // 若要改成「哨兵不计成功」，需要改网关与用量回调，另立决策。
   });
 
   it("端点不给 usage ⇒ 记 0，不按字符数估算冒充真实成本", async () => {
@@ -798,6 +835,85 @@ describe("callLlmStream：取消即停、开流前可轮换、开流后不轮换
     expect(rows).toHaveLength(1);
     expect(rows[0].ok).toBe(0);
     expect(rows[0].error_code).toBe("network");
+  });
+
+  it("第一跳失败后总预算已耗尽 ⇒ 第二跳一个请求都不发", async () => {
+    let attempts = 0;
+    const fakeFetch = (async () => {
+      attempts += 1;
+      await sleep(120);
+      return new Response(JSON.stringify({ error: { message: "upstream boom" } }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      (async () => {
+        for await (const _event of callLlmStream(ctx, pool("stream-deadline", 2), {
+          scenario: "copilot_stream_deadline",
+          messages: [{ role: "user", content: "ping" }],
+          fetchImpl: fakeFetch,
+          deadlineAt: Date.now() + 80,
+        })) {
+          /* 不会进到这里 */
+        }
+      })(),
+    ).rejects.toThrow();
+
+    expect(attempts).toBe(1);
+    const rows = await usageRowsFor("copilot_stream_deadline");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ok).toBe(0);
+  });
+
+  it("单跳超时归 timeout，且不再尝试备用池", async () => {
+    let attempts = 0;
+    const fakeFetch = (async (_url: string, init?: { signal?: AbortSignal | null }) => {
+      attempts += 1;
+      return await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) throw new Error("测试要求：超时信号必须并进 fetch signal");
+        signal.addEventListener(
+          "abort",
+          () => reject(Object.assign(new Error("The operation was aborted"), { name: "AbortError" })),
+          { once: true },
+        );
+      });
+    }) as unknown as typeof fetch;
+
+    const slow = {
+      provider: {
+        name: "slow",
+        baseUrl: "http://127.0.0.1:11430/v1",
+        model: "slow-model",
+        apiKey: "sk-fake",
+        allowPrivateNetwork: true,
+        timeoutMs: 800,
+        // thinking 默认开会把单请求超时放宽到 60s，这里必须显式关掉
+        thinking: false,
+      },
+      fallbacks: [],
+      source: "system",
+    } as unknown as ResolvedLlm;
+
+    await expect(
+      (async () => {
+        for await (const _event of callLlmStream(ctx, slow, {
+          scenario: "copilot_stream_timeout",
+          messages: [{ role: "user", content: "ping" }],
+          fetchImpl: fakeFetch,
+        })) {
+          /* 一个字节都不该出来 */
+        }
+      })(),
+    ).rejects.toThrow(/超时/);
+
+    expect(attempts).toBe(1);
+    const rows = await usageRowsFor("copilot_stream_timeout");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ok).toBe(0);
+    expect(rows[0].error_code).toBe("timeout");
   });
 
   it("总预算已经耗尽 ⇒ 一个请求都不发（备用池是等待时间的乘法）", async () => {

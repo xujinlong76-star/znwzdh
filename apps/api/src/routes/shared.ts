@@ -182,6 +182,36 @@ export function setupSseStream(reply: FastifyReply): void {
 }
 
 /**
+ * SSE 心跳：首个 token 之前可能有检索/排队，注释帧防止中间层把空闲连接掐掉。
+ *
+ * 抽成独立函数是为了可测——路由里内联 setInterval 时，只有等满 10 秒才能
+ * 观察到它，测试只能靠「睡 10 秒」或源码正则。这里接受任意间隔，单测用
+ * 假定时器直接推进；`stop()` 必须幂等（正常结束、取消、异常收尾都会调）。
+ */
+export interface SseHeartbeat {
+  stop(): void;
+}
+
+export function startSseHeartbeat(
+  writeComment: (text: string) => void,
+  intervalMs = 10_000,
+): SseHeartbeat {
+  let stopped = false;
+  const timer = setInterval(() => {
+    if (stopped) return;
+    writeComment("ping");
+  }, intervalMs);
+  timer.unref?.();
+  return {
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
+}
+
+/**
  * 安全审计容错写入：审计日志写入异常时不阻断主业务响应
  */
 export async function auditSafely(

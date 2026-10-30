@@ -361,18 +361,23 @@ describe("与中枢的帧契约逐字对齐", () => {
     expect(client).toMatch(/return parseCopilotFrame\(dataLines\.join\('\\n'\)\)/);
   });
 
-  it("流式只在模型真能跑时开启：额度/未配置仍回一次性 JSON（可用性看整个候选池）", () => {
+  it("流式只在模型真能跑时开启：额度/未配置仍回一次性 JSON（判定收敛为一个纯函数）", () => {
     expect(route).toMatch(
-      /if \(stream && prep\.quotaInfo === null && llmProviderReadyAny\(prep\.llm\)\) \{\s*\n\s*return streamCopilotReply\(/,
+      /if \(stream && canAttemptCopilotModel\(prep\.quotaInfo, prep\.llm\)\) \{\s*\n\s*return streamCopilotReply\(/,
     );
-    // 非流式路径同样按候选池判定，否则主模型缺密钥时备用池永远走不到
+    // 非流式路径同样用这一份判定，否则主模型缺密钥时备用池永远走不到
     expect(route).toMatch(
-      /if \(prep\.quotaInfo === null && llmProviderReadyAny\(prep\.llm\)\) \{\s*\n\s*const \{ candidates \}/,
+      /if \(canAttemptCopilotModel\(prep\.quotaInfo, prep\.llm\)\) \{\s*\n\s*const \{ candidates \}/,
     );
+    expect(route).toMatch(/export function canAttemptCopilotModel\(/);
   });
 
   it("SSE 出口声明了 event-stream 并关掉缓冲（否则逐段输出被中间层攒成整段）", () => {
     expect(route).toMatch(/setupSseStream\(reply\)/);
+    // 心跳必须走可测单元：内联 setInterval 只能靠「睡 10 秒」验证
+    expect(route).toMatch(/startSseHeartbeat\(comment\)/);
+    // 心跳必须在收尾处停掉：否则每次回答都在进程里留一个 10s 定时器
+    expect(route).toMatch(/heartbeat\.stop\(\)/);
     const shared = readFileSync(join(repoRoot(), "apps", "api", "src", "routes", "shared.ts"), "utf8");
     expect(shared).toMatch(/"Content-Type", "text\/event-stream; charset=utf-8"/);
     expect(shared).toMatch(/"X-Accel-Buffering", "no"/);

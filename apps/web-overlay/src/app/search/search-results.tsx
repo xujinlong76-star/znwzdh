@@ -6,6 +6,7 @@ import { SiteFavicon } from '@/components/site-favicon'
 import { isSafeHttpUrl, safeHref } from '@/lib/safe-url'
 import {
   SEARCH_QUERY_MAX_LENGTH,
+  inferredConditionLabels,
   searchHref,
   searchMaxPage,
   searchPageWindow,
@@ -350,13 +351,15 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
       return channels.length > 0 && channels.every((channel) => channel === 'semantic')
     })
   // 中枢在「带筛选却零命中」时会自动放宽筛选重试并标记 fallback=filter。
-  // 此时结果已不满足标签条件，不能再把它们说成「在标签 X 下」——那是错误归因。
-  const filterRelaxed = tag !== null && result?.fallback === 'filter'
+  // 此时结果已不满足筛选条件（显式 tag 或查询里的 #/@ 算子），不能再把它们
+  // 说成「在标签 X 下」——那是错误归因。
+  const inferred = result ? inferredConditionLabels(result) : []
+  const filterRelaxed = result?.fallback === 'filter'
   const tagApplied = tag !== null && !filterRelaxed
   const fuzzy = result?.fallback === 'fuzzy'
   const resultLabel = q
     ? filterRelaxed
-      ? `“${q}” 的结果（标签「${tag}」等筛选没有命中，已放宽）`
+      ? `“${q}” 的结果（已放宽筛选）`
       : tag
         ? `“${q}” 在标签「${tag}」下`
         : `“${q}” 的结果`
@@ -425,13 +428,21 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
               className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-400"
             >
               <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-              <span>标签「{tag}」等筛选没有命中，已放宽为更宽的结果；下面的站点不保证符合该标签。</span>
-              <Link
-                href={searchHref({ q })}
-                className="font-medium underline underline-offset-2 hover:no-underline"
-              >
-                去掉筛选
-              </Link>
+              <span>
+                {tag
+                  ? `标签「${tag}」等筛选没有命中，已放宽为更宽的结果；下面的站点不保证符合该标签。`
+                  : inferred.length > 0
+                    ? `查询里的条件（${inferred.join('、')}）没有命中，已放宽为更宽的结果；下面的站点不保证符合这些条件。`
+                    : '筛选条件没有命中，已放宽为更宽的结果；下面的站点不保证符合原条件。'}
+              </span>
+              {tag ? (
+                <Link
+                  href={searchHref({ q })}
+                  className="font-medium underline underline-offset-2 hover:no-underline"
+                >
+                  去掉筛选
+                </Link>
+              ) : null}
             </div>
           ) : null}
 
@@ -471,6 +482,12 @@ export function SearchResults({ q, page, tag, result, failed }: SearchResultsPro
               </div>
 
               {failed ? <FailedNotice q={q} page={page} tag={tag} /> : null}
+
+              {!failed && !filterRelaxed && inferred.length > 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  已理解查询条件：{inferred.join('、')}。
+                </p>
+              ) : null}
 
               {!failed && didYouMean ? (
                 <div className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-foreground">

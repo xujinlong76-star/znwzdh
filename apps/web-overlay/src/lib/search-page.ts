@@ -94,6 +94,33 @@ export function searchApiPath(q: string, page: number, tag?: string | null): str
 }
 
 /**
+ * 中枢会从查询里解析 `#标签` / `@分类` / 「开源」这类算子并自动加筛选。
+ * 页面必须把这些条件说出来，否则用户看到结果变少/变了却不知道查询被「理解」过。
+ * 分面键显示中文轴名，取值原样展示（受控词表在 core 侧，web 生产镜像不依赖它）。
+ */
+const FACET_KEY_LABELS: Record<string, string> = {
+  pricing: '付费模式',
+  platform: '平台',
+  form: '形态',
+  language: '语言',
+  scene: '场景',
+}
+
+export function inferredConditionLabels(input: {
+  inferredTag?: string
+  inferredCategory?: string
+  inferredFacets?: Record<string, string[]>
+}): string[] {
+  const out: string[] = []
+  if (input.inferredTag) out.push(`标签「${input.inferredTag}」`)
+  if (input.inferredCategory) out.push(`分类「${input.inferredCategory}」`)
+  for (const [key, values] of Object.entries(input.inferredFacets ?? {})) {
+    if (values.length > 0) out.push(`${FACET_KEY_LABELS[key] ?? key}「${values.join(' / ')}」`)
+  }
+  return out
+}
+
+/**
  * 页码窗口：只画「已经走到过 / 确定存在」的页。
  *
  * 中枢响应只给 hasMore，不给总页数——hasMore 只保证下一页还有内容，

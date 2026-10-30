@@ -13,6 +13,7 @@ import {
   SEARCH_PAGE_SIZE,
   SEARCH_QUERY_MAX_LENGTH,
   SEARCH_TAG_MAX_LENGTH,
+  inferredConditionLabels,
   normalizeSearchPage,
   normalizeSearchQuery,
   normalizeSearchTag,
@@ -117,6 +118,17 @@ describe('/search 的 URL 状态', () => {
     const api = repoFile('apps/api/src/routes/search.ts')
     expect(api).toContain(`tag: z.string().max(${SEARCH_TAG_MAX_LENGTH})`)
   })
+
+  it('中枢从查询里理解出的 #标签 / @分类 / 分面要说出来（生效与放宽共用一套措辞）', () => {
+    expect(inferredConditionLabels({})).toEqual([])
+    expect(inferredConditionLabels({ inferredTag: 'ai' })).toEqual(['标签「ai」'])
+    expect(inferredConditionLabels({ inferredCategory: 'design' })).toEqual(['分类「design」'])
+    expect(
+      inferredConditionLabels({ inferredFacets: { pricing: ['free'], scene: ['dev', 'ai'], unknownKey: ['x'] } }),
+    ).toEqual(['付费模式「free」', '场景「dev / ai」', 'unknownKey「x」'])
+    // 空数组的分面轴不产出条件，否则会渲染成「平台「」」这种空话
+    expect(inferredConditionLabels({ inferredFacets: { platform: [] } })).toEqual([])
+  })
 })
 
 describe('/search 页面契约', () => {
@@ -166,11 +178,16 @@ describe('/search 页面契约', () => {
 
   it('中枢放宽筛选时必须如实说明：全站结果不能冒充「在标签下」', () => {
     const view = overlaySource('src/app/search/search-results.tsx')
-    // 中枢零命中会带 fallback=filter 重试（结果已不满足标签）
+    // 中枢零命中会带 fallback=filter 重试（结果已不满足筛选条件）
     expect(view).toContain("result?.fallback === 'filter'")
     expect(view).toContain('const tagApplied = tag !== null && !filterRelaxed')
     expect(view).toContain('已放宽为更宽的结果')
     expect(view).toContain('不保证符合该标签')
+    // 查询里的 #/@ 算子也会被放宽：放宽时要点名是哪些条件没命中
+    expect(view).toContain('查询里的条件')
+    expect(view).toContain('inferredConditionLabels(result)')
+    // 条件真的生效时同样留痕，否则用户不知道结果为什么变少
+    expect(view).toContain('已理解查询条件')
     // 放宽后不再显示生效中的标签筛选条，也不再随分页传递标签
     expect(view).toContain('{tagApplied ? <input type="hidden" name="tag"')
     // 模糊放宽（前缀→包含/逐词 OR）同样留痕

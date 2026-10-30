@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 // @ts-expect-error —— .mjs 无类型声明
-import { decideTestOutcome, parseFailedTestFiles } from "./test-retry.mjs";
+import { decideTestOutcome, escalateFlaky, parseFailedTestFiles } from "./test-retry.mjs";
 
 describe("抖动收敛：从 vitest 输出抽失败文件", () => {
   it("抽出去重后的文件路径，保持出现顺序", () => {
@@ -59,5 +59,31 @@ describe("抖动收敛：结论判定", () => {
     const v = decideTestOutcome({ firstOk: false, failedFiles: [], retryOk: true });
     expect(v.kind).toBe("unparseable");
     expect(v.message).toContain("不重试");
+  });
+});
+
+describe("抖动收敛：脆弱测试累进", () => {
+  it("计数递增，未到阈值不升级", () => {
+    const r = escalateFlaky({}, ["a.test.ts"], 3);
+    expect(r.counts["a.test.ts"]).toBe(1);
+    expect(r.escalated).toHaveLength(0);
+  });
+
+  it("累计到阈值 ⇒ 升级为真脆弱，必须转红", () => {
+    const r = escalateFlaky({ "a.test.ts": 2 }, ["a.test.ts"], 3);
+    expect(r.counts["a.test.ts"]).toBe(3);
+    expect(r.escalated).toEqual(["a.test.ts"]);
+  });
+
+  it("多个文件各自计数，只升级到阈值的那些", () => {
+    const r = escalateFlaky({ "a.test.ts": 2, "b.test.ts": 0 }, ["a.test.ts", "b.test.ts"], 3);
+    expect(r.escalated).toEqual(["a.test.ts"]);
+    expect(r.counts["b.test.ts"]).toBe(1);
+  });
+
+  it("没有历史 ⇒ 从 0 起算", () => {
+    const r = escalateFlaky(undefined, ["a.test.ts"], 1);
+    expect(r.counts["a.test.ts"]).toBe(1);
+    expect(r.escalated).toEqual(["a.test.ts"]);
   });
 });

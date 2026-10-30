@@ -53,7 +53,35 @@ export function scriptKey(scriptPath) {
 }
 
 export function commandKey(script, args = "") {
-  return (scriptKey(script) + (String(args).trim() ? " " + String(args).trim().replace(/\s+/g, " ") : "")).trim();
+  /**
+   * 剥掉 shell 命令替换（`$(…)`，含嵌套括号）与引号：它们是**运行时才定的实参**，
+   * 不是命令身份的一部分。不剥的话 `fix-mock-hygiene.mjs --changed $(git diff …)`
+   * 会与登记的 `fix-mock-hygiene.mjs` 对不上——2026-10-30 给门禁加 `--changed`
+   * 收窄时实测被自己拦下。嵌套括号（`grep -E '(…)'`）用配对计数，不靠非贪婪正则。
+   */
+  const stripShellSubs = (s) => {
+    let out = "";
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] === "$" && s[i + 1] === "(") {
+        let depth = 1;
+        i += 2;
+        while (i < s.length && depth > 0) {
+          if (s[i] === "(") depth++;
+          else if (s[i] === ")") depth--;
+          if (depth > 0) i++;
+        }
+        out += " ";
+        continue;
+      }
+      out += s[i];
+    }
+    return out;
+  };
+  const cleaned = stripShellSubs(String(args ?? ""))
+    .replace(/"[^"]*"/g, '""')
+    .replace(/\s+/g, " ")
+    .trim();
+  return (scriptKey(script) + (cleaned ? " " + cleaned : "")).trim();
 }
 
 /** 模板内容 → 命令 key 列表（去重、排序） */

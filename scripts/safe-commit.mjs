@@ -376,7 +376,12 @@ function main() {
    * 大于漏报的代价（多看一眼 message）。要升级成阻断，等映射表跑稳再说。
    */
   const subjectText = message.split("\n")[0];
-  const scopeCheck = checkCommitScope(subjectText, committed.map((p) => p.replace(cwd + "/", "").replace(/\\/g, "/")));
+  // 路径归一化到仓库相对的正斜杠形式——Windows 上 cwd 用反斜杠，
+  // 直接 replace(cwd + "/") 剥不掉前缀，守卫会把绝对路径全判成「域外」（自己踩过）。
+  const relFiles = committed.map((p) =>
+    resolve(p).replace(/\\/g, "/").replace(new RegExp("^" + resolve(cwd).replace(/\\/g, "/").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/"), ""),
+  );
+  const scopeCheck = checkCommitScope(subjectText, relFiles);
   if (!scopeCheck.ok) {
     console.error(`\n⚠ 主题域与文件域不一致：${scopeCheck.reason}`);
     for (const p of scopeCheck.outsiders) console.error(`  · ${p}`);

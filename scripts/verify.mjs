@@ -31,8 +31,9 @@
  * （`Test Files … failed` / `Tests … failed`），不要截断输出。
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { decideTestOutcome, parseFailedTestFiles } from "./lib/test-retry.mjs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { decideTestOutcome, escalateFlaky, parseFailedTestFiles } from "./lib/test-retry.mjs";
 
 const env = {
   ...process.env,
@@ -274,6 +275,12 @@ function runFullTests() {
   const failed = parseFailedTestFiles(out1);
   const firstOk = first.status === 0;
   if (firstOk) {
+    // 全绿就清零抖动计数：只对「反复抖」敏感，修好了不该继续背着历史
+    try {
+      unlinkSync(resolve(".git", "navhub-flaky.json"));
+    } catch {
+      // 没有计数文件就不用清
+    }
     passed.push("全量测试");
     return;
   }
@@ -285,7 +292,31 @@ function runFullTests() {
   const verdict = decideTestOutcome({ firstOk, failedFiles: failed, retryOk });
 
   if (verdict.kind === "flaky") {
+    /**
+     * 累进：同一文件被抖动放行到阈值就转红。
+     * 放行一次是宽容，放行十次就是把守卫变成摆设——反复抖的文件是真脆弱
+     * （依赖墙钟 / 全局状态 / 网络），该修的是它，不是每次重跑蒙混过关。
+     * 计数落在 .git/ 下（不入库，随仓库走）；全绿时清零。
+     */
+    const flakyPath = resolve(".git", "navhub-flaky.json");
+    let history = {};
+    try {
+      history = JSON.parse(readFileSync(flakyPath, "utf8"));
+    } catch {
+      history = {};
+    }
+    const { counts, escalated } = escalateFlaky(history, failed, 3);
+    if (escalated.length > 0) {
+      writeFileSync(flakyPath, JSON.stringify(counts, null, 2), "utf8");
+      console.error(`\n❌ [verify] 全量测试：这些文件已被抖动放行 3 次，判定为真脆弱测试，不再放行：`);
+      for (const f of escalated) console.error(`   · ${f}（累计 ${counts[f]} 次）`);
+      console.error(`[verify] 请修掉它的脆弱性（墙钟断言 / 全局状态 / 网络依赖），而不是继续靠重跑。`);
+      console.error(`[verify] 已完成 ${passed.length} 项；本次没有「全部通过」这回事。`);
+      process.exit(1);
+    }
+    writeFileSync(flakyPath, JSON.stringify(counts, null, 2), "utf8");
     console.log(`\n⚠️ [verify] 全量测试：${verdict.message}`);
+    console.log(`[verify] 抖动计数已记入 ${flakyPath}；同文件累计 3 次将转红。`);
     passed.push("全量测试（抖动放行）");
     return;
   }

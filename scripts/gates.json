@@ -110,7 +110,8 @@
       "script": "scripts/fix-mock-hygiene.mjs",
       "blocks": true,
       "test": "scripts/fix-mock-hygiene.test.ts",
-      "why": "跨模块 vi.mock 必须带 vi.resetModules() 兜底；修法机械，报错时直接给 --apply 提示"
+      "why": "跨模块 vi.mock 必须带 vi.resetModules() 兜底；修法机械，报错时直接给 --apply 提示；只查本次提交集（--changed），全仓口径归全量测试里的 mock-hygiene.test.ts",
+      "args": "--changed"
     },
     {
       "name": "cleanup-coverage",

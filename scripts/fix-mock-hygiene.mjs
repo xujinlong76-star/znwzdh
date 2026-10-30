@@ -108,8 +108,24 @@ export function addResetModulesHook(src) {
 }
 
 function main() {
+  /**
+   * `--changed`：只扫位置参数里给的文件，不扫全仓。
+   *
+   * pre-commit 用这个档——全仓扫描会把**并行会话在途的文件**也拦进我的提交
+   * （2026-10-30 实测：我改了 tools 的测试，门禁却因为对方一个没提交的测试文件
+   * 把我挡住，而那个文件还依赖它没入库的源码，连锁卡死）。
+   * 全仓口径归全量测试里的 `apps/web/test/mock-hygiene.test.ts`。
+   */
+  const changedIdx = process.argv.indexOf("--changed");
+  const useChanged = changedIdx !== -1;
+  const explicit = useChanged
+    ? process.argv.slice(changedIdx + 1).filter((a) => !a.startsWith("--")).map((p) => join(ROOT, p)).filter((p) => existsSync(p))
+    : null;
+
+  const candidates = explicit ?? testFiles();
   const targets = [];
-  for (const file of testFiles()) {
+  for (const file of candidates) {
+    if (!/\.test\.tsx?$/.test(file)) continue; // --changed 传进来的可能是源码，只看测试文件
     const src = readFileSync(file, "utf8");
     if (!needsHook(src)) continue;
     targets.push({ file, src });

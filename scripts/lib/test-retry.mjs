@@ -65,3 +65,22 @@ export function decideTestOutcome({ firstOk, failedFiles, retryOk }) {
     message: `重跑后仍红 ${failedFiles.length} 个文件，是真回归不是抖动：${names}`,
   };
 }
+
+/**
+ * 脆弱测试的累进判定：同一文件被「抖动放行」到一定次数就转红。
+ *
+ * 为什么需要：放行一次是宽容，放行十次就是把守卫变成摆设——
+ * 同一个文件反复抖，说明它是真脆弱（依赖墙钟 / 全局状态 / 网络），
+ * 该修的是它，不是每次重跑蒙混过关。
+ *
+ * 纯函数，计数由调用方持久化。
+ */
+export function escalateFlaky(history, failedFiles, threshold = 3) {
+  const counts = { ...(history ?? {}) };
+  const escalated = [];
+  for (const f of failedFiles) {
+    counts[f] = (counts[f] ?? 0) + 1;
+    if (counts[f] >= threshold) escalated.push(f);
+  }
+  return { counts, escalated };
+}

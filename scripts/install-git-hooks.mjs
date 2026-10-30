@@ -168,8 +168,10 @@ node scripts/check-deps-integrity.mjs || exit 1
 
 # mock 卫生：本次动了测试文件才查。跨模块 vi.mock 必须带 vi.resetModules() 兜底
 # （isolate:false 下假模块会漏给同 worker 的后续文件）。修法是机械的，直接给可执行提示。
+# 只查本次提交集（--changed）：全仓扫描会把并行会话在途的文件也拦进我的提交，
+# 全仓口径归全量测试里的 mock-hygiene.test.ts。
 if git diff --cached --name-only --diff-filter=ACM | grep -qE '(^|/).*\\.test\\.tsx?$'; then
-  node scripts/fix-mock-hygiene.mjs || { echo "  ↑ 跑 node scripts/fix-mock-hygiene.mjs --apply 自动补齐"; exit 1; }
+  node scripts/fix-mock-hygiene.mjs --changed $(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/).*\\.test\\.tsx?$') || { echo "  ↑ 跑 node scripts/fix-mock-hygiene.mjs --apply 自动补齐"; exit 1; }
 fi
 
 # 清理动作覆盖：本次动了被登记的文件才查。清理函数漏一条出口（尤其提前 return）

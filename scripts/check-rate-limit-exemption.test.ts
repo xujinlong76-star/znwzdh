@@ -29,6 +29,8 @@ type ApiOpts = {
    * 省略 = 窗口无穷大（单调计数器），只够判「有没有被挡」；
    * 阶段 3b 必须给它有限值，否则「等过 revalidate 的这段时间额度自己恢复了」这件事
    * 在夹具里不存在，复探前打满额度的那一次锤击就没东西可承重。
+   * 窗口按「首个非豁免请求」起算（见 serveFakeApi），所以一次 hammer 不会跨边界；
+   * 复探前额度恢复与否只取决于 `--revalidate-grace` 与它的关系，两条用例都把它写成显式前置。
    */
   windowMs?: number;
 };
@@ -58,7 +60,11 @@ function serveFakeApi(opts: ApiOpts): Promise<{ base: string; close: () => Promi
   return new Promise((resolvePromise) => {
     const windowMs = opts.windowMs ?? Number.POSITIVE_INFINITY;
     let publicSeen = 0;
-    let windowStart = Date.now();
+    // null = 窗口还没起算。锚在「首个非豁免请求」上而不是服务创建时刻：
+    // @fastify/rate-limit 本来就是按密钥首请求起算一个 timeWindow，不是墙钟网格。
+    // 原先锚在创建时刻时，边界可能落在一次 hammer 中间（子进程 spawn 耗时决定相位），
+    // 重置后剩下的次数打不满额度 ⇒ 阶段 1「一次 429 都没有」偶发红。
+    let windowStart: number | null = null;
     const server = createServer((req, res) => {
       const headers = req.headers;
       const token = Array.isArray(headers["x-navhub-internal-token"])
@@ -67,7 +73,7 @@ function serveFakeApi(opts: ApiOpts): Promise<{ base: string; close: () => Promi
       const exempt = Boolean(token) && token.trim() === TOKEN && !opts.ignoreToken;
       if (!exempt) {
         // allowList 命中时 @fastify/rate-limit 根本不计数，这里也对齐
-        if (Date.now() - windowStart >= windowMs) {
+        if (windowStart === null || Date.now() - windowStart >= windowMs) {
           windowStart = Date.now();
           publicSeen = 0;
         }
@@ -262,12 +268,23 @@ describe("check-rate-limit-exemption.mjs", () => {
     // 假前端是个真的 ISR 状态机：首趟全 HIT（快照没到期）→ 等过 revalidate →
     // 检查先把公开额度打满再复探 → 每页给 STALE 并后台向**已耗尽额度**的中枢取数。
     // 带凭据 ⇒ 取数成功 ⇒ 第二趟回到 HIT ⇒ 这才叫「在受限中枢面前重新生成过」。
+    //
+    // 两个时间常数的关系是这一条成立的前提，写在这里而不是只写在注释里：
+    // 窗口必须**短于 grace**，否则复探时额度还没恢复（「重新打满」没东西可承重）；
+    // 同时必须**长到一次 hammer 打不穿边界** —— 窗口按首请求起算后这点由锚定保证。
+    const WINDOW_MS = 1200;
+    const GRACE_SEC = 1.5;
+    expect(GRACE_SEC * 1000).toBeGreaterThan(WINDOW_MS);
     const { code, out } = await run(
-      { publicLimit: 5, windowMs: 1200 },
+      { publicLimit: 5, windowMs: WINDOW_MS },
       { isr: true },
-      ["--revalidate-grace=1.5", "--revalidate-settle=0.4"],
+      [`--revalidate-grace=${GRACE_SEC}`, "--revalidate-settle=0.4"],
     );
     expect(code, out).toBe(0);
+    // 阶段 1 打穿 + 复探前额度真的恢复并重新打满：两个数字都由「8 次 / 额度 5」推出，
+    // 一旦它们变了，说明窗口锚定被改回了墙钟网格 —— 那正是本机抖动的来源。
+    expect(out).toContain("429 首次出现在第 6 次");
+    expect(out).toContain("（429 首次在第 6 次）");
     expect(out).toContain("阶段 3b 复探");
     expect(out).toContain("同步/后台成功=12");
     expect(out).toContain("限流豁免集成检查通过");
@@ -279,12 +296,17 @@ describe("check-rate-limit-exemption.mjs", () => {
   it("过期后一直给旧快照（SSR 取数没带凭据）⇒ 红灯归因到取数层，不许混进另外两条分支", async () => {
     // windowMs 必须有界：假中枢的额度要能在等 revalidate 的那段时间里自己恢复，
     // 否则「复探前重新打满额度」这一步没有东西可承重（真实中枢是 300/分钟的窗口）。
+    const WINDOW_MS = 1200;
+    const GRACE_SEC = 1.5;
     const { code, out } = await run(
-      { publicLimit: 5, windowMs: 1200 },
+      { publicLimit: 5, windowMs: WINDOW_MS },
       { isr: true, isrSsrCarriesToken: false },
-      ["--revalidate-grace=1.5", "--revalidate-settle=0.4"],
+      [`--revalidate-grace=${GRACE_SEC}`, "--revalidate-settle=0.4"],
     );
     expect(code, out).toBe(1);
+    // 这一条必须「额度已恢复 → 被公开请求重新打满 → 后台再生撞在耗尽的额度上」，
+    // 否则失败就不是取数层没带凭据，而是复探压根没撞上限流。
+    expect(out).toContain("（429 首次在第 6 次）");
     expect(out).toContain("没能再生、继续给旧快照");
     expect(out).toContain("lib/server/hub.ts");
     // 「仍全 HIT」是 revalidate 窗口没起作用那条的签名，「关掉了复探」是 grace=0 那条的签名；

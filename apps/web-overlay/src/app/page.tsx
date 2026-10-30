@@ -185,7 +185,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function HomePage() {
   // WebSite 结构化数据：全站唯一入口页挂一份即可。
-  // 不写 potentialAction（没有 /search 页面），不写 aggregateRating（没有评价体系）。
+  // 不写 potentialAction（/search 已上线，但 SearchAction 尚未接入该页），
+  // 不写 aggregateRating（没有评价体系）。
   // origin 只读配置：首页带 revalidate，一旦回退到 headers() 就会在构建期落成 ƒ、
   // 60s 缓存静默作废（缺配置的正确降级是「这份 JSON-LD 不输出」，地址保持相对）。
   const origin = configuredSiteOrigin();

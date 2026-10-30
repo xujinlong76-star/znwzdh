@@ -38,6 +38,7 @@ import { recordOfflineVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { getIdentity } from '@/lib/identity'
+import { searchHref } from '@/lib/search-page'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useToast } from '@/components/ui/use-toast'
 import type { SiteConfig } from '@/types/site'
@@ -1146,6 +1147,18 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       下一页没加载成功（请求失败，不是没有更多了）。已显示的 {hits.length} 条仍然可用，点上面按钮可再试。
                     </p>
                   )}
+                </div>
+              )}
+              {showResults && query.trim() && hits.length > 0 && (
+                <div className="border-t border-border/60 bg-muted/10 px-2 py-1.5">
+                  <Link
+                    href={searchHref({ q: query })}
+                    onClick={() => setIsFocused(false)}
+                    className="flex items-center justify-center gap-1 rounded-md py-1 text-xs text-primary/90 transition-colors hover:bg-primary/5 hover:text-primary"
+                  >
+                    查看全部结果
+                    <ArrowRight className="h-3 w-3" aria-hidden />
+                  </Link>
                 </div>
               )}
             </CommandList>

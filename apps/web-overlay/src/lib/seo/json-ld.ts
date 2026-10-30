@@ -3,8 +3,9 @@
  *
  * 三条红线，改这里前先读（都有对应单测在 test/json-ld.test.ts 守着）：
  *
- * 1. **不写 SearchAction**：本站没有 `/search` 页面（搜索是首页客户端面板）。
- *    声明一个不存在的搜索端点，Google 可能渲染出点不进去的 sitelinks 搜索框。
+ * 1. **暂不写 SearchAction**：`/search` 结果页已上线（2026-10-31），但
+ *    SearchAction 尚未接入该页。接入前不得声明——声明一个点不进去的搜索
+ *    端点，Google 可能渲染出无效的 sitelinks 搜索框。
  * 2. **不写 aggregateRating / 假 star**：站内没有评价体系；
  *    `liveMetrics.githubStars` 历史上被硬编码污染过（125000/86000），
  *    既渲染又参与 DIY 排序，在数据修复前任何星级数字都不能进结构化数据。

@@ -532,7 +532,7 @@ export default function SearchHistoryPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
-                        href={`/?q=${encodeURIComponent(item.query)}`}
+                        href={`/search?q=${encodeURIComponent(item.query)}`}
                         className="line-clamp-2 break-words text-sm font-medium leading-snug text-foreground hover:text-primary hover:underline"
                         title={`再次搜索：${item.query}`}
                       >
@@ -557,7 +557,7 @@ export default function SearchHistoryPage() {
                       asChild
                       className="h-8 w-8 text-muted-foreground hover:text-primary"
                     >
-                      <Link href={`/?q=${encodeURIComponent(item.query)}`} aria-label={`再次搜索 ${item.query}`}>
+                      <Link href={`/search?q=${encodeURIComponent(item.query)}`} aria-label={`再次搜索 ${item.query}`}>
                         <ArrowUpRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>

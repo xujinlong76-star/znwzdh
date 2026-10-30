@@ -74,6 +74,7 @@ import {
 import { getIdentity } from '@/lib/identity'
 import { openCopilot } from '@/lib/ai-entry'
 import { searchChannelStatus } from '@/lib/search-degrade'
+import { searchHref } from '@/lib/search-page'
 import { getModifierKey } from '@/lib/platform'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { recordOfflineVisit } from '@/lib/offline-recent'
@@ -1001,7 +1002,19 @@ export function SpotlightModal({
                       <Layers className="w-3.5 h-3.5" />
                       <span>导航站点（RRF 混合多通道排序）</span>
                     </span>
-                    <span className="text-[11px] font-mono text-muted-foreground/70">{hits.length} 条命中</span>
+                    <span className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono text-muted-foreground/70">{hits.length} 条命中</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false)
+                          router.push(searchHref({ q: query }))
+                        }}
+                        className="text-[11px] text-primary hover:underline"
+                      >
+                        查看全部
+                      </button>
+                    </span>
                   </div>
 
                   {hits.map((hit, idx) => {

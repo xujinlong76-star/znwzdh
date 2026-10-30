@@ -62,7 +62,7 @@ overlay → `apps/web` 镜像已同步（`node scripts/check-web-overlay.mjs`：
 | --- | --- |
 | `apps/web/test/{admin-brand-logo,crawl-page-isr,hub-cache-revalidate,site-settings}.test.ts` | 24/24 通过（仓库根 vitest，`@/` 别名生效） |
 | `node scripts/check-web-overlay.mjs` | 934 个覆盖层文件一致 |
-| `tsc -p apps/web/tsconfig.json --noEmit` | 仅并行归属的 `apps/web/src/app/videos/page.tsx(87,32): Cannot find name 'NavigationData'` |
+| `tsc -p apps/web/tsconfig.json --noEmit` | 实测当时仅并行归属的 `apps/web/src/app/videos/page.tsx(87,32): Cannot find name 'NavigationData'`；收尾复验时该问题已被并行提交 `1b509ecc` 修复，退出码 0 |
 | 消融 1：`{ expire: 0 }` → `'max'` | crawl-page-isr 红；恢复后 md5 一致 |
 | 消融 2：layout 的 `brandLogo={settings...}` → 写死回退图 | admin-brand-logo 红；恢复后 md5 一致 |
 | 消融 3：AdminLayoutClient 一处 `src={brandLogo}` → 写死 `/assets/images/alogo.webp` | admin-brand-logo 红；恢复后 md5 一致 |

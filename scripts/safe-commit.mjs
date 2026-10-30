@@ -55,6 +55,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { checkCommitScope } from "./lib/commit-scope.mjs";
 
 /** 陈旧索引锁的判定阈值：活锁一般几秒内释放，超过这个时长基本是崩溃残留 */
 const STALE_LOCK_MS = 2 * 60 * 1000;
@@ -362,6 +363,26 @@ function main() {
       "提交内容与预期不一致。用 `git show --stat HEAD` 核对，必要时 `git reset --soft HEAD~1` 重来。",
       2,
     );
+  }
+  /**
+   * 第二道核对：**主题域 ↔ 文件域**。
+   *
+   * 上面的 pathspec 核对在 HEAD 竞态下会跟着一起错（它读的也是同一个索引）——
+   * 2026-10-30 的 `6dbadb83` 就是这么错位的：message 写 `feat(tooling)`，
+   * 装进来的却是并行会话的 `ci-defused` 文件集。主题与文件域的对照是独立判据，
+   * 写的是 tooling、装的是 ci.yml + docs/，一眼就能看出来。
+   *
+   * 只**告警不阻断**：scope 映射表覆盖不全时误报的代价（挡住合法提交）
+   * 大于漏报的代价（多看一眼 message）。要升级成阻断，等映射表跑稳再说。
+   */
+  const subjectText = message.split("\n")[0];
+  const scopeCheck = checkCommitScope(subjectText, committed.map((p) => p.replace(cwd + "/", "").replace(/\\/g, "/")));
+  if (!scopeCheck.ok) {
+    console.error(`\n⚠ 主题域与文件域不一致：${scopeCheck.reason}`);
+    for (const p of scopeCheck.outsiders) console.error(`  · ${p}`);
+    console.error(`  ↑ 若确属同一次改动，把 scope 改对；若是竞态卷入了别人的文件，reset --soft HEAD~1 重来。`);
+  } else {
+    console.log(`✓ ${scopeCheck.reason}`);
   }
   console.log(`✓ 提交内容与预期完全一致（${committed.length} 个文件）\n`);
   } finally {

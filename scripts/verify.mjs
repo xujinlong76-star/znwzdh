@@ -32,6 +32,7 @@
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { decideTestOutcome, parseFailedTestFiles } from "./lib/test-retry.mjs";
 
 const env = {
   ...process.env,
@@ -241,15 +242,56 @@ function runStandardTier() {
    *
    * 用 `skip()` 而不是静默略过——`skip` 会进最后的「未执行」清单，
    * 明确告诉读者「这一项本次没有发生，不代表通过」。这正是这个脚本的输出铁律。
+   *
+   * **失败后只重跑红的文件**：全量 566 文件跑 15 分钟，而本机常有并行会话争用，
+   * 高并发下单用例超时是常态（2026-10-30 三次实测：连跑两次即绿）。整段重跑
+   * 等于再花 15 分钟，而红的往往只有一两个文件。重跑仍红才是真回归。
    */
   if (process.argv.includes("--full")) {
-    run("全量测试", "node", VITEST_ARGV);
+    runFullTests();
   } else {
     skip(
       "全量测试",
       "默认档不含（400+ 文件，实测 20 分钟以上且不能并行）。要跑：node scripts/verify.mjs --full",
     );
   }
+}
+
+/**
+ * 全量测试 + 「只重跑红文件」的收敛。
+ *
+ * 三段式：全量 → 抽出红的文件 → 只跑它们。第二段全绿就当作抖动放行，
+ * 但**必须在输出里点名是哪些文件抖过**，不许默默当通过（输出铁律）。
+ */
+function runFullTests() {
+  console.log(`\n[verify] ----------------------------------------------------`);
+  console.log(`[verify] 执行: 全量测试`);
+  console.log(`[verify] ----------------------------------------------------`);
+  const first = spawnSync("node", VITEST_ARGV, { stdio: "pipe", shell: true, env, encoding: "utf8" });
+  const out1 = (first.stdout ?? "") + (first.stderr ?? "");
+  process.stdout.write(out1);
+
+  const failed = parseFailedTestFiles(out1);
+  const firstOk = first.status === 0;
+  if (firstOk) {
+    passed.push("全量测试");
+    return;
+  }
+
+  console.log(`\n[verify] 全量测试首轮 ${failed.length} 个文件红；只重跑这些文件判定是抖动还是真回归：`);
+  for (const f of failed) console.log(`[verify]   · ${f}`);
+
+  const retryOk = failed.length > 0 && spawnSync("node", [...VITEST_ARGV, ...failed], { stdio: "inherit", shell: true, env }).status === 0;
+  const verdict = decideTestOutcome({ firstOk, failedFiles: failed, retryOk });
+
+  if (verdict.kind === "flaky") {
+    console.log(`\n⚠️ [verify] 全量测试：${verdict.message}`);
+    passed.push("全量测试（抖动放行）");
+    return;
+  }
+  console.error(`\n❌ [verify] 全量测试：${verdict.message}`);
+  console.error(`[verify] 已完成 ${passed.length} 项；本次没有「全部通过」这回事。`);
+  process.exit(1);
 }
 
 // --guards：只跑文本不变量与组件契约，约 15 秒。提交前的最小技术底线。

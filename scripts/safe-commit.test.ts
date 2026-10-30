@@ -94,6 +94,20 @@ describe("集成：pathspec 隔离", () => {
     delete env.GIT_INDEX_FILE;
     delete env.GIT_DIR;
     delete env.GIT_WORK_TREE;
+    /**
+     * 门禁的放行开关同样不许泄漏进夹具——这里一个都不需要：临时仓库里跑的是
+     * `git commit`，没有任何 NAVHUB_* 变量参与判据。
+     *
+     * 2026-10-30 实测到第二类泄漏：外层为了提交别的改动设了
+     * `NAVHUB_ALLOW_CROSS_SCOPE='<理由>'`（≥8 字符才算真理由），跑全量 scripts 时
+     * 它漏进来，主题域守卫从「主题域与文件域不一致」改判成「理由出现在提交说明
+     * 正文里」，「守卫拦下时不留独立索引」那例当场红。`commit-atomicity.test.ts`
+     * 2026-10-29 为同一族踩过一次（那时 4 例假绿），它逐条点名删；这个夹具将来还会
+     * 长出新的放行开关，所以整族剥干净，而不是维护一张会过期的名单。
+     */
+    for (const key of Object.keys(env)) {
+      if (key.startsWith("NAVHUB_")) delete env[key];
+    }
     return env;
   };
 
@@ -246,6 +260,34 @@ describe("集成：pathspec 隔离", () => {
     expect(res.status).not.toBe(0);
     expect(res.stderr).toContain("理由出现在提交说明正文里");
     expect(existsSync(join(repo, ".git", "index.safe-commit"))).toBe(false);
+  });
+
+  it("外层带着放行理由跑，夹具里的守卫仍按「未放行」判（整族剥 NAVHUB_ 的钉子）", () => {
+    /**
+     * 与上一例同一个仓库状态、同一个 subject，只差外层那枚环境变量：
+     * 泄漏进来时守卫走 needInMessage 分支（「理由出现在提交说明正文里」），
+     * 剥掉了才走 mismatch 分支（「主题域与文件域不一致」）。
+     * 上一例断言的正是后者 ⇒ 这一例红就说明 cleanEnv 的剥除失效了。
+     */
+    const prev = process.env.NAVHUB_ALLOW_CROSS_SCOPE;
+    process.env.NAVHUB_ALLOW_CROSS_SCOPE = "同一轮工具加固必须连 docs 一起提交";
+    try {
+      const head = git(["rev-parse", "HEAD"]);
+      writeFileSync(join(repo, "mine.ts"), "export const a = 7;\n");
+      writeFileSync(join(repo, ".msg9"), "feat(tooling): 主题域写 tooling，但文件在仓库根\n");
+      const res = spawnSync(process.execPath, [SCRIPT, "--msg-file", ".msg9", "--", "mine.ts"], {
+        cwd: repo,
+        encoding: "utf8",
+        env: cleanEnv(),
+      });
+      expect(res.status, "域外文件必须拦下提交").not.toBe(0);
+      expect(res.stderr).toContain("主题域与文件域不一致");
+      expect(res.stderr).not.toContain("理由出现在提交说明正文里");
+      expect(git(["rev-parse", "HEAD"])).toBe(head);
+    } finally {
+      if (prev === undefined) delete process.env.NAVHUB_ALLOW_CROSS_SCOPE;
+      else process.env.NAVHUB_ALLOW_CROSS_SCOPE = prev;
+    }
   });
 
   it("钩子拦下提交后不留独立索引（Windows 上 git 退出后句柄滞留，unlink 会失败）", () => {

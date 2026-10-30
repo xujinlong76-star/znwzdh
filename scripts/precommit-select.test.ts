@@ -15,7 +15,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const ROOT = process.cwd();
 const PAYLOAD = join(ROOT, ".git", "hooks", "navhub-precommit-tests.mjs");
@@ -28,11 +28,22 @@ beforeAll(() => {
 
 /** 返回本次会被交给 vitest 的测试文件（空数组表示 SKIP 或全部被跳过） */
 function select(changed: string[], extraEnv: Record<string, string> = {}): string[] {
+  /**
+   * 口径开关不许从外层继承：`NAVHUB_PRECOMMIT_SCOPE=all` / `NO_GRAPH=1` 会把选测器
+   * 挪到另一条分支上，而下面的断言写的是「按图」的取舍——泄漏进来要么假绿要么假红。
+   * 同一族泄漏在 `commit-atomicity.test.ts`（2026-10-29，4 例假绿）和
+   * `safe-commit.test.ts`（2026-10-30，放行理由漏进来改了守卫分支）各踩过一次。
+   * 整族剥而不是点名：`extraEnv` 在剥除之后合并，所以真要走对照臂的用例照样能显式注入。
+   */
+  const inherited = { ...process.env };
+  for (const key of Object.keys(inherited)) {
+    if (key.startsWith("NAVHUB_PRECOMMIT_")) delete inherited[key];
+  }
   const out = execFileSync(process.execPath, [PAYLOAD], {
     cwd: ROOT,
     encoding: "utf8",
     env: {
-      ...process.env,
+      ...inherited,
       NAVHUB_PRECOMMIT_FILES: changed.join(","),
       NAVHUB_PRECOMMIT_DRYRUN: "1",
       ...extraEnv,
@@ -43,6 +54,12 @@ function select(changed: string[], extraEnv: Record<string, string> = {}): strin
   if (!line) return [];
   return JSON.parse(line.slice("DRYRUN_FILES=".length)) as string[];
 }
+
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
 
 describe("pre-commit 选测：改动 → 测试文件", () => {
   it("改 routes/backup.ts：backup 自己的测试在，且按图把经 server 引导的测试也带上", () => {
@@ -169,6 +186,29 @@ describe("选测器把 git 环境与夹具测试隔离", () => {
     const payload = readFileSync(PAYLOAD, "utf8");
     for (const name of ["GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE"]) {
       expect(payload, `生成物没有剥 ${name}（重装没生效？）`).toContain(`delete childEnv.${name};`);
+    }
+  });
+
+  it("外层带着 SCOPE=all / NO_GRAPH=1 跑，夹具仍按「图口径」那一档判", () => {
+    // 剥除失效的自证：这两枚开关真泄漏进子进程时，选出来的集合会换一档
+    // （all → 整棵；NO_GRAPH → 旧词根，比图口径少），下面这条相等就会红。
+    const baseline = select(["apps/api/src/routes/backup.ts"]);
+    expect(baseline.length, "基线本身要有内容，否则相等是空的").toBeGreaterThan(50);
+    const names = ["NAVHUB_PRECOMMIT_SCOPE", "NAVHUB_PRECOMMIT_NO_GRAPH"];
+    const prev = names.map((n) => process.env[n]);
+    process.env.NAVHUB_PRECOMMIT_SCOPE = "all";
+    process.env.NAVHUB_PRECOMMIT_NO_GRAPH = "1";
+    try {
+      expect(select(["apps/api/src/routes/backup.ts"])).toEqual(baseline);
+      // 显式注入仍然有效：剥的是继承，不是夹具自己的对照臂
+      const forced = select(["apps/api/src/routes/backup.ts"], { NAVHUB_PRECOMMIT_NO_GRAPH: "1" });
+      expect(forced).not.toEqual(baseline);
+      expect(forced.length).toBeLessThan(baseline.length);
+    } finally {
+      names.forEach((n, i) => {
+        if (prev[i] === undefined) delete process.env[n];
+        else process.env[n] = prev[i];
+      });
     }
   });
 });

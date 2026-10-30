@@ -12,10 +12,12 @@
  * 把 always() 换成默认条件 ⇒ 本地 verify 红），不是运行结果。
  * 想在本地拿非零退出做一次性核对：`--strict`。
  *
- * 全绿同样要出账（2026-10-30 补）：只在本步骤 stdout 上留话，等于跨机器什么都没有——
- * 无 actions:read 时日志与 `/jobs/{id}/summary` 都是 404，而那轮注解池实测为 0 条，
- * 「没接线」与「跑过且全绿」就是同一种形状。所以绿色路径也发一条 ::notice 并写 Step Summary
- * （notice 级被归因层显式排除，不会冒充判红原因）。
+ * 全绿同样要出账（2026-10-30 补）：账只在作业里打一行 stdout，读的人得先进那条日志。
+ * 两条机器可读通道的实测边界（run 41010267114）：`/actions/jobs/{id}/logs` 用
+ * redirect:"manual" 接签名 URL 读得到正文；`/actions/jobs/{id}/summary` 仍 404（要 actions:read）；
+ * 而同一轮 13 个作业的 `/check-runs/{id}/annotations` 返回 0 条，尽管日志里 ::notice / ::warning
+ * 的正文都打出来了。所以绿色路径也发一条 ::notice（UI 注解面板用）并写 Step Summary（人在聚合页看），
+ * 机器核对读日志。notice 级被归因层显式排除，不会冒充判红原因。
  *
  * 用法（CI 内）：
  *   - name: 撤防账
@@ -25,9 +27,10 @@
  *     run: node scripts/ci-defused-gates.mjs --job test-web
  *
  * 为什么读 steps 上下文而不是 REST API：本仓库的工作流权限是
- * `permissions: contents: read`，拿不到 actions:read ⇒ `/actions/jobs/{id}/logs` 恒 403，
- * 跨机器只剩 annotations 可读。在作业内算完 ⇒ 不扩权限、不需要 token，且当场就能写进
- * Step Summary 和注解。
+ * `permissions: contents: read`，作业内的 GITHUB_TOKEN 拿不到 actions:read ⇒
+ * 自己 `/actions/jobs/{id}/logs` 会 403，也没有别的接口能给出逐步结论。
+ * 在作业内算完 ⇒ 不扩权限、不需要 token，且当场就能写进 Step Summary 和注解。
+ * （外面用 PAT 读日志是另一回事：那条要 redirect:"manual"，见上面的实测边界。）
  */
 import { appendFileSync } from "node:fs";
 import { defusedEntryFor, findDefused } from "./lib/ci-defused.mjs";
@@ -96,9 +99,11 @@ function main() {
     console.log(`${label} ${opts.job}：${head}${redNote}`);
     // 全绿也要留痕：没有这一行，「跑过且全绿」和「根本没接线」在跨轮视角是同一种形状
     // （2026-10-30 直证：tip 2ca11031 那一轮 13 个作业的注解池总数为 0）。
-    // 只写 Step Summary 不够——无 actions:read 时 `/jobs/{id}/summary` 与日志一样是 404，
-    // 所以同时发一条 ::notice：归因层（ci-attribution 的 usableAnnotations）显式排除
-    // notice 级，它不会冒充判红原因；本仓的先例是 check-isr-live 的「限流豁免四阶段成立」。
+    // Step Summary 单独不够：`/actions/jobs/{id}/summary` 实测 404（要 actions:read），
+    // 而同一轮的 `/actions/jobs/{id}/logs` 用 redirect:"manual" 接签名 URL 是读得到的
+    // （run 41010267114 直证）⇒ 日志才是可机器读的那条，注解这轮 REST 返回 0 条。
+    // ::notice 仍然发：归因层（ci-attribution 的 usableAnnotations）显式排除 notice 级，
+    // 它不会冒充判红原因；本仓的先例是 check-isr-live 的「限流豁免四阶段成立」。
     console.log(`::notice title=CI 门禁撤防::${opts.job} ${head}${redNote}（在册准备步骤 ${envTotal} 个）`);
     if (summaryPath) {
       appendFileSync(

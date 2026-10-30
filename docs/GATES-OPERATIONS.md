@@ -223,9 +223,15 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   在跨轮视角里原本是同一种形状（tip `2ca11031` 那一轮 13 个作业的注解池总数为 0）。
   notice 不会冒充判红原因：归因层 `usableAnnotations` 显式排除 `annotation_level === "notice"`。
   `--strict` 也不罚全绿的那一轮——严格档拦的是真撤防。
-- **为什么账必须在工作流里算**：本仓库 `permissions: contents: read`，没有 `actions:read`
-  ⇒ `/actions/jobs/{id}/logs` 与 artifact zip 恒 404，跨机器唯一可读通道是 annotation + Step Summary。
-  结论只打在 stdout 的门禁，别人读不到就等于没说。
+- **为什么账必须在工作流里算**：账跑在作业里，读它的人不会逐条翻日志。两条通道各有各的读法
+  （2026-10-30 直证，run 41010267114）：
+  - **日志可读**：`/actions/jobs/{id}/logs` 返回 302 到签名 URL，必须 `redirect: "manual"` 再自己接
+    `location`——按默认 follow 会把 Authorization 头带到 blob 域上，拿到的是 404/403，容易被误读成
+    「这个 token 没有 Actions:read」。本仓 `explain-ci-failure.mjs` 就是这么读的。
+  - **注解这轮读不到**：同一轮里 13 个作业的 `/check-runs/{id}/annotations` 全返回 0 条，
+    而日志里 `::notice` / `::warning` 的正文确实打出来了（runner 已解释该命令）。
+    所以 `::notice` 按「人能在 UI 注解面板看到」来定位，不许把它当跨机器唯一通道；
+    要机器读，读日志与 Step Summary。
 - **已接线**：`test-sqlite`、`test-postgres`、`test-web`、`test-e2e`、`check-isr-live`、
   `check-web-overlay`、`docker-smoke`、`audit`（**8 作业 / 25 道门禁**；`docker-smoke` 的两个
   `docker build` 没有准备步骤，`check-isr-live` 有 7 个 `env` 准备步骤——它们红不是产品红，

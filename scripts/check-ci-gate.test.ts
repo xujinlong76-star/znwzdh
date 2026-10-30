@@ -340,7 +340,7 @@ describe("check-ci-gate 第 7 项：撤防账接线", () => {
     // 2ca11031 那轮用 test-postgres 当「暂未登记的作业」；它现已接线，改用今天唯一
     // 刻意不登记的 seo-audit-prod（手动/定时作业，多一处红不阻塞合并）。
     // 把 test-web 那一步的形状搬过去 ⇒ 必须点名，而不是让「脚本自己发的 ::warning」
-    // 成为唯一线索（无 token 时注解才是可读通道）。
+    // 成为唯一线索（注解这轮 REST 实测读不到，能机器读的是作业日志）。
     const withRogue = editStep("node scripts/seo-audit.mjs", (step) => [
       ...step,
       "      - name: 撤防账（没跑成的门禁要点名）",

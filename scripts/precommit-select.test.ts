@@ -189,6 +189,20 @@ describe("选测器把 git 环境与夹具测试隔离", () => {
     }
   });
 
+  it("失败归因接线：生成源与产物都把红按「依赖本次提交」归属（failure-scope）", () => {
+    // 判据本体在 scripts/lib/failure-scope.mjs（有独立单测）。这里钉接线：
+    // 改生成源却忘重装时，生成物里就没有这段，失败会按旧行为一律拦——不是安全问题，
+    // 但「本地判定不可信」这条能力会悄悄失效。两处都断言，重装漏了当场红。
+    const src = readFileSync(join(ROOT, "scripts", "install-git-hooks.mjs"), "utf8");
+    expect(src).toContain("classifyFailures");
+    expect(src).toContain("failure-scope.mjs");
+    const payload = readFileSync(PAYLOAD, "utf8");
+    expect(payload).toContain("classifyFailures");
+    expect(payload).toContain("failure-scope.mjs");
+    // 未知形状不许静默降级：解析不出失败文件时 fallback 必须落在 blocked
+    expect(payload).toContain('blocked: [{ file: "(未能定位失败文件)"');
+  });
+
   it("外层带着 SCOPE=all / NO_GRAPH=1 跑，夹具仍按「图口径」那一档判", () => {
     // 剥除失效的自证：这两枚开关真泄漏进子进程时，选出来的集合会换一档
     // （all → 整棵；NO_GRAPH → 旧词根，比图口径少），下面这条相等就会红。

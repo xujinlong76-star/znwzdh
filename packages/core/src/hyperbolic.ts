@@ -36,6 +36,36 @@ export function clampToBall(v: number[], maxNorm = 1.0 - EPSILON): number[] {
 }
 
 /**
+ * 把检索向量投影到庞加莱球内的**固定半径**。
+ *
+ * 为什么单独有这个函数：端点早先是取 embedding 的**前 16 维**再乘 0.6。
+ * bge 这类模型的语义摊在全部 512 维上，前 16 维只是一个随机子空间——
+ * 用它算测地线距离会把真近邻的先后次序打乱。实测（data/navhub.db，993 个有向量的站点）：
+ * Obsidian 的「同类产品」按截断投影给出 Geek Uninstaller / Free Download Manager /
+ * Motrix，而按全维余弦给出 Logseq、思源笔记、有道云笔记、Joplin、印象笔记、Typora。
+ *
+ * 固定半径同时解决第二件事：候选全部落在同一球面上，`||u|| ≈ ||v||` 恒成立，
+ * 平替得分里的「模长层级一致性」惩罚项不再退化成噪声，排序与余弦同序——
+ * 这才是这个端点想表达的语义。零向量/非有限值返回 null，调用方据此跳过（没有向量就没有语义证据）。
+ */
+export function projectEmbeddingToBall(
+  embedding: ArrayLike<number> | null | undefined,
+  radius = 0.6,
+): number[] | null {
+  if (!embedding || embedding.length === 0) return null;
+  if (!(radius > 0) || radius >= 1) return null;
+  const values: number[] = [];
+  for (let i = 0; i < embedding.length; i++) {
+    const val = Number(embedding[i]);
+    if (!Number.isFinite(val)) return null;
+    values.push(val);
+  }
+  const norm = euclideanNorm(values);
+  if (norm <= 1e-12) return null;
+  return clampToBall(values.map((val) => (val / norm) * radius));
+}
+
+/**
  * 原点处的指数映射：将欧氏切空间向量映射到庞加莱球
  * exp_0(v) = tanh(||v||) * (v / ||v||)
  */

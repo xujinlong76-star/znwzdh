@@ -6,10 +6,10 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
-  clampToBall,
   computeHyperbolicAlternativeScore,
   lorentzDistance,
   poincareToLorentz,
+  projectEmbeddingToBall,
 } from "@navhub/core";
 
 import { MAX_SEARCH_QUERY_LENGTH, privatizeVector, rankItemsWithPrivacy } from "@navhub/core";
@@ -90,9 +90,11 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       // 优先尝试真实向量召回 + 洛伦兹双曲流形重排
       if (ctx.embedding && ctx.vectors) {
         const vec = await ctx.repo.getEmbedding(siteId);
-        if (vec) {
+        // 投影用**全维**归一化到固定半径。旧写法取前 16 维再乘 0.6：bge 的语义摊在 512 维上，
+        // 前 16 维是随机子空间，用它算测地线距离会把真近邻的次序打乱（见 projectEmbeddingToBall 的实测）。
+        const targetBall = vec ? projectEmbeddingToBall(vec) : null;
+        if (vec && targetBall) {
           const matches = await ctx.vectors.search(vec, Math.max(limit * 3, 24));
-          const targetBall = clampToBall(Array.from(vec.slice(0, 16)).map((v) => v * 0.6));
           const targetLorentz = poincareToLorentz(targetBall);
 
           // 候选集原本逐条 getSite + getEmbedding：默认 24 个候选就是 48 次串行往返
@@ -107,10 +109,11 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
             const candId = candidates[i]!.siteId;
             const candSite = candSiteMap.get(candId);
             if (!candSite || candSite.status === "broken") continue;
-            const candVec = candVecs[i];
-            const candBall = candVec
-              ? clampToBall(Array.from(candVec.slice(0, 16)).map((v) => v * 0.6))
-              : targetBall.map((v, idx) => v * (idx % 2 === 0 ? 0.85 : 0.9));
+            // 缺向量的候选以前用「目标坐标 × 系数」造一个假近邻：它和自身的距离恒为 0，
+            // 索引与 embeddings 表一旦漂移，那个站点就会出现在所有站点的「同类产品」首位。
+            // 现在跳过——没有向量就没有语义证据，宁可少给几条也不编。
+            const candBall = projectEmbeddingToBall(candVecs[i]);
+            if (!candBall) continue;
             const candLorentz = poincareToLorentz(candBall);
             const lDist = lorentzDistance(targetLorentz, candLorentz);
             const altScore = computeHyperbolicAlternativeScore(targetBall, candBall);

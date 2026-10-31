@@ -32,6 +32,16 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { targetTitle: "Continue.dev", targetUrl: "https://continue.dev", relationType: "alternative", isFreeOrOpenSource: true, note: "开源 VSCode / JetBrains 扩展" },
     ],
   },
+  "chatgpt.com": {
+    relations: [
+      { targetTitle: "Claude", targetUrl: "https://claude.ai", relationType: "alternative", isFreeOrOpenSource: false, note: "长文本与代码见长的对话助手" },
+      { targetTitle: "DeepSeek", targetUrl: "https://chat.deepseek.com", relationType: "alternative", isFreeOrOpenSource: true, note: "开源权重、网页端免费" },
+      { targetTitle: "Kimi", targetUrl: "https://kimi.moonshot.cn", relationType: "alternative", isFreeOrOpenSource: true, note: "超长上下文与中文检索问答" },
+      { targetTitle: "Google Gemini", targetUrl: "https://gemini.google.com", relationType: "alternative", isFreeOrOpenSource: false, note: "Google 多模态助手" },
+      { targetTitle: "智谱清言", targetUrl: "https://chatglm.cn", relationType: "alternative", isFreeOrOpenSource: true, note: "GLM 系国产对话模型" },
+      { targetTitle: "Ollama", targetUrl: "https://ollama.com", relationType: "alternative", isFreeOrOpenSource: true, note: "本地私有化跑开源模型" },
+    ],
+  },
   "claude.ai": {
     workspaces: ["ai", "dev", "efficiency"],
     actions: [
@@ -39,7 +49,9 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
     ],
     relations: [
       { targetTitle: "DeepSeek", targetUrl: "https://chat.deepseek.com", relationType: "alternative", isFreeOrOpenSource: true, note: "高性价比国产大模型" },
-      { targetTitle: "ChatGPT", targetUrl: "https://chat.openai.com", relationType: "alternative", isFreeOrOpenSource: false, note: "OpenAI 旗舰对话模型" },
+      // 库里活着的那条 ChatGPT 是 https://chatgpt.com；chat.openai.com 已被巡检软删，
+      // 写成旧域名只会让面板上这条平替永远点不进站内。
+      { targetTitle: "ChatGPT", targetUrl: "https://chatgpt.com", relationType: "alternative", isFreeOrOpenSource: false, note: "OpenAI 旗舰对话模型" },
     ],
   },
   "chat.deepseek.com": {
@@ -72,7 +84,8 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { id: "trending", label: "Trending", urlTemplate: "https://github.com/trending", icon: "flame" },
     ],
     relations: [
-      { targetTitle: "GitLab", targetUrl: "https://gitlab.com", relationType: "alternative", isFreeOrOpenSource: true, note: "支持私有化部署的代码托管平台" },
+      // 收录的是 about.gitlab.com（GitLab 官方站条目），写成 gitlab.com 会永远对不上
+      { targetTitle: "GitLab", targetUrl: "https://about.gitlab.com", relationType: "alternative", isFreeOrOpenSource: true, note: "支持私有化部署的代码托管平台" },
       { targetTitle: "Gitee", targetUrl: "https://gitee.com", relationType: "alternative", isFreeOrOpenSource: false, note: "国内快速访问的代码托管" },
     ],
   },
@@ -173,6 +186,10 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { targetTitle: "AppFlowy", targetUrl: "https://appflowy.io", relationType: "alternative", isFreeOrOpenSource: true, note: "Notion 开源私有化看板与知识库" },
       { targetTitle: "Obsidian", targetUrl: "https://obsidian.md", relationType: "alternative", isFreeOrOpenSource: true, note: "本地 Markdown 离线双链知识库" },
       { targetTitle: "AFFiNE", targetUrl: "https://affine.pro", relationType: "alternative", isFreeOrOpenSource: true, note: "下一代开源全能画布与协同工作区" },
+      // 这两条是「点了能进站内详情页」的补集：AppFlowy / AFFiNE 库里还没收，
+      // 而 events 里 `notion 平替` 恰恰要的是一次能比出多个候选的平替雷达。
+      { targetTitle: "Logseq", targetUrl: "https://logseq.com", relationType: "alternative", isFreeOrOpenSource: true, note: "开源大纲笔记，本地优先双链" },
+      { targetTitle: "思源笔记", targetUrl: "https://b3log.org/siyuan", relationType: "alternative", isFreeOrOpenSource: true, note: "开源块级编辑器，可完全离线" },
     ],
   },
 };
@@ -201,6 +218,20 @@ function parseEcosystemUrl(raw: string): { host: string; path: string } | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 把任意 URL（或 ECOSYSTEM_MAP 的键）归一成「host + path」定位串：去 `www.`、去尾斜杠、小写。
+ *
+ * 导出给中枢种子（apps/api/src/seed.ts:seedEcosystemRelations）用：源站与平替目标必须
+ * 走同一个口径，否则库里的 `https://www.continue.dev/` 和策划里写的 `https://continue.dev`
+ * 会被当成两个不同的站，把「其实收进来了」误报成「站外目标」。
+ * 键本身没有协议，调用方补 `https://` 再传进来即可。非 http(s) 或非法 URL 返回 null。
+ */
+export function ecosystemUrlKey(raw: string): string | null {
+  const parsed = parseEcosystemUrl(raw);
+  if (!parsed) return null;
+  return parsed.path === "/" ? parsed.host : `${parsed.host}${parsed.path}`;
 }
 
 /** 最长（最具体）的键优先：`github.com/features/copilot` 必须先于 `github.com` 尝试。 */

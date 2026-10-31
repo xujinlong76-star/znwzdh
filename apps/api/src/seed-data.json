@@ -920,6 +920,130 @@
         "开源"
       ],
       "icon": "https://github.com/favicon.ico"
+    },
+    {
+      "url": "https://github.com",
+      "title": "GitHub",
+      "description": "全球最大开源社区的代码托管与协作平台，仓库、Issue、Pull Request、Actions 流水线与 Pages 静态站在同一个账号里。",
+      "categorySlug": "code-hosting",
+      "tags": [
+        "代码托管",
+        "开源",
+        "Git",
+        "协作"
+      ],
+      "icon": "https://github.com/favicon.ico"
+    },
+    {
+      "url": "https://www.notion.so/",
+      "title": "Notion",
+      "description": "块编辑器式的笔记、知识库与团队工作区，页面可当数据库用，看板/文档/任务共用一套结构，模板与嵌入生态庞大。",
+      "categorySlug": "notes-and-pkb",
+      "tags": [
+        "笔记",
+        "知识库",
+        "看板",
+        "协作"
+      ],
+      "icon": "https://www.notion.so/favicon.ico"
+    },
+    {
+      "url": "https://npmmirror.com",
+      "title": "npmmirror 淘宝 NPM 镜像",
+      "description": "国内 npm 镜像站，安装依赖通常比直连官方 registry 快一个数量级；同步频率高，是 CI 与内网环境的常用加速方案。",
+      "categorySlug": "build-and-tooling",
+      "tags": [
+        "npm",
+        "镜像",
+        "加速",
+        "包管理"
+      ],
+      "icon": "https://npmmirror.com/favicon.ico"
+    },
+    {
+      "url": "https://coolify.io",
+      "title": "Coolify",
+      "description": "开源自托管的 Vercel / Heroku 平替：在自有服务器上部署应用、数据库与静态站，带自动构建、HTTPS 与一键回滚。",
+      "categorySlug": "cloud-and-iac",
+      "tags": [
+        "自托管",
+        "部署",
+        "PaaS",
+        "开源"
+      ],
+      "icon": "https://coolify.io/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
+    },
+    {
+      "url": "https://zeabur.com",
+      "title": "Zeabur",
+      "description": "面向全栈应用的托管部署平台，连上仓库即可上线前端、后端与数据库，按用量计费，不用自己运维服务器。",
+      "categorySlug": "cloud-and-iac",
+      "tags": [
+        "部署",
+        "PaaS",
+        "托管"
+      ],
+      "icon": "https://zeabur.com/favicon.ico"
+    },
+    {
+      "url": "https://pages.cloudflare.com",
+      "title": "Cloudflare Pages",
+      "description": "Cloudflare 的静态站与全栈前端托管：Git 推送即部署，全球边缘网络分发，免费额度覆盖多数个人项目。",
+      "categorySlug": "cloud-and-iac",
+      "tags": [
+        "静态托管",
+        "边缘网络",
+        "部署"
+      ],
+      "icon": "https://www.cloudflare.com/favicon.ico"
+    },
+    {
+      "url": "https://www.pexels.com/zh-cn/",
+      "title": "Pexels",
+      "description": "免版权图片与视频素材库，中文界面可搜，商用无需署名；封面、配图与短视频空镜的常用来源。",
+      "categorySlug": "stock-media",
+      "tags": [
+        "图库",
+        "免版权",
+        "视频素材"
+      ],
+      "icon": "https://www.pexels.com/favicon.ico"
+    },
+    {
+      "url": "https://pixabay.com/zh/",
+      "title": "Pixabay",
+      "description": "老牌免版权素材站：照片、插画、矢量与视频都有，中文界面，适合快速找配图与背景素材。",
+      "categorySlug": "stock-media",
+      "tags": [
+        "图库",
+        "免版权",
+        "插画",
+        "矢量"
+      ],
+      "icon": "https://pixabay.com/favicon.ico"
+    },
+    {
+      "url": "https://app.diagrams.net",
+      "title": "Draw.io（diagrams.net）",
+      "description": "免费开源的在线流程图与架构图工具，无需注册即可用，支持存到本地或网盘，并可导出多种格式。",
+      "categorySlug": "mindmaps-and-boards",
+      "tags": [
+        "流程图",
+        "架构图",
+        "白板",
+        "开源"
+      ],
+      "icon": "https://app.diagrams.net/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     }
   ],
   "collections": [

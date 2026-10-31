@@ -167,7 +167,10 @@ describe("aggregateLlmUsage 聚合语义", () => {
     await ctx.repo.run("UPDATE llm_usage SET created_at = ? WHERE scenario IN ('daily_a','daily_b')", [day(-1)]);
     await ctx.repo.run("UPDATE llm_usage SET created_at = ? WHERE scenario = 'daily_c'", [day(0)]);
 
-    const agg = await ctx.repo.aggregateLlmUsage({ since: day(-2) });
+    // until 必须显式给：day(0) 是「今天正午」，在中午之前跑的用例里它是未来时刻，
+    // 而 aggregateLlmUsage 的 until 默认 Date.now() —— 那条行会被窗口悄悄丢掉，
+    // 于是这条用例只在 12:00 之后是绿的（墙钟相位依赖，与本仓已修过的同类坑同形）。
+    const agg = await ctx.repo.aggregateLlmUsage({ since: day(-2), until: day(1) });
     expect(agg.daily).toHaveLength(2);
     expect(agg.daily[0].day < agg.daily[1].day).toBe(true);
     expect(agg.daily[0].day).toMatch(/^\d{4}-\d{2}-\d{2}$/);

@@ -426,7 +426,7 @@ export interface VideoHarvestReport {
   totalHarvestedCount: number
   totalAddedCount: number
   totalReplacedCount: number
-  additions: Array<{ categoryTitle: string; item: NavigationSubItem }>
+  additions: Array<{ categoryTitle: string; subCategoryTitle?: string; item: NavigationSubItem }>
   replacements: VideoReplacementRecord[]
   /**
    * 本次采集失败/跳过的关键词。

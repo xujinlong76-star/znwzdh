@@ -14,7 +14,7 @@
       "firstSeen": "2026-10-31",
       "lastSeen": "2026-10-31",
       "expiresAt": "2026-11-07",
-      "note": "候选平替必须对真实外站实测探活（probeCandidateUrl → guardedFetch），grade=verified 才够格被 autoApply；CI runner 出站受限/抖动时部分候选未验证，replacedCount 随探活成功率抖动。已观测到的同一根因指纹：`expected +0 to be 2`（run 41201160983 起）与 `expected 1 to be 2`（run 41201750460），两者登记为主指纹+别名；再出现别的数字必须人工确认后补别名，不是通配。同一提交本地 25/25 绿、前一 tip 该分片绿——单机敏感，不是代码回归（rankCandidate 只读探活档位，与 /rank 的双曲投影无关）。修法：给探活注入测试桩或预热候选探活缓存，不是改断言；修好后同步删掉别名。"
+      "note": "候选平替必须对真实外站实测探活（probeCandidateUrl → guardedFetch），grade=verified 才够格被 autoApply；CI runner 出站受限/抖动时部分候选未验证，replacedCount 随探活成功率抖动。已观测到的同一根因指纹：`expected +0 to be 2`（run 41201160983 起）与 `expected 1 to be 2`（run 41201750460），两者登记为主指纹+别名；再出现别的数字必须人工确认后补别名，不是通配。同一提交本地 25/25 绿、前一 tip 该分片绿——单机敏感，不是代码回归（rankCandidate 只读探活档位，与 /rank 的双曲投影无关）。测试侧确定性修法（已核对签名，不动生产代码）：把 vitest 的 import 补上 vi，在 apps/api/test/plugin-audit-api.test.ts 顶部加 `vi.mock('../src/candidate-probe.ts', async (importOriginal) => { const actual = await importOriginal<typeof import('../src/candidate-probe.ts')>(); return { ...actual, probeCandidateUrl: async () => ({ grade: 'verified', ok: true, status: 200, latencyMs: 1, reason: '测试桩：候选探活与网络无关' }) }; })`；vi.mock 会被提升到 import 之前，applyProbeResult / rankCandidate 仍走真实实现。该文件目前没有任何用例断言候选档位，全部候选判 verified 后 replacedCount=2 与 URL 去重就与出站网络无关。修好后删掉本条的 signatureAliases 与 flaky（过期点名的 `!` 行会提醒）。"
     }
   ]
 }

@@ -1,0 +1,182 @@
+{
+  "$comment": [
+    "检索召回回归语料（由 scripts/check-search-recall.mjs 在真库副本上重放）。",
+    "口径：只读、默认关语义通道与个性化，站点按 host 后缀 / 标题子串匹配，绝不钉站点 id。",
+    "每条用例都写 note 说明它为什么存在；查询一律来自 events 里真实发生过的搜索（kind='search'）。",
+    "带 pending 的用例在 HEAD 上是红的——它依赖 packages/store/src/search.ts 里那条还没提交的",
+    "「中文查询不进拼音通道」；改动落地后请把 pending 摘掉，让它进常规回归。"
+  ],
+  "cases": [
+    {
+      "query": "docker",
+      "expect": [{ "host": "docker.com" }],
+      "note": "拉丁精确查询：官方站、文档、Hub 都该在前 5。这条是引擎最基本的等值命中。"
+    },
+    {
+      "query": "笔记",
+      "expect": [{ "host": "note.youdao.com" }],
+      "note": "真实查询 ×6。中文标题 contains 命中，走的是 exact 通道，不依赖拼音列。"
+    },
+    {
+      "query": "天气",
+      "expect": [{ "host": "weather.com.cn" }],
+      "note": "真实查询 ×9，库里只有中国天气网一条对得上——该只出这一条，别用拼音乱撞凑页数。"
+    },
+    {
+      "query": "tianqi",
+      "expect": [{ "host": "weather.com.cn" }],
+      "note": "用户用全拼打中文站名：`tianqi` 落在「中国天气网」全拼串的中段，靠 exact 通道对 pinyin_full 的 contains 兜住。钉住「拼音列对拉丁输入仍然可用」。"
+    },
+    {
+      "query": "图标",
+      "expect": [{ "host": "lucide.dev" }, { "host": "heroicons.com" }],
+      "note": "真实查询 ×2。图标库是一类站，前 5 里至少要有其中一个。"
+    },
+    {
+      "query": "字体",
+      "expect": [{ "host": "fonts.google.com" }],
+      "note": "真实查询 ×2。Google Fonts 是字体类查询的核心答案。"
+    },
+    {
+      "query": "监控",
+      "expect": [{ "host": "prometheus.io" }],
+      "note": "真实查询。Prometheus 必须在结果里；这条同时守住「监控」不被 MSI Afterburner 这类硬件监控独占首位之外的召回。"
+    },
+    {
+      "query": "容器",
+      "expect": [{ "host": "kubernetes.io" }],
+      "note": "真实查询「我要部署容器」的母词。K8s 召不回来就是分类检索塌了。"
+    },
+    {
+      "query": "正则",
+      "expect": [{ "host": "regex101.com" }],
+      "note": "真实查询 ×2。regex101 是这类查询唯一正确答案。"
+    },
+    {
+      "query": "markdown",
+      "expect": [{ "host": "typora.io" }, { "host": "joplinapp.org" }],
+      "note": "真实查询「markdown 编辑器」。Typora/Joplin 都是真答案，命中其一即可，钉住跨语言（拉丁查询→中文描述站点）。"
+    },
+    {
+      "query": "地图",
+      "expect": [{ "host": "amap.com" }, { "host": "map.baidu.com" }],
+      "note": "地图类查询：高德/百度至少出一个。Immich 这种「自带地图相册」的站不该挤掉它们，但那是排序问题，这里只钉召回。"
+    },
+    {
+      "query": "截图",
+      "expect": [{ "host": "snipaste.com" }, { "title": "PixPin" }, { "title": "Snipaste" }],
+      "note": "真实查询 ×2。截图工具的头部产品必须在第 1 页——注意与「截屏」不同词，后者目前库里没有对得上的站。"
+    },
+    {
+      "query": "剪贴板",
+      "expect": [{ "title": "Ditto" }, { "title": "CopyQ" }],
+      "note": "剪贴板管理类：Ditto/CopyQ 是直接答案。这条守住中文查询靠描述原文召回（它们的标题里没有「剪贴板」）。"
+    },
+    {
+      "query": "日历",
+      "expect": [{ "host": "dida365.com" }],
+      "note": "真实查询。滴答清单的描述里有日历，属于「描述命中」这一类召回。"
+    },
+    {
+      "query": "翻译",
+      "expect": [{ "host": "crowdin.com" }, { "title": "Tolgee" }],
+      "note": "真实查询 ×3。 localization/翻译类站要能召回；这条也是「中文查询拆掉拼音通道后召回没塌」的正面证据。"
+    },
+    {
+      "query": "服务器",
+      "expect": [{ "host": "proxmox.com" }],
+      "note": "真实查询。Proxmox VE 是「服务器」类查询的核心答案。"
+    },
+    {
+      "query": "邮箱",
+      "expect": [{ "host": "proton.me" }],
+      "note": "邮箱类查询：Proton（邮件+密码管理）该在。修复前第 3 条是「印象笔记」——那条现在没了。"
+    },
+    {
+      "query": "音乐",
+      "expect": [{ "host": "suno.com" }],
+      "note": "真实查询。音乐生成 Suno 必须在；修复前第 3 条是「云原生社区（中文）」，纯拼音乱撞。"
+    },
+    {
+      "query": "内存",
+      "expect": [{ "host": "memcached.org" }],
+      "note": "真实查询（内存数据库）。Memcached 召不回来就是这一类查询整体失效。"
+    },
+    {
+      "query": "开源",
+      "expect": [{ "host": "github.com" }],
+      "k": 6,
+      "note": "真实查询 ×12，第 2 高频中文词。前 6 里至少有一个 GitHub 上的开源项目——这条守的是高频词不许空手。"
+    },
+    {
+      "query": "免费",
+      "expect": [{ "host": "fonts.google.com" }],
+      "note": "真实查询「免费高清图片 / 免费矢量设计软件」的母词。免费类查询必须有结果，不许空。"
+    },
+    {
+      "query": "插件",
+      "expect": [{ "host": "figma.com" }],
+      "note": "真实查询 ×5。Figma 插件文档这类答案必须在第 1 页。"
+    },
+    {
+      "query": "设计",
+      "expect": [{ "host": "gaoding.com" }, { "title": "创客贴" }],
+      "note": "真实查询 ×5。中文在线设计工具（稿定设计/创客贴）必须召回——它们是「设计」这个词的真实答案。"
+    },
+    {
+      "query": "会议纪要",
+      "expect": [{ "title": "讯飞听见" }],
+      "note": "会议纪要类查询：讯飞听见（录音转纪要）是唯一对得上的站，不许被泛化结果顶掉。"
+    },
+    {
+      "query": "视频剪辑",
+      "expect": [{ "host": "techsmith.com" }],
+      "note": "真实查询 ×2。库里剪辑类站很少，Camtasia 是仅剩的正确答案——这条守住「结果少不等于没有」。"
+    },
+    {
+      "query": "域名",
+      "expect": [{ "host": "pi-hole.net" }],
+      "note": "真实查询。修复前第 2 条是「一亩三分地」（拼音跨词界乱撞），现在只留 Pi-hole 这类真命中。"
+    },
+    {
+      "query": "dockr",
+      "didYouMean": ["Docker"],
+      "note": "真实查询 ×13 的拼错词。零结果必须给出「您是不是想搜 Docker」，这是拼写纠错唯一的用户可见出口。"
+    },
+    {
+      "query": "梯子",
+      "forbid": [
+        { "host": "fontsource.org" },
+        { "host": "stackblitz.com" },
+        { "host": "hetzner.com" },
+        { "host": "forestapp.cc" }
+      ],
+      "pending": "中文查询不进拼音通道（packages/store/src/search.ts 在途）",
+      "note": "真实查询 ×4。`梯子`→拼音 tizi 在连写的 pinyin_full 里跨词界撞上「字体托管」→Fontsource；拆掉长度门槛还会带出 StackBlitz/Hetzner/Forest。库里没有翻墙类站点，该空就空。"
+    },
+    {
+      "query": "短链",
+      "forbid": [{ "title": "JSON Server" }, { "title": "Locofy" }, { "title": "JSFiddle" }, { "title": "Bundlephobia" }],
+      "pending": "中文查询不进拼音通道（packages/store/src/search.ts 在途）",
+      "note": "真实查询。`短链`→duanlian 撞上「前端联动」的连写拼音（JSON Server）与「reactnextdengkuangjiadaimajiasushejiyuqianduanlian」（Locofy）。搜短链给出 JSON Server 是最典型的假命中。"
+    },
+    {
+      "query": "书签",
+      "forbid": [{ "title": "SQLite" }, { "title": "Squoosh" }],
+      "pending": "中文查询不进拼音通道（packages/store/src/search.ts 在途）",
+      "note": "真实查询。`书签`→shuqian 的拼音把 SQLite、Squoosh 拽了进来——用户搜书签管理器看到这两个纯属瞎撞。"
+    },
+    {
+      "query": "小说",
+      "forbid": [{ "title": "XState" }],
+      "pending": "中文查询不进拼音通道（packages/store/src/search.ts 在途）",
+      "note": "真实查询 ×4。`小说`→xiaoshuo 撞进 XState（状态机库）文档的拼音串。这类查询的正确行为是没内容就说没有。"
+    },
+    {
+      "query": "看图",
+      "forbid": [{ "title": "Hacktoberfest" }, { "title": "创客贴" }, { "title": "Tekton" }],
+      "pending": "首字母包含放宽的长度门槛（packages/store/src/search.ts 在途）",
+      "note": "真实查询 ×3（另有「免费 看图」×3）。`看图`→kt 的 2 字母首字母按包含放宽会撞进 Hacktoberfest/创客贴/Tekton 的连写拼音；看图类站点的召回要靠分类/标签，不是靠拼音乱撞。这条的牙齿在长度门槛那条改动上（拆掉门槛即红），拆掉「中文查询不进拼音通道」不影响它。"
+    }
+  ]
+}

@@ -689,6 +689,237 @@
         "举报"
       ],
       "icon": "https://12377.cn/favicon.ico"
+    },
+    {
+      "url": "https://www.irfanview.com",
+      "title": "IrfanView 看图工具",
+      "description": "Windows 上老牌轻量看图器，秒开 JPG/PNG/BMP/GIF/TIFF，支持 RAW、插件扩展与批量转换改名。",
+      "categorySlug": "desktop-utilities",
+      "tags": [
+        "看图",
+        "图片查看器",
+        "Windows",
+        "免费"
+      ],
+      "icon": "https://www.irfanview.com/favicon.ico"
+    },
+    {
+      "url": "https://imageglass.org",
+      "title": "ImageGlass 图片查看器",
+      "description": "开源的 Windows 看图工具，界面现代、支持 HEIC/WebP/SVG/RAW，可设为系统默认图片查看器并做简单涂写。",
+      "categorySlug": "desktop-utilities",
+      "tags": [
+        "看图",
+        "图片查看器",
+        "开源",
+        "Windows"
+      ],
+      "icon": "https://imageglass.org/favicon.ico"
+    },
+    {
+      "url": "https://www.bandisoft.com/honeyview/",
+      "title": "Honeyview 高速看图",
+      "description": "Bandicam 团队的看图器，压缩包里的图不必先解压缩直接看图，支持压缩包内预览与漫画阅读模式。",
+      "categorySlug": "desktop-utilities",
+      "tags": [
+        "看图",
+        "图片查看器",
+        "压缩包预览",
+        "Windows"
+      ],
+      "icon": "https://www.bandisoft.com/favicon.ico"
+    },
+    {
+      "url": "https://www.xnview.com",
+      "title": "XnView MP 看图与批量改名",
+      "description": "跨平台看图器，读取 500 余种图片格式，带标签管理、缩略图浏览器与批量转换改名。",
+      "categorySlug": "desktop-utilities",
+      "tags": [
+        "看图",
+        "图片查看器",
+        "跨平台",
+        "批量转换"
+      ],
+      "icon": "https://www.xnview.com/favicon.ico"
+    },
+    {
+      "url": "https://www.faststone.org",
+      "title": "FastStone Image Viewer 看图",
+      "description": "免费看图器，全屏对比、放大镜、简单裁剪涂写与批量转换都有，启动占用小，适合旧机器。",
+      "categorySlug": "desktop-utilities",
+      "tags": [
+        "看图",
+        "图片查看器",
+        "免费",
+        "Windows"
+      ],
+      "icon": "https://www.faststone.org/favicon.ico"
+    },
+    {
+      "url": "https://tinyurl.com",
+      "title": "TinyURL 短链生成",
+      "description": "免注册即可用的网址缩短服务，支持自定义短链后缀与二维码，长链接、带参数的营销链接都能压。",
+      "categorySlug": "coding-utilities",
+      "tags": [
+        "短链",
+        "网址缩短",
+        "二维码"
+      ],
+      "icon": "https://tinyurl.com/favicon.ico"
+    },
+    {
+      "url": "https://v.gd",
+      "title": "v.gd 短链与访问统计",
+      "description": "is.gd 团队的短链服务，勾选后给出点击次数报表，可用自定义后缀，页面极简无需登录。",
+      "categorySlug": "coding-utilities",
+      "tags": [
+        "短链",
+        "网址缩短",
+        "点击统计"
+      ],
+      "icon": "https://v.gd/favicon.ico"
+    },
+    {
+      "url": "https://short.io",
+      "title": "Short.io 短链域名管理",
+      "description": "绑定自有域名的短链平台，带点击地理分布、A/B 重定向与 API，免费额度够个人站长期使用。",
+      "categorySlug": "coding-utilities",
+      "tags": [
+        "短链",
+        "网址缩短",
+        "自定义域名",
+        "API"
+      ],
+      "icon": "https://short.io/favicon.ico"
+    },
+    {
+      "url": "https://yourls.org",
+      "title": "YOURLS 自建短链",
+      "description": "PHP 写的开源自建短链程序，装在自己服务器上就能取代第三方服务，带插件、书签小工具与统计面板。",
+      "categorySlug": "coding-utilities",
+      "tags": [
+        "短链",
+        "自建",
+        "开源",
+        "PHP"
+      ],
+      "icon": "https://yourls.org/favicon.ico"
+    },
+    {
+      "url": "https://polrproject.org",
+      "title": "Polr 开源短链引擎",
+      "description": "Laravel 实现的开源自建短链服务，支持域名池、二维码与访问统计，REST API 可直接接入自己的系统。",
+      "categorySlug": "coding-utilities",
+      "tags": [
+        "短链",
+        "自建",
+        "开源",
+        "Laravel"
+      ],
+      "icon": "https://polrproject.org/favicon.ico"
+    },
+    {
+      "url": "https://dub.co",
+      "title": "Dub 开源链接管理",
+      "description": "开源短链与链接管理平台，带 UTM 标记、点击归因与开发者优先的 API，可自建也可用官方托管。",
+      "categorySlug": "coding-utilities",
+      "tags": [
+        "短链",
+        "链接管理",
+        "开源",
+        "API"
+      ],
+      "icon": "https://dub.co/favicon.ico"
+    },
+    {
+      "url": "https://raindrop.io",
+      "title": "Raindrop 书签管理",
+      "description": "跨浏览器与手机的书签管理器，多级集合、标签与全文检索，能一键导出安装到别的浏览器。",
+      "categorySlug": "browser-and-pwa",
+      "tags": [
+        "书签",
+        "收藏管理",
+        "跨平台"
+      ],
+      "icon": "https://raindrop.io/favicon.ico"
+    },
+    {
+      "url": "https://github.com/sissbruecker/linkding",
+      "title": "linkding 自托管书签",
+      "description": "极简的自托管书签服务，单 Docker 容器即可跑起来，支持标签式收藏、全文检索与浏览器扩展同步。",
+      "categorySlug": "browser-and-pwa",
+      "tags": [
+        "书签",
+        "自建",
+        "开源",
+        "Docker"
+      ],
+      "icon": "https://github.com/favicon.ico"
+    },
+    {
+      "url": "https://floccus.org",
+      "title": "floccus 书签同步",
+      "description": "开源浏览器书签同步扩展，把 Chrome/Firefox 的书签通过 WebDAV 或 Nextcloud 对齐，不必登录厂商账号。",
+      "categorySlug": "browser-and-pwa",
+      "tags": [
+        "书签",
+        "同步",
+        "开源",
+        "WebDAV"
+      ],
+      "icon": "https://floccus.org/favicon.ico"
+    },
+    {
+      "url": "https://wallabag.org",
+      "title": "wallabag 自托管稍后读",
+      "description": "自托管的收藏与稍后读服务，抓正文存档成可离线阅读的页面，带标签、全文检索与 OPDS 阅读器接入。",
+      "categorySlug": "browser-and-pwa",
+      "tags": [
+        "书签",
+        "稍后读",
+        "自建",
+        "开源"
+      ],
+      "icon": "https://wallabag.org/favicon.ico"
+    },
+    {
+      "url": "https://github.com/ohmyzsh/ohmyzsh",
+      "title": "Oh My Zsh —— zsh 配置与启动脚本框架",
+      "description": "zsh 启动脚本管理框架，把 .zshrc 拆成可复用的插件与主题，装上即得命令补全、Git 状态提示与历史搜索。",
+      "categorySlug": "coding-utilities",
+      "tags": [
+        "启动脚本",
+        "shell",
+        "zsh",
+        "开源"
+      ],
+      "icon": "https://github.com/favicon.ico"
+    },
+    {
+      "url": "https://github.com/bash-it/bash-it",
+      "title": "bash-it —— Bash 启动脚本框架",
+      "description": "Bash 版的启动脚本框架，插件、别名、主题按需开关，适合不愿换 zsh 又想管好 .bashrc 的人。",
+      "categorySlug": "coding-utilities",
+      "tags": [
+        "启动脚本",
+        "shell",
+        "bash",
+        "开源"
+      ],
+      "icon": "https://github.com/favicon.ico"
+    },
+    {
+      "url": "https://github.com/nicknisi/dotfiles",
+      "title": "nicknisi dotfiles —— 可直接抄的启动脚本范例",
+      "description": "两万星的 dotfiles 范例仓库，vim/bash/zsh/tmux 的配置与启动脚本成套可复用，README 逐条讲为什么这么配。",
+      "categorySlug": "coding-utilities",
+      "tags": [
+        "启动脚本",
+        "dotfiles",
+        "shell",
+        "开源"
+      ],
+      "icon": "https://github.com/favicon.ico"
     }
   ],
   "collections": [

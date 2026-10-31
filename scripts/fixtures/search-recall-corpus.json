@@ -4,7 +4,12 @@
     "口径：只读、默认关语义通道与个性化，站点按 host 后缀 / 标题子串匹配，绝不钉站点 id。",
     "每条用例都写 note 说明它为什么存在；查询一律来自 events 里真实发生过的搜索（kind='search'）。",
     "带 pending 的用例在 HEAD 上是红的——它依赖 packages/store/src/search.ts 里那条还没提交的",
-    "「中文查询不进拼音通道」；改动落地后请把 pending 摘掉，让它进常规回归。"
+    "「中文查询不进拼音通道」；改动落地后请把 pending 摘掉，让它进常规回归。",
+    "2026-10-31：看图 / 短链 / 书签 / 启动脚本 这四个意图原本是**内容缺口**——把这 18 条种子的 URL",
+    "从当天的库里剔掉，剩下 1020 条启用站点的标题+描述命中 0；补收录后命中 5/6/4/3，才有答案可召回。",
+    "所以这几条 expect 用例钉的是「内容不许再被删空」，不是算法退步——将来它红了先查站点还在不在。",
+    "note 里的 ×N 是**当天的 events 计量**，只是「这个查询真的发生过」的证据：探针走中枢会被记成 search 事件，",
+    "同一个词的计数会随调试自增，别拿它当需要复现的断言。"
   ],
   "cases": [
     {
@@ -144,6 +149,21 @@
       "note": "真实查询 ×13 的拼错词。零结果必须给出「您是不是想搜 Docker」，这是拼写纠错唯一的用户可见出口。"
     },
     {
+      "query": "qdjb",
+      "expect": [{ "title": "启动脚本" }],
+      "note": "2026-10-31 计量：search ×14、zero_result ×7，排在 events 前 12 个高频查询里的第 8 位。`qdjb` 是「启动脚本」的首字母。补收录 Oh My Zsh / bash-it / dotfiles 之前，库里 0 条对得上——这条钉的是**内容**不再缺，不是算法变好。"
+    },
+    {
+      "query": "启动脚本",
+      "expect": [{ "title": "启动脚本" }],
+      "note": "真实查询 ×1。中文母词走 exact 通道的标题 contains，与上一条 `qdjb`（拼音通道）分开通道各钉一次：任一条断了就说明那一侧的召回塌了。"
+    },
+    {
+      "query": "免费 看图",
+      "expect": [{ "host": "imageglass.org" }, { "host": "irfanview.com" }, { "title": "FastStone" }],
+      "note": "真实查询 ×4、zero_result ×3。补收录前库里没有任何站点对得上「看图」，两条空格词查询是同一处内容缺口的两种打法。"
+    },
+    {
       "query": "梯子",
       "forbid": [
         { "host": "fontsource.org" },
@@ -156,15 +176,17 @@
     },
     {
       "query": "短链",
+      "expect": [{ "host": "tinyurl.com" }, { "host": "v.gd" }, { "host": "short.io" }, { "host": "yourls.org" }, { "host": "polrproject.org" }, { "host": "dub.co" }],
       "forbid": [{ "title": "JSON Server" }, { "title": "Locofy" }, { "title": "JSFiddle" }, { "title": "Bundlephobia" }],
       "pending": "中文查询不进拼音通道（packages/store/src/search.ts 在途）",
-      "note": "真实查询。`短链`→duanlian 撞上「前端联动」的连写拼音（JSON Server）与「reactnextdengkuangjiadaimajiasushejiyuqianduanlian」（Locofy）。搜短链给出 JSON Server 是最典型的假命中。"
+      "note": "2026-10-31 计量 search ×3、zero_result ×1。expect 半边由这批补收录满足（短链服务 6 条）；forbid 半边在 HEAD 上仍是 `短链`→duanlian 撞上「前端联动」的连写拼音（JSON Server）与「reactnextdengkuangjiadaimajiasushejiyuqianduanlian」（Locofy）。搜短链给出 JSON Server 是最典型的假命中——两半都要绿才算这条过。"
     },
     {
       "query": "书签",
+      "expect": [{ "host": "raindrop.io" }, { "host": "floccus.org" }, { "host": "wallabag.org" }, { "title": "linkding" }],
       "forbid": [{ "title": "SQLite" }, { "title": "Squoosh" }],
       "pending": "中文查询不进拼音通道（packages/store/src/search.ts 在途）",
-      "note": "真实查询。`书签`→shuqian 的拼音把 SQLite、Squoosh 拽了进来——用户搜书签管理器看到这两个纯属瞎撞。"
+      "note": "2026-10-31 计量 search ×4、zero_result ×1。expect 半边由这批补收录满足（书签管理器 4 条）；forbid 半边在 HEAD 上仍是 `书签`→shuqian 的拼音把 SQLite、Squoosh 拽了进来——用户搜书签管理器看到这两个纯属瞎撞。"
     },
     {
       "query": "小说",
@@ -174,9 +196,10 @@
     },
     {
       "query": "看图",
+      "expect": [{ "host": "imageglass.org" }, { "host": "irfanview.com" }, { "host": "xnview.com" }, { "title": "Honeyview" }, { "title": "FastStone" }],
       "forbid": [{ "title": "Hacktoberfest" }, { "title": "创客贴" }, { "title": "Tekton" }],
       "pending": "首字母包含放宽的长度门槛（packages/store/src/search.ts 在途）",
-      "note": "真实查询 ×3（另有「免费 看图」×3）。`看图`→kt 的 2 字母首字母按包含放宽会撞进 Hacktoberfest/创客贴/Tekton 的连写拼音；看图类站点的召回要靠分类/标签，不是靠拼音乱撞。这条的牙齿在长度门槛那条改动上（拆掉门槛即红），拆掉「中文查询不进拼音通道」不影响它。"
+      "note": "2026-10-31 计量：search ×6、zero_result ×4（另有「免费 看图」search ×4 / zero ×3）。expect 半边由这批补收录满足（看图器 5 条）；forbid 半边在 HEAD 上仍是 `看图`→kt 的 2 字母首字母按包含放宽会撞进 Hacktoberfest/创客贴/Tekton 的连写拼音；看图类站点的召回要靠分类/标签，不是靠拼音乱撞。这条的牙齿在长度门槛那条改动上（拆掉门槛即红），拆掉「中文查询不进拼音通道」不影响它。"
     }
   ]
 }

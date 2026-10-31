@@ -126,18 +126,19 @@ function main(argv) {
   }
 
   if (opts.update) {
-    const { ledger: next, removed, added, renewed } = updateLedger(ledger, failures, {
+    const { ledger: next, removed, retained, added, renewed } = updateLedger(ledger, failures, {
       ttlDays: opts.ttlDays,
       ownerOf: (f) => (opts.owner ? opts.owner : ownerFromGit(f.file)),
     });
     writeFileSync(ledgerAbs, JSON.stringify(next, null, 2) + "\n");
     console.log(
       `${P}台账已写入 ${opts.ledger}：${failures.length} 条在账（新增 ${added.length}，换因重置 ${renewed.length}，` +
-        `修复移除 ${removed.length}，TTL ${opts.ttlDays} 天）`,
+        `修复移除 ${removed.length}，抖动保留 ${retained.length}，TTL ${opts.ttlDays} 天）`,
     );
     for (const id of added) console.log(`   + ${id}`);
     for (const id of renewed) console.log(`   ~ ${id}（换因，TTL 重置）`);
     for (const id of removed) console.log(`   - ${id}（已修复）`);
+    for (const id of retained) console.log(`   = ${id}（flaky：本轮未出现只说明抖动，保留；确认修好后手工删条目）`);
     return 0;
   }
 

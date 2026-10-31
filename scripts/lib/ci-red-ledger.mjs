@@ -21,6 +21,11 @@
  * 不是换因，但也不能拿正则/前缀放宽比对（那会把真正的新根因一起放行）。所以别名是
  * **人工逐条登记的确切字符串**：命中仍算已知，未登记的指纹照样按换因处理。别名从属于
  * 当前根因——真换因时随旧条目一起丢弃，不留到新根因上。
+ *
+ * 抖动账（flaky: true）：这类条目在某一轮全绿**不代表修好了**，`--update` 不能把它当
+ * 「已修复」删掉（删掉后下一轮再红就变成「新增」，别名也一起没了）。所以标记 flaky 的
+ * 条目在 --update 时即使本轮未出现也保留，lastSeen 不刷新（绿轮不是它还活着的证据）。
+ * 确认修复后手工删条目——删除是人的判断，不是一次绿轮的副作用。
  */
 
 export const LEDGER_VERSION = 1;
@@ -83,10 +88,15 @@ export function validateLedger(ledger) {
       if (!e || typeof e !== "object") problems.push(`entries[${i}] 不是对象`);
       else if (!e.id || !e.signature || !e.owner || !e.expiresAt) {
         problems.push(`entries[${i}] 缺 id/signature/owner/expiresAt（台账条目必须可追责、会过期）`);
-      } else if (e.signatureAliases !== undefined) {
-        if (!Array.isArray(e.signatureAliases)) problems.push(`entries[${i}] 的 signatureAliases 不是数组`);
-        else if (e.signatureAliases.some((a) => typeof a !== "string" || a.trim() === "")) {
-          problems.push(`entries[${i}] 的 signatureAliases 含空值（别名必须是确切字符串，不能放通配）`);
+      } else {
+        if (e.signatureAliases !== undefined) {
+          if (!Array.isArray(e.signatureAliases)) problems.push(`entries[${i}] 的 signatureAliases 不是数组`);
+          else if (e.signatureAliases.some((a) => typeof a !== "string" || a.trim() === "")) {
+            problems.push(`entries[${i}] 的 signatureAliases 含空值（别名必须是确切字符串，不能放通配）`);
+          }
+        }
+        if (e.flaky !== undefined && typeof e.flaky !== "boolean") {
+          problems.push(`entries[${i}] 的 flaky 必须是布尔（抖动账决定 --update 是否保留条目）`);
         }
       }
     }
@@ -119,7 +129,9 @@ export function diffLedger(ledger, failures, { now = new Date(), includeFixed = 
       continue;
     }
     if (entry.signature !== signature) {
-      const aliases = Array.isArray(entry.signatureAliases) ? entry.signatureAliases : [];
+      // 别名与真实指纹走同一套归一化（首行/压平空白）：从 CI 日志整段复制的消息
+      // 带缩进或堆栈时不会静默匹配不上。
+      const aliases = Array.isArray(entry.signatureAliases) ? entry.signatureAliases.map((a) => signatureOf(a)) : [];
       if (!aliases.includes(signature)) {
         changed.push({ ...f, id, signature, prevSignature: entry.signature, reason: "同用例换因（错误指纹变了）", entry });
         continue;
@@ -181,7 +193,7 @@ export function updateLedger(ledger, failures, { now = new Date(), ttlDays = 14,
     const signature = signatureOf(f.message);
     seen.add(id);
     const old = prev.get(id);
-    const aliases = Array.isArray(old?.signatureAliases) ? old.signatureAliases : [];
+    const aliases = Array.isArray(old?.signatureAliases) ? old.signatureAliases.map((a) => signatureOf(a)) : [];
     // 别名命中只续命：主指纹与别名都保持不变，否则主指纹会被抖动值带跑，
     // 下一轮又换一个数字就再报一次换因。
     if (old && (old.signature === signature || aliases.includes(signature))) {
@@ -202,11 +214,23 @@ export function updateLedger(ledger, failures, { now = new Date(), ttlDays = 14,
     });
   }
 
-  const removed = [...prev.keys()].filter((id) => !seen.has(id));
+  const removed = [];
+  const retained = [];
+  for (const e of prev.values()) {
+    if (seen.has(e.id)) continue;
+    if (e.flaky === true) {
+      // 绿轮不是「还活着」的证据：保留条目但**不刷新 lastSeen**，TTL 照旧。
+      entries.push(e);
+      retained.push(e.id);
+    } else {
+      removed.push(e.id);
+    }
+  }
   entries.sort((a, b) => a.id.localeCompare(b.id));
   return {
     ledger: { version: LEDGER_VERSION, updatedAt: today, entries },
     removed,
+    retained,
     added: entries.filter((e) => !prev.has(e.id)).map((e) => e.id),
     renewed: entries.filter((e) => prev.has(e.id) && prev.get(e.id).signature !== e.signature).map((e) => e.id),
   };

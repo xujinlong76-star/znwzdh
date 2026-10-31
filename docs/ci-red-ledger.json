@@ -10,6 +10,7 @@
       "signatureAliases": ["expected 1 to be 2 // Object.is equality"],
       "message": "expected +0 to be 2 // Object.is equality",
       "owner": "插件平台（候选探活需可注入，单机敏感）",
+      "flaky": true,
       "firstSeen": "2026-10-31",
       "lastSeen": "2026-10-31",
       "expiresAt": "2026-11-07",

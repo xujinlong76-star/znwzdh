@@ -167,6 +167,15 @@ describe("updateLedger：入账、续命、换因重置、修复移除", () => {
     expect(ledger.entries).toEqual([]);
     expect(removed).toEqual(["apps/web/test/a.test.ts :: 用例 A"]);
   });
+
+  it("flaky：本轮全绿也不移除、lastSeen 不刷新（一轮绿不是修复证据）", () => {
+    const flakyEntry = { ...known[0], flaky: true, lastSeen: "2026-10-20" };
+    const { ledger, removed, retained } = updateLedger(ledgerOf([flakyEntry]), [], { now });
+    expect(removed).toEqual([]);
+    expect(retained).toEqual(["apps/web/test/a.test.ts :: 用例 A"]);
+    expect(ledger.entries).toHaveLength(1);
+    expect(ledger.entries[0].lastSeen).toBe("2026-10-20");
+  });
 });
 
 describe("signatureAliases：只放行登记过的抖动指纹", () => {
@@ -196,6 +205,13 @@ describe("signatureAliases：只放行登记过的抖动指纹", () => {
     expect(diff.persisted[0].matchedAlias).toBe(true);
   });
 
+  it("别名按首行归一化：连堆栈整段粘进来也能命中", () => {
+    const pasted = ledgerOf([{ ...flaky[0], signatureAliases: ["  expected   1 to be 2\r\n    at p.test.ts:3:4"] }]);
+    const diff = diffLedger(pasted, fail("expected 1 to be 2"), { now });
+    expect(diff.persisted).toHaveLength(1);
+    expect(diff.persisted[0].matchedAlias).toBe(true);
+  });
+
   it("未登记的指纹 → 照旧换因（别名是确切字符串，不是通配）", () => {
     const diff = diffLedger(ledgerOf(flaky), fail("expected 2 to be 2"), { now });
     expect(diff.changed).toHaveLength(1);
@@ -221,6 +237,10 @@ describe("signatureAliases：只放行登记过的抖动指纹", () => {
   it("validateLedger：别名不是确切的非空字符串 → 坏账", () => {
     expect(validateLedger(ledgerOf([{ ...flaky[0], signatureAliases: "expected 1 to be 2" }])).join()).toContain("signatureAliases");
     expect(validateLedger(ledgerOf([{ ...flaky[0], signatureAliases: [""] }])).join()).toContain("signatureAliases");
+  });
+
+  it("validateLedger：flaky 不是布尔 → 坏账", () => {
+    expect(validateLedger(ledgerOf([{ ...flaky[0], flaky: "yes" }])).join()).toContain("flaky");
   });
 
   it("真实 CLI：别名命中 → --require-no-new/--strict-ttl rc 0，输出点名别名", () => {
@@ -289,6 +309,18 @@ describe("真实 CLI", () => {
     expect(saved.entries[0].owner).toBe("team-a");
     const check = run(dir, ["--from", "j.xml", "--ledger", "ledger.json", "--require-no-new"]);
     expect(check.status).toBe(0);
+  });
+
+  it("--update 对 flaky 账：本轮全绿也保留并在输出里点名", () => {
+    const dir = workspace();
+    writeFileSync(join(dir, "ledger.json"), JSON.stringify(ledgerOf([{ ...known[0], flaky: true }])));
+    writeFileSync(join(dir, "j.xml"), junit([], 0));
+    const res = run(dir, ["--from", "j.xml", "--ledger", "ledger.json", "--update"]);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("抖动保留 1");
+    const saved = JSON.parse(readFileSync(join(dir, "ledger.json"), "utf8"));
+    expect(saved.entries).toHaveLength(1);
+    expect(saved.entries[0].flaky).toBe(true);
   });
 
   it("GITHUB_STEP_SUMMARY 存在时追加而不是覆盖", () => {

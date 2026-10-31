@@ -257,6 +257,8 @@ export interface VideoConfig {
   seoKeywords?: string[]
   indexable?: boolean
   lastIndexedAt?: number
+  difficulty?: 'beginner' | 'intermediate' | 'advanced'
+  tags?: string[]
 }
 
 export interface NavigationCategoryRaw {

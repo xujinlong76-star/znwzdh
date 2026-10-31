@@ -93,7 +93,7 @@ export function buildDailyChartModel(daily: HubAiDailyTrendPoint[]): DailyChartM
   let hasAnyCost = false
   let maxTotalCalls = 0
   let windowCalls = 0
-  let windowCost: number | null = null
+  let windowCost = 0
   const days = daily.map((d) => {
     const segs = d.models
       .filter((m) => m.calls > 0)
@@ -108,7 +108,7 @@ export function buildDailyChartModel(daily: HubAiDailyTrendPoint[]): DailyChartM
     if (d.costRmb !== null) {
       cum += d.costRmb
       hasAnyCost = true
-      windowCost = (windowCost ?? 0) + d.costRmb
+      windowCost += d.costRmb
     }
     windowCalls += d.calls
     maxTotalCalls = Math.max(maxTotalCalls, d.calls)
@@ -129,7 +129,7 @@ export function buildDailyChartModel(daily: HubAiDailyTrendPoint[]): DailyChartM
     maxCumCostRmb: cum,
     hasAnyCost,
     windowCalls,
-    windowCostRmb: windowCost === null ? null : Number(windowCost.toFixed(6)),
+    windowCostRmb: hasAnyCost ? Number(windowCost.toFixed(6)) : null,
   }
 }
 

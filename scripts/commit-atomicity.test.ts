@@ -36,12 +36,14 @@ import {
   addedMemberNames,
   aliasRootsFor,
   changedExportNames,
+  exportedNames,
   extractPathLiterals,
   findHeadConsumerOrphans,
   isReadArgument,
   memberNamesOf,
   mentionsSymbol,
   reexportClosure,
+  removedExportNames,
 } from "./lib/commit-atomicity.mjs";
 import { joinedPathLiterals, resolveSpecifier, WORKSPACE_ALIAS_ROOTS } from "./lib/source-refs.mjs";
 
@@ -72,6 +74,8 @@ function gitEnv(extra: Record<string, string> = {}) {
   delete env.NAVHUB_ALLOW_DIRTY_SOURCE_DEPS;
   // HEAD 自洽性的总闸同理：本机为了别的提交关掉它，「必须报」的夹具就会假绿。
   delete env.NAVHUB_SKIP_HEAD_CONSUMERS;
+  // 「本地判定不可信」那条同理（2026-10-31 新增）：泄漏进夹具同样让「必须报」的用例整段静默。
+  delete env.NAVHUB_SKIP_FOREIGN_REMOVALS;
   return { ...env, ...extra };
 }
 
@@ -950,5 +954,111 @@ describe("HEAD 自洽性的字段级判据", () => {
     });
     expect(out).toEqual([]);
     expect(greps).toBe(0);
+  });
+});
+
+describe("提交原子性：本地判定不可信（脏生产者删导出、干净消费者仍读）", () => {
+  const QUOTA = "export async function checkLlmQuota(state: unknown) {\n  return state;\n}\n";
+  const CONSUMER = 'import { checkLlmQuota } from "../lib/quota.ts";\n\nexport const run = () => checkLlmQuota(1);\n';
+  const RENAMED = "export async function reserveLlmQuota(state: unknown) {\n  return state;\n}\n";
+
+  function seedRepo() {
+    return makeRepo({
+      "apps/api/src/lib/quota.ts": QUOTA,
+      "apps/api/src/routes/copilot.ts": CONSUMER,
+      "apps/api/src/seed.ts": "export const seed = 1;\n",
+    });
+  }
+
+  it("脏生产者删了导出、干净消费者仍在 import → 当场点名两者，且只报不拦", () => {
+    const dir = seedRepo();
+    write(dir, "apps/api/src/lib/quota.ts", RENAMED);
+    write(dir, "apps/api/src/seed.ts", "// 本次提交只动了无关文件\nexport const seed = 1;\n");
+    git(dir, ["add", "apps/api/src/seed.ts"]);
+    const r = run(dir);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain("本地判定不可信");
+    expect(r.out).toContain("apps/api/src/lib/quota.ts");
+    expect(r.out).toContain("checkLlmQuota");
+    expect(r.out).toContain("apps/api/src/routes/copilot.ts:1");
+    expect(r.out).toContain("摘除闭包");
+  });
+
+  it("删了又加回来（挪位置）→ 不报：工作区里仍导出同名符号", () => {
+    const dir = seedRepo();
+    write(
+      dir,
+      "apps/api/src/lib/quota.ts",
+      "export const other = 1;\n\nexport async function checkLlmQuota(state: unknown) {\n  return state;\n}\n",
+    );
+    write(dir, "apps/api/src/seed.ts", "// 本次提交只动了无关文件\nexport const seed = 1;\n");
+    git(dir, ["add", "apps/api/src/seed.ts"]);
+    const r = run(dir);
+    expect(r.status).toBe(0);
+    expect(r.out).not.toContain("本地判定不可信");
+  });
+
+  it("消费者自己也脏 → 不报（改过的消费者由另外两条判据管）", () => {
+    const dir = seedRepo();
+    write(dir, "apps/api/src/lib/quota.ts", RENAMED);
+    write(
+      dir,
+      "apps/api/src/routes/copilot.ts",
+      'import { reserveLlmQuota } from "../lib/quota.ts";\n\nexport const run = () => reserveLlmQuota(1);\n',
+    );
+    write(dir, "apps/api/src/seed.ts", "// 本次提交只动了无关文件\nexport const seed = 1;\n");
+    git(dir, ["add", "apps/api/src/seed.ts"]);
+    const r = run(dir);
+    expect(r.status).toBe(0);
+    expect(r.out).not.toContain("本地判定不可信");
+  });
+
+  it("只是同名标识符、没有 import 边 → 不报（少了这条边判据就是纯噪音）", () => {
+    const dir = makeRepo({
+      "apps/api/src/lib/quota.ts": QUOTA,
+      // 同名标识符，但与 quota.ts 之间没有 import 边
+      "apps/api/src/routes/other.ts": "export const checkLlmQuota = 1;\n",
+      "apps/api/src/seed.ts": "export const seed = 1;\n",
+    });
+    write(dir, "apps/api/src/lib/quota.ts", RENAMED);
+    write(dir, "apps/api/src/seed.ts", "// 本次提交只动了无关文件\nexport const seed = 1;\n");
+    git(dir, ["add", "apps/api/src/seed.ts"]);
+    const r = run(dir);
+    expect(r.status).toBe(0);
+    expect(r.out).not.toContain("本地判定不可信");
+  });
+
+  it("NAVHUB_SKIP_FOREIGN_REMOVALS=1：整段静默（总闸必须能真关掉）", () => {
+    const dir = seedRepo();
+    write(dir, "apps/api/src/lib/quota.ts", RENAMED);
+    write(dir, "apps/api/src/seed.ts", "// 本次提交只动了无关文件\nexport const seed = 1;\n");
+    git(dir, ["add", "apps/api/src/seed.ts"]);
+    const r = run(dir, { NAVHUB_SKIP_FOREIGN_REMOVALS: "1" });
+    expect(r.status).toBe(0);
+    expect(r.out).not.toContain("本地判定不可信");
+  });
+
+  it("--json：结构化字段与纯 JSON 输出同时成立", () => {
+    const dir = seedRepo();
+    write(dir, "apps/api/src/lib/quota.ts", RENAMED);
+    write(dir, "apps/api/src/seed.ts", "// 本次提交只动了无关文件\nexport const seed = 1;\n");
+    git(dir, ["add", "apps/api/src/seed.ts"]);
+    const r = run(dir, {}, ["--json"]);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.foreignRemovals).toEqual([
+      expect.objectContaining({ producer: "apps/api/src/lib/quota.ts", name: "checkLlmQuota" }),
+    ]);
+  });
+
+  it("removedExportNames 只认导出声明消失：函数体内删行与改动实现不算", () => {
+    expect([...removedExportNames("-export async function gone() {}\n")]).toEqual(["gone"]);
+    expect([...removedExportNames("-  const x = 1;\n")]).toEqual([]);
+    expect([...removedExportNames("-export { a, b as c };\n")].sort()).toEqual(["a", "b"]);
+    expect([...removedExportNames("+export async function added() {}\n")]).toEqual([]);
+  });
+
+  it("exportedNames：`export { a as b }` 对外可见的是 b", () => {
+    expect([...exportedNames("export { a as b, c };\nexport class D {}\n")].sort()).toEqual(["D", "b", "c"]);
   });
 });

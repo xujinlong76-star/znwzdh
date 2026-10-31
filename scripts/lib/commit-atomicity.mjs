@@ -648,3 +648,153 @@ export function findHeadConsumerOrphans({
   }
   return out.sort((a, b) => `${a.producer}#${a.member}`.localeCompare(`${b.producer}#${b.member}`));
 }
+
+/**
+ * 文件里**现在**导出的顶层符号名（正向版，配合 removedExportNames 用）。
+ *
+ * 只认导出声明本身：`export function x` / `export const x` / `export class x` /
+ * `export type x` / `export { a, b as c }`。不认 `export default`（名字恒为 default，报出来没有指向性）。
+ */
+export function exportedNames(text) {
+  const names = new Set();
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("//") || line.startsWith("/*") || line.startsWith("*")) continue;
+    const decl = EXPORTED_DECL_RE.exec(line);
+    if (decl) {
+      names.add(decl[1]);
+      continue;
+    }
+    const list = EXPORT_LIST_RE.exec(line);
+    if (list) {
+      for (const item of list[1].split(",")) {
+        // `export { a as b }`：对外可见的是 b
+        const aliased = item.split(/\s+as\s+/);
+        const name = (aliased.length > 1 ? aliased[1] : aliased[0]).trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name)) names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * `git diff` 里**消失**的导出符号：只看导出声明行被删（`-export function foo`）与
+ * `export {}` 名单里被删的那几项。
+ *
+ * 为什么不用 changedExportNames：它把「函数体内删了一行」也算成签名变化（那是伴随改动检查要的宽口径），
+ * 这里要的是一句能负责任地说出口的话——「这个符号在工作区里已经不存在了」。宽了就会把无关标识符
+ * 报成本地红的原因，而这条判据的全部价值就是它说得出真话。
+ */
+export function removedExportNames(diffText) {
+  const names = new Set();
+  for (const raw of String(diffText).split(/\r?\n/)) {
+    if (!raw.startsWith("-") || raw.startsWith("---")) continue;
+    const line = raw.slice(1);
+    const decl = EXPORTED_DECL_RE.exec(line);
+    if (decl) {
+      names.add(decl[1]);
+      continue;
+    }
+    const list = EXPORT_LIST_RE.exec(line);
+    if (list) {
+      for (const item of list[1].split(",")) {
+        const name = item.trim().split(/\s+as\s+/)[0]?.trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name ?? "")) names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * 「本地判定不可信」的账：脏生产者删掉了导出，而**没改动过**的消费者还在读它。
+ *
+ * 这是 findHeadConsumerOrphans 的镜像。那边量的是「工作区多了字段、提交树里已有消费者在读」
+ * （提交会红在 CI）；这边量的是「工作区少了符号、本机消费者还在读」——
+ * 本机 typecheck / eslint / vitest 读磁盘，于是红指向一个跟本次提交集无关的文件。
+ *
+ * 真事故形状（2026-10-31）：他方在途把 `llm-quota.ts` 的 `checkLlmQuota` 改成 `reserveLlmQuota`，
+ * 为了过闸把两个消费者临时还原成 HEAD，结果 typecheck 直接 TS2305——
+ * 那一刻缺的就是这句「生产者还得连带还原 llm-quota.ts」，而它是靠跑完 7 分钟提交才撞出来的。
+ *
+ * @param {object} io
+ * @param {{file:string, unstagedDiff:string}[]} io.producers 脏生产者（不含本次提交集）
+ * @param {(file:string)=>Set<string>} io.worktreeExportsOf 该文件**工作区**版本当前的导出名（惰性问）
+ *        删了又加回来（挪位置、改名后复用同一个名字）不算消失——报了就是假账。
+ * @param {(tokens:string[])=>{file:string,line:number,text:string}[]} io.grepCommitted 一次批量搜裸标识符
+ * @param {(file:string)=>boolean} io.isUnchanged 消费者是否压根没改过（改过的由别的判据管）
+ * @param {(consumer:string, producer:string)=>boolean} io.dependsOn 没有这条 import 边就不是它删的
+ * @param {number} [io.maxConsumers]
+ * @param {number} [io.maxHitFiles] 同 findHeadConsumerOrphans：泛名字散落在太多文件时不报，经 onSkip 记账
+ * @param {(name:string, files:number)=>void} [io.onSkip]
+ * @returns {{producer:string, name:string, consumers:{file:string,line:number,text:string}[], consumerCount:number}[]}
+ */
+export function findForeignRemovalFalseReds({
+  producers,
+  worktreeExportsOf,
+  grepCommitted,
+  isUnchanged,
+  dependsOn,
+  maxConsumers = 8,
+  maxHitFiles = 12,
+  onSkip,
+}) {
+  const candidates = [];
+  for (const p of [...producers].sort((a, b) => a.file.localeCompare(b.file))) {
+    if (!SOURCE_FILE_RE.test(p.file) || TEST_FILE_RE.test(p.file)) continue;
+    if (typeof p.unstagedDiff !== "string") continue;
+    for (const name of [...removedExportNames(p.unstagedDiff)].sort()) {
+      if (worktreeExportsOf(p.file).has(name)) continue;
+      candidates.push({ producer: p.file, name });
+    }
+  }
+  if (candidates.length === 0) return [];
+
+  const hits = grepCommitted([...new Set(candidates.map((c) => c.name))]) ?? [];
+  /** 同 findHeadConsumerOrphans：从每行抽标识符建桶，一次扫描完成，不做「候选 × 引用行」的百万次正则 */
+  const byName = new Map();
+  for (const h of hits) {
+    if (isCommentBody(h.text)) continue;
+    for (const m of String(h.text).matchAll(/[A-Za-z_$][\w$]*/g)) {
+      const name = m[0];
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(h);
+    }
+  }
+
+  const out = [];
+  const seen = new Set();
+  for (const c of candidates) {
+    const key = `${c.producer}\0${c.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const matched = (byName.get(c.name) ?? []).filter((h) => h.file !== c.producer && isUnchanged(h.file));
+    if (matched.length === 0) continue;
+    const hitFiles = new Set(matched.map((h) => h.file));
+    if (hitFiles.size > maxHitFiles) {
+      onSkip?.(c.name, hitFiles.size);
+      continue;
+    }
+    const consumers = [];
+    const seenHit = new Set();
+    for (const h of matched) {
+      const hk = `${h.file}:${h.line}`;
+      if (seenHit.has(hk)) continue;
+      seenHit.add(hk);
+      if (!dependsOn(h.file, c.producer)) continue;
+      consumers.push(h);
+    }
+    if (consumers.length === 0) continue;
+    consumers.sort((a, b) =>
+      `${a.file}:${String(a.line).padStart(6, "0")}`.localeCompare(`${b.file}:${String(b.line).padStart(6, "0")}`),
+    );
+    out.push({
+      producer: c.producer,
+      name: c.name,
+      consumers: consumers.slice(0, maxConsumers),
+      consumerCount: consumers.length,
+    });
+  }
+  return out.sort((a, b) => `${a.producer}#${a.name}`.localeCompare(`${b.producer}#${b.name}`));
+}

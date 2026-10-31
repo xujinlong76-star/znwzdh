@@ -21,12 +21,14 @@
  *   NAVHUB_ALLOW_DIRTY_TEST_DEPS=1 git commit ...
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   changedExportNames,
   collectDependencies,
+  exportedNames,
   findAtomicityViolations,
+  findForeignRemovalFalseReds,
   findHeadConsumerOrphans,
   findSourceCompanionViolations,
   memberNamesOf,
@@ -329,17 +331,25 @@ function reportHeadConsumers(orphans, skipped) {
   return true;
 }
 
-function headConsumerCheck() {
-  if (process.env.NAVHUB_SKIP_HEAD_CONSUMERS === "1") return { orphans: [], skipped: [] };
+/**
+ * 工作区里改过的源码文件（一次 `git diff` 取全部，供「HEAD 自洽性」与「本地判定不可信」两条判据共用）。
+ *
+ * 分开算会让每次提交多起一个 git 进程、多扫一遍 20+ 个脏文件——实测那条检查从 0.1s 顶到 8.3s 的教训。
+ */
+function unstagedSourceProducers() {
   // apps/web 是 vendor 生成物（gitignore），事实源在 overlay：对它算 diff 只会读到镜像噪声
   const files = unstagedChanges().filter(
     (f) => SOURCE_FILE_RE.test(f) && !TEST_FILE_RE.test(f) && !f.startsWith("apps/web/"),
   );
-  if (files.length === 0) return { orphans: [], skipped: [] };
+  if (files.length === 0) return [];
   const diffs = unstagedDiffsByFile(files);
-  const producers = files
+  return files
     .filter((f) => typeof diffs.get(f) === "string" && diffs.get(f).trim() !== "")
     .map((f) => ({ file: f, unstagedDiff: diffs.get(f) }));
+}
+
+function headConsumerCheck(producers) {
+  if (process.env.NAVHUB_SKIP_HEAD_CONSUMERS === "1") return { orphans: [], skipped: [] };
   if (producers.length === 0) return { orphans: [], skipped: [] };
   const skipped = [];
   const memberMemo = new Map();
@@ -362,6 +372,75 @@ function headConsumerCheck() {
   // 本次提交集里带着生产者也要报：unstaged diff 量的是「工作区 − 索引」，
   // 索引才是 CI 看到的版本——已暂存但字段没暂存，同样是不自洽的提交树。
   return { orphans, skipped };
+}
+
+/**
+ * 「本地判定不可信」的账：本次提交集外的脏文件删掉了导出，而**没改过**的文件还在读它。
+ *
+ * 为什么只报不拦：它描述的是共享工作区的他方在途状态，拦下来等于把无关提交永久锁死
+ * （与 HEAD 自洽性同一条理由）。它的用途是在红出现之前就说清楚「这不是你的」，
+ * 并顺手给出摘除闭包——2026-10-31 那笔提交为此白跑了 7 分钟才撞出 TS2305。
+ */
+function mixedWorktreeCheck(producers, dirty, commit) {
+  if (process.env.NAVHUB_SKIP_FOREIGN_REMOVALS === "1") return { removals: [], skipped: [] };
+  const inCommit = new Set(commit);
+  const outOfSet = producers.filter((p) => !inCommit.has(p.file));
+  if (outOfSet.length === 0) return { removals: [], skipped: [] };
+  const skipped = [];
+  const exportMemo = new Map();
+  return {
+    removals: findForeignRemovalFalseReds({
+      producers: outOfSet,
+      // 惰性：只有 diff 里真删了导出声明、且被判据接住的生产者才读工作区全文
+      worktreeExportsOf: (file) => {
+        if (!exportMemo.has(file)) {
+          let text = "";
+          try {
+            text = readFileSync(resolve(ROOT, file), "utf8");
+          } catch {
+            text = "";
+          }
+          exportMemo.set(file, exportedNames(stripComments(text)));
+        }
+        return exportMemo.get(file);
+      },
+      grepCommitted: (tokens) => grepCommittedTree(tokens).filter((h) => CONSUMER_FILE_RE.test(h.file)),
+      // 消费者必须没改过：改过的消费者由「测试 → 脏依赖」「源码伴随改动」两条判据管，
+      // 这里再报一遍只会让同一处事故出现两次。
+      isUnchanged: (file) => !dirty.has(file),
+      dependsOn,
+      maxHitFiles: MAX_HIT_FILES,
+      onSkip: (name, files) => skipped.push({ name, files }),
+    }),
+    skipped,
+  };
+}
+
+function reportForeignRemovals(removals, skipped) {
+  if (removals.length === 0 && skipped.length === 0) return false;
+  console.log(
+    `\n⚠️ 本地判定不可信（只报不拦）：${removals.length} 个未随本次提交的脏文件删掉了导出，而没改过的消费者仍在读它`,
+  );
+  for (const r of removals) {
+    console.log(`   ${r.producer}  −  ${r.name}（工作区里已经没有这个导出）`);
+    for (const c of r.consumers) {
+      console.log(`     ${c.file}:${c.line}  ${c.text.trim().slice(0, 110)}`);
+    }
+  }
+  if (skipped.length > 0) {
+    console.log(
+      `   （另有 ${skipped.length} 个被删的导出名散落在 >${MAX_HIT_FILES} 个文件，逐文件算依赖边不划算，未归因：` +
+        skipped
+          .slice(0, 8)
+          .map((s) => s.name)
+          .join(" ") +
+        (skipped.length > 8 ? " …" : "") +
+        "）",
+    );
+  }
+  console.log("   后果：typecheck / eslint / vitest 读磁盘 ⇒ 这些红不是本次提交带来的。");
+  console.log("   摘除闭包 = 上面列出的生产者：一并还原到 HEAD 才能本地验，或等它们提交。");
+  return true;
 }
 
 function reportSourceCompanions(violations) {
@@ -446,7 +525,9 @@ function main() {
     }
   }
 
-  const head = headConsumerCheck();
+  const producers = unstagedSourceProducers();
+  const head = headConsumerCheck(producers);
+  const mixed = mixedWorktreeCheck(producers, dirty, commit);
 
   if (AS_JSON) {
     console.log(
@@ -458,6 +539,8 @@ function main() {
           sourceViolations: [],
           headConsumers: head.orphans,
           headConsumersUnattributed: head.skipped.length,
+          foreignRemovals: mixed.removals,
+          foreignRemovalsUnattributed: mixed.skipped.length,
           strictHeadConsumers: STRICT_HEAD,
         },
         null,
@@ -479,6 +562,7 @@ function main() {
   // 只报不拦：共享工作区常年有在途脏源码，硬拦会把无关提交永久锁死（判据见 lib 的注释）。
   // 要它拦：--strict-head-consumers（本地排查用，没接进 pre-commit）。
   reportHeadConsumers(head.orphans, head.skipped);
+  reportForeignRemovals(mixed.removals, mixed.skipped);
   if (STRICT_HEAD && head.orphans.length > 0) process.exit(1);
 }
 

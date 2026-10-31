@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -42,10 +43,38 @@ function testFiles(): string[] {
   return out
 }
 
+const GIT_OK = (() => {
+  try {
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: ROOT, stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+})()
+
+/**
+ * 扫描集 = 磁盘上的测试文件 ∩ 已入库（git 跟踪）。
+ *
+ * 2026-10-31 实测：并行会话在途的 video-shrink-confirm.test.ts 尚未补
+ * vi.resetModules()，全量守卫把它算进违规，连累一个只含种子数据的提交
+ * 跑 259 个测试时被判红——而那个文件并不在提交里。CI 检出的就是 HEAD，
+ * 未跟踪文件在 CI 里不存在；在途文件归 pre-commit 的 --changed 管。
+ * 去掉 .git 的运行环境（导出快照/裁剪镜像）退回全量扫描，宁可严格。
+ */
+function trackedTestFiles(): string[] {
+  const all = testFiles()
+  if (!GIT_OK) return all
+  const listed = execFileSync('git', ['ls-files', '--', ...SCAN_DIRS], { cwd: ROOT, encoding: 'utf8' })
+  const tracked = new Set(
+    listed.split(/\r?\n/).filter(Boolean).map((p) => p.replace(/\\/g, '/')),
+  )
+  return all.filter((rel) => tracked.has(rel.replace(/\\/g, '/')))
+}
+
 describe('测试文件 mock 卫生（isolate:false 重启前提）', () => {
   it('使用跨模块 vi.mock 的测试文件必须带 vi.resetModules() 清理', () => {
     const offenders: string[] = []
-    for (const rel of testFiles()) {
+    for (const rel of trackedTestFiles()) {
       const src = readFileSync(resolve(ROOT, rel), 'utf8')
       if (!src.includes('vi.mock(')) continue
       if (src.includes('mock-hygiene: exempt')) continue
@@ -60,7 +89,7 @@ describe('测试文件 mock 卫生（isolate:false 重启前提）', () => {
 
   it('写 process.env 的测试文件必须存在清理钩子（afterAll）或显式豁免', () => {
     const offenders: string[] = []
-    for (const rel of testFiles()) {
+    for (const rel of trackedTestFiles()) {
       const src = readFileSync(resolve(ROOT, rel), 'utf8')
       if (src.includes('mock-hygiene: exempt')) continue
       // 只看「赋值」不看读取：process.env.X = 且非 === 比较
@@ -75,6 +104,30 @@ describe('测试文件 mock 卫生（isolate:false 重启前提）', () => {
     expect(SCAN_DIRS.length).toBeGreaterThanOrEqual(5)
     for (const d of SCAN_DIRS) {
       expect(existsSync(resolve(ROOT, d)), d).toBe(true)
+    }
+  })
+
+  it('全量扫描只看已入库测试文件：在途未跟踪文件不参与判定', () => {
+    if (!GIT_OK) return // 没有 .git 的环境退回全量扫描（宁可严格），此断言不适用
+    const fixture = join('apps/web-overlay/test', `mock-hygiene-untracked-fixture-${process.pid}.test.ts`)
+    // 夹具自带兜底，避免并行运行的镜像副本恰好扫到它的瞬间被误判成违规
+    writeFileSync(
+      resolve(ROOT, fixture),
+      "import { afterAll } from 'vitest'\nvi.mock('mock-hygiene-fixture-pkg')\nvi.resetModules()\nvoid afterAll\n",
+      'utf8',
+    )
+    try {
+      expect(testFiles()).toContain(fixture) // 对照臂：磁盘扫描确实看得见它
+      expect(trackedTestFiles()).not.toContain(fixture)
+      const listed = execFileSync('git', ['ls-files', '--', ...SCAN_DIRS], { cwd: ROOT, encoding: 'utf8' })
+      const tracked = new Set(
+        listed.split(/\r?\n/).filter(Boolean).map((p) => p.replace(/\\/g, '/')),
+      )
+      for (const rel of trackedTestFiles()) {
+        expect(tracked.has(rel.replace(/\\/g, '/')), rel).toBe(true)
+      }
+    } finally {
+      rmSync(resolve(ROOT, fixture), { force: true })
     }
   })
 })

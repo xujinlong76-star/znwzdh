@@ -182,9 +182,14 @@ function runDepsIntegrityGate() {
 /**
  * mock 卫生：pre-commit 只查本次提交集，**分多次提交累积出的缺口**要在这里兜住
  * （甲提交加了 vi.mock、乙提交才补 afterAll——分开看都对，合起来漏）。
+ *
+ * 按 HEAD 判而不是按工作区：推送出去的只有 HEAD。按工作区判会把并行会话
+ * 尚未提交的测试文件算进来——2026-10-31 实测，别人 19:06 新建的
+ * video-shrink-confirm.test.ts 缺兜底，把只含 gate 脚本的推送挡了两次，
+ * 而那个文件根本不在要推的提交里。与 core 镜像 / 测试镜像配对同一口径。
  */
 function runMockHygieneGate() {
-  runNode(["scripts/fix-mock-hygiene.mjs"]);
+  runNode(["scripts/fix-mock-hygiene.mjs", "--head"]);
 }
 
 /**

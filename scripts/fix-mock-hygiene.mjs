@@ -21,9 +21,19 @@
  *
  * ## 用法
  *
- *   node scripts/fix-mock-hygiene.mjs           # 只报告，不改
- *   node scripts/fix-mock-hygiene.mjs --apply   # 真改
+ *   node scripts/fix-mock-hygiene.mjs           # 只报告工作区，不改
+ *   node scripts/fix-mock-hygiene.mjs --apply   # 真改工作区
+ *   node scripts/fix-mock-hygiene.mjs --head    # 只报告 HEAD（pre-push 用）
+ *
+ * ## 为什么 pre-push 要按 HEAD 扫
+ *
+ * 推送出去的只有 HEAD。按工作区扫会把**并行会话尚未提交的测试文件**算进来：
+ * 2026-10-31 实测，同事 19:06 新建的 video-shrink-confirm.test.ts 还缺兜底，
+ * 我的推送（只含 gate 脚本）被它挡下两次——而那个文件根本不在我要推的提交里。
+ * pre-commit 的 --changed 已管本次提交集，全仓口径归 HEAD 与 CI。
+ * 反过来，HEAD 里真积累出的缺口照样会被这一档点名（甲加 mock、乙忘了补 afterAll）。
  */
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +79,33 @@ export function needsHook(src) {
 }
 
 /**
+ * HEAD 口径的违规清单：`entries` 是 `{ path, src }`，只认测试文件。
+ *
+ * 纯函数，让「工作区里的未跟踪文件不算数、HEAD 里的缺口算数」这条行为可被单测钉住。
+ */
+export function findHygieneViolations(entries) {
+  return entries
+    .filter((entry) => /\.test\.tsx?$/.test(entry.path) && needsHook(entry.src))
+    .map((entry) => entry.path);
+}
+
+/** HEAD 下的全部候选测试文件及其内容（内容取 git blob，不受工作区与换行符影响） */
+function headEntries() {
+  const listed = execFileSync(
+    "git",
+    ["ls-tree", "-r", "--name-only", "--full-tree", "HEAD", "--", ...SCAN_DIRS],
+    { cwd: ROOT, encoding: "utf8" },
+  );
+  return listed
+    .split(/\r?\n/)
+    .filter((path) => /\.test\.tsx?$/.test(path))
+    .map((path) => ({
+      path,
+      src: execFileSync("git", ["show", `HEAD:${path}`], { cwd: ROOT, encoding: "utf8" }),
+    }));
+}
+
+/**
  * 补上 afterAll 兜底。返回改写后的源码；已是干净的原样返回。
  * 纯函数，便于回归。
  */
@@ -108,6 +145,23 @@ export function addResetModulesHook(src) {
 }
 
 function main() {
+  /**
+   * `--head`：pre-push 档。只判 HEAD——推送出去的只有 HEAD，
+   * 工作区里别人的在途测试不参与（见文件头 2026-10-31 的实测）。
+   * 只报告不修：HEAD 是历史，不能就地改。
+   */
+  if (process.argv.includes("--head")) {
+    const violations = findHygieneViolations(headEntries());
+    if (violations.length === 0) {
+      console.log("✅ mock 卫生（HEAD，即本次推送的内容）：所有跨模块 mock 的测试文件都已有 vi.resetModules() 兜底");
+      return;
+    }
+    console.log(`⚠ mock 卫生（HEAD）：${violations.length} 个已入库文件缺 vi.resetModules() 兜底：`);
+    for (const path of violations) console.log(`  · ${path}`);
+    console.log("修复方式：在工作区补齐 afterAll 后提交；HEAD 不能就地改。");
+    process.exit(1);
+  }
+
   /**
    * `--changed`：只扫位置参数里给的文件，不扫全仓。
    *

@@ -143,8 +143,10 @@ function main(argv) {
 
   const diff = diffLedger(ledger, failures, {});
   emit(renderLedger(diff, { label: `CI 红灯台账（${opts.files.length} 份产物 / ${totals.tests} 例）`, max: opts.max, ledgerPath: opts.ledger }));
+  const aliasHits = diff.persisted.filter((x) => x.matchedAlias).length;
   console.log(
-    `${P}新增 ${diff.introduced.length} · 换因 ${diff.changed.length} · 已知 ${diff.persisted.length} · 过期 ${diff.expired.length}`,
+    `${P}新增 ${diff.introduced.length} · 换因 ${diff.changed.length} · 已知 ${diff.persisted.length}` +
+      `${aliasHits > 0 ? `（别名 ${aliasHits}）` : ""} · 过期 ${diff.expired.length}`,
   );
 
   let rc = 0;

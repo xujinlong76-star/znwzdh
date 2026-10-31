@@ -15,6 +15,12 @@
  *
  * TTL：每条新红带 expiresAt，过期仍在红就单独报「过期未修」。台账不是免死金牌，
  * 它只负责让「已知的债」和「新引入的红」在输出里一眼可分。
+ *
+ * 别名（signatureAliases）：极少数红是「同一根因、断言里的数字抖动」——例如外站探活
+ * 成功数每轮不同，`expected +0 to be 2` 与 `expected 1 to be 2` 交替出现。这种抖动
+ * 不是换因，但也不能拿正则/前缀放宽比对（那会把真正的新根因一起放行）。所以别名是
+ * **人工逐条登记的确切字符串**：命中仍算已知，未登记的指纹照样按换因处理。别名从属于
+ * 当前根因——真换因时随旧条目一起丢弃，不留到新根因上。
  */
 
 export const LEDGER_VERSION = 1;
@@ -77,6 +83,11 @@ export function validateLedger(ledger) {
       if (!e || typeof e !== "object") problems.push(`entries[${i}] 不是对象`);
       else if (!e.id || !e.signature || !e.owner || !e.expiresAt) {
         problems.push(`entries[${i}] 缺 id/signature/owner/expiresAt（台账条目必须可追责、会过期）`);
+      } else if (e.signatureAliases !== undefined) {
+        if (!Array.isArray(e.signatureAliases)) problems.push(`entries[${i}] 的 signatureAliases 不是数组`);
+        else if (e.signatureAliases.some((a) => typeof a !== "string" || a.trim() === "")) {
+          problems.push(`entries[${i}] 的 signatureAliases 含空值（别名必须是确切字符串，不能放通配）`);
+        }
       }
     }
   }
@@ -108,7 +119,12 @@ export function diffLedger(ledger, failures, { now = new Date(), includeFixed = 
       continue;
     }
     if (entry.signature !== signature) {
-      changed.push({ ...f, id, signature, prevSignature: entry.signature, reason: "同用例换因（错误指纹变了）", entry });
+      const aliases = Array.isArray(entry.signatureAliases) ? entry.signatureAliases : [];
+      if (!aliases.includes(signature)) {
+        changed.push({ ...f, id, signature, prevSignature: entry.signature, reason: "同用例换因（错误指纹变了）", entry });
+        continue;
+      }
+      persisted.push({ ...f, id, signature, entry, matchedAlias: true });
       continue;
     }
     persisted.push({ ...f, id, signature, entry });
@@ -165,7 +181,10 @@ export function updateLedger(ledger, failures, { now = new Date(), ttlDays = 14,
     const signature = signatureOf(f.message);
     seen.add(id);
     const old = prev.get(id);
-    if (old && old.signature === signature) {
+    const aliases = Array.isArray(old?.signatureAliases) ? old.signatureAliases : [];
+    // 别名命中只续命：主指纹与别名都保持不变，否则主指纹会被抖动值带跑，
+    // 下一轮又换一个数字就再报一次换因。
+    if (old && (old.signature === signature || aliases.includes(signature))) {
       entries.push({ ...old, lastSeen: today, message: f.message });
       continue;
     }
@@ -207,9 +226,11 @@ function cell(value, limit = 120) {
 export function renderLedger(diff, { label = "CI 红灯台账", max = 20, ledgerPath = "" } = {}) {
   const bad = diff.introduced.length + diff.changed.length;
   const mark = bad > 0 ? "❌" : "✅";
+  const aliasHits = diff.persisted.filter((x) => x.matchedAlias).length;
+  const known = aliasHits > 0 ? `已知 ${diff.persisted.length}（其中 ${aliasHits} 条按别名命中）` : `已知 ${diff.persisted.length}`;
   const src = ledgerPath ? `（对照 ${ledgerPath}）` : "";
   const lines = [
-    `### ${mark} ${label}${src} — 新增 ${diff.introduced.length}，换因 ${diff.changed.length}，已知 ${diff.persisted.length}，过期 ${diff.expired.length}`,
+    `### ${mark} ${label}${src} — 新增 ${diff.introduced.length}，换因 ${diff.changed.length}，${known}，过期 ${diff.expired.length}`,
   ];
   const rows = [
     ...diff.introduced.map((x) => ["新增", x]),

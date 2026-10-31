@@ -7,12 +7,13 @@
       "file": "apps/api/test/plugin-audit-api.test.ts",
       "case": "POST /api/plugins/:slug/ai-heal > 支持 autoApply=true 傻瓜式一键全自动匹配垂类权威标杆并去重采纳最优平替更新 Manifest",
       "signature": "expected +0 to be 2 // Object.is equality",
+      "signatureAliases": ["expected 1 to be 2 // Object.is equality"],
       "message": "expected +0 to be 2 // Object.is equality",
       "owner": "插件平台（候选探活需可注入，单机敏感）",
       "firstSeen": "2026-10-31",
       "lastSeen": "2026-10-31",
       "expiresAt": "2026-11-07",
-      "note": "候选平替必须对真实外站实测探活（probeCandidateUrl → guardedFetch），grade=verified 才够格被 autoApply；CI runner 出站受限/抖动时全部候选未验证，replacedCount 就是 0。同一提交本地 25/25 绿、上一轮 run 41199872020 该分片绿、本轮红——单机敏感，不是代码回归（rankCandidate 只读探活档位，与 /rank 的双曲投影无关）。修法：给探活注入测试桩或预热候选探活缓存，不是改断言。"
+      "note": "候选平替必须对真实外站实测探活（probeCandidateUrl → guardedFetch），grade=verified 才够格被 autoApply；CI runner 出站受限/抖动时部分候选未验证，replacedCount 随探活成功率抖动。已观测到的同一根因指纹：`expected +0 to be 2`（run 41201160983 起）与 `expected 1 to be 2`（run 41201750460），两者登记为主指纹+别名；再出现别的数字必须人工确认后补别名，不是通配。同一提交本地 25/25 绿、前一 tip 该分片绿——单机敏感，不是代码回归（rankCandidate 只读探活档位，与 /rank 的双曲投影无关）。修法：给探活注入测试桩或预热候选探活缓存，不是改断言；修好后同步删掉别名。"
     }
   ]
 }

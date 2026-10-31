@@ -4,7 +4,8 @@
  * 三个方向都要钉住：
  *   1. 新红/换因必须被识别——否则台账会把「刚坏的」当成「早就红的」放行；
  *   2. 已知红必须被认出来——否则每轮都报新增，台账不如没有；
- *   3. 坏账/缺账必须 rc 2——「读不到台账」不能退化成「没有新红」。
+ *   3. 坏账/缺账必须 rc 2——「读不到台账」不能退化成「没有新红」；
+ *   4. 别名只放行登记过的抖动指纹——未登记的指纹照旧按换因处理。
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -165,6 +166,70 @@ describe("updateLedger：入账、续命、换因重置、修复移除", () => {
     const { ledger, removed } = updateLedger(ledgerOf(known), [], { now });
     expect(ledger.entries).toEqual([]);
     expect(removed).toEqual(["apps/web/test/a.test.ts :: 用例 A"]);
+  });
+});
+
+describe("signatureAliases：只放行登记过的抖动指纹", () => {
+  // 真实场景：ai-heal 的 autoApply 依赖外站实测探活，成功数每轮不同，
+  // 同一断言在 `expected +0 to be 2` / `expected 1 to be 2` 之间抖动。
+  const flaky = [
+    {
+      id: "apps/api/test/p.test.ts :: 用例 F",
+      file: "apps/api/test/p.test.ts",
+      case: "用例 F",
+      signature: "expected +0 to be 2",
+      message: "expected +0 to be 2\n    at p.test.ts:1:1",
+      signatureAliases: ["expected 1 to be 2"],
+      owner: "bob",
+      firstSeen: "2026-10-31",
+      lastSeen: "2026-10-31",
+      expiresAt: "2026-11-07",
+    },
+  ];
+  const now = new Date("2026-10-31T00:00:00Z");
+  const fail = (message: string) => [{ classname: "apps/api/test/p.test.ts", name: "用例 F", message }];
+
+  it("命中别名 → persisted（标 matchedAlias），不算换因", () => {
+    const diff = diffLedger(ledgerOf(flaky), fail("expected 1 to be 2\n    at p.test.ts:9:9"), { now });
+    expect(diff.changed).toHaveLength(0);
+    expect(diff.persisted).toHaveLength(1);
+    expect(diff.persisted[0].matchedAlias).toBe(true);
+  });
+
+  it("未登记的指纹 → 照旧换因（别名是确切字符串，不是通配）", () => {
+    const diff = diffLedger(ledgerOf(flaky), fail("expected 2 to be 2"), { now });
+    expect(diff.changed).toHaveLength(1);
+    expect(diff.persisted).toHaveLength(0);
+  });
+
+  it("updateLedger：别名命中保留主指纹与别名、只刷新 lastSeen", () => {
+    const { ledger, renewed } = updateLedger(ledgerOf(flaky), fail("expected 1 to be 2"), { now });
+    expect(renewed).toEqual([]);
+    const e = ledger.entries[0];
+    expect(e.signature).toBe("expected +0 to be 2");
+    expect(e.signatureAliases).toEqual(["expected 1 to be 2"]);
+    expect(e.lastSeen).toBe("2026-10-31");
+  });
+
+  it("updateLedger：真换因丢弃别名（别名从属于旧根因）", () => {
+    const { ledger, renewed } = updateLedger(ledgerOf(flaky), fail("TypeError: 新根因"), { now });
+    expect(renewed).toHaveLength(1);
+    expect(ledger.entries[0].signature).toBe("TypeError: 新根因");
+    expect(ledger.entries[0].signatureAliases).toBeUndefined();
+  });
+
+  it("validateLedger：别名不是确切的非空字符串 → 坏账", () => {
+    expect(validateLedger(ledgerOf([{ ...flaky[0], signatureAliases: "expected 1 to be 2" }])).join()).toContain("signatureAliases");
+    expect(validateLedger(ledgerOf([{ ...flaky[0], signatureAliases: [""] }])).join()).toContain("signatureAliases");
+  });
+
+  it("真实 CLI：别名命中 → --require-no-new/--strict-ttl rc 0，输出点名别名", () => {
+    const dir = workspace();
+    writeFileSync(join(dir, "ledger.json"), JSON.stringify(ledgerOf(flaky)));
+    writeFileSync(join(dir, "j.xml"), junit([{ file: "apps/api/test/p.test.ts", name: "用例 F", message: "expected 1 to be 2" }]));
+    const res = run(dir, ["--from", "j.xml", "--ledger", "ledger.json", "--require-no-new", "--strict-ttl"]);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("别名 1");
   });
 });
 

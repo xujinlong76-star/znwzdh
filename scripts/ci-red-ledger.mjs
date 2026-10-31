@@ -139,6 +139,14 @@ function main(argv) {
     for (const id of renewed) console.log(`   ~ ${id}（换因，TTL 重置）`);
     for (const id of removed) console.log(`   - ${id}（已修复）`);
     for (const id of retained) console.log(`   = ${id}（flaky：本轮未出现只说明抖动，保留；确认修好后手工删条目）`);
+    // 抖动账的 lastSeen 不会因为绿轮而前进：只要一直绿，它就永远躺在账上。
+    // TTL 的 --strict-ttl 只在「仍红」时催收，这里把过期的抖动账统一点名（含本轮未出现的）。
+    const today = new Date().toISOString().slice(0, 10);
+    for (const e of next.entries) {
+      if (e.flaky === true && e.expiresAt && e.expiresAt < today) {
+        console.log(`   ! ${e.id}（抖动账已过期 ${e.expiresAt}：修掉或手工删条目，不要靠保留续命）`);
+      }
+    }
     return 0;
   }
 

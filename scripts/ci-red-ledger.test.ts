@@ -323,6 +323,15 @@ describe("真实 CLI", () => {
     expect(saved.entries[0].flaky).toBe(true);
   });
 
+  it("--update 对过期且未出现的抖动账点名——绿轮不会推进 lastSeen", () => {
+    const dir = workspace();
+    writeFileSync(join(dir, "ledger.json"), JSON.stringify(ledgerOf([{ ...known[0], flaky: true, expiresAt: "2020-01-01" }])));
+    writeFileSync(join(dir, "j.xml"), junit([], 0));
+    const res = run(dir, ["--from", "j.xml", "--ledger", "ledger.json", "--update"]);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("抖动账已过期 2020-01-01");
+  });
+
   it("GITHUB_STEP_SUMMARY 存在时追加而不是覆盖", () => {
     const dir = workspace();
     writeFileSync(join(dir, "ledger.json"), JSON.stringify(ledgerOf([])));

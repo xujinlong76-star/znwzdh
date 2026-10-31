@@ -123,7 +123,11 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
      仓库根前缀表 `REPO_RELATIVE_PREFIXES` 里除了代码树，还包括 `.github/`、`docker/`、`docs/`
      这类**测试读的非代码文件**（2026-10-29 盲区：`check-ci-gate.test.ts` 真读 `.github/workflows/ci.yml`，
      改 ci.yml 却选不到它）。文件还是目录按**真实存在性**判，不按有没有后缀——
-     `docker/Dockerfile.api` 没有后缀，落到 `dir:` 分支后那条边永远匹配不上「改这个文件本身」；
+     `docker/Dockerfile.api` 没有后缀，落到 `dir:` 分支后那条边永远匹配不上「改这个文件本身」。
+     选测器自身也必须查图（2026-10-31）：旧实现只在暂存集含代码后缀时建图，于是「只改
+     ci.yml / 台账」恰好是唯一跳过建图的提交——上面这条边在最该生效的场景里是死代码。
+     现在只要没被 `NO_GRAPH` / `SCOPE=all` 关掉就建图（~3 秒）；图已覆盖的文件不再出现在
+     「未纳入本次运行」提示里，避免「选了测试」与「未覆盖」两句话同时出现；
    - **镜像边**：`scripts/core-mirrors.json` 登记的 core ↔ overlay 镜像，改任一侧都影响消费另一侧的测试。
    从改动文件做**反向 BFS**（谁传递地引用了它），命中测试根的测试全部入选。测试根与 vitest include
    对齐——`packages/*/test` 也算：CI 的 `vitest run --shard` 会跑它们，漏在图外时改 core 只能靠词根兜底。
@@ -443,7 +447,8 @@ mkdtempSync(join(tmpdir(), "canon-"))
 
 | 改动范围 | hook 选中的测试 | 耗时（收窄后实测） |
 |---|---|---|
-| 只改 docs | 无（SKIP） | ~30 秒（typecheck） |
+| 只改 docs（没有任何测试引用它） | 无（SKIP） | ~30 秒（typecheck + ~3 秒建图） |
+| 只改 `ci.yml` / 台账等非代码文件 | 图命中的守卫测试（台账 → `scripts/ci-red-ledger.test.ts`；`ci.yml` → 14 个） | ~5–40 秒 |
 | 改 `apps/api/src/routes/backup.ts` | 8 个 `backup-*.test.ts` | **~40 秒**（收窄前是整棵 93 文件 / 3 分钟） |
 | 改 `packages/store/**` | `packages/store/test` | ~124 秒（未收窄时） |
 | 改 `apps/web-overlay/src/app/admin/data/restore/page.tsx` | `restore-page-guard` + 两个全仓门禁 | ~5 秒 |

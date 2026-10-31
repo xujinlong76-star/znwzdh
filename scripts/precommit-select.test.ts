@@ -163,14 +163,41 @@ describe("pre-commit 选测：改动 → 测试文件", () => {
     expect(files).not.toContain("apps/api/test/backup-async-api.test.ts");
   });
 
-  it("图与词根都给不出线索时回退整棵（宁可多跑，不可漏跑）", () => {
-    // 非源码扩展名不进图（looksLikeSource），词干 xqzv-config 也命中不了任何测试
+  it("非代码文件也查图：JSON 落在目录扫描守卫上，不再整棵兜底", () => {
+    // 旧实现只在暂存集含代码后缀时才建图，apps/api/src/**.json 一律退回整棵 apps/api/test。
+    // 图里真读这个目录的门禁（backend-lint-gate）就是消费者，按图收窄才是准的。
     const files = select(["apps/api/src/xqzv-config.json"]);
+    expect(files).toContain("apps/api/test/backend-lint-gate.test.ts");
+    expect(files.length).toBeLessThan(20);
+  });
+
+  it("图与词根都给不出线索时回退整棵（宁可多跑，不可漏跑）", () => {
+    // 对照臂：关掉图、词干 xqzv-config 又命中不了任何测试 → 退回整棵 apps/api/test
+    const files = select(["apps/api/src/xqzv-config.json"], { NAVHUB_PRECOMMIT_NO_GRAPH: "1" });
     expect(files.length).toBeGreaterThan(100);
   });
 
-  it("只改文档：一个测试都不跑（SKIP）", () => {
-    expect(select(["docs/BACKUP-RUNBOOK.md"])).toEqual([]);
+  it("只改没有被任何测试引用的文档：一个测试都不跑（SKIP）", () => {
+    // 路径拆成两段写：整体字面量会让本文件自己成为该文档的消费者（图里出现一条边），
+    // 断言就变成「选中自己」，测不出 SKIP 分支。
+    const doc = "doc" + "s/zzz-unreferenced.md";
+    expect(select([doc])).toEqual([]);
+  });
+
+  it("只改台账：选中的是读它的那条校验测试", () => {
+    // 2026-10-31 修：旧闸要求暂存集里有代码后缀才建图，于是「只改台账 / ci.yml」
+    // 恰恰是唯一不查图的提交——e3b4c6f5 补的非代码边在最该生效的场景里是死代码。
+    // 两条路径都拆段写：整体字面量会让本文件自己成为台账测试的图消费者（2 跳），
+    // 断言就会多出自己，测不出「只选到校验测试」。
+    const ledgerPath = "docs/ci-" + "red-ledger.json";
+    const ledgerTest = "scripts/ci-" + "red-ledger.test.ts";
+    expect(select([ledgerPath])).toEqual([ledgerTest]);
+  });
+
+  it("只改 CI 接线：图把守卫 ci.yml 的测试都选上（旧实现这里是 SKIP）", () => {
+    const files = select([".github/workflows/ci.yml"]);
+    expect(files).toContain("scripts/check-ci-gate.test.ts");
+    expect(files).toContain("apps/web/test/ci-gate.test.ts");
   });
 });
 

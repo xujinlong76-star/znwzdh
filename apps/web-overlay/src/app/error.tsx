@@ -55,12 +55,12 @@ export default function Error({
   return (
     <main id="main-content" className="flex flex-col items-center justify-center min-h-[80vh] p-4 text-center">
       <div className="max-w-md w-full p-8 rounded-3xl border border-destructive/30 bg-destructive/5 glass-surface shadow-xl space-y-6 animate-in fade-in zoom-in-95 duration-200">
-        <div className="w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-center mx-auto shadow-xs">
+        <div className="w-16 h-16 rounded-2xl bg-destructive/15 border border-destructive/20 text-destructive-text flex items-center justify-center mx-auto shadow-xs">
           <Icon className="w-8 h-8" />
         </div>
 
         <div className="space-y-2">
-          <div className="inline-block text-xs font-mono px-2.5 py-0.5 rounded-full bg-destructive/10 text-destructive font-semibold border border-destructive/20">
+          <div className="inline-block text-xs font-mono px-2.5 py-0.5 rounded-full bg-destructive/15 text-destructive-text font-semibold border border-destructive/20">
             {crash.badge}
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">{crash.title}</h1>

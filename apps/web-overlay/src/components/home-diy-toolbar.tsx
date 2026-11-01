@@ -398,6 +398,19 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                       onChange={(e) => setAestheticSliders(Number(e.target.value), cardOpacity ?? 0.9)}
                       className="w-full h-1.5 accent-primary cursor-pointer"
                     />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      {/* F4 可读性下限：滑杆最小 0.85（85%），低于此值壁纸最亮/最暗时卡片文字跌破 AA */}
+                      <span>卡片不透明度: {Math.round((cardOpacity ?? 0.9) * 100)}%（可读性下限 85%）</span>
+                    </div>
+                    <input aria-label="卡片不透明度（可读性下限 0.85）"
+                      type="range"
+                      min={0.85}
+                      max={1}
+                      step={0.01}
+                      value={Math.min(1, Math.max(0.85, cardOpacity ?? 0.9))}
+                      onChange={(e) => setAestheticSliders(glassmorphismBlur ?? 12, Number(e.target.value))}
+                      className="w-full h-1.5 accent-primary cursor-pointer"
+                    />
                   </div>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -445,7 +458,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                 variant="outline"
                 size="sm"
                 onClick={() => setIsAddCatOpen(true)}
-                className="h-8 px-2.5 rounded-full text-xs gap-1 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+                className="h-8 px-2.5 rounded-full text-xs gap-1 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
                 title="新建专属分类"
               >
                 <FolderPlus className="w-3.5 h-3.5" />
@@ -566,10 +579,10 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                 <span className={cn(
                   "text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase",
                   healthReport.level === 'excellent'
-                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20"
                     : healthReport.level === 'good'
-                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
-                    : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                    ? "bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20"
+                    : "bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20"
                 )}>
                   {healthReport.score} 分 · {healthReport.level === 'excellent' ? '极佳' : healthReport.level === 'good' ? '良好' : '需优化'}
                 </span>
@@ -650,25 +663,25 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                   )}
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <span className="font-mono text-muted-foreground/60 text-[10px] w-5 text-center">
+                    <span className="font-mono text-muted-foreground text-[10px] w-5 text-center">
                       {index + 1}
                     </span>
                     <span className="truncate text-foreground font-semibold">
                       {title}
                     </span>
                     {customCat && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
                         专属
                       </span>
                     )}
                     {isPinned && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0 flex items-center gap-0.5">
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 shrink-0 flex items-center gap-0.5">
                         <Pin className="w-2.5 h-2.5 fill-amber-500" />
                         <span>置顶</span>
                       </span>
                     )}
                     {isCollapsed && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 shrink-0">
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-700 dark:text-sky-400 border border-sky-500/20 shrink-0">
                         已收起
                       </span>
                     )}
@@ -737,7 +750,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                         variant="ghost"
                         size="icon"
                         onClick={() => deleteCustomCategory(id)}
-                        className="h-7 w-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        className="h-7 w-7 rounded-md text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
                         title="删除该专属分类"
                         aria-label="删除该专属分类"
                       >

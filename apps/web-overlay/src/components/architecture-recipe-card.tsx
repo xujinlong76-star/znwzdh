@@ -105,7 +105,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
             {copyState === 'copied' ? (
               <Check className="w-3 h-3 text-emerald-500" />
             ) : copyState === 'failed' ? (
-              <X className="w-3 h-3 text-destructive" />
+              <X className="w-3 h-3 text-destructive-text" />
             ) : (
               <Copy className="w-3 h-3" />
             )}

@@ -90,13 +90,13 @@ export function AiCanvasGeneratorModal({
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-border/50 bg-muted/20">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-700 dark:text-purple-400 shrink-0">
               <Sparkles className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 id="navhub-ai-canvas-modal-title" className="text-sm sm:text-base font-bold text-foreground truncate">一句话 AI 生成工作台</h2>
-                <span className="text-[10px] sm:text-[11px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 shrink-0">
+                <span className="text-[10px] sm:text-[11px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20 shrink-0">
                   AI 智能规划
                 </span>
               </div>
@@ -121,7 +121,7 @@ export function AiCanvasGeneratorModal({
                   onClick={() => setPrompt(p.prompt)}
                   className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${
                     prompt === p.prompt
-                      ? 'border-purple-500 bg-purple-500/10 text-purple-600 dark:text-purple-300 font-medium'
+                      ? 'border-purple-500 bg-purple-500/10 text-purple-700 dark:text-purple-300 font-medium'
                       : 'border-border/70 bg-card/60 hover:bg-card text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -174,7 +174,7 @@ export function AiCanvasGeneratorModal({
 
           {/* 错误提示 */}
           {error && (
-            <div className="p-3 rounded-xl border border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400 text-xs">
+            <div className="p-3 rounded-xl border border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400 text-xs">
               {error}
             </div>
           )}
@@ -216,7 +216,7 @@ export function AiCanvasGeneratorModal({
 
               {/* 保底布局：一张合法卡都没拿到，这是系统兜底而不是模型规划的结果 */}
               {result.fallbackUsed && (
-                <div role="alert" className="p-2.5 rounded-lg border border-destructive/40 bg-destructive/10 text-xs text-destructive leading-relaxed">
+                <div role="alert" className="p-2.5 rounded-lg border border-destructive/40 bg-destructive/15 text-xs text-destructive-text leading-relaxed">
                   <span className="font-semibold">保底布局：未按原规划生成。</span>
                   <span className="block mt-1 text-muted-foreground">
                     这次没有拿到任何可用模块（见下方原因），下面是系统给的通用三件套。可以直接用，也可以重新规划一次。
@@ -256,7 +256,7 @@ export function AiCanvasGeneratorModal({
                         className="p-2.5 rounded-lg border border-border/60 bg-background/80 flex items-center justify-between text-xs"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-5 h-5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-300 flex items-center justify-center text-[10px] font-mono">
+                          <span className="w-5 h-5 rounded-md bg-purple-500/10 text-purple-700 dark:text-purple-300 flex items-center justify-center text-[10px] font-mono">
                             #{idx + 1}
                           </span>
                           <div className="truncate">

@@ -573,7 +573,7 @@ export default function SearchHistoryPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      className="h-8 w-8 text-muted-foreground hover:bg-destructive/15 hover:text-destructive-text"
                       disabled={deletingId === item.id}
                       onClick={() => void removeItem(item.id)}
                       aria-label={`删除历史 ${item.query}`}

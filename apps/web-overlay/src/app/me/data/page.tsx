@@ -486,7 +486,7 @@ export default function MeDataPage() {
       {state === 'ready' && (
         <>
           {error && (
-            <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive" role="alert">
+            <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive-text" role="alert">
               {error}
             </section>
           )}
@@ -507,7 +507,7 @@ export default function MeDataPage() {
               <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
                 {(
                   [
-                    { label: '云端收藏', value: summary.counts.favorites, icon: Heart, chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
+                    { label: '云端收藏', value: summary.counts.favorites, icon: Heart, chip: 'bg-rose-500/10 text-rose-700 dark:text-rose-400' },
                     { label: '收藏夹分组', value: summary.counts.folders, icon: FolderHeart, chip: 'bg-orange-500/10 text-orange-700 dark:text-orange-300' },
                     { label: '搜索历史', value: summary.counts.searches, icon: History, chip: 'bg-sky-500/10 text-sky-700 dark:text-sky-300' },
                     { label: '近 30 天事件', value: summary.counts.recentEvents, icon: Zap, chip: 'bg-primary/10 text-primary' },
@@ -732,7 +732,7 @@ export default function MeDataPage() {
               <Database className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
               <h2 className="text-sm font-semibold">数据说明</h2>
             </div>
-            <ul className="mt-3 list-inside list-disc space-y-1.5 text-xs leading-relaxed text-muted-foreground marker:text-muted-foreground/60">
+            <ul className="mt-3 list-inside list-disc space-y-1.5 text-xs leading-relaxed text-muted-foreground marker:text-muted-foreground">
               <li className="break-words">收藏与文件夹：全量删除后不可恢复，本机收藏缓存也会清空。</li>
               <li className="break-words">搜索历史与行为事件：画像会随之清空，之后按新行为重新积累。</li>
               <li className="break-words">LLM 配置：个人模型密钥（加密存储）一并删除，系统回退到全局配置。</li>
@@ -743,16 +743,16 @@ export default function MeDataPage() {
 
           <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive-text">
                 <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
                 删除全部云端数据
               </h2>
-              <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
+              <span className="rounded-full border border-destructive/30 bg-destructive/15 px-2 py-0.5 text-[10px] font-medium text-destructive-text">
                 不可逆
               </span>
             </div>
             <p className="mt-3 max-w-prose text-xs leading-relaxed text-muted-foreground">
-              这是不可逆操作。输入 <span className="font-mono font-semibold text-destructive">DELETE</span> 解锁按钮。
+              这是不可逆操作。输入 <span className="font-mono font-semibold text-destructive-text">DELETE</span> 解锁按钮。
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input

@@ -30,7 +30,7 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
       >
         <DialogHeader className="space-y-1 pb-2 border-b border-border/50">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
@@ -60,7 +60,7 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
             </div>
             <Badge
               variant="outline"
-              className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/30 self-start sm:self-auto"
+              className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-700 border-emerald-500/30 self-start sm:self-auto"
             >
               安全等级：优良 (Verified)
             </Badge>
@@ -93,7 +93,7 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
             </div>
           </div>
 
-          <div className="text-[11px] text-muted-foreground/80 flex flex-wrap gap-1 items-center justify-between pt-1 font-mono">
+          <div className="text-[11px] text-muted-foreground flex flex-wrap gap-1 items-center justify-between pt-1 font-mono">
             <span>认证时间：{new Date(plugin.aiAudit.auditedAt).toLocaleString()}</span>
             <span>契约版本：v1.0</span>
           </div>

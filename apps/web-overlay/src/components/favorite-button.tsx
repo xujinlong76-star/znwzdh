@@ -42,7 +42,7 @@ export function FavoriteButton({ site, className, tabIndex, cardAction }: Favori
         void favorites.toggle(site)
       }}
     >
-      <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground/60')} />
+      <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
     </button>
   )
 }

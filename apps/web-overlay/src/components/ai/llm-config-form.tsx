@@ -38,7 +38,7 @@ export const JSON_MODE_OPTIONS: Array<{ value: HubJsonMode; label: string }> = [
 ]
 
 const SELECT_CLASS =
-  'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50'
+  'flex h-9 w-full rounded-md border border-border-strong bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50'
 
 export function LlmConfigFields({
   value,
@@ -99,7 +99,7 @@ export function LlmConfigFields({
             快速预设厂商模版
           </Label>
           {selectedPresetObj?.supportsThinking && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
               ⚡ 支持原生深度思考
             </span>
           )}
@@ -126,7 +126,7 @@ export function LlmConfigFields({
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            className="h-4 w-4 rounded border-input accent-[var(--primary)]"
+            className="h-4 w-4 rounded border-border-strong accent-[var(--primary)]"
             checked={value.enabled}
             disabled={disabled}
             onChange={(e) => set('enabled', e.target.checked)}
@@ -275,7 +275,7 @@ export function LlmConfigFields({
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"
-          className="mt-0.5 h-4 w-4 rounded border-input accent-[var(--primary)]"
+          className="mt-0.5 h-4 w-4 rounded border-border-strong accent-[var(--primary)]"
           checked={value.thinking}
           disabled={disabled}
           onChange={(e) => set('thinking', e.target.checked)}
@@ -292,7 +292,7 @@ export function LlmConfigFields({
         <label className="flex items-start gap-2 text-sm">
           <input
             type="checkbox"
-            className="mt-0.5 h-4 w-4 rounded border-input accent-[var(--primary)]"
+            className="mt-0.5 h-4 w-4 rounded border-border-strong accent-[var(--primary)]"
             checked={value.allowPrivateNetwork}
             disabled={disabled}
             onChange={(e) => set('allowPrivateNetwork', e.target.checked)}

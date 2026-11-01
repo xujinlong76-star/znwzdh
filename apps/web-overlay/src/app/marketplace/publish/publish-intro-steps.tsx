@@ -176,7 +176,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label htmlFor="publish-plugin-name" className="text-xs font-medium text-foreground">
-                    插件名称 <span className="text-destructive">*</span>
+                    插件名称 <span className="text-destructive-text">*</span>
                   </label>
                   <input
                     id="publish-plugin-name"
@@ -193,7 +193,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
 
                 <div className="space-y-1">
                   <label htmlFor="publish-plugin-version" className="text-xs font-medium text-foreground">
-                    版本号 (SemVer) <span className="text-destructive">*</span>
+                    版本号 (SemVer) <span className="text-destructive-text">*</span>
                   </label>
                   <input
                     id="publish-plugin-version"
@@ -210,7 +210,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
 
                 <div className="space-y-1 sm:col-span-2">
                   <label htmlFor="publish-plugin-description" className="text-xs font-medium text-foreground">
-                    详细描述 <span className="text-destructive">*</span>
+                    详细描述 <span className="text-destructive-text">*</span>
                   </label>
                   <textarea
                     id="publish-plugin-description"
@@ -330,7 +330,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
                 </div>
 
                 {bundlePickerError && (
-                  <p className="text-[11px] text-destructive flex items-center gap-1.5">
+                  <p className="text-[11px] text-destructive-text flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5" />
                     <span>{bundlePickerError}</span>
                   </p>
@@ -350,7 +350,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
                     </div>
                   ) : bundleCandidatesError ? (
                     <div className="p-6 text-center text-xs space-y-2">
-                      <p className="text-destructive">候选列表载入失败（网络或服务暂不可用）。</p>
+                      <p className="text-destructive-text">候选列表载入失败（网络或服务暂不可用）。</p>
                       <button
                         type="button"
                         onClick={() => void loadBundleCandidates()}
@@ -424,7 +424,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
                             type="button"
                             aria-label={`移除成员 ${item.slug}`}
                             onClick={() => handleToggleBundleMember(candidate ?? { slug: item.slug, kind: item.kind })}
-                            className="w-4 h-4 rounded hover:bg-destructive/10 hover:text-destructive flex items-center justify-center"
+                            className="w-4 h-4 rounded hover:bg-destructive/15 hover:text-destructive-text flex items-center justify-center"
                           >
                             <X className="w-3 h-3" />
                           </button>

@@ -294,12 +294,12 @@ const AUTO_APPLY_REASON_LABELS: Record<string, string> = {
 
 /** 候选档位的中文名与配色 */
 const CANDIDATE_GRADE_META: Record<string, { label: string; className: string }> = {
-  verified: { label: '实测可达', className: 'text-emerald-600 border-emerald-500/40 bg-emerald-500/10' },
-  blocked: { label: '拒绝爬虫·未验证', className: 'text-sky-600 border-sky-500/40 bg-sky-500/10' },
+  verified: { label: '实测可达', className: 'text-emerald-700 border-emerald-500/40 bg-emerald-500/10' },
+  blocked: { label: '拒绝爬虫·未验证', className: 'text-sky-700 border-sky-500/40 bg-sky-500/10' },
   // 超时/连接中断只说明「这次没测到」，不能写成「不可达」——那是把没测准说成确认下线
-  unverified: { label: '未能验证', className: 'text-slate-600 border-slate-400/40 bg-slate-500/10' },
-  suspicious: { label: '疑似停放', className: 'text-amber-600 border-amber-500/40 bg-amber-500/10' },
-  dead: { label: '不可达', className: 'text-rose-600 border-rose-500/40 bg-rose-500/10' },
+  unverified: { label: '未能验证', className: 'text-slate-700 border-slate-400/40 bg-slate-500/10' },
+  suspicious: { label: '疑似停放', className: 'text-amber-700 border-amber-500/40 bg-amber-500/10' },
+  dead: { label: '不可达', className: 'text-rose-700 border-rose-500/40 bg-rose-500/10' },
 }
 
 /** 趋势文案：明确区分「真的在变」与「点数不够，判不了」 */
@@ -424,9 +424,9 @@ function PackHealthBar({
 /** 延迟时间色标徽章 */
 function LatencyBadge({ ms }: { ms?: number }) {
   if (ms === undefined || ms === null) return null
-  let color = 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20'
-  if (ms > 1500) color = 'text-rose-600 bg-rose-500/10 border-rose-500/20'
-  else if (ms > 600) color = 'text-amber-600 bg-amber-500/10 border-amber-500/20'
+  let color = 'text-emerald-700 bg-emerald-500/10 border-emerald-500/20'
+  if (ms > 1500) color = 'text-rose-700 bg-rose-500/10 border-rose-500/20'
+  else if (ms > 600) color = 'text-amber-700 bg-amber-500/10 border-amber-500/20'
   return (
     <span className={`text-[10px] font-mono px-1 py-0.2 rounded border shrink-0 ${color}`} title={`探测耗时: ${ms}ms`}>
       {ms}ms
@@ -537,7 +537,7 @@ const PackRowItem = memo(function PackRowItem({
             {isSelected ? (
               <CheckSquare className="h-4 w-4 text-primary" />
             ) : (
-              <Square className="h-4 w-4 text-muted-foreground/60" />
+              <Square className="h-4 w-4 text-muted-foreground" />
             )}
           </button>
 
@@ -559,7 +559,7 @@ const PackRowItem = memo(function PackRowItem({
               {snap?.declared !== null && snap?.declared !== undefined && <span>声明 {snap.declared} 站点</span>}
               {snap?.sampled !== null && snap?.sampled !== undefined && <span>抽样 {snap.sampled} 站点</span>}
               {brokenCount > 0 && (
-                <span className="text-destructive font-medium flex items-center gap-0.5">
+                <span className="text-destructive-text font-medium flex items-center gap-0.5">
                   <AlertCircle className="h-3 w-3" /> {brokenCount} 死链
                 </span>
               )}
@@ -785,7 +785,7 @@ const PackRowItem = memo(function PackRowItem({
                   疑似停放/软404 {snap.suspiciousCount}
                 </span>
               )}
-              <span className={brokenCount > 0 ? 'text-destructive font-semibold' : ''}>
+              <span className={brokenCount > 0 ? 'text-destructive-text font-semibold' : ''}>
                 确认死链 {brokenCount}
               </span>
               {auditResult?.redirected ? (
@@ -911,7 +911,7 @@ const PackRowItem = memo(function PackRowItem({
                   type="button"
                   onClick={() => onSetTab(pack.slug, 'broken')}
                   className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                    activeTab === 'broken' ? 'bg-destructive text-destructive-foreground shadow-sm' : 'hover:bg-muted text-destructive'
+                    activeTab === 'broken' ? 'bg-destructive text-destructive-foreground shadow-sm' : 'hover:bg-muted text-destructive-text'
                   }`}
                 >
                   仅看死链 ({brokenCount})
@@ -1073,7 +1073,7 @@ const PackRowItem = memo(function PackRowItem({
             auditResult.brokenItems.length > 0 && (
               <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-destructive flex items-center gap-1.5">
+                  <span className="font-semibold text-destructive-text flex items-center gap-1.5">
                     <AlertCircle className="h-4 w-4" />
                     确认不可达死链清单（共 {auditResult.brokenItems.length} 条）
                   </span>
@@ -1106,7 +1106,7 @@ const PackRowItem = memo(function PackRowItem({
                   {auditResult.brokenItems.map((item) => (
                     <li key={item.url} className="flex items-start justify-between gap-2 rounded bg-background/80 p-2 border border-destructive/20">
                       <div className="flex items-center gap-1 min-w-0">
-                        <code className="break-all text-destructive font-mono text-[11px]">{item.url}</code>
+                        <code className="break-all text-destructive-text font-mono text-[11px]">{item.url}</code>
                         <CopyButton text={item.url} />
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0 text-muted-foreground text-[11px]">
@@ -1272,7 +1272,7 @@ const PackRowItem = memo(function PackRowItem({
                           (aiHeal.autoApplied.applied === false ? (
                             <Badge
                               variant="outline"
-                              className="text-[10px] text-amber-600 border-amber-500/40 bg-amber-500/10"
+                              className="text-[10px] text-amber-700 border-amber-500/40 bg-amber-500/10"
                               title={aiHeal.autoApplied.detail}
                             >
                               未应用：{AUTO_APPLY_REASON_LABELS[aiHeal.autoApplied.reason ?? ''] ?? '未说明'}
@@ -1280,7 +1280,7 @@ const PackRowItem = memo(function PackRowItem({
                           ) : (
                             <Badge
                               variant="outline"
-                              className="text-[10px] text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
+                              className="text-[10px] text-emerald-700 border-emerald-500/40 bg-emerald-500/10"
                             >
                               已自动平替 {aiHeal.autoApplied.replacedCount} 条 · 清理 {aiHeal.autoApplied.removedCount} 条
                             </Badge>
@@ -1339,7 +1339,7 @@ const PackRowItem = memo(function PackRowItem({
                                     </Badge>
                                   )}
                                   <span className={`font-semibold text-xs truncate ${diag.resolved ? 'line-through text-muted-foreground' : ''}`}>{diag.title}</span>
-                                  <code className={`text-[10px] truncate ${diag.resolved ? 'line-through text-muted-foreground/60' : 'text-muted-foreground'}`}>{diag.url}</code>
+                                  <code className={`text-[10px] truncate ${diag.resolved ? 'line-through text-muted-foreground' : 'text-muted-foreground'}`}>{diag.url}</code>
                                   <CopyButton text={diag.url} />
                                   {diag.evidence?.source === 'client-claimed' && (
                                     <Badge
@@ -1414,7 +1414,7 @@ const PackRowItem = memo(function PackRowItem({
                                             {typeof rep.qualityScore === 'number' && (
                                               <Badge
                                                 variant="outline"
-                                                className="text-[10px] font-bold border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 py-0"
+                                                className="text-[10px] font-bold border-emerald-500/30 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 py-0"
                                                 title={
                                                   rep.confidence
                                                     ? `合成可信度：可达性 ${rep.confidence.reachability} × 0.5 + 内容健康 ${rep.confidence.contentHealth} × 0.3 + 领域匹配 ${rep.confidence.domainFit} × 0.2`
@@ -1435,12 +1435,12 @@ const PackRowItem = memo(function PackRowItem({
                                                 {rep.latencyMs ? ` · ${rep.latencyMs}ms` : ''}
                                               </Badge>
                                             ) : rep.verified === false ? (
-                                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
                                                 待复测
                                               </span>
                                             ) : null}
                                             {rep.source && (
-                                              <span className="text-[10px] text-muted-foreground/80 font-mono">
+                                              <span className="text-[10px] text-muted-foreground font-mono">
                                                 [{rep.source === 'ai' ? '大模型精选' : rep.source === 'catalog' ? '垂类权威标杆' : '类目匹配'}]
                                               </span>
                                             )}
@@ -2647,11 +2647,11 @@ export function PluginUrlHealthPanel() {
             </div>
           </div>
           <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-2.5 shadow-sm border-t-2 border-t-rose-500 transition-all hover:shadow">
-            <div className="text-[11px] font-medium text-destructive flex items-center gap-1">
+            <div className="text-[11px] font-medium text-destructive-text flex items-center gap-1">
               <AlertCircle className="h-3 w-3" /> 确认死链
             </div>
             <div className="mt-1 flex items-baseline gap-1">
-              <span className="text-xl font-bold tracking-tight text-destructive">{globalMetrics.totalBroken}</span>
+              <span className="text-xl font-bold tracking-tight text-destructive-text">{globalMetrics.totalBroken}</span>
               <span className="text-xs text-muted-foreground">条</span>
             </div>
           </div>
@@ -2809,7 +2809,7 @@ export function PluginUrlHealthPanel() {
               className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1 ${
                 filter === 'issues'
                   ? 'bg-destructive text-destructive-foreground shadow-sm'
-                  : 'bg-destructive/10 text-destructive hover:bg-destructive/20'
+                  : 'bg-destructive/15 text-destructive-text hover:bg-destructive/20'
               }`}
             >
               <AlertCircle className="h-3 w-3" />
@@ -2825,7 +2825,7 @@ export function PluginUrlHealthPanel() {
               className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1 ${
                 filter === 'healthy'
                   ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20'
               }`}
             >
               <CheckCircle2 className="h-3 w-3" />
@@ -2952,7 +2952,7 @@ export function PluginUrlHealthPanel() {
 
       <CardContent className="space-y-4 pt-4">
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive-text">
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>

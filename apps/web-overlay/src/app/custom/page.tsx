@@ -50,15 +50,15 @@ export default function CustomPage() {
                   <Move className="w-3.5 h-3.5" />
                   <span>鼠标自由拖拽换位</span>
                 </span>
-                <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-medium">
+                <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20 font-medium">
                   <Maximize2 className="w-3.5 h-3.5" />
                   <span>12 栅格无级缩放</span>
                 </span>
-                <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium">
+                <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-medium">
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>独立沙箱 · 本地持久化</span>
                 </span>
-                <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-medium">
+                <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 font-medium">
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>支持 Ctrl+Z 历史撤销</span>
                 </span>

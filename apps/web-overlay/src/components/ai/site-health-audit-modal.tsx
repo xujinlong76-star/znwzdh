@@ -255,7 +255,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4 border-b border-border/60 bg-muted/20">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shrink-0">
+            <div className="p-2 rounded-xl bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20 shrink-0">
               <HeartPulse className="w-5 h-5" />
             </div>
             <div className="min-w-0">
@@ -324,7 +324,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
             </div>
           ) : !summary || summary.issues.length === 0 ? (
             <div className="py-16 text-center space-y-2">
-              <div className="inline-flex p-3 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              <div className="inline-flex p-3 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <div className="text-sm font-medium text-foreground">全站网络连接健康度极佳！</div>
@@ -456,7 +456,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
                                 </div>
                                 <div className="text-[10px] text-muted-foreground leading-relaxed">{alt.reason}</div>
                                 {alt.gradeReason && (
-                                  <div className="text-[10px] text-muted-foreground/90 leading-relaxed">
+                                  <div className="text-[10px] text-muted-foreground leading-relaxed">
                                     实测依据：{alt.gradeReason}
                                   </div>
                                 )}

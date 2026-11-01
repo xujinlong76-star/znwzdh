@@ -223,11 +223,11 @@ export function NotesWidget() {
           </span>
         </div>
         {copyError && (
-          <span role="status" title={copyError} className="text-destructive">
+          <span role="status" title={copyError} className="text-destructive-text">
             复制失败
           </span>
         )}
-        <div className="font-mono text-muted-foreground/70">
+        <div className="font-mono text-muted-foreground">
           {content.length} 字符 · {content.split('\n').filter(Boolean).length} 行
         </div>
       </div>

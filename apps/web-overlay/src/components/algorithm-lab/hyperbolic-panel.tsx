@@ -108,8 +108,8 @@ export function HyperbolicPanel() {
                   <div className="absolute inset-4 rounded-full border border-dashed border-violet-400/20 pointer-events-none" />
                   <div className="absolute inset-16 rounded-full border border-dashed border-violet-400/20 pointer-events-none" />
                   <div className="absolute inset-28 rounded-full border border-dotted border-violet-400/15 pointer-events-none" />
-                  <div className="text-xs text-muted-foreground/70 absolute top-2 font-mono">||x|| = 1.0 (流形边界)</div>
-                  <div className="text-xs text-muted-foreground/60 absolute bottom-3 font-mono">Poincaré Ball Model</div>
+                  <div className="text-xs text-muted-foreground absolute top-2 font-mono">||x|| = 1.0 (流形边界)</div>
+                  <div className="text-xs text-muted-foreground absolute bottom-3 font-mono">Poincaré Ball Model</div>
 
                   {/* 节点在圆盘上的投影点 */}
                   {TECH_NODES.map((n) => {
@@ -158,7 +158,7 @@ export function HyperbolicPanel() {
                       >
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 text-xs font-bold flex items-center justify-center font-mono">
+                            <span className="w-5 h-5 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-400 text-xs font-bold flex items-center justify-center font-mono">
                               #{idx + 1}
                             </span>
                             <span className="text-sm font-semibold group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">

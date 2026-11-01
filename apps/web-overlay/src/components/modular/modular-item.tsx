@@ -225,7 +225,7 @@ function ModularItemImpl({
             移除此模块
           </Button>
         ) : (
-          <div className="text-xs text-muted-foreground/70">开启编辑模式后可移除此模块</div>
+          <div className="text-xs text-muted-foreground">开启编辑模式后可移除此模块</div>
         )}
       </div>
     )
@@ -516,7 +516,7 @@ function ModularItemImpl({
       {isEditing && (
         <div
           onPointerDown={handleResizePointerDown}
-          className="absolute bottom-0 right-0 p-1.5 z-10 cursor-se-resize flex items-end justify-end text-muted-foreground/60 hover:text-primary transition-all select-none group/resize touch-none"
+          className="absolute bottom-0 right-0 p-1.5 z-10 cursor-se-resize flex items-end justify-end text-muted-foreground hover:text-primary transition-all select-none group/resize touch-none"
           title={`当前尺寸: ${colSpan} 列 × ${rowSpan} 行 (按住右下角横向改宽度、纵向改高度)`}
         >
           <span className="opacity-0 group-hover/resize:opacity-100 text-xs font-mono bg-background/90 border border-border/80 px-1.5 py-0.5 rounded mr-1 mb-0.5 shadow-xs transition-opacity">

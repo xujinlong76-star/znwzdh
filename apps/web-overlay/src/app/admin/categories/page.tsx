@@ -299,7 +299,7 @@ export default function AdminCategoriesPage() {
                       <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void toggleEnabled(cat, setBusyId, load)}>
                         {cat.enabled ? '停用' : '启用'}
                       </Button>
-                      <Button size="sm" variant="ghost" className="text-destructive" disabled={busyId === cat.id} onClick={() => void deleteCat(cat, setBusyId, load)}>
+                      <Button size="sm" variant="ghost" className="text-destructive-text" disabled={busyId === cat.id} onClick={() => void deleteCat(cat, setBusyId, load)}>
                         删除
                       </Button>
                     </td>

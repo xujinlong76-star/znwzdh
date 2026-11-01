@@ -156,7 +156,7 @@ export function TrendingWidget() {
           <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
           <span>热度榜</span>
           {demo && !loading && (
-            <span className="px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-normal leading-none">
+            <span className="px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px] font-normal leading-none">
               演示数据
             </span>
           )}
@@ -231,7 +231,7 @@ export function TrendingWidget() {
         )}
       </div>
 
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono flex flex-col items-center gap-1">
+      <div className="pt-1 text-xs text-muted-foreground text-center font-mono flex flex-col items-center gap-1">
         {demo ? (
           <span>演示数据 · 中枢趋势暂不可用</span>
         ) : hasSignal ? (

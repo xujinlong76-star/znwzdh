@@ -327,7 +327,7 @@ export function PluginCard({
               {pluginKindLabel(plugin.kind)}
             </Badge>
             {plugin.featured && (
-              <Badge variant="outline" className="text-[10px] text-amber-600 bg-amber-500/10 border-amber-500/30">
+              <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-500/10 border-amber-500/30">
                 精选
               </Badge>
             )}
@@ -348,7 +348,7 @@ export function PluginCard({
               >
                 <Badge
                   variant="outline"
-                  className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 inline-flex items-center gap-1 font-mono transition-colors"
+                  className="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 inline-flex items-center gap-1 font-mono transition-colors"
                   title="点击查看 AI 智能四维审查认证详情报告"
                 >
                   <ShieldCheck className="w-3 h-3 text-emerald-500" />
@@ -357,7 +357,7 @@ export function PluginCard({
               </button>
             )}
           </div>
-          <span className="text-[11px] font-mono text-muted-foreground/80">v{plugin.version}</span>
+          <span className="text-[11px] font-mono text-muted-foreground">v{plugin.version}</span>
         </div>
 
         {/* 插件标题与描述 */}
@@ -369,7 +369,7 @@ export function PluginCard({
             <span>{plugin.name}</span>
             <ExternalLink className="w-3.5 h-3.5 opacity-40 sm:opacity-0 -translate-x-1 transition-all group-hover/title:opacity-100 group-hover/title:translate-x-0" />
           </Link>
-          <p className="text-[13px] text-muted-foreground/90 line-clamp-2 leading-relaxed min-h-[38px] break-words">
+          <p className="text-[13px] text-muted-foreground line-clamp-2 leading-relaxed min-h-[38px] break-words">
             {plugin.description || '暂无描述'}
           </p>
         </div>
@@ -413,7 +413,7 @@ export function PluginCard({
             className={cn(
               'inline-flex items-center gap-1 px-2 py-1.5 min-h-[32px] rounded-md transition-colors border',
               starred
-                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
                 : 'text-muted-foreground hover:text-foreground border-transparent hover:bg-muted/60'
             )}
             title={starred ? '取消星标' : '点亮星标'}
@@ -423,7 +423,7 @@ export function PluginCard({
           </button>
 
           <span className="text-muted-foreground flex items-center gap-1 font-mono text-[11px]">
-            <Download className="w-3.5 h-3.5 text-muted-foreground/60" />
+            <Download className="w-3.5 h-3.5 text-muted-foreground" />
             {plugin.installCount || 0}
           </span>
           {(plugin.reviewCount ?? 0) > 0 && (
@@ -462,7 +462,7 @@ export function PluginCard({
               needsUpdate
                 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/25'
                 : installed
-                  ? 'group/btn bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30'
+                  ? 'group/btn bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-destructive/15 hover:text-destructive-text hover:border-destructive/30'
                   : 'bg-primary text-primary-foreground hover:opacity-90 active:scale-95'
             )}
           >

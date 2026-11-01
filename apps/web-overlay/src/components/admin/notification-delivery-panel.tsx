@@ -238,13 +238,13 @@ export function NotificationDeliveryPanel() {
         </CardHeader>
         <CardContent className="p-4 pt-1 space-y-3">
           {inboxActionError && (
-            <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text">
               全部已读失败：{inboxActionError}
             </div>
           )}
 
           {inboxDegrade && inbox.length > 0 && (
-            <div role="status" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <div role="status" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text">
               本次刷新失败，下面是上一次成功获取的告警。{inboxDegrade}
             </div>
           )}
@@ -252,7 +252,7 @@ export function NotificationDeliveryPanel() {
           {inboxLoading && inbox.length === 0 ? (
             <p className="rounded-md border p-6 text-center text-sm text-muted-foreground">正在加载管理员收件箱…</p>
           ) : inboxError && inbox.length === 0 ? (
-            <div role="status" className="rounded-md border border-destructive/30 bg-destructive/5 p-6 text-center text-sm text-destructive space-y-3">
+            <div role="status" className="rounded-md border border-destructive/30 bg-destructive/5 p-6 text-center text-sm text-destructive-text space-y-3">
               <p>没能取到管理员收件箱。{inboxDegrade}</p>
               <Button variant="outline" size="sm" onClick={() => void loadInbox(0, false)}>
                 重试
@@ -273,7 +273,7 @@ export function NotificationDeliveryPanel() {
                       <span className="text-[11px] text-muted-foreground tabular-nums">{formatTime(n.createdAt)}</span>
                     </div>
                     {n.body && <p className="break-words text-[11px] leading-relaxed text-muted-foreground">{n.body}</p>}
-                    <p className="text-[10px] font-mono text-muted-foreground/70">{n.kind}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">{n.kind}</p>
                   </li>
                 ))}
               </ul>
@@ -302,7 +302,7 @@ export function NotificationDeliveryPanel() {
               </label>
               <select
                 id="delivery-status-filter"
-                className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-7 rounded-md border border-border-strong bg-background px-2 text-xs"
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
               >
@@ -331,7 +331,7 @@ export function NotificationDeliveryPanel() {
         </CardHeader>
         <CardContent className="p-4 pt-1 space-y-3">
           {deliveryDegrade && deliveries.length > 0 && (
-            <div role="status" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <div role="status" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text">
               本次刷新失败，下面是上一次成功获取的记录。{deliveryDegrade}
             </div>
           )}
@@ -339,7 +339,7 @@ export function NotificationDeliveryPanel() {
           {deliveriesLoading && deliveries.length === 0 ? (
             <p className="rounded-md border p-6 text-center text-sm text-muted-foreground">正在加载投递记录…</p>
           ) : deliveryDegrade && deliveries.length === 0 ? (
-            <div role="status" className="rounded-md border border-destructive/30 bg-destructive/5 p-6 text-center text-sm text-destructive space-y-3">
+            <div role="status" className="rounded-md border border-destructive/30 bg-destructive/5 p-6 text-center text-sm text-destructive-text space-y-3">
               <p className="flex items-center justify-center gap-1.5">
                 <AlertTriangle className="w-4 h-4" aria-hidden />
                 没能取到投递记录。{deliveryDegrade}

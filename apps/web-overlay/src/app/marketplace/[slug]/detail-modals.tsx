@@ -193,7 +193,7 @@ export function DetailModals(props: DetailModalsProps) {
                     {`[![山羊胡 Plugin](https://.../api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](...)`}
                   </pre>
                   {mdCopy.copyFeedback.state === 'failed' && mdCopy.copyFeedback.reason ? (
-                    <p role="status" className="text-[11px] text-destructive">
+                    <p role="status" className="text-[11px] text-destructive-text">
                       {mdCopy.copyFeedback.reason}，请手动选中代码复制
                     </p>
                   ) : null}
@@ -231,7 +231,7 @@ export function DetailModals(props: DetailModalsProps) {
                     {`/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric}`}
                   </pre>
                   {svgCopy.copyFeedback.state === 'failed' && svgCopy.copyFeedback.reason ? (
-                    <p role="status" className="text-[11px] text-destructive">
+                    <p role="status" className="text-[11px] text-destructive-text">
                       {svgCopy.copyFeedback.reason}，请手动选中地址复制
                     </p>
                   ) : null}
@@ -251,7 +251,7 @@ export function DetailModals(props: DetailModalsProps) {
           <DialogContent className="max-w-md p-5 glass-surface border-border/80 shadow-2xl rounded-2xl">
             <DialogHeader className="space-y-1 pb-2 border-b border-border/50">
               <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
+                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
@@ -302,8 +302,8 @@ export function DetailModals(props: DetailModalsProps) {
                     className={cn(
                       'text-xs font-semibold px-2.5 py-1',
                       auditReport.level === 'safe'
-                        ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
-                        : 'bg-amber-500/10 text-amber-600 border-amber-500/30'
+                        ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/30'
+                        : 'bg-amber-500/10 text-amber-700 border-amber-500/30'
                     )}
                   >
                     {auditReport.level === 'safe' ? '安全等级：优良 (Safe)' : '安全等级：关注 (Notice)'}
@@ -351,7 +351,7 @@ export function DetailModals(props: DetailModalsProps) {
                   {auditReport.checks.map((c, i) => (
                     <div key={i} className="p-2.5 rounded-lg border border-border/40 bg-card/60 text-xs flex items-start gap-2.5">
                       {c.skipped ? (
-                        <Minus className="w-4 h-4 text-muted-foreground/60 shrink-0 mt-0.5" />
+                        <Minus className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                       ) : c.passed ? (
                         <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                       ) : (
@@ -365,7 +365,7 @@ export function DetailModals(props: DetailModalsProps) {
                   ))}
                 </div>
 
-                <div className="text-[10px] text-muted-foreground/70 text-center pt-1">
+                <div className="text-[10px] text-muted-foreground text-center pt-1">
                   体检时间：{new Date(auditReport.auditedAt).toLocaleString()} · SHA-256 签名无害化校验
                 </div>
               </div>

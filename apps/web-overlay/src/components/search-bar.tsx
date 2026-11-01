@@ -139,7 +139,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
   return (
     <div ref={searchRef} className="relative w-full max-w-lg mx-auto">
       <div className="relative">
-        <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground/80" />
+        <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           ref={inputRef}
           type="search"
@@ -217,7 +217,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                   <div className="text-muted-foreground text-sm">
                     未找到与 &ldquo;<span className="font-medium">{searchQuery}</span>&rdquo; 相关的导航
                   </div>
-                  <div className="text-xs text-muted-foreground/70 mt-1">
+                  <div className="text-xs text-muted-foreground mt-1">
                     尝试使用不同的关键词搜索
                   </div>
                   {/* 空结果不能是死路：给一个明确的「回到完整列表」出口 */}

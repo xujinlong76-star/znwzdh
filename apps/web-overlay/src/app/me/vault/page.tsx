@@ -162,7 +162,7 @@ export default function VaultPage() {
               <KeyRound className="h-4 w-4 shrink-0 text-primary" aria-hidden />
               零知识意味着什么
             </h2>
-            <ul className="mt-3 list-inside list-disc space-y-1.5 text-xs leading-relaxed text-muted-foreground marker:text-muted-foreground/60">
+            <ul className="mt-3 list-inside list-disc space-y-1.5 text-xs leading-relaxed text-muted-foreground marker:text-muted-foreground">
               <li className="break-words">加密与解密都在浏览器完成，主密码不离开本机，也不发往服务端。</li>
               <li className="break-words">服务端只保存密文与版本号，无法读取内容，也无法替你恢复。</li>
               <li className="break-words">忘记主密码等于无法解密：请保留一份自己的加密备份。</li>
@@ -252,11 +252,11 @@ export default function VaultPage() {
 
           <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive-text">
                 <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
                 删除云端金库
               </h2>
-              <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
+              <span className="rounded-full border border-destructive/30 bg-destructive/15 px-2 py-0.5 text-[10px] font-medium text-destructive-text">
                 不可逆
               </span>
             </div>

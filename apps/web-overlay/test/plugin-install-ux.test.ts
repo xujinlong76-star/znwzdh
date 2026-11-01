@@ -73,7 +73,7 @@ describe("插件卡片与市场弹窗：已安装插件的卸载/管理联动", 
   it("卡片已安装按钮悬停时展示管理/卸载文案与危险样式", () => {
     expect(card).toContain("管理 / 卸载")
     expect(card).toContain("group-hover/btn")
-    expect(card).toContain("hover:text-destructive")
+    expect(card).toContain("hover:text-destructive-text")
   })
 
   it("市场首页弹窗消费卡片传递的 installMode，支持卸载与升级模式", () => {

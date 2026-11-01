@@ -420,7 +420,7 @@ export function PluginInstallModal({
                         }`}
                       >
                         <div>追加新看板</div>
-                        <div className="text-[10px] text-muted-foreground/80">保留当前工作台</div>
+                        <div className="text-[10px] text-muted-foreground">保留当前工作台</div>
                       </button>
                       <button
                         type="button"
@@ -432,7 +432,7 @@ export function PluginInstallModal({
                         }`}
                       >
                         <div>覆盖当前工作台</div>
-                        <div className="text-[10px] text-muted-foreground/80">可随时在历史中撤销</div>
+                        <div className="text-[10px] text-muted-foreground">可随时在历史中撤销</div>
                       </button>
                     </div>
                   </div>
@@ -461,7 +461,7 @@ export function PluginInstallModal({
                     </span>
                   </div>
                   {bundleBlocked && (
-                    <div className="flex items-start gap-1.5 text-[11px] text-destructive">
+                    <div className="flex items-start gap-1.5 text-[11px] text-destructive-text">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>部分成员已失效，安装已暂停；可等待作者更新组合包或选择单独安装其余插件。</span>
                     </div>
@@ -473,14 +473,14 @@ export function PluginInstallModal({
                           {item.available ? (
                             <Check className="w-3 h-3 shrink-0 text-emerald-500" />
                           ) : (
-                            <AlertTriangle className="w-3 h-3 shrink-0 text-destructive" />
+                            <AlertTriangle className="w-3 h-3 shrink-0 text-destructive-text" />
                           )}
                           <span className="text-foreground truncate">{item.name ?? item.slug}</span>
                           <span className="text-[10px] text-muted-foreground shrink-0">
                             {memberKindLabels[item.kind] ?? item.kind}
                           </span>
                           {!item.available && item.reason && (
-                            <span className="text-[10px] text-destructive shrink-0">{item.reason}</span>
+                            <span className="text-[10px] text-destructive-text shrink-0">{item.reason}</span>
                           )}
                         </li>
                       ))}
@@ -535,7 +535,7 @@ export function PluginInstallModal({
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                 <span>安全与隐私透明度 (Nutrition Label)</span>
               </div>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-mono">
                 100% 声明式沙箱
               </span>
             </div>
@@ -563,7 +563,7 @@ export function PluginInstallModal({
               <div className="pt-0.5 space-y-1">
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                   <span>涉及外部网络域 ({externalDomains.length})</span>
-                  <span className="text-muted-foreground/70">同源数据沙箱隔离</span>
+                  <span className="text-muted-foreground">同源数据沙箱隔离</span>
                 </div>
                 <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
                   {externalDomains.slice(0, 6).map((domain) => (

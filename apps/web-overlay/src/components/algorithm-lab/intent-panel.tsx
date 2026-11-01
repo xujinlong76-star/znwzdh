@@ -80,7 +80,7 @@ export function IntentPanel() {
                         <Sparkles className="w-4 h-4" />
                       </div>
                       <span className="text-sm font-bold">{intentResult.title}</span>
-                      <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-500/40 bg-amber-500/10 font-mono px-2 py-0.5">
+                      <Badge variant="outline" className="text-xs text-amber-700 dark:text-amber-400 border-amber-500/40 bg-amber-500/10 font-mono px-2 py-0.5">
                         0-RTT 命中
                       </Badge>
                     </div>

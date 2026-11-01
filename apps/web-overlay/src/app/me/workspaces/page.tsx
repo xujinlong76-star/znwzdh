@@ -365,7 +365,7 @@ export default function WorkspacesPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                  className="h-7 w-7 text-muted-foreground hover:bg-destructive/15 hover:text-destructive-text"
                                   disabled={removeDisabled}
                                   title={
                                     member.role === 'owner' && ownerCount <= 1

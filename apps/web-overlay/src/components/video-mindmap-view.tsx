@@ -97,7 +97,7 @@ export function VideoMindmapView({ rootNode, onSeek, videoTitle }: VideoMindmapV
               {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           ) : (
-            <span className="w-3.5 h-3.5 flex items-center justify-center text-muted-foreground/40">•</span>
+            <span className="w-3.5 h-3.5 flex items-center justify-center text-muted-foreground">•</span>
           )}
 
           <span className="shrink-0">{badge.icon}</span>

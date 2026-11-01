@@ -51,7 +51,7 @@ const STATUS_META: Record<
   published: { label: '已上架', className: 'text-emerald-600 border-emerald-500/30 bg-emerald-500/5', icon: CheckCircle2 },
   rejected: { label: '已驳回', className: 'text-rose-600 border-rose-500/30 bg-rose-500/5', icon: XCircle },
   delisted: { label: '已下架', className: 'text-zinc-600 border-zinc-500/30 bg-zinc-500/5', icon: ShieldAlert },
-  quarantined: { label: '安全隔离', className: 'text-destructive border-destructive/30 bg-destructive/5', icon: ShieldAlert },
+  quarantined: { label: '安全隔离', className: 'text-destructive-text border-destructive/30 bg-destructive/5', icon: ShieldAlert },
 }
 
 export default function MyPluginsPage() {
@@ -191,7 +191,7 @@ export default function MyPluginsPage() {
           </div>
         ) : items.length === 0 ? (
           <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
-            <Store className="w-8 h-8 mx-auto text-muted-foreground/50" />
+            <Store className="w-8 h-8 mx-auto text-muted-foreground" />
             <p className="text-sm text-muted-foreground">你还没有提交过插件</p>
             <Button asChild size="sm" className="gap-1.5">
               <Link href="/marketplace/publish">

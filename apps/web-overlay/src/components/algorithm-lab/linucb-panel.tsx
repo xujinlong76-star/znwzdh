@@ -107,7 +107,7 @@ export function LinucbPanel() {
                 <div className="md:col-span-2 space-y-2.5">
                   <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
                     <span>测试搜索输入：</span>
-                    <span className="text-xs font-normal text-muted-foreground/75">(实时动态提取上下文特征向量 x)</span>
+                    <span className="text-xs font-normal text-muted-foreground">(实时动态提取上下文特征向量 x)</span>
                   </label>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Input aria-label="搜索关键词（拼音 / 中文 / 长句）"

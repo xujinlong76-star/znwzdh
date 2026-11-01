@@ -379,7 +379,7 @@ export default function AdminStatsPage() {
       {degradeNotice && (
         <div
           role="status"
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text"
         >
           <span>
             {data

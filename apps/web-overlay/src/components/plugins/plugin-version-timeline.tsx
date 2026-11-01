@@ -108,7 +108,7 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
   if (loading) {
     return (
       <div className="rounded-2xl border border-dashed border-border/70 p-8 text-center text-xs text-muted-foreground">
-        <History className="h-5 w-5 animate-spin mx-auto mb-2 text-muted-foreground/60" />
+        <History className="h-5 w-5 animate-spin mx-auto mb-2 text-muted-foreground" />
         加载版本历史记录中...
       </div>
     )
@@ -117,7 +117,7 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
   if (versions.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground bg-card/30">
-        <History className="h-6 w-6 mx-auto mb-2 text-muted-foreground/40" />
+        <History className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
         <p className="font-medium text-foreground">暂无历史版本记录</p>
         <p className="mt-1">该插件由种子数据初始化或当前为首发版本 (v{currentVersion})。</p>
       </div>
@@ -199,7 +199,7 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
                     {v.changelog}
                   </p>
                 ) : (
-                  <p className="mt-1 text-xs text-muted-foreground/60 italic">
+                  <p className="mt-1 text-xs text-muted-foreground italic">
                     发布者未附带版本更新说明
                   </p>
                 )}
@@ -237,7 +237,7 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
                         : '安装/回滚此版本'}
                     </Button>
                   </div>
-                  <span className="text-[10px] text-muted-foreground/50 font-mono">
+                  <span className="text-[10px] text-muted-foreground font-mono">
                     ID: {v.id.slice(0, 8)}
                   </span>
                 </div>
@@ -268,7 +268,7 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
                         </div>
                       </div>
                     ) : (
-                      <p className="text-xs text-destructive">快照数据读取失败</p>
+                      <p className="text-xs text-destructive-text">快照数据读取失败</p>
                     )}
                   </div>
                 )}

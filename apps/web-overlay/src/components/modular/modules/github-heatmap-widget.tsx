@@ -36,7 +36,7 @@ const THEME_CLASSES: Record<ThemeName, Record<string | number, string>> = {
     3: 'bg-emerald-500/75 dark:bg-emerald-500/70 border-emerald-500/70',
     4: 'bg-emerald-500 text-white font-bold border-emerald-600',
     text: 'text-emerald-500',
-    badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+    badge: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
   },
   amber: {
     0: 'bg-muted/40 dark:bg-muted/20 border-border/20',
@@ -45,7 +45,7 @@ const THEME_CLASSES: Record<ThemeName, Record<string | number, string>> = {
     3: 'bg-amber-500/75 dark:bg-amber-500/70 border-amber-500/70',
     4: 'bg-amber-500 text-white font-bold border-amber-600',
     text: 'text-amber-500',
-    badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+    badge: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
   },
   purple: {
     0: 'bg-muted/40 dark:bg-muted/20 border-border/20',
@@ -54,7 +54,7 @@ const THEME_CLASSES: Record<ThemeName, Record<string | number, string>> = {
     3: 'bg-purple-500/75 dark:bg-purple-500/70 border-purple-500/70',
     4: 'bg-purple-500 text-white font-bold border-purple-600',
     text: 'text-purple-500',
-    badge: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+    badge: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20',
   },
   cyan: {
     0: 'bg-muted/40 dark:bg-muted/20 border-border/20',
@@ -63,7 +63,7 @@ const THEME_CLASSES: Record<ThemeName, Record<string | number, string>> = {
     3: 'bg-cyan-500/75 dark:bg-cyan-500/70 border-cyan-500/70',
     4: 'bg-cyan-500 text-white font-bold border-cyan-600',
     text: 'text-cyan-500',
-    badge: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
+    badge: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/20',
   },
 }
 
@@ -203,7 +203,7 @@ export function GithubHeatmapWidget({ config }: GithubHeatmapWidgetProps) {
               实时事件流
             </span>
           ) : (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-destructive/30 bg-destructive/5 text-destructive whitespace-nowrap">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-destructive/30 bg-destructive/5 text-destructive-text whitespace-nowrap">
               未取到数据
             </span>
           )}
@@ -225,7 +225,7 @@ export function GithubHeatmapWidget({ config }: GithubHeatmapWidgetProps) {
 
       {error ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center min-h-[95px]">
-          <p className="text-[11px] text-destructive leading-relaxed inline-flex items-start gap-1.5 max-w-[270px]">
+          <p className="text-[11px] text-destructive-text leading-relaxed inline-flex items-start gap-1.5 max-w-[270px]">
             <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <span>{error}</span>
           </p>
@@ -327,7 +327,7 @@ export function GithubHeatmapWidget({ config }: GithubHeatmapWidgetProps) {
             </div>
           </div>
 
-          <p className="text-[10px] text-muted-foreground/80 leading-snug">
+          <p className="text-[10px] text-muted-foreground leading-snug">
             {isDemo
               ? '模拟矩阵：仅用于预览排版与配色，不是任何人的真实贡献记录。'
               : `色阶按本卡数据分档（单日最高 ${render.maxDaily} 次）· 覆盖 ${render.coveredFrom ?? '—'} ~ ${

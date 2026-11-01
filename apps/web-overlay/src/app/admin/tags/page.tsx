@@ -187,7 +187,7 @@ export default function AdminTagsPage() {
                             <button
                               type="button"
                               onClick={() => void removeAlias(t, alias, setBusyId, load)}
-                              className="text-muted-foreground hover:text-destructive text-[10px] ml-0.5 font-bold"
+                              className="text-muted-foreground hover:text-destructive-text text-[10px] ml-0.5 font-bold"
                               title="移除此别名"
                             >
                               ×
@@ -195,7 +195,7 @@ export default function AdminTagsPage() {
                           </span>
                         ))
                       ) : (
-                        <span className="text-xs text-muted-foreground/60 italic">无别名</span>
+                        <span className="text-xs text-muted-foreground italic">无别名</span>
                       )}
                       <button
                         type="button"
@@ -236,7 +236,7 @@ export default function AdminTagsPage() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-destructive hover:text-destructive"
+                      className="text-destructive-text hover:text-destructive-text"
                       disabled={busyId === t.id}
                       onClick={() => void deleteTag(t, setBusyId, load)}
                     >

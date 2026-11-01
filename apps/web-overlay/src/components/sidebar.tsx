@@ -179,7 +179,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
                       <Button
                         key={subCategory.id}
                         variant="ghost"
-                        className="w-full justify-start h-7.5 px-2 text-xs rounded-md text-muted-foreground/80 hover:text-foreground hover:bg-muted/50 cursor-pointer"
+                        className="w-full justify-start h-7.5 px-2 text-xs rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
                         onClick={() => {
                           scrollToSection(subCategory.id)
                           onClose?.()

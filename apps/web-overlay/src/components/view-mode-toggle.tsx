@@ -101,7 +101,7 @@ export function ViewModeToggle({ className }: { className?: string }) {
                   <span className="w-1.5 h-1.5 rounded-full bg-primary" />
                 )}
               </div>
-              <span className="text-[11px] text-muted-foreground/80 mt-0.5 leading-snug">{item.desc}</span>
+              <span className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{item.desc}</span>
             </div>
           </DropdownMenuItem>
         ))}

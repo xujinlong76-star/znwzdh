@@ -210,7 +210,7 @@ export function AddVideoItemForm({
           <Label htmlFor="video-platform" className="text-xs font-medium">平台类型</Label>
           <select
             id="video-platform"
-            className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full h-9 rounded-md border border-border-strong bg-background px-3 py-1 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
             value={videoType}
             onChange={(e) => setVideoType(e.target.value)}
           >
@@ -260,7 +260,7 @@ export function AddVideoItemForm({
         <textarea
           id="video-desc"
           rows={2}
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-border-strong bg-background px-3 py-2 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
           placeholder="简要概括本视频涉及的核心架构或技术教程..."
           value={description}
           onChange={(e) => setDescription(e.target.value)}

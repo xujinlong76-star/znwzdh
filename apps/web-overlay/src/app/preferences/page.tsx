@@ -368,7 +368,7 @@ export default function PreferencesPage() {
             </section>
 
             <section className="min-w-0 rounded-xl border border-destructive/25 bg-destructive/[0.03] p-4 sm:col-span-2 sm:p-5">
-              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive">
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive-text">
                 <ShieldAlert className="h-4 w-4" />
                 重置画像
               </h2>

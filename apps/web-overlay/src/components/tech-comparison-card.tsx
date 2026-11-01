@@ -18,7 +18,7 @@ export function TechComparisonCard({ matrix }: TechComparisonCardProps) {
       {/* 头部标题与标识 */}
       <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2.5">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400">
+          <div className="p-1.5 rounded-md bg-violet-500/10 text-violet-700 dark:text-violet-400">
             <Scale className="w-4 h-4" />
           </div>
           <div>

@@ -171,7 +171,7 @@ export function StudioSandboxPanel(props: StudioSandboxPanelProps) {
                               {site.tags && site.tags.length > 0 && (
                                 <div className="flex gap-1">
                                   {site.tags.slice(0, 2).map((t, ti) => (
-                                    <span key={ti} className="text-muted-foreground/80">
+                                    <span key={ti} className="text-muted-foreground">
                                       #{t}
                                     </span>
                                   ))}

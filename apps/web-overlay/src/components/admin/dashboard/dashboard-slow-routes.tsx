@@ -18,11 +18,11 @@ export interface DashboardSlowRoutesProps {
 }
 
 const METHOD_COLORS: Record<string, string> = {
-  GET: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
-  POST: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/30',
-  PUT: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
-  DELETE: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
-  PATCH: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30',
+  GET: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+  POST: 'bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/30',
+  PUT: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30',
+  DELETE: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30',
+  PATCH: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30',
 }
 
 export function DashboardSlowRoutes({ routes }: DashboardSlowRoutesProps) {
@@ -124,7 +124,7 @@ export function DashboardSlowRoutes({ routes }: DashboardSlowRoutesProps) {
       ) : (
         <div className="px-4 py-6 text-center text-xs text-muted-foreground space-y-1">
           <p>暂无异常慢请求采样</p>
-          <p className="text-[11px] text-muted-foreground/80">接口延迟全部在基线以内（P95 &lt; 50ms）</p>
+          <p className="text-[11px] text-muted-foreground">接口延迟全部在基线以内（P95 &lt; 50ms）</p>
         </div>
       )}
     </div>

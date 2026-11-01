@@ -259,7 +259,7 @@ export default function AdminAiPage() {
   if (loadError) {
     return (
       <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6">
-        <p className="text-sm text-destructive">{loadError}</p>
+        <p className="text-sm text-destructive-text">{loadError}</p>
         <Button variant="outline" size="sm" className="mt-4" onClick={() => void load()}>
           <RefreshCw className="mr-2 h-4 w-4" />
           重试
@@ -312,7 +312,7 @@ export default function AdminAiPage() {
         >
           <Cpu className="h-4 w-4 text-indigo-500" />
           效能与 Token 遥测大盘
-          <Badge variant="outline" className="text-[10px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20">
+          <Badge variant="outline" className="text-[10px] bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20">
             Agnes 3.0 Flash
           </Badge>
         </button>
@@ -533,7 +533,7 @@ export default function AdminAiPage() {
               'rounded-lg border p-3 text-sm ' +
               (testResult.ok
                 ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
-                : 'border-destructive/30 bg-destructive/5 text-destructive')
+                : 'border-destructive/30 bg-destructive/5 text-destructive-text')
             }
           >
             <div className="flex items-center gap-2 font-medium">

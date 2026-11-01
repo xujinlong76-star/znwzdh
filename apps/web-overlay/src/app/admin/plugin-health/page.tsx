@@ -25,11 +25,11 @@ export default function AdminPluginHealthPage() {
             <LayoutDashboard className="h-3.5 w-3.5" />
             <span>管理后台</span>
           </Link>
-          <ChevronRight className="h-3 w-3 text-muted-foreground/60" />
+          <ChevronRight className="h-3 w-3 text-muted-foreground" />
           <Link href="/admin/plugins" className="hover:text-foreground transition-colors">
             插件生态治理
           </Link>
-          <ChevronRight className="h-3 w-3 text-muted-foreground/60" />
+          <ChevronRight className="h-3 w-3 text-muted-foreground" />
           <span className="text-foreground font-medium">网址智能体检与 AI 自愈</span>
         </nav>
 

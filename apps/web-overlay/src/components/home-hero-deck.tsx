@@ -87,7 +87,7 @@ export function HomeHeroDeck() {
           </div>
           <h2 className="text-xs sm:text-sm font-semibold tracking-tight text-foreground flex items-center gap-1.5">
             <span>极速启动展板</span>
-            <span className="text-[11px] font-normal text-muted-foreground/80 hidden sm:inline">
+            <span className="text-[11px] font-normal text-muted-foreground hidden sm:inline">
               (首屏即插即用 · 与图钉 📌 实时联动)
             </span>
           </h2>
@@ -143,7 +143,7 @@ export function HomeHeroDeck() {
                       </div>
                       <div className="min-w-0">
                         <div className="text-xs font-semibold truncate text-foreground">{def.title}</div>
-                        <div className="text-[11px] text-muted-foreground/80 line-clamp-1 mt-0.5">
+                        <div className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
                           {def.description}
                         </div>
                       </div>
@@ -217,7 +217,7 @@ export function HomeHeroDeck() {
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span>首屏极速启动展板已收起</span>
-            <span className="text-muted-foreground/60 hidden sm:inline">
+            <span className="text-muted-foreground hidden sm:inline">
               · 已挂载 {heroDeckWidgets.length} 个快捷小组件
             </span>
           </div>

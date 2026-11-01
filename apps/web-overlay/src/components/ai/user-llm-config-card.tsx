@@ -243,7 +243,7 @@ export function UserLlmConfigCard() {
         </div>
       ) : loadError ? (
         <div className="space-y-2">
-          <p className="text-xs text-destructive">{loadError}</p>
+          <p className="text-xs text-destructive-text">{loadError}</p>
           <Button size="sm" variant="outline" onClick={() => void load(identityRef.current)}>
             <RefreshCw className="mr-2 h-3.5 w-3.5" />
             重试
@@ -300,7 +300,7 @@ export function UserLlmConfigCard() {
                 'rounded-md border p-2.5 text-xs ' +
                 (testResult.ok
                   ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
-                  : 'border-destructive/30 bg-destructive/5 text-destructive')
+                  : 'border-destructive/30 bg-destructive/5 text-destructive-text')
               }
             >
               <div className="flex items-center gap-1.5 font-medium">
@@ -331,7 +331,7 @@ export function UserLlmConfigCard() {
               type="checkbox"
               checked={chatThinking}
               onChange={(e) => setChatThinking(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-input accent-[var(--primary)]"
+              className="h-3.5 w-3.5 rounded border-border-strong accent-[var(--primary)]"
             />
             <span>深度思考 (Thinking)</span>
           </label>
@@ -352,7 +352,7 @@ export function UserLlmConfigCard() {
             发送
           </Button>
         </div>
-        {chatError && <p className="text-xs text-destructive">{chatError}</p>}
+        {chatError && <p className="text-xs text-destructive-text">{chatError}</p>}
         {chatReply && (
           <div className="rounded-md border bg-muted/30 p-2.5 space-y-2">
             {chatReply.reasoningContent && (

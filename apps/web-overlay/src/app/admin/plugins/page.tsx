@@ -93,15 +93,15 @@ const STATUS_TABS = [
 const GOVERNANCE_KIND_META: Record<HubPluginGovernanceAlert['kind'], { label: string; chip: string }> = {
   pending_sla: {
     label: '待审超 SLA',
-    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
+    chip: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30',
   },
   reported: {
     label: '插件被举报',
-    chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
+    chip: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30',
   },
   review_reported: {
     label: '评价被举报',
-    chip: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/30',
+    chip: 'bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/30',
   },
 }
 
@@ -555,7 +555,7 @@ export default function AdminPluginsPage() {
               type="button"
               disabled={syncingSeed}
               onClick={handleSyncOfficialCatalog}
-              className="inline-flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 transition-colors px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30"
+              className="inline-flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 hover:text-amber-700 transition-colors px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30"
               title="一键将代码库最新官方插件库同步至本站（增量无损）"
             >
               {syncingSeed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
@@ -567,7 +567,7 @@ export default function AdminPluginsPage() {
             <button
               type="button"
               onClick={() => setTapsModalOpen(true)}
-              className="inline-flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors px-2.5 py-1 rounded-md bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30"
+              className="inline-flex items-center gap-1.5 text-xs text-indigo-700 dark:text-indigo-400 hover:text-indigo-700 transition-colors px-2.5 py-1 rounded-md bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30"
             >
               <Radio className="w-3.5 h-3.5" />
               <span>Taps 订阅源管理</span>
@@ -597,7 +597,7 @@ export default function AdminPluginsPage() {
                 {seedStatus?.hasAvailableUpdates ? (
                   <Badge className="text-[10px] bg-amber-500 text-white">发现新资源</Badge>
                 ) : (
-                  <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">已就绪</Badge>
+                  <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">已就绪</Badge>
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
@@ -806,13 +806,13 @@ export default function AdminPluginsPage() {
                       v{item.version}
                     </span>
                     {item.status === 'quarantined' && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive border border-destructive/30">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-destructive/15 text-destructive-text border border-destructive/30">
                         <AlertTriangle className="w-3 h-3" />
                         <span>已隔离熔断</span>
                       </span>
                     )}
                     {item.reportCount > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 border border-amber-500/30">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 border border-amber-500/30">
                         <Flag className="w-3 h-3" />
                         <span>举报 {item.reportCount}</span>
                       </span>
@@ -823,7 +823,7 @@ export default function AdminPluginsPage() {
                     {item.description || '暂无描述'}
                   </p>
 
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                     <span>
                       作者: <strong className="text-foreground">{item.author || '匿名'}</strong>
                     </span>
@@ -865,7 +865,7 @@ export default function AdminPluginsPage() {
                           setRejectModalOpen(true)
                         }}
                         disabled={actionLoading}
-                        className="px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-lg border border-destructive/30 transition-colors"
+                        className="px-3 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/15 rounded-lg border border-destructive/30 transition-colors"
                       >
                         驳回
                       </button>
@@ -907,7 +907,7 @@ export default function AdminPluginsPage() {
                         className={cn(
                           'inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors',
                           item.featured
-                            ? 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
+                            ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20'
                             : 'border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60',
                         )}
                       >
@@ -922,7 +922,7 @@ export default function AdminPluginsPage() {
                       type="button"
                       onClick={() => handleDelist(item)}
                       disabled={actionLoading}
-                      className="px-3 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 rounded-lg border border-amber-500/30 transition-colors"
+                      className="px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 rounded-lg border border-amber-500/30 transition-colors"
                     >
                       下架
                     </button>
@@ -933,7 +933,7 @@ export default function AdminPluginsPage() {
                       type="button"
                       onClick={() => handleApprove(item)}
                       disabled={actionLoading}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-600 hover:bg-emerald-500/10 rounded-lg border border-emerald-500/30 transition-colors"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-500/10 rounded-lg border border-emerald-500/30 transition-colors"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>{item.status === 'quarantined' ? '审核解封并上架' : '重新上架'}</span>
@@ -1038,7 +1038,7 @@ export default function AdminPluginsPage() {
                     </Link>
                     <span className="font-mono text-muted-foreground">★ {review.rating}/5</span>
                     {(review.reportCount ?? 0) > 0 && (
-                      <span className="inline-flex items-center gap-1 font-bold px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                      <span className="inline-flex items-center gap-1 font-bold px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/30">
                         <Flag className="w-3 h-3" aria-hidden />
                         <span>举报 {review.reportCount}</span>
                       </span>
@@ -1069,7 +1069,7 @@ export default function AdminPluginsPage() {
                         onChange={(e) => setReviewNoteDrafts((prev) => ({ ...prev, [review.id]: e.target.value }))}
                         placeholder="隐藏理由（可选，留痕用）"
                         maxLength={200}
-                        className="flex-1 min-w-[180px] px-2 py-1 text-[11px] rounded-md border border-border/60 bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                        className="flex-1 min-w-[180px] px-2 py-1 text-[11px] rounded-md border border-border/60 bg-background text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       />
                     )}
                     <button
@@ -1079,8 +1079,8 @@ export default function AdminPluginsPage() {
                       className={cn(
                         'px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors',
                         review.status === 'hidden'
-                          ? 'border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10'
-                          : 'border-destructive/30 text-destructive hover:bg-destructive/10',
+                          ? 'border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10'
+                          : 'border-destructive/30 text-destructive-text hover:bg-destructive/15',
                       )}
                     >
                       {review.status === 'hidden' ? '恢复公开' : '隐藏评价'}
@@ -1115,7 +1115,7 @@ export default function AdminPluginsPage() {
                 onChange={(e) => setRejectNote(e.target.value)}
                 placeholder="请填写驳回原因以指导作者修改…"
                 rows={4}
-                className="w-full text-xs rounded-lg border border-border/80 bg-background p-2.5 text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40 resize-none"
+                className="w-full text-xs rounded-lg border border-border/80 bg-background p-2.5 text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 resize-none"
                 maxLength={500}
               />
             </div>
@@ -1242,7 +1242,7 @@ export default function AdminPluginsPage() {
                     }
                   }}
                   disabled={actionLoading}
-                  className="px-3.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-lg border border-destructive/30 transition-colors"
+                  className="px-3.5 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/15 rounded-lg border border-destructive/30 transition-colors"
                 >
                   驳回
                 </button>
@@ -1285,11 +1285,11 @@ export default function AdminPluginsPage() {
                     <div className="text-lg font-bold text-foreground">{syncResult.summary.total}</div>
                     <div className="text-[10px] text-muted-foreground">总目录数</div>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400">
                     <div className="text-lg font-bold">{syncResult.summary.added}</div>
                     <div className="text-[10px]">新增入库</div>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400">
+                  <div className="p-2.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-700 dark:text-sky-400">
                     <div className="text-lg font-bold">{syncResult.summary.updated}</div>
                     <div className="text-[10px]">版本升级</div>
                   </div>

@@ -110,7 +110,7 @@ export function QuickSearchWidget({ config }: { config?: Record<string, unknown>
       </form>
 
       {/* 底部信息 */}
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono space-y-0.5">
+      <div className="pt-1 text-xs text-muted-foreground text-center font-mono space-y-0.5">
         {unknownEngine && (
           <p className="text-amber-600 dark:text-amber-400 leading-relaxed">
             配置的默认引擎「{requested}」不存在，已选中 Google。可用值：

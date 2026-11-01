@@ -21,7 +21,7 @@ const STAT_ITEMS: Array<{
   /** 跨列大卡的补充说明；普通小卡留空保持紧凑 */
   hint?: string
 }> = [
-  { key: 'favorites', label: '收藏站点', icon: Heart, href: '/favorites', chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
+  { key: 'favorites', label: '收藏站点', icon: Heart, href: '/favorites', chip: 'bg-rose-500/10 text-rose-700 dark:text-rose-400' },
   { key: 'folders', label: '收藏夹', icon: FolderHeart, href: '/favorites', chip: 'bg-orange-500/10 text-orange-700 dark:text-orange-300' },
   { key: 'searches', label: '搜索历史', icon: Search, href: '/me/history', chip: 'bg-sky-500/10 text-sky-700 dark:text-sky-300' },
   { key: 'activePluginInstalls', label: '已装插件', icon: Plug, href: '/me/plugins', chip: 'bg-violet-500/10 text-violet-700 dark:text-violet-300' },

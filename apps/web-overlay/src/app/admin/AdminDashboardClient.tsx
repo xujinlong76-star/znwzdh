@@ -198,27 +198,27 @@ const CHANNEL_STYLES: Record<string, { label: string; barClass: string; badgeCla
   exact: {
     label: '精准匹配 (exact)',
     barClass: 'bg-gradient-to-r from-blue-500 to-indigo-500',
-    badgeClass: 'text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/30',
+    badgeClass: 'text-blue-700 dark:text-blue-400 bg-blue-500/10 border-blue-500/30',
   },
   fts: {
     label: '全文分词 (fts)',
     barClass: 'bg-gradient-to-r from-emerald-500 to-teal-500',
-    badgeClass: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+    badgeClass: 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
   },
   pinyin: {
     label: '拼音双向 (pinyin)',
     barClass: 'bg-gradient-to-r from-violet-500 to-purple-500',
-    badgeClass: 'text-violet-600 dark:text-violet-400 bg-violet-500/10 border-violet-500/30',
+    badgeClass: 'text-violet-700 dark:text-violet-400 bg-violet-500/10 border-violet-500/30',
   },
   semantic: {
     label: '向量语义 (semantic)',
     barClass: 'bg-gradient-to-r from-amber-500 to-orange-500',
-    badgeClass: 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30',
+    badgeClass: 'text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/30',
   },
   personal: {
     label: '个性化偏置 (personal)',
     barClass: 'bg-gradient-to-r from-rose-500 to-pink-500',
-    badgeClass: 'text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/30',
+    badgeClass: 'text-rose-700 dark:text-rose-400 bg-rose-500/10 border-rose-500/30',
   },
 }
 
@@ -446,7 +446,7 @@ export function AdminDashboardClient() {
       href: '/admin/navigation',
       description: '管理全站层级分类、二级子类与菜单排布',
       badge: badgeNum(overview?.categories, ' 个类目'),
-      iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+      iconBg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
     },
     {
       title: '站点列表与录入',
@@ -454,7 +454,7 @@ export function AdminDashboardClient() {
       href: '/admin/sitelist',
       description: '检索、录入、批量编辑与状态变更',
       badge: badgeNum(overview?.totalSites, ' 个站点'),
-      iconBg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+      iconBg: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
     },
     {
       title: '自动化任务调度',
@@ -462,7 +462,7 @@ export function AdminDashboardClient() {
       href: '/admin/jobs',
       description: '实时流监控、巡检派发与死链自愈',
       badge: badgeNum(metrics24h?.jobsPending, ' 待处理'),
-      iconBg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+      iconBg: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20',
     },
     {
       title: '运营数据看板',
@@ -470,7 +470,7 @@ export function AdminDashboardClient() {
       href: '/admin/stats',
       description: '多维趋势折线图、搜索热词与零结果补录',
       badge: '深度洞察',
-      iconBg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+      iconBg: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
     },
     {
       title: '凭据与访问权限',
@@ -478,7 +478,7 @@ export function AdminDashboardClient() {
       href: '/admin/tokens',
       description: 'API Token 轮换、Scope 细粒度授权与审计',
       badge: '密钥管控',
-      iconBg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
+      iconBg: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/20',
     },
     {
       title: '安全审计日志',
@@ -486,7 +486,7 @@ export function AdminDashboardClient() {
       href: '/admin/audit',
       description: '追溯管理员行为与拦截未经授权攻击请求',
       badge: badgeNum(metrics24h?.auditLogs, ' 条近24h'),
-      iconBg: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
+      iconBg: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
     },
     {
       title: '站点全局设置',
@@ -494,7 +494,7 @@ export function AdminDashboardClient() {
       href: '/admin/site',
       description: '全站 SEO、元数据配置、Logo 与品牌规范',
       badge: '基础配置',
-      iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
+      iconBg: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20',
     },
     {
       title: '回收站保护区',
@@ -502,7 +502,7 @@ export function AdminDashboardClient() {
       href: '/admin/trash',
       description: '软删除站点归档、快速还原与终极物理擦除',
       badge: badgeNum(overview?.trashedSites, ' 个可恢复'),
-      iconBg: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+      iconBg: 'bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-500/20',
     },
     {
       title: '网址体检',
@@ -510,7 +510,7 @@ export function AdminDashboardClient() {
       href: '/admin/plugin-health',
       description: '巡检插件与站点 URL 健康度，识别停放、劫持与拒绝爬虫',
       badge: '健康巡检',
-      iconBg: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+      iconBg: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20',
     },
   ]
 
@@ -599,7 +599,7 @@ export function AdminDashboardClient() {
       {degradeNotice && (
         <div
           role="status"
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text"
         >
           <span>
             {data
@@ -626,7 +626,7 @@ export function AdminDashboardClient() {
         <div className="rounded-xl border border-border/70 bg-card/60 backdrop-blur-xs p-3 shadow-xs hover:border-primary/40 transition-colors flex flex-col justify-between">
           <div className="flex items-center justify-between text-muted-foreground text-xs">
             <span>运行时长</span>
-            <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
+            <Clock className="w-3.5 h-3.5 text-muted-foreground" />
           </div>
           <div className="text-base font-bold font-mono tracking-tight mt-1.5 text-foreground">
             {runtime ? formatUptime(runtime.uptimeSeconds) : '--'}
@@ -697,7 +697,7 @@ export function AdminDashboardClient() {
           <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-blue-500 via-indigo-500 to-transparent" />
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">站点资产规模</CardTitle>
-            <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+            <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20">
               <Globe className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -744,7 +744,7 @@ export function AdminDashboardClient() {
           <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-emerald-500 via-teal-500 to-transparent" />
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">24h 站点健康度</CardTitle>
-            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
               <Activity className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -781,7 +781,7 @@ export function AdminDashboardClient() {
           <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-indigo-500 via-violet-500 to-transparent" />
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">API 性能吞吐</CardTitle>
-            <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+            <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20">
               <Zap className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -817,7 +817,7 @@ export function AdminDashboardClient() {
           <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-500 via-orange-500 to-transparent" />
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">自愈与后台任务</CardTitle>
-            <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
               <Workflow className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -858,7 +858,7 @@ export function AdminDashboardClient() {
           <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-rose-500 via-pink-500 to-transparent" />
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">安全防护与审计</CardTitle>
-            <div className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+            <div className="p-1.5 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20">
               <ShieldCheck className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -894,7 +894,7 @@ export function AdminDashboardClient() {
           <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-violet-500 via-purple-500 to-transparent" />
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">检索强化学习 (LinUCB)</CardTitle>
-            <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+            <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20">
               <Sparkles className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -1060,7 +1060,7 @@ export function AdminDashboardClient() {
                 物理数据库容量: {formatBytes(storage?.dbSizeBytes ?? null)} · WAL 写入缓冲就绪
               </CardDescription>
             </div>
-            <Badge variant="outline" className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 text-xs font-mono">
+            <Badge variant="outline" className="border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 text-xs font-mono">
               WAL 模式
             </Badge>
           </CardHeader>
@@ -1070,7 +1070,7 @@ export function AdminDashboardClient() {
                 Object.entries(storage.tableCounts).map(([table, count]) => (
                   <div key={table} className="border border-border/60 rounded-lg p-2.5 text-center bg-muted/20 hover:bg-muted/40 transition-colors">
                     <div className="text-[11px] font-mono text-muted-foreground truncate flex items-center justify-center gap-1">
-                      <Database className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                      <Database className="w-3 h-3 text-muted-foreground shrink-0" />
                       <span className="truncate">{table}</span>
                     </div>
                     <div className="text-sm font-bold font-mono mt-1 text-foreground">{count.toLocaleString()}</div>
@@ -1347,7 +1347,7 @@ export function AdminDashboardClient() {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <CardTitle className="text-base flex items-center gap-2">
-                <Bug className="h-4 w-4 text-destructive" />
+                <Bug className="h-4 w-4 text-destructive-text" />
                 前端错误监控
                 {clientErrors && clientErrors.total > 0 && (
                   <Badge variant="destructive" className="text-[10px] h-5 px-1.5 font-mono">
@@ -1385,7 +1385,7 @@ export function AdminDashboardClient() {
                         {e.kind}
                       </Badge>
                       <span className="text-muted-foreground truncate">{e.path ?? '/'}</span>
-                      <span className="text-[10px] text-muted-foreground/70 truncate">{e.fingerprint}</span>
+                      <span className="text-[10px] text-muted-foreground truncate">{e.fingerprint}</span>
                     </span>
                     <span className="text-muted-foreground shrink-0 ml-2">
                       ×{e.count} · {new Date(e.lastSeen).toLocaleTimeString('zh-CN', { hour12: false })}
@@ -1436,7 +1436,7 @@ export function AdminDashboardClient() {
                     <Badge variant="secondary" className="text-[11px] font-normal">
                       {item.badge}
                     </Badge>
-                    <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground/60 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all text-primary" />
+                    <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all text-primary" />
                   </div>
                 </CardHeader>
                 <CardContent>

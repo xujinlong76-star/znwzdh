@@ -96,7 +96,7 @@ export function ReplacementHistoryDialog({
       case 'broken':
         return <Badge variant="destructive" className="text-[11px]">原视频失效/删除</Badge>
       case 'hot_superseded':
-        return <Badge variant="secondary" className="text-[11px] bg-amber-500/10 text-amber-600 dark:text-amber-400">更优新视频超越</Badge>
+        return <Badge variant="secondary" className="text-[11px] bg-amber-500/10 text-amber-700 dark:text-amber-400">更优新视频超越</Badge>
       default:
         return <Badge variant="outline" className="text-[11px]">自动替换</Badge>
     }

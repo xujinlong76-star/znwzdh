@@ -109,7 +109,7 @@ export function MetricsWidget() {
         </div>
       </div>
 
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono">
+      <div className="pt-1 text-xs text-muted-foreground text-center font-mono">
         {status.tone === 'offline' ? '遥测不可用 · 未能连上中枢' : 'Fastify 运行时遥测指标 · 实时健康同步'}
       </div>
     </div>

@@ -177,7 +177,7 @@ export function GraphPanel() {
                     <span className="text-muted-foreground font-medium">协同优势：</span>
                     <div className="flex flex-wrap gap-1.5">
                       {stackReport.synergies.map((syn, idx) => (
-                        <span key={idx} className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[11px]">
+                        <span key={idx} className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 text-[11px]">
                           ✓ {syn}
                         </span>
                       ))}
@@ -190,7 +190,7 @@ export function GraphPanel() {
                     <span className="text-amber-500 font-medium">缺失分层建议补齐：</span>
                     <div className="flex flex-wrap gap-1.5">
                       {stackReport.suggestedAdditions.map((item) => (
-                        <span key={item.id} className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[11px]">
+                        <span key={item.id} className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 text-[11px]">
                           + 推荐引入 {item.name} ({item.reason})
                         </span>
                       ))}

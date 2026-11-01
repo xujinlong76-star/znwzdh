@@ -206,9 +206,9 @@ export function RssFeedWidget({ config }: RssFeedWidgetProps) {
 
       {state.kind === 'error' && !isStale && (
         <div className="flex items-start gap-1.5 rounded-lg border border-destructive/30 bg-destructive/5 px-2.5 py-2">
-          <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
+          <AlertCircle className="w-3.5 h-3.5 text-destructive-text shrink-0 mt-0.5" />
           <div className="min-w-0">
-            <p className="text-[11px] text-destructive leading-snug">{state.message}</p>
+            <p className="text-[11px] text-destructive-text leading-snug">{state.message}</p>
             <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">
               {REASON_HINT[state.reason] ?? '可以用齿轮换个地址，或稍后重试。'}
             </p>

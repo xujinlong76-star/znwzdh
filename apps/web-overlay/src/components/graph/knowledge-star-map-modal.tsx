@@ -333,7 +333,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                   <h2 id="navhub-star-map-modal-title" className="text-sm sm:text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 truncate">
                     全景知识星图与拓扑演进中枢
                   </h2>
-                  <Badge variant="outline" className="hidden sm:inline-flex text-[10px] sm:text-xs bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 shrink-0">
+                  <Badge variant="outline" className="hidden sm:inline-flex text-[10px] sm:text-xs bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/30 shrink-0">
                     拓扑互联 2.0
                   </Badge>
                 </div>
@@ -625,10 +625,10 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                         variant="secondary"
                         className={`text-[10px] mb-1.5 ${
                           selectedNode.type === 'category'
-                            ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                            ? 'bg-purple-500/10 text-purple-700 dark:text-purple-400'
                             : selectedNode.type === 'site'
-                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                            : 'bg-pink-500/10 text-pink-600 dark:text-pink-400'
+                            ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400'
+                            : 'bg-pink-500/10 text-pink-700 dark:text-pink-400'
                         }`}
                       >
                         {selectedNode.type === 'category' ? '分类星系' : selectedNode.type === 'site' ? '导航站点' : '关联标签'}
@@ -746,7 +746,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                         setPathTarget(to.toLowerCase())
                         handleFindPath(from.toLowerCase(), to.toLowerCase())
                       }}
-                      className="px-2.5 py-1 rounded-md bg-zinc-200/60 dark:bg-zinc-800/60 hover:bg-indigo-500/10 hover:text-indigo-600 dark:hover:text-indigo-400 text-zinc-600 dark:text-zinc-300 transition-colors"
+                      className="px-2.5 py-1 rounded-md bg-zinc-200/60 dark:bg-zinc-800/60 hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:text-indigo-400 text-zinc-600 dark:text-zinc-300 transition-colors"
                     >
                       {from} → {to}
                     </button>
@@ -909,8 +909,8 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                                   <Badge
                                     className={`text-xs ${
                                       pair.similarity > 0.8
-                                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
-                                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                                        ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30'
+                                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
                                     }`}
                                     variant="outline"
                                   >

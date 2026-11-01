@@ -170,14 +170,14 @@ export function VaultPanel() {
                     <Button
                       onClick={() => setDecryptInputPassword('WrongPass!456')}
                       variant="outline"
-                      className="text-xs h-9 text-destructive border-destructive/30 hover:bg-destructive/10"
+                      className="text-xs h-9 text-destructive-text border-destructive/30 hover:bg-destructive/15"
                     >
                       填入错误密码测试
                     </Button>
                   </div>
 
                   {vaultError && (
-                    <div className="p-3 rounded-lg border border-destructive/40 bg-destructive/10 text-xs text-destructive flex items-center gap-2">
+                    <div className="p-3 rounded-lg border border-destructive/40 bg-destructive/15 text-xs text-destructive-text flex items-center gap-2">
                       <ShieldAlert className="w-4 h-4 shrink-0" />
                       <span>{vaultError}</span>
                     </div>

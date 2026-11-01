@@ -175,7 +175,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
       {/* 内容区域 */}
       <div className="flex-1 overflow-y-auto py-3">
         {errorMsg ? (
-          <div className="h-full flex items-center justify-center gap-1.5 text-xs text-destructive">
+          <div className="h-full flex items-center justify-center gap-1.5 text-xs text-destructive-text">
             <AlertCircle className="h-4 w-4" />
             <span>{errorMsg}</span>
           </div>

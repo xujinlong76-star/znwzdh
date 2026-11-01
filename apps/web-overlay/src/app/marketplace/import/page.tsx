@@ -151,7 +151,7 @@ export default function MarketplaceImportPage() {
         {/* 文件选择 */}
         <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex items-center gap-2 h-9 px-4 rounded-md border border-input bg-background text-sm cursor-pointer hover:bg-accent transition-colors">
+            <label className="inline-flex items-center gap-2 h-9 px-4 rounded-md border border-border-strong bg-background text-sm cursor-pointer hover:bg-accent transition-colors">
               <Upload className="w-4 h-4" />
               选择 .json 文件
               <input
@@ -178,7 +178,7 @@ export default function MarketplaceImportPage() {
                 value={remoteUrl}
                 onChange={(e) => setRemoteUrl(e.target.value)}
                 placeholder="https://raw.githubusercontent.com/.../plugin.json 或 GitHub 文件链接"
-                className="flex-1 h-8.5 rounded-md border border-input bg-background px-2.5 text-xs font-mono"
+                className="flex-1 h-8.5 rounded-md border border-border-strong bg-background px-2.5 text-xs font-mono"
               />
               <Button
                 type="button"
@@ -201,7 +201,7 @@ export default function MarketplaceImportPage() {
               value={jsonText}
               onChange={(e) => setJsonText(e.target.value)}
               placeholder='{"manifestVersion":1,"kind":"site-pack","name":"我的收藏包",...}'
-              className="mt-2 w-full min-h-40 rounded-lg border border-input bg-background p-3 text-base sm:text-xs font-mono leading-relaxed"
+              className="mt-2 w-full min-h-40 rounded-lg border border-border-strong bg-background p-3 text-base sm:text-xs font-mono leading-relaxed"
             />
           </details>
 
@@ -212,7 +212,7 @@ export default function MarketplaceImportPage() {
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
                 placeholder="my-site-pack"
-                className="w-full h-9 rounded-md border border-input bg-background px-2.5 text-base sm:text-sm font-mono"
+                className="w-full h-9 rounded-md border border-border-strong bg-background px-2.5 text-base sm:text-sm font-mono"
               />
             </label>
             <label className="flex items-end gap-2 text-xs pb-1.5">

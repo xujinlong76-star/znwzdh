@@ -114,7 +114,7 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
             <span className="text-xs">时段场景推荐已关闭</span>
           </div>
         )}
-        <span className="text-xs text-muted-foreground/80">自适应工作区</span>
+        <span className="text-xs text-muted-foreground">自适应工作区</span>
       </div>
     </div>
   )

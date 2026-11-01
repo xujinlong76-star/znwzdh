@@ -86,7 +86,7 @@ export function ThemeTryoutRibbon() {
           variant="outline"
           size="sm"
           onClick={handleCancel}
-          className="h-8 px-2.5 text-xs border-border/80 text-muted-foreground hover:text-destructive"
+          className="h-8 px-2.5 text-xs border-border/80 text-muted-foreground hover:text-destructive-text"
         >
           <X className="h-3.5 w-3.5 mr-1" />
           退出试用

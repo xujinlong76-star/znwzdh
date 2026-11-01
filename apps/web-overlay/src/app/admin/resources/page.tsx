@@ -515,7 +515,7 @@ export default function ResourceManagement() {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <span className="font-medium">{uploadProgress}%</span>
-                    <span className="text-muted-foreground/60">•</span>
+                    <span className="text-muted-foreground">•</span>
                     <span>{(uploadSpeed / (1024 * 1024)).toFixed(2)} MB/s</span>
                   </div>
                   <Button

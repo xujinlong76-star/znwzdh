@@ -137,7 +137,7 @@ export function AiPriceBookPanel() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive flex items-center gap-2">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive-text flex items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>

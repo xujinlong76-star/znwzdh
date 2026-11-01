@@ -476,7 +476,7 @@ export function AiCopilotDrawer() {
                   </h2>
                   {/* 模型名只在中枢回报后才亮出来，「系统默认」这类凭据来源前端并不知道，不再冒充 */}
                   {assistantModel && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 max-w-[11rem] truncate bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 max-w-[11rem] truncate bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
                       {assistantModel}
                     </Badge>
                   )}
@@ -491,7 +491,7 @@ export function AiCopilotDrawer() {
                 onClick={() => setEnableThinking((prev) => !prev)}
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors ${
                   enableThinking
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
                     : 'bg-muted/40 border-border text-muted-foreground hover:text-foreground'
                 }`}
                 title="切换深度思考模式（是否请求模型的思维链输出）"
@@ -538,7 +538,7 @@ export function AiCopilotDrawer() {
 
                 {/* 快捷推荐 Pills */}
                 <div className="w-full space-y-2 pt-2">
-                  <p className="text-[11px] font-medium text-muted-foreground/80 text-left px-1">
+                  <p className="text-[11px] font-medium text-muted-foreground text-left px-1">
                     快速探索灵感：
                   </p>
                   <div className="grid grid-cols-1 gap-2">
@@ -836,7 +836,7 @@ export function AiCopilotDrawer() {
                 e.preventDefault()
                 handleSend()
               }}
-              className="relative rounded-xl border border-input bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all p-1"
+              className="relative rounded-xl border border-border-strong bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all p-1"
             >
               <textarea
                 ref={inputRef}
@@ -866,7 +866,7 @@ export function AiCopilotDrawer() {
                     onClick={() => setEnableThinking((prev) => !prev)}
                     className={`inline-flex items-center gap-1 font-medium px-1.5 py-0.5 rounded transition-colors ${
                       enableThinking
-                        ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
+                        ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >

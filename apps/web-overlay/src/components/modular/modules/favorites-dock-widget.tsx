@@ -58,7 +58,7 @@ export function FavoritesDockWidget() {
         )}
       </div>
 
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono">
+      <div className="pt-1 text-xs text-muted-foreground text-center font-mono">
         已集成 E2EE 零知识本地同步
       </div>
     </div>

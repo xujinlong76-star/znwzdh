@@ -100,7 +100,7 @@ export function StudioJsonPanel(props: StudioJsonPanelProps) {
                   <div className="space-y-3">
                     {!previousManifest ? (
                       <div className="p-6 rounded-2xl border border-dashed border-border text-center space-y-2 bg-muted/20">
-                        <GitCompare className="h-8 w-8 mx-auto text-muted-foreground/60" />
+                        <GitCompare className="h-8 w-8 mx-auto text-muted-foreground" />
                         <div className="text-xs font-bold text-foreground">
                           当前为首个生成版本 (v{manifest.version})
                         </div>

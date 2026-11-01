@@ -149,7 +149,7 @@ export function VideoSeoGovernancePanel({ onRefresh }: { onRefresh?: () => void 
             {/* 面板头部 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
                         <Globe className="h-5 w-5" />
                     </div>
                     <div>

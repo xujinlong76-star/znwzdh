@@ -1195,7 +1195,7 @@ export default function SiteListPage() {
               variant="outline"
               onClick={handleExportAsPlugin}
               disabled={sites.length === 0}
-              className="border-sky-500/30 text-sky-600 dark:text-sky-400 hover:bg-sky-500/10"
+              className="border-sky-500/30 text-sky-700 dark:text-sky-400 hover:bg-sky-500/10"
               title="将系统站点全量打包导出为插件市场规范的清单文件（.json）"
             >
               <Package className="mr-2 h-4 w-4" />

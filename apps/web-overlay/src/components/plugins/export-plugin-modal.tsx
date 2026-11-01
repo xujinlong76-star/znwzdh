@@ -321,7 +321,7 @@ export function ExportPluginModal({
                 <span>实时预检格式中...</span>
               </div>
             ) : validationErrors.length > 0 ? (
-              <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-2.5 text-destructive text-[11px] space-y-1">
+              <div className="rounded-lg bg-destructive/15 border border-destructive/30 p-2.5 text-destructive-text text-[11px] space-y-1">
                 <div className="font-semibold flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   <span>清单校验未通过：</span>

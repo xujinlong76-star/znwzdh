@@ -119,15 +119,15 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                     <Alert
                         className={`mb-6 rounded-xl ${result.success
                                 ? 'border-emerald-500/40 bg-emerald-500/10'
-                                : 'border-destructive/40 bg-destructive/10'
+                                : 'border-destructive/40 bg-destructive/15'
                             }`}
                     >
                         {result.success ? (
                             <CheckCircle className="h-4 w-4 text-emerald-500" />
                         ) : (
-                            <XCircle className="h-4 w-4 text-destructive" />
+                            <XCircle className="h-4 w-4 text-destructive-text" />
                         )}
-                        <AlertDescription className={result.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-destructive'}>
+                        <AlertDescription className={result.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-destructive-text'}>
                             {result.message}
                             {result.issueUrl && (
                                 <a
@@ -149,7 +149,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                         <Label htmlFor="title" className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                             <Tag className="h-3.5 w-3.5 text-muted-foreground" />
                             <span>网站名称</span>
-                            <span className="text-destructive">*</span>
+                            <span className="text-destructive-text">*</span>
                         </Label>
                         <Input
                             id="title"
@@ -166,7 +166,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                         <Label htmlFor="url" className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                             <Globe className="h-3.5 w-3.5 text-muted-foreground" />
                             <span>网站地址 (URL)</span>
-                            <span className="text-destructive">*</span>
+                            <span className="text-destructive-text">*</span>
                         </Label>
                         <Input
                             id="url"
@@ -184,7 +184,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                         <Label htmlFor="description" className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                             <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                             <span>一句话核心介绍</span>
-                            <span className="text-destructive">*</span>
+                            <span className="text-destructive-text">*</span>
                         </Label>
                         <Textarea
                             id="description"
@@ -201,7 +201,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label className="text-xs font-semibold text-foreground">
-                                选择主分类 <span className="text-destructive">*</span>
+                                选择主分类 <span className="text-destructive-text">*</span>
                             </Label>
                             <Select
                                 value={formData.category}

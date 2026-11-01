@@ -59,7 +59,7 @@ export function SpeculativeTerminalWidget() {
           <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           <span className="truncate">0-RTT 意图即时推断终端</span>
         </div>
-        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 truncate max-w-[130px]">
+        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 truncate max-w-[130px]">
           {badgeText}
         </span>
       </div>
@@ -112,7 +112,7 @@ export function SpeculativeTerminalWidget() {
         </div>
       </div>
 
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono">
+      <div className="pt-1 text-xs text-muted-foreground text-center font-mono">
         零 Eval 安全沙箱 · 0ms 端侧直出
         {zeroRttEnabled ? '' : ' · 意图推断已关闭'}
       </div>

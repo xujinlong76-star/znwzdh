@@ -183,7 +183,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                                  <span className="px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">
+                                  <span className="px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-mono">
                                     {colSpan} 列
                                   </span>
                                   <span>×</span>
@@ -191,7 +191,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                                     {w.rowSpan ?? 1} 行
                                   </span>
                                 </div>
-                                <div className="h-6 rounded-md bg-muted/40 border border-border/30 flex items-center justify-center text-[10px] text-muted-foreground/60 font-mono">
+                                <div className="h-6 rounded-md bg-muted/40 border border-border/30 flex items-center justify-center text-[10px] text-muted-foreground font-mono">
                                   Mini Bento Preview
                                 </div>
                               </div>
@@ -261,7 +261,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                         value={testSearchQuery}
                         onChange={(e) => setTestSearchQuery(e.target.value)}
                         placeholder="输入搜索词测试跳转..."
-                        className="h-7 px-2.5 rounded-lg border border-border/60 bg-background text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary w-40"
+                        className="h-7 px-2.5 rounded-lg border border-border/60 bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-40"
                       />
                     </div>
                   </div>
@@ -338,7 +338,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                   </div>
 
                   {plugin.bundleReady === false && (
-                    <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2 text-xs text-destructive">
+                    <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2 text-xs text-destructive-text">
                       <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                       <span>
                         部分成员当前不可用（下架/隔离/删除或类型变更），组合包已暂停安装；卸载仅解除组合关系，不会级联移除成员。
@@ -380,7 +380,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                               <span className="font-mono shrink-0">v{item.version}</span>
                             </div>
                           ) : (
-                            <p className="text-[11px] text-destructive flex items-center gap-1">
+                            <p className="text-[11px] text-destructive-text flex items-center gap-1">
                               <AlertTriangle className="w-3 h-3 shrink-0" />
                               <span>{item.reason ?? '当前不可用'}</span>
                             </p>

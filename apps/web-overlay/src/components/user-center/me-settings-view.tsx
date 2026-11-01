@@ -90,7 +90,7 @@ export function MeSettingsView() {
       {saveError && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3.5 py-2 text-xs text-destructive"
+          className="flex items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3.5 py-2 text-xs text-destructive-text"
         >
           <span>{saveError}</span>
           <button

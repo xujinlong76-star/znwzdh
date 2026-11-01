@@ -103,11 +103,11 @@ export function PluginReportModal({
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="请补充具体违规说明或证据链接…"
                 rows={4}
-                className="w-full text-xs rounded-lg border border-border/80 bg-background p-2.5 text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40 resize-none"
+                className="w-full text-xs rounded-lg border border-border/80 bg-background p-2.5 text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 resize-none"
                 maxLength={500}
                 required
               />
-              <div className="flex justify-between text-[10px] text-muted-foreground/80">
+              <div className="flex justify-between text-[10px] text-muted-foreground">
                 <span>理由不能为空</span>
                 <span>{reason.length}/500</span>
               </div>

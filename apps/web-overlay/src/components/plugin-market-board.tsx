@@ -337,7 +337,7 @@ export function PluginMarketBoard({
                 size="sm"
                 variant="outline"
                 onClick={() => setTapsModalOpen(true)}
-                className="h-8 gap-1.5 text-xs border-indigo-500/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10"
+                className="h-8 gap-1.5 text-xs border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10"
               >
                 <Radio className="w-3.5 h-3.5" />
                 <span>Taps 订阅源</span>
@@ -401,7 +401,7 @@ export function PluginMarketBoard({
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-card/40 p-2 backdrop-blur-xs">
           <select
             aria-label="按类型筛选"
-            className="h-8 rounded-md border border-input bg-background px-2 text-base sm:text-sm"
+            className="h-8 rounded-md border border-border-strong bg-background px-2 text-base sm:text-sm"
             value={kind}
             onChange={(e) => setKind(e.target.value)}
           >
@@ -414,7 +414,7 @@ export function PluginMarketBoard({
           </select>
           <select
             aria-label="排序方式"
-            className="h-8 rounded-md border border-input bg-background px-2 text-base sm:text-sm"
+            className="h-8 rounded-md border border-border-strong bg-background px-2 text-base sm:text-sm"
             value={sort}
             onChange={(e) => setSort(e.target.value as MarketplaceSort)}
           >
@@ -443,7 +443,7 @@ export function PluginMarketBoard({
                 onChange={(e) => setQInput(e.target.value)}
                 placeholder="搜索名称 / 描述"
                 enterKeyHint="search"
-                className="h-8 w-full sm:w-52 rounded-md border border-input bg-background pl-8 pr-7 text-base sm:text-sm"
+                className="h-8 w-full sm:w-52 rounded-md border border-border-strong bg-background pl-8 pr-7 text-base sm:text-sm"
               />
               {qInput && (
                 <button
@@ -624,7 +624,7 @@ export function PluginMarketBoard({
         ) : items.length === 0 ? (
           <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-border/60 bg-muted/50 shadow-xs">
-              <Store className="w-7 h-7 text-muted-foreground/60" />
+              <Store className="w-7 h-7 text-muted-foreground" />
             </div>
             <p className="text-sm text-muted-foreground">
               {hasFilter

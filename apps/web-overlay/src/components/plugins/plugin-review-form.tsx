@@ -105,7 +105,7 @@ export function ReviewForm({
               >
                 <Star
                   className={`h-6 w-6 transition-colors ${
-                    active ? 'fill-amber-400 text-amber-400' : 'fill-muted/30 text-muted-foreground/30'
+                    active ? 'fill-amber-400 text-amber-400' : 'fill-muted/30 text-muted-foreground'
                   }`}
                 />
               </button>

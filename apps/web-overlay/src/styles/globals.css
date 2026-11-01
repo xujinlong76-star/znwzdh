@@ -50,6 +50,9 @@
 @theme {
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
+  /* 边框加强档（WCAG 1.4.11 非文本对比 ≥3:1）：专供 input / 描边按钮 / checkbox 的
+     控件边界；装饰卡片边框继续用 --border。类名 border-border-strong。 */
+  --color-border-strong: hsl(var(--border-strong));
   --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --color-ring: hsl(var(--ring));
   --color-background: hsl(var(--background));
@@ -63,6 +66,10 @@
 
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
+  /* 危险「文字」专用色（与作按钮底色的 --destructive 分离）：
+     深色下 --destructive 是暗红按钮底（0 62.8% 30.6%），当文字用只有 1.98:1，
+     故文字一律走 text-destructive-text。类名 text-destructive-text。 */
+  --color-destructive-text: hsl(var(--destructive-text));
 
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
@@ -240,14 +247,23 @@
     --secondary: 240 4.8% 95.9%;
     --secondary-foreground: 240 5.9% 10%;
     --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
+    /* 240 4% 40% = #62626A，对白 6.05:1（旧 240 3.8% 46.1% 仅 4.83:1，
+       再叠 /50-/80 透明度变体直接跌破 AA —— 透明度变体已全站禁用） */
+    --muted-foreground: 240 4% 40%;
     --accent: 240 4.8% 95.9%;
     --accent-foreground: 240 5.9% 10%;
     --destructive: 0 72.22% 50.59%;
     --destructive-foreground: 0 0% 98%;
+    /* 危险文字（浅）：#BC1C1C 系 red-700，对白 6.41:1；
+       错误条底色提到 /15 后对其仍 5.12:1（#DC2626 实测仅 3.82:1，弃用） */
+    --destructive-text: 0 74% 42%;
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
-    --ring: 240 5% 64.9%;
+    /* 控件边界加强档：#8F8F99，对白 3.22:1（WCAG 1.4.11 ≥3:1）。
+       注：任务单初稿 240 5% 72%（#B4B4BB）实测仅 2.06:1，按门禁口径收紧。 */
+    --border-strong: 240 5% 58%;
+    /* 对白 4.93:1（旧 240 5% 64.9% 仅 2.56:1，键盘焦点环不可见） */
+    --ring: 240 5% 46%;
     --radius: 0.5rem;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
@@ -313,8 +329,14 @@
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 85.7% 97.3%;
+    /* 危险文字（深）：#F37272，对深底 7.07:1。
+       同态 --destructive 是暗红按钮底，当文字仅 1.98:1（F1 主故障之一）。 */
+    --destructive-text: 0 84% 70%;
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
+    /* 控件边界加强档（深）：#66666E，对深底 3.17:1（≥3:1）。
+       注：任务单初稿 240 4% 36% 实测 2.83:1，按门禁口径微调。 */
+    --border-strong: 240 4% 39%;
     --ring: 240 4.9% 83.9%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
@@ -557,21 +579,26 @@
   }
 
   :root[data-accent="emerald"], [data-accent="emerald"] {
-    --primary: 158 64% 45%;
+    /* 158 84% 26%：对近白前景 210 40% 98% = 4.74:1。
+       任务单初稿 158 84% 30% 实测仅 4.03:1（前景近白时不过 AA），按门禁口径加深。 */
+    --primary: 158 84% 26%;
     --primary-foreground: 210 40% 98%;
-    --ring: 158 64% 45%;
+    --ring: 158 84% 26%;
   }
 
   :root[data-accent="amber"], [data-accent="amber"] {
     --primary: 38 92% 50%;
     --primary-foreground: 240 5.9% 10%;
-    --ring: 38 92% 50%;
+    /* 焦点环单独加深：38 92% 40% 对白 3.29:1、对深底 6.05:1（旧 50% 对白仅 2.14:1）。
+       --primary/前景对不动（8.29:1 本就合格）。 */
+    --ring: 38 92% 40%;
   }
 
   :root[data-accent="rose"], [data-accent="rose"] {
-    --primary: 346 77% 55%;
+    /* 346 84% 42%：对近白前景 5.70:1（旧 346 77% 55% 仅 4.04:1） */
+    --primary: 346 84% 42%;
     --primary-foreground: 210 40% 98%;
-    --ring: 346 77% 55%;
+    --ring: 346 84% 42%;
   }
 }
 @layer utilities {
@@ -610,3 +637,4 @@
     break-inside: avoid;
   }
 }
+

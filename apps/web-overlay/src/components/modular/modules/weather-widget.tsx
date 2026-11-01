@@ -152,7 +152,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
           <span className="truncate">{city.name}</span>
           <span className="text-xs text-muted-foreground font-normal shrink-0">({city.region})</span>
           {payload?.stale && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-normal shrink-0">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-normal shrink-0">
               旧观测
             </span>
           )}
@@ -161,7 +161,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
         <div className="flex items-center gap-1 shrink-0">
           {unitOverride !== null && (
             <span
-              className="text-[10px] px-1 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 leading-none"
+              className="text-[10px] px-1 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 leading-none"
               title="卡上的切换只影响本卡本次显示，不会写回配置"
             >
               临时
@@ -203,7 +203,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
         <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center">
           <TriangleAlert className="w-4 h-4 text-amber-500" />
           <p className="text-xs text-muted-foreground leading-relaxed">{state.message}</p>
-          <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
             {REASON_HINT[state.reason] ?? '可以重试，或在卡片设置里换个城市。'}
           </p>
           <button onClick={() => void load(resolved.key, true)} className="text-xs text-primary hover:underline">
@@ -230,10 +230,10 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
                     <span
                       className={`text-[10px] border px-1.5 py-0.5 rounded-full font-mono ${
                         level.tone === 'good'
-                          ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                          ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
                           : level.tone === 'moderate'
-                            ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20'
-                            : 'text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/20'
+                            ? 'text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/20'
+                            : 'text-rose-700 dark:text-rose-400 bg-rose-500/10 border-rose-500/20'
                       }`}
                       title="美国 EPA AQI 口径，由空气质量上游单独提供"
                     >
@@ -281,7 +281,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
                   <div className="flex items-center gap-1 font-mono font-medium">
                     <WeatherGlyph kind={dc.kind} className="w-2.5 h-2.5" />
                     <span>{tempOrDash(d.highC, unit)}</span>
-                    <span className="text-muted-foreground/70">/{tempOrDash(d.lowC, unit)}</span>
+                    <span className="text-muted-foreground">/{tempOrDash(d.lowC, unit)}</span>
                   </div>
                 </div>
               )
@@ -293,7 +293,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
         </>
       )}
 
-      <div className="text-[10px] text-muted-foreground/70 font-mono space-y-0.5 shrink-0">
+      <div className="text-[10px] text-muted-foreground font-mono space-y-0.5 shrink-0">
         {payload?.stale ? (
           <p className="text-amber-600 dark:text-amber-400">
             本次刷新未成功，以下是 {ageLabel(payload.staleAt ?? payload.fetchedAt)}的历史观测。
@@ -305,7 +305,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
           数据源 Open-Meteo ·{' '}
           {state.kind === 'ready' ? `${ageLabel(payload!.fetchedAt)}更新` : '尚未取到数据'}
         </p>
-        {aqi === null && payload?.aqiNote && <p className="text-center text-muted-foreground/80">{payload.aqiNote}</p>}
+        {aqi === null && payload?.aqiNote && <p className="text-center text-muted-foreground">{payload.aqiNote}</p>}
       </div>
     </div>
   )

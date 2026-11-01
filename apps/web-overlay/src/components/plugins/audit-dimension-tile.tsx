@@ -25,7 +25,7 @@ export function AuditDimensionTile({
       <div
         className={cn(
           'mt-0.5 font-mono text-sm',
-          measured ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'font-medium text-muted-foreground/70',
+          measured ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'font-medium text-muted-foreground',
         )}
       >
         {measured ? `${value} 分` : '未测'}

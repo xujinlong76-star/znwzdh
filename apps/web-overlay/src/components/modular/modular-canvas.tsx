@@ -555,7 +555,7 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 shadow-xs"
+                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-purple-500/30 text-purple-700 dark:text-purple-400 hover:bg-purple-500/10 shadow-xs"
                 onClick={() => setIsAiGenOpen(true)}
                 title="一句话让 AI 智能规划专属工作台"
               >
@@ -566,7 +566,7 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
                 onClick={() => {
                   compactLayout()
                   // 只报「重排了几个模块」：单个模块时 compactLayout 是空操作，
@@ -592,7 +592,7 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
                 onClick={handleExportAsPlugin}
                 title="导出为插件市场规范的工作台预设清单（.json）"
               >
@@ -647,7 +647,7 @@ export function ModularCanvas() {
           className={
             exportNotice.tone === 'warn'
               ? 'p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2 animate-in fade-in duration-150'
-              : 'p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-start gap-2 animate-in fade-in duration-150'
+              : 'p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs flex items-start gap-2 animate-in fade-in duration-150'
           }
           role={exportNotice.tone === 'warn' ? 'alert' : 'status'}
         >
@@ -724,7 +724,7 @@ export function ModularCanvas() {
                   <Plus className="w-5 h-5 text-muted-foreground group-hover:text-primary" />
                 </div>
                 <span className="text-xs font-semibold">添加更多功能模块</span>
-                <span className="text-xs text-muted-foreground/70">浏览 {Object.keys(WIDGET_REGISTRY).length} 大组件库</span>
+                <span className="text-xs text-muted-foreground">浏览 {Object.keys(WIDGET_REGISTRY).length} 大组件库</span>
               </button>
             )}
           </div>

@@ -463,7 +463,7 @@ export function AiPluginStudioModal({
                     aria-label="选择插件类型"
                     value={kind}
                     onChange={(e) => setKind(e.target.value as any)}
-                    className="text-[11px] bg-background border border-input rounded-md px-1.5 py-0.5 text-foreground focus:outline-none"
+                    className="text-[11px] bg-background border border-border-strong rounded-md px-1.5 py-0.5 text-foreground focus:outline-none"
                     disabled={generating}
                   >
                     <option value="auto">🤖 智能判断类型</option>
@@ -497,7 +497,7 @@ export function AiPluginStudioModal({
                     onClick={() => setEnableThinking((prev) => !prev)}
                     className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md transition-colors ${
                       enableThinking
-                        ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 font-medium'
+                        ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 font-medium'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -538,7 +538,7 @@ export function AiPluginStudioModal({
               </div>
 
               {generating && (
-                <div className="text-[10px] text-muted-foreground/80 flex items-center justify-center gap-1.5 pt-0.5 animate-pulse">
+                <div className="text-[10px] text-muted-foreground flex items-center justify-center gap-1.5 pt-0.5 animate-pulse">
                   <Sparkles className="h-3 w-3 text-primary animate-spin" />
                   <span>
                     {enableThinking
@@ -905,7 +905,7 @@ export function AiPluginStudioModal({
                       variant="outline"
                       disabled={autoFixing}
                       onClick={handleAutoFix}
-                      className="h-8 text-xs gap-1.5 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                      className="h-8 text-xs gap-1.5 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
                     >
                       {autoFixing ? (
                         <>

@@ -83,7 +83,7 @@ export function IframeWidget({ config }: IframeWidgetProps) {
               临时
             </span>
           )}
-          <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0 hidden sm:inline-block">
+          <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 shrink-0 hidden sm:inline-block">
             Sandbox
           </span>
         </div>
@@ -133,7 +133,7 @@ export function IframeWidget({ config }: IframeWidgetProps) {
       {/* Iframe 嵌入沙箱容器 */}
       <div className="flex-1 w-full relative rounded-xl overflow-hidden border border-border/40 bg-muted/20 min-h-[160px]">
         {invalidConfigUrl && (
-          <div className="absolute top-2 left-2 right-2 z-20 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive leading-relaxed">
+          <div className="absolute top-2 left-2 right-2 z-20 rounded-lg border border-destructive/30 bg-destructive/15 px-2.5 py-2 text-[11px] text-destructive-text leading-relaxed">
             配置里的地址不是合法 http(s)，已拒绝内嵌：{String(config?.url).slice(0, 80)}
           </div>
         )}

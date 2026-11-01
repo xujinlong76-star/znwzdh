@@ -31,7 +31,7 @@ export function TemplateModal({ isOpen, onClose, onApplyTemplate }: TemplateModa
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 bg-muted/20">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-700 dark:text-indigo-400">
               <LayoutTemplate className="w-4 h-4" />
             </div>
             <div>
@@ -54,7 +54,7 @@ export function TemplateModal({ isOpen, onClose, onApplyTemplate }: TemplateModa
               <div className="space-y-1 min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-sm text-foreground">{tpl.name}</span>
-                  <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                  <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20">
                     {tpl.widgets.length} 个推荐模块
                   </span>
                 </div>

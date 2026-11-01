@@ -90,12 +90,12 @@ export function CrdtSyncStatusPill() {
               <span className="text-muted-foreground">当前协同状态</span>
               <div className="flex items-center gap-1.5">
                 {status === 'synced' ? (
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[11px]">
+                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[11px]">
                     <CheckCircle2 className="mr-1 h-3 w-3" />
                     已完全收敛 (Converged)
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[11px]">
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-700 border-amber-500/20 text-[11px]">
                     <Wifi className="mr-1 h-3 w-3" />
                     本地优先运行中
                   </Badge>

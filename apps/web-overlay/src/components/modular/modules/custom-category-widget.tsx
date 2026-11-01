@@ -337,9 +337,9 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
         )}
       </div>
 
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono flex items-center justify-center gap-1.5 flex-wrap shrink-0">
+      <div className="pt-1 text-xs text-muted-foreground text-center font-mono flex items-center justify-center gap-1.5 flex-wrap shrink-0">
         {isTemporary && (
-          <span className="px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] leading-none">
+          <span className="px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px] leading-none">
             临时
           </span>
         )}

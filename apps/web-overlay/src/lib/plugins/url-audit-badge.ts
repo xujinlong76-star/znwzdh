@@ -22,7 +22,7 @@ export function reachabilityTone(rate: number | null | undefined): {
   if (safe >= 0.8) {
     return { label: `${pct}% 可达`, className: 'text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/5' }
   }
-  return { label: `${pct}% 可达`, className: 'text-destructive border-destructive/30 bg-destructive/5' }
+  return { label: `${pct}% 可达`, className: 'text-destructive-text border-destructive/30 bg-destructive/5' }
 }
 
 /** 时间戳 → 「3 天前」这类短相对时间；未来时间与非法值都按「刚刚」处理 */

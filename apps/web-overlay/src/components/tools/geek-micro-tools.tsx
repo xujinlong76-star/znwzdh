@@ -203,7 +203,7 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
             </button>
           </div>
         ) : error ? (
-          <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-xs flex items-center gap-2 font-mono">
+          <div className="p-3 rounded-lg bg-destructive/15 text-destructive-text text-xs flex items-center gap-2 font-mono">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -510,7 +510,7 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
             </button>
           </div>
         ) : error ? (
-          <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-xs flex items-center gap-2 font-mono">
+          <div className="p-3 rounded-lg bg-destructive/15 text-destructive-text text-xs flex items-center gap-2 font-mono">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>

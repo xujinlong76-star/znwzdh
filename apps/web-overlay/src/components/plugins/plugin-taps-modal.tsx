@@ -298,9 +298,9 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
 
           {taps.length === 0 ? (
             <div className="py-8 text-center rounded-xl border border-dashed border-border/70 p-6 space-y-2">
-              <Globe className="w-8 h-8 text-muted-foreground/40 mx-auto" />
+              <Globe className="w-8 h-8 text-muted-foreground mx-auto" />
               <div className="text-xs text-muted-foreground">暂未配置第三方 Taps 订阅源</div>
-              <div className="text-[11px] text-muted-foreground/70">
+              <div className="text-[11px] text-muted-foreground">
                 您可通过上方输入框添加自定义 GitHub Raw JSON 或团队内网 Hub 源。
               </div>
             </div>
@@ -317,7 +317,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
                       <Badge
                         variant="outline"
                         title="上次同步后，本源清单里在市场可见的条数（新增 + 已存在同名）；不含清单不合规与写入失败的条目"
-                        className="text-[10px] bg-indigo-500/10 text-indigo-600 border-indigo-500/20"
+                        className="text-[10px] bg-indigo-500/10 text-indigo-700 border-indigo-500/20"
                       >
                         市场内 {tap.pluginCount ?? 0} 个插件
                       </Badge>
@@ -354,7 +354,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
                       size="sm"
                       variant="ghost"
                       onClick={() => handleDelete(tap.id, tap.name)}
-                      className="h-8 text-xs text-destructive hover:bg-destructive/10 px-2"
+                      className="h-8 text-xs text-destructive-text hover:bg-destructive/15 px-2"
                       title="移除此订阅源"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -403,7 +403,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
 
                     <div className="shrink-0 self-end sm:self-auto">
                       {isSubscribed ? (
-                        <Badge variant="outline" className="text-[11px] py-1 px-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 flex items-center gap-1">
+                        <Badge variant="outline" className="text-[11px] py-1 px-2.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3" />
                           <span>已订阅</span>
                         </Badge>

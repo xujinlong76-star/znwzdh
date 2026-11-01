@@ -433,11 +433,11 @@ export default function PluginDetailView({
 
         {/* 自动隔离熔断警告 */}
         {plugin.status === 'quarantined' && (
-          <div className="p-4 rounded-2xl border border-destructive/40 bg-destructive/10 text-destructive flex items-start gap-3">
+          <div className="p-4 rounded-2xl border border-destructive/40 bg-destructive/15 text-destructive-text flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="text-xs sm:text-sm">
               <h4 className="font-bold">⚠️ 该插件已被系统自动隔离体检 (Quarantined)</h4>
-              <p className="text-xs mt-1 text-destructive/90 leading-relaxed">
+              <p className="text-xs mt-1 text-destructive-text leading-relaxed">
                 因累计收到多次社区用户违规举报，系统已自动触发安全熔断机制，暂停普通访客一键安装。
                 山羊胡管理员审核确认安全后将恢复上架。
               </p>
@@ -547,9 +547,9 @@ export default function PluginDetailView({
                   <button
                     type="button"
                     onClick={() => selectTab('reviews')}
-                    className="text-xs text-muted-foreground/80 hover:text-foreground cursor-pointer flex items-center gap-1"
+                    className="text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1"
                   >
-                    <Star className="w-3.5 h-3.5 text-muted-foreground/40" />
+                    <Star className="w-3.5 h-3.5 text-muted-foreground" />
                     <span>暂无评分 (点击评价)</span>
                   </button>
                 )}
@@ -561,10 +561,10 @@ export default function PluginDetailView({
                     className={cn(
                       'inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full border transition-colors cursor-pointer',
                       auditReport.level === 'safe'
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                         : auditReport.level === 'low_risk'
-                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 hover:bg-blue-500/20'
-                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+                        ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20 hover:bg-blue-500/20'
+                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
                     )}
                     title="点击查看全自动代码沙盒安全审计报告"
                   >
@@ -612,7 +612,7 @@ export default function PluginDetailView({
                   className={cn(
                     'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-all',
                     starred
-                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
                       : 'border-border/70 bg-background/70 hover:bg-muted text-muted-foreground hover:text-foreground'
                   )}
                 >
@@ -706,7 +706,7 @@ export default function PluginDetailView({
               {/* 安装 / 更新 / 卸载主要按钮 */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                 {bundleBlocked && !plugin.installed && (
-                  <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] text-destructive flex items-start gap-1.5 max-w-xs">
+                  <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] text-destructive-text flex items-start gap-1.5 max-w-xs">
                     <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                     <span>组合包成员已失效，安装已暂停；可查看下方「影响评估」中的成员明细。</span>
                   </div>
@@ -744,7 +744,7 @@ export default function PluginDetailView({
                         setModalMode('uninstall')
                         setInstallModalOpen(true)
                       }}
-                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all group"
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-medium bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-destructive/15 hover:text-destructive-text hover:border-destructive/30 transition-all group"
                     >
                       <Check className="w-4 h-4 group-hover:hidden" />
                       <RotateCcw className="w-4 h-4 hidden group-hover:inline-block" />
@@ -776,8 +776,8 @@ export default function PluginDetailView({
                   className={cn(
                     'w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
                     inTryout
-                      ? 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
-                      : 'border-violet-500/30 bg-violet-500/5 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10'
+                      ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20'
+                      : 'border-violet-500/30 bg-violet-500/5 text-violet-700 dark:text-violet-400 hover:bg-violet-500/10'
                   )}
                 >
                   <Palette className="w-3.5 h-3.5" />
@@ -830,7 +830,7 @@ export default function PluginDetailView({
                 <span>纯声明式 JSON 架构</span>
               </span>
               <span className="flex items-center gap-1.5">
-                <Download className="w-3.5 h-3.5 text-muted-foreground/70" />
+                <Download className="w-3.5 h-3.5 text-muted-foreground" />
                 <span>已累计被安装 {plugin.installCount || 0} 次</span>
               </span>
             </div>

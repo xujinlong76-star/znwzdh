@@ -213,7 +213,7 @@ export function PluginReviewSection({
                   className={`h-4 w-4 ${
                     star <= Math.round(stats.avgRating)
                       ? 'fill-amber-400 text-amber-400'
-                      : 'fill-muted/30 text-muted-foreground/30'
+                      : 'fill-muted/30 text-muted-foreground'
                   }`}
                 />
               ))}
@@ -231,7 +231,7 @@ export function PluginReviewSection({
               return (
                 <div key={star} className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="w-6 text-right font-mono flex items-center justify-end gap-0.5">
-                    {star} <Star className="h-2.5 w-2.5 fill-muted-foreground/50 text-muted-foreground/50" />
+                    {star} <Star className="h-2.5 w-2.5 fill-muted-foreground/50 text-muted-foreground" />
                   </span>
                   <div className="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden">
                     <div
@@ -312,7 +312,7 @@ export function PluginReviewSection({
           </div>
         ) : !hasReviews ? (
           <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center bg-card/30">
-            <MessageSquare className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+            <MessageSquare className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
             <p className="text-sm font-medium text-foreground">暂无用户评价</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
               成为第一位使用并分享体验的用户吧！
@@ -334,7 +334,7 @@ export function PluginReviewSection({
                           className={`h-3.5 w-3.5 ${
                             star <= rev.rating
                               ? 'fill-amber-400 text-amber-400'
-                              : 'fill-muted/30 text-muted-foreground/30'
+                              : 'fill-muted/30 text-muted-foreground'
                           }`}
                         />
                       ))}
@@ -363,7 +363,7 @@ export function PluginReviewSection({
                 )}
 
                 <div className="flex items-center justify-between gap-2 pt-1">
-                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                     <span>已验证真实安装用户</span>
                   </div>
@@ -374,7 +374,7 @@ export function PluginReviewSection({
                       setReportingId((prev) => (prev === rev.id ? null : rev.id))
                       setReportReason('')
                     }}
-                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/60 hover:text-rose-500 transition-colors"
+                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-rose-500 transition-colors"
                   >
                     <Flag className="h-3 w-3" />
                     举报

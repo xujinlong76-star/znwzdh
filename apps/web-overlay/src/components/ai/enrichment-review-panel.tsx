@@ -228,7 +228,7 @@ export function EnrichmentReviewPanel() {
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive-text">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{error}</span>
           </div>
@@ -346,7 +346,7 @@ export function EnrichmentReviewPanel() {
               <select
                 id="enrich-review-category"
                 aria-label="挂载类目"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-9 w-full rounded-md border border-border-strong bg-background px-3 text-sm"
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
                 disabled={creating || categories === null}

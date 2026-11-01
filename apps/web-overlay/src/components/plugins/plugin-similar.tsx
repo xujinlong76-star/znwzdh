@@ -109,7 +109,7 @@ export function PluginSimilar({ slug }: { slug: string }) {
               </span>
             </div>
             <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{p.description}</p>
-            <div className="text-[11px] text-muted-foreground/80 font-mono">
+            <div className="text-[11px] text-muted-foreground font-mono">
               v{p.version} · 安装 {p.installCount} · 星标 {p.starCount}
             </div>
           </Link>

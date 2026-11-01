@@ -705,7 +705,7 @@ export function HomeDIYBackupDialog({
                   className={cn(
                     'text-[11px]',
                     cloudVaultPresent
-                      ? 'text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium'
+                      ? 'text-[10px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium'
                       : cloudVaultKnownAbsent || cloudVaultMeta === null
                         ? 'text-muted-foreground'
                         : 'text-amber-600 dark:text-amber-400',
@@ -736,7 +736,7 @@ export function HomeDIYBackupDialog({
                   disabled={!vaultPassphrase.trim() || cloudBusy}
                   aria-busy={isPullingCloud}
                   aria-describedby="cloud-action-hint"
-                  className="flex-1 text-xs border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
+                  className="flex-1 text-xs border-violet-500/30 text-violet-700 dark:text-violet-400 hover:bg-violet-500/10"
                 >
                   <CloudDownload className="w-3.5 h-3.5" />
                   <span>{isPullingCloud ? '拉取中...' : '从云端拉取解密'}</span>
@@ -830,7 +830,7 @@ export function HomeDIYBackupDialog({
                         variant="outline"
                         onClick={() => void handleCloudUpload(0)}
                         disabled={!vaultPassphrase.trim() || cloudBusy}
-                        className="flex-1 text-xs gap-1.5 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
+                        className="flex-1 text-xs gap-1.5 border-violet-500/30 text-violet-700 dark:text-violet-400 hover:bg-violet-500/10"
                       >
                         <CloudUpload className="w-3.5 h-3.5" />
                         <span>{isSyncingCloud ? '重建中...' : VAULT_REBUILD_ACTION_LABEL}</span>
@@ -841,7 +841,7 @@ export function HomeDIYBackupDialog({
                         variant="outline"
                         onClick={() => void handleCloudDownload()}
                         disabled={!vaultPassphrase.trim() || cloudBusy}
-                        className="flex-1 text-xs gap-1.5 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
+                        className="flex-1 text-xs gap-1.5 border-violet-500/30 text-violet-700 dark:text-violet-400 hover:bg-violet-500/10"
                       >
                         <CloudDownload className="w-3.5 h-3.5" />
                         <span>先拉取云端最新一版</span>
@@ -902,7 +902,7 @@ export function HomeDIYBackupDialog({
                   onClick={() => setDeleteConfirmOpen(true)}
                   disabled={isDeletingCloud || cloudBusy}
                   aria-busy={isDeletingCloud}
-                  className="w-full text-xs gap-1.5 border-red-500/35 text-red-600 dark:text-red-400 hover:bg-red-500/10"
+                  className="w-full text-xs gap-1.5 border-red-500/35 text-red-700 dark:text-red-400 hover:bg-red-500/10"
                 >
                   <CloudOff className="w-3.5 h-3.5" />
                   <span>{isDeletingCloud ? '删除中...' : '永久删除云端备份'}</span>
@@ -920,7 +920,7 @@ export function HomeDIYBackupDialog({
                 variant="outline"
                 onClick={handleCopyEncryptedConfig}
                 disabled={!vaultPassphrase.trim()}
-                className="text-xs gap-1.5 flex-1 min-w-[calc(50%-0.25rem)] sm:min-w-0 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
+                className="text-xs gap-1.5 flex-1 min-w-[calc(50%-0.25rem)] sm:min-w-0 border-violet-500/30 text-violet-700 dark:text-violet-400 hover:bg-violet-500/10"
               >
                 <Lock className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">复制加密密文</span>
@@ -930,7 +930,7 @@ export function HomeDIYBackupDialog({
                 variant="outline"
                 onClick={handleDownloadEncryptedConfig}
                 disabled={!vaultPassphrase.trim()}
-                className="text-xs gap-1.5 flex-1 min-w-[calc(50%-0.25rem)] sm:min-w-0 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
+                className="text-xs gap-1.5 flex-1 min-w-[calc(50%-0.25rem)] sm:min-w-0 border-violet-500/30 text-violet-700 dark:text-violet-400 hover:bg-violet-500/10"
               >
                 <Download className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">下载 .enc.json</span>

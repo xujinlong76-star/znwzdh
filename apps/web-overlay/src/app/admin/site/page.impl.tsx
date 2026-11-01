@@ -419,7 +419,7 @@ export default function SiteSettings() {
     <>
       <div className="space-y-6">
         {degraded && (
-          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400">
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
             中枢当前不可达，下方显示的是**构建期基线值**。为避免覆盖真实配置，保存已禁用——
             恢复中枢后点右上角「重新读取」。
           </div>
@@ -431,7 +431,7 @@ export default function SiteSettings() {
           </div>
         )}
         {banner && (
-          <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/15 p-3 text-sm text-destructive-text">
             {banner}
           </div>
         )}
@@ -715,7 +715,7 @@ export default function SiteSettings() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {assetsError && <div role="alert" className="rounded-md border border-destructive/40 p-3 text-xs text-destructive">{assetsError}</div>}
+            {assetsError && <div role="alert" className="rounded-md border border-destructive/40 p-3 text-xs text-destructive-text">{assetsError}</div>}
             {!assetsLoading && !assetsError && assets.length === 0 && (
               <p className="text-sm text-muted-foreground">还没有上传过品牌图片。</p>
             )}

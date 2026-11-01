@@ -152,7 +152,7 @@ export function AiObservabilityPanel() {
               <Cpu className="h-5 w-5 text-indigo-500" />
               AI 效能与 Token 遥测大盘
             </h2>
-            <Badge variant="outline" className="text-xs bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20">
+            <Badge variant="outline" className="text-xs bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20">
               {/* 大盘解的是「当前生效的那个模型」，名字必须来自接口而不是写死的厂商名 */}
               {data?.activeModel ? `${data.activeModel} 实时中枢` : '实时中枢'}
             </Badge>
@@ -197,7 +197,7 @@ export function AiObservabilityPanel() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive flex items-center gap-2">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive-text flex items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>获取遥测指标异常：{error}</span>
         </div>
@@ -220,11 +220,11 @@ export function AiObservabilityPanel() {
           <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 flex-wrap">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
             <span>成功率: {data ? `${data.successRate}%` : '--'}</span>
-            <span className="text-muted-foreground/60">·</span>
+            <span className="text-muted-foreground">·</span>
             <span>异常: {data ? data.errorCalls : 0}</span>
             {data && typeof data.thinkingCalls === 'number' && data.thinkingCalls > 0 && (
               <>
-                <span className="text-muted-foreground/60">·</span>
+                <span className="text-muted-foreground">·</span>
                 <span className="text-emerald-600 dark:text-emerald-400 font-medium">
                   🧠 思考调用: {data.thinkingCalls}
                 </span>
@@ -341,8 +341,8 @@ export function AiObservabilityPanel() {
                         allDisabled
                           ? 'text-muted-foreground'
                           : percent !== null && percent >= 90
-                            ? 'bg-destructive/10 text-destructive border-destructive/20'
-                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                            ? 'bg-destructive/15 text-destructive-text border-destructive/20'
+                            : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
                       }`}
                     >
                       {allDisabled ? '未启用' : percent === null ? '按人计量' : percent >= 90 ? '接近上限' : '有余量'}
@@ -577,7 +577,7 @@ export function AiObservabilityPanel() {
                 variant="outline"
                 className={
                   data?.activeModel?.trim()
-                    ? 'text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                    ? 'text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
                     : 'text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
                 }
               >
@@ -637,7 +637,7 @@ export function AiObservabilityPanel() {
                     <td className="py-2 px-3 text-right tabular-nums">{(m.tokens / 1000).toFixed(1)}k</td>
                     <td className="py-2 px-3 text-right tabular-nums">
                       {m.errorCalls > 0 ? (
-                        <span className="text-destructive">{m.errorCalls}</span>
+                        <span className="text-destructive-text">{m.errorCalls}</span>
                       ) : (
                         <span className="text-muted-foreground">0</span>
                       )}
@@ -781,10 +781,10 @@ export function AiObservabilityPanel() {
                         <span
                           className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-medium ${
                             log.latencyMs < 400
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
                               : log.latencyMs < 800
-                              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                              : 'bg-red-500/10 text-red-600 dark:text-red-400'
+                              ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                              : 'bg-red-500/10 text-red-700 dark:text-red-400'
                           }`}
                         >
                           {log.latencyMs} ms
@@ -795,11 +795,11 @@ export function AiObservabilityPanel() {
                       </td>
                       <td className="py-2 px-3 text-right">
                         {log.status === 'success' ? (
-                          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+                          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
                             成功
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">
+                          <Badge variant="outline" className="text-[10px] bg-destructive/15 text-destructive-text border-destructive/20">
                             异常
                           </Badge>
                         )}

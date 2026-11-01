@@ -283,7 +283,7 @@ export default function AdminFacetsPage() {
       {degradeNotice && (
         <div
           role="status"
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text"
         >
           <span>
             {data
@@ -393,7 +393,7 @@ export default function AdminFacetsPage() {
                 </span>
               </span>
               {opt.labelEn && (
-                <span className="block text-[11px] text-muted-foreground/80 mt-2 truncate">
+                <span className="block text-[11px] text-muted-foreground mt-2 truncate">
                   {opt.labelEn}
                 </span>
               )}
@@ -430,7 +430,7 @@ export default function AdminFacetsPage() {
           {loadingSites ? (
             <div className="text-xs text-muted-foreground py-8 text-center">正在加载归属站点…</div>
           ) : samplesNotice ? (
-            <div role="status" className="text-xs text-destructive py-8 text-center">
+            <div role="status" className="text-xs text-destructive-text py-8 text-center">
               样例站点没能加载出来。{samplesNotice.message}
               <button
                 type="button"
@@ -524,7 +524,7 @@ export default function AdminFacetsPage() {
               {saveError && saveError.siteId === editing.id && (
                 <div
                   role="alert"
-                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive space-y-1"
+                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text space-y-1"
                 >
                   <p>{saveError.message}</p>
                   {saveError.issues.length > 0 && (

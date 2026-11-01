@@ -312,7 +312,7 @@ export function AccountView() {
                     <li key={check.id} className="flex items-start justify-between gap-3 px-3 py-2 text-xs">
                       <span className="flex min-w-0 items-start gap-2">
                         {check.status === 'failed' ? (
-                          <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" aria-hidden />
+                          <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive-text" aria-hidden />
                         ) : (
                           <CheckCircle2
                             className={
@@ -342,7 +342,7 @@ export function AccountView() {
           <ApiTokensPanel />
 
           <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive-text">
               <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden />
               账号数据
             </h2>

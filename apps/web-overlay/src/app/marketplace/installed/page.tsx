@@ -396,7 +396,7 @@ export default function InstalledPluginsPage() {
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
-            <PackageCheck className="w-8 h-8 mx-auto text-muted-foreground/50" />
+            <PackageCheck className="w-8 h-8 mx-auto text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
               {activeTab === 'all'
                 ? '你尚未安装任何插件，前往市场一键开启'
@@ -462,7 +462,7 @@ export default function InstalledPluginsPage() {
                           variant="outline"
                           disabled={isUpgrading}
                           onClick={() => void handleUpgrade(item)}
-                          className="h-7 text-xs gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                          className="h-7 text-xs gap-1 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
                         >
                           <RefreshCw className={`w-3 h-3 ${isUpgrading ? 'animate-spin' : ''}`} />
                           升级至 v{item.version}
@@ -479,7 +479,7 @@ export default function InstalledPluginsPage() {
                       variant="ghost"
                       disabled={isUninstalling}
                       onClick={() => void handleUninstall(item)}
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
                       title="卸载此插件"
                       aria-label={`卸载插件 ${item.name}`}
                     >

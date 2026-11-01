@@ -74,7 +74,7 @@ export function PublishPayloadStep(props: PublishPayloadStepProps) {
                   'rounded-2xl border p-4 space-y-2 text-xs transition-all',
                   validationResult.ok
                     ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300'
-                    : 'border-destructive/30 bg-destructive/5 text-destructive'
+                    : 'border-destructive/30 bg-destructive/5 text-destructive-text'
                 )}
               >
                 <div className="flex items-center gap-2 font-semibold">
@@ -85,7 +85,7 @@ export function PublishPayloadStep(props: PublishPayloadStepProps) {
                     </>
                   ) : (
                     <>
-                      <AlertCircle className="w-4 h-4 text-destructive" />
+                      <AlertCircle className="w-4 h-4 text-destructive-text" />
                       <span>发现以下校验错误：</span>
                     </>
                   )}
@@ -158,7 +158,7 @@ export function PublishPayloadStep(props: PublishPayloadStepProps) {
                           ✓ {r.status}
                         </span>
                       ) : (
-                        <span className="text-destructive font-bold shrink-0">
+                        <span className="text-destructive-text font-bold shrink-0">
                           ✕ {r.error || '失败'}
                         </span>
                       )}
@@ -180,7 +180,7 @@ export function PublishPayloadStep(props: PublishPayloadStepProps) {
                   maxLength={2000}
                   rows={3}
                   placeholder="例如：新增 12 个设计工具站点；修复失效链接；调整主题强调色"
-                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base sm:text-xs leading-relaxed resize-y"
+                  className="w-full rounded-xl border border-border-strong bg-background px-3 py-2 text-base sm:text-xs leading-relaxed resize-y"
                 />
               </div>
             )}

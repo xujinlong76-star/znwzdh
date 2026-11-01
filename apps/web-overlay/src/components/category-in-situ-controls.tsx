@@ -137,7 +137,7 @@ export function CategoryInSituControls({
           variant="ghost"
           size="icon"
           onClick={handleDelete}
-          className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
           title="删除此自建专属分类"
         >
           <Trash2 className="w-3.5 h-3.5" />

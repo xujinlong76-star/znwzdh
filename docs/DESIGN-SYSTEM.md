@@ -124,9 +124,53 @@ Tailwind 侧已通过 `--color-*` 映射（`--color-primary: hsl(var(--primary))
 2. **老页面**：只允许「就地替换为样板组件」（如空态 → `<EmptyState>`），
    禁止顺手重排样式——重排会制造无意义 diff，把回归风险掺进设计迁移；
 3. **registry 上游文件**（`registry/new-york/ui/*`）：shadcn 原样 vendored，
-   本仓库不改其内部实现；需要定制时在 `components/ui/` 包一层；
+   本仓库不改其内部实现；需要定制时在 `components/ui/` 包一层。
+   **唯一例外（F1，2026-11-02）**：为满足 WCAG 1.4.11 控件边界 3:1，button / input / checkbox
+   的边界类已收编进 overlay 并改用 `border-border-strong`（见 §7）；除对比度合规行外不改；
 4. 判断「是否自研文件」以 git 为准：apps/web 是被 gitignore 的 vendored 底座，
    `git add -f` 进去的就是自研，必须同步回 `apps/web-overlay`（`check-web-overlay.mjs` 把关）。
+
+---
+
+## 7. 对比度配方（WCAG AA，F1 收敛）
+
+四条配方是**硬约束**，由 `apps/web/test/a11y-token-contrast.test.ts`（token 实测 + 类名回潮门禁）把关：
+
+| 场景 | 配方 | 实测对比度 |
+| --- | --- | --- |
+| 徽章（状态芯片） | `bg-*-500/10` + **`text-*-700`**（emerald/amber/rose/… 任意色系） | -600 在 /10 底上不足 AA，-700 达标 |
+| 错误文字 | **`text-destructive-text`**；错误条底 `bg-destructive/15` | 浅 #BC1C1C 对白 6.41:1、对 /15 条底 5.12:1；深 #F37272 对深底 7.07:1 |
+| 输入框 / 描边按钮 / checkbox 边界 | **`border-border-strong`**（`--border-strong`） | 浅 #8F8F99 对白 3.22:1；深 #66666E 对深底 3.17:1 |
+| 次要文本 | `text-muted-foreground`，**禁止任何透明度变体** | 浅 #62626A 对白 6.05:1 |
+
+补充语义：
+
+- `--destructive` 仍只作**按钮底色**（白字对它 4.62:1）；深色模式下它是暗红按钮底，
+  拿来当文字只有 1.98:1 —— 危险**文字**一律 `text-destructive-text`，类名禁止回退到 `text-destructive`；
+- 装饰性卡片边框继续 `--border`（`border-border`），不要为「看得见」一律加重；
+- `text-muted-foreground/50/60/70/80` 这类透明度变体全站禁用（叠加后必跌破 AA），
+  需要更弱层级时改用更小字号/更粗字重，或换 `text-muted-foreground` 本色；
+- 徽章同理禁止 `text-*-600`（在 /10 彩底上实测不足）。
+
+自定义壁纸可读性兜底（F4）：
+
+- **卡片不透明度下限 0.85**：DIY 滑杆最小刻度 0.85，读写两端 clamp（旧配置/旧分享链接
+  存的 0.2 读到即抬升），保分享方/接收方观感一致；
+- **卡片/玻璃面板底色 alpha ≥0.88**（globals.css 未分层 `.nav-card-deferred` / `.glass-surface`），
+  自定义壁纸最亮/最暗时卡片标题/描述实测对比度 4.60~19.90:1（wallpaper-contrast-guard 锁定）；
+- 热区残留的 `text-muted-foreground/90` 透明度变体由未分层规则在卡片内归一（热区释放后删除该条）。
+
+关键 token 实测（WCAG 相对亮度公式，2026-11-02）：
+
+| token | 浅色值 | 浅实测 | 深色值 | 深实测 |
+| --- | --- | --- | --- | --- |
+| `--ring` | `240 5% 46%` #6F6F7B | 4.93:1（对白） | `240 4.9% 83.9%` | 13.46:1（对深底） |
+| `--muted-foreground` | `240 4% 40%` #62626A | 6.05:1（对白） | `240 5% 64.9%` | — |
+| `--destructive-text` | `0 74% 42%` #BC1C1C | 6.41:1（对白） | `0 84% 70%` #F37272 | 7.07:1（对深底） |
+| `--border-strong` | `240 5% 58%` #8F8F99 | 3.22:1（对白） | `240 4% 39%` | 3.17:1（对深底） |
+| accent emerald `--primary` | `158 84% 26%` | 4.74:1（对近白前景） | 同左 | — |
+| accent rose `--primary` | `346 84% 42%` | 5.70:1（对近白前景） | 同左 | — |
+
 
 ## 6. 待办（下轮）
 

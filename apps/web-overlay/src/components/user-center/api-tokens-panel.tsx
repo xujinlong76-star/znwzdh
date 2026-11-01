@@ -171,7 +171,7 @@ export function ApiTokensPanel() {
             aria-label="令牌权限"
             value={permission}
             onChange={(e) => setPermission(e.target.value as TokenPermission)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+            className="h-9 rounded-md border border-border-strong bg-background px-2 text-xs"
           >
             <option value="read">只读</option>
             <option value="favorites">收藏写入</option>

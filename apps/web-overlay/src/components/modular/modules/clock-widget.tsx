@@ -150,8 +150,8 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
                 variant="outline"
                 className={`h-7 px-3 text-xs rounded-full gap-1 transition-all ${
                   isRunning
-                    ? 'border-amber-500/30 text-amber-600 hover:bg-amber-500/10'
-                    : 'border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10'
+                    ? 'border-amber-500/30 text-amber-700 hover:bg-amber-500/10'
+                    : 'border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10'
                 }`}
                 onClick={() => setIsRunning(!isRunning)}
               >
@@ -180,7 +180,7 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
       </div>
 
       {/* 底部状态 */}
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono truncate">
+      <div className="pt-1 text-xs text-muted-foreground text-center font-mono truncate">
         {isPomodoro
           ? isRunning
             ? '心流模式运行中 · 保持专注'

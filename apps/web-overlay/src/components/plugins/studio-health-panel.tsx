@@ -139,11 +139,11 @@ export function StudioHealthPanel(props: StudioHealthPanelProps) {
                         <div className="text-lg font-bold">{urlCheckResults.total}</div>
                         <div className="text-[10px] text-muted-foreground">检测总数</div>
                       </div>
-                      <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                      <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400">
                         <div className="text-lg font-bold">{urlCheckResults.okCount}</div>
                         <div className="text-[10px]">健康正常</div>
                       </div>
-                      <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400">
+                      <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400">
                         <div className="text-lg font-bold">{urlCheckResults.failedCount}</div>
                         <div className="text-[10px]">异常或超时</div>
                       </div>

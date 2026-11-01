@@ -205,12 +205,12 @@ export function QuickToolsWidget() {
       </div>
 
       {copyError && (
-        <div role="status" title={copyError} className="text-xs text-destructive leading-tight">
+        <div role="status" title={copyError} className="text-xs text-destructive-text leading-tight">
           复制失败：{copyError}
         </div>
       )}
 
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono">
+      <div className="pt-1 text-xs text-muted-foreground text-center font-mono">
         纯前端本地即时转换 · 零网络往返
       </div>
     </div>

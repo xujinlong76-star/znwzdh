@@ -43,7 +43,7 @@ export function RouteError({
     // tabIndex={-1} 让它可被程序聚焦，跳过链接点下去焦点真的会落进来。
     <main id="main-content" tabIndex={-1} className="container mx-auto px-4 py-16 max-w-xl outline-none">
       <div role="alert" aria-labelledby="route-error-title" className="rounded-2xl border border-destructive/25 bg-destructive/5 p-6 space-y-4 text-center">
-        <div className="mx-auto w-12 h-12 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-center">
+        <div className="mx-auto w-12 h-12 rounded-xl bg-destructive/15 border border-destructive/20 text-destructive-text flex items-center justify-center">
           <AlertTriangle className="w-6 h-6" />
         </div>
         <div className="space-y-1">
@@ -54,7 +54,7 @@ export function RouteError({
           <p className="text-sm text-muted-foreground">{crash.hint}</p>
         </div>
         {error?.digest && (
-          <p className="text-[11px] font-mono text-muted-foreground/80">诊断编号：{error.digest}</p>
+          <p className="text-[11px] font-mono text-muted-foreground">诊断编号：{error.digest}</p>
         )}
         <div className="flex items-center justify-center gap-2 pt-1">
           {crash.retryable && (

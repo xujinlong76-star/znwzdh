@@ -175,7 +175,7 @@ export function HyperbolicRadarWidget({ config }: { config?: Record<string, any>
           onChange={(e) => setQuery(e.target.value)}
           placeholder="输入产品名，如 Figma / Postman"
           aria-label="要查平替的产品名"
-          className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-muted/25 border border-border/40 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-primary/60"
+          className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-muted/25 border border-border/40 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60"
         />
       </form>
 
@@ -193,7 +193,7 @@ export function HyperbolicRadarWidget({ config }: { config?: Record<string, any>
                     setQuery(ex)
                     void lookup(ex)
                   }}
-                  className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 text-xs hover:bg-purple-500/20 transition-colors"
+                  className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs hover:bg-purple-500/20 transition-colors"
                 >
                   {ex}
                 </button>
@@ -234,7 +234,7 @@ export function HyperbolicRadarWidget({ config }: { config?: Record<string, any>
             <p className="text-xs text-muted-foreground leading-relaxed">
               「{state.site.title}」已收录，但没有可比较的候选。
             </p>
-            <p className="text-[10px] text-muted-foreground/80 font-mono">{manifoldLabel(state.manifold, false)}</p>
+            <p className="text-[10px] text-muted-foreground font-mono">{manifoldLabel(state.manifold, false)}</p>
             <Link href={`/site/${state.site.id}`} className="text-xs text-primary hover:underline">
               看该站点详情
             </Link>
@@ -298,7 +298,7 @@ export function HyperbolicRadarWidget({ config }: { config?: Record<string, any>
         )}
       </div>
 
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono shrink-0 truncate">
+      <div className="pt-1 text-xs text-muted-foreground text-center font-mono shrink-0 truncate">
         {state.kind === 'ready'
           ? `平替得分来自双曲投影 · 共 ${state.hits.length} 个候选`
           : '候选与得分由中枢实时计算，非人工编排的对照表'}

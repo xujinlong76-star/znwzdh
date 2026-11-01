@@ -366,7 +366,7 @@ export default function AdminCollectionsPage() {
                   >
                     改描述
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:bg-destructive/10 ml-auto" disabled={busy} onClick={() => void removeSelected()}>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive-text hover:bg-destructive/15 ml-auto" disabled={busy} onClick={() => void removeSelected()}>
                     删除专题
                   </Button>
                 </div>
@@ -454,7 +454,7 @@ export default function AdminCollectionsPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-7 text-xs text-destructive hover:bg-destructive/10"
+                              className="h-7 text-xs text-destructive-text hover:bg-destructive/15"
                               disabled={busy}
                               onClick={() => void removeItem(it.siteId)}
                             >
@@ -469,7 +469,7 @@ export default function AdminCollectionsPage() {
                             {it.note ? (
                               <span className="text-foreground/90">{it.note}</span>
                             ) : (
-                              <span className="text-muted-foreground/70 italic">未填推荐理由</span>
+                              <span className="text-muted-foreground italic">未填推荐理由</span>
                             )}
                           </div>
                           <button

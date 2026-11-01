@@ -87,11 +87,11 @@ function stateOf(t: ApiToken): TokenState {
 }
 
 const STATE_META: Record<TokenState, { label: string; className: string }> = {
-  revoked: { label: '已吊销', className: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20' },
-  expired: { label: '已过期', className: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20' },
-  expiring: { label: '即将过期', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' },
-  permanent: { label: '长期有效', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' },
-  active: { label: '正常', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' },
+  revoked: { label: '已吊销', className: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' },
+  expired: { label: '已过期', className: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' },
+  expiring: { label: '即将过期', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20' },
+  permanent: { label: '长期有效', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20' },
+  active: { label: '正常', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20' },
 }
 
 export default function AdminTokensPage() {
@@ -401,7 +401,7 @@ export default function AdminTokensPage() {
                           <Badge variant="outline" className="text-[10px] h-4 border-border/60">已轮换</Badge>
                         )}
                       </div>
-                      <div className="text-[11px] font-mono text-muted-foreground/80 mt-0.5 space-x-2">
+                      <div className="text-[11px] font-mono text-muted-foreground mt-0.5 space-x-2">
                         <span>创建于 {new Date(t.createdAt).toLocaleDateString('zh-CN')}</span>
                         {t.tokenPrefix && <span>· {t.tokenPrefix}…</span>}
                       </div>
@@ -409,9 +409,9 @@ export default function AdminTokensPage() {
                     <td className="px-4 py-3">
                       <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full border ${
                         maxScopeOf(t.scopes) === 'admin'
-                          ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 font-bold'
+                          ? 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20 font-bold'
                           : maxScopeOf(t.scopes) === 'write'
-                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
                           : 'bg-primary/10 text-primary border-primary/20'
                       }`}>
                         {maxScopeOf(t.scopes)}
@@ -448,7 +448,7 @@ export default function AdminTokensPage() {
                         </Button>
                         <Button
                           size="sm" variant="ghost" title="吊销（停用但保留记录）"
-                          className="h-7 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-500/10 rounded-lg gap-1"
+                          className="h-7 text-xs text-amber-700 hover:text-amber-700 hover:bg-amber-500/10 rounded-lg gap-1"
                           disabled={disabled || state === 'revoked'}
                           onClick={() => handleRevoke(t)}
                         >
@@ -456,7 +456,7 @@ export default function AdminTokensPage() {
                         </Button>
                         <Button
                           size="sm" variant="ghost" title="彻底删除（抹除全部记录）"
-                          className="h-7 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-lg gap-1"
+                          className="h-7 text-xs text-red-500 hover:text-red-700 hover:bg-red-500/10 rounded-lg gap-1"
                           disabled={disabled}
                           onClick={() => handlePurge(t)}
                         >
@@ -688,7 +688,7 @@ export default function AdminTokensPage() {
             </Button>
           </div>
 
-          <div className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 flex items-start gap-2">
+          <div className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>在请求头中使用 <code>Authorization: Bearer &lt;Token&gt;</code>。</span>
           </div>

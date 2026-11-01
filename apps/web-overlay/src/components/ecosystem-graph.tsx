@@ -613,7 +613,7 @@ export function EcosystemGraph() {
             </div>
 
             {selectedNode.openSource && (
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs border border-emerald-500/20 font-medium">
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs border border-emerald-500/20 font-medium">
                 <span>🌱 开源生态项目</span>
               </div>
             )}
@@ -633,7 +633,7 @@ export function EcosystemGraph() {
                   <Zap className="w-3.5 h-3.5 text-amber-500" />
                   <span>图谱关联拓扑 ({relatedEdges.length})</span>
                 </span>
-                <span className="text-xs text-muted-foreground/80 font-mono">点选或回车切换</span>
+                <span className="text-xs text-muted-foreground font-mono">点选或回车切换</span>
               </h4>
 
               <div className="space-y-2">

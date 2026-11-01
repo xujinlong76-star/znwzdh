@@ -187,11 +187,11 @@ export function LiveApiWidget({ config }: LiveApiWidgetProps) {
 
         <div>
           {statusOk === true ? (
-            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 font-medium">
+            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 font-medium">
               <CheckCircle2 className="w-2.5 h-2.5" /> 正常
             </span>
           ) : statusOk === false ? (
-            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 border border-rose-500/20 font-medium">
+            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-700 border border-rose-500/20 font-medium">
               <AlertCircle className="w-2.5 h-2.5" /> 异常
             </span>
           ) : null}

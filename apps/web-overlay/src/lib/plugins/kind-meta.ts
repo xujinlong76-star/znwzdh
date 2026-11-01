@@ -16,11 +16,11 @@ export const KIND_ICONS: Record<PluginKind, LucideIcon> = {
 
 /** 类型 → 徽章色调（Tailwind 语义类，深浅色模式各一档透明度） */
 export const KIND_TONES: Record<PluginKind, string> = {
-  'site-pack': 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
-  'workspace-preset': 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30',
-  theme: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
-  'search-pack': 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30',
-  bundle: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
+  'site-pack': 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+  'workspace-preset': 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/30',
+  theme: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30',
+  'search-pack': 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/30',
+  bundle: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30',
 }
 
 /** 主题强调色的可视化色版（与 globals.css 的 data-accent 块同源口径） */

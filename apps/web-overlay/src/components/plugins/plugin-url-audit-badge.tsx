@@ -69,7 +69,7 @@ export function PluginUrlAuditBadge({ slug, className }: { slug: string; classNa
     >
       <Gauge className="h-3 w-3" aria-hidden />
       <span>{tone.label}</span>
-      {when && <span className="text-muted-foreground/80">· {when}</span>}
+      {when && <span className="text-muted-foreground">· {when}</span>}
     </Badge>
   )
 }

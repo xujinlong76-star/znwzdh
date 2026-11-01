@@ -106,7 +106,7 @@ export default function AuthorPluginsView({
           </div>
         ) : !data ? (
           <div className="py-20 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
-            <UserRound className="w-8 h-8 mx-auto text-muted-foreground/50" />
+            <UserRound className="w-8 h-8 mx-auto text-muted-foreground" />
             <p className="text-sm text-muted-foreground">作者不存在，或暂时没有已上架插件</p>
             <Button asChild size="sm" variant="outline">
               <Link href="/marketplace">去市场逛逛</Link>

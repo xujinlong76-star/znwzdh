@@ -128,7 +128,7 @@ export function VideoMiniPlayer() {
           <button
             type="button"
             onClick={closePlayer}
-            className="p-1 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
+            className="p-1 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive-text transition-colors"
             title="关闭"
           >
             <X className="w-3.5 h-3.5" />

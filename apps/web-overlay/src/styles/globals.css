@@ -638,3 +638,16 @@
   }
 }
 
+/* F3 移动端触控可读性：表单字号 ≥16px，防 iOS 聚焦自动缩放（input font < 16px 必触发）。
+   刻意写在任何 @layer 之外：未分层声明优先于全部分层工具类（含 utilities），
+   call-site 的 text-xs 覆盖（如热区 app/auth/signin 的 <Input className="h-9 text-xs">，
+   该文件不许改）在移动端也压得住；实测见 touch-target-baseline 与回报。
+   范围：input/textarea/select（F3 尾项裁决扩面）；768px 以上维持桌面字号。 */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']):not([type='hidden']),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+

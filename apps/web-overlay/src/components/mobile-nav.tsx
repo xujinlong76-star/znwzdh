@@ -66,7 +66,8 @@ export default function MobileNav() {
                 aria-label={href === '/me' && unread > 0 ? `${label}，${unread} 条未读通知` : label}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
+                  // 触控可读性基线（F3）：标签 12px（原 10px 触控不可读）；leading 收紧防 4 项 flex-1 纵向溢出
+                  'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[12px] leading-[14px] font-medium transition-colors',
                   active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
@@ -75,13 +76,14 @@ export default function MobileNav() {
                   {showBadge && (
                     <span
                       aria-hidden
-                      className="absolute -right-2 -top-1.5 min-w-[14px] rounded-full bg-primary px-0.5 text-center text-[8px] font-semibold leading-[14px] text-primary-foreground tabular-nums"
+                      // 徽章 11px（原 8px）；leading/min-w 同步到 16px 保持胶囊形，不影响 flex-1 列宽
+                      className="absolute -right-2 -top-1.5 min-w-[16px] rounded-full bg-primary px-1 text-center text-[11px] font-semibold leading-[16px] text-primary-foreground tabular-nums"
                     >
                       {unreadText}
                     </span>
                   )}
                 </span>
-                <span>{label}</span>
+                <span className="whitespace-nowrap">{label}</span>
               </Link>
             </li>
           )

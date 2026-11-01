@@ -85,7 +85,7 @@ export function NavigationToolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden sm:inline-flex"
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden sm:inline-flex"
                 onClick={() => onOpenTools()}
                 title="打开内置微工具箱 (快捷键: T)"
                 aria-label="微工具箱"
@@ -97,7 +97,7 @@ export function NavigationToolbar({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden sm:inline-flex"
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden sm:inline-flex"
               >
                 <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
                   <Flame className="h-4 w-4" />
@@ -110,7 +110,7 @@ export function NavigationToolbar({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                    className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
                     title="探索矩阵"
                     aria-label="探索矩阵"
                   >
@@ -226,7 +226,7 @@ export function NavigationToolbar({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
               >
                 <Link href="/me" title="用户中心" aria-label="用户中心">
                   <User className="h-4 w-4" />
@@ -237,7 +237,7 @@ export function NavigationToolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden sm:inline-flex"
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden sm:inline-flex"
                 onClick={() => onOpenShortcuts()}
                 title="快捷键全景指南 (快捷键: ?)"
                 aria-label="快捷键指南"
@@ -250,7 +250,7 @@ export function NavigationToolbar({
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "relative h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-lg transition-colors",
+                  "relative h-9 w-9 rounded-lg transition-colors",
                   selectionMode
                     ? "text-primary bg-primary/10"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
@@ -272,7 +272,7 @@ export function NavigationToolbar({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8.5 rounded-lg gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  className="h-9 w-auto rounded-lg gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                   onClick={onSelectAllVisible}
                   title={summarizeSelection(selectedIds, visibleSiteCount) + '（点击全选当前可见站点）'}
                 >
@@ -288,7 +288,7 @@ export function NavigationToolbar({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden sm:inline-flex"
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden sm:inline-flex"
               >
                 <Link
                   href="https://github.com/tianyaxiang/NavSphere"
@@ -304,8 +304,9 @@ export function NavigationToolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-lg md:hidden text-muted-foreground hover:text-foreground"
+                className="h-9 w-9 rounded-lg md:hidden text-muted-foreground hover:text-foreground"
                 onClick={() => onToggleSidebar()}
+                title="打开菜单"
                 aria-label="打开菜单"
               >
                 <Menu className="h-4 w-4" />

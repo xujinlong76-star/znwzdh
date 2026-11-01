@@ -321,7 +321,7 @@ export function NavigationCard({
                     <Pin className="w-2.5 h-2.5 text-amber-500 fill-amber-500 shrink-0" />
                   )}
                   {item.liveMetrics?.githubStars && (
-                    <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded">
+                    <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded">
                       <Star className="w-2 h-2 text-amber-500 fill-amber-500" />
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                     </span>
@@ -333,7 +333,7 @@ export function NavigationCard({
                         e.stopPropagation()
                         onPeek?.(item)
                       }}
-                      className="pointer-events-auto inline-flex items-center gap-0.5 text-[9px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
+                      className="pointer-events-auto inline-flex items-center gap-0.5 text-[9px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
                       title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
                     >
                       <Clock className="w-2.5 h-2.5 text-amber-500" />
@@ -344,7 +344,7 @@ export function NavigationCard({
               </div>
 
               {/* 紧凑操作按钮 */}
-              <div className="relative z-20 flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onKeyDown={handleActionsKeyDown}>
+              <div className="relative z-20 flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity" onKeyDown={handleActionsKeyDown}>
                 {onTogglePinInCategory && (
                   <Button
                   tabIndex={-1}
@@ -437,7 +437,7 @@ export function NavigationCard({
               )}
             >
               {isPinnedInCategory && (
-                <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-medium">
+                <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-medium">
                   <Pin className="w-2.5 h-2.5 fill-amber-500" />
                   <span>已置顶</span>
                 </div>
@@ -488,7 +488,7 @@ export function NavigationCard({
                           )}
                         </CardTitle>
                         {item.liveMetrics?.githubStars && (
-                          <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
                             <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                             {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                           </span>
@@ -500,7 +500,7 @@ export function NavigationCard({
                               e.stopPropagation()
                               onPeek?.(item)
                             }}
-                            className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
+                            className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
                             title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
                           >
                             <Clock className="w-2.5 h-2.5 text-amber-500" />
@@ -510,7 +510,7 @@ export function NavigationCard({
                       </div>
 
                       {item.description && (
-                        <CardDescription className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1.5 break-words">
+                        <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1.5 break-words">
                           {item.description}
                         </CardDescription>
                       )}
@@ -541,13 +541,13 @@ export function NavigationCard({
                       e.stopPropagation()
                       onPeek?.(item)
                     }}
-                    className="pointer-events-auto inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
+                    className="pointer-events-auto inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
                   >
                     <span>平替: {topAlternative.targetTitle}</span>
                   </span>
                 )}
                 {item.actions && item.actions.length > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
                     <Zap className="w-2.5 h-2.5" />
                     <span>深链</span>
                   </span>
@@ -555,7 +555,7 @@ export function NavigationCard({
               </div>
 
               {/* 操作区：右上角悬浮药丸胶囊 */}
-              <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
+              <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
                 {onTogglePinInCategory && (
                   <Button
                   tabIndex={-1}
@@ -647,7 +647,7 @@ export function NavigationCard({
             )}
           >
             {isPinnedInCategory && (
-              <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-medium">
+              <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-medium">
                 <Pin className="w-2.5 h-2.5 fill-amber-500" />
                 <span>已置顶</span>
               </div>
@@ -698,7 +698,7 @@ export function NavigationCard({
                         )}
                       </CardTitle>
                       {item.liveMetrics?.githubStars && (
-                        <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                        <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
                           <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                           {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                         </span>
@@ -710,7 +710,7 @@ export function NavigationCard({
                             e.stopPropagation()
                             onPeek?.(item)
                           }}
-                          className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
+                          className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
                           title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
                         >
                           <Clock className="w-2.5 h-2.5 text-amber-500" />
@@ -719,7 +719,7 @@ export function NavigationCard({
                       )}
                     </div>
                     {item.description && (
-                      <CardDescription className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1 break-words">
+                      <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1 break-words">
                         {item.description}
                       </CardDescription>
                     )}
@@ -734,13 +734,13 @@ export function NavigationCard({
                               e.stopPropagation()
                               onPeek?.(item)
                             }}
-                            className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
+                            className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
                           >
                             <span>平替: {topAlternative.targetTitle}</span>
                           </span>
                         )}
                         {item.actions && item.actions.length > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-xs text-amber-600 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-0.5 text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
                             <Zap className="w-2.5 h-2.5" />
                             <span>深链</span>
                           </span>
@@ -753,7 +753,7 @@ export function NavigationCard({
             </div>
 
             {/* 操作区：右上角悬浮药丸胶囊 */}
-            <div className="absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
+            <div className="absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
               {onTogglePinInCategory && (
                 <Button
                   tabIndex={-1}

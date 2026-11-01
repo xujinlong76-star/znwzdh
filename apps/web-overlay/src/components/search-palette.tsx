@@ -546,7 +546,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           value={query}
           onChange={(e) => { setQuery(e.target.value); setIsFocused(true) }}
           onFocus={() => setIsFocused(true)}
-          className="pl-9 sm:pl-10 pr-9 sm:pr-20 h-9.5 sm:h-10 rounded-xl border border-border/70 hover:border-border bg-background/90 dark:bg-muted/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 shadow-xs text-base sm:text-sm transition-all"
+          className="pl-9 sm:pl-10 pr-9 sm:pr-20 h-9.5 sm:h-10 rounded-xl border border-border-strong hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 shadow-xs text-base sm:text-sm transition-all"
         />
         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
@@ -588,7 +588,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
                   <span>常用与最近常去</span>
                 </span>
-                <span className="text-[10px] font-mono text-muted-foreground/70">一键直达</span>
+                <span className="text-[10px] font-mono text-muted-foreground">一键直达</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 {recentVisits.map((visit) => (
@@ -654,7 +654,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
             <div className="space-y-2">
               <div>
-                <div className="text-xs text-muted-foreground/80 mb-1 flex items-center gap-1">
+                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
                   <GitCompare className="h-2.5 w-2.5 text-blue-500" /> 竞品选型多维判胜矩阵
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -666,7 +666,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     <button
                       key={chip.q}
                       onClick={() => setQuery(chip.q)}
-                      className="px-2 py-0.5 rounded text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors"
+                      className="px-2 py-0.5 rounded text-xs bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors"
                     >
                       {chip.label}
                     </button>
@@ -675,7 +675,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               </div>
 
               <div>
-                <div className="text-xs text-muted-foreground/80 mb-1 flex items-center gap-1">
+                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
                   <Layers className="h-2.5 w-2.5 text-purple-500" /> Graph-RAG 技术栈蓝图配方
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -686,7 +686,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     <button
                       key={chip.q}
                       onClick={() => setQuery(chip.q)}
-                      className="px-2 py-0.5 rounded text-xs bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 transition-colors"
+                      className="px-2 py-0.5 rounded text-xs bg-purple-500/10 text-purple-700 dark:text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 transition-colors"
                     >
                       {chip.label}
                     </button>
@@ -695,7 +695,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               </div>
 
               <div>
-                <div className="text-xs text-muted-foreground/80 mb-1 flex items-center gap-1">
+                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
                   <Zap className="h-2.5 w-2.5 text-emerald-500" /> 0-RTT 端侧推测执行
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -711,7 +711,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     <button
                       key={chip.q}
                       onClick={() => setQuery(chip.q)}
-                      className="px-2 py-0.5 rounded text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors font-mono"
+                      className="px-2 py-0.5 rounded text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors font-mono"
                     >
                       {chip.label}
                     </button>
@@ -728,7 +728,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           <Command className="border-0 shadow-none flex-1 overflow-hidden" shouldFilter={false}>
             <CommandList className="max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto">
               {degraded && panel.mode !== 'outage' && (
-                <div className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 border-b flex items-center justify-between gap-2">
+                <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b flex items-center justify-between gap-2">
                   <span>
                     {hits.length > 0
                       ? '检索服务暂时不可用，已降级；下面结果可能不完整。'
@@ -748,7 +748,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 </div>
               )}
               {fallbackHint && hits.length > 0 && (
-                <div className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 border-b">
+                <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b">
                   {fallbackHint === 'filter'
                     ? '当前筛选下没有结果，已放宽到全库匹配（结果可能来自其他类目）。'
                     : '没有精确匹配，以下是放宽匹配后的结果。'}
@@ -782,14 +782,14 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     </span>
                   )}
                   {inferredCategory && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
                       <span>@{inferredCategory}</span>
                     </span>
                   )}
                   {excludedTerms.map((ex) => (
                     <span
                       key={ex}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20"
                     >
                       <span>-{ex}</span>
                     </span>
@@ -797,7 +797,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   {queryExpansion.map((exp) => (
                     <span
                       key={exp}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20"
                     >
                       <span>~{exp}</span>
                     </span>
@@ -816,7 +816,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {/* 知识图谱对标与实体方案推荐 (Phase 3 知识图谱联动) */}
               {relationHits.length > 0 && (
                 <div className="p-3 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-500/20">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">
                     <GitFork className="w-3.5 h-3.5 text-amber-500" />
                     <span>知识图谱对标方案推荐：为您找到 “{query}” 的开源/平替选项</span>
                   </div>
@@ -832,7 +832,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                               {rel.sourceSite?.title || '推荐站点'}
                             </span>
                             {rel.isFreeOrOpenSource && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20 flex-shrink-0">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold border border-emerald-500/20 flex-shrink-0">
                                 开源/免费
                               </span>
                             )}
@@ -841,7 +841,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           </div>
                           {rel.note && (
-                            <p className="text-xs text-muted-foreground/90 line-clamp-1 mt-0.5">
+                            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                               💡 {rel.note}
                             </p>
                           )}
@@ -872,7 +872,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {matchedCollections.length > 0 && (
                 <div className="border-b border-border/70 bg-violet-500/5 p-2.5">
                   <div className="flex items-center justify-between px-1 mb-2">
-                    <span className="text-xs font-semibold text-violet-600 dark:text-violet-400 flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-violet-700 dark:text-violet-400 flex items-center gap-1.5">
                       <Layers className="h-3.5 w-3.5" />
                       精选专题推荐
                     </span>
@@ -899,7 +899,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             <div className="text-[10px] text-muted-foreground truncate">{col.description}</div>
                           )}
                         </div>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0 font-medium">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-700 dark:text-violet-400 shrink-0 font-medium">
                           {col.kind === 'roadmap' ? '路线图' : '专题'}
                         </span>
                       </Link>
@@ -980,7 +980,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 </div>
               )}
               {pluginFailed && pluginItems.length === 0 && (
-                <div className="px-3.5 py-2 text-[11px] text-amber-600 dark:text-amber-400 border-b flex items-center gap-1.5">
+                <div className="px-3.5 py-2 text-[11px] text-amber-700 dark:text-amber-400 border-b flex items-center gap-1.5">
                   <Store className="h-3.5 w-3.5 shrink-0" aria-hidden />
                   <span>插件结果本次没有取回（不是插件市场没有匹配），站点结果不受影响。</span>
                   <button
@@ -994,7 +994,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {panel.mode !== 'hidden' ? (
                 <div className="py-6 px-3 text-center">
                   <div className="text-muted-foreground text-sm">{panel.title}</div>
-                  <div className="text-xs text-muted-foreground/70 mt-1">{panel.hint}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{panel.hint}</div>
                   {didYouMean && (
                     <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-foreground">
                       <span>💡 您是不是想搜：</span>
@@ -1088,7 +1088,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setIsFocused(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors font-medium"
+                          className="text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors font-medium"
                         >
                           Google
                         </a>
@@ -1106,7 +1106,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setIsFocused(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors font-medium"
+                          className="text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors font-medium"
                         >
                           百度
                         </a>
@@ -1115,7 +1115,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setIsFocused(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors font-medium"
+                          className="text-xs px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors font-medium"
                         >
                           Bing
                         </a>
@@ -1164,7 +1164,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         <div className="flex items-center gap-1 flex-wrap">
                           {(site.status === 'broken' || site.health?.ok === false) && (
                             <span
-                              className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium border border-amber-500/20 inline-flex items-center gap-1"
+                              className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 font-medium border border-amber-500/20 inline-flex items-center gap-1"
                               title="检测到站点当前可能无法直接访问，已就绪 Wayback 时光机自愈镜像"
                             >
                               <Clock className="w-2.5 h-2.5 text-amber-500" />
@@ -1239,7 +1239,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         : `加载更多（已显示 ${hits.length} 条）`}
                   </button>
                   {moreFailed && (
-                    <p className="pt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                    <p className="pt-1.5 text-[11px] text-amber-700 dark:text-amber-400">
                       下一页没加载成功（请求失败，不是没有更多了）。已显示的 {hits.length} 条仍然可用，点上面按钮可再试。
                     </p>
                   )}
@@ -1257,7 +1257,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 font-medium"
+                      className="px-1.5 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 font-medium"
                     >
                       Google
                     </a>
@@ -1275,7 +1275,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 font-medium"
+                      className="px-1.5 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 font-medium"
                     >
                       百度
                     </a>
@@ -1284,7 +1284,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 font-medium"
+                      className="px-1.5 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 font-medium"
                     >
                       Bing
                     </a>

@@ -111,4 +111,13 @@ describe("无障碍细节（footer 分隔符与移动表单字号）", () => {
     expect(media).toMatch(/textarea/);
     expect(media).toMatch(/select/);
   });
+
+  it("站点卡片操作在触屏（无 hover）时强制可见（pointer-coarse，V13）", () => {
+    const src = overlayFile("src/components/navigation-card.tsx");
+    const hits = src.split("pointer-coarse:opacity-100").length - 1;
+    expect(
+      hits,
+      "三处 hover-reveal 操作簇都应带 pointer-coarse:opacity-100——否则触屏用户永远看不到收藏/置顶按钮",
+    ).toBe(3);
+  });
 });

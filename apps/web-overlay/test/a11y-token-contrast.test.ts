@@ -131,20 +131,18 @@ const ACCENTS = ["default", "violet", "emerald", "amber", "rose"] as const;
 // packages/store/**、apps/api/**、.github/** 不在 overlay/src 扫描面内，无需登记。
 const WIP_HOT_EXEMPT: string[] = [
   // —— 任务单热区（navigation-card / navigation-content / search-palette / app/{search,auth,favorites}）——
-  "components/navigation-card.tsx", // WIP 热区待释放
-  "components/navigation-content.tsx", // WIP 热区待释放
-  "components/search-palette.tsx", // WIP 热区待释放
+  // 2026-11-02 热区清账：navigation-card / search-palette / search-results / signin / favorites /
+  // category-quick-jump-bar / quick-access-tray / universal-bookmark-modal 已清零，豁免已清退，
+  // 由冷区禁令全量接管（回潮即红）。navigation-content 复核无违例，一并清退。
   "app/search/error.tsx", // WIP 热区待释放
   "app/search/loading.tsx", // WIP 热区待释放
   "app/search/page.tsx", // WIP 热区待释放
-  "app/search/search-results.tsx", // WIP 热区待释放
   "app/auth/layout.tsx", // WIP 热区待释放
   "app/auth/forgot-password/layout.tsx", // WIP 热区待释放
   "app/auth/forgot-password/page.tsx", // WIP 热区待释放
   "app/auth/reset-password/layout.tsx", // WIP 热区待释放
   "app/auth/reset-password/page.tsx", // WIP 热区待释放
   "app/auth/signin/layout.tsx", // WIP 热区待释放
-  "app/auth/signin/page.tsx", // WIP 热区待释放
   "app/auth/signup/layout.tsx", // WIP 热区待释放
   "app/auth/signup/page.tsx", // WIP 热区待释放
   "app/auth/verify-email/layout.tsx", // WIP 热区待释放
@@ -152,7 +150,6 @@ const WIP_HOT_EXEMPT: string[] = [
   "app/favorites/error.tsx", // WIP 热区待释放
   "app/favorites/layout.tsx", // WIP 热区待释放
   "app/favorites/loading.tsx", // WIP 热区待释放
-  "app/favorites/page.tsx", // WIP 热区待释放
   // —— 并行会话 WIP 快照（2026-11-02，git 脏文件里的违例文件）——
   "app/admin/data/restore/page.tsx", // WIP 热区待释放
   "app/admin/jobs/page.tsx", // WIP 热区待释放
@@ -168,11 +165,9 @@ const WIP_HOT_EXEMPT: string[] = [
   "components/ai/llm-daily-cost-chart.tsx", // WIP 热区待释放
   "components/bookmark-importer.tsx", // WIP 热区待释放
   "components/category-index-filterable-list.tsx", // WIP 热区待释放
-  "components/category-quick-jump-bar.tsx", // WIP 热区待释放
   "components/category-site-filter-bar.tsx", // WIP 热区待释放
   "components/navigation-category-section.tsx", // WIP 热区待释放
   "components/p2p/p2p-airdrop-modal.tsx", // WIP 热区待释放
-  "components/quick-access-tray.tsx", // WIP 热区待释放
   "components/quick-tools-drawer.tsx", // WIP 热区待释放
   "components/reader/site-archive-reader-modal.tsx", // WIP 热区待释放
   "components/search/spotlight-modal.tsx", // WIP 热区待释放
@@ -181,7 +176,6 @@ const WIP_HOT_EXEMPT: string[] = [
   "components/sites-directory-filterable-grid.tsx", // WIP 热区待释放
   "components/tag-cloud.tsx", // WIP 热区待释放
   "components/tag-results-board.tsx", // WIP 热区待释放
-  "components/user-center/universal-bookmark-modal.tsx", // WIP 热区待释放
   "components/video-auto-harvest-dialog.tsx", // WIP 热区待释放
   "components/video-card.tsx", // WIP 热区待释放
   "components/video-content.tsx", // WIP 热区待释放
@@ -353,6 +347,16 @@ describe("表单控件边界（border-border-strong，禁 border-input）", () =
         bad.map((f) => "  - " + f).join("\n") +
         `\n改为 border-border-strong。豁免只认 WIP_HOT_EXEMPT 显式清单。`,
     ).toEqual([]);
+  });
+  it("搜索面板输入框（原 border-border/70 盲区，实测 ≈1.2:1）必须用 border-border-strong", () => {
+    const src = readFileSync(overlayPath("src/components/search-palette.tsx"), "utf8");
+    const inputLine = src.split("\n").find((l) => l.includes("pl-9") && l.includes("rounded-xl"));
+    expect(inputLine, "未找到搜索输入框 className 行").toBeTruthy();
+    expect(
+      inputLine!,
+      "搜索框边界需 border-border-strong（防 border-border/N 透明度变体绕开 border-input 禁令）",
+    ).toContain("border-border-strong");
+    expect(inputLine!, "搜索框边界不得回退 border-border/N").not.toMatch(/border-border\/\d/);
   });
 });
 

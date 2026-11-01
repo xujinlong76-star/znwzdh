@@ -168,7 +168,7 @@ Tailwind 侧已通过 `--color-*` 映射（`--color-primary: hsl(var(--primary))
 | `--muted-foreground` | `240 4% 40%` #62626A | 6.05:1（对白） | `240 5% 64.9%` | — |
 | `--destructive-text` | `0 74% 42%` #BC1C1C | 6.41:1（对白） | `0 84% 70%` #F37272 | 7.07:1（对深底） |
 | `--border-strong` | `240 5% 58%` #8F8F99 | 3.22:1（对白） | `240 4% 39%` | 3.17:1（对深底） |
-| accent emerald `--primary` | `158 84% 26%` | 4.74:1（对近白前景） | 同左 | — |
+| accent emerald `--primary` | `158 84% 26%` | 5.12:1（对近白前景） | 同左 | — |
 | accent rose `--primary` | `346 84% 42%` | 5.70:1（对近白前景） | 同左 | — |
 
 

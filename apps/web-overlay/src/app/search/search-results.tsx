@@ -117,7 +117,7 @@ function RelationBand({ relations }: { relations: NonNullable<HubSearchResult['r
               </Link>
               <span className="text-[11px] text-muted-foreground">对标 {rel.targetTitle}</span>
               {rel.isFreeOrOpenSource ? (
-                <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
                   开源/免费
                 </span>
               ) : null}
@@ -180,7 +180,7 @@ function ResultRow({ hit, q }: { hit: HubSearchHit; q: string }) {
             {site.status === 'broken' ? (
               <span
                 title="最近一次健康巡检被对方站点拒绝（常见 401/403 反爬），不代表站点已下线"
-                className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+                className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400"
               >
                 巡检打不开
               </span>
@@ -329,7 +329,7 @@ function EmptyResults({
         </Link>
         {q ? (
           <Link
-            className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            className="inline-flex items-center gap-1 text-blue-700 dark:text-blue-400 hover:underline font-medium"
             href={`/videos?q=${encodeURIComponent(q)}`}
           >
             <MonitorPlay className="w-3.5 h-3.5" />
@@ -546,7 +546,7 @@ export function SearchResults({
           {q && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/5 text-xs text-foreground">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
                   <MonitorPlay className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">

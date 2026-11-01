@@ -731,7 +731,7 @@ export default function FavoritesPage() {
                 <span>返回主页</span>
               </Link>
               <span className="text-border">/</span>
-              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+              <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">
                 私密书签与 E2EE 金库
               </span>
             </div>
@@ -739,7 +739,7 @@ export default function FavoritesPage() {
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="max-w-2xl">
                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-xs">
+                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 shadow-xs">
                     <Shield className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
                   <span>我的离线收藏与零知识金库</span>
@@ -790,7 +790,7 @@ export default function FavoritesPage() {
                     setShowVaultImport(false)
                     setShowImport(false)
                   }}
-                  className="text-xs text-emerald-600 dark:text-emerald-400 h-8 rounded-lg hover:bg-emerald-500/10 font-medium"
+                  className="text-xs text-emerald-700 dark:text-emerald-400 h-8 rounded-lg hover:bg-emerald-500/10 font-medium"
                   title="支持 Chrome/Edge 导出的 HTML 书签或 Markdown 链接清单"
                 >
                   <FileUp className="w-3.5 h-3.5 mr-1" />
@@ -845,7 +845,7 @@ export default function FavoritesPage() {
                   size="sm"
                   onClick={handleExportAsPlugin}
                   disabled={favorites.items.length === 0}
-                  className="text-xs text-sky-600 dark:text-sky-400 h-8 rounded-lg hover:bg-sky-500/10"
+                  className="text-xs text-sky-700 dark:text-sky-400 h-8 rounded-lg hover:bg-sky-500/10"
                   title="把全部收藏打包成网址包插件（.json），可在插件市场发布"
                 >
                   <Package className="w-3.5 h-3.5" /> 导出为插件
@@ -855,7 +855,7 @@ export default function FavoritesPage() {
             </div>
 
             <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-600 dark:text-emerald-400">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-700 dark:text-emerald-400">
                 <Shield className="w-3 h-3" />
                 本地收藏 {favorites.ready ? favorites.items.length : '—'} 条
               </span>
@@ -879,7 +879,7 @@ export default function FavoritesPage() {
               syncBanner.tone === 'syncing'
                 ? 'bg-muted border-border text-muted-foreground'
                 : syncBanner.tone === 'success'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
                   : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400'
             }`}
           >
@@ -948,9 +948,9 @@ export default function FavoritesPage() {
           <div
             className={`mb-6 p-3 rounded-lg border text-xs flex items-center gap-2 ${
               syncStatus === 'success'
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
                 : syncStatus === 'error'
-                ? 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-400'
                 : 'bg-muted border-border text-muted-foreground'
             }`}
           >
@@ -1114,7 +1114,7 @@ export default function FavoritesPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 px-1 text-muted-foreground hover:text-destructive"
+                              className="h-6 px-1 text-muted-foreground hover:text-destructive-text"
                               aria-label="删除收藏夹"
                               onClick={() => void removeFolder(folder.id)}
                             >
@@ -1159,7 +1159,7 @@ export default function FavoritesPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 border-destructive/30 text-[11px] text-destructive hover:bg-destructive/10"
+                  className="h-7 border-destructive/30 text-[11px] text-destructive-text hover:bg-destructive/15"
                   disabled={manageBusy}
                   onClick={() => void clearCloud()}
                 >
@@ -1295,7 +1295,7 @@ export default function FavoritesPage() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 text-xs border-destructive/40 text-destructive hover:bg-destructive/10"
+                className="h-8 text-xs border-destructive/40 text-destructive-text hover:bg-destructive/15"
                 disabled={selectedSiteIds.size === 0}
                 onClick={() => void handleBatchDelete()}
               >
@@ -1422,11 +1422,11 @@ export default function FavoritesPage() {
                         {f.title}
                       </div>
                       {f.description && (
-                        <div className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1">
+                        <div className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1">
                           {f.description}
                         </div>
                       )}
-                      <div className="text-xs text-muted-foreground/70 font-mono mt-2">
+                      <div className="text-xs text-muted-foreground font-mono mt-2">
                         {new Date(f.createdAt).toLocaleDateString('zh-CN')}
                       </div>
                     </div>

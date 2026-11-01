@@ -136,7 +136,7 @@ export function UniversalBookmarkModal({
       <DialogContent className="max-w-xl p-5 sm:p-6">
         <DialogHeader className="space-y-1.5">
           <DialogTitle className="text-lg font-bold flex items-center gap-2">
-            <Upload className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            <Upload className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
             <span>导入外部书签与导航数据</span>
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
@@ -206,7 +206,7 @@ export function UniversalBookmarkModal({
                 onChange={handleFileChange}
               />
               <div className="flex flex-col items-center justify-center gap-2">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 flex items-center justify-center">
                   <FileCode className="w-6 h-6" />
                 </div>
                 <div className="text-sm font-semibold text-foreground">
@@ -224,7 +224,7 @@ export function UniversalBookmarkModal({
                 onChange={(e) => setRawText(e.target.value)}
                 placeholder={`在此粘贴书签 HTML、Markdown 链接（- [标题](URL)）或 OneTab 纯文本链接...`}
                 aria-label="粘贴书签内容"
-                className="w-full h-36 rounded-lg border border-border/70 bg-background p-2.5 text-xs font-mono placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full h-36 rounded-lg border border-border/70 bg-background p-2.5 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
               <div className="flex justify-end gap-2">
                 <Button
@@ -245,7 +245,7 @@ export function UniversalBookmarkModal({
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-950/20 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  <CheckCircle2 className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
                   <span className="text-sm font-semibold text-foreground">
                     解析成功：识别到 {parseResult.items.length} 个书签
                   </span>
@@ -275,7 +275,7 @@ export function UniversalBookmarkModal({
                   </span>
                 )}
                 {duplicateCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
                     与现有收藏重复：{duplicateCount} 条
                   </span>
                 )}
@@ -309,7 +309,7 @@ export function UniversalBookmarkModal({
                   type="checkbox"
                   checked={createFolders}
                   onChange={(e) => setCreateFolders(e.target.checked)}
-                  className="rounded border-border text-emerald-600 focus:ring-emerald-500"
+                  className="rounded border-border text-emerald-700 focus:ring-emerald-500"
                 />
                 <span className="text-foreground">自动同步创建对应的收藏夹/分类并归类</span>
               </label>
@@ -318,7 +318,7 @@ export function UniversalBookmarkModal({
                   type="checkbox"
                   checked={skipDuplicates}
                   onChange={(e) => setSkipDuplicates(e.target.checked)}
-                  className="rounded border-border text-emerald-600 focus:ring-emerald-500"
+                  className="rounded border-border text-emerald-700 focus:ring-emerald-500"
                 />
                 <span className="text-foreground">跳过已存在的相同网址（避免重复）</span>
               </label>

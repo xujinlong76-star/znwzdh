@@ -185,7 +185,7 @@ export function CategoryQuickJumpBar({
               className={cn(
                 "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150",
                 activeId === 'quick-access-tray'
-                  ? "bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-400 font-semibold"
+                  ? "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400 font-semibold"
                   : "bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/70"
               )}
             >
@@ -229,7 +229,7 @@ export function CategoryQuickJumpBar({
           {/* 直达技术视频 */}
           <Link
             href="/videos"
-            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 transition-all duration-150 ml-1"
+            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 transition-all duration-150 ml-1"
           >
             <MonitorPlay className="h-3 w-3" />
             <span>精选视频</span>

@@ -185,7 +185,7 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
                   <div className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
                     {site.title}
                   </div>
-                  <div className="text-[10px] text-muted-foreground/80 truncate font-mono">
+                  <div className="text-[10px] text-muted-foreground truncate font-mono">
                     {(() => {
                       try {
                         return new URL(site.href).hostname.replace(/^www\./, '')
@@ -214,7 +214,7 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
                         e.stopPropagation()
                         remove(site.id)
                       }}
-                      className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      className="p-1 rounded text-muted-foreground hover:text-destructive-text hover:bg-destructive/15 transition-colors"
                       title="取消常用"
                     >
                       <X className="h-3 w-3" />

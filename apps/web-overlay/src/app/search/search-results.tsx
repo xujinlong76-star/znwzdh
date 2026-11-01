@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertTriangle, ArrowRight, ExternalLink, Search, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ExternalLink, Search, Sparkles, MonitorPlay, Globe } from 'lucide-react'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -12,6 +12,9 @@ import {
   searchPageWindow,
 } from '@/lib/search-page'
 import type { HubSearchHit, HubSearchResult } from '@/lib/navhub-api'
+import { Fragment } from 'react'
+import { highlightParts } from '@/lib/highlight'
+import { SearchFacetBar, type FacetGroup } from '@/components/search-facet-bar'
 
 /**
  * /search 的视图（纯服务端组件）。
@@ -24,6 +27,12 @@ interface SearchResultsProps {
   q: string
   page: number
   tag: string | null
+  /** 分类作用域（slug 或 id）：分类页「全局搜索本分类」入口透传 */
+  category?: string | null
+  /** 已生效的正交分面筛选 */
+  facets?: Record<string, string[]>
+  /** 分面分布（中枢 /api/facets）；null = 取数失败或未启用，整块不渲染 */
+  facetGroups?: FacetGroup[] | null
   result: HubSearchResult | null
   failed: boolean
   unavailable: HubSearchHit[]
@@ -44,18 +53,21 @@ function siteHost(url: string): string | null {
   }
 }
 
-/** 字面命中高亮（纯文本切分，不注入 HTML） */
+/** 字面命中高亮：复用客户端同款 highlightParts（多词 / 正则转义 / 代理对安全） */
 function Highlight({ text, query }: { text: string; query: string }) {
-  if (!query) return <>{text}</>
-  const at = text.toLowerCase().indexOf(query.toLowerCase())
-  if (at < 0) return <>{text}</>
+  const segments = highlightParts(text, query)
+  if (segments.length === 1 && !segments[0].hit) return <>{text}</>
   return (
     <>
-      {text.slice(0, at)}
-      <mark className="rounded-sm bg-primary/15 px-0.5 text-foreground">
-        {text.slice(at, at + query.length)}
-      </mark>
-      {text.slice(at + query.length)}
+      {segments.map((seg, i) =>
+        seg.hit ? (
+          <mark key={i} className="rounded-sm bg-primary/15 px-0.5 text-foreground">
+            {seg.text}
+          </mark>
+        ) : (
+          <Fragment key={i}>{seg.text}</Fragment>
+        ),
+      )}
     </>
   )
 }
@@ -278,6 +290,33 @@ function EmptyResults({
           </div>
         </div>
       ) : null}
+      {q ? (
+        <div className="space-y-2 border-t border-border/60 pt-3">
+          <p className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
+            <Globe className="h-3.5 w-3.5 text-primary" />
+            全网穿透搜索：直接去外部开发者引擎查找 “{q}”
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { name: 'Google 开发者搜索', url: `https://www.google.com/search?q=${encodeURIComponent(q)}`, color: 'hover:border-blue-500/50 hover:bg-blue-500/10' },
+              { name: 'GitHub 仓库代码', url: `https://github.com/search?q=${encodeURIComponent(q)}&type=repositories`, color: 'hover:border-purple-500/50 hover:bg-purple-500/10' },
+              { name: 'Devv 开发者专搜', url: `https://devv.ai/search?q=${encodeURIComponent(q)}`, color: 'hover:border-emerald-500/50 hover:bg-emerald-500/10' },
+              { name: 'Bilibili 技术视频', url: `https://search.bilibili.com/all?keyword=${encodeURIComponent(q)}`, color: 'hover:border-sky-500/50 hover:bg-sky-500/10' },
+            ].map((engine) => (
+              <a
+                key={engine.name}
+                href={safeHref(engine.url)}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs border border-border bg-card text-foreground transition-all shadow-2xs ${engine.color}`}
+              >
+                <span>{engine.name}</span>
+                <ExternalLink className="h-3 w-3 opacity-60" />
+              </a>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <nav aria-label="浏览入口" className="flex flex-wrap gap-x-4 gap-y-2 border-t border-border/60 pt-3 text-xs">
         <Link className="text-primary hover:underline" href="/category">
           按分类浏览
@@ -288,6 +327,15 @@ function EmptyResults({
         <Link className="text-primary hover:underline" href="/sites">
           全部站点目录
         </Link>
+        {q ? (
+          <Link
+            className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            href={`/videos?q=${encodeURIComponent(q)}`}
+          >
+            <MonitorPlay className="w-3.5 h-3.5" />
+            <span>在视频库中搜索 “{q}”</span>
+          </Link>
+        ) : null}
       </nav>
     </section>
   )
@@ -363,10 +411,52 @@ function Pagination({
   )
 }
 
-export function SearchResults({ q, page, tag, result, failed, unavailable }: SearchResultsProps) {
+function SearchRelatedTags({
+  tags,
+  currentTag,
+  q,
+}: {
+  tags: Array<{ name: string; slug: string; count: number }>
+  currentTag: string | null
+  q: string
+}) {
+  const displayTags = tags.filter((t) => t.slug !== currentTag?.toLowerCase())
+  if (displayTags.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 pt-1 pb-1">
+      <span className="text-xs text-muted-foreground font-medium mr-1 flex items-center gap-1">
+        相关主题:
+      </span>
+      {displayTags.map((t) => (
+        <Link
+          key={t.slug}
+          href={searchHref({ q: q || undefined, tag: t.slug })}
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs bg-muted/60 hover:bg-primary/10 hover:text-primary border border-border/60 transition-colors text-muted-foreground"
+          title={`${t.count} 个命中站点包含此标签`}
+        >
+          <span>#{t.name}</span>
+          <span className="text-[10px] opacity-70">({t.count})</span>
+        </Link>
+      ))}
+    </div>
+  )
+}
+
+export function SearchResults({
+  q,
+  page,
+  tag,
+  category = null,
+  facets = {},
+  facetGroups = null,
+  result,
+  failed,
+  unavailable,
+}: SearchResultsProps) {
   const hits = result?.hits ?? []
   const hasMore = result?.hasMore === true
   const relations = (result?.relationHits ?? []).filter((rel) => rel.sourceSite).slice(0, 3)
+  const relatedTags = result?.relatedTags ?? []
   const suggestions = result?.suggestions ?? []
   const popular = result?.popular ?? []
   const didYouMean = result?.didYouMean
@@ -448,6 +538,35 @@ export function SearchResults({ q, page, tag, result, failed, unavailable }: Sea
               <code className="rounded bg-muted px-1 py-0.5">笔记 -广告</code>。
             </p>
           </header>
+
+          {facetGroups && facetGroups.length > 0 ? (
+            <SearchFacetBar groups={facetGroups} q={q} tag={tagApplied ? tag : null} category={category} selected={facets} />
+          ) : null}
+
+          {q && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/5 text-xs text-foreground">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  <MonitorPlay className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-foreground truncate">
+                    在精选技术视频库中搜索 “{q}”
+                  </div>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    收录 6,000+ 部 B站 &amp; YouTube 高保鲜实战课程与优质教程
+                  </div>
+                </div>
+              </div>
+              <Link
+                href={`/videos?q=${encodeURIComponent(q)}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shrink-0 transition-colors shadow-2xs self-start sm:self-auto"
+              >
+                <span>前往视频库</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
 
           {tagApplied ? (
             <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -546,6 +665,10 @@ export function SearchResults({ q, page, tag, result, failed, unavailable }: Sea
                   </Link>
                   <span>？</span>
                 </div>
+              ) : null}
+
+              {!failed && relatedTags.length > 0 ? (
+                <SearchRelatedTags tags={relatedTags} currentTag={tag} q={q} />
               ) : null}
 
               {!failed && relations.length > 0 ? <RelationBand relations={relations} /> : null}

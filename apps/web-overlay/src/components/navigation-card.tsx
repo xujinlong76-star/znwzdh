@@ -12,7 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Eye, Star, Zap, Pin, Clock, Info } from 'lucide-react'
+import { Eye, Star, Zap, Pin, Clock, Info, Copy } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
@@ -24,6 +24,7 @@ import { recordOfflineVisit } from '@/lib/offline-recent'
 import { getIdentity } from '@/lib/identity'
 import { reportClick } from '@/lib/navhub-api'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
+import { copyText } from '@/lib/clipboard'
 
 interface NavigationCardProps {
   item: NavigationSubItem
@@ -209,6 +210,24 @@ export function NavigationCard({
     onToggleSelect?.(item.id)
   }
 
+  const handleCopyLink = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const res = await copyText(item.href)
+    if (res.ok) {
+      toast({
+        title: '已复制网址',
+        description: `「${item.title}」链接已复制到剪贴板`,
+      })
+    } else {
+      toast({
+        title: '复制失败',
+        description: res.reason,
+        variant: 'destructive',
+      })
+    }
+  }
+
   /**
    * 卡片的内容层：外链覆盖层之下/之上的兄弟层。
    *
@@ -371,6 +390,18 @@ export function NavigationCard({
                   onClick={handleWorkbenchPin}
                 >
                   <Pin className="w-3 h-3" />
+                </Button>
+                <Button
+                  tabIndex={-1}
+                  data-card-action=""
+                  variant="ghost"
+                  size="icon"
+                  className="hidden sm:inline-flex h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title="复制网址链接"
+                  aria-label={`复制链接：${item.title}`}
+                  onClick={handleCopyLink}
+                >
+                  <Copy className="w-3 h-3" />
                 </Button>
                 <FavoriteButton
                   tabIndex={-1}
@@ -571,6 +602,18 @@ export function NavigationCard({
                 >
                   <Pin className="w-3.5 h-3.5" />
                 </Button>
+                <Button
+                  tabIndex={-1}
+                  data-card-action=""
+                  variant="ghost"
+                  size="icon"
+                  className="hidden sm:inline-flex h-7 w-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title="复制网址链接"
+                  aria-label={`复制链接：${item.title}`}
+                  onClick={handleCopyLink}
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </Button>
                 <FavoriteButton
                   tabIndex={-1}
                   cardAction
@@ -756,6 +799,18 @@ export function NavigationCard({
                 onClick={handleWorkbenchPin}
               >
                 <Pin className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                tabIndex={-1}
+                data-card-action=""
+                variant="ghost"
+                size="icon"
+                className="hidden sm:inline-flex h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="复制网址链接"
+                aria-label={`复制链接：${item.title}`}
+                onClick={handleCopyLink}
+              >
+                <Copy className="w-3.5 h-3.5" />
               </Button>
               <FavoriteButton
                 tabIndex={-1}

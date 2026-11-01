@@ -12,6 +12,9 @@ import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { Footer } from '@/components/footer'
 import { OnboardingCard } from '@/components/onboarding-card'
 import { useOverlayBehavior } from '@/components/ui/overlay'
+import { CategoryQuickJumpBar } from '@/components/category-quick-jump-bar'
+import { QuickAccessTray } from '@/components/quick-access-tray'
+import { FloatingQuickNav } from '@/components/floating-quick-nav'
 
 // 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
 const ModularCanvas = dynamic(
@@ -166,6 +169,8 @@ export function NavigationContent({
     pinnedCategoryIds,
     hiddenCategoryIds,
     collapsedCategoryIds,
+    collapseAllCategories,
+    expandAllCategories,
     customCategories,
     addSiteToCustomCategory,
     siteCategoryOverrides,
@@ -384,6 +389,27 @@ export function NavigationContent({
           onToggleSelectMode={toggleSelectMode}
           onSelectAllVisible={selectAllVisible}
         />
+
+        {/* 吸顶分类快捷直达导航轨 */}
+        {viewMode !== 'workbench' && sortedCategories.length > 0 && (
+          <CategoryQuickJumpBar
+            categories={sortedCategories.map(cat => ({
+              id: cat.id,
+              title: cat.title,
+              count: (cat.items?.length || 0) + (cat.subCategories?.reduce((acc: number, sub: any) => acc + (sub.items?.length || 0), 0) || 0)
+            }))}
+            isAllCollapsed={sortedCategories.length > 0 && sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))}
+            onToggleAllCollapsed={() => {
+              const allCollapsed = sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))
+              if (allCollapsed) {
+                expandAllCategories()
+              } else {
+                collapseAllCategories(sortedCategories.map((c) => c.id))
+              }
+            }}
+          />
+        )}
+
         <div className="px-3 sm:px-6 md:px-8 py-4 sm:py-8 flex-1">
           {/* 站内目录带：首页此前 0 条 /category 链接，分类 hub 只能靠 sitemap
               发现。服务端下发达标分类，SSR 直出；三个总览入口常驻。 */}
@@ -427,6 +453,9 @@ export function NavigationContent({
 
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
           {viewMode !== 'workbench' && <OnboardingCard />}
+
+          {/* 我的常用与最近访问快速托盘 */}
+          {viewMode !== 'workbench' && <QuickAccessTray />}
           {viewMode === 'workbench' ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-1">
@@ -517,6 +546,9 @@ export function NavigationContent({
 
         {/* 4.0 弹窗：内置开发者微工具抽屉 */}
         <QuickToolsDrawer open={isToolsOpen} onOpenChange={setIsToolsOpen} />
+
+        {/* 浮动快捷导航胶囊：滚动时自动呈现「极速回顶 / 呼出超级搜索 / 打开微工具」 */}
+        <FloatingQuickNav onOpenTools={() => setIsToolsOpen(true)} />
 
         {/* 4.0 弹窗：快捷键指南与 Maestro 监听 */}
         {/* T 键打开微工具箱的键盘入口由这里接线 */}

@@ -34,7 +34,7 @@ import {
 } from '@/lib/navhub-api'
 import { searchChannelStatus } from '@/lib/search-degrade'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
-import { recordOfflineVisit } from '@/lib/offline-recent'
+import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { getIdentity } from '@/lib/identity'
@@ -154,6 +154,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [popular, setPopular] = useState<string[]>([])
   const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
   const [recent, setRecent] = useState<string[]>([])
+  const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
   /** 中枢不可用（历史拉取降级）：与「真的没有历史」区分，避免把故障渲染成「暂无数据」 */
   const [recentDegraded, setRecentDegraded] = useState(false)
   /** 知识图谱对标与实体关联方案命中 */
@@ -205,18 +206,26 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
 
 
-  /* 最近搜索：聚焦且空查询时加载 */
+  /* 最近搜索与最近访问站点：聚焦且空查询时加载 */
   useEffect(() => {
-    if (isFocused && !query.trim() && identity) {
-      // 中枢不可用时 fetchSearchHistory 返回兜底 []，与「真的没有历史」无法区分；
-      // 用局部标记把「已降级」带出 then（onDegraded 在 resolve 之前同步触发）。
-      let failed = false
-      void fetchSearchHistory(identity, 8, () => {
-        failed = true
-      }).then((items) => {
-        setRecentDegraded(failed)
-        setRecent(items)
+    if (isFocused && !query.trim()) {
+      readOfflineVisits(8).then((visits) => {
+        setRecentVisits(visits)
+      }).catch(() => {
+        // 容错降级：本地最近访问读取失败保持空数组
       })
+
+      if (identity) {
+        // 中枢不可用时 fetchSearchHistory 返回兜底 []，与「真的没有历史」无法区分；
+        // 用局部标记把「已降级」带出 then（onDegraded 在 resolve 之前同步触发）。
+        let failed = false
+        void fetchSearchHistory(identity, 8, () => {
+          failed = true
+        }).then((items) => {
+          setRecentDegraded(failed)
+          setRecent(items)
+        })
+      }
     }
   }, [isFocused, query, identity])
 
@@ -571,6 +580,47 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
       {isFocused && !query.trim() && (
         <div id="navhub-search-suggest-panel" className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
+          {/* 常用与最近常去站点快捷直达 */}
+          {recentVisits.length > 0 && (
+            <div className="p-2.5 bg-muted/20">
+              <div className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between mb-2 px-1">
+                <span className="flex items-center gap-1.5">
+                  <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
+                  <span>常用与最近常去</span>
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground/70">一键直达</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {recentVisits.map((visit) => (
+                  <a
+                    key={visit.id}
+                    href={safeHref(visit.href)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      recordOfflineVisit(visit)
+                      reportClick(visit.id, identity)
+                      setIsFocused(false)
+                    }}
+                    className="flex items-center gap-2 p-1.5 rounded-lg border border-border/50 bg-background/60 hover:bg-accent/50 hover:border-primary/30 transition-all text-xs group"
+                  >
+                    <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                      <SiteFavicon
+                        title={visit.title}
+                        url={visit.href}
+                        icon={visit.icon}
+                        className="w-4 h-4 object-contain rounded"
+                      />
+                    </div>
+                    <span className="truncate font-medium text-foreground group-hover:text-primary transition-colors text-[11px]">
+                      {visit.title}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {recentDegraded && recent.length === 0 && (
             <div className="px-3.5 py-2 text-xs text-muted-foreground flex items-center gap-1.5 bg-muted/40">
               <Clock className="h-3 w-3" /> 最近搜索暂时不可用（服务未响应）
@@ -1026,6 +1076,52 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       )}
                     </div>
                   )}
+                  {query.trim() && (
+                    <div className="mt-4 pt-3 border-t border-border/40 flex flex-col items-center gap-2">
+                      <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                        <ExternalLink className="h-3 w-3 text-primary" />
+                        <span>一键全网聚合搜索「{query.trim()}」：</span>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <a
+                          href={safeHref(`https://www.google.com/search?q=${encodeURIComponent(query.trim())}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setIsFocused(false)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors font-medium"
+                        >
+                          Google
+                        </a>
+                        <a
+                          href={safeHref(`https://github.com/search?q=${encodeURIComponent(query.trim())}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setIsFocused(false)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 border border-neutral-500/20 transition-colors font-medium"
+                        >
+                          GitHub
+                        </a>
+                        <a
+                          href={safeHref(`https://www.baidu.com/s?wd=${encodeURIComponent(query.trim())}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setIsFocused(false)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors font-medium"
+                        >
+                          百度
+                        </a>
+                        <a
+                          href={safeHref(`https://www.bing.com/search?q=${encodeURIComponent(query.trim())}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setIsFocused(false)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors font-medium"
+                        >
+                          Bing
+                        </a>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
 
@@ -1150,11 +1246,53 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 </div>
               )}
               {showResults && query.trim() && hits.length > 0 && (
-                <div className="border-t border-border/60 bg-muted/10 px-2 py-1.5">
+                <div className="border-t border-border/60 bg-muted/10 px-2 py-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
+                    <span className="inline-flex items-center gap-1">
+                      <ExternalLink className="h-3 w-3 text-primary shrink-0" />
+                      <span>全网搜索：</span>
+                    </span>
+                    <a
+                      href={safeHref(`https://www.google.com/search?q=${encodeURIComponent(query.trim())}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setIsFocused(false)}
+                      className="px-1.5 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 font-medium"
+                    >
+                      Google
+                    </a>
+                    <a
+                      href={safeHref(`https://github.com/search?q=${encodeURIComponent(query.trim())}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setIsFocused(false)}
+                      className="px-1.5 py-0.5 rounded text-[11px] bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 font-medium"
+                    >
+                      GitHub
+                    </a>
+                    <a
+                      href={safeHref(`https://www.baidu.com/s?wd=${encodeURIComponent(query.trim())}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setIsFocused(false)}
+                      className="px-1.5 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 font-medium"
+                    >
+                      百度
+                    </a>
+                    <a
+                      href={safeHref(`https://www.bing.com/search?q=${encodeURIComponent(query.trim())}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setIsFocused(false)}
+                      className="px-1.5 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 font-medium"
+                    >
+                      Bing
+                    </a>
+                  </div>
                   <Link
                     href={searchHref({ q: query })}
                     onClick={() => setIsFocused(false)}
-                    className="flex items-center justify-center gap-1 rounded-md py-1 text-xs text-primary/90 transition-colors hover:bg-primary/5 hover:text-primary"
+                    className="flex items-center justify-center gap-1 rounded-md py-1 text-xs text-primary/90 transition-colors hover:bg-primary/5 hover:text-primary shrink-0"
                   >
                     查看全部结果
                     <ArrowRight className="h-3 w-3" aria-hidden />

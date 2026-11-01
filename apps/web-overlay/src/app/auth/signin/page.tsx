@@ -17,7 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { ShieldCheck, KeyRound, ArrowLeft, AlertCircle, Sparkles, Lock, User } from 'lucide-react'
+import { ShieldCheck, KeyRound, ArrowLeft, AlertCircle, CheckCircle2, Sparkles, Lock, User } from 'lucide-react'
 import { NETWORK_FAILURE_STATUS, describeSignInFailure, isSignInSuccess } from '@/lib/signin-failure'
 import { normalizeCallbackUrl } from '@/lib/safe-callback'
 
@@ -35,6 +35,7 @@ function SignInContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [isBypassLoading, setIsBypassLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [availableProviders, setAvailableProviders] = useState<string[]>([])
 
   // 检测可用的登录方式
@@ -54,6 +55,19 @@ function SignInContent() {
     if (!urlError) return
     setErrorMessage(describeSignInFailure({ error: urlError }).message)
   }, [urlError])
+
+  // 注册成功后跳回登录页：给出「已注册，请验证邮箱」的提示
+  const justRegistered = searchParams?.get('registered') === '1'
+  const registeredEmail = searchParams?.get('email') ?? ''
+  useEffect(() => {
+    if (!justRegistered) return
+    setErrorMessage(null)
+    setSuccessMessage(
+      registeredEmail
+        ? `账号 ${registeredEmail} 已创建，请查收验证邮件完成激活`
+        : '账号已创建，请查收验证邮件完成激活',
+    )
+  }, [justRegistered, registeredEmail])
 
   // 1. 凭证登录（密码 / Token）
   const handleCredentialsSignIn = async (e: React.FormEvent) => {
@@ -207,6 +221,13 @@ function SignInContent() {
                 <div className="flex items-start gap-2.5 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-xs leading-snug animate-in fade-in">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div className="flex-1">{errorMessage}</div>
+                </div>
+              )}
+
+              {successMessage && (
+                <div className="flex items-start gap-2.5 p-3 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs leading-snug animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="flex-1">{successMessage}</div>
                 </div>
               )}
 
@@ -364,6 +385,21 @@ function SignInContent() {
             </CardContent>
 
             <CardFooter className="flex flex-col gap-2 pt-2 border-t border-border/50 text-center">
+              <div className="flex items-center justify-center gap-3">
+                <Link
+                  href="/auth/signup"
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+                >
+                  注册新账号
+                </Link>
+                <span className="text-border-foreground/40">·</span>
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+                >
+                  忘记密码
+                </Link>
+              </div>
               <Link
                 href="/"
                 className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"

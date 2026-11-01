@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FavoriteButton } from '@/components/favorite-button'
 import { SiteFavicon } from '@/components/site-favicon'
+import { cn } from '@/lib/utils'
 import {
   readSyncStatus,
   syncFavoritesToCloud,
@@ -50,7 +51,15 @@ import {
 } from '@/lib/navhub-api'
 import {
   Shield, KeyRound, CheckCircle2, AlertTriangle, EyeOff,
-  RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn, ChevronUp, ChevronDown, Tag } from 'lucide-react'
+  RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn, ChevronUp, ChevronDown, Tag,
+  Download, FileUp, CheckSquare, Square, Layers,
+} from 'lucide-react'
+import {
+  exportFavoritesToHtml,
+  exportFavoritesToMarkdown,
+  triggerFileDownload,
+  type ParsedUniversalItem,
+} from '@/lib/favorites-export-import'
 import dynamic from 'next/dynamic'
 
 // 两个面板都只在用户点开时才需要：金库导入/导出、插件包导出向导。
@@ -61,6 +70,10 @@ const FavoritesVaultPanels = dynamic(
 )
 const ExportPluginModal = dynamic(
   () => import('@/components/plugins/export-plugin-modal').then((m) => m.ExportPluginModal),
+  { ssr: false },
+)
+const UniversalBookmarkModal = dynamic(
+  () => import('@/components/user-center/universal-bookmark-modal').then((m) => m.UniversalBookmarkModal),
   { ssr: false },
 )
 
@@ -102,6 +115,10 @@ export default function FavoritesPage() {
   const [syncingCloud, setSyncingCloud] = useState(false)
   const [importText, setImportText] = useState('')
   const [showImport, setShowImport] = useState(false)
+  const [showUniversalImport, setShowUniversalImport] = useState(false)
+  const [batchMode, setBatchMode] = useState(false)
+  const [selectedSiteIds, setSelectedSiteIds] = useState<Set<string>>(new Set())
+  const [batchFolderTarget, setBatchFolderTarget] = useState<string>('')
   // 本页收藏的本地筛选（不联网）：收藏攒到几十个以后，「用眼睛扫网格」不是一种检索方式
   const [favoriteQuery, setFavoriteQuery] = useState('')
   // 收藏管理（云端文件夹 / 备注）：只在登录身份下出现
@@ -310,7 +327,7 @@ export default function FavoritesPage() {
       setSyncStatus(status)
     },
   })
-  const { newFolderName, setNewFolderName, folderBusy, editingFolder, setEditingFolder, editingName, setEditingName, refreshFolders, addFolder, saveFolderName, removeFolder, moveFolder, migrateLocalFolders } = folderManager
+  const { newFolderName, setNewFolderName, folderBusy, editingFolder, setEditingFolder, editingName, setEditingName, refreshFolders, addFolder, createFolderDirectly, saveFolderName, removeFolder, moveFolder, migrateLocalFolders } = folderManager
 
   const visibleFolders = useMemo<Array<{ id: string; name: string }>>(
     () => (cloudIdentity ? folders : localFolders),
@@ -403,6 +420,163 @@ export default function FavoritesPage() {
   // 一键将收藏导出为标准网址包插件清单向导 (site-pack)
   const handleExportAsPlugin = () => {
     setShowPluginExport(true)
+  }
+
+  // 一键导出为浏览器标准 Netscape Bookmarks HTML
+  const handleExportHtml = () => {
+    if (favorites.items.length === 0) return
+    const html = exportFavoritesToHtml(favorites.items, visibleFolders)
+    const day = new Date().toISOString().slice(0, 10)
+    triggerFileDownload(html, `navsphere-bookmarks-${day}.html`, 'text/html;charset=utf-8')
+    setSyncNote(`已成功导出 ${favorites.items.length} 个书签为浏览器标准 HTML 格式（支持 Chrome/Edge/Safari/Firefox 直接导入）`)
+    setSyncStatus('success')
+  }
+
+  // 一键导出为结构化 Markdown
+  const handleExportMarkdown = () => {
+    if (favorites.items.length === 0) return
+    const md = exportFavoritesToMarkdown(favorites.items, visibleFolders)
+    const day = new Date().toISOString().slice(0, 10)
+    triggerFileDownload(md, `navsphere-bookmarks-${day}.md`, 'text/markdown;charset=utf-8')
+    setSyncNote(`已成功导出 ${favorites.items.length} 个书签为结构化 Markdown 清单（适配 Notion/Obsidian）`)
+    setSyncStatus('success')
+  }
+
+  // 批量选择切换
+  const handleToggleSelect = (siteId: string) => {
+    setSelectedSiteIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(siteId)) next.delete(siteId)
+      else next.add(siteId)
+      return next
+    })
+  }
+
+  const handleSelectAll = () => {
+    if (selectedSiteIds.size === renderedFavorites.length && renderedFavorites.length > 0) {
+      setSelectedSiteIds(new Set())
+    } else {
+      setSelectedSiteIds(new Set(renderedFavorites.map((f) => f.siteId)))
+    }
+  }
+
+  // 批量移动到收藏夹
+  const handleBatchMoveFolder = async () => {
+    if (selectedSiteIds.size === 0) return
+    const target = batchFolderTarget || null
+    setManageBusy(true)
+    let errCount = 0
+    for (const siteId of selectedSiteIds) {
+      favorites.updateMeta(siteId, { folderId: target })
+      if (cloudIdentity) {
+        const ok = await updateFavoriteMeta(cloudIdentity, siteId, { folderId: target })
+        if (!ok) errCount++
+      }
+    }
+    setManageBusy(false)
+    const targetFolder = visibleFolders.find((f) => f.id === target)
+    const targetName = targetFolder ? targetFolder.name : '未分组'
+    setSyncNote(`已将 ${selectedSiteIds.size} 项移至「${targetName}」` + (errCount > 0 ? ` (云端有 ${errCount} 项待同步)` : ''))
+    setSyncStatus(errCount > 0 ? 'info' : 'success')
+    setSelectedSiteIds(new Set())
+  }
+
+  // 批量删除
+  const handleBatchDelete = async () => {
+    if (selectedSiteIds.size === 0) return
+    if (!window.confirm(`确定要移除选中的 ${selectedSiteIds.size} 个收藏吗？`)) return
+    for (const siteId of selectedSiteIds) {
+      favorites.remove(siteId)
+    }
+    setSyncNote(`已批量移除 ${selectedSiteIds.size} 个收藏`)
+    setSyncStatus('success')
+    setSelectedSiteIds(new Set())
+  }
+
+  // 批量导出选中项为 Markdown
+  const handleBatchExportMarkdown = () => {
+    const selected = favorites.items.filter((f) => selectedSiteIds.has(f.siteId))
+    if (selected.length === 0) return
+    const md = exportFavoritesToMarkdown(selected, visibleFolders)
+    const day = new Date().toISOString().slice(0, 10)
+    triggerFileDownload(md, `navsphere-selected-${day}.md`, 'text/markdown;charset=utf-8')
+    setSyncNote(`已将选中的 ${selected.length} 个书签导出为 Markdown`)
+    setSyncStatus('success')
+  }
+
+  // 批量导出选中项为 HTML
+  const handleBatchExportHtml = () => {
+    const selected = favorites.items.filter((f) => selectedSiteIds.has(f.siteId))
+    if (selected.length === 0) return
+    const html = exportFavoritesToHtml(selected, visibleFolders)
+    const day = new Date().toISOString().slice(0, 10)
+    triggerFileDownload(html, `navsphere-selected-${day}.html`, 'text/html;charset=utf-8')
+    setSyncNote(`已将选中的 ${selected.length} 个书签导出为 HTML`)
+    setSyncStatus('success')
+  }
+
+  // 通用多格式导入执行
+  const handleImportUniversalItems = async (
+    items: ParsedUniversalItem[],
+    options: { createFolders: boolean; skipDuplicates: boolean },
+  ) => {
+    let foldersCreated = 0
+    const folderNameToId = new Map<string, string>()
+
+    for (const f of visibleFolders) {
+      folderNameToId.set(f.name, f.id)
+    }
+
+    if (options.createFolders) {
+      for (const item of items) {
+        if (item.folderName && !folderNameToId.has(item.folderName)) {
+          const newId = await createFolderDirectly(item.folderName)
+          if (newId) {
+            folderNameToId.set(item.folderName, newId)
+            foldersCreated++
+          }
+        }
+      }
+    }
+
+    const existingUrlSet = new Set(favorites.items.map((f) => f.href))
+    const toImport: any[] = []
+    let skipped = 0
+
+    for (const item of items) {
+      if (options.skipDuplicates && existingUrlSet.has(item.href)) {
+        skipped++
+        continue
+      }
+      const folderId = item.folderName ? folderNameToId.get(item.folderName) : null
+      toImport.push({
+        siteId: item.siteId,
+        title: item.title,
+        href: item.href,
+        description: item.description,
+        note: item.note,
+        tags: item.tags,
+        folderId,
+        createdAt: item.createdAt || Date.now(),
+      })
+    }
+
+    if (toImport.length > 0) {
+      const payload = JSON.stringify({
+        version: 1,
+        items: toImport,
+      })
+      favorites.importJson(payload)
+    }
+
+    setSyncNote(`导入完成：成功添加 ${toImport.length} 条书签` + (foldersCreated > 0 ? `，新建 ${foldersCreated} 个分类夹` : '') + (skipped > 0 ? `，跳过 ${skipped} 条重复项` : ''))
+    setSyncStatus('success')
+
+    return {
+      imported: toImport.length,
+      skipped,
+      foldersCreated,
+    }
   }
 
   const handleImportPlain = () => {
@@ -610,6 +784,42 @@ export default function FavoritesPage() {
                 <Button
                   variant="ghost"
                   size="sm"
+                  onClick={() => {
+                    setShowUniversalImport(true)
+                    setShowVaultExport(false)
+                    setShowVaultImport(false)
+                    setShowImport(false)
+                  }}
+                  className="text-xs text-emerald-600 dark:text-emerald-400 h-8 rounded-lg hover:bg-emerald-500/10 font-medium"
+                  title="支持 Chrome/Edge 导出的 HTML 书签或 Markdown 链接清单"
+                >
+                  <FileUp className="w-3.5 h-3.5 mr-1" />
+                  导入书签/MD
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleExportHtml}
+                  disabled={favorites.items.length === 0}
+                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
+                  title="导出为浏览器通用的 Netscape HTML 书签（包含文件夹结构）"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" />
+                  书签 HTML
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleExportMarkdown}
+                  disabled={favorites.items.length === 0}
+                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
+                  title="导出为分级结构化 Markdown 清单（适配 Notion/Obsidian）"
+                >
+                  Markdown
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={handleExportPlain}
                   disabled={favorites.items.length === 0}
                   className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
@@ -623,23 +833,12 @@ export default function FavoritesPage() {
                     setShowImport(!showImport)
                     setShowVaultExport(false)
                     setShowVaultImport(false)
+                    setShowUniversalImport(false)
                   }}
                   className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
                 >
                   导入 JSON
                 </Button>
-                {/* Netscape 书签互操作（M9 服务端已建成、此处补 UI 入口，T16）：
-                    仅登录态展示——端点按云端收藏渲染，匿名调用只会得到 401 */}
-                {cloudIdentity && (
-                  <a
-                    href="/api/me/export/bookmarks.html"
-                    download
-                    className="inline-flex h-8 items-center rounded-lg px-2 text-xs text-muted-foreground hover:bg-accent"
-                    title="导出为浏览器可导入的 Netscape 书签 HTML"
-                  >
-                    书签 HTML
-                  </a>
-                )}
                 {/* 导出为插件属于「发布到市场」，不是数据管理动作：标注清楚去向 */}
                 <Button
                   variant="ghost"
@@ -1010,6 +1209,100 @@ export default function FavoritesPage() {
               <option value="created">最近收藏</option>
               <option value="title">按标题</option>
             </select>
+            <Button
+              size="sm"
+              variant={batchMode ? 'default' : 'outline'}
+              className={`h-9 px-2.5 text-xs rounded-lg ${
+                batchMode ? 'bg-primary text-primary-foreground' : 'border-border/60 text-muted-foreground'
+              }`}
+              onClick={() => {
+                setBatchMode(!batchMode)
+                setSelectedSiteIds(new Set())
+              }}
+            >
+              <Layers className="w-3.5 h-3.5 mr-1" />
+              {batchMode ? '退出批量' : '批量管理'}
+            </Button>
+          </div>
+        )}
+
+        {/* 批量操作工具栏 */}
+        {batchMode && favorites.items.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-primary/30 bg-primary/5 mb-4 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-xs font-medium"
+                onClick={handleSelectAll}
+              >
+                {selectedSiteIds.size === renderedFavorites.length && renderedFavorites.length > 0 ? (
+                  <CheckSquare className="w-4 h-4 mr-1.5 text-primary" />
+                ) : (
+                  <Square className="w-4 h-4 mr-1.5 text-muted-foreground" />
+                )}
+                {selectedSiteIds.size === renderedFavorites.length && renderedFavorites.length > 0
+                  ? '取消全选'
+                  : `全选当前 (${renderedFavorites.length})`}
+              </Button>
+              <span className="text-xs font-semibold text-primary">
+                已选中 {selectedSiteIds.size} 项
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={batchFolderTarget}
+                onChange={(e) => setBatchFolderTarget(e.target.value)}
+                disabled={selectedSiteIds.size === 0 || manageBusy}
+                aria-label="选择批量移动目标文件夹"
+                className="h-8 rounded-lg border border-border/70 bg-background px-2 text-xs text-foreground"
+              >
+                <option value="">移至未分组</option>
+                {visibleFolders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    移至: {folder.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={selectedSiteIds.size === 0 || manageBusy}
+                onClick={() => void handleBatchMoveFolder()}
+              >
+                确认移动
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={selectedSiteIds.size === 0}
+                onClick={handleBatchExportMarkdown}
+              >
+                导出 MD
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={selectedSiteIds.size === 0}
+                onClick={handleBatchExportHtml}
+              >
+                导出 HTML
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-destructive/40 text-destructive hover:bg-destructive/10"
+                disabled={selectedSiteIds.size === 0}
+                onClick={() => void handleBatchDelete()}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                批量删除
+              </Button>
+            </div>
           </div>
         )}
 
@@ -1079,9 +1372,47 @@ export default function FavoritesPage() {
             {renderedFavorites.map((f) => (
               <div
                 key={f.siteId}
-                className="group relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-3.5 flex flex-col justify-between"
+                
+                className={cn(
+                  'group relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-3.5 flex flex-col justify-between',
+                  batchMode && 'cursor-pointer select-none',
+                  batchMode && selectedSiteIds.has(f.siteId) && 'border-primary ring-1 ring-primary/40 bg-primary/5',
+                )}
               >
-                <a href={safeHref(f.href)} target="_blank" rel="noopener noreferrer" className="block min-w-0">
+                {/* 批量选择标记 */}
+                {batchMode && (
+                  <div className="absolute top-2.5 left-2.5 z-20">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToggleSelect(f.siteId)
+                      }}
+                      aria-label={`选择 ${f.title}`}
+                      className="p-1 rounded-md bg-background/90 border border-border/80 shadow-xs hover:border-primary transition-colors cursor-pointer"
+                    >
+                      {selectedSiteIds.has(f.siteId) ? (
+                        <CheckSquare className="w-4 h-4 text-primary" />
+                      ) : (
+                        <Square className="w-4 h-4 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
+                )}
+                <a
+                  href={safeHref(f.href)}
+                  onClick={
+                    batchMode
+                      ? (e) => {
+                          e.preventDefault()
+                          handleToggleSelect(f.siteId)
+                        }
+                      : undefined
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn('block min-w-0', batchMode && 'pl-7')}
+                >
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                       <SiteFavicon title={f.title} url={f.href} icon={f.icon} className="w-full h-full object-contain rounded-xs" />
@@ -1251,6 +1582,16 @@ export default function FavoritesPage() {
             })),
           }}
         />
+        )}
+
+        {/* 浏览器书签 / Markdown 通用导入向导弹窗 */}
+        {showUniversalImport && (
+          <UniversalBookmarkModal
+            open={showUniversalImport}
+            onOpenChange={setShowUniversalImport}
+            existingHrefs={new Set(favorites.items.map((f) => f.href))}
+            onImportItems={handleImportUniversalItems}
+          />
         )}
       </div>
       <Footer />

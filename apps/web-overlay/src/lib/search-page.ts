@@ -67,14 +67,71 @@ export function normalizeSearchPage(raw: string | string[] | undefined): number 
   return Math.min(n, searchMaxPage())
 }
 
+
+/**
+ * 分类归一：与中枢 /api/search 的 categoryId 同形（slug 或 id，最长 64）。
+ * 分类页把 URL 段直接透过来，URI 编码由调用方保证。
+ */
+export const SEARCH_CATEGORY_MAX_LENGTH = 64
+
+export function normalizeSearchCategory(raw: string | string[] | undefined): string | null {
+  const v = first(raw).trim().slice(0, SEARCH_CATEGORY_MAX_LENGTH).trim()
+  return v || null
+}
+
+/**
+ * 分面 URL 形态：`f_<key>=a,b`（多值逗号分隔，值内部不含逗号——受控词表的值
+ * 都是 `open_source` 这类标识符）。刻意不用 JSON：URL 要可读、可手改、可分享，
+ * 且搜索引擎与日志都能看懂。
+ */
+export function normalizeSearchFacets(
+  sp: Record<string, string | string[] | undefined>,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const [rawKey, rawValue] of Object.entries(sp)) {
+    if (!rawKey.startsWith('f_')) continue
+    const key = rawKey.slice(2).trim().toLowerCase()
+    if (!/^[a-z0-9_]{1,32}$/.test(key)) continue
+    const values = (Array.isArray(rawValue) ? rawValue.join(',') : (rawValue ?? ''))
+      .split(',')
+      .map((v) => v.trim().toLowerCase())
+      .filter((v) => /^[a-z0-9_-]{1,32}$/.test(v))
+    const unique = [...new Set(values)].slice(0, 8)
+    if (unique.length > 0) out[key] = unique
+  }
+  return out
+}
+
+/** 分面转 URL 查询参数（供 searchHref 复用） */
+function appendFacetParams(params: URLSearchParams, facets?: Record<string, string[] | undefined>): void {
+  for (const [key, values] of Object.entries(facets ?? {})) {
+    if (!key || !values || values.length === 0) continue
+    const clean = values.map((v) => String(v).trim().toLowerCase()).filter(Boolean)
+    if (clean.length > 0) params.set('f_' + key, clean.join(','))
+  }
+}
+
 /** 结果页 URL：第 1 页省略 page，空查询且无标签就是 /search */
-export function searchHref(input: { q?: string; page?: number; tag?: string | null } = {}): string {
+export function searchHref(
+  input: {
+    q?: string
+    page?: number
+    tag?: string | null
+    /** 分类 slug 或 id（分类页「全局搜索本分类」入口用） */
+    category?: string | null
+    /** 正交分面筛选（键 → 值数组） */
+    facets?: Record<string, string[] | undefined>
+  } = {},
+): string {
   const q = normalizeSearchQuery(input.q)
   const tag = normalizeSearchTag(input.tag ?? undefined)
+  const category = normalizeSearchCategory(input.category ?? undefined)
   const page = normalizeSearchPage(input.page === undefined ? undefined : String(input.page))
   const params = new URLSearchParams()
   if (q) params.set('q', q)
   if (tag) params.set('tag', tag)
+  if (category) params.set('category', category)
+  appendFacetParams(params, input.facets)
   if (page > 1) params.set('page', String(page))
   const qs = params.toString()
   return qs ? `/search?${qs}` : '/search'
@@ -91,7 +148,11 @@ export function searchApiPath(
   q: string,
   page: number,
   tag?: string | null,
-  opts: { status?: 'active' | 'broken' } = {},
+  opts: {
+    status?: 'active' | 'broken'
+    category?: string | null
+    facets?: Record<string, string[] | undefined>
+  } = {},
 ): string {
   const params = new URLSearchParams({
     q: normalizeSearchQuery(q),
@@ -101,6 +162,12 @@ export function searchApiPath(
   })
   const normalizedTag = normalizeSearchTag(tag ?? undefined)
   if (normalizedTag) params.set('tag', normalizedTag)
+  const category = normalizeSearchCategory(opts.category ?? undefined)
+  if (category) params.set('categoryId', category)
+  // 中枢接受「整段 JSON 字符串」形态（GET query 的方括号嵌套不被 Fastify 默认 parser 解析）
+  if (opts.facets && Object.keys(opts.facets).length > 0) {
+    params.set('facets', JSON.stringify(opts.facets))
+  }
   return `/api/search?${params.toString()}`
 }
 

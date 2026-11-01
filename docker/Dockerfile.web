@@ -73,9 +73,14 @@ ARG NAVHUB_CSP=
 ARG NAVHUB_CSP_REPORT_ONLY=
 ARG NAVHUB_CSP_REPORT_URI=
 
+# 首页 HTML 预算（4096KB 哨兵）：全量 443 卡时实测 4617KB，超预算 521KB。
+# app/page.tsx 支持用 NAVHUB_HOME_CARDS_PER_GROUP 控制每组 SSR 卡片数；实测每组 4 张后
+# 首页 3502KB（-1115KB，留 594KB 余量）。折叠卡片在客户端即时展开（数据随 props 下发，
+# 零请求、无加载态），不损失功能。该值必须固化在构建期（next build 时被读取）。
 ENV NODE_ENV=production \
     STORAGE_ADAPTER=http \
-    NEXT_PUBLIC_API_URL=http://api:8787
+    NEXT_PUBLIC_API_URL=http://api:8787 \
+    NAVHUB_HOME_CARDS_PER_GROUP=4
 
 # 生产构建（不使用 standalone：避免 Windows/受限环境下创建符号链接失败）
 RUN NAVHUB_CSP="$NAVHUB_CSP" \

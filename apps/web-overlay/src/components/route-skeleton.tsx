@@ -1,14 +1,26 @@
 /**
  * 路由级骨架屏（Server Component，无客户端 JS）。
  *
- * 为什么统一成一个组件：`app/loading.tsx` 只有全局一份，其余 10 条路由在
- * 服务端渲染期间是**白屏**（尤其是 force-dynamic 的 /site/[id] 与 /hot）。
- * 逐个手写骨架很容易与真实布局不一致 —— 骨架和内容形状对不上时，切换瞬间
- * 会「跳一下」，比没有骨架更糟。这里按三种页面形态给三个近似布局：
+ * 为什么统一成一个组件：逐个手写骨架很容易与真实布局不一致 —— 骨架和内容
+ * 形状对不上时，切换瞬间会「跳一下」，比没有骨架更糟。这里按三种页面形态
+ * 给三个近似布局：
  *
- *   grid   —— 卡片墙（/hot、/tags、/collections、/videos）
- *   detail —— 左文右卡（/site/[id]、/collections/[slug]、/tags/[slug]）
- *   list   —— 单列列表（/favorites、/preferences）
+ *   grid   —— 卡片墙（/hot、/tags、/videos、/category、/sites、/marketplace）
+ *   detail —— 左文右卡（/algorithms、/graph）
+ *   list   —— 单列列表（/preferences、/import、/submit、/custom、/offline）
+ *
+ * 已接入路由清单（F2：路由级加载骨架补全；门禁见
+ * test/route-state-coverage.test.ts，规范见 docs/ROUTE-STATE-CONVENTIONS.md）：
+ *
+ *   grid   — category/  marketplace/  search/  sites/  tags/
+ *   list   — custom/  import/  offline/  submit/
+ *
+ *   （更早接入：hot/ videos/ preferences/ algorithms/ graph/；me 族与 admin 族
+ *     是形状逐块对齐的手写骨架，见门禁 HANDCRAFTED_SKELETONS，冻结不许再增。
+ *     每条路由的 loading.tsx 只是「引这里对应形态」，不要在路由里手写骨架。）
+ *   （软 404 回归锁：collections/ 与 site/[id] 不接 loading——骨架屏边界会先
+ *     流式刷 200，notFound 就改不了状态码；锁见 collection-detail.test.ts、
+ *     site-detail-404.test.ts、site-detail-performance.test.ts。）
  *
  * 说明：骨架只求「占位形状接近」，不追求像素级复刻；真实布局改动后
  * 只需调整这里一处。

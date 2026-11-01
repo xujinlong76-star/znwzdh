@@ -653,13 +653,13 @@
   }
 }
 
-/* F4 自定义壁纸文字可读性兜底：卡片底色 alpha 下限 0.88（≥0.85 门禁）。
-   卡片的 bg-card/85、dark:bg-card/45 写在热区 navigation-card.tsx 不许改；
-   这里用**未分层**规则压过全部分层工具类（与上面移动字号同一机制，已实测），
-   自定义壁纸最亮（白）/最暗（黑）时卡片标题与描述对底色均 ≥4.5:1。
-   若未来在注入点加壁纸 scrim，一行改法见 F4 回报（navigation-content 热区）。 */
+/* F4/P1 自定义壁纸文字可读性兜底：卡片底色 alpha 由 DIY 配置经 --card-alpha 驱动，
+   缺省回退 0.88（实测最坏 4.60:1；0.85 时描述文字外推 ≈4.4:1，故下限定 0.88）。
+   卡片的 bg-card/85、dark:bg-card/45 写法保留；这里用**未分层**规则压过全部分层工具类
+   （与上面移动字号同一机制，已实测），自定义壁纸最亮（白）/最暗（黑）时标题与描述均 ≥4.5:1。
+   --card-alpha 由 navigation-content.tsx 注入（JS 侧已 clamp 0.88~1.0）。 */
 .nav-card-deferred {
-  background-color: hsl(var(--card) / 0.88);
+  background-color: hsl(var(--card) / var(--card-alpha, 0.88));
 }
 
 /* F4 补充：热区 navigation-card.tsx 仍有两处 text-muted-foreground/90 透明度变体

@@ -154,8 +154,10 @@ Tailwind 侧已通过 `--color-*` 映射（`--color-primary: hsl(var(--primary))
 
 自定义壁纸可读性兜底（F4）：
 
-- **卡片不透明度下限 0.85**：DIY 滑杆最小刻度 0.85，读写两端 clamp（旧配置/旧分享链接
-  存的 0.2 读到即抬升），保分享方/接收方观感一致；
+- **卡片不透明度下限 0.88**：DIY 滑杆最小刻度 0.88，读写两端 clamp（旧配置/旧分享链接
+  存的 0.2/0.85 读到即抬升；按壁纸实测曲线，0.85 时描述文字外推 ≈4.4:1，0.88 实测 4.60:1），
+  保分享方/接收方观感一致；`--card-alpha` 由 navigation-content 注入、`.nav-card-deferred` 消费，
+  滑杆真正驱动卡片底色（P1 接线）；
 - **卡片/玻璃面板底色 alpha ≥0.88**（globals.css 未分层 `.nav-card-deferred` / `.glass-surface`），
   自定义壁纸最亮/最暗时卡片标题/描述实测对比度 4.60~19.90:1（wallpaper-contrast-guard 锁定）；
 - 热区残留的 `text-muted-foreground/90` 透明度变体由未分层规则在卡片内归一（热区释放后删除该条）。

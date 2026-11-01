@@ -812,10 +812,10 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
       ? Math.min(30, Math.max(0, Number(typeof raw.glassmorphismBlur === 'number' ? raw.glassmorphismBlur : (raw as any).gb)))
       : 12,
     cardOpacity: typeof raw.cardOpacity === 'number' || typeof (raw as any).co_op === 'number'
-      // F4 可读性下限 0.85：旧预设/旧分享链接（含 co_op=0.2）读入即抬到 0.85，与 use-home-diy 读写端同口径
+      // P1 可读性下限 0.88：旧预设/旧分享链接（含 co_op=0.2）读入即抬到 0.88，与 use-home-diy 读写端同口径
       ? (() => {
           const n = Number(typeof raw.cardOpacity === 'number' ? raw.cardOpacity : (raw as any).co_op);
-          return Number.isFinite(n) ? Math.min(1, Math.max(0.85, n)) : 0.9;
+          return Number.isFinite(n) ? Math.min(1, Math.max(0.88, n)) : 0.9;
         })()
       : 0.9,
     customCategories,

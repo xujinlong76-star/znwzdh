@@ -178,6 +178,7 @@ export function NavigationContent({
     togglePinSiteInCategory,
     customWallpaperUrl,
     glassmorphismBlur,
+    cardOpacity,
   } = useHomeDIY()
 
   // 拖拽编排分类状态
@@ -359,13 +360,18 @@ export function NavigationContent({
         className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-300", canvasBgClass)}
         // 水合安全：壁纸来自 localStorage（仅客户端），首帧与 SSR 保持一致（undefined），
         // 挂载后再上壁纸，避免 style 分叉触发 hydration mismatch；URL 白名单防 CSS url() 注入
-        style={mounted && customWallpaperUrl && isSafeWallpaperUrl(customWallpaperUrl) ? {
-          backgroundImage: `url(${customWallpaperUrl})`,
-          backgroundSize: 'cover',
-          backgroundAttachment: 'fixed',
-          backgroundPosition: 'center',
-          backdropFilter: `blur(${glassmorphismBlur || 0}px)`
-        } : undefined}
+        style={{
+          ...(mounted && customWallpaperUrl && isSafeWallpaperUrl(customWallpaperUrl) ? {
+            backgroundImage: `url(${customWallpaperUrl})`,
+            backgroundSize: 'cover',
+            backgroundAttachment: 'fixed',
+            backgroundPosition: 'center',
+            backdropFilter: `blur(${glassmorphismBlur || 0}px)`
+          } : {}),
+          // P1 接线：DIY 卡片不透明度经 CSS 变量驱动 .nav-card-deferred 底色；
+          // JS 侧 clamp 0.88~1.0（0.88 为壁纸实测可读性下限，0.85 外推 ≈4.4:1 跌破 AA）
+          '--card-alpha': String(Math.min(1, Math.max(0.88, cardOpacity ?? 0.9))),
+        } as React.CSSProperties}
       >
         {/* 卡片键盘模型说明：所有卡片通过 aria-describedby 指向这一条 */}
         <p id="navhub-card-keyboard-hint" className="sr-only">

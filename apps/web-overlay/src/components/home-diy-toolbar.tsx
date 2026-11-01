@@ -399,15 +399,16 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                       className="w-full h-1.5 accent-primary cursor-pointer"
                     />
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                      {/* F4 可读性下限：滑杆最小 0.85（85%），低于此值壁纸最亮/最暗时卡片文字跌破 AA */}
-                      <span>卡片不透明度: {Math.round((cardOpacity ?? 0.9) * 100)}%（可读性下限 85%）</span>
+                      {/* P1 可读性下限：滑杆最小 0.88（88%）——按壁纸实测曲线，0.85 时描述文字外推 ≈4.4:1（跌破 AA），
+                          0.88 实测最坏 4.60:1；下限与配置 clamp / CSS 兜底同口径 */}
+                      <span>卡片不透明度: {Math.round((cardOpacity ?? 0.9) * 100)}%（可读性下限 88%）</span>
                     </div>
-                    <input aria-label="卡片不透明度（可读性下限 0.85）"
+                    <input aria-label="卡片不透明度（可读性下限 0.88）"
                       type="range"
-                      min={0.85}
+                      min={0.88}
                       max={1}
                       step={0.01}
-                      value={Math.min(1, Math.max(0.85, cardOpacity ?? 0.9))}
+                      value={Math.min(1, Math.max(0.88, cardOpacity ?? 0.9))}
                       onChange={(e) => setAestheticSliders(glassmorphismBlur ?? 12, Number(e.target.value))}
                       className="w-full h-1.5 accent-primary cursor-pointer"
                     />

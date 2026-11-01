@@ -515,8 +515,9 @@ export function useHomeDIY() {
     persistConfig((prev) => ({
       ...prev,
       glassmorphismBlur: Math.min(30, Math.max(0, blur)),
-      // F4 可读性下限：卡片不透明度 ≥0.85，写入端就地兜住（0.2 旧值会让壁纸最亮/最暗时文字跌破 AA）
-      cardOpacity: Math.min(1.0, Math.max(0.85, opacity)),
+      // P1 可读性下限：卡片不透明度 ≥0.88，写入端就地兜住（0.85 时黑壁纸描述文字外推 ≈4.4:1 跌破 AA；
+      // 0.88 为实测达标值 4.60:1。旧配置 0.2 读到同样抬升，见读取端）
+      cardOpacity: Math.min(1.0, Math.max(0.88, opacity)),
       updatedAt: Date.now(),
     }))
   }, [persistConfig])
@@ -561,9 +562,9 @@ export function useHomeDIY() {
     siteCategoryOverrides: config.siteCategoryOverrides || {},
     customWallpaperUrl: config.customWallpaperUrl || '',
     glassmorphismBlur: config.glassmorphismBlur ?? 12,
-    // F4 可读性下限：读取端同样 clamp——旧配置/旧分享链接可能存着 0.2，读到即抬到 0.85
+    // P1 可读性下限：读取端同样 clamp 0.88——旧配置/旧分享链接可能存着 0.2 或 0.85，读到即抬到 0.88
     //（与写入端 setAestheticSliders 同口径，分享方/接收方观感一致无分叉）
-    cardOpacity: Math.min(1.0, Math.max(0.85, config.cardOpacity ?? 0.9)),
+    cardOpacity: Math.min(1.0, Math.max(0.88, config.cardOpacity ?? 0.9)),
 
     mounted,
     viewMode: config.viewMode,

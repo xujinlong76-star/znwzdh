@@ -151,6 +151,7 @@ const WIP_HOT_EXEMPT: string[] = [
   "app/favorites/layout.tsx", // WIP 热区待释放
   "app/favorites/loading.tsx", // WIP 热区待释放
   // —— 并行会话 WIP 快照（2026-11-02，git 脏文件里的违例文件）——
+  "components/user-center/local-data-manager.tsx", // 2026-11-02 22:45 并行会话活跃写入（me/data 新组件），只报告不改
   "app/admin/data/restore/page.tsx", // WIP 热区待释放
   "app/admin/jobs/page.tsx", // WIP 热区待释放
   "app/admin/taxonomy/page.tsx", // WIP 热区待释放

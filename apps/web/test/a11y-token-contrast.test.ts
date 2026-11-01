@@ -134,22 +134,12 @@ const WIP_HOT_EXEMPT: string[] = [
   // 2026-11-02 热区清账：navigation-card / search-palette / search-results / signin / favorites /
   // category-quick-jump-bar / quick-access-tray / universal-bookmark-modal 已清零，豁免已清退，
   // 由冷区禁令全量接管（回潮即红）。navigation-content 复核无违例，一并清退。
-  "app/search/error.tsx", // WIP 热区待释放
-  "app/search/loading.tsx", // WIP 热区待释放
   "app/search/page.tsx", // WIP 热区待释放
   "app/auth/layout.tsx", // WIP 热区待释放
-  "app/auth/forgot-password/layout.tsx", // WIP 热区待释放
   "app/auth/forgot-password/page.tsx", // WIP 热区待释放
-  "app/auth/reset-password/layout.tsx", // WIP 热区待释放
   "app/auth/reset-password/page.tsx", // WIP 热区待释放
-  "app/auth/signin/layout.tsx", // WIP 热区待释放
-  "app/auth/signup/layout.tsx", // WIP 热区待释放
   "app/auth/signup/page.tsx", // WIP 热区待释放
-  "app/auth/verify-email/layout.tsx", // WIP 热区待释放
   "app/auth/verify-email/page.tsx", // WIP 热区待释放
-  "app/favorites/error.tsx", // WIP 热区待释放
-  "app/favorites/layout.tsx", // WIP 热区待释放
-  "app/favorites/loading.tsx", // WIP 热区待释放
   // —— 并行会话 WIP 快照（2026-11-02，git 脏文件里的违例文件）——
   "components/user-center/local-data-manager.tsx", // 2026-11-02 22:45 并行会话活跃写入（me/data 新组件），只报告不改
   "app/admin/data/restore/page.tsx", // WIP 热区待释放

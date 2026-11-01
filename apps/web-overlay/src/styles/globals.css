@@ -466,7 +466,9 @@
 
 @layer utilities {
   .glass-surface {
-    background-color: hsl(var(--card) / 0.75);
+    /* F4 壁纸可读性兜底：玻璃面板底色 alpha ≥0.85（原 0.75，自定义壁纸最亮/最暗时
+       面板文字对比度会跌破 AA）——实测见 wallpaper-contrast-guard。 */
+    background-color: hsl(var(--card) / 0.88);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border-color: hsl(var(--border) / 0.6);
@@ -651,3 +653,19 @@
   }
 }
 
+/* F4 自定义壁纸文字可读性兜底：卡片底色 alpha 下限 0.88（≥0.85 门禁）。
+   卡片的 bg-card/85、dark:bg-card/45 写在热区 navigation-card.tsx 不许改；
+   这里用**未分层**规则压过全部分层工具类（与上面移动字号同一机制，已实测），
+   自定义壁纸最亮（白）/最暗（黑）时卡片标题与描述对底色均 ≥4.5:1。
+   若未来在注入点加壁纸 scrim，一行改法见 F4 回报（navigation-content 热区）。 */
+.nav-card-deferred {
+  background-color: hsl(var(--card) / 0.88);
+}
+
+/* F4 补充：热区 navigation-card.tsx 仍有两处 text-muted-foreground/90 透明度变体
+   （F1 清单待释放项），自定义黑壁纸 + 浅色模式下描述文字实测只有 3.81:1。
+   未分层规则把卡片内该变体归一为不透明 muted-foreground（4.8:1 达标），
+   等热区释放后删掉本条即可。 */
+.nav-card-deferred .text-muted-foreground\/90 {
+  color: hsl(var(--muted-foreground));
+}

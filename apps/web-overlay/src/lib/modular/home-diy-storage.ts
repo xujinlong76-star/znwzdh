@@ -560,7 +560,12 @@ export function applyHomeDiyShareHash(): { applied: boolean; warning: string | n
             siteCategoryOverrides: parsed.sco ?? parsed.siteCategoryOverrides,
             customWallpaperUrl: parsed.wp ?? parsed.customWallpaperUrl,
             glassmorphismBlur: parsed.gb ?? parsed.glassmorphismBlur,
-            cardOpacity: parsed.co_op ?? parsed.cardOpacity,
+            // F4 可读性下限 0.85：URL-Hash 旧链接里的 co_op=0.2 读取时就地抬升
+            //（下游 validateAndCleanDIYConfig 会再兜一层，双保险防分叉）
+            cardOpacity: (() => {
+              const raw = Number(parsed.co_op ?? parsed.cardOpacity ?? 0.9);
+              return Number.isFinite(raw) ? Math.min(1, Math.max(0.85, raw)) : 0.9;
+            })(),
           }
         : null
     const check = validateAndCleanDIYConfig(normalized)

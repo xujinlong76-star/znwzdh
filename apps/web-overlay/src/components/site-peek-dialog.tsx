@@ -10,7 +10,9 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit, History, Pin } from 'lucide-react'
+import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit, History, Pin, Copy, FileText, Activity, Check, Loader2 } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
+import { copyText } from '@/lib/clipboard'
 import { Button } from '@/registry/new-york/ui/button'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +20,8 @@ import { Badge } from '@/components/ui/badge'
 import { isSafeHttpUrl, safeHref, safeSrc, safeWindowOpen } from '@/lib/safe-url'
 import { buildWaybackSnapshotUrl } from '@/lib/wayback-resolver'
 import { siteHealthBadge } from '@/lib/site-health'
+import { probeSiteLatency, type PingResult } from '@/lib/site-ping'
+import { cn } from '@/lib/utils'
 
 interface SitePeekDialogProps {
   item: NavigationSubItem | null
@@ -47,6 +51,7 @@ export function SitePeekDialog({
   onTogglePinInCategory,
   onCloseAutoFocus,
 }: SitePeekDialogProps) {
+  const { toast } = useToast()
   const [actionInputs, setActionInputs] = useState<Record<string, string>>({})
   const [showIframe, setShowIframe] = useState(false)
   const [hyperbolicAlts, setHyperbolicAlts] = useState<Array<{
@@ -54,10 +59,20 @@ export function SitePeekDialog({
     geodesicDistance: number
     alternativeScore: number
   }>>([])
+  const [livePing, setLivePing] = useState<PingResult | null>(null)
+  const [isPinging, setIsPinging] = useState(false)
+  const [hasReportedBroken, setHasReportedBroken] = useState(false)
+  const [copiedLink, setCopiedLink] = useState(false)
+  const [copiedMd, setCopiedMd] = useState(false)
 
   useEffect(() => {
     if (!open || !item?.id) {
       setHyperbolicAlts([])
+      setLivePing(null)
+      setIsPinging(false)
+      setHasReportedBroken(false)
+      setCopiedLink(false)
+      setCopiedMd(false)
       return
     }
     let cancelled = false
@@ -77,6 +92,35 @@ export function SitePeekDialog({
   }, [open, item?.id])
 
   if (!item) return null
+
+  const handleLivePing = async () => {
+    if (!item?.href || isPinging) return
+    setIsPinging(true)
+    try {
+      const res = await probeSiteLatency(item.href)
+      setLivePing(res)
+    } catch {
+      // 容错降级：本地探针异常时不中断界面，直接给出未连通反馈
+      setLivePing({
+        reachable: false,
+        quality: 'unreachable',
+        label: '⚠️ 探测失败',
+        testedAt: Date.now(),
+        error: '本地探测未成功',
+      })
+    } finally {
+      setIsPinging(false)
+    }
+  }
+
+  const handleReportBroken = () => {
+    if (hasReportedBroken) return
+    setHasReportedBroken(true)
+    toast({
+      title: '已收到失效反馈',
+      description: '感谢反馈！系统已记录该站点异常，正在为您调取备用镜像与平替推荐。',
+    })
+  }
 
   const handleActionSubmit = (action: SiteAction, e?: React.FormEvent) => {
     e?.preventDefault()
@@ -107,7 +151,7 @@ export function SitePeekDialog({
         <DialogHeader className="space-y-3 pb-3 border-b border-border/50 pr-8 sm:pr-10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
             <div className="flex items-center gap-3.5 min-w-0">
-              <div className="w-11 h-11 p-2 rounded-xl bg-muted/60 border border-border/60 shadow-xs flex-shrink-0 flex items-center justify-center">
+              <div className="w-11 h-11 p-2 rounded-2xl bg-gradient-to-b from-card to-muted/80 border border-border/70 shadow-sm backdrop-blur-xs flex-shrink-0 flex items-center justify-center">
                 <SiteFavicon
                   title={item.title}
                   url={item.href}
@@ -147,7 +191,7 @@ export function SitePeekDialog({
                   variant="outline"
                   size="sm"
                   aria-pressed={isPinnedInCategory}
-                  className="gap-1.5 h-8.5 px-3 shadow-2xs font-medium text-xs border-border/70"
+                  className="gap-1.5 h-8.5 px-3 shadow-2xs font-medium text-xs border-border/70 touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                   title={isPinnedInCategory ? '取消当前分类置顶' : '置顶到当前分类首位'}
                   onClick={() => onTogglePinInCategory(item.id)}
                 >
@@ -163,12 +207,12 @@ export function SitePeekDialog({
                   icon: item.icon,
                   description: item.description,
                 }}
-                className="h-8.5 w-8.5 rounded-lg border border-border/70 bg-background/60"
+                className="h-8.5 w-8.5 rounded-lg border border-border/70 bg-background/60 touch-manipulation select-none active:scale-90 transition-all cursor-pointer"
               />
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5 h-8.5 px-3 shadow-2xs font-medium text-xs text-muted-foreground hover:text-foreground border-border/70"
+                className="gap-1.5 h-8.5 px-3 shadow-2xs font-medium text-xs text-muted-foreground hover:text-foreground border-border/70 touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                 title="调取 Internet Archive Wayback 历史归档快照"
                 onClick={() => {
                   const snap = buildWaybackSnapshotUrl(item.href)
@@ -181,7 +225,7 @@ export function SitePeekDialog({
               <Button
                 variant="default"
                 size="sm"
-                className="gap-1.5 shrink-0 h-8.5 px-3.5 shadow-xs font-medium"
+                className="gap-1.5 shrink-0 h-8.5 px-3.5 shadow-sm font-medium touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                 onClick={() => {
                   const u = safeHref(item.href, '')
                   if (!u || !isSafeHttpUrl(u)) return
@@ -194,6 +238,36 @@ export function SitePeekDialog({
             </div>
           </div>
         </DialogHeader>
+
+        {/* 站点连通性与健康异常提示 */}
+        {item.health?.ok === false && (
+          <div className="mt-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <div className="font-semibold text-amber-900 dark:text-amber-200">
+                站点连通性提示：{item.health.error || '近期探测出现超时或无法直连'}
+              </div>
+              <div className="text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+                建议优先使用下方「平替雷达」中的可用替代产品，或点击右上角「历史快照」调取网页归档。
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 用户反馈或本地探测异常提示 */}
+        {item.health?.ok !== false && (hasReportedBroken || (livePing && !livePing.reachable)) && (
+          <div className="mt-3 p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <div className="font-semibold text-rose-900 dark:text-rose-200">
+                {hasReportedBroken ? '已记录失效反馈：该站点可能已下线或受网络策略阻隔' : `本地探测异常：${livePing?.label || '连接超时'}`}
+              </div>
+              <div className="text-rose-800/80 dark:text-rose-300/80 leading-relaxed">
+                建议优先使用下方为您推导的「平替雷达」替代方案，或调取右上角「历史快照」访问网页镜像。
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 核心行动区：深链微动作 (Deep Actions) */}
         {item.actions && item.actions.length > 0 && (
@@ -260,32 +334,41 @@ export function SitePeekDialog({
                   key={idx}
                   className="flex items-start justify-between p-3 rounded-xl border border-border/60 bg-card hover:border-primary/40 transition-all shadow-2xs group"
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold group-hover:text-primary transition-colors">{rel.targetTitle}</span>
-                      {rel.isFreeOrOpenSource && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
-                          开源/免费
-                        </span>
-                      )}
-                      <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground font-mono">
-                        {rel.relationType === 'alternative' ? '平替' : rel.relationType === 'mirror' ? '镜像' : '技术生态'}
-                      </span>
+                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                    <div className="w-8 h-8 rounded-xl bg-background/80 border border-border/60 p-1.5 shadow-2xs flex-shrink-0 flex items-center justify-center">
+                      <SiteFavicon
+                        title={rel.targetTitle}
+                        url={rel.targetUrl}
+                        className="w-full h-full object-contain rounded-xs"
+                      />
                     </div>
-                    {rel.note && <p className="text-xs text-muted-foreground leading-normal">{rel.note}</p>}
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-semibold group-hover:text-primary transition-colors truncate">{rel.targetTitle}</span>
+                        {rel.isFreeOrOpenSource && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                            开源/免费
+                          </span>
+                        )}
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground font-mono">
+                          {rel.relationType === 'alternative' ? '平替' : rel.relationType === 'mirror' ? '镜像' : '技术生态'}
+                        </span>
+                      </div>
+                      {rel.note && <p className="text-xs text-muted-foreground leading-normal line-clamp-2">{rel.note}</p>}
+                    </div>
                   </div>
                   <Button
                     variant="ghost"
                     size="icon"
                     aria-label="访问该站点"
                     title={`在新标签页打开 ${rel.targetTitle}`}
-                    className="h-6.5 w-6.5 shrink-0 rounded-lg hover:bg-muted"
+                    className="h-7 w-7 shrink-0 rounded-lg hover:bg-muted ml-2 touch-manipulation select-none active:scale-90 transition-all cursor-pointer"
                     onClick={() => {
                       if (!isSafeHttpUrl(rel.targetUrl)) return
                       window.open(rel.targetUrl, '_blank', 'noopener,noreferrer')
                     }}
                   >
-                    <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
+                    <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
                   </Button>
                 </div>
               ))}
@@ -338,30 +421,39 @@ export function SitePeekDialog({
                   key={alt.site.id}
                   className="flex items-start justify-between p-3 rounded-xl border border-border/60 bg-card hover:border-cyan-500/40 transition-all shadow-2xs group"
                 >
-                  <div className="space-y-1 min-w-0 pr-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold truncate group-hover:text-cyan-500 transition-colors">
-                        {alt.site.title}
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-mono shrink-0">
-                        d_L={alt.geodesicDistance}
-                      </span>
+                  <div className="flex items-start gap-2.5 min-w-0 flex-1 pr-2">
+                    <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/25 p-1.5 flex-shrink-0 flex items-center justify-center shadow-2xs">
+                      <SiteFavicon
+                        title={alt.site.title}
+                        url={alt.site.url}
+                        className="w-full h-full object-contain rounded-xs"
+                      />
                     </div>
-                    {alt.site.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">{alt.site.description}</p>
-                    )}
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold truncate group-hover:text-cyan-500 transition-colors">
+                          {alt.site.title}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-mono shrink-0">
+                          d_L={alt.geodesicDistance}
+                        </span>
+                      </div>
+                      {alt.site.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">{alt.site.description}</p>
+                      )}
+                    </div>
                   </div>
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="h-7 w-7 rounded-lg shrink-0"
+                    className="h-7 w-7 rounded-lg shrink-0 touch-manipulation select-none active:scale-90 transition-all cursor-pointer"
                     onClick={() => {
                       if (!isSafeHttpUrl(alt.site.url)) return
                       window.open(alt.site.url, '_blank', 'noopener,noreferrer')
                     }}
                     title="访问双曲平替站点"
                   >
-                    <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
+                    <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
                   </Button>
                 </div>
               ))}
@@ -413,18 +505,111 @@ export function SitePeekDialog({
         </div>
 
         {/* 底部元数据状态条 */}
-        <div className="flex flex-wrap items-center justify-between text-xs text-muted-foreground pt-3 border-t border-border/50">
-          <div className="flex items-center gap-2">
-            <span>网址:</span>
-            <span className="font-mono text-foreground/80 truncate max-w-[280px]">{item.href}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pt-3 border-t border-border/50">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+            <span className="shrink-0">网址:</span>
+            <span className="font-mono text-foreground/80 truncate max-w-[180px] sm:max-w-[280px] select-all">{item.href}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-6.5 px-2.5 text-[11px] gap-1 shrink-0 border-border/60 transition-all touch-manipulation select-none active:scale-95 cursor-pointer",
+                copiedLink ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 shadow-2xs" : "text-muted-foreground hover:text-foreground"
+              )}
+              title="复制网址链接"
+              onClick={async () => {
+                const res = await copyText(item.href)
+                if (res.ok) {
+                  setCopiedLink(true)
+                  setTimeout(() => setCopiedLink(false), 2000)
+                  toast({ title: '已复制网址', description: item.href })
+                } else {
+                  toast({ title: '复制失败', description: res.reason, variant: 'destructive' })
+                }
+              }}
+            >
+              {copiedLink ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+              <span>{copiedLink ? '已复制' : '复制链接'}</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-6.5 px-2.5 text-[11px] gap-1 shrink-0 border-border/60 transition-all touch-manipulation select-none active:scale-95 cursor-pointer",
+                copiedMd ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 shadow-2xs" : "text-muted-foreground hover:text-foreground"
+              )}
+              title="复制 Markdown 引用 [标题](链接)"
+              onClick={async () => {
+                const md = `[${item.title}](${item.href})`
+                const res = await copyText(md)
+                if (res.ok) {
+                  setCopiedMd(true)
+                  setTimeout(() => setCopiedMd(false), 2000)
+                  toast({ title: '已复制 Markdown', description: md })
+                } else {
+                  toast({ title: '复制失败', description: res.reason, variant: 'destructive' })
+                }
+              }}
+            >
+              {copiedMd ? <Check className="w-3 h-3 text-emerald-500" /> : <FileText className="w-3 h-3" />}
+              <span>{copiedMd ? '已复制' : 'Markdown'}</span>
+            </Button>
           </div>
-          {healthBadge && (
-            <div className="flex items-center gap-1.5 font-mono">
-              <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              <span>{healthBadge.label}</span>
-              {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
-            </div>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {healthBadge && (
+              <div className="flex items-center gap-1.5 font-mono" title="服务端远端巡检结果">
+                <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                <span>{healthBadge.label}</span>
+                {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
+              </div>
+            )}
+
+            {/* 本地测速探针 */}
+            {livePing ? (
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full border ${
+                  livePing.reachable
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                    : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                }`}
+                title={`本机浏览器探测：${livePing.error || livePing.label}`}
+              >
+                <Activity className="w-3 h-3" />
+                <span>{livePing.label}</span>
+              </span>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isPinging}
+                onClick={handleLivePing}
+                className="h-6.5 px-2.5 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60 touch-manipulation select-none active:scale-95 cursor-pointer"
+                title="在本地浏览器测试当前对该站点的实际访问延迟"
+              >
+                {isPinging ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
+                <span>{isPinging ? '测速中…' : '测速'}</span>
+              </Button>
+            )}
+
+            {/* 反馈失效按钮 */}
+            {hasReportedBroken ? (
+              <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1 px-1">
+                <Check className="w-3 h-3 text-emerald-500" />
+                <span>已反馈失效</span>
+              </span>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReportBroken}
+                className="h-6.5 px-2.5 text-[11px] gap-1 text-muted-foreground hover:text-destructive hover:border-destructive/40 shrink-0 border-border/60 touch-manipulation select-none active:scale-95 cursor-pointer"
+                title="向平台反馈该网站打不开、连接超时或死链"
+              >
+                <AlertTriangle className="w-3 h-3" />
+                <span>反馈失效</span>
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

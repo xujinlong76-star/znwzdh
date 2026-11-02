@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Star, MonitorPlay, Sparkles, FoldVertical, ChevronsUpDown, Layers } from 'lucide-react'
+import { resolveNavIcon } from '@/lib/nav-icons'
 import { cn } from '@/lib/utils'
 import { preferredScrollBehavior } from '@/lib/motion'
 
@@ -105,18 +106,33 @@ export function CategoryQuickJumpBar({
   }, [categories])
 
   const scrollToId = (id: string) => {
-    const element = document.getElementById(id)
-    if (element) {
-      const topOffset = 110 // 吸顶栏高度缓冲
-      const elementPosition = element.getBoundingClientRect().top
-      const offsetPosition = elementPosition + window.pageYOffset - topOffset
-
-      window.scrollTo({
-        top: offsetPosition,
-        behavior: preferredScrollBehavior()
-      })
-      setActiveId(id)
+    // 广播聚焦与自愈展开事件，确保若目标分类处于折叠状态能自动展开
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('navhub-request-category-focus', { detail: { categoryId: id } }))
+      try {
+        window.history.replaceState(null, '', `#${id}`)
+      } catch (_e) {
+        // 静默捕获：部分受限 iframe 或无痕沙箱环境下禁止操作 history state
+      }
     }
+
+    // 双重 RAF 确保 DOM 自愈展开重绘完成后，按真实高度精确平滑滚动
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const element = document.getElementById(id)
+        if (element) {
+          const topOffset = 110 // 吸顶栏高度缓冲
+          const elementPosition = element.getBoundingClientRect().top
+          const offsetPosition = elementPosition + window.pageYOffset - topOffset
+
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: preferredScrollBehavior()
+          })
+          setActiveId(id)
+        }
+      })
+    })
   }
 
   const scrollHorizontally = (direction: 'left' | 'right') => {
@@ -142,7 +158,7 @@ export function CategoryQuickJumpBar({
           <button
             type="button"
             onClick={() => scrollHorizontally('left')}
-            className="absolute left-0 z-10 hidden sm:flex items-center justify-center h-7 w-7 rounded-full bg-background/95 border border-border shadow-xs text-muted-foreground hover:text-foreground transition-all"
+            className="absolute left-0 z-10 hidden sm:flex items-center justify-center h-7 w-7 rounded-full bg-background/95 border border-border shadow-xs text-muted-foreground hover:text-foreground transition-all touch-manipulation select-none active:scale-90 cursor-pointer"
             aria-label="向左滚动分类"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -164,7 +180,7 @@ export function CategoryQuickJumpBar({
               type="button"
               onClick={onToggleAllCollapsed}
               className={cn(
-                "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 mr-1",
+                "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 mr-1 touch-manipulation select-none active:scale-95 cursor-pointer",
                 isAllCollapsed
                   ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
                   : "bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/70"
@@ -183,7 +199,7 @@ export function CategoryQuickJumpBar({
               id="pill-quick-access"
               onClick={() => scrollToId('quick-access-tray')}
               className={cn(
-                "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150",
+                "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 touch-manipulation select-none active:scale-95 cursor-pointer",
                 activeId === 'quick-access-tray'
                   ? "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400 font-semibold"
                   : "bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/70"
@@ -196,6 +212,7 @@ export function CategoryQuickJumpBar({
 
           {categories.map((cat) => {
             const isActive = activeId === cat.id
+            const CatIcon = cat.icon ? resolveNavIcon(cat.icon) : null
             return (
               <button
                 key={cat.id}
@@ -203,12 +220,15 @@ export function CategoryQuickJumpBar({
                 type="button"
                 onClick={() => scrollToId(cat.id)}
                 className={cn(
-                  "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs transition-all duration-150 border",
+                  "shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-all duration-150 border touch-manipulation select-none active:scale-95 cursor-pointer",
                   isActive
                     ? "bg-primary text-primary-foreground border-primary font-medium shadow-2xs scale-102"
                     : "bg-muted/40 border-border/40 text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted/70"
                 )}
               >
+                {CatIcon && (
+                  <CatIcon className={cn("h-3 w-3 shrink-0", isActive ? "text-primary-foreground" : "text-primary/70")} />
+                )}
                 <span>{cat.title}</span>
                 {cat.count !== undefined && cat.count > 0 && (
                   <span
@@ -229,7 +249,7 @@ export function CategoryQuickJumpBar({
           {/* 直达技术视频 */}
           <Link
             href="/videos"
-            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 transition-all duration-150 ml-1"
+            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 transition-all duration-150 ml-1 touch-manipulation select-none active:scale-95"
           >
             <MonitorPlay className="h-3 w-3" />
             <span>精选视频</span>
@@ -242,7 +262,7 @@ export function CategoryQuickJumpBar({
           <button
             type="button"
             onClick={() => scrollHorizontally('right')}
-            className="absolute right-0 z-10 hidden sm:flex items-center justify-center h-7 w-7 rounded-full bg-background/95 border border-border shadow-xs text-muted-foreground hover:text-foreground transition-all"
+            className="absolute right-0 z-10 hidden sm:flex items-center justify-center h-7 w-7 rounded-full bg-background/95 border border-border shadow-xs text-muted-foreground hover:text-foreground transition-all touch-manipulation select-none active:scale-90 cursor-pointer"
             aria-label="向右滚动分类"
           >
             <ChevronRight className="h-4 w-4" />

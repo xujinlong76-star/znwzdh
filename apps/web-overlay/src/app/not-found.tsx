@@ -56,8 +56,9 @@ export default function NotFound() {
   return (
     <main id="main-content" className="flex flex-col items-center justify-center min-h-[80vh] p-4 text-center">
       <div className="max-w-2xl w-full p-6 sm:p-8 rounded-3xl border border-border/80 glass-surface shadow-xl space-y-6 animate-in fade-in zoom-in-95 duration-200">
-        <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto shadow-xs">
-          <Compass className="w-8 h-8 animate-pulse" />
+        <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 border border-primary/30 text-primary flex items-center justify-center mx-auto shadow-md shadow-primary/10 overflow-hidden group">
+          <div aria-hidden className="absolute -inset-1 bg-primary/20 blur-md pointer-events-none" />
+          <Compass className="relative z-10 w-8 h-8 animate-pulse" />
         </div>
 
         <div className="space-y-2">
@@ -101,14 +102,16 @@ export default function NotFound() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="group flex items-start gap-2.5 rounded-xl border border-border/60 p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
+                className="group flex items-center gap-3 rounded-xl border border-border/60 p-3 transition-all duration-150 hover:border-primary/40 hover:bg-primary/5 active:scale-[0.985] touch-manipulation select-none"
               >
-                <Icon className="w-4 h-4 mt-0.5 text-primary shrink-0" />
-                <span className="min-w-0">
-                  <span className="block text-xs font-medium text-foreground group-hover:text-primary">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105">
+                  <Icon className="w-4 h-4 text-primary" />
+                </div>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
                     {link.label}
                   </span>
-                  <span className="block text-xs text-muted-foreground leading-relaxed">
+                  <span className="block text-xs text-muted-foreground leading-relaxed line-clamp-1 mt-0.5">
                     {link.description}
                   </span>
                 </span>

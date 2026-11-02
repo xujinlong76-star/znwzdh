@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <!-- 主背景科技流光渐变 -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+
+    <!-- 顶层晶体高光渐变 -->
+    <linearGradient id="glassGloss" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35" />
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- 核心光晕 -->
+    <radialGradient id="centerGlow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9" />
+      <stop offset="40%" stop-color="#a5f3fc" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- 柔和阴影滤镜 -->
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- 柔和外发光底板 -->
+  <rect x="12" y="12" width="104" height="104" rx="26" fill="#0891b2" opacity="0.25" filter="url(#softGlow)" />
+
+  <!-- 主圆角晶体背景 (Squircle) -->
+  <rect x="14" y="14" width="100" height="100" rx="24" fill="url(#bgGrad)" />
+
+  <!-- 顶层高光反射 -->
+  <rect x="15" y="15" width="98" height="48" rx="23" fill="url(#glassGloss)" />
+
+  <!-- 外边框微描边 -->
+  <rect x="14.5" y="14.5" width="99" height="99" rx="23.5" fill="none" stroke="#ffffff" stroke-width="1" stroke-opacity="0.3" />
+
+  <!-- 中心科技罗盘 / 全球网络拓扑图形 -->
+  <g transform="translate(64, 64)">
+    <!-- 经纬微网格 -->
+    <circle cx="0" cy="0" r="28" fill="none" stroke="#ffffff" stroke-width="1.75" stroke-opacity="0.35" stroke-dasharray="2 3" />
+    <ellipse cx="0" cy="0" rx="28" ry="12" fill="none" stroke="#ffffff" stroke-width="1.75" stroke-opacity="0.4" />
+    <ellipse cx="0" cy="0" rx="12" ry="28" fill="none" stroke="#ffffff" stroke-width="1.75" stroke-opacity="0.4" />
+
+    <!-- 探索罗盘主星芒 -->
+    <path d="M 0 -22 L 4 -6 L 20 0 L 4 6 L 0 22 L -4 6 L -20 0 L -4 -6 Z" fill="#ffffff" fill-opacity="0.95" />
+    <!-- 副星芒 -->
+    <path d="M 0 -14 L 2.5 -4 L 12 0 L 2.5 4 L 0 14 L -2.5 4 L -12 0 L -2.5 -4 Z" fill="#cffafe" fill-opacity="0.75" transform="rotate(45)" />
+
+    <!-- 核心光点 -->
+    <circle cx="0" cy="0" r="4.5" fill="url(#centerGlow)" />
+    <circle cx="0" cy="0" r="2" fill="#ffffff" />
+  </g>
+</svg>

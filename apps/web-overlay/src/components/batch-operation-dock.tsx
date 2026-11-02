@@ -11,6 +11,7 @@ import {
   Trash2,
   CheckSquare,
   Sparkles,
+  LayoutGrid,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -188,10 +189,10 @@ export function BatchOperationDock({
               variant="ghost"
               size="sm"
               onClick={onBatchPinToWorkbench}
-              className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent"
-              title="批量固定到工作台启动坞"
+              className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent touch-manipulation select-none active:scale-95"
+              title="批量固定到工作台快捷启动坞"
             >
-              <Pin className="w-3.5 h-3.5 sm:mr-1.5 text-amber-500" />
+              <LayoutGrid className="w-3.5 h-3.5 sm:mr-1.5 text-emerald-500" />
               <span className="hidden sm:inline">固定工作台</span>
             </Button>
           )}

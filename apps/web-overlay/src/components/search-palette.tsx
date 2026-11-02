@@ -19,13 +19,15 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList } from '@/registry/new-york/ui/command'
-import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink } from 'lucide-react'
+import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink, Info, Copy } from 'lucide-react'
+import { copyText, copyFailureToast } from '@/lib/clipboard'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   searchSites,
   searchPlugins,
   reportClick,
   fetchSearchHistory,
+  clearCloudSearchHistory,
   fetchCollections,
   type HubSearchHit,
   type HubSiteRelation,
@@ -47,6 +49,7 @@ import { spotlightHotkeyHint, useExternalLinkTarget, useUserPreferences } from '
 import { parseTechComparisonQuery } from '@/lib/comparison'
 import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
 import { SiteFavicon } from '@/components/site-favicon'
+import { getBuiltinBrandLogo } from '@/lib/brand-logos'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { getModifierKey } from '@/lib/platform'
 
@@ -229,6 +232,23 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     }
   }, [isFocused, query, identity])
 
+  // 清空最近搜索记录
+  const handleClearRecent = useCallback(async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setRecent([])
+    if (identity) {
+      await clearCloudSearchHistory(identity)
+    }
+  }, [identity])
+
+  // 单条移除最近搜索记录
+  const handleRemoveRecent = useCallback((queryToRemove: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setRecent((prev) => prev.filter((item) => item !== queryToRemove))
+  }, [])
+
   /* 点击外部关闭 */
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -403,6 +423,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const openSite = useCallback((hit: HubSearchHit) => {
     const site = hit.site
     if (!site) return
+    const isBroken = site.status === 'broken' || site.health?.ok === false
+
     // 把「这次命中来自哪一路」带回中枢：telemetry.ts 只有在带 query 时才更新
     // LinUCB 通道权重；只发 siteId 会让在线学习永远收不到真实反馈。
     const channel = Object.entries(hit.contributions ?? {})
@@ -412,6 +434,14 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     // 非 http(s) 一律不跳，避免 javascript: 之类的脏数据直达执行
     const url = safeHref(site.url, '')
     if (!url || !isSafeHttpUrl(url)) return
+
+    if (isBroken) {
+      toast({
+        title: '⚠️ 站点可能无法直连',
+        description: `「${site.title}」近期巡检异常，可在详情页获取时光机快照或平替推荐。`,
+      })
+    }
+
     // 离线可用性（P2-3）：把这次访问写进本地「最近访问」快照（IndexedDB，
     // 隐私模式降级 localStorage）。断网时用户仍能从本地列表回到常用站点。
     // 放在安全闸之后：只记录真的会打开的站点。
@@ -425,7 +455,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     else window.open(url, linkTarget, 'noopener,noreferrer')
     setQuery('')
     setIsFocused(false)
-  }, [identity, linkTarget, query])
+  }, [identity, linkTarget, query, toast])
 
   const showResults = isFocused && query.trim().length > 0
   /**
@@ -477,14 +507,50 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
   const onSearchKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      // 避免输入法 composition 期间按回车或上下键产生误判与误跳转
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return
+
       if (!showResults) return
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const isDown = e.key === 'ArrowDown' || (e.ctrlKey && e.key.toLowerCase() === 'n')
+      const isUp = e.key === 'ArrowUp' || (e.ctrlKey && e.key.toLowerCase() === 'p')
+      if (isDown || isUp) {
         if (navItems.length === 0) return
         e.preventDefault()
         setActiveIndex((prev) => {
-          if (e.key === 'ArrowDown') return prev < 0 ? 0 : (prev + 1) % navItems.length
+          if (isDown) return prev < 0 ? 0 : (prev + 1) % navItems.length
           return prev <= 0 ? navItems.length - 1 : prev - 1
         })
+        return
+      }
+      const isCopyKey = (e.altKey && e.key.toLowerCase() === 'c') || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'c')
+      if (isCopyKey) {
+        if (navItems.length === 0) return
+        const targetIdx = activeIndex >= 0 ? activeIndex : 0
+        const targetItem = navItems[targetIdx]
+        if (targetItem?.kind === 'site') {
+          const hit = hits.find((h) => `site-${h.siteId}` === targetItem.id)
+          if (hit?.site?.url) {
+            e.preventDefault()
+            const safeUrl = safeHref(hit.site.url, '')
+            if (safeUrl) {
+              void copyText(safeUrl).then((res) => {
+                if (res.ok) {
+                  toast({
+                    title: '📋 已复制站点网址',
+                    description: `${hit.site!.title} (${safeUrl})`,
+                  })
+                } else {
+                  const note = copyFailureToast(res)
+                  toast({
+                    title: note.title,
+                    description: note.description,
+                    variant: 'destructive',
+                  })
+                }
+              })
+            }
+          }
+        }
         return
       }
       if (e.key === 'Enter') {
@@ -628,19 +694,43 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           )}
           {recent.length > 0 && (
             <div>
-              <div className="px-3.5 py-2 text-xs font-medium text-muted-foreground flex items-center gap-1.5 bg-muted/40">
-                <Clock className="h-3 w-3" /> 最近搜索
+              <div className="px-3.5 py-2 text-xs font-medium text-muted-foreground flex items-center justify-between bg-muted/40">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-3 w-3" /> 最近搜索
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearRecent}
+                  className="text-[11px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                  title="清空全部最近搜索记录"
+                >
+                  清空
+                </button>
               </div>
-              <div className="p-1">
+              <div className="p-1 space-y-0.5">
                 {recent.map((r) => (
-                  <button
+                  <div
                     key={r}
-                    className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground hover:text-foreground flex items-center justify-between"
-                    onClick={() => setQuery(r)}
+                    className="group flex items-center justify-between px-3 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <span>{r}</span>
-                    <ArrowRight className="h-3 w-3 opacity-40" />
-                  </button>
+                    <button
+                      type="button"
+                      className="flex-1 text-left truncate mr-2 cursor-pointer flex items-center justify-between"
+                      onClick={() => setQuery(r)}
+                    >
+                      <span>{r}</span>
+                      <ArrowRight className="h-3 w-3 opacity-40 group-hover:opacity-70 transition-opacity" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleRemoveRecent(r, e)}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-background/80 text-muted-foreground hover:text-destructive transition-all cursor-pointer"
+                      title="移除此条记录"
+                      aria-label={`移除搜索记录 ${r}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1088,36 +1178,40 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setIsFocused(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors font-medium"
+                          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-all font-medium active:scale-95 touch-manipulation shadow-2xs"
                         >
-                          Google
+                          <img src={getBuiltinBrandLogo('google.com')!} alt="" className="w-3.5 h-3.5 rounded-xs shrink-0" />
+                          <span>Google</span>
                         </a>
                         <a
                           href={safeHref(`https://github.com/search?q=${encodeURIComponent(query.trim())}`)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setIsFocused(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 border border-neutral-500/20 transition-colors font-medium"
+                          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 border border-neutral-500/20 transition-all font-medium active:scale-95 touch-manipulation shadow-2xs"
                         >
-                          GitHub
+                          <img src={getBuiltinBrandLogo('github.com')!} alt="" className="w-3.5 h-3.5 rounded-xs shrink-0" />
+                          <span>GitHub</span>
                         </a>
                         <a
                           href={safeHref(`https://www.baidu.com/s?wd=${encodeURIComponent(query.trim())}`)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setIsFocused(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors font-medium"
+                          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-all font-medium active:scale-95 touch-manipulation shadow-2xs"
                         >
-                          百度
+                          <img src={getBuiltinBrandLogo('baidu.com')!} alt="" className="w-3.5 h-3.5 rounded-xs shrink-0" />
+                          <span>百度</span>
                         </a>
                         <a
                           href={safeHref(`https://www.bing.com/search?q=${encodeURIComponent(query.trim())}`)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setIsFocused(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors font-medium"
+                          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all font-medium active:scale-95 touch-manipulation shadow-2xs"
                         >
-                          Bing
+                          <img src={getBuiltinBrandLogo('bing.com')!} alt="" className="w-3.5 h-3.5 rounded-xs shrink-0" />
+                          <span>Bing</span>
                         </a>
                       </div>
                     </div>
@@ -1163,13 +1257,18 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         )}
                         <div className="flex items-center gap-1 flex-wrap">
                           {(site.status === 'broken' || site.health?.ok === false) && (
-                            <span
-                              className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 font-medium border border-amber-500/20 inline-flex items-center gap-1"
-                              title="检测到站点当前可能无法直接访问，已就绪 Wayback 时光机自愈镜像"
+                            <Link
+                              href={`/site/${encodeURIComponent(site.id)}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setIsFocused(false)
+                              }}
+                              className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 font-medium border border-amber-500/20 inline-flex items-center gap-1 hover:bg-amber-500/20 transition-colors cursor-pointer"
+                              title="检测到站点当前可能无法直接访问，点击进入详情查看时光机快照与平替推荐"
                             >
                               <Clock className="w-2.5 h-2.5 text-amber-500" />
                               <span>快照自愈</span>
-                            </span>
+                            </Link>
                           )}
                           {channels.map((c) => (
                             <span
@@ -1185,24 +1284,67 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           ))}
                         </div>
                       </div>
-                      <button
-                        className="flex-shrink-0 p-1 rounded hover:bg-muted"
-                        title={faved ? '取消收藏' : '收藏'}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // 存储读不出来时写入会被拒绝（为了不覆盖原数据）：必须说出来
-                          if (favorites.storageBlocked) {
-                            toast({ title: '这一下没能保存', description: favorites.storageBlocked, variant: 'destructive' })
-                            return
-                          }
-                          void favorites.toggle({
-                            siteId: site.id, title: site.title, href: site.url,
-                            icon: site.iconKey ?? undefined, description: site.description ?? undefined,
-                          })
-                        }}
-                      >
-                        <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Link
+                          href={`/site/${encodeURIComponent(site.id)}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setIsFocused(false)
+                          }}
+                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          title="查看站点详情、时光机快照与平替推荐"
+                          aria-label={`查看 ${site.title} 详情`}
+                        >
+                          <Info className="h-4 w-4" />
+                        </Link>
+                        <button
+                          type="button"
+                          className="flex-shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          title="复制站点网址 (Alt+C)"
+                          aria-label={`复制 ${site.title} 网址`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const safeUrl = safeHref(site.url, '')
+                            if (safeUrl) {
+                              void copyText(safeUrl).then((res) => {
+                                if (res.ok) {
+                                  toast({
+                                    title: '📋 已复制站点网址',
+                                    description: `${site.title} (${safeUrl})`,
+                                  })
+                                } else {
+                                  const note = copyFailureToast(res)
+                                  toast({
+                                    title: note.title,
+                                    description: note.description,
+                                    variant: 'destructive',
+                                  })
+                                }
+                              })
+                            }
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                        <button
+                          className="flex-shrink-0 p-1 rounded hover:bg-muted cursor-pointer"
+                          title={faved ? '取消收藏' : '收藏'}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // 存储读不出来时写入会被拒绝（为了不覆盖原数据）：必须说出来
+                            if (favorites.storageBlocked) {
+                              toast({ title: '这一下没能保存', description: favorites.storageBlocked, variant: 'destructive' })
+                              return
+                            }
+                            void favorites.toggle({
+                              siteId: site.id, title: site.title, href: site.url,
+                              icon: site.iconKey ?? undefined, description: site.description ?? undefined,
+                            })
+                          }}
+                        >
+                          <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
+                        </button>
+                      </div>
                     </div>
                   )
                 })
@@ -1211,13 +1353,16 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {(hits.length > 0 || pluginItems.length > 0) && (
                 <div className="hidden sm:flex items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑</kbd>
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↓</kbd>
+                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑↓ / ^N P</kbd>
                     选择
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Enter</kbd>
                     打开
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Alt+C</kbd>
+                    复制网址
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Esc</kbd>
@@ -1257,36 +1402,40 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 font-medium"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 font-medium active:scale-95 transition-all touch-manipulation"
                     >
-                      Google
+                      <img src={getBuiltinBrandLogo('google.com')!} alt="" className="w-3 h-3 rounded-xs shrink-0" />
+                      <span>Google</span>
                     </a>
                     <a
                       href={safeHref(`https://github.com/search?q=${encodeURIComponent(query.trim())}`)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 font-medium"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 font-medium active:scale-95 transition-all touch-manipulation"
                     >
-                      GitHub
+                      <img src={getBuiltinBrandLogo('github.com')!} alt="" className="w-3 h-3 rounded-xs shrink-0" />
+                      <span>GitHub</span>
                     </a>
                     <a
                       href={safeHref(`https://www.baidu.com/s?wd=${encodeURIComponent(query.trim())}`)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 font-medium"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 font-medium active:scale-95 transition-all touch-manipulation"
                     >
-                      百度
+                      <img src={getBuiltinBrandLogo('baidu.com')!} alt="" className="w-3 h-3 rounded-xs shrink-0" />
+                      <span>百度</span>
                     </a>
                     <a
                       href={safeHref(`https://www.bing.com/search?q=${encodeURIComponent(query.trim())}`)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 font-medium"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 font-medium active:scale-95 transition-all touch-manipulation"
                     >
-                      Bing
+                      <img src={getBuiltinBrandLogo('bing.com')!} alt="" className="w-3 h-3 rounded-xs shrink-0" />
+                      <span>Bing</span>
                     </a>
                   </div>
                   <Link

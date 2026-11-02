@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
-import { Wrench, Copy, Check, RefreshCw, Braces, Binary, Clock, Link2, KeyRound, Timer, Terminal } from 'lucide-react'
+import { Wrench, Copy, Check, RefreshCw, Braces, Binary, Clock, Link2, KeyRound, Timer, Terminal, RotateCcw } from 'lucide-react'
 import { parseSpeculativeIntent } from '@/lib/speculative'
 import { copyText } from '@/lib/clipboard'
 
@@ -52,14 +52,44 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
   const [cronInput, setCronInput] = useState('*/5 * * * *')
   const [curlInput, setCurlInput] = useState('curl -X POST https://api.navhub.local/v1/search -d "{\"q\":\"ai\"}"')
 
-  /**
-   * 复制：**先确认真的写进去了，再说「已复制」**。
-   *
-   * 原来是 `await navigator.clipboard.writeText(text)` 且**没有 catch**：
-   * 非安全上下文（http:// 局域网 IP）下 `navigator.clipboard` 根本不存在，
-   * 权限被拒 / 页面失焦时写入的 Promise 也会 reject —— 两种情况都只会静默失败
-   * （外加一条未处理的 Promise 拒绝），8 个复制按钮看起来就是「点了没反应」。
-   */
+  // 极客小工具本地草稿记忆 (E3: 解决意外刷新/关闭抽屉丢失调试代码的痛点)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('navhub_quick_tools_draft')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed.activeTab) setActiveTab(parsed.activeTab)
+        if (parsed.jsonInput) setJsonInput(parsed.jsonInput)
+        if (parsed.b64Input) setB64Input(parsed.b64Input)
+        if (parsed.tsInput) setTsInput(parsed.tsInput)
+        if (parsed.urlInput) setUrlInput(parsed.urlInput)
+        if (parsed.jwtInput) setJwtInput(parsed.jwtInput)
+        if (parsed.cronInput) setCronInput(parsed.cronInput)
+        if (parsed.curlInput) setCurlInput(parsed.curlInput)
+      }
+    } catch {
+      // 容错降级：无痕模式或存储受限时静默回退
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      const payload = JSON.stringify({
+        activeTab,
+        jsonInput,
+        b64Input,
+        tsInput,
+        urlInput,
+        jwtInput,
+        cronInput,
+        curlInput,
+      })
+      localStorage.setItem('navhub_quick_tools_draft', payload)
+    } catch {
+      // 容错降级：忽略本地存储配额超限错误
+    }
+  }, [activeTab, jsonInput, b64Input, tsInput, urlInput, jwtInput, cronInput, curlInput])
+
   const copyToClipboard = async (text: string, id: string) => {
     const result = await copyText(text)
     if (!result.ok) {
@@ -153,7 +183,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100%-2rem)] max-w-3xl max-h-[calc(100dvh-2.5rem)] overflow-y-auto p-4 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
+      <DialogContent className="w-[calc(100%-2rem)] max-w-3xl max-h-[calc(100dvh-2.5rem)] overflow-y-auto overscroll-contain p-4 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
         <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
           <DialogTitle className="flex items-center gap-2.5 text-lg sm:text-xl font-bold">
             <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
@@ -181,64 +211,64 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           <Button
             size="sm"
             variant={activeTab === 'json' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap touch-manipulation select-none active:scale-95 cursor-pointer"
             onClick={() => setActiveTab('json')}
           >
-            <Braces className="w-3.5 h-3.5" />
+            <Braces className={`w-3.5 h-3.5 ${activeTab === 'json' ? 'text-emerald-300' : 'text-emerald-500'}`} />
             <span>JSON 格式化</span>
           </Button>
           <Button
             size="sm"
             variant={activeTab === 'base64' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap touch-manipulation select-none active:scale-95 cursor-pointer"
             onClick={() => setActiveTab('base64')}
           >
-            <Binary className="w-3.5 h-3.5" />
+            <Binary className={`w-3.5 h-3.5 ${activeTab === 'base64' ? 'text-blue-300' : 'text-blue-500'}`} />
             <span>Base64 编解码</span>
           </Button>
           <Button
             size="sm"
             variant={activeTab === 'uuid-time' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap touch-manipulation select-none active:scale-95 cursor-pointer"
             onClick={() => setActiveTab('uuid-time')}
           >
-            <Clock className="w-3.5 h-3.5" />
+            <Clock className={`w-3.5 h-3.5 ${activeTab === 'uuid-time' ? 'text-amber-300' : 'text-amber-500'}`} />
             <span>UUID & 时间戳</span>
           </Button>
           <Button
             size="sm"
             variant={activeTab === 'url' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap touch-manipulation select-none active:scale-95 cursor-pointer"
             onClick={() => setActiveTab('url')}
           >
-            <Link2 className="w-3.5 h-3.5" />
+            <Link2 className={`w-3.5 h-3.5 ${activeTab === 'url' ? 'text-indigo-300' : 'text-indigo-500'}`} />
             <span>URL 编解码</span>
           </Button>
           <Button
             size="sm"
             variant={activeTab === 'jwt' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap touch-manipulation select-none active:scale-95 cursor-pointer"
             onClick={() => setActiveTab('jwt')}
           >
-            <KeyRound className="w-3.5 h-3.5" />
+            <KeyRound className={`w-3.5 h-3.5 ${activeTab === 'jwt' ? 'text-rose-300' : 'text-rose-500'}`} />
             <span>JWT 透视</span>
           </Button>
           <Button
             size="sm"
             variant={activeTab === 'cron' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap touch-manipulation select-none active:scale-95 cursor-pointer"
             onClick={() => setActiveTab('cron')}
           >
-            <Timer className="w-3.5 h-3.5" />
+            <Timer className={`w-3.5 h-3.5 ${activeTab === 'cron' ? 'text-purple-300' : 'text-purple-500'}`} />
             <span>Cron 推演</span>
           </Button>
           <Button
             size="sm"
             variant={activeTab === 'curl' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap touch-manipulation select-none active:scale-95 cursor-pointer"
             onClick={() => setActiveTab('curl')}
           >
-            <Terminal className="w-3.5 h-3.5" />
+            <Terminal className={`w-3.5 h-3.5 ${activeTab === 'curl' ? 'text-cyan-300' : 'text-cyan-500'}`} />
             <span>Curl 转 Fetch</span>
           </Button>
         </div>
@@ -253,6 +283,18 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               <Button size="sm" variant="secondary" className="h-8 text-xs px-3 border border-border/60" onClick={handleMinifyJson}>
                 压缩成一行
               </Button>
+              {jsonInput && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => { setJsonInput(''); setJsonOutput(''); setJsonError(null); }}
+                  title="清空输入与输出"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                  清空
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -302,6 +344,18 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               <Button size="sm" variant="secondary" className="h-8 text-xs px-3 border border-border/60" onClick={handleDecodeBase64}>
                 还原解码
               </Button>
+              {b64Input && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => { setB64Input(''); setB64Output(''); }}
+                  title="清空输入与输出"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                  清空
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -381,14 +435,14 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs font-mono">
                 <div className="p-2.5 rounded-lg bg-muted/40 border border-border/50 flex items-center justify-between">
                   <span className="text-muted-foreground">秒级 (10位): <strong className="text-foreground">{Math.floor(currentTs / 1000)}</strong></span>
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-background" onClick={() => copyToClipboard(String(Math.floor(currentTs / 1000)), 'ts10')} aria-label="复制秒级时间戳" title="复制秒级时间戳">
-                    <Copy className="w-3 h-3" />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-background cursor-pointer touch-manipulation select-none active:scale-90" onClick={() => copyToClipboard(String(Math.floor(currentTs / 1000)), 'ts10')} aria-label="复制秒级时间戳" title="复制秒级时间戳">
+                    {copied === 'ts10' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                   </Button>
                 </div>
                 <div className="p-2.5 rounded-lg bg-muted/40 border border-border/50 flex items-center justify-between">
                   <span className="text-muted-foreground">毫秒级 (13位): <strong className="text-foreground">{currentTs}</strong></span>
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-background" onClick={() => copyToClipboard(String(currentTs), 'ts13')} aria-label="复制毫秒时间戳" title="复制毫秒时间戳">
-                    <Copy className="w-3 h-3" />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-background cursor-pointer touch-manipulation select-none active:scale-90" onClick={() => copyToClipboard(String(currentTs), 'ts13')} aria-label="复制毫秒时间戳" title="复制毫秒时间戳">
+                    {copied === 'ts13' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                   </Button>
                 </div>
               </div>
@@ -404,8 +458,22 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   onChange={(e) => handleConvertTimestamp(e.target.value)}
                   className="font-mono text-xs h-9 bg-background/90 border-border/70 flex-1"
                 />
-                <div className="text-xs font-mono font-medium px-3.5 py-2 bg-muted/50 rounded-lg border border-border/60 min-w-[180px] text-center">
-                  {tsResult || '等待输入...'}
+                <div className="flex items-center gap-2">
+                  <div className="text-xs font-mono font-medium px-3.5 py-2 bg-muted/50 rounded-lg border border-border/60 min-w-[180px] text-center flex-1 sm:flex-initial">
+                    {tsResult || '等待输入...'}
+                  </div>
+                  {tsResult && tsResult !== '无效时间戳' && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-9 text-xs px-2.5 shrink-0 border border-border/60 cursor-pointer touch-manipulation select-none active:scale-90"
+                      onClick={() => copyToClipboard(tsResult, 'tsResult')}
+                      aria-label="复制转换后时间"
+                      title="复制转换后时间"
+                    >
+                      {copied === 'tsResult' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -422,6 +490,18 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               <Button size="sm" variant="secondary" className="h-8 text-xs px-3 border border-border/60" onClick={handleDecodeUrl}>
                 URL 解码 (decodeURI)
               </Button>
+              {urlInput && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => { setUrlInput(''); setUrlOutput(''); }}
+                  title="清空输入与输出"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                  清空
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -461,11 +541,24 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           const preview = parsedJwt?.type === 'jwt' ? parsedJwt.previewValue : '请输入以 eyJ 开头的标准三段式 JWT 字符串...'
           return (
             <div className="space-y-3.5 pt-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground truncate">
                   {parsedJwt?.type === 'jwt' ? parsedJwt.subtitle : '支持端侧零网络开销解码 Header/Payload 并探测过期时间'}
                 </span>
-                <Button
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {jwtInput && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-xs px-2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setJwtInput('')}
+                      title="清空输入"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                      清空
+                    </Button>
+                  )}
+                  <Button
                   size="sm"
                   variant="outline"
                   className="h-8 text-xs gap-1.5 border-border/60"
@@ -473,7 +566,8 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                 >
                   {copied === 'jwt' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copied === 'jwt' ? '已复制' : '复制 Payload'}</span>
-                </Button>
+                  </Button>
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">
@@ -539,17 +633,31 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           const codeOut = parsedCurl?.type === 'curl_to_fetch' ? parsedCurl.previewValue : '// 请输入以 curl 开头的命令...'
           return (
             <div className="space-y-3.5 pt-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">将终端 Curl 命令即时逆向转换为标准 Fetch 脚本</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs gap-1.5 border-border/60"
-                  onClick={() => copyToClipboard(codeOut, 'curl')}
-                >
-                  {copied === 'curl' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied === 'curl' ? '已复制' : '复制 Fetch 代码'}</span>
-                </Button>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground truncate">将终端 Curl 命令即时逆向转换为标准 Fetch 脚本</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {curlInput && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-xs px-2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setCurlInput('')}
+                      title="清空输入"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                      清空
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs gap-1.5 border-border/60"
+                    onClick={() => copyToClipboard(codeOut, 'curl')}
+                  >
+                    {copied === 'curl' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copied === 'curl' ? '已复制' : '复制 Fetch 代码'}</span>
+                  </Button>
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">

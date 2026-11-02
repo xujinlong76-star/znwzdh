@@ -57,7 +57,7 @@ export function CrdtSyncStatusPill() {
         <button
           type="button"
           aria-label={`${labelText} - 查看多端协同状态`}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs text-muted-foreground transition-all hover:bg-muted/80 hover:text-foreground shadow-sm"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs text-muted-foreground transition-all hover:bg-muted/80 hover:text-foreground shadow-sm touch-manipulation select-none active:scale-95 cursor-pointer"
         >
           {status === 'synced' ? (
             <span className="relative flex h-2 w-2">

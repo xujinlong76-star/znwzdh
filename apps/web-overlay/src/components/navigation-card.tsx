@@ -12,7 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Eye, Star, Zap, Pin, Clock, Info, Copy } from 'lucide-react'
+import { Eye, Star, Zap, Pin, Clock, Info, Copy, LayoutGrid } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
@@ -107,6 +107,8 @@ export function NavigationCard({
 
   // 提取首个平替
   const topAlternative = item.relations?.find((r) => r.relationType === 'alternative')
+  // 识别死链/不可达状态（兼容服务端 health 巡检异常与数据库 status === 'broken'）
+  const isUnhealthy = item.health?.ok === false || (item as any).status === 'broken'
 
   /**
    * 卡片的键盘模型：**整卡只有一个 Tab 停留点**（主链接）。
@@ -270,7 +272,7 @@ export function NavigationCard({
               draggable={isDraggable}
               onDragStart={handleDragStart}
               className={cn(
-                "nav-card-deferred group relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
+                "nav-card-deferred group relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40 touch-manipulation select-none active:scale-[0.985] sm:active:scale-100",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
                 selectionClass
@@ -326,7 +328,7 @@ export function NavigationCard({
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                     </span>
                   )}
-                  {item.health?.ok === false && (
+                  {isUnhealthy && (
                     <span
                       onClick={(e) => {
                         e.preventDefault()
@@ -334,7 +336,7 @@ export function NavigationCard({
                         onPeek?.(item)
                       }}
                       className="pointer-events-auto inline-flex items-center gap-0.5 text-[9px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
-                      title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
+                      title="检测到站点当前无法直连或已失效，点击开启时光机历史快照自愈"
                     >
                       <Clock className="w-2.5 h-2.5 text-amber-500" />
                       <span>快照自愈</span>
@@ -384,12 +386,12 @@ export function NavigationCard({
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex h-6 w-6 rounded-md text-muted-foreground hover:text-emerald-500"
-                  title="📌 固定到工作台"
+                  className="hidden sm:inline-flex h-6 w-6 rounded-md text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                  title="📌 固定到模块化工作台"
                   aria-label={`固定到工作台：${item.title}`}
                   onClick={handleWorkbenchPin}
                 >
-                  <Pin className="w-3 h-3" />
+                  <LayoutGrid className="w-3 h-3" />
                 </Button>
                 <Button
                   tabIndex={-1}
@@ -430,7 +432,7 @@ export function NavigationCard({
               draggable={isDraggable}
               onDragStart={handleDragStart}
               className={cn(
-                "nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
+                "nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 touch-manipulation select-none active:scale-[0.985] sm:active:scale-100 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/70 hover:ring-1 hover:ring-primary/40",
                 selectionClass
@@ -493,7 +495,7 @@ export function NavigationCard({
                             {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                           </span>
                         )}
-                        {item.health?.ok === false && (
+                        {isUnhealthy && (
                           <span
                             onClick={(e) => {
                               e.preventDefault()
@@ -501,7 +503,7 @@ export function NavigationCard({
                               onPeek?.(item)
                             }}
                             className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
-                            title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
+                            title="检测到站点当前无法直连或已失效，点击开启时光机历史快照自愈"
                           >
                             <Clock className="w-2.5 h-2.5 text-amber-500" />
                             <span>快照自愈</span>
@@ -600,7 +602,7 @@ export function NavigationCard({
                   aria-label={`固定到工作台：${item.title}`}
                   onClick={handleWorkbenchPin}
                 >
-                  <Pin className="w-3.5 h-3.5" />
+                  <LayoutGrid className="w-3.5 h-3.5" />
                 </Button>
                 <Button
                   tabIndex={-1}
@@ -640,7 +642,7 @@ export function NavigationCard({
             draggable={isDraggable}
             onDragStart={handleDragStart}
             className={cn(
-              "nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
+              "nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40 touch-manipulation select-none active:scale-[0.985] sm:active:scale-100",
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
               isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
               selectionClass
@@ -703,7 +705,7 @@ export function NavigationCard({
                           {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                         </span>
                       )}
-                      {item.health?.ok === false && (
+                      {isUnhealthy && (
                         <span
                           onClick={(e) => {
                             e.preventDefault()
@@ -711,7 +713,7 @@ export function NavigationCard({
                             onPeek?.(item)
                           }}
                           className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
-                          title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
+                          title="检测到站点当前无法直连或已失效，点击开启时光机历史快照自愈"
                         >
                           <Clock className="w-2.5 h-2.5 text-amber-500" />
                           <span>快照自愈</span>
@@ -798,7 +800,7 @@ export function NavigationCard({
                 aria-label={`固定到工作台：${item.title}`}
                 onClick={handleWorkbenchPin}
               >
-                <Pin className="w-3.5 h-3.5" />
+                <LayoutGrid className="w-3.5 h-3.5" />
               </Button>
               <Button
                 tabIndex={-1}

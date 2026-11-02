@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/registry/new-york/ui/dialog'
-import { Command, Keyboard, Sparkles } from 'lucide-react'
+import { Command, Keyboard, Sparkles, Layout, Search, Zap } from 'lucide-react'
 import { useHomeDIY, type HomeViewMode, type CanvasBackground } from '@/lib/modular/use-home-diy'
 import { canonicalDensityLabel, useDensity } from '@/components/density-provider'
 import { useToast } from '@/components/ui/use-toast'
@@ -22,7 +22,20 @@ interface KeyboardShortcutsDialogProps {
 
 const SHORTCUT_GROUPS = [
   {
+    title: '检索与流转',
+    icon: Search,
+    shortcuts: [
+      { key: '/ 或 ⌘K', desc: '极速呼出超级搜索与指令控制台 (Spotlight)' },
+      { key: 'Space', desc: '聚焦卡片时触发沙箱速览与平替 (Peek)' },
+      { key: '1 ~ 9', desc: '桌面常用启动坞数字键一键秒开' },
+      { key: '^N / ^P', desc: '搜索结果上下项快速穿梭选择' },
+      { key: 'Alt+C', desc: '极速复制当前聚焦项官网链接' },
+      { key: 'T', desc: '打开开发者微工具箱 (Base64/JSON/UUID)' },
+    ],
+  },
+  {
     title: '视窗与排版',
+    icon: Layout,
     shortcuts: [
       { key: '1', desc: '切换为极客混合流 (Hybrid)' },
       { key: '2', desc: '切换为经典全景流 (Classic)' },
@@ -30,16 +43,8 @@ const SHORTCUT_GROUPS = [
       { key: 'E', desc: '开关首页 DIY 可视化排版工坊' },
       { key: 'D', desc: '循环切换内容密度 (紧凑 / 舒适 / 宽松)' },
       { key: 'B', desc: '循环切换画布背景 (微网格 / 科技点 / 极客网 / 极光 / 纯净)' },
-    ],
-  },
-  {
-    title: '检索与导航',
-    shortcuts: [
-      { key: '/', desc: '极速聚焦智能检索引擎 (Search Palette)' },
-      { key: 'Space', desc: '聚焦卡片时触发沙箱速览与微动作 (Peek)' },
-      { key: 'T', desc: '打开开发者微工具箱 (Base64/JSON/UUID)' },
       { key: '?', desc: '打开或关闭本快捷键指南' },
-      { key: 'Esc', desc: '关闭弹窗 / 退出速览' },
+      { key: 'Esc', desc: '关闭当前浮层 / 退出全屏' },
     ],
   },
 ]
@@ -83,11 +88,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
       // 模态打开期间只保留「?」呼出本身：此时用户正在对话框里操作，
       // 1/2/3 切视图、E 开工坊、D 切密度、B 换背景这些全局键必须让位，
       // 否则在速览窗里按个 e 就把首页排版改了，属于按键劫持。
-      // 判定用 role=dialog（Radix 与我们自己的浮层都会带），不用组件状态：
-      // 快捷键是全局的，得能感知别的组件打开的浮层。
       const inDialog = typeof document !== 'undefined' && Boolean(
-        // 排除 aria-hidden：常驻 DOM 的抽屉关闭态也带 role=dialog，
-        // 不排除会让全局快捷键在移动端永久失效
         document.querySelector('[role="dialog"]:not([aria-hidden="true"]), [role="alertdialog"]:not([aria-hidden="true"])'),
       )
       if (inDialog && e.key !== '?') return
@@ -120,8 +121,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
         toggleEditingLayout()
       }
 
-      // 按 T 打开开发者微工具箱。指南里一直宣传这个键，但处理分支此前从未实现，
-      // 按 T 永远没反应 —— 广告了不存在的功能比没有这个功能更糟。
+      // 按 T 打开开发者微工具箱
       if (e.key === 't' || e.key === 'T') {
         e.preventDefault()
         onOpenTools?.()
@@ -134,7 +134,6 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
         const nextIndex = (order.indexOf(density as any) + 1) % order.length
         const next = order[nextIndex]
         setDensity(next)
-        // 文案与设置页/首页菜单同源（canonicalDensityLabel），不再另写一套叫法
         toast({
           title: `内容密度已切换: ${canonicalDensityLabel(next)}`,
         })
@@ -159,47 +158,52 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-3rem)] overflow-y-auto sm:w-full p-4 sm:p-6">
+      <DialogContent className="w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-3rem)] overflow-y-auto sm:w-full p-4 sm:p-6 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
         <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
-          <DialogTitle className="flex items-center gap-2 text-base font-bold">
-            <Keyboard className="w-5 h-5 text-primary" />
+          <DialogTitle className="flex items-center gap-2.5 text-base sm:text-lg font-bold">
+            <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 shadow-xs">
+              <Keyboard className="w-4 h-4 sm:w-5 sm:h-5" />
+            </div>
             <span>山羊胡快捷键全景指南</span>
           </DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            像操作专业 IDE 一样高效掌控山羊胡，随时随地单手盲操。
+          <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+            像操作专业 IDE 一样高效掌控山羊胡，随时随地双手盲操直达。
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-3 space-y-5">
-          {SHORTCUT_GROUPS.map((group) => (
-            <div key={group.title} className="space-y-2.5">
-              <h4 className="text-xs font-semibold text-muted-foreground tracking-wider uppercase flex items-center gap-1.5">
-                <span className="w-1 h-3 rounded-full bg-primary" />
-                <span>{group.title}</span>
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {group.shortcuts.map((item) => (
-                  <div
-                    key={item.key}
-                    className="flex items-center justify-between p-2 rounded-lg bg-muted/40 border border-border/40 text-xs"
-                  >
-                    <span className="text-muted-foreground truncate mr-2">{item.desc}</span>
-                    <kbd className="font-mono font-bold text-foreground bg-background px-2 py-0.5 rounded border border-border/70 shadow-2xs shrink-0">
-                      {item.key}
-                    </kbd>
-                  </div>
-                ))}
+        <div className="py-3 space-y-4">
+          {SHORTCUT_GROUPS.map((group) => {
+            const GroupIcon = group.icon
+            return (
+              <div key={group.title} className="space-y-2">
+                <h4 className="text-xs font-semibold text-foreground tracking-wider uppercase flex items-center gap-1.5">
+                  <GroupIcon className="w-3.5 h-3.5 text-primary" />
+                  <span>{group.title}</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {group.shortcuts.map((item) => (
+                    <div
+                      key={item.key}
+                      className="flex items-center justify-between p-2 rounded-xl bg-card/60 hover:bg-card border border-border/60 text-xs transition-colors duration-150"
+                    >
+                      <span className="text-muted-foreground truncate mr-2">{item.desc}</span>
+                      <kbd className="font-mono font-bold text-primary bg-background/90 px-2 py-0.5 rounded-lg border border-border/80 shadow-2xs shrink-0 ring-1 ring-inset ring-white/10">
+                        {item.key}
+                      </kbd>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
-        <div className="pt-2 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
+        <div className="pt-2.5 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             <span>随时按「?」呼出本窗口</span>
           </span>
-          <span className="font-mono text-[11px]">山羊胡 Pro Keyboard Maestro</span>
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Pro Keyboard Maestro</span>
         </div>
       </DialogContent>
     </Dialog>

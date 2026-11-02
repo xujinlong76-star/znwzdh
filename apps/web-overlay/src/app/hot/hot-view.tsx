@@ -10,7 +10,7 @@
  * 避免把 SSR 内容闪成骨架屏。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
@@ -19,7 +19,7 @@ import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SearchPalette } from '@/components/search-palette'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Flame, Sparkles, ArrowLeft, Trophy } from 'lucide-react'
+import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink, Search, X, Video, ArrowRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
@@ -52,6 +52,31 @@ export default function HotView({
    * 原来 defaultValue 只存在 Radix 内部，返回即回到「访问量榜」。
    */
   const [tab, setTab] = useState<'trending' | 'new'>('trending')
+  const [filterQuery, setFilterQuery] = useState('')
+
+  const filteredTrending = useMemo(() => {
+    if (!filterQuery.trim()) return trending
+    const q = filterQuery.trim().toLowerCase()
+    return trending.filter((s) => {
+      const titleMatch = s.title.toLowerCase().includes(q)
+      const descMatch = (s.description ?? '').toLowerCase().includes(q)
+      const urlMatch = (s.url ?? '').toLowerCase().includes(q)
+      const tagMatch = (s.tags ?? []).some((t) => t.toLowerCase().includes(q))
+      return titleMatch || descMatch || urlMatch || tagMatch
+    })
+  }, [trending, filterQuery])
+
+  const filteredFresh = useMemo(() => {
+    if (!filterQuery.trim()) return fresh
+    const q = filterQuery.trim().toLowerCase()
+    return fresh.filter((s) => {
+      const titleMatch = s.title.toLowerCase().includes(q)
+      const descMatch = (s.description ?? '').toLowerCase().includes(q)
+      const urlMatch = (s.url ?? '').toLowerCase().includes(q)
+      const tagMatch = (s.tags ?? []).some((t) => t.toLowerCase().includes(q))
+      return titleMatch || descMatch || urlMatch || tagMatch
+    })
+  }, [fresh, filterQuery])
   useEffect(() => {
     const syncFromUrl = () => {
       const t = new URLSearchParams(window.location.search).get('tab')
@@ -98,22 +123,31 @@ export default function HotView({
     const rank = index + 1
     if (rank === 1) {
       return (
-        <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 flex items-center justify-center text-xs font-bold font-mono shadow-xs">
-          🥇
+        <span
+          title="榜首第 1 名"
+          className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-white flex items-center justify-center text-xs font-black font-mono shadow-sm ring-1 ring-inset ring-amber-300/50"
+        >
+          1
         </span>
       )
     }
     if (rank === 2) {
       return (
-        <span className="w-6 h-6 rounded-full bg-slate-400/20 text-slate-600 dark:text-slate-300 border border-slate-400/40 flex items-center justify-center text-xs font-bold font-mono shadow-xs">
-          🥈
+        <span
+          title="第 2 名"
+          className="w-6 h-6 rounded-full bg-gradient-to-br from-slate-300 via-slate-400 to-slate-500 text-white flex items-center justify-center text-xs font-black font-mono shadow-sm ring-1 ring-inset ring-slate-200/50"
+        >
+          2
         </span>
       )
     }
     if (rank === 3) {
       return (
-        <span className="w-6 h-6 rounded-full bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-500/40 flex items-center justify-center text-xs font-bold font-mono shadow-xs">
-          🥉
+        <span
+          title="第 3 名"
+          className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-700 via-amber-800 to-amber-900 text-amber-100 flex items-center justify-center text-xs font-black font-mono shadow-sm ring-1 ring-inset ring-amber-500/40"
+        >
+          3
         </span>
       )
     }
@@ -132,7 +166,7 @@ export default function HotView({
       {sites.map((site, i) => (
         <div
           key={site.id}
-          className="relative group @container rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-[var(--density-card-padding,0.875rem)] flex flex-col justify-between shadow-2xs"
+          className="relative group @container rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-[var(--density-card-padding,0.875rem)] flex flex-col justify-between shadow-2xs touch-manipulation select-none active:scale-[0.985] sm:active:scale-100"
         >
           <div className="flex items-start gap-3">
             <div className="shrink-0 pt-0.5">
@@ -182,7 +216,17 @@ export default function HotView({
               站内详情
             </Link>
           </div>
-          <div className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <div className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-1">
+            <a
+              href={safeHref(site.url)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="新窗口直达"
+              aria-label={`访问 ${site.title}`}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
             <FavoriteButton
               site={{
                 siteId: site.id,
@@ -260,6 +304,63 @@ export default function HotView({
 
         {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
 
+        {/* 热门技术视频推荐横幅 */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/5 text-xs text-foreground">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <Video className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="font-semibold text-foreground truncate">
+                热门技术精选视频教程
+              </div>
+              <div className="text-[11px] text-muted-foreground truncate">
+                探索 6,000+ 部热门前端、后端、AI、云原生等前沿技术实战课程
+              </div>
+            </div>
+          </div>
+          <Button asChild size="sm" variant="outline" className="text-xs shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10">
+            <Link href="/videos">
+              <span>前往技术视频库</span>
+              <ArrowRight className="w-3.5 h-3.5 ml-1" />
+            </Link>
+          </Button>
+        </div>
+
+        {/* 榜单内即时筛选器 */}
+        {!loading && (trending.length > 0 || fresh.length > 0) && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-muted/30 border border-border/60 rounded-xl p-2.5">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                placeholder="在当前榜单中极速筛选站点（名称、简介、域名、标签）..."
+                aria-label="在当前榜单中筛选站点"
+                className="w-full text-xs bg-background/80 border border-border/60 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-lg pl-8 pr-8 py-1.5 outline-none transition-colors"
+              />
+              {filterQuery && (
+                <button
+                  type="button"
+                  onClick={() => setFilterQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer"
+                  title="清空筛选"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="text-[11px] text-muted-foreground shrink-0 px-1">
+              {tab === 'trending' ? (
+                <>显示 <span className="font-mono font-semibold text-foreground">{filteredTrending.length}</span> / {trending.length} 个站点</>
+              ) : (
+                <>显示 <span className="font-mono font-semibold text-foreground">{filteredFresh.length}</span> / {fresh.length} 个站点</>
+              )}
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div aria-busy="true" aria-live="polite" aria-label="正在加载榜单" className="space-y-4">
             <span className="sr-only">正在计算最新榜单排行…</span>
@@ -322,8 +423,26 @@ export default function HotView({
                     </Button>
                   }
                 />
+              ) : filteredTrending.length === 0 ? (
+                <EmptyState
+                  icon={Search}
+                  iconTone="muted"
+                  title="未找到匹配的榜单站点"
+                  description={`未搜索到包含 “${filterQuery}” 的热门站点`}
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                      onClick={() => setFilterQuery('')}
+                    >
+                      清空筛选条件
+                    </Button>
+                  }
+                />
               ) : (
-                renderList(trending)
+                renderList(filteredTrending)
               )}
             </TabsContent>
             <TabsContent value="new" className="pt-2">
@@ -339,8 +458,26 @@ export default function HotView({
                     </Button>
                   }
                 />
+              ) : filteredFresh.length === 0 ? (
+                <EmptyState
+                  icon={Search}
+                  iconTone="muted"
+                  title="未找到匹配的新入库站点"
+                  description={`未搜索到包含 “${filterQuery}” 的新入库站点`}
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                      onClick={() => setFilterQuery('')}
+                    >
+                      清空筛选条件
+                    </Button>
+                  }
+                />
               ) : (
-                renderList(fresh)
+                renderList(filteredFresh)
               )}
             </TabsContent>
           </Tabs>

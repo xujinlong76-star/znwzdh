@@ -26,10 +26,25 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-const KIND_META: Record<string, { label: string; icon: typeof Compass }> = {
-  topic: { label: '主题', icon: Compass },
-  geo: { label: '地域', icon: MapPin },
-  roadmap: { label: '路线图', icon: Route },
+const KIND_META: Record<string, { label: string; icon: typeof Compass; color: string; bg: string }> = {
+  topic: {
+    label: '主题',
+    icon: Compass,
+    color: 'text-violet-600 dark:text-violet-400',
+    bg: 'bg-violet-500/10 border-violet-500/20',
+  },
+  geo: {
+    label: '地域',
+    icon: MapPin,
+    color: 'text-amber-600 dark:text-amber-400',
+    bg: 'bg-amber-500/10 border-amber-500/20',
+  },
+  roadmap: {
+    label: '路线图',
+    icon: Route,
+    color: 'text-emerald-600 dark:text-emerald-400',
+    bg: 'bg-emerald-500/10 border-emerald-500/20',
+  },
 }
 
 export function CollectionBoard({
@@ -245,13 +260,13 @@ export function CollectionBoard({
               <Link
                 key={c.id}
                 href={'/collections/' + encodeURIComponent(c.slug)}
-                className="group rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 backdrop-blur-xs p-4 sm:p-5 transition-all duration-200 hover:-translate-y-0.5 shadow-2xs flex flex-col"
+                className="group rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 backdrop-blur-xs p-4 sm:p-5 transition-all duration-200 hover:-translate-y-0.5 shadow-2xs flex flex-col touch-manipulation select-none active:scale-[0.985] sm:active:scale-100"
               >
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="p-1.5 rounded-lg bg-violet-500/10 text-violet-500 border border-violet-500/20">
+                  <span className={`p-1.5 rounded-lg border ${meta.bg} ${meta.color} shadow-2xs transition-transform duration-200 group-hover:scale-105`}>
                     <Icon className="w-4 h-4" />
                   </span>
-                  <Badge variant="outline" className="text-xs">{meta.label}</Badge>
+                  <Badge variant="outline" className={`text-xs ${meta.color} border-current/20`}>{meta.label}</Badge>
                 </div>
                 <div className="text-base font-semibold group-hover:text-primary transition-colors">{c.title}</div>
                 {c.description && (

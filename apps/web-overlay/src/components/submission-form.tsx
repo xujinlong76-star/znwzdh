@@ -21,7 +21,8 @@ import {
     CardTitle,
 } from "@/registry/new-york/ui/card"
 import { Alert, AlertDescription } from "@/registry/new-york/ui/alert"
-import { Loader2, CheckCircle, XCircle, Send, Globe, FileText, Tag } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, Send, Globe, FileText, Tag, Sparkles } from 'lucide-react'
+import { SiteFavicon } from '@/components/site-favicon'
 import type { NavigationData, NavigationItem, NavigationCategory } from '@/types/navigation'
 import type { SubmissionData, SubmissionResponse } from '@/types/submission'
 
@@ -177,6 +178,16 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                             required
                             className="h-10 text-base sm:text-sm rounded-xl border-border/70 bg-background/80 font-mono"
                         />
+                        {formData.url && (formData.url.startsWith('http://') || formData.url.startsWith('https://')) && (
+                            <div className="flex items-center gap-2 p-2 rounded-xl bg-muted/30 border border-border/50 text-xs">
+                                <SiteFavicon url={formData.url} title={formData.title} size={20} className="w-5 h-5 rounded-md shrink-0" />
+                                <span className="text-muted-foreground truncate font-mono text-[11px] flex-1">{formData.url}</span>
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                    <Sparkles className="w-2.5 h-2.5" />
+                                    <span>有效网址</span>
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     {/* 网站描述 */}
@@ -268,7 +279,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                     <Button
                         type="submit"
                         disabled={isSubmitting}
-                        className="w-full h-11 text-sm font-semibold rounded-xl shadow-xs transition-all duration-200"
+                        className="w-full h-11 text-sm font-semibold rounded-xl shadow-xs transition-all duration-200 touch-manipulation select-none active:scale-[0.98] cursor-pointer"
                     >
                         {isSubmitting ? (
                             <>

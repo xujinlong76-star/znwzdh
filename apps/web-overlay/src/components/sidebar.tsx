@@ -140,10 +140,10 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
               <div className="flex items-center group">
                 <Button
                   variant="ghost"
-                  className="flex-1 justify-start gap-2.5 h-8.5 px-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+                  className="flex-1 justify-start gap-2.5 h-8.5 px-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer touch-manipulation select-none active:scale-[0.98]"
                   onClick={() => handleCategoryClick(category.id)}
                 >
-                  <span className="text-muted-foreground group-hover:text-primary transition-colors">
+                  <span className="w-6 h-6 rounded-md bg-muted/60 dark:bg-muted/30 border border-border/40 flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 group-hover:border-primary/20 transition-all shrink-0">
                     {renderIcon(category.icon)}
                   </span>
                   <span className="truncate">{category.title}</span>
@@ -153,7 +153,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-7 px-0 hover:bg-muted/50 cursor-pointer text-muted-foreground"
+                    className="h-8 w-7 px-0 hover:bg-muted/50 cursor-pointer text-muted-foreground touch-manipulation select-none active:scale-90"
                     onClick={() => toggleCategory(category.id)}
                     aria-label={expandedCategories[category.id] ? `折叠分类：${category.title}` : `展开分类：${category.title}`}
                     aria-expanded={Boolean(expandedCategories[category.id])}

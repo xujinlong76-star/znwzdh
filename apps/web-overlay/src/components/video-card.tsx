@@ -10,6 +10,7 @@ import type { SiteConfig } from '@/types/site'
 import { formatDuration } from '@/lib/video-format'
 import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 import { saveOfflineVideo, isOfflineVideo } from '@/lib/offline-video-cache'
+import { getPlaybackRecord } from '@/lib/video-playback-storage'
 import { VideoBilibiliHdPlayer } from '@/components/video-bilibili-hd-player'
 import { buildVideoEmbedUrlForSeo } from '@/lib/video-seo'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
@@ -32,6 +33,7 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
     const [isUsingProxy, setIsUsingProxy] = useState(false)
     const [inWatchLater, setInWatchLater] = useState(false)
     const [isSavedOffline, setIsSavedOffline] = useState(false)
+    const [playbackProgress, setPlaybackProgress] = useState(0)
     const { videoConfig } = item
 
     useEffect(() => {
@@ -39,8 +41,17 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
         // 离线状态只影响角标显示，探测失败时保持「未离线」即可，不影响播放
         isOfflineVideo(item.id).then(setIsSavedOffline).catch(() => { /* 见上：纯装饰性状态 */ })
 
+        const record = getPlaybackRecord(item.id)
+        if (record && record.progressPercent > 0) {
+            setPlaybackProgress(record.progressPercent)
+        }
+
         const handleSync = () => {
             setInWatchLater(isInWatchLater(item.id))
+            const rec = getPlaybackRecord(item.id)
+            if (rec && rec.progressPercent > 0) {
+                setPlaybackProgress(rec.progressPercent)
+            }
         }
         if (typeof window !== 'undefined') {
             window.addEventListener(PLAYLIST_UPDATE_EVENT, handleSync)
@@ -220,9 +231,16 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                             />
                         </>
                     ) : (
-                        /* 默认占位符 */
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted-foreground/20">
-                            <PlayCircle className="w-16 h-16 text-muted-foreground/30" />
+                        /* 全新现代高质感科技海报占位（杜绝死气沉沉的灰暗方块） */
+                        <div className="w-full h-full relative flex flex-col items-center justify-center bg-gradient-to-br from-indigo-950/30 via-muted/50 to-slate-900/40 overflow-hidden p-3 select-none">
+                            <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-primary/10 blur-2xl pointer-events-none" />
+                            <div className="absolute -bottom-10 -left-10 w-28 h-28 rounded-full bg-cyan-500/10 blur-2xl pointer-events-none" />
+                            <div className="relative z-10 w-12 h-12 rounded-2xl bg-background/70 backdrop-blur-md border border-border/80 shadow-md flex items-center justify-center text-primary/80 group-hover:scale-105 transition-transform duration-300">
+                                <MonitorPlay className="w-6 h-6 text-primary" />
+                            </div>
+                            <span className="relative z-10 mt-2 text-[11px] font-medium text-muted-foreground line-clamp-1 text-center max-w-[85%]">
+                                {item.title || '精选视频教程'}
+                            </span>
                         </div>
                     )}
 
@@ -240,12 +258,29 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                     {/* 平台标识 */}
                     {getPlatformBadge()}
 
-                    {/* 时长角标 */}
-                    {videoConfig?.durationSec ? (
-                        <span className="absolute bottom-2.5 right-2.5 px-2 py-0.5 text-[11px] font-mono font-medium bg-black/80 text-white/95 rounded-md backdrop-blur-md shadow-xs z-10">
-                            {formatDuration(videoConfig.durationSec)}
-                        </span>
-                    ) : null}
+                    {/* 时长与续播进度角标 */}
+                    <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5 z-10">
+                        {playbackProgress >= 3 && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded-md shadow-xs backdrop-blur-md">
+                                已看 {playbackProgress}%
+                            </span>
+                        )}
+                        {videoConfig?.durationSec ? (
+                            <span className="px-2 py-0.5 text-[11px] font-mono font-medium bg-black/80 text-white/95 rounded-md backdrop-blur-md shadow-xs">
+                                {formatDuration(videoConfig.durationSec)}
+                            </span>
+                        ) : null}
+                    </div>
+
+                    {/* 续播进度横条 */}
+                    {playbackProgress > 0 && (
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40 z-10 overflow-hidden">
+                            <div
+                                className="h-full bg-primary transition-all duration-300"
+                                style={{ width: `${playbackProgress}%` }}
+                            />
+                        </div>
+                    )}
 
                     {/* 渐变遮罩 - 底部 */}
                     <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-black/60 to-transparent" />
@@ -282,6 +317,31 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                             {item.description}
                         </p>
                     )}
+
+                    {((videoConfig?.tags && videoConfig.tags.length > 0) || (item.tags && item.tags.length > 0) || videoConfig?.subCategoryTitle) && (
+                        <div className="flex items-center gap-1 overflow-hidden pt-0.5 flex-wrap">
+                            {videoConfig?.subCategoryTitle && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-primary/10 text-primary font-medium truncate max-w-[130px]" title={videoConfig.subCategoryTitle}>
+                                    {videoConfig.subCategoryTitle}
+                                </span>
+                            )}
+                            {(videoConfig?.tags || item.tags || []).slice(0, 2).map((t, idx) => (
+                                <span key={idx} className="text-[10px] px-1.5 py-0.2 rounded bg-muted/60 text-muted-foreground/90 font-mono">
+                                    {t}
+                                </span>
+                            ))}
+                            {videoConfig?.difficulty === 'advanced' && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                                    进阶
+                                </span>
+                            )}
+                            {videoConfig?.difficulty === 'beginner' && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                                    入门
+                                </span>
+                            )}
+                        </div>
+                    )}
                 </div>
                 </button>
 
@@ -291,7 +351,8 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                         type="button"
                         onClick={handleToggleWatchLater}
                         title={inWatchLater ? '已加入稍后再看' : '稍后再看'}
-                        className={`p-1.5 rounded-lg backdrop-blur-md transition-all duration-200 ${
+                        aria-label={inWatchLater ? '已加入稍后再看' : '稍后再看'}
+                        className={`p-1.5 rounded-lg backdrop-blur-md transition-all duration-200 touch-manipulation select-none active:scale-90 cursor-pointer ${
                             inWatchLater
                                 ? 'bg-primary text-primary-foreground shadow-md'
                                 : 'bg-black/60 text-white/80 hover:bg-black/85 hover:text-white'
@@ -303,13 +364,14 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                         type="button"
                         onClick={handleSaveOffline}
                         title={isSavedOffline ? '已离线缓存' : '离线缓存'}
-                        className={`p-1.5 rounded-lg backdrop-blur-md transition-all duration-200 ${
+                        aria-label={isSavedOffline ? '已离线缓存' : '离线缓存'}
+                        className={`p-1.5 rounded-lg backdrop-blur-md transition-all duration-200 touch-manipulation select-none active:scale-90 cursor-pointer ${
                             isSavedOffline
                                 ? 'bg-emerald-600 text-white shadow-md'
                                 : 'bg-black/60 text-white/80 hover:bg-black/85 hover:text-white'
                         }`}
                     >
-                        <Download className="w-3.5 h-3.5" />
+                        {isSavedOffline ? <Check className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
                     </button>
                 </div>
             </div>

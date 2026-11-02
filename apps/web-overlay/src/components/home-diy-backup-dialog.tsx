@@ -570,10 +570,12 @@ export function HomeDIYBackupDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-xl max-h-[85dvh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-xl max-h-[85dvh] overflow-y-auto p-4 sm:p-6 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
         <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
-          <DialogTitle className="flex items-center gap-2 text-base font-bold">
-            <Download className="w-5 h-5 text-primary" />
+          <DialogTitle className="flex items-center gap-2.5 text-base font-bold">
+            <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shadow-2xs">
+              <Download className="w-4 h-4" />
+            </div>
             <span>DIY 配置漫游与备份分享</span>
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
@@ -587,7 +589,7 @@ export function HomeDIYBackupDialog({
             type="button"
             onClick={() => setBackupTab('plain')}
             className={cn(
-              "flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5",
+              "flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 touch-manipulation select-none active:scale-95 cursor-pointer",
               backupTab === 'plain'
                 ? "bg-background text-foreground shadow-xs font-semibold"
                 : "text-muted-foreground hover:text-foreground"
@@ -600,7 +602,7 @@ export function HomeDIYBackupDialog({
             type="button"
             onClick={() => setBackupTab('e2ee')}
             className={cn(
-              "flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5",
+              "flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 touch-manipulation select-none active:scale-95 cursor-pointer",
               backupTab === 'e2ee'
                 ? "bg-violet-600 text-white shadow-xs font-semibold"
                 : "text-muted-foreground hover:text-foreground"
@@ -615,17 +617,17 @@ export function HomeDIYBackupDialog({
           /* 明文 JSON 模式 */
           <div className="py-2 space-y-3.5">
             <div className="space-y-2">
-              <Button size="sm" onClick={handleShareUrlHash} className="w-full text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white shadow-xs">
+              <Button size="sm" onClick={handleShareUrlHash} className="w-full text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white shadow-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer font-medium">
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                 <span>复制免登专属分享链接 (URL-Hash)</span>
               </Button>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <Button size="sm" variant="outline" onClick={handleCopyConfig} className="text-xs gap-1.5">
+                <Button size="sm" variant="outline" onClick={handleCopyConfig} className="text-xs gap-1.5 touch-manipulation select-none active:scale-95 transition-all cursor-pointer">
                   <Copy className="w-3.5 h-3.5" />
                   <span>复制配置 JSON</span>
                 </Button>
-                <Button size="sm" variant="outline" onClick={handleDownloadConfig} className="text-xs gap-1.5">
+                <Button size="sm" variant="outline" onClick={handleDownloadConfig} className="text-xs gap-1.5 touch-manipulation select-none active:scale-95 transition-all cursor-pointer">
                   <Download className="w-3.5 h-3.5" />
                   <span>下载备份文件</span>
                 </Button>
@@ -633,7 +635,7 @@ export function HomeDIYBackupDialog({
                   size="sm"
                   variant="outline"
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-xs gap-1.5"
+                  className="text-xs gap-1.5 touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                 >
                   <Upload className="w-3.5 h-3.5" />
                   <span>选择文件导入</span>

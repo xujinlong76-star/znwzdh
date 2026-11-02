@@ -88,8 +88,11 @@ export async function generateMetadata(): Promise<Metadata> {
       title: siteName,
     },
     icons: {
-      // 默认指向真实存在的 PWA 图标：public/ 下没有 favicon.ico（曾 404 刷屏），用 icon-192 兜底
-      icon: settings.appearance.favicon || '/icons/icon-192.png',
+      // 现代浏览器优先加载自适应亮暗矢量 SVG Favicon，位图兜底
+      icon: settings.appearance.favicon || [
+        { url: '/favicon.svg', type: 'image/svg+xml' },
+        { url: '/icons/icon-192.png' },
+      ],
       apple: settings.appearance.appleTouchIcon || '/icons/apple-touch-icon.png',
     },
   };

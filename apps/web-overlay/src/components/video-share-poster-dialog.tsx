@@ -3,9 +3,10 @@
 import React, { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
-import { Share2, Copy, Check, Download, ExternalLink, Sparkles } from 'lucide-react'
+import { Share2, Copy, Check, Download } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 import { copyText } from '@/lib/clipboard'
+import { cn } from '@/lib/utils'
 
 interface VideoSharePosterDialogProps {
   open: boolean
@@ -49,10 +50,12 @@ export function VideoSharePosterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-xl glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl p-5 sm:p-6">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <Share2 className="w-5 h-5 text-primary" />
+          <DialogTitle className="flex items-center gap-2.5 text-base font-bold">
+            <div className="w-8 h-8 rounded-xl bg-pink-500/10 border border-pink-500/20 text-pink-500 flex items-center justify-center shadow-2xs">
+              <Share2 className="w-4 h-4" />
+            </div>
             <span>生成高能时间戳分享海报</span>
           </DialogTitle>
         </DialogHeader>
@@ -69,27 +72,44 @@ export function VideoSharePosterDialog({
           </div>
 
           {/* Share metadata info */}
-          <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted text-xs">
+          <div className="flex items-center justify-between p-2.5 rounded-xl bg-muted/60 border border-border/50 text-xs">
             <div className="space-y-0.5">
               <div className="font-semibold text-foreground">精准锚定播放点: {formattedTime}</div>
-              <div className="text-[11px] text-muted-foreground truncate max-w-sm">
+              <div className="text-[11px] text-muted-foreground truncate max-w-sm select-all font-mono">
                 {shareLink}
               </div>
             </div>
-            <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={handleCopyLink}>
+            <Button
+              size="sm"
+              variant="outline"
+              className={cn(
+                "h-8 gap-1.5 touch-manipulation select-none active:scale-95 transition-all cursor-pointer font-medium border-border/60",
+                copiedLink ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 shadow-2xs" : ""
+              )}
+              onClick={handleCopyLink}
+            >
               {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copiedLink ? '已复制' : '复制直达链接'}</span>
             </Button>
           </div>
 
           {/* Action buttons */}
-          <div className="flex justify-end gap-2 pt-2 border-t">
-            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+          <div className="flex justify-end gap-2 pt-3 border-t border-border/50">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="touch-manipulation select-none active:scale-95 cursor-pointer"
+              onClick={() => onOpenChange(false)}
+            >
               关闭
             </Button>
-            <Button size="sm" className="gap-1.5" onClick={handleDownloadPoster}>
+            <Button
+              size="sm"
+              className="gap-1.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white shadow-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer font-medium"
+              onClick={handleDownloadPoster}
+            >
               <Download className="w-3.5 h-3.5" />
-              下载高清海报 (SVG)
+              <span>下载高清海报 (SVG)</span>
             </Button>
           </div>
         </div>

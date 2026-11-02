@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <style>
+      .bg-rect {
+        fill: url(#lightBg);
+      }
+      .ring-path {
+        stroke: #ffffff;
+        stroke-opacity: 0.45;
+      }
+      .star-path {
+        fill: #ffffff;
+      }
+      .core-glow {
+        fill: #cffafe;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .bg-rect {
+          fill: url(#darkBg);
+        }
+        .ring-path {
+          stroke: #38bdf8;
+          stroke-opacity: 0.6;
+        }
+        .star-path {
+          fill: #f0f9ff;
+        }
+        .core-glow {
+          fill: #38bdf8;
+        }
+      }
+    </style>
+
+    <!-- 浅色模式蓝青极光流光 -->
+    <linearGradient id="lightBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="60%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+
+    <!-- 深色模式深邃星空极夜微光 -->
+    <linearGradient id="darkBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="60%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+
+    <linearGradient id="gloss" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <!-- 主圆角晶体底板 -->
+  <rect class="bg-rect" x="1.5" y="1.5" width="29" height="29" rx="7" />
+
+  <!-- 顶层微高光反光弧 -->
+  <rect x="2" y="2" width="28" height="14" rx="6.5" fill="url(#gloss)" />
+
+  <!-- 外边框微描边 -->
+  <rect x="2" y="2" width="28" height="28" rx="6.5" fill="none" stroke="#ffffff" stroke-width="0.75" stroke-opacity="0.35" />
+
+  <!-- 核心探索罗盘星轨图形 (在 16~32 像素极佳辨识) -->
+  <g transform="translate(16, 16)">
+    <!-- 经纬微网轨 -->
+    <circle cx="0" cy="0" r="8" fill="none" class="ring-path" stroke-width="0.85" stroke-dasharray="1 1.5" />
+    <ellipse cx="0" cy="0" rx="8" ry="3.5" fill="none" class="ring-path" stroke-width="0.85" />
+    
+    <!-- 罗盘主星芒 -->
+    <path class="star-path" d="M 0 -6.5 L 1.2 -1.8 L 6 0 L 1.2 1.8 L 0 6.5 L -1.2 1.8 L -6 0 L -1.2 -1.8 Z" />
+
+    <!-- 核心微光点 -->
+    <circle cx="0" cy="0" r="1.3" class="core-glow" />
+    <circle cx="0" cy="0" r="0.6" fill="#ffffff" />
+  </g>
+</svg>

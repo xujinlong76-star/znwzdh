@@ -21,7 +21,7 @@
  */
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Heart, Home, LayoutGrid, User } from 'lucide-react'
+import { Star, Home, LayoutGrid, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
@@ -31,7 +31,7 @@ const ITEMS = [
   { href: '/', label: '首页', Icon: Home },
   // 分类总览的真实路由是 /category（app/category/page.tsx），不是 /categories
   { href: '/category', label: '分类', Icon: LayoutGrid },
-  { href: '/favorites', label: '收藏', Icon: Heart },
+  { href: '/favorites', label: '收藏', Icon: Star },
   { href: '/me', label: '我的', Icon: User },
 ] as const
 
@@ -67,12 +67,12 @@ export default function MobileNav() {
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   // 触控可读性基线（F3）：标签 12px（原 10px 触控不可读）；leading 收紧防 4 项 flex-1 纵向溢出
-                  'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[12px] leading-[14px] font-medium transition-colors',
-                  active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+                  'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[12px] leading-[14px] font-medium transition-all duration-100 touch-manipulation select-none active:scale-90',
+                  active ? 'text-primary font-semibold' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                <span className="relative inline-flex">
-                  <Icon className="h-5 w-5" aria-hidden />
+                <span className="relative inline-flex items-center justify-center">
+                  <Icon className={cn("h-5 w-5 transition-transform duration-150", active && "scale-105 fill-primary/15")} aria-hidden />
                   {showBadge && (
                     <span
                       aria-hidden

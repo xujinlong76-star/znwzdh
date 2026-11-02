@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { ExternalLink, Sparkles, Zap, ArrowLeft, Search, ZoomIn, ZoomOut, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { Input } from '@/components/ui/input'
+import { SiteFavicon } from '@/components/site-favicon'
 import {
   directionFromKey,
   isActivationKey,
@@ -589,21 +590,29 @@ export function EcosystemGraph() {
         {selectedNode && (
           <div className="absolute right-2 sm:right-4 top-2 sm:top-4 bottom-2 sm:bottom-4 w-full sm:w-88 max-w-[calc(100%-1rem)] sm:max-w-[calc(100%-2rem)] glass-surface subtle-mesh rounded-2xl border border-border/70 p-3.5 sm:p-5 shadow-2xl flex flex-col space-y-4 animate-in fade-in slide-in-from-right-4 z-30 overflow-y-auto">
             <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-bold">{selectedNode.title}</h3>
-                  <Badge variant="outline" className="text-xs border-border/70">
-                    {CATEGORY_COLORS[selectedNode.category].name}
-                  </Badge>
+              <div className="flex items-start gap-3">
+                <SiteFavicon
+                  url={selectedNode.url}
+                  title={selectedNode.title}
+                  size={36}
+                  className="w-9 h-9 rounded-xl shrink-0 mt-0.5 shadow-xs border border-border/60"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold truncate">{selectedNode.title}</h3>
+                    <Badge variant="outline" className="text-xs border-border/70 shrink-0">
+                      {CATEGORY_COLORS[selectedNode.category].name}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    {selectedNode.description}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                  {selectedNode.description}
-                </p>
               </div>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 w-7 p-0 rounded-lg hover:bg-muted"
+                className="h-7 w-7 p-0 rounded-lg hover:bg-muted shrink-0 touch-manipulation select-none active:scale-90"
                 aria-label="关闭节点详情"
                 title="关闭节点详情"
                 onClick={() => setSelectedNode(null)}
@@ -619,7 +628,7 @@ export function EcosystemGraph() {
             )}
 
             <Button
-              className="w-full text-xs h-9 gap-1.5 shadow-xs font-medium"
+              className="w-full text-xs h-9 gap-1.5 shadow-xs font-medium touch-manipulation select-none active:scale-[0.98] cursor-pointer"
               onClick={() => safeWindowOpen(selectedNode.url)}
             >
               <span>立即直达官方主站</span>
@@ -647,15 +656,21 @@ export function EcosystemGraph() {
                       key={idx}
                       type="button"
                       onClick={() => setSelectedNode(otherNode)}
-                      className="w-full text-left p-2.5 rounded-xl border border-border/60 bg-background/70 hover:bg-background/95 hover:border-primary/40 cursor-pointer transition-all flex items-center justify-between text-xs shadow-2xs group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="w-full text-left p-2.5 rounded-xl border border-border/60 bg-background/70 hover:bg-background/95 hover:border-primary/40 cursor-pointer transition-all flex items-center justify-between text-xs shadow-2xs group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring touch-manipulation select-none active:scale-[0.98]"
                     >
-                      <span className="flex items-center">
-                        <span className="font-semibold group-hover:text-primary transition-colors">{otherNode.title}</span>
-                        <span className="text-xs text-muted-foreground ml-1.5 font-mono">
+                      <span className="flex items-center gap-2 min-w-0">
+                        <SiteFavicon
+                          url={otherNode.url}
+                          title={otherNode.title}
+                          size={18}
+                          className="w-4.5 h-4.5 rounded-md shrink-0 shadow-2xs"
+                        />
+                        <span className="font-semibold group-hover:text-primary transition-colors truncate">{otherNode.title}</span>
+                        <span className="text-xs text-muted-foreground font-mono shrink-0">
                           ({e.label || (e.type === 'alternative' ? '平替' : '生态')})
                         </span>
                       </span>
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge variant="secondary" className="text-xs shrink-0 ml-1.5">
                         {CATEGORY_COLORS[otherNode.category].name}
                       </Badge>
                     </button>

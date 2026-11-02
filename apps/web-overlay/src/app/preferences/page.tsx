@@ -197,13 +197,13 @@ export default function PreferencesPage() {
         description="搜索会根据你的浏览与收藏做轻量个性化重排。这里是系统据你的行为推断出的内容——看得见，才可以控制。"
         actions={
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <Button variant="outline" size="sm" asChild className="w-full text-xs sm:w-auto">
+            <Button variant="outline" size="sm" asChild className="w-full text-xs sm:w-auto touch-manipulation select-none active:scale-95 transition-all">
               <Link href="/me">
                 <Settings2 className="mr-2 h-4 w-4" />
                 全局导航与隐私设置
               </Link>
             </Button>
-            <Button variant="outline" size="sm" asChild className="w-full text-xs sm:w-auto">
+            <Button variant="outline" size="sm" asChild className="w-full text-xs sm:w-auto touch-manipulation select-none active:scale-95 transition-all">
               <Link href="/me/history">
                 <History className="mr-2 h-4 w-4" />
                 管理搜索历史
@@ -268,19 +268,21 @@ export default function PreferencesPage() {
           {/* 摘要：把原先挤在头图里的计数拆成可扫读的三块，窄屏 2 列、第三块整行 */}
           <section aria-label="画像摘要" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {[
-              { icon: Search, label: '搜索次数', value: profile!.searchCount, hint: '累计参与统计' },
-              { icon: Heart, label: '收藏站点', value: profile!.favoriteSiteIds.length, hint: '参与重排' },
-              { icon: Clock, label: '画像更新', value: new Date(profile!.updatedAt).toLocaleDateString('zh-CN'), hint: '本地时区' },
+              { icon: Search, label: '搜索次数', value: profile!.searchCount, hint: '累计参与统计', color: 'text-blue-500', bg: 'bg-blue-500/10 border-blue-500/20' },
+              { icon: Heart, label: '收藏站点', value: profile!.favoriteSiteIds.length, hint: '参与重排', color: 'text-rose-500', bg: 'bg-rose-500/10 border-rose-500/20' },
+              { icon: Clock, label: '画像更新', value: new Date(profile!.updatedAt).toLocaleDateString('zh-CN'), hint: '本地时区', color: 'text-amber-500', bg: 'bg-amber-500/10 border-amber-500/20' },
             ].map((stat) => (
               <div
                 key={stat.label}
-                className="min-w-0 rounded-xl border border-border/70 bg-card/60 p-4 last:col-span-2 sm:last:col-span-1"
+                className="min-w-0 rounded-2xl border border-border/70 bg-card/60 p-4 last:col-span-2 sm:last:col-span-1 shadow-2xs hover:border-primary/30 transition-all"
               >
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <stat.icon className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-                  {stat.label}
-                </p>
-                <p className="mt-2 break-words text-lg font-semibold tabular-nums">{stat.value}</p>
+                <div className="flex items-center gap-2">
+                  <div className={`w-7 h-7 rounded-lg border ${stat.bg} ${stat.color} flex items-center justify-center shrink-0 shadow-2xs`}>
+                    <stat.icon className="h-3.5 w-3.5" aria-hidden />
+                  </div>
+                  <span className="text-xs text-muted-foreground font-medium">{stat.label}</span>
+                </div>
+                <p className="mt-2.5 break-words text-lg sm:text-xl font-bold tabular-nums text-foreground">{stat.value}</p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">{stat.hint}</p>
               </div>
             ))}
@@ -290,7 +292,9 @@ export default function PreferencesPage() {
             <section className="flex h-full min-w-0 flex-col rounded-xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-primary/40 sm:p-5">
               <h2 className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">
                 <span className="flex min-w-0 items-center gap-2">
-                  <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
+                  <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <FolderOpen className="h-3.5 w-3.5" />
+                  </div>
                   常浏览的类目
                 </span>
                 <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
@@ -302,7 +306,7 @@ export default function PreferencesPage() {
                   <span
                     key={c}
                     title={catTitles[c] ?? c}
-                    className="max-w-full truncate rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs"
+                    className="max-w-full truncate rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs touch-manipulation select-none"
                   >
                     {catTitles[c] ?? c}
                   </span>
@@ -316,7 +320,9 @@ export default function PreferencesPage() {
             <section className="flex h-full min-w-0 flex-col rounded-xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-primary/40 sm:p-5">
               <h2 className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">
                 <span className="flex min-w-0 items-center gap-2">
-                  <Tag className="h-4 w-4 shrink-0 text-primary" />
+                  <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <Tag className="h-3.5 w-3.5" />
+                  </div>
                   关注的标签
                 </span>
                 <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
@@ -328,7 +334,7 @@ export default function PreferencesPage() {
                   <span
                     key={t}
                     title={t}
-                    className="max-w-full truncate rounded-full border border-border/60 bg-accent px-3 py-1 text-xs"
+                    className="max-w-full truncate rounded-full border border-border/60 bg-accent px-3 py-1 text-xs touch-manipulation select-none"
                   >
                     {t}
                   </span>
@@ -342,7 +348,9 @@ export default function PreferencesPage() {
             <section className="flex h-full min-w-0 flex-col rounded-xl border border-border/70 bg-card/60 p-4 sm:col-span-2 sm:p-5">
               <h2 className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">
                 <span className="flex min-w-0 items-center gap-2">
-                  <History className="h-4 w-4 shrink-0 text-primary" />
+                  <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <History className="h-3.5 w-3.5" />
+                  </div>
                   最近访问过的站点
                 </span>
                 <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
@@ -354,7 +362,7 @@ export default function PreferencesPage() {
                   <span
                     key={id}
                     title={siteTitles[id] ?? id}
-                    className="max-w-full truncate rounded-full border border-border/60 bg-muted px-3 py-1 text-xs"
+                    className="max-w-full truncate rounded-full border border-border/60 bg-muted px-3 py-1 text-xs touch-manipulation select-none"
                   >
                     {siteTitles[id] ?? id}
                   </span>
@@ -369,7 +377,9 @@ export default function PreferencesPage() {
 
             <section className="min-w-0 rounded-xl border border-destructive/25 bg-destructive/[0.03] p-4 sm:col-span-2 sm:p-5">
               <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive-text">
-                <ShieldAlert className="h-4 w-4" />
+                <div className="w-6 h-6 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-center shrink-0">
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                </div>
                 重置画像
               </h2>
               <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
@@ -381,7 +391,7 @@ export default function PreferencesPage() {
                 variant="destructive"
                 onClick={handleReset}
                 disabled={resetting}
-                className="w-full sm:w-auto"
+                className="w-full sm:w-auto touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 {resetting ? '重置中…' : '重置个性化画像'}

@@ -402,6 +402,7 @@ export function NavigationContent({
             categories={sortedCategories.map(cat => ({
               id: cat.id,
               title: cat.title,
+              icon: cat.icon,
               count: (cat.items?.length || 0) + (cat.subCategories?.reduce((acc: number, sub: any) => acc + (sub.items?.length || 0), 0) || 0)
             }))}
             isAllCollapsed={sortedCategories.length > 0 && sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))}

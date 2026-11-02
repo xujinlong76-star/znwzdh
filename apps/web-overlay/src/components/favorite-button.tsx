@@ -3,6 +3,7 @@
 import { Star } from 'lucide-react'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useToast } from '@/components/ui/use-toast'
+import { cn } from '@/lib/utils'
 
 interface FavoriteButtonProps {
   site: { siteId: string; title: string; href: string; icon?: string; description?: string }
@@ -29,7 +30,10 @@ export function FavoriteButton({ site, className, tabIndex, cardAction }: Favori
       data-card-action={cardAction ? '' : undefined}
       title={faved ? `取消收藏${site.title ? '：' + site.title : ''}` : `收藏${site.title ? '：' + site.title : ''}`}
       aria-label={faved ? `取消收藏${site.title ? '：' + site.title : ''}` : `收藏${site.title ? '：' + site.title : ''}`}
-      className={'inline-flex items-center justify-center rounded-md p-1.5 transition-colors hover:bg-muted ' + (className ?? '')}
+      className={cn(
+        'inline-flex items-center justify-center rounded-md p-1.5 transition-all duration-150 hover:bg-muted active:scale-75 cursor-pointer touch-manipulation',
+        className
+      )}
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -42,7 +46,14 @@ export function FavoriteButton({ site, className, tabIndex, cardAction }: Favori
         void favorites.toggle(site)
       }}
     >
-      <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
+      <Star
+        className={cn(
+          'h-3.5 w-3.5 transition-all duration-200',
+          faved
+            ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_5px_rgba(251,191,36,0.5)] scale-105'
+            : 'text-muted-foreground hover:text-amber-400'
+        )}
+      />
     </button>
   )
 }

@@ -590,6 +590,21 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         }
     }, [selectedVideo])
 
+    const currentCategoryContext = useMemo(() => {
+        if (!selectedVideo) return { category: null, subCategory: null }
+        for (const cat of navigationData.navigationItems || []) {
+            if (cat.items?.some(it => it.id === selectedVideo.id)) {
+                return { category: cat, subCategory: null }
+            }
+            for (const sub of cat.subCategories || []) {
+                if (sub.items?.some(it => it.id === selectedVideo.id)) {
+                    return { category: cat, subCategory: sub }
+                }
+            }
+        }
+        return { category: null, subCategory: null }
+    }, [navigationData, selectedVideo])
+
     const relatedVideos = useMemo(() => {
         if (!selectedVideo) return []
         return getRelatedVideos(selectedVideo, allVideos, 4)
@@ -1045,6 +1060,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             size="icon"
                             title="快捷键指南 (?)"
                             onClick={() => setShowShortcutHelp(true)}
+                            className="touch-manipulation select-none active:scale-90 transition-all cursor-pointer"
                         >
                             <Keyboard className="w-4 h-4 text-muted-foreground" />
                         </Button>
@@ -1053,16 +1069,16 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             size="icon"
                             title="观看历史"
                             onClick={() => setActiveTab(prev => prev === 'history' ? 'playlist' : 'history')}
-                            className={activeTab === 'history' ? 'bg-accent text-accent-foreground' : ''}
+                            className={cn("touch-manipulation select-none active:scale-90 transition-all cursor-pointer", activeTab === 'history' ? 'bg-accent text-accent-foreground' : '')}
                         >
                             <History className="w-4 h-4 text-muted-foreground" />
                         </Button>
-                        <Button asChild variant="ghost" size="icon">
+                        <Button asChild variant="ghost" size="icon" className="hover:text-primary hover:bg-primary/10 touch-manipulation select-none active:scale-90 transition-all cursor-pointer">
                             <Link href="/" aria-label="返回主页" title="返回主页">
                                 <Home className="w-5 h-5" />
                             </Link>
                         </Button>
-                        <Button asChild variant="ghost" size="icon">
+                        <Button asChild variant="ghost" size="icon" className="hover:text-primary hover:bg-primary/10 touch-manipulation select-none active:scale-90 transition-all cursor-pointer">
                             <Link href="/videos" aria-label="返回视频中心" title="返回视频中心">
                                 <LayoutGrid className="w-5 h-5" />
                             </Link>
@@ -1073,6 +1089,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             size="icon"
                             title="4K / 超分辨率着色器 (CAS 锐化)"
                             onClick={() => setShowShaderDialog(true)}
+                            className="touch-manipulation select-none active:scale-90 transition-all cursor-pointer"
                         >
                             <Sparkles className={cn("w-4 h-4", sharpenerOptions.enabled ? "text-amber-400" : "text-muted-foreground")} />
                         </Button>
@@ -1081,6 +1098,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             size="icon"
                             title="技能图谱与打卡热力图"
                             onClick={() => setShowSkillTreeDialog(true)}
+                            className="touch-manipulation select-none active:scale-90 transition-all cursor-pointer"
                         >
                             <Trophy className="w-4 h-4 text-amber-500" />
                         </Button>
@@ -1089,6 +1107,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             size="icon"
                             title="无障碍视力守护与滤镜 (a11y)"
                             onClick={() => setShowA11yDialog(true)}
+                            className="touch-manipulation select-none active:scale-90 transition-all cursor-pointer"
                         >
                             <Eye className="w-4 h-4 text-primary" />
                         </Button>
@@ -1102,6 +1121,45 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 {/* 左侧播放器区域 */}
                 <div className="flex-1 p-4 lg:p-6 overflow-auto pb-52 md:pb-6">
                     <div className="max-w-5xl mx-auto space-y-4">
+                        {/* 路径导航面包屑与细分方向一键穿透 */}
+                        <nav aria-label="课程路径导航" className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap py-0.5">
+                            <Link href="/videos" className="hover:text-foreground flex items-center gap-1 transition-colors">
+                                <LayoutGrid className="w-3.5 h-3.5" />
+                                <span>视频中心</span>
+                            </Link>
+                            {currentCategoryContext.category && (
+                                <>
+                                    <ChevronRight className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                                    <Link
+                                        href={`/videos?c=${encodeURIComponent(currentCategoryContext.category.id)}`}
+                                        className="hover:text-primary transition-colors font-medium text-foreground/80 hover:underline"
+                                    >
+                                        {currentCategoryContext.category.title}
+                                    </Link>
+                                </>
+                            )}
+                            {currentCategoryContext.subCategory && (
+                                <>
+                                    <ChevronRight className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                                    <Link
+                                        href={`/videos?c=${encodeURIComponent(currentCategoryContext.category?.id || '')}&sub=${encodeURIComponent(currentCategoryContext.subCategory.id)}`}
+                                        className="hover:text-primary transition-colors px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium hover:bg-primary/20 border border-primary/20"
+                                        title={`查看 ${currentCategoryContext.subCategory.title} 下的所有实战课程`}
+                                    >
+                                        {currentCategoryContext.subCategory.title}
+                                    </Link>
+                                </>
+                            )}
+                            {selectedVideo && (
+                                <>
+                                    <ChevronRight className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                                    <span className="text-foreground/90 font-medium truncate max-w-[180px] sm:max-w-md">
+                                        {selectedVideo.title}
+                                    </span>
+                                </>
+                            )}
+                        </nav>
+
                         {/* 断点续播提示横幅 */}
                         {resumePrompt && (
                             <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/20 text-xs animate-in fade-in slide-in-from-top-2">
@@ -1165,7 +1223,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-8 gap-1.5 text-xs"
+                                    className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer font-medium"
                                     disabled={currentIndex <= 0}
                                     onClick={handlePrevVideo}
                                     title="上一部视频 ( [ 键 )"
@@ -1176,7 +1234,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-8 gap-1.5 text-xs"
+                                    className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer font-medium"
                                     disabled={currentIndex < 0 || currentIndex >= allVideos.length - 1}
                                     onClick={handleNextVideo}
                                     title="下一部视频 ( ] 键 )"
@@ -1251,7 +1309,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <Button
                                     variant={inWatchLater ? 'default' : 'outline'}
                                     size="sm"
-                                    className="h-8 gap-1.5 text-xs"
+                                    className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                                     onClick={handleToggleWatchLater}
                                     title="加入/移出稍后再看"
                                 >
@@ -1263,7 +1321,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <Button
                                     variant={activeTab === 'chapters' ? 'secondary' : 'ghost'}
                                     size="sm"
-                                    className="h-8 gap-1.5 text-xs"
+                                    className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                                     onClick={() => setActiveTab('chapters')}
                                 >
                                     <ListCollapse className="w-3.5 h-3.5 text-primary" />
@@ -1275,7 +1333,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                     <Button
                                         variant="outline"
                                         size="sm"
-                                        className="h-8 gap-1.5 text-xs"
+                                        className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                                         asChild
                                         title="查看搜索引擎收录专用的结构化语义落地页 (/videos/v/[id])"
                                     >
@@ -1290,7 +1348,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <Button
                                     variant={showSandbox ? 'default' : 'outline'}
                                     size="sm"
-                                    className="h-8 gap-1.5 text-xs"
+                                    className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                                     onClick={() => setShowSandbox(prev => !prev)}
                                     title="代码演练沙箱"
                                 >
@@ -1302,7 +1360,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-8 gap-1.5 text-xs"
+                                    className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                                     onClick={() => setShowNoteDialog(true)}
                                     title="记录时间戳笔记"
                                 >
@@ -1366,7 +1424,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-8 gap-1.5 text-xs"
+                                    className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                                     onClick={() => setShowPosterDialog(true)}
                                     title="生成精美时间戳分享卡片"
                                 >
@@ -1378,7 +1436,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-8 gap-1.5 text-xs"
+                                    className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                                     onClick={() => setShowFlashcardsDialog(true)}
                                     title="艾宾浩斯遗忘曲线抽认卡与复习日程"
                                 >
@@ -1390,7 +1448,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-8 gap-1.5 text-xs"
+                                    className="h-8 gap-1.5 text-xs touch-manipulation select-none active:scale-95 transition-all cursor-pointer"
                                     onClick={() => setShowCertDialog(true)}
                                     title="全套课程通关与可验证结业微证书"
                                 >
@@ -1731,6 +1789,18 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                         )}>
                                             {selectedVideo.videoConfig.type === 'bilibili' ? 'Bilibili' : 'YouTube'}
                                         </span>
+                                        {selectedVideo.videoConfig.subCategoryTitle && (
+                                            <span className="px-2 py-0.5 font-medium rounded bg-primary/10 text-primary">
+                                                {selectedVideo.videoConfig.subCategoryTitle}
+                                            </span>
+                                        )}
+                                        {selectedVideo.videoConfig.tags && selectedVideo.videoConfig.tags.length > 0 && (
+                                            selectedVideo.videoConfig.tags.slice(0, 3).map((t, i) => (
+                                                <span key={i} className="px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono text-[11px]">
+                                                    #{t}
+                                                </span>
+                                            ))
+                                        )}
                                         {selectedVideo.videoConfig.author && (
                                             <span className="text-muted-foreground">
                                                 创作者: <strong className="font-medium text-foreground">{selectedVideo.videoConfig.author}</strong>

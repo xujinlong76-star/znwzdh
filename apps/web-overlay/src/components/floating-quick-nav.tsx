@@ -47,7 +47,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
       id="navhub-floating-quick-nav"
       aria-label="快速操作与回到顶部"
       className={cn(
-        'fixed right-3 sm:right-6 bottom-6 z-40 flex flex-col items-center gap-1.5 p-1 rounded-2xl border border-border/80 bg-background/90 dark:bg-card/85 backdrop-blur-md shadow-xl transition-all duration-200',
+        'fixed right-3 sm:right-6 bottom-6 z-40 flex flex-col items-center gap-1.5 p-1.5 rounded-2xl border border-border/80 bg-background/90 dark:bg-card/85 backdrop-blur-md shadow-xl ring-1 ring-inset ring-white/10 transition-all duration-200',
         visible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none',
         className,
       )}
@@ -55,7 +55,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
       <button
         type="button"
         onClick={scrollToTop}
-        className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+        className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-150 touch-manipulation select-none active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
         title="回到顶部 (Top)"
         aria-label="回到顶部"
       >
@@ -67,7 +67,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
       <button
         type="button"
         onClick={openSpotlight}
-        className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+        className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-blue-500 hover:bg-blue-500/10 transition-all duration-150 touch-manipulation select-none active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 cursor-pointer"
         title="呼出超级搜索与指令控制台 (⌘K / /)"
         aria-label="呼出超级搜索控制台"
       >
@@ -78,7 +78,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
         <button
           type="button"
           onClick={onOpenTools}
-          className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+          className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-all duration-150 touch-manipulation select-none active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 cursor-pointer"
           title="打开开发者极速微工具箱 (T)"
           aria-label="开发者极速微工具箱"
         >

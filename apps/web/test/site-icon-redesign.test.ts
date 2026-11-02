@@ -314,4 +314,379 @@ describe('网站图标美化与高清矢量重新设计', () => {
     expect(src).toContain('SiteFavicon')
     expect(src).toContain('touch-manipulation select-none active:scale-[0.98]')
   })
+
+  it('SitePeekDialog 站点速览具备晶体 Favicon 高光底座与全面触控优化', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/site-peek-dialog.tsx'), 'utf8')
+    expect(src).toContain('bg-gradient-to-b from-card to-muted/80')
+    expect(src).toContain('w-8 h-8 rounded-xl bg-background/80')
+    expect(src).toContain('touch-manipulation select-none active:scale-95')
+  })
+
+  it('SiteDetailView 详情展板具备晶体微光底座且全量按钮支持触控反馈', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/site-detail-view.tsx'), 'utf8')
+    expect(src).toContain('bg-gradient-to-b from-card to-muted/80')
+    expect(src).toContain('w-9 h-9 rounded-xl bg-background/80')
+    expect(src).toContain('touch-manipulation select-none active:scale-95')
+  })
+
+  it('VideoSharePosterDialog 海报分享弹窗具备晶体微光徽标与触控反馈', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/video-share-poster-dialog.tsx'), 'utf8')
+    expect(src).toContain('bg-pink-500/10 border border-pink-500/20 text-pink-500')
+    expect(src).toContain('touch-manipulation select-none active:scale-95')
+  })
+
+  it('HomeDiyBackupDialog DIY 备份弹窗具备晶体微光徽标与触控反馈', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/home-diy-backup-dialog.tsx'), 'utf8')
+    expect(src).toContain('bg-primary/10 border border-primary/20 text-primary')
+    expect(src).toContain('touch-manipulation select-none active:scale-95')
+  })
+
+  it('PreferencesPage 画像摘要与设置项具备晶体微光底座与触控弹性', () => {
+    const src = readFileSync(resolve(HERE, '../src/app/preferences/page.tsx'), 'utf8')
+    expect(src).toContain('min-w-0 rounded-2xl border border-border/70 bg-card/60')
+    expect(src).toContain('w-6 h-6 rounded-lg bg-primary/10')
+    expect(src).toContain('touch-manipulation select-none')
+  })
+
+  it('VideoPlayerPage 播放器控制栏与连播切换全量支持触控弹性', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/video-player-page.tsx'), 'utf8')
+    expect(src).toContain('touch-manipulation select-none active:scale-90')
+    expect(src).toContain('touch-manipulation select-none active:scale-95')
+  })
+
+  it('SearchPalette 结果项 Favicon 微晶底座与快捷键 kbd 晶体外观', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/search-palette.tsx'), 'utf8')
+    expect(src).toContain('w-8 h-8 rounded-xl p-1 bg-background/80 border border-border/60 shadow-2xs')
+    expect(src).toContain('ring-1 ring-inset ring-white/10')
+    expect(src).toContain('touch-manipulation select-none active:scale-90')
+  })
+
+  it('UserCenter Dashboard 统计卡片与快捷操作全量支持触控弹性与晶体底座', () => {
+    const statsSrc = readFileSync(resolve(HERE, '../src/components/user-center/dashboard/stats-grid.tsx'), 'utf8')
+    expect(statsSrc).toContain('touch-manipulation select-none active:scale-[0.985]')
+    expect(statsSrc).toContain('rounded-xl border border-current/15 shadow-2xs')
+
+    const quickSrc = readFileSync(resolve(HERE, '../src/components/user-center/dashboard/quick-actions.tsx'), 'utf8')
+    expect(quickSrc).toContain('touch-manipulation select-none active:scale-[0.985]')
+    expect(quickSrc).toContain('rounded-xl bg-muted/80 border border-border/60')
+
+    const accountSrc = readFileSync(resolve(HERE, '../src/components/user-center/dashboard/account-card.tsx'), 'utf8')
+    expect(accountSrc).toContain('touch-manipulation select-none active:scale-95 transition-all')
+
+    const syncSrc = readFileSync(resolve(HERE, '../src/components/user-center/dashboard/sync-health-card.tsx'), 'utf8')
+    expect(syncSrc).toContain('touch-manipulation select-none active:scale-95 transition-all')
+  })
+
+  it('OnboardingCard 新手引导三步卡片装配独立微光晶体徽标与触控弹性', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/onboarding-card.tsx'), 'utf8')
+    expect(src).toContain('bg-amber-500/10 border border-amber-500/20 text-amber-600')
+    expect(src).toContain('bg-sky-500/10 border border-sky-500/20 text-sky-600')
+    expect(src).toContain('bg-rose-500/10 border border-rose-500/20 text-rose-600')
+    expect(src).toContain('touch-manipulation select-none active:scale-95 transition-all')
+  })
+
+  it('VideoBilibiliHdPlayer 换源与控制按钮全量支持触屏弹性交互', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/video-bilibili-hd-player.tsx'), 'utf8')
+    expect(src).toContain('touch-manipulation select-none active:scale-95 cursor-pointer')
+  })
+
+  it('InstallPrompt 桌面安装横幅具备 Download 晶体微标底座与触控弹性', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/install-prompt.tsx'), 'utf8')
+    expect(src).toContain('w-9 h-9 rounded-xl bg-primary/10 border border-primary/20')
+    expect(src).toContain('touch-manipulation select-none active:scale-95')
+  })
+
+  it('OfflineBanner 离线与恢复提示具备 Wifi/WifiOff 晶体微标底座与触控链接', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/offline-banner.tsx'), 'utf8')
+    expect(src).toContain('w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/25')
+    expect(src).toContain('w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25')
+    expect(src).toContain('touch-manipulation select-none active:scale-95')
+  })
+
+  it('NavigationToolbar 探索矩阵菜单条目全量装配晶体微标底座与触控按压反馈', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/navigation-toolbar.tsx'), 'utf8')
+    expect(src).toContain('w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20')
+    expect(src).toContain('w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20')
+    expect(src).toContain('touch-manipulation select-none active:scale-[0.98]')
+  })
+
+  it('WorkspaceFilter 工作台分类切换胶囊与场景流推荐具备触控弹性', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/workspace-filter.tsx'), 'utf8')
+    expect(src).toContain('touch-manipulation select-none active:scale-95')
+  })
+
+  it('DensityToggle 与 ViewModeToggle 下拉菜单项全量装配晶体微标与触控弹性', () => {
+    const densitySrc = readFileSync(resolve(HERE, '../src/components/density-toggle.tsx'), 'utf8')
+    expect(densitySrc).toContain('w-7 h-7 rounded-lg bg-background/80 border border-border/60')
+    expect(densitySrc).toContain('touch-manipulation select-none active:scale-[0.98]')
+
+    const viewModeSrc = readFileSync(resolve(HERE, '../src/components/view-mode-toggle.tsx'), 'utf8')
+    expect(viewModeSrc).toContain('w-7 h-7 rounded-lg bg-background/80 border border-border/60')
+    expect(viewModeSrc).toContain('touch-manipulation select-none active:scale-[0.98]')
+  })
+
+  it('NavigationCard 紧凑/丰富/标准三种模式 Favicon 底座晶体化且操作按钮全量触控化', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/navigation-card.tsx'), 'utf8')
+    // 紧凑模式 Favicon 底座
+    expect(src).toContain('flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-gradient-to-b from-card to-muted/80')
+    // 丰富模式 Favicon 底座
+    expect(src).toContain('flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-gradient-to-b from-card to-muted/80')
+    // 标准模式 Favicon 底座
+    expect(src).toContain('bg-gradient-to-b from-card to-muted/80 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-2xs backdrop-blur-xs')
+    // 详情按钮与操作按钮触控化
+    expect(src).toContain('touch-manipulation select-none active:scale-90 transition-all cursor-pointer')
+  })
+
+  it('主流技术栈与现代 AI 平台官方纯矢量 Logo 库全量支持 (React, Vue, Next, Tailwind, OpenAI, Claude, Midjourney 等)', () => {
+    const modernDevAiDomains = [
+      'openai.com',
+      'claude.ai',
+      'midjourney.com',
+      'suno.com',
+      'ollama.com',
+      'react.dev',
+      'vuejs.org',
+      'nextjs.org',
+      'tailwindcss.com',
+      'typescriptlang.org',
+      'python.org',
+      'rust-lang.org',
+      'go.dev',
+      'nodejs.org',
+      'vite.dev',
+      'bun.sh',
+      'kubernetes.io',
+      'figma.com',
+      'notion.so',
+      'dribbble.com',
+      'cloudflare.com',
+      'gitlab.com',
+      'git-scm.com',
+      'supabase.com',
+      'discord.com',
+      't.me',
+      'gitee.com',
+      'leetcode.cn',
+    ]
+
+    for (const domain of modernDevAiDomains) {
+      const logo = BUILTIN_BRAND_LOGOS[domain]
+      expect(logo, `Missing logo for ${domain}`).toBeDefined()
+      expect(logo).toContain('data:image/svg+xml')
+      expect(logo).toContain('%3Csvg')
+    }
+
+    // 别名与别名域名精准解析
+    expect(getBuiltinBrandLogo('https://chatgpt.com')).toEqual(BUILTIN_BRAND_LOGOS['openai.com'])
+    expect(getBuiltinBrandLogo('https://anthropic.com')).toEqual(BUILTIN_BRAND_LOGOS['claude.ai'])
+    expect(getBuiltinBrandLogo('https://reactjs.org')).toEqual(BUILTIN_BRAND_LOGOS['react.dev'])
+    expect(getBuiltinBrandLogo('https://suno.ai')).toEqual(BUILTIN_BRAND_LOGOS['suno.com'])
+    expect(getBuiltinBrandLogo('https://ollama.ai')).toEqual(BUILTIN_BRAND_LOGOS['ollama.com'])
+    expect(getBuiltinBrandLogo('https://golang.org')).toEqual(BUILTIN_BRAND_LOGOS['go.dev'])
+    expect(getBuiltinBrandLogo('https://k8s.io')).toEqual(BUILTIN_BRAND_LOGOS['kubernetes.io'])
+    expect(getBuiltinBrandLogo('https://notion.com')).toEqual(BUILTIN_BRAND_LOGOS['notion.so'])
+    expect(getBuiltinBrandLogo('https://telegram.org')).toEqual(BUILTIN_BRAND_LOGOS['t.me'])
+  })
+
+  it('SiteFavicon 具备现代 CSS 容器查询响应式字号自适应与列表复用幽灵破图防御', () => {
+    const src = readFileSync(resolve(HERE, '../src/components/site-favicon.tsx'), 'utf8')
+    // 容器查询与黄金比例星轨罗盘
+    expect(src).toContain('@container')
+    expect(src).toContain('@[28px]:text-xs @[36px]:text-sm @[44px]:text-base @[52px]:text-lg @[60px]:text-2xl')
+    expect(src).toContain("w-[55%] h-[55%]")
+    // 列表复用状态重置机制
+    expect(src).toContain('prevEffectiveIcon !== effectiveIcon')
+    expect(src).toContain('setLoadFailed(false)')
+  })
+
+  it('主流设计素材、开源白板、科研论文与极客工具官方矢量 Logo 库全量支持 (Unsplash, Excalidraw, TinyPNG, Roadmap, Wikipedia, arXiv, 12306 等)', () => {
+    const extendedDomains = [
+      'unsplash.com',
+      'pexels.com',
+      'pixabay.com',
+      'excalidraw.com',
+      'diagrams.net',
+      'tinypng.com',
+      'remove.bg',
+      'iconify.design',
+      'coolors.co',
+      'uiverse.io',
+      'roadmap.sh',
+      'wikipedia.org',
+      'arxiv.org',
+      'paperswithcode.com',
+      'coursera.org',
+      'runoob.com',
+      '12306.cn',
+      'weather.com.cn',
+      'xiaohongshu.com',
+      'raindrop.io',
+      'dub.co',
+      'coolify.io',
+      'zeabur.com',
+    ]
+
+    for (const domain of extendedDomains) {
+      const logo = BUILTIN_BRAND_LOGOS[domain]
+      expect(logo, `Missing logo for ${domain}`).toBeDefined()
+      expect(logo).toContain('data:image/svg+xml')
+      expect(logo).toContain('%3Csvg')
+    }
+
+    // 别名与多级子域名精准映射验证
+    expect(getBuiltinBrandLogo('https://draw.io')).toEqual(BUILTIN_BRAND_LOGOS['diagrams.net'])
+    expect(getBuiltinBrandLogo('https://app.diagrams.net')).toEqual(BUILTIN_BRAND_LOGOS['diagrams.net'])
+    expect(getBuiltinBrandLogo('https://npmmirror.com')).toEqual(BUILTIN_BRAND_LOGOS['npmjs.com'])
+    expect(getBuiltinBrandLogo('https://registry.npmmirror.com')).toEqual(BUILTIN_BRAND_LOGOS['npmjs.com'])
+    expect(getBuiltinBrandLogo('https://zh.wikipedia.org')).toEqual(BUILTIN_BRAND_LOGOS['wikipedia.org'])
+    expect(getBuiltinBrandLogo('https://en.wikipedia.org')).toEqual(BUILTIN_BRAND_LOGOS['wikipedia.org'])
+    expect(getBuiltinBrandLogo('https://arxiv.org/abs/2301.00000')).toEqual(BUILTIN_BRAND_LOGOS['arxiv.org'])
+    expect(getBuiltinBrandLogo('https://www.12306.cn/index/')).toEqual(BUILTIN_BRAND_LOGOS['12306.cn'])
+
+    // 标题模糊匹配验证
+    expect(getBuiltinBrandLogo(undefined, 'Unsplash 免费高质量摄影图库')).toEqual(BUILTIN_BRAND_LOGOS['unsplash.com'])
+    expect(getBuiltinBrandLogo(undefined, 'Excalidraw 协同手绘白板')).toEqual(BUILTIN_BRAND_LOGOS['excalidraw.com'])
+    expect(getBuiltinBrandLogo(undefined, 'TinyPNG 智能图片压缩')).toEqual(BUILTIN_BRAND_LOGOS['tinypng.com'])
+    expect(getBuiltinBrandLogo(undefined, 'Roadmap 开发者技能路线图')).toEqual(BUILTIN_BRAND_LOGOS['roadmap.sh'])
+    expect(getBuiltinBrandLogo(undefined, '维基百科自由的百科全书')).toEqual(BUILTIN_BRAND_LOGOS['wikipedia.org'])
+  })
+
+  it('Sidebar 侧边栏子分类具备微拟物微圆点导航指示器且微工具箱操作按钮全量触控化', () => {
+    const sidebarSrc = readFileSync(resolve(HERE, '../src/components/sidebar.tsx'), 'utf8')
+    expect(sidebarSrc).toContain('w-1.5 h-1.5 rounded-full bg-border/80 group-hover/sub:bg-primary/80')
+    expect(sidebarSrc).toContain('touch-manipulation select-none active:scale-[0.98]')
+
+    const toolsSrc = readFileSync(resolve(HERE, '../src/components/quick-tools-drawer.tsx'), 'utf8')
+    expect(toolsSrc).toContain('cursor-pointer touch-manipulation select-none active:scale-95 transition-all')
+  })
+
+  it('全栈开发者生态与问答平台官方矢量 Logo 库支持 (少数派, 思否, 开源中国, CSDN, CodePen, StackBlitz, Apple, Android 等)', () => {
+    const devDomains = [
+      'sspai.com',
+      'segmentfault.com',
+      'oschina.net',
+      'infoq.cn',
+      'csdn.net',
+      'codepen.io',
+      'codesandbox.io',
+      'stackblitz.com',
+      'kaggle.com',
+      'apple.com',
+      'android.com',
+      'bandisoft.com',
+    ]
+
+    for (const domain of devDomains) {
+      const logo = BUILTIN_BRAND_LOGOS[domain]
+      expect(logo, `Missing logo for ${domain}`).toBeDefined()
+      expect(logo).toContain('data:image/svg+xml')
+      expect(logo).toContain('%3Csvg')
+    }
+
+    // 开发者子域名映射
+    expect(getBuiltinBrandLogo('https://developer.apple.com')).toEqual(BUILTIN_BRAND_LOGOS['apple.com'])
+    expect(getBuiltinBrandLogo('https://developer.android.com')).toEqual(BUILTIN_BRAND_LOGOS['android.com'])
+    expect(getBuiltinBrandLogo('https://gist.github.com/someone/123')).toEqual(BUILTIN_BRAND_LOGOS['github.com'])
+
+    // 模糊匹配
+    expect(getBuiltinBrandLogo(undefined, '少数派高效工作流')).toEqual(BUILTIN_BRAND_LOGOS['sspai.com'])
+    expect(getBuiltinBrandLogo(undefined, 'SegmentFault 思否社区')).toEqual(BUILTIN_BRAND_LOGOS['segmentfault.com'])
+    expect(getBuiltinBrandLogo(undefined, '开源中国社区')).toEqual(BUILTIN_BRAND_LOGOS['oschina.net'])
+  })
+
+  it('SearchBar 搜索栏统一收敛至 SiteFavicon 并装配微晶底座，彻底杜绝 display:none 破图留白', () => {
+    const searchBarSrc = readFileSync(resolve(HERE, '../src/components/search-bar.tsx'), 'utf8')
+    expect(searchBarSrc).not.toContain("target.style.display = 'none'")
+    expect(searchBarSrc).toContain('w-8 h-8 rounded-xl p-1 bg-gradient-to-b from-card to-muted/80 border border-border/60 shadow-2xs')
+    expect(searchBarSrc).toContain('SiteFavicon')
+  })
+
+  it('登录与注册页面全面升级为官方纯矢量 Favicon 徽标并配以微晶圆角底座', () => {
+    const signinSrc = readFileSync(resolve(HERE, '../src/app/auth/signin/page.tsx'), 'utf8')
+    expect(signinSrc).not.toContain('/assets/images/alogo.webp')
+    expect(signinSrc).toContain('src="/favicon.svg"')
+
+    const signupSrc = readFileSync(resolve(HERE, '../src/app/auth/signup/page.tsx'), 'utf8')
+    expect(signupSrc).not.toContain('/assets/images/alogo.webp')
+    expect(signupSrc).toContain('src="/favicon.svg"')
+  })
+
+  it('第 4 轮扩充官方矢量 Logo 库：看图、短链、开源书签与不良信息举报中心全量收敛', () => {
+    const round4Domains = [
+      '12377.cn',
+      'irfanview.com',
+      'imageglass.org',
+      'xnview.com',
+      'faststone.org',
+      'tinyurl.com',
+      'v.gd',
+      'short.io',
+      'yourls.org',
+      'polrproject.org',
+      'floccus.org',
+      'wallabag.org',
+    ]
+
+    for (const d of round4Domains) {
+      const logo = BUILTIN_BRAND_LOGOS[d]
+      expect(logo, `Missing round 4 logo for ${d}`).toBeDefined()
+      expect(logo?.startsWith('data:image/svg+xml;utf8,')).toBe(true)
+      expect(getBuiltinBrandLogo(`https://${d}/about`)).toEqual(logo)
+    }
+
+    // 别名解析
+    expect(getBuiltinBrandLogo('https://is.gd/xyz')).toEqual(BUILTIN_BRAND_LOGOS['v.gd'])
+    expect(getBuiltinBrandLogo('https://polr.me')).toEqual(BUILTIN_BRAND_LOGOS['polrproject.org'])
+    expect(getBuiltinBrandLogo('https://wallabag.it')).toEqual(BUILTIN_BRAND_LOGOS['wallabag.org'])
+
+    // 标题模糊解析
+    expect(getBuiltinBrandLogo(undefined, '12377 互联网违法和不良信息举报')).toEqual(BUILTIN_BRAND_LOGOS['12377.cn'])
+    expect(getBuiltinBrandLogo(undefined, 'Floccus 书签云同步')).toEqual(BUILTIN_BRAND_LOGOS['floccus.org'])
+    expect(getBuiltinBrandLogo(undefined, 'ImageGlass 现代看图')).toEqual(BUILTIN_BRAND_LOGOS['imageglass.org'])
+  })
+
+  it('全站前台 navigation.json 与初始 seed-data.json 官方矢量 Logo 覆盖率达 100%', () => {
+    const navPath = resolve(HERE, '../src/navsphere/content/navigation.json')
+    const navData = JSON.parse(readFileSync(navPath, 'utf8'))
+    const allNavItems: any[] = []
+    const collect = (node: any) => {
+      if (node.items) allNavItems.push(...node.items)
+      if (node.subCategories) node.subCategories.forEach(collect)
+    }
+    navData.navigationItems.forEach(collect)
+
+    let navCovered = 0
+    for (const item of allNavItems) {
+      if (getBuiltinBrandLogo(item.href || item.url, item.title)) {
+        navCovered++
+      }
+    }
+    expect(navCovered).toBe(allNavItems.length)
+    expect(allNavItems.length).toBeGreaterThan(50)
+
+    const seedPath = resolve(HERE, '../../api/src/seed-data.json')
+    const seedData = JSON.parse(readFileSync(seedPath, 'utf8'))
+    let seedCovered = 0
+    for (const site of seedData.sites || []) {
+      if (getBuiltinBrandLogo(site.url || site.href, site.title)) {
+        seedCovered++
+      }
+    }
+    expect(seedCovered).toBe(seedData.sites.length)
+  })
+
+  it('管理后台布局与次级列表均装配微晶底座与官方矢量徽标', () => {
+    const adminLayoutSrc = readFileSync(resolve(HERE, '../src/app/admin/layout.tsx'), 'utf8')
+    expect(adminLayoutSrc).toContain("settings.appearance.logo || '/favicon.svg'")
+
+    const clientSrc = readFileSync(resolve(HERE, '../src/app/admin/AdminLayoutClient.tsx'), 'utf8')
+    expect(clientSrc).toContain('bg-gradient-to-b from-card to-muted/80 border border-border/60 shadow-2xs')
+    expect(clientSrc).toContain("target.src !== '/favicon.svg'")
+
+    const sitesGridSrc = readFileSync(resolve(HERE, '../src/components/sites-directory-filterable-grid.tsx'), 'utf8')
+    expect(sitesGridSrc).toContain('shrink-0 w-8 h-8 rounded-xl p-1 bg-gradient-to-b from-card to-muted/80 border border-border/60 shadow-2xs')
+
+    const categoryBoardSrc = readFileSync(resolve(HERE, '../src/app/category/[slug]/category-board.tsx'), 'utf8')
+    expect(categoryBoardSrc).toContain('shrink-0 w-8 h-8 rounded-xl p-1 bg-gradient-to-b from-card to-muted/80 border border-border/60 shadow-2xs')
+  })
 })

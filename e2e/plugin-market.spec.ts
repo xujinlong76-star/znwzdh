@@ -118,14 +118,14 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     // 列表页：搜索定位到刚导入的插件
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
-    await page.getByLabel('搜索插件').fill(name);
+    await page.getByLabel('搜索插件').first().fill(name);
     await page.getByRole('button', { name: '搜索', exact: true }).click();
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
     // 筛选条件写回地址栏，统一搜索 /marketplace?q=... 与刷新都能还原
     await expect(page).toHaveURL(/[?&]q=/);
 
     await page.goto(`/marketplace?q=${encodeURIComponent(name)}`);
-    await expect(page.getByLabel('搜索插件')).toHaveValue(name);
+    await expect(page.getByLabel('搜索插件').first()).toHaveValue(name);
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
 
     // 详情页：标题与影响摘要。列表未完成水合时点击可能只触发统一搜索深链
@@ -242,7 +242,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     // 2. 待审阶段：市场检索不到
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
-    await page.getByLabel('搜索插件').fill(name);
+    await page.getByLabel('搜索插件').first().fill(name);
     await page.getByRole('button', { name: '搜索', exact: true }).click();
     await expect(page.getByText('没有匹配的插件，换个筛选条件试试')).toBeVisible();
 
@@ -259,7 +259,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     // 4. 上架后：市场公开可见
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
-    await page.getByLabel('搜索插件').fill(name);
+    await page.getByLabel('搜索插件').first().fill(name);
     await page.getByRole('button', { name: '搜索', exact: true }).click();
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
   });
@@ -317,7 +317,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     // 切换到「主题」分类筛选
     await page.getByLabel('按类型筛选').selectOption('theme');
     // 检索该插件
-    await page.getByLabel('搜索插件').fill(themeName);
+    await page.getByLabel('搜索插件').first().fill(themeName);
     await page.getByRole('button', { name: '搜索', exact: true }).click();
     await expect(page.getByText(themeName, { exact: true }).first()).toBeVisible();
 

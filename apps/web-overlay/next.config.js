@@ -28,9 +28,18 @@ const nextConfig = {
     'localhost:3000',
     ...(process.env.NAVHUB_DEV_ORIGINS ? process.env.NAVHUB_DEV_ORIGINS.split(',').map((s) => s.trim()) : []),
   ],
-  // 构建输出目录可用 NEXT_DIST_DIR 覆盖（默认 .next）。
-  // 用途：CI / 验证构建不想动现有产物时指定独立目录。
-  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  // 构建输出目录：NEXT_DIST_DIR 显式覆盖 > dev 模式独立目录 > 默认 .next。
+  //
+  // 为什么 dev 必须与生产分家（本机真实发生两次的生产事故）：`next dev` 会把
+  // distDir 重写为 dev 工件并清掉 `static/`，而同机器的 `next start` 正在按
+  // build 时的 manifest 服务懒加载 chunk——dev 一编译，生产服务的页面点任何
+  // 懒加载按钮就 500（manifest 引用的 chunk 文件已不存在）。
+  // 因此：dev（NODE_ENV=development，next dev 自动设置）默认写 `.next-dev`，
+  // 生产 build/start 永远用 `.next`，两者从此互不干扰。
+  // E2E 的隔离目录（NEXT_DIST_DIR）优先级不变；CI 构建是 production 同样不受影响。
+  distDir:
+    process.env.NEXT_DIST_DIR ??
+    (process.env.NODE_ENV === "development" ? ".next-dev" : ".next"),
   // standalone 产物用于自包含部署（Docker / Cloudflare），它需要在构建期创建符号链接。
   // Windows 上若未开启"开发者模式"，创建符号链接会 EPERM 失败，
   // 因此改为**按需开启**：设置 NAVHUB_WEB_STANDALONE=1 时才生成 standalone 产物。
@@ -175,6 +184,8 @@ const nextConfig = {
       allowedOrigins: ["localhost", "newkit.site"],
     },
     optimizePackageImports: ["lucide-react", "date-fns", "lodash"],
+    // 关闭 Windows 本地开发时 Turbopack 的持久化磁盘缓存，规避 RocksDB .sst 文件被并发删除导致的 Rust panic 中断
+    turbopackFileSystemCacheForDev: false,
   },
 };
 

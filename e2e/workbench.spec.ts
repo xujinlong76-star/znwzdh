@@ -6,8 +6,8 @@ test.describe('核心旅程 2：模块化自定义工作台与看板持久化', 
   });
 
   test('工作台画布正常装载并呈现默认看板与栅格卡片', async ({ page }) => {
-    // 验证页面主标题
-    await expect(page.getByText('模块化自定义工作台', { exact: true })).toBeVisible();
+    // 验证页面主标题（h1 可见文本，a11y 改版后从「模块化自定义工作台」缩短为「自定义工作台」）
+    await expect(page.getByText('自定义工作台', { exact: true })).toBeVisible();
 
     // 验证多看板切换标签与 12 栅格自适应指示
     await expect(page.getByText('12 栅格自适应', { exact: true })).toBeVisible();

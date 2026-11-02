@@ -1266,19 +1266,22 @@ export function SiteDetailView({
                   rel="noopener noreferrer"
                   className="group rounded-xl border border-border/70 bg-card overflow-hidden hover:border-violet-500/40 hover:shadow-md transition-all flex flex-col justify-between"
                 >
-                  <div className="relative aspect-video w-full bg-muted overflow-hidden">
-                    {video.icon ? (
+                  <div className="relative aspect-video w-full bg-gradient-to-br from-muted/80 to-muted/40 overflow-hidden flex items-center justify-center">
+                    <div className="absolute inset-0 flex items-center justify-center text-primary/30 pointer-events-none">
+                      <MonitorPlay className="w-8 h-8" />
+                    </div>
+                    {video.icon && (
                       <img
                         src={video.icon}
                         alt={video.title}
                         referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="relative z-10 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement
+                          target.style.display = 'none'
+                        }}
                       />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-violet-500/5 text-violet-500/40">
-                        <MonitorPlay className="w-10 h-10" />
-                      </div>
                     )}
                     {video.videoConfig?.durationSec && (
                       <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-black/75 text-white backdrop-blur-xs">

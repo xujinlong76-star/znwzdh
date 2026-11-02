@@ -45,6 +45,8 @@ import * as dashboardRepo from "./repository/dashboard.ts";
 import * as eventsRepo from "./repository/events.ts";
 import * as llmUsageRepo from "./repository/llm-usage.ts";
 import * as llmPriceRepo from "./repository/llm-prices.ts";
+import * as llmQuotaRepo from "./repository/llm-quota.ts";
+import * as navVersionRepo from "./repository/nav-version.ts";
 import * as healthRepo from "./repository/health.ts";
 import * as tagsRepo from "./repository/tags.ts";
 import * as favoritesRepo from "./repository/favorites.ts";
@@ -57,6 +59,7 @@ import * as sessionsRepo from "./repository/sessions.ts";
 import type { SessionDeviceRecord } from "./repository/sessions.ts";
 import * as notificationsRepo from "./repository/notifications.ts";
 import * as usersRepo from "./repository/users.ts";
+import * as authTokensRepo from "./repository/auth-tokens.ts";
 import * as tokensRepo from "./repository/tokens.ts";
 import * as collectionsRepo from "./repository/collections.ts";
 import * as analyticsRepo from "./repository/analytics.ts";
@@ -258,9 +261,23 @@ export class Repository {
     return sitesRepo.listSites(this, filter);
   }
 
-  /** 全量站点（快照层专用，不分页；普通列表请用 listSites） */
-  async listAllSites(limit?: number): Promise<Site[]> {
-    return sitesRepo.listAllSites(this, limit);
+  /**
+   * 全量站点（快照层专用，不分页；普通列表请用 listSites）。
+   *
+   * `facets: false` 省掉一条按站点数计代价的分面聚合查询 —— 快照投影里没有分面字段。
+   */
+  async listAllSites(limit?: number, options: { facets?: boolean } = {}): Promise<Site[]> {
+    return sitesRepo.listAllSites(this, limit, options);
+  }
+
+  /** 导航快照版本号（P1-1）：单行主键点查；取不到返回 null，见 repository/nav-version.ts */
+  async readNavDataVersion(): Promise<number | null> {
+    return navVersionRepo.readNavDataVersion(this);
+  }
+
+  /** 版本号触发器探针：present/missing 供 /api/health 与测试核对 */
+  async navVersionProbe(): Promise<navVersionRepo.NavVersionProbe> {
+    return navVersionRepo.navVersionProbe(this);
   }
 
   async getSitesByIds(ids: string[]): Promise<Map<string, Site>> {
@@ -270,6 +287,10 @@ export class Repository {
   /** @internal repository/* 域函数使用 */
   selectSitesSql(): string {
     return sitesRepo.selectSitesSql(this);
+  }
+
+  async listSimilarSitesByTags(siteId: string, limit = 6): Promise<Site[]> {
+    return sitesRepo.listSimilarSitesByTags(this, siteId, limit);
   }
 
   async getSite(idOrUrl: string): Promise<Site | null> {
@@ -314,6 +335,23 @@ export class Repository {
 
   async deleteSite(id: string): Promise<boolean> {
     return sitesRepo.deleteSite(this, id);
+  }
+
+  /** 快照写回（P1-2）：先 diff，再按「更新 / 复活 / 新增 / 软删」四类批量落库 */
+  async listDeletedSiteIds(ids: string[]): Promise<Set<string>> {
+    return sitesRepo.listDeletedSiteIds(this, ids);
+  }
+
+  async updateSitesFromSnapshot(rows: sitesRepo.SnapshotSiteWrite[]): Promise<number> {
+    return sitesRepo.updateSitesFromSnapshot(this, rows);
+  }
+
+  async reviveSitesFromSnapshot(rows: sitesRepo.SnapshotSiteWrite[]): Promise<number> {
+    return sitesRepo.reviveSitesFromSnapshot(this, rows);
+  }
+
+  async softDeleteSites(ids: string[]): Promise<number> {
+    return sitesRepo.softDeleteSites(this, ids);
   }
 
   async restoreSite(id: string): Promise<Site | null> {
@@ -698,6 +736,40 @@ export class Repository {
     return llmPriceRepo.replaceLlmModelPrices(this, items);
   }
 
+  /* ------------------------------ LLM 配额预留 ------------------------------ */
+
+  /** 原子「查已用+已预留 vs 上限并占位」：额度闸门的唯一入口，见 repository/llm-quota.ts */
+  async reserveLlmQuota(input: Parameters<typeof llmQuotaRepo.reserveLlmQuota>[1]) {
+    return llmQuotaRepo.reserveLlmQuota(this, input);
+  }
+
+  /** 结算预留（删行）。返回是否真的删掉了一行 */
+  async settleLlmQuotaReservation(id: string | null | undefined): Promise<boolean> {
+    return llmQuotaRepo.settleLlmQuotaReservation(this, id);
+  }
+
+  /** 窗口内未过期预留的合计（次数/token/最早到期） */
+  async sumLlmQuotaReservations(options: {
+    identity?: string | null;
+    excludeUserSource?: boolean;
+    now?: number;
+  }) {
+    return llmQuotaRepo.sumLlmQuotaReservations(this, options);
+  }
+
+  async listLlmQuotaReservations(limit = 50) {
+    return llmQuotaRepo.listLlmQuotaReservations(this, limit);
+  }
+
+  async pruneLlmQuotaReservations(before: number): Promise<number> {
+    return llmQuotaRepo.pruneLlmQuotaReservations(this, before);
+  }
+
+  /** 全局在途预留合计（/metrics 与观测面板用） */
+  async sumAllLlmQuotaReservations(options?: { now?: number }) {
+    return llmQuotaRepo.sumAllLlmQuotaReservations(this, options);
+  }
+
   async pruneHealthChecks(before: number): Promise<number> {
     return healthRepo.pruneHealthChecks(this, before);
   }
@@ -751,6 +823,15 @@ export class Repository {
   async resolveTag(nameOrAlias: string): Promise<{ id: string; name: string; slug: string; group: string; description: string | null } | null> {
     return tagsRepo.resolveTag(this, nameOrAlias);
   }
+
+  async getRawTag(ref: string): Promise<{ id: string; name: string; slug: string } | null> {
+    return tagsRepo.getRawTag(this, ref);
+  }
+
+  async listRelatedTags(tagId: string, limit = 12): Promise<import("./repository/records.ts").RelatedTag[]> {
+    return tagsRepo.listRelatedTags(this, tagId, limit);
+  }
+
 
 
   /* ------------------------- 收藏夹 ------------------------- */
@@ -979,10 +1060,10 @@ export class Repository {
     return notificationsRepo.emitNotification(this, input);
   }
 
-  async relayNotifications(limit = 50): Promise<notificationsRepo.RelayNotificationsResult> {
+  async relayNotifications(limit = 50, emailSender?: notificationsRepo.NotificationEmailSender): Promise<notificationsRepo.RelayNotificationsResult> {
     // 必须拥有顶层事务边界，失败后才能完整回滚并独立记录重试。
     if (this.txContext.getStore()) throw new Error("relayNotifications must run outside a transaction");
-    return notificationsRepo.relayNotifications(this, limit);
+    return notificationsRepo.relayNotifications(this, limit, emailSender);
   }
 
   /** 仅供管理员调用；调用层负责鉴权。 */
@@ -1038,6 +1119,57 @@ export class Repository {
     patch: { username?: string; avatar?: string | null; email?: string | null },
   ): Promise<{ ok: true; user: UserRecord } | { ok: false; reason: "username_taken" | "email_taken" | "invalid_input" }> {
     return usersRepo.updateUserProfileInfo(this, identity, patch);
+  }
+
+  /* ------------------------- 账号生命周期（注册/登录/找回） ------------------------- */
+
+  async findUserByEmail(email: string): Promise<UserRecord | null> {
+    return usersRepo.findUserByEmail(this, email);
+  }
+
+  /** 按用户 id 查邮箱（通知 email 渠道投递用）；无邮箱返回 null */
+  async findUserEmailById(userId: string): Promise<string | null> {
+    return usersRepo.findUserEmailById(this, userId);
+  }
+
+  async findUserByIdentifier(identifier: string): Promise<UserRecord | null> {
+    return usersRepo.findUserByIdentifier(this, identifier);
+  }
+
+  async createUserWithPassword(input: { username: string; email: string; password: string }) {
+    return usersRepo.createUserWithPassword(this, input);
+  }
+
+  /** 校验口令登录；返回 null = 用户不存在或密码错误（不区分，防账号枚举） */
+  async verifyUserPassword(identifier: string, password: string): Promise<UserRecord | null> {
+    return usersRepo.verifyUserPassword(this, identifier, password);
+  }
+
+  async updateUserPassword(userId: string, newPassword: string): Promise<boolean> {
+    return usersRepo.updateUserPassword(this, userId, newPassword);
+  }
+
+  async setUserEmailVerified(userId: string): Promise<boolean> {
+    return usersRepo.setUserEmailVerified(this, userId);
+  }
+
+  /* ------------------------- 认证令牌（邮箱验证/密码重置） ------------------------- */
+
+  async createAuthToken(input: authTokensRepo.CreateAuthTokenInput): Promise<string> {
+    return authTokensRepo.createAuthToken(this, input);
+  }
+
+  /** 原子消费一次性令牌；成功 true，失败（不存在/已用/过期/用途不符）false */
+  async consumeAuthToken(input: { userId: string; purpose: authTokensRepo.AuthTokenPurpose; tokenHash: string; now?: number }): Promise<boolean> {
+    return authTokensRepo.consumeAuthToken(this, input);
+  }
+
+  async hasActiveAuthToken(userId: string, purpose: authTokensRepo.AuthTokenPurpose, now?: number): Promise<boolean> {
+    return authTokensRepo.hasActiveAuthToken(this, userId, purpose, now);
+  }
+
+  async pruneAuthTokens(before: number): Promise<number> {
+    return authTokensRepo.pruneAuthTokens(this, before);
   }
 
   /* ------------------------- 身份合并 / 用户中心 ------------------------- */
@@ -1274,33 +1406,62 @@ export class Repository {
     return jobsRepo.enqueueJob(this, kind, payload);
   }
 
+  /** 幂等入队：同 kind 已有未跑完的行则跳过（独立 cron 定时器用） */
+  async enqueueJobIfAbsent(kind: string, payload: unknown): Promise<string | null> {
+    return jobsRepo.enqueueJobIfAbsent(this, kind, payload);
+  }
+
   /** 长任务进度上报（只对 running 生效，同时刷新 updated_at 供僵尸判定） */
   async updateJobProgress(id: string, progress: { done: number; total: number }): Promise<void> {
     return jobsRepo.updateJobProgress(this, id, progress);
   }
 
-  async claimNextJob(): Promise<JobRecord | null> {
-    return jobsRepo.claimNextJob(this);
+  async claimNextJob(opts: jobsRepo.ClaimJobOptions = {}): Promise<JobRecord | null> {
+    return jobsRepo.claimNextJob(this, opts);
   }
 
   async completeJob(id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean; durationMs?: number } | null = null): Promise<boolean> {
     return jobsRepo.completeJob(this, id, error, opts);
   }
 
-  async heartbeatJob(id: string): Promise<boolean> {
+  /**
+   * 执行心跳：续期并回报当前执行态。
+   * `running` = 正常；`cancelling` = 已要求停手；`null` = 行已离开执行态，必须停手。
+   */
+  async heartbeatJob(id: string): Promise<"running" | "cancelling" | null> {
     return jobsRepo.heartbeatJob(this, id);
   }
 
-  async listJobs(status?: string, limit = 50): Promise<JobRecord[]> {
-    return jobsRepo.listJobs(this, status, limit);
+  async listJobs(status?: string, limit = 50, offset = 0): Promise<JobRecord[]> {
+    return jobsRepo.listJobs(this, status, limit, offset);
+  }
+
+  /** 按 kind 的待跑任务数（/metrics 的 jobs_pending） */
+  async pendingJobsByKind(): Promise<Map<string, number>> {
+    return jobsRepo.pendingJobsByKind(this);
   }
 
   async getJob(id: string): Promise<JobRecord | null> {
     return jobsRepo.getJob(this, id);
   }
 
-  async cancelJob(id: string): Promise<boolean> {
+  /** 取消请求：running 只到 `cancelling`（等 Runner 收尾），其余直接 `cancelled` */
+  async cancelJob(id: string): Promise<"cancelled" | "cancelling" | null> {
     return jobsRepo.cancelJob(this, id);
+  }
+
+  /** 预算到点：由 Runner 把 running 标成「已要求停手、尚未确认」 */
+  async markJobCancelling(id: string, note: string): Promise<boolean> {
+    return jobsRepo.markJobCancelling(this, id, note);
+  }
+
+  /** handler 确认停手后，把 `cancelling` 收成 cancelled / failed 终态 */
+  async settleCancellingJob(
+    id: string,
+    terminal: "cancelled" | "failed",
+    opts: { error?: string | null; durationMs?: number } = {},
+  ): Promise<boolean> {
+    return jobsRepo.settleCancellingJob(this, id, terminal, opts);
   }
 
   async retryJob(id: string): Promise<JobRecord | null> {

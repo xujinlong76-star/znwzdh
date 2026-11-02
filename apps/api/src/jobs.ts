@@ -16,12 +16,12 @@
 
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { readFile, unlink } from "node:fs/promises";
+import { readFile, stat, unlink } from "node:fs/promises";
 import { canonicalizeUrl } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import { enrichLlmOf, resolveLlm } from "./llm-config.ts";
 import { createEnrichUsageCallback } from "./llm-usage.ts";
-import { checkLlmQuota } from "./llm-quota.ts";
+import { reserveLlmQuota, settleLlmQuota } from "./llm-quota.ts";
 import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol, sanitizeIconUrl } from "@navhub/core";
 import {
   bindSqlite,
@@ -34,6 +34,7 @@ import {
   type RetentionAdapter,
 } from "@navhub/store";
 import type { AppContext } from "./context.ts";
+import { assertRestoreStagingPath } from "./restore-staging.ts";
 import { indexSite, indexSitesBatch } from "./index-site.ts";
 import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
 import { ADMIN_NOTIFICATION_IDENTITY } from "./notifications.ts";
@@ -89,7 +90,11 @@ export interface DataRetentionPayload {
 export interface JobEventPayload {
   jobId: string;
   kind: JobKind | string;
-  status: "pending" | "running" | "completed" | "failed" | "retrying" | "cancelled";
+  /**
+   * `cancelling` = 已要求停手、handler 还没确认（管理端应显示「正在收尾」，
+   * 且不能给出「重试」入口——重试会和还在跑的执行体并发写同一批数据）。
+   */
+  status: "pending" | "running" | "cancelling" | "completed" | "failed" | "retrying" | "cancelled";
   attempts?: number;
   error?: string | null;
   /** 本次执行耗时（不含排队等待）；只有任务真正跑过才有 */
@@ -140,6 +145,37 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
  */
 export const MANUAL_ONLY_KINDS: JobKind[] = ["backup_restore"];
 
+/**
+ * 入队所需的最低 scope：常规任务 write，破坏性任务 admin。
+ *
+ * `POST /api/jobs` 的 route scope 只能是单一 label，但同一条路由下既有只产
+ * 读数的巡检，也有不可逆操作（恢复覆盖数据、物理清空回收站、按保留策略删
+ * 事件/审计）。路由 label 取最低门槛（write）才能同时拦住匿名与只读，
+ * 破坏性的差别只能在处理器里按 kind 判定。
+ *
+ * 开放模式下匿名身份持有全部 scope（见 auth.ts `ANONYMOUS_IDENTITY`），
+ * 因此这里不改变个人/NAS 部署的历史行为。
+ */
+export function jobEnqueueScope(kind: JobKind, payload: unknown): "write" | "admin" {
+  if (kind === "backup_restore" || kind === "purge_trash") return "admin";
+  if (kind === "data_retention") {
+    const apply =
+      typeof payload === "object" && payload !== null && (payload as { apply?: unknown }).apply === true;
+    // dry-run 只统计不删，保持 write；apply:true 会真的删事件/审计，提级
+    return apply ? "admin" : "write";
+  }
+  return "write";
+}
+
+/**
+ * staging 文件的读取上限。
+ *
+ * 端点自己的 body limit 是 16MB（5 万站点约 9.3MB），正常 staging 远小于此；
+ * 任务侧直接 `readFile` 前先看大小，挡的是「路径指到了别的大文件」——那种情况
+ * 会先把整个文件读进内存才在 JSON.parse 失败，等于一次自伤的 OOM。
+ */
+const RESTORE_STAGING_MAX_BYTES = 64 * 1024 * 1024;
+
 const LOCK_KEY = "lock:job-runner";
 /**
  * SQLite 持锁有效期（不是「任务预算」）：崩溃后最多等这么久，别的实例就能接管。
@@ -150,6 +186,13 @@ const LOCK_TTL_MS = 120_000;
 const LOCK_HEARTBEAT_DEFAULT_MS = Math.floor(LOCK_TTL_MS / 3);
 /** 执行中任务的心跳（reapStaleJobs 的判定窗口是 15 分钟） */
 const JOB_HEARTBEAT_DEFAULT_MS = 60_000;
+/**
+ * 排期定时器的检查周期（P1-4）。
+ *
+ * 与 worker tick 彻底解耦：tick 会被一个长任务占满整轮（reindex 默认预算 10 分钟），
+ * 而最短的排期是 1 小时——每分钟看一眼「到点没有」足够，且不会给 DB 添负担。
+ */
+const CRON_TICK_DEFAULT_MS = 60_000;
 const PG_LOCK_KEY = 728_501_001;
 
 /** PG 独占连接（advisory lock 是会话级的：加锁与解锁必须在同一连接上） */
@@ -231,6 +274,116 @@ export function healthCheckDeadline(
  * 轮询间隔可配置：`NAVHUB_JOBS_INTERVAL_MS`（毫秒，默认 30000）。
  * 环境变量而不是 config 字段——它是 Runner 的运行参数，不进能力面。
  */
+
+/** 要求 handler 停手的原因（决定 `cancelling` 最终收成哪个终态） */
+export type JobAbortReason =
+  /** 用户取消：本进程的路由直接中止，或别的实例改了库里的状态（由任务心跳发现） */
+  | "cancelled"
+  /** 单次执行预算到点 */
+  | "budget";
+
+/**
+ * 交给 handler 的执行句柄。
+ *
+ * 为什么句柄而不是裸的 AbortSignal：长任务的停手条件有两种，而它们的处理方式不同——
+ *   - `signal.aborted`（取消/超时）：**丢弃本轮剩余工作，且不要把剩余部分标失败**；
+ *   - `deadlineAt` 到点（预算的协作式版本）：主动收手并把剩余顺延下一轮，任务算成功。
+ * 只有 health_check 用得到 deadlineAt（分批巡检天然可顺延），其余 handler 只看 shouldStop。
+ */
+export interface JobRunHandle {
+  readonly jobId: string;
+  readonly kind: JobKind;
+  readonly signal: AbortSignal;
+  /** 协作式截止时间（毫秒时间戳；0 = 不设截止） */
+  readonly deadlineAt: number;
+  /** 下一个分片边界该不该收手 */
+  shouldStop(): boolean;
+}
+
+interface InFlightRun {
+  jobId: string;
+  kind: JobKind;
+  controller: AbortController;
+  startedAt: number;
+  /** 已请求停手的原因；null = 还没人要求 */
+  abortReason: JobAbortReason | null;
+}
+
+/**
+ * 本进程的执行中任务登记表。
+ *
+ * 它是「假取消」的另一半解药：库里的 `cancelling` 只能说明"要求过停手"，
+ * 而重试入口要的是"上一次执行真的停了"。同进程内这张表就是那个事实——
+ * 条目从执行体结算时才移除，所以 `isJobInFlight` 为真期间重试必然还在并发窗口里。
+ * 跨实例那一侧靠 `cancelling` 不被 `retryJob` 接受来兜（最坏等 reaper 的 15 分钟）。
+ */
+const inFlightRuns = new Map<string, InFlightRun>();
+
+/** 执行中任务读数（/metrics 与管理端共用；不暴露 handler 内部对象） */
+export function inFlightRunsSnapshot(): Array<{ jobId: string; kind: string; runningMs: number; abortRequested: boolean }> {
+  const now = Date.now();
+  return [...inFlightRuns.values()].map((run) => ({
+    jobId: run.jobId,
+    kind: run.kind,
+    runningMs: now - run.startedAt,
+    abortRequested: run.abortReason !== null,
+  }));
+}
+
+/** 本进程是否还在执行这个任务（含「已要求停手但 handler 未结算」的收尾窗口） */
+export function isJobInFlight(jobId: string): boolean {
+  return inFlightRuns.has(jobId);
+}
+
+/**
+ * 请求本地执行体停手；返回是否命中本进程的执行体。
+ *
+ * 与库状态改写（`repo.cancelJob`）刻意分开：「别的实例按了取消」这条路径根本没有
+ * 本地执行体可中止，它靠任务心跳读到 `cancelling` 后自行中止（见 process 里的心跳）。
+ */
+export function requestJobAbort(jobId: string, reason: JobAbortReason): boolean {
+  const run = inFlightRuns.get(jobId);
+  if (!run) return false;
+  // 用户取消覆盖先前记录的原因：终态应是 cancelled 而不是 failed
+  if (reason === "cancelled" || run.abortReason === null) run.abortReason = reason;
+  run.controller.abort();
+  return true;
+}
+
+/* --------------------------- 执行统计（/metrics 用） --------------------------- */
+
+interface JobKindStats {
+  runs: number;
+  durationMsTotal: number;
+  failures: number;
+  timeouts: number;
+  cancels: number;
+}
+
+const jobStatsByKind = new Map<string, JobKindStats>();
+
+function jobStatsOf(kind: string): JobKindStats {
+  let s = jobStatsByKind.get(kind);
+  if (!s) {
+    s = { runs: 0, durationMsTotal: 0, failures: 0, timeouts: 0, cancels: 0 };
+    jobStatsByKind.set(kind, s);
+  }
+  return s;
+}
+
+/** 本进程累计的任务执行统计（计数器只增不减；重启归零，与其余 navhub_* 计数器一致） */
+export function jobStatsSnapshot(): Array<JobKindStats & { kind: string }> {
+  return [...jobStatsByKind.entries()].map(([kind, s]) => ({ kind, ...s }));
+}
+
+export function resetJobStatsForTest(): void {
+  jobStatsByKind.clear();
+}
+
+/**
+ * 轮询间隔可配置：`NAVHUB_JOBS_INTERVAL_MS`（毫秒，默认 30000）。
+ * 环境变量而不是 config 字段——它是 Runner 的运行参数，不进能力面。
+ */
 function envInterval(): number {
   const raw = Number(process.env.NAVHUB_JOBS_INTERVAL_MS);
   return Number.isFinite(raw) && raw >= 1000 ? raw : 30_000;
@@ -249,12 +402,15 @@ export interface JobSchedulePolicy {
   cron?: string;
   /**
    * 单次执行的预算（毫秒）。**自 2026-10-27 起由 Runner 强制执行**：
-   * `process()` 用 Promise.race 在预算到点时脱身，并把任务落 failed 终态
-   * （不自动重试——handler 没有 AbortSignal，可能仍在后台跑，立刻重试会并发执行）。
+   * `process()` 在预算到点时把任务标成 `cancelling` 并通知执行体停手，等执行体
+   * 在分片边界结算后才落 failed 终态（不自动重试，见 finalizeAbortedRun）。
    * 各 handler 内部的网络/LLM 调用仍各自带超时；这一层是兜底，不是替代。
    */
   timeoutMs?: number;
-  /** 期望的按 kind 最大并发数。**当前 Runner 全程串行**，该值同样只是声明 */
+  /**
+   * 按 kind 的最大并发数。**当前只在 PG 生效**（SKIP LOCKED + per-kind lane）；
+   * SQLite 单写者，保持串行并把长任务排到队尾（见 DEFERRED_KINDS）。
+   */
   maxConcurrency?: number;
 }
 
@@ -281,6 +437,45 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
    */
   backup_restore: { cron: "MANUAL", timeoutMs: 1_800_000, maxConcurrency: 1 },
 };
+
+/**
+ * 串行消费时排到队尾的长任务（见 ClaimJobOptions.deferKinds）。
+ *
+ * 被认领的任务会占满整个执行体：一条 reindex 默认预算 10 分钟，若它排在队首，
+ * 后面 5 秒就能跑完的 health_check 要陪跑 10 分钟。反向等待（长任务排在巡检后）
+ * 的代价只是一次巡检的时长，所以这个方向的排序永远不会更差。
+ */
+const DEFERRED_KINDS = ["reindex", "backup_restore", "data_retention", "refetch_metadata", "site_self_healing"];
+
+/** PG 并发的全局 lane 上限（每 kind 的 maxConcurrency 才是主约束，这是兜底） */
+const CONCURRENT_SLOT_LIMIT = 4;
+
+export interface JobLane {
+  kind: string;
+  lanes: number;
+}
+
+/**
+ * 按 kind 分配并发 lane（纯函数，便于单测）。
+ *
+ * 规则：每个 kind 不超过 DEFAULT_SCHEDULES.maxConcurrency；待办数不足时不多开；
+ * 总量不超过 slots。按待办数降序分配 —— 积压最多的 kind 先拿到 lane，避免
+ * 「一个 20 条积压的巡检只开 1 条，同时 4 个各 1 条的 kind 各开 1 条」。
+ */
+export function planJobLanes(pending: Map<string, number>, slots = CONCURRENT_SLOT_LIMIT): JobLane[] {
+  const out: JobLane[] = [];
+  let left = Math.max(0, slots);
+  const ordered = [...pending.entries()].sort((a, b) => b[1] - a[1]);
+  for (const [kind, count] of ordered) {
+    if (left <= 0) break;
+    const cap = Math.max(1, DEFAULT_SCHEDULES[kind as JobKind]?.maxConcurrency ?? 1);
+    const lanes = Math.min(cap, count, left);
+    if (lanes <= 0) continue;
+    out.push({ kind, lanes });
+    left -= lanes;
+  }
+  return out;
+}
 
 /** 标准 5 段 cron 字面量（与 DEFAULT_SCHEDULES 别名一一对应，集中存放避免块注释提前闭合） */
 const CRON_EXPRS = {
@@ -431,6 +626,9 @@ export class JobRunner {
   private onAlert: JobRunnerOptions["onAlert"];
   private budgetOverrides: JobRunnerOptions["budgetOverrides"];
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** 独立排期定时器（与任务消费 tick 解耦，见 startCronTimer） */
+  private cronTimer: ReturnType<typeof setInterval> | null = null;
+  private cronChecking = false;
   private ticking = false;
   private lockHeld = false;
   /** 心跳发现锁已丢失（SQLite 被夺 / PG 连接断开）：本轮不再认领新任务 */
@@ -465,6 +663,42 @@ export class JobRunner {
     }, jitterMs);
     // 不阻塞启动：首个周期也交给定时器
     if (typeof this.timer.unref === "function") this.timer.unref();
+    this.startCronTimer();
+  }
+
+  /**
+   * 独立排期定时器（P1-4）：周期检查不再搭在任务消费的 tick 上。
+   *
+   * 旧行为是 tick 里、拿到全局锁之后才检查排期。一个长任务（reindex 默认预算
+   * 10 分钟）会把整轮 tick 占住，到点的排期只能等它跑完——「排期到点」不该
+   * 取决于「上一个任务跑完没有」。
+   *
+   * 去掉锁保护后的重复入队风险由 `repo.enqueueJobIfAbsent` 兜住：同 kind 已有
+   * pending/running/retrying/cancelling 的行就跳过；多实例同时判定「没有」时最
+   * 多多一条重复任务（与定时器引入之前的行为一致，不会更差）。tick 内的检查
+   * 保留：测试与手动 `tick()` 仍要能推进排期，两条路都走同一个去重函数。
+   */
+  startCronTimer(intervalMs = CRON_TICK_DEFAULT_MS): void {
+    if (this.cronTimer) return;
+    this.enableCron = true;
+    const jitterMs = Math.max(200, Math.round(intervalMs * (0.8 + Math.random() * 0.4)));
+    this.cronTimer = setInterval(() => {
+      void this.runCronCheck();
+    }, jitterMs);
+    if (typeof this.cronTimer.unref === "function") this.cronTimer.unref();
+  }
+
+  /** 单次排期检查；失败只告警，下一周期自然重试（不能拖垮 worker） */
+  private async runCronCheck(): Promise<void> {
+    if (this.stopping || this.cronChecking) return;
+    this.cronChecking = true;
+    try {
+      await this.checkRecurringSchedules();
+    } catch (err) {
+      console.warn("[navhub-job] 排期检查失败，下一周期重试:", err);
+    } finally {
+      this.cronChecking = false;
+    }
   }
   /** 优雅停机：stop() 后等待 in-flight tick 完成（最多等 stopTimeoutMs） */
   private stopping = false;
@@ -474,6 +708,8 @@ export class JobRunner {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.cronTimer) clearInterval(this.cronTimer);
+    this.cronTimer = null;
     // 标记停机中：tick 入口会拒绝新一轮，in-flight 的一轮正常跑完
     this.stopping = true;
   }
@@ -510,16 +746,7 @@ export class JobRunner {
           await this.ctx.repo.reapStaleJobs().catch(() => undefined);
         }
         await this.relayNotificationsSafely();
-        for (let i = 0; i < this.maxPerTick; i++) {
-          // 心跳已发现锁丢失：停止认领，避免与合法新持有者双跑
-          if (this.lockLost || !this.lockHeld) break;
-          const job = await this.ctx.repo.claimNextJob();
-          if (!job) break;
-          await this.process(job.kind as JobKind, job.payload, job.id, job.attempts);
-          processed++;
-          await this.relayNotificationsSafely();
-          if (this.lockLost) break;
-        }
+        processed = await this.consumeJobs();
       } finally {
         clearInterval(heartbeat);
         await this.releaseLock();
@@ -530,16 +757,89 @@ export class JobRunner {
     }
   }
 
+  /**
+   * 消费队列：SQLite 串行、PG 按 kind 并发。
+   *
+   * 为什么 SQLite 不并发：写锁只有一个。两个 handler 同时写只会互相等锁，
+   * 还会把 SQLITE_BUSY 引到事务里；串行的瓶颈是任务时长，不是调度。
+   * PG 上不同 kind 的任务互不相干（巡检读外链、索引重建写本地表），把
+   * health_check 堵在 10 分钟的 reindex 后面纯属浪费。
+   */
+  private async consumeJobs(): Promise<number> {
+    return this.ctx.db.dialect === "pg" ? this.consumePerKind() : this.consumeSerial();
+  }
+
+  /** 串行消费：长任务排到队尾，短任务先跑（见 DEFERRED_KINDS） */
+  private async consumeSerial(): Promise<number> {
+    let processed = 0;
+    for (let i = 0; i < this.maxPerTick; i++) {
+      // 心跳已发现锁丢失：停止认领，避免与合法新持有者双跑
+      if (this.lockLost || !this.lockHeld) break;
+      const job = await this.ctx.repo.claimNextJob({ deferKinds: DEFERRED_KINDS });
+      if (!job) break;
+      await this.process(job.kind as JobKind, job.payload, job.id, job.attempts);
+      processed++;
+      await this.relayNotificationsSafely();
+      if (this.lockLost) break;
+    }
+    return processed;
+  }
+
+  /**
+   * PG 并发消费：每个 kind 开自己的 lane（上限 DEFAULT_SCHEDULES.maxConcurrency），
+   * 认领走 FOR UPDATE SKIP LOCKED —— 多实例下每个 lane 拿到的行互不重叠。
+   *
+   * lane 数量在 tick 开始时按当时的待办快照分配：本 tick 中途新入队的任务
+   * 留给下一轮（默认 30s 后），不在这里追赶，避免一轮 tick 被持续流入的任务拖住。
+   */
+  private async consumePerKind(): Promise<number> {
+    // 仓储能力缺失（测试替身/裁剪过的实现）时退回串行：并发是优化，不是正确性前提
+    if (typeof this.ctx.repo.pendingJobsByKind !== "function") return this.consumeSerial();
+    const lanes = planJobLanes(await this.ctx.repo.pendingJobsByKind());
+    if (lanes.length === 0) return 0;
+    let remaining = this.maxPerTick;
+    let processed = 0;
+    const workers: Promise<void>[] = [];
+    for (const { kind, lanes: count } of lanes) {
+      for (let i = 0; i < count; i++) {
+        workers.push(
+          (async () => {
+            while (!this.lockLost && this.lockHeld) {
+              if (remaining <= 0) break;
+              remaining -= 1;
+              const job = await this.ctx.repo.claimNextJob({ kinds: [kind] });
+              if (!job) {
+                // 没认领到：把名额还回去，别的 lane 还能用
+                remaining += 1;
+                break;
+              }
+              processed += 1;
+              await this.process(job.kind as JobKind, job.payload, job.id, job.attempts);
+              await this.relayNotificationsSafely();
+            }
+          })(),
+        );
+      }
+    }
+    await Promise.all(workers);
+    return processed;
+  }
+
   /** 通知投递失败不应中断本轮任务消费：outbox 会在下一轮 tick 自动重试。 */
   private async relayNotificationsSafely(): Promise<void> {
     try {
-      await this.ctx.repo.relayNotifications();
+      // 注入邮件发送器：此前 email 渠道入队即 deferred 且永不投递（静默失败），
+      // 现在由 mail transport 真实发送；未配 SMTP 时退化为日志投递。
+      const mail = this.ctx.mail;
+      await this.ctx.repo.relayNotifications(50, {
+        send: (input) => mail.sendMail(input),
+      });
     } catch (err) {
       console.error("[navhub-job] 通知投递失败，将在后续周期重试:", err);
     }
   }
 
-  /** 检查内置 Cron 定时计划并在到期时入队任务 */
+  /** 检查内置 Cron 定时计划并在到期时入队任务（tick 与独立排期定时器共用） */
   private async checkRecurringSchedules(): Promise<void> {
     const now = Date.now();
     for (const schedule of DEFAULT_CRON_SCHEDULES) {
@@ -547,7 +847,10 @@ export class JobRunner {
       const lastRun = await this.ctx.repo.getSystemState<number>(stateKey);
       if (!lastRun || now - lastRun >= schedule.intervalMs) {
         try {
-          await this.ctx.repo.enqueueJob(schedule.kind, schedule.payload ?? {});
+          // 去重入队：多实例/双路径（tick + 单独定时器）同时到点时只认一条。
+          // 返回 null = 同 kind 已有没跑完的任务，此刻也把水位推进——否则等那条
+          // 跑完后下一分钟就会立刻再入一条，排期语义变成「跑完即重排」。
+          await this.ctx.repo.enqueueJobIfAbsent(schedule.kind, schedule.payload ?? {});
           await this.ctx.repo.setSystemState(stateKey, now);
         } catch {
           // 忽略入队冲突或瞬时错误
@@ -686,12 +989,30 @@ export class JobRunner {
       attempts,
       timestamp: Date.now(),
     });
-    // 执行中心跳：reapStaleJobs 以 updated_at 判定僵尸，没有心跳时任何超过
-    // 15 分钟的合法长任务都会被另一实例回收，造成同一任务并发执行。
+    /**
+     * 执行中心跳，兼「停手探测器」。
+     *
+     * 两个用途：
+     *  1. reapStaleJobs 以 updated_at 判定僵尸，没有心跳时任何超过 15 分钟的合法长任务
+     *     都会被另一实例回收，造成同一任务并发执行。
+     *  2. 心跳语句只在 `running`/`cancelling` 上命中，回的是**当前状态**——
+     *     `cancelling` 说明有人（本进程或其他实例）按了取消，`null` 说明行已离开执行态
+     *     （被 reaper 回收 / 已被接管 / 已落终态），继续跑就是双写。两种都要立刻中止。
+     * 旧实现把返回值丢掉，于是这两种情况都要等到完成回写的 CAS 失败才被发现，
+     * 而那时 handler 已经多写了几千行数据。
+     */
     const jobHeartbeat =
       typeof this.ctx.repo.heartbeatJob === "function"
         ? setInterval(() => {
-            void this.ctx.repo.heartbeatJob(jobId).catch(() => undefined);
+            void this.ctx.repo
+              .heartbeatJob(jobId)
+              .then((status) => {
+                // 非 running = 要么有人要求停手（cancelling），要么行已离开执行态（null）。
+                // 两者的收尾都是「让 handler 在下一个边界停」，区别只由库里当前状态决定：
+                // 真的收成 cancelled 需要行仍是 cancelling，被 reaper 改走时 CAS 自然不命中。
+                if (status !== "running") requestJobAbort(jobId, "cancelled");
+              })
+              .catch(() => undefined);
           }, this.jobHeartbeatMs)
         : null;
     if (jobHeartbeat && typeof jobHeartbeat.unref === "function") jobHeartbeat.unref();
@@ -711,15 +1032,43 @@ export class JobRunner {
      * 避免同一任务被两个执行流并发处理。
      */
     const budgetMs = this.budgetOverrides?.[kind] ?? DEFAULT_SCHEDULES[kind]?.timeoutMs ?? 0;
+    /**
+     * 执行句柄：取消/超时都收敛成「让 handler 在下一个分片边界自己停」。
+     *
+     * 为什么不直接 kill：JS 没有安全的中断点，硬砍会把一个事务劈成半写；而分批
+     * 任务本来就按分片设计（一片一个事务），边界处停手 = 已提交的分片保留、
+     * 未开始的不写，取消语义与「撤销」无关（这一点界面也必须这么说）。
+     */
+    const controller = new AbortController();
+    const entry: InFlightRun = { jobId, kind, controller, startedAt: attemptStartedAt, abortReason: null };
+    inFlightRuns.set(jobId, entry);
+    const run: JobRunHandle = {
+      jobId,
+      kind,
+      signal: controller.signal,
+      deadlineAt:
+        kind === "health_check"
+          ? // 余量按 fetch 超时 + 2s 兑现，保证「最后一次抓取」也落在外层硬预算内
+            healthCheckDeadline(attemptStartedAt, budgetMs, this.ctx.config.fetch.timeoutMs + 2_000)
+          : 0,
+      shouldStop: () => controller.signal.aborted || (run.deadlineAt > 0 && Date.now() >= run.deadlineAt),
+    };
+    /**
+     * 执行体结算 = 「handler 确认已停手」的唯一时点，所以收尾（cancelling → 终态）
+     * 挂在这里，而不是挂在 process 的 catch 上——预算到点时 catch 早就跑完了，
+     * 那一刻 handler 还在写数据，写终态就是审计报告说的「假取消」。
+     */
+    const settleRun = (): void => {
+      inFlightRuns.delete(jobId);
+      void this.finalizeAbortedRun(entry, attemptStartedAt, attempts).catch((err: unknown) => {
+        console.error("[navhub-job] 中止收尾失败", { jobId, kind, err });
+      });
+    };
     const execution = (async (): Promise<void> => {
       switch (kind) {
         case "health_check":
           // 分批巡检走协作式截止：预算内主动停手、剩余顺延，不把整轮标失败。
-          // 余量按 fetch 超时 + 2s 兑现，保证「最后一次抓取」也落在外层硬预算内。
-          await this.runHealthCheck(
-            (payload ?? {}) as { siteId?: string; limit?: number },
-            healthCheckDeadline(attemptStartedAt, budgetMs, this.ctx.config.fetch.timeoutMs + 2_000),
-          );
+          await this.runHealthCheck((payload ?? {}) as { siteId?: string; limit?: number }, run);
           break;
         case "refetch_metadata":
           await this.runRefetch((payload ?? {}) as { siteId?: string; llm?: boolean });
@@ -728,7 +1077,7 @@ export class JobRunner {
           await this.runRecomputeRank();
           break;
         case "reindex":
-          await this.runReindex((payload ?? {}) as { siteId?: string; vectors?: boolean });
+          await this.runReindex((payload ?? {}) as { siteId?: string; vectors?: boolean }, run);
           break;
         case "site_self_healing":
           await this.runSiteSelfHealing((payload ?? {}) as { siteId?: string });
@@ -740,10 +1089,10 @@ export class JobRunner {
           await this.runPurgeTrash((payload ?? {}) as { olderThanDays?: number });
           break;
         case "taxonomy_audit":
-          await this.runTaxonomyAudit((payload ?? {}) as { dryRun?: boolean; siteLimit?: number });
+          await this.runTaxonomyAudit((payload ?? {}) as { dryRun?: boolean; siteLimit?: number }, run);
           break;
         case "data_retention":
-          await this.runDataRetention((payload ?? {}) as DataRetentionPayload);
+          await this.runDataRetention((payload ?? {}) as DataRetentionPayload, run);
           break;
         case "plugin_governance":
           await this.runPluginGovernance();
@@ -752,14 +1101,20 @@ export class JobRunner {
           await this.runUserDataAudit();
           break;
         case "backup_restore":
-          // jobId 由 Runner 注入而不是放在 payload 里：入队时还拿不到 id（enqueueJob
-          // 才生成），把 id 写进 payload 必然要「入队后再改 payload」这一趟额外写。
-          await this.runBackupRestore((payload ?? {}) as { stagingPath?: string }, jobId);
+          // jobId 由 Runner 通过执行句柄注入而不是放在 payload 里：入队时还拿不到 id
+          // （enqueueJob 才生成），把 id 写进 payload 必然要「入队后再改 payload」这一趟额外写。
+          await this.runBackupRestore((payload ?? {}) as { stagingPath?: string }, run);
           break;
         default:
           throw new Error("未知任务类型: " + kind);
       }
     })();
+    /**
+     * 执行体结算后才收尾（见 settleRun）。`catch` 是必须的：这条分支与
+     * `runWithBudget` 的观察是两回事，异常在 Runner 那条已经在处理，这里只是
+     * 借结算时机做一次登记清理，不能再生成第二个未处理的 rejection。
+     */
+    execution.finally(settleRun).catch(() => undefined);
     let executionCompleted = false;
     try {
       await runWithBudget(execution, budgetMs, kind);
@@ -796,8 +1151,12 @@ export class JobRunner {
           durationMs,
           timestamp: Date.now(),
         });
+        jobStatsOf(kind).runs += 1;
+        jobStatsOf(kind).durationMsTotal += durationMs;
+      } else if (entry.abortReason !== null) {
+        // 取消/超时导致的中途停下：终态由 settleRun 收尾，这里不是异常
       } else {
-        // 执行期间任务被取消 / 被 reaper 回收 / 已被接管：结果只记日志，不改写终态
+        // 执行期间任务被 reaper 回收 / 已被接管：结果只记日志，不改写终态
         console.warn("[navhub-job] 完成回写被忽略（任务已不在 running）", { jobId, kind });
       }
     } catch (err) {
@@ -807,15 +1166,36 @@ export class JobRunner {
       /**
        * 超时与普通失败分开处理：
        *  - 普通失败：按指数退避重试，attempts 耗尽后落 failed；
-       *  - 预算超时：handler 可能仍在后台跑，立刻重试会让同一任务并发执行，
-       *    因此直接落 failed 终态（人工确认后可从管理端 retry）。
+       *  - 预算超时：handler 可能仍在跑，**先中止、不写终态**——标成 `cancelling`
+       *    并让 handler 在下一个分片边界收手，执行体结算后由 settleRun 落 failed。
+       *    （旧实现直接写 failed：界面说「已失败」，代码还在写库，用户点重试就是
+       *    两个执行流并发写同一批数据——审计报告里的「假取消」。）
        */
       const timedOut = err instanceof JobBudgetExceededError;
-      const exhausted = timedOut || attempts >= MAX_JOB_ATTEMPTS;
-      const retryAt = exhausted ? null : Date.now() + backoffMs(attempts);
       const durationMs = Date.now() - attemptStartedAt;
-      if (durationMs >= 10_000 || timedOut) {
-        console.warn("[navhub-job] 长任务失败", { jobId, kind, durationMs, error: message, timedOut });
+      if (timedOut) {
+        jobStatsOf(kind).timeouts += 1;
+        console.warn("[navhub-job] 预算到点，请求停止", { jobId, kind, durationMs, error: message });
+        const marked = await this.ctx.repo.markJobCancelling(jobId, message).catch(() => false);
+        requestJobAbort(jobId, "budget");
+        if (marked) {
+          jobEventBus.emitJobUpdate({
+            jobId,
+            kind,
+            status: "cancelling",
+            attempts,
+            error: message,
+            durationMs,
+            timestamp: Date.now(),
+          });
+        }
+        // 行已被用户取消(已是 cancelling)或 reaper 改走：原因与终态都归那条路径管
+        return;
+      }
+      const exhausted = attempts >= MAX_JOB_ATTEMPTS;
+      const retryAt = exhausted ? null : Date.now() + backoffMs(attempts);
+      if (durationMs >= 10_000) {
+        console.warn("[navhub-job] 长任务失败", { jobId, kind, durationMs, error: message });
       }
       const applied = await this.ctx.repo.withTransaction(async () => {
         const changed = await this.ctx.repo.completeJob(jobId, message, { retryAt, exhausted, durationMs });
@@ -844,11 +1224,10 @@ export class JobRunner {
         timestamp: Date.now(),
       });
       if (exhausted) {
+        jobStatsOf(kind).failures += 1;
+        jobStatsOf(kind).durationMsTotal += durationMs;
         const detail = { kind, attempts, error: message };
-        this.alert(
-          (timedOut ? "任务 " + kind + " 超出单次执行预算，已终止（不会自动重试）：" : "任务 " + kind + " 连续失败 " + attempts + " 次，已停止重试：") + message,
-          detail,
-        );
+        this.alert("任务 " + kind + " 连续失败 " + attempts + " 次，已停止重试：" + message, detail);
       }
     } finally {
       if (jobHeartbeat) clearInterval(jobHeartbeat);
@@ -866,6 +1245,110 @@ export class JobRunner {
     try {
       this.onAlert?.(message, detail);
     } catch { /* 回调失败不影响任务流 */ }
+  }
+
+  /**
+   * 中止收尾：把 `cancelling` 收成真正的终态（`cancelled` / `failed`）。
+   *
+   * 调用时机是**执行体已结算**（`settleRun`），也就是 handler 已确认停手的那一刻。
+   * 这是整条状态机里唯一可靠的确认点：`process` 的 catch 在预算到点时就跑完了，
+   * 而那一刻 handler 可能还在写数据——在那里写终态正是审计报告说的「假取消」
+   * （界面显示已取消，库里还在变）。
+   *
+   * 终态由中止原因决定，两者语义不同：
+   *   - `cancelled`（用户按了取消）：是用户意图，收 `cancelled`，可 `retryJob`；
+   *   - `budget`（单次预算到点）：不是失败也不是用户意图，但本次执行确实没跑完，
+   *     且 budget 超时一律不自动重试（handler 可能仍在后台跑，立刻重试会并发执行），
+   *     因此收 `failed` —— 与 `runWithBudget` 超时分支落 failed 的口径保持一致。
+   *
+   * 写入走仓储的 `settleCancellingJob`（CAS 要求 `cancelling`）：若期间行已被 reaper
+   * 改成 pending/failed、或已被别的实例接管，CAS 自然不命中，迟到的收尾不会覆盖
+   * 别人的状态。这一点必须复用那条路径，不能在本地另写一条 UPDATE —— 那会绕过
+   * CAS，把「已经重新排队跑起来了」的任务又按回终态。
+   */
+  private async finalizeAbortedRun(
+    entry: InFlightRun,
+    attemptStartedAt: number,
+    attempts: number,
+  ): Promise<void> {
+    const { jobId, kind } = entry;
+    const reason = entry.abortReason;
+    const durationMs = Date.now() - attemptStartedAt;
+    /**
+     * 终态由中止原因决定：
+     *   - `cancelled`：用户按了取消，收 `cancelled`（可 `retryJob`）；
+     *   - `budget`：单次预算到点，本次确实没跑完且**不自动重试**（handler 可能仍在
+     *     后台跑，立刻重试会并发执行），因此收 failed —— 与 `runWithBudget` 超时
+     *     分支落 failed 的口径一致。
+     *   - 无本地原因：见下面「为什么仍然要试一次」。
+     */
+    /**
+     * 两条写入路径（缺一不可）：
+     *  - 用户取消：路由/心跳调用 `requestJobAbort(..., "cancelled")`；
+     *  - 预算超时：process 的 catch 先 `markJobCancelling` 再
+     *    `requestJobAbort(..., "budget")`，**不再直接写 failed**——那一刻 handler
+     *    可能还在写数据，写终态就是「假取消」。这里才是超时的终态出口。
+     */
+    const terminal: "cancelled" | "failed" = reason === "budget" ? "failed" : "cancelled";
+    const error =
+      reason === "budget"
+        ? "任务超出单次执行预算，执行体已在分片边界停手（不会自动重试）"
+        : "任务已被取消，执行体在分片边界停手";
+
+    /**
+     * 写终态一律走 `settleCancellingJob`（CAS 要求 `cancelling`）而不是本地另写一条
+     * UPDATE：那条 CAS 同时兜住「期间被 reaper 改成 pending/failed」与「已被别的实例
+     * 接管」两种情况，迟到的收尾因此不可能覆盖别人的状态。
+     *
+     * 为什么 `reason` 为空也要试一次：本地原因只在两条路上登记——路由/心跳调用
+     * `requestJobAbort`。心跳是**间隔**触发的（`jobHeartbeatMs`），取消可能在两次心跳
+     * 之间到达，于是 handler 已经因为「分片边界读到 cancelling」停手了，本地却还没
+     * 登记原因。若这里直接 return，任务就永久停在 `cancelling`：既不被 claimNextJob
+     * 认领、也不被 retryJob 接受，界面显示「正在收尾」永远不变——这就是另一种假取消。
+     * 交给 CAS 判定即可：行不在 `cancelling`（正常结束、仍是 running）时自然不命中。
+     */
+    const applied = await this.ctx.repo.settleCancellingJob(jobId, terminal, { error, durationMs });
+    if (applied) {
+      // 与正常/失败路径同口径：计数与事件都要能看到「这次是被中止收掉的」，
+      // 否则 /metrics 上取消的任务既不计 cancels 也不计 failures，凭空消失。
+      const stats = jobStatsOf(kind);
+      stats.runs += 1;
+      stats.durationMsTotal += durationMs;
+      if (terminal === "cancelled") stats.cancels += 1;
+      else stats.timeouts += 1;
+      jobEventBus.emitJobUpdate({
+        jobId,
+        kind,
+        status: terminal,
+        attempts,
+        error,
+        durationMs,
+        timestamp: Date.now(),
+      });
+      if (terminal === "failed") {
+        // 超时终态要与普通失败同口径地留通知 + 告警：否则「预算到点」会变成
+        // 一条只存在于日志里的失败，管理端既没提醒也看不到重试入口。
+        await this.ctx.repo
+          .emitNotification({
+            identity: ADMIN_NOTIFICATION_IDENTITY,
+            idempotencyKey: `job:${jobId}:failed`,
+            kind: kind === "backup_restore" ? "backup_failed" : "job_failed",
+            title: kind === "backup_restore" ? "备份恢复任务失败" : `自动化任务失败：${kind}`,
+            body: `任务 ${jobId} 超出单次执行预算，已确认停止且不会自动重试。请到任务管理查看详情并决定是否重试。`,
+          })
+          .catch(() => undefined);
+        this.alert("任务 " + kind + " 超出单次执行预算，已确认停止（不会自动重试）", {
+          kind,
+          attempts,
+          error: String(error),
+        });
+      }
+    } else if (reason) {
+      // 明确要求过停手却没写上：行已离开 cancelling（被 reaper 回收 / 已被接管 /
+      // 已被直接落终态）。与 process 里「完成回写被忽略」同款日志，排查时两边要对得上。
+      // reason 为空时未命中属于正常结束（终态由 completeJob 写），不该刷警告。
+      console.warn("[navhub-job] 中止收尾被忽略（任务已不在 cancelling）", { jobId, kind, reason });
+    }
   }
 
   /**
@@ -903,8 +1386,15 @@ export class JobRunner {
     return picked;
   }
 
-  /** 健康巡检：与 MCP health_check 同一套抓取逻辑，但走仓储（双方言） */
-  private async runHealthCheck(payload: { siteId?: string; limit?: number }, deadlineAt = 0): Promise<void> {
+  /**
+   * 健康巡检：与 MCP health_check 同一套抓取逻辑，但走仓储（双方言）。
+   *
+   * 第二个参数是执行句柄而不是裸的 `deadlineAt`：分批巡检是唯一用到协作式截止的
+   * handler，但「有人按了取消」与「预算到点」在这里的处置是同一件事——在下一个
+   * 分片边界收手，已提交的分片保留。收统一句柄后两种原因都归入 `shouldStop()`，
+   * 不必再各接一个参数（这正是本次「假取消」重构要消灭的散落参数之一）。
+   */
+  private async runHealthCheck(payload: { siteId?: string; limit?: number }, run: JobRunHandle): Promise<void> {
     const { guardedFetch } = await import("@navhub/ai");
     const limit = payload.limit ?? 50;
     const found: Array<SiteRow | null> = payload.siteId
@@ -916,7 +1406,9 @@ export class JobRunner {
     for (const site of targets) {
       // 协作式截止：到点就收手。patrolTargets 按「上次巡检最久」优先挑选，
       // 所以停下的这批下一次（下一轮排期）会被排在最前面，不会饿死。
-      if (deadlineAt > 0 && Date.now() >= deadlineAt) break;
+      // shouldStop() 同时覆盖「预算到点」与「被要求取消」——两者的分片语义一致，
+      // 区别只在收尾终态（由 Runner 按 abortReason 决定），handler 不必区分。
+      if (run.shouldStop()) break;
       checked++;
       const t0 = Date.now();
       try {
@@ -1001,16 +1493,21 @@ export class JobRunner {
      * 能连发几十次模型调用，`payload.llm` 一旦被人循环投递就是无上限消耗。
      * 额度以 null 身份计（与 `job_enrich` 用量的 identity 列同为 NULL 对齐），
      * 被拒时降级成启发式抓取 —— 标题/描述/icon 照样拿得到，只是没有 AI 润色。
+     *
+     * 只在 `payload.llm` 真的要调模型时才预留：默认的纯抓取路径不花钱，
+     * 给它占位会让一批 refetch 任务互相把 anonymous 档吃满。
      */
-    const quota = await checkLlmQuota(this.ctx, null);
-    const useLlm = payload.llm === true && quota.ok;
+    const quota = payload.llm === true ? await reserveLlmQuota(this.ctx, null) : null;
+    const useLlm = quota?.ok === true;
+    const aiSkipped = quota && !quota.ok ? "quota" : null;
+    const hold = quota && quota.ok ? quota.hold : null;
     const resolved = useLlm ? await resolveLlm(this.ctx) : null;
     const enriched = await enrichUrl(site.url, {
       llm: resolved ? enrichLlmOf(resolved) : undefined,
       guard: this.ctx.config.fetch,
       heuristicOnly: !useLlm,
       onLlmCall: resolved ? createEnrichUsageCallback(this.ctx, resolved.source, null, "job_enrich") : undefined,
-    });
+    }).finally(() => settleLlmQuota(this.ctx, hold));
     // 只覆盖「空值或超期（>30 天）字段」——刷新不该把人工精修的内容冲掉
     const stale = 30 * 86_400_000;
     const isStale = (updatedAt: number | undefined) => !updatedAt || Date.now() - updatedAt > stale;
@@ -1030,7 +1527,7 @@ export class JobRunner {
     await this.ctx.repo
       .recordEvent("refetch", {
         siteId: site.id,
-        meta: { provenance: enriched.provenance, aiSkipped: payload.llm === true && !quota.ok ? "quota" : null },
+        meta: { provenance: enriched.provenance, aiSkipped },
       })
       .catch(() => undefined);
   }
@@ -1078,7 +1575,12 @@ export class JobRunner {
     siteIds?: string[];
     vectors?: boolean;
     targets?: Array<"sites" | "plugins">;
-  }): Promise<void> {
+    /**
+     * 执行句柄：重建按 32 条一批推进，批与批之间是天然的安全停手点。
+     * 到这里才停而不是每批都查库——`shouldStop()` 读的是进程内的 AbortSignal
+     * 与截止时间，零 IO 成本，因此每批查一次不会比「只在开头查」更贵。
+     */
+  }, run: JobRunHandle): Promise<void> {
     const targets: Array<"sites" | "plugins"> =
       Array.isArray(payload.targets) && payload.targets.length > 0 ? payload.targets : ["sites"];
     if (targets.includes("plugins")) {
@@ -1159,6 +1661,15 @@ export class JobRunner {
 
     const BATCH_SIZE = 32;
     for (let i = 0; i < sites.length; i += BATCH_SIZE) {
+      /**
+       * 分片边界停手：已提交的批次保留，未开始的不再写。
+       * 与体检巡检同一条语义——取消不等于撤销，只是不再前进。
+       * 索引没重建完的站点仍可被检索到（旧索引还在），不会变成搜不到。
+       */
+      if (run.shouldStop()) {
+        console.info("[navhub-job] reindex 在分片边界停手", { jobId: run.jobId, processed: i, total: sites.length });
+        break;
+      }
       const chunk = sites.slice(i, i + BATCH_SIZE);
       await this.ctx.repo.withTransaction(async () => {
         for (const site of chunk) {
@@ -1347,9 +1858,14 @@ export class JobRunner {
    * 这样请求时长与数据量解耦（这正是异步化的目的）。
    *
    * 失败时**不删** staging：运维要能拿它复盘或直接重跑（JobRunner 会按退避重试）。
+   *
+   * jobId 取自执行句柄而不是第二个字符串参数：入队时还拿不到 id（`enqueueJob`
+   * 才生成），把 id 塞进 payload 必然要「入队后再改 payload」这一趟额外写。
+   * 由 Runner 通过句柄注入就没有这趟写，也不必让每个 handler 各自去猜 id 从哪来。
    */
-  private async runBackupRestore(payload: { stagingPath?: string }, jobId: string): Promise<void> {
+  private async runBackupRestore(payload: { stagingPath?: string }, run: JobRunHandle): Promise<void> {
     const { stagingPath } = payload;
+    const jobId = run.jobId;
     if (!stagingPath) {
       throw new Error("backup_restore 缺少 stagingPath（端点应在入队前把规范化计划落到 staging 文件）");
     }
@@ -1369,9 +1885,19 @@ export class JobRunner {
       sites?: StagedSite[];
     }
 
+    // 只读 staging 目录内的文件：入队来源不止端点，payload 里的路径不可信。
+    // 校验放在 try 外，越界路径要报自己的错，不能被当成「文件已被清理」。
+    const stagingFile = assertRestoreStagingPath(stagingPath);
+    const stagingInfo = await stat(stagingFile).catch(() => null);
+    if (stagingInfo && stagingInfo.size > RESTORE_STAGING_MAX_BYTES) {
+      throw new Error(
+        `backup_restore staging 文件超过上限（${stagingInfo.size} > ${RESTORE_STAGING_MAX_BYTES} 字节），拒绝读取`,
+      );
+    }
+
     let plan: StagedPlan;
     try {
-      plan = JSON.parse(await readFile(stagingPath, "utf8")) as StagedPlan;
+      plan = JSON.parse(await readFile(stagingFile, "utf8")) as StagedPlan;
     } catch (err) {
       // 文件不在 = 已被处理过或过期清理；明确失败，不要当成功（否则 status 会谎报完成）
       throw new Error("读取恢复 staging 失败（可能已被处理或过期）：" + String((err as Error)?.message ?? "unknown"));
@@ -1394,8 +1920,19 @@ export class JobRunner {
      * 删了文件那次重试就必然失败。残留由 `sweepStaleStaging` 按 24 小时清。
      */
     const isCancelled = async (): Promise<boolean> => {
+      /**
+       * 先看执行句柄：取消由 Runner 经 AbortSignal 下发（任务心跳读到 `cancelling`
+       * 后调用 `requestJobAbort`），这是零 IO 的本地事实，且覆盖「别的实例按了取消、
+       * 本进程靠心跳才发现」这条跨实例路径。
+       *
+       * 再查库里的状态：`cancelling` 必须一并算作已取消——新状态机里 running 被取消
+       * 后停在 `cancelling`（真正的 `cancelled` 由 Runner 在 handler 结算后写入），
+       * 只读 `cancelled` 会让「已取消」在收尾前根本读不到，于是分片照写不误。
+       */
+      if (run.shouldStop()) return true;
       const rows = await this.ctx.repo.raw("SELECT status FROM jobs WHERE id = ? LIMIT 1", [jobId]);
-      return String(rows[0]?.status ?? "") === "cancelled";
+      const status = String(rows[0]?.status ?? "");
+      return status === "cancelled" || status === "cancelling";
     };
     if (await isCancelled()) {
       console.info("[navhub-job] 恢复任务在执行前已被取消，未写入任何数据", { jobId });
@@ -1740,7 +2277,16 @@ export class JobRunner {
     }
   }
 
-  private async runDataRetention(payload: DataRetentionPayload = {}): Promise<void> {
+  /**
+   * 数据保留 / 明细聚合。执行句柄在这里用于「开始前已被要求停手就不跑」：
+   * rollup 与 cleanup 都按天推进且由仓储层自持事务，handler 侧没有安全的
+   * 中途切分点——半途停会留下「压了一半的日统计」，比跑完一次更难解释。
+   */
+  private async runDataRetention(payload: DataRetentionPayload = {}, run: JobRunHandle): Promise<void> {
+    if (run.shouldStop()) {
+      console.info("[navhub-job] data_retention 执行前已被要求停手，未做任何聚合/清理", { jobId: run.jobId });
+      return;
+    }
     const mode = payload.mode === "cleanup" ? "cleanup" : "rollup";
     if (mode === "cleanup" && payload.apply === true) {
       throw new Error(
@@ -1757,8 +2303,21 @@ export class JobRunner {
     await this.ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => undefined);
   }
 
-  /** 分类与标签体系智能治理审计 */
-  private async runTaxonomyAudit(payload: { dryRun?: boolean; siteLimit?: number } = {}): Promise<void> {
+  /**
+   * 分类与标签体系智能治理审计。
+   *
+   * 执行句柄在本次实现里只用于「审计开始前已被要求停手就别浪费一次全站扫描」：
+   * 审计是一次 `runTaxonomyAudit` 的仓储调用（内部自分片），handler 侧没有可
+   * 让出的边界，所以不在中途切分——宁可让它跑完一次，也不在半途写出半份提案。
+   */
+  private async runTaxonomyAudit(
+    payload: { dryRun?: boolean; siteLimit?: number } = {},
+    run: JobRunHandle,
+  ): Promise<void> {
+    if (run.shouldStop()) {
+      console.info("[navhub-job] taxonomy_audit 执行前已被要求停手，未扫描", { jobId: run.jobId });
+      return;
+    }
     const res = await this.ctx.repo.runTaxonomyAudit({
       dryRun: payload.dryRun ?? false,
       siteLimit: payload.siteLimit ?? 500,

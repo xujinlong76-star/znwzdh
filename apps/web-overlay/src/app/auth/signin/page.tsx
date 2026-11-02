@@ -150,16 +150,16 @@ function SignInContent() {
         <div className="absolute inset-0 bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950" />
         <div className="relative z-20 flex items-center text-lg font-medium">
           <Link href="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
-            <div className="relative w-8 h-8 overflow-hidden rounded-lg border border-white/20 shadow-md">
+            <div className="relative w-8 h-8 p-1 overflow-hidden rounded-xl bg-gradient-to-b from-card to-muted/80 border border-white/20 shadow-md flex items-center justify-center">
               <img
-                src="/assets/images/alogo.webp"
-                alt="山羊胡 Logo"
-                className="object-cover w-full h-full"
+                src="/favicon.svg"
+                alt="控制中心 Logo"
+                className="w-full h-full object-contain"
               />
             </div>
             <div className="flex flex-col">
               <span className="text-xl font-bold leading-none tracking-tight text-white">
-                山羊胡
+                控制中心
               </span>
               <span className="text-[11px] text-zinc-400 mt-0.5 tracking-wider uppercase font-semibold">
                 Control Center
@@ -196,14 +196,14 @@ function SignInContent() {
         <div className="mx-auto flex w-full max-w-[390px] flex-col justify-center space-y-6">
           {/* 移动端展示 Logo */}
           <div className="flex lg:hidden flex-col items-center gap-2 mb-2 text-center">
-            <div className="relative w-10 h-10 overflow-hidden rounded-xl border border-border shadow-md">
+            <div className="relative w-10 h-10 p-1.5 overflow-hidden rounded-xl bg-gradient-to-b from-card to-muted/80 border border-border shadow-md flex items-center justify-center">
               <img
-                src="/assets/images/alogo.webp"
-                alt="Logo"
-                className="object-cover w-full h-full"
+                src="/favicon.svg"
+                alt="控制中心 Logo"
+                className="w-full h-full object-contain"
               />
             </div>
-            <span className="text-xl font-bold tracking-tight">山羊胡管理后台</span>
+            <span className="text-xl font-bold tracking-tight">管理后台控制中心</span>
           </div>
 
           <Card className="border-border/70 shadow-lg backdrop-blur-sm">

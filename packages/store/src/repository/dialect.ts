@@ -289,6 +289,7 @@ export function rowToUser(row: Record<string, any>): UserRecord {
     email: row.email ?? null,
     avatar: row.avatar ?? null,
     source: String(row.source ?? "local"),
+    emailVerified: row.email_verified === 1 || row.email_verified === true,
   };
 }
 

@@ -173,6 +173,8 @@ export interface HubSearchResult
   degraded?: boolean
   /** 知识图谱对标方案与实体关联命中（如搜 "figma" 命中其开源平替 "Penpot"） */
   relationHits?: HubSiteRelation[]
+  /** 搜索结果中前序命中站点聚合出的高频相关标签 */
+  relatedTags?: Array<{ name: string; slug: string; count: number }>
 }
 
 export interface HubTag {
@@ -664,6 +666,36 @@ export function reportClick(siteId: string, identity?: string, context?: ClickRe
 }
 
 /* ------------------------------ 标签 ------------------------------ */
+
+export interface RelatedTag {
+  id: string
+  name: string
+  slug: string
+  group: string
+  color: string | null
+  /** 共现存活站点数；越大越相关 */
+  sharedSites: number
+}
+
+export interface RelatedTagsResponse {
+  ok: boolean
+  tagSlug: string
+  related: RelatedTag[]
+}
+
+/**
+ * 标签共现相关标签（标签页侧的浏览死胡同修复）。
+ *
+ * 与 fetchTags 同走 BASE='/api/hub'（hubUrl 会把 /api 前缀规范化），
+ * 浏览器经过 /api/hub 代理打到中枢的 /api/tags/:id/related。
+ */
+export async function fetchRelatedTags(
+  ref: string,
+  onDegraded?: DegradedHandler,
+): Promise<RelatedTag[]> {
+  const path = '/api/tags/' + encodeURIComponent(ref) + '/related';
+  return degrade([], () => getJson<RelatedTagsResponse>(path).then((r) => r.related ?? []), onDegraded);
+}
 
 export async function fetchTags(onDegraded?: DegradedHandler): Promise<HubTag[]> {
   // 读契约类型（而不是手写的 HubTag）：中枢若改名 name/slug/count，
@@ -1383,6 +1415,49 @@ export async function fetchSiteRelations(siteId: string, onDegraded?: DegradedHa
   return degrade<HubSiteRelationsPayload | null>(
     null,
     () => getJson<HubSiteRelationsPayload>('/api/sites/' + encodeURIComponent(siteId) + '/relations'),
+    onDegraded,
+  )
+}
+
+/** 单次健康巡检点（详情页健康趋势 sparkline 用） */
+export interface HealthCheckPoint {
+  ok: boolean
+  checkedAt: number
+}
+
+/**
+ * 站点健康历史：最近 N 次巡检（时间正序，旧→新）。
+ * 此前详情页只有「最近一次巡检」的即时徽标，用户无法判断偶发抖动还是长期不稳。
+ */
+export async function fetchSiteHealthHistory(siteId: string, limit = 30, onDegraded?: DegradedHandler): Promise<HealthCheckPoint[]> {
+  return degrade<HealthCheckPoint[]>(
+    [],
+    async () => {
+      const data = await getJson<{ checks: HealthCheckPoint[] }>(
+        '/api/sites/' + encodeURIComponent(siteId) + '/health-history?limit=' + limit,
+      )
+      return data.checks ?? []
+    },
+    onDegraded,
+  )
+}
+
+/**
+ * 站点平替（死链时的替代推荐回退）。
+ *
+ * 详情页已有来自 site_relations 的「对标平替」；但关系表只覆盖人工/AI 标注过的站点，
+ * 死链站点常常没有 relations。此时回退到 /api/rank/alternatives（双曲测地线评分），
+ * 让用户至少看到可用的替代，而不是一个死链孤页。
+ */
+export async function fetchSiteAlternatives(siteId: string, limit = 6, onDegraded?: DegradedHandler): Promise<HubSite[]> {
+  return degrade<HubSite[]>(
+    [],
+    async () => {
+      const data = await getJson<{ hits: Array<{ site: HubSite }> }>(
+        '/api/rank/alternatives/' + encodeURIComponent(siteId) + '?limit=' + limit,
+      )
+      return data.hits.map((h) => h.site).filter(Boolean)
+    },
     onDegraded,
   )
 }

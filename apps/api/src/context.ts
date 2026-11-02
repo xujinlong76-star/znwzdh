@@ -12,6 +12,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createEmbeddingService, type EmbeddingService } from "@navhub/ai";
+import { createMailTransport, type MailTransport } from "@navhub/ai";
 import { Repository, SearchEngine, SqliteFtsStore, SqliteVecStore, openDb, type Db, type FullTextStore, type VectorStore } from "@navhub/store";
 import type { AppConfig } from "./config.ts";
 import { refreshLlmCapability } from "./llm-config.ts";
@@ -33,6 +34,8 @@ export interface AppContext {
   pluginVectors: VectorStore;
   fts: FullTextStore | null;
   embedding: EmbeddingService | null;
+  /** 邮件投递器：验证码/重置链接/通知外发的唯一出口 */
+  mail: MailTransport;
   capabilities: Capabilities;
   close(): Promise<void>;
 }
@@ -173,8 +176,11 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
     notes,
   };
 
+  // 邮件投递器：未配 SMTP 时退化为日志投递（开发开箱即用），生产配好后自动切真实 SMTP。
+  const mail = createMailTransport();
+
   const context: AppContext = {
-    config, db, repo, search, vectors, pluginVectors, fts, embedding, capabilities,
+    config, db, repo, search, vectors, pluginVectors, fts, embedding, mail, capabilities,
     async close() {
       try {
         await search.flushLinUCB();

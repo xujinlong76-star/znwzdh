@@ -19,7 +19,7 @@
     "build": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@navhub/api": "workspace:*",
     "@navhub/core": "workspace:*",
     "@navhub/store": "workspace:*",

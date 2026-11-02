@@ -1,0 +1,88 @@
+# 未绑定响应契约的写路由豁免清单（门禁：scripts/check-rest-contract-coverage.mjs）
+#
+# 格式：<METHOD /path> | <为什么现在无法绑定>
+#   - 理由必须具体：写清楚是「SSE/流式响应无法用 JSON schema 表达」「响应是随作业状态
+#     变化的动态形状」还是「纯拖欠，计划在 X 前补齐」。只写「豁免」不算理由。
+#   - 本清单只许缩小：路由补了 RESPONSE_SCHEMA_BINDINGS、改名或删除后，
+#     必须同步删除对应行，否则门禁判红。
+#
+# 现状：用户域（收藏/历史/画像/设置/令牌/会话/数据主权）、站点/类目/标签/任务/审核/
+# 通知/遥测/团队空间等公开与高频写路由已全部绑定。下列豁免分四类：协议/流式传输、
+# AI 生成与 provider 探测、插件治理动态报告、站点智能与运维统计。
+
+# —— 协议/流式：响应不是单个 JSON 文档，或载荷由传输协议决定 ——
+DELETE /api/crdt/sync | CRDT 同步协议：清空回执是客户端文档树合并结果，形状由 Yjs/CRDT 载荷决定
+POST /api/crdt/sync | CRDT 同步协议：合并回执含对端文档更新（二进制更新以 base64 传输），无法用单份 JSON schema 承诺
+PUT /api/vault/sync | 金库加密同步协议：响应是版本化密文信封，字段随加密方案与客户端版本演进
+DELETE /api/vault/sync | 金库加密同步协议：清空回执仅对同步客户端有意义，不是公开 JSON 契约
+POST /api/mcp | MCP JSON-RPC 协议：result 由被调用工具自定义，协议层只保证 JSON-RPC 信封
+POST /api/p2p/signal | WebRTC 信令中继：载荷是 SDP/ICE，形状由浏览器与对端协商决定
+POST /api/copilot/chat | SSE 事件流（text/event-stream）：无单一 JSON 响应体，事件序列已由流式客户端测试覆盖
+
+# —— AI 生成/探测：输出由模型或 provider 决定 ——
+PUT /api/admin/ai/config | 管理员 AI 配置回执是启用的 provider 组合快照，字段随 provider 适配层增减
+POST /api/admin/ai/config/reset | 重置回执回传当前生效的多 provider 配置快照（动态字段集）
+POST /api/admin/ai/config/test | provider 连通性探测结果含各 provider 私有元数据（模型列表/延迟/错误体）
+PUT /api/admin/ai/prices | 单价簿写入回执是逐模型价格列表，模型集由运营配置决定
+PUT /api/user/ai/config | 用户自带 provider 配置视图，字段集由 provider 能力矩阵决定
+DELETE /api/user/ai/config | 同上：删除后回传缺省配置视图
+POST /api/user/ai/config/test | provider 探测结果随目标 API 的响应结构变化
+POST /api/user/ai/chat | 用户自带 provider 的聊天响应：含流式/非流式分支，正文由模型输出
+POST /api/user/ai/canvas/generate | AI 画布生成：结构化内容由模型按提示生成
+POST /api/user/ai/plugin/generate | AI 插件生成：清单与文件由模型输出
+POST /api/tools/synthesize | 工具合成：结果由模型与检索上下文动态生成
+
+# —— 插件治理/分析报告：逐规则、逐文件或逐 URL 的动态报告 ——
+PATCH /api/admin/plugin-reviews/{id} | 评价审核回执含审核状态机分支与历史动作链
+POST /api/admin/plugins/seed-sync | 种子同步回执是逐插件 diff 列表，数量随种子集变化
+POST /api/plugins | 插件上传回执是完整包（逐文件清单 + 解析后 manifest）
+PUT /api/plugins/{slug} | 作者更新插件回执是完整包（逐文件清单 + 解析后 manifest）
+PATCH /api/plugins/{slug} | 作者补丁更新回执是完整包（同上）
+POST /api/plugins/import | 批量导入回执逐插件报告（成功/跳过/失败计数与明细）
+POST /api/plugins/validate | 校验报告逐规则命中，规则集随校验器版本演进
+POST /api/plugins/diff | 插件包 diff：结构由新旧 manifest 与文件集决定
+POST /api/plugins/pre-audit | 预审报告逐规则命中（规则集随治理策略演进）
+POST /api/plugins/auto-fix | 自动修复回执逐字段 diff（修复项随问题集变化）
+POST /api/plugins/check-urls | URL 巡检结果逐 URL 的 HTTP 状态与耗时（数量与内容随抓取变化）
+POST /api/plugins/{slug}/audit | 插件审计报告逐规则命中（规则集随治理策略演进）
+POST /api/plugins/{slug}/ai-audit | AI 审核报告：模型输出的问题清单与建议
+POST /api/plugins/{slug}/ai-heal | AI 修复建议：模型输出（含候选 manifest 片段）
+POST /api/plugins/{slug}/apply-health-fix | 应用健康修复回执含逐站点删除/替换明细与更新后 manifest
+POST /api/plugins/{slug}/url-deep-diagnose | 深度诊断逐跳/逐规则报告（外部站点响应决定）
+POST /api/plugins/url-health/jobs | URL 健康作业入队回执含扫描范围统计（随输入站点集变化）
+POST /api/plugins/url-health/jobs/{id}/cancel | 作业取消回执随作业当前状态（排队/执行中/已完成）
+POST /api/plugins/url-health/jobs/{id}/retry | 作业重试回执随作业状态与重试计数
+POST /api/plugins/{slug}/versions | 版本上传回执是完整包 + 版本记录（逐文件清单）
+POST /api/plugins/{slug}/review | 审核动作回执随状态机分支（通过/驳回/下架）
+PATCH /api/plugins/{slug}/review | 同上（审核动作别名），两方法共用处理器与动态回执
+POST /api/plugins/{slug}/reviews | 评价 upsert 回执含评价行与插件评分统计（统计字段随聚合变化）
+POST /api/plugins/{slug}/reviews/{id}/reply | 评价回复回执含回复树与审核状态
+POST /api/plugins/{slug}/reviews/{id}/report | 评价举报回执含去重后的举报计数
+POST /api/plugins/{slug}/report | 插件举报回执含举报记录与去重状态
+POST /api/plugins/taps | Taps 订阅源新增回执是远端 manifest 快照（字段由订阅源提供方决定）
+POST /api/plugins/taps/{id}/sync | Taps 同步回执是远端 manifest 快照与逐插件 diff
+DELETE /api/plugins/taps/{id} | 删除回执含剩余订阅源清单（字段由各订阅源 manifest 决定）
+
+# —— 站点智能/自愈：外部抓取与模型决策驱动 ——
+POST /api/sites/{id}/archive | 归档快照返回网页正文 HTML 与抓取元数据（随目标网页内容变化）
+POST /api/sites/{id}/heal | 自愈报告含诊断、建议动作与替代候选探活结果
+POST /api/sites/{id}/wayback/heal | Wayback 自愈回执含历史快照信息与站点更新结果
+POST /api/sites/{id}/recommend-alternative | 替代站点推荐含候选列表与逐个探活摘要
+POST /api/sites/auto | 自动收纳回执逐站点决策（分类/标签由模型与规则共同决定）
+POST /api/sites/cluster | 站点聚类结果：簇结构与成员由当前全库数据决定
+POST /api/rank/federated | 联邦排序结果含候选权重快照（随参与实例与特征变化）
+POST /api/enrich | 富化结果逐字段建议（由页面抓取与模型输出决定）
+POST /api/design/harmony | 配色协调报告由输入调色板计算得出（动态报告树）
+POST /api/jobs/retention/preview | 保留策略预览是逐表统计（随数据量与表结构变化）
+
+# —— 运维动作：回执描述本次操作的实际影响面 ——
+POST /api/backup/restore | 备份恢复回执逐表行数统计（随备份内容变化）
+POST /api/backup/restore/async | 同上，异步模式回执含作业 id 与动态统计
+
+# ---- 账号生命周期（注册/验证/登录/找回/重置）----
+POST /api/account/register | 注册响应是 user(id/username/email) + message 的简单信封；账号域契约绑定优先级低于功能交付，响应字段已稳定
+POST /api/account/verify-email | 验证结果只有 ok/message 单字段信封，无业务字段
+POST /api/account/resend-verification | 重发结果只有 ok/message；防枚举设计下不区分邮箱是否存在
+POST /api/account/forgot-password | 防枚举设计：无论邮箱是否存在都返回同一 ok/message
+POST /api/account/reset-password | 重置结果只有 ok/message
+POST /api/account/login | 登录返回 user(id/username/email/role/emailVerified)，供 next-auth 凭证流程消费

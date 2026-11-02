@@ -103,7 +103,15 @@ export const tags = sqliteTable("tags", {
   color: text("color"),
   description: text("description"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
-}, (t) => [uniqueIndex("tags_slug_idx").on(t.slug)]);
+}, (t) => [
+  // 注意：schema.ts 并非索引的单一事实源 —— driver.ts / migrate.ts 里还有
+  // categories_slug_idx、site_tags_unique_idx 等不在此处的索引（已知漂移）。
+  // 这里只登记本次新增的 name 约束，不做全量对齐。
+  // name 与 slug 同为标签身份：只约束 slug 会出现「slug 唯一但 name 重复」，
+  // 使 tag 解析与 addTagAlias 冲突检查出现歧义。
+  uniqueIndex("tags_slug_idx").on(t.slug),
+  uniqueIndex("tags_name_uniq").on(t.name),
+]);
 
 export const tagAliases = sqliteTable("tag_aliases", {
   alias: text("alias").primaryKey(),
@@ -179,6 +187,8 @@ export const users = sqliteTable("users", {
   avatar: text("avatar"),
   /** 身份来源：github（OAuth 登录用户）| local（内置管理员） */
   source: text("source").notNull().default("local"),
+  /** 邮箱是否已验证（注册/找回密码流程）：0=未验证，1=已验证 */
+  emailVerified: integer("email_verified", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [uniqueIndex("users_username_idx").on(t.username)]);
 
@@ -194,6 +204,26 @@ export const sessions = sqliteTable("sessions", {
   revokedAt: integer("revoked_at"),
   lastSeenAt: integer("last_seen_at"),
 });
+
+/**
+ * 认证令牌（邮箱验证 / 密码重置）。
+ *
+ * 单用途、可消费、带过期：注册/重置流程生成一次性令牌，邮件里带明文链接，
+ * 库里只存 sha256——库泄露也无法直接冒用。consumed_at 非空即已使用，
+ * 保证「一个令牌只能用一次」。purpose 区分两种用途，避免跨用途复用。
+ */
+export const authTokens = sqliteTable("auth_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  purpose: text("purpose").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  consumedAt: integer("consumed_at"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("auth_tokens_user_purpose_idx").on(t.userId, t.purpose, t.createdAt),
+  index("auth_tokens_hash_idx").on(t.tokenHash),
+]);
 
 /**
  * 站内通知（T13）：面向终端用户的轻量消息（同步失败、备份超期提醒等）。
@@ -675,12 +705,46 @@ export const llmModelPrices = sqliteTable("llm_model_prices", {
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 });
 
+/**
+ * LLM 配额预留（P0-3）：一次「承诺要花但还没落账」的额度。
+ *
+ * 结算即删，真实用量以 llm_usage 为账；未结算的行靠 expiresAt 自动回收。
+ * source 用文本而不是布尔：与 llm_usage.source 同口径（'user' 不占系统档），
+ * 且避开 PG BOOLEAN / SQLite 0-1 的比较写法差异。
+ */
+export const llmQuotaReservations = sqliteTable("llm_quota_reservations", {
+  id: text("id").primaryKey(),
+  identity: text("identity"),
+  source: text("source").notNull().default("system"),
+  reservedCalls: integer("reserved_calls").notNull().default(1),
+  reservedTokens: integer("reserved_tokens").notNull().default(0),
+  expiresAt: integer("expires_at").notNull(),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("llm_quota_res_expiry_idx").on(t.expiresAt),
+  index("llm_quota_res_identity_idx").on(t.identity, t.expiresAt),
+  index("llm_quota_res_source_idx").on(t.source, t.expiresAt),
+]);
+
+/**
+ * 导航数据版本号（P1-1）：**恒为 id=1 的单行表**。
+ *
+ * 它不是业务实体，而是「库里的导航数据变过没有」的廉价判据：
+ * 快照缓存用它替代每次热读都要跑的 COUNT/MAX 指纹，多实例因此能立刻看到
+ * 另一个实例的写入，而不是等一个 TTL。递增由 `migrateSiteIndexes` 里建的
+ * 触发器负责，所以写侧（仓储、后台任务、运维脚本）都不必记得「顺手 +1」。
+ */
+export const dataVersion = sqliteTable("data_version", {
+  id: integer("id").primaryKey(),
+  version: integer("version").notNull().default(0),
+});
+
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
-  users, sessions, notifications, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
+  users, sessions, authTokens, notifications, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, userWorkspaceBlobs, systemStates, taxonomyProposals,
   plugins, pluginInstalls, pluginStars, pluginReports, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
-  llmModelPrices,
+  llmModelPrices, llmQuotaReservations, dataVersion,
   // 用户域补齐（N11）：此前这四张表没有进入导出，drizzle 工具链拿不到它们，
   // 「schema 是单一事实源」名不副实——迁移脚本与 DDL 各写一份，drift 无从校验。
   identityAliases, identityMerges, userLlmConfigs, userSettings,

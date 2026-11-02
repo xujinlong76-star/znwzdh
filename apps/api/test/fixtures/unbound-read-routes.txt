@@ -10,7 +10,6 @@ GET /api/admin/dashboard/search-ai
 GET /api/admin/dashboard/security
 GET /api/admin/dashboard/stream
 GET /api/admin/health/trend
-GET /api/admin/maintenance/status
 GET /api/admin/plugin-reviews
 GET /api/admin/plugins
 GET /api/admin/plugins/funnel
@@ -20,9 +19,7 @@ GET /api/admin/plugins/seed-status
 GET /api/admin/stats/trends
 GET /api/admin/user-center/metrics
 GET /api/backup/restore/status/{jobId}
-GET /api/categories/by-slug/{slug}
 GET /api/categories/skos
-GET /api/categories/{id}
 GET /api/categories/{id}/related
 GET /api/collections/by-id/{id}
 GET /api/comparisons
@@ -30,7 +27,6 @@ GET /api/crdt/sync
 GET /api/docs
 GET /api/export/backup.json
 GET /api/export/bookmarks.html
-GET /api/facets
 GET /api/favicon/{id}
 GET /api/favorites/version
 GET /api/graph/centrality
@@ -60,7 +56,6 @@ GET /api/plugins/url-health/jobs
 GET /api/plugins/url-health/jobs/{id}
 GET /api/plugins/url-health/metrics
 GET /api/plugins/url-health/summary
-GET /api/plugins/{slug}
 GET /api/plugins/{slug}/audit
 GET /api/plugins/{slug}/badge.svg
 GET /api/plugins/{slug}/health
@@ -82,18 +77,17 @@ GET /api/shortlinks/{code}
 GET /api/sites/duplicates
 GET /api/sites/{id}/archive
 GET /api/sites/{id}/collections
-GET /api/sites/{id}/facets
 GET /api/sites/{id}/graph
 GET /api/sites/{id}/relations
 GET /api/sites/{id}/wayback
 GET /api/stats
 GET /api/storage
-GET /api/storage/list
 GET /api/storage/version
 GET /api/submissions
-GET /api/tags/resolve
 GET /api/taxonomy/proposals
-GET /api/tokens
+# GET/HEAD 由标签长尾统计接口自动产生；返回简单数值对象，仅 admin 内页以本地 TS 接口消费，不进入前端生成的 HubSite 类型，故无需登记响应契约
+GET /api/taxonomy/tags/stats
+HEAD /api/taxonomy/tags/stats
 GET /api/trash
 GET /api/user/ai/config
 GET /api/vault/sync
@@ -210,6 +204,7 @@ HEAD /api/sites/{id}/collections
 HEAD /api/sites/{id}/facets
 HEAD /api/sites/{id}/graph
 HEAD /api/sites/{id}/relations
+HEAD /api/sites/{id}/similar
 HEAD /api/sites/{id}/wayback
 HEAD /api/stats
 HEAD /api/storage
@@ -218,6 +213,7 @@ HEAD /api/storage/version
 HEAD /api/submissions
 HEAD /api/tags
 HEAD /api/tags/resolve
+HEAD /api/tags/{id}/related
 HEAD /api/taxonomy/proposals
 HEAD /api/tokens
 HEAD /api/trash
@@ -228,3 +224,7 @@ HEAD /api/videos
 HEAD /api/videos/{id}
 HEAD /api/workspaces
 HEAD /api/workspaces/{id}/members
+GET /api/account/email-status
+HEAD /api/account/email-status
+GET /api/sites/{id}/health-history
+HEAD /api/sites/{id}/health-history

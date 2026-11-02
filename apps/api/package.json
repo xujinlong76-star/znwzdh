@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "build": "tsc -p tsconfig.json",
-    "bundle": "pnpm exec esbuild src/main.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/main.mjs --external:better-sqlite3 --external:sqlite-vec --external:@libsql/client --external:pg --external:onnxruntime-node --external:@huggingface/transformers --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --sourcemap --log-level=info",
+    "bundle": "pnpm exec esbuild src/main.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/main.mjs --external:better-sqlite3 --external:sqlite-vec --external:@libsql/client --external:pg --external:onnxruntime-node --external:@huggingface/transformers --external:nodemailer --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --sourcemap --log-level=info",
     "prepublishOnly": "pnpm bundle"
   },
   "dependencies": {
@@ -28,8 +28,8 @@
   },
   "devDependencies": {
     "eslint": "10.13.0",
-    "typescript-eslint": "8.71.2",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2"
   },
   "exports": {
     ".": {

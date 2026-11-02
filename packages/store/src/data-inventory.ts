@@ -105,6 +105,13 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     note: "会话令牌哈希；不导出",
   },
   {
+    id: "authTokens",
+    table: "auth_tokens",
+    ownerColumns: ["user_id"],
+    disposition: "delete",
+    note: "邮箱验证/密码重置一次性令牌哈希；注销后必须删净，避免残留令牌被冒用",
+  },
+  {
     id: "notifications",
     table: "notifications",
     ownerColumns: ["identity"],
@@ -140,6 +147,16 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     ownerColumns: ["identity"],
     disposition: "nullify",
     note: "保留用量聚合价值，抹掉身份（可逆性为零，等同匿名化）",
+  },
+  {
+    id: "llmQuotaReservations",
+    table: "llm_quota_reservations",
+    ownerColumns: ["identity"],
+    disposition: "delete",
+    // 不导出：它不是「用户产生的内容」，而是额度闸门的在途占位（≤TTL 分钟）。
+    // 即便不删，TTL 也会自己回收；登记的意义是注销这条路径不许留下带身份的行，
+    // 也别让一个已经不存在的人继续占着当天的调用名额。
+    note: "并发预留占位，不导出；按身份精确删除（残留本来也会在 TTL 内被回收）",
   },
   {
     id: "pluginInstalls",

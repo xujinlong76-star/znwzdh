@@ -87,6 +87,11 @@ BFF 对匿名返回 401，通知页把非 2xx 一律当「云端暂时不可用�
 **修复**：`/api/hub/[...path]/route.ts` 对 `admin` 目标强制 `verifyAdminSession`；已登录管理员的凭据注入行为不变（overlay + 本地镜像双侧）。
 **部署提醒**：公网部署按 `docker/docker-compose.yml` 注释设 `NAVHUB_AUTH_REQUIRED=1` + ≥32 字符 `NAVHUB_IDENTITY_SECRET`。
 
+### 岛屿重复挂载观察（低频，移交组件域）
+
+E2E 全量轮两次捕获：客户端搜索提交后 `goto('/marketplace?q=…')`，页面出现**两个完全相同的** `input[name=q]`（aria-label 均为「搜索插件」）——PluginMarketBoard 岛在导航打断水合时疑似残留旧节点后重新挂载。同一序列在浏览器手动复现未果（低频竞态）。
+E2E 侧已用 `.first()` 加固定位器（7/7 绿）；组件侧建议岛挂载前清空容器或用 `hydrateRoot` 语义保证幂等。
+
 ### 已知设计（非缺陷）
 开放模式默认全开是自托管单用户场景的既定选择（server.ts T20 注释）；收紧路径 = 部署环境变量，已有文档。
 

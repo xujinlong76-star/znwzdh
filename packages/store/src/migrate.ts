@@ -60,6 +60,9 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 收藏标签（T22）：JSON 字符串数组；契约与上限见 normalizeFavoriteTags
   { table: "favorites", column: "tags", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "source", sqlite: "TEXT NOT NULL DEFAULT 'local'", pg: "TEXT NOT NULL DEFAULT 'local'" },
+  // 邮箱验证状态（注册/找回密码流程用）：0=未验证/待验证，1=已验证。
+  // 老库补列默认 0：既有 OAuth/管理员行不会因为新流程被误判成「未验证」而无法登录。
+  { table: "users", column: "email_verified", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
   // API 凭据治理：
@@ -343,6 +346,19 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     // 存储层补索引（旧库补齐；幂等 IF NOT EXISTS；与 driver.ts DDL 保持一致）
     "CREATE INDEX IF NOT EXISTS sites_source_status_idx ON sites(source, status)",
     "CREATE INDEX IF NOT EXISTS sites_hot_idx ON sites(enabled, trend_score DESC)",
+    // 检索主路径复合索引（browse / 类目页 / 标签页）。
+    // 为什么必须有：所有检索都先过 `enabled = ? AND deleted_at IS NULL`，而老的
+    // sites_hot_idx 只有 (enabled, trend_score)，既缺 deleted_at 也让 browse 的
+    // ORDER BY featured DESC, trend_score DESC 无法用它排序 —— 类目页/标签页实际
+    // 走的是全表扫 + 临时 B-tree 排序，库一大就体现在首字节时间上。
+    // 列序按「等值过滤 → 排序」排：deleted_at / enabled 是等值，featured 与
+    // trend_score 是排序键，因此放在后面并带 DESC，与 browse 的 ORDER BY 同向，
+    //  planner 可以直接顺序读索引、省掉排序步骤。
+    "CREATE INDEX IF NOT EXISTS sites_browse_idx ON sites(deleted_at, enabled, featured DESC, trend_score DESC)",
+    // 同上，但覆盖「按状态过滤」的分支（browse 带 statuses 参数、以及只按
+    // enabled/deleted_at/status 计数/列举的仓储方法）。status 是等值过滤，
+    // 放在两个等值键之后即可；不带排序键，因为它在这条路径上不参与排序。
+    "CREATE INDEX IF NOT EXISTS sites_enabled_status_idx ON sites(deleted_at, enabled, status)",
     // 邮箱唯一（部分索引：NULL 与空串都不进索引，等于「没有邮箱」不互斥）。
     // 必须晚于 dedupeUserEmails —— 存量重复会让 CREATE UNIQUE INDEX 直接失败，
     // 而这里逐语句 try/catch，失败只会静默跳过（下次启动再试）。
@@ -360,6 +376,11 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS plugins_owner_identity_idx ON plugins(owner_identity)",
     "CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at)",
     "CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC)",
+    // 任务历史翻页（P1-7）：GET /api/jobs 的 ORDER BY created_at DESC, id DESC
+    // 此前没有匹配索引，全表读 + 临时排序；两个键与排序逐列同向，可顺序扫描到
+    // LIMIT/OFFSET 即停。带 status 的查询走复合索引，避免先按时间扫再丢弃非目标状态。
+    "CREATE INDEX IF NOT EXISTS jobs_created_idx ON jobs(created_at DESC, id DESC)",
+    "CREATE INDEX IF NOT EXISTS jobs_status_created_idx ON jobs(status, created_at DESC, id DESC)",
     "CREATE INDEX IF NOT EXISTS collection_items_site_idx ON collection_items(site_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS site_tags_unique_idx ON site_tags(site_id, tag_id)",
     // 用户中心设置（画像开关 / 收藏信号清理水位）：旧库补齐，新库由 driver.ts DDL 建
@@ -402,6 +423,16 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     )`,
     "CREATE INDEX IF NOT EXISTS notification_outbox_due_idx ON notification_outbox(next_attempt_at, created_at, id) WHERE status = 'pending' AND channel = 'inapp'",
     "CREATE INDEX IF NOT EXISTS notification_outbox_created_idx ON notification_outbox(created_at DESC, id DESC)",
+    // 认证令牌表：邮箱验证 + 密码重置共用一张表，purpose 区分。
+    // 只存 token_hash（sha256），明文令牌仅在生成时返回一次；单用途、可消费、带过期。
+    `CREATE TABLE IF NOT EXISTS auth_tokens (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK (purpose IN ('email_verification', 'password_reset')),
+      token_hash TEXT NOT NULL,
+      expires_at BIGINT NOT NULL, consumed_at BIGINT, created_at BIGINT NOT NULL
+    )`,
+    "CREATE INDEX IF NOT EXISTS auth_tokens_user_purpose_idx ON auth_tokens(user_id, purpose, created_at)",
+    "CREATE INDEX IF NOT EXISTS auth_tokens_hash_idx ON auth_tokens(token_hash)",
     "CREATE TABLE IF NOT EXISTS submission_owners (site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, identity TEXT NOT NULL, created_at BIGINT NOT NULL)",
     "CREATE INDEX IF NOT EXISTS submission_owners_identity_idx ON submission_owners(identity)",
     "CREATE INDEX IF NOT EXISTS api_tokens_owner_idx ON api_tokens(owner_identity)",
@@ -411,6 +442,17 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS favorites_user_folder_idx ON favorites(user_id, folder_id)",
     // 标签概念别名索引
     "CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id)",
+    // tags.name 索引 + 唯一。
+    // 为什么需要：整仓只有 tags_slug_idx(slug) 唯一索引，而 `WHERE name = ?` 是
+    //  查询扩展（resolveTag）、listTags 的 GROUP BY、addTagAlias 的冲突检查、
+    //  browse 的标签过滤子查询的高频路径 —— 没有索引时每一条都是 tags 全表扫。
+    // 为什么唯一：name 与 slug 同为「标签的身份」，两个不一致的约束会出现
+    //  「slug 唯一但 name 重复」的脏结果（同一个名字解析到两个 id）。
+    // 建不上（存量重复）时按本表的既定口径处理：留痕到 migration_failures，
+    //  不阻断启动，下次启动再试 —— 所以**必须先建非唯一索引再建唯一索引**：
+    //  唯一索引失败时，非唯一那条仍然把这几条查询从全表扫变成索引查找。
+    "CREATE INDEX IF NOT EXISTS tags_name_idx ON tags(name)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS tags_name_uniq ON tags(name)",
     // 分面属性表与索引 (Taxonomy Phase 2)
     "CREATE TABLE IF NOT EXISTS site_facets (site_id TEXT NOT NULL, facet_key TEXT NOT NULL, facet_value TEXT NOT NULL, PRIMARY KEY (site_id, facet_key, facet_value))",
     "CREATE INDEX IF NOT EXISTS site_facets_key_val_idx ON site_facets(facet_key, facet_value)",
@@ -474,6 +516,15 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS llm_model_prices (model TEXT PRIMARY KEY, prompt_per_1k_rmb DOUBLE PRECISION NOT NULL, completion_per_1k_rmb DOUBLE PRECISION NOT NULL, updated_at BIGINT NOT NULL)"
       : "CREATE TABLE IF NOT EXISTS llm_model_prices (model TEXT PRIMARY KEY, prompt_per_1k_rmb REAL NOT NULL, completion_per_1k_rmb REAL NOT NULL, updated_at INTEGER NOT NULL)",
+    // LLM 配额预留（P0-3，2026-10-30）：额度闸门从「先查后写」改成「事务内查+占位」。
+    // 老库必须有这张表，否则 reserveLlmQuota 的 INSERT 直接抛 no such table——
+    // 而它落在闸门里，等于全站 AI 入口同时挂掉。
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS llm_quota_reservations (id TEXT PRIMARY KEY, identity TEXT, source TEXT NOT NULL DEFAULT 'system', reserved_calls INTEGER NOT NULL DEFAULT 1, reserved_tokens INTEGER NOT NULL DEFAULT 0, expires_at BIGINT NOT NULL, created_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS llm_quota_reservations (id TEXT PRIMARY KEY, identity TEXT, source TEXT NOT NULL DEFAULT 'system', reserved_calls INTEGER NOT NULL DEFAULT 1, reserved_tokens INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS llm_quota_res_expiry_idx ON llm_quota_reservations(expires_at)",
+    "CREATE INDEX IF NOT EXISTS llm_quota_res_identity_idx ON llm_quota_reservations(identity, expires_at)",
+    "CREATE INDEX IF NOT EXISTS llm_quota_res_source_idx ON llm_quota_reservations(source, expires_at)",
     // 分享短链：只存内部 /marketplace/ 目标（防开放重定向）
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS short_links (code TEXT PRIMARY KEY, target TEXT NOT NULL, plugin_slug TEXT, clicks INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL)"
@@ -499,6 +550,119 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
 
   // 存量搬迁单独执行：DELETE 带 EXISTS 守卫，INSERT 失败时不会误删源数据。
   await migrateWorkspaceBlobs(db);
+
+  // 导航版本号触发器（P1-1）：与索引同属「失败留痕但不阻断启动」的一类。
+  await migrateNavVersionTriggers(db);
+}
+
+/**
+ * 快照版本号触发器覆盖的表（= 导航快照的全部数据来源）。
+ *
+ * 加表要同时改这里：读侧的探针按名字逐个核对，缺一个就在 /api/health 里点名，
+ * 不会出现「新增了数据来源却静默不失效」。
+ */
+export const NAV_VERSION_TRIGGER_TABLES = ["sites", "categories", "tags", "site_tags", "site_facets"] as const;
+/** 每张表三个单事件触发器（见下方「为什么不是一条 INSERT OR UPDATE OR DELETE」） */
+export const NAV_VERSION_TRIGGER_EVENTS = ["insert", "update", "delete"] as const;
+
+/** 触发器命名约定：`nav_version_<表名>_<事件>`（探针与测试都按 `nav_version_%` 匹配） */
+export function navVersionTriggerName(table: string, event: string): string {
+  return "nav_version_" + table + "_" + event;
+}
+
+/** 探针要核对的全部触发器名（读侧与测试共用同一份清单，不在两边各数一遍） */
+export function navVersionTriggerNames(): string[] {
+  const out: string[] = [];
+  for (const table of NAV_VERSION_TRIGGER_TABLES) {
+    for (const event of NAV_VERSION_TRIGGER_EVENTS) out.push(navVersionTriggerName(table, event));
+  }
+  return out;
+}
+
+/**
+ * 为什么用触发器，而不是「写侧记得把 version +1」：
+ *
+ * 版本号的唯一用途是让快照缓存失效**不可能被漏掉**。站点/类目/标签的写入口有 40+ 处
+ * （仓储方法、后台健康检查与热度重算、快照写回、运维脚本、测试直写数据库），
+ * 漏掉一处不是「变慢」，而是「旧快照继续喂给读-改-写的写侧」——快照里没有 = 用户删了，
+ * 后果是数据丢失。把递增交给数据库，绕过仓储的直接写一样会被记到。
+ *
+ * 方言差异与形态选择：
+ *   - 一张表**三个单事件触发器**，而不是一条 `AFTER INSERT OR UPDATE OR DELETE`：
+ *     本机 better-sqlite3（SQLite 3.53）对触发器的多事件列表直接报
+ *     `near "OR": syntax error`（`fts.ts` 的既有触发器同样一事件一个），PG 才支持。
+ *     两侧统一成单事件形态，探针与测试才能共用同一份名字清单，不必按方言分叉。
+ *   - SQLite 只有行级触发器（没有 FOR EACH STATEMENT），批量写逐行 +1。语义仍然正确
+ *     （变大就算变过）。实测 8000 站批量写 92ms → 137ms（约 2.8µs/次），
+ *     相对 P1-2 的 5s 保存预算可忽略，换来的是「写侧不可能漏」。
+ *   - PostgreSQL 用语句级触发器 + plpgsql 函数：一条语句只 +1，
+ *     既省掉大事务里的逐行开销，也让 data_version 那一行的行锁只获取一次。
+ *
+ * 试过「按秒去重」（`WHERE <本秒> <> updated_at`）来省掉逐行开销： unsafe ——
+ * 同一秒内的第二次写不会 bump，缓存就带着上一份数据继续命中，正是要防的丢数据。
+ *
+ * 建失败的处理与其它索引迁移一致：落进 migration_failures 留痕，不阻断启动。
+ * 那种情况下读侧探针会报「触发器缺失」，快照退回「TTL + HTTP 写请求失效」——
+ * 与引入版本号之前完全一致，不会更差。
+ */
+export async function migrateNavVersionTriggers(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  const isPg = db.dialect === "pg";
+  const statements: string[] = [];
+
+  if (isPg) {
+    // 函数体每次启动覆盖（CREATE OR REPLACE）：bump 语句改了不需要重命名触发器。
+    statements.push(
+      "CREATE OR REPLACE FUNCTION navhub_bump_data_version() RETURNS trigger LANGUAGE plpgsql AS $$\n" +
+        "BEGIN\n  UPDATE data_version SET version = version + 1 WHERE id = 1;\n  RETURN NULL;\nEND\n$$",
+    );
+  }
+
+  for (const table of NAV_VERSION_TRIGGER_TABLES) {
+    for (const event of NAV_VERSION_TRIGGER_EVENTS) {
+      const name = navVersionTriggerName(table, event);
+      const keyword = event.toUpperCase();
+      if (isPg) {
+        // 只在「名字不存在」时创建：不用 DROP + CREATE，因为两条 autocommit 语句之间
+        // 会留下「触发器不在」的空窗，而另一个实例正在写库——空窗里的那次写永远不会被记到。
+        // 改了触发器的**定义**时按索引 v2 的惯例换名，让新名重建。
+        statements.push(
+          "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid " +
+            "WHERE t.tgname = '" +
+            name +
+            "' AND c.relname = '" +
+            table +
+            "') THEN CREATE TRIGGER " +
+            name +
+            " AFTER " +
+            keyword +
+            " ON " +
+            table +
+            " FOR EACH STATEMENT EXECUTE FUNCTION navhub_bump_data_version(); END IF; END $$",
+        );
+      } else {
+        statements.push(
+          "CREATE TRIGGER IF NOT EXISTS " +
+            name +
+            " AFTER " +
+            keyword +
+            " ON " +
+            table +
+            " FOR EACH ROW BEGIN UPDATE data_version SET version = version + 1 WHERE id = 1; END;",
+        );
+      }
+    }
+  }
+
+  for (const sqlText of statements) await runMigrationStatement(db, sqlText);
+}
+
+/** 单条迁移语句：失败只留痕（与其它索引迁移同口径） */
+async function runMigrationStatement(db: { dialect: string; sqlite?: any; pg?: any }, sqlText: string): Promise<void> {
+  try {
+    await execSql(db, sqlText);
+  } catch (err) {
+    await recordMigrationFailure(db, sqlText, err);
+  }
 }
 
 async function tableColumns(db: { dialect: string; sqlite?: any; pg?: any }, table: string): Promise<Set<string>> {

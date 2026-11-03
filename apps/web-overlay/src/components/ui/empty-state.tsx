@@ -49,12 +49,17 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'rounded-2xl border border-dashed border-border/80 p-10 sm:p-12 text-center max-w-lg mx-auto space-y-3 bg-card/40 my-6',
+        'rounded-2xl border border-dashed border-border/80 p-10 sm:p-12 text-center max-w-lg mx-auto space-y-3 bg-muted/60 my-6',
         className,
       )}
     >
-      <div className="w-12 h-12 rounded-xl bg-muted/60 flex items-center justify-center mx-auto border border-border/40">
-        <Icon className={cn('w-6 h-6', ICON_TONE[iconTone])} aria-hidden />
+      <div className="relative w-14 h-14 mx-auto mb-1">
+        {/* 背景柔和呼吸光晕 */}
+        <div className="absolute inset-0 rounded-2xl bg-primary/15 dark:bg-primary/20 blur-md pointer-events-none" />
+        {/* 晶体多层质感图标底座 */}
+        <div className="relative w-full h-full rounded-2xl bg-gradient-to-b from-card via-card/90 to-muted/80 flex items-center justify-center border border-border/70 shadow-sm ring-1 ring-inset ring-white/20 dark:ring-white/10">
+          <Icon className={cn('w-6 h-6 sm:w-7 sm:h-7 transition-transform duration-200 group-hover:scale-105', ICON_TONE[iconTone])} aria-hidden />
+        </div>
       </div>
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       {description ? (

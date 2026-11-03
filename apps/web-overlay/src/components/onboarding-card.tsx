@@ -73,15 +73,17 @@ export function OnboardingCard() {
       </div>
 
       <ol className="mt-4 grid gap-3 sm:grid-cols-3">
-        <li className="rounded-xl border border-border/60 bg-background/70 p-3">
-          <div className="flex items-center gap-2 text-xs font-medium">
-            <BookmarkPlus className="h-3.5 w-3.5 text-primary" />
-            1. 导入浏览器书签
+        <li className="rounded-xl border border-border/60 bg-background/70 p-3 shadow-2xs hover:border-amber-500/30 transition-all">
+          <div className="flex items-center gap-2.5 text-xs font-semibold text-foreground">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 shadow-2xs">
+              <BookmarkPlus className="h-3.5 w-3.5" />
+            </span>
+            <span>1. 导入浏览器书签</span>
           </div>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
             支持 Chrome / Edge / Firefox 导出的 HTML、OneTab 文本与 Markdown。
           </p>
-          <Button asChild size="sm" variant="outline" className="mt-2 h-7 gap-1 text-xs">
+          <Button asChild size="sm" variant="outline" className="mt-2.5 h-7 gap-1 text-xs touch-manipulation select-none active:scale-95 transition-all">
             <Link href="/import">
               去导入
               <ArrowRight className="h-3 w-3" />
@@ -89,18 +91,20 @@ export function OnboardingCard() {
           </Button>
         </li>
 
-        <li className="rounded-xl border border-border/60 bg-background/70 p-3">
-          <div className="flex items-center gap-2 text-xs font-medium">
-            <Command className="h-3.5 w-3.5 text-primary" />
-            2. 用键盘搜索
+        <li className="rounded-xl border border-border/60 bg-background/70 p-3 shadow-2xs hover:border-sky-500/30 transition-all">
+          <div className="flex items-center gap-2.5 text-xs font-semibold text-foreground">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-700 dark:text-sky-400 shadow-2xs">
+              <Command className="h-3.5 w-3.5" />
+            </span>
+            <span>2. 用键盘搜索</span>
           </div>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
-            按 <kbd className="rounded border px-1">{shortcutHint}</kbd> 唤起；支持拼音（qdjb）与自然语言。
+          <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+            按 <kbd className="rounded-md border border-border/80 bg-background/90 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary shadow-2xs ring-1 ring-inset ring-white/10">{shortcutHint}</kbd> 唤起；支持拼音（qdjb）与自然语言。
           </p>
           <Button
             size="sm"
             variant="outline"
-            className="mt-2 h-7 gap-1 text-xs"
+            className="mt-2.5 h-7 gap-1 text-xs touch-manipulation select-none active:scale-95 transition-all"
             onClick={() => {
               // 不实现全局快捷键分发：直接聚焦搜索输入框，语义等价且更可靠
               const input = document.querySelector<HTMLInputElement>('input[data-search-input]')
@@ -112,15 +116,17 @@ export function OnboardingCard() {
           </Button>
         </li>
 
-        <li className="rounded-xl border border-border/60 bg-background/70 p-3">
-          <div className="flex items-center gap-2 text-xs font-medium">
-            <Star className="h-3.5 w-3.5 text-primary" />
-            3. 收藏常用站点
+        <li className="rounded-xl border border-border/60 bg-background/70 p-3 shadow-2xs hover:border-rose-500/30 transition-all">
+          <div className="flex items-center gap-2.5 text-xs font-semibold text-foreground">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400 shadow-2xs">
+              <Star className="h-3.5 w-3.5" />
+            </span>
+            <span>3. 收藏常用站点</span>
           </div>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
             卡片上的星标加入收藏；下次从「我的收藏」一键打开。
           </p>
-          <Button asChild size="sm" variant="outline" className="mt-2 h-7 gap-1 text-xs">
+          <Button asChild size="sm" variant="outline" className="mt-2.5 h-7 gap-1 text-xs touch-manipulation select-none active:scale-95 transition-all">
             <Link href="/favorites">
               看看收藏
               <ArrowRight className="h-3 w-3" />

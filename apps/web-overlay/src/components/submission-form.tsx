@@ -180,9 +180,11 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                         />
                         {formData.url && (formData.url.startsWith('http://') || formData.url.startsWith('https://')) && (
                             <div className="flex items-center gap-2 p-2 rounded-xl bg-muted/30 border border-border/50 text-xs">
-                                <SiteFavicon url={formData.url} title={formData.title} size={20} className="w-5 h-5 rounded-md shrink-0" />
+                                <div className="shrink-0 w-7 h-7 rounded-lg p-0.5 bg-gradient-to-b from-card to-muted/80 border border-border/60 shadow-2xs flex items-center justify-center">
+                                    <SiteFavicon url={formData.url} title={formData.title} size={20} className="w-full h-full rounded-xs object-contain" />
+                                </div>
                                 <span className="text-muted-foreground truncate font-mono text-[11px] flex-1">{formData.url}</span>
-                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 font-medium shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                                     <Sparkles className="w-2.5 h-2.5" />
                                     <span>有效网址</span>
                                 </span>

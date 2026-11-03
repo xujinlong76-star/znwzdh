@@ -674,7 +674,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       <SiteFavicon
                         title={visit.title}
                         url={visit.href}
-                        icon={visit.icon}
+                        icon={visit.icon ?? undefined}
                         className="w-4 h-4 object-contain rounded"
                       />
                     </div>
@@ -701,7 +701,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 <button
                   type="button"
                   onClick={handleClearRecent}
-                  className="text-[11px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                  className="text-[11px] text-muted-foreground hover:text-destructive-text transition-colors cursor-pointer"
                   title="清空全部最近搜索记录"
                 >
                   清空
@@ -724,7 +724,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     <button
                       type="button"
                       onClick={(e) => handleRemoveRecent(r, e)}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-background/80 text-muted-foreground hover:text-destructive transition-all cursor-pointer"
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-background/80 text-muted-foreground hover:text-destructive-text transition-all cursor-pointer"
                       title="移除此条记录"
                       aria-label={`移除搜索记录 ${r}`}
                     >
@@ -1031,7 +1031,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           navIndexById.get('plugin-' + p.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                         }`}
                       >
-                        <span className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
+                        <span className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 shadow-2xs">
                           <Store className="h-4 w-4 text-primary" />
                         </span>
                         <span className="min-w-0 flex-1">
@@ -1238,7 +1238,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         navIndexById.get('site-' + site.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                       }`}
                     >
-                      <div className="flex-shrink-0 w-8 h-8 rounded-md p-1 bg-muted/60 dark:bg-muted/30 border border-border/50 flex items-center justify-center">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-xl p-1 bg-background/80 border border-border/60 shadow-2xs flex items-center justify-center">
                         <SiteFavicon
                           title={site.title}
                           url={site.url}
@@ -1291,7 +1291,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             e.stopPropagation()
                             setIsFocused(false)
                           }}
-                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer touch-manipulation select-none active:scale-90"
                           title="查看站点详情、时光机快照与平替推荐"
                           aria-label={`查看 ${site.title} 详情`}
                         >
@@ -1299,7 +1299,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         </Link>
                         <button
                           type="button"
-                          className="flex-shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          className="flex-shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer touch-manipulation select-none active:scale-90"
                           title="复制站点网址 (Alt+C)"
                           aria-label={`复制 ${site.title} 网址`}
                           onClick={(e) => {
@@ -1353,19 +1353,19 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {(hits.length > 0 || pluginItems.length > 0) && (
                 <div className="hidden sm:flex items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑↓ / ^N P</kbd>
+                    <kbd className="rounded-md border border-border/80 bg-background/90 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary shadow-2xs ring-1 ring-inset ring-white/10">↑↓ / ^N P</kbd>
                     选择
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Enter</kbd>
+                    <kbd className="rounded-md border border-border/80 bg-background/90 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary shadow-2xs ring-1 ring-inset ring-white/10">Enter</kbd>
                     打开
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Alt+C</kbd>
+                    <kbd className="rounded-md border border-border/80 bg-background/90 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary shadow-2xs ring-1 ring-inset ring-white/10">Alt+C</kbd>
                     复制网址
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Esc</kbd>
+                    <kbd className="rounded-md border border-border/80 bg-background/90 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary shadow-2xs ring-1 ring-inset ring-white/10">Esc</kbd>
                     关闭
                   </span>
                 </div>

@@ -377,7 +377,7 @@ export default function PreferencesPage() {
 
             <section className="min-w-0 rounded-xl border border-destructive/25 bg-destructive/[0.03] p-4 sm:col-span-2 sm:p-5">
               <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive-text">
-                <div className="w-6 h-6 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-center shrink-0">
+                <div className="w-6 h-6 rounded-lg bg-destructive/15 border border-destructive/20 text-destructive-text flex items-center justify-center shrink-0">
                   <ShieldAlert className="h-3.5 w-3.5" />
                 </div>
                 重置画像

@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Folder, ExternalLink, RefreshCw, TriangleAlert } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Folder, ExternalLink, RefreshCw, TriangleAlert, Search, X } from 'lucide-react'
 import Link from 'next/link'
 
 import {
@@ -132,6 +132,8 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
   const [catalog, setCatalog] = useState<CatalogState>({ kind: 'loading' })
   const [selected, setSelected] = useState<CategoryTab | null>(null)
   const [sites, setSites] = useState<SitesState>({ kind: 'idle' })
+  const [filterQuery, setFilterQuery] = useState('')
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [reload, setReload] = useState(0)
   const catalogReqId = useRef(0)
   const sitesReqId = useRef(0)
@@ -209,6 +211,22 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.ref, limit])
 
+  // 所有 hook 必须待在下面这些 early return 之前。
+  // 本组件在 catalog 为 loading / error 时直接返回，把 useMemo 放到 return 之后，
+  // 会让首帧只跑到第 13 个 hook、数据就绪那一帧多出第 14 个，React 抛
+  // "change in the order of Hooks called by CustomCategoryWidget"（14: undefined → useMemo）。
+  const displayedSites = useMemo(() => {
+    if (sites.kind !== 'ready') return []
+    const q = filterQuery.trim().toLowerCase()
+    if (!q) return sites.items
+    return sites.items.filter(
+      (s) =>
+        s.title.toLowerCase().includes(q) ||
+        (s.description && s.description.toLowerCase().includes(q)) ||
+        s.url.toLowerCase().includes(q)
+    )
+  }, [sites, filterQuery])
+
   if (catalog.kind === 'loading') {
     return (
       <Shell>
@@ -246,12 +264,31 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
   return (
     <Shell
       right={
-        selected ? (
-          <Link href={selected.href} className="text-xs text-primary hover:underline flex items-center gap-0.5">
-            <span>分类页</span>
-            <ExternalLink className="w-2.5 h-2.5" />
-          </Link>
-        ) : null
+        <div className="flex items-center gap-1.5">
+          {sites.kind === 'ready' && sites.items.length > 2 && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsFilterOpen((prev) => !prev)
+                if (isFilterOpen) setFilterQuery('')
+              }}
+              className={`p-1 rounded-md transition-colors ${
+                isFilterOpen
+                  ? 'bg-blue-500/15 text-blue-500'
+                  : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+              }`}
+              title="分类内就地检索"
+            >
+              <Search className="w-3 h-3" />
+            </button>
+          )}
+          {selected && (
+            <Link href={selected.href} className="text-xs text-primary hover:underline flex items-center gap-0.5">
+              <span>分类页</span>
+              <ExternalLink className="w-2.5 h-2.5" />
+            </Link>
+          )}
+        </div>
       }
     >
       <div className="flex items-center gap-1 flex-wrap pb-1.5 shrink-0">
@@ -260,7 +297,10 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
           return (
             <button
               key={tab.ref}
-              onClick={() => setSelected(tab)}
+              onClick={() => {
+                setSelected(tab)
+                setFilterQuery('')
+              }}
               title={tab.siteCount === null ? tab.title : `${tab.title} · ${tab.siteCount} 个存活站点`}
               className={`px-1.5 py-0.5 rounded text-xs truncate max-w-28 transition-colors ${
                 active
@@ -273,6 +313,33 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
           )
         })}
       </div>
+
+      {isFilterOpen && (
+        <div className="pb-1.5 shrink-0">
+          <div className="relative flex items-center">
+            <Search className="w-3 h-3 text-muted-foreground absolute left-2 pointer-events-none" />
+            <input
+              type="text"
+              autoFocus
+              // placeholder 只是视觉提示（输入首字就消失），读屏名字必须来自 aria-label
+              aria-label={`在「${selected?.title || '当前分类'}」中过滤站点`}
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              placeholder={`在「${selected?.title || '当前分类'}」中过滤站点...`}
+              className="w-full text-xs pl-6 pr-6 py-1 rounded-lg border border-border/80 bg-background outline-none focus:border-blue-500/60"
+            />
+            {filterQuery && (
+              <button
+                type="button"
+                onClick={() => setFilterQuery('')}
+                className="absolute right-1.5 text-muted-foreground hover:text-foreground p-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {catalog.configuredMissing && (
         <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-relaxed shrink-0">
@@ -297,17 +364,19 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
               重试
             </button>
           </div>
-        ) : sites.items.length === 0 ? (
+        ) : displayedSites.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center gap-1 py-3 text-center">
-            <p className="text-xs text-muted-foreground">「{selected?.title}」下暂无存活站点（已排除失效与待审）</p>
-            {selected && (
+            <p className="text-xs text-muted-foreground">
+              {filterQuery ? `未找到匹配 "${filterQuery}" 的站点` : `「${selected?.title}」下暂无存活站点（已排除失效与待审）`}
+            </p>
+            {selected && !filterQuery && (
               <Link href={selected.href} className="text-xs text-primary hover:underline">
                 看该分类页
               </Link>
             )}
           </div>
         ) : (
-          sites.items.map((site) => (
+          displayedSites.map((site) => (
             <a
               key={site.id}
               href={safeHref(site.url)}

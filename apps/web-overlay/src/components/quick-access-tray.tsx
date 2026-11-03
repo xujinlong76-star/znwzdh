@@ -1,14 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { useFavorites, type LocalFavorite } from '@/hooks/useFavorites'
 import { SiteFavicon } from '@/components/site-favicon'
-import { safeHref } from '@/lib/safe-url'
+import { safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { Button } from '@/registry/new-york/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { copyText } from '@/lib/clipboard'
+import { copyText, copyFailureToast } from '@/lib/clipboard'
 import { Star, Clock, Copy, ExternalLink, ChevronDown, ChevronUp, Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -33,6 +33,23 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
     }
   }, [])
 
+  // 综合展示列表：置顶收藏在前，最近访问（去重后）在后
+  const favList = useMemo(() => Array.isArray(favorites) ? favorites : [], [favorites])
+  const recentList = useMemo(() => Array.isArray(recentVisits) ? recentVisits : [], [recentVisits])
+  const favoriteIds = useMemo(() => new Set(favList.map(f => f.siteId)), [favList])
+  const dedupedRecent = useMemo(() => recentList.filter(r => !favoriteIds.has(r.id)), [recentList, favoriteIds])
+
+  const displayItems = useMemo(() => {
+    return activeTab === 'favorites'
+      ? favList.map(f => ({ id: f.siteId, title: f.title, href: f.href, icon: f.icon, isPinned: true }))
+      : activeTab === 'recent'
+        ? dedupedRecent.map(r => ({ id: r.id, title: r.title, href: r.href, icon: r.icon, isPinned: false }))
+        : [
+            ...favList.map(f => ({ id: f.siteId, title: f.title, href: f.href, icon: f.icon, isPinned: true })),
+            ...dedupedRecent.map(r => ({ id: r.id, title: r.title, href: r.href, icon: r.icon, isPinned: false }))
+          ]
+  }, [activeTab, favList, dedupedRecent])
+
   useEffect(() => {
     setMounted(true)
     refreshRecent()
@@ -43,19 +60,63 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
     return () => window.removeEventListener('focus', handleFocus)
   }, [refreshRecent])
 
+  // 极客专属：数字键 1~9 秒开常用站点
+  useEffect(() => {
+    if (!mounted || !isOpen || displayItems.length === 0) return
+
+    const handleDigitKeyDown = (e: KeyboardEvent) => {
+      // 1. 输入法组合状态（IME composition）静默，防拼音选词误触
+      if (e.isComposing || e.keyCode === 229) return
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
+
+      // 2. 存在弹窗对话框或处于卡片批量整理模式时静默，保障主心流不被打断
+      if (typeof document !== 'undefined') {
+        if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+        if (document.querySelector('[data-navhub-selected="true"]')) return
+      }
+
+      if (e.key >= '1' && e.key <= '9') {
+        const index = parseInt(e.key, 10) - 1
+        if (index < displayItems.length) {
+          const site = displayItems[index]
+          if (site?.href) {
+            e.preventDefault()
+            const safe = safeHref(site.href, '')
+            if (safe) {
+              safeWindowOpen(safe)
+              toast({
+                title: `⚡ 数字键 ${e.key} 直达`,
+                description: `正在新窗口打开「${site.title}」`,
+              })
+            }
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleDigitKeyDown)
+    return () => window.removeEventListener('keydown', handleDigitKeyDown)
+  }, [mounted, isOpen, displayItems, toast])
+
   const copyUrl = async (e: React.MouseEvent, href: string, title: string) => {
     e.preventDefault()
     e.stopPropagation()
-    const res = await copyText(href)
+    const safe = safeHref(href, '')
+    if (!safe) return
+    const res = await copyText(safe)
     if (res.ok) {
       toast({
         title: '已复制网址',
         description: `「${title}」链接已复制到剪贴板`,
       })
     } else {
+      const note = copyFailureToast(res)
       toast({
-        title: '复制失败',
-        description: res.reason,
+        title: note.title,
+        description: note.description,
         variant: 'destructive',
       })
     }
@@ -63,23 +124,8 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
 
   if (!mounted) return null
 
-  // 综合展示列表：置顶收藏在前，最近访问（去重后）在后
-  const favList = Array.isArray(favorites) ? favorites : []
-  const recentList = Array.isArray(recentVisits) ? recentVisits : []
-  const favoriteIds = new Set(favList.map(f => f.siteId))
-  const dedupedRecent = recentList.filter(r => !favoriteIds.has(r.id))
-
   const totalCount = favList.length + dedupedRecent.length
   if (totalCount === 0) return null
-
-  const displayItems = activeTab === 'favorites'
-    ? favList.map(f => ({ id: f.siteId, title: f.title, href: f.href, icon: f.icon, isPinned: true }))
-    : activeTab === 'recent'
-      ? dedupedRecent.map(r => ({ id: r.id, title: r.title, href: r.href, icon: r.icon, isPinned: false }))
-      : [
-          ...favList.map(f => ({ id: f.siteId, title: f.title, href: f.href, icon: f.icon, isPinned: true })),
-          ...dedupedRecent.map(r => ({ id: r.id, title: r.title, href: r.href, icon: r.icon, isPinned: false }))
-        ]
 
   return (
     <section
@@ -100,6 +146,9 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
           </span>
           <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
             {displayItems.length}
+          </span>
+          <span className="hidden sm:inline-flex items-center text-[10px] text-muted-foreground font-mono bg-muted/60 px-1.5 py-0.5 rounded border border-border/40">
+            按 1-9 秒开
           </span>
         </div>
 
@@ -161,7 +210,7 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
       {isOpen && (
         <div className="pt-3">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-2.5">
-            {displayItems.map((site) => (
+            {displayItems.map((site, idx) => (
               <a
                 key={site.id}
                 href={safeHref(site.href)}
@@ -171,9 +220,10 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
               >
                 <div className="shrink-0 relative">
                   <SiteFavicon
-                    domain={site.href}
-                    iconUrl={site.icon}
+                    url={site.href}
+                    icon={site.icon ?? undefined}
                     title={site.title}
+                    size={24}
                     className="h-6 w-6 rounded-md shadow-2xs"
                   />
                   {site.isPinned && (
@@ -182,8 +232,15 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                    {site.title}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                      {site.title}
+                    </span>
+                    {idx < 9 && (
+                      <kbd className="hidden sm:inline-flex items-center justify-center h-4 min-w-4 px-1 rounded text-[9px] font-mono font-semibold bg-muted/80 text-muted-foreground border border-border/60 shrink-0" title={`按键盘数字键 ${idx + 1} 直接在新窗口打开`}>
+                        {idx + 1}
+                      </kbd>
+                    )}
                   </div>
                   <div className="text-[10px] text-muted-foreground truncate font-mono">
                     {(() => {

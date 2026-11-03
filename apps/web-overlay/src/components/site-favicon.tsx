@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useState } from 'react'
+import { getBuiltinBrandLogo } from '@/lib/brand-logos'
+import { cn } from '@/lib/utils'
 
 export interface SiteFaviconProps {
   title?: string
@@ -13,6 +15,13 @@ export interface SiteFaviconProps {
    * 仍会让浏览器推迟一次解码调度，而这张图常常就是该页的 LCP 元素。
    */
   eager?: boolean
+  /**
+   * 内联尺寸提示（px）：只写到 `<img width/height>` 上，给浏览器一个解码前的占位比例，
+   * 避免图标位在加载瞬间抖一下。**实际显示大小仍由 className 决定**——
+   * 组件本身不自适应大容器（那是 site-icon-redesign 守卫要求的行为），
+   * 所以这里不设默认值：不传就不写属性，绝不写死某个尺寸。
+   */
+  size?: number
 }
 
 export const PRESET_GRADIENTS = [
@@ -89,11 +98,71 @@ export function extractFaviconMonogram(title: string, url?: string): string {
         return host[0]!.toUpperCase()
       }
     } catch {
-      // 地址解析不出来就落到下面的默认首字母：这个函数承诺「永远返回一个字符」
+      // 容错降级
     }
   }
 
-  return '山'
+  return ''
+}
+
+/** 现代微型星轨罗盘图标（用于无首字母站点的精致矢量兜底） */
+function GlobeCompassIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="9" strokeWidth="1.5" strokeDasharray="2 3" opacity="0.6" />
+      <ellipse cx="12" cy="12" rx="9" ry="4" strokeWidth="1.5" opacity="0.75" />
+      <ellipse cx="12" cy="12" rx="4" ry="9" strokeWidth="1.5" opacity="0.75" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** 重新设计的 Modern Crystal Squircle 晶体质感徽标 */
+function renderCrystalBadge(title: string, url: string | undefined, className: string) {
+  const monogram = extractFaviconMonogram(title, url)
+  const gradient = getDeterministicGradient(url || title || 'navhub')
+
+  // 根据 className 或外部容器规格自适应字号与图标尺寸（详情页 64px、速览 48px、卡片 24px 均等比饱满）
+  const isLarge = className.includes('w-16') || className.includes('h-16') || className.includes('w-14') || className.includes('h-14')
+  const isMedium = className.includes('w-12') || className.includes('h-12') || className.includes('w-10') || className.includes('h-10')
+
+  const fontClass = isLarge
+    ? 'text-2xl sm:text-3xl font-black'
+    : isMedium
+      ? 'text-base sm:text-lg font-extrabold'
+      : 'text-[11px] sm:text-xs @[28px]:text-xs @[36px]:text-sm @[44px]:text-base @[52px]:text-lg @[60px]:text-2xl font-mono font-black'
+
+  const iconClass = isLarge
+    ? 'w-8 h-8 drop-shadow-md'
+    : isMedium
+      ? 'w-6 h-6 drop-shadow-sm'
+      : 'w-[55%] h-[55%] max-w-[36px] max-h-[36px] drop-shadow-[0_1px_1.5px_rgba(0,0,0,0.4)]'
+
+  return (
+    <div
+      className={cn(
+        "@container relative flex items-center justify-center font-bold select-none rounded-lg overflow-hidden shadow-xs ring-1 ring-inset ring-white/25 dark:ring-white/15 transition-transform duration-150 group-hover:scale-105",
+        className
+      )}
+      style={{
+        background: gradient.cssGradient,
+        color: gradient.textColor,
+      }}
+      title={title}
+      aria-label={title ? `${title} 图标` : '站点图标'}
+    >
+      {/* 顶层柔光晶体微弧反射 */}
+      <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/30 via-white/10 to-transparent pointer-events-none" />
+
+      {monogram ? (
+        <span className={cn("relative z-10 tracking-tight leading-none drop-shadow-[0_1px_1.5px_rgba(0,0,0,0.4)]", fontClass)}>
+          {monogram}
+        </span>
+      ) : (
+        <GlobeCompassIcon className={cn("relative z-10 text-white", iconClass)} />
+      )}
+    </div>
+  )
 }
 
 export const LOCAL_LOGO_MAP: Record<string, string> = {
@@ -205,7 +274,13 @@ export function resolveSiteIcon(
   title?: string,
   customIcon?: string | null
 ): string {
-  // 自定义 icon 优先，但第三方图标服务与远端盲猜 favicon 探测地址除外
+  // 1. 优先命中官方内建高清矢量 Logo（免去外部网络请求与跨域防盗链问题，杜绝模糊与过期位图）
+  const builtinLogo = getBuiltinBrandLogo(url, title)
+  if (builtinLogo) {
+    return builtinLogo
+  }
+
+  // 2. 自定义 icon 优先，但第三方图标服务与远端盲猜 favicon 探测地址除外
   if (
     customIcon &&
     typeof customIcon === 'string' &&
@@ -250,7 +325,7 @@ export function resolveSiteIcon(
 
     // 未命中内置 Logo 且无合法自定义图标时，不向浏览器返回远端裸 /favicon.ico，
     // 避免浏览器盲发跨域请求触发 CORP (NotSameOrigin) 阻断或 404/502 报错；
-    // 返回空字符串让组件安全回落到确定性渐变字母徽标。
+    // 返回空字符串让组件安全回落到确定性晶体徽标。
     return ''
   } catch {
     return ''
@@ -267,30 +342,24 @@ export function SiteFavicon({
   useDefaultIcon = false,
   className = 'w-full h-full object-contain',
   eager = false,
+  size,
 }: SiteFaviconProps) {
-  const [loadFailed, setLoadFailed] = useState(false)
+  // 1. 综合计算有效图标地址
+  const effectiveIcon = resolveSiteIcon(url, title, icon)
 
-  // 1. 若显式指定默认图标，直接渲染确定性高质感渐变字母徽标
-  if (useDefaultIcon) {
-    const monogram = extractFaviconMonogram(title, url)
-    const gradient = getDeterministicGradient(url || title || 'navhub')
-    return (
-      <div
-        className={`flex items-center justify-center font-bold text-xs select-none rounded-sm shadow-xs transition-transform duration-150 ${className}`}
-        style={{
-          background: gradient.cssGradient,
-          color: gradient.textColor,
-        }}
-        title={title}
-        aria-label={title ? `${title} 图标` : '站点图标'}
-      >
-        <span className="leading-none drop-shadow-xs">{monogram}</span>
-      </div>
-    )
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [prevEffectiveIcon, setPrevEffectiveIcon] = useState(effectiveIcon)
+
+  // 当属性变更导致解析出的图标地址改变时，重置加载失败状态，防止列表节点复用导致的“幽灵破图锁死”
+  if (prevEffectiveIcon !== effectiveIcon) {
+    setPrevEffectiveIcon(effectiveIcon)
+    setLoadFailed(false)
   }
 
-  // 2. 综合计算有效图标地址
-  const effectiveIcon = resolveSiteIcon(url, title, icon)
+  // 2. 若显式指定默认图标，直接渲染全新 Modern Crystal Squircle 晶体质感徽标
+  if (useDefaultIcon) {
+    return renderCrystalBadge(title, url, className)
+  }
 
   // 3. 判断是否为明确的自定义图标或本地品牌资源
   const isLocalAsset = effectiveIcon.startsWith('/') || effectiveIcon.startsWith('data:')
@@ -304,36 +373,22 @@ export function SiteFavicon({
 
   // 4. 若此前已知加载失败、或未提供自定义 icon 且无内置 Logo（即属于自动生成的外部 /favicon.ico 盲猜地址）：
   //    外部站点普遍存在缺乏根目录 /favicon.ico、防盗链限制、CORP (NotSameOrigin) 阻断或跨境网络超时；
-  //    直接加载会导致浏览器控制台报大量 net::ERR_* 错误。此处直接展示 NavHub 确定性渐变徽标，零网络开销且体验极佳。
+  //    直接加载会导致浏览器控制台报大量 net::ERR_* 错误。此处直接展示 NavHub 晶体徽标，零网络开销且质感极佳。
   if (!effectiveIcon || loadFailed || failedFaviconCache.has(effectiveIcon) || (!hasCustomIcon && !isLocalAsset)) {
-    const monogram = extractFaviconMonogram(title, url)
-    const gradient = getDeterministicGradient(url || title || 'navhub')
-
-    return (
-      <div
-        className={`flex items-center justify-center font-bold text-xs select-none rounded-sm shadow-xs transition-transform duration-150 ${className}`}
-        style={{
-          background: gradient.cssGradient,
-          color: gradient.textColor,
-        }}
-        title={title}
-        aria-label={title ? `${title} 图标` : '站点图标'}
-      >
-        <span className="leading-none drop-shadow-xs">{monogram}</span>
-      </div>
-    )
+    return renderCrystalBadge(title, url, className)
   }
 
   return (
     <img
       src={effectiveIcon}
       alt={title ? `${title} 图标` : '站点图标'}
+      // 只在调用方显式给了 size 时才写内在尺寸；不传则完全不写，绝不写死
+      width={size}
+      height={size}
       className={className}
       loading={eager ? 'eager' : 'lazy'}
       fetchPriority={eager ? 'high' : 'auto'}
       decoding="async"
-      width={24}
-      height={24}
       onError={() => {
         failedFaviconCache.add(effectiveIcon)
         setLoadFailed(true)

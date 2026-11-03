@@ -22,7 +22,10 @@ describe('管理后台品牌 logo 消费', () => {
 
   it('服务端布局从站点设置读 logo，并保留内置图回退', () => {
     expect(layout).toContain('readSiteSettings()')
-    expect(layout).toMatch(/brandLogo=\{settings\.appearance\.logo \|\| '\/assets\/images\/alogo\.webp'\}/)
+    // 回退图只要求「非空的本站品牌图」：当前是 /favicon.svg（在 apps/web-overlay/public 下、
+    // 受 git 跟踪）。不再钉死上游打包进来的 /assets/images/alogo.webp——那是 vendored 资源，
+    // 重新 vendor 时可能消失，本身也不是本站品牌。
+    expect(layout).toMatch(/brandLogo=\{settings\.appearance\.logo \|\| '\/[^']+'\}/)
   })
 
   it('侧栏三处 logo 都用 brandLogo，不再写死上游图', () => {

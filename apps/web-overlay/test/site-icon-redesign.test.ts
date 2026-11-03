@@ -379,9 +379,10 @@ describe('网站图标美化与高清矢量重新设计', () => {
 
   it('OnboardingCard 新手引导三步卡片装配独立微光晶体徽标与触控弹性', () => {
     const src = readFileSync(resolve(HERE, '../src/components/onboarding-card.tsx'), 'utf8')
-    expect(src).toContain('bg-amber-500/10 border border-amber-500/20 text-amber-600')
-    expect(src).toContain('bg-sky-500/10 border border-sky-500/20 text-sky-600')
-    expect(src).toContain('bg-rose-500/10 border border-rose-500/20 text-rose-600')
+    // 徽章文字统一 700：a11y-token-contrast 实测 600 在 /10 底上不足 AA（统一配方见该守卫）
+    expect(src).toContain('bg-amber-500/10 border border-amber-500/20 text-amber-700')
+    expect(src).toContain('bg-sky-500/10 border border-sky-500/20 text-sky-700')
+    expect(src).toContain('bg-rose-500/10 border border-rose-500/20 text-rose-700')
     expect(src).toContain('touch-manipulation select-none active:scale-95 transition-all')
   })
 

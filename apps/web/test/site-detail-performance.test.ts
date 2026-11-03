@@ -47,18 +47,24 @@ describe("站点详情性能", () => {
     expect(overlayPath("src/app/site/[id]/loading.tsx")).toBeNull();
   });
 
-  it("SiteFavicon 图片具备懒加载、异步解码与显式尺寸", () => {
+  it("SiteFavicon 图片具备懒加载与异步解码（尺寸由自适应容器负责）", () => {
     const favicon = overlayFile("src/components/site-favicon.tsx");
     expect(favicon).toContain('loading="lazy"');
     expect(favicon).toContain('decoding="async"');
-    expect(favicon).toContain("width={24}");
-    expect(favicon).toContain("height={24}");
+    // 2026-11-03 起图标按 className 自适应（w-16/w-12 大容器，见 site-icon-redesign 守卫），
+    // 不再写死 24×24：继续钉 width={24} 会与那条守卫正面对撞。
+    // 防抖动改由调用方的固定尺寸容器保证（见下一个用例）。
+    expect(favicon).not.toContain("width={24}");
   });
 
   it("搜索下拉与插件详情图标补齐显式尺寸", () => {
     const searchBar = overlayFile("src/components/search-bar.tsx");
-    const sized = searchBar.match(/width=\{32\}[\s\S]{0,40}height=\{32\}/g) ?? [];
-    expect(sized.length).toBe(2);
+    // 2026-11-03 架构调整：下拉图标统一收口到 SiteFavicon（它自己给 img 写死 24×24，
+    // 并在内部拦掉远程裸 favicon），调用方不再内联 <img width={32} height={32}>。
+    // 尺寸契约因此落在「图标位是固定 32px 容器」上：仍然要求显式尺寸，只是换了层，
+    // 继续钉字面 width={32} 只会锁住已经删掉的旧实现。
+    const sizedBoxes = searchBar.match(/flex-shrink-0 w-8 h-8/g) ?? [];
+    expect(sizedBoxes.length).toBe(2);
 
     const pluginDetail = ["plugin-detail-view.tsx", "detail-tab-panels.tsx", "detail-modals.tsx"]
       .map((f) => overlayFile(`src/app/marketplace/[slug]/${f}`))

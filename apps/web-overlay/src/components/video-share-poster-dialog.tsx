@@ -84,7 +84,7 @@ export function VideoSharePosterDialog({
               variant="outline"
               className={cn(
                 "h-8 gap-1.5 touch-manipulation select-none active:scale-95 transition-all cursor-pointer font-medium border-border/60",
-                copiedLink ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 shadow-2xs" : ""
+                copiedLink ? "text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10 shadow-2xs" : ""
               )}
               onClick={handleCopyLink}
             >

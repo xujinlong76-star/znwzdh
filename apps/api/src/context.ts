@@ -194,6 +194,42 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
 
   // 系统级 LLM 配置（管理端写入）优先于环境变量；读取失败不阻断启动
   await refreshLlmCapability(context);
+
+  /**
+   * 启动后台预热 embedding 模型（2026-11-03 实测驱动的修复）。
+   *
+   * 实测冷启动代价：首次 `encode()` **1396ms**（模型加载），此后 0ms；体现在用户侧就是
+   * 「第一次搜索 2512ms，第二次 9ms」——第一个搜索的人替所有人付这笔初始化钱。
+   * 此前只有 `POST /api/warmup` 能预热，而它需要有人主动调（部署脚本里通常没有），
+   * 于是生产上这笔钱永远由第一个真实用户承担。
+   *
+   * 三个刻意的取舍：
+   *  1. **不 await，且用 setImmediate 推迟到下一轮事件循环**：模型加载是重 CPU 工作，
+   *     即便只是 `void Promise.resolve().then(...)`，微任务也会在当前 tick 的尾部立刻执行，
+   *     实测把 createContext 从 238ms 拖到 2700~3600ms（启动被它挡住）。setImmediate 让
+   *     `createContext` 先返回、HTTP 先能 listen，预热在随后的宏任务里跑。
+   *  2. **失败只记 note，不抛**：模型文件缺失/损坏时语义通道本就该降级（搜索仍然可用），
+   *     绝不能因为预热失败让服务起不来。这与 plugins-search 的 kickWarmup 同口径。
+   *  3. **可用 NAVHUB_EMBEDDING_WARMUP=0 关闭**：CI、一次性脚本、批量任务不需要
+   *     为一次进程加载几百 MB 模型；给一个明确的关闸而不是让他们忍受启动噪音。
+   */
+  if (embedding && config.embedding.warmupOnStart !== false) {
+    setImmediate(() => {
+      void Promise.resolve()
+        .then(() => embedding!.warmup())
+        .then((ok) => {
+          if (ok) {
+            notes.push("embedding 启动预热完成（首次搜索无需再等模型加载）");
+          } else {
+            notes.push("embedding 启动预热未成功，语义通道将在首次使用时重试");
+          }
+        })
+        .catch((err) => {
+          notes.push("embedding 启动预热异常（语义通道降级，搜索仍可用）：" + msg(err));
+        });
+    });
+  }
+
   return context;
 }
 

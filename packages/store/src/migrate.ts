@@ -63,6 +63,11 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 邮箱验证状态（注册/找回密码流程用）：0=未验证/待验证，1=已验证。
   // 老库补列默认 0：既有 OAuth/管理员行不会因为新流程被误判成「未验证」而无法登录。
   { table: "users", column: "email_verified", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
+  // 「拒绝爬虫」标记（2026-11-03）：401/403/405/412/418/429 说明目标服务器活着但不让
+  // 爬虫看，这类失败**不应推进连续失败计数**——否则 Claude、ChatGPT、npm、CodePen 这类
+  // 站点会被打成 broken 并向前端显示「已失效」（实测 16 个 broken 里 13 个是这种误杀）。
+  // 老库补列默认 0（=普通失败），历史行保持原有语义，不重算。
+  { table: "health_checks", column: "blocked", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "BOOLEAN NOT NULL DEFAULT FALSE" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
   // API 凭据治理：

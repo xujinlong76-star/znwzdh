@@ -677,6 +677,11 @@ export class Repository {
     /** 失败时是否把 status 置为 broken */
     markBroken?: boolean
     currentStatus?: string
+    /**
+     * 本次失败是否属于「目标活着但拒绝爬虫」（401/403/405/412/418/429）。
+     * 落库后 recentHealthChecks 会跳过这些行，连续失败计数不会把活站点判成 broken。
+     */
+    blocked?: boolean
   }): Promise<void> {
     return healthRepo.updateSiteHealth(this, siteId, health);
   }

@@ -22,7 +22,16 @@ import { enrichUrl } from "@navhub/ai";
 import { enrichLlmOf, resolveLlm } from "./llm-config.ts";
 import { createEnrichUsageCallback } from "./llm-usage.ts";
 import { reserveLlmQuota, settleLlmQuota } from "./llm-quota.ts";
-import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol, sanitizeIconUrl } from "@navhub/core";
+import {
+  ageInDays,
+  trendScore,
+  auditPageHealth,
+  runAutonomousHealing,
+  planPatrol,
+  sanitizeIconUrl,
+  classifyProbeStatus,
+  classifyProbeError,
+} from "@navhub/core";
 import {
   bindSqlite,
   toPgSql,
@@ -1416,35 +1425,83 @@ export class JobRunner {
         let healthy = res.status >= 200 && res.status < 400;
         let reason: string | null = null;
 
+        /**
+         * 4xx 一律先过 probe-policy 的统一判据（2026-11-03 修复）。
+         *
+         * 真实事故：库里 243 次失败巡检有 133 次 error 为空；16 个 broken 站点有 13 个
+         * 「无原因」，其中 Claude、ChatGPT 都是 403 —— 它们活着，只是拒绝爬虫。用户看到
+         * 「已失效」而站点其实可正常访问，这是把「WAF 挡我」错读成「站点已死」。
+         * 本仓早已把判定收敛到 packages/core 的 probe-policy.ts（BOT_BLOCKED_STATUSES /
+         * classifyProbeStatus），这里接上它，不再自己写 `status >= 200 && status < 400`。
+         *
+         * 注意：`blocked` 不算「健康」（我们确实没验证到内容），但它也**不足以判死**——
+         * 因此不启动连续失败计数，让站点维持原状态，只把原因落库供运营判读。
+         */
+        let blockedByBot = false;
+        if (!healthy && res.status >= 400) {
+          const probe = classifyProbeStatus(res.status);
+          if (probe) {
+            reason = probe.reason;
+            blockedByBot = probe.kind === "blocked";
+          }
+        }
+
         if (healthy && res.body) {
           const audit = auditPageHealth(site!.url, res.body, undefined, undefined, { truncated: res.truncated });
           if (audit.status === "SUSPICIOUS_PARKED" || audit.status === "SOFT_404") {
             healthy = false;
             reason = `伪健康识别: ${audit.reason}`;
+          } else if (audit.status === "THIN_CONTENT") {
+            // 页面能打开但内容寡淡：记一条可读原因，但不判死（站点是活的）
+            reason = `内容偏薄（页面可访问，未判死）: ${audit.reason}`;
           }
         }
 
         if (healthy) ok++;
-        // 恢复：曾被判 broken 的站点，只要这次探测健康就回到 active。
-        // 人工标记的 archived/pending 不会被这次恢复覆盖。
-        const nextStatus = healthy && site!.status === "broken" ? "active" : site!.status;
+        /**
+         * 状态回写：三种情形分开。
+         *
+         * 1) 健康 → 曾被判 broken 的恢复到 active（人工标记的 archived/pending 不动）；
+         * 2) 拒绝爬虫（blocked）→ **同样恢复到 active**。这是关键：能返回 403/401/429
+         *    说明目标服务器活着并有应答，死链是「连不上」而不是「不让我看」。此前这些
+         *    站点被标 broken，用户看到「已失效」而站点其实可正常访问（实测 Claude、
+         *    ChatGPT、npm、CodePen 等 13 个全部误杀）。自愈优于一次性数据订正——
+         *    下一轮巡检就会把它们纠正回来。
+         * 3) 其余失败 → 按连续失败阈值决定是否 broken。
+         */
+        const recovered = (healthy || blockedByBot) && site!.status === "broken";
+        const nextStatus = recovered ? "active" : site!.status;
+        // 必须显式传 false，不能传 undefined：updateSiteHealth 的状态表达式是
+        // `ok ? (currentStatus ?? active) : (markBroken === false ? (currentStatus ?? active) : broken)`，
+        // 只有严格等于 false 才保住当前状态；undefined 会落到 `broken`，等于没修。
+        const markBroken = healthy || blockedByBot ? false : await this.shouldBreak(site!.id);
         await this.ctx.repo.updateSiteHealth(site!.id, {
           httpStatus: res.status,
+          // 诚实回写：blocked 不算健康（我们确实没验证到内容）。状态恢复靠 markBroken=false
+          // 完成（ok=false 且 markBroken===false 时 updateSiteHealth 会保住 currentStatus）。
+          // 若这里写 true，health_checks 会记下一条假的「成功」，火花线会说谎。
           ok: healthy,
+          blocked: blockedByBot,
           latencyMs: Date.now() - t0,
           redirectTo: res.redirects?.at(-1) ?? null,
           error: reason,
           currentStatus: nextStatus,
-          markBroken: healthy ? undefined : await this.shouldBreak(site!.id),
+          markBroken,
         });
       } catch (err) {
-
+        // 异常同样走统一判据：区分「确认失效」与「没测准」，并给出中文可读原因。
+        // 此前直接把 err.message 落库，既有内部地址外泄风险，也常是空串。
+        const probe = classifyProbeError(err, {
+          elapsedMs: Date.now() - t0,
+          timeoutMs: this.ctx.config.fetch.timeoutMs,
+          url: site!.url,
+        });
         await this.ctx.repo.updateSiteHealth(site!.id, {
           httpStatus: null,
           ok: false,
           latencyMs: Date.now() - t0,
           redirectTo: null,
-          error: err instanceof Error ? err.message : String(err),
+          error: probe.reason,
           currentStatus: site!.status,
           markBroken: await this.shouldBreak(site!.id),
         });

@@ -9,6 +9,13 @@ export async function updateSiteHealth(repo: Repository, siteId: string, health:
     /** 失败时是否把 status 置为 broken */
     markBroken?: boolean
     currentStatus?: string
+    /**
+     * 本次失败是否属于「目标活着但拒绝爬虫」（401/403/405/412/418/429）。
+     *
+     * 这类结果**不算健康**（没验证到内容），但**也不能算死**——服务器有应答就说明它活着。
+     * 落库后 recentHealthChecks 会跳过这些行，连续失败计数因此不会把活站点判成 broken。
+     */
+    blocked?: boolean
   }): Promise<void> {
   const now = Date.now();
   // 两条写必须同生同死：只写了 sites 而没写进 health_checks，
@@ -24,8 +31,8 @@ export async function updateSiteHealth(repo: Repository, siteId: string, health:
     ],
   );
   await repo.run(
-    "INSERT INTO health_checks (site_id, checked_at, ok, http_status, latency_ms, redirect_to, error) VALUES (?,?,?,?,?,?,?)",
-    [siteId, now, health.ok, health.httpStatus, health.latencyMs, health.redirectTo, health.error],
+    "INSERT INTO health_checks (site_id, checked_at, ok, http_status, latency_ms, redirect_to, error, blocked) VALUES (?,?,?,?,?,?,?,?)",
+    [siteId, now, health.ok, health.httpStatus, health.latencyMs, health.redirectTo, health.error, health.blocked ? true : false],
   );
   });
 }
@@ -50,6 +57,14 @@ export async function healthCheckSeries(repo: Repository, since: number, limit =
  * 实测背景：50 个站点里 15 个被标 broken，其中 kubernetes.io / figma.com /
  * npmjs.com 全部可正常访问 —— 单次探测遇到 403/429/超时就会把健康站点打进
  * 冷宫，前台还可能显示「已失效」。连续失败阈值能过滤掉绝大多数抖动。
+ *
+ * 2026-11-03 补充：`blocked = 1` 的行（401/403/405/412/418/429，目标活着但拒绝爬虫）
+ * **不参与连续失败计数**——它们既不是健康，也不是死亡证据。此前这些行按 ok=0 计入，
+ * 于是「一直被 WAF 挡着」的站点攒够 3 次就被判 broken，实测 Claude/ChatGPT/npm/CodePen
+ * 等 13 个站点因此被误标。跳过它们，计数只反映「真的探测不到」。
+ *
+ * 注意这里用 `blocked = 0` 而不是 `IS NULL`：老库补列时给了 NOT NULL DEFAULT 0，
+ * 历史行一律 0，语义是「普通失败」，与新增行一致。
  */
 export async function recentHealthChecks(
   repo: Repository,
@@ -57,7 +72,7 @@ export async function recentHealthChecks(
   limit = 5,
 ): Promise<Array<{ ok: boolean; checkedAt: number }>> {
   const rows = await repo.raw(
-    "SELECT ok, checked_at FROM health_checks WHERE site_id = ? ORDER BY checked_at DESC LIMIT ?",
+    "SELECT ok, checked_at FROM health_checks WHERE site_id = ? AND blocked = 0 ORDER BY checked_at DESC LIMIT ?",
     [siteId, limit],
   );
   return rows.map((r) => ({

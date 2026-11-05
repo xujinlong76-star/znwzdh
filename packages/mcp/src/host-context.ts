@@ -12,8 +12,9 @@
 import type { Repository } from "@navhub/store";
 import type { SearchEngine } from "@navhub/store";
 import type { VectorStore } from "@navhub/store";
+import type { PluginRecord } from "@navhub/store";
 import type { EmbeddingService } from "@navhub/ai";
-import type { ResolvedLlm } from "@navhub/core";
+import type { ResolvedLlm, PluginSummary } from "@navhub/core";
 
 export interface McpHostConfig {
   fetch: {
@@ -34,12 +35,14 @@ export interface McpHostContext {
   config: McpHostConfig;
   capabilities?: { mcp: string[]; embed: string[] };
 
-  // 可选能力：插件索引操作（由应用层注入）
+  // 可选能力：插件索引操作（由应用层注入；apps/api createContext 是唯一装配点）。
+  // 形状对齐 apps/api plugins-search.ts 的 PluginSearchResult：summary 是
+  // PluginSummary 对象（不是 string），manifest 仅 site-pack 缺省。
   pluginOps?: {
-    indexSitesBatch: (sites: Array<{ title: string; description: string | null; url: string }>) => Promise<void>;
+    indexSitesBatch: (sites: Array<{ id: string; title: string; description: string | null; url: string }>) => Promise<void>;
     removePluginIndex: (pluginId: string) => Promise<void>;
     searchPluginsSemantic: (query: string, limit: number) => Promise<{
-      items: Array<{ slug: string; kind: string; name: string; description: string | null; version: string; author: string; tags: string[]; installCount: number; starCount: number; reviewCount: number; ratingAvg: number; featured: boolean; publishedAt: number | null; score: number | null; summary: string | null }>;
+      items: Array<Omit<PluginRecord, "manifest"> & { summary: PluginSummary; score?: number | null; manifest?: PluginRecord["manifest"] }>;
       total: number;
       mode: string;
       degraded: boolean;

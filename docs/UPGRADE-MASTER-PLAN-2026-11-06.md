@@ -1,4 +1,4 @@
-# NavHub 全栈升级总方案（2026-11-06 定稿）
+# NavHub 全栈升级总方案（2026-11-06 定稿 · 同日第二批实施）
 
 > 方法：四路并行深度审计（后端 apps/api / 数据层 packages/* / 前端 apps/web-overlay / 基建·CI·安全·依赖）
 > + 全栈专家逐项复核。视频采集子系统已于 2026-11-05/06 单独深度审计并实施两轮
@@ -44,6 +44,34 @@
 - ✅ **P1-1 导航写侧容量守卫**：`writeNavigationData` 复用读侧 MAX+1 探测，超限 413（此前存量基线被静默截断→缩水判据失真+误判新增撞主键 500）。
 - ✅ **P2 速修 ×4**：`/api/admin/audit` 纳入快照失效前缀（应用修复后 30s 陈旧）；`collections by-id` scope write→read（读语义，只读令牌可用）；config `num()` 非法数字告警；备份恢复 staging 删除用归一化路径。
 
+## 三点五、第二批实施（同日，按路线图 P0→P1）
+
+### ✅ P0-2 覆盖率门禁真接线（装饰门禁 → 真拦截）
+
+- **前置修复**：全量 coverage 跑基线时暴露 **MCP 插件搜索先天断链**——`pluginOps` 声明了接口却从未被任何启动器装配，`search_plugins` 恒走 `unavailable` 降级，`install` 后向量索引从不发生（D2 的 REST 通道能用是因为直连实现）。已在 `createContext` 完成唯一装配点（searchPluginsSemantic/indexSitesBatch/removePluginIndex 与 REST 同源），mcp.test 60/60 全绿。
+- **基线实测**：641 文件全量 + coverage 插桩 = **lines 85.68% / functions 86.35%**（639 绿）。
+- **接线**：新增独立 CI 作业 `coverage`（全量跑 + `check-coverage.mjs --max-lines 84 --max-functions 85`，阈值=基线留 1.5pct 余量）；进 ci-passed 聚合；gates.json 登记（CI 10 作业/阻塞 9）；DEFUSED_GATES 接线（typeTrust 声明：本作业不判整前端类型）；级联登记表补 products。为什么不进 test-sqlite：3 分片作业的覆盖率各自缺 2/3 覆盖面，`all:true` 会把未执行文件计 0%，分片内阈值必然失真。
+- **GATES-OPERATIONS 恢复「CI 拦截」表述**（阈值/作业名/收紧方式写明）。
+- 门禁账本同步：check-ci-gate.test（撤防账 9 作业/28 门禁）、ci-defused.test（WIRED 清单）、ci-gate.test（聚合 9 作业）、check-ci-gate.mjs CASCADE_RULES。
+
+### ✅ P0-3 导航类目缩水守卫
+
+- `storage.ts`：类目维度两道判据进 `writeNavigationData`——①`evaluateCategoryShrink`（独立基线 `NAV_CATEGORY_SHRINK_MIN_BASELINE=20` + 同款 80% 保留率；直接复用站点判据会把 100 基线带进来=永不触发）；②子树清空探测（挂 ≥`NAV_CATEGORY_SUBTREE_WIPE_MIN_CHILDREN=3` 个托管子类目的可见类目被快照清零——形状回归每次都长这样，与库规模无关）。
+- 二阶段确认协议与站点判据**共用一套**：expectedCount 声明的都是站点数（重试客户端只需一个数字，两道判据同时校验）；`categoryViolation` 进 409 响应体与审计 diff；放行审计同样留痕。
+- 测试：navigation-shrink-guard.test 新增 3 组（整层丢失 409+确认放行 / 基线 25→5 拦截+确认 / 正常保存与单类目合法移除不误伤）。
+
+### ✅ P1-3 recompute_rank 修复（正确性+性能双重）
+
+- `repository/health.ts setTrendScores`：逐行 UPDATE → 分批 CASE-WHEN（500/批）；**不再触碰 updated_at**——此前每小时把 updated_at 刷新，runRefetch 的「30 天没富化」判定被慢性短路，且 sites 的 UPDATE 推进 nav_version 使快照缓存与全站 ETag 每小时翻转重建。
+- 回归锚：store.test 新增「trend 写入不碰 updated_at」用例。
+
+### ✅ P1-4 视频库 KV 快照缓存
+
+- `storage.ts`：`readVideosData` KV 路径接版本号+SingleFlight 缓存（纪律与导航 snapshotCache 同款：版本号先于构建读、降级读信任 TTL、写后显式失效）；**db 模式不缓存**（KV 版本与表写入无关）。6.37MB JSON.parse 不再是每次列表/详情请求的固定税。
+- `videoSnapshotCacheInfo()` 观测出口；测试 3 组（命中同引用/写后失效/空文档 null 语义）。
+
+**回归**：web+api+store+mcp 四套件 504+ 全绿（ai-config 1 例为全量并发下的既有偶发，单跑通过，与本批无关）；5 包 typecheck 通过。
+
 ## 四、后端审计结果（apps/api + mcp）——路线图部分
 
 **健康度**：config/context/metrics 优秀；鉴权三层体系分层清晰（哈希令牌/身份 HMAC v1+v2/bootstrap），失败审计带节流；44 个路由的 scope 纪律由四层测试防线守护。已核实无问题：health_check SSRF 防护完整、KV 文档不受任务清理误删、日志 redact、requestId 透传、MCP HTTP 每请求重验 token。
@@ -88,13 +116,13 @@
 **已全部落库（本轮）**：第三节 10 项，含 2 个 P1 行为修复 + 4 个 P2 + 基建/文档批次。
 
 **P0（下一步，按序）**
-1. next-auth beta 迁移立项（安全公告驱动，越拖越贵）
-2. 覆盖率门禁真接线（步骤见六.2，半天）
-3. 导航类目缩水守卫（四.1，一天，含测试）
+1. ~~覆盖率门禁真接线~~ ✅ 已实施（见三.五）
+2. ~~导航类目缩水守卫~~ ✅ 已实施（见三.五）
+3. next-auth beta 迁移立项（安全公告驱动，越拖越贵；迁移路径见六.1）
 
 **P1（两周内）**
-4. recompute_rank 正确性修复（四.2）
-5. 视频库快照缓存（四.3）
+4. ~~recompute_rank 正确性修复~~ ✅ 已实施（见三.五）
+5. ~~视频库快照缓存~~ ✅ 已实施（见三.五）
 6. video E2E 冒烟（五.4）
 7. web eslint 清零 + 阻断（六.5）
 8. Web 镜像多阶段 + CSP report-only 默认（六.3/4，需 Docker 环境）

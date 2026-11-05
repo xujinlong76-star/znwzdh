@@ -230,9 +230,10 @@ describe("撤防账：读数（findDefused）", () => {
 });
 
 describe("撤防账：接线（对真实 ci.yml 的作业片段派生夹具）", () => {
-  // 8 个阻塞作业全部接线（2026-10-30 第二轮补齐 test-postgres / check-isr-live /
-  // docker-smoke / audit）。没接的只剩 seo-audit-prod（手动/定时，多一处红不阻塞合并）
-  // 和 ci-passed（只做聚合）——口径见 docs/GATES-OPERATIONS.md §2.3。
+  // 9 个阻塞作业全部接线（2026-10-30 第二轮补齐 test-postgres / check-isr-live /
+  // docker-smoke / audit；2026-11-06 补 coverage）。没接的只剩 seo-audit-prod
+  // （手动/定时，多一处红不阻塞合并）和 ci-passed（只做聚合）——口径见
+  // docs/GATES-OPERATIONS.md §2.3。
   const WIRED = [
     "test-sqlite",
     "test-postgres",
@@ -242,6 +243,7 @@ describe("撤防账：接线（对真实 ci.yml 的作业片段派生夹具）",
     "check-web-overlay",
     "docker-smoke",
     "audit",
+    "coverage",
   ];
 
   it("仓库现状：八个接入作业的接线与覆盖面全部通过", () => {

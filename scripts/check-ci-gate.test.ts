@@ -202,7 +202,8 @@ describe("check-ci-gate 第 6 项：级联红收敛", () => {
       /^(\s*)id: vitest\s*\n/m,
       "",
     );
-    expect(orphaned).not.toContain("id: vitest");
+    // 行锚断言：coverage 作业有 `id: vitest-coverage`，子串包含会误报
+    expect(orphaned).not.toMatch(/^[ \t]*id: vitest[ \t]*\r?\n/m);
     const res = runGate(writeFixture("ci-no-vitest-id.yml", orphaned), GATE_TEST);
     expect(res.status).not.toBe(0);
     expect(res.out).toContain("级联判据挂在它上面");
@@ -285,13 +286,14 @@ describe("check-ci-gate 第 7 项：撤防账接线", () => {
     return [...lines.slice(0, start), ...fn(lines.slice(start, end)), ...lines.slice(end)].join("\n");
   }
 
-  it("仓库现状：8 个接入作业各有读数步骤 ⇒ 绿，✅ 行把记账范围说出来", () => {
+  it("仓库现状：9 个接入作业各有读数步骤 ⇒ 绿，✅ 行把记账范围说出来", () => {
     const res = runGate(REAL_CI, GATE_TEST);
     expect(res.status, res.out).toBe(0);
-    // 26 道：数字是「有读数步骤盯着的门禁」，加一道就要同步这里，否则范围被夸大/缩小都没人看见。
+    // 28 道：数字是「有读数步骤盯着的门禁」，加一道就要同步这里，否则范围被夸大/缩小都没人看见。
     // 2026-11-01 后端 lint 硬化时它仍在册（登记表管「该跑的有没有跑成」，不管那步软硬），所以这里没变。
-    expect(res.out).toContain("撤防账已接线（8 个作业 / 26 道门禁");
-    expect(source().split("run: node scripts/ci-defused-gates.mjs").length - 1).toBe(8);
+    // 2026-11-06 coverage 作业接入：+2 道门禁（vitest-coverage / coverage-threshold）。
+    expect(res.out).toContain("撤防账已接线（9 个作业 / 28 道门禁");
+    expect(source().split("run: node scripts/ci-defused-gates.mjs").length - 1).toBe(9);
   });
 
   it("删掉 test-web 的读数步骤 ⇒ 红：登记表只是愿望", () => {

@@ -185,6 +185,19 @@ export const DEFUSED_GATES = [
     ],
   },
   {
+    job: "coverage",
+    reporterStepId: "defused-gates",
+    // 与 test-sqlite 同款可信度声明：本作业 vendor 重建 apps/web 并跑 web 测试，
+    // 它的绿不代表整前端类型也过（esbuild 会擦掉类型错误）——全量判定只在
+    // test-web 的 web-typecheck。
+    typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
+    env: [{ id: "coverage-install", label: "pnpm install --frozen-lockfile" }],
+    gates: [
+      { id: "vitest-coverage", label: "全量测试（含覆盖率插桩）" },
+      { id: "coverage-threshold", label: "覆盖率阈值判定（lines≥84% / functions≥85%）" },
+    ],
+  },
+  {
     job: "test-web",
     reporterStepId: "defused-gates",
     // 这个作业自己就是那唯一一处整前端 tsc（web-typecheck）⇒ 不需要可信度声明。

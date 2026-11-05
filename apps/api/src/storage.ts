@@ -525,11 +525,49 @@ export async function writeNavigationData(
       (s) => isSnapshotManaged(s.source) && emittedCatIds.has(s.categoryId),
     ).length;
     const shrink = evaluateNavigationShrink(managedExistingCount, snapshotSites.length);
-    if (shrink) {
-      if (!guard.confirmLargeDeletion) throw new NavigationShrinkError("navigation_shrink_requires_confirmation", shrink);
-      if (guard.expectedCount === undefined) throw new NavigationShrinkError("navigation_shrink_expected_count_required", shrink);
+
+    // 类目维度守卫（P0-1）：站点守卫盯的是站点数，纯类目树不受它保护，
+    // 而类目删除是物理删除（无回收站）。两道判据：
+    //   1) 基线判据：托管可见类目 ≥ NAV_CATEGORY_SHRINK_MIN_BASELINE 时套用同款 80% 判据；
+    //   2) 子树清空探测：挂 ≥ NAV_CATEGORY_SUBTREE_WIPE_MIN_CHILDREN 个托管子类目的
+    //      可见类目被快照清零——真实运营极少整层清空，形状回归每次都长这样。
+    // 只数托管子类目：MCP/API 创建的类目本就不在删除范围内（D1），不构成「丢失」。
+    const managedVisibleCats = existingCats.filter(
+      (c) => isSnapshotManaged(c.source) && emittedCatIds.has(c.id),
+    );
+    const categoryShrink = evaluateCategoryShrink(managedVisibleCats.length, categoryCount);
+    const childrenByParent = new Map<string, number>();
+    for (const c of existingCats) {
+      if (c.parentId !== null && isSnapshotManaged(c.source) && emittedCatIds.has(c.parentId)) {
+        childrenByParent.set(c.parentId, (childrenByParent.get(c.parentId) ?? 0) + 1);
+      }
+    }
+    const wipedSubtrees: string[] = [];
+    for (const top of input) {
+      const existingChildren = childrenByParent.get(top.id) ?? 0;
+      if (existingChildren >= NAV_CATEGORY_SUBTREE_WIPE_MIN_CHILDREN && (top.subCategories ?? []).length === 0) {
+        wipedSubtrees.push(`「${top.title}」${existingChildren} -> 0`);
+      }
+    }
+    const categoryViolation = categoryShrink
+      ? `托管可见类目 ${managedVisibleCats.length} -> ${categoryCount}（低于 ${NAV_CATEGORY_SHRINK_MIN_BASELINE} 基线的 80%）`
+      : wipedSubtrees.length > 0
+        ? `子类目整层丢失：${wipedSubtrees.join("、")}`
+        : null;
+
+    // 站点与类目判据共用同一套二阶段确认协议：expectedCount 声明的都是
+    // 本次真实写入的站点数（重试客户端只需要一个数字，两个判据同时校验）。
+    if (shrink || categoryViolation) {
+      const verdict = shrink ?? {
+        existingCount: managedExistingCount,
+        incomingCount: snapshotSites.length,
+        minimumAllowed: Math.ceil(managedExistingCount * NAVIGATION_SHRINK_KEEP_RATIO),
+      };
+      const fullVerdict = categoryViolation ? { ...verdict, categoryViolation } : verdict;
+      if (!guard.confirmLargeDeletion) throw new NavigationShrinkError("navigation_shrink_requires_confirmation", fullVerdict);
+      if (guard.expectedCount === undefined) throw new NavigationShrinkError("navigation_shrink_expected_count_required", fullVerdict);
       if (guard.expectedCount !== snapshotSites.length) {
-        throw new NavigationShrinkError("navigation_shrink_expected_count_mismatch", { ...shrink, declaredExpectedCount: guard.expectedCount });
+        throw new NavigationShrinkError("navigation_shrink_expected_count_mismatch", { ...fullVerdict, declaredExpectedCount: guard.expectedCount });
       }
     }
 
@@ -577,7 +615,12 @@ export async function writeNavigationData(
     }
 
     // 确认放行与数据写在同一个事务里：审计要么和数据一起提交，要么一起回滚。
-    if (shrink) await guard.onLargeDeletionConfirmed?.(shrink);
+    // 类目守卫命中也属于「大规模删除」：放行审计要携带类目说明，事后才连得起来。
+    if (shrink || categoryViolation) {
+      await guard.onLargeDeletionConfirmed?.(
+        categoryViolation ? { existingCount: managedExistingCount, incomingCount: snapshotSites.length, minimumAllowed: Math.ceil(managedExistingCount * NAVIGATION_SHRINK_KEEP_RATIO), categoryViolation } : (shrink as ShrinkVerdict),
+      );
+    }
     return { categories: categoryCount, sites: siteCount };
   });
 }
@@ -694,6 +737,8 @@ export interface ShrinkVerdict {
   minimumAllowed: number;
   /** 调用方声明的条数；二阶段确认时必填 */
   declaredExpectedCount?: number;
+  /** 类目维度守卫的命中说明（站点判据未触发时它就是主因）；进 409 响应体与审计 diff */
+  categoryViolation?: string;
 }
 
 export type VideoShrinkVerdict = ShrinkVerdict;
@@ -766,6 +811,38 @@ export interface ShrinkGuardOptions {
 export const NAVIGATION_SHRINK_MIN_BASELINE = 100;
 export const NAVIGATION_SHRINK_KEEP_RATIO = 0.8;
 
+/**
+ * 类目维度守卫（P0-1）的独立常量。
+ *
+ * 为什么需要：站点守卫盯的是站点数，纯类目树不受它保护——子类目整层被前端
+ * 形状回归（丢 `subCategories` 字段）清掉时，站点若都挂在子类目下会跟着软删
+ * （数量变化被站点守卫接住），但**挂在顶级类目下的类目树**（或站点都还在、
+ * 只是挪了位置）完全绕过站点判据；而类目删除是物理删除，没有回收站。
+ *
+ *  - `NAV_CATEGORY_SHRINK_MIN_BASELINE`：类目基线判据的最小规模。类目总量远小
+ *    于站点，照抄 100 基线等于永远不触发；20 是「值得为它保留整层结构」的量级。
+ *  - `NAV_CATEGORY_SUBTREE_WIPE_MIN_CHILDREN`：子树清空探测的阈值。一个挂满
+ *    ≥3 个托管子类目的可见类目被快照清零，真实运营极少这么干，形状回归却
+ *    每次都长这样——与规模无关，任何库都受保护。
+ */
+export const NAV_CATEGORY_SHRINK_MIN_BASELINE = 20;
+export const NAV_CATEGORY_SUBTREE_WIPE_MIN_CHILDREN = 3;
+
+/**
+ * 类目基线判据（纯函数）：与 evaluateNavigationShrink 同款 80% 保留率，
+ * 但基线独立（20）——直接复用站点判据会把 100 基线带进来，类目总量
+ * 通常不过十几二十个，那样等于永远不触发。
+ */
+export function evaluateCategoryShrink(existingCount: number, incomingCount: number): ShrinkVerdict | null {
+  if (existingCount < NAV_CATEGORY_SHRINK_MIN_BASELINE) return null;
+  if (incomingCount >= existingCount * NAVIGATION_SHRINK_KEEP_RATIO) return null;
+  return {
+    existingCount,
+    incomingCount,
+    minimumAllowed: Math.ceil(existingCount * NAVIGATION_SHRINK_KEEP_RATIO),
+  };
+}
+
 /** 纯函数：基线是「当前可被这次快照删除的托管站点数」，不是全表站点数 */
 export function evaluateNavigationShrink(existingCount: number, incomingCount: number): ShrinkVerdict | null {
   if (existingCount < NAVIGATION_SHRINK_MIN_BASELINE) return null;
@@ -788,12 +865,14 @@ export class NavigationShrinkError extends Error {
   constructor(code: NavigationShrinkBlockCode, verdict: ShrinkVerdict) {
     const { existingCount, incomingCount, minimumAllowed, declaredExpectedCount } = verdict;
     const base = `待写入 ${incomingCount} 个站点，少于库内可托管站点 ${existingCount} 个的 80%（下限 ${minimumAllowed} 个）`;
+    // 类目守卫命中时它才是主因（站点判据可能根本没触发），必须让人第一眼看到真实原因
+    const catNote = verdict.categoryViolation ? `类目守卫命中：${verdict.categoryViolation}。` : "";
     super(
       code === "navigation_shrink_requires_confirmation"
-        ? `写入被导航快照缩水保护拦下：${base}。若这确实是一次合法的大规模删除，请带 confirmLargeDeletion=true 且 expectedCount=${incomingCount} 重试`
+        ? `${catNote}写入被导航快照缩水保护拦下：${base}。若这确实是一次合法的大规模删除，请带 confirmLargeDeletion=true 且 expectedCount=${incomingCount} 重试`
         : code === "navigation_shrink_expected_count_required"
-          ? `已确认大规模删除，但仍缺 expectedCount：${base}，expectedCount 必须填本次真实写入的 ${incomingCount} 个站点`
-          : `expectedCount 与真实写入条数不一致：声明 ${declaredExpectedCount} 个站点，实际 ${incomingCount} 个（${base}），拒绝放行`,
+          ? `${catNote}已确认大规模删除，但仍缺 expectedCount：${base}，expectedCount 必须填本次真实写入的 ${incomingCount} 个站点`
+          : `${catNote}expectedCount 与真实写入条数不一致：声明 ${declaredExpectedCount} 个站点，实际 ${incomingCount} 个（${base}），拒绝放行`,
     );
     this.name = "NavigationShrinkError";
     this.code = code;
@@ -812,6 +891,82 @@ export class NavigationShrinkError extends Error {
  * 与「中枢里确实存了空列表」—— 否则像 /videos 这种从没存过的页面
  * 会在**每个请求**上刷一条回退警告，把真正的问题淹没。
  */
+/* ------------------ 视频库 KV 快照缓存（P1-4） ------------------ */
+
+interface VideoSnapshotEntry {
+  data: unknown;
+  expiresAt: number;
+  version: number | null;
+}
+
+let videoSnapshotCache: VideoSnapshotEntry | null = null;
+let inFlightVideoSnapshot: Promise<unknown> | null = null;
+/* 观测读数（与导航快照缓存同款口径；暂无 /metrics 出口，测试与排查用） */
+let videoSnapshotHits = 0;
+let videoSnapshotMisses = 0;
+let videoSnapshotDegradedReads = 0;
+
+/** 写路径成功后调用：下一次 readVideosData 立即重建（版本号兜底之外的立即一致层） */
+export function invalidateVideoSnapshotCache(): void {
+  videoSnapshotCache = null;
+}
+
+/** 供 /api/health、/metrics 与测试观察缓存状态（不参与业务判定） */
+export function videoSnapshotCacheInfo(): {
+  cached: boolean;
+  version: number | null;
+  hits: number;
+  misses: number;
+  degradedReads: number;
+} {
+  return {
+    cached: videoSnapshotCache !== null,
+    version: videoSnapshotCache?.version ?? null,
+    hits: videoSnapshotHits,
+    misses: videoSnapshotMisses,
+    degradedReads: videoSnapshotDegradedReads,
+  };
+}
+
+/**
+ * KV 路径的缓存读：版本号 + SingleFlight，纪律与导航 snapshotCache 完全同款。
+ *
+ * 为什么值得：6.37MB 的 videos.json 是全站最大的单个 JSON 文档，json/dual 模式下
+ * routes/videos 的每次列表/详情请求都要付一次 JSON.parse + flatten（导航侧早有
+ * 版本号 + SingleFlight 快照缓存，视频侧一直没有）。
+ *
+ * 两条铁律（从导航侧的事故账里抄来的）：
+ *   1. **版本号必须在构建之前读**——反过来会把「V 时刻的数据」标成 V+1，
+ *      构建窗口里落下的写入被永久记为已包含；
+ *   2. db 模式**不缓存**：readKvVersion 反映的是 KV 版本，与关系表写入无关，
+ *      缓存会把表的更新喂成旧数据。
+ */
+async function readVideosDataCached(ctx: AppContext): Promise<unknown> {
+  const version = await readKvVersion(ctx, "videos");
+  const now = Date.now();
+  if (videoSnapshotCache && videoSnapshotCache.expiresAt > now) {
+    if (version === null) {
+      // 降级：版本号读不到时信任 TTL（与导航同款），而不是「读不到就每次重建」
+      videoSnapshotDegradedReads++;
+      videoSnapshotHits++;
+      return videoSnapshotCache.data;
+    }
+    if (videoSnapshotCache.version === version) {
+      videoSnapshotHits++;
+      return videoSnapshotCache.data;
+    }
+  }
+  videoSnapshotMisses++;
+  if (!inFlightVideoSnapshot) {
+    inFlightVideoSnapshot = readKv(ctx, "videos").finally(() => {
+      inFlightVideoSnapshot = null;
+    });
+  }
+  const data = await inFlightVideoSnapshot;
+  videoSnapshotCache = { data, expiresAt: now + SNAPSHOT_TTL_MS, version };
+  return data;
+}
+
 export async function readVideosData(ctx: AppContext): Promise<unknown> {
   // `db` 模式：优先读关系表，表为空（首次切换 / 迁移未跑 / 被误清空）时回落 KV。
   // 回落而不是返回空库 —— 读路径绝不能因为影子表没准备好就让视频库消失。
@@ -819,11 +974,12 @@ export async function readVideosData(ctx: AppContext): Promise<unknown> {
     const fromDb = await loadVideoCatalogFromDb(ctx);
     if (fromDb) return fromDb;
   }
-  const fromKv = (await readKv(ctx, "videos")) as { navigationItems?: any[] } | null;
+  const fromKv = (await readVideosDataCached(ctx)) as { navigationItems?: any[] } | null;
   // 这里**不能**加「表里条数多于 KV 就用表」的启发式：`json` / `dual` 模式下关系表
   // 只是影子副本，可能早已和 KV 分叉（实测：KV 74 条、表 5,578 条）。按条数多的那侧供数
   // 会返回站点上根本不存在的幻影视频——这正是 routes/videos.ts 明令禁止的口径。
   // 判据只有 `resolveVideoStoreMode() === "db"` 一个；未切读就一律以 KV 为事实源。
+  // 缓存共享同一个对象：调用方只读（routes/videos 的 filter/slice 均不改动文档）。
   return fromKv;
 }
 
@@ -864,6 +1020,9 @@ export async function writeVideosData(
   // `dual` / `db` 模式下把文档同步进关系表。失败只记状态，不影响本次写入 ——
   // 影子表是副本，副本故障不该让正本写入报错（详见 video-catalog.ts 文件头）。
   await syncVideoCatalogSafely(ctx, data);
+  // 写成功即失效视频快照缓存（P1-4）：版本号判据本会在下一次读时自然失效，
+  // 显式失效把「降级读（版本号拿不到）」窗口内的一致性也补齐，与导航侧同款三层纪律。
+  invalidateVideoSnapshotCache();
   // 确认放行只在写入真的落库之后记账：半途失败留一条「已放行」的审计，
   // 比不留更糟——它会让排查者以为数据已经按新内容覆盖了。
   if (shrink) await guard.onLargeDeletionConfirmed?.(shrink);

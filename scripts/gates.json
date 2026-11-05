@@ -1,312 +1,320 @@
 {
-  "_comment": "门禁清单的单一事实源：每一枚「会拦住提交/推送/合并」的检查都在这里登记。只登记能被自动核对的坐标（命令 / runner id / CI 作业）与它的测试，不复制实现。双向口径见 scripts/check-gates-registry.mjs：登记了没接线 = 以为在拦其实没跑；接线了没登记 = 下次改钩子会悄悄删掉它。test 里的文件必须真实存在；确实没有专属测试的写 whyNoTest 说明理由（没有理由的「裸门禁」不许入库）。",
-  "version": 1,
-  "updatedAt": "2026-10-30",
-  "gates": [
-    {
-      "name": "large-files-staged",
-      "when": "staged",
-      "script": "scripts/check-large-files.mjs",
-      "args": "--staged",
-      "blocks": true,
-      "test": "scripts/check-large-files.test.ts",
-      "why": "超过 50 MiB 的暂存 blob 一旦提交就只能重写历史（2026-10-26 真实事故）"
-    },
-    {
-      "name": "web-overlay-staged",
-      "when": "staged",
-      "script": "scripts/check-web-overlay.mjs",
-      "args": "--staged",
-      "blocks": true,
-      "test": [
-        "apps/web/test/overlay-drift-gate.test.ts",
-        "scripts/lib/overlay-drift.test.ts"
-      ],
-      "why": "本次提交涉及的 overlay 文件必须与 apps/web 镜像对齐；全仓库判定交给 CI（别人的半成品不该挡住我的提交）"
-    },
-    {
-      "name": "extensions",
-      "when": "staged",
-      "script": "scripts/check-extensions.mjs",
-      "blocks": true,
-      "whyNoTest": "无专属测试：脚本是对 extensions/ 清单与入口文件的薄校验（manifest 字段 + node --check），单测只能复述实现；真实回归由 pre-commit 与 CI 的 check-web-overlay 作业直接执行本脚本来暴露",
-      "why": "扩展清单的 schema 错误只有在加载时才炸，进 CI 之前就该拦住"
-    },
-    {
-      "name": "upstream-ref",
-      "when": "staged",
-      "script": "scripts/check-upstream-ref.mjs",
-      "blocks": true,
-      "whyNoTest": "无专属测试：校验对象是四处仓库声明（vendor 默认 ref / Dockerfile ARG / UPSTREAM.md / compose）本身，造四份夹具才等价；回归由 pre-commit 与 CI 的 check-web-overlay 作业直接执行本脚本兜",
-      "why": "上游 ref 指向的提交必须存在，否则 CI 的对比基线会静默退化成全量"
-    },
-    {
-      "name": "committed-refs",
-      "when": "staged",
-      "script": "scripts/check-committed-refs.mjs",
-      "args": "--staged",
-      "blocks": true,
-      "test": "scripts/check-committed-refs.test.ts",
-      "why": "已跟踪文件不得引用未入库文件（2026-10-27：vitest 配置引用了未提交的 worker-budget）"
-    },
-    {
-      "name": "commit-atomicity",
-      "when": "staged",
-      "script": "scripts/check-commit-atomicity.mjs",
-      "args": "--staged",
-      "blocks": true,
-      "test": "scripts/commit-atomicity.test.ts",
-      "why": "测试不得依赖「改了但没提交」的文件——源码、被断言的非代码契约（.github/workflows/ci.yml、*.css、docker/Dockerfile.*、docs/*.json）同理，分段拼接写法（resolve(ROOT, \"scripts\", \"x.mjs\")）也算；源码经 barrel 用到的导出被删改却没随本次提交（2026-10-29：CI 26 例红与三个 typecheck 分片红是同一根因的两种形状）；另有一路只报不拦的 HEAD 自洽性——已提交的消费者在读只存在于工作区的字段（2026-10-30：9 条常驻红的根因，--strict-head-consumers 才拦）"
-    },
-    {
-      "name": "hooks-fresh",
-      "when": "staged",
-      "script": "scripts/check-hooks-fresh.mjs",
-      "blocks": true,
-      "test": "scripts/check-hooks-fresh.test.ts",
-      "why": "改了 install-git-hooks.mjs 却没重装时钩子跑的是旧生成物；它的相对 import 闭包漏拷进 Dockerfile 时镜像 prepare 直接起不来（2026-10-29 docker-smoke 真红）"
-    },
-    {
-      "name": "ci-gate",
-      "when": "staged",
-      "script": "scripts/check-ci-gate.mjs",
-      "blocks": true,
-      "test": [
-        "scripts/check-ci-gate.test.ts",
-        "scripts/lib/ci-workflow.test.ts",
-        "scripts/ci-defused.test.ts",
-        "apps/web/test/ci-gate.test.ts"
-      ],
-      "why": "ci-passed 的聚合关系被改坏时，只有 CI 会红——而 CI 自己正是被改的那一方；读上游产物的收尾步骤还兼管级联红（一次根因只留一处红，2026-10-29 run40835496871；判据不限于 junit，test-web 的预算账同受管）。2026-10-30 起还核对登记表覆盖面：带 if-no-files-found: error 上传的阻塞作业没登记就直接红，不再等事故发现。第 7 项钉「撤防账」的接线：默认条件是「上一步红 ⇒ 后面每步 skipped」而 skipped 不判红，所以每个接入作业必须有 if: always() 的读数步骤、门禁形状的步骤必须有 id 并登进 scripts/lib/ci-defused.mjs（现状 8 作业 / 26 道门禁，2026-11-01 后端 lint 硬化后本仓合并门禁已无软门禁，登记表与 YAML 的 soft 标记由该判据双向核对；只拦接线，运行结果全绿也会留一条 ::notice + Step Summary 痕迹，否则「没接线」与「跑过且全绿」同形）"
-    },
-    {
-      "name": "gates-registry",
-      "when": "staged",
-      "script": "scripts/check-gates-registry.mjs",
-      "blocks": true,
-      "test": "scripts/check-gates-registry.test.ts",
-      "why": "本清单与钩子/CI 的双向对照；改清单或改钩子后必须仍然对得上"
-    },
-    {
-      "name": "syntax",
-      "when": "staged",
-      "script": "scripts/check-syntax.mjs",
-      "args": "--staged",
-      "blocks": true,
-      "test": "scripts/check-syntax.test.ts",
-      "why": "标点级错误在 tsc 之前挡住，秒级"
-    },
-    {
-      "name": "deps-integrity",
-      "when": "staged",
-      "script": "scripts/check-deps-integrity.mjs",
-      "blocks": true,
-      "test": "scripts/check-deps-integrity.test.ts",
-      "why": "装残的包会让几百个测试套件同时报「找不到模块」，看起来像代码全坏；秒级先认出「是依赖残了」"
-    },
-    {
-      "name": "mock-hygiene-fix",
-      "when": "staged",
-      "script": "scripts/fix-mock-hygiene.mjs",
-      "blocks": true,
-      "test": "scripts/fix-mock-hygiene.test.ts",
-      "why": "跨模块 vi.mock 必须带 vi.resetModules() 兜底；修法机械，报错时直接给 --apply 提示；只查本次提交集（--changed），全仓口径归全量测试里的 mock-hygiene.test.ts",
-      "args": "--changed"
-    },
-    {
-      "name": "cleanup-coverage",
-      "when": "staged",
-      "script": "scripts/check-cleanup-coverage.mjs",
-      "blocks": true,
-      "test": "scripts/check-cleanup-coverage.test.ts",
-      "why": "清理动作漏一条出口（尤其是提前 return）就是「删了还在」；登记制 + 每条 return 都见清理；只查本次提交集（--changed），全仓口径归全量测试",
-      "args": "--changed"
-    },
-    {
-      "name": "source-truth",
-      "when": "staged",
-      "script": "scripts/check-source-truth.mjs",
-      "blocks": true,
-      "test": "scripts/check-source-truth.test.ts",
-      "why": "读路径按计数选源会把影子副本当正本（KV 74 条 vs 表 5578 条）；判据必须是显式开关；只查本次提交集（--changed），全仓口径归全量测试",
-      "args": "--changed"
-    },
-    {
-      "name": "typecheck",
-      "when": "staged",
-      "script": "scripts/typecheck.mjs",
-      "blocks": true,
-      "test": "scripts/typecheck.test.ts",
-      "why": "@navhub/* 的 tsc --noEmit；前端类型由 CI 的 test-web 兜"
-    },
-    {
-      "name": "impact-select",
-      "when": "staged",
-      "script": "navhub-precommit-tests.mjs",
-      "blocks": true,
-      "test": [
-        "scripts/precommit-select.test.ts",
-        "scripts/test-impact.test.ts"
-      ],
-      "why": "按模块图选出的相关测试；生成物在 .git/hooks 下（生成源 scripts/install-git-hooks.mjs）"
-    },
-    {
-      "name": "large-files-unpushed",
-      "when": "prepush",
-      "script": "scripts/check-large-files.mjs",
-      "args": "--unpushed",
-      "blocks": true,
-      "test": "scripts/check-large-files.test.ts",
-      "why": "pre-commit 可被绕过；被 GitHub 拒绝只发生在 push 那一刻，此时历史还能在本地处理"
-    },
-    {
-      "name": "prepush-gates",
-      "when": "prepush",
-      "script": "scripts/prepush-gates.mjs",
-      "blocks": true,
-      "test": "scripts/prepush-gates.test.ts",
-      "why": "「只有 CI 才知道」的闸门左移（见下），失败信息带修复命令"
-    },
-    {
-      "name": "rest-contracts",
-      "when": "prepush",
-      "runner": "prepush-gates",
-      "blocks": true,
-      "test": [
-        "scripts/generate-rest-contract-types.test.ts",
-        "scripts/check-rest-contract-coverage.test.ts",
-        "scripts/prepush-gates.test.ts"
-      ],
-      "why": "契约生成物与 core 事实源同源；写路由未绑定响应契约必须显式豁免（allowlist 只许缩小）；改 core 不重生成是常态漏网"
-    },
-    {
-      "name": "scope-explicit",
-      "when": "prepush",
-      "runner": "prepush-gates",
-      "blocks": true,
-      "test": [
-        "apps/api/test/route-policy.test.ts",
-        "scripts/prepush-gates.test.ts"
-      ],
-      "why": "写路由漏写 scope 会静默变成匿名可写"
-    },
-    {
-      "name": "client-node-imports",
-      "when": "prepush",
-      "runner": "prepush-gates",
-      "blocks": true,
-      "test": "scripts/check-client-node-imports.test.ts",
-      "why": "客户端模块图引 node 内建只会在首屏预算超限时才暴露，根因还得人反推"
-    },
-    {
-      "name": "core-mirrors",
-      "when": "prepush",
-      "runner": "prepush-gates",
-      "blocks": true,
-      "test": "scripts/check-core-mirrors.test.ts",
-      "why": "core 镜像漂移在工作区里查不出来，只有读 HEAD 的提交内容能说真话"
-    },
-    {
-      "name": "test-mirror-pairs",
-      "when": "prepush",
-      "runner": "prepush-gates",
-      "blocks": true,
-      "test": "scripts/prepush-gates.test.ts",
-      "why": "只提交 overlay 侧测试会让 HEAD 上两份副本互相矛盾，且 CI 因先重建镜像而看不见"
-    },
-    {
-      "name": "deps-integrity-prepush",
-      "when": "prepush",
-      "runner": "prepush-gates",
-      "blocks": true,
-      "test": "scripts/check-deps-integrity.test.ts",
-      "why": "装残的包让几百个套件同时报「找不到模块」；pre-commit 只看本次提交，推送前再扫一遍全仓"
-    },
-    {
-      "name": "mock-hygiene-prepush",
-      "when": "prepush",
-      "runner": "prepush-gates",
-      "blocks": true,
-      "test": "scripts/fix-mock-hygiene.test.ts",
-      "why": "分多次提交累积出的缺口（甲加 vi.mock、乙才补 afterAll）只有推送前扫全仓才看得见"
-    },
-    {
-      "name": "test-sqlite",
-      "when": "ci",
-      "job": "test-sqlite",
-      "blocks": true,
-      "test": [
-        "apps/web/test/ci-gate.test.ts",
-        "scripts/ci-red-ledger.test.ts"
-      ],
-      "why": "SQLite 全量测试（分片）；红灯台账在这里做跨轮对比"
-    },
-    {
-      "name": "test-postgres",
-      "when": "ci",
-      "job": "test-postgres",
-      "blocks": true,
-      "test": "apps/web/test/ci-gate.test.ts",
-      "why": "PG 套件必须走 pnpm test:pg:suite（带环境守卫，防整体 skip 假绿）"
-    },
-    {
-      "name": "test-web",
-      "when": "ci",
-      "job": "test-web",
-      "blocks": true,
-      "test": "apps/web/test/ci-gate.test.ts",
-      "why": "前端测试、lint、类型与构建口径的阻塞作业"
-    },
-    {
-      "name": "check-web-overlay",
-      "when": "ci",
-      "job": "check-web-overlay",
-      "blocks": true,
-      "test": [
-        "apps/web/test/ci-gate.test.ts",
-        "apps/web/test/overlay-drift-gate.test.ts"
-      ],
-      "why": "全仓库镜像对齐（本地只查暂存集）"
-    },
-    {
-      "name": "check-isr-live",
-      "when": "ci",
-      "job": "check-isr-live",
-      "blocks": true,
-      "test": "apps/web/test/ci-gate.test.ts",
-      "why": "ISR 降级壳与收录面实测，只有真起服务才能判定"
-    },
-    {
-      "name": "test-e2e",
-      "when": "ci",
-      "job": "test-e2e",
-      "blocks": true,
-      "test": "apps/web/test/ci-gate.test.ts",
-      "why": "Playwright 端到端；本地默认不跑（NAVHUB_PRECOMMIT_E2E=1 才跑暂存 spec）"
-    },
-    {
-      "name": "docker-smoke",
-      "when": "ci",
-      "job": "docker-smoke",
-      "blocks": true,
-      "test": "apps/web/test/ci-gate.test.ts",
-      "why": "容器构建与启动冒烟"
-    },
-    {
-      "name": "audit",
-      "when": "ci",
-      "job": "audit",
-      "blocks": true,
-      "test": "apps/web/test/ci-gate.test.ts",
-      "why": "依赖与安全审计"
-    },
-    {
-      "name": "seo-audit-prod",
-      "when": "ci",
-      "job": "seo-audit-prod",
-      "blocks": false,
-      "test": "scripts/seo-audit.test.ts",
-      "why": "手动/定时作业：只跑 workflow_dispatch / schedule，不参与合并门禁（豁免必须显式登记）"
-    }
-  ]
+ "_comment": "门禁清单的单一事实源：每一枚「会拦住提交/推送/合并」的检查都在这里登记。只登记能被自动核对的坐标（命令 / runner id / CI 作业）与它的测试，不复制实现。双向口径见 scripts/check-gates-registry.mjs：登记了没接线 = 以为在拦其实没跑；接线了没登记 = 下次改钩子会悄悄删掉它。test 里的文件必须真实存在；确实没有专属测试的写 whyNoTest 说明理由（没有理由的「裸门禁」不许入库）。",
+ "version": 1,
+ "updatedAt": "2026-11-06",
+ "gates": [
+  {
+   "name": "large-files-staged",
+   "when": "staged",
+   "script": "scripts/check-large-files.mjs",
+   "args": "--staged",
+   "blocks": true,
+   "test": "scripts/check-large-files.test.ts",
+   "why": "超过 50 MiB 的暂存 blob 一旦提交就只能重写历史（2026-10-26 真实事故）"
+  },
+  {
+   "name": "web-overlay-staged",
+   "when": "staged",
+   "script": "scripts/check-web-overlay.mjs",
+   "args": "--staged",
+   "blocks": true,
+   "test": [
+    "apps/web/test/overlay-drift-gate.test.ts",
+    "scripts/lib/overlay-drift.test.ts"
+   ],
+   "why": "本次提交涉及的 overlay 文件必须与 apps/web 镜像对齐；全仓库判定交给 CI（别人的半成品不该挡住我的提交）"
+  },
+  {
+   "name": "extensions",
+   "when": "staged",
+   "script": "scripts/check-extensions.mjs",
+   "blocks": true,
+   "whyNoTest": "无专属测试：脚本是对 extensions/ 清单与入口文件的薄校验（manifest 字段 + node --check），单测只能复述实现；真实回归由 pre-commit 与 CI 的 check-web-overlay 作业直接执行本脚本来暴露",
+   "why": "扩展清单的 schema 错误只有在加载时才炸，进 CI 之前就该拦住"
+  },
+  {
+   "name": "upstream-ref",
+   "when": "staged",
+   "script": "scripts/check-upstream-ref.mjs",
+   "blocks": true,
+   "whyNoTest": "无专属测试：校验对象是四处仓库声明（vendor 默认 ref / Dockerfile ARG / UPSTREAM.md / compose）本身，造四份夹具才等价；回归由 pre-commit 与 CI 的 check-web-overlay 作业直接执行本脚本兜",
+   "why": "上游 ref 指向的提交必须存在，否则 CI 的对比基线会静默退化成全量"
+  },
+  {
+   "name": "committed-refs",
+   "when": "staged",
+   "script": "scripts/check-committed-refs.mjs",
+   "args": "--staged",
+   "blocks": true,
+   "test": "scripts/check-committed-refs.test.ts",
+   "why": "已跟踪文件不得引用未入库文件（2026-10-27：vitest 配置引用了未提交的 worker-budget）"
+  },
+  {
+   "name": "commit-atomicity",
+   "when": "staged",
+   "script": "scripts/check-commit-atomicity.mjs",
+   "args": "--staged",
+   "blocks": true,
+   "test": "scripts/commit-atomicity.test.ts",
+   "why": "测试不得依赖「改了但没提交」的文件——源码、被断言的非代码契约（.github/workflows/ci.yml、*.css、docker/Dockerfile.*、docs/*.json）同理，分段拼接写法（resolve(ROOT, \"scripts\", \"x.mjs\")）也算；源码经 barrel 用到的导出被删改却没随本次提交（2026-10-29：CI 26 例红与三个 typecheck 分片红是同一根因的两种形状）；另有一路只报不拦的 HEAD 自洽性——已提交的消费者在读只存在于工作区的字段（2026-10-30：9 条常驻红的根因，--strict-head-consumers 才拦）"
+  },
+  {
+   "name": "hooks-fresh",
+   "when": "staged",
+   "script": "scripts/check-hooks-fresh.mjs",
+   "blocks": true,
+   "test": "scripts/check-hooks-fresh.test.ts",
+   "why": "改了 install-git-hooks.mjs 却没重装时钩子跑的是旧生成物；它的相对 import 闭包漏拷进 Dockerfile 时镜像 prepare 直接起不来（2026-10-29 docker-smoke 真红）"
+  },
+  {
+   "name": "ci-gate",
+   "when": "staged",
+   "script": "scripts/check-ci-gate.mjs",
+   "blocks": true,
+   "test": [
+    "scripts/check-ci-gate.test.ts",
+    "scripts/lib/ci-workflow.test.ts",
+    "scripts/ci-defused.test.ts",
+    "apps/web/test/ci-gate.test.ts"
+   ],
+   "why": "ci-passed 的聚合关系被改坏时，只有 CI 会红——而 CI 自己正是被改的那一方；读上游产物的收尾步骤还兼管级联红（一次根因只留一处红，2026-10-29 run40835496871；判据不限于 junit，test-web 的预算账同受管）。2026-10-30 起还核对登记表覆盖面：带 if-no-files-found: error 上传的阻塞作业没登记就直接红，不再等事故发现。第 7 项钉「撤防账」的接线：默认条件是「上一步红 ⇒ 后面每步 skipped」而 skipped 不判红，所以每个接入作业必须有 if: always() 的读数步骤、门禁形状的步骤必须有 id 并登进 scripts/lib/ci-defused.mjs（现状 8 作业 / 26 道门禁，2026-11-01 后端 lint 硬化后本仓合并门禁已无软门禁，登记表与 YAML 的 soft 标记由该判据双向核对；只拦接线，运行结果全绿也会留一条 ::notice + Step Summary 痕迹，否则「没接线」与「跑过且全绿」同形）"
+  },
+  {
+   "name": "gates-registry",
+   "when": "staged",
+   "script": "scripts/check-gates-registry.mjs",
+   "blocks": true,
+   "test": "scripts/check-gates-registry.test.ts",
+   "why": "本清单与钩子/CI 的双向对照；改清单或改钩子后必须仍然对得上"
+  },
+  {
+   "name": "syntax",
+   "when": "staged",
+   "script": "scripts/check-syntax.mjs",
+   "args": "--staged",
+   "blocks": true,
+   "test": "scripts/check-syntax.test.ts",
+   "why": "标点级错误在 tsc 之前挡住，秒级"
+  },
+  {
+   "name": "deps-integrity",
+   "when": "staged",
+   "script": "scripts/check-deps-integrity.mjs",
+   "blocks": true,
+   "test": "scripts/check-deps-integrity.test.ts",
+   "why": "装残的包会让几百个测试套件同时报「找不到模块」，看起来像代码全坏；秒级先认出「是依赖残了」"
+  },
+  {
+   "name": "mock-hygiene-fix",
+   "when": "staged",
+   "script": "scripts/fix-mock-hygiene.mjs",
+   "blocks": true,
+   "test": "scripts/fix-mock-hygiene.test.ts",
+   "why": "跨模块 vi.mock 必须带 vi.resetModules() 兜底；修法机械，报错时直接给 --apply 提示；只查本次提交集（--changed），全仓口径归全量测试里的 mock-hygiene.test.ts",
+   "args": "--changed"
+  },
+  {
+   "name": "cleanup-coverage",
+   "when": "staged",
+   "script": "scripts/check-cleanup-coverage.mjs",
+   "blocks": true,
+   "test": "scripts/check-cleanup-coverage.test.ts",
+   "why": "清理动作漏一条出口（尤其是提前 return）就是「删了还在」；登记制 + 每条 return 都见清理；只查本次提交集（--changed），全仓口径归全量测试",
+   "args": "--changed"
+  },
+  {
+   "name": "source-truth",
+   "when": "staged",
+   "script": "scripts/check-source-truth.mjs",
+   "blocks": true,
+   "test": "scripts/check-source-truth.test.ts",
+   "why": "读路径按计数选源会把影子副本当正本（KV 74 条 vs 表 5578 条）；判据必须是显式开关；只查本次提交集（--changed），全仓口径归全量测试",
+   "args": "--changed"
+  },
+  {
+   "name": "typecheck",
+   "when": "staged",
+   "script": "scripts/typecheck.mjs",
+   "blocks": true,
+   "test": "scripts/typecheck.test.ts",
+   "why": "@navhub/* 的 tsc --noEmit；前端类型由 CI 的 test-web 兜"
+  },
+  {
+   "name": "impact-select",
+   "when": "staged",
+   "script": "navhub-precommit-tests.mjs",
+   "blocks": true,
+   "test": [
+    "scripts/precommit-select.test.ts",
+    "scripts/test-impact.test.ts"
+   ],
+   "why": "按模块图选出的相关测试；生成物在 .git/hooks 下（生成源 scripts/install-git-hooks.mjs）"
+  },
+  {
+   "name": "large-files-unpushed",
+   "when": "prepush",
+   "script": "scripts/check-large-files.mjs",
+   "args": "--unpushed",
+   "blocks": true,
+   "test": "scripts/check-large-files.test.ts",
+   "why": "pre-commit 可被绕过；被 GitHub 拒绝只发生在 push 那一刻，此时历史还能在本地处理"
+  },
+  {
+   "name": "prepush-gates",
+   "when": "prepush",
+   "script": "scripts/prepush-gates.mjs",
+   "blocks": true,
+   "test": "scripts/prepush-gates.test.ts",
+   "why": "「只有 CI 才知道」的闸门左移（见下），失败信息带修复命令"
+  },
+  {
+   "name": "rest-contracts",
+   "when": "prepush",
+   "runner": "prepush-gates",
+   "blocks": true,
+   "test": [
+    "scripts/generate-rest-contract-types.test.ts",
+    "scripts/check-rest-contract-coverage.test.ts",
+    "scripts/prepush-gates.test.ts"
+   ],
+   "why": "契约生成物与 core 事实源同源；写路由未绑定响应契约必须显式豁免（allowlist 只许缩小）；改 core 不重生成是常态漏网"
+  },
+  {
+   "name": "scope-explicit",
+   "when": "prepush",
+   "runner": "prepush-gates",
+   "blocks": true,
+   "test": [
+    "apps/api/test/route-policy.test.ts",
+    "scripts/prepush-gates.test.ts"
+   ],
+   "why": "写路由漏写 scope 会静默变成匿名可写"
+  },
+  {
+   "name": "client-node-imports",
+   "when": "prepush",
+   "runner": "prepush-gates",
+   "blocks": true,
+   "test": "scripts/check-client-node-imports.test.ts",
+   "why": "客户端模块图引 node 内建只会在首屏预算超限时才暴露，根因还得人反推"
+  },
+  {
+   "name": "core-mirrors",
+   "when": "prepush",
+   "runner": "prepush-gates",
+   "blocks": true,
+   "test": "scripts/check-core-mirrors.test.ts",
+   "why": "core 镜像漂移在工作区里查不出来，只有读 HEAD 的提交内容能说真话"
+  },
+  {
+   "name": "test-mirror-pairs",
+   "when": "prepush",
+   "runner": "prepush-gates",
+   "blocks": true,
+   "test": "scripts/prepush-gates.test.ts",
+   "why": "只提交 overlay 侧测试会让 HEAD 上两份副本互相矛盾，且 CI 因先重建镜像而看不见"
+  },
+  {
+   "name": "deps-integrity-prepush",
+   "when": "prepush",
+   "runner": "prepush-gates",
+   "blocks": true,
+   "test": "scripts/check-deps-integrity.test.ts",
+   "why": "装残的包让几百个套件同时报「找不到模块」；pre-commit 只看本次提交，推送前再扫一遍全仓"
+  },
+  {
+   "name": "mock-hygiene-prepush",
+   "when": "prepush",
+   "runner": "prepush-gates",
+   "blocks": true,
+   "test": "scripts/fix-mock-hygiene.test.ts",
+   "why": "分多次提交累积出的缺口（甲加 vi.mock、乙才补 afterAll）只有推送前扫全仓才看得见"
+  },
+  {
+   "name": "test-sqlite",
+   "when": "ci",
+   "job": "test-sqlite",
+   "blocks": true,
+   "test": [
+    "apps/web/test/ci-gate.test.ts",
+    "scripts/ci-red-ledger.test.ts"
+   ],
+   "why": "SQLite 全量测试（分片）；红灯台账在这里做跨轮对比"
+  },
+  {
+   "name": "test-postgres",
+   "when": "ci",
+   "job": "test-postgres",
+   "blocks": true,
+   "test": "apps/web/test/ci-gate.test.ts",
+   "why": "PG 套件必须走 pnpm test:pg:suite（带环境守卫，防整体 skip 假绿）"
+  },
+  {
+   "name": "test-web",
+   "when": "ci",
+   "job": "test-web",
+   "blocks": true,
+   "test": "apps/web/test/ci-gate.test.ts",
+   "why": "前端测试、lint、类型与构建口径的阻塞作业"
+  },
+  {
+   "name": "check-web-overlay",
+   "when": "ci",
+   "job": "check-web-overlay",
+   "blocks": true,
+   "test": [
+    "apps/web/test/ci-gate.test.ts",
+    "apps/web/test/overlay-drift-gate.test.ts"
+   ],
+   "why": "全仓库镜像对齐（本地只查暂存集）"
+  },
+  {
+   "name": "check-isr-live",
+   "when": "ci",
+   "job": "check-isr-live",
+   "blocks": true,
+   "test": "apps/web/test/ci-gate.test.ts",
+   "why": "ISR 降级壳与收录面实测，只有真起服务才能判定"
+  },
+  {
+   "name": "test-e2e",
+   "when": "ci",
+   "job": "test-e2e",
+   "blocks": true,
+   "test": "apps/web/test/ci-gate.test.ts",
+   "why": "Playwright 端到端；本地默认不跑（NAVHUB_PRECOMMIT_E2E=1 才跑暂存 spec）"
+  },
+  {
+   "name": "docker-smoke",
+   "when": "ci",
+   "job": "docker-smoke",
+   "blocks": true,
+   "test": "apps/web/test/ci-gate.test.ts",
+   "why": "容器构建与启动冒烟"
+  },
+  {
+   "name": "audit",
+   "when": "ci",
+   "job": "audit",
+   "blocks": true,
+   "test": "apps/web/test/ci-gate.test.ts",
+   "why": "依赖与安全审计"
+  },
+  {
+   "name": "seo-audit-prod",
+   "when": "ci",
+   "job": "seo-audit-prod",
+   "blocks": false,
+   "test": "scripts/seo-audit.test.ts",
+   "why": "手动/定时作业：只跑 workflow_dispatch / schedule，不参与合并门禁（豁免必须显式登记）"
+  },
+  {
+   "name": "coverage",
+   "when": "ci",
+   "job": "coverage",
+   "blocks": true,
+   "test": "apps/web/test/ci-gate.test.ts",
+   "why": "覆盖率门禁（2026-11-06 接线）：阈值 lines≥84% / functions≥85%（2026-11-06 全量实测 85.68/86.35 留 1.5pct 余量）；低于即红，收紧时同步改 ci.yml 里 check-coverage 的参数"
+  }
+ ]
 }

@@ -946,6 +946,18 @@ describe("SQLite 集成：导航增强能力", () => {
     expect(newest.length).toBe(1);
   });
 
+  it("trend 写入不碰 updated_at（P1-3）：refetch 的 30 天超期判定不被巡检慢性短路", async () => {
+    const site = (await repo.findSiteByUrl("https://a.com"))!;
+    const before = (await repo.findSiteByUrl("https://a.com"))!.updatedAt;
+    // 模拟巡检与富化之间隔了任意时长
+    await new Promise((r) => setTimeout(r, 5));
+    await repo.setTrendScores([{ id: site.id, trendScore: 3.3 }]);
+    const after = await repo.findSiteByUrl("https://a.com")!;
+    expect(after.trendScore).toBeCloseTo(3.3);
+    expect(after.weight).toBeCloseTo(3.3);
+    expect(after.updatedAt).toBe(before);
+  });
+
   /* ------------------------- 任务队列 ------------------------- */
 
   it("任务入队 / 抢占 / 完成 / 列表", async () => {

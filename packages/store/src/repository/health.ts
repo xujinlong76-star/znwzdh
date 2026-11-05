@@ -86,10 +86,27 @@ export async function bumpVisit(repo: Repository, siteId: string): Promise<void>
 }
 
 export async function setTrendScores(repo: Repository, scores: Array<{ id: string; trendScore: number }>): Promise<void> {
+  if (scores.length === 0) return;
   await repo.withTransaction(async () => {
-    const now = Date.now();
-    for (const s of scores) {
-      await repo.run("UPDATE sites SET trend_score = ?, weight = ?, updated_at = ? WHERE id = ?", [s.trendScore, s.trendScore, now, s.id]);
+    // 分批 CASE-WHEN 批量更新（P1-3）：此前逐行 UPDATE，5 万库 = 每小时 5 万条
+    // 单行语句包在一个事务里。**不碰 updated_at**：trend 巡检每小时跑一次，
+    // 此前顺手把 updated_at 一起刷新 → runRefetch 的「30 天没富化过」判定
+    // 被慢性短路（refetch_metadata 永远认为站点是新的）；同时 sites 的 UPDATE
+    // 会推进 nav_version，快照缓存与全站 ETag 每小时翻转重建。
+    const BATCH = 500;
+    for (let i = 0; i < scores.length; i += BATCH) {
+      const chunk = scores.slice(i, i + BATCH);
+      const cases = chunk.map(() => "WHEN id = ? THEN ?").join(" ");
+      const scoreParams: unknown[] = [];
+      for (const s of chunk) scoreParams.push(s.id, s.trendScore);
+      const ids = chunk.map((s) => s.id);
+      await repo.run(
+        `UPDATE sites SET
+            trend_score = CASE ${cases} ELSE trend_score END,
+            weight = CASE ${cases} ELSE weight END
+          WHERE id IN (${ids.map(() => "?").join(",")})`,
+        [...scoreParams, ...scoreParams, ...ids],
+      );
     }
   });
 }

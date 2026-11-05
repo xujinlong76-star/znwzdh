@@ -174,3 +174,165 @@ describe("导航快照缩水保护", () => {
     expect(await active("navsphere")).toBe(10);
   });
 });
+
+/**
+ * 类目维度守卫（P0-1）：站点判据盯不住纯类目树的删除，而类目是物理删除。
+ * 两道判据：基线（≥20 个托管可见类目套 80% 判据）+ 子树清空探测（挂 ≥3 个
+ * 托管子类目的可见类目被快照清零）。
+ */
+describe("类目缩水守卫（P0-1）", () => {
+  /** 独立播种：根类目 + 5 个托管子类目（各挂 2 个托管站点），与文件级用例互不影响 */
+  beforeEach(async () => {
+    ctx.db.sqlite!.exec("DELETE FROM sites; DELETE FROM categories;");
+    await ctx.repo.createCategory({ id: "cat-root", title: "根类目", source: "navsphere" });
+    const rows: Array<Parameters<AppContext["repo"]["insertSitesBulk"]>[0][number]> = [];
+    for (let s = 0; s < 5; s++) {
+      await ctx.repo.createCategory({ id: `cat-sub-${s}`, title: `子类 ${s}`, parentId: "cat-root", source: "navsphere" });
+      for (let i = 0; i < 2; i++) {
+        rows.push({
+          id: `sub-site-${s}-${i}`,
+          url: `https://sub-${s}-${i}.example.com`,
+          title: `子站 ${s}-${i}`,
+          iconKey: resolveSiteIcon(`https://sub-${s}-${i}.example.com`, `子站 ${s}-${i}`),
+          categoryId: `cat-sub-${s}`,
+          sort: i,
+          source: "navsphere",
+        });
+      }
+    }
+    await ctx.repo.insertSitesBulk(rows, { hydrate: false });
+  });
+
+  it("子类目整层丢失：409 + categoryViolation 指名道姓，retryWith 的 expectedCount=站点数", async () => {
+    // 形状回归的样子：sites 挪进根类目直挂（一个不少），subCategories 整层消失
+    const snap = {
+      navigationItems: [
+        {
+          id: "cat-root",
+          title: "根类目",
+          enabled: true,
+          items: Array.from({ length: 10 }, (_, i) => {
+            const s = Math.floor(i / 2);
+            return { id: `sub-site-${s}-${i % 2}`, title: `子站 ${s}-${i % 2}`, href: `https://sub-${s}-${i % 2}.example.com`, enabled: true };
+          }),
+          subCategories: [],
+        },
+      ],
+    };
+    const res = await put(snap);
+    expect(res.statusCode, res.body).toBe(409);
+    const body = res.json() as Record<string, any>;
+    expect(body.error).toBe("navigation_shrink_requires_confirmation");
+    expect(body.categoryViolation).toContain("子类目整层丢失");
+    expect(body.categoryViolation).toContain("5 -> 0");
+    // 站点判据没触发（站点一个不少），所以 retryWith 的数字就是站点数——
+    // 客户端照抄重试时，类目与站点两道判据必须同时满足
+    expect(body.retryWith).toEqual({ confirmLargeDeletion: true, expectedCount: 10 });
+
+    // 两段确认齐全：子类目物理删除（这正是守卫在拦的事），站点全部保留并挪到根下
+    const ok = await put(snap, { confirmLargeDeletion: true, expectedCount: 10 });
+    expect(ok.statusCode, ok.body).toBe(200);
+    // 类目删除是物理删除（无回收站），直接数表
+    const cats = await ctx.repo.raw("SELECT id FROM categories");
+    const catIds = (cats as Array<{ id: string }>).map((c) => c.id);
+    expect(catIds).toContain("cat-root");
+    for (let s = 0; s < 5; s++) expect(catIds).not.toContain(`cat-sub-${s}`);
+    expect(await active("navsphere")).toBe(10);
+  });
+
+  it("类目基线判据：≥20 个托管可见类目被砍到 5 个，站点判据不触发也拦", async () => {
+    // 重播种：25 个顶级托管类目各挂 1 个站点（无子类目，让基线判据独立出镜）
+    ctx.db.sqlite!.exec("DELETE FROM sites; DELETE FROM categories;");
+    const rows: Array<Parameters<AppContext["repo"]["insertSitesBulk"]>[0][number]> = [];
+    for (let c = 0; c < 25; c++) {
+      await ctx.repo.createCategory({ id: `big-${c}`, title: `类目 ${c}`, source: "navsphere" });
+      rows.push({
+        id: `big-site-${c}`,
+        url: `https://big-${c}.example.com`,
+        title: `大库站点 ${c}`,
+        iconKey: resolveSiteIcon(`https://big-${c}.example.com`, `大库站点 ${c}`),
+        categoryId: `big-${c}`,
+        sort: 0,
+        source: "navsphere",
+      });
+    }
+    await ctx.repo.insertSitesBulk(rows, { hydrate: false });
+
+    // 快照只留 5 个类目：25 站点 -> 5 站点，低于 100 基线，站点判据不触发
+    const snap = {
+      navigationItems: Array.from({ length: 5 }, (_, c) => ({
+        id: `big-${c}`,
+        title: `类目 ${c}`,
+        enabled: true,
+        items: [{ id: `big-site-${c}`, title: `大库站点 ${c}`, href: `https://big-${c}.example.com`, enabled: true }],
+      })),
+    };
+    const res = await put(snap);
+    expect(res.statusCode, res.body).toBe(409);
+    const body = res.json() as Record<string, any>;
+    expect(body.error).toBe("navigation_shrink_requires_confirmation");
+    expect(body.categoryViolation).toContain("25 -> 5");
+    expect(body.retryWith).toEqual({ confirmLargeDeletion: true, expectedCount: 5 });
+
+    const ok = await put(snap, { confirmLargeDeletion: true, expectedCount: 5 });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const cats = await ctx.repo.raw("SELECT id FROM categories");
+    const catIds = (cats as Array<{ id: string }>).map((c) => c.id);
+    // 5 个保留类目 + cat-uncategorized（删类目时仓库自动兜底创建，不可删）
+    expect(catIds.filter((id) => id.startsWith("big-")).length).toBe(5);
+    expect(catIds).toContain("cat-uncategorized");
+    expect(await active("navsphere")).toBe(5);
+  });
+
+  it("正常保存不误伤：子类目原样保留、个别子类目被人工移除也放行", async () => {
+    // 全量原样保存（含全部子类目）→ 两道判据都不命中
+    const full = {
+      navigationItems: [
+        {
+          id: "cat-root",
+          title: "根类目",
+          enabled: true,
+          items: [],
+          subCategories: Array.from({ length: 5 }, (_, s) => ({
+            id: `cat-sub-${s}`,
+            title: `子类 ${s}`,
+            enabled: true,
+            items: [
+              { id: `sub-site-${s}-0`, title: `子站 ${s}-0`, href: `https://sub-${s}-0.example.com`, enabled: true },
+              { id: `sub-site-${s}-1`, title: `子站 ${s}-1`, href: `https://sub-${s}-1.example.com`, enabled: true },
+            ],
+          })),
+        },
+      ],
+    };
+    const res = await put(full);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await active("navsphere")).toBe(10);
+
+    // 合法运营：只删掉 1 个子类目（4 -> 剩 4 个，单类目子层 5 -> 4），不应触发
+    const legal = {
+      navigationItems: [
+        {
+          id: "cat-root",
+          title: "根类目",
+          enabled: true,
+          items: [],
+          subCategories: Array.from({ length: 4 }, (_, s) => ({
+            id: `cat-sub-${s}`,
+            title: `子类 ${s}`,
+            enabled: true,
+            items: [
+              { id: `sub-site-${s}-0`, title: `子站 ${s}-0`, href: `https://sub-${s}-0.example.com`, enabled: true },
+              { id: `sub-site-${s}-1`, title: `子站 ${s}-1`, href: `https://sub-${s}-1.example.com`, enabled: true },
+            ],
+          })),
+        },
+      ],
+    };
+    const legalRes = await put(legal);
+    expect(legalRes.statusCode, legalRes.body).toBe(200);
+    const cats = await ctx.repo.raw("SELECT id FROM categories");
+    // 根 + 4 子 + cat-uncategorized（cat-sub-4 删除时兜底自动创建）
+    expect((cats as Array<{ id: string }>).length).toBe(6);
+  });
+});

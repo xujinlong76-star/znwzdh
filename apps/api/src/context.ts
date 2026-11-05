@@ -16,6 +16,9 @@ import { createMailTransport, type MailTransport } from "@navhub/ai";
 import { Repository, SearchEngine, SqliteFtsStore, SqliteVecStore, openDb, type Db, type FullTextStore, type VectorStore } from "@navhub/store";
 import type { AppConfig } from "./config.ts";
 import { refreshLlmCapability } from "./llm-config.ts";
+import { searchPluginsSemantic, type PluginSearchResult } from "./plugins-search.ts";
+import { indexSitesBatch } from "./index-site.ts";
+import { removePluginIndex } from "./index-plugin.ts";
 
 export interface Capabilities {
   semantic: boolean;
@@ -37,6 +40,19 @@ export interface AppContext {
   /** 邮件投递器：验证码/重置链接/通知外发的唯一出口 */
   mail: MailTransport;
   capabilities: Capabilities;
+  /**
+   * 插件向量索引操作（MCP host-context 注入面）。
+   *
+   * 为什么必须在 ctx 上：MCP 的插件市场工具此前只声明了 `pluginOps?` 接口却
+   **从未被任何启动器装配**——search_plugins 恒走 `unavailable` 降级，install
+   * 后的向量索引也从不发生（D2 的 REST 通道能用是因为直接 import 实现）。
+   * 这里是唯一装配点：MCP 与 REST 共用同一套实现（见 plugins-search.ts）。
+   */
+  pluginOps: {
+    indexSitesBatch: (sites: Array<{ id: string; title: string; description: string | null; url: string }>) => Promise<void>;
+    removePluginIndex: (pluginId: string) => Promise<void>;
+    searchPluginsSemantic: (query: string, limit: number) => Promise<PluginSearchResult>;
+  };
   close(): Promise<void>;
 }
 
@@ -181,6 +197,14 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
 
   const context: AppContext = {
     config, db, repo, search, vectors, pluginVectors, fts, embedding, mail, capabilities,
+    pluginOps: {
+      // 形状与 packages/mcp/src/host-context.ts 的声明逐字对应；
+      // 语义检索的 keyword 回退 / degraded 标注在 plugins-search.ts 内实现。
+      // 箭头函数在构造完成后才被调用，此处引用 context 是安全的（TDZ 不触发）。
+      indexSitesBatch: (sites) => indexSitesBatch(context, sites),
+      removePluginIndex: (pluginId) => removePluginIndex(context, pluginId),
+      searchPluginsSemantic: (query, limit) => searchPluginsSemantic(context, { q: query, limit }),
+    },
     async close() {
       try {
         await search.flushLinUCB();

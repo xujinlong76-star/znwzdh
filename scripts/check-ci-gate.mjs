@@ -139,6 +139,9 @@ if (lintStepSuppressed && !existsSync(LINT_GATE_TEST)) {
 const CASCADE_RULES = [
   { job: "test-sqlite", anchor: "vitest", products: [/junit-summary\.mjs/, /ci-red-ledger\.mjs/, /junit-sqlite-/] },
   { job: "test-e2e", anchor: "e2e", products: [/junit-summary\.mjs/, /ci-red-ledger\.mjs/, /junit-e2e-/, /playwright-report/] },
+  // coverage 作业的阈值判定读 coverage-summary.json：产物缺失时它自己会红（exit 2），
+  // 但「测试红导致 summary 没产出」时必须让根因留在 vitest-coverage 上游。
+  { job: "coverage", anchor: "vitest-coverage", products: [/coverage-summary\.json/] },
   // 预算账读的是 next build 的产物：锚点是 build 而不是 lint/门禁步骤，
   // 因为「预算门禁红灯时账仍要出」是有意为之，只有 build 没跑成才算级联。
   // check-isr-routes 也挂在 web-build 上（2026-10-30）：它读的同样是 `.next`，

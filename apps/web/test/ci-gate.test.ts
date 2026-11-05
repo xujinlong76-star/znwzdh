@@ -59,10 +59,10 @@ function runWithInjectedJob(jobLines: string[]) {
 }
 
 describe("CI 合并门禁", () => {
-  it("当前 ci.yml 通过：8 个作业聚合、逐个读结果、PG 走 test:pg:suite", () => {
+  it("当前 ci.yml 通过：9 个作业聚合、逐个读结果、PG 走 test:pg:suite", () => {
     const res = runGate();
     expect(res.status, res.stderr).toBe(0);
-    expect(res.stdout).toContain("聚合 8 个作业");
+    expect(res.stdout).toContain("聚合 9 个作业");
     // 手动/定时作业必须被识别并显式列出，而不是静默忽略
     expect(res.stdout).toContain("seo-audit-prod");
   });
@@ -72,8 +72,8 @@ describe("CI 合并门禁", () => {
     tmpDirs.push(dir);
     const src = readFileSync(CI_FILE, "utf8");
     const broken = src.replace(
-      "needs: [test-sqlite, test-postgres, test-web, check-web-overlay, check-isr-live, test-e2e, docker-smoke, audit]",
-      "needs: [test-sqlite, test-web, check-web-overlay, check-isr-live, test-e2e, docker-smoke, audit]",
+      "needs: [test-sqlite, test-postgres, test-web, check-web-overlay, check-isr-live, test-e2e, docker-smoke, audit, coverage]",
+      "needs: [test-sqlite, test-web, check-web-overlay, check-isr-live, test-e2e, docker-smoke, audit, coverage]",
     );
     expect(broken).not.toBe(src);
     const target = join(dir, "ci.yml");

@@ -191,6 +191,8 @@ export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
           existingCount: err.verdict.existingCount,
           incomingCount: err.verdict.incomingCount,
           minimumAllowed: err.verdict.minimumAllowed,
+          // 类目守卫命中时它才是主因（站点判据可能没触发），必须指名道姓
+          ...(err.verdict.categoryViolation ? { categoryViolation: err.verdict.categoryViolation } : {}),
           // 直接告诉客户端「重试要带什么」，否则前端只能自己猜一个数字，
           // 而猜错的数字正好会触发 mismatch——确认流程会变成第二次失败。
           retryWith: {

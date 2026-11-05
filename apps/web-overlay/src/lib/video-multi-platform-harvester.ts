@@ -36,166 +36,208 @@ export interface DetectedPlatformResult {
 }
 
 /**
- * 识别任意视频 URL 所属平台、提取标准视频 ID 与规范化 URL
+ * 平台 URL 识别规则表（插件化的第一步）。
+ *
+ * 为什么表化：`detectVideoPlatform` 原来是 170 行的 if 链——新增平台要在这条
+ * 链里找位置插分支，漏插的症状是「URL 被兜底成 custom」。表化后，新增一个
+ * 「可识别」平台 = 追加一条 `{ platform, patterns, build }` 规则 + 注册表描述符，
+ * `video-platform-registry.test` 的交叉校验会同时盯住两边。
+ *
+ * 顺序即优先级：表按数组序匹配，第一条命中的规则胜出（bilibili 的 BV 号
+ * 强标识必须最先判，避免被 custom 兜底吃掉）。
+ */
+export interface PlatformUrlRule {
+  platform: VideoPlatformType
+  /** 依序尝试；任一正则命中即调用 build */
+  patterns: RegExp[]
+  /** 由命中结果构造识别结果；返回 null 视为未命中（继续下一条规则） */
+  build: (match: RegExpMatchArray, url: string) => DetectedPlatformResult | null
+}
+
+export const PLATFORM_URL_RULES: PlatformUrlRule[] = [
+  // 1. Bilibili（BV 号强标识优先；bvid/aid 双通道 + 域名兜底）
+  {
+    platform: 'bilibili',
+    patterns: [/(BV[a-zA-Z0-9]{10})/i, /\/av(\d+)/i, /bilibili\.com|b23\.tv/i],
+    build: (_match, url) => {
+      const bvidMatch = url.match(/(BV[a-zA-Z0-9]{10})/i)
+      const avidMatch = url.match(/\/av(\d+)/i)
+      const bvid = bvidMatch ? bvidMatch[1] : undefined
+      const aid = avidMatch ? avidMatch[1] : undefined
+      const externalId = bvid || (aid ? `av${aid}` : url.replace(/[^a-zA-Z0-9]/g, '').slice(-12))
+      return {
+        platform: 'bilibili',
+        externalId,
+        bvid,
+        aid,
+        canonicalUrl: bvid ? `https://www.bilibili.com/video/${bvid}` : url,
+      }
+    },
+  },
+  // 2. YouTube
+  {
+    platform: 'youtube',
+    patterns: [
+      /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts|live)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i,
+    ],
+    build: (match) => ({
+      platform: 'youtube',
+      externalId: match[1]!,
+      canonicalUrl: `https://www.youtube.com/watch?v=${match[1]!}`,
+    }),
+  },
+  // 3. Vimeo
+  {
+    platform: 'vimeo',
+    patterns: [/(?:vimeo\.com\/(?:video\/|channels\/[^\/]+\/)?|player\.vimeo\.com\/video\/)(\d{6,12})/i],
+    build: (match) => ({
+      platform: 'vimeo',
+      externalId: match[1]!,
+      canonicalUrl: `https://vimeo.com/${match[1]!}`,
+    }),
+  },
+  // 4. TED Talks
+  {
+    platform: 'ted',
+    patterns: [/ted\.com\/talks\/([a-zA-Z0-9_-]+)/i],
+    build: (match) => ({
+      platform: 'ted',
+      externalId: match[1]!,
+      canonicalUrl: `https://www.ted.com/talks/${match[1]!}`,
+    }),
+  },
+  // 5. Dailymotion
+  {
+    platform: 'dailymotion',
+    patterns: [/(?:dailymotion\.com\/(?:video|embed\/video)\/|dai\.ly\/)([a-zA-Z0-9]+)/i],
+    build: (match) => ({
+      platform: 'dailymotion',
+      externalId: match[1]!,
+      canonicalUrl: `https://www.dailymotion.com/video/${match[1]!}`,
+    }),
+  },
+  // 6a. 抖音（站内 video/note 页）
+  {
+    platform: 'douyin',
+    patterns: [/(?:douyin\.com\/(?:video|note)\/|iesdouyin\.com\/share\/video\/)(\d{15,22})/i],
+    build: (match) => ({
+      platform: 'douyin',
+      externalId: match[1]!,
+      canonicalUrl: `https://www.douyin.com/video/${match[1]!}`,
+    }),
+  },
+  // 6b. 抖音（v.douyin.com 短链，无数字 ID，原样保留）
+  {
+    platform: 'douyin',
+    patterns: [/v\.douyin\.com\/([a-zA-Z0-9_-]+)/i],
+    build: (match, url) => ({
+      platform: 'douyin',
+      externalId: match[1] || 'dy',
+      canonicalUrl: url,
+    }),
+  },
+  // 7. 快手
+  {
+    platform: 'kuaishou',
+    patterns: [/(?:kuaishou\.com\/(?:short-video|photo)\/|v\.kuaishou\.com\/)([a-zA-Z0-9_-]{6,24})/i],
+    build: (match, url) => ({
+      platform: 'kuaishou',
+      externalId: match[1]!,
+      canonicalUrl: url.startsWith('http') ? url : `https://www.kuaishou.com/short-video/${match[1]!}`,
+    }),
+  },
+  // 8. 西瓜视频
+  {
+    platform: 'xigua',
+    patterns: [/ixigua\.com\/(?:i)?(\d{15,22})/i],
+    build: (match) => ({
+      platform: 'xigua',
+      externalId: match[1]!,
+      canonicalUrl: `https://www.ixigua.com/${match[1]!}`,
+    }),
+  },
+  // 9. 小红书（探索页给规范域名，xhslink 短链原样保留）
+  {
+    platform: 'xiaohongshu',
+    patterns: [/(?:xiaohongshu\.com\/(?:explore|discovery\/item)\/|xhslink\.com\/)([a-zA-Z0-9_-]{6,28})/i],
+    build: (match, url) => ({
+      platform: 'xiaohongshu',
+      externalId: match[1]!,
+      canonicalUrl: url.includes('xiaohongshu.com')
+        ? `https://www.xiaohongshu.com/explore/${match[1]!}`
+        : url,
+    }),
+  },
+  // 10. 腾讯视频（cover / page 两种路径，同构 build）
+  {
+    platform: 'tencent',
+    patterns: [
+      /v\.qq\.com\/x\/cover\/[^\/]+\/([a-zA-Z0-9]+)\.html/i,
+      /v\.qq\.com\/x\/page\/([a-zA-Z0-9]+)\.html/i,
+    ],
+    build: (match) => ({
+      platform: 'tencent',
+      externalId: match[1]!,
+      canonicalUrl: `https://v.qq.com/x/page/${match[1]!}.html`,
+    }),
+  },
+  // 11. 优酷
+  {
+    platform: 'youku',
+    patterns: [/youku\.com\/v_show\/id_([a-zA-Z0-9=_]+)\.html/i],
+    build: (match) => ({
+      platform: 'youku',
+      externalId: match[1]!,
+      canonicalUrl: `https://v.youku.com/v_show/id_${match[1]!}.html`,
+    }),
+  },
+  // 12. PeerTube（通用联邦实例：任意 http(s) URL 进 build 后按 pathname 判定，
+  // 非 PeerTube 路径返回 null 继续走 custom 兜底）
+  {
+    platform: 'peertube',
+    patterns: [/^https?:\/\//i],
+    build: (_match, url) => {
+      try {
+        const parsed = new URL(url)
+        const ptMatch = parsed.pathname.match(/^\/(?:videos\/watch|videos\/embed|w)\/([a-zA-Z0-9_-]{16,36})$/)
+        if (ptMatch && ptMatch[1]) {
+          return {
+            platform: 'peertube',
+            externalId: ptMatch[1],
+            instanceOrigin: parsed.origin,
+            canonicalUrl: `${parsed.origin}/w/${ptMatch[1]}`,
+          }
+        }
+      } catch {
+        // 非法 URL：交给后续兜底
+      }
+      return null
+    },
+  },
+]
+
+/**
+ * 识别任意视频 URL 所属平台、提取标准视频 ID 与规范化 URL。
+ *
+ * 规则表（PLATFORM_URL_RULES）按序匹配，全部未命中时走 custom 兜底
+ * （需要 `new URL()` 解析 origin / pathname）。
  */
 export function detectVideoPlatform(rawUrl: string): DetectedPlatformResult | null {
   const url = (rawUrl || '').trim()
   if (!url) return null
 
-  // 1. Bilibili
-  const bvidMatch = url.match(/(BV[a-zA-Z0-9]{10})/i)
-  const avidMatch = url.match(/\/av(\d+)/i)
-  if (bvidMatch || avidMatch || /bilibili\.com|b23\.tv/i.test(url)) {
-    const bvid = bvidMatch ? bvidMatch[1] : undefined
-    const aid = avidMatch ? avidMatch[1] : undefined
-    const externalId = bvid || (aid ? `av${aid}` : url.replace(/[^a-zA-Z0-9]/g, '').slice(-12))
-    return {
-      platform: 'bilibili',
-      externalId,
-      bvid,
-      aid,
-      canonicalUrl: bvid ? `https://www.bilibili.com/video/${bvid}` : url,
+  for (const rule of PLATFORM_URL_RULES) {
+    for (const pattern of rule.patterns) {
+      const match = url.match(pattern)
+      if (!match) continue
+      const result = rule.build(match, url)
+      if (result) return result
     }
   }
 
-  // 2. YouTube
-  const ytMatch = url.match(
-    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts|live)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i
-  )
-  if (ytMatch && ytMatch[1]) {
-    const videoId = ytMatch[1]
-    return {
-      platform: 'youtube',
-      externalId: videoId,
-      canonicalUrl: `https://www.youtube.com/watch?v=${videoId}`,
-    }
-  }
-
-  // 3. Vimeo
-  const vimeoMatch = url.match(/(?:vimeo\.com\/(?:video\/|channels\/[^\/]+\/)?|player\.vimeo\.com\/video\/)(\d{6,12})/i)
-  if (vimeoMatch && vimeoMatch[1]) {
-    const videoId = vimeoMatch[1]
-    return {
-      platform: 'vimeo',
-      externalId: videoId,
-      canonicalUrl: `https://vimeo.com/${videoId}`,
-    }
-  }
-
-  // 4. TED Talks
-  const tedMatch = url.match(/ted\.com\/talks\/([a-zA-Z0-9_-]+)/i)
-  if (tedMatch && tedMatch[1]) {
-    const slug = tedMatch[1]
-    return {
-      platform: 'ted',
-      externalId: slug,
-      canonicalUrl: `https://www.ted.com/talks/${slug}`,
-    }
-  }
-
-  // 5. Dailymotion
-  const dmMatch = url.match(/(?:dailymotion\.com\/(?:video|embed\/video)\/|dai\.ly\/)([a-zA-Z0-9]+)/i)
-  if (dmMatch && dmMatch[1]) {
-    const videoId = dmMatch[1]
-    return {
-      platform: 'dailymotion',
-      externalId: videoId,
-      canonicalUrl: `https://www.dailymotion.com/video/${videoId}`,
-    }
-  }
-
-  // 6. 抖音 (Douyin)
-  const dyMatch = url.match(/(?:douyin\.com\/(?:video|note)\/|iesdouyin\.com\/share\/video\/)(\d{15,22})/i)
-  if (dyMatch && dyMatch[1]) {
-    const videoId = dyMatch[1]
-    return {
-      platform: 'douyin',
-      externalId: videoId,
-      canonicalUrl: `https://www.douyin.com/video/${videoId}`,
-    }
-  }
-  if (/v\.douyin\.com\/([a-zA-Z0-9_-]+)/i.test(url)) {
-    const code = url.match(/v\.douyin\.com\/([a-zA-Z0-9_-]+)/i)?.[1] || 'dy'
-    return {
-      platform: 'douyin',
-      externalId: code,
-      canonicalUrl: url,
-    }
-  }
-
-  // 7. 快手 (Kuaishou)
-  const ksMatch = url.match(/(?:kuaishou\.com\/(?:short-video|photo)\/|v\.kuaishou\.com\/)([a-zA-Z0-9_-]{6,24})/i)
-  if (ksMatch && ksMatch[1]) {
-    const videoId = ksMatch[1]
-    return {
-      platform: 'kuaishou',
-      externalId: videoId,
-      canonicalUrl: url.startsWith('http') ? url : `https://www.kuaishou.com/short-video/${videoId}`,
-    }
-  }
-
-  // 8. 西瓜视频 (Xigua)
-  const xgMatch = url.match(/ixigua\.com\/(?:i)?(\d{15,22})/i)
-  if (xgMatch && xgMatch[1]) {
-    const videoId = xgMatch[1]
-    return {
-      platform: 'xigua',
-      externalId: videoId,
-      canonicalUrl: `https://www.ixigua.com/${videoId}`,
-    }
-  }
-
-  // 9. 小红书 (Xiaohongshu)
-  const xhsMatch = url.match(/(?:xiaohongshu\.com\/(?:explore|discovery\/item)\/|xhslink\.com\/)([a-zA-Z0-9_-]{6,28})/i)
-  if (xhsMatch && xhsMatch[1]) {
-    const videoId = xhsMatch[1]
-    return {
-      platform: 'xiaohongshu',
-      externalId: videoId,
-      canonicalUrl: url.includes('xiaohongshu.com')
-        ? `https://www.xiaohongshu.com/explore/${videoId}`
-        : url,
-    }
-  }
-
-  // 10. 腾讯视频 (Tencent Video)
-  const qqCoverMatch = url.match(/v\.qq\.com\/x\/cover\/[^\/]+\/([a-zA-Z0-9]+)\.html/i)
-  const qqPageMatch = url.match(/v\.qq\.com\/x\/page\/([a-zA-Z0-9]+)\.html/i)
-  const qqVid = qqCoverMatch?.[1] || qqPageMatch?.[1]
-  if (qqVid) {
-    return {
-      platform: 'tencent',
-      externalId: qqVid,
-      canonicalUrl: `https://v.qq.com/x/page/${qqVid}.html`,
-    }
-  }
-
-  // 11. 优酷 (Youku)
-  const youkuMatch = url.match(/youku\.com\/v_show\/id_([a-zA-Z0-9=_]+)\.html/i)
-  if (youkuMatch && youkuMatch[1]) {
-    const videoId = youkuMatch[1]
-    return {
-      platform: 'youku',
-      externalId: videoId,
-      canonicalUrl: `https://v.youku.com/v_show/id_${videoId}.html`,
-    }
-  }
-
-  // 12. PeerTube (通用联邦视频实例路径 /videos/watch/<uuid> 或 /w/<shortUUID>)
+  // custom 兜底：任意有效 HTTP/HTTPS 视频直链或网页
   try {
     const parsed = new URL(url)
-    const ptMatch = parsed.pathname.match(/^\/(?:videos\/watch|videos\/embed|w)\/([a-zA-Z0-9_-]{16,36})$/)
-    if (ptMatch && ptMatch[1]) {
-      const videoId = ptMatch[1]
-      return {
-        platform: 'peertube',
-        externalId: videoId,
-        instanceOrigin: parsed.origin,
-        canonicalUrl: `${parsed.origin}/w/${videoId}`,
-      }
-    }
-
-    // 13. 任意有效 HTTP/HTTPS 视频直链或网页
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
       const pathTail = parsed.pathname.split('/').filter(Boolean).pop() || parsed.hostname
       const cleanId = pathTail.replace(/\.(mp4|webm|m3u8|mov|html|htm)$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_') || 'custom_vid'

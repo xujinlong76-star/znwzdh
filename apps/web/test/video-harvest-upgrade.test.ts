@@ -383,6 +383,37 @@ describe('E：bili-stream 域名白名单之外的解析后 IP 校验', () => {
 })
 
 // ---------------------------------------------------------------------------
+// G. 平台 URL 识别规则表（插件化第一步）：注册表交叉校验
+// ---------------------------------------------------------------------------
+describe('G：PLATFORM_URL_RULES 与平台注册表交叉校验', () => {
+  it('规则覆盖注册表中除 custom（解析兜底）外的全部平台，且 platform 名全部有效', async () => {
+    const harvester = await import('../src/lib/video-multi-platform-harvester')
+    const { PLATFORM_URL_RULES, VIDEO_PLATFORM_REGISTRY } = harvester
+    const registryKeys = new Set(Object.keys(VIDEO_PLATFORM_REGISTRY))
+
+    for (const rule of PLATFORM_URL_RULES) {
+      expect(
+        registryKeys.has(rule.platform),
+        `规则表里的 ${rule.platform} 不在注册表中（改了枚举/注册表没跟上）`,
+      ).toBe(true)
+      expect(rule.patterns.length).toBeGreaterThan(0)
+      expect(typeof rule.build).toBe('function')
+    }
+
+    const covered = new Set(PLATFORM_URL_RULES.map((r) => r.platform))
+    for (const key of registryKeys) {
+      if (key === 'custom') continue
+      expect(
+        covered.has(key as keyof typeof VIDEO_PLATFORM_REGISTRY),
+        `平台 ${key} 缺少 URL 识别规则——新增平台必须同时登记规则表与注册表`,
+      ).toBe(true)
+    }
+    // custom 兜底之外不允许出现第二个「表外处理」的平台
+    expect(registryKeys.size - covered.size).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // F. 假数据治理 + 路由语义守卫
 // ---------------------------------------------------------------------------
 describe('F：假数据治理与路由状态码语义（源码守卫）', () => {

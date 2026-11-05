@@ -15,6 +15,7 @@ import { registerCompression } from "./http-compression.ts";
 import { JobRunner, MAX_JOB_ATTEMPTS } from "./jobs.ts";
 import { sendWebhookAlert, ALERT_DEDUPE_WINDOW_MS } from "./alerts.ts";
 import { createStoreAlertDeduper } from "./alert-dedupe.ts";
+import { reconcileVideoCatalogOnBoot } from "./video-catalog-boot.ts";
 
 // 本地/容器启动时加载仓库根目录的 .env（Node 原生能力，零依赖）。
 // 注意：dev-all 以 apps/api 为 CWD 启动，默认的 loadEnvFile() 会找 apps/api/.env，
@@ -53,6 +54,12 @@ const runner = jobsEnabled
     })
   : null;
 if (runner) runner.start();
+
+// 启动对账（影子表自愈）：见 video-catalog-boot.ts 头注释。fire-and-forget，
+// 绝不阻断/拖慢启动；NAVHUB_VIDEO_CATALOG_RECONCILE_ON_BOOT=0 可关闭。
+if (process.env.NAVHUB_VIDEO_CATALOG_RECONCILE_ON_BOOT !== "0") {
+  void reconcileVideoCatalogOnBoot(ctx, (line) => console.info(line));
+}
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "正在关闭");

@@ -72,6 +72,34 @@
 
 **回归**：web+api+store+mcp 四套件 504+ 全绿（ai-config 1 例为全量并发下的既有偶发，单跑通过，与本批无关）；5 包 typecheck 通过。
 
+## 三点六、第三批实施（同日）
+
+### ✅ P1-6 video E2E 冒烟（测试金字塔空洞第一块砖）
+
+- 新增 `e2e/videos-smoke.spec.ts`（3 用例，复用 helpers 冷编译预热模式）：
+  1. `/videos` 列表：壳 + 种子卡片渲染 + 卡片弹窗带详情/演播室入口（列表卡片的入口在预览 Dialog 内，不在网格锚点里——按真实 UI 形状断言）；
+  2. `/videos/v/:id` 详情落地页：h1 + `player.bilibili.com` 官方内嵌 iframe 可见；
+  3. `/videos/player?id=` 播放工作台：返回导航 + 快捷键指南 + 种子视频选中（面包屑）+ WBI 直连档标注。
+- 数据供给：beforeAll 匿名 PUT **中枢** `/api/storage` 写入最小视频库（E2E 开放模式；空库基线 0 < 100，缩水守卫不触发）。注意 /api/storage 是中枢路由，Web 侧没有——种子必须打中枢端口。
+- **实跑验证**：`3 passed (26.3s)`；同轮全量 E2E 套件 77 用例亦全绿（6.5m），证明无跨 spec 污染。
+- 排障沉淀：文本断言踩了「数字与文案被拆成多个 text 节点（空格来自布局）」的坑——统计类断言锚无空格子串或正则。
+
+### ⚠️ P1-7 web eslint 清零 + 阻断 —— 重新评估后暂缓（升级为独立工程）
+
+动手时实测与陈旧基线严重不符：**当前 910 告警 + 3 错误**（2026-10-16 的"259"基线之后，eslint-config-next 16 的 React Compiler/react-hooks v6 规则族已上线：set-state-in-effect ×110、no-explicit-any ×289、unused-vars ×150 等）。进一步发现两个**结构性前提问题**：
+
+1. **门禁作用域被 vendor 污染**：`eslint .`（apps/web）扫进了 20 个 **git 均不跟踪的 vendor 上游产物文件**（68 条告警，如 NavigationSidebar.tsx——gitignore 白名单模型之外的上游残留，vendor-web 重建即变）。清零前必须先把门禁作用域收敛到 overlay 自研文件。
+2. **非机械告警占比过高**：no-explicit-any ×289 是 API 层类型债；react-hooks v6 族 ×136 需要逐个 effect 重构——均不适合脚本盲改。
+
+**本轮动作**：已启动的 unused-import codemod（脚本化删 218 个未用 import）在与并行工作共管的文件上产生了 parse 破坏（JSX 未定义引用 ×4 + 解析错误 ×70），已全部回滚（git checkout overlay src/test），overlay 经 drift gate + 测试验证恢复健康。**教训已入账：codemod 必须以当轮 lint 为准并在独占仓库时执行。**
+
+**重启前置（登记为 P1 独立工程）**：① eslint 作用域排除 vendor 路径（对齐 gitignore 白名单模型）；② 以当轮基线在独占窗口跑 codemod；③ react-hooks v6 族按规则族分批重构（每批过视觉回归）；④ 全零后补 `--max-warnings 0`。
+
+### 仍受阻（显式说明）
+
+- **P0-1 next-auth beta 迁移**：需产品拍板（目标框架 Better Auth vs 回退 4.x、公网反代缓解启用时机），跨周安全迁移——保持 P0 头号待办。
+- **Web 镜像 Docker 多阶段 + CSP report-only 默认**：本机未安装 Docker（README-恢复说明.md 明载），无法验证构建——待 Docker 环境就绪后按方案六.3/4 实施。
+
 ## 四、后端审计结果（apps/api + mcp）——路线图部分
 
 **健康度**：config/context/metrics 优秀；鉴权三层体系分层清晰（哈希令牌/身份 HMAC v1+v2/bootstrap），失败审计带节流；44 个路由的 scope 纪律由四层测试防线守护。已核实无问题：health_check SSRF 防护完整、KV 文档不受任务清理误删、日志 redact、requestId 透传、MCP HTTP 每请求重验 token。
@@ -123,8 +151,8 @@
 **P1（两周内）**
 4. ~~recompute_rank 正确性修复~~ ✅ 已实施（见三.五）
 5. ~~视频库快照缓存~~ ✅ 已实施（见三.五）
-6. video E2E 冒烟（五.4）
-7. web eslint 清零 + 阻断（六.5）
+6. ~~video E2E 冒烟~~ ✅ 已实施（见三.六，3 用例实跑通过）
+7. web eslint 清零 + 阻断 —— **暂缓升级为独立工程**（实测 910 条且门禁被 vendor 文件污染，重启前置见三.六）
 8. Web 镜像多阶段 + CSP report-only 默认（六.3/4，需 Docker 环境）
 
 **P2（按需）**：四.4 / 五.1-3 / 六.6 清单。

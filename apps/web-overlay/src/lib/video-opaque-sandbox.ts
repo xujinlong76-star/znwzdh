@@ -429,6 +429,9 @@ export function openOpaqueSession(timeoutMs: number = READY_TIMEOUT_MS): Promise
   frame.srcdoc = HARNESS_HTML
 
   return new Promise<OpaqueSession>((resolve, reject) => {
+    // timer 有两个赋值点（iframe 就绪 / 超时兜底），分属不同执行路径，无法在声明处
+    // 合并为 const；cleanup 闭包必须在两条路径前就引用它——可合并前提不成立。
+    // eslint-disable-next-line prefer-const
     let timer: ReturnType<typeof setTimeout> | undefined
     const cleanup = () => {
       if (timer !== undefined) clearTimeout(timer)

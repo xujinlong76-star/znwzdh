@@ -30,7 +30,7 @@ export default function GlobalError({
   useEffect(() => {
     // 根级兜底同样上报（脱敏：分类 + 指纹 + pathname + digest）
     reportClientError({ message: error?.message ?? String(error), digest: error?.digest })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 崩溃时只需上报一次
+     
   }, [])
 
   return (
@@ -121,7 +121,9 @@ export default function GlobalError({
             )}
             <button
               onClick={() => {
-                // 根布局已出错，客户端路由状态不可信：整页跳到主页更可靠
+                // 根布局已出错，客户端路由状态不可信：整页硬跳主页（不能用 router——
+                // 软路由同样建立在已崩溃的根布局上）。
+                // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- 根错误恢复路径：单一定向跳转，非通用导航
                 window.location.assign('/')
               }}
               style={{

@@ -94,7 +94,6 @@ export function reportClientError(input: { message: string; digest?: string }): 
       keepalive: true,
     }).catch(() => {
       /* 上报失败绝不能反噬用户：错误边界已经接管界面，遥测丢一条无代价 */
-      undefined
     })
   } catch {
     // 上报失败绝不影响用户：错误边界已经接管了界面

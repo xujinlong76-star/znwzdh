@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "dev": "next dev",
@@ -11,12 +11,9 @@
     "start": "next start",
     "lint": "eslint .",
     "clean": "rm -rf .next",
-    "docker:build": "docker build -f docker/Dockerfile -t navsphere:latest .",
     "docker:dev": "docker-compose -f docker/docker-compose.yml up -d",
-    "docker:prod": "docker-compose -f docker/docker-compose.prod.yml up -d",
     "docker:stop": "docker-compose -f docker/docker-compose.yml down",
-    "docker:logs": "docker-compose -f docker/docker-compose.yml logs -f",
-    "docker:deploy": "./scripts/docker-deploy.sh"
+    "docker:logs": "docker-compose -f docker/docker-compose.yml logs -f"
   },
   "//deployment": "部署形态已收敛到 Docker（docker/docker-compose.yml + Dockerfile.{api,web}）。Cloudflare Pages 相关的 cf:build / cf:deploy 与 wrangler 依赖已删除：仓库里没有可用的 wrangler.toml，脚本输出目录也与 next 产物互相矛盾，留着只会误导。",
   "dependencies": {
@@ -75,7 +72,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@types/node": "22.18.13",
+    "@types/node": "^24.0.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "autoprefixer": "10.4.14",

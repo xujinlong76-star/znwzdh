@@ -2102,8 +2102,10 @@ export class JobRunner {
       }
     }
 
-    // 成功才删 staging（失败保留供重跑/复盘）
-    await unlink(stagingPath).catch(() => undefined);
+    // 成功才删 staging（失败保留供重跑/复盘）。
+    // 删的是归一化后的 stagingFile（assertRestoreStagingPath），不是 payload
+    // 原始路径——payload 可携带 ../ 变体，原样 unlink 会错删（P2-4）。
+    await unlink(stagingFile).catch(() => undefined);
     await this.ctx.repo
       .recordEvent("backup_restore", { meta: { categories: categories.length, sites: sites.length } })
       .catch(() => undefined);

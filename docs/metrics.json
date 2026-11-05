@@ -1,0 +1,50 @@
+{
+  "_note": "由 scripts/gen-docs-metrics.mjs 生成；--check 进 verify/CI 防漂移。文档引用数字请指向本文件，不要再手写。",
+  "generatedAt": "2026-11-05T16:59:46.500Z",
+  "source": {
+    "apps/api/src": {
+      "files": 155,
+      "lines": 53960
+    },
+    "apps/web-overlay/src": {
+      "files": 725,
+      "lines": 164036
+    },
+    "packages/core/src": {
+      "files": 82,
+      "lines": 20636
+    },
+    "packages/store/src": {
+      "files": 59,
+      "lines": 20753
+    },
+    "packages/ai/src": {
+      "files": 11,
+      "lines": 3175
+    },
+    "packages/mcp/src": {
+      "files": 14,
+      "lines": 1698
+    },
+    "scripts": {
+      "files": 201,
+      "lines": 50881
+    }
+  },
+  "restRoutes": 288,
+  "bffRoutes": 46,
+  "pages": 67,
+  "testFiles": 937,
+  "vitestCollected": {
+    "note": "apps/web-overlay/test 是镜像双份，vitest 只收集 apps/web/test",
+    "collectedApprox": 641
+  },
+  "tables": 45,
+  "ci": {
+    "jobs": 13,
+    "steps": 95,
+    "lines": 966
+  },
+  "docsMd": 87,
+  "node": "v24.22.2"
+}

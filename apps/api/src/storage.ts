@@ -282,7 +282,7 @@ async function loadNavigationRows(ctx: AppContext): Promise<{
  * 站点列表对匿名可见，这里也保留（否则一次探针失败就会让链接从导航消失）。
  * `enabled=false` 是管理员手动停用，任何公开投影都不应包含。
  */
-function isPubliclyVisibleSite(s: { enabled: boolean; status: string }): boolean {
+export function isPubliclyVisibleSite(s: { enabled: boolean; status: string }): boolean {
   return s.enabled !== false && (s.status === "active" || s.status === "broken");
 }
 
@@ -433,7 +433,17 @@ export async function writeNavigationData(
     // 或匹配不到存量行走 createSiteWithId 撞主键（见 listAllSites 注释）。
     // facets:false：写回只用 id / source / categoryId（索引字段的标签由
     // updateSitesFromSnapshot 对变化行补取），一条 8000 行的聚合查询换不来任何语义。
-    const existingSites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES, { facets: false });
+    // 写侧与读侧（buildNavigationData）同款 MAX+1 探测：超限直接 413，否则
+    // 存量基线被静默截断——缩水判据失真，且截断行会被误判「新增」撞主键 500
+    // （写侧容量守卫，P1-1）。
+    const existingSites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES + 1, { facets: false });
+    if (existingSites.length > NAVIGATION_MAX_SITES) {
+      const err = new Error(
+        `站点数已超过单文件快照上限 (${NAVIGATION_MAX_SITES})，保存被拒绝：请调大 NAVHUB_NAVIGATION_MAX_SITES`,
+      ) as Error & { statusCode?: number };
+      err.statusCode = 413;
+      throw err;
+    }
     // O(1) 索引代替线性 find：原来是"每个快照条目扫一遍全表"= O(n²)，
     // 数千站点的大库保存一次要做上百万次比较（实测是最主要的保存耗时来源）。
     const catIndex = new Map(existingCats.map((c) => [c.id, c]));

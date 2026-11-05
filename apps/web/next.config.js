@@ -172,7 +172,13 @@ const nextConfig = {
     // 限制页面构建并发 Worker 数（默认 os.cpus()-1 在多核机器拉起 7+ 个进程易导致 OOM）
     cpus: Number(process.env.NEXT_BUILD_CPUS ?? 2),
     serverActions: {
-      allowedOrigins: ["localhost", "newkit.site"],
+      // Server Action 的 Origin 白名单（运行时读取，改配置不用重新构建）。
+      // 生产域名不进版本库（审计 P1-5）：公网部署用 NAVHUB_SERVER_ACTION_ORIGINS
+      // 逗号分隔提供（docker-compose.yml 已接线透传）；缺省只放行本地开发。
+      allowedOrigins: (process.env.NAVHUB_SERVER_ACTION_ORIGINS || "localhost")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
     },
     optimizePackageImports: ["lucide-react", "date-fns", "lodash"],
     // 关闭 Windows 本地开发时 Turbopack 的持久化磁盘缓存，规避 RocksDB .sst 文件被并发删除导致的 Rust panic 中断

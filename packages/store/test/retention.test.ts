@@ -9,17 +9,20 @@ import {
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 9, 17); // 2026-10-17T00:00:00Z，固定基准避免测试跨天抖动
 
-/** 内存表 fixture：rows 按 created_at 升序，id 从 1 递增。 */
+/** 内存表 fixture：rows 按时间列升序，id 从 1 递增。 */
 function makeTable(rows: RetentionRow[]) {
   let data = rows.map((r, i) => ({ id: (r.id as number) ?? i + 1, ...r }));
   return {
     get size() {
       return data.length;
     },
-    select(cutoff: number, take: number, afterId: number | null = null) {
+    select(cutoff: number, take: number, afterId: number | null = null, timeCol = "created_at") {
       return data
-        .filter((r) => r.created_at < cutoff && (afterId === null || (r.id as number) > afterId))
-        .sort((a, b) => a.id - b.id)
+        .filter(
+          (r) =>
+            (r[timeCol] as number) < cutoff && (afterId === null || (r.id as number) > afterId),
+        )
+        .sort((a, b) => (a.id as number) - (b.id as number))
         .slice(0, take);
     },
     deleteIds(ids: unknown[]) {
@@ -42,12 +45,13 @@ function makeAdapter(tables: Record<string, ReturnType<typeof makeTable>>, style
     select(sql, params) {
       calls.push({ sql, params });
       const table = sql.match(/FROM (\w+)/)?.[1] ?? "";
+      const timeCol = sql.match(/WHERE (\w+) </)?.[1] ?? "created_at";
       const limit = Number(sql.match(/LIMIT (\d+)/)?.[1] ?? 0);
       const cutoff = Number(params[0]);
       // 假 adapter 必须真的执行 id 游标：否则 dry-run「每轮取到同一批」这个缺陷
       // 在测试里根本表现不出来（真实 adapter 走的是同一句 SQL）
       const afterId = /AND id > /i.test(sql) ? Number(params[1]) : null;
-      return tables[table].select(cutoff, limit, afterId);
+      return tables[table].select(cutoff, limit, afterId, timeCol);
     },
     execute(sql, params) {
       calls.push({ sql, params });
@@ -282,12 +286,13 @@ describe("runRetention", () => {
     ).rejects.toThrow(/保留天数必须为正数/);
   });
 
-  it("默认策略：行为/搜索 180 天、审计/归档 365 天（审计与归档留得更久）", async () => {
+  it("默认策略：行为/搜索/巡检 180 天、审计/归档 365 天（审计与归档留得更久）", async () => {
     expect(DEFAULT_RETENTION_TARGETS).toEqual([
       { table: "events", keepDays: 180 },
       { table: "audit_logs", keepDays: 365 },
       { table: "search_history", keepDays: 180 },
       { table: "site_archives", keepDays: 365 },
+      { table: "health_checks", keepDays: 180, timeColumn: "checked_at" },
     ]);
 
     // 200 天前的审计日志在 365 天策略下要留下；同期的搜索历史按 180 天应被清掉
@@ -298,6 +303,7 @@ describe("runRetention", () => {
       audit_logs: auditLogs,
       search_history: searchHistory,
       site_archives: makeTable([]),
+      health_checks: makeTable([]),
     });
     const result = await runRetention(adapter, {
       targets: DEFAULT_RETENTION_TARGETS,
@@ -308,6 +314,42 @@ describe("runRetention", () => {
     expect(auditLogs.size).toBe(1);
     expect(result.tables[2].deleted).toBe(1);
     expect(searchHistory.size).toBe(0);
+  });
+
+  it("health_checks 按 checked_at 口径清理（timeColumn 参数化）", async () => {
+    const healthChecks = makeTable([
+      { id: 1, checked_at: NOW - 400 * DAY },
+      { id: 2, checked_at: NOW - 100 * DAY },
+      { id: 3, checked_at: NOW - 1 * DAY },
+    ]);
+    const { adapter, calls } = makeAdapter({ health_checks: healthChecks });
+
+    const result = await runRetention(adapter, {
+      targets: [{ table: "health_checks", keepDays: 180, timeColumn: "checked_at" }],
+      now: NOW,
+      dryRun: false,
+    });
+
+    expect(result.tables[0].deleted).toBe(1); // 只删 400 天前那条
+    expect(healthChecks.size).toBe(2);
+    // 时间列必须来自白名单字面量进 SQL，而不是硬编码 created_at
+    expect(calls.find((c) => c.sql.startsWith("SELECT"))?.sql).toContain("WHERE checked_at <");
+  });
+
+  it("时间列同样走白名单：运行时注入非法列名会被拒绝", async () => {
+    const healthChecks = makeTable([{ id: 1, checked_at: NOW - 400 * DAY }]);
+    const { adapter } = makeAdapter({ health_checks: healthChecks });
+
+    await expect(
+      runRetention(adapter, {
+        targets: [
+          // @ts-expect-error 故意传非法时间列，验证运行时同样会拦（列名会拼进 SQL）
+          { table: "health_checks", keepDays: 30, timeColumn: "site_id; DROP TABLE health_checks" },
+        ],
+        now: NOW,
+      }),
+    ).rejects.toThrow(/不支持的保留时间列/);
+    expect(healthChecks.size).toBe(1);
   });
 
   it("表里没有过期数据时没有任何 SQL 写操作", async () => {

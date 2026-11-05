@@ -5,7 +5,7 @@
  * **不放行私网** —— 命中 SSRF 守卫会立即判为不可达且**不产生任何外部网络请求**，
  * 所以这条链路可离线稳定复现，既不依赖外网可用性，也不会真的打别人站点。
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,27 @@ import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { resetPluginAuditBudgetForTests, seedPluginAuditFlightForTests } from "../src/routes/plugin-audit.ts";
+
+/**
+ * 候选探活桩（docs/ci-red-ledger.json 处方，2026-11-06 落地）：
+ * 真实探活走 guardedFetch 出站，CI runner 出站受限/抖动时部分候选拿不到
+ * grade=verified，replacedCount 随之抖动（`expected +0 to be 2` 系列红）。
+ * 本文件没有任何用例断言候选档位，全部候选判 verified 后 replacedCount 与
+ * URL 去重就与出站网络无关；applyProbeResult / rankCandidate 仍走真实实现。
+ */
+vi.mock("../src/candidate-probe.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/candidate-probe.ts")>();
+  return {
+    ...actual,
+    probeCandidateUrl: async () => ({
+      grade: "verified",
+      ok: true,
+      status: 200,
+      latencyMs: 1,
+      reason: "测试桩：候选探活与网络无关",
+    }),
+  };
+});
 
 let dir: string;
 let ctx: AppContext;

@@ -206,6 +206,9 @@ services:
       # 对外站点的唯一 origin（canonical/sitemap/OG 都靠它）。公网部署必须显式
       # 设置，否则会退化为请求 Host 推导，反代配置错误时整站 canonical 会写错。
       NAVHUB_SITE_URL: ${NAVHUB_SITE_URL:-}
+      # Server Action 的 Origin 白名单（next.config.js 运行时读取）。生产域名
+      # 只在部署配置里声明，不进 next.config.js；多个用逗号分隔。
+      NAVHUB_SERVER_ACTION_ORIGINS: ${NAVHUB_SERVER_ACTION_ORIGINS:-}
       # 代理上游超时（毫秒）：卡死的中枢不能把前端请求无限期挂住；SSE 长连接不受影响
       NAVHUB_HUB_TIMEOUT_MS: ${NAVHUB_HUB_TIMEOUT_MS:-30000}
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}

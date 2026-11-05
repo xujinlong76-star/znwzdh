@@ -72,7 +72,7 @@
 * **公开只读**：`GET /api/sites`（支持按 source 过滤）、`GET /api/categories`、`GET /api/tags`、`GET /api/collections`、`GET /api/search`。
 * **管理写操作**：`POST /api/sites`、`POST /api/sites/batch`（批量导入）、`POST /api/sites/auto`（URL 自动抓取富化）、`DELETE /api/sites/:id`。
 * **Token 治理**：`GET /api/tokens`、`POST /api/tokens`、`DELETE /api/tokens/:id`。
-* **任务队列**：`GET /api/jobs`、`POST /api/jobs/run`。
+* **任务队列**：`GET /api/jobs`（列表；流式：`/api/jobs/stream`）、`POST /api/jobs/:id/cancel`、`POST /api/jobs/:id/retry`、`POST /api/jobs/prune`（admin）。
 * **系统探针**：`GET /api/health`。
 
 ---

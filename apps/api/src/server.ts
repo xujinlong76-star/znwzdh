@@ -285,6 +285,9 @@ export async function buildServer(ctx: AppContext) {
         "/api/facets",
         "/api/taxonomy",
         "/api/plugins",
+        // 体检一键应用会改站点的 url/title/status（P2-1）：漏了它，快照最长
+        // 30s 内还是旧值，前台「应用修复」后刷新看不到变化。
+        "/api/admin/audit",
       ];
       const url = req.url ?? "";
       if (SNAPSHOT_MUTATING_PREFIXES.some((p) => url.startsWith(p))) {

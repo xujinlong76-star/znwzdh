@@ -122,7 +122,7 @@ export async function POST(request: Request) {
     } catch {
       body = {}
     }
-    const { dryRun = false, categoryId, forceKeywords } = body
+    const { dryRun = false, categoryId, forceKeywords, platforms, limitPerKeyword } = body
 
     /**
      * 互斥、指标与跨实例租约统一由服务层负责（与异步任务入口、cron 完全同一套）。

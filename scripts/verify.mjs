@@ -190,6 +190,10 @@ function runStandardTier() {
   // 几百个测试套件同时报「找不到模块 / resolve entry 失败」，看起来像代码全坏。
   // 先在这里认出「是依赖残了」，省掉一整轮无谓的排查（2026-10-29 一天两次）。
   run("依赖完整性", "node", ["scripts/check-deps-integrity.mjs"]);
+  // 文档数字与实测一致性（2026-11-06 深扫）：CODEBASE_OVERVIEW / ci.yml 头注释里的
+  // 手写数字长期漂移（778 文件 vs 实际 1000+、654 测试文件 vs 937），没有任何脚本核对。
+  // 秒级静态计数，漂移即红；数字统一由 docs/metrics.json 生成，文档只引用不手写。
+  run("文档数字一致性", "node", ["scripts/gen-docs-metrics.mjs", "--check"]);
   gate("覆盖层同步", "node", ["scripts/check-web-overlay.mjs"], touches("apps/web-overlay/") || touches("apps/web/"));
   // 网关策略表由枢纽注册声明生成；枢纽新增路由没重跑生成器 = 网关按旧白名单放行/拒绝，
   // 这类分叉只在真实请求时才暴露，所以必须在这里挡住。

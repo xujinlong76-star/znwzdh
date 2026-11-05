@@ -20,7 +20,7 @@ import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { createContext, loadConfig, type AppContext } from "@navhub/api";
-import { createMcpHttpServer } from "../src/http-server.ts";
+import { createMcpHttpServer } from "../../../apps/mcp/src/http-server.ts";
 
 let dir: string;
 let ctx: AppContext;

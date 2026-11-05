@@ -47,13 +47,18 @@ let ctxA: AppContext, appA: App;
 let ctxB: AppContext, appB: App;
 let ctxC: AppContext, appC: App;
 let readToken = "";
+/** 三个实例同构：各自记下站点 id 供详情/导出用例复用（id 按实例独立生成） */
+let idsA: { activeId: string; pendingId: string; archivedId: string };
+let idsB: { activeId: string; pendingId: string; archivedId: string };
+let idsC: { activeId: string; pendingId: string; archivedId: string };
 
 /** 每个实例都有：active / pending / archived 三个站点 + 一个分类 */
 async function seed(ctx: AppContext) {
   const cat = await ctx.repo.createCategory({ title: "可见性测试类目" });
-  await ctx.repo.createSite({ url: "https://visible.example.com", title: "已上线", categoryId: cat.id, status: "active" });
-  await ctx.repo.createSite({ url: "https://pending.example.com", title: "待审", categoryId: cat.id, status: "pending" });
-  await ctx.repo.createSite({ url: "https://archived.example.com", title: "已归档", categoryId: cat.id, status: "archived" });
+  const active = await ctx.repo.createSite({ url: "https://visible.example.com", title: "已上线", categoryId: cat.id, status: "active" });
+  const pending = await ctx.repo.createSite({ url: "https://pending.example.com", title: "待审", categoryId: cat.id, status: "pending" });
+  const archived = await ctx.repo.createSite({ url: "https://archived.example.com", title: "已归档", categoryId: cat.id, status: "archived" });
+  return { activeId: active.id, pendingId: pending.id, archivedId: archived.id };
 }
 
 const urlsOf = (res: { json: () => unknown }) =>
@@ -67,7 +72,7 @@ beforeAll(async () => {
   );
   appA = await buildServer(ctxA);
   await appA.ready();
-  await seed(ctxA);
+  idsA = await seed(ctxA);
 
   // read 令牌：用 bootstrap 建，scope 只给 read
   const created = await appA.inject({
@@ -84,12 +89,12 @@ beforeAll(async () => {
   );
   appB = await buildServer(ctxB);
   await appB.ready();
-  await seed(ctxB);
+  idsB = await seed(ctxB);
 
   ctxC = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "c.db") } as never));
   appC = await buildServer(ctxC);
   await appC.ready();
-  await seed(ctxC);
+  idsC = await seed(ctxC);
 });
 
 afterAll(async () => {
@@ -162,5 +167,48 @@ describe("站点列表：pending/archived 只对管理面可见", () => {
     expect(urls).toContain("https://visible.example.com");
     expect(urls).toContain("https://pending.example.com");
     expect(urls).toContain("https://archived.example.com");
+  });
+});
+
+describe("站点详情与书签导出：同一可见性口径（P1-2）", () => {
+  it("A 鉴权 + read 令牌：pending/archived 详情 404（此前凭 id 可绕过列表过滤直读）", async () => {
+    for (const id of [idsA.pendingId, idsA.archivedId]) {
+      const res = await appA.inject({
+        method: "GET",
+        url: `/api/sites/${id}`,
+        headers: { authorization: "Bearer " + readToken },
+      });
+      expect(res.statusCode).toBe(404);
+    }
+    const active = await appA.inject({
+      method: "GET",
+      url: `/api/sites/${idsA.activeId}`,
+      headers: { authorization: "Bearer " + readToken },
+    });
+    expect(active.statusCode).toBe(200);
+  });
+
+  it("A 鉴权 + 管理令牌：pending 详情仍可读（编辑工作面不受影响）", async () => {
+    const res = await appB.inject({
+      method: "GET",
+      url: `/api/sites/${idsB.pendingId}`,
+      headers: { authorization: "Bearer " + BOOTSTRAP },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { url: string }).url).toBe("https://pending.example.com");
+  });
+
+  it("C 开放模式：详情三种状态照旧可读（个人/NAS 本机即管理面）", async () => {
+    const res = await appC.inject({ method: "GET", url: `/api/sites/${idsC.pendingId}` });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("匿名书签导出不含 pending/archived（此前只过滤 enabled）", async () => {
+    const html = await appA.inject({ method: "GET", url: "/api/export/bookmarks.html" });
+    expect(html.statusCode).toBe(200);
+    const body = html.body;
+    expect(body).toContain("https://visible.example.com");
+    expect(body).not.toContain("https://pending.example.com");
+    expect(body).not.toContain("https://archived.example.com");
   });
 });

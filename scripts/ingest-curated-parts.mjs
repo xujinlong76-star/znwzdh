@@ -19,13 +19,40 @@ function normalizeUrl(raw) {
   }
 }
 
+function normalizePart(part) {
+  if (!part) return [];
+  if (Array.isArray(part)) return part;
+  const out = [];
+  for (const [categoryId, list] of Object.entries(part)) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      out.push({
+        categoryId,
+        title: item.title || item.name,
+        url: item.url,
+        description: item.description || item.desc || "",
+        tags: item.tags || [],
+      });
+    }
+  }
+  return out;
+}
+
 async function run() {
   const { CURATED_PART1 = [] } = await import("./curated-leaves-part1.mjs").catch(() => ({}));
   const { CURATED_PART2 = [] } = await import("./curated-leaves-part2.mjs").catch(() => ({}));
   const { CURATED_PART3 = [] } = await import("./curated-leaves-part3.mjs").catch(() => ({}));
   const { CURATED_PART4 = [] } = await import("./curated-leaves-part4.mjs").catch(() => ({}));
+  const { CURATED_PART5 = [], EXTRA_PART5 = [] } = await import("./curated-leaves-part5.mjs").catch(() => ({}));
 
-  const allCandidates = [...CURATED_PART1, ...CURATED_PART2, ...CURATED_PART3, ...CURATED_PART4];
+  const allCandidates = [
+    ...normalizePart(CURATED_PART1),
+    ...normalizePart(CURATED_PART2),
+    ...normalizePart(CURATED_PART3),
+    ...normalizePart(CURATED_PART4),
+    ...normalizePart(CURATED_PART5),
+    ...normalizePart(EXTRA_PART5),
+  ];
   console.log(`Loaded ${allCandidates.length} curated candidate sites from parts 1-4.`);
 
   const existingRows = db.prepare("SELECT id, url, category_id, deleted_at, enabled, status FROM sites").all();
@@ -59,8 +86,8 @@ async function run() {
     ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 'active', 1, 0, 75, 0, 'curated-2026', ?, ?, ?, NULL, ?, ?)
   `);
 
-  const findTagStmt = db.prepare("SELECT id FROM tags WHERE slug = ? LIMIT 1");
-  const insertTagStmt = db.prepare("INSERT INTO tags (id, name, slug) VALUES (?, ?, ?)");
+  const findTagStmt = db.prepare("SELECT id FROM tags WHERE slug = ? OR name = ? LIMIT 1");
+  const insertTagStmt = db.prepare("INSERT OR IGNORE INTO tags (id, name, slug) VALUES (?, ?, ?)");
   const insertSiteTagStmt = db.prepare("INSERT OR IGNORE INTO site_tags (site_id, tag_id) VALUES (?, ?)");
 
   const now = Date.now();
@@ -114,16 +141,18 @@ async function run() {
         leafCounts.set(cid, (leafCounts.get(cid) || 0) + 1);
 
         for (const rawTag of tags) {
-          const name = String(rawTag || "").trim();
-          if (!name) continue;
-          const slug = slugify(name);
-          let tagRow = findTagStmt.get(slug);
-          if (!tagRow) {
-            const tagId = randomUUID();
-            insertTagStmt.run(tagId, name, slug);
-            tagRow = { id: tagId };
-          }
-          insertSiteTagStmt.run(id, tagRow.id);
+          try {
+            const name = String(rawTag || "").trim();
+            if (!name) continue;
+            const slug = slugify(name);
+            let tagRow = findTagStmt.get(slug, name);
+            if (!tagRow) {
+              const tagId = randomUUID();
+              insertTagStmt.run(tagId, name, slug);
+              tagRow = findTagStmt.get(slug, name);
+            }
+            if (tagRow?.id) insertSiteTagStmt.run(id, tagRow.id);
+          } catch {}
         }
       } catch {
         skippedDup++;

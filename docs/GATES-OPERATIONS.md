@@ -15,7 +15,7 @@
 |---|---|---|---|
 | 提交信息规范（Conventional Commits） | **`commit-msg` 钩子**（由 `scripts/install-git-hooks.mjs` 生成） | 原始 message 只有本地拿得到；CI 看到的是 PR 标题/压缩后信息，拦不住 | <1s |
 | 跳钩子三行声明 | **`commit-msg` 钩子**（同一入口） | 与上一条同源，一次解析 | <1s |
-| 覆盖率门禁 | **CI `test-sqlite`**（判定）；`pnpm verify` 只出数 | 覆盖率必须基于全量测试；pre-commit 是暂存区子集，算覆盖率是假数字 | 见 §4 |
+| 覆盖率数字 | `pnpm coverage` / `pnpm verify`（**只出数，不判定**） | 覆盖率必须基于全量测试；pre-commit 是暂存区子集，算覆盖率是假数字。CI 判定阈值尚未接线（check-coverage.mjs 不传阈值恒 exit 0），接线前此处不得声称「CI 拦截」 | 见 §4 |
 | PR 模板必填校验 | 阶段 1：只落模板（零 CI 改动）；阶段 2（可选）：`pr-hygiene` 作业读 `github.event.pull_request.body` | 先看两周遵守率再上硬门禁 | 0s / <1min |
 | 锁文件一致性 | 已有 `pnpm install --frozen-lockfile` | 无需新增 | — |
 | overlay 双镜像 / 扩展 / 上游 ref / 语法 / typecheck / 选测 | 已有 `pre-commit` | 已在跑，保持 | 30s–6min |

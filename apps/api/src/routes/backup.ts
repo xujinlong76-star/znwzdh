@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { AppContext } from "../context.ts";
+import { isPubliclyVisibleSite } from "../storage.ts";
 import { restoreStagingDir } from "../restore-staging.ts";
 import {
   canonicalizeUrl,
@@ -271,7 +272,9 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       ctx.repo.listAllSites(EXPORT_MAX_SITES),
     ]);
 
-    const activeSites = sites.filter((s) => s.enabled !== false);
+    // 可见性口径（P1-2）：与 storage 的公开投影同源——pending/待上线站点此前
+    // 只靠 enabled 过滤，凭「下载一份书签」就能被匿名方枚举出来。
+    const activeSites = sites.filter((s) => isPubliclyVisibleSite(s));
     const html = exportNetscapeBookmarks(categories, activeSites);
 
     reply.header("Content-Type", "text/html; charset=utf-8");

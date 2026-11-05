@@ -20,13 +20,30 @@
 /**
  * 支持保留策略的表。白名单也是 SQL 拼接的安全边界（见 assertTable）。
  *
- * 入选条件：必须有 `id` 主键与 `created_at` 毫秒时间戳（分批与游标都依赖这两列）。
- * `health_checks` 只有 `checked_at`，时间列口径不同，暂不纳入 ——
- * 要么先把列改名/补列，要么单独写一套按 `checked_at` 的清理，不能硬套。
+ * 入选条件：必须有 `id` 主键与毫秒时间戳列（分批与游标都依赖这两列）。
+ * 时间列默认 `created_at`；列口径不同的表用 `timeColumn` 声明
+ * （`health_checks` 是 `checked_at`），时间列名也走字面量联合类型，
+ * 不接受运行时注入。
  */
-export type RetentionTable = "events" | "audit_logs" | "search_history" | "site_archives";
+export type RetentionTable =
+  | "events"
+  | "audit_logs"
+  | "search_history"
+  | "site_archives"
+  | "health_checks";
 
-const TABLES: readonly RetentionTable[] = ["events", "audit_logs", "search_history", "site_archives"];
+const TABLES: readonly RetentionTable[] = [
+  "events",
+  "audit_logs",
+  "search_history",
+  "site_archives",
+  "health_checks",
+];
+
+/** 允许进 SQL 的时间列（白名单内的表至少有其中一列） */
+export type RetentionTimeColumn = "created_at" | "checked_at";
+
+const TIME_COLUMNS: readonly RetentionTimeColumn[] = ["created_at", "checked_at"];
 
 /** 行数据（列名 → 值），由 adapter 原样返回。 */
 export type RetentionRow = Record<string, unknown>;
@@ -52,8 +69,14 @@ export interface RetentionAdapter {
 
 export interface RetentionTarget {
   table: RetentionTable;
-  /** 保留天数：created_at 早于 `now - keepDays` 的行才会被清理。 */
+  /** 保留天数：时间列早于 `now - keepDays` 的行才会被清理。 */
   keepDays: number;
+  /**
+   * 时间列，默认 `created_at`。
+   * `health_checks` 的时间口径是 `checked_at`（巡检产物没有 created_at），
+   * 硬补一列再回填百万行得不偿失，这里按列名参数化，列名仍是编译期字面量。
+   */
+  timeColumn?: RetentionTimeColumn;
 }
 
 export interface RetentionOptions {
@@ -127,6 +150,11 @@ export async function runRetention(
     if (!(target.keepDays > 0)) {
       throw new Error(`保留天数必须为正数，收到 keepDays=${target.keepDays}（table=${target.table}）`);
     }
+    // 时间列名会拼进 SQL：只接受白名单字面量（运行时防线，类型层已约束）
+    const timeColumn = target.timeColumn ?? "created_at";
+    if (!TIME_COLUMNS.includes(timeColumn)) {
+      throw new Error(`不支持的保留时间列: ${timeColumn}（仅支持 ${TIME_COLUMNS.join(" / ")}）`);
+    }
     const cutoff = now - target.keepDays * DAY_MS;
 
     const result: RetentionTableResult = {
@@ -157,7 +185,7 @@ export async function runRetention(
       const take = Math.min(batchSize, remaining);
       const cursorOn = dryRun && afterId !== null;
       const rows = await adapter.select(
-        `SELECT * FROM ${target.table} WHERE created_at < ${adapter.placeholder(1)}` +
+        `SELECT * FROM ${target.table} WHERE ${timeColumn} < ${adapter.placeholder(1)}` +
           (cursorOn ? ` AND id > ${adapter.placeholder(2)}` : "") +
           ` ORDER BY id LIMIT ${take}`,
         cursorOn ? [cutoff, afterId] : [cutoff],
@@ -206,11 +234,15 @@ export async function runRetention(
  * 默认保留策略：行为事件 180 天、审计日志 365 天（审计要留得比行为事件久）。
  *
  * 搜索历史同样是个人行为数据，按 180 天清理；离线归档是整页 HTML（单行最大），
- * 保留 365 天。两者都必须由人显式执行删除（任务侧 cleanup 只做 dry-run）。
+ * 保留 365 天。健康巡检是巡检任务的原始产物（每站点 × 每轮巡检一行），
+ * 是增长最快的附加型表，按 checked_at 保留 180 天 —— 巡检判定只回看
+ * 最近连续失败计数（HEALTH_FAIL_THRESHOLD 轮），180 天远超判定窗口。
+ * 以上都必须由人显式执行删除（任务侧 cleanup 只做 dry-run）。
  */
 export const DEFAULT_RETENTION_TARGETS: RetentionTarget[] = [
   { table: "events", keepDays: 180 },
   { table: "audit_logs", keepDays: 365 },
   { table: "search_history", keepDays: 180 },
   { table: "site_archives", keepDays: 365 },
+  { table: "health_checks", keepDays: 180, timeColumn: "checked_at" },
 ];

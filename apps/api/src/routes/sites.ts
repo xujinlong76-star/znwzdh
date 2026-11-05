@@ -22,6 +22,7 @@ import { createEnrichUsageCallback } from "../llm-usage.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import { selectEnrichmentFields } from "../enrich-fields.ts";
 import { badRequest, canSeeUnpublishedSites, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
+import { isPubliclyVisibleSite } from "../storage.ts";
 import type { AppContext } from "../context.ts";
 
 export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -78,6 +79,16 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const { id } = req.params as { id: string };
     const site = await ctx.repo.getSite(id);
     if (!site) { reply.code(404); return { error: "站点不存在" }; }
+    /**
+     * 数据面最小化（P1-2）：与列表侧同口径。pending/archived 是编辑工作面的
+     * 中间态——列表把它们藏起来了，但此前凭 id 直接 GET 仍能读到详情，
+     * 知道 id 就绕过了列表的过滤。回 404 而不是 403：与列表「显式查 pending
+     * 返回空集」同一理由，不向无权方泄露存在性。
+     */
+    if (!isPubliclyVisibleSite(site) && !canSeeUnpublishedSites(ctx, req as never)) {
+      reply.code(404);
+      return { error: "站点不存在" };
+    }
     return site;
   });
 

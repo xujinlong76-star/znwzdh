@@ -33,7 +33,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { AppContext } from "@navhub/api";
 import { scopeSatisfies, hashToken, parseScopes } from "@navhub/api";
-import { createHandlers } from "./handlers.ts";
+import { createHandlers } from "../../../packages/mcp/src/handlers.ts";
 import { createMcpServer } from "../../../packages/mcp/src/mcp-server.ts";
 import { TOOL_DEFS, type McpScope, type ToolContext } from "../../../packages/mcp/src/tools.ts";
 

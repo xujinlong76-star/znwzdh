@@ -12,6 +12,11 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    // Node 24 strip-types 只剥离「可擦除」语法。参数属性 / enum / namespace /
+    // 装饰器会让 tsc 全绿、生产却抛 "not supported in strip-only mode"
+    // （2026-11-06 实证：apps/api/src/vision.ts:23 的 readonly reason）。
+    // 开启后这类语法在类型检查期直接被拒，不必等人记注释。
+    "erasableSyntaxOnly": true,
     // 全仓统一用显式 .ts 后缀导入（Node 的 --experimental-strip-types 直接跑源码所需）
     "allowImportingTsExtensions": true,
     "emitDeclarationOnly": true,

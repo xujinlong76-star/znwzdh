@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { getFileContent } from '@/lib/github'
 import { enrichVideoItemSeo, generateVideoSitemapXml } from '@/lib/video-seo'
+import { siteOrigin } from '@/lib/seo/origin'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const rawData = (await getFileContent('src/navsphere/content/videos.json')) as NavigationData
     const items: NavigationSubItem[] = []
@@ -23,9 +24,16 @@ export async function GET(request: Request) {
       }
     }
 
-    const host = request.headers.get('host') || 'localhost:3000'
-    const protocol = host.startsWith('localhost') ? 'http' : 'https'
-    const siteUrl = `${protocol}://${host}`
+    // origin 只能来自 NAVHUB_SITE_URL（经 normalizeConfiguredOrigin 收敛）；
+    // 裸读 Host 头 + s-maxage=3600 会让一次投毒把整份 sitemap 缓存成攻击者域名。
+    // 未配置时与 feed.xml 同口径返回 503，不用可伪造的请求头兜底。
+    const siteUrl = await siteOrigin()
+    if (!siteUrl) {
+      return new Response('sitemap origin unavailable', {
+        status: 503,
+        headers: { 'content-type': 'text/plain; charset=utf-8', 'retry-after': '300' },
+      })
+    }
 
     const sitemap = generateVideoSitemapXml(items, siteUrl)
 

@@ -26,9 +26,10 @@ export const collectionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
   });
 
   /**
-   * 按 ID 获取专题详情及关联条目（供管理端专用）
+   * 按 ID 获取专题详情及关联条目（读语义）：此前声明 write 与 by-slug 的
+   * public 不一致，只读令牌读不到自己名下的专题（P2-15）。
    */
-  app.get("/api/collections/by-id/:id", { config: { scope: "write" } }, async (req, reply) => {
+  app.get("/api/collections/by-id/:id", { config: { scope: "read" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const col = await ctx.repo.getCollectionById(id);
     if (!col) return notFound(reply, "专题不存在");

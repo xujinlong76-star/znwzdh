@@ -20,9 +20,14 @@ import type { FetchGuardOptions } from "@navhub/ai";
 /** 浏览器不可用（未安装 / 启动失败）：调用方应回 503 而不是 500 */
 export class VisionUnavailableError extends Error {
   readonly code = "vision_unavailable";
-  constructor(message: string, readonly reason: string) {
+  // 不用参数属性：Node 24 strip-types 只剥离可擦除语法，
+  // `constructor(readonly reason: string)` 会在运行时抛
+  // "TypeScript parameter property is not supported in strip-only mode"。
+  readonly reason: string;
+  constructor(message: string, reason: string) {
     super(message);
     this.name = "VisionUnavailableError";
+    this.reason = reason;
   }
 }
 

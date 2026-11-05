@@ -216,7 +216,12 @@ function num(key: string, fallback: number): number {
   const v = process.env[key];
   if (v === undefined || v === "") return fallback;
   const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+  if (!Number.isFinite(n)) {
+    // 配置打错字（NAVHUB_PORT=abc）此前静默回退，排查时毫无痕迹（P2-10）
+    console.warn(`[config] 环境变量 ${key}="${v}" 不是合法数字，回退默认值 ${fallback}`);
+    return fallback;
+  }
+  return n;
 }
 
 function bool(key: string, fallback: boolean): boolean {

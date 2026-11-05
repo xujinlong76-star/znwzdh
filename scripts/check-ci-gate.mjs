@@ -18,9 +18,10 @@
  * 其余校验：
  *   - `ci-passed` 必须有 `if: always()`（否则上游失败时聚合作业被跳过）；
  *   - PG 作业使用带环境守卫的入口 `pnpm test:pg:suite`（防整体 skip 假绿）；
- *   - 后端 lint 必须有一条**阻塞通道** —— 本地 verify 视其为硬门禁，而 CI 的
- *     该步骤带 `continue-on-error`（退出码被吞，作业仍绿）。两者可以并存，前提是
- *     同一个断言也在被 ci-passed 聚合的阻塞作业里跑一遍（见 LINT_GATE_TEST）。
+ *   - 后端 lint 必须有一条**阻塞通道** —— 本地 verify 视其为硬门禁；CI 的同一
+ *     断言也在被 ci-passed 聚合的阻塞作业里跑一遍（LINT_GATE_TEST，
+ *     backend-lint-gate.test.ts）。2026-11-01 起 CI 的 lint 步骤本身已硬化为阻塞
+ *     （无 continue-on-error），LINT_GATE_TEST 保留为第二道防线。
  *   - **级联红收敛**（2026-10-29）：读上游产物的收尾步骤（红灯光谱 / 红灯台账 /
  *     upload-artifact / 首屏预算账）必须以「生产者真的跑过」为条件
  *     （`steps.<锚点 id>.outcome != 'skipped'`）。只写 `!cancelled()` 或 `always()` 时，

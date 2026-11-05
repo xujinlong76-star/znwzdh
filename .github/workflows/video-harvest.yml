@@ -26,6 +26,10 @@ on:
         type: string
         required: false
 
+# 与 ci.yml 的权限收敛标准对齐：定时任务只需触发 HTTP 端点，不需要任何仓库令牌权限
+permissions:
+  contents: none
+
 concurrency:
   group: video-harvest
   cancel-in-progress: false

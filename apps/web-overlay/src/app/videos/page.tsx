@@ -3,7 +3,7 @@ import { VideoContent } from '@/components/video-content'
 import { Metadata } from 'next/types'
 import { ScrollToTop } from '@/components/ScrollToTop'
 import { getProcessedData } from '@/lib/data-loader'
-import { getFileContent, readStorageFresh } from '@/lib/github'
+import { getFileContent } from '@/lib/github'
 import { withSignedVideoIcons } from '@/lib/media-proxy'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import type { NavigationData } from '@/types/navigation'
@@ -36,13 +36,7 @@ const SITE_PATH = 'src/navsphere/content/site.json'
  */
 const getData = cache(async () => {
   const [videosRaw, siteRaw] = await Promise.all([
-    readStorageFresh(VIDEOS_PATH)
-      .catch(() => {
-        // 存储读失败不算事件丢失：下一行有 getFileContent 兜底回落到事实源，
-        // 这里只需把「fresh 读不到」表达成 null，让 ?? 走回落分支。
-        return null
-      })
-      .then(fresh => fresh ?? getFileContent(VIDEOS_PATH)),
+    getFileContent(VIDEOS_PATH),
     getFileContent(SITE_PATH),
   ])
   const processed = getProcessedData(videosRaw as never, siteRaw as never)
@@ -59,14 +53,13 @@ export async function generateMetadata(): Promise<Metadata> {
     // 点击行为是站内弹窗播放或无播放配置时直达原站，不是「进入站内播放页」
     description: '按分类浏览收录的视频与教程，支持站内弹窗播放或直达原站',
     alternates: { canonical: '/videos' },
-    // 收录口径（2026-10-28 复核后更新，旧注释写的是「视频库仍是占位内容」，已与事实不符）：
+    // 收录口径（2026-10-28 复核 + 2026-10-31 改判）：
     //   库里是**真实内容**——video_categories 12 个类目（带 harvest_policy）、
     //   video_items 5578 条（含 platform / external_id / duration_sec / quality_score）。
-    //   仍然 noindex 的原因不再是「内容是占位」，而是**链接全部指向第三方视频站**，
-    //   收录本页对本站无增益、还会把 crawl budget 花在外链上。
-    //   是否放开收录，取决于 /videos/sitemap.xml 那条路由（当前在视频线 WIP 中）：
-    //   它一旦上线，本行的 robots 必须与之同口径修改，不能一边 sitemap 一边 noindex。
-    robots: { index: false, follow: true },
+    //   原先判据「内容是占位、链接指向第三方视频站」都不成立，故改判为可索引；
+    //   sitemap 静态清单（lib/seo/sitemap-entries.ts 的 STATIC_PATHS）与本行的
+    //   robots 必须同口径，两边都已改，不留「一边 sitemap 一边 noindex」的打架状态。
+    robots: { index: true, follow: true },
     ...(await pageShareMetadata({
       url: '/videos',
       title: '视频中心',

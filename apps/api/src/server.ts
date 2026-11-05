@@ -25,7 +25,7 @@ import type { AppContext } from "./context.ts";
 import { assertIdentitySecurity } from "./security-readiness.ts";
 import { INTERNAL_TOKEN_HEADER, isInternalTraffic } from "./internal-traffic.ts";
 import { buildOpenApiDoc, renderDocsHtml, type RouteEntry } from "./openapi.ts";
-import { recordHttpMetric } from "./metrics.ts";
+import { installOutboundObserver, recordHttpMetric } from "./metrics.ts";
 import { invalidateSnapshotCache } from "./storage.ts";
 import {
   ANONYMOUS_IDENTITY,
@@ -81,6 +81,7 @@ import { graphRoutes } from "./routes/graph.ts";
 import { archiveRoutes } from "./routes/archive.ts";
 import { backupRoutes } from "./routes/backup.ts";
 import { copilotRoutes } from "./routes/copilot.ts";
+import { accountRoutes } from "./routes/account.ts";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -138,6 +139,17 @@ export async function buildServer(ctx: AppContext) {
     },
     bodyLimit: 4 * 1024 * 1024,
     trustProxy: ctx.config.trustProxy,
+    /**
+     * 版本前缀别名（升级方案 P2「统一错误包络与版本」）。
+     *
+     * `/api/v1/*` 在路由前重写为 `/api/*`：两套路径共享同一条路由、同一份
+     * scope 策略与缓存头，不会出现「v1 少了一道鉴权」这类漂移。旧路径继续可用，
+     * 新客户端可以直接写 v1；退役旧路径属于下一个大版本的事，不是这次改动的开关。
+     */
+    rewriteUrl: (req) => {
+      const url = req.url ?? "";
+      return url.startsWith("/api/v1/") ? "/api/" + url.slice("/api/v1/".length) : url;
+    },
   });
 
   // 容错 JSON 解析：当客户端或代理携带 Content-Type: application/json 却发了空体时，
@@ -237,7 +249,11 @@ export async function buildServer(ctx: AppContext) {
   /**
    * 采集状态与文本渲染都在 ./metrics.ts（不引入 prom-client，避免为一个端点加依赖）。
    * 这里只挂 hook——/api/metrics 自身不计入，避免自反馈噪音。
+   *
+   * 出站请求（富化、探活、订阅源、动态 REST 工具）不走 HTTP hook，它们在
+   * packages/ai 的 guardedFetch 里发生，所以在这里装一次观察者；重复调用无害。
    */
+  installOutboundObserver();
   app.addHook("onResponse", async (req, reply) => {
     const route = (req.routeOptions?.url as string | undefined) ?? "unmatched";
     if (route !== "/api/metrics") {
@@ -278,12 +294,36 @@ export async function buildServer(ctx: AppContext) {
   });
 
 
-  // 全局错误兜底：统一 500 形态，避免 Fastify 默认 HTML 泄漏栈
-  app.setErrorHandler((err, _req, reply) => {
+  // 全局错误兜底：统一错误信封，避免 Fastify 默认 HTML 泄漏栈。
+  // `error` 保持字符串（存量客户端直接读它做展示），新增的 code/message/requestId
+  // 是给新客户端与 OpenAPI 生成器做分支判断的；details 仅在框架给出校验明细时出现。
+  const ERROR_CODE_BY_STATUS: Record<number, string> = {
+    400: "BAD_REQUEST",
+    401: "UNAUTHORIZED",
+    403: "FORBIDDEN",
+    404: "NOT_FOUND",
+    409: "CONFLICT",
+    413: "PAYLOAD_TOO_LARGE",
+    422: "UNPROCESSABLE_ENTITY",
+    429: "RATE_LIMITED",
+    500: "INTERNAL_ERROR",
+  };
+  app.setErrorHandler((err, req, reply) => {
     app.log.error(err);
     const status = typeof (err as { statusCode?: unknown }).statusCode === "number"
       ? (err as { statusCode: number }).statusCode : 500;
-    reply.code(status >= 400 && status < 600 ? status : 500).send({ error: status === 500 ? "内部错误" : (err as Error).message });
+    const safeStatus = status >= 400 && status < 600 ? status : 500;
+    const rawCode = (err as { code?: unknown }).code;
+    const message = safeStatus === 500 ? "内部错误" : (err as Error).message;
+    const details = (err as { validation?: unknown }).validation;
+    reply.code(safeStatus).send({
+      error: message,
+      code: typeof rawCode === "string" && rawCode ? rawCode : ERROR_CODE_BY_STATUS[safeStatus] ?? "INTERNAL_ERROR",
+      message,
+      requestId: req.id,
+      ...(details === undefined ? {} : { details }),
+      retryable: safeStatus >= 500 || safeStatus === 429,
+    });
   });
 
   /* ---------------------------- OpenAPI 路由收集 ---------------------------- */
@@ -687,6 +727,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(archiveRoutes, { ctx });
   await app.register(backupRoutes, { ctx });
   await app.register(copilotRoutes, { ctx });
+  await app.register(accountRoutes, { ctx });
 
   // 统一 JSON 404：默认响应也是 JSON，但这里显式补上 error 码与 requestId，
   // 便于客户端/排障区分「路由不存在」与「业务 404」（例如 site not found）。

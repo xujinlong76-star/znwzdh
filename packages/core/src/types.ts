@@ -268,6 +268,11 @@ export interface SearchCandidate {
   rank: number;
   /** 通道原始分（可解释性用） */
   rawScore?: number;
+  /**
+   * 语义相似度（0~1，仅 semantic 候选携带）。
+   * rawScore 保留各存储后端的原始 distance 供可解释性；相似度闸门只认这个统一口径。
+   */
+  similarity?: number;
 }
 
 export interface SearchHit {
@@ -305,10 +310,30 @@ export interface SearchQuery {
    */
   offset?: number;
   categoryId?: Id;
+  /** 单个标签过滤（历史单数形态，保留向后兼容；与 tags 同时给出时两个条件都生效） */
   tag?: string;
+  /**
+   * 多标签过滤：**取交集**（站点必须同时具备全部标签）。
+   *
+   * 为什么是交集而不是并集：用户在标签页勾选第二个标签时，意图是「再收窄一层」
+   * （设计与开源 → 既设计又开源），并集会越勾越多、与直觉相反。
+   */
+  tags?: string[];
   /** 多维分面正交过滤（例如 { pricing: ['free'], platform: ['web', 'ios'] }） */
   facets?: Record<string, string[]>;
   statuses?: SiteStatus[];
+  /**
+   * 召回通道选择。
+   *
+   *   "hybrid"   （默认）词法三通道 + 语义通道，RRF 融合
+   *   "keyword"  只要词法通道（等价于 disableSemantic: true）
+   *   "semantic" 只要语义通道；融合前剔除词法候选
+   *
+   * 与 disableSemantic 的关系：mode 是**新**的声明式写法，disableSemantic 是旧开关。
+   * 两者同时给出时以 mode 为准（"keyword" 强制关语义，"hybrid"/"semantic" 强制开语义），
+   * 否则「mode=hybrid + disableSemantic:true」这种自相矛盾的入参会随解析顺序漂移。
+   */
+  mode?: "hybrid" | "keyword" | "semantic";
   /** 关闭语义通道（无模型或追求极低延迟时） */
   disableSemantic?: boolean;
   /** 关闭个性化通道 */

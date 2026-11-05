@@ -169,3 +169,21 @@ describe("search-bar.tsx：高亮实现必须走安全路径", () => {
     expect(source).toContain("清空搜索，查看全部导航");
   });
 });
+
+describe("search-results.tsx（SSR /search 命中高亮，item ③）", () => {
+  const source = readFileSync(overlaySource("src/app/search/search-results.tsx"), "utf8");
+
+  it("复用 @/lib/highlight 的 highlightParts 做服务端高亮", () => {
+    expect(source).toContain("import { highlightParts } from '@/lib/highlight'");
+    expect(source).toContain("highlightParts(text, query)");
+  });
+
+  it("不再用单 token 的 indexOf 做高亮（多词/正则安全回归）", () => {
+    expect(source).not.toContain("text.toLowerCase().indexOf(query.toLowerCase())");
+  });
+
+  it("命中段包裹 <mark>，<mark> 沿用既有样式类", () => {
+    expect(source).toContain("<mark");
+    expect(source).toContain("bg-primary/15");
+  });
+});

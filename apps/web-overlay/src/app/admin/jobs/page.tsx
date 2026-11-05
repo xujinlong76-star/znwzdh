@@ -9,7 +9,7 @@
  * 3. 任务多维状态统计、筛选与可读错误追溯
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -40,7 +40,7 @@ interface Job {
   id: string
   kind: string
   payload?: Record<string, unknown> | null
-  status: 'pending' | 'running' | 'done' | 'failed' | 'retrying' | 'cancelled'
+  status: 'pending' | 'running' | 'cancelling' | 'done' | 'failed' | 'retrying' | 'cancelled'
   attempts: number
   error: string | null
   createdAt: number
@@ -56,6 +56,15 @@ interface RetentionPreview {
   truncated?: boolean[]
   telemetry: { days: number; healthChecks: number; llmUsage: number }
   userRetention: { usersAffected?: number; rowsDeleted?: number; error?: string }
+}
+
+/** 任务列表一页的大小；翻页用 offset（服务端返回 nextOffset/hasMore，P1-7） */
+const JOB_PAGE_SIZE = 100
+
+interface JobPage {
+  items: Job[]
+  nextOffset: number
+  hasMore: boolean
 }
 
 const KIND_CONFIG: Record<
@@ -120,6 +129,8 @@ const STATUS_MAP: Record<
 > = {
   pending: { label: '等待执行', color: 'text-amber-500', badgeVariant: 'secondary' },
   running: { label: '正在执行', color: 'text-blue-500', badgeVariant: 'default' },
+  // 「已要求停手、handler 还没确认」：此刻不能给重试入口——重试会和仍在跑的执行体并发写
+  cancelling: { label: '正在收尾', color: 'text-indigo-500', badgeVariant: 'secondary' },
   done: { label: '已完成', color: 'text-emerald-500', badgeVariant: 'outline' },
   retrying: { label: '退避重试', color: 'text-orange-500', badgeVariant: 'secondary' },
   failed: { label: '失败终止', color: 'text-rose-500', badgeVariant: 'destructive' },
@@ -130,6 +141,15 @@ export default function AdminJobsPage() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<unknown>(null)
+  // 「加载更多」的状态：hasMore 来自服务端；翻页请求本身要有独立的忙碌态，
+  // 否则按钮只能靠全局 loading 闪烁，用户不知道那次点击是否生效。
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  /**
+   * 当前已展开的行数。20 秒轮询不能把用户翻出来的历史页吞回去：
+   * 刷新时按这个宽度重取，列表保持连续；用户点「加载更多」才增长。
+   */
+  const loadedCountRef = useRef(JOB_PAGE_SIZE)
   // 连着 SSE 但消息解析失败时，列表会悄悄停止更新 —— 必须能说出来
   const [sseParseFailures, setSseParseFailures] = useState(0)
   const [enqueuing, setEnqueuing] = useState<string | null>(null)
@@ -146,8 +166,11 @@ export default function AdminJobsPage() {
 
   const load = useCallback(async () => {
     try {
-      const data = await hubGet<Job[]>('/api/hub/jobs?limit=100')
-      setJobs(Array.isArray(data) ? data : [])
+      const data = await hubGet<JobPage | Job[]>(`/api/hub/jobs?limit=${loadedCountRef.current}`)
+      // 兼容「前端已升级、中枢仍是旧版」的滚动部署：旧版返回裸数组。
+      const items = Array.isArray(data) ? data : data?.items ?? []
+      setJobs(items)
+      setHasMore(Array.isArray(data) ? items.length >= loadedCountRef.current : Boolean(data?.hasMore))
       setLoadError(null)
     } catch (err) {
       // 以前只 console.error：拉取失败时 jobs 保持为空，页面把它渲染成
@@ -158,6 +181,38 @@ export default function AdminJobsPage() {
       setLoading(false)
     }
   }, [])
+
+  /**
+   * 翻到下一页。
+   *
+   * 用 offset 而不是「把已加载的 id 发给服务端」：任务历史是只追加的，offset
+   * 足够；按钮只出现在 hasMore 为真时。追加时按 id 去重 —— 轮询/SSE 期间新任务
+   * 插到头部会让下一页的窗口右移，边界行可能重复出现。
+   */
+  const loadMore = useCallback(async () => {
+    if (loadingMore) return
+    setLoadingMore(true)
+    try {
+      const data = await hubGet<JobPage | Job[]>(
+        `/api/hub/jobs?limit=${JOB_PAGE_SIZE}&offset=${loadedCountRef.current}`,
+      )
+      const items = Array.isArray(data) ? data : data?.items ?? []
+      setJobs((prev) => {
+        const seen = new Set(prev.map((j) => j.id))
+        const merged = [...prev, ...items.filter((j) => !seen.has(j.id))]
+        loadedCountRef.current = merged.length
+        return merged
+      })
+      setHasMore(Array.isArray(data) ? items.length >= JOB_PAGE_SIZE : Boolean(data?.hasMore))
+      setLoadError(null)
+    } catch (err) {
+      console.error('[jobs] 加载更多任务失败:', err)
+      // 翻页失败不覆盖已有列表：把错误交给同一个降级横幅，列表保持可读。
+      setLoadError(err)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [loadingMore])
 
   // 建立 SSE 实时监听通道，并在断开时自动重连与定时轮询兜底
   useEffect(() => {
@@ -293,8 +348,16 @@ export default function AdminJobsPage() {
   const handleCancel = async (jobId: string) => {
     setActingJobId(jobId)
     try {
-      await hubSend(`/api/jobs/${jobId}/cancel`, 'POST', {})
-      setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: 'cancelled' } : j)))
+      // 用服务端回报的真实状态，而不是本地猜 'cancelled'：执行中的任务只会先进
+      // 'cancelling'（handler 在分片边界停手后才落 cancelled）。写死终态会让界面
+      // 立刻给出「重试」入口，而重试会和仍在写数据的执行体并发跑同一批任务。
+      const res = await hubSend<{ ok: boolean; status: 'cancelled' | 'cancelling' }>(
+        `/api/jobs/${jobId}/cancel`,
+        'POST',
+        {},
+      )
+      const next = res?.status === 'cancelling' ? 'cancelling' : 'cancelled'
+      setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: next } : j)))
     } catch (err) {
       console.error('[jobs] 取消任务失败:', err)
       alert('取消任务失败: ' + (err instanceof Error ? err.message : String(err)))
@@ -697,8 +760,9 @@ export default function AdminJobsPage() {
             description="调整筛选条件，或到任务面板派发一个新任务。"
           />
         ) : (
-          <div className="rounded-md border overflow-x-auto no-scrollbar touch-pan-x">
-            <table className="w-full text-sm">
+          <div className="space-y-3">
+            <div className="rounded-md border overflow-x-auto no-scrollbar touch-pan-x">
+              <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
                   <th className="text-left px-4 py-2.5 font-medium">任务类型</th>
@@ -790,6 +854,14 @@ export default function AdminJobsPage() {
                 })}
               </tbody>
             </table>
+            </div>
+            {hasMore && (
+              <div className="flex justify-center">
+                <Button variant="outline" size="sm" onClick={() => void loadMore()} disabled={loadingMore}>
+                  {loadingMore ? '正在加载更早的任务…' : `加载更早的任务（已显示 ${jobs.length} 条）`}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

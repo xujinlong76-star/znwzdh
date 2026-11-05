@@ -11,11 +11,11 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { zodSchemaToJsonSchema } from "@navhub/core";
-import type { AppContext } from "@navhub/api";
+import type { McpHostContext } from "./host-context.ts";
 import { TOOL_DEFS, type ToolContext } from "./tools.ts";
 import { createHandlers } from "./handlers.ts";
 
-export function createMcpServer(ctx: AppContext, toolCtx: ToolContext): Server {
+export function createMcpServer(ctx: McpHostContext, toolCtx: ToolContext): Server {
   const handlers = createHandlers(ctx) as Record<string, (a: unknown, t: ToolContext) => Promise<unknown>>;
 
   const server = new Server(

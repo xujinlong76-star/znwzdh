@@ -110,12 +110,51 @@ export function buildUserProfile(): {
 export function scoreVideoItem(
   item: NavigationSubItem,
   userProfile: ReturnType<typeof buildUserProfile>,
-  targetKeywords?: Set<string>
+  targetKeywords?: Set<string>,
+  targetVideo?: NavigationSubItem
 ): number {
   let score = 0
 
   const hasTargetKeywords = Boolean(targetKeywords && targetKeywords.size > 0)
   const hasUserKeywords = userProfile.preferredKeywords.size > 0
+
+  // 1. 同子分类优先与导师连载强关联加权（大幅提升相关视频推荐精准度）
+  if (targetVideo) {
+    // 1.1 相同细分技术子方向加权 (+35分)
+    if (targetVideo.videoConfig?.subCategoryId && item.videoConfig?.subCategoryId) {
+      if (targetVideo.videoConfig.subCategoryId === item.videoConfig.subCategoryId) {
+        score += 35
+      }
+    } else if (targetVideo.videoConfig?.subCategoryTitle && item.videoConfig?.subCategoryTitle) {
+      if (targetVideo.videoConfig.subCategoryTitle === item.videoConfig.subCategoryTitle) {
+        score += 30
+      }
+    }
+
+    // 1.2 相同技术讲师/系列教程连载加权 (+20分)
+    if (targetVideo.videoConfig?.author && item.videoConfig?.author) {
+      if (targetVideo.videoConfig.author.trim().toLowerCase() === item.videoConfig.author.trim().toLowerCase()) {
+        score += 20
+      }
+    }
+
+    // 1.3 萃取标签重合加权 (每个重合标签 +8分，最高 24分)
+    const targetTags = targetVideo.videoConfig?.tags || targetVideo.tags || []
+    const itemTags = item.videoConfig?.tags || item.tags || []
+    if (targetTags.length > 0 && itemTags.length > 0) {
+      const common = itemTags.filter(t => targetTags.includes(t))
+      score += Math.min(24, common.length * 8)
+    }
+
+    // 1.4 学习阶梯难度契合度加权 (+10分)
+    if (targetVideo.videoConfig?.difficulty && item.videoConfig?.difficulty) {
+      if (targetVideo.videoConfig.difficulty === item.videoConfig.difficulty) {
+        score += 10
+      } else if (targetVideo.videoConfig.difficulty === 'beginner' && item.videoConfig.difficulty === 'intermediate') {
+        score += 8
+      }
+    }
+  }
 
   // 性能优化：无目标词且用户尚未沉淀偏好时，跳过对几千部视频的高开销大正则分词与集合交集运算，秒级直接基于质量分与时效排序
   if (hasTargetKeywords || hasUserKeywords) {
@@ -206,7 +245,7 @@ export function getRelatedVideos(
 
   const scored = candidates.map(item => ({
     item,
-    score: scoreVideoItem(item, userProfile, targetKeywords),
+    score: scoreVideoItem(item, userProfile, targetKeywords, currentVideo),
   }))
 
   scored.sort((a, b) => b.score - a.score)

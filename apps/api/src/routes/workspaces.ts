@@ -4,17 +4,37 @@
  * 支持个人空间（Personal）与多团队空间（Team）隔离；
  * 提供 Owner、Maintainer、Member、Viewer 四级权限判定与成员管理。
  */
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import type { AppContext } from "../context.ts";
-import { identityTrusted, requestIdentityOf, resolveCanonicalIdentity, notFound, unauthorized, forbidden } from "./shared.ts";
+import { identityTrusted, requestIdentityOf, resolveCanonicalIdentity, notFound, unauthorized, forbidden, conflict } from "./shared.ts";
 import {
   checkWorkspacePermission,
   type Workspace,
   type WorkspaceMember,
   type WorkspaceRole,
 } from "@navhub/core";
+
+/**
+ * 单身份自定义空间上限（预设空间另算）。
+ *
+ * 空间名册是「整包 JSON 一次写入」的存储形态，没有上限时任何匿名身份都能
+ * 反复创建把 vault 行撑大；20 对真实团队使用远远够用，也给导出的快照一个天花板。
+ */
+const MAX_CUSTOM_WORKSPACES = 20
+
+/** 工作区/成员名册单个 blob 的字节上限（正常量级是 KB 级，512KB 已是宽裕上限） */
+const MAX_WORKSPACE_BLOB_BYTES = 512 * 1024
+
+function blobTooLarge(reply: FastifyReply, bytes: number): { error: string; bytes: number; maxBytes: number } {
+  reply.code(413)
+  return {
+    error: `工作空间数据超过单包上限（${bytes} > ${MAX_WORKSPACE_BLOB_BYTES} 字节）`,
+    bytes,
+    maxBytes: MAX_WORKSPACE_BLOB_BYTES,
+  }
+}
 
 const DEFAULT_WORKSPACES: Workspace[] = [
   {
@@ -161,7 +181,13 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
   /**
    * 创建新的团队空间
    */
-  app.post("/api/workspaces", { config: { scope: "public" } }, async (req, reply) => {
+  app.post("/api/workspaces", {
+    config: {
+      scope: "public",
+      // 创建是整包读改写；10 次/分钟足够真人操作，测试进程放宽避免互相拖累
+      rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 10, timeWindow: "1 minute" },
+    },
+  }, async (req, reply) => {
     const rawIdentity = requestIdentityOf(req as never);
     if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
     if (!rawIdentity) return unauthorized(reply, "缺少 userId 或 anonId");
@@ -197,8 +223,16 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     };
 
     const list = await loadCustomWorkspaces(ctx, identity);
+    if (list.length >= MAX_CUSTOM_WORKSPACES) {
+      return conflict(reply, `自定义工作空间已达上限（${MAX_CUSTOM_WORKSPACES} 个）`, {
+        limit: MAX_CUSTOM_WORKSPACES,
+      });
+    }
     list.push(newWs);
-    await ctx.repo.saveWorkspaceBlob("workspaces:" + identity, JSON.stringify(list));
+    const payload = JSON.stringify(list);
+    const payloadBytes = Buffer.byteLength(payload);
+    if (payloadBytes > MAX_WORKSPACE_BLOB_BYTES) return blobTooLarge(reply, payloadBytes);
+    await ctx.repo.saveWorkspaceBlob("workspaces:" + identity, payload);
 
     await ctx.repo.audit({
       actor: identity || "anonymous",
@@ -316,7 +350,10 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
       });
     }
 
-    await ctx.repo.saveWorkspaceBlob(customKey, JSON.stringify(members));
+    const payload = JSON.stringify(members);
+    const payloadBytes = Buffer.byteLength(payload);
+    if (payloadBytes > MAX_WORKSPACE_BLOB_BYTES) return blobTooLarge(reply, payloadBytes);
+    await ctx.repo.saveWorkspaceBlob(customKey, payload);
 
     await ctx.repo.audit({
       actor: identity || "anonymous",
@@ -364,7 +401,10 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     }
 
     members = members.filter((m) => m.userId !== userId);
-    await ctx.repo.saveWorkspaceBlob(customKey, JSON.stringify(members));
+    const payload = JSON.stringify(members);
+    const payloadBytes = Buffer.byteLength(payload);
+    if (payloadBytes > MAX_WORKSPACE_BLOB_BYTES) return blobTooLarge(reply, payloadBytes);
+    await ctx.repo.saveWorkspaceBlob(customKey, payload);
 
     await ctx.repo.audit({
       actor: identity || "anonymous",

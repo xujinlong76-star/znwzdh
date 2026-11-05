@@ -69,8 +69,11 @@ interface NothingToDo {
   message: string
 }
 
-/** 与服务端 jobs.status 对齐（是 `done`，不是 `completed`） */
-type JobStatus = 'pending' | 'running' | 'retrying' | 'done' | 'failed' | 'cancelled'
+/**
+ * 与服务端 jobs.status 对齐（是 `done`，不是 `completed`）。
+ * `cancelling` = 已要求停手、执行体还没在分片边界确认——它不是终态。
+ */
+type JobStatus = 'pending' | 'running' | 'cancelling' | 'retrying' | 'done' | 'failed' | 'cancelled'
 
 /** 前端持有的任务视图：比服务端多存了「当初计划写多少」，失败时才能说清进度 */
 interface JobState {
@@ -124,6 +127,7 @@ const TERMINAL_STATUS: ReadonlySet<JobStatus> = new Set<JobStatus>(['done', 'fai
 const STATUS_TEXT: Record<JobStatus, string> = {
   pending: '排队中（等待任务执行器认领）',
   running: '执行中',
+  cancelling: '正在收尾（当前分片写完即停）',
   retrying: '等待重试',
   done: '已完成',
   failed: '失败',
@@ -786,6 +790,7 @@ function JobProgress({
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
   const isDone = job.status === 'done'
   const isCancelled = job.status === 'cancelled'
+  const isCancelling = job.status === 'cancelling'
   const isFailed = job.status === 'failed'
   const isActive = !isDone && !isFailed && !isCancelled
   const elapsedMs = job.finishedAt && job.startedAt ? job.finishedAt - job.startedAt : null
@@ -859,6 +864,13 @@ function JobProgress({
           </div>
         )}
 
+        {isCancelling && (
+          <p className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400" role="status">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            已提交取消，正在等当前分片写完（已写入的数据会保留）；随后自动转为「已取消」。
+          </p>
+        )}
+
         {isCancelled && (
           <div className="space-y-2">
             <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-500">
@@ -903,8 +915,13 @@ function JobProgress({
              * 而弹确认框会让「想停就停」这件事变慢，反而鼓励用户直接关页面。
              * 文案里写明「已写入的会保留」，避免用户以为取消等于撤销。
              */
-            <Button variant="outline" size="sm" onClick={onCancel} disabled={cancelling}>
-              {cancelling ? '取消中…' : '取消任务（已写入的会保留）'}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCancel}
+              disabled={cancelling || isCancelling}
+            >
+              {cancelling || isCancelling ? '取消中…' : '取消任务（已写入的会保留）'}
             </Button>
           )}
           {(isFailed || isCancelled) && job.retryable && canRetry && (

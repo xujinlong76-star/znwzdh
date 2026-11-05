@@ -18,7 +18,7 @@ import Link from 'next/link'
 import { fetchTags, type HubTag } from '@/lib/navhub-api'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
-import { Tags, ArrowLeft, Search, Hash, Flame } from 'lucide-react'
+import { Tags, ArrowLeft, Search, Hash, Flame, Video, ArrowRight, Filter, ChevronDown, ChevronUp } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -42,6 +42,8 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
   const [tags, setTags] = useState<HubTag[]>(initialTags ?? [])
   const [loading, setLoading] = useState(initialTags === null)
   const [searchQuery, setSearchQuery] = useState('')
+  /** 标签分层过滤：multi(≥2站核心标签，默认收敛长尾降噪) | all(包含689个单站长尾) | single(仅看长尾标签) */
+  const [tierFilter, setTierFilter] = useState<'multi' | 'all' | 'single'>('multi')
   /** 中枢挂了时「共聚合 0 个标签」是假事实，要说清是取不到而不是没有 */
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
@@ -67,11 +69,17 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
     }
   }, [reloadToken, initialTags])
 
-  const filteredTags = useMemo(() => {
-    if (!searchQuery.trim()) return tags
+    const filteredTags = useMemo(() => {
+    let list = tags
+    if (tierFilter === 'multi') {
+      list = list.filter((t) => (Number.isFinite(t.count) ? t.count : 0) >= TAG_LINK_MIN)
+    } else if (tierFilter === 'single') {
+      list = list.filter((t) => (Number.isFinite(t.count) ? t.count : 0) < TAG_LINK_MIN)
+    }
+    if (!searchQuery.trim()) return list
     const q = searchQuery.toLowerCase().trim()
-    return tags.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q))
-  }, [tags, searchQuery])
+    return list.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q))
+  }, [tags, searchQuery, tierFilter])
 
   const tagStats = useMemo(() => {
     const coveredSites = tags.reduce((sum, t) => sum + (Number.isFinite(t.count) ? t.count : 0), 0)
@@ -133,7 +141,43 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
             </div>
           </div>
 
-          <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
+          <div className="mt-5 pt-4 border-t border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-background/80 border border-border/60">
+              <button
+                type="button"
+                onClick={() => setTierFilter('multi')}
+                className={`px-3 py-1 text-xs rounded-lg font-medium transition-all ${
+                  tierFilter === 'multi'
+                    ? 'bg-primary text-primary-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                核心主题 ({tagStats.multiTags})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTierFilter('all')}
+                className={`px-3 py-1 text-xs rounded-lg font-medium transition-all ${
+                  tierFilter === 'all'
+                    ? 'bg-primary text-primary-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                全部标签 ({tags.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTierFilter('single')}
+                className={`px-3 py-1 text-xs rounded-lg font-medium transition-all ${
+                  tierFilter === 'single'
+                    ? 'bg-primary text-primary-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                长尾单站 ({tagStats.singleTags})
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-indigo-500/25 bg-indigo-500/5 text-xs text-indigo-600 dark:text-indigo-400">
               <Tags className="w-3 h-3" />
               共 {tags.length} 个标签
@@ -144,10 +188,34 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
             </span>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
               <Hash className="w-3 h-3 text-border" />
-              覆盖 {tagStats.coveredSites} 次站点归类
+              覆盖 {tagStats.coveredSites} 次归类
             </span>
+            </div>
           </div>
         </div>
+      </div>
+
+      {/* 跨生态技术视频联动横幅 */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/5 text-xs text-foreground">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <Video className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="font-semibold text-foreground truncate">
+              按技术栈查找精选视频教程
+            </div>
+            <div className="text-[11px] text-muted-foreground truncate">
+              在视频库中输入任意技术标签（如 React, Docker, Python），直达 6,000+ 部高清课程
+            </div>
+          </div>
+        </div>
+        <Button asChild size="sm" variant="outline" className="text-xs shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10">
+          <Link href="/videos">
+            <span>浏览视频教程</span>
+            <ArrowRight className="w-3.5 h-3.5 ml-1" />
+          </Link>
+        </Button>
       </div>
 
       {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
@@ -199,7 +267,23 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
           }
         />
       ) : (
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 p-3.5 sm:p-7 rounded-2xl border border-border/60 bg-card/60 backdrop-blur-xs shadow-2xs">
+        <>
+          {tierFilter === 'multi' && tagStats.singleTags > 0 && !searchQuery && (
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border border-border/60 bg-muted/20 text-xs text-muted-foreground">
+              <span>
+                已为您收敛 <strong>{tagStats.singleTags}</strong> 个仅被 1 站引用的长尾标签，当前展示 <strong>{filteredTags.length}</strong> 个可探索核心主题。
+              </span>
+              <button
+                type="button"
+                onClick={() => setTierFilter('all')}
+                className="inline-flex items-center gap-1 text-primary hover:underline font-medium shrink-0"
+              >
+                展开全部标签
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 p-3.5 sm:p-7 rounded-2xl border border-border/60 bg-card/60 backdrop-blur-xs shadow-2xs">
           {filteredTags.map((t) => {
             const isHeavy = t.count >= 10
             const isMedium = t.count >= 4
@@ -253,6 +337,7 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
             )
           })}
         </div>
+        </>
       )}
     </>
   )

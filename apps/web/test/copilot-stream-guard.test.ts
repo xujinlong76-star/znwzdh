@@ -363,7 +363,7 @@ describe("与中枢的帧契约逐字对齐", () => {
 
   it("流式只在模型真能跑时开启：额度/未配置仍回一次性 JSON（判定收敛为一个纯函数）", () => {
     expect(route).toMatch(
-      /if \(stream && canAttemptCopilotModel\(prep\.quotaInfo, prep\.llm\)\) \{\s*\n\s*return streamCopilotReply\(/,
+      /if \(stream && canAttemptCopilotModel\(prep\.quotaInfo, prep\.llm\)\) \{\s*\n\s*return (?:await )?streamCopilotReply\(/,
     );
     // 非流式路径同样用这一份判定，否则主模型缺密钥时备用池永远走不到
     expect(route).toMatch(

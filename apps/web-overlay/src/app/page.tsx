@@ -1,7 +1,6 @@
 import { cache } from "react";
 import { NavigationContent } from "@/components/navigation-content";
 import { Metadata } from "next/types";
-import { ScrollToTop } from "@/components/ScrollToTop";
 import { getProcessedData } from "@/lib/data-loader";
 import { getFileContent } from "@/lib/github";
 import { configuredSiteOrigin } from "@/lib/seo/origin";
@@ -210,7 +209,6 @@ export default async function HomePage() {
           />
         </>
       ) : null}
-      <ScrollToTop />
     </>
   );
 }

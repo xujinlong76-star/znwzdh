@@ -149,10 +149,13 @@ export function contractEntries(bindings, toJsonSchema) {
       existing.routes.push(route);
       continue;
     }
+    // 204 没有响应体：生成类型声明会说谎。schema 置 null，渲染层把路由键
+    // 标成 undefined，既保留路由清单完整性，也不编造一个不存在的 body。
+    const noContent = Boolean(binding.noContent) || !binding.schema;
     byName.set(binding.name, {
       name: binding.name,
       routes: [route],
-      schema: toJsonSchema(binding.schema),
+      schema: noContent ? null : toJsonSchema(binding.schema),
     });
   }
   return [...byName.values()];
@@ -192,6 +195,7 @@ export function renderContractTypes(entries) {
   for (const entry of entries) {
     if (seen.has(entry.name)) continue;
     seen.add(entry.name);
+    if (entry.schema === null) continue; // 204：无响应体
     // zod 目前会把重复子结构内联展开；一旦哪天改成 $defs/$ref，渲染器会
     // 把它们当作 unknown 静默降级——前端类型变成一坨 any 而没人发现。
     // 与其猜，不如在这里直接失败（降级必须如实说）。
@@ -207,7 +211,8 @@ export function renderContractTypes(entries) {
 
   const routeLines = [];
   for (const entry of entries) {
-    for (const route of entry.routes) routeLines.push("  " + JSON.stringify(route) + ": " + entry.name + ";");
+    const target = entry.schema === null ? "undefined" : entry.name;
+    for (const route of entry.routes) routeLines.push("  " + JSON.stringify(route) + ": " + target + ";");
   }
   blocks.push(
     [

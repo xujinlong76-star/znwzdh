@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { httpUrl } from "@navhub/core";
+import { httpUrl, SubmissionReviewInput } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 import { ADMIN_NOTIFICATION_IDENTITY } from "../notifications.ts";
 import { identityTrusted, requestIdentityOf, submissionNumber } from "./shared.ts";
@@ -145,10 +145,7 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    */
   app.patch("/api/submissions/:number", { config: { scope: "admin" } }, async (req, reply) => {
     const { number } = req.params as { number: string };
-    const body = z.object({
-      action: z.enum(["approve", "reject"]),
-      reason: z.string().max(500).optional(),
-    }).safeParse(req.body ?? {});
+    const body = SubmissionReviewInput.safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { success: false, message: "无效的操作" }; }
 
     // 优先按真实 siteId 匹配；若未匹配且传入的是纯数字编号，回退按 djb2 哈希编号查找

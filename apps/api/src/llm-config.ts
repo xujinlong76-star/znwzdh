@@ -21,6 +21,7 @@ import {
   assertLlmEndpoint,
   chatCompletion,
   maskApiKey,
+  resolveRequestTimeout,
   type JsonMode,
   type LlmConfig,
   type LlmProvider,
@@ -92,6 +93,8 @@ interface StoredLlmFallback {
   model: string;
   apiKeyEnc: EncryptedPayloadEnvelope | null;
   timeoutMs: number;
+  /** timeoutMs 是否由管理端显式提交（或来自 NAVHUB_LLM_TIMEOUT_MS）；false = 该值是内置默认 */
+  timeoutMsExplicit: boolean;
   temperature: number;
   maxTokens: number;
   jsonMode: JsonMode;
@@ -107,6 +110,8 @@ interface StoredLlmProvider {
   model: string;
   apiKeyEnc: EncryptedPayloadEnvelope | null;
   timeoutMs: number;
+  /** 同 LlmFallback.timeoutMsExplicit：只有显式提交过才允许「思考态不放宽」 */
+  timeoutMsExplicit: boolean;
   temperature: number;
   maxTokens: number;
   jsonMode: JsonMode;
@@ -129,6 +134,7 @@ const StoredLlmFallbackSchema = z.object({
   model: z.string(),
   apiKeyEnc: z.unknown().nullable().optional(),
   timeoutMs: z.number().default(20_000),
+  timeoutMsExplicit: z.boolean().default(false),
   temperature: z.number().default(0.2),
   maxTokens: z.number().default(1024),
   jsonMode: z.enum(["auto", "response_format", "prompt"]).default("auto"),
@@ -144,6 +150,9 @@ const StoredLlmProviderSchema = z.object({
   model: z.string().default(AGNES_MODEL),
   apiKeyEnc: z.unknown().nullable().optional(),
   timeoutMs: z.number().default(20_000),
+  // 同 thinking：读侧不声明就等于「管理端填过但永远读不出来」。
+  // 默认 false —— 旧库里的记录没人显式填过超时，仍按思考态放宽处理。
+  timeoutMsExplicit: z.boolean().default(false),
   temperature: z.number().default(0.2),
   maxTokens: z.number().default(1024),
   jsonMode: z.enum(["auto", "response_format", "prompt"]).default("auto"),
@@ -162,6 +171,25 @@ function secretPassphrase(config: AppConfig): string {
   return config.llm.secretsKey || config.sessionSecret;
 }
 
+/**
+ * 部署方是否显式设定过 LLM 超时（NAVHUB_LLM_TIMEOUT_MS）。
+ *
+ * 判据必须和 config.ts 的 `num()` 一致：变量存在、非空且能解析成有限数才算「填过」，
+ * 写成 `NAVHUB_LLM_TIMEOUT_MS=abc` 时 num() 会退回 20000，这里也必须退回「没填过」，
+ * 否则一个坏掉的赋值会把思考态的放宽关掉，表现得像管理员主动要求 20s。
+ *
+ * 还要比一次 `config.llm.timeoutMs`：`loadConfig(overrides)` 允许测试/嵌入式装配覆盖，
+ * 此时环境变量里的数字并没有真正生效，只有落进 config 的那个数字才算「部署方设的」。
+ * 之所以直接读 process.env 而不是扩展 AppConfig：超时是否显式属于「解析链」的事实，
+ * 只有这一个消费者，加字段要把整条 config 契约牵动一遍。
+ */
+function envLlmTimeoutConfigured(config: AppConfig): boolean {
+  const raw = process.env.NAVHUB_LLM_TIMEOUT_MS;
+  if (raw === undefined || raw === "") return false;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed === config.llm.timeoutMs;
+}
+
 function envDefaults(config: AppConfig): Omit<StoredLlmProvider, "apiKeyEnc" | "updatedAt" | "updatedBy"> {
   return {
     enabled: true,
@@ -169,6 +197,7 @@ function envDefaults(config: AppConfig): Omit<StoredLlmProvider, "apiKeyEnc" | "
     baseUrl: config.llm.baseUrl || AGNES_BASE_URL,
     model: config.llm.model || AGNES_MODEL,
     timeoutMs: config.llm.timeoutMs,
+    timeoutMsExplicit: envLlmTimeoutConfigured(config),
     temperature: config.llm.temperature,
     maxTokens: config.llm.maxTokens,
     jsonMode: config.llm.jsonMode,
@@ -186,6 +215,7 @@ function toProvider(stored: StoredLlmProvider, apiKey: string | null, allowPriva
     model: stored.model,
     apiKey,
     timeoutMs: stored.timeoutMs,
+    timeoutMsExplicit: stored.timeoutMsExplicit === true,
     temperature: stored.temperature,
     maxTokens: stored.maxTokens,
     jsonMode: stored.jsonMode,
@@ -202,6 +232,7 @@ function fallbackToProvider(fb: StoredLlmFallback, apiKey: string): LlmProvider 
     model: fb.model,
     apiKey,
     timeoutMs: fb.timeoutMs,
+    timeoutMsExplicit: fb.timeoutMsExplicit === true,
     temperature: fb.temperature,
     maxTokens: fb.maxTokens,
     jsonMode: fb.jsonMode,
@@ -342,6 +373,7 @@ export async function resolveLlm(ctx: AppContext, identity?: string | null): Pro
     model: ctx.config.llm.model,
     apiKey: ctx.config.llm.apiKey,
     timeoutMs: ctx.config.llm.timeoutMs,
+    timeoutMsExplicit: envLlmTimeoutConfigured(ctx.config),
     temperature: ctx.config.llm.temperature,
     maxTokens: ctx.config.llm.maxTokens,
     jsonMode: ctx.config.llm.jsonMode,
@@ -361,6 +393,7 @@ export function enrichLlmOf(resolved: ResolvedLlm): LlmConfig {
     apiKey: resolved.provider.apiKey ?? null,
     model: resolved.provider.model,
     timeoutMs: resolved.provider.timeoutMs ?? 20_000,
+    timeoutMsExplicit: resolved.provider.timeoutMsExplicit === true,
     jsonMode: resolved.provider.jsonMode,
     allowPrivateNetwork: resolved.provider.allowPrivateNetwork,
     thinking: resolved.provider.thinking ?? true,
@@ -369,6 +402,7 @@ export function enrichLlmOf(resolved: ResolvedLlm): LlmConfig {
       apiKey: fb.apiKey ?? null,
       model: fb.model,
       timeoutMs: fb.timeoutMs ?? 20_000,
+      timeoutMsExplicit: fb.timeoutMsExplicit === true,
       jsonMode: fb.jsonMode,
       allowPrivateNetwork: fb.allowPrivateNetwork,
     })),
@@ -427,6 +461,10 @@ export interface LlmFallbackView {
   hasApiKey: boolean;
   apiKeyMasked: string;
   timeoutMs: number;
+  /** timeoutMs 是否显式配置过（见 LlmProvider.timeoutMsExplicit） */
+  timeoutMsExplicit: boolean;
+  /** 思考态请求真正生效的超时：未显式配置时会被内置下限抬到 60s */
+  thinkingTimeoutMsEffective: number;
   temperature: number;
   maxTokens: number;
   jsonMode: JsonMode;
@@ -443,6 +481,10 @@ export interface LlmConfigView {
   hasApiKey: boolean;
   apiKeyMasked: string;
   timeoutMs: number;
+  /** timeoutMs 是否显式配置过；false = 该值来自内置默认，思考态请求会被抬到 60s */
+  timeoutMsExplicit: boolean;
+  /** 思考态（思维链确实下发时）真正生效的超时，与 llm.ts 的 resolveRequestTimeout 同一口径 */
+  thinkingTimeoutMsEffective: number;
   temperature: number;
   maxTokens: number;
   jsonMode: JsonMode;
@@ -470,6 +512,11 @@ function viewOf(stored: StoredLlmProvider, key: string | null, source: "db" | "e
     hasApiKey: Boolean(key),
     apiKeyMasked: maskApiKey(key),
     timeoutMs: stored.timeoutMs,
+    timeoutMsExplicit: stored.timeoutMsExplicit === true,
+    thinkingTimeoutMsEffective: resolveRequestTimeout(
+      { timeoutMs: stored.timeoutMs, timeoutMsExplicit: stored.timeoutMsExplicit === true },
+      stored.thinking ?? true,
+    ),
     temperature: stored.temperature,
     maxTokens: stored.maxTokens,
     jsonMode: stored.jsonMode,
@@ -511,6 +558,11 @@ export async function getSystemLlmConfigView(ctx: AppContext): Promise<LlmConfig
         hasApiKey: Boolean(fbKey),
         apiKeyMasked: maskApiKey(fbKey),
         timeoutMs: fb.timeoutMs,
+        timeoutMsExplicit: fb.timeoutMsExplicit === true,
+        thinkingTimeoutMsEffective: resolveRequestTimeout(
+          { timeoutMs: fb.timeoutMs, timeoutMsExplicit: fb.timeoutMsExplicit === true },
+          fb.thinking ?? true,
+        ),
         temperature: fb.temperature,
         maxTokens: fb.maxTokens,
         jsonMode: fb.jsonMode,
@@ -582,6 +634,8 @@ export async function saveSystemLlmConfig(
         model: fb.model,
         apiKeyEnc: fbKeyEnc,
         timeoutMs: fb.timeoutMs ?? prev?.timeoutMs ?? 20_000,
+        // 本次显式填了超时 = 这一跳锁定该值；省略 = 沿用旧条目的显式性（与 apiKey 同的「不填不改」语义）
+        timeoutMsExplicit: fb.timeoutMs !== undefined ? true : (prev?.timeoutMsExplicit ?? false),
         temperature: fb.temperature ?? prev?.temperature ?? 0.2,
         maxTokens: fb.maxTokens ?? prev?.maxTokens ?? 1024,
         jsonMode: fb.jsonMode ?? prev?.jsonMode ?? "auto",
@@ -600,6 +654,9 @@ export async function saveSystemLlmConfig(
     model: input.model,
     apiKeyEnc,
     timeoutMs: input.timeoutMs ?? base.timeoutMs,
+    // 只有本次真的提交了 timeoutMs 才判为「显式」；省略时沿用既有判定（无既有条目则是环境变量说了算），
+    // 不能让「管理端从没填过、值是 envDefaults 兜出来的 20000」被读成「管理员要求 20 秒」。
+    timeoutMsExplicit: input.timeoutMs !== undefined ? true : base.timeoutMsExplicit,
     temperature: input.temperature ?? base.temperature,
     maxTokens: input.maxTokens ?? base.maxTokens,
     jsonMode: input.jsonMode ?? base.jsonMode,
@@ -652,6 +709,10 @@ export interface UserLlmConfigView {
   hasApiKey: boolean;
   apiKeyMasked: string;
   timeoutMs: number;
+  /** timeoutMs 是否显式配置过；false = 该值来自上层默认，思考态请求会被抬到 60s */
+  timeoutMsExplicit: boolean;
+  /** 思考态（思维链确实下发时）真正生效的超时，与 llm.ts 的 resolveRequestTimeout 同一口径 */
+  thinkingTimeoutMsEffective: number;
   temperature: number;
   maxTokens: number;
   jsonMode: JsonMode;
@@ -693,6 +754,11 @@ export async function getUserLlmConfigView(ctx: AppContext, identity: string): P
       hasApiKey: false,
       apiKeyMasked: "",
       timeoutMs: ctx.config.llm.timeoutMs,
+      timeoutMsExplicit: envLlmTimeoutConfigured(ctx.config),
+      thinkingTimeoutMsEffective: resolveRequestTimeout(
+        { timeoutMs: ctx.config.llm.timeoutMs, timeoutMsExplicit: envLlmTimeoutConfigured(ctx.config) },
+        ctx.config.llm.thinking,
+      ),
       temperature: ctx.config.llm.temperature,
       maxTokens: ctx.config.llm.maxTokens,
       jsonMode: ctx.config.llm.jsonMode,
@@ -712,6 +778,11 @@ export async function getUserLlmConfigView(ctx: AppContext, identity: string): P
     hasApiKey: Boolean(key),
     apiKeyMasked: maskApiKey(key),
     timeoutMs: stored.timeoutMs,
+    timeoutMsExplicit: stored.timeoutMsExplicit === true,
+    thinkingTimeoutMsEffective: resolveRequestTimeout(
+      { timeoutMs: stored.timeoutMs, timeoutMsExplicit: stored.timeoutMsExplicit === true },
+      stored.thinking ?? true,
+    ),
     temperature: stored.temperature,
     maxTokens: stored.maxTokens,
     jsonMode: stored.jsonMode,
@@ -745,6 +816,8 @@ export async function saveUserLlmConfig(
     model: input.model,
     apiKeyEnc,
     timeoutMs: input.timeoutMs ?? existing?.timeoutMs ?? ctx.config.llm.timeoutMs,
+    // 个人配置同理：本次提交才算显式；沿用既有显式性，旧记录一律 false（保持当前线上行为）
+    timeoutMsExplicit: input.timeoutMs !== undefined ? true : (existing?.timeoutMsExplicit ?? false),
     temperature: input.temperature ?? existing?.temperature ?? ctx.config.llm.temperature,
     maxTokens: input.maxTokens ?? existing?.maxTokens ?? ctx.config.llm.maxTokens,
     jsonMode: input.jsonMode ?? existing?.jsonMode ?? ctx.config.llm.jsonMode,

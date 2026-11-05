@@ -191,15 +191,23 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   /**
    * 客户端本地差分隐私 (Local Differential Privacy, LDP Laplace) 联邦协同推荐排序端点
    */
-  app.post("/api/rank/federated", { config: { scope: "public" } }, async (req, reply) => {
+  app.post("/api/rank/federated", {
+    config: {
+      scope: "public",
+      // 联邦排序是公开计算端点：60 次/分钟覆盖正常客户端交互，测试进程放宽
+      rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" },
+    },
+    // 50 个候选 × 256 维已在百 KB 量级；再大属于批量跑分，应走离线计算而不是公开端点
+    bodyLimit: 512 * 1024,
+  }, async (req, reply) => {
     const body = z.object({
-      localVector: z.array(z.number()).max(1024),
-      globalVector: z.array(z.number()).max(1024).optional(),
+      localVector: z.array(z.number().finite()).max(256),
+      globalVector: z.array(z.number().finite()).max(256).optional(),
       candidates: z.array(z.object({
-        id: z.string(),
-        name: z.string(),
-        featureVector: z.array(z.number()).max(1024),
-      })).max(200).optional(),
+        id: z.string().max(128),
+        name: z.string().max(200),
+        featureVector: z.array(z.number().finite()).max(256),
+      })).max(50).optional(),
       personalWeight: z.number().min(0).max(1).default(0.6),
       privatize: z.boolean().default(false),
       epsilon: z.number().positive().default(1.0),

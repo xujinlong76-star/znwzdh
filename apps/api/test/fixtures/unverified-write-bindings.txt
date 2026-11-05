@@ -1,0 +1,91 @@
+# 写绑定「尚未在本文件跑真实响应」的豁免清单（门禁：response-contracts.test.ts）
+#
+# 格式：<METHOD /path> | <为什么不在本文件跑、在哪里验过>
+#   - 本文件同时验证「OpenAPI 结构」与「真实响应」。结构验证对全部绑定生效；
+#     真实响应验证需要构造前置状态（作业、密钥、双身份、备份、外部探活）或
+#     会产生难以回滚的副作用，所以下列绑定走各自的路由测试/单测。
+#   - 清单只许缩小：某条绑定补了 expectRoutedContract 后必须删除对应行；
+#     新增写绑定既不补运行时用例也不登记，门禁判红。
+#   - 理由必须能查到验证位置；只写「以后再说」不算。
+
+# —— 破坏性/运维动作：本文件有固定的数据量断言，执行会污染或不可回滚 ——
+DELETE /api/sites/{id} | 删除站点；由 sites CRUD 路由用例覆盖，本文件删除会让 health/stats 计数漂移
+POST /api/sites/bulk | 批量导入；由 sites 导入用例覆盖，会改变本文件站点总数
+POST /api/sites/batch | 批量操作（改状态/类目）；由 sites 批量用例覆盖，会改变列表断言
+POST /api/trash/{id}/restore | 回收站恢复；依赖「先删除站点」的前置状态，在 trash 用例覆盖
+DELETE /api/trash/{id} | 回收站彻底清除；破坏性且依赖前置状态，在 trash 用例覆盖
+POST /api/admin/maintenance/checkpoint | 运维动作（WAL 检查点），契约测试不触碰存储引擎
+POST /api/admin/maintenance/optimize | 运维动作（索引重建），契约测试不执行
+POST /api/admin/maintenance/vacuum | 全库 VACUUM，契约测试严禁执行
+PUT /api/storage | 存储写入需要真实对象存储与资产二进制，在 storage 路由用例覆盖
+DELETE /api/storage | 存储删除同上，且不可回滚
+POST /api/admin/audit/scan | 站点审计会发起外部探活，契约测试禁止出站
+POST /api/admin/audit/apply | 审计结果批量应用，破坏性更新，在 audit 用例覆盖
+POST /api/warmup | 预热会构建检索索引，耗时且非响应契约面，由 warmup 单测覆盖
+
+# —— 类目/标签治理：会改变本文件固定的类目树、标签计数与站点分面基线 ——
+POST /api/categories | 类目创建；由 categories 路由用例覆盖，本文件建类目会破坏层级断言
+PATCH /api/categories/{id} | 类目更新；同上
+POST /api/categories/{id}/move | 类目移动会改父级链，破坏本文件层级断言
+POST /api/categories/merge | 类目合并会删除源类目，破坏性，在 taxonomy 用例覆盖
+DELETE /api/categories/{id} | 删除类目，破坏本文件类目总数与孤儿站点断言
+PATCH /api/tags/{id} | 标签改名会改变 /api/tags 断言，在 tags 路由用例覆盖
+DELETE /api/tags/{id} | 删除标签，破坏性，在 tags 路由用例覆盖
+POST /api/tags/merge | 标签合并会改计数与别名，在 tags 路由用例覆盖
+POST /api/tags/{id}/aliases | 别名写入会改变 /api/tags 的 aliases 数组，在 tags 用例覆盖
+DELETE /api/tags/{id}/aliases/{alias} | 同上（移除别名）
+PUT /api/sites/{id}/facets | 分面写入需要受控站点与分面基线，在 facets 路由用例覆盖
+PUT /api/sites/{id}/relations | 站点关系需要双站点前置，在 relations 路由用例覆盖
+POST /api/taxonomy/audit | 需要真实治理数据（重复/空类目）才能产出 proposal，在 taxonomy 用例覆盖
+POST /api/taxonomy/proposals/{id}/apply | 需要 pending proposal 前置，应用会改类目树
+POST /api/taxonomy/proposals/{id}/dismiss | 同上（忽略提案）
+POST /api/taxonomy/proposals/batch | 批量应用/忽略依赖 pending proposal 集合，在 taxonomy 用例覆盖
+
+# —— 作业/凭据/投稿/通知：需要运行中执行器、密钥持久化或待办状态 ——
+POST /api/jobs | 入队会启动后台执行器；契约测试不启动 job runner，在 jobs 路由用例覆盖
+POST /api/jobs/{id}/cancel | 依赖真实入队作业的状态，在 jobs 用例覆盖
+POST /api/jobs/{id}/retry | 同上（失败作业才能重试）
+POST /api/jobs/prune | 破坏性清理任务历史，在 jobs 用例覆盖
+POST /api/tokens | 实例令牌创建需要 admin 凭据与密钥落库，在 tokens 路由用例覆盖
+PATCH /api/tokens/{id} | 令牌更新同上
+POST /api/tokens/{id}/rotate | 凭据轮换，不可回滚，在 tokens 用例覆盖
+POST /api/tokens/{id}/revoke | 吊销后原凭据立即失效，在 tokens 用例覆盖
+DELETE /api/tokens/{id} | 删除令牌（204 无响应体由 OpenAPI 结构断言兜底），在 tokens 用例覆盖
+POST /api/submissions | 匿名投稿需要站点前置，在 submissions 路由用例覆盖
+PATCH /api/submissions/{number} | 审核需要 pending 投稿前置，在 submissions 用例覆盖
+POST /api/admin/notifications/read-all | 需要通知台账非空，在 notifications 用例覆盖
+POST /api/me/notifications/read-all | 需要该身份存在未读通知，在 me 通知用例覆盖
+POST /api/me/notifications/{id}/read | 需要具体通知 id 前置，在 me 通知用例覆盖
+DELETE /api/plugins/{slug}/star | 取消星标需要先星标；本文件已覆盖 POST 星标，DELETE 由插件用例覆盖
+PATCH /api/plugins/{slug}/featured | 精选位写入会改市场排序，在插件治理路由用例覆盖
+POST /api/shortlinks | 需要已上架插件 slug 前置，在 shortlinks 路由用例覆盖
+DELETE /api/admin/client-errors | 清空进程内错误聚合，在 client-errors 用例覆盖
+POST /api/users/sync | OAuth upsert 会写 users 表并影响身份解析，在 auth.test 的 users/sync 用例覆盖
+
+# —— 用户自服务：需要登录身份、会话/双身份/备份等前置，或会破坏本文件 ME 基线 ——
+PATCH /api/me/settings | 需要登录身份与设置持久化，在 me 路由用例覆盖
+PATCH /api/me/profile | 昵称/邮箱唯一性需要账号表前置，在 me 路由用例覆盖
+POST /api/me/tokens | 个人令牌明文只在创建响应出现一次，在 me-tokens 用例覆盖
+DELETE /api/me/tokens/{id} | 需要已创建的个人令牌前置，在 me-tokens 用例覆盖
+DELETE /api/me/sessions/{id} | 需要会话登记（sidHash）前置，在 me-sessions 用例覆盖
+POST /api/me/sessions/check | 会登记会话并影响吊销核对，在 me-sessions 用例覆盖
+POST /api/me/diagnostics | 会修复数据并刷新画像，契约测试不执行自修复
+POST /api/me/prune | 按域清理用户数据（破坏性），在 user-data 用例覆盖
+DELETE /api/me | 注销账号（破坏性），在 user-data 用例覆盖
+POST /api/me/merge | 需要匿名+登录双身份与签名前置，在 identity-merge 用例覆盖
+POST /api/me/favorites/sync | 需要收藏基线；在 favorites-sync 用例覆盖
+POST /api/me/import | 需要完整导出备份前置，在 me-import 用例覆盖
+DELETE /api/profile | 会重置画像与行为事件，影响本文件 ME 概览断言
+DELETE /api/profile/signals/{kind} | 按信号清理并重建画像，同上
+DELETE /api/search-history/{id} | 会删除本文件固定的历史记录，破坏后续分页断言
+DELETE /api/search-history | 清空历史，同上
+POST /api/search-history/batch-delete | 批量删除历史，同上（在 history 路由用例覆盖）
+
+# —— 公开遥测/团队空间/纯函数：写入会污染事件表，或响应由协议决定 ——
+POST /api/events | 公开遥测：写事件会改变 /api/me counts.events 与画像，在 telemetry 用例覆盖
+POST /api/vitals | 204 无响应体由 OpenAPI 结构断言覆盖；写入会污染事件表
+POST /api/errors | 同上（进程内聚合 + events 明细），在 client-errors 用例覆盖
+POST /api/workspaces | 需要登录身份与 workspace blob，在 workspaces 路由用例覆盖
+POST /api/workspaces/{id}/members | 需要 RBAC 角色前置，在 workspaces 用例覆盖
+DELETE /api/workspaces/{id}/members/{userId} | 同上（Owner 不可移除）
+POST /api/speculation/rules | 纯函数编译结果，在 speculation 单测覆盖，无需启动 HTTP 栈

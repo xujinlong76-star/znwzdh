@@ -175,6 +175,8 @@ const nextConfig = {
       allowedOrigins: ["localhost", "newkit.site"],
     },
     optimizePackageImports: ["lucide-react", "date-fns", "lodash"],
+    // 关闭 Windows 本地开发时 Turbopack 的持久化磁盘缓存，规避 RocksDB .sst 文件被并发删除导致的 Rust panic 中断
+    turbopackFileSystemCacheForDev: false,
   },
 };
 

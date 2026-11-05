@@ -74,6 +74,7 @@ export function VideoIconUpload({ value, onChange }: VideoIconUploadProps) {
                         <img
                             src={value}
                             alt="图标预览"
+                            referrerPolicy="no-referrer"
                             className="w-4 h-4 object-contain"
                             onError={(e) => {
                                 const target = e.target as HTMLImageElement;

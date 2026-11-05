@@ -8,6 +8,8 @@ vi.mock('@/lib/github', () => ({
 import {
   calculateQualityScore,
   calculateFreshnessScore,
+  DEFAULT_HARVEST_PLATFORMS,
+  VIDEO_PLATFORM_REGISTRY,
 } from '../src/lib/video-harvester'
 import { formatDuration } from '../src/lib/video-format'
 
@@ -95,6 +97,27 @@ describe('video-harvester 核心工具函数单测', () => {
       const scoreWithOldYear = calculateFreshnessScore(daysAgo30, 80, 90, '2021 年 Next.js 极速上手')
 
       expect(scoreWithOldYear).toBeLessThan(scoreWithoutYear)
+    })
+  })
+
+  describe('多平台采集通道与平台能力注册表', () => {
+    it('DEFAULT_HARVEST_PLATFORMS 默认包含 B站、YouTube、Dailymotion、TED、PeerTube', () => {
+      expect(DEFAULT_HARVEST_PLATFORMS).toEqual([
+        'bilibili',
+        'youtube',
+        'dailymotion',
+        'ted',
+        'peertube',
+      ])
+    })
+
+    it('VIDEO_PLATFORM_REGISTRY 覆盖所有支持平台并提供名称与徽标色', () => {
+      for (const p of DEFAULT_HARVEST_PLATFORMS) {
+        expect(VIDEO_PLATFORM_REGISTRY[p]).toBeDefined()
+        expect(VIDEO_PLATFORM_REGISTRY[p].shortName).toBeDefined()
+        expect(VIDEO_PLATFORM_REGISTRY[p].badgeColor).toMatch(/^#[0-9a-fA-F]{6}$/)
+        expect(VIDEO_PLATFORM_REGISTRY[p].supportsKeywordHarvest).toBe(true)
+      }
     })
   })
 })

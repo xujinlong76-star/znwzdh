@@ -113,7 +113,7 @@ export default function AdminAuditPage() {
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <select aria-label="按操作类型过滤"
-          className="h-8 rounded-md border border-input bg-background px-2 text-base sm:text-sm"
+          className="h-8 rounded-md border border-border-strong bg-background px-2 text-base sm:text-sm"
           value={action}
           onChange={(e) => setAction(e.target.value)}
         >
@@ -123,7 +123,7 @@ export default function AdminAuditPage() {
           ))}
         </select>
         <input aria-label="按执行者过滤"
-          className="h-8 rounded-md border border-input bg-background px-2 text-base sm:text-sm w-full sm:w-44"
+          className="h-8 rounded-md border border-border-strong bg-background px-2 text-base sm:text-sm w-full sm:w-44"
           placeholder="按执行者过滤"
           value={actor}
           onChange={(e) => setActor(e.target.value)}

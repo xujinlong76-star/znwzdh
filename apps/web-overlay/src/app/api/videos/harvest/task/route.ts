@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   try {
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
     // 进程重启后内存是空的：先把上一条快照懒加载回来，管理端才不会看到「没有任何任务」
@@ -47,16 +47,17 @@ export async function POST(request: Request) {
   try {
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
     const body = await request.json()
-    const { dryRun = false, categoryId, forceKeywords, trigger = 'admin' } = body
+    const { dryRun = false, categoryId, forceKeywords, trigger = 'admin', platforms } = body
 
     const { taskId, task } = await scheduleAndRunVideoHarvest({
       dryRun,
       categoryId,
       forceKeywords,
+      platforms,
       trigger,
       accessToken: authCheck.githubToken || undefined
     })

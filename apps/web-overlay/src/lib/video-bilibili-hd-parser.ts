@@ -79,6 +79,11 @@ export interface BilibiliHdParseResult {
   expiresAt: number
   /** 降级或失败原因说明 */
   errorReason?: string
+  /**
+   * 请求里带的 access_key 没有被交给任何上游（本部署未开启出站转发）。
+   * 界面必须据此说明，否则用户以为「大会员画质解锁生效了」，实际拿到的是免登录档。
+   */
+  accessKeyIgnored?: boolean
 }
 
 /** 星之阁 API 原始响应结构（doc/40） */
@@ -251,6 +256,46 @@ async function fetchBiliVideoInfo(
 }
 
 /**
+ * 本次请求真正会出站的 access_key（空串 = 免登录档）。
+ *
+ * 星之阁 / 米人 是不受我们控制的外部服务。把「用户在页面上粘贴的 B 站登录凭据」
+ * 原样转发过去，等于替用户把账号交出去——他以为只是「解锁高清」，实际是把
+ * access_key 送进了别人的日志。所以默认只转发**操作者自己配的**
+ * `NAVHUB_BILIBILI_ACCESS_KEY`（那是部署者对自己账号的处置），用户提交的 key
+ * 要显式 `NAVHUB_BILI_FORWARD_USER_KEY=1` 才允许出站。
+ */
+export function forwardsUserAccessKey(): boolean {
+  return process.env.NAVHUB_BILI_FORWARD_USER_KEY === '1'
+}
+
+export function resolveOutboundAccessKey(input: BilibiliHdParseInput): string {
+  const operatorKey = (process.env.NAVHUB_BILIBILI_ACCESS_KEY ?? '').trim()
+  const userKey = (input.accessKey ?? '').trim()
+  if (!userKey) return operatorKey
+  return forwardsUserAccessKey() ? userKey : operatorKey
+}
+
+/**
+ * 缓存按「结果是用哪把凭据解析出来的」分桶。
+ *
+ * 旧键只分 custom / default 两档：任何两把不同的 access_key 共用同一份结果，
+ * 等于把 A 账号解析出的带签名流地址发给 B（那是可用的 Bearer 能力，TTL 到 deadline）。
+ * 这里用出站 key 的 SHA-256 摘要前 8 字节分桶——摘要只当键用，不落盘、不进日志。
+ * 拿不到 WebCrypto 时返回 null，调用方据此**不缓存**带 key 的请求：
+ * 宁可多解析一次，也不能让不同账号的结果互相串。
+ */
+export async function accessKeyCacheBucket(outboundKey: string): Promise<string | null> {
+  const key = outboundKey.trim()
+  if (!key) return 'anon'
+  const subtle = (globalThis.crypto as Crypto | undefined)?.subtle
+  if (!subtle) return null
+  const digest = await subtle.digest('SHA-256', new TextEncoder().encode(key))
+  return Array.from(new Uint8Array(digest).slice(0, 8), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')
+}
+
+/**
  * 引擎 1 (主引擎)：星之阁 B 站解析 API (https://api.xingzhige.com/doc/40)
  */
 export async function parseBilibiliWithXingzhige(
@@ -258,7 +303,7 @@ export async function parseBilibiliWithXingzhige(
   fetchImpl: typeof fetch = fetch
 ): Promise<BilibiliHdParseResult> {
   const target = normalizeBilibiliTarget(input)
-  const accessKey = (input.accessKey ?? process.env.NAVHUB_BILIBILI_ACCESS_KEY ?? '').trim()
+  const accessKey = resolveOutboundAccessKey(input)
 
   const queryParams = new URLSearchParams()
   queryParams.set('url', target.canonicalUrl)
@@ -803,13 +848,23 @@ export async function resolveBilibiliHdStream(
   fetchImpl: typeof fetch = fetch
 ): Promise<BilibiliHdParseResult> {
   const target = normalizeBilibiliTarget(input)
-  const hasCustomKey = Boolean((input.accessKey ?? '').trim())
-  const cacheKey = `${target.canonicalUrl}|p=${target.p}|key=${hasCustomKey ? 'custom' : 'default'}|pref=${input.preferredEngine || 'auto'}`
+  const userKey = (input.accessKey ?? '').trim()
+  const outboundKey = resolveOutboundAccessKey(input)
+  // 用户填了 key，但真正出站的不是它 = 本部署拦下了转发。界面必须说出来。
+  const accessKeyIgnored = Boolean(userKey) && outboundKey !== userKey
+  // 缓存桶按「真正出站的那把 key」分。用户 key 被拦下时结果属于操作者档，
+  // 不能和用户 key 的结果共用一个桶——否则就是把 A 账号的签名流地址发给 B。
+  // bucket 为 null 表示环境没有 WebCrypto：带 key 的请求一律不缓存，
+  // 宁可多解析一次，也不能让不同账号的结果互相串味。
+  const bucket = await accessKeyCacheBucket(outboundKey)
+  const cacheKey = bucket === null
+    ? null
+    : `${target.canonicalUrl}|p=${target.p}|key=${bucket}|pref=${input.preferredEngine || 'auto'}`
 
-  if (!input.forceRefresh) {
+  if (!input.forceRefresh && cacheKey) {
     const cached = streamCache.get(cacheKey)
     if (cached && cached.expiresAt > Date.now()) {
-      return cached
+      return withKeyNotice(cached, accessKeyIgnored)
     }
   }
 
@@ -840,8 +895,12 @@ export async function resolveBilibiliHdStream(
     try {
       const res = await engine.fn(input, fetchImpl)
       if (res.ok && res.streamUrl) {
-        saveToStreamCache(cacheKey, res)
-        return res
+        // 落缓存的是「纯解析结果」：accessKeyIgnored 是每次请求按当时配置算出来的，
+        // 存进去会把一次性的策略状态固化成别人读到的结果。
+        const stored: BilibiliHdParseResult = { ...res }
+        delete stored.accessKeyIgnored
+        if (cacheKey) saveToStreamCache(cacheKey, stored)
+        return withKeyNotice(stored, accessKeyIgnored)
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
@@ -857,19 +916,28 @@ export async function resolveBilibiliHdStream(
     p: target.p,
   })
 
-  return {
-    ok: false,
-    source: 'iframe_fallback',
-    canonicalUrl: target.canonicalUrl,
-    bvid: target.bvid,
-    aid: target.aid,
-    cid: target.cid,
-    p: target.p,
-    qualityLabel: '官方内嵌播放',
-    embedUrl,
-    expiresAt: Date.now() + 60_000,
-    errorReason: `6 大解析引擎全部熔断失败: ${failedErrors.join(' | ')}`,
-  }
+  return withKeyNotice(
+    {
+      ok: false,
+      source: 'iframe_fallback',
+      canonicalUrl: target.canonicalUrl,
+      bvid: target.bvid,
+      aid: target.aid,
+      cid: target.cid,
+      p: target.p,
+      qualityLabel: '官方内嵌播放',
+      embedUrl,
+      expiresAt: Date.now() + 60_000,
+      errorReason: `6 大解析引擎全部熔断失败: ${failedErrors.join(' | ')}`,
+    },
+    accessKeyIgnored,
+  )
+}
+
+/** 只在「确实被拦下」时补标记，免得每条正常结果都挂一个 `false` 字段 */
+function withKeyNotice(result: BilibiliHdParseResult, accessKeyIgnored: boolean): BilibiliHdParseResult {
+  if (!accessKeyIgnored) return result
+  return { ...result, accessKeyIgnored: true }
 }
 
 function saveToStreamCache(key: string, value: BilibiliHdParseResult): void {

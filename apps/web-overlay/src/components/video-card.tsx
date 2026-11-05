@@ -10,6 +10,7 @@ import type { SiteConfig } from '@/types/site'
 import { formatDuration } from '@/lib/video-format'
 import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 import { saveOfflineVideo, isOfflineVideo } from '@/lib/offline-video-cache'
+import { getPlaybackRecord } from '@/lib/video-playback-storage'
 import { VideoBilibiliHdPlayer } from '@/components/video-bilibili-hd-player'
 import { buildVideoEmbedUrlForSeo } from '@/lib/video-seo'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
@@ -32,6 +33,7 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
     const [isUsingProxy, setIsUsingProxy] = useState(false)
     const [inWatchLater, setInWatchLater] = useState(false)
     const [isSavedOffline, setIsSavedOffline] = useState(false)
+    const [playbackProgress, setPlaybackProgress] = useState(0)
     const { videoConfig } = item
 
     useEffect(() => {
@@ -39,8 +41,17 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
         // 离线状态只影响角标显示，探测失败时保持「未离线」即可，不影响播放
         isOfflineVideo(item.id).then(setIsSavedOffline).catch(() => { /* 见上：纯装饰性状态 */ })
 
+        const record = getPlaybackRecord(item.id)
+        if (record && record.progressPercent > 0) {
+            setPlaybackProgress(record.progressPercent)
+        }
+
         const handleSync = () => {
             setInWatchLater(isInWatchLater(item.id))
+            const rec = getPlaybackRecord(item.id)
+            if (rec && rec.progressPercent > 0) {
+                setPlaybackProgress(rec.progressPercent)
+            }
         }
         if (typeof window !== 'undefined') {
             window.addEventListener(PLAYLIST_UPDATE_EVENT, handleSync)
@@ -240,12 +251,29 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                     {/* 平台标识 */}
                     {getPlatformBadge()}
 
-                    {/* 时长角标 */}
-                    {videoConfig?.durationSec ? (
-                        <span className="absolute bottom-2.5 right-2.5 px-2 py-0.5 text-[11px] font-mono font-medium bg-black/80 text-white/95 rounded-md backdrop-blur-md shadow-xs z-10">
-                            {formatDuration(videoConfig.durationSec)}
-                        </span>
-                    ) : null}
+                    {/* 时长与续播进度角标 */}
+                    <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5 z-10">
+                        {playbackProgress >= 3 && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded-md shadow-xs backdrop-blur-md">
+                                已看 {playbackProgress}%
+                            </span>
+                        )}
+                        {videoConfig?.durationSec ? (
+                            <span className="px-2 py-0.5 text-[11px] font-mono font-medium bg-black/80 text-white/95 rounded-md backdrop-blur-md shadow-xs">
+                                {formatDuration(videoConfig.durationSec)}
+                            </span>
+                        ) : null}
+                    </div>
+
+                    {/* 续播进度横条 */}
+                    {playbackProgress > 0 && (
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40 z-10 overflow-hidden">
+                            <div
+                                className="h-full bg-primary transition-all duration-300"
+                                style={{ width: `${playbackProgress}%` }}
+                            />
+                        </div>
+                    )}
 
                     {/* 渐变遮罩 - 底部 */}
                     <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-black/60 to-transparent" />
@@ -281,6 +309,31 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                         <p className="text-xs text-muted-foreground/75 line-clamp-1 leading-relaxed">
                             {item.description}
                         </p>
+                    )}
+
+                    {((videoConfig?.tags && videoConfig.tags.length > 0) || (item.tags && item.tags.length > 0) || videoConfig?.subCategoryTitle) && (
+                        <div className="flex items-center gap-1 overflow-hidden pt-0.5 flex-wrap">
+                            {videoConfig?.subCategoryTitle && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-primary/10 text-primary font-medium truncate max-w-[130px]" title={videoConfig.subCategoryTitle}>
+                                    {videoConfig.subCategoryTitle}
+                                </span>
+                            )}
+                            {(videoConfig?.tags || item.tags || []).slice(0, 2).map((t, idx) => (
+                                <span key={idx} className="text-[10px] px-1.5 py-0.2 rounded bg-muted/60 text-muted-foreground/90 font-mono">
+                                    {t}
+                                </span>
+                            ))}
+                            {videoConfig?.difficulty === 'advanced' && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                                    进阶
+                                </span>
+                            )}
+                            {videoConfig?.difficulty === 'beginner' && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                                    入门
+                                </span>
+                            )}
+                        </div>
                     )}
                 </div>
                 </button>

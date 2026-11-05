@@ -31,6 +31,7 @@ export interface FavoritesFolderManager {
   setEditingName: Dispatch<SetStateAction<string>>
   refreshFolders: () => Promise<void>
   addFolder: () => Promise<void>
+  createFolderDirectly: (name: string) => Promise<string | null>
   saveFolderName: (folderId: string) => Promise<void>
   removeFolder: (folderId: string) => Promise<void>
   moveFolder: (folderId: string, dir: -1 | 1) => Promise<void>
@@ -88,6 +89,33 @@ export function useFavoritesFolderManager(opts: {
     setNewFolderName('')
     await refreshFolders()
   }, [cloudIdentity, folderBusy, localFolders, newFolderName, refreshFolders, report, setLocalFolders])
+
+  const createFolderDirectly = useCallback(async (rawName: string): Promise<string | null> => {
+    const name = rawName.trim()
+    if (!name) return null
+
+    // 检查是否已有同名文件夹
+    const currentList = cloudIdentity ? folders : localFolders
+    const existing = currentList.find((f) => f.name === name)
+    if (existing) return existing.id
+
+    if (!cloudIdentity) {
+      const result = addLocalFolder(localFolders, name, Date.now())
+      if (!result.ok) {
+        return null
+      }
+      setLocalFolders(result.folders)
+      const created = result.folders.find((f) => f.name === name)
+      return created ? created.id : null
+    }
+
+    const folder = await createFavoriteFolder(cloudIdentity, name)
+    if (folder) {
+      await refreshFolders()
+      return folder.id
+    }
+    return null
+  }, [cloudIdentity, folders, localFolders, refreshFolders, setLocalFolders])
 
   const saveFolderName = useCallback(async (folderId: string) => {
     const name = editingName.trim()
@@ -214,6 +242,7 @@ export function useFavoritesFolderManager(opts: {
     setEditingName,
     refreshFolders,
     addFolder,
+    createFolderDirectly,
     saveFolderName,
     removeFolder,
     moveFolder,

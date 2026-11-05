@@ -116,8 +116,10 @@ describe("Dashboard Repository & Search Extensions", () => {
     expect(job?.attempts).toBe(0);
 
     // 取消任务
+    // pending 没有执行体可等：没有人在跑它，直接落 cancelled 终态，
+    // 所以返回值是 "cancelled" 而不是 "cancelling"（后者只在 running 上出现）。
     const cancelled = await repo.cancelJob(jobId);
-    expect(cancelled).toBe(true);
+    expect(cancelled).toBe("cancelled");
     const afterCancel = await repo.getJob(jobId);
     expect(afterCancel?.status).toBe("cancelled");
 
@@ -208,16 +210,20 @@ describe("Dashboard Repository & Search Extensions", () => {
     expect(done?.status).toBe("done");
   });
 
-  it("heartbeatJob 只为 running 任务续期，取消后返回 false", async () => {
+  it("heartbeatJob 回报执行态：running 续期成功，取消后仍是 cancelling", async () => {
     await repo.run("DELETE FROM jobs");
     const id = await repo.enqueueJob("heartbeat_test", {});
     await repo.claimNextJob();
     const stale = Date.now() - 10 * 60 * 1000;
     await repo.run("UPDATE jobs SET updated_at = ? WHERE id = ?", [stale, id]);
-    expect(await repo.heartbeatJob(id)).toBe(true);
+    // running 上心跳回 "running"：续期成功且状态未变。
+    expect(await repo.heartbeatJob(id)).toBe("running");
     expect((await repo.getJob(id))?.updatedAt).toBeGreaterThan(stale);
 
+    // 取消 running 的任务只会停在 cancelling（真 cancelled 要等 Runner 收尾写），
+    // 而心跳口径覆盖 cancelling —— 收尾期间 updated_at 必须继续前进，
+    // 否则 reaper 会在 handler 还没停手时就把任务重新排队，又造一次并发执行。
     await repo.cancelJob(id);
-    expect(await repo.heartbeatJob(id)).toBe(false);
+    expect(await repo.heartbeatJob(id)).toBe("cancelling");
   });
 });

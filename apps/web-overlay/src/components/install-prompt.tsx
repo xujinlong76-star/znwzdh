@@ -70,17 +70,25 @@ export function InstallPrompt() {
     if (!deferred) return
     await deferred.prompt()
     const choice = await deferred.userChoice
-    if (choice.outcome === "accepted") {
-      localStorage.removeItem(INSTALL_VISIT_KEY)
-    } else {
-      localStorage.setItem(INSTALL_DISMISS_KEY, String(installDismissedUntil(Date.now())))
+    try {
+      if (choice.outcome === "accepted") {
+        localStorage.removeItem(INSTALL_VISIT_KEY)
+      } else {
+        localStorage.setItem(INSTALL_DISMISS_KEY, String(installDismissedUntil(Date.now())))
+      }
+    } catch {
+      // 存储访问受限时不影响提示隐藏
     }
     setVisible(false)
     setDeferred(null)
   }
 
   const later = () => {
-    localStorage.setItem(INSTALL_DISMISS_KEY, String(installDismissedUntil(Date.now())))
+    try {
+      localStorage.setItem(INSTALL_DISMISS_KEY, String(installDismissedUntil(Date.now())))
+    } catch {
+      // 存储访问受限时不影响提示隐藏
+    }
     setVisible(false)
   }
 

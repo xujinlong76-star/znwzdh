@@ -71,6 +71,10 @@ const API = readFileSync(
   fileURLToPath(new URL('../../../apps/api/src/routes/sites.ts', import.meta.url)),
   'utf8',
 )
+const SCHEMAS = readFileSync(
+  fileURLToPath(new URL('../../../packages/core/src/mcp-schemas.ts', import.meta.url)),
+  'utf8',
+)
 
 describe('书签导入的条数台账', () => {
   /**
@@ -111,7 +115,7 @@ describe('书签导入的条数台账', () => {
 
   it('分块大小不超过中枢的单次上限', () => {
     // 形如 `})).min(1).max(200)`：数组里每项是对象，所以闭合是双括号。
-    const cap = API.match(/\)\)\.min\(1\)\.max\((\d+)\)/)
+    const cap = (API + SCHEMAS).match(/\)\)\.min\(1\)\.max\((\d+)\)/)
     expect(cap, '找不到 /api/sites/batch 的 sites 上限').not.toBeNull()
     const chunk = CODE.match(/const chunkSize = (\d+)/)
     expect(chunk, '找不到分块大小').not.toBeNull()

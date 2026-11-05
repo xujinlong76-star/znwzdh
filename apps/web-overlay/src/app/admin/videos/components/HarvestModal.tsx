@@ -14,41 +14,75 @@ import { Badge } from '@/registry/new-york/ui/badge'
 import { Input } from '@/registry/new-york/ui/input'
 import { useToast } from '@/registry/new-york/hooks/use-toast'
 import type { VideoHarvestReport } from '@/lib/video-harvester'
-import { Sparkles, Play, CheckCircle2, ArrowRight, Layers, Search, Filter } from 'lucide-react'
+import { Sparkles, Play, CheckCircle2, ArrowRight, Layers, Search, Filter, Check, Radar } from 'lucide-react'
+import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
+import type { VideoPlatformType } from '@/types/navigation'
+import { cn } from '@/lib/utils'
+
+const HARVEST_PLATFORMS: Array<{ id: VideoPlatformType; label: string; color: string }> = [
+  { id: 'bilibili', label: '哔哩哔哩 (B站)', color: '#00A1D6' },
+  { id: 'youtube', label: 'YouTube', color: '#FF0000' },
+  { id: 'dailymotion', label: 'Dailymotion', color: '#0066DC' },
+  { id: 'ted', label: 'TED Talks', color: '#E62B1E' },
+  { id: 'peertube', label: 'PeerTube', color: '#F1680D' },
+]
 
 const CATEGORIES_OPTIONS = [
   { id: 'all', title: '🌐 全部 12 个技术领域巡航 (默认全量)' },
-  { id: 'cat_ai_models', title: '🤖 AI 与大模型工程' },
-  { id: 'cat_fullstack_micro', title: '🚀 现代全栈与微服务架构' },
-  { id: 'cat_cloudnative_devops', title: '☁️ 云原生与 DevOps 实战' },
+  { id: 'cat_ai_engineering', title: '🤖 AI 与大模型工程' },
+  { id: 'cat_fullstack_architecture', title: '🚀 现代全栈与微服务架构' },
+  { id: 'cat_devops_cloud', title: '☁️ 云原生与 DevOps 实战' },
   { id: 'cat_systems_perf', title: '⚡ 系统底层与高性能计算' },
-  { id: 'cat_storage_data', title: '🗄️ 现代存储引擎与海量数据架构' },
-  { id: 'cat_open_source_indie', title: '🚢 开源神器与独立开发出海' },
+  { id: 'cat_database_bigdata', title: '🗄️ 现代存储引擎与海量数据架构' },
+  { id: 'cat_tools_indie', title: '🚢 开源神器与独立开发出海' },
   { id: 'cat_mobile_multiplatform', title: '📱 移动端与跨平台全栈开发' },
-  { id: 'cat_cyber_security', title: '🛡️ 网络安全与攻防工程' },
-  { id: 'cat_algorithm_design', title: '🧠 算法精粹与系统设计' },
+  { id: 'cat_security_network', title: '🛡️ 网络安全与攻防工程' },
+  { id: 'cat_algorithms_interview', title: '🧠 算法精粹与系统设计' },
   { id: 'cat_game_graphics', title: '🎮 游戏开发与 3D 图形渲染' },
   { id: 'cat_embedded_iot', title: '🔌 嵌入式系统与物联网硬件' },
-  { id: 'cat_qa_testing', title: '🎯 软件测试与自动化效能工程' },
+  { id: 'cat_qa_performance', title: '🎯 软件测试与自动化效能工程' },
 ]
 
 interface HarvestModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  categories?: Array<{ id: string; title: string }>
   onCompleted?: () => void
 }
 
 export function HarvestModal({
   open,
   onOpenChange,
+  categories,
   onCompleted,
 }: HarvestModalProps) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [customKeywords, setCustomKeywords] = useState<string>('')
+  const [selectedPlatforms, setSelectedPlatforms] = useState<VideoPlatformType[]>([
+    'bilibili',
+    'youtube',
+    'dailymotion',
+    'ted',
+    'peertube',
+  ])
   const [report, setReport] = useState<VideoHarvestReport | null>(null)
   const [mode, setMode] = useState<'idle' | 'previewed' | 'applied'>('idle')
+  const categoryOptions = categories && categories.length > 0
+    ? [{ id: 'all', title: '🌐 全部技术领域巡航 (默认全量)' }, ...categories.map(c => ({ id: c.id, title: c.title }))]
+    : CATEGORIES_OPTIONS
+
+  const togglePlatform = (p: VideoPlatformType) => {
+    if (loading) return
+    setSelectedPlatforms((prev) => {
+      if (prev.includes(p)) {
+        if (prev.length <= 1) return prev
+        return prev.filter((x) => x !== p)
+      }
+      return [...prev, p]
+    })
+  }
 
   const handleHarvest = async (dryRun: boolean) => {
     setLoading(true)
@@ -62,6 +96,7 @@ export function HarvestModal({
           forceKeywords: customKeywords.trim()
             ? customKeywords.split(/[,，\s]+/).filter(Boolean)
             : undefined,
+          platforms: selectedPlatforms,
         }),
       })
 
@@ -133,7 +168,7 @@ export function HarvestModal({
                       disabled={loading}
                       className="w-full h-8 px-2.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                     >
-                      {CATEGORIES_OPTIONS.map((c) => (
+                      {categoryOptions.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.title}
                         </option>
@@ -154,6 +189,44 @@ export function HarvestModal({
                     />
                   </div>
                 </div>
+
+                {/* 采集平台通道选择 */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="text-[11px] font-medium text-muted-foreground flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Radar className="w-3 h-3 text-primary" />
+                      <span>采集平台通道 ({selectedPlatforms.length} / {HARVEST_PLATFORMS.length} 已选)</span>
+                    </span>
+                    <span className="text-[10px]">多平台并发检索 · 自动提取直链与封面</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {HARVEST_PLATFORMS.map((p) => {
+                      const active = selectedPlatforms.includes(p.id)
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={loading}
+                          onClick={() => togglePlatform(p.id)}
+                          className={cn(
+                            'px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1.5 border cursor-pointer',
+                            active
+                              ? 'bg-background border-border text-foreground shadow-2xs'
+                              : 'opacity-40 bg-muted/30 border-transparent text-muted-foreground hover:opacity-75'
+                          )}
+                        >
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: p.color }}
+                          />
+                          <span>{p.label}</span>
+                          {active && <Check className="w-3 h-3 text-emerald-500" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
                 <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 pt-1 border-t border-border/40">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
                   <span>启用智能语义分流: 采集入库时自动映射至该分类下最相关的子方向（如 ArkUI -&gt; HarmonyOS NEXT）</span>
@@ -229,6 +302,17 @@ export function HarvestModal({
                       <div key={idx} className="p-2.5 rounded-lg border bg-card text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
                         <div className="space-y-1 min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
+                            {item.item.videoConfig?.type && (
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white shrink-0 shadow-2xs"
+                                style={{
+                                  backgroundColor:
+                                    (VIDEO_PLATFORM_REGISTRY[item.item.videoConfig.type as VideoPlatformType] || VIDEO_PLATFORM_REGISTRY.bilibili).badgeColor,
+                                }}
+                              >
+                                {(VIDEO_PLATFORM_REGISTRY[item.item.videoConfig.type as VideoPlatformType] || VIDEO_PLATFORM_REGISTRY.bilibili).shortName}
+                              </span>
+                            )}
                             <span className="font-semibold text-foreground truncate">
                               {item.item.title}
                             </span>

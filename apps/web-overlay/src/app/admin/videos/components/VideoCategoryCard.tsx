@@ -260,6 +260,7 @@ export function VideoCategoryCard({
 
             <div className="flex items-center gap-2 self-start lg:self-center shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-border/40 w-full lg:w-auto justify-end">
                 <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     disabled={isHarvesting}
@@ -271,6 +272,7 @@ export function VideoCategoryCard({
                 </Button>
 
                 <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => router.push(`/admin/videos/${item.id}/categories`)}
@@ -282,6 +284,7 @@ export function VideoCategoryCard({
                 </Button>
 
                 <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => router.push(`/admin/videos/${item.id}/items`)}
@@ -296,6 +299,7 @@ export function VideoCategoryCard({
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
+                                type="button"
                                 variant="ghost"
                                 size="icon"
                                 aria-label="采集策略设置"
@@ -314,6 +318,7 @@ export function VideoCategoryCard({
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
+                                type="button"
                                 variant="ghost"
                                 size="icon"
                                 aria-label="编辑分类"
@@ -332,6 +337,7 @@ export function VideoCategoryCard({
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
+                                type="button"
                                 variant="ghost"
                                 size="icon"
                                 aria-label="删除分类"
@@ -361,6 +367,9 @@ export function VideoCategoryCard({
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>编辑分类</DialogTitle>
+                        <DialogDescription className="text-xs text-muted-foreground">
+                            修改分类标题、图标与显示状态。
+                        </DialogDescription>
                     </DialogHeader>
                     <AddVideoCategoryForm
                         defaultValues={{

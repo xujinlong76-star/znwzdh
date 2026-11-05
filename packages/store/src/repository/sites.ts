@@ -60,15 +60,21 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
   const baseWhere = where.join(" AND ");
   const baseParams = [...params];
 
+  // 排序键说明：sort（手工序）> trend_score（热度）> id（决胜）。
+  // 这里**不再**排 weight：它在两个 INSERT 站点被硬编码为 0（见本文件 createSite /
+  // createSitesWithIds），全仓没有任何 UPDATE 写它，所以这个键恒等、永远区分不了
+  // 任何两行——实际顺序全靠 sort/id。热度由 recompute_rank 任务写 trend_score
+  // （repository/health.ts 的 setTrendScores），所以用它做次级键。
+  // weight 列本身保留（老库/导出行仍在写），只是退出所有 ORDER BY。
+  //
   // 单语句路径的三个前提：没有分面过滤 / 集合谓词已吸收全部 id / id 少到装得下一片
   if (facetPred !== null || facetIds === null || facetIds.length <= SQL_IN_CHUNK) {
-    const sqlText = repo.selectSitesSql() +
+    const sqlText = SELECT_SITES_BASE_SQL +
       " WHERE " + baseWhere +
-      " GROUP BY s.id" +
-      " ORDER BY s.sort ASC, s.weight DESC, s.id ASC" +
+      " ORDER BY s.sort ASC, s.weight DESC, s.trend_score DESC, s.id ASC" +
       " LIMIT ? OFFSET ?";
     const rows = await repo.raw(sqlText, [...baseParams, limit, offset]);
-    return rows.map(rowToSite);
+    return hydrateSites(repo, rows);
   }
 
   // 回退路径（仅当集合谓词探测失败：老 SQLite 没有 JSON1）：候选 id 装不进
@@ -78,22 +84,22 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
   // 注意：这里不做 Promise.all——sqlite 是同步驱动，并发派发不产生并行；
   // 真正的提速来自上面的单语句路径（一次执行，无归并），本循环只是能力兜底。
   const window = offset + limit;
-  const ranked: Array<{ id: string; sort: number; weight: number }> = [];
+  const ranked: Array<{ id: string; sort: number; trendScore: number }> = [];
   for (const part of chunkList(facetIds)) {
     const predicate = inPredicate("s.id", part);
     const rows = (await repo.raw(
-      "SELECT s.id AS id, s.sort AS sort, s.weight AS weight FROM sites s" +
+      "SELECT s.id AS id, s.sort AS sort, s.trend_score AS trend_score FROM sites s" +
         " WHERE " + predicate.sql + " AND " + baseWhere +
-        " ORDER BY s.sort ASC, s.weight DESC LIMIT ?",
+        " ORDER BY s.sort ASC, s.trend_score DESC LIMIT ?",
       [...predicate.params, ...baseParams, window],
-    )) as Array<{ id: unknown; sort: unknown; weight: unknown }>;
+    )) as Array<{ id: unknown; sort: unknown; trend_score: unknown }>;
     for (const r of rows) {
-      ranked.push({ id: String(r.id), sort: Number(r.sort) || 0, weight: Number(r.weight) || 0 });
+      ranked.push({ id: String(r.id), sort: Number(r.sort) || 0, trendScore: Number(r.trend_score) || 0 });
     }
   }
   // 与单语句路径同一套排序（含 id 决胜）：缺 id 决胜时跨片并列的页边界会抖动，
   // 同一份数据两次查询可能切出不同的页。
-  ranked.sort((a, b) => a.sort - b.sort || b.weight - a.weight || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  ranked.sort((a, b) => a.sort - b.sort || b.trendScore - a.trendScore || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const pageIds = ranked.slice(offset, offset + limit).map((r) => r.id);
   if (pageIds.length === 0) return [];
   const siteMap = await repo.getSitesByIds(pageIds);
@@ -110,15 +116,18 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
  * 存量站点在写回时匹配不到行，会走 createSiteWithId 对活行 INSERT，
  * 直接撞同 id 主键冲突（整个保存 500）。
  * 普通列表接口继续用 listSites（默认 100、上限 1000）防止慢查询。
+ *
+ * `facets: false` 是给快照的：快照投影里没有分面字段，而这一条聚合查询的代价
+ * 与站点数成正比（见 hydrateSites 的说明）。
  */
-export async function listAllSites(repo: Repository, limit?: number): Promise<Site[]> {
+export async function listAllSites(repo: Repository, limit?: number, options: { facets?: boolean } = {}): Promise<Site[]> {
   const rows = await repo.raw(
-    repo.selectSitesSql() +
-      " WHERE s.deleted_at IS NULL GROUP BY s.id ORDER BY s.sort ASC, s.weight DESC" +
+    SELECT_SITES_BASE_SQL +
+      " WHERE s.deleted_at IS NULL ORDER BY s.sort ASC, s.weight DESC, s.trend_score DESC" +
       (limit ? " LIMIT ?" : ""),
     limit ? [limit] : [],
   );
-  return rows.map(rowToSite);
+  return hydrateSites(repo, rows, options);
 }
 
 export async function getSitesByIds(repo: Repository, ids: string[]): Promise<Map<string, Site>> {
@@ -128,22 +137,144 @@ export async function getSitesByIds(repo: Repository, ids: string[]): Promise<Ma
   for (const part of chunkList(uniq)) {
     const placeholders = part.map(() => "?").join(", ");
     const rows = await repo.raw(
-      repo.selectSitesSql() + " WHERE s.id IN (" + placeholders + ") AND s.deleted_at IS NULL",
+      SELECT_SITES_BASE_SQL + " WHERE s.id IN (" + placeholders + ") AND s.deleted_at IS NULL",
       part,
     );
-    for (const r of rows.map(rowToSite)) out.set(r.id, r);
+    for (const r of await hydrateSites(repo, rows)) out.set(r.id, r);
   }
   return out;
 }
 
+/**
+ * 站点行的聚合列（标签 / 分面）**相关子查询**版本。
+ *
+ * 只给「按主键/URL 取一到几行」的路径用（`getSite`、`getDeletedSite`、`findSiteByUrl`）：
+ * 单行时它就是最优解——一次往返、每个子查询走 `site_tags_site_idx` / `site_facets_site_idx`。
+ *
+ * **不要把它接回列表路径**（P1-1）：8000 站点 = 16000 次相关子查询，
+ * 而「缓存命中」的那次读也要付这个钱。列表走 `selectSitesBaseSql` + `hydrateSites`。
+ *
+ * 两个方言的聚合都带**显式排序**：`getSite` 与列表必须给出同一个标签顺序，
+ * 否则同一个站点在不同接口里标签会「洗牌」。SQLite 用子查询 ORDER BY，
+ * PG 用 `string_agg(... ORDER BY ...)`（SQLite 的 group_concat 没有 ORDER BY 语法）。
+ */
 export function selectSitesSql(repo: Repository): string {
-  const tagExpr = repo.db.dialect === "sqlite"
-    ? "(SELECT group_concat(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id)"
-    : "(SELECT string_agg(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id)";
-  const facetExpr = repo.db.dialect === "sqlite"
-    ? "(SELECT group_concat(sf.facet_key || ':' || sf.facet_value, ',') FROM site_facets sf WHERE sf.site_id = s.id)"
-    : "(SELECT string_agg(sf.facet_key || ':' || sf.facet_value, ',') FROM site_facets sf WHERE sf.site_id = s.id)";
+  const isPg = repo.db.dialect === "pg";
+  const tagExpr = isPg
+    ? "(SELECT string_agg(t.slug, ',' ORDER BY t.slug) FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id)"
+    : "(SELECT group_concat(slug, ',') FROM (SELECT t.slug AS slug FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id ORDER BY t.slug))";
+  const facetExpr = isPg
+    ? "(SELECT string_agg(sf.facet_key || ':' || sf.facet_value, ',' ORDER BY sf.facet_key, sf.facet_value) FROM site_facets sf WHERE sf.site_id = s.id)"
+    : "(SELECT group_concat(pair, ',') FROM (SELECT sf.facet_key || ':' || sf.facet_value AS pair FROM site_facets sf WHERE sf.site_id = s.id ORDER BY sf.facet_key, sf.facet_value))";
   return "SELECT s.*, " + tagExpr + " AS tag_slugs, " + facetExpr + " AS facet_pairs FROM sites s";
+}
+
+/**
+ * 站点列表的**基础**投影：只有 sites 表本身，没有逐行相关子查询（P1-1）。
+ *
+ * 聚合列由 `hydrateSites` 用两条 `GROUP BY site_id` 的批量查询补齐：
+ * 一次列表读 = 1 条主查询 + 2 条聚合查询，与行数无关。
+ */
+export const SELECT_SITES_BASE_SQL = "SELECT s.* FROM sites s";
+
+/** 单参数集合谓词优先（`collectionIn`：任意规模一条语句），探测失败退回分片 */
+async function siteIdPredicates(repo: Repository, column: string, ids: string[]): Promise<Array<{ sql: string; params: unknown[] }>> {
+  const one = await repo.collectionIn(column, ids);
+  if (one) return [one];
+  return chunkList(ids).map((part) => inPredicate(column, part));
+}
+
+/**
+ * 一条按 site_id 分组的聚合查询：`site_id -> "a,b,c"`。
+ *
+ * 排序在两方言里走不同写法（PG 的 `string_agg` 自带 ORDER BY，SQLite 的 `group_concat`
+ * 没有），但**排序键与 `selectSitesSql` 的相关子查询逐字一致**——两条路径必须给出
+ * 同一个标签顺序，否则同一个站点在 `getSite` 和列表接口里会「洗牌」。
+ */
+async function aggregateBySiteId(
+  repo: Repository,
+  opts: {
+    /** 限定后的站点 id 列，如 `st.site_id` */
+    column: string;
+    /** FROM 片段（含 JOIN） */
+    from: string;
+    /** 被聚合的表达式 */
+    expr: string;
+    /** 排序键（表达式列表，可为多个） */
+    orderBy: string;
+    ids: string[];
+  },
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (opts.ids.length === 0) return out;
+  for (const pred of await siteIdPredicates(repo, opts.column, opts.ids)) {
+    const sql =
+      repo.db.dialect === "pg"
+        ? "SELECT " + opts.column + " AS site_id, string_agg(" + opts.expr + ", ',' ORDER BY " + opts.orderBy +
+          ") AS v FROM " + opts.from + " WHERE " + pred.sql + " GROUP BY " + opts.column
+        : "SELECT site_id, group_concat(v, ',') AS v FROM (SELECT " + opts.column + " AS site_id, " + opts.expr +
+          " AS v FROM " + opts.from + " WHERE " + pred.sql + " ORDER BY " + opts.column + ", " + opts.orderBy +
+          ") GROUP BY site_id";
+    const rows = await repo.raw(sql, pred.params);
+    for (const r of rows) {
+      if (r.v !== null && r.v !== undefined) out.set(String(r.site_id), String(r.v));
+    }
+  }
+  return out;
+}
+
+/**
+ * 把「只有 sites 列」的查询结果补齐成 `rowToSite` 能吃的行（P1-1）。
+ *
+ * 标签与分面各一条 `GROUP BY site_id` 聚合，取代 `selectSitesSql` 的逐行相关子查询。
+ * 没有标签/分面的站点在聚合结果里根本不出现 —— 与相关子查询给出 NULL 后
+ * `rowToSite` 落到 `[]` 的行为一致，所以这里补 null 而不是空串。
+ *
+ * `facets: false` 给快照这类「不读分面」的消费者：省掉一条聚合查询。
+ * 快照写回从不按快照里的分面删分面（见 apps/api/src/storage.ts 的写侧），
+ * 所以少读一个字段在这里是安全的；需要分面的调用方保持默认。
+ */
+export async function hydrateSites(
+  repo: Repository,
+  rows: Array<Record<string, any>>,
+  options: { facets?: boolean } = {},
+): Promise<Site[]> {
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => String(r.id));
+  // 不做 Promise.all：sqlite 是同步驱动，并发派发不产生并行（见 listSites 的同款注释）
+  const tags = await aggregateBySiteId(repo, {
+    column: "st.site_id",
+    from: "site_tags st JOIN tags t ON t.id = st.tag_id",
+    expr: "t.slug",
+    orderBy: "t.slug",
+    ids,
+  });
+  const facets =
+    options.facets === false
+      ? null
+      : await aggregateBySiteId(repo, {
+          column: "sf.site_id",
+          from: "site_facets sf",
+          expr: "sf.facet_key || ':' || sf.facet_value",
+          orderBy: "sf.facet_key, sf.facet_value",
+          ids,
+        });
+  const sites: Site[] = [];
+  for (const row of rows) {
+    const id = String(row.id);
+    // 浅拷贝而不是原地写：同一个 rows 数组可能被连续 hydrate 两次（例如对照测试或
+    // 两种投影都要跑），原地写会让第二次读到第一次的聚合列。
+    sites.push(
+      rowToSite({
+        ...row,
+        tag_slugs: tags.get(id) ?? null,
+        // facets:false 是投影开关，不是「顺便保留调用方带来的值」：显式清空，
+        // 否则同一个函数在有无分面之间取决于输入行里有没有残留字段。
+        facet_pairs: facets ? facets.get(id) ?? null : null,
+      }),
+    );
+  }
+  return sites;
 }
 
 /**
@@ -399,8 +530,9 @@ export async function insertSitesBulk(
   }
 
   /**
-   * 站点-标签关联：同样批量。这里**按 (site_id, tag_id) 去重**——`setSiteTags`
-   * 不去重，重复 tag 会撞唯一约束；恢复包里的 tags 来自用户导出，完全可能有重复。
+   * 站点-标签关联：同样批量。这里**按 (site_id, tag_id) 去重**——恢复包里的
+   * tags 来自用户导出，完全可能有重复（"AI" 与 "ai"），不去重会撞唯一约束。
+   * `setSiteTags` 现在同样按解析后的 tag_id 去重，两者口径一致；
    * 去重是更宽容的行为，且与「标签是集合」的语义一致。
    */
   const links = new Map<string, [string, string]>();
@@ -484,6 +616,135 @@ export async function deleteSite(repo: Repository, id: string): Promise<boolean>
   return true;
 }
 
+/**
+ * 快照写回托管的主字段（navigation.json 只有这些）。
+ *
+ * 与 `SiteInput` 分开命名是为了让「批量路径不碰 tags/facets/relations/status」
+ * 在类型层面就成立：拿错对象编译期就会报错。
+ */
+export interface SnapshotSiteWrite {
+  id: string;
+  url: string;
+  title: string;
+  description: string | null;
+  categoryId: string;
+  iconKey: string | null;
+  enabled: boolean;
+  sort: number;
+}
+
+/** 快照里「看似新增」的 id 里，哪些其实是回收站里的软删行（写回要复活而不是 INSERT） */
+export async function listDeletedSiteIds(repo: Repository, ids: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  const uniq = [...new Set(ids.filter(Boolean))];
+  for (const part of chunkList(uniq)) {
+    const placeholders = part.map(() => "?").join(", ");
+    const rows = await repo.raw(
+      `SELECT id FROM sites WHERE deleted_at IS NOT NULL AND id IN (${placeholders})`,
+      part,
+    );
+    for (const row of rows) out.add(String(row.id));
+  }
+  return out;
+}
+
+/**
+ * 批量更新快照托管的字段（P1-2）。
+ *
+ * 与 `updateSite` 的差异：不回读旧行、不回读结果、不碰 tags/facets/relations。
+ * 调用方（快照写回）在同一个事务里已经持有全量存量行并做过内存 diff，
+ * 这里只负责把「确实变化」的行落库。fts_tokens 含标签线索，而标签不在快照里，
+ * 所以只对变化行补一次标签聚合（分片），口径与 updateSite 的
+ * `patch.tags ?? existing.tags` 一致。
+ */
+export async function updateSitesFromSnapshot(repo: Repository, rows: SnapshotSiteWrite[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const tagsById = new Map<string, string[]>();
+  for (const part of chunkList(rows.map((row) => row.id))) {
+    const placeholders = part.map(() => "?").join(", ");
+    const tagRows = await repo.raw(
+      `SELECT st.site_id AS site_id, t.slug AS slug
+         FROM site_tags st JOIN tags t ON t.id = st.tag_id
+        WHERE st.site_id IN (${placeholders}) ORDER BY t.slug`,
+      part,
+    );
+    for (const row of tagRows) {
+      const id = String(row.site_id);
+      const list = tagsById.get(id) ?? [];
+      list.push(String(row.slug));
+      tagsById.set(id, list);
+    }
+  }
+  const now = Date.now();
+  for (const row of rows) {
+    const index = buildIndexFields({
+      title: row.title,
+      description: row.description,
+      url: row.url,
+      tags: tagsById.get(row.id) ?? [],
+    });
+    await repo.run(
+      `UPDATE sites SET url = ?, title = ?, description = ?, category_id = ?, icon_key = ?,
+         enabled = ?, sort = ?, fts_tokens = ?, pinyin_full = ?, pinyin_initials = ?, updated_at = ?
+       WHERE id = ? AND deleted_at IS NULL`,
+      [
+        row.url, row.title, row.description, row.categoryId, row.iconKey,
+        row.enabled ? 1 : 0, row.sort,
+        index.ftsTokens, index.pinyinFull, index.pinyinInitials, now, row.id,
+      ],
+    );
+  }
+  return rows.length;
+}
+
+/**
+ * 复活软删行（快照写回带回了回收站里的 id）。
+ *
+ * 语义必须与 `createSiteWithId` 的复活分支一致：覆盖主字段、清空
+ * tags/facets/relations、metadata 归零（快照不携带这些），状态回到 active。
+ * 只更新 `deleted_at IS NOT NULL` 的行；调用方已用 `listDeletedSiteIds`
+ * 在同一事务里判定过，不会误伤活行。
+ */
+export async function reviveSitesFromSnapshot(repo: Repository, rows: SnapshotSiteWrite[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const now = Date.now();
+  for (const row of rows) {
+    const index = buildIndexFields({ title: row.title, description: row.description, url: row.url, tags: [] });
+    await repo.run(
+      `UPDATE sites SET url = ?, title = ?, description = ?, category_id = ?, sub_category_id = NULL,
+         icon_key = ?, status = 'active', enabled = ?, sort = ?, featured = 0, source = 'navsphere',
+         fts_tokens = ?, pinyin_full = ?, pinyin_initials = ?, metadata = NULL, deleted_at = NULL, updated_at = ?
+       WHERE id = ? AND deleted_at IS NOT NULL`,
+      [
+        row.url, row.title, row.description, row.categoryId, row.iconKey,
+        row.enabled ? 1 : 0, row.sort,
+        index.ftsTokens, index.pinyinFull, index.pinyinInitials, now, row.id,
+      ],
+    );
+  }
+  for (const part of chunkList(rows.map((row) => row.id))) {
+    const placeholders = part.map(() => "?").join(", ");
+    await repo.run(`DELETE FROM site_tags WHERE site_id IN (${placeholders})`, part);
+    await repo.run(`DELETE FROM site_facets WHERE site_id IN (${placeholders})`, part);
+    await repo.run(`DELETE FROM site_relations WHERE source_site_id IN (${placeholders})`, part);
+  }
+  return rows.length;
+}
+
+/** 批量软删（快照里缺席的托管站点），语义与逐条 deleteSite 相同 */
+export async function softDeleteSites(repo: Repository, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const now = Date.now();
+  for (const part of chunkList(ids)) {
+    const placeholders = part.map(() => "?").join(", ");
+    await repo.run(
+      `UPDATE sites SET deleted_at = ?, updated_at = ? WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+      [now, now, ...part],
+    );
+  }
+  return ids.length;
+}
+
 export async function restoreSite(repo: Repository, id: string): Promise<Site | null> {
   await repo.run("UPDATE sites SET deleted_at = NULL, updated_at = ? WHERE id = ?", [Date.now(), id]);
   return repo.getSite(id);
@@ -526,14 +787,26 @@ export async function reorderSites(repo: Repository, order: Array<{ id: string; 
   });
 }
 
+/**
+ * 重写站点的标签关联。
+ *
+ * 这里**必须按解析后的 tag_id 去重**：一次请求里传两个等价标签名（"AI" 与 "ai"、
+ * trim 后同值、或 slugify 同值）时，upsertTag 会把它们解析到同一个 tag_id，
+ * 逐条 INSERT 就撞上 site_tags_unique_idx(site_id, tag_id)，整个事务回滚 ——
+ * 表现为 PATCH /api/sites 直接 500。按 tag_id 去重同时也让「标签是集合」的
+ * 语义成立（与 insertSitesBulk 的处理一致；那里曾专门注释过本函数不去重）。
+ */
 export async function setSiteTags(repo: Repository, siteId: string, tagNames: string[]): Promise<void> {
   return repo.withTransaction(async () => {
     await repo.run("DELETE FROM site_tags WHERE site_id = ?", [siteId]);
+    const seen = new Set<string>();
     for (const raw of tagNames) {
       const name = raw.trim();
       if (!name) continue;
       const slug = slugify(name);
       const tagId = await repo.upsertTag(name, slug);
+      if (seen.has(tagId)) continue;
+      seen.add(tagId);
       await repo.run("INSERT INTO site_tags (site_id, tag_id) VALUES (?, ?)", [siteId, tagId]);
     }
   });
@@ -678,9 +951,20 @@ export async function listFacetsSummary(
 
   let tagJoin = "";
   if (filter.tag) {
+    // 与 search.ts 的 tagSiteIdsSql 同口径：只在查询侧归一（lower + slugify），
+    // 不动库里已存的 slug/name。否则 tag=AI 在这里匹配不到 slug 为 "ai" 的标签，
+    // 分面计数全成 0，与检索结果的标签过滤对不上。
     tagJoin = "JOIN site_tags st ON st.site_id = s.id JOIN tags t ON t.id = st.tag_id LEFT JOIN tag_aliases ta ON ta.tag_id = t.id";
-    wheres.push("(t.slug = ? OR t.name = ? OR ta.alias = ?)");
-    params.push(filter.tag, filter.tag, filter.tag);
+    const norm = filter.tag.trim();
+    const lower = norm.toLowerCase();
+    const slug = slugify(norm);
+    const conds = ["lower(t.slug) = ?", "lower(t.name) = ?", "lower(ta.alias) = ?"];
+    params.push(lower, lower, lower);
+    if (slug !== lower) {
+      conds.push("lower(t.slug) = ?");
+      params.push(slug);
+    }
+    wheres.push(`(${conds.join(" OR ")})`);
   }
 
   const sqlText = `
@@ -1045,3 +1329,44 @@ export async function getLatestSiteArchive(repo: Repository, siteId: string): Pr
 }
 
 
+
+
+/**
+ * 基于共享标签发现相似站点（详情页推荐增强）。
+ *
+ * 为什么基于标签而不是单纯同分类：
+ * 1. 同一分类（如「开发工具」）可能有几十上百站点，单纯按分类取排序无法体现主题紧密性；
+ * 2. 共享标签（如「React」+「状态管理」）具有极强的语义指向，两个站点重合标签越多，相似度越高；
+ * 3. 纯 SQL 基于 site_tags 聚合，只计算存活站点（deleted_at IS NULL AND enabled AND status = 'active'），
+ *    性能高且不依赖外部服务。若无共现标签或站点无标签，返回空数组由调用方回退至分类树。
+ */
+export async function listSimilarSitesByTags(
+  repo: Repository,
+  siteId: string,
+  limit = 6,
+): Promise<Site[]> {
+  const cap = Math.max(1, Math.min(24, Math.trunc(limit)));
+  const rows = await repo.raw(
+    `SELECT s.id, COUNT(DISTINCT st2.tag_id) AS shared_tags_count
+       FROM site_tags st1
+       JOIN site_tags st2 ON st2.tag_id = st1.tag_id AND st2.site_id <> st1.site_id
+       JOIN sites s ON s.id = st2.site_id
+         AND s.deleted_at IS NULL AND s.enabled = ? AND s.status = 'active'
+      WHERE st1.site_id = ?
+      GROUP BY s.id
+     HAVING COUNT(DISTINCT st2.tag_id) >= 1
+      ORDER BY shared_tags_count DESC, s.sort ASC, s.created_at DESC
+      LIMIT ?`,
+    [true, siteId, cap],
+  );
+
+  if (!rows || rows.length === 0) return [];
+  const siteIds = rows.map((r) => String(r.id));
+  const sitesMap = await repo.getSitesByIds(siteIds);
+  const out: Site[] = [];
+  for (const id of siteIds) {
+    const s = sitesMap.get(id);
+    if (s && s.status === 'active') out.push(s);
+  }
+  return out;
+}

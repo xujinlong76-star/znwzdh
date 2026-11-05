@@ -21,6 +21,7 @@ import { useFavorites } from '@/hooks/useFavorites'
 import { probeClientSession } from '@/lib/client-session'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { AnonymousHint } from '@/components/user-center/anonymous-hint'
+import { LocalDataManager } from '@/components/user-center/local-data-manager'
 import dynamic from 'next/dynamic'
 
 // 隔离区只在「本机收藏/设置出现过坏数据」时才有用，对多数访问者是死重：
@@ -459,11 +460,14 @@ export default function MeDataPage() {
       )}
 
       {state === 'anonymous' && (
-        <AnonymousHint
-          title="需要登录后管理云端数据"
-          description="匿名数据只保存在本机浏览器；登录后可导出、导入恢复与按域清理云端数据，也能把本机匿名数据合并到账号。"
-          callbackUrl="/me/data"
-        />
+        <div className="space-y-6">
+          <AnonymousHint
+            title="需要登录后管理云端数据"
+            description="匿名数据只保存在本机浏览器；登录后可导出、导入恢复与按域清理云端数据，也能把本机匿名数据合并到账号。"
+            callbackUrl="/me/data"
+          />
+          <LocalDataManager />
+        </div>
       )}
 
       {state === 'deleted' && (
@@ -740,6 +744,8 @@ export default function MeDataPage() {
               <li className="break-words">登录账号保留：NextAuth 会话仍然有效，重新登录后是空账号。</li>
             </ul>
           </section>
+
+          <LocalDataManager />
 
           <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">

@@ -160,6 +160,70 @@ describe("NAVHUB_ALLOW_UNSIGNED_IDENTITY 装配", () => {
   });
 });
 
+describe("生产 CORS 通配默认可见化", () => {
+  const KEYS = [
+    "NODE_ENV",
+    "NAVHUB_SESSION_SECRET",
+    "NAVHUB_PUBLIC_URL",
+    "NAVHUB_AUTH_REQUIRED",
+    "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_ALLOW_UNSIGNED_IDENTITY",
+    "NAVHUB_ADMIN_TOKEN",
+    "NAVHUB_CORS_ORIGINS",
+  ] as const;
+  const original = new Map<string, string | undefined>(KEYS.map((key) => [key, process.env[key]]));
+
+  const loadWith = (cors: string | undefined, nodeEnv: string) => {
+    for (const key of KEYS) delete process.env[key];
+    process.env.NODE_ENV = nodeEnv;
+    process.env.NAVHUB_SESSION_SECRET =
+      "a-very-strong-production-secret-with-at-least-32-chars!";
+    process.env.NAVHUB_PUBLIC_URL = "http://localhost:8787";
+    process.env.NAVHUB_IDENTITY_SECRET = VALID_SECRET;
+    process.env.NAVHUB_ADMIN_TOKEN = VALID_SECRET;
+    if (cors !== undefined) process.env.NAVHUB_CORS_ORIGINS = cors;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const config = loadConfig();
+      const corsWarnings = warn.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.includes("NAVHUB_CORS_ORIGINS"));
+      return { config, corsWarnings };
+    } finally {
+      warn.mockRestore();
+    }
+  };
+
+  afterEach(() => {
+    for (const key of KEYS) {
+      const value = original.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it("生产 + 未配 → 仍是通配（不改行为），但告警必须出现", () => {
+    const { config, corsWarnings } = loadWith(undefined, "production");
+    expect(config.corsOrigins).toEqual(["*"]);
+    expect(corsWarnings).toHaveLength(1);
+    expect(corsWarnings[0]).toContain("credentials");
+  });
+
+  it("生产 + 显式白名单 → 不告警", () => {
+    const { config, corsWarnings } = loadWith(
+      "https://nav.example.com,https://admin.example.com",
+      "production"
+    );
+    expect(config.corsOrigins).toEqual(["https://nav.example.com", "https://admin.example.com"]);
+    expect(corsWarnings).toHaveLength(0);
+  });
+
+  it("非生产 + 通配 → 不打扰本地/测试", () => {
+    const { corsWarnings } = loadWith(undefined, "development");
+    expect(corsWarnings).toHaveLength(0);
+  });
+});
+
 describe("接线与部署一致性", () => {
   it("buildServer 必须在装配路由前以 ctx.config 原样调用校验", () => {
     const source = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
@@ -178,5 +242,58 @@ describe("接线与部署一致性", () => {
       /NAVHUB_ALLOW_UNSIGNED_IDENTITY: \$\{NAVHUB_ALLOW_UNSIGNED_IDENTITY:-0\}/g
     );
     expect(matches).toHaveLength(2);
+  });
+});
+
+/**
+ * 「/api/ready 是唯一健康检查」的账（规划 P2 部署默认值）。
+ *
+ * /api/health 刻意不看数据库，把它当 healthcheck 会得到「DB 已坏但容器 healthy」，
+ * 于是 depends_on: service_healthy 与 restart 策略都成了空判据。这条约束横跨
+ * 4 个部署文件，靠人记必然漏，所以逐文件断言。
+ */
+describe("部署探针一致性", () => {
+  const PROBE_FILES = [
+    "../../../docker-compose.yml",
+    "../../../docker/docker-compose.yml",
+    "../../../docker/Dockerfile.api",
+  ] as const;
+  // 根 Dockerfile 自己没有探针（CMD 直接起服务），但也不能悄悄留一个旧探针
+  const DEPLOY_FILES = ["../../../Dockerfile", ...PROBE_FILES];
+
+  const read = (rel: string) =>
+    readFileSync(new URL(rel, import.meta.url), "utf8").split(/\r?\n/);
+
+  it("部署文件里没有任何指向中枢的 /api/health 探针", () => {
+    const offenders: string[] = [];
+    for (const rel of DEPLOY_FILES) {
+      for (const [index, line] of read(rel).entries()) {
+        if (!/api\/health/.test(line)) continue;
+        // 只查真探针：curl/wget 那一行；注释里的对比说明留着才有教育意义
+        if (!/curl|wget/.test(line)) continue;
+        offenders.push(`${rel.replace(/^\.\.\//, "")}:${index + 1}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("中枢探针一律 /api/ready（compose 与镜像 HEALTHCHECK 同口径）", () => {
+    for (const rel of PROBE_FILES) {
+      const lines = read(rel).filter((line) => /127\.0\.0\.1:8787/.test(line));
+      expect(lines.length, rel).toBeGreaterThan(0);
+      for (const line of lines) expect(line, `${rel}: ${line}`).toContain("/api/ready");
+    }
+  });
+
+  it("两个 compose 模板都把 CORS 白名单透传出来（默认仍是 *，但可见）", () => {
+    // 只认「活的一行」：注释掉的透传等于没透传，正则若不排注释就拦不住误删
+    const active = (rel: string, pattern: RegExp) =>
+      read(rel).filter((line) => !/^\s*#/.test(line) && pattern.test(line));
+    expect(
+      active("../../../docker/docker-compose.yml", /NAVHUB_CORS_ORIGINS: \$\{NAVHUB_CORS_ORIGINS:-\*\}/)
+    ).toHaveLength(2);
+    expect(
+      active("../../../docker-compose.yml", /NAVHUB_CORS_ORIGINS=\$\{NAVHUB_CORS_ORIGINS:-\*\}/)
+    ).toHaveLength(1);
   });
 });

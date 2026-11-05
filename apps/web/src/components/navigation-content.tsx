@@ -12,6 +12,9 @@ import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { Footer } from '@/components/footer'
 import { OnboardingCard } from '@/components/onboarding-card'
 import { useOverlayBehavior } from '@/components/ui/overlay'
+import { CategoryQuickJumpBar } from '@/components/category-quick-jump-bar'
+import { QuickAccessTray } from '@/components/quick-access-tray'
+import { FloatingQuickNav } from '@/components/floating-quick-nav'
 
 // 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
 const ModularCanvas = dynamic(
@@ -166,6 +169,8 @@ export function NavigationContent({
     pinnedCategoryIds,
     hiddenCategoryIds,
     collapsedCategoryIds,
+    collapseAllCategories,
+    expandAllCategories,
     customCategories,
     addSiteToCustomCategory,
     siteCategoryOverrides,
@@ -173,6 +178,7 @@ export function NavigationContent({
     togglePinSiteInCategory,
     customWallpaperUrl,
     glassmorphismBlur,
+    cardOpacity,
   } = useHomeDIY()
 
   // 拖拽编排分类状态
@@ -354,13 +360,18 @@ export function NavigationContent({
         className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-300", canvasBgClass)}
         // 水合安全：壁纸来自 localStorage（仅客户端），首帧与 SSR 保持一致（undefined），
         // 挂载后再上壁纸，避免 style 分叉触发 hydration mismatch；URL 白名单防 CSS url() 注入
-        style={mounted && customWallpaperUrl && isSafeWallpaperUrl(customWallpaperUrl) ? {
-          backgroundImage: `url(${customWallpaperUrl})`,
-          backgroundSize: 'cover',
-          backgroundAttachment: 'fixed',
-          backgroundPosition: 'center',
-          backdropFilter: `blur(${glassmorphismBlur || 0}px)`
-        } : undefined}
+        style={{
+          ...(mounted && customWallpaperUrl && isSafeWallpaperUrl(customWallpaperUrl) ? {
+            backgroundImage: `url(${customWallpaperUrl})`,
+            backgroundSize: 'cover',
+            backgroundAttachment: 'fixed',
+            backgroundPosition: 'center',
+            backdropFilter: `blur(${glassmorphismBlur || 0}px)`
+          } : {}),
+          // P1 接线：DIY 卡片不透明度经 CSS 变量驱动 .nav-card-deferred 底色；
+          // JS 侧 clamp 0.88~1.0（0.88 为壁纸实测可读性下限，0.85 外推 ≈4.4:1 跌破 AA）
+          '--card-alpha': String(Math.min(1, Math.max(0.88, cardOpacity ?? 0.9))),
+        } as React.CSSProperties}
       >
         {/* 卡片键盘模型说明：所有卡片通过 aria-describedby 指向这一条 */}
         <p id="navhub-card-keyboard-hint" className="sr-only">
@@ -384,6 +395,27 @@ export function NavigationContent({
           onToggleSelectMode={toggleSelectMode}
           onSelectAllVisible={selectAllVisible}
         />
+
+        {/* 吸顶分类快捷直达导航轨 */}
+        {viewMode !== 'workbench' && sortedCategories.length > 0 && (
+          <CategoryQuickJumpBar
+            categories={sortedCategories.map(cat => ({
+              id: cat.id,
+              title: cat.title,
+              count: (cat.items?.length || 0) + (cat.subCategories?.reduce((acc: number, sub: any) => acc + (sub.items?.length || 0), 0) || 0)
+            }))}
+            isAllCollapsed={sortedCategories.length > 0 && sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))}
+            onToggleAllCollapsed={() => {
+              const allCollapsed = sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))
+              if (allCollapsed) {
+                expandAllCategories()
+              } else {
+                collapseAllCategories(sortedCategories.map((c) => c.id))
+              }
+            }}
+          />
+        )}
+
         <div className="px-3 sm:px-6 md:px-8 py-4 sm:py-8 flex-1">
           {/* 站内目录带：首页此前 0 条 /category 链接，分类 hub 只能靠 sitemap
               发现。服务端下发达标分类，SSR 直出；三个总览入口常驻。 */}
@@ -427,6 +459,9 @@ export function NavigationContent({
 
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
           {viewMode !== 'workbench' && <OnboardingCard />}
+
+          {/* 我的常用与最近访问快速托盘 */}
+          {viewMode !== 'workbench' && <QuickAccessTray />}
           {viewMode === 'workbench' ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-1">
@@ -517,6 +552,9 @@ export function NavigationContent({
 
         {/* 4.0 弹窗：内置开发者微工具抽屉 */}
         <QuickToolsDrawer open={isToolsOpen} onOpenChange={setIsToolsOpen} />
+
+        {/* 浮动快捷导航胶囊：滚动时自动呈现「极速回顶 / 呼出超级搜索 / 打开微工具」 */}
+        <FloatingQuickNav onOpenTools={() => setIsToolsOpen(true)} />
 
         {/* 4.0 弹窗：快捷键指南与 Maestro 监听 */}
         {/* T 键打开微工具箱的键盘入口由这里接线 */}

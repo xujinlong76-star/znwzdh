@@ -81,6 +81,21 @@ describe("Query Intent: parseFacetedQuery 分面修饰符提取", () => {
   });
 });
 
+describe("findDidYouMeanSuggestion 的最短长度按书写系统分档", () => {
+  const dict = ["字体", "简历", "Docker", "PostgreSQL"];
+  it("2 字中文拼错一个字要能纠", () => {
+    expect(findDidYouMeanSuggestion("宇体", dict)).toBe("字体");
+    expect(findDidYouMeanSuggestion("简厉", dict)).toBe("简历");
+  });
+  it("2 字拉丁仍按 3 卡住，避免缩写召出噪声", () => {
+    expect(findDidYouMeanSuggestion("ai", dict)).toBeNull();
+    expect(findDidYouMeanSuggestion("qt", dict)).toBeNull();
+  });
+  it("2 字中文差两个字不纠，那已是另一个词", () => {
+    expect(findDidYouMeanSuggestion("宇黑", dict)).toBeNull();
+  });
+});
+
 describe("Query Intent: findDidYouMeanSuggestion 零结果纠错推荐", () => {
   const dictionary = [
     "Docker",

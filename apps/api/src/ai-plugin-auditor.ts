@@ -28,7 +28,7 @@ import {
 } from "@navhub/core";
 import type { AppContext } from "./context.ts";
 import { llmProviderReady, resolveLlm } from "./llm-config.ts";
-import { checkLlmQuota } from "./llm-quota.ts";
+import { reserveLlmQuota, settleLlmQuota } from "./llm-quota.ts";
 import { callLlm } from "./llm-usage.ts";
 import { indexPluginsBatch, indexItemFromManifest, removePluginIndex } from "./index-plugin.ts";
 import type { PluginRecord } from "@navhub/store";
@@ -72,8 +72,15 @@ export interface PluginAuditResult {
   reviewSkipped: "quota" | "unconfigured" | "error" | null;
   /** 得分覆盖了哪些维度：full=四维；static_plus_probe=只有静态安全与探活 */
   scoreBasis: "full" | "static_plus_probe";
-  /** reviewSkipped==="quota" 时的额度明细 */
-  quota?: { scope: string; metric: string; limit: number; used: number; retryAfterSeconds: number } | null;
+  /** reviewSkipped==="quota" 时的额度明细（blockedBy 区分「已用满」与「被在途并发占住」） */
+  quota?: {
+    scope: string;
+    metric: string;
+    limit: number;
+    used: number;
+    blockedBy: "usage" | "reservation" | "both";
+    retryAfterSeconds: number;
+  } | null;
 }
 
 /** 提取清单内所有外部链接与图标 */
@@ -424,7 +431,8 @@ export async function evaluatePluginAudit(
   let llmRejected = false;
 
   // 烧的是运维者/作者自己的 key，就要先过额度闸门；被拒时连模型都不碰。
-  const auditQuota = await checkLlmQuota(ctx, options.identity || null);
+  // 这里在闸门之后才 resolveLlm，所以按最保守的 system 申报预留。
+  const auditQuota = await reserveLlmQuota(ctx, options.identity || null);
   if (!auditQuota.ok) {
     reviewSkipped = "quota";
     quotaDetail = {
@@ -432,6 +440,7 @@ export async function evaluatePluginAudit(
       metric: auditQuota.error.metric,
       limit: auditQuota.error.limit,
       used: auditQuota.error.used,
+      blockedBy: auditQuota.error.blockedBy,
       retryAfterSeconds: Math.max(1, Math.ceil(auditQuota.error.retryAfterMs / 1000)),
     };
   }
@@ -515,6 +524,9 @@ export async function evaluatePluginAudit(
     // 模型层任何异常都不能补分：缺维度就让它缺着，由 pending_review 交人工。
     reviewSkipped = "error";
     llmReviewed = false;
+  } finally {
+    // 预留只覆盖这次模型调用；JSON 解析失败与模型抛错同样从这里交还。
+    await settleLlmQuota(ctx, auditQuota.ok ? auditQuota.hold : null);
   }
   if (!llmReviewed) {
     // 探活结论是真实测出来的，可以写；合规/相关性不能冒充「已严审」。

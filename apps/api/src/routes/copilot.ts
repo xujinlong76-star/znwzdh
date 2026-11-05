@@ -13,7 +13,7 @@ import { isUpstreamCancelNotice, LlmError } from "@navhub/ai";
 import type { CopilotFrame, Site as NavSite } from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { llmProviderReadyAny, resolveLlm, type ResolvedLlm } from "../llm-config.ts";
-import { checkLlmQuota } from "../llm-quota.ts";
+import { reserveLlmQuota, settleLlmQuota, type LlmQuotaHold } from "../llm-quota.ts";
 import { callLlm, callLlmStream, INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
 import { citationOfSite, groundCopilotReply, type CopilotCitation } from "../copilot-grounding.ts";
 import { identityTrusted, requestIdentityOf, setupSseStream, startSseHeartbeat } from "./shared.ts";
@@ -114,6 +114,8 @@ interface CopilotQuotaInfo {
   metric: "calls" | "tokens";
   limit: number;
   used: number;
+  /** 是被已落账用量挡住，还是被在途并发预留挡住（P0-3） */
+  blockedBy: "usage" | "reservation" | "both";
   retryAfterSeconds: number;
 }
 
@@ -139,6 +141,11 @@ interface CopilotPrep {
   identity: string | null;
   llm: ResolvedLlm;
   quotaInfo: CopilotQuotaInfo | null;
+  /**
+   * 额度预留的持有权柄。出口必须结算（由路由的 `finally` 统一负责，两条出口
+   * 共用一处），否则这次调用占住的额度要等 TTL 才还回去。
+   */
+  quotaHold: LlmQuotaHold;
   retrieval: CopilotRetrieval;
   candidates: CopilotCitation[];
   catNames: string;
@@ -185,13 +192,17 @@ async function prepareCopilot(
    *  1. 真的不再调用模型（不再花钱）；
    *  2. 响应里如实带上 `degraded` 与额度明细，前端才能写「今天的 AI 额度到顶了，
    *     X 小时后恢复，下面是不走模型的站内匹配结果」，而不是把兜底冒充成模型回答。
+   *
+   * `resolveLlm` 已经跑过，所以 `source` 是确定的：用户自带 key 的对话不占
+   * 运维者预算，这条在预留侧同样要成立，否则「按身份限流」会顺手把系统档吃满。
    */
-  const quota = await checkLlmQuota(ctx, identity);
+  const quota = await reserveLlmQuota(ctx, identity, { source: llm.source });
   const quotaInfo: CopilotQuotaInfo | null = quota.ok ? null : {
     scope: quota.error.scope,
     metric: quota.error.metric,
     limit: quota.error.limit,
     used: quota.error.used,
+    blockedBy: quota.error.blockedBy,
     retryAfterSeconds: Math.max(1, Math.ceil(quota.error.retryAfterMs / 1000)),
   };
   if (!quota.ok) reply.header("retry-after", String(quotaInfo?.retryAfterSeconds));
@@ -319,6 +330,7 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
     identity,
     llm,
     quotaInfo,
+    quotaHold: quota.ok ? quota.hold : null,
     retrieval,
     candidates,
     catNames,
@@ -607,84 +619,93 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     const prep = await prepareCopilot(ctx, reply, req, { message, thinking, history, context });
 
     /**
-     * 取消闸门（准备阶段）：浏览器在检索/额度阶段就走了。既不该开流，
-     * 也不该把这次取消记成「调模型后取消」——stage 决定大盘里取消率的归因。
+     * 预留的结算点放在这里，而不是每个出口各写一次：本路由有流式、非流式、
+     * 取消（499）、上游取消、兜底五条出口，漏一条就等于「每次异常都白占一份额度
+     * 直到 TTL」——在并发下这正是闸门要把人挡住的那段时间。
      */
-    if (clientSignal.aborted) {
-      prep.recordCopilot("copilot_cancel", { stage: "pre_llm" });
-      reply.code(499);
-      return { ok: false, error: "请求已取消", code: "client_closed" };
-    }
-
-    /**
-     * 流式只在「模型真能跑」时开启：额度/未配置这两类降级没有逐段内容可推，
-     * 直接回与旧版完全相同的一次性 JSON，前端按 content-type 分流。
-     * 「能跑」看整个候选池：主模型没配密钥但备用池可用时仍应尝试，而不是
-     * 直接告诉用户未配置。
-     */
-    if (stream && canAttemptCopilotModel(prep.quotaInfo, prep.llm)) {
-      return streamCopilotReply(ctx, reply, prep, clientSignal, cleanupAbort);
-    }
-
     try {
-      if (canAttemptCopilotModel(prep.quotaInfo, prep.llm)) {
-        const { candidates } = prep;
-        const res = await callLlm(ctx, prep.llm, {
-          scenario: "copilot",
-          identity: prep.identity,
-          messages: prep.messages,
-          temperature: 0.6,
-          maxTokens: 1200,
-          thinking,
-          signal: clientSignal,
-          deadlineAt: prep.startedAt + INTERACTIVE_LLM_BUDGET_MS,
-        });
+      /**
+       * 取消闸门（准备阶段）：浏览器在检索/额度阶段就走了。既不该开流，
+       * 也不该把这次取消记成「调模型后取消」——stage 决定大盘里取消率的归因。
+       */
+      if (clientSignal.aborted) {
+        prep.recordCopilot("copilot_cancel", { stage: "pre_llm" });
+        reply.code(499);
+        return { ok: false, error: "请求已取消", code: "client_closed" };
+      }
 
-        if (res.content) {
-          /**
-           * 引用校验（AI-1）：回复里的外链只有两种情况——
-           * 命中本次召回候选（保留并进入 citations），或不是候选（降级成纯文本标题）。
-           * 模型编造的 URL 绝不作为可点击推荐透传给前端。
-           */
-          const grounded = groundCopilotReply(res.content, candidates);
-          const body = replyFromGrounded(
-            prep,
-            grounded,
-            res.reasoningContent,
-            res.model || prep.llm.provider.model,
-          );
-          if (body) return body;
+      /**
+       * 流式只在「模型真能跑」时开启：额度/未配置这两类降级没有逐段内容可推，
+       * 直接回与旧版完全相同的一次性 JSON，前端按 content-type 分流。
+       * 「能跑」看整个候选池：主模型没配密钥但备用池可用时仍应尝试，而不是
+       * 直接告诉用户未配置。
+       */
+      if (stream && canAttemptCopilotModel(prep.quotaInfo, prep.llm)) {
+        return await streamCopilotReply(ctx, reply, prep, clientSignal, cleanupAbort);
+      }
+
+      try {
+        if (canAttemptCopilotModel(prep.quotaInfo, prep.llm)) {
+          const { candidates } = prep;
+          const res = await callLlm(ctx, prep.llm, {
+            scenario: "copilot",
+            identity: prep.identity,
+            messages: prep.messages,
+            temperature: 0.6,
+            maxTokens: 1200,
+            thinking,
+            signal: clientSignal,
+            deadlineAt: prep.startedAt + INTERACTIVE_LLM_BUDGET_MS,
+          });
+
+          if (res.content) {
+            /**
+             * 引用校验（AI-1）：回复里的外链只有两种情况——
+             * 命中本次召回候选（保留并进入 citations），或不是候选（降级成纯文本标题）。
+             * 模型编造的 URL 绝不作为可点击推荐透传给前端。
+             */
+            const grounded = groundCopilotReply(res.content, candidates);
+            const body = replyFromGrounded(
+              prep,
+              grounded,
+              res.reasoningContent,
+              res.model || prep.llm.provider.model,
+            );
+            if (body) return body;
+          }
+        }
+      } catch (err) {
+        // 容错降级进入本地启发式推荐；「用户已取消」不在这里冒充「模型坏了」，
+        // 由下面的取消闸门统一拦。
+        //
+        // 例外：上游网关把取消当 200 正常回答返回（content = 用户已取消）时，
+        // 必须在这里就地收口——继续走兜底会把「取消」记成一次降级成功，
+        // 用户也会看到一条不是模型说的话。直接按取消记账并给可重试提示。
+        if (err instanceof LlmError && err.code === "cancelled") {
+          prep.recordCopilot("copilot_cancel", { stage: "llm" });
+          return {
+            ok: false,
+            error: "上游模型中断了本次回答（不是你的操作），可直接重试。",
+            code: "upstream_cancelled",
+          };
         }
       }
-    } catch (err) {
-      // 容错降级进入本地启发式推荐；「用户已取消」不在这里冒充「模型坏了」，
-      // 由下面的取消闸门统一拦。
-      //
-      // 例外：上游网关把取消当 200 正常回答返回（content = 用户已取消）时，
-      // 必须在这里就地收口——继续走兜底会把「取消」记成一次降级成功，
-      // 用户也会看到一条不是模型说的话。直接按取消记账并给可重试提示。
-      if (err instanceof LlmError && err.code === "cancelled") {
-        prep.recordCopilot("copilot_cancel", { stage: "llm" });
-        return {
-          ok: false,
-          error: "上游模型中断了本次回答（不是你的操作），可直接重试。",
-          code: "upstream_cancelled",
-        };
+
+      /**
+       * 取消闸门（必须在兜底之前）：客户端已经不等了就别再产出答案。
+       * 此前这条路径会把站内混合检索的结果当一次正常回答写完并记账，
+       * 「用户按了停止」在大盘里长成「降级答案成功」，取消率永远量不出来。
+       */
+      if (clientSignal.aborted) {
+        const reachedLlm = canAttemptCopilotModel(prep.quotaInfo, prep.llm);
+        prep.recordCopilot("copilot_cancel", { stage: reachedLlm ? "llm" : "pre_llm" });
+        reply.code(499);
+        return { ok: false, error: "请求已取消", code: "client_closed" };
       }
-    }
 
-    /**
-     * 取消闸门（必须在兜底之前）：客户端已经不等了就别再产出答案。
-     * 此前这条路径会把站内混合检索的结果当一次正常回答写完并记账，
-     * 「用户按了停止」在大盘里长成「降级答案成功」，取消率永远量不出来。
-     */
-    if (clientSignal.aborted) {
-      const reachedLlm = canAttemptCopilotModel(prep.quotaInfo, prep.llm);
-      prep.recordCopilot("copilot_cancel", { stage: reachedLlm ? "llm" : "pre_llm" });
-      reply.code(499);
-      return { ok: false, error: "请求已取消", code: "client_closed" };
+      return buildFallbackBody(prep);
+    } finally {
+      await settleLlmQuota(ctx, prep.quotaHold);
     }
-
-    return buildFallbackBody(prep);
   });
 };

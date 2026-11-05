@@ -9,6 +9,8 @@ import { evaluateArithmeticExpression, formatArithmeticResult } from './arithmet
  */
 export function tryParseMath(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
+  // 排除形如 YYYY-MM-DD 或 YYYY/MM/DD 的日期格式，防止 2026-02-30 被误算为 2026 - 2 - 30
+  if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(trimmed)) return null;
   // 长度上限：防止长串每击键解析一次 DoS
   if (trimmed.length > 200) return null;
   // 必须包含至少一个算术运算符，且仅包含数字、小数点、括号、运算符与空白

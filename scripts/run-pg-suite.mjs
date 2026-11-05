@@ -2,13 +2,16 @@
 /**
  * 跨方言套件的显式入口：**没有 DATABASE_URL 就直接失败**。
  *
- * 背景：`pg-dialect` / `rollup-pg` 在没有 `NAVHUB_TEST_DATABASE_URL` 时会整体
- * skip。这是本地开发的正确默认（没 PG 也能跑绿），但也制造了一种假象——
+ * 背景：`pg-dialect` / `rollup-pg` / `llm-quota-reservation-pg` 在没有 `NAVHUB_TEST_DATABASE_URL`
+ * 时会整体 skip。这是本地开发的正确默认（没 PG 也能跑绿），但也制造了一种假象——
  * 开发者以为「我跑了 PG 套件」，实际 0 条用例执行。2026-10-24 实测：
- * 这两个文件当时在 CI 上其实是红的（`catId is not defined` + 非幂等夹具），
+ * 前两个套件当时在 CI 上其实是红的（`catId is not defined` + 非幂等夹具），
  * 因为本地一直跳过而没人发现。
  *
  * 这个入口把「跳过」变成「报错」，并给出可直接复制的最小启动方式。
+ *
+ * 套件清单必须在此显式登记：漏登记的文件在 CI 上**根本不会被执行**，
+ * 连「跳过」的信号都没有。这条由 pg-suite-entry.test.ts 用目录扫描钉住。
  */
 import { spawnSync } from "node:child_process";
 
@@ -42,6 +45,7 @@ const res = spawnSync(
     "run",
     "packages/store/test/pg-dialect.e2e.test.ts",
     "packages/store/test/rollup-pg.e2e.test.ts",
+    "packages/store/test/llm-quota-reservation-pg.e2e.test.ts",
   ],
   { stdio: "inherit", env: process.env },
 );

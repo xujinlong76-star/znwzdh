@@ -5,14 +5,23 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { JobPayloadSchemas, RunJobInput, validateJobPayload } from "@navhub/core";
+import { JobPayloadSchemas, JobPruneInput, RunJobInput, validateJobPayload } from "@navhub/core";
 
 import type { AppContext } from "../context.ts";
+import { scopeSatisfies } from "../auth.ts";
 import { ADMIN_NOTIFICATION_IDENTITY } from "../notifications.ts";
-import { jobEventBus, previewDataRetention, type DataRetentionPayload, type JobEventPayload } from "../jobs.ts";
+import {
+  jobEnqueueScope,
+  jobEventBus,
+  previewDataRetention,
+  requestJobAbort,
+  type DataRetentionPayload,
+  type JobEventPayload,
+} from "../jobs.ts";
 import {
   badRequest,
   created,
+  forbidden,
   notFound,
   parsePagination,
   setupSseStream,
@@ -68,14 +77,27 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
         return badRequest(reply, "任务参数无效", payload.issues);
       }
 
+      /**
+       * 路由级别只能标一个 scope，而这条路由下既有常规巡检也有不可逆操作。
+       * 破坏性 kind 在这里二次判权：write 令牌入队恢复/清空/真删 → 403。
+       * 开放模式下匿名身份持有全部 scope，个人/NAS 部署行为不变。
+       */
+      const requiredScope = jobEnqueueScope(parsed.data.kind, payload.payload);
+      if (!scopeSatisfies(req.auth.scopes, requiredScope)) {
+        return forbidden(reply, `任务 ${parsed.data.kind} 需要 ${requiredScope} 权限（当前令牌不足）`);
+      }
+      if (requiredScope === "admin" && parsed.data.confirm !== true) {
+        return badRequest(reply, "破坏性任务需要在请求体里显式 confirm: true");
+      }
+
       const id = await ctx.repo.enqueueJob(parsed.data.kind, payload.payload);
       await ctx.repo.audit({
         ip: req.ip,
         actor: req.auth.actor,
         actorKind: req.auth.kind,
-        action: "job.enqueue",
+        action: requiredScope === "admin" ? "job.enqueue_destructive" : "job.enqueue",
         target: id,
-        diff: { kind: parsed.data.kind },
+        diff: { kind: parsed.data.kind, requiredScope },
       });
 
       return created(reply, { id, kind: parsed.data.kind });
@@ -103,12 +125,20 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
   );
 
   /**
-   * 分页筛选获取任务列表
+   * 分页筛选获取任务列表。
+   *
+   * 返回 `{ items, nextOffset, hasMore }` 而不是裸数组（P1-7）：任务历史是排查
+   * 事故的主要入口，此前只有 limit、没有 offset —— 第 201 条以后的任务在 HTTP
+   * 层完全不可达，只能直连数据库。多取一行来判定 hasMore，避免「最后一页恰好
+   * 满页」时客户端还要再请求一次空页。排序带 id 第二键，保证同毫秒批量入队时
+   * 翻页无重复、无遗漏。
    */
   app.get("/api/jobs", { config: { scope: "read" } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
-    const { limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
-    return ctx.repo.listJobs(q.status, limit);
+    const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
+    const rows = await ctx.repo.listJobs(q.status, limit + 1, offset);
+    const items = rows.slice(0, limit);
+    return { items, nextOffset: offset + items.length, hasMore: rows.length > limit };
   });
 
   /**
@@ -128,7 +158,13 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
    * ------------------------------------------------------------------ */
 
   /**
-   * 取消任务（仅处于 pending 或 running 状态的任务可被取消）
+   * 取消任务（仅处于 pending 或 running 状态的任务可被取消）。
+   *
+   * 返回值是**真实结果**而不是一律 "cancelled"，三种情况语义不同：
+   *   - "cancelled"  pending，没有执行体可等，已直接落终态；
+   *   - "cancelling" running，执行体还在跑，此刻停在「已要求停手」；
+   *   真正的 cancelled 由 Runner 在 handler 于分片边界确认停手后写入；
+   *   - null         已是终态，两条 UPDATE 都不命中，什么事都没做。
    */
   app.post("/api/jobs/:id/cancel", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -137,11 +173,45 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       return notFound(reply, "任务不存在");
     }
 
-    await ctx.repo.cancelJob(id);
+    const result = await ctx.repo.cancelJob(id);
+
+    /**
+     * 终态任务：如实回「没做任何事」，不要回 200 + 一个看起来成功的消息。
+     * 旧实现无条件 emit status:"cancelled" 并返回 status:"cancelled"，于是管理端
+     * 对一个已经 done 的任务也会显示「已取消」——这正是 P1-4 要治的假状态。
+     */
+    if (!result) {
+      reply.code(409);
+      return {
+        error: "JOB_NOT_CANCELLABLE",
+        message: `任务状态为 ${job.status}，已处于终态，未做任何变更`,
+        id,
+        status: job.status,
+      };
+    }
+
+    /**
+     * 立刻中止本进程的执行体（如果有）。
+     *
+     * 为什么必须补这一句：库状态改成 cancelling 只是「登记了要求」，handler 自己
+     * 并不会看库——它只在分片边界读 AbortSignal 与截止时间。少了这一句，同进程
+     * 按取消后执行体要等下一次任务心跳（默认 60s）读到 cancelling 才停；对没有
+     * 分片让出的 handler，那就是「界面说已取消、库里还在写」。
+     *
+     * 返回 false 表示本进程没有它的执行体（别的实例在跑），那种情况下只能靠对方
+     * 的心跳发现——这是跨实例的固有时延，不是缺陷，但要如实区分开。
+     */
+    const abortedLocally = requestJobAbort(id, "cancelled");
+
+    /**
+     * emit 与响应都按真实状态走：running 的任务此刻是 cancelling，写 cancelled
+     * 等于给前端一个还没发生的终态（管理端会立刻给出「重试」入口，而重试会和
+     * 仍在跑的执行体并发写同一批数据）。
+     */
     jobEventBus.emitJobUpdate({
       jobId: id,
       kind: job.kind,
-      status: "cancelled",
+      status: result,
       attempts: job.attempts,
       timestamp: Date.now(),
     });
@@ -152,10 +222,10 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       actorKind: req.auth.kind,
       action: "job.cancel",
       target: id,
-      diff: { kind: job.kind },
+      diff: { kind: job.kind, result, abortedLocally },
     });
 
-    return { ok: true, id, status: "cancelled" };
+    return { ok: true, id, status: result, abortedLocally };
   });
 
   /**
@@ -199,12 +269,7 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
    * 批量修剪历史终态任务（清除已完成、已失败或已取消的任务）
    */
   app.post("/api/jobs/prune", { config: { scope: "admin" } }, async (req, reply) => {
-    const parsed = z
-      .object({
-        olderThanDays: z.number().int().min(0).max(365).default(7),
-        statuses: z.array(z.string()).default(["done", "failed", "cancelled"]),
-      })
-      .safeParse(req.body ?? {});
+    const parsed = JobPruneInput.safeParse(req.body ?? {});
 
     if (!parsed.success) {
       return badRequest(reply, "参数无效", parsed.error.issues);

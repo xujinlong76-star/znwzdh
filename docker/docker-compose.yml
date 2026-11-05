@@ -75,6 +75,10 @@ services:
       NAVHUB_LLM_QUOTA_ANON_TOKENS: ${NAVHUB_LLM_QUOTA_ANON_TOKENS:-}
       NAVHUB_LLM_QUOTA_SYSTEM_CALLS: ${NAVHUB_LLM_QUOTA_SYSTEM_CALLS:-}
       NAVHUB_LLM_QUOTA_SYSTEM_TOKENS: ${NAVHUB_LLM_QUOTA_SYSTEM_TOKENS:-}
+      # 并发预留（升级改造方案 P0-3）：不透传就只能永远用代码默认值，
+      # 而在多副本部署里「闸门拦不住并发」正是这两项存在的唯一理由。
+      NAVHUB_LLM_QUOTA_RESERVE_TOKENS: ${NAVHUB_LLM_QUOTA_RESERVE_TOKENS:-}
+      NAVHUB_LLM_QUOTA_TTL_MS: ${NAVHUB_LLM_QUOTA_TTL_MS:-}
       # 显式关掉整个闸门才允许生产环境六档全 0（config.ts 会为此拒绝启动）
       NAVHUB_LLM_QUOTA_DISABLED: ${NAVHUB_LLM_QUOTA_DISABLED:-}
       # 不设公开可查的默认值（升级改造方案 P0-1）：未显式提供时由
@@ -90,6 +94,10 @@ services:
       # 注意：profile web 的 Next.js /api/hub/* 代理只转发客户端带来的 XFF、无法追加对端地址
       # （Next 15 路由处理器拿不到 socket IP），单独跑 api+web 时开着它并不等于可信。
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-0}
+      # 默认 * 保留（改了会让所有没配的存量部署立刻 403），但它不是「安全的默认」：
+      # * 与浏览器凭据互斥，服务端会自动关掉 credentials，且任意来源都能跨域读接口。
+      # 生产请显式写白名单，例如 NAVHUB_CORS_ORIGINS=https://nav.example.com
+      # （NODE_ENV=production 且仍为 * 时，启动日志会打一条警告。）
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
       NAVHUB_SEED_ON_START: ${NAVHUB_SEED_ON_START:-1}
       # 公网部署必须设为 1：生产 + NAVHUB_PUBLIC_URL 指向公网 + 未开鉴权 → 服务拒绝启动（fail-closed）。
@@ -209,6 +217,17 @@ services:
       # 与 api 服务同值：web 层服务端取数（lib/server/hub.ts）靠它豁免按 IP 的限流。
       # 注意：只给服务端直连用；浏览器侧 /api/hub/* 代理带上它等于把全站访客标成内部流量。
       NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
+      # B 站高清解析（/api/videos/bili-parse）：操作者自己的 access_key，用于第三方解析站
+      # 解锁大会员画质。以前 compose 完全没透传 → 容器里这条能力恒关，界面上那个密钥输入框骗人。
+      # 只透传不兜底：这是凭据，写死默认值等于把部署者的 B 站账号公开。
+      NAVHUB_BILIBILI_ACCESS_KEY: ${NAVHUB_BILIBILI_ACCESS_KEY:-}
+      # 是否允许把「页面访客填的 access_key」交给第三方解析站（星之阁）。默认关：
+      # 那是访客的 B 站登录凭据，替他把账号交给不受我们控制的一方不该是默认行为。
+      NAVHUB_BILI_FORWARD_USER_KEY: ${NAVHUB_BILI_FORWARD_USER_KEY:-}
+      # 解析出站预算：匿名可访问的出站通道，一次请求最多顺序打 6 个上游。
+      # 不设闸门的后果由全体真实用户承担——出口 IP 被目标站拉黑后全都解析失败。
+      NAVHUB_BILI_PARSE_MAX_CONCURRENT: ${NAVHUB_BILI_PARSE_MAX_CONCURRENT:-8}
+      NAVHUB_BILI_PARSE_MAX_PER_MIN: ${NAVHUB_BILI_PARSE_MAX_PER_MIN:-12}
 
   postgres:
     image: pgvector/pgvector:pg17
@@ -281,6 +300,8 @@ services:
       NAVHUB_LLM_QUOTA_ANON_TOKENS: ${NAVHUB_LLM_QUOTA_ANON_TOKENS:-}
       NAVHUB_LLM_QUOTA_SYSTEM_CALLS: ${NAVHUB_LLM_QUOTA_SYSTEM_CALLS:-}
       NAVHUB_LLM_QUOTA_SYSTEM_TOKENS: ${NAVHUB_LLM_QUOTA_SYSTEM_TOKENS:-}
+      NAVHUB_LLM_QUOTA_RESERVE_TOKENS: ${NAVHUB_LLM_QUOTA_RESERVE_TOKENS:-}
+      NAVHUB_LLM_QUOTA_TTL_MS: ${NAVHUB_LLM_QUOTA_TTL_MS:-}
       NAVHUB_LLM_QUOTA_DISABLED: ${NAVHUB_LLM_QUOTA_DISABLED:-}
       # 不设公开可查的默认值（升级改造方案 P0-1）：未显式提供时由
       # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
@@ -303,6 +324,10 @@ services:
       NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-http://localhost:8788}
       NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
       NAVHUB_ALERT_WEBHOOK: ${NAVHUB_ALERT_WEBHOOK:-}
+      # 默认 * 保留（改了会让所有没配的存量部署立刻 403），但它不是「安全的默认」：
+      # * 与浏览器凭据互斥，服务端会自动关掉 credentials，且任意来源都能跨域读接口。
+      # 生产请显式写白名单，例如 NAVHUB_CORS_ORIGINS=https://nav.example.com
+      # （NODE_ENV=production 且仍为 * 时，启动日志会打一条警告。）
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/ready"]
@@ -329,7 +354,7 @@ services:
     ports:
       - "${NAVHUB_MCP_PORT:-8790}:8790"
     healthcheck:
-      # 镜像自带的 HEALTHCHECK 打的是中枢的 :8787/api/health；本容器跑的是 MCP 传输，
+      # 镜像自带的 HEALTHCHECK 打的是中枢的 :8787/api/ready；本容器跑的是 MCP 传输，
       # 沿用会永远 unhealthy（compose 看起来"起来了但一直不健康"）。
       # MCP 传输自己的探测点在 :8790/health。
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8790/health"]

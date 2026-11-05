@@ -187,6 +187,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     let suggestions: string[] = [];
     let popular: string[] = [];
     let relationHits: unknown[] = [];
+    let relatedTags: Array<{ name: string; slug: string; count: number }> = [];
     /** 建议读侧失败：hits 已经算出，不能因为「附加信息」读不出来而整单 5xx */
     let suggestionsDegraded = false;
     if (q) {
@@ -197,6 +198,22 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
       if (q.length >= 2) {
         relationHits = await ctx.repo.findRelationsByQuery(q, 3).catch(() => []);
+      }
+      // 聚合前序高频命中的标签，为用户提供跨主题快速筛选与相关标签探索
+      if (hits.length > 0) {
+        const tagCountMap = new Map<string, number>();
+        for (const h of hits.slice(0, 20)) {
+          if (!h.site?.tags) continue;
+          for (const t of h.site.tags) {
+            const norm = t.trim();
+            if (!norm) continue;
+            tagCountMap.set(norm, (tagCountMap.get(norm) ?? 0) + 1);
+          }
+        }
+        relatedTags = Array.from(tagCountMap.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([name, count]) => ({ name, slug: name.toLowerCase(), count }));
       }
       if (result.hits.length === 0 && isFirstPage) {
         // 只关掉「写零结果行」这一段；建议/热门仍照算，
@@ -234,6 +251,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       ...(result.hits.length === 0 && q && isFirstPage ? { suggestions, popular } : {}),
       ...(suggestionsDegraded ? { suggestionsDegraded: true } : {}),
       ...(relationHits.length > 0 ? { relationHits } : {}),
+      ...(relatedTags.length > 0 ? { relatedTags } : {}),
     };
   }
 

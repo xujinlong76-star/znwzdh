@@ -7,6 +7,8 @@ import { hubGet } from '@/lib/server/hub'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import type { HubSite } from '@/lib/navhub-api'
 import { TagResultsBoard } from '@/components/tag-results-board'
+import { RelatedTags } from '@/components/related-tags'
+import { fetchRelatedTags, type RelatedTag } from '@/lib/navhub-api'
 import { MIN_SITES_FOR_TAG_INDEX } from '@/lib/seo/thresholds'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { ogImageUrl } from '@/lib/seo/og-text'
@@ -50,7 +52,7 @@ type TagMeta = { ok: boolean; tag: { name: string; slug: string; description: st
  * - resolve：标签规范名与描述（82 条由 scripts/tag-descriptions.mjs 回填）。
  */
 async function loadTagPage(slug: string) {
-  const [res, tagRes] = await Promise.all([
+  const [res, tagRes, rawRelated] = await Promise.all([
     // status=active 必须下推到中枢：标签页只展示存活站点，而 limit=100 是硬上限。
     // 不带这个参数时，broken/pending 会先占掉名额，页面再过滤就可能把本来达标的
     // 标签误判成薄页（noindex），与 /api/tags 的存活计数、sitemap 门槛不同口径。
@@ -59,6 +61,10 @@ async function loadTagPage(slug: string) {
       60,
     ),
     hubGet<TagMeta>('/api/tags/resolve?q=' + encodeURIComponent(slug), 60),
+    hubGet<{ ok: boolean; tagSlug: string; related: RelatedTag[] }>(
+      '/api/tags/' + encodeURIComponent(slug) + '/related?limit=12',
+      60,
+    ),
   ])
   // 索引门槛按 **active** 站点算：broken 站点仍会出现在 search 候选集里，
   // 但它们不该为一个薄标签页凑数（实测唯一达标的标签有 2/5 是 broken）。
@@ -66,7 +72,10 @@ async function loadTagPage(slug: string) {
     .map((h) => h.site)
     .filter((s): s is HubSite => Boolean(s))
     .filter((s) => s.status === 'active')
-  return { res, sites, tagRes }
+  const related = (rawRelated && (rawRelated as { ok?: boolean; related?: RelatedTag[] }).ok)
+    ? (rawRelated as { ok?: boolean; related?: RelatedTag[] }).related ?? []
+    : null
+  return { res, sites, tagRes, related }
 }
 
 /**
@@ -89,7 +98,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const safeSlug = safeDecodeParam(slug)
   if (!safeSlug) notFound()
-  const { res, sites, tagRes } = await loadTagPage(safeSlug)
+  const { res, sites, tagRes, related } = await loadTagPage(safeSlug)
   const name = tagRes?.tag?.name ?? safeSlug
   // resolve 返回的是规范 slug：别名/原名 URL（如 /tags/AI 编程）与规范页
   // 内容完全相同，canonical 必须指向规范页，否则同一内容在两个 URL 上竞争。
@@ -122,7 +131,7 @@ export default async function TagDetailPage({ params }: { params: Promise<{ slug
   const { slug } = await params
   const safeSlug = safeDecodeParam(slug)
   if (!safeSlug) notFound()
-  const { res, sites, tagRes } = await loadTagPage(safeSlug)
+  const { res, sites, tagRes, related } = await loadTagPage(safeSlug)
   // 真 404（软 404 消灭战）：search 成功但 0 命中 = 标签无存活站点或压根
   // 不存在（方案 §4.1：两类都 404）。search **失败**（res === null）不 404——
   // 中枢挂了不该把整站标签页打成 404，降级渲染由岛负责。
@@ -148,6 +157,7 @@ export default async function TagDetailPage({ params }: { params: Promise<{ slug
           initialTruncated={Boolean(res?.hasMore)}
           tagDescription={tagRes?.tag?.description ?? null}
         />
+        <RelatedTags tagSlug={canonicalSlug} related={related} />
       </div>
       <Footer />
     </Container>

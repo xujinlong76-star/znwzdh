@@ -28,6 +28,7 @@ import {
   Check,
   Sparkles,
   Activity,
+  AlertTriangle,
   ArrowRight,
   GitFork,
   Boxes,
@@ -40,15 +41,23 @@ import {
   Globe,
   Layers,
   X,
+  MonitorPlay,
+  FileText,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react'
+import { probeSiteLatency, type PingResult } from '@/lib/site-ping'
 import {
   fetchSite,
   fetchSimilar,
   fetchSiteRelations,
   fetchSiteCollections,
+  fetchSiteHealthHistory,
+  fetchSiteAlternatives,
   type HubSite,
   type HubSiteRelation,
   type HubCollection,
+  type HealthCheckPoint,
 } from '@/lib/navhub-api'
 import { EmptyState } from '@/components/ui/empty-state'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
@@ -56,7 +65,7 @@ import { copyText } from '@/lib/clipboard'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
-import { siteHealthBadge } from '@/lib/site-health'
+import { isBotBlockStatus, siteHealthBadge } from '@/lib/site-health'
 import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
 
@@ -134,6 +143,37 @@ function daysSince(ts: number | null | undefined): number | null {
   return days >= 0 ? days : null
 }
 
+/**
+ * 健康历史 sparkline：把最近 N 次巡检画成一条折线。
+ * ok=true 的点画在顶部（绿），false 画在底部（琥珀）。
+ * 少于 2 个点不渲染（单点画不出趋势，反而会让人误以为有数据）。
+ */
+function HealthSparkline({ checks }: { checks: HealthCheckPoint[] }) {
+  if (checks.length < 2) return null
+  const width = 120
+  const height = 32
+  const stepX = width / (checks.length - 1)
+  const okY = 5
+  const badY = height - 5
+  const linePath =
+    'M' + checks.map((c, i) => `${(i * stepX).toFixed(1)},${c.ok ? okY : badY}`).join(' L')
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      className="inline-block align-middle"
+      role="img"
+      aria-label={`最近 ${checks.length} 次巡检，${checks.filter((c) => c.ok).length} 次正常`}
+    >
+      <path d={linePath} fill="none" stroke="currentColor" strokeWidth={1.5} className="text-muted-foreground" />
+      {checks.map((c, i) => (
+        <circle key={i} cx={i * stepX} cy={c.ok ? okY : badY} r={2} fill={c.ok ? '#10b981' : '#f59e0b'} />
+      ))}
+    </svg>
+  )
+}
+
 export function SiteDetailView({
   id,
   initialSite = null,
@@ -154,8 +194,8 @@ export function SiteDetailView({
   /** 分类站点数达标才链分类页——薄分类路由是 404 */
   canLinkCategory?: boolean
   categoryCount?: number
-  /** 相关站点的取数范围：本分类 / 父分类子树 / 全站兜底 */
-  relatedScope?: 'category' | 'parent' | 'more'
+  /** 相关站点的取数范围：相似标签 / 本分类 / 父分类子树 / 全站兜底 */
+  relatedScope?: 'similar' | 'category' | 'parent' | 'more'
   /** 相关范围对应的分类名（全站兜底时为 null） */
   relatedLabel?: string | null
   /** 「浏览全部」入口：只有站点数达标的相关分类才有公开页 */
@@ -169,13 +209,64 @@ export function SiteDetailView({
   const [collections, setCollections] = useState<Array<HubCollection & { collectionNote: string | null }>>([])
   /** 关系网络降级：中枢不可用时 relations 静默为空，需与「确实没有关系」区分 */
   const [relationsDegraded, setRelationsDegraded] = useState(false)
+  /** 健康历史（详情页健康趋势 sparkline 用） */
+  const [healthHistory, setHealthHistory] = useState<HealthCheckPoint[]>([])
+  /** 死链时的替代推荐回退（relations 无 alternative 时启用） */
+  const [alternativesFallback, setAlternativesFallback] = useState<HubSite[]>([])
   const [loading, setLoading] = useState(!initialSite)
   const [notFound, setNotFound] = useState(false)
   const { copyFeedback, reportCopy } = useCopyFeedback()
+  const { copyFeedback: mdCopyFeedback, reportCopy: reportMdCopy } = useCopyFeedback()
+
+  const handleCopyMarkdown = async () => {
+    if (!site?.url || !site?.title) return
+    const desc = site.description ? ` - ${site.description.trim()}` : ''
+    const citation = `[${site.title.trim()}](${site.url.trim()})${desc}`
+    const result = await copyText(citation)
+    reportMdCopy(result)
+  }
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
   const reload = () => setReloadToken((n) => n + 1)
+
+  const [relatedVideos, setRelatedVideos] = useState<any[]>([])
+  const [loadingVideos, setLoadingVideos] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!site?.title) return
+    const q = site.title.trim()
+    fetch(`/api/videos?q=${encodeURIComponent(q)}&limit=3&compact=1`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        if (data && Array.isArray(data.videos)) {
+          setRelatedVideos(data.videos)
+        }
+        setLoadingVideos(false)
+      })
+      .catch(() => {
+        if (!cancelled) setLoadingVideos(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [site?.title])
+
+  const [livePing, setLivePing] = useState<PingResult | null>(null)
+  const [pinging, setPinging] = useState(false)
+
+  const handleLivePing = async () => {
+    if (!site?.url || pinging) return
+    setPinging(true)
+    try {
+      const res = await probeSiteLatency(site.url)
+      setLivePing(res)
+    } finally {
+      setPinging(false)
+    }
+  }
 
   const handleCopyUrl = async () => {
     if (!site?.url) return
@@ -232,6 +323,35 @@ export function SiteDetailView({
       if (cancelled) return
       setRelationsDegraded(failed)
       if (res?.all) setRelations(res.all)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [id, site, reloadToken])
+
+  // 加载站点健康历史（详情页健康趋势 sparkline）
+  useEffect(() => {
+    if (!id || !site) return
+    let cancelled = false
+    void fetchSiteHealthHistory(id, 30).then((checks) => {
+      if (!cancelled) setHealthHistory(checks)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [id, site, reloadToken])
+
+  // 死链时的替代推荐回退：站点非 active 时，用 /api/rank/alternatives 补替代
+  // （relations 只覆盖人工/AI 标注过的站点，死链站点常常没有关系，此前是死链孤页）
+  useEffect(() => {
+    if (!id || !site) return
+    if (site.status === 'active') {
+      setAlternativesFallback([])
+      return
+    }
+    let cancelled = false
+    void fetchSiteAlternatives(id, 6).then((alts) => {
+      if (!cancelled) setAlternativesFallback(alts)
     })
     return () => {
       cancelled = true
@@ -335,6 +455,9 @@ export function SiteDetailView({
 
   const hasFacets = site.facets && Object.keys(site.facets).length > 0
   const healthBadge = siteHealthBadge(site.health)
+  // 反爬状态（401/403/429）不等于站点下线：详情页只报 HTTP 码会被读成「打不开」，
+  // 这一句把「我们被拒绝」和「站点不可用」分开（口径与 /search 的 broken 分区一致）。
+  const botBlocked = isBotBlockStatus(site.health?.httpStatus)
 
   // 收录档案用的事实值：只在有真实时间戳时渲染，缺失就整行不出现，
   // 不用「未知 / --」占位（占位符会把缺失数据伪装成已核实）。
@@ -351,6 +474,9 @@ export function SiteDetailView({
       : site.source === 'submit'
         ? '用户投稿'
         : (site.source ?? '').trim() || null
+
+  const isDeadLink = site.status === 'broken' || (livePing && !livePing.reachable)
+  const waybackUrl = `https://web.archive.org/web/*/${encodeURI(site.url)}`
 
   return (
     <Container as="main" id="main-content">
@@ -385,19 +511,60 @@ export function SiteDetailView({
                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
                   {site.title}
                 </h1>
-                {healthBadge && (
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs border ${
-                      healthBadge.tone === 'ok'
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
-                    }`}
+                <div className="flex flex-wrap items-center gap-2">
+                  {healthBadge && (
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs border ${
+                        healthBadge.tone === 'ok'
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                          : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                      }`}
+                      title="服务端最新巡检结果"
+                    >
+                      <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                      <span>{healthBadge.label}</span>
+                      {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
+                    </span>
+                  )}
+                  {healthHistory.length >= 2 && (
+                    <HealthSparkline checks={healthHistory} />
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleLivePing}
+                    disabled={pinging}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono border border-border/70 bg-background/60 hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
+                    title="点击由浏览器向该站点发起实时轻量握手，测试您当前网络直连延迟"
                   >
-                    <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                    <span>{healthBadge.label}</span>
-                    {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
-                  </span>
-                )}
+                    {pinging ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                        <span>测速中…</span>
+                      </>
+                    ) : livePing ? (
+                      <>
+                        <span
+                          className={cn(
+                            'w-2 h-2 rounded-full',
+                            livePing.quality === 'fast' && 'bg-emerald-500 animate-pulse',
+                            livePing.quality === 'normal' && 'bg-sky-500',
+                            livePing.quality === 'slow' && 'bg-amber-500',
+                            livePing.quality === 'unreachable' && 'bg-rose-500',
+                          )}
+                        />
+                        <span className={livePing.reachable ? 'text-foreground font-medium' : 'text-destructive font-medium'}>
+                          本机实测: {livePing.label}
+                        </span>
+                        <RefreshCw className="w-2.5 h-2.5 ml-0.5 opacity-60 hover:opacity-100" />
+                      </>
+                    ) : (
+                      <>
+                        <Activity className="w-3 h-3 text-muted-foreground" />
+                        <span>本机测速</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -509,6 +676,22 @@ export function SiteDetailView({
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCopyMarkdown}
+                className="h-9 text-xs px-3 gap-1.5 font-medium shadow-2xs cursor-pointer"
+                title="复制为 Markdown 引用格式：[标题](网址) - 简介"
+                aria-label={mdCopyFeedback.state === 'copied' ? '已复制 Markdown 引用' : '复制 Markdown 引用'}
+              >
+                {mdCopyFeedback.state === 'copied' ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                ) : (
+                  <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+                )}
+                <span>{mdCopyFeedback.state === 'copied' ? '已复制引用' : '复制 Markdown'}</span>
+              </Button>
               <FavoriteButton
                 site={{
                   siteId: site.id,
@@ -532,6 +715,43 @@ export function SiteDetailView({
             </div>
           </div>
         </div>
+
+        {/* 死链与失联自愈引导横幅 */}
+        {isDeadLink && (
+          <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>当前站点巡检或本机测速不可达，建议调取历史网页快照，或查阅下方的对标平替与生态方案。</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs border-amber-500/30 hover:bg-amber-500/20 font-medium"
+              >
+                <a href={waybackUrl} target="_blank" rel="noopener noreferrer">
+                  <span>查看历史快照</span>
+                  <ExternalLink className="w-3 h-3 ml-1" />
+                </a>
+              </Button>
+              {alternatives.length > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('alternatives-section')
+                    el?.scrollIntoView({ behavior: 'smooth' })
+                  }}
+                  className="h-8 text-xs font-medium cursor-pointer"
+                >
+                  <span>查看平替方案 ({alternatives.length})</span>
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 收录档案：详情页此前只有标题 + 一句话简介（生产集中位数 23 字），
             正文几乎全是链接列表。这里用库里**已有的事实字段**补出可读正文
@@ -593,6 +813,12 @@ export function SiteDetailView({
               </div>
             )}
           </dl>
+          {botBlocked ? (
+            <p className="text-xs leading-relaxed text-amber-600 dark:text-amber-400">
+              最近一次巡检返回 HTTP {site.health?.httpStatus}：这通常表示对方站点拒绝了自动访问（反爬、登录墙或按 IP 限流），
+              不代表站点无法打开。点「立即直达」通常仍可正常访问，巡检恢复后本条会自动更新。
+            </p>
+          ) : null}
           {/*
             这一段**刻意不复述标题、简介与标签**——它们在首屏卡片与标签区已经出现，
             重复一遍只是把字数刷上去，对读者和搜索引擎都没有增量。
@@ -619,7 +845,7 @@ export function SiteDetailView({
 
         {/* 强类型平替与竞品雷达 (Alternative Relations - Phase 3) */}
         {alternatives.length > 0 && (
-          <div className="space-y-3.5">
+          <div id="alternatives-section" className="space-y-3.5 scroll-m-16">
             <div className="flex items-center justify-between">
               <h2 className="text-sm sm:text-base font-bold flex items-center gap-2 text-foreground">
                 <GitFork className="w-4 h-4 text-amber-500" />
@@ -678,6 +904,49 @@ export function SiteDetailView({
                       💡 {alt.note}
                     </p>
                   )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 死链替代回退：站点非 active 且 relations 没有平替时，用 /api/rank/alternatives 补替代。
+            此前死链站点若没有关系标注，详情页就是一个死链孤页——用户点出去打不开，也没有替代可走。 */}
+        {alternatives.length === 0 && alternativesFallback.length > 0 && site.status !== 'active' && (
+          <div className="space-y-3.5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm sm:text-base font-bold flex items-center gap-2 text-foreground">
+                <GitFork className="w-4 h-4 text-amber-500" />
+                <span>可用的替代站点</span>
+              </h2>
+              <span className="text-xs text-muted-foreground font-mono">{alternativesFallback.length} 个</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {alternativesFallback.map((alt) => (
+                <div
+                  key={alt.id}
+                  className="rounded-xl border border-border/70 bg-card p-4 hover:border-amber-500/40 transition-all shadow-2xs space-y-2.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <Link href={`/site/${alt.id}`} className="font-semibold text-sm hover:text-primary hover:underline truncate block">
+                        {alt.title}
+                      </Link>
+                      <a
+                        href={safeHref(alt.url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-muted-foreground hover:text-primary font-mono truncate block mt-0.5"
+                      >
+                        {alt.url}
+                      </a>
+                    </div>
+                    <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
+                      <a href={safeHref(alt.url)} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -795,7 +1064,7 @@ export function SiteDetailView({
                 className="text-sm sm:text-base font-bold flex items-center gap-2 text-foreground"
               >
                 <LayoutGrid className="w-4 h-4 text-sky-500" />
-                <span>{relatedScope === 'parent' ? '同类目站点' : relatedScope === 'more' ? '更多站点' : '同分类站点'}</span>
+                <span>{relatedScope === 'similar' ? '相似站点推荐' : relatedScope === 'parent' ? '同类目站点' : relatedScope === 'more' ? '更多站点' : '同分类站点'}</span>
               </h2>
               {relatedLabel && (
                 <span className="text-xs text-muted-foreground font-mono truncate">{relatedLabel}</span>
@@ -858,6 +1127,30 @@ export function SiteDetailView({
           </section>
         )}
 
+        {/* 关联技术视频频道一键联动 */}
+        <section aria-label="相关精选技术视频" className="rounded-2xl border border-blue-500/25 bg-blue-500/5 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <MonitorPlay className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-foreground truncate">
+                想深入学习「{site.title}」？
+              </div>
+              <div className="text-xs text-muted-foreground truncate mt-0.5">
+                在精选技术视频库中检索相关实战视频与核心原理解析课程
+              </div>
+            </div>
+          </div>
+          <Link
+            href={`/videos?q=${encodeURIComponent(site.title)}`}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shrink-0 transition-all shadow-2xs self-start sm:self-auto"
+          >
+            <span>搜索相关教程</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </section>
+
         {/* 向量图谱相似推荐 (KNN) */}
         {similar.length > 0 && (
           <div className="space-y-3.5">
@@ -897,6 +1190,96 @@ export function SiteDetailView({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* 跨生态精选视频推荐：连接工具与实战教程 */}
+        {relatedVideos.length > 0 ? (
+          <section aria-labelledby="site-videos-heading" className="space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <h2
+                id="site-videos-heading"
+                className="text-sm sm:text-base font-bold flex items-center gap-2 text-foreground"
+              >
+                <MonitorPlay className="w-4 h-4 text-violet-500" />
+                <span>「{site.title}」相关实战视频与精品教程</span>
+              </h2>
+              <Link
+                href={`/videos?q=${encodeURIComponent(site.title)}`}
+                className="text-xs text-primary hover:underline flex items-center gap-1 font-medium"
+              >
+                <span>在视频中心查看更多</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+              {relatedVideos.map((video) => (
+                <a
+                  key={video.id}
+                  href={safeHref(video.href) || `/videos?q=${encodeURIComponent(site.title)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group rounded-xl border border-border/70 bg-card overflow-hidden hover:border-violet-500/40 hover:shadow-md transition-all flex flex-col justify-between"
+                >
+                  <div className="relative aspect-video w-full bg-muted overflow-hidden">
+                    {video.icon ? (
+                      <img
+                        src={video.icon}
+                        alt={video.title}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-violet-500/5 text-violet-500/40">
+                        <MonitorPlay className="w-10 h-10" />
+                      </div>
+                    )}
+                    {video.videoConfig?.durationSec && (
+                      <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-black/75 text-white backdrop-blur-xs">
+                        {Math.floor(video.videoConfig.durationSec / 60)}:{String(video.videoConfig.durationSec % 60).padStart(2, '0')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-3 space-y-1.5 flex-1 flex flex-col justify-between">
+                    <h3 className="text-xs font-semibold text-foreground line-clamp-2 group-hover:text-primary transition-colors leading-snug">
+                      {video.title}
+                    </h3>
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/40 mt-1">
+                      <span className="truncate max-w-[120px]">
+                        {video.videoConfig?.author || '技术精选'}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-primary font-medium group-hover:underline">
+                        <span>观看教程</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </span>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs text-foreground">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                <MonitorPlay className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <span className="font-semibold text-foreground block text-sm">想看「{site.title}」的视频教程与实操演练？</span>
+                <span className="text-muted-foreground text-xs block truncate">
+                  本站技术视频库收录 6,000+ 部开发者视频、实操讲解与系统课程
+                </span>
+              </div>
+            </div>
+            <Link
+              href={`/videos?q=${encodeURIComponent(site.title)}`}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors shrink-0 text-xs shadow-2xs"
+            >
+              <span>在视频中心检索相关资源</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
         )}
       </div>

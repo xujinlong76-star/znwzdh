@@ -364,11 +364,12 @@ describe("撤防账：接线（对真实 ci.yml 的作业片段派生夹具）",
   });
 
   it("continue-on-error 的门禁不逼登记（反向豁免：它红了也挡不住别人）", () => {
-    // 豁免分支要靠合成夹具才走得通：今天真带 continue-on-error 的那步（test-sqlite 的后端 lint）
-    // 已经**自愿登记**成软门禁，而它的命令形状本来就不在 GATE_STEP_RE 里 ⇒
-    // 在 check-web-overlay 末尾插一道「形状是门禁、但允许失败」的步骤来走那条分支。
+    // 豁免分支只能靠合成夹具走通：2026-11-01 撤掉后端 lint 的 continue-on-error 后，
+    // 真实工作流里已经没有允许失败的步骤了（那个方向由下面「再出现软门禁」那组守）。
+    // 先在真实片段上确认「硬门禁 + 已登记」这件事不报，再在夹具上走豁免分支。
     const block = jobBlock("test-sqlite");
-    expect(block).toMatch(/lint:backend\n        id: backend-lint\n        continue-on-error: true/);
+    expect(block).toMatch(/- run: pnpm run lint:backend\n        id: backend-lint\n/);
+    expect(block).not.toMatch(/- run: pnpm run lint:backend\n(?:\s*id:\s*\S+\n)?\s*continue-on-error:/);
     expect(lib.defusedCoverageProblems(block, entryOf("test-sqlite"))).toEqual([]);
 
     const exempt = jobBlock("check-web-overlay").replace(
@@ -576,15 +577,16 @@ describe("撤防账：CLI（ci-defused-gates.mjs）", () => {
         "sqlite-install": { outcome: "success" },
         "sqlite-vendor": { outcome: "skipped" },
         typecheck: { outcome: "failure" },
-        // 软门禁带着告警跑完：outcome=failure 而 conclusion=success ⇒ 它算跑过，不算判红
-        "backend-lint": { outcome: "failure", conclusion: "success" },
+        // 后端 lint 现在与 typecheck 同一种门禁（跑过就是跑过，红了就是红了），
+        // 这里让它干净跑过，钉的只是「门禁数」与「准备步骤数」互不串门
+        "backend-lint": { outcome: "success", conclusion: "success" },
         vitest: { outcome: "skipped" },
       }),
     });
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("3 道门禁里 1 道没跑成");
     expect(res.out).toContain("另有 1 个准备步骤没跑成：vendor 重建 apps/web");
-    // id 列表里不许出现 backend-lint：它带着告警跑完了，软门禁的红被吞掉 ⇒ 算跑过
+    // 门禁 id 列表里只许出现 vitest：准备步骤（sqlite-vendor）不是判定，不能混进去夸大门禁撤防数
     expect(res.out).toContain("没跑成的步骤 id：sqlite-vendor、vitest");
   });
 
@@ -642,53 +644,101 @@ function runCliRaw(job: string, conclusions: unknown, args: string[] = []) {
 }
 
 /**
- * 软门禁 backend-lint：本仓唯一的 `continue-on-error` 步骤，2026-10-30 起登进登记表。
+ * backend-lint 硬化：2026-11-01 撤掉那一步的 continue-on-error，登记表同步摘掉 soft 与 note。
  *
- * 为什么要它在账上：「conclusion 优先」这条判据此前只有夹具能证明——CI 里唯一会用到它的
- * 那一步既没有 id 也没登记，等于判据长期不执勤。现在它是活体样本：那步红了（outcome=failure
- * 而 conclusion=success）时账必须说「跑过」而不是「判红」，判据若退回 outcome 优先就会当场
- * 把它写成根因——一个不存在的原因，而且写在全仓唯一的公共作业里，人人看得见。
+ * 为什么这一组一条没减：撤防账「判据取 conclusion 不取 outcome」这条口径原本靠这道门禁执勤——
+ * 它是本仓唯一的软门禁，也就是唯一的活体样本。现在 YAML 与登记表两侧都是 0 个软门禁，样本没了，
+ * 执勤的是**两个方向的一致性**：
+ *   - 谁重新引入 continue-on-error 而登记表不标 soft ⇒ 接线红（读数会把被吞掉的退出码讲成门禁判红）；
+ *   - 谁摘掉 soft 而那步还软 ⇒ 接线红（账里那句「红了不判红」成了假话）。
+ * 所以下面的夹具一律是合成的（把真实片段加回 / 摘掉那一行），只有「现状」那两条钉真实文件，
+ * 钉的是两侧确实都为 0。把现状改成「有几处算几处」等于给下一轮埋雷：真要重新引入软门禁，
+ * 必须同批改 scripts/lib/ci-defused.mjs 的登记、docs/GATES-OPERATIONS.md §2.3 和这两条断言。
  */
-describe("撤防账：软门禁 backend-lint（conclusion 优先的活体样本）", () => {
-  it("现状：登记为软门禁 ⇔ YAML 里真的带 continue-on-error ⇒ 接线与覆盖面都不报", () => {
+describe("撤防账：backend-lint 硬化后（YAML 与登记表必须同口径）", () => {
+  /** soft 这一档今天全仓没人用（硬化后就没了），读它要显式承认「登记表里可能没这个键」 */
+  const isSoft = (g: unknown) => Boolean((g as { soft?: boolean }).soft);
+  /** 合成夹具只动一行：把真实片段里那一步重新写成「允许失败」 */
+  const softBlock = () =>
+    jobBlock("test-sqlite").replace(
+      "        id: backend-lint\n",
+      "        id: backend-lint\n        continue-on-error: true\n",
+    );
+  /** 反向合成夹具：YAML 不动，登记表把那一道标成 soft */
+  const softEntry = (entry: Entry) => ({
+    ...entry,
+    gates: (entry.gates ?? []).map((g) => ({ ...g, soft: true })),
+  });
+
+  it("现状：那一步不带 continue-on-error，登记表也不标 soft ⇒ 接线与覆盖面都不报", () => {
     const block = jobBlock("test-sqlite");
     const entry = entryOf("test-sqlite");
-    expect(block).toMatch(/- run: pnpm run lint:backend\n        id: backend-lint\n        continue-on-error: true/);
-    expect(entry.gates?.find((g) => g.id === "backend-lint")?.soft).toBe(true);
+    expect(block).toMatch(/- run: pnpm run lint:backend\n        id: backend-lint\n/);
+    expect(block).not.toMatch(
+      /- run: pnpm run lint:backend\s*\n(?:\s*id:\s*[A-Za-z0-9_-]+\s*\n)?\s*continue-on-error:/,
+    );
+    expect(isSoft(entry.gates?.find((g) => g.id === "backend-lint"))).toBe(false);
     expect(lib.defusedWiringProblems(block, entry)).toEqual([]);
     expect(lib.defusedCoverageProblems(block, entry)).toEqual([]);
   });
 
-  it("它红了 ⇒ 账写「3 道门禁全部跑过」并说破软门禁，不写判红、不点根因（rc 0，--strict 也 0）", () => {
+  it("现状：8 个登记作业 / 26 道门禁里一个软门禁都没有（YAML 与登记表两侧都数得到）", () => {
+    // 两侧各数一次而不是只数一侧：只数登记表会漏「YAML 悄悄加回 flag」，只数 YAML 会漏
+    // 「登记表凭空标 soft」。今天两个都是 0 —— 这正是硬化要钉住的形状。
+    for (const entry of lib.DEFUSED_GATES) {
+      expect(entry.gates?.filter(isSoft) ?? [], `${entry.job} 的登记表里还有 soft`).toEqual([]);
+      const flagged = jobBlock(entry.job).split("\n").filter((line) => /^\s*continue-on-error\s*:/.test(line));
+      expect(flagged, `${entry.job} 的 YAML 里还有 continue-on-error`).toEqual([]);
+    }
+    // 全文件再兜一遍：ci.yml 里唯一出现这个词的地方是解释历史的注释（第 834 行），不是 YAML 键
+    expect(realCi.split("\n").filter((line) => /^\s*continue-on-error\s*:/.test(line))).toEqual([]);
+  });
+
+  it("它红了 ⇒ 就是判红、就是根因，后面那步按撤防点名（硬化前这里写的是「跑过 + 软门禁 1 道」）", () => {
     const entry = entryOf("test-sqlite");
-    const conclusions = conclusionsOf(entry, { softFail: ["backend-lint"] });
+    // 现在 runner 真会因为这道红而跳过后面的步骤：conclusion 也是 failure
+    const conclusions = conclusionsOf(entry, { fail: ["backend-lint"], skip: ["vitest"] });
     const read = lib.findDefused({ entry, conclusions });
-    expect(read.defused).toEqual([]);
-    expect(read.failed).toEqual([]);
-    expect(read.ran).toContain("backend-lint");
-    expect(read.blocker).toBeNull();
+    expect(read.failed.map((f: { id: string }) => f.id)).toEqual(["backend-lint"]);
+    expect(read.defused.map((d: { id: string }) => d.id)).toEqual(["vitest"]);
+    expect(read.blocker?.id).toBe("backend-lint");
+    expect(read.ran).not.toContain("backend-lint");
 
     const res = runCliRaw("test-sqlite", conclusions);
     expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("3 道门禁里 1 道没跑成");
+    expect(res.out).toContain("根因：后端 eslint（lint:backend）（id: backend-lint）判红");
+    // 硬化后不该再有任何「软门禁」字样：那句话现在会说谎（这道门禁既判红也挡路）
+    expect(res.out).not.toContain("软门禁");
+    expect(res.out).toContain("::warning title=CI 门禁撤防::");
+  });
+
+  it("合成的放行形状（outcome=failure / conclusion=success）仍算跑过、不当根因", () => {
+    // 本仓今天没有这种步骤 ⇒ 只能合成。判据不能等事故：谁重新引入 continue-on-error，
+    // 读数必须仍然按 conclusion 判「挡没挡路」，否则会把一步明明放行的红点成根因。
+    const entry = entryOf("test-sqlite");
+    const conclusions = { ...conclusionsOf(entry), "backend-lint": { outcome: "failure", conclusion: "success" } };
+    const read = lib.findDefused({ entry, conclusions });
+    expect(read.failed).toEqual([]);
+    expect(read.defused).toEqual([]);
+    expect(read.ran).toContain("backend-lint");
+    expect(read.blocker).toBeNull();
+    // 登记表没标 soft ⇒ 账里不能出现「软门禁」这句免责； YAML 真带 flag 时该红的是接线判据（下面两条）
+    const res = runCliRaw("test-sqlite", conclusions);
+    expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("3 道门禁全部跑过");
-    // 「全部跑过」必须带上这句：否则读的人会以为后端 lint 干净过了，而它可能正带着几十条告警
-    expect(res.out).toContain("软门禁 1 道：红了不判红、也不挡路");
-    // 不许把它写成判红，也不许把它点成根因（「红了不判红」那句是说明，不是判定）
-    expect(res.out).not.toContain("道判红");
-    expect(res.out).not.toContain("根因");
-    expect(res.out).toContain("::notice title=CI 门禁撤防::");
-    // 严格档拦的是真撤防；软门禁红被吞掉不是撤防
+    expect(res.out).not.toContain("软门禁");
     expect(runCliRaw("test-sqlite", conclusions, ["--strict"]).status).toBe(0);
   });
 
-  it("判据退回 outcome 优先 ⇒ 同一份读数把软门禁写成判红与根因（上面那条不是「反正都绿」）", async () => {
+  it("判据退回 outcome 优先 ⇒ 同一份读数把放行的一步写成判红与根因（上面那条不是「反正都绿」）", async () => {
     const patched = await importPatchedLib(
       'return String(stepValue.conclusion ?? stepValue.outcome ?? "").trim() || null;',
       'return String(stepValue.outcome ?? stepValue.conclusion ?? "").trim() || null;',
       "outcome-first-live",
     );
     const entry = entryOf("test-sqlite");
-    const conclusions = conclusionsOf(entry, { softFail: ["backend-lint"] });
+    const conclusions = { ...conclusionsOf(entry), "backend-lint": { outcome: "failure", conclusion: "success" } };
     const read = patched.findDefused({ entry, conclusions });
     expect(read.failed.map((f: { id: string }) => f.id)).toEqual(["backend-lint"]);
     expect(read.blocker?.id).toBe("backend-lint");
@@ -696,7 +746,7 @@ describe("撤防账：软门禁 backend-lint（conclusion 优先的活体样本�
     expect(lib.findDefused({ entry, conclusions }).failed).toEqual([]);
   });
 
-  it("软门禁被上游红跳过 ⇒ 账里点得出它的名字，并把「红了不算红」写在同一行", () => {
+  it("被上游红跳过 ⇒ 照常点名，且不再附送「红了不算红」那句", () => {
     const entry = entryOf("test-sqlite");
     const conclusions = conclusionsOf(entry, {
       fail: ["typecheck"],
@@ -707,47 +757,38 @@ describe("撤防账：软门禁 backend-lint（conclusion 优先的活体样本�
     expect(res.out).toContain("3 道门禁里 2 道没跑成");
     expect(res.out).toContain("没跑成的步骤 id：sqlite-vendor、backend-lint、vitest");
     expect(res.out).toContain("根因：根 typecheck（packages/* + apps/api）（id: typecheck）判红");
-    expect(res.out).toContain("自己红不判红、也不挡后面的路");
+    expect(res.out).not.toContain("软门禁");
+  });
+
+  it("重新引入 continue-on-error 而登记表不标 soft ⇒ 接线红：读数会把吞掉的退出码讲成门禁判红", () => {
+    const softened = softBlock();
+    expect(softened).toMatch(/- run: pnpm run lint:backend\n        id: backend-lint\n        continue-on-error: true/);
+    expect(lib.defusedWiringProblems(softened, entryOf("test-sqlite")).join("\n")).toContain("请补 soft: true");
+    // 对照：同一段 YAML 只差那一行 ⇒ 报的确实是这条判据，不是别处
+    expect(lib.defusedWiringProblems(jobBlock("test-sqlite"), entryOf("test-sqlite"))).toEqual([]);
   });
 
   it("工作流去掉 continue-on-error 而登记表还标 soft ⇒ 接线红：账里那句「红了不算红」成了假话", () => {
-    const hardened = jobBlock("test-sqlite").replace(
-      "        id: backend-lint\n        continue-on-error: true\n",
-      "        id: backend-lint\n",
-    );
-    // 注释里本来就写着 continue-on-error（解释口径），判据读的是那一步的 YAML ⇒ 只断言步骤本身
-    expect(hardened).not.toMatch(/- run: pnpm run lint:backend\s*\n\s*id: backend-lint\s*\n\s*continue-on-error:/);
-    expect(lib.defusedWiringProblems(hardened, entryOf("test-sqlite")).join("\n")).toContain(
+    // 现状 YAML 已经没有那一行了，所以这个方向只能反过来合成：动登记表，不动 YAML
+    const entry = softEntry(entryOf("test-sqlite"));
+    expect(lib.defusedWiringProblems(jobBlock("test-sqlite"), entry).join("\n")).toContain(
       "登记为软门禁，但作业里已经没有 continue-on-error 了",
     );
   });
 
-  it("登记表摘掉 soft 而那步还软 ⇒ 接线红：会把被吞掉的退出码讲成门禁判红", () => {
-    const entry = entryOf("test-sqlite");
-    const hard = {
-      ...entry,
-      gates: (entry.gates ?? []).map((g) => (g.id === "backend-lint" ? { id: g.id, label: g.label } : g)),
-    };
-    expect(lib.defusedWiringProblems(jobBlock("test-sqlite"), hard).join("\n")).toContain("请补 soft: true");
-    // 对照：同一步骤同时带 soft 与不带，只差那一个标记 ⇒ 报的确实是新判据
-    expect(lib.defusedWiringProblems(jobBlock("test-sqlite"), entry)).toEqual([]);
-  });
   it("拆掉 soft 一致性判据 ⇒ 对应那种谎言不再被报（两个方向各拆一次）", async () => {
-    // 只拆一边：`softInYaml` 改成常量会同时翻转两个分支，消融就成了自证不了的把戏
-    const blindHard = await importPatchedLib("if (gate.soft && !softInYaml) {", "if (false) {", "soft-vs-hard");
-    const blindSoft = await importPatchedLib("if (!gate.soft && softInYaml) {", "if (false) {", "hard-vs-soft");
+    // 只拆一边：把 `softInYaml` 改成常量会同时翻转两个分支，消融就成了自证不了的把戏
+    const blindRegistry = await importPatchedLib("if (gate.soft && !softInYaml) {", "if (false) {", "soft-vs-hard");
+    const blindYaml = await importPatchedLib("if (!gate.soft && softInYaml) {", "if (false) {", "hard-vs-soft");
     const entry = entryOf("test-sqlite");
     const block = jobBlock("test-sqlite");
-    const hardened = block.replace("        id: backend-lint\n        continue-on-error: true\n", "        id: backend-lint\n");
-    const hard = {
-      ...entry,
-      gates: (entry.gates ?? []).map((g) => (g.id === "backend-lint" ? { id: g.id, label: g.label } : g)),
-    };
+    const softened = softBlock();
+    const marked = softEntry(entry);
 
-    expect(lib.defusedWiringProblems(hardened, entry).join("\n")).toContain("已经没有 continue-on-error 了");
-    expect(blindHard.defusedWiringProblems(hardened, entry)).toEqual([]);
-    expect(lib.defusedWiringProblems(block, hard).join("\n")).toContain("请补 soft: true");
-    expect(blindSoft.defusedWiringProblems(block, hard)).toEqual([]);
+    expect(lib.defusedWiringProblems(block, marked).join("\n")).toContain("已经没有 continue-on-error 了");
+    expect(blindRegistry.defusedWiringProblems(block, marked)).toEqual([]);
+    expect(lib.defusedWiringProblems(softened, entry).join("\n")).toContain("请补 soft: true");
+    expect(blindYaml.defusedWiringProblems(softened, entry)).toEqual([]);
     // 对照：判据在位时现状两边都不报——报的确实只是那两个被改坏的形状
     expect(lib.defusedWiringProblems(block, entry)).toEqual([]);
   });
@@ -817,7 +858,7 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
       .join("\n");
     const t = lib.parseDefusedTrace(onlyStdout);
     expect(t.found).toBe(true);
-    // 3 道：typecheck、backend-lint（软门禁，这份读数里它跑过了）、vitest
+    // 3 道：typecheck、backend-lint、vitest（2026-11-01 起三道都是硬门禁，这里都跑过了）
     expect(t.gateTotal).toBe(3);
     expect(t.defused).toBe(1);
     // 准备步骤（sqlite-vendor）不混进门禁 id：数字只数门禁，id 列表也必须只数门禁
@@ -896,7 +937,9 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
   });
 
   it("绿色那行带软门禁标记 ⇒ 读侧也说破「红了不判红」，不把「跑过」读成「后端 lint 过了」", () => {
-    // 写侧在 softNote 里说破了，读侧丢掉就等于把这句话吞回去
+    // 写侧在 softNote 里说破了，读侧丢掉就等于把这句话吞回去。
+    // 夹具是**硬化前**（2026-10-30 那轮，backend-lint 还是软门禁）的真实日志文本：
+    // explain-ci-failure 读的是历史 run 的日志，那种行以后还会被读到，判据不能跟着工作流一起删。
     const log = [
       "2026-10-30T06:12:00.1110000Z [撤防账] test-sqlite：3 道门禁全部跑过（软门禁 1 道：红了不判红、也不挡路）",
       "2026-10-30T06:12:00.1120000Z ##[notice]test-sqlite 3 道门禁全部跑过（软门禁 1 道：红了不判红、也不挡路）（在册准备步骤 2 个）",
@@ -1013,6 +1056,136 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
     const log = cliText("test-sqlite", { fail: ["typecheck"], skip: ["sqlite-vendor", "vitest"] });
     expect(lib.parseDefusedTrace(log).blocker).toBe("typecheck");
     expect(patched.parseDefusedTrace(log).blocker).toBeNull();
+  });
+});
+
+/**
+ * 可信度声明（run132）：`ignoreBuildErrors` 开着时，「本作业的门禁全跑过」推不出
+ * 「前端类型判过」——全仓唯一的整前端 tsc 在 test-web 的 web-typecheck。
+ * 2026-10-30 直证：adf13b3a / d544274e 的 `前端门禁=failure`（8 条 error TS，全在
+ * HarvestModal.tsx:238-247）那一轮，线上 ISR 抽查、镜像冒烟、E2E 两个分片、覆盖层检查全 success。
+ *
+ * 四条判据各配一次反向：漏登记、声明过期（作业里其实有了 tsc）、self 贴错作业、
+ * 以及「配置已不再忽略类型错误 ⇒ 那句措辞成假话」。
+ */
+describe("撤防账：可信度声明（哪些作业的绿不含前端类型判定）", () => {
+  const DEPENDENTS = ["test-sqlite", "check-isr-live", "check-web-overlay", "test-e2e", "docker-smoke"];
+
+  // cliText 住在上面那个 describe 里（作用域到不了这儿），这里自己起一份：
+  // 真跑一次 CI 内那步读数，写侧与读侧走同一段代码，不拿夹具冒充。
+  function cliOut(job: string, overrides: Record<string, { outcome: string; conclusion?: string }> = {}) {
+    const res = spawnSync(process.execPath, [CLI, "--job", job], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GITHUB_STEP_SUMMARY: "",
+        NAVHUB_STEP_CONCLUSIONS: JSON.stringify(conclusionsOf(entryOf(job), overrides)),
+      },
+    });
+    return `${res.stdout ?? ""}${res.stderr ?? ""}`;
+  }
+
+  it("真 ci.yml：5 道会构建/运行前端产物又没有整前端 tsc 的作业都带声明，权威作业带 self ⇒ 全部无问题", () => {
+    for (const job of DEPENDENTS) {
+      expect(lib.reliesOnForeignTypecheck(jobBlock(job), job), job).toBe(true);
+      expect(entryOf(job).typeTrust?.dependsOnStepId, job).toBe("web-typecheck");
+      expect(
+        lib.typeTrustProblems({ jobBlock: jobBlock(job), entry: entryOf(job), ignoreBuildErrors: true }),
+        job,
+      ).toEqual([]);
+    }
+    // 权威作业自己判类型 ⇒ 不需要可信度声明，但必须被 self 钉住
+    expect(lib.reliesOnForeignTypecheck(jobBlock("test-web"), "test-web")).toBe(false);
+    expect(entryOf("test-web").typeTrust).toEqual({ self: true });
+    expect(
+      lib.typeTrustProblems({ jobBlock: jobBlock("test-web"), entry: entryOf("test-web"), ignoreBuildErrors: true }),
+    ).toEqual([]);
+    // 根本不碰前端产物的作业不许被算进来（audit / test-postgres 的说明注释里满是 next start 字样）
+    for (const job of ["audit", "test-postgres"]) {
+      expect(lib.reliesOnForeignTypecheck(jobBlock(job), job), job).toBe(false);
+      expect(entryOf(job).typeTrust, job).toBeUndefined();
+    }
+  });
+
+  it("漏登记 ⇒ 点名「绿会被读成类型也过了」", () => {
+    const entry = { ...entryOf("docker-smoke"), typeTrust: undefined };
+    const problems = lib.typeTrustProblems({ jobBlock: jobBlock("docker-smoke"), entry, ignoreBuildErrors: true });
+    expect(problems.join("\n")).toContain("docker-smoke");
+    expect(problems.join("\n")).toContain("没带 typeTrust");
+  });
+
+  it("作业里其实已经有整前端 tsc 却仍带声明 ⇒ 那句「本作业不判整前端类型」被报成假话", () => {
+    const moved = `${jobBlock("docker-smoke")}\n      - run: pnpm --filter navsphere exec tsc --noEmit\n        id: docker-tsc\n`;
+    expect(lib.reliesOnForeignTypecheck(moved, "docker-smoke")).toBe(false);
+    const problems = lib.typeTrustProblems({ jobBlock: moved, entry: entryOf("docker-smoke"), ignoreBuildErrors: true });
+    expect(problems.join("\n")).toContain("成了假话");
+  });
+
+  it("self 贴到别的作业 ⇒ 同时报「权威位置不对」和「那作业里没有整前端 tsc」", () => {
+    const problems = lib.typeTrustProblems({
+      jobBlock: jobBlock("audit"),
+      entry: { job: "audit", reporterStepId: "defused-gates", env: [], gates: [], typeTrust: { self: true } },
+      ignoreBuildErrors: true,
+    });
+    expect(problems.length).toBe(2);
+    expect(problems.join("\n")).toContain("全仓唯一的整前端 tsc 在 test-web");
+    expect(problems.join("\n")).toContain("找不到 pnpm --filter");
+  });
+
+  it("权威作业条目丢了 self ⇒ 报「5 道作业的可信度都指向它，权威位置必须被钉住」", () => {
+    const entry = { ...entryOf("test-web"), typeTrust: undefined };
+    const problems = lib.typeTrustProblems({ jobBlock: jobBlock("test-web"), entry, ignoreBuildErrors: true });
+    expect(problems.join("\n")).toContain("typeTrust:{self:true}");
+  });
+
+  it("next.config 不再 ignoreBuildErrors ⇒ 每句声明都报「口径已过期」（配置一改，账必须同步改）", () => {
+    const problems = lib.typeTrustProblems({
+      jobBlock: jobBlock("check-isr-live"),
+      entry: entryOf("check-isr-live"),
+      ignoreBuildErrors: false,
+    });
+    expect(problems.join("\n")).toContain("ignoreBuildErrors");
+    expect(problems.join("\n")).toContain("已经没有这条");
+  });
+
+  it("写侧与读侧闭环：CLI 那行账自带声明，parseDefusedTrace 能把它读回来", () => {
+    const text = cliOut("check-isr-live");
+    expect(text).toContain("本作业不判整前端类型");
+    expect(text).toContain("全量判定只在 test-web 的 web-typecheck");
+    const t = lib.parseDefusedTrace(text);
+    expect(t.found).toBe(true);
+    expect(t.trustNote).toBe(true);
+    expect(t.trustDependsOn).toBe("test-web/web-typecheck");
+    // 权威作业自己不写这句（否则读者会以为 test-web 也没判类型）
+    const self = lib.parseDefusedTrace(cliOut("test-web"));
+    expect(self.trustNote).toBe(false);
+    expect(self.trustDependsOn).toBe("");
+  });
+
+  it("跨作业连带标注：权威判红时只标注带声明的绿色作业，判绿时一个都不标", () => {
+    const rows = [
+      { name: "线上 ISR 抽查", conclusion: "success", ...lib.parseDefusedTrace(cliOut("check-isr-live")) },
+      { name: "前端门禁", conclusion: "failure", ...lib.parseDefusedTrace(cliOut("test-web")) },
+    ];
+    const red = lib.renderDefusedTable(rows, { job: "test-web", conclusion: "failure" });
+    expect(red[0]).toContain("建立在忽略类型错误的产物上");
+    expect(red[1]).not.toContain("忽略类型错误");
+    const green = lib.renderDefusedTable(rows, { job: "test-web", conclusion: "success" });
+    expect(green.join("\n")).not.toContain("忽略类型错误");
+    // 没传权威（读不到 test-web 那一行）时不许瞎标
+    expect(lib.renderDefusedTable(rows).join("\n")).not.toContain("忽略类型错误");
+  });
+
+  it("拆掉「判据前先剥 YAML 注释」⇒ 只跑 pnpm audit 的作业被算成会构建前端产物", async () => {
+    // 本轮真实踩到的形状：audit 的注释里写着「那个作业在 CI 内自建预览（migrate + seed + next start）」
+    const patched = await importPatchedLib(
+      "const block = stripYamlCommentLines(String(jobBlock ?? \"\"));",
+      "const block = String(jobBlock ?? \"\");",
+      "trust-strip",
+    );
+    expect(patched.reliesOnForeignTypecheck(jobBlock("audit"), "audit")).toBe(true);
+    expect(lib.reliesOnForeignTypecheck(jobBlock("audit"), "audit")).toBe(false);
   });
 });
 

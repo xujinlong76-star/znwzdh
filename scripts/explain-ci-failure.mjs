@@ -68,6 +68,7 @@ import {
   waitForRunConclusion,
 } from "./lib/ci-attribution.mjs";
 import {
+  FRONTEND_TYPECHECK_AUTHORITY,
   defusedWiring,
   matchDefusedWiring,
   parseDefusedTrace,
@@ -541,6 +542,20 @@ export async function main(argv, { clientFactory = createClient, workflowYaml = 
     const defusedRows = jobs.filter((r) => r.found && r.defused > 0);
     const gatesRan = jobs.reduce((n, r) => n + (r.found ? r.ran : 0), 0);
     const gatesDefused = jobs.reduce((n, r) => n + (r.found && r.defused ? r.defused : 0), 0);
+    // 跨作业才看得出的那一半：一个作业里的账不知道兄弟作业红没红。
+    // 类型判定判红时，那些自己不含整前端 tsc 的作业（账行带 trustNote）的绿必须连带标注——
+    // next.config 的 ignoreBuildErrors 让「产物能跑」推不出「源码类型过」（run131 实测）。
+    const authorityRow =
+      jobs.find((r) => r.job === FRONTEND_TYPECHECK_AUTHORITY.job) ??
+      jobs.find((r) => /typecheck/i.test(String(r.name ?? "")));
+    const authority = {
+      job: authorityRow?.job || FRONTEND_TYPECHECK_AUTHORITY.job,
+      conclusion: String(authorityRow?.conclusion ?? ""),
+    };
+    const trustShadowed =
+      authority.conclusion === "failure"
+        ? jobs.filter((r) => r.found && r.green && r.trustNote)
+        : [];
     if (argv.includes("--json")) {
       console.log(
         JSON.stringify(
@@ -555,6 +570,8 @@ export async function main(argv, { clientFactory = createClient, workflowYaml = 
               unreadable: missing.map((r) => r.name),
               unwired: unwired.map((r) => r.name),
               unwiredBasis: wiring.length ? "ci.yml" : "本地 ci.yml 读不到：每个作业都按缺账保守记",
+              typecheckAuthority: authority,
+              typecheckShadowedByIgnoredErrors: trustShadowed.map((r) => r.name),
             },
             jobs,
           },
@@ -566,7 +583,15 @@ export async function main(argv, { clientFactory = createClient, workflowYaml = 
       console.log("仓库 " + repo + " · run #" + run.id + " · " + String(run.head_sha).slice(0, 12) + " · 撤防账");
       console.log(run.html_url);
       if (waitMeta) console.log("已等待 " + Math.round(waitMeta.waitedMs / 1000) + "s · run 结论：" + (run.conclusion ?? "仍未结束"));
-      console.log("\n" + renderDefusedTable(jobs).join("\n"));
+      console.log("\n" + renderDefusedTable(jobs, authority).join("\n"));
+      if (trustShadowed.length > 0) {
+        console.log(
+          "\n⚠ 类型判定（" + authority.job + "）判红，而 " + trustShadowed.length + " 个作业仍然全绿：" +
+            trustShadowed.map((r) => r.name).join("、") +
+            "。它们自己不跑整前端 tsc，而 next build 的内置类型检查被 ignoreBuildErrors 关掉" +
+            "⇒ 这些绿只说明「产物跑得通」，不说明「源码类型过」。",
+        );
+      }
       console.log(
         "\n合计：" + jobs.length + " 个作业 · 跑过 " + gatesRan + " 道门禁 · 没跑成 " + gatesDefused + " 道" +
           (missing.length > 0 ? " · " + missing.length + " 个本该有账的作业读不到（" + missing.map((r) => r.name).join("、") + "）" : "") +

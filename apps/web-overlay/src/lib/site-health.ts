@@ -29,3 +29,12 @@ export function siteHealthBadge(health: SiteHealthLike | null | undefined): Site
   if (health.httpStatus != null) return { tone: 'warn', label: `HTTP ${health.httpStatus}`, latencyMs }
   return { tone: 'warn', label: '近期检测异常', latencyMs }
 }
+
+/**
+ * 401/403/429 = 对方站点拒绝「自动访问」的典型状态（反爬、登录墙、按 IP 限流），
+ * 对真实用户的浏览器往往照常可用。详情页据此给出解释，避免把巡检失败
+ * 读成「站点已下线」；这不改变 state 判定，只影响文案。
+ */
+export function isBotBlockStatus(httpStatus: number | null | undefined): boolean {
+  return httpStatus === 401 || httpStatus === 403 || httpStatus === 429
+}

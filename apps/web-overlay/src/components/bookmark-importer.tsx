@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Upload, FileUp, CheckCircle, ArrowLeft, Loader2, Sparkles, AlertCircle } from 'lucide-react'
+import { Upload, FileUp, CheckCircle, ArrowLeft, Loader2, Sparkles, AlertCircle, Bookmark, Globe, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 
 interface ParsedBookmark {
@@ -265,6 +265,47 @@ export function BookmarkImporter() {
               <span>零外泄隐私保护</span>
             </span>
           </div>
+        </div>
+      </div>
+
+            {/* 导入模式指引：个人私密收藏 vs 提交收录到公共站 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 flex flex-col justify-between gap-3">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                <Bookmark className="w-4 h-4" />
+              </span>
+              <h2 className="text-sm font-bold text-foreground">导入至我的个人离线/云端收藏夹</h2>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              100% 本地隐私存储，支持完整保留文件夹层级。支持 HTML 书签、Markdown 链接、OneTab 与 JSON，随时离线访问与批量分类。
+            </p>
+          </div>
+          <Button asChild size="sm" variant="outline" className="w-full sm:w-auto self-start text-xs border-primary/30 text-primary hover:bg-primary/10">
+            <Link href="/favorites">
+              <span>前往「我的收藏」导入</span>
+              <ArrowRight className="w-3.5 h-3.5 ml-1" />
+            </Link>
+          </Button>
+        </div>
+
+        <div className="p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 flex flex-col justify-between gap-3">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                <Globe className="w-4 h-4" />
+              </span>
+              <h2 className="text-sm font-bold text-foreground">提交收录至本站公共导航库（当前页）</h2>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              将优质网站批量贡献到公共导航库，基于系统内置的技术语义启发式引擎自动推荐分类，审核收录后供全站用户发现与检索。
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
+            <CheckCircle className="w-3.5 h-3.5" />
+            <span>下方已就绪，直接上传书签即可开始解析</span>
+          </span>
         </div>
       </div>
 

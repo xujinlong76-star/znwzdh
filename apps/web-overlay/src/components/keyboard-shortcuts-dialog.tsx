@@ -35,7 +35,7 @@ const SHORTCUT_GROUPS = [
   {
     title: '检索与导航',
     shortcuts: [
-      { key: '/', desc: '极速聚焦智能检索引擎 (Search Palette)' },
+      { key: '/ 或 ⌘K', desc: '极速呼出超级搜索与指令控制台 (Spotlight)' },
       { key: 'Space', desc: '聚焦卡片时触发沙箱速览与微动作 (Peek)' },
       { key: 'T', desc: '打开开发者微工具箱 (Base64/JSON/UUID)' },
       { key: '?', desc: '打开或关闭本快捷键指南' },

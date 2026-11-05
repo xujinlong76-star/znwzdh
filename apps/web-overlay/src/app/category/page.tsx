@@ -13,6 +13,10 @@ import {
   loadCategories,
   type HubCategory,
 } from '@/lib/server/categories'
+import {
+  CategoryIndexFilterableList,
+  type FormattedCategoryGroup,
+} from '@/components/category-index-filterable-list'
 
 /**
  * 分类总览：一级根分组 + 子分类列表（方案 P4-4）。
@@ -90,6 +94,20 @@ export default async function CategoryIndexPage() {
   const groups = categories && counts ? buildGroups(categories, counts) : []
   const leafTotal = groups.reduce((n, g) => n + g.leaves.length, 0)
 
+  const formattedGroups: FormattedCategoryGroup[] = groups.map(({ root, rootCount, leaves }) => ({
+    id: root.id,
+    title: categoryDisplayName(root, categories ?? []),
+    href: categoryHref(root),
+    rootCount,
+    leaves: leaves.map(({ category, count }) => ({
+      id: category.id,
+      title: categoryDisplayName(category, categories ?? []),
+      href: categoryHref(category),
+      description: category.description ?? null,
+      count,
+    })),
+  }))
+
   return (
     <>
       <Container as="main" id="main-content">
@@ -122,56 +140,13 @@ export default async function CategoryIndexPage() {
             </nav>
           </header>
 
-          {groups.length === 0 ? (
+          {formattedGroups.length === 0 ? (
             <p className="text-sm text-muted-foreground">暂无可展示的分类。</p>
           ) : (
-            <div className="space-y-2">
-              {groups.map(({ root, rootCount, leaves }, index) => (
-                <details
-                  key={root.id}
-                  open={index === 0}
-                  className="rounded-xl border border-border/70 px-3 py-2.5"
-                >
-                  <summary className="flex cursor-pointer list-none items-center gap-3 text-sm font-semibold text-foreground [&::-webkit-details-marker]:hidden">
-                    <Link href={categoryHref(root)} className="hover:text-primary">
-                      {categoryDisplayName(root, categories ?? [])}
-                    </Link>
-                    <span className="ml-auto flex items-center gap-2 text-xs font-normal text-muted-foreground">
-                      <span className="font-mono">{rootCount}</span>
-                      <span>· {leaves.length} 个子分类</span>
-                    </span>
-                  </summary>
-                  {leaves.length === 0 ? (
-                    <p className="pt-2 text-xs text-muted-foreground">
-                      该分类下的子分类收录站点还不足 {MIN_SITES_FOR_CATEGORY_INDEX} 个，先从上面的聚合页浏览。
-                    </p>
-                  ) : (
-                    <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-2">
-                      {leaves.map(({ category, count }) => (
-                        <li key={category.id}>
-                          <Link
-                            href={categoryHref(category)}
-                            className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-2.5 py-2 hover:bg-muted/50 transition-colors"
-                          >
-                            <span className="min-w-0">
-                              <span className="block text-sm text-foreground truncate">
-                                {categoryDisplayName(category, categories ?? [])}
-                              </span>
-                              {category.description ? (
-                                <span className="block text-xs text-muted-foreground truncate">
-                                  {category.description}
-                                </span>
-                              ) : null}
-                            </span>
-                            <span className="text-xs font-mono text-muted-foreground shrink-0">{count}</span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </details>
-              ))}
-            </div>
+            <CategoryIndexFilterableList
+              groups={formattedGroups}
+              totalLeaves={leafTotal}
+            />
           )}
         </div>
       </Container>

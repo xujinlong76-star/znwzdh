@@ -37,6 +37,8 @@ pnpm --filter @navhub/api start
 | `pnpm mcp:stdio` | `pnpm --filter @navhub/mcp start` | 启动 MCP stdio |
 | `pnpm vendor:web` | `node scripts/vendor-web.mjs` | 拉取上游底座 |
 | `pnpm test:pg` | `node --experimental-strip-types scripts/pg-check.mts` | PostgreSQL 分档验收 |
+| `pnpm load:seed` | `node scripts/seed-loadtest.mts` | 压测种子（隔离库，见 §6.5） |
+| `pnpm load:baseline` | `node scripts/load-baseline.mts` | 压测基线（隔离栈，见 §6.5） |
 | `pnpm backup` | `node scripts/backup.mjs` | SQLite 在线热备（见 §8） |
 
 ### 2.2 `@navhub/api` 子脚本
@@ -121,7 +123,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 | `NAVHUB_LOG_LEVEL` | `info`（测试时 `silent`） | |
 | `NAVHUB_TRUST_PROXY` | 关闭（见说明） | 默认不信任 `X-Forwarded-For`（防公网直连伪造 XFF 绕过限流）。`1`/`true` 信任整条链，但 `req.ip` 取的是**客户端自报的最左值**，换个伪造值就换个限流桶；反代后推荐给可信网段列表（proxy-addr 语法，如 `"loopback, 172.16.0.0/12"`）。数字不是跳数：`2` 会让 XFF 整段失效，配置层直接报错 |
 | `NAVHUB_NAVIGATION_MAX_SITES` | `8000` | `navigation.json` 单文件快照站点数上限，超限返回 HTTP 413 |
-| `NAVHUB_CORS_ORIGINS` | `*` | 逗号分隔 |
+| `NAVHUB_CORS_ORIGINS` | `*` | 逗号分隔。`*` 时服务端自动关掉 `credentials`（浏览器禁止两者并存）；生产请显式列前端域名，`NODE_ENV=production` 且仍为 `*` 时启动打警告。详见 [11-operations.md §2.4](./11-operations.md) |
 | `NAVHUB_JOBS_ENABLED` | 开启（`=0`/`false` 关闭） | 任务队列开关 |
 | `NAVHUB_JOBS_INTERVAL_MS` | `30000`（<1000 视为非法回退） | 任务轮询间隔（毫秒），见 [02-api.md §5.2](./02-api.md) |
 | `NAVHUB_SEED_ON_START` | `1` | Docker entrypoint 自动播种 |
@@ -272,6 +274,40 @@ node --experimental-strip-types scripts/pg-check.mts     # 或 pnpm test:pg
 ```
 
 结果：**17/17 通过**，详见 [docs/acceptance-report.md](../acceptance-report.md)。
+
+### 6.5 压测基线（手动 / 夜间）
+
+仓库不引入 k6/autocannon：`scripts/load-baseline.mts` 用 Node 内置 `fetch` 做固定时长、
+固定并发的负载，覆盖六条热路径 `health / ready / sites / search / storage / jobs`。
+
+```bash
+# 1) 隔离库灌到约 1 万站点（site-pack 真实内容 + 合成补齐）
+#    必须显式给 NAVHUB_SQLITE_PATH；脚本会拒绝共享开发库 data/navhub.db
+NAVHUB_SQLITE_PATH=./data/loadtest.db node scripts/seed-loadtest.mts --sites 10000 --fresh
+
+# 2) 用隔离端口起 API（不要去动 8787 / 3200 上的并行开发栈）
+NAVHUB_SQLITE_PATH=./data/loadtest.db NAVHUB_PORT=8799 node apps/api/src/main.ts &
+
+# 3) 压测；给阈值时超限退出码 1，可直接接夜间任务
+node scripts/load-baseline.mts --url http://127.0.0.1:8799 \
+  --duration 30 --concurrency 16 --max-p95-ms 800 --max-error-rate 0.01
+
+# 4) 收尾
+kill %1
+```
+
+输出每目标 `rps / p50 / p95 / p99 / max / 错误率 / 状态码分布`；`--json` 输出单行 JSON，
+便于跨版本落盘比对。
+
+口径说明（避免误读）：
+
+- **429 不算服务故障**：搜索路由自带 120/min 的按 IP 限流。压测时用
+  `--internal-token $NAVHUB_INTERNAL_TOKEN` 走限流豁免；不给豁免时 429 会出现在
+  状态码分布里，但不计入错误率（那是限流按设计工作）。
+- **错误率只算 5xx + 网络错误**；4xx 视为压测脚本自身参数问题。
+- 测的是**整包传输**（读完 body 才停表），不是 TTFB —— `storage` 打的是
+  `navigation.json` 这类大文档，只看首字节会严重低估。
+- 数据只对「同一台机器、同一隔离库、同一参数」的两次运行可比；换机器先重跑基线。
 
 ## 7. 环境坑与排障
 

@@ -4,14 +4,22 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
 
-import { canonicalizeUrl, httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl, SiteCreateBody, UNCATEGORIZED_CATEGORY_ID } from "@navhub/core";
+import {
+  canonicalizeUrl,
+  httpUrl,
+  resolveCategoryTitleSuggestion,
+  sanitizeIconUrl,
+  SiteBatchInput,
+  SiteBulkInput,
+  SiteCreateBody,
+  UNCATEGORIZED_CATEGORY_ID,
+} from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import { indexSite, indexSitesBatch } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
-import { checkLlmQuota } from "../llm-quota.ts";
+import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import { selectEnrichmentFields } from "../enrich-fields.ts";
 import { badRequest, canSeeUnpublishedSites, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
@@ -74,6 +82,36 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   });
 
   /**
+   * 基于共享标签发现相似站点（详情页相似推荐增强）
+   */
+  app.get("/api/sites/:id/similar", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const limit = Math.min(Math.max(Number(q.limit) || 6, 1), 24);
+    const site = await ctx.repo.getSite(id);
+    if (!site) { reply.code(404); return { error: "站点不存在" }; }
+    return ctx.repo.listSimilarSitesByTags(site.id, limit);
+  });
+
+  /**
+   * 站点健康历史（详情页健康趋势 sparkline 用）。
+   *
+   * 此前详情页只有「最近一次巡检」的即时徽标，用户无法判断这个站点是偶发抖动
+   * 还是长期不稳。这里返回最近 N 次巡检的 ok/checkedAt（按时间正序，旧→新），
+   * 前端可直接画折线；与 /api/sites/:id 的即时健康字段同源（health_checks 表）。
+   */
+  app.get("/api/sites/:id/health-history", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const limit = Math.min(Math.max(Number(q.limit) || 30, 1), 90);
+    const site = await ctx.repo.getSite(id);
+    if (!site) { reply.code(404); return { error: "站点不存在" }; }
+    const recent = await ctx.repo.recentHealthChecks(site.id, limit);
+    // recentHealthChecks 返回新→旧；sparkline 需要旧→新，直接反转
+    return { checks: recent.reverse() };
+  });
+
+  /**
    * 站点写入体不再本地手写：与 MCP 的 create_site 工具共用同一份 zod 契约
    * （packages/core/src/mcp-schemas.ts 的 SiteCreateBody，由 CreateSiteInput 派生）。
    * OpenAPI 的 requestBody 也从同一份契约生成，三处不会再各自漂移。
@@ -99,15 +137,18 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       // 身份必须过第二轴（否则「自称别人」= 花别人的 key、记别人的账），
       // 并且这一次写库前的富化也要受额度闸门约束：额度到顶就只用抓取结果。
       const identity = identityTrusted(ctx, req as never) ? requestIdentityOf(req as never) : null;
-      const quota = await checkLlmQuota(ctx, identity);
       const resolved = await resolveLlm(ctx, identity);
+      // 闸门放在 resolveLlm 之后：source 决定这次预留占不占运维者预算
+      // （用户自带 key 的富化不该把系统档吃满，口径与 recordLlmUsage 一致）。
+      const quota = await reserveLlmQuota(ctx, identity, { source: resolved.source });
+      const hold = quota.ok ? quota.hold : null;
       const enriched = await enrichUrl(url, {
         llm: enrichLlmOf(resolved),
         guard: ctx.config.fetch,
         knownCategories: categories.map((c) => c.title),
         heuristicOnly: !quota.ok,
         onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identity),
-      });
+      }).finally(() => settleLlmQuota(ctx, hold));
       // 字段级取舍：没选 category 就不拿模型/规则的建议去解析类目，也不记类目缺口
       const selection = selectEnrichmentFields(
         enriched,
@@ -223,13 +264,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * scope 用 admin（≥ write）：操作集含删除，按最危险的成员定级。
    */
   app.post("/api/sites/bulk", { config: { scope: "admin" } }, async (req, reply) => {
-    const body = z.object({
-      op: z.enum(["delete", "setCategory", "setStatus"]),
-      ids: z.array(z.string().min(1)).min(1).max(200),
-      categoryId: z.string().optional(),
-      status: z.enum(["active", "pending", "broken", "archived"]).optional(),
-      dryRun: z.boolean().default(true),
-    }).safeParse(req.body ?? {});
+    const body = SiteBulkInput.safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const { op, ids, dryRun } = body.data;
     if (op === "setCategory" && !body.data.categoryId) { reply.code(400); return { error: "setCategory 需要 categoryId" }; }
@@ -283,17 +318,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * 内部自动处理 URL 去重与分类回退，大幅降低并发 HTTP 往返与限流风险。
    */
   app.post("/api/sites/batch", { config: { scope: "write", rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 30, timeWindow: "1 minute" } } }, async (req, reply) => {
-    const body = z.object({
-      sites: z.array(z.object({
-        url: httpUrl(),
-        title: z.string().min(1).optional(),
-        description: z.string().nullable().optional(),
-        categoryId: z.string().optional(),
-        tags: z.array(z.string()).max(50).optional(),
-        source: z.string().optional(),
-      })).min(1).max(200),
-      defaultCategoryId: z.string().optional(),
-    }).safeParse(req.body ?? {});
+    const body = SiteBatchInput.safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const cats = await ctx.repo.listCategories();

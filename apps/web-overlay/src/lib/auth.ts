@@ -113,7 +113,43 @@ const providers: NextAuthConfig['providers'] = [
         }
       }
 
-      // 4. 默认口令开箱即用支持——同样受 allowInsecureLogin 总闸管辖
+      // 4. 真实用户凭证登录（邮箱/用户名 + 密码）
+      //
+      // 此前 credentials provider 只认环境变量管理员口令与静态 token，
+      // 普通用户无法用注册的邮箱+密码登录（password_hash 列从未被使用）。
+      // 这里改为：未命中管理员通道时，调 API 中枢的 /api/account/login 校验
+      // 注册用户的 scrypt 口令。API 不可达时不阻断，继续落到默认口令分支（保持旧行为）。
+      if (rawUsername && rawPassword) {
+        const apiBase =
+          process.env.NAVHUB_STORAGE_BASE_URL ||
+          process.env.NAVHUB_API_BASE_URL ||
+          "http://127.0.0.1:8787";
+        try {
+          const res = await fetch(`${apiBase.replace(/\/+$/, "")}/api/account/login`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ identifier: rawUsername, password: rawPassword }),
+          });
+          if (res.ok) {
+            const data = (await res.json()) as {
+              user?: { id?: string; username?: string; email?: string | null; role?: string };
+            };
+            const u = data?.user;
+            if (u?.id) {
+              return {
+                id: u.id,
+                name: u.username ?? rawUsername,
+                email: u.email ?? null,
+                role: u.role ?? "user",
+              };
+            }
+          }
+        } catch {
+          // API 不可达：不阻断，落到下面的默认口令分支（保持历史行为）
+        }
+      }
+
+      // 5. 默认口令开箱即用支持——同样受 allowInsecureLogin 总闸管辖
       if (!envAdminPassword && validTokens.length === 0) {
         if (allowInsecureLogin) {
           const allowedDefaults = ['admin', 'admin123', 'navhub', '123456']

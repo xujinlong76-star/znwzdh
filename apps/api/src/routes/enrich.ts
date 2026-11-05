@@ -10,7 +10,7 @@ import { httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl } from "@navhu
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
-import { checkLlmQuota } from "../llm-quota.ts";
+import { reserveLlmQuota, settleLlmQuota, type LlmQuotaHold } from "../llm-quota.ts";
 import { selectEnrichmentFields } from "../enrich-fields.ts";
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 
@@ -33,27 +33,46 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    * 只是少了 AI 归纳的分类与标签。降级成「只用抓取」比拒绝整次提交有用得多，
    * 前提是响应里如实标出 `aiSkipped`。
    */
+  /** 富化入口的身份 + 额度结论 + 待结算的预留（见 `withEnrichQuota`） */
+  interface EnrichBudget {
+    identity: string | null;
+    llmBlocked: boolean;
+    quotaInfo: Record<string, unknown> | null;
+    hold: LlmQuotaHold;
+  }
+
   async function enrichBudget(req: {
     query: Record<string, unknown>;
     body: unknown;
     headers?: Record<string, string | undefined>;
     auth?: { kind?: string };
-  }): Promise<{ identity: string | null; llmBlocked: boolean; quotaInfo: Record<string, unknown> | null }> {
+  }): Promise<EnrichBudget> {
     const identity = identityTrusted(ctx, req as never) ? requestIdentityOf(req as never) : null;
-    const quota = await checkLlmQuota(ctx, identity);
-    if (quota.ok) return { identity, llmBlocked: false, quotaInfo: null };
+    const quota = await reserveLlmQuota(ctx, identity);
+    if (quota.ok) return { identity, llmBlocked: false, quotaInfo: null, hold: quota.hold };
     return {
       identity,
       llmBlocked: true,
+      hold: null,
       quotaInfo: {
         scope: quota.error.scope,
         metric: quota.error.metric,
         limit: quota.error.limit,
         used: quota.error.used,
+        blockedBy: quota.error.blockedBy,
         retryAfterSeconds: Math.max(1, Math.ceil(quota.error.retryAfterMs / 1000)),
       },
     };
   }
+
+  /**
+   * 预留的作用域只包住模型调用本身：`enrichUrl` 之后还有入库、索引、遥测几步，
+   * 那些不花钱，让额度多占几十毫秒没有理由。
+   *
+   * 结算统一挂在 `.finally()` 上而不是各出口手写：抓取阶段抛错（超时、DNS 失败）
+   * 是常态，漏一次结算就是每次失败白占一份额度直到 TTL。`settleLlmQuota` 自己
+   * 不抛，所以这条 finally 不会把原始错误换成结算错误。
+   */
 
   /* ---------------------------- AI 富化 ---------------------------- */
 
@@ -71,7 +90,7 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       // 额度到顶：只用抓取，不碰模型（也就不再产生花费）
       heuristicOnly: budget.llmBlocked,
       onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
-    });
+    }).finally(() => settleLlmQuota(ctx, budget.hold));
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
     await ctx.repo.recordEvent("enrich", { meta: { url: body.data.url, provenance: result.provenance } }).catch(() => undefined);
     return budget.llmBlocked ? { ...result, aiSkipped: "quota" as const, quota: budget.quotaInfo } : result;
@@ -104,7 +123,7 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       knownCategories: categories.map((c) => c.title),
       heuristicOnly: budget.llmBlocked,
       onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
-    });
+    }).finally(() => settleLlmQuota(ctx, budget.hold));
 
     // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 落「未分类」并产类目缺口提案。
     // 「富化建议」只有在调用方把 category 选进 enrichFields 时才参与：取消该字段

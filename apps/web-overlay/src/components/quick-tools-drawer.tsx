@@ -52,14 +52,31 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
   const [cronInput, setCronInput] = useState('*/5 * * * *')
   const [curlInput, setCurlInput] = useState('curl -X POST https://api.navhub.local/v1/search -d "{\"q\":\"ai\"}"')
 
-  /**
-   * 复制：**先确认真的写进去了，再说「已复制」**。
-   *
-   * 原来是 `await navigator.clipboard.writeText(text)` 且**没有 catch**：
-   * 非安全上下文（http:// 局域网 IP）下 `navigator.clipboard` 根本不存在，
-   * 权限被拒 / 页面失焦时写入的 Promise 也会 reject —— 两种情况都只会静默失败
-   * （外加一条未处理的 Promise 拒绝），8 个复制按钮看起来就是「点了没反应」。
-   */
+  // 极客小工具本地草稿记忆 (E3: 解决意外刷新/关闭抽屉丢失调试代码的痛点)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('navhub_quick_tools_draft')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed.activeTab) setActiveTab(parsed.activeTab)
+        if (parsed.jsonInput) setJsonInput(parsed.jsonInput)
+        if (parsed.b64Input) setB64Input(parsed.b64Input)
+        if (parsed.tsInput) setTsInput(parsed.tsInput)
+      }
+    } catch {
+      /* 容错：无痕模式或存储受限时静默降级 */
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      const payload = JSON.stringify({ activeTab, jsonInput, b64Input, tsInput })
+      localStorage.setItem('navhub_quick_tools_draft', payload)
+    } catch {
+      /* 忽略本地存储写入配额限制 */
+    }
+  }, [activeTab, jsonInput, b64Input, tsInput])
+
   const copyToClipboard = async (text: string, id: string) => {
     const result = await copyText(text)
     if (!result.ok) {

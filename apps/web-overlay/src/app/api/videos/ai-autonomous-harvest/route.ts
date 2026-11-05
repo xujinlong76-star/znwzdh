@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { getFileContent } from '@/lib/github'
-import { mutateVideoLibrary } from '@/lib/video-library-store'
+import { mutateVideoLibrary, readVideoLibrary } from '@/lib/video-library-store'
 import type { NavigationData } from '@/types/navigation'
 import {
   getAutonomousHarvesterController,
@@ -18,10 +18,10 @@ export async function GET() {
     // 候选池样本与统计属运营数据（会暴露未上架内容与评分），不能匿名开放。
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
-    const data = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
+    const data = await readVideoLibrary()
     const categories = data.navigationItems || []
 
     let totalVideos = 0
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     // 该接口会整包覆盖写视频库，历史上缺少鉴权（任意匿名 POST 即可写库）。
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
     const body = await request.json().catch(() => ({}))

@@ -7,7 +7,8 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
 import type { AppContext } from "../context.ts";
-import { identityAllowed, isSafeAvatarUrl } from "./shared.ts";
+import { scopeSatisfies } from "../auth.ts";
+import { identityAllowed, isSafeAvatarUrl, resolveCanonicalIdentity } from "./shared.ts";
 import { verifyIdentityHeaders } from "../identity-signature.ts";
 
 export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -51,7 +52,53 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     let email = typeof raw.email === "string" && raw.email.trim() !== "" ? raw.email.trim() : null;
     if (email !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) email = null; // 非法邮箱不入库
     const targetId = strict.data.provider + ":" + strict.data.providerId;
-    if (ctx.config.identitySecret && (req as any).auth?.kind === "anonymous") {
+    const canonicalTarget = await resolveCanonicalIdentity(ctx, targetId);
+
+    /**
+     * 身份绑定：token 即身份。
+     *
+     * 修复前：任何有效 token 都能指定任意 provider:providerId 写 users 表，且
+     * 签名校验只对匿名请求执行——「持票」被当成了「可代表任意终端用户」。
+     * 现在按三档收口：
+     *   1. 令牌带 owner（个人令牌）：target 必须解析到同一个 canonical 身份；
+     *   2. 无 owner 的实例令牌：鉴权模式下要求 write/admin，配了签名密钥还要验签；
+     *   3. 匿名（开放模式 / 公共站签名访客）：配了密钥就必须验签（原有行为）。
+     * 开放模式的匿名流程零变化。
+     */
+    const auth = req.auth;
+    const isAnonymous = auth?.kind === "anonymous";
+    let syncIdentity = canonicalTarget;
+    if (auth?.ownerIdentity) {
+      const canonicalOwner = await resolveCanonicalIdentity(ctx, auth.ownerIdentity);
+      if (canonicalTarget !== canonicalOwner) {
+        await ctx.repo.audit({
+          ip: req.ip,
+          actor: req.auth.actor,
+          actorKind: req.auth.kind,
+          action: "identity.sync_forbidden",
+          target: canonicalTarget,
+          diff: { reason: "owner_mismatch", tokenId: auth.tokenId ?? null },
+        });
+        reply.code(403);
+        return { error: "令牌只能同步自己的身份" };
+      }
+      syncIdentity = canonicalOwner;
+    } else if (!isAnonymous) {
+      if (ctx.config.authRequired && !scopeSatisfies(auth?.scopes ?? [], "write")) {
+        await ctx.repo.audit({
+          ip: req.ip,
+          actor: req.auth.actor,
+          actorKind: req.auth.kind,
+          action: "identity.sync_forbidden",
+          target: canonicalTarget,
+          diff: { reason: "scope_too_low", tokenId: auth?.tokenId ?? null },
+        });
+        reply.code(403);
+        return { error: "实例令牌同步用户身份需要 write 权限" };
+      }
+    }
+    // 没有 owner 绑定的调用方（匿名 / 实例令牌）配了签名密钥就必须证明目标身份
+    if (!auth?.ownerIdentity && ctx.config.identitySecret) {
       const verdict = verifyIdentityHeaders({
         secret: ctx.config.identitySecret,
         identity: targetId,
@@ -65,7 +112,7 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     }
     const avatarRaw = strict.data.avatar;
     const user = await ctx.repo.upsertOauthUser({
-      id: targetId,
+      id: syncIdentity,
       username,
       email,
       avatar: avatarRaw && avatarRaw.trim() !== "" ? avatarRaw.trim() : null,

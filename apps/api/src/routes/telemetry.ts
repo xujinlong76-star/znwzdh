@@ -10,13 +10,15 @@ import { identityTrusted, requestIdentityOf, resolveCanonicalIdentity } from "./
 
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
+import { cachedSiteStats } from "../stats-cache.ts";
 
 export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
   /* ------------------------------ 统计 ------------------------------ */
 
-  app.get("/api/stats", { config: { scope: "read" } }, async () => ctx.repo.stats());
+  // 计数走进程内缓存（P1-5）：SSE 心跳、health 探针与这里共用同一次刷新
+  app.get("/api/stats", { config: { scope: "read" } }, async () => cachedSiteStats(ctx));
 
   /**
    * 事件上报（前端点击/收藏等行为）。
@@ -54,12 +56,23 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     "success", "failed", "conflict", "empty", "deleted", "absent", "no_identity",
   ] as const;
 
-  app.post("/api/events", async (req, reply) => {
+  /**
+   * 公开写端点：字段一律有界。
+   *
+   * 此前 siteId/query/categoryId 没有长度上限——匿名调用方可以用 4MB 的 query 把
+   * events 表与画像聚合撑爆（全局 bodyLimit 只拦字节，不拦「一条事件写多长」）。
+   * 限流 120 次/分钟：正常前端一次交互最多几条事件，批量埋点走的是离线出箱而不是这里。
+   */
+  app.post("/api/events", {
+    // 测试进程放宽，避免套件内多次上报被限流互相拖累（与 archive 等路由同口径）
+    config: { rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 120, timeWindow: "1 minute" } },
+    bodyLimit: 16 * 1024,
+  }, async (req, reply) => {
     const body = z.object({
       kind: z.enum(EVENT_KINDS),
-      siteId: z.string().optional(),
-      query: z.string().optional(),
-      categoryId: z.string().optional(),
+      siteId: z.string().max(128).optional(),
+      query: z.string().max(512).optional(),
+      categoryId: z.string().max(128).optional(),
       /** 插件事件归属（plugin_view / plugin_install_click / plugin_uninstall_click / plugin_share） */
       pluginSlug: z.string().max(80).optional(),
       channel: z.enum(["exact", "fts", "pinyin", "semantic", "personal"]).optional(),
@@ -156,7 +169,14 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
 
   const VITAL_NAMES = ["LCP", "INP", "CLS", "TTFB", "FCP"] as const;
 
-  app.post("/api/vitals", { config: { scope: "public" } }, async (req, reply) => {
+  // 同样是无鉴权公开写：限流 + 小体积上限，防止被当免费的 events 写入通道刷表
+  app.post("/api/vitals", {
+    config: {
+      scope: "public",
+      rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 120, timeWindow: "1 minute" },
+    },
+    bodyLimit: 8 * 1024,
+  }, async (req, reply) => {
     const body = z.object({
       name: z.enum(VITAL_NAMES),
       value: z.number().finite().min(0).max(600_000),

@@ -33,7 +33,7 @@ import {
 } from "@navhub/core";
 import { canvasQualitySummary } from "@navhub/store";
 import { identityTrusted, requestIdentityOf, unauthorized, resolveCanonicalIdentity } from "./shared.ts";
-import { checkLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
+import { replyQuotaBlocked, reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import type { AppContext } from "../context.ts";
 
 export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -420,14 +420,17 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         return { error: "参数无效", detail: body.error.issues };
       }
 
-      const quota = await checkLlmQuota(ctx, identity);
-      if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
-
+      // 额度闸门放在 resolveLlm 之后：这时才确定「花的是谁的 key」。
+      // 用户自带 key 的调用不该占运维者预算，预留侧的 source 必须与用量侧
+      // （recordLlmUsage 写的 resolved.source）同口径，否则系统档会被凭空吃紧。
       const resolved = await resolveLlm(ctx, identity);
       if (!llmProviderReady(resolved.provider)) {
         reply.code(400);
         return { error: "尚未配置可用的模型密钥", code: "config" };
       }
+
+      const quota = await reserveLlmQuota(ctx, identity, { source: resolved.source });
+      if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
 
       // 组装消息：安全注入系统角色指引（客户端无法伪造 system 角色）
       const systemPromptParts = [
@@ -480,6 +483,10 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           code: lastError?.code ?? "network",
           detail: err instanceof Error ? err.message : "未知错误",
         };
+      } finally {
+        // 无论成功、模型报错还是超时，本次预留都在此交还；不结算就要等 TTL 才放开，
+        // 而那段时间恰好是并发判定要用的（异常路径漏结算 = 闸门自己掐住自己的额度）。
+        await settleLlmQuota(ctx, quota.hold);
       }
     },
   );
@@ -544,14 +551,17 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         return { error: "参数无效", detail: body.error.issues };
       }
 
-      const quota = await checkLlmQuota(ctx, identity);
-      if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
-
+      // 额度闸门放在 resolveLlm 之后：这时才确定「花的是谁的 key」。
+      // 用户自带 key 的调用不该占运维者预算，预留侧的 source 必须与用量侧
+      // （recordLlmUsage 写的 resolved.source）同口径，否则系统档会被凭空吃紧。
       const resolved = await resolveLlm(ctx, identity);
       if (!llmProviderReady(resolved.provider)) {
         reply.code(400);
         return { error: "尚未配置可用的模型密钥", code: "config" };
       }
+
+      const quota = await reserveLlmQuota(ctx, identity, { source: resolved.source });
+      if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
 
       // 获取系统或用户已知分类辅助规划
       let knownCategories = body.data.categories ?? [];
@@ -692,6 +702,8 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           code: lastError?.code ?? "network",
           detail: err instanceof Error ? err.message : "未知错误",
         };
+      } finally {
+        await settleLlmQuota(ctx, quota.hold);
       }
     },
   );
@@ -724,14 +736,17 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         return { error: "参数无效", detail: body.error.issues };
       }
 
-      const quota = await checkLlmQuota(ctx, identity);
-      if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
-
+      // 额度闸门放在 resolveLlm 之后：这时才确定「花的是谁的 key」。
+      // 用户自带 key 的调用不该占运维者预算，预留侧的 source 必须与用量侧
+      // （recordLlmUsage 写的 resolved.source）同口径，否则系统档会被凭空吃紧。
       const resolved = await resolveLlm(ctx, identity);
       if (!llmProviderReady(resolved.provider)) {
         reply.code(400);
         return { error: "尚未配置可用的模型密钥", code: "config" };
       }
+
+      const quota = await reserveLlmQuota(ctx, identity, { source: resolved.source });
+      if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
 
       // 获取系统已知分类与精选站点辅助规划
       let knownCategories: string[] = [];
@@ -897,6 +912,8 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           code: lastError?.code ?? "network",
           detail: err instanceof Error ? err.message : "未知错误",
         };
+      } finally {
+        await settleLlmQuota(ctx, quota.hold);
       }
     },
   );

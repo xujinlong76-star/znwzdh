@@ -167,6 +167,59 @@ export function categoryGapProposalId(title: string): string {
   return `category_gap_${encodeURIComponent(normalizeCategoryKey(title))}`;
 }
 
+/** 是否含中日韩字符：用来区分「技术缩写」与「中文短语」两类标签。 */
+function hasCJK(s: string): boolean {
+  return /[\u4e00-\u9fa5\u3040-\u30ff]/.test(s);
+}
+
+/**
+ * 编辑距离 1 的差异是不是「安全」的那一种。
+ *
+ * 这是本函数被加上的原因：纯距离判断在真实语料上精确率只有约 12.5%，
+ * 会把 APM→API、GIF→Git、K3s→K8s、Preact→React、GPU→CPU、SaaS→FaaS、
+ * pnpm→npm、编译器→编辑器、数据集→数据库 这些**不同技术/概念**判成拼写变体。
+ * 采纳一条错误提案 = 把两个概念的站点永久合并，不可逆；而漏掉一条只是
+ * 「以后人工再合」，代价极低。所以这里的取向是**宁可不出**。
+ *
+ * 安全判据（三条全满足才出提案）：
+ *  1. 差异必须是**纯插入或纯删除**（较长串去掉一个字符即等于较短串），
+ *     而不是替换。替换是缩写误判的根源：API/APM、Git/GIF 都是替换；
+ *     而 Vue/Viee、github/githubb 这类真拼写错误也都是替换……所以第 1 条
+ *     单独不够，必须叠加第 2 条。
+ *  2. 仅限含 CJK 的标签，且差异发生在**修饰词**上：去掉/多出的那个字符
+ *     属于修饰性前后缀（零/无/多/高/小/微/化/型/期/库/箱/面/式 等）。
+ *     中文里「零运行时 vs 运行时」是修饰词增删、概念不变，安全；
+ *     而「编译器 vs 编辑器」「数据集 vs 数据库」是替换、概念不同，被挡住。
+ *  3. 纯 ASCII 的技术缩写一律不出（API/APM/K3s/GIF 每一位都承载语义）。
+ *
+ * 结果：ASCII 侧只保留形态规则（大小写/标点/前后缀）判定的合并，
+ * 编辑距离规则退化为「中文修饰词增删」这一条窄而准的路径。
+ */
+function isSafeEditDistanceOne(longer: string, shorter: string): boolean {
+  if (!hasCJK(longer) || !hasCJK(shorter)) return false;
+  // 必须是纯增删：较长串删掉某一个字符后与较短串完全相同
+  let found = false;
+  for (let i = 0; i < longer.length; i++) {
+    if (longer.slice(0, i) + longer.slice(i + 1) === shorter) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) return false;
+  // 差异字符必须是修饰词：出现在首尾（修饰语通常在边缘）
+  const diffAtStart = longer[0] !== shorter[0];
+  const diffAtEnd = longer[longer.length - 1] !== shorter[shorter.length - 1];
+  if (!diffAtStart && !diffAtEnd) return false;
+  const diffChar = diffAtStart ? longer[0]! : longer[longer.length - 1]!;
+  return TAG_MODIFIER_CHARS.has(diffChar);
+}
+
+/** 中文修饰性字符：增删它不改变概念（零运行时/运行时、工具库/工具箱）。 */
+const TAG_MODIFIER_CHARS = new Set([
+  "零", "无", "多", "高", "小", "微", "泛", "类", "非", "半", "全", "超",
+  "化", "型", "期", "库", "箱", "面", "式", "性", "级", "态", "集", "链",
+]);
+
 /**
  * 标签冗余与同义合并治理审计
  */
@@ -209,9 +262,14 @@ export function auditTagConsolidation(
       }
 
       // 2. 编辑距离极小且低频 (如 Viee vs Vue, githubb vs github)
+      //    但必须过 isSafeEditDistanceOne 这道闸：实测纯距离判据在本仓语料上
+      //    会把 APM/GIF/K3s/Preact 等**不同技术**误判为拼写变体（精确率约 12.5%），
+      //    采纳即不可逆地合并两个概念。闸后只剩「中文修饰词增删」这条窄路径。
       const dist = levenshteinDistance(higher.tag, lower.tag);
       const minLen = Math.min(higher.tag.length, lower.tag.length);
-      if (dist === 1 && minLen >= 3 && lower.count <= 2) {
+      const longer = higher.tag.length >= lower.tag.length ? higher.tag : lower.tag;
+      const shorter = higher.tag.length >= lower.tag.length ? lower.tag : higher.tag;
+      if (dist === 1 && minLen >= 3 && lower.count <= 2 && isSafeEditDistanceOne(longer, shorter)) {
         proposals.push({
           id: `tag_typo_${encodeURIComponent(lower.tag)}_to_${encodeURIComponent(higher.tag)}`,
           kind: "tag_consolidation",

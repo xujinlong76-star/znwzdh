@@ -47,6 +47,90 @@ describe("Taxonomy Governance Core Algorithms", () => {
     expect(dotJsProposal?.suggestedValue).toBe("React");
   });
 
+
+  /**
+   * 编辑距离规则的安全闸（2026-10-31 加）。
+   *
+   * 背景：纯「编辑距离 1 + 低频」判据在本仓真实语料（1047 标签）上产出 57 条提案，
+   * 其中约 49 条是把**不同技术/概念**当拼写变体 —— APM→API、GIF→Git、K3s→K8s、
+   * Preact→React、GPU→CPU、SaaS→FaaS、pnpm→npm、编译器→编辑器、数据集→数据库。
+   * 采纳一条错误提案 = 把两个概念的站点永久合并，不可逆；漏掉一条只是以后人工再合。
+   * 所以这里把「不该出」的清单钉死，宁可不出。
+   */
+  it("编辑距离规则不得把不同技术/概念判成拼写变体", () => {
+    // 每组 [低频候选, 高频主标签]：都是差一个字符，但语义完全不同
+    const mustNotMerge: Array<[string, string]> = [
+      ["APM", "API"],
+      ["GIF", "Git"],
+      ["K3s", "K8s"],
+      ["Preact", "React"],
+      ["GPU", "CPU"],
+      ["SaaS", "FaaS"],
+      ["BaaS", "SaaS"],
+      ["Sass", "SaaS"],
+      ["HTAP", "HTTP"],
+      ["RAR", "RAG"],
+      ["SSR", "SSO"],
+      ["MDN", "CDN"],
+      ["SFTP", "FTP"],
+      ["tRPC", "gRPC"],
+      ["pnpm", "npm"],
+      ["OpenAI", "OpenAPI"],
+      ["编译器", "编辑器"],
+      ["数据集", "数据库"],
+      ["国际化", "国产化"],
+      ["虚拟机", "虚拟化"],
+      ["状态页", "状态机"],
+      ["工具链", "工具箱"],
+      ["私有云", "公有云"],
+    ];
+
+    for (const [lower, higher] of mustNotMerge) {
+      const proposals = auditTagConsolidation([
+        { tag: higher, count: 50 },
+        { tag: lower, count: 1 },
+      ]);
+      const hit = proposals.find(
+        (p) => p.currentValue === lower && p.suggestedValue === higher,
+      );
+      expect(hit, `不应把 "${lower}" 并入 "${higher}"`).toBeUndefined();
+    }
+  });
+
+  it("编辑距离规则仍要抓到中文修饰词增删这类真同义", () => {
+    const proposals = auditTagConsolidation([
+      { tag: "运行时", count: 20 },
+      { tag: "零运行时", count: 1 },
+      { tag: "性价比", count: 12 },
+      { tag: "高性价比", count: 1 },
+    ]);
+
+    const zeroRuntime = proposals.find((p) => p.currentValue === "零运行时");
+    expect(zeroRuntime).toBeDefined();
+    expect(zeroRuntime?.suggestedValue).toBe("运行时");
+
+    const highValue = proposals.find((p) => p.currentValue === "高性价比");
+    expect(highValue).toBeDefined();
+    expect(highValue?.suggestedValue).toBe("性价比");
+  });
+
+  it("形态重合（大小写/标点/前后缀）仍然要出提案，且不被安全闸误伤", () => {
+    const proposals = auditTagConsolidation([
+      { tag: "国产", count: 34 },
+      { tag: "国产工具", count: 1 },
+      { tag: "AI", count: 6 },
+      { tag: "AI 工具", count: 1 },
+    ]);
+
+    const guochan = proposals.find((p) => p.currentValue === "国产工具");
+    expect(guochan).toBeDefined();
+    expect(guochan?.suggestedValue).toBe("国产");
+
+    const ai = proposals.find((p) => p.currentValue === "AI 工具");
+    expect(ai).toBeDefined();
+    expect(ai?.suggestedValue).toBe("AI");
+  });
+
   it("auditZeroResultGaps 正确发现高频零结果缺口并过滤现有词汇", () => {
     const zeroQueries = [
       { query: "Kubernetes", count: 6, lastAt: Date.now() },
@@ -180,3 +264,41 @@ describe("类目名解析（AI / MCP 归类闸门的地基）", () => {
     expect(normalizeCategoryKey("Dev-Tools")).toBe("devtools");
   });
 });
+
+describe("标签合并安全闸 isSafeEditDistanceOne 行为回归（item ①）", () => {
+  it("安全：中文修饰词增删（零运行时→运行时）在低频时出合并提案", () => {
+    const proposals = auditTagConsolidation([
+      { tag: "运行时", count: 50 },
+      { tag: "零运行时", count: 1 },
+    ]);
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]!.targetId).toBe("零运行时");
+    expect(proposals[0]!.suggestedValue).toBe("运行时");
+    expect(proposals[0]!.kind).toBe("tag_consolidation");
+    expect(proposals[0]!.meta).toMatchObject({ action: "merge" });
+  });
+
+  it("不安全：不同概念的替换（编辑器↔编译器）绝不出提案", () => {
+    const proposals = auditTagConsolidation([
+      { tag: "编辑器", count: 50 },
+      { tag: "编译器", count: 1 },
+    ]);
+    expect(proposals).toHaveLength(0);
+  });
+
+  it("不安全：纯 ASCII 缩写差异（API/APM、npm/pnpm）绝不出提案", () => {
+    expect(
+      auditTagConsolidation([
+        { tag: "API", count: 50 },
+        { tag: "APM", count: 1 },
+      ]),
+    ).toHaveLength(0);
+    expect(
+      auditTagConsolidation([
+        { tag: "npm", count: 50 },
+        { tag: "pnpm", count: 1 },
+      ]),
+    ).toHaveLength(0);
+  });
+});
+

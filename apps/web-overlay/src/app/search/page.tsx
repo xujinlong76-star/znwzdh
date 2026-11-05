@@ -1,6 +1,14 @@
 import type { Metadata } from 'next'
 import { loadSearchPage } from '@/lib/server/search'
-import { normalizeSearchPage, normalizeSearchQuery, normalizeSearchTag } from '@/lib/search-page'
+import {
+  normalizeSearchCategory,
+  normalizeSearchFacets,
+  normalizeSearchPage,
+  normalizeSearchQuery,
+  normalizeSearchTag,
+} from '@/lib/search-page'
+import { hubGet } from '@/lib/server/hub'
+import type { FacetGroup } from '@/components/search-facet-bar'
 import { SearchResults } from './search-results'
 
 /**
@@ -52,11 +60,33 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const q = normalizeSearchQuery(sp.q)
   const page = normalizeSearchPage(sp.page)
   const tag = normalizeSearchTag(sp.tag)
-  // 只有标签没有关键词也是有效查询：展示该标签下的站点，与标签页同口径但保留分页
-  const { result, failed, unavailable } =
-    q || tag ? await loadSearchPage(q, page, tag) : { result: null, failed: false, unavailable: [] }
+  const category = normalizeSearchCategory(sp.category)
+  const facets = normalizeSearchFacets(sp)
+  const hasFilter = q || tag || category || Object.keys(facets).length > 0
+
+  const [{ result, failed, unavailable }, facetGroups] = await Promise.all([
+    hasFilter
+      ? loadSearchPage(q, page, tag, { category, facets })
+      : Promise.resolve({ result: null, failed: false, unavailable: [] }),
+    // 分面分布按当前作用域统计：分类内只统计该分类，避免给出「点了一定空」的选项。
+    // 取数失败返回 null → 整块不渲染，不阻塞结果。
+    hubGet<{ facets?: FacetGroup[] }>(
+      '/api/facets' + (category ? '?categoryId=' + encodeURIComponent(category) : ''),
+      60,
+    ),
+  ])
 
   return (
-    <SearchResults q={q} page={page} tag={tag} result={result} failed={failed} unavailable={unavailable} />
+    <SearchResults
+      q={q}
+      page={page}
+      tag={tag}
+      category={category}
+      facets={facets}
+      facetGroups={facetGroups?.facets ?? null}
+      result={result}
+      failed={failed}
+      unavailable={unavailable}
+    />
   )
 }

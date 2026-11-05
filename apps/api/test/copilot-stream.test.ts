@@ -26,7 +26,7 @@ import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { callLlmStream } from "../src/llm-usage.ts";
-import { checkLlmQuota } from "../src/llm-quota.ts";
+import { reserveLlmQuota, settleLlmQuota } from "../src/llm-quota.ts";
 import { llmProviderReadyAny, resetSystemLlmConfig, saveSystemLlmConfig, type ResolvedLlm } from "../src/llm-config.ts";
 import { canAttemptCopilotModel } from "../src/routes/copilot.ts";
 
@@ -960,21 +960,27 @@ describe("额度边界：到上限才拒，档位之间不串", () => {
       });
 
       await insertUsageRow(rows[0], "quota_boundary", null);
-      expect(await checkLlmQuota(ctx, null)).toEqual({ ok: true });
+      // 放行会占住一个名额；不结算它，下一次判定数到的是「已落账 + 在途」，
+      // used 就会比 limit 多 1 —— 这条用例同时也是「结算即放开」的证据
+      const granted = await reserveLlmQuota(ctx, null);
+      expect(granted.ok).toBe(true);
+      if (granted.ok) expect(await settleLlmQuota(ctx, granted.hold)).toBe(true);
 
       await insertUsageRow(rows[1], "quota_boundary", null);
-      const blocked = await checkLlmQuota(ctx, null);
+      const blocked = await reserveLlmQuota(ctx, null);
       expect(blocked.ok).toBe(false);
       if (!blocked.ok) {
         expect(blocked.error).toMatchObject({ scope: "anonymous", metric: "calls", limit, used: limit });
         expect(blocked.error.retryAfterMs).toBeGreaterThan(0);
       }
 
-      // 有身份时不再落进「无法归属流量」的合池；identity 档为 0 表示关闭
-      expect(await checkLlmQuota(ctx, "anon:someone")).toEqual({ ok: true });
+      // 有身份时不再落进「无法归属流量」的合池；identity 档为 0 表示关闭 → 连预留都不该写
+      const withIdentity = await reserveLlmQuota(ctx, "anon:someone");
+      expect(withIdentity).toEqual({ ok: true, hold: null });
     } finally {
       Object.assign(cfg, saved);
       await ctx.repo.run("DELETE FROM llm_usage WHERE id IN (?, ?)", rows);
+      await ctx.repo.run("DELETE FROM llm_quota_reservations WHERE identity IS NULL");
     }
   });
 });

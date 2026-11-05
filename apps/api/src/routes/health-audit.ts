@@ -12,13 +12,14 @@ import { z } from "zod";
 import {
   runAutonomousHealing,
   httpUrl,
+  SiteAuditApplyInput,
   type SiteHealthAuditSummary,
   type SiteHealthAuditIssue,
 } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
-import { checkLlmQuota } from "../llm-quota.ts";
+import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import { probeCandidates, type StructuredReplacementCandidate } from "../candidate-probe.ts";
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
@@ -153,12 +154,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
    * 3. 一键采纳自愈建议
    */
   app.post("/api/admin/audit/apply", { config: { scope: "write" } }, async (req, reply) => {
-    const body = z.object({
-      siteId: z.string().min(1),
-      action: z.enum(["wayback", "replacement", "dismiss"]),
-      targetUrl: httpUrl().optional(),
-      targetTitle: z.string().min(1).optional(),
-    }).safeParse(req.body ?? {});
+    const body = SiteAuditApplyInput.safeParse(req.body ?? {});
 
     if (!body.success) {
       reply.code(400);
@@ -303,7 +299,10 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     };
 
     const identity = identityTrusted(ctx, req as never) ? requestIdentityOf(req as never) : null;
-    const quota = await checkLlmQuota(ctx, identity);
+    // 这里在闸门之后才 resolveLlm，所以 source 未知 → 按最保守的 system 申报。
+    // 少占的那点系统额度换来的是「不会放过脚本」：宁可让在途的用户自带 key
+    // 临时占住预算（结算即释放，占用量受并发数约束），也不能反过来。
+    const quota = await reserveLlmQuota(ctx, identity);
     if (!quota.ok) {
       return respondWithProbe(fallbackCandidates, {
         model: "fallback-heuristics",
@@ -313,6 +312,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           metric: quota.error.metric,
           limit: quota.error.limit,
           used: quota.error.used,
+          blockedBy: quota.error.blockedBy,
           retryAfterSeconds: Math.max(1, Math.ceil(quota.error.retryAfterMs / 1000)),
         },
       });
@@ -370,6 +370,10 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       }
     } catch (err) {
       degradedReason = err instanceof Error ? err.name.toLowerCase() : "unknown";
+    } finally {
+      // JSON 解析失败、结构不合 schema、模型不可用这三条都从这里过：
+      // 走到降级出口不等于没花钱，预留照样要交还。
+      await settleLlmQuota(ctx, quota.hold);
     }
 
     return respondWithProbe(fallbackCandidates, {

@@ -1,5 +1,6 @@
 import type { Repository } from "../repository.ts";
 import type {
+  RelatedTag,
   TagAliasRecord,
   TagWithCount,
 } from "./records.ts";
@@ -7,6 +8,9 @@ import {
   buildIndexFields,
   slugify,
 } from "./dialect.ts";
+
+/** 重算索引时单次 IN 查询的站点数上限（每行 1 个参数，留足余量） */
+const REINDEX_CHUNK = 400;
 
 export async function listTagsWithCounts(repo: Repository, minCount = 1, group?: string): Promise<TagWithCount[]> {
   const params: unknown[] = [];
@@ -106,6 +110,55 @@ export async function updateTag(
   await repo.run(`UPDATE tags SET ${sets.join(", ")} WHERE id = ?`, params);
 }
 
+/**
+ * 就地重算一组站点的检索索引（fts_tokens / pinyin_full / pinyin_initials）。
+ *
+ * 索引语料是「标题 + 描述 + URL + 标签 slug」拼出来的（见 buildIndexFields），
+ * 所以**任何**改动 site_tags 的写路径都必须走这里：关联变了但索引不刷新，
+ * 搜旧标签名仍然命中这些站点——不报错、只是结果错，属于最难发现的静默不一致。
+ * deleteTag 与 mergeTags 共用这一条路径，避免两处逻辑各自漂移
+ * （历史上正是 mergeTags 漏了重算，合并后旧标签名仍能搜到）。
+ */
+async function reindexSites(repo: Repository, siteIds: string[]): Promise<void> {
+  const unique = [...new Set(siteIds.map((id) => String(id)))].filter(Boolean);
+  if (unique.length === 0) return;
+  const now = Date.now();
+  // 分片：绑定参数有语句级上限（sqlite 999），合并一个热门标签可能牵动上千站点
+  for (let i = 0; i < unique.length; i += REINDEX_CHUNK) {
+    const slice = unique.slice(i, i + REINDEX_CHUNK);
+    const placeholders = slice.map(() => "?").join(",");
+    const sites = await repo.raw(
+      `SELECT id, title, description, url FROM sites WHERE id IN (${placeholders})`,
+      slice,
+    );
+    if (!sites.length) continue;
+    const rest = await repo.raw(
+      `SELECT st.site_id, t.slug FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id IN (${placeholders})`,
+      slice,
+    );
+    const tagsBySite = new Map<string, string[]>();
+    for (const r of rest) {
+      const sid = String(r.site_id);
+      const list = tagsBySite.get(sid);
+      if (list) list.push(String(r.slug));
+      else tagsBySite.set(sid, [String(r.slug)]);
+    }
+    for (const s of sites) {
+      const siteId = String(s.id);
+      const index = buildIndexFields({
+        title: String(s.title),
+        description: s.description ?? null,
+        url: String(s.url),
+        tags: tagsBySite.get(siteId) ?? [],
+      });
+      await repo.run(
+        "UPDATE sites SET fts_tokens = ?, pinyin_full = ?, pinyin_initials = ?, updated_at = ? WHERE id = ?",
+        [index.ftsTokens, index.pinyinFull, index.pinyinInitials, now, siteId],
+      );
+    }
+  }
+}
+
 export async function deleteTag(repo: Repository, id: string): Promise<{ unbound: number }> {
   const found = await repo.raw("SELECT id FROM tags WHERE id = ? LIMIT 1", [id]);
   if (!found.length) throw new Error("标签不存在");
@@ -124,23 +177,7 @@ export async function deleteTag(repo: Repository, id: string): Promise<{ unbound
     // 站点的 fts_tokens / pinyin_full 是「标题+描述+标签」拼出来的（见 buildIndexFields）。
     // 关联删了但索引不刷新的话，搜已删标签仍然会命中这些站点——
     // 属于静默不一致（不报错，只是结果不对），必须就地重算。
-    for (const r of affected) {
-      const siteId = String(r.id);
-      const rest = await repo.raw(
-        "SELECT t.slug FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = ?",
-        [siteId],
-      );
-      const index = buildIndexFields({
-        title: String(r.title),
-        description: r.description ?? null,
-        url: String(r.url),
-        tags: rest.map((t) => String(t.slug)),
-      });
-      await repo.run(
-        "UPDATE sites SET fts_tokens = ?, pinyin_full = ?, pinyin_initials = ?, updated_at = ? WHERE id = ?",
-        [index.ftsTokens, index.pinyinFull, index.pinyinInitials, Date.now(), siteId],
-      );
-    }
+    await reindexSites(repo, affected.map((r) => String(r.id)));
     return { unbound: affected.length };
   });
 }
@@ -187,10 +224,75 @@ export async function mergeTags(repo: Repository, sourceId: string, targetId: st
 
     await repo.run("DELETE FROM site_tags WHERE tag_id = ?", [sourceId]);
     await repo.run("DELETE FROM tags WHERE id = ?", [sourceId]);
+    // 与 deleteTag 同一条重算路径：源标签被删、站点改挂目标标签后，
+    // 索引语料里的旧 slug 必须换掉。漏了这一步的话，合并后搜旧标签名
+    // 仍然命中这些站点（不报错，只是结果错）。
+    await reindexSites(repo, rows.map((r) => String(r.site_id)));
     return { moved: rows.length };
   });
 }
 
+
+/**
+ * 取标签原始行（按 id 或 slug 命中）。
+ *
+ * 为什么新增：相关标签路由要接受「slug 或 id」两种入参（与 /api/tags/resolve
+ * 同口径，但 resolve 走 name/slug 别名归一、这里只认主键与 slug）。共现查询
+ * 需要的是内部 id，页面侧传来的却是 URL 段（slug 形态），先归一成 id 再聚合。
+ */
+export async function getRawTag(repo: Repository, ref: string): Promise<{ id: string; name: string; slug: string } | null> {
+  const norm = ref.trim();
+  if (!norm) return null;
+  const rows = await repo.raw(
+    "SELECT id, name, slug FROM tags WHERE id = ? OR slug = ? LIMIT 1",
+    [norm, norm],
+  );
+  if (!rows.length) return null;
+  return { id: String(rows[0]!.id), name: String(rows[0]!.name), slug: String(rows[0]!.slug) };
+}
+
+/**
+ * 标签共现相关标签（信息组织清晰度的真实缺口：标签页是浏览死胡同——
+ * 用户看完「React」下的站点，没有任何路径通往「Vue / Next.js / 前端框架」，
+ * 整套代码此前对标签共现零实现）。
+ *
+ * 方法：找同时挂了本标签与候选标签的**存活**站点，按共现站点数降序，
+ * 取前 limit 个（排除自身）。纯只读、复用 site_tags 索引，不引入新表。
+ *
+ * 存活口径与 listTagsWithCounts 一致（deleted_at IS NULL / enabled / status='active'），
+ * 否则软删除站点的关联会把弱相关标签顶上来。候选标签只回基础展示字段，
+ * 不回 count（那是 listTagsWithCounts 的职责，避免一次请求里双重口径）。
+ */
+export async function listRelatedTags(
+  repo: Repository,
+  tagId: string,
+  limit = 12,
+): Promise<RelatedTag[]> {
+  const lid = Math.max(1, Math.min(50, Math.trunc(limit)));
+  const rows = await repo.raw(
+    `SELECT t.id AS id, t.name AS name, t.slug AS slug, t.group_name AS group_name,
+            t.color AS color, COUNT(DISTINCT st2.site_id) AS shared
+     FROM site_tags st1
+     JOIN site_tags st2 ON st2.site_id = st1.site_id AND st2.tag_id <> st1.tag_id
+     JOIN tags t ON t.id = st2.tag_id
+     JOIN sites s ON s.id = st2.site_id
+       AND s.deleted_at IS NULL AND s.enabled = ? AND s.status = 'active'
+     WHERE st1.tag_id = ?
+     GROUP BY t.id, t.name, t.slug, t.group_name, t.color
+     HAVING COUNT(DISTINCT st2.site_id) >= 1
+     ORDER BY shared DESC, t.name ASC
+     LIMIT ?`,
+    [true, tagId, lid],
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    name: String(r.name),
+    slug: String(r.slug),
+    group: String(r.group_name || "topic"),
+    color: r.color ? String(r.color) : null,
+    sharedSites: Number(r.shared ?? 0),
+  }));
+}
 export async function addTagAlias(repo: Repository, tagId: string, rawAlias: string): Promise<{ alias: string }> {
   const norm = rawAlias.trim();
   if (!norm) throw new Error("别名不能为空");

@@ -17,12 +17,18 @@ export interface PlaybackHistoryItem {
 const STORAGE_KEY = 'navhub:video:playback-history:v1'
 const MAX_HISTORY_ITEMS = 30
 
-function getStorage(): Storage | null {
+const memoryFallback = new Map<string, string>()
+
+function getStorage(): { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } {
   if (typeof window !== 'undefined' && window.localStorage) return window.localStorage
   if (typeof globalThis !== 'undefined' && (globalThis as unknown as { localStorage?: Storage }).localStorage) {
-    return (globalThis as unknown as { localStorage: Storage }).localStorage
+    return (globalThis as unknown as { localStorage: Storage }).localStorage!
   }
-  return null
+  return {
+    getItem: (k: string) => memoryFallback.get(k) ?? null,
+    setItem: (k: string, v: string) => { memoryFallback.set(k, v) },
+    removeItem: (k: string) => { memoryFallback.delete(k) },
+  }
 }
 
 export function getPlaybackHistory(): PlaybackHistoryItem[] {
@@ -80,6 +86,13 @@ export function savePlaybackPosition(item: {
   } catch {
     // 忽略 localStorage 满或隐私模式错误
   }
+}
+
+export function getPlaybackRecord(videoId: string): PlaybackHistoryItem | null {
+  const storage = getStorage()
+  if (!storage || !videoId) return null
+  const history = getPlaybackHistory()
+  return history.find(h => h.videoId === videoId) || null
 }
 
 export function getResumePosition(videoId: string): number {

@@ -80,7 +80,7 @@
 ## 3. 前端与 Bento-Flow 工作台 (`apps/web-overlay` & `apps/web`)
 
 ### 3.1 覆盖层镜像机制
-山羊胡采用自研 `apps/web-overlay` 作为前端事实源，通过 `node scripts/check-web-overlay.mjs` 实现 120 个覆盖层文件与 `apps/web` 保持 100% 镜像一致。
+`apps/web` 现已改为 **自动生成** 产物，不再手工维护：它由唯一事实源 `apps/web-overlay` 通过 `node scripts/generate-web-mirror.mjs`（根命令 `pnpm mirror:web`）合并式生成。CI / pre-commit 的 `check:overlay` 已改为「先生成再校验」，因此覆盖层漂移会被自动修复（闸门自愈），无需人工同步。`apps/web` 里的覆盖层文件**不要手改**——改动应在 `apps/web-overlay/` 完成，再跑 `pnpm mirror:web` 重新生成。校验口径与排除规则由 `scripts/lib/overlay-drift.mjs` 的 `isExcluded` 统一提供，镜像必须保持 byte-identical。
 
 ### 3.2 Bento-Flow 核心能力
 1. **跨分类卡片自由拖拽重组**：在排版模式下，站点卡片携带 `siteId` 与源分类 ID，可直接拖入任意目标分类标题，底层通过 `siteCategoryOverrides` 字典完成响应式分类迁移。
@@ -164,6 +164,13 @@
 * `scripts/check-web-overlay.mjs`：前端覆盖层一致性实时校验工具。
 
 ---
+
+
+### 9.x 前端镜像生成的 CI 约定
+
+- `apps/web` 是 GENERATED 产物：CI 与 pre-commit 应**重新生成**（`pnpm mirror:web`）而非手改；`check:overlay` 已内置「先生成再校验」的自愈逻辑。
+- 若 `check-web-overlay` 仍报漂移，先 `pnpm mirror:web` 复测；漂移会自动修复。
+- 排除规则（`.next` / `node_modules` / `UPSTREAM.md` / `upstream-baseline.json` 等）由 `scripts/lib/overlay-drift.mjs` 单一提供，镜像须 byte-identical。
 
 ## 9. 生产环境部署与故障排查
 

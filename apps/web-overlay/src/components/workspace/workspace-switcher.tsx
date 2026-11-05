@@ -111,7 +111,11 @@ export function WorkspaceSwitcher() {
   const selectWorkspace = (ws: HubWorkspace) => {
     setActiveWs(ws)
     if (typeof window !== 'undefined') {
-      localStorage.setItem('navhub_active_ws', ws.id)
+      try {
+        localStorage.setItem('navhub_active_ws', ws.id)
+      } catch {
+        // 本地存储不可用时仅在内存中生效
+      }
     }
     toast({
       title: `已切换至「${ws.name}」`,

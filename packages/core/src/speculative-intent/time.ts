@@ -1,3 +1,52 @@
+
+/**
+ * 自然日期时间转时间戳 (yyyy-MM-dd / yyyy/MM/dd / yyyy-MM-dd HH:mm:ss 等)
+ */
+export function tryParseDateToTimestamp(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  const explicit = trimmed.startsWith('date:') || trimmed.startsWith('dt:');
+  const body = explicit ? trimmed.replace(/^(date:|dt:)\s*/, '') : trimmed;
+
+  const m = body.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (!m) return null;
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = m[4] !== undefined ? Number(m[4]) : 0;
+  const minute = m[5] !== undefined ? Number(m[5]) : 0;
+  const second = m[6] !== undefined ? Number(m[6]) : 0;
+
+  if (year < 1970 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
+    return null;
+  }
+
+  const d = new Date(year, month - 1, day, hour, minute, second);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) {
+    return null;
+  }
+
+  const ms = d.getTime();
+  const sec = Math.floor(ms / 1000);
+  const iso = d.toISOString();
+  const localStr = d.toLocaleString('zh-CN', { hour12: false });
+
+  return {
+    type: 'date_to_ts',
+    title: '日期时间转时间戳',
+    subtitle: `${localStr} ➔ ${sec}s / ${ms}ms`,
+    previewValue: `${sec} (秒) / ${ms} (毫秒)`,
+    actionLabel: '复制秒级时间戳',
+    copyValue: sec.toString(),
+    details: {
+      '标准时间': localStr,
+      '秒级戳 (10位)': sec.toString(),
+      '毫秒级戳 (13位)': ms.toString(),
+      'UTC ISO': iso,
+    },
+  };
+}
+
 /**
  * 时间族检测器：Unix 时间戳转换、Cron 表达式解释。
  */

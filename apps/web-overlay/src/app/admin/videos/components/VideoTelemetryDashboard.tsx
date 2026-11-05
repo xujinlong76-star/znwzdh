@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import useSWR from 'swr'
 import {
   Activity,
@@ -60,48 +60,57 @@ export function VideoTelemetryDashboard({
   const { toast } = useToast()
   const [isStartingAsync, setIsStartingAsync] = useState(false)
 
-  // 轮询任务队列状态（每 2.5 秒刷新一次）
+  // 任务队列状态轮询：仅在存在活动任务时每 2.5 秒轮询，平时静默避免无谓的网络消耗与后台开销
   const { data: taskData, mutate: mutateTask } = useSWR<TaskResponse>(
     '/api/videos/harvest/task',
     fetcher,
-    { refreshInterval: 2500 }
+    { refreshInterval: (data) => (data?.activeTask ? 2500 : 0) }
   )
 
   const activeTask = taskData?.activeTask
 
-  // 计算健康分箱
-  const allVideos: Array<{ item: NavigationSubItem; category: NavigationItem }> = []
-  categories.forEach(cat => {
-    if (cat.enabled === false) return
-    ;(cat.items || []).forEach(it => {
-      if (it.enabled !== false && it.videoConfig) allVideos.push({ item: it, category: cat })
-    })
-    ;(cat.subCategories || []).forEach(sub => {
-      if (sub.enabled === false) return
-      ;(sub.items || []).forEach(it => {
-        if (it.enabled !== false && it.videoConfig) allVideos.push({ item: it, category: cat })
+  // 记忆化健康分箱计算：防止每次重渲染遍历 6000+ 条目导致长任务卡顿
+  const { total, excellent, good, warning, urgent, urgentList } = useMemo(() => {
+    const list: Array<{ item: NavigationSubItem; category: NavigationItem }> = []
+    categories.forEach(cat => {
+      if (cat.enabled === false) return
+      ;(cat.items || []).forEach(it => {
+        if (it.enabled !== false && it.videoConfig) list.push({ item: it, category: cat })
+      })
+      ;(cat.subCategories || []).forEach(sub => {
+        if (sub.enabled === false) return
+        ;(sub.items || []).forEach(it => {
+          if (it.enabled !== false && it.videoConfig) list.push({ item: it, category: cat })
+        })
       })
     })
-  })
 
-  const total = allVideos.length
-  let excellent = 0 // 90-100
-  let good = 0 // 70-89
-  let warning = 0 // 50-69
-  let urgent = 0 // <50
+    let exc = 0
+    let gd = 0
+    let wrn = 0
+    let urg = 0
+    const urgList: Array<{ item: NavigationSubItem; category: NavigationItem; score: number }> = []
 
-  const urgentList: Array<{ item: NavigationSubItem; category: NavigationItem; score: number }> = []
+    list.forEach(({ item, category }) => {
+      const sc = item.videoConfig?.freshnessScore ?? 75
+      if (sc >= 90) exc++
+      else if (sc >= 70) gd++
+      else if (sc >= 50) wrn++
+      else {
+        urg++
+        urgList.push({ item, category, score: sc })
+      }
+    })
 
-  allVideos.forEach(({ item, category }) => {
-    const sc = item.videoConfig?.freshnessScore ?? 75
-    if (sc >= 90) excellent++
-    else if (sc >= 70) good++
-    else if (sc >= 50) warning++
-    else {
-      urgent++
-      urgentList.push({ item, category, score: sc })
+    return {
+      total: list.length,
+      excellent: exc,
+      good: gd,
+      warning: wrn,
+      urgent: urg,
+      urgentList: urgList,
     }
-  })
+  }, [categories])
 
   // 触发异步后台长任务
   const handleLaunchAsyncTask = async (dryRun: boolean = false) => {

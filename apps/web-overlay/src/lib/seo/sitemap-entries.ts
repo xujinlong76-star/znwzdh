@@ -52,8 +52,9 @@ export interface CategoryRef {
 /**
  * 进 sitemap 的静态页（/category 随分类 hub 上线）。
  *
- * `/videos` 暂不收录：视频库仍是占位内容，页面已声明 noindex，
- * 提交进 sitemap 只会制造「sitemap 与 robots 打架」。
+ * `/videos` 收录：视频库实测是真实内容（video_items 5578 条，含 platform /
+ * duration_sec / quality_score），不是占位；页面也已改为 index:true。
+ * 此前「仍是占位内容 → noindex 并移出 sitemap」的判据不成立，判据与 robots 一起改。
  */
 export const STATIC_PATHS = [
   '/',
@@ -65,6 +66,7 @@ export const STATIC_PATHS = [
   '/graph',
   '/algorithms',
   '/sites',
+  '/videos',
 ] as const
 
 /** origin 归一：去掉末尾斜杠，避免拼出 `//` 这类重复斜杠 URL */

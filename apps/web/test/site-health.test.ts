@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { siteHealthBadge } from "../src/lib/site-health";
+import { siteHealthBadge, isBotBlockStatus } from "../src/lib/site-health";
 
 /**
  * 站点巡检徽标守卫（2026-10-22）。
@@ -56,5 +56,20 @@ describe("站点巡检徽标", () => {
       expect(src).not.toContain("SLA 正常");
       expect(src).not.toContain("SLA:");
     }
+  });
+
+  it("401/403/429 是「拒绝自动访问」而不是下线：详情页要解释，别只甩状态码", () => {
+    // 15 个 broken 站点全部是 401/403 反爬（ChatGPT / npm / Stack Overflow…）
+    expect(isBotBlockStatus(401)).toBe(true);
+    expect(isBotBlockStatus(403)).toBe(true);
+    expect(isBotBlockStatus(429)).toBe(true);
+    expect(isBotBlockStatus(500)).toBe(false);
+    expect(isBotBlockStatus(404)).toBe(false);
+    expect(isBotBlockStatus(null)).toBe(false);
+    expect(isBotBlockStatus(undefined)).toBe(false);
+
+    const src = overlayFile("src/components/site-detail-view.tsx");
+    expect(src).toContain("isBotBlockStatus(site.health?.httpStatus)");
+    expect(src).toContain("不代表站点无法打开");
   });
 });

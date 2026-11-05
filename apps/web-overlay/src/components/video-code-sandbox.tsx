@@ -93,6 +93,9 @@ export function VideoCodeSandbox({
 
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
+      // 只认自己那个沙盒 iframe 的回信：这一页还嵌着视频站的播放器 iframe，
+      // 它们同样能向 parent 发 postMessage —— 只看 data.type 就能往控制台里塞假日志。
+      if (e.source !== iframeRef.current?.contentWindow) return
       if (e.data && e.data.type === 'SANDBOX_LOG') {
         const prefix = e.data.level === 'error' ? '❌ ' : '❯ '
         setLogs(prev => [...prev, `${prefix}${e.data.message}`])

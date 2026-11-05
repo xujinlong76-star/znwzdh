@@ -24,6 +24,9 @@ let ctx: AppContext;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-restore-job-"));
+  // 任务侧只读 staging 目录内的路径：本文件的 staging 都写在临时目录里，
+  // 把它声明成 staging 目录，任务才认这些路径（仓库 data/ 不被测试脏化）。
+  process.env.NAVHUB_RESTORE_STAGING_DIR = dir;
   ctx = await createContext(
     loadConfig({
       mode: "lite",
@@ -43,6 +46,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await ctx.close();
+  delete process.env.NAVHUB_RESTORE_STAGING_DIR;
   rmSync(dir, { recursive: true, force: true });
 });
 

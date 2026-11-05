@@ -21,6 +21,8 @@ export interface LlmConfig {
   apiKey: string | null;
   model: string;
   timeoutMs: number;
+  /** timeoutMs 是否由使用方显式给出；false/省略时思考态请求允许抬到内置下限，见 llm.ts 的 resolveRequestTimeout */
+  timeoutMsExplicit?: boolean;
   /** JSON 约束策略；auto 时遇到不支持 response_format 的端点会自动去参重试 */
   jsonMode?: JsonMode;
   /** 允许内网端点（本地 Ollama）；仅系统级配置可开启 */
@@ -392,6 +394,7 @@ async function tryLlm(
           model: llm.model,
           apiKey: llm.apiKey,
           timeoutMs: llm.timeoutMs,
+          timeoutMsExplicit: llm.timeoutMsExplicit,
           jsonMode: llm.jsonMode,
           allowPrivateNetwork: llm.allowPrivateNetwork,
         },

@@ -60,8 +60,11 @@ describe("迁移安全", () => {
 
     // 失败必须可查询，而不是只留一行 console
     const failures = await repo.raw("SELECT step, error FROM migration_failures");
-    expect(failures.some((r) => String(r.step).includes("workspace_blobs"))).toBe(true);
-    expect(String(failures[0]?.error ?? "")).toContain("user_workspace_blobs");
+    // 只挑本用例关心的那条：migration_failures 是全库共享的留痕表，
+    // 建触发器/索引等其它步骤的失败也会落在这里，取 failures[0] 会随执行顺序漂移。
+    const blobFailure = failures.find((r) => String(r.step).includes("workspace_blobs"));
+    expect(blobFailure).toBeDefined();
+    expect(String(blobFailure?.error ?? "")).toContain("user_workspace_blobs");
   });
 
   it("唯一索引先建后删：新索引存在，旧索引被清掉", async () => {

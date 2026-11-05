@@ -78,6 +78,43 @@ describe("buildDailyChartModel", () => {
     expect(chart.windowCalls).toBe(0);
   });
 
+  it("断档日补零柱：相邻柱必是相邻天，时间轴不被压缩", () => {
+    const daily = [
+      day("2026-10-27", [{ model: "a", calls: 2, tokens: 0, costRmb: null }], null),
+      // 10-28 无调用（不出现在 daily 里）
+      day("2026-10-29", [{ model: "a", calls: 3, tokens: 0, costRmb: null }], null),
+    ];
+    const chart = buildDailyChartModel(daily);
+    expect(chart.days.map((d) => d.day)).toEqual(["2026-10-27", "2026-10-28", "2026-10-29"]);
+    const zero = chart.days[1];
+    expect(zero.totalCalls).toBe(0);
+    expect(zero.segments).toEqual([]);
+    // 合计不变：补零不造调用
+    expect(chart.windowCalls).toBe(5);
+  });
+
+  it("补零日的累计花费沿用前一日（已知花费没变，也不补 0）", () => {
+    const daily = [
+      day("2026-10-27", [{ model: "a", calls: 2, tokens: 0, costRmb: 1 }], 1),
+      day("2026-10-29", [{ model: "a", calls: 3, tokens: 0, costRmb: 1 }], 1),
+    ];
+    const chart = buildDailyChartModel(daily);
+    expect(chart.days.map((d) => d.cumCostRmb)).toEqual([1, 1, 2]);
+  });
+
+  it("errorCalls 随日透传：失败日与好日子在数据层可区分", () => {
+    const d = day("2026-10-29", [{ model: "a", calls: 3, tokens: 0, costRmb: null }], null);
+    d.errorCalls = 2;
+    const chart = buildDailyChartModel([d]);
+    expect(chart.days[0].errorCalls).toBe(2);
+    // 补零出的日子恒为 0
+    const gap = buildDailyChartModel([
+      day("2026-10-27", [{ model: "a", calls: 1, tokens: 0, costRmb: null }], null),
+      d,
+    ]);
+    expect(gap.days[1].errorCalls).toBe(0);
+  });
+
   it("成本线颜色是独立的焦点色，不与模型堆叠色混淆", () => {
     expect(MODEL_PALETTE).not.toContain(COST_LINE_COLOR);
   });

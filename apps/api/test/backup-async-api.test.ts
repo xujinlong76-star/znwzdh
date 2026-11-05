@@ -298,6 +298,20 @@ describe("异步恢复：并发守卫、契约头与零增量", () => {
     expect(Number(count[0]!.c)).toBe(1);
   });
 
+  it("正在收尾（cancelling）的恢复仍算进行中：执行体还在写，不能放第二个进来", async () => {
+    await resetRestoreJobs();
+    const now = Date.now();
+    await ctx.repo.run(
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+      ["winding-down", "backup_restore", "{}", "cancelling", 1, now, now],
+    );
+
+    // cancelled 才是「停了」；cancelling 只是「要求停手」，此时放新任务进来就是两组分片并发写
+    const res = await submit([{ id: "w1", title: "收尾中", url: "https://winding-1.example.com" }]);
+    expect(res.statusCode).toBe(409);
+    expect((res.json() as Record<string, any>).error).toBe("CONFLICT_RESTORE_RUNNING");
+  });
+
   it("僵尸任务不算活跃：心跳超过 15 分钟不再阻塞新提交", async () => {
     await resetRestoreJobs();
     const staleAt = Date.now() - 20 * 60_000;
@@ -438,6 +452,36 @@ describe("异步恢复：并发守卫、契约头与零增量", () => {
     // 文件被删的话，那个任务一旦被回收重跑就会「读不到 staging」永久失败，
     // 而状态接口仍说 retryable —— 用户会一直重试一直失败
     expect(existsSync(referenced)).toBe(true);
+    rmSync(referenced, { force: true });
+    await resetRestoreJobs();
+  });
+
+  it("正在收尾的恢复同样保护 staging：执行体随时可能再读这个文件", async () => {
+    await resetRestoreJobs();
+    mkdirSync(stagingDir, { recursive: true });
+    const referenced = join(stagingDir, "referenced-cancelling.json");
+    writeFileSync(referenced, "{}", "utf8");
+    const old = Date.now() - 30 * 3600_000;
+    utimesSync(referenced, new Date(old), new Date(old));
+
+    // cancelling 且心跳过期：守卫会放行（这不是活跃任务），但 staging 仍被引用着
+    await ctx.repo.run(
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+      [
+        "protect-cancelling",
+        "backup_restore",
+        JSON.stringify({ stagingPath: referenced }),
+        "cancelling",
+        1,
+        old,
+        old,
+      ],
+    );
+
+    const res = await submit([{ id: "pc1", title: "保护 cancelling staging", url: "https://protect-cancel.example.com" }]);
+    expect(res.statusCode).toBe(202);
+    expect(existsSync(referenced)).toBe(true);
+
     rmSync(referenced, { force: true });
     await resetRestoreJobs();
   });

@@ -53,6 +53,12 @@
 - [ ] `NAVHUB_AUTH_REQUIRED=true` + 引导 token 流程创建正式凭据
 - [ ] `NAVHUB_MCP_TOKEN` / `NAVHUB_STORAGE_TOKEN` 生产必改（http 适配器写接口）
 - [ ] 定期 `pnpm audit --audit-level high`（CI audit job 转硬门禁的进度见 ci.yml）
+- [ ] 执行 AI / 用户代码的容器**不许**带 `allow-same-origin`，全仓**不许**有 `eval` / `new Function`
+      （由 `opaque-code-sandbox-guard.test.ts` 锁定；机制见 [`CODE-EXECUTION-ISOLATION-2026-11-01.md`](CODE-EXECUTION-ISOLATION-2026-11-01.md)）
+- [ ] **凭据不进 URL**（query 会留在浏览器历史与反代/服务端访问日志），**匿名可访问的出站通道必须有预算**
+      （否则出口 IP 被目标站拉黑的代价由全体真实用户承担）；带凭据的响应必须 `no-store`，
+      缓存必须按「真正出站的那把凭据」分桶（由 `bili-parse-route.test.ts` + `video-bilibili-hd-parser.test.ts`
+      的 A3 组锁定；机制见 [`BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md`](BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md)）
 
 ---
 
@@ -88,3 +94,29 @@
   正确配法是可信代理网段列表（proxy-addr 语法，如 `"loopback, 172.16.0.0/12"`），
   只有 socket 对端落在列表内才解析 XFF，`req.ip` 取代理实际看到的那一跳。
   数字值（`2` 等）不是跳数——Fastify 不认，会让 XFF 整段失效，配置层直接拒绝启动。
+
+---
+
+## 五、2026-11-01：AI / 用户代码曾在页面同源 realm 里执行
+
+| 项 | 内容 |
+| --- | --- |
+| 事实 | 视频页两个「即时运行」面板用 `new Function` 在**页面自己的 realm** 执行 AI 生成与用户粘贴的代码：可读本域 `localStorage`（含会话）、拿 cookie、伪造 `fetch`、改写 DOM。代码来源是输入框，属于最低信任输入 |
+| 附带发现 | 本仓 CSP 是 `script-src 'self' 'unsafe-inline'`，**无** `'unsafe-eval'` ⇒ 这段代码在真人浏览器里**从来没跑通过**，报的是 CSP 违规而不是用户代码的错误。不是「安全 vs 能用」的取舍，两边本来都坏 |
+| 处置 | 执行面整体搬进 `<iframe sandbox="allow-scripts">`（**不给** `allow-same-origin` ⇒ 不透明源）。全仓 `eval` / `new Function` 归零：代码经 postMessage 进沙盒后交给 `document.createElement('script')` 的 `textContent`，由浏览器按普通内联脚本编译，**不需要放宽 CSP**。环境不具备时 `stopReason` 如实申报「未执行」，**不降级回同源** |
+| 验证 | `opaque-code-sandbox-guard.test.ts`（A–F 六组 29 条：零求值 / 容器无 `allow-same-origin` / 回信验 `event.source` / 不可用时不跑 / 行为 / 判据自证）；真人浏览器按本仓 CSP 实测：`localStorage` 与 `parent` DOM 均 `SecurityError`、帧 origin 为 `null`、`</script>` 贴进代码越不出边界；9 条消融全部变红。机制与契约见 [`CODE-EXECUTION-ISOLATION-2026-11-01.md`](CODE-EXECUTION-ISOLATION-2026-11-01.md) |
+| 已知残留 | 沙盒 iframe 与页面共用主线程 ⇒ 同步死循环仍会卡住标签页（改造前后相同，未变差）。换 Worker 需把 CSP `worker-src` 放开到 `blob:`，**为省一次卡顿去放宽安全策略不做** |
+
+
+---
+
+## 六、2026-11-01：B 站解析把访客凭据写进 URL，且匿名出站无闸门
+
+| 项 | 内容 |
+| --- | --- |
+| 事实 | `/api/videos/bili-parse` 的 GET 直接收 `access_key` 并拼进上游请求 ⇒ 访客的 B 站登录凭据留在**浏览器历史、反代与服务端访问日志、任何一层的错误上报**里。同一条通道**匿名可访问且没有闸门**：一次解析最多顺序打 6 个第三方上游，任何人都能把本站当免费解析代理，而**出口 IP 被目标站拉黑的是我们** |
+| 附带发现 | ① 解析缓存只分 `custom\|default` 两桶 ⇒ 两把不同账号的 key 共用同一份结果，而结果里是带 `deadline`/`uipk` 的**可播放签名流地址**（跨账号 bearer capability 泄漏）。② 全仓只有星之阁引擎消费 `access_key`，也就是说「贴 key」这一动作的真实含义是**把账号交给一个不受我们控制的第三方**，而界面从未说过 |
+| 处置 | ① `access_key` 只允许走 POST body；GET 一旦发现 query 里有 key 就在**拿预算、进解析链之前** `400 code=credential_in_query`。② 接既有 `StreamBudget` 原语（与 `bili-stream` 同一套，不新造限流器）：按调用方分桶限流 `429 rate_limited`、进程并发满 `503 saturated`，两者分开报并带 `Retry-After`；额度在 `finally` 归还。③ 缓存键改为按**真正出站的那把 key** 的 SHA-256 前 8 字节分桶，key 明文不进缓存键；没有 WebCrypto 时对带 key 的请求**一律不缓存**（安全侧失败，不是降级）。④ 出站闸门 `resolveOutboundAccessKey()`：**默认不把访客 key 交给第三方**，只有部署显式 `NAVHUB_BILI_FORWARD_USER_KEY=1` 才转发；被拦下时结果带 `accessKeyIgnored`，界面写明「等同于 B 站登录凭据 / 默认不出站 / 需要管理员显式开启」 |
+| 验证 | 路由守卫 14 条 + 解析器 A3 组 9 条 + compose 透传守卫 8 条；14 条消融逐条变红并按 md5 还原。真人浏览器 + 独立进程实测：query 带 key ⇒ 400；页面里 `fetch` 拦截器记到 `POST /api/videos/bili-parse`（无 query，key 在 body）；同调用方 12 次后 429 + `retry-after: 10`，换一个 XFF 立刻回 200；额度打满后页面出现「解析太频繁…等十几秒再点【立即换源】」而非静默降画质；`NAVHUB_BILI_FORWARD_USER_KEY=1` 下两把 key 各自重新出站、同 key 命中同桶。机制与残留见 [`BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md`](BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md) |
+| 实测中修出的第二条 | 兜底的 `iframe_fallback` 结果原先不带 `accessKeyIgnored` ⇒ 被限流后徽标继续显示「VIP 密钥已启用」，而请求根本没进解析器。已改为「未被使用」，并由消融第 14 条钉住 |
+| 已知残留 | 预算按**进程**计，多副本总量 ≈ 副本数 × 阈值；`callerKey` 取自 `x-forwarded-for` 首段，未经信任反代时**可伪造**，只当限流桶、绝不当身份（前反代必须覆写该头，与 `bili-stream` 同一前提）；桶摘要不是加密承诺，不可当可公开的反查依据 |

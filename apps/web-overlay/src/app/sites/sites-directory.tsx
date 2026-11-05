@@ -9,7 +9,8 @@ import type { HubSite } from '@/lib/navhub-api'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { SiteFavicon } from '@/components/site-favicon'
-import { AlertTriangle, Globe } from 'lucide-react'
+import { AlertTriangle, Globe, ExternalLink, MonitorPlay, ArrowRight } from 'lucide-react'
+import { SitesDirectoryFilterableGrid } from '@/components/sites-directory-filterable-grid'
 
 /**
  * 全站站点目录（`/sites`）的服务端取数与主体视图，由第 1 页与 `/sites/p/{n}` 共用。
@@ -164,29 +165,29 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
             />
           ) : null}
 
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {items.map((site) => (
-              <li key={site.id}>
-                <Link
-                  href={`/site/${encodeURIComponent(site.id)}`}
-                  className="flex items-center gap-3 rounded-xl border border-border/70 px-3 py-2.5 hover:bg-muted/50 transition-colors"
-                >
-                  <SiteFavicon
-                    title={site.title}
-                    url={site.url}
-                    icon={site.iconKey ?? undefined}
-                    className="w-6 h-6 rounded-md object-contain shrink-0"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground truncate">{site.title}</span>
-                    {site.description ? (
-                      <span className="block text-xs text-muted-foreground truncate">{site.description}</span>
-                    ) : null}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {/* 跨生态：精选技术视频推荐 */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs text-foreground">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                <MonitorPlay className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <span className="font-semibold text-foreground block text-sm">除了工具网站，还想看技术视频教程？</span>
+                <span className="text-muted-foreground text-xs block truncate">
+                  本站视频库收录 6,000+ 高质量技术视频与实操课程，覆盖前端、后端、AI 等全栈技能
+                </span>
+              </div>
+            </div>
+            <Link
+              href="/videos"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors shrink-0 text-xs shadow-2xs"
+            >
+              <span>探索精选视频库</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <SitesDirectoryFilterableGrid initialSites={items} current={current} totalPages={totalPages} totalSites={all.length} />
 
           {/* 取数失败时 totalPages 是按半截集合算出来的，页码链接会把用户送到
               并不存在的页（或静默夹到别的页）；只有一页时也无需分页条。 */}

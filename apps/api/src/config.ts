@@ -181,6 +181,21 @@ export interface AppConfig {
     /** 运维者 key 的总预算（只数 source ≠ 'user' 的消耗） */
     systemDailyCalls: number;
     systemDailyTokens: number;
+    /**
+     * 每次调用在预留行里先占住的 token 数（升级改造方案 P0-3）。
+     *
+     * 它不是「猜得多准」的问题，而是「并发时看得见彼此」的问题：闸门判定和
+     * 模型返回之间隔着几秒到几十秒，没有预留就没人知道这些额度已经名花有主。
+     * 预估值会夹到该档剩余空间以内，所以上限小于预估值时不会把自己锁死。
+     * 0 = 只按次数预留（token 档退化成「只看已落账用量」的老行为）。
+     */
+    reserveTokens: number;
+    /**
+     * 预留存活时长（毫秒）。进程被 kill、SSE 半路断开这些来不及结算的行
+     * 靠它自愈；太短会在正常慢响应期间把额度提前放出去，太长会让一次崩溃
+     * 白占额度 —— 所以有下限守护（见 assertSecurityConstraints）。
+     */
+    reserveTtlMs: number;
   };
 }
 
@@ -342,6 +357,17 @@ function assertSecurityConstraints(
     }
   }
 
+  // 2e. 预留 TTL 要有下限。TTL 比一次正常模型响应还短，意味着预留会在调用
+  // 还在飞的时候过期 —— 并发判定退化成原来的「先查后写」，而这条退化没有任何
+  // 日志：看起来闸门配了、跑着、生效了，实际拦不住第二个并发请求。
+  // 1s 是「肯定小于任何真实生成」的保守边界，比它小一定是配置写错。
+  if (config.llmQuota.reserveTtlMs > 0 && config.llmQuota.reserveTtlMs < 1_000) {
+    throw new Error(
+      `LLM 额度 reserveTtlMs 至少 1000（毫秒），当前 ${config.llmQuota.reserveTtlMs}：` +
+        "比一次模型响应还短的预留等于没有并发闸门。",
+    );
+  }
+
   // 3b. 生产环境不允许把全部 LLM 额度一起关掉。
   //
   // 三档全 0 意味着「闸门形同不存在」，而生产站正是匿名流量能摸到系统 key 的
@@ -416,7 +442,22 @@ function assertSecurityConstraints(
     );
   }
 
-  // 4. 量化格式合法性预检
+  // 4. CORS 仍是默认通配。
+  //
+  // 不改默认值：`*` 是「本地/CORS 无关」部署的合法默认，收紧成空列表会让所有
+  // 浏览器侧请求立刻 403。但通配的真实代价必须在日志里看得见 —— 它同时把
+  // `credentials` 关掉（server.ts 里 allowAll ⇒ credentials:false），于是任何
+  // 想带 cookie 的第三方前端都会「配了 CORS 还是不回凭据」，排查起来最费时间。
+  // 至少要让人在启动第一屏看到：你现在是谁都能读，且凭据模式已自动关闭。
+  if (isProd && config.corsOrigins.includes("*")) {
+    console.warn(
+      "[navhub] 警告：NAVHUB_CORS_ORIGINS 仍为默认通配（*）——任意来源都能跨域读取接口，" +
+        "同时 credentials 已被自动关闭（浏览器禁止 * 与凭据并存）。" +
+        "生产请显式列为前端域名，例如 NAVHUB_CORS_ORIGINS=https://nav.example.com"
+    );
+  }
+
+  // 5. 量化格式合法性预检
   if (!VALID_EMBEDDING_DTYPES.has(config.embedding.dtype)) {
     throw new Error(`NAVHUB_EMBEDDING_DTYPE 非法: ${config.embedding.dtype}`);
   }
@@ -538,6 +579,10 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
       anonymousDailyTokens: num("NAVHUB_LLM_QUOTA_ANON_TOKENS", isTest ? 0 : 300_000),
       systemDailyCalls: num("NAVHUB_LLM_QUOTA_SYSTEM_CALLS", isTest ? 0 : 5_000),
       systemDailyTokens: num("NAVHUB_LLM_QUOTA_SYSTEM_TOKENS", isTest ? 0 : 4_000_000),
+      // 预估值取「一次典型问答的输入+输出」量级：偏大一档换的是并发判定的保守，
+      // 偏小则等于闸门不吃并发。测试环境同样给非 0 值，让并发用例能真的撞上限。
+      reserveTokens: num("NAVHUB_LLM_QUOTA_RESERVE_TOKENS", 1_500),
+      reserveTtlMs: num("NAVHUB_LLM_QUOTA_TTL_MS", 300_000),
     },
 
     skipOrphanCleanup: bool("NAVHUB_SKIP_ORPHAN_CLEANUP", false),

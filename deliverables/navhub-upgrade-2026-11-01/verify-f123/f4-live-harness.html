@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<!--
+  verify-f4 整页实测（静态版，真实浏览器计算样式）
+  - 加载 dev 服务器实际下发 CSS 字节（served-f4.css）
+  - 复刻 navigation-card.tsx 三种卡片精确类名
+  - 主题由 <html class="dark"> 静态决定（避免 headless 虚拟时钟类切换陈旧读数）
+  - 壁纸色是纯数学输入（黑/白 1×1），两种壁纸都算
+-->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>f4-live-static</title>
+<link rel="stylesheet" href="served-f4.css">
+</head>
+<body>
+<div id="stage" style="position:relative;min-height:300px;padding:24px;">
+  <a id="card-large" class="nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40" href="#" style="position:relative;display:block;width:280px;">
+    <span id="title-large" class="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors">站点标题 Title</span>
+    <span id="desc-large" class="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1.5 break-words" style="display:block;">站点描述描述描述 description muted</span>
+  </a>
+  <a id="card-std" class="nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40" href="#" style="position:relative;display:block;width:280px;">
+    <span id="title-std" class="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors">站点标题 Title</span>
+    <span id="desc-std" class="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1.5 break-words" style="display:block;">站点描述描述描述 description muted</span>
+  </a>
+  <a id="card-compact" class="nav-card-deferred group relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40" href="#" style="position:relative;display:block;width:280px;">
+    <span id="title-compact" class="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors">站点标题 Title</span>
+    <span id="desc-compact" class="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1.5 break-words" style="display:block;">站点描述描述描述 description muted</span>
+  </a>
+</div>
+<pre id="f4out">PENDING</pre>
+<script>
+(function () {
+  function parseColor(s) {
+    var m = /rgba?\(([^)]+)\)/.exec(s);
+    if (!m) return null;
+    var p = m[1].split(",").map(function (x) { return parseFloat(x); });
+    return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1];
+  }
+  function lin(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  function lum(rgb) { return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]); }
+  function contrast(f, b) {
+    var lf = lum(f), lb = lum(b);
+    var hi = lf >= lb ? lf : lb, lo = lf >= lb ? lb : lf;
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function compOver(fg, a, bg) { return [fg[0] * a + bg[0] * (1 - a), fg[1] * a + bg[1] * (1 - a), fg[2] * a + bg[2] * (1 - a)]; }
+  function effText(parsed, bgEff) { return parsed[3] < 1 ? compOver(parsed, parsed[3], bgEff) : parsed; }
+  function rd2(n) { return Math.round(n * 100) / 100; }
+
+  // debug2 实证读取顺序：html → body → card 先各读一次 --card
+  var warmHtml = getComputedStyle(document.documentElement).getPropertyValue("--card").trim();
+  var warmBody = getComputedStyle(document.body).getPropertyValue("--card").trim();
+
+  var WALLS = { "黑壁纸": [0, 0, 0], "白壁纸": [255, 255, 255] };
+  var VARIANTS = [
+    ["large", "card-large", "title-large", "desc-large"],
+    ["standard", "card-std", "title-std", "desc-std"],
+    ["compact", "card-compact", "title-compact", "desc-compact"]
+  ];
+  var rows = [];
+  var theme = document.documentElement.classList.contains("dark") ? "深色" : "浅色";
+
+  VARIANTS.forEach(function (v) {
+    var card = document.getElementById(v[1]);
+    var tEl = document.getElementById(v[2]);
+    var dEl = document.getElementById(v[3]);
+    getComputedStyle(card).getPropertyValue("--card"); // card 级预热
+    void document.body.offsetHeight;
+    var csBg = getComputedStyle(card).backgroundColor;
+    getComputedStyle(card).backgroundColor; // 丢弃
+    var tCol = getComputedStyle(tEl).color; getComputedStyle(tEl).color;
+    var dCol = getComputedStyle(dEl).color; getComputedStyle(dEl).color;
+    csBg = getComputedStyle(card).backgroundColor; // 二次确认
+    tCol = getComputedStyle(tEl).color;
+    dCol = getComputedStyle(dEl).color;
+
+    var cardRaw = parseColor(csBg);
+    var tRaw = parseColor(tCol);
+    var dRaw = parseColor(dCol);
+    Object.keys(WALLS).forEach(function (wallName) {
+      var wall = WALLS[wallName];
+      var cardEff = compOver(cardRaw, cardRaw[3], wall);
+      var tEff = effText(tRaw, cardEff);
+      var dEff = effText(dRaw, cardEff);
+      rows.push({
+        variant: v[0], theme: theme, wall: wallName,
+        cardComputed: csBg, titleComputed: tCol, descComputed: dCol,
+        warmHtmlVar: warmHtml, warmBodyVar: warmBody,
+        titleContrast: rd2(contrast(tEff, cardEff)),
+        descContrast: rd2(contrast(dEff, cardEff))
+      });
+    });
+  });
+  document.getElementById("f4out").textContent = "F4DATA:" + JSON.stringify(rows)
+    + " || DOMCHECK:title-large.class=[" + document.getElementById("title-large").className
+    + "] title-large.parent.class=[" + document.getElementById("title-large").parentElement.className.slice(0, 60)
+    + "] stylesheets=" + document.styleSheets.length
+    + "] link.sheet.disabled=" + (document.querySelector("link[rel=stylesheet]") ? document.querySelector("link[rel=stylesheet]").sheet === null : "no-link");
+})();
+</script>
+</body>
+</html>

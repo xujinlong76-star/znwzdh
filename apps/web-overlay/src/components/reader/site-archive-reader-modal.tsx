@@ -96,7 +96,12 @@ export function SiteArchiveReaderModal({
         }
       } catch {
         // 尝试从本地离线缓存恢复
-        const cached = typeof window !== 'undefined' ? localStorage.getItem(`navhub:archive:${site.id}`) : null
+        let cached: string | null = null
+        try {
+          cached = typeof window !== 'undefined' ? localStorage.getItem(`navhub:archive:${site.id}`) : null
+        } catch {
+          // 隐私模式或无权访问本地存储
+        }
         if (cached) {
           try {
             const parsed = JSON.parse(cached)

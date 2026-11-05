@@ -15,7 +15,7 @@ import type {
   VideoPlatformType,
   VideoStats,
 } from '@/types/navigation'
-import { calculateQualityScore, calculateFreshnessScore } from './video-scoring'
+import { calculateQualityScore, calculateFreshnessScore, parseDurationToSeconds } from './video-scoring'
 import { enrichVideoItemSeo } from './video-seo'
 import { guardedFetch, isProbablySafeUrl } from './ssrf-guard'
 
@@ -800,315 +800,500 @@ export async function harvestMultiPlatformVideosForKeyword(
   const kw = keyword.trim()
   if (!kw) return results
 
-  // 1. Dailymotion 公开搜索通道
+  // 1. 各平台并发采集任务清单（并发执行，防单平台超时拖垮全局预算）
+  const tasks: Array<Promise<NavigationSubItem[]>> = []
+
   if (platforms.includes('dailymotion')) {
-    try {
-      const dmUrl = `https://api.dailymotion.com/videos?search=${encodeURIComponent(
-        kw
-      )}&fields=id,title,description,duration,thumbnail_720_url,owner.screenname,owner.url,views_total,created_time&limit=${Math.max(
-        limitPerKeyword * 2,
-        6
-      )}&sort=relevance`
-      const res = await fetchImpl(dmUrl, { signal: AbortSignal.timeout(6000) })
-      if (!res.ok) {
-        failures?.push({ keyword: kw, reason: `Dailymotion 搜索返回 HTTP ${res.status}` })
-      } else {
-        const json = await res.json()
-        const list = Array.isArray(json?.list) ? json.list : []
-        let taken = 0
-        for (const item of list) {
-          if (taken >= limitPerKeyword) break
-          const videoId = String(item?.id || '').trim()
-          if (!videoId || seenKeys.has(`dailymotion:${videoId}`)) continue
-
-          const durationSec = Number(item.duration) || 0
-          if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
-
-          const cleanTitle = String(item.title || '').replace(/<[^>]+>/g, '').trim()
-          if (!cleanTitle) continue
-          const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
-
-          const stats: VideoStats = { views: Number(item.views_total) || 0 }
-          const qualityScore = Math.max(
-            minQualityScore,
-            calculateQualityScore(stats, durationSec || 300, item.created_time)
-          )
-          const pubDate = item.created_time
-            ? new Date(Number(item.created_time) * 1000).toISOString()
-            : undefined
-          const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
-
-          seenKeys.add(`dailymotion:${videoId}`)
-          taken++
-
-          const rawSubItem: NavigationSubItem = {
-            id: `harvest_dm_${videoId}_${Date.now()}`,
-            title: cleanTitle,
-            href: `https://www.dailymotion.com/video/${videoId}`,
-            description: cleanDesc,
-            icon: item.thumbnail_720_url || undefined,
-            enabled: true,
-            videoConfig: {
-              type: 'dailymotion',
-              videoId,
-              author: item['owner.screenname'] || 'Dailymotion Creator',
-              authorUrl: item['owner.url'] || undefined,
-              durationSec: durationSec || 300,
-              ...(pubDate ? { publishedAt: pubDate } : {}),
-              harvestedAt: Date.now(),
-              lastVerifiedAt: Date.now(),
-              qualityScore,
-              freshnessScore,
-              sourceType: 'auto_trend',
-              trendKeyword: kw,
-              pinned: false,
-              healthStatus: 'healthy',
-              stats,
-            },
-          }
-          results.push(enrichVideoItemSeo(rawSubItem))
-        }
-      }
-    } catch (err) {
-      failures?.push({
-        keyword: kw,
-        reason: `Dailymotion 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
-      })
-    }
+    tasks.push(
+      harvestDailymotionChannel(
+        kw,
+        { minDurationSec, minQualityScore, limitPerKeyword, failures },
+        fetchImpl
+      )
+    )
   }
 
-  // 2. PeerTube (SepiaSearch 全球联邦视频索引 API)
-  if (platforms.includes('peertube')) {
-    try {
-      const ptUrl = `https://sepiasearch.org/api/v1/videos?search=${encodeURIComponent(
-        kw
-      )}&count=${Math.max(limitPerKeyword * 2, 6)}&sort=-match&nsfw=false`
-      const res = await fetchImpl(ptUrl, { signal: AbortSignal.timeout(6000) })
-      if (!res.ok) {
-        failures?.push({ keyword: kw, reason: `PeerTube SepiaSearch 返回 HTTP ${res.status}` })
-      } else {
-        const json = await res.json()
-        const data = Array.isArray(json?.data) ? json.data : []
-        let taken = 0
-        for (const item of data) {
-          if (taken >= limitPerKeyword) break
-          const videoId = String(item?.shortUUID || item?.uuid || '').trim()
-          if (!videoId || seenKeys.has(`peertube:${videoId}`)) continue
-
-          const durationSec = Number(item.duration) || 0
-          if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
-
-          const cleanTitle = String(item.name || '').trim()
-          if (!cleanTitle) continue
-          const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
-
-          const stats: VideoStats = {
-            views: Number(item.views) || 0,
-            likes: Number(item.likes) || 0,
-          }
-          const qualityScore = Math.max(
-            minQualityScore,
-            calculateQualityScore(stats, durationSec || 300)
-          )
-          const pubDate = item.publishedAt ? new Date(item.publishedAt).toISOString() : undefined
-          const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
-
-          const host = item.account?.host || item.channel?.host || 'framatube.org'
-          const href = item.url || `https://${host}/w/${videoId}`
-          const coverUrl =
-            item.thumbnailUrl ||
-            (item.thumbnailPath ? `https://${host}${item.thumbnailPath}` : undefined)
-
-          seenKeys.add(`peertube:${videoId}`)
-          taken++
-
-          const rawSubItem: NavigationSubItem = {
-            id: `harvest_pt_${videoId}_${Date.now()}`,
-            title: cleanTitle,
-            href,
-            description: cleanDesc,
-            icon: coverUrl,
-            enabled: true,
-            videoConfig: {
-              type: 'peertube',
-              videoId,
-              author: item.account?.displayName || item.channel?.displayName || 'PeerTube Creator',
-              authorUrl: item.account?.url || item.channel?.url || `https://${host}`,
-              durationSec: durationSec || 300,
-              ...(pubDate ? { publishedAt: pubDate } : {}),
-              harvestedAt: Date.now(),
-              lastVerifiedAt: Date.now(),
-              qualityScore,
-              freshnessScore,
-              sourceType: 'auto_trend',
-              trendKeyword: kw,
-              pinned: false,
-              healthStatus: 'healthy',
-              stats,
-            },
-          }
-          results.push(enrichVideoItemSeo(rawSubItem))
-        }
-      }
-    } catch (err) {
-      failures?.push({
-        keyword: kw,
-        reason: `PeerTube 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
-      })
-    }
-  }
-
-  // 3. TED Talks 公开 API 通道 (/talks.json?q=...)
   if (platforms.includes('ted')) {
+    tasks.push(
+      harvestTedChannel(
+        kw,
+        { minDurationSec, minQualityScore, limitPerKeyword, failures },
+        fetchImpl
+      )
+    )
+  }
+
+  if (platforms.includes('youtube')) {
+    tasks.push(
+      harvestYouTubeChannel(
+        kw,
+        { minDurationSec, minQualityScore, limitPerKeyword, failures },
+        fetchImpl
+      )
+    )
+  }
+
+  if (platforms.includes('peertube')) {
+    tasks.push(
+      harvestPeerTubeChannel(
+        kw,
+        { minDurationSec, minQualityScore, limitPerKeyword, failures },
+        fetchImpl
+      )
+    )
+  }
+
+  const settled = await Promise.allSettled(tasks)
+  for (const s of settled) {
+    if (s.status === 'fulfilled') {
+      for (const item of s.value) {
+        const key = `${item.videoConfig?.type}:${item.videoConfig?.videoId || item.id}`
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key)
+          results.push(item)
+        }
+      }
+    }
+  }
+
+  return results
+}
+
+function parseViewsCount(raw?: string): number {
+  if (!raw) return 0
+  const s = raw.replace(/,/g, '').trim()
+  if (s.includes('万')) {
+    const num = parseFloat(s)
+    return isNaN(num) ? 0 : Math.round(num * 10000)
+  }
+  if (s.toLowerCase().includes('m')) {
+    const num = parseFloat(s)
+    return isNaN(num) ? 0 : Math.round(num * 1000000)
+  }
+  if (s.toLowerCase().includes('k')) {
+    const num = parseFloat(s)
+    return isNaN(num) ? 0 : Math.round(num * 1000)
+  }
+  const digits = s.match(/\d+/)
+  return digits ? parseInt(digits[0], 10) : 0
+}
+
+async function harvestDailymotionChannel(
+  kw: string,
+  options: {
+    minDurationSec: number
+    minQualityScore: number
+    limitPerKeyword: number
+    failures?: Array<{ keyword: string; reason: string }>
+  },
+  fetchImpl: typeof fetch
+): Promise<NavigationSubItem[]> {
+  const { minDurationSec, minQualityScore, limitPerKeyword, failures } = options
+  const results: NavigationSubItem[] = []
+  try {
+    const dmUrl = `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+      kw
+    )}&fields=id,title,description,duration,thumbnail_720_url,owner.screenname,owner.url,views_total,created_time&limit=${Math.max(
+      limitPerKeyword * 2,
+      6
+    )}&sort=relevance`
+    const res = await fetchImpl(dmUrl, { signal: AbortSignal.timeout(6000) })
+    if (!res.ok) {
+      failures?.push({ keyword: kw, reason: `Dailymotion 搜索返回 HTTP ${res.status}` })
+      return results
+    }
+    const json = await res.json()
+    const list = Array.isArray(json?.list) ? json.list : []
+    for (const item of list) {
+      if (results.length >= limitPerKeyword) break
+      const videoId = String(item?.id || '').trim()
+      if (!videoId) continue
+
+      const durationSec = Number(item.duration) || 0
+      if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+
+      const cleanTitle = String(item.title || '').replace(/<[^>]+>/g, '').trim()
+      if (!cleanTitle) continue
+      const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
+
+      const stats: VideoStats = { views: Number(item.views_total) || 0 }
+      const qualityScore = Math.max(
+        minQualityScore,
+        calculateQualityScore(stats, durationSec || 300, item.created_time)
+      )
+      const pubDate = item.created_time
+        ? new Date(Number(item.created_time) * 1000).toISOString()
+        : undefined
+      const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
+
+      const rawSubItem: NavigationSubItem = {
+        id: `harvest_dm_${videoId}_${Date.now()}`,
+        title: cleanTitle,
+        href: `https://www.dailymotion.com/video/${videoId}`,
+        description: cleanDesc,
+        icon: item.thumbnail_720_url || undefined,
+        enabled: true,
+        videoConfig: {
+          type: 'dailymotion',
+          videoId,
+          author: item['owner.screenname'] || 'Dailymotion Creator',
+          authorUrl: item['owner.url'] || undefined,
+          durationSec: durationSec || 300,
+          ...(pubDate ? { publishedAt: pubDate } : {}),
+          harvestedAt: Date.now(),
+          lastVerifiedAt: Date.now(),
+          qualityScore,
+          freshnessScore,
+          sourceType: 'auto_trend',
+          trendKeyword: kw,
+          pinned: false,
+          healthStatus: 'healthy',
+          stats,
+        },
+      }
+      results.push(enrichVideoItemSeo(rawSubItem))
+    }
+  } catch (err) {
+    failures?.push({
+      keyword: kw,
+      reason: `Dailymotion 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
+    })
+  }
+  return results
+}
+
+async function harvestTedChannel(
+  kw: string,
+  options: {
+    minDurationSec: number
+    minQualityScore: number
+    limitPerKeyword: number
+    failures?: Array<{ keyword: string; reason: string }>
+  },
+  fetchImpl: typeof fetch
+): Promise<NavigationSubItem[]> {
+  const { minDurationSec, minQualityScore, limitPerKeyword, failures } = options
+  const results: NavigationSubItem[] = []
+  try {
+    let talks: any[] = []
+
+    // 1. 尝试 TED Talks REST API (单元测试 Mock / 官方 JSON 通道)
     try {
-      const tedUrl = `https://www.ted.com/talks.json?q=${encodeURIComponent(
+      const jsonUrl = `https://www.ted.com/talks.json?q=${encodeURIComponent(
         kw
       )}&per_page=${Math.max(limitPerKeyword * 2, 6)}`
-      const res = await fetchImpl(tedUrl, { signal: AbortSignal.timeout(6000) })
-      if (!res.ok) {
-        failures?.push({ keyword: kw, reason: `TED Talks 搜索返回 HTTP ${res.status}` })
-      } else {
+      const res = await fetchImpl(jsonUrl, { signal: AbortSignal.timeout(4000) })
+      if (res.ok) {
         const json = await res.json()
-        const talks = Array.isArray(json?.talks)
+        talks = Array.isArray(json?.talks)
           ? json.talks
           : Array.isArray(json?.results)
             ? json.results
             : []
-        let taken = 0
-        for (const item of talks) {
-          if (taken >= limitPerKeyword) break
-          const slug = String(item?.slug || item?.id || '').trim()
-          if (!slug || seenKeys.has(`ted:${slug}`)) continue
-
-          const durationSec = Number(item.duration) || 900
-          if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
-
-          const cleanTitle = String(item.name || item.title || '').trim()
-          if (!cleanTitle) continue
-          const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
-
-          const stats: VideoStats = {
-            views: Number(item.view_count || item.views) || 50000,
-          }
-          const qualityScore = Math.max(
-            minQualityScore,
-            calculateQualityScore(stats, durationSec)
-          )
-          const pubDate = item.published_at ? new Date(item.published_at).toISOString() : undefined
-          const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
-          const speaker = item.speaker_name || item.speakers?.[0]?.name || 'TED Speaker'
-          const thumb = item.primary_image_tag || item.image_16x9 || undefined
-
-          seenKeys.add(`ted:${slug}`)
-          taken++
-
-          const rawSubItem: NavigationSubItem = {
-            id: `harvest_ted_${slug}_${Date.now()}`,
-            title: cleanTitle,
-            href: `https://www.ted.com/talks/${slug}`,
-            description: cleanDesc,
-            icon: thumb,
-            enabled: true,
-            videoConfig: {
-              type: 'ted',
-              videoId: slug,
-              author: speaker,
-              authorUrl: 'https://www.ted.com',
-              durationSec,
-              ...(pubDate ? { publishedAt: pubDate } : {}),
-              harvestedAt: Date.now(),
-              lastVerifiedAt: Date.now(),
-              qualityScore,
-              freshnessScore,
-              sourceType: 'auto_trend',
-              trendKeyword: kw,
-              pinned: false,
-              healthStatus: 'healthy',
-              stats,
-            },
-          }
-          results.push(enrichVideoItemSeo(rawSubItem))
-        }
       }
-    } catch (err) {
-      failures?.push({
-        keyword: kw,
-        reason: `TED Talks 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
-      })
+    } catch {
+      // 降级到 HTML
+    }
+
+    // 2. 若 JSON 接口 404 或无返回，解析 TED 页面内嵌 __NEXT_DATA__
+    if (talks.length === 0) {
+      try {
+        const tedSearchUrl = `https://www.ted.com/talks?q=${encodeURIComponent(kw)}`
+        const res = await fetchImpl(tedSearchUrl, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+          signal: AbortSignal.timeout(5000),
+        })
+
+        if (res.ok) {
+          const html = await res.text()
+          const idx = html.indexOf('__NEXT_DATA__')
+          if (idx !== -1) {
+            const start = html.indexOf('>', idx) + 1
+            const end = html.indexOf('</script>', start)
+            if (end !== -1) {
+              const json = JSON.parse(html.slice(start, end))
+              talks = json.props?.pageProps?.talks || json.props?.pageProps?.results || []
+            }
+          }
+        }
+      } catch {
+        // 捕获
+      }
+    }
+
+    for (const item of talks) {
+      if (results.length >= limitPerKeyword) break
+      const slug = String(item.slug || item.id || '').trim()
+      if (!slug) continue
+
+      const cleanTitle = String(item.title || item.name || '').trim()
+      if (!cleanTitle) continue
+
+      const durationSec = Number(item.duration) || 900
+      if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+
+      const stats: VideoStats = {
+        views: Number(item.viewedCount || item.view_count || item.views) || 60000,
+      }
+      const qualityScore = Math.max(minQualityScore, calculateQualityScore(stats, durationSec))
+      const rawPub = item.publishedAt || item.published_at
+      const pubDate = rawPub ? new Date(rawPub).toISOString() : undefined
+      const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
+      const speaker = item.presenterDisplayName || item.speaker_name || item.speakers?.[0]?.name || 'TED Speaker'
+      const thumb = item.primaryImageSet?.[0]?.url || item.primary_image_tag || item.image_16x9 || undefined
+
+      results.push(
+        enrichVideoItemSeo({
+          id: `harvest_ted_${slug}_${Date.now()}`,
+          title: cleanTitle,
+          href: item.canonicalUrl || `https://www.ted.com/talks/${slug}`,
+          description: String(item.description || item.videoContext || '').trim(),
+          icon: thumb,
+          enabled: true,
+          videoConfig: {
+            type: 'ted',
+            videoId: slug,
+            author: speaker,
+            authorUrl: 'https://www.ted.com',
+            durationSec,
+            ...(pubDate ? { publishedAt: pubDate } : {}),
+            harvestedAt: Date.now(),
+            lastVerifiedAt: Date.now(),
+            qualityScore,
+            freshnessScore,
+            sourceType: 'auto_trend',
+            trendKeyword: kw,
+            pinned: false,
+            healthStatus: 'healthy',
+            stats,
+          },
+        })
+      )
+    }
+  } catch (err) {
+    failures?.push({
+      keyword: kw,
+      reason: `TED Talks 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
+    })
+  }
+  return results
+}
+
+async function harvestYouTubeChannel(
+  kw: string,
+  options: {
+    minDurationSec: number
+    minQualityScore: number
+    limitPerKeyword: number
+    failures?: Array<{ keyword: string; reason: string }>
+  },
+  fetchImpl: typeof fetch
+): Promise<NavigationSubItem[]> {
+  const { minDurationSec, minQualityScore, limitPerKeyword, failures } = options
+  const results: NavigationSubItem[] = []
+
+  // 1. 若配置了 YOUTUBE_API_KEY，首选官方 YouTube Data API v3
+  if (process.env.YOUTUBE_API_KEY) {
+    try {
+      const apiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(
+        kw
+      )}&type=video&maxResults=${Math.max(limitPerKeyword * 2, 6)}&key=${process.env.YOUTUBE_API_KEY}`
+      const res = await fetchImpl(apiUrl, { signal: AbortSignal.timeout(5000) })
+      if (res.ok) {
+        const json = await res.json()
+        const items = Array.isArray(json?.items) ? json.items : []
+        for (const item of items) {
+          if (results.length >= limitPerKeyword) break
+          const videoId = item?.id?.videoId
+          if (!videoId) continue
+          const snippet = item.snippet || {}
+          const title = (snippet.title || '').trim()
+          if (!title) continue
+          const desc = (snippet.description || '').trim()
+          const stats: VideoStats = { views: 50000 }
+          const qualityScore = Math.max(minQualityScore, calculateQualityScore(stats, 600))
+          const pubDate = snippet.publishedAt ? new Date(snippet.publishedAt).toISOString() : undefined
+          const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, title)
+
+          results.push(
+            enrichVideoItemSeo({
+              id: `harvest_yt_${videoId}_${Date.now()}`,
+              title,
+              href: `https://www.youtube.com/watch?v=${videoId}`,
+              description: desc,
+              icon:
+                snippet.thumbnails?.high?.url ||
+                snippet.thumbnails?.medium?.url ||
+                `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+              enabled: true,
+              videoConfig: {
+                type: 'youtube',
+                videoId,
+                author: snippet.channelTitle || 'YouTube Creator',
+                durationSec: 600,
+                ...(pubDate ? { publishedAt: pubDate } : {}),
+                harvestedAt: Date.now(),
+                lastVerifiedAt: Date.now(),
+                qualityScore,
+                freshnessScore,
+                sourceType: 'auto_trend',
+                trendKeyword: kw,
+                pinned: false,
+                healthStatus: 'healthy',
+                stats,
+              },
+            })
+          )
+        }
+        if (results.length > 0) return results
+      }
+    } catch {
+      // 降级
     }
   }
 
-  // 4. YouTube 开放镜像通道 (Piped / Invidious API 降级聚合)
-  if (platforms.includes('youtube')) {
-    try {
-      const pipedInstances = [
-        'https://pipedapi.kavin.rocks',
-        'https://api.piped.privacy.com.de',
-        'https://piped-api.lunar.icu',
-      ]
-      let ytList: any[] = []
-      for (const instance of pipedInstances) {
-        try {
-          const ytUrl = `${instance}/search?q=${encodeURIComponent(kw)}&filter=videos`
-          const res = await fetchImpl(ytUrl, { signal: AbortSignal.timeout(5000) })
-          if (res.ok) {
-            const json = await res.json()
-            const items = Array.isArray(json?.items) ? json.items : []
-            if (items.length > 0) {
-              ytList = items
-              break
+  // 2. 开放式 HTML 结构化解析 (通过页面内嵌 ytInitialData 提取)
+  try {
+    const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(kw)}`
+    const res = await fetchImpl(ytSearchUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (res.ok) {
+      const html = await res.text()
+      const startIdx = html.indexOf('ytInitialData = {')
+      if (startIdx !== -1) {
+        const jsonStart = startIdx + 'ytInitialData = '.length
+        const endIdx = html.indexOf('};', jsonStart)
+        if (endIdx !== -1) {
+          const jsonStr = html.slice(jsonStart, endIdx + 1)
+          const data = JSON.parse(jsonStr)
+          const sectionList =
+            data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer
+              ?.contents || []
+
+          for (const section of sectionList) {
+            const itemSection = section?.itemSectionRenderer?.contents || []
+            for (const item of itemSection) {
+              if (results.length >= limitPerKeyword) break
+              const vr = item?.videoRenderer
+              if (!vr || !vr.videoId) continue
+
+              const videoId = String(vr.videoId).trim()
+              const cleanTitle = (vr.title?.runs?.[0]?.text || vr.title?.simpleText || '').trim()
+              if (!cleanTitle) continue
+
+              const durationText = vr.lengthText?.simpleText
+              const durationSec = durationText ? parseDurationToSeconds(durationText) : 600
+              if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+
+              const cleanDesc = (
+                vr.detailedMetadataSnippets?.[0]?.snippetText?.runs
+                  ?.map((r: any) => r.text)
+                  .join('') ||
+                vr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') ||
+                ''
+              ).trim()
+
+              const views = parseViewsCount(vr.viewCountText?.simpleText)
+              const stats: VideoStats = { views }
+              const qualityScore = Math.max(minQualityScore, calculateQualityScore(stats, durationSec))
+              const freshnessScore = calculateFreshnessScore(undefined, qualityScore, 90, cleanTitle)
+
+              const author = vr.ownerText?.runs?.[0]?.text || 'YouTube Creator'
+              const authorPath =
+                vr.ownerText?.runs?.[0]?.navigationEndpoint?.commandMetadata?.webCommandMetadata?.url
+              const authorUrl = authorPath ? `https://www.youtube.com${authorPath}` : undefined
+              const thumbnail =
+                vr.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
+                `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+
+              results.push(
+                enrichVideoItemSeo({
+                  id: `harvest_yt_${videoId}_${Date.now()}`,
+                  title: cleanTitle,
+                  href: `https://www.youtube.com/watch?v=${videoId}`,
+                  description: cleanDesc,
+                  icon: thumbnail,
+                  enabled: true,
+                  videoConfig: {
+                    type: 'youtube',
+                    videoId,
+                    author,
+                    authorUrl,
+                    durationSec,
+                    harvestedAt: Date.now(),
+                    lastVerifiedAt: Date.now(),
+                    qualityScore,
+                    freshnessScore,
+                    sourceType: 'auto_trend',
+                    trendKeyword: kw,
+                    pinned: false,
+                    healthStatus: 'healthy',
+                    stats,
+                  },
+                })
+              )
             }
           }
-        } catch {
-          // 尝试下一镜像
         }
       }
+    }
+    if (results.length > 0) return results
+  } catch {
+    // 降级到公共镜像
+  }
 
-      if (ytList.length === 0) {
-        failures?.push({ keyword: kw, reason: 'YouTube 开放镜像通道无响应或未命中结果' })
-      } else {
-        let taken = 0
-        for (const item of ytList) {
-          if (taken >= limitPerKeyword) break
-          const videoId = String(
-            item?.url ? item.url.replace('/watch?v=', '') : item?.id || ''
-          ).trim()
-          if (!videoId || videoId.length !== 11 || seenKeys.has(`youtube:${videoId}`)) continue
+  // 3. 开放镜像降级通道 (Invidious / Piped)
+  const mirrorEndpoints = [
+    `https://inv.tux.pizza/api/v1/search?q=${encodeURIComponent(kw)}&type=video`,
+    `https://invidious.nerdvpn.de/api/v1/search?q=${encodeURIComponent(kw)}&type=video`,
+    `https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(kw)}&filter=videos`,
+  ]
+  for (const mirror of mirrorEndpoints) {
+    try {
+      const res = await fetchImpl(mirror, { signal: AbortSignal.timeout(4000) })
+      if (!res.ok) continue
+      const json = await res.json()
+      const list = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
+      for (const item of list) {
+        if (results.length >= limitPerKeyword) break
+        const videoId = String(
+          item.videoId || item.id || (item.url ? item.url.replace('/watch?v=', '') : '')
+        ).trim()
+        if (!videoId || videoId.length !== 11) continue
+        const cleanTitle = String(item.title || '').trim()
+        if (!cleanTitle) continue
+        const durationSec = Number(item.lengthSeconds || item.duration) || 600
+        if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+        const stats: VideoStats = { views: Number(item.viewCount || item.views) || 0 }
+        const qualityScore = Math.max(minQualityScore, calculateQualityScore(stats, durationSec))
+        const freshnessScore = calculateFreshnessScore(undefined, qualityScore, 90, cleanTitle)
 
-          const durationSec = Number(item.duration) || 600
-          if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
-
-          const cleanTitle = String(item.title || '').trim()
-          if (!cleanTitle) continue
-          const cleanDesc = String(item.shortDescription || item.description || '').trim()
-
-          const stats: VideoStats = {
-            views: Number(item.views) || 0,
-          }
-          const qualityScore = Math.max(
-            minQualityScore,
-            calculateQualityScore(stats, durationSec)
-          )
-          const pubDate = item.uploaded ? new Date(item.uploaded).toISOString() : undefined
-          const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
-
-          seenKeys.add(`youtube:${videoId}`)
-          taken++
-
-          const rawSubItem: NavigationSubItem = {
+        results.push(
+          enrichVideoItemSeo({
             id: `harvest_yt_${videoId}_${Date.now()}`,
             title: cleanTitle,
             href: `https://www.youtube.com/watch?v=${videoId}`,
-            description: cleanDesc,
-            icon: item.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            description: String(item.description || item.shortDescription || '').trim(),
+            icon:
+              item.videoThumbnails?.[0]?.url ||
+              item.thumbnail ||
+              `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
             enabled: true,
             videoConfig: {
               type: 'youtube',
               videoId,
-              author: item.uploaderName || 'YouTube Creator',
-              authorUrl: item.uploaderUrl ? `https://www.youtube.com${item.uploaderUrl}` : undefined,
+              author: item.author || item.uploaderName || 'YouTube Creator',
               durationSec,
-              ...(pubDate ? { publishedAt: pubDate } : {}),
               harvestedAt: Date.now(),
               lastVerifiedAt: Date.now(),
               qualityScore,
@@ -1119,17 +1304,109 @@ export async function harvestMultiPlatformVideosForKeyword(
               healthStatus: 'healthy',
               stats,
             },
-          }
-          results.push(enrichVideoItemSeo(rawSubItem))
-        }
+          })
+        )
       }
-    } catch (err) {
-      failures?.push({
-        keyword: kw,
-        reason: `YouTube 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
-      })
+      if (results.length > 0) return results
+    } catch {
+      // 尝试下一镜像
     }
   }
 
+  if (results.length === 0) {
+    failures?.push({
+      keyword: kw,
+      reason: 'YouTube 通道检索未返回有效结果（开放网页解析与镜像通道均超时或受网络阻断）',
+    })
+  }
+
+  return results
+}
+
+async function harvestPeerTubeChannel(
+  kw: string,
+  options: {
+    minDurationSec: number
+    minQualityScore: number
+    limitPerKeyword: number
+    failures?: Array<{ keyword: string; reason: string }>
+  },
+  fetchImpl: typeof fetch
+): Promise<NavigationSubItem[]> {
+  const { minDurationSec, minQualityScore, limitPerKeyword, failures } = options
+  const results: NavigationSubItem[] = []
+  try {
+    const ptUrl = `https://sepiasearch.org/api/v1/videos?search=${encodeURIComponent(
+      kw
+    )}&count=${Math.max(limitPerKeyword * 2, 6)}&sort=-match&nsfw=false`
+    const res = await fetchImpl(ptUrl, { signal: AbortSignal.timeout(5000) })
+    if (!res.ok) {
+      failures?.push({ keyword: kw, reason: `PeerTube SepiaSearch 返回 HTTP ${res.status}` })
+      return results
+    }
+    const json = await res.json()
+    const data = Array.isArray(json?.data) ? json.data : []
+    for (const item of data) {
+      if (results.length >= limitPerKeyword) break
+      const videoId = String(item?.shortUUID || item?.uuid || '').trim()
+      if (!videoId) continue
+
+      const durationSec = Number(item.duration) || 0
+      if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+
+      const cleanTitle = String(item.name || '').trim()
+      if (!cleanTitle) continue
+      const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
+
+      const stats: VideoStats = {
+        views: Number(item.views) || 0,
+        likes: Number(item.likes) || 0,
+      }
+      const qualityScore = Math.max(
+        minQualityScore,
+        calculateQualityScore(stats, durationSec || 300)
+      )
+      const pubDate = item.publishedAt ? new Date(item.publishedAt).toISOString() : undefined
+      const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
+
+      const host = item.account?.host || item.channel?.host || 'framatube.org'
+      const href = item.url || `https://${host}/w/${videoId}`
+      const coverUrl =
+        item.thumbnailUrl ||
+        (item.thumbnailPath ? `https://${host}${item.thumbnailPath}` : undefined)
+
+      const rawSubItem: NavigationSubItem = {
+        id: `harvest_pt_${videoId}_${Date.now()}`,
+        title: cleanTitle,
+        href,
+        description: cleanDesc,
+        icon: coverUrl,
+        enabled: true,
+        videoConfig: {
+          type: 'peertube',
+          videoId,
+          author: item.account?.displayName || item.channel?.displayName || 'PeerTube Creator',
+          authorUrl: item.account?.url || item.channel?.url || `https://${host}`,
+          durationSec: durationSec || 300,
+          ...(pubDate ? { publishedAt: pubDate } : {}),
+          harvestedAt: Date.now(),
+          lastVerifiedAt: Date.now(),
+          qualityScore,
+          freshnessScore,
+          sourceType: 'auto_trend',
+          trendKeyword: kw,
+          pinned: false,
+          healthStatus: 'healthy',
+          stats,
+        },
+      }
+      results.push(enrichVideoItemSeo(rawSubItem))
+    }
+  } catch (err) {
+    failures?.push({
+      keyword: kw,
+      reason: `PeerTube 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
+    })
+  }
   return results
 }

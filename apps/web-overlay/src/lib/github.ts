@@ -192,14 +192,24 @@ function baselineFor(name: string): unknown | undefined {
 }
 
 const contentCache = new Map<string, { data: unknown; expiresAt: number; degraded: boolean }>();
+const inflightReads = new Map<string, Promise<{ data: unknown; degraded: boolean }>>();
 const CACHE_TTL_MS = 2500; // 2.5 秒极速微缓存
 const FAILURE_TTL_MS = 1_000;
+
+function getCacheTtlForPath(path: string): number {
+  // videos.json 达 12.4MB，每次重新网络拉取与 JSON 解析耗费数秒；
+  // 写入时 commitFile 会显式 invalidateContentCache，因此缓存 60 秒既安全又极致流畅
+  if (path.endsWith("videos.json")) return 60_000;
+  return CACHE_TTL_MS;
+}
 
 export function invalidateContentCache(path?: string) {
   if (path) {
     contentCache.delete(path);
+    inflightReads.delete(path);
   } else {
     contentCache.clear();
+    inflightReads.clear();
   }
 }
 
@@ -217,41 +227,57 @@ export async function getFileContentWithStatus<T = any>(path: string): Promise<{
     return { data: cachedItem.data as T, degraded: cachedItem.degraded };
   }
 
-  const name = basename(path);
-  const baseline = baselineFor(name);
-
-  try {
-    const data = await getAdapter().read(path);
-
-    if (data === null || data === undefined) {
-      const res = (baseline ?? {}) as T;
-      contentCache.set(path, { data: res, expiresAt: now + CACHE_TTL_MS, degraded: true });
-      return { data: res, degraded: true };
-    }
-
-    const looksEmpty =
-      name === "navigation.json" || name === "navigation-default.json" || name === "videos.json"
-        ? !hasNavigation(data)
-        : name === "resource-metadata.json"
-          ? !hasMetadataArray(data)
-          : isEmptyObject(data);
-
-    if (baseline !== undefined && looksEmpty) {
-      console.warn("[storage] 中枢返回了数据但内容为空，回退到构建期基线:", path);
-      contentCache.set(path, { data: baseline, expiresAt: now + CACHE_TTL_MS, degraded: true });
-      return { data: baseline as T, degraded: true };
-    }
-    contentCache.set(path, { data, expiresAt: now + CACHE_TTL_MS, degraded: false });
-    return { data: data as T, degraded: false };
-  } catch (error) {
-    const hubUnreachable = error instanceof StorageError && error.unreachable;
-    if (!hubUnreachable) {
-      console.error("[storage] 读取失败，回退到构建期基线:", path, error);
-    }
-    const res = (baseline ?? {}) as T;
-    contentCache.set(path, { data: res, expiresAt: Date.now() + FAILURE_TTL_MS, degraded: true });
-    return { data: res, degraded: true };
+  // 单飞防击穿：若当前文件已有在途读取请求，后续并发读取合并复用同一 Promise，
+  // 杜绝 12MB 的 videos.json 在多路由并发时触发惊群效应与 HTTP 超时。
+  const existingInflight = inflightReads.get(path);
+  if (existingInflight) {
+    return (await existingInflight) as { data: T; degraded: boolean };
   }
+
+  const doRead = async (): Promise<{ data: T; degraded: boolean }> => {
+    const name = basename(path);
+    const baseline = baselineFor(name);
+
+    try {
+      const data = await getAdapter().read(path);
+      const ttl = getCacheTtlForPath(path);
+
+      if (data === null || data === undefined) {
+        const res = (baseline ?? {}) as T;
+        contentCache.set(path, { data: res, expiresAt: Date.now() + ttl, degraded: true });
+        return { data: res, degraded: true };
+      }
+
+      const looksEmpty =
+        name === "navigation.json" || name === "navigation-default.json" || name === "videos.json"
+          ? !hasNavigation(data)
+          : name === "resource-metadata.json"
+            ? !hasMetadataArray(data)
+            : isEmptyObject(data);
+
+      if (baseline !== undefined && looksEmpty) {
+        console.warn("[storage] 中枢返回了数据但内容为空，回退到构建期基线:", path);
+        contentCache.set(path, { data: baseline, expiresAt: Date.now() + ttl, degraded: true });
+        return { data: baseline as T, degraded: true };
+      }
+      contentCache.set(path, { data, expiresAt: Date.now() + ttl, degraded: false });
+      return { data: data as T, degraded: false };
+    } catch (error) {
+      const hubUnreachable = error instanceof StorageError && error.unreachable;
+      if (!hubUnreachable) {
+        console.error("[storage] 读取失败，回退到构建期基线:", path, error);
+      }
+      const res = (baseline ?? {}) as T;
+      contentCache.set(path, { data: res, expiresAt: Date.now() + FAILURE_TTL_MS, degraded: true });
+      return { data: res, degraded: true };
+    } finally {
+      inflightReads.delete(path);
+    }
+  };
+
+  const inflightPromise = doRead();
+  inflightReads.set(path, inflightPromise as Promise<{ data: unknown; degraded: boolean }>);
+  return await inflightPromise;
 }
 
 export async function getFileContent<T = any>(path: string): Promise<T> {
@@ -286,8 +312,12 @@ export async function getStorageVersion(path: string): Promise<number | null> {
  */
 async function revalidateStorageTag(path: string): Promise<void> {
   try {
-    const { revalidateTag } = await import("next/cache");
+    const { revalidateTag, revalidatePath } = await import("next/cache");
     revalidateTag(storageTag(path), "max");
+    if (path.includes("videos.json")) {
+      revalidatePath("/videos");
+      revalidatePath("/api/videos");
+    }
   } catch {
     // 非 Next 运行时 / 非请求上下文：忽略
   }
@@ -300,6 +330,8 @@ export async function commitFile(
   _token?: string,
   retryCount = 3,
   ifVersion?: number,
+  /** 视频库缩水保护的二阶段确认，透传给中枢（见 `StorageWriteOptions`） */
+  shrinkConfirm?: { confirmLargeDeletion: boolean; expectedCount: number },
 ) {
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= retryCount; attempt++) {
@@ -308,7 +340,12 @@ export async function commitFile(
         path,
         content,
         message,
-        ifVersion !== undefined ? { ifVersion } : undefined,
+        ifVersion !== undefined || shrinkConfirm !== undefined
+          ? {
+              ...(ifVersion !== undefined ? { ifVersion } : {}),
+              ...(shrinkConfirm ?? {}),
+            }
+          : undefined,
       );
       invalidateContentCache(path);
       await revalidateStorageTag(path);
@@ -316,8 +353,9 @@ export async function commitFile(
     } catch (error) {
       lastError = error;
       /**
-       * 409 是版本冲突，重试同一个 `ifVersion` 永远失败 —— 必须由调用方
-       * 重新读取并重放变更，所以这里直接抛出，不做无意义的重试。
+       * 409 有两种，且都不该在这里重试：
+       *   - 版本冲突：重试同一个 `ifVersion` 永远失败，必须由调用方重读后重放；
+       *   - 缩水保护：重放同一份内容只会再被拦一次，报错文案得留给上层透传给用户。
        */
       if (error instanceof StorageError && error.status === 409) {
         throw error;

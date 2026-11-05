@@ -33,7 +33,8 @@ docker build -f docker/Dockerfile.web -t navhub/web:$TAG .
 # 3) 灰度替换（compose 里把 image 指到 $TAG）
 docker compose -f docker/docker-compose.yml up -d
 
-# 4) 观察 5 分钟：健康、任务、关键指标
+# 4) 观察 5 分钟：就绪、健康、任务、关键指标
+curl -fsS http://127.0.0.1:8787/api/ready     # 就绪（真打数据库）
 curl -fsS http://127.0.0.1:8787/api/health
 curl -fsS http://127.0.0.1:8787/api/metrics | head
 ```
@@ -68,6 +69,34 @@ curl -fsS http://127.0.0.1:8787/api/health
 | 前端 lint | `pnpm lint` | 0 error（warning 不卡门禁，当前 269 条） |
 | 镜像可构建 | `docker build -f docker/Dockerfile.{api,web}` | CI 的 docker-smoke job 同款 |
 
+### 2.4 两根探针与 CORS 默认值（都是「默认能用、生产要改」）
+
+**探针只有一个口径：编排层打 `/api/ready`。**
+
+| 探针 | 数据库挂掉时 | 用在哪 |
+| --- | --- | --- |
+| `/api/health` | 仍返回 `ok:true`（`db.ok:false` 只是字段） | 人看的概览：能力位、stats、快照版本。**不要**当 healthcheck |
+| `/api/ready` | 返回 503 | compose `healthcheck`、`depends_on: service_healthy`、镜像 `HEALTHCHECK`、发布后验收 |
+
+把 `/api/health` 当 healthcheck 的后果是「容器永远 healthy，但每个请求都 500」：
+`restart: unless-stopped` 不会触发，`depends_on: condition: service_healthy` 也形同空判据。
+`docker/docker-compose.yml`、根 `docker-compose.yml` 与 `docker/Dockerfile.api` 三处已统一到
+`/api/ready`，并由 `apps/api/test/security-readiness.test.ts` 的「部署探针一致性」逐文件断言
+（新增部署文件时把路径加进那个数组，否则等于开了个口子）。
+
+**CORS：默认 `*` 保留，但代价现在会说话。**
+
+`NAVHUB_CORS_ORIGINS` 不设就是 `*`。没改成显式白名单是刻意的：收紧成空列表会让所有
+存量部署的浏览器请求立刻 403。但 `*` 有两笔实际代价，都要知道：
+
+1. 任意来源都能跨域读接口（公开读路由本来就是匿名可读的，这笔主要是别指望 CORS 挡 anything）；
+2. `*` 与 `credentials` 在浏览器侧互斥，服务端因此自动关掉凭据模式 ——
+   带 cookie 的前端会出现「明明配了 CORS 还是不回凭据」，最难查的一类问题。
+
+`NODE_ENV=production` 且仍为 `*` 时启动日志会打一条警告（只警告，不阻断）。
+生产模板写法：`NAVHUB_CORS_ORIGINS=https://nav.example.com`（多个来源逗号分隔）。
+浏览器扩展（Chrome / Raycast）直连中枢，也需要在这里带上 `chrome-extension://<id>`。
+
 ---
 
 ## 3. on-call runbook（症状 → 检查 → 处置）
@@ -81,6 +110,7 @@ curl -fsS http://127.0.0.1:8787/api/health
 | 任务长时间 pending / failed | 管理面板「后台任务」或 `GET /api/jobs` | 重试耗尽会写 `console.error` 并按 `NAVHUB_ALERT_WEBHOOK` 投递告警；单实例锁没拿到说明有多个副本在抢 |
 | 磁盘快速增长 | `events` / `audit_logs` 表体积 | 见 §6 数据治理（TTL / 归档） |
 | 搜索或写接口变慢 | `/api/metrics` + 慢查询日志 | 先看是否触发限流（`NAVHUB_TRUST_PROXY` 配置错误会被伪造 IP 绕过），再看快照保存是否处于大库首次全量 |
+| 整包保存返回 409，`error` 含 `_shrink_` | 响应 `detail` 里的 `existingCount` / `incomingCount` / `minimumAllowed` | 缩水保护生效（默认拒绝降到基线的 80% 以下，navigation.json 与 videos.json 同判据）。确认确需批量删除：按响应 `retryWith` 原样带上 `confirmLargeDeletion: true` + `expectedCount`（须等于本次真实条数）重试；被拦与放行都进审计（`storage.navigation.*` / `storage.videos.*`），误操作前兆可据此追溯 |
 | 前端 500 / 白屏 | `docker logs navhub-web` | 多为存储适配器连不上中枢：检查 `NAVHUB_STORAGE_BASE_URL` 与网络（`http://api:8787`） |
 
 **告警通道**：任务重试耗尽（默认 3 次）会触发一次 webhook。配置 `NAVHUB_ALERT_WEBHOOK`（飞书/钉钉/自建机器人均可），

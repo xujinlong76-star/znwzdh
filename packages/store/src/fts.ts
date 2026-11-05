@@ -27,12 +27,23 @@ export interface FtsHit {
 
 export interface FullTextStore {
   readonly kind: "sqlite-fts5" | "pg-tsvector" | "none";
+  /**
+   * 子串（trigram）索引表名；不支持或建表失败时为 null，调用方必须退回 LIKE。
+   *
+   * SQLite 用它把 exact 通道里 `lower(col) LIKE '%term%'` 的前导通配符换成
+   * 索引查找（P1-3）；PG 侧靠 pg_trgm 表达式索引，不需要改 SQL。
+   */
+  readonly substringIndex?: string | null;
   search(query: string, limit: number): Promise<FtsHit[]>;
   rebuild(): Promise<void>;
 }
 
+/** trigram 子串索引表（external-content，索引 title/url/description） */
+export const SITES_SUBSTR_TABLE = "sites_substr";
+
 export class SqliteFtsStore implements FullTextStore {
   readonly kind = "sqlite-fts5" as const;
+  substringIndex: string | null = null;
   private db: FtsLike;
   private table: string;
 
@@ -101,6 +112,81 @@ export class SqliteFtsStore implements FullTextStore {
     }
 
     if (rebuildNow) this.rebuild();
+
+    this.initSubstring();
+  }
+
+  /**
+   * trigram 子串索引（P1-3）。
+   *
+   * exact 通道的 `%term%` 前导通配符无法走普通 B-tree：每次搜索都全表扫
+   * title/url/description。trigram 分词把三列切成 3 字符片段建 FTS5 索引，
+   * `MATCH '"term"'` 与 LIKE 子串**语义等价**（≥3 个字符时），却能走索引。
+   * 1–2 字符的短词 trigram 索引不了，仍走原 LIKE（中文两字词由 FTS 二元通道
+   * 兜底召回），所以这里只建表，不改动短词的查询路径。
+   *
+   * 建表失败（旧 SQLite 无 trigram 分词器）不阻断启动：substringIndex 保持 null，
+   * 搜索退回 LIKE，只是慢，不会错。
+   */
+  private initSubstring(): void {
+    try {
+      this.db.exec(
+        `CREATE VIRTUAL TABLE IF NOT EXISTS ${SITES_SUBSTR_TABLE} USING fts5(
+           title,
+           url,
+           description,
+           content='sites',
+           content_rowid='rowid',
+           tokenize='trigram case_sensitive 0'
+         )`,
+      );
+      // 与 sites_fts 同一套同步策略：UPDATE 只盯被索引的三列，巡检/点击等
+      // 高频 UPDATE 不触发索引写。
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS ${SITES_SUBSTR_TABLE}_ai AFTER INSERT ON sites BEGIN
+          INSERT INTO ${SITES_SUBSTR_TABLE}(rowid, title, url, description)
+          VALUES (new.rowid, new.title, new.url, coalesce(new.description,''));
+        END;
+      `);
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS ${SITES_SUBSTR_TABLE}_ad AFTER DELETE ON sites BEGIN
+          INSERT INTO ${SITES_SUBSTR_TABLE}(${SITES_SUBSTR_TABLE}, rowid, title, url, description)
+          VALUES ('delete', old.rowid, old.title, old.url, coalesce(old.description,''));
+        END;
+      `);
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS ${SITES_SUBSTR_TABLE}_au AFTER UPDATE OF title, url, description ON sites
+        WHEN old.title IS NOT new.title
+          OR old.url IS NOT new.url
+          OR old.description IS NOT new.description
+        BEGIN
+          INSERT INTO ${SITES_SUBSTR_TABLE}(${SITES_SUBSTR_TABLE}, rowid, title, url, description)
+          VALUES ('delete', old.rowid, old.title, old.url, coalesce(old.description,''));
+          INSERT INTO ${SITES_SUBSTR_TABLE}(rowid, title, url, description)
+          VALUES (new.rowid, new.title, new.url, coalesce(new.description,''));
+        END;
+      `);
+      this.substringIndex = SITES_SUBSTR_TABLE;
+
+      // 外部内容 FTS5 的 COUNT(*) 读的是 content 表（sites）行数，无法判断索引
+      // 是否灌过数据；docsize 影子表才是「已索引文档数」。老库升级时新表为空，
+      // 必须在此重建一次，否则 exact 通道会静默只剩短词 LIKE 可用。
+      const live = (this.db.prepare("SELECT COUNT(*) AS n FROM sites WHERE deleted_at IS NULL").get() as { n?: number } | undefined)?.n ?? 0;
+      if (live > 0) {
+        const indexed = (this.db.prepare(`SELECT COUNT(*) AS n FROM ${SITES_SUBSTR_TABLE}_docsize`).get() as { n?: number } | undefined)?.n ?? 0;
+        if (indexed === 0) {
+          this.db.exec(`INSERT INTO ${SITES_SUBSTR_TABLE}(${SITES_SUBSTR_TABLE}) VALUES('rebuild')`);
+        }
+      }
+    } catch {
+      this.substringIndex = null;
+    }
+  }
+
+  /** 首次升级/索引丢失时重建 trigram 索引（与 rebuild() 同一入口策略） */
+  async rebuildSubstring(): Promise<void> {
+    if (!this.substringIndex) return;
+    this.db.exec(`INSERT INTO ${this.substringIndex}(${this.substringIndex}) VALUES('rebuild')`);
   }
 
   async rebuild(): Promise<void> {

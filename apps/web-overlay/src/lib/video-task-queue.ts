@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto'
 import { runVideoHarvestAndRotation, type VideoHarvestReport } from './video-harvester'
 import { commitFile, readStorageFresh } from '@/lib/github'
+import type { VideoPlatformType } from '@/types/navigation'
 
 export interface VideoHarvestProgress {
   percent: number
@@ -27,6 +28,7 @@ export interface VideoHarvestTask {
   dryRun: boolean
   categoryId?: string
   forceKeywords?: string[]
+  platforms?: VideoPlatformType[]
   trigger: 'manual' | 'cron' | 'admin'
   progress: VideoHarvestProgress
   report?: VideoHarvestReport
@@ -336,6 +338,7 @@ export async function scheduleAndRunVideoHarvest(input: {
   dryRun: boolean
   categoryId?: string
   forceKeywords?: string[]
+  platforms?: VideoPlatformType[]
   trigger: 'manual' | 'cron' | 'admin'
   accessToken?: string
 }): Promise<{ taskId: string; task: VideoHarvestTask }> {
@@ -382,6 +385,7 @@ export async function scheduleAndRunVideoHarvest(input: {
         dryRun: input.dryRun,
         categoryId: input.categoryId,
         forceKeywords: input.forceKeywords,
+        platforms: input.platforms,
         accessToken: input.accessToken
       })
 

@@ -7,6 +7,18 @@
  * 由 server.ts 单体抽出（升级改造方案 P1-3）。
  */
 import type { AppContext } from "./context.ts";
+import { snapshotCacheInfo } from "./storage.ts";
+import { cacheSnapshot, cachedSiteStats } from "./stats-cache.ts";
+import { setOutboundObserver } from "@navhub/ai";
+/**
+ * 任务队列读数直接取自 JobRunner 的进程内登记表（P1-4）。
+ *
+ * 这里存在一条**刻意的**循环依赖：jobs.ts → llm-quota.ts → metrics.ts。
+ * 安全的前提是所有引用都发生在调用时（renderMetrics 内部），模块初始化阶段
+ * 只做类型/常量声明——两边都不在顶层读对方的绑定，因此不存在 TDZ 问题。
+ * 换成「注入 provider」要多一层间接，而收益只是消除一个无害的环。
+ */
+import { JOB_KINDS, inFlightRunsSnapshot, jobStatsSnapshot } from "./jobs.ts";
 
 const metricsStartedAt = Date.now();
 /** key: method\u0000route\u0000status -> 次数 */
@@ -324,13 +336,229 @@ export function getSearchSuggestionsDegradedCount(): number {
   return searchSuggestionsDegraded;
 }
 
-/** DB 统计加重询，避免 Prometheus 高频抓取把 COUNT 打满（5s 内复用；缓存为模块级，跨请求生效） */
-let statsCache: { at: number; value: Awaited<ReturnType<AppContext["repo"]["stats"]>> } | null = null;
-async function cachedStats(ctx: AppContext) {
-  if (statsCache && Date.now() - statsCache.at < 5000) return statsCache.value;
-  const value = await ctx.repo.stats();
-  statsCache = { at: Date.now(), value };
+
+/* ---------------- LLM 额度闸门观测（升级改造方案 P0-3） ---------------- */
+
+/**
+ * 额度拒绝计数：按「哪一档 + 哪个计量维度」展开，标签基数固定为 3×2=6。
+ *
+ * 为什么值得单独一档：拒绝发生在**调用之前**，所以 llm_usage 里不会有行——
+ * 只看用量曲线无法回答「今天闸门拦掉了多少」。有了它，运维能区分
+ * 「没人用」与「用量顶到上限被拦」，这两种情况的处置完全不同。
+ */
+const QUOTA_SCOPES = ["identity", "anonymous", "system"] as const;
+const QUOTA_METRICS = ["calls", "tokens"] as const;
+const quotaRejections = new Map<string, number>();
+/** 拒绝完全由**在途预留**造成的次数：闸门开始吃并发时的第一手证据 */
+let quotaRejectionsByReservation = 0;
+/** 结算失败次数（预留只能等 TTL 回收，期间白占额度） */
+let quotaSettleFailures = 0;
+
+export function recordLlmQuotaRejected(scope: string, metric: string, blockedByReservation: boolean): void {
+  const s = (QUOTA_SCOPES as readonly string[]).includes(scope) ? scope : "identity";
+  const m = (QUOTA_METRICS as readonly string[]).includes(metric) ? metric : "calls";
+  const key = `${s}\u0000${m}`;
+  quotaRejections.set(key, (quotaRejections.get(key) ?? 0) + 1);
+  if (blockedByReservation) quotaRejectionsByReservation++;
+}
+
+export function recordLlmQuotaSettleFailure(): void {
+  quotaSettleFailures++;
+}
+
+export function getLlmQuotaRejectionStats(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const scope of QUOTA_SCOPES) {
+    for (const metric of QUOTA_METRICS) {
+      out[`${scope}|${metric}`] = quotaRejections.get(`${scope}\u0000${metric}`) ?? 0;
+    }
+  }
+  return out;
+}
+
+/**
+ * 在途预留读数同样走 5s 复用：它是 COUNT+SUM，抓取风暴下不能每次 /metrics 都打一遍表。
+ *
+ * 失败时返回上一次的缓存值（没有则 0）而不是抛出——预留 gauge 坏了不该让整条
+ * /metrics 500，那会把「进程还活着」的探针一起带走。
+ */
+let quotaReservationsCache: { at: number; value: { active: number; tokens: number } } | null = null;
+async function cachedQuotaReservations(ctx: AppContext): Promise<{ active: number; tokens: number }> {
+  if (quotaReservationsCache && Date.now() - quotaReservationsCache.at < 5000) return quotaReservationsCache.value;
+  try {
+    const value = await ctx.repo.sumAllLlmQuotaReservations();
+    quotaReservationsCache = { at: Date.now(), value: { active: value.active, tokens: value.tokens } };
+    return quotaReservationsCache.value;
+  } catch {
+    return quotaReservationsCache?.value ?? { active: 0, tokens: 0 };
+  }
+}
+
+/**
+ * 快照版本号的健康态（升级改造方案 P1-1）。
+ *
+ * 三态而不是一个布尔：`data_version` 的**触发器创建失败**（权限受限的 PG 部署、
+ * 并发启动撞 DDL）不会让服务起不来，但会让版本号冻结 —— 而冻结的版本号比没有
+ * 版本号更危险，因为缓存看起来一直在正确失效。健康度必须能区分：
+ *   - ok：触发器齐全且版本号读得到；
+ *   - triggers_missing：应有而没有（写入不会 bump，缓存退回 TTL）；
+ *   - unreadable：版本号本身读不到（老库没这张表 / 单行没种下 / 目录查询失败）。
+ * 枚举固定为这三个值 ⇒ 序列数恒定。
+ */
+type SnapshotVersionHealth = "ok" | "triggers_missing" | "unreadable";
+const SNAPSHOT_HEALTH_STATES: SnapshotVersionHealth[] = ["ok", "triggers_missing", "unreadable"];
+
+/** 探针是一次目录查询（sqlite_master / pg_trigger），与 stats 同样 5s 复用，避免抓取风暴打库 */
+let versionHealthCache: { at: number; value: SnapshotVersionHealth } | null = null;
+async function cachedVersionHealth(ctx: AppContext): Promise<SnapshotVersionHealth> {
+  if (versionHealthCache && Date.now() - versionHealthCache.at < 5000) return versionHealthCache.value;
+  let value: SnapshotVersionHealth = "unreadable";
+  try {
+    const probe = await ctx.repo.navVersionProbe();
+    if (probe.version === null) value = "unreadable";
+    else value = probe.missing.length === 0 ? "ok" : "triggers_missing";
+  } catch {
+    value = "unreadable";
+  }
+  versionHealthCache = { at: Date.now(), value };
   return value;
+}
+
+/* ---------------- 任务队列观测（升级改造方案 P1-4） ---------------- */
+
+/**
+ * 待跑任务按 kind 的积压读数，5s 复用（与 stats 同口径）。
+ *
+ * 失败时退回上一次缓存（没有则空表 → 渲染成 0）：队列读数坏了不该让 /metrics 500，
+ * 那会把「进程还活着」的探针一起带走。0 与「读不到」在抓取侧无法区分，所以
+ * `navhub_job_queue_readable` 同时导出，别让一个坏掉的 GROUP BY 伪装成清空队列。
+ */
+let pendingByKindCache: { at: number; value: Map<string, number>; readable: boolean } | null = null;
+async function cachedPendingByKind(ctx: AppContext): Promise<Map<string, number>> {
+  if (pendingByKindCache && Date.now() - pendingByKindCache.at < 5000) return pendingByKindCache.value;
+  try {
+    const value = await ctx.repo.pendingJobsByKind();
+    pendingByKindCache = { at: Date.now(), value, readable: true };
+    return value;
+  } catch {
+    const value = pendingByKindCache?.value ?? new Map<string, number>();
+    pendingByKindCache = { at: Date.now(), value, readable: false };
+    return value;
+  }
+}
+
+/* ---------------- 出站请求观测（升级改造方案 P2） ---------------- */
+
+/**
+ * 服务端主动出站的读数（富化、探活、插件体检、订阅源抓取、动态 REST 工具……
+ * 全部经 `@navhub/ai` 的 `guardedFetch`，所以在这里一处接上就全覆盖）。
+ *
+ * 为什么维度是「结果分类 + 拦截原因」而不是目标域名：域名是无界的（用户能提交
+ * 任意 URL），按域名打标签等于让时间序列随站点数量增长——这正是本文件开头写明
+ * 的红线。想知道「哪个目标在失败」去看审计日志与任务台账，那里有完整上下文。
+ *
+ * 结果分四类而不是成功/失败两类（分类定义在 packages/ai 的 OutboundOutcome）：
+ *   - ok：拿到 2xx/3xx 应答；
+ *   - http_error：对端应答了但是 4xx/5xx —— 目标站的问题；
+ *   - network_error：根本没拿到应答（DNS/连接/超时/跳数超限）—— 我们出口的问题；
+ *   - blocked：SSRF 防护拦截 —— 有人在拿内网地址试探，或配置放行了不该放行的输入。
+ * 拦截再按 reason 细分（reason 是代码里的有界枚举），因为「协议被拒」与
+ * 「解析到 169.254.169.254」的处置完全不同：前者多是脏数据，后者是攻击。
+ *
+ * 没有按 profile（fetch/probe/candidate）再加一维：32 个调用点里只有 2 个真的
+ * 走 profile 表，其余各自传超时常量，按 profile 打标签得到的只是一个九成落在
+ * unknown 的假维度。想知道调用方，看任务台账与审计日志。
+ */
+const OUTBOUND_OUTCOMES = ["ok", "http_error", "blocked", "network_error"] as const;
+type OutboundOutcomeName = (typeof OUTBOUND_OUTCOMES)[number];
+/** SsrfBlockedError.reason 的有界枚举；未知一律归到 other，不让新原因悄悄造出新序列 */
+const OUTBOUND_BLOCK_REASONS = [
+  "malformed",
+  "protocol",
+  "no-host",
+  "credentials",
+  "blocked-port",
+  "dns-timeout",
+  "dns-failure",
+  "dns-empty",
+  "blocked-ip",
+  "method",
+  "header-injection",
+  "unsupported-body",
+  "body-not-allowed",
+  "body-too-large",
+] as const;
+const outboundOutcomeCounts = new Map<OutboundOutcomeName, number>();
+const outboundBlockCounts = new Map<string, number>();
+let outboundRequests = 0;
+let outboundHops = 0;
+let outboundBytes = 0;
+let outboundSecondsTotal = 0;
+
+export function recordOutbound(observation: {
+  outcome: string;
+  reason: string | null;
+  hops: number;
+  bytes: number;
+  durationMs: number;
+}): void {
+  const outcome = (OUTBOUND_OUTCOMES as readonly string[]).includes(observation.outcome)
+    ? (observation.outcome as OutboundOutcomeName)
+    : "network_error";
+  outboundOutcomeCounts.set(outcome, (outboundOutcomeCounts.get(outcome) ?? 0) + 1);
+  if (outcome === "blocked") {
+    const reason = observation.reason && (OUTBOUND_BLOCK_REASONS as readonly string[]).includes(observation.reason)
+      ? observation.reason
+      : "other";
+    outboundBlockCounts.set(reason, (outboundBlockCounts.get(reason) ?? 0) + 1);
+  }
+  outboundRequests += 1;
+  // 失败路径的 hops 是 0（不知道走到第几跳），如实累加而不是按 1 估算
+  outboundHops += Math.max(0, observation.hops);
+  outboundBytes += Math.max(0, observation.bytes);
+  outboundSecondsTotal += Math.max(0, observation.durationMs / 1000);
+}
+
+export function getOutboundStats(): {
+  requests: number;
+  byOutcome: Record<OutboundOutcomeName, number>;
+  blockedByReason: Record<string, number>;
+  hops: number;
+  bytes: number;
+  secondsTotal: number;
+} {
+  const byOutcome = {} as Record<OutboundOutcomeName, number>;
+  for (const outcome of OUTBOUND_OUTCOMES) byOutcome[outcome] = outboundOutcomeCounts.get(outcome) ?? 0;
+  const blockedByReason: Record<string, number> = {};
+  // 全量导出（含 0）：只导非零值的话，「今天没有 blocked-ip 试探」和
+  // 「这条序列还没被渲染」在 Grafana 里长得一模一样。
+  for (const reason of [...OUTBOUND_BLOCK_REASONS, "other"]) {
+    blockedByReason[reason] = outboundBlockCounts.get(reason) ?? 0;
+  }
+  return { requests: outboundRequests, byOutcome, blockedByReason, hops: outboundHops, bytes: outboundBytes, secondsTotal: outboundSecondsTotal };
+}
+
+/** 测试用：清零出站计数（进程内累加器，跨用例不复位会让断言互相污染） */
+export function resetOutboundMetricsForTest(): void {
+  outboundOutcomeCounts.clear();
+  outboundBlockCounts.clear();
+  outboundRequests = 0;
+  outboundHops = 0;
+  outboundBytes = 0;
+  outboundSecondsTotal = 0;
+}
+
+/**
+ * 把 `guardedFetch` 的观测接到本模块。
+ *
+ * 由 server.ts 在装配时调用一次。刻意不做模块初始化的副作用导入：测试里
+ * 也会加载 @navhub/ai，自动注册会让「谁在什么时候开始计数」变成隐式约定。
+ */
+let outboundObserverInstalled = false;
+export function installOutboundObserver(): void {
+  if (outboundObserverInstalled) return;
+  outboundObserverInstalled = true;
+  setOutboundObserver((observation) => recordOutbound(observation));
 }
 
 export async function renderMetrics(ctx: AppContext): Promise<string> {
@@ -347,7 +575,7 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
   const mem = process.memoryUsage();
   const caps = ctx.capabilities;
   const embeddingReady = ctx.embedding ? ctx.embedding.ready() : false;
-  const stats = await cachedStats(ctx);
+  const stats = await cachedSiteStats(ctx);
   const planner = getSearchPlannerStats();
 
   out.push("# HELP navhub_build_info 构建与运行模式信息（值恒为 1）");
@@ -377,6 +605,21 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
   ]);
   gauge("navhub_categories_total", "分类数", stats.categories);
   gauge("navhub_tags_total", "标签数", stats.tags);
+
+  // 高频计数缓存（P1-5）：命中率突然掉到 0 通常意味着写入风暴或 TTL 被改小
+  const cache = cacheSnapshot(ctx);
+  metric("navhub_stats_cache_total", "全站计数缓存的命中/共享/回源次数", "counter", [
+    `navhub_stats_cache_total{result="hit"} ${cache.stats.hits}`,
+    `navhub_stats_cache_total{result="shared"} ${cache.stats.shared}`,
+    `navhub_stats_cache_total{result="miss"} ${cache.stats.misses}`,
+  ]);
+  gauge("navhub_stats_refresh_seconds", "全站计数最近一次刷新耗时（秒）", Number((cache.stats.lastMs / 1000).toFixed(3)));
+  metric("navhub_dashboard_cache_total", "管理总览缓存的命中/共享/回源次数", "counter", [
+    `navhub_dashboard_cache_total{result="hit"} ${cache.dashboard.hits}`,
+    `navhub_dashboard_cache_total{result="shared"} ${cache.dashboard.shared}`,
+    `navhub_dashboard_cache_total{result="miss"} ${cache.dashboard.misses}`,
+  ]);
+  gauge("navhub_dashboard_refresh_seconds", "管理总览最近一次刷新耗时（秒）", Number((cache.dashboard.lastMs / 1000).toFixed(3)));
 
   // HTTP：请求计数（method × 路由模板 × 状态码）
   const countLines = [...httpCounts.entries()].map(([k, n]) => {
@@ -431,6 +674,184 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
     "搜索建议读失败降级次数（建议区为空，检索命中不受影响）",
     "counter",
     [`navhub_search_suggestions_degraded_total ${getSearchSuggestionsDegradedCount()}`],
+  );
+
+  // LLM 额度拒绝：三档×两维度固定全量导出（含 0），同上「没有序列 ≠ 没被拦」
+  const quotaStats = getLlmQuotaRejectionStats();
+  metric(
+    "navhub_llm_quota_rejected_total",
+    "LLM 额度闸门在调用前拒绝的请求数（按档位与计量维度；拒绝不落 llm_usage）",
+    "counter",
+    Object.entries(quotaStats).map(
+      ([key, value]) =>
+        `navhub_llm_quota_rejected_total{scope="${key.split("|")[0]}",metric="${key.split("|")[1]}"} ${value}`,
+    ),
+  );
+  metric(
+    "navhub_llm_quota_rejected_by_reservation_total",
+    "仅由在途预留（而非已落账用量）造成的额度拒绝次数：>0 说明闸门开始吃并发",
+    "counter",
+    [`navhub_llm_quota_rejected_by_reservation_total ${quotaRejectionsByReservation}`],
+  );
+  metric(
+    "navhub_llm_quota_settle_failures_total",
+    "额度预留结算失败次数（行留在表里等 TTL 回收，期间白占额度）",
+    "counter",
+    [`navhub_llm_quota_settle_failures_total ${quotaSettleFailures}`],
+  );
+  // 在途预留：gauge，读 DB（与 stats 同样 5s 复用，避免抓取把表打满）
+  const reservations = await cachedQuotaReservations(ctx);
+  gauge(
+    "navhub_llm_quota_reservations_active",
+    "当前未结算的 LLM 额度预留行数（异常/断流的残留会在这里现形）",
+    reservations.active,
+  );
+  gauge(
+    "navhub_llm_quota_reserved_tokens",
+    "当前在途预留占用的 token 合计（预留只用于并发判定，不参与成本统计）",
+    reservations.tokens,
+  );
+
+  // 快照读缓存（升级改造方案 P1-1）
+  // 命中的那一路现在只付一次主键点查（版本号），所以 hit/miss 比例是
+  // 「读放大有没有真的消掉」的直接证据；build_seconds_total / builds_total
+  // 相除得到平均重建成本，last_bytes 是网络上的那个体积。
+  const snap = snapshotCacheInfo();
+  metric(
+    "navhub_snapshot_cache_total",
+    "导航快照读缓存的命中与回源次数（miss 含冷启动与 TTL 过期）",
+    "counter",
+    [
+      `navhub_snapshot_cache_total{result="hit"} ${snap.hits}`,
+      `navhub_snapshot_cache_total{result="miss"} ${snap.misses}`,
+    ],
+  );
+  metric(
+    "navhub_snapshot_builds_total",
+    "导航快照全量重建次数（每次都是一条类目 + 站点批量查询）",
+    "counter",
+    [`navhub_snapshot_builds_total ${snap.builds}`],
+  );
+  metric(
+    "navhub_snapshot_build_seconds_total",
+    "导航快照重建累计耗时（秒），与 builds_total 相除即平均重建成本",
+    "counter",
+    [`navhub_snapshot_build_seconds_total ${snap.buildSecondsTotal.toFixed(6)}`],
+  );
+  gauge("navhub_snapshot_last_build_seconds", "最近一次快照重建耗时（秒）", Number(snap.lastBuildSeconds.toFixed(6)));
+  gauge("navhub_snapshot_last_bytes", "最近一次快照的序列化体积（字节）", snap.bytes);
+  metric(
+    "navhub_snapshot_degraded_reads_total",
+    "版本号读不到、一致性退回 TTL 的快照读取次数（持续增长 = bump 触发器没生效或老库）",
+    "counter",
+    [`navhub_snapshot_degraded_reads_total ${snap.degradedReads}`],
+  );
+  gauge("navhub_snapshot_data_version", "当前缓存条目对应的导航数据版本号（0 也可能表示未取到，看 degraded_reads）", snap.version ?? 0);
+  // 健康度三态固定全量导出（含 0）：只有一条为 1，缺序列等于状态未知
+  const health = await cachedVersionHealth(ctx);
+  metric(
+    "navhub_snapshot_version_health",
+    "导航版本号健康度（1=当前状态）：triggers_missing/unreadable 都意味着缓存退回 TTL",
+    "gauge",
+    SNAPSHOT_HEALTH_STATES.map((state) => `navhub_snapshot_version_health{state="${state}"} ${health === state ? 1 : 0}`),
+  );
+
+  // ---- 任务队列（P1-4） ----
+  // 12 个 kind × 固定几族：序列数只随「任务种类」增长，不随用户数据增长。
+  // 全部 kind 都导出（含 0）：「没有序列」与「积压为 0」必须能区分，
+  // 否则某个 kind 的调度坏了，看板只会安静地少一行。
+  const pendingByKind = await cachedPendingByKind(ctx);
+  const runningByKind = new Map<string, number>();
+  for (const inflight of inFlightRunsSnapshot()) {
+    runningByKind.set(inflight.kind, (runningByKind.get(inflight.kind) ?? 0) + 1);
+  }
+  const statsByKind = new Map(jobStatsSnapshot().map((s) => [s.kind, s]));
+  metric(
+    "navhub_jobs_pending",
+    "待认领任务数（按 kind；retrying 不计——退避是设计行为，不是积压）",
+    "gauge",
+    JOB_KINDS.map((kind) => `navhub_jobs_pending{kind="${kind}"} ${pendingByKind.get(kind) ?? 0}`),
+  );
+  metric(
+    "navhub_jobs_running",
+    "本进程正在执行的任务数（按 kind；含已要求停手、尚未确认收尾的）",
+    "gauge",
+    JOB_KINDS.map((kind) => `navhub_jobs_running{kind="${kind}"} ${runningByKind.get(kind) ?? 0}`),
+  );
+  metric(
+    "navhub_job_runs_total",
+    "本进程完成的任务执行次数（含成功、失败、超时与取消）",
+    "counter",
+    JOB_KINDS.map((kind) => `navhub_job_runs_total{kind="${kind}"} ${statsByKind.get(kind)?.runs ?? 0}`),
+  );
+  metric(
+    "navhub_job_duration_seconds_total",
+    "任务执行耗时合计（秒，只算 handler，不含排队）；除以 runs_total 即平均耗时",
+    "counter",
+    JOB_KINDS.map(
+      (kind) =>
+        `navhub_job_duration_seconds_total{kind="${kind}"} ${((statsByKind.get(kind)?.durationMsTotal ?? 0) / 1000).toFixed(3)}`,
+    ),
+  );
+  metric(
+    "navhub_job_failures_total",
+    "任务失败次数（按 kind；超预算另行计入 timeouts，避免两类混读）",
+    "counter",
+    JOB_KINDS.map((kind) => `navhub_job_failures_total{kind="${kind}"} ${statsByKind.get(kind)?.failures ?? 0}`),
+  );
+  metric(
+    "navhub_job_timeouts_total",
+    "超出单次执行预算且已确认停手的次数（>0 说明预算偏紧或存在卡住的 handler）",
+    "counter",
+    JOB_KINDS.map((kind) => `navhub_job_timeouts_total{kind="${kind}"} ${statsByKind.get(kind)?.timeouts ?? 0}`),
+  );
+  metric(
+    "navhub_job_cancels_total",
+    "按用户请求停止的任务次数（分片边界停手，已提交部分保留）",
+    "counter",
+    JOB_KINDS.map((kind) => `navhub_job_cancels_total{kind="${kind}"} ${statsByKind.get(kind)?.cancels ?? 0}`),
+  );
+  gauge(
+    "navhub_job_queue_readable",
+    "任务积压读数是否可读（0=这次抓取读不到，积压序列退回上次缓存或 0）",
+    pendingByKindCache?.readable === false ? 0 : 1,
+  );
+
+  /* 出站请求：升级方案 P2 的「我们主动访问别人」这一整面，之前完全没有读数 */
+  const outbound = getOutboundStats();
+  metric(
+    "navhub_outbound_requests_total",
+    "服务端主动发起的出站请求次数（按结果分类；blocked>0 说明有人在拿内网地址试探，network_error 高企是自家出口问题，http_error 高企是目标站问题）",
+    "counter",
+    OUTBOUND_OUTCOMES.map(
+      (outcome) => `navhub_outbound_requests_total{outcome="${outcome}"} ${outbound.byOutcome[outcome]}`,
+    ),
+  );
+  metric(
+    "navhub_outbound_blocked_total",
+    "SSRF 防护拦截次数（按拦截原因；reason=\"other\" 说明出现了本文件枚举之外的新原因，须补分类而不是放着不管）",
+    "counter",
+    Object.entries(outbound.blockedByReason).map(
+      ([reason, count]) => `navhub_outbound_blocked_total{reason="${escLabel(reason)}"} ${count}`,
+    ),
+  );
+  metric(
+    "navhub_outbound_hops_total",
+    "出站 HTTP 往返次数合计（含重定向跟随；除以 requests_total 即平均跳数，明显 >1 说明目标站在批量跳转或存在重定向环路风险）",
+    "counter",
+    [`navhub_outbound_hops_total ${outbound.hops}`],
+  );
+  metric(
+    "navhub_outbound_response_bytes_total",
+    "出站响应体字节数合计（按实际读入计：触发体积上限的请求只记到上限，所以这是自家带宽而不是对端页面总大小）",
+    "counter",
+    [`navhub_outbound_response_bytes_total ${outbound.bytes}`],
+  );
+  metric(
+    "navhub_outbound_request_seconds_total",
+    "出站请求耗时合计（秒，含 DNS 解析、逐跳重定向与读体）；除以 requests_total 即平均单次耗时",
+    "counter",
+    [`navhub_outbound_request_seconds_total ${outbound.secondsTotal.toFixed(3)}`],
   );
 
   return out.join("\n") + "\n";

@@ -298,6 +298,8 @@ export interface GuardedFetchResult {
   contentType: string | null;
   body: string;
   truncated: boolean;
+  /** 真正读进内存的响应体字节数（触发截断时等于上限，不是对端声称的总大小） */
+  bytes: number;
   redirects: string[];
   /**
    * 对端给的缓存校验器。调用方存起来，下次带 `If-None-Match` /
@@ -335,6 +337,8 @@ export interface GuardedFetchRequest {
   body?: string | URLSearchParams;
   /** 未显式提供 Accept 时的默认值。 */
   accept?: string;
+  /** 外部传入的取消信号（如任务队列超时或主动中止） */
+  signal?: AbortSignal;
 }
 
 function normalizeMethod(input?: string): string {
@@ -369,15 +373,122 @@ function deleteHeader(headers: Record<string, string>, name: string): void {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * 出站观测（升级改造方案 P2：任务与出站可观测性）
+ * ------------------------------------------------------------------ */
+
 /**
- * 带 SSRF 防护的 fetch。
+ * 出站结果分类。
+ *
+ * 为什么把 `http_error` 与 `network_error` 分开：前者是「对端应答了但应答是
+ * 4xx/5xx」，说明目标站有问题；后者是「我们根本没拿到应答」，说明出口链路、
+ * DNS 或超时配置有问题。两种情况的处置完全不同，合成一个 failure 就看不出了。
+ * `blocked` 单独一档：它是 SSRF 防护生效的证据，数量异常上涨意味着有人在试探。
+ */
+export type OutboundOutcome = "ok" | "http_error" | "blocked" | "network_error";
+
+export interface OutboundObservation {
+  /** 目标 host（含端口）。不带路径与查询串：既避免时间序列爆炸，也不留用户输入 */
+  host: string;
+  method: string;
+  outcome: OutboundOutcome;
+  /** 拦截原因（SsrfBlockedError.reason，有界枚举）；非拦截为 null */
+  reason: string | null;
+  /** HTTP 状态码；没拿到应答时为 null */
+  status: number | null;
+  /** 实际发出的请求次数（含重定向跳）；失败路径无法确定，报 0 */
+  hops: number;
+  /** 读到的响应体字节数 */
+  bytes: number;
+  durationMs: number;
+}
+
+type OutboundObserver = (observation: OutboundObservation) => void;
+
+let outboundObserver: OutboundObserver | null = null;
+
+/**
+ * 注册出站观测回调（中枢启动时把它接到进程内指标）。
+ *
+ * 为什么用回调而不是让 packages/ai 直接引指标模块：ai 包不该认得中枢的进程内
+ * 计数器，反向依赖会让它只能在中枢里使用。观察者的异常一律吞掉——一次抓取
+ * 成功与否、以及安全拦截的原始错误类型，都比一条指标重要。
+ */
+export function setOutboundObserver(observer: OutboundObserver | null): void {
+  outboundObserver = observer;
+}
+
+function observeOutbound(observation: OutboundObservation): void {
+  if (outboundObserver === null) return;
+  try {
+    outboundObserver(observation);
+  } catch {
+    // 指标链路坏了不影响抓取本身
+  }
+}
+
+/** 解析不出 URL 时归到 fixed label，不让高基数或异常输入进指标 */
+function hostForObservation(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).host;
+  } catch {
+    return "invalid-url";
+  }
+}
+
+/**
+ * `guardedFetch` 的对外入口：执行真实抓取并上报一次出站观测。
+ *
+ * 语义与旧的直接实现完全一致（含抛出的错误类型），只是多了一条观测。
+ */
+export async function guardedFetch(
+  rawUrl: string,
+  options: Partial<FetchGuardOptions> = {},
+  request: GuardedFetchRequest = {},
+): Promise<GuardedFetchResult> {
+  const startedAt = Date.now();
+  const method = (request.method ?? "GET").toUpperCase();
+  const host = hostForObservation(rawUrl);
+  try {
+    const result = await runGuardedFetch(rawUrl, options, request);
+    observeOutbound({
+      host,
+      method,
+      outcome: result.status >= 400 ? "http_error" : "ok",
+      reason: null,
+      status: result.status,
+      hops: result.redirects.length + 1,
+      bytes: result.bytes,
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  } catch (error) {
+    const blocked = error instanceof SsrfBlockedError;
+    observeOutbound({
+      host,
+      method,
+      outcome: blocked ? "blocked" : "network_error",
+      reason: blocked ? error.reason : null,
+      status: null,
+      hops: 0,
+      bytes: 0,
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
+}
+
+/**
+ * 带 SSRF 防护的 fetch 的实现体。
  * 手工跟随重定向（fetch 的 redirect:"follow" 无法逐跳校验，因此禁用）。
  *
  * 第三参数用于动态 REST 工具等写请求：方法、请求头与请求体都会在每一跳重新
  * 校验 URL/DNS；301/302/303 按浏览器语义降级为 GET 并丢弃请求体，307/308 保留。
  * 跨源跳转会移除 Authorization/Cookie，避免把调用方凭据带到另一个主机。
+ *
+ * 对外入口是下面的 `guardedFetch`（它负责观测），这里保持纯抓取语义。
  */
-export async function guardedFetch(
+async function runGuardedFetch(
   rawUrl: string,
   options: Partial<FetchGuardOptions> = {},
   request: GuardedFetchRequest = {},
@@ -405,6 +516,14 @@ export async function guardedFetch(
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+    const onParentAbort = () => controller.abort(request.signal?.reason);
+    if (request.signal) {
+      if (request.signal.aborted) {
+        clearTimeout(timer);
+        throw new Error("抓取已取消: " + current.toString());
+      }
+      request.signal.addEventListener("abort", onParentAbort, { once: true });
+    }
     let res: Response;
     try {
       // TOCTOU 缓解：http 明文请求直接钉 IP 直连（Host 头保留原域名），
@@ -444,6 +563,7 @@ export async function guardedFetch(
       }
     } catch (err) {
       clearTimeout(timer);
+      if (request.signal) request.signal.removeEventListener("abort", onParentAbort);
       // 保留安全拦截的原始类型：调用方靠 instanceof SsrfBlockedError 区分
       // 「被防护拒绝」与「网络失败」，包装成普通 Error 会让前者退化成 500。
       if (err instanceof SsrfBlockedError) throw err;
@@ -453,6 +573,7 @@ export async function guardedFetch(
 
     if (res.status >= 300 && res.status < 400) {
       clearTimeout(timer);
+      if (request.signal) request.signal.removeEventListener("abort", onParentAbort);
       const loc = res.headers.get("location");
       if (!loc) throw new Error("重定向缺少 Location: " + current.toString());
       const next = new URL(loc, current);
@@ -480,7 +601,7 @@ export async function guardedFetch(
     }
 
     try {
-      const { text, truncated } = await readLimited(res, opts.maxBytes);
+      const { text, truncated, bytes } = await readLimited(res, opts.maxBytes);
       const etag = res.headers.get("etag");
       const lastModified = res.headers.get("last-modified");
       return {
@@ -489,6 +610,7 @@ export async function guardedFetch(
         contentType: res.headers.get("content-type"),
         body: text,
         truncated,
+        bytes,
         redirects,
         ...(etag ? { etag } : {}),
         ...(lastModified ? { lastModified } : {}),
@@ -502,9 +624,9 @@ export async function guardedFetch(
 }
 
 /** 边读边计数，超过上限立即停止（避免大文件把内存吃满） */
-async function readLimited(res: Response, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
+async function readLimited(res: Response, maxBytes: number): Promise<{ text: string; truncated: boolean; bytes: number }> {
   const body = res.body;
-  if (!body) return { text: "", truncated: false };
+  if (!body) return { text: "", truncated: false, bytes: 0 };
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -525,5 +647,5 @@ async function readLimited(res: Response, maxBytes: number): Promise<{ text: str
   const merged = new Uint8Array(chunks.reduce((n, c) => n + c.byteLength, 0));
   let off = 0;
   for (const c of chunks) { merged.set(c, off); off += c.byteLength; }
-  return { text: new TextDecoder("utf-8", { fatal: false }).decode(merged), truncated };
+  return { text: new TextDecoder("utf-8", { fatal: false }).decode(merged), truncated, bytes: merged.byteLength };
 }

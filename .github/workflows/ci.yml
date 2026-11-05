@@ -89,16 +89,16 @@ jobs:
       # 覆盖层比对在 check-web-overlay 作业里单独跑（全新检出需先 vendor，见那里）
       - run: pnpm run typecheck
         id: typecheck
-      # 后端 ESLint（方案 P1-8）：apps/api / packages/store 此前零静态检查。
-      # 首轮只开 no-unused-vars / no-empty / no-console 且全部为 warning，
-      # 所以这里 continue-on-error：告警看得见，但不阻塞合并。
-      # 全量清完告警后再去掉这一行并收紧规则。
-      # id 是 2026-10-30 补的：这是本仓唯一的软门禁，`outcome=failure` 而 `conclusion=success`，
-      # 撤防账（第 7 项）因此拿它当**活体样本**——判据若退回 outcome 优先，这里就会当场把
-      # 「红了也不判红」的一步写成根因。去 continue-on-error 时记得同步改登记表的 soft 标记。
+      # 后端 ESLint（方案 P1-8）：apps/api / packages/store 的三条规则早已升为 error，
+      # 两个包的 lint 脚本都带 `--max-warnings 0`，所以这一步**会判红也会挡路**。
+      # 2026-11-01 撤掉这里的 continue-on-error：它的前提（「首轮只开 warning、告警不挡门禁」）
+      # 在 2026-10-25 就过期了，留着只会让 CI 与本地对同一次改动给出相反结论——
+      # 1f34cc1 的 2 个 error 就是那样在 CI 全绿、本地必红的。
+      # 同一份断言在阻塞作业里另有一份（apps/api/test/backend-lint-gate.test.ts，给逐条 message 明细），
+      # 配对由 check-ci-gate.mjs 第 5 项守住：那一步若再变软而这份断言被删，第 5 项就红。
+      # id 保留：撤防账要把这一步的红与被上游跳过分别对上读数（登记表里已不再标 soft）。
       - run: pnpm run lint:backend
         id: backend-lint
-        continue-on-error: true
       # apps/web/test/*.test.ts 打的是存储接缝：github.ts 顶层 import @/lib/auth 与
       # @/navsphere/content/*.json。这些同属 gitignore 的生成物（来自上游），全新检出
       # 并不存在 —— 不先 vendor 重建 apps/web，vitest 会以
@@ -196,11 +196,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
         id: pg-install
       # 只跑 PG 套件（SQLite 套件在 test-sqlite job 已覆盖）。
-      # 两个 e2e 套件共用同一实例但各自独占 schema，可并行：
-      #   pg-dialect —— Repository 断言跨方言一致（public schema）
-      #   rollup-pg   —— 数据治理 rollup 的 $n 占位符 / ON CONFLICT / COUNT(DISTINCT)（rollup_e2e schema）
+      # 三个 e2e 套件共用同一实例，可并行：
+      #   pg-dialect   —— Repository 断言跨方言一致（public schema）
+      #   rollup-pg    —— 数据治理 rollup 的 $n 占位符 / ON CONFLICT / COUNT(DISTINCT)（rollup_e2e schema）
+      #   llm-quota-reservation-pg —— 额度预留的跨连接并发（独占身份，用例前后自清）
       # 用带环境守卫的入口：NAVHUB_TEST_DATABASE_URL 缺失时直接失败，
-      # 而不是让两个套件整体 skip 后仍然绿灯（2026-10-24 实测过这个假绿）。
+      # 而不是让套件整体 skip 后仍然绿灯（2026-10-24 实测过这个假绿）。
       - run: pnpm test:pg:suite
         id: pg-suite
       # 标准模式 12 项真实数据库方言基准检验（同样只认 NAVHUB_TEST_DATABASE_URL）

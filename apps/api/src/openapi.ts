@@ -23,6 +23,7 @@
 
 import type { RouteScope } from "./auth.ts";
 import {
+  ErrorResponse,
   MCP_TOOL_DEFS,
   RESPONSE_SCHEMA_BINDINGS,
   REST_SCHEMA_BINDINGS,
@@ -115,6 +116,8 @@ function buildComponentSchemas(): {
   const schemas: Record<string, unknown> = {
     SiteCreateBody: zodSchemaToJsonSchema(SiteCreateBody),
     SiteUpdateBody: zodSchemaToJsonSchema(SiteUpdateBody),
+    // 统一错误信封：4xx/5xx 全部指向它，客户端生成器才能产出可判别的错误分支
+    ErrorResponse: zodSchemaToJsonSchema(ErrorResponse),
   };
   const refOf = new Map<ZodSchemaLike, string>();
   refOf.set(SiteCreateBody as ZodSchemaLike, "SiteCreateBody");
@@ -140,6 +143,7 @@ function buildComponentSchemas(): {
 
   // 响应契约：显式组件名，多个端点可指向同一组件（GET/POST 共用处理器时必须同源）
   for (const item of Object.values(RESPONSE_SCHEMA_BINDINGS)) {
+    if (item.noContent || !item.schema) continue;
     schemas[item.name] = zodSchemaToJsonSchema(item.schema);
   }
 
@@ -185,10 +189,12 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
       : ["200"];
     const responses: Record<string, unknown> = {};
     for (const status of successStatuses) {
-      responses[status] = {
-        description: status === "201" ? "已创建" : "成功",
-        content: { "application/json": { schema: okSchema } },
-      };
+      responses[status] = responseBinding?.noContent
+        ? { description: "成功（无响应体）" }
+        : {
+            description: status === "201" ? "已创建" : "成功",
+            content: { "application/json": { schema: okSchema } },
+          };
     }
     const operation: Record<string, unknown> = {
       summary: DESCRIPTIONS[key] ?? inferDescription(r.method.toUpperCase(), r.url),
@@ -211,7 +217,10 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
       operation.parameters = [...pathParams, ...queryParams];
     }
 
-    if (["post", "put", "patch"].includes(method)) {
+    // DELETE 默认没有请求体；只有契约显式绑定 body 时才声明（如 /api/storage 的按 path 删除）
+    const hasRequestBody = ["post", "put", "patch"].includes(method)
+      || (method === "delete" && binding?.in === "body");
+    if (hasRequestBody) {
       const refName = binding?.in === "body" ? refOf.get(binding.schema) : undefined;
       operation.requestBody = {
         required: method !== "patch",
@@ -224,18 +233,25 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
         },
       };
     }
-    // 错误响应：写操作与详情类端点可能 400/401/404/409 —— 只声明确有语义的
+    // 错误响应：写操作与详情类端点可能 400/401/404/409 —— 只声明确有语义的。
+    // 统一指向 ErrorResponse 组件：生成器能把失败分支产出成有类型的 union，
+    // 而不是 `unknown`。`error` 字段保留为字符串以兼容存量客户端。
     const errorResponses = operation.responses as Record<string, unknown>;
+    const errorOf = (description: string) => ({
+      description,
+      content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } },
+    });
+    errorResponses["500"] = errorOf("服务端内部错误（响应体为统一错误信封）");
     if (r.scope !== "public") {
-      errorResponses["401"] = { description: "缺少/无效 Bearer token（NAVHUB_AUTH_REQUIRED 开启时）" };
-      errorResponses["403"] = { description: "token scope 不足（需要 " + r.scope + "）" };
+      errorResponses["401"] = errorOf("缺少/无效 Bearer token（NAVHUB_AUTH_REQUIRED 开启时）");
+      errorResponses["403"] = errorOf("token scope 不足（需要 " + r.scope + "）");
     }
     if (["post"].includes(method) || params.length > 0) {
-      errorResponses["400"] = { description: "参数校验失败" };
-      errorResponses["404"] = { description: "资源不存在" };
+      errorResponses["400"] = errorOf("参数校验失败");
+      errorResponses["404"] = errorOf("资源不存在");
     }
     if (key === "POST /api/sites" || key === "POST /api/trash/{id}/restore") {
-      errorResponses["409"] = { description: "URL 冲突（已存在 / 恢复目标 URL 被占用）" };
+      errorResponses["409"] = errorOf("URL 冲突（已存在 / 恢复目标 URL 被占用）");
     }
 
     paths[template] = paths[template] ?? {};

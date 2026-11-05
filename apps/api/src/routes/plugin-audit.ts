@@ -37,7 +37,7 @@ import {
 } from "../plugin-audit.ts";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
-import { checkLlmQuota } from "../llm-quota.ts";
+import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import type { AppContext } from "../context.ts";
 import { getProbeCache } from "../probe-cache.ts";
 import {
@@ -49,13 +49,43 @@ import {
 } from "../candidate-probe.ts";
 import { probeMetricsPrometheus, probeMetricsSummary, recordProbeResults } from "../probe-metrics-buffer.ts";
 import { getAuditQueue, runAuditWorker } from "../audit-queue-service.ts";
+import { OutboundBudget } from "../outbound-budget.ts";
 import { safeDecodeParam, badRequest, notFound, identityTrusted, requestIdentityOf } from "./shared.ts";
 
 /** 单次体检抽样上限（防滥用：一次打几百条外部请求会伤人也伤己） */
-const MAX_SAMPLE = 200
+const MAX_SAMPLE = 100
 /** 单条探活兜底超时区间 */
 const MIN_TIMEOUT_MS = 500
 const MAX_TIMEOUT_MS = 30_000
+
+/**
+ * 进程级出站预算：路由限流只约束「请求数」，一次体检却能按抽样条数扇出上百次探活。
+ * 5 次/分钟的请求限流在 100 条抽样下仍是 500 次外部请求——出口 IP 会被目标站拉黑。
+ * 并发槽位按「正在跑的体检」计（每次内部仍用 PLUGIN_AUDIT_DEFAULTS.concurrency 并行），
+ * 窗口额度按实际抽样条数计。
+ */
+const AUDIT_OUTBOUND_BUDGET = new OutboundBudget({ maxConcurrent: 2, maxPerWindow: 600, windowMs: 60_000 })
+
+/**
+ * 同参数体检单飞表：键 = `slug|sample|timeoutMs`。
+ * 运维并发点「重新体检」时后到者共享领先者的 Promise，不重复消耗出站预算；
+ * 响应体带 `coalesced: true` 说明结果来自同一次体检。
+ */
+const auditFlights = new Map<string, Promise<Record<string, unknown>>>()
+
+/**
+ * 测试接缝：出站预算与单飞表都是模块级状态，集成测试需要复位与预置。
+ * 生产路径不应调用；复位只影响本进程内存，不改变任何持久化状态。
+ */
+export function resetPluginAuditBudgetForTests(): void {
+  AUDIT_OUTBOUND_BUDGET.reset()
+  auditFlights.clear()
+}
+
+/** 测试接缝：预置一次「进行中的体检」，用于验证单飞分支不会重复出站 */
+export function seedPluginAuditFlightForTests(key: string, payload: Record<string, unknown>): void {
+  auditFlights.set(key, Promise.resolve(payload))
+}
 
 /**
  * 体检专用 UA：浏览器风格，可用 NAVHUB_AUDIT_USER_AGENT 覆盖。
@@ -459,59 +489,99 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
   /**
    * 对一个插件包做抽样 URL 体检。
    */
-  app.post("/api/plugins/:slug/audit", { config: { scope: "write" } }, async (req, reply) => {
-    const slug = safeDecodeParam((req.params as { slug: string }).slug)
-    const plugin = await ctx.repo.getPluginBySlug(slug)
-    if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
-    if (plugin.manifest.kind !== "site-pack") {
-      return badRequest(reply, "只有网址包（site-pack）的清单里才有 URL 可体检")
-    }
-
-    const body = (req.body ?? {}) as { limit?: unknown; timeoutMs?: unknown }
-    const sample = clampInt(body.limit, PLUGIN_AUDIT_DEFAULTS.sample, 1, MAX_SAMPLE)
-    const timeoutMs = clampInt(body.timeoutMs, PLUGIN_AUDIT_DEFAULTS.timeoutMs, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
-    const urls = (plugin.manifest.payload as SitePackPayload).sites.map((s) => s.url)
-
-    const { summary, probes } = await auditPluginUrls(urls, createGuardedProber(), { sample, timeoutMs })
-    recordProbeResults(probes)
-
-    await ctx.repo.audit({
-      ip: req.ip,
-      actor: req.auth.actor,
-      actorKind: req.auth.kind,
-      action: "audit.plugin_url_audit",
-      target: slug,
-      diff: {
-        slug,
-        declared: urls.length,
-        sampled: summary.total,
-        ok: summary.ok,
-        blocked: summary.blocked,
-        suspicious: summary.suspicious,
-        broken: summary.broken,
-        reachability: summary.reachability,
+  app.post(
+    "/api/plugins/:slug/audit",
+    {
+      config: {
+        scope: "write",
+        // 一次体检按抽样条数扇出外链；5 次/分钟够日常「重新体检」用。
+        // 测试进程里放宽，避免同一套件内多次体检互相吃掉限流额度。
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 5, timeWindow: "1 minute" },
       },
-    })
+    },
+    async (req, reply) => {
+      const slug = safeDecodeParam((req.params as { slug: string }).slug)
+      const plugin = await ctx.repo.getPluginBySlug(slug)
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
+      if (plugin.manifest.kind !== "site-pack") {
+        return badRequest(reply, "只有网址包（site-pack）的清单里才有 URL 可体检")
+      }
 
-    return {
-      ok: true,
-      slug,
-      declared: urls.length,
-      sampled: summary.total,
-      okCount: summary.ok,
-      blockedCount: summary.blocked,
-      suspiciousCount: summary.suspicious,
-      brokenCount: summary.broken,
-      redirected: summary.redirected,
-      reachability: summary.reachability,
-      brokenItems: summary.brokenItems,
-      blockedItems: summary.blockedItems,
-      suspiciousItems: summary.suspiciousItems,
-      brokenByReason: summary.brokenByReason,
-      caveat: REACHABILITY_CAVEAT,
-      params: { sample, timeoutMs, maxRedirects: PLUGIN_AUDIT_DEFAULTS.maxRedirects },
-    }
-  })
+      const body = (req.body ?? {}) as { limit?: unknown; timeoutMs?: unknown }
+      const sample = clampInt(body.limit, PLUGIN_AUDIT_DEFAULTS.sample, 1, MAX_SAMPLE)
+      const timeoutMs = clampInt(body.timeoutMs, PLUGIN_AUDIT_DEFAULTS.timeoutMs, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
+      const urls = (plugin.manifest.payload as SitePackPayload).sites.map((s) => s.url)
+
+      // 单飞：同一插件同一参数的后到者共享领先者的探活与响应，不再占用第二份出站预算
+      const flightKey = `${slug}|${sample}|${timeoutMs}`
+      const inFlight = auditFlights.get(flightKey)
+      if (inFlight) {
+        return { ...(await inFlight), coalesced: true }
+      }
+
+      const plannedProbes = Math.max(1, Math.min(sample, urls.length))
+      if (!AUDIT_OUTBOUND_BUDGET.tryAcquire(plannedProbes)) {
+        reply.code(429).header("retry-after", "60")
+        return {
+          ok: false,
+          error: "outbound_budget_exhausted",
+          message: "体检出站预算已用尽，请稍后重试",
+        }
+      }
+
+      const auditIp = req.ip
+      const auditActor = req.auth.actor
+      const auditActorKind = req.auth.kind
+      const flight = (async () => {
+        try {
+          const { summary, probes } = await auditPluginUrls(urls, createGuardedProber(), { sample, timeoutMs })
+          recordProbeResults(probes)
+
+          await ctx.repo.audit({
+            ip: auditIp,
+            actor: auditActor,
+            actorKind: auditActorKind,
+            action: "audit.plugin_url_audit",
+            target: slug,
+            diff: {
+              slug,
+              declared: urls.length,
+              sampled: summary.total,
+              ok: summary.ok,
+              blocked: summary.blocked,
+              suspicious: summary.suspicious,
+              broken: summary.broken,
+              reachability: summary.reachability,
+            },
+          })
+
+          return {
+            ok: true,
+            slug,
+            declared: urls.length,
+            sampled: summary.total,
+            okCount: summary.ok,
+            blockedCount: summary.blocked,
+            suspiciousCount: summary.suspicious,
+            brokenCount: summary.broken,
+            redirected: summary.redirected,
+            reachability: summary.reachability,
+            brokenItems: summary.brokenItems,
+            blockedItems: summary.blockedItems,
+            suspiciousItems: summary.suspiciousItems,
+            brokenByReason: summary.brokenByReason,
+            caveat: REACHABILITY_CAVEAT,
+            params: { sample, timeoutMs, maxRedirects: PLUGIN_AUDIT_DEFAULTS.maxRedirects },
+          }
+        } finally {
+          AUDIT_OUTBOUND_BUDGET.release()
+          auditFlights.delete(flightKey)
+        }
+      })()
+      auditFlights.set(flightKey, flight)
+      return await flight
+    },
+  )
 
   /**
    * 批量读取所有插件的最近一次体检快照（工作台秒级预载用）。
@@ -953,9 +1023,9 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         /**
          * 权限必须与 POST /:slug/audit 对齐。
          *
-         * 两者对服务端做的是同一件事：对整包清单发起最多 MAX_SAMPLE(200) 次外链探活。
+         * 两者对服务端做的是同一件事：对整包清单发起最多 MAX_SAMPLE(100) 次外链探活。
          * 但那边要求 write，这边原本只要 read —— 于是只读令牌可以把它当免费探活器用，
-         * 配合 20 次/分钟限流，最坏是每分钟 4000 次出站请求，出口 IP 很快会被目标站拉黑。
+         * 配合 20 次/分钟限流，最坏是每分钟 2000 次出站请求，出口 IP 很快会被目标站拉黑。
          *
          * 校验放在这里而不是入口，是为了与「过滤包外 URL 之后是否还需要自动体检」同口径：
          * 若在入口按 body.brokenUrls.length 判断，传一批包外 URL 就能绕过。
@@ -972,10 +1042,22 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         // 参数顺序必须是 (value, fallback, min, max)：此前写成 (value, 1, 200, 30)
         // 导致 Math.min(30, Math.max(200, n)) 恒等于 30 —— sampleLimit 完全失效。
         const limit = clampInt(body.sampleLimit, PLUGIN_AUDIT_DEFAULTS.sample, 1, MAX_SAMPLE)
-        const { summary, probes } = await auditPluginUrls(packSites.map((s) => s.url), createGuardedProber(), {
-          sample: limit,
-          timeoutMs: 3500,
-        })
+        // 与 POST /:slug/audit 共用同一份出站预算：限流按请求数算，探活按条数算
+        const plannedProbes = Math.max(1, Math.min(limit, packSites.length))
+        const auditRun = AUDIT_OUTBOUND_BUDGET.tryAcquire(plannedProbes)
+          ? await auditPluginUrls(packSites.map((s) => s.url), createGuardedProber(), {
+              sample: limit,
+              timeoutMs: 3500,
+            }).finally(() => AUDIT_OUTBOUND_BUDGET.release())
+          : null
+        if (!auditRun) {
+          return reply.code(429).header("retry-after", "60").send({
+            ok: false,
+            error: "outbound_budget_exhausted",
+            message: "体检出站预算已用尽，请稍后重试",
+          })
+        }
+        const { summary, probes } = auditRun
         recordProbeResults(probes)
         for (const item of summary.brokenItems ?? []) {
           evidenceMap.set(item.url, {
@@ -1058,7 +1140,7 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       )
 
       const identity = identityTrusted(ctx, req as never) ? requestIdentityOf(req as never) : null
-      const quota = await checkLlmQuota(ctx, identity)
+      const quota = await reserveLlmQuota(ctx, identity)
       // llmProviderReady 收的是 provider，不是 ctx：解出来的 provider 才带 apiKey /
       // allowPrivateNetwork，直接塞 ctx 会恒为 false（有 Key 也判成「没配」）。
       const resolved = await resolveLlm(ctx, identity)
@@ -1279,6 +1361,9 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
       // 启发式降级分支（当无 LLM 或配额超限时）
       if (!quota.ok || !hasLlm) {
+        // 模型不可用（hasLlm=false）这条同样已经占过额度位：既然不打算调模型，
+        // 就在这里交还，否则这份预留要等 TTL 才放开，白白掐住同身份的并发请求。
+        if (quota.ok) await settleLlmQuota(ctx, quota.hold)
         // 对平台候选站点做内容级探活预验（2xx 也要过停放/软 404 检测）
         const diagnoses = await Promise.all(
           baseDiagnoses.map(async (d) => {
@@ -1509,6 +1594,9 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           autoApplied,
           ignoredUrls: ignoredUrls.length > 0 ? ignoredUrls : undefined,
         }
+      } finally {
+        // L3 的四条出口（正常 / JSON 不可用 / 模型抛错 / 探活降级）共用这一处结算
+        await settleLlmQuota(ctx, quota.hold)
       }
     },
   )

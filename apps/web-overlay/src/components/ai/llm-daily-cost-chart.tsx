@@ -93,7 +93,7 @@ export function buildDailyChartModel(daily: HubAiDailyTrendPoint[]): DailyChartM
   let hasAnyCost = false
   let maxTotalCalls = 0
   let windowCalls = 0
-  let windowCost = 0
+  let windowCost: number | null = null
   const days = daily.map((d) => {
     const segs = d.models
       .filter((m) => m.calls > 0)
@@ -108,7 +108,7 @@ export function buildDailyChartModel(daily: HubAiDailyTrendPoint[]): DailyChartM
     if (d.costRmb !== null) {
       cum += d.costRmb
       hasAnyCost = true
-      windowCost += d.costRmb
+      windowCost = (windowCost ?? 0) + d.costRmb
     }
     windowCalls += d.calls
     maxTotalCalls = Math.max(maxTotalCalls, d.calls)
@@ -117,24 +117,55 @@ export function buildDailyChartModel(daily: HubAiDailyTrendPoint[]): DailyChartM
       label: d.day.slice(5), // MM-DD
       segments: segs,
       totalCalls: d.calls,
+      errorCalls: d.errorCalls,
       costRmb: d.costRmb,
       cumCostRmb: hasAnyCost ? Number(cum.toFixed(6)) : null,
     }
   })
 
+  /**
+   * 断档日补零柱。daily 只含「有调用」的日子：直接画会让相邻柱不一定是相邻天，
+   * 时间轴被悄悄压缩（7 天窗口画成 4 根柱，看起来像 4 天）。
+   * 只在首末日之间补，窗口之外不造数据；零日的累计花费沿用前一日（已知花费没变）。
+   */
+  const filled: typeof days = []
+  for (let i = 0; i < days.length; i++) {
+    if (filled.length > 0) {
+      for (let gap = nextLocalDay(filled[filled.length - 1].day); gap < days[i].day; gap = nextLocalDay(gap)) {
+        filled.push({
+          day: gap,
+          label: gap.slice(5),
+          segments: [],
+          totalCalls: 0,
+          errorCalls: 0,
+          costRmb: null,
+          cumCostRmb: filled[filled.length - 1].cumCostRmb,
+        })
+      }
+    }
+    filled.push(days[i])
+  }
+
   return {
     models,
-    days,
+    days: filled,
     maxTotalCalls,
     maxCumCostRmb: cum,
     hasAnyCost,
     windowCalls,
-    windowCostRmb: hasAnyCost ? Number(windowCost.toFixed(6)) : null,
+    windowCostRmb: windowCost === null ? null : Number(windowCost.toFixed(6)),
   }
 }
 
 function fmtCost(v: number | null): string {
   return v === null ? '无价' : `¥${v.toFixed(v >= 100 ? 0 : 2)}`
+}
+
+/** YYYY-MM-DD 的本地日期 +1 天（不用 UTC 解析，避免时区把日期偏走） */
+function nextLocalDay(day: string): string {
+  const [y, m, d] = day.split('-').map(Number)
+  const next = new Date(y, m - 1, d + 1)
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`
 }
 
 export function LlmDailyCostChart({
@@ -236,11 +267,19 @@ export function LlmDailyCostChart({
                 <span className="text-muted-foreground">累计花费（右轴）</span>
               </span>
             )}
+            {chart.days.some((d) => d.errorCalls > 0) && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-red-600" />
+                <span className="text-muted-foreground">当日有失败调用</span>
+              </span>
+            )}
           </div>
 
+          {/* 窄屏横向滚动而不是整体缩放：缩放会把刻度文字压到不可读 */}
+          <div className="overflow-x-auto no-scrollbar touch-pan-x">
           <svg
             viewBox={`0 0 ${W} ${H}`}
-            className="w-full h-auto"
+            className="w-full h-auto min-w-[560px]"
             role="img"
             aria-label={`每日调用量堆叠柱与累计花费线，共 ${n} 天，窗口合计 ${chart.windowCalls} 次`}
           >
@@ -301,19 +340,23 @@ export function LlmDailyCostChart({
             {chart.days.map((d, i) => {
               const cx = padL + band * (i + 0.5)
               let acc = 0
+              const barTopY = padT + plotH - (chart.maxTotalCalls > 0 ? (d.totalCalls / chart.maxTotalCalls) * plotH : 0)
               return (
                 <g key={d.day}>
                   <title>
                     {d.day}：{d.totalCalls} 次（
-                    {d.segments.map((s) => `${s.model}×${s.calls}`).join('、')}）
+                    {d.segments.map((s) => `${s.model}×${s.calls}`).join('、') || '无调用'}）
+                    {d.errorCalls > 0 ? ` · 失败 ${d.errorCalls} 次` : ''}
                     {d.costRmb !== null ? ` · 当日已知花费 ¥${d.costRmb.toFixed(4)}` : ' · 当日无价样本'}
                     {d.cumCostRmb !== null ? ` · 累计 ¥${d.cumCostRmb.toFixed(4)}` : ''}
                   </title>
                   {d.segments.map((s) => {
                     const h = chart.maxTotalCalls > 0 ? (s.calls / chart.maxTotalCalls) * plotH : 0
-                    // 极小段给 2px 保底可见高度（视觉保真，数值仍以标注为准）
-                    const hh = Math.max(h, 2)
-                    acc += hh
+                    // 极小段给 2px 保底可见高度（视觉保真，数值仍以标注为准）；
+                    // 段间留 1px 缝隙，多模型分层的边界一眼可辨
+                    const gapPx = d.segments.length > 1 ? 1 : 0
+                    const hh = Math.max(h - gapPx, 2)
+                    acc += Math.max(h, 2)
                     return (
                       <rect
                         key={s.model}
@@ -326,6 +369,24 @@ export function LlmDailyCostChart({
                       />
                     )
                   })}
+                  {/* 失败标记：当日有失败调用时柱顶压一枚红点（与 tooltip 数值互为冗余编码） */}
+                  {d.errorCalls > 0 && (
+                    <circle cx={cx} cy={Math.max(barTopY - 5, padT + 2)} r={2.5} fill="#dc2626">
+                      <title>{`${d.day} 失败 ${d.errorCalls} 次`}</title>
+                    </circle>
+                  )}
+                  {/* 柱顶直接标注次数：关键值不靠 hover；天数多时隔标避免重叠 */}
+                  {n <= 14 && d.totalCalls > 0 && (
+                    <text
+                      x={cx}
+                      y={Math.max(barTopY - (d.errorCalls > 0 ? 12 : 4), padT - 2)}
+                      textAnchor="middle"
+                      fontSize={9}
+                      className="fill-muted-foreground"
+                    >
+                      {d.totalCalls}
+                    </text>
+                  )}
                   {/* 日期标签（抽稀） */}
                   {i % labelStep === 0 && (
                     <text
@@ -370,6 +431,7 @@ export function LlmDailyCostChart({
               </text>
             )}
           </svg>
+          </div>
         </>
       )}
     </div>

@@ -33,7 +33,7 @@
  * （外面用 PAT 读日志是另一回事：那条要 redirect:"manual"，见上面的实测边界。）
  */
 import { appendFileSync } from "node:fs";
-import { defusedEntryFor, findDefused } from "./lib/ci-defused.mjs";
+import { defusedEntryFor, findDefused, typeTrustNoteText } from "./lib/ci-defused.mjs";
 
 const TOTAL_LABEL = {
   skipped: "被跳过",
@@ -98,10 +98,17 @@ function main() {
   // 「3 道全部跑过」会被读成「后端 lint 过了」，而它其实可能正带着几十条告警。
   const softTotal = (entry.gates ?? []).filter((g) => g.soft).length;
   const softNote = softTotal > 0 ? `（软门禁 ${softTotal} 道：红了不判红、也不挡路）` : "";
+  // 可信度声明（run132）：`N 道门禁全部跑过` 说的是「判过」，而它推不出「类型过」——
+  // next.config 的 ignoreBuildErrors 把 next build 的内置类型检查关掉了，全仓唯一的整前端 tsc
+  // 在 test-web 的 web-typecheck。2026-10-30 直证（adf13b3a / d544274e）：同 commit 前端门禁
+  // =failure（8 条 error TS）时，线上 ISR 抽查、镜像冒烟、E2E 两个分片、覆盖层检查全部 success。
+  // 一个作业看不到兄弟作业的结论（steps 上下文只有本作业的步骤，而 needs 要改工作流——不在范围内），
+  // 所以这里只把「本作业的绿不含类型判定」说死，跨作业的连带标注交给 explain-ci-failure --defused。
+  const trustNote = entry.typeTrust && !entry.typeTrust.self ? `｜${typeTrustNoteText(entry.typeTrust)}` : "";
   if (defused.length === 0) {
     const head = `${gateTotal} 道门禁全部跑过`;
     const redNote = failed.length > 0 ? `（其中 ${failed.length} 道判红，见那一步自己）` : "";
-    console.log(`${label} ${opts.job}：${head}${redNote}${softNote}`);
+    console.log(`${label} ${opts.job}：${head}${redNote}${softNote}${trustNote}`);
     // 全绿也要留痕：没有这一行，「跑过且全绿」和「根本没接线」在跨轮视角是同一种形状
     // （2026-10-30 直证：tip 2ca11031 那一轮 13 个作业的注解池总数为 0）。
     // Step Summary 单独不够：`/actions/jobs/{id}/summary` 实测 404（要 actions:read），
@@ -110,7 +117,7 @@ function main() {
     // ::notice 仍然发：归因层（ci-attribution 的 usableAnnotations）显式排除 notice 级，
     // 它不会冒充判红原因；本仓的先例是 check-isr-live 的「限流豁免四阶段成立」。
     console.log(
-      `::notice title=CI 门禁撤防::${opts.job} ${head}${redNote}${softNote}（在册准备步骤 ${envTotal} 个）`,
+      `::notice title=CI 门禁撤防::${opts.job} ${head}${redNote}${softNote}${trustNote}（在册准备步骤 ${envTotal} 个）`,
     );
     if (summaryPath) {
       appendFileSync(
@@ -121,6 +128,7 @@ function main() {
           `**${head}**${redNote}${softNote}——跑过的门禁 id：${(entry.gates ?? []).map((g) => `\`${g.id}\``).join("、")}；在册准备步骤 ${envTotal} 个。`,
           "",
           "作业结论只说明「没新增红」；这一行才说明「门禁真的判过」。",
+          ...(trustNote ? ["", `>${trustNote.slice(1)}。同 commit 的类型判定若判红，本页的绿仍不蕴含类型过。`] : []),
           "",
         ].join("\n"),
         "utf8",
@@ -142,14 +150,14 @@ function main() {
       ? `根因：${blocker.label}（id: ${blocker.id}）${blocker.kind === "cancelled" ? "被取消" : "判红"}——默认条件下排在它后面的每一步都会被跳过`
       : `根因读不出来：${blocker.label}`
     : "根因读不出来";
-  console.log(`${label} ${opts.job}：${head}${envNote}`);
+  console.log(`${label} ${opts.job}：${head}${envNote}${trustNote}`);
   for (const d of defused) {
     const note = d.note ? `｜${d.note}` : "";
     console.log(`  · ${d.label}（id: ${d.id}）— ${TOTAL_LABEL[d.outcome] ?? d.outcome}${note}`);
   }
   console.log(`  ${blockerText}`);
   console.log(
-    `::warning title=CI 门禁撤防::${opts.job} ${head}${envNote}；没跑成的步骤 id：${gateNames}；${blockerText}`,
+    `::warning title=CI 门禁撤防::${opts.job} ${head}${envNote}；没跑成的步骤 id：${gateNames}；${blockerText}${trustNote}`,
   );
 
   if (summaryPath) {
@@ -168,6 +176,7 @@ function main() {
         rows,
         "",
         `- ${blockerText}`,
+        ...(trustNote ? ["", `>${trustNote.slice(1)}。`] : []),
         "",
       ].join("\n"),
       "utf8",

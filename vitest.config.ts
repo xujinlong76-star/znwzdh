@@ -49,6 +49,8 @@ export default defineConfig({
       // 新增 overlay 测试必须同时提交镜像，否则 check-web-overlay 会拦下。
       // 仓库根 scripts/ 下的本地脚手架（vendor-web 的搬运逻辑等）也要有回归测试
       "scripts/**/*.test.ts",
+      // 本地脚手架也用纯 .mjs 测试（如 scripts/test/*.test.mjs，无需 TS 编译）：
+      "scripts/**/*.test.mjs",
     ],
     environment: "node",
     testTimeout: 30_000,

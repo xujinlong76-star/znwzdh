@@ -713,8 +713,10 @@ describe("identity 路由收紧（鉴权开启后拒绝纯匿名调用）", () =
     const withToken = { ...anon, authorization: "Bearer " + raw };
     expect((await authApp.inject({ method: "GET", url: "/api/favorites", headers: withToken })).statusCode).toBe(200);
     expect((await authApp.inject({ method: "GET", url: "/api/vault/sync", headers: withToken })).statusCode).toBe(200);
+    // users/sync 会写 users 表：实例 read 令牌不再能写（P0-2 身份绑定），换 write 令牌
+    const identityRaw = await mintToken("身份面写", "write");
     const u = await authApp.inject({
-      method: "POST", url: "/api/users/sync", headers: { authorization: "Bearer " + raw },
+      method: "POST", url: "/api/users/sync", headers: { authorization: "Bearer " + identityRaw },
       payload: { provider: "github", providerId: "real-1", username: "real" },
     });
     expect(u.statusCode).toBe(200);
@@ -749,7 +751,8 @@ describe("identity 路由收紧（鉴权开启后拒绝纯匿名调用）", () =
   it("鉴权模式：users/sync 接受站内相对头像，仍拒绝协议相对与伪协议", async () => {
     // 本地登录会话的 session.image 就是 /assets/images/alogo.webp；
     // 只认 z.url() 时 BFF 每次 /api/me/sync 都 400，控制台还会持续刷错。
-    const raw = await mintToken("头像同步", "read");
+    // 实例 read 令牌不能写 users 表（P0-2），这里用 write 令牌
+    const raw = await mintToken("头像同步", "write");
     const headers = { authorization: "Bearer " + raw };
     const ok = await authApp.inject({
       method: "POST", url: "/api/users/sync", headers,

@@ -7,7 +7,7 @@
  * 只影响语义检索，不影响安装结果）。
  */
 import { summarizePluginManifest, validateAndCleanPluginManifest, validatePluginManifestWithCatalog } from "@navhub/core";
-import { indexSitesBatch, removePluginIndex, searchPluginsSemantic } from "@navhub/api";
+
 import {
   InstallPluginInput,
   ListPluginsInput,
@@ -63,11 +63,10 @@ export const pluginHandlers = {
     requireScope(tc, "read");
     const input = SearchPluginsInput.parse(args ?? {});
 
-    const res = await searchPluginsSemantic(ctx, {
-      q: input.query,
-      kind: input.kind,
-      limit: input.limit,
-    });
+    const res = await deps.ctx.pluginOps?.searchPluginsSemantic(input.query, input.limit);
+    if (!res) {
+      return ok({ count: 0, total: 0, mode: "unavailable", degraded: true, plugins: [] });
+    }
 
     return ok({
       count: res.items.length,
@@ -120,7 +119,7 @@ export const pluginHandlers = {
           const sites = Array.from(siteMap.values())
             .filter((s): s is NonNullable<typeof s> => !!s)
             .map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
-          await indexSitesBatch(ctx, sites);
+          await deps.ctx.pluginOps?.indexSitesBatch(sites);
         }
 
         return {
@@ -180,7 +179,7 @@ export const pluginHandlers = {
           actor,
         );
         if (updated.status !== "published") {
-          await removePluginIndex(ctx, input.slug);
+          await deps.ctx.pluginOps?.removePluginIndex(input.slug);
         }
         return {
           success: true,

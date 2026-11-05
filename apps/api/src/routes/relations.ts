@@ -5,11 +5,7 @@
  * 双向关联查询与局部自我中心图谱（Ego Knowledge Graph）API。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
-import {
-  CONTROLLED_RELATION_TYPES,
-  SiteRelationSchema,
-} from "@navhub/core";
+import { CONTROLLED_RELATION_TYPES, RelationsUpdateInput } from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { badRequest, notFound, parseIntParam } from "./shared.ts";
 
@@ -54,9 +50,7 @@ export const relationRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       return notFound(reply, "站点不存在");
     }
 
-    const body = z.object({
-      relations: z.array(SiteRelationSchema).max(200),
-    }).safeParse(req.body ?? {});
+    const body = RelationsUpdateInput.safeParse(req.body ?? {});
 
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);

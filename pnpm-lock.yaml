@@ -86,6 +86,21 @@ importers:
         specifier: 8.71.2
         version: 8.71.2(eslint@10.13.0(jiti@2.7.0))(typescript@5.9.3)
 
+  apps/mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.32.1
+        version: 1.32.1(zod@4.6.7)
+      '@navhub/api':
+        specifier: workspace:*
+        version: link:../api
+      '@navhub/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   apps/web:
     dependencies:
       '@hello-pangea/dnd':
@@ -210,7 +225,7 @@ importers:
         version: 16.4.2(@babel/core@7.29.7)(@playwright/test@1.64.1)(@types/node@22.18.13)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       next-auth:
         specifier: 5.0.0-beta.32
-        version: 5.0.0-beta.32(next@16.4.2(@babel/core@7.29.7)(@playwright/test@1.64.1)(@types/node@22.18.13)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
+        version: 5.0.0-beta.32(next@16.4.2(@babel/core@7.29.7)(@playwright/test@1.64.1)(@types/node@22.18.13)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(nodemailer@7.0.13)(react@19.3.1)
       next-themes:
         specifier: ^0.2.1
         version: 0.2.1(next@16.4.2(@babel/core@7.29.7)(@playwright/test@1.64.1)(@types/node@22.18.13)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -290,10 +305,16 @@ importers:
       '@navhub/core':
         specifier: workspace:*
         version: link:../core
+      nodemailer:
+        specifier: ^7.0.13
+        version: 7.0.13
       zod:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@types/nodemailer':
+        specifier: ^8.0.2
+        version: 8.0.2
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -319,9 +340,6 @@ importers:
       '@navhub/ai':
         specifier: workspace:*
         version: link:../ai
-      '@navhub/api':
-        specifier: workspace:*
-        version: link:../../apps/api
       '@navhub/core':
         specifier: workspace:*
         version: link:../core
@@ -2204,6 +2222,9 @@ packages:
 
   '@types/node@26.6.5':
     resolution: {integrity: sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg==}
+
+  '@types/nodemailer@8.0.2':
+    resolution: {integrity: sha512-c7M5ox8p0nEOfbJ2E9Qcmt8/QCu/VzsiAhzBiZbvky2PhKZDHpKB3sQHBM5MEZNkCfBOaS6S9//AGPRTNB7IaA==}
 
   '@types/pg@8.15.5':
     resolution: {integrity: sha512-LF7lF6zWEKxuT3/OR8wAZGzkg4ENGXFNyiV/JeOt9z5B+0ZVwbql9McqX5c/WStFq1GaGso7H1AzP/qSzmlCKQ==}
@@ -4088,6 +4109,10 @@ packages:
     resolution: {integrity: sha512-5qr2okC4ItAI0hG5SaV0HoYMpnM/Y6+Oqr7AmPYy/2uEoGvS+GbSKLeRxSS1uAdu59yz0ouzcuXievSgg///WA==}
     engines: {node: '>=18'}
 
+  nodemailer@7.0.13:
+    resolution: {integrity: sha512-PNDFSJdP+KFgdsG3ZzMXCgquO7I6McjY2vlqILjtJd0hy8wEvtugS9xKRF2NWlPNGxvLCXlTNIae4serI7dinw==}
+    engines: {node: '>=6.0.0'}
+
   normalize-range@0.1.2:
     resolution: {integrity: sha512-bdok/XvKII3nUpklnV6P2hxtMNrCboOjAcyBuQnWEhO665FwrSNRxU+AqpsyvO6LgGYPspN+lu5CLtw4jPRKNA==}
     engines: {node: '>=0.10.0'}
@@ -5229,13 +5254,15 @@ snapshots:
 
   '@antfu/ni@23.2.0': {}
 
-  '@auth/core@0.41.3':
+  '@auth/core@0.41.3(nodemailer@7.0.13)':
     dependencies:
       '@panva/hkdf': 1.2.1
       jose: 6.2.12
       oauth4webapi: 3.8.8
       preact: 10.24.3
       preact-render-to-string: 6.5.11(preact@10.24.3)
+    optionalDependencies:
+      nodemailer: 7.0.13
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -6877,6 +6904,10 @@ snapshots:
   '@types/node@26.6.5':
     dependencies:
       undici-types: 8.9.0
+
+  '@types/nodemailer@8.0.2':
+    dependencies:
+      '@types/node': 26.6.5
 
   '@types/pg@8.15.5':
     dependencies:
@@ -8763,11 +8794,13 @@ snapshots:
     dependencies:
       content-type: 2.1.0
 
-  next-auth@5.0.0-beta.32(next@16.4.2(@babel/core@7.29.7)(@playwright/test@1.64.1)(@types/node@22.18.13)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1):
+  next-auth@5.0.0-beta.32(next@16.4.2(@babel/core@7.29.7)(@playwright/test@1.64.1)(@types/node@22.18.13)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(nodemailer@7.0.13)(react@19.3.1):
     dependencies:
-      '@auth/core': 0.41.3
+      '@auth/core': 0.41.3(nodemailer@7.0.13)
       next: 16.4.2(@babel/core@7.29.7)(@playwright/test@1.64.1)(@types/node@22.18.13)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react: 19.3.1
+    optionalDependencies:
+      nodemailer: 7.0.13
 
   next-themes@0.2.1(next@16.4.2(@babel/core@7.29.7)(@playwright/test@1.64.1)(@types/node@22.18.13)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
@@ -8821,6 +8854,8 @@ snapshots:
       formdata-polyfill: 4.0.10
 
   node-releases@2.0.59: {}
+
+  nodemailer@7.0.13: {}
 
   normalize-range@0.1.2: {}
 

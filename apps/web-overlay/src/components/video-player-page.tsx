@@ -590,6 +590,21 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         }
     }, [selectedVideo])
 
+    const currentCategoryContext = useMemo(() => {
+        if (!selectedVideo) return { category: null, subCategory: null }
+        for (const cat of navigationData.navigationItems || []) {
+            if (cat.items?.some(it => it.id === selectedVideo.id)) {
+                return { category: cat, subCategory: null }
+            }
+            for (const sub of cat.subCategories || []) {
+                if (sub.items?.some(it => it.id === selectedVideo.id)) {
+                    return { category: cat, subCategory: sub }
+                }
+            }
+        }
+        return { category: null, subCategory: null }
+    }, [navigationData, selectedVideo])
+
     const relatedVideos = useMemo(() => {
         if (!selectedVideo) return []
         return getRelatedVideos(selectedVideo, allVideos, 4)
@@ -1102,6 +1117,45 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 {/* 左侧播放器区域 */}
                 <div className="flex-1 p-4 lg:p-6 overflow-auto pb-52 md:pb-6">
                     <div className="max-w-5xl mx-auto space-y-4">
+                        {/* 路径导航面包屑与细分方向一键穿透 */}
+                        <nav aria-label="课程路径导航" className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap py-0.5">
+                            <Link href="/videos" className="hover:text-foreground flex items-center gap-1 transition-colors">
+                                <LayoutGrid className="w-3.5 h-3.5" />
+                                <span>视频中心</span>
+                            </Link>
+                            {currentCategoryContext.category && (
+                                <>
+                                    <ChevronRight className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                                    <Link
+                                        href={`/videos?c=${encodeURIComponent(currentCategoryContext.category.id)}`}
+                                        className="hover:text-primary transition-colors font-medium text-foreground/80 hover:underline"
+                                    >
+                                        {currentCategoryContext.category.title}
+                                    </Link>
+                                </>
+                            )}
+                            {currentCategoryContext.subCategory && (
+                                <>
+                                    <ChevronRight className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                                    <Link
+                                        href={`/videos?c=${encodeURIComponent(currentCategoryContext.category?.id || '')}&sub=${encodeURIComponent(currentCategoryContext.subCategory.id)}`}
+                                        className="hover:text-primary transition-colors px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium hover:bg-primary/20 border border-primary/20"
+                                        title={`查看 ${currentCategoryContext.subCategory.title} 下的所有实战课程`}
+                                    >
+                                        {currentCategoryContext.subCategory.title}
+                                    </Link>
+                                </>
+                            )}
+                            {selectedVideo && (
+                                <>
+                                    <ChevronRight className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                                    <span className="text-foreground/90 font-medium truncate max-w-[180px] sm:max-w-md">
+                                        {selectedVideo.title}
+                                    </span>
+                                </>
+                            )}
+                        </nav>
+
                         {/* 断点续播提示横幅 */}
                         {resumePrompt && (
                             <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/20 text-xs animate-in fade-in slide-in-from-top-2">
@@ -1731,6 +1785,18 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                         )}>
                                             {selectedVideo.videoConfig.type === 'bilibili' ? 'Bilibili' : 'YouTube'}
                                         </span>
+                                        {selectedVideo.videoConfig.subCategoryTitle && (
+                                            <span className="px-2 py-0.5 font-medium rounded bg-primary/10 text-primary">
+                                                {selectedVideo.videoConfig.subCategoryTitle}
+                                            </span>
+                                        )}
+                                        {selectedVideo.videoConfig.tags && selectedVideo.videoConfig.tags.length > 0 && (
+                                            selectedVideo.videoConfig.tags.slice(0, 3).map((t, i) => (
+                                                <span key={i} className="px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono text-[11px]">
+                                                    #{t}
+                                                </span>
+                                            ))
+                                        )}
                                         {selectedVideo.videoConfig.author && (
                                             <span className="text-muted-foreground">
                                                 创作者: <strong className="font-medium text-foreground">{selectedVideo.videoConfig.author}</strong>

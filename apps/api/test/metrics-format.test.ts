@@ -7,15 +7,27 @@
  *  - counter 必须 `_total` 结尾，gauge / summary 不得冒充 counter；
  *  - summary 的 `_sum` / `_count` 必须成对；
  *  - 标签只允许有界维度白名单，`route` 必须是 Fastify 路由模板（不得出现查询串）；
+ *    枚举型标签（scope / metric）连**值**一起锁——名字合规但值是身份串，基数照样无界；
  *  - 指标家庭清单做 inline snapshot：改名、改类型、新增都会显式失败。
  *
  * 为什么不做全量快照：uptime / 内存 / 请求数每次都变，只有「结构」可快照。
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HTTP_DURATION_BUCKETS_S, quantileFromBuckets, recordHttpMetric, renderMetrics } from "../src/metrics.ts";
+import {
+  HTTP_DURATION_BUCKETS_S,
+  getOutboundStats,
+  quantileFromBuckets,
+  recordHttpMetric,
+  recordLlmQuotaRejected,
+  recordLlmQuotaSettleFailure,
+  recordOutbound,
+  renderMetrics,
+  resetOutboundMetricsForTest,
+} from "../src/metrics.ts";
 import type { AppContext } from "../src/context.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -23,7 +35,57 @@ const API_ROOT = resolve(HERE, "..");
 
 const ALLOWED_TYPES = new Set(["counter", "gauge", "summary", "histogram"]);
 /** 新增标签必须显式更新这里——这是防止「原始 URL / 用户输入进标签」的最后一道闸。 */
-const ALLOWED_LABELS = new Set(["method", "route", "status", "name", "channel", "decision", "mode", "node", "component", "le"]);
+const ALLOWED_LABELS = new Set(["method", "route", "status", "name", "channel", "decision", "mode", "node", "component", "scope", "metric", "le", "result", "state", "kind", "outcome", "reason"]);
+/**
+ * 白名单只锁住标签**名**；名合规但值无界一样会打爆基数（把 identity 塞进 scope，
+ * /metrics 的序列数就随用户数增长，抓取本身变成 DoS）。所以枚举型标签连值一起锁。
+ */
+const ALLOWED_LABEL_VALUES: Record<string, Set<string>> = {
+  // 额度闸门的档位与计量维度：与 config.llmQuota 的六个数字一一对应，3×2=6 条固定序列
+  scope: new Set(["identity", "anonymous", "system"]),
+  metric: new Set(["calls", "tokens"]),
+  // 缓存读数（P1-1 快照 / P1-5 高频计数）：hit 命中、miss 回源、shared 等他人刷新的并发请求
+  result: new Set(["hit", "miss", "shared"]),
+  // 版本号健康度（P1-1）：三态固定，缺序列等于状态未知
+  state: new Set(["ok", "triggers_missing", "unreadable"]),
+  // 任务队列（P1-4）：kind 必须与 JOB_KINDS 逐字一致（12 个固定值），
+  // 任何新增 kind 都会在这里被拦下来——否则新任务的指标会静默缺席。
+  kind: new Set([
+    "health_check",
+    "refetch_metadata",
+    "recompute_rank",
+    "reindex",
+    "site_self_healing",
+    "token_audit",
+    "purge_trash",
+    "taxonomy_audit",
+    "data_retention",
+    "plugin_governance",
+    "user_data_audit",
+    "backup_restore",
+  ]),
+  // 出站请求（P2）：outcome 是 guardedFetch 的四种结局，reason 是 SSRF 拦截原因的
+  // 有界枚举。这两组值由 @navhub/ai 传进来（不是本包的常量），正是「外部输入借道
+  // 标签把基数撑爆」最现实的入口——所以在这里逐值锁死，新原因必须先登记。
+  outcome: new Set(["ok", "http_error", "blocked", "network_error"]),
+  reason: new Set([
+    "malformed",
+    "protocol",
+    "no-host",
+    "credentials",
+    "blocked-port",
+    "dns-timeout",
+    "dns-failure",
+    "dns-empty",
+    "blocked-ip",
+    "method",
+    "header-injection",
+    "unsupported-body",
+    "body-not-allowed",
+    "body-too-large",
+    "other",
+  ]),
+};
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 /**
  * Prometheus 约定 `_total` 留给 counter，但这两个「规模计数」是历史已发布的 gauge 名。
@@ -57,6 +119,16 @@ function fakeContext(): AppContext {
     embedding: null,
     repo: {
       stats: async () => ({ sites: 5, broken: 1, pending: 2, trashed: 3, categories: 4, tags: 6 }),
+      // 刻意用可识别的非零值：gauge 恒为 0 时，「读不到」与「真的没有在途」无法区分，
+      // 而 sumAllLlmQuotaReservations 抛错也被渲染层吞掉降级成 0——不接上就发现不了。
+      sumAllLlmQuotaReservations: async () => ({ active: 7, tokens: 12345 }),
+      // 任务积压（P1-4）：非零值同样是为了让「积压读不到」与「积压为 0」可区分。
+      pendingJobsByKind: async () => new Map([["health_check", 3], ["backup_restore", 1]]),
+      // 快照版本号探针（P1-1）：给可识别的非零版本、触发器齐全，
+      // 这样「健康度恒为 unreadable」这类接线漏接会立刻显形。
+      navVersionProbe: async () => ({ version: 42, present: ["nav_version_sites_insert"], missing: [] }),
+      // 高频计数缓存（P1-5）的前置读：缺了会退回纯 TTL，测试里给固定版本
+      readNavDataVersion: async () => 42,
     },
   } as unknown as AppContext;
 }
@@ -151,6 +223,16 @@ function parseExposition(text: string): { families: Map<string, Family>; samples
   return { families, samples };
 }
 
+/**
+ * 取某个序列的值；序列不存在直接失败。
+ * 「没有序列」和「值为 0」是两件事：前者意味着这条观测根本没接上。
+ */
+function sampleValue(body: string, line: string): number {
+  const match = body.split("\n").find((l) => l.startsWith(line + " "));
+  expect(match, "缺少序列 " + line).toBeTruthy();
+  return Number(match!.split(" ")[1]);
+}
+
 describe("Prometheus 指标格式", () => {
   let text: string;
   let parsed: ReturnType<typeof parseExposition>;
@@ -234,8 +316,12 @@ describe("Prometheus 指标格式", () => {
 
   it("标签只允许有界维度白名单，route 必须是路由模板", () => {
     for (const s of parsed.samples) {
-      for (const key of Object.keys(s.labels)) {
+      for (const [key, value] of Object.entries(s.labels)) {
         expect(ALLOWED_LABELS.has(key), "出现未登记标签 " + key).toBe(true);
+        const enumValues = ALLOWED_LABEL_VALUES[key];
+        if (enumValues) {
+          expect(enumValues.has(value), `标签 ${key} 的值不在枚举内（基数无界）: ${value}`).toBe(true);
+        }
       }
       // method / route / status 是 HTTP 指标专用；navhub_sites 的 status 是站点状态，不能按状态码校验。
       if (!s.name.startsWith("navhub_http_")) continue;
@@ -306,9 +392,29 @@ describe("Prometheus 指标格式", () => {
       "navhub_build_info gauge
       navhub_capability gauge
       navhub_categories_total gauge
+      navhub_dashboard_cache_total counter
+      navhub_dashboard_refresh_seconds gauge
       navhub_embedding_ready gauge
       navhub_http_request_duration_seconds histogram
       navhub_http_requests_total counter
+      navhub_job_cancels_total counter
+      navhub_job_duration_seconds_total counter
+      navhub_job_failures_total counter
+      navhub_job_queue_readable gauge
+      navhub_job_runs_total counter
+      navhub_job_timeouts_total counter
+      navhub_jobs_pending gauge
+      navhub_jobs_running gauge
+      navhub_llm_quota_rejected_by_reservation_total counter
+      navhub_llm_quota_rejected_total counter
+      navhub_llm_quota_reservations_active gauge
+      navhub_llm_quota_reserved_tokens gauge
+      navhub_llm_quota_settle_failures_total counter
+      navhub_outbound_blocked_total counter
+      navhub_outbound_hops_total counter
+      navhub_outbound_request_seconds_total counter
+      navhub_outbound_requests_total counter
+      navhub_outbound_response_bytes_total counter
       navhub_process_heap_total_bytes gauge
       navhub_process_heap_used_bytes gauge
       navhub_process_resident_memory_bytes gauge
@@ -319,6 +425,16 @@ describe("Prometheus 指标格式", () => {
       navhub_search_suggestions_degraded_total counter
       navhub_search_write_failures_total counter
       navhub_sites gauge
+      navhub_snapshot_build_seconds_total counter
+      navhub_snapshot_builds_total counter
+      navhub_snapshot_cache_total counter
+      navhub_snapshot_data_version gauge
+      navhub_snapshot_degraded_reads_total counter
+      navhub_snapshot_last_build_seconds gauge
+      navhub_snapshot_last_bytes gauge
+      navhub_snapshot_version_health gauge
+      navhub_stats_cache_total counter
+      navhub_stats_refresh_seconds gauge
       navhub_tags_total gauge
       navhub_up gauge"
     `);
@@ -377,5 +493,335 @@ describe("采集接线（防止指标退化）", () => {
   it("health.ts 返回 Prometheus 0.0.4 文本格式", () => {
     const src = readFileSync(resolve(API_ROOT, "src/routes/health.ts"), "utf8");
     expect(src).toContain("text/plain; version=0.0.4");
+  });
+
+  it("额度闸门在调用点记录拒绝与结算失败，不是只在 metrics.ts 里自说自话", () => {
+    const src = readFileSync(resolve(API_ROOT, "src/llm-quota.ts"), "utf8");
+    expect(src).toContain("recordLlmQuotaRejected(");
+    expect(src).toContain("recordLlmQuotaSettleFailure(");
+  });
+});
+
+describe("额度闸门指标（P0-3）", () => {
+  it("越界的档位/维度被夹回枚举，不会长出第 7 条序列", async () => {
+    // 传进来的是「本该被拒的形态」：身份串当档位、不存在的维度名当 metric。
+    recordLlmQuotaRejected("anon:someone", "requests", false);
+    recordLlmQuotaRejected("system", "tokens", true);
+    recordLlmQuotaSettleFailure();
+    const body = await renderMetrics(fakeContext());
+
+    const series = [...body.matchAll(/^navhub_llm_quota_rejected_total\{scope="([^"]+)",metric="([^"]+)"\} \d+$/gm)];
+    expect(series, "拒绝计数必须固定导出 3×2=6 条序列（含 0）").toHaveLength(6);
+    const scopes = [...new Set(series.map((m) => m[1]))].sort();
+    const dims = [...new Set(series.map((m) => m[2]))].sort();
+    expect(scopes).toEqual(["anonymous", "identity", "system"]);
+    expect(dims).toEqual(["calls", "tokens"]);
+
+    // 夹回枚举后仍要计入，否则「越界输入」被静默丢弃 = 拒绝次数低估
+    expect(sampleValue(body, 'navhub_llm_quota_rejected_total{scope="identity",metric="calls"}')).toBeGreaterThanOrEqual(1);
+    expect(sampleValue(body, 'navhub_llm_quota_rejected_total{scope="system",metric="tokens"}')).toBeGreaterThanOrEqual(1);
+    expect(sampleValue(body, "navhub_llm_quota_rejected_by_reservation_total")).toBeGreaterThanOrEqual(1);
+    expect(sampleValue(body, "navhub_llm_quota_settle_failures_total")).toBeGreaterThanOrEqual(1);
+  });
+
+  it("在途预留 gauge 反映仓储读数，而不是恒 0 的占位", async () => {
+    const body = await renderMetrics(fakeContext());
+    expect(sampleValue(body, "navhub_llm_quota_reservations_active")).toBe(7);
+    expect(sampleValue(body, "navhub_llm_quota_reserved_tokens")).toBe(12345);
+  });
+
+  it("预留读数取不到时降级为 0，但序列照样存在（不能让整条 /metrics 500）", async () => {
+    const broken = {
+      ...fakeContext(),
+      repo: {
+        stats: async () => ({ sites: 0, broken: 0, pending: 0, trashed: 0, categories: 0, tags: 0 }),
+        sumAllLlmQuotaReservations: async () => {
+          throw new Error("表不存在");
+        },
+      },
+    } as unknown as AppContext;
+    // 前面用例的 7/12345 已经在 5s 缓存里；换一个全新的模块实例才能测到「取不到」而不是「缓存」。
+    // 不用墙钟等待，也避免这条用例把整轮跑慢 5 秒。
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const body = await fresh.renderMetrics(broken);
+    expect(sampleValue(body, "navhub_llm_quota_reservations_active")).toBe(0);
+    expect(sampleValue(body, "navhub_llm_quota_reserved_tokens")).toBe(0);
+    // 降级不能顺带把「进程还活着」的探针一起带走
+    expect(sampleValue(body, "navhub_up")).toBe(1);
+  });
+});
+
+describe("快照读缓存指标（P1-1）", () => {
+  it("版本号健康度固定三条序列，且恰有一条为 1", async () => {
+    const body = await renderMetrics(fakeContext());
+    const series = [...body.matchAll(/^navhub_snapshot_version_health\{state="([^"]+)"\} ([01])$/gm)];
+    expect(series, "健康度必须固定导出三态（含 0），缺序列等于状态未知").toHaveLength(3);
+    expect(series.filter((m) => m[2] === "1").map((m) => m[1])).toEqual(["ok"]);
+  });
+
+  it("探针抛错时报 unreadable，而不是当成 ok（/metrics 不能被带走）", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const broken = {
+      ...fakeContext(),
+      repo: {
+        ...fakeContext().repo,
+        navVersionProbe: async () => {
+          throw new Error("没有权限读目录");
+        },
+      },
+    } as unknown as AppContext;
+    const body = await fresh.renderMetrics(broken);
+    expect(sampleValue(body, 'navhub_snapshot_version_health{state="unreadable"}')).toBe(1);
+    expect(sampleValue(body, 'navhub_snapshot_version_health{state="ok"}')).toBe(0);
+    expect(sampleValue(body, "navhub_up")).toBe(1);
+  });
+
+  it("版本号可读但触发器缺失时报 triggers_missing（冻结的版本号比没有更危险）", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const frozen = {
+      ...fakeContext(),
+      repo: {
+        ...fakeContext().repo,
+        navVersionProbe: async () => ({ version: 7, present: ["nav_version_sites_insert"], missing: ["nav_version_sites_update"] }),
+      },
+    } as unknown as AppContext;
+    const body = await fresh.renderMetrics(frozen);
+    expect(sampleValue(body, 'navhub_snapshot_version_health{state="triggers_missing"}')).toBe(1);
+    expect(sampleValue(body, 'navhub_snapshot_version_health{state="ok"}')).toBe(0);
+  });
+
+  it("版本号读不到时报 unreadable（即使触发器都在——没有 bump 目标）", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const noRow = {
+      ...fakeContext(),
+      repo: {
+        ...fakeContext().repo,
+        navVersionProbe: async () => ({ version: null, present: ["nav_version_sites_insert"], missing: [] }),
+      },
+    } as unknown as AppContext;
+    const body = await fresh.renderMetrics(noRow);
+    expect(sampleValue(body, 'navhub_snapshot_version_health{state="unreadable"}')).toBe(1);
+    expect(sampleValue(body, 'navhub_snapshot_version_health{state="ok"}')).toBe(0);
+  });
+
+  it("命中/回源两态固定导出，值非负", async () => {
+    const body = await renderMetrics(fakeContext());
+    expect(sampleValue(body, 'navhub_snapshot_cache_total{result="hit"}')).toBeGreaterThanOrEqual(0);
+    expect(sampleValue(body, 'navhub_snapshot_cache_total{result="miss"}')).toBeGreaterThanOrEqual(0);
+    expect(sampleValue(body, "navhub_snapshot_builds_total")).toBeGreaterThanOrEqual(0);
+    expect(sampleValue(body, "navhub_snapshot_build_seconds_total")).toBeGreaterThanOrEqual(0);
+    expect(sampleValue(body, "navhub_snapshot_degraded_reads_total")).toBeGreaterThanOrEqual(0);
+  });
+
+  it("接线守卫：storage.ts 真的读版本号，且 COUNT 指纹没有被写回来", () => {
+    const src = readFileSync(resolve(API_ROOT, "src/storage.ts"), "utf8");
+    expect(src).toContain("ctx.repo.readNavDataVersion()");
+    // 指纹是「命中也要付一次聚合」的那条路；它回来 = P1-1 白做，而且缓存会重新变成 TTL 一致性。
+    expect(src).not.toContain("snapshotFingerprint");
+    expect(src).not.toMatch(/SELECT\s*\n?\s*\(SELECT COUNT\(\*\) FROM sites\)/);
+  });
+});
+
+/**
+ * 高频计数缓存指标（P1-5）。
+ *
+ * hit/shared/miss 三类**固定导出**：hit 归零本身不说明问题（全站还没人读就都是 0），
+ * 但某一类整行消失会让人分不清「没有共享」和「共享计数器忘了接线」。
+ */
+describe("计数缓存指标（P1-5）", () => {
+  it("三类结果固定导出，刷新耗时非负", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const body = await fresh.renderMetrics(fakeContext());
+    for (const result of ["hit", "shared", "miss"]) {
+      expect(sampleValue(body, `navhub_stats_cache_total{result="${result}"}`)).toBeGreaterThanOrEqual(0);
+      expect(sampleValue(body, `navhub_dashboard_cache_total{result="${result}"}`)).toBeGreaterThanOrEqual(0);
+    }
+    expect(sampleValue(body, "navhub_stats_refresh_seconds")).toBeGreaterThanOrEqual(0);
+    expect(sampleValue(body, "navhub_dashboard_refresh_seconds")).toBeGreaterThanOrEqual(0);
+  });
+});
+
+/**
+ * 任务队列指标（P1-4）。
+ *
+ * 判据同其它族：12 个 kind 必须**全部**有序列（含 0）——「少一行」在抓取侧
+ * 与「积压为 0」看起来一样，某个 kind 的调度坏了会安静地查不出来。
+ */
+describe("任务队列指标（P1-4）", () => {
+  it("pending/running 按 kind 全量导出，非零值不被抹平", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const body = await fresh.renderMetrics(fakeContext());
+    expect(sampleValue(body, 'navhub_jobs_pending{kind="health_check"}')).toBe(3);
+    expect(sampleValue(body, 'navhub_jobs_pending{kind="backup_restore"}')).toBe(1);
+    // 没有积压的 kind 也要有序列（0），否则「缺序列」无法与「真的为 0」区分
+    expect(sampleValue(body, 'navhub_jobs_pending{kind="reindex"}')).toBe(0);
+    expect(sampleValue(body, 'navhub_jobs_running{kind="reindex"}')).toBe(0);
+    expect(sampleValue(body, "navhub_job_queue_readable")).toBe(1);
+  });
+
+  it("积压读不到时退回缓存值并把 queue_readable 置 0（不伪装成清空队列）", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const broken = {
+      ...fakeContext(),
+      repo: {
+        ...fakeContext().repo,
+        pendingJobsByKind: async () => {
+          throw new Error("db down");
+        },
+      },
+    } as unknown as AppContext;
+    const body = await fresh.renderMetrics(broken);
+    expect(sampleValue(body, "navhub_job_queue_readable")).toBe(0);
+    expect(sampleValue(body, 'navhub_jobs_pending{kind="health_check"}')).toBe(0);
+  });
+
+  it("执行计数与耗时按 kind 导出；没有跑过时也要有条目（0）", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const body = await fresh.renderMetrics(fakeContext());
+    for (const name of [
+      "navhub_job_runs_total",
+      "navhub_job_duration_seconds_total",
+      "navhub_job_failures_total",
+      "navhub_job_timeouts_total",
+      "navhub_job_cancels_total",
+    ]) {
+      expect(sampleValue(body, name + '{kind="backup_restore"}')).toBeGreaterThanOrEqual(0);
+      expect(sampleValue(body, name + '{kind="health_check"}')).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
+/**
+ * 出站请求指标（P2）。
+ *
+ * 「我们主动访问别人」这一整面以前没有任何读数：富化挂了、订阅源抓不到、
+ * 有人在拿 169.254.169.254 试探，全都要靠翻日志才知道。这里的判据与其它族一致——
+ * 四类结局与全部拦截原因**固定导出（含 0）**，因为「少一行」在抓取侧和「真的是 0」
+ * 长得一样，而 blocked 恰好为 0 时你最需要确认它不是忘了接线。
+ */
+describe("出站请求指标（P2）", () => {
+  const OUTCOME_SERIES = ["ok", "http_error", "blocked", "network_error"] as const;
+
+  it("四类结局与拦截原因固定导出；一条请求都没发过时也全是 0", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const body = await fresh.renderMetrics(fakeContext());
+    for (const outcome of OUTCOME_SERIES) {
+      expect(sampleValue(body, `navhub_outbound_requests_total{outcome="${outcome}"}`)).toBe(0);
+    }
+    for (const reason of ["blocked-ip", "protocol", "dns-timeout", "other"]) {
+      expect(sampleValue(body, `navhub_outbound_blocked_total{reason="${reason}"}`)).toBe(0);
+    }
+    for (const name of [
+      "navhub_outbound_hops_total",
+      "navhub_outbound_response_bytes_total",
+      "navhub_outbound_request_seconds_total",
+    ]) {
+      expect(sampleValue(body, name)).toBe(0);
+    }
+  });
+
+  it("recordOutbound 的每一次累加都如实渲染（次数/跳数/字节/秒）", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    fresh.recordOutbound({ outcome: "ok", reason: null, hops: 3, bytes: 2048, durationMs: 1500 });
+    fresh.recordOutbound({ outcome: "blocked", reason: "blocked-ip", hops: 0, bytes: 0, durationMs: 5 });
+    const stats = fresh.getOutboundStats();
+    expect(stats.requests).toBe(2);
+    expect(stats.byOutcome.ok).toBe(1);
+    expect(stats.byOutcome.blocked).toBe(1);
+    expect(stats.hops).toBe(3);
+    expect(stats.bytes).toBe(2048);
+    expect(stats.secondsTotal).toBeCloseTo(1.505, 3);
+
+    const body = await fresh.renderMetrics(fakeContext());
+    expect(sampleValue(body, 'navhub_outbound_requests_total{outcome="ok"}')).toBe(1);
+    expect(sampleValue(body, 'navhub_outbound_requests_total{outcome="blocked"}')).toBe(1);
+    expect(sampleValue(body, 'navhub_outbound_blocked_total{reason="blocked-ip"}')).toBe(1);
+    expect(sampleValue(body, "navhub_outbound_hops_total")).toBe(3);
+    expect(sampleValue(body, "navhub_outbound_response_bytes_total")).toBe(2048);
+    expect(sampleValue(body, "navhub_outbound_request_seconds_total")).toBe(1.505);
+  });
+
+  it("外部传进来的结局/原因夹回枚举：标签基数不会随用户输入增长", () => {
+    // 观察者的数据来自 @navhub/ai（URL 由用户提交），本白名单是最后一道闸。
+    recordOutbound({ outcome: "https://x/y", reason: "169.254.169.254", hops: 2, bytes: 5, durationMs: 10 });
+    const unknownOutcome = getOutboundStats();
+    expect(unknownOutcome.byOutcome.network_error).toBe(1);
+    expect(unknownOutcome.byOutcome.ok).toBe(0);
+    // 非 blocked 不带拦截原因，不该凭空多出 reason 序列
+    expect(Object.values(unknownOutcome.blockedByReason).every((v) => v === 0)).toBe(true);
+
+    recordOutbound({ outcome: "blocked", reason: "将来新增的原因", hops: 1, bytes: 1, durationMs: 1 });
+    const after = getOutboundStats();
+    expect(after.blockedByReason.other).toBe(1);
+    for (const key of Object.keys(after.blockedByReason)) {
+      expect(ALLOWED_LABEL_VALUES.reason?.has(key), "拦截原因逃出枚举白名单: " + key).toBe(true);
+    }
+    resetOutboundMetricsForTest();
+    const cleared = getOutboundStats();
+    expect(cleared.requests).toBe(0);
+    expect(Object.values(cleared.byOutcome).every((v) => v === 0)).toBe(true);
+    expect(Object.values(cleared.blockedByReason).every((v) => v === 0)).toBe(true);
+  });
+
+  it("接线守卫：server.ts 装配时真的装上观察者，而不是只在 metrics.ts 里自说自话", () => {
+    const src = readFileSync(resolve(API_ROOT, "src/server.ts"), "utf8");
+    expect(src).toContain("installOutboundObserver()");
+  });
+
+  it("装上之后，真实 guardedFetch 的成功与拦截都进 navhub_outbound_*", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const ai = await import("@navhub/ai");
+    fresh.resetOutboundMetricsForTest();
+    fresh.installOutboundObserver();
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("hello-outbound");
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as { port: number }).port;
+    try {
+      await ai.guardedFetch("http://127.0.0.1:" + port + "/x", { allowPrivateNetworks: true, timeoutMs: 2000 });
+      await expect(ai.guardedFetch("http://169.254.169.254/latest/meta-data/")).rejects.toBeInstanceOf(
+        ai.SsrfBlockedError,
+      );
+      const body = await fresh.renderMetrics(fakeContext());
+      expect(sampleValue(body, 'navhub_outbound_requests_total{outcome="ok"}')).toBe(1);
+      expect(sampleValue(body, 'navhub_outbound_requests_total{outcome="blocked"}')).toBe(1);
+      expect(sampleValue(body, 'navhub_outbound_blocked_total{reason="blocked-ip"}')).toBe(1);
+      expect(sampleValue(body, "navhub_outbound_hops_total")).toBe(1);
+      expect(sampleValue(body, "navhub_outbound_response_bytes_total")).toBe("hello-outbound".length);
+    } finally {
+      ai.setOutboundObserver(null);
+      fresh.resetOutboundMetricsForTest();
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  it("重复装配观察者不会把一次请求计两遍（buildServer 会被调用多次）", async () => {
+    vi.resetModules();
+    const fresh = await import("../src/metrics.ts");
+    const ai = await import("@navhub/ai");
+    fresh.resetOutboundMetricsForTest();
+    fresh.installOutboundObserver();
+    fresh.installOutboundObserver();
+    try {
+      await expect(ai.guardedFetch("file:///etc/passwd")).rejects.toBeInstanceOf(ai.SsrfBlockedError);
+      expect(fresh.getOutboundStats().requests).toBe(1);
+      expect(fresh.getOutboundStats().byOutcome.blocked).toBe(1);
+    } finally {
+      ai.setOutboundObserver(null);
+      fresh.resetOutboundMetricsForTest();
+    }
   });
 });

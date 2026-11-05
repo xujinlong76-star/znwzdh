@@ -32,6 +32,54 @@ interface FlatVideoItem extends NavigationSubItem {
     isSubCategoryItem: boolean
 }
 
+function AdminVideoThumbnail({ item }: { item: FlatVideoItem }) {
+    const [hasError, setHasError] = useState(false)
+    const [useProxy, setUseProxy] = useState(false)
+
+    const rawIcon = item.icon || ''
+    const normalizedUrl = rawIcon.startsWith('//') ? `https:${rawIcon}` : rawIcon
+    const isStrictAntiLeech = normalizedUrl.includes('hdslb.com') || normalizedUrl.includes('biliimg.com')
+
+    const displaySrc = (useProxy || isStrictAntiLeech) && item.mediaProxyIconUrl
+        ? item.mediaProxyIconUrl
+        : normalizedUrl
+
+    if (!rawIcon || hasError) {
+        return (
+            <div className="flex items-center justify-center w-14 h-14 rounded-lg bg-primary/10 text-primary shrink-0">
+                <Icons.video className="h-6 w-6" />
+            </div>
+        )
+    }
+
+    return (
+        <div className="flex items-center justify-center w-14 h-14 rounded-lg bg-muted overflow-hidden relative shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+                src={displaySrc}
+                alt={item.title}
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                className="w-full h-full object-cover"
+                onError={() => {
+                    if (!useProxy && item.mediaProxyIconUrl && !isStrictAntiLeech) {
+                        setUseProxy(true)
+                    } else {
+                        setHasError(true)
+                    }
+                }}
+            />
+            {item.videoConfig && (
+                <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
+                    <div className="w-4 h-4 bg-white/90 rounded-full flex items-center justify-center shadow-xs">
+                        <div className="w-0 h-0 border-t-3 border-t-transparent border-l-5 border-l-black border-b-3 border-b-transparent ml-0.5" />
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
 function LoadingSkeleton() {
     return (
         <div className="space-y-4">
@@ -228,12 +276,18 @@ export default function VideoItemsPage() {
     const addItem = async (values: NavigationSubItem) => {
         try {
             if (!params?.id) throw new Error('Navigation ID not found')
+            const subId = (!targetSubCategoryId || targetSubCategoryId === 'auto')
+                ? undefined
+                : targetSubCategoryId === 'direct'
+                    ? undefined
+                    : targetSubCategoryId
+
             const response = await fetch(`/api/videos/${params.id}/items`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     item: values,
-                    subCategoryId: targetSubCategoryId === 'direct' ? undefined : targetSubCategoryId
+                    subCategoryId: subId
                 })
             })
 
@@ -413,6 +467,7 @@ export default function VideoItemsPage() {
                                                 <SelectValue placeholder="选择所属子分类" />
                                             </SelectTrigger>
                                             <SelectContent>
+                                                <SelectItem value="auto">🤖 智能语义分流 (自动分析标题与技术栈)</SelectItem>
                                                 {navigation.subCategories.map(sub => (
                                                     <SelectItem key={sub.id} value={sub.id}>
                                                         {sub.title} ({sub.items?.length || 0}部视频)
@@ -553,20 +608,7 @@ export default function VideoItemsPage() {
                             className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl border border-border/80 bg-card text-card-foreground shadow-xs hover:border-primary/50 transition-colors"
                         >
                             <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
-                                <div className="flex items-center justify-center w-14 h-14 rounded-lg bg-primary/10 overflow-hidden relative shrink-0">
-                                    {item.icon ? (
-                                        <img src={item.icon} alt={item.title} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <Icons.video className="h-6 w-6 text-primary" />
-                                    )}
-                                    {item.videoConfig && (
-                                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                                            <div className="w-4 h-4 bg-white/90 rounded-full flex items-center justify-center shadow-xs">
-                                                <div className="w-0 h-0 border-t-3 border-t-transparent border-l-5 border-l-black border-b-3 border-b-transparent ml-0.5"></div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                <AdminVideoThumbnail item={item} />
                                 <div className="min-w-0 flex-1 space-y-1">
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <span className="font-semibold text-sm leading-tight text-foreground line-clamp-1">{item.title}</span>
@@ -621,6 +663,16 @@ export default function VideoItemsPage() {
                                         {item.videoConfig?.durationSec ? (
                                             <span>时长: {formatDuration(item.videoConfig.durationSec)}</span>
                                         ) : null}
+                                        {item.videoConfig?.difficulty && (
+                                            <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-foreground font-medium">
+                                                {item.videoConfig.difficulty === 'beginner' ? '入门' : item.videoConfig.difficulty === 'intermediate' ? '进阶' : '高阶'}
+                                            </span>
+                                        )}
+                                        {item.videoConfig?.tags && item.videoConfig.tags.length > 0 && (
+                                            <span className="text-[10px] text-muted-foreground/80 font-mono">
+                                                [{item.videoConfig.tags.slice(0, 3).join(', ')}]
+                                            </span>
+                                        )}
                                         {item.videoConfig?.stats?.views ? (
                                             <span>播放: {(item.videoConfig.stats.views / 10000).toFixed(1)}万</span>
                                         ) : null}

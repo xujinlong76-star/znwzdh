@@ -4,12 +4,18 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { VideoCard, VideoPlayerModal } from '@/components/video-card'
+import dynamic from 'next/dynamic'
+
+const VideoAutoHarvestDialog = dynamic(
+  () => import('@/components/video-auto-harvest-dialog').then(m => m.VideoAutoHarvestDialog),
+  { ssr: false }
+)
 import { Sidebar } from '@/components/sidebar'
 import { SearchBar } from '@/components/search-bar'
 import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
 import { Footer } from '@/components/footer'
-import { MonitorPlay, Menu, Home, Sparkles, Clock, Layers, ChevronRight, ChevronDown, ChevronUp, Zap, Search, X } from 'lucide-react'
+import { MonitorPlay, Menu, Home, Sparkles, Clock, Layers, ChevronRight, ChevronDown, ChevronUp, Zap, Search, X, Video, ArrowUpDown } from 'lucide-react'
 import { NavIcon } from '@/components/nav-icon'
 import { Button } from "@/registry/new-york/ui/button"
 import Link from 'next/link'
@@ -24,6 +30,20 @@ interface VideoContentProps {
     siteData: SiteConfig
 }
 
+const PLATFORM_FILTER_OPTIONS: Array<{ id: 'all' | 'bilibili' | 'youtube'; label: string; shortLabel: string }> = [
+    { id: 'all', label: '全部平台', shortLabel: '全部' },
+    { id: 'bilibili', label: '哔哩哔哩 (Bilibili)', shortLabel: 'B站' },
+    { id: 'youtube', label: 'YouTube (海外精选)', shortLabel: 'YouTube' },
+]
+
+const SORT_OPTIONS: Array<{ id: 'default' | 'views' | 'latest' | 'duration_desc' | 'duration_asc'; label: string }> = [
+    { id: 'default', label: '综合推荐' },
+    { id: 'views', label: '播放量最高' },
+    { id: 'latest', label: '最新发布/收录' },
+    { id: 'duration_desc', label: '长视频/系统课优先' },
+    { id: 'duration_asc', label: '短平快/速查优先' },
+]
+
 export function VideoContent({ navigationData: initialData, siteData }: VideoContentProps) {
     const [navigationData, setNavigationData] = useState<NavigationData>(initialData)
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -35,6 +55,22 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
       ariaLabel: '频道导航抽屉',
     })
     const [playingVideo, setPlayingVideo] = useState<NavigationSubItem | null>(null)
+    const [showHarvestDialog, setShowHarvestDialog] = useState(false)
+
+    const handleHarvestCompleted = async () => {
+        try {
+            const res = await fetch('/api/videos?compact=1')
+            if (res.ok) {
+                const data = await res.json()
+                if (data && Array.isArray(data.navigationItems) && data.navigationItems.length > 0) {
+                    setNavigationData(data)
+                    fullCatalogRef.current = data
+                }
+            }
+        } catch (err) {
+            console.error('Failed to reload videos after harvest:', err)
+        }
+    }
     const [searchQuery, setSearchQuery] = useState('')
 
     // 全量视频库缓存池（Ref 存储避免触发 2.7 秒全局组件树重渲染与丢帧）
@@ -141,6 +177,13 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
 
     const handleSearch = (query: string) => {
         setSearchQuery(query)
+        const url = new URL(window.location.href)
+        if (query.trim()) {
+            url.searchParams.set('q', query.trim())
+        } else {
+            url.searchParams.delete('q')
+        }
+        window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
     }
 
     // 公开页只渲染有内容的分类：空分类会留下光秃秃的标题，
@@ -252,11 +295,123 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
      */
     const [activeCategory, setActiveCategory] = useState<string | null>(null)
     const [activeSubCategory, setActiveSubCategory] = useState<string | null>(null)
+    const [durationFilter, setDurationFilter] = useState<'all' | 'short' | 'medium' | 'long'>('all')
+    const [platformFilter, setPlatformFilter] = useState<'all' | 'bilibili' | 'youtube'>('all')
+    const [sortOrder, setSortOrder] = useState<'default' | 'views' | 'latest' | 'duration_desc' | 'duration_asc'>('default')
+
+    const matchesDuration = (sec?: number) => {
+        if (durationFilter === 'all') return true
+        if (!sec || sec <= 0) return durationFilter === 'short'
+        if (durationFilter === 'short') return sec < 600
+        if (durationFilter === 'medium') return sec >= 600 && sec <= 1800
+        if (durationFilter === 'long') return sec > 1800
+        return true
+    }
+
+    const matchesPlatform = (item: NavigationSubItem) => {
+        if (platformFilter === 'all') return true
+        const p = item.videoConfig?.type?.toLowerCase() || ''
+        const url = (item.url || item.href || '').toLowerCase()
+        if (platformFilter === 'bilibili') {
+            return p === 'bilibili' || url.includes('bilibili.com') || url.includes('b23.tv')
+        }
+        if (platformFilter === 'youtube') {
+            return p === 'youtube' || url.includes('youtube.com') || url.includes('youtu.be')
+        }
+        return true
+    }
+
+    const sortVideoItems = (items: NavigationSubItem[]) => {
+        if (sortOrder === 'default') return items
+        return [...items].sort((a, b) => {
+            if (sortOrder === 'views') {
+                const vA = a.videoConfig?.stats?.views ?? 0
+                const vB = b.videoConfig?.stats?.views ?? 0
+                return vB - vA
+            }
+            if (sortOrder === 'latest') {
+                const getTimestamp = (it: NavigationSubItem) => {
+                    const pub = it.videoConfig?.publishedAt
+                    if (typeof pub === 'number') return pub
+                    if (typeof pub === 'string') {
+                        const t = Date.parse(pub)
+                        if (!Number.isNaN(t)) return t
+                    }
+                    return (it as any).harvestedAt || 0
+                }
+                return getTimestamp(b) - getTimestamp(a)
+            }
+            if (sortOrder === 'duration_desc') {
+                const dA = a.videoConfig?.durationSec ?? 0
+                const dB = b.videoConfig?.durationSec ?? 0
+                return dB - dA
+            }
+            if (sortOrder === 'duration_asc') {
+                const dA = a.videoConfig?.durationSec ?? 0
+                const dB = b.videoConfig?.durationSec ?? 0
+                return dA - dB
+            }
+            return 0
+        })
+    }
+
+    const selectDuration = (dur: 'all' | 'short' | 'medium' | 'long') => {
+        setDurationFilter(dur)
+        const url = new URL(window.location.href)
+        if (dur !== 'all') {
+            url.searchParams.set('dur', dur)
+        } else {
+            url.searchParams.delete('dur')
+        }
+        window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+    }
+
+    const selectPlatform = (platform: 'all' | 'bilibili' | 'youtube') => {
+        setPlatformFilter(platform)
+        const url = new URL(window.location.href)
+        if (platform !== 'all') {
+            url.searchParams.set('platform', platform)
+        } else {
+            url.searchParams.delete('platform')
+        }
+        window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+    }
+
+    const selectSortOrder = (sort: 'default' | 'views' | 'latest' | 'duration_desc' | 'duration_asc') => {
+        setSortOrder(sort)
+        const url = new URL(window.location.href)
+        if (sort !== 'default') {
+            url.searchParams.set('sort', sort)
+        } else {
+            url.searchParams.delete('sort')
+        }
+        window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+    }
 
     useEffect(() => {
         const syncFromLocation = () => {
             setActiveCategory(new URLSearchParams(window.location.search).get('c'))
             setActiveSubCategory(new URLSearchParams(window.location.search).get('sub'))
+            const urlQ = new URLSearchParams(window.location.search).get('q') || ''
+            if (urlQ) setSearchQuery(urlQ)
+            const dur = new URLSearchParams(window.location.search).get('dur')
+            if (dur === 'short' || dur === 'medium' || dur === 'long') {
+                setDurationFilter(dur)
+            } else {
+                setDurationFilter('all')
+            }
+            const platform = new URLSearchParams(window.location.search).get('platform')
+            if (platform === 'bilibili' || platform === 'youtube') {
+                setPlatformFilter(platform)
+            } else {
+                setPlatformFilter('all')
+            }
+            const sort = new URLSearchParams(window.location.search).get('sort')
+            if (sort === 'views' || sort === 'latest' || sort === 'duration_desc' || sort === 'duration_asc') {
+                setSortOrder(sort)
+            } else {
+                setSortOrder('default')
+            }
         }
         syncFromLocation()
         window.addEventListener('popstate', syncFromLocation)
@@ -353,17 +508,81 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
             ? visibleNavigationData.navigationItems.filter((category) => category.id === activeCategoryId)
             : visibleNavigationData.navigationItems
 
-        if (!activeSubCategoryId) return base
-
         return base.map((cat) => {
-            if (!cat.subCategories || cat.subCategories.length === 0) return cat
-            const filteredSubs = cat.subCategories.filter((sub) => sub.id === activeSubCategoryId)
+            let catItems = cat.items || []
+            let subCats = cat.subCategories || []
+
+            if (activeSubCategoryId) {
+                subCats = subCats.filter((sub) => sub.id === activeSubCategoryId)
+                catItems = []
+            }
+
+            if (durationFilter !== 'all') {
+                catItems = catItems.filter((it) => matchesDuration(it.videoConfig?.durationSec))
+                subCats = subCats.map((sub) => ({
+                    ...sub,
+                    items: (sub.items || []).filter((it) => matchesDuration(it.videoConfig?.durationSec)),
+                })).filter((sub) => (sub.items || []).length > 0)
+            }
+
+            if (platformFilter !== 'all') {
+                catItems = catItems.filter(matchesPlatform)
+                subCats = subCats.map((sub) => ({
+                    ...sub,
+                    items: (sub.items || []).filter(matchesPlatform),
+                })).filter((sub) => (sub.items || []).length > 0)
+            }
+
+            if (sortOrder !== 'default') {
+                catItems = sortVideoItems(catItems)
+                subCats = subCats.map((sub) => ({
+                    ...sub,
+                    items: sortVideoItems(sub.items || []),
+                }))
+            }
+
             return {
                 ...cat,
-                subCategories: filteredSubs
+                items: catItems,
+                subCategories: subCats,
             }
-        })
-    }, [activeCategoryId, activeSubCategoryId, visibleNavigationData])
+        }).filter((cat) => (cat.items || []).length > 0 || (cat.subCategories || []).length > 0)
+    }, [activeCategoryId, activeSubCategoryId, visibleNavigationData, durationFilter, platformFilter, sortOrder])
+
+    const filteredSearchResults = useMemo(() => {
+        let results = searchResults
+        if (durationFilter !== 'all') {
+            results = results.map((cat) => ({
+                ...cat,
+                items: cat.items.filter((it) => matchesDuration(it.videoConfig?.durationSec)),
+                subCategories: cat.subCategories.map((sub) => ({
+                    ...sub,
+                    items: sub.items.filter((it) => matchesDuration(it.videoConfig?.durationSec)),
+                })).filter((sub) => sub.items.length > 0),
+            })).filter((cat) => cat.items.length > 0 || cat.subCategories.length > 0)
+        }
+        if (platformFilter !== 'all') {
+            results = results.map((cat) => ({
+                ...cat,
+                items: cat.items.filter(matchesPlatform),
+                subCategories: cat.subCategories.map((sub) => ({
+                    ...sub,
+                    items: sub.items.filter(matchesPlatform),
+                })).filter((sub) => sub.items.length > 0),
+            })).filter((cat) => cat.items.length > 0 || cat.subCategories.length > 0)
+        }
+        if (sortOrder !== 'default') {
+            results = results.map((cat) => ({
+                ...cat,
+                items: sortVideoItems(cat.items),
+                subCategories: cat.subCategories.map((sub) => ({
+                    ...sub,
+                    items: sortVideoItems(sub.items),
+                })),
+            }))
+        }
+        return results
+    }, [searchResults, durationFilter, platformFilter, sortOrder])
 
     return (
         <div className="flex flex-col md:flex-row min-h-screen">
@@ -502,6 +721,17 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                                         <span className="font-mono">{videoStats.videos}</span>
                                         <span>门精选视频</span>
                                     </div>
+                                    <div className="sm:ml-auto flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowHarvestDialog(true)}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-orange-500/15 to-amber-500/15 hover:from-amber-500/25 hover:to-orange-500/25 text-amber-700 dark:text-amber-300 text-xs font-semibold transition-all shadow-xs hover:shadow-sm cursor-pointer"
+                                            title="自动发现并采集前沿开发者技术视频"
+                                        >
+                                            <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500/30" />
+                                            <span>采集最新技术视频</span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -604,25 +834,135 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                             </nav>
                         )}
 
+                        {/* 视频综合多维筛选控制台：来源平台、时长偏好、智能排序 */}
+                        <div className="flex flex-wrap items-center gap-3 py-2.5 px-3 sm:px-4 rounded-xl bg-card/60 border border-border/60 shadow-2xs backdrop-blur-md">
+                            {/* 来源平台筛选 */}
+                            <div className="flex items-center gap-1.5 text-xs">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/80 shrink-0">
+                                    <Video className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <span>平台：</span>
+                                </span>
+                                <div className="inline-flex p-0.5 rounded-lg bg-muted/50 border border-border/40">
+                                    {PLATFORM_FILTER_OPTIONS.map((pf) => {
+                                        const isSelected = platformFilter === pf.id
+                                        return (
+                                            <button
+                                                key={pf.id}
+                                                type="button"
+                                                onClick={() => selectPlatform(pf.id)}
+                                                className={cn(
+                                                    'px-2 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer',
+                                                    isSelected
+                                                        ? 'bg-background text-foreground shadow-2xs font-semibold'
+                                                        : 'text-muted-foreground hover:text-foreground'
+                                                )}
+                                            >
+                                                {pf.shortLabel}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="hidden sm:block h-3.5 w-px bg-border/60" />
+
+                            {/* 时长偏好 */}
+                            <div className="flex items-center gap-1.5 text-xs overflow-x-auto scrollbar-none">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/80 shrink-0">
+                                    <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <span>时长偏好：</span>
+                                </span>
+                                <div className="inline-flex p-0.5 rounded-lg bg-muted/50 border border-border/40">
+                                    {[
+                                        { id: 'all', label: '全部' },
+                                        { id: 'short', label: '<10分' },
+                                        { id: 'medium', label: '10-30分' },
+                                        { id: 'long', label: '>30分' },
+                                    ].map((dur) => {
+                                        const isSelected = durationFilter === dur.id
+                                        return (
+                                            <button
+                                                key={dur.id}
+                                                type="button"
+                                                onClick={() => selectDuration(dur.id as any)}
+                                                className={cn(
+                                                    'px-2 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer',
+                                                    isSelected
+                                                        ? 'bg-background text-foreground shadow-2xs font-semibold'
+                                                        : 'text-muted-foreground hover:text-foreground'
+                                                )}
+                                            >
+                                                {dur.label}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="hidden sm:block h-3.5 w-px bg-border/60" />
+
+                            {/* 排序方式 */}
+                            <div className="flex items-center gap-1.5 text-xs ml-auto">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/80 shrink-0">
+                                    <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <span>排序：</span>
+                                </span>
+                                <select
+                                    value={sortOrder}
+                                    onChange={(e) => selectSortOrder(e.target.value as any)}
+                                    aria-label="视频排序方式"
+                                    className="text-[11px] font-medium bg-muted/50 hover:bg-muted text-foreground border border-border/50 rounded-lg px-2 py-1 outline-none cursor-pointer transition-colors"
+                                >
+                                    {SORT_OPTIONS.map((opt) => (
+                                        <option key={opt.id} value={opt.id}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
                         {/* 活跃过滤状态面包屑条 */}
-                        {(activeCategoryId !== null || activeSubCategoryId !== null) && (
+                        {(activeCategoryId !== null || activeSubCategoryId !== null || durationFilter !== 'all' || platformFilter !== 'all' || sortOrder !== 'default') && (
                             <div className="flex flex-wrap items-center gap-2 text-xs py-1.5 px-3 rounded-xl bg-primary/5 border border-primary/20 text-primary w-fit">
                                 <span className="text-muted-foreground">当前筛选：</span>
-                                <span className="font-semibold text-foreground">{currentSelectedCategory?.title}</span>
+                                {currentSelectedCategory && (
+                                    <span className="font-semibold text-foreground">{currentSelectedCategory.title}</span>
+                                )}
                                 {activeSubCategoryId && (
                                     <>
                                         <span className="text-muted-foreground/60">/</span>
                                         <span className="font-semibold text-primary">{subCategoryChips.find((s) => s.id === activeSubCategoryId)?.title}</span>
                                     </>
                                 )}
+                                {platformFilter !== 'all' && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium text-[11px]">
+                                        {PLATFORM_FILTER_OPTIONS.find(p => p.id === platformFilter)?.label}
+                                    </span>
+                                )}
+                                {durationFilter !== 'all' && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium text-[11px]">
+                                        {durationFilter === 'short' ? '<10分钟' : durationFilter === 'medium' ? '10-30分钟' : '>30分钟'}
+                                    </span>
+                                )}
+                                {sortOrder !== 'default' && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium text-[11px]">
+                                        {SORT_OPTIONS.find(s => s.id === sortOrder)?.label}
+                                    </span>
+                                )}
                                 <button
                                     type="button"
-                                    onClick={() => selectCategory(null)}
-                                    className="ml-2 hover:bg-primary/10 p-1 rounded-md transition-colors text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-                                    title="清除所有分类筛选"
+                                    onClick={() => {
+                                        selectCategory(null)
+                                        selectDuration('all')
+                                        selectPlatform('all')
+                                        selectSortOrder('default')
+                                    }}
+                                    className="ml-2 hover:bg-primary/10 p-1 rounded-md transition-colors text-muted-foreground hover:text-foreground inline-flex items-center gap-1 cursor-pointer"
+                                    title="清除所有筛选"
                                 >
                                     <X className="w-3.5 h-3.5" />
-                                    <span className="text-[11px]">重置</span>
+                                    <span className="text-[11px]">重置全部</span>
                                 </button>
                             </div>
                         )}
@@ -649,8 +989,8 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={() => setSearchQuery('')}
-                                        className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-background/80 hover:bg-muted transition-colors self-start sm:self-center"
+                                        onClick={() => handleSearch('')}
+                                        className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-background/80 hover:bg-muted transition-colors self-start sm:self-center cursor-pointer"
                                     >
                                         <X className="w-3.5 h-3.5" />
                                         <span>清空搜索</span>
@@ -664,7 +1004,7 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
-                                        {searchResults.map((res) => {
+                                        {filteredSearchResults.map((res) => {
                                             const items = [...res.items, ...res.subCategories.flatMap((s) => s.items)]
                                             const isExpanded = !!expandedSearchResults[res.category.id]
                                             const displayedItems = isExpanded || items.length <= 15 ? items : items.slice(0, 15)
@@ -733,7 +1073,7 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                                         style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                     >
                                         {watchLaterList.map((item) => (
-                                            <VideoCard key={`wl-${item.id}`} item={item} siteConfig={siteData} />
+                                            <VideoCard key={`wl-${item.id}`} item={item} siteConfig={siteData} onPlay={setPlayingVideo} />
                                         ))}
                                     </div>
                                 </div>
@@ -758,11 +1098,39 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                                         style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                     >
                                         {recommendedVideos.map((item) => (
-                                            <VideoCard key={`rec-${item.id}`} item={item} siteConfig={siteData} />
+                                            <VideoCard key={`rec-${item.id}`} item={item} siteConfig={siteData} onPlay={setPlayingVideo} />
                                         ))}
                                     </div>
                                 </div>
                             </section>
+                        )}
+
+                        {visibleCategories.length === 0 && !hasQuery && (
+                            <div className="py-16 text-center rounded-2xl border border-dashed border-border/80 bg-muted/20 p-8 space-y-4">
+                                <div className="inline-flex p-3 rounded-full bg-muted text-muted-foreground">
+                                    <MonitorPlay className="w-8 h-8 opacity-60" />
+                                </div>
+                                <div className="space-y-1">
+                                    <h3 className="text-base font-bold text-foreground">没有找到匹配当前条件的视频</h3>
+                                    <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                                        当前分类、平台或时长组合下暂无条目，请尝试重置筛选或切换分类浏览
+                                    </p>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        selectCategory(null)
+                                        selectDuration('all')
+                                        selectPlatform('all')
+                                        selectSortOrder('default')
+                                    }}
+                                    className="text-xs gap-1.5"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                    <span>重置所有筛选</span>
+                                </Button>
+                            </div>
                         )}
 
                         {visibleCategories.map((category) => {
@@ -830,11 +1198,41 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
 
                                     {category.subCategories && category.subCategories.length > 0 ? (
                                         <div className="space-y-8">
+                                            {category.items && category.items.length > 0 && (
+                                                <div id={`${category.id}-direct`} className="space-y-3.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <h3 className="text-sm font-semibold tracking-tight text-foreground/90 flex items-center gap-2">
+                                                            <span className="w-1.5 h-3.5 bg-amber-500/80 rounded-full" />
+                                                            <span>精选推荐</span>
+                                                        </h3>
+                                                        <span className="text-[11px] font-mono text-muted-foreground/60 bg-muted/40 px-2 py-0.5 rounded-md border border-border/30">
+                                                            {category.items.length} 个视频
+                                                        </span>
+                                                    </div>
+                                                    <div
+                                                        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! transition-all duration-200"
+                                                        style={{ gap: 'var(--density-grid-gap, 1rem)' }}
+                                                    >
+                                                        {category.items.slice(0, INITIAL_VISIBLE_PER_SUBCAT).map((item) => (
+                                                            <VideoCard key={item.id} item={item} siteConfig={siteData} priority={eagerItemIds.has(item.id)} onPlay={setPlayingVideo} />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                             {category.subCategories.map((subCategory) => {
                                                 const fullSubItems = fullCatalogRef.current
                                                     ? fullCatalogRef.current.navigationItems.flatMap(c => c.subCategories || []).find(s => s.id === subCategory.id)?.items
                                                     : undefined
-                                                const allSubItems = fullSubItems && fullSubItems.length > 0 ? fullSubItems : (subCategory.items || [])
+                                                let allSubItems = fullSubItems && fullSubItems.length > 0 ? fullSubItems : (subCategory.items || [])
+                                                if (durationFilter !== 'all') {
+                                                    allSubItems = allSubItems.filter(it => matchesDuration(it.videoConfig?.durationSec))
+                                                }
+                                                if (platformFilter !== 'all') {
+                                                    allSubItems = allSubItems.filter(matchesPlatform)
+                                                }
+                                                if (sortOrder !== 'default') {
+                                                    allSubItems = sortVideoItems(allSubItems)
+                                                }
                                                 const totalSubCount = subCategory.totalCount ?? allSubItems.length
                                                 const isExpanded = !!expandedSubCats[subCategory.id] || activeSubCategoryId === subCategory.id
                                                 const displayedItems = isExpanded || allSubItems.length <= INITIAL_VISIBLE_PER_SUBCAT
@@ -903,7 +1301,16 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                                             const fullCatItems = fullCatalogRef.current
                                                 ? fullCatalogRef.current.navigationItems.find(c => c.id === category.id)?.items
                                                 : undefined
-                                            const allCatItems = fullCatItems && fullCatItems.length > 0 ? fullCatItems : (category.items || [])
+                                            let allCatItems = fullCatItems && fullCatItems.length > 0 ? fullCatItems : (category.items || [])
+                                            if (durationFilter !== 'all') {
+                                                allCatItems = allCatItems.filter(it => matchesDuration(it.videoConfig?.durationSec))
+                                            }
+                                            if (platformFilter !== 'all') {
+                                                allCatItems = allCatItems.filter(matchesPlatform)
+                                            }
+                                            if (sortOrder !== 'default') {
+                                                allCatItems = sortVideoItems(allCatItems)
+                                            }
                                             const isCatExpanded = !!expandedSubCats[category.id]
                                             const displayedCatItems = isCatExpanded || allCatItems.length <= INITIAL_VISIBLE_PER_SUBCAT
                                                 ? allCatItems
@@ -954,6 +1361,14 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                         })}
                     </div>
                 </div>
+            {showHarvestDialog && (
+                <VideoAutoHarvestDialog
+                    open={showHarvestDialog}
+                    onOpenChange={setShowHarvestDialog}
+                    onHarvestCompleted={handleHarvestCompleted}
+                />
+            )}
+
             {/* 页面单例视频播放弹窗：避免在 360+ 网格内直接重排 */}
             {playingVideo && (
                 <VideoPlayerModal

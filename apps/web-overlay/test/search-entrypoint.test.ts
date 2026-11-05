@@ -86,7 +86,10 @@ describe("站点列表页必须有搜索入口", () => {
     const src = overlaySource("src/app/collections/[slug]/collection-detail-view.tsx");
     const palette = src.indexOf("<SearchPalette");
     const empty = src.indexOf("该专题暂时没有站点");
-    const grid = src.indexOf("sites.map((site)");
+    // 列表变量名可能是 filteredSites（分类/关键词筛选后）——钉的是「面板在列表之前」，
+    // 不是某一个具体变量名，否则一次无关重命名就会让这条守卫失效。
+    const gridMatch = src.match(/\b(?:filteredSites|sites)\.map\(\(site\)/)
+    const grid = gridMatch ? (gridMatch.index ?? -1) : -1
     expect(palette).toBeGreaterThan(-1);
     expect(palette).toBeLessThan(empty);
     expect(palette).toBeLessThan(grid);

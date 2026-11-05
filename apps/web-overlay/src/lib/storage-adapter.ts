@@ -28,6 +28,15 @@ export interface StorageWriteOptions {
    * 保持行为不变。用途见 `commitFile` 的冲突重试。
    */
   ifVersion?: number;
+  /**
+   * 视频库缩水保护的二阶段确认（第一段）。
+   *
+   * 与 `ifVersion` 一样只有 http 适配器透传：github/sqlite 后端没有这道守卫，
+   * 参数被忽略不会让写入失败。
+   */
+  confirmLargeDeletion?: boolean;
+  /** 第二段：声明本次真实条数，必须与中枢解析出的条数逐字相等 */
+  expectedCount?: number;
 }
 
 export interface StorageAdapter {
@@ -209,8 +218,10 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
     init: RequestInit,
     opts: { tags?: string[]; noStore?: boolean } = {},
   ): Promise<unknown> {
+    const isBigPayload = url.includes("videos.json") || url.includes("resource-metadata.json");
+    const effectiveTimeout = isBigPayload ? Math.max(timeout, 30_000) : timeout;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
+    const timer = setTimeout(() => controller.abort(), effectiveTimeout);
     // 读请求（GET/无 method）才进 Data Cache；写不过缓存。
     // next 是 Next 对 fetch 的扩展字段，非 Next 环境（脚本/测试的 fetchImpl）忽略。
     const isRead = !init.method || init.method.toUpperCase() === "GET";
@@ -278,6 +289,11 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
         content,
         message,
         ...(writeOpts?.ifVersion !== undefined ? { ifVersion: writeOpts.ifVersion } : {}),
+        // 只在显式给出时入参：省略是中枢「默认拒绝」的判据，传 false 反而像是在试探守卫
+        ...(writeOpts?.confirmLargeDeletion !== undefined
+          ? { confirmLargeDeletion: writeOpts.confirmLargeDeletion }
+          : {}),
+        ...(writeOpts?.expectedCount !== undefined ? { expectedCount: writeOpts.expectedCount } : {}),
       });
       const res = (await call(base + "/api/storage", { method: "PUT", body })) as { note?: string; version?: number };
       return { ok: true, note: res?.note, version: res?.version };

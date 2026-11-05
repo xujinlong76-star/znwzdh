@@ -100,8 +100,11 @@ ENV NODE_ENV=production \
 VOLUME ["/data"]
 EXPOSE 8787
 
+# 就绪探针，不是存活探针：/api/health 在数据库不可用时仍返回 ok:true（重启修不好 DB，
+# 只会放大抖动），所以镜像级 HEALTHCHECK 打 /api/ready —— 与 docker/docker-compose.yml
+# 的 healthcheck 同口径，`depends_on: service_healthy` 才是真判据。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8787/api/health || exit 1
+  CMD curl -fsS http://127.0.0.1:8787/api/ready || exit 1
 
 # 入口负责可选的种子导入，再启动服务（只用到 node，不需要 pnpm）
 COPY docker/entrypoint.sh /usr/local/bin/navhub-entrypoint

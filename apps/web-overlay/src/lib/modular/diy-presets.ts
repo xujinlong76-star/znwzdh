@@ -160,6 +160,7 @@ export interface AdaptiveRankingOptions {
 export function computeAdaptiveSiteRanking<
   T extends {
     id: string
+    weight?: number
     liveMetrics?: { githubStars?: number }
     trendScore?: number
   }
@@ -179,6 +180,10 @@ export function computeAdaptiveSiteRanking<
     const isPinned = pinnedItemIds.includes(item.id)
     if (isPinned) {
       score += 10000 - pinnedItemIds.indexOf(item.id) * 10
+    }
+
+    if (typeof item.weight === 'number' && item.weight > 0) {
+      score += item.weight * 2
     }
 
     const stat = visitStats[item.id]

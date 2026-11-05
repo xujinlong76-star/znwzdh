@@ -49,6 +49,11 @@ export interface LlmProvider {
   allowPrivateNetwork?: boolean;
   /** 默认是否启用深度思考（调用点未显式指定时以此为准） */
   thinking?: boolean;
+  /**
+   * timeoutMs 是不是「有人真填过」：管理端/个人配置显式提交过这个数，或部署时设了
+   * NAVHUB_LLM_TIMEOUT_MS。省略/false = 这个数来自内置默认，思考态请求才允许放宽。
+   */
+  timeoutMsExplicit?: boolean;
 }
 
 export type ChatContentPart =
@@ -168,6 +173,29 @@ export class LlmError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_DETAIL_CHARS = 400;
+
+/** 思考态请求的内置放宽下限（仅在超时值并非显式配置时生效，见 resolveRequestTimeout） */
+export const THINKING_TIMEOUT_FLOOR_MS = 60_000;
+
+/**
+ * 单次请求的「原生」超时（还没钳进总预算）。
+ *
+ * 为什么要有 timeoutMsExplicit 这一步：这里曾经无条件执行 `Math.max(baseTimeout, 60_000)`，
+ * 于是运营把超时收紧到 25s，思考态请求照样等到 60s 才失败 —— 配置的声明值与执行值不一致，
+ * 管理面板那个数字是装饰。但也不能反过来直接删掉下限：本机 llm_usage 实测 33 次思考态成功里
+ * 有 23 次耗时超过内置默认的 20s（20–40s 档 13 次、40–60s 档 10 次），照配置生效会让它们
+ * 集体变成超时失败。所以只有「这个数是人（或部署的环境变量）填的」时才让路。
+ *
+ * 抽成纯函数是为了让它能被单独断言，也为了让配置视图能回显同一个数字，而不是两处各写一遍规则。
+ */
+export function resolveRequestTimeout(
+  provider: Pick<LlmProvider, "timeoutMs" | "timeoutMsExplicit">,
+  thinkingSent: boolean,
+): number {
+  const baseTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
+  if (!thinkingSent) return baseTimeout;
+  return provider.timeoutMsExplicit === true ? baseTimeout : Math.max(baseTimeout, THINKING_TIMEOUT_FLOOR_MS);
+}
 
 /**
  * 上游网关的「取消」哨兵。
@@ -482,7 +510,7 @@ async function callOnce(
 
   const baseTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
   // 思维链确实下发时才放宽超时：去参重试走的是普通请求，没必要多等 40 秒
-  const naturalTimeout = opts.thinking === true && includeThinking ? Math.max(baseTimeout, 60_000) : baseTimeout;
+  const naturalTimeout = resolveRequestTimeout({ timeoutMs: baseTimeout, timeoutMsExplicit: provider.timeoutMsExplicit }, opts.thinking === true && includeThinking);
   // 总预算优先：钳完只剩 0 说明截止时间已到，直接失败（不要用 1ms 超时去撞网络）
   const timeoutMs = clampToDeadline(naturalTimeout, opts.deadlineAt);
   if (timeoutMs <= 0) throw new LlmError("timeout", "模型调用已超出总预算，未再发起请求");
@@ -742,8 +770,8 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
   const key = capabilityKey(provider);
   const thinkingSent = opts.thinking === true && !thinkingParamUnsupported.has(key);
   const baseTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
-  // 与非流式同口径：思维链确实下发时放宽超时，否则长推理流会被默认 20s 腰斩
-  const naturalTimeout = thinkingSent ? Math.max(baseTimeout, 60_000) : baseTimeout;
+  // 与非流式同口径：思维链确实下发且超时值并非显式配置时才抬到内置下限
+  const naturalTimeout = resolveRequestTimeout({ timeoutMs: baseTimeout, timeoutMsExplicit: provider.timeoutMsExplicit }, thinkingSent);
   const timeoutMs = clampToDeadline(naturalTimeout, opts.deadlineAt);
   if (timeoutMs <= 0) throw new LlmError("timeout", "模型流式调用已超出总预算，未再发起请求");
   const gate = timeoutSignal(timeoutMs, opts.signal);

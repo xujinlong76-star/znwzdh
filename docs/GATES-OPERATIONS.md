@@ -214,10 +214,14 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   等价于 `success()`）。拿 outcome 当判据会把「允许失败」的那一步点成根因——它其实一路放行。
   2026-10-30 直证：`scripts/ci-defused.test.ts` 里把 `outcomeOf` 拆成 outcome 优先后，
   `web-budget` 那一步（夹具里的软失败）被写成了根因，用例当场红。
-  这条判据在 CI 里也有**活体样本**：`test-sqlite` 的后端 lint（`id: backend-lint`，带
-  `continue-on-error: true`）按 `soft: true` 登记 ⇒ 它红了算「跑过」，只有被上游红跳过时才进撤防账。
+  **2026-11-01 起本仓合并门禁作业里没有软门禁了**（`test-sqlite` 的 `backend-lint` 撤掉了
+  `continue-on-error`，登记表同步摘掉 `soft`），这条判据因此只剩合成夹具执勤——它照样不能删：
+  谁重新引入一步 `continue-on-error`，读数必须仍按 conclusion 判「挡没挡路」。
   登记表的 `soft` 与 YAML 的 `continue-on-error` 必须一致，两个方向各有判据：去掉 flag 不摘 `soft`
   ⇒ 报「它会判红也会挡路」；补了 flag 不标 `soft` ⇒ 报「把被吞掉的退出码讲成门禁判红」。
+  硬化后的「现状」由 `scripts/ci-defused.test.ts` 那组的两条断言钉住：**登记表标 soft 的门禁数
+  = YAML 里带 flag 的步骤数 = 0**。真要重新引入软门禁，必须同改 `ci-defused.mjs` 的登记、
+  本节文档和那两条现状断言——把「= 0」顺手改成「有几处算几处」就是把这条守卫放宽了。
 - **只报不拦**（rc 恒 0，`--strict` 才非零）：把「有门禁没跑成」变成第二处红，等于把 2.2 刚压下去的
   级联红请回来。运行期出 `::warning title=CI 门禁撤防::` + Step Summary 表格；
   第 7 项拦的是**接线**（读数步骤在不在、条件是不是 `always()`、`toJSON(steps)` 传没传、
@@ -259,9 +263,11 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   run 41010267114 实测 13 个作业 ⇒ 「跑过 26 道 / 没跑成 4 道」，并把 test-web 那行读成
   `1/5 道跑过，4 道没跑成（web-lint、web-build、web-budget、web-isr） · 根因 web-typecheck`。
   读早于接线那一档的历史轮（如 run 40973366906）会按本地口径多报，合计里带 `[口径]` 一句说明来源。
-  绿色那行也带**软门禁计数**（`3 道门禁全部跑过（软门禁 1 道：红了不判红、也不挡路）`）：写侧在
+  绿色那行还带**软门禁计数**（`3 道门禁全部跑过（软门禁 1 道：红了不判红、也不挡路）`）：写侧在
   `softNote` 里说破了，读侧不带上就等于把这句吞回去——「全部跑过」只证明「执行过」，
   带 `continue-on-error` 的那道红了既不在 `failedGates` 里也不在撤防列表里。
+  2026-11-01 本仓不再有软门禁 ⇒ 新写的账里这句恒为空，但读侧的 `softTotal` 不能跟着删：
+  `explain-ci-failure` 读的是**历史 run** 的日志，硬化前那几轮的行就是这个形状。
 - **已接线**：`test-sqlite`、`test-postgres`、`test-web`、`test-e2e`、`check-isr-live`、
   `check-web-overlay`、`docker-smoke`、`audit`（**8 作业 / 26 道门禁**；`docker-smoke` 的两个
   `docker build` 没有准备步骤，`check-isr-live` 有 7 个 `env` 准备步骤——它们红不是产品红，
@@ -272,13 +278,17 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 - **两处刻意不登记**：`test-sqlite` 的 `id: pkg-build`（最后一步，2/3 片按矩阵合法跳过，登记了每轮都报假撤防；
   给 id 是为了它当根因时点得出名）；`check-isr-live` 的「失败时留下预览站日志」（带 `if: failure()`，
   全绿时 skipped 是设计如此）。
-  后端 `lint:backend` **不再是豁免**——2026-10-30 给它补了 `id: backend-lint` 并按软门禁口径登记
-  （`soft: true`）：覆盖面判据仍不逼 `continue-on-error` 的步骤登记，但一旦登记，`soft` 就必须和 YAML 对齐，
-  这样「conclusion 优先」这条判据在 CI 里有一块活体样本，而不只活在夹具里。
+  后端 `lint:backend` **不再是豁免**——2026-10-30 给它补了 `id: backend-lint`，2026-11-01 撤掉那一步的
+  `continue-on-error` 并同步摘掉登记表的 `soft: true`，它从此与 typecheck / vitest 同为硬门禁：
+  红了既判红也挡路，被上游红跳过时进撤防账。覆盖面判据那条「`continue-on-error` 的步骤不逼登记」的
+  豁免因此只剩合成夹具能走通（反向的那句「YAML 还软、登记表没标 `soft`」才是现在真正执勤的方向）。
+  同一条 lint 判定在阻塞作业里另有 `apps/api/test/backend-lint-gate.test.ts` 那份（给逐条 message 明细），
+  配对由 `check-ci-gate.mjs` 第 5 项守住——那一项如今是防守型：只有再把 flag 加回来才会开口。
 - **反向也管**：① 判定前先剥 YAML 注释——注释里解释口径会写 `always()` / `toJSON(steps)` / 脚本名，
   真删掉 `if:` 与 `env:` 两行必须当场红；② 未登记的作业跑了读数脚本也红（接线跑在账前面 = 每轮白跑一步）；
   ③ 读数步骤被挪到门禁之前也红（它打完账才跑的那步永远进不了账）。
-- **测试**：`scripts/ci-defused.test.ts`（78 例：读数 / 接线与覆盖面 / CLI / 日志读回 / 软门禁活体样本 /
+- **测试**：`scripts/ci-defused.test.ts`（80 例：读数 / 接线与覆盖面 / CLI / 日志读回 / backend-lint
+  硬化后两侧同口径（现状 0 个软门禁 + 两个方向的合成夹具）/
   接线期望（`defusedWiring`），含 18 条消融自证——
   逐条把判据拆掉，确认对应用例真的会转红；日志读回那组里供了一份 run 41010267114 的**逐字日志片段**，
   防止夹具形状和 runner 改写后的真形状分家）与 `scripts/check-ci-gate.test.ts` 的第 7 组
@@ -318,7 +328,7 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 
 | 作业 | 是否进聚合 | 作用 |
 |---|---|---|
-| `test-sqlite` | ✅ | typecheck + 后端 lint（`continue-on-error`，撤防账里是唯一的软门禁）+ vendor + 全量 vitest + build |
+| `test-sqlite` | ✅ | typecheck + 后端 lint（2026-11-01 起也是硬门禁）+ vendor + 全量 vitest + build |
 | `test-postgres` | ✅ | pgvector 服务容器 + `test:pg:suite` + `test:pg` |
 | `test-web` | ✅ | vendor + tsc + eslint + `next build` + 首屏预算 + ISR 路由门禁 |
 | `check-web-overlay` | ✅ | 语法 + vendor + overlay 字节比对 + core 镜像 + 上游 ref + 扩展 |
@@ -388,7 +398,7 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 
 | 作业 | 第一反应 | 假红 / 归因陷阱 |
 |---|---|---|
-| `test-sqlite` | 按步骤定位：typecheck → lint:backend（`continue-on-error`，不会红）→ vendor → vitest → build。`Cannot find package '@/lib/auth'` = 忘了 `node scripts/vendor-web.mjs`；build 红 = 声明导出/入口路径坏 | `lint:backend`（`id: backend-lint`）是 warning 级，红了也不是它；它在撤防账里登记为**软门禁**——红了算「跑过」，只有被上游红跳过时才点名 |
+| `test-sqlite` | 按步骤定位：typecheck → lint:backend → vendor → vitest → build。`Cannot find package '@/lib/auth'` = 忘了 `node scripts/vendor-web.mjs`；build 红 = 声明导出/入口路径坏 | `lint:backend`（`id: backend-lint`）2026-11-01 起是**硬门禁**：它红就判红、也跳掉后面的步骤。规则只有三条（no-unused-vars / no-empty / no-console）且都是 error，红了先按 `pnpm lint:backend` 的逐条明细改，别去松规则；同一次改动在本地 verify 也必红（两边跑同一份 eslint.config.mjs） |
 | `test-postgres` | 先看是 `test:pg:suite` 还是 `test:pg` 红。suite 报「未设置 `NAVHUB_TEST_DATABASE_URL` —— 拒绝执行」= **作业配置坏了**，不是代码；有 URL 仍红 = 真跨方言缺陷 | 把变量设成 `DATABASE_URL` 是死变量，套件整体 skip → 假绿，绝不能这样「修」 |
 | `test-web` | 按步骤序：tsc → eslint（warning 不卡）→ `next build` → bundle budget → `check-isr-routes`。budget 红**不许上调** `scripts/bundle-budget.json`；2026-10-30 起每条超限路由单独写一条 `::error file=scripts/bundle-budget.json,line=<阈值行>::`（本地不打），所以没 token 也能从 annotation 直接看出是哪几条路由超了多少；ISR 红 = 某收录型路由从 ● 退化成 ƒ，或页面签名读了 `searchParams`。**budget 红不再跳过 ISR 那一步**（它带 `if: !cancelled() && steps.web-build.outcome == 'success'`）：10-29～10-30 之间预算常驻红，ISR 每轮 `skipped` 而 skipped 不判红 —— 读那几轮的结论时，「只有预算红」不等于「ISR 门禁判过且通过」 | `next.config` 的 `ignoreBuildErrors` 只影响 build，不影响 tsc 步骤。**eslint 那一步红不起来**（基线 0 error / 800+ warning），annotation 里的警告文案不是判红原因 |
 | `check-web-overlay` | 报错会列出不一致文件：先问「是不是直接改了 `apps/web`」。事实源是 `apps/web-overlay/`，改 overlay 后重跑 `node scripts/vendor-web.mjs`；再查 `sync-core-mirrors --check` 与 `check-upstream-ref` | `apps/web` 是 gitignore 生成物，全新检出必须 vendor 后才能比对 |

@@ -13,7 +13,11 @@ import {
   AlertCircle,
   Eye,
   Code2,
+  ShieldAlert,
 } from 'lucide-react'
+import {
+  SANDBOX_FLAGS,
+} from '@/lib/video-opaque-sandbox'
 import {
   SandboxRuntime,
   VirtualFileSystem,
@@ -142,7 +146,22 @@ export function VideoSandboxRunnerPane({ initialCode }: VideoSandboxRunnerPanePr
         <div className="flex-1 p-2.5 overflow-y-auto font-mono text-[11px] leading-relaxed">
           {previewTab === 'console' ? (
             !executionResult ? (
-              <p className="text-zinc-500">{'// 点击上方“运行工程”执行代码并查看输出日志'}</p>
+              <p className="text-zinc-500">
+                {'// 点击「运行工程」在隔离沙盒里执行；要给结果就写 exports.result = ...'}
+              </p>
+            ) : executionResult.stopReason ? (
+              <div className="flex items-start gap-2 text-amber-300">
+                <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-semibold">代码一行都没跑，不是你的代码有问题</p>
+                  <p className="text-[10px] text-amber-200/80 break-words">
+                    {executionResult.errorMessage}
+                  </p>
+                  <p className="text-[10px] text-zinc-500">
+                    这个沙盒只在隔离环境里执行代码，不会退回到页面内运行；代码仍可编辑与复制。
+                  </p>
+                </div>
+              </div>
             ) : executionResult.success ? (
               <div className="space-y-1">
                 {executionResult.logs.map((log, idx) => (
@@ -150,9 +169,9 @@ export function VideoSandboxRunnerPane({ initialCode }: VideoSandboxRunnerPanePr
                     &gt; {log.text}
                   </div>
                 ))}
-                {executionResult.returnValue !== undefined && (
-                  <div className="text-cyan-400 pt-1 border-t border-zinc-800">
-                    &lt; 返回值: {JSON.stringify(executionResult.returnValue)}
+                {(executionResult.returnValue !== undefined || executionResult.returnValueText) && (
+                  <div className="text-cyan-400 pt-1 border-t border-zinc-800 break-words">
+                    &lt; 导出结果: {executionResult.returnValueText ?? JSON.stringify(executionResult.returnValue)}
                   </div>
                 )}
               </div>
@@ -162,12 +181,15 @@ export function VideoSandboxRunnerPane({ initialCode }: VideoSandboxRunnerPanePr
               </div>
             )
           ) : (
-            <div className="w-full h-full bg-background rounded border border-border/40 p-2 text-foreground font-sans text-xs">
-              <p className="font-semibold text-primary">DOM Preview Container</p>
-              <p className="text-muted-foreground text-[11px] mt-1">
-                沙盒环境已隔离，可支持组件挂载与交互测试。
-              </p>
-            </div>
+            // 过去这里是一段写死的文案，声称「沙盒环境已隔离」却什么都没渲染。
+            // 现在真把 /index.html 交给不透明源 iframe：它只有 allow-scripts，
+            // 预览里的脚本读不到本页的 DOM、cookie 与 localStorage。
+            <iframe
+              sandbox={SANDBOX_FLAGS}
+              srcDoc={runtime.generateIframePreview()}
+              title="沙盒 DOM 预览"
+              className="w-full h-full min-h-[140px] rounded border border-border/40 bg-background"
+            />
           )}
         </div>
       </div>

@@ -1,15 +1,19 @@
 /**
- * LLM 额度闸门（`llm-quota.ts` + `repo.sumLlmUsage`）与「额度到顶之后说真话」。
+ * LLM 额度闸门（`llm-quota.ts` + `repo.reserveLlmQuota`）与「额度到顶之后说真话」。
  *
- * 要锁住的是两类语义，缺一类都会退回事故现场：
+ * 要锁住的是三类语义，缺一类都会退回事故现场：
  *  1. **计数口径**。身份 / 无身份合池 / 运维者预算（排除用户自带 key）三档各自独立，
  *     口径错一位就会「误伤正常用户」或「放过脚本」——比如把用户自带 key 的消耗
  *     也计进系统预算，一个人多用就能吃完全站额度。
- *  2. **拒绝之后的响应必须诚实**。有非模型答案的入口降级并标注来源
+ *  2. **判定与占位同事务**（P0-3）。闸门不能是「先读用量、再在 JS 里比上限」：
+ *     两步之间隔着 await，N 个并发会同时看到「还没超」并全部放行。所以这里跑
+ *     真并发（20 抢 5），并要求被拒的请求**不落预留行**、结算后立刻放开名额。
+ *  3. **拒绝之后的响应必须诚实**。有非模型答案的入口降级并标注来源
  *     （`degraded` / `aiSkipped` / `aiDegraded`），没有的入口给 429 + Retry-After；
  *     两条都不许把「额度用完了」渲染成「模型坏了」，也不许冒充模型回答。
  *
  * 额度默认值在测试环境全是 0（= 关闭），所以下面每个用例都显式注入上限。
+ * 只有 `reserveTokens` / `reserveTtlMs` 保持非 0：并发用例要真的撞上限。
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -18,7 +22,7 @@ import { join } from "node:path";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig, type AppConfig } from "../src/config.ts";
-import { checkLlmQuota, LlmQuotaError } from "../src/llm-quota.ts";
+import { LlmQuotaError, reserveLlmQuota, settleLlmQuota, type LlmQuotaHold } from "../src/llm-quota.ts";
 
 let dir: string;
 let ctx: AppContext;
@@ -58,6 +62,22 @@ function setQuota(patch: Partial<AppConfig["llmQuota"]>) {
   ctx.config.llmQuota = { ...baseQuota, ...patch };
 }
 
+/**
+ * 走一次闸门。通过就立刻结算：预留行代表「这次调用占住了额度」，
+ * 不结算的话它会在后面的用例里继续占位，把一个「只数已落账用量」的断言
+ * 变成「用量 + 上一行的残留」——那种失败看起来像额度算错，其实是夹具没归零。
+ */
+async function gate(identity: string | null, options?: Parameters<typeof reserveLlmQuota>[2]) {
+  const res = await reserveLlmQuota(ctx, identity, options);
+  if (res.ok) await settleLlmQuota(ctx, res.hold);
+  return res;
+}
+
+async function reservationCount(): Promise<number> {
+  const row = (await ctx.repo.raw("SELECT COUNT(*) AS c FROM llm_quota_reservations"))[0];
+  return Number(row?.c ?? 0);
+}
+
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-llm-quota-"));
   const config = loadConfig({
@@ -95,6 +115,8 @@ beforeAll(async () => {
 afterEach(async () => {
   setQuota({});
   await ctx.repo.run("DELETE FROM llm_usage");
+  // 预留行是「在途」状态的数据：上一轮用例如果没结算，会把下一轮的 used 抬高 1
+  await ctx.repo.run("DELETE FROM llm_quota_reservations");
 });
 
 afterAll(async () => {
@@ -153,11 +175,26 @@ describe("sumLlmUsage 计数口径", () => {
   });
 });
 
-describe("checkLlmQuota 三档独立", () => {
-  it("默认（测试环境全 0）不拦任何调用", async () => {
+describe("reserveLlmQuota 三档独立", () => {
+  it("默认（测试环境全 0）不拦任何调用，也一行预留都不写", async () => {
     await seedUsage({ identity: "user-a" });
-    expect((await checkLlmQuota(ctx, "user-a")).ok).toBe(true);
-    expect((await checkLlmQuota(ctx, null)).ok).toBe(true);
+    // 三档全关时连事务都不开：留一行没人结算的预留，只会把观测上的 active 变成噪音
+    expect(await reserveLlmQuota(ctx, "user-a")).toEqual({ ok: true, hold: null });
+    expect(await reserveLlmQuota(ctx, null)).toEqual({ ok: true, hold: null });
+    expect(await reservationCount()).toBe(0);
+  });
+
+  it("放行换到一行预留，结算即删行", async () => {
+    setQuota({ identityDailyCalls: 5 });
+    const res = await reserveLlmQuota(ctx, "user-a");
+    if (!res.ok || !res.hold) throw new Error("空账本下应当放行并拿到句柄");
+    expect(res.hold).toMatchObject({ identity: "user-a", source: "system", reservedCalls: 1 });
+    expect(await reservationCount()).toBe(1);
+    expect((await ctx.repo.listLlmQuotaReservations(10)).map((r) => r.id)).toEqual([res.hold.id]);
+    expect(await settleLlmQuota(ctx, res.hold)).toBe(true);
+    // 结算=删行（真实数字由 llm_usage 说话）：留行会让同一笔消耗被记两次
+    expect(await reservationCount()).toBe(0);
+    expect(await settleLlmQuota(ctx, res.hold)).toBe(false);
   });
 
   it("身份档命中次数上限：报 identity/calls，且不没收别人的额度", async () => {
@@ -166,7 +203,7 @@ describe("checkLlmQuota 三档独立", () => {
     await seedUsage({ identity: "user-a" });
     await seedUsage({ identity: "user-b" });
 
-    const res = await checkLlmQuota(ctx, "user-a");
+    const res = await gate("user-a");
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error).toBeInstanceOf(LlmQuotaError);
@@ -174,18 +211,34 @@ describe("checkLlmQuota 三档独立", () => {
     expect(res.error.metric).toBe("calls");
     expect(res.error.limit).toBe(2);
     expect(res.error.used).toBe(2);
-    expect((await checkLlmQuota(ctx, "user-b")).ok).toBe(true);
+    expect(res.error.blockedBy).toBe("usage");
+    expect((await gate("user-b")).ok).toBe(true);
   });
 
   it("token 档命中：报 metric=tokens（次数还没超也要拦）", async () => {
     setQuota({ identityDailyTokens: 1000 });
     await seedUsage({ identity: "user-a", promptTokens: 600, completionTokens: 500 });
 
-    const res = await checkLlmQuota(ctx, "user-a");
+    const res = await gate("user-a");
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error.metric).toBe("tokens");
     expect(res.error.used).toBe(1100);
+  });
+
+  it("预估值夹到该档剩余空间：上限小于预估也不会把自己锁死", async () => {
+    // 老配置形态：token 上限 60、单次预估 1500。若预估值参与「超限」判据，
+    // 第一次调用（用量 0）就会被自己的预估挡住 —— 闸门从拦并发退化成拦死。
+    setQuota({ identityDailyTokens: 60, reserveTokens: 1500 });
+    const first = await reserveLlmQuota(ctx, "user-a");
+    if (!first.ok) throw new Error("空账本下第一次必须放行");
+    expect(first.hold?.reservedTokens).toBe(60);
+
+    const second = await reserveLlmQuota(ctx, "user-a");
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.error).toMatchObject({ metric: "tokens", limit: 60, used: 60, blockedBy: "reservation" });
+    await settleLlmQuota(ctx, first.hold);
   });
 
   it("无身份流量合池：两条不同的 NULL 记录累加到 anonymous 档", async () => {
@@ -193,23 +246,26 @@ describe("checkLlmQuota 三档独立", () => {
     await seedUsage({ identity: null });
     await seedUsage({ identity: null });
 
-    const res = await checkLlmQuota(ctx, null);
+    const res = await gate(null);
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error.scope).toBe("anonymous");
   });
 
-  it("系统预算：用户自带 key 的消耗不吃运维额度，但非 user 源的会", async () => {
+  it("系统预算：用户自带 key 的消耗不吃运维额度，也不生成系统档", async () => {
     setQuota({ systemDailyCalls: 1 });
     await seedUsage({ identity: "user-a", source: "user" });
-    expect((await checkLlmQuota(ctx, "user-a")).ok).toBe(true);
+    expect((await gate("user-a", { source: "system" })).ok).toBe(true);
 
     await seedUsage({ identity: "user-a", source: "system" });
-    const res = await checkLlmQuota(ctx, "user-a");
+    const res = await gate("user-a");
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error.scope).toBe("system");
     expect(res.error.used).toBe(1);
+
+    // 自带 key 的请求：系统档根本不参与判定（别人花光预算，不能连你自己的 key 都不能用）
+    expect(await reserveLlmQuota(ctx, "user-a", { source: "user" })).toEqual({ ok: true, hold: null });
   });
 
   it("Retry-After 由窗口内最早一条推出，不给假的「24 小时后」", async () => {
@@ -217,7 +273,7 @@ describe("checkLlmQuota 三档独立", () => {
     const elevenHoursAgo = Date.now() - 11 * 60 * 60 * 1000;
     await seedUsage({ identity: "user-a", createdAt: elevenHoursAgo });
 
-    const res = await checkLlmQuota(ctx, "user-a");
+    const res = await gate("user-a");
     expect(res.ok).toBe(false);
     if (res.ok) return;
     // 最早一条再过 ~13h 滚出窗口，就腾出一个额度
@@ -229,13 +285,83 @@ describe("checkLlmQuota 三档独立", () => {
   it("响应体带结构化额度信息，前端才能区分「限制」与「故障」", async () => {
     setQuota({ identityDailyCalls: 1 });
     await seedUsage({ identity: "user-a" });
-    const res = await checkLlmQuota(ctx, "user-a");
+    const res = await gate("user-a");
     if (res.ok) throw new Error("应当被拦");
     const body = res.error.toResponseBody();
     expect(body.code).toBe("llm_quota");
-    expect(body.quota).toMatchObject({ scope: "identity", metric: "calls", limit: 1, used: 1 });
+    expect(body.quota).toMatchObject({ scope: "identity", metric: "calls", limit: 1, used: 1, blockedBy: "usage" });
     expect(body.quota.retryAfterSeconds).toBeGreaterThanOrEqual(1);
     expect(res.error.statusCode).toBe(429);
+  });
+});
+
+/**
+ * P0-3 的核心：闸门必须拦得住并发。
+ *
+ * 「先查后写」的实现每一步单看都对，串行用例永远绿；只有把 N 个请求同时打进去，
+ * 才会看到上限 5 放出 20 次调用。下面这几条就是为此存在的——把 reserve 退回
+ * check-then-act（读挪到事务外），第一条立刻变红。
+ */
+describe("并发：判定与占位在同一个事务里", () => {
+  it("20 个并发抢 5 个名额：恰好 5 个通过，其余被在途预留挡住", async () => {
+    setQuota({ identityDailyCalls: 5 });
+    const holds: LlmQuotaHold[] = [];
+    const results = await Promise.all(Array.from({ length: 20 }, () => reserveLlmQuota(ctx, "burst")));
+    for (const r of results) {
+      if (r.ok) {
+        // 放行却不带句柄 = 档位被静默关掉（三档全关才会这样），并发断言就成了假的绿
+        if (!r.hold) throw new Error("额度开着时放行必须换来一个预留句柄");
+        holds.push(r.hold);
+      } else {
+        expect(r.error).toMatchObject({ scope: "identity", metric: "calls", limit: 5, used: 5, blockedBy: "reservation" });
+        // 被预留挡住等的是 TTL（秒级），报 24 小时会把「稍后再试」渲染成「今天没了」
+        expect(r.error.retryAfterMs).toBeLessThanOrEqual(ctx.config.llmQuota.reserveTtlMs);
+      }
+    }
+    expect(holds).toHaveLength(5);
+    // 库里恰好 5 行：被拒的请求不留预留，通过的每一行都代表一次真实的在途调用
+    expect(await reservationCount()).toBe(5);
+
+    for (const hold of holds) await settleLlmQuota(ctx, hold);
+    expect(await reservationCount()).toBe(0);
+    expect((await reserveLlmQuota(ctx, "burst")).ok).toBe(true);
+  });
+
+  it("被上限挡住时不占名额：拒绝不落预留行", async () => {
+    setQuota({ identityDailyCalls: 1 });
+    await seedUsage({ identity: "solo" });
+    const res = await reserveLlmQuota(ctx, "solo");
+    expect(res.ok).toBe(false);
+    expect(await reservationCount()).toBe(0);
+  });
+
+  it("在途预留挡住第二个并发请求，结算后立刻放开", async () => {
+    setQuota({ identityDailyCalls: 1 });
+    const first = await reserveLlmQuota(ctx, "seq");
+    if (!first.ok) throw new Error("空账本下第一个应当放行");
+    const second = await reserveLlmQuota(ctx, "seq");
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.error.blockedBy).toBe("reservation");
+    // finally 里重复结算不能抛：SSE 断开与正常收尾可能都跑到这一句
+    expect(await settleLlmQuota(ctx, first.hold)).toBe(true);
+    expect(await settleLlmQuota(ctx, first.hold)).toBe(false);
+    expect((await gate("seq")).ok).toBe(true);
+  });
+
+  it("来不及结算的行靠 TTL 自愈，不会永久吃掉额度", async () => {
+    setQuota({ identityDailyCalls: 1, reserveTtlMs: 1000 });
+    const held = await reserveLlmQuota(ctx, "crash");
+    if (!held.ok) throw new Error("空账本下应当放行");
+    // 故意不结算：模拟进程被 kill / SSE 半路断开
+    expect((await reserveLlmQuota(ctx, "crash")).ok).toBe(false);
+
+    await new Promise((r) => setTimeout(r, 1_100));
+    const after = await reserveLlmQuota(ctx, "crash");
+    expect(after.ok).toBe(true);
+    // 只留下一行：上一轮的死行被这次预留顺手回收（不新增清理任务类型）
+    expect(await reservationCount()).toBe(1);
+    if (after.ok) await settleLlmQuota(ctx, after.hold);
   });
 });
 
@@ -335,5 +461,34 @@ describe("额度配置的错误必须响亮（config 层）", () => {
         }),
       ).toThrow(/LLM 额度|identityDailyCalls/);
     }
+  });
+
+  it("P0-3 新增的两个键同样吃整数守护", () => {
+    for (const key of ["reserveTokens", "reserveTtlMs"] as const) {
+      expect(() =>
+        loadConfig({ mode: "lite", sqlitePath: join(dir, "never.db"), llmQuota: { [key]: -1 } }),
+      ).toThrow(new RegExp(`LLM 额度 ${key}`));
+    }
+  });
+
+  it("预留 TTL 短于 1 秒直接拒绝启动：那等于没有并发闸门", () => {
+    // TTL 比一次真实生成还短 → 预留会在调用还在飞的时候过期，
+    // 判定退回「先查后写」。这条退化没有任何日志，只能靠启动守护拦住。
+    for (const tooShort of [1, 500, 999]) {
+      expect(() =>
+        loadConfig({
+          mode: "lite",
+          sqlitePath: join(dir, "never.db"),
+          llmQuota: { reserveTtlMs: tooShort },
+        }),
+      ).toThrow(/reserveTtlMs 至少 1000/);
+    }
+    // 0 = 未配置（原语退回默认 5 分钟），1000 是守护的下边界，两者都合法
+    expect(() =>
+      loadConfig({ mode: "lite", sqlitePath: join(dir, "never.db"), llmQuota: { reserveTtlMs: 0 } }),
+    ).not.toThrow();
+    expect(() =>
+      loadConfig({ mode: "lite", sqlitePath: join(dir, "never.db"), llmQuota: { reserveTtlMs: 1000 } }),
+    ).not.toThrow();
   });
 });

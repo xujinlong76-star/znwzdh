@@ -10,7 +10,7 @@ export async function GET() {
     // 替换历史含旧条目全文与回滚入口，属于管理面数据：此前无鉴权即可读。
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
     return NextResponse.json({
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   try {
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
     const body = await request.json()

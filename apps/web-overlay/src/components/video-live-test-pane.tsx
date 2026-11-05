@@ -3,10 +3,11 @@
 import React, { useState } from 'react'
 import {
   runLiveCodeTest,
+  type LiveTestCaseSpec,
   type TestSuiteResult,
 } from '@/lib/video-live-test-runner'
 import { Button } from '@/registry/new-york/ui/button'
-import { CheckCircle2, XCircle, Play, RotateCcw, Terminal, Code2 } from 'lucide-react'
+import { CheckCircle2, XCircle, Play, RotateCcw, Terminal, Code2, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface VideoLiveTestPaneProps {
@@ -40,32 +41,28 @@ export function VideoLiveTestPane({
   const handleRunTests = async () => {
     setIsRunning(true)
 
-    const testCases = [
+    // 用例是数据不是闭包：被测代码在沙盒里跑，闭包跨不过去（也本不该由界面持有）
+    const testCases: LiveTestCaseSpec[] = [
       {
         id: 'tc-1',
         title: '基础连续正负数组最大和验证',
-        testFn: ({ expect }: any) => {
-          // Eval user function
-          const fn = new Function(`${code}; return exports.findMaxSubArray;`)()
-          expect(typeof fn).toBe('function')
-          expect(fn([-2, 1, -3, 4, -1, 2, 1, -5, 4])).toBe(6)
-        },
+        exportName: 'findMaxSubArray',
+        args: [[-2, 1, -3, 4, -1, 2, 1, -5, 4]],
+        assertion: { kind: 'toBe', expected: 6 },
       },
       {
         id: 'tc-2',
         title: '全负数数组边界保护',
-        testFn: ({ expect }: any) => {
-          const fn = new Function(`${code}; return exports.findMaxSubArray;`)()
-          expect(fn([-5, -3, -8, -1, -9])).toBe(-1)
-        },
+        exportName: 'findMaxSubArray',
+        args: [[-5, -3, -8, -1, -9]],
+        assertion: { kind: 'toBe', expected: -1 },
       },
       {
         id: 'tc-3',
         title: '单元素极端场景断言',
-        testFn: ({ expect }: any) => {
-          const fn = new Function(`${code}; return exports.findMaxSubArray;`)()
-          expect(fn([42])).toBe(42)
-        },
+        exportName: 'findMaxSubArray',
+        args: [[42]],
+        assertion: { kind: 'toBe', expected: 42 },
       },
     ]
 
@@ -117,6 +114,18 @@ export function VideoLiveTestPane({
 
       {result && (
         <div className="space-y-2 p-3 rounded-lg border border-border/50 bg-card">
+          {result.blocked && (
+            <div className="flex items-start gap-2 p-2 rounded-md border border-amber-500/30 bg-amber-500/5 text-amber-200">
+              <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-medium">本次一行都没跑</p>
+                <p className="text-[11px] leading-snug">
+                  当前环境不允许隔离执行代码。这个面板只做「阅读 + 复制」，
+                  不会退回到页面内执行——下面那些「失败」不代表你的代码有问题。
+                </p>
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="font-semibold text-foreground">{result.suiteTitle}</span>
             <div className="flex items-center gap-2 font-mono">

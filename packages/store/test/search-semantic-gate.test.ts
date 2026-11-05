@@ -132,3 +132,69 @@ describe("语义相似度闸门", () => {
     expect(result.channelTimings?.semanticFiltered).toBe(0);
   });
 });
+
+/**
+ * 第二档：语义独占的严格闸门。
+ *
+ * 真实缺陷：基础闸门 0.4 上线后，乱码查询（qdjb / zzzzqqqxyz）仍返回一批
+ * 「最近的向量邻居」——离线实测这些噪声的余弦集中在 0.51~0.52，正好跨过 0.4。
+ * 而有效查询的最近邻在 0.66~0.74。词法通道全线无命中时再卡一刀 0.55，
+ * 就能把「没有真匹配」和「语义近邻确实很强」分开。
+ */
+describe("语义独占的严格闸门", () => {
+  beforeAll(async () => {
+    const cat = await repo.createCategory({ title: "严格闸门测试" });
+    // 弱语义近邻：cos ≈ 0.52 —— 高于基础闸门 0.5，低于严格闸门 0.55
+    const weak = await repo.createSite({
+      url: "https://gate-W.example.com",
+      title: "弱语义对照 W",
+      categoryId: cat.id,
+    });
+    siteIds.W = weak.id;
+    await vectors.upsert([
+      { key: hashSiteId(weak.id), siteId: weak.id, vector: new Float32Array([0.52, 0.854166]) },
+    ]);
+    // 词法命中站（无向量）：证明「有词法命中时严格闸门不生效」
+    const lex = await repo.createSite({
+      url: "https://gate-L.example.com",
+      title: "语义对照 lexonly",
+      categoryId: cat.id,
+    });
+    siteIds.L = lex.id;
+  });
+
+  it("词法全线无命中：0.52 的弱语义被严格闸门剔除并计数", async () => {
+    const result = await engine(0.5).search({ q: "qwzx", limit: 10, disablePersonal: true });
+    expect(await hitKeys(result)).toEqual(["A", "B"]);
+    // C/D 被基础闸门剔除（2），W 被严格闸门剔除（1）
+    expect(result.channelTimings?.semanticFiltered).toBe(3);
+  });
+
+  it("有词法命中时不启用严格闸门：弱语义仍作为低权重补充参与融合", async () => {
+    const e = new SearchEngine(
+      { db, repo, fts: null, vectors, embed: async () => QUERY_VEC },
+      { semanticMinSimilarity: 0.5, earlyExitExactHits: 0 }
+    );
+    const result = await e.search({ q: "lexonly", limit: 10, disablePersonal: true });
+    expect(await hitKeys(result)).toEqual(["A", "B", "L", "W"]);
+    // 只有基础闸门的 2 条，严格闸门没碰
+    expect(result.channelTimings?.semanticFiltered).toBe(2);
+  });
+
+  it("基础闸门为 0（显式关闭）时严格闸门不生效，保持旧行为", async () => {
+    const result = await engine(0).search({ q: "qwzx", limit: 10, disablePersonal: true });
+    expect(await hitKeys(result)).toEqual(["A", "B", "C", "D", "W"]);
+    expect(result.channelTimings?.semanticFiltered).toBe(0);
+  });
+
+  it("严格闸门可调：0.9 时只剩 1.0 的近邻", async () => {
+    const e = new SearchEngine(
+      { db, repo, fts: null, vectors, embed: async () => QUERY_VEC },
+      { semanticMinSimilarity: 0.5, semanticOnlyMinSimilarity: 0.9, earlyExitExactHits: 5 }
+    );
+    const result = await e.search({ q: "qwzx", limit: 10, disablePersonal: true });
+    expect(await hitKeys(result)).toEqual(["A"]);
+    // 基础闸门剔 C/D（2），严格闸门剔 B/W（2）
+    expect(result.channelTimings?.semanticFiltered).toBe(4);
+  });
+});

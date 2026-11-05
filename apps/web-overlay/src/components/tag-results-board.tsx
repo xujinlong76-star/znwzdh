@@ -19,7 +19,7 @@ import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Button } from '@/components/ui/button'
-import { Tag, Hash, LayoutGrid } from 'lucide-react'
+import { Tag, Hash, LayoutGrid, MonitorPlay, ArrowRight, Search, X } from 'lucide-react'
 import { searchSites, type HubSite } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
@@ -51,6 +51,19 @@ export function TagResultsBoard({
   const [truncated, setTruncated] = useState(initialTruncated)
   const identity = useMemo(() => getIdentity(), [])
   const [reloadToken, setReloadToken] = useState(0)
+  const [filterQuery, setFilterQuery] = useState('')
+
+  const filteredSites = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase()
+    if (!q) return sites
+    return sites.filter((site) => {
+      const title = (site.title || '').toLowerCase()
+      const desc = (site.description || '').toLowerCase()
+      const url = (site.url || '').toLowerCase()
+      const tags = (site.tags || []).join(' ').toLowerCase()
+      return title.includes(q) || desc.includes(q) || url.includes(q) || tags.includes(q)
+    })
+  }, [sites, filterQuery])
 
   const reload = () => setReloadToken((n) => n + 1)
 
@@ -130,6 +143,28 @@ export function TagResultsBoard({
       {/* 站内搜索：标签页只能看这一类站点，想找别的就得回首页 —— 这里直接给出口 */}
       <SearchPalette placeholder="不限于本标签：搜索全部站点（中文 / 拼音 / 语义）" />
 
+      {/* 跨生态技术视频联动横幅 */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs text-foreground">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+            <MonitorPlay className="w-4 h-4" />
+          </span>
+          <div className="min-w-0">
+            <span className="font-semibold text-foreground block text-sm">想看「#{slug}」相关的实战视频教程？</span>
+            <span className="text-muted-foreground text-xs block truncate">
+              本站视频中心收录 6,000+ 部开发者视频、课程讲解与项目实操
+            </span>
+          </div>
+        </div>
+        <Link
+          href={`/videos?q=${encodeURIComponent(slug)}`}
+          className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors shrink-0 text-xs shadow-2xs"
+        >
+          <span>查看相关视频教程</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+
       {degraded && (
         <HubDegradedNotice
           notice={{ message: '检索服务暂时不可用，已切到本地离线降级索引。', retryable: true }}
@@ -169,14 +204,85 @@ export function TagResultsBoard({
           title="该标签下暂无收录站点"
           description="标签是人工与检索共同对齐的结果；这个标签暂时没有匹配到站点，可以换个标签或直接搜索。"
           action={
-            <Button asChild variant="outline" size="sm" className="text-xs">
-              <Link href="/tags">浏览其他标签</Link>
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button asChild variant="outline" size="sm" className="text-xs">
+                <Link href="/tags">浏览其他标签</Link>
+              </Button>
+              <Button asChild size="sm" className="text-xs">
+                <Link href={`/videos?q=${encodeURIComponent(slug)}`}>
+                  <MonitorPlay className="w-3.5 h-3.5 mr-1" />
+                  <span>在视频中心检索「#{slug}」</span>
+                </Link>
+              </Button>
+            </div>
           }
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! gap-3.5 sm:gap-4">
-          {sites.map((site) => (
+        <div className="space-y-4">
+          {sites.length >= 4 && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-2 sm:p-2.5 rounded-xl border border-border/60 bg-muted/20">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={filterQuery}
+                  onChange={(e) => setFilterQuery(e.target.value)}
+                  placeholder={`在「#${slug}」标签内即时筛选站点（名称、简介、网址）...`}
+                  aria-label={`在标签${slug}内筛选站点`}
+                  className="w-full pl-8.5 pr-8 py-1.5 text-xs bg-background/80 rounded-lg border border-border/50 focus:outline-none focus:ring-1 focus:ring-primary/40 placeholder:text-muted-foreground/60 transition-all"
+                />
+                {filterQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setFilterQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground rounded-full cursor-pointer"
+                    aria-label="清空筛选"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center justify-between sm:justify-end gap-2 text-xs text-muted-foreground px-1">
+                <span>
+                  匹配 <span className="font-semibold text-foreground font-mono">{filteredSites.length}</span> / {sites.length} 站
+                </span>
+                {filterQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6.5 text-[11px] px-2 text-primary cursor-pointer"
+                    onClick={() => setFilterQuery('')}
+                  >
+                    重置
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {filteredSites.length === 0 ? (
+            <EmptyState
+              icon={Tag}
+              iconTone="muted"
+              title={`在「#${slug}」中未找到匹配站点`}
+              description={`已尝试筛选关键词 “${filterQuery}”。您可以尝试清空筛选，或前往全站进行多模态搜索。`}
+              action={
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button variant="outline" size="sm" className="text-xs cursor-pointer" onClick={() => setFilterQuery('')}>
+                    清空标签内筛选
+                  </Button>
+                  <Button asChild size="sm" className="text-xs">
+                    <Link href={`/search?q=${encodeURIComponent(filterQuery)}`}>
+                      <Search className="w-3.5 h-3.5 mr-1" />
+                      <span>全站搜索 “{filterQuery}”</span>
+                    </Link>
+                  </Button>
+                </div>
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! gap-3.5 sm:gap-4">
+              {filteredSites.map((site) => (
             /* 卡片双模式：整卡拉伸外链（z-0）+ 标题站内内链（z-10）+
                收藏按钮（z-20）三者是**兄弟节点**，绝不嵌套——
                `<a>` 里嵌 `<Link>` 是非法 HTML，浏览器会自动闭合外层
@@ -228,6 +334,8 @@ export function TagResultsBoard({
               </div>
             </div>
           ))}
+        </div>
+          )}
         </div>
       )}
 

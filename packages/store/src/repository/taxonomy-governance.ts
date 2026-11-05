@@ -443,3 +443,49 @@ export async function runTaxonomyAudit(
     byKind,
   };
 }
+
+/**
+ * 标签长尾治理统计（只读、零副作用）。
+ *
+ * 复用既有 listTagsWithCounts 的「存活站点」口径，给出长尾分布全景：
+ *  - total          标签总数
+ *  - usedByOne      仅被 1 个站点使用（count === 1）
+ *  - usedByLteTwo   被 ≤2 个站点使用（count <= 2）
+ *  - usedByGteFive  被 ≥5 个站点使用（count >= 5）—— 这些才是「主标签」候选
+ *  - ratioByOne     usedByOne / total
+ *  - ratioByLteTwo  usedByLteTwo / total
+ *
+ * 阈值与 deep-scan-report-2026-10-31.md 第八节一致：真实语料 1047 个标签里
+ * 689 个（66%）只被 1 站使用、853 个（81%）<=2 次、仅 79 个（7.5%）>=5 次。
+ * 本函数只负责让运营看清长尾，不做任何合并；合并走既有 applyTaxonomyProposal。
+ */
+export interface TagLongTailStats {
+  total: number;
+  usedByOne: number;
+  usedByLteTwo: number;
+  usedByGteFive: number;
+  ratioByOne: number;
+  ratioByLteTwo: number;
+}
+
+export async function computeTagLongTailStats(repo: Repository): Promise<TagLongTailStats> {
+  const tags = await repo.listTagsWithCounts();
+  const total = tags.length;
+  let usedByOne = 0;
+  let usedByLteTwo = 0;
+  let usedByGteFive = 0;
+  for (const t of tags) {
+    if (t.count === 1) usedByOne++;
+    if (t.count <= 2) usedByLteTwo++;
+    if (t.count >= 5) usedByGteFive++;
+  }
+  const safeRatio = (n: number) => (total === 0 ? 0 : n / total);
+  return {
+    total,
+    usedByOne,
+    usedByLteTwo,
+    usedByGteFive,
+    ratioByOne: safeRatio(usedByOne),
+    ratioByLteTwo: safeRatio(usedByLteTwo),
+  };
+}

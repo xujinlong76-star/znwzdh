@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { getFileContent, readStorageFresh } from '@/lib/github'
+import { getFileContent } from '@/lib/github'
 import { mutateVideoLibrary } from '@/lib/video-library-store'
+import { routeVideoToSubcategory } from '@/lib/video-subcategory-router'
+import { signIcon } from '@/lib/media-proxy'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'
@@ -15,7 +17,7 @@ export async function GET(
 ) {
     try {
         const { id } = await params
-        const data = ((await readStorageFresh(VIDEOS_FILE_PATH)) ?? (await getFileContent(VIDEOS_FILE_PATH))) as NavigationData
+        const data = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
         const category = data.navigationItems.find(item => item.id === id)
 
         if (!category) {
@@ -27,10 +29,10 @@ export async function GET(
 
         if (subCategoryId) {
             const sub = category.subCategories?.find(s => s.id === subCategoryId)
-            return NextResponse.json(sub?.items || [])
+            return NextResponse.json((sub?.items || []).map(signIcon))
         }
 
-        return NextResponse.json(category.items || [])
+        return NextResponse.json((category.items || []).map(signIcon))
     } catch (error) {
         return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 })
     }
@@ -44,7 +46,7 @@ export async function POST(
         const { id } = await params
         const authCheck = await verifyAdminSession()
         if (!authCheck.ok) {
-            return new Response(authCheck.error, { status: authCheck.status })
+            return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
         }
 
         const body = await request.json()
@@ -66,14 +68,38 @@ export async function POST(
                         if (sub.id === subCategoryId) {
                             return {
                                 ...sub,
-                                items: [...(sub.items || []), newItem]
+                                items: [newItem, ...(sub.items || [])]
                             }
                         }
                         return sub
                     })
                     updatedCategory.subCategories = subCategories
+                } else if (category.subCategories && category.subCategories.length > 0) {
+                    const match = routeVideoToSubcategory(
+                        {
+                            title: newItem.title,
+                            description: newItem.description,
+                            tags: newItem.tags,
+                            trendKeyword: newItem.videoConfig?.trendKeyword,
+                        },
+                        category.subCategories
+                    )
+                    const targetSubId = match.targetSub.id
+                    if (newItem.videoConfig) {
+                        newItem.videoConfig.subCategoryId = targetSubId
+                        newItem.videoConfig.subCategoryTitle = match.targetSub.title
+                    }
+                    updatedCategory.subCategories = category.subCategories.map(sub => {
+                        if (sub.id === targetSubId) {
+                            return {
+                                ...sub,
+                                items: [newItem, ...(sub.items || [])]
+                            }
+                        }
+                        return sub
+                    })
                 } else {
-                    updatedCategory.items = [...(category.items || []), newItem]
+                    updatedCategory.items = [newItem, ...(category.items || [])]
                 }
 
                 const updatedNavigations = data.navigationItems.map((c, i) =>
@@ -110,7 +136,7 @@ export async function PUT(
         const { id } = await params
         const authCheck = await verifyAdminSession()
         if (!authCheck.ok) {
-            return new Response(authCheck.error, { status: authCheck.status })
+            return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
         }
 
         const { index, item, subCategoryId }: { index: number; item: NavigationSubItem; subCategoryId?: string } = await request.json()
@@ -185,7 +211,7 @@ export async function DELETE(
         const { id } = await params
         const authCheck = await verifyAdminSession()
         if (!authCheck.ok) {
-            return new Response(authCheck.error, { status: authCheck.status })
+            return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
         }
 
         const { index, subCategoryId }: { index: number; subCategoryId?: string } = await request.json()

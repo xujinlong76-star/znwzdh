@@ -43,9 +43,11 @@ import { fileURLToPath } from "node:url";
 import { parseWorkflow, cascadeProblems, readerJobCoverageProblems, stripYamlCommentLines } from "./lib/ci-workflow.mjs";
 import {
   DEFUSED_GATES,
+  FRONTEND_TYPECHECK_AUTHORITY,
   defusedCoverageProblems,
   defusedEntryFor,
   defusedWiringProblems,
+  typeTrustProblems,
 } from "./lib/ci-defused.mjs";
 
 /** 允许测试注入替代文件，验证「删掉关键作业确实会红」 */
@@ -54,6 +56,12 @@ const CI_PATH = process.env.NAVHUB_CI_PATH || resolve(REPO_ROOT, ".github/workfl
 /** 后端 lint 在阻塞作业里的那份同口径断言；可用测试替换 */
 const LINT_GATE_REL = "apps/api/test/backend-lint-gate.test.ts";
 const LINT_GATE_TEST = process.env.NAVHUB_LINT_GATE_TEST || resolve(REPO_ROOT, LINT_GATE_REL);
+/**
+ * 可信度声明的前提文件：`typescript.ignoreBuildErrors` 还在不在。
+ * 撤防账里那句「本作业不判整前端类型」全靠这一条撑着，配置一改口径就得同步改（可被测试替换）。
+ */
+const NEXT_CONFIG_REL = "apps/web-overlay/next.config.js";
+const NEXT_CONFIG_PATH = process.env.NAVHUB_NEXT_CONFIG_PATH || resolve(REPO_ROOT, NEXT_CONFIG_REL);
 /** 解析下限：低于它说明 YAML 结构变了，脚本不该假装通过 */
 const MIN_JOBS = 6;
 
@@ -173,6 +181,23 @@ for (const entry of DEFUSED_GATES) {
   problems.push(...defusedCoverageProblems(found.block, entry));
 }
 
+let trustNoteCount = 0;
+for (const entry of DEFUSED_GATES) {
+  if (entry.typeTrust) trustNoteCount += 1;
+}
+const nextConfigSource = existsSync(NEXT_CONFIG_PATH) ? readFileSync(NEXT_CONFIG_PATH, "utf8") : "";
+const ignoreBuildErrorsOn = /typescript:\s*\{[^}]*ignoreBuildErrors:\s*true/.test(nextConfigSource);
+if (!existsSync(NEXT_CONFIG_PATH)) {
+  problems.push(`读不到 ${NEXT_CONFIG_REL}——「构建期是否仍忽略类型错误」无法核对，可信度声明可能是过期的`);
+}
+for (const entry of DEFUSED_GATES) {
+  const found = jobs.find((j) => j.name === entry.job);
+  if (!found) continue; // 「找不到作业」上面那条已报
+  for (const p of typeTrustProblems({ jobBlock: found.block, entry, ignoreBuildErrors: ignoreBuildErrorsOn })) {
+    problems.push(p);
+  }
+}
+
 // 反方向：ci.yml 里调用了读数脚本、登记表里却没有这个作业 = 接线跑在账前面，
 // 那一步每次都在报「未登记」，而没人会去读它（与 gates.json 的双向对照同一个口径）。
 for (const job of jobs) {
@@ -195,7 +220,10 @@ console.log(
   `✅ CI 合并门禁：解析 ${jobs.length - 1} 个作业，ci-passed 聚合 ${aggregated.length} 个作业，逐个读取结果，` +
     "PG 走 test:pg:suite，" +
     `级联红已按产物生产者 outcome 收敛（${CASCADE_RULES.length} 个作业登记，覆盖面按 error 上传核对），` +
-    `撤防账已接线（${DEFUSED_GATES.length} 个作业 / ${defusedGateCount} 道门禁有读数步骤），` +
+    `撤防账已接线（${DEFUSED_GATES.length} 个作业 / ${defusedGateCount} 道门禁有读数步骤；其中 ${trustNoteCount} 个作业带可信度声明），` +
+    (ignoreBuildErrorsOn
+      ? `ignoreBuildErrors 仍开着⇒类型判定只在 ${FRONTEND_TYPECHECK_AUTHORITY.job}/${FRONTEND_TYPECHECK_AUTHORITY.stepId} 一处，`
+      : "构建期已不忽略类型错误，") +
     (lintStepSuppressed ? "后端 lint 由阻塞作业里的同口径断言把关。" : "后端 lint 步骤本身即为阻塞。"),
 );
 if (manualOnly.length > 0) {

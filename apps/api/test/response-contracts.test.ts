@@ -23,6 +23,7 @@ import {
   CollectionItemMutationResponse,
   CollectionListResponse,
   CollectionPayload,
+  ErrorResponse,
   FavoriteCreateResponse,
   FavoriteFolderPayload,
   FavoriteFolderUpdateResponse,
@@ -57,6 +58,7 @@ import type { TagWithCount } from "@navhub/store";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
+import { analyzeCoverage, parseAllowlist } from "../../../scripts/lib/rest-contract-coverage.mjs";
 
 let dir: string;
 let ctx: AppContext;
@@ -213,6 +215,16 @@ describe("绑定表与真实路由同源", () => {
       // 写路由的成功码不都是 200（201 新建、收藏建/改两态并存），
       // 文档必须按绑定声明的每个成功码都挂同一组件，否则生成的客户端只认一半。
       const statuses = Array.isArray(binding.status) ? binding.status : [binding.status ?? "200"];
+      if (binding.noContent) {
+        // 204 是「成功但无响应体」：文档必须真的没有 content，也不该为它
+        // 生成一个空壳组件（gen:rest-contracts 会把它映射成 undefined）。
+        for (const status of statuses) {
+          expect(op.responses[status], key + " 缺少 " + status + " 响应").toBeTruthy();
+          expect(op.responses[status].content, key + " 的 " + status + " 不应有响应体").toBeUndefined();
+        }
+        expect(doc.components.schemas[binding.name], "无响应体绑定不应生成组件：" + binding.name).toBeUndefined();
+        continue;
+      }
       for (const status of statuses) {
         const ref = op.responses[status]?.content?.["application/json"]?.schema?.$ref;
         expect(ref, key + " 的 " + status + " 未引用响应契约").toBe("#/components/schemas/" + binding.name);
@@ -252,6 +264,40 @@ describe("绑定表与真实路由同源", () => {
     for (const field of TAG_CORE_FIELDS) {
       expect(tagShape[field], "TagPayload 缺少核心字段：" + field).toBeTruthy();
     }
+  });
+
+  it("失败分支也能生成：所有 JSON 端点声明统一 ErrorResponse，鉴权端点带 401/403", async () => {
+    const doc = (await app.inject({ method: "GET", url: "/api/openapi.json" })).json() as {
+      paths: Record<string, Record<string, any>>;
+      components: { schemas: Record<string, any> };
+    };
+    expect(doc.components.schemas.ErrorResponse, "错误信封组件缺失").toBeTruthy();
+    const errorRef = "#/components/schemas/ErrorResponse";
+    for (const [path, methods] of Object.entries(doc.paths)) {
+      for (const [method, op] of Object.entries(methods)) {
+        if (method === "head" || method === "options") continue;
+        expect(
+          op.responses?.["500"]?.content?.["application/json"]?.schema?.$ref,
+          method.toUpperCase() + " " + path + " 缺少统一 500 错误契约",
+        ).toBe(errorRef);
+        if (Array.isArray(op.security) && op.security.length > 0) {
+          for (const status of ["401", "403"]) {
+            expect(
+              op.responses?.[status]?.content?.["application/json"]?.schema?.$ref,
+              method.toUpperCase() + " " + path + " 缺少 " + status + " 错误契约",
+            ).toBe(errorRef);
+          }
+        }
+      }
+    }
+  });
+
+  it("真实失败响应满足错误信封（Fastify 兜底 404）", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/definitely-not-a-route" });
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    expect(typeof body.error).toBe("string");
+    expectContract(ErrorResponse, body, "未知路由 404");
   });
 
   it("标签契约字段与仓储类型 TagWithCount 编译期对齐", () => {
@@ -853,13 +899,74 @@ describe("写路由真实响应满足契约（状态码 + 形状）", () => {
   });
 });
 
+/**
+ * 写绑定的运行时验证棘轮。
+ *
+ * 绑定表能保证「登记了的形状不漂」，但绑定了却没跑过真实响应，等于只验了
+ * 文档生成。写绑定从 20 条涨到 90+ 后，把所有写路由都塞进本文件会让契约
+ * 测试变成集成测试（要造作业、密钥、双身份、备份、外部探活），风险与耗时
+ * 都不成比例。折中：已跑过的必须继续跑；没跑过的必须进 fixtures 并写明
+ * 「为什么、在哪里验」——新增写绑定既不补用例也不登记会直接红。该清单只许
+ * 缩小：某条补了运行时用例后必须删行，否则门禁同样判红。
+ */
+const UNVERIFIED_WRITE_FIXTURE = "test/fixtures/unverified-write-bindings.txt";
+
+function readUnverifiedWriteBindings(): string[] {
+  const text = readFileSync(new URL("./fixtures/unverified-write-bindings.txt", import.meta.url), "utf8");
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"))
+    .map((line) => line.split("|")[0]!.trim())
+    .filter((key) => key !== "");
+}
+
 describe("写侧绑定没有漏测", () => {
-  it("所有非读方法的绑定都在本轮真实响应里验过", () => {
+  it("写绑定要么本轮跑过真实响应，要么在豁免清单里写明验证位置", () => {
     const writeBindings = Object.keys(RESPONSE_SCHEMA_BINDINGS).filter((key) => !READ_METHODS.has(key.split(" ")[0]!.toUpperCase()));
-    const missing = writeBindings.filter((key) => !RUNTIME_COVERED.has(key));
+    const unverified = writeBindings.filter((key) => !RUNTIME_COVERED.has(key)).sort();
+    const fixture = readUnverifiedWriteBindings().sort();
     expect(
-      missing,
-      "以下写绑定没有运行时用例：新增写绑定请在同名 describe 里补 expectRoutedContract",
+      unverified,
+      "写绑定既没有运行时用例、也不在 " + UNVERIFIED_WRITE_FIXTURE + "。" +
+        "请在写路由 describe 里补 expectRoutedContract，或登记键 + 「为什么、在哪里验」；" +
+        "补了运行时用例的绑定必须从清单删除（清单只许缩小）",
+    ).toEqual(fixture);
+  });
+
+  it("写绑定豁免清单不陈旧：每条都是真实绑定，且没有被运行时用例覆盖", () => {
+    const writeBindings = new Set(
+      Object.keys(RESPONSE_SCHEMA_BINDINGS).filter((key) => !READ_METHODS.has(key.split(" ")[0]!.toUpperCase())),
+    );
+    for (const key of readUnverifiedWriteBindings()) {
+      expect(writeBindings.has(key), "豁免清单里的键已不是写绑定（改名/删除/补绑定）：" + key).toBe(true);
+      expect(RUNTIME_COVERED.has(key), "该写绑定已有运行时用例，请从豁免清单删除：" + key).toBe(false);
+    }
+  });
+});
+
+/**
+ * 写路由覆盖率门禁：CI 用的是 `pnpm test`，所以真正的「新增写路由必须绑定」
+ * 判定必须活在这里，而不是只在 `pnpm check:rest-contracts` 里。
+ * 判定逻辑与本地 CLI 共用 scripts/lib/rest-contract-coverage.mjs：
+ * 写路由 100% 绑定或 allowlist 写明理由、Top 20 公开读全绑定、allowlist 只许缩小。
+ */
+const UNBOUND_WRITE_FIXTURE = "test/fixtures/unbound-write-routes.txt";
+
+describe("写路由契约覆盖率（与 check:rest-contracts 同口径）", () => {
+  it("新增未绑定写路由 / 漏绑高频读 / 陈旧 allowlist 都会让测试转红", () => {
+    const allowlistText = readFileSync(new URL("./fixtures/unbound-write-routes.txt", import.meta.url), "utf8");
+    const result = analyzeCoverage({
+      routes: app.routeInventory,
+      bindings: RESPONSE_SCHEMA_BINDINGS,
+      allowlist: parseAllowlist(allowlistText),
+    });
+    expect(
+      result.problems,
+      "契约覆盖率不达标：写路由必须绑定响应契约或进 " +
+        UNBOUND_WRITE_FIXTURE + " 并写明理由；公开高频读 Top 20 必须全部绑定；" +
+        "allowlist 只许缩小（补了绑定/删了路由要同步删行）",
     ).toEqual([]);
+    expect(result.stats.priorityPublicRead.bound).toBe(result.stats.priorityPublicRead.total);
   });
 });

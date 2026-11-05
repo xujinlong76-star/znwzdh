@@ -48,7 +48,15 @@ import {
   Compass,
   Radio,
   BookOpen,
+  Video,
+  Flame,
+  Trophy,
+  Star,
+  Tag,
+  PlusCircle,
 } from 'lucide-react'
+import type { NavigationSubItem } from '@/types/navigation'
+import { formatDuration } from '@/lib/video-format'
 import { Input } from '@/registry/new-york/ui/input'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -77,7 +85,7 @@ import { searchChannelStatus } from '@/lib/search-degrade'
 import { searchHref } from '@/lib/search-page'
 import { getModifierKey } from '@/lib/platform'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
-import { recordOfflineVisit } from '@/lib/offline-recent'
+import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { applyThemeTokens } from '@/lib/plugins/theme-runtime'
 
@@ -135,8 +143,13 @@ export function SpotlightModal({
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [hits, setHits] = useState<HubSearchHit[]>([])
+  const [didYouMean, setDidYouMean] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<string[]>([])
   const [pluginHits, setPluginHits] = useState<HubPluginSearchResponse | null>(null)
+  const [videoHits, setVideoHits] = useState<NavigationSubItem[]>([])
+  const [totalVideoCount, setTotalVideoCount] = useState<number>(0)
   const [recentQueries, setRecentQueries] = useState<string[]>([])
+  const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [healingId, setHealingId] = useState<string | null>(null)
@@ -251,9 +264,17 @@ export function SpotlightModal({
     }
   }, [shortcutMode])
 
-  // 2. 加载历史记录（初始焦点由 useOverlayBehavior 的 initialFocusRef 交接）
+  // 2. 加载历史记录与最近常去站点（初始焦点由 useOverlayBehavior 的 initialFocusRef 交接）
   useEffect(() => {
     if (open) {
+      readOfflineVisits(6)
+        .then((visits) => {
+          if (Array.isArray(visits)) setRecentVisits(visits)
+        })
+        .catch(() => {
+          // 容错降级：本地最近访问读取失败保持空数组
+        })
+
       fetchSearchHistory(identity)
         .then((items) => {
           if (Array.isArray(items)) setRecentQueries(items.slice(0, 8))
@@ -265,6 +286,8 @@ export function SpotlightModal({
       setQuery('')
       setHits([])
       setPluginHits(null)
+      setVideoHits([])
+      setTotalVideoCount(0)
       setSelectedIndex(0)
     }
   }, [open, identity])
@@ -476,6 +499,127 @@ export function SpotlightModal({
       },
     },
     {
+      id: 'cmd-category',
+      title: '全站分类总览与即时检索 (Category Index)',
+      description: '全量层级分类目录树、存活站点数统计与 0-RTT 即时类目定位',
+      icon: LayoutGrid,
+      category: '页面直达',
+      handler: () => {
+        setOpen(false)
+        router.push('/category')
+      },
+    },
+    {
+      id: 'cmd-submit',
+      title: '投稿新站点与收录申请 (Submit New Site)',
+      description: '提交优质开发工具、开源项目或官方技术文档至中枢审核',
+      icon: PlusCircle,
+      category: '生态贡献',
+      handler: () => {
+        setOpen(false)
+        router.push('/submit')
+      },
+    },
+    {
+      id: 'cmd-videos',
+      title: '精选技术视频库 (Video Hub)',
+      description: '全屏技术视频聚合看板与分类索引 (6000+ 精选高保鲜课程)',
+      icon: Video,
+      category: '页面直达',
+      handler: () => {
+        setOpen(false)
+        router.push('/videos')
+      },
+    },
+    {
+      id: 'cmd-hot',
+      title: '今日热榜与全站风向标 (Trending & Hot Sites)',
+      description: '查看全站访问热度榜与最新收录站点排行榜',
+      icon: Flame,
+      category: '页面直达',
+      handler: () => {
+        setOpen(false)
+        router.push('/hot')
+      },
+    },
+    {
+      id: 'cmd-collections',
+      title: '精选合集与路线图 (Curated Collections & Roadmaps)',
+      description: '浏览按技术领域与成长阶段策划的深度主题合集',
+      icon: Layers,
+      category: '页面直达',
+      handler: () => {
+        setOpen(false)
+        router.push('/collections')
+      },
+    },
+    {
+      id: 'cmd-tags',
+      title: '技术标签全景知识库 (Tags Index)',
+      description: '探索全站技术栈标签分布、分类交叉与标签云',
+      icon: Tag,
+      category: '知识网络',
+      handler: () => {
+        setOpen(false)
+        router.push('/tags')
+      },
+    },
+    {
+      id: 'cmd-sites',
+      title: '站点收录总库与目录 (Sites Catalog)',
+      description: '全量分页浏览全站已收录的优质站点与工具索引',
+      icon: Compass,
+      category: '页面直达',
+      handler: () => {
+        setOpen(false)
+        router.push('/sites')
+      },
+    },
+    {
+      id: 'cmd-favorites',
+      title: '我的收藏夹与本地金库 (My Favorites & Vault)',
+      description: '管理私人专属收藏、分类文件夹与本地离线金库',
+      icon: Star,
+      category: '个人中心',
+      handler: () => {
+        setOpen(false)
+        router.push('/favorites')
+      },
+    },
+    {
+      id: 'cmd-admin-videos',
+      title: '视频采集管理 (Video Harvester & Operations)',
+      description: '多平台视频自动采集策略、保鲜度评分与生命周期轮换治理',
+      icon: Video,
+      category: '管理面',
+      handler: () => {
+        setOpen(false)
+        router.push('/admin/videos')
+      },
+    },
+    {
+      id: 'cmd-import',
+      title: '书签导入与解析 (Import Bookmarks)',
+      description: '从 Chrome、Edge 或 HTML 书签文件批量导入并智能分类',
+      icon: Download,
+      category: '数据管理',
+      handler: () => {
+        setOpen(false)
+        router.push('/import')
+      },
+    },
+    {
+      id: 'cmd-user-center',
+      title: '个人中心与偏好设置 (Account & Preferences)',
+      description: '查看收藏、快捷键偏好、搜索引擎绑定与会话安全设置',
+      icon: Settings,
+      category: '系统设置',
+      handler: () => {
+        setOpen(false)
+        router.push('/me')
+      },
+    },
+    {
       id: 'cmd-fluid',
       title: '动态流光毛玻璃背景切换 (Toggle Fluid Glass)',
       description: '开启或关闭极致平滑的流体渐变磨砂画布壁纸背景',
@@ -483,7 +627,12 @@ export function SpotlightModal({
       category: '界面外观',
       handler: () => {
         window.dispatchEvent(new CustomEvent('toggle-fluid-glass'))
-        const isNow = localStorage.getItem('navhub_fluid_glass_enabled') === 'true'
+        let isNow = false
+        try {
+          isNow = localStorage.getItem('navhub_fluid_glass_enabled') === 'true'
+        } catch {
+          // 存储访问受限
+        }
         toast.success(isNow ? '已开启动态流光毛玻璃背景' : '已关闭流光背景')
         setOpen(false)
       },
@@ -506,6 +655,8 @@ export function SpotlightModal({
     if (isCommandMode || isAiMode) {
       setHits([])
       setPluginHits(null)
+      setVideoHits([])
+      setTotalVideoCount(0)
       setLoading(false)
       return
     }
@@ -514,6 +665,10 @@ export function SpotlightModal({
     if (!trimmed) {
       setHits([])
       setPluginHits(null)
+      setVideoHits([])
+      setTotalVideoCount(0)
+      setDidYouMean(null)
+      setSuggestions([])
       setSitesUnavailable(false)
       setSemanticUnavailable(false)
       setPluginUnavailable(false)
@@ -544,10 +699,21 @@ export function SpotlightModal({
           pluginSearchFailed = true
           return null
         }),
-      ]).then(([sitesRes, pluginsRes]) => {
+        fetch(`/api/videos?q=${encodeURIComponent(trimmed)}&limit=3&compact=1`, { signal: ac.signal })
+          .then((res) => (res.ok ? res.json() : null))
+          .catch(() => {
+            /* 视频检索异常降级为 null，不阻塞站点与插件主检索流程 */
+            return null
+          }),
+      ]).then(([sitesRes, pluginsRes, videosRes]) => {
         if (!ac.signal.aborted) {
           setHits(sitesRes?.hits ?? [])
+          setDidYouMean(sitesRes?.didYouMean ?? null)
+          setSuggestions(sitesRes?.suggestions ?? [])
           setPluginHits(pluginsRes)
+          const vList = (videosRes?.videos || []) as NavigationSubItem[]
+          setVideoHits(vList)
+          setTotalVideoCount(typeof videosRes?.total === 'number' ? videosRes.total : vList.length)
           // navhub-api 失败时返回 degraded 兜底值而不抛错，只监听 catch 会谎报「没有结果」
           const status = searchChannelStatus({
             sites: sitesRes,
@@ -570,6 +736,14 @@ export function SpotlightModal({
       ac.abort()
     }
   }, [query, isCommandMode, isAiMode, identity, searchNonce])
+
+  // 快捷采纳拼写纠错或推荐词
+  const handleApplySuggestion = useCallback((newQuery: string) => {
+    setQuery(newQuery)
+    setDidYouMean(null)
+    setSuggestions([])
+    inputRef.current?.focus()
+  }, [])
 
   // 6. 复制链接
   const handleCopy = useCallback(async (url: string, id: string, e: React.MouseEvent) => {
@@ -629,30 +803,38 @@ export function SpotlightModal({
       return
     }
 
-    // 默认检索：站点优先，插件次之
+    // 默认检索：站点优先，视频次之，插件再次之
     const totalSiteHits = hits.length
+    const totalVideoHits = videoHits.length
     if (selectedIndex < totalSiteHits) {
       const hit = hits[selectedIndex]
       if (hit?.site?.url) {
         openSite(hit.site, hit)
         setOpen(false)
       }
+    } else if (selectedIndex < totalSiteHits + totalVideoHits) {
+      const videoIndex = selectedIndex - totalSiteHits
+      const video = videoHits[videoIndex]
+      if (video?.href) {
+        setOpen(false)
+        safeWindowOpen(video.href)
+      }
     } else {
-      const pluginIndex = selectedIndex - totalSiteHits
+      const pluginIndex = selectedIndex - totalSiteHits - totalVideoHits
       const plugin = pluginHits?.items[pluginIndex]
       if (plugin?.slug) {
         setOpen(false)
         router.push(`/marketplace/${encodeURIComponent(plugin.slug)}`)
       }
     }
-  }, [isCommandMode, isAiMode, filteredCommands, selectedIndex, cleanAiPrompt, hits, pluginHits, router, openSite])
+  }, [isCommandMode, isAiMode, filteredCommands, selectedIndex, cleanAiPrompt, hits, videoHits, pluginHits, router, openSite])
 
   // 9. 键盘导航 (上下箭头 / 回车)
   const totalItemCount = useMemo(() => {
     if (isCommandMode) return filteredCommands.length
     if (isAiMode) return 1
-    return hits.length + (pluginHits?.items.length ?? 0)
-  }, [isCommandMode, isAiMode, filteredCommands.length, hits.length, pluginHits?.items.length])
+    return hits.length + videoHits.length + (pluginHits?.items.length ?? 0)
+  }, [isCommandMode, isAiMode, filteredCommands.length, hits.length, videoHits.length, pluginHits?.items.length])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -676,12 +858,14 @@ export function SpotlightModal({
   const activeOptionId = totalItemCount > 0 ? optionIdOf(selectedIndex) : undefined
   // 极客微工具面板里没有可选行（selectedIndex 走的是指令列表），此时不能声称控制着某个列表
   const hasListbox = totalItemCount > 0 && !(isCommandMode && isGeekToolActive)
-  /** 当前选中行落在哪个列表：指令 / 站点 / 插件（插件行编号从 hits.length 起） */
+  /** 当前选中行落在哪个列表：指令 / 站点 / 视频 / 插件 */
   const listboxId = isCommandMode
     ? 'spotlight-cmd-listbox'
     : selectedIndex < hits.length
       ? 'spotlight-site-listbox'
-      : 'spotlight-plugin-listbox'
+      : selectedIndex < hits.length + videoHits.length
+        ? 'spotlight-video-listbox'
+        : 'spotlight-plugin-listbox'
 
   return (
     <>
@@ -720,7 +904,7 @@ export function SpotlightModal({
                   ? '输入指令（如 canvas, copilot, theme, backup...）'
                   : isAiMode
                   ? '输入任何问题，回车直达 AI 深度问答...'
-                  : '搜索站点、插件、输入 > 进入指令模式、输入 ? 询问 AI...'
+                  : '搜索站点、精选视频、插件，输入 > 执行快捷指令，输入 ? 询问 AI...'
               }
               value={query}
               onChange={(e) => {
@@ -871,6 +1055,61 @@ export function SpotlightModal({
               {/* 空输入时展示：历史搜索与快速建议 */}
               {!query.trim() && (
                 <div className="p-3 space-y-4">
+                  {/* 常用与最近访问站点 */}
+                  {recentVisits.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                          <span>常用与最近常去</span>
+                        </span>
+                        <span className="text-[10px] font-mono text-muted-foreground/70">一键秒开</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {recentVisits.map((visit) => (
+                          <a
+                            key={visit.id}
+                            href={safeHref(visit.href)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => {
+                              recordOfflineVisit(visit)
+                              reportClick(visit.id, identity)
+                              setOpen(false)
+                            }}
+                            className="flex items-center justify-between p-2.5 rounded-xl border border-border/60 bg-muted/20 hover:bg-muted/50 hover:border-primary/40 text-left transition-all group"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                              <div className="w-6 h-6 rounded-lg bg-background/80 border border-border/50 flex items-center justify-center shrink-0">
+                                <SiteFavicon
+                                  title={visit.title}
+                                  url={visit.href}
+                                  icon={visit.icon}
+                                  className="w-4 h-4 object-contain rounded"
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-medium text-foreground group-hover:text-primary transition-colors truncate">
+                                  {visit.title}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground font-mono truncate">
+                                  {(() => {
+                                    try {
+                                      return new URL(visit.href).hostname.replace(/^www\./, '')
+                                    } catch {
+                                      return visit.href
+                                    }
+                                  })()}
+                                </div>
+                              </div>
+                            </div>
+                            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {recentQueries.length > 0 && (
                     <div className="space-y-2">
                       <div className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
@@ -991,6 +1230,34 @@ export function SpotlightModal({
               {!loading && query.trim() && !sitesUnavailable && semanticUnavailable && (
                 <div className="px-3 py-1.5 text-[11px] text-muted-foreground">
                   语义检索未就绪（未配置本地模型），当前为关键词 / 拼音 / 全文混合召回。
+                </div>
+              )}
+
+              {/* 智能拼写纠错 / 意图猜测建议 */}
+              {didYouMean && query.trim().toLowerCase() !== didYouMean.toLowerCase() && (
+                <div className="mx-3 my-2 px-3 py-2 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 text-foreground flex-wrap">
+                    <span className="text-primary font-medium flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>您是不是想搜：</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="font-bold underline text-primary hover:text-primary/80 cursor-pointer text-left"
+                      onClick={() => handleApplySuggestion(didYouMean)}
+                    >
+                      {didYouMean}
+                    </button>
+                    <span>？</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDidYouMean(null)}
+                    aria-label="关闭建议"
+                    className="text-muted-foreground hover:text-foreground p-1 rounded-md cursor-pointer ml-2"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
 
@@ -1130,6 +1397,95 @@ export function SpotlightModal({
                 </div>
               )}
 
+              {/* 精选技术视频召回 */}
+              {videoHits.length > 0 && (
+                <div role="listbox" id="spotlight-video-listbox" aria-label={`视频检索结果，共 ${videoHits.length} 条`} className="pt-2 border-t border-border/40 space-y-1">
+                  <div className="px-3 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Video className="w-3.5 h-3.5 text-blue-500" />
+                      <span>精选技术视频 (Video Hub)</span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono text-muted-foreground/70">{totalVideoCount} 条命中</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false)
+                          router.push(`/videos?q=${encodeURIComponent(query)}`)
+                        }}
+                        className="text-[11px] text-primary hover:underline"
+                      >
+                        查看全部视频
+                      </button>
+                    </span>
+                  </div>
+
+                  {videoHits.map((video, idx) => {
+                    const itemIndex = hits.length + idx
+                    const isSelected = itemIndex === selectedIndex
+                    const platform = video.videoConfig?.type || 'bilibili'
+                    const author = video.videoConfig?.author
+                    const duration = video.videoConfig?.durationSec ? formatDuration(video.videoConfig.durationSec) : null
+
+                    return (
+                      <div
+                        key={video.id || idx}
+                        onClick={() => {
+                          setOpen(false)
+                          if (video.href) safeWindowOpen(video.href)
+                        }}
+                        id={optionIdOf(itemIndex)}
+                        role="option"
+                        aria-selected={isSelected}
+                        aria-label={`技术视频：${video.title}${author ? `，UP主：${author}` : ''}${duration ? `，时长：${duration}` : ''}`}
+                        className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-colors ${
+                          isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted/40 text-foreground'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-12 h-8 rounded-md bg-muted/80 border border-border/60 flex items-center justify-center shrink-0 overflow-hidden relative">
+                            {video.icon ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={video.icon.startsWith('//') ? `https:${video.icon}` : video.icon}
+                                alt=""
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Video className="w-4 h-4 text-primary" />
+                            )}
+                            {duration && (
+                              <span className="absolute bottom-0.5 right-0.5 text-[8px] font-mono px-0.5 rounded bg-black/80 text-white leading-tight">
+                                {duration}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-semibold truncate group-hover:text-primary transition-colors">
+                                {video.title}
+                              </span>
+                              <Badge variant="outline" className="text-[9px] h-3.5 px-1 shrink-0 font-normal">
+                                {platform === 'bilibili' ? 'B站' : 'YouTube'}
+                              </Badge>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground truncate leading-relaxed">
+                              {author ? `UP主: ${author}` : ''} {video.description || ''}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               {/* 插件市场并行召回 */}
               {pluginHits && pluginHits.items.length > 0 && (
                 <div role="listbox" id="spotlight-plugin-listbox" aria-label={`插件检索结果，共 ${pluginHits.items.length} 条`} className="pt-2 border-t border-border/40 space-y-1">
@@ -1154,7 +1510,7 @@ export function SpotlightModal({
                   </div>
 
                   {pluginHits.items.map((plugin, idx) => {
-                    const itemIndex = hits.length + idx
+                    const itemIndex = hits.length + videoHits.length + idx
                     const isSelected = itemIndex === selectedIndex
                     return (
                       <div
@@ -1232,23 +1588,90 @@ export function SpotlightModal({
                       <div className="text-xs text-muted-foreground">
                         未找到与 “<span className="text-foreground font-medium">{query}</span>” 相关的站点或插件
                       </div>
+                      {didYouMean && (
+                        <div className="pt-1">
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-foreground">
+                            <span className="text-primary font-medium flex items-center gap-1">
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>您是不是想搜：</span>
+                            </span>
+                            <button
+                              type="button"
+                              className="font-bold underline text-primary hover:text-primary/80 cursor-pointer"
+                              onClick={() => handleApplySuggestion(didYouMean)}
+                            >
+                              {didYouMean}
+                            </button>
+                            <span>？</span>
+                          </div>
+                        </div>
+                      )}
+                      {suggestions.length > 0 && (
+                        <div className="pt-1 max-w-md mx-auto">
+                          <div className="text-[11px] text-muted-foreground mb-1.5">相关搜索推荐：</div>
+                          <div className="flex flex-wrap justify-center gap-1.5">
+                            {suggestions.map((s) => (
+                              <button
+                                key={s}
+                                type="button"
+                                className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                                onClick={() => handleApplySuggestion(s)}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="text-[11px] text-muted-foreground">
                         提示：输入 <span className="font-mono text-primary">&gt;</span> 可执行系统控制指令，或输入 <span className="font-mono text-primary">?</span> 呼出 AI 助手
                       </div>
                     </>
                   )}
-                  {externalSearchHref && (
-                    <div>
-                      <a
-                        href={externalSearchHref}
-                        target={linkTarget}
-                        rel="noopener noreferrer nofollow"
-                        onClick={() => setOpen(false)}
-                        className="text-[11px] px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors inline-flex items-center gap-1"
-                      >
-                        <ExternalLink className="h-3 w-3" aria-hidden />
-                        <span>用 {externalSearchName} 搜索「{query.trim()}」</span>
-                      </a>
+                  {query.trim() && (
+                    <div className="pt-2 flex flex-col items-center gap-2">
+                      <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                        <ExternalLink className="h-3 w-3 text-primary" />
+                        <span>一键全网聚合搜索「{query.trim()}」：</span>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <a
+                          href={safeHref(`https://www.google.com/search?q=${encodeURIComponent(query.trim())}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setOpen(false)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors inline-flex items-center gap-1"
+                        >
+                          <span className="font-semibold">Google</span>
+                        </a>
+                        <a
+                          href={safeHref(`https://github.com/search?q=${encodeURIComponent(query.trim())}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setOpen(false)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 border border-neutral-500/20 transition-colors inline-flex items-center gap-1"
+                        >
+                          <span className="font-semibold">GitHub</span>
+                        </a>
+                        <a
+                          href={safeHref(`https://www.baidu.com/s?wd=${encodeURIComponent(query.trim())}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setOpen(false)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors inline-flex items-center gap-1"
+                        >
+                          <span className="font-semibold">百度</span>
+                        </a>
+                        <a
+                          href={safeHref(`https://www.bing.com/search?q=${encodeURIComponent(query.trim())}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setOpen(false)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors inline-flex items-center gap-1"
+                        >
+                          <span className="font-semibold">Bing</span>
+                        </a>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1263,6 +1686,53 @@ export function SpotlightModal({
               {!loading && pluginUnavailable && hits.length > 0 && (
                 <div className="px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400 border-t border-border/40">
                   插件检索通道暂时不可用，以下只有站点结果。
+                </div>
+              )}
+              {/* 当有检索结果时，在列表底部也常驻提供全网聚合搜索入口 */}
+              {query.trim() && hits.length > 0 && (
+                <div className="pt-2.5 pb-1 px-2 border-t border-border/40 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <ExternalLink className="h-3 w-3 text-primary shrink-0" />
+                    <span>全网聚合搜索「{query.trim()}」：</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <a
+                      href={safeHref(`https://www.google.com/search?q=${encodeURIComponent(query.trim())}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setOpen(false)}
+                      className="px-2 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors font-medium"
+                    >
+                      Google
+                    </a>
+                    <a
+                      href={safeHref(`https://github.com/search?q=${encodeURIComponent(query.trim())}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setOpen(false)}
+                      className="px-2 py-0.5 rounded text-[11px] bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 border border-neutral-500/20 transition-colors font-medium"
+                    >
+                      GitHub
+                    </a>
+                    <a
+                      href={safeHref(`https://www.baidu.com/s?wd=${encodeURIComponent(query.trim())}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setOpen(false)}
+                      className="px-2 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors font-medium"
+                    >
+                      百度
+                    </a>
+                    <a
+                      href={safeHref(`https://www.bing.com/search?q=${encodeURIComponent(query.trim())}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setOpen(false)}
+                      className="px-2 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors font-medium"
+                    >
+                      Bing
+                    </a>
+                  </div>
                 </div>
               )}
             </>

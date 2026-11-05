@@ -27,7 +27,9 @@ export type SpeculativeIntentType =
   | 'byte_size'
   | 'regex'
   | 'semver'
-  | 'http_status';
+  | 'http_status'
+  | 'date_to_ts'
+  | 'hash_calc';
 
 /** 浏览器端推测性意图解析 */
 export interface SpeculativeIntentResult {
@@ -151,6 +153,56 @@ function tryParseBase64(input: string): SpeculativeIntentResult | null {
 /**
  * 时间戳意图解析（支持秒级 10 位与毫秒级 13 位）
  */
+
+/**
+ * 自然日期时间转时间戳 (yyyy-MM-dd / yyyy/MM/dd / yyyy-MM-dd HH:mm:ss 等)
+ */
+function tryParseDateToTimestamp(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  const explicit = trimmed.startsWith('date:') || trimmed.startsWith('dt:');
+  const body = explicit ? trimmed.replace(/^(date:|dt:)s*/, '') : trimmed;
+
+  // 严格匹配常见的日期时间格式：YYYY-MM-DD 或 YYYY/MM/DD，可选 HH:mm 或 HH:mm:ss
+  const m = body.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (!m) return null;
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = m[4] !== undefined ? Number(m[4]) : 0;
+  const minute = m[5] !== undefined ? Number(m[5]) : 0;
+  const second = m[6] !== undefined ? Number(m[6]) : 0;
+
+  if (year < 1970 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
+    return null;
+  }
+
+  const d = new Date(year, month - 1, day, hour, minute, second);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) {
+    return null; // 非法日期如 2月30日
+  }
+
+  const ms = d.getTime();
+  const sec = Math.floor(ms / 1000);
+  const iso = d.toISOString();
+  const localStr = d.toLocaleString('zh-CN', { hour12: false });
+
+  return {
+    type: 'date_to_ts',
+    title: '日期时间转时间戳',
+    subtitle: `${localStr} ➔ ${sec}s / ${ms}ms`,
+    previewValue: `${sec} (秒) / ${ms} (毫秒)`,
+    actionLabel: '复制秒级时间戳',
+    copyValue: sec.toString(),
+    details: {
+      '标准时间': localStr,
+      '秒级戳 (10位)': sec.toString(),
+      '毫秒级戳 (13位)': ms.toString(),
+      'UTC ISO': iso,
+    },
+  };
+}
+
 function tryParseTimestamp(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
   const explicit = trimmed.startsWith('ts:') || trimmed.startsWith('time:');
@@ -259,6 +311,8 @@ function tryParseColor(input: string): SpeculativeIntentResult | null {
  */
 function tryParseMath(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
+  // 排除形如 YYYY-MM-DD 或 YYYY/MM/DD 的日期格式，防止 2026-02-30 被误算为 2026 - 2 - 30
+  if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(trimmed)) return null;
   // 表达式长度上限：防止长串每击键解析一次阻塞主线程（DoS 面）
   if (trimmed.length > 256) return null;
   // 必须包含至少一个算术运算符，且仅包含数字、小数点、括号、运算符与空白
@@ -353,6 +407,61 @@ function tryParseUrlEncoding(input: string): SpeculativeIntentResult | null {
 /**
  * 哈希特征识别
  */
+/**
+ * 从输入文本计算哈希值（MD5 / SHA-1 / SHA-256 / SHA-512）。
+ *
+ * 支持显式前缀（md5: / sha1: / sha256: / sha512:）或自动识别。
+ * 使用 Web Crypto API（SHA-256/512）和纯 JS 实现（MD5/SHA-1）。
+ */
+function tryCalculateHash(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  let hashType = '';
+  let body = trimmed;
+  const prefixMatch = trimmed.match(/^(md5|sha1|sha256|sha512):\s*/i);
+  if (prefixMatch) {
+    hashType = prefixMatch[1].toLowerCase();
+    body = trimmed.slice(prefixMatch[0].length);
+  } else {
+    return null;
+  }
+
+  if (!body) return null;
+
+  // 浏览器端只支持 SHA-256/SHA-512（Web Crypto API）
+  // MD5/SHA-1 在浏览器中需要额外实现，暂不支持
+  let result: { hex: string; label: string } | null = null;
+  try {
+    if (hashType === 'sha256' && typeof crypto !== 'undefined' && crypto.subtle) {
+      result = { hex: '(异步计算中...)', label: 'SHA-256 (256-bit)' };
+    } else if (hashType === 'sha512' && typeof crypto !== 'undefined' && crypto.subtle) {
+      result = { hex: '(异步计算中...)', label: 'SHA-512 (512-bit)' };
+    } else if (hashType === 'md5' || hashType === 'sha1') {
+      // MD5/SHA-1 在浏览器中需要额外实现，暂不支持
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  if (!result) return null;
+
+  return {
+    type: 'hash_calc',
+    title: result.label + ' 哈希计算',
+    subtitle: body.length > 40 ? body.slice(0, 40) + '...' : body,
+    previewValue: result.hex,
+    actionLabel: '复制哈希值',
+    copyValue: result.hex,
+    details: {
+      '算法': result.label,
+      '输入长度': body.length + ' 字符',
+      '哈希值': result.hex,
+    },
+  };
+}
+
 function tryDetectHash(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
   if (!/^[0-9a-fA-F]+$/.test(trimmed)) return null;
@@ -1142,6 +1251,8 @@ export function parseSpeculativeIntent(input: string): SpeculativeIntentResult |
     tryParseSemver(q) ||
     tryParseRegex(q) ||
     tryParseColor(q) ||
+    tryCalculateHash(q) ||
+    tryParseDateToTimestamp(q) ||
     tryParseMath(q) ||
     tryParseTimestamp(q) ||
     tryParseJson(q) ||

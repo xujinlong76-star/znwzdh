@@ -102,24 +102,40 @@ describe("服务端可达图里不许出现 React 客户端 hook", () => {
 
   it("从任服务端入口出发，遇到 'use client' 就收住；否则不许摸到 react hook", () => {
     const violations: string[] = [];
-    for (const entry of serverEntries) {
-      const seen = new Set<string>([entry]);
-      const stack: Array<{ file: string; trail: string[] }> = [{ file: entry, trail: [relative(SRC, entry)] }];
-      while (stack.length) {
-        const { file, trail } = stack.pop()!;
+    // 性能守则（2026-10-30 修超时）：文件内容在本用例内不变，每个文件只解析一次。
+    // 旧写法逐入口重复 readFileSync + 去注释 + 三轮正则，退化成「入口数 × 可达文件数」
+    // 次全量解析（本树实测 34s+，30s 超时把断言直接吞掉）。
+    const analyzed = new Map<string, { hits: string[]; specs: string[]; boundary: boolean }>();
+    const analyze = (file: string) => {
+      let cached = analyzed.get(file);
+      if (!cached) {
         const code = readFileSync(file, "utf8")
           .replace(/\/\*[\s\S]*?\*\//g, "")
           .replace(/^\s*\/\/.*$/gm, "");
-        const hits = clientHookNames(code);
+        cached = { hits: clientHookNames(code), specs: importsOf(code), boundary: isClientBoundary(code) };
+        analyzed.set(file, cached);
+      }
+      return cached;
+    };
+    // 「干净模块」与到达路径无关：全局去重后每个模块只走一遍，
+    // 首次到达的 trail 就是违规报告里的路径。
+    const seen = new Set<string>();
+    for (const entry of serverEntries) {
+      if (seen.has(entry)) continue;
+      seen.add(entry);
+      const stack: Array<{ file: string; trail: string[] }> = [{ file: entry, trail: [relative(SRC, entry)] }];
+      while (stack.length) {
+        const { file, trail } = stack.pop()!;
+        const { hits, specs } = analyze(file);
         if (hits.length) {
           violations.push(`${trail.join(" -> ")} 从 react 导入了客户端 API：${hits.join(", ")}`);
           continue;
         }
-        for (const spec of importsOf(code)) {
+        for (const spec of specs) {
           const next = resolveSpecifier(file, spec);
           if (!next || seen.has(next)) continue;
           // 客户端边界：Next 在这里切断服务端图，不再往下算
-          if (isClientBoundary(readFileSync(next, "utf8"))) continue;
+          if (analyze(next).boundary) continue;
           seen.add(next);
           stack.push({ file: next, trail: [...trail, relative(SRC, next)] });
         }

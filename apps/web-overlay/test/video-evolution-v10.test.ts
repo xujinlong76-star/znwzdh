@@ -27,6 +27,7 @@ import {
   VirtualFileSystem,
   SandboxRuntime,
 } from '../src/lib/video-code-sandbox-runtime'
+import type { OpaqueSession } from '../src/lib/video-opaque-sandbox'
 import {
   StudyRoomCRDTState,
 } from '../src/lib/video-study-room-crdt'
@@ -307,17 +308,42 @@ describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
 
     it('bundles and executes multi-file project with console output interception', async () => {
       const vfs = new VirtualFileSystem({
-        '/index.ts': `import { multiply } from './math.ts'\nconst res = multiply(6, 7)\nconsole.log("Answer is:", res)\nreturn res`,
+        '/index.ts': `import { multiply } from './math.ts'\nconst res = multiply(6, 7)\nconsole.log("Answer is:", res)\nexports.answer = res`,
         '/math.ts': `export function multiply(a, b) { return a * b; }`,
       })
 
-      const runtime = new SandboxRuntime(vfs)
+      // 执行搬进不透明源沙盒（lib/video-opaque-sandbox.ts）；node 里没有 DOM，
+      // 真沙盒只会回 unavailable，所以这里注入一个 stub 会话来验跑通之后的接线。
+      // 结果走 exports（脚本里顶层 return 是语法错），stub 就照这个契约回一份导出快照。
+      let bundled = ''
+      const stub: OpaqueSession = {
+        logs: [{ level: 'log', text: 'Answer is: 42', timestamp: 1 }],
+        load: async (code) => {
+          bundled = code
+          return { ok: true, logs: [], hasValue: true, value: { answer: 42 }, durationMs: 1 }
+        },
+        invoke: async () => ({ ok: false, logs: [], hasValue: false, durationMs: 0 }),
+        close: () => {},
+      }
+
+      const runtime = new SandboxRuntime(vfs, { openSession: async () => stub })
       const execution = await runtime.execute('/index.ts')
 
       expect(execution.success).toBe(true)
-      expect(execution.returnValue).toBe(42)
+      expect(execution.returnValue).toEqual({ answer: 42 })
       expect(execution.logs).toHaveLength(1)
       expect(execution.logs[0].text).toContain('Answer is: 42')
+      expect(bundled, '依赖没被内联进交给沙盒的代码').toContain('function multiply')
+    })
+
+    it('沙盒不可用时判「未执行」，不会退回页面内求值', async () => {
+      const vfs = new VirtualFileSystem({
+        '/index.ts': `console.log("被执行了")\nexports.one = 1`,
+      })
+      const execution = await new SandboxRuntime(vfs).execute('/index.ts')
+      expect(execution.success).toBe(false)
+      expect(execution.stopReason).toBe('unavailable')
+      expect(execution.logs, '真的跑了就说明留了同源回退口').toEqual([])
     })
   })
 

@@ -110,6 +110,11 @@ export const GetSiteInput = z.object({
   idOrUrl: z.string().describe("站点 id 或完整网址"),
 });
 
+export const ListFacetsInput = z.object({
+  categoryId: z.string().optional().describe("限定类目（可选，限定统计该分类下的分面分布）"),
+  tag: z.string().optional().describe("限定标签（可选，限定统计该标签下的分面分布）"),
+});
+
 export const ListCategoriesInput = z.object({
   includeCounts: z.boolean().default(true).describe("是否返回每个类目下的站点数"),
 });
@@ -228,10 +233,18 @@ export const RunJobInput = z.object({
     "backup_restore",
   ]).describe("任务类型：health_check (健康巡检), refetch_metadata (重抓元数据), recompute_rank (重排热度), reindex (重建检索索引), site_self_healing (死链自愈诊断), token_audit (API 凭据过期与闲置巡检), purge_trash (过期回收站物理清理), taxonomy_audit (分类标签体系审计), data_retention (events/audit_logs 数据保留与明细聚合；cleanup 只 dry-run，rollup 可选 apply), plugin_governance (插件治理巡检), user_data_audit (用户数据质量巡检), backup_restore (按 staging 计划恢复站点)"),
   payload: z.record(z.string(), z.unknown()).optional().describe("任务参数（按 kind 校验：health_check 可选 siteId/limit；refetch_metadata/site_self_healing 必填 siteId；reindex 可选 siteIds/targets/vectors；token_audit 可选 expiringDays/dormantDays；purge_trash 可选 olderThanDays；taxonomy_audit 可选 dryRun/siteLimit；data_retention 支持 mode=cleanup|rollup、apply、maxDays、maxGroups、maxScan、telemetryDays；backup_restore 必填 stagingPath）"),
+  /**
+   * 破坏性任务（backup_restore / purge_trash / data_retention apply）的确认位。
+   * REST 的 POST /api/jobs 会强制它；MCP 的 run_job 本身已是 admin-only，不额外要求。
+   */
+  confirm: z.boolean().optional().describe("破坏性任务（backup_restore / purge_trash / data_retention apply）必须显式传 true，否则拒绝入队"),
 });
 
 export const ListJobsInput = z.object({
-  status: z.enum(["pending", "running", "done", "failed", "cancelled"]).optional().describe("按状态过滤；缺省返回最近的全部任务"),
+  status: z
+    .enum(["pending", "running", "cancelling", "retrying", "done", "failed", "cancelled"])
+    .optional()
+    .describe("按状态过滤；缺省返回最近的全部任务。cancelling = 已要求停手、执行体在分片边界停手前的过渡态"),
   limit: z.number().int().min(1).max(100).default(20).describe("返回条数上限"),
 });
 
@@ -539,6 +552,154 @@ export const UpdateApiTokenInput = z.object({
   expiresAt: z.number().int().positive().nullable().optional().describe("过期时间戳（毫秒）"),
 });
 
+/* ------------------------------------------------------------------ *
+ * 管理面写路由的请求体契约（P1-8）
+ *
+ * 这些 schema 与处理器共享同一份定义：字段上限只在这里写一次，
+ * OpenAPI、请求校验、契约测试不会各说一套。此前处理器内联 z.object，
+ * 文档只能写「通用 object」。
+ * ------------------------------------------------------------------ */
+
+/** POST /api/sites/bulk：dryRun 默认 true，确认后才落库 */
+export const SiteBulkInput = z.object({
+  op: z.enum(["delete", "setCategory", "setStatus"]),
+  ids: z.array(z.string().min(1)).min(1).max(200),
+  categoryId: z.string().optional(),
+  status: SiteStatusSchema.optional(),
+  dryRun: z.boolean().default(true),
+});
+
+/** POST /api/sites/batch：批量导入（201） */
+export const SiteBatchInput = z.object({
+  sites: z
+    .array(
+      z.object({
+        url: httpUrl(),
+        title: z.string().min(1).optional(),
+        description: z.string().nullable().optional(),
+        categoryId: z.string().optional(),
+        tags: z.array(z.string()).max(50).optional(),
+        source: z.string().optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+  defaultCategoryId: z.string().optional(),
+});
+
+export const CategoryCreateInput = z.object({
+  title: z.string().min(1),
+  titleEn: z.string().nullable().optional(),
+  parentId: z.string().nullable().optional(),
+  icon: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  sort: z.number().optional(),
+  altLabels: z.array(z.string()).max(50).optional(),
+  relatedCategories: z.array(z.string()).max(50).optional(),
+});
+
+export const CategoryUpdateInput = z.object({
+  title: z.string().min(1).optional(),
+  titleEn: z.string().nullable().optional(),
+  icon: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  enabled: z.boolean().optional(),
+  sort: z.number().optional(),
+  altLabels: z.array(z.string()).max(50).optional(),
+  relatedCategories: z.array(z.string()).max(50).optional(),
+});
+
+export const CategoryMoveInput = z.object({
+  parentId: z.string().nullable(),
+});
+
+export const CategoryMergeInput = z.object({
+  sourceId: z.string().min(1),
+  targetId: z.string().min(1),
+});
+
+export const TagUpdateInput = z.object({
+  name: z.string().min(1).max(24).optional(),
+  group: z.string().min(1).max(32).optional(),
+  color: z.string().max(32).nullable().optional(),
+  description: z.string().max(200).nullable().optional(),
+});
+
+export const TagMergeInput = z.object({
+  sourceId: z.string().min(1),
+  targetId: z.string().min(1),
+});
+
+export const TagAliasInput = z.object({
+  alias: z.string().min(1).max(40),
+});
+
+/** PUT /api/sites/{id}/facets 与 GET 的查询过滤共用同一份预算 */
+export const FacetsUpdateInput = z.object({
+  facets: SiteFacetsInput,
+});
+
+export const RelationsUpdateInput = z.object({
+  relations: z.array(SiteRelationSchema).max(200),
+});
+
+export const JobPruneInput = z.object({
+  olderThanDays: z.number().int().min(0).max(365).default(7),
+  statuses: z.array(z.string()).default(["done", "failed", "cancelled"]),
+});
+
+export const SubmissionReviewInput = z.object({
+  action: z.enum(["approve", "reject"]),
+  reason: z.string().max(500).optional(),
+});
+
+export const StorageWriteInput = z.object({
+  path: z.string().min(1),
+  content: z.string(),
+  message: z.string().optional(),
+  ifVersion: z.number().int().nonnegative().optional(),
+  /**
+   * 整包文档（videos.json / navigation.json）缩水保护的二阶段确认（第一段）。
+   *
+   * 只带它不会放行：必须同时声明 expectedCount。否则「确认」退化成一个
+   * 可以无脑加上的布尔值，保护等于没有。
+   */
+  confirmLargeDeletion: z.boolean().optional(),
+  /** 第二段：调用方声明本次真实写入的条目数，必须与解析结果逐字相等 */
+  expectedCount: z.number().int().nonnegative().optional(),
+});
+
+export const StorageDeleteInput = z.object({
+  path: z.string().min(1).max(4096),
+});
+
+export const MaintenanceCheckpointInput = z.object({
+  mode: z.enum(["passive", "full", "restart", "truncate"]).default("passive"),
+});
+
+export const SiteAuditApplyInput = z.object({
+  siteId: z.string().min(1),
+  action: z.enum(["wayback", "replacement", "dismiss"]),
+  targetUrl: httpUrl().optional(),
+  targetTitle: z.string().min(1).optional(),
+});
+
+export const TaxonomyAuditInput = z.object({
+  dryRun: z.boolean().optional().default(false),
+  siteLimit: z.number().int().positive().optional().default(500),
+});
+
+export const TaxonomyApplyInput = z.object({
+  parentId: z.string().nullable().optional(),
+  titleEn: z.string().max(60).nullable().optional(),
+  icon: z.string().max(40).nullable().optional(),
+});
+
+export const TaxonomyBatchInput = z.object({
+  ids: z.array(z.string()).min(1).max(100),
+  action: z.enum(["apply", "dismiss"]),
+});
+
 /**
  * REST 端点 -> 契约 schema 的绑定表。
  * key 必须是 OpenAPI 路径模板（`:id` 已转成 `{id}`）+ 大写方法。
@@ -570,6 +731,26 @@ export const REST_SCHEMA_BINDINGS: Record<string, { schema: ZodSchemaLike; in: "
   "GET /api/tags/resolve": { schema: ResolveTagInput, in: "query" },
   "GET /api/plugins/search": { schema: SearchPluginsInput, in: "query" },
   "GET /api/rank/trending": { schema: GetTrendingInput, in: "query" },
+  "POST /api/sites/bulk": { schema: SiteBulkInput, in: "body" },
+  "POST /api/sites/batch": { schema: SiteBatchInput, in: "body" },
+  "PUT /api/sites/{id}/facets": { schema: FacetsUpdateInput, in: "body" },
+  "PUT /api/sites/{id}/relations": { schema: RelationsUpdateInput, in: "body" },
+  "POST /api/categories": { schema: CategoryCreateInput, in: "body" },
+  "PATCH /api/categories/{id}": { schema: CategoryUpdateInput, in: "body" },
+  "POST /api/categories/{id}/move": { schema: CategoryMoveInput, in: "body" },
+  "POST /api/categories/merge": { schema: CategoryMergeInput, in: "body" },
+  "PATCH /api/tags/{id}": { schema: TagUpdateInput, in: "body" },
+  "POST /api/tags/merge": { schema: TagMergeInput, in: "body" },
+  "POST /api/tags/{id}/aliases": { schema: TagAliasInput, in: "body" },
+  "POST /api/jobs/prune": { schema: JobPruneInput, in: "body" },
+  "PATCH /api/submissions/{number}": { schema: SubmissionReviewInput, in: "body" },
+  "PUT /api/storage": { schema: StorageWriteInput, in: "body" },
+  "DELETE /api/storage": { schema: StorageDeleteInput, in: "body" },
+  "POST /api/admin/maintenance/checkpoint": { schema: MaintenanceCheckpointInput, in: "body" },
+  "POST /api/admin/audit/apply": { schema: SiteAuditApplyInput, in: "body" },
+  "POST /api/taxonomy/audit": { schema: TaxonomyAuditInput, in: "body" },
+  "POST /api/taxonomy/proposals/{id}/apply": { schema: TaxonomyApplyInput, in: "body" },
+  "POST /api/taxonomy/proposals/batch": { schema: TaxonomyBatchInput, in: "body" },
 };
 
 /* ------------------------------------------------------------------ *

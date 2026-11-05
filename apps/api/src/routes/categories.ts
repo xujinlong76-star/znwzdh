@@ -6,7 +6,13 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
-import { assertCategoryName } from "@navhub/core";
+import {
+  assertCategoryName,
+  CategoryCreateInput,
+  CategoryMergeInput,
+  CategoryMoveInput,
+  CategoryUpdateInput,
+} from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { badRequest, created, notFound } from "./shared.ts";
 
@@ -185,18 +191,7 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    * registry 播种走仓储层显式传 slug，HTTP 这条口子上没有那个映射表可校验。
    */
   app.post("/api/categories", { config: { scope: "write" } }, async (req, reply) => {
-    const body = z
-      .object({
-        title: z.string().min(1),
-        titleEn: z.string().nullable().optional(),
-        parentId: z.string().nullable().optional(),
-        icon: z.string().nullable().optional(),
-        description: z.string().nullable().optional(),
-        sort: z.number().optional(),
-        altLabels: z.array(z.string()).max(50).optional(),
-        relatedCategories: z.array(z.string()).max(50).optional(),
-      })
-      .safeParse(req.body ?? {});
+    const body = CategoryCreateInput.safeParse(req.body ?? {});
 
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);
@@ -229,16 +224,6 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    * 分类增强与树形重排 (Taxonomy Refactor & Movements)
    * ------------------------------------------------------------------ */
 
-  const categoryPatchSchema = z.object({
-    title: z.string().min(1).optional(),
-    titleEn: z.string().nullable().optional(),
-    icon: z.string().nullable().optional(),
-    description: z.string().nullable().optional(),
-    enabled: z.boolean().optional(),
-    sort: z.number().optional(),
-    altLabels: z.array(z.string()).max(50).optional(),
-    relatedCategories: z.array(z.string()).max(50).optional(),
-  });
 
   /**
    * 部分更新类目属性（标题/图标/描述/状态/排序）
@@ -248,7 +233,7 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    */
   app.patch("/api/categories/:id", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = categoryPatchSchema.safeParse(req.body ?? {});
+    const body = CategoryUpdateInput.safeParse(req.body ?? {});
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);
     }
@@ -320,7 +305,7 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    */
   app.post("/api/categories/:id/move", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = z.object({ parentId: z.string().nullable() }).safeParse(req.body ?? {});
+    const body = CategoryMoveInput.safeParse(req.body ?? {});
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);
     }
@@ -348,9 +333,7 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    * 合并类目：将源类目（含其子树）站点整体迁入目标类目后安全删除源分类
    */
   app.post("/api/categories/merge", { config: { scope: "write" } }, async (req, reply) => {
-    const body = z
-      .object({ sourceId: z.string().min(1), targetId: z.string().min(1) })
-      .safeParse(req.body ?? {});
+    const body = CategoryMergeInput.safeParse(req.body ?? {});
 
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);

@@ -18,6 +18,12 @@ import { calculateQualityScore, calculateFreshnessScore, parseDurationToSeconds 
 import { parseBilibiliWithXingzhige } from './video-bilibili-hd-parser'
 import { enrichVideoItemSeo } from './video-seo'
 import {
+  routeVideoToSubcategory,
+  isFuzzyDuplicateVideo,
+  extractTechBadgesAndDifficulty,
+  normalizeVideoCoverUrl,
+} from './video-subcategory-router'
+import {
   attachResolvedSeoMetadata,
   harvestMultiPlatformVideosForKeyword,
   resolveMultiPlatformVideoUrl,
@@ -212,6 +218,14 @@ export async function resolveVideoUrl(rawUrl: string): Promise<ResolvedVideoInfo
  * 注：B 站 `wbi/search/type` 需要 `w_rid`/`wts` 签名，缺失时接口返回 -352/-412。
  * 这类响应现在会被记为失败原因，而不是伪装成「没有结果」。
  */
+export const DEFAULT_HARVEST_PLATFORMS: VideoPlatformType[] = [
+  'bilibili',
+  'youtube',
+  'dailymotion',
+  'ted',
+  'peertube',
+]
+
 export async function harvestVideosForTopic(
   keywords: string[],
   options: {
@@ -228,7 +242,7 @@ export async function harvestVideosForTopic(
   } = {}
 ): Promise<NavigationSubItem[]> {
   const {
-    platforms = ['bilibili'],
+    platforms = DEFAULT_HARVEST_PLATFORMS,
     minDurationSec = 180,
     minQualityScore = 60,
     limitPerKeyword = 3,
@@ -256,12 +270,7 @@ export async function harvestVideosForTopic(
     })
   }
 
-  if (platforms.includes('youtube') && !process.env.YOUTUBE_API_KEY) {
-    failures?.push({
-      keyword: '(全局)',
-      reason: 'YouTube 采集通道尚未实现：policy.platforms 含 youtube，官方 API 需配额密钥，当前通过开放镜像通道兜底检索',
-    })
-  }
+
 
   const harvestOne = async (kw: string): Promise<void> => {
     if (Date.now() > deadline) {
@@ -455,6 +464,8 @@ export interface HarvestRunOptions {
   categoryId?: string
   forceKeywords?: string[]
   accessToken?: string
+  platforms?: VideoPlatformType[]
+  limitPerKeyword?: number
 }
 
 /** 冲突重试上限：每次重试都会重新读库、重新计算，代价是又一轮搜索请求。 */
@@ -524,7 +535,7 @@ export async function runVideoHarvestAndRotation(
 }
 
 async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<VideoHarvestReport> {
-  const { dryRun = false, categoryId, forceKeywords, accessToken } = options
+  const { dryRun = false, categoryId, forceKeywords, accessToken, platforms, limitPerKeyword } = options
 
   /**
    * 必须用「绕过一切缓存」的读链路拿基准数据。
@@ -557,7 +568,7 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
     }
   }
 
-  const additions: Array<{ categoryTitle: string; item: NavigationSubItem }> = []
+  const additions: Array<{ categoryTitle: string; subCategoryTitle?: string; item: NavigationSubItem }> = []
   const newReplacements: VideoReplacementRecord[] = []
   const categorySummaries: VideoHarvestReport['categorySummaries'] = []
   const degradedKeywords: Array<{ keyword: string; reason: string }> = []
@@ -634,12 +645,16 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
       continue
     }
 
+    const targetPlatforms = (platforms && platforms.length > 0)
+      ? platforms
+      : (policy.platforms && policy.platforms.length > 0 ? policy.platforms : DEFAULT_HARVEST_PLATFORMS)
+
     // 针对该分类执行检索采集
     const harvestedCandidates = await harvestVideosForTopic(queryKeywords, {
-      platforms: policy.platforms || ['bilibili'],
+      platforms: targetPlatforms,
       minDurationSec: policy.minDurationSec || 180,
       minQualityScore: policy.minQualityScore || 60,
-      limitPerKeyword: 2,
+      limitPerKeyword: limitPerKeyword || 2,
       // 失败原因汇总进报告，不再只打 console.warn
       failures: degradedKeywords,
     })
@@ -653,22 +668,67 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
       return true
     })
 
+    // 现有分类下所有标题清单（用于模糊去重）
+    const existingCategoryTitles = [
+      ...currentItems,
+      ...subCategories.flatMap(s => s.items || []),
+    ].map(it => it.title).filter(Boolean)
+
     for (const candidate of uniqueCandidates) {
-      const maxItems = policy.maxItems || 12
+      // 模糊相似度去重：防同质化教程过度堆积
+      const fuzzy = isFuzzyDuplicateVideo(candidate.title, existingCategoryTitles)
+      if (fuzzy.isDuplicate) {
+        degradedKeywords.push({
+          keyword: candidate.title,
+          reason: `检测到同类既有教程「${fuzzy.matchedTitle}」（相似度 ${(fuzzy.similarity || 0) * 100}%），已自动去重防同质化`,
+        })
+        continue
+      }
+
+      // 技术栈标签萃取与封面高清化
+      const { tags, difficulty } = extractTechBadgesAndDifficulty(candidate.title, candidate.description)
+      candidate.tags = Array.from(new Set([...(candidate.tags || []), ...tags]))
+      candidate.icon = normalizeVideoCoverUrl(candidate.icon, candidate.videoConfig?.type)
+      if (candidate.videoConfig) {
+        candidate.videoConfig.tags = candidate.tags
+        candidate.videoConfig.difficulty = difficulty
+      }
+
+      const maxItems = Math.max(policy.maxItems || 600, allCategoryItems.length + 50)
       const candidateScore = candidate.videoConfig?.freshnessScore || 80
       const candidateKey = videoExternalKey(candidate.videoConfig)
 
-      // 1. 若分类未满，直接增加（优先放入对应子分类）
+      // 1. 若分类未满，直接增加（根据技术语义精准分流至对应子分类）
       if (allCategoryItems.length < maxItems) {
+        let routedSubTitle: string | undefined = undefined
         if (subCategories.length > 0) {
-          const targetSub = subCategories[0]
-          targetSub.items = [...(targetSub.items || []), candidate]
+          const match = routeVideoToSubcategory(
+            {
+              title: candidate.title,
+              description: candidate.description,
+              trendKeyword: candidate.videoConfig?.trendKeyword,
+              tags: candidate.tags,
+            },
+            subCategories
+          )
+          const targetSub = match.targetSub
+          routedSubTitle = targetSub.title
+          if (candidate.videoConfig) {
+            candidate.videoConfig.subCategoryId = targetSub.id
+            candidate.videoConfig.subCategoryTitle = targetSub.title
+          }
+          targetSub.items = [candidate, ...(targetSub.items || [])]
         } else {
-          currentItems.push(candidate)
+          currentItems.unshift(candidate)
         }
-        allCategoryItems.push(candidate)
+        allCategoryItems.unshift(candidate)
         if (candidateKey) existingExternalIds.add(candidateKey)
-        additions.push({ categoryTitle: cat.title, item: candidate })
+        existingCategoryTitles.unshift(candidate.title)
+        additions.push({
+          categoryTitle: cat.title,
+          subCategoryTitle: routedSubTitle,
+          item: candidate,
+        })
         summary.addedCount++
         continue
       }

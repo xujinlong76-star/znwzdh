@@ -15,7 +15,7 @@
  *      与改造前行为一致，不会因为拿不到版本就写不进去。
  */
 import { commitFile, getFileContent, getStorageVersion, readStorageFresh } from './github'
-import { isVersionConflict } from './video-write-guard'
+import { evaluateVideoShrink, isVersionConflict, isVideoShrinkBlock, VIDEO_SHRINK_KEEP_RATIO } from './video-write-guard'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
@@ -47,14 +47,17 @@ export function countVideoLibraryItems(data: NavigationData): number {
 }
 
 /** 读取视频库，并把结构收敛成「一定存在 navigationItems 数组」 */
-export async function readVideoLibrary(): Promise<NavigationData> {
-  const fresh = await readStorageFresh<NavigationData>(VIDEOS_FILE_PATH)
-    .catch(() => {
-      // fresh 读失败不算数据丢失：下一行有 getFileContent 兜底回落到事实源，
-      // 这里只把「fresh 读不到」表达成 null，让 ?? 走回落分支。
+export async function readVideoLibrary(options: { fresh?: boolean } = {}): Promise<NavigationData> {
+  let raw: NavigationData | null = null
+  if (options.fresh) {
+    raw = await readStorageFresh<NavigationData>(VIDEOS_FILE_PATH).catch(() => {
+      /* 实时读取失败时回退到默认缓存读取，避免整站崩溃 */
       return null
     })
-  const raw = fresh ?? ((await getFileContent(VIDEOS_FILE_PATH)) as NavigationData | null | undefined)
+  }
+  if (!raw) {
+    raw = ((await getFileContent(VIDEOS_FILE_PATH)) as NavigationData | null | undefined) ?? null
+  }
   if (!raw || typeof raw !== 'object') return { navigationItems: [] }
   if (!Array.isArray(raw.navigationItems)) return { ...raw, navigationItems: [] }
   return raw
@@ -69,13 +72,25 @@ export async function readVideoLibrary(): Promise<NavigationData> {
 export async function mutateVideoLibrary<T>(
   mutate: (data: NavigationData) => MutationPlan<T> | Promise<MutationPlan<T>>,
   message: string,
-  options: { token?: string; maxAttempts?: number } = {},
+  options: {
+    token?: string
+    maxAttempts?: number
+    /**
+     * 缩水保护的二阶段确认（与中枢同一套语义，两段都要、数字必须逐字相等）。
+     *
+     * 为什么本地也要一份判据：这道守卫在中枢，但本地守卫先抛就轮不到中枢说话。
+     * 只放开「调用方明确声明了本次条数且与算出来的一致」这一种情形，
+     * 传个 confirm=true 就想绕过，等于把守卫变成一个布尔开关。
+     */
+    confirmLargeDeletion?: boolean
+    expectedCount?: number
+  } = {},
 ): Promise<MutateOutcome<T>> {
   const maxAttempts = Math.max(1, options.maxAttempts ?? 3)
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // 每轮重新读：冲突意味着别人改过，复用旧快照只会再次冲突
-    const data = await readVideoLibrary()
+    // 写前必须读最新（fresh: true）：冲突意味着别人改过，复用旧快照只会再次冲突
+    const data = await readVideoLibrary({ fresh: true })
     const version = await getStorageVersion(VIDEOS_FILE_PATH)
     const plan = await mutate(data)
     if (plan.skip) return { ok: true, result: plan.result, attempts: attempt }
@@ -83,12 +98,18 @@ export async function mutateVideoLibrary<T>(
     // 防破坏性数据丢失守卫：禁止将拥有丰富视频或分类的库抹平/截断
     const initialCount = countVideoLibraryItems(data)
     const nextCount = countVideoLibraryItems(plan.next)
-    if (initialCount >= 100 && nextCount < initialCount * 0.8) {
-      throw new Error(`[video-library-store] 变更被安全拦截：条目总数从 ${initialCount} 骤降至 ${nextCount}，疑似分类或条目被意外抹除！`)
+    const shrinkConfirmed = options.confirmLargeDeletion === true && options.expectedCount === nextCount
+    const shrink = evaluateVideoShrink(initialCount, nextCount)
+    if (!shrinkConfirmed && shrink) {
+      throw new Error(
+        `[video-library-store] 变更被安全拦截：条目总数从 ${shrink.existingCount} 骤降至 ${shrink.incomingCount}，` +
+          `低于下限 ${shrink.minimumAllowed}（存量的 ${Math.round(VIDEO_SHRINK_KEEP_RATIO * 100)}%），疑似分类或条目被意外抹除！` +
+          `确实要这样删除时，带 confirmLargeDeletion=true 且 expectedCount=${nextCount} 重试`,
+      )
     }
     const initialCats = data.navigationItems?.length || 0
     const nextCats = plan.next.navigationItems?.length || 0
-    if (initialCats > 0 && nextCats < initialCats) {
+    if (!shrinkConfirmed && initialCats > 0 && nextCats < initialCats) {
       throw new Error(`[video-library-store] 变更被安全拦截：分类数从 ${initialCats} 减少至 ${nextCats}！`)
     }
 
@@ -100,9 +121,15 @@ export async function mutateVideoLibrary<T>(
         options.token,
         1, // 重试交给本函数（按「重读 + 重放」），commitFile 内部重试同一个版本必然失败
         version ?? undefined,
+        options.confirmLargeDeletion === true
+          ? { confirmLargeDeletion: true, expectedCount: options.expectedCount ?? nextCount }
+          : undefined,
       )
       return { ok: true, result: plan.result, attempts: attempt }
     } catch (error) {
+      // 缩水拦截（409）不是「有人比我快」：重放同一份内容只会再撞一次，
+      // 直接把中枢给的文案抛出去，操作者才能看到「要带哪个 expectedCount」。
+      if (isVideoShrinkBlock(error)) throw error
       const conflict = isVersionConflict(error)
       if (conflict && attempt < maxAttempts) continue
       if (conflict) return { ok: false, conflict: true, attempts: attempt }

@@ -104,10 +104,16 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    let storedId = localStorage.getItem('navhub_p2p_device_id')
-    if (!storedId) {
-      storedId = 'dev_' + Math.random().toString(36).substring(2, 9)
-      localStorage.setItem('navhub_p2p_device_id', storedId)
+    let storedId: string | null = null
+    try {
+      storedId = localStorage.getItem('navhub_p2p_device_id')
+      if (!storedId) {
+        storedId = 'dev_' + Math.random().toString(36).substring(2, 9)
+        localStorage.setItem('navhub_p2p_device_id', storedId)
+      }
+    } catch {
+      /* 容错：无痕模式或存储配额耗尽时使用内存临时 ID */
+      storedId = 'dev_temp_' + Math.random().toString(36).substring(2, 9)
     }
     setDeviceId(storedId)
     setInventory(readLocalInventory())

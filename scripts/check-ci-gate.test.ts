@@ -2,12 +2,14 @@
  * `scripts/check-ci-gate.mjs` 的三项守卫（第 5 项 2026-10-25 run47，第 6 项 2026-10-29，
  * 第 7 项 2026-10-30）。
  *
- * 第 5 项管的是「后端 lint 到底哪边说了算」：CI 的那一步带 continue-on-error，
- * 退出码会被吞掉，所以同一份断言必须在被 ci-passed 聚合的阻塞作业里也跑一遍。
- * 检查本身只有在**两种方向都会红**时才有意义，因此这里用真实 ci.yml 派生夹具：
- *   1. 现状（有 continue-on-error + 有阻塞断言文件）⇒ 绿；
- *   2. 阻塞断言文件消失 ⇒ 红，且话里说清缺的是哪条通道；
- *   3. 工作流自己收紧（去掉 continue-on-error）⇒ 绿 —— 证明它不是「无论如何都要第二通道」的死规则。
+ * 第 5 项管「后端 lint 到底哪边说了算」：CI 那一步若带 continue-on-error，退出码会被吞掉，
+ * 所以同一份断言必须在被 ci-passed 聚合的阻塞作业里再跑一遍。2026-11-01 那一步已经硬化
+ * （规则早就是 error、脚本带 --max-warnings 0），这条配对判据因此改成防守型：只在有人
+ * 重新把 flag 加回来时才执勤。检查本身仍然**两个方向都会动**，夹具由真实 ci.yml 派生：
+ *   1. 现状（那步是硬门禁）⇒ 绿，✅ 行写「后端 lint 步骤本身即为阻塞」；
+ *   2. 现状 + 第二通道文件消失 ⇒ 仍然绿 —— 证明它不是「无论如何都要第二通道」的死规则；
+ *   3. 把 continue-on-error 加回来 + 第二通道文件消失 ⇒ 红，话说清缺的是哪条通道；
+ *      同一份 YAML 只要第二通道还在就不再报第 5 项（但第 7 项会催登记表标 soft）。
  *
  * 第 6 项管「一次根因只留一处红」，见下面 describe 的注释。
  */
@@ -56,36 +58,53 @@ afterAll(() => {
 });
 
 describe("check-ci-gate 第 5 项：后端 lint 的阻塞通道", () => {
-  it("仓库现状：CI 步骤允许失败，但阻塞作业里有同口径断言 ⇒ 绿", () => {
+  /** 合成夹具：把真实 ci.yml 里那一步重新写成「允许失败」——只加一行，别的位置保持原样 */
+  function softenedCi(): string {
     const source = readFileSync(REAL_CI, "utf8");
-    // 允许 run 与 continue-on-error 之间夹一行 id（那一步 2026-10-30 起有 id，
-    // 撤防账靠它点名软门禁）——YAML 键序不影响语义，判据不该依赖相邻
-    expect(source).toMatch(
+    // 工作区里 ci.yml 是 CRLF（检出时由 core.autocrlf 转换）：插行必须跟着同一行尾，
+    // 否则夹具变成混行尾，判据读的就不再是「工作流改一行」那个真实形状。
+    const eol = source.includes("\r\n") ? "\r\n" : "\n";
+    const softened = source.replace(
+      /(- run: pnpm run lint:backend\r?\n\s*id: backend-lint\r?\n)/,
+      (_m, head: string) => `${head}        continue-on-error: true${eol}`,
+    );
+    expect(softened, "夹具没改到东西：ci.yml 里那一步的形状变了").not.toBe(source);
+    return softened;
+  }
+
+  it("仓库现状：那一步本身就是阻塞 ⇒ 第 5 项不逼第二通道，✅ 行把口径说清", () => {
+    const source = readFileSync(REAL_CI, "utf8");
+    expect(source).not.toMatch(
       /- run: pnpm run lint:backend\s*\n(?:\s*id:\s*[A-Za-z0-9_-]+\s*\n)?\s*continue-on-error:\s*true/,
     );
     const res = runGate(REAL_CI, GATE_TEST);
     expect(res.status, res.out).toBe(0);
-    expect(res.out).toContain("后端 lint 由阻塞作业里的同口径断言把关");
+    expect(res.out).toContain("后端 lint 步骤本身即为阻塞");
+    expect(res.out).not.toContain("同口径断言");
   });
 
-  it("阻塞断言消失 ⇒ 红（否则 continue-on-error 又把信号吞回去）", () => {
+  it("不是死规则：现状下第二通道文件消失也照样绿（那一步的退出码没人吞）", () => {
     const res = runGate(REAL_CI, join(dir, "does-not-exist.test.ts"));
-    expect(res.status).not.toBe(0);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).not.toContain("同口径断言");
+  });
+
+  it("重新引入 continue-on-error 且没有第二通道 ⇒ 红：CI 全绿、本地必红的形状回来了", () => {
+    const fixture = writeFixture("ci-lint-soft-again.yml", softenedCi());
+    const res = runGate(fixture, join(dir, "does-not-exist.test.ts"));
+    expect(res.status, res.out).not.toBe(0);
     expect(res.out).toContain("continue-on-error");
     expect(res.out).toContain("backend-lint-gate.test.ts");
   });
 
-  it("工作流自己收紧（去掉 continue-on-error）⇒ 第 5 项不再逼第二通道；登记表由第 7 项催同步", () => {
-    const tightened = readFileSync(REAL_CI, "utf8").replace(/\n\s*continue-on-error:\s*true/, "");
-    expect(tightened).not.toContain("continue-on-error: true");
-    const fixture = writeFixture("ci-tightened.yml", tightened);
-    const res = runGate(fixture, join(dir, "does-not-exist.test.ts"));
-    // 第 5 项：那步已经不软了，退出码不再被吞 ⇒ 不该再要求阻塞作业里有同口径断言
+  it("同一份软化 YAML 只要第二通道还在 ⇒ 第 5 项闭嘴，改由第 7 项催登记表标 soft", () => {
+    // 两条判据各管一头、互不顶班：第 5 项问「红有没有第二处会报」，第 7 项问「账说的是不是真话」。
+    // 现状是两侧都硬 ⇒ 两条都不报；把 flag 加回来则两条各自亮起来。
+    const fixture = writeFixture("ci-lint-soft-with-gate.yml", softenedCi());
+    const res = runGate(fixture, GATE_TEST);
     expect(res.out).not.toContain("同口径断言");
-    // 第 7 项：登记表还标着 soft: true ⇒ 有人必须把那一行摘掉。
-    // 改工作流不许让账说假话——「红了不判红」这句从此不成立，还留着就是给下一轮埋雷。
     expect(res.status, res.out).not.toBe(0);
-    expect(res.out).toContain("登记为软门禁，但作业里已经没有 continue-on-error 了");
+    expect(res.out).toContain("请补 soft: true");
   });
 });
 
@@ -269,8 +288,8 @@ describe("check-ci-gate 第 7 项：撤防账接线", () => {
   it("仓库现状：8 个接入作业各有读数步骤 ⇒ 绿，✅ 行把记账范围说出来", () => {
     const res = runGate(REAL_CI, GATE_TEST);
     expect(res.status, res.out).toBe(0);
-    // 26 道（2026-10-30 起含 test-sqlite 的软门禁 backend-lint）：这个数字是「有读数步骤盯着的门禁」，
-    // 加一道门禁就要同步这里，否则范围被夸大/缩小都没人看见
+    // 26 道：数字是「有读数步骤盯着的门禁」，加一道就要同步这里，否则范围被夸大/缩小都没人看见。
+    // 2026-11-01 后端 lint 硬化时它仍在册（登记表管「该跑的有没有跑成」，不管那步软硬），所以这里没变。
     expect(res.out).toContain("撤防账已接线（8 个作业 / 26 道门禁");
     expect(source().split("run: node scripts/ci-defused-gates.mjs").length - 1).toBe(8);
   });

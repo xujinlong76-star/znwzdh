@@ -26,6 +26,21 @@ const BILI_ACCESS_KEY_STORAGE = 'navhub_bili_access_key'
 const BILI_PLAY_MODE_STORAGE = 'navhub_bili_prefer_mode'
 const BILI_SELECTED_ENGINE_STORAGE = 'navhub_bili_selected_engine'
 
+/** 被服务端出站预算拦下（429/503）——与「解析失败」是两件事，要分开说 */
+class ParseDeniedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ParseDeniedError'
+  }
+}
+
+function denialNotice(status: number, code?: string): string {
+  if (status === 503 || code === 'saturated') {
+    return '同时解析的人较多，已先用官方内嵌播放。稍等几秒再点【立即换源】。'
+  }
+  return '解析太频繁，已先用官方内嵌播放（清晰度受限）。等十几秒再点【立即换源】。'
+}
+
 export interface VideoBilibiliHdPlayerProps {
   bvid?: string
   aid?: string
@@ -137,26 +152,37 @@ export function VideoBilibiliHdPlayer({
     const controller = new AbortController()
     setIsLoading(true)
 
-    const params = new URLSearchParams()
-    if (bvid) params.set('bvid', bvid)
-    if (aid) params.set('aid', aid)
-    if (cid) params.set('cid', cid)
-    params.set('p', String(Math.max(1, p)))
+    // 凭据走请求体，不进 URL：query 会留在浏览器历史与反代/服务端访问日志里，
+    // 而 access_key 等同于用户的 B 站登录态。
+    const payload: Record<string, unknown> = { p: Math.max(1, p) }
+    if (bvid) payload.bvid = bvid
+    if (aid) payload.aid = aid
+    if (cid) payload.cid = cid
     if (accessKey.trim()) {
-      params.set('access_key', accessKey.trim())
+      payload.accessKey = accessKey.trim()
     }
     if (selectedEngine && selectedEngine !== 'auto') {
-      params.set('engine', selectedEngine)
+      payload.engine = selectedEngine
     }
     if (refreshTick > 0) {
-      params.set('refresh', '1')
+      payload.forceRefresh = true
     }
 
-    fetch(`/api/videos/bili-parse?${params.toString()}`, {
+    fetch(`/api/videos/bili-parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
       signal: controller.signal,
     })
       .then(async res => {
         if (!res.ok) {
+          if (res.status === 429 || res.status === 503) {
+            const body = (await res.json().catch(() => {
+              /* 状态码本身已足够判定是哪一类拒绝，正文只是补充 code；解析不了就当没有 */
+              return null
+            })) as { code?: string } | null
+            throw new ParseDeniedError(denialNotice(res.status, body?.code))
+          }
           throw new Error(`HTTP ${res.status}`)
         }
         return (await res.json()) as BilibiliHdParseResult
@@ -185,8 +211,12 @@ export function VideoBilibiliHdPlayer({
           qualityLabel: '官方内嵌播放',
           embedUrl: buildBilibiliEmbedUrl({ bvid, aid, cid, p, autoplay: autoPlay, seekSec }),
           expiresAt: Date.now() + 60_000,
+          // 请求根本没进到解析器 = 这把 key 没被用过。不能继续显示「VIP 密钥已启用」。
+          accessKeyIgnored: err instanceof ParseDeniedError ? Boolean(accessKey.trim()) : undefined,
         })
         setDeliveryStage('iframe')
+        // 被预算拦下要说清「为什么只有内嵌」；其它失败沿用换源提示，不编造原因
+        setStreamErrorNotice(err instanceof ParseDeniedError ? err.message : null)
         setIsLoading(false)
       })
 
@@ -543,7 +573,9 @@ export function VideoBilibiliHdPlayer({
               )}
             >
               <KeyRound className="w-3 h-3" />
-              <span className="hidden sm:inline">{accessKey ? 'VIP 密钥已启用' : '1080P+ 密钥'}</span>
+              <span className="hidden sm:inline">
+                {!accessKey ? '1080P+ 密钥' : parseResult?.accessKeyIgnored ? '密钥未被使用' : 'VIP 密钥已启用'}
+              </span>
             </button>
 
             {/* 重新解析刷新按钮 */}
@@ -630,7 +662,10 @@ export function VideoBilibiliHdPlayer({
             </button>
           </div>
           <p className="text-[11px] text-zinc-400 leading-relaxed">
-            默认免密钥即可解析 <strong>高清 720P</strong> MP4 直链。如需解锁大会员 1080P+/4K 画质，可填入 B 站客户端 <code>access_key</code>：
+            默认免密钥即可解析 <strong>高清 720P</strong> MP4 直链。大会员 1080P+ 需要 B 站客户端
+            <code>access_key</code>；它等同于你的 B 站登录凭据，会经本站转发给第三方解析站
+            （星之阁），因此<strong>默认不出站</strong>——需要管理员显式开启
+            <code>NAVHUB_BILI_FORWARD_USER_KEY=1</code>。
           </p>
           <div className="flex items-center gap-1.5">
             <input
@@ -651,6 +686,16 @@ export function VideoBilibiliHdPlayer({
               应用
             </button>
           </div>
+          {parseResult?.accessKeyIgnored && (
+            // 服务器没把 key 交出去却照旧显示「VIP 密钥已启用」就是骗人：这里如实说明拿到的仍是免登录档。
+            <p className="flex items-start gap-1.5 mt-1.5 text-[11px] leading-relaxed text-amber-300">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>
+                本次解析<strong>没有使用</strong>你填入的 access_key（本服务器未开启把它交给第三方解析站），
+                当前画质仍是免登录档。
+              </span>
+            </p>
+          )}
         </form>
       )}
 

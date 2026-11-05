@@ -6,10 +6,11 @@
  * 负责分类标题、折叠/置顶/排序控件、一级与二级站点的拖拽/收录/多选。
  * 共享状态直接走 useHomeDIY()，拖拽目标等跨区块 UI 状态由父组件注入。
  */
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback, useEffect } from 'react'
 import { NavigationCard } from '@/components/navigation-card'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
-import { ChevronDown, Pin, Plus, Sparkles } from 'lucide-react'
+import { ChevronDown, Pin, Plus, Sparkles, Search, X, Link2 } from 'lucide-react'
+import { Button } from '@/registry/new-york/ui/button'
 import { cn } from '@/lib/utils'
 import {
   computeAdaptiveSiteRanking,
@@ -20,6 +21,7 @@ import { createCustomSiteId } from '@/lib/modular/custom-site-input'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { useToast } from '@/components/ui/use-toast'
+import { copyText } from '@/lib/clipboard'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 
@@ -148,24 +150,109 @@ export function NavigationCategorySection({
   /** 排版编辑与多选是「要对全部卡片动手」的模式：此时不截断，否则用户找不到被折叠的卡 */
   const forceFull = isEditingLayout || selectionMode
 
+  // 类目内秒级精准筛选状态
+  const [filterKeyword, setFilterKeyword] = useState('')
+  const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const [selectedSubCatId, setSelectedSubCatId] = useState<string | null>(null)
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+
+  // 提取类目内的常见热门标签
+  const categoryTopTags = useMemo(() => {
+    const tagCounts = new Map<string, number>()
+    const collectTags = (items?: any[]) => {
+      if (!Array.isArray(items)) return
+      for (const item of items) {
+        if (Array.isArray(item.tags)) {
+          for (const t of item.tags) {
+            if (typeof t === 'string' && t.trim()) {
+              const tag = t.trim()
+              tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
+            }
+          }
+        }
+      }
+    }
+    collectTags(category.items)
+    if (Array.isArray(category.subCategories)) {
+      for (const sub of category.subCategories) {
+        collectTags(sub.items)
+      }
+    }
+    return Array.from(tagCounts.entries())
+      .filter(([_, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([tag]) => tag)
+  }, [category.items, category.subCategories])
+
+  const matchesFilter = useCallback((item: any) => {
+    if (selectedTag) {
+      if (!Array.isArray(item.tags) || !item.tags.includes(selectedTag)) {
+        return false
+      }
+    }
+    const kw = filterKeyword.trim().toLowerCase()
+    if (!kw) return true
+    const titleMatch = typeof item.title === 'string' && item.title.toLowerCase().includes(kw)
+    const descMatch = typeof item.description === 'string' && item.description.toLowerCase().includes(kw)
+    const hrefMatch = typeof item.href === 'string' && item.href.toLowerCase().includes(kw)
+    const tagMatch = Array.isArray(item.tags) && item.tags.some((t: string) => typeof t === 'string' && t.toLowerCase().includes(kw))
+    return titleMatch || descMatch || hrefMatch || tagMatch
+  }, [filterKeyword, selectedTag])
+
+  const isFilterActive = Boolean(filterKeyword.trim() || selectedTag)
+
+  const filteredDirectItems = useMemo(() => {
+    if (!isFilterActive) return sortedDirectItems
+    return sortedDirectItems.filter(matchesFilter)
+  }, [sortedDirectItems, isFilterActive, matchesFilter])
+
+  const filteredSubCategories = useMemo(() => {
+    return sortedSubCategories.map((entry) => {
+      const filtered = isFilterActive
+        ? (entry.sortedSubItems as any[]).filter(matchesFilter)
+        : (entry.sortedSubItems as any[])
+      return {
+        ...entry,
+        filteredSubItems: filtered,
+      }
+    }).filter((entry) => !isFilterActive || entry.filteredSubItems.length > 0)
+  }, [sortedSubCategories, isFilterActive, matchesFilter])
+
+  const showDirectGroup = selectedSubCatId === null || selectedSubCatId === '__direct__'
+
   const directGroup = useMemo(() => {
-    const all = sortedDirectItems as any[]
-    if (forceFull || expandedGroups.__direct__ || all.length <= limit) return { items: all }
+    const all = filteredDirectItems as any[]
+    if (forceFull || isFilterActive || expandedGroups.__direct__ || all.length <= limit) return { items: all }
     return { items: all.slice(0, limit) }
-  }, [sortedDirectItems, forceFull, expandedGroups, limit])
+  }, [filteredDirectItems, forceFull, isFilterActive, expandedGroups, limit])
 
   const subGroups = useMemo(
-    () =>
-      sortedSubCategories.map((entry) => {
-        const all = entry.sortedSubItems as any[]
-        const expanded = forceFull || Boolean(expandedGroups[entry.subCategory.id])
+    () => {
+      const activeList = selectedSubCatId === '__direct__'
+        ? []
+        : selectedSubCatId
+          ? filteredSubCategories.filter((entry) => entry.subCategory.id === selectedSubCatId)
+          : filteredSubCategories
+
+      return activeList.map((entry) => {
+        const all = entry.filteredSubItems as any[]
+        const expanded = forceFull || isFilterActive || Boolean(expandedGroups[entry.subCategory.id])
         return {
           ...entry,
           items: expanded || all.length <= limit ? all : all.slice(0, limit),
         }
-      }),
-    [sortedSubCategories, forceFull, expandedGroups, limit]
+      })
+    },
+    [filteredSubCategories, selectedSubCatId, forceFull, isFilterActive, expandedGroups, limit]
   )
+
+  const totalMatchedCount = useMemo(() => {
+    if (!isFilterActive && !selectedSubCatId) return totalCount
+    const directMatched = showDirectGroup ? filteredDirectItems.length : 0
+    const subMatched = subGroups.reduce((acc, sub) => acc + sub.filteredSubItems.length, 0)
+    return directMatched + subMatched
+  }, [isFilterActive, selectedSubCatId, totalCount, showDirectGroup, filteredDirectItems.length, subGroups])
 
   /**
    * 「展开全部 / 收起」开关。占满整行（col-span-full），避免在半行末尾留空。
@@ -186,6 +273,34 @@ export function NavigationCategorySection({
         <span>{expanded ? '收起' : `展开全部 ${total} 个`}</span>
       </button>
     )
+  }
+
+  // 当从外链携带 #category.id 锚点进入时，若当前分类处于折叠态则自动展开
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash === `#${category.id}` && isCollapsed) {
+      toggleCollapseCategory(category.id)
+    }
+  }, [category.id, isCollapsed, toggleCollapseCategory])
+
+  const handleCopyCategoryLink = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (typeof window === 'undefined') return
+    const url = `${window.location.origin}${window.location.pathname}#${category.id}`
+    const res = await copyText(url)
+    if (res.ok) {
+      window.history.replaceState(null, '', `#${category.id}`)
+      toast({
+        title: '已复制分类直达链接',
+        description: `「${category.title}」锚点链接已复制到剪贴板`,
+      })
+    } else {
+      toast({
+        title: '复制链接失败',
+        description: res.reason,
+        variant: 'destructive',
+      })
+    }
   }
 
   return (
@@ -416,8 +531,18 @@ export function NavigationCategorySection({
                                 </span>
                               )}
                             </h2>
+                            {/* 复制分类直达链接按钮 */}
+                            <button
+                              type="button"
+                              onClick={handleCopyCategoryLink}
+                              className="p-1 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted/80 transition-all cursor-pointer opacity-70 hover:opacity-100"
+                              title={`复制「${category.title}」直达锚点链接`}
+                              aria-label={`复制「${category.title}」分类直达链接`}
+                            >
+                              <Link2 className="w-3.5 h-3.5" />
+                            </button>
                             <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 font-medium">
-                              {totalCount} 站点
+                              {isFilterActive ? `${totalMatchedCount}/${totalCount} 匹配` : selectedSubCatId ? `${totalMatchedCount}/${totalCount} 站点` : `${totalCount} 站点`}
                             </span>
                             {isCollapsed && (
                               <button
@@ -430,6 +555,79 @@ export function NavigationCategorySection({
                               </button>
                             )}
                           </div>
+
+                          {/* 类目内秒级精准筛选器 */}
+                          {!isCollapsed && totalCount >= 4 && (
+                            <div className="flex items-center gap-1.5 ml-auto">
+                              {categoryTopTags.length > 0 && (
+                                <div className="hidden lg:flex items-center gap-1">
+                                  {categoryTopTags.map((tag) => {
+                                    const isSelected = selectedTag === tag
+                                    return (
+                                      <button
+                                        key={tag}
+                                        type="button"
+                                        onClick={() => setSelectedTag(isSelected ? null : tag)}
+                                        className={cn(
+                                          "px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer",
+                                          isSelected
+                                            ? "bg-primary text-primary-foreground shadow-2xs"
+                                            : "bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
+                                        )}
+                                        title={`按标签「${tag}」筛选`}
+                                      >
+                                        #{tag}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              )}
+
+                              {isFilterOpen || filterKeyword ? (
+                                <div className="flex items-center gap-1 bg-background/90 border border-primary/40 focus-within:border-primary rounded-lg px-2 py-0.5 shadow-2xs">
+                                  <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                  <input
+                                    type="text"
+                                    value={filterKeyword}
+                                    onChange={(e) => setFilterKeyword(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Escape') {
+                                        setFilterKeyword('')
+                                        setIsFilterOpen(false)
+                                      }
+                                    }}
+                                    placeholder={`筛选 ${category.title}...`}
+                                    aria-label={`筛选${category.title}分类下的站点`}
+                                    className="w-24 sm:w-32 text-xs bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
+                                    autoFocus
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFilterKeyword('')
+                                      setSelectedTag(null)
+                                      setIsFilterOpen(false)
+                                    }}
+                                    className="p-0.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                                    title="关闭筛选"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setIsFilterOpen(true)}
+                                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors flex items-center gap-1 text-xs cursor-pointer"
+                                  title={`在「${category.title}」内极速筛选`}
+                                  aria-label={`在「${category.title}」内极速筛选`}
+                                >
+                                  <Search className="w-3.5 h-3.5" />
+                                  <span className="hidden xl:inline text-[11px]">类目筛选</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
 
                           {/* 就地可视化排版控制器（置顶 / 上移 / 下移 / 隐藏） */}
                           {isEditingLayout && (
@@ -448,8 +646,97 @@ export function NavigationCategorySection({
                         {/* 未折叠时渲染分类下挂载的站点和二级分类 */}
                         {!isCollapsed && (
                           <>
+                            {/* 二级分类快速切换导航轨（仅在拥有多个子分类且未折叠时渲染） */}
+                            {!isEditingLayout && subCats.length > 1 && (
+                              <div
+                                role="tablist"
+                                aria-label={`${category.title} 子分类快速切换`}
+                                className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none text-xs"
+                              >
+                                <button
+                                  type="button"
+                                  role="tab"
+                                  aria-selected={selectedSubCatId === null}
+                                  onClick={() => setSelectedSubCatId(null)}
+                                  className={cn(
+                                    "px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                    selectedSubCatId === null
+                                      ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
+                                      : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
+                                  )}
+                                >
+                                  <span>全部</span>
+                                  <span className={cn("text-[10px] font-mono", selectedSubCatId === null ? "text-primary-foreground/80" : "text-muted-foreground/60")}>
+                                    ({totalCount})
+                                  </span>
+                                </button>
+                                {sortedDirectItems.length > 0 && (
+                                  <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={selectedSubCatId === '__direct__'}
+                                    onClick={() => setSelectedSubCatId(selectedSubCatId === '__direct__' ? null : '__direct__')}
+                                    className={cn(
+                                      "px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                      selectedSubCatId === '__direct__'
+                                        ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
+                                        : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
+                                    )}
+                                  >
+                                    <span>精选直属</span>
+                                    <span className={cn("text-[10px] font-mono", selectedSubCatId === '__direct__' ? "text-primary-foreground/80" : "text-muted-foreground/60")}>
+                                      ({sortedDirectItems.length})
+                                    </span>
+                                  </button>
+                                )}
+                                {subCats.map((sub: any) => {
+                                  const isCurrent = selectedSubCatId === sub.id
+                                  const subItemCount = (sub.items as any[])?.length || 0
+                                  return (
+                                    <button
+                                      key={sub.id}
+                                      type="button"
+                                      role="tab"
+                                      aria-selected={isCurrent}
+                                      onClick={() => setSelectedSubCatId(isCurrent ? null : sub.id)}
+                                      className={cn(
+                                        "px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                        isCurrent
+                                          ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
+                                          : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
+                                      )}
+                                    >
+                                      <span>{sub.title}</span>
+                                      <span className={cn("text-[10px] font-mono", isCurrent ? "text-primary-foreground/80" : "text-muted-foreground/60")}>
+                                        ({subItemCount})
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )}
+
+                            {/* 筛选零匹配友好空态 */}
+                            {isFilterActive && totalMatchedCount === 0 && (
+                              <div className="py-6 px-4 rounded-xl border border-dashed border-border/70 text-center space-y-2 bg-muted/20">
+                                <p className="text-xs text-muted-foreground">
+                                  在「{category.title}」分类中未找到匹配「{filterKeyword || selectedTag}」的站点
+                                </p>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs h-7"
+                                  onClick={() => {
+                                    setFilterKeyword('')
+                                    setSelectedTag(null)
+                                  }}
+                                >
+                                  清空此类目筛选
+                                </Button>
+                              </div>
+                            )}
                             {/* 一级分类下直接挂载的站点 */}
-                            {(sortedDirectItems.length > 0 || isCustom) && (
+                            {(showDirectGroup && (sortedDirectItems.length > 0 || isCustom)) && (
                               <div
                                 className={cn(gridColumnsClass, "transition-all duration-200")}
                                 style={{ gap: 'var(--density-grid-gap, 1rem)' }}

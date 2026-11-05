@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { AppContext } from "../context.ts";
+import { restoreStagingDir } from "../restore-staging.ts";
 import {
   canonicalizeUrl,
   exportNetscapeBookmarks,
@@ -222,7 +223,7 @@ interface ActiveRestoreJob {
 async function findActiveRestoreJob(ctx: AppContext): Promise<ActiveRestoreJob | null> {
   const rows = await ctx.repo.raw(
     `SELECT id, status, progress_done, progress_total, updated_at, next_run_at FROM jobs
-     WHERE kind = 'backup_restore' AND status IN ('pending', 'running', 'retrying')
+     WHERE kind = 'backup_restore' AND status IN ('pending', 'running', 'retrying', 'cancelling')
      ORDER BY updated_at DESC LIMIT 1`,
   );
   const row = rows[0];
@@ -242,7 +243,7 @@ async function findActiveRestoreJob(ctx: AppContext): Promise<ActiveRestoreJob |
 async function collectActiveStagingPaths(ctx: AppContext): Promise<Set<string>> {
   const rows = await ctx.repo.raw(
     `SELECT payload FROM jobs
-     WHERE kind = 'backup_restore' AND status IN ('pending', 'running', 'retrying')`,
+     WHERE kind = 'backup_restore' AND status IN ('pending', 'running', 'retrying', 'cancelling')`,
   );
   const paths = new Set<string>();
   for (const row of rows) {
@@ -605,7 +606,7 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
        * staging 文件：只放**已解析**的计划（categoryId 已换成真实 id），
        * 任务侧因此不需要再碰分类映射逻辑，也就能拒绝「categoryId 为空」的脏数据。
        */
-      const stagingDir = resolve(process.env.NAVHUB_RESTORE_STAGING_DIR || "data/restore-staging");
+      const stagingDir = restoreStagingDir();
       // 顺手清理过期残留：非终态任务还引用着的文件必须留住，否则那份任务重跑时
       // 读不到 staging，会以「可重试」的状态永久失败。
       const keep = await collectActiveStagingPaths(ctx);

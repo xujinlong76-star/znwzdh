@@ -97,7 +97,15 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_PUBLIC_URL",
     "NAVHUB_ALERT_WEBHOOK",
   ],
-  web: ["NAVHUB_SESSION_SECRET", "NAVHUB_IDENTITY_SECRET", "NAVHUB_INTERNAL_TOKEN"],
+  web: [
+    "NAVHUB_SESSION_SECRET",
+    "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_INTERNAL_TOKEN",
+    // B 站高清解析：不透传则「面板上能填 key」这件事在容器里永远兑现不了，
+    // 而 FORWARD_USER_KEY 是唯一能改变「访客凭据会不会出站」的开关。
+    "NAVHUB_BILIBILI_ACCESS_KEY",
+    "NAVHUB_BILI_FORWARD_USER_KEY",
+  ],
 };
 
 describe("docker compose 安全变量透传契约", () => {
@@ -177,6 +185,10 @@ const QUOTA_KEYS = [
   "NAVHUB_LLM_QUOTA_ANON_TOKENS",
   "NAVHUB_LLM_QUOTA_SYSTEM_CALLS",
   "NAVHUB_LLM_QUOTA_SYSTEM_TOKENS",
+  // 并发预留两项同属额度闸门：少透传一个，多副本部署就只能用代码默认值，
+  // 「.env 里调 TTL」变成写了没用的假旋钮。
+  "NAVHUB_LLM_QUOTA_RESERVE_TOKENS",
+  "NAVHUB_LLM_QUOTA_TTL_MS",
   "NAVHUB_LLM_QUOTA_DISABLED",
 ];
 

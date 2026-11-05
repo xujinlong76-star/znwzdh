@@ -96,9 +96,16 @@ describe('采集入口：并发互斥与平台诚实性', () => {
     expect(code).toMatch(/const\s+lockOwner\s*=/)
   })
 
-  it('platforms 含 youtube 时显式记录「未实现」，不再静默返回空结果', () => {
+  it('platforms 含 youtube 时走真实 YouTube 通道，检索无结果必须显式记 degraded', () => {
+    // 契约更新（2026-10-30）：YouTube 采集已由多平台通道真实实现
+    // （官方 Data API → ytInitialData 网页解析 → 开放镜像三级降级），
+    // 旧断言「YouTube 采集通道尚未实现」随之过时。
+    // 不变的诚实性要求：youtube 不许被静默丢弃，检索不到必须记 failures 而不是装作「没有结果」。
     const code = stripComments(src('lib/video-harvester.ts'))
-    expect(code).toMatch(/YouTube 采集通道尚未实现/)
+    expect(code).toMatch(/harvestMultiPlatformVideosForKeyword\s*\(/)
+    const multi = stripComments(src('lib/video-multi-platform-harvester.ts'))
+    expect(multi).toMatch(/platforms\.includes\(\s*'youtube'\s*\)/)
+    expect(multi).toMatch(/YouTube 通道检索未返回有效结果/)
   })
 })
 

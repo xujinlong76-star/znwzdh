@@ -30,7 +30,12 @@ export function FluidGlassCanvas() {
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    const stored = localStorage.getItem('navhub_fluid_glass_enabled')
+    let stored: string | null = null
+    try {
+      stored = localStorage.getItem('navhub_fluid_glass_enabled')
+    } catch {
+      // 存储访问受限
+    }
     if (stored === 'true') {
       setEnabled(true)
     }
@@ -38,7 +43,11 @@ export function FluidGlassCanvas() {
     const handleToggle = () => {
       setEnabled((prev) => {
         const next = !prev
-        localStorage.setItem('navhub_fluid_glass_enabled', String(next))
+        try {
+          localStorage.setItem('navhub_fluid_glass_enabled', String(next))
+        } catch {
+          // 存储访问受限
+        }
         return next
       })
     }

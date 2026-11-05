@@ -21,7 +21,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 520,
         "minQualityScore": 65,
@@ -13921,7 +13924,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 520,
         "minQualityScore": 65,
@@ -27677,7 +27683,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 520,
         "minQualityScore": 65,
@@ -41295,7 +41304,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 520,
         "minQualityScore": 65,
@@ -54962,7 +54974,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 520,
         "minQualityScore": 65,
@@ -68616,7 +68631,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 520,
         "minQualityScore": 65,
@@ -82164,7 +82182,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 520,
         "minQualityScore": 65,
@@ -95749,7 +95770,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 520,
         "minQualityScore": 65,
@@ -109426,7 +109450,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 520,
         "minQualityScore": 65,
@@ -123011,7 +123038,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 400,
         "minQualityScore": 65,
@@ -139163,7 +139193,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 400,
         "minQualityScore": 65,
@@ -155313,7 +155346,10 @@
         "syncSiteHotTrends": true,
         "platforms": [
           "bilibili",
-          "youtube"
+          "youtube",
+          "dailymotion",
+          "ted",
+          "peertube"
         ],
         "maxItems": 400,
         "minQualityScore": 65,

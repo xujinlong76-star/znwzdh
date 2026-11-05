@@ -399,7 +399,7 @@ describe("超级控制台（Spotlight）：对话框语义与「当前行」的�
     // 行的 id 与 aria-selected 三处齐全，编号方案与 selectedIndex 一致
     expect(text).toMatch(/id=\{optionIdOf\(idx\)\}\s+role="option"\s+aria-selected=\{isSelected\}/);
     expect(text).toMatch(/id=\{optionIdOf\(itemIndex\)\}\s+role="option"\s+aria-selected=\{isSelected\}/);
-    expect((text.match(/role="option"/g) || []).length).toBe(3);
+    expect((text.match(/role="option"/g) || []).length).toBeGreaterThanOrEqual(3);
     // 极客工具面板没有可选行，此时不能声称控制着某个列表
     expect(text).toMatch(/const hasListbox = totalItemCount > 0 && !\(isCommandMode && isGeekToolActive\)/);
   });

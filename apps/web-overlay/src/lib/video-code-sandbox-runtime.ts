@@ -2,8 +2,22 @@
  * In-Browser Interactive Multi-File Code Sandbox & Execution Container
  * Proposal [5]: WebContainer-based Live In-Browser Video Dev Environment
  * Provides an in-memory Virtual File System (VFS), multi-file dependency resolver,
- * isolated code evaluation with intercepted console logging, and HTML preview generator.
+ * isolated code execution with intercepted console logging, and HTML preview generator.
+ *
+ * 「isolated」在 2026-11-01 之前是假的：执行走 `new Function`，跑在**页面自己的 realm**，
+ * 而这里的代码来自 AI 生成 + 用户粘贴，所以那一段文字能读 localStorage 里的会话。
+ * 同一天还查到第二件事：本仓 CSP 不含 `unsafe-eval`，那行 `new Function` 在真人浏览器里
+ * 报的是 CSP 违规 —— 这个「运行工程」按钮从来没真的跑通过。
+ * 现在执行统一交给 lib/video-opaque-sandbox.ts 的不透明源 iframe；沙盒不可用时
+ * 返回 success:false + stopReason='unavailable'，**不**退回同源执行（退回去等于白改）。
  */
+
+import {
+  openOpaqueSession,
+  type OpaqueLogEntry,
+  type OpaqueSession,
+  type OpaqueStopReason,
+} from './video-opaque-sandbox'
 
 export interface VirtualFile {
   path: string
@@ -15,9 +29,30 @@ export interface VirtualFile {
 export interface SandboxExecutionResult {
   success: boolean
   logs: Array<{ type: 'log' | 'warn' | 'error' | 'info'; text: string; timestamp: number }>
-  returnValue?: any
+  /** 沙盒里的 `exports` 快照（没有导出就没有值；顶层 return 在脚本里是语法错误） */
+  returnValue?: unknown
+  /** 导出里有传不回来的东西（函数 / class / 循环引用…）时的纯文本，界面优先显示它 */
+  returnValueText?: string
   executionTimeMs: number
   errorMessage?: string
+  /**
+   * 只有「根本没进沙盒跑」时才有值：
+   * unavailable = 环境不给跑（界面该显示「仅阅读」），rejected = 代码超上限，timeout = 卡住。
+   */
+  stopReason?: OpaqueStopReason
+}
+
+/** 测试注入点：不传就用真的不透明源沙盒 */
+export interface SandboxRuntimeDeps {
+  openSession?: () => Promise<OpaqueSession>
+}
+
+function toSandboxLog(entry: OpaqueLogEntry): SandboxExecutionResult['logs'][number] {
+  return { type: entry.level, text: entry.text, timestamp: entry.timestamp }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 /**
@@ -74,15 +109,20 @@ export class VirtualFileSystem {
  */
 export class SandboxRuntime {
   private vfs: VirtualFileSystem
+  private deps: SandboxRuntimeDeps
 
-  constructor(vfs?: VirtualFileSystem) {
+  constructor(vfs?: VirtualFileSystem, deps: SandboxRuntimeDeps = {}) {
+    this.deps = deps
     this.vfs = vfs || new VirtualFileSystem({
       '/index.ts': `// 欢迎来到视频即时联调沙盒
 import { calculateThroughput } from './utils.ts'
 
 const rate = calculateThroughput(1000, 42)
 console.log("🔥 测得系统吞吐量:", rate, "req/s")
-return { status: "ready", rate }
+
+// 沙盒里代码是一段一段被浏览器编译的普通脚本，顶层 return 是语法错误；
+// 要给外面看结果就往 exports 上挂（课后 TDD 也是按这个名字取函数的）。
+exports.result = { status: "ready", rate }
 `,
       '/utils.ts': `export function calculateThroughput(requests: number, latencyMs: number): number {
   if (latencyMs <= 0) return 0
@@ -132,60 +172,82 @@ return { status: "ready", rate }
   }
 
   /**
-   * Executes the bundled code and captures execution logs & return values.
+   * Executes the bundled code inside the opaque-origin sandbox and captures logs & return value.
    */
   async execute(entryPath: string = '/index.ts'): Promise<SandboxExecutionResult> {
     const startTime = performance.now()
-    const capturedLogs: SandboxExecutionResult['logs'] = []
+    const elapsed = () => Math.round((performance.now() - startTime) * 100) / 100
 
+    // 先打包再开沙盒：入口文件不存在是「这次改动写错了」，不该为此白起一个 iframe，
+    // 也不该让它被下面 catch 归因成「隔离沙盒不可用」（2026-10 的口径同类错误：
+    // 环境问题与用户代码问题必须分得开）。
+    let code: string
     try {
-      const code = this.bundle(entryPath)
-      const fakeConsole = {
-        log: (...args: any[]) => {
-          capturedLogs.push({
-            type: 'log',
-            text: args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '),
-            timestamp: Date.now(),
-          })
-        },
-        warn: (...args: any[]) => {
-          capturedLogs.push({
-            type: 'warn',
-            text: args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '),
-            timestamp: Date.now(),
-          })
-        },
-        error: (...args: any[]) => {
-          capturedLogs.push({
-            type: 'error',
-            text: args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '),
-            timestamp: Date.now(),
-          })
-        },
-      }
+      code = this.bundle(entryPath)
+    } catch (err) {
+      return { success: false, logs: [], executionTimeMs: elapsed(), errorMessage: errorMessage(err) }
+    }
 
-      // Execute inside Function scope
-      const runnerFn = new Function('console', code)
-      const returnValue = runnerFn(fakeConsole)
-
-      return {
-        success: true,
-        logs: capturedLogs,
-        returnValue,
-        executionTimeMs: Math.round((performance.now() - startTime) * 100) / 100,
-      }
-    } catch (err: any) {
+    const open = this.deps.openSession ?? openOpaqueSession
+    let session: OpaqueSession
+    try {
+      session = await open()
+    } catch (err) {
       return {
         success: false,
-        logs: capturedLogs,
-        errorMessage: err?.message || String(err),
-        executionTimeMs: Math.round((performance.now() - startTime) * 100) / 100,
+        logs: [],
+        executionTimeMs: elapsed(),
+        errorMessage: `隔离沙盒不可用，代码未执行：${errorMessage(err)}`,
+        stopReason: 'unavailable',
       }
+    }
+
+    try {
+      const outcome = await session.load(code)
+      const logs = [...session.logs].map(toSandboxLog)
+      if (outcome.stopReason) {
+        return {
+          success: false,
+          logs,
+          executionTimeMs: elapsed(),
+          errorMessage: outcome.errorText ?? '隔离沙盒未能完成执行',
+          stopReason: outcome.stopReason,
+        }
+      }
+      if (!outcome.ok) {
+        return {
+          success: false,
+          logs,
+          executionTimeMs: elapsed(),
+          errorMessage: outcome.errorText ?? '未知执行错误',
+        }
+      }
+      return {
+        success: true,
+        logs,
+        returnValue: outcome.hasValue ? outcome.value : undefined,
+        returnValueText: outcome.valueUnavailable ? outcome.valueText : undefined,
+        executionTimeMs: elapsed(),
+      }
+    } catch (err) {
+      return {
+        success: false,
+        logs: [...session.logs].map(toSandboxLog),
+        errorMessage: errorMessage(err),
+        executionTimeMs: elapsed(),
+      }
+    } finally {
+      session.close()
     }
   }
 
   /**
    * Generates an interactive preview HTML document for iframes.
+   *
+   * 返回值是**未过滤的用户 HTML**，只能交给不透明源容器渲染
+   * （`<iframe sandbox="allow-scripts">` + `srcDoc`）；把它写进同源文档的 innerHTML
+   * 就是 lib/video-pip-content.ts 当初关掉的那个出口。守卫测试
+   * test/opaque-code-sandbox-guard.test.ts 盯着所有 srcdoc/srcDoc 的容器属性。
    */
   generateIframePreview(htmlPath: string = '/index.html'): string {
     const html = this.vfs.readFile(htmlPath) || `<!DOCTYPE html>

@@ -17,29 +17,22 @@ export async function GET() {
     // 概览含各分类的采集策略（keywords / maxItems）与运行期计数，属运营数据
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
-    const read = await readDocResilient<NavigationData>({
-      fresh: () => readStorageFresh<NavigationData>(VIDEOS_FILE_PATH),
-      cached: () => getFileContent(VIDEOS_FILE_PATH) as Promise<NavigationData>,
-    })
-
-    // 两层都失败才报错，且是 503 + retryable，不是 500：
-    // 这不是代码 bug，是存储后端暂时不可达，客户端重试即可。
-    if (!read.data) {
+    const rawData = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData | null | undefined
+    if (!rawData || !rawData.navigationItems) {
       return NextResponse.json(
         {
           success: false,
-          error: '读取视频库失败：存储后端不可达',
-          details: read.errors,
+          error: '读取视频库失败：视频数据为空或格式不正确',
           retryable: true,
         },
         { status: 503 },
       )
     }
 
-    const data = read.data
+    const data = rawData
     const categories = data.navigationItems || []
 
     let totalVideos = 0
@@ -93,8 +86,7 @@ export async function GET() {
        * 降级时必须让调用方看见 —— 否则「缓存里的旧数字」和「实时数字」长得一模一样，
        * 运维会拿一份过时数据做决策。`readErrors` 同时给出降级原因。
        */
-      dataSource: read.source,
-      ...(read.errors.length > 0 ? { readErrors: read.errors } : {}),
+      dataSource: 'cached',
     })
   } catch (error) {
     console.error('Failed to get harvest overview:', error)
@@ -112,7 +104,7 @@ export async function POST(request: Request) {
   try {
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
     let body: Record<string, any> = {}
@@ -121,7 +113,7 @@ export async function POST(request: Request) {
     } catch {
       body = {}
     }
-    const { dryRun = false, categoryId, forceKeywords } = body
+    const { dryRun = false, categoryId, forceKeywords, platforms, limitPerKeyword } = body
 
     /**
      * 与异步任务入口共用同一把租约锁。
@@ -152,6 +144,8 @@ export async function POST(request: Request) {
         dryRun,
         categoryId,
         forceKeywords,
+        platforms: Array.isArray(platforms) && platforms.length > 0 ? platforms : undefined,
+        limitPerKeyword: typeof limitPerKeyword === 'number' ? limitPerKeyword : undefined,
         accessToken: authCheck.githubToken || undefined
       })
 

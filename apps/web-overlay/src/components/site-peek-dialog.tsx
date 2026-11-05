@@ -10,7 +10,9 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit, History, Pin } from 'lucide-react'
+import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit, History, Pin, Copy, FileText, Activity, Check, Loader2 } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
+import { copyText } from '@/lib/clipboard'
 import { Button } from '@/registry/new-york/ui/button'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +20,7 @@ import { Badge } from '@/components/ui/badge'
 import { isSafeHttpUrl, safeHref, safeSrc, safeWindowOpen } from '@/lib/safe-url'
 import { buildWaybackSnapshotUrl } from '@/lib/wayback-resolver'
 import { siteHealthBadge } from '@/lib/site-health'
+import { probeSiteLatency, type PingResult } from '@/lib/site-ping'
 
 interface SitePeekDialogProps {
   item: NavigationSubItem | null
@@ -47,6 +50,7 @@ export function SitePeekDialog({
   onTogglePinInCategory,
   onCloseAutoFocus,
 }: SitePeekDialogProps) {
+  const { toast } = useToast()
   const [actionInputs, setActionInputs] = useState<Record<string, string>>({})
   const [showIframe, setShowIframe] = useState(false)
   const [hyperbolicAlts, setHyperbolicAlts] = useState<Array<{
@@ -54,10 +58,16 @@ export function SitePeekDialog({
     geodesicDistance: number
     alternativeScore: number
   }>>([])
+  const [livePing, setLivePing] = useState<PingResult | null>(null)
+  const [isPinging, setIsPinging] = useState(false)
+  const [hasReportedBroken, setHasReportedBroken] = useState(false)
 
   useEffect(() => {
     if (!open || !item?.id) {
       setHyperbolicAlts([])
+      setLivePing(null)
+      setIsPinging(false)
+      setHasReportedBroken(false)
       return
     }
     let cancelled = false
@@ -77,6 +87,35 @@ export function SitePeekDialog({
   }, [open, item?.id])
 
   if (!item) return null
+
+  const handleLivePing = async () => {
+    if (!item?.href || isPinging) return
+    setIsPinging(true)
+    try {
+      const res = await probeSiteLatency(item.href)
+      setLivePing(res)
+    } catch {
+      // 容错降级：本地探针异常时不中断界面，直接给出未连通反馈
+      setLivePing({
+        reachable: false,
+        quality: 'unreachable',
+        label: '⚠️ 探测失败',
+        testedAt: Date.now(),
+        error: '本地探测未成功',
+      })
+    } finally {
+      setIsPinging(false)
+    }
+  }
+
+  const handleReportBroken = () => {
+    if (hasReportedBroken) return
+    setHasReportedBroken(true)
+    toast({
+      title: '已收到失效反馈',
+      description: '感谢反馈！系统已记录该站点异常，正在为您调取备用镜像与平替推荐。',
+    })
+  }
 
   const handleActionSubmit = (action: SiteAction, e?: React.FormEvent) => {
     e?.preventDefault()
@@ -194,6 +233,36 @@ export function SitePeekDialog({
             </div>
           </div>
         </DialogHeader>
+
+        {/* 站点连通性与健康异常提示 */}
+        {item.health?.ok === false && (
+          <div className="mt-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <div className="font-semibold text-amber-900 dark:text-amber-200">
+                站点连通性提示：{item.health.error || '近期探测出现超时或无法直连'}
+              </div>
+              <div className="text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+                建议优先使用下方「平替雷达」中的可用替代产品，或点击右上角「历史快照」调取网页归档。
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 用户反馈或本地探测异常提示 */}
+        {item.health?.ok !== false && (hasReportedBroken || (livePing && !livePing.reachable)) && (
+          <div className="mt-3 p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <div className="font-semibold text-rose-900 dark:text-rose-200">
+                {hasReportedBroken ? '已记录失效反馈：该站点可能已下线或受网络策略阻隔' : `本地探测异常：${livePing?.label || '连接超时'}`}
+              </div>
+              <div className="text-rose-800/80 dark:text-rose-300/80 leading-relaxed">
+                建议优先使用下方为您推导的「平替雷达」替代方案，或调取右上角「历史快照」访问网页镜像。
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 核心行动区：深链微动作 (Deep Actions) */}
         {item.actions && item.actions.length > 0 && (
@@ -413,18 +482,101 @@ export function SitePeekDialog({
         </div>
 
         {/* 底部元数据状态条 */}
-        <div className="flex flex-wrap items-center justify-between text-xs text-muted-foreground pt-3 border-t border-border/50">
-          <div className="flex items-center gap-2">
-            <span>网址:</span>
-            <span className="font-mono text-foreground/80 truncate max-w-[280px]">{item.href}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pt-3 border-t border-border/50">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+            <span className="shrink-0">网址:</span>
+            <span className="font-mono text-foreground/80 truncate max-w-[180px] sm:max-w-[280px] select-all">{item.href}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60"
+              title="复制网址链接"
+              onClick={async () => {
+                const res = await copyText(item.href)
+                if (res.ok) {
+                  toast({ title: '已复制网址', description: item.href })
+                } else {
+                  toast({ title: '复制失败', description: res.reason, variant: 'destructive' })
+                }
+              }}
+            >
+              <Copy className="w-3 h-3" />
+              <span>复制链接</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60"
+              title="复制 Markdown 引用 [标题](链接)"
+              onClick={async () => {
+                const md = `[${item.title}](${item.href})`
+                const res = await copyText(md)
+                if (res.ok) {
+                  toast({ title: '已复制 Markdown', description: md })
+                } else {
+                  toast({ title: '复制失败', description: res.reason, variant: 'destructive' })
+                }
+              }}
+            >
+              <FileText className="w-3 h-3" />
+              <span>Markdown</span>
+            </Button>
           </div>
-          {healthBadge && (
-            <div className="flex items-center gap-1.5 font-mono">
-              <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              <span>{healthBadge.label}</span>
-              {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
-            </div>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {healthBadge && (
+              <div className="flex items-center gap-1.5 font-mono" title="服务端远端巡检结果">
+                <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                <span>{healthBadge.label}</span>
+                {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
+              </div>
+            )}
+
+            {/* 本地测速探针 */}
+            {livePing ? (
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full border ${
+                  livePing.reachable
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                    : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                }`}
+                title={`本机浏览器探测：${livePing.error || livePing.label}`}
+              >
+                <Activity className="w-3 h-3" />
+                <span>{livePing.label}</span>
+              </span>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isPinging}
+                onClick={handleLivePing}
+                className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60"
+                title="在本地浏览器测试当前对该站点的实际访问延迟"
+              >
+                {isPinging ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
+                <span>{isPinging ? '测速中…' : '测速'}</span>
+              </Button>
+            )}
+
+            {/* 反馈失效按钮 */}
+            {hasReportedBroken ? (
+              <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1 px-1">
+                <Check className="w-3 h-3 text-emerald-500" />
+                <span>已反馈失效</span>
+              </span>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReportBroken}
+                className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-destructive hover:border-destructive/40 shrink-0 border-border/60"
+                title="向平台反馈该网站打不开、连接超时或死链"
+              >
+                <AlertTriangle className="w-3 h-3" />
+                <span>反馈失效</span>
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -17,6 +17,11 @@
  *   # 指定数据库（不污染开发库，CI / 演练用）
  *   NAVHUB_SQLITE_PATH=/tmp/x.db node --experimental-strip-types apps/api/src/video-catalog-main.ts
  *
+ *   # 载入文件且这次确实是大规模删除时（写入库内 80% 以下会被缩水保护拦下）：
+ *   # 两段都要给，且 --expected-count 必须等于文件里的真实条数
+ *   node --experimental-strip-types apps/api/src/video-catalog-main.ts \
+ *     --from-file new-videos.json --confirm-large-deletion --expected-count 120
+ *
  * **为什么必须读原始 KV 而不是 `readVideosData`**：
  *   `readVideosData` 在 `db` 模式下返回的是**由关系表重建的文档**。用它去和关系表
  *   对账，等于拿表和自己比，永远「一致」——切读前的最后一道门禁会静默失效。
@@ -30,7 +35,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
-import { readKv, writeVideosData } from "./storage.ts";
+import { readKv, writeVideosData, VideoShrinkError } from "./storage.ts";
 import {
   checkVideoCatalogConsistency,
   resolveVideoStoreMode,
@@ -50,6 +55,30 @@ const sampleSize = (() => {
 
 const fromFileIdx = argv.indexOf("--from-file");
 const fromFilePath = fromFileIdx !== -1 ? argv[fromFileIdx + 1] : null;
+
+/**
+ * 缩水保护二阶段确认（升级方案 P2）。
+ *
+ * `--expected-count` 解析不出合法数字时**不静默丢弃**：确认参数拼错的结果应该是
+ * 明确失败，而不是让脚本以为已经确认过了。
+ */
+const confirmLargeDeletion = argv.includes("--confirm-large-deletion");
+const expectedCountIdx = argv.indexOf("--expected-count");
+const expectedCountRaw = expectedCountIdx !== -1 ? argv[expectedCountIdx + 1] : undefined;
+const expectedCount =
+  expectedCountRaw !== undefined && Number.isInteger(Number(expectedCountRaw)) && Number(expectedCountRaw) >= 0
+    ? Number(expectedCountRaw)
+    : undefined;
+
+// 确认参数只给了一半时立刻失败：静默丢掉拼错的 --expected-count，
+// 操作者会以为「我已经确认过了」，实际拿到的是一个永远 409 的重试。
+if (confirmLargeDeletion && expectedCount === undefined) {
+  fail(
+    `[video-catalog] --confirm-large-deletion 必须与 --expected-count <本次真实条数> 同时给出` +
+      `（收到 --expected-count=${String(expectedCountRaw)}，需为非负整数）。`,
+  );
+  process.exit(1);
+}
 
 /** 机器可读模式下，人读日志一律走 stderr，避免污染 stdout 的 JSON */
 function note(message: string): void {
@@ -72,7 +101,41 @@ try {
       process.exit(2);
     }
     doc = JSON.parse(readFileSync(fromFilePath, "utf8"));
-    await writeVideosData(ctx, doc);
+    try {
+      await writeVideosData(ctx, doc, undefined, {
+        confirmLargeDeletion,
+        expectedCount,
+        // CLI 没有请求方身份，审计只能记成 system：谁在什么时候按确认跑了这次批量删除，
+        // 事后必须查得到，否则「放行」就成了无痕操作。
+        onLargeDeletionConfirmed: async (verdict) => {
+          await ctx.repo.audit({
+            actor: "cli:video-catalog",
+            actorKind: "system",
+            action: "storage.videos.large_deletion",
+            target: "videos.json",
+            diff: {
+              existingCount: verdict.existingCount,
+              incomingCount: verdict.incomingCount,
+              minimumAllowed: verdict.minimumAllowed,
+              declaredExpectedCount: verdict.declaredExpectedCount ?? verdict.incomingCount,
+              fromFile: fromFilePath,
+            },
+          });
+        },
+      });
+    } catch (err) {
+      // 缩水拦截是按设计拒绝，不是脚本故障：打一条能直接照抄的重试命令，
+      // 而不是一屏堆栈让操作者去猜这次到底要带什么参数。
+      if (err instanceof VideoShrinkError) {
+        fail(`[video-catalog] ${err.message}`);
+        fail(
+          "  重试：node --experimental-strip-types apps/api/src/video-catalog-main.ts " +
+            `--from-file ${fromFilePath} --confirm-large-deletion --expected-count ${err.verdict.incomingCount}`,
+        );
+        process.exit(1);
+      }
+      throw err;
+    }
     note(`[video-catalog] 已将 ${fromFilePath} 载入 KV (kv:videos)`);
   } else {
     doc = await readKv(ctx, "videos");

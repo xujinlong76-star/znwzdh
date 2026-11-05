@@ -38,6 +38,45 @@ import {
     Sparkles,
 } from 'lucide-react'
 
+function CategoryVideoThumbnail({ item }: { item: NavigationSubItem }) {
+    const [hasError, setHasError] = useState(false)
+    const [useProxy, setUseProxy] = useState(false)
+
+    const rawIcon = item.icon || ''
+    const normalizedUrl = rawIcon.startsWith('//') ? `https:${rawIcon}` : rawIcon
+    const isStrictAntiLeech = normalizedUrl.includes('hdslb.com') || normalizedUrl.includes('biliimg.com')
+
+    const displaySrc = (useProxy || isStrictAntiLeech) && item.mediaProxyIconUrl
+        ? item.mediaProxyIconUrl
+        : normalizedUrl
+
+    if (!rawIcon || hasError) {
+        return (
+            <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">
+                无图
+            </div>
+        )
+    }
+
+    return (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+            src={displaySrc}
+            alt={item.title}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            className="w-full h-full object-cover"
+            onError={() => {
+                if (!useProxy && item.mediaProxyIconUrl && !isStrictAntiLeech) {
+                    setUseProxy(true)
+                } else {
+                    setHasError(true)
+                }
+            }}
+        />
+    )
+}
+
 export default function SubCategoryVideoItemsPage() {
     const params = useParams<{ id: string; categoryId: string }>()
     // 依赖数组里只放**简单标识符**：React Compiler 不接受 `params?.id` 这种
@@ -392,18 +431,7 @@ export default function SubCategoryVideoItemsPage() {
                                 <div className="flex items-start gap-3 min-w-0 flex-1">
                                     {/* 封面缩略图 */}
                                     <div className="w-20 h-12 rounded-lg bg-black/40 overflow-hidden shrink-0 relative border border-border/60">
-                                        {item.icon ? (
-                                            <img
-                                                src={item.icon}
-                                                alt={item.title}
-                                                className="w-full h-full object-cover"
-                                                loading="lazy"
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">
-                                                无图
-                                            </div>
-                                        )}
+                                        <CategoryVideoThumbnail item={item} />
                                         {vc?.durationSec ? (
                                             <span className="absolute bottom-0.5 right-0.5 text-[9px] font-mono px-1 rounded bg-black/80 text-white">
                                                 {formatDuration(vc.durationSec)}

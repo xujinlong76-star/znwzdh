@@ -36,6 +36,8 @@ interface NsItem {
   icon?: string;
   useDefaultIcon?: boolean;
   enabled: boolean;
+  weight?: number;
+  trendScore?: number;
   tags?: string[];
   actions?: SiteAction[];
   relations?: SiteRelation[];
@@ -69,7 +71,7 @@ interface NsNavigationData { navigationItems: NsCategory[] }
 /**
  * 单次导出 navigation.json 允许的最大站点数（防大库全表拉取 OOM，可通过 NAVHUB_NAVIGATION_MAX_SITES 调整）。
  */
-const NAVIGATION_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_NAVIGATION_MAX_SITES || 8000));
+const NAVIGATION_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_NAVIGATION_MAX_SITES || 15000));
 
 /* ------------------------------------------------------------------ *
  * 快照读缓存
@@ -79,16 +81,7 @@ const NAVIGATION_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_NAVIGATION_
  * 但这是全站唯一没有缓存的全量操作，成本随站点数线性增长，而首页
  * `force-dynamic` 会让每次访问都触发它。
  *
- * 失效策略（三层，任何一层命中都足够正确）：
- *   1. 任何成功的写请求（POST/PUT/PATCH/DELETE）由 server.ts 的 onResponse
- *      统一调用 invalidateSnapshotCache() —— 覆盖 /api/sites、/api/categories、
- *      /api/storage 等所有写入口，不依赖各路由自觉；
- *   2. writeStoragePath 内部再显式失效一次（防止将来有绕过 server hook 的调用）；
- *   3. TTL 兜底（默认 30s，NAVHUB_SNAPSHOT_TTL_MS 可调，0 表示关闭缓存），
- *      用于覆盖「另一个进程/实例直接改库」这类绕过 API 的场景。
- *
- * 多实例：缓存是进程内的，A 实例写入不会让 B 实例立即失效，最长滞后 TTL。
- * lite 模式（单实例）无此问题；standard 模式如需强一致，把 TTL 调小或关闭。
+ * 失效策略与一致性判据见下面 `snapshotCache` 的注释（P1-1 起以版本号为准）。
  * ------------------------------------------------------------------ */
 const SNAPSHOT_TTL_MS = (() => {
   const raw = process.env.NAVHUB_SNAPSHOT_TTL_MS;
@@ -97,99 +90,233 @@ const SNAPSHOT_TTL_MS = (() => {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 30_000;
 })();
 
-let snapshotCache: { data: NsNavigationData; expiresAt: number; fp: string } | null = null;
-
 /**
- * 数据指纹：用一条聚合查询判断「库有没有变」。
+ * 快照读缓存（升级改造方案 P1-1：版本号取代指纹）。
  *
- * 为什么需要它：缓存失效不能只依赖 HTTP 写请求 —— 后台任务
- * （health_check 写健康列、recompute_rank 写热度分）以及测试/运维脚本
- * 都是直接调 Repository 的，不经过路由层。只靠 server 的 onResponse
- * 失效会让这些变更最长滞后一个 TTL。
+ * 缓存的**正确性**判据从「COUNT/MAX 指纹」换成 `data_version` 单行表的主键读数：
+ *   - 指纹是五条子查询的聚合，PG 上是顺序扫描 —— 而且**命中也要付**，因为它就是命中判据；
+ *   - 版本号是 O(1) 点查，且写侧由数据库触发器递增（`migrate.ts` 的 nav_version 触发器），
+ *     所以另一个实例/后台任务/运维脚本的写入在下一次读就可见，不再受 TTL 约束。
+ *     这一点对标准模式（多副本）才是新能力：以前 A 实例写、B 实例最长滞后一个 TTL。
  *
- * 代价：每次读取多一条聚合查询。SQLite 上是微秒级；PostgreSQL 在
- * 十万级行上 COUNT(*) 会退化为顺序扫描（几十毫秒），仍远低于全量重建，
- * 但如成为瓶颈，可把 NAVHUB_SNAPSHOT_TTL_MS 调小或改为版本号方案。
+ * 读顺序是这里唯一真正要紧的一条：**版本号必须在构建之前读**。
+ * 反过来（先建、再取版本）会把「V 时刻的数据」标成 V+1：构建窗口里落下的那次写入
+ * 被永久记为已包含，缓存于是把旧快照一直喂给「读-改-写」的写侧 —— 就是丢数据。
+ * 现在这个方向最多让下一次读多重建一次。
  *
- * 查询失败（老库缺列等）时返回空串：此时退化为「只靠 TTL + HTTP 失效」，
- * 不会因为指纹不可用而让整个快照接口报错。
+ * 失效仍然有三层，版本号只是把第 3 层从「TTL 兜底」升级成「立即一致」：
+ *   1. 写请求成功后 server.ts 的 onResponse 统一 invalidateSnapshotCache()；
+ *   2. writeStoragePath 内部再显式失效一次；
+ *   3. 版本号（读不到时退回 TTL，见下面的 degradedReads）。
  */
-async function snapshotFingerprint(ctx: AppContext): Promise<string> {
-  try {
-    const rows = await ctx.repo.raw(
-      `SELECT
-         (SELECT COUNT(*) FROM sites) AS sn,
-         (SELECT COALESCE(MAX(updated_at), 0) FROM sites) AS sm,
-         (SELECT COUNT(*) FROM categories) AS cn,
-         (SELECT COALESCE(MAX(updated_at), 0) FROM categories) AS cm,
-         (SELECT COUNT(*) FROM site_tags) AS tn`,
-    );
-    const r = rows[0] ?? {};
-    return [r.sn, r.sm, r.cn, r.cm, r.tn].join(":");
-  } catch {
-    return "";
-  }
+/**
+ * 导航快照的两种视图（P1-6）。
+ *
+ * `raw` 是写回数据源：必须包含停用/待审/归档记录，否则「快照里没有 = 用户删了」
+ * 的全量对齐会把它们真删掉。`public` 是给匿名/只读调用方的展示投影：
+ * 排除停用记录与未发布状态（pending/archived），避免只读凭据看到后台态。
+ *
+ * 两者由**同一次查询**构建（见 buildSnapshotPairWithMetrics）：投影差异只是内存里
+ * 的过滤，重复查库会让「缓存命中」重新变成一次全量读。
+ */
+export type NavigationView = "raw" | "public";
+
+interface SnapshotEntry {
+  data: NsNavigationData;
+  publicData: NsNavigationData;
+  expiresAt: number;
+  version: number | null;
 }
+
+let snapshotCache: SnapshotEntry | null = null;
 
 /** 让下一次读取重建快照。写路径与 server 的 onResponse 都会调用。 */
 export function invalidateSnapshotCache(): void {
   snapshotCache = null;
 }
 
-/** 供 /api/health 与测试观察缓存状态（不参与业务）。 */
-export function snapshotCacheInfo(): { cached: boolean; ttlMs: number } {
-  return { cached: snapshotCache !== null, ttlMs: SNAPSHOT_TTL_MS };
+/* 观测读数：只给 /metrics 与测试用，不参与任何业务判断 */
+let snapshotHits = 0;
+let snapshotMisses = 0;
+let snapshotBuilds = 0;
+/** 版本号取不到（老库没这张表 / 单行没种下）的次数：此时一致性退回 TTL */
+let snapshotDegradedReads = 0;
+let snapshotLastBuildSeconds = 0;
+let snapshotBuildSecondsTotal = 0;
+let snapshotLastBytes = 0;
+
+/** 构建一次快照并记录耗时/体积（体积用序列化字节，它就是网络上的那个数）。 */
+let inFlightSnapshotPromise: Promise<{ raw: NsNavigationData; publicData: NsNavigationData }> | null = null;
+async function buildSnapshotPairWithMetrics(ctx: AppContext): Promise<{ raw: NsNavigationData; publicData: NsNavigationData }> {
+  const started = process.hrtime.bigint();
+  const { sites, categories } = await loadNavigationRows(ctx);
+  const raw = projectNavigation(sites, categories, "raw");
+  const publicData = projectNavigation(sites, categories, "public");
+  snapshotBuildSecondsTotal += Number(process.hrtime.bigint() - started) / 1e9;
+  snapshotBuilds++;
+  snapshotLastBuildSeconds = Number(process.hrtime.bigint() - started) / 1e9;
+  // 序列化一次只为取体积；重建本身是重路径，这里的个位数毫秒不影响结论
+  snapshotLastBytes = Buffer.byteLength(JSON.stringify(raw), "utf8");
+  return { raw, publicData };
 }
 
-async function readNavigationSnapshot(ctx: AppContext): Promise<NsNavigationData> {
-  if (SNAPSHOT_TTL_MS <= 0) return buildNavigationData(ctx);
+async function readNavigationSnapshot(
+  ctx: AppContext,
+  view: NavigationView = "raw",
+  knownVersion?: number | null,
+): Promise<NsNavigationData> {
+  const pick = (entry: SnapshotEntry) => (view === "public" ? entry.publicData : entry.data);
+  if (SNAPSHOT_TTL_MS <= 0) {
+    const built = await buildSnapshotPairWithMetrics(ctx);
+    return view === "public" ? built.publicData : built.raw;
+  }
+  // 路由层为 ETag 已经点查过版本号时直接复用：命中路径因此只付一次点查。
+  // 注意 undefined 与 null 的区别 —— null 是「读不到」，仍按降级路径走。
+  const version = knownVersion === undefined ? await ctx.repo.readNavDataVersion() : knownVersion;
   const now = Date.now();
   if (snapshotCache && snapshotCache.expiresAt > now) {
-    const fp = await snapshotFingerprint(ctx);
-    // 指纹一致 = 库没变；指纹取不到（空串）时信任 TTL，避免每次都重建
-    if (fp === "" || fp === snapshotCache.fp) return snapshotCache.data;
+    if (version === null) {
+      // 降级：没有版本号可用时信任 TTL（和改指纹之前的行为一致），
+      // 而不是「读不到就每次重建」——那会让一个可选的观测件变成可用性故障。
+      snapshotDegradedReads++;
+      snapshotHits++;
+      return pick(snapshotCache);
+    }
+    // 缓存里记的是 null（当时读不到）时不能算命中：那份数据的出处已经无法证明。
+    if (snapshotCache.version === version) {
+      snapshotHits++;
+      return pick(snapshotCache);
+    }
   }
-  const data = await buildNavigationData(ctx);
-  snapshotCache = {
-    data,
-    expiresAt: now + SNAPSHOT_TTL_MS,
-    fp: await snapshotFingerprint(ctx),
-  };
-  return data;
+  snapshotMisses++;
+  // 并发防击穿 (SingleFlight)：多个并发请求只触发一次全量快照构建，
+  // 其余请求共享同一个正在执行的 Promise，避免高并发下数据库连接暴涨与 GC 卡死
+  if (!inFlightSnapshotPromise) {
+    inFlightSnapshotPromise = buildSnapshotPairWithMetrics(ctx).finally(() => {
+      inFlightSnapshotPromise = null;
+    });
+  }
+  const built = await inFlightSnapshotPromise;
+  snapshotCache = { data: built.raw, publicData: built.publicData, expiresAt: now + SNAPSHOT_TTL_MS, version };
+  return pick(snapshotCache);
 }
+
+/** 供 /api/health、/api/metrics 与测试观察缓存状态（不参与业务）。 */
+export function snapshotCacheInfo(): {
+  cached: boolean;
+  ttlMs: number;
+  /** 当前缓存条目的数据版本号；null = 没缓存或版本号不可用 */
+  version: number | null;
+  hits: number;
+  misses: number;
+  builds: number;
+  /** 版本号读不到、只能靠 TTL 保持一致的读取次数（非 0 = 触发器没建起来或老库） */
+  degradedReads: number;
+  lastBuildSeconds: number;
+  /** 构建耗时合计（秒）：用于平均 rebuild 时间，避免再加一个带 label 的直方图 */
+  buildSecondsTotal: number;
+  /** 最近一次快照的序列化字节数 */
+  bytes: number;
+} {
+  return {
+    cached: snapshotCache !== null,
+    ttlMs: SNAPSHOT_TTL_MS,
+    version: snapshotCache?.version ?? null,
+    hits: snapshotHits,
+    misses: snapshotMisses,
+    builds: snapshotBuilds,
+    degradedReads: snapshotDegradedReads,
+    lastBuildSeconds: snapshotLastBuildSeconds,
+    buildSecondsTotal: snapshotBuildSecondsTotal,
+    bytes: snapshotLastBytes,
+  };
+}
+
+/** 测试用：把观测计数清零（不改缓存内容本身） */
+export function resetSnapshotMetricsForTest(): void {
+  snapshotHits = 0;
+  snapshotMisses = 0;
+  snapshotBuilds = 0;
+  snapshotDegradedReads = 0;
+  snapshotLastBuildSeconds = 0;
+  snapshotBuildSecondsTotal = 0;
+  snapshotLastBytes = 0;
+}
+
 
 /**
  * 把数据库读成 NavSphere 的 navigation.json 形状。
  * 组级顺序严格按 sort，保证前端拖拽排序结果可复现。
+ *
+ * 不做可见性过滤 —— 快照是写回数据源，见 buildNavigationData 上方注释。
  */
-export async function buildNavigationData(ctx: AppContext): Promise<NsNavigationData> {
-  const stats = await ctx.repo.stats();
-  if (stats.sites > NAVIGATION_MAX_SITES) {
+async function loadNavigationRows(ctx: AppContext): Promise<{
+  sites: Awaited<ReturnType<AppContext["repo"]["listAllSites"]>>;
+  categories: Awaited<ReturnType<AppContext["repo"]["listCategories"]>>;
+}> {
+  // 容量守卫：以前先跑一条 `stats()`（五个 COUNT/MAX 聚合）只为判断「会不会超上限」，
+  // 而现在正要把这类重查询请出热路径 —— 改成「多取一行」：
+  // 拉到 MAX+1 行就说明库里确实更多，直接 413；否则这批行本身就是要用数据，
+  // 一次查询同时完成守卫与取数。代价是报错里不再给出精确总数（只说超过上限），
+  // 而精确总数对处置建议没有影响。
+  //
+  // `facets: false`：快照形状（NsItem）里没有分面，写回也从不按快照里的分面删分面
+  // （见 upsertSite），所以这里省掉一条聚合查询 —— 整个快照因此是 4 条语句。
+  const sites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES + 1, { facets: false });
+  if (sites.length > NAVIGATION_MAX_SITES) {
     const err = new Error(
-      `站点总数 (${stats.sites}) 超过单文件快照上限 (${NAVIGATION_MAX_SITES})，请改用分页接口 /api/sites 或调大 NAVHUB_NAVIGATION_MAX_SITES`,
+      `站点数已超过单文件快照上限 (${NAVIGATION_MAX_SITES})，请改用分页接口 /api/sites 或调大 NAVHUB_NAVIGATION_MAX_SITES`,
     ) as Error & { statusCode?: number };
     err.statusCode = 413;
     throw err;
   }
-  // 类目与站点**都不做可见性预过滤**：快照必须是数据的全量投影。
+  const categories = (await ctx.repo.listCategories()).sort((a, b) => a.sort - b.sort);
+  return { sites, categories };
+}
+
+/**
+ * 可见性判据（P1-6）。
+ *
+ * 与 `/api/sites` 的数据面最小化口径一致：pending / archived 是编辑工作面的
+ * 中间态，只读调用方无权知道它们是否存在；broken 是「已上线但暂时不可用」，
+ * 站点列表对匿名可见，这里也保留（否则一次探针失败就会让链接从导航消失）。
+ * `enabled=false` 是管理员手动停用，任何公开投影都不应包含。
+ */
+function isPubliclyVisibleSite(s: { enabled: boolean; status: string }): boolean {
+  return s.enabled !== false && (s.status === "active" || s.status === "broken");
+}
+
+/**
+ * 投影：把行集组装成导航树。
+ *
+ * `view="public"` 只做过滤，不改字段 —— 前台渲染消费 actions/relations/
+ * liveMetrics/workspaces/health，裁剪字段会让公开快照与站内渲染出现两套数据。
+ */
+function projectNavigation(
+  sites: Awaited<ReturnType<AppContext["repo"]["listAllSites"]>>,
+  categories: Awaited<ReturnType<AppContext["repo"]["listCategories"]>>,
+  view: NavigationView,
+): NsNavigationData {
+  const publicOnly = view === "public";
+  const visibleSites = publicOnly ? sites.filter(isPubliclyVisibleSite) : sites;
+  const visibleCategories = publicOnly ? categories.filter((c) => c.enabled !== false) : categories;
+  // 类目与站点**都不做可见性预过滤**（raw 视图）：快照必须是数据的全量投影。
   // 隐藏语义（enabled=false）由渲染层负责 —— web 端 data-loader 的
   // filterNavigationData 已经过滤了类目/子类目/站点三级。
   //
-  // 为什么不能在这里预过滤：快照写回把「快照里没有」当成「用户删了」。
+  // 为什么 raw 不能在这里预过滤：快照写回把「快照里没有」当成「用户删了」。
   // 被停用的类目如果在读侧就被滤掉，NavSphere 原版后台（按快照读改写）
   // 既看不到它、也无法再启用它，下一次任意保存还会把它硬删、站点进回收站。
-  const categories = (await ctx.repo.listCategories()).sort((a, b) => a.sort - b.sort);
-  // listSites 默认 limit 100：快照会静默截断到 100 个站点，所以走全量版本
-  // （上限与上面的快照容量守卫一致）。
-  const sites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES);
-
-  const byCategory = new Map<string, typeof sites>();
-  for (const s of sites) {
+  //
+  // 站点必须先于类目取到位：`listSites` 默认 limit 100，快照以前会静默截断到
+  // 100 个站点，所以这里用的是全量版本（同上面容量守卫的那一次查询）。
+  const byCategory = new Map<string, typeof visibleSites>();
+  for (const s of visibleSites) {
     const list = byCategory.get(s.categoryId);
     if (list) list.push(s); else byCategory.set(s.categoryId, [s]);
   }
 
-  const toItem = (s: (typeof sites)[number], tags: string[]): NsItem => {
+  const toItem = (s: (typeof visibleSites)[number], tags: string[]): NsItem => {
     const enhanced = getEnhancedSiteData(s.url, s.title);
     return {
       id: s.id,
@@ -200,6 +327,8 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
       // 指向第三方图标服务的脏值会在这里被视同没有自定义图标，避免进快照 / RSC payload。
       icon: resolveSiteIcon(s.url, s.title, s.iconKey),
       enabled: s.enabled,
+      weight: s.weight,
+      trendScore: s.trendScore,
       tags: s.tags ?? tags,
       actions: s.actions ?? enhanced.actions,
       relations: s.relations ?? enhanced.relations,
@@ -209,10 +338,27 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
     };
   };
 
-  const tops = categories.filter((c) => c.parentId === null);
+  const compareSitesByRank = (a: any, b: any): number => {
+    // 优先：显式指定的有效排序序号（正整数）
+    if (a.sort !== b.sort && a.sort > 0 && b.sort > 0) return a.sort - b.sort;
+    // 次级：网站综合权威权重降序（高权重排在前面）
+    const wA = typeof a.weight === "number" ? a.weight : 0;
+    const wB = typeof b.weight === "number" ? b.weight : 0;
+    if (wA !== wB) return wB - wA;
+    // 三级：若权重相同，按 sort 升序兜底
+    if (a.sort !== b.sort) return a.sort - b.sort;
+    // 四级：按热度分 trend_score 降序
+    const tA = typeof a.trendScore === "number" ? a.trendScore : 0;
+    const tB = typeof b.trendScore === "number" ? b.trendScore : 0;
+    if (tA !== tB) return tB - tA;
+    // 末级：按点击量降序
+    return (b.visitCount ?? 0) - (a.visitCount ?? 0);
+  };
+
+  const tops = visibleCategories.filter((c) => c.parentId === null);
   const navigationItems: NsCategory[] = tops.map((c) => {
-    const own = (byCategory.get(c.id) ?? []).sort((a, b) => a.sort - b.sort);
-    const children = categories.filter((x) => x.parentId === c.id).sort((a, b) => a.sort - b.sort);
+    const own = (byCategory.get(c.id) ?? []).sort(compareSitesByRank);
+    const children = visibleCategories.filter((x) => x.parentId === c.id).sort((a, b) => a.sort - b.sort);
 
     const node: NsCategory = {
       id: c.id,
@@ -224,7 +370,7 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
     if (own.length > 0) node.items = own.map((s) => toItem(s, s.tags));
     if (children.length > 0) {
       node.subCategories = children.map((sub) => {
-        const subSites = (byCategory.get(sub.id) ?? []).sort((a, b) => a.sort - b.sort);
+        const subSites = (byCategory.get(sub.id) ?? []).sort(compareSitesByRank);
         return {
           id: sub.id,
           title: sub.title,
@@ -240,6 +386,11 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
   });
 
   return { navigationItems };
+}
+
+export async function buildNavigationData(ctx: AppContext): Promise<NsNavigationData> {
+  const { sites, categories } = await loadNavigationRows(ctx);
+  return projectNavigation(sites, categories, "raw");
 }
 
 /**
@@ -261,8 +412,17 @@ function isSnapshotManaged(source: string | null | undefined): boolean {
  * 采用「全量对齐」而非逐条 diff：前台提交的就是完整快照，语义更明确、也更不容易漏。
  *
  * 全量对齐的删除语义有**来源过滤**（D1 缺陷的修复），见 isSnapshotManaged。
+ *
+ * 写放大的收口（P1-2）：存量行已经全量读出，diff 在内存里做；只有真正变化的
+ * 站点才落 UPDATE，新增/复活/删除分别走多行 INSERT、批量 UPDATE、批量软删。
+ * 此前是每站点 `updateSite`（先读、再写、再回读）——8k 站点保存 ≈ 1.6 万次重读
+ * 全部压在同一条写事务里，SQLite 长时间持锁。
  */
-export async function writeNavigationData(ctx: AppContext, data: NsNavigationData): Promise<{ categories: number; sites: number }> {
+export async function writeNavigationData(
+  ctx: AppContext,
+  data: NsNavigationData,
+  guard: ShrinkGuardOptions = {},
+): Promise<{ categories: number; sites: number }> {
   return await ctx.repo.withTransaction(async () => {
     const input = Array.isArray(data?.navigationItems) ? data.navigationItems : [];
     let categoryCount = 0;
@@ -271,7 +431,9 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
     const existingCats = await ctx.repo.listCategories();
     // 必须全量：只看到前 100 个存量站点时，超出部分会在下面被当作「不在快照里」
     // 或匹配不到存量行走 createSiteWithId 撞主键（见 listAllSites 注释）。
-    const existingSites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES);
+    // facets:false：写回只用 id / source / categoryId（索引字段的标签由
+    // updateSitesFromSnapshot 对变化行补取），一条 8000 行的聚合查询换不来任何语义。
+    const existingSites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES, { facets: false });
     // O(1) 索引代替线性 find：原来是"每个快照条目扫一遍全表"= O(n²)，
     // 数千站点的大库保存一次要做上百万次比较（实测是最主要的保存耗时来源）。
     const catIndex = new Map(existingCats.map((c) => [c.id, c]));
@@ -286,6 +448,9 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
     }
     const seenCategoryIds = new Set<string>();
     const seenSiteIds = new Set<string>();
+    // 快照里的站点先收集，循环结束后统一分类落库；重复 id 的顺序语义与逐条写回一致
+    // （后出现的覆盖先出现的）。
+    const snapshotSites: ReturnType<typeof snapshotSiteWrite>[] = [];
 
     let catSort = 0;
     for (const top of input) {
@@ -311,7 +476,7 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
       let itemSort = 0;
       for (const item of top.items ?? []) {
         seenSiteIds.add(item.id);
-        await upsertSite(ctx, item, top.id, itemSort++, siteIndex);
+        snapshotSites.push(snapshotSiteWrite(item, top.id, itemSort++));
         siteCount++;
       }
 
@@ -335,10 +500,50 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
         itemSort = 0;
         for (const item of sub.items ?? []) {
           seenSiteIds.add(item.id);
-          await upsertSite(ctx, item, sub.id, itemSort++, siteIndex);
+          snapshotSites.push(snapshotSiteWrite(item, sub.id, itemSort++));
           siteCount++;
         }
       }
+    }
+
+    // 缩水保护：快照是整包覆盖，前端一次客户端 bug 或误操作就能把库删空。
+    // 基线只数「这份快照有权删除的托管站点」（来源受管 + 类目在可见集里），
+    // 手工/MCP 创建的站点不参与比较——否则一个 5000 站点的库加了两条手工记录，
+    // 就会让 80% 的判据悄悄变宽/变窄。
+    // 类目更新已经在这个事务里执行过，这里抛错会整体回滚，不会留下「改了一半」。
+    const managedExistingCount = existingSites.filter(
+      (s) => isSnapshotManaged(s.source) && emittedCatIds.has(s.categoryId),
+    ).length;
+    const shrink = evaluateNavigationShrink(managedExistingCount, snapshotSites.length);
+    if (shrink) {
+      if (!guard.confirmLargeDeletion) throw new NavigationShrinkError("navigation_shrink_requires_confirmation", shrink);
+      if (guard.expectedCount === undefined) throw new NavigationShrinkError("navigation_shrink_expected_count_required", shrink);
+      if (guard.expectedCount !== snapshotSites.length) {
+        throw new NavigationShrinkError("navigation_shrink_expected_count_mismatch", { ...shrink, declaredExpectedCount: guard.expectedCount });
+      }
+    }
+
+    // 内存 diff：存量行命中且字段一致 → 跳过（重复保存是后台最常见的回流路径）。
+    // 不在存量集合里的 id 还要区分「真新增」与「回收站复活」：后者若走 INSERT
+    // 会撞主键，语义也必须是复活（清空关联数据）而不是新建。
+    const toUpdate: ReturnType<typeof snapshotSiteWrite>[] = [];
+    const toCreate: ReturnType<typeof snapshotSiteWrite>[] = [];
+    for (const row of snapshotSites) {
+      const found = siteIndex.get(row.id);
+      if (!found) toCreate.push(row);
+      else if (snapshotSiteChanged(found, row)) toUpdate.push(row);
+    }
+    const deletedIds = await ctx.repo.listDeletedSiteIds(toCreate.map((row) => row.id));
+    const toRevive = toCreate.filter((row) => deletedIds.has(row.id));
+    const toInsert = toCreate.filter((row) => !deletedIds.has(row.id));
+
+    if (toUpdate.length > 0) await ctx.repo.updateSitesFromSnapshot(toUpdate);
+    if (toRevive.length > 0) await ctx.repo.reviveSitesFromSnapshot(toRevive);
+    if (toInsert.length > 0) {
+      await ctx.repo.insertSitesBulk(
+        toInsert.map((row) => ({ ...row, source: "navsphere" })),
+        { hydrate: false },
+      );
     }
 
     // 快照语义：本次未出现的「前端托管」站点/类目视为被删除。
@@ -352,10 +557,8 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
       // （孤儿 categoryId 等，接口未强校验）的站点本就不进快照，不能据此删除。
       .filter((s) => emittedCatIds.has(s.categoryId))
       .map((s) => s.id);
-    for (const id of removedSiteIds) {
-      await ctx.repo.deleteSite(id);
-    }
     if (removedSiteIds.length > 0) {
+      await ctx.repo.softDeleteSites(removedSiteIds);
       await ctx.vectors.remove(removedSiteIds).catch(() => undefined);
     }
     for (const c of existingCats) {
@@ -363,41 +566,42 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
       if (isSnapshotManaged(c.source) && emittedCatIds.has(c.id) && !seenCategoryIds.has(c.id)) await ctx.repo.deleteCategory(c.id);
     }
 
+    // 确认放行与数据写在同一个事务里：审计要么和数据一起提交，要么一起回滚。
+    if (shrink) await guard.onLargeDeletionConfirmed?.(shrink);
     return { categories: categoryCount, sites: siteCount };
   });
 }
 
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
 
-async function upsertSite(
-  ctx: AppContext,
-  item: NsItem,
-  categoryId: string,
-  sort: number,
-  existing: Map<string, SiteRow>,
-): Promise<void> {
-  const found = existing.get(item.id);
-  const title = item.title ?? item.href;
-  const description = item.description ?? null;
+/** 快照条目 → 托管字段（与旧 upsertSite 的取值规则逐字一致） */
+function snapshotSiteWrite(item: NsItem, categoryId: string, sort: number) {
   // 自定义图标作为第 3 参传给 resolveSiteIcon：指向第三方图标服务的脏值不会写回库里
   // （前端后台把快照读出来再保存一遍是常见的回流路径，这里必须同样净化）
   const resolvedIcon = resolveSiteIcon(item.href, item.title, item.icon);
-  if (found) {
-    await ctx.repo.updateSite(item.id, {
-      url: item.href, title, description, categoryId,
-      iconKey: resolvedIcon || null, enabled: item.enabled !== false, sort,
-    });
-    // 这里原本还会 setSiteTags(item.id, found.tags)：把刚刚读出来的标签原样写回，
-    // 即 DELETE 全部再逐条 INSERT 同一个集合——语义上是 no-op，却是每站点 1+2n 次 SQL
-    // 的纯浪费（setSiteTags 内部还逐标签往返 upsertTag）。快照语义只托管
-    // 站点主字段，标签由其它通道（后台/MCP）维护，故直接跳过；行为等价且快一个量级。
-  } else {
-    // 保持 NavSphere 传下来的 id，避免前端接下来的更新请求丢失目标
-    await ctx.repo.createSiteWithId({
-      id: item.id, url: item.href, title, description, categoryId,
-      iconKey: resolvedIcon || null, enabled: item.enabled !== false, sort, source: "navsphere",
-    });
-  }
+  return {
+    id: item.id,
+    url: item.href,
+    title: item.title ?? item.href,
+    description: item.description ?? null,
+    categoryId,
+    iconKey: resolvedIcon || null,
+    enabled: item.enabled !== false,
+    sort,
+  };
+}
+
+/** 快照托管的字段是否有变化；不变就不写（updated_at 也不动） */
+function snapshotSiteChanged(existing: SiteRow, row: ReturnType<typeof snapshotSiteWrite>): boolean {
+  return (
+    existing.url !== row.url ||
+    existing.title !== row.title ||
+    (existing.description ?? null) !== row.description ||
+    existing.categoryId !== row.categoryId ||
+    (existing.iconKey ?? null) !== row.iconKey ||
+    (existing.enabled !== false) !== row.enabled ||
+    Number(existing.sort ?? 0) !== row.sort
+  );
 }
 
 /**
@@ -456,6 +660,141 @@ export async function writeResourceMetadata(ctx: AppContext, data: unknown): Pro
 }
 
 /**
+ * 视频库条目计数：顶层 items + 子分类 items。
+ *
+ * 口径与关系表同步（video-catalog.ts 的 flatten）保持一致，否则缩水保护
+ * 会比错两把尺子——文档里 300 条、表里 320 条时按比例判定毫无意义。
+ */
+function countVideoDocItems(data: unknown): number {
+  const items = (data as { navigationItems?: any[] })?.navigationItems || [];
+  return items.reduce((acc: number, c: any) => {
+    return acc + (c.items?.length || 0) + (c.subCategories || []).reduce((s: number, sub: any) => s + (sub.items?.length || 0), 0);
+  }, 0);
+}
+
+/** 触发缩水保护所需的最小存量（少于它说明多半是首次导入，不是覆盖写） */
+export const VIDEO_SHRINK_MIN_BASELINE = 100;
+/** 允许的最低保留比例：写入量低于存量的 80% 即视为疑似数据损毁 */
+export const VIDEO_SHRINK_KEEP_RATIO = 0.8;
+
+/** 一次疑似缩水的覆盖写：三个数字是给操作者做判断用的，缺一不可 */
+export interface ShrinkVerdict {
+  existingCount: number;
+  incomingCount: number;
+  minimumAllowed: number;
+  /** 调用方声明的条数；二阶段确认时必填 */
+  declaredExpectedCount?: number;
+}
+
+export type VideoShrinkVerdict = ShrinkVerdict;
+
+/** 纯函数：方便把「判定」和「拦截后的处置」分开测 */
+export function evaluateVideoShrink(existingCount: number, incomingCount: number): ShrinkVerdict | null {
+  if (existingCount < VIDEO_SHRINK_MIN_BASELINE) return null;
+  if (incomingCount >= existingCount * VIDEO_SHRINK_KEEP_RATIO) return null;
+  return {
+    existingCount,
+    incomingCount,
+    minimumAllowed: Math.ceil(existingCount * VIDEO_SHRINK_KEEP_RATIO),
+  };
+}
+
+export type VideoShrinkBlockCode =
+  | "video_shrink_requires_confirmation"
+  | "video_shrink_expected_count_required"
+  | "video_shrink_expected_count_mismatch";
+
+/**
+ * 缩水保护拦下了一次写入。
+ *
+ * 409 而不是 500：这是一次「按设计被拒」的请求，客户端要能据此弹出确认框，
+ * 而不是把它当成中枢故障重试。`code` 是给机器的，`message` 是给操作者的。
+ */
+export class VideoShrinkError extends Error {
+  readonly code: VideoShrinkBlockCode;
+  readonly verdict: ShrinkVerdict;
+  constructor(code: VideoShrinkBlockCode, verdict: ShrinkVerdict) {
+    const { existingCount, incomingCount, minimumAllowed, declaredExpectedCount } = verdict;
+    const base = `待写入 ${incomingCount} 条，少于库内 ${existingCount} 条的 80%（下限 ${minimumAllowed} 条）`;
+    super(
+      code === "video_shrink_requires_confirmation"
+        ? `写入被视频库缩水保护拦下：${base}。若这确实是一次合法的大规模删除，请带 confirmLargeDeletion=true 且 expectedCount=${incomingCount} 重试`
+        : code === "video_shrink_expected_count_required"
+          ? `已确认大规模删除，但仍缺 expectedCount：${base}，expectedCount 必须填本次真实写入的 ${incomingCount} 条`
+          : `expectedCount 与真实写入条数不一致：声明 ${declaredExpectedCount} 条，实际 ${incomingCount} 条（${base}），拒绝放行`,
+    );
+    this.name = "VideoShrinkError";
+    this.code = code;
+    this.verdict = verdict;
+  }
+  get statusCode(): number {
+    return 409;
+  }
+}
+
+/** 两阶段确认的参数：视频库与导航快照写回共用 */
+export interface ShrinkGuardOptions {
+  /** 二阶段确认的第一段：调用方明确知道这是一次大规模删除 */
+  confirmLargeDeletion?: boolean;
+  /**
+   * 二阶段确认的第二段：调用方声明「我这次就是要写这么多条」。
+   *
+   * 必须与真实条数逐字相等，确认才有效——否则一个陈旧的确认框（或者一个
+   * 无脑带 confirm=true 的脚本）可以把任意内容盖掉，保护就退化成了摆设。
+   */
+  expectedCount?: number;
+  /** 确认放行后回调：身份与 IP 只有调用方知道，审计由它落笔 */
+  onLargeDeletionConfirmed?: (verdict: ShrinkVerdict) => void | Promise<void>;
+}
+
+/* ------------------------- 导航快照写回的缩水保护 ------------------------- */
+
+/**
+ * 判据与视频库相同（100 基线 / 80% 保留率），但常量分开导出：
+ * 两个域的「正常批量删除」频率不同，允许以后各自调参而不互相牵连。
+ */
+export const NAVIGATION_SHRINK_MIN_BASELINE = 100;
+export const NAVIGATION_SHRINK_KEEP_RATIO = 0.8;
+
+/** 纯函数：基线是「当前可被这次快照删除的托管站点数」，不是全表站点数 */
+export function evaluateNavigationShrink(existingCount: number, incomingCount: number): ShrinkVerdict | null {
+  if (existingCount < NAVIGATION_SHRINK_MIN_BASELINE) return null;
+  if (incomingCount >= existingCount * NAVIGATION_SHRINK_KEEP_RATIO) return null;
+  return {
+    existingCount,
+    incomingCount,
+    minimumAllowed: Math.ceil(existingCount * NAVIGATION_SHRINK_KEEP_RATIO),
+  };
+}
+
+export type NavigationShrinkBlockCode =
+  | "navigation_shrink_requires_confirmation"
+  | "navigation_shrink_expected_count_required"
+  | "navigation_shrink_expected_count_mismatch";
+
+export class NavigationShrinkError extends Error {
+  readonly code: NavigationShrinkBlockCode;
+  readonly verdict: ShrinkVerdict;
+  constructor(code: NavigationShrinkBlockCode, verdict: ShrinkVerdict) {
+    const { existingCount, incomingCount, minimumAllowed, declaredExpectedCount } = verdict;
+    const base = `待写入 ${incomingCount} 个站点，少于库内可托管站点 ${existingCount} 个的 80%（下限 ${minimumAllowed} 个）`;
+    super(
+      code === "navigation_shrink_requires_confirmation"
+        ? `写入被导航快照缩水保护拦下：${base}。若这确实是一次合法的大规模删除，请带 confirmLargeDeletion=true 且 expectedCount=${incomingCount} 重试`
+        : code === "navigation_shrink_expected_count_required"
+          ? `已确认大规模删除，但仍缺 expectedCount：${base}，expectedCount 必须填本次真实写入的 ${incomingCount} 个站点`
+          : `expectedCount 与真实写入条数不一致：声明 ${declaredExpectedCount} 个站点，实际 ${incomingCount} 个（${base}），拒绝放行`,
+    );
+    this.name = "NavigationShrinkError";
+    this.code = code;
+    this.verdict = verdict;
+  }
+  get statusCode(): number {
+    return 409;
+  }
+}
+
+/**
  * videos.json：视频导航数据。
  *
  * 从未写入过时返回 **null**（而不是 { navigationItems: [] }）。
@@ -478,22 +817,46 @@ export async function readVideosData(ctx: AppContext): Promise<unknown> {
   return fromKv;
 }
 
+/**
+ * 缩水判定的基线 = **即将被覆盖的那份文档**当前有多少条。
+ *
+ * 早先取关系表的 COUNT：`json` 模式下影子表可能根本没同步（基线 0，守卫形同虚设），
+ * 也可能被手工导入过而与 KV 分叉（基线虚高，原样保存都被拦）。两种情况下判据都不对。
+ * 关系表只在 KV 从未写入时回落：首次导入 / 切换期它至少是已知库容。
+ */
+async function currentVideoBaseline(ctx: AppContext): Promise<number> {
+  try {
+    const current = await readKv(ctx, "videos");
+    if (current !== null) return countVideoDocItems(current);
+  } catch {
+    // 当前文档读不出来时继续走关系表：写入本来就会覆盖它，
+    // 不能因为基线读取失败就把正常保存判死。
+  }
+  return await countVideoItems(ctx.repo).catch(() => 0);
+}
+
 export async function writeVideosData(
   ctx: AppContext,
   data: unknown,
   ifVersion?: number,
+  guard: ShrinkGuardOptions = {},
 ): Promise<void> {
-  const incomingItems = ((data as any)?.navigationItems || []).reduce((acc: number, c: any) => {
-    return acc + (c.items?.length || 0) + (c.subCategories || []).reduce((s: number, sub: any) => s + (sub.items?.length || 0), 0);
-  }, 0);
-  const currentDbCount = await countVideoItems(ctx.repo).catch(() => 0);
-  if (currentDbCount >= 100 && incomingItems < currentDbCount * 0.8) {
-    throw new Error(`[storage] 写入被拒绝：待写入视频数 (${incomingItems}) 严重少于数据库现有数 (${currentDbCount})，疑似数据损毁或分类丢失！`);
+  const incomingItems = countVideoDocItems(data);
+  const shrink = evaluateVideoShrink(await currentVideoBaseline(ctx), incomingItems);
+  if (shrink) {
+    if (!guard.confirmLargeDeletion) throw new VideoShrinkError("video_shrink_requires_confirmation", shrink);
+    if (guard.expectedCount === undefined) throw new VideoShrinkError("video_shrink_expected_count_required", shrink);
+    if (guard.expectedCount !== incomingItems) {
+      throw new VideoShrinkError("video_shrink_expected_count_mismatch", { ...shrink, declaredExpectedCount: guard.expectedCount });
+    }
   }
   await writeKv(ctx, "videos", data, ifVersion);
   // `dual` / `db` 模式下把文档同步进关系表。失败只记状态，不影响本次写入 ——
   // 影子表是副本，副本故障不该让正本写入报错（详见 video-catalog.ts 文件头）。
   await syncVideoCatalogSafely(ctx, data);
+  // 确认放行只在写入真的落库之后记账：半途失败留一条「已放行」的审计，
+  // 比不留更糟——它会让排查者以为数据已经按新内容覆盖了。
+  if (shrink) await guard.onLargeDeletionConfirmed?.(shrink);
 }
 
 /* --------------------------- 键值读写（复用 jobs 表） --------------------------- */
@@ -805,11 +1168,23 @@ export function pathToKey(path: string): string {
   return "doc:" + path.replace(/^\/+/, "");
 }
 
-/** 分发：把 NavSphere 的 path 映射到上面的处理函数 */
-export async function readStoragePath(ctx: AppContext, path: string): Promise<unknown> {
+/**
+ * 分发：把 NavSphere 的 path 映射到上面的处理函数。
+ *
+ * `view` 只影响 navigation.json（及同源的 navigation-default.json）：
+ * `public` 返回过滤后的展示投影，`raw`（默认）是全量快照。其它内容文件没有
+ * 「后台态」概念，两种视图一致。
+ */
+export async function readStoragePath(
+  ctx: AppContext,
+  path: string,
+  opts: { view?: NavigationView; navVersion?: number | null } = {},
+): Promise<unknown> {
   const name = basename(path);
   // navigation-default.json 是"默认模板"，当前实现下与导航数据同源
-  if (name === "navigation-default.json" || name === "navigation.json") return readNavigationSnapshot(ctx);
+  if (name === "navigation-default.json" || name === "navigation.json") {
+    return readNavigationSnapshot(ctx, opts.view ?? "raw", opts.navVersion);
+  }
   if (name === "site.json") return readSiteConfig(ctx);
   if (name === "resource-metadata.json") return readResourceMetadata(ctx);
   if (name === "videos.json") return readVideosData(ctx);
@@ -838,11 +1213,16 @@ export async function writeStoragePath(
   ctx: AppContext,
   path: string,
   content: string,
-  opts?: { ifVersion?: number },
+  opts?: { ifVersion?: number } & ShrinkGuardOptions,
 ): Promise<{ ok: true; note: string; version?: number }> {
   const parsed = content.trim() ? JSON.parse(content) : {};
   if (basename(path) === "navigation.json") {
-    const r = await writeNavigationData(ctx, parsed as NsNavigationData);
+    const r = await writeNavigationData(ctx, parsed as NsNavigationData, {
+      // 与 videos.json 同一条通道：网关层漏传一个字段，二阶段确认就会永远 409
+      confirmLargeDeletion: opts?.confirmLargeDeletion,
+      expectedCount: opts?.expectedCount,
+      onLargeDeletionConfirmed: opts?.onLargeDeletionConfirmed,
+    });
     // 与 server.ts 的 onResponse 失效互为兜底：即便将来有调用方绕过 HTTP 层，
     // 也不会把旧快照继续喂给前端。
     invalidateSnapshotCache();
@@ -857,7 +1237,13 @@ export async function writeStoragePath(
     return { ok: true, note: "资源元数据已更新" };
   }
   if (basename(path) === "videos.json") {
-    await writeVideosData(ctx, parsed, opts?.ifVersion);
+    // 确认参数必须原样透传：写 videos.json 有两条入口（HTTP PUT /api/storage 与 CLI），
+    // 这里漏掉一个字段，等于其中一条入口的二阶段确认永远失效（409 无限重试）。
+    await writeVideosData(ctx, parsed, opts?.ifVersion, {
+      confirmLargeDeletion: opts?.confirmLargeDeletion,
+      expectedCount: opts?.expectedCount,
+      onLargeDeletionConfirmed: opts?.onLargeDeletionConfirmed,
+    });
     const version = await readKvVersion(ctx, "videos");
     return { ok: true, note: "视频导航数据已更新", version: version ?? undefined };
   }

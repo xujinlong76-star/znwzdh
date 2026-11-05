@@ -1,7 +1,7 @@
 /**
  * MCP 工具实现（组合入口）。
  *
- * 与 REST API 共用同一套仓储 / 检索引擎 / AI 能力（通过 AppContext 注入），
+ * 与 REST API 共用同一套仓储 / 检索引擎 / AI 能力（通过 McpHostContext 注入），
  * 因此 MCP 与网页端的所见所得完全一致，不会出现"两套逻辑算出两个答案"。
  *
  * 每个写操作都做三件事：权限校验 -> 幂等去重 -> 审计落库。
@@ -11,7 +11,7 @@
  * 构造共享依赖（上下文、幂等、向量索引），把各域 `(deps, args, tc)` 处理器
  * 绑定成对外 `(args, tc)` 并合并为一个对象。对调用方而言 API 完全不变。
  */
-import type { AppContext } from "@navhub/api";
+import type { McpHostContext } from "./host-context.ts";
 import { algorithmHandlers } from "./handlers/algorithms.ts";
 import { catalogHandlers } from "./handlers/catalog.ts";
 import { developerToolHandlers } from "./handlers/developer-tools.ts";
@@ -25,7 +25,7 @@ import { userCenterHandlers } from "./handlers/user-center.ts";
 
 export type { ToolResult } from "./handlers/shared.ts";
 
-export function createHandlers(ctx: AppContext) {
+export function createHandlers(ctx: McpHostContext) {
   const deps: HandlerDeps = {
     ctx,
     withIdempotency: makeWithIdempotency(ctx),

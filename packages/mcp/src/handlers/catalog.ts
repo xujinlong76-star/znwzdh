@@ -1,18 +1,34 @@
 /**
  * 目录域工具：类目 / 标签 / 统计 / 热度榜。均为只读。
  */
+import { CONTROLLED_FACETS } from "@navhub/core";
 import {
   GetTrendingInput,
   ListCategoriesInput,
   ListCollectionsInput,
   GetCollectionInput,
   ListTagsInput,
+  ListFacetsInput,
   requireScope,
   type ToolContext,
 } from "../tools.ts";
 import { ok, fail, type Handler, type HandlerDeps } from "./shared.ts";
 
 export const catalogHandlers = {
+  async list_facets(deps: HandlerDeps, args: unknown, tc: ToolContext) {
+    const { ctx } = deps;
+    requireScope(tc, "read");
+    const input = ListFacetsInput.parse(args ?? {});
+    const summary = await ctx.repo.listFacetsSummary({
+      categoryId: input.categoryId,
+      tag: input.tag,
+    });
+    return ok({
+      definitions: CONTROLLED_FACETS,
+      facets: summary,
+    });
+  },
+
   async list_categories(deps: HandlerDeps, args: unknown, tc: ToolContext) {
     const { ctx } = deps;
     requireScope(tc, "read");

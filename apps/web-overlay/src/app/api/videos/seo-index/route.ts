@@ -16,7 +16,7 @@ export async function GET() {
   try {
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
     const data = await readVideoLibrary()
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
   try {
     const authCheck = await verifyAdminSession()
     if (!authCheck.ok) {
-      return new Response(authCheck.error, { status: authCheck.status })
+      return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
     const body = await request.json().catch(() => ({}))

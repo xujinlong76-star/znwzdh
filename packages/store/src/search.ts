@@ -23,7 +23,7 @@ import {
 } from "@navhub/core";
 import type { Db, Dialect } from "./driver.ts";
 import type { FullTextStore } from "./fts.ts";
-import { bindSqlite, toPgSql } from "./repository.ts";
+import { bindSqlite, slugify, toPgSql } from "./repository.ts";
 import { containsLike, escapeLike, prefixLike } from "./sql-like.ts";
 import { chunkList } from "./sql-in.ts";
 import type { VectorStore } from "./vector/types.ts";
@@ -70,6 +70,19 @@ export interface SearchEngineOptions {
    * 拿 distance 当阈值会在换存储后端时静默改变语义。
    */
   semanticMinSimilarity?: number;
+  /**
+   * 语义独占时的严格闸门：词法通道（exact/fts/pinyin）全线无命中、结果只剩
+   * 语义近邻时，低于该值的候选在融合前剔除。
+   *
+   * 为什么需要第二档：KNN 对任何输入都返回 top-N，bge 这类模型对无关文本的
+   * 余弦相似度本来就集中在 0.5 上下（各向异性），基础闸门 0.4 挡不住——
+   * 乱码查询会拿到一批「最像的噪声」并伪装成结果。宁可给出诚实的零结果，
+   * 让 didYouMean 接手纠错，也不假装配对。
+   *
+   * 默认 0.55；0 表示关闭；基础闸门为 0（显式关闭相似度过滤）时不生效，
+   * 严格闸门比基础闸门更松时也不生效（基础闸门已经更严）。
+   */
+  semanticOnlyMinSimilarity?: number;
 }
 
 /**
@@ -84,7 +97,11 @@ export interface ChannelTimings {
   pinyinMs: number;
   semanticMs: number;
   skippedSemantic: boolean;
-  /** 被相似度闸门剔除的向量命中数（回表前统计；闸门关闭时恒为 0） */
+  /**
+   * 被相似度闸门剔除的向量命中数。
+   * 基础闸门在通道内回表前统计；语义独占的严格闸门在融合前追加统计。
+   * 两档都关闭时恒为 0。
+   */
   semanticFiltered: number;
 }
 
@@ -101,6 +118,13 @@ export interface ChannelTimings {
 interface FilterCache {
   category?: Promise<Set<string>>;
   tag?: Promise<Set<string>>;
+  /**
+   * 多标签**交集**集合。
+   *
+   * 只挂在单次 search 的局部变量上，不放到实例上 —— 放实例就成了跨请求共享，
+   * 并发下会把 A 用户的过滤集合套到 B 用户的查询上。
+   */
+  tags?: Promise<Set<string>>;
   facets?: Promise<Set<string>>;
 }
 
@@ -111,6 +135,65 @@ interface FilterCache {
  */
 function enabledValue(dialect: Dialect): string {
   return dialect === "pg" ? "TRUE" : "1";
+}
+
+/**
+ * trigram 子串索引能服务的最短查询是 3 个码点：SQLite 的 trigram 分词器
+ * 只把长度 ≥3 的片段切三元组，更短的词 MATCH 恒为空。短词必须继续走 LIKE。
+ */
+export function trigramEligible(term: string): boolean {
+  return Array.from(term).length >= 3;
+}
+
+/**
+ * FTS5 字符串字面量：双引号包裹、内部双引号翻倍。
+ * 用户输入的 `"`、`*`、`-`、`OR` 等都不能被当成查询语法。
+ */
+export function ftsPhrase(term: string): string {
+  return '"' + term.replace(/"/g, '""') + '"';
+}
+
+/**
+ * pinyin_full / pinyin_initials 只含 `[a-z0-9]`（见 @navhub/core/pinyin.ts），
+ * 含空格、符号或中文的查询词与它们必然不匹配——跳过这两个 LIKE 分支
+ * 结果不变，但中文查询每次能省掉一次 `sites` 全表扫描。
+ */
+export function pinyinMatchable(term: string): boolean {
+  return /^[a-z0-9]+$/.test(term);
+}
+
+/**
+ * 把检索算子还原成字面词：`#tag` / `@分类` / `tag:` / `pricing:` 等前缀剥掉，
+ * 保留用户真正输入的词。仅用于「算子过滤后一无所获」的字面回落。
+ */
+function stripSearchOperators(raw: string): string {
+  return raw
+    .replace(/(^|\s)[#@](?=[A-Za-z0-9_\u4e00-\u9fa5-])/g, "$1")
+    .replace(/(^|\s)(?:tag|标签|cat|category|类目|分类|pricing|platform|form|language|lang|计费|平台|形态|语言):/gi, "$1")
+    .replace(/["“”]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * 拼写建议词表：整条标题/标签名 + 其中的英文词元。
+ *
+ * 只切英文词元：中文串做「编辑距离 ≤2」的纠错没有意义（两字之差就是另一个词），
+ * 而产品名几乎都写在英文段里（「Docker 官方文档」→ docker）。
+ * 旧实现只取**无序前 100 行**标题当词表，"dockr" 之类的拼写错误能否被纠
+ * 取决于数据库返回顺序——这里改为全量 + 词元，结果对同一份数据稳定可复现。
+ */
+function buildSpellingDictionary(terms: string[]): string[] {
+  const out = new Set<string>();
+  for (const term of terms) {
+    const clean = term.trim();
+    if (!clean) continue;
+    out.add(clean);
+    for (const word of clean.split(/[^A-Za-z0-9+#]+/)) {
+      if (word.length >= 3) out.add(word);
+    }
+  }
+  return [...out];
 }
 
 /**
@@ -136,6 +219,7 @@ export class SearchEngine {
   private perChannel: number;
   private earlyExitExactHits: number;
   private semanticMinSimilarity: number;
+  private semanticOnlyMinSimilarity: number;
   private linucbModel: LinUCBModel;
   private feedbackCount = 0;
   private savingPromise: Promise<void> | null = null;
@@ -149,6 +233,10 @@ export class SearchEngine {
     this.earlyExitExactHits = opts.earlyExitExactHits ?? 5;
     const gate = opts.semanticMinSimilarity ?? 0;
     this.semanticMinSimilarity = Number.isFinite(gate) ? Math.min(1, Math.max(0, gate)) : 0;
+    const strictGate = opts.semanticOnlyMinSimilarity ?? 0.55;
+    this.semanticOnlyMinSimilarity = Number.isFinite(strictGate)
+      ? Math.min(1, Math.max(0, strictGate))
+      : 0.55;
     this.linucbModel = createLinUCBModel(0.15);
   }
 
@@ -303,6 +391,26 @@ export class SearchEngine {
   private static readonly EXPANSION_CACHE_MAX = 512;
 
   /**
+   * 类目子树解析结果的短 TTL 缓存。
+   *
+   * categoryWithDescendants 是全站最热的重复读：每个类目页、每次带 categoryId 的
+   * 检索都要付 1~3 次解析查询 + 一次 anchor 前缀扫描，而类目树由管理端手工维护、
+   * 几乎不变。此前只有单次检索内的 FilterCache 复用（browse 分支甚至不走它），
+   * 跨请求每次都重跑。
+   *
+   * 与 expansionCache 同构：60s TTL + 上限 FIFO。失效靠 invalidateCategoryTree()，
+   * 类目增删改（写路径）必须调用它，否则最长 60s 内新类目搜不到。
+   */
+  private categoryTreeCache = new Map<string, { at: number; ids: Set<string> }>();
+  private static readonly CATEGORY_TREE_TTL_MS = 60_000;
+  private static readonly CATEGORY_TREE_CACHE_MAX = 512;
+
+  /** 类目写路径调用：类目增删改后清空子树缓存，避免最长 60s 的陈旧解析。 */
+  invalidateCategoryTree(): void {
+    this.categoryTreeCache.clear();
+  }
+
+  /**
    * 基于 tag_aliases 与 categories.alt_labels 的同义词/知识图谱查询扩展
    */
   private async expandQueryTerms(raw: string): Promise<string[]> {
@@ -369,13 +477,34 @@ export class SearchEngine {
     const effectiveTag = q.tag ?? parsedIntent.inferredTag;
     const effectiveCategory = q.categoryId ?? parsedIntent.inferredCategory;
     const effectiveExcluded = [...(q.excludedTerms ?? []), ...(parsedIntent.excludedTerms ?? [])];
-    const effectiveQuery = parsedIntent.cleanedQuery;
-    const effectiveOpt: SearchQuery = {
+    let effectiveQuery = parsedIntent.cleanedQuery;
+    /**
+     * mode 与 disableSemantic 二选一的**唯一裁定点**。
+     *
+     * mode 是新的声明式写法（"hybrid" / "keyword" / "semantic"），disableSemantic
+     * 是旧开关。两者都给出时以 mode 为准，否则「mode=hybrid + disableSemantic:true」
+     * 这种自相矛盾的入参会随调用方构造对象的顺序漂移——同一个请求两种行为。
+     *
+     * 未给 mode 时原样保留 disableSemantic：既有调用方（含本仓测试）全部走这条路径，
+     * 行为逐字不变。
+     *
+     * "semantic" 只保留语义通道：词法三通道照跑（它们的 SQL 比一次 embedding
+     * 推理便宜得多，且 early-exit 逻辑依赖 exact 命中数），但候选在融合前被剔除，
+     * 因此**排序与召回集合**都只来自语义近邻 —— 与「只跑语义」等价，
+     * 但又不用为它单独复制一套 runChannels 分支。
+     */
+    const wantSemanticOnly = q.mode === "semantic";
+    const effectiveDisableSemantic = q.mode
+      ? q.mode === "keyword"
+      : Boolean(q.disableSemantic);
+    let effectiveOpt: SearchQuery = {
       ...q,
       tag: effectiveTag,
       categoryId: effectiveCategory,
       facets: effectiveFacets,
       excludedTerms: effectiveExcluded.length > 0 ? effectiveExcluded : undefined,
+      disableSemantic: effectiveDisableSemantic,
+      mode: q.mode,
     };
 
     // 若已累积在线强化学习反馈且未硬性锁死静态权重，启用 Discounted-LinUCB 动态情境权重
@@ -401,10 +530,14 @@ export class SearchEngine {
     const recall = Math.max(this.perChannel, Math.min((offset + limit) * 5, 500));
     const pool = Math.max((offset + limit) * 3, 60);
 
-    // 空查询 = 浏览模式：按 featured/weight/sort 出列表，不经过 RRF
+    const hasParsedIntent =
+      hasInferredFacets || Boolean(parsedIntent.inferredTag) || Boolean(parsedIntent.inferredCategory);
+
+    // 空查询 = 浏览模式：按 featured/trend_score/sort 出列表，不经过 RRF
+    let literalFallback = false;
     if (effectiveQuery.length === 0) {
       const browse = await this.browse(effectiveOpt, limit, offset);
-      return {
+      const browseResult: SearchResult = {
         hits: browse.hits,
         channelsUsed: [],
         semanticAvailable: this.semanticAvailable,
@@ -416,6 +549,15 @@ export class SearchEngine {
         ...(parsedIntent.inferredCategory ? { inferredCategory: parsedIntent.inferredCategory } : {}),
         ...(effectiveExcluded.length > 0 ? { excludedTerms: effectiveExcluded } : {}),
       };
+      if (browse.hits.length > 0 || !hasParsedIntent) return browseResult;
+      // 自然语言分面/算子可以把整句吃光（「开源」「插件」「@design」），过滤后却一条不剩。
+      // 这些词大概率就是用户想搜的文本 —— 退回字面检索，否则用户看到的是「有这个词却零结果」。
+      // 显式过滤（URL 上的 tag/category/facets 参数）仍保留，只丢推断出来的那部分。
+      const literal = stripSearchOperators(raw);
+      if (literal.length === 0) return browseResult;
+      effectiveQuery = literal;
+      effectiveOpt = { ...effectiveOpt, categoryId: q.categoryId, tag: q.tag, tags: q.tags, facets: q.facets };
+      literalFallback = true;
     }
 
     // 语义与知识图谱同义词扩展
@@ -424,8 +566,19 @@ export class SearchEngine {
     const hasFilter = Boolean(
       effectiveOpt.categoryId ||
       effectiveOpt.tag ||
+      (effectiveOpt.tags && effectiveOpt.tags.length > 0) ||
       (effectiveOpt.facets && Object.keys(effectiveOpt.facets).length > 0)
     );
+    /**
+     * mode="semantic" 的通道裁剪：只留语义候选。
+     *
+     * 为什么在**每次** runChannels 之后立刻裁，而不是融合前统一裁一次：
+     * 下面的零结果兜底按 candidates.length === 0 决定是否放宽过滤重试，
+     * 若留到融合前才裁，词法命中会让兜底判定为「有结果」而不再重试，
+     * 裁完却一条不剩 —— 用户拿到零结果且没有任何放宽提示。
+     */
+    const keepModeChannels = (list: SearchCandidate[]): SearchCandidate[] =>
+      wantSemanticOnly ? list.filter((c) => c.channel === "semantic") : list;
     let fallback: SearchResult["fallback"];
     // 过滤集合按「一次 search」缓存，四个通道共用 —— 见 FilterCache 注释
     const filterCache: FilterCache = {};
@@ -437,20 +590,22 @@ export class SearchEngine {
       filterCache,
       recall,
     );
+    candidates = keepModeChannels(candidates);
 
     // ---- 零结果兜底（两级放宽） ----
     // 第 1 级：原查询带类目/标签/分面正向过滤 → 先怀疑是过滤器太窄，去掉正向过滤重试（负向排除关键词仍坚决保留）
     if (candidates.length === 0 && hasFilter) {
       const widened = await this.runChannels(
         effectiveQuery,
-        { ...effectiveOpt, categoryId: undefined, tag: undefined, facets: undefined },
+        { ...effectiveOpt, categoryId: undefined, tag: undefined, tags: undefined, facets: undefined },
         false,
         expandedTerms,
         filterCache,
         recall,
       );
-      if (widened.candidates.length > 0) {
-        candidates = widened.candidates;
+      const widenedKept = keepModeChannels(widened.candidates);
+      if (widenedKept.length > 0) {
+        candidates = widenedKept;
         timings = widened.timings;
         fallback = "filter";
       }
@@ -458,29 +613,61 @@ export class SearchEngine {
     // 第 2 级：拼音从「前缀」放宽为「包含」、英文多词改逐词 OR。
     if (candidates.length === 0) {
       const widened = await this.runChannels(effectiveQuery, effectiveOpt, true, expandedTerms, filterCache, recall);
-      if (widened.candidates.length > 0) {
-        candidates = widened.candidates;
+      const widenedKept = keepModeChannels(widened.candidates);
+      if (widenedKept.length > 0) {
+        candidates = widenedKept;
         timings = widened.timings;
         fallback = "fuzzy";
       }
     }
+    // 字面回落：结果来自「丢掉推断过滤」，如实按筛选放宽上报（前端据此提示）
+    if (literalFallback && candidates.length > 0 && !fallback) fallback = "filter";
 
-    // 零结果时的编辑距离智能拼写建议 (Did You Mean)
+    // 语义独占的严格闸门：词法通道全线无命中时，剩下的只有「最近的向量邻居」。
+    // KNN 对任何输入都有输出，乱码查询的最近邻相似度也能到 0.5 上下（bge 的各向异性），
+    // 基础闸门 0.4 拦不住——这里再卡一刀，宁可零结果交给 didYouMean 纠错，也不假装配对。
+    // 有词法命中时不开：弱语义只是低权重补充，RRF 已有权重兜底，不该整刀剔除。
+    const lexicalHits = candidates.filter((c) => c.channel !== "semantic" && c.channel !== "personal");
+    if (
+      lexicalHits.length === 0 &&
+      this.semanticMinSimilarity > 0 &&
+      this.semanticOnlyMinSimilarity > this.semanticMinSimilarity
+    ) {
+      const before = candidates.length;
+      candidates = candidates.filter(
+        (c) => c.channel !== "semantic" || (c.similarity ?? 0) >= this.semanticOnlyMinSimilarity
+      );
+      timings.semanticFiltered += before - candidates.length;
+    }
+
+    // 拼写建议 (Did You Mean)：零结果，或**只有语义近邻、没有任何关键词命中**时计算。
+    // 语义 KNN 对任何输入都返回最近邻，若只在零候选时算，带向量库的生产环境里
+    // 这个功能永远不可达——拼错的词只会得到一批「最像的」站点，没有任何纠错提示。
+    const semanticOnly = candidates.length > 0 && lexicalHits.length === 0;
     let didYouMean: string | undefined;
-    if (candidates.length === 0 && effectiveQuery.length >= 3) {
+    /**
+     * 纠错建议的最短查询长度：**拉丁按 3、中文按 2**。
+     *
+     * 为什么按书写系统分档：硬卡 3 的本意是挡掉 go/ai 这类 2 字母缩写召出的噪声建议，
+     * 但汉字信息密度高，2 字已是完整词（小说/简历/面试/字体/翻译/代理…）——实测这批
+     * 2 字查询在真实查询里占比很大，卡 3 等于让它们**永远拿不到纠错**，只剩一批
+     * 「语义上最像」的站点，用户看到的是答非所问且无从纠正。中文下限降到 2。
+     */
+    const suggestMinLen = /[\u4e00-\u9fa5]/.test(effectiveQuery) ? 2 : 3;
+    if ((candidates.length === 0 || semanticOnly) && effectiveQuery.length >= suggestMinLen) {
       try {
         const siteRows = (await this.rawRows(
-          `SELECT title FROM sites WHERE deleted_at IS NULL AND enabled = ${this.enabled} LIMIT 100`,
+          `SELECT title FROM sites WHERE deleted_at IS NULL AND enabled = ${this.enabled} LIMIT 5000`,
           []
         )) as unknown as Array<{ title?: string }>;
         const tagRows = (await this.rawRows(
-          `SELECT name FROM tags LIMIT 100`,
+          `SELECT name FROM tags LIMIT 5000`,
           []
         )) as unknown as Array<{ name?: string }>;
-        const dict = [
+        const dict = buildSpellingDictionary([
           ...siteRows.map((r) => r.title || ""),
           ...tagRows.map((r) => r.name || ""),
-        ].filter(Boolean);
+        ]);
         const suggestion = findDidYouMeanSuggestion(effectiveQuery, dict, 2);
         if (suggestion) didYouMean = suggestion;
       } catch {
@@ -511,9 +698,11 @@ export class SearchEngine {
       ...(fallback ? { fallback } : {}),
       ...(timings.skippedSemantic && !effectiveOpt.disableSemantic ? { planner: "early-exit" as const } : {}),
       channelTimings: timings,
-      ...(hasInferredFacets ? { inferredFacets: parsedIntent.inferredFacets } : {}),
-      ...(parsedIntent.inferredTag ? { inferredTag: parsedIntent.inferredTag } : {}),
-      ...(parsedIntent.inferredCategory ? { inferredCategory: parsedIntent.inferredCategory } : {}),
+      ...(hasInferredFacets && !literalFallback ? { inferredFacets: parsedIntent.inferredFacets } : {}),
+      ...(parsedIntent.inferredTag && !literalFallback ? { inferredTag: parsedIntent.inferredTag } : {}),
+      ...(parsedIntent.inferredCategory && !literalFallback
+        ? { inferredCategory: parsedIntent.inferredCategory }
+        : {}),
       ...(effectiveExcluded.length > 0 ? { excludedTerms: effectiveExcluded } : {}),
       ...(didYouMean ? { didYouMean } : {}),
       ...(expandedTerms.length > 1 ? { queryExpansion: expandedTerms } : {}),
@@ -546,7 +735,15 @@ export class SearchEngine {
       return [value, Date.now() - started];
     };
     // early-exit：精确命中足够强时，语义通道的 embedding 推理是纯浪费（首次 300ms+）。
-    if (!fuzzy && !opt.disableSemantic && this.earlyExitExactHits > 0 && exact.length >= this.earlyExitExactHits) {
+    // mode="semantic" 时**不得**剪枝：用户明确只要语义结果，剪掉就一条不剩，
+    // 而候选在 search() 里会被裁成只剩语义 —— 结果是恒零且没有任何降级提示。
+    if (
+      !fuzzy &&
+      !opt.disableSemantic &&
+      opt.mode !== "semantic" &&
+      this.earlyExitExactHits > 0 &&
+      exact.length >= this.earlyExitExactHits
+    ) {
       const [[ftsHits, ftsMs], [pinyin, pinyinMs]] = await Promise.all([
         timed(() => this.channelFts(raw, opt, extraTerms, cache, recall)),
         timed(() => this.channelPinyin(raw, opt, false, cache, recall)),
@@ -581,6 +778,13 @@ export class SearchEngine {
 
   /**
    * 通道 1：子串精确匹配（支持站点标签、多词交叉检索与同义词扩展）。
+   *
+   * 排序分档（粗到细，见下方 ORDER BY）：标题精确 > 标题包含 > **标签精确** >
+   * 标签包含 > 标题首词 > 其它。加中间两档的原因：此前只有标题参与分档，
+   * 标签与描述同落最后一档、再按 trend_score 排，于是「热门但不相关」的站会
+   * 压过「标签就是这个词」的站——实测搜「代理」时 OpenHands（tag=开发代理）
+   * 排在 Nginx（tag=代理）之前、搜「k8s」时 containerd 压过 Knative（tag=k8s）。
+   * 标签是人工策划的强相关信号，必须先于热度。
    */
   private async channelExact(q: string, opt: SearchQuery, fuzzy = false, extraTerms: string[] = [], cache?: FilterCache, limit = this.perChannel): Promise<SearchCandidate[]> {
     const lowered = q.toLowerCase();
@@ -591,47 +795,17 @@ export class SearchEngine {
       if (parts.length > 1) terms.push(...parts);
     }
     const uniqueTerms = [...new Set(terms.filter(Boolean))];
+    if (uniqueTerms.length === 0) return [];
 
-    const conditions = [
-      "lower(title) LIKE ? ESCAPE '!'",
-      "lower(url) LIKE ? ESCAPE '!'",
-      "lower(coalesce(description,'')) LIKE ? ESCAPE '!'",
-      "pinyin_full LIKE ? ESCAPE '!'",
-      "pinyin_initials LIKE ? ESCAPE '!'",
-      "id IN (SELECT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE lower(t.name) LIKE ? ESCAPE '!' OR lower(t.slug) LIKE ? ESCAPE '!')",
-    ];
-    const singleCondClause = "(" + conditions.join(" OR ") + ")";
-
-    // 每个 term 一组 6 个条件（7 个 LIKE 占位符）
-    const orGroups: string[] = [];
-    const likeParams: unknown[] = [];
-    for (const t of uniqueTerms) {
-      const like = containsLike(t);
-      orGroups.push(singleCondClause);
-      likeParams.push(like, like, like, like, like, like, like);
-    }
-
-    const textConditions = [
-      "lower(title) LIKE ? ESCAPE '!'",
-      "lower(url) LIKE ? ESCAPE '!'",
-      "lower(coalesce(description,'')) LIKE ? ESCAPE '!'",
-      "id IN (SELECT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE lower(t.name) LIKE ? ESCAPE '!' OR lower(t.slug) LIKE ? ESCAPE '!')",
-    ];
-    const textCondClause = "(" + textConditions.join(" OR ") + ")";
-
+    // 每个匹配来源独立成一个 SELECT 分支，再 UNION 成候选 id 集。
+    // 不能把这些条件写成一个 OR：只要 OR 里有一条前导通配符 LIKE 无法索引，
+    // SQLite 就会放弃 trigram 索引、退化成全表扫描（P1-3 实测的规划器行为）。
+    const trigram = this.trigramTable();
+    const branches = uniqueTerms.flatMap((term) => this.termBranches(term, trigram));
     // 多词且非 fuzzy 模式下，增加所有 token 的文本交叉与 (AND) 条件
     // 使得 "react 状态" 能成功召回 Title="React..." 且 Description="...状态管理..." 的多词交叉站点
-    let multiTokenClause = "";
-    const multiTokenParams: unknown[] = [];
-    if (!fuzzy && tokens.length > 1) {
-      const tokenClauses: string[] = [];
-      for (const tok of tokens) {
-        tokenClauses.push(textCondClause);
-        const lk = containsLike(tok);
-        multiTokenParams.push(lk, lk, lk, lk, lk);
-      }
-      multiTokenClause = `(${tokenClauses.join(" AND ")}) OR `;
-    }
+    const multi = !fuzzy && tokens.length > 1 ? this.multiTokenBranch(tokens, trigram) : null;
+    if (multi) branches.push(multi);
 
     const rows = await this.rawRows(
       `SELECT id, url, title, description, category_id AS categoryid,
@@ -639,17 +813,101 @@ export class SearchEngine {
          FROM sites
         WHERE enabled = ${this.enabled}
           AND deleted_at IS NULL
-          AND (${multiTokenClause}${orGroups.join(" OR ")})
+          AND id IN (${branches.map((b) => b.sql).join(" UNION ")})
         ORDER BY
-          CASE WHEN lower(title) LIKE ? ESCAPE '!' THEN 0
+          CASE WHEN lower(title) = ? THEN 0
                WHEN lower(title) LIKE ? ESCAPE '!' THEN 1
-               ELSE 2 END,
-          weight DESC, sort ASC, id ASC
+               WHEN EXISTS (SELECT 1 FROM site_tags st JOIN tags t ON t.id = st.tag_id
+                             WHERE st.site_id = sites.id AND (lower(t.name) = ? OR t.slug = ?)) THEN 2
+               WHEN EXISTS (SELECT 1 FROM site_tags st JOIN tags t ON t.id = st.tag_id
+                             WHERE st.site_id = sites.id AND (lower(t.name) LIKE ? ESCAPE '!' OR lower(t.slug) LIKE ? ESCAPE '!')) THEN 3
+               WHEN lower(title) LIKE ? ESCAPE '!' THEN 4
+               ELSE 5 END,
+          weight DESC, trend_score DESC, sort ASC, id ASC
         LIMIT ?`,
-      [...multiTokenParams, ...likeParams, containsLike(lowered), containsLike(tokens[0] || lowered), limit],
+      [
+        ...branches.flatMap((b) => b.params),
+        lowered,
+        containsLike(lowered),
+        lowered,
+        lowered,
+        containsLike(lowered),
+        containsLike(lowered),
+        containsLike(tokens[0] || lowered),
+        limit,
+      ],
     );
     const filtered = await this.postFilter(rows, opt, cache);
     return filtered.map((r, i) => ({ siteId: r.id, channel: "exact" as const, rank: i + 1 }));
+  }
+
+  /** trigram 索引只在 SQLite FTS5 实现里可用；PG 靠 pg_trgm 表达式索引服务 LIKE */
+  private trigramTable(): string | null {
+    const fts = this.deps.fts;
+    return fts && fts.kind === "sqlite-fts5" ? fts.substringIndex ?? null : null;
+  }
+
+  /** 单个查询词的全部匹配来源：标题/URL/描述（长词走 trigram）、拼音、标签 */
+  private termBranches(term: string, trigram: string | null): Array<{ sql: string; params: unknown[] }> {
+    const branches: Array<{ sql: string; params: unknown[] }> = [];
+    if (trigram && trigramEligible(term)) {
+      branches.push({
+        // 从 trigram 索引驱动（MATCH 在 JOIN 内侧），再回 sites 校验启用/未删；
+        // 这样规划器不会因为别的 LIKE 分支退化成全表扫描。
+        sql: `SELECT s2.id AS id FROM ${trigram} JOIN sites s2 ON s2.rowid = ${trigram}.rowid
+               WHERE ${trigram} MATCH ? AND s2.enabled = ${this.enabled} AND s2.deleted_at IS NULL`,
+        params: [ftsPhrase(term)],
+      });
+    } else {
+      const like = containsLike(term);
+      branches.push({
+        sql: `SELECT id FROM sites WHERE enabled = ${this.enabled} AND deleted_at IS NULL
+                 AND (lower(title) LIKE ? ESCAPE '!'
+                   OR lower(url) LIKE ? ESCAPE '!'
+                   OR lower(coalesce(description,'')) LIKE ? ESCAPE '!')`,
+        params: [like, like, like],
+      });
+    }
+    if (pinyinMatchable(term)) {
+      // 性能优化：短字母/拼音(<=2字符如 'jd'、'wx')坚决走前缀索引 prefixLike ('jd%')，
+      // 命中 sites_pinyin_initials_idx 与 sites_pinyin_full_idx B-Tree 索引裁剪；
+      // >=3 字符才放宽为 containsLike 兜底中段匹配，消灭海量短词前导通配 % 全表扫描。
+      const pfx = term.length <= 2 ? prefixLike(term) : containsLike(term);
+      branches.push({
+        sql: `SELECT id FROM sites WHERE enabled = ${this.enabled} AND deleted_at IS NULL
+                 AND (pinyin_initials LIKE ? ESCAPE '!' OR pinyin_full LIKE ? ESCAPE '!')`,
+        params: [pfx, pfx],
+      });
+    }
+    const tagLike = containsLike(term);
+    branches.push({
+      sql: `SELECT st.site_id AS id FROM site_tags st JOIN tags t ON t.id = st.tag_id
+             WHERE lower(t.name) LIKE ? ESCAPE '!' OR lower(t.slug) LIKE ? ESCAPE '!'`,
+      params: [tagLike, tagLike],
+    });
+    return branches;
+  }
+
+  /** 多词交叉：每个 token 各自命中（文本或标签），不要求落在同一列 */
+  private multiTokenBranch(tokens: string[], trigram: string | null): { sql: string; params: unknown[] } | null {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    for (const tok of tokens) {
+      const tagLike = containsLike(tok);
+      const tagIn = "id IN (SELECT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE lower(t.name) LIKE ? ESCAPE '!' OR lower(t.slug) LIKE ? ESCAPE '!')";
+      if (trigram && trigramEligible(tok)) {
+        clauses.push(`(id IN (SELECT s2.id FROM ${trigram} JOIN sites s2 ON s2.rowid = ${trigram}.rowid WHERE ${trigram} MATCH ?) OR ${tagIn})`);
+        params.push(ftsPhrase(tok), tagLike, tagLike);
+      } else {
+        const like = containsLike(tok);
+        clauses.push(`(lower(title) LIKE ? ESCAPE '!' OR lower(url) LIKE ? ESCAPE '!' OR lower(coalesce(description,'')) LIKE ? ESCAPE '!' OR ${tagIn})`);
+        params.push(like, like, like, tagLike, tagLike);
+      }
+    }
+    return {
+      sql: `SELECT id FROM sites WHERE enabled = ${this.enabled} AND deleted_at IS NULL AND ${clauses.join(" AND ")}`,
+      params,
+    };
   }
 
   /** 通道 2：BM25 全文（支持同义词多词检索） */
@@ -699,13 +957,30 @@ export class SearchEngine {
    * （`cnjc` → 菜鸟教程）。查询词出现在拼音串**中段**时（`tianqi` → 中国天气网）
    * 由 exact 通道的 contains 兜住；fuzzy 模式改为**包含**匹配，
    * 兜住「打了一半 / 拼错开头 / 非首字母」的查询（如 `tianq`、`gtqw`）。
+   * 首字母串的包含放宽有长度门槛，理由见下方 initialPattern 注释。
+   *
+   * **中文查询压根不该进这条通道**：拼音列是给「用拉丁字母打中文」用的
+   * （`qdjb` → 启动脚本），而中文查询在 exact 通道里已经按标题/描述原文 contains 过了。
+   * 把中文再转成拼音去 LIKE 拼音列，只会撞上**跨词界拼出来的子串**——
+   * `pinyin_full` 是标题+描述整串连写、没有隔音符号，于是 `梯子`→`tizi` 命中
+   * Fontsource 描述里的「…限制 xian**tizi**tuoguan …」，`小说`→`xiaoshuo` 命中 XState，
+   * `书签`→`shuqian` 命中 SQLite，`面试`→`mianshi` 命中 MSI Afterburner。
+   * 真库 88 条真实中文查询实测：跳过后 7 条结果集变化，丢掉的 9 条命中全是这类乱撞，
+   * 没有一条本来是对的命中（`代` 那种单字查询整批都是垃圾，跳过反而干净）。
    */
   private async channelPinyin(q: string, opt: SearchQuery, fuzzy = false, cache?: FilterCache, limit = this.perChannel): Promise<SearchCandidate[]> {
-    if (!looksLikeLatinQuery(q) && !/[\u4e00-\u9fff]/.test(q)) return [];
+    if (!looksLikeLatinQuery(q)) return [];
     const { full, initials } = normalizeQueryPinyin(q);
     if (!full) return [];
     const pattern = fuzzy ? containsLike(full) : prefixLike(full);
-    const initialPattern = fuzzy ? containsLike(initials) : prefixLike(initials);
+    // fuzzy 的「包含」放宽对首字母串要设长度门槛。库里拉丁标题的 pinyin_initials
+    // 存的就是整串小写标题（实测 Photopea→`photopea`、Hetzner→`hetzner`、
+    // Adobe Acrobat 在线工具→`adobeacrobatzxgj`），2 字母模式于是跨过词界乱撞：
+    // `梯子`(tz) → StackBlitz / Hetzner / Forest 专注森林，`翻译`(fy) → Fastify / Dify / Iconify，
+    // `内存`(nc) → SWE-bench / Let's Encrypt。而这些查询真正该命中的条目
+    // （中国天气网、有道云笔记）由 exact 通道的标题 contains 兜住，放宽首字母只添噪声。
+    // ≥3 字母仍按包含匹配，保住注释里 `gtqw` 这类「命中在中段」的查询。
+    const initialPattern = fuzzy && initials.length >= 3 ? containsLike(initials) : prefixLike(initials);
     const rows = await this.rawRows(
       `SELECT id, url, title, description, category_id AS categoryid,
               pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
@@ -716,7 +991,7 @@ export class SearchEngine {
                WHEN pinyin_full = ? THEN 0
                WHEN pinyin_initials LIKE ? ESCAPE '!' THEN 1
                ELSE 2 END,
-          weight DESC, sort ASC, id ASC
+          weight DESC, trend_score DESC, sort ASC, id ASC
         LIMIT ?`,
       [pattern, initialPattern, initials, full, initialPattern, limit],
     );
@@ -757,7 +1032,13 @@ export class SearchEngine {
       const allowedIds = new Set(allowed.map((r) => r.id));
       return matches
         .filter((m) => allowedIds.has(m.siteId))
-        .map((m, i) => ({ siteId: m.siteId, channel: "semantic" as const, rank: i + 1, rawScore: m.distance }));
+        .map((m, i) => ({
+          siteId: m.siteId,
+          channel: "semantic" as const,
+          rank: i + 1,
+          rawScore: m.distance,
+          similarity: m.similarity,
+        }));
     } catch {
       // 模型不可用 / 维度不匹配时静默降级 —— 搜索必须仍然可用
       return [];
@@ -785,6 +1066,13 @@ export class SearchEngine {
         : this.siteIdsWithTag(opt.tag));
       out = out.filter((r) => ids.has(r.id));
     }
+    if (opt.tags && opt.tags.length > 0) {
+      // 多标签取交集（AND）；与单数 tag 同时给出时两个条件都生效。
+      const ids = await (cache
+        ? (cache.tags ??= this.siteIdsWithAllTags(opt.tags))
+        : this.siteIdsWithAllTags(opt.tags));
+      out = out.filter((r) => ids.has(r.id));
+    }
     if (opt.facets && Object.keys(opt.facets).length > 0) {
       const facets = opt.facets;
       const ids = await (cache
@@ -804,9 +1092,16 @@ export class SearchEngine {
 
   /** 浏览模式：多取 1 条用于判断 hasMore（避免 COUNT 往返） */
   private async browse(q: SearchQuery, limit: number, offset: number): Promise<{ hits: SearchHit[]; hasMore: boolean }> {
-    // 浏览排序：编辑精选(featured) > 热度(trend_score) > 权重(weight) > 手工序(sort)。
+    // 浏览排序：编辑精选(featured) > 热度(trend_score) > 手工序(sort) > id 决胜。
     // trend_score 由 recompute_rank 任务写入；为 0 时自然退化为旧行为，
     // 因此这次排序升级对存量数据零影响。
+    //
+    // weight 曾排在 trend_score 之后，但它恒为 0：INSERT 时硬编码 0（见
+    // repository/sites.ts 的两个 INSERT 站点），全仓没有任何 UPDATE 写它
+    // （recompute_rank 只写 trend_score），因此这个键从未区分过任何两行——
+    // 通道内顺序实际落在 sort/id 上，等于随机。留着它只会让人以为还有第二
+    // 个热度来源。这里统一改为只依赖真被写入的 trend_score（与通道内排序
+    // 同一口径），weight 列保留在表里供历史兼容，但不再参与排序。
     const wheres: string[] = [`enabled = ${this.enabled}`, "deleted_at IS NULL"];
     const params: unknown[] = [];
 
@@ -831,13 +1126,26 @@ export class SearchEngine {
       const ids = await this.siteIdsWithTag(q.tag);
       if (ids.size > 0) {
         if (ids.size > 500) {
-          const norm = q.tag.trim();
-          wheres.push(`id IN (SELECT DISTINCT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id LEFT JOIN tag_aliases ta ON ta.tag_id = t.id WHERE t.slug = ? OR t.name = ? OR ta.alias = ?)`);
-          params.push(norm, norm, norm);
+          // 命中过多时把过滤下推成子查询，避免上千个绑定参数；
+          // 谓词与 siteIdsWithTag 同源（tagSiteIdsSql），口径不会分叉。
+          const { sql, params: tagParams } = this.tagSiteIdsSql(q.tag);
+          wheres.push(`id IN (${sql})`);
+          params.push(...tagParams);
         } else {
           wheres.push(`id IN (${[...ids].map(() => "?").join(",")})`);
           params.push(...ids);
         }
+      } else {
+        return { hits: [], hasMore: false };
+      }
+    }
+
+    if (q.tags && q.tags.length > 0) {
+      // 浏览模式（空查询）同样支持多标签交集，口径与 postFilter 一致
+      const ids = await this.siteIdsWithAllTags(q.tags);
+      if (ids.size > 0) {
+        wheres.push('id IN (' + [...ids].map(() => "?").join(",") + ')');
+        params.push(...ids);
       } else {
         return { hits: [], hasMore: false };
       }
@@ -859,7 +1167,7 @@ export class SearchEngine {
       `SELECT id, url, title, description, category_id AS categoryid,
               pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
          FROM sites WHERE ${wheres.join(" AND ")}
-        ORDER BY featured DESC, trend_score DESC, weight DESC, sort ASC, id ASC LIMIT ? OFFSET ?`,
+        ORDER BY weight DESC, featured DESC, trend_score DESC, sort ASC, id ASC LIMIT ? OFFSET ?`,
       params,
     );
     const hasMore = rows.length > limit;
@@ -899,6 +1207,8 @@ export class SearchEngine {
    */
   private async categoryWithDescendants(categoryId: string): Promise<Set<string>> {
     const norm = categoryId.trim();
+    const cached = this.categoryTreeCache.get(norm);
+    if (cached && Date.now() - cached.at < SearchEngine.CATEGORY_TREE_TTL_MS) return cached.ids;
     const byId = (await this.rawRows(`SELECT id, anchor FROM categories WHERE id = ?`, [norm])) as unknown as Array<{ id?: string; anchor?: string }>;
     let target = byId[0];
     if (!target) {
@@ -916,32 +1226,112 @@ export class SearchEngine {
 
     const ids = new Set<string>([target?.id ? String(target.id) : norm]);
     const anchor = target?.anchor;
-    if (!anchor) return ids;
+    // 未解析到（歧义/不存在）也缓存：这是「每次都要重跑 3 条查询仍得到空」的最坏路径，
+    // 缓存它才挡得住扫描式调用。缩短到 60s 由调用方 invalidateCategoryTree() 兜底。
+    const remember = () => {
+      if (this.categoryTreeCache.size >= SearchEngine.CATEGORY_TREE_CACHE_MAX) {
+        const oldest = this.categoryTreeCache.keys().next();
+        if (!oldest.done) this.categoryTreeCache.delete(oldest.value);
+      }
+      this.categoryTreeCache.set(norm, { at: Date.now(), ids });
+    };
+    if (!anchor) {
+      remember();
+      return ids;
+    }
 
     const descendants = await this.rawRows(
       `SELECT id AS categoryid FROM categories WHERE anchor LIKE ?`,
       [anchor + "/%"],
     ) as unknown as Array<{ categoryid?: string }>;
     for (const d of descendants) if (d.categoryid) ids.add(d.categoryid);
+    remember();
     return ids;
+  }
+
+  /**
+   * 标签过滤的匹配谓词（slug / name / alias 三路）。
+   *
+   * 归一化约定：**只在查询侧归一，不动库里已存的数据**。
+   * 库里 t.slug 是 slugify 的产物（小写、空格转连字符），而 t.name 保留原始大小写
+   * （"AI" / "SaaS"）。旧实现把 trim 后的原值直接和三者比，于是 tag=AI 匹配不到
+   * slug 为 "ai" 的标签、tag="AI 工具" 匹配不到 slug 为 "ai-工具" 的标签 ——
+   * 过滤结果静默为空（前端表现为「明明有这个标签却零结果」）。
+   * 查询侧同时给出 lowercase 原值与 slugify 形态，两侧都能命中。
+   *
+   * siteIdsWithTag 与 browse(>500 命中时的 SQL 下推) 共用这一段，
+   * 保证两条路径的口径永远一致。
+   */
+  private tagSiteIdsSql(tag: string): { sql: string; params: unknown[] } {
+    const norm = tag.trim();
+    if (!norm) return { sql: "SELECT NULL AS id FROM tags WHERE 1 = 0", params: [] };
+    const lower = norm.toLowerCase();
+    const slug = slugify(norm);
+    const conds = ["lower(t.slug) = ?", "lower(t.name) = ?", "lower(ta.alias) = ?"];
+    const params: unknown[] = [lower, lower, lower];
+    // slugify 会把空格换成连字符（"AI 工具" → "ai-工具"），与 lowercase 原值不同时才需要补一路
+    if (slug !== lower) {
+      conds.push("lower(t.slug) = ?");
+      params.push(slug);
+    }
+    return {
+      sql: `SELECT DISTINCT st.site_id AS id
+         FROM site_tags st
+         JOIN tags t ON t.id = st.tag_id
+         LEFT JOIN tag_aliases ta ON ta.tag_id = t.id
+        WHERE ${conds.join(" OR ")}`,
+      params,
+    };
   }
 
   /**
    * 按标签过滤。
    * 同时匹配 slug、name 与 tag_aliases 别名（SKOS altLabel 归一化）：
-   * 调用方可能传「天气」展示名，或者「AIGC」「AI」等别名。
+   * 调用方可能传「天气」展示名，或者「AIGC」「AI」等别名；大小写不敏感。
    */
   private async siteIdsWithTag(tag: string): Promise<Set<string>> {
-    const norm = tag.trim();
-    const rows = await this.rawRows(
-      `SELECT DISTINCT st.site_id AS id
-         FROM site_tags st
-         JOIN tags t ON t.id = st.tag_id
-         LEFT JOIN tag_aliases ta ON ta.tag_id = t.id
-        WHERE t.slug = ? OR t.name = ? OR ta.alias = ?`,
-      [norm, norm, norm],
+    return this.siteIdsWithAllTags([tag]);
+  }
+
+  /**
+   * 多标签过滤：**交集** —— 站点必须同时具备 tags 里的每一个标签。
+   *
+   * 为什么是交集而不是并集：用户在标签页勾选第二个标签时，意图是「再收窄一层」
+   * （设计 + 开源 = 既设计又开源）。并集会越勾越多，与「筛选」的直觉相反。
+   *
+   * 实现取舍：不做 N 路 SQL 自连接交集，而是「每个标签查一次 site_id
+   * （复用 tagSiteIdsSql，与单标签口径完全一致：slug / name / alias + 大小写与
+   * slugify 双形态），再在内存取交集」。标签数已由路由侧封顶（20），
+   * 且每个标签的命中集合通常远小于站点总数，内存交集开销可忽略。
+   *
+   * 从最小的集合起步迭代；任一标签命中为空 ⇒ 交集为空，直接短路。
+   */
+  private async siteIdsWithAllTags(tags: string[]): Promise<Set<string>> {
+    const norms = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+    if (norms.length === 0) return new Set();
+    if (norms.length === 1) {
+      const { sql, params } = this.tagSiteIdsSql(norms[0]!);
+      const rows = await this.rawRows(sql, params);
+      return new Set(rows.map((r) => r.id));
+    }
+
+    const perTag = await Promise.all(
+      norms.map(async (tag) => {
+        const { sql, params } = this.tagSiteIdsSql(tag);
+        const rows = await this.rawRows(sql, params);
+        return new Set(rows.map((r) => r.id));
+      }),
     );
-    return new Set(rows.map((r) => r.id));
+
+    perTag.sort((a, b) => a.size - b.size);
+    let acc = perTag[0]!;
+    for (const next of perTag.slice(1)) {
+      if (acc.size === 0) break;
+      const intersected = new Set<string>();
+      for (const id of acc) if (next.has(id)) intersected.add(id);
+      acc = intersected;
+    }
+    return acc;
   }
 
   /**

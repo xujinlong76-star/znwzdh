@@ -24,7 +24,9 @@ export type SpeculativeIntentType =
   | 'byte_size'
   | 'regex'
   | 'semver'
-  | 'http_status';
+  | 'http_status'
+  | 'hash_calc'
+  | 'date_to_ts';
 
 export interface SpeculativeIntentResult {
   type: SpeculativeIntentType;

@@ -5,6 +5,8 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { renderMetrics } from "../metrics.ts";
+import { snapshotCacheInfo } from "../storage.ts";
+import { cachedSiteStats } from "../stats-cache.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -19,9 +21,31 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     let dbOk = true;
     let stats: Awaited<ReturnType<typeof ctx.repo.stats>> | null = null;
     try {
-      stats = await ctx.repo.stats();
+      // 走缓存（P1-5）：探针可能被 5s 一次地轮询，COUNT 不能跟着探针走
+      stats = await cachedSiteStats(ctx);
     } catch {
       dbOk = false;
+    }
+    /**
+     * 快照一致性判据（升级改造方案 P1-1）。
+     *
+     * 刻意不影响 `ok`：版本号读不到只是「缓存退回 TTL」，不是服务故障，
+     * 但它必须在这里可见 —— 因为 bump 触发器没建起来时**没有任何请求会报错**，
+     * 只有多实例一致性的上限悄悄从「立即」变回 30s。
+     * 探针自身失败（权限受限的 PG 目录查询）按「全缺」上报，让不确定显示出来。
+     */
+    let navSnapshot: { version: number | null; triggersMissing: number; cached: boolean; ttlMs: number } | undefined;
+    try {
+      const probe = await ctx.repo.navVersionProbe();
+      const cache = snapshotCacheInfo();
+      navSnapshot = {
+        version: probe.version,
+        triggersMissing: probe.missing.length,
+        cached: cache.cached,
+        ttlMs: cache.ttlMs,
+      };
+    } catch {
+      navSnapshot = undefined;
     }
     return {
       ok: true,
@@ -29,6 +53,7 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       capabilities: ctx.capabilities,
       db: { ok: dbOk },
       stats,
+      navSnapshot,
       embedding: ctx.embedding?.stats ? { cache: ctx.embedding.stats() } : undefined,
     };
   });

@@ -14,6 +14,8 @@ import {
   SEARCH_QUERY_MAX_LENGTH,
   SEARCH_TAG_MAX_LENGTH,
   inferredConditionLabels,
+  normalizeSearchCategory,
+  normalizeSearchFacets,
   normalizeSearchPage,
   normalizeSearchQuery,
   normalizeSearchTag,
@@ -151,7 +153,8 @@ describe('/search 页面契约', () => {
   })
 
   it('服务端直出：hubGet 走 /api/search 契约，视图不是客户端组件', () => {
-    expect(overlaySource('src/lib/server/search.ts')).toContain('hubGet<HubSearchResult>(searchApiPath(')
+    // 容空白：调用可以跨行（带 category/facets 选项时会折行），契约是「hubGet 走 searchApiPath」
+    expect(overlaySource('src/lib/server/search.ts')).toMatch(/hubGet<HubSearchResult>\(\s*searchApiPath\(/)
     const view = overlaySource('src/app/search/search-results.tsx')
     expect(view).not.toContain("'use client'")
     expect(view).toContain('href={`/site/${encodeURIComponent(site.id)}`}')
@@ -168,11 +171,12 @@ describe('/search 页面契约', () => {
   it('标签筛选贯通：解析 → 取数 → 视图，提交关键词时保留筛选', () => {
     const page = overlaySource('src/app/search/page.tsx')
     expect(page).toContain('normalizeSearchTag(sp.tag)')
-    expect(page).toContain('q || tag ?')
-    expect(page).toContain('loadSearchPage(q, page, tag)')
+    // 只有「有查询条件」才取数：q / tag（新增 category、facets 也属于条件）
+    expect(page).toMatch(/q \|\| tag/)
+    expect(page).toContain('loadSearchPage(q, page, tag,')
     expect(page).toContain('tag={tag}')
 
-    expect(overlaySource('src/lib/server/search.ts')).toContain('searchApiPath(q, page, tag)')
+    expect(overlaySource('src/lib/server/search.ts')).toContain('searchApiPath(q, page, tag,')
 
     const view = overlaySource('src/app/search/search-results.tsx')
     // 结果行的标签是筛选入口：点标签看该标签下的全部站点
@@ -227,7 +231,8 @@ describe('/search 页面契约', () => {
 
   it('巡检打不开的站点不静默消失：第 1 页补取 broken，按字面命中过滤并如实分区展示', () => {
     const server = overlaySource('src/lib/server/search.ts')
-    expect(server).toContain("searchApiPath(q, page, tag, { status: 'broken' })")
+    // 容空白与新增选项：契约是「补取走的仍是同一个 searchApiPath，且 status=broken」
+    expect(server).toMatch(/searchApiPath\(q, page, tag, \{[^}]*status: 'broken'/)
     expect(server).toContain('isLexicalHit')
     // 只有第 1 页非空查询才补取（翻页语义与空检索不该多打一次中枢）
     expect(server).toContain('page === 1 && q')
@@ -262,5 +267,51 @@ describe('/search 页面契约', () => {
       expect(src, rel).toContain('searchHref({ q: query })')
       expect(src, rel).toContain('查看全部')
     }
+  })
+})
+
+
+describe('正交分面与分类作用域（URL 即状态）', () => {
+  it('f_<key>=a,b 解析为分面对象，非法键值被丢弃', () => {
+    const facets = normalizeSearchFacets({
+      f_pricing: 'open_source',
+      f_platform: 'web,linux',
+      'f_form': ['self_hosted', 'saas'],
+      'f_bad key': 'x',
+      f_language: '中文,',
+      q: 'react',
+    })
+    expect(facets.pricing).toEqual(['open_source'])
+    expect(facets.platform).toEqual(['web', 'linux'])
+    expect(facets.form).toEqual(['self_hosted', 'saas'])
+    // 受控词表的值是 ASCII 标识符；中文值非法 → 全被丢弃 → 整个键不出现（不留空数组）
+    expect(facets.language).toBeUndefined()
+    expect(Object.keys(facets)).not.toContain('bad key')
+    expect(Object.keys(facets)).not.toContain('q')
+  })
+
+  it('分类归一：空/空白 → null，超长被截断', () => {
+    expect(normalizeSearchCategory(undefined)).toBeNull()
+    expect(normalizeSearchCategory('   ')).toBeNull()
+    expect(normalizeSearchCategory(' frontend-tools ')).toBe('frontend-tools')
+    expect(normalizeSearchCategory('x'.repeat(200))!.length).toBeLessThanOrEqual(64)
+  })
+
+  it('searchHref 带上分类与分面，且能清空', () => {
+    const href = searchHref({ q: 'react', category: 'frontend-tools', facets: { pricing: ['open_source'], platform: ['web'] } })
+    expect(href).toContain('q=react')
+    expect(href).toContain('category=frontend-tools')
+    expect(href).toContain('f_pricing=open_source')
+    expect(href).toContain('f_platform=web')
+    const cleared = searchHref({ q: 'react', category: 'frontend-tools' })
+    expect(cleared).not.toContain('f_')
+  })
+
+  it('searchApiPath 把分面序列化成 JSON 字符串交给中枢，分类走 categoryId', () => {
+    const path = searchApiPath('react', 1, null, { category: 'frontend-tools', facets: { pricing: ['open_source'] } })
+    expect(path).toContain('categoryId=frontend-tools')
+    expect(path).toContain('facets=')
+    const params = new URLSearchParams(path.split('?')[1])
+    expect(JSON.parse(params.get('facets')!)).toEqual({ pricing: ['open_source'] })
   })
 })

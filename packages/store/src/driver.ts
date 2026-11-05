@@ -252,6 +252,9 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_next_run_idx ON jobs(status, next_run_at);
+-- 任务历史翻页（P1-7）：与 GET /api/jobs 的 ORDER BY created_at DESC, id DESC 同向
+CREATE INDEX IF NOT EXISTS jobs_created_idx ON jobs(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS jobs_status_created_idx ON jobs(status, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS idempotency (
   key TEXT PRIMARY KEY, response TEXT, created_at INTEGER NOT NULL
@@ -517,6 +520,21 @@ CREATE TABLE IF NOT EXISTS llm_model_prices (
   updated_at INTEGER NOT NULL
 );
 
+/* LLM 配额预留（P0-3）：额度判定与占位必须在同一事务里，见 repository/llm-quota.ts。
+   短生命周期数据——结算即删，未结算的靠 expires_at 自动回收，不参与成本统计。 */
+CREATE TABLE IF NOT EXISTS llm_quota_reservations (
+  id TEXT PRIMARY KEY,
+  identity TEXT,
+  source TEXT NOT NULL DEFAULT 'system',
+  reserved_calls INTEGER NOT NULL DEFAULT 1,
+  reserved_tokens INTEGER NOT NULL DEFAULT 0,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS llm_quota_res_expiry_idx ON llm_quota_reservations(expires_at);
+CREATE INDEX IF NOT EXISTS llm_quota_res_identity_idx ON llm_quota_reservations(identity, expires_at);
+CREATE INDEX IF NOT EXISTS llm_quota_res_source_idx ON llm_quota_reservations(source, expires_at);
+
 /* ------------------------- 视频库（关系化） -------------------------
  * 为什么单独建表：videos.json 是「整包文档」模型，只能整体读写，
  * 无法按条查询、分页、审计单条变更，也挡不住两个写入口互相覆盖。
@@ -585,6 +603,22 @@ CREATE TABLE IF NOT EXISTS video_replacements (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS video_replacements_category_idx ON video_replacements(category_id, created_at);
+
+-- 导航数据版本号（升级方案 P1-1）：**恒为 id=1 的单行表**，用来替代快照热读路径上的
+-- COUNT/MAX 指纹。
+-- 为什么不用指纹：指纹在「缓存命中」时也要跑一遍，而 PG 在大表上的 COUNT(*) 是顺序扫描
+-- （十万行几十毫秒）——等于命中也付一次重查询；多实例还只能靠 TTL 兜滞后，最长 30s 读到
+-- 旧快照，而快照同时是后台「读-改-写」的写侧数据源，滞后不是慢而是丢数据。
+-- 单行主键点查在两种方言里都是微秒级，且版本号在数据库里，跨实例天然可见。
+-- 递增由触发器负责（见 migrateSiteIndexes）：写侧不必「记得 +1」，
+-- 后台任务、运维脚本、测试里绕过仓储的直接写同样会被记到。
+CREATE TABLE IF NOT EXISTS data_version (
+  id INTEGER PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 0
+);
+-- 触发器只做 UPDATE ... WHERE id = 1：行不在就等于静默失效，所以必须在建表时种下。
+-- ON CONFLICT 让这条 DML 在每次启动重放 DDL 时都幂等。
+INSERT INTO data_version (id, version) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
 `;
 
 const DDL_PG = `
@@ -794,6 +828,9 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_next_run_idx ON jobs(status, next_run_at);
+-- 任务历史翻页（P1-7）：与 GET /api/jobs 的 ORDER BY created_at DESC, id DESC 同向
+CREATE INDEX IF NOT EXISTS jobs_created_idx ON jobs(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS jobs_status_created_idx ON jobs(status, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS idempotency (
   key TEXT PRIMARY KEY, response TEXT, created_at BIGINT NOT NULL
@@ -1059,6 +1096,20 @@ CREATE TABLE IF NOT EXISTS llm_model_prices (
   updated_at BIGINT NOT NULL
 );
 
+/* LLM 配额预留（P0-3）：与 SQLite 分支同构，时间戳用 BIGINT */
+CREATE TABLE IF NOT EXISTS llm_quota_reservations (
+  id TEXT PRIMARY KEY,
+  identity TEXT,
+  source TEXT NOT NULL DEFAULT 'system',
+  reserved_calls INTEGER NOT NULL DEFAULT 1,
+  reserved_tokens INTEGER NOT NULL DEFAULT 0,
+  expires_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS llm_quota_res_expiry_idx ON llm_quota_reservations(expires_at);
+CREATE INDEX IF NOT EXISTS llm_quota_res_identity_idx ON llm_quota_reservations(identity, expires_at);
+CREATE INDEX IF NOT EXISTS llm_quota_res_source_idx ON llm_quota_reservations(source, expires_at);
+
 /* ------------------------- 视频库（关系化） -------------------------
  * 为什么单独建表：videos.json 是「整包文档」模型，只能整体读写，
  * 无法按条查询、分页、审计单条变更，也挡不住两个写入口互相覆盖。
@@ -1127,6 +1178,15 @@ CREATE TABLE IF NOT EXISTS video_replacements (
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS video_replacements_category_idx ON video_replacements(category_id, created_at);
+
+-- 导航数据版本号（见 DDL_SQLITE 同名片段的说明）。
+-- 这里必须是 BIGINT：递增由触发器完成，一次 8000 站的快照保存就吃掉 8000，
+-- INTEGER（int32，21 亿）在长期运行 + 批量写的环境里是会溢出的。
+CREATE TABLE IF NOT EXISTS data_version (
+  id INTEGER PRIMARY KEY,
+  version BIGINT NOT NULL DEFAULT 0
+);
+INSERT INTO data_version (id, version) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;

@@ -35,7 +35,10 @@ const RULES = [
   {
     id: "no-reverse-dependency",
     from: "packages/",
-    deny: [{ kind: "path", value: "apps/", reason: "packages 不得反向依赖 apps（分层单向）" }],
+    deny: [
+      { kind: "path", value: "apps/", reason: "packages 不得反向依赖 apps（分层单向）" },
+      { kind: "package", value: "@navhub/api", reason: "packages 禁止隐式依赖应用层 @navhub/api" },
+    ],
   },
   {
     id: "api-no-frontend",
@@ -63,6 +66,8 @@ const EXCEPTIONS = [
     spec: "../apps/web-overlay/src/lib/seo/thresholds.ts",
     reason: "压测必须与线上用同一组 SEO 阈值，否则量出来的规模没有意义；阈值模块是纯常量，无运行时依赖",
   },
+  // packages/mcp 历史包袱：stdio/http 启动器作为常驻进程直连 Fastify AppContext。
+  // 显式登记技术债，防止破坏性反向蔓延至 packages/core 或 packages/store
 ];
 
 function isExcepted(v) {

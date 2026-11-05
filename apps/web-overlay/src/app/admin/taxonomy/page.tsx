@@ -104,6 +104,107 @@ const KIND_META: Record<TaxonomyProposal['kind'], { label: string; icon: any; co
   },
 }
 
+interface TagLongTailStats {
+  total: number
+  usedByOne: number
+  usedByLteTwo: number
+  usedByGteFive: number
+  ratioByOne: number
+  ratioByLteTwo: number
+}
+
+/**
+ * 已通过 isSafeEditDistanceOne 安全闸、人工逐条核对的 10 条别名合并候选
+ * （deep-scan-report-2026-10-31.md 第八节）。前端绝不展示未经此清单核过的合并，
+ * 采纳路径复用既有 applyTaxonomyProposal（/api/taxonomy/proposals/:id/apply），
+ * 不在此处发明任何新的写逻辑。
+ */
+const VETTED_SAFE_MERGES: Array<[string, string]> = [
+  ['国产工具', '国产'],
+  ['AI 工具', 'AI'],
+  ['安全框架', '安全'],
+  ['扩展框架', '扩展'],
+  ['零运行时', '运行时'],
+  ['Web 框架', 'Web'],
+  ['全栈框架', '全栈'],
+  ['多数据库', '数据库'],
+  ['高性价比', '性价比'],
+  ['终端工具', '终端'],
+]
+const VETTED_SAFE_MERGE_SET = new Set(VETTED_SAFE_MERGES.map(([l, h]) => `${l}->${h}`))
+
+function isVettedSafeMerge(p: TaxonomyProposal): boolean {
+  if (p.meta?.action !== 'alias') return false
+  const key = `${(p.currentValue ?? p.targetId)}->${p.suggestedValue}`
+  return VETTED_SAFE_MERGE_SET.has(key)
+}
+
+function StatCell({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-lg bg-muted/40 border px-3 py-2.5">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="mt-0.5 flex items-baseline gap-1.5">
+        <span className="text-xl font-bold tabular-nums">{value}</span>
+        {sub && <span className="text-[11px] text-muted-foreground">{sub}</span>}
+      </div>
+    </div>
+  )
+}
+
+function SafeMergeCandidates({
+  proposals,
+  adoptingId,
+  onAdopt,
+}: {
+  proposals: TaxonomyProposal[]
+  adoptingId: string | null
+  onAdopt: (p: TaxonomyProposal) => void
+}) {
+  const candidates = proposals.filter((p) => p.status === 'pending' && isVettedSafeMerge(p))
+  return (
+    <div className="bg-card border rounded-xl p-4 sm:p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+          <h2 className="text-sm font-semibold">安全合并候选</h2>
+          <span className="text-[11px] text-muted-foreground">
+            仅已通过安全闸的别名合并（{candidates.length} 条）
+          </span>
+        </div>
+      </div>
+      {candidates.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          当前没有待采纳的已核准合并候选。运行「一键全站体检」后，审计产出的别名提案若命中下方清单会在此出现。
+        </p>
+      ) : (
+        <div className="divide-y rounded-lg border">
+          {candidates.map((p) => (
+            <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-mono text-muted-foreground line-through">{p.currentValue ?? p.targetId}</span>
+                <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="font-semibold text-primary">{p.suggestedValue}</span>
+                <span className="text-[11px] text-muted-foreground">
+                  置信度 {(p.confidence * 100).toFixed(0)}%
+                </span>
+              </div>
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3"
+                disabled={adoptingId === p.id}
+                onClick={() => onAdopt(p)}
+              >
+                <Check className="w-3.5 h-3.5 mr-1" />
+                {adoptingId === p.id ? '采纳中…' : '采纳'}
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AdminTaxonomyPage() {
   const [proposals, setProposals] = useState<TaxonomyProposal[]>([])
   const [loading, setLoading] = useState(true)
@@ -119,6 +220,12 @@ export default function AdminTaxonomyPage() {
   const [rootsError, setRootsError] = useState<string | null>(null)
   const [rootsRetryToken, setRootsRetryToken] = useState(0)
   const [gapParent, setGapParent] = useState<Record<string, string>>({})
+
+  // 标签长尾分布统计（来自 /api/taxonomy/tags/stats，只读、不触发审计）
+  const [tagStats, setTagStats] = useState<TagLongTailStats | null>(null)
+  const [tagStatsLoading, setTagStatsLoading] = useState(false)
+  // 安全合并候选的采纳中状态（避免重复点击；采纳走既有 apply 路径）
+  const [adoptingSafeId, setAdoptingSafeId] = useState<string | null>(null)
 
   const showFeedback = (type: 'success' | 'error', message: string) => {
     setFeedback({ type, message })
@@ -167,6 +274,31 @@ export default function AdminTaxonomyPage() {
       cancelled = true
     }
   }, [rootsRetryToken])
+
+  const loadTagStats = useCallback(async () => {
+    setTagStatsLoading(true)
+    try {
+      const res = await hubGet<TagLongTailStats>('/api/taxonomy/tags/stats')
+      setTagStats(res)
+    } catch (err) {
+      showFeedback('error', '加载标签长尾统计失败: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setTagStatsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadTagStats()
+  }, [loadTagStats])
+
+  const handleAdoptSafe = async (proposal: TaxonomyProposal) => {
+    setAdoptingSafeId(proposal.id)
+    try {
+      await handleApplySingle(proposal)
+    } finally {
+      setAdoptingSafeId(null)
+    }
+  }
 
   const handleRunAudit = async () => {
     setAuditing(true)
@@ -307,6 +439,50 @@ export default function AdminTaxonomyPage() {
           <span>{feedback.message}</span>
         </div>
       )}
+
+      {/* 标签长尾分布统计卡 */}
+      <div className="bg-card border rounded-xl p-4 sm:p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Tag className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-semibold">标签长尾分布</h2>
+            <span className="text-[11px] text-muted-foreground">（来自 /api/taxonomy/tags/stats）</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={loadTagStats}
+            disabled={tagStatsLoading}
+            className="gap-1.5 text-xs text-muted-foreground"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${tagStatsLoading ? 'animate-spin' : ''}`} />
+            刷新
+          </Button>
+        </div>
+        {tagStats ? (
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCell label="标签总数" value={String(tagStats.total)} />
+            <StatCell label="仅 1 站使用" value={String(tagStats.usedByOne)} sub={`${(tagStats.ratioByOne * 100).toFixed(0)}%`} />
+            <StatCell label="≤2 站使用" value={String(tagStats.usedByLteTwo)} sub={`${(tagStats.ratioByLteTwo * 100).toFixed(0)}%`} />
+            <StatCell
+              label="≥5 站使用（主标签）"
+              value={String(tagStats.usedByGteFive)}
+              sub={`${(tagStats.usedByGteFive / Math.max(1, tagStats.total) * 100).toFixed(1)}%`}
+            />
+          </div>
+        ) : (
+          <div className="mt-4 text-sm text-muted-foreground">
+            {tagStatsLoading ? '加载中…' : '暂无数据'}
+          </div>
+        )}
+      </div>
+
+      {/* 安全合并候选：仅展示已通过安全闸 (isSafeEditDistanceOne) 的别名提案，采纳走既有 apply 路径 */}
+      <SafeMergeCandidates
+        proposals={proposals}
+        adoptingId={adoptingSafeId}
+        onAdopt={handleAdoptSafe}
+      />
 
       {/* 状态与类型过滤控制面板 */}
       <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between bg-muted/40 p-4 rounded-xl border">

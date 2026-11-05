@@ -54,12 +54,21 @@ export interface RelayNotificationsResult {
   failed: number;
 }
 
+/**
+ * 邮件发送器接口（由 API 层注入，避免 store 反向依赖 @navhub/ai）。
+ * 实现方负责把邮件真正投出去；失败返回 ok:false，由 outbox 退避重试。
+ */
+export interface NotificationEmailSender {
+  send(input: { to: string; subject: string; text: string; html?: string }): Promise<{ ok: boolean; error?: string }>;
+}
+
 const DELIVERY_STATUSES: NotificationDeliveryStatus[] = ["pending", "delivered", "deferred", "failed"];
 const CHANNEL_ERRORS = {
   email: "Email sender is not configured",
   push: "Push sender is not configured",
 } as const;
 const DELIVERY_ERROR = "In-app notification delivery failed";
+const EMAIL_DELIVERY_ERROR = "Email notification delivery failed";
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 60_000;
 
@@ -109,7 +118,11 @@ export async function emitNotification(
  * JobRunner 顶层调用（不得包在业务事务内）；每条独立领取、投递、提交，不做外部 I/O。
  * 失败事务先完全回滚，再另开事务记录退避；原始异常可能含参数/凭据，故仅存固定错误。
  */
-export async function relayNotifications(repo: Repository, limit = 50): Promise<RelayNotificationsResult> {
+export async function relayNotifications(
+  repo: Repository,
+  limit = 50,
+  emailSender?: NotificationEmailSender,
+): Promise<RelayNotificationsResult> {
   const capped = deliveryLimit(limit);
   const cutoff = Date.now();
   const seen: string[] = [];
@@ -169,6 +182,87 @@ export async function relayNotifications(repo: Repository, limit = 50): Promise<
       result.failed += changed;
     }
   }
+
+  // ---- email 渠道：此前 email 行入队即 'deferred' 且永不投递（静默失败）。
+  // 注入 emailSender 后，这里领取 pending/deferred 的 email 行真实发送。
+  if (emailSender) {
+    const emailSeen: string[] = [];
+    for (let index = 0; index < capped; index++) {
+      let claimed: { id: string; identity: string; attempts: number } | undefined;
+      try {
+        const id = await repo.withTransaction(async () => {
+          claimed = undefined;
+          const exclusion = emailSeen.length ? ` AND id NOT IN (${emailSeen.map(() => "?").join(",")})` : "";
+          const row = (await repo.raw(
+            "SELECT id, identity, title, body, attempts FROM notification_outbox " +
+              "WHERE channel = 'email' AND status IN ('pending','deferred') AND attempts < ? " +
+              "AND (next_attempt_at IS NULL OR next_attempt_at <= ?)" +
+              exclusion + " ORDER BY created_at, id LIMIT 1" + lock,
+            [MAX_ATTEMPTS, cutoff, ...emailSeen],
+          ))[0];
+          if (!row) return null;
+          claimed = { id: String(row.id), identity: String(row.identity), attempts: Number(row.attempts) };
+          return claimed.id;
+        });
+        if (id === null) break;
+        emailSeen.push(id);
+
+        const c = claimed!;
+        const email = await repo.findUserEmailById(c.identity);
+        if (!email) {
+          // 用户没有邮箱：直接记失败，避免无限重试
+          await repo.withTransaction(() => repo.runCount(
+            "UPDATE notification_outbox SET status = 'failed', last_error = ? WHERE id = ? AND status IN ('pending','deferred')",
+            [EMAIL_DELIVERY_ERROR, c.id],
+          ));
+          result.failed++;
+          continue;
+        }
+        const row = (await repo.raw(
+          "SELECT title, body FROM notification_outbox WHERE id = ? LIMIT 1",
+          [c.id],
+        ))[0];
+        const sendResult = await emailSender.send({
+          to: email,
+          subject: row ? String(row.title) : "通知",
+          text: row?.body == null ? "" : String(row.body),
+        });
+        if (sendResult.ok) {
+          await repo.withTransaction(() => repo.runCount(
+            "UPDATE notification_outbox SET status = 'delivered', delivered_at = ?, next_attempt_at = NULL, last_error = NULL WHERE id = ?",
+            [Date.now(), c.id],
+          ));
+          result.delivered++;
+        } else {
+          const attempts = c.attempts + 1;
+          const exhausted = attempts >= MAX_ATTEMPTS;
+          const changed = await repo.withTransaction(() => repo.runCount(
+            "UPDATE notification_outbox SET attempts = ?, status = ?, next_attempt_at = ?, last_error = ? " +
+              "WHERE id = ? AND status IN ('pending','deferred') AND attempts = ?",
+            [attempts, exhausted ? "failed" : "deferred",
+              exhausted ? null : Date.now() + RETRY_DELAY_MS * 2 ** (attempts - 1),
+              sendResult.error ?? EMAIL_DELIVERY_ERROR,
+              claimed!.id, claimed!.attempts],
+          ));
+          result.failed += changed;
+        }
+      } catch (error) {
+        if (!claimed) throw error;
+        emailSeen.push(claimed.id);
+        const attempts = claimed.attempts + 1;
+        const exhausted = attempts >= MAX_ATTEMPTS;
+        const changed = await repo.withTransaction(() => repo.runCount(
+          "UPDATE notification_outbox SET attempts = ?, status = ?, next_attempt_at = ?, last_error = ? " +
+            "WHERE id = ? AND status IN ('pending','deferred') AND attempts = ?",
+          [attempts, exhausted ? "failed" : "deferred",
+            exhausted ? null : Date.now() + RETRY_DELAY_MS * 2 ** (attempts - 1), EMAIL_DELIVERY_ERROR,
+            claimed!.id, claimed!.attempts],
+        ));
+        result.failed += changed;
+      }
+    }
+  }
+
   return result;
 }
 

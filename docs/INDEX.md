@@ -23,10 +23,13 @@
 | 恢复的异步化设计（为什么分批、为什么 staging 落文件） | [`ASYNC-RESTORE-DESIGN.md`](ASYNC-RESTORE-DESIGN.md) | 现行 |
 | 恢复方案的深度审阅与后续 11 项改进（A1–A11） | [`ASYNC-RESTORE-REVIEW-2026-10-25.md`](ASYNC-RESTORE-REVIEW-2026-10-25.md) | 现行 |
 | 写测试：该写守卫还是 E2E | [`TESTING-CONVENTIONS.md`](TESTING-CONVENTIONS.md) | 现行 |
+| 新增路由的 loading / error 接线与豁免规则 | [`ROUTE-STATE-CONVENTIONS.md`](ROUTE-STATE-CONVENTIONS.md) | 现行 |
 | 上/回滚 CSP | [`CSP-ROLLOUT.md`](CSP-ROLLOUT.md) | 现行 |
 | 接 Prometheus 指标 | [`OBSERVABILITY.md`](OBSERVABILITY.md) | 现行 |
 | 合并门禁、分支保护 | [`CI-BRANCH-PROTECTION.md`](CI-BRANCH-PROTECTION.md) | 现行 |
 | 安全事件与已知风险 | [`security-notes.md`](security-notes.md) | 现行 |
+| 改「即时运行」面板 / 让 AI 或用户代码跑起来 | [`CODE-EXECUTION-ISOLATION-2026-11-01.md`](CODE-EXECUTION-ISOLATION-2026-11-01.md) | 现行 |
+| 改 B 站高清解析、动第三方凭据或匿名出站通道 | [`BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md`](BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md) | 现行 |
 | 代码在哪、模块怎么分 | [`CODEBASE_OVERVIEW.md`](CODEBASE_OVERVIEW.md)、[`CODEBASE_FILE_INDEX.md`](CODEBASE_FILE_INDEX.md)、[`wiki/`](wiki/) | 现行 |
 | UI 颜色/间距/组件用法 | [`DESIGN-SYSTEM.md`](DESIGN-SYSTEM.md) | 现行 |
 

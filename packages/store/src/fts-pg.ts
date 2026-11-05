@@ -31,6 +31,8 @@ const CFG = "simple";
 
 /** 语法错误只告警一次，避免每次搜索都刷日志 */
 let pgFtsWarned = false;
+/** pg_trgm 安装失败同样只告警一次（权限受限的托管库很常见） */
+let pgTrgmWarned = false;
 
 export class PgFtsStore implements FullTextStore {
   readonly kind = "pg-tsvector" as const;
@@ -55,6 +57,29 @@ export class PgFtsStore implements FullTextStore {
       await this.db.query("CREATE INDEX IF NOT EXISTS sites_fts_title_idx ON sites USING gin (" + vectorExpr("title") + ")");
     } catch {
       // 索引失败不影响可用性
+    }
+
+    // 子串搜索（P1-3）：exact 通道的 `lower(col) LIKE '%term%'` 是前导通配符，
+    // B-tree 用不上；pg_trgm 的 GIN 索引专门服务这种模式。表达式必须与
+    // search.ts 中的 WHERE 逐字一致（否则规划器不会选中表达式索引）。
+    // 托管 PG 常常不允许 CREATE EXTENSION：失败只是慢，不改变结果。
+    try {
+      await this.db.query("CREATE EXTENSION IF NOT EXISTS pg_trgm");
+      await this.db.query("CREATE INDEX IF NOT EXISTS sites_trgm_title_idx ON sites USING gin (lower(title) gin_trgm_ops)");
+      await this.db.query("CREATE INDEX IF NOT EXISTS sites_trgm_url_idx ON sites USING gin (lower(url) gin_trgm_ops)");
+      await this.db.query("CREATE INDEX IF NOT EXISTS sites_trgm_desc_idx ON sites USING gin (lower(coalesce(description, '')) gin_trgm_ops)");
+      await this.db.query("CREATE INDEX IF NOT EXISTS sites_trgm_pinyin_full_idx ON sites USING gin (pinyin_full gin_trgm_ops)");
+      await this.db.query("CREATE INDEX IF NOT EXISTS sites_trgm_pinyin_initials_idx ON sites USING gin (pinyin_initials gin_trgm_ops)");
+      await this.db.query("CREATE INDEX IF NOT EXISTS tags_trgm_name_idx ON tags USING gin (lower(name) gin_trgm_ops)");
+      await this.db.query("CREATE INDEX IF NOT EXISTS tags_trgm_slug_idx ON tags USING gin (lower(slug) gin_trgm_ops)");
+    } catch (err) {
+      if (!pgTrgmWarned) {
+        pgTrgmWarned = true;
+        console.warn(
+          "[navhub-fts-pg] pg_trgm 子串索引不可用，exact 通道将退化为顺序扫描（后续同类错误不再打印）：",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     }
     this.ready = true;
   }

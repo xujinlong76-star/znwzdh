@@ -34,11 +34,126 @@ import { parseWorkflow, splitJobSteps, stripYamlCommentLines } from "./ci-workfl
 export const GATE_STEP_RE =
   /(?:node\s+scripts\/check-[a-z0-9-]+\.mjs)|(?:\btsc\b[^\n]*--noEmit)|(?:\beslint\b)|(?:pnpm run typecheck)|(?:pnpm test)|(?:--filter \S+ build)/;
 
+/**
+ * 「整前端类型判定」的唯一落点（2026-10-30 实测，run131）。
+ *
+ * 背景：`apps/web-overlay/next.config.js:44`（及镜像 `apps/web/next.config.js:44`）写着
+ * `typescript: { ignoreBuildErrors: true }`，于是 `next build` 不再做内置类型检查。
+ * 后果不是「构建会红」，而是**别处的绿灯不再蕴含类型过**：同 commit 的
+ * `前端门禁（Web typecheck / lint / build）=failure` 那一轮（adf13b3a / d544274e 直证，
+ * 8 条 error TS 全在 HarvestModal.tsx:238-247），线上 ISR 抽查、镜像冒烟构建、
+ * Playwright 两个分片、覆盖层与扩展规范性检查**全部 success**——它们读的产物和源码
+ * 都在类型断裂的分支上。根 `pnpm run typecheck` 只覆盖 @navhub/*（packages/* + apps/api），
+ * 前端全量 tsc 只有 ci.yml 里 `pnpm --filter navsphere exec tsc --noEmit` 那一处。
+ *
+ * 因此：凡「重建 / 构建 / 启动 / 打包前端产物」而自己没有整前端 tsc 的作业，
+ * 它的绿必须带上这句可信度声明。判据从 YAML 推（下面两条正则），不靠事故发现。
+ */
+export const FRONTEND_TYPECHECK_AUTHORITY = { job: "test-web", stepId: "web-typecheck" };
+
+/** 会重建/构建/启动/打包前端产物的命令形状（vendor 底座、next build、next start、镜像里的 Dockerfile.web） */
+export const WEB_PRODUCT_STEP_RE = /vendor-web\.mjs|--filter navsphere build|next start|Dockerfile\.web/;
+
+/** 真正「判整前端类型」的那一条：`pnpm --filter <web 包> exec tsc …`（根 typecheck 不算，它只覆盖 @navhub/*） */
+export const FRONTEND_TSC_STEP_RE = /--filter\s+\S+\s+exec\s+tsc\b/;
+
+/** 从 YAML 判定：这个作业依赖别的作业的类型结论 */
+export function reliesOnForeignTypecheck(jobBlock, jobName) {
+  // 必须剥注释再判：ci.yml 的说明性注释里满是「next start」「vendor 重建 apps/web」这类字样，
+  // 不剥就会把只跑 `pnpm audit` 的作业也算成「会构建前端产物」（同仓先例：级联红判定前先剥 YAML 注释）。
+  const block = stripYamlCommentLines(String(jobBlock ?? ""));
+  if (jobName === FRONTEND_TYPECHECK_AUTHORITY.job) return false;
+  return WEB_PRODUCT_STEP_RE.test(block) && !FRONTEND_TSC_STEP_RE.test(block);
+}
+
+/** 账里那句可信度声明（写侧与读侧共用一份，改文案只改这里） */
+export function typeTrustNoteText(trust) {
+  if (!trust?.dependsOnJob || !trust?.dependsOnStepId) return "";
+  return `可信度：本作业不判整前端类型——next build 的内置类型检查被 ignoreBuildErrors 关掉，全量判定只在 ${trust.dependsOnJob} 的 ${trust.dependsOnStepId}`;
+}
+
+const TYPE_TRUST_NOTE_RE = /不判整前端类型[\s\S]*?全量判定只在 ([A-Za-z0-9_.-]+) 的 ([A-Za-z0-9_.-]+)/;
+
+/**
+ * 可信度声明的正反两向对账（判据全部从 YAML + next.config 推出，漏一边就报一条）。
+ *
+ * @param {object} input
+ *   @param {string} input.jobBlock 该作业的 YAML 片段
+ *   @param {object} input.entry 撤防登记表条目
+ *   @param {boolean} input.ignoreBuildErrors next.config 里 typescript.ignoreBuildErrors 是否仍为 true
+ * @returns {string[]}
+ */
+export function typeTrustProblems({ jobBlock, entry, ignoreBuildErrors }) {
+  const problems = [];
+  const job = entry?.job;
+  const block = stripYamlCommentLines(String(jobBlock ?? ""));
+  const trust = entry?.typeTrust;
+
+  // `self` 是另一种声明：这个作业就是那唯一一处整前端 tsc 的宿主。
+  // 它必须贴在权威作业上、且作业里真的还有那条命令——否则 5 道依赖它的作业指的是一个不存在的位置。
+  if (trust?.self) {
+    if (job !== FRONTEND_TYPECHECK_AUTHORITY.job) {
+      problems.push(
+        `${job}: 登记了 typeTrust:{self:true}，但全仓唯一的整前端 tsc 在 ${FRONTEND_TYPECHECK_AUTHORITY.job}——` +
+          "要么把类型判定挪回来，要么把权威位置和这张表一起改掉",
+      );
+    }
+    if (!FRONTEND_TSC_STEP_RE.test(block)) {
+      problems.push(
+        `${job}: 登记了 typeTrust:{self:true}，作业里却找不到 pnpm --filter … exec tsc——` +
+          "那句「本作业含整前端类型判定」已经站不住",
+      );
+    }
+    return problems;
+  }
+  if (job === FRONTEND_TYPECHECK_AUTHORITY.job) {
+    problems.push(
+      `${FRONTEND_TYPECHECK_AUTHORITY.job}: 撤防登记表没有 typeTrust:{self:true}——` +
+        "5 道作业的可信度都指向它，权威位置本身必须被钉住",
+    );
+  }
+
+  const derived = reliesOnForeignTypecheck(block, job);
+  const declared = Boolean(trust);
+
+  if (derived && !declared) {
+    problems.push(
+      `${job}: 这个作业会重建/构建/启动前端产物，自己却没有整前端 tsc（类型判定只在 ` +
+        `${FRONTEND_TYPECHECK_AUTHORITY.job} 的 ${FRONTEND_TYPECHECK_AUTHORITY.stepId}），` +
+        "登记表里却没带 typeTrust——它的绿会被读成「类型也过了」，而 ignoreBuildErrors 让这个推论不成立",
+    );
+  }
+  if (declared && !derived) {
+    problems.push(
+      `${job}: 登记表带了 typeTrust，但作业里已经能找到整前端 tsc（或它根本不碰前端产物）——` +
+        "那句「本作业不判整前端类型」成了假话，请把 typeTrust 摘掉",
+    );
+  }
+  if (declared) {
+    if (trust.dependsOnJob !== FRONTEND_TYPECHECK_AUTHORITY.job || trust.dependsOnStepId !== FRONTEND_TYPECHECK_AUTHORITY.stepId) {
+      problems.push(
+        `${job}: typeTrust 指向 ${trust.dependsOnJob}/${trust.dependsOnStepId}，而全仓唯一的整前端 tsc 是 ` +
+          `${FRONTEND_TYPECHECK_AUTHORITY.job}/${FRONTEND_TYPECHECK_AUTHORITY.stepId}——指向别处等于没指`,
+      );
+    }
+    if (!ignoreBuildErrors) {
+      problems.push(
+        `${job}: 登记表的措辞写着「next build 的内置类型检查被 ignoreBuildErrors 关掉」，` +
+          "而 next.config 里已经没有这条了——构建期已恢复类型检查，请同步改写 lib/ci-defused.mjs 的口径",
+      );
+    }
+  }
+  return problems;
+}
+
 /** 每个已接入作业的登记表：reporterStepId = 那步 `if: always()` 的读数步骤 */
 export const DEFUSED_GATES = [
   {
     job: "test-sqlite",
     reporterStepId: "defused-gates",
+    // 根 typecheck 只覆盖 @navhub/*，而这个作业会 vendor 重建 apps/web 并跑 apps/web/test
+    // （vitest 用 esbuild，类型错误会被擦掉不报）⇒ 它的绿不含前端类型判定。
+    typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
     env: [
       { id: "sqlite-install", label: "pnpm install --frozen-lockfile" },
       { id: "sqlite-vendor", label: "vendor 重建 apps/web" },
@@ -48,13 +163,14 @@ export const DEFUSED_GATES = [
       {
         id: "backend-lint",
         label: "后端 eslint（lint:backend）",
-        // 本仓唯一的软门禁：outcome=failure 而 conclusion=success。登记它是为了让
-        // 「conclusion 优先」这条判据有一块活体样本——判据若退回 outcome 优先，
-        // CI 里这一步就会被当场写成根因，而它其实一路放行（这比夹具里的自证多一个读者）。
-        // 它的红不归这里管：阻塞面在 apps/api/test/backend-lint-gate.test.ts，
-        // 这对配对由 check-ci-gate.mjs 第 5 项守住。
-        soft: true,
-        note: "带 continue-on-error ⇒ 自己红不判红、也不挡后面的路；它进账只有一种形状：被上游红跳过",
+        // 2026-11-01 起是硬门禁：那一步的 `continue-on-error` 已经撤掉（规则早就是 error、
+        // lint 脚本带 --max-warnings 0），所以这里**不再标 soft**。
+        // 它原来是本仓唯一的软门禁，也是「判据取 conclusion」那条口径的活体样本；
+        // 硬化后这个样本没了，同一口径改由两个方向执勤：
+        //   - 谁再把某步写成 continue-on-error 而登记表不标 soft ⇒ defusedWiringProblems 报「请补 soft: true」；
+        //   - 覆盖面判据对允许失败的步骤仍然豁免（合成夹具反向钉住，见 scripts/ci-defused.test.ts）。
+        // 它的红不归这里管：阻塞面另有 apps/api/test/backend-lint-gate.test.ts 这份同口径断言，
+        // 配对由 check-ci-gate.mjs 第 5 项守住。
       },
       { id: "vitest", label: "单元/接口测试（SQLite，分片）" },
     ],
@@ -71,6 +187,10 @@ export const DEFUSED_GATES = [
   {
     job: "test-web",
     reporterStepId: "defused-gates",
+    // 这个作业自己就是那唯一一处整前端 tsc（web-typecheck）⇒ 不需要可信度声明。
+    // 登记 self 只为把「本作业的绿含类型判定」这件事写死：若有人把 web-typecheck 挪出这个作业，
+    // typeTrustProblems 的 self 分支会当场报红（否则 5 道依赖它的作业会一起变成无主声明）。
+    typeTrust: { self: true },
     env: [
       { id: "web-install", label: "pnpm install --frozen-lockfile" },
       { id: "web-vendor", label: "vendor 重建 apps/web" },
@@ -90,6 +210,9 @@ export const DEFUSED_GATES = [
   {
     job: "test-e2e",
     reporterStepId: "defused-gates",
+    // vendor 出 apps/web 后由 Playwright 的 webServer 起站：类型错误既不进构建也不进运行时
+    // ⇒ 用例全绿与「类型过」无关（run131 直证：adf13b3a 前端门禁 failure，两个分片 success）。
+    typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
     env: [
       { id: "e2e-install", label: "pnpm install --frozen-lockfile" },
       { id: "e2e-vendor", label: "vendor 重建 apps/web" },
@@ -100,6 +223,9 @@ export const DEFUSED_GATES = [
   {
     job: "check-isr-live",
     reporterStepId: "defused-gates",
+    // 全程不跑 tsc（见下方 env 那套一次性预览站脚手架）⇒ 它的 success 只说明产物能跑，
+    // 不说明源码类型过（2026-10-30 直证：同 commit 前端门禁 failure、本作业 success）。
+    typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
     // 这个作业的门禁全都挂在一套一次性预览站上（迁移/种子/中枢/next start）。
     // env 因此比别的作业多：它们的红不是「产品红」，而是「检查没跑成」——
     // 根因点名必须指得出是哪一层脚手架塌了（2026-10-23 起吃过 EADDRINUSE、
@@ -123,6 +249,9 @@ export const DEFUSED_GATES = [
   {
     job: "check-web-overlay",
     reporterStepId: "defused-gates",
+    // 这里的 gate-video-scope 只判「视频作用域」那一片（见 scripts/typecheck-video-scope.mjs），
+    // 不是整前端 tsc ⇒ 它的绿同样不含类型判定。
+    typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
     env: [
       { id: "overlay-install", label: "pnpm install --frozen-lockfile" },
       { id: "overlay-vendor", label: "vendor 重建 apps/web" },
@@ -143,6 +272,8 @@ export const DEFUSED_GATES = [
     // 它们是这两个作业里**唯一**的判定，红会吞掉同作业后面的判定。
     job: "docker-smoke",
     reporterStepId: "defused-gates",
+    // Dockerfile.web 里跑的就是那个不判类型的 next build ⇒ 镜像冒烟通过 ≠ 类型过。
+    typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
     env: [],
     gates: [
       { id: "docker-api", label: "docker build Dockerfile.api" },
@@ -397,9 +528,10 @@ export function defusedWiringProblems(jobBlock, entry) {
  *
  * 豁免：`continue-on-error: true` 的步骤**不逼登记**——它红了也不会挡住别人（红被吞掉），
  * 硬要求登记等于让门禁管一件不会出事的事。但**自愿登记是允许的**，且必须带 `soft: true`
- * （`defusedWiringProblems` 盯那步在 YAML 里到底还软不软）：今天的 `test-sqlite` 后端 lint
- * 就是这么登记的——判据取 conclusion，所以它 outcome=failure 而 conclusion=success 时
- * 既不进 failed 也不会被点成根因，而它被上游跳过时账里点得出名字。
+ * （`defusedWiringProblems` 盯那步在 YAML 里到底还软不软）。
+ * 2026-11-01 撤掉后端 lint 的 continue-on-error 之后，本仓合并门禁作业里**没有任何**软门禁：
+ * 这条豁免只剩合成夹具能走通（见 scripts/ci-defused.test.ts 的反向用例），
+ * 而它反向的那句「YAML 还软、登记表没标」是现在真正执勤的方向。
  * 读数步骤自己也不算门禁（它只报账）。
  */
 export function defusedCoverageProblems(jobBlock, entry) {
@@ -509,6 +641,10 @@ export function parseDefusedTrace(logText) {
     green: false,
     failedGates: 0,
     softTotal: 0,
+    // 可信度声明读没读回来（false 有两种意思，靠 trustDependsOn 区分不了——所以只在
+    // 「这行本来就带声明」时才置 true；没带声明的作业留 false，由 check-ci-gate 的第 8 项判是不是漏登记）
+    trustNote: false,
+    trustDependsOn: "",
     line: "",
   };
   const text = String(logText ?? "").replace(/\x1b\[[0-9;]*m/g, "");
@@ -583,6 +719,10 @@ export function parseDefusedTrace(logText) {
   const softTotal = Number(/软门禁\s*(\d+)\s*道/.exec(whole)?.[1] ?? 0);
   // 缺省要成 null：`Number(null)===0` 会把「这行没写准备步骤」读成「一个都没登记」
   const envHit = /在册准备步骤\s*(\d+)\s*个/.exec(annotation?.body ?? "");
+  // 可信度声明：写在同一行末尾（`…｜可信度：本作业不判整前端类型…全量判定只在 test-web 的 web-typecheck`）。
+  // 读不到它而作业又登记了 typeTrust ⇒ 说明那一步的账换了形状，跨机器视角会静默失去这句——
+  // 所以 explain-ci-failure 只在 trustNote 为真时才敢替它做「同 commit 类型判定红」的连带标注。
+  const trustHit = TYPE_TRUST_NOTE_RE.exec(whole);
 
   return {
     found: true,
@@ -600,6 +740,8 @@ export function parseDefusedTrace(logText) {
     green: counts.defused === 0,
     failedGates,
     softTotal,
+    trustNote: Boolean(trustHit),
+    trustDependsOn: trustHit ? `${trustHit[1]}/${trustHit[2]}` : "",
     line: whole.slice(0, 240),
   };
 }
@@ -617,8 +759,20 @@ function unwiredReason(row) {
   return "接线外：ci.yml 里这个作业没有读数步骤 ⇒ 不计入判红";
 }
 
-/** 逐作业一行的账（--defused 的文本输出；空数组也要出一行说明，别让调用方对着空白猜） */
-export function renderDefusedTable(rows) {
+/**
+ * 逐作业一行的账（--defused 的文本输出；空数组也要出一行说明，别让调用方对着空白猜）
+ *
+ * `authority` 是跨作业才能算出来的那一半：一个作业自己看不到兄弟作业的结论
+ * （steps 上下文只含本作业的步骤），而 `ignoreBuildErrors` 让「本作业绿」推不出「类型过」。
+ * 调用方（explain-ci-failure --defused）手里有整轮作业的 conclusion，就在那儿把
+ * 「权威作业判红」连带到每一行带 trustNote 的绿色作业上——这不是判红，是把绿话说全。
+ *
+ * @param {object[]} rows parseDefusedTrace 的行
+ * @param {{conclusion?:string, job?:string}} [authority] 类型判定所在作业（含其本轮结论）
+ */
+export function renderDefusedTable(rows, authority) {
+  const authorityRed = String(authority?.conclusion ?? "") === "failure";
+  const authorityLabel = authority?.job ? `类型判定=${authority.job} 判红` : "类型判定作业判红";
   if (!rows?.length) return ["（没有作业可读——jobs 清单是空的）"];
   const width = Math.max(...rows.map((r) => String(r.name ?? "").length), 4);
   return rows.map((r) => {
@@ -640,7 +794,10 @@ export function renderDefusedTable(rows) {
       const note = r.failedGates > 0 ? `，其中 ${r.failedGates} 道判红` : "";
       const soft = r.softTotal ? `（软门禁 ${r.softTotal} 道：红了不判红、也不挡路）` : "";
       const env = r.envTotal === null ? "" : `（准备步骤 ${r.envTotal} 个在册）`;
-      return `${name} ${r.conclusion || "?"} — ${r.gateTotal} 道门禁全部跑过${note}${soft}${env}`;
+      // 只在这行自己声明了「我不判整前端类型」时才连带标注：
+      // 没声明的作业可能是权威本身（它自己判类型），拿 trustNote 当开关才不会误伤。
+      const trust = authorityRed && r.trustNote ? ` ⚠ ${authorityLabel}，本绿灯建立在忽略类型错误的产物上` : "";
+      return `${name} ${r.conclusion || "?"} — ${r.gateTotal} 道门禁全部跑过${note}${soft}${env}${trust}`;
     }
     const blocker = r.blocker ? `根因 ${r.blocker}` : "根因读不出来";
     const env = r.envIds?.length ? `；准备步骤没跑成：${r.envIds.join("、")}` : "";

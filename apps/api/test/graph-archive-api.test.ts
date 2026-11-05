@@ -182,6 +182,11 @@ describe("Stage 3 & 4: Graph Mesh & Offline Archive API", () => {
   });
 
   it("POST /api/sites/:id/archive 应能触发离线快照抓取并持久化", async () => {
+    // 上一条用例的 GET 已生成「合成快照」：它从未出站，必须排除在 24h 复用之外，
+    // 否则「重新捕获」永远抓不到真实网页。
+    const synthetic = await app.inject({ method: "GET", url: `/api/sites/${createdSiteId}/archive` });
+    const syntheticCapturedAt = synthetic.json().capturedAt as number;
+
     const res = await app.inject({
       method: "POST",
       url: `/api/sites/${createdSiteId}/archive`,
@@ -190,7 +195,22 @@ describe("Stage 3 & 4: Graph Mesh & Offline Archive API", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.siteId).toBe(createdSiteId);
-    expect(body.capturedAt).toBeGreaterThan(0);
+    expect(body.capturedAt).toBeGreaterThan(syntheticCapturedAt);
+    // 合成快照没有被当作「已捕获」——fresh capture 不带 reused 标记
+    expect(body.reused).toBeUndefined();
+  });
+
+  it("POST /api/sites/:id/archive 24h 内复用真实快照（reused=true，不再出站）", async () => {
+    const first = await app.inject({ method: "POST", url: `/api/sites/${createdSiteId}/archive` });
+    // 上一条用例刚捕获过 → 这里应当直接复用
+    const res = await app.inject({ method: "POST", url: `/api/sites/${createdSiteId}/archive` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.reused).toBe(true);
+    expect(body.capturedAt).toBe(first.json().capturedAt);
+    // 复用只发生在「真实抓取」的快照上；响应体仍契约完整
+    expect(body.htmlContent).toContain("GitHub Official");
+    expect(body.byteSize).toBeGreaterThan(0);
   });
 
   it("POST /api/sites/:id/archive 不得访问私网地址（SSRF 回归）", async () => {

@@ -78,7 +78,7 @@ async function loadSite(id: string) {
 }
 
 /** 「同分类」区块的取数来源：本分类 → 父分类子树 → 全站兜底 */
-export type RelatedScope = 'category' | 'parent' | 'more'
+export type RelatedScope = 'similar' | 'category' | 'parent' | 'more'
 
 /**
  * 同分类 / 同类目 / 兜底站点与分类入口（服务端取数，进 SSR HTML）。
@@ -95,6 +95,15 @@ export type RelatedScope = 'category' | 'parent' | 'more'
  * 自己）退回全站清单，保证任何详情页都有可爬的下一层。兜底只补内链，
  * 「浏览全部」入口仍按分类门槛门控——薄分类页是 404。
  */
+/**
+ * 基于共享标签发现相似站点（优选相关性最高的站点推荐）。
+ */
+async function loadSimilarSitesByTags(siteId: string): Promise<HubSite[]> {
+  const sites = await hubGet<HubSite[]>(`/api/sites/${encodeURIComponent(siteId)}/similar?limit=${RELATED_LIMIT}`, 300)
+  if (!Array.isArray(sites)) return []
+  return sites.filter((s): s is HubSite => s !== null && s.id !== siteId && s.status === 'active')
+}
+
 async function loadRelatedFromCategory(categoryId: string, excludeId: string): Promise<HubSite[]> {
   const res = await loadCategorySites(categoryId, RELATED_LIMIT + 1, 0, 300)
   // search 结果保持中枢相关度排序；只做自站/非活跃过滤与截断
@@ -132,7 +141,8 @@ async function loadSiteContext(site: HubSite) {
     return { ...empty, related: await loadFallbackSites(site.id) }
   }
 
-  const [res, categories, rawCounts] = await Promise.all([
+  const [similarSites, res, categories, rawCounts] = await Promise.all([
+    loadSimilarSitesByTags(site.id),
     loadCategorySites(categoryId, RELATED_LIMIT + 1, 0, 300),
     loadCategories(3600),
     loadActiveCategoryCounts(60),
@@ -143,19 +153,32 @@ async function loadSiteContext(site: HubSite) {
     categories?.find(
       (c) => c.id === categoryId && c.enabled !== false && !isHiddenCategory(c),
     ) ?? null
-  const related = (res?.hits ?? [])
-    .map((h) => h.site)
-    .filter((s): s is HubSite => s !== null && s.id !== site.id && s.status === 'active')
-    .slice(0, RELATED_LIMIT)
   const categoryCount = counts?.get(categoryId) ?? 0
-
-  let relatedScope: RelatedScope = 'category'
-  let relatedLabel: string | null = category && categories ? categoryDisplayName(category, categories) : null
   const canLinkCategory = Boolean(category) && counts !== null && categoryCount >= MIN_SITES_FOR_CATEGORY_INDEX
-  let relatedCategory = canLinkCategory && category && relatedLabel
-    ? { slug: categoryUrlKey(category), title: relatedLabel, count: categoryCount }
+  const defaultCategoryLabel = category && categories ? categoryDisplayName(category, categories) : null
+  let relatedCategory = canLinkCategory && category && defaultCategoryLabel
+    ? { slug: categoryUrlKey(category), title: defaultCategoryLabel, count: categoryCount }
     : null
-  let finalRelated = related
+
+  let finalRelated: HubSite[] = []
+  let relatedScope: RelatedScope = 'category'
+  let relatedLabel: string | null = defaultCategoryLabel
+
+  // 1. 优先使用基于共享标签的相似推荐（精准度与探索价值最高）
+  if (similarSites.length > 0) {
+    finalRelated = similarSites.slice(0, RELATED_LIMIT)
+    relatedScope = 'similar'
+    relatedLabel = '基于主题标签'
+  } else {
+    // 2. 无重合标签时降级到同分类站点
+    const fromCat = (res?.hits ?? [])
+      .map((h) => h.site)
+      .filter((s): s is HubSite => s !== null && s.id !== site.id && s.status === 'active')
+      .slice(0, RELATED_LIMIT)
+    finalRelated = fromCat
+    relatedScope = 'category'
+    relatedLabel = defaultCategoryLabel
+  }
 
   if (finalRelated.length === 0 && category?.parentId && categories) {
     const parent =

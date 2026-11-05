@@ -143,6 +143,10 @@ export interface VideoConfigRaw {
   seoKeywords?: string[]
   indexable?: boolean
   lastIndexedAt?: number
+  subCategoryId?: string
+  subCategoryTitle?: string
+  difficulty?: 'beginner' | 'intermediate' | 'advanced'
+  tags?: string[]
 }
 
 export interface NavigationSubItemRaw {
@@ -257,6 +261,8 @@ export interface VideoConfig {
   seoKeywords?: string[]
   indexable?: boolean
   lastIndexedAt?: number
+  subCategoryId?: string
+  subCategoryTitle?: string
   difficulty?: 'beginner' | 'intermediate' | 'advanced'
   tags?: string[]
 }
@@ -287,6 +293,8 @@ export interface NavigationDataRaw {
   navigationItems: NavigationItemRaw[]
   replacementHistory?: VideoReplacementRecord[]
 }
+
+export type NavigationSubCategory = NavigationCategory
 
 export interface NavigationCategory {
   id: string

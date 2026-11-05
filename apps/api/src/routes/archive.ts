@@ -3,6 +3,21 @@ import { guardedFetch } from "@navhub/ai";
 import type { AppContext } from "../context.ts";
 import type { SiteOfflineArchive } from "@navhub/core";
 
+/**
+ * 快照复用窗口（24h）。
+ *
+ * POST /api/sites/:id/archive 是公开端点，每次都会出站抓取原站；没有窗口时
+ * 匿名调用方按 20 次/分钟反复「重新捕获」，等于把本服务当免费抓取器。
+ * 24h 内的真实抓取结果直接复用，并回 `reused: true` 让调用方知道没有重新出站。
+ */
+const ARCHIVE_REUSE_WINDOW_MS = 24 * 60 * 60 * 1000
+
+/**
+ * 合成快照（GET 兜底生成的元数据页）的标记。
+ * 它从未出站抓取，复用会让「重新捕获」永远拿不到真实网页内容，因此必须排除在复用之外。
+ */
+const SYNTHETIC_ARCHIVE_MARKER = 'data-snapshot-origin="metadata"'
+
 function enrichArchiveForClient(archive: SiteOfflineArchive) {
   const plainText = extractPlainTextFromHtml(archive.htmlContent, archive.title, archive.excerpt);
   return {
@@ -57,7 +72,7 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
 
     // 若无现成快照，根据元数据生成初始快照
     const syntheticHtml = `
-      <article class="prose max-w-none">
+      <article class="prose max-w-none" ${SYNTHETIC_ARCHIVE_MARKER}>
         <h1>${escapeHtml(site.title)}</h1>
         <p class="lead">${escapeHtml(site.description || "暂无描述信息")}</p>
         <hr/>
@@ -116,6 +131,22 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         ok: false,
         error: "NOT_FOUND",
         message: "Site not found",
+      };
+    }
+
+    // 24h 内已有真实抓取结果：直接复用，不再出站（合成快照不算，见常量注释）
+    const latest = await ctx.repo.getLatestSiteArchive(id);
+    if (
+      latest &&
+      !latest.htmlContent.includes(SYNTHETIC_ARCHIVE_MARKER) &&
+      Date.now() - latest.capturedAt < ARCHIVE_REUSE_WINDOW_MS
+    ) {
+      const enriched = enrichArchiveForClient(latest);
+      return {
+        ok: true,
+        reused: true,
+        archive: enriched,
+        ...enriched,
       };
     }
 

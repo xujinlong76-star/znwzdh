@@ -9,7 +9,7 @@
 import { createHash } from "node:crypto";
 import { hashSiteId } from "@navhub/store";
 import { siteEmbeddingText } from "@navhub/ai";
-import type { AppContext } from "@navhub/api";
+import type { McpHostContext } from "../host-context.ts";
 import type { ToolContext } from "../tools.ts";
 
 export interface ToolResult {
@@ -29,7 +29,7 @@ export function fail(message: string): ToolResult {
 export type Handler = (deps: HandlerDeps, args: unknown, tc: ToolContext) => Promise<ToolResult>;
 
 export interface HandlerDeps {
-  ctx: AppContext;
+  ctx: McpHostContext;
   /**
    * 幂等键处理：命中则直接返回上次结果。
    * 这是防止 Agent 重试导致重复入库的关键 —— Agent 重试是常态，不是异常。
@@ -56,10 +56,10 @@ export function requireOwnerIdentity(tc: ToolContext): string {
   return tc.ownerIdentity;
 }
 
-export function makeWithIdempotency(ctx: AppContext): HandlerDeps["withIdempotency"] {
+export function makeWithIdempotency(ctx: McpHostContext): HandlerDeps["withIdempotency"] {
   return async function withIdempotency(key, compute) {
     if (!key) return ok(await compute());
-    const db = ctx.db;
+    const db = ctx.repo.db;
     if (db.dialect === "sqlite" && db.sqlite) {
       const existing = db.sqlite.prepare("SELECT response FROM idempotency WHERE key = ?").get(key) as { response: string } | undefined;
       if (existing?.response) return ok({ replayed: true, result: JSON.parse(existing.response) });
@@ -82,7 +82,7 @@ export function makeWithIdempotency(ctx: AppContext): HandlerDeps["withIdempoten
   };
 }
 
-export function makeIndexSite(ctx: AppContext): HandlerDeps["indexSite"] {
+export function makeIndexSite(ctx: McpHostContext): HandlerDeps["indexSite"] {
   return async function indexSite(id, title, description, url) {
     if (!ctx.embedding) return;
     try {

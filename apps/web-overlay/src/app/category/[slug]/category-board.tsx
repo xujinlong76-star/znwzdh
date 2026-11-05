@@ -5,9 +5,14 @@ import { Breadcrumbs } from '@/components/breadcrumbs'
 import { JsonLd } from '@/components/json-ld'
 import { SiteFavicon } from '@/components/site-favicon'
 import { SearchPalette } from '@/components/search-palette'
+import { CategorySiteFilterBar } from '@/components/category-site-filter-bar'
+import { ExternalLink, MonitorPlay, ArrowRight } from 'lucide-react'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { categoryItemListLd, itemListLd } from '@/lib/seo/json-ld'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
+// 契约级补缺（主理人 2026-11-01 23:5x）：WIP 里用了 safeHref 未 import，导致 /category/[slug] 预渲染 ReferenceError；
+// 仅补 import，不涉及业务逻辑，未随本会话提交，归并行会话持有。
+import { safeHref } from '@/lib/safe-url'
 import { descendantSiteCounts } from '@/lib/seo/category-totals'
 import { maxReachableCategoryPage } from '@/lib/seo/category-pagination'
 import { categoryHref, categoryUrlKey } from '@/lib/seo/category-url'
@@ -280,26 +285,104 @@ export async function CategoryBoard({
             )
           ) : null}
 
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {/* 跨生态：精选技术视频推荐 */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs text-foreground">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                <MonitorPlay className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <span className="font-semibold text-foreground block text-sm">想系统学习「{name}」？</span>
+                <span className="text-muted-foreground text-xs block truncate">
+                  本站技术视频库收录 6,000+ 高质量课程与实战，直达相关教学资源
+                </span>
+              </div>
+            </div>
+            <Link
+              href={`/videos?q=${encodeURIComponent(name)}`}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors shrink-0 text-xs shadow-2xs"
+            >
+              <span>查看精选视频</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          {/* 根分类专属：子分类快捷直达轨 */}
+          {isRootPage && related.length > 0 && (
+            <div className="space-y-2 pt-1 pb-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground">包含子分类目录 ({related.length})</span>
+                <Link href="/category" className="text-xs text-primary hover:underline">查看全部分类</Link>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {related.map((sub) => (
+                  <Link
+                    key={sub.id}
+                    href={categoryHref(sub)}
+                    className="px-2.5 py-1 rounded-lg border border-border/70 bg-muted/30 text-xs text-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-colors flex items-center gap-1.5"
+                  >
+                    <span>{categoryDisplayName(sub, categories ?? [])}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      ({counts?.get(sub.id) ?? 0})
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 分类内即时筛选 */}
+          {sites.length > 0 && (
+            <CategorySiteFilterBar
+              totalCount={sites.length}
+              categoryName={name}
+              topTags={topTags}
+              categorySlug={category ? categoryUrlKey(category) : null}
+              totalAcrossPages={typeof res?.total === 'number' ? res.total : null}
+            />
+          )}
+
+          <ul id="category-sites-list" className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {sites.map((site) => (
-              <li key={site.id}>
-                <Link
-                  href={`/site/${encodeURIComponent(site.id)}`}
-                  className="flex items-center gap-3 rounded-xl border border-border/70 px-3 py-2.5 hover:bg-muted/50 transition-colors"
-                >
-                  <SiteFavicon
-                    title={site.title}
-                    url={site.url}
-                    icon={site.iconKey ?? undefined}
-                    className="w-6 h-6 rounded-md object-contain shrink-0"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground truncate">{site.title}</span>
-                    {site.description ? (
-                      <span className="block text-xs text-muted-foreground truncate">{site.description}</span>
-                    ) : null}
-                  </span>
-                </Link>
+              <li
+                key={site.id}
+                data-site-item=""
+                data-title={site.title.toLowerCase()}
+                data-desc={(site.description || '').toLowerCase()}
+                data-url={(site.url || '').toLowerCase()}
+                data-tags={(site.tags || []).join(' ').toLowerCase()}
+              >
+                <div className="group relative flex items-center justify-between rounded-xl border border-border/70 p-2.5 hover:bg-muted/40 transition-colors">
+                  <Link
+                    href={`/site/${encodeURIComponent(site.id)}`}
+                    className="flex items-center gap-3 min-w-0 flex-1 py-0.5"
+                  >
+                    <SiteFavicon
+                      title={site.title}
+                      url={site.url}
+                      icon={site.iconKey ?? undefined}
+                      className="w-6 h-6 rounded-md object-contain shrink-0"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                        {site.title}
+                      </span>
+                      {site.description ? (
+                        <span className="block text-xs text-muted-foreground truncate">{site.description}</span>
+                      ) : null}
+                    </span>
+                  </Link>
+                  <a
+                    href={safeHref(site.url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`新窗口直达 ${site.title} 官网`}
+                    aria-label={`新窗口直达 ${site.title} 官网`}
+                    className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-colors shrink-0 ml-2 cursor-pointer"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
               </li>
             ))}
           </ul>

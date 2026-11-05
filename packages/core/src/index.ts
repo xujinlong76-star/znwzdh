@@ -1,4 +1,5 @@
 export * from "./types.ts";
+export * from "./password.ts";
 export * from "./mcp-schemas.ts";
 export * from "./job-payloads.ts";
 export * from "./json-schema.ts";
@@ -56,3 +57,5 @@ export * from "./bookmark-exporter.ts";
 export * from "./canonical-json.ts";
 export * from "./rest-responses.ts";
 export * from "./copilot-frame.ts";
+
+export * from "./llm-utils.ts";

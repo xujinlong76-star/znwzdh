@@ -1,8 +1,6 @@
 'use client'
 
-export const runtime = 'edge'
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/registry/new-york/ui/button"
 import { VideoCategoryCard } from "./components/VideoCategoryCard"
 import { AddVideoCategoryForm } from "./components/AddVideoCategoryForm"
@@ -11,7 +9,7 @@ import { ReplacementHistoryDialog } from "./components/ReplacementHistoryDialog"
 import { VideoTelemetryDashboard } from "./components/VideoTelemetryDashboard"
 import { VideoSeoGovernancePanel } from "./components/VideoSeoGovernancePanel"
 import { Input } from "@/registry/new-york/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/registry/new-york/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/registry/new-york/ui/dialog"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
 import { Skeleton } from "@/registry/new-york/ui/skeleton"
 import useSWR from 'swr'
@@ -41,6 +39,7 @@ async function overviewFetcher(url: string): Promise<HarvestOverview> {
 }
 
 export default function VideosAdminPage() {
+    const [isMounted, setIsMounted] = useState(false)
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [isHarvestModalOpen, setIsHarvestModalOpen] = useState(false)
     const [isHistoryOpen, setIsHistoryOpen] = useState(false)
@@ -49,7 +48,7 @@ export default function VideosAdminPage() {
     const { toast } = useToast()
 
     const { data: items = [], error, isLoading, mutate } = useSWR<NavigationItem[]>(
-        '/api/videos',
+        '/api/videos?summary=1',
         fetcher,
         {
             fallbackData: [],
@@ -95,12 +94,7 @@ export default function VideosAdminPage() {
             const response = await fetch('/api/videos', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    navigationItems: [
-                        ...items,
-                        newItem
-                    ]
-                })
+                body: JSON.stringify({ item: newItem })
             })
 
             if (!response.ok) {
@@ -124,6 +118,10 @@ export default function VideosAdminPage() {
         }
     }
 
+    useEffect(() => {
+        setIsMounted(true)
+    }, [])
+
     const filteredItems = items
         .filter(item =>
             item.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -131,7 +129,7 @@ export default function VideosAdminPage() {
         )
 
     return (
-        <div className="h-full flex-1 flex-col space-y-5 sm:space-y-6 p-3 sm:p-6 lg:p-8 md:flex">
+        <div data-hydrated={isMounted ? "true" : undefined} className="h-full flex-1 flex-col space-y-5 sm:space-y-6 p-3 sm:p-6 lg:p-8 md:flex">
             {/* 顶层治理看板 */}
             <div className="relative overflow-hidden rounded-xl border border-border/80 bg-card p-4 sm:p-5 shadow-xs">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -247,7 +245,11 @@ export default function VideosAdminPage() {
                         </SelectContent>
                     </Select>
                 </div>
-                <Button onClick={() => setIsDialogOpen(true)} className="w-full sm:w-auto shrink-0">
+                <Button
+                    type="button"
+                    onClick={() => setIsDialogOpen(true)}
+                    className="w-full sm:w-auto shrink-0"
+                >
                     <Plus className="mr-2 h-4 w-4" />
                     新建视频分类
                 </Button>
@@ -312,6 +314,7 @@ export default function VideosAdminPage() {
             <HarvestModal
                 open={isHarvestModalOpen}
                 onOpenChange={setIsHarvestModalOpen}
+                categories={items.map(it => ({ id: it.id, title: it.title }))}
                 onCompleted={() => {
                     mutate()
                     mutateOverview()
@@ -331,6 +334,9 @@ export default function VideosAdminPage() {
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>新建视频分类</DialogTitle>
+                        <DialogDescription>
+                            创建新的技术视频专题分类，用于组织管理视频教程与智能采集。
+                        </DialogDescription>
                     </DialogHeader>
                     <AddVideoCategoryForm
                         onSubmit={handleAdd}

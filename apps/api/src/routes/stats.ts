@@ -5,11 +5,12 @@
  * SSE 实时流推流以及存储引擎在线维护端点。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
+import { MaintenanceCheckpointInput } from "@navhub/core";
 import { copilotEventSummary } from "@navhub/store";
 import type { AppContext } from "../context.ts";
 import { getHttpMetricsSummary } from "../metrics.ts";
 import { getUserCenterMetrics } from "../user-center-metrics.ts";
+import { cachedDashboardOverview, cachedSiteStats } from "../stats-cache.ts";
 import { parseTimeWindow, setupSseStream } from "./shared.ts";
 
 export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -27,7 +28,8 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     { config: { scope: "read", cache: { maxAge: 5 } } },
     async () => {
       const [overview, categoryDistribution] = await Promise.all([
-        ctx.repo.dashboardOverview(),
+        // 20+ 个 COUNT 的重查询：30s 进程内缓存（P1-5），运营看板不需要秒级新鲜
+        cachedDashboardOverview(ctx),
         ctx.repo.categorySiteDistribution(8),
       ]);
 
@@ -107,7 +109,7 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
 
     // 初始快照推送
     try {
-      const stats = await ctx.repo.stats();
+      const stats = await cachedSiteStats(ctx);
       sendEvent("init", {
         timestamp: Date.now(),
         runtime: getHttpMetricsSummary(),
@@ -134,7 +136,8 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       }
       try {
         const [stats, queue] = await Promise.all([
-          ctx.repo.stats(),
+          // 3s 心跳：每个心跳都打 COUNT 的话，开一天就是 2.8 万次全表扫描
+          cachedSiteStats(ctx),
           ctx.repo.jobsQueueDepth(),
         ]);
         sendEvent("tick", {
@@ -250,11 +253,7 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
    * 强制执行 SQLite WAL 预写日志同步刷盘（PASSIVE / FULL / RESTART / TRUNCATE）
    */
   app.post("/api/admin/maintenance/checkpoint", { config: { scope: "admin" } }, async (req) => {
-    const body = z
-      .object({
-        mode: z.enum(["passive", "full", "restart", "truncate"]).default("passive"),
-      })
-      .safeParse(req.body ?? {});
+    const body = MaintenanceCheckpointInput.safeParse(req.body ?? {});
 
     const mode = body.success ? body.data.mode : "passive";
     const res = await ctx.repo.checkpointWal(mode);

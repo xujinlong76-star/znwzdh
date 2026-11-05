@@ -100,13 +100,23 @@ export function getSignedMediaProxyUrl(rawUrl: string): string {
   return `/api/media/proxy?url=${encodeURIComponent(rawUrl)}&sig=${sig}`
 }
 
-function signIcon(item: NavigationSubItem): NavigationSubItem {
+export function signIcon(item: NavigationSubItem): NavigationSubItem {
   const icon = item.icon
   if (!icon) return item
   // 与 VideoCard 的归一化一致：协议相对 URL（//host/x）按 https 处理
   const raw = icon.startsWith('//') ? `https:${icon}` : icon
   if (!raw.startsWith('http://') && !raw.startsWith('https://')) return item
   return { ...item, mediaProxyIconUrl: getSignedMediaProxyUrl(raw) }
+}
+
+export function signCategory(category: NavigationItem): NavigationItem {
+  const signItems = (items: NavigationSubItem[] | undefined) =>
+    items?.map(signIcon)
+  return {
+    ...category,
+    items: signItems(category.items),
+    subCategories: category.subCategories?.map(sub => ({ ...sub, items: signItems(sub.items) })),
+  }
 }
 
 /**
@@ -116,13 +126,6 @@ function signIcon(item: NavigationSubItem): NavigationSubItem {
  * 签名是 URL 的纯函数，服务端渲染（含 ISR 再生成）时算一次即可，签名无时效。
  */
 export function withSignedVideoIcons(navigationData: NavigationData): NavigationData {
-  const signItems = (items: NavigationSubItem[] | undefined) =>
-    items?.map(signIcon)
-  const signCategory = (category: NavigationItem): NavigationItem => ({
-    ...category,
-    items: signItems(category.items),
-    subCategories: category.subCategories?.map(sub => ({ ...sub, items: signItems(sub.items) })),
-  })
   return {
     ...navigationData,
     navigationItems: navigationData.navigationItems.map(signCategory),

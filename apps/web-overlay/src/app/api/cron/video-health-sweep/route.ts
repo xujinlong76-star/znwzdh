@@ -131,8 +131,13 @@ async function handleHealthSweep(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const dryRun = searchParams.get('dryRun') === 'true'
-  const maxItemsToCheck = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : 30
-  const timeoutMs = searchParams.get('timeout') ? parseInt(searchParams.get('timeout')!, 10) : 3500
+  const rawLimit = searchParams.get('limit')
+  const parsedLimit = rawLimit ? parseInt(rawLimit, 10) : 30
+  const maxItemsToCheck = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 30
+
+  const rawTimeout = searchParams.get('timeout')
+  const parsedTimeout = rawTimeout ? parseInt(rawTimeout, 10) : 3500
+  const timeoutMs = Number.isFinite(parsedTimeout) && parsedTimeout >= 500 ? Math.min(parsedTimeout, 30000) : 3500
   /**
    * 自动删除默认关闭。
    *

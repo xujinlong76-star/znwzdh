@@ -4,8 +4,8 @@
  * 负责标签云热度聚合、标签重命名、解绑删除与跨标签批量合并。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
 
+import { TagAliasInput, TagMergeInput, TagUpdateInput } from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { safeDecodeParam, badRequest, notFound } from "./shared.ts";
 
@@ -26,10 +26,15 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       const q = (req.query ?? {}) as Record<string, string>;
       const minCount = Number(q.minCount);
       const group = typeof q.group === "string" && q.group.trim() ? q.group.trim() : undefined;
-      return ctx.repo.listTagsWithCounts(
+      // limit 此前被静默忽略（web 端 tag-cloud 传了 limit=100 从未生效，report §七-4）。
+      // 不分页会让标签云一次拉满全量标签；上限 200 防 SSR 一次拉爆。
+      const lim = Number(q.limit);
+      const limit = Number.isFinite(lim) && lim > 0 ? Math.min(200, Math.trunc(lim)) : undefined;
+      const tags = await ctx.repo.listTagsWithCounts(
         Number.isFinite(minCount) && minCount > 0 ? minCount : 1,
         group,
       );
+      return typeof limit === "number" ? tags.slice(0, limit) : tags;
     }
   );
 
@@ -45,6 +50,31 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     return { ok: true, tag: resolved };
   });
 
+  /**
+   * 标签共现相关标签（修复标签页的浏览死胡同）。
+   *
+   * 之前整套代码对标签共现零实现：用户在「React」标签页看完站点后，
+   * 没有任何路径通往「Vue / Next.js / 前端框架」这类相邻主题，标签页成了
+   * 信息组织的终点。这里聚合 site_tags 的共现（见 store 的 listRelatedTags），
+   * 按共享存活站点数降序返回 top-N。
+   *
+   * 入参接受 slug 或 id（与 /api/tags/resolve 同口径，但只读主表 id/slug，
+   * 不踩别名）：页面 URL 段是 slug 形态，先 getRawTag 归一成 id 再聚合。
+   * limit 上限 50（防 SSR 一次拉爆；默认 12 是标签页卡片一排的量级）。
+   */
+  app.get("/api/tags/:id/related", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
+    const ref = String((req.params as { id: string }).id || "").trim();
+    if (!ref) return badRequest(reply, "缺少标签标识");
+    const tag = await ctx.repo.getRawTag(ref);
+    if (!tag) return notFound(reply, "未找到该标签");
+    const q = (req.query ?? {}) as Record<string, string>;
+    const lim = Number(q.limit);
+    const limit = Number.isFinite(lim) && lim > 0 ? Math.min(50, Math.trunc(lim)) : 12;
+    const related = await ctx.repo.listRelatedTags(tag.id, limit);
+    return { ok: true, tagId: tag.id, tagSlug: tag.slug, related };
+  });
+
+
   /* ------------------------------------------------------------------ *
    * 标签修改与维护 (Tag Mutation & Lifecycle)
    * ------------------------------------------------------------------ */
@@ -54,14 +84,7 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
    */
   app.patch("/api/tags/:id", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = z
-      .object({
-        name: z.string().min(1).max(24).optional(),
-        group: z.string().min(1).max(32).optional(),
-        color: z.string().max(32).nullable().optional(),
-        description: z.string().max(200).nullable().optional(),
-      })
-      .safeParse(req.body ?? {});
+    const body = TagUpdateInput.safeParse(req.body ?? {});
 
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);
@@ -112,9 +135,7 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
    * 合并标签：将源标签下的所有站点关系归并到目标标签后删除源标签
    */
   app.post("/api/tags/merge", { config: { scope: "write" } }, async (req, reply) => {
-    const body = z
-      .object({ sourceId: z.string().min(1), targetId: z.string().min(1) })
-      .safeParse(req.body ?? {});
+    const body = TagMergeInput.safeParse(req.body ?? {});
 
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);
@@ -145,7 +166,7 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
    */
   app.post("/api/tags/:id/aliases", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = z.object({ alias: z.string().min(1).max(40) }).safeParse(req.body ?? {});
+    const body = TagAliasInput.safeParse(req.body ?? {});
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);
     }

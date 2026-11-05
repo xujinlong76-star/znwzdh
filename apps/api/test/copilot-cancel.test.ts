@@ -2,7 +2,9 @@
  * copilot 取消链路（候选 2 + 候选 3）：用户按「停止」之后
  *   ① 中枢不许再打备用模型池，也不许把这次记成模型失败（污染大盘失败率）；
  *   ② 路由不许把取消当一次正常回答产出并记账，要落 499 + 一行 copilot_cancel；
- *   ③ 「正常写完」与「半路挂断」必须分得开——node http 的 'close' 两种情况都会触发。
+ *   ③ 「正常写完」与「半路挂断」必须分得开——node http 的 'close' 两种情况都会触发；
+ *   ④ 挂断之后额度预留必须当场结算（P0-3）——否则「用户按停止」会一次性占住当天额度
+ *      直到 TTL，而这正是并发下闸门挡人的那段时间。
  *
  * 三条语义各自锁一处代码：bindReplyAbort 用假 raw（不依赖真 socket），
  * callLlm 的 abort 即停用真 sqlite 数 llm_usage 行数，路由级用 app.inject +
@@ -19,6 +21,7 @@ import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { callLlm } from "../src/llm-usage.ts";
+import { reserveLlmQuota, settleLlmQuota } from "../src/llm-quota.ts";
 import { resetSystemLlmConfig, saveSystemLlmConfig, type ResolvedLlm } from "../src/llm-config.ts";
 import { bindReplyAbort } from "../src/routes/copilot.ts";
 
@@ -93,6 +96,12 @@ async function usageRows(scenario: string) {
   return ctx.repo.raw("SELECT ok, error_code FROM llm_usage WHERE scenario = ?", [scenario]) as Promise<
     Array<{ ok: number; error_code: string | null }>
   >;
+}
+
+/** 在途预留行数：断流是否泄漏预留，只看这一个数就够 */
+async function reservationCount(): Promise<number> {
+  const row = (await ctx.repo.raw("SELECT COUNT(*) AS c FROM llm_quota_reservations"))[0] as { c: number | string };
+  return Number(row?.c ?? 0);
 }
 
 describe("callLlm：取消即停，不打备用池、不记失败用量", () => {
@@ -262,6 +271,90 @@ describe("copilot 路由：取消落 499 + copilot_cancel，正常兜底落 copi
     expect(meta.stage).toBe("llm");
     expect(meta.quota_limited).toBe(false);
     expect(Number(meta.waited_ms)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("流式挂断同样结算预留：取消既不烧当天额度，也不留下等 TTL 的死行", async () => {
+    /**
+     * P0-3 的验收项「断流/异常路径不泄漏预留」在 HTTP 层的落点。
+     * 预留只在路由的 finally 里结算，而流式有五条出口——少一条就变成
+     * 「每次用户按停止，当天额度就被占住一次直到 TTL」，并发下正好是闸门挡人的那段。
+     */
+    const savedQuota = { ...ctx.config.llmQuota };
+    const state = { hubHits: 0 };
+    const hub = net.createServer((socket) => {
+      state.hubHits += 1;
+      socket.resume();
+    });
+    await new Promise<void>((resolve) => hub.listen(0, "127.0.0.1", resolve));
+    const baseUrl = "http://127.0.0.1:" + (hub.address() as net.AddressInfo).port + "/v1";
+    try {
+      /**
+       * 匿名档上限贴着「已有用量 + 1」设：本次请求恰好把这一格占满，
+       * 结算成功 → 归零后还能再借一格；结算漏了 → 预留行还在，下一次直接撞上限。
+       * 不删别人留下的用量行：那是它们的账，动它会把这条用例变成依赖清库的用例。
+       */
+      const baseUsed = (await ctx.repo.sumLlmUsage({ since: Date.now() - 24 * 60 * 60 * 1000, identity: null })).calls;
+      Object.assign(ctx.config.llmQuota, {
+        identityDailyCalls: 0,
+        identityDailyTokens: 0,
+        anonymousDailyCalls: baseUsed + 1,
+        anonymousDailyTokens: 0,
+        systemDailyCalls: 0,
+        systemDailyTokens: 0,
+      });
+      await ctx.repo.run("DELETE FROM llm_quota_reservations");
+      await saveSystemLlmConfig(
+        ctx,
+        {
+          enabled: true,
+          baseUrl,
+          model: "fake-hanging",
+          apiKey: "sk-fake",
+          timeoutMs: 5000,
+          thinking: false,
+          allowPrivateNetwork: true,
+        },
+        "test",
+      );
+
+      // 上一条用例已经留下一行 copilot_cancel，所以只看「新增」
+      const beforeEvents = (await eventRows()).length;
+      const inflight = app.inject({
+        method: "POST",
+        url: "/api/copilot/chat",
+        payload: { message: "推荐一个 Markdown 编辑器", stream: true },
+      });
+      await until("本地网关收到连接", 10_000, () => state.hubHits > 0, () => state);
+      // 预留此时必须已经占住那 1 次——不然下面「结算归零」测的是空气
+      expect(await reservationCount()).toBe(1);
+
+      const raw = (captured as unknown as { raw: EventEmitter & { writableEnded: boolean } }).raw;
+      raw.emit("close");
+      try {
+        await inflight;
+      } catch {
+        /* light-my-request 对已挂断的连接判 ECONNRESET，同上一条用例 */
+      }
+      await until("取消闸门写事件行", 6000, async () => (await eventRows()).length > beforeEvents, () => state);
+
+      // 结算发生在 finally：行必须被删掉，而不是等 300s 的 TTL
+      await until(
+        "预留结算归零",
+        6000,
+        async () => (await reservationCount()) === 0,
+        () => state,
+      );
+      expect(await reservationCount()).toBe(0);
+
+      // 取消没记用量（llm_usage 零行）也没留下预留 ⇒ 匿名档回到「1 次可用」
+      const recheck = await reserveLlmQuota(ctx, null);
+      expect(recheck.ok, "取消不该把当天额度吃掉一次").toBe(true);
+      if (recheck.ok) expect(await settleLlmQuota(ctx, recheck.hold)).toBe(true);
+    } finally {
+      Object.assign(ctx.config.llmQuota, savedQuota);
+      hub.close();
+      await resetSystemLlmConfig(ctx, "test");
+    }
   });
 
   it("未挂断时降级兜底照旧成功，并写一行 copilot（哨兵模型名 + 降级原因，不含问题原文）", async () => {

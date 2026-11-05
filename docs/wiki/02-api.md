@@ -339,6 +339,19 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 
 > 注释原话（[server.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/server.ts#L706-L711)）：**「这两个端点就是『不修改前端 69 处调用点』的全部秘密。」** `path` 沿用前端原值（如 `src/navsphere/content/navigation.json`），前端连常量都不用改。
 
+**整包覆盖写的缩水保护（P2）**：`videos.json` 与 `navigation.json` 在存量 ≥ **100** 条时，
+待写入低于存量 **80%** 会返回 `409`（`video_shrink_*` / `navigation_shrink_*`），
+响应里的 `retryWith` 给出一对确认参数：`confirmLargeDeletion: true` + `expectedCount: <本次真实条数>`
+（逐字相等才放行，只带一个不放行）。基线口径不同：视频取**即将被覆盖的 KV 文档当前条数**
+（文档缺失时回落关系表），导航取**这份快照有权删除的托管站点数**（`source` 受管且类目在快照可见集里，
+手工 / MCP 站点不参与比较）。被拦与放行都进审计：`storage.{videos,navigation}.shrink_blocked` /
+`storage.{videos,navigation}.large_deletion`。测试：`apps/api/test/navigation-shrink-guard.test.ts`、
+`apps/api/test/video-catalog-store.test.ts`。
+
+**版本前缀（P2）**：`/api/v1/*` 在路由前被 `rewriteUrl` 重写为 `/api/*` ——
+两套路径共享同一条路由、同一份 scope 策略、缓存头与错误包络，旧路径继续可用；
+未知版本（如 `/api/v2/*`）不重写、照常 404。测试：`apps/api/test/api-version-alias.test.ts`。
+
 ### 3.14 回收站（软删除）
 
 | 方法 | 路径 | 功能 | scope | 状态码 |
@@ -399,6 +412,12 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 **为什么默认 `no-store`**：GET 缺缓存头时浏览器走「启发式缓存」，可能缓存含身份或管理面数据——静默的正确性风险，所以刻意收紧为安全默认。
 
 **ETag 语义**：对序列化后的 payload 取 sha1（base64url），处理 `If-None-Match`（含 `W/` 前缀与逗号列表）→ 命中回 **304 且不带 body**（同时移除 `content-type`/`content-length`，否则残留头与空 body 冲突）。未命中照常 200。
+
+**`/api/storage?path=navigation.json` 是例外**：它的 ETag 是 `W/"v<data_version>"`（`data_version` 单行表的当前值），
+不是 payload 哈希 —— 大文档每次算 sha1 本身就是读放大。带 `If-None-Match` 的请求在 preHandler 里先比版本号，
+一致直接 304（不再读快照）；不一致才走完整读取，而那一次读取复用的是同一个版本号点查，
+所以命中路径整个请求只有 `SELECT version FROM data_version WHERE id = 1` 一条 SQL。
+其它文档不做版本点查（`apps/api/test/snapshot-version.test.ts` 两条守卫钉住）。
 
 测试：`apps/api/test/api.test.ts > 响应缓存头`（TTL、304、no-store 默认各一条）。
 

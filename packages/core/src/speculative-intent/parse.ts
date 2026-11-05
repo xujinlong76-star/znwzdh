@@ -7,12 +7,13 @@
  */
 import type { SpeculativeIntentResult } from './types.ts'
 import { tryParseBase64, tryParseUrlEncoding, tryParseJson, tryDetectHash } from './encoding.ts'
-import { tryParseTimestamp, tryParseCron } from './time.ts'
+import { tryParseTimestamp, tryParseCron, tryParseDateToTimestamp } from './time.ts'
 import { tryDetectIp, tryParseCidr, tryParseCurl, tryParseJwt } from './network.ts'
 import { tryParseMath, tryParseColor, tryParseUuidOrUlid, tryParseByteSize } from './compute.ts'
 import { tryParseRegex } from './regex.ts'
 import { tryParseSemver } from './semver.ts'
 import { tryParseHttpStatus } from './http-status.ts'
+import { tryCalculateHash } from './hash-calc.ts'
 
 export function parseSpeculativeIntent(input: string): SpeculativeIntentResult | null {
   if (!input || input.trim().length === 0) return null;
@@ -30,6 +31,8 @@ export function parseSpeculativeIntent(input: string): SpeculativeIntentResult |
     tryParseHttpStatus(q) ||
     tryParseSemver(q) ||
     tryParseRegex(q) ||
+    tryCalculateHash(q) ||
+    tryParseDateToTimestamp(q) ||
     tryParseMath(q) ||
     tryParseTimestamp(q) ||
     tryParseColor(q) ||

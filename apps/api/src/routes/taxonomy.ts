@@ -4,8 +4,9 @@
  * 提供全站分类/标签健康度审计、治理提案查询、单条/批量人工审核采纳与驳回接口。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
+import { TaxonomyApplyInput, TaxonomyAuditInput, TaxonomyBatchInput } from "@navhub/core";
 import type { AppContext } from "../context.ts";
+import { computeTagLongTailStats } from "@navhub/store";
 import { badRequest, parsePagination } from "./shared.ts";
 
 export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -24,13 +25,20 @@ export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   });
 
   /**
+   * 标签长尾分布统计（只读、公开）。
+   *
+   * 让运营看清「1047 个标签里 66% 只被 1 站使用、81% <=2、仅 7.5% >=5」的长尾现状，
+   * 而不依赖跑全站审计。复用 store.computeTagLongTailStats，口径与前端 TAG_LINK_MIN 一致。
+   */
+  app.get("/api/taxonomy/tags/stats", { config: { scope: "public" } }, async () => {
+    return computeTagLongTailStats(ctx.repo);
+  });
+
+  /**
    * 触发分类与标签全站健康度审计
    */
   app.post("/api/taxonomy/audit", { config: { scope: "write" } }, async (req, reply) => {
-    const body = z.object({
-      dryRun: z.boolean().optional().default(false),
-      siteLimit: z.number().int().positive().optional().default(500),
-    }).safeParse(req.body ?? {});
+    const body = TaxonomyAuditInput.safeParse(req.body ?? {});
 
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);
@@ -55,13 +63,7 @@ export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.post("/api/taxonomy/proposals/:id/apply", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const actor = req.auth.actor ?? "admin";
-    const body = z
-      .object({
-        parentId: z.string().nullable().optional(),
-        titleEn: z.string().max(60).nullable().optional(),
-        icon: z.string().max(40).nullable().optional(),
-      })
-      .safeParse(req.body ?? {});
+    const body = TaxonomyApplyInput.safeParse(req.body ?? {});
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);
     }
@@ -95,10 +97,7 @@ export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    * 批量采纳或驳回治理提案
    */
   app.post("/api/taxonomy/proposals/batch", { config: { scope: "write" } }, async (req, reply) => {
-    const body = z.object({
-      ids: z.array(z.string()).min(1).max(100),
-      action: z.enum(["apply", "dismiss"]),
-    }).safeParse(req.body ?? {});
+    const body = TaxonomyBatchInput.safeParse(req.body ?? {});
 
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);

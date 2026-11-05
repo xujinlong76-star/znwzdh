@@ -16,7 +16,8 @@
  */
 
 import { z } from "zod";
-import { SiteStatusSchema } from "./mcp-schemas.ts";
+import { SiteRelationSchema, SiteStatusSchema } from "./mcp-schemas.ts";
+import { TAXONOMY_PROPOSAL_KINDS } from "./taxonomy-governance.ts";
 import type { PluginKind } from "./plugin-manifest.ts";
 import type { Category, SearchHit, Site } from "./types.ts";
 
@@ -120,6 +121,24 @@ export const HealthResponse = z.looseObject({
   embedding: z
     .object({
       cache: z.object({ size: z.number().int(), hits: z.number().int(), misses: z.number().int() }),
+    })
+    .optional(),
+  /**
+   * 导航快照的一致性判据（升级改造方案 P1-1）。
+   *
+   * 为什么要进健康面：快照缓存的正确性判据是 `data_version`，而它的递增来自数据库
+   * 触发器。触发器创建失败（权限受限的 PG 部署、并发启动撞 DDL）不会让任何请求报错，
+   * 只会让版本号冻结 —— 于是多实例一致性悄悄退回 TTL。运维必须能在不抓 /metrics 的
+   * 情况下看见「判据还在不在」。
+   *   - version=null：读不到版本号（老库没这张表 / 单行没种下）；
+   *   - triggersMissing>0：应有的 bump 触发器缺失，写入不会递增。
+   */
+  navSnapshot: z
+    .object({
+      version: z.number().int().nullable(),
+      triggersMissing: z.number().int().nonnegative(),
+      cached: z.boolean(),
+      ttlMs: z.number().int().nonnegative(),
     })
     .optional(),
 });
@@ -556,6 +575,222 @@ export const MeOverviewResponse = z.looseObject({
   settings: MeSettingsPayload,
 });
 
+/**
+ * GET/PATCH /api/me/settings：settings 与概览里的是同一份形状，
+ * 所以设置页与首屏不会出现两套字段解释。
+ */
+export const MeSettingsResponse = z.looseObject({
+  ok: z.literal(true),
+  settings: MeSettingsPayload,
+});
+
+/** 用户中心里的账号资料（与概览 user 字段同形，写侧不打折） */
+const MeUserPayload = z.looseObject({
+  id: z.string(),
+  username: z.string(),
+  email: z.string().nullable(),
+  avatar: z.string().nullable(),
+  source: z.string(),
+});
+
+export const MeProfileUpdateResponse = z.looseObject({
+  ok: z.literal(true),
+  user: MeUserPayload,
+});
+
+/** 个人令牌记录：明文只在创建回执的 token 字段出现一次，record 永不回传哈希 */
+const MeApiTokenPayload = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+  scopes: z.array(z.string()),
+  ownerIdentity: z.string().nullable(),
+  expiresAt: z.number().nullable(),
+  lastUsedAt: z.number().nullable(),
+  createdAt: z.number(),
+  revokedAt: z.number().nullable(),
+  rotatedAt: z.number().nullable(),
+  tokenPrefix: z.string().nullable(),
+});
+
+export const MeTokenCreateResponse = z.looseObject({
+  ok: z.literal(true),
+  token: z.string(),
+  record: MeApiTokenPayload,
+});
+
+/** POST /api/me/sessions/check：BFF 每次代理前核对会话是否已被踢出 */
+export const MeSessionCheckResponse = z.looseObject({
+  ok: z.literal(true),
+  revoked: z.boolean(),
+});
+
+export const MeDiagnosticsResponse = z.looseObject({
+  ok: z.literal(true),
+  identity: z.string(),
+  repairedCount: z.number().int(),
+  checks: z.array(
+    z.looseObject({
+      id: z.string(),
+      label: z.string(),
+      status: z.enum(["ok", "repaired"]),
+      detail: z.string(),
+    }),
+  ),
+  checkedAt: z.number(),
+});
+
+/** POST /api/me/prune：按域回传实际清理行数（未选中的域不出现） */
+export const MePruneResponse = z.looseObject({
+  ok: z.literal(true),
+  identity: z.string(),
+  pruned: z.record(z.string(), z.number()),
+});
+
+/** DELETE /api/me：键集由数据清单驱动，未来新增可删表不破坏此契约 */
+export const MeDeleteResponse = z.looseObject({
+  ok: z.literal(true),
+  deleted: z.record(z.string(), z.number()),
+});
+
+/**
+ * POST /api/me/merge：幂等命中（alreadyMerged=true）与首次合并返回同一形状，
+ * 统计字段恒在（幂等命中时取首次落库的快照），前端不需要两个分支。
+ */
+export const MeMergeResponse = z.looseObject({
+  ok: z.literal(true),
+  alreadyMerged: z.boolean(),
+  source: z.string(),
+  target: z.string(),
+  favoritesMoved: z.number().int(),
+  favoritesSkipped: z.number().int(),
+  foldersMoved: z.number().int(),
+  searchesMoved: z.number().int(),
+  eventsMoved: z.number().int(),
+  pluginsMoved: z.number().int(),
+  starsMoved: z.number().int(),
+  reviewsMoved: z.number().int(),
+  llmConfigMoved: z.boolean(),
+  settingsMoved: z.boolean(),
+  workspacesMoved: z.boolean(),
+  vaultNeedsChoice: z.boolean(),
+});
+
+/**
+ * POST /api/me/favorites/sync：契约承诺的是同步信封（applied/version/截断计数）；
+ * items/folders 的条目形状由收藏仓储演进，集成方应配合 GET /api/favorites 使用。
+ */
+export const MeFavoritesSyncResponse = z.looseObject({
+  ok: z.literal(true),
+  applied: z.number().int(),
+  version: z.number(),
+  items: z.array(z.unknown()),
+  folders: z.array(z.unknown()),
+  truncatedNotes: z.number().int(),
+});
+
+/** POST /api/me/import：回执只报「实际恢复了多少」，跳过/截断/失败分支都要能说清 */
+export const MeImportResponse = z.looseObject({
+  ok: z.literal(true),
+  identity: z.string(),
+  foldersImported: z.number().int(),
+  favoritesImported: z.number().int(),
+  favoritesSkipped: z.number().int(),
+  favoritesSkippedMissingSite: z.number().int(),
+  searchesImported: z.number().int(),
+  searchesSkippedDuplicate: z.number().int(),
+  searchesTruncated: z.number().int(),
+  settingsRestored: z.boolean(),
+  settingsError: z.string().nullable(),
+  backupHistoryTruncated: z.boolean(),
+  historyExportLimit: z.number().int(),
+  historyImportCap: z.number().int(),
+  nextHistoryOffset: z.number().int().nullable(),
+  starsImported: z.number().int(),
+  starsSkippedDuplicate: z.number().int(),
+  starsSkippedMissing: z.number().int(),
+  reviewsImported: z.number().int(),
+  reviewsSkippedMissing: z.number().int(),
+  reviewsSkippedNotInstalled: z.number().int(),
+  reviewsSkippedInvalid: z.number().int(),
+  favoritesExportLimit: z.number().int(),
+});
+
+/** DELETE /api/profile：重置画像与行为事件（收藏与搜索历史不动） */
+export const ProfileResetResponse = z.looseObject({
+  ok: z.literal(true),
+  profileCleared: z.boolean(),
+  eventsRemoved: z.number().int(),
+});
+
+/** DELETE /api/profile/signals/{kind}：清一类信号并立即重建画像 */
+export const ProfileSignalClearResponse = z.looseObject({
+  ok: z.literal(true),
+  kind: z.enum(["click", "search", "favorite"]),
+  removed: z.number().int(),
+  profileRebuilt: z.boolean(),
+});
+
+/** POST /api/search-history/batch-delete：两种筛选口径共用 removed */
+export const SearchHistoryBatchDeleteResponse = z.looseObject({
+  ok: z.literal(true),
+  removed: z.number().int(),
+});
+
+/** POST /api/users/sync：OAuth upsert 后回传的账号行（不含任何令牌） */
+export const OauthUserSyncResponse = z.looseObject({
+  id: z.string(),
+  username: z.string(),
+  email: z.string().nullable(),
+  avatar: z.string().nullable(),
+  source: z.string(),
+});
+
+const WorkspaceMemberPayload = z.looseObject({
+  userId: z.string(),
+  username: z.string(),
+  role: z.enum(["owner", "maintainer", "member", "viewer"]),
+  joinedAt: z.number(),
+  avatar: z.string().optional(),
+  email: z.string().optional(),
+});
+
+const WorkspacePayload = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  description: z.string().optional(),
+  type: z.enum(["personal", "team"]),
+  role: z.enum(["owner", "maintainer", "member", "viewer"]),
+  icon: z.string().optional(),
+  memberCount: z.number().int(),
+  isDefault: z.boolean().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const WorkspaceCreateResponse = z.looseObject({
+  ok: z.literal(true),
+  workspace: WorkspacePayload,
+});
+
+/** POST/DELETE /api/workspaces/{id}/members 共用名册回执 */
+export const WorkspaceMembersResponse = z.looseObject({
+  ok: z.literal(true),
+  members: z.array(WorkspaceMemberPayload),
+});
+
+/**
+ * POST /api/speculation/rules：W3C Speculation Rules 编译结果。
+ * rules/script 随浏览器规范演进，契约只承诺信封与可空性，不重写规范本身。
+ */
+export const SpeculationRulesResponse = z.looseObject({
+  ok: z.literal(true),
+  hasRules: z.boolean(),
+  rules: z.unknown().nullable(),
+  script: z.string(),
+  fallbackTags: z.array(z.unknown()),
+});
+
 /* ------------------------------------------------------------------ *
  * 绑定表：路由键 -> 响应契约
  * ------------------------------------------------------------------ */
@@ -776,6 +1011,12 @@ export const PluginStarResponse = z.looseObject({
   starCount: z.number().int(),
 });
 
+/** PATCH /api/plugins/{slug}/featured：精选位变更后回传公开插件卡片 */
+export const PluginFeaturedResponse = z.looseObject({
+  ok: z.literal(true),
+  plugin: PluginMutationPayload,
+});
+
 /** 无载荷写回执（DELETE 收藏夹等「只表示成功」的端点） */
 export const OkResponse = z.looseObject({ ok: z.literal(true) });
 
@@ -908,11 +1149,369 @@ export const VideoDetailResponse = z.looseObject({
 });
 
 /* ------------------------------------------------------------------ *
+ * 写路由回执（P1-8：write/admin 路由的可生成契约）
+ * ------------------------------------------------------------------ */
+
+/** 标签增删改的通用回执：各操作按仓库返回附带 unbound/moved/alias 之一 */
+export const TagMutationResponse = z.looseObject({
+  ok: z.literal(true),
+  unbound: z.number().int().optional(),
+  moved: z.number().int().optional(),
+  alias: z.string().optional(),
+});
+
+export const CategoryMergeResponse = z.looseObject({
+  ok: z.literal(true),
+  movedSites: z.number().int(),
+  removedCategories: z.number().int(),
+});
+
+const SiteBulkPlanItem = z.object({
+  id: z.string(),
+  action: z.enum(["apply", "skip"]),
+  reason: z.string().optional(),
+});
+
+/** POST /api/sites/bulk：dryRun 与执行态共用一份形状（字段按阶段出现） */
+export const SiteBulkResponse = z.looseObject({
+  dryRun: z.boolean(),
+  op: z.enum(["delete", "setCategory", "setStatus"]),
+  total: z.number().int().optional(),
+  wouldApply: z.number().int().optional(),
+  applied: z.number().int().optional(),
+  skipped: z.number().int().optional(),
+  plan: z.array(SiteBulkPlanItem),
+});
+
+/** POST /api/sites/batch：批量导入回执（201） */
+export const SiteBatchResponse = z.looseObject({
+  success: z.literal(true),
+  created: z.number().int(),
+  duplicates: z.number().int(),
+  categoryDegraded: z.number().int(),
+  sites: z.array(SitePayload),
+});
+
+/** 任务记录的最小可依赖形状（GET /api/jobs/:id 与 retry 响应共用） */
+export const JobSummaryPayload = z.looseObject({
+  id: z.string(),
+  kind: z.string(),
+  status: z.string(),
+  attempts: z.number().int(),
+  error: z.string().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  nextRunAt: z.number().nullable().optional(),
+  progressDone: z.number().int().optional(),
+  progressTotal: z.number().int().optional(),
+});
+
+export const JobEnqueuedResponse = z.object({
+  id: z.string(),
+  kind: z.string(),
+});
+
+export const JobCancelResponse = z.object({
+  ok: z.literal(true),
+  id: z.string(),
+  status: z.enum(["cancelled", "cancelling"]),
+  abortedLocally: z.boolean(),
+});
+
+export const JobRetryResponse = z.object({
+  ok: z.literal(true),
+  job: JobSummaryPayload,
+});
+
+export const JobPruneResponse = z.object({
+  ok: z.literal(true),
+  pruned: z.number().int(),
+  olderThanDays: z.number().int(),
+});
+
+/** API 凭据的公开字段（不含明文与哈希） */
+const apiTokenCoreShape = {
+  id: z.string(),
+  name: z.string(),
+  scopes: z.array(z.string()),
+  ownerIdentity: z.string().nullable(),
+  expiresAt: z.number().nullable(),
+  lastUsedAt: z.number().nullable(),
+  createdAt: z.number(),
+  revokedAt: z.number().nullable(),
+  rotatedAt: z.number().nullable(),
+  tokenPrefix: z.string().nullable(),
+};
+
+export const ApiTokenPayload = z.looseObject(apiTokenCoreShape);
+
+/** GET /api/tokens：凭据列表（按创建时间倒序） */
+export const ApiTokenListResponse = z.array(ApiTokenPayload);
+
+/** POST /api/tokens 与 rotate 的唯一区别是 note 文案；明文只在此出现一次 */
+export const ApiTokenIssueResponse = z.looseObject({
+  ...apiTokenCoreShape,
+  token: z.string(),
+  note: z.string(),
+});
+
+/** POST /api/admin/notifications/read-all */
+export const NotificationReadAllResponse = z.object({
+  ok: z.literal(true),
+  marked: z.number().int(),
+});
+
+/** PATCH /api/submissions/{number}：审核回执 */
+export const SubmissionReviewResponse = z.object({
+  success: z.literal(true),
+  message: z.string(),
+  siteId: z.string(),
+});
+
+/* ------------------------------------------------------------------ *
+ * 运维/存储管理面回执
+ * ------------------------------------------------------------------ */
+
+export const MaintenanceStatusResponse = z.looseObject({
+  ok: z.boolean(),
+  dialect: z.enum(["sqlite", "pg"]),
+  integrity: z.string(),
+  dbSizeBytes: z.number().nullable(),
+  pageCount: z.number().optional(),
+  pageSize: z.number().optional(),
+  freePages: z.number().optional(),
+  tableCounts: z.record(z.string(), z.number()),
+});
+
+export const MaintenanceActionResult = z.looseObject({
+  ok: z.boolean(),
+  tookMs: z.number(),
+  message: z.string().optional(),
+  skipped: z.boolean().optional(),
+  logSize: z.number().optional(),
+});
+
+export const StorageWriteResponse = z.looseObject({
+  ok: z.literal(true),
+  note: z.string(),
+  version: z.number().optional(),
+});
+
+export const StorageDeleteResponse = z.object({
+  ok: z.literal(true),
+  path: z.string(),
+});
+
+const StorageAssetPayload = z.looseObject({
+  references: z.array(z.string()),
+  kind: z.string(),
+  createdAt: z.number(),
+  mime: z.string().nullable(),
+  sha256: z.string().nullable(),
+  width: z.number().nullable(),
+  height: z.number().nullable(),
+  path: z.string(),
+  name: z.string(),
+  bytes: z.number(),
+  updatedAt: z.number(),
+});
+
+export const StorageAssetListResponse = z.object({
+  assets: z.array(StorageAssetPayload),
+  limit: z.number().int(),
+});
+
+/** POST /api/admin/audit/scan：自治巡检报告 */
+export const SiteAuditScanResponse = z.looseObject({
+  ok: z.literal(true),
+  scanned: z.number().int(),
+  summary: z.looseObject({
+    scannedAt: z.number(),
+    totalSites: z.number().int(),
+    activeCount: z.number().int(),
+    brokenCount: z.number().int(),
+    healthScore: z.number(),
+    issues: z.array(z.looseObject({ siteId: z.string(), url: z.string(), title: z.string() })),
+  }),
+});
+
+/** POST /api/admin/audit/apply：采纳自愈建议 */
+export const SiteAuditApplyResponse = z.looseObject({
+  ok: z.literal(true),
+  action: z.enum(["wayback", "replacement", "dismiss"]),
+  siteId: z.string(),
+});
+
+/** POST /api/warmup：embedding 预热结果（未启用时 ok=false + reason） */
+export const WarmupResponse = z.looseObject({
+  ok: z.boolean(),
+  reason: z.string().optional(),
+  tookMs: z.number().optional(),
+  model: z.string().optional(),
+  dim: z.number().optional(),
+});
+
+/* ------------------------------------------------------------------ *
+ * 公开读路由：Top-20 高频端点补齐
+ * ------------------------------------------------------------------ */
+
+/** GET /api/tags/resolve：别名归一化解析 */
+export const ResolveTagResponse = z.looseObject({
+  ok: z.literal(true),
+  tag: TagPayload,
+});
+
+/** GET /api/tags/{id}/related：标签共现相邻主题（标签页不再是没有出口的死胡同） */
+export const RelatedTagsResponse = z.looseObject({
+  ok: z.literal(true),
+  tagId: z.string(),
+  tagSlug: z.string(),
+  related: z.array(
+    z.looseObject({
+      id: z.string(),
+      name: z.string(),
+      slug: z.string(),
+      group: z.string(),
+      color: z.string().nullable(),
+      sharedSites: z.number().int(),
+    }),
+  ),
+});
+
+const FacetDefinitionPayload = z.looseObject({
+  key: z.string(),
+  label: z.string(),
+  labelEn: z.string().optional(),
+  description: z.string().optional(),
+  multiselect: z.boolean().optional(),
+  options: z.array(z.looseObject({ value: z.string(), label: z.string(), labelEn: z.string().optional() })),
+});
+
+const FacetGroupSummaryPayload = z.looseObject({
+  key: z.string(),
+  label: z.string(),
+  labelEn: z.string().optional(),
+  description: z.string().optional(),
+  options: z.array(
+    z.looseObject({
+      value: z.string(),
+      label: z.string(),
+      labelEn: z.string().optional(),
+      count: z.number().int(),
+    }),
+  ),
+});
+
+/** GET /api/facets：受控分面定义 + 当前筛选下的计数 */
+export const FacetsResponse = z.looseObject({
+  ok: z.literal(true),
+  definitions: z.array(FacetDefinitionPayload),
+  facets: z.array(FacetGroupSummaryPayload),
+});
+
+/** GET /api/sites/{id}/facets：单个站点的分面值 */
+export const SiteFacetsResponse = z.looseObject({
+  ok: z.literal(true),
+  siteId: z.string(),
+  facets: z.record(z.string(), z.array(z.string())),
+});
+
+/** GET /api/plugins/{slug}：详情页需要的插件卡片 + 私有状态 */
+export const PluginDetailResponse = z.looseObject({
+  plugin: PluginMutationPayload.extend({
+    installed: z.boolean(),
+    starred: z.boolean(),
+    installedVersion: z.string().nullable(),
+    installedAt: z.number().nullable(),
+    hasUpgrade: z.boolean(),
+    upgradeDiff: z.unknown(),
+    reviewStats: z.unknown(),
+    myReview: z.unknown(),
+    isOwner: z.boolean(),
+  }),
+  summary: z.unknown(),
+});
+
+/** PUT /api/sites/{id}/relations：覆盖写回执（回读的完整关系集） */
+export const RelationsUpdateResponse = z.looseObject({
+  ok: z.literal(true),
+  siteId: z.string(),
+  total: z.number().int(),
+  relations: z.array(SiteRelationSchema),
+});
+
+/* ------------------------------------------------------------------ *
+ * 分类/标签治理（taxonomy）
+ * ------------------------------------------------------------------ */
+
+const TaxonomyProposalPayload = z.looseObject({
+  id: z.string(),
+  kind: z.enum(TAXONOMY_PROPOSAL_KINDS),
+  targetId: z.string(),
+  targetTitle: z.string().optional(),
+  currentValue: z.string().optional(),
+  suggestedValue: z.string(),
+  confidence: z.number(),
+  reason: z.string(),
+  status: z.enum(["pending", "applied", "dismissed"]),
+  meta: z.record(z.string(), z.unknown()).optional(),
+  createdAt: z.number(),
+  appliedAt: z.number().nullable().optional(),
+});
+
+/** POST /api/taxonomy/audit：全站治理审计报告 */
+export const TaxonomyAuditResponse = z.looseObject({
+  ok: z.literal(true),
+  dryRun: z.boolean(),
+  proposalsCount: z.number().int(),
+  byKind: z.record(z.string(), z.number()),
+  proposals: z.array(TaxonomyProposalPayload),
+});
+
+/** 单条提案的采纳/驳回回执 */
+export const TaxonomyProposalMutationResponse = z.looseObject({
+  ok: z.literal(true),
+  message: z.string().optional(),
+  proposal: TaxonomyProposalPayload,
+});
+
+/** POST /api/taxonomy/proposals/batch：批量结果如实分成功/失败 */
+export const TaxonomyBatchResponse = z.looseObject({
+  ok: z.literal(true),
+  action: z.enum(["apply", "dismiss"]),
+  total: z.number().int(),
+  successCount: z.number().int(),
+  failedCount: z.number().int(),
+  errors: z.array(z.string()),
+});
+
+/* ------------------------------------------------------------------ *
+ * 投稿与短链
+ * ------------------------------------------------------------------ */
+
+export const SubmissionCreateResponse = z.object({
+  success: z.literal(true),
+  message: z.string(),
+  siteId: z.string(),
+});
+
+export const ShortlinkCreateResponse = z.object({
+  success: z.literal(true),
+  code: z.string(),
+  path: z.string(),
+  target: z.string(),
+});
+
+/* ------------------------------------------------------------------ *
  * 绑定表
  * ------------------------------------------------------------------ */
 
 export interface ResponseSchemaBinding {
-  schema: z.ZodTypeAny;
+  /**
+   * 响应体契约。`noContent: true` 的绑定没有响应体，此字段可省略——
+   * 204 端点若硬塞一个 `{ok:true}` schema，文档会说谎（客户端会尝试解析空 body）。
+   */
+  schema?: z.ZodTypeAny;
   /**
    * OpenAPI components.schemas 里的组件名。
    * 显式命名（而不是从路由派生）是为了让生成的客户端类型可直接引用。
@@ -924,7 +1523,35 @@ export interface ResponseSchemaBinding {
    * 声明多个状态码时 OpenAPI 里每个都指向同一份组件。
    */
   status?: string | string[];
+  /** true = 成功响应无 body（204）。与 schema 互斥。 */
+  noContent?: true;
 }
+
+/* ------------------------------------------------------------------ *
+ * 统一错误包络（P2-2）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 错误响应契约。
+ *
+ * 兼容口径：`error` 仍是字符串——前端与 BFF 里大量 `data.error || "..."` 在直接读它。
+ * 一次改成嵌套对象会让所有存量调用方拿到 `[object Object]`，所以新增字段并列扩展：
+ *   - `code`：稳定错误码（客户端按它分支，而不是匹配中文文案）
+ *   - `requestId`：Fastify 请求 id，报障时把它交给运维即可定位日志
+ *   - `details`：校验 issue 等结构化细节（旧路由里的 `detail` 继续保留）
+ *   - `retryable`：明确「重试是否有意义」，避免客户端对所有 5xx 盲目重试
+ *
+ * looseObject 是因为历史路由会附带 `siteId` / `existingSiteId` 这类上下文；
+ * 它们不是统一契约的一部分，但也不该让文档与实现互相否认。
+ */
+export const ErrorResponse = z.looseObject({
+  error: z.string().describe("错误信息（兼容字段：存量客户端直接读这个字符串）"),
+  code: z.string().optional().describe("稳定错误码（如 INVALID_ARGUMENT / NOT_FOUND / INTERNAL_ERROR）"),
+  message: z.string().optional().describe("错误信息（与 error 同值；新客户端优先读它）"),
+  requestId: z.string().optional().describe("请求 id，用于在日志中定位同一次失败"),
+  details: z.unknown().optional().describe("结构化细节（字段校验 issues 等）"),
+  retryable: z.boolean().optional().describe("是否值得重试（false 时客户端不应自动重试）"),
+});
 
 /** GET /api/admin/ai/prices：模型单价簿 + 旧版单一价回落值 */
 export const AdminAiPricesResponse = z.looseObject({
@@ -978,6 +1605,15 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
     name: "NotificationDeliveryListResponse",
   },
   "GET /api/categories/{id}/impact": { schema: CategoryImpactResponse, name: "CategoryImpactResponse" },
+  "GET /api/categories/{id}": { schema: CategoryPayload, name: "CategoryPayload" },
+  "GET /api/categories/by-slug/{slug}": { schema: CategoryPayload, name: "CategoryPayload" },
+  "GET /api/tags/resolve": { schema: ResolveTagResponse, name: "ResolveTagResponse" },
+  "GET /api/facets": { schema: FacetsResponse, name: "FacetsResponse" },
+  "GET /api/sites/{id}/facets": { schema: SiteFacetsResponse, name: "SiteFacetsResponse" },
+  // 详情页相似推荐：与站点列表同形（直接返回站点数组，没有外壳）
+  "GET /api/sites/{id}/similar": { schema: SiteListResponse, name: "SiteListResponse" },
+  "GET /api/tags/{id}/related": { schema: RelatedTagsResponse, name: "RelatedTagsResponse" },
+  "GET /api/plugins/{slug}": { schema: PluginDetailResponse, name: "PluginDetailResponse" },
   // 视频库只读查询：列表/详情共用条目形状，来源字段由服务端如实标注
   "GET /api/videos": { schema: VideoListResponse, name: "VideoListResponse" },
   "GET /api/videos/{id}": { schema: VideoDetailResponse, name: "VideoDetailResponse" },
@@ -1002,4 +1638,128 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "POST /api/collections/{id}/items": { schema: CollectionItemMutationResponse, name: "CollectionItemMutationResponse" },
   "PATCH /api/collections/{id}/items/{siteId}": { schema: CollectionItemMutationResponse, name: "CollectionItemMutationResponse" },
   "DELETE /api/collections/{id}/items/{siteId}": { schema: CollectionItemMutationResponse, name: "CollectionItemMutationResponse" },
+
+  /* 站点/回收站写路由 */
+  "DELETE /api/sites/{id}": { name: "NoContent", status: "204", noContent: true },
+  "POST /api/sites/bulk": { schema: SiteBulkResponse, name: "SiteBulkResponse" },
+  "POST /api/sites/batch": { schema: SiteBatchResponse, name: "SiteBatchResponse", status: "201" },
+  "POST /api/trash/{id}/restore": { schema: SitePayload, name: "SitePayload" },
+  "DELETE /api/trash/{id}": { name: "NoContent", status: "204", noContent: true },
+
+  /* 类目/标签写路由 */
+  "POST /api/categories": { schema: CategoryPayload, name: "CategoryPayload", status: "201" },
+  "PATCH /api/categories/{id}": { schema: CategoryPayload, name: "CategoryPayload" },
+  "POST /api/categories/{id}/move": { schema: CategoryPayload, name: "CategoryPayload" },
+  "POST /api/categories/merge": { schema: CategoryMergeResponse, name: "CategoryMergeResponse" },
+  "DELETE /api/categories/{id}": { name: "NoContent", status: "204", noContent: true },
+  "PATCH /api/tags/{id}": { schema: OkResponse, name: "OkResponse" },
+  "DELETE /api/tags/{id}": { schema: TagMutationResponse, name: "TagMutationResponse" },
+  "POST /api/tags/merge": { schema: TagMutationResponse, name: "TagMutationResponse" },
+  "POST /api/tags/{id}/aliases": { schema: TagMutationResponse, name: "TagMutationResponse" },
+  "DELETE /api/tags/{id}/aliases/{alias}": { schema: OkResponse, name: "OkResponse" },
+  "PUT /api/sites/{id}/facets": { schema: SiteFacetsResponse, name: "SiteFacetsResponse" },
+  "PUT /api/sites/{id}/relations": { schema: RelationsUpdateResponse, name: "RelationsUpdateResponse" },
+
+  /* 类目/标签治理 */
+  "POST /api/taxonomy/audit": { schema: TaxonomyAuditResponse, name: "TaxonomyAuditResponse" },
+  "POST /api/taxonomy/proposals/{id}/apply": {
+    schema: TaxonomyProposalMutationResponse,
+    name: "TaxonomyProposalMutationResponse",
+  },
+  "POST /api/taxonomy/proposals/{id}/dismiss": {
+    schema: TaxonomyProposalMutationResponse,
+    name: "TaxonomyProposalMutationResponse",
+  },
+  "POST /api/taxonomy/proposals/batch": { schema: TaxonomyBatchResponse, name: "TaxonomyBatchResponse" },
+
+  /* 任务队列 */
+  "POST /api/jobs": { schema: JobEnqueuedResponse, name: "JobEnqueuedResponse", status: "201" },
+  "POST /api/jobs/{id}/cancel": { schema: JobCancelResponse, name: "JobCancelResponse" },
+  "POST /api/jobs/{id}/retry": { schema: JobRetryResponse, name: "JobRetryResponse" },
+  "POST /api/jobs/prune": { schema: JobPruneResponse, name: "JobPruneResponse" },
+
+  /* API 凭据 */
+  "GET /api/tokens": { schema: ApiTokenListResponse, name: "ApiTokenListResponse" },
+  "POST /api/tokens": { schema: ApiTokenIssueResponse, name: "ApiTokenIssueResponse", status: "201" },
+  "PATCH /api/tokens/{id}": { schema: ApiTokenPayload, name: "ApiTokenPayload" },
+  "POST /api/tokens/{id}/rotate": { schema: ApiTokenIssueResponse, name: "ApiTokenIssueResponse" },
+  "POST /api/tokens/{id}/revoke": { schema: ApiTokenPayload, name: "ApiTokenPayload" },
+  "DELETE /api/tokens/{id}": { name: "NoContent", status: "204", noContent: true },
+
+  /* 审核与通知 */
+  "POST /api/submissions": { schema: SubmissionCreateResponse, name: "SubmissionCreateResponse", status: "201" },
+  "PATCH /api/submissions/{number}": { schema: SubmissionReviewResponse, name: "SubmissionReviewResponse" },
+  "POST /api/admin/notifications/read-all": {
+    schema: NotificationReadAllResponse,
+    name: "NotificationReadAllResponse",
+  },
+  "POST /api/me/notifications/read-all": {
+    schema: NotificationReadAllResponse,
+    name: "NotificationReadAllResponse",
+  },
+  "POST /api/me/notifications/{id}/read": {
+    schema: NotificationReadAllResponse,
+    name: "NotificationReadAllResponse",
+  },
+
+  /* 插件市场公开写路由 */
+  "DELETE /api/plugins/{slug}/star": { schema: PluginStarResponse, name: "PluginStarResponse" },
+  "PATCH /api/plugins/{slug}/featured": { schema: PluginFeaturedResponse, name: "PluginFeaturedResponse" },
+  "POST /api/shortlinks": { schema: ShortlinkCreateResponse, name: "ShortlinkCreateResponse" },
+
+  /* 运维/存储管理面 */
+  "GET /api/admin/maintenance/status": { schema: MaintenanceStatusResponse, name: "MaintenanceStatusResponse" },
+  "POST /api/admin/maintenance/checkpoint": { schema: MaintenanceActionResult, name: "MaintenanceActionResult" },
+  "POST /api/admin/maintenance/optimize": { schema: MaintenanceActionResult, name: "MaintenanceActionResult" },
+  "POST /api/admin/maintenance/vacuum": { schema: MaintenanceActionResult, name: "MaintenanceActionResult" },
+  "GET /api/storage/list": { schema: StorageAssetListResponse, name: "StorageAssetListResponse" },
+  "PUT /api/storage": { schema: StorageWriteResponse, name: "StorageWriteResponse" },
+  "DELETE /api/storage": { schema: StorageDeleteResponse, name: "StorageDeleteResponse" },
+  "POST /api/admin/audit/scan": { schema: SiteAuditScanResponse, name: "SiteAuditScanResponse" },
+  "POST /api/admin/audit/apply": { schema: SiteAuditApplyResponse, name: "SiteAuditApplyResponse" },
+  "DELETE /api/admin/client-errors": { schema: OkResponse, name: "OkResponse" },
+  "POST /api/warmup": { schema: WarmupResponse, name: "WarmupResponse" },
+
+  /* 用户域写路由（设置/资料/令牌/会话/数据主权） */
+  "PATCH /api/me/settings": { schema: MeSettingsResponse, name: "MeSettingsResponse" },
+  "PATCH /api/me/profile": { schema: MeProfileUpdateResponse, name: "MeProfileUpdateResponse" },
+  "POST /api/me/tokens": { schema: MeTokenCreateResponse, name: "MeTokenCreateResponse" },
+  "DELETE /api/me/tokens/{id}": { schema: OkResponse, name: "OkResponse" },
+  "DELETE /api/me/sessions/{id}": { schema: OkResponse, name: "OkResponse" },
+  "POST /api/me/sessions/check": { schema: MeSessionCheckResponse, name: "MeSessionCheckResponse" },
+  "POST /api/me/diagnostics": { schema: MeDiagnosticsResponse, name: "MeDiagnosticsResponse" },
+  "POST /api/me/prune": { schema: MePruneResponse, name: "MePruneResponse" },
+  "DELETE /api/me": { schema: MeDeleteResponse, name: "MeDeleteResponse" },
+  "POST /api/me/merge": { schema: MeMergeResponse, name: "MeMergeResponse" },
+  "POST /api/me/favorites/sync": { schema: MeFavoritesSyncResponse, name: "MeFavoritesSyncResponse" },
+  "POST /api/me/import": { schema: MeImportResponse, name: "MeImportResponse" },
+  "DELETE /api/profile": { schema: ProfileResetResponse, name: "ProfileResetResponse" },
+  "DELETE /api/profile/signals/{kind}": {
+    schema: ProfileSignalClearResponse,
+    name: "ProfileSignalClearResponse",
+  },
+  "DELETE /api/search-history/{id}": { schema: OkResponse, name: "OkResponse" },
+  "DELETE /api/search-history": { schema: OkResponse, name: "OkResponse" },
+  "POST /api/search-history/batch-delete": {
+    schema: SearchHistoryBatchDeleteResponse,
+    name: "SearchHistoryBatchDeleteResponse",
+  },
+  "POST /api/users/sync": { schema: OauthUserSyncResponse, name: "OauthUserSyncResponse" },
+
+  /* 公开遥测写路由：204 无响应体也算「已绑定」 */
+  "POST /api/events": { schema: OkResponse, name: "OkResponse" },
+  "POST /api/vitals": { name: "NoContent", status: "204", noContent: true },
+  "POST /api/errors": { name: "NoContent", status: "204", noContent: true },
+
+  /* 团队空间（名册写回执） */
+  "POST /api/workspaces": { schema: WorkspaceCreateResponse, name: "WorkspaceCreateResponse", status: "201" },
+  "POST /api/workspaces/{id}/members": {
+    schema: WorkspaceMembersResponse,
+    name: "WorkspaceMembersResponse",
+  },
+  "DELETE /api/workspaces/{id}/members/{userId}": {
+    schema: WorkspaceMembersResponse,
+    name: "WorkspaceMembersResponse",
+  },
+  "POST /api/speculation/rules": { schema: SpeculationRulesResponse, name: "SpeculationRulesResponse" },
 };

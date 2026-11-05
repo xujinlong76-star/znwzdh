@@ -33,8 +33,15 @@ function isLexicalHit(hit: HubSearchHit): boolean {
   )
 }
 
-export async function loadSearchPage(q: string, page: number, tag?: string | null): Promise<SearchPageData> {
-  const result = await hubGet<HubSearchResult>(searchApiPath(q, page, tag))
+export async function loadSearchPage(
+  q: string,
+  page: number,
+  tag?: string | null,
+  opts: { category?: string | null; facets?: Record<string, string[]> } = {},
+): Promise<SearchPageData> {
+  const result = await hubGet<HubSearchResult>(
+    searchApiPath(q, page, tag, { category: opts.category, facets: opts.facets }),
+  )
   const failed = result === null
   let unavailable: HubSearchHit[] = []
   // 只在第 1 页补取：翻页时再插一段「不可用」列表会让分页语义错乱。
@@ -44,7 +51,9 @@ export async function loadSearchPage(q: string, page: number, tag?: string | nul
   // 主结果有字面命中、但用户要找的正是那个被误判的站点。按标题去重，
   // 避免同一站点在正常结果与巡检分区各出现一次（如 Cursor 的两条记录）。
   if (!failed && page === 1 && q) {
-    const broken = await hubGet<HubSearchResult>(searchApiPath(q, page, tag, { status: 'broken' }))
+    const broken = await hubGet<HubSearchResult>(
+      searchApiPath(q, page, tag, { status: 'broken', category: opts.category, facets: opts.facets }),
+    )
     const shownTitles = new Set(
       result.hits.map((hit) => hit.site?.title.trim().toLowerCase()).filter((title): title is string => !!title),
     )

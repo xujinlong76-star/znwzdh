@@ -1,5 +1,6 @@
 import type { Repository } from "../repository.ts";
 import { randomUUID } from "node:crypto";
+import { hashPassword, verifyPassword, validatePassword } from "@navhub/core";
 import type {
   UserRecord,
 } from "./records.ts";
@@ -49,8 +50,8 @@ export async function upsertOauthUser(repo: Repository, input: { id?: string; us
   // password_hash 为 NOT NULL；OAuth 用户无密码，置空串（本系统登录走 next-auth 会话，不查密码）
   const insert = async (username: string, email: string | null): Promise<void> => {
     await repo.run(
-      "INSERT INTO users (id, username, password_hash, role, email, avatar, source, created_at) VALUES (?,?,?,?,?,?,?,?)",
-      [id, username, "", "user", email, input.avatar ?? null, input.source ?? "github", Date.now()],
+      "INSERT INTO users (id, username, password_hash, role, email, avatar, source, email_verified, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      [id, username, "", "user", email, input.avatar ?? null, input.source ?? "github", 1, Date.now()],
     );
   };
   // username 全局唯一：插入失败逐层降级——原用户名+email → 原用户名+null email
@@ -77,7 +78,7 @@ export async function upsertOauthUser(repo: Repository, input: { id?: string; us
     await insert(disambiguated, null);
     storedUsername = disambiguated;
   }
-  return { id, username: storedUsername, role: "user", email: storedEmail, avatar: input.avatar ?? null, source: input.source ?? "github" };
+  return { id, username: storedUsername, role: "user", email: storedEmail, avatar: input.avatar ?? null, source: input.source ?? "github", emailVerified: true };
 }
 
 export async function getUser(repo: Repository, idOrUsername: string): Promise<UserRecord | null> {
@@ -122,8 +123,8 @@ export async function updateUserProfileInfo(
     const source = identity.includes(":") ? identity.split(":")[0]! : "local";
     const defaultName = cleanUsername || (identity.includes(":") ? identity.split(":").slice(1).join(":") : identity);
     await repo.run(
-      "INSERT INTO users (id, username, password_hash, role, email, avatar, source, created_at) VALUES (?,?,?,?,?,?,?,?)",
-      [identity, defaultName, "", "user", patch.email ?? null, patch.avatar ?? null, source, Date.now()],
+      "INSERT INTO users (id, username, password_hash, role, email, avatar, source, email_verified, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      [identity, defaultName, "", "user", patch.email ?? null, patch.avatar ?? null, source, 0, Date.now()],
     );
   } else {
     const nextUsername = cleanUsername ?? String(existing.username);
@@ -139,4 +140,141 @@ export async function updateUserProfileInfo(
   const updated = (await repo.raw("SELECT * FROM users WHERE id = ? LIMIT 1", [identity]))[0];
   if (!updated) return { ok: false, reason: "invalid_input" };
   return { ok: true, user: rowToUser(updated) };
+}
+
+/* ------------------------- 账号生命周期（注册/登录/找回） ------------------------- */
+
+/** 邮箱格式的宽松校验：只挡明显非法，不追求 RFC 完备（注册转化率优先） */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** 按邮箱查用户（邮箱非唯一索引，这里做应用层查重） */
+export async function findUserByEmail(repo: Repository, email: string): Promise<UserRecord | null> {
+  const row = (
+    await repo.raw("SELECT * FROM users WHERE email = ? LIMIT 1", [email])
+  )[0];
+  return row ? rowToUser(row) : null;
+}
+
+/** 按用户 id 查邮箱（通知 email 投递用）；无邮箱返回 null */
+export async function findUserEmailById(repo: Repository, userId: string): Promise<string | null> {
+  const row = (
+    await repo.raw("SELECT email FROM users WHERE id = ? LIMIT 1", [userId])
+  )[0];
+  return row?.email ?? null;
+}
+
+/**
+ * 按「邮箱或用户名」查用户（登录入口）。
+ * 顺序：邮箱优先（注册以邮箱为主键心智），再用户名。
+ */
+export async function findUserByIdentifier(
+  repo: Repository,
+  identifier: string,
+): Promise<UserRecord | null> {
+  const id = identifier.trim();
+  if (!id) return null;
+  const byEmail = (await repo.raw("SELECT * FROM users WHERE email = ? LIMIT 1", [id]))[0];
+  if (byEmail) return rowToUser(byEmail);
+  const byName = (await repo.raw("SELECT * FROM users WHERE username = ? LIMIT 1", [id]))[0];
+  return byName ? rowToUser(byName) : null;
+}
+
+export type CreateUserResult =
+  | { ok: true; user: UserRecord }
+  | { ok: false; reason: "username_taken" | "email_taken" | "invalid_username" | "invalid_email" | "invalid_password" };
+
+/**
+ * 创建带密码的用户（注册）。
+ *
+ * 用户名冲突与邮箱冲突都返回可读原因，前端据此提示；密码在写入前用 scrypt 哈希，
+ * 明文绝不落库。email_verified 默认 0——注册后必须走邮箱验证才能获得完整权限。
+ */
+export async function createUserWithPassword(
+  repo: Repository,
+  input: { username: string; email: string; password: string },
+): Promise<CreateUserResult> {
+  const username = input.username.trim();
+  const email = input.email.trim().toLowerCase();
+  const pwError = validatePassword(input.password);
+  if (pwError) return { ok: false, reason: "invalid_password" };
+  if (username.length < 1 || username.length > 40) return { ok: false, reason: "invalid_username" };
+  if (!EMAIL_RE.test(email)) return { ok: false, reason: "invalid_email" };
+
+  const nameTaken = (
+    await repo.raw("SELECT id FROM users WHERE username = ? LIMIT 1", [username])
+  )[0];
+  if (nameTaken) return { ok: false, reason: "username_taken" };
+  const emailTaken = (
+    await repo.raw("SELECT id FROM users WHERE email = ? LIMIT 1", [email])
+  )[0];
+  if (emailTaken) return { ok: false, reason: "email_taken" };
+
+  const id = randomUUID();
+  const passwordHash = await hashPassword(input.password);
+  try {
+    await repo.run(
+      "INSERT INTO users (id, username, password_hash, role, email, avatar, source, email_verified, created_at) " +
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+      [id, username, passwordHash, "user", email, null, "local", 0, Date.now()],
+    );
+  } catch (err) {
+    // 并发注册撞唯一约束：转成可读原因，不把底层 SQL 错误透给前端
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/users_username_idx|UNIQUE/i.test(msg)) return { ok: false, reason: "username_taken" };
+    throw err;
+  }
+  const created = (await repo.raw("SELECT * FROM users WHERE id = ? LIMIT 1", [id]))[0];
+  if (!created) throw new Error("注册后无法读回用户行");
+  return { ok: true, user: rowToUser(created) };
+}
+
+/**
+ * 校验口令登录。
+ *
+ * 返回 null 表示「用户不存在或密码错误」——**不区分两者**，避免账号枚举
+ * （攻击者可用「该邮箱是否注册」来缩小撞库范围）。
+ */
+export async function verifyUserPassword(
+  repo: Repository,
+  identifier: string,
+  password: string,
+): Promise<UserRecord | null> {
+  const user = await findUserByIdentifier(repo, identifier);
+  if (!user) {
+    // 用户不存在时仍做一次哈希校验，抹平响应时间差异（防时序侧信道）
+    await verifyPassword(password, "scrypt$16384$8$1$AAAA$AAAA");
+    return null;
+  }
+  const row = (
+    await repo.raw("SELECT password_hash FROM users WHERE id = ? LIMIT 1", [user.id])
+  )[0];
+  const hash = row?.password_hash;
+  if (!hash) return null;
+  const ok = await verifyPassword(password, String(hash));
+  return ok ? user : null;
+}
+
+/** 更新密码（找回密码流程用）：先哈希再写，明文不落库 */
+export async function updateUserPassword(
+  repo: Repository,
+  userId: string,
+  newPassword: string,
+): Promise<boolean> {
+  const pwError = validatePassword(newPassword);
+  if (pwError) return false;
+  const passwordHash = await hashPassword(newPassword);
+  const changes = await repo.runCount(
+    "UPDATE users SET password_hash = ? WHERE id = ?",
+    [passwordHash, userId],
+  );
+  return changes > 0;
+}
+
+/** 标记邮箱已验证（邮箱验证流程消费令牌后调用） */
+export async function setUserEmailVerified(repo: Repository, userId: string): Promise<boolean> {
+  const changes = await repo.runCount(
+    "UPDATE users SET email_verified = 1 WHERE id = ?",
+    [userId],
+  );
+  return changes > 0;
 }

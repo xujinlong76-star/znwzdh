@@ -196,7 +196,19 @@ export function findDidYouMeanSuggestion(
   maxDistance = 2
 ): string | null {
   const normQuery = query.trim().toLowerCase();
-  if (!normQuery || normQuery.length < 3) return null;
+  /**
+   * 最短长度：**拉丁 3、中文 2**。
+   *
+   * 拉丁维持 3：go/ai 这类 2 字母缩写做编辑距离纠错只会召出噪声（见
+   * query-intent.test.ts 的 "ai" 用例）。
+   *
+   * 中文降到 2：汉字信息密度高，2 字已是完整词（字体/简历/小说/代理…），而 2 字
+   * 中文「打错一个字」的编辑距离恰好是 1 —— 下面对短词已把 effectiveMax 收紧到 1，
+   * 不会出现「两字之差就是另一个词」的误纠。硬卡 3 等于让站内最常见的查询长度
+   * （2 字中文）永远拿不到「您是不是想搜…」。
+   */
+  const minQueryLen = /[\u4e00-\u9fa5]/.test(normQuery) ? 2 : 3;
+  if (!normQuery || normQuery.length < minQueryLen) return null;
 
   let bestCandidate: string | null = null;
   let minDistance = maxDistance + 1;

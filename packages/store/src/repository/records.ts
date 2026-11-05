@@ -195,6 +195,8 @@ export interface UserRecord {
   email: string | null;
   avatar: string | null;
   source: string;
+  /** 邮箱是否已验证（注册/找回密码流程） */
+  emailVerified: boolean;
 }
 
 /** API token 记录（**不含 token_hash 明文**——哈希只在查询入参里出现，不进返回值） */
@@ -260,6 +262,28 @@ export interface TagWithCount {
   color?: string | null;
   description?: string | null;
   aliases: string[];
+}
+
+/**
+ * 共现相关标签（基于站点共享的标签关联，packages/store 零实现 → 本次新增）。
+ *
+ * 为什么是「共现」而不是「语义相似」：标签本身没有向量、没有描述覆盖率，
+ * 唯一可靠信号是「同一批站点同时挂了这两个标签」。两个标签共现的站点越多，
+ * 它们越像「同一主题的不同侧面」——这是纯 SQL 从 site_tags 聚合就能拿到的
+ * 信号，不需要任何模型，也不引入新表。
+ *
+ * sharedSites = 同时挂了「本标签」与「该相关标签」的**存活**站点数
+ * （与 listTagsWithCounts 同口径：deleted_at IS NULL / enabled / status='active'），
+ * 这样相关标签的排序不会被软删除站点抬上去。
+ */
+export interface RelatedTag {
+  id: string;
+  name: string;
+  slug: string;
+  group: string;
+  color: string | null;
+  /** 共现存活站点数；越大越相关 */
+  sharedSites: number;
 }
 
 export interface TagAliasRecord {

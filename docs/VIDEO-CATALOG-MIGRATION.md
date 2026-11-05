@@ -90,7 +90,52 @@ NAVHUB_VIDEO_STORE=db     # 重启 API
   `video-library-store`）都走 `commitFile → PUT /api/storage`，即都会触发
   `syncVideoCatalogSafely`。新增写入口时必须同样走 `commitFile`，不要直连数据库。
 
-## 6. 排障
+## 6. 缩水保护与二阶段确认
+
+`videos.json` 是整包覆盖写，所以中枢保留了一道按条数的守卫（升级方案 P2 只让它
+**可操作**，门槛一个字没动）：
+
+- 基线：**即将被覆盖的 `videos` KV 文档当前条数**（`currentVideoBaseline`）；
+  只有文档从未写入过时才回落关系表 `video_items` 的条数。
+- 触发：基线 ≥ **100** 条，且待写入条数 < 基线 × **80%**。
+- 结果：`409`，`error` 为三种码之一 ——
+  `video_shrink_requires_confirmation` / `video_shrink_expected_count_required` /
+  `video_shrink_expected_count_mismatch`。
+
+确认可合法删库的操作者要**同时**带两个参数（只带一个不放行，两者都必须由调用方明示）：
+
+| 入口 | 怎么带 |
+|---|---|
+| `PUT /api/storage` | body 里 `confirmLargeDeletion: true` + `expectedCount: <本次真实条数>`；409 响应里的 `retryWith` 就是这两个值，照抄即可 |
+| CLI 重灌 | `pnpm video:catalog --from-file x.json --confirm-large-deletion --expected-count 120`（只给一半会直接失败，不静默丢参数） |
+| 管理端整包保存 | `PUT /api/videos` 的 body 里带同样两个字段（它们会被从文档里剥出来，不会写进 `videos.json`）；被拦时返回 409 而不是 500，`message` 里就是守卫原文 |
+
+overlay 侧（`video-library-store`）本地也有一道同判据的守卫，它在写入前先拦：
+只有 `confirmLargeDeletion === true` **且** `expectedCount` 与算出来的条数逐字相等才放行。
+判据必须和中枢一致，否则会出现「中枢准备放行、本地先拦死」的错位。
+另外，中枢的缩水 409 **不能**被当成版本冲突重放 —— 重放同一份内容只会连撞三次，
+最后还给操作者一句误导性的「视频库正在被并发修改，请刷新后重试」。
+
+`github` / `sqlite` 适配器与 `ifVersion` 一样忽略这两个参数（那两个后端没有这道守卫）。
+
+`expectedCount` 必须与解析出来的真实条数逐字相等。这是刻意的：否则一个陈旧的确认框
+（或一个无脑 `confirm=true` 的脚本）能把任意内容盖掉，保护退化成布尔开关。
+
+两条路径都进审计，事后能查到「谁、删了多少、按什么数字放行的」：
+
+- `storage.videos.shrink_blocked` —— 被拦下的尝试（含 `code` 与三个条数）；
+- `storage.videos.large_deletion` —— 确认放行后的写入（含 `existingCount` /
+  `incomingCount` / `minimumAllowed` / `declaredExpectedCount`；CLI 走这条时
+  `actor=cli:video-catalog`、`actorKind=system`）。
+
+**基线为什么取 KV 而不是关系表**：`json`（默认）模式不写关系表，按表计数会让
+守卫在默认部署上恒为 0（形同虚设）；反过来，手工跑过全量导入的实例表里可能比
+KV 多（分叉），按表计数又会把一次**原样保存**误判成缩水。判据必须对着
+「马上要被覆盖的那份文档」。`navigation.json` 走同一套两阶段确认，基线是
+「这份快照有权删除的托管站点数」（`source` 受管且类目在快照可见集里），
+错误码与审计动作为 `navigation_shrink_*` / `storage.navigation.*`。
+
+## 7. 排障
 
 | 现象 | 检查 |
 |---|---|

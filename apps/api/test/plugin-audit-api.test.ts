@@ -13,6 +13,7 @@ import { validateAndCleanPluginManifest } from "@navhub/core";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
+import { resetPluginAuditBudgetForTests, seedPluginAuditFlightForTests } from "../src/routes/plugin-audit.ts";
 
 let dir: string;
 let ctx: AppContext;
@@ -110,7 +111,7 @@ describe("POST /api/plugins/:slug/audit", () => {
     expect(body.params.maxRedirects).toBe(6);
   })
 
-  it("抽样参数被夹紧：limit=9999 → 上限 200，且不超过声明条数", async () => {
+  it("抽样参数被夹紧：limit=9999 → 上限 100，且不超过声明条数", async () => {
     const urls = Array.from({ length: 12 }, (_, i) => `https://127.0.0.1/x${i}`);
     await seedPack("audit-clamp-pack", "体检抽样包", urls);
     const res = await app.inject({
@@ -119,7 +120,7 @@ describe("POST /api/plugins/:slug/audit", () => {
       payload: { limit: 9999, timeoutMs: 500 },
     });
     const body = res.json();
-    expect(body.params.sample).toBe(200);
+    expect(body.params.sample).toBe(100);
     expect(body.sampled).toBe(12);
   })
 
@@ -131,6 +132,53 @@ describe("POST /api/plugins/:slug/audit", () => {
     expect(body.declared).toBe(60);
     expect(body.params.sample).toBe(30);
     expect(body.sampled).toBe(30);
+  })
+
+  it("同一插件同一参数已在体检中 → 共享结果并标记 coalesced（不重复出站）", async () => {
+    await seedPack("audit-coalesce-pack", "单飞体检包", ["https://127.0.0.1/c1"]);
+    seedPluginAuditFlightForTests("audit-coalesce-pack|30|4000", {
+      ok: true,
+      slug: "audit-coalesce-pack",
+      sampled: 1,
+      fromFlight: true,
+    });
+    try {
+      const res = await app.inject({ method: "POST", url: "/api/plugins/audit-coalesce-pack/audit" });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.coalesced).toBe(true);
+      expect(body.fromFlight).toBe(true);
+    } finally {
+      resetPluginAuditBudgetForTests();
+    }
+  })
+
+  it("出站预算按抽样条数扣减：用尽后 429 + retry-after（限流只算请求数）", async () => {
+    resetPluginAuditBudgetForTests();
+    const urls = Array.from({ length: 120 }, (_, i) => `https://127.0.0.1/b${i}`);
+    await seedPack("audit-budget-pack", "预算体检包", urls);
+    try {
+      // 6 × 100 条 = 窗口额度 600，恰好用尽
+      for (let i = 0; i < 6; i++) {
+        const res = await app.inject({
+          method: "POST",
+          url: "/api/plugins/audit-budget-pack/audit",
+          payload: { limit: 100, timeoutMs: 500 },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json().sampled).toBe(100);
+      }
+      const denied = await app.inject({
+        method: "POST",
+        url: "/api/plugins/audit-budget-pack/audit",
+        payload: { limit: 100, timeoutMs: 500 },
+      });
+      expect(denied.statusCode).toBe(429);
+      expect(denied.headers["retry-after"]).toBe("60");
+      expect(denied.json().error).toBe("outbound_budget_exhausted");
+    } finally {
+      resetPluginAuditBudgetForTests();
+    }
   })
 })
 

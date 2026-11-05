@@ -339,7 +339,7 @@ export function VideoAutonomousHarvestConsole({
                         <div className="min-w-0 pr-2">
                           <p className="font-medium text-foreground truncate">{c.title}</p>
                           <p className="text-[10px] text-muted-foreground">
-                            {c.categoryTitle} · UP主: {c.author} · 时长: {formatDuration(c.durationSec)}
+                            {c.subCategoryTitle ? `${c.categoryTitle} · ${c.subCategoryTitle}` : c.categoryTitle} · UP主: {c.author} · 时长: {formatDuration(c.durationSec)}
                           </p>
                         </div>
                         <div className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-primary/10 text-primary border border-primary/20">

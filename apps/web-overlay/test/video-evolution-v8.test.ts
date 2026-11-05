@@ -23,6 +23,7 @@ import {
   createExpect,
   runLiveCodeTest,
 } from '@/lib/video-live-test-runner'
+import type { OpaqueSession } from '@/lib/video-opaque-sandbox'
 import {
   calculateBKTUpdate,
   BayesianKnowledgeTracer,
@@ -197,21 +198,46 @@ describe('Proposal [5]: Timeline-Driven Live Unit Test Runner', () => {
       console.log("Add function ready");
     `
 
+    // 被测代码搬进不透明源沙盒之后，用例是**数据**（exportName / args / assertion）而不是闭包。
+    // node 里没有 DOM，真沙盒只会给 unavailable（那正是「不许降级回同源」要的读数），
+    // 所以这里用 stub 会话顶上，测的是跑通之后的判定与日志归集。
+    const stub: OpaqueSession = {
+      logs: [{ level: 'log', text: 'Add function ready', timestamp: 1 }],
+      load: async () => ({ ok: true, logs: [], hasValue: false, durationMs: 1 }),
+      invoke: async (_name, args) => ({
+        ok: true,
+        logs: [],
+        hasValue: true,
+        value: (args?.[0] ?? 0) + (args?.[1] ?? 0),
+        durationMs: 1,
+      }),
+      close: () => {},
+    }
+
     const testCases = [
       {
         id: 'tc-1',
         title: '测试加法',
-        testFn: ({ expect }: any) => {
-          const fn = new Function(`const exports = {}; ${userCode}; return exports.add;`)()
-          expect(fn(2, 3)).toBe(5)
-        },
+        exportName: 'add',
+        args: [2, 3],
+        assertion: { kind: 'toBe' as const, expected: 5 },
       },
     ]
 
-    const res = await runLiveCodeTest('Math Test Suite', userCode, testCases)
+    const res = await runLiveCodeTest('Math Test Suite', userCode, testCases, {
+      openSession: async () => stub,
+    })
     expect(res.passedCount).toBe(1)
     expect(res.failedCount).toBe(0)
     expect(res.consoleLogs).toContain('Add function ready')
+  })
+
+  it('沙盒不可用时判 blocked，而不是把用户代码跑一遍', async () => {
+    const res = await runLiveCodeTest('Math Test Suite', 'console.log("被执行了"); exports.add = () => 5', [
+      { id: 'tc-1', title: '测试加法', exportName: 'add', args: [], assertion: { kind: 'toBe' as const, expected: 5 } },
+    ])
+    expect(res.blocked).toBe('unavailable')
+    expect(res.consoleLogs, '用户代码在无隔离环境里真的跑了 ⇒ 有同源回退').toEqual([])
   })
 })
 

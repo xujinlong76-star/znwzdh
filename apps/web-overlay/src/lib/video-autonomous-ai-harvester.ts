@@ -20,6 +20,12 @@ import { videoExternalKey } from '@/lib/video-identity'
 import { enrichVideoItemSeo, submitUrlsToIndexNow } from '@/lib/video-seo'
 import { harvestMultiPlatformVideosForKeyword } from '@/lib/video-multi-platform-harvester'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
+import {
+  routeVideoToSubcategory,
+  isFuzzyDuplicateVideo,
+  extractTechBadgesAndDifficulty,
+  normalizeVideoCoverUrl,
+} from './video-subcategory-router'
 
 export interface AIEvaluationResult {
   aiQualityScore: number // 0 - 100
@@ -71,6 +77,7 @@ export interface AutonomousHarvestCycleReport {
   newCourses: Array<{
     title: string
     categoryTitle: string
+    subCategoryTitle?: string
     author: string
     aiScore: number
     durationSec: number
@@ -512,19 +519,52 @@ export class AutonomousAIHarvesterController {
 
       const enrichedItem = enrichVideoItemSeo(rawSubItem, targetCat.title)
 
+      let routedSubTitle: string | undefined = undefined
       if (!options.dryRun) {
         if (targetCat.subCategories && targetCat.subCategories.length > 0) {
-          targetCat.subCategories[0].items.push(enrichedItem)
+          const match = routeVideoToSubcategory(
+            {
+              title: enrichedItem.title,
+              description: enrichedItem.description,
+              trendKeyword: topic.keyword,
+              tags: enrichedItem.tags,
+            },
+            targetCat.subCategories
+          )
+          const targetSub = match.targetSub
+          routedSubTitle = targetSub.title
+          if (enrichedItem.videoConfig) {
+            enrichedItem.videoConfig.subCategoryId = targetSub.id
+            enrichedItem.videoConfig.subCategoryTitle = targetSub.title
+          }
+          if (!targetSub.items) targetSub.items = []
+          targetSub.items.unshift(enrichedItem)
+          this.addLog(
+            'approved',
+            `🎯 智能语义分流: 将《${enrichedItem.title}》精准归入子方向「${targetSub.title}」(${match.matchReason})`
+          )
         } else {
-          targetCat.items.push(enrichedItem)
+          targetCat.items.unshift(enrichedItem)
         }
         existingIds.add(topicKey)
+      } else if (targetCat.subCategories && targetCat.subCategories.length > 0) {
+        const match = routeVideoToSubcategory(
+          {
+            title: enrichedItem.title,
+            description: enrichedItem.description,
+            trendKeyword: topic.keyword,
+            tags: enrichedItem.tags,
+          },
+          targetCat.subCategories
+        )
+        routedSubTitle = match.targetSub.title
       }
 
       categoriesEnriched.add(targetCat.title)
       newCourses.push({
         title: meta.cleanTitle,
         categoryTitle: targetCat.title,
+        subCategoryTitle: routedSubTitle,
         author: topic.author,
         aiScore: evalResult.aiQualityScore,
         durationSec: topic.durationSec,
@@ -573,6 +613,17 @@ export class AutonomousAIHarvesterController {
               const candKey = videoExternalKey(cand.videoConfig)
               if (!candKey || existingIds.has(candKey)) continue
 
+              // 模糊相似度去重：防跨平台同质化教程
+              const existingCatTitles = [
+                ...(cat.items || []),
+                ...(cat.subCategories || []).flatMap(s => s.items || []),
+              ].map(it => it.title).filter(Boolean)
+              const fuzzy = isFuzzyDuplicateVideo(cand.title, existingCatTitles)
+              if (fuzzy.isDuplicate) {
+                this.addLog('info', `跳过高度相似视频: "${cand.title}" (与既有课程「${fuzzy.matchedTitle}」相似度 ${(fuzzy.similarity || 0) * 100}%)`)
+                continue
+              }
+
               const evalRes = evaluateVideoWithAIModel({
                 title: cand.title,
                 description: cand.description,
@@ -593,11 +644,18 @@ export class AutonomousAIHarvesterController {
                 `AI 审核通过: "${cand.title}" (平台: ${cand.videoConfig?.type}) - 综合评分: ${evalRes.aiQualityScore}分 (${evalRes.pedagogicalValue})`
               )
 
+              // 萃取标签与规范化封面
+              const { tags, difficulty } = extractTechBadgesAndDifficulty(cand.title, cand.description)
+              cand.tags = Array.from(new Set([...(cand.tags || []), ...tags]))
+              cand.icon = normalizeVideoCoverUrl(cand.icon, cand.videoConfig?.type)
+
               const enrichedCand = enrichVideoItemSeo(
                 {
                   ...cand,
                   videoConfig: {
                     ...cand.videoConfig!,
+                    tags: cand.tags,
+                    difficulty,
                     qualityScore: evalRes.aiQualityScore,
                     freshnessScore: calculateFreshnessScore(
                       cand.videoConfig?.publishedAt,
@@ -610,19 +668,52 @@ export class AutonomousAIHarvesterController {
                 cat.title
               )
 
+              let routedSubTitle: string | undefined = undefined
               if (!options.dryRun) {
                 if (cat.subCategories && cat.subCategories.length > 0) {
-                  cat.subCategories[0].items.push(enrichedCand)
+                  const match = routeVideoToSubcategory(
+                    {
+                      title: enrichedCand.title,
+                      description: enrichedCand.description,
+                      trendKeyword: kw,
+                      tags: enrichedCand.tags,
+                    },
+                    cat.subCategories
+                  )
+                  const targetSub = match.targetSub
+                  routedSubTitle = targetSub.title
+                  if (enrichedCand.videoConfig) {
+                    enrichedCand.videoConfig.subCategoryId = targetSub.id
+                    enrichedCand.videoConfig.subCategoryTitle = targetSub.title
+                  }
+                  if (!targetSub.items) targetSub.items = []
+                  targetSub.items.unshift(enrichedCand)
+                  this.addLog(
+                    'approved',
+                    `🎯 智能语义分流: 将《${enrichedCand.title}》精准归入子方向「${targetSub.title}」(${match.matchReason})`
+                  )
                 } else {
-                  cat.items.push(enrichedCand)
+                  cat.items.unshift(enrichedCand)
                 }
                 existingIds.add(candKey)
+              } else if (cat.subCategories && cat.subCategories.length > 0) {
+                const match = routeVideoToSubcategory(
+                  {
+                    title: enrichedCand.title,
+                    description: enrichedCand.description,
+                    trendKeyword: kw,
+                    tags: enrichedCand.tags,
+                  },
+                  cat.subCategories
+                )
+                routedSubTitle = match.targetSub.title
               }
 
               categoriesEnriched.add(cat.title)
               newCourses.push({
                 title: cand.title,
                 categoryTitle: cat.title,
+                subCategoryTitle: routedSubTitle,
                 author: cand.videoConfig?.author || '技术创作者',
                 aiScore: evalRes.aiQualityScore,
                 durationSec: cand.videoConfig?.durationSec || 600,

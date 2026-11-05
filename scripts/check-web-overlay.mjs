@@ -13,6 +13,14 @@
  *    不联网拿不到上游 tarball 就无法区分（见 sync-web-overlay.mjs 的 owned 判定），
  *    所以这里只列出候选告警，不判失败；要确诊请跑 `node scripts/sync-web-overlay.mjs`。
  *
+
+ * ⚠️ apps/web 现已改为 GENERATED 产物（不再手维护）：
+ *   它的 overlay 对应文件由 `node scripts/generate-web-mirror.mjs`（pnpm mirror:web）
+ *   从唯一事实源 apps/web-overlay 合并式生成。CI / pre-commit 的 check:overlay 已改为
+ *   「先跑生成器、再跑本校验」，所以漂移会被自动修复（闸门自愈），而不是卡在人工同步上。
+ *   若本脚本仍报漂移，先跑 `pnpm mirror:web` 再复测；不要手改 apps/web 里的覆盖层文件。
+ *   语义与排除规则见 scripts/generate-web-mirror.mjs 头部，isExcluded 口径与本脚本一致。
+
  * 用法：
  *   node scripts/check-web-overlay.mjs          # 只检查（全仓库）
  *   node scripts/check-web-overlay.mjs --staged # 只对「本次提交涉及的文件」判失败（pre-commit 用）

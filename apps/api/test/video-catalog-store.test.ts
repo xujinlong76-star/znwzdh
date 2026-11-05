@@ -5,13 +5,17 @@
  *   1. 影子表写失败不能让正本写入失败；
  *   2. db 模式下表为空必须回落文档，不能返回空视频库；
  *   3. 文档里的子分类与重复 id 必须能无损 round-trip。
+ *
+ * 另覆盖缩水保护的二阶段确认（升级方案 P2）：保护本身不许放松，但合法的
+ * 大规模删除必须有可走的路，且三个写入口（HTTP / 存储层 / CLI）都得带上这条路。
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
+import { buildServer } from "../src/server.ts";
 import {
   checkVideoCatalogConsistency,
   flattenVideoCatalog,
@@ -24,7 +28,18 @@ import {
   videoCatalogSyncState,
   VIDEO_REPLACEMENTS_PATH,
 } from "../src/video-catalog.ts";
-import { readVideosData, writeStoragePath, writeVideosData } from "../src/storage.ts";
+import {
+  evaluateVideoShrink,
+  readKv,
+  readKvVersion,
+  readVideosData,
+  VIDEO_SHRINK_KEEP_RATIO,
+  VIDEO_SHRINK_MIN_BASELINE,
+  VideoShrinkError,
+  writeStoragePath,
+  writeVideosData,
+  type VideoShrinkVerdict,
+} from "../src/storage.ts";
 import { countVideoItems, listVideoCategories, listVideoItems, listVideoReplacements } from "@navhub/store";
 
 /** 刻意构造三种边界：子分类、重复 id、章节大字段 */
@@ -398,5 +413,261 @@ describe('外置替换审计：全量进表，不受内联 100 条限制', () =>
       JSON.stringify({ version: 1, records: makeRecords(5) }),
     )
     expect(await listVideoReplacements(ctx.repo, { limit: 500 })).toHaveLength(0)
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * 缩水保护的二阶段确认（升级改造方案 P2）
+ *
+ * 保护门槛（100 条基线 / 80% 保留率）一个字都不许动；这里加的只是
+ * 「合法的大规模删除怎么过去」，以及「过去之后要留下什么痕迹」。
+ * ------------------------------------------------------------------ */
+describe('缩水保护二阶段确认', () => {
+  const VIDEOS_PATH = 'src/navsphere/content/videos.json'
+
+  /** 条数就是缩水判据的分子，夹具必须能精确控制它 */
+  const makeDoc = (n: number) => ({
+    navigationItems: [
+      {
+        id: 'cat_bulk',
+        title: '批量',
+        enabled: true,
+        items: Array.from({ length: n }, (_, i) => ({
+          id: `bulk-${i}`,
+          title: `条目 ${i}`,
+          href: `https://example.com/bulk-${i}`,
+          enabled: true,
+        })),
+      },
+    ],
+  })
+
+  /** 把库内条数抬到基线门槛之上（只有 dual/db 模式才会真的写影子表） */
+  async function seedBaseline(n: number): Promise<void> {
+    process.env.NAVHUB_VIDEO_STORE = 'dual'
+    await writeVideosData(ctx, makeDoc(n))
+    expect(await countVideoItems(ctx.repo)).toBe(n)
+  }
+
+  const shrinkTo = async (n: number, opts?: Parameters<typeof writeVideosData>[3]): Promise<VideoShrinkError> => {
+    try {
+      await writeVideosData(ctx, makeDoc(n), undefined, opts)
+    } catch (err) {
+      if (err instanceof VideoShrinkError) return err
+      throw err
+    }
+    throw new Error('预期被缩水保护拦下，但写入成功了')
+  }
+
+  it('门槛本身没有被放松（常量即判据）', () => {
+    expect(VIDEO_SHRINK_MIN_BASELINE).toBe(100)
+    expect(VIDEO_SHRINK_KEEP_RATIO).toBe(0.8)
+  })
+
+  it('判定：存量不足或保留率达标都不算缩水', () => {
+    // 首次导入 / 小库没有可比较的历史，拦它就是把正常写入判死
+    expect(evaluateVideoShrink(VIDEO_SHRINK_MIN_BASELINE - 1, 0)).toBeNull()
+    expect(evaluateVideoShrink(0, 0)).toBeNull()
+    // 恰好保留 80% 允许，差一条就拦
+    expect(evaluateVideoShrink(200, 160)).toBeNull()
+    expect(evaluateVideoShrink(200, 159)).toMatchObject({ existingCount: 200, incomingCount: 159, minimumAllowed: 160 })
+    // 清空整库是最极端的缩水：下限仍按比例算，不留「0 也算合法」的口子
+    expect(evaluateVideoShrink(201, 0)).toMatchObject({ minimumAllowed: 161 })
+  })
+
+  it('未确认：拒绝，且拒绝发生在写入之前（正本与影子表都不动）', async () => {
+    await seedBaseline(200)
+    const before = await readKv(ctx, 'videos')
+
+    const err = await shrinkTo(10)
+    expect(err).toBeInstanceOf(VideoShrinkError)
+    expect(err.code).toBe('video_shrink_requires_confirmation')
+    expect(err.statusCode).toBe(409)
+    // 报错文案要给操作者能直接照抄的参数，而不是只说「被拒绝」
+    expect(err.message).toContain('confirmLargeDeletion=true')
+    expect(err.message).toContain('expectedCount=10')
+
+    expect(await readKv(ctx, 'videos')).toEqual(before)
+    expect(await countVideoItems(ctx.repo)).toBe(200)
+  })
+
+  it('只给 confirm 不给 expectedCount：仍然拒绝（否则确认退化成一个布尔开关）', async () => {
+    await seedBaseline(200)
+    const err = await shrinkTo(10, { confirmLargeDeletion: true })
+    expect(err.code).toBe('video_shrink_expected_count_required')
+    expect(await countVideoItems(ctx.repo)).toBe(200)
+  })
+
+  it('expectedCount 与真实条数不符：拒绝，并把「声明 / 实际」两个数字都说出来', async () => {
+    await seedBaseline(200)
+    // 确认框过期后拿旧数字来点、或脚本无脑带 confirm=true，都走这一支
+    const err = await shrinkTo(10, { confirmLargeDeletion: true, expectedCount: 5 })
+    expect(err.code).toBe('video_shrink_expected_count_mismatch')
+    expect(err.verdict).toMatchObject({ incomingCount: 10, declaredExpectedCount: 5 })
+    expect(err.message).toContain('声明 5 条')
+    expect(err.message).toContain('实际 10 条')
+    expect(await countVideoItems(ctx.repo)).toBe(200)
+  })
+
+  it('两段确认齐全：放行，且确认回调在落库之后恰好触发一次', async () => {
+    await seedBaseline(200)
+    const calls: VideoShrinkVerdict[] = []
+    await writeVideosData(ctx, makeDoc(10), undefined, {
+      confirmLargeDeletion: true,
+      expectedCount: 10,
+      onLargeDeletionConfirmed: (v) => { calls.push(v) },
+    })
+
+    expect(await countVideoItems(ctx.repo)).toBe(10)
+    const stored = (await readVideosData(ctx)) as { navigationItems: { items: unknown[] }[] }
+    expect(stored.navigationItems[0].items).toHaveLength(10)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ existingCount: 200, incomingCount: 10, minimumAllowed: 160 })
+  })
+
+  it('确认后写入仍可能失败（版本冲突）：半途失败不留「已放行」记录', async () => {
+    await seedBaseline(200)
+    const staleVersion = (await readKvVersion(ctx, 'videos'))! - 1
+    const calls: VideoShrinkVerdict[] = []
+
+    const err = await writeVideosData(ctx, makeDoc(10), staleVersion, {
+      confirmLargeDeletion: true,
+      expectedCount: 10,
+      onLargeDeletionConfirmed: (v) => { calls.push(v) },
+    }).then(() => null, (e: unknown) => e as Error)
+
+    expect(err?.name).toBe('StorageVersionConflictError')
+    // 数据没落地却记了一条「已放行」，会让排查者以为库已被新内容覆盖
+    expect(calls).toHaveLength(0)
+    expect(await countVideoItems(ctx.repo)).toBe(200)
+  })
+
+  it('存储层入口把确认参数透传给 videos.json 分支（三个写入口口径一致）', async () => {
+    await seedBaseline(200)
+    const content = JSON.stringify(makeDoc(10))
+
+    // 不带确认 → 拒
+    await expect(writeStoragePath(ctx, VIDEOS_PATH, content)).rejects.toBeInstanceOf(VideoShrinkError)
+    expect(await countVideoItems(ctx.repo)).toBe(200)
+
+    // 带两段确认 → 过。这条断言测的是「参数在半路被丢掉」这个接线缺陷
+    await expect(
+      writeStoragePath(ctx, VIDEOS_PATH, content, { confirmLargeDeletion: true, expectedCount: 10 }),
+    ).resolves.toMatchObject({ ok: true })
+    expect(await countVideoItems(ctx.repo)).toBe(10)
+  })
+
+  it('json 模式（默认）也真的会拦：基线取即将被覆盖的 KV 文档，而不是空影子表', async () => {
+    // 不切 dual：表保持 0 条，KV 通过正常写入达到 200 条。
+    // 旧基线取表 COUNT 时这里恒为 0，守卫在默认模式下形同虚设。
+    await writeVideosData(ctx, makeDoc(200))
+    expect(await countVideoItems(ctx.repo)).toBe(0)
+
+    const err = await shrinkTo(10)
+    expect(err.code).toBe('video_shrink_requires_confirmation')
+    expect(err.verdict).toMatchObject({ existingCount: 200, incomingCount: 10 })
+  })
+
+  it('影子表与 KV 分叉时不误拦正常保存：基线是 KV 自己的条数', async () => {
+    process.env.NAVHUB_VIDEO_STORE = 'dual'
+    await writeVideosData(ctx, makeDoc(200))
+    // 模拟手工导入：表被换成 300 条，KV 仍是 200 条
+    await syncVideoCatalog(ctx, makeDoc(300))
+    expect(await countVideoItems(ctx.repo)).toBe(300)
+    process.env.NAVHUB_VIDEO_STORE = 'json'
+
+    // 原样保存当前 KV：旧判据按表的 300 条算 80%=240，会把这份正常保存拦下
+    await expect(writeVideosData(ctx, makeDoc(200))).resolves.toBeUndefined()
+    // 真正的缩水仍按 KV 自己的 200 条判定
+    const err = await shrinkTo(10)
+    expect(err.verdict).toMatchObject({ existingCount: 200, minimumAllowed: 160 })
+  })
+
+  it('CLI 入口接上两段确认与系统审计（源码守卫）', () => {
+    const code = readFileSync(new URL('../src/video-catalog-main.ts', import.meta.url), 'utf8')
+    expect(code).toContain('--confirm-large-deletion')
+    expect(code).toContain('--expected-count')
+    expect(code).toContain('confirmLargeDeletion,')
+    expect(code).toContain('expectedCount,')
+    expect(code).toContain('action: "storage.videos.large_deletion"')
+    expect(code).toContain('actorKind: "system"')
+    // 确认参数只给一半必须明确失败，不能静默丢掉拼错的 --expected-count
+    expect(code).toMatch(/confirmLargeDeletion && expectedCount === undefined/)
+  })
+
+  describe('PUT /api/storage 的对外形状', () => {
+    let app: Awaited<ReturnType<typeof buildServer>>
+
+    beforeAll(async () => {
+      app = await buildServer(ctx)
+      await app.ready()
+    })
+    afterAll(async () => {
+      await app.close()
+    })
+
+    it('拦下时返回 409 + retryWith，并把这次尝试写进审计', async () => {
+      await seedBaseline(200)
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/api/storage',
+        payload: { path: VIDEOS_PATH, content: JSON.stringify(makeDoc(10)) },
+      })
+
+      expect(res.statusCode).toBe(409)
+      const body = res.json()
+      expect(body.error).toBe('video_shrink_requires_confirmation')
+      expect(body).toMatchObject({ existingCount: 200, incomingCount: 10, minimumAllowed: 160 })
+      // 客户端照 retryWith 重试就能过；让它自己猜数字会正好撞上 mismatch
+      expect(body.retryWith).toEqual({ confirmLargeDeletion: true, expectedCount: 10 })
+      expect(await countVideoItems(ctx.repo)).toBe(200)
+
+      const logs = await ctx.repo.listAuditLogs({ action: 'storage.videos.shrink_blocked', limit: 5 })
+      expect(logs.items.length).toBeGreaterThan(0)
+      expect(logs.items[0].diff).toMatchObject({ code: 'video_shrink_requires_confirmation', incomingCount: 10 })
+    })
+
+    it('确认后放行，并留下一条能查到「谁删了多少」的审计', async () => {
+      await seedBaseline(200)
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/api/storage',
+        payload: {
+          path: VIDEOS_PATH,
+          content: JSON.stringify(makeDoc(10)),
+          confirmLargeDeletion: true,
+          expectedCount: 10,
+        },
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(await countVideoItems(ctx.repo)).toBe(10)
+
+      const logs = await ctx.repo.listAuditLogs({ action: 'storage.videos.large_deletion', limit: 5 })
+      expect(logs.items.length).toBeGreaterThan(0)
+      expect(logs.items[0].diff).toMatchObject({
+        existingCount: 200,
+        incomingCount: 10,
+        minimumAllowed: 160,
+        declaredExpectedCount: 10,
+      })
+      // 确认放行不等于没有正常写入审计：两条都要在，事后才连得起来
+      const writes = await ctx.repo.listAuditLogs({ action: 'storage.write', limit: 5 })
+      expect(writes.items.some((l) => l.target === VIDEOS_PATH)).toBe(true)
+    })
+
+    it('非视频路径不受影响（保护只在 videos.json 上）', async () => {
+      await seedBaseline(200)
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/api/storage',
+        payload: { path: 'src/navsphere/content/resource-metadata.json', content: JSON.stringify({ shrunk: true }) },
+      })
+      // resource-metadata 也是「整包覆盖」，但它没有条目数概念，不能借这条路把保护摊到所有文档上
+      expect(res.statusCode).toBe(200)
+      expect(await countVideoItems(ctx.repo)).toBe(200)
+    })
   })
 })

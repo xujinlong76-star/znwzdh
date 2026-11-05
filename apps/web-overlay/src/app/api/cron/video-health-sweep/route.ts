@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server'
 import { sweepVideoHealth } from '@/lib/video-deadlink-sweeper'
 import { requireCronSecret } from '@/lib/cron-auth'
 import { recordSweepRun } from '@/lib/video-harvest-metrics'
+import {
+  hydrateVideoMetrics,
+  persistSweepReport,
+  scheduleVideoMetricsPersist,
+} from '@/lib/video-metrics-store'
 import { mutateVideoLibrary, readVideoLibrary } from '@/lib/video-library-store'
 import type { NavigationData, NavigationSubItem, VideoConfig } from '@/types/navigation'
 
@@ -147,6 +152,9 @@ async function handleHealthSweep(request: Request) {
   const autoPrune = searchParams.get('autoPrune') === 'true'
 
   try {
+    // 指标接上历史累计（重启后 sweep 计数从 0 开始的问题）
+    await hydrateVideoMetrics()
+
     const snapshot = await readVideoLibrary()
     if (!Array.isArray(snapshot.navigationItems)) {
       return NextResponse.json({ error: 'Failed to read video library' }, { status: 500 })
@@ -200,6 +208,12 @@ async function handleHealthSweep(request: Request) {
       applied = outcome.ok ? outcome.result.applied : 0
     }
 
+    // 报告落中枢 KV（截断摘要）：服务端 localStorage 是 no-op，不落盘的报告
+    // 随 HTTP 响应消失，事后排查「上次巡检是什么时候、杀了谁」无据可查。
+    // 成功计数已在 sweeper 内部记录，这里补挂持久化。
+    void persistSweepReport(report)
+    scheduleVideoMetricsPersist()
+
     return NextResponse.json({
       success: true,
       report,
@@ -209,8 +223,10 @@ async function handleHealthSweep(request: Request) {
     }, { status: 200 })
   } catch (error: any) {
     recordSweepRun({ ok: false, error: error?.message || 'health sweep failed' })
+    // 内部异常细节只进日志；cron 调用方按 5xx + retryable 重试即可
+    console.error('[VideoHealthSweep] Execution failed:', error)
     return NextResponse.json({
-      error: error?.message || 'Video health sweep execution failed',
+      error: 'Video health sweep execution failed',
       retryable: true,
     }, { status: 500 })
   }

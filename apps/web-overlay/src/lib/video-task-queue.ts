@@ -12,6 +12,35 @@ import { runVideoHarvestAndRotation, type VideoHarvestReport } from './video-har
 import { commitFile, readStorageFresh } from '@/lib/github'
 import type { VideoPlatformType } from '@/types/navigation'
 
+/** 采集任务入参（worker 与排队等待者都要用到， hydrate 恢复时从任务字段重建） */
+export interface HarvestTaskInput {
+  dryRun: boolean
+  categoryId?: string
+  forceKeywords?: string[]
+  platforms?: VideoPlatformType[]
+  trigger: 'manual' | 'cron' | 'admin'
+  accessToken?: string
+}
+
+/**
+ * 「锁被占 / 队列已满」的类型化错误。
+ *
+ * 此前 scheduleAndRunVideoHarvest 把包括程序崩溃在内的一切异常都抛成普通 Error，
+ * 路由层只能一刀切回 409 —— 监控无法区分「真的有任务在跑」和「队列坏了」。
+ * 路由按 `error.code` 区分：lock_busy / queue_full → 409（可重试），其余 → 500。
+ */
+export class HarvestBusyError extends Error {
+  readonly code: 'lock_busy' | 'queue_full'
+  constructor(code: 'lock_busy' | 'queue_full', message: string) {
+    super(message)
+    this.name = 'HarvestBusyError'
+    this.code = code
+  }
+}
+
+/** 同一实例内最多排队等待的任务数（超出直接 409，避免内存与快照无限堆积） */
+const MAX_WAITING_TASKS = 3
+
 export interface VideoHarvestProgress {
   percent: number
   stage: string
@@ -78,6 +107,8 @@ class VideoTaskQueueStore {
   private hydrated = false
   private persisting = false
   private persistTimer: ReturnType<typeof setTimeout> | null = null
+  /** 排队等待前置任务完成的工作项（先进先出） */
+  private waiters: Array<{ task: VideoHarvestTask; input: HarvestTaskInput; lockOwner: string }> = []
 
   private constructor() {}
 
@@ -180,12 +211,39 @@ class VideoTaskQueueStore {
     }
     this.tasks.set(id, task)
     this.taskOrder.unshift(id)
-    this.schedulePersist()
     if (this.taskOrder.length > 50) {
       const removedId = this.taskOrder.pop()
       if (removedId) this.tasks.delete(removedId)
     }
+    // 任务创建**立即**写一次快照（不走防抖）：fire-and-forget worker 启动后进程
+    // 随时可能死掉，400ms 防抖窗口内的崩溃会让这条任务人间蒸发（管理端永远查无此任务）。
+    void this.persistNow()
     return task
+  }
+
+  /** 当前排队等待前置任务的任务数（管理端可观测） */
+  public getQueueDepth(): number {
+    return this.waiters.length
+  }
+
+  /** 把刚创建的任务标记为「排队中」（锁被占时进入等待队列的可见状态） */
+  public markQueued(id: string): void {
+    const t = this.tasks.get(id)
+    if (t) {
+      t.status = 'pending'
+      t.progress = { ...t.progress, stage: '排队中：已有采集任务在执行，本任务将在其完成后自动开始' }
+      void this.persistNow()
+    }
+  }
+
+  /** 登记一个等待前置任务的工作项（与 markQueued 配对使用） */
+  public enqueueWaiter(task: VideoHarvestTask, input: HarvestTaskInput, lockOwner: string): void {
+    this.waiters.push({ task, input, lockOwner })
+  }
+
+  /** 前置任务结束后的唤醒入口（worker finally 里调用） */
+  public drainQueuedTasks(): void {
+    this.drainQueue()
   }
 
   /**
@@ -201,13 +259,33 @@ class VideoTaskQueueStore {
       const raw = (await readStorageFresh<TasksSnapshot>(TASKS_SNAPSHOT_PATH)) as TasksSnapshot | null
       if (!raw || raw.version !== 1 || !Array.isArray(raw.tasks)) return
       const now = Date.now()
+      const resumeEnabled = process.env.NAVHUB_VIDEO_HARVEST_RESUME_ON_BOOT === '1'
+      const resumable: VideoHarvestTask[] = []
       for (const t of raw.tasks) {
         if (!t || typeof t.id !== 'string') continue
         if (t.status === 'running' || t.status === 'pending') {
-          t.status = 'failed'
-          t.error = t.error || '进程重启，任务中断'
-          t.completedAt = t.completedAt ?? now
-          t.progress = { ...t.progress, stage: '任务中断（进程重启）' }
+          /**
+           * 重启后的处置按状态分流：
+           *   - running：跑到一半，网络采集与写库进度无从对账，不能盲目重跑 → failed；
+           *   - pending：从未开始。默认也判 failed（进程启动即自动爬取容易吓到运维）；
+           *     显式 `NAVHUB_VIDEO_HARVEST_RESUME_ON_BOOT=1` 时重新排队，兑现「重启不丢任务」。
+           *     注意 accessToken 不会持久化（凭据不落盘），恢复的任务以无 token 模式运行
+           *     —— http 适配器（中枢）不需要 token，github/sqlite 模式下可能需要重新发起。
+           */
+          if (t.status === 'pending' && resumeEnabled) {
+            t.progress = { ...t.progress, stage: '等待恢复执行（进程重启后重新排队）' }
+            resumable.push(t)
+          } else {
+            t.status = 'failed'
+            t.error = t.error || '进程重启，任务中断'
+            t.completedAt = t.completedAt ?? now
+            t.progress = {
+              ...t.progress,
+              stage: resumeEnabled
+                ? '任务中断（进程重启，运行中任务不可恢复，请重新发起）'
+                : '任务中断（进程重启；如需重启后自动恢复排队任务，配置 NAVHUB_VIDEO_HARVEST_RESUME_ON_BOOT=1）',
+            }
+          }
         }
         this.tasks.set(t.id, t)
         if (!this.taskOrder.includes(t.id)) this.taskOrder.push(t.id)
@@ -220,8 +298,46 @@ class VideoTaskQueueStore {
       }
       // 过期锁不恢复：否则一次异常退出会让采集被锁 5 分钟
       if (raw.lock && raw.lock.expiresAt > now) this.currentLock = raw.lock
+      // 恢复的排队任务重新进入等待队列（不持有锁，由 drain 排到当前任务之后）
+      for (const t of resumable) {
+        if (this.waiters.length >= MAX_WAITING_TASKS) break
+        this.waiters.push({
+          task: t,
+          input: {
+            dryRun: t.dryRun,
+            categoryId: t.categoryId,
+            forceKeywords: t.forceKeywords,
+            platforms: t.platforms,
+            trigger: t.trigger,
+          },
+          lockOwner: `harvest_resume_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        })
+      }
+      if (resumable.length > 0) void this.persistNow()
     } catch {
       // 快照不可用（首次运行 / 中枢不可达）：静默降级为纯内存态
+    }
+  }
+
+  /**
+   * 前置任务结束后逐个唤起排队任务。
+   *
+   * 只在 worker 的 finally 里调用；拿不到锁（理论上不该发生）就把等待者原样
+   * 放回队首，不丢任务。串行唤醒，不并发拉起。
+   */
+  private drainQueue(): void {
+    while (this.waiters.length > 0) {
+      const next = this.waiters.shift()
+      if (!next) return
+      const lockResult = this.acquireLock(next.lockOwner)
+      if (!lockResult.success) {
+        // 锁被占（跨实例分布式锁的等价物在服务层）：放回队首等下一次 drain
+        this.waiters.unshift(next)
+        return
+      }
+      this.startTask(next.task.id)
+      void runHarvestTaskWorker(next.task, next.input, next.lockOwner)
+      return
     }
   }
 
@@ -332,16 +448,65 @@ class VideoTaskQueueStore {
 export const videoTaskQueue = VideoTaskQueueStore.getInstance()
 
 /**
- * 调度并后台执行视频采集长任务
+ * 执行单个采集任务的 worker 主体（由调度器与排队唤起共用）。
+ *
+ * 完成后释放租约并唤起下一个排队任务。
  */
-export async function scheduleAndRunVideoHarvest(input: {
-  dryRun: boolean
-  categoryId?: string
-  forceKeywords?: string[]
-  platforms?: VideoPlatformType[]
-  trigger: 'manual' | 'cron' | 'admin'
-  accessToken?: string
-}): Promise<{ taskId: string; task: VideoHarvestTask }> {
+async function runHarvestTaskWorker(
+  task: VideoHarvestTask,
+  input: HarvestTaskInput,
+  lockOwner: string,
+): Promise<void> {
+  try {
+    videoTaskQueue.startTask(task.id)
+    videoTaskQueue.renewLock(lockOwner)
+    videoTaskQueue.updateProgress(task.id, {
+      percent: 10,
+      stage: '正在分析分类时效衰减分与热点词云...'
+    })
+
+    // 执行核心采集轮换引擎
+    const report = await runVideoHarvestAndRotation({
+      dryRun: input.dryRun,
+      categoryId: input.categoryId,
+      forceKeywords: input.forceKeywords,
+      platforms: input.platforms,
+      accessToken: input.accessToken
+    })
+
+    videoTaskQueue.renewLock(lockOwner)
+    videoTaskQueue.updateProgress(task.id, {
+      percent: 90,
+      stage: '生成快照与持久化审计记录...'
+    })
+
+    videoTaskQueue.completeTask(task.id, report)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[VideoHarvestQueue] Task ${task.id} failed:`, err)
+    videoTaskQueue.failTask(task.id, msg)
+  } finally {
+    // 释放租约（owner 与 acquire 时一致），再唤起排队中的下一个任务
+    videoTaskQueue.releaseLock(lockOwner)
+    videoTaskQueue.drainQueuedTasks()
+  }
+}
+
+/**
+ * 调度并后台执行视频采集长任务。
+ *
+ * 并发语义（此前是「拿不到锁直接 409」）：
+ *   - 锁空闲 → 立即后台执行，返回 taskId；
+ *   - 锁被占且队列未满 → 任务**排队**（status=pending，管理端可见「排队中」），
+ *     前置任务结束后自动开始，返回 `queued: true`；
+ *   - 队列也满 → 抛 `HarvestBusyError('queue_full')`，路由转 409。
+ * 注意：排队只在**本进程内**生效；跨实例的互斥由服务层的分布式租约负责。
+ */
+export async function scheduleAndRunVideoHarvest(input: HarvestTaskInput): Promise<{
+  taskId: string
+  task: VideoHarvestTask
+  queued: boolean
+}> {
   /**
    * 锁的持有者必须是一个**在 acquire 与 release 之间保持不变的标识**。
    *
@@ -358,7 +523,14 @@ export async function scheduleAndRunVideoHarvest(input: {
   // 1. 尝试加锁
   const lockResult = videoTaskQueue.acquireLock(lockOwner)
   if (!lockResult.success) {
-    throw new Error(lockResult.error || '无法获取采集锁，已有任务正在运行中')
+    // 锁被占：不满 409 一刀切，先尝试排队
+    if (videoTaskQueue.getQueueDepth() >= MAX_WAITING_TASKS) {
+      throw new HarvestBusyError('queue_full', '采集队列已满（前置任务执行中，且已有多个任务排队），请稍后重试')
+    }
+    const task = videoTaskQueue.createTask(input)
+    videoTaskQueue.markQueued(task.id)
+    videoTaskQueue.enqueueWaiter(task, input, `harvest_wait_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
+    return { taskId: task.id, task, queued: true }
   }
 
   // 2. 创建任务入队（放在 try 内：createTask 抛错时也要释放锁）
@@ -371,40 +543,7 @@ export async function scheduleAndRunVideoHarvest(input: {
   }
 
   // 3. 异步启动 Worker（不阻塞当前 HTTP 请求）
-  void (async () => {
-    try {
-      videoTaskQueue.startTask(task.id)
-      videoTaskQueue.renewLock(lockOwner)
-      videoTaskQueue.updateProgress(task.id, {
-        percent: 10,
-        stage: '正在分析分类时效衰减分与热点词云...'
-      })
+  void runHarvestTaskWorker(task, input, lockOwner)
 
-      // 执行核心采集轮换引擎
-      const report = await runVideoHarvestAndRotation({
-        dryRun: input.dryRun,
-        categoryId: input.categoryId,
-        forceKeywords: input.forceKeywords,
-        platforms: input.platforms,
-        accessToken: input.accessToken
-      })
-
-      videoTaskQueue.renewLock(lockOwner)
-      videoTaskQueue.updateProgress(task.id, {
-        percent: 90,
-        stage: '生成快照与持久化审计记录...'
-      })
-
-      videoTaskQueue.completeTask(task.id, report)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[VideoHarvestQueue] Task ${task.id} failed:`, err)
-      videoTaskQueue.failTask(task.id, msg)
-    } finally {
-      // 释放租约（owner 与 acquire 时一致）
-      videoTaskQueue.releaseLock(lockOwner)
-    }
-  })()
-
-  return { taskId: task.id, task }
+  return { taskId: task.id, task, queued: false }
 }

@@ -21,21 +21,38 @@ const connector = new MultiSourceConnector(WEBHOOK_SECRET)
 export async function GET() {
   try {
     const configured = Boolean(WEBHOOK_SECRET)
+    /**
+     * 披露面收敛：本端点匿名可探。启用状态与接入指引是集成方必需的；
+     * 但「支持哪些来源 + 签名算法细节」等于给探测者递漏洞测绘图，
+     * 只对已通过会话鉴权的管理员展开。
+     */
+    const adminCheck = await verifyAdminSession().catch(() => ({ ok: false as const }))
+    const isAdmin = Boolean(adminCheck.ok)
+
     return NextResponse.json({
       code: 0,
       data: {
         status: configured ? 'active' : 'disabled',
         // 不配置密钥时明确告知：该端点不会接受任何外部匿名写入
-        hint: configured ? undefined : '未配置 NAVHUB_VIDEO_WEBHOOK_SECRET，外部 Webhook 端点已关闭（管理员会话仍可在控制台直接调试）',
+        hint: configured
+          ? undefined
+          : '未配置 NAVHUB_VIDEO_WEBHOOK_SECRET，外部 Webhook 端点已关闭（管理员会话仍可在控制台直接调试）',
         endpoint: '/api/videos/webhook-harvest',
-        supportedSources: ['bilibili', 'youtube', 'github_trending', 'custom'],
-        signatureAlgorithm: 'HMAC-SHA256 over raw body (Header: X-Hub-Signature-256, 必须带 sha256= 前缀)',
-        description: '自动接收外部自动化流 (GitHub Actions / IFTTT / RSS Poller) 触发的视频发布事件并完成 AI 审核入库',
+        ...(isAdmin
+          ? {
+              supportedSources: ['bilibili', 'youtube', 'github_trending', 'custom'],
+              signatureAlgorithm:
+                'HMAC-SHA256 over raw body (Header: X-Hub-Signature-256, 必须带 sha256= 前缀)',
+              description:
+                '自动接收外部自动化流 (GitHub Actions / IFTTT / RSS Poller) 触发的视频发布事件并完成 AI 审核入库',
+            }
+          : {}),
       },
     })
   } catch (error) {
+    console.error('Webhook status check failed:', error)
     return NextResponse.json(
-      { code: 500, message: (error as Error).message },
+      { code: 500, message: '查询 Webhook 状态失败' },
       { status: 500 }
     )
   }
@@ -172,8 +189,9 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error('Webhook harvest handler failed:', error)
+    // 500 的内部异常信息不回给匿名可达的端点；日志里已保留完整堆栈
     return NextResponse.json(
-      { code: 500, message: (error as Error).message, retryable: true },
+      { code: 500, message: 'Webhook 处理失败，请稍后重试', retryable: true },
       { status: 500 }
     )
   }

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveBilibiliHdStream, type BilibiliHdParseInput } from '@/lib/video-bilibili-hd-parser'
-import { envPositiveInt, StreamBudget } from '@/lib/stream-budget'
+import {
+  envPositiveInt,
+  GLOBAL_BUDGET_KEY,
+  resolveRateLimitKey,
+  StreamBudget,
+} from '@/lib/stream-budget'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,7 +13,7 @@ export const dynamic = 'force-dynamic'
  * 出站预算（与 /api/videos/bili-stream 同一套原语）。
  *
  * 这是一条**匿名可访问的出站通道**：一次解析最多顺序打 6 个上游
- * （星之阁 / 米人 / B 站 WBI / 免登录 / PC / Android）。没有闸门时，任何人
+ （星之阁 / 米人 / B 站 WBI / 免登录 / PC / Android）。没有闸门时，任何人
  * 都能把本站当免费解析代理，而**出口 IP 被目标站拉黑的是我们**——
  * 真实用户随后看到的是「全都解析失败」。
  * 并发额度同时也在保护进程：每个在飞的解析都占着一个 Node 连接与上游配额。
@@ -22,12 +27,30 @@ const PARSE_BUDGET = new StreamBudget({
   ),
   windowMs: 60_000,
 })
+/**
+ * 全局兜底预算（升级方案 P1-7）：x-forwarded-for 可伪造——直连部署时换头
+ * 就能绕过按调用方的窗口额度，这份进程级总闸门伪造不掉。按调用方的分桶
+ * 保留为体验层（正常用户互不牵连），滥用防护以全局预算为准。
+ */
+const GLOBAL_PARSE_BUDGET = new StreamBudget({
+  maxConcurrent: envPositiveInt('NAVHUB_BILI_PARSE_GLOBAL_MAX_CONCURRENT', 16),
+  maxPerWindow: envPositiveInt(
+    'NAVHUB_BILI_PARSE_GLOBAL_MAX_PER_MIN',
+    process.env.NODE_ENV === 'test' ? 10_000 : 240
+  ),
+  windowMs: 60_000,
+})
 
-/** 尽力而为的调用方标记：只用于分桶限流，不作为身份判断 */
-function callerKey(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  const first = forwarded?.split(',')[0]?.trim()
-  return first || request.headers.get('x-real-ip') || 'unknown'
+/** 先按调用方取槽，再吃全局兜底额度；全局拒绝时归还调用方槽位（不漏还） */
+function acquireParseBudget(request: NextRequest): 'rate_limited' | 'saturated' | null {
+  const perCaller = PARSE_BUDGET.tryAcquire(resolveRateLimitKey(request.headers))
+  if (perCaller) return perCaller
+  const global = GLOBAL_PARSE_BUDGET.tryAcquire(GLOBAL_BUDGET_KEY)
+  if (global) {
+    PARSE_BUDGET.release()
+    return global
+  }
+  return null
 }
 
 function denied(denial: 'rate_limited' | 'saturated'): NextResponse {
@@ -76,7 +99,7 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const denial = PARSE_BUDGET.tryAcquire(callerKey(request))
+  const denial = acquireParseBudget(request)
   if (denial) return denied(denial)
 
   try {
@@ -122,6 +145,7 @@ export async function GET(request: NextRequest) {
     )
   } finally {
     PARSE_BUDGET.release()
+    GLOBAL_PARSE_BUDGET.release()
   }
 }
 
@@ -134,7 +158,7 @@ export async function GET(request: NextRequest) {
  * 被拦下时结果带 `accessKeyIgnored: true`，界面据此如实提示。
  */
 export async function POST(request: NextRequest) {
-  const denial = PARSE_BUDGET.tryAcquire(callerKey(request))
+  const denial = acquireParseBudget(request)
   if (denial) return denied(denial)
 
   try {
@@ -184,5 +208,6 @@ export async function POST(request: NextRequest) {
     )
   } finally {
     PARSE_BUDGET.release()
+    GLOBAL_PARSE_BUDGET.release()
   }
 }

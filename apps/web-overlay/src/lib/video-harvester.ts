@@ -1,5 +1,9 @@
 import { getFileContent, commitFile, readStorageFresh, getStorageVersion } from '@/lib/github'
 import { appendReplacementHistory } from './video-library-store'
+import {
+  isVideoShrinkBlock,
+  isVersionConflict as isWriteVersionConflict,
+} from './video-write-guard'
 import { videoExternalKey } from '@/lib/video-identity'
 import { recordHarvestRun } from '@/lib/video-harvest-metrics'
 import { BILI_HEADERS, getWbiMixinKey, signWbiQuery } from '@/lib/bilibili-wbi'
@@ -496,13 +500,24 @@ function capReplacementHistory(records: VideoReplacementRecord[]): VideoReplacem
   return records.slice(0, REPLACEMENT_HISTORY_LIMIT)
 }
 
+/**
+ * 缩水保护拦截（中枢 409）：内容本身需要人工确认，不是「有人比我快」。
+ *
+ * 此前本文件的局部 `isVersionConflict` 只认 `status === 409`，缩水拦截会被
+ * 当成普通版本冲突重放三次（每次都重新发起全部网络搜索），最后还把错误吞进
+ * 「降级为临时应用模式」——改动既没落盘，报告却显示成功。引入 video-write-guard
+ * 的判据后：缩水 409 不重试、不降级，立即以结构化错误抛出，路由层转 409 语义。
+ */
+export class VideoShrinkBlockedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'VideoShrinkBlockedError'
+  }
+}
+
 function isVersionConflict(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'status' in err &&
-    (err as { status?: number }).status === 409
-  )
+  // 复用统一判据：覆盖 StorageError.status 与各适配器的文案形态，且先排除缩水拦截
+  return isWriteVersionConflict(err)
 }
 
 /**
@@ -518,6 +533,16 @@ export async function runVideoHarvestAndRotation(
   try {
     return await runVideoHarvestOnce(options)
   } catch (err) {
+    // 缩水拦截不重放：内容需要人工确认，重试只会连撞三次
+    if (isVideoShrinkBlock(err)) {
+      recordHarvestRun({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw new VideoShrinkBlockedError(
+        err instanceof Error ? err.message : '写入被缩水保护拦截，需人工确认条目数后重试',
+      )
+    }
     if (isVersionConflict(err) && attempt < HARVEST_CONFLICT_RETRIES) {
       console.warn(
         `[video-harvester] 写入版本冲突，第 ${attempt} 次重放（重新读取后再合并）`
@@ -823,11 +848,16 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
         version ?? undefined
       )
     } catch (commitErr) {
-      console.warn('[video-harvester] 写入存储后端失败，降级为临时应用模式:', commitErr)
-      degradedKeywords.push({
-        keyword: '(存储写盘)',
-        reason: commitErr instanceof Error ? commitErr.message : '存储写入失败',
-      })
+      /**
+       * 此前的实现在这里把一切写失败吞成「降级为临时应用模式」：改动只停留在
+       * 本次请求的内存对象里（响应一返回就消失），报告却显示已应用——
+       * 更糟的是版本冲突 409 也被吞掉，外层的整体重放逻辑成了死代码。
+       * 现在一律向上抛：
+       *   - 缩水拦截 → VideoShrinkBlockedError（外层立即失败，不重放）；
+       *   - 版本冲突 → 外层整体重放（重读重算重写，最多 3 次）；
+       *   - 其它（中枢不可达等）→ 外层记失败指标后抛出，调用方如实看到失败。
+       */
+      throw commitErr
     }
 
     // 内联历史有容量上限（capReplacementHistory），独立文件是**不截断**的权威副本：

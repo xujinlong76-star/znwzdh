@@ -62,8 +62,9 @@ export async function GET() {
         })),
     })
   } catch (error) {
+    console.error('Failed to audit video seo readiness:', error)
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : 'SEO 审计失败' },
+      { ok: false, error: 'SEO 审计失败' },
       { status: 500 }
     )
   }
@@ -150,6 +151,7 @@ export async function POST(request: Request) {
 
     // 可选：如果配置了 IndexNow Key，则主动向 Bing / Yandex / IndexNow 推送最新视频落地页
     let indexNowSubmitted = 0
+    let indexNowError: string | undefined
     const indexNowKey = body?.indexNowKey || process.env.NAVHUB_INDEXNOW_KEY || process.env.INDEXNOW_KEY
     const siteOrigin = configuredSiteOrigin()
     if (siteOrigin) {
@@ -171,8 +173,12 @@ export async function POST(request: Request) {
           siteOrigin,
         })
         indexNowSubmitted = pingResult.submitted
-      } catch {
-        // IndexNow 推送失败不影响主流程
+        indexNowError = pingResult.error
+      } catch (err) {
+        // 推送失败不影响主流程，但必须可见：此前纯空 catch，「推送失败」与
+        // 「没配 Key 所以没推」在响应里长得一模一样
+        indexNowError = err instanceof Error ? err.message : 'IndexNow 请求异常'
+        console.warn('[seo-index] IndexNow 推送失败:', indexNowError)
       }
     }
 
@@ -180,11 +186,14 @@ export async function POST(request: Request) {
       ok: true,
       enrichedCount: outcome.result.enrichedCount,
       indexNowSubmitted,
+      // undefined = 正常；有值 = 未配置 Key 或推送异常，调用方据此区分「没推」与「推了失败」
+      indexNowError,
       indexedAt: nowIso,
     })
   } catch (error) {
+    console.error('Failed to batch enrich video seo:', error)
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : '批量生成 SEO 索引失败' },
+      { ok: false, error: '批量生成 SEO 索引失败' },
       { status: 500 }
     )
   }

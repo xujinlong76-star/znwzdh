@@ -86,6 +86,36 @@ export function recordSweepRun(result: {
   metrics.sweep.pruned += result.pruned ?? 0
 }
 
+/**
+ * 把持久化快照并回进程内计数器（进程重启后 hydrate 用）。
+ *
+ * 合并取 **max** 而不是相加：计数器只增不减，重启后进程内从 0 开始，
+ * max 恰好等于「接上历史累计」；若两个实例都从同一份落盘值 hydrate 再各自累加，
+ * 相加会把同一段历史翻倍，max 不会。代价是实例 A 写盘后实例 B 仍在跑的窗口里
+ * B 的增量可能被 A 的整包覆盖——多副本下指标本就是尽力而为的观测值，不是账本。
+ */
+export function mergeVideoMetrics(persisted: Partial<VideoHarvestRuntimeMetrics> | null | undefined): void {
+  if (!persisted || typeof persisted !== 'object') return
+  const take = (a: number | undefined, b: number | undefined): number =>
+    Math.max(typeof a === 'number' && Number.isFinite(a) ? a : 0, typeof b === 'number' && Number.isFinite(b) ? b : 0)
+  metrics.harvest.runs = take(metrics.harvest.runs, persisted.harvest?.runs)
+  metrics.harvest.failed = take(metrics.harvest.failed, persisted.harvest?.failed)
+  metrics.harvest.added = take(metrics.harvest.added, persisted.harvest?.added)
+  metrics.harvest.replaced = take(metrics.harvest.replaced, persisted.harvest?.replaced)
+  metrics.harvest.degradedKeywords = take(metrics.harvest.degradedKeywords, persisted.harvest?.degradedKeywords)
+  metrics.sweep.runs = take(metrics.sweep.runs, persisted.sweep?.runs)
+  metrics.sweep.failed = take(metrics.sweep.failed, persisted.sweep?.failed)
+  metrics.sweep.healthy = take(metrics.sweep.healthy, persisted.sweep?.healthy)
+  metrics.sweep.dead = take(metrics.sweep.dead, persisted.sweep?.dead)
+  metrics.sweep.unverified = take(metrics.sweep.unverified, persisted.sweep?.unverified)
+  metrics.sweep.pruned = take(metrics.sweep.pruned, persisted.sweep?.pruned)
+  metrics.lastHarvestAt = Math.max(metrics.lastHarvestAt ?? 0, persisted.lastHarvestAt ?? 0) || null
+  metrics.lastSweepAt = Math.max(metrics.lastSweepAt ?? 0, persisted.lastSweepAt ?? 0) || null
+  if (!metrics.lastError && typeof persisted.lastError === 'string') {
+    metrics.lastError = persisted.lastError
+  }
+}
+
 /** 深拷贝快照，调用方改不动内部状态 */
 export function videoMetricsSnapshot(): VideoHarvestRuntimeMetrics {
   return {

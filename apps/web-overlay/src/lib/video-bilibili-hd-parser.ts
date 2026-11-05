@@ -1,14 +1,17 @@
 /**
- * Bilibili 高清视频流解析器（支持星之阁 API + 5 大备用解析接口集群自动故障转移）
+ * Bilibili 高清视频流解析器（官方通道优先 + 第三方解析接口末位兜底的集群自动故障转移）
  *
- * 备用接口集群：
- *   1. 主引擎：星之阁 API (https://api.xingzhige.com/doc/40)
- *   2. 备用 1：米人 API (https://api.mir6.com/api/bzjiexi) —— 免费第三方高可用解析
- *   3. 备用 2：B 站官方 WBI 签名高画质 PlayUrl 通道 —— 防风控能力最强
- *   4. 备用 3：B 站官方免登录 Web HTML5 720P 直连通道
- *   5. 备用 4：B 站官方 PC 客户端兼容 PlayUrl 通道
- *   6. 备用 5：B 站官方 Android 客户端移动流通道
+ * 解析引擎（升级方案 3.3 合规倒置后的顺序）：
+ *   1. B 站官方 WBI 签名高画质 PlayUrl 通道 —— 防风控能力最强
+ *   2. B 站官方免登录 Web HTML5 720P 直连通道
+ *   3. B 站官方 PC 客户端兼容 PlayUrl 通道
+ *   4. B 站官方 Android 客户端移动流通道
+ *   5. 第三方兜底 1：星之阁 API (https://api.xingzhige.com/doc/40)
+ *   6. 第三方兜底 2：米人 API (https://api.mir6.com/api/bzjiexi)
  *   7. 终极兜底：B 站官方高画质内嵌播放器 (player.bilibili.com/player.html?high_quality=1)
+ *
+ * 第三方通道可用 `NAVHUB_BILI_DISABLE_THIRD_PARTY=1` 完全关闭（官方通道失败时
+ * 直接走内嵌兜底，不再向不受控外部服务转发任何信息）。
  */
 
 import { getWbiMixinKey, signWbiQuery, BILI_HEADERS } from '@/lib/bilibili-wbi'
@@ -833,14 +836,14 @@ export async function parseBilibiliWithAndroid(
 }
 
 /**
- * 统一多引擎自动容灾解析入口：
+ * 统一多引擎自动容灾解析入口（合规倒置后的优先级）：
  *   按优先级依次尝试解析引擎，遇失败自动顺延切换：
- *     1. 星之阁 API (Primary)
- *     2. 米人 API (Mir6 - Backup 1)
- *     3. 官方 WBI 签名通道 (Bilibili WBI - Backup 2)
- *     4. 官方免登录 Web HTML5 通道 (Bilibili HTML5 - Backup 3)
- *     5. 官方 PC 客户端通道 (Bilibili PC - Backup 4)
- *     6. 官方 Android 客户端通道 (Bilibili Android - Backup 5)
+ *     1. 官方 WBI 签名通道 (Bilibili WBI - Primary)
+ *     2. 官方免登录 Web HTML5 通道 (Bilibili HTML5)
+ *     3. 官方 PC 客户端通道 (Bilibili PC)
+ *     4. 官方 Android 客户端通道 (Bilibili Android)
+ *     5. 第三方兜底：星之阁 API (Xingzhige)
+ *     6. 第三方兜底：米人 API (Mir6)
  *     7. 终极内嵌兜底 (Bilibili Iframe Embed Fallback)
  */
 export async function resolveBilibiliHdStream(
@@ -868,17 +871,31 @@ export async function resolveBilibiliHdStream(
     }
   }
 
-  const engines: Array<{
+  /**
+   * 引擎优先级（升级方案 3.3 合规倒置）：**官方通道优先，第三方只做末位兜底**。
+   *
+   * 历史顺序是星之阁/米人两个不受控第三方打头阵——每次解析都先把目标 URL 交给
+   * 外部服务（隐私 + 断供 + ToS 风险），官方通道反而成了摆设。官方 WBI/HTML5/PC/
+   * Android 通道直接与 B 站 API 通信（access_key 出站策略不变），失败时才顺延到
+   * 第三方；部署方可用 `NAVHUB_BILI_DISABLE_THIRD_PARTY=1` 彻底关掉第三方出站。
+   * 官方通道集体被风控时，第三方兜底仍能救回可用性。
+   */
+  const allEngines: Array<{
     name: BilibiliParseEngineSource
     fn: (inp: BilibiliHdParseInput, f: typeof fetch) => Promise<BilibiliHdParseResult>
   }> = [
-    { name: 'xingzhige', fn: parseBilibiliWithXingzhige },
-    { name: 'mir6', fn: parseBilibiliWithMir6 },
     { name: 'bilibili_wbi', fn: parseBilibiliWithWbi },
     { name: 'bilibili_html5', fn: parseBilibiliWithNativeHtml5 },
     { name: 'bilibili_pc', fn: parseBilibiliWithPc },
     { name: 'bilibili_android', fn: parseBilibiliWithAndroid },
+    { name: 'xingzhige', fn: parseBilibiliWithXingzhige },
+    { name: 'mir6', fn: parseBilibiliWithMir6 },
   ]
+
+  const disableThirdParty = process.env.NAVHUB_BILI_DISABLE_THIRD_PARTY === '1'
+  const engines = disableThirdParty
+    ? allEngines.filter(e => e.name !== 'xingzhige' && e.name !== 'mir6')
+    : allEngines
 
   // 如果指定了优先引擎，将该引擎提至最前
   if (input.preferredEngine && input.preferredEngine !== 'iframe_fallback') {

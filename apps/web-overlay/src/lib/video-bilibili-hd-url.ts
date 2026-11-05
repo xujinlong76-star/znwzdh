@@ -106,7 +106,29 @@ export function normalizeBilibiliTarget(input: BilibiliHdParseInput): {
   } else if (aid && /^\d+$/.test(aid)) {
     baseUrl = `https://www.bilibili.com/video/av${aid}`
   } else if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
-    baseUrl = ensureHttpsUrl(rawUrl) || rawUrl
+    /**
+     * 域名断言（升级方案 P0-4）：本模块的输出会被拼进星之阁等**不受我们控制的
+     * 第三方解析 API** 的 `url=` 参数。此前对不含 BV/av 号的任意 http(s) URL
+     * 原样放行——匿名开放的 bili-parse 端点因此沦为「把任意 URL 转发给第三方」
+     * 的中继（隐私与滥用面）。这里只放行 B 站自己的域；非 B 站链接应走
+     * 多平台解析通道（resolveMultiPlatformVideoUrl），那里有完整的 SSRF 防护。
+     */
+    const httpsUrl = ensureHttpsUrl(rawUrl) || rawUrl
+    let host = ''
+    try {
+      host = new URL(httpsUrl).hostname.toLowerCase()
+    } catch {
+      throw new Error('无法解析的视频链接，请提供有效的 B 站视频地址')
+    }
+    const isBiliHost =
+      host === 'bilibili.com' ||
+      host.endsWith('.bilibili.com') ||
+      host === 'b23.tv' ||
+      host.endsWith('.b23.tv')
+    if (!isBiliHost) {
+      throw new Error(`仅支持 B 站视频链接（bilibili.com / b23.tv），收到的是「${host}」；非 B 站链接请使用对应平台的解析通道`)
+    }
+    baseUrl = httpsUrl
   } else if (rawUrl) {
     baseUrl = `https://www.bilibili.com/video/${rawUrl}`
   }

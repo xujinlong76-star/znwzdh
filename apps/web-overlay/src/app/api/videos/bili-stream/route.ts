@@ -3,9 +3,12 @@ import { ensureHttpsUrl, isAllowedBilivideoStreamHost } from '@/lib/video-bilibi
 import {
   clampRangeHeader,
   envPositiveInt,
+  GLOBAL_BUDGET_KEY,
   readWithIdleTimeout,
+  resolveRateLimitKey,
   StreamBudget,
 } from '@/lib/stream-budget'
+import { resolveAndCheck, SsrfBlockedError } from '@/lib/ssrf-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,14 +38,45 @@ const STREAM_BUDGET = new StreamBudget({
   ),
   windowMs: 60_000,
 })
+/**
+ * 全局兜底预算（升级方案 P1-7）：x-forwarded-for 可伪造，直连部署时换头
+ * 就能绕过按调用方的窗口额度，这份进程级总闸门伪造不掉。按调用方的分桶
+ * 保留为体验层（正常用户互不牵连），滥用防护以全局预算为准。
+ */
+const GLOBAL_STREAM_BUDGET = new StreamBudget({
+  maxConcurrent: envPositiveInt('NAVHUB_BILI_STREAM_GLOBAL_MAX_CONCURRENT', 64),
+  maxPerWindow: envPositiveInt(
+    'NAVHUB_BILI_STREAM_GLOBAL_MAX_PER_MIN',
+    process.env.NODE_ENV === 'test' ? 10_000 : 600
+  ),
+  windowMs: 60_000,
+})
+
+/**
+ * DNS/IP 级 SSRF 校验开关（升级方案 P1-2）。
+ *
+ * 域名白名单是纯字符串后缀匹配——允许的域名若解析到内网 IP（DNS 指向
+ * 127.0.0.1 / 169.254.169.254）照样放行。接入 ssrf-guard 的解析后 IP 校验后，
+ * 每一跳都先 DNS 解析再逐个比对受保护网段。测试进程默认关闭（用例 stub 了
+ * 全局 fetch，真实 DNS 解析会让测试依赖外网）；需要测这条路径时显式
+ * `NAVHUB_BILI_STREAM_SSRF_GUARD=1`（配合 mock node:dns/promises）。
+ */
+const SSRF_DNS_GUARD =
+  process.env.NODE_ENV !== 'test' || process.env.NAVHUB_BILI_STREAM_SSRF_GUARD === '1'
 
 /** 尽力而为的标记：播放器看到它就知道失败时该回退直链，而不是死等代理 */
 const STREAM_MODE_HEADER = 'X-NavHub-Stream-Mode'
 
-function callerKey(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  const first = forwarded?.split(',')[0]?.trim()
-  return first || request.headers.get('x-real-ip') || 'unknown'
+/** 每一跳请求前（与 https 建连后）的解析后 IP 校验；被拦按 403 处理 */
+async function assertHostResolvableSafe(url: string): Promise<void> {
+  if (!SSRF_DNS_GUARD) return
+  await resolveAndCheck(new URL(url), {
+    timeoutMs: HEADER_TIMEOUT_MS,
+    maxBytes: MAX_RANGE_BYTES,
+    maxRedirects: 0,
+    allowPrivateNetworks: false,
+    userAgent: UPSTREAM_HEADERS['User-Agent'] ?? 'NavHubBot/0.1',
+  })
 }
 
 /**
@@ -84,9 +118,11 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
     )
   }
 
-  // 预算：先按调用方限流，再看进程并发。GET 的槽位交给流自身在结束/断开时归还，
-  // 其余出口统一在 finally 里归还（漏还等于把并发额度永久吃掉）。
-  const denial = STREAM_BUDGET.tryAcquire(callerKey(request))
+  // 预算：先按调用方限流，再看进程并发；全局兜底预算最后把关。
+  // GET 的槽位交给流自身在结束/断开时归还，其余出口统一在 finally 里归还
+  // （漏还等于把并发额度永久吃掉）。
+  const callerBudgetKey = resolveRateLimitKey(request.headers)
+  const denial = STREAM_BUDGET.tryAcquire(callerBudgetKey) ?? GLOBAL_STREAM_BUDGET.tryAcquire(GLOBAL_BUDGET_KEY)
   if (denial) {
     return NextResponse.json(
       {
@@ -111,28 +147,47 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
     let currentUrl = targetUrl
     let upstreamRes: Response | null = null
 
-    // 手动逐跳校验重定向，防范通过开放重定向发起的内网 SSRF 探测
-    for (let hop = 0; hop < 3; hop++) {
-      if (!isAllowedBilivideoStreamHost(currentUrl)) {
+    // 手动逐跳校验重定向，防范通过开放重定向发起的内网 SSRF 探测：
+    // 域名白名单之外，每一跳再做 DNS 解析后的受保护网段校验
+    try {
+      for (let hop = 0; hop < 3; hop++) {
+        if (!isAllowedBilivideoStreamHost(currentUrl)) {
+          return NextResponse.json(
+            { error: '重定向跳转目标域名不在 B 站官方 CDN 白名单中' },
+            { status: 403 }
+          )
+        }
+
+        await assertHostResolvableSafe(currentUrl)
+
+        upstreamRes = await fetchWithHeaderTimeout(currentUrl, {
+          method,
+          headers: fetchHeaders,
+          redirect: 'manual',
+        }, HEADER_TIMEOUT_MS)
+
+        // https 建连后的二次复核：TLS 需要用原域名握手，DNS 结果可能在解析与
+        // 建连之间被改（TOCTOU / DNS rebinding），拿到响应后立刻再验一遍
+        if (SSRF_DNS_GUARD && new URL(currentUrl).protocol === 'https:') {
+          await assertHostResolvableSafe(currentUrl)
+        }
+
+        if (upstreamRes.status >= 300 && upstreamRes.status < 400) {
+          const location = upstreamRes.headers.get('location')
+          if (!location) break
+          currentUrl = new URL(location, currentUrl).toString()
+          continue
+        }
+        break
+      }
+    } catch (err) {
+      if (err instanceof SsrfBlockedError) {
         return NextResponse.json(
-          { error: '重定向跳转目标域名不在 B 站官方 CDN 白名单中' },
+          { error: `目标域名解析到受限网络地址，已拦截（${err.reason}）` },
           { status: 403 }
         )
       }
-
-      upstreamRes = await fetchWithHeaderTimeout(currentUrl, {
-        method,
-        headers: fetchHeaders,
-        redirect: 'manual',
-      }, HEADER_TIMEOUT_MS)
-
-      if (upstreamRes.status >= 300 && upstreamRes.status < 400) {
-        const location = upstreamRes.headers.get('location')
-        if (!location) break
-        currentUrl = new URL(location, currentUrl).toString()
-        continue
-      }
-      break
+      throw err
     }
 
     if (!upstreamRes || (!upstreamRes.ok && upstreamRes.status !== 206)) {
@@ -146,7 +201,8 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
     const contentType = upstreamRes.headers.get('content-type') || 'video/mp4'
     responseHeaders.set('Content-Type', contentType)
     responseHeaders.set('Accept-Ranges', upstreamRes.headers.get('accept-ranges') || 'bytes')
-    responseHeaders.set('Cache-Control', 'private, max-age=3600')
+    // CDN 直链带签名与 deadline，长缓存会把过期地址发给后续播放器
+    responseHeaders.set('Cache-Control', 'private, max-age=300')
     responseHeaders.set(STREAM_MODE_HEADER, 'best-effort')
 
     const contentLength = upstreamRes.headers.get('content-length')
@@ -182,7 +238,25 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
       if (released) return
       released = true
       STREAM_BUDGET.release()
+      GLOBAL_STREAM_BUDGET.release()
+      clearInterval(watchdog)
     }
+
+    /**
+     * 空闲看门狗（升级方案 P1-2）。
+     *
+     * pull 驱动的流只有客户端在读才会触发 readWithIdleTimeout——客户端暂停
+     * 播放且不 cancel 时，读定时器永远不挂，上游 socket 与两个并发槽位被一直
+     * 占用，直到 32 格并发被慢慢耗尽。看门狗只认「最近一次活动时间」，
+     * 超过空闲上限就掐断上游并归还槽位。
+     */
+    let lastActivity = Date.now()
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+        reader.cancel().catch(() => { /* 上游已断时忽略 */ })
+        release()
+      }
+    }, Math.max(1_000, Math.floor(IDLE_TIMEOUT_MS / 3)))
 
     let pending: ReadableStreamReadResult<Uint8Array> | null = first
     // pull 驱动：客户端读得慢就自然背压，不会把整条流缓存在内存里
@@ -191,6 +265,7 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
         try {
           const chunk = pending ?? (await readWithIdleTimeout(() => reader.read(), IDLE_TIMEOUT_MS))
           pending = null
+          lastActivity = Date.now()
           if (chunk.done) {
             controller.close()
             release()
@@ -217,6 +292,7 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
     )
   } finally {
     if (!handedOff) STREAM_BUDGET.release()
+    if (!handedOff) GLOBAL_STREAM_BUDGET.release()
   }
 }
 

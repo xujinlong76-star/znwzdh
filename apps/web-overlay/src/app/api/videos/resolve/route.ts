@@ -22,10 +22,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: resolved })
   } catch (error) {
     console.error('Failed to resolve video URL:', error)
+    // 上游错误细节（可能含内网地址/URL 形状）只进日志，不回给客户端
     return NextResponse.json(
       {
-        error: '解析视频信息失败',
-        details: (error as Error).message
+        error: '解析视频信息失败'
       },
       { status: 500 }
     )

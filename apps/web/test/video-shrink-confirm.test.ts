@@ -9,7 +9,7 @@
  *      最后还给操作者一句误导性的「请刷新重试」）；
  *   4. 真的版本冲突仍按「重读 + 重放」处理，不能被第 3 条带跑。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi, afterAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 vi.mock('@/lib/github', () => ({
@@ -60,6 +60,12 @@ beforeEach(() => {
   vi.mocked(getStorageVersion).mockResolvedValue(7)
   vi.mocked(getFileContent).mockResolvedValue(null)
 })
+
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
 
 describe('本地守卫与中枢同判据', () => {
   beforeEach(() => {

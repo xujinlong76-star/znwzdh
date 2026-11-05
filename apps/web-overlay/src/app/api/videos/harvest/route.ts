@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { runVideoHarvestAndRotation } from '@/lib/video-harvester'
-import { getFileContent, readStorageFresh } from '@/lib/github'
-import { videoTaskQueue } from '@/lib/video-task-queue'
+import { getFileContentWithStatus } from '@/lib/github'
 import { videoMetricsSnapshot } from '@/lib/video-harvest-metrics'
+import { hydrateVideoMetrics } from '@/lib/video-metrics-store'
 import { readDocResilient } from '@/lib/video-doc-read'
+import {
+  runPolicyHarvest,
+  clampPositiveInt,
+  sanitizePlatforms,
+} from '@/lib/video-harvest-service'
+import { HarvestBusyError } from '@/lib/video-task-queue'
+import { VideoShrinkBlockedError } from '@/lib/video-harvester'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'
@@ -20,7 +26,10 @@ export async function GET() {
       return NextResponse.json({ success: false, error: authCheck.error, message: authCheck.status === 401 ? '请先登录管理员账号' : '无权执行该操作' }, { status: authCheck.status })
     }
 
-    const rawData = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData | null | undefined
+    // 概览读数与「数据新鲜度」必须一起返回：degraded=true 说明这份统计来自
+    // 进程内/数据缓存（中枢抖动时的兜底），运维不能拿它当实时数据做决策。
+    const overview = await getFileContentWithStatus<NavigationData>(VIDEOS_FILE_PATH)
+    const rawData = overview.data
     if (!rawData || !rawData.navigationItems) {
       return NextResponse.json(
         {
@@ -84,16 +93,16 @@ export async function GET() {
       /**
        * 这份统计来自哪一层：`fresh`（直连中枢）/ `cached`（进程内或 Data Cache）。
        * 降级时必须让调用方看见 —— 否则「缓存里的旧数字」和「实时数字」长得一模一样，
-       * 运维会拿一份过时数据做决策。`readErrors` 同时给出降级原因。
+       * 运维会拿一份过时数据做决策。
        */
-      dataSource: 'cached',
+      dataSource: overview.degraded ? 'cached' : 'fresh',
     })
   } catch (error) {
+    // 错误细节只进服务端日志；客户端拿通用文案（内部异常信息不外泄）
     console.error('Failed to get harvest overview:', error)
     return NextResponse.json(
       {
-        error: '获取视频采集概览失败',
-        details: (error as Error).message
+        error: '获取视频采集概览失败'
       },
       { status: 500 }
     )
@@ -113,54 +122,62 @@ export async function POST(request: Request) {
     } catch {
       body = {}
     }
-    const { dryRun = false, categoryId, forceKeywords, platforms, limitPerKeyword } = body
+    const { dryRun = false, categoryId, forceKeywords } = body
 
     /**
-     * 与异步任务入口共用同一把租约锁。
+     * 互斥、指标与跨实例租约统一由服务层负责（与异步任务入口、cron 完全同一套）。
      *
-     * 此前本端点直接跑采集、完全不取锁：手动点击与 Cron 撞车时，两边各自搜索、
-     * 各自整包写，只能靠 `ifVersion` 冲突重放兜底 —— 而重放的代价是**重新发起
-     * 全部网络搜索**（每轮 25s 预算），不是简单重试写入。
+     * 此前本端点自己拿进程内锁、cron 却完全不取锁——两个入口行为不一致，
+     * cron 与手动任务可以并行跑两轮全量采集。现在三入口共用 `runPolicyHarvest`。
      *
      * TTL 给到 10 分钟：12 个分类 × 25s 预算的最坏情况是 300s，默认 5 分钟会
      * 在任务跑完前过期，互斥就失效了。
      */
-    const lockOwner = `harvest_sync_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    const lock = videoTaskQueue.acquireLock(lockOwner, 10 * 60 * 1000)
-    if (!lock.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'harvest_in_progress',
-          message: lock.error ?? '已有采集任务正在执行，请稍后重试',
-          retryable: true,
-        },
-        { status: 409 }
-      )
-    }
-
     try {
-      const report = await runVideoHarvestAndRotation({
+      const report = await runPolicyHarvest({
+        scope: 'harvest_sync',
         dryRun,
         categoryId,
         forceKeywords,
-        platforms: Array.isArray(platforms) && platforms.length > 0 ? platforms : undefined,
-        limitPerKeyword: typeof limitPerKeyword === 'number' ? limitPerKeyword : undefined,
+        platforms: sanitizePlatforms(platforms),
+        // 钳制：每关键词条数接受任意大数字会打穿上游与时间预算（1..10）
+        limitPerKeyword: clampPositiveInt(limitPerKeyword, 2, 10),
         accessToken: authCheck.githubToken || undefined
       })
 
       return NextResponse.json({ success: true, report })
-    } finally {
-      // owner 必须与 acquire 时一致，否则锁只能等 TTL 自然过期
-      videoTaskQueue.releaseLock(lockOwner)
+    } catch (err) {
+      if (err instanceof HarvestBusyError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'harvest_in_progress',
+            message: err.message,
+            retryable: true,
+          },
+          { status: 409 }
+        )
+      }
+      throw err
     }
   } catch (error) {
+    // 缩水保护拦截是给管理员的明确操作指引（带 expectedCount），如实透传；
+    // 其余内部错误只进日志，客户端拿通用文案。
+    if (error instanceof VideoShrinkBlockedError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'video_shrink_blocked',
+          message: error.message,
+        },
+        { status: 409 }
+      )
+    }
     console.error('Failed to run video harvest and rotation:', error)
     return NextResponse.json(
       {
         success: false,
-        error: '自动采集与轮换执行失败',
-        details: (error as Error).message
+        error: '自动采集与轮换执行失败'
       },
       { status: 500 }
     )

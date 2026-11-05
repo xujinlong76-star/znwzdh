@@ -121,6 +121,12 @@ export function parseBilibiliApiResponse(json: Record<string, any>): RawExternal
 
 /**
  * Parses YouTube XML / RSS Atom feeds into standardized candidate objects.
+ *
+ * 假数据治理（升级方案 3.5）：此前无论 RSS 里有什么，一律硬编码
+ * `durationSec: 1200`、`views: 50000`、`likes: 3500` —— 编造的互动数据会进
+ * 质量分模型，让「无法判断」的内容伪装成「表现中等偏好」。现在只消费 feed
+ * 里真实存在的字段：RSS 偶尔带 `<media:statistics views>`，有就采，没有就
+ * 不写 stats；时长 RSS 不提供，如实置 0（未知），由评估逻辑按未知处理。
  */
 export function parseYouTubeRssFeed(xmlText: string): RawExternalCandidate[] {
   const candidates: RawExternalCandidate[] = []
@@ -133,18 +139,21 @@ export function parseYouTubeRssFeed(xmlText: string): RawExternalCandidate[] {
     const titleMatch = /<title>(.*?)<\/title>/.exec(entryBlock)
     const authorMatch = /<name>(.*?)<\/name>/.exec(entryBlock)
     const descMatch = /<media:description>([\s\S]*?)<\/media:description>/.exec(entryBlock)
+    const viewsMatch = /<media:statistics[^>]*views="(\d+)"[^>]*>/.exec(entryBlock)
+      ?? /<media:statistics[^>]*views="(\d+)"/.exec(entryBlock)
 
     if (idMatch && titleMatch) {
+      const views = viewsMatch ? Number.parseInt(viewsMatch[1], 10) : undefined
       candidates.push({
         source: 'youtube',
         externalId: idMatch[1].trim(),
         title: titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim(),
         description: descMatch ? descMatch[1].trim() : '',
         author: authorMatch ? authorMatch[1].trim() : 'YouTube Creator',
-        durationSec: 1200, // RSS feed lacks duration tag, default to 20m
+        durationSec: 0, // RSS 不提供时长：未知就是未知，不编造默认值
         originUrl: `https://www.youtube.com/watch?v=${idMatch[1].trim()}`,
         domain: 'cat_fullstack_architecture',
-        stats: { views: 50000, likes: 3500 },
+        ...(views !== undefined && Number.isFinite(views) ? { stats: { views } } : {}),
       })
     }
   }
@@ -153,18 +162,22 @@ export function parseYouTubeRssFeed(xmlText: string): RawExternalCandidate[] {
 
 /**
  * Parses GitHub Trending repository feeds and translates them into technical video candidates.
+ *
+ * 假数据治理（升级方案 3.5）：GitHub Trending 给的是**仓库**，不是视频——
+ * 此前却套上「架构剖析与开源实战指南」的课程标题模板，并用 `stars × 10`
+ * 编造播放量。现在标题/描述如实转写仓库信息，不写任何编造的 stats 与时长；
+ * 内容是否值得入库交由评估与人工判断。
  */
 export function parseGitHubTrendingFeed(repos: Array<{ name: string; description: string; language: string; stars: number }>): RawExternalCandidate[] {
   return repos.map(r => ({
     source: 'github_trending',
     externalId: `gh_${r.name.replace(/[^a-zA-Z0-9_]/g, '_')}`,
-    title: `${r.name} 架构剖析与开源实战指南（${r.language}）`,
-    description: r.description || `基于 ${r.language} 的前沿高星项目。`,
+    title: `${r.name}（${r.language || '开源'}·GitHub 热门仓库）`,
+    description: r.description || `GitHub Trending 上的 ${r.language || ''} 开源项目。`.trim(),
     author: 'GitHub 创作者',
-    durationSec: 1800,
+    durationSec: 0, // 仓库没有时长：未知就是未知，不编造默认值
     originUrl: `https://github.com/${r.name}`,
     domain: 'cat_tools_indie',
-    stats: { views: r.stars * 10, likes: r.stars },
   }))
 }
 

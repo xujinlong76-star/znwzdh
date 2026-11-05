@@ -139,3 +139,20 @@ export function envPositiveInt(name: string, fallback: number): number {
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
+
+/** 全局兜底预算的键：所有调用方共享一份窗口 */
+export const GLOBAL_BUDGET_KEY = "__global__";
+
+/**
+ * 匿名出站通道的限流键（尽力而为的按调用方分桶）。
+ *
+ * `x-forwarded-for` 的第一段**可被任意伪造**：直连部署（没有可信反代重写该头）
+ * 时攻击者换个头就能绕过每窗口额度。所以按调用方的分桶只是体验层
+ * （正常用户互不牵连），真正的滥用闸门是路由层叠加的**全局兜底预算**
+ * （`GLOBAL_BUDGET_KEY` 一份窗口，伪造头绕不过去）。两级叠加，缺一不可。
+ */
+export function resolveRateLimitKey(headers: Headers): string {
+  const forwarded = headers.get("x-forwarded-for");
+  const first = forwarded?.split(",")[0]?.trim();
+  return first || headers.get("x-real-ip") || "unknown";
+}

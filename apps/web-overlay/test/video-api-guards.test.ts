@@ -88,12 +88,37 @@ describe('Webhook 入库不得写死保鲜分', () => {
 })
 
 describe('采集入口：并发互斥与平台诚实性', () => {
-  it('同步采集入口持有与异步任务相同的租约锁，且 owner 配对释放', () => {
-    const code = stripComments(src('app/api/videos/harvest/route.ts'))
-    expect(code).toMatch(/acquireLock\s*\(/)
-    expect(code).toMatch(/releaseLock\s*\(\s*lockOwner\s*\)/)
-    // 旧写法 owner 用 Date.now() 现拼，release 永远对不上 → 锁只能等 TTL
-    expect(code).toMatch(/const\s+lockOwner\s*=/)
+  /**
+   * 契约更新（2026-11-05 升级）：同步入口/异步任务/cron 三个采集入口的互斥
+   * 收敛到 lib/video-harvest-service.ts 统一服务层（进程内租约 + 中枢 CAS
+   * 跨实例租约）。守卫意图不变——acquire 与 release 必须同一 owner 配对，
+   * 且三条路径必须共用同一把锁；只是断言的位置从路由移到了服务层。
+   */
+  it('同步采集入口委托服务层：双层租约 owner 配对，路由不再自持锁', () => {
+    const service = stripComments(src('lib/video-harvest-service.ts'))
+    // 进程内租约：同一 owner acquire/release 配对（旧写法 owner 用 Date.now() 现拼，
+    // release 永远对不上 → 锁只能等 TTL）
+    expect(service).toMatch(/acquireLock\s*\(\s*owner\s*[,)]/)
+    expect(service).toMatch(/releaseLock\s*\(\s*handle\.owner\s*\)/)
+    // 跨实例租约也要成对出现：抢锁失败时先归还进程内锁
+    expect(service).toMatch(/acquireHarvestLease\s*\(/)
+    expect(service).toMatch(/releaseHarvestLease\s*\(/)
+    // cron 也必须走同一服务层（此前 cron 是唯一不取锁的采集入口）
+    const cron = stripComments(src('app/api/cron/video-harvest/route.ts'))
+    expect(cron).toMatch(/runPolicyHarvest\s*\(/)
+    expect(cron).toMatch(/runAutonomousCycle\s*\(/)
+    expect(cron).not.toMatch(/runVideoHarvestAndRotation\s*\(/)
+    // 同步路由只做参数与鉴权，互斥交给服务层
+    const route = stripComments(src('app/api/videos/harvest/route.ts'))
+    expect(route).toMatch(/runPolicyHarvest\s*\(/)
+    expect(route).not.toMatch(/acquireLock\s*\(/)
+  })
+
+  it('自主采集周期统一走 runAutonomousCycle（带租约），管理端路由不再内联 mutate', () => {
+    // 此前 ai-autonomous 路由不取任何锁：并发 POST 各跑一轮完整周期
+    const route = stripComments(src('app/api/videos/ai-autonomous-harvest/route.ts'))
+    expect(route).toMatch(/runAutonomousCycle\s*\(/)
+    expect(route).not.toMatch(/mutateVideoLibrary\s*\(/)
   })
 
   it('platforms 含 youtube 时走真实 YouTube 通道，检索无结果必须显式记 degraded', () => {

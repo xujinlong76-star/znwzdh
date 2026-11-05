@@ -164,13 +164,81 @@ export async function probeVideoAvailability(
         latencyMs: Date.now() - start,
       }
     } else {
+      /**
+       * 其余平台（vimeo / ted / dailymotion / peertube / douyin / custom…）没有
+       * 统一的元数据 API，此前直接返回 healthy —— 巡检对它们完全空转，死链永远
+       * 绿灯。现在对条目的落地页做真实 HTTP 探测，口径与 B 站/YouTube 一致：
+       * 404/410 = dead；2xx/3xx = healthy；403/429/5xx 与超时/网络错误 =
+       * unverified（不可判定，绝不进删除分母）。
+       *
+       * 目标 URL 来自本站视频库（管理员维护），不是匿名用户输入；探测只读页面
+       * 存在性，不解析内容体。非 http(s) 目标（无 href / 特殊 scheme）无从探测，
+       * 保持 healthy 并注明原因。
+       */
+      const target = (item.href || '').trim()
+      const platform = config.type || 'custom'
+      if (!/^https?:\/\//i.test(target)) {
+        clearTimeout(timer)
+        return {
+          videoId: item.id,
+          title: item.title,
+          platform,
+          healthy: true,
+          state: 'healthy',
+          reason: '无 http(s) 落地页可探测，跳过（不判死）',
+          latencyMs: Date.now() - start,
+        }
+      }
+
+      // 先 HEAD（省流量）；405/501 说明站点不支持 HEAD，再用 GET 复核一次
+      let resp = await fetch(target, {
+        method: 'HEAD',
+        redirect: 'follow',
+        headers: { 'User-Agent': 'NavHubBot/0.1 (+video-health-sweep)' },
+        signal: controller.signal,
+      })
+      if (resp.status === 405 || resp.status === 501) {
+        resp = await fetch(target, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: { 'User-Agent': 'NavHubBot/0.1 (+video-health-sweep)' },
+          signal: controller.signal,
+        })
+      }
       clearTimeout(timer)
+
+      if (resp.status === 404 || resp.status === 410) {
+        return {
+          videoId: item.id,
+          title: item.title,
+          platform,
+          healthy: false,
+          state: 'dead',
+          statusCode: resp.status,
+          reason: `落地页返回 HTTP ${resp.status}（资源不存在）`,
+          latencyMs: Date.now() - start,
+        }
+      }
+      if (resp.ok || (resp.status >= 200 && resp.status < 400)) {
+        return {
+          videoId: item.id,
+          title: item.title,
+          platform,
+          healthy: true,
+          state: 'healthy',
+          statusCode: resp.status,
+          latencyMs: Date.now() - start,
+        }
+      }
+      // 403（防盗链）/429（限流）/5xx 等一律不可判定
       return {
         videoId: item.id,
         title: item.title,
-        platform: 'custom',
-        healthy: true,
-        state: 'healthy',
+        platform,
+        healthy: false,
+        state: 'unverified',
+        statusCode: resp.status,
+        reason: `落地页返回 HTTP ${resp.status}，无法确认是否失效`,
         latencyMs: Date.now() - start,
       }
     }

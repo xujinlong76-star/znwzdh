@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { getFileContent } from '@/lib/github'
-import { mutateVideoLibrary, readVideoLibrary } from '@/lib/video-library-store'
+import { readVideoLibrary } from '@/lib/video-library-store'
 import type { NavigationData } from '@/types/navigation'
 import {
-  getAutonomousHarvesterController,
   evaluateVideoWithAIModel,
 } from '@/lib/video-autonomous-ai-harvester'
 import { CURATED_TRENDING_TOPICS } from '@/lib/video-trending-harvester'
+import { runAutonomousCycle, clampPositiveInt } from '@/lib/video-harvest-service'
 
 export const runtime = 'nodejs'
 
@@ -69,7 +68,6 @@ export async function GET() {
       {
         code: 500,
         message: '获取自主采集系统状态与统计失败',
-        details: (error as Error).message,
       },
       { status: 500 }
     )
@@ -93,32 +91,25 @@ export async function POST(request: Request) {
       maxAdditionsPerCycle = 15,
     } = body
 
-    // 单例：每次 new 会让 controller.logs（管理端的「AI 思考过程」）每轮从零开始
-    const controller = getAutonomousHarvesterController()
+    // 单例 controller 由服务层持有（每次 new 会让「AI 思考过程」日志每轮从零开始）
 
     /**
      * 采集周期会读全库做去重与配额判断，写回是整包覆盖 —— 必须带版本号。
-     * 这里把「读 + 算 + 写」整体放进 mutate：冲突时重读重放，避免把
-     * 同期管理端的编辑或另一轮采集整批抹掉。
+     * 「读 + 算 + 写」与租约锁统一收敛到服务层：此前本路由不取任何锁，并发
+     * POST 会各跑一轮完整周期，只靠 ifVersion 冲突重放兜底（重放 = 重跑整轮）。
      * dryRun 与「本轮没新增」都不落盘（skip），但仍把 report 返回给管理端。
+     *
+     * maxAdditionsPerCycle 钳制在 1..50：此前接受任意大数字，等于把全局熔断
+     * （newCourses >= maxAdditions）的闸门拆掉。
      */
-    const outcome = await mutateVideoLibrary(
-      async (data) => {
-        const { updatedData, report } = await controller.runCycle(data, {
-          dryRun: Boolean(dryRun),
-          forceCategory: typeof forceCategory === 'string' ? forceCategory : undefined,
-          includeMultiPlatform: Boolean(includeMultiPlatform),
-          autoSubmitIndexNow: Boolean(autoSubmitIndexNow),
-          maxAdditionsPerCycle: typeof maxAdditionsPerCycle === 'number' ? maxAdditionsPerCycle : 15,
-        })
-        return {
-          next: updatedData,
-          result: { report },
-          skip: Boolean(dryRun) || report.newCourses.length === 0,
-        }
-      },
-      '[AI Harvest] Autonomous harvest cycle'
-    )
+    const outcome = await runAutonomousCycle({
+      scope: 'ai_autonomous',
+      dryRun: Boolean(dryRun),
+      forceCategory: typeof forceCategory === 'string' ? forceCategory : undefined,
+      includeMultiPlatform: Boolean(includeMultiPlatform),
+      autoSubmitIndexNow: Boolean(autoSubmitIndexNow),
+      maxAdditionsPerCycle: clampPositiveInt(maxAdditionsPerCycle, 15, 50),
+    })
 
     if (!outcome.ok) {
       return NextResponse.json(
@@ -131,7 +122,7 @@ export async function POST(request: Request) {
       code: 0,
       success: true,
       data: {
-        report: outcome.result.report,
+        report: outcome.report,
       },
     })
   } catch (error) {
@@ -140,7 +131,6 @@ export async function POST(request: Request) {
       {
         code: 500,
         message: '自主采集与 AI 模型审核循环执行异常',
-        details: (error as Error).message,
         retryable: true,
       },
       { status: 500 }

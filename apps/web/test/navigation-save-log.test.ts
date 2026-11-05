@@ -18,7 +18,13 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  afterAll } from 'vitest'
 
 vi.mock('@/lib/auth', () => ({
   verifyAdminSession: vi.fn(async () => ({ ok: true, githubToken: '' })),
@@ -91,6 +97,12 @@ afterEach(() => {
 async function post(body: unknown) {
   return POST(new Request('http://127.0.0.1:3000/api/navigation', { method: 'POST', body: JSON.stringify(body) }))
 }
+
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
 
 describe('整包保存：日志只记体量', () => {
   it('摘要一行，计数与夹具逐字对得上', async () => {

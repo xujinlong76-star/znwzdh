@@ -21,7 +21,13 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  afterAll } from 'vitest'
 
 vi.mock('@/lib/clipboard', () => ({ copyText: vi.fn() }))
 
@@ -150,6 +156,12 @@ function build(data: { videoTitle: string; currentSubtitle?: string; lastCodeCom
   const built = buildVideoPipContent(asDocument(doc), data)
   return { doc, root: built as unknown as StubElement }
 }
+
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
 
 describe("行为：恶意载荷进不了 HTML 解析器", () => {
   it("构建全程没有任何一次 HTML 写入（桩会当场抛错并记名）", () => {

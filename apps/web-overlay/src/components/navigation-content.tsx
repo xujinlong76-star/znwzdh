@@ -460,9 +460,6 @@ export function NavigationContent({
             </div>
           ) : (
             <>
-              {/* 极客混合模式：首屏极速组件展板 */}
-              {viewMode === 'hybrid' && <HomeHeroDeck />}
-
               <div className="space-y-8 sm:space-y-10">
                 {renderedCategories.map((category, index) => (
                   <NavigationCategorySection
@@ -497,6 +494,15 @@ export function NavigationContent({
                   </div>
                 )}
               </div>
+
+              {/*
+                极速启动展板（多引擎搜索 / 时钟 / 收藏坞 / 微工具）实测 733px 高，
+                原先钉在分类正文之前：553px 视口里首屏被它和引导卡吃满，第一张
+                站点卡片要滚到 1407px 才出现。它又是页面上的第二个搜索框，而站内
+                召回顶栏超级搜索已经覆盖。所以降到分类正文之后——组件本身不动，
+                仍只在 hybrid 视图挂载、仍是 ssr:false 懒加载。
+              */}
+              {viewMode === 'hybrid' && <HomeHeroDeck />}
             </>
           )}
 

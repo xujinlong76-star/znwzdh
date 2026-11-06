@@ -29,4 +29,20 @@ describe("首屏展板必须有同高骨架", () => {
     // 骨架高度要与真实卡片对齐，否则「有骨架也照样跳」
     expect(block).toContain("min-h-[160px]");
   });
+
+  /**
+   * 位置不变量（2026-11-07）：展板排在分类正文之后。
+   *
+   * 上面那条解决的是「水合后往下跳」，这条解决的是「首屏被挡住」。展板实测
+   * 733px 高，钉在分类之前时，553px 视口的首屏被引导卡 + 展板吃满，第一张
+   * 站点卡片要滚到 1407px 才出现；它还是页面上的第二个搜索框。可以挪，
+   * 不能挪回去。
+   */
+  it("展板挂载点在分类正文之后", () => {
+    const src = overlaySource("src/components/navigation-content.tsx");
+    const sections = src.indexOf("<NavigationCategorySection");
+    const deck = src.indexOf("{viewMode === 'hybrid' && <HomeHeroDeck />}");
+    expect(sections).toBeGreaterThan(-1);
+    expect(deck).toBeGreaterThan(sections);
+  });
 });

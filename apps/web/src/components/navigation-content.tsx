@@ -438,46 +438,6 @@ export function NavigationContent({
         )}
 
         <div className="px-3 sm:px-6 md:px-8 py-4 sm:py-8 flex-1">
-          {/* 站内目录带：首页此前 0 条 /category 链接，分类 hub 只能靠 sitemap
-              发现。服务端下发达标分类，SSR 直出；三个总览入口常驻。 */}
-          <nav
-            aria-labelledby="home-directory-title"
-            className="mb-4 sm:mb-6 rounded-xl border border-border/60 bg-background/60 px-3 py-2.5 backdrop-blur-sm"
-          >
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <span id="home-directory-title" className="text-xs font-semibold text-foreground">
-                站内目录
-              </span>
-              <Link href="/category" className="text-xs text-primary hover:underline">
-                全部分类
-              </Link>
-              <Link href="/sites" className="text-xs text-primary hover:underline">
-                全部站点
-              </Link>
-              <Link href="/tags" className="text-xs text-primary hover:underline">
-                按标签浏览
-              </Link>
-              {directoryLinks.length > 0 && (
-                <>
-                  <span aria-hidden className="hidden sm:block h-3.5 w-px bg-border" />
-                  <ul className="flex flex-wrap items-center gap-1.5">
-                    {directoryLinks.map((link) => (
-                      <li key={link.id}>
-                        <Link
-                          href={`/category/${encodeURIComponent(link.slug)}`}
-                          className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
-                        >
-                          {link.title}
-                          <span className="font-mono text-[10px] opacity-70">{link.count}</span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          </nav>
-
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
           {viewMode !== 'workbench' && <OnboardingCard />}
 
@@ -500,9 +460,6 @@ export function NavigationContent({
             </div>
           ) : (
             <>
-              {/* 极客混合模式：首屏极速组件展板 */}
-              {viewMode === 'hybrid' && <HomeHeroDeck />}
-
               <div className="space-y-8 sm:space-y-10">
                 {renderedCategories.map((category, index) => (
                   <NavigationCategorySection
@@ -537,8 +494,61 @@ export function NavigationContent({
                   </div>
                 )}
               </div>
+
+              {/*
+                极速启动展板（多引擎搜索 / 时钟 / 收藏坞 / 微工具）实测 733px 高，
+                原先钉在分类正文之前：553px 视口里首屏被它和引导卡吃满，第一张
+                站点卡片要滚到 1407px 才出现。它又是页面上的第二个搜索框，而站内
+                召回顶栏超级搜索已经覆盖。所以降到分类正文之后——组件本身不动，
+                仍只在 hybrid 视图挂载、仍是 ssr:false 懒加载。
+              */}
+              {viewMode === 'hybrid' && <HomeHeroDeck />}
             </>
           )}
+
+          {/*
+            站内目录带是首页 HTML 里权重最高的一批 /category 内链（F1，2026-10-22：
+            改版前首页 0 条分类内链，hub 只能靠 sitemap 被发现），判据由
+            home-directory.test.ts 锁死，不能删。但它同时是首屏的第五层导航，
+            于是放在分类正文之后：内链照常 SSR 直出，首屏留给内容。
+          */}
+          <nav
+            aria-labelledby="home-directory-title"
+            className="mt-10 sm:mt-12 rounded-xl border border-border/60 bg-background/60 px-3 py-2.5 backdrop-blur-sm"
+          >
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span id="home-directory-title" className="text-xs font-semibold text-foreground">
+                站内目录
+              </span>
+              <Link href="/category" className="text-xs text-primary hover:underline">
+                全部分类
+              </Link>
+              <Link href="/sites" className="text-xs text-primary hover:underline">
+                全部站点
+              </Link>
+              <Link href="/tags" className="text-xs text-primary hover:underline">
+                按标签浏览
+              </Link>
+              {directoryLinks.length > 0 && (
+                <>
+                  <span aria-hidden className="hidden sm:block h-3.5 w-px bg-border" />
+                  <ul className="flex flex-wrap items-center gap-1.5">
+                    {directoryLinks.map((link) => (
+                      <li key={link.id}>
+                        <Link
+                          href={`/category/${encodeURIComponent(link.slug)}`}
+                          className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                        >
+                          {link.title}
+                          <span className="font-mono text-[10px] opacity-70">{link.count}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          </nav>
         </div>
 
         {/* 首页浮动 DIY 排版与分类管理托盘 */}

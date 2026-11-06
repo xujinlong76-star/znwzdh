@@ -321,8 +321,9 @@ ${transcriptContext}
           scenario: "video_copilot",
           messages: [{ role: "user", content: prompt }],
           json: true,
+          thinking: false,
           temperature: 0.2,
-          maxTokens: 700,
+          maxTokens: 900,
         });
 
         let parsed: { answer?: string; keyPoints?: Array<{ startSec?: number; point?: string }> } | null = null;

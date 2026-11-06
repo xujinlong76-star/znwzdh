@@ -206,6 +206,7 @@ ${peerContext}
         scenario: "site_radar",
         messages: [{ role: "user", content: prompt }],
         json: true,
+        thinking: false,
         temperature: 0.2,
         maxTokens: 900,
       });
@@ -733,6 +734,7 @@ ${bookmarkLines}
           scenario: "batch_bookmark_classify",
           messages: [{ role: "user", content: prompt }],
           json: true,
+          thinking: false,
           temperature: 0.1,
           maxTokens: 2048,
         });

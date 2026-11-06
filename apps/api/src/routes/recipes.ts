@@ -127,6 +127,7 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
         scenario: "dynamic_recipe",
         messages: [{ role: "user", content: prompt }],
         json: true,
+        thinking: false,
         temperature: 0.2,
         maxTokens: 2048,
       });
@@ -251,6 +252,7 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
         scenario: "dynamic_comparison",
         messages: [{ role: "user", content: prompt }],
         json: true,
+        thinking: false,
         temperature: 0.2,
         maxTokens: 2048,
       });

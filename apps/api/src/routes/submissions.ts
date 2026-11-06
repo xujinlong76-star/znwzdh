@@ -116,8 +116,9 @@ ${catSpec || "无指定分类树"}
           scenario: "submission_prefill",
           messages: [{ role: "user", content: prompt }],
           json: true,
+          thinking: false,
           temperature: 0.2,
-          maxTokens: 600,
+          maxTokens: 800,
         });
 
         let parsed: Record<string, unknown> | null = null;

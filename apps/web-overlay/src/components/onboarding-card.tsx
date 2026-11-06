@@ -13,6 +13,10 @@
  *   1. 可以把浏览器书签整包导入（大多数新用户的第一诉求）；
  *   2. 搜索支持 ⌘K / `/`，且能搜拼音与语义；
  *   3. 收藏后下次直接从这里打开（本地收藏，不需要登录）。
+ *
+ * 键盘类提示（⌘K、空格、↑↓）在 `pointer: coarse` 的设备上不渲染：触屏用户
+ * 按不到键，留着就是噪声。判据用指针类型而不是断点宽度——640px 以上的平板
+ * 同样是触屏，按宽度筛会漏掉它们。
  */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -92,10 +96,11 @@ export function OnboardingCard() {
         <li className="rounded-xl border border-border/60 bg-background/70 p-3">
           <div className="flex items-center gap-2 text-xs font-medium">
             <Command className="h-3.5 w-3.5 text-primary" />
-            2. 用键盘搜索
+            2. 搜索
           </div>
           <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
-            按 <kbd className="rounded border px-1">{shortcutHint}</kbd> 唤起；支持拼音（qdjb）与自然语言。
+            点顶部搜索框直接输入
+            <span className="pointer-coarse:hidden">，或按 <kbd className="rounded border px-1">{shortcutHint}</kbd> 随时唤起</span>；支持拼音（qdjb）与自然语言。
           </p>
           <Button
             size="sm"

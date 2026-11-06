@@ -173,7 +173,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
               <X className="h-3 w-3" />
             </Button>
           )}
-          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/60 bg-muted/70 px-1.5 font-mono text-xs text-muted-foreground opacity-100 sm:flex">
+          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/60 bg-muted/70 px-1.5 font-mono text-xs text-muted-foreground opacity-100 sm:flex sm:pointer-coarse:hidden">
             <span>⌘</span>K
           </kbd>
         </div>

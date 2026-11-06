@@ -223,7 +223,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>{isEditingLayout ? '完成编排' : 'DIY 排版工坊'}</span>
-            <kbd className="hidden sm:inline-block text-[10px] px-1 py-0.2 bg-black/10 dark:bg-white/10 rounded font-mono">
+            <kbd className="hidden sm:inline-block sm:pointer-coarse:hidden text-[10px] px-1 py-0.2 bg-black/10 dark:bg-white/10 rounded font-mono">
               E
             </kbd>
           </Button>

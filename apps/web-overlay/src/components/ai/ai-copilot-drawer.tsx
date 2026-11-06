@@ -873,8 +873,8 @@ export function AiCopilotDrawer() {
                     <span className={`h-1.5 w-1.5 rounded-full ${enableThinking ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
                     <span>深度思考{enableThinking ? '已开' : '关闭'}</span>
                   </button>
-                  <span className="hidden sm:inline">·</span>
-                  <div className="hidden sm:flex items-center gap-1">
+                  <span className="hidden sm:inline sm:pointer-coarse:hidden">·</span>
+                  <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-1">
                     <Compass className="h-3 w-3 text-primary" />
                     <span>Cmd/Ctrl+J 唤出</span>
                   </div>

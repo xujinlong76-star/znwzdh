@@ -936,7 +936,7 @@ export function SpotlightModal({
                 AI Copilot
               </Badge>
             )}
-            <kbd className="hidden sm:inline-flex h-5 items-center gap-1 rounded border border-border/80 bg-muted px-1.5 font-mono text-[10px] text-muted-foreground">
+            <kbd className="hidden sm:inline-flex sm:pointer-coarse:hidden h-5 items-center gap-1 rounded border border-border/80 bg-muted px-1.5 font-mono text-[10px] text-muted-foreground">
               ESC
             </kbd>
           </div>
@@ -1739,14 +1739,15 @@ export function SpotlightModal({
           )}
         </div>
 
-        {/* 底部快捷键指南栏 */}
+        {/* 底部快捷键指南栏：↑↓ 与 ↵ 是硬件键，触屏按不到；而 > 与 ? 是打得出来的
+            输入前缀，软键盘上有，所以只摘掉前两项，后缀提示留给触屏用户。 */}
         <div className="px-4 py-2.5 border-t border-border/50 bg-muted/30 text-[11px] text-muted-foreground flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 pointer-coarse:hidden">
               <kbd className="rounded border bg-background px-1 py-0.5 text-[10px]">↑↓</kbd>
               <span>选择</span>
             </span>
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 pointer-coarse:hidden">
               <kbd className="rounded border bg-background px-1 py-0.5 text-[10px]">↵</kbd>
               <span>执行/打开</span>
             </span>

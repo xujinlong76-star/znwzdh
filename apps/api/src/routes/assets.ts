@@ -27,6 +27,21 @@ const MEMORY_CACHE = new Map<string, CachedIcon>();
 const MAX_MEMORY_ITEMS = 1500;
 const CACHE_DIR = "data/cache/icons";
 
+/**
+ * 内存缓存的唯一写入口。
+ *
+ * 图标有三条进入内存的路径：磁盘命中回升、成功抓取、SVG 兜底。上限原先只写在
+ * 成功抓取那一条上，于是每个抓不到图标的主机都从兜底路径留下一条永久条目
+ * ——常驻字节数按「访问过的主机数」增长，上限形同虚设。
+ */
+function rememberIcon(hostHash: string, entry: CachedIcon): void {
+  if (MEMORY_CACHE.size >= MAX_MEMORY_ITEMS) {
+    const oldest = MEMORY_CACHE.keys().next().value;
+    if (oldest) MEMORY_CACHE.delete(oldest);
+  }
+  MEMORY_CACHE.set(hostHash, entry);
+}
+
 // 确保本地磁盘缓存目录存在
 try {
   mkdirSync(CACHE_DIR, { recursive: true });
@@ -127,7 +142,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
         try {
           const meta = JSON.parse(readFileSync(diskMetaPath, "utf-8")) as { contentType: string; etag: string };
           const buf = readFileSync(diskDataPath);
-          MEMORY_CACHE.set(hostHash, {
+          rememberIcon(hostHash, {
             buffer: buf,
             contentType: meta.contentType,
             etag: meta.etag,
@@ -216,12 +231,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       // 6. 成功抓取 -> 落地磁盘与内存缓存
       if (iconBuffer) {
         const etag = `W/"${createHash("md5").update(iconBuffer).digest("hex")}"`;
-        // 维护内存容量上限
-        if (MEMORY_CACHE.size >= MAX_MEMORY_ITEMS) {
-          const firstKey = MEMORY_CACHE.keys().next().value;
-          if (firstKey) MEMORY_CACHE.delete(firstKey);
-        }
-        MEMORY_CACHE.set(hostHash, { buffer: iconBuffer, contentType, etag, updatedAt: Date.now() });
+        rememberIcon(hostHash, { buffer: iconBuffer, contentType, etag, updatedAt: Date.now() });
 
         try {
           writeFileSync(diskDataPath, iconBuffer);
@@ -240,7 +250,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       const fallbackSvg = generateFallbackSvg(monogram, hostname);
       const svgBuf = Buffer.from(fallbackSvg, "utf-8");
       const etag = `W/"svg_${hostHash}"`;
-      MEMORY_CACHE.set(hostHash, { buffer: svgBuf, contentType: "image/svg+xml", etag, updatedAt: Date.now() });
+      rememberIcon(hostHash, { buffer: svgBuf, contentType: "image/svg+xml", etag, updatedAt: Date.now() });
 
       reply
         .header("Content-Type", "image/svg+xml")

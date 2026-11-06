@@ -117,7 +117,9 @@ export interface HttpAdapterOptions {
    *   2. 请求不带 Authorization —— Next 对带鉴权头的 fetch 默认不缓存
    *      （开了 NAVHUB_STORAGE_TOKEN 的部署保持实时读，属安全降级）。
    *
-   * 注意：只给 GET 读加，写（PUT）永远不过缓存。
+   * 注意：只给 GET 读加，写（PUT）永远不过缓存；超过 2MB 缓存上限的大文档
+   * 连读也不过（见 DATA_CACHE_EXEMPT_FILES）——它们的条目写不进缓存，却会
+   * 让上一次写进去的旧快照被无限期当成新数据。
    */
   revalidateS?: number;
   /**
@@ -136,6 +138,35 @@ export interface HttpAdapterOptions {
  */
 export function storageTag(path: string): string {
   return `storage:${path.replace(/^\/+/, "")}`;
+}
+
+/**
+ * 永远不进 Data Cache 的内容文件（按文件名匹配读 URL，URL 里的路径是
+ * encodeURIComponent 过的，但文件名本身不变）。
+ *
+ * 为什么必须豁免，而不是「只是缓存不生效」：Next 的 fetch 缓存单条目上限 2MB，
+ * 超限的新数据**写不进去**，而旧条目不会因为写不进去被清掉——页面于是一直读
+ * 最早那份「还装得下」的快照，且只在日志里留一行 WARN。实测事故：中枢
+ * 2026-11-05 22:50 的 navigation.json（1365 条，898KB）落进
+ * `apps/web/.next/dev/cache/fetch-cache` 后，数据涨到 4841 条（序列化 3.03MB），
+ * 此后每次再生都以 `items over 2MB can not be cached (3029690 bytes)` 失败，
+ * 首屏停在两天前的旧目录上——同一屏里旧目录的条目数与中枢实时计数并排显示，
+ * 就是「同一个分类两个数字」的来源。
+ *
+ * 这几份文档只会变大、不会缩回 2MB 以内，缓存对它们是纯风险，因此直接实时读：
+ * 本机中枢读延迟毫秒级，上面还有 `getFileContent` 的 2.5 秒进程内微缓存与
+ * 单飞（`inflightReads`）兜并发惊群。小文件（site.json 等）继续吃缓存——
+ * 那才是 ISR 真正在用的那一层，收益与风险都在这里划算。
+ */
+const DATA_CACHE_EXEMPT_FILES = [
+  "navigation.json",
+  "navigation-default.json",
+  "videos.json",
+  "resource-metadata.json",
+];
+
+function isDataCacheExempt(url: string): boolean {
+  return DATA_CACHE_EXEMPT_FILES.some((name) => url.includes(name));
 }
 
 export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
@@ -227,7 +258,8 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
     const isRead = !init.method || init.method.toUpperCase() === "GET";
     // noStore 用于「必须实时」的读：版本号（乐观并发的判据）绝不能吃 60s 缓存，
     // 否则客户端会拿着过时版本去写，白撞一次 409。
-    const useDataCache = isRead && revalidateS > 0 && !opts.noStore;
+    // 大文档同样必须实时读，理由见 DATA_CACHE_EXEMPT_FILES。
+    const useDataCache = isRead && revalidateS > 0 && !opts.noStore && !isDataCacheExempt(url);
     // 静态标签（构造时给定，用于「整类内容一起失效」）与按路径标签合并去重：
     // 后者是写侧定点失效的抓手，前者保留给需要批量失效的部署。
     const effectiveTags = Array.from(new Set([...tags, ...(opts.tags ?? [])]));

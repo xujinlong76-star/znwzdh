@@ -75,12 +75,14 @@ describe("createHttpAdapter 正常路径", () => {
       revalidateS: 60,
     });
 
-    await adapter.read("src/navsphere/content/videos.json");
+    // 用 site.json 而不是 videos.json：后者体积超过 fetch 缓存上限，
+    // 根本不进 Data Cache（见文件末尾「装不进 Data Cache 的大文档改为实时读」）
+    await adapter.read("src/navsphere/content/site.json");
 
     const init = fetchImpl.mock.calls[0][1] as RequestInit & {
       next?: { revalidate?: number; tags?: string[] };
     };
-    expect(init.next?.tags).toEqual(["storage:src/navsphere/content/videos.json"]);
+    expect(init.next?.tags).toEqual(["storage:src/navsphere/content/site.json"]);
   });
 
   it("version 请求不吃缓存（no-store）：旧版本号会让写入白撞 409", async () => {
@@ -308,5 +310,60 @@ describe("读请求的 Data Cache（next.revalidate）", () => {
     await adapter.read("site.json");
     expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60, tags: ["storage:site.json"] });
     expect((lastInit(fetchImpl).headers as Record<string, string>).Authorization).toBe("Bearer t0ken");
+  });
+});
+
+describe("装不进 Data Cache 的大文档改为实时读", () => {
+  /** 取最近一次 fetch 的 init（含 next 扩展字段） */
+  function lastInit(fetchImpl: ReturnType<typeof vi.fn>): RequestInit & { next?: { revalidate?: number; tags: string[] } } {
+    return fetchImpl.mock.calls.at(-1)?.[1] as RequestInit & { next?: { revalidate?: number; tags: string[] } };
+  }
+
+  // Next 的 fetch 缓存单条目上限 2MB。超限的新数据写不进去，而**旧条目不会因为
+  // 写不进去被清掉**——页面于是无限期读最早那份「还装得下」的快照，只在日志里
+  // 留一行 WARN。实测事故：中枢 2026-11-05 22:50 的 navigation.json（1365 条，
+  // 898KB）进了 fetch-cache，之后数据涨到 4841 条（序列化 3.03MB），每次再生都
+  // 失败，首屏就此停在两天前的目录上。这几份文档只会更大，所以根本不进缓存。
+  const oversized = [
+    "src/navsphere/content/navigation.json",
+    "src/navsphere/content/navigation-default.json",
+    "src/navsphere/content/videos.json",
+    "src/navsphere/content/resource-metadata.json",
+  ];
+
+  it.each(oversized)("%s 实时读：no-store 且不附 next/tags", async (path) => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({
+      baseUrl: BASE,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      revalidateS: 60,
+      tags: ["navhub-hub"],
+    });
+
+    await adapter.read(path);
+    const init = lastInit(fetchImpl);
+    expect(init.next).toBeUndefined();
+    expect(init.cache).toBe("no-store");
+  });
+
+  it("小文件不受豁免影响（site.json 继续吃 60s 缓存 —— ISR 用的就是这一层）", async () => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await adapter.read("src/navsphere/content/site.json");
+    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60, tags: ["storage:src/navsphere/content/site.json"] });
+  });
+
+  it("豁免只在读侧：写大文档仍是 PUT，不带缓存选项也不带 no-store 之外的花样", async () => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await adapter.write("src/navsphere/content/navigation.json", "{}", "msg");
+    const init = lastInit(fetchImpl);
+    expect(init.next).toBeUndefined();
+    expect(init.method).toBe("PUT");
   });
 });

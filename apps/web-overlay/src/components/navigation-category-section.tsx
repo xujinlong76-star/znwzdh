@@ -19,6 +19,7 @@ import {
 } from '@/lib/modular/diy-presets'
 import { createCustomSiteId } from '@/lib/modular/custom-site-input'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { countCategorySites } from '@/lib/modular/category-counts'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { useToast } from '@/components/ui/use-toast'
 import { copyText } from '@/lib/clipboard'
@@ -95,10 +96,9 @@ export function NavigationCategorySection({
   const isCustom = Boolean(category.isCustom)
   const isCollapsed = collapsedCategoryIds.includes(category.id)
   const directItems = (category.items || []) as NavigationSubItem[]
-  const directCount = directItems.length
   const subCats = (category.subCategories || []) as Array<NavigationCategory & { items?: NavigationSubItem[] }>
-  const subCount = subCats.reduce((acc: number, sub) => acc + (sub.items?.length || 0), 0)
-  const totalCount = directCount + subCount
+  // 与吸顶快捷直达轨、站内目录带共用同一个算式（lib/modular/category-counts.ts）
+  const totalCount = countCategorySites(category)
   const categoryPinnedItemIds = pinnedSiteIdsByCategory[category.id] || []
   /**
    * 排序结果必须缓存。

@@ -89,6 +89,7 @@ import {
   isSafeSiteHref,
 } from '@/lib/modular/diy-presets'
 import { filterNavigationByWorkspace } from '@/lib/modular/workspace-matching'
+import { countCategorySites } from '@/lib/modular/category-counts'
 import {
   combineAndSortCategories,
   customCategoriesToNavigation,
@@ -232,6 +233,19 @@ export function NavigationContent({
     }
     return sortedCategories.slice(0, initialCategoryLimit)
   }, [mounted, initialCategoryLimit, sortedCategories])
+
+  /**
+   * 分类 id → 本页真正渲染出来的站点数（算式见 lib/modular/category-counts.ts）。
+   *
+   * 站内目录带的链接由服务端按中枢权威类目树生成，它自带的数字是中枢的 active 计数，
+   * 与本页区块头的「树口径」差着坏链与快照新鲜度两件事——同屏并排就是数字打架。
+   * 目录带的数字改用这份映射；`link.count` 只留给树里找不到对应分类时的回退
+   * （自定义分类、被隐藏的分类）。
+   */
+  const treeSiteCounts = useMemo(
+    () => new Map(sortedCategories.map((cat) => [cat.id, countCategorySites(cat)] as const)),
+    [sortedCategories],
+  )
 
   /* ------------------------- 多选批量操作 -------------------------
    *
@@ -423,7 +437,7 @@ export function NavigationContent({
             categories={sortedCategories.map(cat => ({
               id: cat.id,
               title: cat.title,
-              count: (cat.items?.length || 0) + (cat.subCategories?.reduce((acc: number, sub: any) => acc + (sub.items?.length || 0), 0) || 0)
+              count: countCategorySites(cat)
             }))}
             isAllCollapsed={sortedCategories.length > 0 && sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))}
             onToggleAllCollapsed={() => {
@@ -540,7 +554,9 @@ export function NavigationContent({
                           className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
                         >
                           {link.title}
-                          <span className="font-mono text-[10px] opacity-70">{link.count}</span>
+                          <span className="font-mono text-[10px] opacity-70">
+                            {treeSiteCounts.get(link.id) ?? link.count}
+                          </span>
                         </Link>
                       </li>
                     ))}

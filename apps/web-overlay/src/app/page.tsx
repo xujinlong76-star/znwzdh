@@ -115,6 +115,10 @@ function homeInitialSsrCategories(): number {
  * 一级根在原始 counts 里恒为 0（站点只挂叶子），不聚合就等于目录带永久消失。
  * 选取从「站点数降序」改成权威树 `sort` 升序：这排内链的位置不该随数据浮动，
  * 否则同一个站今天排第一、明天第五，首页每天换脸，爬虫也难判断锚点。
+ *
+ * 这里返回的 `count` 是**中枢 active 口径**，首页只把它当回退值用：实际显示的数字
+ * 来自本页渲染的导航树（`navigation-content.tsx` 的 treeSiteCounts），一屏一个平面。
+ * active 计数在这条链路上的职责是「链过去的分类页会不会 404」，不是「有几张卡片」。
  */
 async function loadDirectoryLinks() {
   const [categories, rawCounts] = await Promise.all([

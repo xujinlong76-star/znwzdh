@@ -1057,3 +1057,221 @@ export async function generateImage(opts: ImageGenerationOptions): Promise<Image
 
   throw lastError;
 }
+
+export interface VideoGenerationOptions {
+  prompt: string;
+  apiKey?: string | null;
+  baseUrl?: string;
+  model?: string;
+  seconds?: "5" | "10";
+  mode?: "text" | "keyframe" | "reference";
+  size?: "720P";
+  aspectRatio?: "16:9" | "9:16";
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
+export interface VideoTaskResult {
+  ok: boolean;
+  taskId?: string;
+  status: "processing" | "completed" | "failed" | "queue_full";
+  url?: string;
+  message?: string;
+  model: string;
+}
+
+async function createVideoTaskSingle(opts: VideoGenerationOptions, key: string): Promise<VideoTaskResult> {
+  const baseUrl = (opts.baseUrl || AGNES_BASE_URL).replace(/\/+$/, "");
+  const endpoint = baseUrl.endsWith("/videos") ? baseUrl : `${baseUrl}/videos`;
+  const fetchFn = opts.fetchImpl ?? fetch;
+  const model = opts.model || AGNES_VIDEO_MODEL;
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetchFn(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        prompt: opts.prompt,
+        seconds: opts.seconds || "5",
+        mode: opts.mode || "text",
+        size: opts.size || "720P",
+        aspect_ratio: opts.aspectRatio || "16:9",
+      }),
+      signal: controller.signal,
+    });
+
+    if (res.status === 503) {
+      const errText = await res.text();
+      let msg = "视频队列已满，请稍后重试";
+      try {
+        const parsed = JSON.parse(errText);
+        if (parsed?.message) msg = parsed.message;
+      } catch {
+        // 容错降级：非 JSON 错误体采用通用队列满提示
+      }
+      return {
+        ok: false,
+        status: "queue_full",
+        message: msg,
+        model,
+      };
+    }
+
+    if (!res.ok) {
+      const detail = await readErrorDetail(res);
+      const code: LlmErrorCode =
+        res.status === 401 || res.status === 403
+          ? "auth"
+          : res.status === 429
+            ? "rate_limit"
+            : res.status >= 500
+              ? "http"
+              : "invalid_response";
+      throw new LlmError(code, `AI 视频生成任务创建失败（HTTP ${res.status}）`, res.status, detail);
+    }
+
+    const data = (await res.json()) as Record<string, unknown>;
+    const nestedData = (typeof data.data === "object" && data.data !== null) ? (data.data as Record<string, unknown>) : {};
+    const taskId =
+      (typeof data.task_id === "string" ? data.task_id : "") ||
+      (typeof data.id === "string" ? data.id : "") ||
+      (typeof data.taskId === "string" ? data.taskId : "") ||
+      (typeof nestedData.task_id === "string" ? nestedData.task_id : "") ||
+      (typeof nestedData.id === "string" ? nestedData.id : "");
+
+    const directUrl =
+      (typeof data.url === "string" ? data.url : "") ||
+      (typeof nestedData.url === "string" ? nestedData.url : "");
+
+    if (directUrl) {
+      return {
+        ok: true,
+        taskId,
+        status: "completed",
+        url: directUrl,
+        model,
+      };
+    }
+
+    if (!taskId) {
+      throw new LlmError("invalid_response", "AI 视频生成未返回有效任务 ID");
+    }
+
+    return {
+      ok: true,
+      taskId,
+      status: "processing",
+      model,
+    };
+  } catch (err) {
+    if (err instanceof LlmError) throw err;
+    if (err instanceof Error && err.name === "AbortError") throw new LlmError("timeout", `AI 视频任务创建超时（${timeoutMs}ms）`);
+    throw new LlmError("network", "AI 视频任务网络失败：" + (err instanceof Error ? err.message : String(err)));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * 创建 AI 视频生成任务（内置多密钥自动轮询与故障转移）
+ */
+export async function createVideoTask(opts: VideoGenerationOptions): Promise<VideoTaskResult> {
+  const keys = extractApiKeys(opts.apiKey);
+  if (keys.length === 0) {
+    throw new LlmError("config", "未配置可用的 AI 密钥");
+  }
+
+  const startIndex = Math.abs(keyPoolCounter++) % keys.length;
+  let lastError: unknown;
+
+  for (let i = 0; i < keys.length; i++) {
+    const currentKey = keys[(startIndex + i) % keys.length]!;
+    try {
+      const res = await createVideoTaskSingle(opts, currentKey);
+      if (res.status === "queue_full" && i < keys.length - 1) {
+        // 当前 Key 遇到队列满，尝试下一个 Key 碰碰运气
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err;
+      const isRecoverable =
+        err instanceof LlmError &&
+        (err.code === "rate_limit" || err.code === "auth" || err.code === "network" || err.code === "http");
+      if (!isRecoverable || i === keys.length - 1) {
+        throw err;
+      }
+    }
+  }
+
+  if (lastError) throw lastError;
+  return {
+    ok: false,
+    status: "queue_full",
+    message: "视频队列已满，请稍后重试",
+    model: opts.model || AGNES_VIDEO_MODEL,
+  };
+}
+
+/**
+ * 轮询 AI 视频任务生成状态
+ */
+export async function pollVideoTask(opts: {
+  taskId: string;
+  apiKey?: string | null;
+  model?: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<{ ok: boolean; status: "completed" | "processing" | "failed"; url?: string; message?: string }> {
+  const keys = extractApiKeys(opts.apiKey);
+  const key = keys[0] || "";
+  const model = opts.model || AGNES_VIDEO_MODEL;
+  const fetchFn = opts.fetchImpl ?? fetch;
+  const timeoutMs = opts.timeoutMs ?? 15_000;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const url = `https://api.agnes-ai.cn/agnesapi?video_id=${encodeURIComponent(opts.taskId)}&model_name=${encodeURIComponent(model)}`;
+    const res = await fetchFn(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${key}`,
+      },
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      return { ok: false, status: "failed", message: `HTTP ${res.status}` };
+    }
+
+    const data = (await res.json()) as Record<string, unknown>;
+    const nestedData = (typeof data.data === "object" && data.data !== null) ? (data.data as Record<string, unknown>) : {};
+    const statusRaw = String(data.status || nestedData.status || "").toLowerCase();
+    const videoUrl = String(data.url || nestedData.url || "");
+
+    if (statusRaw === "completed" || videoUrl) {
+      return { ok: true, status: "completed", url: videoUrl };
+    }
+    if (statusRaw === "failed" || statusRaw === "error") {
+      return { ok: false, status: "failed", message: String(data.message || nestedData.message || "生成失败") };
+    }
+
+    return { ok: true, status: "processing" };
+  } catch (err) {
+    // 容错降级：轮询网络抖动或超时不判定为彻底失败，仍返回 processing 允许后续重试
+    return { ok: true, status: "processing", message: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+

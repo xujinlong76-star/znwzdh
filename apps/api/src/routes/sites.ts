@@ -16,7 +16,7 @@ import {
   SiteCreateBody,
   UNCATEGORIZED_CATEGORY_ID,
 } from "@navhub/core";
-import { AGNES_IMAGE_MODEL, enrichUrl, generateImage } from "@navhub/ai";
+import { AGNES_IMAGE_MODEL, AGNES_VIDEO_MODEL, createVideoTask, enrichUrl, generateImage } from "@navhub/ai";
 import { indexSite, indexSitesBatch } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { callLlm, createEnrichUsageCallback } from "../llm-usage.ts";
@@ -372,6 +372,265 @@ ${peerContext}
         reply.code(502);
         return {
           error: "图像生成服务暂时不可用，请稍后重试",
+          detail: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+  );
+
+  /**
+   * 全球化多语言本地化透视 (Multilingual AI Localization)
+   * 运用 Agnes 3.0 Flash 将任意中外站点快速翻译并进行本土语境分析，
+   * 彻底消除语言障碍、并排查境内直连/支付暗坑。
+   */
+  app.get(
+    "/api/sites/:id/localize",
+    {
+      config: {
+        scope: "public",
+        cache: { maxAge: 3600, etag: true },
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 30, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const { lang = "en" } = (req.query ?? {}) as { lang?: string };
+      const site = await ctx.repo.getSite(id);
+      if (!site) {
+        reply.code(404);
+        return { error: "站点不存在" };
+      }
+
+      const langMap: Record<string, { name: string; nativeName: string }> = {
+        en: { name: "English", nativeName: "English" },
+        zh: { name: "Simplified Chinese", nativeName: "简体中文" },
+        ja: { name: "Japanese", nativeName: "日本語" },
+        es: { name: "Spanish", nativeName: "Español" },
+        de: { name: "German", nativeName: "Deutsch" },
+        fr: { name: "French", nativeName: "Français" },
+      };
+
+      const targetLang = langMap[lang] || { name: lang, nativeName: lang };
+      const cacheKey = `site_localize:${site.id}:${lang}:${createHash("sha256")
+        .update(site.title + (site.description || ""))
+        .digest("hex")
+        .slice(0, 16)}`;
+
+      try {
+        const cached = await ctx.repo.getSystemState<Record<string, unknown>>(cacheKey);
+        if (cached && typeof cached === "object" && typeof cached.localizedTitle === "string") {
+          return { ok: true, cached: true, ...cached };
+        }
+      } catch {
+        // 容错降级：系统状态缓存读取失败直接向下穿透打大模型
+      }
+
+      const llm = await resolveLlm(ctx);
+      const prompt = `你是全球化数字生产力工具本土化评估专家。请针对以下网站/工具，将其核心价值翻译并深度本地化适配至【${targetLang.nativeName} (${targetLang.name})】语境：
+【原站点信息】
+- 网站标题: ${site.title}
+- 官方网址: ${site.url}
+- 原文描述: ${site.description || "无"}
+- 标签: ${Array.isArray(site.tags) ? site.tags.join("、") : "未标注"}
+- 属性分面: ${site.facets ? JSON.stringify(site.facets) : "无"}
+
+请严格按以下 JSON 结构返回本土化信息（所有字段值必须为 ${targetLang.nativeName}）：
+{
+  "localizedTitle": "本土化翻译后的软件名称（保留核心品牌名，补充简明修饰）",
+  "localizedTagline": "一句话核心价值主张与最吸引人的卖点（30字内）",
+  "localizedDescription": "通俗易懂的 2~3 句软件功能介绍（80字内）",
+  "localizedScenarios": [
+    "高频实战场景 1",
+    "高频实战场景 2",
+    "高频实战场景 3"
+  ],
+  "localizedCaveats": "关键访问与支付提示（如：是否免国内备案、是否支持微信/支付宝或仅限国际信用卡、是否需要海外网络等，35字内）",
+  "keywords": ["关键词1", "关键词2", "关键词3"]
+}`;
+
+      try {
+        const res = await callLlm(ctx, llm, {
+          scenario: "site_localize",
+          messages: [{ role: "user", content: prompt }],
+          json: true,
+          thinking: false,
+          temperature: 0.2,
+          maxTokens: 800,
+        });
+
+        let parsed: Record<string, unknown> | null = null;
+        try {
+          const raw = (res.content || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+          parsed = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          // 容错降级：首轮 JSON 解析失败正则兜底提取
+          const match = (res.content || "").match(/\{[\s\S]*\}/);
+          if (match) {
+            try {
+              parsed = JSON.parse(match[0]) as Record<string, unknown>;
+            } catch {
+              // 容错降级：正则提取后仍非合法 JSON 放弃解析
+            }
+          }
+        }
+
+        if (parsed && typeof parsed.localizedTitle === "string") {
+          const resultData = {
+            siteId: site.id,
+            lang,
+            langLabel: targetLang.nativeName,
+            localizedTitle: String(parsed.localizedTitle),
+            localizedTagline: String(parsed.localizedTagline || site.description || ""),
+            localizedDescription: String(parsed.localizedDescription || site.description || ""),
+            localizedScenarios: Array.isArray(parsed.localizedScenarios) ? parsed.localizedScenarios.map(String) : [],
+            localizedCaveats: String(parsed.localizedCaveats || "可通过官方网址直连访问"),
+            keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(String) : [],
+          };
+
+          try {
+            await ctx.repo.setSystemState(cacheKey, resultData);
+          } catch {
+            // 容错降级：缓存写入失败不影响向前端返回生成结果
+          }
+
+          return { ok: true, cached: false, ...resultData };
+        }
+      } catch (err) {
+        req.log.warn({ err: String(err) }, "站点多语言本地化失败");
+      }
+
+      // 启发式降级
+      return {
+        ok: true,
+        cached: false,
+        fallback: true,
+        siteId: site.id,
+        lang,
+        langLabel: targetLang.nativeName,
+        localizedTitle: site.title,
+        localizedTagline: site.description || site.title,
+        localizedDescription: site.description || `${site.title} 官方在线服务与工具`,
+        localizedScenarios: site.tags?.slice(0, 3) || ["效率提升", "在线工具"],
+        localizedCaveats: "可通过官方网址直接访问",
+        keywords: site.tags || [],
+      };
+    }
+  );
+
+  /**
+   * 站点 3 秒核心交互微演示 (AI Video Micro-Demo Engine)
+   * 运用 Agnes Video 2.5 Flash 生成 720P 核心操作微演示视频。
+   * 当官方免费算力队列满载或排队时，自动无缝降级为基于架构蓝图的高保真交互微动效模拟。
+   */
+  app.post(
+    "/api/sites/:id/video-demo",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 20, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const site = await ctx.repo.getSite(id);
+      if (!site) {
+        reply.code(404);
+        return { error: "站点不存在" };
+      }
+
+      const cacheKey = `site_video:${site.id}`;
+      try {
+        const cached = await ctx.repo.getSystemState<Record<string, unknown>>(cacheKey);
+        if (cached && typeof cached === "object" && typeof cached.videoUrl === "string") {
+          return { ok: true, cached: true, ...cached };
+        }
+      } catch {
+        // 容错降级：缓存读取异常直接穿透继续执行生成
+      }
+
+      const llm = await resolveLlm(ctx);
+      if (!llm.provider.apiKey) {
+        reply.code(400);
+        return { error: "未配置可用 AI 密钥" };
+      }
+
+      const videoPrompt = `Clean minimalist software UI interaction walkthrough animation of "${site.title}" (${(site.description || "").slice(0, 80)}). Modern dark developer dashboard theme, responsive interface, smooth real-time streaming data visual chart animation, high definition 720P, 60fps tech product screencast`;
+
+      try {
+        const taskRes = await createVideoTask({
+          prompt: videoPrompt,
+          apiKey: llm.provider.apiKey,
+          baseUrl: llm.provider.baseUrl,
+          model: AGNES_VIDEO_MODEL,
+          seconds: "5",
+          size: "720P",
+          aspectRatio: "16:9",
+        });
+
+        if (taskRes.ok && taskRes.status === "completed" && taskRes.url) {
+          const payload = {
+            siteId: site.id,
+            status: "completed",
+            videoUrl: taskRes.url,
+            model: taskRes.model,
+          };
+          try {
+            await ctx.repo.setSystemState(cacheKey, payload);
+          } catch {
+            // 容错降级：视频生成结果写缓存失败不阻断接口返回
+          }
+          return { ok: true, cached: false, ...payload };
+        }
+
+        if (taskRes.ok && taskRes.taskId) {
+          return {
+            ok: true,
+            status: "processing",
+            taskId: taskRes.taskId,
+            message: "视频正在云端 Agnes 2.5 集群渲染中...",
+            model: taskRes.model,
+          };
+        }
+
+        // 官方上游免费算力队列满载 (503 queue_full)：无缝降级为高保真架构视觉与交互微动效
+        let fallbackImageUrl = "";
+        try {
+          const imgRes = await generateImage({
+            prompt: `Clean technical architecture dataflow diagram for "${site.title}" (${(site.description || "software tool").slice(0, 60)}). Minimalist dark layout: left input trigger, center engine, right output artifacts. Crisp vector lines, high readability, 16:9`,
+            apiKey: llm.provider.apiKey,
+            baseUrl: llm.provider.baseUrl,
+            model: AGNES_IMAGE_MODEL,
+          });
+          fallbackImageUrl = imgRes.url;
+        } catch {
+          // 容错降级：架构图生成异常采用内置动效
+        }
+
+        return {
+          ok: true,
+          status: "simulated_preview",
+          fallbackType: "interactive_simulation",
+          previewImageUrl: fallbackImageUrl,
+          simulationSteps: [
+            `1. 初始化 ${site.title} 核心控制台与上下文`,
+            `2. 触发主场景流水线执行实时流式交互`,
+            `3. 验证产出物并极速导出成品`,
+          ],
+          message: "官方免费视频集群当前排队高峰，已无缝切换至高保真交互式微动效演示！",
+          model: AGNES_VIDEO_MODEL,
+        };
+      } catch (err) {
+        req.log.warn({ err: String(err) }, "视频微演示任务调度失败");
+        return {
+          ok: true,
+          status: "simulated_preview",
+          fallbackType: "interactive_simulation",
+          simulationSteps: [
+            `1. 打开 ${site.title} 官方在线控制台`,
+            `2. 运行核心实战工作流`,
+            `3. 查看处理结果与指标`,
+          ],
+          message: "已启用本地交互式微动效演示",
           detail: err instanceof Error ? err.message : String(err),
         };
       }

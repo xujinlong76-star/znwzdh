@@ -243,11 +243,11 @@ jobs:
       - run: pnpm --filter navsphere exec tsc --noEmit
         id: web-typecheck
       # Next 16 移除了 `next lint`（eslint-config-next@16 改为扁平配置 + ESLint CLI）。
-      # 2026-11-06：vendor-only 文件已在 eslint.config.mjs ignores 登记排除（20 个，
-      # 方括号目录需转义）；no-explicit-any 与 react-hooks v6 族按台账显式降级。
-      # 剩余 ~321 条 no-unused-vars 待 unused-codemod epic 清零后
-      # 方可升为 --max-warnings 0 阻断（epic 细节见 UPGRADE-MASTER-PLAN 三.七）。
-      - run: pnpm --filter navsphere exec eslint .
+      # 2026-11-07 起棘轮门禁（--max-warnings 316 = 2026-11-07 实测基线）：vendor-only 文件
+      # 已在 eslint.config.mjs ignores 登记排除（20 个，方括号目录需转义）；
+      # no-explicit-any 与 react-hooks v6 族按台账显式降级；unused-vars 棘轮不许新增。
+      # 目标：unused-codemod epic 清零后降为 --max-warnings 0。
+      - run: pnpm --filter navsphere exec eslint . --max-warnings 316
         id: web-lint
       - run: pnpm --filter navsphere build
         id: web-build

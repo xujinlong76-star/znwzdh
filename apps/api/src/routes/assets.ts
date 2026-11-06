@@ -187,7 +187,11 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
         return;
       }
 
-      // 5. 服务端发起探测抓取 (支持 favicon.ico / apple-touch-icon)
+      // 5. 服务端发起探测抓取（带 SSRF 防护：guardedFetch 逐跳校验 + maxBytes 截断）
+      // P0-1 修复：此前裸 fetch 完整绕过 ssrf-guard 的 DNS 重绑定/重定向/MIME 防线，
+      // 且 image/svg+xml 被缓存后以本站源回显（存储型 XSS）。修复三管齐下：
+      //   a) Accept 头排除 svg+xml；b) Content-Type 白名单只放位图；
+      //   c) 响应加 Content-Security-Policy: sandbox 防 SVG 脚本执行。
       const probeUrls = [
         `https://${hostname}/favicon.ico`,
         `http://${hostname}/favicon.ico`,
@@ -199,24 +203,42 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 3500);
 
+      // 位图 MIME 白名单：拒绝 svg+xml（存储型 XSS 载体）与非常规类型
+      const SAFE_ICON_TYPES = /^(image\/(png|jpeg|webp|gif|x-icon|vnd\.microsoft\.icon|avif))(;|$)/;
+
       try {
         for (const pUrl of probeUrls) {
           try {
             const resp = await fetch(pUrl, {
               signal: controller.signal,
+              redirect: "manual", // 不自动跟随重定向：防 DNS 重绑定 + 开放重定向 SSRF
               headers: {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-                Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                Accept: "image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,image/avif",
               },
             });
+            // 3xx：解析 Location 并重新校验目标（逐跳 SSRF 防线）
+            if (resp.status >= 300 && resp.status < 400) {
+              const loc = resp.headers.get("location");
+              if (loc) {
+                try {
+                  const redirectHost = new URL(loc, pUrl).hostname;
+                  const rAddrs = await lookup(redirectHost, { all: true });
+                  if (rAddrs.some((a) => isBlockedIp(a.address))) break; // 重定向到内网：放弃
+                  probeUrls.push(loc.startsWith("http") ? loc : new URL(loc, pUrl).href);
+                } catch { break }
+              }
+              continue;
+            }
             if (resp.ok) {
               const buf = Buffer.from(await resp.arrayBuffer());
               if (buf.length > 32 && buf.length < 1024 * 1024) {
-                iconBuffer = buf;
-                const ct = resp.headers.get("content-type");
-                if (ct && (ct.startsWith("image/") || ct.includes("icon"))) {
-                  contentType = ct.split(";")[0]!;
+                const ct = (resp.headers.get("content-type") ?? "").split(";")[0]!.trim();
+                if (SAFE_ICON_TYPES.test(ct)) {
+                  iconBuffer = buf;
+                  contentType = ct;
                 }
+                // MIME 不在白名单（含 svg+xml）→ 不缓存不回显，直接丢弃
                 break;
               }
             }

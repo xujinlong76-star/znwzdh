@@ -733,7 +733,13 @@ ${toolSummary}
         .map((s) => `- ${s.title} (${s.url}): ${(s.description || "").slice(0, 70)}`)
         .join("\n");
 
+      const isEnglishQuery = /^[a-zA-Z0-9\s\-_.,?!'"$#@]+$/.test(q);
+      const langRule = isEnglishQuery
+        ? "The user's query is in English. You MUST output all fields (actionSummary, whyBest, steps, proTip) in fluent English."
+        : "用户提问是中文，请用精炼纯正的中文输出 actionSummary、whyBest、steps 与 proTip。";
+
       const prompt = `你是全球顶级数字生产力调度与效率专家。针对用户的自然语言实操提问，从候选工具中选出最契合的 1 个王牌工具，并输出 3 步极简操作法。
+语言约束：${langRule}
 
 【用户提问】: "${q}"
 
@@ -749,9 +755,9 @@ ${candidateContext}
     "whyBest": "入选核心理由（如：免登录每日赠送额度、支持声纹切分，30字内）"
   },
   "steps": [
-    "1. 实操第一步（18字内）",
-    "2. 实操第二步（18字内）",
-    "3. 实操第三步（18字内）"
+    "实操第一步描述（不要带数字序号，18字内）",
+    "实操第二步描述（不要带数字序号，18字内）",
+    "实操第三步描述（不要带数字序号，18字内）"
   ],
   "proTip": "关键防坑或提效小贴士（30字内）",
   "alternativeTool": {
@@ -843,8 +849,8 @@ ${candidateContext}
           },
           steps:
             Array.isArray(parsed.steps) && parsed.steps.length > 0
-              ? parsed.steps.slice(0, 3)
-              : ["1. 进入工具主页", "2. 按需选择功能与配置", "3. 导出或应用成果"],
+              ? parsed.steps.slice(0, 3).map((s: any) => String(s).replace(/^(\d+[\.、\s]+|[一二三四五]+[、\.\s]+)/, "").trim())
+              : ["进入工具主页", "按需选择功能与配置", "导出或应用成果"],
           proTip: parsed.proTip || "优先使用最新版本以获得最佳稳定性与免费额度。",
           alternativeTool: altMatch,
           model: res.model,

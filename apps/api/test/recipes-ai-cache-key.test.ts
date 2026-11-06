@@ -73,7 +73,11 @@ beforeAll(async () => {
     loadConfig({
       mode: "lite" as const,
       embedding: { model: "m", endpoint: "https://hf-mirror.com", dtype: "q8" as const, cacheDir: join(dir, "models"), dim: 512, enabled: false },
-      llm: { baseUrl: "https://cache-stub.test/v1", apiKey: "test-key", model: "cache-test-model", timeoutMs: 3000 },
+      // 端点主机写成字面 IP：网关在发请求前会先解析端点域名做 SSRF 校验
+      // （llm.ts assertLlmEndpoint → resolveAndCheck），假域名等于让本套件依赖本机真实 DNS，
+      // 全量并发下会偶发「DNS 解析失败」并让路由直接 500。字面 IP 走 isIP 分支，不查 DNS；
+      // 出站请求由下方 fetch 桩接管，一个包都不会离开进程。
+      llm: { baseUrl: "https://93.184.216.34/v1", apiKey: "test-key", model: "cache-test-model", timeoutMs: 3000 },
       fetch: { timeoutMs: 1000, maxBytes: 65536, maxRedirects: 1, allowPrivateNetworks: false, userAgent: "NavHubTest/0.1" },
       corsOrigins: ["*"],
       sqlitePath: join(dir, "recipes.db"),

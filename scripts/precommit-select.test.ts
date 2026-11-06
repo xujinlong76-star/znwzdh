@@ -13,7 +13,7 @@
  * 用 `NAVHUB_PRECOMMIT_FILES` 注入改动集、`NAVHUB_PRECOMMIT_DRYRUN=1` 只看不跑。
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -73,8 +73,11 @@ describe("pre-commit 选测：改动 → 测试文件", () => {
     // 所以改路由不再顺带跑它（词根只作回退，见下一条用例）。任务执行器的改动仍由
     // 改 jobs.ts 选中它（本文件第 6 条用例钉住）。
     expect(files.length).toBeGreaterThan(50);
-    // 但仍小于整棵 apps/api/test（128）：收窄还在，只是依据从名字换成了依赖
-    expect(files.length).toBeLessThan(128);
+    // 但仍小于整棵 apps/api/test：收窄还在，只是依据从名字换成了依赖。
+    // 总数取目录实时计数——写死的快照每新增一个 api 测试就假红一次
+    // （本次提交新增 assets-icon-fallback.test.ts 后，选中数正好顶穿了旧的 128）。
+    const apiTestTotal = readdirSync(join(ROOT, "apps/api/test")).filter((f) => f.endsWith(".test.ts")).length;
+    expect(files.length).toBeLessThan(apiTestTotal);
   });
 
   it("NAVHUB_PRECOMMIT_NO_GRAPH=1 只走旧词根口径（test-impact --diff 的对照臂）", () => {

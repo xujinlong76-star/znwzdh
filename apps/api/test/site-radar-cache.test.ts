@@ -20,8 +20,11 @@ const dir = mkdtempSync(join(tmpdir(), "navhub-radar-cache-"));
 const base = {
   mode: "lite" as const,
   embedding: { model: "m", endpoint: "https://hf-mirror.com", dtype: "q8" as const, cacheDir: join(dir, "models"), dim: 512, enabled: false },
-  // 真实网络一概不出门：模型端点由下方 fetch 桩接管
-  llm: { baseUrl: "https://radar-stub.test/v1", apiKey: "test-key", model: "radar-test-model", timeoutMs: 3000 },
+  // 真实网络一概不出门：模型端点由下方 fetch 桩接管。
+  // 主机写成字面 IP：网关发请求前会先解析端点域名做 SSRF 校验
+  // （llm.ts assertLlmEndpoint → resolveAndCheck），假域名会让本套件依赖本机真实 DNS，
+  // 全量并发下偶发「DNS 解析失败」并把 500 当成模型失败。
+  llm: { baseUrl: "https://93.184.216.34/v1", apiKey: "test-key", model: "radar-test-model", timeoutMs: 3000 },
   fetch: { timeoutMs: 1000, maxBytes: 65536, maxRedirects: 1, allowPrivateNetworks: false, userAgent: "NavHubTest/0.1" },
   corsOrigins: ["*"],
 };
@@ -60,7 +63,11 @@ function stubLlm(content: string | "boom") {
   modelCalls = [];
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (!url.includes("/chat/completions")) return original(input as RequestInfo);
+    // 非模型端点就地回空，不 fall through 到真实网络：桩主机是字面 IP，
+    // 真发一次就是往公网地址发请求，成败取决于当天网络，测试结果也跟着抖。
+    if (!url.includes("/chat/completions")) {
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     modelCalls.push(url);
     if (content === "boom") throw new Error("模型不可达（测试桩）");
     return new Response(

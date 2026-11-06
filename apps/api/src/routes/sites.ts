@@ -269,6 +269,19 @@ ${peerContext}
       }
       parsed.peerLinks = peerLinks;
 
+      let healthBadge = { type: "healthy", label: "健康直连" };
+      if (parsed.accessRequirement === "需海外网络环境") {
+        healthBadge = { type: "geo_limited", label: "需海外网络" };
+      } else if (parsed.pricingType === "仅限付费试用" || parsed.pricingType === "企业级商业定价") {
+        healthBadge = { type: "paid_only", label: "商业付费" };
+      } else if (parsed.pricingType === "完全开源免费") {
+        healthBadge = { type: "open_free", label: "完全免费开源" };
+      }
+      parsed.healthBadge = healthBadge;
+      if (peerLinks.length > 0) {
+        parsed.bestAlternative = peerLinks[0];
+      }
+
       // 键用 llm.provider.model 而不是 res.model：读取侧比对的就是前者，
       // 供应商回显一个略不一样的 model 串会让缓存永远命不中。
       // 落库失败也不能把已经付过几十秒的结果丢掉，单独吞掉异常只留告警。
@@ -333,7 +346,7 @@ ${peerContext}
 
       const basePrompt =
         body.prompt?.trim() ||
-        `A high quality modern 3D isometric digital concept art poster for "${site.title}" (${site.description || "web tool"}), clean cyberpunk neon aesthetic, tech product banner, vibrant, 4k`;
+        `Clean technical architecture blueprint and dataflow cheatsheet for "${site.title}" (${site.description || "software tool"}). Minimalist system diagram layout: left input boxes, center core engine labeled "${site.title}", right output artifacts. Dark mode developer theme, crisp typography, clean vector lines, high readability, technical flowchart aesthetic, 16:9 aspect ratio`;
 
       try {
         const result = await generateImage({

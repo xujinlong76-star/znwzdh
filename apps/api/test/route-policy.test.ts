@@ -151,6 +151,7 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   // 原先未登记导致本快照门禁转红。此处**如实登记现状**，但这些都是
   // 「计算型 / 预填型 / 同步型」写操作，未做业务落库审计 ——
   // 待 owner 复核：若有真实落库，应把 scope 提成 write（见本文件顶部三选一说明）。
+  "POST /api/recipes/scaffold",
   "POST /api/sites/:id/visual",
   "POST /api/sites/batch-classify",
   "POST /api/submissions/prefill",

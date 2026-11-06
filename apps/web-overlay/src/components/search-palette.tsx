@@ -66,6 +66,11 @@ const ArchitectureRecipeCard = dynamic(
   () => import('@/components/architecture-recipe-card').then((m) => m.ArchitectureRecipeCard),
   { ssr: false }
 )
+const ActionIntentCard = dynamic(
+  () => import('@/components/action-intent-card').then((m) => m.ActionIntentCard),
+  { ssr: false }
+)
+import type { ActionIntentCardData } from '@/components/action-intent-card'
 
 const CHANNEL_LABELS: Record<string, string> = {
   exact: '精确',
@@ -207,6 +212,41 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [aiComparisonLoading, setAiComparisonLoading] = useState(false)
   const [aiRecipe, setAiRecipe] = useState<ReturnType<typeof findMatchingArchitectureRecipe>>(null)
   const [aiRecipeLoading, setAiRecipeLoading] = useState(false)
+  const [actionIntentData, setActionIntentData] = useState<ActionIntentCardData | null>(null)
+  const [actionIntentLoading, setActionIntentLoading] = useState(false)
+
+  useEffect(() => {
+    setActionIntentData(null)
+    const trimmed = query.trim()
+    if (!trimmed || trimmed.length < 5) {
+      setActionIntentLoading(false)
+      return
+    }
+    const isActionQuery = /(怎么|如何|怎样|有没有|把.+转|去除|提取|在线|免安装|替代|制作|生成|转换|下载|压缩)/i.test(trimmed)
+    if (!isActionQuery) {
+      setActionIntentLoading(false)
+      return
+    }
+    let cancelled = false
+    setActionIntentLoading(true)
+    const timer = setTimeout(() => {
+      fetch(`/api/hub/intent/action?q=${encodeURIComponent(trimmed)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!cancelled && data?.ok && data.isActionable) {
+            setActionIntentData(data)
+          }
+        })
+        .catch(() => { /* 降级 */ })
+        .finally(() => {
+          if (!cancelled) setActionIntentLoading(false)
+        })
+    }, 380)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [query])
 
   useEffect(() => {
     setAiComparisonMatrix(null)
@@ -811,6 +851,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   {fallbackHint === 'filter'
                     ? '当前筛选下没有结果，已放宽到全库匹配（结果可能来自其他类目）。'
                     : '没有精确匹配，以下是放宽匹配后的结果。'}
+                </div>
+              )}
+              {actionIntentData && (
+                <div className="p-2 border-b">
+                  <ActionIntentCard data={actionIntentData} />
+                </div>
+              )}
+              {actionIntentLoading && !actionIntentData && (
+                <div className="px-3 py-2 border-b bg-amber-500/5 flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>正在分析实操意图并匹配王牌工具与 3 步解决方案...</span>
                 </div>
               )}
               {speculativeResult && (

@@ -595,12 +595,12 @@ export function SitePeekDialog({
                       {visualLoading ? (
                         <>
                           <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>生成图卡中...</span>
+                          <span>生成架构图中...</span>
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-3 h-3 text-primary" />
-                          <span>生成分享图卡</span>
+                          <span>📐 生成架构与数据流示意图</span>
                         </>
                       )}
                     </Button>
@@ -613,7 +613,7 @@ export function SitePeekDialog({
                   <div className="relative rounded-lg overflow-hidden border border-border/60 aspect-video bg-muted/40 max-h-56 shadow-md">
                     {/* 2026-11-06 深扫 F-6：visualUrl 来自服务端下发的 data.imageUrl（外部可控），
                         统一过 safeSrc 与 safeWindowOpen。 */}
-                    <img src={safeSrc(visualUrl)} alt={`${item.title} 分享图卡`} className="w-full h-full object-cover" />
+                    <img src={safeSrc(visualUrl)} alt={`${item.title} 架构与数据流示意图`} className="w-full h-full object-cover" />
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button
@@ -623,7 +623,7 @@ export function SitePeekDialog({
                       onClick={() => safeWindowOpen(visualUrl)}
                     >
                       <ExternalLink className="w-3 h-3 mr-1" />
-                      查看高清大图
+                      查看高清架构图
                     </Button>
                   </div>
                 </div>

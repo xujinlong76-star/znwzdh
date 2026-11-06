@@ -92,3 +92,4 @@ POST /api/sites/{id}/visual | 场景视觉预览：返回按目标 URL 抓取的
 POST /api/sites/batch-classify | 批量分类建议：逐站点的模型/规则决策结果（随全库数据变化）
 POST /api/submissions/prefill | 投稿预填：根据 URL 抓取与模型抽取的字段建议（随目标页面变化）
 POST /api/videos/copilot | 视频 copilot 建议：逐条候选与理由（随模型输出变化）
+POST /api/recipes/scaffold | 配方脚手架：按配方层级生成 .env 模板与粘合代码建议（随模型输出变化）

@@ -35,6 +35,8 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   const dynamicRecipeCache = new Map<string, ArchitectureRecipe>();
   const dynamicComparisonCache = new Map<string, TechComparisonMatrix>();
+  const dynamicScaffoldCache = new Map<string, any>();
+  const actionIntentCache = new Map<string, any>();
 
   /* ----------------- 架构配方 & 竞品对比 & 确定性 Favicon ----------------- */
 
@@ -531,5 +533,302 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
     const result = autoClusterSites(sitesToCluster, body.data.targetK);
     return { ok: true, result };
   });
+
+  /**
+   * 痛点解决：配方实战脚手架与保姆级实操清单生成 (Playbook & Scaffold Generator)
+   * 解决痛点：用户获取架构配方后，仍需花费大量时间拼凑 .env、编写跨工具粘合代码与理清执行顺序的痛点。
+   */
+  app.post(
+    "/api/recipes/scaffold",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 20, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const body = z.object({
+        recipeTitle: z.string().min(1).max(200),
+        targetGoal: z.string().min(1).max(1000),
+        layers: z.array(z.object({
+          layerName: z.string(),
+          category: z.string().optional(),
+          recommended: z.object({
+            title: z.string(),
+            url: z.string().optional(),
+            description: z.string().optional(),
+          }),
+          alternatives: z.array(z.object({
+            title: z.string(),
+            url: z.string().optional(),
+          })).optional(),
+        })).min(1).max(8),
+      }).safeParse(req.body ?? {});
+
+      if (!body.success) {
+        reply.code(400);
+        return { error: "参数无效", detail: body.error.issues };
+      }
+
+      const { recipeTitle, targetGoal, layers } = body.data;
+      const cacheKey = `${recipeTitle.trim().toLowerCase()}::${layers.map((l) => l.recommended.title).join("+")}`;
+      const cached = dynamicScaffoldCache.get(cacheKey);
+      if (cached) {
+        return { ok: true, cached: true, ...cached };
+      }
+
+      const llm = await resolveLlm(ctx);
+      if (!llm.provider.apiKey) {
+        reply.code(503);
+        return { ok: false, error: "AI 服务尚未就绪" };
+      }
+
+      const toolSummary = layers
+        .map(
+          (l, i) =>
+            `${i + 1}. [${l.layerName}] 工具名: ${l.recommended.title} (说明: ${l.recommended.description || "无"}, 官网: ${l.recommended.url || "无"})`
+        )
+        .join("\n");
+
+      const prompt = `你是精通现代前后端架构与生产力工具整合的资深全栈系统架构师。
+针对以下业务落地配方，生成开箱即用的工程实战脚手架、环境变量整合清单与保姆级执行SOP：
+
+【配方标题】: ${recipeTitle}
+【目标场景】: ${targetGoal}
+【工具链条】:
+${toolSummary}
+
+请严格按以下 JSON 结构输出（严禁输出任何客套寒暄）：
+{
+  "recipeType": "coding_tech" 或 "creator_business",
+  "envTemplate": "# 跨工具整合所需环境变量\\n# 注释必须说明从哪个工具后台哪个具体菜单复制获取\\nNEXT_PUBLIC_EXAMPLE_KEY=xxx",
+  "glueCodeSnippet": {
+    "filename": "例如 lib/integration.ts 或 scripts/bootstrap.sh",
+    "language": "typescript" 或 "bash" 或 "python",
+    "content": "核心跨工具粘合代码（20-30行左右，真实可用，含关键错误处理）",
+    "explanation": "一句话说明此粘合代码实现了哪两个工具之间的数据流连通"
+  },
+  "cliQuickStart": "极简一键依赖安装或初始化命令（如 pnpm add @supabase/supabase-js stripe resend）",
+  "sopChecklist": [
+    {
+      "step": 1,
+      "title": "阶段简短标题",
+      "toolName": "工具名称",
+      "action": "精准实操动作（不超过30字）",
+      "pitfallWarning": "该步骤最容易踩的暗坑与避坑指引（不超过35字）"
+    }
+  ]
+}`;
+
+      try {
+        const res = await callLlm(ctx, llm, {
+          scenario: "recipe_scaffold",
+          messages: [{ role: "user", content: prompt }],
+          json: true,
+          thinking: false,
+          temperature: 0.2,
+          maxTokens: 2048,
+        });
+
+        let parsed: any = null;
+        try {
+          const raw = (res.content || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+          parsed = JSON.parse(raw);
+        } catch {
+          const m = (res.content || "").match(/\{[\s\S]*\}/);
+          if (m) {
+            try { parsed = JSON.parse(m[0]); } catch {}
+          }
+        }
+
+        if (!parsed || typeof parsed !== "object") {
+          reply.code(502);
+          return { ok: false, error: "AI 输出格式异常" };
+        }
+
+        const result = {
+          recipeType: parsed.recipeType || "coding_tech",
+          envTemplate: parsed.envTemplate || "",
+          glueCodeSnippet: parsed.glueCodeSnippet || null,
+          cliQuickStart: parsed.cliQuickStart || "",
+          sopChecklist: Array.isArray(parsed.sopChecklist) ? parsed.sopChecklist : [],
+          model: res.model,
+        };
+
+        dynamicScaffoldCache.set(cacheKey, result);
+        return { ok: true, cached: false, ...result };
+      } catch (err: any) {
+        reply.code(500);
+        return { ok: false, error: "生成实战脚手架失败: " + (err?.message || String(err)) };
+      }
+    }
+  );
+
+  /**
+   * 痛点解决：全局自然语言意图动作派调度器 (Intent Action Dispatcher)
+   * 解决痛点：用户输入自然语言长句或实操提问时（“怎么把录音转文字并区分说话人”），
+   * 传统关键词分词检索 0 结果，而 AI 能直接给出：最佳单一工具直达 + 3步极简法 + 避坑指南。
+   */
+  app.get(
+    "/api/intent/action",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 30, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const queryObj = (req.query ?? {}) as Record<string, string>;
+      const q = String(queryObj.q ?? "").trim();
+      if (!q || q.length < 3) {
+        return { ok: false, isActionable: false, reason: "查询词过短" };
+      }
+
+      const cacheKey = q.toLowerCase();
+      const cached = actionIntentCache.get(cacheKey);
+      if (cached) {
+        return { ok: true, cached: true, ...cached };
+      }
+
+      // 召回站内候选站点
+      const searchRes = await ctx.search.search({
+        q,
+        limit: 8,
+        statuses: ["active"],
+      });
+      const hitIds = [...new Set((searchRes.hits || []).map((h) => h.siteId))];
+      if (hitIds.length === 0) {
+        return { ok: false, isActionable: false, reason: "站内未检索到相关工具" };
+      }
+
+      const siteMap = await ctx.repo.getSitesByIds(hitIds);
+      const candidateSites = hitIds
+        .map((id) => siteMap.get(id))
+        .filter((s): s is NonNullable<typeof s> => Boolean(s));
+
+      if (candidateSites.length === 0) {
+        return { ok: false, isActionable: false, reason: "候选站点无效" };
+      }
+
+      const llm = await resolveLlm(ctx);
+      if (!llm.provider.apiKey) {
+        reply.code(503);
+        return { ok: false, error: "AI 服务尚未就绪" };
+      }
+
+      const candidateContext = candidateSites
+        .map((s) => `- ${s.title} (${s.url}): ${(s.description || "").slice(0, 70)}`)
+        .join("\n");
+
+      const prompt = `你是全球顶级数字生产力调度与效率专家。针对用户的自然语言实操提问，从候选工具中选出最契合的 1 个王牌工具，并输出 3 步极简操作法。
+
+【用户提问】: "${q}"
+
+【站内候选工具】:
+${candidateContext}
+
+请严格按以下 JSON 结构返回：
+{
+  "isActionable": true,
+  "actionSummary": "3步完成：[动作提炼，15字内]",
+  "primaryTool": {
+    "title": "必须精准对应候选工具中的某个标题",
+    "whyBest": "入选核心理由（如：免登录每日赠送额度、支持声纹切分，30字内）"
+  },
+  "steps": [
+    "1. 实操第一步（18字内）",
+    "2. 实操第二步（18字内）",
+    "3. 实操第三步（18字内）"
+  ],
+  "proTip": "关键防坑或提效小贴士（30字内）",
+  "alternativeTool": {
+    "title": "候选工具中的另一个工具标题（选填）",
+    "reason": "备选理由（如：完全开源支持本地离线运行）"
+  }
+}`;
+
+      try {
+        const res = await callLlm(ctx, llm, {
+          scenario: "intent_action",
+          messages: [{ role: "user", content: prompt }],
+          json: true,
+          thinking: false,
+          temperature: 0.2,
+          maxTokens: 1024,
+        });
+
+        let parsed: any = null;
+        try {
+          const raw = (res.content || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+          parsed = JSON.parse(raw);
+        } catch {
+          const m = (res.content || "").match(/\{[\s\S]*\}/);
+          if (m) {
+            try { parsed = JSON.parse(m[0]); } catch {}
+          }
+        }
+
+        if (!parsed || !parsed.isActionable || !parsed.primaryTool?.title) {
+          return { ok: false, isActionable: false };
+        }
+
+        // 校验 primaryTool 真实性并补全链接
+        const primaryMatch =
+          candidateSites.find(
+            (s) =>
+              s.title.toLowerCase().includes(parsed.primaryTool.title.toLowerCase()) ||
+              parsed.primaryTool.title.toLowerCase().includes(s.title.toLowerCase())
+          ) || candidateSites[0];
+
+        // candidateSites 为空时 find 与 [0] 都是 undefined —— 直接读 .id/.title 会崩。
+        // 这是「无候选站点」的合法降级路径（本站尚未收录任何站点），返回可解释的空结果。
+        if (!primaryMatch) {
+          return { ok: true, cached: false, isActionable: false, actionSummary: "本站尚未收录可执行工具，建议先收录相关站点", primaryTool: null, steps: [], proTip: "", alternativeTool: undefined, model: res.model };
+        }
+
+        let altMatch = undefined;
+        if (parsed.alternativeTool?.title) {
+          const found = candidateSites.find(
+            (s) =>
+              s.id !== primaryMatch.id &&
+              (s.title.toLowerCase().includes(parsed.alternativeTool.title.toLowerCase()) ||
+                parsed.alternativeTool.title.toLowerCase().includes(s.title.toLowerCase()))
+          );
+          if (found) {
+            altMatch = {
+              id: found.id,
+              title: found.title,
+              url: found.url,
+              reason: parsed.alternativeTool.reason || "备选平替方案",
+            };
+          }
+        }
+
+        const result = {
+          isActionable: true,
+          actionSummary: parsed.actionSummary || `针对「${q}」的极速实操方案`,
+          primaryTool: {
+            id: primaryMatch.id,
+            title: primaryMatch.title,
+            url: primaryMatch.url,
+            whyBest: parsed.primaryTool.whyBest || (primaryMatch.description || "").slice(0, 50),
+          },
+          steps:
+            Array.isArray(parsed.steps) && parsed.steps.length > 0
+              ? parsed.steps.slice(0, 3)
+              : ["1. 进入工具主页", "2. 按需选择功能与配置", "3. 导出或应用成果"],
+          proTip: parsed.proTip || "优先使用最新版本以获得最佳稳定性与免费额度。",
+          alternativeTool: altMatch,
+          model: res.model,
+        };
+
+        actionIntentCache.set(cacheKey, result);
+        return { ok: true, cached: false, ...result };
+      } catch (err: any) {
+        reply.code(500);
+        return { ok: false, error: "意图解析失败: " + (err?.message || String(err)) };
+      }
+    }
+  );
 
 };

@@ -63,7 +63,7 @@ export const DEFAULT_AI_UPSTREAM_TIMEOUT_MS = 120_000
  * 后果不是「慢」而是**假失败**：代理先 504，中枢实际上已经提交事务，
  * 用户以为失败而重试（恢复幂等，但会白等一次）。
  */
-const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich', 'backup', 'recipes', 'comparisons'])
+const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich', 'backup', 'recipes', 'comparisons', 'intent'])
 const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix', 'check-urls', 'ai-heal'])
 /**
  * 站点详情里的 AI 动作（末段，中间夹着 id）：

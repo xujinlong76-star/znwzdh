@@ -502,10 +502,7 @@ function buildBody(
   // 深度思考：Agnes 官方规范使用 thinking: { type: 'enabled', budget_tokens }，
   // 同时兼容 vLLM 系的 chat_template_kwargs: { enable_thinking: true }
   if (opts.thinking === true && includeThinking) {
-    const budgetTokens = Math.min(
-      typeof maxTokens === "number" && maxTokens > 0 ? Math.max(Math.floor(maxTokens * 0.25), 128) : 512,
-      512,
-    );
+    const budgetTokens = 128;
     body.thinking = {
       type: "enabled",
       budget_tokens: budgetTokens,

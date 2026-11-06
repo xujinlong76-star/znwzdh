@@ -63,7 +63,7 @@ export const DEFAULT_AI_UPSTREAM_TIMEOUT_MS = 120_000
  * 后果不是「慢」而是**假失败**：代理先 504，中枢实际上已经提交事务，
  * 用户以为失败而重试（恢复幂等，但会白等一次）。
  */
-const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich', 'backup'])
+const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich', 'backup', 'recipes', 'comparisons'])
 const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix', 'check-urls', 'ai-heal'])
 /**
  * 站点详情里的 AI 动作（末段，中间夹着 id）：
@@ -71,13 +71,15 @@ const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix'
  * 单次 30 秒上限 × 密钥池 4 把逐个重试，最坏 120 秒。
  * 留在默认 30 秒里就是「每次必 504」——弹窗拿到的永远是超时而不是结果。
  */
-const LONG_RUNNING_SITE_ACTIONS = new Set(['radar', 'visual'])
+const LONG_RUNNING_SITE_ACTIONS = new Set(['radar', 'visual', 'batch-classify'])
 
 export function isLongRunningPath(path: string[] | string): boolean {
   const segments = (Array.isArray(path) ? path : path.split('/')).filter(Boolean)
   if (segments.length === 0) return false
   if (LONG_RUNNING_ROOTS.has(segments[0])) return true
   if (segments[0] === 'sites' && segments[1] === 'auto') return true
+  if (segments[0] === 'submissions' && segments[1] === 'prefill') return true
+  if (segments[0] === 'videos' && segments[1] === 'copilot') return true
   // 全库导入/导出：`me` 根下绝大多数端点都是毫秒级，只认这两个动作
   if (segments[0] === 'me' && (segments[1] === 'import' || segments[1] === 'export')) return true
   // 批量写入：上限 200 条、每条都要算索引字段并做向量化，属于秒级端点

@@ -64,7 +64,8 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: targetUrl, categories: categoriesPayload }),
             })
-            const data = await res.json().catch(() => null)
+            // 响应体不是 JSON（如 502 网关页）时按「无预填」处理，下面 res.ok 分支会兜底
+            const data = await res.json().catch(() => { /* 解析失败即视为无数据，由 res.ok 判定 */ return null })
             if (res.ok && data?.success && data.prefill) {
                 const p = data.prefill
                 setFormData((prev) => ({

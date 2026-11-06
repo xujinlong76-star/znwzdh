@@ -178,7 +178,8 @@ export function BookmarkImporter() {
           }),
         })
         if (!res.ok) continue
-        const data = await res.json().catch(() => null)
+        // 单条响应体非 JSON 时跳过该条（批量导入不允许一条坏数据中断整批）
+        const data = await res.json().catch(() => { /* 非 JSON 响应视为该条无数据 */ return null })
         if (data && Array.isArray(data.results)) {
           const map = new Map<string, { categorySlug?: string; description?: string; tags?: string[] }>()
           for (const r of data.results) {

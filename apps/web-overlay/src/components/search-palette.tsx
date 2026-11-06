@@ -232,7 +232,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             setAiComparisonMatrix(data.matrix)
           }
         })
-        .catch(() => {})
+        // 配方请求失败不打扰用户：下方 catch 已经负责提示，这里只是避免未处理的 rejection
+      .catch(() => { /* 由外层 catch 统一降级 */ })
         .finally(() => {
           if (!cancelled) setAiComparisonLoading(false)
         })

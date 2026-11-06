@@ -87,41 +87,40 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             }));
 
       const candidateContext = candidates
-        .slice(0, 12)
-        .map((c) => `- [id:${c.id}] ${c.title} (${c.url}): ${c.description.slice(0, 60)}`)
+        .slice(0, 8)
+        .map((c) => `- [id:${c.id}] ${c.title} (${c.url}): ${c.description.slice(0, 45)}`)
         .join("\n");
 
-      const prompt = `你是全球顶尖的场景化工具链架构师。用户正在搜索场景需求：「${q}」。
-请结合以下站内已收录的真实工具（优先从中挑选 URL 与工具），为用户定制一套分阶段的「端到端场景工作流配方 (ArchitectureRecipe)」。
+      const prompt = `你是全球顶尖的场景化工具链架构师。用户搜索场景需求：「${q}」。
+请结合以下站内工具，定制一套包含 3 个阶段的精炼「场景工作流配方 (ArchitectureRecipe)」。
 
-【站内候选工具库】
+【站内候选工具】
 ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
 
-请严格返回以下 JSON 格式（包含 3 到 4 个阶段 layers）：
+请严格返回以下 JSON 格式（包含 3 个阶段 layers，文字精炼）：
 {
   "id": "ai-recipe-slug",
-  "title": "针对「${q}」的全流程实战工具链配方",
-  "targetGoal": "一句话说明该工作流帮助用户达成的核心目标",
-  "description": "简述该方案的分阶段协同思路与避坑要点（50字内）",
+  "title": "「${q}」全流程实战工具链配方",
+  "targetGoal": "一句话说明核心目标（25字内）",
+  "description": "简述分阶段协同思路（35字内）",
   "keywords": ["关键词1", "关键词2"],
   "layers": [
     {
-      "layerName": "1. 阶段名称（如：需求调研 / 素材生成 / 核心构建 / 部署分发）",
-      "category": "阶段分类短标签",
+      "layerName": "1. 阶段名",
+      "category": "阶段分类",
       "recommended": {
         "id": "工具ID",
-        "title": "首选工具名称",
-        "url": "https://真实可访问网址",
-        "description": "为什么在该阶段首选它（35字内）",
-        "highlights": ["亮点1", "亮点2", "免费/低门槛优势"]
+        "title": "首选工具",
+        "url": "https://真实网址",
+        "description": "首选理由（25字内）",
+        "highlights": ["亮点1", "亮点2"]
       },
       "alternatives": [
-        { "id": "alt-1", "title": "备选平替1", "url": "https://真实网址" },
-        { "id": "alt-2", "title": "备选平替2", "url": "https://真实网址" }
+        { "id": "alt-1", "title": "平替工具", "url": "https://真实网址" }
       ]
     }
   ],
-  "quickStartSnippet": "一步到位的实操启动建议或命令/Prompt模板（1-3行）"
+  "quickStartSnippet": "一步启动建议（30字内）"
 }`;
 
       const res = await callLlm(ctx, llm, {
@@ -129,7 +128,7 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
         messages: [{ role: "user", content: prompt }],
         json: true,
         temperature: 0.2,
-        maxTokens: 1200,
+        maxTokens: 900,
       });
 
       let parsed: ArchitectureRecipe | null = null;
@@ -216,39 +215,36 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
         ? `${hitB.title} (${hitB.url}): ${hitB.description || ""}`
         : rawB;
 
-      const prompt = `你是客观严谨的全球数字工具与技术选型评测专家。请针对用户查询的「${rawA}」与「${rawB}」进行深度并排对比评测，帮助用户快速做出选型决策。
+      const prompt = `你是工具选型评测专家。请针对「${rawA}」与「${rawB}」进行精炼并排对比：
+- A参考: ${infoA}
+- B参考: ${infoB}
 
-【馆藏参考信息】
-- 工具 A: ${infoA}
-- 工具 B: ${infoB}
-
-请严格返回以下 JSON 结构：
+请严格返回以下 JSON 结构（文字简明扼要）：
 {
   "id": "ai-cmp-slug",
   "title": "${rawA} vs ${rawB} 深度选型对比",
   "itemA": {
     "name": "${rawA}",
-    "category": "核心所属品类（10字内）",
-    "license": "收费/开源模式（如：开源免费 / 免费+Pro订阅 / 商业付费）",
-    "primaryPros": ["核心优势1", "核心优势2", "核心优势3"],
-    "tradeoffs": ["主要短板或门槛1", "主要短板或门槛2"],
-    "bestFor": "最适合哪类人群或业务场景（30字内）"
+    "category": "所属品类",
+    "license": "免费/订阅模式",
+    "primaryPros": ["优势1", "优势2"],
+    "tradeoffs": ["局限1"],
+    "bestFor": "最适合人群与场景（25字内）"
   },
   "itemB": {
     "name": "${rawB}",
-    "category": "核心所属品类（10字内）",
-    "license": "收费/开源模式（如：开源免费 / 免费+Pro订阅 / 商业付费）",
-    "primaryPros": ["核心优势1", "核心优势2", "核心优势3"],
-    "tradeoffs": ["主要短板或门槛1", "主要短板或门槛2"],
-    "bestFor": "最适合哪类人群或业务场景（30字内）"
+    "category": "所属品类",
+    "license": "免费/订阅模式",
+    "primaryPros": ["优势1", "优势2"],
+    "tradeoffs": ["局限1"],
+    "bestFor": "最适合人群与场景（25字内）"
   },
   "dimensions": [
-    { "dimName": "核心能力与质量", "valueA": "A的表现简述", "valueB": "B的表现简述", "winner": "A" },
-    { "dimName": "免费额度与性价比", "valueA": "A的定价策略", "valueB": "B的定价策略", "winner": "B" },
-    { "dimName": "上手门槛与生态", "valueA": "A的体验", "valueB": "B的体验", "winner": "TIE" },
-    { "dimName": "国内访问与合规性", "valueA": "A的直连/合规情况", "valueB": "B的直连/合规情况", "winner": "A" }
+    { "dimName": "核心能力", "valueA": "A表现（15字内）", "valueB": "B表现（15字内）", "winner": "A" },
+    { "dimName": "免费与性价比", "valueA": "A定价（15字内）", "valueB": "B定价（15字内）", "winner": "B" },
+    { "dimName": "上手与生态", "valueA": "A体验（15字内）", "valueB": "B体验（15字内）", "winner": "TIE" }
   ],
-  "verdict": "一针见血的终极选型建议：什么情况下选 ${rawA}，什么情况下选 ${rawB}（60字内）"
+  "verdict": "终极选型建议：何时选 ${rawA}，何时选 ${rawB}（45字内）"
 }`;
 
       const res = await callLlm(ctx, llm, {
@@ -256,7 +252,7 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
         messages: [{ role: "user", content: prompt }],
         json: true,
         temperature: 0.2,
-        maxTokens: 1100,
+        maxTokens: 850,
       });
 
       let parsed: TechComparisonMatrix | null = null;

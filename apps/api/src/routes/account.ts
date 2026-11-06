@@ -14,7 +14,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { generateToken, hashToken, validatePassword } from "@navhub/core";
+import { generateToken, hashPassword, hashToken, validatePassword } from "@navhub/core";
 
 import type { AppContext } from "../context.ts";
 
@@ -135,19 +135,13 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         password: body.data.password,
       });
       if (!result.ok) {
-        // 账号枚举防护（2026-11-06 深扫 S-6）：
-        // 「该用户名已被占用」/「该邮箱已注册」是精确的账号存在性 oracle，
-        // 与同文件 forgot-password/resend 刻意做的防枚举自相矛盾。
-        // 现在所有「已存在」类冲突统一回同一文案；真实原因只写审计，不回前端。
-        // 格式类错误（invalid_*）不涉及账号存在性，保留具体提示以引导用户修正输入。
+        // 账号枚举防护（P0-2）：409 冲突分支跳过了 scrypt 哈希（~100ms），
+        // 与 201 成功分支的响应时间可区分——攻击者用全新 username + 目标邮箱注册，
+        // 收到 409 就等于确认了「该邮箱已注册」。哑哈希抹平时序；文案统一防枚举。
         const taken = result.reason === "username_taken" || result.reason === "email_taken";
-        const messages: Record<string, string> = {
-          invalid_username: "用户名不合法",
-          invalid_email: "邮箱格式不正确",
-          invalid_password: "密码不符合要求",
-        };
-        reply.code(409);
         if (taken) {
+          // 哑 scrypt：与成功路径等价耗时报错时间，关闭时序 oracle
+          await hashPassword(body.data.password);
           await ctx.repo.audit({
             actor: "anonymous",
             actorKind: "anonymous",
@@ -155,6 +149,14 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
             target: email,
             diff: { reason: result.reason },
           }).catch(() => undefined);
+        }
+        const messages: Record<string, string> = {
+          invalid_username: "用户名不合法",
+          invalid_email: "邮箱格式不正确",
+          invalid_password: "密码不符合要求",
+        };
+        reply.code(409);
+        if (taken) {
           return { error: "该标识不可用，请更换或直接登录 / 找回密码" };
         }
         return { error: messages[result.reason] ?? "注册失败" };
@@ -168,7 +170,9 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         tokenHash: hashToken(token),
         expiresAt: Date.now() + VERIFY_TTL_MS,
       });
-      await sendVerificationMail(ctx, ctx.mail, email, result.user.username, buildVerifyUrl(ctx, token));
+      // P0-3：username 用户可控 → HTML escape 防邮件内容注入/钓鱼（与 resend 路径同口径）
+      const safeName = result.user.username.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      await sendVerificationMail(ctx, ctx.mail, email, safeName, buildVerifyUrl(ctx, token));
 
       await ctx.repo.audit({
         actor: result.user.id,
@@ -248,14 +252,20 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       }
       const email = body.data.email.trim().toLowerCase();
       const user = await ctx.repo.findUserByEmail(email);
-      // 无论邮箱是否存在都返回同一文案（防枚举）
+      // 防枚举（P0-1）：三个分支统一返回同一响应，攻击者无法区分
+      // 「邮箱未注册」「已注册已验证」「已注册未验证」——审计走独立通道
+      const UNIFORM = { ok: true, message: "若该邮箱已注册且未验证，验证邮件已发送" };
       if (!user) {
-        return { ok: true, message: "若该邮箱已注册，验证邮件已发送" };
+        return UNIFORM;
       }
       if (user.emailVerified) {
-        return { ok: true, message: "该邮箱已验证，无需重复发送" };
+        return UNIFORM; // 已验证：静默 no-op（不泄露状态）
       }
-      // 已有未消费令牌则复用，避免邮件轰炸
+      // 已有未消费令牌则跳过（节流：防邮件轰炸 + 防 auth_tokens 积累）
+      const hasActive = await ctx.repo.hasActiveAuthToken(user.id, "email_verification");
+      if (hasActive) {
+        return UNIFORM; // 仍有活跃令牌：不重发（审计可见尝试但响应不变）
+      }
       const token = generateToken(32);
       await ctx.repo.createAuthToken({
         userId: user.id,
@@ -263,8 +273,10 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         tokenHash: hashToken(token),
         expiresAt: Date.now() + VERIFY_TTL_MS,
       });
-      await sendVerificationMail(ctx, ctx.mail, email, user.username, buildVerifyUrl(ctx, token));
-      return { ok: true, message: "验证邮件已发送" };
+      // P0-3：username 用户可控 → HTML escape 防邮件内容注入/钓鱼
+      const safeName = user.username.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      await sendVerificationMail(ctx, ctx.mail, email, safeName, buildVerifyUrl(ctx, token));
+      return UNIFORM;
     },
   );
 

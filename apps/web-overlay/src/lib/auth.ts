@@ -1,9 +1,21 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import NextAuth from 'next-auth'
 import GithubProvider from 'next-auth/providers/github'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import type { NextAuthConfig } from 'next-auth'
 import { authConfig, authSecret, isAdminAccessAllowed } from './auth.config'
+
+/** 时序安全的字符串比较（长度不等归一化到哑比较防短路） */
+function timingSafeEq(a: string, b: string): boolean {
+  const ab = Buffer.from(a, 'utf8')
+  const bb = Buffer.from(b, 'utf8')
+  if (ab.length !== bb.length) {
+    // 长度不等仍做一次哑比较抹平时序，再返回 false
+    timingSafeEqual(ab, ab)
+    return false
+  }
+  return timingSafeEqual(ab, bb)
+}
 
 interface EncryptedTokenRecord {
   ciphertext: string
@@ -164,8 +176,9 @@ const providers: NextAuthConfig['providers'] = [
       const username = rawUsername || 'admin'
 
       // 2. 环境变量管理员密码校验 (NAVHUB_ADMIN_PASSWORD / ADMIN_PASSWORD)
+      // P0-6：timingSafeEqual 替代裸 ===，防时序泄露（普通用户口令链路已做到，管理员通道此前是裸比较）
       const envAdminPassword = process.env.NAVHUB_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD
-      if (envAdminPassword && rawPassword === envAdminPassword) {
+      if (envAdminPassword && timingSafeEq(rawPassword, envAdminPassword)) {
         return {
           id: 'admin',
           name: username,
@@ -183,7 +196,7 @@ const providers: NextAuthConfig['providers'] = [
         process.env.NAVHUB_MCP_TOKEN,
       ].filter(Boolean) as string[]
 
-      if (rawPassword && validTokens.some((t) => rawPassword === t)) {
+      if (rawPassword && validTokens.some((t) => timingSafeEq(rawPassword, t))) {
         return {
           id: 'admin',
           name: username || 'Token 管理员',

@@ -1333,13 +1333,17 @@ export async function getLatestSiteArchive(repo: Repository, siteId: string): Pr
 /**
  * 读取站点 AI 透视结果。
  *
- * 命中条件里带上 model：`expectedModel` 与存量不一致时返回 null，让调用方
- * 重新计算——否则换了模型之后界面会无限期展示旧模型的文案，且没有任何入口能纠正它。
+ * 命中条件有两个，任一不满足就返回 null 让调用方重算：
+ *  - `expectedModel`：换了模型还继续供旧文案，界面里没有任何入口能纠正它；
+ *  - `expectedSrc`：透视结论是整段提示词的函数（标题/网址/描述/标签/属性/同分类候选），
+ *    站点被自动富化改写描述或挪了分类之后，旧结论描述的是已经不存在的那个站点。
+ * 两者都写在 payload 的信封里，因此不需要给表加列（老库里已经是 IF NOT EXISTS 建表，加列要走迁移）。
  */
 export async function getSiteRadar(
   repo: Repository,
   siteId: string,
-  expectedModel: string
+  expectedModel: string,
+  expectedSrc: string
 ): Promise<SiteRadarRecord | null> {
   const rows = await repo.raw(
     `SELECT payload, model, updated_at FROM site_radar WHERE site_id = ? LIMIT 1`,
@@ -1347,16 +1351,21 @@ export async function getSiteRadar(
   );
   const r = rows?.[0];
   if (!r || String(r.model) !== expectedModel) return null;
+  let env: unknown;
   try {
-    return {
-      radar: JSON.parse(String(r.payload)),
-      model: String(r.model),
-      updatedAt: Number(r.updated_at),
-    };
+    env = JSON.parse(String(r.payload));
   } catch {
     // 存量 JSON 坏掉（历史上被截断/手工改库）：当成没有，让调用方重算并覆盖
     return null;
   }
+  // 没有信封（早先落库的裸透视对象）同样按未命中处理：宁可重算一次，也不放行一个无法判据的结论
+  const { radar, src } = (env ?? {}) as { radar?: unknown; src?: unknown };
+  if (!radar || String(src) !== expectedSrc) return null;
+  return {
+    radar,
+    model: String(r.model),
+    updatedAt: Number(r.updated_at),
+  };
 }
 
 /** 落库一次真实的大模型产出；降级兜底文案不允许走这里（见 SiteRadarRecord）。 */
@@ -1364,14 +1373,15 @@ export async function saveSiteRadar(
   repo: Repository,
   siteId: string,
   radar: unknown,
-  model: string
+  model: string,
+  src: string
 ): Promise<void> {
   await repo.run(
     `INSERT INTO site_radar (site_id, payload, model, updated_at)
      VALUES (?, ?, ?, ?)
      ON CONFLICT (site_id) DO UPDATE SET
        payload = excluded.payload, model = excluded.model, updated_at = excluded.updated_at`,
-    [siteId, JSON.stringify(radar), model, Date.now()]
+    [siteId, JSON.stringify({ radar, src }), model, Date.now()]
   );
 }
 

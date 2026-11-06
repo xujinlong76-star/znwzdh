@@ -4,6 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync } from "fastify";
+import { createHash } from "node:crypto";
 
 import {
   canonicalizeUrl,
@@ -143,13 +144,6 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
 
     const llm = await resolveLlm(ctx);
 
-    // 读穿缓存：一次透视结论只取决于站点的标题/网址/描述。
-    // 命中就立刻返回，不再打模型；换了模型视为未命中（判据在 getSiteRadar）。
-    const cached = await ctx.repo.getSiteRadar(site.id, llm.provider.model);
-    if (cached) {
-      return { success: true, radar: cached.radar, cached: true };
-    }
-
     // 检索同分类下的真实馆藏平替候选，杜绝大模型“凭空编造站内不存在的工具”
     const peers = (await ctx.repo.listSites({ categoryId: site.categoryId, status: "active", limit: 12 }))
       .filter((p) => p.id !== site.id)
@@ -200,6 +194,16 @@ ${peerContext}
   "cons": ["局限或痛点1", "局限或痛点2"],
   "directAlternatives": ["推荐平替工具1", "推荐平替工具2"]
 }`;
+
+    // 读穿缓存放在提示词成形之后：一次透视结论就是这段提示词的函数（标题/网址/描述/标签/
+    // 属性/开源标记/同分类候选），所以指纹取在提示词本身——站点被自动富化改写描述、换了分类、
+    // 或者同领域候选变动之后，旧结论描述的是已经不成立的输入，必须立刻不再命中。
+    // 判据（提示词指纹 + model）都在 getSiteRadar 里比，命中就不打模型。
+    const src = createHash("sha256").update(prompt).digest("hex").slice(0, 32);
+    const cached = await ctx.repo.getSiteRadar(site.id, llm.provider.model, src);
+    if (cached) {
+      return { success: true, radar: cached.radar, cached: true };
+    }
 
     try {
       const res = await callLlm(ctx, llm, {
@@ -286,7 +290,7 @@ ${peerContext}
       // 供应商回显一个略不一样的 model 串会让缓存永远命不中。
       // 落库失败也不能把已经付过几十秒的结果丢掉，单独吞掉异常只留告警。
       try {
-        await ctx.repo.saveSiteRadar(site.id, parsed, llm.provider.model);
+        await ctx.repo.saveSiteRadar(site.id, parsed, llm.provider.model, src);
       } catch (err) {
         req.log.warn({ err: String(err) }, "站点 AI 透视落库失败");
       }

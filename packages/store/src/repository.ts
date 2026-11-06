@@ -407,14 +407,18 @@ export class Repository {
     return sitesRepo.getLatestSiteArchive(this, siteId);
   }
 
-  /** 站点 AI 透视的持久结果；model 不匹配或 JSON 损坏时返回 null（调用方重算） */
-  async getSiteRadar(siteId: string, expectedModel: string): Promise<SiteRadarRecord | null> {
-    return sitesRepo.getSiteRadar(this, siteId, expectedModel);
+  /** 站点 AI 透视的持久结果；model/提示词指纹不匹配或 JSON 损坏时返回 null（调用方重算） */
+  async getSiteRadar(
+    siteId: string,
+    expectedModel: string,
+    expectedSrc: string
+  ): Promise<SiteRadarRecord | null> {
+    return sitesRepo.getSiteRadar(this, siteId, expectedModel, expectedSrc);
   }
 
   /** 只写大模型真实产出，降级兜底文案不写（否则一次失败永久固化） */
-  async saveSiteRadar(siteId: string, radar: unknown, model: string): Promise<void> {
-    return sitesRepo.saveSiteRadar(this, siteId, radar, model);
+  async saveSiteRadar(siteId: string, radar: unknown, model: string, src: string): Promise<void> {
+    return sitesRepo.saveSiteRadar(this, siteId, radar, model, src);
   }
 
   /** @internal repository/* 域函数使用 */

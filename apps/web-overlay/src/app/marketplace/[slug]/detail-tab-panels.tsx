@@ -35,7 +35,7 @@ function isImageIcon(value: string): boolean {
 }
 import type { useCopyFeedback } from '@/hooks/use-copy-feedback'
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- 壳里 summary/manifest/payload 本就是 any（hub 聚合形状逐版本演进），拆分不做形状收紧 */
+ 
 export interface DetailTabPanelsProps {
   activeTab: DetailTab
   plugin: HubPluginItem

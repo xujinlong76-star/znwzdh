@@ -123,7 +123,7 @@ export function useMeOverview(options: { initialOverview?: MeOverview | null } =
     }
     void load()
     // initialOverview 为常量注入（服务端一次性），无需作为依赖触发重取
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   const updateSettings = useCallback((settings: UserSettingsModel) => {

@@ -19,6 +19,8 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Download,
+  CheckCircle2,
 } from 'lucide-react'
 import type { ArchitectureRecipe } from '@/lib/architecture-recipe'
 import { copyText } from '@/lib/clipboard'
@@ -56,6 +58,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
   const [activeTab, setActiveTab] = useState<'env' | 'glue' | 'sop'>('env')
   const [copyEnvState, setCopyEnvState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [copyGlueState, setCopyGlueState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [copyPlaybookState, setCopyPlaybookState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [completedSteps, setCompletedSteps] = useState<number[]>([])
 
   useEffect(() => {
@@ -100,6 +103,75 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
     const result = await copyText(scaffoldData.glueCodeSnippet.content)
     setCopyGlueState(result.ok ? 'copied' : 'failed')
     setTimeout(() => setCopyGlueState('idle'), 2000)
+  }
+
+  const generatePlaybookMarkdown = () => {
+    if (!scaffoldData) return ''
+    const parts = [
+      `# ${recipe.title} - 实战开工 Playbook`,
+      `> 目标场景: ${recipe.targetGoal}`,
+      '',
+      '## 一、核心工具链矩阵',
+      ...recipe.layers.map(
+        (l, i) =>
+          `${i + 1}. **[${l.layerName}] ${l.recommended.title}** - ${l.recommended.description || ''} (${l.recommended.url || ''})`
+      ),
+      '',
+    ]
+
+    if (scaffoldData.cliQuickStart) {
+      parts.push('## 二、一键快速启动命令', '```bash', scaffoldData.cliQuickStart, '```', '')
+    }
+
+    if (scaffoldData.envTemplate) {
+      parts.push('## 三、环境变量配置模板 (.env)', '```bash', scaffoldData.envTemplate, '```', '')
+    }
+
+    if (scaffoldData.glueCodeSnippet) {
+      parts.push(
+        `## 四、跨工具核心粘合代码 (${scaffoldData.glueCodeSnippet.filename})`,
+        `> 说明: ${scaffoldData.glueCodeSnippet.explanation}`,
+        '```' + (scaffoldData.glueCodeSnippet.language || 'typescript'),
+        scaffoldData.glueCodeSnippet.content,
+        '```',
+        ''
+      )
+    }
+
+    if (scaffoldData.sopChecklist && scaffoldData.sopChecklist.length > 0) {
+      parts.push(
+        '## 五、保姆级实战执行 SOP',
+        ...scaffoldData.sopChecklist.map(
+          (s) =>
+            `${s.step}. [ ] **${s.title}** (${s.toolName}): ${s.action}\n   - ⚠️ 避坑提醒: ${s.pitfallWarning}`
+        ),
+        ''
+      )
+    }
+
+    return parts.join('\n')
+  }
+
+  const handleCopyPlaybook = async () => {
+    const md = generatePlaybookMarkdown()
+    if (!md) return
+    const res = await copyText(md)
+    setCopyPlaybookState(res.ok ? 'copied' : 'failed')
+    setTimeout(() => setCopyPlaybookState('idle'), 2000)
+  }
+
+  const handleDownloadPlaybook = () => {
+    const md = generatePlaybookMarkdown()
+    if (!md) return
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Playbook-${recipe.title.replace(/[^\w\u4e00-\u9fa5-]+/g, '_')}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   const handleFetchScaffold = async () => {
@@ -245,7 +317,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
           size="sm"
           variant="outline"
           onClick={handleFetchScaffold}
-          className="w-full h-8 text-xs font-semibold border-primary/30 text-primary hover:bg-primary/10 flex items-center justify-center gap-1.5 shadow-2xs"
+          className="w-full h-8 text-xs font-semibold border-primary/30 text-primary hover:bg-primary/10 flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
         >
           {scaffoldLoading ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -276,57 +348,89 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
 
         {scaffoldOpen && scaffoldData && (
           <div className="mt-2.5 p-3 rounded-xl border border-primary/20 bg-background/95 space-y-3 shadow-xs">
-            {/* Tab 导航 */}
-            <div className="flex items-center gap-1.5 border-b border-border/60 pb-2">
-              {scaffoldData.envTemplate && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('env')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                    activeTab === 'env'
-                      ? 'bg-primary text-primary-foreground shadow-2xs'
-                      : 'text-muted-foreground hover:bg-muted'
-                  }`}
-                >
-                  <KeyRound className="w-3 h-3" />
-                  <span>环境变量 (.env)</span>
-                </button>
-              )}
+            {/* Tab 导航与全套导出 */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
+              <div className="flex items-center gap-1.5">
+                {scaffoldData.envTemplate && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('env')}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      activeTab === 'env'
+                        ? 'bg-primary text-primary-foreground shadow-2xs'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <KeyRound className="w-3 h-3" />
+                    <span>环境变量 (.env)</span>
+                  </button>
+                )}
 
-              {scaffoldData.glueCodeSnippet && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('glue')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                    activeTab === 'glue'
-                      ? 'bg-primary text-primary-foreground shadow-2xs'
-                      : 'text-muted-foreground hover:bg-muted'
-                  }`}
-                >
-                  <Code2 className="w-3 h-3" />
-                  <span>最小粘合代码</span>
-                </button>
-              )}
+                {scaffoldData.glueCodeSnippet && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('glue')}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      activeTab === 'glue'
+                        ? 'bg-primary text-primary-foreground shadow-2xs'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <Code2 className="w-3 h-3" />
+                    <span>最小粘合代码</span>
+                  </button>
+                )}
 
-              {scaffoldData.sopChecklist && scaffoldData.sopChecklist.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('sop')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                    activeTab === 'sop'
-                      ? 'bg-primary text-primary-foreground shadow-2xs'
-                      : 'text-muted-foreground hover:bg-muted'
-                  }`}
+                {scaffoldData.sopChecklist && scaffoldData.sopChecklist.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('sop')}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      activeTab === 'sop'
+                        ? 'bg-primary text-primary-foreground shadow-2xs'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <ListChecks className="w-3 h-3" />
+                    <span>保姆级执行 SOP</span>
+                    {completedSteps.length > 0 && (
+                      <span className="ml-1 px-1.5 py-0.2 rounded-full bg-primary/20 text-primary text-[10px]">
+                        {completedSteps.length}/{scaffoldData.sopChecklist.length}
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* 全套导出入口 */}
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleCopyPlaybook}
+                  className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+                  title="复制完整 Markdown 格式实战手册"
                 >
-                  <ListChecks className="w-3 h-3" />
-                  <span>保姆级执行 SOP</span>
-                  {completedSteps.length > 0 && (
-                    <span className="ml-1 px-1.5 py-0.2 rounded-full bg-primary/20 text-primary text-[10px]">
-                      {completedSteps.length}/{scaffoldData.sopChecklist.length}
-                    </span>
+                  {copyPlaybookState === 'copied' ? (
+                    <Check className="w-3 h-3 text-emerald-500" />
+                  ) : copyPlaybookState === 'failed' ? (
+                    <X className="w-3 h-3 text-destructive-text" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
                   )}
-                </button>
-              )}
+                  <span>{copyPlaybookState === 'copied' ? '已复制 Playbook' : '复制全套 Playbook'}</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleDownloadPlaybook}
+                  className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+                  title="下载 Markdown 文件至本地工程"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>导出 .md</span>
+                </Button>
+              </div>
             </div>
 
             {/* Tab 1: 环境变量模板 */}
@@ -338,7 +442,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
                     size="sm"
                     variant="secondary"
                     onClick={handleCopyEnv}
-                    className="h-6 px-2 text-xs flex items-center gap-1 font-mono"
+                    className="h-6 px-2 text-xs flex items-center gap-1 font-mono cursor-pointer"
                   >
                     {copyEnvState === 'copied' ? (
                       <Check className="w-3 h-3 text-emerald-500" />
@@ -372,7 +476,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
                     size="sm"
                     variant="secondary"
                     onClick={handleCopyGlue}
-                    className="h-6 px-2 text-xs flex items-center gap-1 font-mono flex-shrink-0"
+                    className="h-6 px-2 text-xs flex items-center gap-1 font-mono flex-shrink-0 cursor-pointer"
                   >
                     {copyGlueState === 'copied' ? (
                       <Check className="w-3 h-3 text-emerald-500" />
@@ -392,10 +496,35 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
 
             {/* Tab 3: 保姆级执行 SOP */}
             {activeTab === 'sop' && scaffoldData.sopChecklist && (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  勾选确认每一步实操进度（状态自动本地保存）：
-                </p>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>勾选确认每一步实操进度（状态自动本地保存）：</span>
+                  {completedSteps.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompletedSteps([])
+                        try {
+                          localStorage.removeItem(`navhub_recipe_sop_${recipe.id}`)
+                        } catch {}
+                      }}
+                      className="text-[11px] text-muted-foreground hover:text-foreground underline cursor-pointer"
+                    >
+                      清空勾选
+                    </button>
+                  )}
+                </div>
+
+                {completedSteps.length === scaffoldData.sopChecklist.length &&
+                  scaffoldData.sopChecklist.length > 0 && (
+                    <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs flex items-center justify-between gap-2 shadow-2xs">
+                      <div className="flex items-center gap-1.5 font-semibold">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        <span>🎉 恭喜！本配方的所有实战步骤已全部勾选就绪，可立即上线验证！</span>
+                      </div>
+                    </div>
+                  )}
+
                 <div className="space-y-2">
                   {scaffoldData.sopChecklist.map((step) => {
                     const isDone = completedSteps.includes(step.step)
@@ -410,9 +539,6 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            {/* 键盘可达性：外层 div 的 onClick 已移除，整行点击语义交给这个
-                                checkbox（原生 input 自带空格切换），避免「只有鼠标能点」；
-                                aria-label 提供可访问名（列表项文本不作为 placeholder）。 */}
                             <input
                               type="checkbox"
                               checked={isDone}

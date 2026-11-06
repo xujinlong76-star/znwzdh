@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+import Link from 'next/link'
 import { safeHref } from '@/lib/safe-url'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
@@ -11,7 +13,12 @@ import {
   ArrowRight,
   Workflow,
   Zap,
+  Eye,
+  Copy,
+  Check,
+  X,
 } from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
 
 export interface ActionIntentCardData {
   isActionable: boolean
@@ -38,7 +45,26 @@ interface ActionIntentCardProps {
 }
 
 export function ActionIntentCard({ data }: ActionIntentCardProps) {
+  const [copyGuideState, setCopyGuideState] = useState<'idle' | 'copied' | 'failed'>('idle')
+
   if (!data.isActionable || !data.primaryTool) return null
+
+  const handleCopyGuide = async () => {
+    const text = [
+      `🎯 ${data.actionSummary}`,
+      `🛠️ 推荐工具: ${data.primaryTool.title} (${data.primaryTool.url})`,
+      `💡 入选理由: ${data.primaryTool.whyBest}`,
+      '',
+      '📋 极简 3 步落地指南:',
+      ...data.steps.map((s, idx) => `${idx + 1}. ${s.replace(/^(\d+[\.、\s]+|[一二三四五]+[、\.\s]+)/, '').trim()}`),
+      '',
+      `⚠️ 避坑提示: ${data.proTip}`,
+    ].join('\n')
+
+    const res = await copyText(text)
+    setCopyGuideState(res.ok ? 'copied' : 'failed')
+    setTimeout(() => setCopyGuideState('idle'), 2000)
+  }
 
   return (
     <div className="mx-2 mb-2 p-3.5 rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-amber-500/[0.03] to-transparent shadow-sm space-y-3">
@@ -60,6 +86,22 @@ export function ActionIntentCard({ data }: ActionIntentCardProps) {
             </p>
           </div>
         </div>
+
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={handleCopyGuide}
+          className="h-6.5 px-2 text-xs flex items-center gap-1 text-muted-foreground hover:text-foreground flex-shrink-0"
+        >
+          {copyGuideState === 'copied' ? (
+            <Check className="w-3 h-3 text-emerald-500" />
+          ) : copyGuideState === 'failed' ? (
+            <X className="w-3 h-3 text-destructive-text" />
+          ) : (
+            <Copy className="w-3 h-3" />
+          )}
+          <span>{copyGuideState === 'copied' ? '已复制' : '复制指南'}</span>
+        </Button>
       </div>
 
       {/* 首推王牌工具卡片 */}
@@ -78,17 +120,28 @@ export function ActionIntentCard({ data }: ActionIntentCardProps) {
           </p>
         </div>
 
-        {/* 嵌套可交互守卫：外层 <a> 已是链接，里面不能再套 <Button>（button 内嵌于 a 非法）。
-            改为纯展示的 <span>，外观一致、语义正确；视觉仍由外层 a 的样式承担。 */}
-        <a
-          href={safeHref(data.primaryTool.url)}
-          target="_blank"
-          rel="noreferrer"
-          className="flex-shrink-0 inline-flex items-center justify-center gap-1 h-7.5 px-3 rounded-md text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs transition-colors"
-        >
-          <span>直达使用</span>
-          <ExternalLink className="w-3.5 h-3.5 ml-0.5" />
-        </a>
+        {/* 双行动入口：外链直达 + 站内深度透视 */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {data.primaryTool.id && (
+            <Link
+              href={`/site/${encodeURIComponent(data.primaryTool.id)}`}
+              className="inline-flex items-center justify-center gap-1 h-7.5 px-2.5 rounded-md text-xs font-medium border border-border/80 bg-background hover:bg-muted text-muted-foreground hover:text-foreground shadow-2xs transition-colors"
+            >
+              <Eye className="w-3 h-3" />
+              <span>深度透视</span>
+            </Link>
+          )}
+
+          <a
+            href={safeHref(data.primaryTool.url)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center gap-1 h-7.5 px-3 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs transition-colors"
+          >
+            <span>直达使用</span>
+            <ExternalLink className="w-3.5 h-3.5 ml-0.5" />
+          </a>
+        </div>
       </div>
 
       {/* 3步极简操作法 */}
@@ -98,15 +151,21 @@ export function ActionIntentCard({ data }: ActionIntentCardProps) {
           <span>极简 3 步落地指南：</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {data.steps.map((step, idx) => (
-            <div
-              key={idx}
-              className="p-2 rounded-lg bg-muted/60 border text-xs text-foreground flex items-start gap-1.5"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
-              <span className="leading-snug">{step}</span>
-            </div>
-          ))}
+          {data.steps.map((step, idx) => {
+            const cleanStep = step.replace(/^(\d+[\.、\s]+|[一二三四五]+[、\.\s]+)/, '').trim()
+            return (
+              <div
+                key={idx}
+                className="p-2.5 rounded-lg bg-muted/60 border text-xs text-foreground flex flex-col justify-between gap-1 shadow-2xs"
+              >
+                <div className="flex items-center gap-1.5 text-primary font-semibold text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                  <span>第 {idx + 1} 步</span>
+                </div>
+                <p className="leading-relaxed text-muted-foreground">{cleanStep}</p>
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -120,15 +179,24 @@ export function ActionIntentCard({ data }: ActionIntentCardProps) {
         {data.alternativeTool && (
           <div className="flex items-center gap-1 text-muted-foreground flex-shrink-0">
             <span>备选:</span>
-            <a
-              href={safeHref(data.alternativeTool.url)}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary hover:underline font-medium flex items-center gap-0.5"
-            >
-              {data.alternativeTool.title}
-              <ExternalLink className="w-2.5 h-2.5" />
-            </a>
+            {data.alternativeTool.id ? (
+              <Link
+                href={`/site/${encodeURIComponent(data.alternativeTool.id)}`}
+                className="text-primary hover:underline font-medium flex items-center gap-0.5"
+              >
+                {data.alternativeTool.title}
+              </Link>
+            ) : (
+              <a
+                href={safeHref(data.alternativeTool.url)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary hover:underline font-medium flex items-center gap-0.5"
+              >
+                {data.alternativeTool.title}
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            )}
             <span className="text-[11px]">({data.alternativeTool.reason})</span>
           </div>
         )}

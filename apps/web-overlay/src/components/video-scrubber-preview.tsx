@@ -36,7 +36,7 @@ export function VideoScrubberPreview({
       <div className="overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 shadow-2xl p-1 space-y-1">
         {/* Thumbnail Frame */}
         <div className="relative w-40 h-[90px] rounded bg-zinc-900 overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img
             src={currentThumbnail.dataUrl}
             alt="Timeline preview"

@@ -60,7 +60,7 @@ export function VideoSharePosterDialog({
         <div className="space-y-4 pt-2 text-xs">
           {/* Live OG Card Preview */}
           <div className="relative w-full aspect-[1200/630] rounded-xl overflow-hidden border border-border shadow-2xl bg-zinc-950 flex items-center justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img
               src={ogUrl}
               alt={videoTitle}

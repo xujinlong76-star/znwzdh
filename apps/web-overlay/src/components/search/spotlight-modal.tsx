@@ -1445,7 +1445,7 @@ export function SpotlightModal({
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-12 h-8 rounded-md bg-muted/80 border border-border/60 flex items-center justify-center shrink-0 overflow-hidden relative">
                             {video.icon ? (
-                              // eslint-disable-next-line @next/next/no-img-element
+                               
                               <img
                                 src={video.icon.startsWith('//') ? `https:${video.icon}` : video.icon}
                                 alt=""

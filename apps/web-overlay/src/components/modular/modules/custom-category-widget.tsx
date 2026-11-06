@@ -206,7 +206,7 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
     if (!selected) return
     void loadSites(selected)
     return () => sitesAbort.current?.abort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [selected?.ref, limit])
 
   if (catalog.kind === 'loading') {

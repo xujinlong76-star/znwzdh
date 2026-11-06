@@ -222,7 +222,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       setActionIntentLoading(false)
       return
     }
-    const isActionQuery = /(怎么|如何|怎样|有没有|把.+转|去除|提取|在线|免安装|替代|制作|生成|转换|下载|压缩)/i.test(trimmed)
+    const isActionQuery = /(怎么|如何|怎样|有没有|把.+转|去除|提取|在线|免安装|替代|制作|生成|转换|下载|压缩|how to|how do|how can|what is best|convert|extract|transcribe|remove)/i.test(trimmed)
     if (!isActionQuery) {
       setActionIntentLoading(false)
       return

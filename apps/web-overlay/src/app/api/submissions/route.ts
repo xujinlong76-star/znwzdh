@@ -255,7 +255,7 @@ export async function GET(request: NextRequest) {
         const issues = await response.json()
 
         // 解析投稿数据
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const submissions: SubmissionIssue[] = issues.map((issue: any) => ({
             id: issue.id,
             number: issue.number,

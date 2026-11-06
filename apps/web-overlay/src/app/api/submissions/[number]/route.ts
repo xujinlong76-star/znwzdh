@@ -148,7 +148,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             const filePath = 'src/navsphere/content/navigation.json'
 
             // 1. 使用 getFileContent 获取当前导航数据
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             const navigationData: any = await getFileContent(filePath)
 
             if (!navigationData || !navigationData.navigationItems) {
@@ -162,7 +162,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             const categoryId = submissionData.category
             const subcategoryId = submissionData.subcategory
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             let targetCategory = navigationData.navigationItems.find(
                 (item: any) => item.id === categoryId || item.title === categoryId
             )
@@ -181,7 +181,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             }
 
             if (subcategoryId && targetCategory.subCategories) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                 
                 const targetSubCategory = targetCategory.subCategories.find(
                     (sub: any) => sub.id === subcategoryId || sub.title === subcategoryId
                 )
@@ -279,7 +279,7 @@ async function updateIssueLabels(issueNumber: string, addLabel: string, removeLa
     )
 
     const issue = await issueResponse.json()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const currentLabels = issue.labels.map((l: any) => l.name)
 
     // 移除旧标签，添加新标签

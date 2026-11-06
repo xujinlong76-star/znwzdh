@@ -75,7 +75,7 @@ function FieldValue({ row }: { row: EnrichReviewRow }) {
     return (
       <div className="flex items-center gap-2">
         {/* 图标预览走普通 img：后台只允许管理员访问，不用 next/image 的远程域名白名单 */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        { }
         <img
           src={row.value}
           alt="富化图标预览"

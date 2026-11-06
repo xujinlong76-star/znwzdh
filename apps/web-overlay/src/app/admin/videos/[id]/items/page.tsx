@@ -54,7 +54,7 @@ function AdminVideoThumbnail({ item }: { item: FlatVideoItem }) {
 
     return (
         <div className="flex items-center justify-center w-14 h-14 rounded-lg bg-muted overflow-hidden relative shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img
                 src={displaySrc}
                 alt={item.title}

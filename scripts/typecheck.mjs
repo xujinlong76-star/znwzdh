@@ -24,7 +24,7 @@ if (!existsSync(TSC)) {
   process.exit(1);
 }
 
-function discoverPackages() {
+function discoverPackages(includeWeb = false) {
   const found = [];
   for (const parent of ["apps", "packages"]) {
     const base = join(ROOT, parent);
@@ -36,7 +36,8 @@ function discoverPackages() {
       const tsconfigPath = join(dir, "tsconfig.json");
       if (!existsSync(pkgPath) || !existsSync(tsconfigPath)) continue;
       const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-      if (typeof pkg.name === "string" && pkg.name.startsWith("@navhub/")) {
+      if (entry.name === "web-overlay") continue;
+      if (typeof pkg.name === "string" && (pkg.name.startsWith("@navhub/") || (includeWeb && pkg.name === "navsphere"))) {
         found.push({ dir, name: pkg.name });
       }
     }
@@ -44,7 +45,8 @@ function discoverPackages() {
   return found.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-const packages = discoverPackages();
+const includeWeb = process.argv.includes("--with-web") || process.argv.includes("--all");
+const packages = discoverPackages(includeWeb);
 if (packages.length === 0) {
   console.error("[typecheck] 未发现 @navhub/* 包");
   process.exit(1);

@@ -231,7 +231,12 @@ export const DEFUSED_GATES = [
       { id: "e2e-vendor", label: "vendor 重建 apps/web" },
       { id: "e2e-playwright", label: "安装 Playwright Chromium" },
     ],
-    gates: [{ id: "e2e", label: "Playwright E2E（分片）" }],
+    gates: [
+      { id: "e2e", label: "Playwright E2E（分片）" },
+      // 隔离用例取证（TESTING-STRATEGY §4.3）：只在分片 1 跑、且永不阻塞合并，
+      // 但「skipped 时读数里没有它」正是撤防账要防的静默跳过，因此必须登记。
+      { id: "quarantine-e2e", label: "隔离用例取证（@quarantine，末尾 exit 0 故不阻塞）" },
+    ],
   },
   {
     job: "check-isr-live",

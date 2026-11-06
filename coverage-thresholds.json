@@ -1,0 +1,105 @@
+{
+  "_note": "覆盖率阈值单一事实源（docs/TESTING-STRATEGY.md §3.2）。由 2026-11-06 W0 全量实测生成，stage=W1 表示「钉住现状、只降不升」。每两周的收紧必须是独立 PR，禁止在功能 PR 里悄悄调低。",
+  "stage": "W1",
+  "generatedAt": "2026-11-06T00:00:00+08:00",
+  "baseline": {
+    "collectedAt": "2026-11-06（vitest run --coverage，641 文件 / 7235 用例）",
+    "totals": {
+      "lines": 85.68,
+      "functions": 86.35,
+      "branches": 71.68,
+      "statements": 85.68
+    },
+    "areas": {
+      "apps/api": {
+        "files": 156,
+        "zeroFiles": 8,
+        "lines": 82.72,
+        "functions": 81.64,
+        "branches": 67.99
+      },
+      "packages/core": {
+        "files": 82,
+        "zeroFiles": 5,
+        "lines": 87.38,
+        "functions": 88.22,
+        "branches": 74.86
+      },
+      "packages/store": {
+        "files": 59,
+        "zeroFiles": 4,
+        "lines": 90.33,
+        "functions": 91.4,
+        "branches": 74.42
+      },
+      "packages/ai": {
+        "files": 11,
+        "zeroFiles": 2,
+        "lines": 80.51,
+        "functions": 81.21,
+        "branches": 76.76
+      },
+      "packages/mcp": {
+        "files": 14,
+        "zeroFiles": 1,
+        "lines": 85.38,
+        "functions": 87,
+        "branches": 60.96
+      }
+    }
+  },
+  "global": {
+    "lines": 83.68,
+    "functions": 84.35,
+    "branches": 69.68,
+    "statements": 83.68,
+    "_why": "W1 = W0 基线 − 2pp 容差（文档 §3.3），ratchet 只升不降"
+  },
+  "areas": {
+    "apps/api": {
+      "lines": 80.72,
+      "functions": 79.64,
+      "branches": 65.99
+    },
+    "packages/core": {
+      "lines": 85.38,
+      "functions": 86.22,
+      "branches": 72.86
+    },
+    "packages/store": {
+      "lines": 88.33,
+      "functions": 89.4,
+      "branches": 72.42
+    },
+    "packages/ai": {
+      "lines": 78.51,
+      "functions": 79.21,
+      "branches": 74.76
+    },
+    "packages/mcp": {
+      "lines": 83.38,
+      "functions": 85,
+      "branches": 58.96
+    }
+  },
+  "criticalFiles": {
+    "_note": "文档 §3.2 C 层：安全/数据边界文件。W1 阶段 = 实测值，W3 起按 +3/+6/+9/+12 抬。当前未逐文件实测，W1 只登记清单不作为阻断项（避免没有基线的假门禁）。",
+    "paths": [
+      "packages/store/src/repository.ts",
+      "apps/api/src/server.ts",
+      "apps/api/src/auth.ts",
+      "apps/api/src/config.ts",
+      "packages/ai/src/ssrf.ts"
+    ],
+    "enforced": false
+  },
+  "patch": {
+    "minPatchLines": 70,
+    "enabled": false,
+    "_why": "W3 上线；需要 coverage-final.json 的 statementMap 与 git diff --unified=0 映射，见文档 §3.4"
+  },
+  "requireCoveredNew": {
+    "enabled": false,
+    "_why": "W5 上线；新增 0% 文件应 fail，但先要有稳定基线"
+  }
+}

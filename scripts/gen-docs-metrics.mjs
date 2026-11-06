@@ -127,17 +127,45 @@ metrics.vitestCollected = (() => {
 const text = JSON.stringify(metrics, null, 2) + "\n";
 if (argv.includes("--check")) {
   if (!existsSync(OUT)) { console.error("[docs-metrics] 缺 docs/metrics.json，先跑生成"); process.exit(2); }
-  const cur = readFileSync(OUT, "utf8");
-  // 忽略生成时间（否则每次跑都红），只比数字
-  const strip = (s) => { const o = JSON.parse(s); delete o.generatedAt; return JSON.stringify(o); };
-  if (strip(cur) !== strip(text)) {
-    console.error("[docs-metrics] ❌ 文档数字与实测漂移：");
-    console.error("  已提交: " + strip(cur).slice(0, 400));
-    console.error("  实测  : " + strip(text).slice(0, 400));
+  const cur = JSON.parse(readFileSync(OUT, "utf8"));
+  const live = JSON.parse(text);
+
+  // 设计口径（2026-11-06 修订）：这是「文档数字别骗人」的闸门，不是「代码别增长」的闸门。
+  // 并行会话每天加文件/加路由属正常演进，逐字段全等会让门禁天天红、随即被绕过，反而失效。
+  // 因此：
+  //   - 结构性数字（表数 / CI 作业数 / BFF 页数）任何变化都判红 —— 它们变了文档必须跟；
+  //   - 规模数字（文件数 / 行数 / 路由数 / 测试数）允许增长，但**大幅回退 > 10%** 判红
+  //     （删库/误删源码/生成器坏了才会出现），增长只打印提示；
+  //   - 忽略 generatedAt（否则每次跑都红）。
+  const structural = [
+    ["tables", cur.tables, live.tables],
+    ["ci.jobs", cur.ci.jobs, live.ci.jobs],
+    ["pages", cur.pages, live.pages],
+    ["bffRoutes", cur.bffRoutes, live.bffRoutes],
+  ];
+  const scale = [
+    ["restRoutes", cur.restRoutes, live.restRoutes],
+    ["testFiles", cur.testFiles, live.testFiles],
+    ["docsMd", cur.docsMd, live.docsMd],
+  ];
+  for (const [area, s] of Object.entries(cur.source)) {
+    scale.push([area + ".files", s.files, live.source[area]?.files ?? 0]);
+    scale.push([area + ".lines", s.lines, live.source[area]?.lines ?? 0]);
+  }
+  const problems = [];
+  for (const [k, a, b] of structural) if (a !== b) problems.push(`${k}: 结构性数字 ${a} → ${b}，文档必须同步`);
+  for (const [k, a, b] of scale) {
+    if (a > 0 && b < a * 0.9) problems.push(`${k}: 规模数字大幅回退 ${a} → ${b}（>10%），疑似误删或生成器坏了`);
+  }
+  if (problems.length) {
+    console.error("[docs-metrics] ❌ 文档数字需同步：");
+    for (const p of problems) console.error("  - " + p);
     console.error("  修法：node scripts/gen-docs-metrics.mjs（生成）后连同文档引用一起提交");
     process.exit(1);
   }
-  console.log("[docs-metrics] ✅ 数字一致：" + metrics.source["apps/api/src"].lines + " 行 api / " + metrics.restRoutes + " 路由 / " + metrics.testFiles + " 测试文件");
+  const grew = scale.filter(([k, a, b]) => b > a).map(([k, a, b]) => `${k} ${a}→${b}`);
+  console.log("[docs-metrics] ✅ 数字在容差内：" + live.source["apps/api/src"].lines + " 行 api / " + live.restRoutes + " 路由 / " + live.testFiles + " 测试文件");
+  if (grew.length) console.log("[docs-metrics] 提示：以下计数较基线增长（正常演进，重跑生成即可刷新基线）：" + grew.join("、"));
   process.exit(0);
 }
 writeFileSync(OUT, text, "utf8");

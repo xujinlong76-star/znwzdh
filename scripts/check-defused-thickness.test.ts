@@ -141,7 +141,8 @@ describe("check-defused-thickness CLI：三档退出码各有各的形状", () =
     expect(j.findings).toHaveLength(1);
     expect(j.counted).toEqual([]);
     expect(j.readableJobs).toBe(1);
-    expect(j.registryGateTotal).toBe(26);
+    // 2026-11-06：26 → 29（coverage 作业 +2、test-e2e 的 quarantine-e2e +1）
+    expect(j.registryGateTotal).toBe(29);
     expect(j.exitCode).toBe(0);
   });
 

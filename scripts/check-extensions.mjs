@@ -79,6 +79,23 @@ if (!existsSync(chromeManifestPath)) {
     const popupJs = join(chromeDir, 'popup.js')
     if (existsSync(popupJs)) checkSyntax(popupJs, 'Chrome popup.js')
 
+    // 安全守卫（2026-11-06 深扫 S-5）：Bearer token 不得发往用户可配的任意 apiUrl。
+    // manifest 必须有 host_permissions；两个 JS 入口都必须经过 safeApiUrl / isTrustedApiUrl
+    // 校验，而不是直接返回 chrome.storage.local["apiUrl"]。
+    if (!Array.isArray(manifest.host_permissions) || manifest.host_permissions.length === 0) {
+      logError('Chrome 扩展缺少 host_permissions：Bearer token 可能被发往任意主机')
+    }
+    for (const [file, label] of [[join(chromeDir, 'background.js'), 'background.js'], [popupJs, 'popup.js']]) {
+      if (!existsSync(file)) continue
+      const src = readFileSync(file, 'utf-8')
+      if (!src.includes('function isTrustedApiUrl')) {
+        logError(`${label} 缺少 isTrustedApiUrl 白名单校验（apiUrl 可被改成攻击者服务器）`)
+      }
+      if (!/getApi(?:Url|Base)\(\)[\s\S]{0,300}safeApiUrl\(/.test(src)) {
+        logError(`${label} 的 getApiUrl/getApiBase 未经过 safeApiUrl，Bearer 可能外泄`)
+      }
+    }
+
     // 检查图标
     if (manifest.icons && typeof manifest.icons === 'object') {
       for (const [size, iconPath] of Object.entries(manifest.icons)) {

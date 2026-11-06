@@ -2,9 +2,13 @@
 /**
  * 覆盖率取数脚本（零依赖，只读 vitest 产出的 JSON，自己不跑测试）。
  *
- * 定位：W3「先把不可度量变成可度量」。本轮 **只出数，不定硬门禁** ——
- * 不传 --max-lines / --max-functions 时永远 exit 0，只把实测数字打出来。
- * 等存量摸清、补测到位之后再在 CI 里传阈值收紧。
+ * 定位：W1「把不可度量变成可度量，再钉住现状」。
+ *   - 不传阈值参数：只出数，exit 0（W0 行为，保持兼容）。
+ *   - --max-lines / --max-functions：老的全局阈值参数（保留兼容）。
+ *   - --thresholds coverage-thresholds.json：读外置阈值文件（全局 + 分区域 floor），
+ *     任一低于阈值即 exit 1，并逐条打 ::error:: 注解供 CI 文件页展示。
+ *   - --max-age <minutes>：产物 mtime 超阈值视为旧数据，exit 2（防 clean:false 的假绿）。
+ * 阈值单一事实源为仓库根 coverage-thresholds.json（docs/TESTING-STRATEGY.md §3.2）。
  *
  * 口径（必须与 vitest.config.ts 的 coverage 段保持一致）：
  *   - provider v8，include = apps/api/src 与 packages 下各包的 src（glob 见 vitest.config.ts）
@@ -23,7 +27,7 @@
  *
  * 退出码：0 = 通过（或本轮无阈值）；1 = 未达传入的阈值；2 = 找不到覆盖率产物。
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,11 +58,27 @@ const has = (name) => args.includes(name);
 const maxLines = flag("--max-lines") === undefined ? null : Number(flag("--max-lines"));
 const maxFunctions = flag("--max-functions") === undefined ? null : Number(flag("--max-functions"));
 const zeroLimit = flag("--zero") === undefined ? 0 : Number(flag("--zero"));
+const thresholdsPath = flag("--thresholds");
+const maxAgeMin = flag("--max-age") === undefined ? null : Number(flag("--max-age"));
 
 if (!existsSync(SUMMARY_FILE)) {
   console.error(`[coverage] 找不到覆盖率产物：${SUMMARY_FILE}`);
   console.error("[coverage] 先跑：node node_modules/vitest/vitest.mjs run --coverage");
   process.exit(2);
+}
+
+// 产物新鲜度：vitest.config.ts 设了 clean:false，coverage/ 里的上一轮残留会一直在。
+// 不判 mtime 就会拿三天前的 coverage-summary.json 判这次改动「达标」——典型假绿。
+if (maxAgeMin !== null) {
+  if (!Number.isFinite(maxAgeMin) || maxAgeMin <= 0) {
+    console.error(`[coverage] --max-age 需要正数分钟，收到：${flag("--max-age")}`);
+    process.exit(2);
+  }
+  const ageMin = (Date.now() - statSync(SUMMARY_FILE).mtimeMs) / 60_000;
+  if (ageMin > maxAgeMin) {
+    console.error(`[coverage] 覆盖率产物已过期：${ageMin.toFixed(1)} 分钟前生成（上限 ${maxAgeMin} 分钟）。先跑 vitest run --coverage`);
+    process.exit(2);
+  }
 }
 
 const summary = JSON.parse(readFileSync(SUMMARY_FILE, "utf8"));
@@ -184,10 +204,49 @@ const check = (name, max, key) => {
 check("lines", maxLines, "lines");
 check("functions", maxFunctions, "functions");
 
+// --thresholds：外置阈值文件（全局 floor + 分区域 floor）。
+// 分区域是文档 §3.2 的 B 层：高覆盖区域不能掩盖低覆盖区域。
+if (thresholdsPath) {
+  const full = resolve(REPO_ROOT, thresholdsPath);
+  if (!existsSync(full)) {
+    console.error(`[coverage] 找不到阈值文件：${full}`);
+    process.exit(2);
+  }
+  let t;
+  try { t = JSON.parse(readFileSync(full, "utf8")); }
+  catch (e) { console.error(`[coverage] 阈值文件解析失败：${e.message}`); process.exit(2); }
+  const totalOf = (k) => ({ total: rows.reduce((s, r) => s + r[k].total, 0), covered: rows.reduce((s, r) => s + r[k].covered, 0) });
+  const keymap = { lines: "lines", functions: "functions", branches: "branches", statements: "lines" };
+  const fail = (name, actual, min) => failures.push(`${name} ${pct(actual)} < floor ${pct(min)}`);
+  if (t.global) {
+    for (const [k, min] of Object.entries(t.global)) {
+      if (typeof min !== "number" || !keymap[k]) continue;
+      const actual = ratio(totalOf(keymap[k]));
+      if (actual < min) fail(`全局 ${k}`, actual, min);
+    }
+  }
+  if (t.areas) {
+    for (const [area, limits] of Object.entries(t.areas)) {
+      const row = rows.find((r) => r.area === area);
+      if (!row) { failures.push(`分区域 ${area}：覆盖率产物里没有该区域`); continue; }
+      for (const [k, min] of Object.entries(limits)) {
+        if (typeof min !== "number" || !keymap[k]) continue;
+        const actual = ratio(row[keymap[k]]);
+        if (actual < min) fail(`区域 ${area} ${k}`, actual, min);
+      }
+    }
+  }
+  console.log(`[coverage] 阈值来源：${thresholdsPath}（stage=${t.stage ?? "未标注"}）`);
+}
+
 if (failures.length > 0) {
+  // ::error:: 注解让 CI 的 PR 文件页能逐条看到失败项，而不是只在日志末尾一段。
+  for (const f of failures) console.error(`::error::[coverage] ${f}`);
   console.error(`\n[coverage] 未达阈值：\n  - ${failures.join("\n  - ")}`);
   process.exit(1);
 }
-if (!jsonMode && maxLines === null && maxFunctions === null) {
+if (thresholdsPath) {
+  console.log(`[coverage] ✅ 阈值达标（${thresholdsPath}）`);
+} else if (!jsonMode && maxLines === null && maxFunctions === null) {
   console.log("\n[coverage] 本轮未传阈值 —— 只出数，不判定通过/失败。");
 }

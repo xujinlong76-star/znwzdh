@@ -21,7 +21,7 @@ import {
 } from '@/registry/new-york/ui/dropdown-menu'
 import { Input } from '@/registry/new-york/ui/input'
 import { Textarea } from '@/registry/new-york/ui/textarea'
-import { useHomeDIY, type CardDisplayMode, type CanvasBackground, type AccentColor } from '@/lib/modular/use-home-diy'
+import { useHomeDIY, type AccentColor } from '@/lib/modular/use-home-diy'
 import { computeLayoutTidyPlan } from '@/lib/modular/layout-tidy'
 import { HomeDIYBackupDialog } from '@/components/home-diy-backup-dialog'
 import { useDensity } from '@/components/density-provider'

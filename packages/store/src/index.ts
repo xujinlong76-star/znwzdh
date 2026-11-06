@@ -1,6 +1,7 @@
 export * from "./schema.ts";
 export * from "./driver.ts";
 export * from "./migrate.ts";
+export * from "./migrations/schema-migrations.ts";
 export * from "./fts.ts";
 export * from "./sql-in.ts";
 export * from "./fts-pg.ts";

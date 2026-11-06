@@ -24,6 +24,8 @@ import {
 } from "@navhub/store";
 import { readVideosData } from "../storage.ts";
 import { flattenVideoCatalog, resolveVideoStoreMode } from "../video-catalog.ts";
+import { resolveLlm } from "../llm-config.ts";
+import { callLlm } from "../llm-usage.ts";
 
 /** 单页上限：与 repository 内部上限一致，避免调用方传 10000 把响应撑爆 */
 const MAX_LIMIT = 200;
@@ -231,4 +233,137 @@ export const videoRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     reply.header("X-Video-Source", "kv");
     return { source: "kv", item: toApiItem(found, true) };
   });
+
+  /**
+   * 视频智能伴学 Copilot（AI 全片要点速览与字幕带时间戳问答）
+   * 解决痛点：长技术视频耗时费力，用户需要 10 秒看懂核心结论并一键跳转到对应秒数。
+   */
+  app.post(
+    "/api/videos/copilot",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 25, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as {
+        question?: string;
+        mode?: "qa" | "summary";
+        chunks?: Array<{ startSec?: number; text?: string }>;
+      };
+      const chunks = Array.isArray(body.chunks)
+        ? body.chunks
+            .slice(0, 20)
+            .map((c) => ({
+              startSec: Math.max(0, Math.floor(Number(c.startSec) || 0)),
+              text: String(c.text ?? "").trim().slice(0, 300),
+            }))
+            .filter((c) => c.text.length > 0)
+        : [];
+
+      if (chunks.length === 0) {
+        reply.code(400);
+        return { error: "缺少视频字幕片段" };
+      }
+
+      const mode = body.mode === "summary" ? "summary" : "qa";
+      const question = String(body.question ?? "").trim();
+      const transcriptContext = chunks
+        .map((c) => `[startSec=${c.startSec}] ${c.text}`)
+        .join("\n");
+
+      const llm = await resolveLlm(ctx);
+      if (!llm.provider.apiKey) {
+        return {
+          success: true,
+          answer: mode === "summary"
+            ? "已为您提取全片关键节点，点击下方时间戳可直接跳转播放："
+            : `围绕「${question || "当前问题"}」为您定位到以下高相关讲解段落：`,
+          keyPoints: chunks.slice(0, 3).map((c) => ({
+            startSec: c.startSec,
+            point: c.text.slice(0, 60),
+          })),
+          fallback: true,
+        };
+      }
+
+      const prompt =
+        mode === "summary"
+          ? `你是专业的技术视频伴学助教。请根据以下带时间戳的视频字幕切片，提炼出全片最核心的结论概要与 3~4 个关键知识点时间戳：
+
+【视频字幕切片】
+${transcriptContext}
+
+请严格返回以下 JSON 格式：
+{
+  "answer": "一句话全片核心主旨总结（50字内）",
+  "keyPoints": [
+    { "startSec": 对应秒数整数, "point": "该时间点讲解的核心干货结论（35字内）" }
+  ]
+}`
+          : `你是专业的技术视频伴学助教。用户针对当前视频提问：「${question}」。
+请结合以下检索到的视频字幕切片，直接回答用户的问题，并指出对应的关键时间戳：
+
+【相关视频字幕切片】
+${transcriptContext}
+
+请严格返回以下 JSON 格式：
+{
+  "answer": "针对用户提问的简明专业解答（80字内，直接给干货结论）",
+  "keyPoints": [
+    { "startSec": 对应秒数整数, "point": "讲师在该时间点的对应原话要点（35字内）" }
+  ]
+}`;
+
+      try {
+        const res = await callLlm(ctx, llm, {
+          scenario: "video_copilot",
+          messages: [{ role: "user", content: prompt }],
+          json: true,
+          temperature: 0.2,
+          maxTokens: 700,
+        });
+
+        let parsed: { answer?: string; keyPoints?: Array<{ startSec?: number; point?: string }> } | null = null;
+        try {
+          const raw = (res.content || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+          parsed = JSON.parse(raw);
+        } catch {
+          const m = (res.content || "").match(/\{[\s\S]*\}/);
+          if (m) {
+            try { parsed = JSON.parse(m[0]); } catch {}
+          }
+        }
+
+        const keyPoints = Array.isArray(parsed?.keyPoints)
+          ? parsed!.keyPoints
+              .map((kp) => ({
+                startSec: Math.max(0, Math.floor(Number(kp.startSec) || 0)),
+                point: String(kp.point ?? "").trim(),
+              }))
+              .filter((kp) => kp.point.length > 0)
+              .slice(0, 5)
+          : chunks.slice(0, 3).map((c) => ({ startSec: c.startSec, point: c.text.slice(0, 60) }));
+
+        return {
+          success: true,
+          answer: String(parsed?.answer || "以下是结合视频字幕为您提炼的核心解答：").trim(),
+          keyPoints,
+          model: res.model,
+        };
+      } catch (err) {
+        req.log.warn({ err: String(err) }, "视频 AI 伴学降级");
+        return {
+          success: true,
+          answer: "已根据字幕语义相似度为您定位关键讲解段落：",
+          keyPoints: chunks.slice(0, 3).map((c) => ({
+            startSec: c.startSec,
+            point: c.text.slice(0, 60),
+          })),
+          fallback: true,
+        };
+      }
+    }
+  );
 };

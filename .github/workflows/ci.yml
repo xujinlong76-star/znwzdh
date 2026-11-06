@@ -741,7 +741,10 @@ jobs:
           set +e
           # 同单元测试：`pnpm test:e2e -- …` 的 `--` 会被透传给 playwright，
           # 后面的 --shard/--reporter 全被当成文件过滤器（实测两个「分片」各跑了全量）
-          PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit-e2e-${{ matrix.shard }}.xml pnpm test:e2e --shard=${{ matrix.shard }}/2 --reporter=list --reporter=junit 2>&1 | tee /tmp/e2e.log
+          # --grep-invert @quarantine（TESTING-STRATEGY §4.3）：带 @quarantine tag 的用例
+          # 不进主门禁 —— 主 E2E 的红必须只指向真回归，否则长期 flake 会淹没新问题。
+          # 隔离用例由独立作业 test-e2e-quarantine 继续跑（continue-on-error），仍留证据。
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit-e2e-${{ matrix.shard }}.xml pnpm test:e2e --grep-invert @quarantine --shard=${{ matrix.shard }}/2 --reporter=list --reporter=junit 2>&1 | tee /tmp/e2e.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" != "0" ]; then
@@ -770,6 +773,13 @@ jobs:
       - name: 红灯台账（跨轮对比 + TTL）
         if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         run: node scripts/ci-red-ledger.mjs --from junit-e2e-${{ matrix.shard }}.xml --require-no-new --strict-ttl
+      # 测试遥测（TESTING-STRATEGY §4.2/§4.3）：把每轮 flake 沉淀成台账，
+      # 并校验隔离清单没过期。--quarantine-only 模式下：隔离条目过期 → exit 1。
+      # 这一步只在 E2E 真跑过时执行（安装/构建红不该变成「缺 junit」的红）。
+      - name: 测试遥测（flake 台账 + 隔离清单校验）
+        id: test-telemetry
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        run: node scripts/test-telemetry.mjs --junit=junit-e2e-${{ matrix.shard }}.xml --quarantine-only
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         with:
@@ -787,6 +797,31 @@ jobs:
           # "No files were found" 注解，掩盖真正的告警；失败时报告仍会被上传。
           if-no-files-found: ignore
           retention-days: 14
+      # 隔离用例取证（TESTING-STRATEGY §4.3）：主 E2E 已 --grep-invert @quarantine，
+      # 带 tag 的用例不进主门禁；但「隔离」不等于「删除」——仍需跑一次并留证据，
+      # 否则 14 天 SLA 与「连续 5 次全绿则复活」都无从判定。
+      #
+      # 为什么放在**同一作业内**而不是独立 job：本仓 check-ci-gate 要求每个作业要么进
+      # ci-passed.needs、要么声明为手动/定时；而隔离用例必须在 PR 上跑且**不阻塞**。
+      # 独立 job 会撞上「不在 needs 却非手动作业」的守卫（实测复现），因此合并到本作业，
+      # 用 `|| true` 保证它永不改变作业结论。仅分片 1 执行，避免两片重复跑同一批用例。
+      - name: 隔离用例取证（不阻塞，仅留证据）
+        id: quarantine-e2e
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' && matrix.shard == 1 }}
+        run: |
+          set +e
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit-quarantine.xml pnpm test:e2e --grep @quarantine --reporter=list --reporter=junit 2>&1 | tee /tmp/q-e2e.log
+          echo "隔离用例 rc=${PIPESTATUS[0]}（不阻塞合并，仅留证据）"
+          set -e
+          exit 0
+      - name: 隔离台账读数与过期校验
+        id: quarantine-check
+        if: ${{ !cancelled() && steps.quarantine-e2e.outcome != 'skipped' }}
+        # --quarantine-only：隔离条目过期 → exit 1。这里的红**不影响**作业结论
+        # （由 `|| true` 兜住），但会进 Step Summary，人工可见。
+        run: |
+          node scripts/test-telemetry.mjs --junit=junit-quarantine.xml || true
+          node scripts/test-telemetry.mjs --quarantine-only || true
       # 撤防账：E2E 只有一道门禁，但它前面排着 install / vendor / Playwright 安装三步——
       # 任一步红都会把整片用例跳过，而作业结论里只看得到那一步红，看不出「E2E 根本没跑」。
       # 这一作业历史上吃过两次「分片空转」（junit 0 产物、两片各跑全量），读数必须自带。
@@ -943,11 +978,12 @@ jobs:
   #   「执行到的文件」计，分片产物各缺另外 2/3 的覆盖面；`all: true` 又会把
   #   未执行文件计 0% —— 分片内阈值必然失真。合并产物要跨作业传 json 再聚合，
   #   复杂度远高于单作业全量跑一次（本地实测 ~9 分钟）。
-  #   阈值 = 2026-11-06 本地全量实测（lines 85.68% / functions 86.35%）留 ~1.5
-  #   个百分点余量，防跨机抖动；低于基线 1.5pct 即红，收紧时同步改这里。
+  #   阈值不写在 YAML：单一事实源是仓库根 coverage-thresholds.json（W1 = 实测 − 2pp），
+  #   全局 + 分区域 floor 都由它给；收紧只改那一份文件并走独立 PR（TESTING-STRATEGY §3.3）。
+  #   --max-age 防 clean:false 的陈旧产物假绿（TESTING-STRATEGY §3.5）。
   coverage:
     timeout-minutes: 30
-    name: 覆盖率门禁（lines≥84% functions≥85%）
+    name: 覆盖率门禁（W1 ratchet · coverage-thresholds.json）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -966,7 +1002,7 @@ jobs:
       - name: 覆盖率阈值判定
         id: coverage-threshold
         if: ${{ !cancelled() && steps.vitest-coverage.outcome != 'skipped' }}
-        run: node scripts/check-coverage.mjs --max-lines 84 --max-functions 85
+        run: node scripts/check-coverage.mjs --thresholds coverage-thresholds.json --max-age 60
       - name: 撤防账（没跑成的门禁要点名）
         id: defused-gates
         if: ${{ always() }}

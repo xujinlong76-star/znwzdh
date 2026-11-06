@@ -18,6 +18,7 @@ GET /api/admin/plugins/metrics
 GET /api/admin/plugins/seed-status
 GET /api/admin/stats/trends
 GET /api/admin/user-center/metrics
+GET /api/assets/icon
 GET /api/backup/restore/status/{jobId}
 GET /api/categories/skos
 GET /api/categories/{id}/related
@@ -117,6 +118,7 @@ HEAD /api/admin/plugins/metrics
 HEAD /api/admin/plugins/seed-status
 HEAD /api/admin/stats/trends
 HEAD /api/admin/user-center/metrics
+HEAD /api/assets/icon
 HEAD /api/backup/restore/status/{jobId}
 HEAD /api/categories
 HEAD /api/categories/by-slug/{slug}
@@ -228,3 +230,5 @@ GET /api/account/email-status
 HEAD /api/account/email-status
 GET /api/sites/{id}/health-history
 HEAD /api/sites/{id}/health-history
+GET /api/sites/{id}/radar
+HEAD /api/sites/{id}/radar

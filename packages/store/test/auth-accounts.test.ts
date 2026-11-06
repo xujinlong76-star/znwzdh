@@ -62,6 +62,24 @@ describe("账号生命周期仓储", () => {
     expect(dupName.reason).toBe("username_taken");
   });
 
+  it("保留用户名与系统域邮箱注册被拒（防特权冒领）", async () => {
+    const adminUser = await repo.createUserWithPassword({
+      username: "admin",
+      email: "attacker@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(adminUser.ok).toBe(false);
+    if (!adminUser.ok) expect(adminUser.reason).toBe("username_taken");
+
+    const reservedDomain = await repo.createUserWithPassword({
+      username: "attacker",
+      email: "admin@navhub.local",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(reservedDomain.ok).toBe(false);
+    if (!reservedDomain.ok) expect(reservedDomain.reason).toBe("invalid_email");
+  });
+
   it("弱密码被拒", async () => {
     const weak = await repo.createUserWithPassword({
       username: "weak",

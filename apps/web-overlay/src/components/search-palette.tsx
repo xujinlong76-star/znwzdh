@@ -203,6 +203,64 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   )
   const comparisonMatrix = useMemo(() => parseTechComparisonQuery(query), [query])
   const architectureRecipe = useMemo(() => findMatchingArchitectureRecipe(query), [query])
+  const [aiComparisonMatrix, setAiComparisonMatrix] = useState<ReturnType<typeof parseTechComparisonQuery>>(null)
+  const [aiComparisonLoading, setAiComparisonLoading] = useState(false)
+  const [aiRecipe, setAiRecipe] = useState<ReturnType<typeof findMatchingArchitectureRecipe>>(null)
+  const [aiRecipeLoading, setAiRecipeLoading] = useState(false)
+
+  useEffect(() => {
+    setAiComparisonMatrix(null)
+    setAiRecipe(null)
+    setAiRecipeLoading(false)
+    const trimmed = query.trim()
+    if (!trimmed || comparisonMatrix) {
+      setAiComparisonLoading(false)
+      return
+    }
+    const isVsQuery = /^(.+?)\s*(?:\bvs\.?\b|\bVS\.?\b|\bpk\b|\bPK\b|对比|对决)\s*(.+?)$/i.test(trimmed)
+    if (!isVsQuery) {
+      setAiComparisonLoading(false)
+      return
+    }
+    let cancelled = false
+    setAiComparisonLoading(true)
+    const timer = setTimeout(() => {
+      fetch(`/api/hub/comparisons?q=${encodeURIComponent(trimmed)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!cancelled && data?.ok && data.matrix) {
+            setAiComparisonMatrix(data.matrix)
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setAiComparisonLoading(false)
+        })
+    }, 350)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [query, comparisonMatrix])
+
+  const triggerAiRecipe = useCallback(async () => {
+    const trimmed = query.trim()
+    if (!trimmed || aiRecipeLoading) return
+    setAiRecipeLoading(true)
+    try {
+      const res = await fetch(`/api/hub/recipes?q=${encodeURIComponent(trimmed)}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.item) {
+          setAiRecipe(data.item)
+        }
+      }
+    } catch {
+      // 容错降级
+    } finally {
+      setAiRecipeLoading(false)
+    }
+  }, [query, aiRecipeLoading])
 
 
 
@@ -759,14 +817,47 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   <SpeculativeIntentCard result={speculativeResult} />
                 </div>
               )}
-              {comparisonMatrix && (
+              {(comparisonMatrix || aiComparisonMatrix) && (
                 <div className="p-2 border-b">
-                  <TechComparisonCard matrix={comparisonMatrix} />
+                  <TechComparisonCard matrix={(comparisonMatrix || aiComparisonMatrix)!} />
                 </div>
               )}
-              {architectureRecipe && (
+              {aiComparisonLoading && !comparisonMatrix && !aiComparisonMatrix && (
+                <div className="px-3 py-2.5 border-b bg-primary/5 flex items-center gap-2 text-xs text-primary">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>正在调取 Agnes AI 实时生成并排选型对比矩阵...</span>
+                </div>
+              )}
+              {(architectureRecipe || aiRecipe) && (
                 <div className="p-2 border-b">
-                  <ArchitectureRecipeCard recipe={architectureRecipe} />
+                  <ArchitectureRecipeCard recipe={(architectureRecipe || aiRecipe)!} />
+                </div>
+              )}
+              {!architectureRecipe && !aiRecipe && query.trim().length >= 2 && !speculativeResult && !comparisonMatrix && !aiComparisonMatrix && (
+                <div className="px-3 py-2 border-b bg-gradient-to-r from-primary/10 via-primary/5 to-transparent flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground flex items-center gap-1.5 truncate">
+                    <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span className="truncate">搜场景不求人：基于馆藏定制「<strong className="text-foreground">{query.trim()}</strong>」全流程工具链</span>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6.5 px-2.5 text-[11px] gap-1 border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+                    disabled={aiRecipeLoading}
+                    onClick={triggerAiRecipe}
+                  >
+                    {aiRecipeLoading ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>AI 编排中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Layers className="w-3 h-3" />
+                        <span>✨ AI 生成场景工作流</span>
+                      </>
+                    )}
+                  </Button>
                 </div>
               )}
               {/* 自动识别的分面筛选与检索算子胶囊 */}

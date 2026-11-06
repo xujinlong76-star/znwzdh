@@ -80,10 +80,10 @@
 2. 低覆盖区域补测是数周工作量，混在功能 PR 里会拖慢交付并催生垃圾测试。
 3. ratchet 的正确姿势是「先钉住现状，再按固定节奏抬」：红灯只指向「这次改动让数字掉了」，而不是「历史欠账」。
 
-| 阶段 | 时间 | 全局 lines | 关键文件 | 门禁动作 |
-|---|---|---|---|---|
-| W0 基线 | 10/25–10/31 | 只出数不判定 | 只记录 | 跑 `pnpm coverage`，基线写入 `coverage-thresholds.json` |
-| W1 钉住 | 11/03–11/14 | 基线 − 2（容差） | = 实测 | CI 硬门禁上线 |
+| 阶段 | 时间 | 全局 lines | 关键文件 | 门禁动作 | 状态 |
+|---|---|---|---|---|---|
+| W0 基线 | 10/25–10/31 | 只出数不判定 | 只记录 | 跑 `pnpm coverage`，基线写入 `coverage-thresholds.json` | ✅ 2026-11-06 实测完成（lines 85.68 / functions 86.35 / branches 71.68） |
+| W1 钉住 | 11/03–11/14 | 基线 − 2（容差） | = 实测 | CI 硬门禁上线 | ✅ 2026-11-06 落地：独立 `coverage` 作业 + `coverage-thresholds.json` 单一事实源 + `--max-age` |
 | W3 | 11/17–11/28 | 基线 + 2 | 实测 + 3 | patch 覆盖 ≥70% 同步上线 |
 | W5 | 12/01–12/12 | 基线 + 4 | 实测 + 6 | 新增零覆盖文件拦截上线 |
 | W7 | 12/15–12/26 | 基线 + 6 | 实测 + 9 | 分区域 floor 独立判定 |
@@ -103,29 +103,33 @@
 
 ### 3.5 `check-coverage.mjs` 能力
 
-P0（已实现）：
+**2026-11-06 落地状态**（此前本节把未实现的能力写成「已实现」，是文档先行的典型，现按代码实测更正）：
 
-| 能力 | 说明 |
-|---|---|
-| `--min-lines / --min-functions / --min-branches / --min-statements` | 语义纠正；`--max-*` 保留为 deprecated 别名 |
-| `--thresholds coverage-thresholds.json` | 读取外置阈值（全局/区域/文件/ignore/stage） |
-| `--require-covered-new` | 新增文件零覆盖 → fail（读 `git diff --diff-filter=A`） |
-| `--patch --base=origin/main --min-patch-lines 70` | 改动行覆盖（需要 `coverage-final.json`） |
-| `::error::` 注解 | 每条失败一行，PR 文件页可见；日志末尾附 Top 5 + 未覆盖行区间 |
-| `--max-age <minutes>` | 产物 mtime 超阈值视为旧数据，exit 2（`clean:false` 的假绿入口） |
+| 能力 | 状态 | 说明 |
+|---|---|---|
+| `--max-lines / --max-functions` | ✅ 已实现（保留） | 老的全局阈值参数 |
+| `--json` / `--zero N` | ✅ 已实现（保留） | 机器可读输出 / 零覆盖文件 Top N |
+| `--thresholds coverage-thresholds.json` | ✅ 2026-11-06 新增 | 读外置阈值（全局 floor + 分区域 floor），低于阈值 exit 1 |
+| `::error::` 注解 | ✅ 2026-11-06 新增 | 每条失败一行，PR 文件页可见 |
+| `--max-age <minutes>` | ✅ 2026-11-06 新增 | 产物 mtime 超阈值 exit 2（`clean:false` 的假绿入口） |
+| `--patch --base=... --min-patch-lines 70` | ⏳ W3 上线 | 改动行覆盖，需 `coverage-final.json` 的 statementMap 映射 |
+| `--require-covered-new` | ⏳ W5 上线 | 新增零覆盖文件拦截（`git diff --diff-filter=A`） |
+| 关键文件 floor（`criticalFiles`） | ⏳ W3 起 | `coverage-thresholds.json` 已登记清单，当前 `enforced:false`（无逐文件基线，不做假门禁） |
+| `--per-area` / `--changed-files` / `--github-summary` / `--json` 增 `uncoveredLines` | P1 待做 | — |
+| `--list-zero` / PR 评论机器人 | P2 待做 | — |
 
-P1（待做）：`--per-area` 独立判定、`--changed-files`、`--github-summary`、`--json` 增加 `uncoveredLines`。
-P2（待做）：`--list-zero`、PR 评论机器人。
+> 单一事实源 `coverage-thresholds.json` 的 `stage: W1` 表示「钉住现状、只降不升」；
+> `patch.enabled` / `requireCoveredNew.enabled` 当前为 `false`，与路线图 W3/W5 对齐，不是漏做。
 
 ### 3.6 CI 落点与失败呈现
 
-- **落点**：`test-sqlite` 作业（复用同一次 vitest 运行；另起作业要再跑一遍全量并引入环境噪声）。
-- **命令**：
+- **落点**：**独立 `coverage` 作业**（2026-11-06 落地）。不进 `test-sqlite` 的原因：后者按 3 分片跑，v8 覆盖率按「执行到的文件」计，分片产物各缺另外 2/3 覆盖面，`all:true` 又会把未执行文件计 0% —— 分片内阈值必然失真；合并产物要跨作业传 JSON 再聚合，复杂度高于单作业全量跑一次。
+- **命令**（CI 与本地 `pnpm coverage` 同源）：
   ```bash
-  node node_modules/vitest/vitest.mjs run --coverage
-  node scripts/check-coverage.mjs --thresholds coverage-thresholds.json --patch --base=origin/${{ github.base_ref }}
+  pnpm vitest run --coverage --reporter=default
+  node scripts/check-coverage.mjs --thresholds coverage-thresholds.json --max-age 60
   ```
-- **超时**：见 `GATES-OPERATIONS.md` §4。本机实测全量（含覆盖率）约 27 分钟，**不要**按「9 分钟」估；CI 侧需先实测再定 timeout，必要时拆独立作业。
+- **超时**：`coverage` 作业 `timeout-minutes: 30`；本机实测全量（含覆盖率）约 9–10 分钟。旧版本此处写「约 27 分钟」是 W0 首次冷启动的口径，已按实测更正。
 - **失败呈现三层**：① 每条阈值失败一个 `::error::` 注解；② 日志末尾表格（区域/文件数/零覆盖/lines/functions/branches/阈值/结果）；③ 上传 `coverage-summary.json` 为 artifact（14 天）。
 
 ---
@@ -147,7 +151,8 @@ P2（待做）：`--list-zero`、PR 评论机器人。
 
 - **标记**：用 `{ tag: '@quarantine' }` 或标题前缀 `[quarantine]`；不用 `test.fixme`（等于删除）。
 - **登记**：[`../e2e/QUARANTINE.md`](../e2e/QUARANTINE.md)，字段：测试名 / 首次 flake 日期 / 失败签名 / 归属人 / 到期日（≤14 天）。
-- **门禁**：主 E2E 作业加 `--grep-invert @quarantine`；隔离用例进单独作业 `test-e2e-quarantine`（`continue-on-error: true`），保证仍在跑、仍留证据。
+- **门禁**：主 E2E 作业加 `--grep-invert @quarantine`（✅ 已接线）；隔离用例仍需跑一次并留证据（✅ 已接线）。
+  > **落地形态**：取证放在 `test-e2e` 作业内、仅分片 1，末尾 `exit 0` 不阻塞合并——**不是**独立 `test-e2e-quarantine` 作业。原因：本仓 `check-ci-gate` 要求不在 `ci-passed.needs` 的作业必须声明为手动/定时，而 `check-gates-registry` 又要求 `blocks:false` 的作业不得被 `needs` 聚合；两道守卫互斥，独立作业无法既在 PR 跑又不阻塞。详见 [`TESTING-QUARANTINE.md`](./TESTING-QUARANTINE.md) §1 与 §3.3。
 - **SLA**：14 天未修复 → 要么修好、要么删除，并在测试计划里记录「能力缺口」。不允许无限期隔离。
 
 ### 4.4 复活机制

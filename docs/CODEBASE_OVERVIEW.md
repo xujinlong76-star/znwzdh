@@ -1,6 +1,8 @@
 # 山羊胡 4.0 代码库架构总览
 
-> 本文基于对仓库 **778 个代码/配置文件（155,150 行）** 的静态扫描与关键模块源码通读写成（扫描时间 2026-10-18 15:35，仓库当时处于活跃改动中），所有数量、路由、表结构、依赖边均来自实际代码，而非 README 转述。逐文件的职责/导出/依赖见 [`CODEBASE_FILE_INDEX.md`](./CODEBASE_FILE_INDEX.md)，也可用可搜索的单页版 [`codebase-index.html`](./codebase-index.html)。
+> 本文基于关键模块源码通读写成。⚠️ **规模数字已改为引用 machine-readable 的 [`metrics.json`](./metrics.json)**（由 `node scripts/gen-docs-metrics.mjs` 生成、`--check` 进 `pnpm verify` 防漂移，2026-11-06 落地）：实测源码约 **28 万行**（`apps/api/src` 157 文件/54,568 行、`apps/web-overlay/src` 725 文件/163,618 行、`scripts` 202 文件等）、**289 REST 路由声明 / 46 BFF 路由 / 67 页面 / 45 表声明 / 939 测试文件**。
+>
+> 旧版本此处写「778 个文件 / 155,150 行 / 117 端点 / 25 表」（2026-10-18 快照），与当前实物相差近一倍且长期无人核对——这正是引入 `metrics.json` 的原因。下方 §1 的历史表格保留作**当时快照**，不再作为当前事实；要看当前值请读 `metrics.json`。逐文件的职责/导出/依赖见 [`CODEBASE_FILE_INDEX.md`](./CODEBASE_FILE_INDEX.md)，也可用可搜索的单页版 [`codebase-index.html`](./codebase-index.html)。
 
 ---
 
@@ -24,7 +26,9 @@
 
 山羊胡是一个 **AI 原生网址导航与开发者知识工作台**：以「站点收藏」为数据底座，向外叠加五路混合检索、Bento 自由排版工作台、端侧 0-RTT 微工具、技术关系图谱，并通过 MCP 协议把同一套能力开放给外部 AI Agent。
 
-代码形态是 **pnpm Workspace Monorepo**：4 个后端库（core / store / ai / mcp）+ 1 个 Fastify 服务（api）+ 1 个 Next.js 前端（web，事实源在 web-overlay）+ 2 个端侧扩展 + 21 个工程脚本。
+代码形态是 **pnpm Workspace Monorepo**：4 个后端库（core / store / ai / mcp）+ 1 个 Fastify 服务（api）+ 1 个 Next.js 前端（web，事实源在 web-overlay）+ 2 个端侧扩展 + 200+ 个工程脚本（当前值见 `metrics.json` 的 `scripts.files`）。
+
+> **下方表格是 2026-10-18 的历史快照**（保留原样，按 `INDEX.md` 约定不回写历史），**不是当前规模**。当前值一律读 `metrics.json`。
 
 | 模块 | 源文件 | 测试文件 | 源码行数 | 角色 |
 | :--- | ---: | ---: | ---: | :--- |

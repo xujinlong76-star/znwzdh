@@ -78,14 +78,22 @@ describe("账号生命周期 API", () => {
     expect(captured[0].text).toContain("验证");
   });
 
-  it("重复注册返回 409", async () => {
-    const res = await post("/api/account/register", {
+  it("重复注册返回 409，且不泄露「是用户名还是邮箱被占用」（防枚举 S-6）", async () => {
+    const byEmail = await post("/api/account/register", {
       username: "alice2",
       email: "alice@example.com",
       password: "S3cret-Passw0rd!",
     });
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error).toContain("邮箱");
+    expect(byEmail.statusCode).toBe(409);
+    // 2026-11-06：旧断言 toContain("邮箱") 依赖精确冲突文案，那是账号存在性 oracle。
+    // 现在 username_taken / email_taken 统一同一文案，响应体必须逐字节一致。
+    const byName = await post("/api/account/register", {
+      username: "alice",
+      email: "brand-new@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(byName.statusCode).toBe(409);
+    expect(byName.body).toBe(byEmail.body);
   });
 
   it("弱密码返回 400", async () => {
@@ -191,12 +199,17 @@ describe("账号生命周期 API", () => {
     expect((await post("/api/account/reset-password", { token, password: "Another1!" })).statusCode).toBe(400);
   });
 
-  it("邮箱状态查询", async () => {
+  it("邮箱状态查询：恒定响应，不泄露账号存在性/验证状态（防枚举 S-6）", async () => {
+    // 2026-11-06：email-status 是 public 路由，旧实现返回 registered/verified 两个
+    // 布尔，等于把「某邮箱是否注册、是否已验证」做成批量枚举 oracle。改为恒定 { ok: true }。
     const res = await app.inject({ method: "GET", url: "/api/account/email-status?email=bob@example.com" });
     expect(res.statusCode).toBe(200);
-    expect(res.json().verified).toBe(true);
+    expect(res.json()).toEqual({ ok: true });
 
     const unknown = await app.inject({ method: "GET", url: "/api/account/email-status?email=ghost@example.com" });
-    expect(unknown.json().registered).toBe(false);
+    expect(unknown.statusCode).toBe(200);
+    // 存在与不存在邮箱的响应体必须逐字节一致，否则仍是 oracle
+    expect(unknown.json()).toEqual(res.json());
+    expect(unknown.body).toBe(res.body);
   });
 });

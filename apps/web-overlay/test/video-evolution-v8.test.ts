@@ -208,7 +208,7 @@ describe('Proposal [5]: Timeline-Driven Live Unit Test Runner', () => {
         ok: true,
         logs: [],
         hasValue: true,
-        value: (args?.[0] ?? 0) + (args?.[1] ?? 0),
+        value: Number((args as any)?.[0] ?? 0) + Number((args as any)?.[1] ?? 0),
         durationMs: 1,
       }),
       close: () => {},

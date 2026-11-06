@@ -202,7 +202,10 @@ describe('Proposal [3]: Media Anti-Leech Proxy & SSRF Protection', () => {
     const rawUrl = 'https://i0.hdslb.com/bfs/archive/test_cover.jpg'
     const sig = generateMediaSignature(rawUrl)
     expect(sig).toBeDefined()
-    expect(sig.length).toBe(16)
+    // 2026-11-06 安全加固（S-4）：MAC 从 16 hex（64 bit）升到 64 hex（256 bit）。
+    // 旧断言钉的是弱 MAC 长度；64 bit 对在线伪造偏短，且旧实现用 === 比较。
+    expect(sig.length).toBe(64)
+    expect(sig).toMatch(/^[0-9a-f]{64}$/)
 
     expect(verifyMediaSignature(rawUrl, sig)).toBe(true)
     expect(verifyMediaSignature(rawUrl, 'tampered_signature')).toBe(false)

@@ -65,6 +65,13 @@ export const DEFAULT_AI_UPSTREAM_TIMEOUT_MS = 120_000
  */
 const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich', 'backup'])
 const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix', 'check-urls', 'ai-heal'])
+/**
+ * 站点详情里的 AI 动作（末段，中间夹着 id）：
+ * `radar` 打大模型，中枢实测 60 秒才回；`visual` 走图像生成，
+ * 单次 30 秒上限 × 密钥池 4 把逐个重试，最坏 120 秒。
+ * 留在默认 30 秒里就是「每次必 504」——弹窗拿到的永远是超时而不是结果。
+ */
+const LONG_RUNNING_SITE_ACTIONS = new Set(['radar', 'visual'])
 
 export function isLongRunningPath(path: string[] | string): boolean {
   const segments = (Array.isArray(path) ? path : path.split('/')).filter(Boolean)
@@ -75,6 +82,8 @@ export function isLongRunningPath(path: string[] | string): boolean {
   if (segments[0] === 'me' && (segments[1] === 'import' || segments[1] === 'export')) return true
   // 批量写入：上限 200 条、每条都要算索引字段并做向量化，属于秒级端点
   if (segments[0] === 'sites' && segments[1] === 'batch') return true
+  // `/sites/:id/radar` 的动作在末段（中间夹着 id），与插件动作同样只看末段名
+  if (segments[0] === 'sites' && LONG_RUNNING_SITE_ACTIONS.has(segments[segments.length - 1])) return true
   // `/plugins/:slug/ai-audit` 的动作在末段，`/plugins/pre-audit` 在第二段 → 统一看是否命中动作名
   if (segments[0] === 'plugins' && LONG_RUNNING_PLUGIN_ACTIONS.has(segments[segments.length - 1])) return true
   // 精确的 `ai` 段：/user/ai/config、/admin/ai/config、/user/ai/plugin/generate

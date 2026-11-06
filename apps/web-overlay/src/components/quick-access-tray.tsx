@@ -171,8 +171,8 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
               >
                 <div className="shrink-0 relative">
                   <SiteFavicon
-                    domain={site.href}
-                    iconUrl={site.icon}
+                    url={site.href}
+                    icon={site.icon}
                     title={site.title}
                     className="h-6 w-6 rounded-md shadow-2xs"
                   />

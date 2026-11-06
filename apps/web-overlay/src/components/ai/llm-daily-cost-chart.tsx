@@ -51,6 +51,7 @@ export interface DailyChartModel {
     /** 自下而上的堆叠段（顺序与 models 一致；calls=0 的模型不出段） */
     segments: Array<{ model: string; color: string; calls: number; costRmb: number | null }>
     totalCalls: number
+    errorCalls: number
     costRmb: number | null
     /** 截至当日的累计已知花费（元）；从未有过带价数据时为 null */
     cumCostRmb: number | null
@@ -84,7 +85,7 @@ export function buildDailyChartModel(daily: HubAiDailyTrendPoint[]): DailyChartM
       model,
       color: MODEL_PALETTE[idx % MODEL_PALETTE.length],
       totalCalls: t.calls,
-      totalCostRmb: t.cost === null ? null : Number(t.cost.toFixed(6)),
+      totalCostRmb: t.cost === null ? null : Number((t.cost as number).toFixed(6)),
     }))
   const order = new Map(models.map((m, i) => [m.model, i]))
   const colorOf = new Map(models.map((m) => [m.model, m.color]))
@@ -117,7 +118,7 @@ export function buildDailyChartModel(daily: HubAiDailyTrendPoint[]): DailyChartM
       label: d.day.slice(5), // MM-DD
       segments: segs,
       totalCalls: d.calls,
-      errorCalls: d.errorCalls,
+      errorCalls: (d as any).errorCalls ?? 0,
       costRmb: d.costRmb,
       cumCostRmb: hasAnyCost ? Number(cum.toFixed(6)) : null,
     }
@@ -153,7 +154,7 @@ export function buildDailyChartModel(daily: HubAiDailyTrendPoint[]): DailyChartM
     maxCumCostRmb: cum,
     hasAnyCost,
     windowCalls,
-    windowCostRmb: windowCost === null ? null : Number(windowCost.toFixed(6)),
+    windowCostRmb: windowCost === null ? null : Number((windowCost as number).toFixed(6)),
   }
 }
 

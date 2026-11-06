@@ -77,7 +77,7 @@ const DIRECTORY_CATEGORY_LINKS = 8;
  *
  * `NAVHUB_HOME_CARDS_PER_GROUP` 可覆盖；传 0 即恢复全量 SSR 的旧行为。
  */
-const HOME_CARDS_PER_GROUP_DEFAULT = 6;
+const HOME_CARDS_PER_GROUP_DEFAULT = 4;
 
 function homeCardsPerGroup(): number {
   const raw = process.env.NAVHUB_HOME_CARDS_PER_GROUP?.trim();
@@ -85,6 +85,20 @@ function homeCardsPerGroup(): number {
   const parsed = Number(raw);
   // 非法值退回默认：不让一个错字的配置把首页变成空壳
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : HOME_CARDS_PER_GROUP_DEFAULT;
+}
+
+/**
+ * 首页首屏服务端渲染的分类数上限（默认 4 个主分类，其余水合后即时呈现）。
+ * 超出的分类在客户端水合后即时挂载，控制 SSR HTML 体积在 4MB 预算哨兵以内。
+ * 环境变量 NAVHUB_HOME_INITIAL_SSR_CATEGORIES 可调；传 0 即全量 SSR。
+ */
+const HOME_INITIAL_SSR_CATEGORIES_DEFAULT = 4;
+
+function homeInitialSsrCategories(): number {
+  const raw = process.env.NAVHUB_HOME_INITIAL_SSR_CATEGORIES?.trim();
+  if (!raw) return HOME_INITIAL_SSR_CATEGORIES_DEFAULT;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : HOME_INITIAL_SSR_CATEGORIES_DEFAULT;
 }
 
 /**
@@ -200,6 +214,7 @@ export default async function HomePage() {
         siteData={siteData}
         directoryLinks={directoryLinks}
         cardsPerGroup={homeCardsPerGroup()}
+        initialCategoryLimit={homeInitialSsrCategories()}
       />
       {origin ? (
         <>

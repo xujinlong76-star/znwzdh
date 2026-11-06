@@ -98,7 +98,7 @@ describe('本地守卫与中枢同判据', () => {
 
   it('报错文案给出该带的 expectedCount', async () => {
     const err = await mutateVideoLibrary(() => ({ next: lib(10), result: null }), 'msg').catch((e) => e as Error)
-    expect(err.message).toContain('expectedCount=10')
+    expect((err as Error).message).toContain('expectedCount=10')
   })
 
   it('两段齐全：放行，并把确认参数带到适配器写入', async () => {

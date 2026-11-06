@@ -89,6 +89,25 @@ describe('P1-3：审核动作与投稿队列都必须要求管理员且中枢通
   })
 })
 
+describe('PERF-01：服务端 Token 采用 AES-256-GCM 加密与有界 LRU 缓存', () => {
+  const auth = read('src/lib/auth.ts')
+
+  it('不再使用裸 Map 存储明文 token，改用 EncryptedServerTokenStore 加密类', () => {
+    expect(auth).not.toContain('const serverTokenStore = new Map<string, string>()')
+    expect(auth).toContain('class EncryptedServerTokenStore')
+    expect(auth).toContain('aes-256-gcm')
+    expect(auth).toContain('MAX_CACHED_TOKENS = 500')
+    expect(auth).toContain('TOKEN_TTL_MS')
+  })
+
+  it('加密实现采用认证加密 GCM 与安全派生 salt', () => {
+    expect(auth).toContain('createCipheriv')
+    expect(auth).toContain('createDecipheriv')
+    expect(auth).toContain('randomBytes(12)')
+    expect(auth).toContain('getAuthTag')
+  })
+})
+
 describe('边界与清理项：不留可重入的副作用', () => {
   it('算术投机解析不再使用 new Function，且仍有长度上限', () => {
     const src = read('src/lib/speculative.ts')

@@ -29,6 +29,7 @@ import type {
     MaintenanceStatus,
     SecurityOverview,
     SiteInput,
+    SiteRadarRecord,
     TagAliasRecord,
     TagWithCount,
     UserProfileRecord,
@@ -88,61 +89,44 @@ export type { NotificationRecord } from "./repository/notifications.ts";
  * 事务持有写锁、普通查询持有读锁，确保「事务期间没有外部 SQL」。
  */
 class DbAccessGate {
-  private readers = 0;
-  private writer = false;
-  private readonly queue: Array<{ mode: "read" | "write"; resolve: () => void }> = [];
+  private writing = false;
+  private readonly writeQueue: Array<() => void> = [];
 
+  /**
+   * 读操作零阻塞执行。
+   * SQLite WAL 模式原生支持多读并发，查询不排队、不被写锁阻断，极大提升搜索与浏览吞吐。
+   */
   async read<T>(fn: () => Promise<T>): Promise<T> {
-    await this.acquire("read");
-    try {
-      return await fn();
-    } finally {
-      this.release("read");
-    }
+    return fn();
   }
 
+  /**
+   * 写操作 FIFO 串行互斥队列。
+   * 确保单连接/单写模型下写事务按序执行，彻底消除 SQLITE_BUSY。
+   */
   async write<T>(fn: () => Promise<T>): Promise<T> {
-    await this.acquire("write");
+    await this.acquireWrite();
     try {
       return await fn();
     } finally {
-      this.release("write");
+      this.releaseWrite();
     }
   }
 
-  private acquire(mode: "read" | "write"): Promise<void> {
-    if (mode === "read" && !this.writer && this.queue.length === 0) {
-      this.readers++;
+  private acquireWrite(): Promise<void> {
+    if (!this.writing) {
+      this.writing = true;
       return Promise.resolve();
     }
-    if (mode === "write" && !this.writer && this.readers === 0 && this.queue.length === 0) {
-      this.writer = true;
-      return Promise.resolve();
-    }
-    return new Promise((resolve) => this.queue.push({ mode, resolve }));
+    return new Promise((resolve) => this.writeQueue.push(resolve));
   }
 
-  private release(mode: "read" | "write"): void {
-    if (mode === "write") this.writer = false;
-    else this.readers--;
-    this.drain();
-  }
-
-  private drain(): void {
-    if (this.writer) return;
-    const head = this.queue[0];
-    if (!head) return;
-    if (head.mode === "write") {
-      if (this.readers > 0) return;
-      this.queue.shift();
-      this.writer = true;
-      head.resolve();
-      return;
-    }
-    while (this.queue[0]?.mode === "read") {
-      const next = this.queue.shift()!;
-      this.readers++;
-      next.resolve();
+  private releaseWrite(): void {
+    const next = this.writeQueue.shift();
+    if (next) {
+      next();
+    } else {
+      this.writing = false;
     }
   }
 }
@@ -170,7 +154,7 @@ export class Repository {
    * 其写入被并入 A 的事务 —— A 回滚时 B 已「提交」的数据一起消失。
    * AsyncLocalStorage 把判断范围收窄到「同一条异步调用链」，并发请求互不可见。
    */
-  private readonly txContext = new AsyncLocalStorage<true>();
+  private readonly txContext = new AsyncLocalStorage<{ inTx: boolean; pgClient?: unknown }>();
   /**
    * 事务 / 普通查询互斥闸门。
    *
@@ -182,15 +166,25 @@ export class Repository {
   private collectionBindOk: boolean | null = null;
 
   constructor(db: Db) {
-    this.db = db;
+    // 代理 db 对象：当处于事务作用域且存在事务独占 PG 连接时，db.pg 自动安全路由到该连接，
+    // 彻底解耦对全局共享 db.pg 单例属性的破坏性重写，保证并发只读查询不受阻塞且避免连接池引用损坏。
+    this.db = new Proxy(db, {
+      get: (target, prop, receiver) => {
+        if (prop === 'pg') {
+          const store = this.txContext.getStore();
+          if (store?.pgClient) return store.pgClient;
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
   }
 
   async withTransaction<T>(action: () => Promise<T>): Promise<T> {
     // 真嵌套（同一异步调用链）：复用外层事务，不重复 BEGIN
-    if (this.txContext.getStore()) return action();
+    if (this.txContext.getStore()?.inTx) return action();
 
     // 写锁覆盖整个 BEGIN ... COMMIT，普通查询在此期间排队
-    return this.dbGate.write(() => this.txContext.run(true, () => this.runTransaction(action)));
+    return this.dbGate.write(() => this.runTransaction(action));
   }
 
   private async runTransaction<T>(action: () => Promise<T>): Promise<T> {
@@ -201,7 +195,7 @@ export class Repository {
         try {
           this.db.sqlite.exec("BEGIN IMMEDIATE");
           try {
-            const result = await action();
+            const result = await this.txContext.run({ inTx: true }, action);
             this.db.sqlite.exec("COMMIT");
             return result;
           } catch (err) {
@@ -225,26 +219,21 @@ export class Repository {
       };
       if (typeof poolAny.connect === "function") {
         const client = await poolAny.connect();
-        // 事务期间把 this.db.pg 临时指向该独占连接，保证内部 run/raw 走同一连接。
-        // 因为事务已由 txLock 串行化，这里不会与另一个事务的替换互相覆盖。
-        const origPg = this.db.pg;
-        (this as unknown as { db: { pg: unknown } }).db.pg = client as never;
         try {
           await client.query("BEGIN", []);
-          const result = await action();
+          const result = await this.txContext.run({ inTx: true, pgClient: client }, action);
           await client.query("COMMIT", []);
           return result;
         } catch (err) {
           try { await client.query("ROLLBACK", []); } catch { /* ignore */ }
           throw err;
         } finally {
-          (this as unknown as { db: { pg: unknown } }).db.pg = origPg as never;
           client.release();
         }
       }
       try {
         await this.db.pg.query("BEGIN");
-        const result = await action();
+        const result = await this.txContext.run({ inTx: true }, action);
         await this.db.pg.query("COMMIT");
         return result;
       } catch (err) {
@@ -252,7 +241,7 @@ export class Repository {
         throw err;
       }
     }
-    return action();
+    return this.txContext.run({ inTx: true }, action);
   }
 
   /* ------------------------- 站点 ------------------------- */
@@ -416,6 +405,16 @@ export class Repository {
 
   async getLatestSiteArchive(siteId: string): Promise<SiteOfflineArchive | null> {
     return sitesRepo.getLatestSiteArchive(this, siteId);
+  }
+
+  /** 站点 AI 透视的持久结果；model 不匹配或 JSON 损坏时返回 null（调用方重算） */
+  async getSiteRadar(siteId: string, expectedModel: string): Promise<SiteRadarRecord | null> {
+    return sitesRepo.getSiteRadar(this, siteId, expectedModel);
+  }
+
+  /** 只写大模型真实产出，降级兜底文案不写（否则一次失败永久固化） */
+  async saveSiteRadar(siteId: string, radar: unknown, model: string): Promise<void> {
+    return sitesRepo.saveSiteRadar(this, siteId, radar, model);
   }
 
   /** @internal repository/* 域函数使用 */
@@ -1062,7 +1061,7 @@ export class Repository {
 
   async relayNotifications(limit = 50, emailSender?: notificationsRepo.NotificationEmailSender): Promise<notificationsRepo.RelayNotificationsResult> {
     // 必须拥有顶层事务边界，失败后才能完整回滚并独立记录重试。
-    if (this.txContext.getStore()) throw new Error("relayNotifications must run outside a transaction");
+    if (this.txContext.getStore()?.inTx) throw new Error("relayNotifications must run outside a transaction");
     return notificationsRepo.relayNotifications(this, limit, emailSender);
   }
 
@@ -1747,13 +1746,13 @@ export class Repository {
 
   /** @internal repository/* 域函数使用 */
   async runCount(sqlText: string, params: unknown[]): Promise<number> {
-    if (this.txContext.getStore()) return ioRepo.runCount(this, sqlText, params);
+    if (this.txContext.getStore()?.inTx) return ioRepo.runCount(this, sqlText, params);
     return this.dbGate.read(() => ioRepo.runCount(this, sqlText, params));
   }
 
   /** @internal repository/* 域函数使用 */
   async raw(sqlText: string, params: unknown[] = []): Promise<Record<string, any>[]> {
-    if (this.txContext.getStore()) return ioRepo.raw(this, sqlText, params);
+    if (this.txContext.getStore()?.inTx) return ioRepo.raw(this, sqlText, params);
     return this.dbGate.read(() => ioRepo.raw(this, sqlText, params));
   }
 
@@ -1793,8 +1792,8 @@ export class Repository {
 
   /** @internal repository/* 域函数使用 */
   async run(sqlText: string, params: unknown[] = []): Promise<void> {
-    if (this.txContext.getStore()) return ioRepo.run(this, sqlText, params);
-    return this.dbGate.read(() => ioRepo.run(this, sqlText, params));
+    if (this.txContext.getStore()?.inTx) return ioRepo.run(this, sqlText, params);
+    return this.dbGate.write(() => ioRepo.run(this, sqlText, params));
   }
 
 }

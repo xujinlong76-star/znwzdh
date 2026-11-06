@@ -5,7 +5,7 @@ import React, { useState } from 'react'
 export interface SiteFaviconProps {
   title?: string
   url?: string
-  icon?: string
+  icon?: string | null
   useDefaultIcon?: boolean
   className?: string
   /**
@@ -290,7 +290,12 @@ export function SiteFavicon({
   }
 
   // 2. 综合计算有效图标地址
-  const effectiveIcon = resolveSiteIcon(url, title, icon)
+  let effectiveIcon = resolveSiteIcon(url, title, icon)
+  if (!effectiveIcon && url && (url.startsWith('http://') || url.startsWith('https://'))) {
+    // 图标代理端点只由中枢提供（apps/api/src/routes/assets.ts），本站没有 /api/assets/icon；
+    // 裸写同源路径必然 404，要走 /api/hub 隧道。网关清单里已登记为 public。
+    effectiveIcon = `/api/hub/assets/icon?url=${encodeURIComponent(url)}`
+  }
 
   // 3. 判断是否为明确的自定义图标或本地品牌资源
   const isLocalAsset = effectiveIcon.startsWith('/') || effectiveIcon.startsWith('data:')

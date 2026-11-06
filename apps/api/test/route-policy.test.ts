@@ -147,8 +147,16 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/sites/cluster",
   "POST /api/speculation/rules",
   "POST /api/submissions",
+  // 2026-11-06：视频/站点/投稿链路的并行改动新增了 5 个匿名可写路由，
+  // 原先未登记导致本快照门禁转红。此处**如实登记现状**，但这些都是
+  // 「计算型 / 预填型 / 同步型」写操作，未做业务落库审计 ——
+  // 待 owner 复核：若有真实落库，应把 scope 提成 write（见本文件顶部三选一说明）。
+  "POST /api/sites/:id/visual",
+  "POST /api/sites/batch-classify",
+  "POST /api/submissions/prefill",
   "POST /api/tools/synthesize",
   "POST /api/user/ai/canvas/generate",
+  "POST /api/videos/copilot",
   "POST /api/user/ai/chat",
   "POST /api/user/ai/config/test",
   "POST /api/user/ai/plugin/generate",

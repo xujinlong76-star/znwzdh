@@ -84,7 +84,9 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
   const tagStats = useMemo(() => {
     const coveredSites = tags.reduce((sum, t) => sum + (Number.isFinite(t.count) ? t.count : 0), 0)
     const heavyTags = tags.filter((t) => t.count >= 10).length
-    return { coveredSites, heavyTags }
+    const multiTags = tags.filter((t) => (Number.isFinite(t.count) ? t.count : 0) >= TAG_LINK_MIN).length
+    const singleTags = tags.filter((t) => (Number.isFinite(t.count) ? t.count : 0) < TAG_LINK_MIN).length
+    return { coveredSites, heavyTags, multiTags, singleTags }
   }, [tags])
 
   return (

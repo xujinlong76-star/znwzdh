@@ -1,0 +1,752 @@
+{
+  "schemaVersion": 1,
+  "description": "NavHub docs/ 文档索引的单一事实源（由 scripts/gen-docs-index.mjs 生成；--check 防漏登记）",
+  "generatedAt": "2026-11-06",
+  "generator": "scripts/gen-docs-index.mjs",
+  "counts": {
+    "docsMdDisk": 94,
+    "docsMdGitTracked": 87,
+    "docsMdUntrackedAdr": 4,
+    "deliverablesTopLevelDirs": 15,
+    "deliverablesMdReports": 20,
+    "scriptsCheckMjs": 30
+  },
+  "notes": [
+    "任务书给的 docs/ 87 份 = git 已跟踪口径（GIT_TRACKED_DOCS 常量，2026-11-06 git ls-files 实测）；本索引以磁盘全量为登记口径，逐份标注 tracked，不伪造 87。",
+    "初始采集时磁盘实存 91 份 = 87 已跟踪 + 4 份未跟踪 docs/adr/（3 ADR + README）；采集后又出现并行会话新增的未跟踪 .md 时，buildIndex() 会动态纳入并标 source=disk-extra，--check 不误报。",
+    "任务书给的 deliverables/ 19 份报告 = 旧口径；磁盘实存 20 份 .md，按真实名称全量登记，不凑数删减。",
+    "本索引只登记 docs/ 下的 .md；docs/ 下另有 metrics.json / plan-status.json 等非 .md 文件，由各自生成器负责（metrics.json 见 scripts/gen-docs-metrics.mjs）。",
+    "docs/_archive/README.md、docs/seo/CURRENT.md、scripts/INDEX.md、deliverables/INDEX.md 是本轮治理新建的人读文档；其中位于 docs/ 下的两份会由 --check 自动纳入登记范围。"
+  ],
+  "docs": [
+    {
+      "path": "ACCOUNT-LIFECYCLE-2026-11-01.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "AGNES-LLM-INTEGRATION-PLAN-2026-10-19.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "AI-MODEL-PLATFORM-PLAN-2026-10-19.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "ASYNC-RESTORE-DESIGN.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "ASYNC-RESTORE-REVIEW-2026-10-25.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "AUDIT-2026-10-20-PASS2.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "AUDIT-2026-10-20-PASS3.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "AUDIT-2026-10-20.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "AUDIT_VERIFICATION_2026-10-16.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "BACKEND-OPTIMIZATION-PLAN-2026-10-30.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "BACKUP-RUNBOOK.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "CI-BRANCH-PROTECTION.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "CODE-EXECUTION-ISOLATION-2026-11-01.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "CODE-REVIEW.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "CODEBASE_FILE_INDEX.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "CODEBASE_OVERVIEW.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "CSP-ROLLOUT.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "DESIGN-SYSTEM.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "DEV-PLAN-2026-10-19-NEXT.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "GATES-OPERATIONS.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "GUI-TEST-REPORT-2026-10-27.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "INDEX.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "index"
+    },
+    {
+      "path": "NEXT-STEPS-PLAN-2026-10-24.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "OBSERVABILITY.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "P3-COMPLETION-REPORT-2026-10-16.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "PLUGIN-MARKET-DESIGN-2026-10-19.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "PLUGIN-MARKET-ENHANCEMENTS-2026-10-19.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "PROJECT-PROGRESS-SCAN-2026-10-28.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "ROUTE-STATE-CONVENTIONS.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "SEO-TEMPLATE-COPY-AUDIT-2026-10-21.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "SITE-HEALTH-HISTORY-2026-11-01.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "TESTING-CONVENTIONS.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "TESTING-QUARANTINE.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
+    },
+    {
+      "path": "TESTING-STRATEGY.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "UPGRADE-EXECUTION-2026-10-18.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-EXECUTION-2026-10-24-PASS2.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-EXECUTION-2026-10-24-PASS3.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-EXECUTION-2026-10-24-PASS4.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-EXECUTION-2026-10-24-PASS5.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-EXECUTION-2026-10-24.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-EXECUTION-2026-10-27.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-EXECUTION-REPORT-2026-10-17.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-MASTER-PLAN-2026-11-06.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-PLAN-2026-10-16.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-PLAN-2026-10-23.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-PLAN-2026-10-27-BACKEND.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-PROPOSAL-2026-10-18.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-PROPOSAL-V2-2026-10-18.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-PROPOSAL-V3-2026-10-19.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "UPGRADE-RECOMMENDATIONS-2026-10-16.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "USER-CENTER-DEEP-SCAN-V2-2026-10-22.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "USER-CENTER-UPGRADE-PLAN-2026-10-22.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "USER-CENTER-UPGRADE-PLAN-2026-10-24.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "VIDEO-CATALOG-MIGRATION.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "VIDEO-HOTSPOT-BACKEND-AUDIT-2026-10-28.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "VIDEO-HOTSPOT-REMEDIATION-2026-10-28.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "VIDEO-HOTSPOT-REVIEW-2026-10-28.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "VIDEO-LINE-COMMIT-PLAN-2026-10-29.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "VIDEO-LLM-EVAL-PLAN.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "_archive/README.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
+    },
+    {
+      "path": "acceptance-report.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "adr/0001-lite-single-instance-constraint.md",
+      "tracked": false,
+      "source": "adr-untracked",
+      "status": "decision"
+    },
+    {
+      "path": "adr/0002-strip-types-production-runtime.md",
+      "tracked": false,
+      "source": "adr-untracked",
+      "status": "decision"
+    },
+    {
+      "path": "adr/0003-coverage-threshold-single-source.md",
+      "tracked": false,
+      "source": "adr-untracked",
+      "status": "decision"
+    },
+    {
+      "path": "adr/README.md",
+      "tracked": false,
+      "source": "adr-untracked",
+      "status": "decision"
+    },
+    {
+      "path": "competitor-walkthrough/README.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "navigation-enhancement-plan.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "research-notes.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "research-taxonomy-upgrade.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "security-notes.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "seo-keyword-research.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "seo/CURRENT.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
+    },
+    {
+      "path": "seo/ISR-ROUTES.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "seo/SEO-OPTIMIZATION-PLAN-2026-10-20.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "seo/SEO-OPTIMIZATION-PLAN-V2-2026-10-21.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "seo/SEO-OPTIMIZATION-PLAN-V4-2026-10-22.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "seo/SEO-UPGRADE-PLAN-V3-2026-10-21.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "proposal"
+    },
+    {
+      "path": "seo/TECHNICAL-SEO-AUDIT-2026-10-20.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "seo/link-architecture-navhub.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "seo/tag-descriptions-draft.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/01-architecture.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/02-api.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/03-web.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/04-core.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/05-store.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/06-ai.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/07-mcp.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/08-extensions-scripts-docker.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/09-run-and-test.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/10-bento-diy-and-advanced-algorithms.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/11-operations.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/12-user-center.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    },
+    {
+      "path": "wiki/README.md",
+      "tracked": true,
+      "source": "git-tracked",
+      "status": "current"
+    }
+  ],
+  "deliverables": {
+    "topLevelDirs": [
+      "ai3-stream-2026-10-28",
+      "ai4a-canvas-2026-10-28",
+      "ai4b-probe-2026-10-28",
+      "ai4c-review-2026-10-29",
+      "ai5-vector-2026-10-30",
+      "ai6-cost-2026-10-30",
+      "brand-admin-logo-2026-10-30",
+      "code-scan-2026-11-01",
+      "e2e-ui-2026-10-26",
+      "engineering-assurance",
+      "navhub-upgrade-2026-11-01",
+      "plugin-health",
+      "verify-archive-2026-10-30",
+      "verify-archive-2026-10-30-pm",
+      "web-audit"
+    ],
+    "mdReports": [
+      "ai3-stream-2026-10-28/README.md",
+      "ai4a-canvas-2026-10-28/README.md",
+      "ai4b-probe-2026-10-28/README.md",
+      "ai4c-review-2026-10-29/README.md",
+      "ai5-vector-2026-10-30/README.md",
+      "ai6-cost-2026-10-30/README.md",
+      "brand-admin-logo-2026-10-30/README.md",
+      "deep-scan-report-2026-10-31.md",
+      "e2e-ui-2026-10-26/REPORT.md",
+      "e2e-ui-2026-10-26/results/08-raw-summary.md",
+      "engineering-assurance/design-review-testing-process-2026-10-25.md",
+      "navhub-upgrade-2026-11-01/REPORT.md",
+      "navhub-upgrade-2026-11-01/phase2-ux-spec.md",
+      "navhub-upgrade-2026-11-01/verify-f123/f4-verification-report.md",
+      "plugin-health/设计-插件智能体检与AI自愈增强.md",
+      "verify-archive-2026-10-30-pm/README.md",
+      "verify-archive-2026-10-30/README.md",
+      "web-audit/ux-review-2026-10-31/phase1-visual.md",
+      "web-audit/检测报告.md",
+      "web-overlay-audit-2026-11-06.md"
+    ]
+  },
+  "scripts": {
+    "checkMjs": [
+      {
+        "file": "check-isr-routes.mjs",
+        "purpose": "ISR 路由门禁：构建产物 + --live 线上形态抽查，防 Next 16 读 searchParams 触发 DYNAMIC_SERVER_USAGE 500"
+      },
+      {
+        "file": "check-upstream-ref.mjs",
+        "purpose": "上游底座 ref 一致性：DEFAULT_REF / Dockerfile ARG / UPSTREAM.md / compose build arg 四处同源"
+      },
+      {
+        "file": "check-extensions.mjs",
+        "purpose": "浏览器与桌面扩展规范性：Chrome MV3 清单/资源/JS 语法 + Raycast 包规范与入口"
+      },
+      {
+        "file": "check-syntax.mjs",
+        "purpose": "语法快速门禁：用 esbuild 秒级解析 TS/TSX（不依赖 tsc 项目配置，与 TS 7 解耦）"
+      },
+      {
+        "file": "check-large-files.mjs",
+        "purpose": "大文件入库守卫：--staged 默认 50 MiB / --unpushed 扫未推送 blob，防 100 MiB 推送被拒"
+      },
+      {
+        "file": "check-committed-refs.mjs",
+        "purpose": "提交完整性：已跟踪文件不得引用未入库文件（仓库内相对引用 / package.json 的 node scripts/x.mjs）"
+      },
+      {
+        "file": "check-client-node-imports.mjs",
+        "purpose": "客户端模块图不得 import node 内建模块（防 'use client' 把 crypto/buffer 打进首屏）"
+      },
+      {
+        "file": "check-core-mirrors.mjs",
+        "purpose": "core 镜像一致性：读 HEAD 提交内容，防 packages/core 改了而 overlay 镜像没重生成"
+      },
+      {
+        "file": "check-component-contracts.mjs",
+        "purpose": "组件 props 契约静态检查：调用点多传未声明属性 / 必填属性全没传（正则，非 AST）"
+      },
+      {
+        "file": "check-gates-registry.mjs",
+        "purpose": "门禁清单对账：scripts/gates.json ↔ pre-commit ↔ pre-push ↔ ci.yml 三向一致"
+      },
+      {
+        "file": "check-hooks-fresh.mjs",
+        "purpose": "钩子新鲜度：.git/hooks 生成物仍是 install-git-hooks.mjs 的产物（仅 pre-commit 跑）"
+      },
+      {
+        "file": "check-commit-closure.mjs",
+        "purpose": "提交闭包：按「HEAD 缺了哪些符号」判定一组文件能否作为完整提交（少文件 / 多带别人半成品）"
+      },
+      {
+        "file": "check-rate-limit-exemption.mjs",
+        "purpose": "限流豁免集成覆盖：预览站上 A/B 验证 SSR 取数不再 429 降级成 noindex 壳"
+      },
+      {
+        "file": "check-bundle-budget.mjs",
+        "purpose": "首屏 JS 预算：从构建产物静态统计路由初始 chunk（扣除异步 chunk / polyfills）"
+      },
+      {
+        "file": "check-cleanup-coverage.mjs",
+        "purpose": "清理动作覆盖每条出口（登记制 CLEANUP_RULES），尤其提前 return 绕过 finally"
+      },
+      {
+        "file": "check-source-truth.mjs",
+        "purpose": "读路径事实源判据必须是显式开关（如 resolveVideoStoreMode() === 'db'），不许按哪边数据多"
+      },
+      {
+        "file": "check-deps-integrity.mjs",
+        "purpose": "依赖完整性：抓 pnpm Windows EPERM 安装半途而废导致的「被装残的包」"
+      },
+      {
+        "file": "check-defused-thickness.mjs",
+        "purpose": "撤防账厚度棘轮：比对 explain-ci-failure --defused --json 快照的道数，防写侧漏登记"
+      },
+      {
+        "file": "check-web-overlay.mjs",
+        "purpose": "apps/web 与 apps/web-overlay 一致性：正向漂移失败 exit 1，反向只告警（可选 --fix）"
+      },
+      {
+        "file": "check-search-recall.mjs",
+        "purpose": "检索召回回归器：起盘上引擎 + 临时库副本，重放金标集之外的「召不回来」缺陷探针"
+      },
+      {
+        "file": "check-rest-contract-coverage.mjs",
+        "purpose": "REST 契约覆盖率：路由表 ↔ RESPONSE_SCHEMA_BINDINGS 对账，写路由 100% 绑定或进 allowlist"
+      },
+      {
+        "file": "check-commit-atomicity.mjs",
+        "purpose": "提交原子性：本次提交的测试不得依赖「脏了但没提交」的源码 / 非代码文件"
+      },
+      {
+        "file": "check-import-boundaries.mjs",
+        "purpose": "依赖边界：规则表化「谁能 import 谁」，防 overlay 直接 import @navhub/core 在镜像里 TS2307"
+      },
+      {
+        "file": "check-sparsity.mjs",
+        "purpose": "分类稀疏度巡检：拉 :8787 /api/categories 与 counts，核验 18 根 / 215 叶站点数 ≥20 达标率并抽查权重排序"
+      },
+      {
+        "file": "check-ci-gate.mjs",
+        "purpose": "CI 合并门禁离线校验：解析 ci.yml 全部 jobs 与 ci-passed 的 needs 聚合关系并断言"
+      },
+      {
+        "file": "check-coverage.mjs",
+        "purpose": "覆盖率取数：只读 vitest JSON，出数 / --thresholds 判红 / --max-age 防旧数据假绿"
+      },
+      {
+        "file": "check-plan-status.mjs",
+        "purpose": "计划项 → 落地证据收口：按符号名 / 特征字符串判定 docs/plan-status.json 的 landed 证据"
+      },
+      {
+        "file": "check-env-surface.mjs",
+        "purpose": "配置面登记棘轮：process.env.NAVHUB_* 新增未登记变量判红（against scripts/env-surface.json）"
+      },
+      {
+        "file": "check-audit-exceptions.mjs",
+        "purpose": "依赖审计例外到期：ghsa/reason/owner/expiresAt 齐全，过期判红，可 --emit-ignore"
+      },
+      {
+        "file": "check-governance.mjs",
+        "purpose": "治理门禁聚合器：把 plan-status / env-surface / audit-exceptions 三条单一事实源合成 verify 一步"
+      }
+    ]
+  }
+}

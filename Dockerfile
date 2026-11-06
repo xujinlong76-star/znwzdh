@@ -46,5 +46,8 @@ COPY --from=builder /app /app
 EXPOSE 3000
 EXPOSE 8787
 
-# 默认启动 API 与 Web 服务
-CMD ["node", "scripts/run.mjs", "dev"]
+# ⚠️ 本文件已 DEPRECATED（见文件头），且这条 CMD 以 dev 模式作生产入口，属误用陷阱。
+# 2026-11-06 深度扫描：改为显式阻断——误用此镜像时立即失败并指向正确部署文件，
+# 而不是静默起一个开发服务器当成生产环境。
+# 正确入口：docker/docker-compose.yml + docker/Dockerfile.api + docker/Dockerfile.web
+CMD ["node", "-e", "console.error('[DEPRECATED] 根 Dockerfile 已废弃，请勿使用。生产部署请用 docker/docker-compose.yml 与 docker/Dockerfile.api / docker/Dockerfile.web（见 README 与 docs/wiki/08）。'); process.exit(1)"]

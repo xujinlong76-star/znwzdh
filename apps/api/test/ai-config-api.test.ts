@@ -239,7 +239,7 @@ describe("系统级配置（管理端）", () => {
       const res = await app.inject({
         method: "POST",
         url: ADMIN_TEST,
-        payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" },
+        payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", apiKey: "sk-test" },
       });
       expect(res.statusCode).toBe(200);
       const result = res.json().result;

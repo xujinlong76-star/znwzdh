@@ -21,7 +21,7 @@ import {
     CardTitle,
 } from "@/registry/new-york/ui/card"
 import { Alert, AlertDescription } from "@/registry/new-york/ui/alert"
-import { Loader2, CheckCircle, XCircle, Send, Globe, FileText, Tag } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, Send, Globe, FileText, Tag, Sparkles } from 'lucide-react'
 import type { NavigationData, NavigationItem, NavigationCategory } from '@/types/navigation'
 import type { SubmissionData, SubmissionResponse } from '@/types/submission'
 
@@ -41,7 +41,55 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
 
     const [subCategories, setSubCategories] = useState<NavigationCategory[]>([])
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [isAiPrefilling, setIsAiPrefilling] = useState(false)
     const [result, setResult] = useState<SubmissionResponse | null>(null)
+
+    const handleAiPrefill = async () => {
+        const targetUrl = formData.url.trim()
+        if (!targetUrl || isAiPrefilling) return
+        setIsAiPrefilling(true)
+        setResult(null)
+        try {
+            const categoriesPayload = navigationData.navigationItems
+                .filter((item) => item.enabled !== false)
+                .map((item) => ({
+                    id: item.id,
+                    title: item.title,
+                    subCategories: (item.subCategories || [])
+                        .filter((sub) => sub.enabled !== false)
+                        .map((sub) => ({ id: sub.id, title: sub.title })),
+                }))
+            const res = await fetch('/api/hub/submissions/prefill', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: targetUrl, categories: categoriesPayload }),
+            })
+            const data = await res.json().catch(() => null)
+            if (res.ok && data?.success && data.prefill) {
+                const p = data.prefill
+                setFormData((prev) => ({
+                    ...prev,
+                    title: p.title || prev.title,
+                    description: p.description || prev.description,
+                    category: p.category || prev.category,
+                    subcategory: p.subcategory || prev.subcategory,
+                    submitterNote: p.submitterNote || prev.submitterNote,
+                }))
+            } else {
+                setResult({
+                    success: false,
+                    message: data?.message || '无法识别该网址，请确认输入了完整的 https:// 网址',
+                })
+            }
+        } catch {
+            setResult({
+                success: false,
+                message: 'AI 识别服务请求失败，请手动填写或稍后重试',
+            })
+        } finally {
+            setIsAiPrefilling(false)
+        }
+    }
 
     // 当主分类变化时，更新子分类列表
     useEffect(() => {
@@ -163,20 +211,44 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
 
                     {/* 网站地址 */}
                     <div className="space-y-2">
-                        <Label htmlFor="url" className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                            <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>网站地址 (URL)</span>
-                            <span className="text-destructive-text">*</span>
-                        </Label>
-                        <Input
-                            id="url"
-                            type="url"
-                            placeholder="https://example.com"
-                            value={formData.url}
-                            onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                            required
-                            className="h-10 text-base sm:text-sm rounded-xl border-border/70 bg-background/80 font-mono"
-                        />
+                        <div className="flex items-center justify-between gap-2">
+                            <Label htmlFor="url" className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                                <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span>网站地址 (URL)</span>
+                                <span className="text-destructive-text">*</span>
+                            </Label>
+                            <span className="text-[11px] text-muted-foreground">输入网址后可一键 AI 自动填表</span>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <Input
+                                id="url"
+                                type="url"
+                                placeholder="https://example.com"
+                                value={formData.url}
+                                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                                required
+                                className="h-10 text-base sm:text-sm rounded-xl border-border/70 bg-background/80 font-mono flex-1"
+                            />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={!formData.url.trim() || isAiPrefilling}
+                                onClick={handleAiPrefill}
+                                className="h-10 px-3.5 rounded-xl border-primary/40 text-primary hover:bg-primary/10 gap-1.5 text-xs font-semibold shrink-0"
+                            >
+                                {isAiPrefilling ? (
+                                    <>
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        <span>AI 正在识别网页...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Sparkles className="h-3.5 w-3.5" />
+                                        <span>✨ AI 识别网址自动填写</span>
+                                    </>
+                                )}
+                            </Button>
+                        </div>
                     </div>
 
                     {/* 网站描述 */}

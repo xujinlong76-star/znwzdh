@@ -38,7 +38,11 @@ describe('CI 测试遥测接线（分片 + junit）', () => {
     expect(unit, unit).not.toMatch(/pnpm test\s+--(\s|$)/)
 
     const e2e = lineOf('PLAYWRIGHT_JUNIT_OUTPUT_NAME=')
-    expect(e2e).toContain('pnpm test:e2e --shard=${{ matrix.shard }}/2')
+    // 2026-11-06 E2E 隔离接线后，本行多了 --grep-invert @quarantine，故按分段断言：
+    // 仍必须①带分片参数②紧跟 pnpm 不出现裸 `--`（后者是 2026-10-28 那次空转的根因）。
+    expect(e2e).toContain('pnpm test:e2e')
+    expect(e2e).toContain('--grep-invert @quarantine')
+    expect(e2e).toContain('--shard=${{ matrix.shard }}/2')
     expect(e2e, e2e).not.toMatch(/pnpm test:e2e\s+--(\s|$)/)
   })
 

@@ -377,6 +377,7 @@ async function resolveCatalogCandidates(
   packUrls: Set<string>,
   packContext?: { slug: string; name: string },
   offsetIndex = 0,
+  log?: { warn: (obj: unknown, msg: string) => void },
 ): Promise<StructuredReplacementCandidate[]> {
   const candidates: StructuredReplacementCandidate[] = []
   const seen = new Set<string>()
@@ -430,7 +431,9 @@ async function resolveCatalogCandidates(
         })
         if (candidates.length >= 2) break
       }
-    } catch {}
+    } catch (err) {
+      log?.warn({ err: String(err), categoryId: siteMeta.category }, "同类目候选站点召回失败，跳过并继续降级");
+    }
   }
 
   // 2. 标题关键词语义召回
@@ -458,7 +461,9 @@ async function resolveCatalogCandidates(
           }
         }
       }
-    } catch {}
+    } catch (err) {
+      log?.warn({ err: String(err), title: siteMeta?.title }, "关键词语义匹配候选站点召回失败，跳过并继续降级");
+    }
   }
 
   // 3. 通用兜底活跃站点
@@ -479,7 +484,9 @@ async function resolveCatalogCandidates(
         })
         if (candidates.length >= 2) break
       }
-    } catch {}
+    } catch (err) {
+      log?.warn({ err: String(err) }, "通用兜底活跃站点召回失败");
+    }
   }
 
   return candidates.slice(0, 2)
@@ -1117,6 +1124,7 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
             packUrls,
             { slug, name: plugin.manifest.name },
             idx,
+            req.log,
           )
           return {
             url: targetUrl,

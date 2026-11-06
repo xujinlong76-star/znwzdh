@@ -100,6 +100,9 @@ export async function updateUserProfileInfo(
     return { ok: false, reason: "invalid_input" };
   }
   if (cleanUsername) {
+    if (RESERVED_USERNAMES.has(cleanUsername.toLowerCase())) {
+      return { ok: false, reason: "username_taken" };
+    }
     const conflict = (
       await repo.raw("SELECT id FROM users WHERE username = ? AND id <> ? LIMIT 1", [cleanUsername, identity])
     )[0];
@@ -146,6 +149,26 @@ export async function updateUserProfileInfo(
 
 /** 邮箱格式的宽松校验：只挡明显非法，不追求 RFC 完备（注册转化率优先） */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** 系统保留用户名（禁止普通注册或修改资料占用） */
+export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
+  "admin",
+  "administrator",
+  "root",
+  "system",
+  "navhub",
+  "operator",
+  "support",
+  "security",
+  "master",
+]);
+
+/** 系统保留邮箱后缀域名（禁止外部注册冒用） */
+export const RESERVED_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
+  "navhub.local",
+  "localhost",
+  "internal",
+]);
 
 /** 按邮箱查用户（邮箱非唯一索引，这里做应用层查重） */
 export async function findUserByEmail(repo: Repository, email: string): Promise<UserRecord | null> {
@@ -199,6 +222,15 @@ export async function createUserWithPassword(
   if (pwError) return { ok: false, reason: "invalid_password" };
   if (username.length < 1 || username.length > 40) return { ok: false, reason: "invalid_username" };
   if (!EMAIL_RE.test(email)) return { ok: false, reason: "invalid_email" };
+
+  // 1. 保留用户名与保留邮箱阻断
+  if (RESERVED_USERNAMES.has(username.toLowerCase())) {
+    return { ok: false, reason: "username_taken" };
+  }
+  const emailDomain = email.split("@")[1]?.toLowerCase();
+  if (emailDomain && RESERVED_EMAIL_DOMAINS.has(emailDomain)) {
+    return { ok: false, reason: "invalid_email" };
+  }
 
   const nameTaken = (
     await repo.raw("SELECT id FROM users WHERE username = ? LIMIT 1", [username])

@@ -17,6 +17,7 @@ import type {
   SiteKnowledgeGraph,
   MatchedSiteRelation,
   SiteInput,
+  SiteRadarRecord,
 } from "./records.ts";
 import {
   buildIndexFields,
@@ -756,6 +757,7 @@ export async function purgeSite(repo: Repository, id: string): Promise<boolean> 
   await repo.run("DELETE FROM site_facets WHERE site_id = ?", [id]);
   await repo.run("DELETE FROM site_relations WHERE source_site_id = ? OR target_site_id = ?", [id, id]);
   await repo.run("DELETE FROM embeddings WHERE site_id = ?", [id]);
+  await repo.run("DELETE FROM site_radar WHERE site_id = ?", [id]);
   // 以下五张表同样以 site_id 关联站点，但 schema 里没有外键（跨方言手写 DDL），
   // 不会自动级联。漏删的后果：site_archives 留着整页 HTML（体积最大、回收站
   // 清理后存储持续膨胀），favorites / collection_items 留下指向不存在站点的
@@ -1326,6 +1328,51 @@ export async function getLatestSiteArchive(repo: Repository, siteId: string): Pr
     byteSize: Number(r.byte_size || 0),
     tags,
   };
+}
+
+/**
+ * 读取站点 AI 透视结果。
+ *
+ * 命中条件里带上 model：`expectedModel` 与存量不一致时返回 null，让调用方
+ * 重新计算——否则换了模型之后界面会无限期展示旧模型的文案，且没有任何入口能纠正它。
+ */
+export async function getSiteRadar(
+  repo: Repository,
+  siteId: string,
+  expectedModel: string
+): Promise<SiteRadarRecord | null> {
+  const rows = await repo.raw(
+    `SELECT payload, model, updated_at FROM site_radar WHERE site_id = ? LIMIT 1`,
+    [siteId]
+  );
+  const r = rows?.[0];
+  if (!r || String(r.model) !== expectedModel) return null;
+  try {
+    return {
+      radar: JSON.parse(String(r.payload)),
+      model: String(r.model),
+      updatedAt: Number(r.updated_at),
+    };
+  } catch {
+    // 存量 JSON 坏掉（历史上被截断/手工改库）：当成没有，让调用方重算并覆盖
+    return null;
+  }
+}
+
+/** 落库一次真实的大模型产出；降级兜底文案不允许走这里（见 SiteRadarRecord）。 */
+export async function saveSiteRadar(
+  repo: Repository,
+  siteId: string,
+  radar: unknown,
+  model: string
+): Promise<void> {
+  await repo.run(
+    `INSERT INTO site_radar (site_id, payload, model, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (site_id) DO UPDATE SET
+       payload = excluded.payload, model = excluded.model, updated_at = excluded.updated_at`,
+    [siteId, JSON.stringify(radar), model, Date.now()]
+  );
 }
 
 

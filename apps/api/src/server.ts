@@ -82,6 +82,7 @@ import { archiveRoutes } from "./routes/archive.ts";
 import { backupRoutes } from "./routes/backup.ts";
 import { copilotRoutes } from "./routes/copilot.ts";
 import { accountRoutes } from "./routes/account.ts";
+import { assetRoutes } from "./routes/assets.ts";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -731,6 +732,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(backupRoutes, { ctx });
   await app.register(copilotRoutes, { ctx });
   await app.register(accountRoutes, { ctx });
+  await app.register(assetRoutes, { ctx });
 
   // 统一 JSON 404：默认响应也是 JSON，但这里显式补上 error 码与 requestId，
   // 便于客户端/排障区分「路由不存在」与「业务 404」（例如 site not found）。

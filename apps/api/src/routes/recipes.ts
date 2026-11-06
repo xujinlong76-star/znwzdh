@@ -16,32 +16,154 @@ import {
   PRESET_RECIPES,
   PRESET_TECH_GRAPH,
   runAutonomousHealing,
+  type ArchitectureRecipe,
+  type TechComparisonMatrix,
 } from "@navhub/core";
 
 import { buildWaybackSaveUrl, buildWaybackSnapshotUrl, normalizeTargetUrl, parseWaybackAvailabilityResponse, type WaybackSnapshotInfo } from "@navhub/core";
 import { guardedFetch } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
+import { resolveLlm } from "../llm-config.ts";
+import { callLlm } from "../llm-usage.ts";
 import type { AppContext } from "../context.ts";
 
 export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
+  /**
+   * 动态场景配方与对比矩阵内存缓存（避免高频搜索重复请求 LLM）
+   */
+  const dynamicRecipeCache = new Map<string, ArchitectureRecipe>();
+  const dynamicComparisonCache = new Map<string, TechComparisonMatrix>();
+
   /* ----------------- 架构配方 & 竞品对比 & 确定性 Favicon ----------------- */
 
   /**
-   * Graph-RAG 多跳技术栈链路配方查询
+   * Graph-RAG 多跳技术栈链路配方查询 + Agnes 3.0 Flash 动态场景配方合成
+   * 解决痛点：用户搜索任意业务/开发/创作场景（如“跨境电商出海”、“短视频创作”、“独立开发变现”）时，
+   * 不再受限于 3 条静态预设，而是自动结合站内真实馆藏合成端到端分阶段工具链配方。
    */
   app.get("/api/recipes", { config: { scope: "public", cache: { maxAge: 300, etag: true } } }, async (req) => {
-    const q = String((req.query as Record<string, string>)?.q ?? "").trim();
+    const queryObj = (req.query ?? {}) as Record<string, string>;
+    const q = String(queryObj.q ?? "").trim();
     if (!q) {
       return { items: PRESET_RECIPES };
     }
     const matched = findMatchingArchitectureRecipe(q);
-    return { item: matched, items: matched ? [matched] : [] };
+    if (matched) {
+      return { item: matched, items: [matched] };
+    }
+
+    const normKey = q.toLowerCase();
+    const cached = dynamicRecipeCache.get(normKey);
+    if (cached) {
+      return { item: cached, items: [cached], aiGenerated: true, cached: true };
+    }
+
+    // 当查询长度 >= 2 且配置了有效 AI 密钥时，结合馆藏检索动态合成场景工作流配方
+    const llm = await resolveLlm(ctx);
+    if (q.length < 2 || !llm.provider.apiKey) {
+      return { item: null, items: [] };
+    }
+
+    try {
+      const searchRes = await ctx.search.search({ q, limit: 15, statuses: ["active"] });
+      const hitIds = [...new Set((searchRes.hits ?? []).map((h) => h.siteId))];
+      const byId = hitIds.length > 0 ? await ctx.repo.getSitesByIds(hitIds) : new Map();
+      const matchedSites = hitIds.map((id) => byId.get(id)).filter((s) => Boolean(s));
+      const candidates =
+        matchedSites.length > 0
+          ? matchedSites.map((s) => ({
+              id: s!.id,
+              title: s!.title,
+              url: s!.url,
+              description: s!.description || "",
+            }))
+          : (await ctx.repo.listSites({ status: "active", limit: 15 })).map((s) => ({
+              id: s.id,
+              title: s.title,
+              url: s.url,
+              description: s.description || "",
+            }));
+
+      const candidateContext = candidates
+        .slice(0, 12)
+        .map((c) => `- [id:${c.id}] ${c.title} (${c.url}): ${c.description.slice(0, 60)}`)
+        .join("\n");
+
+      const prompt = `你是全球顶尖的场景化工具链架构师。用户正在搜索场景需求：「${q}」。
+请结合以下站内已收录的真实工具（优先从中挑选 URL 与工具），为用户定制一套分阶段的「端到端场景工作流配方 (ArchitectureRecipe)」。
+
+【站内候选工具库】
+${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
+
+请严格返回以下 JSON 格式（包含 3 到 4 个阶段 layers）：
+{
+  "id": "ai-recipe-slug",
+  "title": "针对「${q}」的全流程实战工具链配方",
+  "targetGoal": "一句话说明该工作流帮助用户达成的核心目标",
+  "description": "简述该方案的分阶段协同思路与避坑要点（50字内）",
+  "keywords": ["关键词1", "关键词2"],
+  "layers": [
+    {
+      "layerName": "1. 阶段名称（如：需求调研 / 素材生成 / 核心构建 / 部署分发）",
+      "category": "阶段分类短标签",
+      "recommended": {
+        "id": "工具ID",
+        "title": "首选工具名称",
+        "url": "https://真实可访问网址",
+        "description": "为什么在该阶段首选它（35字内）",
+        "highlights": ["亮点1", "亮点2", "免费/低门槛优势"]
+      },
+      "alternatives": [
+        { "id": "alt-1", "title": "备选平替1", "url": "https://真实网址" },
+        { "id": "alt-2", "title": "备选平替2", "url": "https://真实网址" }
+      ]
+    }
+  ],
+  "quickStartSnippet": "一步到位的实操启动建议或命令/Prompt模板（1-3行）"
+}`;
+
+      const res = await callLlm(ctx, llm, {
+        scenario: "dynamic_recipe",
+        messages: [{ role: "user", content: prompt }],
+        json: true,
+        temperature: 0.2,
+        maxTokens: 1200,
+      });
+
+      let parsed: ArchitectureRecipe | null = null;
+      try {
+        const raw = (res.content || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+        parsed = JSON.parse(raw) as ArchitectureRecipe;
+      } catch {
+        const m = (res.content || "").match(/\{[\s\S]*\}/);
+        if (m) {
+          try { parsed = JSON.parse(m[0]) as ArchitectureRecipe; } catch {}
+        }
+      }
+
+      if (parsed && parsed.title && Array.isArray(parsed.layers) && parsed.layers.length > 0) {
+        parsed.id = parsed.id || `ai-recipe-${Date.now()}`;
+        parsed.keywords = Array.isArray(parsed.keywords) ? parsed.keywords : [q];
+        if (dynamicRecipeCache.size >= 100) {
+          const oldest = dynamicRecipeCache.keys().next().value;
+          if (oldest) dynamicRecipeCache.delete(oldest);
+        }
+        dynamicRecipeCache.set(normKey, parsed);
+        return { item: parsed, items: [parsed], aiGenerated: true };
+      }
+    } catch (err) {
+      req.log.warn({ err: String(err), q }, "动态 AI 场景配方合成降级");
+    }
+
+    return { item: null, items: [] };
   });
 
   /**
-   * 端侧竞品并排对比矩阵合成
+   * 端侧竞品并排对比矩阵合成 + Agnes 3.0 Flash 动态任意工具 PK 矩阵
+   * 解决痛点：用户输入任意两个工具对比（如 "ChatGPT vs Claude", "Notion vs Obsidian", "DeepSeek vs Kimi"）时，
+   * 不再受限于 6 条预设，实时生成结构化优劣势、开源/收费协议与多维胜负裁决。
    */
   app.get("/api/comparisons", { config: { scope: "public", cache: { maxAge: 300, etag: true } } }, async (req) => {
     const q = String((req.query as Record<string, string>)?.q ?? "").trim();
@@ -49,7 +171,119 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       return { ok: false, matrix: null };
     }
     const matrix = parseTechComparisonQuery(q);
-    return { ok: Boolean(matrix), matrix };
+    if (matrix) {
+      return { ok: true, matrix };
+    }
+
+    // 识别任意 "A vs B" / "A 对比 B" / "A pk B" / "A 和 B 哪个好" 语法
+    const vsMatch = q.match(/^(.+?)\s*(?:\bvs\.?\b|\bVS\.?\b|\bpk\b|\bPK\b|对比|对决|与|和)\s*(.+?)(?:对比|哪个好|区别|选型|怎么选)?$/i);
+    if (!vsMatch) {
+      return { ok: false, matrix: null };
+    }
+
+    const rawA = vsMatch[1]!.trim();
+    const rawB = vsMatch[2]!.trim();
+    if (!rawA || !rawB || rawA.toLowerCase() === rawB.toLowerCase()) {
+      return { ok: false, matrix: null };
+    }
+
+    const cacheKey = [rawA.toLowerCase(), rawB.toLowerCase()].sort().join("__vs__");
+    const cached = dynamicComparisonCache.get(cacheKey);
+    if (cached) {
+      return { ok: true, matrix: cached, aiGenerated: true, cached: true };
+    }
+
+    const llm = await resolveLlm(ctx);
+    if (!llm.provider.apiKey) {
+      return { ok: false, matrix: null };
+    }
+
+    try {
+      const [resA, resB] = await Promise.all([
+        ctx.search.search({ q: rawA, limit: 2, statuses: ["active"] }),
+        ctx.search.search({ q: rawB, limit: 2, statuses: ["active"] }),
+      ]);
+      const idA = resA.hits?.[0]?.siteId;
+      const idB = resB.hits?.[0]?.siteId;
+      const [hitA, hitB] = await Promise.all([
+        idA ? ctx.repo.getSite(idA) : Promise.resolve(null),
+        idB ? ctx.repo.getSite(idB) : Promise.resolve(null),
+      ]);
+      const infoA = hitA
+        ? `${hitA.title} (${hitA.url}): ${hitA.description || ""}`
+        : rawA;
+      const infoB = hitB
+        ? `${hitB.title} (${hitB.url}): ${hitB.description || ""}`
+        : rawB;
+
+      const prompt = `你是客观严谨的全球数字工具与技术选型评测专家。请针对用户查询的「${rawA}」与「${rawB}」进行深度并排对比评测，帮助用户快速做出选型决策。
+
+【馆藏参考信息】
+- 工具 A: ${infoA}
+- 工具 B: ${infoB}
+
+请严格返回以下 JSON 结构：
+{
+  "id": "ai-cmp-slug",
+  "title": "${rawA} vs ${rawB} 深度选型对比",
+  "itemA": {
+    "name": "${rawA}",
+    "category": "核心所属品类（10字内）",
+    "license": "收费/开源模式（如：开源免费 / 免费+Pro订阅 / 商业付费）",
+    "primaryPros": ["核心优势1", "核心优势2", "核心优势3"],
+    "tradeoffs": ["主要短板或门槛1", "主要短板或门槛2"],
+    "bestFor": "最适合哪类人群或业务场景（30字内）"
+  },
+  "itemB": {
+    "name": "${rawB}",
+    "category": "核心所属品类（10字内）",
+    "license": "收费/开源模式（如：开源免费 / 免费+Pro订阅 / 商业付费）",
+    "primaryPros": ["核心优势1", "核心优势2", "核心优势3"],
+    "tradeoffs": ["主要短板或门槛1", "主要短板或门槛2"],
+    "bestFor": "最适合哪类人群或业务场景（30字内）"
+  },
+  "dimensions": [
+    { "dimName": "核心能力与质量", "valueA": "A的表现简述", "valueB": "B的表现简述", "winner": "A" },
+    { "dimName": "免费额度与性价比", "valueA": "A的定价策略", "valueB": "B的定价策略", "winner": "B" },
+    { "dimName": "上手门槛与生态", "valueA": "A的体验", "valueB": "B的体验", "winner": "TIE" },
+    { "dimName": "国内访问与合规性", "valueA": "A的直连/合规情况", "valueB": "B的直连/合规情况", "winner": "A" }
+  ],
+  "verdict": "一针见血的终极选型建议：什么情况下选 ${rawA}，什么情况下选 ${rawB}（60字内）"
+}`;
+
+      const res = await callLlm(ctx, llm, {
+        scenario: "dynamic_comparison",
+        messages: [{ role: "user", content: prompt }],
+        json: true,
+        temperature: 0.2,
+        maxTokens: 1100,
+      });
+
+      let parsed: TechComparisonMatrix | null = null;
+      try {
+        const raw = (res.content || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+        parsed = JSON.parse(raw) as TechComparisonMatrix;
+      } catch {
+        const m = (res.content || "").match(/\{[\s\S]*\}/);
+        if (m) {
+          try { parsed = JSON.parse(m[0]) as TechComparisonMatrix; } catch {}
+        }
+      }
+
+      if (parsed && parsed.itemA && parsed.itemB && Array.isArray(parsed.dimensions)) {
+        parsed.id = parsed.id || cacheKey;
+        if (dynamicComparisonCache.size >= 100) {
+          const oldest = dynamicComparisonCache.keys().next().value;
+          if (oldest) dynamicComparisonCache.delete(oldest);
+        }
+        dynamicComparisonCache.set(cacheKey, parsed);
+        return { ok: true, matrix: parsed, aiGenerated: true };
+      }
+    } catch (err) {
+      req.log.warn({ err: String(err), q }, "动态 AI 竞品对比合成降级");
+    }
+
+    return { ok: false, matrix: null };
   });
 
   /**

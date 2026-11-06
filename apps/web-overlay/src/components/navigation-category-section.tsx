@@ -22,7 +22,8 @@ import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { useToast } from '@/components/ui/use-toast'
 import { copyText } from '@/lib/clipboard'
-import type { NavigationSubItem } from '@/types/navigation'
+import type { CategoryNode } from '@/lib/modular/category-combine'
+import type { NavigationItem, NavigationCategory, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 
 interface DropCategoryTarget {
@@ -31,7 +32,7 @@ interface DropCategoryTarget {
 }
 
 export interface NavigationCategorySectionProps {
-  category: any
+  category: CategoryNode | (NavigationItem & { isCustom?: boolean })
   index: number
   totalCategories: number
   allCategoryIds: string[]
@@ -93,9 +94,10 @@ export function NavigationCategorySection({
   const isPinned = pinnedCategoryIds.includes(category.id)
   const isCustom = Boolean(category.isCustom)
   const isCollapsed = collapsedCategoryIds.includes(category.id)
-  const directCount = (category.items as any[])?.length || 0
-  const subCats = (category.subCategories as any[]) || []
-  const subCount = subCats.reduce((acc: number, sub: any) => acc + ((sub.items as any[])?.length || 0), 0)
+  const directItems = (category.items || []) as NavigationSubItem[]
+  const directCount = directItems.length
+  const subCats = (category.subCategories || []) as Array<NavigationCategory & { items?: NavigationSubItem[] }>
+  const subCount = subCats.reduce((acc: number, sub) => acc + (sub.items?.length || 0), 0)
   const totalCount = directCount + subCount
   const categoryPinnedItemIds = pinnedSiteIdsByCategory[category.id] || []
   /**
@@ -107,9 +109,9 @@ export function NavigationCategorySection({
   const sortedDirectItems = useMemo(
     () =>
       isAdaptiveRankingEnabled
-        ? computeAdaptiveSiteRanking((category.items as any[]) || [], { pinnedItemIds: categoryPinnedItemIds })
-        : sortCategoryItemsWithPinned((category.items as any[]) || [], categoryPinnedItemIds),
-    [category.items, categoryPinnedItemIds, isAdaptiveRankingEnabled]
+        ? computeAdaptiveSiteRanking(directItems, { pinnedItemIds: categoryPinnedItemIds })
+        : sortCategoryItemsWithPinned(directItems, categoryPinnedItemIds),
+    [directItems, categoryPinnedItemIds, isAdaptiveRankingEnabled]
   )
 
   /**
@@ -121,17 +123,18 @@ export function NavigationCategorySection({
   /** 二级分类的排序同样缓存（原来写在 render 的 map 回调里，每帧重算） */
   const sortedSubCategories = useMemo(
     () =>
-      ((category.subCategories as any[]) || []).map((subCategory: any) => {
+      subCats.map((subCategory) => {
         const subPinnedItemIds = pinnedSiteIdsByCategory[subCategory.id] || []
+        const subItems = (subCategory.items || []) as NavigationSubItem[]
         return {
           subCategory,
           subPinnedItemIds,
           sortedSubItems: isAdaptiveRankingEnabled
-            ? computeAdaptiveSiteRanking((subCategory.items as any[]) || [], { pinnedItemIds: subPinnedItemIds })
-            : sortCategoryItemsWithPinned((subCategory.items as any[]) || [], subPinnedItemIds),
+            ? computeAdaptiveSiteRanking(subItems, { pinnedItemIds: subPinnedItemIds })
+            : sortCategoryItemsWithPinned(subItems, subPinnedItemIds),
         }
       }),
-    [category.subCategories, pinnedSiteIdsByCategory, isAdaptiveRankingEnabled]
+    [subCats, pinnedSiteIdsByCategory, isAdaptiveRankingEnabled]
   )
 
   /**
@@ -210,8 +213,8 @@ export function NavigationCategorySection({
   const filteredSubCategories = useMemo(() => {
     return sortedSubCategories.map((entry) => {
       const filtered = isFilterActive
-        ? (entry.sortedSubItems as any[]).filter(matchesFilter)
-        : (entry.sortedSubItems as any[])
+        ? entry.sortedSubItems.filter(matchesFilter)
+        : entry.sortedSubItems
       return {
         ...entry,
         filteredSubItems: filtered,
@@ -222,7 +225,7 @@ export function NavigationCategorySection({
   const showDirectGroup = selectedSubCatId === null || selectedSubCatId === '__direct__'
 
   const directGroup = useMemo(() => {
-    const all = filteredDirectItems as any[]
+    const all = filteredDirectItems
     if (forceFull || isFilterActive || expandedGroups.__direct__ || all.length <= limit) return { items: all }
     return { items: all.slice(0, limit) }
   }, [filteredDirectItems, forceFull, isFilterActive, expandedGroups, limit])
@@ -236,7 +239,7 @@ export function NavigationCategorySection({
           : filteredSubCategories
 
       return activeList.map((entry) => {
-        const all = entry.filteredSubItems as any[]
+        const all = entry.filteredSubItems
         const expanded = forceFull || isFilterActive || Boolean(expandedGroups[entry.subCategory.id])
         return {
           ...entry,
@@ -355,8 +358,8 @@ export function NavigationCategorySection({
                                   })
                                   return
                                 }
-                                const exists = (category.items as any[])?.some(
-                                  (item: any) => item.href === card.href || item.title === card.title
+                                const exists = category.items?.some(
+                                  (item) => item.href === card.href || item.title === card.title
                                 )
                                 if (exists) {
                                   toast({
@@ -409,8 +412,8 @@ export function NavigationCategorySection({
                             if (raw) {
                               const card = JSON.parse(raw)
                               if (card.title && card.href) {
-                                const exists = (category.items as any[])?.some(
-                                  (item: any) => item.href === card.href || item.title === card.title
+                                const exists = category.items?.some(
+                                  (item) => item.href === card.href || item.title === card.title
                                 )
                                 if (exists) {
                                   toast({
@@ -689,9 +692,9 @@ export function NavigationCategorySection({
                                     </span>
                                   </button>
                                 )}
-                                {subCats.map((sub: any) => {
+                                {subCats.map((sub) => {
                                   const isCurrent = selectedSubCatId === sub.id
-                                  const subItemCount = (sub.items as any[])?.length || 0
+                                  const subItemCount = sub.items?.length || 0
                                   return (
                                     <button
                                       key={sub.id}

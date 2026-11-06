@@ -472,3 +472,15 @@ export interface ShortLinkRecord {
   clicks: number;
   createdAt: number;
 }
+
+/**
+ * 站点 AI 透视的持久结果。
+ *
+ * `model` 参与有效性判断：换模型后旧结果不再命中，而不是被永久供着。
+ * 只存大模型真实产出——降级兜底文案写进来会让一次失败永久固化（写入侧约束）。
+ */
+export interface SiteRadarRecord {
+  radar: unknown;
+  model: string;
+  updatedAt: number;
+}

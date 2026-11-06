@@ -311,7 +311,7 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
     const matchesPlatform = (item: NavigationSubItem) => {
         if (platformFilter === 'all') return true
         const p = item.videoConfig?.type?.toLowerCase() || ''
-        const url = (item.url || item.href || '').toLowerCase()
+        const url = ((item as any).url || item.href || '').toLowerCase()
         if (platformFilter === 'bilibili') {
             return p === 'bilibili' || url.includes('bilibili.com') || url.includes('b23.tv')
         }

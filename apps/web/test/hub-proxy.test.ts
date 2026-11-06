@@ -67,6 +67,14 @@ describe("upstreamTimeoutMs", () => {
     expect(isLongRunningPath(["me", "export"])).toBe(true);
     expect(isLongRunningPath(["sites", "batch"])).toBe(true);
 
+    // 站点 AI 透视：中枢实测 60 秒才回（大模型打不通也要等降级链路跑完），
+    // 留在默认 30 秒里就是「每次必 504」——弹窗拿到的永远是超时而不是降级内容。
+    expect(isLongRunningPath(["sites", "05a9866c-846d-42d1-8de9-c9da0c69f2ae", "radar"])).toBe(true);
+    // 视觉生成：单次 30 秒上限，密钥池 4 把逐个重试 → 最坏 120 秒
+    expect(isLongRunningPath(["sites", "05a9866c-846d-42d1-8de9-c9da0c69f2ae", "visual"])).toBe(true);
+    // 同一根下的普通站点子资源不跟着放宽
+    expect(isLongRunningPath(["sites", "05a9866c-846d-42d1-8de9-c9da0c69f2ae", "health-history"])).toBe(false);
+
     // 单词里含 "ai" 的普通端点不再被放宽（detail / validate 都是这类）
     expect(isLongRunningPath(["sites", "detail"])).toBe(false);
     expect(isLongRunningPath(["plugins", "validate"])).toBe(false);
@@ -80,6 +88,7 @@ describe("upstreamTimeoutMs", () => {
 
   it("copilot 对话拿到大模型上限，普通查询保持 30 秒", () => {
     expect(upstreamTimeoutMs(undefined, ["copilot", "chat"])).toBe(DEFAULT_AI_UPSTREAM_TIMEOUT_MS);
+    expect(upstreamTimeoutMs(undefined, ["sites", "x", "radar"])).toBe(DEFAULT_AI_UPSTREAM_TIMEOUT_MS);
     expect(upstreamTimeoutMs(undefined, ["sites", "detail"])).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
     // 显式配置仍然优先
     expect(upstreamTimeoutMs("8000", ["copilot", "chat"])).toBe(8000);

@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import type { NavigationData, NavigationSubItem } from '@/types/navigation'
+import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { Sidebar } from '@/components/sidebar'
 import { NavigationToolbar } from '@/components/navigation-toolbar'
@@ -116,6 +116,11 @@ interface NavigationContentProps {
    * 由服务端按 NAVHUB_HOME_CARDS_PER_GROUP 注入；<=0 表示不限制。
    */
   cardsPerGroup?: number
+  /**
+   * 首页首屏渲染的分类数上限（超出部分在客户端挂载后即时渲染）。
+   * 由服务端按 NAVHUB_HOME_INITIAL_SSR_CATEGORIES 注入；<=0 表示不限制。
+   */
+  initialCategoryLimit?: number
 }
 
 export function NavigationContent({
@@ -123,6 +128,7 @@ export function NavigationContent({
   siteData,
   directoryLinks = [],
   cardsPerGroup = 0,
+  initialCategoryLimit = 0,
 }: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -203,7 +209,7 @@ export function NavigationContent({
     () =>
       combineAndSortCategories({
         custom: customAsCategories,
-        navigation: filteredNavigationItems as never,
+        navigation: filteredNavigationItems,
         siteCategoryOverrides,
         hiddenCategoryIds,
         pinnedCategoryIds,
@@ -211,6 +217,21 @@ export function NavigationContent({
       }),
     [customAsCategories, filteredNavigationItems, hiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides],
   )
+
+  /**
+   * 首屏分类分批渲染（首页 HTML 预算哨兵与 CWV 首屏加速）。
+   * 
+   * SSR / 初始水合仅渲染前 initialCategoryLimit 个分类，
+   * 避免 100+ 分类、700+ 卡片把未压缩 HTML 撑到 7.5MB。
+   * 客户端水合后（mounted === true）立即揭示全部分类，
+   * 既保证 SSR HTML 控制在预算内（< 2MB），又保证客户端交互与滚动完整无缝。
+   */
+  const renderedCategories = useMemo(() => {
+    if (mounted || !initialCategoryLimit || initialCategoryLimit <= 0) {
+      return sortedCategories
+    }
+    return sortedCategories.slice(0, initialCategoryLimit)
+  }, [mounted, initialCategoryLimit, sortedCategories])
 
   /* ------------------------- 多选批量操作 -------------------------
    *
@@ -231,7 +252,7 @@ export function NavigationContent({
     toggleSelectMode,
     toggleSelectOne,
     selectAllVisible,
-  } = useSiteSelection(sortedCategories as never, collapsedCategoryIds)
+  } = useSiteSelection(sortedCategories, collapsedCategoryIds)
 
   // 4. 画布背景类名
   const canvasBgClass = useMemo(() => {
@@ -325,7 +346,7 @@ export function NavigationContent({
     <div className="flex flex-col md:flex-row min-h-screen">
       <div className="hidden md:block">
         <Sidebar
-          navigationData={{ navigationItems: sortedCategories as any }}
+          navigationData={{ navigationItems: sortedCategories as unknown as NavigationItem[] }}
           siteInfo={siteData}
           className="sticky top-0 h-screen"
         />
@@ -348,7 +369,7 @@ export function NavigationContent({
           )}
         >
           <Sidebar
-            navigationData={{ navigationItems: sortedCategories as any }}
+            navigationData={{ navigationItems: sortedCategories as unknown as NavigationItem[] }}
             siteInfo={siteData}
             onClose={() => setIsSidebarOpen(false)}
           />
@@ -483,7 +504,7 @@ export function NavigationContent({
               {viewMode === 'hybrid' && <HomeHeroDeck />}
 
               <div className="space-y-8 sm:space-y-10">
-                {sortedCategories.map((category, index) => (
+                {renderedCategories.map((category, index) => (
                   <NavigationCategorySection
                     key={category.id}
                     category={category}

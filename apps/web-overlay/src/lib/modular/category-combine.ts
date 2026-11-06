@@ -10,6 +10,8 @@
  * 双阶段 map；抽成纯函数后可用普通数据直接验证。
  */
 
+import type { NavigationCategory, NavigationItem, NavigationSubItem } from '@/types/navigation'
+
 /** 自建分类（来自 use-home-diy 的 localStorage 结构） */
 export interface CustomCategoryLike {
   id: string
@@ -24,14 +26,37 @@ export interface CustomCategoryLike {
   }>
 }
 
-/** 导航树节点（上游分类 / 自建分类统一后的最小形状） */
+/** 站点条目形状（兼顾 NavigationSubItem 与最小测试结构） */
+export type CategoryItemNode = NavigationSubItem | (Partial<NavigationSubItem> & {
+  id: string
+  title: string
+  href: string
+  icon?: string
+  description?: string
+  tags?: string[]
+  workspaces?: string[]
+})
+
+/** 二级分类形状 */
+export type CategorySubNode = NavigationCategory | {
+  id: string
+  title: string
+  icon?: string
+  description?: string
+  items?: CategoryItemNode[]
+  [key: string]: unknown
+}
+
+/** 导航树节点（上游分类 / 自建分类统一后的形状） */
 export interface CategoryNode {
   id: string
   title: string
   icon?: string
+  description?: string
   isCustom?: boolean
-  items: unknown[]
-  subCategories: unknown[]
+  items: CategoryItemNode[]
+  subCategories: CategorySubNode[]
+  [key: string]: unknown
 }
 
 /** 用户自建分类 → 导航分类形状 */
@@ -47,6 +72,7 @@ export function customCategoriesToNavigation(custom: CustomCategoryLike[]): Cate
       href: i.href,
       icon: i.icon,
       description: i.description,
+      enabled: true,
     })),
     subCategories: [],
   }))
@@ -56,7 +82,7 @@ export interface CombineArgs {
   /** 自建分类（已转成导航形状） */
   custom: CategoryNode[]
   /** 上游导航分类 */
-  navigation: CategoryNode[]
+  navigation: CategoryNode[] | NavigationItem[]
   /** 站点 → 分类的归类重映射（用户在卡片上「移动到」后的覆盖） */
   siteCategoryOverrides?: Record<string, string>
   /** 被隐藏的分类 id */
@@ -92,7 +118,7 @@ export function combineAndSortCategories(args: CombineArgs): CategoryView {
     categoryOrder = [],
   } = args
 
-  const combined: CategoryNode[] = [...custom, ...navigation]
+  const combined: CategoryNode[] = [...custom, ...(navigation as CategoryNode[])]
 
   const categoryTitleMap: Record<string, string> = {}
   const allCategoryIds: string[] = []
@@ -104,11 +130,11 @@ export function combineAndSortCategories(args: CombineArgs): CategoryView {
   // 1. 跨分类归类重映射
   let processedCombined = combined
   if (siteCategoryOverrides && Object.keys(siteCategoryOverrides).length > 0) {
-    const movedMap: Record<string, unknown[]> = {}
+    const movedMap: Record<string, CategoryItemNode[]> = {}
     processedCombined = combined.map((cat) => {
-      const catItems = Array.isArray(cat.items) ? (cat.items as unknown[]) : []
+      const catItems = Array.isArray(cat.items) ? cat.items : []
       const remaining = catItems.filter((item) => {
-        const targetId = siteCategoryOverrides[(item as { id: string }).id]
+        const targetId = siteCategoryOverrides[item.id]
         if (targetId && targetId !== cat.id) {
           if (!movedMap[targetId]) movedMap[targetId] = []
           movedMap[targetId]!.push(item)
@@ -119,7 +145,7 @@ export function combineAndSortCategories(args: CombineArgs): CategoryView {
       return { ...cat, items: remaining }
     }).map((cat) => {
       const incoming = movedMap[cat.id] || []
-      const currentItems = Array.isArray(cat.items) ? (cat.items as unknown[]) : []
+      const currentItems = Array.isArray(cat.items) ? cat.items : []
       return incoming.length > 0 ? { ...cat, items: [...currentItems, ...incoming] } : cat
     })
   }

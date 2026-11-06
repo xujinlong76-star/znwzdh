@@ -153,6 +153,7 @@ export interface NavigationSubItemRaw {
   id: string
   title: string
   href: string
+  url?: string
   description?: string
   icon?: string
   useDefaultIcon?: boolean
@@ -207,6 +208,8 @@ export interface NavigationSubItem {
     latencyMs?: number | null
     httpStatus?: number | null
     lastCheckedAt?: number | null
+    error?: string | null
+    redirectTo?: string | null
   }
   /**
    * 服务端预签的图片代理地址（icon 直链被防盗链拦截时的降级 URL）。

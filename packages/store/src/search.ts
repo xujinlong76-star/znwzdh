@@ -807,6 +807,10 @@ export class SearchEngine {
     const multi = !fuzzy && tokens.length > 1 ? this.multiTokenBranch(tokens, trigram) : null;
     if (multi) branches.push(multi);
 
+    const pre = await this.buildPreFilterClauses(opt, cache);
+    if (pre.empty) return [];
+    const extraWhere = pre.wheres.length > 0 ? " AND " + pre.wheres.join(" AND ") : "";
+
     const rows = await this.rawRows(
       `SELECT id, url, title, description, category_id AS categoryid,
               pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
@@ -814,6 +818,7 @@ export class SearchEngine {
         WHERE enabled = ${this.enabled}
           AND deleted_at IS NULL
           AND id IN (${branches.map((b) => b.sql).join(" UNION ")})
+          ${extraWhere}
         ORDER BY
           CASE WHEN lower(title) = ? THEN 0
                WHEN lower(title) LIKE ? ESCAPE '!' THEN 1
@@ -827,6 +832,7 @@ export class SearchEngine {
         LIMIT ?`,
       [
         ...branches.flatMap((b) => b.params),
+        ...pre.params,
         lowered,
         containsLike(lowered),
         lowered,
@@ -839,6 +845,66 @@ export class SearchEngine {
     );
     const filtered = await this.postFilter(rows, opt, cache);
     return filtered.map((r, i) => ({ siteId: r.id, channel: "exact" as const, rank: i + 1 }));
+  }
+
+  /** 构造前过滤 SQL 谓词下推（Pre-filtering Pushdown），从根源杜绝后过滤截断与漏召回 */
+  private async buildPreFilterClauses(
+    opt: SearchQuery,
+    cache?: FilterCache
+  ): Promise<{ wheres: string[]; params: unknown[]; empty: boolean }> {
+    const wheres: string[] = [];
+    const params: unknown[] = [];
+
+    if (opt.statuses?.length) {
+      wheres.push(`status IN (${opt.statuses.map(() => "?").join(",")})`);
+      params.push(...opt.statuses);
+    } else {
+      wheres.push("status != 'archived'");
+    }
+
+    if (opt.categoryId) {
+      const ids = await (cache
+        ? (cache.category ??= this.categoryWithDescendants(opt.categoryId))
+        : this.categoryWithDescendants(opt.categoryId));
+      if (ids.size > 0) {
+        wheres.push(`category_id IN (${[...ids].map(() => "?").join(",")})`);
+        params.push(...ids);
+      } else {
+        return { wheres: [], params: [], empty: true };
+      }
+    }
+
+    if (opt.tag) {
+      const ids = await (cache
+        ? (cache.tag ??= this.siteIdsWithTag(opt.tag))
+        : this.siteIdsWithTag(opt.tag));
+      if (ids.size > 0) {
+        if (ids.size > 500) {
+          const { sql, params: tagParams } = this.tagSiteIdsSql(opt.tag);
+          wheres.push(`id IN (${sql})`);
+          params.push(...tagParams);
+        } else {
+          wheres.push(`id IN (${[...ids].map(() => "?").join(",")})`);
+          params.push(...ids);
+        }
+      } else {
+        return { wheres: [], params: [], empty: true };
+      }
+    }
+
+    if (opt.tags && opt.tags.length > 0) {
+      const ids = await (cache
+        ? (cache.tags ??= this.siteIdsWithAllTags(opt.tags))
+        : this.siteIdsWithAllTags(opt.tags));
+      if (ids.size > 0) {
+        wheres.push("id IN (" + [...ids].map(() => "?").join(",") + ")");
+        params.push(...ids);
+      } else {
+        return { wheres: [], params: [], empty: true };
+      }
+    }
+
+    return { wheres, params, empty: false };
   }
 
   /** trigram 索引只在 SQLite FTS5 实现里可用；PG 靠 pg_trgm 表达式索引服务 LIKE */
@@ -981,11 +1047,16 @@ export class SearchEngine {
     // （中国天气网、有道云笔记）由 exact 通道的标题 contains 兜住，放宽首字母只添噪声。
     // ≥3 字母仍按包含匹配，保住注释里 `gtqw` 这类「命中在中段」的查询。
     const initialPattern = fuzzy && initials.length >= 3 ? containsLike(initials) : prefixLike(initials);
+    const pre = await this.buildPreFilterClauses(opt, cache);
+    if (pre.empty) return [];
+    const extraWhere = pre.wheres.length > 0 ? " AND " + pre.wheres.join(" AND ") : "";
+
     const rows = await this.rawRows(
       `SELECT id, url, title, description, category_id AS categoryid,
               pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
          FROM sites
         WHERE enabled = ${this.enabled} AND deleted_at IS NULL AND (pinyin_full LIKE ? ESCAPE '!' OR pinyin_initials LIKE ? ESCAPE '!')
+          ${extraWhere}
         ORDER BY
           CASE WHEN pinyin_initials = ? THEN 0
                WHEN pinyin_full = ? THEN 0
@@ -993,7 +1064,7 @@ export class SearchEngine {
                ELSE 2 END,
           weight DESC, trend_score DESC, sort ASC, id ASC
         LIMIT ?`,
-      [pattern, initialPattern, initials, full, initialPattern, limit],
+      [pattern, initialPattern, ...pre.params, initials, full, initialPattern, limit],
     );
     const filtered = await this.postFilter(rows, opt, cache);
     return filtered.map((r, i) => ({ siteId: r.id, channel: "pinyin" as const, rank: i + 1 }));

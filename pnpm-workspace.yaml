@@ -66,11 +66,10 @@ overrides:
   # package.json 的 pnpm 字段（overrides 迁到 pnpm-workspace.yaml），那里实际已失效。
   # 统一搬到 workspace 配置，顺带消除 Docker 只拷部分清单时的
   # ERR_PNPM_LOCKFILE_CONFIG_MISMATCH（见 docker/Dockerfile.api 注释）。
-  brace-expansion@<2: 1.1.18
-  # >=2 <5 仍钉安全维护版 2.1.4；>=5 放行：ESLint 10 的 @eslint/config-array
-  # 依赖 minimatch@10，后者要求 brace-expansion ^5。此前一刀切 `>=2` 会把 v5
-  # 也压回 2.1.4，ESLint 10 启动即崩（braceExpand: expand is not a function）。
-  brace-expansion@>=2 <5: 2.1.4
+  brace-expansion@<2: 1.1.20
+  # >=2 <5 仍钉安全维护版 2.1.6；>=5 放行：ESLint 10 的 @eslint/config-array
+  # 依赖 minimatch@10，后者要求 brace-expansion ^5。
+  brace-expansion@>=2 <5: 2.1.6
   brace-expansion@>=5: 5.0.12
   # nanoid v3 的 ReDoS/无限循环：GHSA-2v37-7h3g-55p8，修复版 >=3.3.18。
   # 原钉 3.3.16 本身就在受影响区间（这条 overrides 从 apps/web/package.json 的
@@ -86,6 +85,12 @@ overrides:
   postcss: '>=8.4.31'
   ws: '>=8.21.0'
   esbuild: '>=0.28.1'
+  # nodemailer: GHSA-p6gq-j5cr-w38f (SSRF / 任意文件读取) & GHSA-8h2f-cmhf-554p (O(n²) DoS)
+  nodemailer: '>=9.1.0'
+  # fast-uri: GHSA-333x-w4r6-6crp
+  fast-uri: '>=3.1.9'
+  # zod 全仓统一使用安全版本 >=4.6.7（彻底解决 GHSA-mrhx-c7xc-m3w5 内存耗尽漏洞）
+  zod: '>=4.6.7'
 
 # 类型解析修复：以下包的 d.ts 会导入 'react' 但未把 @types/react 声明为 peer，
 # pnpm 隔离安装下其实例目录内没有 @types/react，classic node10 解析使这些 d.ts

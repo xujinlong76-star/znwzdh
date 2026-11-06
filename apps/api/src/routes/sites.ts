@@ -15,10 +15,10 @@ import {
   SiteCreateBody,
   UNCATEGORIZED_CATEGORY_ID,
 } from "@navhub/core";
-import { enrichUrl } from "@navhub/ai";
+import { AGNES_IMAGE_MODEL, enrichUrl, generateImage } from "@navhub/ai";
 import { indexSite, indexSitesBatch } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
-import { createEnrichUsageCallback } from "../llm-usage.ts";
+import { callLlm, createEnrichUsageCallback } from "../llm-usage.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import { selectEnrichmentFields } from "../enrich-fields.ts";
 import { badRequest, canSeeUnpublishedSites, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
@@ -128,6 +128,237 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * OpenAPI 的 requestBody 也从同一份契约生成，三处不会再各自漂移。
    */
   const siteInput = SiteCreateBody;
+
+  /**
+   * 站点 AI 深度透视雷达 (AI Deep Radar)
+   * 运用 Agnes 3.0 Flash 智能分析站点的核心定位、收费政策排雷、优劣势与精选平替
+   */
+  app.get("/api/sites/:id/radar", { config: { scope: "public", cache: { maxAge: 3600, etag: true } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const site = await ctx.repo.getSite(id);
+    if (!site) {
+      reply.code(404);
+      return { error: "站点不存在" };
+    }
+
+    const llm = await resolveLlm(ctx);
+
+    // 读穿缓存：一次透视结论只取决于站点的标题/网址/描述。
+    // 命中就立刻返回，不再打模型；换了模型视为未命中（判据在 getSiteRadar）。
+    const cached = await ctx.repo.getSiteRadar(site.id, llm.provider.model);
+    if (cached) {
+      return { success: true, radar: cached.radar, cached: true };
+    }
+
+    // 检索同分类下的真实馆藏平替候选，杜绝大模型“凭空编造站内不存在的工具”
+    const peers = (await ctx.repo.listSites({ categoryId: site.categoryId, status: "active", limit: 12 }))
+      .filter((p) => p.id !== site.id)
+      .slice(0, 8);
+    const peerLookup = new Map<string, { id: string; title: string; url: string }>();
+    for (const p of peers) {
+      peerLookup.set(p.title.toLowerCase(), { id: p.id, title: p.title, url: p.url });
+    }
+    if (Array.isArray(site.relations)) {
+      for (const rel of site.relations) {
+        if (rel.targetTitle && rel.targetUrl) {
+          peerLookup.set(rel.targetTitle.toLowerCase(), {
+            id: rel.targetSiteId || "",
+            title: rel.targetTitle,
+            url: rel.targetUrl,
+          });
+        }
+      }
+    }
+
+    const peerContext =
+      peers.length > 0
+        ? peers.map((p) => `- ${p.title} (${p.url}): ${(p.description || "").slice(0, 60)}`).join("\n")
+        : "暂无同分类候选";
+    const facetsInfo = site.facets ? JSON.stringify(site.facets) : "未标注";
+    const tagsInfo = Array.isArray(site.tags) && site.tags.length > 0 ? site.tags.join("、") : "未标注";
+
+    const prompt = `你是全球顶级数字中枢与生产力避坑专家。请针对以下网站进行全景专业深度透视，重点排查其收费暗坑、登录/网络门槛及平替方案：
+【目标网站】
+- 网站标题: ${site.title}
+- 网站网址: ${site.url}
+- 网站描述: ${site.description || "无"}
+- 标签: ${tagsInfo}
+- 已知属性: ${facetsInfo}
+- 是否开源: ${site.liveMetrics?.openSource ? "开源项目" : "未知/商业"}
+
+【站内同领域候选工具（可从中挑选平替）】
+${peerContext}
+
+请严格按以下 JSON 结构返回分析：
+{
+  "summary": "一句话核心定位与最适合的使用人群（45字内）",
+  "pricingType": "完全开源免费" | "免登录可用" | "基础免费+进阶订阅" | "仅限付费试用" | "企业级商业定价",
+  "pricingWarning": "关于收费排雷的温馨提示（例如：'核心去水印需开通会员' 或 '完全免费无套路'，50字内）",
+  "accessRequirement": "免登录直连" | "需注册账号" | "需海外网络环境" | "支持本地私有部署",
+  "bestForScenarios": ["适用高频场景1", "适用高频场景2"],
+  "pros": ["核心优势1", "核心优势2", "核心优势3"],
+  "cons": ["局限或痛点1", "局限或痛点2"],
+  "directAlternatives": ["推荐平替工具1", "推荐平替工具2"]
+}`;
+
+    try {
+      const res = await callLlm(ctx, llm, {
+        scenario: "site_radar",
+        messages: [{ role: "user", content: prompt }],
+        json: true,
+        temperature: 0.2,
+        maxTokens: 900,
+      });
+
+      let parsed: Record<string, unknown> | null = null;
+      try {
+        const raw = (res.content || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+        parsed = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        const match = (res.content || "").match(/\{[\s\S]*\}/);
+        if (match) {
+          try { parsed = JSON.parse(match[0]) as Record<string, unknown>; } catch {}
+        }
+      }
+      if (!parsed || typeof parsed !== "object") {
+        // 解析不出来 = 这一轮并没有真正产出。回给用户，但**不落库**：
+        // 写进去就是把一次抖动固化成永久文案，之后再也纠不回来。
+        return {
+          success: true,
+          radar: {
+            summary: site.description || site.title,
+            pricingType: "基础免费+进阶订阅",
+            pricingWarning: "请留意官方最新收费与额度政策",
+            accessRequirement: "需注册账号",
+            bestForScenarios: site.tags?.slice(0, 2) || ["高效工作流"],
+            pros: ["功能全面", "交互流畅"],
+            cons: ["高级特性需订阅"],
+            directAlternatives: peers.slice(0, 2).map((p) => p.title),
+            peerLinks: peers.slice(0, 2).map((p) => ({ id: p.id, title: p.title, url: p.url })),
+          },
+          fallback: true,
+        };
+      }
+
+      // 将 AI 推荐平替与站内真实工具链接对齐
+      const rawAlts = Array.isArray(parsed.directAlternatives)
+        ? parsed.directAlternatives.map((x) => String(x).trim()).filter(Boolean)
+        : [];
+      const peerLinks: Array<{ id: string; title: string; url: string }> = [];
+      for (const altName of rawAlts) {
+        const lower = altName.toLowerCase();
+        const exact = peerLookup.get(lower);
+        if (exact) {
+          peerLinks.push(exact);
+          continue;
+        }
+        for (const [k, v] of peerLookup.entries()) {
+          if (k.includes(lower) || lower.includes(k)) {
+            if (!peerLinks.some((pl) => pl.url === v.url)) {
+              peerLinks.push(v);
+            }
+            break;
+          }
+        }
+      }
+      if (peerLinks.length === 0 && peers.length > 0) {
+        for (const p of peers.slice(0, 2)) {
+          peerLinks.push({ id: p.id, title: p.title, url: p.url });
+        }
+      }
+      parsed.peerLinks = peerLinks;
+
+      // 键用 llm.provider.model 而不是 res.model：读取侧比对的就是前者，
+      // 供应商回显一个略不一样的 model 串会让缓存永远命不中。
+      // 落库失败也不能把已经付过几十秒的结果丢掉，单独吞掉异常只留告警。
+      try {
+        await ctx.repo.saveSiteRadar(site.id, parsed, llm.provider.model);
+      } catch (err) {
+        req.log.warn({ err: String(err) }, "站点 AI 透视落库失败");
+      }
+
+      return {
+        success: true,
+        radar: parsed,
+        latencyMs: res.latencyMs,
+        model: res.model,
+      };
+    } catch (err) {
+      req.log.warn({ err: String(err) }, "站点 AI 透视生成降级");
+      return {
+        success: true,
+        radar: {
+          summary: site.description || site.title,
+          pricingType: "免登录可用",
+          pricingWarning: "基于本地启发式规则分析，建议以官网实际为准",
+          accessRequirement: "免登录直连",
+          bestForScenarios: site.tags?.slice(0, 2) || ["高效工作流"],
+          pros: ["即开即用", "界面直观"],
+          cons: ["海外节点可能偶有网络延迟"],
+          directAlternatives: peers.slice(0, 2).map((p) => p.title),
+          peerLinks: peers.slice(0, 2).map((p) => ({ id: p.id, title: p.title, url: p.url })),
+        },
+        fallback: true,
+      };
+    }
+  });
+
+  /**
+   * 站点场景灵感与视觉生成 (AI Visual Generation)
+   * 运用 Agnes Image 2.5 Flash 结合站点定位生成高清场景海报/封面视觉
+   */
+  app.post(
+    "/api/sites/:id/visual",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 20, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const site = await ctx.repo.getSite(id);
+      if (!site) {
+        reply.code(404);
+        return { error: "站点不存在" };
+      }
+
+      const body = (req.body ?? {}) as { prompt?: string };
+      const llm = await resolveLlm(ctx);
+      if (!llm.provider.apiKey) {
+        reply.code(400);
+        return { error: "未配置可用 AI 密钥" };
+      }
+
+      const basePrompt =
+        body.prompt?.trim() ||
+        `A high quality modern 3D isometric digital concept art poster for "${site.title}" (${site.description || "web tool"}), clean cyberpunk neon aesthetic, tech product banner, vibrant, 4k`;
+
+      try {
+        const result = await generateImage({
+          prompt: basePrompt,
+          apiKey: llm.provider.apiKey,
+          baseUrl: llm.provider.baseUrl,
+          model: AGNES_IMAGE_MODEL,
+        });
+
+        return {
+          success: true,
+          imageUrl: result.url,
+          prompt: basePrompt,
+          model: result.model,
+          taskId: result.taskId,
+        };
+      } catch (err) {
+        req.log.warn({ err: String(err) }, "站点场景视觉生成失败");
+        reply.code(502);
+        return {
+          error: "图像生成服务暂时不可用，请稍后重试",
+          detail: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+  );
 
   // 建站默认会抓取并走 AI 富化：单 IP 30/min，避免全局 300/min 把模型调用放大
   app.post(
@@ -420,5 +651,141 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     reply.code(201);
     return { success: true, created, duplicates, categoryDegraded: degraded, sites: createdSites };
   });
+
+  /**
+   * 书签批量智能归类与简介补全（AI Batch Bookmark Classifier）
+   * 解决痛点：用户导入数百个浏览器书签时，超过半数书签无分类或仅有简短标题，手动逐条分类极其耗时。
+   * 运用 Agnes 3.0 Flash 一次性对齐权威叶子分类并生成简明中文功能简介。
+   */
+  app.post(
+    "/api/sites/batch-classify",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 20, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as {
+        items?: Array<{ id?: string; title?: string; url?: string; folder?: string }>;
+        categories?: Array<{ slug?: string; label?: string }>;
+      };
+      if (!Array.isArray(body.items) || body.items.length === 0) {
+        return badRequest(reply, "缺少待归类书签列表");
+      }
+
+      const items = body.items.slice(0, 35).map((item, idx) => ({
+        id: String(item.id ?? `bm-${idx}`),
+        title: String(item.title ?? "").trim().slice(0, 120),
+        url: String(item.url ?? "").trim().slice(0, 300),
+        folder: String(item.folder ?? "").trim().slice(0, 80),
+      }));
+
+      // 汇总合法叶子分类列表（数据库叶子分类 ∪ 前端传入的候选分类）
+      const dbCats = await ctx.repo.listCategories();
+      const validSlugs = new Map<string, string>();
+      for (const c of dbCats) {
+        if (!c.parentId || c.enabled === false) continue;
+        const slug = String(c.slug ?? c.id).trim();
+        if (slug) validSlugs.set(slug, c.title);
+      }
+      if (Array.isArray(body.categories)) {
+        for (const c of body.categories) {
+          const slug = String(c.slug ?? "").trim();
+          const label = String(c.label ?? "").trim();
+          if (slug && label && !validSlugs.has(slug)) {
+            validSlugs.set(slug, label);
+          }
+        }
+      }
+
+      const categorySpec = Array.from(validSlugs.entries())
+        .map(([slug, label]) => `${slug}: ${label}`)
+        .join("\n");
+
+      const bookmarkLines = items
+        .map((it) => `ID=${it.id} | 标题=${it.title} | URL=${it.url}${it.folder ? ` | 原文件夹=${it.folder}` : ""}`)
+        .join("\n");
+
+      const llm = await resolveLlm(ctx);
+      const prompt = `你是专业的网址导航分类架构师。请将以下浏览器书签精准归入给定的【合法分类编码】中，并为每条书签补充一句简明实用的中文功能简介（15~35字）。
+
+【合法分类编码 (categorySlug: 分类名称)】
+${categorySpec}
+
+【待归类书签】
+${bookmarkLines}
+
+请严格返回以下 JSON 格式：
+{
+  "results": [
+    {
+      "id": "与输入完全一致的ID",
+      "categorySlug": "必须严格从上方合法分类编码中选择一个最匹配的slug",
+      "description": "一句话中文核心用途简介（15-35字）",
+      "tags": ["标签1", "标签2"]
+    }
+  ]
+}`;
+
+      try {
+        const res = await callLlm(ctx, llm, {
+          scenario: "batch_bookmark_classify",
+          messages: [{ role: "user", content: prompt }],
+          json: true,
+          temperature: 0.1,
+          maxTokens: 2048,
+        });
+
+        let parsed: { results?: Array<Record<string, unknown>> } | null = null;
+        try {
+          const raw = (res.content || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+          parsed = JSON.parse(raw);
+        } catch {
+          const match = (res.content || "").match(/\{[\s\S]*\}/);
+          if (match) {
+            try { parsed = JSON.parse(match[0]); } catch {}
+          }
+        }
+
+        const rawResults = Array.isArray(parsed?.results) ? parsed!.results : [];
+        const normalized = rawResults
+          .map((r) => {
+            const id = String(r.id ?? "").trim();
+            let slug = String(r.categorySlug ?? "").trim();
+            if (!validSlugs.has(slug)) {
+              // 模糊修正：若模型填了中文名或相近 slug
+              for (const [k, label] of validSlugs.entries()) {
+                if (label.includes(slug) || slug.includes(label) || k.includes(slug.toLowerCase())) {
+                  slug = k;
+                  break;
+                }
+              }
+              if (!validSlugs.has(slug)) slug = "";
+            }
+            const description = String(r.description ?? "").trim().slice(0, 120);
+            const tags = Array.isArray(r.tags)
+              ? r.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 4)
+              : [];
+            return { id, categorySlug: slug, description, tags };
+          })
+          .filter((r) => r.id);
+
+        return {
+          success: true,
+          results: normalized,
+          model: res.model,
+          latencyMs: res.latencyMs,
+        };
+      } catch (err) {
+        req.log.warn({ err: String(err) }, "AI 批量书签归类失败");
+        reply.code(502);
+        return {
+          error: "AI 批量归类暂时不可用，已保留本地智能规则匹配结果",
+          detail: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+  );
 
 };

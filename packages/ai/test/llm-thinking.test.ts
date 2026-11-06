@@ -55,7 +55,7 @@ describe("富化：深度思考必须真的下发（不是只记在用量里）"
     return bodies;
   }
 
-  it("llm.thinking=true 时请求体带 thinking 与 chat_template_kwargs", async () => {
+  it("llm.thinking=true 时请求体带 thinking 与 chat_template_kwargs，且 max_tokens 预留输出空间防截断", async () => {
     const bodies = stubNetwork();
     await enrichUrl("http://127.0.0.1:9/", {
       llm: { baseUrl: BASE, apiKey: "sk-test-1234567890", model: "test-model", timeoutMs: 800, allowPrivateNetwork: true, thinking: true },
@@ -63,6 +63,8 @@ describe("富化：深度思考必须真的下发（不是只记在用量里）"
     expect(bodies.length).toBeGreaterThan(0);
     expect(bodies[0]!.thinking).toMatchObject({ type: "enabled" });
     expect(bodies[0]!.chat_template_kwargs).toEqual({ enable_thinking: true });
+    const thinkingObj = bodies[0]!.thinking as { budget_tokens: number };
+    expect(Number(bodies[0]!.max_tokens)).toBeGreaterThan(thinkingObj.budget_tokens);
   });
 
   it("llm.thinking=false 时这两个字段都不出现（开关不是摆设）", async () => {

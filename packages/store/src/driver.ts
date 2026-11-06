@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { migrateColumns, migrateSiteIndexes, migrateEventIdentity, migrateCategorySlugs, dedupeUserEmails, cleanupOrphanPluginCategories } from "./migrate.ts";
+import { migrateColumns, migrateWorkspaceBlobs, cleanupOrphanPluginCategories } from "./migrate.ts";
+import { runVersionedMigrations } from "./migrations/schema-migrations.ts";
 
 /**
  * 数据库驱动抽象。
@@ -268,6 +269,11 @@ CREATE TABLE IF NOT EXISTS embeddings (
 CREATE TABLE IF NOT EXISTS plugin_embeddings (
   slug TEXT PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL,
   vector BLOB, updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS site_radar (
+  site_id TEXT PRIMARY KEY, payload TEXT NOT NULL, model TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS favorites (
@@ -846,6 +852,11 @@ CREATE TABLE IF NOT EXISTS plugin_embeddings (
   vector BYTEA, updated_at BIGINT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS site_radar (
+  site_id TEXT PRIMARY KEY, payload TEXT NOT NULL, model TEXT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS favorites (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -1225,6 +1236,7 @@ export async function openDb(config: {
       async close() { raw.close(); },
     };
     try {
+    
       raw.exec(DDL_SQLITE);
     } catch {
       // 旧库启动保护：表存在但缺新列时（如 jobs 缺 next_run_at），
@@ -1232,16 +1244,20 @@ export async function openDb(config: {
       // migrateColumns 还没机会补列——曾导致老部署升级即无法启动。
       // 先补列再重放 DDL（全是 IF NOT EXISTS，重放安全）；仍失败则原样抛出。
       await migrateColumns(db);
+  
+    
       raw.exec(DDL_SQLITE);
     }
-    await migrateColumns(db);
+
     // 先清空重复 email，再建 users_email_unique_idx（索引在 migrateSiteIndexes 里）。
     // 顺序不能反：存量重复会让 CREATE UNIQUE INDEX 失败，而那里是逐语句 try/catch，
     // 失败等于静默跳过索引 —— 看起来迁移成功，实际约束从未生效。
-    await dedupeUserEmails(db);
-    await migrateSiteIndexes(db);
-    await migrateEventIdentity(db);
-    await migrateCategorySlugs(db);
+    await runVersionedMigrations(db);
+  await migrateWorkspaceBlobs(db);
+    await migrateWorkspaceBlobs(db);
+
+
+
     await cleanupOrphanPluginCategories(db, { skip: config.skipOrphanCleanup });
     return db;
   }
@@ -1289,14 +1305,16 @@ export async function openDb(config: {
   } catch {
     // 同上：旧 PG 库缺列时索引先崩，先补列再重放（幂等语句，重放安全）。
     await migrateColumns(db);
+
     await pool.query(DDL_PG);
   }
-  await migrateColumns(db);
+
   // 同 sqlite 分支：dedupe 必须早于 users_email_unique_idx 的创建（在 migrateSiteIndexes 内）。
-  await dedupeUserEmails(db);
-  await migrateSiteIndexes(db);
-  await migrateEventIdentity(db);
-  await migrateCategorySlugs(db);
+  await runVersionedMigrations(db);
+  await migrateWorkspaceBlobs(db);
+
+
+
   await cleanupOrphanPluginCategories(db, { skip: config.skipOrphanCleanup });
   return db;
 }

@@ -12,6 +12,8 @@ interface ParsedBookmark {
   title: string
   url: string
   folder?: string
+  description?: string
+  tags?: string[]
   /** 权威树的叶子 slug；空串 = 没建议出来，交给「未分类」 */
   suggestedCategorySlug: string
   selected: boolean
@@ -78,6 +80,8 @@ export function BookmarkImporter() {
   const [categories, setCategories] = useState<Array<{ slug: string; label: string }>>([])
   const [isParsing, setIsParsing] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
+  const [isAiClassifying, setIsAiClassifying] = useState(false)
+  const [aiClassifiedCount, setAiClassifiedCount] = useState(0)
   const [importResult, setImportResult] = useState<{
     success: number
     failed: number
@@ -146,6 +150,65 @@ export function BookmarkImporter() {
     setBookmarks((prev) => prev.map((b) => ({ ...b, selected: checked })))
   }
 
+  const handleAiBatchClassify = async () => {
+    if (bookmarks.length === 0 || isAiClassifying) return
+    setIsAiClassifying(true)
+    setError(null)
+    let updatedTotal = 0
+
+    try {
+      const validCats = categoryOptions.filter((c) => Boolean(c.slug))
+      const chunkSize = 30
+      const targetItems = bookmarks.filter((b) => b.selected)
+      const listToProcess = targetItems.length > 0 ? targetItems : bookmarks
+
+      for (let i = 0; i < listToProcess.length; i += chunkSize) {
+        const chunk = listToProcess.slice(i, i + chunkSize)
+        const res = await fetch('/api/hub/sites/batch-classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: chunk.map((b) => ({
+              id: b.id,
+              title: b.title,
+              url: b.url,
+              folder: b.folder,
+            })),
+            categories: validCats,
+          }),
+        })
+        if (!res.ok) continue
+        const data = await res.json().catch(() => null)
+        if (data && Array.isArray(data.results)) {
+          const map = new Map<string, { categorySlug?: string; description?: string; tags?: string[] }>()
+          for (const r of data.results) {
+            if (r && typeof r.id === 'string') {
+              map.set(r.id, r)
+              updatedTotal++
+            }
+          }
+          setBookmarks((prev) =>
+            prev.map((item) => {
+              const hit = map.get(item.id)
+              if (!hit) return item
+              return {
+                ...item,
+                suggestedCategorySlug: hit.categorySlug || item.suggestedCategorySlug,
+                description: hit.description || item.description,
+                tags: Array.isArray(hit.tags) && hit.tags.length > 0 ? hit.tags : item.tags,
+              }
+            })
+          )
+        }
+      }
+      setAiClassifiedCount(updatedTotal)
+    } catch {
+      setError('AI 批量归类请求超时或繁忙，已保留已完成的分类建议。')
+    } finally {
+      setIsAiClassifying(false)
+    }
+  }
+
   const handleImport = async () => {
     const toImport = bookmarks.filter((b) => b.selected)
     if (toImport.length === 0) return
@@ -171,6 +234,8 @@ export function BookmarkImporter() {
             sites: chunk.map((b) => ({
               url: b.url,
               title: b.title,
+              ...(b.description ? { description: b.description } : {}),
+              ...(b.tags && b.tags.length > 0 ? { tags: b.tags } : {}),
               // 中枢对 id 与 slug 都认；没建议出来就整个字段省略，让它走「未分类」
               ...(b.suggestedCategorySlug ? { categoryId: b.suggestedCategorySlug } : {}),
               source: 'bookmark-import',
@@ -386,8 +451,23 @@ export function BookmarkImporter() {
                 <div className="flex items-center gap-2 text-xs">
                   <span className="font-semibold text-foreground">已解析出 {bookmarks.length} 个书签</span>
                   <Badge variant="secondary" className="font-mono bg-muted/80 px-2 py-0.5 rounded-full">已选中 {selectedCount}</Badge>
+                  {aiClassifiedCount > 0 && (
+                    <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      ✨ 已 AI 补全 {aiClassifiedCount} 条
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs gap-1.5 rounded-lg border-primary/40 text-primary hover:bg-primary/10"
+                    disabled={isAiClassifying || isImporting}
+                    onClick={handleAiBatchClassify}
+                  >
+                    {isAiClassifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    <span>{isAiClassifying ? 'AI 正在智能归类与写简介...' : '✨ AI 一键智能归类与补全简介'}</span>
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -428,6 +508,11 @@ export function BookmarkImporter() {
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground/80 truncate font-mono">{b.url}</p>
+                        {b.description && (
+                          <p className="text-xs text-primary/90 leading-snug pt-0.5">
+                            ✨ {b.description}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center justify-end sm:justify-start pl-6 sm:pl-0 shrink-0">

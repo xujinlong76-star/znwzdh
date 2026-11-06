@@ -7,7 +7,10 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { httpUrl, SubmissionReviewInput } from "@navhub/core";
+import { extractMetadata, guardedFetch } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
+import { resolveLlm } from "../llm-config.ts";
+import { callLlm } from "../llm-usage.ts";
 import { ADMIN_NOTIFICATION_IDENTITY } from "../notifications.ts";
 import { identityTrusted, requestIdentityOf, submissionNumber } from "./shared.ts";
 
@@ -17,6 +20,151 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
   const ctx = opts.ctx;
 
   /* -------------------------- 投稿 -------------------------- */
+
+  /**
+   * 投稿前 AI 网址智能识别与一键自动填表（解决手动填 5 个字段的繁琐痛点）
+   * 安全抓取网页标题与元信息，并调用 Agnes 3.0 Flash 自动生成中文简介、匹配主/子分类及推荐理由。
+   */
+  app.post(
+    "/api/submissions/prefill",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 15, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const raw = (req.body ?? {}) as {
+        url?: string;
+        categories?: Array<{
+          id: string;
+          title: string;
+          subCategories?: Array<{ id: string; title: string }>;
+        }>;
+      };
+      const parsedUrl = httpUrl().safeParse(String(raw.url ?? "").trim());
+      if (!parsedUrl.success) {
+        reply.code(400);
+        return { success: false, message: "请输入合法的 http/https 网址" };
+      }
+
+      const targetUrl = parsedUrl.data;
+      let scrapedTitle = "";
+      let scrapedDesc = "";
+      try {
+        const fetched = await guardedFetch(targetUrl, {
+          ...ctx.config.fetch,
+          timeoutMs: Math.min(ctx.config.fetch.timeoutMs || 5000, 4500),
+        });
+        if (fetched.body) {
+          const meta = extractMetadata(fetched.body, fetched.finalUrl);
+          scrapedTitle = meta.title || "";
+          scrapedDesc = meta.description || "";
+        }
+      } catch {
+        // 网页防爬或超时不阻断：交由 LLM 根据域名与已知知识库补全
+      }
+
+      const catTree = Array.isArray(raw.categories) ? raw.categories : [];
+      const catSpec = catTree
+        .map((c) => {
+          const subs = Array.isArray(c.subCategories) && c.subCategories.length > 0
+            ? ` (子类目: ${c.subCategories.map((s) => `${s.id}=${s.title}`).join(", ")})`
+            : "";
+          return `- 主分类 ${c.id}=${c.title}${subs}`;
+        })
+        .join("\n");
+
+      const fallbackHost = (() => {
+        try { return new URL(targetUrl).hostname.replace(/^www\./, ""); } catch { return targetUrl; }
+      })();
+
+      const llm = await resolveLlm(ctx);
+      if (!llm.provider.apiKey) {
+        return {
+          success: true,
+          prefill: {
+            title: scrapedTitle || fallbackHost,
+            description: scrapedDesc || `${scrapedTitle || fallbackHost} 官方网站与生产力工具。`,
+            category: catTree[0]?.id || "",
+            subcategory: catTree[0]?.subCategories?.[0]?.id || "",
+            submitterNote: "系统启发式提取",
+          },
+          fallback: true,
+        };
+      }
+
+      const prompt = `你是全球数字工具导航站的资深编辑。用户正在投稿推荐一个网站，请根据以下抓取到的线索自动补全投稿表单：
+网址: ${targetUrl}
+抓取到的网页标题: ${scrapedTitle || "（未抓取到，请根据网址与知名工具知识库推断）"}
+抓取到的网页简介: ${scrapedDesc || "（未抓取到，请根据网址与知名工具知识库推断）"}
+
+【可选分类树 (必须严格从以下 ID 中选择)】
+${catSpec || "无指定分类树"}
+
+请严格返回以下 JSON 格式：
+{
+  "title": "精炼准确的网站名称（如 Cursor / Notion / DeepSeek，25字内）",
+  "description": "一句话中文核心功能与亮点介绍（25~60字，客观实用）",
+  "category": "最匹配的主分类 ID（必须完全匹配上方主分类 ID）",
+  "subcategory": "最匹配的子类目 ID（必须属于所选主分类下的子类目 ID；若无则填空字符串）",
+  "submitterNote": "推荐理由、核心标签与收费模式说明（如：#AI编程 #免费额度充足，40字内）"
+}`;
+
+      try {
+        const res = await callLlm(ctx, llm, {
+          scenario: "submission_prefill",
+          messages: [{ role: "user", content: prompt }],
+          json: true,
+          temperature: 0.2,
+          maxTokens: 600,
+        });
+
+        let parsed: Record<string, unknown> | null = null;
+        try {
+          const text = (res.content || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+          parsed = JSON.parse(text) as Record<string, unknown>;
+        } catch {
+          const m = (res.content || "").match(/\{[\s\S]*\}/);
+          if (m) {
+            try { parsed = JSON.parse(m[0]) as Record<string, unknown>; } catch {}
+          }
+        }
+
+        const matchedCat = catTree.find(
+          (c) => c.id === parsed?.category || c.title === parsed?.category
+        );
+        const matchedSub = matchedCat?.subCategories?.find(
+          (s) => s.id === parsed?.subcategory || s.title === parsed?.subcategory
+        );
+
+        return {
+          success: true,
+          prefill: {
+            title: String(parsed?.title || scrapedTitle || fallbackHost).trim().slice(0, 100),
+            description: String(parsed?.description || scrapedDesc || "").trim().slice(0, 400),
+            category: matchedCat?.id || catTree[0]?.id || "",
+            subcategory: matchedSub?.id || matchedCat?.subCategories?.[0]?.id || "",
+            submitterNote: String(parsed?.submitterNote || "").trim().slice(0, 300),
+          },
+          model: res.model,
+        };
+      } catch (err) {
+        req.log.warn({ err: String(err) }, "投稿 AI 自动填表降级");
+        return {
+          success: true,
+          prefill: {
+            title: scrapedTitle || fallbackHost,
+            description: scrapedDesc || `${scrapedTitle || fallbackHost} 在线工具与资源站点。`,
+            category: catTree[0]?.id || "",
+            subcategory: catTree[0]?.subCategories?.[0]?.id || "",
+            submitterNote: "",
+          },
+          fallback: true,
+        };
+      }
+    }
+  );
 
   /**
    * 匿名投稿：创建 status=pending、source=submission 的站点，进入审核队列。

@@ -1,0 +1,85 @@
+# NavHub Web 前端镜像 —— 多阶段瘦身版（可选）
+#
+# 与 docker/Dockerfile.web 的关系：
+#   - Dockerfile.web      : 现行默认，单阶段、next start，稳定但运行镜像带 pnpm/源码/构建缓存
+#   - Dockerfile.web.slim : 本文件，多阶段 + standalone，运行镜像只含最小产物（约下降 40%+）
+#
+# 为什么另开一个文件而不是直接改默认：entrypoint-web.sh 用的是 `exec pnpm start`（next start），
+# 而 standalone 产物需要 `node server.js`。改默认会牵动 compose / 冒烟测试 / 回滚路径，
+# 属生产部署变更；先以「可选镜像」落地，验证通过后再决定是否切换默认。
+#
+# 用法（在仓库根）：
+#   docker build -f docker/Dockerfile.web.slim -t navhub/web:slim .
+#   docker run --rm -p 3000:3000 -e NAVHUB_STORAGE_BASE_URL=http://api:8787 navhub/web:slim
+#
+# 前提：apps/web/next.config.js 支持 NAVHUB_WEB_STANDALONE=1 生成 standalone 产物
+# （见该文件 output 配置）。Docker 内是 Linux，不存在注释里提到的 Windows 符号链接问题。
+# ⚠️ 尚未在本机做 docker build 实测（环境无 Docker）：首次使用请先跑一次构建并确认
+#    /app/server.js 与 /app/apps/web/.next/static 的实际路径，再决定是否切换默认镜像。
+#    当前它只是「可选产物」，不影响 docker/Dockerfile.web 与 compose 的稳定性。
+
+ARG NODE_IMAGE=node:24-bookworm-slim
+
+# ============================ 阶段 1：依赖 ============================
+FROM ${NODE_IMAGE} AS deps
+RUN npm install -g pnpm@11.7.0 --registry=https://registry.npmmirror.com
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY scripts/install-git-hooks.mjs ./scripts/
+COPY scripts/lib/hooks-fresh.mjs ./scripts/lib/
+COPY apps/web-overlay/package.json ./apps/web/package.json
+RUN pnpm install --frozen-lockfile --filter "./apps/web"
+
+# ============================ 阶段 2：构建 ============================
+FROM ${NODE_IMAGE} AS builder
+ARG DEBIAN_MIRROR=deb.debian.org
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tar \
+    && rm -rf /var/lib/apt/lists/*
+RUN npm install -g pnpm@11.7.0 --registry=https://registry.npmmirror.com
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/web-overlay/ ./apps/web/
+# 上游 NavSphere 底座：固定 commit，与 scripts/vendor-web.mjs / Dockerfile.web 同源
+ARG NAVSPHERE_REF=6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a
+RUN curl -fsSL --connect-timeout 10 --max-time 300 --retry 3 --retry-delay 2 --retry-connrefused \
+      "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/${NAVSPHERE_REF}" -o /tmp/ns.tgz \
+    && mkdir -p /tmp/ns && tar -xzf /tmp/ns.tgz -C /tmp/ns --strip-components=1 \
+    && cp -a /tmp/ns/. /app/apps/web/ && rm -rf /tmp/ns /tmp/ns.tgz
+RUN rm -f /app/apps/web/src/middleware.ts /app/apps/web/.eslintrc.json
+WORKDIR /app/apps/web
+ARG NAVHUB_CSP=
+ARG NAVHUB_CSP_REPORT_ONLY=
+ARG NAVHUB_CSP_REPORT_URI=
+ENV NODE_ENV=production \
+    STORAGE_ADAPTER=http \
+    NEXT_PUBLIC_API_URL=http://api:8787 \
+    NAVHUB_HOME_CARDS_PER_GROUP=4 \
+    NAVHUB_WEB_STANDALONE=1
+RUN NAVHUB_CSP="$NAVHUB_CSP" \
+    NAVHUB_CSP_REPORT_ONLY="$NAVHUB_CSP_REPORT_ONLY" \
+    NAVHUB_CSP_REPORT_URI="$NAVHUB_CSP_REPORT_URI" \
+    pnpm build
+
+# ============================ 阶段 3：运行 ============================
+FROM ${NODE_IMAGE} AS runner
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+# standalone 自带最小 node_modules 与 server.js，不含 pnpm / 源码 / 构建缓存 / 上游 tarball 工具
+# 未设 outputFileTracingRoot 时，Next 把 standalone 目录按 workspace 根布局生成：
+# /app/server.js + /app/apps/web/.next/... + /app/node_modules（最小闭包）。
+COPY --from=builder /app/.next/standalone ./
+# session secret 共享卷自举（与默认镜像同口径，但不依赖 pnpm）
+COPY docker/entrypoint-web-standalone.sh /usr/local/bin/navhub-web-entrypoint
+RUN chmod +x /usr/local/bin/navhub-web-entrypoint \
+    && mkdir -p /data && chown -R node:node /data /app
+USER node
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:3000/ || exit 1
+ENTRYPOINT ["/usr/local/bin/navhub-web-entrypoint"]

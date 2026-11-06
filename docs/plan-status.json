@@ -1,0 +1,346 @@
+{
+  "_note": "计划项 → 落地证据映射（docs 元分析空白地带 B-1/B-2）。由 scripts/check-plan-status.mjs 按符号名在代码中 grep 判定，不用行号（行号会随并行会话漂移）。历史文档不改写，这里只做收口账。",
+  "updatedAt": "2026-11-06",
+  "plans": [
+    {
+      "source": "docs/BACKEND-OPTIMIZATION-PLAN-2026-10-30.md",
+      "note": "该方案 5 个 P0 + 8 个 P1 已全部在代码中落地，但文档无一处标注，INDEX.md 甚至未收录它。此表是收口账，不是新方案。",
+      "items": [
+        {
+          "id": "P0-1",
+          "title": "破坏性任务按 kind 分级 + confirm + staging 校验",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/routes/jobs.ts:jobEnqueueScope",
+            "apps/api/src/jobs.ts:jobEnqueueScope",
+            "apps/api/src/restore-staging.ts"
+          ]
+        },
+        {
+          "id": "P0-2",
+          "title": "/api/users/sync token 身份绑定与验签",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/routes/identity.ts:sync_forbidden",
+            "apps/api/src/routes/identity.ts:owner_mismatch"
+          ]
+        },
+        {
+          "id": "P0-3",
+          "title": "LLM 配额 check-then-act → 原子预留",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/llm-quota.ts:reserveLlmQuota",
+            "apps/api/src/llm-quota.ts:settleLlmQuota"
+          ]
+        },
+        {
+          "id": "P0-4",
+          "title": "出站/公开写预算限流",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/routes/plugin-audit.ts",
+            "apps/api/src/routes/telemetry.ts",
+            "apps/api/src/outbound-budget.ts"
+          ]
+        },
+        {
+          "id": "P0-5",
+          "title": "媒体代理与 B 站流字节/超时上限",
+          "status": "landed",
+          "evidence": [
+            "apps/web-overlay/src/app/api/media/proxy/route.ts:MAX_MEDIA_BYTES"
+          ]
+        },
+        {
+          "id": "P1-1",
+          "title": "快照读放大：data_version 单行表 + 点查 + singleflight",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/storage.ts:readNavDataVersion",
+            "apps/api/src/storage.ts:inFlightSnapshotPromise",
+            "packages/store/src/migrate.ts:data_version"
+          ]
+        },
+        {
+          "id": "P1-2",
+          "title": "快照写放大：existingSites 内存 diff",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/storage.ts:existingSites"
+          ]
+        },
+        {
+          "id": "P1-4",
+          "title": "JobRunner 串行/假取消 → AbortSignal + per-kind lane",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/jobs.ts:JobRunHandle",
+            "apps/api/src/jobs.ts:planJobLanes",
+            "apps/api/src/jobs.ts:maxConcurrency"
+          ]
+        },
+        {
+          "id": "P1-5",
+          "title": "高频 COUNT → cachedSiteStats",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/routes/health.ts:cachedSiteStats"
+          ]
+        },
+        {
+          "id": "P1-6",
+          "title": "/api/storage 可见性投影",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/routes/navsphere.ts:view=public"
+          ]
+        },
+        {
+          "id": "P1-7",
+          "title": "/api/jobs 分页",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/routes/jobs.ts:nextOffset"
+          ]
+        },
+        {
+          "id": "P1-8",
+          "title": "OpenAPI 契约覆盖",
+          "status": "open",
+          "evidence": [],
+          "note": "45 请求绑定 / 130 响应绑定 vs 289 路由；门禁 scripts/check-rest-contract-coverage.mjs 已存在，覆盖仍在推进"
+        }
+      ]
+    },
+    {
+      "source": "docs/UPGRADE-EXECUTION-2026-10-27.md",
+      "note": "§8 未完成清单 13 项，至少 8 项已由后续会话闭环，文档未回填。",
+      "items": [
+        {
+          "id": "8-1",
+          "title": "迁移事务化",
+          "status": "landed",
+          "evidence": [
+            "packages/store/src/repository.ts:withTransaction"
+          ]
+        },
+        {
+          "id": "8-2",
+          "title": "唯一索引先建后删",
+          "status": "landed",
+          "evidence": [
+            "packages/store/src/migrate.ts:sites_url_uniq_v2"
+          ]
+        },
+        {
+          "id": "8-5",
+          "title": "AbortSignal 贯穿",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/jobs.ts:JobRunHandle"
+          ]
+        },
+        {
+          "id": "8-8",
+          "title": "LLM 配额原子占位",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/llm-quota.ts:reserveLlmQuota"
+          ]
+        },
+        {
+          "id": "8-10",
+          "title": "/api/users/sync 验签",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/routes/identity.ts:sync_forbidden"
+          ]
+        }
+      ]
+    },
+    {
+      "source": "NavHub-结构化升级方案-8维度-2026-11-06.md",
+      "note": "本会话落地项（见执行台账）。",
+      "items": [
+        {
+          "id": "S-1",
+          "title": "LLM 连通性测试不得回退已存密钥",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/llm-config.ts:不得回退任何已存密钥",
+            "apps/api/test/llm-test-no-key-fallback.test.ts"
+          ]
+        },
+        {
+          "id": "D-1",
+          "title": "FTS5 空索引探针改查 _docsize",
+          "status": "landed",
+          "evidence": [
+            "apps/api/src/context.ts:sites_fts_docsize"
+          ]
+        },
+        {
+          "id": "A-4",
+          "title": "Node 24 erasableSyntaxOnly + vision.ts 参数属性修复",
+          "status": "landed",
+          "evidence": [
+            "tsconfig.base.json:erasableSyntaxOnly",
+            "apps/api/src/vision.ts:readonly reason"
+          ]
+        },
+        {
+          "id": "T-1",
+          "title": "覆盖率 W1 硬门禁",
+          "status": "landed",
+          "evidence": [
+            "coverage-thresholds.json",
+            "scripts/check-coverage.mjs:--thresholds",
+            ".github/workflows/ci.yml:thresholds coverage-thresholds.json"
+          ]
+        },
+        {
+          "id": "T-3",
+          "title": "文档数字单一事实源",
+          "status": "landed",
+          "evidence": [
+            "docs/metrics.json",
+            "scripts/gen-docs-metrics.mjs",
+            "scripts/verify.mjs:gen-docs-metrics.mjs"
+          ]
+        },
+        {
+          "id": "A-2",
+          "title": "MCP 包内路径修复 + @navhub/api devDep",
+          "status": "landed",
+          "evidence": [
+            "packages/mcp/test/mcp-http.test.ts:apps/mcp/src/http-server.ts",
+            "apps/mcp/src/http-server.ts:packages/mcp/src/handlers.ts"
+          ]
+        },
+        {
+          "id": "T-6",
+          "title": "计划项落地证据账 + 按符号名校验",
+          "status": "landed",
+          "evidence": ["docs/plan-status.json", "scripts/check-plan-status.mjs"]
+        },
+        {
+          "id": "C-2",
+          "title": "配置面登记棘轮（新增未登记 env 即红）",
+          "status": "landed",
+          "evidence": ["scripts/env-surface.json", "scripts/check-env-surface.mjs"]
+        },
+        {
+          "id": "C-5",
+          "title": "审计例外到期校验",
+          "status": "landed",
+          "evidence": ["scripts/audit-exceptions.json", "scripts/check-audit-exceptions.mjs"]
+        },
+        {
+          "id": "GOV",
+          "title": "治理三合一聚合器接入 verify",
+          "status": "landed",
+          "evidence": ["scripts/check-governance.mjs", "scripts/verify.mjs:check-governance.mjs"]
+        },
+        {
+          "id": "ADR",
+          "title": "3 份架构决策记录（多实例/strip-types/覆盖率阈值）",
+          "status": "landed",
+          "evidence": ["docs/adr/README.md", "docs/adr/0001-lite-single-instance-constraint.md", "docs/adr/0002-strip-types-production-runtime.md", "docs/adr/0003-coverage-threshold-single-source.md"]
+        },
+        {
+          "id": "SEC-WEBHOOK",
+          "title": "Webhook v2 时间戳签名 + 重放去重（库 + 接线）",
+          "status": "landed",
+          "evidence": ["apps/web-overlay/src/lib/webhook-signature.ts:signHmacSha256WithTimestamp", "apps/web-overlay/src/lib/webhook-signature.ts:createReplayGuard", "apps/web-overlay/src/lib/video-multi-source-connector.ts:verifyHmacSha256WithTimestamp", "apps/web-overlay/src/app/api/videos/webhook-harvest/route.ts:x-webhook-timestamp"]
+        },
+        {
+          "id": "SEC-WEBHOOK-ADMIN",
+          "title": "Webhook 管理端测试旁路收紧（只认显式 x-admin-test）",
+          "status": "landed",
+          "evidence": ["apps/web-overlay/src/app/api/videos/webhook-harvest/route.ts:isTestCall"]
+        },
+        {
+          "id": "SEC-SSRF-PORTS",
+          "title": "SSRF 禁用端口单一事实源 + 三方统一（漂移归零）",
+          "status": "landed",
+          "evidence": ["packages/core/src/ssrf-ports.ts:BLOCKED_PORTS_UNION", "packages/ai/src/ssrf.ts:BLOCKED_PORTS_UNION", "apps/web-overlay/src/lib/ssrf-guard.ts:BLOCKED_PORTS", "apps/web-overlay/test/ssrf-ports-drift.test.ts"]
+        },
+        {
+          "id": "ENG-STRIP-FLAGS",
+          "title": "清理 --experimental-strip-types 冗余（Node 24 默认 strip）",
+          "status": "landed",
+          "evidence": ["package.json:video:catalog"]
+        },
+        {
+          "id": "ENG-E2E-QUARANTINE",
+          "title": "E2E 隔离：主作业 --grep-invert + 取证步骤 + 撤防登记",
+          "status": "landed",
+          "evidence": [".github/workflows/ci.yml:grep-invert @quarantine", ".github/workflows/ci.yml:quarantine-e2e", "scripts/lib/ci-defused.mjs:quarantine-e2e", "e2e/QUARANTINE.md"]
+        },
+        {
+          "id": "SEC-PROMPT-INJECTION",
+          "title": "AI 富化提示词注入防护 + 类目白名单约束",
+          "status": "landed",
+          "evidence": ["packages/ai/src/enrich.ts:UNTRUSTED_PAGE_CONTENT", "packages/ai/src/enrich.ts:constrainCategoryToWhitelist"]
+        },
+        {
+          "id": "PERF-ENRICH-DEADLINE",
+          "title": "enrich 接入端到端 deadline 预算",
+          "status": "landed",
+          "evidence": ["packages/ai/src/enrich.ts:clampToDeadline", "apps/api/src/routes/enrich.ts:INTERACTIVE_LLM_BUDGET_MS"]
+        },
+        {
+          "id": "SEC-MCP-SESSION",
+          "title": "MCP 会话绑定调用方身份（防会话固定/提权）",
+          "status": "landed",
+          "evidence": ["apps/mcp/src/http-server.ts:SessionBinding", "apps/mcp/src/http-server.ts:bindingMatches"]
+        },
+        {
+          "id": "SEC-LDP-CSPRNG",
+          "title": "联邦推荐 LDP 随机源改 CSPRNG",
+          "status": "landed",
+          "evidence": ["packages/core/src/federated-recommendation.ts:secureUniform"]
+        },
+        {
+          "id": "FIX-ACCOUNT-ENUM",
+          "title": "账号枚举防护（email-status 恒定 / register 统一文案）",
+          "status": "landed",
+          "evidence": ["apps/api/src/routes/account.ts:该标识不可用"]
+        },
+        {
+          "id": "FIX-ADMIN-NOINDEX",
+          "title": "后台 22 页 noindex + 错误边界 render 期副作用",
+          "status": "landed",
+          "evidence": ["apps/web-overlay/src/app/admin/layout.tsx:robots", "apps/web-overlay/src/app/error.tsx:reportClientError"]
+        }
+      ]
+    }
+  ],
+  "openActions": [
+    {
+      "action": "GitHub 分支保护网页勾选 ci-passed 为唯一必经项 + 反向验收",
+      "owner": "运维",
+      "requiresUi": true,
+      "verifiedAt": null
+    },
+    {
+      "action": "轮换 SSH/LLM/AUTH/MEDIA 密钥并删除备份盘明文 .env",
+      "owner": "运维",
+      "requiresUi": false,
+      "verifiedAt": null
+    },
+    {
+      "action": "CSP report-only 观察 7 天后决定 enforce",
+      "owner": "运维",
+      "requiresUi": false,
+      "verifiedAt": null
+    },
+    {
+      "action": "生产配置 NAVHUB_SMTP_HOST / NAVHUB_AUTH_REQUIRED / NAVHUB_IDENTITY_SECRET",
+      "owner": "运维",
+      "requiresUi": false,
+      "verifiedAt": null
+    }
+  ]
+}

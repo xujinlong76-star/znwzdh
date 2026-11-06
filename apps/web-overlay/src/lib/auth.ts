@@ -1,18 +1,96 @@
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
 import NextAuth from 'next-auth'
 import GithubProvider from 'next-auth/providers/github'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import type { NextAuthConfig } from 'next-auth'
 import { authConfig, authSecret, isAdminAccessAllowed } from './auth.config'
 
+interface EncryptedTokenRecord {
+  ciphertext: string
+  iv: string
+  tag: string
+  expiresAt: number
+}
+
+const MAX_CACHED_TOKENS = 500
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000 // 24 小时过期
+
 /**
- * 服务端侧的 GitHub token 保管（进程内、仅服务端可读）。
+ * 服务端加密 Token 缓存（AES-256-GCM + LRU + TTL）。
  *
  * 此前把 accessToken 写进 session 下发给浏览器：/api/auth/session 可被任意前端
  * JS 读取，且 scope 是 'repo'（读写用户全部仓库）——一次 XSS 或恶意脚本即全量失守。
- * 现在 token 只留在服务端，按 sub（用户唯一 ID）索引；前端需要写仓库时走
- * 服务端路由（需自行校验会话与管理员身份），不再接触原始 token。
+ * 现在 token 只留在服务端，按 sub（用户唯一 ID）索引且经 AES-256-GCM 加密，前端写仓库时走
+ * 服务端路由（需校验会话与管理员白名单），杜绝明文驻留与无界内存泄露风险。
  */
-const serverTokenStore = new Map<string, string>()
+class EncryptedServerTokenStore {
+  private readonly records = new Map<string, EncryptedTokenRecord>()
+  private keyCache: Buffer | null = null
+
+  private getEncryptionKey(): Buffer {
+    if (!this.keyCache) {
+      const secret = authSecret || 'navhub-token-storage-default-key'
+      this.keyCache = scryptSync(secret, 'navhub-oauth-server-token-salt', 32)
+    }
+    return this.keyCache
+  }
+
+  set(sub: string, token: string): void {
+    if (!sub || !token) return
+    try {
+      const key = this.getEncryptionKey()
+      const iv = randomBytes(12)
+      const cipher = createCipheriv('aes-256-gcm', key, iv)
+      let ciphertext = cipher.update(token, 'utf8', 'hex')
+      ciphertext += cipher.final('hex')
+      const tag = cipher.getAuthTag().toString('hex')
+
+      // LRU 淘汰：超过上限丢弃最早条目
+      if (this.records.size >= MAX_CACHED_TOKENS) {
+        const oldest = this.records.keys().next().value
+        if (oldest) this.records.delete(oldest)
+      }
+
+      this.records.set(sub, {
+        ciphertext,
+        iv: iv.toString('hex'),
+        tag,
+        expiresAt: Date.now() + TOKEN_TTL_MS,
+      })
+    } catch {
+      // 容错降级
+    }
+  }
+
+  get(sub: string): string | undefined {
+    if (!sub) return undefined
+    const record = this.records.get(sub)
+    if (!record) return undefined
+
+    if (Date.now() > record.expiresAt) {
+      this.records.delete(sub)
+      return undefined
+    }
+
+    try {
+      const key = this.getEncryptionKey()
+      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(record.iv, 'hex'))
+      decipher.setAuthTag(Buffer.from(record.tag, 'hex'))
+      let decrypted = decipher.update(record.ciphertext, 'hex', 'utf8')
+      decrypted += decipher.final('utf8')
+      return decrypted
+    } catch {
+      this.records.delete(sub)
+      return undefined
+    }
+  }
+
+  clear(): void {
+    this.records.clear()
+  }
+}
+
+const serverTokenStore = new EncryptedServerTokenStore()
 
 const ADMIN_IDS_CONFIGURED = Boolean(process.env.NAVHUB_ADMIN_IDS)
 const IS_PRODUCTION_RUNTIME =
@@ -55,10 +133,12 @@ const providers: NextAuthConfig['providers'] = [
       const authRequired =
         process.env.NAVHUB_AUTH_REQUIRED === 'true' || process.env.NAVHUB_AUTH_REQUIRED === '1'
 
+      // 生产环境绝对禁止不安全登录（Fail-Closed 原则）
       const allowInsecureLogin =
-        isDev ||
-        process.env.NAVHUB_ALLOW_DEFAULT_PASSWORD === '1' ||
-        process.env.NAVHUB_ALLOW_DEFAULT_PASSWORD === 'true'
+        isDev &&
+        (process.env.NAVHUB_ALLOW_DEFAULT_PASSWORD === '1' ||
+          process.env.NAVHUB_ALLOW_DEFAULT_PASSWORD === 'true' ||
+          !authRequired)
       if (!isDev && allowInsecureLogin) {
         console.warn(
           '[navhub][安全警告] 生产环境开启了不安全登录通道（NAVHUB_ALLOW_DEFAULT_PASSWORD）：' +

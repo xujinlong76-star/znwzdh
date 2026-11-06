@@ -13,7 +13,7 @@
  *  - **失败不抛出到业务事务**：投递失败返回 `{ ok: false, error }`，
  *    由 outbox 的 attempts/退避机制重试，绝不让一封邮件拖垮注册/重置事务。
  */
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 
 export interface MailMessage {
   to: string;
@@ -78,7 +78,7 @@ export function parseSmtpConfig(env: NodeJS.ProcessEnv = process.env): SmtpConfi
  */
 export class SmtpMailTransport implements MailTransport {
   private readonly config: SmtpConfig;
-  private transport: nodemailer.Transporter | null = null;
+  private transport: Transporter | null = null;
   private transportError: string | null = null;
 
   constructor(config: SmtpConfig) {
@@ -93,7 +93,7 @@ export class SmtpMailTransport implements MailTransport {
     return `smtp://${this.config.host}:${this.config.port}${this.config.secure ? " (TLS)" : ""}`;
   }
 
-  private async ensureTransport(): Promise<nodemailer.Transporter> {
+  private async ensureTransport(): Promise<Transporter> {
     if (this.transport) return this.transport;
     const auth = this.config.user
       ? { user: this.config.user, pass: this.config.pass ?? "" }

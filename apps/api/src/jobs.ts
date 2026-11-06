@@ -17,12 +17,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { readFile, stat, unlink } from "node:fs/promises";
-import { canonicalizeUrl } from "@navhub/core";
-import { enrichUrl } from "@navhub/ai";
-import { enrichLlmOf, resolveLlm } from "./llm-config.ts";
-import { createEnrichUsageCallback } from "./llm-usage.ts";
-import { reserveLlmQuota, settleLlmQuota } from "./llm-quota.ts";
-import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol, sanitizeIconUrl } from "@navhub/core";
+import { canonicalizeUrl, runAutonomousHealing, planPatrol } from "@navhub/core";
 import {
   bindSqlite,
   toPgSql,
@@ -35,9 +30,28 @@ import {
 } from "@navhub/store";
 import type { AppContext } from "./context.ts";
 import { assertRestoreStagingPath } from "./restore-staging.ts";
-import { indexSite, indexSitesBatch } from "./index-site.ts";
+import { indexSitesBatch } from "./index-site.ts";
 import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
 import { ADMIN_NOTIFICATION_IDENTITY } from "./notifications.ts";
+import {
+  TaskRegistry,
+  type JobHandler,
+  type JobHandlerContext,
+  handleHealthCheck,
+  handleRecomputeRank,
+  handleRefetchMetadata,
+  handleDataRetention,
+} from "./jobs/index.ts";
+
+export {
+  TaskRegistry,
+  type JobHandler,
+  type JobHandlerContext,
+  handleHealthCheck,
+  handleRecomputeRank,
+  handleRefetchMetadata,
+  handleDataRetention,
+};
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
@@ -635,6 +649,7 @@ export class JobRunner {
   private lockLost = false;
   /** PG advisory lock 持有期间独占的连接（解锁前不归还给池） */
   private pgClient: PgLockClient | null = null;
+  public readonly taskRegistry: TaskRegistry;
 
   constructor(ctx: AppContext, opts: JobRunnerOptions = {}) {
     this.ctx = ctx;
@@ -646,6 +661,19 @@ export class JobRunner {
     this.jobHeartbeatMs = opts.jobHeartbeatMs ?? JOB_HEARTBEAT_DEFAULT_MS;
     this.onAlert = opts.onAlert;
     this.budgetOverrides = opts.budgetOverrides;
+    this.taskRegistry = new TaskRegistry();
+    this.taskRegistry.register("health_check", async ({ payload, run }) => {
+      await this.runHealthCheck((payload ?? {}) as { siteId?: string; limit?: number }, run);
+    });
+    this.taskRegistry.register("recompute_rank", async () => {
+      await this.runRecomputeRank();
+    });
+    this.taskRegistry.register("refetch_metadata", async ({ payload }) => {
+      await this.runRefetch((payload ?? {}) as { siteId?: string; llm?: boolean });
+    });
+    this.taskRegistry.register("data_retention", async ({ payload, run }) => {
+      await this.runDataRetention((payload ?? {}) as DataRetentionPayload, run);
+    });
   }
 
   /** 当前轮询间隔（启动横幅与 /admin/jobs 展示用） */
@@ -1387,78 +1415,10 @@ export class JobRunner {
   }
 
   /**
-   * 健康巡检：与 MCP health_check 同一套抓取逻辑，但走仓储（双方言）。
-   *
-   * 第二个参数是执行句柄而不是裸的 `deadlineAt`：分批巡检是唯一用到协作式截止的
-   * handler，但「有人按了取消」与「预算到点」在这里的处置是同一件事——在下一个
-   * 分片边界收手，已提交的分片保留。收统一句柄后两种原因都归入 `shouldStop()`，
-   * 不必再各接一个参数（这正是本次「假取消」重构要消灭的散落参数之一）。
+   * 健康巡检：与 MCP health_check 同一套抓取逻辑，但走仓储（双方言）（委派给 tasks/health-check.task.ts）。
    */
   private async runHealthCheck(payload: { siteId?: string; limit?: number }, run: JobRunHandle): Promise<void> {
-    const { guardedFetch } = await import("@navhub/ai");
-    const limit = payload.limit ?? 50;
-    const found: Array<SiteRow | null> = payload.siteId
-      ? [await this.ctx.repo.getSite(payload.siteId)]
-      : await this.patrolTargets(limit);
-    const targets = found.filter((s): s is SiteRow => Boolean(s));
-    let ok = 0;
-    let checked = 0;
-    for (const site of targets) {
-      // 协作式截止：到点就收手。patrolTargets 按「上次巡检最久」优先挑选，
-      // 所以停下的这批下一次（下一轮排期）会被排在最前面，不会饿死。
-      // shouldStop() 同时覆盖「预算到点」与「被要求取消」——两者的分片语义一致，
-      // 区别只在收尾终态（由 Runner 按 abortReason 决定），handler 不必区分。
-      if (run.shouldStop()) break;
-      checked++;
-      const t0 = Date.now();
-      try {
-        const res = await guardedFetch(site!.url, { ...this.ctx.config.fetch });
-        let healthy = res.status >= 200 && res.status < 400;
-        let reason: string | null = null;
-
-        if (healthy && res.body) {
-          const audit = auditPageHealth(site!.url, res.body, undefined, undefined, { truncated: res.truncated });
-          if (audit.status === "SUSPICIOUS_PARKED" || audit.status === "SOFT_404") {
-            healthy = false;
-            reason = `伪健康识别: ${audit.reason}`;
-          }
-        }
-
-        if (healthy) ok++;
-        // 恢复：曾被判 broken 的站点，只要这次探测健康就回到 active。
-        // 人工标记的 archived/pending 不会被这次恢复覆盖。
-        const nextStatus = healthy && site!.status === "broken" ? "active" : site!.status;
-        await this.ctx.repo.updateSiteHealth(site!.id, {
-          httpStatus: res.status,
-          ok: healthy,
-          latencyMs: Date.now() - t0,
-          redirectTo: res.redirects?.at(-1) ?? null,
-          error: reason,
-          currentStatus: nextStatus,
-          markBroken: healthy ? undefined : await this.shouldBreak(site!.id),
-        });
-      } catch (err) {
-
-        await this.ctx.repo.updateSiteHealth(site!.id, {
-          httpStatus: null,
-          ok: false,
-          latencyMs: Date.now() - t0,
-          redirectTo: null,
-          error: err instanceof Error ? err.message : String(err),
-          currentStatus: site!.status,
-          markBroken: await this.shouldBreak(site!.id),
-        });
-      }
-    }
-    const deferred = targets.length - checked;
-    if (deferred > 0) {
-      console.warn("[navhub-job] health_check 预算到点，剩余站点顺延下一轮", {
-        planned: targets.length,
-        checked,
-        deferred,
-      });
-    }
-    await this.ctx.repo.recordEvent("health_check", { meta: { planned: targets.length, checked, ok, deferred } }).catch(() => undefined);
+    return handleHealthCheck(this.ctx, payload, run, (limit) => this.patrolTargets(limit));
   }
 
   /**
@@ -1482,81 +1442,14 @@ export class JobRunner {
     }
   }
 
-  /** 元数据刷新：默认只用启发式（不烧 LLM）；payload.llm=true 才走 LLM */
+  /** 元数据刷新：默认只用启发式（不烧 LLM）；payload.llm=true 才走 LLM（委派给 tasks/metadata-refetch.task.ts） */
   private async runRefetch(payload: { siteId?: string; llm?: boolean }): Promise<void> {
-    if (!payload.siteId) throw new Error("refetch_metadata 需要 siteId");
-    const site = await this.ctx.repo.getSite(payload.siteId);
-    if (!site) throw new Error("站点不存在: " + payload.siteId);
-
-    /**
-     * 后台任务同样要过额度闸门：它烧的是运维者那把系统 key，而且一次批量重刷
-     * 能连发几十次模型调用，`payload.llm` 一旦被人循环投递就是无上限消耗。
-     * 额度以 null 身份计（与 `job_enrich` 用量的 identity 列同为 NULL 对齐），
-     * 被拒时降级成启发式抓取 —— 标题/描述/icon 照样拿得到，只是没有 AI 润色。
-     *
-     * 只在 `payload.llm` 真的要调模型时才预留：默认的纯抓取路径不花钱，
-     * 给它占位会让一批 refetch 任务互相把 anonymous 档吃满。
-     */
-    const quota = payload.llm === true ? await reserveLlmQuota(this.ctx, null) : null;
-    const useLlm = quota?.ok === true;
-    const aiSkipped = quota && !quota.ok ? "quota" : null;
-    const hold = quota && quota.ok ? quota.hold : null;
-    const resolved = useLlm ? await resolveLlm(this.ctx) : null;
-    const enriched = await enrichUrl(site.url, {
-      llm: resolved ? enrichLlmOf(resolved) : undefined,
-      guard: this.ctx.config.fetch,
-      heuristicOnly: !useLlm,
-      onLlmCall: resolved ? createEnrichUsageCallback(this.ctx, resolved.source, null, "job_enrich") : undefined,
-    }).finally(() => settleLlmQuota(this.ctx, hold));
-    // 只覆盖「空值或超期（>30 天）字段」——刷新不该把人工精修的内容冲掉
-    const stale = 30 * 86_400_000;
-    const isStale = (updatedAt: number | undefined) => !updatedAt || Date.now() - updatedAt > stale;
-    const patch: Record<string, unknown> = {};
-    if (!site.description && enriched.description) patch.description = enriched.description;
-    if (!site.title && enriched.title) patch.title = enriched.title;
-    // 抓取到的 icon 指向第三方图标服务时不落库（视同没有；由前端本地解析链兜底）
-    const enrichedIcon = sanitizeIconUrl(enriched.iconUrl);
-    if (!site.iconKey && enrichedIcon) patch.iconKey = enrichedIcon;
-    if (isStale(site.updatedAt) && enriched.description && !patch.description) {
-      patch.description = enriched.description;
-    }
-    if (Object.keys(patch).length > 0) {
-      await this.ctx.repo.updateSite(site.id, patch as never);
-      await indexSite(this.ctx, site.id, (patch.title as string) ?? site.title, (patch.description as string) ?? site.description ?? null, site.url);
-    }
-    await this.ctx.repo
-      .recordEvent("refetch", {
-        siteId: site.id,
-        meta: { provenance: enriched.provenance, aiSkipped },
-      })
-      .catch(() => undefined);
+    return handleRefetchMetadata(this.ctx, payload);
   }
 
-  /** 重算热度分：近 7 天点击 + 近 7 天收藏 − 年龄惩罚 */
+  /** 重算热度分：近 7 天点击 + 近 7 天收藏 − 年龄惩罚（委派给 tasks/rank-recompute.task.ts） */
   private async runRecomputeRank(): Promise<void> {
-    const now = Date.now();
-    const since7d = now - 7 * 86_400_000;
-    // 全库覆盖 + 只取需要的两列。原来用 listSites()（默认 limit=100），
-    // 第 101 条以后的站点永远拿不到新分数 —— 排序质量随库变大静默退化。
-    // 走 selectSitesSql 还会为每行做标签/分面两个关联子查询，这里用不上。
-    const [clicks, favorites, rankRows] = await Promise.all([
-      this.ctx.repo.clickCountsSince(since7d),
-      this.ctx.repo.favoriteCountsSince(since7d),
-      this.ctx.repo.raw("SELECT id, created_at FROM sites WHERE deleted_at IS NULL"),
-    ]);
-    const scores = rankRows.map((r) => {
-      const id = String(r.id);
-      return {
-        id,
-        trendScore: trendScore({
-          visits7d: clicks.get(id) ?? 0,
-          favorites7d: favorites.get(id) ?? 0,
-          ageDays: ageInDays(Number(r.created_at), now),
-        }, now),
-      };
-    });
-    await this.ctx.repo.setTrendScores(scores);
-    await this.ctx.repo.recordEvent("recompute_rank", { meta: { sites: scores.length } }).catch(() => undefined);
+    return handleRecomputeRank(this.ctx);
   }
 
   /**

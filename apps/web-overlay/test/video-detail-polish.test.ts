@@ -21,6 +21,7 @@ describe('Video Detail Polish & Subcategory Affinity Engine', () => {
       id: 'current_arkts_1',
       title: 'HarmonyOS NEXT ArkTS 声明式 UI 核心实战',
       href: 'https://www.bilibili.com/video/BV1111111111',
+      enabled: true,
       videoConfig: {
         type: 'bilibili',
         subCategoryId: 'sub_mob_harmony',
@@ -37,6 +38,7 @@ describe('Video Detail Polish & Subcategory Affinity Engine', () => {
       id: 'companion_arkts_2',
       title: 'ArkTS 状态管理与组件生命周期高级演进',
       href: 'https://www.bilibili.com/video/BV2222222222',
+      enabled: true,
       videoConfig: {
         type: 'bilibili',
         subCategoryId: 'sub_mob_harmony',
@@ -53,6 +55,7 @@ describe('Video Detail Polish & Subcategory Affinity Engine', () => {
       id: 'unrelated_k8s_1',
       title: 'Kubernetes Pod 调度算法与生产级容器编排',
       href: 'https://www.bilibili.com/video/BV3333333333',
+      enabled: true,
       videoConfig: {
         type: 'bilibili',
         subCategoryId: 'sub_cloud_k8s',

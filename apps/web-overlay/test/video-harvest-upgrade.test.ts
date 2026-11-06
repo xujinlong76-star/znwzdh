@@ -365,7 +365,7 @@ describe('E：bili-stream 域名白名单之外的解析后 IP 校验', () => {
     const request = new Request(
       'https://app.example.com/api/videos/bili-stream?url=https%3A%2F%2Fupos-sz-mirrorhw.bilivideo.com%2Fx.mp4',
     )
-    const res = await (mod.GET as (r: Request) => Promise<Response>)(request)
+    const res = await (mod.GET as any)(request)
     expect(res.status).toBe(403)
     expect(((await res.json()) as { error?: string }).error).toContain('受限')
     expect(fetchSpy, 'SSRF 拦截发生在出站之前').not.toHaveBeenCalled()

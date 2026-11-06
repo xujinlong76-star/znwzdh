@@ -95,10 +95,28 @@ export async function POST(request: Request) {
       )
     }
 
-    const isTestCall = isAdmin && (request.headers.get('x-admin-test') === '1' || !WEBHOOK_SECRET || !signature)
+    // 管理端测试通道必须**显式**开启（2026-11-06 深扫 P2-11 收口）。
+    // 旧条件还包含 `!WEBHOOK_SECRET || !signature` —— 那意味着「管理员会话 + 没配密钥」
+    // 或「管理员会话 + 没带签名头」都会静默跳过验签，等于把测试旁路做成默认路径：
+    //   · 未配密钥时任何人都看不到 503，管理员会话直接把任意 payload 写库；
+    //   · 攻击者只要能让请求不带签名头，就绕过了「签名失败 → 401」这条可观测告警。
+    // 现在只有显式 `x-admin-test: 1` 才走 processAdminTestPayload，其余一律走真验签。
+    const isTestCall = isAdmin && request.headers.get('x-admin-test') === '1'
+    if (!isTestCall && !signature) {
+      return NextResponse.json(
+        { code: 401, success: false, message: '缺少签名头（X-Hub-Signature-256 / X-Webhook-Signature）；管理员调试请显式带 x-admin-test: 1' },
+        { status: 401 }
+      )
+    }
+    // v2 时间戳头（可选）：发送方带上即启用「时间窗口 + 重放去重」严格校验。
+    // 剥掉它退回 v1 会因签名载荷不同（v2 含 ts）而验签失败，不存在降级绕过。
+    const timestampHeader =
+      request.headers.get('x-webhook-timestamp') ||
+      request.headers.get('x-hub-timestamp') ||
+      ''
     const processRes = isTestCall
       ? connector.processAdminTestPayload(body)
-      : connector.processWebhook(body, signature, rawBody)
+      : connector.processWebhook(body, signature, rawBody, timestampHeader || undefined)
 
     if (!processRes.ok || !processRes.subItem) {
       // 签名失败是鉴权问题（401），内容未过审是 422 —— 分开才能被监控区分

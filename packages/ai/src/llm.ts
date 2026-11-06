@@ -30,6 +30,8 @@ import { clampToDeadline } from "./deadline.ts";
 export const AGNES_NAME = "Agnes 3.0 Flash";
 export const AGNES_BASE_URL = "https://api.agnes-ai.cn/v1";
 export const AGNES_MODEL = "agnes-3.0-flash";
+export const AGNES_IMAGE_MODEL = "agnes-image-2.5-flash";
+export const AGNES_VIDEO_MODEL = "agnes-video-2.5-flash";
 
 export type JsonMode = "auto" | "response_format" | "prompt";
 
@@ -266,14 +268,36 @@ export function chatCompletionsUrl(baseUrl: string): string {
 }
 
 /**
+ * 提取 API Key 列表（支持逗号或换行分隔的多 Key 配置池）。
+ */
+export function extractApiKeys(rawKey: string | null | undefined): string[] {
+  if (!rawKey) return [];
+  return rawKey
+    .split(/[,\n]/)
+    .map((k) => k.trim())
+    .filter(Boolean);
+}
+
+function maskSingleApiKey(value: string): string {
+  if (!value) return "";
+  if (value.length <= 8) return "****" + value.slice(-2);
+  return value.slice(0, 3) + "****" + value.slice(-4);
+}
+
+/**
  * 密钥掩码：保留前 3 后 4（短密钥只留尾部 2 位），永不回显明文。
+ * 支持多 Key 池：输出首 Key 掩码及备用 Key 计数。
  * 非字符串/空串统一返回空串，避免把 "null" 当成掩码展示。
  */
 export function maskApiKey(key: string | null | undefined): string {
   const value = typeof key === "string" ? key.trim() : "";
   if (!value) return "";
-  if (value.length <= 8) return "****" + value.slice(-2);
-  return value.slice(0, 3) + "****" + value.slice(-4);
+  const parts = extractApiKeys(value);
+  if (parts.length > 1) {
+    const firstMask = maskSingleApiKey(parts[0]!);
+    return `${firstMask} (+${parts.length - 1} 备用 Key)`;
+  }
+  return maskSingleApiKey(value);
 }
 
 /**
@@ -478,11 +502,18 @@ function buildBody(
   // 深度思考：Agnes 官方规范使用 thinking: { type: 'enabled', budget_tokens }，
   // 同时兼容 vLLM 系的 chat_template_kwargs: { enable_thinking: true }
   if (opts.thinking === true && includeThinking) {
+    const budgetTokens = Math.min(typeof maxTokens === "number" && maxTokens > 0 ? maxTokens : 2048, 2048);
     body.thinking = {
       type: "enabled",
-      budget_tokens: Math.min(typeof maxTokens === "number" && maxTokens > 0 ? maxTokens : 2048, 4096),
+      budget_tokens: budgetTokens,
     };
     body.chat_template_kwargs = { enable_thinking: true };
+    // Agnes 等推理网关将 reasoning_tokens 计入 max_tokens 总上限；
+    // 当调用方指定了较小的输出配额（如 maxTokens: 500）时，需叠加 budget_tokens 作为总上限，
+    // 防止推理 token 耗尽全部 max_tokens 导致 content 为空（finish_reason="length"）。
+    if (typeof maxTokens === "number" && maxTokens > 0) {
+      body.max_tokens = Math.min(maxTokens + budgetTokens, 65_536);
+    }
   }
   return body;
 }
@@ -586,15 +617,12 @@ async function callOnce(
   }
 }
 
+let keyPoolCounter = 0;
+
 /**
- * 发起一次 chat completions 调用。
- *
- * 网关只做「去参」这一类技术性重试，不重试业务失败（超时/鉴权/限流/坏响应）：
- * - `response_format`：jsonMode=auto 且端点 400/422 点名不支持时，改走提示词约束；
- * - 思维链参数：严格 OpenAI 兼容网关会拒收未知字段，而去参后普通回答照常可用。
- * 两类判定都记进进程级能力缓存，后续调用直接跳过，不再白撞一次 400。
+ * 单次模型执行（技术性去参重试）。
  */
-export async function chatCompletion(provider: LlmProvider, opts: ChatOptions): Promise<ChatResult> {
+async function chatCompletionSingle(provider: LlmProvider, opts: ChatOptions): Promise<ChatResult> {
   const mode: JsonMode = provider.jsonMode ?? "auto";
   const key = capabilityKey(provider);
   let useResponseFormat = opts.json === true && mode !== "prompt" && !jsonModeUnsupported.has(key);
@@ -627,6 +655,43 @@ export async function chatCompletion(provider: LlmProvider, opts: ChatOptions): 
       throw err;
     }
   }
+}
+
+/**
+ * 发起一次 chat completions 调用。
+ *
+ * 网关只做「去参」这一类技术性重试，不重试业务失败（超时/鉴权/限流/坏响应）：
+ * - `response_format`：jsonMode=auto 且端点 400/422 点名不支持时，改走提示词约束；
+ * - 思维链参数：严格 OpenAI 兼容网关会拒收未知字段，而去参后普通回答照常可用。
+ * - 多 Key 轮询与故障转移：当 apiKey 包含多组密钥时，自动轮询；遇到 429 限流或 401 失败时无缝切换至下一可用 Key。
+ */
+export async function chatCompletion(provider: LlmProvider, opts: ChatOptions): Promise<ChatResult> {
+  const keys = extractApiKeys(provider.apiKey);
+  if (keys.length <= 1) {
+    return chatCompletionSingle(provider, opts);
+  }
+
+  // 多 Key 轮询与自动故障转移
+  const startIndex = Math.abs(keyPoolCounter++) % keys.length;
+  let lastError: unknown;
+
+  for (let i = 0; i < keys.length; i++) {
+    const currentKey = keys[(startIndex + i) % keys.length]!;
+    const providerWithKey: LlmProvider = { ...provider, apiKey: currentKey };
+    try {
+      return await chatCompletionSingle(providerWithKey, opts);
+    } catch (err) {
+      lastError = err;
+      const isRecoverable =
+        err instanceof LlmError &&
+        (err.code === "rate_limit" || err.code === "auth" || err.code === "network" || err.code === "http");
+      if (!isRecoverable || i === keys.length - 1) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 /** SSE 分块里能取出的有用信息（正文/思维链/模型名/用量） */
@@ -778,8 +843,10 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
   const fetchImpl = opts.fetchImpl ?? fetch;
 
   try {
+    const keys = extractApiKeys(provider.apiKey);
+    const chosenKey = keys.length > 0 ? keys[Math.abs(keyPoolCounter++) % keys.length] : null;
     const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "text/event-stream" };
-    if (provider.apiKey) headers.Authorization = "Bearer " + provider.apiKey;
+    if (chosenKey) headers.Authorization = "Bearer " + chosenKey;
 
     const request = (includeUsage: boolean) => {
       const body = buildBody(provider, opts, false, true, thinkingSent);
@@ -880,4 +947,113 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
   } finally {
     gate.cleanup();
   }
+}
+
+export interface ImageGenerationOptions {
+  prompt: string;
+  apiKey?: string | null;
+  baseUrl?: string;
+  model?: string;
+  size?: string;
+  n?: number;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
+export interface ImageGenerationResult {
+  url: string;
+  revisedPrompt?: string;
+  model: string;
+  taskId?: string;
+}
+
+async function generateImageSingle(opts: ImageGenerationOptions, key: string): Promise<ImageGenerationResult> {
+  const baseUrl = (opts.baseUrl || AGNES_BASE_URL).replace(/\/+$/, "");
+  const endpoint = baseUrl.endsWith("/images/generations") ? baseUrl : `${baseUrl}/images/generations`;
+  const fetchFn = opts.fetchImpl ?? fetch;
+  const model = opts.model || AGNES_IMAGE_MODEL;
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetchFn(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        prompt: opts.prompt,
+        size: opts.size || "1024x1024",
+        n: opts.n || 1,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const detail = await readErrorDetail(res);
+      const code: LlmErrorCode =
+        res.status === 401 || res.status === 403
+          ? "auth"
+          : res.status === 429
+            ? "rate_limit"
+            : res.status >= 500
+              ? "http"
+              : "invalid_response";
+      throw new LlmError(code, `AI 图像生成失败（HTTP ${res.status}）`, res.status, detail);
+    }
+
+    const data = (await res.json()) as Record<string, unknown>;
+    const items = Array.isArray(data.data) ? (data.data as Array<Record<string, unknown>>) : [];
+    const firstUrl = typeof items[0]?.url === "string" ? items[0].url : "";
+    if (!firstUrl) {
+      throw new LlmError("invalid_response", "AI 图像生成未返回有效图片地址");
+    }
+
+    return {
+      url: firstUrl,
+      revisedPrompt: typeof items[0]?.revised_prompt === "string" ? items[0].revised_prompt : undefined,
+      model,
+      taskId: typeof data.task_id === "string" ? data.task_id : undefined,
+    };
+  } catch (err) {
+    if (err instanceof LlmError) throw err;
+    if (err instanceof Error && err.name === "AbortError") throw new LlmError("timeout", `AI 图像生成超时（${timeoutMs}ms）`);
+    throw new LlmError("network", "AI 图像生成网络失败：" + (err instanceof Error ? err.message : String(err)));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * 调用 AI 图像生成模型（内置多密钥自动轮询与故障转移）
+ */
+export async function generateImage(opts: ImageGenerationOptions): Promise<ImageGenerationResult> {
+  const keys = extractApiKeys(opts.apiKey);
+  if (keys.length === 0) {
+    throw new LlmError("config", "未配置可用的 AI 密钥");
+  }
+
+  const startIndex = Math.abs(keyPoolCounter++) % keys.length;
+  let lastError: unknown;
+
+  for (let i = 0; i < keys.length; i++) {
+    const currentKey = keys[(startIndex + i) % keys.length]!;
+    try {
+      return await generateImageSingle(opts, currentKey);
+    } catch (err) {
+      lastError = err;
+      const isRecoverable =
+        err instanceof LlmError &&
+        (err.code === "rate_limit" || err.code === "auth" || err.code === "network" || err.code === "http");
+      if (!isRecoverable || i === keys.length - 1) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError;
 }

@@ -11,13 +11,15 @@
  *         "command": "node",
  *         "args": ["--experimental-strip-types", "packages/mcp/src/stdio.ts"],
  *         "env": { "NAVHUB_MODE": "lite", "NAVHUB_SQLITE_PATH": "./data/navhub.db",
- *                  "NAVHUB_MCP_SCOPES": "read,write" }
+ *                  "NAVHUB_MCP_SCOPES": "read" }
  *       }
  *     }
  *   }
  *
- * ⚠️ stdio 模式下进程由客户端直接启动，没有网络攻击面，
- * 权限由启动它的用户决定；因此 scope 默认给 read,write（仍可通过环境变量收紧）。
+ * ⚠️ 最小权限（2026-11-06 深扫 P2-12）：stdio 虽无网络监听，但「被诱导粘贴一段
+ * 恶意 mcpServers 配置」正是它的主要攻击面——客户端配置文件由用户/第三方内容
+ * 决定，不等于用户本人显式授权写操作。默认只给 read；需要 create_site /
+ * update_site 等写工具时由运维显式设置 NAVHUB_MCP_SCOPES=read,write。
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createContext } from "@navhub/api";
@@ -27,7 +29,7 @@ import { TOOL_DEFS, type McpScope, type ToolContext } from "../../../packages/mc
 import { createMcpServer } from "../../../packages/mcp/src/mcp-server.ts";
 
 function makeContext(): ToolContext {
-  const names = (process.env.NAVHUB_MCP_SCOPES ?? "read,write").split(",").map((s) => s.trim()) as McpScope[];
+  const names = (process.env.NAVHUB_MCP_SCOPES ?? "read").split(",").map((s) => s.trim()) as McpScope[];
   const scopes = [...new Set<McpScope>(names)];
   return {
     actor: process.env.NAVHUB_MCP_ACTOR ?? "mcp:stdio",

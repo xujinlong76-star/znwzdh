@@ -125,6 +125,46 @@ async function readBodyWithLimit(res: Response, maxBytes: number): Promise<{ buf
   return { buffer: Buffer.concat(chunks, total) }
 }
 
+/**
+ * 逐跳跟随重定向并**每一跳**重新校验目标主机。
+ *
+ * 2026-11-06 安全加固：此前 `fetch(rawUrl)` 用默认 redirect:'follow'，
+ * 白名单图床域名的一个 302/开放重定向就能把请求带到 169.254.169.254 或内网，
+ * 而签名只覆盖原始 URL 字符串、不覆盖最终落地地址。现改为 manual + 最多 3 跳，
+ * 每跳都过 isSafeMediaHost，跨源时剥离敏感头（与 packages/ai/src/ssrf.ts 同口径）。
+ */
+async function fetchWithRedirectGuard(
+  startUrl: string,
+  baseHeaders: Record<string, string>,
+  maxHops = 3
+): Promise<Response> {
+  let current = startUrl
+  for (let hop = 0; hop <= maxHops; hop++) {
+    const parsed = new URL(current)
+    if (!isSafeMediaHost(parsed.hostname)) {
+      // 用一个不可能成功的合成响应让上层统一走 failed 分支，不抛未捕获异常
+      return new Response(null, { status: 403 })
+    }
+    const res = await fetch(current, {
+      headers: baseHeaders,
+      signal: AbortSignal.timeout(6000),
+      redirect: 'manual'
+    })
+    if (res.status < 300 || res.status >= 400) return res
+    const location = res.headers.get('location')
+    if (!location) return res
+    const next = new URL(location, current).toString()
+    // 跨源重定向不携带 Referer/Origin（避免把 B 站凭据带到第三方）
+    const nextHost = new URL(next).hostname
+    if (nextHost !== parsed.hostname) {
+      delete baseHeaders['Referer']
+      delete baseHeaders['Origin']
+    }
+    current = next
+  }
+  return new Response(null, { status: 403 })
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -203,10 +243,7 @@ export async function GET(request: Request) {
             upstreamHeaders['Referer'] = 'https://www.youtube.com/'
           }
 
-          const upstreamRes = await fetch(rawUrl, {
-            headers: upstreamHeaders,
-            signal: AbortSignal.timeout(6000)
-          })
+          const upstreamRes = await fetchWithRedirectGuard(rawUrl, upstreamHeaders)
 
           if (!upstreamRes.ok) {
             return { status: 'failed' }

@@ -41,9 +41,12 @@ export default function Error({
 
   useEffect(() => {
     console.error('Next.js Page Error:', error)
-  }, [error])
-    // 上报到中枢（脱敏：只发分类 + 指纹 + pathname + digest；开关默认关闭）
+    // 上报到中枢（脱敏：只发分类 + 指纹 + pathname + digest；开关默认关闭）。
+    // 2026-11-06 深扫 F-5：此前这行在 useEffect **外面**——每次 render 都会发一次
+    // 网络上报，错误边界经常重渲染（reset/状态变化），等于把一个错误放大成 N 个请求，
+    // 且 render 期副作用在并发渲染下会被丢弃/重放。挪进 effect 并依赖 error。
     reportClientError({ message: error?.message ?? String(error), digest: error?.digest })
+  }, [error])
 
   const copyDiagnostics = async () => {
     // copyText 永不 reject，返回值即真实结果：失败时把按钮状态还原成"未复制"，

@@ -16,6 +16,7 @@
  */
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { BLOCKED_PORTS_UNION } from "@navhub/core";
 
 export interface FetchGuardOptions {
   timeoutMs: number;
@@ -185,45 +186,12 @@ export function isBlockedIpv6(ip: string): boolean {
  * 同时也保护我们自己：这些端口上不会有正常网页，探活必然是噪声。
  * 只做「精确端口」匹配，不做范围——避免把 8080/8443 这类正常站点误杀。
  */
-const BLOCKED_PORTS = new Set([
-  "22", // SSH
-  "23", // Telnet
-  "25", // SMTP
-  "110", // POP3
-  "143", // IMAP
-  "445", // SMB
-  "1433", // SQL Server
-  "1521", // Oracle
-  "2181", // ZooKeeper
-  "2375", // Docker daemon（未加密）
-  "2376", // Docker daemon（TLS）
-  "2379", // etcd client
-  "2380", // etcd peer
-  "3306", // MySQL
-  "3389", // RDP
-  "5432", // PostgreSQL
-  "5601", // Kibana
-  "5672", // AMQP
-  "5984", // CouchDB
-  "6379", // Redis
-  "6380", // Redis（TLS）
-  "6443", // kube-apiserver
-  "7001", // WebLogic
-  "7002", // WebLogic（TLS）
-  "8086", // InfluxDB
-  "8500", // Consul HTTP
-  "8600", // Consul DNS
-  "9042", // Cassandra
-  "9092", // Kafka
-  "9200", // Elasticsearch
-  "9300", // Elasticsearch transport
-  "10250", // kubelet
-  "10255", // kubelet（只读）
-  "11211", // Memcached
-  "15672", // RabbitMQ 管理台
-  "27017", // MongoDB
-  "27018", // MongoDB shard
-]);
+// 端口表统一来自 @navhub/core（2026-11-06 深扫 P2-2）。
+// 此前本文件与 apps/web-overlay/src/lib/ssrf-guard.ts 各维护一份，口径已经漂移
+// （37 vs 40，仅 28 共有，且一侧是 Set<string> 另一侧是 Set<number>）——
+// 同一个 URL 在两套实现里可能得到相反判定。
+// 现统一为并集口径；判定走 isBlockedPortUnion 以同时接受字符串与数字。
+const BLOCKED_PORTS = new Set(BLOCKED_PORTS_UNION.map(String));
 
 /** 校验 URL 协议与主机名形态；不做 DNS（DNS 在 resolveAndCheck 里） */
 export function assertUrlShape(raw: string): URL {
@@ -264,15 +232,15 @@ async function lookupWithTimeout(host: string, timeoutMs: number): Promise<Array
   }
 }
 
-/** DNS 解析并校验全部解析结果 */
-export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promise<void> {
-  if (opts.allowPrivateNetworks) return;
+/** DNS 解析并校验全部解析结果，返回已校验安全的 IP 地址清单 */
+export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promise<string[]> {
+  if (opts.allowPrivateNetworks) return [];
   const host = url.hostname.replace(/^\[|\]$/g, "");
 
   // 主机名本身就是字面 IP 时直接判
   if (isIP(host)) {
     if (isBlockedIp(host)) throw new SsrfBlockedError("目标是受保护网段: " + host, "blocked-ip");
-    return;
+    return [host];
   }
 
   let addrs: Array<{ address: string }>;
@@ -284,12 +252,15 @@ export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promis
   }
   if (addrs.length === 0) throw new SsrfBlockedError("DNS 无结果: " + host, "dns-empty");
 
+  const safeIps: string[] = [];
   // 全部解析结果都必须安全（DNS 轮询/多 A 记录下，只要有一个是不安全的就拒绝）
   for (const a of addrs) {
     if (isBlockedIp(a.address)) {
       throw new SsrfBlockedError(host + " 解析到受保护网段 " + a.address, "blocked-ip");
     }
+    safeIps.push(a.address);
   }
+  return safeIps;
 }
 
 export interface GuardedFetchResult {
@@ -512,7 +483,7 @@ async function runGuardedFetch(
   if (!hasHeader(headers, "accept")) headers.Accept = request.accept ?? "text/html,application/xhtml+xml";
 
   for (let hop = 0; hop <= opts.maxRedirects; hop++) {
-    await resolveAndCheck(current, opts);
+    const verifiedIps = await resolveAndCheck(current, opts);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
@@ -526,19 +497,12 @@ async function runGuardedFetch(
     }
     let res: Response;
     try {
-      // TOCTOU 缓解：http 明文请求直接钉 IP 直连（Host 头保留原域名），
-      // 避免 resolve 与 fetch 之间的 DNS 重绑定窗口；https 因 SNI/证书无法钉 IP，
-      // 仍走域名，但在读取 body 前后各做一次 resolveAndCheck 以收窄窗口。
+      // TOCTOU 阻断：http 明文请求直接钉 IP 直连（Host 头保留原域名），
+      // 避免 resolve 与 fetch 之间的 DNS 重绑定窗口；
       let fetchUrl = current.toString();
       const extraHeaders: Record<string, string> = {};
       if (current.protocol === "http:" && !opts.allowPrivateNetworks && !isIP(current.hostname.replace(/^\[|\]$/g, ""))) {
-        let pinned: Array<{ address: string }> = [];
-        try {
-          pinned = await lookupWithTimeout(current.hostname, opts.timeoutMs);
-        } catch {
-          // pin 超时或解析失败：回退到域名直连（循环头部的 resolveAndCheck 已校验过一次）
-        }
-        const first = pinned[0]?.address;
+        const first = verifiedIps[0];
         if (first && isIP(first)) {
           if (isBlockedIp(first)) throw new SsrfBlockedError(current.hostname + " 解析到受保护网段 " + first, "blocked-ip");
           const portSuffix = current.port ? ":" + current.port : "";

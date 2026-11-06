@@ -13,10 +13,35 @@
 const DEFAULT_API_BASE = "http://127.0.0.1:8787";
 const DEFAULT_WEB_BASE = "http://localhost:3000";
 
+/**
+ * 与 background.js 同源的 API 目标校验（2026-11-06 深扫 S-5）。
+ * Bearer token 绝不能被发往用户在设置里随手填的任意地址：http 只允许 loopback，
+ * https 只允许白名单主机。不合规时回退默认地址并警告。
+ */
+const ALLOWED_API_HOSTS = ["127.0.0.1", "localhost", "::1", "navhub.example.com"];
+function isTrustedApiUrl(raw) {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    if (u.username || u.password) return false;
+    const host = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    const loopback = host === "127.0.0.1" || host === "localhost" || host === "::1";
+    if (u.protocol === "http:" && !loopback) return false;
+    if (!loopback && !ALLOWED_API_HOSTS.includes(host)) return false;
+    return true;
+  } catch { return false; }
+}
+function safeApiUrl(raw) {
+  const candidate = (raw || DEFAULT_API_BASE).replace(/\/$/, "");
+  if (isTrustedApiUrl(candidate)) return candidate;
+  console.warn("[navhub-ext] apiUrl 不在可信白名单，已回退默认地址：" + candidate);
+  return DEFAULT_API_BASE;
+}
+
 async function getApiBase() {
   try {
     const store = await chrome.storage.local.get(["apiUrl"]);
-    return (store.apiUrl || DEFAULT_API_BASE).replace(/\/$/, "");
+    return safeApiUrl(store.apiUrl);
   } catch {
     return DEFAULT_API_BASE;
   }

@@ -6,9 +6,41 @@
 const DEFAULT_API_URL = "http://127.0.0.1:8787";
 const DEFAULT_WEB_URL = "http://localhost:3000";
 
+/**
+ * 只允许把 Bearer token 发往可信目标（2026-11-06 深扫 S-5）。
+ * 旧实现 getApiUrl() 直接返回用户在 popup 里填的任意字符串，manifest 又没有
+ * host_permissions —— 被诱导 / 恶意页面改写 chrome.storage.local["apiUrl"] 后，
+ * omnibox 搜索与 /api/sites/auto、/api/favorites 都会把完整 Bearer 发到攻击者服务器。
+ * 规则：
+ *   - 协议只认 http/https；
+ *   - http 仅限 loopback（127.0.0.1 / localhost / [::1]），禁止 http 公网（明文带凭据）；
+ *   - https 限定在 ALLOWED_API_HOSTS 白名单（部署域名）与 loopback；
+ *   - 带 userinfo 的可疑形态一律拒绝；
+ *   - 不合规时回退 DEFAULT_API_URL 并打印警告，绝不静默使用用户填的地址。
+ */
+const ALLOWED_API_HOSTS = ["127.0.0.1", "localhost", "::1", "navhub.example.com"];
+function isTrustedApiUrl(raw) {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    if (u.username || u.password) return false;
+    const host = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    const loopback = host === "127.0.0.1" || host === "localhost" || host === "::1";
+    if (u.protocol === "http:" && !loopback) return false;
+    if (!loopback && !ALLOWED_API_HOSTS.includes(host)) return false;
+    return true;
+  } catch { return false; }
+}
+function safeApiUrl(raw) {
+  const candidate = (raw || DEFAULT_API_URL).replace(/\/$/, "");
+  if (isTrustedApiUrl(candidate)) return candidate;
+  console.warn("[navhub-ext] apiUrl 不在可信白名单，已回退默认地址：" + candidate);
+  return DEFAULT_API_URL;
+}
+
 async function getApiUrl() {
   const store = await chrome.storage.local.get(["apiUrl"]);
-  return (store.apiUrl || DEFAULT_API_URL).replace(/\/$/, "");
+  return safeApiUrl(store.apiUrl);
 }
 
 async function getWebUrl() {
@@ -82,7 +114,6 @@ function escapeXml(unsafe) {
     .replace(/'/g, "&apos;");
 }
 
-
 // ---------------------------------------------------------------------------
 // 右键「收藏到 NavHub」（B1）：与 popup 的收藏按钮同一套两步链路
 // ---------------------------------------------------------------------------
@@ -94,7 +125,7 @@ async function getToken() {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "navhub-favorite",
-    title: "⭐ 收藏到 山羊胡",
+    title: "★ 收藏到 山羊胡",
     contexts: ["page"],
   });
 });

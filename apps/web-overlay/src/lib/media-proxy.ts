@@ -6,7 +6,7 @@
  * 客户端需要的代理地址一律由页面在服务端签好后下发（见 withSignedVideoIcons）。
  */
 
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 
 let _ephemeralSecret: string | null = null
@@ -70,21 +70,59 @@ export function isSafeMediaHost(hostname: string): boolean {
 }
 
 /**
- * 为合法的图片 URL 生成防篡改 HMAC-SHA256 签名
+ * 为合法的图片 URL 生成防篡改 HMAC-SHA256 签名。
+ *
+ * 2026-11-06 安全加固：旧实现 `digest('hex').slice(0, 16)` 只保留 64 bit MAC，
+ * 且用 `===` 比较（非常量时间）。现改为全长 64 hex（256 bit）+ timingSafeEqual。
+ *
+ * 刻意**不加时效/过期**：这些签名在 SSR/ISR 阶段被烘进缓存的 HTML（withSignedVideoIcons
+ * 的注释已说明「签名无时效」）。加 exp 会让 ISR 缓存里的图标地址在过期后全部 403。
+ * 如需短期签名，用下面的 generateMediaSignatureV2（带 exp，调用方自行承担缓存语义）。
  */
 export function generateMediaSignature(rawUrl: string): string {
-  const hmac = createHmac('sha256', getMediaProxySecret())
-  hmac.update(rawUrl)
-  return hmac.digest('hex').slice(0, 16)
+  return createHmac('sha256', getMediaProxySecret()).update(rawUrl).digest('hex')
+}
+
+/** 常量时间比较：两侧先取 sha256 定长摘要，避免长度不等时 timingSafeEqual 抛错 */
+function constantTimeEqual(a: string, b: string): boolean {
+  const ha = createHmac('sha256', 'navhub-ct-eq').update(a).digest()
+  const hb = createHmac('sha256', 'navhub-ct-eq').update(b).digest()
+  return timingSafeEqual(ha, hb)
 }
 
 /**
- * 校验 URL 签名有效性
+ * 校验 URL 签名有效性（兼容旧 16 hex 与新 64 hex，灰度期不打断已缓存的 ISR 页面）。
  */
 export function verifyMediaSignature(rawUrl: string, signature: string): boolean {
   if (!rawUrl || !signature) return false
   const expected = generateMediaSignature(rawUrl)
-  return expected === signature
+  // 新签名：全长 64 hex，常量时间比较
+  if (signature.length === 64 && constantTimeEqual(expected, signature)) return true
+  // 旧签名（16 hex）：仅作过渡兼容，同样走常量时间比较
+  if (signature.length === 16 && constantTimeEqual(expected.slice(0, 16), signature)) return true
+  return false
+}
+
+/**
+ * 带过期时间的 v2 签名（可选，非 ISR 缓存场景用）。
+ * 格式：v2.<expUnixSeconds>.<hmac64hex>，exp 为签发时刻起的有效秒数。
+ */
+export function generateMediaSignatureV2(rawUrl: string, ttlSeconds = 86400): string {
+  const exp = Math.floor(Date.now() / 1000) + ttlSeconds
+  const payload = `${exp}.${rawUrl}`
+  const mac = createHmac('sha256', getMediaProxySecret()).update(payload).digest('hex')
+  return `v2.${exp}.${mac}`
+}
+
+export function verifyMediaSignatureV2(rawUrl: string, signature: string, nowMs = Date.now()): boolean {
+  if (!rawUrl || !signature) return false
+  const parts = signature.split('.')
+  if (parts.length !== 3 || parts[0] !== 'v2') return false
+  const exp = Number(parts[1])
+  if (!Number.isFinite(exp) || exp < Math.floor(nowMs / 1000)) return false
+  const payload = `${parts[1]}.${rawUrl}`
+  const expected = createHmac('sha256', getMediaProxySecret()).update(payload).digest('hex')
+  return parts[2].length === 64 && constantTimeEqual(expected, parts[2])
 }
 
 /**

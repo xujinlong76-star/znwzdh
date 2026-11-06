@@ -109,8 +109,13 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       store.init(false);
       const siteCount = (db.sqlite!.prepare("SELECT COUNT(*) AS n FROM sites WHERE deleted_at IS NULL").get() as { n: number })?.n ?? 0;
       if (siteCount > 0) {
-        const ftsCount = (db.sqlite!.prepare("SELECT COUNT(*) AS n FROM sites_fts").get() as { n: number })?.n ?? 0;
-        if (ftsCount === 0) store.rebuild();
+        // external-content FTS5 的 `SELECT COUNT(*) FROM sites_fts` 读的是 content 表
+        // (sites) 的行数：索引为空时它仍返回站点数，guard 会误判「已就绪」→ 全文通道
+        // 永久静默失效而 health 仍报 fts=true（2026-11-06 数据层深扫实测复现）。
+        // 与 fts.ts initSubstring 同口径，改查 _docsize 影子表：0 才说明索引真的没灌。
+        // ⚠️ 2026-11-06 二次落地：并行会话曾把此处覆盖回 COUNT(*)，勿再回退。
+        const ftsIndexed = (db.sqlite!.prepare("SELECT COUNT(*) AS n FROM sites_fts_docsize").get() as { n: number })?.n ?? 0;
+        if (ftsIndexed === 0) store.rebuild();
       }
       fts = store;
       notes.push("FTS5 全文索引就绪（CJK 二元分词）");

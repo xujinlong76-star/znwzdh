@@ -70,8 +70,22 @@ interface NsNavigationData { navigationItems: NsCategory[] }
 
 /**
  * 单次导出 navigation.json 允许的最大站点数（防大库全表拉取 OOM，可通过 NAVHUB_NAVIGATION_MAX_SITES 调整）。
+ *
+ * 2026-11-06 深扫 C-3：旧写法 `Math.max(100, Number(env || 15000))`，当 env 是
+ * `abc` 时 Number("abc")=NaN，Math.max(100,NaN)=NaN，于是 :266 的 `sites.length > NaN`
+ * 恒 false —— 上限静默消失，大库下 /api/storage 全表读进内存组装，OOM 且无日志。
+ * 与 SNAPSHOT_TTL_MS 同口径：非法值一律回退默认并显式警告（不静默）。
  */
-const NAVIGATION_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_NAVIGATION_MAX_SITES || 15000));
+const NAVIGATION_MAX_SITES = (() => {
+  const raw = process.env.NAVHUB_NAVIGATION_MAX_SITES;
+  if (raw === undefined || raw.trim() === "") return 15_000;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 100) {
+    console.warn(`[navhub] NAVHUB_NAVIGATION_MAX_SITES 非法值 ${JSON.stringify(raw)}，回退默认 15000`);
+    return 15_000;
+  }
+  return Math.max(100, Math.floor(n));
+})();
 
 /* ------------------------------------------------------------------ *
  * 快照读缓存

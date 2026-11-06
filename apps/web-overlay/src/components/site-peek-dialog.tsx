@@ -61,6 +61,58 @@ export function SitePeekDialog({
   const [livePing, setLivePing] = useState<PingResult | null>(null)
   const [isPinging, setIsPinging] = useState(false)
   const [hasReportedBroken, setHasReportedBroken] = useState(false)
+  const [radar, setRadar] = useState<{
+    summary: string
+    pricingType: string
+    pricingWarning: string
+    accessRequirement?: string
+    bestForScenarios?: string[]
+    pros: string[]
+    cons: string[]
+    directAlternatives: string[]
+    peerLinks?: Array<{ id: string; title: string; url: string }>
+  } | null>(null)
+  const [radarLoading, setRadarLoading] = useState(false)
+  const [radarLoaded, setRadarLoaded] = useState(false)
+  const [visualUrl, setVisualUrl] = useState<string | null>(null)
+  const [visualLoading, setVisualLoading] = useState(false)
+
+  const fetchVisual = async () => {
+    if (!item?.id || visualLoading) return
+    setVisualLoading(true)
+    try {
+      const res = await fetch(`/api/hub/sites/${encodeURIComponent(item.id)}/visual`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.imageUrl) {
+          setVisualUrl(data.imageUrl)
+        }
+      }
+    } catch {
+      // 容错降级
+    } finally {
+      setVisualLoading(false)
+    }
+  }
+
+  const fetchRadar = async () => {
+    if (!item?.id || radarLoading) return
+    setRadarLoading(true)
+    try {
+      const res = await fetch(`/api/hub/sites/${encodeURIComponent(item.id)}/radar`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.radar) {
+          setRadar(data.radar)
+          setRadarLoaded(true)
+        }
+      }
+    } catch {
+      // 容错降级
+    } finally {
+      setRadarLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!open || !item?.id) {
@@ -68,6 +120,11 @@ export function SitePeekDialog({
       setLivePing(null)
       setIsPinging(false)
       setHasReportedBroken(false)
+      setRadar(null)
+      setRadarLoading(false)
+      setRadarLoaded(false)
+      setVisualUrl(null)
+      setVisualLoading(false)
       return
     }
     let cancelled = false
@@ -390,6 +447,190 @@ export function SitePeekDialog({
             </div>
           </div>
         )}
+
+        {/* AI 全景深度透视与收费排雷 (AI Deep Radar - Powered by Agnes 3.0 Flash) */}
+        <div className="mt-4 p-4 rounded-xl border border-primary/25 bg-gradient-to-br from-primary/5 via-card to-background space-y-3 shadow-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded-md bg-primary/10 text-primary">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <div>
+                <span className="text-xs font-bold text-foreground">AI 全景透视与收费排雷</span>
+                <span className="ml-2 text-[10px] text-muted-foreground font-mono">Agnes 3.0 Flash</span>
+              </div>
+            </div>
+            {!radarLoaded && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10 cursor-pointer"
+                onClick={fetchRadar}
+                disabled={radarLoading}
+              >
+                {radarLoading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>透视推导中...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>即刻透视</span>
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+
+          {radarLoading && (
+            <div className="py-3 flex items-center justify-center gap-2 text-xs text-muted-foreground animate-pulse">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <span>正在调取 Agnes AI 深度分析站点定位与真实收费门槛...</span>
+            </div>
+          )}
+
+          {radarLoaded && radar && (
+            <div className="space-y-3 pt-1 text-xs">
+              <div className="p-2.5 rounded-lg bg-background/80 border border-border/60 text-muted-foreground leading-relaxed">
+                <span className="font-semibold text-foreground">💡 核心画像：</span>
+                {radar.summary}
+              </div>
+
+              <div className="flex flex-wrap items-start gap-2 p-2.5 rounded-lg border border-border/60 bg-muted/30">
+                <Badge
+                  variant="outline"
+                  className={
+                    radar.pricingType.includes('免费') || radar.pricingType.includes('开源')
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold'
+                      : radar.pricingType.includes('订阅')
+                      ? 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold'
+                      : 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 font-semibold'
+                  }
+                >
+                  {radar.pricingType}
+                </Badge>
+                {radar.accessRequirement && (
+                  <Badge variant="secondary" className="text-[11px] font-medium">
+                    门槛：{radar.accessRequirement}
+                  </Badge>
+                )}
+                <span className="text-muted-foreground flex-1 min-w-[180px] pt-0.5">
+                  <span className="font-semibold text-foreground">收费排雷：</span>
+                  {radar.pricingWarning}
+                </span>
+              </div>
+
+              {radar.bestForScenarios && radar.bestForScenarios.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-muted-foreground font-semibold">适用高频场景：</span>
+                  {radar.bestForScenarios.map((sc, i) => (
+                    <Badge key={i} variant="outline" className="text-[11px] px-2 py-0.5 border-primary/25 bg-primary/5 text-primary font-normal">
+                      {sc}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {radar.pros && radar.pros.length > 0 && (
+                  <div className="space-y-1 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                    <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      核心亮点
+                    </span>
+                    <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+                      {radar.pros.map((p, i) => (
+                        <li key={i} className="truncate">{p}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {radar.cons && radar.cons.length > 0 && (
+                  <div className="space-y-1 p-2 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                    <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      使用门槛 / 局限
+                    </span>
+                    <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+                      {radar.cons.map((c, i) => (
+                        <li key={i} className="truncate">{c}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {((radar.peerLinks && radar.peerLinks.length > 0) || (radar.directAlternatives && radar.directAlternatives.length > 0)) && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/40">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-muted-foreground font-semibold">AI 甄选平替直达：</span>
+                    {radar.peerLinks && radar.peerLinks.length > 0
+                      ? radar.peerLinks.map((pl, i) => (
+                          <Button
+                            key={i}
+                            variant="secondary"
+                            size="sm"
+                            className="h-6 text-[11px] px-2 py-0 gap-1 font-medium hover:text-primary"
+                            onClick={() => safeWindowOpen(pl.url)}
+                          >
+                            <span>{pl.title}</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </Button>
+                        ))
+                      : radar.directAlternatives.map((alt, i) => (
+                          <Badge key={i} variant="secondary" className="text-[11px] px-2 py-0.5 font-normal">
+                            {alt}
+                          </Badge>
+                        ))}
+                  </div>
+                  {!visualUrl && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[11px] px-2 gap-1 text-muted-foreground hover:text-primary"
+                      onClick={fetchVisual}
+                      disabled={visualLoading}
+                    >
+                      {visualLoading ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>生成图卡中...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3 h-3 text-primary" />
+                          <span>生成分享图卡</span>
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {visualUrl && (
+                <div className="space-y-2 pt-1">
+                  <div className="relative rounded-lg overflow-hidden border border-border/60 aspect-video bg-muted/40 max-h-56 shadow-md">
+                    {/* 2026-11-06 深扫 F-6：visualUrl 来自服务端下发的 data.imageUrl（外部可控），
+                        统一过 safeSrc 与 safeWindowOpen。 */}
+                    <img src={safeSrc(visualUrl)} alt={`${item.title} 分享图卡`} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[11px] text-muted-foreground"
+                      onClick={() => safeWindowOpen(visualUrl)}
+                    >
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                      查看高清大图
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* 洛伦兹双曲空间实时平替推荐 (Lorentz Hyperbolic Alternatives) */}
         {hyperbolicAlts.length > 0 && (

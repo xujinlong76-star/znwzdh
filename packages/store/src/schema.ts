@@ -115,22 +115,22 @@ export const tags = sqliteTable("tags", {
 
 export const tagAliases = sqliteTable("tag_aliases", {
   alias: text("alias").primaryKey(),
-  tagId: text("tag_id").notNull(),
+  tagId: text("tag_id").notNull().references(() => tags.id, { onDelete: "cascade" }),
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [
   index("tag_aliases_tag_idx").on(t.tagId),
 ]);
 
 export const siteTags = sqliteTable("site_tags", {
-  siteId: text("site_id").notNull(),
-  tagId: text("tag_id").notNull(),
+  siteId: text("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  tagId: text("tag_id").notNull().references(() => tags.id, { onDelete: "cascade" }),
 }, (t) => [
   index("site_tags_site_idx").on(t.siteId),
   index("site_tags_tag_idx").on(t.tagId),
 ]);
 
 export const siteFacets = sqliteTable("site_facets", {
-  siteId: text("site_id").notNull(),
+  siteId: text("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
   facetKey: text("facet_key").notNull(),
   facetValue: text("facet_value").notNull(),
 }, (t) => [
@@ -141,7 +141,7 @@ export const siteFacets = sqliteTable("site_facets", {
 
 export const siteRelations = sqliteTable("site_relations", {
   id: text("id").primaryKey(),
-  sourceSiteId: text("source_site_id").notNull(),
+  sourceSiteId: text("source_site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
   targetSiteId: text("target_site_id"),
   targetTitle: text("target_title").notNull(),
   targetUrl: text("target_url").notNull(),
@@ -171,8 +171,8 @@ export const collections = sqliteTable("collections", {
 }, (t) => [uniqueIndex("collections_slug_idx").on(t.slug)]);
 
 export const collectionItems = sqliteTable("collection_items", {
-  collectionId: text("collection_id").notNull(),
-  siteId: text("site_id").notNull(),
+  collectionId: text("collection_id").notNull().references(() => collections.id, { onDelete: "cascade" }),
+  siteId: text("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
   sort: integer("sort").notNull().default(0),
   note: text("note"),
 }, (t) => [index("collection_items_col_idx").on(t.collectionId)]);
@@ -356,6 +356,20 @@ export const pluginEmbeddings = sqliteTable("plugin_embeddings", {
   model: text("model").notNull(),
   dim: integer("dim").notNull(),
   vector: blob("vector", { mode: "buffer" }),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
+/**
+ * 站点 AI 透视（`GET /api/sites/:id/radar`）的结果表。
+ *
+ * 一次透视要打一次大模型，实测 44–60 秒，而结论只取决于站点的标题/网址/描述
+ * ——每次打开速览弹窗都重算既慢又贵。与 embeddings 同构：一站点一行，
+ * 存 model 是为了换模型后旧结果自动失效（而不是永不过期地供着旧文案）。
+ */
+export const siteRadar = sqliteTable("site_radar", {
+  siteId: text("site_id").primaryKey(),
+  payload: text("payload").notNull(),
+  model: text("model").notNull(),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 });
 
@@ -741,7 +755,7 @@ export const dataVersion = sqliteTable("data_version", {
 
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
-  users, sessions, authTokens, notifications, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
+  users, sessions, authTokens, notifications, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings, siteRadar,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, userWorkspaceBlobs, systemStates, taxonomyProposals,
   plugins, pluginInstalls, pluginStars, pluginReports, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
   llmModelPrices, llmQuotaReservations, dataVersion,

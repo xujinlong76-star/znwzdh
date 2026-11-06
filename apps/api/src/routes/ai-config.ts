@@ -92,7 +92,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         return { error: "参数无效", detail: body.error.issues };
       }
       try {
-        // identity=null：未填密钥时回退系统级已存密钥
+        // identity=null；testLlmProvider 不再回退任何已存密钥（凭据外带 P0 修复）
         const result = await testLlmProvider(ctx, body.data, null);
         return { result };
       } catch (err) {

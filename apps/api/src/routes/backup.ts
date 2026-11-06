@@ -60,6 +60,20 @@ export function classifyRestoreError(err: unknown): "duplicate_key" | "foreign_k
   return "unknown";
 }
 
+/**
+ * 匿名书签导出 (`GET /api/export/bookmarks.html`) 的站点可见性判据（批次 H）。
+ *
+ * 与 `/api/sites` / `/api/storage` 的公开投影同源（`isPubliclyVisibleSite`）：
+ *  - `pending` / `archived` 是编辑工作面的中间态，匿名导出不得枚举；
+ *  - `enabled=false` 是管理员手动停用，任何公开投影都不应包含；
+ *  - `active` / `broken` 保留（`broken` 只是暂时探活失败，链接本身仍公开）。
+ *
+ * 抽成具名函数（而不是散落在 filter 里）是为了让「可见性口径」有唯一出处，
+ * 回归测试可以直接钉住它，避免以后某次重构又只写回 enabled !== false。
+ */
+export function isBookmarkExportVisibleSite(s: { enabled: boolean; status: string }): boolean {
+  return isPubliclyVisibleSite(s);
+}
 export interface RestorePlan {
   /** 需要新建的分类（已按标题去重） */
   plannedCategories: NavHubColdBackup["categories"];
@@ -272,9 +286,10 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       ctx.repo.listAllSites(EXPORT_MAX_SITES),
     ]);
 
-    // 可见性口径（P1-2）：与 storage 的公开投影同源——pending/待上线站点此前
-    // 只靠 enabled 过滤，凭「下载一份书签」就能被匿名方枚举出来。
-    const activeSites = sites.filter((s) => isPubliclyVisibleSite(s));
+    // 可见性口径（P1-2 / 批次 H）：与 /api/sites、/api/storage 的公开投影同源。
+    // 此前只靠 enabled 过滤，pending/待上线与 archived/已归档站点凭「下载一份
+    // 书签」就能被匿名方枚举出来——必须用同一判据排除，不能另写一套。
+    const activeSites = sites.filter(isBookmarkExportVisibleSite);
     const html = exportNetscapeBookmarks(categories, activeSites);
 
     reply.header("Content-Type", "text/html; charset=utf-8");
@@ -287,13 +302,18 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    *
    * 冷备包含 disabled 站点等未发布数据，且对应恢复接口是 admin；下载也必须
    * 是 admin，避免匿名请求把「未启用/待上线」站点整体导出。书签 HTML 仍是
-   * 面向普通用户的 public 导出，但只包含 enabled 站点。
+   * 面向普通用户的 public 导出，但只含 isBookmarkExportVisibleSite 判定的公开站点。
+   *
+   * 与书签导出的区别是**故意**的：冷备是灾备全量包，包含 pending/archived/
+   * disabled 站点，少一条就是恢复时真的少一条。admin 作用域 + 限流已把访问面
+   * 收得很小，所以这里既不套用公开可见性过滤，也不设条目上限；不得为了「口径
+   * 统一」把冷备也过滤成公开投影（那会让备份静默缺数据）。
    */
   app.get("/api/export/backup.json", { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (_req, reply) => {
     const [categories, sites] = await Promise.all([
       ctx.repo.listCategories(),
-      // 冷备必须全量：少一条就是恢复时真的少一条。admin 作用域 + 限流已经
-      // 把访问面收得很小，这里不设上限（宁可在极端大库上慢，也不要静默缺数据）。
+      // 冷备必须全量：不套用匿名书签导出的可见性过滤，也不设条目上限
+      // （宁可在极端大库上慢，也不要静默缺数据）。
       ctx.repo.listAllSites(),
     ]);
 

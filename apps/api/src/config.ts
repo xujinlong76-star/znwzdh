@@ -416,6 +416,36 @@ function assertSecurityConstraints(
     );
   }
 
+  // 2f. 静态管理凭据强度（2026-11-06 深扫 S-2 / P1-3）。
+  // server.ts 把 adminToken / bootstrapToken 与 sessionSecret 并列当作 admin Bearer
+  // 恒定时间比对；短口令或含 dev/test/local 字样的低熵串一旦被猜中 = 拿 admin scope。
+  // 只校验 sessionSecret 的 >=32 与黑名单，挡不住这两个「另一把钥匙」。
+  const weakStaticSecret = (v: string | null): boolean => {
+    if (!v) return false;
+    if (v.length < 32 || INSECURE_SECRETS_BLACKLIST.has(v)) return true;
+    // 长度达标但字面含开发/测试/占位字样的，同样视为低熵（实测 .env 里的
+    // navhub-session-secret-local-prod-test-32chars 能通过旧的 >=32 校验）。
+    return /(?:dev|test|local|change-me|example|placeholder|insecure)/i.test(v);
+  };
+  for (const [key, value] of [
+    ["NAVHUB_ADMIN_TOKEN", config.adminToken],
+    ["NAVHUB_BOOTSTRAP_TOKEN", config.bootstrapToken],
+  ] as const) {
+    if (isProd && weakStaticSecret(value)) {
+      throw new Error(
+        `生产环境 ${key} 必须是 >=32 字符的随机串且不得含 dev/test/local/change-me 等占位字样` +
+          "（它是静态 admin Bearer 凭据，弱口令等于把管理面交给公网爆破）。"
+      );
+    }
+  }
+  if (isProd && config.bootstrapToken) {
+    // 引导 token 是一次性凭据：用完应删除并重启。长期留在环境变量里 = 永久 admin 后门。
+    console.warn(
+      "[navhub] 警告：NAVHUB_BOOTSTRAP_TOKEN 仍处于配置中；引导出正式 api_tokens 后请删除该变量并重启，" +
+        "否则这个长期有效的引导凭据一直可用。"
+    );
+  }
+
   // 解析失败按「公网」处理：宁可多要一次鉴权，也不能让畸形 URL 成为逃生阀
   let isLocalPublic = false;
   try {

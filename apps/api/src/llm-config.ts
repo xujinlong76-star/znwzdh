@@ -873,7 +873,15 @@ export interface LlmTestResult {
 
 /**
  * 用候选配置发一次最小请求。
- * 未填密钥时按作用域取已存密钥（用户 → 系统 → 环境），便于「只改地址先测」。
+ *
+ * ⚠️ 安全边界（2026-11-06 深扫 P0）：**不得回退任何已存密钥**。
+ * 旧实现「未填密钥 → 用户级已存 → 系统级已存 → 环境变量」让 public 路由
+ * `/api/user/ai/config/test` 的匿名访客只需省略 apiKey、把 baseUrl 指向自己的
+ * 公网服务器，就能让服务端把系统 LLM Key 以 `Authorization: Bearer` 发出去
+ * （assertLlmEndpoint 只拦私网，拦不住凭据外带；密钥加密落库在出库这一刻失效）。
+ * 现在连通性测试必须显式携带待测试的 apiKey；只想测「已保存配置」请走正式保存接口
+ * 再测，或由调用方自己取出密钥显式传入（服务端不代劳解密）。
+ * 本地 Ollama 等 allowPrivate 端点本就无需密钥，保持可用。
  */
 export async function testLlmProvider(
   ctx: AppContext,
@@ -883,19 +891,17 @@ export async function testLlmProvider(
   const allowPrivate = input.allowPrivateNetwork === true;
   await assertLlmEndpoint(input.baseUrl, allowPrivate);
 
-  let apiKey = typeof input.apiKey === "string" && input.apiKey.trim() ? input.apiKey.trim() : null;
-  if (!apiKey && identity) {
-    const user = await readStoredUser(ctx, identity);
-    if (user) apiKey = await openKey(ctx, user.apiKeyEnc);
-  }
-  if (!apiKey) {
-    const system = await readStoredSystem(ctx);
-    if (system) apiKey = await openKey(ctx, system.apiKeyEnc);
-  }
-  if (!apiKey) apiKey = ctx.config.llm.apiKey;
+  const apiKey = typeof input.apiKey === "string" && input.apiKey.trim() ? input.apiKey.trim() : null;
 
   if (!apiKey && !allowPrivate) {
-    return { ok: false, latencyMs: 0, model: input.model, replyPreview: "", error: "尚未配置 API 密钥", code: "config" };
+    return {
+      ok: false,
+      latencyMs: 0,
+      model: input.model,
+      replyPreview: "",
+      error: "连通性测试必须显式提供待测试的 API 密钥（不会使用已保存的配置）",
+      code: "config",
+    };
   }
 
   const startedAt = Date.now();

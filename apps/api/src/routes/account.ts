@@ -135,16 +135,28 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         password: body.data.password,
       });
       if (!result.ok) {
-        // 不区分「用户名已存在」与「邮箱已存在」的具体原因给前端，
-        // 但保留可读提示；前端据此引导用户。
+        // 账号枚举防护（2026-11-06 深扫 S-6）：
+        // 「该用户名已被占用」/「该邮箱已注册」是精确的账号存在性 oracle，
+        // 与同文件 forgot-password/resend 刻意做的防枚举自相矛盾。
+        // 现在所有「已存在」类冲突统一回同一文案；真实原因只写审计，不回前端。
+        // 格式类错误（invalid_*）不涉及账号存在性，保留具体提示以引导用户修正输入。
+        const taken = result.reason === "username_taken" || result.reason === "email_taken";
         const messages: Record<string, string> = {
-          username_taken: "该用户名已被占用",
-          email_taken: "该邮箱已注册",
           invalid_username: "用户名不合法",
           invalid_email: "邮箱格式不正确",
           invalid_password: "密码不符合要求",
         };
         reply.code(409);
+        if (taken) {
+          await ctx.repo.audit({
+            actor: "anonymous",
+            actorKind: "anonymous",
+            action: "account.register_conflict",
+            target: email,
+            diff: { reason: result.reason },
+          }).catch(() => undefined);
+          return { error: "该标识不可用，请更换或直接登录 / 找回密码" };
+        }
         return { error: messages[result.reason] ?? "注册失败" };
       }
 
@@ -399,7 +411,11 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       reply.code(400);
       return { error: "缺少 email" };
     }
-    const user = await ctx.repo.findUserByEmail(email);
-    return { ok: true, email, verified: Boolean(user?.emailVerified), registered: Boolean(user) };
+    // 账号枚举防护（2026-11-06 深扫 S-6）：
+    // 旧实现返回 verified / registered 两个布尔，是精确的账号存在性 + 验证状态
+    // oracle（60 次/小时仍可批量枚举，且 verified 便于定向钓鱼/撞库）。
+    // 这是 public 路由，任何人都能查任意邮箱。改为恒定响应：不查库、不泄露任何状态。
+    // 「我的邮箱验证状态」应走登录会话内的 /api/me/* 私有接口，不在这个匿名端点。
+    return { ok: true };
   });
 };

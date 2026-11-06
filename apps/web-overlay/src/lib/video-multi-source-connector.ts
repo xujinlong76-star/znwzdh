@@ -11,7 +11,20 @@ import {
   type AIEvaluationResult,
   type AISanitizedCourse,
 } from '@/lib/video-autonomous-ai-harvester'
-import { verifyHmacSha256 } from '@/lib/webhook-signature'
+import {
+  verifyHmacSha256,
+  verifyHmacSha256WithTimestamp,
+  createReplayGuard,
+  WEBHOOK_TIMESTAMP_TOLERANCE_SEC,
+} from '@/lib/webhook-signature'
+
+/**
+ * 重放去重守卫（进程内）。
+ * TTL 取 2× 时间容差：签名在窗口内可能被接受，超过窗口的重复请求本就会因 stale 被拒，
+ * 所以缓存只需覆盖窗口长度即可，留一倍余量应对边界。
+ * 多副本部署时每副本各挡一次（严格跨副本去重需共享存储，见 ADR-0001）。
+ */
+const webhookReplayGuard = createReplayGuard(WEBHOOK_TIMESTAMP_TOLERANCE_SEC * 2 * 1000)
 import { calculateFreshnessScore } from '@/lib/video-scoring'
 import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
 import { enrichVideoItemSeo } from '@/lib/video-seo'
@@ -215,14 +228,35 @@ export class MultiSourceConnector {
   processWebhook(
     payload: WebhookPayload,
     signature?: string,
-    rawBody?: string
+    rawBody?: string,
+    /** v2 时间戳头（秒级 Unix 时间戳）；提供时走「时间窗口 + 重放去重」校验 */
+    timestampHeader?: string,
   ): { ok: boolean; message: string; subItem?: NavigationSubItem; evaluation?: AIEvaluationResult } {
     if (!this.webhookSecret) {
       return { ok: false, message: 'Webhook 未配置密钥（NAVHUB_VIDEO_WEBHOOK_SECRET），已拒绝请求' }
     }
 
     const signingInput = rawBody ?? JSON.stringify(payload)
-    if (!verifyWebhookSignature(signingInput, signature ?? '', this.webhookSecret)) {
+
+    // 2026-11-06 深扫 P2-11：有 ts 头就走 v2（时间窗口 + 去重），否则退回 v1。
+    // 为什么保留 v1：现网发送方未必都升级；但**v1 没有重放保护**，所以只要发送方
+    // 带了 ts 头就按 v2 严格校验——剥掉 ts 头退回 v1 会因载荷不同而验签失败。
+    if (timestampHeader) {
+      const replay = verifyHmacSha256WithTimestamp(
+        signingInput,
+        signature ?? '',
+        this.webhookSecret,
+        timestampHeader,
+      )
+      if (!replay.ok) {
+        return { ok: false, message: `Webhook 签名验证失败（${replay.reason}），拒绝请求` }
+      }
+      // 去重键 = 时间戳 + 签名：同一请求重放时两者完全相同
+      const replayKey = `${timestampHeader}.${signature ?? ''}`
+      if (!webhookReplayGuard.check(replayKey)) {
+        return { ok: false, message: 'Webhook 重放被拒（同一签名在容差窗口内重复出现）' }
+      }
+    } else if (!verifyWebhookSignature(signingInput, signature ?? '', this.webhookSecret)) {
       return { ok: false, message: 'Webhook HMAC 签名验证失败，拒绝请求' }
     }
 

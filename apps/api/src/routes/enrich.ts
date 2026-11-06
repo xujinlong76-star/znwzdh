@@ -6,6 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
+import { INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
 import { httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
@@ -90,6 +91,9 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       // 额度到顶：只用抓取，不碰模型（也就不再产生花费）
       heuristicOnly: budget.llmBlocked,
       onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
+      // P2-4：端到端预算，与 copilot / ai-config 同口径（INTERACTIVE_LLM_BUDGET_MS）。
+      // 主模型 + 备用池 + 2 次重试叠加曾可达数分钟，用户关页后上游仍在计费。
+      deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
     }).finally(() => settleLlmQuota(ctx, budget.hold));
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
     await ctx.repo.recordEvent("enrich", { meta: { url: body.data.url, provenance: result.provenance } }).catch(() => undefined);
@@ -123,6 +127,7 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       knownCategories: categories.map((c) => c.title),
       heuristicOnly: budget.llmBlocked,
       onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
+      deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
     }).finally(() => settleLlmQuota(ctx, budget.hold));
 
     // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 落「未分类」并产类目缺口提案。

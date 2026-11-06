@@ -29,7 +29,7 @@
  *  5. 会话空闲超时自动回收，避免内存泄漏；请求体上限 1MB。
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { AppContext } from "@navhub/api";
 import { scopeSatisfies, hashToken, parseScopes } from "@navhub/api";
@@ -61,9 +61,40 @@ interface McpSession {
   transport: StreamableHTTPServerTransport;
   /** 会话建立时的身份（token 未变则后续请求复用；每请求仍会重新校验 token） */
   toolCtx: ToolContext;
+  /**
+   * 会话绑定（2026-11-06 深扫 S-3）：记录建会话时的 token 指纹 / scopes / ownerIdentity。
+   * 旧实现只校验「当前 token 有效」，一个持有**另一个有效只读 token** 的调用方，
+   * 只要拿到泄露的 Mcp-Session-Id，就能复用创建时带 write/admin 的 server
+   * （tools 清单与 requireScope 都闭包在旧 toolCtx 上），形成会话固定/权限提升。
+   */
+  binding: SessionBinding;
   lastSeen: number;
   /** 进行中的 GET SSE 流数量：有活跃流时不回收会话 */
   activeStreams: number;
+}
+
+interface SessionBinding {
+  /** sha256(bearer) —— 不存明文 token */
+  tokenHash: string;
+  /** 排序后的 scopes，避免集合顺序差异导致误判 */
+  scopesKey: string;
+  ownerIdentity: string | null;
+}
+
+/** 从 bearer 与 toolCtx 构造绑定；bearer 为空（insecure 调试模式）时用固定哨兵 */
+function makeBinding(bearer: string | null, toolCtx: ToolContext): SessionBinding {
+  const tokenHash = bearer
+    ? createHash("sha256").update(bearer, "utf8").digest("hex")
+    : "insecure-no-token";
+  return {
+    tokenHash,
+    scopesKey: [...toolCtx.scopes].sort().join(","),
+    ownerIdentity: toolCtx.ownerIdentity ?? null,
+  };
+}
+
+function bindingMatches(a: SessionBinding, b: SessionBinding): boolean {
+  return a.tokenHash === b.tokenHash && a.scopesKey === b.scopesKey && a.ownerIdentity === b.ownerIdentity;
 }
 
 function secureEqual(a: string, b: string): boolean {
@@ -97,6 +128,13 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
 
   const handlers = createHandlers(opts.ctx) as Record<string, (a: unknown, t: ToolContext) => Promise<unknown>>;
   const sessions = new Map<string, McpSession>();
+
+  /** 提取 Bearer 明文（仅用于计算会话绑定指纹，不落日志、不回响应） */
+  function bearerOf(req: IncomingMessage): string | null {
+    const header = req.headers.authorization ?? "";
+    const match = header.match(/^Bearer\s+(.+)$/i);
+    return match?.[1]?.trim() || null;
+  }
 
   async function auth(req: IncomingMessage): Promise<ToolContext | null> {
     // Origin 校验：浏览器跨站请求只在白名单内放行
@@ -193,6 +231,8 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
       res.setHeader("WWW-Authenticate", "Bearer");
       return send(401, { error: "未授权：需要有效的 Bearer token，且来源必须被允许" });
     }
+    // 本次请求的会话绑定（S-3）：token 指纹 + scopes + ownerIdentity。
+    const currentBinding = makeBinding(bearerOf(req), toolCtx);
 
     /* ---------------- 标准 MCP Streamable HTTP ---------------- */
 
@@ -206,6 +246,11 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
         // 服务端 -> 客户端 SSE 流：必须携带有效会话
         const session = sid ? sessions.get(sid) : undefined;
         if (!session) return rpcError(404, "Session not found");
+        // S-3：会话必须绑定当前调用方身份，否则销毁并拒绝（防会话固定/权限提升）
+        if (!bindingMatches(session.binding, currentBinding)) {
+          sessions.delete(sid!);
+          return rpcError(403, "Session identity mismatch：该会话属于另一个 token / scope / owner");
+        }
         session.lastSeen = Date.now();
         session.activeStreams++;
         res.once("close", () => {
@@ -218,6 +263,10 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
       if (req.method === "DELETE") {
         const session = sid ? sessions.get(sid) : undefined;
         if (!session) return rpcError(404, "Session not found");
+        if (!bindingMatches(session.binding, currentBinding)) {
+          sessions.delete(sid!);
+          return rpcError(403, "Session identity mismatch：无权结束该会话");
+        }
         sessions.delete(sid!);
         return await session.transport.handleRequest(req, res);
       }
@@ -235,6 +284,12 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
       if (sid) {
         const session = sessions.get(sid);
         if (!session) return rpcError(404, "Session not found（Mcp-Session-Id 无效或已过期）");
+        // S-3：即使当前 token 有效，若与建会话时的身份不一致（不同 token /
+        // 更窄 scopes / 不同 owner），也拒绝复用——闭包里的 toolCtx 仍带旧权限。
+        if (!bindingMatches(session.binding, currentBinding)) {
+          sessions.delete(sid!);
+          return rpcError(403, "Session identity mismatch：该会话属于另一个 token / scope / owner");
+        }
         session.lastSeen = Date.now();
         return await session.transport.handleRequest(req, res, parsed.body);
       }
@@ -249,7 +304,7 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
         enableJsonResponse: true,
         maxRequestBodySize: MAX_BODY_BYTES,
         onsessioninitialized: (sessionId) => {
-          sessions.set(sessionId, { transport, toolCtx, lastSeen: Date.now(), activeStreams: 0 });
+          sessions.set(sessionId, { transport, toolCtx, binding: currentBinding, lastSeen: Date.now(), activeStreams: 0 });
         },
       });
       // 注意：必须在 connect 之前挂 onclose——Protocol.connect 会把它串起来保留

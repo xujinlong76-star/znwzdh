@@ -136,6 +136,13 @@ services:
       # 否则中枢拒绝启动（fail-closed）。个人 / NAS 内网部署：设 NAVHUB_ALLOW_UNSIGNED_IDENTITY=1；
       # 公网部署请改用 NAVHUB_AUTH_REQUIRED=1 + ≥32 字符密钥（推荐）。
       NAVHUB_ALLOW_UNSIGNED_IDENTITY: ${NAVHUB_ALLOW_UNSIGNED_IDENTITY:-0}
+      # 身份签名严格模式（2026-11-06 深扫 C-1）：旧版本 .env.example / compose / parity-test
+      # 三处都没有这个变量，容器里运维没有任何开关能开启 v2-only；v1 可被剥头降级重放。
+      # 三个服务必须同值，由 compose-env-parity.test.ts 断言。
+      NAVHUB_IDENTITY_SIGNATURE_STRICT: ${NAVHUB_IDENTITY_SIGNATURE_STRICT:-0}
+      # 定时采集 cron 端点凭据（C-4）：cron-auth.ts 未配置即 503 fail-closed，
+      # 与 .github/workflows/video-harvest.yml 的 secrets.CRON_SECRET 必须同值。
+      CRON_SECRET: ${CRON_SECRET:-}
       # 限流豁免凭据（与 web 服务必须同值；留空 = 零豁免，行为同历史）。
       # 见 .env.example 与 docs/seo/ISR-ROUTES.md 5.9：不带它时 web 层 SSR 取数与访客抢同一个 300/min 桶。
       NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
@@ -220,6 +227,9 @@ services:
       # 与 api 服务同值：web 层服务端取数（lib/server/hub.ts）靠它豁免按 IP 的限流。
       # 注意：只给服务端直连用；浏览器侧 /api/hub/* 代理带上它等于把全站访客标成内部流量。
       NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
+      # 与 api / api-standard 同值（C-1 / C-4）：web 侧 BFF 代理与 cron 路由都要读。
+      NAVHUB_IDENTITY_SIGNATURE_STRICT: ${NAVHUB_IDENTITY_SIGNATURE_STRICT:-0}
+      CRON_SECRET: ${CRON_SECRET:-}
       # B 站高清解析（/api/videos/bili-parse）：操作者自己的 access_key，用于第三方解析站
       # 解锁大会员画质。以前 compose 完全没透传 → 容器里这条能力恒关，界面上那个密钥输入框骗人。
       # 只透传不兜底：这是凭据，写死默认值等于把部署者的 B 站账号公开。
@@ -322,6 +332,9 @@ services:
       # 与 api 同一道生产身份签名总闸（语义见 api 服务）；standard 模式漏透传
       # 会导致内网开放模式无法显式 opt-out，只能改 compose 本身。
       NAVHUB_ALLOW_UNSIGNED_IDENTITY: ${NAVHUB_ALLOW_UNSIGNED_IDENTITY:-0}
+      # 与 api 同值（C-1 严格签名模式 / C-4 cron 凭据）
+      NAVHUB_IDENTITY_SIGNATURE_STRICT: ${NAVHUB_IDENTITY_SIGNATURE_STRICT:-0}
+      CRON_SECRET: ${CRON_SECRET:-}
       # 限流豁免凭据（standard 模式同样要有，否则 web 侧 SSR 取数会撞 300/min 桶）
       NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
       NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-http://localhost:8788}

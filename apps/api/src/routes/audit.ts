@@ -60,11 +60,21 @@ export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         `attachment; filename="navhub-audit-${Date.now()}.json"`
       );
 
+      // 2026-11-06 深扫 P2-2：导出上限 5000 条但旧响应只给 hasMore，调用方
+      // 无法判断「这份归档是否完整」，也没法续传。补 truncated / nextOffset /
+      // totalHint 三个字段（纯新增，不破坏既有消费方）；合规归档必须能察觉截断。
+      const truncated = Boolean(data.hasMore);
       return {
         exportedAt: Date.now(),
         hasMore: data.hasMore,
+        truncated,
+        nextOffset: truncated ? data.items.length : null,
         count: data.items.length,
+        limit,
         items: data.items,
+        ...(truncated
+          ? { notice: `导出已截断（上限 ${limit} 条）：请用 /api/admin/audit?offset=${data.items.length} 续取，或缩小 action/actor 过滤条件` }
+          : {}),
       };
     }
   );

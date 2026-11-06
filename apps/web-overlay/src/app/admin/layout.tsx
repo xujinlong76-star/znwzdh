@@ -19,6 +19,12 @@ export async function generateMetadata(): Promise<Metadata> {
       template: '%s · 管理后台',
     },
     description: '管理后台：站点、分类、标签、资源、审计与运维',
+    // 后台必须自行退出索引（2026-11-06 深扫 F-4）。
+    // robots.ts 只写了 `Disallow: /admin`，而按爬虫规范 Disallow 只阻止抓取、
+    // **不阻止收录**：如果 URL 从外部被链接过，仍可能以「无 description 的空结果」
+    // 出现在 SERP。必须同时下发 noindex。项目内 auth / me / favorites / preferences
+    // 四个 layout 都已有这一行，这里是遗漏（22 个后台页共用一个 layout）。
+    robots: { index: false, follow: true },
     icons: {
       icon,
       shortcut: icon,

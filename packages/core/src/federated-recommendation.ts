@@ -8,13 +8,37 @@
  */
 
 /**
+ * Web Crypto 运行时探测（与 vault.ts 同款 shim）。
+ * 该 shim 与前端镜像逐字节一致（core-mirrors.json verbatim），故两处行为相同：
+ * Node 24 与浏览器都提供 globalThis.crypto.getRandomValues（CSPRNG），
+ * 不引入静态 node:crypto import（前端组件图会 +476KB 且撞 check-client-node-imports）。
+ */
+function getCrypto(): typeof globalThis.crypto {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto) return globalThis.crypto;
+  const maybeWindow = (globalThis as { window?: { crypto?: typeof globalThis.crypto } }).window;
+  if (maybeWindow?.crypto) return maybeWindow.crypto;
+  throw new Error('当前运行环境不支持 Web Cryptography API');
+}
+
+/**
+ * 从 CSPRNG 取一个 (0,1) 内的均匀随机数。
+ * Math.random 是 V8 的 xorshift128+（状态可观测/可预测），用于差分隐私会削弱
+ * 「个体不可重构」保证、让 privatizeVector 的输出可被反推（2026-11-06 深扫 P2-14）。
+ * 用 getRandomValues(Uint32) / 2^32 并钳住 0/1 端点。
+ */
+function secureUniform(): number {
+  const buf = new Uint32Array(1);
+  getCrypto().getRandomValues(buf);
+  return (buf[0]! + 0.5) / 4294967296; // 落在 (0,1)，避开 log(1)/log(0)
+}
+
+/**
  * 从拉普拉斯分布 Lap(0, b) 采样噪声
  * 其中 b = sensitivity / epsilon
  */
 export function sampleLaplace(b: number): number {
   if (b <= 0) return 0;
-  const u = Math.random() - 0.5;
-  // 避免正好为 0 导致 log(1)
+  const u = secureUniform() - 0.5;
   if (u === 0) return 0;
   return -b * Math.sign(u) * Math.log(1 - 2 * Math.abs(u));
 }

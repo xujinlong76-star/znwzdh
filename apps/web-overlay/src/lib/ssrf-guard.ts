@@ -43,13 +43,24 @@ export class SsrfBlockedError extends Error {
 
 export const ALLOWED_PROTOCOLS = new Set(['http:', 'https:'])
 
-/** 明确拒绝的高危内网服务端口（与 packages/ai/src/ssrf.ts 保持一致） */
+/**
+ * 明确拒绝的高危内网服务端口。
+ *
+ * 2026-11-06 深扫 P2-2：本表此前与 packages/ai/src/ssrf.ts 各维护一份，
+ * 口径已漂移（40 vs 37，仅 28 共有）——同一个 URL 在两套实现里可能得到相反判定。
+ * 现两侧统一为 packages/core/src/ssrf-ports.ts 的 BLOCKED_PORTS_UNION（并集 48 个）。
+ *
+ * 为什么这里是**数值副本**而不是 `import from "@navhub/core"`：
+ * apps/web 是 vendored 底座、不在 pnpm workspace 内，Next 构建期无法解析 @navhub/core
+ * （vitest 有别名，但 next build 没有）。所以必须复制；一致性由
+ * apps/web/test/ssrf-ports-drift.test.ts 守住（它会比对两侧与 core 的三方一致）。
+ */
 export const BLOCKED_PORTS = new Set([
-  21, 22, 23, 25, 110, 111, 135, 139, 143, 445, 512, 513, 514,
-  1433, 1521, 2049, 2375, 2376, 2379, 2380,
-  3306, 3389, 4222, 5432, 5672, 5900, 5984,
-  6379, 6443, 7000, 7001, 9042, 9200, 9300,
-  10250, 10255, 11211, 27017, 27018, 27019,
+  21, 22, 23, 25, 110, 111, 135, 139, 143, 445,
+  512, 513, 514, 1433, 1521, 2049, 2181, 2375, 2376, 2379,
+  2380, 3306, 3389, 4222, 5432, 5601, 5672, 5900, 5984, 6379,
+  6380, 6443, 7000, 7001, 7002, 8086, 8500, 8600, 9042, 9092,
+  9200, 9300, 10250, 10255, 11211, 15672, 27017, 27018, 27019,
 ])
 
 export function assertUrlShape(url: URL): void {
@@ -246,6 +257,13 @@ export async function guardedFetch(
 ): Promise<GuardedFetchResult> {
   const opts = { ...DEFAULT_GUARD, ...options }
   let current = new URL(rawUrl)
+  // 跨源重定向要剥离敏感头（P2-3，2026-11-06 深扫）。
+  // 旧实现每一跳都用同一份 init.headers 重建，若调用方传了 Authorization/Cookie，
+  // 白名单域名的一个 302 就能把它们带到第三方/内网。packages/ai/src/ssrf.ts 早已
+  // 逐跳剥离，此处与它对齐（parity 测试会锁两侧行为一致）。
+  const SENSITIVE_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization'])
+  let carriedHeaders: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) }
+  let prevOrigin = current.origin
   for (let hop = 0; hop <= opts.maxRedirects; hop++) {
     const resolvedIps = await resolveAndCheckAddresses(current, opts)
     const rawHost = current.hostname.replace(/^\[|\]$/g, '')
@@ -257,7 +275,7 @@ export async function guardedFetch(
     let fetchTarget = current.toString()
     const headers: Record<string, string> = {
       'User-Agent': opts.userAgent,
-      ...(init.headers as Record<string, string> | undefined),
+      ...carriedHeaders,
     }
     if (!isLiteralIp && current.protocol === 'http:' && resolvedIps[0]) {
       const pinned = new URL(current.toString())
@@ -285,7 +303,17 @@ export async function guardedFetch(
       if (!location) return { response, finalUrl: current.toString() }
       // 释放中间响应体，避免长连接一直挂在连接池里
       await response.body?.cancel().catch(() => { /* 连接已断开时忽略 */ })
-      current = new URL(location, current)
+      const next = new URL(location, current)
+      // 跨源跳转：剥离敏感头，后续跳不再携带（同源跳转保留，避免打断正常鉴权流）
+      if (next.origin !== prevOrigin) {
+        const nextHeaders: Record<string, string> = {}
+        for (const [k, v] of Object.entries(carriedHeaders)) {
+          if (!SENSITIVE_HEADERS.has(k.toLowerCase())) nextHeaders[k] = v
+        }
+        carriedHeaders = nextHeaders
+      }
+      prevOrigin = next.origin
+      current = next
       continue
     }
     // 体积限制：读前先看 Content-Length，读完再截断一次

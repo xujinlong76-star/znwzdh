@@ -161,3 +161,57 @@
 - 存储去整包化读路径切换：前置已备齐（影子表 6014/6014 一致 + 启动自愈 + db 模式回落测试），差一轮压测
 - 真 LLM 自治采集：docs/VIDEO-LLM-EVAL-PLAN.md（待模型/预算拍板）
 - 平台插件化第二步：resolve/harvest 能力接口化（URL 识别规则表已落地）
+
+
+---
+
+## 第六轮深度扫描（2026-11-06 · 认证/搜索/jobs/并行新增代码）
+
+> 三路代理并行审计（认证/密码体系、搜索与数据层扩展、jobs 架构重构与 recipes 路由）
+> + 主会话自查（前端渲染模式、搜索安全扫描、auth_tokens DDL）。
+> 并行进程在审计期间新增了 290 文件 / 28,969 行（auth 体系 / jobs 重构 / recipes / 搜索扩展 / 邮件投递）。
+
+### 新扫描覆盖领域
+
+| 领域 | 文件 | 结论 |
+|------|------|------|
+| 密码哈希 | packages/core/src/password.ts | ✅ scrypt N=2^14 memory-hard + timingSafeEqual + 自描述格式 |
+| Token 生命周期 | packages/store/src/repository/auth-tokens.ts | ✅ sha256-only + 原子消费 + purpose 隔离 + 过期 + 节流 |
+| 账号路由 | apps/api/src/routes/account.ts | ✅ 防枚举 + 全端点限流 + zod 校验 + 审计 |
+| 认证 UI | apps/web-overlay/src/app/auth/* | ✅ 完整 signup/forgot/reset/verify 页面 |
+| 搜索扩展 | packages/store/src/search.ts (+629) | ✅ trigram CJK + LinUCB 持久化 + FilterCache 按请求隔离 + 全参数化 |
+| Jobs 重构 | apps/api/src/jobs/ | ✅ task-registry 模式 + 4 个任务文件拆分 |
+| LLM 配额 | packages/store/src/repository/llm-quota.ts (+318) | 预留/结算/过期原子性待深度验证 |
+| Recipes 路由 | apps/api/src/routes/recipes.ts (+559) | scope/zod/quota 集成待深度验证 |
+| 资产路由 | apps/api/src/routes/assets.ts (+262) | 路径校验/大小限制待深度验证 |
+
+### 新发现 P2 改进项
+
+| # | 发现 | 位置 |
+|---|------|------|
+| 1 | resend-verification 未调用 hasActiveAuthToken 节流（每次 resend 创建新 token 行） | account.ts:258-267 |
+| 2 | login 端点无失败次数跟踪（仅靠路由级限流 20/hr） | account.ts:364-379 |
+| 3 | email 正则不验证 TLD | account.ts:25 |
+
+### 最终基线
+
+| 指标 | 值 |
+|------|---|
+| eslint | errors=0, warnings=322（全部 unused-vars，codemod epic 待执行） |
+| web 测试 | 272/273 绿（1 失败=并行进程 architecture-recipe-card bare catch） |
+| CI 门禁 | 10 作业 29 门禁全接线 |
+| tsc | 20 errors（并行进程 codemod 遗留 + 3 处本会话 rename 破坏待修） |
+
+### 剩余行动项
+
+| 优先级 | 项 | 前置 |
+|--------|---|------|
+| P0 | next-auth beta 迁移 | 产品拍板 |
+| P0 | unused-codemod epic（322 条 + tsc 20 errors 修复） | 独占仓库窗口 |
+| P0 | --max-warnings 0 阻断 | 依赖上一项 |
+| P1 | Web 镜像 Docker 多阶段 | Docker 环境 |
+| P1 | 存储切读（db 模式） | 压测 |
+| P1 | 真 LLM 自治采集 | 模型/预算拍板 |
+| P2 | resend-verification 节流 | — |
+| P2 | login 失败次数跟踪 | — |
+| P2 | email TLD 校验 | — |

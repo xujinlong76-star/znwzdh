@@ -58,10 +58,6 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }
 
     const normKey = q.toLowerCase();
-    const cached = dynamicRecipeCache.get(normKey);
-    if (cached) {
-      return { item: cached, items: [cached], aiGenerated: true, cached: true };
-    }
 
     // 当查询长度 >= 2 且配置了有效 AI 密钥时，结合馆藏检索动态合成场景工作流配方
     const llm = await resolveLlm(ctx);
@@ -93,6 +89,15 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         .slice(0, 8)
         .map((c) => `- [id:${c.id}] ${c.title} (${c.url}): ${c.description.slice(0, 45)}`)
         .join("\n");
+
+      // 判据必须带上这次召回到的候选：配方里的 recommended.id/title/url 全部是从这批
+      // 站点里挑出来的，只按 q 缓存会让馆藏变动之后继续供着旧候选集的配方。
+      // q 的大小写归一保留在 key 前缀里，候选指纹只负责「同一批候选」这一件事。
+      const cacheKey = `recipe:${normKey}::${createHash("sha256").update(candidateContext).digest("hex").slice(0, 32)}`;
+      const cached = dynamicRecipeCache.get(cacheKey);
+      if (cached) {
+        return { item: cached, items: [cached], aiGenerated: true, cached: true };
+      }
 
       const prompt = `你是全球顶尖的场景化工具链架构师。用户搜索场景需求：「${q}」。
 请结合以下站内工具，定制一套包含 3 个阶段的精炼「场景工作流配方 (ArchitectureRecipe)」。
@@ -153,7 +158,7 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
           const oldest = dynamicRecipeCache.keys().next().value;
           if (oldest) dynamicRecipeCache.delete(oldest);
         }
-        dynamicRecipeCache.set(normKey, parsed);
+        dynamicRecipeCache.set(cacheKey, parsed);
         return { item: parsed, items: [parsed], aiGenerated: true };
       }
     } catch (err) {
@@ -190,11 +195,8 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
       return { ok: false, matrix: null };
     }
 
-    const cacheKey = [rawA.toLowerCase(), rawB.toLowerCase()].sort().join("__vs__");
-    const cached = dynamicComparisonCache.get(cacheKey);
-    if (cached) {
-      return { ok: true, matrix: cached, aiGenerated: true, cached: true };
-    }
+    // 双向共用一条：[a,b] 排序后拼 key，"A vs B" 与 "B vs A" 命中同一份矩阵
+    const pairKey = [rawA.toLowerCase(), rawB.toLowerCase()].sort().join("__vs__");
 
     const llm = await resolveLlm(ctx);
     if (!llm.provider.apiKey) {
@@ -218,6 +220,18 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
       const infoB = hitB
         ? `${hitB.title} (${hitB.url}): ${hitB.description || ""}`
         : rawB;
+
+      // 判据必须带上两侧的参考条目：矩阵里的品类/定价/优劣都是从这两条站点记录展开的。
+      // 只按工具名缓存，站点被富化改写、或检索开始命中另一个同名工具之后，
+      // 旧矩阵会继续供着已经不成立的对比。排序后取指纹，保住 A/B 对称性。
+      const cacheKey = `${pairKey}::${createHash("sha256")
+        .update([infoA, infoB].sort().join("\u0000"))
+        .digest("hex")
+        .slice(0, 32)}`;
+      const cached = dynamicComparisonCache.get(cacheKey);
+      if (cached) {
+        return { ok: true, matrix: cached, aiGenerated: true, cached: true };
+      }
 
       const prompt = `你是工具选型评测专家。请针对「${rawA}」与「${rawB}」进行精炼并排对比：
 - A参考: ${infoA}
@@ -272,7 +286,7 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
       }
 
       if (parsed && parsed.itemA && parsed.itemB && Array.isArray(parsed.dimensions)) {
-        parsed.id = parsed.id || cacheKey;
+        parsed.id = parsed.id || pairKey;
         if (dynamicComparisonCache.size >= 100) {
           const oldest = dynamicComparisonCache.keys().next().value;
           if (oldest) dynamicComparisonCache.delete(oldest);

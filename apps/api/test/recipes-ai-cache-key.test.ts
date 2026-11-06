@@ -1,7 +1,10 @@
 /**
- * recipes 域两个 AI 内存缓存的判据测试（`POST /api/recipes/scaffold`、`GET /api/intent/action`）。
+ * recipes 域四个 AI 内存缓存的判据测试（`GET /api/recipes`、`GET /api/comparisons`、
+ * `POST /api/recipes/scaffold`、`GET /api/intent/action`）。
  *
- * 两处原本是「拿别人的请求体当自己的键」：
+ * 四处原本是「拿请求体的一部分当整段提示词的键」：
+ *  - recipes 只用查询词，而配方条目是从这次召回到的候选里挑的；
+ *  - comparisons 只用两侧工具名，而矩阵是从两侧站点记录展开的；
  *  - scaffold 的 key 只含配方标题与工具名，`targetGoal` 与各层描述/网址不进 key，
  *    同标题换个目标场景就会命中前一个人的脚手架；
  *  - intent 的 key 只是查询词，而结论同时取决于这次召回到的候选工具，
@@ -29,13 +32,14 @@ function stubLlm() {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     // 非模型端点一律就地回空，绝不 fall through 到真实网络：
-    // 桩域名解析不出去，一旦 fall through 就变成「看机器当天快不快」的偶发失败。
+    // 真发一次就取决于当天网络，测试结果也跟着抖。
     if (!url.includes("/chat/completions")) {
       return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     const n = generations.length + 1;
     generations.push(n);
-    // 两种场景共用一个壳：scaffold 读 envTemplate，intent 读 steps[0]，都带上第几次生成。
+    // 四个场景共用一个壳：scaffold 读 envTemplate、intent 读 steps[0]、
+    // recipes 读 title、comparisons 读 verdict，都带上第几次生成。
     // steps 不带数字序号——序号是否被剥掉属展示层口径，本测试只验缓存判据。
     const content = JSON.stringify({
       recipeType: "coding_tech",
@@ -48,6 +52,12 @@ function stubLlm() {
       steps: [`第${n}次第一步`, "第二步", "第三步"],
       proTip: "p",
       alternativeTool: { title: "声纹切分测试工具", reason: "开源" },
+      title: `第${n}次生成的配方`,
+      layers: [{ layerName: "L1", recommended: { title: "声纹切分测试工具", url: "https://voice-cut.example.com" } }],
+      verdict: `第${n}次选型结论`,
+      itemA: { name: "甲", primaryPros: ["p"], tradeoffs: ["t"], bestFor: "b" },
+      itemB: { name: "乙", primaryPros: ["p"], tradeoffs: ["t"], bestFor: "b" },
+      dimensions: [{ dimName: "核心能力", valueA: "a", valueB: "b", winner: "TIE" }],
     });
     return new Response(
       JSON.stringify({ model: "cache-test-model", choices: [{ message: { role: "assistant", content } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
@@ -199,6 +209,125 @@ describe("GET /api/intent/action 缓存判据", () => {
       // 失效是一次性重算，不是打穿缓存
       const third = await app.inject({ method: "GET", url: `/api/intent/action?q=${encodeURIComponent(Q)}` });
       expect(third.json().cached).toBe(true);
+      expect(generations).toHaveLength(2);
+    } finally {
+      restore();
+      await ctx.repo.deleteSite(id);
+    }
+  });
+});
+
+/**
+ * `/api/recipes` 与 `/api/comparisons` 的两个更早落地的内存缓存：
+ * key 只含查询词（或两侧工具名），而提示词还吃了这次召回到的站点记录。
+ * 站点被富化改写、下架或检索改指另一个同名工具之后，缓存里的 recommended.id
+ * 与对比条目就指向了已经不成立的对象。
+ */
+describe("GET /api/recipes 缓存判据", () => {
+  const Q = "缓存判据专用场景甲";
+
+  async function seedCorpus(marker: string) {
+    const created = await ctx.repo.createSite({
+      url: `https://recipe-${marker}.example.com`,
+      title: Q,
+      description: `初版描述：这套馆藏只有一条候选（${marker}）`,
+      categoryId: "cat-intent",
+    });
+    return String(created.id);
+  }
+
+  const get = () => app.inject({ method: "GET", url: `/api/recipes?q=${encodeURIComponent(Q)}` });
+
+  it("同一查询与同一候选集命中缓存，不再打模型", async () => {
+    const id = await seedCorpus("hit");
+    const restore = stubLlm();
+    try {
+      const first = await get();
+      expect(first.statusCode, first.body).toBe(200);
+      expect(first.json().cached).toBeUndefined();
+      expect(first.json().item?.title).toBe("第1次生成的配方");
+      expect(generations).toHaveLength(1);
+
+      const second = await get();
+      expect(second.json().cached).toBe(true);
+      expect(second.json().item?.title).toBe("第1次生成的配方");
+      expect(generations).toHaveLength(1);
+    } finally {
+      restore();
+      await ctx.repo.deleteSite(id);
+    }
+  });
+
+  it("候选站点描述变了不再命中：配方里的工具条目就是从这批候选挑的", async () => {
+    const id = await seedCorpus("drift");
+    const restore = stubLlm();
+    try {
+      expect((await get()).json().item?.title).toBe("第1次生成的配方");
+
+      await ctx.repo.updateSite(id, { description: "改版描述：换了定价与主推能力" });
+      const after = await get();
+      expect(after.json().cached).toBeUndefined();
+      expect(after.json().item?.title).toBe("第2次生成的配方");
+      expect(generations).toHaveLength(2);
+
+      // 一次性重算，不是此后每次都打模型
+      expect((await get()).json().cached).toBe(true);
+      expect(generations).toHaveLength(2);
+    } finally {
+      restore();
+      await ctx.repo.deleteSite(id);
+    }
+  });
+});
+
+describe("GET /api/comparisons 缓存判据", () => {
+  const A = "缓存判据甲工具";
+  const B = "缓存判据乙工具";
+  const get = (q: string) => app.inject({ method: "GET", url: `/api/comparisons?q=${encodeURIComponent(q)}` });
+
+  async function seedLeft(marker: string) {
+    const created = await ctx.repo.createSite({
+      url: `https://cmp-${marker}.example.com`,
+      title: A,
+      description: `初版描述：甲工具的真实馆藏条目（${marker}）`,
+      categoryId: "cat-intent",
+    });
+    return String(created.id);
+  }
+
+  it("A vs B 与 B vs A 共用一条，第二次不再打模型", async () => {
+    const id = await seedLeft("sym");
+    const restore = stubLlm();
+    try {
+      const first = await get(`${A} vs ${B}`);
+      expect(first.statusCode, first.body).toBe(200);
+      expect(first.json().matrix?.verdict).toBe("第1次选型结论");
+      expect(generations).toHaveLength(1);
+
+      // 换序：同一对工具，同一个结论——旧 key 靠名字排序保证这一点，改造后必须仍然成立
+      const flipped = await get(`${B} vs ${A}`);
+      expect(flipped.json().cached).toBe(true);
+      expect(flipped.json().matrix?.verdict).toBe("第1次选型结论");
+      expect(generations).toHaveLength(1);
+    } finally {
+      restore();
+      await ctx.repo.deleteSite(id);
+    }
+  });
+
+  it("参考条目变了不再命中：矩阵是从两侧站点记录展开的", async () => {
+    const id = await seedLeft("drift");
+    const restore = stubLlm();
+    try {
+      expect((await get(`${A} vs ${B}`)).json().matrix?.verdict).toBe("第1次选型结论");
+
+      await ctx.repo.updateSite(id, { description: "改版描述：甲工具改成了订阅制" });
+      const after = await get(`${A} vs ${B}`);
+      expect(after.json().cached).toBeUndefined();
+      expect(after.json().matrix?.verdict).toBe("第2次选型结论");
+      expect(generations).toHaveLength(2);
+
+      expect((await get(`${A} vs ${B}`)).json().cached).toBe(true);
       expect(generations).toHaveLength(2);
     } finally {
       restore();

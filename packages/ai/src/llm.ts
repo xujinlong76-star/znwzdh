@@ -509,10 +509,10 @@ function buildBody(
     };
     body.chat_template_kwargs = { enable_thinking: true };
     // Agnes 等推理网关将 reasoning_tokens 计入 max_tokens 总上限；
-    // 当调用方指定了较小的输出配额（如 maxTokens: 500）时，需叠加 budget_tokens 作为总上限，
-    // 防止推理 token 耗尽全部 max_tokens 导致 content 为空（finish_reason="length"）。
+    // 即使传入较小的 budget_tokens，复杂 JSON 提示词下模型仍可能消耗数百至上千推理 token，
+    // 因此总 max_tokens 自动在输出配额之上预留 2048 推理冗余，彻底杜绝 content 截断。
     if (typeof maxTokens === "number" && maxTokens > 0) {
-      body.max_tokens = Math.min(maxTokens + budgetTokens, 65_536);
+      body.max_tokens = Math.min(maxTokens + Math.max(budgetTokens, 2048), 65_536);
     }
   }
   return body;

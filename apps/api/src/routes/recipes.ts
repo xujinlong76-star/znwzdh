@@ -128,7 +128,7 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
         messages: [{ role: "user", content: prompt }],
         json: true,
         temperature: 0.2,
-        maxTokens: 900,
+        maxTokens: 2048,
       });
 
       let parsed: ArchitectureRecipe | null = null;
@@ -252,7 +252,7 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
         messages: [{ role: "user", content: prompt }],
         json: true,
         temperature: 0.2,
-        maxTokens: 850,
+        maxTokens: 2048,
       });
 
       let parsed: TechComparisonMatrix | null = null;

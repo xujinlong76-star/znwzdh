@@ -4,6 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync } from "fastify";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   analyzeStackCompatibility,
@@ -571,7 +572,13 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
       }
 
       const { recipeTitle, targetGoal, layers } = body.data;
-      const cacheKey = `${recipeTitle.trim().toLowerCase()}::${layers.map((l) => l.recommended.title).join("+")}`;
+      // key 必须覆盖整段提示词的输入：旧 key 只含配方标题与工具名，
+      // 同一个标题换个目标场景（或工具描述被改）就会命中别人那一份脚手架，
+      // 而且返回的是与本次提问无关的 envTemplate/SOP——这是答非所问，不是「缓存加速」。
+      const cacheKey = `scaffold:${createHash("sha256")
+        .update(JSON.stringify([recipeTitle, targetGoal, layers]))
+        .digest("hex")
+        .slice(0, 32)}`;
       const cached = dynamicScaffoldCache.get(cacheKey);
       if (cached) {
         return { ok: true, cached: true, ...cached };
@@ -655,6 +662,10 @@ ${toolSummary}
           model: res.model,
         };
 
+        if (dynamicScaffoldCache.size >= 100) {
+          const oldest = dynamicScaffoldCache.keys().next().value;
+          if (oldest) dynamicScaffoldCache.delete(oldest);
+        }
         dynamicScaffoldCache.set(cacheKey, result);
         return { ok: true, cached: false, ...result };
       } catch (err: any) {
@@ -684,12 +695,6 @@ ${toolSummary}
         return { ok: false, isActionable: false, reason: "查询词过短" };
       }
 
-      const cacheKey = q.toLowerCase();
-      const cached = actionIntentCache.get(cacheKey);
-      if (cached) {
-        return { ok: true, cached: true, ...cached };
-      }
-
       // 召回站内候选站点
       const searchRes = await ctx.search.search({
         q,
@@ -708,12 +713,6 @@ ${toolSummary}
 
       if (candidateSites.length === 0) {
         return { ok: false, isActionable: false, reason: "候选站点无效" };
-      }
-
-      const llm = await resolveLlm(ctx);
-      if (!llm.provider.apiKey) {
-        reply.code(503);
-        return { ok: false, error: "AI 服务尚未就绪" };
       }
 
       const candidateContext = candidateSites
@@ -746,6 +745,21 @@ ${candidateContext}
     "reason": "备选理由（如：完全开源支持本地离线运行）"
   }
 }`;
+
+      // 命中判据取整段提示词：结论同时取决于用户提问与这次召回到的候选工具，
+      // 只按 q 缓存会让站内新增/改名/下架工具之后继续供着针对旧候选集的推荐，
+      // 而 primaryTool/alternativeTool 的标题必须能在当前候选里落地，否则点进去就是死链。
+      const cacheKey = `intent:${createHash("sha256").update(prompt).digest("hex").slice(0, 32)}`;
+      const cached = actionIntentCache.get(cacheKey);
+      if (cached) {
+        return { ok: true, cached: true, ...cached };
+      }
+
+      const llm = await resolveLlm(ctx);
+      if (!llm.provider.apiKey) {
+        reply.code(503);
+        return { ok: false, error: "AI 服务尚未就绪" };
+      }
 
       try {
         const res = await callLlm(ctx, llm, {
@@ -822,6 +836,10 @@ ${candidateContext}
           model: res.model,
         };
 
+        if (actionIntentCache.size >= 100) {
+          const oldest = actionIntentCache.keys().next().value;
+          if (oldest) actionIntentCache.delete(oldest);
+        }
         actionIntentCache.set(cacheKey, result);
         return { ok: true, cached: false, ...result };
       } catch (err: any) {

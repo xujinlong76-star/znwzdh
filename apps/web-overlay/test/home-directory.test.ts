@@ -59,4 +59,22 @@ describe("首页站内目录带（F1）", () => {
     expect(src).toContain('href="/tags"');
     expect(src).toContain("href={`/category/${encodeURIComponent(link.slug)}`}");
   });
+
+  /**
+   * 位置不变量（2026-11-07）：目录带排在分类正文之后。
+   *
+   * 上面五条断言只保证「链接还在 HTML 里」，不保证它占不占首屏。改版后首页
+   * 同时挂着顶栏 / 场景胶囊 / 直达轨 / 目录带 / 引导 / 展板六层，实测第一张
+   * 站点卡片要滚过一屏半才出现；而这一层又是全站权重最高的内链，删掉等于
+   * 把 F1 那次修复还回去。两头都要，所以把位置钉死：可以挪，不能挪回首屏。
+   */
+  it("目录带在分类正文之后：内链保留，但不占首屏", () => {
+    const src = overlayFile("src/components/navigation-content.tsx");
+    const sections = src.indexOf("<NavigationCategorySection");
+    const directory = src.indexOf('aria-labelledby="home-directory-title"');
+    expect(sections).toBeGreaterThan(-1);
+    expect(directory).toBeGreaterThan(sections);
+    // 首屏那一段（工具栏到展板之间）不该再出现目录带的任何标记
+    expect(src.slice(src.indexOf("<NavigationToolbar"), sections)).not.toContain("home-directory-title");
+  });
 });

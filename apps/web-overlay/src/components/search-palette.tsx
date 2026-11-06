@@ -47,7 +47,7 @@ import { spotlightHotkeyHint, useExternalLinkTarget, useUserPreferences } from '
 import { parseTechComparisonQuery } from '@/lib/comparison'
 import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
 import { SiteFavicon } from '@/components/site-favicon'
-import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
+import { isSafeHttpUrl, safeHref, } from '@/lib/safe-url'
 import { getModifierKey } from '@/lib/platform'
 
 
@@ -654,7 +654,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               <X className="h-3 w-3" />
             </Button>
           )}
-          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 sm:flex shadow-2xs" title={spotlightHotkeyHint(preferences.spotlightShortcut, modKey) + ' 呼出超级搜索'}>
+          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 sm:flex sm:pointer-coarse:hidden shadow-2xs" title={spotlightHotkeyHint(preferences.spotlightShortcut, modKey) + ' 呼出超级搜索'}>
             {/* 徽标必须与真正生效的呼出键一致：选了「仅 /」还显示 ⌘K 就是在骗用户 */}
             <span>{spotlightHotkeyHint(preferences.spotlightShortcut, modKey)}</span>
           </kbd>
@@ -1352,7 +1352,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               )}
               {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}
               {(hits.length > 0 || pluginItems.length > 0) && (
-                <div className="hidden sm:flex items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
+                <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
                     <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑</kbd>
                     <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↓</kbd>

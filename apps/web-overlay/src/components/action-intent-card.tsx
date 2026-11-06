@@ -6,11 +6,9 @@ import { safeHref } from '@/lib/safe-url'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
 import {
-  Sparkles,
   ExternalLink,
   CheckCircle2,
   AlertCircle,
-  ArrowRight,
   Workflow,
   Zap,
   Eye,

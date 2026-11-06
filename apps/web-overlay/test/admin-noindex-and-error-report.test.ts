@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readdirSync, statSync } from "node:fs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ADMIN_LAYOUT = readFileSync(resolve(ROOT, "src/app/admin/layout.tsx"), "utf8");
@@ -24,7 +25,6 @@ describe("后台必须自行退出索引（F-4）", () => {
   });
 
   it("与项目内其它已正确声明的 layout 口径一致（至少 4 处存在）", () => {
-    const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
     const walk = (d: string, acc: string[] = []): string[] => {
       for (const e of readdirSync(d)) {
         const p = resolve(d, e);

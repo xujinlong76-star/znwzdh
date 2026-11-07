@@ -25,6 +25,8 @@ import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
 import { SiteFavicon } from '@/components/site-favicon'
 import { EmptyState } from '@/components/ui/empty-state'
+import { useSiteViewModel } from '@/components/site-view-context'
+import { externalLinkRelAttr } from '@/lib/site-settings'
 
 export default function HotView({
   initialTrending = [],
@@ -35,6 +37,7 @@ export default function HotView({
   initialFresh?: HubSite[]
   degraded?: boolean
 }) {
+  const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
   const [trending, setTrending] = useState<HubSite[]>(initialTrending)
   const [fresh, setFresh] = useState<HubSite[]>(initialFresh)
   const [loading, setLoading] = useState(false)
@@ -163,7 +166,7 @@ export default function HotView({
             <div className="shrink-0 pt-0.5">
               {getRankBadge(i)}
             </div>
-            <a href={safeHref(site.url)} target="_blank" rel="noopener noreferrer" className="block min-w-0 flex-1">
+            <a href={safeHref(site.url)} target="_blank" rel={externalRel} className="block min-w-0 flex-1">
               <div className="flex items-start gap-2.5">
                 <div className="shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                   <SiteFavicon
@@ -211,7 +214,7 @@ export default function HotView({
             <a
               href={safeHref(site.url)}
               target="_blank"
-              rel="noopener noreferrer"
+              rel={externalRel}
               className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
               title="新窗口直达"
               aria-label={`访问 ${site.title}`}

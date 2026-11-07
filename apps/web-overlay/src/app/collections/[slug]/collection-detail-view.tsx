@@ -25,6 +25,8 @@ import { cn } from '@/lib/utils'
 import { useFavorites } from '@/hooks/useFavorites'
 import { copyText, copyFailureToast } from '@/lib/clipboard'
 import { useToast } from '@/components/ui/use-toast'
+import { useSiteViewModel } from '@/components/site-view-context'
+import { externalLinkRelAttr } from '@/lib/site-settings'
 
 export default function CollectionDetailView({
   slug,
@@ -35,6 +37,7 @@ export default function CollectionDetailView({
   initialCollection?: HubCollection | null
   initialSites?: HubCollectionDetailSite[]
 }) {
+  const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
   const favorites = useFavorites()
   const { toast } = useToast()
   const [collection, setCollection] = useState<HubCollection | null>(initialCollection)
@@ -547,7 +550,7 @@ ${items}
                                   <a
                                     href={safeHref(site.url)}
                                     target="_blank"
-                                    rel="noopener noreferrer"
+                                    rel={externalRel}
                                     className="text-sm font-semibold text-foreground hover:text-primary transition-colors truncate"
                                   >
                                     {site.title}
@@ -597,7 +600,7 @@ ${items}
                               <a
                                 href={safeHref(site.url)}
                                 target="_blank"
-                                rel="noopener noreferrer"
+                                rel={externalRel}
                                 className="p-1.5 rounded-md hover:bg-muted text-muted-foreground"
                                 title="新标签页打开"
                               >
@@ -630,7 +633,7 @@ ${items}
                     key={site.id}
                     className="relative group rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 backdrop-blur-xs transition-all duration-200 hover:-translate-y-0.5 p-[var(--density-card-padding,0.875rem)] flex flex-col justify-between shadow-2xs"
                   >
-                    <a href={safeHref(site.url)} target="_blank" rel="noopener noreferrer" className="block min-w-0 flex-1">
+                    <a href={safeHref(site.url)} target="_blank" rel={externalRel} className="block min-w-0 flex-1">
                       <div className="flex items-start gap-2.5">
                         <div className="shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                           <SiteFavicon
@@ -674,7 +677,7 @@ ${items}
                       <a
                         href={safeHref(site.url)}
                         target="_blank"
-                        rel="noopener noreferrer"
+                        rel={externalRel}
                         className="p-1.5 rounded-md hover:bg-muted text-muted-foreground"
                         title="新标签页打开"
                       >

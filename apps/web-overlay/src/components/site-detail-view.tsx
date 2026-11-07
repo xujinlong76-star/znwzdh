@@ -68,6 +68,8 @@ import { SiteFavicon } from '@/components/site-favicon'
 import { isBotBlockStatus, siteHealthBadge } from '@/lib/site-health'
 import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
+import { useSiteViewModel } from '@/components/site-view-context'
+import { externalLinkRelAttr } from '@/lib/site-settings'
 
 const RELATION_TYPE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
   alternative: {
@@ -203,6 +205,7 @@ export function SiteDetailView({
   /** 服务端渲染的可见面包屑 + BreadcrumbList JSON-LD */
   breadcrumb?: ReactNode
 }) {
+  const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
   const [site, setSite] = useState<HubSite | null>(initialSite)
   const [similar, setSimilar] = useState<HubSite[]>([])
   const [relations, setRelations] = useState<HubSiteRelation[]>([])
@@ -571,7 +574,7 @@ export function SiteDetailView({
                 <a
                   href={safeHref(site.url)}
                   target="_blank"
-                  rel="noopener noreferrer"
+                  rel={externalRel}
                   className="text-xs sm:text-sm text-primary hover:underline break-all font-mono"
                 >
                   {site.url}
@@ -671,7 +674,7 @@ export function SiteDetailView({
           <div className="pt-4 border-t border-border/50 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <Button asChild size="sm" className="h-9 text-xs px-4 gap-1.5 shadow-xs font-semibold">
-                <a href={safeHref(site.url)} target="_blank" rel="noopener noreferrer">
+                <a href={safeHref(site.url)} target="_blank" rel={externalRel}>
                   <span>立即直达官方主站</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
@@ -730,7 +733,7 @@ export function SiteDetailView({
                 size="sm"
                 className="h-8 text-xs border-amber-500/30 hover:bg-amber-500/20 font-medium"
               >
-                <a href={waybackUrl} target="_blank" rel="noopener noreferrer">
+                <a href={waybackUrl} target="_blank" rel={externalRel}>
                   <span>查看历史快照</span>
                   <ExternalLink className="w-3 h-3 ml-1" />
                 </a>
@@ -885,7 +888,7 @@ export function SiteDetailView({
                       <a
                         href={safeHref(alt.targetUrl)}
                         target="_blank"
-                        rel="noopener noreferrer"
+                        rel={externalRel}
                         className="text-xs text-muted-foreground hover:text-primary font-mono truncate block mt-0.5"
                       >
                         {alt.targetUrl}
@@ -893,7 +896,7 @@ export function SiteDetailView({
                     </div>
 
                     <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
-                      <a href={safeHref(alt.targetUrl)} target="_blank" rel="noopener noreferrer">
+                      <a href={safeHref(alt.targetUrl)} target="_blank" rel={externalRel}>
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </Button>
@@ -935,14 +938,14 @@ export function SiteDetailView({
                       <a
                         href={safeHref(alt.url)}
                         target="_blank"
-                        rel="noopener noreferrer"
+                        rel={externalRel}
                         className="text-xs text-muted-foreground hover:text-primary font-mono truncate block mt-0.5"
                       >
                         {alt.url}
                       </a>
                     </div>
                     <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
-                      <a href={safeHref(alt.url)} target="_blank" rel="noopener noreferrer">
+                      <a href={safeHref(alt.url)} target="_blank" rel={externalRel}>
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </Button>
@@ -977,7 +980,7 @@ export function SiteDetailView({
                         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${badge.bg} ${badge.color}`}>
                           {badge.label}
                         </span>
-                        <a href={safeHref(eco.targetUrl)} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
+                        <a href={safeHref(eco.targetUrl)} target="_blank" rel={externalRel} className="text-muted-foreground hover:text-primary">
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       </div>
@@ -1104,7 +1107,7 @@ export function SiteDetailView({
                       <a
                         href={safeHref(s.url)}
                         target="_blank"
-                        rel="noopener noreferrer"
+                        rel={externalRel}
                         aria-label={`访问 ${s.title} 官网`}
                         className="text-muted-foreground hover:text-primary p-1"
                       >
@@ -1167,7 +1170,7 @@ export function SiteDetailView({
                   key={s.id}
                   className="group relative rounded-xl border border-border/70 glass-surface subtle-mesh p-3.5 transition-all hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 flex flex-col justify-between"
                 >
-                  <a href={safeHref(s.url)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3">
+                  <a href={safeHref(s.url)} target="_blank" rel={externalRel} className="flex items-center gap-3">
                     <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
                       <SiteFavicon
                         title={s.title}
@@ -1219,7 +1222,7 @@ export function SiteDetailView({
                   key={video.id}
                   href={safeHref(video.href) || `/videos?q=${encodeURIComponent(site.title)}`}
                   target="_blank"
-                  rel="noopener noreferrer"
+                  rel={externalRel}
                   className="group rounded-xl border border-border/70 bg-card overflow-hidden hover:border-violet-500/40 hover:shadow-md transition-all flex flex-col justify-between"
                 >
                   <div className="relative aspect-video w-full bg-muted overflow-hidden">

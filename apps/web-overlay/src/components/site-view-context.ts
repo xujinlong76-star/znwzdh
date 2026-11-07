@@ -16,6 +16,8 @@ import { createContext, useContext } from 'react'
 export interface SiteViewModel {
   brand: string
   linkTarget: '_blank' | '_self'
+  /** 收录站点外链权重策略；缺省按 nofollow 消费（见 externalLinkRelAttr） */
+  externalLinkRel?: 'nofollow' | 'dofollow'
   footerText?: string
   icp?: string
 }

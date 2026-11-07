@@ -64,16 +64,26 @@ const getData = cache(async () => {
   return getProcessedData(navigationRaw as never, siteRaw as never);
 });
 
-/** 首页目录带最多展示的分类数：再多就成了分类总览页的重复 */
-const DIRECTORY_CATEGORY_LINKS = 8;
+/**
+ * 首页目录带最多展示的分类数（2026-11-07 SEO 扫描上调 8 → 50）。
+ *
+ * 原值 8 的顾虑是「再多就成了分类总览页的重复」；但一级根实测 19 个，
+ * 上限 8 意味着首页 HTML 里 11 个根分类没有任何直链，只能靠 /category 二跳
+ * 被发现。目录带是纯文本内链、19 条约几 KB，代价可忽略；保留 50 作安全上界，
+ * 防止脏数据把根分类撑成几百条时页面失控。
+ */
+const DIRECTORY_CATEGORY_LINKS = 50;
 
 /**
  * 首页每组的首屏卡片数（渐进披露，2026-10-26）。
  *
- * 实测：首页 1008 张卡、未压缩 HTML 6.9MB，而 `scripts/html-budget.mjs` 的预算是
- * 4096KB；单卡 6.2KB 里 class 属性占 3.0KB、内联 SVG 占 1.9KB —— 靠「精简卡片」
- * 省不出预算，只能减少首屏卡数。改为每组首屏 6 张后 HTML 约 3.6MB，其余卡片点
- * 「展开全部」在客户端即时揭示（数据本来就在 props 里，展开不发请求、没有加载态）。
+ * 实测（2026-11-07，`node scripts/html-budget.mjs`）：4074KB / 预算 4096KB，
+ * SSR 208 张卡。构成：RSC flight 1.87MB（46%，全量数据本就要下发）、class 属性
+ * 1.14MB、内联 SVG 591KB。卡片级瘦身（5 个操作按钮复用 shadcn 基类，换成 @apply
+ * 短类名约省 0.4MB 未压缩）在 br/gzip 后几乎为零——重复串本来就会被压缩掉，不值得
+ * 为此重写卡片交互区。预算仍通过；只剩「减少首屏卡数」这个杠杆，而它会减少内链，
+ * 非超预算不动。其余卡片点「展开全部」在客户端即时揭示（数据本来就在 props 里，
+ * 展开不发请求、没有加载态）。
  *
  * `NAVHUB_HOME_CARDS_PER_GROUP` 可覆盖；传 0 即恢复全量 SSR 的旧行为。
  */

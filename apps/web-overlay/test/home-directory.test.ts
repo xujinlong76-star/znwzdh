@@ -28,14 +28,14 @@ function overlayFile(rel: string): string {
 }
 
 describe("首页站内目录带（F1）", () => {
-  it("服务端取分类与计数，一级根按权威树 sort 取前 8", () => {
+  it("服务端取分类与计数，一级根按权威树 sort 取前 50（覆盖全部根分类）", () => {
     const src = overlayFile("src/app/page.tsx");
     expect(src).toContain("loadCategories(3600)");
     // 计数必须与类目页 404 判定同频（active 搜索 60s）；3600 会制造小时级死链
     expect(src).toContain("loadActiveCategoryCounts(60)");
     expect(src).toContain("MIN_SITES_FOR_CATEGORY_INDEX");
     expect(src).toMatch(/counts\.get\(c\.id\) \?\? 0\) >= MIN_SITES_FOR_CATEGORY_INDEX/);
-    expect(src).toContain("DIRECTORY_CATEGORY_LINKS = 8");
+    expect(src).toContain("DIRECTORY_CATEGORY_LINKS = 50");
     expect(src).toContain("directoryLinks={directoryLinks}");
     // 全站权重最高的内链必须用 slug 形态，且不得把「未分类」当目录入口
     expect(src).toContain("slug: categoryUrlKey(c)");

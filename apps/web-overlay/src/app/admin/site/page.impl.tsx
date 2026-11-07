@@ -77,6 +77,7 @@ const uiSchema = z.object({
   }),
   navigation: z.object({
     linkTarget: z.enum(["_blank", "_self"]),
+    externalLinkRel: z.enum(["nofollow", "dofollow"]),
   }),
   footer: z.object({
     text: z.string().trim().max(200, "页脚文案最长 200 字符"),
@@ -95,7 +96,7 @@ type UiValues = z.infer<typeof uiSchema>
 const EMPTY: UiValues = {
   basic: { title: "", description: "", keywords: "", ogImage: "" },
   appearance: { logo: "", favicon: "", appleTouchIcon: "", pwaIcon192: "", pwaIcon512: "", pwaMaskable512: "", theme: "system", themeColor: "" },
-  navigation: { linkTarget: "_blank" },
+  navigation: { linkTarget: "_blank", externalLinkRel: "nofollow" },
   footer: { text: "", icp: "" },
 }
 
@@ -113,7 +114,7 @@ const TAB_PATCH_FIELDS: Record<string, Record<string, string[]>> = {
   basic: { basic: ["title", "description", "keywords"] },
   appearance: { appearance: ["logo", "favicon", "appleTouchIcon", "pwaIcon192", "pwaIcon512", "pwaMaskable512", "theme", "themeColor"] },
   share: { basic: ["ogImage"] },
-  navigation: { navigation: ["linkTarget"] },
+  navigation: { navigation: ["linkTarget", "externalLinkRel"] },
   footer: { footer: ["text", "icp"] },
 }
 
@@ -135,7 +136,7 @@ function toFormValues(s: SiteSettings): UiValues {
       theme: s.appearance.theme,
       themeColor: s.appearance.themeColor ?? "",
     },
-    navigation: { linkTarget: s.navigation.linkTarget },
+    navigation: { linkTarget: s.navigation.linkTarget, externalLinkRel: s.navigation.externalLinkRel ?? "nofollow" },
     footer: { text: s.footer?.text ?? "", icp: s.footer?.icp ?? "" },
   }
 }
@@ -650,6 +651,29 @@ export default function SiteSettings() {
                           </Select>
                           <FormDescription>
                             站点默认值：卡片、搜索、搜索面板与 spotlight 都跟随它。访客在偏好里手动设过则以个人偏好为准。
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="navigation.externalLinkRel"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>外链权重传递（SEO）</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger><SelectValue placeholder="选择外链权重策略" /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="nofollow">不传递权重 (nofollow，推荐)</SelectItem>
+                              <SelectItem value="dofollow">传递权重 (dofollow)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            控制收录站点外链是否向对方传递 SEO 权重，作用于首页卡片、分类页、站点详情、热门、合集与搜索结果。
+                            默认 nofollow：上千条外链不再持续稀释本站权重；确认要导流/合作时再切 dofollow。
                           </FormDescription>
                           <FormMessage />
                         </FormItem>

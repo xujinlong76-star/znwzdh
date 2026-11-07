@@ -9,6 +9,8 @@ import {
 } from '@/lib/search-page'
 import { hubGet } from '@/lib/server/hub'
 import type { FacetGroup } from '@/components/search-facet-bar'
+import { readSiteSettings } from '@/lib/site-config-source'
+import { externalLinkRelAttr } from '@/lib/site-settings'
 import { SearchResults } from './search-results'
 
 /**
@@ -52,6 +54,9 @@ export async function generateMetadata({ searchParams }: SearchPageProps): Promi
     title: title,
     description: description,
     robots: { index: false, follow: true },
+    // 自指 canonical 收敛 q/page/tag 参数变体：noindex 已挡住收录，
+    // canonical 进一步保证抓取预算不被同页不同参数的 URL 分裂。
+    alternates: { canonical: '/search' },
   }
 }
 
@@ -75,6 +80,8 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       60,
     ),
   ])
+  // 外链权重策略与首页卡片同源（站点级设置，缺省 nofollow）；readSiteSettings 有进程内缓存。
+  const externalRel = externalLinkRelAttr((await readSiteSettings()).navigation.externalLinkRel)
 
   return (
     <SearchResults
@@ -87,6 +94,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       result={result}
       failed={failed}
       unavailable={unavailable}
+      externalRel={externalRel}
     />
   )
 }

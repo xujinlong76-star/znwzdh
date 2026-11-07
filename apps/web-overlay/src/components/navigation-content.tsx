@@ -412,10 +412,6 @@ export function NavigationContent({
         <p id="navhub-card-keyboard-hint" className="sr-only">
           站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区，左右方向键切换，Esc 返回卡片。
         </p>
-        {/* SEO 与无障碍可访问性首要标题（通过 sr-only 视觉隐藏，供屏幕阅读器与搜索引擎建立层级大纲） */}
-        <h1 className="sr-only">
-          {siteData.basic.title} - {siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
-        </h1>
 
         <NavigationToolbar
           siteConfig={siteData}
@@ -452,6 +448,16 @@ export function NavigationContent({
         )}
 
         <div className="px-3 sm:px-6 md:px-8 py-4 sm:py-8 flex-1">
+          {/* 页面主标题：可见 h1 由 SSR 直出（2026-11-07 SEO 扫描，原 sr-only 隐藏形态
+              属灰色做法）。h1 只承载品牌主体，描述降为 p，保持标题层级大纲干净。 */}
+          <header className="mb-4 sm:mb-6">
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
+              {siteData.basic.title}
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+              {siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
+            </p>
+          </header>
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
           {viewMode !== 'workbench' && <OnboardingCard />}
 

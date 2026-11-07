@@ -30,6 +30,14 @@ export interface SiteSettingsExtra {
     pwaIcon512?: string
     pwaMaskable512?: string
   }
+  navigation: {
+    /**
+     * 收录站点外链的权重传递策略（SEO，2026-11-07）。
+     * 缺省 nofollow：导航卡/分类板/详情/排行/合集/搜索结果的外链默认不导权重，
+     * 避免上千条 dofollow 外链持续稀释本站权重。后台可切 dofollow 显式传递。
+     */
+    externalLinkRel?: 'nofollow' | 'dofollow'
+  }
   footer?: {
     text?: string
     icp?: string
@@ -112,7 +120,13 @@ export const siteSettingsPatchSchema = z.object({
     })
     .strict()
     .optional(),
-  navigation: z.object({ linkTarget: z.enum(['_blank', '_self']).optional() }).strict().optional(),
+  navigation: z
+    .object({
+      linkTarget: z.enum(['_blank', '_self']).optional(),
+      externalLinkRel: z.enum(['nofollow', 'dofollow']).optional(),
+    })
+    .strict()
+    .optional(),
   footer: z
     .object({
       text: z.string().trim().max(200).nullable().optional(),
@@ -170,6 +184,7 @@ export function normalizeSettings(raw: unknown): SiteSettings {
 
   const theme = appearance.theme
   const linkTarget = navigation.linkTarget
+  const externalLinkRel = navigation.externalLinkRel === 'dofollow' ? 'dofollow' : 'nofollow'
   const ogImage = asset(basic.ogImage)
   const themeColor = typeof appearance.themeColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(appearance.themeColor.trim())
     ? appearance.themeColor.trim().toLowerCase()
@@ -196,6 +211,7 @@ export function normalizeSettings(raw: unknown): SiteSettings {
     },
     navigation: {
       linkTarget: linkTarget === '_self' ? '_self' : '_blank',
+      externalLinkRel,
     },
     ...(footerText || footerIcp ? { footer: { ...(footerText ? { text: footerText } : {}), ...(footerIcp ? { icp: footerIcp } : {}) } } : {}),
     // 保留本文件不认识的对象键：mergeSettings 负责落库，读侧不该丢别人的数据
@@ -256,6 +272,17 @@ export function hasPatchContent(patch: SiteSettingsPatch): boolean {
  * ------------------------------------------------------------------ */
 
 export const BRAND_FALLBACK = '山羊胡'
+
+/**
+ * 收录站点外链的 rel 属性（SEO，2026-11-07）。
+ *
+ * 唯一口径：dofollow 显式传递权重，其余一切值（含缺省/脏值）都收敛到 nofollow。
+ * noopener noreferrer 始终保留——它们关的是 window.opener 与 Referer 泄露，
+ * 与权重传递无关，任何档位都不能省。纯函数、无服务端依赖，RSC 与客户端岛共用。
+ */
+export function externalLinkRelAttr(value: unknown): string {
+  return value === 'dofollow' ? 'noopener noreferrer' : 'nofollow noopener noreferrer'
+}
 
 /** 站点默认主题 → next-themes 的 defaultTheme（用户手动选过就以用户为准） */
 export function resolveDefaultTheme(settings: Pick<SiteSettings, 'appearance'> | null | undefined): 'light' | 'dark' | 'system' {

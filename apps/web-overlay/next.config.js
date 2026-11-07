@@ -59,6 +59,15 @@ const nextConfig = {
     // 的字段）；写在 nextConfig 顶层时 Next 只会把未知键忽略掉——名字叫 unoptimized
     // 却一点没生效，正是「看起来生效」那类陷阱。开启后图片直出、不再过 /_next/image
     // 优化器：与媒体代理同向（任意第三方图不必由我们抓取/缓存）。
+    //
+    // 2026-11-07 SEO 扫描复核：维持开启。全仓 next/image 仅 sidebar（图标/logo）与
+    // video-card（封面）两处，拿到的都是后台/用户可填的任意远端地址，或可能为 SVG。
+    // 一旦打开优化器：1) /_next/image 会以本服务身份 fetch 这些第三方地址，媒体代理
+    // 刻意规避的 SSRF / 抓取噪音会从优化器长回来；2) logo 这类 SVG 需要
+    // dangerouslyAllowSVG，等于给用户可控的 SVG 开脚本执行面；3) 首页卡片 favicon 走
+    // <img>（site-favicon），根本不经过 next/image，对 LCP 零收益。
+    // 若未来确有第一方位图要走优化：先给上述两处远端/SVG 图加 unoptimized 属性，再在
+    // 同一个改动里关掉这个开关——不要只关一半。
     unoptimized: true,
     remotePatterns: (process.env.NAVHUB_IMAGE_HOSTS || "")
       .split(",")

@@ -36,6 +36,8 @@ interface SearchResultsProps {
   result: HubSearchResult | null
   failed: boolean
   unavailable: HubSearchHit[]
+  /** 收录站点外链 rel（站点级设置，服务端透传）；缺省 nofollow */
+  externalRel?: string
 }
 
 /** 只展示「为什么这条会被搜到」里不直观的通道；exact/fts 是用户预期内的 */
@@ -90,7 +92,13 @@ function FailedNotice({ q, page, tag }: { q: string; page: number; tag: string |
   )
 }
 
-function RelationBand({ relations }: { relations: NonNullable<HubSearchResult['relationHits']> }) {
+function RelationBand({
+  relations,
+  externalRel = 'nofollow noopener noreferrer',
+}: {
+  relations: NonNullable<HubSearchResult['relationHits']>
+  externalRel?: string
+}) {
   return (
     <section
       aria-label="相关替代与对标方案"
@@ -128,7 +136,7 @@ function RelationBand({ relations }: { relations: NonNullable<HubSearchResult['r
                 <a
                   href={safeHref(site.url)}
                   target="_blank"
-                  rel="noopener noreferrer"
+                  rel={externalRel}
                   className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
                   直达
@@ -143,7 +151,15 @@ function RelationBand({ relations }: { relations: NonNullable<HubSearchResult['r
   )
 }
 
-function ResultRow({ hit, q }: { hit: HubSearchHit; q: string }) {
+function ResultRow({
+  hit,
+  q,
+  externalRel = 'nofollow noopener noreferrer',
+}: {
+  hit: HubSearchHit
+  q: string
+  externalRel?: string
+}) {
   const site = hit.site
   if (!site) return null
 
@@ -166,7 +182,7 @@ function ResultRow({ hit, q }: { hit: HubSearchHit; q: string }) {
               <a
                 href={safeHref(site.url)}
                 target="_blank"
-                rel="noopener noreferrer"
+                rel={externalRel}
                 className="max-w-full truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
               >
                 <Highlight text={site.title} query={q} />
@@ -349,6 +365,7 @@ function EmptyResults({
  * 「大站搜不到」。名字照常可点，说明如实给出。
  */
 function UnavailableSection({ hits, q }: { hits: HubSearchHit[]; q: string }) {
+  const externalRel = 'nofollow noopener noreferrer'
   return (
     <section aria-label="最近巡检打不开的匹配站点" className="space-y-2">
       <div
@@ -362,7 +379,7 @@ function UnavailableSection({ hits, q }: { hits: HubSearchHit[]; q: string }) {
         </span>
       </div>
       <ul className="space-y-2">
-        {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} /> : null))}
+        {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} externalRel={externalRel} /> : null))}
       </ul>
     </section>
   )
@@ -452,6 +469,7 @@ export function SearchResults({
   result,
   failed,
   unavailable,
+  externalRel = 'nofollow noopener noreferrer',
 }: SearchResultsProps) {
   const hits = result?.hits ?? []
   const hasMore = result?.hasMore === true
@@ -671,11 +689,11 @@ export function SearchResults({
                 <SearchRelatedTags tags={relatedTags} currentTag={tag} q={q} />
               ) : null}
 
-              {!failed && relations.length > 0 ? <RelationBand relations={relations} /> : null}
+              {!failed && relations.length > 0 ? <RelationBand relations={relations} externalRel={externalRel} /> : null}
 
               {!failed && hits.length > 0 ? (
                 <ul className="space-y-2">
-                  {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} /> : null))}
+                  {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} externalRel={externalRel} /> : null))}
                 </ul>
               ) : null}
 

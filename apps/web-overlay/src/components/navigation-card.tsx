@@ -25,6 +25,8 @@ import { getIdentity } from '@/lib/identity'
 import { reportClick } from '@/lib/navhub-api'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
 import { copyText } from '@/lib/clipboard'
+import { useSiteViewModel } from '@/components/site-view-context'
+import { externalLinkRelAttr } from '@/lib/site-settings'
 
 interface NavigationCardProps {
   item: NavigationSubItem
@@ -60,6 +62,8 @@ export function NavigationCard({
   const { toast } = useToast()
   // 站点配置只是默认值：用户中心「新标签页打开站点」开关必须真的决定打开方式。
   const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)
+  // 外链权重策略走根布局透传的站点视图（与页脚同源）：缺省 nofollow，后台可切 dofollow。
+  const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
 
   /**
    * 多选模式下卡片点击**不导航**，只切换选中。
@@ -280,7 +284,7 @@ export function NavigationCard({
               <a
                 href={safeHref(item.href)}
                 target={linkTarget}
-                rel="noopener noreferrer"
+                rel={externalRel}
                 data-prefetch-target="true"
                 onClick={handleLinkClick}
                 ref={linkRef}
@@ -447,7 +451,7 @@ export function NavigationCard({
               <a
                 href={safeHref(item.href)}
                 target={linkTarget}
-                rel="noopener noreferrer"
+                rel={externalRel}
                 data-prefetch-target="true"
                 onClick={handleLinkClick}
                 ref={linkRef}
@@ -657,7 +661,7 @@ export function NavigationCard({
             <a
               href={safeHref(item.href)}
               target={linkTarget}
-              rel="noopener noreferrer"
+              rel={externalRel}
               data-prefetch-target="true"
               onClick={handleLinkClick}
               ref={linkRef}

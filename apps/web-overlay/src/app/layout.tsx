@@ -88,7 +88,8 @@ export async function generateMetadata(): Promise<Metadata> {
       title: siteName,
     },
     icons: {
-      // 默认指向真实存在的 PWA 图标：public/ 下没有 favicon.ico（曾 404 刷屏），用 icon-192 兜底
+      // 后台配了 favicon 就用它，否则回退 PWA icon-192。public/favicon.ico 也已补齐，
+      // 浏览器直请 /favicon.ico 不再 404（旧注释「没有 favicon.ico」已过时）。
       icon: settings.appearance.favicon || '/icons/icon-192.png',
       apple: settings.appearance.appleTouchIcon || '/icons/apple-touch-icon.png',
     },
@@ -122,6 +123,7 @@ export default async function RootLayout({
   const siteView = {
     brand: normalizeBrandName(settings.basic.title),
     linkTarget: settings.navigation.linkTarget,
+    externalLinkRel: settings.navigation.externalLinkRel,
     footerText: settings.footer?.text,
     icp: settings.footer?.icp,
   }

@@ -8,6 +8,8 @@ import { SearchPalette } from '@/components/search-palette'
 import { CategorySiteFilterBar } from '@/components/category-site-filter-bar'
 import { ExternalLink, MonitorPlay, ArrowRight } from 'lucide-react'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
+import { readSiteSettings } from '@/lib/site-config-source'
+import { externalLinkRelAttr } from '@/lib/site-settings'
 import { categoryItemListLd, itemListLd } from '@/lib/seo/json-ld'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 // 契约级补缺（主理人 2026-11-01 23:5x）：WIP 里用了 safeHref 未 import，导致 /category/[slug] 预渲染 ReferenceError；
@@ -145,6 +147,8 @@ export async function CategoryBoard({
   const { categories, category, res, sites, counts, degraded } = data
   const indexable = requested === 1 && !degraded
   const origin = configuredSiteOrigin()
+  // 外链权重策略与首页卡片同源（站点级设置，缺省 nofollow）；readSiteSettings 进程内缓存，不额外打中枢。
+  const externalRel = externalLinkRelAttr((await readSiteSettings()).navigation.externalLinkRel)
   const isRootPage = Boolean(category && !category.parentId)
   // 父级按外键（`parent_id`，与 `anchor` 同一条信息）找，不按标题找：
   // 库里还有 4 组同名分类，按标题匹配会让「编程 · 语言」的面包屑挂到「自然语言」下。
@@ -375,7 +379,7 @@ export async function CategoryBoard({
                   <a
                     href={safeHref(site.url)}
                     target="_blank"
-                    rel="noopener noreferrer"
+                    rel={externalRel}
                     title={`新窗口直达 ${site.title} 官网`}
                     aria-label={`新窗口直达 ${site.title} 官网`}
                     className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-colors shrink-0 ml-2 cursor-pointer"

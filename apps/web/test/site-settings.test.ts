@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeSettings, normalizeSettings, siteSettingsPatchSchema } from '../src/lib/site-settings'
+import { externalLinkRelAttr, mergeSettings, normalizeSettings, siteSettingsPatchSchema } from '../src/lib/site-settings'
 
 describe('站点品牌设置', () => {
   it('保留合法的 Apple Touch Icon，并拒绝可执行协议', () => {
@@ -66,5 +66,34 @@ describe('站点品牌设置', () => {
     }
     expect(normalizeSettings({}).appearance[kind]).toBe('')
     expect(normalizeSettings({ appearance: { [kind]: null } }).appearance[kind]).toBe('')
+  })
+
+  describe('外链权重策略（externalLinkRel）', () => {
+    it('缺省与脏值都收敛到 nofollow，dofollow 显式保留', () => {
+      expect(normalizeSettings({}).navigation.externalLinkRel).toBe('nofollow')
+      expect(normalizeSettings({ navigation: { externalLinkRel: 'dofollow' } }).navigation.externalLinkRel).toBe('dofollow')
+      expect(normalizeSettings({ navigation: { externalLinkRel: 'follow' } }).navigation.externalLinkRel).toBe('nofollow')
+      expect(normalizeSettings({ navigation: { externalLinkRel: 1 } }).navigation.externalLinkRel).toBe('nofollow')
+    })
+
+    it('patch schema 只接受两个合法值，并按分组合并保留其它导航字段', () => {
+      expect(siteSettingsPatchSchema.safeParse({ navigation: { externalLinkRel: 'dofollow' } }).success).toBe(true)
+      expect(siteSettingsPatchSchema.safeParse({ navigation: { externalLinkRel: 'nofollow' } }).success).toBe(true)
+      for (const invalid of ['follow', 'ugc', true, 0, '']) {
+        expect(siteSettingsPatchSchema.safeParse({ navigation: { externalLinkRel: invalid } }).success, String(invalid)).toBe(false)
+      }
+      const current = normalizeSettings({ navigation: { linkTarget: '_self', externalLinkRel: 'dofollow' } })
+      const merged = mergeSettings(current, { navigation: { externalLinkRel: 'nofollow' } })
+      expect(merged.navigation.externalLinkRel).toBe('nofollow')
+      expect(merged.navigation.linkTarget).toBe('_self')
+    })
+
+    it('rel 属性始终保留 noopener noreferrer，权重开关只增减 nofollow', () => {
+      expect(externalLinkRelAttr('nofollow')).toBe('nofollow noopener noreferrer')
+      expect(externalLinkRelAttr('dofollow')).toBe('noopener noreferrer')
+      for (const dirty of [undefined, null, '', 'other', {}, 1]) {
+        expect(externalLinkRelAttr(dirty)).toBe('nofollow noopener noreferrer')
+      }
+    })
   })
 })

@@ -215,3 +215,19 @@
 | P2 | resend-verification 节流 | — |
 | P2 | login 失败次数跟踪 | — |
 | P2 | email TLD 校验 | — |
+
+## 七、视觉/DOM 实测评审轮（2026-11-07，浏览器实测复核用户四点反馈）
+
+用户对运行中的 v5.0 做了四点视觉/DOM 评审。本轮逐项用真实浏览器（1440×900 深色 + 亮色 + 390 窄屏）复核：
+
+### 复核结论
+
+1. **卡片标题不可见 —— 现构建不复现，关闭**。SSR HTML 中 CardTitle 文本完整在树（DeepSeek/Gemini/Cursor 均可检索到标题文本节点）；编译 CSS 链路完整（.text-foreground → var(--color-foreground) → hsl(var(--foreground))，dark 切换为 .dark 类制、无 prefers-color-scheme 双轨）；40+ 卡片实测 fontSize 14px / 非零盒 / 前后景对比正常，暗/亮/窄屏三态一致。用户评审时点应早于并行线的多次修复提交。
+2. **数据去重 —— 并行线已完成**（commit 6683067f，2026-11-07 01:20 落库：同分类归一化 URL/标题连簇去重 + SWAP/CROSS_CAT/REMAP 三张人判复核表，存活 4914→4841）。实测 KV 已同步（/api/navigation 4841 条，www.cursor.com 副本已软删，仅剩 cursor.com 主条目 + MCP 生态的 /features 深链条目属有意保留）。脚本默认 dry-run、删除走回收站软删、幂等可重跑，质量合格。
+3. **FAB 遮挡 —— 本轮修复**：home-diy-toolbar 静息态贴边半藏（translate-x-[calc(100%-2.75rem)]，hover/focus-within/编排中/触屏/有告警时滑回全显；触屏不半藏因 hover 不存在）。globals.css 补 html{overflow-x:clip}（clip 不创建滚动容器，sticky 不受影响）防横向溢出。storageWarning 在场时强制全显——告警不许半藏。
+4. **四层导航冗余 —— 第③层桌面端收编**：category-quick-jump-bar 的分类芯片 lg+ 隐藏（与左侧栏逐项重复）；折叠全部/常用/精选视频三个非冗余控件保留。移动端无侧栏，芯片原样保留。
+
+### 过程发现（未修复，登记）
+
+- 展开全部+快速滚动的偶发整页卸载（body 只剩 script/template，无错误捕获）：一次复现后未能再触发，疑似 expand 过渡与路由竞争。观察名单，若再现挂 React 错误边界专项。
+- content-visibility 双层嵌套（.cv-auto-section 包 .nav-card-deferred）：滚动三轮无报错，暂不动；若用户报滚动跳动再校准 contain-intrinsic-size（现 auto 92px）。

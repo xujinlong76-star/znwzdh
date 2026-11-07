@@ -195,6 +195,7 @@ export function CategoryQuickJumpBar({
           )}
 
           {categories.map((cat) => {
+            if (cat.count !== undefined && cat.count === 0) return null
             const isActive = activeId === cat.id
             return (
               <button
@@ -202,8 +203,10 @@ export function CategoryQuickJumpBar({
                 id={`pill-${cat.id}`}
                 type="button"
                 onClick={() => scrollToId(cat.id)}
+                // 桌面端（lg+，左侧栏在场）隐藏分类芯片：与侧栏逐项重复是四层导航冗余的第三层；
+                // 移动端没有侧栏，芯片仍是唯一的分类直达入口，保持原样。
                 className={cn(
-                  "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs transition-all duration-150 border",
+                  "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs transition-all duration-150 border lg:hidden",
                   isActive
                     ? "bg-primary text-primary-foreground border-primary font-medium shadow-2xs scale-102"
                     : "bg-muted/40 border-border/40 text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted/70"

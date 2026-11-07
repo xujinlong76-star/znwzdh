@@ -279,6 +279,10 @@ export const DEFUSED_GATES = [
       { id: "gate-deps-integrity", label: "check-deps-integrity（依赖入口可解析）" },
       { id: "gate-video-scope", label: "typecheck-video-scope（视频作用域类型）" },
       { id: "gate-overlay", label: "check-web-overlay（覆写层与镜像同源）" },
+      // 2026-11-07 九维评审 1-2：四条构建路径的配置事实源一致性。
+      // 排在 vendor / check-web-overlay 之后，前一步红会把它整步 skipped，
+      // 不登记就等于「配置漂移静默撤防」——正是评审要点名的问题。
+      { id: "gate-config-parity", label: "check-web-config-parity（四条构建路径配置同源）" },
       { id: "gate-core-mirrors", label: "sync-core-mirrors --check（core 镜像一致）" },
       { id: "gate-upstream-ref", label: "check-upstream-ref（上游 ref 存在）" },
       { id: "gate-extensions", label: "check-extensions（扩展清单 schema）" },

@@ -12,7 +12,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { isBlockedIp } from "@navhub/ai";
 import type { AppContext } from "../context.ts";
 
@@ -25,7 +25,11 @@ interface CachedIcon {
 
 const MEMORY_CACHE = new Map<string, CachedIcon>();
 const MAX_MEMORY_ITEMS = 1500;
-const CACHE_DIR = "data/cache/icons";
+const CACHE_DIR =
+  process.env.NAVHUB_ICON_CACHE_DIR ||
+  (existsSync(join(process.cwd(), "package.json")) && existsSync(join(process.cwd(), "..", "..", "package.json"))
+    ? resolve(process.cwd(), "..", "..", ".cache", "icons")
+    : resolve(process.cwd(), ".cache", "icons"));
 
 /**
  * 内存缓存的唯一写入口。
@@ -100,16 +104,14 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       const rawTarget = (query.url || query.domain || "").trim();
 
       if (!rawTarget) {
-        reply.code(400).send({ error: "必须提供 url 或 domain 参数" });
-        return;
+        return reply.code(400).send({ error: "必须提供 url 或 domain 参数" });
       }
 
       let parsedUrl: URL;
       try {
         parsedUrl = new URL(rawTarget.startsWith("http") ? rawTarget : `https://${rawTarget}`);
       } catch {
-        reply.code(400).send({ error: "目标地址格式无效" });
-        return;
+        return reply.code(400).send({ error: "目标地址格式无效" });
       }
 
       const hostname = parsedUrl.hostname.toLowerCase().replace(/^www\./, "");
@@ -121,18 +123,16 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       const clientEtag = req.headers["if-none-match"];
       const memoryCached = MEMORY_CACHE.get(hostHash);
       if (memoryCached && clientEtag && clientEtag === memoryCached.etag) {
-        reply.code(304).send();
-        return;
+        return reply.code(304).send();
       }
 
       // 2. 检查内存缓存命中
       if (memoryCached) {
-        reply
+        return reply
           .header("Content-Type", memoryCached.contentType)
           .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
           .header("ETag", memoryCached.etag)
           .send(memoryCached.buffer);
-        return;
       }
 
       // 3. 检查磁盘文件缓存
@@ -149,15 +149,13 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
             updatedAt: Date.now(),
           });
           if (clientEtag && clientEtag === meta.etag) {
-            reply.code(304).send();
-            return;
+            return reply.code(304).send();
           }
-          reply
+          return reply
             .header("Content-Type", meta.contentType)
             .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
             .header("ETag", meta.etag)
             .send(buf);
-          return;
         } catch {
           // 磁盘读取损坏，继续向下抓取
         }
@@ -170,21 +168,19 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
           if (isBlockedIp(addr.address)) {
             // 命中国家级内网/私网保留地址，禁止服务端出站请求
             const fallbackSvg = generateFallbackSvg(monogram, hostname);
-            reply
+            return reply
               .header("Content-Type", "image/svg+xml")
               .header("Cache-Control", "public, max-age=86400")
               .send(fallbackSvg);
-            return;
           }
         }
       } catch {
         // DNS 解析失败，直接返回精美 SVG 兜底
         const fallbackSvg = generateFallbackSvg(monogram, hostname);
-        reply
+        return reply
           .header("Content-Type", "image/svg+xml")
           .header("Cache-Control", "public, max-age=86400")
           .send(fallbackSvg);
-        return;
       }
 
       // 5. 服务端发起探测抓取（带 SSRF 防护：guardedFetch 逐跳校验 + maxBytes 截断）
@@ -260,12 +256,11 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
           writeFileSync(diskMetaPath, JSON.stringify({ contentType, etag }));
         } catch {}
 
-        reply
+        return reply
           .header("Content-Type", contentType)
           .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
           .header("ETag", etag)
           .send(iconBuffer);
-        return;
       }
 
       // 7. 兜底策略：生成高质感 SVG 徽标（无网络红字，视觉统一）
@@ -274,7 +269,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       const etag = `W/"svg_${hostHash}"`;
       rememberIcon(hostHash, { buffer: svgBuf, contentType: "image/svg+xml", etag, updatedAt: Date.now() });
 
-      reply
+      return reply
         .header("Content-Type", "image/svg+xml")
         .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
         .header("ETag", etag)

@@ -312,12 +312,12 @@ export function NavigationCard({
                       href={siteDetailHref}
                       onClick={handleDetailClick}
                       tabIndex={-1}
-                      className="pointer-events-auto truncate rounded text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      className="pointer-events-auto truncate rounded text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none min-w-0 flex-1"
                     >
                       {item.title}
                     </Link>
                   ) : (
-                    <span className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors">
+                    <span className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors min-w-0 flex-1">
                       {item.title}
                     </span>
                   )}
@@ -476,47 +476,53 @@ export function NavigationCard({
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap pr-14 sm:pr-20">
-                        <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover:text-primary transition-colors truncate">
+                      <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 group-hover:pr-16">
+                        <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover:text-primary transition-colors truncate min-w-0 flex-1">
                           {hasSiteDetail ? (
                             <Link
                               href={siteDetailHref}
                               onClick={handleDetailClick}
                               tabIndex={-1}
-                              className="pointer-events-auto rounded hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                              className="pointer-events-auto truncate block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0"
                             >
                               {item.title}
                             </Link>
                           ) : (
-                            <span>{item.title}</span>
+                            <span className="truncate block text-foreground group-hover:text-primary min-w-0">{item.title}</span>
                           )}
                         </CardTitle>
-                        {item.liveMetrics?.githubStars && (
-                          <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
-                            <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
-                            {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
-                          </span>
-                        )}
-                        {item.health?.ok === false && (
-                          <span
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              onPeek?.(item)
-                            }}
-                            className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
-                            title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
-                          >
-                            <Clock className="w-2.5 h-2.5 text-amber-500" />
-                            <span>快照自愈</span>
-                          </span>
-                        )}
                       </div>
 
                       {item.description && (
                         <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1.5 break-words">
                           {item.description}
                         </CardDescription>
+                      )}
+
+                      {/* 徽标与指标：自适应流动折叠，绝不挤压主标题 */}
+                      {(item.liveMetrics?.githubStars || item.health?.ok === false) && (
+                        <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
+                          {item.liveMetrics?.githubStars && (
+                            <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
+                              <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+                              {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
+                            </span>
+                          )}
+                          {item.health?.ok === false && (
+                            <span
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                onPeek?.(item)
+                              }}
+                              className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
+                              title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
+                            >
+                              <Clock className="w-2.5 h-2.5 text-amber-500" />
+                              <span>快照自愈</span>
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -673,6 +679,14 @@ export function NavigationCard({
               className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
             />
 
+            {/* 键盘聚焦显式快捷键角标 */}
+            <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 group-focus-visible:opacity-100 sm:group-hover:opacity-0 transition-opacity duration-150">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded shadow-xs">
+                <span>Space</span>
+                <span>速览</span>
+              </span>
+            </div>
+
             <div className="relative z-10 pointer-events-none">
               <CardHeader className="p-[var(--density-card-padding,0.875rem)]">
                 <div className="flex items-start gap-2.5 @[280px]:gap-3">
@@ -686,41 +700,21 @@ export function NavigationCard({
                     />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap pr-14 sm:pr-20">
-                      <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors truncate">
+                    <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 group-hover:pr-14">
+                      <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors truncate min-w-0 flex-1">
                         {hasSiteDetail ? (
                           <Link
                             href={siteDetailHref}
                             onClick={handleDetailClick}
                             tabIndex={-1}
-                            className="pointer-events-auto rounded hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                            className="pointer-events-auto truncate block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0"
                           >
                             {item.title}
                           </Link>
                         ) : (
-                          <span>{item.title}</span>
+                          <span className="truncate block text-foreground group-hover:text-primary min-w-0">{item.title}</span>
                         )}
                       </CardTitle>
-                      {item.liveMetrics?.githubStars && (
-                        <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
-                          <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
-                          {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
-                        </span>
-                      )}
-                      {item.health?.ok === false && (
-                        <span
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            onPeek?.(item)
-                          }}
-                          className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
-                          title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
-                        >
-                          <Clock className="w-2.5 h-2.5 text-amber-500" />
-                          <span>快照自愈</span>
-                        </span>
-                      )}
                     </div>
                     {item.description && (
                       <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1 break-words">
@@ -728,9 +722,29 @@ export function NavigationCard({
                       </CardDescription>
                     )}
 
-                    {/* 动态特性：平替雷达徽标 / 微动作提示 */}
-                    {(topAlternative || (item.actions && item.actions.length > 0)) && (
+                    {/* 徽标、指标与深链行：自适应折叠，绝不挤压主标题 */}
+                    {(item.liveMetrics?.githubStars || item.health?.ok === false || topAlternative || (item.actions && item.actions.length > 0)) && (
                       <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
+                        {item.liveMetrics?.githubStars && (
+                          <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
+                            <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+                            {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
+                          </span>
+                        )}
+                        {item.health?.ok === false && (
+                          <span
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              onPeek?.(item)
+                            }}
+                            className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
+                            title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
+                          >
+                            <Clock className="w-2.5 h-2.5 text-amber-500" />
+                            <span>快照自愈</span>
+                          </span>
+                        )}
                         {topAlternative && (
                           <span
                             onClick={(e) => {
@@ -738,13 +752,13 @@ export function NavigationCard({
                               e.stopPropagation()
                               onPeek?.(item)
                             }}
-                            className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
+                            className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer shrink-0"
                           >
                             <span>平替: {topAlternative.targetTitle}</span>
                           </span>
                         )}
                         {item.actions && item.actions.length > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-0.5 text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
                             <Zap className="w-2.5 h-2.5" />
                             <span>深链</span>
                           </span>

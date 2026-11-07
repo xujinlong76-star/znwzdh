@@ -153,6 +153,7 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   // 待 owner 复核：若有真实落库，应把 scope 提成 write（见本文件顶部三选一说明）。
   "POST /api/recipes/scaffold",
   "POST /api/sites/:id/visual",
+  "POST /api/sites/:id/video-demo",
   "POST /api/sites/batch-classify",
   "POST /api/submissions/prefill",
   "POST /api/tools/synthesize",

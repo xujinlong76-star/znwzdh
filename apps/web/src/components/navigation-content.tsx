@@ -186,6 +186,7 @@ export function NavigationContent({
     customWallpaperUrl,
     glassmorphismBlur,
     cardOpacity,
+    isEditingLayout,
   } = useHomeDIY()
 
   // 拖拽编排分类状态
@@ -430,10 +431,11 @@ export function NavigationContent({
         {/* 吸顶分类快捷直达导航轨 */}
         {viewMode !== 'workbench' && sortedCategories.length > 0 && (
           <CategoryQuickJumpBar
-            categories={sortedCategories.map(cat => ({
+            className="md:hidden"
+            categories={sortedCategories.map((cat) => ({
               id: cat.id,
               title: cat.title,
-              count: countCategorySites(cat)
+              count: countCategorySites(cat),
             }))}
             isAllCollapsed={sortedCategories.length > 0 && sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))}
             onToggleAllCollapsed={() => {
@@ -447,7 +449,7 @@ export function NavigationContent({
           />
         )}
 
-        <div className="px-3 sm:px-6 md:px-8 py-4 sm:py-8 flex-1">
+        <div className="px-3 sm:px-6 md:px-8 pt-4 sm:pt-8 pb-28 sm:pb-36 flex-1">
           {/* 页面主标题：可见 h1 由 SSR 直出（2026-11-07 SEO 扫描，原 sr-only 隐藏形态
               属灰色做法）。h1 只承载品牌主体，描述降为 p，保持标题层级大纲干净。 */}
           <header className="mb-4 sm:mb-6">

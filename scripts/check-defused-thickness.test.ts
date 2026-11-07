@@ -39,7 +39,7 @@ function snapshot(jobs: unknown[], headSha: string | null = SAME) {
 const GREEN = snapshot([
   row({ job: "test-sqlite", name: "测试（SQLite 默认方言，分片 1/3）" }),
   row({ job: "test-web", name: "前端门禁", gateTotal: 5, ran: 1, defused: 4, conclusion: "failure" }),
-  row({ job: "check-web-overlay", name: "覆盖层规范", gateTotal: 7, ran: 7 }),
+  row({ job: "check-web-overlay", name: "覆盖层规范", gateTotal: 8, ran: 8 }),
 ]);
 
 function run(argv: string[], text: string, headSha: string | null = LOCAL) {
@@ -142,7 +142,8 @@ describe("check-defused-thickness CLI：三档退出码各有各的形状", () =
     expect(j.counted).toEqual([]);
     expect(j.readableJobs).toBe(1);
     // 2026-11-06：26 → 29（coverage 作业 +2、test-e2e 的 quarantine-e2e +1）
-    expect(j.registryGateTotal).toBe(29);
+    // 2026-11-07：29 → 30（check-web-overlay 的 check-web-config-parity +1）
+    expect(j.registryGateTotal).toBe(30);
     expect(j.exitCode).toBe(0);
   });
 

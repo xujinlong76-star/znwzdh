@@ -15,6 +15,8 @@
  *   - check-dead-modules.mjs      前端 0 引用模块棘轮（9 项基线）
  *   - check-strip-syntax.mjs       Node 24 strip-types 不可擦除语法棘轮（基线 0）
  *   - check-numeric-env.mjs        Number(process.env.*) 未保护点棘轮（1 项基线）
+ *   - check-web-config-parity.mjs 两份前端配置 sha256 一致（1-2）
+ *   - check-csp-headers.mjs       CSP 双档位契约，无需 Docker（2-1）
  *
  * 退出码：任一子门禁非 0 即 1；清单缺失/形状非法由子门禁给 2。
  */
@@ -32,6 +34,13 @@ const GATES = [
   { name: "死模块棘轮", script: "scripts/check-dead-modules.mjs" },
   { name: "strip 语法棘轮", script: "scripts/check-strip-syntax.mjs" },
   { name: "数值 env 棘轮", script: "scripts/check-numeric-env.mjs" },
+  // 2026-11-07 九维评审 1-2：四条构建路径读的是两份物理配置，漂移时
+  // CSP / ignoreBuildErrors 会在宿主机、verify:web、CI、Docker 上各读一份。
+  // 并入聚合器而非 verify 新增一步，避免护栏膨胀。
+  { name: "前端配置事实源一致性", script: "scripts/check-web-config-parity.mjs" },
+  // 2026-11-07 九维评审 2-1：本机无 Docker 也能验 CSP 的 enforce / report-only
+  // 双档位契约；并入聚合器，verify 默认档项数不变。
+  { name: "CSP 双档位契约", script: "scripts/check-csp-headers.mjs" },
 ];
 let failed = 0;
 for (const g of GATES) {

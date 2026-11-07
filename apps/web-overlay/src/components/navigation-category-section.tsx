@@ -219,8 +219,8 @@ export function NavigationCategorySection({
         ...entry,
         filteredSubItems: filtered,
       }
-    }).filter((entry) => !isFilterActive || entry.filteredSubItems.length > 0)
-  }, [sortedSubCategories, isFilterActive, matchesFilter])
+    }).filter((entry) => isEditingLayout || entry.filteredSubItems.length > 0)
+  }, [sortedSubCategories, isFilterActive, matchesFilter, isEditingLayout])
 
   const showDirectGroup = selectedSubCatId === null || selectedSubCatId === '__direct__'
 
@@ -692,7 +692,7 @@ export function NavigationCategorySection({
                                     </span>
                                   </button>
                                 )}
-                                {subCats.map((sub) => {
+                                {subCats.filter((sub) => isEditingLayout || (sub.items && sub.items.length > 0)).map((sub) => {
                                   const isCurrent = selectedSubCatId === sub.id
                                   const subItemCount = sub.items?.length || 0
                                   return (

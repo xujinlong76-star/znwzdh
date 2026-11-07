@@ -45,7 +45,7 @@ export const cnDailyNavigation: SeedPluginDef = {
       ],
       sites: [
         { url: "https://www.news.cn/", title: "新华网", description: "国家通讯社官方网站，权威时政与经济新闻首发平台。", category: "新闻资讯", subCategory: "权威媒体", tags: ["新闻", "权威"] },
-        { url: "http://www.people.com.cn/", title: "人民网", description: "人民日报社主办的重点新闻网站，时政与民生信息权威。", category: "新闻资讯", subCategory: "权威媒体", tags: ["新闻", "时政"] },
+        { url: "https://www.people.com.cn/", title: "人民网", description: "人民日报社主办的重点新闻网站，时政与民生信息权威。", category: "新闻资讯", subCategory: "权威媒体", tags: ["新闻", "时政"] },
         { url: "https://www.cctv.com/", title: "央视网", description: "中央广播电视总台官网，新闻、节目与直播入口。", category: "新闻资讯", subCategory: "权威媒体", tags: ["新闻", "央视"] },
         { url: "https://www.chinanews.com.cn/", title: "中国新闻网", description: "中新社主办，覆盖国内国际与侨务新闻。", category: "新闻资讯", subCategory: "权威媒体", tags: ["新闻", "综合"] },
         { url: "https://www.gmw.cn/", title: "光明网", description: "光明日报社主办，思想文化与教育科技报道见长。", category: "新闻资讯", subCategory: "权威媒体", tags: ["新闻", "文化"] },

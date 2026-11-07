@@ -109,7 +109,22 @@ const metrics = {
     const p = join(ROOT, ".github/workflows/ci.yml");
     if (!existsSync(p)) return { jobs: 0, steps: 0, lines: 0 };
     const s = readFileSync(p, "utf8");
-    const jobs = (s.match(/^  [A-Za-z0-9_-]+:\s*$/gm) || []).length;
+    // 只数 jobs: 段下的两空格缩进键（作业名）。旧正则在全文件范围匹配
+    // /^  [A-Za-z0-9_-]+:\s*$/，把 on: 段下的 push / pull_request /
+    // workflow_dispatch 三个触发键也算成作业，导致 ci.jobs=14（真实为 11）。
+    // 结构性数字算错会让「文档数字别骗人」的闸门本身失去可信度。
+    const jobs = (() => {
+      const lines = s.split(/\r?\n/);
+      const start = lines.findIndex((l) => /^jobs:\s*$/.test(l));
+      if (start < 0) return 0;
+      let n = 0;
+      for (let i = start + 1; i < lines.length; i += 1) {
+        const l = lines[i];
+        if (/^[A-Za-z0-9_.-]+:/.test(l)) break; // 下一个顶层键：jobs 段结束
+        if (/^  [A-Za-z0-9_-]+:\s*$/.test(l)) n += 1;
+      }
+      return n;
+    })();
     const steps = (s.match(/^      - (?:name:|run:|uses:)/gm) || []).length;
     return { jobs, steps, lines: s.split(/\r?\n/).length };
   })(),

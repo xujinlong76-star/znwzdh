@@ -160,7 +160,23 @@ if (selfTest) {
 
 const testSrc = readFileSync(TEST_FILE, "utf8");
 const { block, entries } = parseExemptions(testSrc);
-const exemptSet = new Set(entries);
+
+// 2026-11-07 九维评审 3-1：临时 WIP 冻结清单原先没有到期 / 复核机制，
+// 37 条条目把 35 个违例文件逐一在册，使 open 恒为 0，门禁在断言前被架空。
+// 现在由 scripts/a11y-exemptions.json 给每条一个 expiresAt；到期即不再豁免。
+// 三批错开 30 天是为了避免一次性释放 35 个文件让 test-web 立刻红灯阻断交付。
+// 清单本体（WIP_HOT_EXEMPT 数组）保持原形状，parseExemptions 无需改动。
+const POLICY_FILE = resolve(ROOT, "scripts/a11y-exemptions.json");
+const policy = existsSync(POLICY_FILE)
+  ? JSON.parse(readFileSync(POLICY_FILE, "utf8"))
+  : { entries: [] };
+const now = Date.now();
+const expired = new Set(
+  (policy.entries ?? [])
+    .filter((e) => e.expiresAt && Number.isFinite(Date.parse(e.expiresAt)) && Date.parse(e.expiresAt) < now)
+    .map((e) => e.rel),
+);
+const exemptSet = new Set(entries.filter((rel) => !expired.has(rel)));
 const rows = scan(exemptSet);
 
 if (flag("--json")) {
@@ -216,5 +232,22 @@ if (flag("--prune-exemptions")) {
     console.log(`[prune] 清退 ${droppedSet.size} 条：`);
     for (const rel of droppedSet) console.log("  - " + rel);
     console.log("[prune] 已重写 " + relative(ROOT, TEST_FILE).replace(/\\/g, "/") + "，记得 mirror:web 后跑门禁");
+  }
+}
+
+// ---------- 门禁判红（2026-11-07 九维评审 3-1）----------
+// a11y-sweep.mjs 原先只是报告器：主流程没有红灯退出码，35 文件 139 处违例
+// 全部落在豁免清单里，「未豁免 0 个」也照样 EXIT=0，等于门禁从未真正生效。
+// 现在默认只读扫描在存在未豁免违例时判红；--json（机读）、--write / --prune
+// （修复动作，用的是修复前快照）各有自己的退出语义，不被这里挡住。
+if (!flag("--json") && !flag("--write") && !flag("--prune-exemptions") && !flag("--self-test")) {
+  const open = rows.filter((r) => !r.exempt);
+  console.log(`[a11y] 新增未豁免违例：${open.length} 个文件 / ${open.reduce((n, r) => n + r.total, 0)} 处`);
+  if (expired.size) {
+    console.log(`[a11y] 已到期豁免 ${expired.size} 条（不再豁免）。修法：修掉违例，或在 scripts/a11y-exemptions.json 续期并写明理由与责任会话`);
+  }
+  if (open.length) {
+    console.error("[a11y] ❌ 存在未豁免违例，门禁判红。");
+    process.exit(1);
   }
 }

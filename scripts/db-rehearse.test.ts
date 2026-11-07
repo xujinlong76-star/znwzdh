@@ -100,7 +100,9 @@ describe("恢复演练（scripts/db-rehearse.mjs）", () => {
     expect(out.migrations[1]!.addedColumns).toEqual([]);
     expect(out.migrations[1]!.addedTables).toEqual([]);
     expect(out.secondRunIdempotent).toBe(true);
-    expect(out.countsAfter.categories).toBe(1);
+    // 出厂建库时 cleanTaxonomyAndDuplicates 会落 3 个 reg-* 叶，演练只补 schema 不删行：
+    // 3 个内置叶 + 本用例种下的 c1。
+    expect(out.countsAfter.categories).toBe(4);
     expect(out.countsAfter.sites).toBe(1);
     expect(out.checks.integrity).toBe("ok");
     expect(out.checks.foreignKeys).toBe(0);

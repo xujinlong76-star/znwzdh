@@ -316,9 +316,13 @@ export async function getDeletedSite(repo: Repository, id: string): Promise<Site
 export async function findSiteByUrl(repo: Repository, url: string): Promise<Site | null> {
   const canonical = canonicalizeUrl(url);
   const alt = canonical.endsWith("/") ? canonical.slice(0, -1) : canonical + "/";
+  const withWww = canonical.replace(/^(https?:\/\/)(?!www\.)/i, "$1www.");
+  const withWwwAlt = withWww.endsWith("/") ? withWww.slice(0, -1) : withWww + "/";
+  const withoutWww = canonical.replace(/^(https?:\/\/)www\./i, "$1");
+  const withoutWwwAlt = withoutWww.endsWith("/") ? withoutWww.slice(0, -1) : withoutWww + "/";
   const rows = await repo.raw(
-    repo.selectSitesSql() + " WHERE (s.url = ? OR s.url = ? OR s.url = ?) AND s.deleted_at IS NULL LIMIT 1",
-    [url, canonical, alt],
+    repo.selectSitesSql() + " WHERE (s.url = ? OR s.url = ? OR s.url = ? OR s.url = ? OR s.url = ? OR s.url = ? OR s.url = ?) AND s.deleted_at IS NULL LIMIT 1",
+    [url, canonical, alt, withWww, withWwwAlt, withoutWww, withoutWwwAlt],
   );
   const row = rows[0];
   return row ? rowToSite(row) : null;
@@ -343,6 +347,12 @@ export async function findExistingSiteUrls(repo: Repository, urls: string[]): Pr
     probe.add(raw);
     probe.add(canonical);
     probe.add(canonical.endsWith("/") ? canonical.slice(0, -1) : canonical + "/");
+    const withWww = canonical.replace(/^(https?:\/\/)(?!www\.)/i, "$1www.");
+    const withoutWww = canonical.replace(/^(https?:\/\/)www\./i, "$1");
+    probe.add(withWww);
+    probe.add(withWww.endsWith("/") ? withWww.slice(0, -1) : withWww + "/");
+    probe.add(withoutWww);
+    probe.add(withoutWww.endsWith("/") ? withoutWww.slice(0, -1) : withoutWww + "/");
   }
   const found = new Set<string>();
   if (probe.size === 0) return found;

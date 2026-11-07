@@ -3141,8 +3141,14 @@ export interface HubWorkspaceMember {
   email?: string
 }
 
+let inflightWorkspaces: Promise<{ ok: boolean; items: HubWorkspace[] }> | null = null
+
 export async function fetchWorkspaces(): Promise<{ ok: boolean; items: HubWorkspace[] }> {
-  return getJson<{ ok: boolean; items: HubWorkspace[] }>('/api/workspaces')
+  if (inflightWorkspaces) return inflightWorkspaces
+  inflightWorkspaces = getJson<{ ok: boolean; items: HubWorkspace[] }>('/api/workspaces').finally(() => {
+    inflightWorkspaces = null
+  })
+  return inflightWorkspaces
 }
 
 export async function createWorkspace(data: {
@@ -3193,9 +3199,17 @@ export async function removeWorkspaceMember(
  * Phase 4: CRDT 多端协同漫游 (CRDT Sync)
  * ------------------------------------------------------------------ */
 
+const inflightCrdtSync = new Map<string, Promise<{ ok: boolean; operations: any[]; state: any }>>()
+
 export async function fetchCrdtSync(identity?: string): Promise<{ ok: boolean; operations: any[]; state: any }> {
   const url = identity ? `/api/crdt/sync?userId=${encodeURIComponent(identity)}` : '/api/crdt/sync'
-  return getJson<{ ok: boolean; operations: any[]; state: any }>(url)
+  const cached = inflightCrdtSync.get(url)
+  if (cached) return cached
+  const promise = getJson<{ ok: boolean; operations: any[]; state: any }>(url).finally(() => {
+    inflightCrdtSync.delete(url)
+  })
+  inflightCrdtSync.set(url, promise)
+  return promise
 }
 
 export async function pushCrdtSync(

@@ -97,6 +97,17 @@ export function extractFaviconMonogram(title: string, url?: string): string {
 }
 
 export const LOCAL_LOGO_MAP: Record<string, string> = {
+  'deepseek.com': 'https://chat.deepseek.com/favicon.ico',
+  'chat.deepseek.com': 'https://chat.deepseek.com/favicon.ico',
+  'cursor.com': 'https://www.cursor.com/favicon.ico',
+  'cursor.sh': 'https://www.cursor.com/favicon.ico',
+  'klingai.com': 'https://klingai.com/favicon.ico',
+  'klingai.kuaishou.com': 'https://klingai.com/favicon.ico',
+  'runwayml.com': 'https://runwayml.com/favicon.ico',
+  'lumalabs.ai': 'https://lumalabs.ai/favicon.ico',
+  'sora.com': 'https://sora.com/favicon.ico',
+  'vidu.studio': 'https://www.vidu.studio/favicon.ico',
+  'hailuoai.com': 'https://hailuoai.com/favicon.ico',
   'chatgpt.com': '/assets/images/logos/chatgpt.webp',
   'chat.openai.com': '/assets/images/logos/chatgpt.webp',
   'openai.com': '/assets/images/logos/chatgpt.webp',
@@ -239,7 +250,22 @@ export function resolveSiteIcon(
       }
     }
 
+    // 自动解析 GitHub 仓库专属组织/用户 Avatar，杜绝连续黑猫 Octocat 撞脸
+    if (hostname === 'github.com') {
+      const parts = parsed.pathname.split('/').filter(Boolean)
+      if (parts.length >= 1) {
+        const owner = parts[0]!
+        if (!['features', 'topics', 'trending', 'collections', 'pricing', 'about', 'security', 'login', 'signup'].includes(owner.toLowerCase())) {
+          return `https://github.com/${owner}.png?size=64`
+        }
+      }
+    }
+
     const lowerTitle = (title || '').toLowerCase()
+    if (lowerTitle.includes('deepseek')) return 'https://chat.deepseek.com/favicon.ico'
+    if (lowerTitle.includes('cursor')) return 'https://www.cursor.com/favicon.ico'
+    if (lowerTitle.includes('copilot')) return 'https://github.com/github.png?size=64'
+    if (lowerTitle.includes('gemini')) return '/assets/images/logos/gemini.svg'
     if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/assets/images/logos/chatgpt.webp'
     if (lowerTitle.includes('claude')) return '/assets/images/logos/claude.webp'
     if (lowerTitle.includes('cloudflare')) return '/assets/images/logos/cloudflar.webp'
@@ -297,7 +323,7 @@ export function SiteFavicon({
     effectiveIcon = `/api/hub/assets/icon?url=${encodeURIComponent(url)}`
   }
 
-  // 3. 判断是否为明确的自定义图标或本地品牌资源
+  // 3. 判断是否为明确的自定义图标、本地资源或受信任的精选品牌图标
   const isLocalAsset = effectiveIcon.startsWith('/') || effectiveIcon.startsWith('data:')
   const hasCustomIcon = Boolean(
     icon &&
@@ -306,11 +332,21 @@ export function SiteFavicon({
     !isThirdPartyIcon(icon.trim()) &&
     !isRemoteRawFavicon(icon.trim())
   )
+  const isCuratedBrand = Boolean(
+    effectiveIcon &&
+    (effectiveIcon.includes('deepseek') ||
+     effectiveIcon.includes('cursor') ||
+     effectiveIcon.includes('github.com') ||
+     effectiveIcon.includes('githubusercontent.com') ||
+     effectiveIcon.includes('gemini') ||
+     effectiveIcon.includes('figure') ||
+     effectiveIcon.includes('bostondynamics'))
+  )
 
   // 4. 若此前已知加载失败、或未提供自定义 icon 且无内置 Logo（即属于自动生成的外部 /favicon.ico 盲猜地址）：
   //    外部站点普遍存在缺乏根目录 /favicon.ico、防盗链限制、CORP (NotSameOrigin) 阻断或跨境网络超时；
   //    直接加载会导致浏览器控制台报大量 net::ERR_* 错误。此处直接展示 NavHub 确定性渐变徽标，零网络开销且体验极佳。
-  if (!effectiveIcon || loadFailed || failedFaviconCache.has(effectiveIcon) || (!hasCustomIcon && !isLocalAsset)) {
+  if (!effectiveIcon || loadFailed || failedFaviconCache.has(effectiveIcon) || (!hasCustomIcon && !isLocalAsset && !isCuratedBrand)) {
     const monogram = extractFaviconMonogram(title, url)
     const gradient = getDeterministicGradient(url || title || 'navhub')
 

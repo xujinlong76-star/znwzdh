@@ -182,6 +182,8 @@ describe("冷备恢复预演（dryRun 默认 true）", () => {
     const freshApp = await buildServer(freshCtx);
     await freshApp.ready();
     try {
+      // 内置迁移会预置 3 个 reg-* 叶；这里要验的是「真空库」的兜底口径，先清空。
+      freshCtx.db.sqlite!.prepare("DELETE FROM categories").run();
       const res = await freshApp.inject({
         method: "POST",
         url: "/api/backup/restore",

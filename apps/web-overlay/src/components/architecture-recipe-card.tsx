@@ -506,7 +506,9 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
                         setCompletedSteps([])
                         try {
                           localStorage.removeItem(`navhub_recipe_sop_${recipe.id}`)
-                        } catch {}
+                        } catch {
+                          // 本地存储不可用时静默降级
+                        }
                       }}
                       className="text-[11px] text-muted-foreground hover:text-foreground underline cursor-pointer"
                     >

@@ -17,6 +17,7 @@ import {
   migrateEventIdentity,
   migrateCategorySlugs,
   migrateWorkspaceBlobs,
+  cleanTaxonomyAndDuplicates,
 } from "../migrate.ts";
 
 export interface MigrationRecord {
@@ -204,6 +205,14 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await migrateWorkspaceBlobs(db);
     },
     checksum: "v1_workspace_blobs",
+  },
+  {
+    version: "20261107_clean_taxonomy_and_duplicates",
+    name: "类目重构、错位纠偏与存量重复站点数据清洗",
+    up: async (db: Db) => {
+      await cleanTaxonomyAndDuplicates(db);
+    },
+    checksum: "v1_clean_taxonomy_and_duplicates",
   },
 ];
 

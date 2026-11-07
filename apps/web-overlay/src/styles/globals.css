@@ -164,6 +164,13 @@
       outline: 2px solid Highlight;
     }
   }
+
+  /* 贴边半隐藏浮层（home-diy-toolbar 的静息态把手等）横向滑出视口时，
+     不允许把 html 撑出横向滚动条。clip（而非 hidden）不创建滚动容器，
+     position: sticky 的吸顶侧栏不受影响。 */
+  html {
+    overflow-x: clip;
+  }
 }
 
 /* 确保 cursor 样式正常工作 */

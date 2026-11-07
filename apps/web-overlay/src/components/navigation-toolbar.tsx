@@ -81,18 +81,7 @@ export function NavigationToolbar({
               <SearchPalette siteConfig={siteConfig} />
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              {/* 开发者极速微工具箱按钮 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden sm:inline-flex"
-                onClick={() => onOpenTools()}
-                title="打开内置微工具箱 (快捷键: T)"
-                aria-label="微工具箱"
-              >
-                <Wrench className="h-4 w-4" />
-              </Button>
-
+              {/* 发现与热度 */}
               <Button
                 asChild
                 variant="ghost"
@@ -221,7 +210,19 @@ export function NavigationToolbar({
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {/* 用户中心：账号、收藏、历史、偏好与数据管理的统一入口 */}
+              <div className="h-4 w-px bg-border/60 mx-1 hidden sm:block" />
+
+              {/* 开发者极速微工具箱按钮 */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden sm:inline-flex"
+                onClick={() => onOpenTools()}
+                title="打开内置微工具箱 (快捷键: T)"
+                aria-label="微工具箱"
+              >
+                <Wrench className="h-4 w-4" />
+              </Button>
               <Button
                 asChild
                 variant="ghost"
@@ -281,9 +282,11 @@ export function NavigationToolbar({
                 </Button>
               )}
 
+              <div className="h-4 w-px bg-border/60 mx-1 hidden sm:block" />
               <div className="hidden sm:inline-flex"><ViewModeToggle /></div>
               <div className="hidden sm:inline-flex"><DensityToggle /></div>
               <ModeToggle />
+              <div className="h-4 w-px bg-border/60 mx-1 hidden sm:block" />
               <Button
                 asChild
                 variant="ghost"

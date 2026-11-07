@@ -135,7 +135,18 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
 
       <ScrollArea className="flex-1 px-3 py-3">
         <div className="space-y-1">
-          {navigationData.navigationItems.map((category) => (
+          {navigationData.navigationItems
+            .filter((category) => {
+              const directCount = category.items?.length || 0;
+              const subCount = category.subCategories?.reduce((acc, sub) => acc + (sub.items?.length || 0), 0) || 0;
+              if (category.title === '未分类' && directCount + subCount === 0) return false;
+              return true;
+            })
+            .map((category) => {
+              const visibleSubCategories = (category.subCategories || []).filter(
+                (sub) => !sub.items || sub.items.length > 0
+              );
+              return (
             <div key={category.id} className="py-1">
               <div className="flex items-center group">
                 <Button
@@ -149,7 +160,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
                   <span className="truncate">{category.title}</span>
                 </Button>
 
-                {category.subCategories && category.subCategories.length > 0 && (
+                {visibleSubCategories.length > 0 && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -167,7 +178,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
                 )}
               </div>
 
-              {category.subCategories && category.subCategories.length > 0 && (
+              {visibleSubCategories.length > 0 && (
                 <div
                   className={cn(
                     "grid transition-all duration-200 ease-in-out",
@@ -175,7 +186,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
                   )}
                 >
                   <div className="mt-1 ml-3 pl-2.5 border-l border-border/50 space-y-0.5 overflow-hidden">
-                    {category.subCategories.map((subCategory) => (
+                    {visibleSubCategories.map((subCategory) => (
                       <Button
                         key={subCategory.id}
                         variant="ghost"
@@ -192,7 +203,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
                 </div>
               )}
             </div>
-          ))}
+          )})}
         </div>
       </ScrollArea>
 

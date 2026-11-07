@@ -98,6 +98,11 @@ function readonly(dbPath: string): any {
 describe("taxonomy-migrate（P3）", () => {
   it("dry-run 只出报表，不改库、不建 category_remaps", async () => {
     const { dbPath, backupPath } = await buildFixture();
+    // openDb 的内置迁移会先落 3 个 reg-* 叶，所以基线不是 0：比较运行前后的计数，
+    // 才能证明「dry-run 零写入」而不是把夹具的初始行数写死。
+    const snapshotDb = readonly(dbPath);
+    const categoriesBefore = Number(snapshotDb.prepare("SELECT COUNT(*) AS n FROM categories").get().n);
+    snapshotDb.close();
     const report = await runTaxonomyMigrate({ dbPath, backupDbPath: backupPath, apply: false, restoreMatched: true });
 
     expect(report.trashed.total).toBe(MATCHED + 1);
@@ -109,7 +114,7 @@ describe("taxonomy-migrate（P3）", () => {
 
     const db = readonly(dbPath);
     try {
-      expect(Number(db.prepare("SELECT COUNT(*) AS n FROM categories").get().n)).toBe(2);
+      expect(Number(db.prepare("SELECT COUNT(*) AS n FROM categories").get().n)).toBe(categoriesBefore);
       expect(Number(db.prepare("SELECT COUNT(*) AS n FROM sites WHERE deleted_at IS NOT NULL").get().n)).toBe(MATCHED + 1);
       expect(db.prepare("SELECT category_id FROM sites WHERE id = 'trash-1'").get().category_id).toBe("cat-old-containers");
       expect(Number(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name='category_remaps'").get().n)).toBe(0);
@@ -141,8 +146,8 @@ describe("taxonomy-migrate（P3）", () => {
       const q = (sql: string, ...args: unknown[]) => db.prepare(sql).get(...args);
       const all = (sql: string, ...args: unknown[]) => db.prepare(sql).all(...args);
 
-      // 投影：233 条 registry + 未分类；旧种子根已删除；旧根与 registry 根不再同名并存
-      expect(Number(q("SELECT COUNT(*) AS n FROM categories").n)).toBe(234);
+      // 投影：235 条 registry + 未分类；旧种子根已删除；旧根与 registry 根不再同名并存
+      expect(Number(q("SELECT COUNT(*) AS n FROM categories").n)).toBe(236);
       expect(all("SELECT id FROM categories WHERE title = 'AI 工具' AND parent_id IS NULL").map((r: any) => r.id)).toEqual([
         "reg-ai-tools",
       ]);
@@ -195,6 +200,10 @@ describe("taxonomy-migrate（P3）", () => {
 
   it("缺口占比达到 5% 时在写入前拒绝 apply", async () => {
     const { dbPath, backupPath } = await buildFixture({ gapOnly: true });
+    const snapshotDb = readonly(dbPath);
+    const categoriesBefore = Number(snapshotDb.prepare("SELECT COUNT(*) AS n FROM categories").get().n);
+    const regBefore = Number(snapshotDb.prepare("SELECT COUNT(*) AS n FROM categories WHERE id LIKE 'reg-%'").get().n);
+    snapshotDb.close();
 
     await expect(
       runTaxonomyMigrate({ dbPath, backupDbPath: backupPath, apply: true, restoreMatched: true }),
@@ -202,9 +211,9 @@ describe("taxonomy-migrate（P3）", () => {
 
     const db = readonly(dbPath);
     try {
-      expect(Number(db.prepare("SELECT COUNT(*) AS n FROM categories").get().n)).toBe(2);
+      expect(Number(db.prepare("SELECT COUNT(*) AS n FROM categories").get().n)).toBe(categoriesBefore);
       expect(Number(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name='category_remaps'").get().n)).toBe(0);
-      expect(Number(db.prepare("SELECT COUNT(*) AS n FROM categories WHERE id LIKE 'reg-%'").get().n)).toBe(0);
+      expect(Number(db.prepare("SELECT COUNT(*) AS n FROM categories WHERE id LIKE 'reg-%'").get().n)).toBe(regBefore);
     } finally {
       db.close();
     }

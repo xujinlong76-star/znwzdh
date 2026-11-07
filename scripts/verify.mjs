@@ -44,6 +44,24 @@ const env = {
 const passed = [];
 const skipped = [];
 
+/**
+ * 三态汇总兜底（2026-11-07 九维评审 5-1）：
+ * 输出铁律要求「不报 100% 通过」，但失败路径会在 run() / 全量测试分支里
+ * 直接 process.exit(1)，根本走不到 printSummary()——于是台账只看到一行
+ * 「本次没有全部通过」，看不到「通过 N / 跳过 M / 未覆盖 K」的可复算口径。
+ * 用 exit 事件兜底：无论成功、失败还是异常退出，都给出同一套三态数字。
+ */
+let triStatePrinted = false;
+process.on("exit", () => {
+  if (triStatePrinted) return;
+  const uncovered = ["前端 tsc / eslint / next build", "Playwright e2e"];
+  if (!process.argv.includes("--full")) uncovered.push("全量测试");
+  console.log(
+    `[verify] 三态汇总（失败 / 异常退出）：通过 ${passed.length} 项 / 跳过（未执行）${skipped.length} 项 / 未覆盖 ${uncovered.length} 类。`,
+  );
+  console.log("[verify] 绿灯仅表示「已计入项退出码 0」，不代表全覆盖通过。");
+});
+
 function run(label, cmd, args, options = {}) {
   console.log(`\n[verify] ----------------------------------------------------`);
   console.log(`[verify] 执行: ${label}`);
@@ -357,7 +375,16 @@ function printSummary() {
     console.log(`[verify] 未覆盖：全量测试（本次为默认档；用 pnpm verify:full 跑，约 20 分钟以上，勿与其它任务并行）`);
   }
   console.log("");
+  // 输出铁律（:6-8）：不报 100% 通过。绿灯只说明「被计入的项没红」，
+  // 不等于覆盖面完整；改用「通过 / 跳过 / 未覆盖」三态汇总，避免台账把
+  // 混合计数误读成「18 项全绿」。
+  const uncovered = ["前端 tsc / eslint / next build", "Playwright e2e"];
+  if (!process.argv.includes("--full")) uncovered.push("全量测试");
   console.log(
-    `✅ [verify] 上述 ${passed.length} 项全部退出码 0${skipped.length > 0 ? `（另有 ${skipped.length} 项未执行）` : ""}。`,
+    `[verify] 三态汇总：通过 ${passed.length} 项 / 跳过（未执行）${skipped.length} 项 / 未覆盖 ${uncovered.length} 类；合计已登记 ${passed.length + skipped.length + uncovered.length} 项。`,
   );
+  console.log(
+    `[verify] 绿灯仅表示「已计入的 ${passed.length} 项退出码 0」，不代表全覆盖通过（未覆盖清单见上方）。`,
+  );
+  triStatePrinted = true; // 正常路径已打印三态，exit 兜底不再重复
 }

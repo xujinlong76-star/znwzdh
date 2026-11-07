@@ -148,6 +148,8 @@ beforeAll(async () => {
   app = await buildServer(ctx);
   await app.ready();
 
+  // 内置迁移会预置 3 个 reg-* 叶；本文件用受控夹具验契约，先清空。
+  ctx.db.sqlite!.prepare("DELETE FROM categories").run();
   for (const c of CAT_ROOTS) await ctx.repo.createCategory({ id: c.id, title: c.title });
   for (const c of CATS) await ctx.repo.createCategory({ id: c.id, title: c.title, parentId: c.parentId });
   for (const s of SITES) await ctx.repo.createSite(s);

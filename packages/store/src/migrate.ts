@@ -908,3 +908,230 @@ export async function cleanupOrphanPluginCategories(
     return 0;
   }
 }
+
+
+/**
+ * 20261107: 类目重构、错位纠偏与存量重复站点数据清洗
+ *
+ * 解决四大核心痛点：
+ * 1. 类目树重构与补齐（落地 reg-prompt-engineering、reg-inference-and-deployment、reg-embodied-ai-and-robotics）；
+ * 2. 严重错位站点纠偏（将稿定设计、创客贴迁至 设计与创意 reg-inspiration-and-showcase；
+ *    将 llama.cpp、vLLM、TGI、OpenVINO 等迁至 reg-inference-and-deployment；
+ *    将 提示词工程指南、Anthropic 提示词库 等迁至 reg-prompt-engineering）；
+ * 3. 存量重复收录站点合并（Cursor、多邻国、新华网、达芬奇、LeetCode 等，将外键/收藏/事件安全迁移至主记录，删除冗余副本）；
+ * 4. 规范化 URL 自动查重合并，确保未软删站点中无多余镜像副本。
+ */
+export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?: any; pg?: any }): Promise<{
+  categoriesCreated: number;
+  sitesReclassified: number;
+  sitesDeduplicated: number;
+}> {
+  const isSqlite = db.dialect !== "pg" && !!db.sqlite;
+  const read = async (sql: string, params: unknown[] = []): Promise<Array<Record<string, any>>> => {
+    if (isSqlite) {
+      const maybe = db.sqlite.prepare(sql).all(...params);
+      return maybe && typeof maybe.then === "function" ? await maybe : maybe;
+    }
+    if (!db.pg) return [];
+    return (await db.pg.query(toPgSql(sql), params)).rows;
+  };
+  const write = async (sql: string, params: unknown[] = []): Promise<void> => {
+    if (isSqlite) {
+      const maybe = db.sqlite.prepare(sql).run(...params);
+      if (maybe && typeof maybe.then === "function") await maybe;
+      return;
+    }
+    if (db.pg) {
+      await db.pg.query(toPgSql(sql), params);
+    }
+  };
+
+  let categoriesCreated = 0;
+  let sitesReclassified = 0;
+  let sitesDeduplicated = 0;
+
+  try {
+    const now = Date.now();
+    // 1. 确保新类目在 categories 表中落地
+    const newCats = [
+      {
+        id: "reg-prompt-engineering",
+        anchor: "ai-tools/prompt-engineering",
+        parentId: "reg-ai-tools",
+        title: "提示词工程",
+        slug: "prompt-engineering",
+        description: "提示词模板库、Prompt 优化技巧、系统提示与上下文工程指南",
+        sort: 9,
+      },
+      {
+        id: "reg-inference-and-deployment",
+        anchor: "backend-and-cloud/inference-and-deployment",
+        parentId: "reg-backend-and-cloud",
+        title: "推理与端侧",
+        slug: "inference-and-deployment",
+        description: "高并发推理服务引擎、端侧模型量化、模型编译与本地执行运行时",
+        sort: 13,
+      },
+      {
+        id: "reg-embodied-ai-and-robotics",
+        anchor: "ai-tools/embodied-ai-and-robotics",
+        parentId: "reg-ai-tools",
+        title: "具身智能与硬件",
+        slug: "embodied-ai-and-robotics",
+        description: "机器人具身算法、机器人仿真环境、空间智能与物理世界交互系统",
+        sort: 13,
+      },
+    ];
+
+    for (const cat of newCats) {
+      const existing = await read("SELECT id FROM categories WHERE id = ? OR slug = ?", [cat.id, cat.slug]);
+      if (existing.length === 0) {
+        await write(
+          "INSERT INTO categories (id, anchor, parent_id, title, slug, description, sort, enabled, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'registry', ?, ?)",
+          [cat.id, cat.anchor, cat.parentId, cat.title, cat.slug, cat.description, cat.sort, now, now]
+        );
+        categoriesCreated++;
+      }
+    }
+
+    // 2. 错位纠偏：稿定设计与创客贴迁至 设计与创意 (reg-inspiration-and-showcase)
+    const designTarget = await read("SELECT id FROM categories WHERE id = 'reg-inspiration-and-showcase' OR slug = 'inspiration-and-showcase'");
+    const firstDesignTarget = designTarget[0];
+    if (firstDesignTarget) {
+      const targetCatId = firstDesignTarget.id;
+      const misclassifiedDesign = await read(
+        "SELECT id, title FROM sites WHERE (url LIKE '%gaoding.com%' OR title LIKE '%稿定设计%' OR url LIKE '%chuangkit.com%' OR title LIKE '%创客贴%') AND category_id <> ?",
+        [targetCatId]
+      );
+      for (const row of misclassifiedDesign) {
+        await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [targetCatId, now, row.id]);
+        sitesReclassified++;
+      }
+    }
+
+    // 3. 错位纠偏：端侧推理引擎迁至 推理与端侧 (reg-inference-and-deployment)
+    const inferenceTarget = await read("SELECT id FROM categories WHERE id = 'reg-inference-and-deployment' OR slug = 'inference-and-deployment'");
+    const firstInferenceTarget = inferenceTarget[0];
+    if (firstInferenceTarget) {
+      const targetCatId = firstInferenceTarget.id;
+      const inferenceSites = await read(
+        "SELECT id, title FROM sites WHERE (url LIKE '%llama.cpp%' OR url LIKE '%vllm%' OR url LIKE '%text-generation-inference%' OR url LIKE '%openvino%' OR url LIKE '%tvm.apache.org%' OR url LIKE '%triton%' OR url LIKE '%mlc-ai%' OR url LIKE '%whisper.cpp%' OR title LIKE '%llama.cpp%' OR title LIKE '%OpenVINO%' OR title LIKE '%Apache TVM%') AND category_id <> ?",
+        [targetCatId]
+      );
+      for (const row of inferenceSites) {
+        await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [targetCatId, now, row.id]);
+        sitesReclassified++;
+      }
+    }
+
+    // 4. 错位纠偏：提示词工程迁至 提示词工程 (reg-prompt-engineering)
+    const promptTarget = await read("SELECT id FROM categories WHERE id = 'reg-prompt-engineering' OR slug = 'prompt-engineering'");
+    const firstPromptTarget = promptTarget[0];
+    if (firstPromptTarget) {
+      const targetCatId = firstPromptTarget.id;
+      const promptSites = await read(
+        "SELECT id, title FROM sites WHERE (url LIKE '%promptingguide.ai%' OR url LIKE '%docs.anthropic.com%prompt%' OR url LIKE '%cookbook.openai.com%' OR url LIKE '%flowgpt.com%' OR url LIKE '%prompthero.com%' OR title LIKE '%提示词%' OR title LIKE '%提示工程%') AND category_id <> ?",
+        [targetCatId]
+      );
+      for (const row of promptSites) {
+        await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [targetCatId, now, row.id]);
+        sitesReclassified++;
+      }
+    }
+
+    // 5. 辅助合并删除重复站点函数
+    const mergeAndDeleteDuplicate = async (keepId: string, dupId: string) => {
+      if (keepId === dupId) return;
+      const keep = await read("SELECT id FROM sites WHERE id = ?", [keepId]);
+      const dup = await read("SELECT id FROM sites WHERE id = ?", [dupId]);
+      if (keep.length === 0 || dup.length === 0) return;
+
+      // 转移 favorites
+      const dupFavs = await read("SELECT user_id, folder_id, note, tags, created_at, updated_at FROM favorites WHERE site_id = ?", [dupId]);
+      for (const fav of dupFavs) {
+        const hasKeepFav = await read("SELECT id FROM favorites WHERE user_id = ? AND site_id = ?", [fav.user_id, keepId]);
+        if (hasKeepFav.length === 0) {
+          await write("UPDATE favorites SET site_id = ? WHERE site_id = ? AND user_id = ?", [keepId, dupId, fav.user_id]);
+        } else {
+          await write("DELETE FROM favorites WHERE site_id = ? AND user_id = ?", [dupId, fav.user_id]);
+        }
+      }
+
+      // 转移 events
+      await write("UPDATE events SET site_id = ? WHERE site_id = ?", [keepId, dupId]);
+
+      // 转移 collection_items
+      const dupCollections = await read("SELECT collection_id FROM collection_items WHERE site_id = ?", [dupId]);
+      for (const col of dupCollections) {
+        const hasKeepCol = await read("SELECT collection_id FROM collection_items WHERE collection_id = ? AND site_id = ?", [col.collection_id, keepId]);
+        if (hasKeepCol.length === 0) {
+          await write("UPDATE collection_items SET site_id = ? WHERE site_id = ? AND collection_id = ?", [keepId, dupId, col.collection_id]);
+        } else {
+          await write("DELETE FROM collection_items WHERE site_id = ? AND collection_id = ?", [dupId, col.collection_id]);
+        }
+      }
+
+      // 清理关系与关联
+      await write("DELETE FROM site_tags WHERE site_id = ?", [dupId]);
+      await write("DELETE FROM site_facets WHERE site_id = ?", [dupId]);
+      await write("DELETE FROM site_relations WHERE source_site_id = ? OR target_site_id = ?", [dupId, dupId]);
+      await write("DELETE FROM sites WHERE id = ?", [dupId]);
+      sitesDeduplicated++;
+    };
+
+    // 精确消除用户指出的重复对
+    // Cursor
+    await mergeAndDeleteDuplicate("385c18b1-aa13-4a5c-a18c-be3fb3f9b51d", "ef75c24d-dcf0-45b9-9068-c15ef9d2ab29");
+    // 多邻国
+    await mergeAndDeleteDuplicate("bf2b2dc4-957a-43df-96e3-67b101fb419a", "d0c72c62-c39d-47e7-a0ae-59b04586e710");
+    // 新华网
+    await mergeAndDeleteDuplicate("34701294-dc83-4201-8c39-ca26937614a2", "d68c3fe6-859d-48dd-853c-f46313b4695b");
+    // 达芬奇 DaVinci Resolve
+    await mergeAndDeleteDuplicate("5311d2e0-8369-4235-8ca1-ebdf494159d1", "94d43da1-33eb-4703-be77-aad597071bf8");
+
+    // LeetCode 差异化处理：4b93a8b4-aee4-4707-a742-e7b80d254d84 转为 AcWing 算法交流
+    const leetCodeDup = await read("SELECT id, title, url FROM sites WHERE id = '4b93a8b4-aee4-4707-a742-e7b80d254d84'");
+    const firstLeetCode = leetCodeDup[0];
+    if (firstLeetCode && String(firstLeetCode.title).includes("LeetCode")) {
+      await write(
+        "UPDATE sites SET title = 'AcWing 算法交流', url = 'https://www.acwing.com/', description = '知名的中文算法与数据结构学习社区，包含 LeetCode 题解、算法基础课与周赛精讲。', updated_at = ? WHERE id = '4b93a8b4-aee4-4707-a742-e7b80d254d84'",
+        [now]
+      );
+      sitesReclassified++;
+    }
+
+    // 6. 通用 Canonical URL 深度查重与合并
+    const allSites = await read("SELECT id, url, title, created_at FROM sites WHERE deleted_at IS NULL ORDER BY created_at ASC");
+    const seenByCanonical = new Map<string, string>();
+
+    const getCanonicalUrlKey = (u: string): string => {
+      try {
+        const parsed = new URL(u.startsWith("http") ? u : `https://${u}`);
+        const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+        let path = parsed.pathname.replace(/\/+$/, "");
+        if (!path) path = "";
+        return `${host}${path}`;
+      } catch {
+        return u.toLowerCase().replace(/^https?:\/\/(www\.)?/, "").replace(/\/+$/, "");
+      }
+    };
+
+    for (const s of allSites) {
+      const key = getCanonicalUrlKey(s.url);
+      if (!key) continue;
+      const existingId = seenByCanonical.get(key);
+      if (!existingId) {
+        seenByCanonical.set(key, s.id);
+      } else if (existingId !== s.id) {
+        // 同 URL 重复，保留最先创建的现有站点，合并多余项
+        await mergeAndDeleteDuplicate(existingId, s.id);
+      }
+    }
+
+    console.info(`[migrate] cleanTaxonomyAndDuplicates 完成：新增类目 ${categoriesCreated} 个，重分类站点 ${sitesReclassified} 个，消除重复站点 ${sitesDeduplicated} 个`);
+  } catch (err) {
+    console.warn("[migrate] cleanTaxonomyAndDuplicates 异常:", err instanceof Error ? err.message : err);
+  }
+
+  return { categoriesCreated, sitesReclassified, sitesDeduplicated };
+}

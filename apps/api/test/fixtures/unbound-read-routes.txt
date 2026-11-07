@@ -230,6 +230,8 @@ GET /api/account/email-status
 HEAD /api/account/email-status
 GET /api/sites/{id}/health-history
 HEAD /api/sites/{id}/health-history
+GET /api/sites/{id}/localize
+HEAD /api/sites/{id}/localize
 GET /api/sites/{id}/radar
 HEAD /api/sites/{id}/radar
 GET /api/intent/action

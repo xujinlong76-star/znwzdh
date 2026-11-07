@@ -64,7 +64,7 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
             <button
               key={ws.id}
               onClick={() => onChange(ws.id)}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-medium transition-all shrink-0 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-medium transition-all shrink-0 whitespace-nowrap cursor-pointer ${
                 isActive
                   ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                   : 'bg-muted/40 hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/50 hover:border-border'
@@ -85,36 +85,36 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
       {/* 「全天候时段场景流推荐」开关必须真的改变这一行：
           开启 → 给出当前时段建议的场景，点一下就切过去（未经用户同意不自动换整屏）；
           关闭 → 明说已关闭，而不是继续显示一句按时间算出来的提示。 */}
-      <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 whitespace-nowrap">
         {daypartSceneEnabled ? (
           suggestedWorkspace ? (
             <button
               type="button"
               onClick={() => onChange(suggestedWorkspace.id)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors shrink-0 whitespace-nowrap cursor-pointer"
               title={`切换到「${suggestedWorkspace.label}」`}
             >
               <Sparkles className="w-3.5 h-3.5" aria-hidden />
-              <span className="font-semibold">{daypartText(daypart?.hint ?? DAYPART_PLACEHOLDER)}</span>
-              <span className="flex items-center gap-0.5">
+              <span className="font-semibold whitespace-nowrap">{daypartText(daypart?.hint ?? DAYPART_PLACEHOLDER)}</span>
+              <span className="flex items-center gap-0.5 whitespace-nowrap">
                 {suggestedWorkspace.label}
                 <ArrowRight className="w-3 h-3" aria-hidden />
               </span>
             </button>
           ) : (
-            <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40">
+            <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40 shrink-0 whitespace-nowrap">
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span className="font-semibold text-foreground text-xs">
+              <span className="font-semibold text-foreground text-xs whitespace-nowrap">
                 {daypartText(daypart?.hint ?? DAYPART_PLACEHOLDER)}
               </span>
             </div>
           )
         ) : (
-          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40 text-muted-foreground">
-            <span className="text-xs">时段场景推荐已关闭</span>
+          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40 text-muted-foreground shrink-0 whitespace-nowrap">
+            <span className="text-xs whitespace-nowrap">时段场景推荐已关闭</span>
           </div>
         )}
-        <span className="text-xs text-muted-foreground">自适应工作区</span>
+        <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">自适应工作区</span>
       </div>
     </div>
   )

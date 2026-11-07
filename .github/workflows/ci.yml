@@ -691,6 +691,13 @@ jobs:
       # overlay 是 Docker 构建与 vendor 的事实源；apps/web 改了没同步回去会在这里失败
       - run: node scripts/check-web-overlay.mjs
         id: gate-overlay
+      # 前端配置事实源一致性（2026-11-07 九维评审 1-2）：
+      # 宿主机 dev:web 读 apps/web/*，而 verify:web / CI vendor / Docker COPY overlay
+      # 三条路径读 overlay 覆写后的同名文件。两份 next.config.js / package.json /
+      # tsconfig.json 一旦漂移，CSP 与 ignoreBuildErrors 会在不同部署形态下各读一份。
+      # 放在 vendor 之后：此时两个目录都已就绪，比对才有意义。
+      - run: node scripts/check-web-config-parity.mjs
+        id: gate-config-parity
       # core 纯算法的前端运行时副本必须与 packages/core 事实源逐字节一致
       # （历史事故：13 个镜像里 9 个悄悄漂移，knowledge-graph 前端缺 computeGraphCentrality）
       - run: node scripts/sync-core-mirrors.mjs --check

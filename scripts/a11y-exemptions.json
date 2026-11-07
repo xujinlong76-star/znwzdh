@@ -1,0 +1,283 @@
+{
+  "_note": "WIP 豁免到期策略（2026-11-07 九维评审 3-1）。清单本体仍在 apps/web-overlay/test/a11y-token-contrast.test.ts:132-175 的 WIP_HOT_EXEMPT 数组，本文件只存到期元数据，不改数组形状以兼容 parseExemptions。",
+  "createdAt": "2026-11-07",
+  "policy": "分批释放：三批到期日错开 30 天，避免一次性释放 35 个文件让 test-web 立刻红灯阻断交付；到期条目不再享受豁免，需修复违例或续期并写明理由与责任会话。",
+  "batches": [
+    {
+      "batch": 1,
+      "expiresAt": "2026-12-07",
+      "note": "第一批：优先释放核心浏览视图"
+    },
+    {
+      "batch": 2,
+      "expiresAt": "2027-01-07",
+      "note": "第二批"
+    },
+    {
+      "batch": 3,
+      "expiresAt": "2027-02-07",
+      "note": "第三批"
+    }
+  ],
+  "entries": [
+    {
+      "rel": "app/search/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "app/auth/layout.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "app/auth/forgot-password/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "app/auth/reset-password/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "app/auth/signup/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "app/auth/verify-email/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "components/user-center/local-data-manager.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "app/admin/data/restore/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "app/admin/jobs/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "app/admin/taxonomy/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "app/admin/videos/[id]/categories/[categoryId]/items/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "app/admin/videos/[id]/items/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "app/admin/videos/components/HarvestModal.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "app/admin/videos/components/VideoCategoryCard.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "app/admin/videos/page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "app/category/[slug]/category-board.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "app/collections/[slug]/collection-detail-view.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "app/hot/hot-view.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "components/ai/llm-daily-cost-chart.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "components/bookmark-importer.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "components/category-index-filterable-list.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "components/category-site-filter-bar.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "components/navigation-category-section.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "components/p2p/p2p-airdrop-modal.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "components/quick-tools-drawer.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "components/reader/site-archive-reader-modal.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "components/search/spotlight-modal.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "components/site-detail-view.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "components/site-peek-dialog.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "components/sites-directory-filterable-grid.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "components/tag-cloud.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "components/tag-results-board.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "components/video-auto-harvest-dialog.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "components/video-card.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    },
+    {
+      "rel": "components/video-content.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-01-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 2
+    },
+    {
+      "rel": "components/video-player-page.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2027-02-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 3
+    },
+    {
+      "rel": "components/workspace/workspace-switcher.tsx",
+      "createdAt": "2026-11-02",
+      "expiresAt": "2026-12-07",
+      "owner": "WIP 热区（待责任会话确认）",
+      "batch": 1
+    }
+  ]
+}

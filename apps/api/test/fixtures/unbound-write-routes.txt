@@ -89,6 +89,7 @@ POST /api/account/login | 登录返回 user(id/username/email/role/emailVerified
 
 # ---- 站点/投稿/视频链路（2026-11-06 新增，待补 schema）----
 POST /api/sites/{id}/visual | 场景视觉预览：返回按目标 URL 抓取的候选图与置信度（随页面内容变化）
+POST /api/sites/{id}/video-demo | AI 视频微演示：返回 provider 任务态（processing/completed）或降级动效，字段随 provider 任务与缓存状态变化
 POST /api/sites/batch-classify | 批量分类建议：逐站点的模型/规则决策结果（随全库数据变化）
 POST /api/submissions/prefill | 投稿预填：根据 URL 抓取与模型抽取的字段建议（随目标页面变化）
 POST /api/videos/copilot | 视频 copilot 建议：逐条候选与理由（随模型输出变化）

@@ -112,7 +112,7 @@ export const aiAgenticCoding: SeedPluginDef = {
       ],
       "sites": [
         {
-          "url": "https://www.cursor.com/",
+          "url": "https://cursor.com",
           "title": "Cursor",
           "description": "新一代 AI 优先代码编辑器，支持多文件上下文索引与智能改写。",
           "category": "AI 编程助手",

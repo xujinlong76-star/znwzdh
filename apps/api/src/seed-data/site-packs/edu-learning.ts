@@ -104,7 +104,7 @@ export const eduLearningPack: SeedPluginDef = {
         { url: "https://www.shanbay.com/", title: "扇贝", description: "扇贝单词与听说训练平台，用打卡方式坚持学英语。", category: "语言学习", subCategory: "单词记忆", tags: ["单词", "背词", "英语"] },
         { url: "https://www.baicizhan.com/", title: "百词斩", description: "以图片联想记忆单词的学习平台，覆盖多类词书。", category: "语言学习", subCategory: "单词记忆", tags: ["单词", "图记", "英语"] },
         { url: "https://www.liulishuo.com/", title: "英语流利说", description: "AI 口语练习平台，通过跟读与情景对话提升发音。", category: "语言学习", subCategory: "口语训练", tags: ["口语", "英语", "AI"] },
-        { url: "https://www.duolingo.com/", title: "多邻国", description: "游戏化语言学习平台，覆盖英日韩法德等多语种免费课程。", category: "语言学习", subCategory: "多语种学习", tags: ["多语种", "游戏化", "免费"] },
+        { url: "https://www.hellotalk.com/", title: "HelloTalk", description: "全球知名的语言交换社区，与全球母语者一对一练习口语与日常对话。", category: "语言学习", subCategory: "口语社交", tags: ["语言交换", "口语", "社交"] },
         { url: "https://www.kekenet.com/", title: "可可英语", description: "英语听力口语学习站，音频资源、双语字幕与考试频道。", category: "语言学习", subCategory: "听力资源", tags: ["听力", "英语", "资源"] },
         { url: "https://language.chinadaily.com.cn/", title: "中国日报英语点津", description: "中国日报英语学习频道，双语新闻与热词翻译解读。", category: "语言学习", subCategory: "双语阅读", tags: ["双语", "阅读", "英语新闻"] },
         { url: "https://www.eudic.net/", title: "欧路词典", description: "欧路词典官网，支持导入词库、跨平台同步的词典工具。", category: "语言学习", subCategory: "词典工具", tags: ["词典", "离线", "工具"] },

@@ -53,6 +53,9 @@ export default defineConfig({
       "scripts/**/*.test.mjs",
     ],
     environment: "node",
+    cache: {
+      dir: "./.cache/vitest",
+    },
     testTimeout: 30_000,
     hookTimeout: 60_000,
     pool: "forks",

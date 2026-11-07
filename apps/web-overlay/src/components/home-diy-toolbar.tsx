@@ -180,13 +180,19 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
   return (
     <>
       {/* 悬浮微胶囊：首页 DIY 工坊坞 */}
+      {/* 贴边半隐藏（桌面静息态）：工坊坞常驻右下会盖住内容列末端的卡片文字，
+          静息时整体右移只留 2.75rem 把手，悬停 / 键盘聚焦 / 编排中 / 触屏 / 有告警时滑回全显。
+          触屏不半隐藏：hover 不存在，半藏的把手在手机上等于不可发现。 */}
       <div
         className={cn(
-          'fixed right-6 z-40 flex flex-col items-end gap-2 pointer-events-none transition-[bottom] duration-200',
+          'fixed right-6 z-40 flex flex-col items-end gap-2 pointer-events-none transition-[bottom,transform] duration-200',
           // 静息位抬到全局 AI 副驾胶囊（bottom-6 right-6）上方，避免最低那颗
           // 「DIY 排版工坊」入口被胶囊拦截点击；多选批量坞在场时再进一步抬高
-          raised ? 'bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))]' : 'bottom-[calc(5rem+env(safe-area-inset-bottom,0px))]',
+          raised ? 'bottom-[calc(14rem+env(safe-area-inset-bottom,0px))]' : 'bottom-[calc(9.75rem+env(safe-area-inset-bottom,0px))]',
           'right-[max(env(safe-area-inset-right,0px),1.5rem)]',
+          isEditingLayout || storageWarning
+            ? 'translate-x-0'
+            : 'translate-x-0',
         )}
       >
         {/* 落盘失败必须说出来：改动还在屏幕上，但刷新就没了 ——

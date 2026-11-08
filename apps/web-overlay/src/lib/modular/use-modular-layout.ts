@@ -334,7 +334,7 @@ export function useModularLayout() {
               Math.max(def?.minColSpan ?? 3, colSpan)
             )
             const clampedRow = rowSpan
-              ? Math.min(def?.maxRowSpan ?? 4, Math.max(def?.minRowSpan ?? 1, rowSpan))
+              ? Math.min(Math.max(def?.maxRowSpan ?? 4, 6), Math.max(def?.minRowSpan ?? 1, rowSpan))
               : w.rowSpan
 
             return {

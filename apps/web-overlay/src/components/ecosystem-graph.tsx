@@ -115,6 +115,8 @@ export function EcosystemGraph() {
 
   const [edges, setEdges] = useState<GraphEdge[]>(DEFAULT_EDGES)
   const [liveCount, setLiveCount] = useState(0)
+  /** 图谱数据来源：'live' = 真实站点库；'sample' = 内置示例集（必须在界面上如实标注） */
+  const [dataSource, setDataSource] = useState<'live' | 'sample' | 'loading'>('loading')
 
   // 键盘漫游：只有「当前节点」在 Tab 序列里，方向键按几何方向移动（见 lib/graph-nav.ts）
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
@@ -150,23 +152,71 @@ export function EcosystemGraph() {
   })
 
 
-  // 动态对接中枢真实站点库并基于标签共现推导拓扑连线
+  /**
+   * 动态对接中枢真实站点库并基于标签共现推导拓扑连线。
+   *
+   * 数据源修正（2026-11-08 深度扫描 P0-4）：
+   * 原实现打 `/api/hub/sites?limit=60`，该路由在鉴权模式下对匿名访客返回 401，
+   * 且失败分支静默 `return` —— 于是公开页 /graph 对访客展示的一直是硬编码
+   * DEFAULT_NODES，页面文案却宣称是「真实生态图谱」。这是对外承诺与事实不符。
+   *
+   * 现改用公开只读的 `/api/home/navigation`（`s-maxage=60`，无需鉴权），
+   * 它返回完整 19 个一级类目 + 全部子分类站点。若仍然拿不到数据，
+   * 用 `dataSource='sample'` 在页面上打出显式「示例数据」角标，
+   * 不再让访客把内置演示集误认成真实图谱。
+   */
   useEffect(() => {
     let cancelled = false
-    fetch('/api/hub/sites?limit=60')
+    fetch('/api/home/navigation')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (cancelled || !data) return
-        const items = Array.isArray(data.items) ? data.items : Array.isArray(data.sites) ? data.sites : []
-        if (items.length === 0) return
+        if (cancelled) return
+        if (!data) {
+          setDataSource('sample')
+          return
+        }
+
+        // 展平 19 个一级类目（含直属站点与子分类站点）为统一站点列表
+        const flat: Array<{ id: string; title: string; href: string; description?: string; tags?: string[]; categoryId?: string }> = []
+        const cats = Array.isArray(data.navigationItems) ? data.navigationItems : []
+        for (const cat of cats) {
+          if (cat?.enabled === false) continue
+          const pushItems = (items: any[] | undefined, catId: string) => {
+            for (const it of items || []) {
+              if (!it || it.enabled === false || !it.href || !it.title) continue
+              flat.push({
+                id: String(it.id),
+                title: String(it.title),
+                href: String(it.href),
+                description: it.description,
+                tags: Array.isArray(it.tags) ? it.tags : [],
+                categoryId: catId,
+              })
+            }
+          }
+          pushItems(cat.items, String(cat.id))
+          for (const sub of cat.subCategories || []) {
+            if (sub?.enabled === false) continue
+            pushItems(sub.items, String(sub.id))
+          }
+        }
+
+        if (flat.length === 0) {
+          setDataSource('sample')
+          return
+        }
 
         const existingUrls = new Set(DEFAULT_NODES.map((n) => n.url.replace(/\/$/, '').toLowerCase()))
         const dynamicNodes: GraphNode[] = []
         const rawTagMap = new Map<string, string[]>()
 
-        for (const s of items) {
-          if (!s || !s.url || !s.title) continue
-          const normUrl = String(s.url).replace(/\/$/, '').toLowerCase()
+        // 采样策略：均匀抽样而非「取前 N 条」，否则图谱永远只反映第一个类目。
+        const MAX_NODES = 24
+        const stride = Math.max(1, Math.floor(flat.length / MAX_NODES))
+        const sampled = flat.filter((_, i) => i % stride === 0).slice(0, MAX_NODES)
+
+        for (const s of sampled) {
+          const normUrl = s.href.replace(/\/$/, '').toLowerCase()
           if (existingUrls.has(normUrl)) continue
           existingUrls.add(normUrl)
 
@@ -182,18 +232,20 @@ export function EcosystemGraph() {
           const nodeId = `db_${s.id}`
           dynamicNodes.push({
             id: nodeId,
-            title: String(s.title).slice(0, 24),
-            url: String(s.url),
+            title: s.title.slice(0, 24),
+            url: s.href,
             category: cat,
-            description: String(s.description || s.url),
+            description: String(s.description || s.href),
           })
-          if (Array.isArray(s.tags) && s.tags.length > 0) {
-            rawTagMap.set(nodeId, s.tags.map((t: any) => String(t).toLowerCase()))
+          if (s.tags && s.tags.length > 0) {
+            rawTagMap.set(nodeId, s.tags.map((x) => String(x).toLowerCase()))
           }
-          if (dynamicNodes.length >= 24) break
         }
 
-        if (dynamicNodes.length === 0) return
+        if (dynamicNodes.length === 0) {
+          setDataSource('sample')
+          return
+        }
 
         const allCombined = [...DEFAULT_NODES, ...dynamicNodes]
         const width = 900
@@ -218,27 +270,16 @@ export function EcosystemGraph() {
         for (let i = 0; i < dynamicNodes.length; i++) {
           const a = dynamicNodes[i]!
           const tagsA = rawTagMap.get(a.id) || []
-          // 与内置核心节点或其它动态节点建立连接
           const matchPreset = DEFAULT_NODES.find((p) => p.category === a.category)
           if (matchPreset) {
-            extraEdges.push({
-              source: a.id,
-              target: matchPreset.id,
-              type: 'ecosystem',
-              label: '同域生态',
-            })
+            extraEdges.push({ source: a.id, target: matchPreset.id, type: 'ecosystem', label: '同域生态' })
           }
           for (let j = i + 1; j < dynamicNodes.length; j++) {
             const b = dynamicNodes[j]!
             const tagsB = rawTagMap.get(b.id) || []
-            const shared = tagsA.find((t) => tagsB.includes(t))
+            const shared = tagsA.find((x) => tagsB.includes(x))
             if (shared) {
-              extraEdges.push({
-                source: a.id,
-                target: b.id,
-                type: 'alternative',
-                label: `共享:${shared}`,
-              })
+              extraEdges.push({ source: a.id, target: b.id, type: 'alternative', label: `共享:${shared}` })
             }
           }
         }
@@ -246,10 +287,11 @@ export function EcosystemGraph() {
         setNodes(positioned)
         setEdges([...DEFAULT_EDGES, ...extraEdges])
         setLiveCount(dynamicNodes.length)
+        setDataSource('live')
       })
       .catch(() => {
-        // 实时节点拉不到就保留内置静态图谱（可视化不会因此空白），
-        // liveCount 保持 0 —— 页面上「实时 N 个」就是「没有实时数据」的诚实信号
+        // 拉不到数据：保留内置静态图谱保证可视化不空白，但把「示例数据」如实标注出来
+        if (!cancelled) setDataSource('sample')
       })
     return () => {
       cancelled = true
@@ -393,11 +435,34 @@ export function EcosystemGraph() {
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h1 className="text-sm sm:text-base font-bold flex items-center gap-2">
+              <h1 className="text-sm sm:text-base font-bold flex items-center gap-2 flex-wrap">
                 <span>工具链关系图谱与平替雷达</span>
                 <Badge variant="outline" className="hidden sm:inline-flex text-xs text-indigo-500 border-indigo-500/30 font-mono">
                   Poincaré Graph v5.0
                 </Badge>
+                {/*
+                  数据来源必须如实标注（2026-11-08 深度扫描 P0-4）：
+                  「真实站点库」与「内置示例集」是两种性质完全不同的结果，
+                  不标注就等于让访客把演示数据当成全网图谱。
+                */}
+                {dataSource === 'live' && liveCount > 0 && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs font-mono text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                    title={`已接入站点库真实数据，其中 ${liveCount} 个动态节点`}
+                  >
+                    实时 {liveCount} 个站点
+                  </Badge>
+                )}
+                {dataSource === 'sample' && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs font-mono text-amber-600 dark:text-amber-400 border-amber-500/40"
+                    title="未能读取站点库，当前展示的是内置示例节点集，不代表真实收录情况"
+                  >
+                    示例数据（未接入站点库）
+                  </Badge>
+                )}
               </h1>
             </div>
           </div>

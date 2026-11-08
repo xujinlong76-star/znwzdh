@@ -75,7 +75,7 @@ export const CATEGORY_REGISTRY_ROOTS: readonly RegistryRootInput[] = [
       { slug: "vector-db-and-rag", title: "向量库与 RAG", titleEn: "Vector DB & RAG", description: "向量数据库、嵌入与检索增强应用", legacyTitles: ["向量库与 RAG 应用"] },
       { slug: "model-training-and-finetuning", title: "模型训练与微调", titleEn: "Model Training & Finetuning", description: "训练平台、微调框架与训练数据开发", legacyTitles: ["模型微调与训练平台"] },
       { slug: "models-and-datasets", title: "模型与数据集", titleEn: "Models & Datasets", description: "模型社区、数据集与标注服务", legacyTitles: ["模型与数据集社区", "AI 数据标注与数据集服务"] },
-      { slug: "embodied-ai-and-robotics", title: "具身智能与硬件", titleEn: "Embodied AI & Robotics", description: "机器人操作系统、具身基础模型、空间智能与 AI 硬件设备", altLabels: ["具身智能", "机器人", "AI硬件"], legacyTitles: ["具身智能与机器人", "AI 硬件与具身"] },
+      { slug: "ai-hardware-and-embodied", title: "AI 硬件与具身", titleEn: "AI Hardware & Embodied AI", description: "机器人操作系统、具身基础模型、空间智能与 AI 硬件设备", altLabels: ["AI硬件", "具身智能", "机器人"], legacyTitles: ["具身智能与硬件", "具身智能与机器人", "embodied-ai-and-robotics"] },
       { slug: "ai-eval-and-learning", title: "AI 评测与学习", titleEn: "AI Evals & Learning", description: "榜单基准、论文资讯与 AI 课程", legacyTitles: ["评测与基准榜单", "论文资讯与学习", "AI 教育与企业落地", "AI 产品评测与导航站"] },
     ],
   },

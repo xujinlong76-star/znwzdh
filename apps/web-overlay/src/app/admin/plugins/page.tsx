@@ -743,6 +743,7 @@ export default function AdminPluginsPage() {
                       key={p.slug}
                       href={`/marketplace/${encodeURIComponent(p.slug)}`}
                       target="_blank"
+                      rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-background/80 hover:bg-background border border-border/40 text-muted-foreground hover:text-foreground transition-colors"
                     >
                       <span className="font-mono text-primary font-bold">#{idx + 1}</span>
@@ -841,6 +842,7 @@ export default function AdminPluginsPage() {
                   <Link
                     href={pluginDetailHref(item.slug, item.status)}
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground font-medium rounded-lg hover:bg-muted/60 border border-border/60 transition-colors inline-flex items-center gap-1"
                   >
                     <span>预览详情</span>
@@ -1032,6 +1034,7 @@ export default function AdminPluginsPage() {
                     <Link
                       href={pluginDetailHref(review.pluginSlug)}
                       target="_blank"
+                      rel="noopener noreferrer"
                       className="font-medium text-foreground hover:text-primary hover:underline underline-offset-2"
                     >
                       {review.pluginName}

@@ -28,6 +28,39 @@ import {
 } from "./dialect.ts";
 import { chunkList, inPredicate, SQL_IN_CHUNK } from "../sql-in.ts";
 
+/**
+ * 写入边界的 created_at 归一。
+ *
+ * 背景（2026-11-08 实测）：`sites.created_at` 声明为 `INTEGER NOT NULL`，
+ * 但 SQLite 的动态类型允许把 TEXT 日期串塞进去——批量写入用的是
+ * `input.createdAt ?? now`，**调用方给什么存什么**。库里因此出现过 3 行
+ * `"2026-11-07 06:47:11"`，进而把 recompute_rank 打挂（NaN → NULL → 撞
+ * `sites.weight NOT NULL`，每小时整任务失败）。
+ *
+ * 归一规则：能当数字用的就用，其次按日期串解析，都不行才回落 fallback。
+ * 迁移只修存量，这里负责**不再产生新的脏值**——两道一起才算根治。
+ */
+export function normalizeCreatedAt(value: unknown, fallback: number): number {
+  // 分支一：数值（含"看起来像数字的串"）。
+  //
+  // 关键点：只要 `Number()` 能给出有限值，就**不再往下走 Date.parse**。
+  // 反例：`Date.parse("-1")` 返回 946656000000（被当成 1969 年的某天），
+  // 一个明显的无效数字会因此伪装成合理时间戳。数值分支只接受 > 0。
+  //
+  // 空串/null 要排除：`Number("") === 0`、`Number(null) === 0`，
+  // 它们是"没给"，不是"给了 0"。
+  const isAbsent = value === null || value === undefined || value === "";
+  const asNumber = isAbsent ? Number.NaN : Number(value);
+  if (Number.isFinite(asNumber)) {
+    return asNumber > 0 ? Math.trunc(asNumber) : fallback;
+  }
+
+  // 分支二：日期串。SQLite 的 datetime() 默认格式是 "YYYY-MM-DD HH:mm:ss"，
+  // 标准 Date.parse 不认（要 ISO 的 T 分隔），所以先替换分隔符。
+  const parsed = Date.parse(String(value).replace(" ", "T"));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export async function listSites(repo: Repository, filter: { categoryId?: string; status?: SiteStatus; excludeStatuses?: SiteStatus[]; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
   const where: string[] = ["s.deleted_at IS NULL"];
   const params: unknown[] = [];
@@ -129,6 +162,80 @@ export async function listAllSites(repo: Repository, limit?: number, options: { 
     limit ? [limit] : [],
   );
   return hydrateSites(repo, rows, options);
+}
+
+/** 健康巡检队列的取数上限：与 listSites 的硬钳制一致，避免一条查询把整库拉回内存 */
+const PATROL_QUEUE_CAP = 1000;
+
+function clampPatrolLimit(limit: number): number {
+  return Math.min(Math.max(Math.floor(limit) || 1, 1), PATROL_QUEUE_CAP);
+}
+
+/**
+ * 首轮补探队列：从未探测过的活跃站点（`last_checked_at IS NULL`）。
+ *
+ * 为什么必须单独开一条取数（2026-11-07 九维评审 4-2）：
+ * 巡检原先只从 `listSites({ limit: 400 })` 的候选池里挑，而 `listSites` 按
+ * sort/trend_score 排序并硬钳到 1000 条 —— 池外的站点**永远不可能成为候选**。
+ * 实测库 4839 条活跃站点里 4258 条 `last_checked_at IS NULL`，400 条池内只
+ * 装得下 205 条未探测站点：覆盖率天花板 8.3%，池内那批探完之后队列就只剩
+ * 同一批 400 条在轮转，其余 4053 条未知状态不会被任何一轮触达。
+ *
+ * 次一层问题是排序：`planPatrol` 拿 `createdAt` 顶替缺失的 `lastCheckedAt`
+ * 算年龄，刚批量导入的批次被判成「年轻、存活概率高」排到更老的已探测站点
+ * 之后 —— 未探测集合没有年龄可算，套寿命模型本身无意义，所以本函数直接
+ * 按 SQL 排，不经过 `planPatrol`。
+ *
+ * 排序沿用 `scripts/self-healing-agent.mjs:157-158` 的既有口径：
+ * 未探测优先，同为未探测时按创建时间升序（先补录老站点），id 决胜保证可复现。
+ * 这里不需要 `CASE WHEN` —— 队列本身已经只含未探测站点。
+ */
+export async function listUncheckedSites(repo: Repository, limit = 100): Promise<Site[]> {
+  const rows = await repo.raw(
+    SELECT_SITES_BASE_SQL +
+      " WHERE s.deleted_at IS NULL AND s.enabled = " + repo.enabledLiteral +
+      " AND s.last_checked_at IS NULL" +
+      " ORDER BY s.created_at ASC, s.id ASC LIMIT ?",
+    [clampPatrolLimit(limit)],
+  );
+  // facets: false —— 巡检只读 id/url/status/health，分面聚合的代价与站点数成正比。
+  return hydrateSites(repo, rows, { facets: false });
+}
+
+/**
+ * 复核队列：已探测过的活跃站点，最久没查的排最前。
+ *
+ * 与 {@link listUncheckedSites} 分开取数的理由：两条队列的预算要分别计量。
+ * 合成一条 `ORDER BY CASE WHEN last_checked_at IS NULL THEN 0 ELSE 1 END, last_checked_at`
+ * 虽然排序正确，但取数时无法按「本次给补探多少名额、给复核多少名额」切分，
+ * 会把 4-2 的新鲜度 SLO（已探测样本超 7 天比例 ≤5%）变成不可观测的副作用。
+ */
+export async function listStalestCheckedSites(repo: Repository, limit = 100): Promise<Site[]> {
+  const rows = await repo.raw(
+    SELECT_SITES_BASE_SQL +
+      " WHERE s.deleted_at IS NULL AND s.enabled = " + repo.enabledLiteral +
+      " AND s.last_checked_at IS NOT NULL" +
+      " ORDER BY s.last_checked_at ASC, s.id ASC LIMIT ?",
+    [clampPatrolLimit(limit)],
+  );
+  return hydrateSites(repo, rows, { facets: false });
+}
+
+/**
+ * 巡检覆盖面的两个基数（单条聚合，不拉整行）。
+ *
+ * 用于把「本轮补探了多少 / 还剩多少未知」写进任务事件：只报 checked/ok
+ * 无法回答「未知状态是在减少还是在原地打转」，而这正是 4-2 的核心指标。
+ */
+export async function countSitesByPatrolState(repo: Repository): Promise<{ unchecked: number; checked: number }> {
+  const rows = await repo.raw(
+    "SELECT" +
+      " SUM(CASE WHEN s.last_checked_at IS NULL THEN 1 ELSE 0 END) AS unchecked," +
+      " SUM(CASE WHEN s.last_checked_at IS NOT NULL THEN 1 ELSE 0 END) AS checked" +
+      " FROM sites s WHERE s.deleted_at IS NULL AND s.enabled = " + repo.enabledLiteral,
+  );
+  const row = rows[0] ?? {};
+  return { unchecked: Number(row.unchecked ?? 0), checked: Number(row.checked ?? 0) };
 }
 
 export async function getSitesByIds(repo: Repository, ids: string[]): Promise<Map<string, Site>> {
@@ -526,8 +633,9 @@ export async function insertSitesBulk(
         input.enabled === false ? 0 : 1, input.sort ?? 0, 0, input.featured ? 1 : 0,
         input.source ?? "manual", index.ftsTokens, index.pinyinFull, index.pinyinInitials,
         packMetadata(input),
-        // created_at 用调用方给的原值（恢复场景），缺省才取本批时间
-        input.createdAt ?? now,
+        // created_at 用调用方给的原值（恢复场景），缺省才取本批时间；
+        // 但必须过归一函数——TEXT 日期串会让整条热度链路崩（见 normalizeCreatedAt 注释）
+        normalizeCreatedAt(input.createdAt, now),
         now,
       );
     }
@@ -1082,7 +1190,7 @@ export async function setSiteRelations(
           norm.isFreeOrOpenSource ? 1 : 0,
           norm.note ?? null,
           norm.confidence ?? 1.0,
-          norm.createdAt ?? now,
+          normalizeCreatedAt(norm.createdAt, now),
           now,
         ]
       );

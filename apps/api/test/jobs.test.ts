@@ -474,7 +474,7 @@ describe("个性化画像服务", () => {
     ctx.db.sqlite!.prepare("UPDATE sites SET last_checked_at = ? WHERE id = ?").run(now - 1 * DAY, recent.id);
 
     const runner = new JobRunner(ctx, { intervalMs: 1000 });
-    const targets = await (runner as any).patrolTargets(50);
+    const { targets } = await (runner as any).patrolTargets(50);
     const staleIndex = targets.findIndex((t: any) => t.id === stale.id);
     const recentIndex = targets.findIndex((t: any) => t.id === recent.id);
     expect(staleIndex).toBeGreaterThanOrEqual(0);

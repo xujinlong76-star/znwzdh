@@ -12,6 +12,7 @@ const budget = computeWorkerBudget(
 );
 
 export default defineConfig({
+  cacheDir: "./.cache/vite",
   resolve: {
     // apps/web 的库代码用 @/* 别名（见 apps/web/tsconfig.json 的 paths）。
     // 用正则精确匹配 "@/" 前缀，避免误伤 "@scope/pkg" 形式的依赖导入。
@@ -53,9 +54,6 @@ export default defineConfig({
       "scripts/**/*.test.mjs",
     ],
     environment: "node",
-    cache: {
-      dir: "./.cache/vitest",
-    },
     testTimeout: 30_000,
     hookTimeout: 60_000,
     pool: "forks",

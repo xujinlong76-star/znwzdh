@@ -26,10 +26,9 @@ interface CachedIcon {
 const MEMORY_CACHE = new Map<string, CachedIcon>();
 const MAX_MEMORY_ITEMS = 1500;
 const CACHE_DIR =
-  process.env.NAVHUB_ICON_CACHE_DIR ||
-  (existsSync(join(process.cwd(), "package.json")) && existsSync(join(process.cwd(), "..", "..", "package.json"))
+  existsSync(join(process.cwd(), "package.json")) && existsSync(join(process.cwd(), "..", "..", "package.json"))
     ? resolve(process.cwd(), "..", "..", ".cache", "icons")
-    : resolve(process.cwd(), ".cache", "icons"));
+    : resolve(process.cwd(), ".cache", "icons");
 
 /**
  * 内存缓存的唯一写入口。

@@ -3,7 +3,9 @@
 import dynamic from 'next/dynamic'
 import { Skeleton } from '@/registry/new-york/ui/skeleton'
 
-export const runtime = 'edge'
+// 2026-11-07 九维评审环境修复：Next 16 已废弃 Edge Runtime，且 @/lib/auth 顶层引入 node:crypto
+// 会在 Edge 图里报 Native module not found；改走官方推荐的 nodejs runtime，行为不变。
+export const runtime = 'nodejs'
 
 /**
  * 站点设置页：把整页表单（react-hook-form + zod + @hookform/resolvers，约 145 KB）

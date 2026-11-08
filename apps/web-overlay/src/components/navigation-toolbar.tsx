@@ -76,17 +76,17 @@ export function NavigationToolbar({
   return (
         <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
           <div className="flex h-14 items-center justify-between gap-1.5 sm:gap-3">
-            <div className="flex-1 min-w-0 max-w-xl">
+            <div className="flex-1 min-w-0 max-w-2xl">
               {/* 山羊胡混合检索引擎 */}
               <SearchPalette siteConfig={siteConfig} />
             </div>
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 max-w-[150px] sm:max-w-none overflow-hidden">
               {/* 发现与热度 */}
               <Button
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden sm:inline-flex"
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden md:inline-flex"
               >
                 <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
                   <Flame className="h-4 w-4" />

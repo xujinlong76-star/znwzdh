@@ -259,6 +259,21 @@ export class Repository {
     return sitesRepo.listAllSites(this, limit, options);
   }
 
+  /** 首轮补探队列：从未探测的活跃站点（未探测优先、老站点优先），见 sites.ts 的说明 */
+  async listUncheckedSites(limit = 100): Promise<Site[]> {
+    return sitesRepo.listUncheckedSites(this, limit);
+  }
+
+  /** 复核队列：已探测站点里最久没查的排最前 */
+  async listStalestCheckedSites(limit = 100): Promise<Site[]> {
+    return sitesRepo.listStalestCheckedSites(this, limit);
+  }
+
+  /** 巡检覆盖面基数（未探测 / 已探测），用于把未知状态的存量写进任务事件 */
+  async countSitesByPatrolState(): Promise<{ unchecked: number; checked: number }> {
+    return sitesRepo.countSitesByPatrolState(this);
+  }
+
   /** 导航快照版本号（P1-1）：单行主键点查；取不到返回 null，见 repository/nav-version.ts */
   async readNavDataVersion(): Promise<number | null> {
     return navVersionRepo.readNavDataVersion(this);

@@ -503,7 +503,7 @@ export default function SubCategoryVideoItemsPage() {
                                         asChild
                                         title="查看独立 SEO 落地页 (/videos/v/[id])"
                                     >
-                                        <Link href={`/videos/v/${encodeURIComponent(item.id)}`} target="_blank">
+                                        <Link href={`/videos/v/${encodeURIComponent(item.id)}`} target="_blank" rel="noopener noreferrer">
                                             <FileText className="h-4 w-4" />
                                         </Link>
                                     </Button>

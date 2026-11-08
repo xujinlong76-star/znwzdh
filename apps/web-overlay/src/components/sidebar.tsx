@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
@@ -17,6 +17,7 @@ import { CrdtSyncStatusPill } from '@/components/crdt/crdt-sync-status-pill'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
 import { unreadBadgeText } from '@/lib/notification-badge'
+import { useHomeDIY } from '@/lib/modular/use-home-diy'
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   navigationData: NavigationData
@@ -28,20 +29,34 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
   const identityState = useIdentityReady()
   const unread = useUnreadNotifications(identityState)
   const unreadText = unreadBadgeText(unread)
+  const { collapsedCategoryIds, expandCategory } = useHomeDIY()
 
-
-
-  const scrollToSection = (id: string) => {
-    const element = document.getElementById(id)
-    if (element) {
-      // JS 显式传的 behavior 会压过样式表，所以这里必须自己问一次系统偏好
-      element.scrollIntoView({ behavior: preferredScrollBehavior() })
-      onClose?.()
+  const scrollToSection = (id: string, parentCategoryId?: string) => {
+    if (parentCategoryId && collapsedCategoryIds.includes(parentCategoryId)) {
+      expandCategory(parentCategoryId)
+    } else if (collapsedCategoryIds.includes(id)) {
+      expandCategory(id)
     }
+
+    // 若刚展开了折叠分类，DOM 节点在下一帧呈现，通过 requestAnimationFrame 执行平滑滚动
+    requestAnimationFrame(() => {
+      const element = document.getElementById(id)
+      if (element) {
+        element.scrollIntoView({ behavior: preferredScrollBehavior() })
+        onClose?.()
+      } else {
+        setTimeout(() => {
+          const retry = document.getElementById(id)
+          if (retry) {
+            retry.scrollIntoView({ behavior: preferredScrollBehavior() })
+            onClose?.()
+          }
+        }, 60)
+      }
+    })
   }
 
   const handleCategoryClick = (categoryId: string) => {
-    // 先跳转到对应区域
     scrollToSection(categoryId)
 
     // 如果有子分类，切换展开/收起状态
@@ -88,30 +103,136 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
     }))
   }
 
+  const [sidebarWidth, setSidebarWidth] = useState<number | null>(null)
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage?.getItem('navhub_sidebar_width_px')
+      if (saved) {
+        const parsed = parseInt(saved, 10)
+        if (Number.isFinite(parsed) && parsed >= 180 && parsed <= 420) {
+          setSidebarWidth(parsed)
+        }
+      }
+    } catch {
+      // 忽略本地存储读取失败
+    }
+  }, [])
+
+  const handleSidebarResizeStart = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const startX = e.clientX
+      const startW = sidebarWidth ?? 256
+      setIsResizingSidebar(true)
+      const prevCursor = document.body.style.cursor
+      const prevSelect = document.body.style.userSelect
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+
+      let latestW = startW
+      let rafId: number | null = null
+
+      const onMove = (ev: PointerEvent) => {
+        if (rafId !== null) return
+        rafId = requestAnimationFrame(() => {
+          rafId = null
+          const nextW = Math.max(180, Math.min(420, Math.round(startW + (ev.clientX - startX))))
+          latestW = nextW
+          setSidebarWidth(nextW)
+        })
+      }
+      const onUp = () => {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId)
+          rafId = null
+        }
+        document.body.style.cursor = prevCursor
+        document.body.style.userSelect = prevSelect
+        setIsResizingSidebar(false)
+        try {
+          window.localStorage?.setItem('navhub_sidebar_width_px', String(latestW))
+        } catch {
+          // 忽略写入失败
+        }
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        window.removeEventListener('pointercancel', onUp)
+      }
+      window.addEventListener('pointermove', onMove, { passive: true })
+      window.addEventListener('pointerup', onUp)
+      window.addEventListener('pointercancel', onUp)
+    },
+    [sidebarWidth]
+  )
+
+  const handleSidebarResetWidth = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setSidebarWidth(null)
+    try {
+      window.localStorage?.removeItem('navhub_sidebar_width_px')
+    } catch {
+      // 忽略删除失败
+    }
+  }, [])
+
   return (
-    <div className={cn("w-full md:w-64 h-full bg-background border-r border-border/40 flex flex-col", className)}>
-      <div className="flex min-h-[3.5rem] items-center justify-between px-4 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40">
-        <Link href="/" className="flex items-center gap-2.5 font-bold text-sm tracking-tight hover:opacity-90 transition-opacity">
+    <div
+      style={!onClose && sidebarWidth ? { width: `${sidebarWidth}px` } : undefined}
+      className={cn(
+        "relative group/sidebar w-full md:w-64 h-full bg-background border-r border-border/40 flex flex-col",
+        className
+      )}
+    >
+      {/* 桌面端侧边栏右边缘左右拖拉调整宽度手柄 */}
+      {!onClose && (
+        <div
+          aria-hidden="true"
+          data-sidebar-resizer=""
+          onPointerDown={handleSidebarResizeStart}
+          onDoubleClick={handleSidebarResetWidth}
+          style={{ touchAction: 'none' }}
+          title="左右拖拉调整侧边导航栏宽度（双击恢复默认 256px）"
+          className={cn(
+            "hidden md:flex absolute inset-y-0 -right-1.5 w-3 z-30 cursor-col-resize items-center justify-center select-none transition-opacity",
+            isResizingSidebar ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100 hover:opacity-100"
+          )}
+        >
+          <div
+            className={cn(
+              "w-1 h-12 rounded-full transition-all duration-150",
+              isResizingSidebar
+                ? "bg-primary h-24 shadow-md shadow-primary/50"
+                : "bg-border/80 hover:bg-primary hover:h-16"
+            )}
+          />
+        </div>
+      )}
+      <div className="flex min-h-[3.5rem] items-center justify-between px-3.5 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 gap-2">
+        <Link href="/" className="flex items-center gap-2 font-bold text-sm tracking-tight hover:opacity-90 transition-opacity min-w-0 shrink-0">
           {siteInfo.appearance.logo ? (
             <Image
               src={siteInfo.appearance.logo}
               alt={siteInfo.basic.title}
               width={26}
               height={26}
-              className="h-6.5 w-6.5 rounded-md object-contain"
+              className="h-6.5 w-6.5 rounded-md object-contain shrink-0"
             />
           ) : (
-            <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
+            <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs shrink-0">
               <Compass className="h-4 w-4 text-primary" />
             </div>
           )}
-            <div className="flex flex-col">
-            <span className="leading-tight font-semibold text-foreground">{siteInfo.basic.title}</span>
-            <span className="text-xs text-muted-foreground font-mono font-normal">AI-Native Hub</span>
+          <div className="flex flex-col min-w-0 shrink-0">
+            <span className="leading-tight font-bold text-foreground text-[14px] tracking-tight whitespace-nowrap">{siteInfo.basic.title}</span>
+            <span className="text-[11px] text-muted-foreground font-mono font-normal">AI-Native Hub</span>
           </div>
         </Link>
 
-        <span className="hidden sm:inline-flex text-xs font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
+        <span className="shrink-0 hidden min-[1536px]:inline-flex text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
           v5.0
         </span>
 
@@ -192,8 +313,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
                         variant="ghost"
                         className="w-full justify-start h-7.5 px-2 text-xs rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
                         onClick={() => {
-                          scrollToSection(subCategory.id)
-                          onClose?.()
+                          scrollToSection(subCategory.id, category.id)
                         }}
                       >
                         <span className="truncate">{subCategory.title}</span>

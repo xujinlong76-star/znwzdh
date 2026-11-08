@@ -216,7 +216,10 @@ export function WorkspaceSwitcher() {
 
   if (loading || !activeWs) {
     return (
-      <div className="h-8 w-28 rounded-md bg-muted/40 animate-pulse hidden sm:block" />
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-muted-foreground font-medium">
+        <User className="h-3.5 w-3.5 text-primary" />
+        <span>个人私有空间</span>
+      </div>
     )
   }
 
@@ -230,7 +233,7 @@ export function WorkspaceSwitcher() {
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`${activeWs.name} - 选择工作空间与团队`}
+            aria-label={`${activeWs.name} ${roleMeta.label} - 选择工作空间与团队`}
             className="h-8 gap-2 px-2.5 text-xs text-foreground hover:bg-accent/60 transition-colors border border-transparent hover:border-border/60"
           >
             {activeWs.type === 'personal' ? (

@@ -973,13 +973,13 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
         sort: 13,
       },
       {
-        id: "reg-embodied-ai-and-robotics",
-        anchor: "ai-tools/embodied-ai-and-robotics",
+        id: "reg-ai-hardware-and-embodied",
+        anchor: "ai-tools/ai-hardware-and-embodied",
         parentId: "reg-ai-tools",
-        title: "具身智能与硬件",
-        slug: "embodied-ai-and-robotics",
+        title: "AI 硬件与具身",
+        slug: "ai-hardware-and-embodied",
         description: "机器人具身算法、机器人仿真环境、空间智能与物理世界交互系统",
-        sort: 13,
+        sort: 12,
       },
     ];
 
@@ -1035,6 +1035,29 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
       );
       for (const row of promptSites) {
         await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [targetCatId, now, row.id]);
+        sitesReclassified++;
+      }
+    }
+
+    // 4.1 合并具身智能与硬件 -> AI 硬件与具身，并迁移 Filesystem MCP Server 至 智能体与自动化
+    const hwTarget = await read("SELECT id FROM categories WHERE id = 'reg-ai-hardware-and-embodied' OR slug = 'ai-hardware-and-embodied'");
+    if (hwTarget[0]) {
+      const hwCatId = hwTarget[0].id;
+      const embodiedSites = await read("SELECT id, title FROM sites WHERE category_id = 'reg-embodied-ai-and-robotics'");
+      for (const row of embodiedSites) {
+        await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [hwCatId, now, row.id]);
+        sitesReclassified++;
+      }
+      await write("DELETE FROM categories WHERE id = 'reg-embodied-ai-and-robotics'");
+      await write("UPDATE categories SET title = 'AI 硬件与具身' WHERE id = ?", [hwCatId]);
+    }
+
+    const agentTarget = await read("SELECT id FROM categories WHERE id = 'reg-agents-and-automation' OR slug = 'agents-and-automation'");
+    if (agentTarget[0]) {
+      const agentCatId = agentTarget[0].id;
+      const fsSites = await read("SELECT id, title FROM sites WHERE title = 'Filesystem MCP Server' AND category_id != ?", [agentCatId]);
+      for (const row of fsSites) {
+        await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [agentCatId, now, row.id]);
         sitesReclassified++;
       }
     }
@@ -1134,4 +1157,80 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
   }
 
   return { categoriesCreated, sitesReclassified, sitesDeduplicated };
+}
+
+/**
+ * 把 `sites.created_at` 里的非数值存量值归一成 epoch 毫秒。
+ *
+ * ## 为什么需要
+ *
+ * schema 与两个驱动都把该列声明成 `INTEGER/BIGINT NOT NULL`，但实测库里
+ * 有 3 行是 **TEXT 日期串**（`"2026-11-07 06:47:11"`，来自早期导入路径）。
+ * 这条脏数据不会自己报错，而是往下游炸：
+ *   `Number("2026-11-07 06:47:11")` → NaN → ageInDays NaN → trendScore NaN
+ *   → SQL 绑定参数变 NULL → 撞 `sites.weight NOT NULL`
+ *   → **整个 recompute_rank 任务每小时失败一次**（jobs 表实测 25 条 failed），
+ *      全站 trend_score 长期停在 0，热度榜等于没有排序。
+ *
+ * 代码侧已经在 `core/ranking.ts` 加了 NaN 闸门、在任务里加了日期串兜底解析，
+ * 那是「不再因此崩」；这里负责「把脏数据本身修掉」，两者缺一不可：
+ * 只加闸门则脏值永远留在库里，只修数据则下次再进来又会炸。
+ *
+ * 幂等：已经是整数（或可解析为整数）的行不会被触碰。
+ */
+export async function normalizeSiteCreatedAt(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
+  let fixed = 0;
+  try {
+    const isSqlite = db.dialect !== "pg" && !!db.sqlite;
+    const read = async (sql: string): Promise<Array<Record<string, any>>> => {
+      if (isSqlite) {
+        const maybe = db.sqlite.prepare(sql).all();
+        return maybe && typeof maybe.then === "function" ? await maybe : maybe;
+      }
+      return (await db.pg.query(sql)).rows;
+    };
+    const write = async (sql: string, params: unknown[]): Promise<void> => {
+      if (isSqlite) {
+        const maybe = db.sqlite.prepare(sql).run(...params);
+        if (maybe && typeof maybe.then === "function") await maybe;
+        return;
+      }
+      // PG 的 BIGINT 不接受日期串，能进来本函数的基本只有 SQLite；这里仍保持一致口径
+      const pgSql = sql.replace(/\?/g, (_m, i) => "$" + (params.indexOf(params[i]) + 1));
+      await db.pg.query(pgSql, params);
+    };
+
+    // SQLite 用 typeof 精确挑出非整数行；PG 走 NULL 分支（类型系统本身就挡住了脏串）
+    const where = isSqlite
+      ? "WHERE created_at IS NULL OR typeof(created_at) <> 'integer'"
+      : "WHERE created_at IS NULL";
+    const rows = await read(`SELECT id, created_at FROM sites ${where}`);
+    if (rows.length === 0) return 0;
+
+    for (const row of rows) {
+      const raw = row.created_at;
+      const asNumber = Number(raw);
+      let epoch: number | null = null;
+      if (Number.isFinite(asNumber) && asNumber > 0) {
+        epoch = asNumber;
+      } else {
+        // 兼容 "YYYY-MM-DD HH:mm:ss"（SQLite datetime() 的默认格式）与 ISO 串
+        const parsed = Date.parse(String(raw ?? "").replace(" ", "T"));
+        if (Number.isFinite(parsed)) epoch = parsed;
+      }
+      // 解析不出来就按「建站时间未知」处理成当前时间：NOT NULL 列必须有值，
+      // 且用 now 等价于「新站」，不会因为脏数据把它排到热度榜底部。
+      if (epoch === null) epoch = Date.now();
+      if (Number(raw) === epoch) continue; // 幂等：无需改动
+      await write("UPDATE sites SET created_at = ? WHERE id = ?", [epoch, row.id]);
+      fixed += 1;
+    }
+
+    if (fixed > 0) {
+      console.info(`[migrate] normalizeSiteCreatedAt 完成：修正 ${fixed} 行非数值 created_at`);
+    }
+  } catch (err) {
+    console.warn("[migrate] normalizeSiteCreatedAt 异常:", err instanceof Error ? err.message : err);
+  }
+  return fixed;
 }

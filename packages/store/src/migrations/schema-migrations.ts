@@ -18,6 +18,7 @@ import {
   migrateCategorySlugs,
   migrateWorkspaceBlobs,
   cleanTaxonomyAndDuplicates,
+  normalizeSiteCreatedAt,
 } from "../migrate.ts";
 
 export interface MigrationRecord {
@@ -213,6 +214,17 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await cleanTaxonomyAndDuplicates(db);
     },
     checksum: "v1_clean_taxonomy_and_duplicates",
+  },
+  {
+    // 2026-11-08：修掉 3 行 TEXT 日期串的 sites.created_at。
+    // 它是 recompute_rank 每小时整任务失败（NOT NULL constraint failed: sites.weight）
+    // 的源头脏数据，细节见 packages/store/src/migrate.ts 的 normalizeSiteCreatedAt。
+    version: "20261108_normalize_site_created_at",
+    name: "站点创建时间存量数据归一（TEXT 日期串 → epoch 毫秒）",
+    up: async (db: Db) => {
+      await normalizeSiteCreatedAt(db);
+    },
+    checksum: "v1_normalize_site_created_at",
   },
 ];
 

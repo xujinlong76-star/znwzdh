@@ -4,7 +4,7 @@
   "generatedAt": "2026-11-06",
   "generator": "scripts/gen-docs-index.mjs",
   "counts": {
-    "docsMdDisk": 94,
+    "docsMdDisk": 95,
     "docsMdGitTracked": 87,
     "docsMdUntrackedAdr": 4,
     "deliverablesTopLevelDirs": 15,
@@ -126,6 +126,12 @@
       "tracked": true,
       "source": "git-tracked",
       "status": "current"
+    },
+    {
+      "path": "DEEP-SCAN-AND-PROPOSAL-2026-11-08.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "proposal"
     },
     {
       "path": "DESIGN-SYSTEM.md",

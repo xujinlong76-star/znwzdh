@@ -255,6 +255,16 @@ jobs:
       # 不允许为了过门禁上调——超了先优化，再按真实产物重新定基线。
       - run: node scripts/check-bundle-budget.mjs
         id: web-budget
+      # 首屏 HTML 预算（产物档，2026-11-07 九维评审 2-3）：此前 html-budget.mjs 只出现在
+      # seo-audit-prod（workflow_dispatch + 要 NAVHUB_SITE_URL），普通 PR 一次都没量过 HTML——
+      # 预算脚本齐备、退出码齐备，就是不在主链上。这里量的是 next build 落盘的 266 份预渲染
+      # HTML（`/` 是动态渲染，不在 prerender-manifest，仍由 seo-audit-prod 对线上量）。
+      # 数据来自仓库自带的全量导航快照而非 PR 种子库，所以不会退化成「必然绿灯的假门禁」。
+      # 阈值 4096KB 与 docker/Dockerfile.web:76 声明的首页预算同源。
+      # 首次实测最大者 server/app/videos.html 2543.5 KB、tags.html 970.8 KB——
+      # 这两条在此之前没有任何门禁看过（HTML 预算只量过首页）。
+      - run: node scripts/html-budget.mjs --dist --max-kb=4096
+        id: web-html-budget
       # ISR 硬门禁：收录型路由（分类/分页/插件详情/站点详情/标签/合集/站点目录）必须是 ●，
       # 并且页面签名不得读 searchParams。动机：这类路由带 revalidate +
       # generateStaticParams，读了 searchParams 的未预渲染参数在按需生成时直接抛

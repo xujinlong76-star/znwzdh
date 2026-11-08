@@ -46,10 +46,10 @@ export function CrdtSyncStatusPill() {
     status === 'synced'
       ? peerCount > 1
         ? `${peerCount} 标签页协同中`
-        : '多端协同已就绪'
+        : '个人私有空间'
       : status === 'syncing'
-      ? '合流中…'
-      : '离线就绪'
+      ? '协同同步中'
+      : '个人私有空间'
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -57,7 +57,7 @@ export function CrdtSyncStatusPill() {
         <button
           type="button"
           aria-label={`${labelText} - 查看多端协同状态`}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs text-muted-foreground transition-all hover:bg-muted/80 hover:text-foreground shadow-sm"
+          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 dark:bg-emerald-500/15 px-2.5 py-1 text-xs text-emerald-800 dark:text-emerald-300 font-medium transition-all hover:bg-emerald-500/20 shadow-2xs"
         >
           {status === 'synced' ? (
             <span className="relative flex h-2 w-2">
@@ -65,12 +65,12 @@ export function CrdtSyncStatusPill() {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
             </span>
           ) : status === 'syncing' ? (
-            <Loader2 className="h-3 w-3 animate-spin text-indigo-500" />
+            <Loader2 className="h-3 w-3 animate-spin text-emerald-600 dark:text-emerald-400" />
           ) : (
             <span className="h-2 w-2 rounded-full bg-amber-500" />
           )}
 
-          <span className="text-[11px] font-medium hidden sm:inline">
+          <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 inline">
             {labelText}
           </span>
         </button>

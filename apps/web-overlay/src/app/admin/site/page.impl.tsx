@@ -31,7 +31,10 @@ import {
   type AssetKind,
   type SiteAsset,
 } from "@/services/siteConfigService"
-import { pwaAssetField, type SiteSettings, type SiteSettingsPatch } from "@/lib/site-settings"
+import { type SiteSettings, type SiteSettingsPatch } from "@/lib/site-settings"
+// 表单 schema 依赖 zod；本页自己也要用 zod 建 uiSchema，所以走 schema 模块不增负担，
+// 而站点设置的类型/纯函数仍从 @/lib/site-settings 取（保持客户端安全的单一来源）。
+import { pwaAssetField } from "@/lib/site-settings.schema"
 
 /**
  * 站点设置中心。

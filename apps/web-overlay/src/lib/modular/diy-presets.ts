@@ -504,33 +504,50 @@ export interface DIYPreset {
   icon: string
   config: {
     viewMode: 'hybrid' | 'classic' | 'workbench'
-    cardDisplayMode: 'compact' | 'standard' | 'rich'
+    cardDisplayMode: 'compact' | 'standard' | 'rich' | 'minimal' | 'mini-chip'
     canvasBackground: 'mesh' | 'dots' | 'grid' | 'aurora' | 'clean'
     density: 'dense' | 'comfortable' | 'spacious'
     heroDeckCollapsed: boolean
+    speedDialEnabled?: boolean
     heroDeckWidgets: string[]
   }
 }
 
 export const BUILTIN_DIY_PRESETS: DIYPreset[] = [
   {
-    id: 'dev-pro',
-    name: '极客工程套件 (Dev Pro)',
-    description: '超高信息密度条形、工程细网格背景、集成微工具箱与首屏星标坞',
+    id: 'geek-terminal',
+    name: '⚡ 极客高密终端 (Geek High-Density)',
+    description: '极速胶囊块卡片、工程细网格背景、首屏常驻星标速览坞，专为键盘效率与高密极客打造',
     icon: 'Terminal',
     config: {
       viewMode: 'hybrid',
-      cardDisplayMode: 'compact',
+      cardDisplayMode: 'minimal',
       canvasBackground: 'grid',
       density: 'dense',
       heroDeckCollapsed: false,
+      speedDialEnabled: true,
       heroDeckWidgets: ['quick-search', 'quick-tools', 'favorites-dock'],
     },
   },
   {
-    id: 'ai-researcher',
-    name: 'AI 原生研究员 (AI Lab)',
-    description: '深度大图文卡片、柔和彩色极光渐变、指标徽标与论文探索首选',
+    id: 'balanced-hub',
+    name: '🧭 均衡标准工作台 (Balanced Hub)',
+    description: '经典微网格底纹、标准图文平衡卡片、多功能首屏组件与全景分类，日常浏览首选',
+    icon: 'Compass',
+    config: {
+      viewMode: 'hybrid',
+      cardDisplayMode: 'standard',
+      canvasBackground: 'mesh',
+      density: 'comfortable',
+      heroDeckCollapsed: false,
+      speedDialEnabled: true,
+      heroDeckWidgets: ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'],
+    },
+  },
+  {
+    id: 'visual-gallery',
+    name: '🎨 沉浸视觉画廊 (Visual Gallery)',
+    description: '柔和极光流光氛围、深度丰富大图文卡片、微动效与品牌指标光晕，视觉体验拉满',
     icon: 'Sparkles',
     config: {
       viewMode: 'hybrid',
@@ -538,38 +555,109 @@ export const BUILTIN_DIY_PRESETS: DIYPreset[] = [
       canvasBackground: 'aurora',
       density: 'comfortable',
       heroDeckCollapsed: false,
-      heroDeckWidgets: ['quick-search', 'clock-pomodoro', 'favorites-dock'],
+      speedDialEnabled: false,
+      heroDeckWidgets: ['quick-search', 'favorites-dock'],
     },
   },
   {
-    id: 'zen-minimalist',
-    name: '极简禅道流 (Zen Flow)',
-    description: '经典全景分类导航、宽松呼吸间距、纯净白/黑底色、回归最专注的书签体验',
-    icon: 'Compass',
+    id: 'zen-focus',
+    name: '🧘 极简专注流 (Zen Focus)',
+    description: '纯净极简背景、宽松呼吸间距、折叠首屏展板、回归最纯粹的书签流与无扰专注',
+    icon: 'LayoutGrid',
     config: {
       viewMode: 'classic',
       cardDisplayMode: 'standard',
       canvasBackground: 'clean',
       density: 'spacious',
       heroDeckCollapsed: true,
+      speedDialEnabled: false,
       heroDeckWidgets: ['quick-search'],
     },
   },
-  {
-    id: 'power-workbench',
-    name: '全功能工作台 (Power Board)',
-    description: '沉浸式自由布局画布、微网格平滑流体、多组件并行业务仪表盘',
-    icon: 'LayoutGrid',
-    config: {
-      viewMode: 'workbench',
-      cardDisplayMode: 'standard',
-      canvasBackground: 'mesh',
-      density: 'comfortable',
-      heroDeckCollapsed: false,
-      heroDeckWidgets: ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'],
-    },
-  },
 ]
+
+export interface SmartAutoTuneResult {
+  speedDialPinnedIds: string[]
+  speedDialEnabled: boolean
+  categoryOrder: string[]
+  collapsedCategoryIds: string[]
+  enableAdaptiveRanking: boolean
+  appliedCounts: {
+    speedDialCount: number
+    reorderedCount: number
+    collapsedCount: number
+  }
+}
+
+/**
+ * 9.1 智能自适应调优算法 (Smart Auto-Tune Engine)
+ * 根据本地访问频次与星标收藏，提取 Top 8~12 站点至速览星标坞，前置高频分类，折叠长尾分类
+ */
+export function computeSmartAutoTune<
+  TSite extends { id: string; title: string; weight?: number; featured?: boolean },
+  TCat extends { id: string; title: string; items?: any[]; subCategories?: any[] }
+>(
+  sites: TSite[],
+  categories: TCat[],
+  visitStats: Record<string, { count: number; lastVisitedAt?: number }> = {},
+  favoriteSiteIds: string[] = []
+): SmartAutoTuneResult {
+  const scoredSites = sites.map((site) => {
+    let score = 0
+    if (favoriteSiteIds.includes(site.id)) score += 50
+    const stat = visitStats[site.id]
+    if (stat) score += stat.count * 10
+    if (site.featured) score += 20
+    if (site.weight) score += site.weight
+    return { id: site.id, score }
+  })
+
+  scoredSites.sort((a, b) => b.score - a.score)
+  const topSites = scoredSites.slice(0, 10).map((s) => s.id)
+
+  const catScores: Record<string, number> = {}
+  for (const cat of categories) {
+    let score = 0
+    const checkItem = (item: any) => {
+      if (!item) return
+      if (favoriteSiteIds.includes(item.id)) score += 10
+      const stat = visitStats[item.id]
+      if (stat) score += stat.count * 5
+    }
+    if (Array.isArray(cat.items)) cat.items.forEach(checkItem)
+    if (Array.isArray(cat.subCategories)) {
+      cat.subCategories.forEach((sub: any) => {
+        if (Array.isArray(sub.items)) sub.items.forEach(checkItem)
+      })
+    }
+    catScores[cat.id] = score
+  }
+
+  const sortedCatIds = [...categories]
+    .sort((a, b) => (catScores[b.id] || 0) - (catScores[a.id] || 0))
+    .map((c) => c.id)
+
+  const collapsedIds: string[] = []
+  for (let i = 8; i < sortedCatIds.length; i++) {
+    const id = sortedCatIds[i]!
+    if ((catScores[id] || 0) === 0) {
+      collapsedIds.push(id)
+    }
+  }
+
+  return {
+    speedDialPinnedIds: topSites,
+    speedDialEnabled: true,
+    categoryOrder: sortedCatIds,
+    collapsedCategoryIds: collapsedIds,
+    enableAdaptiveRanking: true,
+    appliedCounts: {
+      speedDialCount: topSites.length,
+      reorderedCount: sortedCatIds.length,
+      collapsedCount: collapsedIds.length,
+    },
+  }
+}
 
 /**
  * 10. 校验并清洗外部导入的 DIY JSON 配置
@@ -696,7 +784,7 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
   }
 
   const validViewModes = ['hybrid', 'classic', 'workbench']
-  const validCardModes = ['compact', 'standard', 'rich']
+  const validCardModes = ['compact', 'standard', 'rich', 'minimal', 'mini-chip']
   const validCanvasBgs = ['mesh', 'dots', 'grid', 'aurora', 'clean']
 
   // 枚举回退不是「丢条目」，但用户选的模式被换掉了，同样得说
@@ -709,6 +797,20 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
   if (raw.canvasBackground != null && !validCanvasBgs.includes(raw.canvasBackground)) {
     ledger.note(`画布背景「${String(raw.canvasBackground).slice(0, 32)}」不在支持列表，已回退 mesh`)
   }
+
+  const categoryDensityOverrides = (() => {
+    if (typeof raw.categoryDensityOverrides !== 'object' || raw.categoryDensityOverrides === null || Array.isArray(raw.categoryDensityOverrides)) return {}
+    const entries = Object.entries(raw.categoryDensityOverrides as Record<string, unknown>)
+    const out: Record<string, any> = {}
+    for (const [k, v] of entries) {
+      if (!isSafeIdKey(k) || typeof v !== 'string') continue
+      const normalizedV = v === 'mini-chip' ? 'minimal' : v
+      if (validCardModes.includes(normalizedV)) {
+        out[k] = normalizedV
+      }
+    }
+    return out
+  })()
 
   const heroDeckWidgets = (() => {
     if (!Array.isArray(raw.heroDeckWidgets)) return ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools']
@@ -809,6 +911,11 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
     hiddenCategoryIds: cleanIdList(raw.hiddenCategoryIds, ledger, '隐藏分类'),
     collapsedCategoryIds: cleanIdList(raw.collapsedCategoryIds, ledger, '折叠分类'),
     pinnedSiteIdsByCategory,
+    categoryDensityOverrides,
+    speedDialEnabled: Boolean(raw.speedDialEnabled),
+    speedDialPinnedIds: cleanIdList(raw.speedDialPinnedIds, ledger, '速览星标'),
+    currentWorkspace: typeof raw.currentWorkspace === 'string' ? raw.currentWorkspace : 'all',
+    workspaceLayouts: typeof raw.workspaceLayouts === 'object' && raw.workspaceLayouts !== null && !Array.isArray(raw.workspaceLayouts) ? raw.workspaceLayouts : {},
     // 跨分类重映射：键值均为内部 id，白名单外直接丢弃（防原型污染与非法注入）
     siteCategoryOverrides: cleanOverrides((raw as any).siteCategoryOverrides, ledger),
     // 自定义壁纸：仅 http/https、/ 开头相对路径、data:image/(png|jpeg|webp);base64,，否则置空不渲染

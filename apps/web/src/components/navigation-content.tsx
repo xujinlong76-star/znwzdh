@@ -8,12 +8,14 @@ import type { SiteConfig } from '@/types/site'
 import { Sidebar } from '@/components/sidebar'
 import { NavigationToolbar } from '@/components/navigation-toolbar'
 import { NavigationCategorySection } from '@/components/navigation-category-section'
+import { LazyMountSection } from '@/components/lazy-mount-section'
+import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { Footer } from '@/components/footer'
 import { OnboardingCard } from '@/components/onboarding-card'
 import { useOverlayBehavior } from '@/components/ui/overlay'
+import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { CategoryQuickJumpBar } from '@/components/category-quick-jump-bar'
-import { QuickAccessTray } from '@/components/quick-access-tray'
 import { FloatingQuickNav } from '@/components/floating-quick-nav'
 
 // 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
@@ -68,6 +70,7 @@ const BatchOperationDock = dynamic(
   () => import('@/components/batch-operation-dock').then((m) => m.BatchOperationDock),
   { ssr: false }
 )
+import { SpeedDialDock } from '@/components/speed-dial-dock'
 import { Button } from '@/registry/new-york/ui/button'
 
 import {
@@ -124,6 +127,16 @@ interface NavigationContentProps {
   initialCategoryLimit?: number
 }
 
+/**
+ * 首屏立即挂载的分类数（2026-11-08 深度扫描 P0-1）。
+ *
+ * 其余分类交给 LazyMountSection 视口触发——水合后一次性挂载全部分类会把
+ * 首页撑到 42,803 个 DOM 节点（Lighthouse 阈值 3,000）。
+ * 注意这只影响「客户端第二次渲染」：服务端 HTML 的卡片链接数量由
+ * app/page.tsx 的 HOME_INITIAL_SSR_CATEGORIES 决定，与本常量无关。
+ */
+const EAGER_CATEGORY_COUNT = 2
+
 export function NavigationContent({
   navigationData,
   siteData,
@@ -178,6 +191,7 @@ export function NavigationContent({
     collapsedCategoryIds,
     collapseAllCategories,
     expandAllCategories,
+    setCollapsedCategoryIds,
     customCategories,
     addSiteToCustomCategory,
     siteCategoryOverrides,
@@ -213,12 +227,25 @@ export function NavigationContent({
         custom: customAsCategories,
         navigation: filteredNavigationItems,
         siteCategoryOverrides,
-        hiddenCategoryIds,
+        hiddenCategoryIds: isEditingLayout ? [] : hiddenCategoryIds,
         pinnedCategoryIds,
         categoryOrder,
       }),
-    [customAsCategories, filteredNavigationItems, hiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides],
+    [customAsCategories, filteredNavigationItems, hiddenCategoryIds, isEditingLayout, pinnedCategoryIds, categoryOrder, siteCategoryOverrides],
   )
+
+  const handleWorkspaceChange = useCallback((nextWorkspace: WorkspaceId) => {
+    setActiveWorkspace(nextWorkspace)
+    if (nextWorkspace === 'all') {
+      expandAllCategories()
+    } else {
+      const matchedCats = filterNavigationByWorkspace(navigationData.navigationItems, nextWorkspace)
+      const matchedCatIds = new Set(matchedCats.map((c) => c.id))
+      const allIds = navigationData.navigationItems.map((c) => c.id)
+      const toCollapse = allIds.filter((id) => !matchedCatIds.has(id))
+      setCollapsedCategoryIds(toCollapse)
+    }
+  }, [expandAllCategories, setCollapsedCategoryIds, navigationData.navigationItems])
 
   /**
    * 首屏分类分批渲染（首页 HTML 预算哨兵与 CWV 首屏加速）。
@@ -229,11 +256,14 @@ export function NavigationContent({
    * 既保证 SSR HTML 控制在预算内（< 2MB），又保证客户端交互与滚动完整无缝。
    */
   const renderedCategories = useMemo(() => {
+    const list = !isEditingLayout
+      ? sortedCategories.filter((cat) => countCategorySites(cat) > 0 && cat.title !== '未分类')
+      : sortedCategories
     if (mounted || !initialCategoryLimit || initialCategoryLimit <= 0) {
-      return sortedCategories
+      return list
     }
-    return sortedCategories.slice(0, initialCategoryLimit)
-  }, [mounted, initialCategoryLimit, sortedCategories])
+    return list.slice(0, initialCategoryLimit)
+  }, [mounted, initialCategoryLimit, sortedCategories, isEditingLayout])
 
   /**
    * 分类 id → 本页真正渲染出来的站点数（算式见 lib/modular/category-counts.ts）。
@@ -288,6 +318,9 @@ export function NavigationContent({
 
   // 5. 根据多态卡片选择自适应网格列数
   const gridColumnsClass = useMemo(() => {
+    if (cardDisplayMode === 'minimal' || (cardDisplayMode as any) === 'mini-chip') {
+      return 'grid grid-cols-2 min-[480px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 min-[1536px]:grid-cols-7! min-[1920px]:grid-cols-8!'
+    }
     if (cardDisplayMode === 'compact') {
       return 'grid grid-cols-1 min-[480px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 min-[1536px]:grid-cols-6! min-[1920px]:grid-cols-7!'
     }
@@ -420,7 +453,7 @@ export function NavigationContent({
           onOpenTools={() => setIsToolsOpen(true)}
           onOpenShortcuts={() => setIsShortcutsOpen(true)}
           activeWorkspace={activeWorkspace}
-          onWorkspaceChange={setActiveWorkspace}
+          onWorkspaceChange={handleWorkspaceChange}
           selectionMode={selectionMode}
           selectedIds={selectedIds}
           visibleSiteCount={visibleSites.length}
@@ -462,9 +495,6 @@ export function NavigationContent({
           </header>
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
           {viewMode !== 'workbench' && <OnboardingCard />}
-
-          {/* 我的常用与最近访问快速托盘 */}
-          {viewMode !== 'workbench' && <QuickAccessTray />}
           {viewMode === 'workbench' ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-1">
@@ -482,33 +512,112 @@ export function NavigationContent({
             </div>
           ) : (
             <>
-              <div className="space-y-8 sm:space-y-10">
-                {renderedCategories.map((category, index) => (
-                  <NavigationCategorySection
-                    key={category.id}
-                    category={category}
-                    index={index}
-                    totalCategories={sortedCategories.length}
-                    allCategoryIds={allCategoryIds}
-                    gridColumnsClass={gridColumnsClass}
-                    cardDisplayMode={cardDisplayMode}
-                    selectionMode={selectionMode}
-                    selectedIds={selectedIds}
-                    siteData={siteData}
-                    dropCategoryTarget={dropCategoryTarget}
-                    dragOverCustomCatId={dragOverCustomCatId}
-                    setDropCategoryTarget={setDropCategoryTarget}
-                    setDragOverCustomCatId={setDragOverCustomCatId}
-                    setAddSiteTargetCatId={setAddSiteTargetCatId}
-                    setPeekItem={openPeek}
-                    keyboardHintId="navhub-card-keyboard-hint"
-                    toggleSelectOne={toggleSelectOne}
-                    cardsPerGroup={cardsPerGroup}
+              {/* 首屏极速启动 Bento 展板（多引擎聚合搜索 + 星标/收藏坞 + 时钟 + 快捷工具） */}
+              {viewMode === 'hybrid' ? (
+                <>
+                  <HomeHeroDeck />
+                  <SpeedDialDock
+                    allSites={visibleSites}
+                    activeWorkspace={activeWorkspace}
+                    onPeek={openPeek}
                   />
-                ))}
+                </>
+              ) : (
+                <SpeedDialDock
+                  allSites={visibleSites}
+                  activeWorkspace={activeWorkspace}
+                  onPeek={openPeek}
+                />
+              )}
+
+              <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">
+                {renderedCategories.map((category, index) => {
+                  const section = (
+                    <NavigationCategorySection
+                      key={category.id}
+                      category={category}
+                      index={index}
+                      totalCategories={sortedCategories.length}
+                      allCategoryIds={allCategoryIds}
+                      gridColumnsClass={gridColumnsClass}
+                      cardDisplayMode={cardDisplayMode}
+                      selectionMode={selectionMode}
+                      selectedIds={selectedIds}
+                      siteData={siteData}
+                      dropCategoryTarget={dropCategoryTarget}
+                      dragOverCustomCatId={dragOverCustomCatId}
+                      setDropCategoryTarget={setDropCategoryTarget}
+                      setDragOverCustomCatId={setDragOverCustomCatId}
+                      setAddSiteTargetCatId={setAddSiteTargetCatId}
+                      setPeekItem={openPeek}
+                      keyboardHintId="navhub-card-keyboard-hint"
+                      toggleSelectOne={toggleSelectOne}
+                      cardsPerGroup={cardsPerGroup}
+                    />
+                  )
+                  /**
+                   * 前 EAGER_CATEGORY_COUNT 个分类立即挂载，其余交给视口触发。
+                   *
+                   * 编辑态**不再**强制全量挂载（2026-11-08 实测修正）：一次性挂载
+                   * 873 张卡片 / 42,803 个节点要 20 秒以上，DIY 面板点下去像卡死。
+                   * 改为：编辑态下未挂载的分类在占位块里直接给出**分类级**操控条
+                   * （上移 / 下移 / 隐藏 / 形态 / 添加站点 + 拖拽手柄），这些操作本来就
+                   * 只需要 category 对象、不需要卡片子树；卡片级的钉入/置顶/编辑仍然在
+                   * 用户滚到该分类、卡片真正挂载后可用。
+                   *
+                   * 多选态仍然强制全量：批量操作的前提是「看得见才能选」。
+                   */
+                  const mustMountAll = selectionMode
+                  if (mustMountAll || index < EAGER_CATEGORY_COUNT) return section
+                  return (
+                    <LazyMountSection
+                      key={category.id}
+                      sectionId={category.id}
+                      title={category.title}
+                      count={countCategorySites(category)}
+                      force={false}
+                      placeholder={
+                        isEditingLayout ? (
+                          <section
+                            id={`${category.id}-placeholder`}
+                            className="group relative scroll-m-16 rounded-2xl border border-dashed border-primary/40 bg-primary/5 p-4"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-1.5 h-5 rounded-full bg-primary/60" />
+                                <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground truncate">
+                                  {category.title}
+                                </h2>
+                                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 shrink-0">
+                                  {countCategorySites(category)} 站点
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <CategoryInSituControls
+                                  categoryId={category.id}
+                                  title={category.title}
+                                  isPinned={pinnedCategoryIds.includes(category.id)}
+                                  isCustom={Boolean((category as { isCustom?: boolean }).isCustom)}
+                                  canMoveUp={index > 0}
+                                  canMoveDown={index < renderedCategories.length - 1}
+                                  allCategoryIds={allCategoryIds}
+                                />
+                              </div>
+                            </div>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              滚动到此处即自动展开卡片；上面的操控条对整类生效，无需等待卡片加载。
+                            </p>
+                          </section>
+                        ) : undefined
+                      }
+                    >
+                      {section}
+                    </LazyMountSection>
+                  )
+                })}
 
                 {sortedCategories.length === 0 && (
-                  <div className="text-center py-16 text-muted-foreground space-y-3">
+                  <div className="col-span-12 text-center py-16 text-muted-foreground space-y-3">
                     <p className="text-sm">当前所有分类已被隐藏或工作台下暂无匹配站点</p>
                     <Button variant="outline" size="sm" onClick={() => setActiveWorkspace('all')}>
                       查看全部站点
@@ -516,15 +625,6 @@ export function NavigationContent({
                   </div>
                 )}
               </div>
-
-              {/*
-                极速启动展板（多引擎搜索 / 时钟 / 收藏坞 / 微工具）实测 733px 高，
-                原先钉在分类正文之前：553px 视口里首屏被它和引导卡吃满，第一张
-                站点卡片要滚到 1407px 才出现。它又是页面上的第二个搜索框，而站内
-                召回顶栏超级搜索已经覆盖。所以降到分类正文之后——组件本身不动，
-                仍只在 hybrid 视图挂载、仍是 ssr:false 懒加载。
-              */}
-              {viewMode === 'hybrid' && <HomeHeroDeck />}
             </>
           )}
 
@@ -542,13 +642,13 @@ export function NavigationContent({
               <span id="home-directory-title" className="text-xs font-semibold text-foreground">
                 站内目录
               </span>
-              <Link href="/category" className="text-xs text-primary hover:underline">
+              <Link href="/category" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-primary hover:bg-primary/5 hover:underline transition-colors">
                 全部分类
               </Link>
-              <Link href="/sites" className="text-xs text-primary hover:underline">
+              <Link href="/sites" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-primary hover:bg-primary/5 hover:underline transition-colors">
                 全部站点
               </Link>
-              <Link href="/tags" className="text-xs text-primary hover:underline">
+              <Link href="/tags" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-primary hover:bg-primary/5 hover:underline transition-colors">
                 按标签浏览
               </Link>
               {directoryLinks.length > 0 && (
@@ -559,7 +659,7 @@ export function NavigationContent({
                       <li key={link.id}>
                         <Link
                           href={`/category/${encodeURIComponent(link.slug)}`}
-                          className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                          className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 min-h-6 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
                         >
                           {link.title}
                           <span className="font-mono text-[10px] opacity-70">
@@ -575,13 +675,22 @@ export function NavigationContent({
           </nav>
         </div>
 
-        {/* 首页浮动 DIY 排版与分类管理托盘 */}
-        <HomeDIYToolbar
-          allCategoryIds={allCategoryIds}
-          categoryTitleMap={categoryTitleMap}
-          categories={sortedCategories}
-          raised={selectionMode}
-        />
+        {/*
+          首页 DIY 排版工坊拆成两块（2026-11-08 P0-3）：
+            · HomeDIYTrigger —— 轻量静息入口，静态导入随首屏渲染，不等懒加载 chunk；
+            · HomeDIYToolbar —— 重量级 HUD（下拉菜单 / 多个 Dialog / 备份弹窗），
+              只在真正进入编辑态时才挂载并下载该 chunk。
+          拆之前整包 HUD 在首屏就参与主线程竞争，移动端实测 DIY 按钮 12.5s 才可点。
+        */}
+        <HomeDIYTrigger />
+        {isEditingLayout && (
+          <HomeDIYToolbar
+            allCategoryIds={allCategoryIds}
+            categoryTitleMap={categoryTitleMap}
+            categories={sortedCategories}
+            raised={selectionMode}
+          />
+        )}
 
         {/* 页脚 */}
         <Footer siteInfo={siteData} />

@@ -54,17 +54,40 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
       ? WORKSPACES.find((ws) => ws.id === daypart.suggested) ?? null
       : null
 
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+    const currentIndex = tabs.findIndex((tab) => tab === document.activeElement)
+    if (currentIndex === -1) return
+    e.preventDefault()
+    const nextIndex =
+      e.key === 'ArrowRight'
+        ? (currentIndex + 1) % tabs.length
+        : (currentIndex - 1 + tabs.length) % tabs.length
+    tabs[nextIndex]?.focus()
+    tabs[nextIndex]?.click()
+  }
+
   return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 py-2.5 border-b border-border/40">
-      <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none touch-pan-x overscroll-x-contain [mask-image:linear-gradient(to_right,black_90%,transparent_100%)] sm:[mask-image:none]">
+    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2.5 py-2 border-b border-border/40 overflow-hidden">
+      <div
+        role="tablist"
+        aria-label="工作区视图切换"
+        onKeyDown={handleTabKeyDown}
+        className="flex items-center gap-1.5 overflow-x-auto w-full lg:w-auto pb-0.5 scrollbar-none touch-pan-x overscroll-x-contain shrink-0"
+      >
         {WORKSPACES.map((ws) => {
           const Icon = ws.icon
           const isActive = active === ws.id
           return (
             <button
               key={ws.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
               onClick={() => onChange(ws.id)}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-medium transition-all shrink-0 whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all shrink-0 whitespace-nowrap cursor-pointer ${
                 isActive
                   ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                   : 'bg-muted/40 hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/50 hover:border-border'
@@ -85,7 +108,7 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
       {/* 「全天候时段场景流推荐」开关必须真的改变这一行：
           开启 → 给出当前时段建议的场景，点一下就切过去（未经用户同意不自动换整屏）；
           关闭 → 明说已关闭，而不是继续显示一句按时间算出来的提示。 */}
-      <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 whitespace-nowrap">
+      <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground shrink-0 whitespace-nowrap pl-2">
         {daypartSceneEnabled ? (
           suggestedWorkspace ? (
             <button

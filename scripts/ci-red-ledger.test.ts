@@ -192,7 +192,7 @@ describe("signatureAliases：只放行登记过的抖动指纹", () => {
       owner: "bob",
       firstSeen: "2026-10-31",
       lastSeen: "2026-10-31",
-      expiresAt: "2026-11-07",
+      expiresAt: "2027-12-31",
     },
   ];
   const now = new Date("2026-10-31T00:00:00Z");

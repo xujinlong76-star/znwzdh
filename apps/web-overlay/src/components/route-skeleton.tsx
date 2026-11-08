@@ -18,6 +18,8 @@
  *   （更早接入：hot/ videos/ preferences/ algorithms/ graph/；me 族与 admin 族
  *     是形状逐块对齐的手写骨架，见门禁 HANDCRAFTED_SKELETONS，冻结不许再增。
  *     每条路由的 loading.tsx 只是「引这里对应形态」，不要在路由里手写骨架。）
+ *   （错误面 2026-11-08 收口：admin/ me/ algorithms/ graph/ preferences/ 各自新增
+ *     局部 error.tsx，不再落全局边界；加载面口径未变。）
  *   （软 404 回归锁：collections/ 与 site/[id] 不接 loading——骨架屏边界会先
  *     流式刷 200，notFound 就改不了状态码；锁见 collection-detail.test.ts、
  *     site-detail-404.test.ts、site-detail-performance.test.ts。）

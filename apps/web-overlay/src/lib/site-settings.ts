@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import type { SiteConfig } from '@/types/site'
 
 /**
@@ -10,6 +9,18 @@ import type { SiteConfig } from '@/types/site'
  * 2. 中枢把 site.json 当无 schema 的 KV 整坨存（apps/api/src/storage.ts 的
  *    writeSiteConfig），少一个键就是少一个键，没有任何兜底。所以**写侧必须合并**、
  *    **读侧必须归一化**，否则一次全量覆盖就把别的工具写入的键抹掉了。
+ *
+ * 模块边界（2026-11-07 首屏预算整改）：
+ * 本文件是**客户端安全**的——不含任何校验库依赖。zod 那部分（表单/写侧 schema）
+ * 全部住在 `@/lib/site-settings.schema`。
+ *
+ * 之所以要这道分界：首页 / 热榜 / 合集 / 分类板 / 详情页 / 搜索结果这六个客户端岛，
+ * 只从这里取 `externalLinkRelAttr` 这类纯函数，而它们原先与 `siteSettingsPatchSchema`
+ * 同处一个模块，`import { z } from "zod"` 在模块顶层求值、无法被摇掉，实测把
+ * **103 KB 的 zod 拖进了每一条路由的首屏**（chunk 2f8pg5_guvkgu.js）。拆开后
+ * 客户端一个 import 都不用改，zod 自动退回服务端与后台表单。
+ *
+ * 因此约束是：**本文件不得 import zod（含间接 import）**。校验逻辑请放 schema 模块。
  */
 
 /** 中枢存储路径（与 layout / api/site / metadata 共用同一常量） */
@@ -63,7 +74,7 @@ export type SiteSettingsPatch = {
 }
 
 /* ------------------------------------------------------------------ *
- * 校验
+ * 值域规则（纯正则，读写两侧共用）
  * ------------------------------------------------------------------ */
 
 /**
@@ -73,76 +84,23 @@ export type SiteSettingsPatch = {
  * `<link rel=icon>` 与 metadata.icons，`javascript:` 在 link href 上是可执行的；
  * `data:` 则是把几百 KB 的图塞进整坨站点配置里，每次首页渲染都跟着走一遍。
  * 上传走 /api/site/asset，落地后仍然是个站内相对 URL。
+ *
+ * 导出给 `@/lib/site-settings.schema` 复用，保证「写侧校验」与「读侧归一化」
+ * 用的是同一条规则——两处各写一份正则迟早会漂移。
  */
-const ASSET_RE = /^(https?:\/\/[^\s]+|\/[^\s]*)$/i
-
-const assetField = z
-  .string()
-  .trim()
-  .max(500)
-  .refine((v) => v === '' || ASSET_RE.test(v), {
-    message: '必须是 http(s) 绝对地址或站内相对路径',
-  })
+export const ASSET_RE = /^(https?:\/\/[^\s]+|\/[^\s]*)$/i
 
 export type PwaAssetKind = 'pwaIcon192' | 'pwaIcon512' | 'pwaMaskable512'
 
-/** 与上传端内容寻址命名一致；不接受外链、任意站内图、跨 kind、query 或 hash。 */
-export function pwaAssetField(kind: PwaAssetKind) {
-  const uploadedPng = new RegExp(`^/api/site/asset/${kind}-[0-9a-f]{10}\\.png$`)
-  return z.string().trim().max(500).refine((v) => v === '' || uploadedPng.test(v), {
-    message: `请上传对应的 ${kind} PNG，或清空以使用默认图标`,
-  })
+/**
+ * PWA 图标的落地命名规则：与上传端内容寻址命名一致。
+ *
+ * 不接受外链、任意站内图、跨 kind、query 或 hash。读写两侧共用本函数，
+ * 保证「表单放行的值」与「读侧愿意采信的值」完全重合。
+ */
+export function pwaAssetPattern(kind: PwaAssetKind): RegExp {
+  return new RegExp(`^/api/site/asset/${kind}-[0-9a-f]{10}\\.png$`)
 }
-
-const hexColor = z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, { message: '必须是 #RRGGBB' })
-
-/** 空串在这里不是「值」，是「没设过」——统一由 normalizeSettings 折叠成 undefined */
-export const siteSettingsPatchSchema = z.object({
-  basic: z
-    .object({
-      title: z.string().trim().min(2, '标题至少 2 个字符').max(120).optional(),
-      description: z.string().trim().min(10, '描述至少 10 个字符').max(500).optional(),
-      keywords: z.string().trim().max(300).nullable().optional(),
-      ogImage: assetField.nullable().optional(),
-    })
-    .strict()
-    .optional(),
-  appearance: z
-    .object({
-      logo: assetField.nullable().optional(),
-      favicon: assetField.nullable().optional(),
-      appleTouchIcon: assetField.nullable().optional(),
-      pwaIcon192: pwaAssetField('pwaIcon192').nullable().optional(),
-      pwaIcon512: pwaAssetField('pwaIcon512').nullable().optional(),
-      pwaMaskable512: pwaAssetField('pwaMaskable512').nullable().optional(),
-      theme: z.enum(['light', 'dark', 'system']).optional(),
-      themeColor: hexColor.nullable().optional(),
-    })
-    .strict()
-    .optional(),
-  navigation: z
-    .object({
-      linkTarget: z.enum(['_blank', '_self']).optional(),
-      externalLinkRel: z.enum(['nofollow', 'dofollow']).optional(),
-    })
-    .strict()
-    .optional(),
-  footer: z
-    .object({
-      text: z.string().trim().max(200).nullable().optional(),
-      icp: z
-        .string()
-        .trim()
-        .max(60)
-        .refine((v) => v === null || v === '' || /^[\d\u4e00-\u9fa5a-zA-Z\-/（）() ]+$/.test(v), {
-          message: '备案号只允许汉字、数字、字母与 -/() 分隔符',
-        })
-        .nullable()
-        .optional(),
-    })
-    .strict()
-    .optional(),
-})
 
 /* ------------------------------------------------------------------ *
  * 归一化（读侧）
@@ -163,9 +121,17 @@ function asset(value: unknown): string | undefined {
   return ASSET_RE.test(raw) ? raw : undefined
 }
 
+/**
+ * PWA 图标读侧归一化：等价于「trim → 长度 ≤ 500 → 命中该 kind 的上传命名」。
+ *
+ * 原先走 `pwaAssetField(kind).safeParse()`，把 zod 拽进了读侧（进而拽进 RSC 与
+ * 客户端）。这里换成直白的正则判定，语义逐条对齐，代价是零依赖。
+ */
 function pwaAsset(value: unknown, kind: PwaAssetKind): string {
-  const parsed = pwaAssetField(kind).safeParse(value)
-  return parsed.success ? parsed.data : ''
+  if (typeof value !== 'string') return ''
+  const raw = value.trim()
+  if (!raw || raw.length > 500) return ''
+  return pwaAssetPattern(kind).test(raw) ? raw : ''
 }
 
 /**

@@ -24,7 +24,7 @@ import {
 } from '@/lib/modular/layout-sync'
 
 export type HomeViewMode = 'hybrid' | 'classic' | 'workbench'
-export type CardDisplayMode = 'compact' | 'standard' | 'rich'
+export type CardDisplayMode = 'compact' | 'standard' | 'rich' | 'minimal' | 'mini-chip'
 export type CanvasBackground = 'mesh' | 'dots' | 'grid' | 'aurora' | 'clean'
 export type AccentColor = 'default' | 'violet' | 'emerald' | 'amber' | 'rose'
 
@@ -61,6 +61,14 @@ export interface HomeDIYConfig {
   pinnedSiteIdsByCategory: Record<string, string[]>
   customCategories: CustomCategory[]
   siteCategoryOverrides: Record<string, string>
+  // 单分类卡片形态单独覆盖 (Category Density Overrides)
+  categoryDensityOverrides?: Record<string, CardDisplayMode>
+  // 首屏常驻速览星标坞 (Pinned Speed Dial Dock)
+  speedDialEnabled?: boolean
+  speedDialPinnedIds?: string[]
+  // 多工作区排版蓝图与当前作用域 (Workspace Scoping)
+  currentWorkspace?: string
+  workspaceLayouts?: Record<string, Partial<HomeDIYConfig>>
   customWallpaperUrl?: string
   glassmorphismBlur?: number
   cardOpacity?: number
@@ -105,6 +113,11 @@ export const DEFAULT_CONFIG: HomeDIYConfig = {
   pinnedSiteIdsByCategory: {},
   customCategories: [],
   siteCategoryOverrides: {},
+  categoryDensityOverrides: {},
+  speedDialEnabled: false,
+  speedDialPinnedIds: [],
+  currentWorkspace: 'all',
+  workspaceLayouts: {},
   customWallpaperUrl: '',
   glassmorphismBlur: 12,
   cardOpacity: 0.9,
@@ -484,7 +497,7 @@ export function migrateLegacyHomeDiyConfig(storage: HomeDiyStorage): HomeDIYConf
             viewMode: (['hybrid', 'classic', 'workbench'] as const).includes(parsed.viewMode as HomeViewMode)
               ? (parsed.viewMode as HomeViewMode)
               : 'hybrid',
-            cardDisplayMode: (['compact', 'standard', 'rich'] as const).includes(parsed.cardDisplayMode as CardDisplayMode)
+            cardDisplayMode: (['compact', 'standard', 'rich', 'minimal', 'mini-chip'] as const).includes(parsed.cardDisplayMode as any)
               ? (parsed.cardDisplayMode as CardDisplayMode)
               : 'standard',
             canvasBackground: (['mesh', 'dots', 'grid', 'aurora', 'clean'] as const).includes(parsed.canvasBackground as CanvasBackground)

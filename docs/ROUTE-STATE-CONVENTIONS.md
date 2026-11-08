@@ -77,15 +77,20 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
 2. **禁止通配/前缀放行**——`auth/*`、`admin/` 这种写法一律红灯，新增路由默认
    必须显式接线或显式豁免；
 3. **残留豁免红灯**——接上边界后要同步删清单，清单与现状永远一致；
-4. 现行豁免的四大类（理由全文见门禁）：
+4. 现行豁免只剩**加载面**（2026-11-08 收口后，错误面已无豁免）：
    - `auth/*`：静态客户端表单，无白屏窗口；失败态在表单内展示；
    - `""`（首页）：复合布局贴不上三形态，ISR 60s 缓存命中首字节即到；
    - `site/[id]`、`collections`、`collections/[slug]`：**软 404 回归锁**，
      不接 loading（根因「骨架屏边界会先流式刷 200，notFound 就改不了
      状态码」；锁文件 `collection-detail.test.ts`、`site-detail-404.test.ts`、
-     `site-detail-performance.test.ts`）；
-   - `admin/*`、`me/*`、实验性工具页：错误暂落全局兜底，列入后续收口
-     （加载面各自已有骨架覆盖）。
+     `site-detail-performance.test.ts`）。
+5. **错误面收口完成（2026-11-08）**：`admin/*`、`me/*`、`algorithms`、
+   `graph`、`preferences` 共 35 条「落全局 error.tsx」的豁免**已全部删除**，
+   改由 5 个族级边界承担——`admin/error.tsx`（scope「管理台」）、
+   `me/error.tsx`（scope「用户中心」）、`algorithms/error.tsx`、
+   `graph/error.tsx`、`preferences/error.tsx`。
+   实测：69 个路由目录**全部**有局部错误边界（祖先继承口径），不再有页面
+   因为一次渲染异常被踢出站内外壳。
 
 ## 4. 新增路由 checklist
 

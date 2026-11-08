@@ -106,6 +106,9 @@ import { useVideoPlayer } from '@/contexts/VideoPlayerContext'
 import { parseWebVTT, searchTranscript, exportTranscriptAsMarkdown } from '@/lib/video-transcript-sync'
 import { saveStudyNote, listStudyNotes, exportNotesAsMarkdown, type VideoStudyNote } from '@/lib/video-frame-clipper'
 import { getStoredDanmaku, saveDanmakuItem } from '@/lib/video-danmaku-engine'
+// 未使用但不可删：这是 p2p-stream-loader 在 src 内的唯一引用点，删掉即触发
+// check-dead-modules 判红（测试引用不计入 src 图）；实测删除还会让 Turbopack
+// 的 chunk 切分变差，/videos/player 从 882 KB 涨回 884 KB。
 import { getP2PStreamCoordinator } from '@/lib/p2p-stream-loader'
 // 换源下拉框无条件渲染，常量本身零依赖，静态导入不会拖进播放器
 import { BILI_ENGINE_OPTIONS } from '@/lib/bili-engine-options'
@@ -118,7 +121,10 @@ import { VideoGestureHudOverlay } from '@/components/video-gesture-hud-overlay'
 import { generateFilmstripSequence, type FilmstripThumbnail } from '@/lib/video-filmstrip-generator'
 import { SessionActivityRecorder } from '@/lib/video-session-recorder'
 import { type SilenceDetectorConfig, type SilenceDetectorState } from '@/lib/video-silence-detector'
-import { type A11ySightGuardSettings, generateSvgFilterMarkup } from '@/lib/video-a11y-sight-guard'
+// 只留类型（编译期擦除）：generateSvgFilterMarkup 在本页从未被调用，而它会
+// 把 @/lib/video-a11y-sight-guard 整个模块钉进本页首屏图。该模块仍被
+// video-a11y-settings-dialog（dynamic 组件）引用，故不会变成零引用死模块。
+import { type A11ySightGuardSettings } from '@/lib/video-a11y-sight-guard'
 import { extractCodeMilestones, type CodeMilestone } from '@/lib/video-code-diff'
 import { type AudioEnhancerOptions } from '@/lib/video-audio-enhancer'
 import { joinCoWatchRoom, type CoWatchSession, type CoWatchState } from '@/lib/video-crdt-room'
@@ -126,6 +132,8 @@ import { generateVideoQuizzes, type VideoQuizQuestion } from '@/lib/video-quiz-g
 import { generateVideoMindMap, type MindMapNode } from '@/lib/video-mindmap-generator'
 import { generateVideoObjectSchema } from '@/lib/video-seo'
 import { createQoETracker, type QoEMetrics } from '@/lib/video-qoe-telemetry'
+// 同上：calculatePrefetchQueue 未被调用，但它与 p2p-stream-loader 都是各自模块在
+// src 内的唯一引用点，删掉即触发 check-dead-modules 判红（测试引用不计入 src 图）。
 import { calculatePrefetchQueue } from '@/lib/video-cache-manager'
 import { generateFlashcardsFromNotes, generateFlashcardsFromQuizzes, type FlashcardItem } from '@/lib/video-spaced-repetition'
 import { type SharpenerOptions } from '@/lib/video-webgpu-sharpener'

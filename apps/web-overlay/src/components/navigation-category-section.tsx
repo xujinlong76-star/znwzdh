@@ -6,10 +6,13 @@
  * 负责分类标题、折叠/置顶/排序控件、一级与二级站点的拖拽/收录/多选。
  * 共享状态直接走 useHomeDIY()，拖拽目标等跨区块 UI 状态由父组件注入。
  */
-import { useMemo, useState, useCallback, useEffect } from 'react'
+import { useMemo, useState, useCallback, useEffect, useRef, memo } from 'react'
+import Link from 'next/link'
 import { NavigationCard } from '@/components/navigation-card'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
-import { ChevronDown, Pin, Plus, Sparkles, Search, X, Link2 } from 'lucide-react'
+import { ModuleResizeHandles } from '@/components/modular/module-resize-handles'
+import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
+import { ChevronDown, Pin, Plus, Sparkles, Search, X, Link2, Network, Eye, EyeOff, RotateCcw } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { cn } from '@/lib/utils'
 import {
@@ -26,6 +29,9 @@ import { copyText } from '@/lib/clipboard'
 import type { CategoryNode } from '@/lib/modular/category-combine'
 import type { NavigationItem, NavigationCategory, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
+import { useExternalLinkTarget } from '@/lib/user-preferences'
+import { useSiteViewModel } from '@/components/site-view-context'
+import { externalLinkRelAttr } from '@/lib/site-settings'
 
 interface DropCategoryTarget {
   categoryId: string
@@ -58,7 +64,7 @@ export interface NavigationCategorySectionProps {
   cardsPerGroup?: number
 }
 
-export function NavigationCategorySection({
+export const NavigationCategorySection = memo(function NavigationCategorySection({
   category,
   index,
   totalCategories,
@@ -83,6 +89,9 @@ export function NavigationCategorySection({
     isEditingLayout,
     isAdaptiveRankingEnabled,
     pinnedCategoryIds,
+    hiddenCategoryIds,
+    unhideCategory,
+    categoryDensityOverrides,
     collapsedCategoryIds,
     pinnedSiteIdsByCategory,
     addSiteToCustomCategory,
@@ -90,11 +99,89 @@ export function NavigationCategorySection({
     togglePinSiteInCategory,
     toggleCollapseCategory,
     reorderCategory,
+    speedDialPinnedIds,
+    pinToSpeedDial,
+    unpinFromSpeedDial,
   } = useHomeDIY()
+
+  const linkTarget = useExternalLinkTarget(siteData?.navigation?.linkTarget)
+  const siteViewModel = useSiteViewModel()
+  const externalRel = externalLinkRelAttr(siteViewModel?.externalLinkRel)
+
+  const speedDialPinnedSet = useMemo(
+    () => new Set(speedDialPinnedIds || []),
+    [speedDialPinnedIds]
+  )
+
+  const handleToggleSpeedDialPin = useCallback(
+    (siteId: string) => {
+      if (speedDialPinnedSet.has(siteId)) {
+        unpinFromSpeedDial(siteId)
+      } else {
+        pinToSpeedDial(siteId)
+      }
+    },
+    [speedDialPinnedSet, pinToSpeedDial, unpinFromSpeedDial]
+  )
+
+  const sectionRef = useRef<HTMLElement | null>(null)
+  const isResizingModuleRef = useRef(false)
+  const [isResizingSelf, setIsResizingSelf] = useState(false)
+  const {
+    colSpan: moduleColSpan,
+    heightPx: moduleHeightPx,
+    isCustomSized: isModuleCustomSized,
+    setSize: setModuleSize,
+    resetSize: resetModuleSize,
+  } = useModuleWindowSize(`cat:${category.id}`, { colSpan: 12 })
+
+  const sectionColSpanClass = {
+    4: 'col-span-12 lg:col-span-4',
+    5: 'col-span-12 lg:col-span-5',
+    6: 'col-span-12 lg:col-span-6',
+    7: 'col-span-12 lg:col-span-7',
+    8: 'col-span-12 lg:col-span-8',
+    9: 'col-span-12 lg:col-span-9',
+    10: 'col-span-12 lg:col-span-10',
+    11: 'col-span-12 lg:col-span-11',
+    12: 'col-span-12',
+  }[moduleColSpan] || 'col-span-12'
 
   const isPinned = pinnedCategoryIds.includes(category.id)
   const isCustom = Boolean(category.isCustom)
   const isCollapsed = collapsedCategoryIds.includes(category.id)
+  const effectiveCardMode = categoryDensityOverrides?.[category.id] || cardDisplayMode
+  const effectiveGridClass = useMemo(() => {
+    // 当模块被左右拖拉缩窄为非全宽窗口（< 12 列）时，自适应缩减内部卡片列数，保证每张卡片文字不挤压
+    if (moduleColSpan <= 5) {
+      return effectiveCardMode === 'minimal'
+        ? 'grid grid-cols-1 sm:grid-cols-2'
+        : 'grid grid-cols-1'
+    }
+    if (moduleColSpan <= 7) {
+      return effectiveCardMode === 'minimal'
+        ? 'grid grid-cols-2 xl:grid-cols-3'
+        : 'grid grid-cols-1 xl:grid-cols-2'
+    }
+    if (moduleColSpan <= 9) {
+      return effectiveCardMode === 'minimal'
+        ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
+        : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+    }
+    if (effectiveCardMode === 'minimal') {
+      return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5 min-[1920px]:grid-cols-6!'
+    }
+    if (effectiveCardMode === 'compact') {
+      return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5 min-[1920px]:grid-cols-6!'
+    }
+    if (effectiveCardMode === 'rich') {
+      return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1536px]:grid-cols-4! min-[1920px]:grid-cols-5!'
+    }
+    if (effectiveCardMode === 'standard') {
+      return 'grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))]'
+    }
+    return gridColumnsClass || 'grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))]'
+  }, [effectiveCardMode, gridColumnsClass, moduleColSpan])
   const directItems = (category.items || []) as NavigationSubItem[]
   const subCats = (category.subCategories || []) as Array<NavigationCategory & { items?: NavigationSubItem[] }>
   // 与吸顶快捷直达轨、站内目录带共用同一个算式（lib/modular/category-counts.ts）
@@ -150,8 +237,18 @@ export function NavigationCategorySection({
    */
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const limit = cardsPerGroup > 0 ? cardsPerGroup : Number.POSITIVE_INFINITY
-  /** 排版编辑与多选是「要对全部卡片动手」的模式：此时不截断，否则用户找不到被折叠的卡 */
-  const forceFull = isEditingLayout || selectionMode
+  /**
+   * 是否解除「每组只渲染前 N 张」的截断。
+   *
+   * 2026-11-08 修正：原为 `isEditingLayout || selectionMode`。实测发现编辑态下
+   * 一旦解除截断，两个已挂载分类就会展开成 634 张卡片 / 33,241 个 DOM 节点，
+   * 进入 DIY 面板要等 3 秒以上（叠加分类级懒挂载后仍然重）。
+   *
+   * 现在编辑态**保留截断**：被折叠的卡由每组自带的「展开全部 N 个」按钮揭示——
+   * 那个按钮本来就在编辑态可用，功能没有丢，只是不再默认一次性铺开。
+   * 多选态仍然解除：批量操作的前提是「看得见才能选」。
+   */
+  const forceFull = selectionMode
 
   // 类目内秒级精准筛选状态
   const [filterKeyword, setFilterKeyword] = useState('')
@@ -306,11 +403,55 @@ export function NavigationCategorySection({
     }
   }
 
+  const handlePeekDirect = useCallback(
+    (item: NavigationSubItem) => setPeekItem(item, category.id),
+    [setPeekItem, category.id]
+  )
+  const handleTogglePinDirect = useCallback(
+    (siteId: string) => togglePinSiteInCategory(category.id, siteId),
+    [togglePinSiteInCategory, category.id]
+  )
+
+  const isHidden = hiddenCategoryIds?.includes(category.id)
+  if (isHidden) {
+    if (!isEditingLayout) return null
+    return (
+      <div
+        key={category.id}
+        id={category.id}
+        className="col-span-12 my-1 flex items-center justify-between rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-2.5 backdrop-blur-xs transition-all opacity-70 hover:opacity-100"
+      >
+        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+          <EyeOff className="w-4 h-4 text-amber-500" />
+          <span>{category.title}</span>
+          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-mono">(已隐藏)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              unhideCategory(category.id)
+              toast({ title: `已恢复显示分类: ${category.title}` })
+            }}
+            className="h-7 px-2.5 text-xs rounded-lg gap-1 border-primary/40 text-primary hover:bg-primary/10"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>恢复显示</span>
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
                     <section
+                      ref={sectionRef}
                       key={category.id}
                       id={category.id}
                       onDragOver={(e) => {
+                        if (isResizingModuleRef.current) return
                         // 1. 如果拖拽的是卡片，且当前是自定义专属分类
                         if (e.dataTransfer.types.includes('text/navhub-card-payload')) {
                           if (isCustom) {
@@ -467,12 +608,41 @@ export function NavigationCategorySection({
                         }
                       }}
                       className={cn(
-                        "cv-auto-section relative scroll-m-16 transition-all duration-200",
+                        "cv-auto-section group relative scroll-m-16",
+                        isResizingSelf ? "transition-none! select-none!" : "transition-all duration-200",
+                        sectionColSpanClass,
+                        isModuleCustomSized && !isPinned && !isEditingLayout && "p-3 sm:p-4 rounded-2xl border border-border/70 bg-card/35 backdrop-blur-xs shadow-2xs",
                         isPinned && "p-3 sm:p-4 rounded-2xl bg-primary/3 border border-primary/20 depth-surface",
                         isEditingLayout && "p-3 sm:p-4 rounded-2xl border-2 border-dashed border-primary/30 bg-muted/20",
                         dragOverCustomCatId === category.id && "ring-2 ring-emerald-500 bg-emerald-500/10 rounded-2xl border-emerald-500/60"
                       )}
                     >
+                      {/* 四向边框与双下角自由拖拉调整模块窗口大小手柄 */}
+                      <ModuleResizeHandles
+                        moduleRef={sectionRef}
+                        colSpan={moduleColSpan}
+                        minColSpan={4}
+                        maxColSpan={12}
+                        heightPx={moduleHeightPx}
+                        minHeightPx={220}
+                        maxHeightPx={1200}
+                        isEditing={isEditingLayout}
+                        onResizingStateChange={(resizing) => {
+                          isResizingModuleRef.current = resizing
+                          setIsResizingSelf(resizing)
+                        }}
+                        onResizeChange={(next, isCommit) => {
+                          setModuleSize(next, isCommit ?? false)
+                        }}
+                        onReset={() => {
+                          resetModuleSize()
+                          toast({
+                            title: `🔄 已重置「${category.title}」窗口大小`,
+                            description: '模块已恢复默认全宽（12 列）与自适应高度。',
+                          })
+                        }}
+                      />
+
                       {/* 分类拖拽放置指示标线 */}
                       {dropCategoryTarget && dropCategoryTarget.categoryId === category.id && dropCategoryTarget.position === 'before' && (
                         <div className="absolute -top-1.5 inset-x-2 h-1 bg-primary rounded-full shadow-md shadow-primary/60 animate-pulse z-30" />
@@ -538,15 +708,42 @@ export function NavigationCategorySection({
                             <button
                               type="button"
                               onClick={handleCopyCategoryLink}
-                              className="p-1 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted/80 transition-all cursor-pointer opacity-70 hover:opacity-100"
+                              className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted/80 transition-all cursor-pointer opacity-70 hover:opacity-100"
                               title={`复制「${category.title}」直达锚点链接`}
                               aria-label={`复制「${category.title}」分类直达链接`}
                             >
                               <Link2 className="w-3.5 h-3.5" />
                             </button>
+                            {/* 查看该领域技术生态图谱 */}
+                            <Link
+                              href={`/graph?category=${encodeURIComponent(category.id)}`}
+                              className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-all cursor-pointer opacity-70 hover:opacity-100"
+                              title="查看该领域技术生态图谱"
+                              aria-label={`查看「${category.title}」领域技术生态图谱`}
+                            >
+                              <Network className="w-3.5 h-3.5" />
+                            </Link>
                             <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 font-medium">
                               {isFilterActive ? `${totalMatchedCount}/${totalCount} 匹配` : selectedSubCatId ? `${totalMatchedCount}/${totalCount} 站点` : `${totalCount} 站点`}
                             </span>
+                            {isEditingLayout && isModuleCustomSized && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  resetModuleSize()
+                                  toast({ title: `🔄 已恢复「${category.title}」默认全宽与自适应高度` })
+                                }}
+                                className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-medium hover:bg-primary/20 transition-all cursor-pointer"
+                                title="点击重置该模块窗口为默认全宽与自适应高度"
+                                aria-label={`重置「${category.title}」模块窗口大小`}
+                              >
+                                <span>
+                                  📐 {moduleColSpan === 12 ? '全宽' : `${moduleColSpan}/12列`}
+                                  {moduleHeightPx ? `×${moduleHeightPx}px` : ''}
+                                </span>
+                                <RotateCcw className="w-2.5 h-2.5" />
+                              </button>
+                            )}
                             {isCollapsed && (
                               <button
                                 type="button"
@@ -572,7 +769,7 @@ export function NavigationCategorySection({
                                         type="button"
                                         onClick={() => setSelectedTag(isSelected ? null : tag)}
                                         className={cn(
-                                          "px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer",
+                                          "px-2 py-0.5 min-h-6 inline-flex items-center rounded-md text-[11px] font-medium transition-colors cursor-pointer",
                                           isSelected
                                             ? "bg-primary text-primary-foreground shadow-2xs"
                                             : "bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
@@ -621,9 +818,9 @@ export function NavigationCategorySection({
                                 <button
                                   type="button"
                                   onClick={() => setIsFilterOpen(true)}
-                                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors flex items-center gap-1 text-xs cursor-pointer"
+                                  className="h-6 px-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors inline-flex items-center gap-1 text-xs cursor-pointer"
                                   title={`在「${category.title}」内极速筛选`}
-                                  aria-label={`在「${category.title}」内极速筛选`}
+                                  aria-label={`类目筛选：在「${category.title}」内极速筛选`}
                                 >
                                   <Search className="w-3.5 h-3.5" />
                                   <span className="hidden xl:inline text-[11px]">类目筛选</span>
@@ -642,24 +839,45 @@ export function NavigationCategorySection({
                               canMoveUp={index > 0}
                               canMoveDown={index < totalCategories - 1}
                               allCategoryIds={allCategoryIds}
+                              onAddSite={() => setAddSiteTargetCatId(category.id)}
                             />
                           )}
                         </div>
 
                         {/* 未折叠时渲染分类下挂载的站点和二级分类 */}
                         {!isCollapsed && (
-                          <>
+                          <div
+                            className={cn(
+                              "space-y-4",
+                              moduleHeightPx && "overflow-y-auto pr-1.5 custom-scrollbar"
+                            )}
+                            style={moduleHeightPx ? { maxHeight: `${moduleHeightPx}px` } : undefined}
+                          >
                             {/* 二级分类快速切换导航轨（仅在拥有多个子分类且未折叠时渲染） */}
                             {!isEditingLayout && subCats.length > 1 && (
                               <div
                                 role="tablist"
                                 aria-label={`${category.title} 子分类快速切换`}
+                                onKeyDown={(e) => {
+                                  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+                                  const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+                                  const currentIndex = tabs.findIndex((tab) => tab === document.activeElement)
+                                  if (currentIndex === -1) return
+                                  e.preventDefault()
+                                  const nextIndex =
+                                    e.key === 'ArrowRight'
+                                      ? (currentIndex + 1) % tabs.length
+                                      : (currentIndex - 1 + tabs.length) % tabs.length
+                                  tabs[nextIndex]?.focus()
+                                  tabs[nextIndex]?.click()
+                                }}
                                 className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none text-xs"
                               >
                                 <button
                                   type="button"
                                   role="tab"
                                   aria-selected={selectedSubCatId === null}
+                                  tabIndex={selectedSubCatId === null ? 0 : -1}
                                   onClick={() => setSelectedSubCatId(null)}
                                   className={cn(
                                     "px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
@@ -669,15 +887,14 @@ export function NavigationCategorySection({
                                   )}
                                 >
                                   <span>全部</span>
-                                  <span className={cn("text-[10px] font-mono", selectedSubCatId === null ? "text-primary-foreground/80" : "text-muted-foreground/60")}>
-                                    ({totalCount})
-                                  </span>
+                                  <span className={cn("text-[10px] font-mono", selectedSubCatId === null ? "text-primary-foreground/80" : "text-muted-foreground/60")}>{`(${totalCount})`}</span>
                                 </button>
                                 {sortedDirectItems.length > 0 && (
                                   <button
                                     type="button"
                                     role="tab"
                                     aria-selected={selectedSubCatId === '__direct__'}
+                                    tabIndex={selectedSubCatId === '__direct__' ? 0 : -1}
                                     onClick={() => setSelectedSubCatId(selectedSubCatId === '__direct__' ? null : '__direct__')}
                                     className={cn(
                                       "px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
@@ -687,9 +904,7 @@ export function NavigationCategorySection({
                                     )}
                                   >
                                     <span>精选直属</span>
-                                    <span className={cn("text-[10px] font-mono", selectedSubCatId === '__direct__' ? "text-primary-foreground/80" : "text-muted-foreground/60")}>
-                                      ({sortedDirectItems.length})
-                                    </span>
+                                    <span className={cn("text-[10px] font-mono", selectedSubCatId === '__direct__' ? "text-primary-foreground/80" : "text-muted-foreground/60")}>{`(${sortedDirectItems.length})`}</span>
                                   </button>
                                 )}
                                 {subCats.filter((sub) => isEditingLayout || (sub.items && sub.items.length > 0)).map((sub) => {
@@ -701,6 +916,7 @@ export function NavigationCategorySection({
                                       type="button"
                                       role="tab"
                                       aria-selected={isCurrent}
+                                      tabIndex={isCurrent ? 0 : -1}
                                       onClick={() => setSelectedSubCatId(isCurrent ? null : sub.id)}
                                       className={cn(
                                         "px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
@@ -710,9 +926,7 @@ export function NavigationCategorySection({
                                       )}
                                     >
                                       <span>{sub.title}</span>
-                                      <span className={cn("text-[10px] font-mono", isCurrent ? "text-primary-foreground/80" : "text-muted-foreground/60")}>
-                                        ({subItemCount})
-                                      </span>
+                                      <span className={cn("text-[10px] font-mono", isCurrent ? "text-primary-foreground/80" : "text-muted-foreground/60")}>{`(${subItemCount})`}</span>
                                     </button>
                                   )
                                 })}
@@ -741,24 +955,29 @@ export function NavigationCategorySection({
                             {/* 一级分类下直接挂载的站点 */}
                             {(showDirectGroup && (sortedDirectItems.length > 0 || isCustom)) && (
                               <div
-                                className={cn(gridColumnsClass, "transition-all duration-200")}
-                                style={{ gap: 'var(--density-grid-gap, 1rem)' }}
+                                className={cn(effectiveGridClass, "transition-all duration-200")}
+                                style={{ gap: 'var(--density-grid-gap, 14px)' }}
                               >
                                 {directGroup.items.map((item: any) => (
                                   <NavigationCard
                                     key={item.id}
                                     item={item}
                                     siteConfig={siteData}
-                                    onPeek={(item) => setPeekItem(item, category.id)}
+                                    onPeek={handlePeekDirect}
                                     keyboardHintId={keyboardHintId}
-                                    cardDisplayMode={cardDisplayMode}
+                                    cardDisplayMode={effectiveCardMode}
                                     isPinnedInCategory={categoryPinnedItemIds.includes(item.id)}
-                                    onTogglePinInCategory={(siteId) => togglePinSiteInCategory(category.id, siteId)}
+                                    onTogglePinInCategory={handleTogglePinDirect}
                                     isDraggable={isEditingLayout}
                                     sourceCategoryId={category.id}
                                     selectable={selectionMode}
                                     selected={selectedIdSet.has(item.id)}
                                     onToggleSelect={toggleSelectOne}
+                                    isEditingLayout={isEditingLayout}
+                                    isSpeedDialPinned={speedDialPinnedSet.has(item.id)}
+                                    onToggleSpeedDialPin={handleToggleSpeedDialPin}
+                                    linkTarget={linkTarget}
+                                    externalRel={externalRel}
                                   />
                                 ))}
 
@@ -787,18 +1006,29 @@ export function NavigationCategorySection({
                               subGroups.map(({ subCategory, subPinnedItemIds, sortedSubItems, items }) => {
                                 return (
                                   <div key={subCategory.id} id={subCategory.id} className="space-y-3 pt-2">
-                                    <div className="flex items-center gap-2 pb-0.5 pt-1">
-                                      <span className="w-1 h-3.5 rounded-full bg-muted-foreground/40" />
-                                      <h3 className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">
-                                        {subCategory.title}
-                                      </h3>
-                                      <span className="text-xs text-muted-foreground/60 font-mono">
-                                        ({subCategory.items?.length || 0})
-                                      </span>
+                                    <div className="flex items-center justify-between pb-0.5 pt-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="w-1 h-3.5 rounded-full bg-muted-foreground/40" />
+                                        <h3 className="text-xs font-semibold text-muted-foreground tracking-wider">
+                                          {subCategory.title}
+                                        </h3>
+                                        <span className="text-xs text-muted-foreground/60 font-mono">{`(${subCategory.items?.length || 0})`}</span>
+                                      </div>
+                                      {isEditingLayout && (
+                                        <CategoryInSituControls
+                                          categoryId={subCategory.id}
+                                          title={subCategory.title}
+                                          isPinned={subPinnedItemIds.length > 0}
+                                          canMoveUp={true}
+                                          canMoveDown={true}
+                                          allCategoryIds={subGroups.map((s) => s.subCategory.id)}
+                                          onAddSite={() => setAddSiteTargetCatId(subCategory.id)}
+                                        />
+                                      )}
                                     </div>
                                     <div
-                                      className={cn(gridColumnsClass, "transition-all duration-200")}
-                                      style={{ gap: 'var(--density-grid-gap, 1rem)' }}
+                                      className={cn(effectiveGridClass, "transition-all duration-200")}
+                                      style={{ gap: 'var(--density-grid-gap, 14px)' }}
                                     >
                                       {items.map((item: any) => (
                                         <NavigationCard
@@ -807,7 +1037,7 @@ export function NavigationCategorySection({
                                           siteConfig={siteData}
                                           onPeek={(item) => setPeekItem(item, subCategory.id)}
                                           keyboardHintId={keyboardHintId}
-                                          cardDisplayMode={cardDisplayMode}
+                                          cardDisplayMode={effectiveCardMode}
                                           isPinnedInCategory={subPinnedItemIds.includes(item.id)}
                                           onTogglePinInCategory={(siteId) => togglePinSiteInCategory(subCategory.id, siteId)}
                                           isDraggable={isEditingLayout}
@@ -815,6 +1045,11 @@ export function NavigationCategorySection({
                                           selectable={selectionMode}
                                           selected={selectedIdSet.has(item.id)}
                                           onToggleSelect={toggleSelectOne}
+                                          isEditingLayout={isEditingLayout}
+                                          isSpeedDialPinned={speedDialPinnedSet.has(item.id)}
+                                          onToggleSpeedDialPin={handleToggleSpeedDialPin}
+                                          linkTarget={linkTarget}
+                                          externalRel={externalRel}
                                         />
                                       ))}
                                       {renderGroupToggle(subCategory.id, sortedSubItems.length)}
@@ -829,9 +1064,9 @@ export function NavigationCategorySection({
                                 该分类下暂无收录站点，可通过卡片右上角的图钉或添加站点进行收录。
                               </div>
                             )}
-                          </>
+                          </div>
                         )}
                       </div>
                     </section>
   )
-}
+})

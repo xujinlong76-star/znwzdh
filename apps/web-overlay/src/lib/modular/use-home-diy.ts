@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import {
   BUILTIN_DIY_PRESETS,
   collapseAllCategories as collapseAllCategoriesPure,
+  computeSmartAutoTune,
   expandAllCategories as expandAllCategoriesPure,
   reorderCategoryToTarget,
   toggleCollapsedCategory as toggleCollapsedCategoryPure,
@@ -193,6 +194,11 @@ export function useHomeDIY() {
     persistConfig((prev) => ({ ...prev, hiddenCategoryIds: [], updatedAt: Date.now() }))
   }, [persistConfig])
 
+  // 13.1 批量设置隐藏分类列表（供大纲预设筛选使用）
+  const setHiddenCategories = useCallback((categoryIds: string[]) => {
+    persistConfig((prev) => ({ ...prev, hiddenCategoryIds: categoryIds, updatedAt: Date.now() }))
+  }, [persistConfig])
+
   // 14. 分类上下移动
   const moveCategory = useCallback((categoryId: string, direction: 'up' | 'down', currentAllIds: string[]) => {
     persistConfig((prev) => {
@@ -241,6 +247,93 @@ export function useHomeDIY() {
       const updatedMap = togglePinnedSiteInCategory(prev.pinnedSiteIdsByCategory, categoryId, siteId)
       return { ...prev, pinnedSiteIdsByCategory: updatedMap, updatedAt: Date.now() }
     })
+  }, [persistConfig])
+
+  // 15.1 单分类卡片形态单独覆盖
+  const setCategoryDensityOverride = useCallback((categoryId: string, mode?: CardDisplayMode) => {
+    persistConfig((prev) => {
+      const current = { ...(prev.categoryDensityOverrides || {}) }
+      if (!mode) {
+        delete current[categoryId]
+      } else {
+        current[categoryId] = mode
+      }
+      return { ...prev, categoryDensityOverrides: current, updatedAt: Date.now() }
+    })
+  }, [persistConfig])
+
+  // 15.2 首屏速览星标坞开关与增删
+  const toggleSpeedDial = useCallback(() => {
+    persistConfig((prev) => ({
+      ...prev,
+      speedDialEnabled: !prev.speedDialEnabled,
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
+
+  const pinToSpeedDial = useCallback((siteId: string) => {
+    persistConfig((prev) => {
+      const current = prev.speedDialPinnedIds || []
+      if (current.includes(siteId)) return prev
+      return { ...prev, speedDialPinnedIds: [...current, siteId], updatedAt: Date.now() }
+    })
+  }, [persistConfig])
+
+  const unpinFromSpeedDial = useCallback((siteId: string) => {
+    persistConfig((prev) => ({
+      ...prev,
+      speedDialPinnedIds: (prev.speedDialPinnedIds || []).filter((id) => id !== siteId),
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
+
+  // 15.3 多工作区切换与蓝图存取
+  const setCurrentWorkspace = useCallback((workspaceId: string) => {
+    persistConfig((prev) => ({
+      ...prev,
+      currentWorkspace: workspaceId,
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
+
+  // 15.4 智能自适应一键调优
+  const applySmartAutoTune = useCallback((sites: any[], categories: any[]) => {
+    let visitStats: Record<string, { count: number }> = {}
+    try {
+      if (typeof window !== 'undefined') {
+        const rawVisits = localStorage.getItem('navhub_visit_counts_v1')
+        if (rawVisits) visitStats = JSON.parse(rawVisits)
+      }
+    } catch {
+      // 理由：解析本地访问计数失败时静默降级为空，不阻断主流程
+    }
+
+    let favoriteIds: string[] = []
+    try {
+      if (typeof window !== 'undefined') {
+        const rawFavs = localStorage.getItem('navhub_favorite_sites_v1')
+        if (rawFavs) {
+          const parsed = JSON.parse(rawFavs)
+          favoriteIds = Array.isArray(parsed)
+            ? parsed.map((item: any) => (typeof item === 'string' ? item : item?.siteId || item?.id)).filter(Boolean)
+            : []
+        }
+      }
+    } catch {
+      // 理由：解析本地收藏站点失败时静默降级为空，不阻断主流程
+    }
+
+    const result = computeSmartAutoTune(sites, categories, visitStats, favoriteIds)
+    persistConfig((prev) => ({
+      ...prev,
+      speedDialPinnedIds: result.speedDialPinnedIds,
+      speedDialEnabled: result.speedDialEnabled,
+      categoryOrder: result.categoryOrder,
+      collapsedCategoryIds: result.collapsedCategoryIds,
+      enableAdaptiveRanking: result.enableAdaptiveRanking,
+      updatedAt: Date.now(),
+    }))
+    return result
   }, [persistConfig])
 
   // 16. 重置分类排序与显隐
@@ -479,6 +572,25 @@ export function useHomeDIY() {
     }))
   }, [persistConfig])
 
+  const expandCategory = useCallback((categoryId: string) => {
+    persistConfig((prev) => {
+      if (!prev.collapsedCategoryIds || !prev.collapsedCategoryIds.includes(categoryId)) return prev
+      return {
+        ...prev,
+        collapsedCategoryIds: prev.collapsedCategoryIds.filter((id) => id !== categoryId),
+        updatedAt: Date.now(),
+      }
+    })
+  }, [persistConfig])
+
+  const setCollapsedCategoryIds = useCallback((ids: string[]) => {
+    persistConfig((prev) => ({
+      ...prev,
+      collapsedCategoryIds: ids,
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
+
 
   // 跨分类重归类卡片 (Cross-Category Reclassification)
   const reclassifySite = useCallback((siteId: string, targetCategoryId: string) => {
@@ -578,6 +690,10 @@ export function useHomeDIY() {
     hiddenCategoryIds: config.hiddenCategoryIds,
     collapsedCategoryIds: config.collapsedCategoryIds || [],
     pinnedSiteIdsByCategory: config.pinnedSiteIdsByCategory,
+    categoryDensityOverrides: config.categoryDensityOverrides || {},
+    speedDialEnabled: Boolean(config.speedDialEnabled),
+    speedDialPinnedIds: config.speedDialPinnedIds || [],
+    currentWorkspace: config.currentWorkspace || 'all',
     customCategories: config.customCategories,
     isEditingLayout,
     setIsEditingLayout,
@@ -592,8 +708,16 @@ export function useHomeDIY() {
     toggleCollapseCategory,
     collapseAllCategories,
     expandAllCategories,
+    expandCategory,
+    setCollapsedCategoryIds,
     setViewMode,
     setCardDisplayMode,
+    setCategoryDensityOverride,
+    toggleSpeedDial,
+    pinToSpeedDial,
+    unpinFromSpeedDial,
+    setCurrentWorkspace,
+    applySmartAutoTune,
     setCanvasBackground,
     setAccentColor,
     toggleHeroDeckCollapsed,
@@ -602,6 +726,7 @@ export function useHomeDIY() {
     toggleHideCategory,
     unhideCategory,
     unhideAllCategories,
+    setHiddenCategories,
     moveCategory,
     reorderCategory,
     togglePinSiteInCategory,

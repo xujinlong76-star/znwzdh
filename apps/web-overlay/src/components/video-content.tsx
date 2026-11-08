@@ -419,12 +419,27 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
     }, [])
 
     /**
-     * 细分方向首屏渲染预算：默认首屏每个子方向仅渲染前 10 部精选视频（5列栅格下两满行），
-     * 将首屏 DOM 节点总数从 12 万压降到约 5 千，首屏 HTML 从 37MB 暴降 95%，彻底解决滚动假死。
+     * 细分方向首屏渲染预算：默认首屏每个子方向仅渲染前 6 部精选视频（适配 1/2/3/4/6 列栅格满行），
+     * 将首屏 DOM 节点总数压降到 2,500 以内（满足 ≤ 3,000 预算），彻底解决网络卡顿与滚动假死。
      * 用户可随时一键展开/收起剩余条目，或按分类/二级方向直接定位。
      */
-    const INITIAL_VISIBLE_PER_SUBCAT = 10
+    const INITIAL_VISIBLE_PER_SUBCAT = 6
+
+/**
+ * 首屏完整渲染的一级分类数（2026-11-08 深度扫描 P0-2）。
+ *
+ * 背景：/videos 原先在「全部」模式下把 12 个一级分类的每个子分类都铺开 10 张卡，
+ * 实测单页 365 张卡 / 16,383 个 DOM 节点 / 页高 45,616px，且没有任何分页。
+ * 超过此数的分类降级为「分类摘要卡」：标题 + 计数 + 子分类清单 + 进入按钮，
+ * 点击后走既有的 selectCategory 进入单分类视图（那条路径本来就存在）。
+ *
+ * 内链口径：视频详情页由 /videos/sitemap.xml 全覆盖，此处减少的卡片不会
+ * 让爬虫失去发现路径 —— 这一点决定了该优化不是拿 SEO 换性能。
+ */
+const INITIAL_VISIBLE_CATEGORIES = 2
     const [expandedSubCats, setExpandedSubCats] = useState<Record<string, boolean>>({})
+    /** 「全部」模式下是否展开剩余一级分类（默认收起，见 INITIAL_VISIBLE_CATEGORIES） */
+    const [showAllCategories, setShowAllCategories] = useState(false)
     const toggleSubCatExpand = (id: string) => {
         setExpandedSubCats((prev) => ({
             ...prev,
@@ -1133,8 +1148,61 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                             </div>
                         )}
 
-                        {visibleCategories.map((category) => {
+                        {visibleCategories.map((category, categoryIndex) => {
                             const totalCategoryVideos = (category.items?.length || 0) + (category.subCategories?.reduce((acc, sub) => acc + (sub.items?.length || 0), 0) || 0)
+                            /**
+                             * 「全部」模式下的分类级渐进披露：
+                             * 只完整渲染前 INITIAL_VISIBLE_CATEGORIES 个分类，其余折叠为摘要卡。
+                             * 用户主动选了分类、或用了搜索/筛选、或点了「展开剩余分类」时，一律全量渲染
+                             * —— 这些路径下用户明确表达了「我要看这些」，不该再藏。
+                             */
+                            const isDeferred = !showAllCategories
+                                && !activeCategoryId
+                                && !hasQuery
+                                && durationFilter === 'all'
+                                && platformFilter === 'all'
+                                && sortOrder === 'default'
+                                && categoryIndex >= INITIAL_VISIBLE_CATEGORIES
+
+                            if (isDeferred) {
+                                const subTitles = (category.subCategories || [])
+                                    .filter((s) => s.enabled !== false)
+                                    .slice(0, 6)
+                                return (
+                                    <section key={category.id} id={category.id} className="scroll-m-20">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border border-border/60 bg-card/60 backdrop-blur-xs hover:border-primary/40 transition-colors">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shrink-0">
+                                                    <NavIcon name={category.icon || 'Folder'} className="w-5 h-5" />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground flex items-center gap-2.5">
+                                                        <span className="truncate">{category.title}</span>
+                                                        <span className="text-xs font-mono font-medium text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full border border-border/40 shrink-0">
+                                                            {totalCategoryVideos}
+                                                        </span>
+                                                    </h2>
+                                                    {subTitles.length > 0 && (
+                                                        <p className="text-xs text-muted-foreground/80 mt-0.5 line-clamp-1">
+                                                            {subTitles.map((s) => s.title).join(' · ')}
+                                                            {(category.subCategories || []).length > subTitles.length && ' …'}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => selectCategory(category.id)}
+                                                className="text-xs text-primary font-medium inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/15 border border-primary/20 transition-colors shrink-0 self-start sm:self-center"
+                                            >
+                                                <span>浏览此分类</span>
+                                                <ChevronRight className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    </section>
+                                )
+                            }
+
                             return (
                                 <section key={category.id} id={category.id} className="scroll-m-20 space-y-6 pt-2">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-border/60">
@@ -1295,6 +1363,7 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                                                     </div>
                                                 )
                                             })}
+
                                         </div>
                                     ) : (
                                         (() => {
@@ -1359,6 +1428,39 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                                 </section>
                             )
                         })}
+
+                    {/*
+                      分类级渐进披露的出口（2026-11-08 P0-2）。
+                      只在「全部」模式且确有被折叠的分类时出现；点击后全量渲染，
+                      与页面既有的「展开全部 N 个」交互语言一致。
+                    */}
+                    {!showAllCategories
+                        && !activeCategoryId
+                        && !hasQuery
+                        && visibleCategories.length > INITIAL_VISIBLE_CATEGORIES && (
+                            <div className="flex justify-center pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAllCategories(true)}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary cursor-pointer"
+                                >
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                    <span>展开剩余 {Math.max(0, visibleCategories.length - INITIAL_VISIBLE_CATEGORIES)} 个分类</span>
+                                </button>
+                            </div>
+                        )}
+                    {showAllCategories && !activeCategoryId && (
+                        <div className="flex justify-center pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowAllCategories(false)}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary cursor-pointer"
+                            >
+                                <ChevronUp className="w-3.5 h-3.5" />
+                                <span>收起其余分类</span>
+                            </button>
+                        </div>
+                    )}
                     </div>
                 </div>
             {showHarvestDialog && (

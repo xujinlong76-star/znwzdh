@@ -32,15 +32,23 @@ export const TREND_WEIGHTS = {
 } as const;
 
 export function trendScore(input: TrendInput, now: number = Date.now()): number {
-  const visits = Math.max(0, input.visits7d);
-  const favorites = Math.max(0, input.favorites7d);
-  const ageDays = Math.max(0, input.ageDays);
+  // 入参净化：任一通道拿到 NaN/Infinity 都按 0 处理（调用方数据脏不该让全站任务失败）
+  const safe = (v: number) => (Number.isFinite(v) ? Math.max(0, v) : 0);
+  const visits = safe(input.visits7d);
+  const favorites = safe(input.favorites7d);
+  const ageDays = safe(input.ageDays);
   const raw =
     TREND_WEIGHTS.visits * Math.log1p(visits) +
     TREND_WEIGHTS.favorites * Math.log1p(favorites) -
     TREND_WEIGHTS.agePenaltyPerDay * ageDays;
   // 下限 0：没有互动的老站点不会变成负分（浏览排序里排在手工序之前仍 >= 0）
-  return Math.max(0, Number(raw.toFixed(6)));
+  //
+  // 2026-11-08：补一道有限性闸门。`Math.max(0, NaN) === NaN`，`NaN.toFixed`
+  // 得到字符串 "NaN"，`Number("NaN")` 还是 NaN —— 也就是原本这三步「看起来在兜底」
+  // 的写法对 NaN 完全无效，NaN 会直接进 SQL 绑定参数变成 NULL。
+  // 任何非有限中间值都归零：热度算不出来时，正确结果是「没有热度」而不是让任务崩。
+  const rounded = Number(raw.toFixed(6));
+  return Number.isFinite(rounded) ? Math.max(0, rounded) : 0;
 }
 
 /**
@@ -52,6 +60,22 @@ export function freshnessScore(createdAt: number): number {
   return createdAt;
 }
 
+/**
+ * 站点年龄（天）。
+ *
+ * 2026-11-08 修复：入参可能是「看起来像数字、其实是脏数据」的值——
+ * 库里实测有 3 条站的 created_at 存成了 TEXT 日期串（"2026-11-07 06:47:11"），
+ * `Number()` 之后是 NaN，于是 (now - NaN)/86400000 = NaN，
+ * `Math.max(0, NaN)` 仍然是 NaN（Math.max 不吞 NaN），一路传到 SQL 参数里
+ * 被 SQLite 当成 NULL，撞上 `sites.weight NOT NULL` —— 整个 recompute_rank
+ * 任务每小时失败一次，全站 trend_score 永远停在 0。
+ *
+ * 这里把「算不出年龄」收敛成一个明确的有限值（视为 0 天，即按新站处理），
+ * 而不是让 NaN 继续外泄。脏数据本身由调用方负责修正。
+ */
 export function ageInDays(createdAt: number, now: number = Date.now()): number {
-  return Math.max(0, (now - createdAt) / 86_400_000);
+  const created = Number(createdAt);
+  if (!Number.isFinite(created)) return 0;
+  const days = (now - created) / 86_400_000;
+  return Number.isFinite(days) ? Math.max(0, days) : 0;
 }

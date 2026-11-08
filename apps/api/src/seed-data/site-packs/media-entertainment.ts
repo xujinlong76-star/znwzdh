@@ -1501,12 +1501,12 @@ export const mediaEntertainmentPack: SeedPluginDef = {
           tags: ["购票", "电影", "影院"],
         },
         {
-          url: "https://www.gewara.com/",
-          title: "格瓦拉生活网",
-          description: "格瓦拉生活网，提供电影演出购票、在线选座与观影资讯服务。",
+          url: "https://www.taopiaopiao.com/",
+          title: "淘票票",
+          description: "阿里影业旗下电影购票平台，提供在线选座、影院排片与观影优惠活动。",
           category: "电影院线与购票",
           subCategory: "购票平台",
-          tags: ["购票", "电影", "演出"],
+          tags: ["购票", "电影", "选座"],
         },
         {
           url: "https://www.wandacinemas.com/",

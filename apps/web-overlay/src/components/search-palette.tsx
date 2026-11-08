@@ -627,7 +627,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   })
 
   return (
-    <div ref={searchRef} className="relative w-full max-w-lg mx-auto">
+    <div ref={searchRef} className="relative w-full max-w-2xl min-w-[340px] lg:min-w-[400px] mx-auto">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input aria-label={placeholder}
@@ -645,7 +645,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           value={query}
           onChange={(e) => { setQuery(e.target.value); setIsFocused(true) }}
           onFocus={() => setIsFocused(true)}
-          className="pl-9 sm:pl-10 pr-9 sm:pr-20 h-9.5 sm:h-10 rounded-xl border border-border-strong hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 shadow-xs text-base sm:text-sm transition-all"
+          className="pl-9 sm:pl-10 pr-32 sm:pr-36 h-9.5 sm:h-10 rounded-xl border border-border-strong hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 shadow-xs text-base sm:text-sm transition-all"
         />
         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}

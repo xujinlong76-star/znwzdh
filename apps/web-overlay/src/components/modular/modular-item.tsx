@@ -5,11 +5,10 @@ import { createPortal } from 'react-dom'
 import type { WidgetInstance } from '@/types/modular'
 import { WIDGET_REGISTRY } from '@/lib/modular/registry'
 import { ModuleErrorBoundary } from './module-error-boundary'
+import { ModuleResizeHandles } from './module-resize-handles'
 import { 
   GripVertical, 
   Trash2, 
-  Maximize2, 
-  Sparkles,
   MoveHorizontal,
   ArrowUp,
   ArrowDown,
@@ -43,6 +42,7 @@ const COL_PRESETS = [
   { label: '1/4', value: 3, description: '紧凑卡片' },
   { label: '1/3', value: 4, description: '标准小组件' },
   { label: '1/2', value: 6, description: '半屏展示' },
+  { label: '2/3', value: 8, description: '宽幅展示' },
   { label: '全宽', value: 12, description: '全景通栏' },
 ]
 
@@ -84,8 +84,8 @@ function ModularItemImpl({
       setSizeMenuPos(null)
       return
     }
-    const MENU_H = 214 // 5 个宽度预设 + 3 个高度预设 + 两个分组标题的实测高度
-    const MENU_W = 112
+    const MENU_H = 240
+    const MENU_W = 120
     const place = () => {
       const btn = sizeBtnRef.current
       if (!btn) return
@@ -254,75 +254,10 @@ function ModularItemImpl({
     1: 'min-h-[175px]',
     2: 'min-h-[290px]',
     3: 'min-h-[420px]',
+    4: 'min-h-[540px]',
+    5: 'min-h-[660px]',
+    6: 'min-h-[780px]',
   }[rowSpan] || 'min-h-[175px]'
-
-  /**
-   * 右下角缩放手柄：Pointer Events（鼠标 / 触屏 / 触控笔统一）。
-   *
-   * 两处修正：
-   *  1. 原实现把"1 列 ≈ 80px"写死（假设容器 1200px）。实际列宽随视口变化——
-   *     1440px 屏上 1 列约 110px，375px 屏上约 20px，写死会让手感飘忽、跳格。
-   *     这里在按下时**实测**栅格容器宽度与 columnGap，算出真实列宽。
-   *  2. 原来只能横向改列宽，行高只能进菜单点。现在纵向拖动同时改行高（按 115px 档位）。
-   *
-   * 流畅性：按下时先 beginInteraction() 压入一份历史快照，过程中用
-   * recordHistory=false 更新，避免每个栅格变化都做一次 boards 深拷贝 + 历史入栈。
-   */
-  const handleResizePointerDown = (e: React.PointerEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    const container = itemRef.current?.parentElement
-    if (!container) return
-
-    const styles = window.getComputedStyle(container)
-    const gap = parseFloat(styles.columnGap || '0') || 0
-    const gridWidth = container.clientWidth
-    // 12 栅格：11 个间隙 + 12 列
-    const colWidth = Math.max(24, (gridWidth - gap * 11) / 12)
-    // 行高档位增量：min-h 175 / 290 / 420 → 每档约 115px
-    const rowUnit = 115
-
-    const startX = e.clientX
-    const startY = e.clientY
-    const startCol = widget.colSpan || def.defaultColSpan
-    const startRow = widget.rowSpan || def.defaultRowSpan
-
-    isResizingRef.current = true
-    onBeginInteraction?.()
-    try {
-      ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
-    } catch {
-      /* 某些浏览器不支持捕获，退化为 window 监听 */
-    }
-
-    const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
-
-    const handleMove = (moveEvent: PointerEvent) => {
-      if (!isResizingRef.current) return
-      const deltaCols = Math.round((moveEvent.clientX - startX) / colWidth)
-      const deltaRows = Math.round((moveEvent.clientY - startY) / rowUnit)
-      const targetCol = clamp(startCol + deltaCols, def.minColSpan, def.maxColSpan)
-      const targetRow = clamp(startRow + deltaRows, def.minRowSpan, def.maxRowSpan)
-      if (targetCol !== currentColRef.current || targetRow !== currentRowRef.current) {
-        currentColRef.current = targetCol
-        currentRowRef.current = targetRow
-        onResize(widget.id, targetCol, targetRow, false)
-      }
-    }
-
-    const handleUp = () => {
-      isResizingRef.current = false
-      window.removeEventListener('pointermove', handleMove)
-      window.removeEventListener('pointerup', handleUp)
-      window.removeEventListener('pointercancel', handleUp)
-    }
-
-    window.addEventListener('pointermove', handleMove)
-    window.addEventListener('pointerup', handleUp)
-    window.addEventListener('pointercancel', handleUp)
-  }
-
 
   return (
     <div
@@ -341,7 +276,7 @@ function ModularItemImpl({
       }}
       onDragOver={(e) => onDragOver(e, index)}
       onDragEnd={onDragEnd}
-      className={`relative group @container rounded-2xl border transition-all duration-200 flex flex-col justify-between overflow-hidden ${colSpanClass} ${minHeightStyle} ${
+      className={`relative group @container rounded-2xl border transition-all duration-200 flex flex-col justify-between ${colSpanClass} ${minHeightStyle} ${
         isEditing
           ? 'cursor-grab active:cursor-grabbing border-primary/40 ring-1 ring-primary/20 hover:border-primary/80 bg-card/90 shadow-sm'
           : 'border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs shadow-xs hover:shadow-md'
@@ -349,9 +284,38 @@ function ModularItemImpl({
         isDraggedOver ? 'ring-2 ring-primary ring-offset-2 scale-[1.01]' : ''
       }`}
     >
+      {/* 四向边框与双下角自由拖拉调整模块窗口大小手柄 */}
+      <ModuleResizeHandles
+        moduleRef={itemRef}
+        colSpan={colSpan}
+        minColSpan={def.minColSpan ?? 3}
+        maxColSpan={def.maxColSpan ?? 12}
+        rowSpan={rowSpan}
+        minRowSpan={def.minRowSpan ?? 1}
+        maxRowSpan={Math.max(def.maxRowSpan ?? 4, 6)}
+        rowUnitPx={115}
+        isEditing={isEditing}
+        onBeginResize={onBeginInteraction}
+        onResizingStateChange={(resizing) => {
+          isResizingRef.current = resizing
+        }}
+        onResizeChange={(next, isFinal) => {
+          const targetCol = next.colSpan ?? colSpan
+          const targetRow = next.rowSpan ?? rowSpan
+          if (!isFinal && (targetCol !== currentColRef.current || targetRow !== currentRowRef.current)) {
+            currentColRef.current = targetCol
+            currentRowRef.current = targetRow
+            onResize(widget.id, targetCol, targetRow, false)
+          }
+        }}
+        onReset={() => {
+          onResize(widget.id, def.defaultColSpan, def.defaultRowSpan, true)
+        }}
+      />
+
       {/* 顶部标题栏 / 编辑手柄 */}
       {isEditing && (
-        <div className="flex items-center justify-between px-3 py-1.5 bg-muted/60 border-b border-border/50 text-xs">
+        <div className="flex items-center justify-between px-3 py-1.5 bg-muted/60 border-b border-border/50 text-xs rounded-t-2xl">
           <div className="flex items-center gap-1.5 min-w-0">
             <span
               className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-grab select-none"
@@ -409,7 +373,7 @@ function ModularItemImpl({
                 title="调整网格尺寸"
               >
                 <MoveHorizontal className="w-2.5 h-2.5" />
-                <span>{colSpan}列</span>
+                <span>{colSpan}列×{rowSpan}行</span>
               </button>
 
               {/* portal 到 body：卡片 overflow-hidden 会把 absolute 下拉切掉 */}
@@ -423,7 +387,7 @@ function ModularItemImpl({
                     tabIndex={-1}
                     onKeyDown={handleSizeMenuKeyDown}
                     style={{ position: 'fixed', top: sizeMenuPos.top, left: sizeMenuPos.left }}
-                    className="z-[120] w-28 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-xl p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95"
+                    className="z-[120] w-32 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-xl p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95"
                   >
                     <div role="presentation" className="text-xs text-muted-foreground px-1 pb-1 border-b">选择宽度跨度</div>
                     <div role="group" aria-label="宽度跨度" className="flex flex-col gap-1">
@@ -449,8 +413,8 @@ function ModularItemImpl({
                     ))}
                     </div>
                     <div role="presentation" className="text-xs text-muted-foreground px-1 pt-1 border-t">高度跨度</div>
-                    <div role="group" aria-label="高度跨度" className="flex items-center gap-1">
-                      {[1, 2, 3].map((r) => (
+                    <div role="group" aria-label="高度跨度" className="grid grid-cols-4 gap-1">
+                      {[1, 2, 3, 4].map((r) => (
                         <button
                           key={r}
                           type="button"
@@ -460,7 +424,7 @@ function ModularItemImpl({
                             onResize(widget.id, colSpan, r)
                             setShowSizeMenu(false)
                           }}
-                          className={`flex-1 text-xs py-0.5 rounded font-mono ${
+                          className={`text-xs py-0.5 rounded font-mono ${
                             rowSpan === r ? 'bg-primary text-primary-foreground font-bold' : 'bg-muted/60 hover:bg-muted'
                           }`}
                         >
@@ -502,7 +466,7 @@ function ModularItemImpl({
       )}
 
       {/* 模块内部独立内容 —— 用错误边界圈住：该模块崩溃时只降级这一张卡片 */}
-      <div className="flex-1 w-full min-h-0">
+      <div className="flex-1 w-full min-h-0 overflow-hidden rounded-2xl flex flex-col justify-between">
         <ModuleErrorBoundary
           title={widget.customTitle || def.title}
           isEditing={isEditing}
@@ -511,22 +475,6 @@ function ModularItemImpl({
           <Component config={widget.config} />
         </ModuleErrorBoundary>
       </div>
-
-      {/* 右下角自由缩放手柄 (仅在编辑模式展示；Pointer 事件，鼠标/触屏通用) */}
-      {isEditing && (
-        <div
-          onPointerDown={handleResizePointerDown}
-          className="absolute bottom-0 right-0 p-1.5 z-10 cursor-se-resize flex items-end justify-end text-muted-foreground hover:text-primary transition-all select-none group/resize touch-none"
-          title={`当前尺寸: ${colSpan} 列 × ${rowSpan} 行 (按住右下角横向改宽度、纵向改高度)`}
-        >
-          <span className="opacity-0 group-hover/resize:opacity-100 text-xs font-mono bg-background/90 border border-border/80 px-1.5 py-0.5 rounded mr-1 mb-0.5 shadow-xs transition-opacity">
-            {colSpan}×{rowSpan}
-          </span>
-          <svg className="w-3 h-3 fill-current opacity-70 group-hover/resize:opacity-100" viewBox="0 0 6 6">
-            <path d="M6 6H4V4H6V6ZM6 2H4V0H6V2ZM2 6H0V4H2V6Z" />
-          </svg>
-        </div>
-      )}
     </div>
   )
 }

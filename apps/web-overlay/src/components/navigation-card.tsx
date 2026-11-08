@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useRef } from 'react'
+import { memo, useRef } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/registry/new-york/ui/card'
 import type { NavigationSubItem } from '@/types/navigation'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -23,12 +23,10 @@ import { tagSlug } from '@/lib/seo/tag-slug'
 import { recordOfflineVisit } from '@/lib/offline-recent'
 import { getIdentity } from '@/lib/identity'
 import { reportClick } from '@/lib/navhub-api'
-import { useExternalLinkTarget } from '@/lib/user-preferences'
 import { copyText } from '@/lib/clipboard'
-import { useSiteViewModel } from '@/components/site-view-context'
-import { externalLinkRelAttr } from '@/lib/site-settings'
+import { useExternalLinkTarget } from '@/lib/user-preferences'
 
-interface NavigationCardProps {
+export interface NavigationCardProps {
   item: NavigationSubItem
   siteConfig?: SiteConfig
   onPeek?: (item: NavigationSubItem) => void
@@ -43,9 +41,14 @@ interface NavigationCardProps {
   onToggleSelect?: (siteId: string) => void
   /** 指向页面里唯一的键盘操作说明元素（sr-only），避免每张卡各渲染一份 */
   keyboardHintId?: string
+  isEditingLayout?: boolean
+  isSpeedDialPinned?: boolean
+  onToggleSpeedDialPin?: (siteId: string) => void
+  linkTarget?: '_blank' | '_self'
+  externalRel?: string
 }
 
-export function NavigationCard({
+export const NavigationCard = memo(function NavigationCard({
   item,
   siteConfig,
   onPeek,
@@ -58,12 +61,28 @@ export function NavigationCard({
   selected = false,
   onToggleSelect,
   keyboardHintId,
+  isEditingLayout: propIsEditingLayout,
+  isSpeedDialPinned = false,
+  onToggleSpeedDialPin,
+  linkTarget: propLinkTarget = '_blank',
+  externalRel = 'noopener noreferrer nofollow',
 }: NavigationCardProps) {
+  const linkTarget = useExternalLinkTarget(propLinkTarget)
   const { toast } = useToast()
-  // 站点配置只是默认值：用户中心「新标签页打开站点」开关必须真的决定打开方式。
-  const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)
-  // 外链权重策略走根布局透传的站点视图（与页脚同源）：缺省 nofollow，后台可切 dofollow。
-  const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
+  const isEditingLayout = propIsEditingLayout ?? isDraggable
+
+  const handleToggleSpeedDial = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (onToggleSpeedDialPin) {
+      onToggleSpeedDialPin(item.id)
+      toast({
+        title: isSpeedDialPinned
+          ? `已从速览坞移除: ${item.title}`
+          : `📌 已钉入速览坞: ${item.title}`,
+      })
+    }
+  }
 
   /**
    * 多选模式下卡片点击**不导航**，只切换选中。
@@ -294,7 +313,9 @@ export function NavigationCard({
                 aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}
                 draggable={false}
                 className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
-              />
+              >
+                <span className="sr-only">{`访问 ${item.title}`}</span>
+              </a>
 
               <div className="relative z-10 pointer-events-none flex items-center gap-2 min-w-0 flex-1">
                 <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover:scale-105">
@@ -348,7 +369,27 @@ export function NavigationCard({
               </div>
 
               {/* 紧凑操作按钮 */}
-              <div className="relative z-20 flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity" onKeyDown={handleActionsKeyDown}>
+              <div className={cn(
+                "relative z-20 flex items-center gap-0.5 transition-opacity",
+                isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
+              )} onKeyDown={handleActionsKeyDown}>
+                {isEditingLayout && (
+                  <Button
+                    type="button"
+                    tabIndex={-1}
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      "h-6 w-6 rounded-md transition-colors",
+                      isSpeedDialPinned ? "text-amber-500 bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
+                    )}
+                    title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
+                    aria-label={isSpeedDialPinned ? `从速览坞取消固定：${item.title}` : `钉入速览坞：${item.title}`}
+                    onClick={handleToggleSpeedDial}
+                  >
+                    <Zap className={cn("w-3 h-3", isSpeedDialPinned && "fill-amber-500")} />
+                  </Button>
+                )}
                 {onTogglePinInCategory && (
                   <Button
                   tabIndex={-1}
@@ -461,7 +502,9 @@ export function NavigationCard({
                 aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}
                 draggable={false}
                 className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
-              />
+              >
+                <span className="sr-only">{`访问 ${item.title}`}</span>
+              </a>
 
               <div className="relative z-10 pointer-events-none">
                 <CardHeader className="p-4 sm:p-5">
@@ -476,19 +519,19 @@ export function NavigationCard({
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 group-hover:pr-16">
-                        <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover:text-primary transition-colors truncate min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 ">
+                        <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover:text-primary transition-colors min-w-0 flex-1">
                           {hasSiteDetail ? (
                             <Link
                               href={siteDetailHref}
                               onClick={handleDetailClick}
                               tabIndex={-1}
-                              className="pointer-events-auto truncate block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0"
+                              className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-2 break-words leading-snug"
                             >
                               {item.title}
                             </Link>
                           ) : (
-                            <span className="truncate block text-foreground group-hover:text-primary min-w-0">{item.title}</span>
+                            <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-2 break-words leading-snug">{item.title}</span>
                           )}
                         </CardTitle>
                       </div>
@@ -539,7 +582,7 @@ export function NavigationCard({
                     key={tag}
                     href={'/tags/' + encodeURIComponent(tagSlug(tag))}
                     onClick={handleTagClick}
-                    className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
+                    className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors min-h-6"
                   >
                     #{tag}
                   </Link>
@@ -565,7 +608,27 @@ export function NavigationCard({
               </div>
 
               {/* 操作区：右上角悬浮药丸胶囊 */}
-              <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
+              <div className={cn(
+                "absolute top-2 right-2 z-20 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs transition-all duration-150",
+                isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
+              )} onKeyDown={handleActionsKeyDown}>
+                {isEditingLayout && (
+                  <Button
+                    type="button"
+                    tabIndex={-1}
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      "h-7 w-7 rounded-full transition-colors",
+                      isSpeedDialPinned ? "text-amber-500 bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
+                    )}
+                    title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
+                    aria-label={isSpeedDialPinned ? `从速览坞取消固定：${item.title}` : `钉入速览坞：${item.title}`}
+                    onClick={handleToggleSpeedDial}
+                  >
+                    <Zap className={cn("w-3.5 h-3.5", isSpeedDialPinned && "fill-amber-500")} />
+                  </Button>
+                )}
                 {onTogglePinInCategory && (
                   <Button
                   tabIndex={-1}
@@ -677,7 +740,9 @@ export function NavigationCard({
               aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}
               draggable={false}
               className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
-            />
+            >
+              <span className="sr-only">{`访问 ${item.title}`}</span>
+            </a>
 
             {/* 键盘聚焦显式快捷键角标 */}
             <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 group-focus-visible:opacity-100 sm:group-hover:opacity-0 transition-opacity duration-150">
@@ -700,19 +765,19 @@ export function NavigationCard({
                     />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 group-hover:pr-14">
-                      <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors truncate min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 ">
+                      <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors min-w-0 flex-1">
                         {hasSiteDetail ? (
                           <Link
                             href={siteDetailHref}
                             onClick={handleDetailClick}
                             tabIndex={-1}
-                            className="pointer-events-auto truncate block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0"
+                            className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-2 break-words leading-snug"
                           >
                             {item.title}
                           </Link>
                         ) : (
-                          <span className="truncate block text-foreground group-hover:text-primary min-w-0">{item.title}</span>
+                          <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-2 break-words leading-snug">{item.title}</span>
                         )}
                       </CardTitle>
                     </div>
@@ -771,7 +836,27 @@ export function NavigationCard({
             </div>
 
             {/* 操作区：右上角悬浮药丸胶囊 */}
-            <div className="absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
+            <div className={cn(
+              "absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs transition-all duration-150",
+              isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
+            )} onKeyDown={handleActionsKeyDown}>
+              {isEditingLayout && (
+                <Button
+                  type="button"
+                  tabIndex={-1}
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-6.5 w-6.5 rounded-full transition-colors",
+                    isSpeedDialPinned ? "text-amber-500 bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
+                  )}
+                  title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
+                  aria-label={isSpeedDialPinned ? `从速览坞取消固定：${item.title}` : `钉入速览坞：${item.title}`}
+                  onClick={handleToggleSpeedDial}
+                >
+                  <Zap className={cn("w-3.5 h-3.5", isSpeedDialPinned && "fill-amber-500")} />
+                </Button>
+              )}
               {onTogglePinInCategory && (
                 <Button
                   tabIndex={-1}
@@ -850,4 +935,4 @@ export function NavigationCard({
         </TooltipContent>
       </Tooltip>
   )
-}
+})

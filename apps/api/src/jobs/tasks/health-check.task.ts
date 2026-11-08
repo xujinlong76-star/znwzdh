@@ -14,6 +14,7 @@ import {
   HEALTH_FAIL_THRESHOLD,
   shouldMarkBroken,
   type JobRunHandle,
+  type PatrolSelection,
 } from "../../jobs.ts";
 
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
@@ -43,14 +44,24 @@ export async function handleHealthCheck(
   ctx: AppContext,
   payload: { siteId?: string; limit?: number },
   run: JobRunHandle,
-  getTargets: (limit: number) => Promise<Array<SiteRow | null>>
+  getTargets: (limit: number) => Promise<PatrolSelection>
 ): Promise<void> {
   const { guardedFetch } = await import("@navhub/ai");
   const limit = payload.limit ?? 50;
-  const found: Array<SiteRow | null> = payload.siteId
-    ? [await ctx.repo.getSite(payload.siteId)]
-    : await getTargets(limit);
-  const targets = found.filter((s): s is SiteRow => Boolean(s));
+  let selection: PatrolSelection;
+  if (payload.siteId) {
+    // 单站点巡检：不走队列，配额与基数没有意义，显式置空而不是伪造。
+    const one = await ctx.repo.getSite(payload.siteId);
+    selection = {
+      targets: one ? [one] : [],
+      quota: { backfill: 0, refresh: 0 },
+      picked: { backfill: 0, refresh: 0 },
+      depth: { unchecked: 0, checked: 0 },
+    };
+  } else {
+    selection = await getTargets(limit);
+  }
+  const targets = selection.targets.filter((s): s is SiteRow => Boolean(s));
   let ok = 0;
   let checked = 0;
 
@@ -103,5 +114,31 @@ export async function handleHealthCheck(
       deferred,
     });
   }
-  await ctx.repo.recordEvent("health_check", { meta: { planned: targets.length, checked, ok, deferred } }).catch(() => undefined);
+
+  // 覆盖面指标：补探队列排在 targets 最前面（见 JobRunner#patrolTargets），
+  // 所以「实际尝试过的补探数」= min(已巡检数, 补探选中数)，不会把被 shouldStop
+  // 截断的部分算成已覆盖 —— 报一个偏乐观的覆盖率比不报更糟。
+  const attemptedBackfill = Math.min(checked, selection.picked.backfill);
+  const uncheckedAfter = Math.max(0, selection.depth.unchecked - attemptedBackfill);
+  const total = selection.depth.unchecked + selection.depth.checked;
+  const coveragePct = total > 0 ? Number((((total - uncheckedAfter) / total) * 100).toFixed(2)) : 100;
+  await ctx.repo
+    .recordEvent("health_check", {
+      meta: {
+        planned: targets.length,
+        checked,
+        ok,
+        deferred,
+        // 名额怎么分的：quota 是计划，picked 是实际选中（队列不足时两者不同）
+        quota: selection.quota,
+        picked: selection.picked,
+        // 整库基数与投影：未知状态是在下降还是在原地打转，看这两个数
+        depthBefore: selection.depth,
+        uncheckedAfter,
+        coveragePct,
+        projectedDaysToFullCoverage:
+          attemptedBackfill > 0 ? Math.ceil(uncheckedAfter / attemptedBackfill) : null,
+      },
+    })
+    .catch(() => undefined);
 }

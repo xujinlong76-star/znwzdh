@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ArrowUp, Search, Wrench } from 'lucide-react'
 import { preferredScrollBehavior } from '@/lib/motion'
+import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { cn } from '@/lib/utils'
 
 interface FloatingQuickNavProps {
@@ -12,6 +13,7 @@ interface FloatingQuickNavProps {
 
 export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavProps) {
   const [visible, setVisible] = useState(false)
+  const { isEditingLayout } = useHomeDIY()
 
   const checkScroll = useCallback(() => {
     if (typeof window === 'undefined') return
@@ -47,43 +49,46 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
       id="navhub-floating-quick-nav"
       aria-label="快速操作与回到顶部"
       className={cn(
-        'fixed right-3 sm:right-6 bottom-6 z-40 flex flex-col items-center gap-1.5 p-1 rounded-2xl border border-border/80 bg-background/90 dark:bg-card/85 backdrop-blur-md shadow-xl transition-all duration-200',
-        visible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none',
+        'fixed right-36 sm:right-40 bottom-3 z-40 flex flex-row items-center gap-1 p-0.5 rounded-full border border-border/80 bg-background/90 dark:bg-card/85 backdrop-blur-md shadow-md transition-all duration-200',
+        visible && !isEditingLayout ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none',
         className,
       )}
     >
       <button
         type="button"
         onClick={scrollToTop}
-        className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+        className="w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
         title="回到顶部 (Top)"
         aria-label="回到顶部"
       >
-        <ArrowUp className="w-4 h-4" />
+        <ArrowUp className="w-3.5 h-3.5" />
       </button>
 
-      <div className="w-5 h-px bg-border/60" />
+      <div className="w-px h-4 bg-border/60" />
 
       <button
         type="button"
         onClick={openSpotlight}
-        className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+        className="w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
         title="呼出超级搜索与指令控制台 (⌘K / /)"
         aria-label="呼出超级搜索控制台"
       >
-        <Search className="w-4 h-4" />
+        <Search className="w-3.5 h-3.5" />
       </button>
 
       {onOpenTools && (
-        <button
-          type="button"
-          onClick={onOpenTools}
-          className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
-          title="打开开发者极速微工具箱 (T)"
-          aria-label="开发者极速微工具箱"
-        >
-          <Wrench className="w-4 h-4" />
-        </button>
+        <>
+          <div className="w-px h-4 bg-border/60" />
+          <button
+            type="button"
+            onClick={onOpenTools}
+            className="w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+            title="打开开发者极速微工具箱 (T)"
+            aria-label="开发者极速微工具箱"
+          >
+            <Wrench className="w-3.5 h-3.5" />
+          </button>
+        </>
       )}
     </aside>
   )

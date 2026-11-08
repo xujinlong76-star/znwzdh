@@ -9,9 +9,10 @@ import {
   hasPatchContent,
   mergeSettings,
   normalizeSettings,
-  siteSettingsPatchSchema,
   type SiteSettingsPatch,
 } from '@/lib/site-settings'
+// schema 单独成模块：它依赖 zod，而 @/lib/site-settings 要保持客户端可安全引入。
+import { siteSettingsPatchSchema } from '@/lib/site-settings.schema'
 
 export const runtime = 'nodejs'
 

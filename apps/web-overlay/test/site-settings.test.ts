@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { externalLinkRelAttr, mergeSettings, normalizeSettings, siteSettingsPatchSchema } from '../src/lib/site-settings'
+// 读侧归一化/合并与展示辅助来自客户端安全模块；写侧 schema 单独成模块（它依赖 zod）。
+import { externalLinkRelAttr, mergeSettings, normalizeSettings } from '../src/lib/site-settings'
+import { siteSettingsPatchSchema } from '../src/lib/site-settings.schema'
 
 describe('站点品牌设置', () => {
   it('保留合法的 Apple Touch Icon，并拒绝可执行协议', () => {

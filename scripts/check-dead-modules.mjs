@@ -35,6 +35,7 @@ const UNKNOWN = argv.filter((a) => a !== "--json" && a !== "--update");
 let BASELINE = [
   "apps/web-overlay/src/app/admin/videos/components/VideoIconUpload.tsx",
   "apps/web-overlay/src/components/notification-badge.tsx",
+  "apps/web-overlay/src/components/quick-access-tray.tsx",
   "apps/web-overlay/src/components/speculative-prerender.tsx",
   "apps/web-overlay/src/components/ui/search-input.tsx",
   "apps/web-overlay/src/components/video-scrubber-preview.tsx",

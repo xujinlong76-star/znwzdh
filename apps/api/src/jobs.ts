@@ -81,6 +81,55 @@ export function shouldMarkBroken(
   return priorConsecutiveFailures + 1 >= threshold;
 }
 
+/**
+ * 每轮 `health_check` 把多少比例的抓取名额分给「从未探测过」的站点。
+ *
+ * 为什么需要这个旋钮（2026-11-07 九维评审 4-2）：两条 SLO 抢同一个日预算 ——
+ *   ① 已探测样本里 `lastCheckedAt` 超过 7×24h 的比例 ≤5%（新鲜度）；
+ *   ② 未探测站点占比要往下走（覆盖率）。
+ * 实测库 4839 条活跃站点、4258 条未探测、581 条已探测：日预算 100 时，
+ * 维持 ① 需 ≈581×0.95/7 ≈ 79 个名额，只剩 21 个给 ②，清空 4258 条要 203 天。
+ * 也就是说**当前日预算无法同时满足两条 SLO**——这个数字由
+ * `scripts/check-health-coverage.mjs` 按真实库实时投影，不写死在这里。
+ *
+ * 默认 0.5 是明确的取舍：先把 88% 的未知状态压下来，接受过渡期内已探测
+ * 样本会变旧。运维可用 `NAVHUB_HEALTH_BACKFILL_SHARE` 覆盖（0~1）。
+ */
+export const HEALTH_BACKFILL_SHARE = (() => {
+  const raw = Number(process.env.NAVHUB_HEALTH_BACKFILL_SHARE ?? 0.5);
+  return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0.5;
+})();
+
+/**
+ * 每轮 `health_check` 的抓取名额。默认 100 沿用历史值。
+ *
+ * 为什么把它从硬编码挪到 env：4-2 的两条 SLO 是**预算的函数**，不是代码的函数。
+ * 实测库 4839 条活跃站点 / 4258 条未探测时，日 100 只能做到「未知 86 天清空 +
+ * 已探测 12 天轮一遍」，而 SLO 要求 7 天内轮完；同时满足约需 131/天。
+ * 把预算做成可配，运维才能在不改代码的前提下对齐 SLO —— 而调高的代价
+ * （外呼量、被风控概率，快照里已有 45 条探测中止）必须由人判断，不能由代码擅自决定。
+ * 复核工具：`node scripts/check-health-coverage.mjs --check --strict`。
+ */
+export const HEALTH_CHECK_LIMIT = (() => {
+  const raw = Number(process.env.NAVHUB_HEALTH_LIMIT ?? 100);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 100;
+})();
+
+/**
+ * 一轮巡检的选站结果。除了站点本身，还要带上「名额怎么分的、库里还剩多少」——
+ * 只报 checked/ok 无法回答「未知状态是在减少还是在原地打转」，
+ * 而这正是 4-2 的核心指标。
+ */
+export interface PatrolSelection {
+  targets: SiteRow[];
+  /** 本轮计划分配的名额 */
+  quota: { backfill: number; refresh: number };
+  /** 实际选中的构成（队列不足时与 quota 不同） */
+  picked: { backfill: number; refresh: number };
+  /** 选站前的整库基数 */
+  depth: { unchecked: number; checked: number };
+}
+
 export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore";
 
 export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore"];
@@ -134,7 +183,7 @@ export interface CronScheduleConfig {
 
 export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "recompute_rank", intervalMs: 3600_000 },
-  { kind: "health_check", intervalMs: 86_400_000, payload: { limit: 100 } },
+  { kind: "health_check", intervalMs: 86_400_000, payload: { limit: HEALTH_CHECK_LIMIT } },
   { kind: "purge_trash", intervalMs: 86_400_000, payload: { olderThanDays: 30 } },
   { kind: "token_audit", intervalMs: 7 * 86_400_000 },
   { kind: "taxonomy_audit", intervalMs: 86_400_000 },
@@ -1380,38 +1429,69 @@ export class JobRunner {
   }
 
   /**
-   * 按 Weibull 寿命模型挑出本次该巡检的站点。
+   * 挑出本次该巡检的站点：未知（首轮补探）与已知（复核）**分开计量**。
    *
-   * 原先是 `listSites({ limit })` —— 等价于按 id 顺序取前 N 个，
-   * 也就是假设「失效风险与站点年龄无关」。外链的实际形态是越老越容易挂
-   * （域名到期、站点关停、改版换路由），所以这里改为：
-   *   1. 取一个更大的候选池（PATROL_POOL_FACTOR × limit）
-   *   2. 用 planPatrol 按存活概率升序排（最可能已失效的排最前）
-   *   3. 取前 limit 个
-   * 同样的抓取预算，覆盖到的才是真正可能已经挂掉的站点。
+   * 演进史与两次真实缺陷：
+   *   1. 最早是 `listSites({ limit })` —— 等价按 id 顺序取前 N 个，等于假设
+   *      「失效风险与站点年龄无关」。改成 Weibull 风险模型后（按存活概率升序）。
+   *   2. 2026-11-07 九维评审 4-2 实测出残留缺陷，两层：
+   *      **① 候选池天花板（主因）**：`listSites({ limit: limit * 4 })` 只有 400 条，
+   *        而 `listSites` 按 sort/trend_score 排序并硬钳 1000 —— 排序在 400 之后的
+   *        站点**永远不可能成为候选**。实测库 4839 条活跃站点里 4258 条未探测，
+   *        而 400 条池内只装得下 205 条未探测站点，覆盖率天花板 8.3%；
+   *        池内那批探完之后，队列就只剩同一批 400 条在轮转。
+   *      **② 未知状态被当成「年轻」**：`planPatrol` 在缺 `lastCheckedAt` 时退回
+   *        `createdAt` 算年龄，于是刚批量导入的站点被判成「3 天大 = 存活概率高」
+   *        排到已探测站点之后 —— 未探测集合没有年龄可算，套寿命模型本身无意义。
+   *
+   * 现在的口径：
+   *   - 补探队列：`last_checked_at IS NULL`，SQL 层按「老站点优先」排，
+   *     不再经过 `planPatrol`（未知状态没有年龄可算，套寿命模型是无意义的）；
+   *   - 复核队列：已探测站点按最久未查排序，再过一遍 `planPatrol` 保留风险语义；
+   *   - 两边各有配额，任一队列不足时把剩余名额让给另一边。
+   *
+   * 配额是显式的，因为两条 SLO 会互相挤占：已探测集合要在 7 天内轮完一遍，
+   * 未知集合要被清空，两者都在同一个日预算里。`HEALTH_BACKFILL_SHARE`
+   * 把这个取舍摆到明面上（见 scripts/check-health-coverage.mjs 的投影）。
    */
-  private async patrolTargets(limit: number) {
-    const poolLimit = Math.min(2000, Math.max(limit, limit * 4));
-    const pool = await this.ctx.repo.listSites({ limit: poolLimit });
-    const alive: SiteRow[] = pool.filter((s): s is SiteRow => Boolean(s));
-    if (alive.length === 0) return [];
+  private async patrolTargets(limit: number): Promise<PatrolSelection> {
+    const quotaTotal = Math.max(1, Math.floor(limit));
+    const backfillQuota = Math.min(quotaTotal, Math.round(quotaTotal * HEALTH_BACKFILL_SHARE));
 
-    const plan = planPatrol(
-      alive.map((s) => ({
+    // 取数上限给 quotaTotal 而不是 quotaTotal * 4：这两条 SQL 的 ORDER BY **就是**
+    // 优先级，多取的行不会改变结果，只是白拉整行（旧实现的 400 条池是天花板本身）。
+    const [unchecked, stalest, depth] = await Promise.all([
+      this.ctx.repo.listUncheckedSites(quotaTotal),
+      this.ctx.repo.listStalestCheckedSites(quotaTotal),
+      this.ctx.repo.countSitesByPatrolState(),
+    ]);
+
+    const backfill = unchecked.slice(0, backfillQuota);
+    const byId = new Map(stalest.map((s) => [s.id, s]));
+    const refresh = planPatrol(
+      stalest.map((s) => ({
         siteId: s.id,
-        // 上次巡检时间戳在 health 子对象里（没查过就退回创建时间算年龄）
         lastCheckedAt: s.health?.lastCheckedAt ?? null,
         createdAt: s.createdAt ?? null,
       })),
-    );
-    const idToSite = new Map(alive.map((s) => [s.id, s]));
-    const picked: typeof alive = [];
-    for (const entry of plan) {
-      const site = idToSite.get(entry.siteId);
-      if (site) picked.push(site);
-      if (picked.length >= limit) break;
+    )
+      .map((entry) => byId.get(entry.siteId))
+      .filter((s): s is SiteRow => Boolean(s))
+      .slice(0, quotaTotal - backfill.length);
+
+    // 复核队列不够（新库/全部未探测）时把剩余名额让给补探；反之亦然。
+    const shortfall = quotaTotal - backfill.length - refresh.length;
+    if (shortfall > 0) {
+      backfill.push(...unchecked.slice(backfillQuota, backfillQuota + shortfall));
     }
-    return picked;
+
+    return {
+      // 补探排前面：时间预算触发 shouldStop() 时，先保证未知状态在下降。
+      targets: [...backfill, ...refresh],
+      quota: { backfill: backfillQuota, refresh: quotaTotal - backfillQuota },
+      picked: { backfill: backfill.length, refresh: refresh.length },
+      depth,
+    };
   }
 
   /**
@@ -1421,26 +1501,12 @@ export class JobRunner {
     return handleHealthCheck(this.ctx, payload, run, (limit) => this.patrolTargets(limit));
   }
 
-  /**
-   * 本次失败是否足以把站点标为 broken。
-   * 查该站点最近 threshold-1 次巡检，统计「从最近往前连续失败」的次数。
-   */
-  private async shouldBreak(siteId: string): Promise<boolean> {
-    const threshold = HEALTH_FAIL_THRESHOLD;
-    if (threshold <= 1) return true;
-    try {
-      const recent = await this.ctx.repo.recentHealthChecks(siteId, threshold - 1);
-      let consecutive = 0;
-      for (const r of recent) {
-        if (r.ok) break;
-        consecutive++;
-      }
-      return shouldMarkBroken(false, consecutive, threshold);
-    } catch {
-      // 查不到历史（新库/表缺失）时保守处理：不标 broken，等下一轮
-      return false;
-    }
-  }
+  // 这里曾有一份 `private shouldBreak()`，与 jobs/tasks/health-check.task.ts 的
+  // 导出同名函数逐字重复（巡检逻辑抽成任务时留下的）。它已无调用点，而两份
+  // 「连续失败阈值」判定同时存在本身就是漂移源：改了一处、另一处照旧就会
+  // 让「第 3 次才 broken」的语义在不同入口下不一致。2026-11-07 九维评审 4-2
+  // 清理时确认无调用（HEAD 版本即无 `this.shouldBreak` 引用）后删除，
+  // 判定逻辑只保留 health-check.task.ts 一处。
 
   /** 元数据刷新：默认只用启发式（不烧 LLM）；payload.llm=true 才走 LLM（委派给 tasks/metadata-refetch.task.ts） */
   private async runRefetch(payload: { siteId?: string; llm?: boolean }): Promise<void> {

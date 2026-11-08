@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { cn } from '@/lib/utils'
 
 export interface SiteFaviconProps {
   title?: string
@@ -69,9 +70,10 @@ export function getDeterministicGradient(seed: string): {
   }
 }
 
-export function extractFaviconMonogram(title: string, url?: string): string {
+export function extractFaviconMonogram(title: string, _url?: string): string {
   const cleanTitle = (title || '').trim()
   if (cleanTitle) {
+    // 严格从站点名称 (title) 提取第一个有效汉字或英文字母，严禁从 url hostname 提取
     const stripped = cleanTitle.replace(/^[\p{P}\p{S}\s]+/u, '')
     if (stripped.length > 0) {
       const char = stripped[0]!
@@ -80,30 +82,20 @@ export function extractFaviconMonogram(title: string, url?: string): string {
     }
   }
 
-  if (url) {
-    try {
-      const u = new URL(url.startsWith('http') ? url : `https://${url}`)
-      let host = u.hostname.toLowerCase()
-      if (host.startsWith('www.')) host = host.slice(4)
-      if (host.length > 0 && /[a-zA-Z0-9]/.test(host[0]!)) {
-        return host[0]!.toUpperCase()
-      }
-    } catch {
-      // 地址解析不出来就落到下面的默认首字母：这个函数承诺「永远返回一个字符」
-    }
-  }
-
   return '山'
 }
 
 export const LOCAL_LOGO_MAP: Record<string, string> = {
+  'kimi.moonshot.cn': 'https://kimi.moonshot.cn/pwa-192.png',
+  'doubao.com': '/assets/images/logos/doubao.png',
+  'www.doubao.com': '/assets/images/logos/doubao.png',
+  'yiyan.baidu.com': 'https://www.baidu.com/favicon.ico',
+  'lingma.aliyun.com': 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
+  'runwayml.com': 'https://runwayml.com/icon.png',
   'deepseek.com': 'https://chat.deepseek.com/favicon.ico',
   'chat.deepseek.com': 'https://chat.deepseek.com/favicon.ico',
-  'cursor.com': 'https://www.cursor.com/favicon.ico',
-  'cursor.sh': 'https://www.cursor.com/favicon.ico',
   'klingai.com': 'https://klingai.com/favicon.ico',
   'klingai.kuaishou.com': 'https://klingai.com/favicon.ico',
-  'runwayml.com': 'https://runwayml.com/favicon.ico',
   'lumalabs.ai': 'https://lumalabs.ai/favicon.ico',
   'sora.com': 'https://sora.com/favicon.ico',
   'vidu.studio': 'https://www.vidu.studio/favicon.ico',
@@ -262,8 +254,12 @@ export function resolveSiteIcon(
     }
 
     const lowerTitle = (title || '').toLowerCase()
+    if (lowerTitle.includes('kimi')) return 'https://kimi.moonshot.cn/pwa-192.png'
+    if (lowerTitle.includes('豆包')) return 'https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/favicon/new-doubao/128x128.png'
+    if (lowerTitle.includes('文心一言')) return 'https://www.baidu.com/favicon.ico'
+    if (lowerTitle.includes('通义灵码')) return 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'
+    if (lowerTitle.includes('runway')) return 'https://runwayml.com/icon.png'
     if (lowerTitle.includes('deepseek')) return 'https://chat.deepseek.com/favicon.ico'
-    if (lowerTitle.includes('cursor')) return 'https://www.cursor.com/favicon.ico'
     if (lowerTitle.includes('copilot')) return 'https://github.com/github.png?size=64'
     if (lowerTitle.includes('gemini')) return '/assets/images/logos/gemini.svg'
     if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/assets/images/logos/chatgpt.webp'
@@ -294,91 +290,103 @@ export function SiteFavicon({
   className = 'w-full h-full object-contain',
   eager = false,
 }: SiteFaviconProps) {
-  const [loadFailed, setLoadFailed] = useState(false)
+  const [imgError, setImgError] = useState(false)
+  const [imgLoaded, setImgLoaded] = useState(false)
+  const prevIconRef = React.useRef(icon)
+  const imgRef = React.useRef<HTMLImageElement | null>(null)
 
-  // 1. 若显式指定默认图标，直接渲染确定性高质感渐变字母徽标
-  if (useDefaultIcon) {
-    const monogram = extractFaviconMonogram(title, url)
-    const gradient = getDeterministicGradient(url || title || 'navhub')
-    return (
-      <div
-        className={`flex items-center justify-center font-bold text-xs select-none rounded-sm shadow-xs transition-transform duration-150 ${className}`}
-        style={{
-          background: gradient.cssGradient,
-          color: gradient.textColor,
-        }}
-        title={title}
-        aria-label={title ? `${title} 图标` : '站点图标'}
-      >
-        <span className="leading-none drop-shadow-xs">{monogram}</span>
-      </div>
-    )
-  }
-
-  // 2. 综合计算有效图标地址
+  // 1. 综合计算有效图标地址
   let effectiveIcon = resolveSiteIcon(url, title, icon)
   if (!effectiveIcon && url && (url.startsWith('http://') || url.startsWith('https://'))) {
-    // 图标代理端点只由中枢提供（apps/api/src/routes/assets.ts），本站没有 /api/assets/icon；
-    // 裸写同源路径必然 404，要走 /api/hub 隧道。网关清单里已登记为 public。
-    effectiveIcon = `/api/hub/assets/icon?url=${encodeURIComponent(url)}`
+    // 图标代理端点由中枢提供（apps/api/src/routes/assets.ts）
+    // 通过 /api/hub 隧道代理，已在网关清单中登记为 public
+    effectiveIcon = `/api/hub/assets/icon?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ''}`
   }
 
-  // 3. 判断是否为明确的自定义图标、本地资源或受信任的精选品牌图标
-  const isLocalAsset = effectiveIcon.startsWith('/') || effectiveIcon.startsWith('data:')
-  const hasCustomIcon = Boolean(
-    icon &&
-    typeof icon === 'string' &&
-    icon.trim().length > 0 &&
-    !isThirdPartyIcon(icon.trim()) &&
-    !isRemoteRawFavicon(icon.trim())
-  )
-  const isCuratedBrand = Boolean(
-    effectiveIcon &&
-    (effectiveIcon.includes('deepseek') ||
-     effectiveIcon.includes('cursor') ||
-     effectiveIcon.includes('github.com') ||
-     effectiveIcon.includes('githubusercontent.com') ||
-     effectiveIcon.includes('gemini') ||
-     effectiveIcon.includes('figure') ||
-     effectiveIcon.includes('bostondynamics'))
-  )
-
-  // 4. 若此前已知加载失败、或未提供自定义 icon 且无内置 Logo（即属于自动生成的外部 /favicon.ico 盲猜地址）：
-  //    外部站点普遍存在缺乏根目录 /favicon.ico、防盗链限制、CORP (NotSameOrigin) 阻断或跨境网络超时；
-  //    直接加载会导致浏览器控制台报大量 net::ERR_* 错误。此处直接展示 NavHub 确定性渐变徽标，零网络开销且体验极佳。
-  if (!effectiveIcon || loadFailed || failedFaviconCache.has(effectiveIcon) || (!hasCustomIcon && !isLocalAsset && !isCuratedBrand)) {
-    const monogram = extractFaviconMonogram(title, url)
-    const gradient = getDeterministicGradient(url || title || 'navhub')
-
-    return (
-      <div
-        className={`flex items-center justify-center font-bold text-xs select-none rounded-sm shadow-xs transition-transform duration-150 ${className}`}
-        style={{
-          background: gradient.cssGradient,
-          color: gradient.textColor,
-        }}
-        title={title}
-        aria-label={title ? `${title} 图标` : '站点图标'}
-      >
-        <span className="leading-none drop-shadow-xs">{monogram}</span>
-      </div>
-    )
+  // 当 icon 变化时重置状态
+  if (prevIconRef.current !== icon) {
+    prevIconRef.current = icon
+    if (imgError) setImgError(false)
+    if (imgLoaded) setImgLoaded(false)
   }
 
+  // 特殊站点图标自愈：部分站点原生返回纯白/透明矢量图，在浅色底色下对比度不足（如 Cursor 官网透明白立方体）
+  const isCursorSite = Boolean(
+    (title && title.toLowerCase().includes('cursor')) ||
+    (url && url.toLowerCase().includes('cursor.com'))
+  )
+
+  const monogram = extractFaviconMonogram(title, url)
+  const gradient = getDeterministicGradient(title || url || 'navhub')
+  const shouldRenderImg = !useDefaultIcon && !imgError && Boolean(effectiveIcon) && !failedFaviconCache.has(effectiveIcon)
+
+  // 水合与缓存即时感知：若图片已由浏览器完成解码（或来自本地/HTTP缓存），立即置为已加载，防止依赖 onLoad 漏触发
+  const handleImgRef = React.useCallback((node: HTMLImageElement | null) => {
+    imgRef.current = node
+    if (node && node.complete) {
+      if (node.naturalWidth > 1) {
+        setImgLoaded(true)
+      } else if (node.naturalWidth === 1 || node.naturalWidth === 0) {
+        // 尚未开始加载或空像素，等待 onLoad/onError
+      }
+    }
+  }, [])
+
+  // 2. 双层渲染架构 (Dual-Layer Architecture)：
+  // 底层（Layer 1）：确定性彩色首字母/汉字徽标，常驻存在，零延迟、零灰块
+  // 顶层（Layer 2）：真实图片图标，未解码/加载前透明，成功加载后平滑淡入（透明矢量图不透底）
   return (
-    <img
-      src={effectiveIcon}
-      alt={title ? `${title} 图标` : '站点图标'}
-      className={className}
-      loading={eager ? 'eager' : 'lazy'}
-      fetchPriority={eager ? 'high' : 'auto'}
-      decoding="async"
-      width={24}
-      height={24}
-      onError={() => {
-        failedFaviconCache.add(effectiveIcon)
-        setLoadFailed(true)
-      }}
-    />
+    <div
+      className={cn('relative w-full h-full flex items-center justify-center overflow-hidden rounded-xs select-none', className)}
+      title={title}
+      aria-label={title ? `${title} 图标` : '站点图标'}
+    >
+      {/* 真实站点图标：正在加载或加载成功（未触发 onError）时置于顶层可见 (z-10 opacity-100) */}
+      {shouldRenderImg ? (
+        <img
+          ref={handleImgRef}
+          src={effectiveIcon}
+          alt={title ? `${title} 图标` : '站点图标'}
+          className={cn(
+            'relative z-10 w-full h-full object-contain opacity-100 transition-opacity duration-150',
+            isCursorSite && 'bg-muted/40 dark:bg-muted/20 rounded-xs p-0.5 border border-border/30'
+          )}
+          loading={eager ? 'eager' : 'lazy'}
+          fetchPriority={eager ? 'high' : 'low'}
+          decoding="async"
+          width={24}
+          height={24}
+          onError={() => {
+            failedFaviconCache.add(effectiveIcon)
+            setImgError(true)
+          }}
+          onLoad={(e) => {
+            if (
+              e.currentTarget.complete &&
+              (e.currentTarget.naturalWidth <= 1 ||
+                (e.currentTarget.naturalWidth === 16 &&
+                  e.currentTarget.naturalHeight === 16 &&
+                  effectiveIcon.includes('google.com/s2/favicons')))
+            ) {
+              failedFaviconCache.add(effectiveIcon)
+              setImgError(true)
+            } else if (e.currentTarget.naturalWidth > 1) {
+              setImgLoaded(true)
+            }
+          }}
+        />
+      ) : (
+        /* 仅在无有效图标或图片加载失败时显示彩色首字母徽章兜底 */
+        <div
+          className="absolute inset-0 flex items-center justify-center font-bold text-xs shadow-xs"
+          style={{
+            background: gradient.cssGradient,
+            color: gradient.textColor,
+          }}
+        >
+          <span className="leading-none drop-shadow-xs">{monogram}</span>
+        </div>
+      )}
+    </div>
   )
 }

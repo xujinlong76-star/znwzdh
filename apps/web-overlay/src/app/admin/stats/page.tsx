@@ -537,6 +537,7 @@ export default function AdminStatsPage() {
                       <Link
                         href={`/site/${s.id}`}
                         target="_blank"
+                        rel="noopener noreferrer"
                         className="font-medium hover:text-primary transition-colors flex items-center gap-1 truncate"
                       >
                         {s.title}

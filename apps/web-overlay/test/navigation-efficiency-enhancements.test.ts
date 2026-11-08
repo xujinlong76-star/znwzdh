@@ -39,7 +39,7 @@ describe('导航效率增强与用户体验治理', () => {
   it('NavigationContent 成功装配吸顶快速直达与常用托盘', () => {
     const src = loadSource('src/components/navigation-content.tsx')
     expect(src).toContain('CategoryQuickJumpBar')
-    expect(src).toContain('QuickAccessTray')
+    expect(src).toContain('SpeedDialDock')
     expect(src).toContain('categories={sortedCategories.map')
   })
 

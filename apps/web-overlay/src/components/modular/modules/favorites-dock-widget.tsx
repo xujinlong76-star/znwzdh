@@ -10,10 +10,12 @@ import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { useToast } from '@/components/ui/use-toast'
 import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
+import { useExternalLinkTarget } from '@/lib/user-preferences'
 
 export function FavoritesDockWidget() {
   const { toast } = useToast()
   const favorites = useFavorites()
+  const linkTarget = useExternalLinkTarget('_blank')
   const [activeTab, setActiveTab] = useState<'favorites' | 'history'>('favorites')
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
 
@@ -25,7 +27,9 @@ export function FavoritesDockWidget() {
           setRecentVisits(rows)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        // 降级容错：离线访问记录读取失败时不阻塞主界面渲染
+      })
     return () => {
       active = false
     }
@@ -77,7 +81,7 @@ export function FavoritesDockWidget() {
         <div className="flex items-center gap-2">
           <Link
             href="/import"
-            className="text-[11px] text-primary/80 hover:text-primary hover:underline flex items-center gap-0.5"
+            className="text-[11px] text-primary hover:underline flex items-center gap-0.5"
             title="一键导入浏览器书签或 HTML 文件"
           >
             <span>📥 导入书签</span>
@@ -130,8 +134,8 @@ export function FavoritesDockWidget() {
                   </div>
                   <a
                     href={safeHref(site.href)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    target={linkTarget}
+                    rel="noopener noreferrer nofollow"
                     className="min-w-0 flex-1 truncate text-xs font-medium text-foreground group-hover:text-primary transition-colors after:absolute after:inset-0 after:z-0"
                     title={site.title}
                   >
@@ -173,8 +177,8 @@ export function FavoritesDockWidget() {
                   </div>
                   <a
                     href={safeHref(visit.href)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    target={linkTarget}
+                    rel="noopener noreferrer nofollow"
                     className="min-w-0 flex-1 truncate text-xs font-medium text-foreground group-hover:text-primary transition-colors after:absolute after:inset-0 after:z-0"
                     title={visit.title}
                   >

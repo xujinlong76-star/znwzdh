@@ -216,12 +216,12 @@ export function SitePeekDialog({
                 <DialogTitle className="text-lg sm:text-xl font-bold flex flex-wrap items-center gap-2 break-words">
                   <span>{item.title}</span>
                   {item.liveMetrics?.openSource && (
-                    <Badge variant="secondary" className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-medium">
+                    <Badge variant="secondary" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 font-medium">
                       开源
                     </Badge>
                   )}
                   {item.liveMetrics?.githubStars && (
-                    <Badge variant="outline" className="text-xs flex items-center gap-1 font-mono border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400">
+                    <Badge variant="outline" className="text-xs flex items-center gap-1 font-mono border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400">
                       <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
                       {(item.liveMetrics.githubStars / 1000).toFixed(1)}k
                     </Badge>
@@ -299,7 +299,7 @@ export function SitePeekDialog({
               <div className="font-semibold text-amber-900 dark:text-amber-200">
                 站点连通性提示：{item.health.error || '近期探测出现超时或无法直连'}
               </div>
-              <div className="text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+              <div className="text-amber-900 dark:text-amber-200 leading-relaxed">
                 建议优先使用下方「平替雷达」中的可用替代产品，或点击右上角「历史快照」调取网页归档。
               </div>
             </div>
@@ -314,7 +314,7 @@ export function SitePeekDialog({
               <div className="font-semibold text-rose-900 dark:text-rose-200">
                 {hasReportedBroken ? '已记录失效反馈：该站点可能已下线或受网络策略阻隔' : `本地探测异常：${livePing?.label || '连接超时'}`}
               </div>
-              <div className="text-rose-800/80 dark:text-rose-300/80 leading-relaxed">
+              <div className="text-rose-900 dark:text-rose-200 leading-relaxed">
                 建议优先使用下方为您推导的「平替雷达」替代方案，或调取右上角「历史快照」访问网页镜像。
               </div>
             </div>
@@ -378,7 +378,7 @@ export function SitePeekDialog({
                 <Sparkles className="w-4 h-4 text-indigo-500" />
                 <span>平替雷达与生态推荐 (AlternativeTo)</span>
               </span>
-              <span className="text-xs font-mono text-muted-foreground/80">{item.relations.length} 个候选</span>
+              <span className="text-xs font-mono text-muted-foreground">{item.relations.length} 个候选</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {item.relations.map((rel, idx) => (
@@ -390,7 +390,7 @@ export function SitePeekDialog({
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-semibold group-hover:text-primary transition-colors">{rel.targetTitle}</span>
                       {rel.isFreeOrOpenSource && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-medium">
                           开源/免费
                         </span>
                       )}
@@ -421,7 +421,7 @@ export function SitePeekDialog({
 
         {/* 巡检哨兵防劫持与死链安全告警横幅 */}
         {item.health && item.health.ok === false && (
-          <div className="mt-3 p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/10 space-y-2.5 text-xs text-rose-600 dark:text-rose-400">
+          <div className="mt-3 p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/10 space-y-2.5 text-xs text-rose-700 dark:text-rose-400">
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="space-y-1">
@@ -502,10 +502,10 @@ export function SitePeekDialog({
                   variant="outline"
                   className={
                     radar.pricingType.includes('免费') || radar.pricingType.includes('开源')
-                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold'
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold'
                       : radar.pricingType.includes('订阅')
-                      ? 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold'
-                      : 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 font-semibold'
+                      ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold'
+                      : 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 font-semibold'
                   }
                 >
                   {radar.pricingType}
@@ -548,7 +548,7 @@ export function SitePeekDialog({
                 )}
                 {radar.cons && radar.cons.length > 0 && (
                   <div className="space-y-1 p-2 rounded-lg bg-amber-500/5 border border-amber-500/20">
-                    <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" />
                       使用门槛 / 局限
                     </span>
@@ -777,8 +777,8 @@ export function SitePeekDialog({
               <span
                 className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full border ${
                   livePing.reachable
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                    : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                    : 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20'
                 }`}
                 title={`本机浏览器探测：${livePing.error || livePing.label}`}
               >
@@ -801,7 +801,7 @@ export function SitePeekDialog({
 
             {/* 反馈失效按钮 */}
             {hasReportedBroken ? (
-              <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1 px-1">
+              <span className="text-[11px] text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1 px-1">
                 <Check className="w-3 h-3 text-emerald-500" />
                 <span>已反馈失效</span>
               </span>

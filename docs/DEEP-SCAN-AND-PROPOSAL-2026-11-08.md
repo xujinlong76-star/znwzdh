@@ -456,3 +456,116 @@ NOT NULL constraint failed: sites.weight
 2. **B 站播放器第三方埋点**：隐私面产品决策（是否自建无埋点播放器）。
 3. **`app_settings` 孤儿表**：schema 有、代码无人引用，删还是留。
 4. **首页 Tab 停留点 283、目标 ≤200**：要引入区块级跳转，属结构性改动。
+
+---
+
+# 第四轮：补全语义向量覆盖 21.5% → 100%（2026-11-08 晚）
+
+## 一、做了什么
+
+用仓库**自己的官方路径**跑了一次全量向量重建，没有另写重建逻辑：
+
+```sql
+INSERT INTO jobs (kind, payload) VALUES ('reindex', '{"vectors":true}')
+```
+
+由**运行中的中枢进程**（`scripts/dev-all.mjs` 拉起，pid 4156）在延迟队列里领取执行。
+
+## 二、先量后跑（避免「跑了一半发现预算不够」）
+
+`reindex` 的单次预算写死在 `DEFAULT_SCHEDULES`：**10 分钟**。
+跑之前先用 `scripts/bench-embedding.mts` 测了真实吞吐：
+
+| 指标 | 实测 |
+|---|---|
+| warmup（模型已在 `apps/api/data/models` 缓存，无需下载） | 960 ms |
+| `encodeBatch(96)` | 2,087 ms |
+| 单条 | **21.74 ms** |
+| 维度 | 512 |
+| 推算补全 3,900 条 | **约 1.4 分钟** |
+
+结论：一次全量重建（4,839 条 + FTS/拼音重算）完全在 10 分钟预算内，**不需要按 siteIds 分片**。
+
+## 三、结果
+
+| 指标 | 跑前 | 跑后 |
+|---|---|---|
+| embeddings 行数 | 1,038 | **4,867** |
+| 覆盖率（活跃站 4,839） | 21.5% | **100%**（缺口 0） |
+| 耗时 | — | **120,087 ms**（约 2 分钟，预算的 1/5） |
+| 任务状态 | — | `done / attempts=1 / error=null` |
+| 事件留痕 | — | `{"sites":4839,"vectors":true,"staleEmbeddingsPurged":0}` |
+| 向量分布 | — | 全部 `Xenova/bge-small-zh-v1.5 / dim=512`，无旧模型残留 |
+
+## 四、用户可见效果（这才是判据）
+
+纯语义查询（与站点标题无字面重叠）实测：
+
+| 查询 | 命中（前 5） | 语义通道 |
+|---|---|---|
+| `帮我把会议录音自动整理成文字纪要` | 讯飞听见 / 飞书妙记 / 通义听悟 / 腾讯会议 / 飞书会议 | 全部含 `semantic` |
+| `画一张好看的封面图` | 亿图图示 / 99designs / 图怪兽（其中 2 条**仅** semantic 命中） | 含 `semantic` |
+| `kimi` | Kimi（exact+fts+pinyin+semantic 四路齐中） | 对照组正常 |
+| `jianli` | 简历本 / 简历模板网（exact+fts+pinyin） | 拼音链路正常 |
+
+## 五、如实说明的两点
+
+1. **单 token 拉丁查询的语义精度一般**：`kimi` 的语义通道会一并召回 Nick Jr. / ESPN / MotorTrend
+   这类无关项（512 维量化模型在近 5000 条宽目录上的固有噪声）。这是**召回变宽**的代价，
+   不是缺陷；四路融合里 exact/fts/pinyin 仍把正确结果顶在第 1 位。
+2. **健康端点仍报 `semantic: false`**：那是「`ready()` 之前的惰性加载报告」，不是能力缺失——
+   同一次响应里 `embedding.cache` 已经显示 `misses: 4842`，说明模型确实在跑。
+   该字段的语义在 `capabilities.notes` 里写明了，不改。
+
+## 六、附带发现（未处理）
+
+模型缓存目录 `apps/api/data/models/Xenova/bge-small-zh-v1.5/onnx/` 里有 **4 个 `.tmp.<pid>.<rand>` 残留**，
+合计 **4.3 MB**（`model_quantized.onnx.tmp.*`）——是历史下载被中断留下的半成品。
+不影响功能（真正的 `model_quantized.onnx` 22.9 MB 完好），只是磁盘卫生问题，未动。
+
+---
+
+# 第五轮：收掉一处双端漂移导致的移动端浮层冲突
+
+## 一、发现
+
+第四轮收尾跑门禁时，`check:overlay` 报了新漂移：
+
+```
+[check] 内容漂移: src/components/floating-quick-nav.tsx（CRLF 归一后仍不一致）
+```
+
+逐行 diff 定位到**只有 1 行**不同——浮动快捷导航的定位：
+
+| 侧 | 定位类 |
+|---|---|
+| overlay（工作区，最新） | `fixed right-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:right-40 sm:bottom-3` |
+| apps/web（被服务的一侧） | `fixed right-36 sm:right-40 bottom-3` |
+
+## 二、为什么这不是「无所谓的样式差异」
+
+上一轮我把 **DIY 静息入口**在移动端挪到了**左下**（`left-4`、抬到底部导航之上），
+因为底部导航（`h-14`）会盖住它。而浮动快捷导航在 apps/web 里仍是 `right-36`：
+
+- 移动端 390px 下 `right-36` = 144px → 它的左边缘约在 x=132；
+- DIY 入口 `left-4` 宽 117px → 右边缘 x=133。
+
+**两者在移动端会重叠 1~2px**，且快捷导航是后来的浮层（z-40），会吃掉 DIY 入口右缘的点击。
+
+## 三、处置
+
+按仓库既定规则（自研文件以 overlay 为准），执行 `node scripts/check-web-overlay.mjs --fix`
+把 overlay 的移动端感知版本同步到 apps/web。同步后实测：
+
+| 视口 | 浮动快捷导航 | DIY 入口 | 重叠 | 横向溢出 |
+|---|---|---|---|---|
+| 桌面 1440 | x=1160 宽120 ✅可点 | x=1292 宽136 ✅可点 | **否** | 无 |
+| 移动 390 | x=260 宽114 ✅可点 | x=16 宽117 ✅可点 | **否** | 无（390/390） |
+
+两个浮层现在移动端一左一右、桌面端左右相邻，互不遮挡。
+
+## 四、教训（已写进本轮文档）
+
+`apps/web` 与 `apps/web-overlay` 的双端镜像一旦漂移，**被服务的一侧可能停在旧版本**——
+这次差 1 行就足以在移动端造成真实的点击遮挡。门禁能抓到，但前提是**改完就跑**
+（前几轮我是在最后收尾时才跑，所以漂移多留了一轮）。后续每轮改完应立即 `check:overlay`。

@@ -74,16 +74,18 @@ export function QuickSearchWidget({ config }: { config?: Record<string, unknown>
         <div className="flex items-center gap-1 shrink-0">
           {Object.values(SEARCH_ENGINES).map((eng) => (
             <button
+              type="button"
               key={eng.id}
               onClick={() => setSelectedEngine(eng.id)}
-              className={`px-1.5 py-0.5 rounded text-xs transition-all flex items-center gap-0.5 ${
+              className={`px-1.5 py-0.5 rounded text-xs transition-all flex items-center gap-0.5 cursor-pointer ${
                 selectedEngine === eng.id
-                  ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 font-semibold'
+                  ? 'bg-blue-500/15 text-blue-700 dark:text-blue-400 font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
+              title={`切换至 ${eng.name} 引擎`}
             >
               <span>{eng.icon}</span>
-              <span>{eng.name}</span>
+              <span className="hidden @[340px]:inline">{eng.name}</span>
             </button>
           ))}
         </div>

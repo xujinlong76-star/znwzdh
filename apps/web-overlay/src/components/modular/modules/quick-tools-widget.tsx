@@ -103,25 +103,28 @@ export function QuickToolsWidget() {
         </div>
         <div className="flex items-center gap-1">
           <button
+            type="button"
             onClick={() => setActiveTab('uuid')}
-            className={`px-1.5 py-0.5 rounded text-xs transition-colors ${
-              activeTab === 'uuid' ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-muted-foreground'
+            className={`px-1.5 py-0.5 rounded text-xs transition-colors cursor-pointer ${
+              activeTab === 'uuid' ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 font-semibold' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             UUID
           </button>
           <button
+            type="button"
             onClick={() => { setActiveTab('timestamp'); setCurrentTs(Math.floor(Date.now() / 1000)) }}
-            className={`px-1.5 py-0.5 rounded text-xs transition-colors ${
-              activeTab === 'timestamp' ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-muted-foreground'
+            className={`px-1.5 py-0.5 rounded text-xs transition-colors cursor-pointer ${
+              activeTab === 'timestamp' ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 font-semibold' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             时间戳
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('b64')}
-            className={`px-1.5 py-0.5 rounded text-xs transition-colors ${
-              activeTab === 'b64' ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-muted-foreground'
+            className={`px-1.5 py-0.5 rounded text-xs transition-colors cursor-pointer ${
+              activeTab === 'b64' ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 font-semibold' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Base64

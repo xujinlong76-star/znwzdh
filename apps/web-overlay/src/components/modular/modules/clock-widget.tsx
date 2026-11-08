@@ -70,16 +70,18 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
         </div>
         <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/40">
           <button
+            type="button"
             onClick={() => setIsPomodoro(false)}
-            className={`px-2 py-0.5 rounded text-xs transition-colors ${
+            className={`px-2 py-0.5 rounded text-xs transition-colors cursor-pointer ${
               !isPomodoro ? 'bg-background text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             时钟
           </button>
           <button
+            type="button"
             onClick={() => setIsPomodoro(true)}
-            className={`px-2 py-0.5 rounded text-xs transition-colors ${
+            className={`px-2 py-0.5 rounded text-xs transition-colors cursor-pointer ${
               isPomodoro ? 'bg-background text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -125,13 +127,14 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
             <div className="flex items-center justify-center gap-1.5 pt-0.5">
               {POMO_PRESETS.map((preset) => (
                 <button
+                  type="button"
                   key={preset.seconds}
                   disabled={isRunning}
                   onClick={() => {
                     setTotalSeconds(preset.seconds)
                     setPomodoroSeconds(preset.seconds)
                   }}
-                  className={`text-xs px-2 py-0.5 rounded-md border transition-colors disabled:opacity-50 ${
+                  className={`text-xs px-2 py-0.5 rounded-md border transition-colors disabled:opacity-50 cursor-pointer ${
                     totalSeconds === preset.seconds
                       ? 'bg-primary/15 text-primary border-primary/30 font-semibold'
                       : 'border-border/40 text-muted-foreground hover:bg-muted'
@@ -150,8 +153,8 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
                 variant="outline"
                 className={`h-7 px-3 text-xs rounded-full gap-1 transition-all ${
                   isRunning
-                    ? 'border-amber-500/30 text-amber-700 hover:bg-amber-500/10'
-                    : 'border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10'
+                    ? 'border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10'
+                    : 'border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10'
                 }`}
                 onClick={() => setIsRunning(!isRunning)}
               >

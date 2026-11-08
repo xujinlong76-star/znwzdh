@@ -49,7 +49,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
       id="navhub-floating-quick-nav"
       aria-label="快速操作与回到顶部"
       className={cn(
-        'fixed right-36 sm:right-40 bottom-3 z-40 flex flex-row items-center gap-1 p-0.5 rounded-full border border-border/80 bg-background/90 dark:bg-card/85 backdrop-blur-md shadow-md transition-all duration-200',
+        'fixed right-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:right-40 sm:bottom-3 z-40 flex flex-row items-center gap-1 p-0.5 rounded-full border border-border/80 bg-background/90 dark:bg-card/85 backdrop-blur-md shadow-md transition-all duration-200',
         visible && !isEditingLayout ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none',
         className,
       )}

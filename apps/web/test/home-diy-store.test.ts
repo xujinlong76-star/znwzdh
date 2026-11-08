@@ -455,9 +455,9 @@ describe('接线守则：DIY 状态只能住在共享存储里，且失败必须
   })
 
   it('落盘失败必须在界面上渲染出来（本例：DIY 工具栏的 role=alert）', () => {
-    const toolbar = readSrc('src/components/home-diy-toolbar.tsx')
-    expect(toolbar).toContain('storageWarning')
-    expect(toolbar).toContain('dismissStorageWarning')
-    expect(toolbar).toContain('role="alert"')
+    const trigger = readSrc('src/components/home-diy-trigger.tsx')
+    expect(trigger).toContain('storageWarning')
+    expect(trigger).toContain('dismissStorageWarning')
+    expect(trigger).toContain('role="alert"')
   })
 })

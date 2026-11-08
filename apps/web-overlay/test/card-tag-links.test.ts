@@ -59,14 +59,14 @@ describe("卡片 #tag 内链化（rich 模式）", () => {
   it("外链是自闭合覆盖层：CardHeader 不在 <a> 里——结构上杜绝 <a> 嵌 <a>", () => {
     const overlayAnchor = richSrc.indexOf("href={safeHref(item.href)}");
     const anchorOpen = richSrc.lastIndexOf("<a", overlayAnchor);
-    const anchorClose = richSrc.indexOf("/>", overlayAnchor);
+    const anchorClose = richSrc.indexOf("</a>", overlayAnchor);
     const headerOpen = richSrc.indexOf("<CardHeader");
     expect(overlayAnchor).toBeGreaterThan(-1);
     expect(anchorOpen).toBeGreaterThan(-1);
-    // 覆盖层在 CardHeader 之前就自闭合：它没有包住任何内容
+    // 覆盖层在 CardHeader 之前就关闭：它没有包住 CardHeader
     expect(anchorClose).toBeGreaterThan(overlayAnchor);
     expect(anchorClose).toBeLessThan(headerOpen);
-    expect(richSrc.slice(anchorOpen, anchorClose)).not.toContain("</a>");
+    expect(richSrc.slice(anchorOpen, anchorClose)).not.toContain("<CardHeader");
   });
 
   it("标签池在 CardHeader 之后（手序上不可能嵌进外链或标题内链）", () => {

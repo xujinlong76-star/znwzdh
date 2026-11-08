@@ -10,6 +10,7 @@ import { type WorkspaceId } from '@/components/workspace-filter'
 import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
+import { useExternalLinkTarget } from '@/lib/user-preferences'
 
 interface SpeedDialDockProps {
   allSites: any[]
@@ -39,6 +40,7 @@ const WORKSPACE_KEYWORDS: Record<WorkspaceId, string[]> = {
 
 export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDockProps) {
   const { speedDialEnabled, speedDialPinnedIds, unpinFromSpeedDial, isEditingLayout } = useHomeDIY()
+  const linkTarget = useExternalLinkTarget('_blank')
   const dockRef = useRef<HTMLDivElement | null>(null)
   const { colSpan, heightPx, isCustomSized, setSize, resetSize } = useModuleWindowSize(
     'speed-dial-dock',
@@ -55,7 +57,9 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
           setRecentVisits(rows)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        // 降级容错：离线高频访问读取失败时不阻塞速览坞渲染
+      })
     return () => {
       active = false
     }
@@ -207,8 +211,8 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
               </div>
               <a
                 href={safeHref(site.href)}
-                target="_blank"
-                rel="noopener noreferrer"
+                target={linkTarget}
+                rel="noopener noreferrer nofollow"
                 className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground group-hover/chip:text-primary transition-colors focus-visible:outline-none after:absolute after:inset-0 after:z-0"
                 title={site.title}
               >

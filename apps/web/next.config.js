@@ -37,11 +37,11 @@ const nextConfig = {
   // 本仓库的 Docker 部署走普通 next start，不需要 standalone。
   ...(process.env.NAVHUB_WEB_STANDALONE === "1" ? { output: "standalone" } : {}),
 
-  // Vendored 上游（NavSphere）的表单组件与本仓库的严格类型配置不兼容
-  // （@hookform/resolvers@3.9.1 + zod 的 zodResolver 泛型不匹配，属上游依赖组合问题），
-  // 因此不在构建期做类型门禁（ESLint 同样不进构建期，见下）。
-  // 自研的 packages/* 与 apps/api 仍由 tsc --noEmit 严格检查。
-  typescript: { ignoreBuildErrors: true },
+  // 2026-11-09 S-6：前端 tsc 已收敛到 0 error（scripts/check-frontend-typecheck.mjs 持续把关），
+  // 构建期恢复类型门禁。此前 vendored 上游（NavSphere）的表单组件与严格类型配置不兼容的
+  // 历史问题已不复现；若再引入类型错误，应修类型而不是重新关掉这个开关。
+  // 自研的 packages/* 与 apps/api 由 scripts/typecheck.mjs 单独检查。
+  typescript: { ignoreBuildErrors: false },
 
   // 不在构建期跑 ESLint。Next 16 起 next build 不再内置 lint，`next lint`
   // 命令与 next.config 的 eslint 键都被移除——门禁没有因此缺失：

@@ -113,6 +113,14 @@ export function PluginMarketBoard({
   const [kind, setKind] = useState('')
   const [sort, setSort] = useState<MarketplaceSort>(DEFAULT_MARKETPLACE_SORT)
   const [qInput, setQInput] = useState('')
+  const [activeTopicId, setActiveTopicId] = useState<string>('all')
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQ(qInput.trim())
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [qInput])
   const [q, setQ] = useState('')
   const [filtersReady, setFiltersReady] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
@@ -253,19 +261,38 @@ export function PluginMarketBoard({
     }
   }, [hasFilter, reloadToken])
 
+  function cleanLeaderboardTitle(name: string): string {
+    const match = name.match(/^([^\(（]+)[\(（]/)
+    if (match && match[1].trim().length >= 4) {
+      return match[1].trim()
+    }
+    return name
+  }
+
   const rankingGroups = [
     {
       key: 'popular' as const,
       title: '安装榜',
       icon: TrendingUp,
-      metric: (p: HubPluginItem) => `${p.installCount} 次安装`,
+      metric: (p: HubPluginItem) => {
+        if (p.installCount > 0) return `${p.installCount} 次安装`
+        const s = p.summary
+        if (s?.siteCount) return `${s.siteCount} 站点 · 精选`
+        if (s?.widgetCount) return `${s.widgetCount} 组件 · 精选`
+        if (s?.engineCount) return `${s.engineCount} 引擎 · 精选`
+        return '官方精选'
+      },
     },
     {
       key: 'rating' as const,
       title: '口碑榜',
       icon: Star,
-      metric: (p: HubPluginItem) =>
-        (p.reviewCount ?? 0) > 0 ? `${(p.ratingAvg ?? 0).toFixed(1)} 分 · ${p.reviewCount} 评价` : '暂无评价',
+      metric: (p: HubPluginItem) => {
+        if ((p.reviewCount ?? 0) > 0) {
+          return `${(p.ratingAvg ?? 0).toFixed(1)} ★ · ${p.reviewCount} 评`
+        }
+        return `v${p.version} · 审计通过`
+      },
     },
     {
       key: 'fresh' as const,
@@ -276,8 +303,14 @@ export function PluginMarketBoard({
   ]
 
   const handleTopicClick = (topic: typeof TOPIC_COLLECTIONS[number]) => {
+    setActiveTopicId(topic.id)
     if (topic.id === 'all') {
       resetFilters()
+    } else if (topic.id === 'trending') {
+      setKind('')
+      setQ('')
+      setQInput('')
+      setSort('trending')
     } else {
       if ('kind' in topic && topic.kind) setKind(topic.kind)
       else setKind('')
@@ -288,7 +321,7 @@ export function PluginMarketBoard({
         setQ('')
         setQInput('')
       }
-      setSort('sort' in topic && topic.sort ? topic.sort : DEFAULT_MARKETPLACE_SORT)
+      setSort('sort' in topic && typeof topic.sort === 'string' ? (topic.sort as MarketplaceSort) : DEFAULT_MARKETPLACE_SORT)
     }
   }
 
@@ -316,54 +349,56 @@ export function PluginMarketBoard({
               插件市场
             </span>
           </div>
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
-            <div className="min-w-0 flex-1">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="min-w-0 flex-1 max-w-3xl">
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
                 插件市场
               </h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed max-w-2xl">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
                 与社区互换收藏的网址包、工作台布局、主题与搜索引擎包。全部插件都是可读可审计的声明式 JSON，
                 不含任何可执行代码；安装前可先看清单预览。
               </p>
             </div>
-            <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 shrink-0 lg:justify-end">
-              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 shrink-0">
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs justify-center">
                 <Link href="/marketplace/installed">
                   <PackageCheck className="w-3.5 h-3.5 text-primary" />
-                  已安装管家
+                  <span>已安装管家</span>
                 </Link>
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => setTapsModalOpen(true)}
-                className="h-8 gap-1.5 text-xs border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10"
+                className="h-8 gap-1.5 text-xs justify-center border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10"
               >
                 <Radio className="w-3.5 h-3.5" />
                 <span>Taps 订阅源</span>
               </Button>
-              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs justify-center">
                 <Link href="/marketplace/import">
                   <Upload className="w-3.5 h-3.5" />
-                  导入插件文件
+                  <span>导入插件文件</span>
                 </Link>
               </Button>
-              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs justify-center">
                 <Link href="/marketplace/mine">
                   <UserRound className="w-3.5 h-3.5" />
-                  作者中心
+                  <span>作者中心</span>
                 </Link>
               </Button>
               <Button
                 size="sm"
                 onClick={() => setStudioOpen(true)}
-                className="h-8 gap-1.5 text-xs bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-700 text-primary-foreground font-medium shadow-sm"
+                className="h-8 gap-1.5 text-xs justify-center bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-700 text-primary-foreground font-medium shadow-xs"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>AI 生成插件</span>
+                <span>✨ AI 生成插件</span>
               </Button>
-              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-                <Link href="/marketplace/publish">发布插件</Link>
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs justify-center border-primary/40 hover:bg-primary/5 text-primary font-medium">
+                <Link href="/marketplace/publish">
+                  <span>发布插件</span>
+                </Link>
               </Button>
             </div>
           </div>
@@ -376,13 +411,18 @@ export function PluginMarketBoard({
             </span>
             {TOPIC_COLLECTIONS.map((topic) => {
               const isTopicActive =
-                (topic.id === 'all' && !kind && !q && sort === 'trending') ||
-                ('kind' in topic && kind === topic.kind) ||
-                ('q' in topic && q === topic.q) ||
-                ('sort' in topic && sort === topic.sort && !kind && !q)
+                activeTopicId === topic.id ||
+                (!activeTopicId && (
+                  (topic.id === 'all' && !kind && !q && sort !== 'trending') ||
+                  (topic.id === 'trending' && !kind && !q && sort === 'trending') ||
+                  ('kind' in topic && kind === topic.kind && !q) ||
+                  ('q' in topic && q === topic.q && !kind)
+                ))
               return (
                 <button
                   key={topic.id}
+                  type="button"
+                  aria-pressed={isTopicActive}
                   onClick={() => handleTopicClick(topic)}
                   className={`px-2.5 py-1 rounded-full text-xs transition-all ${
                     isTopicActive
@@ -403,7 +443,7 @@ export function PluginMarketBoard({
             aria-label="按类型筛选"
             className="h-8 rounded-md border border-border-strong bg-background px-2 text-base sm:text-sm"
             value={kind}
-            onChange={(e) => setKind(e.target.value)}
+            onChange={(e) => { setKind(e.target.value); setActiveTopicId(e.target.value ? (TOPIC_COLLECTIONS.find(t => "kind" in t && t.kind === e.target.value)?.id || "") : ""); }}
           >
             <option value="">全部类型</option>
             <option value="site-pack">网站包</option>
@@ -416,7 +456,7 @@ export function PluginMarketBoard({
             aria-label="排序方式"
             className="h-8 rounded-md border border-border-strong bg-background px-2 text-base sm:text-sm"
             value={sort}
-            onChange={(e) => setSort(e.target.value as MarketplaceSort)}
+            onChange={(e) => { setSort(e.target.value as MarketplaceSort); if (!kind && !q) { setActiveTopicId(e.target.value === "trending" ? "trending" : "all"); } else { setActiveTopicId(""); } }}
           >
             <option value="trending">🔥 7天飙升榜</option>
             <option value="new">最新发布</option>
@@ -425,44 +465,36 @@ export function PluginMarketBoard({
             <option value="rating">评分最高</option>
             <option value="updated">最近更新</option>
           </select>
-          <form
-            role="search"
-            className="flex items-center gap-1.5 flex-1 min-w-[180px] sm:flex-initial"
-            onSubmit={(e) => {
-              e.preventDefault()
-              setQ(qInput.trim())
-            }}
-          >
-            <div className="relative flex-1 sm:flex-initial">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                name="q"
-                aria-label="搜索插件"
-                value={qInput}
-                onChange={(e) => setQInput(e.target.value)}
-                placeholder="搜索名称 / 描述"
-                enterKeyHint="search"
-                className="h-8 w-full sm:w-52 rounded-md border border-border-strong bg-background pl-8 pr-7 text-base sm:text-sm"
-              />
-              {qInput && (
-                <button
-                  type="button"
-                  aria-label="清除输入"
-                  onClick={() => {
-                    setQInput('')
-                    setQ('')
-                  }}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-            <Button type="submit" size="sm" variant="outline" className="h-8">
-              搜索
-            </Button>
-          </form>
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              name="q"
+              aria-label="搜索插件"
+              value={qInput}
+              onChange={(e) => {
+                setQInput(e.target.value)
+                setActiveTopicId('')
+              }}
+              placeholder="搜索名称、描述、!前缀、#标签…"
+              enterKeyHint="search"
+              className="h-8 w-full rounded-md border border-border-strong bg-background pl-8 pr-7 text-base sm:text-sm transition-colors focus:border-primary"
+            />
+            {qInput && (
+              <button
+                type="button"
+                aria-label="清除输入"
+                onClick={() => {
+                  setQInput('')
+                  setQ('')
+                  setActiveTopicId('all')
+                }}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
           {total > 0 && !loading && (
             <span className="text-xs text-muted-foreground ml-auto" role="status" aria-live="polite">
               共 {total} 个插件
@@ -583,10 +615,11 @@ export function PluginMarketBoard({
                         <li key={`${group.key}-${p.id}`}>
                           <Link
                             href={`/marketplace/${encodeURIComponent(p.slug)}`}
+                            title={p.name}
                             className="flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-muted/60 transition-colors"
                           >
                             <span className={`w-4 text-[11px] tabular-nums font-bold ${index === 0 ? 'text-amber-500' : index === 1 ? 'text-slate-400' : index === 2 ? 'text-orange-600/80' : 'text-muted-foreground'}`}>{index + 1}</span>
-                            <span className="text-xs font-medium truncate flex-1">{p.name}</span>
+                            <span className="text-xs font-medium truncate flex-1">{cleanLeaderboardTitle(p.name)}</span>
                             <span className="text-[10px] text-muted-foreground shrink-0">{group.metric(p)}</span>
                           </Link>
                         </li>

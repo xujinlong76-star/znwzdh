@@ -47,7 +47,7 @@ import { spotlightHotkeyHint, useExternalLinkTarget, useUserPreferences } from '
 import { parseTechComparisonQuery } from '@/lib/comparison'
 import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
 import { SiteFavicon } from '@/components/site-favicon'
-import { isSafeHttpUrl, safeHref, } from '@/lib/safe-url'
+import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { getModifierKey } from '@/lib/platform'
 
 
@@ -71,6 +71,34 @@ const ActionIntentCard = dynamic(
   { ssr: false }
 )
 import type { ActionIntentCardData } from '@/components/action-intent-card'
+
+export const OMNI_ENGINES: Record<string, { name: string; url: (q: string) => string }> = {
+  g: { name: 'Google', url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
+  google: { name: 'Google', url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
+  gh: { name: 'GitHub', url: (q) => `https://github.com/search?q=${encodeURIComponent(q)}` },
+  github: { name: 'GitHub', url: (q) => `https://github.com/search?q=${encodeURIComponent(q)}` },
+  npm: { name: 'npm', url: (q) => `https://www.npmjs.com/search?q=${encodeURIComponent(q)}` },
+  bing: { name: 'Bing', url: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` },
+  mdn: { name: 'MDN', url: (q) => `https://developer.mozilla.org/zh-CN/search?q=${encodeURIComponent(q)}` },
+  baidu: { name: '百度', url: (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}` },
+  bd: { name: '百度', url: (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}` },
+}
+
+export function parseOmniCommand(raw: string): { engine: string; engineName: string; term: string; url: string } | null {
+  const trimmed = raw.trim()
+  const match = trimmed.match(/^@?([a-zA-Z]+)\s+(.+)$/)
+  if (!match) return null
+  const prefix = match[1]!.toLowerCase()
+  const term = match[2]!.trim()
+  if (!term || !OMNI_ENGINES[prefix]) return null
+  const target = OMNI_ENGINES[prefix]!
+  return {
+    engine: prefix,
+    engineName: target.name,
+    term,
+    url: target.url(term),
+  }
+}
 
 const CHANNEL_LABELS: Record<string, string> = {
   exact: '精确',
@@ -587,6 +615,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         return
       }
       if (e.key === 'Enter') {
+        const omni = parseOmniCommand(query)
+        if (omni) {
+          e.preventDefault()
+          safeWindowOpen(omni.url)
+          setIsFocused(false)
+          return
+        }
         if (navItems.length === 0) return
         // 没有高亮项时回车 = 打开第一条结果。原实现在 activeIndex === -1（默认态）
         // 直接忽略，「输完词直接回车」这个最常见的动作等于完全没反应。
@@ -626,8 +661,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     searchEngine: preferences.defaultSearchEngine,
   })
 
+  const omniCommand = useMemo(() => parseOmniCommand(query), [query])
+
   return (
-    <div ref={searchRef} className="relative w-full max-w-2xl min-w-[340px] lg:min-w-[400px] mx-auto">
+    <div ref={searchRef} className="relative w-full max-w-2xl min-w-[340px] sm:min-w-[380px] lg:min-w-[420px] mx-auto">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input aria-label={placeholder}
@@ -645,7 +682,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           value={query}
           onChange={(e) => { setQuery(e.target.value); setIsFocused(true) }}
           onFocus={() => setIsFocused(true)}
-          className="pl-9 sm:pl-10 pr-32 sm:pr-36 h-9.5 sm:h-10 rounded-xl border border-border-strong hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 shadow-xs text-base sm:text-sm transition-all"
+          className="pl-9 sm:pl-10 pr-36 sm:pr-44 md:pr-48 h-9.5 sm:h-10 rounded-xl border border-border-strong hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 shadow-xs text-base sm:text-sm transition-all"
         />
         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
@@ -824,6 +861,28 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
       {showResults && (
         <div id="navhub-search-results-panel" ref={resultsPanelRef} className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+          {omniCommand && (
+            <div className="px-3.5 py-2.5 bg-primary/10 border-b border-primary/20 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-primary min-w-0">
+                <span className="px-1.5 py-0.5 rounded bg-primary/20 font-mono text-[10px] uppercase font-bold shrink-0">
+                  {omniCommand.engineName}
+                </span>
+                <span className="truncate">
+                  按 Enter 直达外部搜索：<strong className="font-semibold underline underline-offset-2">{omniCommand.term}</strong>
+                </span>
+              </div>
+              <a
+                href={safeHref(omniCommand.url)}
+                target={linkTarget}
+                rel="noopener noreferrer"
+                onClick={() => setIsFocused(false)}
+                className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline shrink-0 font-medium cursor-pointer"
+              >
+                <span>直达</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
           <Command className="border-0 shadow-none flex-1 overflow-hidden" shouldFilter={false}>
             <CommandList className="max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto">
               {degraded && panel.mode !== 'outage' && (

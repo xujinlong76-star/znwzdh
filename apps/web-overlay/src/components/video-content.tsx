@@ -713,7 +713,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                 </div>
                                 <div>
                                     <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-3 text-foreground">
-                                        <div className="p-2 sm:p-2.5 rounded-2xl bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 shadow-xs shrink-0">
+                                        <div className="p-2 sm:p-2.5 rounded-2xl bg-violet-500/10 text-violet-700 dark:text-violet-400 border border-violet-500/20 shadow-xs shrink-0">
                                             <MonitorPlay className="w-5 h-5 sm:w-6 sm:h-6" />
                                         </div>
                                         <span>按分类浏览技术视频与精品教程</span>
@@ -723,7 +723,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                     </p>
                                 </div>
                                 <div className="mt-4 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2.5">
-                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-violet-500/25 bg-violet-500/5 text-xs text-violet-600 dark:text-violet-400 font-medium">
+                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-violet-500/25 bg-violet-500/5 text-xs text-violet-700 dark:text-violet-400 font-medium">
                                         <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
                                         <span>{videoStats.categories} 个专业领域</span>
                                     </div>
@@ -1100,7 +1100,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                             <section className="scroll-m-16 rounded-xl border border-violet-500/20 bg-gradient-to-r from-violet-500/5 via-transparent to-sky-500/5 p-4 backdrop-blur-xs">
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">
-                                        <h2 className="text-base font-bold tracking-tight flex items-center gap-2 text-violet-600 dark:text-violet-400">
+                                        <h2 className="text-base font-bold tracking-tight flex items-center gap-2 text-violet-700 dark:text-violet-400">
                                             <Sparkles className="w-4 h-4 text-violet-500" />
                                             <span>猜你想学 · 协同精选</span>
                                             <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-500 font-normal">

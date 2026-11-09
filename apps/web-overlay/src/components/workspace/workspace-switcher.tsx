@@ -216,9 +216,9 @@ export function WorkspaceSwitcher() {
 
   if (loading || !activeWs) {
     return (
-      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-muted-foreground font-medium">
-        <User className="h-3.5 w-3.5 text-primary" />
-        <span>个人私有空间</span>
+      <div className="w-full flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground font-medium">
+        <User className="h-3.5 w-3.5 text-primary shrink-0" />
+        <span className="truncate">个人私有空间</span>
       </div>
     )
   }
@@ -234,21 +234,25 @@ export function WorkspaceSwitcher() {
             variant="ghost"
             size="sm"
             aria-label={`${activeWs.name} ${roleMeta.label} - 选择工作空间与团队`}
-            className="h-8 gap-2 px-2.5 text-xs text-foreground hover:bg-accent/60 transition-colors border border-transparent hover:border-border/60"
+            className="w-full h-8 flex items-center justify-between gap-1.5 px-2 text-xs text-foreground hover:bg-accent/60 transition-colors border border-transparent hover:border-border/60 min-w-0"
           >
-            {activeWs.type === 'personal' ? (
-              <User className="h-3.5 w-3.5 text-primary" />
-            ) : (
-              <Building2 className="h-3.5 w-3.5 text-indigo-500" />
-            )}
-            <span className="max-w-[120px] truncate font-medium">
-              {activeWs.name}
-            </span>
-            <Badge variant="outline" className={`px-1.5 py-0 text-[10px] hidden md:inline-flex ${roleMeta.color}`}>
-              <RoleIcon className="mr-0.5 h-2.5 w-2.5" />
-              {roleMeta.label}
-            </Badge>
-            <ChevronDown className="h-3 w-3 text-muted-foreground opacity-60" />
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+              {activeWs.type === 'personal' ? (
+                <User className="h-3.5 w-3.5 text-primary shrink-0" />
+              ) : (
+                <Building2 className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+              )}
+              <span className="truncate font-medium text-xs">
+                {activeWs.name}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <Badge variant="outline" className={`px-1.5 py-0 text-[10px] shrink-0 whitespace-nowrap ${roleMeta.color}`}>
+                <RoleIcon className="mr-0.5 h-2.5 w-2.5 shrink-0" />
+                {roleMeta.label}
+              </Badge>
+              <ChevronDown className="h-3 w-3 text-muted-foreground opacity-60 shrink-0" />
+            </div>
           </Button>
         </DropdownMenuTrigger>
 
@@ -301,7 +305,7 @@ export function WorkspaceSwitcher() {
 
           <DropdownMenuItem
             onClick={() => setCreateOpen(true)}
-            className="cursor-pointer gap-2 py-2 text-indigo-600 dark:text-indigo-400"
+            className="cursor-pointer gap-2 py-2 text-indigo-700 dark:text-indigo-400 font-medium"
           >
             <Plus className="h-3.5 w-3.5" />
             <span>新建团队协同空间</span>

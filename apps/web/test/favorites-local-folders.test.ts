@@ -37,8 +37,12 @@ describe('本地收藏夹（P2）', () => {
   })
 
   it('使用独立的新存储键，不动既有收藏键', () => {
+    const lib = overlaySource('src/lib/favorites-folders.ts')
     const page = overlaySource('src/app/favorites/page.tsx')
-    expect(page).toContain("navhub.favorites.folders.v1")
+    // 键只在 lib 里定义一次；页面引用常量，不许再抄一份字面量（抄了就会漂移）
+    expect(lib).toContain("LOCAL_FOLDERS_STORAGE_KEY = 'navhub.favorites.folders.v1'")
+    expect(page).toContain('LOCAL_FOLDERS_STORAGE_KEY')
+    expect(page).not.toContain("'navhub.favorites.folders.v1'")
     // 既有键一律不得改写（改了等于丢老用户收藏）
     expect(page).not.toContain("navhub.favorites.v1'")
     expect(page).toContain('readLocalFolders')

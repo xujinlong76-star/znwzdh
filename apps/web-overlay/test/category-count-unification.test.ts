@@ -97,8 +97,11 @@ describe("首屏三个出口共用同一份算式", () => {
 
   it("站内目录带显示本页树里的数字，中枢 active 计数只在树里没有该分类时回退", () => {
     const src = overlayFile(quickJump);
+    // 目录带已抽成独立组件：映射在页面算，回退逻辑跟着组件走
+    const toolbar = overlayFile("src/components/directory-pill-toolbar.tsx");
     expect(src).toContain("[cat.id, countCategorySites(cat)]");
-    expect(src).toContain("treeSiteCounts.get(link.id) ?? link.count");
+    expect(src).toContain("counts={treeSiteCounts}");
+    expect(toolbar).toContain("counts?.get(link.id) ?? link.count");
   });
 
   it("中枢计数的职责写进注释：它管的是链过去会不会 404，不是「有几张卡片」", () => {

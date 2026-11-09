@@ -192,17 +192,45 @@ function readSignal(signal?: AbortSignal): AbortSignal | undefined {
     : undefined
 }
 
+/**
+ * 并发去重（single-flight）：同 path 的**并发** GET 共享同一次请求。
+ *
+ * 背景：`searchSites` / `fetchCategories` 等被多个组件在 mount 时各自拉取，
+ * 同一路径在同一瞬间会发多次重复请求（切路由更明显）。
+ *
+ * 只在「调用方没给自定义 signal、也没给额外头」时去重：
+ *   - 给了 signal 说明调用方要能单独中止，共享 promise 会把中止扩散给其他调用方；
+ *   - 额外头可能改变结果（键就不只是 path 了）。
+ * 去重窗口 = 请求在途期间；settle 即移除，不引入陈旧数据（这不是缓存）。
+ */
+const inflightGets = new Map<string, Promise<unknown>>()
+
 async function getJson<T>(path: string, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
-  const res = await fetch(hubUrl(path), {
-    signal: readSignal(signal),
-    headers: { Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) },
-  })
-  if (!res.ok) {
-    const detail = await hubServerMessage(res)
-    throw hubError(res.status, detail.message, detail.payload)
+  const dedupe = !signal && !extraHeaders
+  if (dedupe) {
+    const existing = inflightGets.get(path)
+    if (existing) return existing as Promise<T>
   }
-  const text = await res.text()
-  return (text.trim() ? JSON.parse(text) : {}) as T
+  const request = (async (): Promise<T> => {
+    const res = await fetch(hubUrl(path), {
+      signal: readSignal(signal),
+      headers: { Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) },
+    })
+    if (!res.ok) {
+      const detail = await hubServerMessage(res)
+      throw hubError(res.status, detail.message, detail.payload)
+    }
+    const text = await res.text()
+    return (text.trim() ? JSON.parse(text) : {}) as T
+  })()
+  if (!dedupe) return request
+  inflightGets.set(path, request)
+  try {
+    return await request
+  } finally {
+    // 并发下同一 key 只可能有一条；判断是防御性的，避免把后来者登记的 promise 顶掉
+    if (inflightGets.get(path) === request) inflightGets.delete(path)
+  }
 }
 
 /**

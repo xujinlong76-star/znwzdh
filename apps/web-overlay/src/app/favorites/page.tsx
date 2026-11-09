@@ -27,7 +27,7 @@ import {
 } from '@/hooks/useFavorites'
 import { useFavoritesFolderManager } from '@/hooks/use-favorites-folder-manager'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
-import { parseLocalFolders, serializeLocalFolders, type LocalFolder } from '@/lib/favorites-folders'
+import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders, serializeLocalFolders, type LocalFolder } from '@/lib/favorites-folders'
 import { buildFavoritesSearch, parseFavoritesFilters } from '@/lib/favorites-url'
 import {
   favoritesToVaultItems,
@@ -84,7 +84,7 @@ const UniversalBookmarkModal = dynamic(
  * "改了等于丢老用户收藏"，而收藏夹是衍生数据，分开存才能在出问题时只丢分组、
  * 不丢收藏。登录后云端夹子成为事实源，这个键会被清空。
  */
-const LOCAL_FOLDERS_KEY = 'navhub.favorites.folders.v1'
+const LOCAL_FOLDERS_KEY = LOCAL_FOLDERS_STORAGE_KEY
 
 function readLocalFolders(): LocalFolder[] {
   try {

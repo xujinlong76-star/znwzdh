@@ -282,7 +282,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               </Button>
             </div>
             {jsonError && (
-              <p className="text-xs text-red-500 bg-red-500/10 p-2.5 rounded-xl border border-red-500/20 font-mono shadow-2xs">
+              <p className="text-xs text-destructive-text bg-destructive/15 p-2.5 rounded-xl border border-destructive/20 font-mono shadow-2xs">
                 {jsonError}
               </p>
             )}

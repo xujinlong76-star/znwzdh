@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { hubGet } from '@/lib/server/hub'
-import { Breadcrumbs } from '@/components/breadcrumbs'
 import { PluginMarketBoard } from '@/components/plugin-market-board'
 import {
   buildMarketplaceQuery,
@@ -162,12 +161,6 @@ export default async function MarketplacePage({
   return (
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
-        <Breadcrumbs
-          items={[
-            { label: '首页', path: '/' },
-            { label: '插件市场', path: '/marketplace' },
-          ]}
-        />
         <PluginMarketBoard
           initialItems={list ? list.items : null}
           initialTotal={list?.total ?? 0}

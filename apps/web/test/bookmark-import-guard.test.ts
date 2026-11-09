@@ -19,12 +19,21 @@ const SRC = readFileSync(
   'utf8',
 )
 
+/**
+ * 2026-11-08 工作台重构：类目建议表下沉到纯函数层（单一事实源），
+ * 组件只消费它。锁的对象随之下移，语义不变：仍然要求每个 slug 都是可挂叶子。
+ */
+const PIPELINE = readFileSync(
+  fileURLToPath(new URL('../src/lib/import-workbench.ts', import.meta.url)),
+  'utf8',
+)
+
 function hintSlugs(): string[] {
-  const start = SRC.indexOf('const CATEGORY_HINTS')
+  const start = PIPELINE.indexOf('export const CATEGORY_HINTS')
   if (start === -1) throw new Error('找不到 CATEGORY_HINTS 建议表')
-  const end = SRC.indexOf('\n]', start)
+  const end = PIPELINE.indexOf('\n]', start)
   expect(end, '建议表必须以独立一行的 ] 结尾').toBeGreaterThan(start)
-  return [...SRC.slice(start, end).matchAll(/slug: '([a-z0-9-]+)'/g)].map((m) => m[1]!)
+  return [...PIPELINE.slice(start, end).matchAll(/slug: '([a-z0-9-]+)'/g)].map((m) => m[1]!)
 }
 
 describe('书签导入器的类目建议', () => {
@@ -120,5 +129,71 @@ describe('书签导入的条数台账', () => {
     const chunk = CODE.match(/const chunkSize = (\d+)/)
     expect(chunk, '找不到分块大小').not.toBeNull()
     expect(Number(chunk![1])).toBeLessThanOrEqual(Number(cap![1]))
+  })
+})
+
+/**
+ * 工作台重构新增的硬约束。这些不是「源码风格检查」，而是从架构断层里
+ * 提炼出来的不变量：跨页跳转、隐私外泄、裸文件控件、假去重、大列表掉帧。
+ */
+describe('智能导入工作台的架构不变量', () => {
+  it('彻底移除「前往我的收藏导入」的跨页中断式按钮，仅保留轻量辅助链接', () => {
+    expect(SRC).not.toContain('前往「我的收藏」导入')
+    expect(SRC.match(/href="\/favorites"/g) ?? []).toHaveLength(1)
+    expect(SRC).toContain('查看我的收藏夹')
+  })
+
+  it('一次解析支持 4 种文件 + 粘贴，隐藏 file input 用 sr-only 且关联 label', () => {
+    expect(SRC).toContain('accept=".html,.htm,.md,.json,.txt"')
+    expect(SRC).toContain('className="sr-only peer"')
+    expect(SRC).toContain('htmlFor="bookmark-file-input"')
+    expect(SRC).toContain('aria-labelledby="dropzone-title"')
+    expect(SRC).toContain('placeholder=') // 粘贴 Tab
+    expect(SRC).not.toContain('未选择任何文件')
+  })
+
+  it('隐私链接的公共投稿勾选框被硬锁，且服务端回退也只允许未锁定条目', () => {
+    // 锁定条件 = 隐私/已收录（publicLocked）或「仅个人收藏夹」模式
+    expect(SRC).toContain("disabled={b.publicLocked || mode === 'private'}")
+    expect(SRC).toContain('items.filter((b) => b.toPublic && !b.publicLocked)')
+    expect(PIPELINE).toContain('publicLocked = status !== \'ready\'')
+  })
+
+  it('三种模式是硬约束，不是花架子：私有模式锁投稿、公共模式锁私有', () => {
+    expect(SRC).toContain("disabled={mode === 'public'}")
+    expect(SRC).toContain("applyMode(prev, next)")
+    expect(PIPELINE).toContain('export function applyMode')
+    // 模式切换后即刻重算勾选，避免「切到仅公共库但私有还全选着」
+    expect(PIPELINE).toMatch(/toPrivate: mode !== 'public'/)
+    expect(PIPELINE).toMatch(/toPublic: mode !== 'private'/)
+  })
+
+  it('匿名被批量直入网关拒绝时自动改走公开投稿审核，并导出剩余清单', () => {
+    expect(SRC).toContain("'/api/hub/submissions'")
+    expect(SRC).toContain('res.status === 401 || res.status === 403')
+    expect(SRC).toContain('res.status === 429')
+    expect(SRC).toContain('downloadRemaining')
+  })
+
+  it('大列表启用渲染隔离，纯图标/隐藏控件具备无障碍标签与焦点环', () => {
+    expect(SRC).toContain('[content-visibility:auto]')
+    expect(SRC).toContain('[contain-intrinsic-size:auto_88px]')
+    expect(SRC).toContain('aria-label="按状态筛选"')
+    expect(SRC).toContain('peer-focus-visible:ring-2')
+    expect(SRC).toContain('focus-visible:ring-2')
+  })
+
+  it('统计数字不写死在组件里，全部从服务端下发的索引/分类树派生', () => {
+    for (const dead of ['4639', '4839', '4,639']) {
+      expect(SRC, `组件里出现硬编码统计 ${dead}`).not.toContain(dead)
+    }
+    expect(SRC).toContain('publicSiteCount')
+    expect(SRC).toContain('indexReady')
+  })
+
+  it('平台快捷键按 navigator.platform 切换，不再只给 Windows 提示', () => {
+    expect(SRC).toContain('platformShortcut(navigator.platform')
+    expect(PIPELINE).toContain('Cmd + Option + B')
+    expect(PIPELINE).toContain('Ctrl + Shift + O')
   })
 })

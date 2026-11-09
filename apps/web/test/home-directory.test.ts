@@ -57,7 +57,16 @@ describe("首页站内目录带（F1）", () => {
     expect(src).toContain('href="/category"');
     expect(src).toContain('href="/sites"');
     expect(src).toContain('href="/tags"');
-    expect(src).toContain("href={`/category/${encodeURIComponent(link.slug)}`}");
+    /**
+     * 2026-11-08：分类胶囊带抽成了独立组件（roving tabindex，收敛键盘成本）。
+     * 链接模板随之移到 components/directory-pill-toolbar.tsx —— 这里不能只断言
+     * 留在 navigation-content.tsx 里，那样会把「合理抽取」误判成「内链丢失」。
+     * 两处一起断言：调用点接线 + 组件里仍有 slug 形态的分类链接。
+     */
+    expect(src).toContain("<DirectoryPillToolbar links={directoryLinks}");
+    const toolbar = overlayFile("src/components/directory-pill-toolbar.tsx");
+    expect(toolbar).toContain("href={`/category/${encodeURIComponent(link.slug)}`}");
+    expect(toolbar).toContain('data-dir-pill=""');
   });
 
   /**

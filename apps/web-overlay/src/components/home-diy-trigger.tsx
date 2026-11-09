@@ -71,7 +71,7 @@ export function HomeDIYTrigger() {
       )}
 
       <div
-        className="fixed z-50 pointer-events-auto left-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:left-auto sm:right-3 sm:bottom-3"
+        className="fixed z-50 pointer-events-auto left-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:left-auto sm:right-4 sm:bottom-4"
         onMouseEnter={warmToolbarChunk}
         onFocus={warmToolbarChunk}
         onTouchStart={warmToolbarChunk}

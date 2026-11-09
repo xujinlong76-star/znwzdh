@@ -78,7 +78,7 @@ export function VideoSmartSpeedDialog({
 
           {/* Time Saved Stat */}
           <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
               <Clock className="w-4 h-4" />
               <span className="font-medium">本次累计节省时间</span>
             </div>

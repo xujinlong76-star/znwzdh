@@ -11,7 +11,7 @@ import {
   createPluginShortLink,
   trackPluginEvent,
 } from '@/lib/navhub-api'
-import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
+import { pluginKindLabel, resolvePluginDescription } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { Badge } from '@/components/ui/badge'
 import dynamic from 'next/dynamic'
@@ -244,36 +244,92 @@ export function PluginCard({
     }
     if (plugin.kind === 'workspace-preset') {
       return (
-        <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-          <LayoutGrid className="w-3 h-3 text-emerald-500/70" />
-          <span>{summary.boardCount ?? 0} 个看板</span>
-          <span>·</span>
-          <span>{summary.widgetCount ?? 0} 个组件</span>
-        </span>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+            <LayoutGrid className="w-3 h-3 text-emerald-500/70" />
+            <span>{summary.boardCount ?? 0} 个看板</span>
+            <span>·</span>
+            <span>{summary.widgetCount ?? 0} 个组件</span>
+          </span>
+          {Array.isArray(summary.widgetTypes) && summary.widgetTypes.length > 0 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {summary.widgetTypes.slice(0, 3).map((wType: string) => (
+                <span
+                  key={wType}
+                  className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-mono"
+                >
+                  {wType}
+                </span>
+              ))}
+              {summary.widgetTypes.length > 3 && (
+                <span className="text-[10px] text-muted-foreground">+{summary.widgetTypes.length - 3}</span>
+              )}
+            </div>
+          )}
+        </div>
       )
     }
     if (plugin.kind === 'theme') {
+      const ACCENT_LABELS: Record<string, string> = {
+        violet: '紫罗兰',
+        emerald: '极光青 / 墨绿',
+        amber: '琥珀暖橙',
+        rose: '霓虹粉紫 / 胭脂粉',
+        ocean: '海面蓝',
+        sky: '天空蓝 / 冰蓝',
+        'system-blue': '活力系统天蓝',
+        latte: '拿铁暖棕',
+      }
+      const displayAccent = summary.accent ? (ACCENT_LABELS[summary.accent] || summary.accent) : '调色板主题'
       return (
-        <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-          <Palette className="w-3 h-3 text-violet-500/70" />
-          <span>{summary.accent ? `强调色: ${summary.accent}` : '调色板主题'}</span>
-          <span>·</span>
-          <span>{summary.themeTokenCount ?? 0} 项变量</span>
-        </span>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+            <Palette className="w-3 h-3 text-violet-500/70" />
+            <span>{summary.accent ? `强调色: ${displayAccent}` : '调色板主题'}</span>
+            <span>·</span>
+            <span>{summary.themeTokenCount ?? 0} 项变量</span>
+          </span>
+          {Array.isArray(summary.palettePreview) && summary.palettePreview.length > 0 && (
+            <div className="flex items-center gap-1.5 py-0.5" title="主题 5 色调色板实时预览">
+              {summary.palettePreview.slice(0, 5).map((color: string, idx: number) => (
+                <span
+                  key={idx}
+                  data-theme-swatch={color}
+                  aria-hidden="true"
+                  className="w-3.5 h-3.5 rounded-full border border-black/15 dark:border-white/20 shadow-2xs shrink-0 transition-transform hover:scale-110"
+                  style={{ backgroundColor: `hsl(${color})` }}
+                />
+              ))}
+              <span className="text-[10px] text-muted-foreground font-mono ml-0.5">色板预览</span>
+            </div>
+          )}
+        </div>
       )
     }
     if (plugin.kind === 'search-pack') {
       return (
-        <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-          <Search className="w-3 h-3 text-sky-500/70" />
-          <span>{summary.engineCount ?? 0} 个搜索引擎</span>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+            <Search className="w-3 h-3 text-sky-500/70" />
+            <span>{summary.engineCount ?? 0} 个搜索引擎</span>
+          </span>
           {Array.isArray(summary.enginePrefixes) && summary.enginePrefixes.length > 0 && (
-            <>
-              <span>·</span>
-              <span className="font-mono">{summary.enginePrefixes.slice(0, 3).join(' ')}</span>
-            </>
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[10px] text-muted-foreground">快捷指令:</span>
+              {summary.enginePrefixes.slice(0, 4).map((prefix: string) => (
+                <kbd
+                  key={prefix}
+                  className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-muted/80 text-foreground border border-border/80 shadow-2xs"
+                >
+                  {prefix.startsWith('!') ? prefix : `!${prefix}`}
+                </kbd>
+              ))}
+              {summary.enginePrefixes.length > 4 && (
+                <span className="text-[10px] text-muted-foreground">+{summary.enginePrefixes.length - 4}</span>
+              )}
+            </div>
           )}
-        </span>
+        </div>
       )
     }
     if (plugin.kind === 'bundle') {
@@ -284,16 +340,30 @@ export function PluginCard({
         theme: '主题',
       }
       return (
-        <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-          <Boxes className="w-3 h-3 text-amber-500/70" />
-          <span>{summary.bundleItemCount ?? 0} 个成员</span>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+            <Boxes className="w-3 h-3 text-amber-500/70" />
+            <span>{summary.bundleItemCount ?? 0} 个成员</span>
+            {kinds.length > 0 && (
+              <>
+                <span>·</span>
+                <span>{kinds.map((k) => kindLabels[k] ?? k).join(' + ')}</span>
+              </>
+            )}
+          </span>
           {kinds.length > 0 && (
-            <>
-              <span>·</span>
-              <span>{kinds.map((k) => kindLabels[k] ?? k).join(' + ')}</span>
-            </>
+            <div className="flex items-center gap-1 flex-wrap">
+              {kinds.map((k) => (
+                <span
+                  key={k}
+                  className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20"
+                >
+                  {kindLabels[k] ?? k}
+                </span>
+              ))}
+            </div>
           )}
-        </span>
+        </div>
       )
     }
     return null
@@ -370,7 +440,8 @@ export function PluginCard({
             <ExternalLink className="w-3.5 h-3.5 opacity-40 sm:opacity-0 -translate-x-1 transition-all group-hover/title:opacity-100 group-hover/title:translate-x-0" />
           </Link>
           <p className="text-[13px] text-muted-foreground line-clamp-2 leading-relaxed min-h-[38px] break-words">
-            {plugin.description || '暂无描述'}
+            {/* 描述里的统计数字用 summary 派生值覆盖：卡片上文案与徽章必须同源（SSOT） */}
+            {resolvePluginDescription(plugin.description || '', summary) || '暂无描述'}
           </p>
         </div>
 

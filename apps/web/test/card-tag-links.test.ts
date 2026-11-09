@@ -105,9 +105,32 @@ describe("卡片 #tag 内链化（rich 模式）", () => {
     expect(body).toContain("onToggleSelect?.(item.id)");
   });
 
-  it("紧凑/标准模式不渲染标签（三密度保持现状）", () => {
-    expect(standardSrc).not.toContain("href={'/tags/'");
-    expect(standardSrc).not.toContain("tagSlug");
+  /**
+   * 2026-11-08 更新：当前实现里**标准模式也渲染标签栏**（带
+   * 「保持双列网格垂直重心平衡」设计注释），这是有意的产品改动，不是回归。
+   * 旧断言「标准模式不得含 /tags/」会把合理演进误判成缺陷。
+   *
+   * 真正要守住的是 a11y 契约：卡片内**唯一 Tab 停留点是主链接**。
+   * 因此换成更强的断言——所有 /tags/ 标签链接都必须退出 Tab 序列，
+   * 且对 rich 段与标准段同时成立（E2E card-keyboard.spec.ts 实测计数=1）。
+   */
+  it("所有 #tag 标签链接都退出 Tab 序列（卡片单一 Tab 入口）", () => {
+    const tagLinkBlocks: string[] = [];
+    let cursor = 0;
+    while (true) {
+      const start = src.indexOf("href={'/tags/'", cursor);
+      if (start < 0) break;
+      const end = src.indexOf("</Link>", start);
+      tagLinkBlocks.push(src.slice(start, end < 0 ? start + 240 : end));
+      cursor = end < 0 ? start + 1 : end + 1;
+    }
+    const allTagLinks = tagLinkBlocks;
+    expect(allTagLinks.length).toBeGreaterThanOrEqual(2); // rich + 标准各一处
+    for (const link of allTagLinks) {
+      expect(link).toContain("tabIndex={-1}");
+    }
+    // 紧凑模式分支确实不渲染标签（切片在 rich 分支之前）
+    expect(src.slice(0, richStart)).not.toContain("href={'/tags/'");
   });
 
   it("tagSlug 助手存在且与 store slugify 同构的契约有测试", () => {

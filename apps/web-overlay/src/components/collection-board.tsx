@@ -123,7 +123,7 @@ export function CollectionBoard({
             </p>
           </div>
           <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-violet-500/25 bg-violet-500/5 text-xs text-violet-600 dark:text-violet-400">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-violet-500/25 bg-violet-500/5 text-xs text-violet-700 dark:text-violet-400">
               <Layers className="w-3 h-3" />
               {loading ? '—' : cols.length} 个专题
             </span>

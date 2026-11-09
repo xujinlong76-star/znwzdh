@@ -45,11 +45,11 @@ export function CrdtSyncStatusPill() {
   const labelText =
     status === 'synced'
       ? peerCount > 1
-        ? `${peerCount} 标签页协同中`
-        : '个人私有空间'
+        ? `${peerCount} 标签页实时协同`
+        : '实时协同就绪'
       : status === 'syncing'
-      ? '协同同步中'
-      : '个人私有空间'
+      ? '多端协同中…'
+      : '本地优先运行'
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

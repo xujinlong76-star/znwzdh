@@ -23,6 +23,9 @@ function randomId(): string {
 
 export const LOCAL_FOLDER_PREFIX = 'local-'
 
+/** 本地夹子唯一的存储键：/favorites 与 /import 必须共用，分流导入才能保留文件夹层级 */
+export const LOCAL_FOLDERS_STORAGE_KEY = 'navhub.favorites.folders.v1'
+
 export interface LocalFolder {
   id: string
   name: string

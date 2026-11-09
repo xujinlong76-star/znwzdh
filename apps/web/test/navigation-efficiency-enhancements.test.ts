@@ -290,7 +290,10 @@ describe('导航效率增强与用户体验治理', () => {
     expect(srcContent).toContain('onOpenTools={() => setIsToolsOpen(true)}')
 
     const srcShortcuts = loadSource('src/components/keyboard-shortcuts-dialog.tsx')
-    expect(srcShortcuts).toContain('/ 或 ⌘K')
+    // 平台键不许写死：macOS 是 ⌘K、Windows/Linux 是 Ctrl+K，还得跟随用户的呼出键偏好
+    expect(srcShortcuts).toContain('spotlightHotkeyHint(spotlightMode, modKey)')
+    expect(srcShortcuts).toContain('getModifierKey()')
+    expect(srcShortcuts).not.toMatch(/key:\s*'Ctrl\+K 或 \//)
     expect(srcShortcuts).toContain('极速呼出超级搜索与指令控制台 (Spotlight)')
   })
 

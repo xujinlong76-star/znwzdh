@@ -25,7 +25,7 @@ export function Footer({ siteInfo }: FooterProps) {
     <footer className="border-t border-border/40 pt-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8 bg-muted/10 mt-auto">
       <div className="container flex flex-col items-center justify-between gap-4 md:flex-row px-4">
         <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <Link href="/" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors font-medium">主页</Link>
+          <Link href="/" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">主页</Link>
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/me" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">用户中心</Link>
           <span className="text-border" aria-hidden="true">·</span>
@@ -33,7 +33,7 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/graph" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">技术生态图谱</Link>
           <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/algorithms" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors text-primary font-semibold">前沿算法实验室</Link>
+          <Link href="/algorithms" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">前沿算法实验室<span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-primary/10 text-primary border border-primary/20">Lab</span></Link>
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/import" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">智能书签导入</Link>
           <span className="text-border" aria-hidden="true">·</span>
@@ -41,18 +41,17 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/tags" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">全景标签云</Link>
           <span className="text-border" aria-hidden="true">·</span>
-          {/* SEO：站点目录与合集入口此前页脚完全没有，导致 1013 个详情页与 4 个合集页全是孤岛 */}
+          {/* SEO：站点目录与合集入口 */}
           <Link href="/sites" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">全部站点目录</Link>
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/collections" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">精选专题合集</Link>
           <span className="text-border" aria-hidden="true">·</span>
           {/* emerald-600 在 12px 白底上只有 3.62:1（AA 需 4.5），700 才达标 */}
-          <Link href="/custom" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors text-emerald-700 dark:text-emerald-400 font-medium">模块化工作台</Link>
+          <Link href="/custom" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">模块化工作台<span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">DIY</span></Link>
           <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/marketplace" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors text-rose-700 dark:text-rose-400 font-medium">插件市场</Link>
+          <Link href="/marketplace" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">插件市场<span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20">77</span></Link>
           <span className="text-border" aria-hidden="true">·</span>
-          {/* SEO：/videos 与 /submit 此前全站无 SSR 入链（link-graph 最后 2 个
-              真实内容页孤岛），补页脚入口后链接图 100% 可达 */}
+          {/* SEO：/videos 与 /submit 入口 */}
           <Link href="/videos" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">视频资源墙</Link>
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/submit" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">网站投稿</Link>
@@ -61,8 +60,7 @@ export function Footer({ siteInfo }: FooterProps) {
           <p className="text-center text-xs text-muted-foreground font-mono md:text-right">
             &copy; <span suppressHydrationWarning>{currentYear}</span> {title} · AI-Native Cognitive Navigation
           </p>
-          {/* 后台「页脚文案」：纯文本渲染，绝不 dangerouslySetInnerHTML —— 这个字段由
-              后台写入、所有访客页面输出，是天然的存储型 XSS 面。 */}
+          {/* 后台「页脚文案」：纯文本渲染，绝不 dangerouslySetInnerHTML */}
           {footerText && (
             <p className="max-w-[46rem] text-center text-xs leading-relaxed text-muted-foreground md:text-right">
               {footerText}
@@ -82,5 +80,4 @@ export function Footer({ siteInfo }: FooterProps) {
       </div>
     </footer>
   )
-
 }

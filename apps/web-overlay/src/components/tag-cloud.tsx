@@ -180,7 +180,7 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-indigo-500/25 bg-indigo-500/5 text-xs text-indigo-600 dark:text-indigo-400">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-indigo-500/25 bg-indigo-500/5 text-xs text-indigo-700 dark:text-indigo-400">
               <Tags className="w-3 h-3" />
               共 {tags.length} 个标签
             </span>
@@ -200,7 +200,7 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
       {/* 跨生态技术视频联动横幅 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/5 text-xs text-foreground">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
             <Video className="w-4 h-4" />
           </div>
           <div className="min-w-0">
@@ -212,7 +212,7 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
             </div>
           </div>
         </div>
-        <Button asChild size="sm" variant="outline" className="text-xs shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10">
+        <Button asChild size="sm" variant="outline" className="text-xs shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-700 dark:text-blue-400 hover:bg-blue-500/10">
           <Link href="/videos">
             <span>浏览视频教程</span>
             <ArrowRight className="w-3.5 h-3.5 ml-1" />

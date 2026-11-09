@@ -278,6 +278,7 @@ export const NavigationCard = memo(function NavigationCard({
           aria-label={`查看站点详情：${item.title}`}
         >
           <Info className="w-3.5 h-3.5" />
+          <span className="sr-only">{`查看站点详情：${item.title}`}</span>
         </Link>
       </Button>
     ) : null
@@ -526,21 +527,19 @@ export const NavigationCard = memo(function NavigationCard({
                               href={siteDetailHref}
                               onClick={handleDetailClick}
                               tabIndex={-1}
-                              className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-2 break-words leading-snug"
+                              className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
                             >
                               {item.title}
                             </Link>
                           ) : (
-                            <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-2 break-words leading-snug">{item.title}</span>
+                            <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
                           )}
                         </CardTitle>
                       </div>
 
-                      {item.description && (
-                        <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1.5 break-words">
-                          {item.description}
-                        </CardDescription>
-                      )}
+                      <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1.5 break-words min-h-[2.5rem]">
+                        {item.description || '\u00A0'}
+                      </CardDescription>
 
                       {/* 徽标与指标：自适应流动折叠，绝不挤压主标题 */}
                       {(item.liveMetrics?.githubStars || item.health?.ok === false) && (
@@ -576,12 +575,13 @@ export const NavigationCard = memo(function NavigationCard({
                   标签是真内链：/tags/{slug} 与 sitemap、标签云同形态
                   （tagSlug 与 store slugify 同构，见 lib/seo/tag-slug.ts），
                   给标签页提供来自首页的内链——这是 Batch C 的核心。 */}
-              <div className="relative z-10 pointer-events-none flex items-center gap-1.5 px-4 sm:px-5 pb-4 sm:pb-5 flex-wrap">
+              <div className="relative z-10 pointer-events-none flex items-center gap-1.5 px-4 sm:px-5 pb-4 sm:pb-5 flex-wrap min-h-[2rem]">
                 {item.tags?.slice(0, 3).map((tag) => (
                   <Link
                     key={tag}
                     href={'/tags/' + encodeURIComponent(tagSlug(tag))}
                     onClick={handleTagClick}
+                    tabIndex={-1}
                     className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors min-h-6"
                   >
                     #{tag}
@@ -772,20 +772,19 @@ export const NavigationCard = memo(function NavigationCard({
                             href={siteDetailHref}
                             onClick={handleDetailClick}
                             tabIndex={-1}
-                            className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-2 break-words leading-snug"
+                            className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
                           >
                             {item.title}
                           </Link>
                         ) : (
-                          <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-2 break-words leading-snug">{item.title}</span>
+                          <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
                         )}
                       </CardTitle>
                     </div>
-                    {item.description && (
-                      <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1 break-words">
-                        {item.description}
-                      </CardDescription>
-                    )}
+
+                    <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1 break-words min-h-[2.5rem]">
+                      {item.description || '\u00A0'}
+                    </CardDescription>
 
                     {/* 徽标、指标与深链行：自适应折叠，绝不挤压主标题 */}
                     {(item.liveMetrics?.githubStars || item.health?.ok === false || topAlternative || (item.actions && item.actions.length > 0)) && (
@@ -833,6 +832,21 @@ export const NavigationCard = memo(function NavigationCard({
                   </div>
                 </div>
               </CardHeader>
+            </div>
+
+            {/* 标签栏：保持双列网格垂直重心平衡 */}
+            <div className="relative z-10 pointer-events-none flex items-center gap-1 px-[var(--density-card-padding,0.875rem)] pb-[var(--density-card-padding,0.875rem)] pt-0 flex-wrap min-h-[1.75rem]">
+              {item.tags?.slice(0, 3).map((tag) => (
+                <Link
+                  key={tag}
+                  href={'/tags/' + encodeURIComponent(tagSlug(tag))}
+                  onClick={handleTagClick}
+                  tabIndex={-1}
+                  className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.2 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
+                >
+                  #{tag}
+                </Link>
+              ))}
             </div>
 
             {/* 操作区：右上角悬浮药丸胶囊 */}

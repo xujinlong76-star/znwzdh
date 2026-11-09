@@ -14,6 +14,7 @@ import {
   generateVideoObjectSchema,
 } from '@/lib/video-seo'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-multi-platform-harvester'
+import { VideoEmbedFacade } from '@/components/video-embed-facade'
 import { chapterStartSec, type NavigationData, type NavigationSubItem } from '@/types/navigation'
 
 /**
@@ -299,17 +300,14 @@ export default async function VideoSeoDetailPage({
             </div>
           </header>
 
-          {/* 嵌入式视频预览容器 */}
+          {/* 嵌入式视频预览容器（点击后加载门面，见 components/video-embed-facade.tsx） */}
           <div className="aspect-video w-full bg-black relative">
             {embedUrl ? (
-              <iframe
-                src={embedUrl}
+              <VideoEmbedFacade
+                embedUrl={embedUrl}
                 title={item.title}
-                className="w-full h-full border-0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-                loading="lazy"
-                referrerPolicy="strict-origin-when-cross-origin"
+                poster={item.icon || null}
+                platformName={platformMeta.shortName}
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center space-y-3">

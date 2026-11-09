@@ -2477,7 +2477,7 @@ ls -la /workspace`}
                         {coWatchSession ? (
                             <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 space-y-3">
                                 <div className="flex items-center justify-between">
-                                    <span className="font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                                    <span className="font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
                                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                                         房间已连接: {coWatchSession.roomId}
                                     </span>

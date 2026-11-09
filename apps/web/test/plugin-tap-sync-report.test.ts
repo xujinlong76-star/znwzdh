@@ -46,7 +46,21 @@ function codeOnly(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 }
 
-const route = repoFile('apps/api/src/routes/plugins.ts')
+/**
+ * 2026-11-08：插件路由按连续区间拆成 routes/plugins.ts（barrel）+ routes/plugins/p1..p5.ts。
+ * 本守卫断言的是 taps 同步的实现细节，故读取**拼接后的全部源码**（拼接顺序与原文件一致），
+ * 而不是只读 barrel —— 否则断言会全部落空，变成假绿。
+ */
+const route = [
+  'apps/api/src/routes/plugins.ts',
+  'apps/api/src/routes/plugins/p1-market-browse.ts',
+  'apps/api/src/routes/plugins/p2-detail-and-tools.ts',
+  'apps/api/src/routes/plugins/p3-versions-and-reviews.ts',
+  'apps/api/src/routes/plugins/p4-publish-and-engage.ts',
+  'apps/api/src/routes/plugins/p5-shortlinks-and-taps.ts',
+]
+  .map((f) => repoFile(f))
+  .join('\n')
 const client = overlayFile('src/lib/navhub-api.ts')
 const modal = overlayFile('src/components/plugins/plugin-taps-modal.tsx')
 

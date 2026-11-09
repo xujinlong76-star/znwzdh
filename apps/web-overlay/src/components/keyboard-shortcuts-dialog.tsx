@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,8 @@ import { Command, Keyboard, Sparkles } from 'lucide-react'
 import { useHomeDIY, type CanvasBackground } from '@/lib/modular/use-home-diy'
 import { canonicalDensityLabel, useDensity } from '@/components/density-provider'
 import { useToast } from '@/components/ui/use-toast'
+import { getModifierKey } from '@/lib/platform'
+import { spotlightHotkeyHint, useSpotlightShortcutMode } from '@/lib/user-preferences'
 
 interface KeyboardShortcutsDialogProps {
   open?: boolean
@@ -20,7 +22,13 @@ interface KeyboardShortcutsDialogProps {
   onOpenTools?: () => void
 }
 
-const SHORTCUT_GROUPS = [
+/**
+ * 快捷键清单。Spotlight 那一条不写死平台键：macOS 是 ⌘K、Windows/Linux 是 Ctrl+K，
+ * 用户还可能把呼出键改成「仅 /」。文案由 spotlightHotkeyHint 与真实生效键同源生成，
+ * 避免指南教一个按不出来的键。
+ */
+function buildShortcutGroups(spotlightKey: string) {
+  return [
   {
     title: '视窗与排版',
     shortcuts: [
@@ -35,14 +43,16 @@ const SHORTCUT_GROUPS = [
   {
     title: '检索与导航',
     shortcuts: [
-      { key: '/ 或 ⌘K', desc: '极速呼出超级搜索与指令控制台 (Spotlight)' },
+      { key: spotlightKey, desc: '极速呼出超级搜索与指令控制台 (Spotlight)' },
+      { key: '→ / ←', desc: '在卡片内部进入与切换操作按钮 (WAI-ARIA)' },
       { key: 'Space', desc: '聚焦卡片时触发沙箱速览与微动作 (Peek)' },
       { key: 'T', desc: '打开开发者微工具箱 (Base64/JSON/UUID)' },
       { key: '?', desc: '打开或关闭本快捷键指南' },
       { key: 'Esc', desc: '关闭弹窗 / 退出速览' },
     ],
   },
-]
+  ]
+}
 
 export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: KeyboardShortcutsDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false)
@@ -66,6 +76,17 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
 
   const { density, setDensity } = useDensity()
   const { toast } = useToast()
+
+  // 指南里的呼出键必须与真正生效的一致：平台（⌘/Ctrl）与用户偏好（⌘K / 仅 /）都算数
+  const spotlightMode = useSpotlightShortcutMode()
+  const [modKey, setModKey] = useState<'⌘' | 'Ctrl'>('Ctrl')
+  useEffect(() => {
+    setModKey(getModifierKey())
+  }, [])
+  const shortcutGroups = useMemo(
+    () => buildShortcutGroups(spotlightHotkeyHint(spotlightMode, modKey)),
+    [spotlightMode, modKey],
+  )
 
   // 监听全局按键事件
   useEffect(() => {
@@ -171,7 +192,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
         </DialogHeader>
 
         <div className="py-3 space-y-5">
-          {SHORTCUT_GROUPS.map((group) => (
+          {shortcutGroups.map((group) => (
             <div key={group.title} className="space-y-2.5">
               <h4 className="text-xs font-semibold text-muted-foreground tracking-wider uppercase flex items-center gap-1.5">
                 <span className="w-1 h-3 rounded-full bg-primary" />

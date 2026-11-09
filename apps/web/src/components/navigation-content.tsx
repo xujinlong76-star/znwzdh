@@ -10,6 +10,7 @@ import { NavigationToolbar } from '@/components/navigation-toolbar'
 import { NavigationCategorySection } from '@/components/navigation-category-section'
 import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
+import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { Footer } from '@/components/footer'
 import { OnboardingCard } from '@/components/onboarding-card'
@@ -567,7 +568,14 @@ export function NavigationContent({
                    *
                    * 多选态仍然强制全量：批量操作的前提是「看得见才能选」。
                    */
-                  const mustMountAll = selectionMode
+                  /**
+                   * 新建的专属分类必须**立即挂载**：用户在 DIY 里刚点「确认创建」，
+                   * 这个分类要当场出现在导航区并可就地编排（E2E diy-shared-state
+                   * 的 baseline+1 断言钉的就是这条跨组件联动）。若它排在懒挂载区，
+                   * 用户看不到自己刚建的东西，等于功能失效。
+                   */
+                  const isFreshCustom = Boolean((category as { isCustom?: boolean }).isCustom)
+                  const mustMountAll = selectionMode || isFreshCustom
                   if (mustMountAll || index < EAGER_CATEGORY_COUNT) return section
                   return (
                     <LazyMountSection
@@ -654,21 +662,7 @@ export function NavigationContent({
               {directoryLinks.length > 0 && (
                 <>
                   <span aria-hidden className="hidden sm:block h-3.5 w-px bg-border" />
-                  <ul className="flex flex-wrap items-center gap-1.5">
-                    {directoryLinks.map((link) => (
-                      <li key={link.id}>
-                        <Link
-                          href={`/category/${encodeURIComponent(link.slug)}`}
-                          className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 min-h-6 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
-                        >
-                          {link.title}
-                          <span className="font-mono text-[10px] opacity-70">
-                            {treeSiteCounts.get(link.id) ?? link.count}
-                          </span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
+                  <DirectoryPillToolbar links={directoryLinks} counts={treeSiteCounts} />
                 </>
               )}
             </div>

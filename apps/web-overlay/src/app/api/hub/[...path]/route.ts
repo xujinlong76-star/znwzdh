@@ -101,12 +101,13 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     try {
       const adminCheck = await verifyAdminSession()
       if (adminCheck.ok) {
+        // 只用「专用的上游凭据」委派，绝不回落到会话签名密钥。
+        // NAVHUB_SESSION_SECRET / AUTH_SECRET 是签名/加密会话用的密钥，
+        // 一旦被当作中枢管理凭据复用，泄漏即等价于管理员直达中枢。
         const delegated =
           process.env.NAVHUB_ADMIN_TOKEN ||
           process.env.NAVHUB_BOOTSTRAP_TOKEN ||
-          process.env.NAVHUB_STORAGE_TOKEN ||
-          process.env.NAVHUB_SESSION_SECRET ||
-          process.env.AUTH_SECRET
+          process.env.NAVHUB_STORAGE_TOKEN
         if (delegated) {
           headers['authorization'] = 'Bearer ' + delegated
         }
@@ -220,12 +221,9 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     return new Response(res.body, { status: res.status, headers: h })
   }
 
-  if (body && body.length > MAX_BODY_BYTES) {
-    return NextResponse.json(
-      { error: '请求体过大（上限 1MB）' },
-      { status: 413, headers: { 'cache-control': 'no-store' } },
-    )
-  }
+  // 体积上限只在上文按 bodyLimitFor(cleanPath) 判定一次：恢复路径放宽到 16MB，
+  // 其余接口 1MB。这里曾再按 1MB 硬判一次，把刚放行的恢复大包又拒掉——
+  // 维护体积护栏时务必保持「上限只有一处判定」。
 
   // 上游必须有上限：卡死的中枢不能把前端请求无限期挂住（SSE 在拿到响应头后解除，见下）
   const timeoutMs = upstreamTimeoutMs(undefined, cleanPath)

@@ -16,6 +16,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { safeHref } from '@/lib/safe-url'
+import { useExternalLinkTarget } from '@/lib/user-preferences'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Button } from '@/components/ui/button'
@@ -52,6 +53,7 @@ export function TagResultsBoard({
   const identity = useMemo(() => getIdentity(), [])
   const [reloadToken, setReloadToken] = useState(0)
   const [filterQuery, setFilterQuery] = useState('')
+  const linkTarget = useExternalLinkTarget('_blank')
 
   const filteredSites = useMemo(() => {
     const q = filterQuery.trim().toLowerCase()
@@ -295,11 +297,13 @@ export function TagResultsBoard({
             >
               <a
                 href={safeHref(site.url)}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`访问 ${site.title} 官网（新窗口打开）`}
+                target={linkTarget}
+                rel="noopener noreferrer nofollow"
+                aria-label={`访问 ${site.title} 官网`}
                 className="absolute inset-0 z-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/50"
-              />
+              >
+                <span className="sr-only">{`访问 ${site.title} 官网`}</span>
+              </a>
               <div className="relative z-10 pointer-events-none flex items-start gap-3">
                 <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
                   <SiteFavicon

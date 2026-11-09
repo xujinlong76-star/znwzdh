@@ -604,6 +604,25 @@
     --primary-foreground: 210 40% 98%;
     --ring: 346 84% 42%;
   }
+
+  :root[data-accent="ocean"], [data-accent="ocean"] {
+    --primary: 205 85% 45%;
+    --primary-foreground: 210 40% 98%;
+    --ring: 205 85% 45%;
+  }
+
+  :root[data-accent="sky"], [data-accent="sky"],
+  :root[data-accent="system-blue"], [data-accent="system-blue"] {
+    --primary: 212 95% 48%;
+    --primary-foreground: 210 40% 98%;
+    --ring: 212 95% 48%;
+  }
+
+  :root[data-accent="latte"], [data-accent="latte"] {
+    --primary: 28 80% 46%;
+    --primary-foreground: 210 40% 98%;
+    --ring: 28 80% 46%;
+  }
 }
 @layer utilities {
   /* 插件市场展板：主色光斑 + 点阵（深色更浓） */

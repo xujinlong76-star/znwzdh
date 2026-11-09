@@ -117,7 +117,11 @@ describe("枢纽面包屑与合集详情元数据", () => {
     const src = overlayFile("src/app/marketplace/page.tsx");
     expect(src).toContain("import { PluginMarketBoard } from '@/components/plugin-market-board'");
     expect(src).toMatch(/<PluginMarketBoard\s+initialItems=/);
-    expect(src).toContain("<Breadcrumbs");
+    // 2026-11-09：外层重复面包屑已移除，返回入口只保留卡片内一处，
+    // 不许再出现双层「首页 / 插件市场」
+    expect(src).not.toContain("<Breadcrumbs");
+    const board = overlayFile("src/components/plugin-market-board.tsx");
+    expect(board).toMatch(/返回首页<\/span>/);
     expect(src).not.toMatch(/'use client'/);
     // 首屏取全：API 单页上限 100，旧的 limit=1000 会被静默截断，
     // 第 101 个之后的插件详情页会重新变成没有 SSR 入链的孤岛

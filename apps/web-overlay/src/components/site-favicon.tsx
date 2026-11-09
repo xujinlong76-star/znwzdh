@@ -86,6 +86,14 @@ export function extractFaviconMonogram(title: string, _url?: string): string {
 }
 
 export const LOCAL_LOGO_MAP: Record<string, string> = {
+  'video.hunyuan.tencent.com': 'https://hunyuan.tencent.com/favicon.ico',
+  'hunyuan.tencent.com': 'https://hunyuan.tencent.com/favicon.ico',
+  'tongyi.aliyun.com': 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
+  'wan2.aliyun.com': 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
+  'zhiwen.xfyun.cn': 'https://zhiwen.xfyun.cn/favicon.ico',
+  'cursor.com': 'https://www.cursor.com/favicon.ico',
+  'bolt.new': 'https://bolt.new/favicon.ico',
+  'v0.dev': '/assets/images/logos/vercel.webp',
   'kimi.moonshot.cn': 'https://kimi.moonshot.cn/pwa-192.png',
   'doubao.com': '/assets/images/logos/doubao.png',
   'www.doubao.com': '/assets/images/logos/doubao.png',
@@ -254,6 +262,10 @@ export function resolveSiteIcon(
     }
 
     const lowerTitle = (title || '').toLowerCase()
+    if (lowerTitle.includes('混元')) return 'https://hunyuan.tencent.com/favicon.ico'
+    if (lowerTitle.includes('万相') || lowerTitle.includes('wan2')) return 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'
+    if (lowerTitle.includes('智文')) return 'https://zhiwen.xfyun.cn/favicon.ico'
+    if (lowerTitle.includes('roo code')) return 'https://github.com/RooVetGit.png?size=64'
     if (lowerTitle.includes('kimi')) return 'https://kimi.moonshot.cn/pwa-192.png'
     if (lowerTitle.includes('豆包')) return 'https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/favicon/new-doubao/128x128.png'
     if (lowerTitle.includes('文心一言')) return 'https://www.baidu.com/favicon.ico'
@@ -378,13 +390,13 @@ export function SiteFavicon({
       ) : (
         /* 仅在无有效图标或图片加载失败时显示彩色首字母徽章兜底 */
         <div
-          className="absolute inset-0 flex items-center justify-center font-bold text-xs shadow-xs"
+          className="absolute inset-0 flex items-center justify-center font-bold text-xs rounded-xs shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_1px_2px_rgba(0,0,0,0.15)] ring-1 ring-white/20 dark:ring-white/10"
           style={{
             background: gradient.cssGradient,
             color: gradient.textColor,
           }}
         >
-          <span className="leading-none drop-shadow-xs">{monogram}</span>
+          <span className="leading-none font-semibold tracking-wider drop-shadow-xs select-none">{monogram}</span>
         </div>
       )}
     </div>

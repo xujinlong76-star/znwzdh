@@ -11,6 +11,10 @@
  *   - 设置写路径复用 lib/me-settings-save 的 Save-then-Verify 内核（T1）；
  *   - 完整设置与资料编辑分别移到 `/me/settings`、`/me/account`。
  *
+ * 原地即时交互控件（V5）：
+ * 偏好设置从只读展示升级为 In-Place 即时修改（搜索引擎、密度、历史周期、0-RTT），
+ * 修改后通过 Save-then-Verify 内核落盘并广播跨 Tab 与 data-density 样式属性。
+ *
  * 固定文案（匿名 / 加载失败 / 登录状态无法确认）与 E2E 断言保持一致。
  */
 
@@ -38,7 +42,12 @@ import {
   RETENTION_DAY_OPTIONS,
   type UserSettingsModel,
   type UserSettingsPatch,
+  type SearchEngineId,
+  type CardDensityMode,
+  type HistoryRetentionDays,
 } from '@/lib/user-settings'
+import { contentDensityOf } from '@/lib/user-preferences'
+import { cn } from '@/lib/utils'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { SectionState } from '@/components/user-center/section-state'
 import { AccountCard } from '@/components/user-center/dashboard/account-card'
@@ -50,17 +59,18 @@ import { RecentActivity, type ActivityItem } from '@/components/user-center/dash
 import { EntryGroups } from '@/components/user-center/dashboard/entry-groups'
 import { ArrowRight, CheckCircle2, RefreshCw, Settings2, User } from 'lucide-react'
 
-/** 设置摘要：只读展示最容易理解的 4 项，完整表单在 /me/settings */
-function SettingsSummary({ settings, local }: { settings: UserSettingsModel; local: boolean }) {
-  const engine = SEARCH_ENGINE_OPTIONS.find((o) => o.value === settings.defaultSearchEngine)?.label ?? '内置'
-  const density = CARD_DENSITY_OPTIONS.find((o) => o.value === settings.cardDensity)?.label ?? '舒适'
-  const retention = RETENTION_DAY_OPTIONS.find((o) => o.value === settings.historyRetentionDays)?.label ?? '—'
-  const rows = [
-    { label: '默认搜索引擎', value: engine },
-    { label: '卡片展示密度', value: density },
-    { label: '历史保留周期', value: retention },
-    { label: '0-RTT 即时计算', value: settings.speculativeZeroRttEnabled ? '已开启' : '已关闭' },
-  ]
+/** 设置面板：原地即时交互控件（In-Place Controls），完整表单可前往 /me/settings */
+function SettingsSummary({
+  settings,
+  local,
+  onPatch,
+  busy,
+}: {
+  settings: UserSettingsModel
+  local: boolean
+  onPatch?: (patch: UserSettingsPatch) => void
+  busy?: boolean
+}) {
   return (
     <section className="flex h-full flex-col rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -80,14 +90,129 @@ function SettingsSummary({ settings, local }: { settings: UserSettingsModel; loc
           </Link>
         </Button>
       </div>
-      <dl className="mt-3 grid flex-1 gap-2 sm:grid-cols-2">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/50 px-3 py-2">
-            <dt className="min-w-0 truncate text-xs text-muted-foreground">{row.label}</dt>
-            <dd className="shrink-0 text-xs font-medium">{row.value}</dd>
+
+      <div className="mt-3.5 grid flex-1 gap-2.5 sm:grid-cols-2">
+        {/* 默认搜索引擎 */}
+        <div className="flex flex-col justify-between gap-2 rounded-xl border border-border/60 bg-background/50 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground font-medium">默认搜索引擎</span>
+            <span className="text-[10px] text-muted-foreground font-mono">即时生效</span>
           </div>
-        ))}
-      </dl>
+          <select
+            aria-label="默认搜索引擎"
+            disabled={busy || !onPatch}
+            value={settings.defaultSearchEngine}
+            onChange={(e) => onPatch?.({ defaultSearchEngine: e.target.value as SearchEngineId })}
+            className="h-8 w-full rounded-lg border border-border/70 bg-background/90 px-2.5 text-xs font-medium text-foreground transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+          >
+            {SEARCH_ENGINE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 卡片展示密度 */}
+        <div className="flex flex-col justify-between gap-2 rounded-xl border border-border/60 bg-background/50 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground font-medium">卡片展示密度</span>
+            <span className="text-[10px] text-muted-foreground font-mono">全站布局</span>
+          </div>
+          <div
+            role="radiogroup"
+            aria-label="卡片展示密度"
+            className="grid grid-cols-3 rounded-lg border border-border/70 bg-muted/40 p-0.5"
+          >
+            {CARD_DENSITY_OPTIONS.map((opt) => {
+              const active = settings.cardDensity === opt.value
+              const label = opt.label.split(' (')[0]
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={busy || !onPatch}
+                  onClick={() => onPatch?.({ cardDensity: opt.value as CardDensityMode })}
+                  className={cn(
+                    'rounded-md py-1 text-center text-xs font-medium transition-all',
+                    active
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground disabled:opacity-50',
+                  )}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* 历史保留周期 */}
+        <div className="flex flex-col justify-between gap-2 rounded-xl border border-border/60 bg-background/50 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground font-medium">历史保留周期</span>
+            <span className="text-[10px] text-muted-foreground font-mono">本地/云端</span>
+          </div>
+          <div
+            role="radiogroup"
+            aria-label="历史保留周期"
+            className="grid grid-cols-4 gap-1"
+          >
+            {RETENTION_DAY_OPTIONS.map((opt) => {
+              const active = settings.historyRetentionDays === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={busy || !onPatch}
+                  onClick={() => onPatch?.({ historyRetentionDays: opt.value as HistoryRetentionDays })}
+                  className={cn(
+                    'rounded-lg border py-1 text-center text-[11px] font-medium transition-all',
+                    active
+                      ? 'border-primary bg-primary text-primary-foreground shadow-xs'
+                      : 'border-border/60 bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground disabled:opacity-50',
+                  )}
+                >
+                  {opt.label.replace(' (默认)', '').replace(' (1年)', '')}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* 0-RTT 即时计算 */}
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/50 p-3">
+          <div className="min-w-0">
+            <span className="block text-xs font-medium text-foreground">0-RTT 即时计算</span>
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+              {settings.speculativeZeroRttEnabled ? '已开启推测预热' : '已关闭推测预热'}
+            </span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.speculativeZeroRttEnabled}
+            aria-label="0-RTT 即时计算"
+            disabled={busy || !onPatch}
+            onClick={() => onPatch?.({ speculativeZeroRttEnabled: !settings.speculativeZeroRttEnabled })}
+            className={cn(
+              'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+              settings.speculativeZeroRttEnabled ? 'bg-primary' : 'bg-muted',
+            )}
+          >
+            <span
+              className={cn(
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out',
+                settings.speculativeZeroRttEnabled ? 'translate-x-5' : 'translate-x-0',
+              )}
+            />
+          </button>
+        </div>
+      </div>
     </section>
   )
 }
@@ -117,6 +242,27 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
     return cloud && !shouldUploadLocalSettingsFirst(cloud, local) ? cloud : local
   })
   const [verifyNotice, setVerifyNotice] = useState<string | null>(null)
+
+  // 跨路由与跨 Tab 偏好总线监听
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return
+    let bc: BroadcastChannel | null = null
+    try {
+      bc = new BroadcastChannel('navhub_settings_channel')
+      bc.onmessage = (event) => {
+        if (event.data && typeof event.data === 'object') {
+          const normalized = normalizeUserSettings(event.data)
+          setLocalPrefs(normalized)
+          updateSettings(normalized)
+        }
+      }
+    } catch {
+      // 降级兜底
+    }
+    return () => {
+      bc?.close()
+    }
+  }, [updateSettings])
 
   // 身份事件（合并 / 切换）触发的重取做 inflight 去重：
   // 合并完成的瞬间 merged + changed 两个事件几乎同时到达，不去重会连发两次 /api/me。
@@ -164,31 +310,55 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
   }, [state, refreshActivity])
 
   /**
-   * 概览只保留「个性化开关」一项写操作：
-   * 登录态 PATCH 云端并回读校验，匿名态写本机；其余设置统一在 /me/settings。
-   * Save-then-Verify 内核复用 lib/me-settings-save（与 /me/settings 同一份实现）。
+   * 概览原地即时修改偏好：
+   * 登录态 PATCH 云端并回读校验，匿名态写本机。
+   * Save-then-Verify 内核复用 lib/me-settings-save，并打通 BroadcastChannel 与 DOM 布局属性。
    */
+  const applySettingsPatch = useCallback(
+    async (patch: UserSettingsPatch) => {
+      if (settingsBusy) return
+      setSettingsBusy(true)
+      setVerifyNotice(null)
+      try {
+        const result =
+          state === 'ready'
+            ? await saveSettingsPatchToCloud(patch)
+            : saveSettingsPatchLocal(patch)
+        setLocalPrefs(result.finalSettings)
+        updateSettings(result.finalSettings)
+        setVerifyNotice(result.notice)
+
+        // 跨标签页广播
+        try {
+          if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('navhub_settings_channel')
+            bc.postMessage(result.finalSettings)
+            bc.close()
+          }
+        } catch {
+          // ignore
+        }
+
+        // 卡片密度同步到 html[data-density]
+        if (patch.cardDensity) {
+          document.documentElement.setAttribute('data-density', contentDensityOf(patch.cardDensity))
+        }
+
+        toast({ title: '偏好已即时生效', description: result.notice })
+      } catch {
+        toast({ title: '设置保存失败', description: '中枢暂不可用，请稍后重试', variant: 'destructive' })
+      } finally {
+        setSettingsBusy(false)
+      }
+    },
+    [settingsBusy, state, updateSettings, toast],
+  )
+
   const togglePersonalization = useCallback(async () => {
     if (!overview || settingsBusy) return
     const next = !overview.settings.personalizationEnabled
-    const patch: UserSettingsPatch = { personalizationEnabled: next }
-    setSettingsBusy(true)
-    setVerifyNotice(null)
-    try {
-      const result =
-        state === 'ready'
-          ? await saveSettingsPatchToCloud(patch)
-          : saveSettingsPatchLocal(patch)
-      setLocalPrefs(result.finalSettings)
-      updateSettings(result.finalSettings)
-      setVerifyNotice(result.notice)
-      toast({ title: next ? '已开启个性化' : '已关闭个性化' })
-    } catch {
-      toast({ title: '设置保存失败', description: '中枢暂不可用，请稍后重试', variant: 'destructive' })
-    } finally {
-      setSettingsBusy(false)
-    }
-  }, [overview, settingsBusy, state, toast, updateSettings])
+    await applySettingsPatch({ personalizationEnabled: next })
+  }, [overview, settingsBusy, applySettingsPatch])
 
   const clearSignal = useCallback(async (kind: 'click' | 'search' | 'favorite') => {
     if (!overview) return
@@ -285,8 +455,15 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
             anonId={displayAnonId}
             favoritesCount={favorites.items.length}
           />
-          <SettingsSummary settings={localPrefs} local />
-          <EntryGroups />
+          <SettingsSummary
+            settings={localPrefs}
+            local
+            onPatch={applySettingsPatch}
+            busy={settingsBusy}
+          />
+          <EntryGroups
+            favoritesCount={favorites.items.length}
+          />
         </div>
       )}
 
@@ -333,14 +510,22 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
 
           <div className="grid gap-4 lg:grid-cols-12">
             <div className="lg:col-span-7">
-              <SettingsSummary settings={effectiveSettings} local={false} />
+              <SettingsSummary
+                settings={effectiveSettings}
+                local={false}
+                onPatch={applySettingsPatch}
+                busy={settingsBusy}
+              />
             </div>
             <div className="lg:col-span-5">
               <RecentActivity items={activity} />
             </div>
           </div>
 
-          <EntryGroups />
+          <EntryGroups
+            favoritesCount={overview.counts.favorites}
+            installedPluginsCount={overview.counts.activePluginInstalls}
+          />
         </div>
       )}
 

@@ -294,7 +294,7 @@ export const NavigationCard = memo(function NavigationCard({
               draggable={isDraggable}
               onDragStart={handleDragStart}
               className={cn(
-                "nav-card-deferred group relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
+                "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
                 selectionClass
@@ -319,7 +319,7 @@ export const NavigationCard = memo(function NavigationCard({
               </a>
 
               <div className="relative z-10 pointer-events-none flex items-center gap-2 min-w-0 flex-1">
-                <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover:scale-105">
+                <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover/card:scale-105">
                   <SiteFavicon
                     title={item.title}
                     url={item.href}
@@ -334,12 +334,12 @@ export const NavigationCard = memo(function NavigationCard({
                       href={siteDetailHref}
                       onClick={handleDetailClick}
                       tabIndex={-1}
-                      className="pointer-events-auto truncate rounded text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none min-w-0 flex-1"
+                      className="pointer-events-auto truncate rounded text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none min-w-0 flex-1"
                     >
                       {item.title}
                     </Link>
                   ) : (
-                    <span className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors min-w-0 flex-1">
+                    <span className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                       {item.title}
                     </span>
                   )}
@@ -372,7 +372,7 @@ export const NavigationCard = memo(function NavigationCard({
               {/* 紧凑操作按钮 */}
               <div className={cn(
                 "relative z-20 flex items-center gap-0.5 transition-opacity",
-                isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
+                isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
               )} onKeyDown={handleActionsKeyDown}>
                 {isEditingLayout && (
                   <Button
@@ -476,7 +476,7 @@ export const NavigationCard = memo(function NavigationCard({
               draggable={isDraggable}
               onDragStart={handleDragStart}
               className={cn(
-                "nav-card-deferred group @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
+                "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/70 hover:ring-1 hover:ring-primary/40",
                 selectionClass
@@ -510,7 +510,7 @@ export const NavigationCard = memo(function NavigationCard({
               <div className="relative z-10 pointer-events-none flex flex-col flex-1">
                 <CardHeader className="p-4 sm:p-5 flex-1">
                   <div className="flex items-start gap-3.5">
-                    <div className="flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
+                    <div className="flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
                       <SiteFavicon
                         title={item.title}
                         url={item.href}
@@ -521,18 +521,18 @@ export const NavigationCard = memo(function NavigationCard({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 ">
-                        <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover:text-primary transition-colors min-w-0 flex-1">
+                        <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                           {hasSiteDetail ? (
                             <Link
                               href={siteDetailHref}
                               onClick={handleDetailClick}
                               tabIndex={-1}
-                              className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
+                              className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
                             >
                               {item.title}
                             </Link>
                           ) : (
-                            <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
+                            <span className="block text-foreground group-hover/card:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
                           )}
                         </CardTitle>
                       </div>
@@ -607,7 +607,7 @@ export const NavigationCard = memo(function NavigationCard({
               {/* 操作区：右上角悬浮药丸胶囊 */}
               <div className={cn(
                 "absolute top-2 right-2 z-20 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs transition-all duration-150",
-                isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
+                isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
               )} onKeyDown={handleActionsKeyDown}>
                 {isEditingLayout && (
                   <Button
@@ -710,7 +710,7 @@ export const NavigationCard = memo(function NavigationCard({
             draggable={isDraggable}
             onDragStart={handleDragStart}
             className={cn(
-              "nav-card-deferred group @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
+              "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
               isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
               selectionClass
@@ -742,7 +742,7 @@ export const NavigationCard = memo(function NavigationCard({
             </a>
 
             {/* 键盘聚焦显式快捷键角标 */}
-            <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 group-focus-visible:opacity-100 sm:group-hover:opacity-0 transition-opacity duration-150">
+            <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 group-focus-visible/card:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-150">
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded shadow-xs">
                 <span>Space</span>
                 <span>速览</span>
@@ -752,7 +752,7 @@ export const NavigationCard = memo(function NavigationCard({
             <div className="relative z-10 pointer-events-none flex flex-col flex-1 p-[var(--density-card-padding,0.875rem)]">
               {/* Header 层：图标与标题同行，释放左侧死区 */}
               <div className="flex items-center gap-2.5 min-w-0 pr-14">
-                <div className="flex-shrink-0 w-7 h-7 @[280px]:w-8 @[280px]:h-8 rounded-lg p-1 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
+                <div className="flex-shrink-0 w-7 h-7 @[280px]:w-8 @[280px]:h-8 rounded-lg p-1 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
                   <SiteFavicon
                     title={item.title}
                     url={item.href}
@@ -762,18 +762,18 @@ export const NavigationCard = memo(function NavigationCard({
                   />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors min-w-0 flex-1">
+                  <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                     {hasSiteDetail ? (
                       <Link
                         href={siteDetailHref}
                         onClick={handleDetailClick}
                         tabIndex={-1}
-                        className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
+                        className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
                       >
                         {item.title}
                       </Link>
                     ) : (
-                      <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
+                      <span className="block text-foreground group-hover/card:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
                     )}
                   </CardTitle>
                 </div>
@@ -847,7 +847,7 @@ export const NavigationCard = memo(function NavigationCard({
             {/* 操作区：右上角悬浮药丸胶囊 */}
             <div className={cn(
               "absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs transition-all duration-150",
-              isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
+              isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
             )} onKeyDown={handleActionsKeyDown}>
               {isEditingLayout && (
                 <Button

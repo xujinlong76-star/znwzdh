@@ -20,6 +20,14 @@ const { chromium } = req('C:/Users/88/Desktop/web/源码镜像/node_modules/.pnp
     const h1 = Array.from(document.querySelectorAll('h1'))
     const main = document.querySelector('#main-content')
     const inMain = all.filter(el => main && main.contains(el))
+    // display:none / visibility:hidden 的元素键盘根本到不了（典型：桌面端隐藏的移动端分类芯片）。
+    // 真正的 Tab 停留点必须按可渲染口径统计，否则会把「看不见但写着 tabindex」的节点也计入。
+    const isRendered = (el) => {
+      if (el.getClientRects().length === 0) return false
+      const s = getComputedStyle(el)
+      return s.display !== 'none' && s.visibility !== 'hidden'
+    }
+    const inMainRendered = inMain.filter(isRendered)
 
     // 卡片内 tab 停留点
     const cardStops = Array.from(document.querySelectorAll('[data-navhub-site-id]')).map(c => ({
@@ -40,6 +48,8 @@ const { chromium } = req('C:/Users/88/Desktop/web/源码镜像/node_modules/.pnp
     return {
       totalTabbables: all.length,
       tabbablesInMain: inMain.length,
+      /** 真正键盘可达的主内容停留点（排除 display:none / visibility:hidden） */
+      tabbablesInMainRendered: inMainRendered.length,
       h1Text: h1.map(h => h.textContent.trim().slice(0, 40)),
       h1Count: h1.length,
       cardsWithMultipleStops: badCards.length,

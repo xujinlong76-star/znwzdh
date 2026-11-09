@@ -255,6 +255,14 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [selectedSubCatId, setSelectedSubCatId] = useState<string | null>(null)
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+  /**
+   * 热门标签工具的 roving tabindex 游标（2026-11-09 首页 Tab 停留点收敛）。
+   *
+   * 每个分类 5 个标签按钮如果都可 Tab，两个已挂载分类就是 10 个停留点，
+   * 而它们只是同一组互斥筛选。改成 WAI-ARIA `toolbar` + roving：
+   * 整组只保留 1 个 Tab 停留点，组内用 ←/→/Home/End 移动。
+   */
+  const [tagFocusIndex, setTagFocusIndex] = useState(0)
 
   // 提取类目内的常见热门标签
   const categoryTopTags = useMemo(() => {
@@ -337,7 +345,14 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
 
       return activeList.map((entry) => {
         const all = entry.filteredSubItems
-        const expanded = forceFull || isFilterActive || Boolean(expandedGroups[entry.subCategory.id])
+        /**
+         * 2026-11-09：选中某个子分类 tab 时直接全量展开。
+         *
+         * 这就是「区块级跳转」的键盘出口——子分类 tab 是 roving 的 1 个停留点，
+         * 用 ←/→ 选中即看到该子分类的全部站点，不必再 Tab 到每个分组的
+         * 「展开全部 N 个」。只有「全部」视图仍保留逐组截断。
+         */
+        const expanded = forceFull || isFilterActive || selectedSubCatId !== null || Boolean(expandedGroups[entry.subCategory.id])
         return {
           ...entry,
           items: expanded || all.length <= limit ? all : all.slice(0, limit),
@@ -357,16 +372,24 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   /**
    * 「展开全部 / 收起」开关。占满整行（col-span-full），避免在半行末尾留空。
    * 只在「确实被截断」的组出现；切到排版/多选模式时整组直接全量展示，开关隐藏。
+   *
+   * 2026-11-09：子分类 tab 轨在场的分类里，本开关移出 Tab 序列（`tabIndex=-1`），
+   * 鼠标点击照旧；键盘用户走上面的 roving tab 轨选中子分类即可看到该组全部站点。
+   * 这样每个分类最多留下 1 个「展开全部」停留点，而不是十几个分组各一个。
+   * 没有 tab 轨（子分类 ≤1）的分类保持可聚焦，不为省停留点牺牲可用性。
    */
   const renderGroupToggle = (key: string, total: number) => {
     if (forceFull || !Number.isFinite(limit) || total <= limit) return null
     const expanded = Boolean(expandedGroups[key])
+    const hasSubCatRail = !isEditingLayout && subCats.length > 1
     return (
       <button
         type="button"
+        tabIndex={hasSubCatRail ? -1 : 0}
         onClick={() => setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }))}
         aria-expanded={expanded}
         data-group-toggle={key}
+        title={hasSubCatRail ? '键盘用户可用上方子分类切换查看该组全部站点' : undefined}
         className="col-span-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/70 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary cursor-pointer"
       >
         <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', expanded && 'rotate-180')} />
@@ -760,13 +783,39 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                           {!isCollapsed && totalCount >= 4 && (
                             <div className="flex items-center gap-1.5 ml-auto">
                               {categoryTopTags.length > 0 && (
-                                <div className="hidden lg:flex items-center gap-1">
-                                  {categoryTopTags.map((tag) => {
+                                <div
+                                  role="toolbar"
+                                  aria-label={`「${category.title}」热门标签筛选（←/→ 移动，回车切换）`}
+                                  aria-orientation="horizontal"
+                                  className="hidden lg:flex items-center gap-1"
+                                  onKeyDown={(e) => {
+                                    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Home' && e.key !== 'End') return
+                                    const chips = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-tag-chip]'))
+                                    if (chips.length === 0) return
+                                    const current = chips.findIndex((chip) => chip === document.activeElement)
+                                    if (current === -1) return
+                                    e.preventDefault()
+                                    const next =
+                                      e.key === 'Home'
+                                        ? 0
+                                        : e.key === 'End'
+                                          ? chips.length - 1
+                                          : e.key === 'ArrowRight'
+                                            ? (current + 1) % chips.length
+                                            : (current - 1 + chips.length) % chips.length
+                                    setTagFocusIndex(next)
+                                    chips[next]?.focus()
+                                  }}
+                                >
+                                  {categoryTopTags.map((tag, index) => {
                                     const isSelected = selectedTag === tag
                                     return (
                                       <button
                                         key={tag}
                                         type="button"
+                                        data-tag-chip
+                                        tabIndex={index === Math.min(tagFocusIndex, categoryTopTags.length - 1) ? 0 : -1}
+                                        onFocus={() => setTagFocusIndex(index)}
                                         onClick={() => setSelectedTag(isSelected ? null : tag)}
                                         className={cn(
                                           "px-2 py-0.5 min-h-6 inline-flex items-center rounded-md text-[11px] font-medium transition-colors cursor-pointer",

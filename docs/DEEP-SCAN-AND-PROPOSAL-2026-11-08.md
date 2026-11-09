@@ -1926,3 +1926,77 @@ expect(toolbar).toMatch(/onClick={(on)?[Tt]oggleSelectMode}/)
 
 工作区现在只剩那 2 个**不属于我**的改动（保持未提交，交给它的作者）。
 10 轮成果已全部入库，`check-committed-refs` 确认提交树自洽。
+
+---
+
+# 第二十二轮：给数据保留策略装上监控（2026-11-10）
+
+## 一、这轮怎么找到的
+
+前几轮都在读代码，这轮改看**运行时数据**。数据库 93.3 MB / 79 张表，
+按行数排序后发现三张只增不减的表：
+
+| 表 | 行数 |
+|---|---|
+| `audit_logs` | 6469 |
+| `health_checks` | 1955 |
+| `events` | 1821 |
+
+顺着查「有没有清理机制」，找到 `packages/store/src/retention.ts` 的
+`DEFAULT_RETENTION_TARGETS` —— 定义得很完整：
+
+```
+events         180 天
+audit_logs     365 天   ← 审计留得比行为事件久
+search_history 180 天
+site_archives  365 天
+health_checks  180 天
+```
+
+也有 CLI（`scripts/data-retention.mjs --apply`）与任务（`data_retention`）。
+
+**但没有任何门禁看着这件事。** 保留策略只存在于「有人记得去跑」的状态。
+
+## 二、实际积压情况：0
+
+实测五张表的过期行数：**全部 0**。
+
+```
+events           total=1821  expired=0
+audit_logs       total=6469  expired=0
+search_history   total= 120  expired=0
+site_archives    total=   0  expired=0
+health_checks    total=1955  expired=0
+```
+
+库是近期建立的，所有数据都在保留期内。**当前没有问题** ——
+但「现在没问题」不等于「以后会被发现」。
+
+## 三、做了什么
+
+把保留策略积压检查并入 `scripts/check-db-integrity.mjs`（它原本只查 9 项孤儿引用）：
+
+- 新增 5 项保留期检查，每项输出 `keep / total / expired / 占比`；
+- **判定线刻意放宽**：过期占比 > 50% **且** 过期行 > 5000 才判红。
+
+为什么放宽：保留期本来就允许自然滞后，刚过期几行不算运维问题；
+但如果过半的库都是死数据，那就该有人处理了。用「有任何过期行就红」会得到
+一条永远红的告警——那正是本仓库多次批评的「必然红灯的假门禁」的另一种形态。
+
+## 四、验证守卫真的会红
+
+复制数据库到临时文件，注入 6000 条 400 天前的 events，再跑 `--check`：
+
+```
+STALE  events  keep=180d  total=7811  expired=6000  (77%)
+[db-integrity] 保留策略严重积压表 = 1
+exit=1
+```
+
+判红准确、信息完整（哪张表、保留期、总数、过期数、占比）。
+真实库复核 exit=0，临时文件与 WAL/SHM 已全部清理。
+
+## 五、状态
+
+`check-db-integrity` 现在覆盖 **9 项引用完整性 + 5 项保留策略积压**（exit 0）、
+前端 tsc 0 error (exit 0)、docs 43/43 (exit 0)。

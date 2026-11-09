@@ -102,6 +102,58 @@ for (const chk of CHECKS) {
   }
 }
 
+
+/* ------------------------------------------------------------------ *
+ * 保留策略健康度（2026-11-10 补）
+ *
+ * 为什么加：`packages/store/src/retention.ts` 定义了 5 张表的保留期
+ * （events 180 天 / audit_logs 365 天 / search_history 180 天 /
+ * site_archives 365 天 / health_checks 180 天），也有 CLI 可清理
+ * （`scripts/data-retention.mjs --apply`），但**没有任何门禁看着这件事**。
+ * 长期不跑清理，库会静默膨胀 —— 这是"指标都在、没人看"的典型。
+ *
+ * 口径：只报**严重积压**（过期占比 > 50% 且绝对数 > 5000）才判红。
+ * 不按"有任何过期行"判红：保留期允许自然滞后，刚过期的几行不是运维问题；
+ * 但过半的库都是死数据时，就该有人处理了。
+ * ------------------------------------------------------------------ */
+const RETENTION_TARGETS = [
+  { table: "events", keepDays: 180, timeColumn: "created_at" },
+  { table: "audit_logs", keepDays: 365, timeColumn: "created_at" },
+  { table: "search_history", keepDays: 180, timeColumn: "created_at" },
+  { table: "site_archives", keepDays: 365, timeColumn: "created_at" },
+  { table: "health_checks", keepDays: 180, timeColumn: "checked_at" },
+];
+const RETENTION_RED_PCT = 50;
+const RETENTION_RED_MIN = 5000;
+
+let retentionCritical = 0;
+console.log("");
+console.log("[db-integrity] 保留策略积压：");
+for (const t of RETENTION_TARGETS) {
+  let total;
+  let expired;
+  try {
+    total = db.prepare('SELECT COUNT(*) c FROM "' + t.table + '"').get().c;
+    const cutoff = Date.now() - t.keepDays * 86_400_000;
+    expired = db.prepare('SELECT COUNT(*) c FROM "' + t.table + '" WHERE ' + t.timeColumn + " < ?").get(cutoff).c;
+  } catch (err) {
+    console.log("  SKIP  " + t.table.padEnd(16) + "  (" + String(err.message).slice(0, 50) + ")");
+    continue;
+  }
+  const pct = total > 0 ? (expired / total) * 100 : 0;
+  const critical = pct > RETENTION_RED_PCT && expired > RETENTION_RED_MIN;
+  if (critical) retentionCritical += 1;
+  console.log(
+    "  " + (critical ? "STALE" : "OK   ") + "  " + t.table.padEnd(16) +
+    " keep=" + String(t.keepDays).padStart(3) + "d" +
+    "  total=" + String(total).padStart(7) +
+    "  expired=" + String(expired).padStart(7) +
+    "  (" + pct.toFixed(0) + "%)",
+  );
+}
+console.log("[db-integrity] 保留策略严重积压表 =", retentionCritical,
+  "（判定线：过期占比 > " + RETENTION_RED_PCT + "% 且 > " + RETENTION_RED_MIN + " 行）");
+
 // 参考指标（不判红，只是让报告可读）
 const active = db.prepare("SELECT COUNT(*) c FROM sites WHERE deleted_at IS NULL").get().c;
 const softDeleted = db.prepare("SELECT COUNT(*) c FROM sites WHERE deleted_at IS NOT NULL").get().c;
@@ -112,7 +164,7 @@ console.log("[db-integrity] 活跃站点 =", active, "| 软删 =", softDeleted, 
 console.log("[db-integrity] 孤儿引用合计 =", orphans);
 
 db.close();
-if (asCheck && orphans > 0) {
-  console.error("[db-integrity] --check 未通过：存在 " + orphans + " 条孤儿引用");
+if (asCheck && (orphans > 0 || retentionCritical > 0)) {
+  console.error("[db-integrity] --check 未通过：孤儿引用 " + orphans + " 条，保留策略严重积压 " + retentionCritical + " 张表");
   process.exit(1);
 }

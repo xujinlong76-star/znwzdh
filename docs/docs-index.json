@@ -765,7 +765,7 @@
       },
       {
         "file": "check-db-integrity.mjs",
-        "purpose": "数据库引用完整性门禁（只读）：扫关联表指向 sites 里不存在 id 的孤儿行，防早期删站未级联的历史残留再次累积"
+        "purpose": "数据库引用完整性 + 保留策略健康（只读）：扫 9 项孤儿引用（关联表指向不存在的 sites/categories），并检查 events/audit_logs/search_history/site_archives/health_checks 五张表的保留期积压，过期占比 >50% 且 >5000 行判红"
       },
       {
         "file": "check-dead-modules.mjs",

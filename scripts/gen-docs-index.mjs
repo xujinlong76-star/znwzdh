@@ -265,7 +265,7 @@ const CHECK_SCRIPTS = [
   ["check-governance.mjs", "治理门禁聚合器：把 plan-status / env-surface / audit-exceptions 三条单一事实源合成 verify 一步"],
   // ---- 以下 12 份为 2026-11-08 补齐（原清单固定 30 份，磁盘实物已有 42 份）----
   ["check-csp-headers.mjs", "CSP 双档位契约测试：隔离 env 档位加载同一份 next.config.js 的 headers()，断言默认档不下发、enforce 档下发的策略（不依赖 Docker）"],
-  ["check-db-integrity.mjs", "数据库引用完整性门禁（只读）：扫关联表指向 sites 里不存在 id 的孤儿行，防早期删站未级联的历史残留再次累积"],
+  ["check-db-integrity.mjs", "数据库引用完整性 + 保留策略健康（只读）：扫 9 项孤儿引用（关联表指向不存在的 sites/categories），并检查 events/audit_logs/search_history/site_archives/health_checks 五张表的保留期积压，过期占比 >50% 且 >5000 行判红"],
   ["check-dead-modules.mjs", "死模块候选扫描棘轮：overlay 内 0 引用模块，仅「不在基线里的新候选」判红；BASELINE_NOTES 逐份登记 keep/delete 结论"],
   ["check-frontend-typecheck.mjs", "前端类型门禁棘轮：校验 apps/web（构建镜像）的 tsc --noEmit 错误数必须为 0，改 overlay 后需先同步镜像再跑"],
   ["check-generated-all.mjs", "生成/镜像链聚合入口：core 镜像 / 路由策略 / REST 契约 / overlay→web 四条链一次跑完，任一退出非 0 即整体判红"],

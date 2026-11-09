@@ -29,7 +29,12 @@ export function FavoriteButton({ site, className, tabIndex, cardAction }: Favori
       data-card-action={cardAction ? '' : undefined}
       title={faved ? `取消收藏${site.title ? '：' + site.title : ''}` : `收藏${site.title ? '：' + site.title : ''}`}
       aria-label={faved ? `取消收藏${site.title ? '：' + site.title : ''}` : `收藏${site.title ? '：' + site.title : ''}`}
-      className={'inline-flex items-center justify-center rounded-md p-1.5 transition-colors hover:bg-muted ' + (className ?? '')}
+      className={
+        (cardAction
+          ? 'inline-flex items-center justify-center h-6.5 w-6.5 rounded-full transition-colors hover:bg-accent '
+          : 'inline-flex items-center justify-center rounded-md p-1.5 transition-colors hover:bg-muted ') +
+        (className ?? '')
+      }
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -42,7 +47,7 @@ export function FavoriteButton({ site, className, tabIndex, cardAction }: Favori
         void favorites.toggle(site)
       }}
     >
-      <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
+      <Star className={(cardAction ? 'w-3.5 h-3.5 ' : 'h-4 w-4 ') + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
     </button>
   )
 }

@@ -12,7 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Eye, Star, Zap, Pin, Clock, Info, Copy } from 'lucide-react'
+import { Eye, Star, Zap, Pin, Clock, Info, Copy, ArrowUpToLine } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
@@ -405,7 +405,7 @@ export const NavigationCard = memo(function NavigationCard({
                     aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                     onClick={handleCategoryPin}
                   >
-                    <Pin className={cn("w-3 h-3", isPinnedInCategory && "fill-amber-500")} />
+                    <ArrowUpToLine className={cn("w-3 h-3", isPinnedInCategory && "fill-amber-500")} />
                   </Button>
                 )}
                 {detailAction('h-6 w-6 rounded-md')}
@@ -640,7 +640,7 @@ export const NavigationCard = memo(function NavigationCard({
                     aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                     onClick={handleCategoryPin}
                   >
-                    <Pin className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
+                    <ArrowUpToLine className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
                   </Button>
                 )}
                 {detailAction('h-7 w-7 rounded-full')}
@@ -880,7 +880,7 @@ export const NavigationCard = memo(function NavigationCard({
                   aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                   onClick={handleCategoryPin}
                 >
-                  <Pin className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
+                  <ArrowUpToLine className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
                 </Button>
               )}
               {detailAction('h-6.5 w-6.5 rounded-full')}

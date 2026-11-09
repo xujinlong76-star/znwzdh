@@ -38,7 +38,7 @@ function snapshot(jobs: unknown[], headSha: string | null = SAME) {
 
 const GREEN = snapshot([
   row({ job: "test-sqlite", name: "测试（SQLite 默认方言，分片 1/3）" }),
-  row({ job: "test-web", name: "前端门禁", gateTotal: 5, ran: 1, defused: 4, conclusion: "failure" }),
+  row({ job: "test-web", name: "前端门禁", gateTotal: 6, ran: 2, defused: 4, conclusion: "failure" }),
   row({ job: "check-web-overlay", name: "覆盖层规范", gateTotal: 8, ran: 8 }),
 ]);
 
@@ -143,15 +143,16 @@ describe("check-defused-thickness CLI：三档退出码各有各的形状", () =
     expect(j.readableJobs).toBe(1);
     // 2026-11-06：26 → 29（coverage 作业 +2、test-e2e 的 quarantine-e2e +1）
     // 2026-11-07：29 → 30（check-web-overlay 的 check-web-config-parity +1）
-    expect(j.registryGateTotal).toBe(30);
+    // 2026-11-09：30 → 31（test-web 的 web-no-explicit-any +1）
+    expect(j.registryGateTotal).toBe(31);
     expect(j.exitCode).toBe(0);
   });
 
   it("消融：判据改用 ran 与期望比 ⇒ web 真红那轮会被误报成薄账（基准必须是写侧报的总数）", async () => {
     const { rc } = await run(["--from", "-"], GREEN, LOCAL);
     expect(rc).toBe(0);
-    // 同一份数据，若拿 ran 当基准：test-web 期望 5、ran 1 ⇒ 假红一条
-    const naive = 5 - 1;
+    // 同一份数据，若拿 ran 当基准：test-web 期望 6、ran 2 ⇒ 假红一条
+    const naive = 6 - 2;
     expect(naive).toBeGreaterThan(0);
   });
 });

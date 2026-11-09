@@ -226,6 +226,11 @@ export const DEFUSED_GATES = [
     gates: [
       { id: "web-typecheck", label: "Web tsc --noEmit" },
       { id: "web-lint", label: "Web eslint" },
+      {
+        id: "web-no-explicit-any",
+        label: "显式 any 棘轮（按文件基线只减不增）",
+        note: "eslint 该规则按台账 off，本步骤用 AST 语法树替代；阻断式，无 continue-on-error",
+      },
       { id: "web-build", label: "next build" },
       { id: "web-budget", label: "首屏预算硬门禁" },
       {

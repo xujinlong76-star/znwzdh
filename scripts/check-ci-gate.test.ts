@@ -294,7 +294,8 @@ describe("check-ci-gate 第 7 项：撤防账接线", () => {
     // 2026-11-06 coverage 作业接入：+2 道门禁（vitest-coverage / coverage-threshold）→ 28。
     // 2026-11-06 E2E 隔离接线：+1 道（quarantine-e2e，不阻塞但必须进读数）→ 29。
     // 2026-11-07 九维评审 1-2：check-web-overlay 新增 gate-config-parity（四条构建路径配置同源）→ 30。
-    expect(res.out).toContain("撤防账已接线（9 个作业 / 30 道门禁");
+    // 2026-11-09：test-web 新增 web-no-explicit-any（显式 any 棘轮进 CI）→ 31。
+    expect(res.out).toContain("撤防账已接线（9 个作业 / 31 道门禁");
     expect(source().split("run: node scripts/ci-defused-gates.mjs").length - 1).toBe(9);
   });
 

@@ -67,6 +67,10 @@ export default defineConfig([
         //
         // 1. no-explicit-any（~289 处）：API 层（navhub-api.ts 等）与模块化布局的
         //    类型债。修复 = 逐调用点补真实类型，属独立类型工程。
+        //    2026-11-09 起不再「只降级不设防」：规则保持 off（避免 289 条存量噪音淹没
+        //    其它告警），改由 scripts/check-no-explicit-any.mjs 的按文件基线棘轮接管——
+        //    pre-commit 用 --staged，CI 的 test-web / web-no-explicit-any 用全量口径，
+        //    新增文件或已有文件回增即红；逐批清零后下调 baseline 即可收紧。
         "@typescript-eslint/no-explicit-any": "off",
 
         // 2. React Compiler / hooks v6 诊断族（~136 处）：set-state-in-effect 占大头，

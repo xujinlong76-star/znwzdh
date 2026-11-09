@@ -515,7 +515,7 @@ describe("撤防账：CLI（ci-defused-gates.mjs）", () => {
       NAVHUB_STEP_CONCLUSIONS: JSON.stringify(conclusionsOf(entryOf("test-web"))),
     });
     expect(res.status, res.out).toBe(0);
-    expect(res.out).toContain("5 道门禁全部跑过");
+    expect(res.out).toContain("6 道门禁全部跑过");
     expect(res.out).not.toContain("::warning");
   });
 
@@ -532,7 +532,7 @@ describe("撤防账：CLI（ci-defused-gates.mjs）", () => {
     );
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("::notice title=CI 门禁撤防::");
-    expect(res.out).toContain("5 道门禁全部跑过");
+    expect(res.out).toContain("6 道门禁全部跑过");
     const summary = readFileSync(summaryPath, "utf8").replace(/\r\n/g, "\n");
     expect(summary).toContain("撤防账 · test-web");
     expect(summary).toContain("`web-isr`"); // 跑过的门禁 id 逐个列出来，才算「判过」的证据
@@ -818,13 +818,13 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
       .join("\n");
   }
 
-  it("绿色一轮的日志 ⇒ 读出 5 道全跑过、0 道撤防、准备步骤 2 个在册", () => {
+  it("绿色一轮的日志 ⇒ 读出 6 道全跑过、0 道撤防、准备步骤 2 个在册", () => {
     const t = lib.parseDefusedTrace(asRawLog(cliText("test-web")));
     expect(t.found).toBe(true);
     expect(t.job).toBe("test-web");
-    expect(t.gateTotal).toBe(5);
+    expect(t.gateTotal).toBe(6);
     expect(t.defused).toBe(0);
-    expect(t.ran).toBe(5);
+    expect(t.ran).toBe(6);
     expect(t.envTotal).toBe(2);
     expect(t.green).toBe(true);
     expect(t.ids).toEqual([]);
@@ -840,9 +840,10 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
     );
     const t = lib.parseDefusedTrace(log);
     expect(t.found).toBe(true);
-    expect(t.gateTotal).toBe(5);
+    expect(t.gateTotal).toBe(6);
     expect(t.defused).toBe(4);
-    expect(t.ran).toBe(1);
+    // 6 道减 4 道没跑成 = web-typecheck（判红）+ web-no-explicit-any（跑过）
+    expect(t.ran).toBe(2);
     expect(t.ids).toEqual(["web-lint", "web-build", "web-budget", "web-isr"]);
     expect(t.blocker).toBe("web-typecheck");
     expect(t.blockerKind).toBe("判红");
@@ -1002,11 +1003,11 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
       .map((l) => l.replace("::notice title=CI 门禁撤防::", "##[notice]"))
       .join("\n");
     // 这条夹具是「CLI 原文 → runner 改写」的等价变换，措辞仍跟着写侧走
-    expect(rendered).toMatch(/^##\[notice\]test-web 5 道门禁全部跑过（在册准备步骤 2 个）$/);
+    expect(rendered).toMatch(/^##\[notice\]test-web 6 道门禁全部跑过（在册准备步骤 2 个）$/);
     const t = lib.parseDefusedTrace(`${rendered}\n2026-10-30T05:47:20.2345147Z Post job cleanup.`);
     expect(t.found).toBe(true);
     expect(t.green).toBe(true);
-    expect(t.gateTotal).toBe(5);
+    expect(t.gateTotal).toBe(6);
     expect(t.envTotal).toBe(2);
   });
 

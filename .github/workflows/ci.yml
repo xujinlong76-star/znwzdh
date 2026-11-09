@@ -245,10 +245,18 @@ jobs:
       # Next 16 移除了 `next lint`（eslint-config-next@16 改为扁平配置 + ESLint CLI）。
       # 2026-11-07 起棘轮门禁（--max-warnings 316 = 2026-11-07 实测基线）：vendor-only 文件
       # 已在 eslint.config.mjs ignores 登记排除（20 个，方括号目录需转义）；
-      # no-explicit-any 与 react-hooks v6 族按台账显式降级；unused-vars 棘轮不许新增。
+      # react-hooks v6 族按台账显式降级；unused-vars 棘轮不许新增。
       # 目标：unused-codemod epic 清零后降为 --max-warnings 0。
       - run: pnpm --filter navsphere exec eslint . --max-warnings 316
         id: web-lint
+      # 显式 any 棘轮（2026-11-09 补 CI）：eslint 的 no-explicit-any 仍按台账 off
+      # （存量 289 处属独立类型工程，开规则会一次冒出 289 条存量噪音），改由本步骤用
+      # TypeScript 语法树按 scripts/no-explicit-any-baseline.json **逐文件只减不增**：
+      # 已有文件回增 → 红；基线里没有的文件新出现 any → 红；低于基线 → 通过并提示收紧。
+      # 阻断式（无 continue-on-error）：与 pre-commit 的 `--staged` 同源同判据，
+      # 绕过钩子的提交（--no-verify）在这里被同一口径拦下。
+      - run: node scripts/check-no-explicit-any.mjs
+        id: web-no-explicit-any
       - run: pnpm --filter navsphere build
         id: web-build
       # 首屏 JS 预算硬门禁：build 产物已就绪。阈值在 scripts/bundle-budget.json，

@@ -23,7 +23,8 @@ describe("撤防账厚度棘轮：写侧报的道数必须等于登记表期望"
       row({ job: "test-sqlite", name: "测试（SQLite 默认方言，分片 1/3）", gateTotal: 3, ran: 3 }),
       row({ job: "test-sqlite", name: "测试（SQLite 默认方言，分片 2/3）", gateTotal: 3, ran: 3 }),
       row({ job: "test-postgres", gateTotal: 2, ran: 2 }),
-      row({ job: "test-web", gateTotal: 5, ran: 1, defused: 4 }),
+      // 2026-11-09：test-web 增了 web-no-explicit-any，期望 5 → 6
+      row({ job: "test-web", gateTotal: 6, ran: 2, defused: 4 }),
       // 2026-11-06：test-e2e 增了 quarantine-e2e（E2E 隔离取证），期望 1 → 2
       row({ job: "test-e2e", gateTotal: 2, ran: 2 }),
       row({ job: "check-isr-live", gateTotal: 4, ran: 4 }),
@@ -44,7 +45,7 @@ describe("撤防账厚度棘轮：写侧报的道数必须等于登记表期望"
   });
 
   it("厚账 ⇒ 说「新门禁进了 ci.yml 没进登记表」，不许反写成薄账", () => {
-    const out = thicknessFindings([row({ job: "test-web", gateTotal: 6, ran: 6 })], REG);
+    const out = thicknessFindings([row({ job: "test-web", gateTotal: 7, ran: 7 })], REG);
     expect(out.findings[0].kind).toBe("fat");
     expect(out.findings[0].message).toContain("没进登记表");
   });
@@ -96,19 +97,20 @@ describe("撤防账厚度棘轮：写侧报的道数必须等于登记表期望"
   });
 
   it("消融：基准退回「比 ran 与期望」⇒ web 真红那轮会被多造一条假薄账", () => {
-    // 真实形状：test-web 5 道里 1 道跑过、4 道被上游红跳过——道数没错，是门禁没跑成。
-    const rows = [row({ job: "test-web", ran: 1, defused: 4, gateTotal: 5 })];
+    // 真实形状：test-web 6 道里 2 道跑过、4 道被上游红跳过——道数没错，是门禁没跑成。
+    const rows = [row({ job: "test-web", ran: 2, defused: 4, gateTotal: 6 })];
     expect(thicknessFindings(rows, REG).findings).toEqual([]);
     const naive = rows.filter((r) => r.ran !== REG.registry.find((e) => e.job === r.job)!.gates.length);
     expect(naive).toHaveLength(1);
   });
 
-  it("登记表唯一合计仍是 30（改登记表要连带改这里的期望）", () => {
+  it("登记表唯一合计仍是 31（改登记表要连带改这里的期望）", () => {
     // 2026-11-06：26 → 29。增量为三处，逐一说明，避免「数字对不上就随手改大」：
     //   +1 coverage 作业的 2 道（vitest-coverage / coverage-threshold）→ +2
     //   +1 test-e2e 的 quarantine-e2e（E2E 隔离用例取证，不阻塞但必须进读数）→ +1
     // 2026-11-07：29 → 30（check-web-overlay 的 check-web-config-parity +1）。
-    // 合计 26 + 2 + 1 + 1 = 30。
-    expect(DEFUSED_GATES.reduce((s, e) => s + (e.gates ?? []).length, 0)).toBe(30);
+    // 2026-11-09：30 → 31（test-web 的 web-no-explicit-any +1，显式 any 棘轮进 CI）。
+    // 合计 26 + 2 + 1 + 1 + 1 = 31。
+    expect(DEFUSED_GATES.reduce((s, e) => s + (e.gates ?? []).length, 0)).toBe(31);
   });
 });

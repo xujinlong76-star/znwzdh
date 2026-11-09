@@ -32,6 +32,15 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
   const { collapsedCategoryIds, expandCategory } = useHomeDIY()
 
   const scrollToSection = (id: string, parentCategoryId?: string) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('lazy-mount-target', { detail: { sectionId: id } }))
+      ;(window as unknown as { __navhub_programmatic_scroll?: boolean }).__navhub_programmatic_scroll = true
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          ;(window as unknown as { __navhub_programmatic_scroll?: boolean }).__navhub_programmatic_scroll = false
+        }
+      }, 700)
+    }
     if (parentCategoryId && collapsedCategoryIds.includes(parentCategoryId)) {
       expandCategory(parentCategoryId)
     } else if (collapsedCategoryIds.includes(id)) {

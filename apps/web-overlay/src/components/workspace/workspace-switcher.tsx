@@ -247,9 +247,9 @@ export function WorkspaceSwitcher() {
               </span>
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              <Badge variant="outline" className={`px-1.5 py-0 text-[10px] shrink-0 whitespace-nowrap ${roleMeta.color}`}>
-                <RoleIcon className="mr-0.5 h-2.5 w-2.5 shrink-0" />
-                {roleMeta.label}
+              <Badge variant="outline" className={`px-1.5 py-0 text-[10px] shrink-0 whitespace-nowrap flex items-center ${roleMeta.color}`} title={roleMeta.label}>
+                <RoleIcon className="h-2.5 w-2.5 shrink-0 sm:mr-0.5" />
+                <span className="hidden min-[1680px]:inline">{roleMeta.label}</span>
               </Badge>
               <ChevronDown className="h-3 w-3 text-muted-foreground opacity-60 shrink-0" />
             </div>

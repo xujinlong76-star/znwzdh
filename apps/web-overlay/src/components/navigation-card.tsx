@@ -476,7 +476,7 @@ export const NavigationCard = memo(function NavigationCard({
               draggable={isDraggable}
               onDragStart={handleDragStart}
               className={cn(
-                "nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
+                "nav-card-deferred group @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/70 hover:ring-1 hover:ring-primary/40",
                 selectionClass
@@ -507,8 +507,8 @@ export const NavigationCard = memo(function NavigationCard({
                 <span className="sr-only">{`访问 ${item.title}`}</span>
               </a>
 
-              <div className="relative z-10 pointer-events-none">
-                <CardHeader className="p-4 sm:p-5">
+              <div className="relative z-10 pointer-events-none flex flex-col flex-1">
+                <CardHeader className="p-4 sm:p-5 flex-1">
                   <div className="flex items-start gap-3.5">
                     <div className="flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                       <SiteFavicon
@@ -569,13 +569,9 @@ export const NavigationCard = memo(function NavigationCard({
                     </div>
                   </div>
                 </CardHeader>
-              </div>
 
-              {/* 丰富标签池：与外链覆盖层、标题内链同为兄弟节点（<a> 不嵌 <a>）。
-                  标签是真内链：/tags/{slug} 与 sitemap、标签云同形态
-                  （tagSlug 与 store slugify 同构，见 lib/seo/tag-slug.ts），
-                  给标签页提供来自首页的内链——这是 Batch C 的核心。 */}
-              <div className="relative z-10 pointer-events-none flex items-center gap-1.5 px-4 sm:px-5 pb-4 sm:pb-5 flex-wrap min-h-[2rem]">
+                {/* 丰富标签池：mt-auto 锁定底部基线 */}
+                <div className="relative z-10 pointer-events-none flex items-center gap-1.5 px-4 sm:px-5 pb-4 sm:pb-5 flex-wrap min-h-[2rem] mt-auto">
                 {item.tags?.slice(0, 3).map((tag) => (
                   <Link
                     key={tag}
@@ -605,6 +601,7 @@ export const NavigationCard = memo(function NavigationCard({
                     <span>深链</span>
                   </span>
                 )}
+              </div>
               </div>
 
               {/* 操作区：右上角悬浮药丸胶囊 */}
@@ -713,7 +710,7 @@ export const NavigationCard = memo(function NavigationCard({
             draggable={isDraggable}
             onDragStart={handleDragStart}
             className={cn(
-              "nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
+              "nav-card-deferred group @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
               isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
               selectionClass
@@ -752,101 +749,99 @@ export const NavigationCard = memo(function NavigationCard({
               </span>
             </div>
 
-            <div className="relative z-10 pointer-events-none">
-              <CardHeader className="p-[var(--density-card-padding,0.875rem)]">
-                <div className="flex items-start gap-2.5 @[280px]:gap-3">
-                  <div className="flex-shrink-0 w-9 h-9 @[280px]:w-10 @[280px]:h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
-                    <SiteFavicon
-                      title={item.title}
-                      url={item.href}
-                      icon={item.icon}
-                      useDefaultIcon={item.useDefaultIcon}
-                      className="w-full h-full object-contain rounded-xs"
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 ">
-                      <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors min-w-0 flex-1">
-                        {hasSiteDetail ? (
-                          <Link
-                            href={siteDetailHref}
-                            onClick={handleDetailClick}
-                            tabIndex={-1}
-                            className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
-                          >
-                            {item.title}
-                          </Link>
-                        ) : (
-                          <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
-                        )}
-                      </CardTitle>
-                    </div>
-
-                    <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1 break-words min-h-[2.5rem]">
-                      {item.description || '\u00A0'}
-                    </CardDescription>
-
-                    {/* 徽标、指标与深链行：自适应折叠，绝不挤压主标题 */}
-                    {(item.liveMetrics?.githubStars || item.health?.ok === false || topAlternative || (item.actions && item.actions.length > 0)) && (
-                      <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
-                        {item.liveMetrics?.githubStars && (
-                          <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
-                            <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
-                            {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
-                          </span>
-                        )}
-                        {item.health?.ok === false && (
-                          <span
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              onPeek?.(item)
-                            }}
-                            className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
-                            title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
-                          >
-                            <Clock className="w-2.5 h-2.5 text-amber-500" />
-                            <span>快照自愈</span>
-                          </span>
-                        )}
-                        {topAlternative && (
-                          <span
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              onPeek?.(item)
-                            }}
-                            className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer shrink-0"
-                          >
-                            <span>平替: {topAlternative.targetTitle}</span>
-                          </span>
-                        )}
-                        {item.actions && item.actions.length > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
-                            <Zap className="w-2.5 h-2.5" />
-                            <span>深链</span>
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+            <div className="relative z-10 pointer-events-none flex flex-col flex-1 p-[var(--density-card-padding,0.875rem)]">
+              {/* Header 层：图标与标题同行，释放左侧死区 */}
+              <div className="flex items-center gap-2.5 min-w-0 pr-14">
+                <div className="flex-shrink-0 w-7 h-7 @[280px]:w-8 @[280px]:h-8 rounded-lg p-1 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
+                  <SiteFavicon
+                    title={item.title}
+                    url={item.href}
+                    icon={item.icon}
+                    useDefaultIcon={item.useDefaultIcon}
+                    className="w-full h-full object-contain rounded-xs"
+                  />
                 </div>
-              </CardHeader>
-            </div>
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors min-w-0 flex-1">
+                    {hasSiteDetail ? (
+                      <Link
+                        href={siteDetailHref}
+                        onClick={handleDetailClick}
+                        tabIndex={-1}
+                        className="pointer-events-auto block text-foreground group-hover:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
+                      >
+                        {item.title}
+                      </Link>
+                    ) : (
+                      <span className="block text-foreground group-hover:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
+                    )}
+                  </CardTitle>
+                </div>
+              </div>
 
-            {/* 标签栏：保持双列网格垂直重心平衡 */}
-            <div className="relative z-10 pointer-events-none flex items-center gap-1 px-[var(--density-card-padding,0.875rem)] pb-[var(--density-card-padding,0.875rem)] pt-0 flex-wrap min-h-[1.75rem]">
-              {item.tags?.slice(0, 3).map((tag) => (
-                <Link
-                  key={tag}
-                  href={'/tags/' + encodeURIComponent(tagSlug(tag))}
-                  onClick={handleTagClick}
-                  tabIndex={-1}
-                  className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.2 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
-                >
-                  #{tag}
-                </Link>
-              ))}
+              {/* Body 层：描述文字全宽流动（与图标左边缘对齐，横向宽度扩充） */}
+              <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-2.5 break-words min-h-[2.5rem] flex-1">
+                {item.description || '\u00A0'}
+              </CardDescription>
+
+              {/* 徽标、指标与深链行：自适应折叠，绝不挤压主标题 */}
+              {(item.liveMetrics?.githubStars || item.health?.ok === false || topAlternative || (item.actions && item.actions.length > 0)) && (
+                <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
+                  {item.liveMetrics?.githubStars && (
+                    <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
+                      <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+                      {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
+                    </span>
+                  )}
+                  {item.health?.ok === false && (
+                    <span
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        onPeek?.(item)
+                      }}
+                      className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
+                      title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
+                    >
+                      <Clock className="w-2.5 h-2.5 text-amber-500" />
+                      <span>快照自愈</span>
+                    </span>
+                  )}
+                  {topAlternative && (
+                    <span
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        onPeek?.(item)
+                      }}
+                      className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer shrink-0"
+                    >
+                      <span>平替: {topAlternative.targetTitle}</span>
+                    </span>
+                  )}
+                  {item.actions && item.actions.length > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
+                      <Zap className="w-2.5 h-2.5" />
+                      <span>深链</span>
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* 标签栏：mt-auto 强制锁定卡片底部基线，同行标签严丝合缝对齐 */}
+              <div className="mt-auto pt-2.5 flex items-center gap-1 flex-wrap min-h-[1.75rem]">
+                {item.tags?.slice(0, 3).map((tag) => (
+                  <Link
+                    key={tag}
+                    href={'/tags/' + encodeURIComponent(tagSlug(tag))}
+                    onClick={handleTagClick}
+                    tabIndex={-1}
+                    className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.2 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
+                  >
+                    #{tag}
+                  </Link>
+                ))}
+              </div>
             </div>
 
             {/* 操作区：右上角悬浮药丸胶囊 */}

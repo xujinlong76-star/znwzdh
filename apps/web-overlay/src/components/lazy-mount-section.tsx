@@ -64,6 +64,18 @@ export function LazyMountSection({
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleTarget = (e: Event) => {
+      const custom = e as CustomEvent<{ sectionId?: string }>
+      if (custom.detail?.sectionId === sectionId) {
+        setMounted(true)
+      }
+    }
+    window.addEventListener('lazy-mount-target', handleTarget)
+    return () => window.removeEventListener('lazy-mount-target', handleTarget)
+  }, [sectionId])
+
+  useEffect(() => {
     if (force) {
       setMounted(true)
       return
@@ -78,6 +90,10 @@ export function LazyMountSection({
     }
     const io = new IntersectionObserver(
       (entries) => {
+        // 程序化高速跳转进行时，忽略中途掠过的区块，避免大量 DOM 突发膨胀导致的锚点漂移与剧烈抖动
+        if (typeof window !== 'undefined' && (window as unknown as { __navhub_programmatic_scroll?: boolean }).__navhub_programmatic_scroll) {
+          return
+        }
         if (entries.some((entry) => entry.isIntersecting)) {
           setMounted(true)
           io.disconnect()
@@ -113,11 +129,18 @@ export function LazySectionPlaceholder({
   title: string
   count: number
 }) {
+  // 根据站点数量与 3 列布局估算占位高度，利用 contain-intrinsic-size 杜绝长距离跳转时的滚动条抖动 (Jumpiness)
+  const estimatedRows = Math.max(1, Math.ceil(Math.min(count, 6) / 3))
+  const estimatedHeight = Math.min(600, Math.max(140, estimatedRows * 120 + 48))
+
   return (
     <section
       id={`${sectionId}-placeholder`}
-      className="group relative scroll-m-16 rounded-2xl border border-dashed border-border/60 bg-muted/20 p-4"
-      style={{ minHeight: 132 }}
+      className="group relative scroll-m-16 rounded-2xl border border-dashed border-border/60 bg-muted/20 p-4 transition-all duration-200"
+      style={{
+        minHeight: `${estimatedHeight}px`,
+        containIntrinsicSize: `auto ${estimatedHeight}px`,
+      }}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -130,12 +153,17 @@ export function LazySectionPlaceholder({
         <button
           type="button"
           onClick={() => {
-            // 交给 IntersectionObserver 之外的显式入口：滚过去即可触发挂载
-            const el = document.getElementById(sectionId)
-            el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            // 直接通知该分区完成挂载，并在下一微任务平滑对齐视口
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('lazy-mount-target', { detail: { sectionId } }))
+            }
+            requestAnimationFrame(() => {
+              const el = document.getElementById(sectionId)
+              el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            })
           }}
           className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary cursor-pointer shrink-0"
-                >
+        >
           <ChevronDown className="w-3.5 h-3.5" />
           <span>滚动加载该分类</span>
         </button>

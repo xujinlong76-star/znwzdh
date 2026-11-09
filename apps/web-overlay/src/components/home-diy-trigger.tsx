@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { AlertTriangle, SlidersHorizontal, X } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
@@ -41,6 +42,34 @@ function warmToolbarChunk() {
 
 export function HomeDIYTrigger() {
   const { isEditingLayout, toggleEditingLayout, storageWarning, dismissStorageWarning } = useHomeDIY()
+  const [isScrollingDown, setIsScrollingDown] = useState(false)
+  const lastScrollYRef = useRef(0)
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const checkScroll = useCallback(() => {
+    if (typeof window === 'undefined') return
+    const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
+    const prevY = lastScrollYRef.current
+    if (scrollY > prevY + 12 && scrollY > 200) {
+      setIsScrollingDown(true)
+    } else if (scrollY < prevY - 6) {
+      setIsScrollingDown(false)
+    }
+    lastScrollYRef.current = scrollY
+
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current)
+    scrollTimerRef.current = setTimeout(() => {
+      setIsScrollingDown(false)
+    }, 250)
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('scroll', checkScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', checkScroll)
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current)
+    }
+  }, [checkScroll])
 
   // 编辑态由 HUD 接管，静息入口必须让位（否则两个浮层会叠在同一位置）
   if (isEditingLayout) return null
@@ -71,7 +100,10 @@ export function HomeDIYTrigger() {
       )}
 
       <div
-        className="fixed z-50 pointer-events-auto left-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:left-auto sm:right-4 sm:bottom-4"
+        className={cn(
+          "fixed z-40 left-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:left-auto sm:right-4 sm:bottom-3.5 transition-all duration-200",
+          isScrollingDown ? "opacity-0 translate-y-3 pointer-events-none" : "opacity-90 hover:opacity-100 translate-y-0 pointer-events-auto"
+        )}
         onMouseEnter={warmToolbarChunk}
         onFocus={warmToolbarChunk}
         onTouchStart={warmToolbarChunk}
@@ -80,7 +112,7 @@ export function HomeDIYTrigger() {
           variant="outline"
           size="sm"
           onClick={toggleEditingLayout}
-          className="h-8 px-2.5 rounded-full text-xs font-semibold gap-1.5 shadow-md hover:shadow-lg bg-background/90 dark:bg-card/90 backdrop-blur-md border border-border/80 text-foreground hover:text-primary transition-all duration-200"
+          className="h-7.5 px-2.5 rounded-full text-xs font-semibold gap-1.5 shadow-sm hover:shadow-md bg-background/85 dark:bg-card/85 backdrop-blur-md border border-border/80 text-foreground hover:text-primary transition-all duration-200 opacity-90 hover:opacity-100"
           title="开启 DIY 排版与智能编排工坊 (快捷键: E)"
         >
           <SlidersHorizontal className="w-3.5 h-3.5 text-primary" />

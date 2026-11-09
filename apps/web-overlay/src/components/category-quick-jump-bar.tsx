@@ -105,6 +105,15 @@ export function CategoryQuickJumpBar({
   }, [categories])
 
   const scrollToId = (id: string) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('lazy-mount-target', { detail: { sectionId: id } }))
+      ;(window as unknown as { __navhub_programmatic_scroll?: boolean }).__navhub_programmatic_scroll = true
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          ;(window as unknown as { __navhub_programmatic_scroll?: boolean }).__navhub_programmatic_scroll = false
+        }
+      }, 700)
+    }
     const element = document.getElementById(id)
     if (element) {
       const topOffset = 110 // 吸顶栏高度缓冲

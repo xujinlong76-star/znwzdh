@@ -85,6 +85,17 @@ const DIRECTORY_CATEGORY_LINKS = 50;
  * 非超预算不动。其余卡片点「展开全部」在客户端即时揭示（数据本来就在 props 里，
  * 展开不发请求、没有加载态）。
  *
+ * 2026-11-09 孤儿行治理：保持默认 4，由 CSS 按**真实列数**收敛。
+ *
+ * 曾把默认值改成 3 来消除 3 列网格的 3+1 孤儿，但实测列数并不只有 3：
+ *   - 1 列（≤516px 容器）、2 列（516~781px）、3 列（782~1047px）、4 列（≥1048px）
+ *   - 4 张卡在 1/2/4 列下都恰好整行，只有 3 列是 3+1 孤儿；
+ *   - 改成 3 之后，4 列变成「3 张 + 1 个空格」，2 列反而变成 2+1 孤儿。
+ *
+ * 因此保留 4，由 globals.css 的 [data-grid-cols="3"] 规则在折叠态隐藏第 4 张。
+ * 列数由 navigation-category-section.tsx 的 ResizeObserver 读 grid-template-columns
+ * 得出，不靠视口断点猜（左侧栏宽度可拖拽，视口宽度推不出列数）。
+ *
  * `NAVHUB_HOME_CARDS_PER_GROUP` 可覆盖；传 0 即恢复全量 SSR 的旧行为。
  */
 const HOME_CARDS_PER_GROUP_DEFAULT = 4;

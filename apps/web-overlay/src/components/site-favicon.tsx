@@ -86,6 +86,17 @@ export function extractFaviconMonogram(title: string, _url?: string): string {
 }
 
 export const LOCAL_LOGO_MAP: Record<string, string> = {
+  // 2026-11-09：高频开发工具的品牌图标本地静态化。
+  // 这些站点原先走 /api/hub/assets/icon 代理，而代理在拿不到外网 favicon 时会
+  // 回落到「渐变底 + 首字母」的生成 SVG，视觉上和纯字母色块没有区别。
+  // 构建期把 Simple Icons 的官方矢量图落到 public/，运行时零外网依赖。
+  // 放 public/brand-icons/ 而不是 public/assets/images/logos/：后者被
+  // scripts/lib/overlay-drift.mjs 的 EXCLUDE_PREFIX 整目录排除（那是上游底座资产），
+  // 放进去的文件永远不会被镜像同步到 apps/web/public。
+  'vuejs.org': '/brand-icons/vue.svg',
+  'npmjs.com': '/brand-icons/npm.svg',
+  'vite.dev': '/brand-icons/vite.svg',
+  'pnpm.io': '/brand-icons/pnpm.svg',
   'video.hunyuan.tencent.com': 'https://hunyuan.tencent.com/favicon.ico',
   'hunyuan.tencent.com': 'https://hunyuan.tencent.com/favicon.ico',
   'tongyi.aliyun.com': 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
@@ -291,8 +302,29 @@ export function resolveSiteIcon(
   }
 }
 
-// 记录加载失败过的图标地址，避免重复发起失效请求
-const failedFaviconCache = new Set<string>()
+/**
+ * 记录加载失败过的图标地址，避免同一会话里反复发起失效请求。
+ *
+ * 带 TTL：瞬时网络抖动 / 代理冷启动失败不能把一个站点**永久**钉死成字母徽标。
+ * 之前用 Set 不过期，一次失败后该 URL 在本页生命周期内再也不会重试，
+ * 正是「高频工具长期显示纯字母色块」的隐藏成因之一。
+ */
+const FAILED_FAVICON_TTL_MS = 5 * 60 * 1000
+const failedFaviconCache = new Map<string, number>()
+
+export function isKnownBadIcon(src: string): boolean {
+  const failedAt = failedFaviconCache.get(src)
+  if (failedAt === undefined) return false
+  if (Date.now() - failedAt > FAILED_FAVICON_TTL_MS) {
+    failedFaviconCache.delete(src)
+    return false
+  }
+  return true
+}
+
+export function markIconFailed(src: string): void {
+  failedFaviconCache.set(src, Date.now())
+}
 
 export function SiteFavicon({
   title = '',
@@ -330,7 +362,7 @@ export function SiteFavicon({
 
   const monogram = extractFaviconMonogram(title, url)
   const gradient = getDeterministicGradient(title || url || 'navhub')
-  const shouldRenderImg = !useDefaultIcon && !imgError && Boolean(effectiveIcon) && !failedFaviconCache.has(effectiveIcon)
+  const shouldRenderImg = !useDefaultIcon && !imgError && Boolean(effectiveIcon) && !isKnownBadIcon(effectiveIcon)
 
   // 水合与缓存即时感知：若图片已由浏览器完成解码（或来自本地/HTTP缓存），立即置为已加载，防止依赖 onLoad 漏触发
   const handleImgRef = React.useCallback((node: HTMLImageElement | null) => {
@@ -369,7 +401,7 @@ export function SiteFavicon({
           width={24}
           height={24}
           onError={() => {
-            failedFaviconCache.add(effectiveIcon)
+            markIconFailed(effectiveIcon)
             setImgError(true)
           }}
           onLoad={(e) => {
@@ -380,7 +412,7 @@ export function SiteFavicon({
                   e.currentTarget.naturalHeight === 16 &&
                   effectiveIcon.includes('google.com/s2/favicons')))
             ) {
-              failedFaviconCache.add(effectiveIcon)
+              markIconFailed(effectiveIcon)
               setImgError(true)
             } else if (e.currentTarget.naturalWidth > 1) {
               setImgLoaded(true)

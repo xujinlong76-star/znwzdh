@@ -511,8 +511,8 @@
   }
 
   .canvas-bg-grid {
-    background-image: linear-gradient(to right, hsl(var(--border) / 0.4) 1px, transparent 1px),
-                      linear-gradient(to bottom, hsl(var(--border) / 0.4) 1px, transparent 1px);
+    background-image: linear-gradient(to right, hsl(var(--border) / 0.15) 1px, transparent 1px),
+                      linear-gradient(to bottom, hsl(var(--border) / 0.15) 1px, transparent 1px);
     background-size: 28px 28px;
   }
 
@@ -689,4 +689,14 @@
    等热区释放后删掉本条即可。 */
 .nav-card-deferred .text-muted-foreground\/90 {
   color: hsl(var(--muted-foreground));
+}
+
+/* 折叠态 3 列网格的孤儿卡片（2026-11-09 实测）。
+   默认每组 4 张卡：4 列 / 2 列 / 1 列都恰好整行，只有 3 列（容器 880~1040px，
+   对应 1200~1360px 视口，正是常见笔记本宽度）会变成 3+1，右侧空出 2 格。
+   列数由 ResizeObserver 写成 data-grid-cols，不硬编码断点——侧栏宽度可拖拽，
+   视口宽度推不出真实列数。data-grid-folded 由 React 按「该组是否真的被截断」
+   标注：展开/筛选/选中子分类时全量卡片照常显示，不会被误藏。 */
+[data-nav-grid][data-grid-folded][data-grid-cols="3"] > [data-navhub-site-id]:nth-child(4) {
+  display: none;
 }

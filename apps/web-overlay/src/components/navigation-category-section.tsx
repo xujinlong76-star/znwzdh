@@ -23,6 +23,7 @@ import {
 import { createCustomSiteId } from '@/lib/modular/custom-site-input'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { countCategorySites } from '@/lib/modular/category-counts'
+import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { useToast } from '@/components/ui/use-toast'
 import { copyText } from '@/lib/clipboard'
@@ -151,6 +152,27 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   const isCustom = Boolean(category.isCustom)
   const isCollapsed = collapsedCategoryIds.includes(category.id)
   const effectiveCardMode = categoryDensityOverrides?.[category.id] || cardDisplayMode
+  /**
+   * 把网格的**真实列数**写成 data-grid-cols，供 CSS 隐藏 3 列折叠态的孤儿卡片。
+   *
+   * 为什么不在 CSS 里按视口断点猜：网格用的是 repeat(auto-fill, minmax(250px,1fr))，
+   * 列数取决于网格容器宽度，而左侧栏宽度可拖拽，视口宽度推不出列数。
+   * React 19 的 ref callback 支持返回 cleanup，这里每个网格自管一个 observer，
+   * 不需要全局单例，也不会在 HMR 时泄漏。
+   */
+  const gridColumnRef = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return
+    const sync = () => {
+      const cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length
+      if (cols > 0) el.dataset.gridCols = String(cols)
+    }
+    sync()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(sync)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   const effectiveGridClass = useMemo(() => {
     // 当模块被左右拖拉缩窄为非全宽窗口（< 12 列）时，自适应缩减内部卡片列数，保证每张卡片文字不挤压
     if (moduleColSpan <= 5) {
@@ -184,7 +206,15 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   }, [effectiveCardMode, gridColumnsClass, moduleColSpan])
   const directItems = (category.items || []) as NavigationSubItem[]
   const subCats = (category.subCategories || []) as Array<NavigationCategory & { items?: NavigationSubItem[] }>
-  // 与吸顶快捷直达轨、站内目录带共用同一个算式（lib/modular/category-counts.ts）
+  /**
+   * 卡片标签清洗用的分类名集合（运行时从当前分类树派生，不硬编码分类名）。
+   * 数据里存在大量「把一级/二级分类名又写进 tags」的复读项，
+   * 以及跨站点误打的泛化标签，会挤掉每张卡仅有的 2~3 个检索位。
+   */
+  const categoryNameIndex = useMemo(
+    () => buildCategoryNameIndex(category.title, subCats.map((s) => s.title)),
+    [category.title, subCats]
+  )
   const totalCount = countCategorySites(category)
   const categoryPinnedItemIds = pinnedSiteIdsByCategory[category.id] || []
   /**
@@ -287,11 +317,13 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
       }
     }
     return Array.from(tagCounts.entries())
-      .filter(([_, count]) => count >= 2)
+      // 分类头的热门标签条是筛选入口，但展示分类名复读（#ai-工具 / #前端开发）
+      // 和泛化误打标签（#ai赋能）没有筛选价值，与卡片标签共用同一套清洗规则。
+      .filter(([tag, count]) => count >= 2 && !isPollutedTag(tag, categoryNameIndex))
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([tag]) => tag)
-  }, [category.items, category.subCategories])
+  }, [category.items, category.subCategories, categoryNameIndex])
 
   const matchesFilter = useCallback((item: any) => {
     if (selectedTag) {
@@ -390,9 +422,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
         aria-expanded={expanded}
         data-group-toggle={key}
         title={hasSubCatRail ? '键盘用户可用上方子分类切换查看该组全部站点' : undefined}
-        className="col-span-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/70 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary cursor-pointer"
+        className="col-span-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 hover:bg-primary/5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary hover:border-primary/30 transition-all cursor-pointer"
       >
-        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', expanded && 'rotate-180')} />
+        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform duration-200', expanded && 'rotate-180')} />
         <span>{expanded ? '收起' : `展开全部 ${total} 个`}</span>
       </button>
     )
@@ -1004,13 +1036,16 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                             {/* 一级分类下直接挂载的站点 */}
                             {(showDirectGroup && (sortedDirectItems.length > 0 || isCustom)) && (
                               <div
+                                ref={gridColumnRef}
+                                data-nav-grid=""
+                                data-grid-folded={directGroup.items.length < filteredDirectItems.length ? '' : undefined}
                                 className={cn(effectiveGridClass, "transition-all duration-200")}
                                 style={{ gap: 'var(--density-grid-gap, 14px)' }}
                               >
                                 {directGroup.items.map((item: any) => (
                                   <NavigationCard
                                     key={item.id}
-                                    item={item}
+                                    item={sanitizeSiteTags(item, categoryNameIndex)}
                                     siteConfig={siteData}
                                     onPeek={handlePeekDirect}
                                     keyboardHintId={keyboardHintId}
@@ -1053,36 +1088,60 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                             {/* 二级分类及其站点 */}
                             {subGroups.length > 0 &&
                               subGroups.map(({ subCategory, subPinnedItemIds, sortedSubItems, items }) => {
+                                const hasSubCatRail = !isEditingLayout && subCats.length > 1
+                                const isSubExpanded = Boolean(expandedGroups[subCategory.id])
+                                const canExpandSub = !forceFull && Number.isFinite(limit) && sortedSubItems.length > limit
                                 return (
-                                  <div key={subCategory.id} id={subCategory.id} className="space-y-3 pt-2">
+                                  <div key={subCategory.id} id={subCategory.id} className="mt-8 space-y-3 first:mt-2">
                                     <div className="flex items-center justify-between pb-0.5 pt-1">
                                       <div className="flex items-center gap-2">
-                                        <span className="w-1 h-3.5 rounded-full bg-muted-foreground/40" />
-                                        <h3 className="text-xs font-semibold text-muted-foreground tracking-wider">
+                                        <span className="w-[3px] h-3.5 rounded-full bg-gradient-to-b from-primary to-primary/50 shadow-2xs" />
+                                        <h3 className="text-xs font-semibold text-foreground/90 tracking-wider">
                                           {subCategory.title}
                                         </h3>
-                                        <span className="text-xs text-muted-foreground/60 font-mono">{`(${subCategory.items?.length || 0})`}</span>
+                                        <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded-full bg-muted/70 text-muted-foreground border border-border/40 leading-none">
+                                          {subCategory.items?.length || 0}
+                                        </span>
                                       </div>
-                                      {isEditingLayout && (
-                                        <CategoryInSituControls
-                                          categoryId={subCategory.id}
-                                          title={subCategory.title}
-                                          isPinned={subPinnedItemIds.length > 0}
-                                          canMoveUp={true}
-                                          canMoveDown={true}
-                                          allCategoryIds={subGroups.map((s) => s.subCategory.id)}
-                                          onAddSite={() => setAddSiteTargetCatId(subCategory.id)}
-                                        />
-                                      )}
+                                      <div className="flex items-center gap-2">
+                                        {isEditingLayout && (
+                                          <CategoryInSituControls
+                                            categoryId={subCategory.id}
+                                            title={subCategory.title}
+                                            isPinned={subPinnedItemIds.length > 0}
+                                            canMoveUp={true}
+                                            canMoveDown={true}
+                                            allCategoryIds={subGroups.map((s) => s.subCategory.id)}
+                                            onAddSite={() => setAddSiteTargetCatId(subCategory.id)}
+                                          />
+                                        )}
+                                        {canExpandSub && (
+                                          <button
+                                            type="button"
+                                            tabIndex={hasSubCatRail ? -1 : 0}
+                                            onClick={() => setExpandedGroups((prev) => ({ ...prev, [subCategory.id]: !prev[subCategory.id] }))}
+                                            aria-expanded={isSubExpanded}
+                                            data-group-toggle={subCategory.id}
+                                            title={hasSubCatRail ? '键盘用户可用上方子分类切换查看该组全部站点' : undefined}
+                                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-medium text-muted-foreground hover:text-primary bg-muted/30 hover:bg-primary/10 border border-border/50 hover:border-primary/30 transition-all cursor-pointer"
+                                          >
+                                            <span>{isSubExpanded ? '收起' : `展开全部 ${sortedSubItems.length} 个`}</span>
+                                            <ChevronDown className={cn('w-3.5 h-3.5 transition-transform duration-200', isSubExpanded && 'rotate-180')} />
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
                                     <div
+                                      ref={gridColumnRef}
+                                      data-nav-grid=""
+                                      data-grid-folded={items.length < sortedSubItems.length ? '' : undefined}
                                       className={cn(effectiveGridClass, "transition-all duration-200")}
                                       style={{ gap: 'var(--density-grid-gap, 14px)' }}
                                     >
                                       {items.map((item: any) => (
                                         <NavigationCard
                                           key={item.id}
-                                          item={item}
+                                          item={sanitizeSiteTags(item, categoryNameIndex)}
                                           siteConfig={siteData}
                                           onPeek={(item) => setPeekItem(item, subCategory.id)}
                                           keyboardHintId={keyboardHintId}
@@ -1101,7 +1160,6 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                           externalRel={externalRel}
                                         />
                                       ))}
-                                      {renderGroupToggle(subCategory.id, sortedSubItems.length)}
                                     </div>
                                   </div>
                                 )

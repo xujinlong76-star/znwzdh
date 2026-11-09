@@ -13,7 +13,7 @@ const fs = require('node:fs')
 const BASE = process.env.NAVHUB_BASE_URL || 'http://localhost:3000'
 const OUT = process.env.NAVHUB_SHOT_DIR || 'C:/Users/88/Desktop/web'
 const CHROME = process.env.NAVHUB_CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe'
-const result = { home: {}, marketplace: {}, import: {}, failures: [] }
+const result = { home: {}, marketplace: {}, import: {}, layout: {}, failures: [] }
 const fail = (scope, msg) => { result.failures.push(`${scope}: ${msg}`) }
 
 async function baseAudit(page, route, scope) {
@@ -92,7 +92,9 @@ async function baseAudit(page, route, scope) {
     await baseAudit(page, '/', 'home')
     result.home.status = resp.status()
     const home = await page.evaluate(() => {
-      const input = document.querySelector('input[placeholder^="搜索导航"]')
+      // 占位文案会调整（如「搜索导航…（中文 / 拼音 / 语义）」→「搜索站点、标签或拼音…」），
+      // 用包含匹配而不是前缀匹配，避免文案一改就静默返回 null 造成假通过。
+      const input = document.querySelector('input[placeholder*="搜索"]')
       const box = input?.closest('div')
       const kbd = box?.querySelector('kbd')
       const ir = input?.getBoundingClientRect()
@@ -107,6 +109,7 @@ async function baseAudit(page, route, scope) {
       }
     })
     result.home.search = home
+    if (home.placeholderSafe === null) fail('home', '找不到搜索框或快捷键徽标，无法验证占位安全区')
     if (home.placeholderSafe === false) fail('home', `搜索占位区被徽章压住 (contentRight=${home.contentRight}, badgeLeft=${home.badgeLeft})`)
 
     // 徽章由 WorkspaceSwitcher 的 useEffect → fetchWorkspaces() 异步拉回后渲染，
@@ -129,7 +132,11 @@ async function baseAudit(page, route, scope) {
         (el) => (el.textContent || '').trim() === '空间所有者',
       )
       if (!all.length) return null
-      const inner = all.reduce((a, b) => (b.children.length < a.children.length ? b : a))
+      // 角色文字可能收进 `hidden min-[1680px]:inline` 的 span（窄屏只显示皇冠图标），
+      // 那个 span 不参与 flex 布局；真正承载「不换行 / 不压缩」职责的是外层 Badge。
+      // 取 Badge 容器断言，否则会把继承默认 flex-shrink:1 的文本节点误判成回归。
+      const inner = all.find((el) => /rounded-full/.test((el.className || '').toString()))
+        ?? all.reduce((a, b) => (b.children.length < a.children.length ? b : a))
       const host = inner.parentElement
       const box = (el) => {
         const r = el.getBoundingClientRect()
@@ -368,6 +375,62 @@ async function baseAudit(page, route, scope) {
     if (imErrors.length) fail('import', `运行时错误 ${imErrors.slice(0, 3).join(' | ')}`)
     await im.screenshot({ path: `${OUT}/verify-import-${width}.png`, fullPage: false })
     await ctx3.close()
+  }
+
+  // ---------- 首页布局专项：多列数孤儿行 / 标签污染 / 浮层碰撞 ----------
+  // 单独跑而不是塞进 1440/768 主循环：孤儿行只在 3 列（1200~1360px）出现，
+  // 必须补 1280 这个断点；这里只开首页，不重复跑另外两页。
+  for (const width of [1440, 1280, 1024]) {
+    const lc = await browser.newContext({ viewport: { width, height: 900 } })
+    const lp = await lc.newPage()
+    await lp.goto(BASE + '/', { waitUntil: 'domcontentloaded', timeout: 120000 })
+    await lp.waitForTimeout(4000)
+    result.layout[width] = await lp.evaluate(() => {
+      const g = document.querySelector('[data-nav-grid]')
+      const cols = g ? getComputedStyle(g).gridTemplateColumns.split(' ').filter(Boolean).length : 0
+      const cards = g ? Array.from(g.children).filter((e) => e.hasAttribute('data-navhub-site-id')) : []
+      const visible = cards.filter((e) => getComputedStyle(e).display !== 'none')
+      // 卡片标签是 <a>，分类头热门标签条是 <button>，两种都要覆盖：
+      // 只查 a/span 会让分类头的污染标签成为漏网之鱼（假阴性）。
+      const polluted = Array.from(document.querySelectorAll('a,span,button')).filter((e) =>
+        /^#(ai赋能|消费生活|公共服务|金融财经|前端开发|组件与-ui-体系|wasm-与-rust|浏览器与-pwa|ai-工具)$/
+          .test((e.textContent || '').trim())).length
+      return { cols, dom: cards.length, visible: visible.length, remainder: visible.length % (cols || 1), pollutedTags: polluted }
+    })
+    const l = result.layout[width]
+    if (!l.cols) fail('layout', `${width}px 找不到卡片网格`)
+    if (l.remainder !== 0) fail('layout', `${width}px 存在孤儿行 ${JSON.stringify(l)}`)
+    if (l.pollutedTags > 0) fail('layout', `${width}px 仍有 ${l.pollutedTags} 个分类名/泛化污染标签`)
+    await lc.close()
+  }
+
+  // 浮层：hover 最右卡，检查 Radix popper 是否越界 + 移开后是否销毁
+  {
+    const pc = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    const pp = await pc.newPage()
+    await pp.goto(BASE + '/', { waitUntil: 'domcontentloaded', timeout: 120000 })
+    await pp.waitForTimeout(4000)
+    const rightCard = pp.locator('[data-nav-grid]').first().locator('[data-navhub-site-id]').last()
+    await rightCard.scrollIntoViewIfNeeded()
+    await rightCard.hover()
+    await pp.waitForTimeout(700)
+    result.layout.popover = await pp.evaluate(() => {
+      const vw = document.documentElement.clientWidth
+      const tips = Array.from(document.querySelectorAll('[data-radix-popper-content-wrapper]'))
+        .filter((e) => e.getBoundingClientRect().width > 0)
+      return {
+        count: tips.length,
+        overflow: tips.filter((e) => { const r = e.getBoundingClientRect(); return r.right > vw + 1 || r.left < -1 }).length,
+        boxes: tips.map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)] }),
+      }
+    })
+    if (result.layout.popover.overflow > 0) fail('layout', `最右卡浮层越界 ${JSON.stringify(result.layout.popover)}`)
+    await pp.mouse.move(2, 2)
+    await pp.waitForTimeout(900)
+    result.layout.popoverAfterLeave = await pp.evaluate(() =>
+      document.querySelectorAll('[data-radix-popper-content-wrapper]').length)
+    if (result.layout.popoverAfterLeave > 0) fail('layout', `移开鼠标后浮层仍驻留 ${result.layout.popoverAfterLeave} 个`)
+    await pc.close()
   }
 
   await browser.close()

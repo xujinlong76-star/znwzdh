@@ -9,8 +9,8 @@ import { useState, useMemo } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ArrowRight, Sparkles, Network } from 'lucide-react'
-import { findShortestTechPath, analyzeStackCompatibility, PRESET_TECH_GRAPH } from '@/lib/knowledge-graph'
+import { ArrowRight, Sparkles, Network, Crown, Award } from 'lucide-react'
+import { findShortestTechPath, analyzeStackCompatibility, computeGraphCentrality, PRESET_TECH_GRAPH } from '@/lib/knowledge-graph'
 
 
 export function GraphPanel() {
@@ -29,6 +29,43 @@ export function GraphPanel() {
   const stackReport = useMemo(
     () => analyzeStackCompatibility(selectedStackTechs),
     [selectedStackTechs]
+  )
+
+  /**
+   * 生态枢纽 / 权威排名（HITS 算法）。
+   *
+   * 这两组数字一直是算好的：`lib/knowledge-graph.ts` 的 computeGraphCentrality 做了
+   * 15 轮 hubs/authorities 迭代 + L2 归一化，但**全仓没有任何调用方** ——
+   * 算法实验室把图谱画出来了、能寻路、能算兼容度，却从没告诉用户
+   * 「哪几个技术是这张图的枢纽、哪些是被依赖的权威」。
+   *
+   * 现在把它接上：数据是既有的，只加一层展示，不改任何算法。
+   */
+  const centrality = useMemo(() => computeGraphCentrality(PRESET_TECH_GRAPH), [])
+
+  /** id → 展示名，避免榜上出现裸 id */
+  const nodeNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const n of PRESET_TECH_GRAPH.nodes) map.set(n.id.toLowerCase(), n.name)
+    return map
+  }, [])
+
+  const topHubs = useMemo(
+    () =>
+      Object.entries(centrality.hubs)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([id, score]) => ({ id, name: nodeNameById.get(id) ?? id, score })),
+    [centrality, nodeNameById],
+  )
+
+  const topAuthorities = useMemo(
+    () =>
+      Object.entries(centrality.authorities)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([id, score]) => ({ id, name: nodeNameById.get(id) ?? id, score })),
+    [centrality, nodeNameById],
   )
 
   return (
@@ -197,6 +234,41 @@ export function GraphPanel() {
                     </div>
                   </div>
                 )}
+              </div>
+              {/* 生态枢纽与权威榜：HITS 双榜（此前 computeGraphCentrality 零调用） */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  { key: 'hub', title: '生态枢纽 (Hubs)', hint: '向外连接最多、带动面最广', rows: topHubs, Icon: Crown, iconCls: 'text-indigo-500', barCls: 'bg-indigo-500' },
+                  { key: 'auth', title: '被依赖权威 (Authorities)', hint: '被最多技术指向、底座性质最强', rows: topAuthorities, Icon: Award, iconCls: 'text-emerald-500', barCls: 'bg-emerald-500' },
+                ].map(({ key, title, hint, rows, Icon, iconCls, barCls }) => (
+                  <div key={key} className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold">
+                        <Icon className={`w-3.5 h-3.5 ${iconCls}`} />
+                        {title}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">{hint}</span>
+                    </div>
+                    <ol className="space-y-1.5">
+                      {rows.map((row, i) => (
+                        <li key={row.id} className="flex items-center gap-2 text-xs">
+                          <span className="w-4 text-[10px] font-mono text-muted-foreground shrink-0">{i + 1}.</span>
+                          <span className="font-medium text-foreground truncate flex-1">{row.name}</span>
+                          {/* 归一化后的分值（0~1 量级），用条形直观表达相对强弱 */}
+                          <span className="w-16 h-1.5 rounded-full bg-muted overflow-hidden shrink-0">
+                            <span
+                              className={`block h-full ${barCls}`}
+                              style={{ width: `${Math.min(100, Math.max(4, row.score * 100))}%` }}
+                            />
+                          </span>
+                          <span className="font-mono text-[10px] text-muted-foreground w-10 text-right shrink-0">
+                            {row.score.toFixed(3)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>

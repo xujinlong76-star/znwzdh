@@ -23,6 +23,7 @@ import {
   FileJson,
   Trash2,
   RefreshCw,
+  HardDriveDownload,
   Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -37,6 +38,11 @@ import {
   recordOfflineVisit,
   type RecentVisit,
 } from '@/lib/offline-recent'
+import {
+  getOfflineCacheStats,
+  clearOfflineCache,
+  type OfflineCacheStats,
+} from '@/lib/offline-video-cache'
 
 export interface LocalDataBackupPayload {
   format: 'navhub-local-full-backup'
@@ -82,6 +88,42 @@ export function LocalDataManager() {
   useEffect(() => {
     void refreshVisits()
   }, [refreshVisits])
+
+  /**
+   * 离线视频缓存（第 5 张资产卡）。
+   *
+   * 背景：video-card 早就能把视频存进 IndexedDB，但 `getOfflineCacheStats` /
+   * `clearOfflineCache` 这两个导出**全仓无人调用** —— 用户能存、却看不到占了多少、
+   * 也删不掉，缓存只能一直躺在磁盘里。这里把它们接到资产清点上，与其余四类本机数据同口径。
+   */
+  const [videoStats, setVideoStats] = useState<OfflineCacheStats | null>(null)
+  const [loadingVideoStats, setLoadingVideoStats] = useState(true)
+
+  const refreshVideoStats = useCallback(async () => {
+    setLoadingVideoStats(true)
+    try {
+      setVideoStats(await getOfflineCacheStats())
+    } catch {
+      // 存储受限（隐私模式 / 配额满）时退守为「读不出」，不阻断页面
+      setVideoStats(null)
+    } finally {
+      setLoadingVideoStats(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshVideoStats()
+  }, [refreshVideoStats])
+
+  const handleClearVideoCache = useCallback(async () => {
+    try {
+      await clearOfflineCache()
+      await refreshVideoStats()
+      toast({ title: '🧹 已清空离线视频缓存', description: '下次打开视频会重新联网加载。' })
+    } catch {
+      toast({ title: '⚠️ 清空失败', description: '浏览器本地存储不可用。' })
+    }
+  }, [refreshVideoStats, toast])
 
   // 计算自定义分类与网址数量
   const customCategories = diyConfig.customCategories || []
@@ -301,7 +343,7 @@ export function LocalDataManager() {
       </div>
 
       {/* 资产清点卡片 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className="rounded-xl border border-border/70 bg-card p-3.5 space-y-1.5 shadow-2xs">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-medium">专属分类与私有网址</span>
@@ -372,6 +414,37 @@ export function LocalDataManager() {
           <p className="text-[11px] text-muted-foreground truncate font-mono">
             背景: {diyConfig.canvasBackground || 'mesh'} · 色系: {diyConfig.accentColor || 'default'}
           </p>
+        </div>
+
+        <div className="rounded-xl border border-border/70 bg-card p-3.5 space-y-1.5 shadow-2xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">离线视频缓存</span>
+            <HardDriveDownload className="w-4 h-4 text-emerald-500" />
+          </div>
+          <div className="text-xl font-extrabold text-foreground font-mono">
+            {loadingVideoStats ? '—' : (videoStats?.count ?? 0)}
+            <span className="text-xs font-normal text-muted-foreground ml-1">部</span>
+          </div>
+          <div className="flex items-center justify-between gap-1 pt-0.5">
+            <p className="text-[11px] text-muted-foreground truncate">
+              {loadingVideoStats
+                ? '正在核对…'
+                : videoStats && videoStats.count > 0
+                  ? `离线可看 · ${videoStats.storageType}`
+                  : '暂无离线视频'}
+            </p>
+            {(videoStats?.count ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={handleClearVideoCache}
+                aria-label="清空离线视频缓存"
+                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                title="清空离线视频缓存，释放本机空间"
+              >
+                清空
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </section>

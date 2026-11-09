@@ -9,7 +9,7 @@
     "docsMdUntrackedAdr": 4,
     "deliverablesTopLevelDirs": 15,
     "deliverablesMdReports": 20,
-    "scriptsCheckMjs": 42
+    "scriptsCheckMjs": 43
   },
   "notes": [
     "任务书给的 docs/ 87 份 = git 已跟踪口径（GIT_TRACKED_DOCS 常量，2026-11-06 git ls-files 实测）；本索引以磁盘全量为登记口径，逐份标注 tracked，不伪造 87。",
@@ -806,6 +806,10 @@
       {
         "file": "check-web-config-parity.mjs",
         "purpose": "前端配置唯一事实源断言：apps/web 与 overlay 的 next.config.js / package.json / tsconfig.json 必须同源"
+      },
+      {
+        "file": "check-no-explicit-any.mjs",
+        "purpose": "显式 any 棘轮守卫：按文件基线只减不增（TypeScript 语法树数 AnyKeyword，口径与 eslint 一致）；--staged 供 pre-commit 只查暂存集"
       }
     ]
   }

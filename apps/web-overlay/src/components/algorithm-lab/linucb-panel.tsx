@@ -10,70 +10,79 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/reg
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/registry/new-york/ui/input'
 import { Sparkles, RefreshCw, Layers } from 'lucide-react'
-/* ------------------ 算法 1：LinUCB 浏览器侧纯计算 ------------------ */
-interface ArmState {
-  weight: number
-  clicks: number
-}
-
-const DEFAULT_ARMS: Record<string, ArmState> = {
-  exact: { weight: 1.2, clicks: 0 },
-  fts: { weight: 1.0, clicks: 0 },
-  pinyin: { weight: 1.1, clicks: 0 },
-  semantic: { weight: 0.95, clicks: 0 },
-  personal: { weight: 0.9, clicks: 0 },
-}
+/* ------------------ 算法 1：LinUCB（真引擎，来自 @navhub/core） ------------------
+ *
+ * 2026-11-10 修正：此前这个面板是**手工线性加权**冒充 LinUCB ——
+ * `weight + 0.3 * (1 - lenNorm)` 这种固定系数既没有上下文特征向量 x、
+ * 也没有 A 矩阵求逆与置信上界探索项（sqrt(x^T A^{-1} x)）。
+ * 而页面标题写的是「LinUCB 情境自适应多臂融合…动态求解最优置信上界权重」，
+ * 描述与实现对不上；真正的引擎 packages/core/src/linucb.ts（含单位阵、求逆、
+ * 逐臂 UCB 计算）一直存在但零调用。
+ *
+ * 现在改为直接调用引擎：模型只在本地 useState 里持有（可后续接 serializeLinUCB 持久化），
+ * 每次预测与更新都走真算法，页面展示的权重就是引擎算出来的。
+ */
+import {
+  CHANNELS,
+  createLinUCBModel,
+  predictArmWeights,
+  updateArmReward,
+  extractContextFeatures,
+  type LinUCBModel,
+  type RetrievalChannel,
+} from '@/lib/linucb'
 
 
 export function LinucbPanel() {
   /* --- 模块 1：LinUCB 状态 --- */
   const [banditQuery, setBanditQuery] = useState('vsc')
-  const [arms, setArms] = useState(DEFAULT_ARMS)
+  /**
+   * LinUCB 模型：只在本地持有，每次查询/反馈都走真引擎。
+   *
+   * 用 useState 持有对象引用（引擎是原地更新 A/b 与 theta 的），
+   * 因此每次更新后用一个自增 tick 触发重算 —— 不能依赖对象引用变化。
+   */
+  const [model, setModel] = useState<LinUCBModel>(() => createLinUCBModel(0.25))
+  const [tick, setTick] = useState(0)
 
+  /** 上下文特征向量（5 维原始值，供界面展示） */
   const contextFeatures = useMemo(() => {
-    const q = banditQuery.trim()
-    const len = q.length
-    if (len === 0) return { lenNorm: 0, cjkRatio: 0, alphaRatio: 0, pinyinProb: 0 }
-    let cjk = 0
-    let alpha = 0
-    for (let i = 0; i < len; i++) {
-      const code = q.charCodeAt(i)
-      if (code >= 0x4e00 && code <= 0x9fa5) cjk++
-      else if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) alpha++
-    }
-    const isPinyin = /^[a-zA-Z]+$/.test(q) && len >= 2 && len <= 12
+    const x = extractContextFeatures(banditQuery)
     return {
-      lenNorm: Number(Math.min(1.0, len / 30).toFixed(2)),
-      cjkRatio: Number((cjk / len).toFixed(2)),
-      alphaRatio: Number((alpha / len).toFixed(2)),
-      pinyinProb: isPinyin ? 1.0 : 0.0,
+      lenNorm: Number(x[0].toFixed(2)),
+      cjkRatio: Number(x[1].toFixed(2)),
+      alphaRatio: Number(x[2].toFixed(2)),
+      pinyinProb: Number(x[3].toFixed(2)),
     }
   }, [banditQuery])
 
-  // 动态预测权重
+  /** 引擎算出的每臂 UCB 权重（含探索项，不是手工线性加权） */
   const predictedWeights = useMemo(() => {
-    const { cjkRatio, pinyinProb, lenNorm } = contextFeatures
-    return {
-      exact: Number((arms.exact.weight + 0.3 * (1 - lenNorm)).toFixed(2)),
-      fts: Number((arms.fts.weight + 0.2 * lenNorm).toFixed(2)),
-      pinyin: Number((arms.pinyin.weight + 0.8 * pinyinProb).toFixed(2)),
-      semantic: Number((arms.semantic.weight + 0.9 * cjkRatio + 0.4 * lenNorm).toFixed(2)),
-      personal: Number(arms.personal.weight.toFixed(2)),
-    }
-  }, [arms, contextFeatures])
+    const w = predictArmWeights(model, banditQuery)
+    const out: Record<string, number> = {}
+    for (const ch of CHANNELS) out[ch] = Number((w[ch] ?? 0).toFixed(2))
+    return out
+    // tick 是刻意的重算触发器：引擎原地改模型，引用不变
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, banditQuery, tick])
 
+  /** 臂的点击次数（纯展示统计，与引擎状态分开维护） */
+  const [armClicks, setArmClicks] = useState<Record<string, number>>({})
+
+  /** 给某通道一次正反馈：走引擎 updateArmReward（会更新 A 与 b） */
   const rewardArm = (channel: string) => {
-    setArms((prev) => {
-      const cur = prev[channel] || { weight: 1.0, clicks: 0 }
-      return {
-        ...prev,
-        [channel]: {
-          weight: Number((cur.weight + 0.15).toFixed(2)),
-          clicks: cur.clicks + 1,
-        },
-      }
-    })
+    updateArmReward(model, channel as RetrievalChannel, banditQuery, 1)
+    setArmClicks((prev) => ({ ...prev, [channel]: (prev[channel] ?? 0) + 1 }))
+    setTick((t) => t + 1)
   }
+
+  /** 重置：换一个全新模型（等价于清空收益矩阵） */
+  const resetArms = () => {
+    setModel(createLinUCBModel(0.25))
+    setArmClicks({})
+    setTick((t) => t + 1)
+  }
+
 
   return (
     <div className="space-y-4">
@@ -94,7 +103,7 @@ export function LinucbPanel() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setArms(DEFAULT_ARMS)}
+                  onClick={resetArms}
                   className="text-xs h-8 border-border/70 hover:bg-accent gap-1.5 shrink-0"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
@@ -179,7 +188,7 @@ export function LinucbPanel() {
                       <div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-semibold uppercase">{ch} 通道</span>
-                          <span className="text-xs text-muted-foreground">历史点击: {arms[ch]?.clicks || 0}</span>
+                          <span className="text-xs text-muted-foreground">历史点击: {armClicks[ch] ?? 0}</span>
                         </div>
                         <div className="text-2xl font-bold font-mono text-primary mt-1">
                           {predictedWeights[ch]}

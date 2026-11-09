@@ -1052,3 +1052,792 @@ core 镜像一致、扩展校验、后端 lint(api)、后端 lint(store)、类�
 
 **我的决定：保留红灯，不假装修好。** 把 FCP 实测数据、拆包构成、
 和这次失败优化的完整过程都记录下来，让下一个接手的人不必重走这两条死路。
+
+---
+
+# 第十二轮：主动寻找「还需要开发什么」的完整研究（2026-11-09 ~ 11-10）
+
+目标：回答「还有什么需要开发」。这一轮**没有产出新功能**，但产出了可信的结论：
+功能面已经完整，剩下的都是「没有数据源」或「需要产品决策」的项。以下是排查过程与证据。
+
+## 一、体检全部通过（功能面无缺口）
+
+| 检查 | 结果 |
+|---|---|
+| 全仓 typecheck（5 包） | 通过 |
+| 前端类型棘轮 | 0 error |
+| 覆盖层一致性 | 1068 文件零漂移 |
+| 数据库引用完整性 | 孤儿引用 0 |
+| 死模块棘轮 | 无新增（基线 10 项） |
+| verify --guards | 组件契约 + 全库文本不变量全过 |
+
+**10 条主要路由实测**全部 200、无 pageerror、无空态、h1 正常：
+`/` `/videos` `/marketplace` `/graph` `/me` `/favorites` `/hot` `/tags` `/sites` `/category`。
+搜索可用（「视频剪辑」→ 14 条结果）、移动端零横向溢出、DIY 入口存在。
+
+## 二、逐项排查过的「疑似缺口」及其真实结论
+
+### 1. TODO / FIXME —— 全仓 0 条
+扫描 1263 个源文件，`TODO|FIXME` 零命中。
+
+### 2. 「未实现」字样 —— 10 处，逐条查证全部不是缺口
+- `llm-usage.ts:159` / `http-status.ts:41` / `speculative.ts:1183`：都是**文档或 HTTP 状态码释义**（501 Not Implemented）；
+- `backup.ts:181`：注释说明「原设计说由 data_retention 清理，但从未实现」——**已改为即时清理**，是修复记录；
+- `keyboard-shortcuts-dialog.tsx:144`：注释说明「按 T 的处理器此前从未实现」，**已补上**；
+- `mcp-server.ts:41`：兜底分支（handler 缺失时返回错误）。**实测 41 个 MCP 工具全部有 handler**。
+
+### 3. MCP 工具覆盖度 —— 41/41 完整
+`packages/core/src/mcp-schemas.ts` 定义 41 个工具，`packages/mcp/src/handlers/` 下 9 个域文件
+逐个实现（sites / catalog / jobs / algorithms / discovery / state-sync / user-center /
+developer-tools / plugins）。**零缺口**。
+
+### 4. API 路由覆盖 —— 后端 50 / 前端代理 42，无未实现接口
+后端路由文件全部有实现，无 501 / stub 标记。
+
+### 5. 死模块 —— 10 个基线，逐个有保留理由
+其中 2 个标注 `delete（真死）`：`VideoIconUpload.tsx`、`notification-badge.tsx`。
+它们**已在基线里**（不是新增），删除属于清理而非开发，且要同步改基线与文档索引——
+本轮不做，因为价值低于「误删风险」。
+
+## 三、认真做过但**主动放弃**的一个开发项
+
+### 视频时间轴雪碧图预览（失败，已完整回退）
+
+**发现**：`lib/video-scrubber-filmstrip.ts` 里 `getSpriteCoordinate()`
+（帧索引 → CSS background 偏移）**实现完整却零调用方**，是典型孤岛代码。
+同目录还有 `video-scrubber-preview.tsx`（61 行完整组件）被死模块门禁标为
+「真死：视频播放器未接入」。看起来是个现成的开发缺口。
+
+**尝试**：给 `VideoHeatmapTimeline` 加 `spriteConfig` 可选 prop，
+内部用 `getSpriteCoordinate` 算帧坐标，hover 时在 tooltip 里渲染雪碧图裁切。
+类型检查通过（0 error）。
+
+**为什么放弃**：查数据源发现**根本拿不到雪碧图**——
+- `video_items` 表 6014 条记录，`payload.videoConfig` 里**没有** sprite / filmstrip / thumbnail 任何字段；
+- `VideoConfigRaw` 类型定义里也没有这些字段；
+- 实测 B 站公开 API `x/web-interface/view` 只返回 `is_story`，**不提供雪碧图**。
+
+没有数据源，接上的线永远是死路径——传进去的值恒为 `undefined`。
+继续做只会得到「代码看起来接上了、实际永远不生效」的假完成。
+**已完整回退**（两侧文件均恢复原状，零残留）。
+
+**真正要做这件事的前提**（留给后续）：需要先有采集器从 B 站 storyboard 接口
+（需登录态 WBI 签名）抓图并拼接成雪碧图，落成 `videoConfig.sprite` 字段。
+那是一个「采集器 + 存储 + 数据回填」的完整工程，不是前端接线问题。
+
+## 四、结论
+
+这个仓库在**功能实现层面已经饱和**：路由无空页、MCP 工具无缺处理器、
+API 无未实现接口、无 TODO 遗留、死模块都有保留理由。
+
+继续「开发新功能」的边际收益已经很低，真正剩下的工作是三类：
+1. **需要外部数据源的**（如本次的雪碧图，需先建采集器）；
+2. **需要产品决策的**（哪些死模块真删、首屏预算重新定基线）；
+3. **需要稳定写入窗口的**（架构级性能优化、跨会话冲突协调）。
+
+本轮如实报告「没找到值得开发的功能缺口」，而不是为了填满任务去造一个低价值功能。
+
+## 五、本轮找到并修掉的唯一真实缺陷
+
+### `check-no-explicit-any.mjs` 未登记进文档索引（已修）
+
+`gen-docs-index.mjs --check` 一直告警：
+`check-*.mjs 登记数与实物不符：登记 42，实物 43`。
+
+逐名对账后定位到唯一缺口：**`check-no-explicit-any.mjs`**。
+它是一份 251 行的完整守卫（TypeScript 语法树数 `AnyKeyword`，按文件基线「只减不增」，
+支持 `--staged` 供 pre-commit 只查暂存集），**CI 里早已阻断式接入**
+（`.github/workflows/ci.yml:258`，无 `continue-on-error`），
+但它从未被登记进 `CHECK_SCRIPTS` 清单。
+
+**后果**：文档索引的 `scriptsCheckMjs` 计数永远差 1，这条告警长期存在；
+任何照索引排查「有哪些门禁」的人都会漏掉它。
+
+**修复**：在 `CHECK_SCRIPTS` 里补登记（写真实用途，不按文件名猜），
+重新生成 `docs/docs-index.json`。
+
+**踩到的坑**：第一次插入时没给前一行补逗号，导致数组元素被并进字符串、
+`CHECK_SCRIPTS.map(([file, purpose]) => ...)` 抛 `TypeError: undefined is not iterable`，
+而 `gen-docs-index.mjs` 在 PowerShell 管道下**静默无输出**，差点误判为「生成成功但计数没变」。
+补逗号后生成正常。
+
+**验证结果**：
+
+```
+[docs-index] ✅ --check 通过：docs/ 下 96 份 .md 全部已登记；
+            deliverables/ 20 份报告 / 15 个子目录；scripts/ 43 个 check-*.mjs。
+[no-explicit-any] ✓ 全量模式：756 个源文件，当前 91 个文件 / 280 处 any，
+                  均未超过基线；基线保持。
+```
+
+告警消失，43/43 全登记；该守卫首次被显式运行，一次通过。
+
+## 六、删除 4 个已确认的死文件（含连带发现）
+
+死模块门禁的 `BASELINE_NOTES` 里有 2 项标注 `delete（真死）`：
+`VideoIconUpload.tsx`（116 行）、`components/notification-badge.tsx`（46 行）。
+删除前做了三层核对：
+
+1. **全仓引用扫描**（含测试/文档/字符串/DOM id）：`VideoIconUpload` 零引用；
+   `notification-badge` 的 5 处引用**全部指向 `@/lib/notification-badge`**（活跃模块），
+   与待删的 `@/components/notification-badge` 路径不同；
+2. **镜像同步**：overlay 是事实源，`apps/web` 是生成物，两侧同时删；
+3. **删除后立即跑门禁**，不靠「应该没事」。
+
+### 连带发现：一整套孤立的通知子系统
+
+删掉 `components/notification-badge.tsx` 后，门禁立刻报出新的 0 引用候选
+`hooks/use-notification-unread.ts` —— 它是那个组件的唯一消费者。顺藤摸下去发现：
+
+| 文件 | 行数 | 状态 |
+|---|---|---|
+| `hooks/use-notification-unread.ts` | 60 | 唯一消费者已删 → 零引用 |
+| `lib/notifications-client.ts` | 162 | 唯一消费者是上面那个 hook → 零引用 |
+
+**关键判断**：仓库里存在**两套并行的未读通知实现**——
+- 在用的一套：`hooks/useUnreadNotifications` + `lib/notification-badge`，
+  sidebar / mobile-nav / user-center-nav 三处在用，且有 `test/notification-badge.test.ts` 覆盖；
+- 孤立的一套：`hooks/use-notification-unread` + `lib/notifications-client`，
+  **只被刚删的那个死组件用过**。
+
+两套同时存在本身就是隐患（同样的「未读数」有两个数据源，将来必然算出两个答案），
+因此一并清理这 222 行孤儿代码。
+
+### 结果
+
+| 项 | 变化 |
+|---|---|
+| 删除文件 | **4 个 / 384 行**（overlay + web 各 2 个） |
+| 死模块基线 | 10 项 → **8 项** |
+| `check-dead-modules` | ✅ 通过，且「已不再命中」提示消失 |
+| 全仓 typecheck | ✅ 5 包通过 |
+| 前端 tsc | ✅ 0 error |
+| 覆盖层 | ✅ 1064 文件一致 |
+| 运行时 | `/` `/me` `/me/notifications` `/admin/videos` 全 200 |
+
+**注**：`check-dead-modules.mjs --update` 出于并行会话安全，刻意只打印不写文件；
+基线数组由人工编辑移除（并同步删掉两项备注），这样每一步删改都有迹可循。
+
+---
+
+# 第十三轮：补上「批量从自建分类移除」的 UI 接线（2026-11-10）
+
+## 一、找到缺口的路径
+
+这一轮换了方法：不再扫 TODO/注释，而是扫**「导出但全仓只出现一次」的符号**。
+2483 个导出里有 124 个只出现一次，其中 5 个是真实业务函数：
+`batchSetPinnedSitesInCategory` / `batchMoveSitesBetweenCustomCategories` /
+`batchDeleteSitesFromCustomCategories` / `compactOperationLogs` / `openAiStudio`。
+
+顺藤摸到完整缺口链：
+
+1. `lib/batch-operations.ts`（190 行引擎，有单测）实现了批量删除；
+2. `components/batch-operation-dock.tsx` 有「从自建分类中移除」按钮，
+   但它是**条件渲染**：`{onBatchDeleteFromCustomCategories && (...)}`；
+3. `navigation-content.tsx` 只传了 `onBatchAddToCustomCategory` 与 `onBatchPinToWorkbench`，
+   **第三个回调从未传入**；
+4. 结果：这个按钮在真实页面上**永远不渲染**，引擎成了孤岛。
+
+## 二、修复
+
+在 `navigation-content.tsx` 里补上回调实现，并解构 `removeSiteFromCustomCategory`：
+
+```tsx
+onBatchDeleteFromCustomCategories={() => {
+  // 只处理「自定义分类里的卡片」：这些是用户自建的本地条目，删了能重建；
+  // 内置站点库的条目不在这个作用域里（那是回收站/管理端的职责）。
+  let removed = 0
+  for (const cat of customCategories) {
+    const hit = selectedSites.filter((site) =>
+      (cat.items || []).some((item) => item.id === site.id),
+    )
+    for (const site of hit) {
+      removeSiteFromCustomCategory(cat.id, site.id)
+      removed++
+    }
+  }
+  toast(removed > 0 ? {...已移除 N 个...} : {...没有可移除的站点...})
+}}
+```
+
+**为什么这样写**：复用 hook 已有的 `removeSiteFromCustomCategory(categoryId, siteId)`，
+不重新实现删除逻辑；跨多个自建分类扫描同一个选中站点（一个站点可能同时在多个分类里），
+逐个移除并累计计数；两种结果都给出明确 toast，不做无声失败。
+
+## 三、验证（含一次自我纠错）
+
+| 验证 | 结果 |
+|---|---|
+| 类型检查 | 5 包通过 |
+| 前端 tsc | 0 error |
+| 浏览器实测 | 多选后浮坞出现 **4 个按钮**：全选 / 批量固定 / 批量导出 / **从自建分类移除** / 退出多选 —— 此前第三项从不渲染 |
+| 点击行为 | 选中站点库卡片时正确提示「没有可移除的站点」（id 不属于任何自建分类），页面零报错 |
+| 引擎单测 | `batch-and-favicon` + `batch-selection` **28/28** |
+
+### 补的守卫测试被验证「真的会红」
+
+在 `test/batch-selection.test.ts` 里新增用例，锁四件事：按钮是条件渲染、
+调用点必须传回调、回调体必须真调移除 API、移除能力来自 `useHomeDIY`。
+
+**第一次验证失败**：我用 PowerShell 的 `-replace` 去破坏接线，测试仍 19/19 绿，
+差点误判「守卫是假绿」。实际是 PowerShell 对含 `{` 的替换没生效（文件没被改动）。
+改用 Node 直接改写文件后重测：**破坏接线 → 1 failed，恢复 → 19/19 passed**，守卫确实有效。
+
+> 记这一笔是因为「守卫不红」和「守卫假绿」在表面上完全一样，
+> 而两者后果相反 —— 不先把「它真的会红」验证一遍，等于没写守卫。
+
+## 四、状态
+
+5 包 typecheck ✅、前端 tsc 0 error ✅、覆盖层 1064 一致 ✅、
+死模块基线 8 项 ✅、docs 索引 43/43 ✅、批量相关单测 28/28 ✅。
+
+---
+
+# 第十四轮：离线视频缓存有了「查看 + 清空」入口（2026-11-10）
+
+## 一、缺口
+
+沿用上一轮「导出但全仓只出现一次」的扫描法，抓到 `lib/offline-video-cache.ts`：
+该文件有 10 个导出，**只有 2 个被 video-card 使用**（saveOfflineVideo / isOfflineVideo），
+另外 4 个业务函数**全仓零调用**：
+
+| 导出 | 状态 |
+|---|---|
+| `getOfflineVideo` / `listOfflineVideos` | 未使用 |
+| `getOfflineCacheStats` | **未使用** |
+| `clearOfflineCache` | **未使用** |
+| `cacheVideoBatch` | 未使用 |
+
+**后果很具体**：用户在视频卡片上点一下就能把视频存进 IndexedDB，
+但整个应用**没有任何地方能看「占了多少部 / 多大」、也没有任何地方能删**。
+缓存只会一直躺在本机磁盘里，唯一清空方式是用户自己去开发者工具删库。
+
+## 二、修复
+
+接到 `/me/data` 的「本机离线数据资产管理」页——它本来就清点四类本机数据
+（专属分类 / 收藏 / 离线足迹 / 排版方案），**恰好漏了第五类：离线视频**。
+
+新增第 5 张资产卡：
+- 显示缓存部数与存储后端（`indexeddb` / `localstorage` / `memory`）；
+- 有缓存时才出现「清空」按钮（与旁边「离线历史足迹」的清空交互同形态）；
+- 清空后立刻刷新计数并给 toast 确认。
+
+网格从 `sm:grid-cols-4` 改为 `sm:grid-cols-3 lg:grid-cols-5`，避免 5 张卡挤在 4 列里换行。
+
+## 三、端到端验证
+
+不是「编译过就算」，而是真的往 IndexedDB 写数据再点按钮：
+
+```
+写入 3 条到 devops_nav_video_offline_v1/offline_videos
+→ 卡片渲染: 离线视频缓存 | 3部 | 离线可看 · indexeddb | [清空]
+→ 点击清空
+→ 卡片变为: 离线视频缓存 | 0部 | 暂无离线视频
+→ toast: 已清空离线视频缓存
+```
+
+另一个前置状态也验了：缓存为 0 时按钮**不出现**（符合条件渲染预期），
+页面全程零 pageerror，5 张卡片一字排开渲染正常。
+
+## 四、守卫测试（同样验证了「真的会红」）
+
+新增用例锁三件事：引擎导出还在、清点页真的 import 且 **await 调用**（不是只 import）、
+资产卡与清空入口的 aria-label 存在。
+
+按上一轮的教训，先验证守卫有效再收工：
+把 `await clearOfflineCache()` 改成 `await Promise.resolve()` → **1 failed**；恢复 → **20/20 passed**。
+
+## 五、状态
+
+5 包 typecheck ✅、前端 tsc 0 error ✅、覆盖层 1064 一致 ✅、
+死模块基线 8 项 ✅、docs 43/43 ✅、batch-selection 20/20 ✅。
+
+---
+
+# 第十五轮：修复「全屏模式下反复弹安装横幅」+ 补齐 platform 行为测试（2026-11-10）
+
+## 一、缺陷：两处 standalone 判断口径不一致
+
+沿用「单次导出」扫描法，发现 `lib/platform.ts` 的 `isStandalonePwa()` **全仓零调用**。
+顺着查「谁在判断 standalone」，全仓只有两处：
+
+| 位置 | 判据 | 是否被用 |
+|---|---|---|
+| `lib/platform.ts` `isStandalonePwa()` | standalone **或 fullscreen** 或 iOS `navigator.standalone` | ❌ 零调用 |
+| `components/install-prompt.tsx:38` | 内联只判 standalone + iOS | ✅ 生产在用 |
+
+**后果**：用户把站点「添加到主屏」后以 **fullscreen** 方式打开时，
+`install-prompt` 判定为「未安装」，于是继续弹「安装到桌面」横幅——
+一个已经装好的人被反复劝说安装。
+
+判定链路是确定的：`shouldOfferInstall()` 第一行就是
+`if (input.standalone || !input.canPrompt) return false`，
+传入的 `standalone` 为假 → 继续检查访问次数与关闭时间 → 满足就弹。
+
+## 二、修复
+
+把 `install-prompt.tsx` 的内联判断换成 `isStandalonePwa()`，口径收敛到单一事实源：
+
+```diff
+- const standalone =
+-   window.matchMedia("(display-mode: standalone)").matches ||
+-   (navigator as Navigator & { standalone?: boolean }).standalone === true
++ // 统一走 lib/platform 的 isStandalonePwa：同时认 standalone、fullscreen 与 iOS navigator.standalone。
++ const standalone = isStandalonePwa()
+```
+
+顺带把那个「写好了没人用」的导出变成了生产代码的一部分——比删掉它更有价值。
+
+## 三、补齐 platform.ts 的行为测试（16 条）
+
+`lib/platform.ts`（81 行、5 个导出）此前**没有任何测试**：
+`getModifierKey` 只被别的测试间接断言过「源码里调用了它」，
+而 `isAppleDevice` / `isTouchDevice` / `isStandalonePwa` 的**实际判定结果**一行都没验过。
+
+本轮它从「死导出」变成「决定是否弹安装横幅的生产判断」，所以先把行为钉住：
+
+| 覆盖点 | 用例 |
+|---|---|
+| SSR（无 window） | 三个函数都返回 false，不抛错 |
+| Client Hints 优先级 | `platform: Windows` 时不被 legacy 的 `MacIntel` 拉回 true |
+| 传统 UA 兜底 | macOS / iPhone / Windows 三档 |
+| iPadOS 13+ 伪装 | `MacIntel` + `maxTouchPoints: 5` 识别为 Apple |
+| 触摸三信号 | `ontouchstart` / `maxTouchPoints` / `pointer: coarse` 各自单独成立即算触屏 |
+| 触摸边界 | `matchMedia` 缺失不抛错 |
+| **standalone vs fullscreen** | **fullscreen 也必须算已安装**（本次修复的直接依据） |
+
+实现方式：注入受控的假 `window`（不用 jsdom 的真实 window），
+每个用例 `finally` 无条件还原 `globalThis.window`，互不污染。
+这是环境相关判断唯一可靠的测法——不能指望测试运行器恰好模拟出
+「iPadOS 桌面版伪装成 MacIntel」这类边界。
+
+## 四、验证
+
+**16/16 通过**，并且验证了测试真的会红：
+把 `platform.ts` 里的 fullscreen 分支删掉 → **1 failed，且精确指向**
+「display-mode: fullscreen 也算已安装」那条；恢复 → **16/16 passed**。
+
+## 五、状态
+
+5 包 typecheck ✅、前端 tsc 0 error ✅、覆盖层 **1065** 文件一致 ✅、
+死模块基线 8 项 ✅、docs 43/43 ✅、相关单测 **46/46** ✅。
+
+---
+
+# 第十六轮：把 HITS 中心性接进算法实验室（2026-11-10）
+
+## 一、缺口
+
+沿用「零调用导出」扫描（90 个零调用业务函数），逐个核对后聚焦到
+`lib/knowledge-graph.ts` 的 `computeGraphCentrality()`：
+
+- 实现完整：HITS 算法，15 轮 hubs/authorities 迭代 + L2 归一化，含除零保护；
+- **全仓零调用**；
+- 而同文件的 `findShortestTechPath` / `analyzeStackCompatibility` / `PRESET_TECH_GRAPH`
+  都在 `components/algorithm-lab/graph-panel.tsx` 里正常使用。
+
+**后果**：算法实验室的「知识星图」标签页把图谱画出来了、能双向寻路、能算技术栈兼容度，
+却**从没告诉用户「哪几个技术是这张图的枢纽、哪些是被依赖的权威」** ——
+而这两组数字一直是算好的，只差一层展示。
+
+## 二、修复
+
+在 `graph-panel.tsx` 里接上，新增「生态枢纽 (Hubs) / 被依赖权威 (Authorities)」双榜：
+
+- 各取前 5 名，条形宽度按归一化分值等比表达，右侧给出三位小数；
+- id → 展示名走 `Map` 映射，榜上不出现裸 id；
+- 用 `useMemo` 缓存 `computeGraphCentrality(PRESET_TECH_GRAPH)`，静态图只算一次。
+
+## 三、实测数据（语义合理）
+
+浏览器实测 `/algorithms` → 切到「知识星图」标签：
+
+```
+生态枢纽 (Hubs)              被依赖权威 (Authorities)
+1. Next.js      0.816        1. Drizzle ORM        0.620
+2. Hono         0.427        2. Cloudflare Workers 0.482
+3. Fastify      0.357        3. Tailwind CSS       0.372
+4. Nuxt         0.144        4. TypeScript         0.316
+5. vLLM         0.063        5. Prisma             0.316
+```
+
+Next.js 作为框架枢纽向外连接最多、Drizzle/Tailwind 作为底座被依赖最强 —— 与直觉一致，
+说明算法与数据映射都没接错。页面零 pageerror。
+
+## 四、过程中修掉的一个真问题
+
+第一版用了动态 Tailwind 类（`text-${tone}-500` / `bg-${tone}-500`）。
+**JIT 扫不到运行期拼接的类名，这些颜色根本不会生成 CSS**，榜单会变成无色块。
+
+改成静态映射（`iconCls: 'text-indigo-500'` / `barCls: 'bg-indigo-500'`），
+并把「不许出现 `bg-${` / `text-${`」写进守卫测试 —— 这类问题编译期不报错、运行期只是"看起来没样式"，
+靠人眼看很容易漏。
+
+## 五、守卫与验证
+
+在 `algorithm-lab-structure.test.ts` 新增用例，锁：引擎导出在、面板**真的调用**
+`computeGraphCentrality(PRESET_TECH_GRAPH)`（不是只 import）、双榜文案与数据源在、
+无动态色阶类。
+
+按惯例验证守卫真的会红：把调用改成 `null as any` → **1 failed**；恢复 → **5/5 passed**。
+
+## 六、状态
+
+5 包 typecheck ✅、前端 tsc 0 error ✅、覆盖层 1065 文件一致 ✅、
+死模块基线 8 项 ✅、docs 43/43 ✅、相关单测 **41/41** ✅、`/algorithms` 200 ✅。
+
+---
+
+# 第十七轮：算法实验室的 LinUCB 换回真引擎（2026-11-10）
+
+## 一、缺陷：面板宣称 LinUCB，实现是手工线性加权
+
+把「零调用导出」扫描扩到 packages/core，发现 `linucb.ts` 的**核心函数全部零调用**：
+`createLinUCBModel` / `predictArmWeights` / `updateArmReward` 只被测试用；
+`serializeLinUCB` / `deserializeLinUCB` 连测试都没有。
+
+顺着查到 `/algorithms` 的 LinUCB 面板，发现**描述与实现不符**：
+
+| 位置 | 内容 |
+|---|---|
+| 面板标题 | 「LinUCB 情境自适应多臂融合实时推演」 |
+| 面板描述 | 「终结传统静态 RRF 的经验常数权重，根据当前输入的特征动态求解最优置信上界权重」 |
+| 实际实现 | `weight + 0.3 * (1 - lenNorm)` 这类**固定系数线性相加** |
+
+真正的 LinUCB 需要三样东西，手工实现一样都没有：
+1. **上下文特征向量 x**（5 维）参与矩阵运算；
+2. **A 矩阵求逆**（`createIdentityMatrix` / `invertMatrix`）；
+3. **置信上界探索项** `sqrt(x^T A^{-1} x)` —— 这正是「UCB」的全部含义。
+
+反馈也只是 `cur.weight + 0.15` 线性累加，不更新任何矩阵。
+也就是说：**算法实验室把自家最强的算法讲成了演示，而真引擎在旁边吃灰。**
+
+## 二、修复
+
+1. **新增 core 镜像条目**：`scripts/core-mirrors.json` 加 `linucb`（verbatim），
+   跑 `sync-core-mirrors.mjs` 生成 `apps/web-overlay/src/lib/linucb.ts` 与镜像副本。
+   必须这样做，因为 `apps/web` 是 vendored 底座、**无法 import `@navhub/core`**（会 TS2307）。
+2. **面板改调真引擎**：
+   - `useState<LinUCBModel>(() => createLinUCBModel(0.25))` 持有模型；
+   - `predictArmWeights(model, query)` 算权重（含真实 UCB 探索项）；
+   - `updateArmReward(model, channel, query, 1)` 处理反馈（更新 A 与 b）；
+   - `extractContextFeatures(query)` 取上下文向量供界面展示。
+3. **删掉全部手写实现**：`DEFAULT_ARMS`、`ArmState`、线性加权、`+ 0.15` 累加全部移除。
+
+一个实现细节：引擎是**原地修改** model 的 A/b/theta，引用不变，
+所以额外加了一个 `tick` 自增触发器强制 `useMemo` 重算 —— 不能依赖对象引用变化。
+
+## 三、实测：引擎行为与手工实现确实不同
+
+浏览器实测（`/algorithms` → LinUCB 面板）：
+
+```
+初始:              EXACT 1.75 | SEMANTIC 1.50
+点 1 次 SEMANTIC:  EXACT 1.75 | SEMANTIC 2.02  (clicks=1)
+点 3 次 SEMANTIC:  EXACT 1.75 | SEMANTIC 2.14  (clicks=3)
+换成中文长句:      EXACT 1.68 | SEMANTIC 1.45
+```
+
+两个**手工实现做不到**的现象：
+1. 换查询词后 `EXACT` 也跟着从 1.75 变 1.68 —— 上下文向量真的进了矩阵运算，
+   而不是各臂独立累加；
+2. 强化同一臂时其余臂权重相对变化 —— 这是置信区间重算的结果。
+
+初始 1.75/1.35/1.25/1.5/0.65 也与引擎的 `basePriors` + UCB 项吻合。
+
+## 四、守卫（并验证真的会红）
+
+新增三条用例：面板从 `@/lib/linucb` 引入且调用四函数；手写痕迹（`arms.exact.weight + 0.3`、
+`cur.weight + 0.15`、`DEFAULT_ARMS`）必须消失；`core-mirrors.json` 已登记 linucb；
+镜像文件带 `@core-mirror` 标记。
+
+验证：把 import 改回 `@navhub/core` → **1 failed**；恢复 → **8/8 passed**。
+
+## 五、一次差点漏掉的失败（流程教训）
+
+最终回归时我把 `check-frontend-typecheck` 的输出放进管道 `| Select-Object -Last 1`，
+结果**输出被吞掉、看起来像通过**。单独跑才发现真有一条：
+`test/algorithm-lab-structure.test.ts(149,50): error TS7006: Parameter e implicitly has an any type`。
+
+补上类型标注后 exit=0。
+
+> 教训与仓库自己写的一致：**取证命令不要用管道收尾**，
+> 管道的退出码是最后一个命令的，绿得毫无意义。后续回归改成逐条看 `$LASTEXITCODE`。
+
+## 六、状态
+
+5 包 typecheck ✅ (exit 0)、前端 tsc 0 error ✅ (exit 0)、
+core 镜像 15 条逐字节一致 ✅ (exit 0)、覆盖层 **1066** 文件一致 ✅、
+死模块基线 8 项 ✅、docs 43/43 ✅、相关单测 **44/44** ✅、`/algorithms` 200 ✅。
+
+---
+
+# 第十八轮：算法实验室又两个面板在用假实现（2026-11-10）
+
+上一轮发现 LinUCB 面板手写线性加权冒充 UCB。本轮把同一判据套到**全部 12 个面板**：
+
+| 面板 | 引用真实引擎 | 自写算法 | 结论 |
+|---|---|---|---|
+| linucb | ✅（上轮修） | — | 已修 |
+| hyperbolic | ❌ | 是 | **本轮修** |
+| health | ❌ | 是 | **本轮修** |
+| 其余 9 个 | ✅ | — | 正常 |
+
+## 一、庞加莱双曲面板：手写距离公式漏了边界钳制
+
+面板自带 `poincareDist2D`，与 core 的 `poincareDistance` 有三处实质差异：
+
+| 项 | core 引擎 | 面板手写 |
+|---|---|---|
+| 边界钳制 | `clampToBall()` 把点钳进圆盘 | **无** |
+| 越界上界 | 30.0 | 25.0（同场景两个答案） |
+| 打分 | `depthParity^1.5` + `toFixed(4)` | `depthParity^1`（指数缺失，排序会变） |
+| 维度 | 任意维循环 | 硬编码 2D |
+
+缺 `clampToBall` 是实质问题：庞加莱距离公式要求 ‖u‖<1，
+点越界时 `denom ≤ 0` 会直接返回魔法值 —— 距离彻底失真，而不是报错。
+
+**修复**：登记 `hyperbolic` 到 `core-mirrors.json`（第 16 条），面板改调
+`findTopAlternativesInHyperbolicSpace`（内含钳制、sigma=2.5/beta=1.5 打分、降序、limit）。
+
+实测（React 锚点）：
+
+```
+#1 Vue.js   双曲测地距 0.1995  亲和分 92.0
+#2 Angular  双曲测地距 0.2017  亲和分 91.3
+#3 Svelte   双曲测地距 0.3167  亲和分 88.1
+#4 Zed      双曲测地距 3.1387  亲和分 28.4
+```
+
+同为前端框架的三个距离极近、亲和分高；编辑器 Zed 跨域，距离 3.14、分 28.4 —— 语义正确。
+页面还显示「‖x‖ = 1.0（流形边界）」，正是引擎做了 `clampToBall` 的证据。
+
+## 二、防虚假 200 面板：只复刻了 19 条关键词中的 6 条
+
+面板手写 `calculateTextEntropy` 并内联硬编码词表，而 core 的 `health-sentinel.ts` 是完整引擎：
+
+| 能力 | core 引擎 | 面板手写 |
+|---|---|---|
+| 停放/错误关键词 | **19 条** | 6 条 |
+| HTML 剥离 | 独立 `stripHtmlToText()`（去标签/script/style） | 单条正则 `replace(/<[^>]+>/g)` |
+| 视觉哈希比对 | ✅ 汉明距离 ≤8 判停放模板 | ❌ |
+| 置信度 | ✅ `confidence` 0.9/0.95 | ❌ |
+| 截断感知 | ✅ `textLength` + `truncated`（防 MDN 403 页误判） | ❌ |
+
+漏掉的 13 条关键词包括 `dan.com`、`godaddy domain`、`sedo domain parking`、
+`域名出售`、`forbidden`、`access denied`、`blocked by cloudflare` ——
+**恰好是真实停放页最常用的那批**。
+
+**修复**：登记 `health-sentinel` 到清单（第 17 条），面板改调 `auditPageHealth`。
+
+实测三个样本全部判定正确：
+
+```
+正常技术站  熵 5.3375  → HEALTHY
+停放广告页  熵 4.2554  → SUSPICIOUS_PARKED
+SPA 软 404  熵 4.6756  → SOFT_404
+```
+
+熵值精度也是引擎的 4 位小数（手写版 3 位）。
+
+## 三、守卫（均验证过「真的会红」）
+
+新增 4 条用例：两个面板必须从 `@/lib/*` 引入引擎并真的调用；
+手写痕迹（`function poincareDist2D`、`return 25.0`、`Math.exp(-dist / 2.5) * depthParity`、
+`function calculateTextEntropy`、内联 6 词数组）必须消失；
+`core-mirrors.json` 已登记两个条目；镜像带 `@core-mirror` 且含 `clampToBall` /
+`DOMAIN_PARKING_KEYWORDS` / `dan.com` / `blocked by cloudflare`。
+
+逐个验证：改回 `@navhub/core` → 1 failed；把调用换成 `null as any` → 1 failed；恢复 → **12/12 passed**。
+
+## 四、状态
+
+前端 tsc 0 error ✅ (exit 0)、core 镜像 **17** 条逐字节一致 ✅ (exit 0)、
+覆盖层 **1068** 文件一致 ✅、死模块基线 8 项 ✅、docs 43/43 ✅、
+algorithm-lab 守卫 **12/12** ✅、`/algorithms` 200 ✅。
+
+---
+
+# 第十九轮：系统体检未发现新缺口（2026-11-10）
+
+前两轮用「面板宣称的算法 vs 实际实现」抓出 3 个假实现（LinUCB / 庞加莱 / 健康巡检），
+本轮把这个判据系统性铺开，覆盖到全部页面与 API 层。**结论：没有再发现同类缺陷。**
+
+## 一、算法实验室 12 个面板：全部对齐真引擎
+
+逐面板核对「import 的引擎」：
+
+| 面板 | 引用的引擎 |
+|---|---|
+| linucb | `@/lib/linucb`（上轮修） |
+| hyperbolic | `@/lib/hyperbolic`（上轮修） |
+| health | `@/lib/health-sentinel`（上轮修） |
+| synthesizer | `@/lib/dynamic-tool-synthesizer` |
+| webmcp | `@/lib/webmcp-bridge` |
+| mesh | `@/lib/crdt-sync` |
+| vault | `@/lib/vault` |
+| visual | `@/lib/visual-fingerprint` |
+| federated | `@/lib/federated-recommendation` |
+| speculation | `@/lib/speculative-prerender` |
+| intent | `@/lib/speculative` |
+| graph | `@/lib/knowledge-graph` |
+
+**12/12 全部调用真实引擎，零自写实现。**
+
+## 二、全路由扫荡：14 条主路由全部健康
+
+`/` `/videos` `/marketplace` `/graph` `/me` `/favorites` `/hot` `/tags` `/sites`
+`/category` `/algorithms` `/preferences` `/import` `/submit`
+
+全部 **status 200**、无 pageerror、无「加载失败/undefined/NaN」字样、h1 正常。
+
+## 三、逐类排查过的「疑似缺口」及结论
+
+### 1. 从未被 set 的 boolean 状态 —— 0 处
+扫描全部 `useState(false)`，检查其 setter 是否被调用过。0 处未使用
+（意味着上一轮修掉的「按钮永不渲染」这类问题在当前代码里没有残留）。
+
+### 2. API 客户端 8 个零调用函数 —— 逐个查证后都不是缺口
+
+| 函数 | 结论 |
+|---|---|
+| `sendCopilotChat` | 非流式版；UI 用的是更好的 `streamCopilotChat`（流式），两者并存合理 |
+| `fetchSiteWayback` | 纯查询；UI 走的是 `healSiteWayback` 或后端直返 `waybackRecoveryUrl` |
+| `runAiPluginAudit` / `updatePlugin` | 管理端插件编辑/审计入口，当前 UI 未开放该操作 |
+| `flushClickOutbox` / `newClickEventId` / `buildClickEventBody` | 内部实现细节，由 `reportClick` 间接调用 |
+| `setApiToken` | 令牌写入走别的路径 |
+
+### 3. E2EE 收藏页宣称 vs 实现 —— 名实相符
+页面写「AES-256-GCM 加密导出 .navhub.vault，密码不上云」，实际确实调用
+`encryptVault` / `decryptVault`（`@/lib/vault`），含密码长度校验、二次确认、错误处理。
+
+### 4. ⌘K 搜索宣称 RRF —— 名实相符
+调 `searchSites` 真 API，读 `hit.contributions` 显示通道徽标；
+`contributions` 的 `{rank, value}` 结构与排序用法我核对过（`[1].value` 降序取首），正确。
+
+## 四、这轮的方法学价值
+
+前两轮有效是因为「同时看**宣称**和**实现**」。这轮把它变成一次完整审计，
+**证明的是「没有更多同类问题了」而不是「没找到问题」** ——
+前者有覆盖证据（12/12 面板、14/14 路由、全量状态扫描），后者只是没看。
+
+## 五、状态
+
+与上轮一致：前端 tsc 0 error、core 镜像 17 条一致、覆盖层 1068 文件一致、
+死模块基线 8 项、docs 43/43、algorithm-lab 守卫 12/12。本轮**未改动任何生产代码**。
+
+## 六、补记：API 层实测与两个「看似闲置」的接口
+
+对后端做了一轮延迟/正确性实测（8 个端点）：
+
+| 端点 | 状态 | 延迟 | 备注 |
+|---|---|---|---|
+| `/api/sites?limit=20` | 200 | 15ms | 15KB |
+| `/api/categories` | 200 | 9ms | 85KB / 236 分类 |
+| `/api/search`（语义） | 200 | 66ms | 5 条 |
+| `/api/search`（拼音） | 200 | 52ms | 5 条 |
+| `/api/videos?limit=12` | 200 | 187ms | 7KB |
+| `/api/graph/centrality` | 200 | **8ms** | hubs 与前端算出的一致 |
+| `/api/graph/path` | 200 | 7ms | found=true |
+| `/api/graph/compatibility` | 200 | 2ms | coherenceScore=28 |
+
+**全部在预算内，无慢端点。**
+
+### 两个「前端从不调用」的接口，查证后不是缺陷
+
+`/api/graph/centrality` 与 `/api/graph/compatibility` 前端零调用，但：
+
+- 后端实现是 `computeGraphCentrality(PRESET_TECH_GRAPH)` / `analyzeStackCompatibility(...)` ——
+  **与前端 `graph-panel.tsx` 调用的是同一批纯函数**；
+- 纯函数无 I/O，在前端本地算省掉一次网络往返，是**更好的选择**；
+- 后端接口保留给 MCP 工具与第三方调用方（`hub-route-policy.generated.ts` 里登记为 `public`）。
+
+所以我**没有**把前端改成请求这两个接口 —— 那会让一个 0ms 的本地计算变成 8ms 的网络请求，
+并且多一个失败点。这是「看起来重复，实则分层合理」的例子，
+与前面几轮「假实现」有本质区别。
+
+### 一次测试方法错误（记下来避免重犯）
+
+最初我把 `/api/home/navigation` 和 `/api/graph` 都打到 :8787（后端），得到两个 404，
+一度以为是缺路由。实际 `/api/home/navigation` 是 **Next.js 路由（:3000）**，
+从存储读 JSON、不走中枢；`/graph` 是**页面**不是 API。
+换对端口后两者都是 200（637ms / 185ms）。
+
+> 教训：这个仓库有两套 HTTP 面（Next :3000 / 中枢 :8787），
+> 测端点前必须先确认它属于哪一侧，否则 404 会被误读成「功能缺失」。
+
+---
+
+# 第二十轮：首屏优化的一次失败尝试（2026-11-10）
+
+上一轮我建议转向真实使用数据。但隔离的 #9 遗留项（首屏预算超标）一直悬着，
+本轮尝试用**真实优化**解决它，而不是改阈值。**结果失败，已完整回退。**
+
+## 一、先摸清首页到底重在哪
+
+拆包对比 `/` 与 `/hot` 的 chunk 差集：
+
+| 首页独有 chunk | 大小 | 内容 |
+|---|---|---|
+| `0slvbsfsua32r.js` | 111 KB | 首页核心逻辑（视图模式/场景推荐/探索矩阵/快捷入口） |
+| `0gtzjn-z70b1_.js` | 65 KB | 未知（vendored 原语） |
+| `1b1ftez9td9lk.js` | 43 KB | navigation-card + speed-dial |
+| `0k5op5tdw579j.js` | 42 KB | workspace-filter 及其依赖 |
+| 其余 3 个 | ~50 KB | home-hero-deck 等 |
+
+**结论：首页多出来的全是它自己的交互，没有可剔除的第三方库。**
+（111 KB 那个 chunk 里抽出 115 条中文 UI 文案，全是首页功能：视图切换、场景推荐、
+探索矩阵、开发者微工具箱、热度榜、生态图谱…）
+
+## 二、验证懒加载现状：已经做得不错
+
+`navigation-content.tsx` 里已有 **8 个组件**走 `dynamic()`：
+`ModularCanvas` / `HomeHeroDeck` / `KeyboardShortcutsDialog` / `SitePeekDialog` /
+`AddSiteDialog` / `QuickToolsDrawer` / `HomeDIYToolbar` / `BatchOperationDock`。
+
+而且 `HomeHeroDeck` 带了**同高骨架**防 CLS，注释写得很清楚。
+剩余 15 个静态 import 里，13 个是首屏必现（sidebar / toolbar / 分类区 / 页脚 等），
+**唯一符合「只在特定状态出现」的是 `category-in-situ-controls`（12.7 KB，编辑态专用）**。
+
+## 三、优化尝试与结果
+
+把它改成 `dynamic(() => import(...), { ssr: false, loading: 骨架 })`。
+类型检查通过，构建成功。然后量数：
+
+```
+改前: 22 chunks / 735 KB
+改后: 22 chunks / 743 KB   ← 涨了 8 KB
+/：1169 KB → 1177 KB
+```
+
+**优化适得其反。** 原因很清楚：
+1. 一个只被**一处**使用的 12.7 KB 组件，拆出去的收益本来就薄；
+2. `dynamic()` 本身要注入 runtime 包装（`loadable` 逻辑、chunk 映射表）；
+3. 我加的 `loading` 骨架（4 个 `<div className="animate-pulse">`）也是代码。
+
+三者相加超过了移出的 12.7 KB。**已完整回退**，恢复为静态 import。
+
+## 四、这次失败的价值
+
+它把「首屏预算超标」这件事的**性质**钉死了：
+
+- 不是「该懒加载的没懒加载」—— 8 个大件都已经懒加载了；
+- 不是「混进了不该有的库」—— 首页独有的 chunk 全是自家功能代码；
+- 而是**首页功能本身就在增长**（视图模式、场景推荐、探索矩阵、热度榜、生态图谱…
+  每一个都是真实功能，不是冗余）。
+
+所以正确结论是：**要么砍功能，要么按新基线重新定阈值**，
+没有第三条「不牺牲功能还能瘦 60 KB」的路。这个判断现在有实测支撑，不再是猜测。
+
+## 五、回退验证
+
+回退后逐项确认：`git diff` 只剩第 4 轮那个真实功能改动（批量移除接线），
+`CategoryInSituControls` 的 import 也回到了原始位置（第一次回退时误放到文件中部，已修正）。
+临时构建目录 `.next-opt2`（367 MB）已删除。
+
+| 检查 | 结果 |
+|---|---|
+| 前端 tsc | 0 error (exit 0) |
+| 覆盖层 | 1068 文件一致 |
+| core 镜像 | 17 条逐字节一致 (exit 0) |
+| 相关单测 | **48/48** |

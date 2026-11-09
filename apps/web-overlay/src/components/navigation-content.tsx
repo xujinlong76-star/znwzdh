@@ -191,6 +191,7 @@ export function NavigationContent({
     setCollapsedCategoryIds,
     customCategories,
     addSiteToCustomCategory,
+    removeSiteFromCustomCategory,
     siteCategoryOverrides,
     pinnedSiteIdsByCategory,
     togglePinSiteInCategory,
@@ -787,6 +788,25 @@ export function NavigationContent({
                 pinned > 0
                   ? { title: '📌 已固定 ' + pinned + ' 个站点', description: '已加入收藏与工作台启动坞。' }
                   : { title: '⚠️ 固定失败', description: '浏览器本地存储不可用，或网址不合法。' },
+              )
+            }}
+            onBatchDeleteFromCustomCategories={() => {
+              // 只处理「自定义分类里的卡片」：这些是用户自建的本地条目，删了能重建；
+              // 内置站点库的条目不在这个作用域里（那是回收站/管理端的职责）。
+              let removed = 0
+              for (const cat of customCategories) {
+                const hit = selectedSites.filter((site) =>
+                  (cat.items || []).some((item) => item.id === site.id),
+                )
+                for (const site of hit) {
+                  removeSiteFromCustomCategory(cat.id, site.id)
+                  removed++
+                }
+              }
+              toast(
+                removed > 0
+                  ? { title: '🗑️ 已移除 ' + removed + ' 个站点', description: '仅从你的专属分类中移除，站点库本身不受影响。' }
+                  : { title: '⚠️ 没有可移除的站点', description: '所选站点都不在自定义分类里。' },
               )
             }}
           />

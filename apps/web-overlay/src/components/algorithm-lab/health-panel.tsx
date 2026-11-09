@@ -25,40 +25,35 @@ const SAMPLE_HTMLS = {
   },
 }
 
-function calculateTextEntropy(text: string): number {
-  if (!text || text.length === 0) return 0.0
-  const clean = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-  const freq: Record<string, number> = {}
-  for (let i = 0; i < clean.length; i++) {
-    const c = clean[i]
-    if (c) freq[c] = (freq[c] || 0) + 1
-  }
-  let h = 0
-  for (const c in freq) {
-    const p = (freq[c] || 0) / clean.length
-    h -= p * Math.log2(p)
-  }
-  return Number(h.toFixed(3))
-}
+import { auditPageHealth } from '@/lib/health-sentinel'
 
+/**
+ * 2026-11-10 修正：此面板此前**手写了 calculateTextEntropy**，并内联硬编码了 6 个停放关键词，
+ * 而 core 的 health-sentinel 是一个完整的防虚假 200 引擎：
+ *
+ *  - 19 条停放/错误关键词（面板只复刻了 6 条，漏掉 dan.com / godaddy / sedo /
+ *    域名出售 / forbidden / access denied / blocked by cloudflare 等）;
+ *  - stripHtmlToText() 独立函数（去标签、去 script/style），面板用单条正则近似；
+ *  - 支持视觉感知哈希比对（汉明距离 ≤8 判停放模板）;
+ *  - 带 confidence 与 textLength/truncated 感知 —— 截断页不会被误判。
+ *
+ * 面板标题写的是「Shannon 文本信息熵与防虚假 200 巡检引擎」，
+ * 那它就该用引擎，而不是复刻一小半。
+ */
 export function HealthPanel() {
   /* --- 模块 3：页面健康状态 --- */
   const [healthSnippet, setHealthSnippet] = useState(SAMPLE_HTMLS.parked.html)
   const healthAudit = useMemo(() => {
-    const entropy = calculateTextEntropy(healthSnippet)
-    const lower = healthSnippet.toLowerCase()
-    const parkingKeywords = ['domain for sale', 'buy this domain', 'renew this domain', 'hugedomains', '404 not found', '页面未找到']
-    const matched = parkingKeywords.filter((k) => lower.includes(k))
-    let status = 'HEALTHY'
-    let reason = '文本信息熵充盈，无停放或软404特征'
-    if (matched.length >= 2 || (matched.length === 1 && healthSnippet.length < 400)) {
-      status = matched.some((m) => m.includes('404')) ? 'SOFT_404' : 'SUSPICIOUS_PARKED'
-      reason = `检出虚假 200 关键字特征: [${matched.join(', ')}]`
-    } else if (entropy < 2.0) {
-      status = 'SUSPICIOUS_PARKED'
-      reason = `信息熵极低 (${entropy} < 2.0)，疑似空白或停放页`
+    // 走真引擎：19 条关键词 + 独立 HTML 剥离 + 置信度 + 截断感知
+    const audit = auditPageHealth("https://example.com/demo", healthSnippet)
+    return {
+      entropy: audit.shannonEntropy,
+      matched: audit.matchedParkingKeywords,
+      status: audit.status,
+      reason: audit.reason,
+      confidence: audit.confidence,
+      textLength: audit.textLength,
     }
-    return { entropy, matched, status, reason }
   }, [healthSnippet])
 
   return (

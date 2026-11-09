@@ -181,6 +181,29 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
     expect(src).toContain("onClearSelection={clearSelection}");
   });
 
+  /**
+   * 2026-11-10：批量「从自建分类移除」此前**没有接线**。
+   *
+   * `BatchOperationDock` 的移除按钮是条件渲染（`{onBatchDeleteFromCustomCategories && ...}`），
+   * 而 `navigation-content.tsx` 只传了「收录」与「固定」两个回调，第三个一直没传 ——
+   * 于是这个按钮在真实页面上**永远不出现**，`batchDeleteSitesFromCustomCategories`
+   * 这个已实现并有单测的引擎成了孤岛。
+   *
+   * 守卫两件事：回调必须被传入，且必须真的调用 hook 的移除能力（不能只传个空函数）。
+   */
+  it("批量「从自建分类移除」已接线（回归：按钮因缺回调永远不渲染）", () => {
+    const src = overlaySource("src/components/navigation-content.tsx");
+    const dock = overlaySource("src/components/batch-operation-dock.tsx");
+    // 1) 按钮确实是条件渲染 —— 说明「不传回调 = 按钮消失」这个机制是真的
+    expect(dock).toContain("{onBatchDeleteFromCustomCategories && (");
+    // 2) 调用点必须传这个回调
+    expect(src).toContain("onBatchDeleteFromCustomCategories={() => {");
+    // 3) 回调体内必须真的调用移除 API（而非空实现糊过去）
+    expect(src).toContain("removeSiteFromCustomCategory(");
+    // 4) 移除能力来自 useHomeDIY，且在解构里取到了
+    expect(src).toContain("removeSiteFromCustomCategory,");
+  });
+
   it("工具栏有多选开关与全选，并把状态传给卡片", () => {
     const toolbar = overlaySource("src/components/navigation-toolbar.tsx");
     const section = overlaySource("src/components/navigation-category-section.tsx");
@@ -222,3 +245,32 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
     expect(body.indexOf("if (!selectable) {")).toBeLessThan(body.indexOf("preventDefault"));
   });
 });
+
+describe("本机离线资产：视频缓存必须可查看可清空", () => {
+  /**
+   * 2026-11-10：`lib/offline-video-cache.ts` 有 10 个导出，其中 4 个（getOfflineVideo /
+   * getOfflineCacheStats / clearOfflineCache / cacheVideoBatch）**全仓无人调用**。
+   *
+   * 后果很具体：video-card 一直能把视频存进 IndexedDB，但用户**看不到占了多少、也删不掉**，
+   * 缓存只会一直躺在本机磁盘里。资产清点页（/me/data）原本只清点四类数据，正好漏了它。
+   *
+   * 守卫三件事：引擎导出还在、清点页真的调了统计与清空、卡片文案存在。
+   */
+  it("资产清点页接入了离线视频缓存的统计与清空", () => {
+    const lib = overlaySource("src/lib/offline-video-cache.ts");
+    expect(lib).toContain("export async function getOfflineCacheStats");
+    expect(lib).toContain("export async function clearOfflineCache");
+
+    const manager = overlaySource("src/components/user-center/local-data-manager.tsx");
+    // 必须真的 import 这两个能力（而不是自己另写一套统计）
+    expect(manager).toContain("getOfflineCacheStats");
+    expect(manager).toContain("clearOfflineCache");
+    // 必须真的调用，而不是只 import
+    expect(manager).toContain("await getOfflineCacheStats()");
+    expect(manager).toContain("await clearOfflineCache()");
+    // 资产卡与清空入口都要有（缺一个就等于用户看不见 / 删不掉）
+    expect(manager).toContain("离线视频缓存");
+    expect(manager).toContain('aria-label="清空离线视频缓存"');
+  });
+});
+

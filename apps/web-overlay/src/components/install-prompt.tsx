@@ -11,6 +11,7 @@ import {
   parseVisitCount,
   shouldOfferInstall,
 } from "@/lib/install-prompt"
+import { isStandalonePwa } from "@/lib/platform"
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -34,9 +35,10 @@ export function InstallPrompt() {
         sessionStorage.setItem("navhub:install-counted", "1")
       }
       const dismissedUntil = Number(localStorage.getItem(INSTALL_DISMISS_KEY) ?? 0)
-      const standalone =
-        window.matchMedia("(display-mode: standalone)").matches ||
-        (navigator as Navigator & { standalone?: boolean }).standalone === true
+      // 统一走 lib/platform 的 isStandalonePwa：它同时认 standalone、fullscreen 与 iOS navigator.standalone。
+      // 此前这里内联只判 "(display-mode: standalone)"，漏掉 fullscreen ——
+      // 「装到主屏后以全屏方式打开」会被误判成未安装，反复弹出安装横幅。
+      const standalone = isStandalonePwa()
       const offer = (canPrompt: boolean) =>
         setVisible(shouldOfferInstall({ visits, dismissedUntil, now: Date.now(), standalone, canPrompt }))
 

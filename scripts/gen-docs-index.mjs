@@ -275,7 +275,8 @@ const CHECK_SCRIPTS = [
   ["check-numeric-env.mjs", "数值型环境变量守卫：全仓 Number(process.env.X) 读取点所在文件须有 isFinite 校验或钳位/兜底，防 NaN 静默进超时与上限"],
   ["check-quarantine.mjs", "E2E 隔离台账校验：标记形态 / e2e/QUARANTINE.md 五字段 / 到期日 ≤14 天，形状非法即红（政策唯一来源是 TESTING-STRATEGY.md §4.3）"],
   ["check-strip-syntax.mjs", "strip-types 不兼容语法守卫：apps/api 内的 enum / namespace / 构造函数参数属性 / 装饰器任一命中即违规（tsc 全绿也测不出运行时抛错）"],
-  ["check-web-config-parity.mjs", "前端配置唯一事实源断言：apps/web 与 overlay 的 next.config.js / package.json / tsconfig.json 必须同源"]
+  ["check-web-config-parity.mjs", "前端配置唯一事实源断言：apps/web 与 overlay 的 next.config.js / package.json / tsconfig.json 必须同源"],
+  ["check-no-explicit-any.mjs", "显式 any 棘轮守卫：按文件基线只减不增（TypeScript 语法树数 AnyKeyword，口径与 eslint 一致）；--staged 供 pre-commit 只查暂存集"]
 ];
 
 // ---------------- 动态枚举 docs/ 下的 .md ----------------

@@ -28,16 +28,22 @@ const TECH_NODES: TechNode[] = [
   { id: 'zed', name: 'Zed', category: '编辑器', emb: [-0.58, 0.35] },
 ]
 
-function poincareDist2D(u: [number, number], v: [number, number]): number {
-  const diffSq = (u[0] - v[0]) ** 2 + (u[1] - v[1]) ** 2
-  const uNormSq = u[0] ** 2 + u[1] ** 2
-  const vNormSq = v[0] ** 2 + v[1] ** 2
-  const denom = (1 - uNormSq) * (1 - vNormSq)
-  if (denom <= 0) return 25.0
-  const delta = 1 + (2 * diffSq) / denom
-  const safeDelta = Math.max(1.0, delta)
-  return Math.log(safeDelta + Math.sqrt(Math.max(0, safeDelta * safeDelta - 1)))
-}
+import {
+  findTopAlternativesInHyperbolicSpace,
+  poincareDistance,
+  type HyperbolicNode,
+} from '@/lib/hyperbolic'
+
+/**
+ * 2026-11-10 修正：这个面板此前**手写了 poincareDist2D**，与 core 引擎有三处实质差异：
+ *
+ *  1. 缺 `clampToBall` 边界钳制 —— 庞加莱距离公式要求 ‖u‖<1，
+ *     点越界时 denom ≤ 0 会直接返回魔法值时距离完全失真；
+ *  2. 上界截断写成 25.0（引擎是 30.0），同一场景两个答案；
+ *  3. 打分缺 beta=1.5 指数（引擎是 depthParity^1.5），排序会不同。
+ *
+ * 现在统一调引擎，面板只负责把 embedding 喂进去、把结果渲染出来。
+ */
 
 
 export function HyperbolicPanel() {
@@ -45,21 +51,33 @@ export function HyperbolicPanel() {
   const [selectedTech, setSelectedTech] = useState<string>('react')
   const activeTech = useMemo(() => TECH_NODES.find((t) => t.id === selectedTech) || TECH_NODES[0]!, [selectedTech])
 
+  /**
+   * 平替推导：调 core 引擎 findTopAlternativesInHyperbolicSpace。
+   * 它内部已含 clampToBall 钳制、sigma=2.5 / beta=1.5 打分、按分数降序与 limit。
+   */
   const hyperbolicAlts = useMemo(() => {
-    const list = TECH_NODES.filter((n) => n.id !== activeTech.id).map((cand) => {
-      const dist = poincareDist2D(activeTech.emb, cand.emb)
-      const uNorm = Math.sqrt(activeTech.emb[0] ** 2 + activeTech.emb[1] ** 2)
-      const vNorm = Math.sqrt(cand.emb[0] ** 2 + cand.emb[1] ** 2)
-      const depthParity = Math.max(0, 1 - Math.abs(uNorm - vNorm))
-      const score = Math.exp(-dist / 2.5) * depthParity
+    const toNode = (n: TechNode): HyperbolicNode => ({
+      id: n.id,
+      name: n.name,
+      embedding: n.emb as unknown as number[],
+    })
+    const matches = findTopAlternativesInHyperbolicSpace(
+      toNode(activeTech),
+      TECH_NODES.map(toNode),
+      6,
+    )
+    return matches.map((m) => {
+      const src = TECH_NODES.find((n) => n.id === m.targetId)
       return {
-        ...cand,
-        dist: Number(dist.toFixed(3)),
-        depthParity: Number(depthParity.toFixed(2)),
-        score: Number((score * 100).toFixed(1)),
+        id: m.targetId,
+        name: m.name,
+        category: src?.category ?? "",
+        emb: src?.emb ?? ([0, 0] as [number, number]),
+        dist: m.geodesicDistance,
+        // 引擎给出的 alternativeScore 是 0~1 量级，界面沿用百分比展示
+        score: Number((m.alternativeScore * 100).toFixed(1)),
       }
     })
-    return list.sort((a, b) => b.score - a.score)
   }, [activeTech])
 
   return (
@@ -168,7 +186,8 @@ export function HyperbolicPanel() {
                           </div>
                           <div className="text-xs text-muted-foreground font-mono flex gap-3">
                             <span>双曲测地距: <strong className="text-foreground">{alt.dist}</strong></span>
-                            <span>层级对等: <strong className="text-foreground">{alt.depthParity}</strong></span>
+                            {/* 引擎不暴露 depthParity 中间量，这里展示它最终产出的亲和分（0~100） */}
+                            <span>亲和分: <strong className="text-foreground">{alt.score}</strong></span>
                           </div>
                         </div>
                         <div className="text-right">

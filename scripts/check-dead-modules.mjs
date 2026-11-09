@@ -33,8 +33,6 @@ const UNKNOWN = argv.filter((a) => a !== "--json" && a !== "--update");
 
 /** 首次实测（2026-11-06）登记的 0 引用候选；新增项才判红。 */
 let BASELINE = [
-  "apps/web-overlay/src/app/admin/videos/components/VideoIconUpload.tsx",
-  "apps/web-overlay/src/components/notification-badge.tsx",
   "apps/web-overlay/src/components/quick-access-tray.tsx",
   "apps/web-overlay/src/components/speculative-prerender.tsx",
   "apps/web-overlay/src/components/ui/search-input.tsx",

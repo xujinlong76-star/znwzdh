@@ -159,3 +159,51 @@ pnpm exec vitest run apps/web/test/security-headers.test.ts apps/web/test/csp-re
 ```
 
 覆盖：默认不下发、enforce、report-only、`report-uri` 追加、双开关 enforce 优先、两种档位指令逐字一致、HSTS 仅 https 下发；以及上报解析（两种格式）、URL 脱敏、单 IP/全局限流、请求体上限与端点状态码。
+
+## 6. enforce 判定标准（量化）
+
+> 第 2 步「收集 7 天」只是时间下限，不是切换条件。下面每一条都是**可核对的门槛**，全部满足才切 enforce；任一条不满足就继续 report-only。
+> 现状：`/api/csp-report`（`d19ac263`）与 `NAVHUB_CSP_REPORT_ONLY` 开关（`f51f8d80`）已落地，本节只补判定口径，未改 `next.config.js`。
+
+### 6.1 观察期与样本量（前置）
+
+| 门槛 | 阈值 | 为什么 |
+| :--- | :--- | :--- |
+| 观察时长 | ≥ 7 个自然日，且覆盖 1 个工作日峰值 + 1 个周末 | 懒加载路径只在真实访问里触发 |
+| 有效报告总量 | ≥ 200 条 | 低于此说明「没观察到」，不等于「没问题」 |
+| 核心路径覆盖 | 首页、搜索、站点详情、视频详情、市场、管理端各 ≥ 50 PV | 单页观察不到其他页面的违规源 |
+
+核心路径覆盖不足时，用 E2E 遍历补齐（CI 的 Playwright 已覆盖上述路由），不要靠延长观察期硬等。
+
+### 6.2 分诊指标（全部为 0 才能切）
+
+日志里每条 `[csp-report]` 都是 `lib/csp-report.ts` 脱敏后的 JSON，按 `violatedDirective + blockedUri` 聚合即可核对：
+
+| 指标 | 通过线 |
+| :--- | :--- |
+| 高危外部阻塞（`violatedDirective ∈ {script-src, script-src-elem, connect-src, frame-src}` 且 `blockedUri` 为 `http(s)://` 外域） | 观察期最后 3 天 0 条 |
+| `eval` 类（`blockedUri = eval`） | 0 条（`unsafe-eval` 已移除，出现即为回归） |
+| 新增白名单域名 | 最后 3 天 0 条；此前每条都在第 3 步有书面理由 |
+| 功能异常 | 预演期间 0 例（控制台只有报告、无因拦截导致的功能不可用） |
+
+聚合命令（日志为 JSON 行，可在本地或容器里执行）：
+
+```bash
+grep '\[csp-report\]' app.log | sed 's/.*\[csp-report\] //' | node -e "
+let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
+  const m=new Map();
+  for(const line of s.split('\n')){ if(!line.trim())continue;
+    const r=JSON.parse(line); const k=r.violatedDirective+' | '+r.blockedUri;
+    m.set(k,(m.get(k)||0)+1); }
+  console.log([...m].sort((a,b)=>b[1]-a[1]).map(([k,v])=>v+'\t'+k).join('\n'));
+})"
+```
+
+### 6.3 切 enforce 后 24 小时的回滚阈值
+
+- 任一 `script-src` 拦截导致核心页面不可用 → 立即回滚（按第 5 步重新部署未开 CSP 的上一版）；
+- 违规率（条/千 PV）> report-only 基线 2 倍，或出现观察期没见过的 `violatedDirective` 类别 → 回滚并复盘；
+- 回滚后不要直接再切：先把新增违规分诊进 6.2 的表，重新满足门槛再切。
+
+不满足时的唯一正确处理是继续 report-only。**禁止为了把报告清零往 `script-src`/`connect-src` 里加 `https:` 通配**——那会把「未知外链拦截」这一项唯一收益也一起放弃。
+

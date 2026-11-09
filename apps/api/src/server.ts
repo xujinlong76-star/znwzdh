@@ -583,19 +583,18 @@ export async function buildServer(ctx: AppContext) {
       return reply.code(401).send({ error: "缺少 Bearer token（该路由要求 " + required + " 权限）" });
     }
 
-    // 引导 token / 管理端凭据 / 会话特权：内存比对，视同 admin。
-    // NAVHUB_ADMIN_TOKEN 与 sessionSecret 拆开后，轮换会话签名密钥不再连带泄露管理面。
+    // 引导 token / 管理端凭据：内存比对，视同 admin。
+    // NAVHUB_SESSION_SECRET **不得**作为管理面 Bearer：它是签发给每个登录用户的
+    // 会话签名密钥，泄露面与轮换策略都和运维凭据完全不同（拿它当 admin 等于
+    // 把「会话签名」等同于「最高权限」）。管理面只认显式配置的 ADMIN / BOOTSTRAP token。
     if (
       (ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken)) ||
-      (ctx.config.adminToken && secureEqual(token, ctx.config.adminToken)) ||
-      (ctx.config.sessionSecret && secureEqual(token, ctx.config.sessionSecret))
+      (ctx.config.adminToken && secureEqual(token, ctx.config.adminToken))
     ) {
       auth.actor =
         ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken)
           ? "bootstrap"
-          : ctx.config.adminToken && secureEqual(token, ctx.config.adminToken)
-            ? "admin_token"
-            : "admin_session";
+          : "admin_token";
       auth.kind = "static";
       auth.scopes = ["read", "write", "admin"];
       return;

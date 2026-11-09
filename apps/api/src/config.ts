@@ -428,17 +428,22 @@ function assertSecurityConstraints(
     );
   }
 
-  if (isProd && !config.adminToken) {
-    console.warn(
-      "[navhub] 警告：未设置 NAVHUB_ADMIN_TOKEN，管理端仍可将 NAVHUB_SESSION_SECRET 作为静态凭据使用；" +
-        "建议拆分出独立的管理 token，避免会话签名密钥泄露即等于 admin。"
+  // 2e. 生产必须显式配置管理面凭据（2026-11-09 S-1）。
+  // server.ts 已不再接受 NAVHUB_SESSION_SECRET 作为 admin Bearer，
+  // 若生产既无 ADMIN_TOKEN 也无 BOOTSTRAP_TOKEN，管理面将完全不可用：
+  // 与其等到运维点开后台才 401，不如启动即失败，把问题暴露在上线那一刻。
+  // 保留 BOOTSTRAP_TOKEN 作为「首次引导」逃生口（用完应删除，见下方告警）。
+  if (isProd && !config.adminToken && !config.bootstrapToken) {
+    throw new Error(
+      "生产环境必须设置 NAVHUB_ADMIN_TOKEN（建议 >=32 字符随机串）；" +
+        "首次引导可临时使用 NAVHUB_BOOTSTRAP_TOKEN，引导出正式 api_tokens 后删除。" +
+        "NAVHUB_SESSION_SECRET 已不再作为管理面凭据。"
     );
   }
 
   // 2f. 静态管理凭据强度（2026-11-06 深扫 S-2 / P1-3）。
-  // server.ts 把 adminToken / bootstrapToken 与 sessionSecret 并列当作 admin Bearer
-  // 恒定时间比对；短口令或含 dev/test/local 字样的低熵串一旦被猜中 = 拿 admin scope。
-  // 只校验 sessionSecret 的 >=32 与黑名单，挡不住这两个「另一把钥匙」。
+  // server.ts 把 adminToken / bootstrapToken 当作 admin Bearer 恒定时间比对；
+  // 短口令或含 dev/test/local 字样的低熵串一旦被猜中 = 拿 admin scope。
   const weakStaticSecret = (v: string | null): boolean => {
     if (!v) return false;
     if (v.length < 32 || INSECURE_SECRETS_BLACKLIST.has(v)) return true;

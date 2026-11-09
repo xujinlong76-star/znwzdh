@@ -34,8 +34,6 @@ function serviceToken(): string | undefined {
     process.env.NAVHUB_ADMIN_TOKEN ||
     process.env.NAVHUB_BOOTSTRAP_TOKEN ||
     process.env.NAVHUB_STORAGE_TOKEN ||
-    process.env.NAVHUB_SESSION_SECRET ||
-    process.env.AUTH_SECRET ||
     undefined
   )
 }

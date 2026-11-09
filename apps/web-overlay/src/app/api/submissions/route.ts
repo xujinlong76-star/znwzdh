@@ -33,14 +33,12 @@ const HUB_BASE = (
  * 必须携带服务端管理凭据，否则后台投稿管理页在中枢回退通道下会 401 死锁。
  */
 function hubServiceToken(): string | undefined {
-    return (
-        process.env.NAVHUB_ADMIN_TOKEN ||
-        process.env.NAVHUB_BOOTSTRAP_TOKEN ||
-        process.env.NAVHUB_STORAGE_TOKEN ||
-        process.env.NAVHUB_SESSION_SECRET ||
-        process.env.AUTH_SECRET ||
-        undefined
-    )
+  return (
+    process.env.NAVHUB_ADMIN_TOKEN ||
+    process.env.NAVHUB_BOOTSTRAP_TOKEN ||
+    process.env.NAVHUB_STORAGE_TOKEN ||
+    undefined
+  )
 }
 
 /**

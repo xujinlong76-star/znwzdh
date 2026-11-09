@@ -297,14 +297,15 @@ describe("鉴权模式：token 生命周期", () => {
     expect(list.find((t: any) => t.name === "bootstrap")).toBeUndefined();
   });
 
-  it("sessionSecret 会话特权密钥具备 admin 权限，支持管理端透明代理创建 Token", async () => {
-    expect((await as(authCtx.config.sessionSecret, "GET", "/api/tokens")).statusCode).toBe(200);
+  it("sessionSecret 不再具备管理权限：管理面只认 ADMIN/BOOTSTRAP token", async () => {
+    // 2026-11-09 S-1：会话签名密钥签发给每个登录用户，轮换策略与运维凭据不同，
+    // 不能再当作 admin Bearer。这里锁定「拿它来调管理面必须 401」。
+    expect((await as(authCtx.config.sessionSecret, "GET", "/api/tokens")).statusCode).toBe(401);
     const postRes = await as(authCtx.config.sessionSecret, "POST", "/api/tokens", {
-      name: "通过会话特权创建",
+      name: "通过会话密钥创建",
       scopes: "write",
     });
-    expect(postRes.statusCode).toBe(201);
-    expect(postRes.json().name).toBe("通过会话特权创建");
+    expect(postRes.statusCode).toBe(401);
   });
 
   it("bootstrap token 用错（长度不同）同样 401", async () => {
@@ -544,6 +545,7 @@ describe("生产配置硬校验与批量查询回归", () => {
     const prevNodeEnv = process.env.NODE_ENV;
     const prevSecret = process.env.NAVHUB_SESSION_SECRET;
     const prevUrl = process.env.NAVHUB_PUBLIC_URL;
+    const prevAdmin = process.env.NAVHUB_ADMIN_TOKEN;
     try {
       process.env.NODE_ENV = "production";
       delete process.env.NAVHUB_SESSION_SECRET;
@@ -560,11 +562,18 @@ describe("生产配置硬校验与批量查询回归", () => {
       delete process.env.NAVHUB_PUBLIC_URL;
       expect(() => loadConfig()).toThrow(/NAVHUB_PUBLIC_URL/);
       process.env.NAVHUB_PUBLIC_URL = "http://localhost:8787";
+      // 2026-11-09 S-1：sessionSecret 不再兼任管理面凭据，生产必须给出 ADMIN/BOOTSTRAP token
+      delete process.env.NAVHUB_ADMIN_TOKEN;
+      delete process.env.NAVHUB_BOOTSTRAP_TOKEN;
+      expect(() => loadConfig()).toThrow(/NAVHUB_ADMIN_TOKEN/);
+      process.env.NAVHUB_ADMIN_TOKEN = "a-very-strong-admin-token-with-at-least-32-chars-ok";
       expect(loadConfig().sessionSecret).toBe("a-very-strong-production-secret-with-at-least-32-chars!");
+      expect(loadConfig().adminToken).toBe("a-very-strong-admin-token-with-at-least-32-chars-ok");
     } finally {
       if (prevNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prevNodeEnv;
       if (prevSecret === undefined) delete process.env.NAVHUB_SESSION_SECRET; else process.env.NAVHUB_SESSION_SECRET = prevSecret;
       if (prevUrl === undefined) delete process.env.NAVHUB_PUBLIC_URL; else process.env.NAVHUB_PUBLIC_URL = prevUrl;
+      if (prevAdmin === undefined) delete process.env.NAVHUB_ADMIN_TOKEN; else process.env.NAVHUB_ADMIN_TOKEN = prevAdmin;
     }
   });
 
@@ -575,6 +584,7 @@ describe("生产配置硬校验与批量查询回归", () => {
       URL: process.env.NAVHUB_PUBLIC_URL,
       AUTH: process.env.NAVHUB_AUTH_REQUIRED,
       ALLOW: process.env.NAVHUB_ALLOW_INSECURE_PUBLIC,
+      ADMIN: process.env.NAVHUB_ADMIN_TOKEN,
     };
     const restore = () => {
       for (const [k, v] of Object.entries({
@@ -583,6 +593,7 @@ describe("生产配置硬校验与批量查询回归", () => {
         NAVHUB_PUBLIC_URL: prev.URL,
         NAVHUB_AUTH_REQUIRED: prev.AUTH,
         NAVHUB_ALLOW_INSECURE_PUBLIC: prev.ALLOW,
+        NAVHUB_ADMIN_TOKEN: prev.ADMIN,
       })) {
         if (v === undefined) delete process.env[k]; else process.env[k] = v;
       }
@@ -590,6 +601,8 @@ describe("生产配置硬校验与批量查询回归", () => {
     try {
       process.env.NODE_ENV = "production";
       process.env.NAVHUB_SESSION_SECRET = "a-very-strong-production-secret-with-at-least-32-chars!";
+      // S-1：生产缺管理 token 会先于鉴权校验抛错，这里显式提供以隔离被测分支
+      process.env.NAVHUB_ADMIN_TOKEN = "a-very-strong-admin-token-with-at-least-32-chars-ok";
       process.env.NAVHUB_PUBLIC_URL = "https://nav.example.com";
       delete process.env.NAVHUB_AUTH_REQUIRED;
       delete process.env.NAVHUB_ALLOW_INSECURE_PUBLIC;

@@ -30,6 +30,7 @@ function overlaySource(rel: string): string {
 }
 
 const PAGE = "src/components/video-player-page.tsx";
+const CONTROL_BAR = "src/components/video-player-control-bar.tsx";
 const OPTIONS_LIB = "src/lib/bili-engine-options.ts";
 
 /** 条件挂载、必须异步的两块 */
@@ -67,8 +68,13 @@ describe("/videos/player 首屏：条件挂载的播放器移出 first-load", ()
   }
 
   it("换源常量从无 import 的独立模块静态取（否则常量把播放器拖回首屏）", () => {
-    const src = overlaySource(PAGE);
+    // 换源下拉框随控制条一并搬到 video-player-control-bar.tsx（2026-11-09 A-2 第二步），
+    // 常量必须由控制条静态取，且控制条本身由页面静态 import——整条链仍不经过播放器。
+    const src = overlaySource(CONTROL_BAR);
     expect(src).toMatch(/import \{ BILI_ENGINE_OPTIONS \} from '@\/lib\/bili-engine-options'/);
+    expect(overlaySource(PAGE)).toContain(
+      "import { VideoPlayerControlBar } from '@/components/video-player-control-bar'",
+    );
     const lib = overlaySource(OPTIONS_LIB);
     expect(lib).toMatch(/^export interface BiliEngineOption \{/m);
     expect(lib).toMatch(/^export const BILI_ENGINE_OPTIONS: BiliEngineOption\[\] = \[/m);

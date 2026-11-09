@@ -16,7 +16,6 @@ import { formatDuration } from '@/lib/video-format'
 import { Camera, Check, Copy, Download, Play, Sparkles } from 'lucide-react'
 import {
   chapterStartSec,
-  type NavigationItem,
   type NavigationSubItem,
   type VideoChapter,
   type VideoDanmakuItem,
@@ -46,8 +45,8 @@ export type VideoPlayerTab =
 interface VideoPlayerSidePanelProps {
   activeTab: VideoPlayerTab
   setActiveTab: (tab: VideoPlayerTab) => void
-  navigationItems: NavigationItem[]
-  renderCategory: (category: NavigationItem) => ReactNode
+  /** 「列表」tab 的内容（由 VideoPlaylistTree 渲染，展开状态归父组件） */
+  playlist: ReactNode
   allVideos: NavigationSubItem[]
   selectedVideo: NavigationSubItem | null
   setSelectedVideo: (video: NavigationSubItem | null) => void
@@ -77,7 +76,7 @@ interface VideoPlayerSidePanelProps {
 
 export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
   const {
-    activeTab, setActiveTab, navigationItems, renderCategory, allVideos, selectedVideo,
+    activeTab, setActiveTab, playlist, allVideos, selectedVideo,
     setSelectedVideo, chapters, aiSummary, isLoadingAI, handleSeekToChapter, handleCopyCode,
     handleOpenSandbox, copiedCodeId, chapterSeekSec, setChapterSeekSec, mindmapRoot,
     codeMilestones, sandboxInitialCode, danmakuList, transcriptList, filteredTranscript,
@@ -229,7 +228,7 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                     <ScrollArea className="h-[calc(100vh-7.5rem)]">
                         {activeTab === 'playlist' && (
                             <div className="p-3 space-y-1">
-                                {navigationItems.map(category => renderCategory(category))}
+                                {playlist}
                             </div>
                         )}
 

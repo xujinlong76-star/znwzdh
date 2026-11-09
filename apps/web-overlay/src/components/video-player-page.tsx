@@ -10,8 +10,6 @@ import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
 import {
   chapterStartSec,
   type NavigationData,
-  type NavigationCategory,
-  type NavigationItem,
   type NavigationSubItem,
   type VideoChapter,
   type VideoMirrorSource,
@@ -21,7 +19,6 @@ import {
 import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
 import {
-  ChevronDown,
   ChevronRight,
   PlayCircle,
   Home,
@@ -30,60 +27,28 @@ import {
   History,
   RotateCcw,
   Keyboard,
-  SkipBack,
-  SkipForward,
   X,
-  ListCollapse,
   Code,
   Copy,
-  Check,
-  Clock,
-  Layers,
   PictureInPicture,
   Sparkles,
   Camera,
   MessageSquare,
   AlertTriangle,
-  FileText,
   Send,
   Download,
-  Code2,
-  Terminal,
   Volume2,
-  GitCompare,
-  HelpCircle,
-  FolderTree,
   Users,
   Sliders,
   Wand2,
-  Share2,
-  Award,
   GraduationCap,
-  Brain,
   Radio,
-  PenTool,
-  DownloadCloud,
-  Zap,
-  ScanText,
   Eye,
   Trophy,
-  Activity,
-  FolderArchive,
-  Languages,
-  RotateCw,
-  Cpu,
   Bug,
-  Scissors,
-  Timer,
-  Network,
   Presentation,
-  SlidersHorizontal,
   Hand,
-  Flame,
-  BrainCircuit,
-  Webhook,
   Box,
-  Shuffle,
 } from 'lucide-react'
 import { Button } from "@/registry/new-york/ui/button"
 import { cn } from '@/lib/utils'
@@ -91,12 +56,6 @@ import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import { formatDuration } from '@/lib/video-format'
 import { useVideoPlayerState } from '@/hooks/useVideoPlayerState'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { resolveAvailableMirrors, selectBestMirror, recordMirrorFailover } from '@/lib/video-failover'
 import { getVideoAISummary, type VideoAISummary } from '@/lib/video-ai-summary'
 import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
@@ -109,8 +68,6 @@ import { getStoredDanmaku, saveDanmakuItem } from '@/lib/video-danmaku-engine'
 // check-dead-modules 判红（测试引用不计入 src 图）；实测删除还会让 Turbopack
 // 的 chunk 切分变差，/videos/player 从 882 KB 涨回 884 KB。
 import { getP2PStreamCoordinator } from '@/lib/p2p-stream-loader'
-// 换源下拉框无条件渲染，常量本身零依赖，静态导入不会拖进播放器
-import { BILI_ENGINE_OPTIONS } from '@/lib/bili-engine-options'
 import { VideoHeatmapTimeline } from '@/components/video-heatmap-timeline'
 import { VideoNetworkSentinel } from '@/components/video-network-sentinel'
 import { VideoVoiceIndicator } from '@/components/video-voice-indicator'
@@ -140,6 +97,8 @@ import { type VoiceCommandIntent } from '@/lib/video-voice-commander'
 import { type NeuralDenoiserConfig } from '@/lib/video-neural-denoiser'
 import { copyText } from '@/lib/clipboard'
 import { VideoPlayerSidePanel, type VideoPlayerTab } from '@/components/video-player-side-panel'
+import { VideoPlayerControlBar } from '@/components/video-player-control-bar'
+import { VideoPlaylistTree } from '@/components/video-playlist-tree'
 
 /**
  * 按需加载面：这些组件只在对应 tab 激活或弹窗 open 后才真正渲染，
@@ -900,101 +859,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         )
     }
 
-    const renderVideoItem = (item: NavigationSubItem) => {
-        const isSelected = selectedVideo?.id === item.id
-        const hasVideoConfig = !!item.videoConfig
-
-        return (
-            <button
-                key={item.id}
-                onClick={() => hasVideoConfig && setSelectedVideo(item)}
-                disabled={!hasVideoConfig}
-                className={cn(
-                    "w-full text-left px-3 py-2 rounded-lg transition-all duration-200 flex items-start gap-2",
-                    "hover:bg-accent/50",
-                    isSelected && "bg-primary/10 text-primary border-l-2 border-primary",
-                    !hasVideoConfig && "opacity-50 cursor-not-allowed"
-                )}
-            >
-                <PlayCircle className={cn(
-                    "w-4 h-4 mt-0.5 flex-shrink-0",
-                    isSelected ? "text-primary" : "text-muted-foreground"
-                )} />
-                <span className="text-sm line-clamp-2">{item.title}</span>
-            </button>
-        )
-    }
-
-    const renderSubCategory = (sub: NavigationCategory) => {
-        const isExpanded = expandedSubCategories.has(sub.id)
-        const videoItems = (sub.items || []).filter(item => item.enabled !== false)
-
-        if (videoItems.length === 0) return null
-
-        return (
-            <div key={sub.id} className="ml-2">
-                <button
-                    onClick={() => toggleSubCategory(sub.id)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/30 rounded-md transition-colors"
-                >
-                    {isExpanded ? (
-                        <ChevronDown className="w-4 h-4" />
-                    ) : (
-                        <ChevronRight className="w-4 h-4" />
-                    )}
-                    <span>{sub.title}</span>
-                    <span className="ml-auto text-xs text-muted-foreground/60">{videoItems.length}</span>
-                </button>
-                {isExpanded && (
-                    <div className="ml-4 mt-1 space-y-0.5">
-                        {videoItems.map(item => renderVideoItem(item))}
-                    </div>
-                )}
-            </div>
-        )
-    }
-
-    const renderCategory = (category: NavigationItem) => {
-        const isExpanded = expandedCategories.has(category.id)
-        const hasSubCategories = category.subCategories && category.subCategories.length > 0
-        const directItems = (category.items || []).filter(item => item.enabled !== false)
-        const totalItems = hasSubCategories
-            ? category.subCategories!.reduce((sum, sub) => sum + (sub.items?.length || 0), 0)
-            : directItems.length
-
-        if (totalItems === 0) return null
-
-        return (
-            <div key={category.id} className="mb-2">
-                <button
-                    onClick={() => toggleCategory(category.id)}
-                    className="w-full flex items-center gap-2 px-3 py-2 font-medium hover:bg-accent/50 rounded-lg transition-colors"
-                >
-                    {isExpanded ? (
-                        <ChevronDown className="w-5 h-5 text-primary" />
-                    ) : (
-                        <ChevronRight className="w-5 h-5" />
-                    )}
-                    <span>{category.title}</span>
-                    <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                        {totalItems}
-                    </span>
-                </button>
-                {isExpanded && (
-                    <div className="mt-1 space-y-1">
-                        {hasSubCategories ? (
-                            category.subCategories!.map(sub => renderSubCategory(sub))
-                        ) : (
-                            <div className="ml-4 space-y-0.5">
-                                {directItems.map(item => renderVideoItem(item))}
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-        )
-    }
-
     return (
         <div className="min-h-screen bg-background">
             {/* Schema.org VideoObject 搜索引擎结构化数据 */}
@@ -1211,520 +1075,68 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             />
                         )}
 
-                        {/* 上下一集连播快捷条 */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/40">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    disabled={currentIndex <= 0}
-                                    onClick={handlePrevVideo}
-                                    title="上一部视频 ( [ 键 )"
-                                >
-                                    <SkipBack className="w-3.5 h-3.5" />
-                                    上一部
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    disabled={currentIndex < 0 || currentIndex >= allVideos.length - 1}
-                                    onClick={handleNextVideo}
-                                    title="下一部视频 ( ] 键 )"
-                                >
-                                    下一部
-                                    <SkipForward className="w-3.5 h-3.5" />
-                                </Button>
-
-                                {/* 多线路镜像源切换 */}
-                                {availableMirrors.length > 0 && (
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-                                                <Layers className="w-3.5 h-3.5 text-primary" />
-                                                <span>{activeMirror?.label || '线路切换'}</span>
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="start" className="w-48 text-xs">
-                                            {availableMirrors.map(m => (
-                                                <DropdownMenuItem
-                                                    key={m.id}
-                                                    onClick={() => handleSwitchMirror(m.id)}
-                                                    className="flex items-center justify-between cursor-pointer"
-                                                >
-                                                    <span>{m.label}</span>
-                                                    {activeMirror?.id === m.id && <Check className="w-3.5 h-3.5 text-primary ml-2 shrink-0" />}
-                                                </DropdownMenuItem>
-                                            ))}
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                )}
-
-                                {/* B 站 6 级备用解析引擎手动切换 */}
-                                {Boolean(selectedVideo && (selectedVideo.videoConfig?.type === 'bilibili' || selectedVideo.videoConfig?.bvid || selectedVideo.videoConfig?.aid)) && (
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-8 gap-1.5 text-xs text-[#FB7299] border-[#FB7299]/30 hover:bg-[#FB7299]/10 cursor-pointer"
-                                                title="手动选择 B 站备用解析接口"
-                                            >
-                                                <Shuffle className="w-3.5 h-3.5" />
-                                                <span>B站换源: {BILI_ENGINE_OPTIONS.find(o => o.id === biliEngine)?.shortLabel || '自动优选'}</span>
-                                                <ChevronDown className="w-3 h-3 opacity-60" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="start" className="w-64 text-xs">
-                                            <div className="px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground border-b">
-                                                B 站 6 级备用解析引擎（点击手动切换）
-                                            </div>
-                                            {BILI_ENGINE_OPTIONS.map(opt => (
-                                                <DropdownMenuItem
-                                                    key={opt.id}
-                                                    onClick={() => setBiliEngine(opt.id)}
-                                                    className="flex items-center justify-between py-1.5 cursor-pointer"
-                                                >
-                                                    <div className="flex flex-col min-w-0 pr-2">
-                                                        <span className="font-medium text-foreground">{opt.name}</span>
-                                                        <span className="text-[10px] text-muted-foreground truncate">{opt.desc}</span>
-                                                    </div>
-                                                    {(biliEngine === opt.id || (!biliEngine && opt.id === 'auto')) && (
-                                                        <Check className="w-3.5 h-3.5 text-[#FB7299] shrink-0" />
-                                                    )}
-                                                </DropdownMenuItem>
-                                            ))}
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                )}
-
-                                {/* 稍后再看 */}
-                                <Button
-                                    variant={inWatchLater ? 'default' : 'outline'}
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={handleToggleWatchLater}
-                                    title="加入/移出稍后再看"
-                                >
-                                    {inWatchLater ? <Check className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-                                    <span>{inWatchLater ? '已在稍后再看' : '稍后再看'}</span>
-                                </Button>
-
-                                {/* 章节大纲快捷入口 */}
-                                <Button
-                                    variant={activeTab === 'chapters' ? 'secondary' : 'ghost'}
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setActiveTab('chapters')}
-                                >
-                                    <ListCollapse className="w-3.5 h-3.5 text-primary" />
-                                    <span>AI 章节 ({chapters.length})</span>
-                                </Button>
-
-                                {/* 独立 SEO 收录落地页入口 */}
-                                {selectedVideo && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 gap-1.5 text-xs"
-                                        asChild
-                                        title="查看搜索引擎收录专用的结构化语义落地页 (/videos/v/[id])"
-                                    >
-                                        <Link href={`/videos/v/${encodeURIComponent(selectedVideo.id)}`}>
-                                            <FileText className="w-3.5 h-3.5 text-emerald-500" />
-                                            <span>SEO 收录页</span>
-                                        </Link>
-                                    </Button>
-                                )}
-
-                                {/* 演练沙箱入口 */}
-                                <Button
-                                    variant={showSandbox ? 'default' : 'outline'}
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowSandbox(prev => !prev)}
-                                    title="代码演练沙箱"
-                                >
-                                    <Code2 className="w-3.5 h-3.5" />
-                                    <span>{showSandbox ? '收起沙箱' : '演练沙箱'}</span>
-                                </Button>
-
-                                {/* 学习笔记 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowNoteDialog(true)}
-                                    title="记录时间戳笔记"
-                                >
-                                    <Camera className="w-3.5 h-3.5 text-emerald-500" />
-                                    <span>记笔记</span>
-                                </Button>
-
-                                {/* 代码演进 */}
-                                {codeMilestones.length > 0 && (
-                                    <Button
-                                        variant={activeTab === 'diff' ? 'secondary' : 'outline'}
-                                        size="sm"
-                                        className="h-8 gap-1.5 text-xs"
-                                        onClick={() => setActiveTab('diff')}
-                                        title="代码演进与前后对比"
-                                    >
-                                        <GitCompare className="w-3.5 h-3.5 text-blue-500" />
-                                        <span>代码演进 ({codeMilestones.length})</span>
-                                    </Button>
-                                )}
-
-                                {/* 知识脑图 */}
-                                <Button
-                                    variant={activeTab === 'mindmap' ? 'secondary' : 'outline'}
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setActiveTab('mindmap')}
-                                    title="AI 知识图谱与脑图"
-                                >
-                                    <FolderTree className="w-3.5 h-3.5 text-emerald-500" />
-                                    <span>知识脑图</span>
-                                </Button>
-
-                                {/* 课后测验 */}
-                                {quizQuestions.length > 0 && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 gap-1.5 text-xs"
-                                        onClick={() => setShowQuizDialog(true)}
-                                        title="章节通关与课后自测"
-                                    >
-                                        <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
-                                        <span>自测 ({quizQuestions.length}题)</span>
-                                    </Button>
-                                )}
-
-                                {/* 终端会话回放 */}
-                                <Button
-                                    variant={activeTab === 'terminal' ? 'secondary' : 'outline'}
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setActiveTab('terminal')}
-                                    title="终端命令行实战会话回放"
-                                >
-                                    <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-                                    <span>终端回放</span>
-                                </Button>
-
-                                {/* 分享海报 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowPosterDialog(true)}
-                                    title="生成精美时间戳分享卡片"
-                                >
-                                    <Share2 className="w-3.5 h-3.5 text-pink-500" />
-                                    <span>分享海报</span>
-                                </Button>
-
-                                {/* 艾宾浩斯抽认卡 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowFlashcardsDialog(true)}
-                                    title="艾宾浩斯遗忘曲线抽认卡与复习日程"
-                                >
-                                    <Brain className="w-3.5 h-3.5 text-indigo-500" />
-                                    <span>抽认卡 ({flashcards.length})</span>
-                                </Button>
-
-                                {/* 结业微证书 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowCertDialog(true)}
-                                    title="全套课程通关与可验证结业微证书"
-                                >
-                                    <Award className="w-3.5 h-3.5 text-yellow-500" />
-                                    <span>结业证书</span>
-                                </Button>
-
-                                {/* 屏幕涂鸦白板 */}
-                                <Button
-                                    variant={showTelestrator ? 'secondary' : 'outline'}
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowTelestrator(prev => !prev)}
-                                    title="同屏白板涂鸦与时间戳画笔"
-                                >
-                                    <PenTool className="w-3.5 h-3.5 text-sky-400" />
-                                    <span>{showTelestrator ? '收起涂鸦' : '屏幕涂鸦'}</span>
-                                </Button>
-
-                                {/* 画面代码提取 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowOcrDialog(true)}
-                                    title="端侧提取当前画面中的代码与终端命令"
-                                >
-                                    <ScanText className="w-3.5 h-3.5 text-emerald-400" />
-                                    <span>画面提取</span>
-                                </Button>
-
-                                {/* 智能静音加速 */}
-                                <Button
-                                    variant={smartSpeedConfig.enabled ? 'secondary' : 'outline'}
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowSmartSpeedDialog(true)}
-                                    title="自适应静音跳跃与倍速调节"
-                                >
-                                    <Zap className={cn("w-3.5 h-3.5", smartSpeedConfig.enabled ? "text-amber-500 fill-amber-500" : "text-amber-500")} />
-                                    <span>智能加速</span>
-                                </Button>
-
-                                {/* 离线下载缓存 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowOfflineDialog(true)}
-                                    title="PWA 本地加密缓存与断网播放"
-                                >
-                                    <DownloadCloud className="w-3.5 h-3.5 text-blue-400" />
-                                    <span>离线缓存</span>
-                                </Button>
-
-                                {/* 桌面画中画伴学悬浮窗 */}
+                        {/* 播放控制条与学习工具入口 */}
+                        <VideoPlayerControlBar
+                            currentIndex={currentIndex}
+                            totalVideos={allVideos.length}
+                            onPrevVideo={handlePrevVideo}
+                            onNextVideo={handleNextVideo}
+                            availableMirrors={availableMirrors}
+                            activeMirror={activeMirror}
+                            onSwitchMirror={handleSwitchMirror}
+                            biliEngine={biliEngine}
+                            onBiliEngineChange={setBiliEngine}
+                            inWatchLater={inWatchLater}
+                            onToggleWatchLater={handleToggleWatchLater}
+                            activeTab={activeTab}
+                            onTabChange={setActiveTab}
+                            selectedVideo={selectedVideo}
+                            chaptersCount={chapters.length}
+                            codeMilestonesCount={codeMilestones.length}
+                            quizCount={quizQuestions.length}
+                            flashcardsCount={flashcards.length}
+                            showSandbox={showSandbox}
+                            onToggleSandbox={() => setShowSandbox(prev => !prev)}
+                            showTelestrator={showTelestrator}
+                            onToggleTelestrator={() => setShowTelestrator(prev => !prev)}
+                            smartSpeedEnabled={smartSpeedConfig.enabled}
+                            neuralDenoiseEnabled={neuralDenoiseConfig.enabled}
+                            pipRenderer={(
                                 <VideoPipWindowRenderer
                                     videoTitle={selectedVideo?.title || '技术课程'}
                                     currentSubtitle={transcriptList[0]?.text}
                                     lastCodeCommand={codeMilestones[0]?.afterCode.split('\n')[0]}
                                 />
-
-                                {/* 双语字幕 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowBilingualSubtitlesDialog(true)}
-                                    title="双语字幕实时对齐与 SRT/WebVTT 导出"
-                                >
-                                    <Languages className="w-3.5 h-3.5 text-indigo-400" />
-                                    <span>双语字幕</span>
-                                </Button>
-
-                                {/* 声波谱图 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowSpectrogramDialog(true)}
-                                    title="实时音频波形频谱与共振峰分析"
-                                >
-                                    <Activity className="w-3.5 h-3.5 text-rose-400" />
-                                    <span>声波谱图</span>
-                                </Button>
-
-                                {/* 工程导出 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowWorkspaceExportDialog(true)}
-                                    title="一键打包生成完整 Git 工程与 Gist"
-                                >
-                                    <FolderArchive className="w-3.5 h-3.5 text-amber-400" />
-                                    <span>工程导出</span>
-                                </Button>
-
-                                {/* 时空漫游复盘 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowSessionReplayDialog(true)}
-                                    title="学习会话时空漫游与认知负荷复盘"
-                                >
-                                    <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
-                                    <span>会话复盘</span>
-                                </Button>
-
-                                {/* WebGPU 神经网络音频降噪 */}
-                                <Button
-                                    variant={neuralDenoiseConfig.enabled ? 'secondary' : 'outline'}
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowNeuralDenoiseDialog(true)}
-                                    title="WebGPU 神经网络音频实时降噪与人声增强"
-                                >
-                                    <Cpu className={cn("w-3.5 h-3.5", neuralDenoiseConfig.enabled ? "text-emerald-400" : "text-muted-foreground")} />
-                                    <span>AI 降噪</span>
-                                </Button>
-
-                                {/* 视频微知识点一键切片 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowClipMakerDialog(true)}
-                                    title="精细微知识点切片与 WebM/GIF 动图导出"
-                                >
-                                    <Scissors className="w-3.5 h-3.5 text-amber-400" />
-                                    <span>微切片</span>
-                                </Button>
-
-                                {/* 深度沉浸番茄钟 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowPomodoroDialog(true)}
-                                    title="深度沉浸学习番茄钟与粉红噪音白噪音"
-                                >
-                                    <Timer className="w-3.5 h-3.5 text-rose-400" />
-                                    <span>专注番茄</span>
-                                </Button>
-
-                                {/* 分布式 WebRTC P2P 弹幕信标网格 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowDanmakuMeshDialog(true)}
-                                    title="分布式 WebRTC P2P 弹幕信标网格监控"
-                                >
-                                    <Network className="w-3.5 h-3.5 text-sky-400" />
-                                    <span>P2P 网格</span>
-                                </Button>
-
-                                {/* 多轨解耦调音台 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowStemMixerDialog(true)}
-                                    title="人声/伴奏/杂音独立分轨推子混音台"
-                                >
-                                    <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
-                                    <span>分轨调音</span>
-                                </Button>
-
-                                {/* P2P 视频分片蜂群 HUD */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowP2PSwarmHud(true)}
-                                    title="WebRTC 视频切片 P2P-CDN 蜂群位图遥测"
-                                >
-                                    <Network className="w-3.5 h-3.5 text-emerald-400" />
-                                    <span>P2P 蜂群</span>
-                                </Button>
-
-                                {/* 贝叶斯自适应弱项诊断 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs"
-                                    onClick={() => setShowRemedyDialog(true)}
-                                    title="贝叶斯自适应知识追踪与薄弱点诊断"
-                                >
-                                    <Brain className="w-3.5 h-3.5 text-purple-400" />
-                                    <span>弱项诊断</span>
-                                </Button>
-
-                                {/* 全网热点自动采集 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
-                                    onClick={() => setShowAutoHarvestDialog(true)}
-                                    title="一键启动全网多源开发者技术热点视频采集"
-                                >
-                                    <Flame className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                                    <span>热点采集</span>
-                                </Button>
-
-                                {/* AI 全程自主采集控制台 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
-                                    onClick={() => setShowAutonomousHarvestConsole(true)}
-                                    title="启动 AI 全程无人值守视频采集与大模型审核流水线"
-                                >
-                                    <BrainCircuit className="w-3.5 h-3.5 text-indigo-400" />
-                                    <span>AI自主采集</span>
-                                </Button>
-
-                                {/* 多源 Webhook 调度 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-                                    onClick={() => setShowWebhookDialog(true)}
-                                    title="多源数据流与 Webhook 自动化回调"
-                                >
-                                    <Webhook className="w-3.5 h-3.5 text-emerald-400" />
-                                    <span>Webhook</span>
-                                </Button>
-
-                                {/* 智能抽帧 OCR */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
-                                    onClick={() => setShowWasmOcrDialog(true)}
-                                    title="Wasm 视频画面代码智能抽帧与 OCR 提取"
-                                >
-                                    <ScanText className="w-3.5 h-3.5 text-indigo-400" />
-                                    <span>智能抽帧</span>
-                                </Button>
-
-                                {/* 双语同传与 TTS */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10"
-                                    onClick={() => setShowBilingualTtsDialog(true)}
-                                    title="AI 实时双语字幕与语音重译旁白"
-                                >
-                                    <Languages className="w-3.5 h-3.5 text-cyan-400" />
-                                    <span>双语TTS</span>
-                                </Button>
-
-                                {/* 概念图谱 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-                                    onClick={() => setShowConceptGraphDialog(true)}
-                                    title="交互式全站概念拓扑图谱与 Dijkstra 最短学习路径"
-                                >
-                                    <Network className="w-3.5 h-3.5 text-emerald-400" />
-                                    <span>概念图谱</span>
-                                </Button>
-
-                                {/* 伴学自习室 */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 gap-1.5 text-xs border-pink-500/40 text-pink-400 hover:bg-pink-500/10"
-                                    onClick={() => setShowStudyRoomDialog(true)}
-                                    title="WebRTC / CRDT 伴学自习室与多人协同白板"
-                                >
-                                    <Users className="w-3.5 h-3.5 text-pink-400" />
-                                    <span>伴学自习室</span>
-                                </Button>
-                            </div>
-                            <span className="text-xs text-muted-foreground font-mono">
-                                {currentIndex >= 0 ? `${currentIndex + 1} / ${allVideos.length}` : ''}
-                            </span>
-                        </div>
+                            )}
+                            openers={{
+                                note: () => setShowNoteDialog(true),
+                                poster: () => setShowPosterDialog(true),
+                                flashcards: () => setShowFlashcardsDialog(true),
+                                certificate: () => setShowCertDialog(true),
+                                ocr: () => setShowOcrDialog(true),
+                                smartSpeed: () => setShowSmartSpeedDialog(true),
+                                offline: () => setShowOfflineDialog(true),
+                                bilingualSubtitles: () => setShowBilingualSubtitlesDialog(true),
+                                spectrogram: () => setShowSpectrogramDialog(true),
+                                workspaceExport: () => setShowWorkspaceExportDialog(true),
+                                sessionReplay: () => setShowSessionReplayDialog(true),
+                                neuralDenoise: () => setShowNeuralDenoiseDialog(true),
+                                clipMaker: () => setShowClipMakerDialog(true),
+                                pomodoro: () => setShowPomodoroDialog(true),
+                                danmakuMesh: () => setShowDanmakuMeshDialog(true),
+                                stemMixer: () => setShowStemMixerDialog(true),
+                                p2pSwarm: () => setShowP2PSwarmHud(true),
+                                remedy: () => setShowRemedyDialog(true),
+                                autoHarvest: () => setShowAutoHarvestDialog(true),
+                                autonomousHarvest: () => setShowAutonomousHarvestConsole(true),
+                                webhook: () => setShowWebhookDialog(true),
+                                wasmOcr: () => setShowWasmOcrDialog(true),
+                                bilingualTts: () => setShowBilingualTtsDialog(true),
+                                conceptGraph: () => setShowConceptGraphDialog(true),
+                                studyRoom: () => setShowStudyRoomDialog(true),
+                                quiz: () => setShowQuizDialog(true),
+                            }}
+                        />
 
                         {/* 弹幕与避坑路标发送条 */}
                         <form onSubmit={handleSendDanmaku} className="flex items-center gap-2 p-2 rounded-lg bg-card border border-border/50 text-xs">
@@ -1859,8 +1271,17 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 <VideoPlayerSidePanel
                     activeTab={activeTab}
                     setActiveTab={setActiveTab}
-                    navigationItems={navigationData.navigationItems}
-                    renderCategory={renderCategory}
+                    playlist={
+                        <VideoPlaylistTree
+                            navigationItems={navigationData.navigationItems}
+                            selectedVideo={selectedVideo}
+                            onSelectVideo={setSelectedVideo}
+                            expandedCategories={expandedCategories}
+                            onToggleCategory={toggleCategory}
+                            expandedSubCategories={expandedSubCategories}
+                            onToggleSubCategory={toggleSubCategory}
+                        />
+                    }
                     allVideos={allVideos}
                     selectedVideo={selectedVideo}
                     setSelectedVideo={setSelectedVideo}
@@ -1893,7 +1314,15 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur pb-[max(env(safe-area-inset-bottom,0px),0px)]">
                 <ScrollArea className="h-48">
                     <div className="p-3 space-y-1">
-                        {navigationData.navigationItems.map(category => renderCategory(category))}
+                        <VideoPlaylistTree
+                            navigationItems={navigationData.navigationItems}
+                            selectedVideo={selectedVideo}
+                            onSelectVideo={setSelectedVideo}
+                            expandedCategories={expandedCategories}
+                            onToggleCategory={toggleCategory}
+                            expandedSubCategories={expandedSubCategories}
+                            onToggleSubCategory={toggleSubCategory}
+                        />
                     </div>
                 </ScrollArea>
             </div>

@@ -134,6 +134,8 @@ navhub_require_node || exit 1
 # 大文件守卫放最前：最便宜，且它拦的是「一旦提交就需要重写历史」的那一类问题。
 node scripts/check-large-files.mjs --staged || exit 1
 node scripts/check-web-overlay.mjs --staged || exit 1
+# 显式 any 棘轮：只看暂存集，按文件基线拦「新增」和「回增」（存量不要求清零）。
+node scripts/check-no-explicit-any.mjs --staged || exit 1
 node scripts/check-extensions.mjs || exit 1
 node scripts/check-upstream-ref.mjs || exit 1
 

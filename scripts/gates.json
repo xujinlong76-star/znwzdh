@@ -25,6 +25,15 @@
    "why": "本次提交涉及的 overlay 文件必须与 apps/web 镜像对齐；全仓库判定交给 CI（别人的半成品不该挡住我的提交）"
   },
   {
+   "name": "no-explicit-any",
+   "when": "staged",
+   "script": "scripts/check-no-explicit-any.mjs",
+   "args": "--staged",
+   "blocks": true,
+   "test": "scripts/check-no-explicit-any.test.ts",
+   "why": "显式 any 按文件基线只减不增（存量约 280 处不清）；新文件出现 any 或既有文件回增必须拦下，否则类型债会继续膨胀"
+  },
+  {
    "name": "extensions",
    "when": "staged",
    "script": "scripts/check-extensions.mjs",

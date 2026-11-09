@@ -546,6 +546,8 @@ describe("生产配置硬校验与批量查询回归", () => {
     const prevSecret = process.env.NAVHUB_SESSION_SECRET;
     const prevUrl = process.env.NAVHUB_PUBLIC_URL;
     const prevAdmin = process.env.NAVHUB_ADMIN_TOKEN;
+    const prevBootstrap = process.env.NAVHUB_BOOTSTRAP_TOKEN;
+    const prevAuth = process.env.NAVHUB_AUTH_REQUIRED;
     try {
       process.env.NODE_ENV = "production";
       delete process.env.NAVHUB_SESSION_SECRET;
@@ -558,15 +560,25 @@ describe("生产配置硬校验与批量查询回归", () => {
       expect(() => loadConfig()).toThrow(/NAVHUB_SESSION_SECRET/);
 
       process.env.NAVHUB_SESSION_SECRET = "a-very-strong-production-secret-with-at-least-32-chars!";
-      // 生产未开鉴权时必须显式声明 publicUrl：localhost 默认值不能再当逃生阀
-      delete process.env.NAVHUB_PUBLIC_URL;
-      expect(() => loadConfig()).toThrow(/NAVHUB_PUBLIC_URL/);
       process.env.NAVHUB_PUBLIC_URL = "http://localhost:8787";
       // 2026-11-09 S-1：sessionSecret 不再兼任管理面凭据，生产必须给出 ADMIN/BOOTSTRAP token
       delete process.env.NAVHUB_ADMIN_TOKEN;
       delete process.env.NAVHUB_BOOTSTRAP_TOKEN;
       expect(() => loadConfig()).toThrow(/NAVHUB_ADMIN_TOKEN/);
       process.env.NAVHUB_ADMIN_TOKEN = "a-very-strong-admin-token-with-at-least-32-chars-ok";
+
+      // 2026-11-09 S-2：生产默认开鉴权，缺 publicUrl 不再是「静默开放」的入口
+      delete process.env.NAVHUB_AUTH_REQUIRED;
+      expect(loadConfig().authRequired).toBe(true);
+
+      // 只有显式关闭鉴权时，publicUrl 才必须显式声明：localhost 默认值不能再当逃生阀
+      process.env.NAVHUB_AUTH_REQUIRED = "0";
+      delete process.env.NAVHUB_PUBLIC_URL;
+      expect(() => loadConfig()).toThrow(/NAVHUB_PUBLIC_URL/);
+      process.env.NAVHUB_PUBLIC_URL = "http://localhost:8787";
+      // 恢复默认（生产 = 开鉴权）后，配置应完整可用
+      delete process.env.NAVHUB_AUTH_REQUIRED;
+
       expect(loadConfig().sessionSecret).toBe("a-very-strong-production-secret-with-at-least-32-chars!");
       expect(loadConfig().adminToken).toBe("a-very-strong-admin-token-with-at-least-32-chars-ok");
     } finally {
@@ -574,6 +586,8 @@ describe("生产配置硬校验与批量查询回归", () => {
       if (prevSecret === undefined) delete process.env.NAVHUB_SESSION_SECRET; else process.env.NAVHUB_SESSION_SECRET = prevSecret;
       if (prevUrl === undefined) delete process.env.NAVHUB_PUBLIC_URL; else process.env.NAVHUB_PUBLIC_URL = prevUrl;
       if (prevAdmin === undefined) delete process.env.NAVHUB_ADMIN_TOKEN; else process.env.NAVHUB_ADMIN_TOKEN = prevAdmin;
+      if (prevBootstrap === undefined) delete process.env.NAVHUB_BOOTSTRAP_TOKEN; else process.env.NAVHUB_BOOTSTRAP_TOKEN = prevBootstrap;
+      if (prevAuth === undefined) delete process.env.NAVHUB_AUTH_REQUIRED; else process.env.NAVHUB_AUTH_REQUIRED = prevAuth;
     }
   });
 
@@ -583,7 +597,8 @@ describe("生产配置硬校验与批量查询回归", () => {
       SECRET: process.env.NAVHUB_SESSION_SECRET,
       URL: process.env.NAVHUB_PUBLIC_URL,
       AUTH: process.env.NAVHUB_AUTH_REQUIRED,
-      ALLOW: process.env.NAVHUB_ALLOW_INSECURE_PUBLIC,
+      ALLOW_LOCAL: process.env.NAVHUB_ALLOW_INSECURE_LOCALHOST,
+      ALLOW_PUBLIC: process.env.NAVHUB_ALLOW_INSECURE_PUBLIC,
       ADMIN: process.env.NAVHUB_ADMIN_TOKEN,
     };
     const restore = () => {
@@ -592,7 +607,8 @@ describe("生产配置硬校验与批量查询回归", () => {
         NAVHUB_SESSION_SECRET: prev.SECRET,
         NAVHUB_PUBLIC_URL: prev.URL,
         NAVHUB_AUTH_REQUIRED: prev.AUTH,
-        NAVHUB_ALLOW_INSECURE_PUBLIC: prev.ALLOW,
+        NAVHUB_ALLOW_INSECURE_LOCALHOST: prev.ALLOW_LOCAL,
+        NAVHUB_ALLOW_INSECURE_PUBLIC: prev.ALLOW_PUBLIC,
         NAVHUB_ADMIN_TOKEN: prev.ADMIN,
       })) {
         if (v === undefined) delete process.env[k]; else process.env[k] = v;
@@ -603,23 +619,31 @@ describe("生产配置硬校验与批量查询回归", () => {
       process.env.NAVHUB_SESSION_SECRET = "a-very-strong-production-secret-with-at-least-32-chars!";
       // S-1：生产缺管理 token 会先于鉴权校验抛错，这里显式提供以隔离被测分支
       process.env.NAVHUB_ADMIN_TOKEN = "a-very-strong-admin-token-with-at-least-32-chars-ok";
-      process.env.NAVHUB_PUBLIC_URL = "https://nav.example.com";
       delete process.env.NAVHUB_AUTH_REQUIRED;
+      delete process.env.NAVHUB_ALLOW_INSECURE_LOCALHOST;
       delete process.env.NAVHUB_ALLOW_INSECURE_PUBLIC;
-      expect(() => loadConfig()).toThrow(/NAVHUB_AUTH_REQUIRED/);
 
-      // 显式逃生阀：退回警告，不阻断启动
+      // S-2：生产默认开鉴权，公网地址未显式配置也安全
+      process.env.NAVHUB_PUBLIC_URL = "https://nav.example.com";
+      expect(loadConfig().authRequired).toBe(true);
+
+      // 显式开放 + 公网地址 → 一律阻断；旧的 ALLOW_INSECURE_PUBLIC 不再是逃生阀
+      process.env.NAVHUB_AUTH_REQUIRED = "0";
+      expect(() => loadConfig()).toThrow(/NAVHUB_AUTH_REQUIRED/);
       process.env.NAVHUB_ALLOW_INSECURE_PUBLIC = "1";
-      expect(loadConfig().authRequired).toBe(false);
+      expect(() => loadConfig()).toThrow(/NAVHUB_AUTH_REQUIRED/);
       delete process.env.NAVHUB_ALLOW_INSECURE_PUBLIC;
 
       // 回归：公网域名不能因为以 "10." 开头就被当成内网（旧正则的误判）
       process.env.NAVHUB_PUBLIC_URL = "http://10.example.com";
       expect(() => loadConfig()).toThrow(/NAVHUB_AUTH_REQUIRED/);
 
-      // 内网地址原本就不拦截
+      // 内网/回环地址也要显式承认，漏配不再静默放行
       process.env.NAVHUB_PUBLIC_URL = "http://192.168.1.10:8787";
-      expect(() => loadConfig()).not.toThrow();
+      expect(() => loadConfig()).toThrow(/NAVHUB_ALLOW_INSECURE_LOCALHOST/);
+      process.env.NAVHUB_ALLOW_INSECURE_LOCALHOST = "1";
+      expect(loadConfig().authRequired).toBe(false);
+      delete process.env.NAVHUB_ALLOW_INSECURE_LOCALHOST;
 
       // 开启鉴权后公网部署放行
       process.env.NAVHUB_PUBLIC_URL = "https://nav.example.com";

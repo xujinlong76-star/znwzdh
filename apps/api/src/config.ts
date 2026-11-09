@@ -343,7 +343,7 @@ function isLocalHostname(hostname: string): boolean {
 function assertSecurityConstraints(
   config: AppConfig,
   isProd: boolean,
-  allowInsecurePublic: boolean
+  allowInsecureLocalhost: boolean
 ): void {
   // 1. 生产环境密钥强度校验
   const secret = process.env.NAVHUB_SESSION_SECRET;
@@ -479,10 +479,15 @@ function assertSecurityConstraints(
   }
 
   if (!isLocalPublic && !config.authRequired) {
-    if (isProd && !allowInsecurePublic) {
+    // 2026-11-09 S-2：公网可访问 + 开放模式一律拒绝启动。
+    // 旧行为允许 NAVHUB_ALLOW_INSECURE_PUBLIC=1 把阻断降级成警告，实测这是最常被
+    // 「先跑起来再说」滥用的一条；现在要开放模式只能把 publicUrl 改回回环地址并
+    // 显式承认 NAVHUB_ALLOW_INSECURE_LOCALHOST=1。
+    if (isProd) {
       throw new Error(
-        "生产环境公网部署必须开启鉴权：请设置 NAVHUB_AUTH_REQUIRED=true（并配 NAVHUB_BOOTSTRAP_TOKEN 引导首个 token）；" +
-          "若确为不可公网访问的内网部署，显式设置 NAVHUB_ALLOW_INSECURE_PUBLIC=1 可退回警告模式"
+        "生产环境公网部署必须开启鉴权：请设置 NAVHUB_AUTH_REQUIRED=true（并配 NAVHUB_BOOTSTRAP_TOKEN 引导首个 token）。" +
+          "若确实是仅本机可访问的部署，把 NAVHUB_PUBLIC_URL 设为 http://localhost:<port> 并显式设置 " +
+          "NAVHUB_ALLOW_INSECURE_LOCALHOST=1；NAVHUB_ALLOW_INSECURE_PUBLIC 已不再能免除该阻断。"
       );
     }
     console.warn(
@@ -491,8 +496,17 @@ function assertSecurityConstraints(
   }
 
   // 内网 + 开放模式是个人/NAS 部署的合法默认，但当 8787 被直接发布到宿主机时，
-  // 这条默认等价于「同网段任何人都能匿名读写管理面」。不能靠改默认值阻断启动
-  // （会打挂存量部署），至少要让人在日志里看见「你正在开放模式下运行」。
+  // 这条默认等价于「同网段任何人都能匿名读写管理面」。
+  // 2026-11-09 S-2：生产环境下开放模式必须被「有意识地承认」——单靠回环 publicUrl
+  // 不再自动放行，必须显式 NAVHUB_ALLOW_INSECURE_LOCALHOST=1，避免漏配 publicUrl
+  // 就让一次公网暴露静默变成匿名 admin。
+  if (isProd && !config.authRequired && isLocalPublic && !allowInsecureLocalhost) {
+    throw new Error(
+      "生产环境开放模式需要显式承认：请设置 NAVHUB_ALLOW_INSECURE_LOCALHOST=1（并确认 publicUrl 仅本机可访问）；" +
+        "或直接开启鉴权 NAVHUB_AUTH_REQUIRED=true（推荐）。"
+    );
+  }
+
   if (isProd && !config.authRequired && isLocalPublic) {
     console.warn(
       "[navhub] 警告：开放模式（NAVHUB_AUTH_REQUIRED=0）且 publicUrl 为本机地址——" +
@@ -549,7 +563,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
 
   const isProd = (process.env.NODE_ENV ?? "") === "production";
   const isTest = (process.env.NODE_ENV ?? "") === "test";
-  const allowInsecurePublic = bool("NAVHUB_ALLOW_INSECURE_PUBLIC", false);
+  const allowInsecureLocalhost = bool("NAVHUB_ALLOW_INSECURE_LOCALHOST", false);
 
   const base: AppConfig = {
     mode,
@@ -602,7 +616,9 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
 
     trustProxy: trustProxyMode(),
 
-    authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
+    // 2026-11-09 S-2：默认值跟随 NODE_ENV。生产默认开鉴权，开发/测试保持开放，
+    // 避免「升级即 401」也避免「上线即裸奔」。存量 NAS 部署需按迁移说明显式降级。
+    authRequired: bool("NAVHUB_AUTH_REQUIRED", isProd),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
     identitySecret: process.env.NAVHUB_IDENTITY_SECRET || null,
     identitySignatureStrict: bool("NAVHUB_IDENTITY_SIGNATURE_STRICT", false),
@@ -657,7 +673,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     llmQuota: { ...base.llmQuota, ...(overrides.llmQuota ?? {}) },
     search: { ...base.search, ...(overrides.search ?? {}) },
   };
-  assertSecurityConstraints(finalConfig, isProd, allowInsecurePublic);
+  assertSecurityConstraints(finalConfig, isProd, allowInsecureLocalhost);
 
   return finalConfig;
 }

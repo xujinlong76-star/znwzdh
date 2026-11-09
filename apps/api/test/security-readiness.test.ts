@@ -90,6 +90,7 @@ describe("NAVHUB_ALLOW_UNSIGNED_IDENTITY 装配", () => {
     "NAVHUB_AUTH_REQUIRED",
     "NAVHUB_IDENTITY_SECRET",
     "NAVHUB_ALLOW_UNSIGNED_IDENTITY",
+    "NAVHUB_ALLOW_INSECURE_LOCALHOST",
     "NAVHUB_ADMIN_TOKEN",
   ] as const;
   const original = new Map<string, string | undefined>(KEYS.map((key) => [key, process.env[key]]));
@@ -140,7 +141,9 @@ describe("NAVHUB_ALLOW_UNSIGNED_IDENTITY 装配", () => {
     process.env.NAVHUB_PUBLIC_URL = "http://localhost:8787";
     // S-1：生产缺管理 token 会先抛错，这里显式提供以隔离被测的 identity 分支
     process.env.NAVHUB_ADMIN_TOKEN = "a-very-strong-admin-token-with-at-least-32-chars-ok";
-    delete process.env.NAVHUB_AUTH_REQUIRED;
+    // S-2：生产默认开鉴权，要复现「开放模式 + 无密钥」必须显式关闭并承认回环部署
+    process.env.NAVHUB_AUTH_REQUIRED = "0";
+    process.env.NAVHUB_ALLOW_INSECURE_LOCALHOST = "1";
     delete process.env.NAVHUB_IDENTITY_SECRET;
     delete process.env.NAVHUB_ALLOW_UNSIGNED_IDENTITY;
 

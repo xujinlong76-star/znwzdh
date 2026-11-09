@@ -4,7 +4,7 @@
   "generatedAt": "2026-11-06",
   "generator": "scripts/gen-docs-index.mjs",
   "counts": {
-    "docsMdDisk": 95,
+    "docsMdDisk": 96,
     "docsMdGitTracked": 87,
     "docsMdUntrackedAdr": 4,
     "deliverablesTopLevelDirs": 15,
@@ -204,6 +204,12 @@
       "tracked": true,
       "source": "git-tracked",
       "status": "current"
+    },
+    {
+      "path": "SECURITY-MIGRATION-2026-11-09.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
     },
     {
       "path": "SEO-TEMPLATE-COPY-AUDIT-2026-10-21.md",

@@ -100,16 +100,20 @@ services:
       # （NODE_ENV=production 且仍为 * 时，启动日志会打一条警告。）
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
       NAVHUB_SEED_ON_START: ${NAVHUB_SEED_ON_START:-1}
-      # 公网部署必须设为 1：生产 + NAVHUB_PUBLIC_URL 指向公网 + 未开鉴权 → 服务拒绝启动（fail-closed）。
-      # 开启后先用 NAVHUB_BOOTSTRAP_TOKEN 创建正式 token，再删除该变量重启。
-      NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-0}
+      # 默认开启（2026-11-09 S-2）：生产默认鉴权，避免「上线即裸奔」。
+      # 开启后用 NAVHUB_BOOTSTRAP_TOKEN 创建正式 token，再删除该变量重启。
+      # 真正要开放模式的仅限本机部署：显式 NAVHUB_AUTH_REQUIRED=0 +
+      # NAVHUB_ALLOW_INSECURE_LOCALHOST=1 + 回环 NAVHUB_PUBLIC_URL，三者缺一启动即失败。
+      NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-1}
       # 鉴权开启后**唯一**的首个凭据入口（server.ts 里与 Bearer token 恒定时间比较）。
       # 引导出正式 token 后请删除本变量重启，否则这个长期有效的引导凭据一直可用。
       NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
-      # 管理面静态凭据（可选，建议与 SESSION_SECRET 分开）：设置后以其为准，
-      # sessionSecret 仅保留兼容回退。轮换会话签名密钥不再连带泄露 admin。
+      # 管理面静态凭据（生产必填）：与 SESSION_SECRET 分开保管，
+      # NODE_ENV=production 且 ADMIN/BOOTSTRAP 都缺失时容器拒绝启动。
       NAVHUB_ADMIN_TOKEN: ${NAVHUB_ADMIN_TOKEN:-}
-      # NAVHUB_ALLOW_INSECURE_PUBLIC: ${NAVHUB_ALLOW_INSECURE_PUBLIC:-0}
+      # 开放模式（AUTH_REQUIRED=0）的显式承认阀：仅回环 publicUrl 生效，且必须置 1。
+      # NAVHUB_ALLOW_INSECURE_PUBLIC 已不再能免除启动阻断。
+      NAVHUB_ALLOW_INSECURE_LOCALHOST: ${NAVHUB_ALLOW_INSECURE_LOCALHOST:-0}
       # 中枢对外的规范地址。默认 localhost 是**显式声明内网部署**：生产环境未开鉴权时
       # config.ts 要求本变量必须有值，缺省会让容器启动即拒绝（fail-closed）。
       # 公网部署请改成真实域名，并把同一个值同时填给 web 服务的 NAVHUB_SITE_URL
@@ -332,9 +336,10 @@ services:
       # 以下五项与 api 服务保持同一组透传（语义见 api 服务里的注释）。
       # 这里漏一项，standard 模式就等于「鉴权/引导凭据/身份签名/公网 fail-closed 全都配不上」，
       # 只能改 compose 文件本身。
-      NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-0}
+      NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-1}
       NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
       NAVHUB_ADMIN_TOKEN: ${NAVHUB_ADMIN_TOKEN:-}
+      NAVHUB_ALLOW_INSECURE_LOCALHOST: ${NAVHUB_ALLOW_INSECURE_LOCALHOST:-0}
       NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
       # 与 api 同一道生产身份签名总闸（语义见 api 服务）；standard 模式漏透传
       # 会导致内网开放模式无法显式 opt-out，只能改 compose 本身。

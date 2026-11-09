@@ -9,7 +9,7 @@
     "docsMdUntrackedAdr": 4,
     "deliverablesTopLevelDirs": 15,
     "deliverablesMdReports": 20,
-    "scriptsCheckMjs": 30
+    "scriptsCheckMjs": 42
   },
   "notes": [
     "任务书给的 docs/ 87 份 = git 已跟踪口径（GIT_TRACKED_DOCS 常量，2026-11-06 git ls-files 实测）；本索引以磁盘全量为登记口径，逐份标注 tracked，不伪造 87。",
@@ -752,6 +752,54 @@
       {
         "file": "check-governance.mjs",
         "purpose": "治理门禁聚合器：把 plan-status / env-surface / audit-exceptions 三条单一事实源合成 verify 一步"
+      },
+      {
+        "file": "check-csp-headers.mjs",
+        "purpose": "CSP 双档位契约测试：隔离 env 档位加载同一份 next.config.js 的 headers()，断言默认档不下发、enforce 档下发的策略（不依赖 Docker）"
+      },
+      {
+        "file": "check-db-integrity.mjs",
+        "purpose": "数据库引用完整性门禁（只读）：扫关联表指向 sites 里不存在 id 的孤儿行，防早期删站未级联的历史残留再次累积"
+      },
+      {
+        "file": "check-dead-modules.mjs",
+        "purpose": "死模块候选扫描棘轮：overlay 内 0 引用模块，仅「不在基线里的新候选」判红；BASELINE_NOTES 逐份登记 keep/delete 结论"
+      },
+      {
+        "file": "check-frontend-typecheck.mjs",
+        "purpose": "前端类型门禁棘轮：校验 apps/web（构建镜像）的 tsc --noEmit 错误数必须为 0，改 overlay 后需先同步镜像再跑"
+      },
+      {
+        "file": "check-generated-all.mjs",
+        "purpose": "生成/镜像链聚合入口：core 镜像 / 路由策略 / REST 契约 / overlay→web 四条链一次跑完，任一退出非 0 即整体判红"
+      },
+      {
+        "file": "check-health-coverage.mjs",
+        "purpose": "健康探测覆盖与新鲜度 SLO（只读）：已探测样本中超 7×24h 比例 ≤5%、单类目未探测占比 ≤20%"
+      },
+      {
+        "file": "check-icons.mjs",
+        "purpose": "站点 favicon 外链抽查：拉取若干站点首页并打印 <link rel=icon> 供人工核对（非门禁，无退出码判定）"
+      },
+      {
+        "file": "check-navigation-health.mjs",
+        "purpose": "导航健康数据可信口径：重算 trustworthy_fail_rate / untested_rate 双口径，守住「探测中止不得算 unverified」"
+      },
+      {
+        "file": "check-numeric-env.mjs",
+        "purpose": "数值型环境变量守卫：全仓 Number(process.env.X) 读取点所在文件须有 isFinite 校验或钳位/兜底，防 NaN 静默进超时与上限"
+      },
+      {
+        "file": "check-quarantine.mjs",
+        "purpose": "E2E 隔离台账校验：标记形态 / e2e/QUARANTINE.md 五字段 / 到期日 ≤14 天，形状非法即红（政策唯一来源是 TESTING-STRATEGY.md §4.3）"
+      },
+      {
+        "file": "check-strip-syntax.mjs",
+        "purpose": "strip-types 不兼容语法守卫：apps/api 内的 enum / namespace / 构造函数参数属性 / 装饰器任一命中即违规（tsc 全绿也测不出运行时抛错）"
+      },
+      {
+        "file": "check-web-config-parity.mjs",
+        "purpose": "前端配置唯一事实源断言：apps/web 与 overlay 的 next.config.js / package.json / tsconfig.json 必须同源"
       }
     ]
   }

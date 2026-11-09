@@ -154,6 +154,48 @@ for (const t of RETENTION_TARGETS) {
 console.log("[db-integrity] 保留策略严重积压表 =", retentionCritical,
   "（判定线：过期占比 > " + RETENTION_RED_PCT + "% 且 > " + RETENTION_RED_MIN + " 行）");
 
+
+/* ------------------------------------------------------------------ *
+ * E2E 测试数据污染（2026-11-10 补）
+ *
+ * 为什么加：实测发现生产库 events 表里有 217 条 e2e 事件（13%），
+ * 全部来自 2026-10-19 一次未隔离的 E2E 运行——对应插件早已从 plugins 表清理，
+ * 只剩事件残影。后果不是"占空间"，而是**业务指标失真**：
+ * 插件浏览从 339 被虚报成 535，浏览→安装转化率被算成 0.75%（真实 1.18%）。
+ *
+ * 现在 E2E 已有独立库（data/e2e/navhub-e2e.db），但这条门禁防的是
+ * "隔离机制失效或有人绕过它"的复发。只统计、不自动删：清理由人决定。
+ * ------------------------------------------------------------------ */
+const E2E_POLLUTION_RED = 50;
+let e2ePolluted = 0;
+console.log("");
+console.log("[db-integrity] E2E 数据污染：");
+{
+  const patterns = [
+    { table: "events", column: "meta", like: "%e2e-%" },
+    { table: "plugins", column: "slug", like: "e2e-%" },
+    { table: "sites", column: "source", like: "%e2e%" },
+  ];
+  for (const p of patterns) {
+    let c;
+    try {
+      c = db
+        .prepare('SELECT COUNT(*) c FROM "' + p.table + '" WHERE ' + p.column + " LIKE ?")
+        .get(p.like).c;
+    } catch (err) {
+      console.log("  SKIP  " + (p.table + "." + p.column).padEnd(22) + "(" + String(err.message).slice(0, 40) + ")");
+      continue;
+    }
+    if (c > E2E_POLLUTION_RED) e2ePolluted += 1;
+    console.log(
+      "  " + (c > E2E_POLLUTION_RED ? "DIRTY" : "OK   ") + "  " +
+      (p.table + "." + p.column).padEnd(22) + String(c).padStart(6) + " 行",
+    );
+  }
+}
+console.log("[db-integrity] E2E 污染超标列 =", e2ePolluted,
+  "（判定线：单列 > " + E2E_POLLUTION_RED + " 行；只统计不自动删）");
+
 // 参考指标（不判红，只是让报告可读）
 const active = db.prepare("SELECT COUNT(*) c FROM sites WHERE deleted_at IS NULL").get().c;
 const softDeleted = db.prepare("SELECT COUNT(*) c FROM sites WHERE deleted_at IS NOT NULL").get().c;
@@ -164,7 +206,7 @@ console.log("[db-integrity] 活跃站点 =", active, "| 软删 =", softDeleted, 
 console.log("[db-integrity] 孤儿引用合计 =", orphans);
 
 db.close();
-if (asCheck && (orphans > 0 || retentionCritical > 0)) {
-  console.error("[db-integrity] --check 未通过：孤儿引用 " + orphans + " 条，保留策略严重积压 " + retentionCritical + " 张表");
+if (asCheck && (orphans > 0 || retentionCritical > 0 || e2ePolluted > 0)) {
+  console.error("[db-integrity] --check 未通过：孤儿 " + orphans + " 条，保留积压 " + retentionCritical + " 表，E2E 污染 " + e2ePolluted + " 列");
   process.exit(1);
 }

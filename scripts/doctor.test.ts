@@ -37,11 +37,18 @@ describe("probePort", () => {
 });
 
 describe("CLI", () => {
-  it("--json 输出结构固定，含 results 数组", () => {
-    const res = spawnSync(process.execPath, ["scripts/doctor.mjs", "--json"], { cwd: ROOT, encoding: "utf8" });
-    const parsed = JSON.parse(res.stdout) as { ok: boolean; results: Array<{ level: string; name: string }> };
-    expect(Array.isArray(parsed.results)).toBe(true);
-    expect(parsed.results.length).toBeGreaterThan(3);
-    for (const r of parsed.results) expect(["OK", "WARN", "FAIL"]).toContain(r.level);
-  });
+  it(
+    "--json 输出结构固定，含 results 数组",
+    () => {
+      const res = spawnSync(process.execPath, ["scripts/doctor.mjs", "--json"], { cwd: ROOT, encoding: "utf8" });
+      const parsed = JSON.parse(res.stdout) as { ok: boolean; results: Array<{ level: string; name: string }> };
+      expect(Array.isArray(parsed.results)).toBe(true);
+      expect(parsed.results.length).toBeGreaterThan(3);
+      for (const r of parsed.results) expect(["OK", "WARN", "FAIL"]).toContain(r.level);
+    },
+    // 实测本机单跑约 24.5s（脚本要探端口 + 读 git 状态），默认 30s 上限在
+    // 全量并行时会因 CPU 争用被顶穿而误红。放宽到 120s 只给这条进程外调用，
+    // 断言本身一个字没改。
+    120_000,
+  );
 });

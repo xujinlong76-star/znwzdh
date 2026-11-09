@@ -45,6 +45,56 @@ let BASELINE = [
   "apps/web-overlay/src/registry/new-york/ui/input-otp.tsx",
 ];
 
+/**
+ * 基线条目的**逐项结论**（2026-11-08 复核）。
+ *
+ * 为什么需要：基线原先只登记「0 引用」这个事实，不记录**为什么保留**，于是
+ * 「基线只防新增、不催收清理」，也没人知道哪些能删、哪些删了会炸。
+ * 本门禁的静态分析有四个已知盲区，下列结论正是逐项核对这些盲区得出的：
+ *   A. 模块别名目标（package.json 的 imports/别名，构建期解析，静态 import 看不见）
+ *   B. 跨文件**字符串契约**（DOM id / data 属性等，不是 import）
+ *   C. 守卫测试按**源码路径**读取并断言（readFileSync，文件不存在即失败）
+ *   D. vendored 覆盖 / 上游占位（删了会让 vendored 目录重建或 tsc 失败）
+ *
+ * 结论分两类：
+ *   keep   —— 必须保留（命中 A/B/C/D 之一；删除会破坏机制或让守卫测试变红）
+ *   delete —— 真死，可安全删除（删除时须同步 apps/web 镜像与 BASELINE 条目）
+ *
+ * 复核到的铁证（行内已注明）：
+ *   - lazy-dnd.tsx          属于 A：`"@hello-pangea/dnd": "./src/lib/lazy-dnd.tsx"` 别名目标
+ *   - chart.tsx             属于 D：为修 CI tsc 存量错误刻意纳入 overlay 的 vendored 覆盖
+ *   - session.ts            属于 D：为上游 vendored 文件保留的空模块（header 已注明）
+ *   - speculative-prerender.tsx 属于 C：prerender-cleanup-guard.test.ts 读源码断言
+ *   - quick-access-tray.tsx 属于 B+C：quick-jump-bar 用 DOM id 关联 + 效率测试读源码
+ *   - search-input.tsx      属于 C：a11y-token-contrast.test.ts 的 CONTROL_FILES 读源码
+ *   - input-otp.tsx         属于 C：同上 CONTROL_FILES
+ * 可安全删除（仅需同步镜像与基线）：
+ *   - VideoIconUpload.tsx / video-scrubber-preview.tsx / components/notification-badge.tsx
+ *     （最后一个注意与**活跃**的 lib/notification-badge.ts 区分：前者是组件、后者是工具）
+ */
+let BASELINE_NOTES = {
+  "apps/web-overlay/src/lib/lazy-dnd.tsx":
+    "keep（A 别名目标）：package.json 把 @hello-pangea/dnd 指向本文件，构建期解析；另有 types/hello-pangea-dnd-deep.d.ts 与 test/lazy-dnd-guard.test.ts 依赖",
+  "apps/web-overlay/src/registry/new-york/ui/chart.tsx":
+    "keep（D vendored 覆盖）：为修 CI tsc 存量 recharts 类型错误刻意纳入 overlay（docs/UPGRADE-EXECUTION-2026-10-18.md 第五轮更正）；删除会被 vendored 重建覆盖回坏版本",
+  "apps/web-overlay/src/lib/session.ts":
+    "keep（D 上游占位）：上游 src/lib/session.ts 依赖已移除的 iron-session，本文件是覆盖用的空模块，删了 tsc 会 Cannot find module",
+  "apps/web-overlay/src/components/speculative-prerender.tsx":
+    "keep（C 守卫测试）：test/prerender-cleanup-guard.test.ts 按源码路径读取断言；注意业务引用的是同名的 lib/speculative-prerender.ts",
+  "apps/web-overlay/src/components/ui/search-input.tsx":
+    "keep（C 守卫测试）：a11y-token-contrast.test.ts 的 CONTROL_FILES 用 readFileSync 读取并断言 border-border-strong",
+  "apps/web-overlay/src/registry/new-york/ui/input-otp.tsx":
+    "keep（C 守卫测试）：同上 CONTROL_FILES 清单",
+  "apps/web-overlay/src/components/quick-access-tray.tsx":
+    "keep（B 字符串契约 + C 守卫测试）：category-quick-jump-bar.tsx 按 DOM id 'quick-access-tray' 关联；navigation-efficiency-enhancements.test.ts 读源码断言",
+  "apps/web-overlay/src/app/admin/videos/components/VideoIconUpload.tsx":
+    "delete（真死）：除基线与文档索引外无任何引用（含字符串/测试/别名）",
+  "apps/web-overlay/src/components/video-scrubber-preview.tsx":
+    "delete（真死）：除基线外无引用；视频播放器未接入（接入前勿删，见 2026-11-08 外部改动）",
+  "apps/web-overlay/src/components/notification-badge.tsx":
+    "delete（真死）：组件级死代码；勿与活跃的 lib/notification-badge.ts（unreadBadgeText）混淆",
+};
+
 // ---------- 形状校验（退出码 2） ----------
 function shapeError(msg) {
   if (JSON_OUT) console.log(JSON.stringify({ ok: false, exitCode: 2, error: "shape", message: msg }, null, 2));
@@ -159,6 +209,7 @@ const result = {
   scanned: { overlayFiles: overlayFiles.length, webMirrorFiles: webFiles.length, localSpecsUnresolved: unresolved.length },
   totalCandidates: candidates.length,
   baseline: BASELINE,
+  baselineNotes: BASELINE_NOTES,
   brandNew,
   staleBaselineEntries: stale,
   candidates,
@@ -168,7 +219,13 @@ if (JSON_OUT) {
   console.log(JSON.stringify(result, null, 2));
 } else {
   console.log(P + "扫描 overlay " + overlayFiles.length + " 个模块（web 镜像 " + webFiles.length + " 个），0 引用候选 " + candidates.length + " 个");
-  for (const c of candidates) console.log(P + (known.has(c) ? "· 基线 " : "❌ 新增 ") + c);
+  for (const c of candidates) {
+    const note = BASELINE_NOTES[c];
+    console.log(P + (known.has(c) ? "· 基线 " : "❌ 新增 ") + c + (note ? "  ⟶ " + note : ""));
+  }
+  // 新登记的候选若还没做取舍，提醒补结论 —— 避免基线退化成「只防新增、不催收」
+  const unclassified = BASELINE.filter((b) => !BASELINE_NOTES[b]);
+  if (unclassified.length) console.log(P + "ℹ 以下基线项尚无结论（请在 BASELINE_NOTES 补 keep/delete 与理由）：" + unclassified.join("、"));
   if (stale.length) console.log(P + "ℹ 以下基线项已不再命中，可移出 BASELINE：" + stale.join("、"));
   if (brandNew.length) console.error(P + "❌ 出现 " + brandNew.length + " 个新增 0 引用候选（见上），请确认是死代码还是漏了引用");
   else console.log(P + "✅ 无新增死模块候选（基线 " + BASELINE.length + " 项）");

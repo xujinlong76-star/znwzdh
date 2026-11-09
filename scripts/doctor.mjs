@@ -213,10 +213,23 @@ function checkDependencyTree() {
   }
 }
 
-function checkStaleArtifacts() {  const dirs = [".next-e2e", "test-results", "playwright-report"];
+function checkStaleArtifacts() {
+  // 不只点名 `.next-e2e`：apps/web 下的 .next-*（v2..v8 / prod / opt / final / verify / e2e-videos…）
+  // 都是历史构建残留，逐一堆积到 6 万+ 文件；只清点名的那个等于把其余留给"下一次磁盘告警"。
+  // 注意**不含**裸 `.next` —— 那是正在使用的活跃构建目录（dev / start 直接依赖它）。
+  const dirs = ["test-results", "playwright-report"];
+  for (const base of ["apps/web", "."]) {
+    try {
+      for (const name of readdirSync(join(ROOT, base))) {
+        if (name.startsWith(".next-")) dirs.push(join(base, name));
+      }
+    } catch {
+      // 目录不存在或不可读：忽略
+    }
+  }
   const existing = dirs.filter((d) => existsSync(join(ROOT, d)));
   if (existing.length === 0) {
-    report("OK", "构建残留", "无 .next-e2e / test-results / playwright-report");
+    report("OK", "构建残留", "无 .next-* / test-results / playwright-report");
     return;
   }
   if (FIX) {
@@ -224,7 +237,12 @@ function checkStaleArtifacts() {  const dirs = [".next-e2e", "test-results", "pl
     report("OK", "构建残留", `已清理 ${existing.join("、")}`);
     return;
   }
-  report("WARN", "构建残留", `存在 ${existing.join("、")}`, "node scripts/doctor.mjs --fix");
+  report(
+    "WARN",
+    "构建残留",
+    `存在 ${existing.length} 项：${existing.slice(0, 6).join("、")}${existing.length > 6 ? " …" : ""}`,
+    "node scripts/doctor.mjs --fix",
+  );
 }
 
 function checkWorkspaceFiles() {

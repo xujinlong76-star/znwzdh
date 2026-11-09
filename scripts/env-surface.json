@@ -1,6 +1,6 @@
 {
   "_note": "配置面登记基线（C-2）。scripts/check-env-surface.mjs 静态提取 apps/api/src/**/*.ts 的 process.env.NAVHUB_* 全集，与 .env.example / docker-compose.yml / AppConfig 做差集。设计原则：这是「防止新增未登记变量」的棘轮，不是「一次性把 24 个历史缺口全判红」的坏门禁——历史缺口已登记在 knownUnregistered，只允许减少、不允许增加。",
-  "updatedAt": "2026-11-06",
+  "updatedAt": "2026-11-08",
   "scan": [
     "apps/api/src"
   ],
@@ -10,26 +10,20 @@
     "apps/api/src/config.ts"
   ],
   "knownUnregistered": [
-    "NAVHUB_ADMIN_TOKEN",
     "NAVHUB_AUDIT_QUEUE_PATH",
     "NAVHUB_AUDIT_USER_AGENT",
-    "NAVHUB_BOOTSTRAP_TOKEN",
     "NAVHUB_EXPORT_MAX_SITES",
     "NAVHUB_HEALTH_FAIL_THRESHOLD",
-    "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_HEALTH_POOL",
     "NAVHUB_INSTANCE_ID",
-    "NAVHUB_INTERNAL_TOKEN",
     "NAVHUB_JOBS_ENABLED",
     "NAVHUB_JOBS_INTERVAL_MS",
-    "NAVHUB_LLM_QUOTA_DISABLED",
     "NAVHUB_LOG_LEVEL",
     "NAVHUB_PROBE_CACHE_PATH",
     "NAVHUB_REINDEX_INCREMENTAL_MAX",
     "NAVHUB_RESTORE_CHUNK",
     "NAVHUB_RESTORE_STAGING_DIR",
-    "NAVHUB_SECRETS_KEY",
     "NAVHUB_SEED_EMBEDDINGS",
-    "NAVHUB_SESSION_SECRET_PREV",
     "NAVHUB_STORAGE_BODY_LIMIT_MB",
     "NAVHUB_TAP_IMPORT_MAX",
     "NAVHUB_VIDEO_REBUILD_MAX",

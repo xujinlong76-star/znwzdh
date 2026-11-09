@@ -13,7 +13,7 @@
  * 不在镜像里，越界不会造成运行时问题。
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { extractSpecifiers, normalizePath, resolveSpecifier } from "./lib/source-refs.mjs";
 
@@ -46,6 +46,24 @@ const RULES = [
     deny: [
       { kind: "path", value: "apps/web-overlay/", reason: "后端不得依赖前端源码" },
       { kind: "path", value: "apps/web/", reason: "后端不得依赖前端源码" },
+    ],
+  },
+  {
+    id: "core-zero-io",
+    from: "packages/core/src/",
+    deny: [
+      {
+        kind: "package",
+        value: "node:fs",
+        reason:
+          "core 的定位是「纯算法与领域契约，零 IO」：落盘必须走注入的 AtomicFileStore（packages/core/src/file-store.ts），" +
+          "宿主实现在 apps/api/src/fs-file-store.ts。直接 import node:fs 会让 core 无法在浏览器/Edge 侧复用。",
+      },
+      {
+        kind: "package",
+        value: "node:path",
+        reason: "路径拼接属于宿主职责；core 只处理纯数据",
+      },
     ],
   },
   {
@@ -83,7 +101,9 @@ function trackedSources() {
   return raw.split("\0").filter((f) => f && SOURCE_RE.test(f)).map(normalizePath);
 }
 
-function readHead(file) {
+function readSource(file) {
+  const abs = resolve(ROOT, file);
+  if (existsSync(abs)) return readFileSync(abs, "utf8");
   return git(["show", `HEAD:${file}`]);
 }
 
@@ -119,7 +139,7 @@ function main() {
 
     let text;
     try {
-      text = readHead(file);
+      text = readSource(file);
     } catch {
       continue;
     }

@@ -16,7 +16,8 @@
  *     本索引以「磁盘全量」为登记口径，逐份标注 tracked / untracked。
  *   - deliverables/ 15 个顶层子目录（含 1 个空目录 code-scan-2026-11-01）、
  *     20 份 .md 报告（任务书说 19，实测 20，按真实名称全量登记，不凑数删减）。
- *   - scripts/ 下 check-*.mjs = 30 个，用途逐份读文件头注释 / 源码确认。
+ *   - scripts/ 下 check-*.mjs = 42 个（2026-11-08 补齐：原固定 30 份，磁盘实物 42 份），
+ *     用途逐份读文件头注释 / 源码确认，不按文件名猜。
  *
  * 用法：
  *   node scripts/gen-docs-index.mjs            # 默认：重新生成 docs/docs-index.json
@@ -261,7 +262,20 @@ const CHECK_SCRIPTS = [
   ["check-plan-status.mjs", "计划项 → 落地证据收口：按符号名 / 特征字符串判定 docs/plan-status.json 的 landed 证据"],
   ["check-env-surface.mjs", "配置面登记棘轮：process.env.NAVHUB_* 新增未登记变量判红（against scripts/env-surface.json）"],
   ["check-audit-exceptions.mjs", "依赖审计例外到期：ghsa/reason/owner/expiresAt 齐全，过期判红，可 --emit-ignore"],
-  ["check-governance.mjs", "治理门禁聚合器：把 plan-status / env-surface / audit-exceptions 三条单一事实源合成 verify 一步"]
+  ["check-governance.mjs", "治理门禁聚合器：把 plan-status / env-surface / audit-exceptions 三条单一事实源合成 verify 一步"],
+  // ---- 以下 12 份为 2026-11-08 补齐（原清单固定 30 份，磁盘实物已有 42 份）----
+  ["check-csp-headers.mjs", "CSP 双档位契约测试：隔离 env 档位加载同一份 next.config.js 的 headers()，断言默认档不下发、enforce 档下发的策略（不依赖 Docker）"],
+  ["check-db-integrity.mjs", "数据库引用完整性门禁（只读）：扫关联表指向 sites 里不存在 id 的孤儿行，防早期删站未级联的历史残留再次累积"],
+  ["check-dead-modules.mjs", "死模块候选扫描棘轮：overlay 内 0 引用模块，仅「不在基线里的新候选」判红；BASELINE_NOTES 逐份登记 keep/delete 结论"],
+  ["check-frontend-typecheck.mjs", "前端类型门禁棘轮：校验 apps/web（构建镜像）的 tsc --noEmit 错误数必须为 0，改 overlay 后需先同步镜像再跑"],
+  ["check-generated-all.mjs", "生成/镜像链聚合入口：core 镜像 / 路由策略 / REST 契约 / overlay→web 四条链一次跑完，任一退出非 0 即整体判红"],
+  ["check-health-coverage.mjs", "健康探测覆盖与新鲜度 SLO（只读）：已探测样本中超 7×24h 比例 ≤5%、单类目未探测占比 ≤20%"],
+  ["check-icons.mjs", "站点 favicon 外链抽查：拉取若干站点首页并打印 <link rel=icon> 供人工核对（非门禁，无退出码判定）"],
+  ["check-navigation-health.mjs", "导航健康数据可信口径：重算 trustworthy_fail_rate / untested_rate 双口径，守住「探测中止不得算 unverified」"],
+  ["check-numeric-env.mjs", "数值型环境变量守卫：全仓 Number(process.env.X) 读取点所在文件须有 isFinite 校验或钳位/兜底，防 NaN 静默进超时与上限"],
+  ["check-quarantine.mjs", "E2E 隔离台账校验：标记形态 / e2e/QUARANTINE.md 五字段 / 到期日 ≤14 天，形状非法即红（政策唯一来源是 TESTING-STRATEGY.md §4.3）"],
+  ["check-strip-syntax.mjs", "strip-types 不兼容语法守卫：apps/api 内的 enum / namespace / 构造函数参数属性 / 装饰器任一命中即违规（tsc 全绿也测不出运行时抛错）"],
+  ["check-web-config-parity.mjs", "前端配置唯一事实源断言：apps/web 与 overlay 的 next.config.js / package.json / tsconfig.json 必须同源"]
 ];
 
 // ---------------- 动态枚举 docs/ 下的 .md ----------------
@@ -394,6 +408,24 @@ function check() {
   console.log("[docs-index] ✅ --check 通过：docs/ 下 " + diskDocs().length + " 份 .md 全部已登记；" +
     "deliverables/ " + idx.counts.deliverablesMdReports + " 份报告 / " + idx.counts.deliverablesTopLevelDirs + " 个子目录；" +
     "scripts/ " + idx.counts.scriptsCheckMjs + " 个 check-*.mjs。");
+  /**
+   * 非致命告警：登记数与磁盘实物不一致时必须看得见。
+   *
+   * 同一类漂移的第三个实例：scripts/INDEX.md 曾手写「113 个 .mjs / 30 个门禁」，
+   * 这里的清单登记 30 个，而磁盘上已有 42 个 check-*.mjs —— 没登记的脚本
+   * 「存在但没人知道它做什么」，正是本门禁想防的「假绿」。这里不直接判红
+   * （否则会立刻打断 CI），只把缺口与差额提示出来，由维护者补齐清单。
+   */
+  const liveCheckMjs = readdirSync(join(ROOT, "scripts")).filter(
+    (n) => n.startsWith("check-") && n.endsWith(".mjs"),
+  ).length;
+  if (liveCheckMjs !== idx.counts.scriptsCheckMjs) {
+    console.warn(
+      "[docs-index] ⚠ check-*.mjs 登记数与实物不符：登记 " + idx.counts.scriptsCheckMjs +
+        "，实物 " + liveCheckMjs + "。请把缺的 " + (liveCheckMjs - idx.counts.scriptsCheckMjs) +
+        " 份补进本脚本的 check 清单（每项都要写真实用途，别按文件名猜）。",
+    );
+  }
   process.exit(0);
 }
 

@@ -24,11 +24,18 @@ const METHODS = "get|post|put|patch|delete";
 /** 返回 [{method, path, scope, file}]；解析不到的注册直接抛错，避免静默漏项。 */
 export function extractRoutes() {
   const out = [];
+  const walkTs = (dir) => {
+    const list = [];
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, ent.name);
+      if (ent.isDirectory()) list.push(...walkTs(full));
+      else if (ent.name.endsWith(".ts")) list.push(full);
+    }
+    return list;
+  };
   // routes/ 之外还有少量路由注册在 server.ts（openapi / docs），漏掉会让网关默认拒绝它们
   const sources = [
-    ...readdirSync(ROUTES_DIR)
-      .filter((f) => f.endsWith(".ts"))
-      .map((f) => join(ROUTES_DIR, f)),
+    ...walkTs(ROUTES_DIR),
     ...readdirSync(join(ROOT, "apps", "api", "src"))
       .filter((f) => f.endsWith(".ts"))
       .map((f) => join(ROOT, "apps", "api", "src", f)),

@@ -10,11 +10,11 @@
  *
  * 复用 scripts/lib/overlay-drift.mjs 的 isExcluded / walkTree，口径与 check-web-overlay 一致。
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, copyFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, copyFileSync, existsSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { generateMirror } from "../generate-web-mirror.mjs";
 import { walkTree, isExcluded, diffOverlay } from "../lib/overlay-drift.mjs";
 
@@ -42,10 +42,32 @@ function seedWebFromOverlay(web) {
   }
 }
 
-describe("generate-web-mirror", () => {
+/**
+ * 每个用例都要一份完整的合成 web（1000+ 文件）。逐文件 copy 在 Windows 上单次就要
+ * 十几秒，四个用例并行跑全量套件时会顶到默认 30s 超时（不是逻辑失败）。
+ * 这里把「底座」只播种一次，用例用原生递归 cp 克隆，既保持隔离又把时间压下来。
+ */
+let BASELINE = null;
+function cloneBaseline() {
+  const d = makeTmp();
+  cpSync(BASELINE, d, { recursive: true });
+  return d;
+}
+
+beforeAll(() => {
+  BASELINE = mkdtempSync(join(tmpdir(), "navhub-mirror-base-"));
+  seedWebFromOverlay(BASELINE);
+});
+
+afterAll(() => {
+  if (BASELINE) rmSync(BASELINE, { recursive: true, force: true });
+  BASELINE = null;
+});
+
+// 全量套件里磁盘 IO 竞争激烈：单测自带更宽松的预算，语义断言不放松
+describe("generate-web-mirror", { timeout: 120_000 }, () => {
   it("produces a web mirror byte-identical to overlay (parity)", () => {
-    const web = makeTmp();
-    seedWebFromOverlay(web);
+    const web = cloneBaseline();
     const { copied, errors } = generateMirror({ source: OVERLAY, target: web });
     expect(errors).toEqual([]);
     expect(copied).toBeGreaterThan(0);
@@ -57,8 +79,7 @@ describe("generate-web-mirror", () => {
   });
 
   it("is idempotent: running twice yields no diff", () => {
-    const web = makeTmp();
-    seedWebFromOverlay(web);
+    const web = cloneBaseline();
     generateMirror({ source: OVERLAY, target: web });
     // 第二遍仍应把 overlay 内容重写为一致状态，且不报错
     const second = generateMirror({ source: OVERLAY, target: web });
@@ -70,8 +91,7 @@ describe("generate-web-mirror", () => {
   });
 
   it("self-heals forward drift in the web mirror", () => {
-    const web = makeTmp();
-    seedWebFromOverlay(web);
+    const web = cloneBaseline();
     generateMirror({ source: OVERLAY, target: web });
 
     // 故意在 web 侧制造一处内容漂移（overlay 不变）
@@ -93,8 +113,7 @@ describe("generate-web-mirror", () => {
   });
 
   it("does not delete upstream-base files that are absent from overlay", () => {
-    const web = makeTmp();
-    seedWebFromOverlay(web);
+    const web = cloneBaseline();
     // 放一个 overlay 没有、但不被排除的「上游底座文件」
     const upstreamOnly = "public/assets/cover/upstream-only-cover.jpg";
     mkdirSync(join(web, "public", "assets", "cover"), { recursive: true });

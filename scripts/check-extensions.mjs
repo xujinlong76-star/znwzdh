@@ -6,7 +6,7 @@
  * 2. extensions/raycast-extension (Raycast Package 规范、命令与入口文件存在性)
  */
 
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 
@@ -184,6 +184,59 @@ const SEARCH_CREDENTIAL_FILES = [
     }
   }
   if (errors === errorsBefore) logOk('Chrome 扩展搜索请求凭据校验通过')
+}
+
+// ---- 4. API 契约：扩展调用的每个 /api/* 都必须在后端有路由声明 ----
+// 扩展是**直连** Fastify 的（默认 http://127.0.0.1:8787）。后端把某条路由改名/下线时，
+// 扩展里手写的 URL 不会红——只会在用户点击时静默失效（这类回归没有编译期信号）。
+// 这里把「扩展用到的端点」纳入门禁：在 apps/api/src/routes/**.ts 里找不到对应模板即判红
+// （含拆分后的 routes/plugins/p1..p5.ts）。动态段取前缀匹配：`/api/plugins/` 可匹配
+// `/api/plugins/:slug/install`。
+{
+  const errorsBefore = errors
+  const collect = (dir, re) => {
+    const out = []
+    if (!existsSync(dir)) return out
+    const walk = (d) => {
+      for (const entry of readdirSync(d, { withFileTypes: true })) {
+        const p = join(d, entry.name)
+        if (entry.isDirectory()) walk(p)
+        else if (re.test(entry.name)) out.push(p)
+      }
+    }
+    walk(dir)
+    return out
+  }
+
+  const templates = []
+  for (const f of collect(join(ROOT, 'apps/api/src/routes'), /\.ts$/)) {
+    const src = readFileSync(f, 'utf-8')
+    for (const m of src.matchAll(/app\.(?:get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]/g)) {
+      if (m[1].startsWith('/api/')) templates.push(m[1])
+    }
+  }
+  if (templates.length === 0) logError('后端路由里没扫到任何 /api/* 声明（路由目录结构变了？）')
+
+  const used = new Set()
+  for (const f of collect(join(ROOT, 'extensions'), /\.(js|ts|tsx|json|html)$/)) {
+    const src = readFileSync(f, 'utf-8')
+    for (const m of src.matchAll(/\/api\/[A-Za-z0-9/_:-]*/g)) {
+      const p = m[0].replace(/[.,;)'"`]+$/, '')
+      if (p.length > '/api/'.length) used.add(p)
+    }
+  }
+
+  const templateToRe = (tpl) =>
+    new RegExp('^' + tpl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[A-Za-z_]+/g, '[^/]+') + '$')
+  for (const p of [...used].sort()) {
+    const ok = p.endsWith('/')
+      ? templates.some((t) => t.startsWith(p))
+      : templates.some((t) => templateToRe(t).test(p))
+    if (!ok) logError(`扩展调用的端点在后端没有对应声明：${p}（后端改名/下线后扩展会静默失效）`)
+  }
+  if (errors === errorsBefore) {
+    logOk(`扩展 API 契约校验通过（${used.size} 个端点全部有后端声明；后端 ${templates.length} 条 /api/* 路由）`)
+  }
 }
 
 if (errors > 0) {

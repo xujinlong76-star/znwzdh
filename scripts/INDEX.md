@@ -1,7 +1,14 @@
 # scripts/ 脚本索引（INDEX）
 
-> 本文件是给人读的中文索引：`scripts/` 下 **113 个 .mjs**（2026-11-06 实测，
-> `glob scripts/*.mjs`），本轮治理只聚焦其中 `check-*.mjs` 这 **30 个门禁脚本**的真实用途。
+> 本文件是给人读的中文索引：`scripts/` 的规模**一律引用**
+> [`docs/metrics.json`](../docs/metrics.json) 的 **`scriptsIndex`** 字段
+> （`files` / `topLevelMjs` / `topLevelCheckMjs`），不要手写数字。
+> 查当前值：`node -e "console.log(require('./docs/metrics.json').scriptsIndex)"`
+> ——由 `scripts/gen-docs-metrics.mjs` 生成、`--check` 进 verify/CI 防漂移。
+>
+> ⚠️ 这里曾经手写「113 个 .mjs / 30 个门禁」，与实物差约 40%：手写数字必然漂移，
+> 故改为只引用字段名（评审 P2「scripts/INDEX 数字漂移」的落地方式）。
+> 实际治理范围是 `check-*.mjs`（即 `topLevelCheckMjs` 那一批）的真实用途；
 > 用途逐份读文件头注释 / 源码采集，不是按文件名猜的。
 >
 > machine-readable 全量清单见 [`docs/docs-index.json`](../docs/docs-index.json) 的 `scripts.checkMjs`。

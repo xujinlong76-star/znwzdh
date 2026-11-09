@@ -64,6 +64,19 @@ function countMatches(relPath, re) {
   return (readFileSync(p, "utf8").match(re) || []).length;
 }
 
+/** 只数**顶层**文件（不递归）：scripts/ 的 .mjs 与 check-* 计数属于这一类 */
+function topLevelCount(dirRel, filter) {
+  let n = 0;
+  let es;
+  try {
+    es = readdirSync(join(ROOT, dirRel), { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const e of es) if (e.isFile() && filter(e.name)) n++;
+  return n;
+}
+
 function countFilesIn(dirRel, filter, { includeTestDirs = false } = {}) {
   let n = 0;
   const d = join(ROOT, dirRel);
@@ -93,6 +106,17 @@ const metrics = {
     "packages/ai/src": sourceStats(["packages/ai/src"]),
     "packages/mcp/src": sourceStats(["packages/mcp/src"]),
     "scripts": sourceStats(["scripts"]),
+  },
+  /**
+   * scripts/ 的细粒度计数：供 scripts/INDEX.md 等文档引用，替代手写数字。
+   *
+   * 为什么单列：INDEX.md 原写「113 个 .mjs / 30 个门禁」，与实物差了约 40% ——
+   * 手写数字必然漂移。纳入生成物后由 `--check` 兜住，文档只引用字段名。
+   */
+  scriptsIndex: {
+    files: sourceStats(["scripts"]).files,
+    topLevelMjs: topLevelCount("scripts", (n) => n.endsWith(".mjs")),
+    topLevelCheckMjs: topLevelCount("scripts", (n) => n.startsWith("check-") && n.endsWith(".mjs")),
   },
   restRoutes: (() => {
     let n = 0;

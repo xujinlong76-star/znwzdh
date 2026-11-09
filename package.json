@@ -43,6 +43,8 @@
     "check:hub-policy": "node scripts/gen-hub-route-policy.mjs --check",
     "gen:hub-policy": "node scripts/gen-hub-route-policy.mjs",
     "check:rest-contracts": "node scripts/generate-rest-contract-types.mjs --check && node scripts/check-rest-contract-coverage.mjs",
+    "//check:generated": "生成/镜像链聚合入口：一条命令覆盖 core 镜像、路由策略、REST 契约、overlay→web 四条链，任一条漂移即判红（避免漏跑某条造成本地绿/镜像红）。",
+    "check:generated": "node scripts/check-generated-all.mjs",
     "gen:rest-contracts": "node scripts/generate-rest-contract-types.mjs",
     "gen:overlay-baseline": "node scripts/gen-overlay-baseline.mjs",
     "check:ci-gate": "node scripts/check-ci-gate.mjs",
@@ -80,6 +82,7 @@
     "verify:web": "node scripts/vendor-web.mjs && pnpm --filter navsphere exec tsc --noEmit && pnpm --filter navsphere exec eslint .",
     "verify:all": "node scripts/verify.mjs --full && pnpm lint && playwright test",
     "verify:guards": "node scripts/verify-guard.mjs --all",
+    "verify:ui": "node scripts/verify-ui-acceptance.cjs",
     "video:catalog:reconcile": "node apps/api/src/video-catalog-main.ts --check --json",
     "mirror:web": "node scripts/generate-web-mirror.mjs"
   },

@@ -26,6 +26,8 @@ out/
 coverage/
 test-results/
 playwright-report/
+# vitest 的 json reporter 产物（.vitest/json/output.json，单次 1MB+），属会话产物
+.vitest/
 *.tsbuildinfo
 .DS_Store
 Thumbs.db

@@ -61,6 +61,28 @@ minimumReleaseAgeExclude:
   - '@next/swc-win32-x64-msvc@16.4.2'
   - next@16.4.2
 
+# ---------------------------------------------------------------------------
+# overrides 到期台账（review-by）
+#
+# 为什么要有台账：overrides 是"永久钉版本"的机制。上游发了修复版却仍钉着，
+# 既丢掉修复、又持续背维护负担（每个 override 都要同步进 Docker 的部分清单，
+# 否则触发 ERR_PNPM_LOCKFILE_CONFIG_MISMATCH）。这里给每条钉版一个**复核到期日**：
+# 到期复核上游是否已发修复版，能解除就解除；到期未复核视为技术债（与 ci-red-ledger
+# 同一口径）。复核日统一取季度末，改动时顺延。
+#
+#  条目                                          依据                                 复核到期
+#  brace-expansion@<2 / >=2 <5 / >=5             ReDoS GHSA-vfj7-8cjw-p6xm；>=5 放行 ESLint10  2026-12-31
+#  nanoid@<4                                     GHSA-2v37-7h3g-55p8                 2026-12-31
+#  sharp                                         native 依赖安全维护版               2026-12-31
+#  undici                                        >=7.29.1                            2026-12-31
+#  body-parser                                   express@5 经 MCP SDK 仍解析到 2.3.0（高危 DoS） 2026-12-31
+#  next 16.4.2                                   硬钉：与 minimumReleaseAgeExclude 平台包绑定 2027-03-31
+#  tinypool / postcss / ws / esbuild             工具链安全版本                     2026-12-31
+#  nodemailer                                    GHSA-p6gq-j5cr-w38f / GHSA-8h2f-cmhf-554p 2026-12-31
+#  fast-uri                                      GHSA-333x-w4r6-6crp                 2026-12-31
+#  zod                                           GHSA-mrhx-c7xc-m3w5                2026-12-31
+#  ignoreGhsas: braces（dev-only）                上游未发修复版，季度复核            2026-12-31
+# ---------------------------------------------------------------------------
 overrides:
   # 安全钉版本：原写在 apps/web/package.json 的 pnpm 字段里，但 pnpm 11 起不再读
   # package.json 的 pnpm 字段（overrides 迁到 pnpm-workspace.yaml），那里实际已失效。

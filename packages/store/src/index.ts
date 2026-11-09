@@ -6,6 +6,7 @@ export * from "./fts.ts";
 export * from "./sql-in.ts";
 export * from "./fts-pg.ts";
 export * from "./search.ts";
+export * from "./plugin-ops.ts";
 export * from "./vector/index.ts";
 export * from "./repository.ts";
 export * from "./repository/videos.ts";

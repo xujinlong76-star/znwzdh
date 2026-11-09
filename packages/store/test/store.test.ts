@@ -56,6 +56,22 @@ describe("MemoryVectorStore", () => {
     await store.remove(["a"]);
     expect(await store.search(rnd(1), 5)).toEqual([]);
   });
+
+  it("到达容量上限后拒收新向量并置 degraded（检索代价有上界、降级不静默）", async () => {
+    const store = new MemoryVectorStore(DIM, { maxVectors: 2 });
+    expect(store.degraded).toBe(false);
+    await store.upsert([
+      { key: hashSiteId("a"), siteId: "a", vector: rnd(1) },
+      { key: hashSiteId("b"), siteId: "b", vector: rnd(2) },
+      { key: hashSiteId("c"), siteId: "c", vector: rnd(3) },
+    ]);
+    expect(await store.count()).toBe(2);
+    expect(store.degraded).toBe(true);
+    // 更新已有条目不占新额度，不因到顶而被丢弃（用新向量检索应命中 a）
+    await store.upsert([{ key: hashSiteId("a"), siteId: "a", vector: rnd(9) }]);
+    expect(await store.count()).toBe(2);
+    expect((await store.search(rnd(9), 5))[0]!.siteId).toBe("a");
+  });
 });
 
 describe("hashSiteId", () => {
@@ -141,6 +157,35 @@ describe("SqliteVecStore：site_id 列（跨进程语义检索不失效）", () 
     store.rehydrate([]);
     expect(await store.count()).toBe(0);
     expect(await store.search(rnd(3), 5)).toEqual([]);
+  });
+
+  it("轻量索引与全量向量行集一致（省内存路径不会误判为需要重建）", async () => {
+    const sqliteVec = await import("sqlite-vec");
+    const db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
+    sqliteVec.load(db.sqlite as never);
+    const repo = new Repository(db);
+    const model = "parity-test";
+    await repo.saveEmbedding("p-1", model, rnd(11));
+    await repo.saveEmbedding("p-2", model, rnd(12));
+
+    const filter = { model, dim: DIM };
+    const idx = await repo.savedEmbeddingIndex(filter);
+    const full = await repo.savedEmbeddings(filter);
+    // 行集必须完全一致 —— 否则 counts 恒不相等，启动时每次都会全量重灌
+    expect(idx.length).toBe(full.length);
+    expect(idx.map((e) => e.siteId).sort()).toEqual(full.map((e) => e.siteId).sort());
+
+    const store = new SqliteVecStore({ db: db.sqlite as never, dim: DIM });
+    store.rehydrate(full);
+    expect(await store.count()).toBe(2);
+    // 计数一致：轻量索引判定「无需重建」（这是省内存路径成立的前提）
+    expect(store.rehydrateIndex(idx)).toBe(false);
+
+    // 持久层少一条 → 计数不一致 → 必须重建
+    await repo.run("DELETE FROM embeddings WHERE site_id = ?", ["p-2"]);
+    expect(store.rehydrateIndex(await repo.savedEmbeddingIndex(filter))).toBe(true);
+
+    await db.close();
   });
 
   it("remove 按 site_id 直接删，不依赖映射", async () => {

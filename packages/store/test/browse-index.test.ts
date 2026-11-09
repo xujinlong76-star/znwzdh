@@ -82,6 +82,32 @@ describe("检索复合索引与排序键", () => {
     expect(detail).not.toMatch(/SCAN\s+sites/);
   });
 
+  it("巡检列索引存在，且未探测队列不全表扫", async () => {
+    // 回归锁：daily health_check 的三条热查询按
+    //   deleted_at IS NULL AND enabled = ? AND last_checked_at IS [NOT] NULL
+    //   ORDER BY created_at / last_checked_at
+    // 取值。此前无匹配索引 → 每次全表扫 + 临时排序（见 repository/sites.ts 的
+    // listUncheckedSites / listStalestCheckedSites / countSitesByPatrolState）。
+    expect(await indexNames(repo, db.dialect, "sites")).toContain("sites_patrol_idx");
+
+    const cat = await repo.createCategory({ title: "巡检索引分类" });
+    for (let i = 0; i < 40; i++) {
+      await repo.createSite({
+        url: `https://patrol-${i}.example.com`,
+        title: `Patrol ${i}`,
+        categoryId: cat.id,
+      });
+    }
+    await repo.raw("ANALYZE").catch(() => undefined);
+    const detail = await planDetail(
+      repo,
+      `SELECT id FROM sites
+        WHERE deleted_at IS NULL AND enabled = 1 AND last_checked_at IS NULL
+        ORDER BY created_at ASC, id ASC LIMIT 100`,
+    );
+    expect(detail).not.toMatch(/SCAN\s+sites/);
+  });
+
   it("tags.name 等值查询走索引，不是全表扫", async () => {
     await repo.upsertTag("索引回归标签", "index-regression-tag");
     const detail = await planDetail(repo, "SELECT id FROM tags WHERE name = ?", ["索引回归标签"]);

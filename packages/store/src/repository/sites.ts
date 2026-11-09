@@ -730,6 +730,98 @@ export async function updateSite(repo: Repository, id: string, patch: Partial<Si
   });
 }
 
+/** `reindexSiteSearch` 的输入行：重建检索索引只需要这四列 + 标签。 */
+export type SiteSearchIndexInput = { id: string; title: string; description: string | null; url: string };
+
+/**
+ * 按站点批量取标签 slug（`site_id -> [slug...]`，按 slug 升序）。
+ *
+ * 与 `selectSitesSql` / `aggregateBySiteId` 的两个方言聚合**逐字段等价**：
+ * 只取 `t.slug` 并按 `(site_id, slug)` 排序后在 JS 归并，不引入 dialect 分支，
+ * 也就不会出现「getSite 与列表标签顺序洗牌」那类漂移。
+ */
+async function loadSiteTagSlugs(repo: Repository, ids: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  const uniq = [...new Set(ids.filter(Boolean))];
+  if (uniq.length === 0) return out;
+  for (const part of chunkList(uniq)) {
+    const rows = await repo.raw(
+      "SELECT st.site_id AS sid, t.slug AS slug FROM site_tags st JOIN tags t ON t.id = st.tag_id" +
+        " WHERE st.site_id IN (" + part.map(() => "?").join(",") + ") ORDER BY st.site_id, t.slug",
+      part,
+    );
+    for (const r of rows) {
+      const sid = String(r.sid);
+      const list = out.get(sid) ?? [];
+      list.push(String(r.slug));
+      out.set(sid, list);
+    }
+  }
+  return out;
+}
+
+/** 单条语句最多承载多少行（3 个 CASE 列 × 2 参/行 + 1 个 updated_at + N 个 IN 参 ≤ 999）。 */
+const SEARCH_INDEX_STMT_ROWS = 100;
+
+/**
+ * 批量重算站点检索索引列（`fts_tokens` / `pinyin_full` / `pinyin_initials`），**零回读**。
+ *
+ * 背景（评审 P2 · reindex 50k 库 148s）：重建索引原先逐行走 `updateSite`，而
+ * `updateSite` 为了做「未传字段保持原值」的合并，必须
+ *   1. 事务内 `getSite` 读一次快照（单行聚合版，带标签 + 分面两个相关子查询），
+ *   2. 发一条 UPDATE，
+ *   3. 再 `getSite` 回读整行作为返回值。
+ * 重建索引要的只是「标题 / 描述 / URL / 标签 → 三个索引列」，第 1 步的合并语义与
+ * 第 3 步的整行回读全是白付；50k 库约 15 万条语句，其中 10 万条还是带子查询的重读。
+ *
+ * 现在：一条标签读 + 一条 CASE 批量 UPDATE（每行 1 个 `WHEN` 分支），行数只影响
+ * 绑定变量个数、不影响语句数。`CASE id WHEN ? THEN ?` 是标准 SQL，两个方言逐字同款，
+ * 不需要 dialect 分支；也不走 `INSERT` 路径，所以并发删站最多让某行命中 0 行，
+ * 不会凭索引重建造出不存在的站点。
+ *
+ * 调用方负责事务边界（一行分片要么整体可见、要么整体不可见）。
+ */
+export async function reindexSiteSearch(repo: Repository, rows: SiteSearchIndexInput[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const tagsBySite = await loadSiteTagSlugs(repo, rows.map((r) => r.id));
+  const index = rows.map((r) =>
+    buildIndexFields({ title: r.title, description: r.description, url: r.url, tags: tagsBySite.get(r.id) ?? [] }),
+  );
+  const now = Date.now();
+
+  let written = 0;
+  for (let i = 0; i < rows.length; i += SEARCH_INDEX_STMT_ROWS) {
+    const slice = rows.slice(i, i + SEARCH_INDEX_STMT_ROWS);
+    const sliceIndex = index.slice(i, i + SEARCH_INDEX_STMT_ROWS);
+    const params: unknown[] = [];
+    /**
+     * 一列一个 CASE：`fts_tokens = CASE id WHEN ? THEN ? ... ELSE fts_tokens END`。
+     * `ELSE <col>` 而不是 `ELSE NULL`：未命中的行（含并发删除）保持原值，
+     * 批量重算不承担「清空别人索引」的副作用。
+     */
+    const caseColumn = (col: string, pick: (idx: number) => string): string => {
+      const branches: string[] = [];
+      for (let j = 0; j < slice.length; j++) {
+        params.push(slice[j]!.id, pick(j));
+        branches.push("WHEN ? THEN ?");
+      }
+      return col + " = CASE id " + branches.join(" ") + " ELSE " + col + " END";
+    };
+    const sets: string[] = [
+      caseColumn("fts_tokens", (j) => sliceIndex[j]!.ftsTokens),
+      caseColumn("pinyin_full", (j) => sliceIndex[j]!.pinyinFull),
+      caseColumn("pinyin_initials", (j) => sliceIndex[j]!.pinyinInitials),
+      "updated_at = ?",
+    ];
+    params.push(now);
+    const inList = slice.map(() => "?").join(",");
+    for (const row of slice) params.push(row.id);
+    await repo.run("UPDATE sites SET " + sets.join(", ") + " WHERE id IN (" + inList + ")", params);
+    written += slice.length;
+  }
+  return written;
+}
+
 export async function deleteSite(repo: Repository, id: string): Promise<boolean> {
   await repo.run("UPDATE sites SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL", [Date.now(), Date.now(), id]);
   return true;

@@ -82,11 +82,38 @@ export { EXPORT_HISTORY_LIMIT, EXPORT_FAVORITES_LIMIT, EXPORT_SCHEMA_VERSION } f
 export type { SessionDeviceRecord } from "./repository/sessions.ts";
 export type { NotificationRecord } from "./repository/notifications.ts";
 /**
+ * 语句类型判定：写语句必须走写队列串行化，只读语句走零阻塞读路径。
+ *
+ * 为什么不能靠方法名区分读写：`runCount`（返回影响行数）与 `raw`（返回行集）
+ * 都被写路径复用——例如 `repository/jobs.ts` 用 `raw` 跑
+ * `INSERT/UPDATE ... RETURNING`。此前 `runCount`/`raw` 一律走 `read()`
+ * （空实现、不加锁），这些写在 SQLite 单连接下会落到他人事务的连接上，
+ * 事务回滚即静默丢写；写锁保护对此路径不成立。
+ * 这里按 SQL 首关键字路由，杜绝「方法名与闸门语义不符」。
+ */
+const WRITE_SQL_RE = /^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|VACUUM|REINDEX|ANALYZE|TRUNCATE|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|PRAGMA)\b/i;
+const READ_SQL_RE = /^\s*(SELECT|WITH|EXPLAIN|VALUES)\b/i;
+
+/**
+ * 是否为写语句。
+ *
+ * 保守判定：既不是已知写、也不是已知读的一律按**写**处理（串行化，宁慢勿丢）——
+ * 漏判一条写的代价是静默数据丢失，误判一条读的代价只是多排一次队。
+ */
+function isWriteStatement(sqlText: string): boolean {
+  if (WRITE_SQL_RE.test(sqlText)) return true;
+  return !READ_SQL_RE.test(sqlText);
+}
+
+/**
  * 数据库访问闸门（读写锁）。
  *
  * SQLite 只有一个连接，事务一旦 BEGIN，任何在 `await` 期间插进来的普通查询
  * 都会落进这个事务；事务回滚时，普通查询的写入会被一起抹掉。
  * 事务持有写锁、普通查询持有读锁，确保「事务期间没有外部 SQL」。
+ *
+ * 注意：`read()` 只接受**只读**语句。调用方（`raw`/`runCount`）已按 SQL
+ * 类型自动路由，写语句不会再进到这里——见 `isWriteStatement`。
  */
 class DbAccessGate {
   private writing = false;
@@ -337,6 +364,15 @@ export class Repository {
     return sitesRepo.updateSite(this, id, patch);
   }
 
+/**
+   * 批量重算站点检索索引列（`fts_tokens` / 拼音），**零回读**，供 reindex 用。
+   * 语义与逐行 `updateSite` 等价的部分：索引字段取自同一套 `buildIndexFields`；
+   * 不等价的部分（有意）：不重写 title / description / metadata，也不返回整行。
+   */
+  async reindexSiteSearch(rows: sitesRepo.SiteSearchIndexInput[]): Promise<number> {
+    return sitesRepo.reindexSiteSearch(this, rows);
+  }
+
   async deleteSite(id: string): Promise<boolean> {
     return sitesRepo.deleteSite(this, id);
   }
@@ -556,22 +592,35 @@ export class Repository {
     return embeddingsRepo.saveEmbeddingsBatch(this, records);
   }
 
-  async savedEmbeddings(filter?: {
+async savedEmbeddings(filter?: {
     model?: string;
     dim?: number;
   }): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
     return embeddingsRepo.savedEmbeddings(this, filter);
   }
 
+  /**
+   * 轻量向量索引（只取 site_id）：启动时恢复进程内映射用。
+   * 口径与 `savedEmbeddings` 完全一致，避免为「计数一致」这一常态读入全部向量。
+   */
+  async savedEmbeddingIndex(filter?: { model?: string; dim?: number }): Promise<Array<{ key: number; siteId: string }>> {
+    return embeddingsRepo.savedEmbeddingIndex(this, filter);
+  }
+
   async savePluginEmbedding(slug: string, model: string, vector: Float32Array): Promise<void> {
     return embeddingsRepo.savePluginEmbedding(this, slug, model, vector);
   }
 
-  async savedPluginEmbeddings(filter?: {
+async savedPluginEmbeddings(filter?: {
     model?: string;
     dim?: number;
   }): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
     return embeddingsRepo.savedPluginEmbeddings(this, filter);
+  }
+
+  /** 插件向量轻量索引（只取 slug），同 `savedPluginEmbeddings` 行集口径。 */
+  async savedPluginEmbeddingIndex(filter?: { model?: string; dim?: number }): Promise<Array<{ key: number; siteId: string }>> {
+    return embeddingsRepo.savedPluginEmbeddingIndex(this, filter);
   }
 
   async getPluginEmbedding(slug: string): Promise<Float32Array | null> {
@@ -1758,21 +1807,46 @@ export class Repository {
 
   /* ------------------------- 底层执行 ------------------------- */
 
-  /** @internal repository/* 域函数使用 */
+/** @internal repository/* 域函数使用 */
   get enabledLiteral(): string {
     return ioRepo.getEnabledLiteral(this);
   }
 
-  /** @internal repository/* 域函数使用 */
-  async runCount(sqlText: string, params: unknown[]): Promise<number> {
-    if (this.txContext.getStore()?.inTx) return ioRepo.runCount(this, sqlText, params);
-    return this.dbGate.read(() => ioRepo.runCount(this, sqlText, params));
+  /**
+   * 行级悲观锁子句（`FOR UPDATE`）——方言能力只在存储层暴露。
+   *
+   * 与 `enabledLiteral` 同一模式：路由此前内联
+   * `ctx.repo.db.dialect === "pg" ? " FOR UPDATE" : ""`，把方言语义散到了 apps 之外。
+   */
+  get rowLockClause(): string {
+    return ioRepo.getRowLockClause(this);
   }
 
-  /** @internal repository/* 域函数使用 */
+  /**
+   * 事务级 advisory lock（PG 跨进程串行化；SQLite 空操作，已被事务写锁覆盖）。
+   * 必须在 `withTransaction` 内调用。调用方不再直接读写 `db.pg`。
+   */
+  async acquireAdvisoryXactLock(key: string): Promise<void> {
+    return ioRepo.acquireAdvisoryXactLock(this, key);
+  }
+
+/**
+   * @internal repository/* 域函数使用
+   *
+   * 按 SQL 类型路由：写语句（含 `raw` 跑的 `INSERT/UPDATE … RETURNING`）走写队列，
+   * 只读语句才走零阻塞读路径。`runCount` 名字看着像读，实际几乎都是写（DELETE/UPDATE）。
+   */
+  async runCount(sqlText: string, params: unknown[]): Promise<number> {
+    if (this.txContext.getStore()?.inTx) return ioRepo.runCount(this, sqlText, params);
+    const exec = () => ioRepo.runCount(this, sqlText, params);
+    return isWriteStatement(sqlText) ? this.dbGate.write(exec) : this.dbGate.read(exec);
+  }
+
+  /** @internal repository/* 域函数使用（同上：写语句走写队列，只读走读路径） */
   async raw(sqlText: string, params: unknown[] = []): Promise<Record<string, any>[]> {
     if (this.txContext.getStore()?.inTx) return ioRepo.raw(this, sqlText, params);
-    return this.dbGate.read(() => ioRepo.raw(this, sqlText, params));
+    const exec = () => ioRepo.raw(this, sqlText, params);
+    return isWriteStatement(sqlText) ? this.dbGate.write(exec) : this.dbGate.read(exec);
   }
 
   /**

@@ -62,8 +62,17 @@ export const PLUGIN_LIMITS = {
   maxBundleSlug: 80,
 } as const
 
-export type ThemeAccent = 'violet' | 'emerald' | 'amber' | 'rose'
-export const THEME_ACCENTS: readonly ThemeAccent[] = ['violet', 'emerald', 'amber', 'rose']
+export type ThemeAccent = 'violet' | 'emerald' | 'amber' | 'rose' | 'ocean' | 'sky' | 'system-blue' | 'latte'
+export const THEME_ACCENTS: readonly ThemeAccent[] = [
+  'violet',
+  'emerald',
+  'amber',
+  'rose',
+  'ocean',
+  'sky',
+  'system-blue',
+  'latte',
+]
 
 /** 允许覆盖的颜色变量（HSL 三段式，与 styles/globals.css 的 :root 口径一致） */
 export const THEME_COLOR_VARS = [
@@ -188,6 +197,8 @@ export interface PluginSummary {
   widgetTypes: string[]
   accent?: ThemeAccent
   themeTokenCount: number
+  /** 主题 5 色调色板圆点（背景/主色/次色/强调色/前景），供卡片实时预览 */
+  palettePreview?: string[]
   engineCount: number
   enginePrefixes: string[]
   bundleItemCount: number
@@ -841,6 +852,15 @@ export function summarizePluginManifest(manifest: PluginManifest): PluginSummary
     const payload = manifest.payload as ThemePayload
     summary.accent = payload.accent
     summary.themeTokenCount = payload.tokens ? Object.keys(payload.tokens).length : 0
+    if (payload.tokens) {
+      summary.palettePreview = [
+        payload.tokens['--background'],
+        payload.tokens['--primary'],
+        payload.tokens['--secondary'],
+        payload.tokens['--accent'] || payload.tokens['--muted'],
+        payload.tokens['--foreground'],
+      ].filter(Boolean) as string[]
+    }
   } else if (manifest.kind === 'search-pack') {
     const payload = manifest.payload as SearchPackPayload
     summary.engineCount = payload.engines?.length ?? 0

@@ -144,8 +144,49 @@ export class SqliteVecStore implements VectorStore {
   }
 
   /**
-   * 重建进程内映射，并在 vec0 表与 embeddings 不一致时（迁移成空表 / 跨进程写入后残留 /
-   * 部分丢失）以 embeddings 为唯一事实源重建 vec0。
+   * 重建进程内映射（**不携带向量**），返回「是否需要之后用 embeddings 重灌 vec0」。
+   *
+   * 拆成两段是为了省掉启动时不必要的 O(N×dim) 读盘与内存拷贝：vec0 与持久层计数
+   * 一致时（绝大多数启动就是这种情况）根本用不到向量，只需要 site_id 恢复
+   * key↔siteId 映射。调用方可先给轻量索引（Repository.savedEmbeddingIndex），
+   * 只有返回 true 时才去拉全量向量。
+   */
+  rehydrateIndex(entries: Array<{ key: number; siteId: string }>): boolean {
+    this.init();
+    this.keyToSite.clear();
+    this.siteToKey.clear();
+
+    const existing = (this.db.prepare(`SELECT COUNT(*) AS c FROM ${this.table}`).get() as { c: number }).c;
+    const needsRebuild = existing !== entries.length;
+
+    for (const e of entries) {
+      this.keyToSite.set(e.key, e.siteId);
+      this.siteToKey.set(e.siteId, e.key);
+    }
+    return needsRebuild;
+  }
+
+  /**
+   * 以持久层为唯一事实源重灌 vec0（仅在 `rehydrateIndex` 判定计数不一致时调用）。
+   *
+   * 必须无条件清空：持久层记录为 0 而 vec0 里仍有行（删除 / 换模型后的残留）时，
+   * 若因 `records.length > 0` 跳过重建，残留向量会永远留在索引里。
+   */
+  rebuildVectors(records: VectorRecord[]): void {
+    this.init();
+    this.db.exec(`DELETE FROM ${this.table}`);
+    if (records.length === 0) return;
+    const ins = this.db.prepare(`INSERT INTO ${this.table}(site_key, site_id, embedding) VALUES (?, ?, ?)`);
+    for (const r of records) {
+      if (r.vector.length === this.dim) {
+        ins.run(BigInt(r.key), r.siteId, normalize(r.vector));
+      }
+    }
+  }
+
+  /**
+   * 一次性重灌（索引 + 按需重建）。保留给「手上已有全量向量」的调用方与测试；
+   * 服务端启动改走 `rehydrateIndex` + 条件 `rebuildVectors` 的省内存路径。
    *
    * 入参来自 Repository.savedEmbeddings()，形如 { key, siteId, vector } ——
    * 正好是 VectorRecord[]。
@@ -155,31 +196,7 @@ export class SqliteVecStore implements VectorStore {
    * 手工删改），立刻全量重建，保证语义检索不因进程内状态陈旧而静默失效。
    */
   rehydrate(records: VectorRecord[]): void {
-    this.init();
-    this.keyToSite.clear();
-    this.siteToKey.clear();
-
-    const existing = (this.db.prepare(`SELECT COUNT(*) AS c FROM ${this.table}`).get() as { c: number }).c;
-    const needsRebuild = existing !== records.length;
-
-    if (needsRebuild) {
-      // 必须无条件清空：持久层记录为 0 而 vec0 里仍有行（删除/换模型后的残留）
-      // 时，旧逻辑因 `records.length > 0` 跳过重建，残留向量会永远留在索引里。
-      this.db.exec(`DELETE FROM ${this.table}`);
-      if (records.length > 0) {
-        const ins = this.db.prepare(`INSERT INTO ${this.table}(site_key, site_id, embedding) VALUES (?, ?, ?)`);
-        for (const r of records) {
-          if (r.vector.length === this.dim) {
-            ins.run(BigInt(r.key), r.siteId, normalize(r.vector));
-          }
-        }
-      }
-    }
-
-    for (const r of records) {
-      this.keyToSite.set(r.key, r.siteId);
-      this.siteToKey.set(r.siteId, r.key);
-    }
+    if (this.rehydrateIndex(records)) this.rebuildVectors(records);
   }
 
   async count(): Promise<number> {

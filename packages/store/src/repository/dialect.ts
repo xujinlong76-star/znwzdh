@@ -164,6 +164,7 @@ export function rowToCategory(row: Record<string, any>): Category {
         const parsed = JSON.parse(val);
         if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
       } catch {}
+      // 显式降级（非静默）：非合法 JSON 的历史列值：按空数组处理
     }
     return [];
   };

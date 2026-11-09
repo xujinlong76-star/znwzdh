@@ -51,6 +51,14 @@ export interface VectorStore {
   /** 已索引数量 */
   count(): Promise<number>;
   clear(): Promise<void>;
+  /**
+   * 实现是否处于**受限降级**状态（可选）。
+   *
+   * 目前只有内存兜底实现会置位：它到达容量上限后停止接收新向量（否则每次检索
+   * 都是 O(N×dim) 线性扫描），此时检索仍可用但召回不完整。
+   * 健康检查据此如实上报——降级不该是静默的。
+   */
+  readonly degraded?: boolean;
 }
 
 /**

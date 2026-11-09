@@ -7,7 +7,7 @@
  *   3. 落盘：写-读往返一致，且是原子替换（临时文件不残留）；
  *   4. 容错：文件损坏/不存在时当空缓存，不抛错（缓存坏了不能影响体检）。
  */
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,6 +19,21 @@ import {
   openProbeCache,
   probeCacheKey,
 } from "../src/probe-cache.ts";
+import { setFileStore } from "../src/file-store.ts";
+
+/**
+ * core 已零 IO：落盘能力由宿主注入。测试在临时目录上注入 fs 实现——
+ * 与 apps/api 的生产实现（src/fs-file-store.ts）语义一致，只是少了目录创建
+ * （tempFile 的目录已由 mkdtemp 建好）。
+ */
+setFileStore({
+  read: (p) => readFile(p, "utf8"),
+  writeAtomic: async (p, data) => {
+    const tmp = `${p}.${process.pid}.tmp`;
+    await writeFile(tmp, data, "utf8");
+    await rename(tmp, p);
+  },
+});
 
 const dirs: string[] = [];
 

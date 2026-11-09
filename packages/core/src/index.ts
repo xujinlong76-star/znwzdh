@@ -1,6 +1,7 @@
 export * from "./types.ts";
 export * from "./password.ts";
 export * from "./mcp-schemas.ts";
+export * from "./mcp-host.ts";
 export * from "./ssrf-ports.ts";
 export * from "./job-payloads.ts";
 export * from "./json-schema.ts";
@@ -17,6 +18,8 @@ export * from "./hyperbolic.ts";
 export * from "./health-sentinel.ts";
 export * from "./probe-policy.ts";
 export * from "./health-state.ts";
+// 原子文件存储的注入缝：core 不依赖 node:fs，IO 由宿主注入（见 file-store.ts）
+export * from "./file-store.ts";
 export * from "./probe-cache.ts";
 export * from "./probe-metrics.ts";
 export * from "./audit-queue.ts";

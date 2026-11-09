@@ -359,6 +359,15 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     // enabled/deleted_at/status 计数/列举的仓储方法）。status 是等值过滤，
     // 放在两个等值键之后即可；不带排序键，因为它在这条路径上不参与排序。
     "CREATE INDEX IF NOT EXISTS sites_enabled_status_idx ON sites(deleted_at, enabled, status)",
+    // 巡检三条热查询的专用索引（未探测队列 / 复核队列 / 覆盖聚合）：
+    //   WHERE deleted_at IS NULL AND enabled = <lit> AND last_checked_at IS [NOT] NULL
+    //   ORDER BY created_at ASC / last_checked_at ASC
+    // 此前没有匹配索引 → daily health_check 每次对全库全表扫 + 临时 B-tree 排序。
+    // 列序＝「等值过滤(deleted_at, enabled) → 巡检键(last_checked_at) → 排序键(created_at)」：
+    // 未探测分支（last_checked_at IS NULL）与复核分支（IS NOT NULL）都能吃到该索引，
+    // 覆盖聚合只读前缀列即可。只在 migrateSiteIndexes 建（last_checked_at 属较新列，
+    // 放进 driver.ts DDL 会让老库整个 exec 因 "no such column" 失败）。
+    "CREATE INDEX IF NOT EXISTS sites_patrol_idx ON sites(deleted_at, enabled, last_checked_at, created_at)",
     // 邮箱唯一（部分索引：NULL 与空串都不进索引，等于「没有邮箱」不互斥）。
     // 必须晚于 dedupeUserEmails —— 存量重复会让 CREATE UNIQUE INDEX 直接失败，
     // 而这里逐语句 try/catch，失败只会静默跳过（下次启动再试）。

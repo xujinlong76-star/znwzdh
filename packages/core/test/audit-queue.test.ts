@@ -5,11 +5,22 @@
  * 既慢又对目标站不礼貌。测试用「注入的探针」把「已测过的 URL 不会被再测」
  * 这件事变成可断言的事实，而不是靠人工观察日志。
  */
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { backoffDelayMs, drainAuditJob, openAuditQueue, tallyKind, type AuditJobResult } from "../src/audit-queue.ts";
+import { setFileStore } from "../src/file-store.ts";
+
+/** core 已零 IO：测试在临时目录上注入 fs 实现（等价于 apps/api 的生产实现）。 */
+setFileStore({
+  read: (p) => readFile(p, "utf8"),
+  writeAtomic: async (p, data) => {
+    const tmp = `${p}.${process.pid}.tmp`;
+    await writeFile(tmp, data, "utf8");
+    await rename(tmp, p);
+  },
+});
 
 const dirs: string[] = [];
 

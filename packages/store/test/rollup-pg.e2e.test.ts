@@ -21,12 +21,15 @@ import { pathToFileURL } from "node:url";
 import path from "node:path";
 import { runRollup, EVENT_DAILY_ROLLUP, AUDIT_DAILY_ROLLUP, type RollupResult, type RollupTableResult } from "../src/rollup.ts";
 import type { RetentionAdapter } from "../src/retention.ts";
+import { announcePgSkip, pgEnvSkipReason } from "./pg-guard.ts";
 
 const DATABASE_URL = process.env.NAVHUB_TEST_DATABASE_URL;
 const SCHEMA = "rollup_e2e";
 const DAY = 86_400_000;
 
-const skip = DATABASE_URL ? false : "未设置 NAVHUB_TEST_DATABASE_URL（需真实 PostgreSQL；CI 的 test-postgres job 注入）";
+const skip = DATABASE_URL ? false : pgEnvSkipReason();
+// 跳过就打印醒目横幅（全量 vitest / coverage job 里也看得见），NAVHUB_REQUIRE_PG=1 时拒绝静默跳过
+if (skip) announcePgSkip("rollup-pg", skip);
 
 let client: { query: (sql: string, params?: readonly unknown[]) => Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>; end: () => Promise<void> } | null = null;
 let connectError: string | null = null;

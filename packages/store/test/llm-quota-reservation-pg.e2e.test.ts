@@ -21,6 +21,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "../src/driver.ts";
 import { Repository } from "../src/repository.ts";
 import type { LlmQuotaTier } from "../src/repository/llm-quota.ts";
+import { announcePgSkip, pgEnvSkipReason } from "./pg-guard.ts";
 
 const DATABASE_URL = process.env.NAVHUB_TEST_DATABASE_URL;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -43,6 +44,14 @@ if (DATABASE_URL) {
     dbs = [];
     repos = [];
   }
+}
+
+// 跳过就打印醒目横幅（全量 vitest / coverage job 里也看得见），NAVHUB_REQUIRE_PG=1 时拒绝静默跳过
+if (repos.length === 0) {
+  announcePgSkip(
+    "llm-quota-reservation-pg",
+    DATABASE_URL ? `连接失败：${connectError ?? "未知原因"}` : pgEnvSkipReason(),
+  );
 }
 
 /** 取一个可用的 Repository；空数组时说明连接失败（此时整套已 skip，不该走到这里） */

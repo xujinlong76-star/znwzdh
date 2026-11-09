@@ -83,13 +83,39 @@ export async function savedEmbeddings(
     if (!buf) continue;
     const bytes = buf instanceof Uint8Array ? buf : Buffer.from(buf as ArrayBuffer);
     const copy = Buffer.from(bytes);
-    out.push({
+out.push({
       key: hashSiteId(String(r.siteId)),
       siteId: String(r.siteId),
       vector: new Float32Array(copy.buffer, copy.byteOffset, Math.floor(copy.byteLength / 4)),
     });
   }
   return out;
+}
+
+/**
+ * 轻量向量索引：只取 `site_id`，用于启动时恢复进程内 key↔siteId 映射。
+ *
+ * 为什么需要：`savedEmbeddings` 会把每条向量 BLOB 读出并拷贝（O(N×dim) 读盘 +
+ * 内存峰值），而 `SqliteVecStore.rehydrate` 只有在「vec0 计数与持久层不一致」时
+ * 才真正需要向量。行集口径必须与 `savedEmbeddings` **完全一致**（同 model/dim
+ * 过滤、同跳过 NULL 向量）——否则计数校验会永远不匹配、每次启动都触发全量重建。
+ */
+export async function savedEmbeddingIndex(
+  repo: Repository,
+  filter?: { model?: string; dim?: number },
+): Promise<Array<{ key: number; siteId: string }>> {
+  const conditions: string[] = ["vector IS NOT NULL"];
+  const params: unknown[] = [];
+  if (filter?.model) {
+    conditions.push("model = ?");
+    params.push(filter.model);
+  }
+  if (filter?.dim) {
+    conditions.push("dim = ?");
+    params.push(filter.dim);
+  }
+  const rows = await repo.raw(`SELECT site_id AS siteId FROM embeddings WHERE ${conditions.join(" AND ")}`, params);
+  return rows.map((r) => ({ key: hashSiteId(String(r.siteId)), siteId: String(r.siteId) }));
 }
 
 /* ------------------------------------------------------------------ *
@@ -130,13 +156,35 @@ export async function savedPluginEmbeddings(
     const bytes = buf instanceof Uint8Array ? buf : Buffer.from(buf as ArrayBuffer);
     const copy = Buffer.from(bytes);
     const siteId = pluginVectorId(String(r.slug));
-    out.push({
+out.push({
       key: hashSiteId(siteId),
       siteId,
       vector: new Float32Array(copy.buffer, copy.byteOffset, Math.floor(copy.byteLength / 4)),
     });
   }
   return out;
+}
+
+/** 插件向量的轻量索引（同 `savedPluginEmbeddings` 行集口径；只取 slug）。 */
+export async function savedPluginEmbeddingIndex(
+  repo: Repository,
+  filter?: { model?: string; dim?: number },
+): Promise<Array<{ key: number; siteId: string }>> {
+  const conditions: string[] = ["vector IS NOT NULL"];
+  const params: unknown[] = [];
+  if (filter?.model) {
+    conditions.push("model = ?");
+    params.push(filter.model);
+  }
+  if (filter?.dim) {
+    conditions.push("dim = ?");
+    params.push(filter.dim);
+  }
+  const rows = await repo.raw(`SELECT slug FROM plugin_embeddings WHERE ${conditions.join(" AND ")}`, params);
+  return rows.map((r) => {
+    const siteId = pluginVectorId(String(r.slug));
+    return { key: hashSiteId(siteId), siteId };
+  });
 }
 
 export async function getPluginEmbedding(repo: Repository, slug: string): Promise<Float32Array | null> {

@@ -9,6 +9,29 @@ export function getEnabledLiteral(repo: Repository): string {
 }
 
 /**
+ * 行级悲观锁子句（供「先锁行、再读改写」的流程拼接在 SELECT 之后）。
+ *
+ * PostgreSQL 需要显式 ` FOR UPDATE` 才能锁住将要更新的行；SQLite 是单写者，
+ * 事务在 `BEGIN IMMEDIATE` 时已持写锁，加 ` FOR UPDATE` 反而是语法错误。
+ * 把方言判断留在存储层，路由/应用层不再出现 `dialect === "pg"`。
+ */
+export function getRowLockClause(repo: Repository): string {
+  return repo.db.dialect === "pg" ? " FOR UPDATE" : "";
+}
+
+/**
+ * PostgreSQL 事务级 advisory lock（跨进程串行化同名资源）。
+ *
+ * - SQLite 直接返回：事务在 `BEGIN IMMEDIATE` 时已持写锁，无需额外加锁。
+ * - PG 必须在事务内调用（xact 级锁随提交/回滚释放）。事务作用域内 `repo.db.pg`
+ *   由 Proxy 路由到独占连接（见 repository.ts 的 db 代理），因此锁落在事务连接上。
+ */
+export async function acquireAdvisoryXactLock(repo: Repository, key: string): Promise<void> {
+  if (repo.db.dialect !== "pg") return;
+  await repo.db.pg!.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
+}
+
+/**
  * SQLite prepared statement 缓存。
  *
  * better-sqlite3 的 `prepare()` 每次都会编译 SQL：仓储层一次请求可能走到

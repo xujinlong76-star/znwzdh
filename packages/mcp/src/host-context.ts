@@ -12,20 +12,18 @@
 import type { Repository } from "@navhub/store";
 import type { SearchEngine } from "@navhub/store";
 import type { VectorStore } from "@navhub/store";
-import type { PluginRecord } from "@navhub/store";
+import type { PluginOps } from "@navhub/store";
 import type { EmbeddingService } from "@navhub/ai";
-import type { ResolvedLlm, PluginSummary } from "@navhub/core";
+import type { ResolvedLlm, McpHostConfig } from "@navhub/core";
 
-export interface McpHostConfig {
-  fetch: {
-    timeoutMs: number;
-    maxBytes: number;
-    maxRedirects: number;
-    allowPrivateNetworks: boolean;
-    userAgent: string;
-  };
-  embedding: { model: string; dim: number };
-}
+/**
+ * 配置面与插件索引操作**不再在本文件声明**（评审 P2-3）：
+ *   - 配置面 → `@navhub/core` 的 `mcp-host.ts`；
+ *   - 插件索引操作 → `@navhub/store` 的 `plugin-ops.ts`。
+ * 二者都由 api 与 mcp 共用同一份定义，本文件只保留 MCP 侧真正独占的宿主接口，
+ * 并原样转出 `McpHostConfig`，避免既有引用点被迫改导入路径。
+ */
+export type { McpHostConfig };
 
 export interface McpHostContext {
   repo: Repository;
@@ -36,18 +34,8 @@ export interface McpHostContext {
   capabilities?: { mcp: string[]; embed: string[] };
 
   // 可选能力：插件索引操作（由应用层注入；apps/api createContext 是唯一装配点）。
-  // 形状对齐 apps/api plugins-search.ts 的 PluginSearchResult：summary 是
-  // PluginSummary 对象（不是 string），manifest 仅 site-pack 缺省。
-  pluginOps?: {
-    indexSitesBatch: (sites: Array<{ id: string; title: string; description: string | null; url: string }>) => Promise<void>;
-    removePluginIndex: (pluginId: string) => Promise<void>;
-    searchPluginsSemantic: (query: string, limit: number) => Promise<{
-      items: Array<Omit<PluginRecord, "manifest"> & { summary: PluginSummary; score?: number | null; manifest?: PluginRecord["manifest"] }>;
-      total: number;
-      mode: string;
-      degraded: boolean;
-    }>;
-  };
+  // 类型 = @navhub/store 的 PluginOps：与 REST 通道同一份声明，不再手工对拷。
+  pluginOps?: PluginOps;
 
   // 可选能力：LLM 解析（由应用层注入）
   resolveLlm?: (identity?: string | null) => Promise<ResolvedLlm>;

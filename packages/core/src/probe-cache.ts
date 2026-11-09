@@ -17,8 +17,7 @@
  *   - **写入原子**：先写 `.tmp` 再 `rename`，进程被杀也不会留下半个 JSON
  *     （本机曾因磁盘满把源文件写成 0 字节，教训在案）。
  */
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { fileStore } from "./file-store.ts";
 import type { ProbeOutcome, ProbeOutcomeKind } from "./probe-policy.ts";
 
 export interface ProbeCacheEntry {
@@ -139,7 +138,7 @@ export async function openProbeCache(
   const counters: ProbeCacheStats = { hits: 0, misses: 0, revalidations: 0 };
 
   try {
-    const text = await readFile(file, "utf8");
+    const text = await fileStore().read(file);
     const parsed: unknown = JSON.parse(text);
     if (isCacheFile(parsed)) entries = parsed.entries;
   } catch {
@@ -199,15 +198,9 @@ export async function openProbeCache(
     async flush() {
       if (!dirty) return;
       const payload: CacheFile = { version: 1, entries };
-      await mkdir(dirname(file), { recursive: true });
-      const tmp = `${file}.${process.pid}.tmp`;
-      await writeFile(tmp, JSON.stringify(payload), "utf8");
-      try {
-        await rename(tmp, file);
-      } catch (err) {
-        await unlink(tmp).catch(() => {});
-        throw err;
-      }
+      // 目录创建、临时文件 + 改名、失败清理都在注入的实现里（见 file-store.ts）；
+      // core 不再直接依赖 node:fs。
+      await fileStore().writeAtomic(file, JSON.stringify(payload));
       dirty = false;
     },
     get size() {

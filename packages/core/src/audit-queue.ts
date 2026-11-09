@@ -14,8 +14,7 @@
  *   - **僵死回收**：`running` 但超过 stale 时限没更新（进程被杀/机器重启）→ 重置为 pending。
  */
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { fileStore } from "./file-store.ts";
 import type { ProbeOutcomeKind } from "./probe-policy.ts";
 
 export type AuditJobState = "pending" | "running" | "done" | "failed" | "canceled";
@@ -157,7 +156,7 @@ export async function openAuditQueue(
 
   let jobs: AuditJob[] = [];
   try {
-    const parsed: unknown = JSON.parse(await readFile(file, "utf8"));
+    const parsed: unknown = JSON.parse(await fileStore().read(file));
     if (isQueueFile(parsed)) jobs = parsed.jobs;
   } catch {
     jobs = [];
@@ -165,15 +164,8 @@ export async function openAuditQueue(
 
   async function persist(): Promise<void> {
     const payload: QueueFile = { version: 1, jobs };
-    await mkdir(dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify(payload), "utf8");
-    try {
-      await rename(tmp, file);
-    } catch (err) {
-      await unlink(tmp).catch(() => {});
-      throw err;
-    }
+    // 目录创建、临时文件 + 改名、失败清理都在注入的实现里（见 file-store.ts）
+    await fileStore().writeAtomic(file, JSON.stringify(payload));
   }
 
   function evictIfNeeded(): void {

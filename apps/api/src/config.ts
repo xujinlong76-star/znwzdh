@@ -10,7 +10,26 @@
  *   混合启发式逻辑，保障核心导航与搜索的高可用性（具备完整自动化测试验证保护）。
  */
 
+import type { McpHostConfig } from "@navhub/core";
+
 export type NavHubMode = "lite" | "standard";
+
+/**
+ * 双写约束（评审 P2-3）：AppConfig 必须始终满足 MCP 宿主契约的配置面。
+ *
+ * 这两行不是运行时断言，而是**编译期**约束——McpHostConfig 是
+ * packages/core/src/mcp-host.ts 里 api 与 mcp 共用的同一份声明。
+ * 一旦 AppConfig 的对应字段少一个、或把类型改窄（例如 maxRedirects 从
+ * number 变成 string），AppConfig 就不再可赋给 McpHostConfig，tsc 直接报错，
+ * 而不是等 MCP 侧在运行期拿到 undefined。
+ *
+ * 为什么需要显式断言：apps/mcp 把 AppContext 直接当 McpHostContext 用，
+ * 结构检查能挡住「少字段」，但挡不住 MCP 侧靠放宽类型（如 mode: string）
+ * 让检查恒真 —— 收敛到同一份声明 + 这里的正反向断言，才能挡住两边同时改窄。
+ */
+type Satisfies<Base, Impl extends Base> = Impl;
+type _McpHostFetchContract = Satisfies<McpHostConfig["fetch"], AppConfig["fetch"]>;
+type _McpHostEmbeddingContract = Satisfies<McpHostConfig["embedding"], AppConfig["embedding"]>;
 
 export interface AppConfig {
   mode: NavHubMode;

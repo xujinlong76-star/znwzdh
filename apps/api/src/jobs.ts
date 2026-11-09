@@ -459,8 +459,11 @@ function envInterval(): number {
 export interface JobSchedulePolicy {
   /**
    * cron 别名（对应 CRON_EXPRS 的 5 段标准式）。
-   * 注意：cron 表达式目前是**声明值**，Runner 实际按 DEFAULT_CRON_SCHEDULES 的
-   * intervalMs 到期入队；cronDue/scheduleCronOf 只用于管理端展示与测试。
+   *
+   * 声明值，必须与 `DEFAULT_CRON_SCHEDULES.intervalMs` 一致：Runner 实际按 intervalMs
+   * 到期入队，cronDue/scheduleCronOf 只用于管理端展示与测试。不在排期表里的 kind
+   * 必须写 `NOT_SCHEDULED`（绝不自动入队）；手动专属（如 backup_restore）写 `MANUAL`。
+   * 一致性由 upgrade-batch1.test.ts 的守卫锁定——别再写「声明 A、实际 B」的两套口径。
    */
   cron?: string;
   /**
@@ -477,14 +480,27 @@ export interface JobSchedulePolicy {
   maxConcurrency?: number;
 }
 
-/** 各任务默认调度策略（cron/预算为声明值，见 JobSchedulePolicy；实际到期判定走 intervalMs） */
+/**
+ * 各任务默认调度策略。
+ *
+ * `cron` 是**声明值**，必须与 `DEFAULT_CRON_SCHEDULES.intervalMs` 一致——实际到期判定
+ * 只走 intervalMs，cronDue/scheduleCronOf 仅用于管理端展示与测试。此前两者长期矛盾
+ * （health_check 声明 X5MIN、实际按天；token_audit 声明 HOURLY、实际 7 天；另有 3 个
+ * kind 声明得像已排期、实际根本不在排期表），读声明会得到与运行时相反的结论。
+ *
+ * 一致性规则由 `test/upgrade-batch1.test.ts` 的「排期声明与实际间隔一致」守卫锁定：
+ *   1h→HOURLY、4h→X4H、1d→DAILY（或 DAILY3AM / DAILY4AM / DAILY5AM）、7d→WEEKLY；
+ *   不在排期表里的 kind 必须写 NOT_SCHEDULED（= 绝不自动入队），手动专属写 MANUAL。
+ * 注意：DAILY3AM/4AM/5AM 里的小时是**名义值**——运行时按「距上次入队满 24h」触发，
+ * 并不在固定时刻，保留别名只是为了管理端展示的可读性。
+ */
 export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
-  health_check: { cron: "X5MIN", timeoutMs: 240_000, maxConcurrency: 2 },
-  refetch_metadata: { cron: "X30MIN", timeoutMs: 300_000, maxConcurrency: 1 },
+  health_check: { cron: "DAILY", timeoutMs: 240_000, maxConcurrency: 2 },
+  refetch_metadata: { cron: "NOT_SCHEDULED", timeoutMs: 300_000, maxConcurrency: 1 },
   recompute_rank: { cron: "HOURLY", timeoutMs: 180_000, maxConcurrency: 1 },
-  reindex: { cron: "X4H", timeoutMs: 600_000, maxConcurrency: 1 },
-  site_self_healing: { cron: "X30MIN", timeoutMs: 300_000, maxConcurrency: 1 },
-  token_audit: { cron: "HOURLY", timeoutMs: 60_000, maxConcurrency: 1 },
+  reindex: { cron: "NOT_SCHEDULED", timeoutMs: 600_000, maxConcurrency: 1 },
+  site_self_healing: { cron: "NOT_SCHEDULED", timeoutMs: 300_000, maxConcurrency: 1 },
+  token_audit: { cron: "WEEKLY", timeoutMs: 60_000, maxConcurrency: 1 },
   purge_trash: { cron: "DAILY3AM", timeoutMs: 120_000, maxConcurrency: 1 },
   taxonomy_audit: { cron: "DAILY3AM", timeoutMs: 300_000, maxConcurrency: 1 },
   data_retention: { cron: "DAILY4AM", timeoutMs: 600_000, maxConcurrency: 1 },
@@ -546,9 +562,11 @@ const CRON_EXPRS = {
   X30MIN: "\u002a/30 \u002a \u002a \u002a \u002a",
   HOURLY: "0 \u002a \u002a \u002a \u002a",
   X4H: "0 \u002a/4 \u002a \u002a \u002a",
+  DAILY: "0 0 \u002a \u002a \u002a",
   DAILY3AM: "0 3 \u002a \u002a \u002a",
   DAILY4AM: "0 4 \u002a \u002a \u002a",
   DAILY5AM: "0 5 * * *",
+  WEEKLY: "0 0 \u002a \u002a 0",
 } as const;
 
 /**
@@ -711,6 +729,12 @@ export class JobRunner {
     this.onAlert = opts.onAlert;
     this.budgetOverrides = opts.budgetOverrides;
     this.taskRegistry = new TaskRegistry();
+    /**
+     * 执行分派的**唯一**事实源（ARC-02 收口）：12 个 kind 全部在此登记。
+     * 此前注册表只登记 4 个 kind，而 process() 另有一套 switch 覆盖 12 个分支——
+     * 新增 kind 要改两处，漏改一处就会出现「注册了不执行」或「执行了没登记」的漂移。
+     * 构造函数末尾的覆盖断言会把这种漂移变成启动即失败。
+     */
     this.taskRegistry.register("health_check", async ({ payload, run }) => {
       await this.runHealthCheck((payload ?? {}) as { siteId?: string; limit?: number }, run);
     });
@@ -720,9 +744,39 @@ export class JobRunner {
     this.taskRegistry.register("refetch_metadata", async ({ payload }) => {
       await this.runRefetch((payload ?? {}) as { siteId?: string; llm?: boolean });
     });
+    this.taskRegistry.register("reindex", async ({ payload, run }) => {
+      await this.runReindex((payload ?? {}) as { siteId?: string; vectors?: boolean }, run);
+    });
+    this.taskRegistry.register("site_self_healing", async ({ payload }) => {
+      await this.runSiteSelfHealing((payload ?? {}) as { siteId?: string });
+    });
+    this.taskRegistry.register("token_audit", async ({ payload }) => {
+      await this.runTokenAudit((payload ?? {}) as { expiringDays?: number; dormantDays?: number });
+    });
+    this.taskRegistry.register("purge_trash", async ({ payload }) => {
+      await this.runPurgeTrash((payload ?? {}) as { olderThanDays?: number });
+    });
+    this.taskRegistry.register("taxonomy_audit", async ({ payload, run }) => {
+      await this.runTaxonomyAudit((payload ?? {}) as { dryRun?: boolean; siteLimit?: number }, run);
+    });
     this.taskRegistry.register("data_retention", async ({ payload, run }) => {
       await this.runDataRetention((payload ?? {}) as DataRetentionPayload, run);
     });
+    this.taskRegistry.register("plugin_governance", async () => {
+      await this.runPluginGovernance();
+    });
+    this.taskRegistry.register("user_data_audit", async () => {
+      await this.runUserDataAudit();
+    });
+    this.taskRegistry.register("backup_restore", async ({ payload, run }) => {
+      // jobId 由 Runner 通过执行句柄注入而不是放在 payload 里：入队时还拿不到 id
+      // （enqueueJob 才生成），把 id 写进 payload 必然要「入队后再改 payload」这一趟额外写。
+      await this.runBackupRestore((payload ?? {}) as { stagingPath?: string }, run);
+    });
+    const unregistered = JOB_KINDS.filter((k) => !this.taskRegistry.has(k));
+    if (unregistered.length > 0) {
+      throw new Error("[navhub-job] TaskRegistry 未覆盖的任务类型：" + unregistered.join("、"));
+    }
   }
 
   /** 当前轮询间隔（启动横幅与 /admin/jobs 展示用） */
@@ -1141,50 +1195,17 @@ export class JobRunner {
         console.error("[navhub-job] 中止收尾失败", { jobId, kind, err });
       });
     };
+    /**
+     * 执行分派：**只查 TaskRegistry**（handler 全部在构造函数登记）。
+     *
+     * 注意 health_check 的分批巡检靠 `run` 句柄做协作式截止（预算内主动停手、
+     * 剩余顺延，不把整轮标失败），因此执行句柄必须原样透传给 handler——
+     * 见 JobHandlerContext.run。
+     */
     const execution = (async (): Promise<void> => {
-      switch (kind) {
-        case "health_check":
-          // 分批巡检走协作式截止：预算内主动停手、剩余顺延，不把整轮标失败。
-          await this.runHealthCheck((payload ?? {}) as { siteId?: string; limit?: number }, run);
-          break;
-        case "refetch_metadata":
-          await this.runRefetch((payload ?? {}) as { siteId?: string; llm?: boolean });
-          break;
-        case "recompute_rank":
-          await this.runRecomputeRank();
-          break;
-        case "reindex":
-          await this.runReindex((payload ?? {}) as { siteId?: string; vectors?: boolean }, run);
-          break;
-        case "site_self_healing":
-          await this.runSiteSelfHealing((payload ?? {}) as { siteId?: string });
-          break;
-        case "token_audit":
-          await this.runTokenAudit((payload ?? {}) as { expiringDays?: number; dormantDays?: number });
-          break;
-        case "purge_trash":
-          await this.runPurgeTrash((payload ?? {}) as { olderThanDays?: number });
-          break;
-        case "taxonomy_audit":
-          await this.runTaxonomyAudit((payload ?? {}) as { dryRun?: boolean; siteLimit?: number }, run);
-          break;
-        case "data_retention":
-          await this.runDataRetention((payload ?? {}) as DataRetentionPayload, run);
-          break;
-        case "plugin_governance":
-          await this.runPluginGovernance();
-          break;
-        case "user_data_audit":
-          await this.runUserDataAudit();
-          break;
-        case "backup_restore":
-          // jobId 由 Runner 通过执行句柄注入而不是放在 payload 里：入队时还拿不到 id
-          // （enqueueJob 才生成），把 id 写进 payload 必然要「入队后再改 payload」这一趟额外写。
-          await this.runBackupRestore((payload ?? {}) as { stagingPath?: string }, run);
-          break;
-        default:
-          throw new Error("未知任务类型: " + kind);
-      }
+      const handler = this.taskRegistry.get(kind);
+      if (!handler) throw new Error("未知任务类型: " + kind);
+      await handler({ ctx: this.ctx, run, jobId, payload });
     })();
     /**
      * 执行体结算后才收尾（见 settleRun）。`catch` 是必须的：这条分支与
@@ -1630,14 +1651,19 @@ export class JobRunner {
         break;
       }
       const chunk = sites.slice(i, i + BATCH_SIZE);
+      /**
+       * 检索索引 **批量**重算：一条标签读 + 一条 CASE 批量 UPDATE，零回读。
+       *
+       * 原实现在事务里逐行 `updateSite`：每行 = 1 次 `getSite`（事务内快照读，带
+       * 标签/分面两个相关子查询）+ 1 条 UPDATE + 1 次 `getSite` 整行回读。重建索引
+       * 只需要「标题/描述/URL/标签 → 三个索引列」，回读整行与合并逻辑全是白付——
+       * 50k 库按每行约 3 条语句算 15 万条往返，正是 148s 的主因。
+       * 现在每 32 行 2 条语句，且不再经过 `getSite` 那两条相关子查询。
+       */
       await this.ctx.repo.withTransaction(async () => {
-        for (const site of chunk) {
-          // updateSite 会用当前标题/描述/标签重算 fts_tokens 与拼音（写入期预计算）
-          await this.ctx.repo.updateSite(site.id, {
-            title: site.title,
-            description: site.description ?? null,
-          });
-        }
+        await this.ctx.repo.reindexSiteSearch(
+          chunk.map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url })),
+        );
       });
       if (payload.vectors !== false) {
         await indexSitesBatch(
@@ -2305,6 +2331,18 @@ export class JobRunner {
 
   /* --------------------------- 底层执行 --------------------------- */
 
+  /**
+   * 锁相关写语句**故意**直连数据库，不走 store 的写队列。
+   *
+   * 为什么不改成 ctx.repo.run/runCount（有回归测试兜底，见
+   * test/jobs-lock-heartbeat.test.ts）：Runner 收尾时会用 withTransaction 开事务
+   * （事务持写锁），而心跳 setInterval 与事务**不在同一条异步链**上——续期若也去
+   * 排写队列，就会被该事务挡住。一旦某个任务事务超过 LOCK_TTL_MS(120s)
+   * （reindex / data_retention 的预算是 600s），锁会被别的实例按「TTL 到期」合法
+   * 夺走，两个实例同时跑同一批任务。所以续期必须能"插队"直接写锁行。
+   * 代价：它可能落在他人事务的连接上（见 repository.ts 的 DbAccessGate）——
+   * 对"锁行存活"这一用途可接受（最坏是续期被回滚，锁提前过期，而非数据错乱）。
+   */
   private async run(sqlText: string, params: unknown[]): Promise<void> {
     const db = this.ctx.db;
     if (db.dialect === "sqlite") {

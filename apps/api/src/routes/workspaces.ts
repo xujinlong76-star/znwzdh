@@ -269,6 +269,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
         const parsed = JSON.parse(stored.payload);
         if (Array.isArray(parsed)) members = parsed;
       } catch {}
+      // 显式降级（非静默）：存量 payload 非法 JSON：按空成员表处理（后续写入会覆盖）
     }
 
     return {
@@ -321,6 +322,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
         const parsedList = JSON.parse(stored.payload);
         if (Array.isArray(parsedList)) members = parsedList;
       } catch {}
+      // 显式降级（非静默）：存量 payload 非法 JSON：按空成员表处理（后续写入会覆盖）
     }
 
     const targetUser = parsed.data.username.trim();
@@ -392,6 +394,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
         const parsedList = JSON.parse(stored.payload);
         if (Array.isArray(parsedList)) members = parsedList;
       } catch {}
+      // 显式降级（非静默）：存量 payload 非法 JSON：按空成员表处理（后续写入会覆盖）
     }
 
     const targetMember = members.find((m) => m.userId === userId);

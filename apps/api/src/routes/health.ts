@@ -98,6 +98,9 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       semantic,
       embeddingReady,
       fts: Boolean(ctx.fts),
+      // 内存兜底向量库到达容量上限后为 true（检索仍可用但召回不完整）——
+      // 降级不该静默：调用方据此决定是否提示"重建向量库 / 启用 sqlite-vec"。
+      vectorDegraded: Boolean(ctx.vectors?.degraded),
     };
   });
 

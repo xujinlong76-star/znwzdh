@@ -22,7 +22,7 @@ import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { callLlm, createEnrichUsageCallback } from "../llm-usage.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import { selectEnrichmentFields } from "../enrich-fields.ts";
-import { badRequest, canSeeUnpublishedSites, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
+import { safeJsonParse, badRequest, canSeeUnpublishedSites, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
 import { isPubliclyVisibleSite } from "../storage.ts";
 import type { AppContext } from "../context.ts";
 
@@ -222,7 +222,8 @@ ${peerContext}
       } catch {
         const match = (res.content || "").match(/\{[\s\S]*\}/);
         if (match) {
-          try { parsed = JSON.parse(match[0]) as Record<string, unknown>; } catch {}
+          // 解析失败即按「无解析结果」继续（外层还有 !parsed 分支兜底）；不再静默吞异常
+          parsed = safeJsonParse(match[0], parsed);
         }
       }
       if (!parsed || typeof parsed !== "object") {
@@ -1022,7 +1023,8 @@ ${bookmarkLines}
         } catch {
           const match = (res.content || "").match(/\{[\s\S]*\}/);
           if (match) {
-            try { parsed = JSON.parse(match[0]); } catch {}
+            // 解析失败即按「无解析结果」继续（外层还有 !parsed 分支兜底）；不再静默吞异常
+            parsed = safeJsonParse(match[0], parsed);
           }
         }
 

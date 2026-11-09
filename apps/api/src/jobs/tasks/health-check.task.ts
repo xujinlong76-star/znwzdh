@@ -65,44 +65,75 @@ export async function handleHealthCheck(
   let ok = 0;
   let checked = 0;
 
-  for (const site of targets) {
+  /**
+   * 抓取并发度（窗口大小）。
+   *
+   * 原实现是**串行**抓取：50 个站点 × 每次最长 fetch 超时 = 最坏数百秒，而任务预算
+   * 只有 240s、单实例锁心跳 TTL 120s（见 DEFAULT_SCHEDULES / LOCK_HEARTBEAT），
+   * 于是"一轮巡检跑不完"本身就成了常态（剩余顺延）。
+   * 现在按窗口**并发抓取**、**落库仍串行**：
+   *   - 抓取是 IO 密集，并发能近似线性缩短总时长（默认 6；NAVHUB_HEALTH_POOL 可调，钳在 1..16）；
+   *   - 写必须串行：存储层是单写者（见 DbAccessGate），且 shouldBreak 要按站点读历史。
+   * 协作式取消语义不变：每个窗口前后都检查 run.shouldStop()，到点后不再开新窗口。
+   */
+  const pool = (() => {
+    const raw = Number(process.env.NAVHUB_HEALTH_POOL ?? 6);
+    return Number.isFinite(raw) ? Math.min(16, Math.max(1, Math.floor(raw))) : 6;
+  })();
+
+  for (let i = 0; i < targets.length; i += pool) {
     if (run.shouldStop()) break;
-    checked++;
-    const t0 = Date.now();
-    try {
-      const res = await guardedFetch(site!.url, { ...ctx.config.fetch });
-      let healthy = res.status >= 200 && res.status < 400;
-      let reason: string | null = null;
-
-      if (healthy && res.body) {
-        const audit = auditPageHealth(site!.url, res.body, undefined, undefined, { truncated: res.truncated });
-        if (audit.status === "SUSPICIOUS_PARKED" || audit.status === "SOFT_404") {
-          healthy = false;
-          reason = `伪健康识别: ${audit.reason}`;
+    const window = targets.slice(i, i + pool);
+    const fetched = await Promise.all(
+      window.map(async (site) => {
+        const startedAt = Date.now();
+        try {
+          const res = await guardedFetch(site!.url, { ...ctx.config.fetch });
+          return { site: site!, res, error: null as unknown, elapsedMs: Date.now() - startedAt };
+        } catch (err) {
+          return { site: site!, res: null, error: err, elapsedMs: Date.now() - startedAt };
         }
-      }
+      }),
+    );
 
-      if (healthy) ok++;
-      const nextStatus = healthy && site!.status === "broken" ? "active" : site!.status;
-      await ctx.repo.updateSiteHealth(site!.id, {
-        httpStatus: res.status,
-        ok: healthy,
-        latencyMs: Date.now() - t0,
-        redirectTo: res.redirects?.at(-1) ?? null,
-        error: reason,
-        currentStatus: nextStatus,
-        markBroken: healthy ? undefined : await shouldBreak(ctx, site!.id),
-      });
-    } catch (err) {
-      await ctx.repo.updateSiteHealth(site!.id, {
-        httpStatus: null,
-        ok: false,
-        latencyMs: Date.now() - t0,
-        redirectTo: null,
-        error: err instanceof Error ? err.message : String(err),
-        currentStatus: site!.status,
-        markBroken: await shouldBreak(ctx, site!.id),
-      });
+    for (const item of fetched) {
+      checked++;
+      const site = item.site;
+      if (item.res) {
+        const res = item.res;
+        let healthy = res.status >= 200 && res.status < 400;
+        let reason: string | null = null;
+
+        if (healthy && res.body) {
+          const audit = auditPageHealth(site.url, res.body, undefined, undefined, { truncated: res.truncated });
+          if (audit.status === "SUSPICIOUS_PARKED" || audit.status === "SOFT_404") {
+            healthy = false;
+            reason = `伪健康识别: ${audit.reason}`;
+          }
+        }
+
+        if (healthy) ok++;
+        const nextStatus = healthy && site.status === "broken" ? "active" : site.status;
+        await ctx.repo.updateSiteHealth(site.id, {
+          httpStatus: res.status,
+          ok: healthy,
+          latencyMs: item.elapsedMs,
+          redirectTo: res.redirects?.at(-1) ?? null,
+          error: reason,
+          currentStatus: nextStatus,
+          markBroken: healthy ? undefined : await shouldBreak(ctx, site.id),
+        });
+      } else {
+        await ctx.repo.updateSiteHealth(site.id, {
+          httpStatus: null,
+          ok: false,
+          latencyMs: item.elapsedMs,
+          redirectTo: null,
+          error: item.error instanceof Error ? item.error.message : String(item.error),
+          currentStatus: site.status,
+          markBroken: await shouldBreak(ctx, site.id),
+        });
+      }
     }
   }
 

@@ -26,6 +26,7 @@ import { readVideosData } from "../storage.ts";
 import { flattenVideoCatalog, resolveVideoStoreMode } from "../video-catalog.ts";
 import { resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
+import { safeJsonParse } from "./shared.ts";
 
 /** 单页上限：与 repository 内部上限一致，避免调用方传 10000 把响应撑爆 */
 const MAX_LIMIT = 200;
@@ -333,7 +334,8 @@ ${transcriptContext}
         } catch {
           const m = (res.content || "").match(/\{[\s\S]*\}/);
           if (m) {
-            try { parsed = JSON.parse(m[0]); } catch {}
+            // 解析失败即按「无解析结果」继续（外层还有 !parsed 分支兜底）；不再静默吞异常
+            parsed = safeJsonParse(m[0], parsed);
           }
         }
 

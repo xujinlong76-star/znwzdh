@@ -13,7 +13,7 @@ export const aiAgenticCoding: SeedPluginDef = {
     "manifestVersion": 1,
     "kind": "site-pack",
     "name": "AI Agentic 编码与自动化开发包",
-    "description": "2026 前沿 AI 智能体开发武器库（20 大分类 / 210+ 精选站点）：全面覆盖 AI IDE、Agent 框架、RAG 向量库、模型微调、评测基准、全栈框架、DevOps 与安全工具，助你极速构建自主编程智能体。",
+    "description": "2026 前沿 AI 智能体开发武器库（20 大分类 / 204 个精选站点）：全面覆盖 AI IDE、Agent 框架、RAG 向量库、模型微调、评测基准、全栈框架、DevOps 与安全工具，助你极速构建自主编程智能体。",
     "icon": "⚡",
     "author": "山羊胡官方",
     "license": "MIT",

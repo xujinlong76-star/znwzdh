@@ -106,7 +106,7 @@ export const paperLatteTheme: SeedPluginDef = {
     version: "1.0.0",
     tags: ["主题", "浅色", "纸感", "日间"],
     payload: {
-      accent: "violet",
+      accent: "latte",
       tokens: {
         "--background": "40 30% 97%",
         "--foreground": "25 20% 18%",
@@ -190,7 +190,7 @@ export const oceanDeepTheme: SeedPluginDef = {
     version: "1.0.0",
     tags: ["主题", "深色", "海洋", "夜间"],
     payload: {
-      accent: "violet",
+      accent: "ocean",
       tokens: {
         "--background": "214 40% 13%",
         "--foreground": "210 30% 92%",

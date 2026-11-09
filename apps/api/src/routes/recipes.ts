@@ -27,6 +27,7 @@ import { indexSite } from "../index-site.ts";
 import { resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
 import type { AppContext } from "../context.ts";
+import { safeJsonParse } from "./shared.ts";
 
 export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -147,7 +148,8 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
       } catch {
         const m = (res.content || "").match(/\{[\s\S]*\}/);
         if (m) {
-          try { parsed = JSON.parse(m[0]) as ArchitectureRecipe; } catch {}
+          // 解析失败即按「无解析结果」继续（外层还有 !parsed 分支兜底）；不再静默吞异常
+          parsed = safeJsonParse(m[0], parsed);
         }
       }
 
@@ -281,7 +283,8 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
       } catch {
         const m = (res.content || "").match(/\{[\s\S]*\}/);
         if (m) {
-          try { parsed = JSON.parse(m[0]) as TechComparisonMatrix; } catch {}
+          // 解析失败即按「无解析结果」继续（外层还有 !parsed 分支兜底）；不再静默吞异常
+          parsed = safeJsonParse(m[0], parsed);
         }
       }
 
@@ -658,7 +661,8 @@ ${toolSummary}
         } catch {
           const m = (res.content || "").match(/\{[\s\S]*\}/);
           if (m) {
-            try { parsed = JSON.parse(m[0]); } catch {}
+            // 解析失败即按「无解析结果」继续（外层还有 !parsed 分支兜底）；不再静默吞异常
+            parsed = safeJsonParse(m[0], parsed);
           }
         }
 
@@ -798,7 +802,8 @@ ${candidateContext}
         } catch {
           const m = (res.content || "").match(/\{[\s\S]*\}/);
           if (m) {
-            try { parsed = JSON.parse(m[0]); } catch {}
+            // 解析失败即按「无解析结果」继续（外层还有 !parsed 分支兜底）；不再静默吞异常
+            parsed = safeJsonParse(m[0], parsed);
           }
         }
 

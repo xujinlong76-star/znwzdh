@@ -15,6 +15,8 @@ import { summarizePluginManifest } from "@navhub/core";
 import {
   pluginSlugFromVectorId,
   type PluginRecord,
+  type PluginSearchItem,
+  type PluginSearchResult,
 } from "@navhub/store";
 import { indexItemFromManifest, indexPlugin } from "./index-plugin.ts";
 import type { AppContext } from "./context.ts";
@@ -26,13 +28,15 @@ export interface PluginSearchOptions {
   limit?: number;
 }
 
-export type PluginSearchItem = Omit<PluginRecord, "manifest"> & {
-  /** site-pack 不下发完整清单，卡片只用 summary；详情走 `/api/plugins/:slug` */
-  manifest?: PluginRecord["manifest"];
-  summary: ReturnType<typeof summarizePluginManifest>;
-  /** 语义模式的余弦相似度（1 - distance，越大越接近）；关键词回退时缺省 */
-  score?: number | null;
-};
+/**
+ * 载荷类型已收敛到 `@navhub/store` 的 `plugin-ops.ts`（评审 P2-3）。
+ *
+ * 收敛前 REST 侧（本文件）与 MCP 侧（packages/mcp/src/host-context.ts）各写一份，
+ * 且 MCP 侧把 `mode` 放宽成 `string`、载荷内联重述 —— 结构检查永远通过，双写可以
+ * 静默漂移。现在两侧共用同一份声明；这里原样转出，保持 `apps/api/src/index.ts`
+ * 的对外形状与既有导入路径不变。
+ */
+export type { PluginSearchItem, PluginSearchResult };
 
 /**
  * 搜索/相似结果是卡片型载荷，与 `GET /api/plugins` 的默认裁剪保持一致：
@@ -44,13 +48,6 @@ function toSearchItem(p: PluginRecord, score?: number | null): PluginSearchItem 
   if (p.kind === "site-pack") delete item.manifest;
   if (score !== undefined) item.score = score;
   return item;
-}
-
-export interface PluginSearchResult {
-  items: PluginSearchItem[];
-  total: number;
-  mode: "semantic" | "keyword" | "hybrid";
-  degraded: boolean;
 }
 
 export interface SimilarPluginsResult {

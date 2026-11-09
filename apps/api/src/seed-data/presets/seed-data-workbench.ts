@@ -14,7 +14,7 @@ export const seedDataWorkbench: SeedPluginDef = {
     kind: "workspace-preset",
     name: "数据洞察工作台",
     description:
-      "面向技术趋势观察者与数据同学的三看板布局（共 17 个模块）：数据洞察、极客速查、沉淀复盘。热榜雷达、中枢监控、速查终端、双曲雷达与专注时钟一次到位。",
+      "面向技术趋势观察者与数据同学的 4 看板布局（共 23 个组件）：数据洞察、极客速查、沉淀复盘、自动化与标注。热榜雷达、中枢监控、速查终端、双曲雷达与专注时钟一次到位。",
     icon: "📊",
     author: "山羊胡官方",
     license: "MIT",

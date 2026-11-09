@@ -11,7 +11,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { isBlockedIp } from "@navhub/ai";
 import type { AppContext } from "../context.ts";
@@ -49,6 +50,7 @@ function rememberIcon(hostHash: string, entry: CachedIcon): void {
 try {
   mkdirSync(CACHE_DIR, { recursive: true });
 } catch {}
+// 显式降级（非静默）：目录创建失败只影响磁盘缓存，可忽略：内存缓存与远端抓取仍可用
 
 const PRESET_GRADIENTS = [
   { from: "#6366f1", to: "#a855f7" },
@@ -134,30 +136,32 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
           .send(memoryCached.buffer);
       }
 
-      // 3. 检查磁盘文件缓存
+      // 3. 检查磁盘文件缓存（异步读取：本路由是被高频拉取的公开端点，
+      //    同步 fs 会阻塞事件循环；miss 时导航到下一段逻辑）
       const diskMetaPath = join(CACHE_DIR, `${hostHash}.json`);
       const diskDataPath = join(CACHE_DIR, `${hostHash}.bin`);
-      if (existsSync(diskMetaPath) && existsSync(diskDataPath)) {
-        try {
-          const meta = JSON.parse(readFileSync(diskMetaPath, "utf-8")) as { contentType: string; etag: string };
-          const buf = readFileSync(diskDataPath);
-          rememberIcon(hostHash, {
-            buffer: buf,
-            contentType: meta.contentType,
-            etag: meta.etag,
-            updatedAt: Date.now(),
-          });
-          if (clientEtag && clientEtag === meta.etag) {
-            return reply.code(304).send();
-          }
-          return reply
-            .header("Content-Type", meta.contentType)
-            .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
-            .header("ETag", meta.etag)
-            .send(buf);
-        } catch {
-          // 磁盘读取损坏，继续向下抓取
+      try {
+        const [metaRaw, buf] = await Promise.all([
+          readFile(diskMetaPath, "utf-8"),
+          readFile(diskDataPath),
+        ]);
+        const meta = JSON.parse(metaRaw) as { contentType: string; etag: string };
+        rememberIcon(hostHash, {
+          buffer: buf,
+          contentType: meta.contentType,
+          etag: meta.etag,
+          updatedAt: Date.now(),
+        });
+        if (clientEtag && clientEtag === meta.etag) {
+          return reply.code(304).send();
         }
+        return reply
+          .header("Content-Type", meta.contentType)
+          .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
+          .header("ETag", meta.etag)
+          .send(buf);
+      } catch {
+        // 磁盘缺失或损坏，继续向下抓取
       }
 
       // 4. SSRF 安全防线：进行 DNS 解析与内网 IP 过滤
@@ -187,10 +191,17 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       // 且 image/svg+xml 被缓存后以本站源回显（存储型 XSS）。修复三管齐下：
       //   a) Accept 头排除 svg+xml；b) Content-Type 白名单只放位图；
       //   c) 响应加 Content-Security-Policy: sandbox 防 SVG 脚本执行。
-      const probeUrls = [
+      // 初始两个探测地址（https/http）。重定向目标改为进**有界队列**，
+      // 不再就地 push 回正在迭代的同一个数组——旧写法对"自我增长数组"持续
+      // 迭代（for…of 按实时 length 取项），叠加无上限重定向会长时间空转。
+      // 现在：去重（visited）+ 跳数上限（MAX_REDIRECT_HOPS），循环必然有界。
+      const queue: string[] = [
         `https://${hostname}/favicon.ico`,
         `http://${hostname}/favicon.ico`,
       ];
+      const visited = new Set<string>(queue);
+      const MAX_REDIRECT_HOPS = 3;
+      let hops = 0;
 
       let iconBuffer: Buffer | null = null;
       let contentType = "image/x-icon";
@@ -202,7 +213,8 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       const SAFE_ICON_TYPES = /^(image\/(png|jpeg|webp|gif|x-icon|vnd\.microsoft\.icon|avif))(;|$)/;
 
       try {
-        for (const pUrl of probeUrls) {
+        while (queue.length > 0) {
+          const pUrl = queue.shift()!;
           try {
             const resp = await fetch(pUrl, {
               signal: controller.signal,
@@ -215,12 +227,17 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
             // 3xx：解析 Location 并重新校验目标（逐跳 SSRF 防线）
             if (resp.status >= 300 && resp.status < 400) {
               const loc = resp.headers.get("location");
-              if (loc) {
+              if (loc && hops < MAX_REDIRECT_HOPS) {
                 try {
-                  const redirectHost = new URL(loc, pUrl).hostname;
+                  const nextUrl = new URL(loc, pUrl).href;
+                  const redirectHost = new URL(nextUrl).hostname;
                   const rAddrs = await lookup(redirectHost, { all: true });
                   if (rAddrs.some((a) => isBlockedIp(a.address))) break; // 重定向到内网：放弃
-                  probeUrls.push(loc.startsWith("http") ? loc : new URL(loc, pUrl).href);
+                  if (!visited.has(nextUrl)) {
+                    visited.add(nextUrl);
+                    hops++;
+                    queue.push(nextUrl);
+                  }
                 } catch { break }
               }
               continue;
@@ -251,9 +268,12 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
         rememberIcon(hostHash, { buffer: iconBuffer, contentType, etag, updatedAt: Date.now() });
 
         try {
-          writeFileSync(diskDataPath, iconBuffer);
-          writeFileSync(diskMetaPath, JSON.stringify({ contentType, etag }));
+          await Promise.all([
+            writeFile(diskDataPath, iconBuffer),
+            writeFile(diskMetaPath, JSON.stringify({ contentType, etag })),
+          ]);
         } catch {}
+        // 显式降级（非静默）：缓存落盘失败可忽略：图标可重新抓取，不该因此让请求失败
 
         return reply
           .header("Content-Type", contentType)

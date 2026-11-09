@@ -90,6 +90,14 @@ describe("healthCheckDeadline", () => {
 
 describe("health_check 协作式预算", () => {
   it("预算到点：只巡一部分、剩余顺延，任务落 done 且不再抓取剩余站点", async () => {
+    /**
+     * 本用例验证的是**预算截断与顺延的记账**，其推理依赖"每站 40ms 的串行吞吐"。
+     * 巡检现在默认按窗口并发抓取（NAVHUB_HEALTH_POOL，默认 6），12 站会被 2 个窗口
+     * 在 ~80ms 内跑完，串行模型直接失效。因此这里显式固定为串行（pool=1），
+     * 让"480ms > 400ms 预算 ⇒ 必有顺延"这个前提继续成立。
+     */
+    const prevPool = process.env.NAVHUB_HEALTH_POOL;
+    process.env.NAVHUB_HEALTH_POOL = "1";
     hoisted.delayMs = 40;
     hoisted.calls = 0;
     const runner = new JobRunner(ctx, { budgetOverrides: { health_check: 400 } });
@@ -111,6 +119,32 @@ describe("health_check 协作式预算", () => {
     const failed = await ctx.repo.listJobs("failed", 10);
     expect(failed.some((j) => j.kind === "health_check")).toBe(false);
     hoisted.delayMs = 0;
+    if (prevPool === undefined) delete process.env.NAVHUB_HEALTH_POOL;
+    else process.env.NAVHUB_HEALTH_POOL = prevPool;
+  });
+
+  it("并发抓取：同一预算下能巡完整批（吞吐提升），且 planned/checked 记账一致", async () => {
+    // 12 站 × 40ms，默认窗口 6 ⇒ 2 个窗口约 80ms，远小于 400ms 预算：本轮应全部巡完。
+    const prevPool = process.env.NAVHUB_HEALTH_POOL;
+    delete process.env.NAVHUB_HEALTH_POOL;
+    hoisted.delayMs = 40;
+    hoisted.calls = 0;
+    const runner = new JobRunner(ctx, { budgetOverrides: { health_check: 400 } });
+    try {
+      await ctx.repo.enqueueJob("health_check", { limit: 12 });
+      expect((await runner.tick()).processed).toBe(1);
+
+      const meta = lastHealthEventMeta();
+      expect(meta.planned).toBe(12);
+      expect(meta.checked).toBe(12);
+      expect(meta.deferred).toBe(0);
+      // 记账自洽：抓取次数必须等于已巡数（不多抓、不漏抓）
+      expect(hoisted.calls).toBe(meta.checked);
+    } finally {
+      hoisted.delayMs = 0;
+      if (prevPool === undefined) delete process.env.NAVHUB_HEALTH_POOL;
+      else process.env.NAVHUB_HEALTH_POOL = prevPool;
+    }
   });
 
   it("不设预算（override 0）：整批巡完，deferred=0", async () => {

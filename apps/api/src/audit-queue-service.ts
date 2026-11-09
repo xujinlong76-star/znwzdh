@@ -22,6 +22,8 @@ import {
   type AuditQueue,
 } from "@navhub/core";
 import { guardedFetch, outboundProfile } from "@navhub/ai";
+// core 的落盘实现由宿主注入：导入本模块即完成自注册（见 fs-file-store.ts）
+import "./fs-file-store.ts";
 
 /** 异步任务探活沿用 probe profile：超时/体积/UA 只有一份定义（packages/ai/src/outbound.ts） */
 const JOB_PROFILE = outboundProfile("probe");

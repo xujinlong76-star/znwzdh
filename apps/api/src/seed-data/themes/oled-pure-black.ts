@@ -17,7 +17,7 @@ export const oledPureBlack: SeedPluginDef = {
     version: "1.0.0",
     tags: ["主题","深色","OLED","纯黑","极简"],
     payload: {
-      "accent": "rose",
+      "accent": "sky",
       "tokens": {
             "--background": "0 0% 0%",
             "--foreground": "210 40% 98%",

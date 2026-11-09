@@ -13,10 +13,10 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createEmbeddingService, type EmbeddingService } from "@navhub/ai";
 import { createMailTransport, type MailTransport } from "@navhub/ai";
-import { Repository, SearchEngine, SqliteFtsStore, SqliteVecStore, openDb, type Db, type FullTextStore, type VectorStore } from "@navhub/store";
+import { Repository, SearchEngine, SqliteFtsStore, SqliteVecStore, openDb, type Db, type FullTextStore, type PluginOps, type VectorStore } from "@navhub/store";
 import type { AppConfig } from "./config.ts";
 import { refreshLlmCapability } from "./llm-config.ts";
-import { searchPluginsSemantic, type PluginSearchResult } from "./plugins-search.ts";
+import { searchPluginsSemantic } from "./plugins-search.ts";
 import { indexSitesBatch } from "./index-site.ts";
 import { removePluginIndex } from "./index-plugin.ts";
 
@@ -40,19 +40,19 @@ export interface AppContext {
   /** 邮件投递器：验证码/重置链接/通知外发的唯一出口 */
   mail: MailTransport;
   capabilities: Capabilities;
-  /**
+/**
    * 插件向量索引操作（MCP host-context 注入面）。
    *
    * 为什么必须在 ctx 上：MCP 的插件市场工具此前只声明了 `pluginOps?` 接口却
    **从未被任何启动器装配**——search_plugins 恒走 `unavailable` 降级，install
    * 后的向量索引也从不发生（D2 的 REST 通道能用是因为直接 import 实现）。
    * 这里是唯一装配点：MCP 与 REST 共用同一套实现（见 plugins-search.ts）。
+   *
+   * 类型 = `@navhub/store` 的 `PluginOps`（评审 P2-3 收敛）：此前本文件与
+   * packages/mcp/src/host-context.ts 各写一份形状，靠结构检查兜底 —— 而 mcp 侧
+   * 把 mode 放宽成 string，等于没有约束。现在两侧共享一份声明。
    */
-  pluginOps: {
-    indexSitesBatch: (sites: Array<{ id: string; title: string; description: string | null; url: string }>) => Promise<void>;
-    removePluginIndex: (pluginId: string) => Promise<void>;
-    searchPluginsSemantic: (query: string, limit: number) => Promise<PluginSearchResult>;
-  };
+  pluginOps: PluginOps;
   close(): Promise<void>;
 }
 
@@ -86,13 +86,19 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       store.init();
       // 进程重启后重建 key -> siteId 映射，并在 vec0 表与持久层不一致时用向量重灌。
       // 只取当前模型/维度：换模型后旧向量不能混进 KNN，否则计数也会永久对不上。
-      const vectorFilter = { model: config.embedding.model, dim: config.embedding.dim };
-      store.rehydrate(await repo.savedEmbeddings(vectorFilter));
+const vectorFilter = { model: config.embedding.model, dim: config.embedding.dim };
+      // 先只读 site_id 恢复映射；只有计数不一致（迁移 / 跨进程写 / 残留）时才拉全量
+      // 向量重灌 —— 避免「计数一致」这一常态启动就把全部向量 BLOB 读进内存（O(N×dim)）。
+      if (store.rehydrateIndex(await repo.savedEmbeddingIndex(vectorFilter))) {
+        store.rebuildVectors(await repo.savedEmbeddings(vectorFilter));
+      }
       vectors = store;
       // 插件向量：同一数据库、独立 vec0 表；持久层 plugin_embeddings 为唯一事实源
       const pluginStore = new SqliteVecStore({ db: db.sqlite as never, dim: config.embedding.dim, table: "plugins_vec" });
       pluginStore.init();
-      pluginStore.rehydrate(await repo.savedPluginEmbeddings(vectorFilter));
+      if (pluginStore.rehydrateIndex(await repo.savedPluginEmbeddingIndex(vectorFilter))) {
+        pluginStore.rebuildVectors(await repo.savedPluginEmbeddings(vectorFilter));
+      }
       pluginVectors = pluginStore;
       notes.push("sqlite-vec 已加载，向量维度 " + config.embedding.dim);
     } catch (err) {

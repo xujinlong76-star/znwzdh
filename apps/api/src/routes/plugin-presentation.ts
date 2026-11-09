@@ -134,6 +134,7 @@ export function publicPlugin(
         };
       }
     } catch {}
+    // 显式降级（非静默）：审核备注不是合法 JSON：按「无审核信息」处理
   }
   const base = opts.ownerView ? { ...rest, pendingChangelog: pendingChangelog ?? null } : rest;
   return aiAudit ? { ...base, aiAudit } : base;

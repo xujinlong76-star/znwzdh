@@ -17,7 +17,7 @@ export const macSonomaGlass: SeedPluginDef = {
     version: "1.0.0",
     tags: ["主题","macOS","毛玻璃","晶透","现代"],
     payload: {
-      "accent": "violet",
+      "accent": "system-blue",
       "tokens": {
             "--background": "220 20% 12%",
             "--foreground": "210 40% 98%",

@@ -1211,7 +1211,8 @@ export function isAssetDocPath(path: string): boolean {
 
 async function lockBrandAssets(ctx: AppContext): Promise<void> {
   // PostgreSQL 的事务锁跨进程串行化配置保存与删除；SQLite 已持有 BEGIN IMMEDIATE 写锁。
-  if (ctx.db.dialect === "pg") await ctx.db.pg!.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["navhub:brand-assets"]);
+  // 方言判定已收敛到 Repository 能力方法（见 packages/store/src/repository/io.ts）。
+  await ctx.repo.acquireAdvisoryXactLock("navhub:brand-assets");
 }
 
 function assetReferences(config: unknown): Map<string, string[]> {

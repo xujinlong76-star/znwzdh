@@ -95,8 +95,8 @@ describe("cron 调度语义", () => {
     for (const k of kinds) {
       expect(DEFAULT_SCHEDULES[k].timeoutMs).toBeGreaterThan(0);
       expect(DEFAULT_SCHEDULES[k].maxConcurrency).toBeGreaterThanOrEqual(1);
-      if (DEFAULT_SCHEDULES[k].cron === "MANUAL") {
-        // 手动任务（如 backup_restore）：绝不自动调度，cronDue 必须判 false
+      if (DEFAULT_SCHEDULES[k].cron === "MANUAL" || DEFAULT_SCHEDULES[k].cron === "NOT_SCHEDULED") {
+        // 手动专属（backup_restore）或不在排期表里的 kind：绝不自动调度，cronDue 必须判 false
         expect(cronDue(scheduleCronOf(k))).toBe(false);
         continue;
       }
@@ -106,10 +106,42 @@ describe("cron 调度语义", () => {
     }
   });
 
+  /**
+   * 单一事实源守卫：声明的 cron 必须与实际排期（DEFAULT_CRON_SCHEDULES.intervalMs）一致。
+   * 反例（本守卫上线前长期存在）：health_check 声明 X5MIN 实际按天、token_audit 声明
+   * HOURLY 实际 7 天、refetch_metadata/reindex/site_self_healing 声明得像已排期却根本不在表里。
+   */
+  it("排期声明与实际间隔一致（单一事实源）", () => {
+    const scheduledByKind = new Map<string, number>();
+    for (const s of DEFAULT_CRON_SCHEDULES) scheduledByKind.set(s.kind, s.intervalMs);
+    const ALLOWED_BY_INTERVAL: Array<{ ms: number; aliases: string[] }> = [
+      { ms: 3_600_000, aliases: ["HOURLY"] },
+      { ms: 4 * 3_600_000, aliases: ["X4H"] },
+      { ms: 86_400_000, aliases: ["DAILY", "DAILY3AM", "DAILY4AM", "DAILY5AM"] },
+      { ms: 7 * 86_400_000, aliases: ["WEEKLY"] },
+    ];
+    for (const k of Object.keys(DEFAULT_SCHEDULES) as Array<keyof typeof DEFAULT_SCHEDULES>) {
+      const declared = DEFAULT_SCHEDULES[k].cron as string;
+      const interval = scheduledByKind.get(k);
+      if (interval === undefined) {
+        expect(
+          ["NOT_SCHEDULED", "MANUAL"],
+          `${k} 不在 DEFAULT_CRON_SCHEDULES，声明必须为 NOT_SCHEDULED/MANUAL，实际 "${declared}"`,
+        ).toContain(declared);
+        continue;
+      }
+      const rule = ALLOWED_BY_INTERVAL.find((r) => r.ms === interval);
+      expect(rule, `${k} 的 intervalMs=${interval} 没有对应别名规则`).toBeDefined();
+      expect(rule!.aliases, `${k} 声明 "${declared}" 与 intervalMs=${interval} 不一致`).toContain(declared);
+    }
+  });
+
   it("cronDue 匹配步长与整点语义", () => {
-    // 2026-10-17 10:00 周六：分钟 0（被 */5 整除），小时 10
+    // 2026-10-17 10:00 周六：分钟 0（整点）
     const d = new Date(2026, 9, 17, 10, 0, 0);
-    expect(cronDue(scheduleCronOf("health_check"), d)).toBe(true);
+    // health_check 现声明 DAILY（0 0 * * *）：只有 00:00 到期，与「按天」的运行时一致
+    expect(cronDue(scheduleCronOf("health_check"), d)).toBe(false);
+    expect(cronDue(scheduleCronOf("health_check"), new Date(2026, 9, 17, 0, 0, 0))).toBe(true);
     expect(cronDue(scheduleCronOf("recompute_rank"), d)).toBe(true);
     // 10:01 不是整点
     const d2 = new Date(2026, 9, 17, 10, 1, 0);

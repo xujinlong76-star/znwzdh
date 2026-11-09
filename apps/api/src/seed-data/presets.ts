@@ -18,7 +18,7 @@ export const contentCreatorWorkbench: SeedPluginDef = {
     kind: "workspace-preset",
     name: "内容创作者工作台",
     description:
-      "面向自媒体与内容创作者的三看板布局（共 12 个模块）：选题与灵感、素材与产出、数据复盘。安装即用，把「找选题 → 写稿 → 拍素材 → 看数据」串在同一个工作台上。",
+      "面向自媒体与内容创作者的 4 看板布局（共 22 个组件）：选题与灵感、素材与产出、数据复盘、发布与互动。安装即用，把「找选题 → 写稿 → 拍素材 → 看数据」串在同一个工作台上。",
     icon: "✍️",
     author: "山羊胡官方",
     license: "MIT",
@@ -81,7 +81,7 @@ export const studentStudyWorkbench: SeedPluginDef = {
     kind: "workspace-preset",
     name: "学习自习工作台",
     description:
-      "面向学生与自学者的三看板布局（共 12 个模块）：今日学习、课程与资料、复习与沉淀。番茄钟、笔记、资料速查与学术订阅一次就位，装完即可开始自习。",
+      "面向学生与自学者的 4 看板布局（共 22 个组件）：今日学习、课程与资料、复习与沉淀、目标与自习室。番茄钟、笔记、资料速查与学术订阅一次就位，装完即可开始自习。",
     icon: "📖",
     author: "山羊胡官方",
     license: "MIT",
@@ -144,7 +144,7 @@ export const investorWorkbench: SeedPluginDef = {
     kind: "workspace-preset",
     name: "投资研究盯盘工作台",
     description:
-      "面向个人投资者与研究者的三看板布局（共 12 个模块）：市场全景、研究与盯盘、复盘与资讯。行情面板、财经热榜、数据源入口与复盘笔记集中在一屏，减少来回切页。",
+      "面向个人投资者与研究者的 4 看板布局（共 24 个组件）：市场全景、研究与盯盘、复盘与资讯、持仓与风控。行情面板、财经热榜、数据源入口与复盘笔记集中在一屏，减少来回切页。",
     icon: "📊",
     author: "山羊胡官方",
     license: "MIT",

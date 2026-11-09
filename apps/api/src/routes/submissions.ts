@@ -12,7 +12,7 @@ import { indexSite } from "../index-site.ts";
 import { resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
 import { ADMIN_NOTIFICATION_IDENTITY } from "../notifications.ts";
-import { identityTrusted, requestIdentityOf, submissionNumber } from "./shared.ts";
+import { safeJsonParse, identityTrusted, requestIdentityOf, submissionNumber } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -128,7 +128,8 @@ ${catSpec || "无指定分类树"}
         } catch {
           const m = (res.content || "").match(/\{[\s\S]*\}/);
           if (m) {
-            try { parsed = JSON.parse(m[0]) as Record<string, unknown>; } catch {}
+            // 解析失败即按「无解析结果」继续（外层还有 !parsed 分支兜底）；不再静默吞异常
+            parsed = safeJsonParse(m[0], parsed);
           }
         }
 
@@ -317,7 +318,7 @@ ${catSpec || "无指定分类树"}
     const transitionId = randomUUID();
     const reviewed = await ctx.repo.withTransaction(async () => {
       await ctx.repo.raw(
-        "SELECT id FROM sites WHERE id = ?" + (ctx.repo.db.dialect === "pg" ? " FOR UPDATE" : ""),
+        "SELECT id FROM sites WHERE id = ?" + ctx.repo.rowLockClause,
         [siteId],
       );
       const current = await ctx.repo.getSite(siteId);

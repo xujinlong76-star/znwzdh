@@ -9,6 +9,31 @@ import { clampFacetFilter, type FacetFilterResult } from "@navhub/core";
 import type { AppContext } from "../context.ts";
 
 /* ------------------------------------------------------------------ *
+ * 宽松 JSON 解析 (Safe JSON Parse)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 宽松 JSON 解析：解析失败返回 fallback，并按需留痕。
+ *
+ * 为什么要有它：路由层曾有 8 处形态完全一样的
+ * `try { parsed = JSON.parse(m[0]) } catch {}` —— 都是「LLM 输出里抠出 {...} 再试一次
+ * 解析」的兜底。这些 `catch {}` 是空的：解析失败既没有结果、也没有一行日志，
+ * 事后谁也说不清"当时到底解析成功了没有"（评审 P2「空 catch / 重复 JSON 解析」）。
+ * 统一到这里后：失败一律走同一个出口，可按 label 留痕，调用方只处理"有值/没值"。
+ *
+ * 注意：**不**把异常抛给调用方——这些场景的语义就是"解析不出来就按缺省继续"。
+ */
+export function safeJsonParse<T>(raw: string | null | undefined, fallback: T, label?: string): T {
+  if (raw == null || raw.trim() === "") return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    if (label) console.warn(`[navhub] JSON 解析失败（${label}）：按缺省值处理`);
+    return fallback;
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * HTTP 统一响应助手 (Unified HTTP Responders)
  * ------------------------------------------------------------------ */
 

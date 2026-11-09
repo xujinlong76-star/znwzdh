@@ -11,6 +11,8 @@
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { openProbeCache, type ProbeCacheStore } from "@navhub/core";
+// core 的落盘实现由宿主注入：导入本模块即完成自注册（见 fs-file-store.ts）
+import "./fs-file-store.ts";
 
 const FLUSH_INTERVAL_MS = 5_000;
 

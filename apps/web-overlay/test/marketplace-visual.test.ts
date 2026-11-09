@@ -75,3 +75,31 @@ describe("插件市场排版：卡片与列表细节", () => {
     expect(page).not.toContain("set('limit', '1000')")
   })
 })
+
+/**
+ * 钩子声明顺序守卫。
+ *
+ * 2026-11-09 事故：给搜索框加 150ms 防抖时，把 `activeTopicId` 的 useMemo
+ * 插到了 `const [q, setQ] = useState('')` 前面，浏览器与 SSR 双端直接
+ * `ReferenceError: Cannot access 'q' before initialization`，整页被
+ * error.tsx 接走（页面仍返回 200，只有渲染树是空的——普通 smoke 测不出来）。
+ *
+ * 这里只钉住「先声明后使用」这一条，不做通用 AST 分析：可读、不会误报。
+ */
+describe("PluginMarketBoard：状态声明的顺序", () => {
+  const src = overlaySource("src/components/plugin-market-board.tsx")
+
+  it("q 的 useState 声明在 resolveActiveTopicId 之前", () => {
+    const qDecl = src.indexOf("const [q, setQ] = useState")
+    const topicUse = src.indexOf("resolveActiveTopicId(kind, q, sort)")
+    expect(qDecl).toBeGreaterThan(-1)
+    expect(topicUse).toBeGreaterThan(-1)
+    expect(qDecl).toBeLessThan(topicUse)
+  })
+
+  it("防抖用的 qInput 与生效值 q 都保持独立状态", () => {
+    expect(src).toContain("const [qInput, setQInput] = useState('')")
+    expect(src).toContain("setQ(qInput.trim())")
+    expect(src).toContain("}, 150)")
+  })
+})

@@ -199,6 +199,51 @@ describe('Staging：一次解析、双库分流', () => {
     expect(result.dedupeUnavailable).toBe(true)
     expect(result.items.some((i) => i.status === 'duplicate')).toBe(false)
   })
+
+  /**
+   * 验收要求「预览列表 50ms 内渲染」。这里的耗时由两段构成：纯函数管线
+   * （解析 → 规范化 → 去重 → 归类）与 React 重绘。后者随机器与 dev/prod
+   * 波动，前者是能钉死的部分，所以只守这一段，并分两个量级各守一条：
+   *
+   * 1. 20 条预览：直接对齐验收里的 50ms 预算（实测个位数毫秒，余量充足）。
+   * 2. 200 条批量：守**线性摊销**（每条 < 0.5ms），防止有人塞进 O(n²)
+   *    —— 用 200 条去撞 50ms 会夹在边缘上，随机器心情变红，不是好断言。
+   *
+   * 计时方式：预热 2 次后连测 5 次取**中位数**。单次计时会被 GC 与调度
+   * 抖动干扰（同一份代码单跑 12ms、全量套件并行时 66ms），单次结果不可信。
+   */
+  it('20 条预览在 50ms 预算内，200 条批量摊销保持线性', () => {
+    const make = (n: number) => {
+      const rows = Array.from({ length: n }, (_, i) => ({
+        title: `站点 ${i}`,
+        href: `https://site-${i}.example.com/path?utm_source=x`,
+      }))
+      return parseUniversalBookmarks(
+        ['<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>', ...rows.map((b) => `<DT><A HREF="${b.href}">${b.title}</A>`), '</DL><p>'].join('\n'),
+      ).items
+    }
+    const medianOf = (items: ReturnType<typeof make>, runs = 5) => {
+      buildStagingItems(items, publicIndex, CATEGORIES) // 预热：JIT + 正则编译 + 分类索引 WeakMap
+      const samples: number[] = []
+      for (let i = 0; i < runs; i++) {
+        const startedAt = performance.now()
+        const staged = buildStagingItems(items, publicIndex, CATEGORIES)
+        samples.push(performance.now() - startedAt)
+        expect(staged.items).toHaveLength(items.length)
+      }
+      samples.sort((a, b) => a - b)
+      return samples[Math.floor(samples.length / 2)]
+    }
+
+    const small = make(20)
+    expect(small).toHaveLength(20)
+    expect(medianOf(small)).toBeLessThan(50)
+
+    const bulk = make(200)
+    expect(bulk).toHaveLength(200)
+    const perItemMs = medianOf(bulk, 3) / bulk.length
+    expect(perItemMs).toBeLessThan(0.5)
+  })
 })
 
 describe('零门槛示例书签', () => {

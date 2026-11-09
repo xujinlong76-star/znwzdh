@@ -19,6 +19,7 @@ import {
   hslTripleToHex,
   paletteSwatches,
 } from '../src/lib/plugins/plugin-manifest.ts'
+import { cardTitle } from '../src/lib/plugins/display-title.ts'
 
 const SEED_DIR = fileURLToPath(new URL('../../api/src/seed-data/', import.meta.url))
 
@@ -153,5 +154,46 @@ describe('seed 描述护栏（防回潮）', () => {
       }
     }
     expect(broken).toEqual([])
+  })
+})
+
+/**
+ * 卡片标题展示：只在会溢出时去掉结尾括注。
+ *
+ * 事故背景：`AI 智能体时代旗舰全家桶 (Agentic Future Bundle)` 在两行卡片里
+ * 被裁成「…(Agentic Future Bundle」——半个括号挂在卡片上，像数据损坏。
+ * 这里钉住三条：短标题原样、长标题去括注、去完不能只剩空壳。
+ */
+describe('卡片标题：括号截断收敛', () => {
+  it('短标题原样返回，不做任何改写', () => {
+    expect(cardTitle('北欧冰川极简冷灰主题')).toBe('北欧冰川极简冷灰主题')
+    expect(cardTitle('ROI 计算器')).toBe('ROI 计算器')
+  })
+
+  it('超长且以括注结尾时只保留正文', () => {
+    const name = 'AI 智能体时代旗舰全家桶 (Agentic Future Bundle)'
+    expect(cardTitle(name)).toBe('AI 智能体时代旗舰全家桶')
+    // 全角括号同样处理
+    expect(cardTitle('独立黑客出海增长工具包（含 200 个站点）')).toBe('独立黑客出海增长工具包')
+  })
+
+  it('超长但没有括注时不动它——那是 CSS 行数裁剪的事', () => {
+    const name = '面向内容创作者的全流程生产力工作台合集'
+    expect(cardTitle(name)).toBe(name)
+  })
+
+  it('去掉括注后不足 4 个字则保留原名，避免只剩「AI」这种残句', () => {
+    const name = 'AI (Artificial Intelligence Bundle Edition)'
+    expect(cardTitle(name)).toBe(name)
+  })
+
+  it('幂等：对结果再跑一次不会再变', () => {
+    const once = cardTitle('投资研究盯盘工作台 (Invest Desk Pro)')
+    expect(cardTitle(once)).toBe(once)
+  })
+
+  it('空值与空白安全', () => {
+    expect(cardTitle('')).toBe('')
+    expect(cardTitle('   ')).toBe('')
   })
 })

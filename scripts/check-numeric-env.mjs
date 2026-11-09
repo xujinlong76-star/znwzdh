@@ -31,9 +31,7 @@ const UNKNOWN = argv.filter((a) => a !== "--json" && a !== "--update");
 const NL = String.fromCharCode(10);
 
 /** 首次实测（2026-11-06）登记的历史读取点；新增项才判红。 */
-let BASELINE = [
-  "apps/mcp/src/http.ts:19:NAVHUB_MCP_HTTP_PORT",
-];
+let BASELINE = [];
 
 function shapeError(msg) {
   if (JSON_OUT) console.log(JSON.stringify({ ok: false, exitCode: 2, error: "shape", message: msg }, null, 2));

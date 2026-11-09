@@ -2144,6 +2144,49 @@ export interface SpeculationRulesResponse {
   [key: string]: unknown;
 }
 
+/**
+ * POST /api/account/register
+ */
+export interface AccountRegisterResponse {
+  ok: true;
+  user: {
+    id: string;
+    username: string;
+    email: string;
+    [key: string]: unknown;
+  };
+  message: string;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/account/verify-email
+ * POST /api/account/resend-verification
+ * POST /api/account/forgot-password
+ * POST /api/account/reset-password
+ */
+export interface OkMessageResponse {
+  ok: true;
+  message: string;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/account/login
+ */
+export interface AccountLoginResponse {
+  ok: true;
+  user: {
+    id: string;
+    username: string;
+    email: string | null;
+    role: string;
+    emailVerified: boolean;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 /** 路由键 -> 响应类型（前端按端点取类型，避免自己再抄一份接口） */
 export interface RestContractRoutes {
   "DELETE /api/admin/client-errors": OkResponse;
@@ -2219,6 +2262,12 @@ export interface RestContractRoutes {
   "PATCH /api/submissions/{number}": SubmissionReviewResponse;
   "PATCH /api/tags/{id}": OkResponse;
   "PATCH /api/tokens/{id}": ApiTokenPayload;
+  "POST /api/account/forgot-password": OkMessageResponse;
+  "POST /api/account/login": AccountLoginResponse;
+  "POST /api/account/register": AccountRegisterResponse;
+  "POST /api/account/resend-verification": OkMessageResponse;
+  "POST /api/account/reset-password": OkMessageResponse;
+  "POST /api/account/verify-email": OkMessageResponse;
   "POST /api/admin/audit/apply": SiteAuditApplyResponse;
   "POST /api/admin/audit/scan": SiteAuditScanResponse;
   "POST /api/admin/maintenance/checkpoint": MaintenanceActionResult;

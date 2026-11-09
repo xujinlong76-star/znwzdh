@@ -224,6 +224,163 @@ export function pluginKindLabel(kind: PluginKind): string {
 }
 
 /* ------------------------------------------------------------------ *
+ * 描述与摘要 SSOT 收敛（2026-11-09）
+ *
+ * 问题：插件卡片的描述文案是**手写**的（「18 大分类 / 约 200 个站点」），
+ * 而徽章上的数字来自 summarizePluginManifest 的实测摘要。种子数据一改，
+ * 文案里的数字就与徽章打架 —— 同一张卡片上两个数字不一致，用户只会
+ * 相信错的那个。2026-11-09 的 seed 扫描实测出多处「的4 看板」这类
+ * 中文数字与统计量混淆的破损文案。
+ *
+ * 做法：不改文案本身（保留作者措辞与单位），只把**统计片段里的数字**
+ * 用摘要派生值替换。识别单位而不是识别数字位置，这样「18 大类」里的
+ * 18 不会被误伤成「站点数」。
+ * ------------------------------------------------------------------ */
+
+/** 摘要的对外类型别名：SSOT 收敛函数的入参契约（与 PluginSummary 同构） */
+export type PluginManifestSummary = PluginSummary
+
+/** HSL 三元组（`h s% l%`）→ #RRGGBB。非法输入返回 null，绝不编造色值。 */
+export function hslTripleToHex(triple: string): string | null {
+  const match = HSL_TRIPLE_PATTERN.exec(String(triple ?? '').trim())
+  if (!match) return null
+  const h = Number(match[1])
+  const s = Number(match[2]) / 100
+  const l = Number(match[3]) / 100
+  if (!Number.isFinite(h) || !Number.isFinite(s) || !Number.isFinite(l)) return null
+  if (h < 0 || h > 360 || s < 0 || s > 1 || l < 0 || l > 1) return null
+
+  // HSL → RGB（标准公式，s/l 为 0~1）
+  const c = (1 - Math.abs(2 * l - 1)) * s
+  const hp = h / 60
+  const x = c * (1 - Math.abs((hp % 2) - 1))
+  let r = 0
+  let g = 0
+  let b = 0
+  if (hp >= 0 && hp < 1) [r, g, b] = [c, x, 0]
+  else if (hp < 2) [r, g, b] = [x, c, 0]
+  else if (hp < 3) [r, g, b] = [0, c, x]
+  else if (hp < 4) [r, g, b] = [0, x, c]
+  else if (hp < 5) [r, g, b] = [x, 0, c]
+  else [r, g, b] = [c, 0, x]
+
+  const m = l - c / 2
+  const toByte = (v: number) => {
+    const n = Math.round((v + m) * 255)
+    return Math.max(0, Math.min(255, n))
+  }
+  const hex = (v: number) => toByte(v).toString(16).padStart(2, '0').toUpperCase()
+  return `#${hex(r)}${hex(g)}${hex(b)}`
+}
+
+/**
+ * 主题 5 色调色板（背景 / 主色 / 次色 / 强调色 / 前景）的默认色值。
+ *
+ * 为什么要写成字面量而不是调 hslTripleToHex 现算：模块初始化顺序上
+ * HSL_TRIPLE_PATTERN 还没赋值，会在 TDZ 里抛 "Cannot access before initialization"。
+ *
+ * 为什么是常量而不是从 token 现算：这是**列表页在拿到 manifest 之前**
+ * 的占位预览（卡片首屏就要渲染 5 个圆点）。真实 manifest 到达后用
+ * summary.palettePreview 覆盖；这里只保证「不编造、稳定、合法 HEX」。
+ * 对应 THEME_ACCENTS 的 default 一档。
+ */
+export const paletteSwatches: readonly string[] = [
+  '#FFFFFF', // --background
+  '#8B6FE8', // --primary
+  '#E3DDF5', // --secondary
+  '#8B6FE8', // --accent
+  '#1C1C22', // --foreground
+]
+
+/**
+ * 把描述里的统计数字替换成摘要派生值（SSOT）。
+ *
+ * 只替换**带统计单位**的片段，因此「18 大类 / 5 色主题 / 2026 前沿发布」
+ * 这类非统计数字不会被误伤（见测试的「不误伤」用例）。
+ * 摘要缺失或对应字段为 0 时保留原文 —— 0 通常是「该类型没有这个维度」，
+ * 写进描述会让文案从「4 看板」变成「0 看板」。
+ *
+ * 顺带修掉缺失空格的中文数字粘连（`的4 看板` → `的 4 看板`），
+ * 这类破损来自早期手工拼接，属于文案层可安全自动纠正的形态。
+ */
+export function resolvePluginDescription(
+  description: string,
+  summary?: PluginManifestSummary | null,
+): string {
+  const text = String(description ?? '')
+  if (!text) return ''
+
+  const CN_DIGIT: Record<string, number> = {
+    一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+  }
+  /** 中文数字 → 阿拉伯（支持「十」「二十」「十二」这类两位结构） */
+  const cnToArabic = (cn: string): number => {
+    if (!cn.includes('十')) return CN_DIGIT[cn] ?? 0
+    const [head, tail] = cn.split('十')
+    const tens = head ? (CN_DIGIT[head] ?? 0) : 1
+    const ones = tail ? (CN_DIGIT[tail] ?? 0) : 0
+    return tens * 10 + ones
+  }
+
+  let out = text
+
+  // 1) 中文数字紧跟统计单位 → 阿拉伯数字（"四看板" → "4 看板"）。
+  //    只认白名单单位，避免把「一带一路」这类词里的数字改掉。
+  out = out.replace(
+    /([一二两三四五六七八九十]+)\s*(看板|组件|个站点|个组件|个模块|个引擎|个成员|项变量|大分类)/g,
+    (_m, cn: string, unit: string) => {
+      const n = cnToArabic(cn)
+      return n > 0 ? `${n} ${unit}` : cn + unit
+    },
+  )
+
+  // 2) 阿拉伯数字与单位之间缺空格 → 补空格（含「的4 看板」这种，保留「的」）
+  out = out.replace(
+    /(\d+)\s*(看板|组件|个站点|个组件|个模块|个引擎|个成员|项变量|大分类)/g,
+    (_m, num: string, unit: string) => `${num} ${unit}`,
+  )
+
+  // 3) 中文与「数字 + 单位」之间缺空格 → 补空格（「的4 看板」→「的 4 看板」）。
+  //    不碰「2026 年前沿」这类没有统计单位的年份。
+  out = out.replace(
+    /([\u4e00-\u9fff])(\d+\s*(?:看板|组件|个站点|个组件|个模块|个引擎|个成员|项变量|大分类))/g,
+    '$1 $2',
+  )
+
+  // 3) 中文（含「的」）与数字粘连 → 补空格（`的4 看板` → `的 4 看板`）
+  //    只处理「汉字后紧跟数字 + 空白 + 白名单单位」，避免拆坏 v2 / 2026。
+  out = out.replace(
+    /([\u4e00-\u9fa5])(\d+)(\s+(?:看板|组件|个站点|个组件|个模块|个引擎|个成员|项变量|大分类))/g,
+    (_m, pre: string, num: string, rest: string) => `${pre} ${num}${rest}`,
+  )
+
+  if (!summary) return out
+
+  /** 只在该统计维度 > 0 时才覆盖（0 表示该类型没有这个维度，写进去反而错） */
+  const apply = (pattern: RegExp, value: number, build: (n: number) => string) => {
+    if (!Number.isFinite(value) || value <= 0) return
+    out = out.replace(pattern, () => build(value))
+  }
+
+  // 网址包：大分类数、站点数（「个精选站点」必须先于「个站点」匹配）
+  apply(/(\d+)\s*大分类/g, summary.categoryCount, (n) => `${n} 大分类`)
+  apply(/(\d+)\s*个\s*精选站点/g, summary.siteCount, (n) => `${n} 个精选站点`)
+  apply(/(\d+)\s*个\s*站点/g, summary.siteCount, (n) => `${n} 个站点`)
+  // 工作台预设：看板数、组件数
+  apply(/(\d+)\s*看板/g, summary.boardCount, (n) => `${n} 看板`)
+  apply(/(\d+)\s*个\s*组件/g, summary.widgetCount, (n) => `${n} 个组件`)
+  apply(/(\d+)\s*个\s*模块/g, summary.widgetCount, (n) => `${n} 个模块`)
+  // 主题：变量项数
+  apply(/(\d+)\s*项变量/g, summary.themeTokenCount, (n) => `${n} 项变量`)
+  // 搜索引擎包：引擎数
+  apply(/(\d+)\s*个\s*引擎/g, summary.engineCount, (n) => `${n} 个引擎`)
+  // 组合包：成员数
+  apply(/(\d+)\s*个\s*成员/g, summary.bundleItemCount, (n) => `${n} 个成员`)
+
+  return out
+}
+
+/* ------------------------------------------------------------------ *
  * 校验与清洗
  * ------------------------------------------------------------------ */
 
@@ -1170,4 +1327,3 @@ export function diffPluginManifests(base: PluginManifest, target: PluginManifest
 
   return result
 }
-

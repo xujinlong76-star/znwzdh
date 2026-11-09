@@ -13,6 +13,7 @@ import {
 } from '@/lib/navhub-api'
 import { pluginKindLabel, resolvePluginDescription } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
+import { cardTitle } from '@/lib/plugins/display-title'
 import { Badge } from '@/components/ui/badge'
 import dynamic from 'next/dynamic'
 
@@ -434,10 +435,13 @@ export function PluginCard({
         <div className="space-y-1.5">
           <Link
             href={`/marketplace/${encodeURIComponent(plugin.slug)}`}
-            className="group/title inline-flex items-center gap-1.5 font-semibold text-foreground hover:text-primary transition-colors text-base"
+            // 标题在卡片里可能被裁行，全称放 title + aria-label，不因展示收敛而丢信息
+            title={plugin.name}
+            aria-label={plugin.name}
+            className="group/title inline-flex min-w-0 items-center gap-1.5 font-semibold text-foreground hover:text-primary transition-colors text-base"
           >
-            <span>{plugin.name}</span>
-            <ExternalLink className="w-3.5 h-3.5 opacity-40 sm:opacity-0 -translate-x-1 transition-all group-hover/title:opacity-100 group-hover/title:translate-x-0" />
+            <span className="min-w-0 break-words">{cardTitle(plugin.name)}</span>
+            <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-40 sm:opacity-0 -translate-x-1 transition-all group-hover/title:opacity-100 group-hover/title:translate-x-0" />
           </Link>
           <p className="text-[13px] text-muted-foreground line-clamp-2 leading-relaxed min-h-[38px] break-words">
             {/* 描述里的统计数字用 summary 派生值覆盖：卡片上文案与徽章必须同源（SSOT） */}

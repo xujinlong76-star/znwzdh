@@ -89,3 +89,12 @@ POST /api/workspaces | 需要登录身份与 workspace blob，在 workspaces 路
 POST /api/workspaces/{id}/members | 需要 RBAC 角色前置，在 workspaces 用例覆盖
 DELETE /api/workspaces/{id}/members/{userId} | 同上（Owner 不可移除）
 POST /api/speculation/rules | 纯函数编译结果，在 speculation 单测覆盖，无需启动 HTTP 栈
+# 账号体系 6 条写绑定（2026-11-09 随 rest-responses.ts 新增；响应体已由
+# apps/api/test/account-api.test.ts 真实跑过，但不走本文件的 expectRoutedContract，
+# 所以按规则登记在此而不是从清单省略）。
+POST /api/account/register | 需要唯一用户名 + 密码哈希 + 邮件令牌前置；在 account-api.test.ts 跑过 201 回执
+POST /api/account/verify-email | 需要注册时下发的一次性邮件令牌；在 account-api.test.ts 跑过成功/过期两支
+POST /api/account/resend-verification | 需要「已注册未验证」状态与限流窗口，且会真发信；在 account-api.test.ts 覆盖限流与幂等回执
+POST /api/account/forgot-password | 需要已验证账号并会真发信；在 account-api.test.ts 覆盖「不泄露账号是否存在」分支
+POST /api/account/reset-password | 需要重置令牌；在 account-api.test.ts 覆盖令牌校验与改密后旧密码失效
+POST /api/account/login | 需要注册完成态与邮箱验证态；在 account-api.test.ts 覆盖 200/401/403 三支

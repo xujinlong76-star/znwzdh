@@ -463,6 +463,10 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
           />
           <EntryGroups
             favoritesCount={favorites.items.length}
+            settings={localPrefs}
+            vaultExists={false}
+            profileReady={false}
+            anonymous={true}
           />
         </div>
       )}
@@ -525,6 +529,11 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
           <EntryGroups
             favoritesCount={overview.counts.favorites}
             installedPluginsCount={overview.counts.activePluginInstalls}
+            searchesCount={overview.counts.searches}
+            vaultExists={Boolean(overview.vault)}
+            profileReady={Boolean(overview.profile)}
+            anonymous={false}
+            settings={effectiveSettings}
           />
         </div>
       )}

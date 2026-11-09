@@ -29,6 +29,8 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useHomeDIY, commitHomeDiyConfig } from '@/lib/modular/use-home-diy'
+import { readLocalUserSettings, writeLocalUserSettings } from '@/lib/user-settings'
+import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders, serializeLocalFolders } from '@/lib/favorites-folders'
 import {
   readOfflineVisits,
   clearOfflineVisits,
@@ -49,6 +51,8 @@ export interface LocalDataBackupPayload {
   favorites: any[]
   diyConfig: any
   recentVisits: RecentVisit[]
+  settings?: any
+  localFolders?: any[]
 }
 
 export function LocalDataManager() {
@@ -89,6 +93,10 @@ export function LocalDataManager() {
   // 导出全量快照
   const handleExportBackup = () => {
     try {
+      const settings = readLocalUserSettings()
+      const localFolders = typeof window !== 'undefined'
+        ? parseLocalFolders(window.localStorage.getItem(LOCAL_FOLDERS_STORAGE_KEY))
+        : []
       const payload: LocalDataBackupPayload = {
         format: 'navhub-local-full-backup',
         version: 1,
@@ -102,6 +110,8 @@ export function LocalDataManager() {
         favorites,
         diyConfig,
         recentVisits,
+        settings,
+        localFolders,
       }
 
       const jsonStr = JSON.stringify(payload, null, 2)
@@ -180,6 +190,20 @@ export function LocalDataManager() {
           }
         }
         await refreshVisits()
+      }
+
+      // 4. 恢复本地偏好设置
+      if (data.settings && typeof data.settings === 'object') {
+        writeLocalUserSettings(data.settings)
+      }
+
+      // 5. 恢复本地收藏夹分组
+      if (Array.isArray(data.localFolders) && data.localFolders.length > 0) {
+        try {
+          window.localStorage.setItem(LOCAL_FOLDERS_STORAGE_KEY, serializeLocalFolders(data.localFolders))
+        } catch {
+          /* 忽略本地存储写入异常 */
+        }
       }
 
       toast({

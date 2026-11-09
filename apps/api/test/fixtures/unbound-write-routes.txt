@@ -79,14 +79,6 @@ POST /api/jobs/retention/preview | 保留策略预览是逐表统计（随数据
 POST /api/backup/restore | 备份恢复回执逐表行数统计（随备份内容变化）
 POST /api/backup/restore/async | 同上，异步模式回执含作业 id 与动态统计
 
-# ---- 账号生命周期（注册/验证/登录/找回/重置）----
-POST /api/account/register | 注册响应是 user(id/username/email) + message 的简单信封；账号域契约绑定优先级低于功能交付，响应字段已稳定
-POST /api/account/verify-email | 验证结果只有 ok/message 单字段信封，无业务字段
-POST /api/account/resend-verification | 重发结果只有 ok/message；防枚举设计下不区分邮箱是否存在
-POST /api/account/forgot-password | 防枚举设计：无论邮箱是否存在都返回同一 ok/message
-POST /api/account/reset-password | 重置结果只有 ok/message
-POST /api/account/login | 登录返回 user(id/username/email/role/emailVerified)，供 next-auth 凭证流程消费
-
 # ---- 站点/投稿/视频链路（2026-11-06 新增，待补 schema）----
 POST /api/sites/{id}/visual | 场景视觉预览：返回按目标 URL 抓取的候选图与置信度（随页面内容变化）
 POST /api/sites/{id}/video-demo | AI 视频微演示：返回 provider 任务态（processing/completed）或降级动效，字段随 provider 任务与缓存状态变化

@@ -127,3 +127,32 @@ describe('金库版本前置条件（客户端）', () => {
     expect(dialog).toContain('res.conflict')
   })
 })
+
+describe('用户中心与插件市场 V5 回归守卫', () => {
+  it('account-card 与 entry-groups 遵循存储契约，不出现裸键名', () => {
+    const card = read('src/components/user-center/dashboard/account-card.tsx')
+    const entries = read('src/components/user-center/dashboard/entry-groups.tsx')
+
+    expect(card).not.toContain("'navhub_favorites'")
+    expect(card).not.toContain("'navhub_anon_identity'")
+    expect(card).toContain('FAVORITES_STORAGE_KEY')
+    expect(card).toContain('ANON_ID_STORAGE_KEY')
+
+    expect(entries).not.toContain("'navhub_favorites'")
+    expect(entries).toContain('FAVORITES_STORAGE_KEY')
+    expect(entries).toContain('data-telemetry')
+  })
+
+  it('settings-panel 提供 #shortcuts 锚点与键盘矩阵', () => {
+    const settings = read('src/components/user-center/settings-panel.tsx')
+    expect(settings).toContain('id="shortcuts"')
+    expect(settings).toContain('快捷键与键盘微动作速查矩阵')
+  })
+
+  it('plugin-market-board 专题激活态由纯函数派生', () => {
+    const board = read('src/components/plugin-market-board.tsx')
+    expect(board).toContain('resolveActiveTopicId')
+    expect(board).toContain('useMemo(() => resolveActiveTopicId(kind, q, sort), [kind, q, sort])')
+  })
+})
+

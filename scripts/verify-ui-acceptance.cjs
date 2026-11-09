@@ -67,8 +67,9 @@ async function baseAudit(page, route, scope) {
 }
 
 ;(async () => {
-  // 优先用本机 Chrome（Windows 默认路径），不存在时回退 Playwright 自带 Chromium
-  const launchOptions = { headless: true, args: ['--no-sandbox'] }
+  // 优先用本机 Chrome（Windows 默认路径），不存在时回退 Playwright 自带 Chromium。
+  // --no-proxy-server：本机验收必须直连，系统代理会把 localhost 也转发出去并回 502。
+  const launchOptions = { headless: true, args: ['--no-sandbox', '--no-proxy-server'] }
   if (CHROME && fs.existsSync(CHROME)) launchOptions.executablePath = CHROME
   const browser = await chromium.launch(launchOptions)
   fs.mkdirSync(OUT, { recursive: true })
@@ -108,20 +109,47 @@ async function baseAudit(page, route, scope) {
     result.home.search = home
     if (home.placeholderSafe === false) fail('home', `搜索占位区被徽章压住 (contentRight=${home.contentRight}, badgeLeft=${home.badgeLeft})`)
 
+    // 徽章由 WorkspaceSwitcher 的 useEffect → fetchWorkspaces() 异步拉回后渲染，
+    // 直接 evaluate 会和这个请求抢跑（dev 冷编译慢时反而「刚好赶上」，属于假通过）。
+    // 先等它出现，再断言布局，超时才判失败。
+    await page
+      .waitForFunction(
+        () =>
+          Array.from(document.querySelectorAll('span, div, p, li')).some(
+            (el) => (el.textContent || '').trim() === '空间所有者',
+          ),
+        null,
+        { timeout: 10_000 },
+      )
+      .catch(() => {})
+
     const badge = await page.evaluate(() => {
-      const span = Array.from(document.querySelectorAll('span')).find((s) => s.textContent?.trim() === '空间所有者')
-      if (!span) return null
-      const host = span.parentElement
-      const sr = span.getBoundingClientRect()
-      const hr = host?.getBoundingClientRect()
+      // 徽章是 <div>（shadcn Badge），早期脚本只查 <span> 会得到 null 而静默跳过断言
+      const all = Array.from(document.querySelectorAll('span, div, p, li')).filter(
+        (el) => (el.textContent || '').trim() === '空间所有者',
+      )
+      if (!all.length) return null
+      const inner = all.reduce((a, b) => (b.children.length < a.children.length ? b : a))
+      const host = inner.parentElement
+      const box = (el) => {
+        const r = el.getBoundingClientRect()
+        return { right: Math.round(r.right), width: Math.round(r.width) }
+      }
       return {
-        badgeClipped: span.scrollWidth > span.clientWidth + 1,
+        tag: inner.tagName.toLowerCase(),
+        clipped: inner.scrollWidth > inner.clientWidth + 1,
         hostClipped: host ? host.scrollWidth > host.clientWidth + 1 : null,
-        insideHost: hr ? sr.right <= hr.right + 1 : null,
+        whiteSpace: getComputedStyle(inner).whiteSpace,
+        flexShrink: getComputedStyle(inner).flexShrink,
+        insideHost: host ? box(inner).right <= box(host).right + 1 : null,
       }
     })
     result.home.ownerBadge = badge
-    if (badge && (badge.badgeClipped || badge.insideHost === false)) fail('home', `空间所有者徽章被裁切 ${JSON.stringify(badge)}`)
+    if (!badge) fail('home', '等待 10s 后仍找不到「空间所有者」徽章（WorkspaceSwitcher 未渲染或接口无数据）')
+    if (badge?.clipped || badge?.hostClipped) fail('home', `空间所有者徽章被裁切 ${JSON.stringify(badge)}`)
+    if (badge && badge.insideHost === false) fail('home', `空间所有者徽章溢出容器 ${JSON.stringify(badge)}`)
+    if (badge && badge.whiteSpace !== 'nowrap') fail('home', `空间所有者徽章允许换行 ${badge.whiteSpace}`)
+    if (badge && badge.flexShrink !== '0') fail('home', `空间所有者徽章会被压缩 flex-shrink=${badge.flexShrink}`)
 
     const padBottom = await page.evaluate(() => {
       // 内容容器（pb-28 sm:pb-36）给右下悬浮工具栏留出的安全区

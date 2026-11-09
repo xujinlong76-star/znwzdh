@@ -273,6 +273,15 @@ export function writeLocalUserSettings(
     kv.setItem(STORAGE_KEY, JSON.stringify(merged))
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('navhub_settings_changed', { detail: merged }))
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('navhub_settings_channel')
+          bc.postMessage(merged)
+          bc.close()
+        }
+      } catch {
+        /* BroadcastChannel 派发异常静默忽略，不阻断本地写入 */
+      }
     }
     return merged
   } catch {

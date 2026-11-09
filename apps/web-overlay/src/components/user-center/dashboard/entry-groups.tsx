@@ -26,7 +26,8 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react'
-import { CARD_DENSITY_OPTIONS, readLocalUserSettings } from '@/lib/user-settings'
+import { CARD_DENSITY_OPTIONS, readLocalUserSettings, type UserSettingsModel } from '@/lib/user-settings'
+import { FAVORITES_STORAGE_KEY, parseFavorites } from '@/lib/favorites-storage'
 
 interface EntryItem {
   href: string
@@ -161,18 +162,30 @@ const GROUPS: readonly GroupDefinition[] = [
   },
 ] as const
 
+export interface EntryGroupsProps {
+  favoritesCount?: number
+  installedPluginsCount?: number
+  searchesCount?: number
+  vaultExists?: boolean
+  profileReady?: boolean
+  anonymous?: boolean
+  settings?: UserSettingsModel
+}
+
 export function EntryGroups({
   favoritesCount,
   installedPluginsCount,
-}: {
-  favoritesCount?: number
-  installedPluginsCount?: number
-}) {
+  searchesCount,
+  vaultExists,
+  profileReady,
+  anonymous,
+  settings,
+}: EntryGroupsProps) {
   const [telemetry, setTelemetry] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const s = readLocalUserSettings()
+    const s = settings ?? readLocalUserSettings()
     const densityOpt = CARD_DENSITY_OPTIONS.find((o) => o.value === s.cardDensity)
     const densityLabel = densityOpt ? densityOpt.label.split(' (')[0] : '舒适'
 
@@ -180,12 +193,13 @@ export function EntryGroups({
     let favCount = favoritesCount
     if (typeof favCount !== 'number') {
       try {
-        const raw = window.localStorage.getItem('navhub_favorites')
+        const raw = window.localStorage.getItem(FAVORITES_STORAGE_KEY)
         if (raw) {
-          const parsed = JSON.parse(raw) as unknown
-          favCount = Array.isArray(parsed) ? parsed.length : 0
+          const parsed = parseFavorites(raw)
+          favCount = parsed.items.length
         }
       } catch {
+        // LocalStorage unavailable in SSR or strict privacy mode
         favCount = 0
       }
     }
@@ -194,10 +208,19 @@ export function EntryGroups({
       favorites: typeof favCount === 'number' && favCount > 0 ? `${favCount} 个站点` : 'E2EE 加密',
       plugins: typeof installedPluginsCount === 'number' && installedPluginsCount > 0 ? `${installedPluginsCount} 已安装` : '77 款生态',
       settings: `${densityLabel}密度`,
-      history: s.searchHistoryEnabled ? '已开启记录' : '已暂停记录',
+      history: typeof searchesCount === 'number' && searchesCount > 0
+        ? `${searchesCount} 条记录`
+        : (s.searchHistoryEnabled ? '已开启记录' : '已暂停记录'),
       shortcuts: s.spotlightShortcut === 'slash' ? '仅 / 键' : s.spotlightShortcut === 'mod+k' ? '⌘K' : '⌘K 或 /',
+      account: anonymous ? '未登录(临时)' : (profileReady ? '已同步' : 'Local-First'),
+      vault: vaultExists ? '已初始化' : 'AES-GCM',
+      preferences: profileReady ? '画像已就绪' : '本地偏好',
+      data: '自主可控',
+      import: '0-RTT 解析',
+      workspaces: '个人空间',
+      custom: '自由排版',
     })
-  }, [favoritesCount, installedPluginsCount])
+  }, [favoritesCount, installedPluginsCount, searchesCount, vaultExists, profileReady, anonymous, settings])
 
   return (
     <section aria-label="分组入口" className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
@@ -235,7 +258,10 @@ export function EntryGroups({
                       </span>
 
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span className="rounded-md border border-border/50 bg-muted/40 px-1.5 py-0.5 text-[9px] font-mono text-muted-foreground transition-colors group-hover:border-primary/30 group-hover:bg-primary/10 group-hover:text-primary">
+                        <span
+                          data-telemetry={badgeKey}
+                          className="rounded-md border border-border/50 bg-muted/40 px-1.5 py-0.5 text-[9px] font-mono text-muted-foreground transition-colors group-hover:border-primary/30 group-hover:bg-primary/10 group-hover:text-primary"
+                        >
                           {liveBadge}
                         </span>
                         <ArrowRight

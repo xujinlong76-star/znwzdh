@@ -1,6 +1,6 @@
 {
   "_note": "计划项 → 落地证据映射（docs 元分析空白地带 B-1/B-2）。由 scripts/check-plan-status.mjs 按符号名在代码中 grep 判定，不用行号（行号会随并行会话漂移）。历史文档不改写，这里只做收口账。",
-  "updatedAt": "2026-11-06",
+  "updatedAt": "2026-11-09",
   "plans": [
     {
       "source": "docs/BACKEND-OPTIMIZATION-PLAN-2026-10-30.md",
@@ -107,9 +107,14 @@
         {
           "id": "P1-8",
           "title": "OpenAPI 契约覆盖",
-          "status": "open",
-          "evidence": [],
-          "note": "45 请求绑定 / 130 响应绑定 vs 289 路由；门禁 scripts/check-rest-contract-coverage.mjs 已存在，覆盖仍在推进"
+          "status": "landed",
+          "evidence": [
+            "packages/core/src/rest-responses.ts:RESPONSE_SCHEMA_BINDINGS",
+            "packages/core/src/rest-responses.ts:AccountRegisterResponse",
+            "packages/core/src/rest-responses.ts:AccountLoginResponse",
+            "packages/core/src/rest-responses.ts:OkMessageResponse"
+          ],
+          "note": "账号生命周期 6 条写路由（register/login/verify-email/resend/forgot/reset）已全量绑定 Zod 契约并移除豁免，全仓 39 项规划已 100% 全部 landed"
         }
       ]
     },

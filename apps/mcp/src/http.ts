@@ -16,7 +16,8 @@ import { createMcpHttpServer, mcpHttpOptionsFromEnv } from "../../../packages/mc
 import { TOOL_DEFS } from "../../../packages/mcp/src/tools.ts";
 
 const HOST = process.env.NAVHUB_MCP_HTTP_HOST ?? "127.0.0.1";
-const PORT = Number(process.env.NAVHUB_MCP_HTTP_PORT ?? 8790);
+const rawPort = Number(process.env.NAVHUB_MCP_HTTP_PORT ?? 8790);
+const PORT = Number.isFinite(rawPort) ? Math.max(1, Math.min(65535, Math.floor(rawPort))) : 8790;
 /** 静态引导 token：视同 admin，用于首次配置；与 REST 的 NAVHUB_BOOTSTRAP_TOKEN 同性质 */
 const TOKEN = process.env.NAVHUB_MCP_TOKEN ?? "";
 const ALLOW_INSECURE = process.env.NAVHUB_MCP_ALLOW_INSECURE === "true";

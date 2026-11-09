@@ -28,7 +28,7 @@
  *   node scripts/generate-web-mirror.mjs                              # 默认：overlay -> apps/web
  *   node scripts/generate-web-mirror.mjs --source <dir> --target <dir> # 测试 / 隔离用
  */
-import { copyFileSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { walkTree, isExcluded } from "./lib/overlay-drift.mjs";
@@ -63,11 +63,12 @@ function defaultSleep(ms) {
  * 从 source（默认 apps/web-overlay）合并式生成 target（默认 apps/web）。
  *
  * 逐文件把 overlay 的非排除文件覆盖进 web；不删除 web 里的任何其它文件。
- * 幂等：第二次运行对第一次的结果不产生任何内容差异。
+ * 幂等：第二次运行对第一次的结果不产生任何内容差异，**也不产生任何 mtime 变化**
+ * （内容一致的文件直接跳过不写）。
  * 写入带重试（Windows Defender / OneDrive filter 偶发以 errno 0 打断 copyFileSync）。
  *
  * @param {{source?: string, target?: string, deadlineMs?: number}} [opts]
- * @returns {{copied: number, skipped: number, errors: string[]}}
+ * @returns {{copied: number, unchanged: number, skipped: number, errors: string[]}}
  */
 export function generateMirror({ source = DEFAULT_SOURCE, target = DEFAULT_TARGET, deadlineMs = 20_000 } = {}) {
   if (!statSync(source, { throwIfNoEntry: false })?.isDirectory()) {
@@ -75,12 +76,22 @@ export function generateMirror({ source = DEFAULT_SOURCE, target = DEFAULT_TARGE
   }
   const rels = walkTree(source, { exclude: isMirrorExcluded });
   let copied = 0;
+  let unchanged = 0;
   const errors = [];
   for (const rel of rels) {
     const from = join(source, rel);
     const to = join(target, rel);
     // walkTree 里标为目录的项不应出现，但保险起见跳过非文件
     if (!statSync(from, { throwIfNoEntry: false })?.isFile()) continue;
+    // 内容完全一致时**不写**目标文件，保住它的 mtime。
+    // 2026-11-09 事故：无条件 copyFileSync 会把 1000+ 个未改动文件的 mtime 全部刷新，
+    // Next 的文件监听据此判定 next.config.js「已变更」→ 重启 → 重启时批量删 .next
+    // → 被本机 safe-delete 保护拦下（BULK_CONFIRM_REQUIRED）→ dev server 进程退出。
+    // 内容级跳过既保住「幂等」的本意，也不给下游制造假变更信号。
+    if (isSameContent(from, to)) {
+      unchanged++;
+      continue;
+    }
     try {
       mkdirSync(dirname(to), { recursive: true });
       copyWithRetry(from, to, deadlineMs);
@@ -89,7 +100,20 @@ export function generateMirror({ source = DEFAULT_SOURCE, target = DEFAULT_TARGE
       errors.push(rel + ": " + (e instanceof Error ? e.message : String(e)));
     }
   }
-  return { copied, skipped: rels.length - copied, errors };
+  return { copied, unchanged, skipped: rels.length - copied, errors };
+}
+
+/** 目标存在、大小相同且字节一致时返回 true（不写文件，也不改 mtime）。 */
+function isSameContent(from, to) {
+  const target = statSync(to, { throwIfNoEntry: false });
+  if (!target?.isFile()) return false;
+  if (statSync(from).size !== target.size) return false;
+  try {
+    return Buffer.compare(readFileSync(from), readFileSync(to)) === 0;
+  } catch {
+    // 读失败就退回「有差异」，让下面的写入流程带上重试兜底
+    return false;
+  }
 }
 
 /** 单文件覆盖写，遇瞬时写入失败重试（兜底：删目标再 cp）。 */
@@ -123,12 +147,17 @@ const isMain = !!process.argv[1] && resolve(process.argv[1]) === fileURLToPath(i
 if (isMain) {
   const { source, target } = parseArgs(process.argv.slice(2));
   console.log(`[mirror:web] 生成镜像：${relative(ROOT, source)} -> ${relative(ROOT, target)}`);
-  const { copied, errors } = generateMirror({ source, target });
+  const { copied, unchanged, errors } = generateMirror({ source, target });
   if (errors.length > 0) {
     for (const e of errors) console.error("[mirror:web] 写入失败: " + e);
     console.error(`[mirror:web] 失败：${errors.length} 个文件写入出错`);
     process.exit(1);
   }
-  console.log(`[mirror:web] OK：写入 ${copied} 个文件（overlay -> web 合并式镜像，幂等）`);
+  // 明确区分「写入了多少」与「因内容一致跳过多少」：
+  // 只报 copied 会让人以为镜像什么都没做，也无从判断 mtime 是否被无谓刷新。
+  console.log(
+    `[mirror:web] OK：写入 ${copied} 个文件，跳过 ${unchanged} 个未变更文件` +
+      `（overlay -> web 合并式镜像，内容与 mtime 双幂等）`,
+  );
   process.exit(0);
 }

@@ -10,7 +10,7 @@
  *
  * 复用 scripts/lib/overlay-drift.mjs 的 isExcluded / walkTree，口径与 check-web-overlay 一致。
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, copyFileSync, existsSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, copyFileSync, existsSync, cpSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,9 +68,12 @@ afterAll(() => {
 describe("generate-web-mirror", { timeout: 120_000 }, () => {
   it("produces a web mirror byte-identical to overlay (parity)", () => {
     const web = cloneBaseline();
-    const { copied, errors } = generateMirror({ source: OVERLAY, target: web });
+    // 基线本身就是「与 overlay 一致」的合成目标，所以这里 copied 通常是 0
+    // （内容级跳过）。真正要证明的是**结果一致**，以及生成器确实遍历了整棵树。
+    const { copied, unchanged, errors } = generateMirror({ source: OVERLAY, target: web });
     expect(errors).toEqual([]);
-    expect(copied).toBeGreaterThan(0);
+    expect(copied + unchanged).toBeGreaterThan(0);
+    expect(unchanged).toBeGreaterThan(0);
 
     // 用 check-web-overlay 同款 diffOverlay 断言一致（前向严格）
     const { missing, drifted } = diffOverlay({ overlayDir: OVERLAY, targetDir: web });
@@ -90,6 +93,40 @@ describe("generate-web-mirror", { timeout: 120_000 }, () => {
     expect(drifted).toEqual([]);
   });
 
+  /**
+   * 第二遍必须**一个字节都不写**。
+   *
+   * 2026-11-09 事故：无条件 copyFileSync 把 1000+ 个未改动文件的 mtime 全刷新，
+   * Next 的文件监听判定 next.config.js「已变更」→ 自动重启 → 重启时批量删 .next
+   * → 被本机 safe-delete 保护拦下 → dev server 直接退出。内容幂等不等于文件系统幂等，
+   * 这里把后者也钉住：copied 归零，且目标 mtime 逐一不变。
+   */
+  it("second run writes nothing and leaves mtimes untouched", () => {
+    const web = cloneBaseline();
+    generateMirror({ source: OVERLAY, target: web })
+
+    // 记录全部目标文件的 mtimeMs（overlay 树里的每个文件都对应一个 web 目标）
+    const before = new Map()
+    for (const rel of walkTree(OVERLAY, { exclude: isExcluded })) {
+      const to = join(web, rel)
+      const st = statSync(to, { throwIfNoEntry: false })
+      if (st?.isFile()) before.set(rel, st.mtimeMs)
+    }
+    expect(before.size).toBeGreaterThan(0)
+
+    const second = generateMirror({ source: OVERLAY, target: web })
+    expect(second.errors).toEqual([])
+    // 无内容差异 → 零写入
+    expect(second.copied).toBe(0)
+    expect(second.unchanged).toBe(before.size)
+
+    const touched = []
+    for (const [rel, mtime] of before) {
+      if (statSync(join(web, rel)).mtimeMs !== mtime) touched.push(rel)
+    }
+    expect(touched).toEqual([])
+  });
+
   it("self-heals forward drift in the web mirror", () => {
     const web = cloneBaseline();
     generateMirror({ source: OVERLAY, target: web });
@@ -105,8 +142,10 @@ describe("generate-web-mirror", { timeout: 120_000 }, () => {
     expect(before.drifted.length).toBeGreaterThan(0);
 
     // 生成器自愈
-    const { errors } = generateMirror({ source: OVERLAY, target: web });
+    const { copied, errors } = generateMirror({ source: OVERLAY, target: web });
     expect(errors).toEqual([]);
+    // 只重写被弄脏的那一个文件：多写一个都说明「内容级跳过」失效了
+    expect(copied).toBe(1);
     const after = diffOverlay({ overlayDir: OVERLAY, targetDir: web });
     expect(after.missing).toEqual([]);
     expect(after.drifted).toEqual([]);

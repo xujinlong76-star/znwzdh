@@ -94,6 +94,16 @@ function bindOnce(): void {
   // 三条变更源一律「回读存储」而不是相信事件负载：写盘可能只成功了一半
   // （配额满、隐私模式），以存储为准才不会把半截状态固化进快照。
   window.addEventListener('navhub_settings_changed', () => setSnapshot(readSnapshot()))
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const bc = new BroadcastChannel('navhub_settings_channel')
+      bc.onmessage = () => {
+        setSnapshot(readSnapshot())
+      }
+    } catch {
+      /* BroadcastChannel 监听异常静默降级 */
+    }
+  }
   window.addEventListener('storage', (event) => {
     if (event.key && event.key !== USER_SETTINGS_STORAGE_KEY) return
     setSnapshot(readSnapshot())

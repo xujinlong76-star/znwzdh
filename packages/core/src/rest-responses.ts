@@ -1020,6 +1020,35 @@ export const PluginFeaturedResponse = z.looseObject({
 /** 无载荷写回执（DELETE 收藏夹等「只表示成功」的端点） */
 export const OkResponse = z.looseObject({ ok: z.literal(true) });
 
+/** 带消息文案的成功回执（邮箱验证 / 密码重置等） */
+export const OkMessageResponse = z.looseObject({
+  ok: z.literal(true),
+  message: z.string(),
+});
+
+/** POST /api/account/register：注册成功回执 */
+export const AccountRegisterResponse = z.looseObject({
+  ok: z.literal(true),
+  user: z.looseObject({
+    id: z.string(),
+    username: z.string(),
+    email: z.string(),
+  }),
+  message: z.string(),
+});
+
+/** POST /api/account/login：登录凭证校验回执 */
+export const AccountLoginResponse = z.looseObject({
+  ok: z.literal(true),
+  user: z.looseObject({
+    id: z.string(),
+    username: z.string(),
+    email: z.string().nullable(),
+    role: z.string(),
+    emailVerified: z.boolean(),
+  }),
+});
+
 /* ------------------------------------------------------------------ *
  * 通知中心（站内信 + 投递台账）
  * ------------------------------------------------------------------ */
@@ -1762,4 +1791,11 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
     name: "WorkspaceMembersResponse",
   },
   "POST /api/speculation/rules": { schema: SpeculationRulesResponse, name: "SpeculationRulesResponse" },
+  /* 账号生命周期（注册/验证/登录/找回/重置） */
+  "POST /api/account/register": { schema: AccountRegisterResponse, name: "AccountRegisterResponse", status: "201" },
+  "POST /api/account/verify-email": { schema: OkMessageResponse, name: "OkMessageResponse" },
+  "POST /api/account/resend-verification": { schema: OkMessageResponse, name: "OkMessageResponse" },
+  "POST /api/account/forgot-password": { schema: OkMessageResponse, name: "OkMessageResponse" },
+  "POST /api/account/reset-password": { schema: OkMessageResponse, name: "OkMessageResponse" },
+  "POST /api/account/login": { schema: AccountLoginResponse, name: "AccountLoginResponse" },
 };

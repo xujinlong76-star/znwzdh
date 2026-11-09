@@ -23,6 +23,10 @@ import {
 } from 'lucide-react'
 import type { Overview } from '@/lib/me-types'
 import { readLocalUserSettings } from '@/lib/user-settings'
+import { FAVORITES_STORAGE_KEY, parseFavorites } from '@/lib/favorites-storage'
+import { ANON_ID_STORAGE_KEY } from '@/lib/identity-keys'
+import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders } from '@/lib/favorites-folders'
+import type { LocalFavorite } from '@/hooks/useFavorites'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -77,34 +81,48 @@ export function AccountCard({
 
   const exportLocalSnapshot = useCallback(() => {
     if (typeof window === 'undefined') return
-    const keys = [
-      'navhub_user_settings',
-      'navhub_anon_identity',
-      'navhub_favorites',
-      'navhub_search_history',
-      'navhub_vault_items',
-    ]
-    const localData: Record<string, string | null> = {}
-    for (const key of keys) {
-      localData[key] = window.localStorage.getItem(key)
+    const rawFav = window.localStorage.getItem(FAVORITES_STORAGE_KEY)
+    const favItems = parseFavorites<LocalFavorite>(rawFav).items
+    const localFolders = parseLocalFolders(window.localStorage.getItem(LOCAL_FOLDERS_STORAGE_KEY))
+    const settings = readLocalUserSettings()
+    let diyConfig: Record<string, unknown> = {}
+    try {
+      const rawDiy = window.localStorage.getItem('navhub_home_diy_config')
+      if (rawDiy) diyConfig = JSON.parse(rawDiy)
+    } catch {
+      /* 容错处理：DIY 配置解析失败使用空对象 */
     }
-    const snapshot = {
+
+    const payload = {
       appName: '山羊胡网址导航大全 (AI-Native Hub)',
-      exportType: 'navhub_local_snapshot',
+      format: 'navhub-local-full-backup',
+      version: 1,
       schemaVersion: '5.0',
       exportedAt: new Date().toISOString(),
-      anonId,
-      favoritesCount,
-      settings: readLocalUserSettings(),
-      storageDump: localData,
+      // 匿名身份以存储为准（用户可能刚在别的标签页重置过），prop 只作兜底
+      anonId: window.localStorage.getItem(ANON_ID_STORAGE_KEY) || anonId,
+      meta: {
+        customCategoriesCount: Array.isArray(diyConfig.customCategories) ? diyConfig.customCategories.length : 0,
+        customSitesCount: Array.isArray(diyConfig.customCategories)
+          ? (diyConfig.customCategories as Array<{ items?: unknown[] }>).reduce((acc: number, c) => acc + (c.items?.length || 0), 0)
+          : 0,
+        favoritesCount: favItems.length || favoritesCount,
+        recentVisitsCount: 0,
+      },
+      favorites: favItems,
+      localFolders,
+      settings,
+      diyConfig,
+      recentVisits: [],
+      favoritesCount: favItems.length || favoritesCount,
     }
-    const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json;charset=utf-8',
     })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `navhub-snapshot-${anonId.slice(0, 8)}-${Date.now()}.json`
+    anchor.download = `navhub-snapshot-${(anonId || 'anon').slice(0, 8)}-${Date.now()}.json`
     document.body.appendChild(anchor)
     anchor.click()
     document.body.removeChild(anchor)

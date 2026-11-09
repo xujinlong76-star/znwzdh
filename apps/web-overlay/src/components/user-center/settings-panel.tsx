@@ -19,7 +19,7 @@ import {
   type UserSettingsModel,
   type UserSettingsPatch,
 } from '@/lib/user-settings'
-import { Settings2, Zap, ChevronDown } from 'lucide-react'
+import { Settings2, Zap, ChevronDown, Command } from 'lucide-react'
 import type { ComponentProps } from 'react'
 
 /**
@@ -243,6 +243,80 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
           busy={busy}
           onToggle={() => onChange({ telemetryEnabled: !value.telemetryEnabled })}
         />
+      </div>
+      {/* 快捷键与键盘微动作速查矩阵 (P1-2 #shortcuts 锚点) */}
+      <div
+        id="shortcuts"
+        tabIndex={-1}
+        className="mt-6 rounded-xl border border-border/70 bg-background/50 p-4 transition-all duration-300 target:border-primary target:bg-primary/5 target:ring-2 target:ring-primary/30"
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Command className="h-4 w-4 text-primary" aria-hidden />
+            <h3 className="text-xs font-semibold tracking-tight text-foreground">
+              快捷键与键盘微动作速查矩阵
+            </h3>
+          </div>
+          <span className="text-[10px] text-muted-foreground font-mono">
+            Focus Model &amp; Shortcuts
+          </span>
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-xs">
+          <div className="rounded-lg border border-border/50 bg-card/40 p-2.5 space-y-1.5">
+            <span className="text-[11px] font-medium text-foreground">全局直达与唤醒</span>
+            <ul className="space-y-1 text-[11px] text-muted-foreground">
+              <li className="flex items-center justify-between">
+                <span>唤醒全局搜索与命令</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K 或 /</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>进入工作台 DIY 排版</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">E</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>回到页面顶部</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Home / ↑</kbd>
+              </li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg border border-border/50 bg-card/40 p-2.5 space-y-1.5">
+            <span className="text-[11px] font-medium text-foreground">卡片单焦点键盘动作 (A11y)</span>
+            <ul className="space-y-1 text-[11px] text-muted-foreground">
+              <li className="flex items-center justify-between">
+                <span>Tab 遍历卡片（单焦点模型）</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Tab / ⇧Tab</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>卡片原地展开速览</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Space 空格</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>进入卡片内操作区</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">→</kbd>
+              </li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg border border-border/50 bg-card/40 p-2.5 space-y-1.5 sm:col-span-2 lg:col-span-1">
+            <span className="text-[11px] font-medium text-foreground">弹窗与速览层控制</span>
+            <ul className="space-y-1 text-[11px] text-muted-foreground">
+              <li className="flex items-center justify-between">
+                <span>关闭当前弹窗 / 速览层</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>搜索结果首项回车直达</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Enter ↵</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>快速清理当前输入</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Ctrl+U</kbd>
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     </section>
   )

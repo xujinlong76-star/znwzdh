@@ -825,7 +825,10 @@ describe("热度榜小卡：量纲要对得上，缺测不许编数", () => {
 });
 
 describe("分类推荐：字符串重合度不许冒充 AI 置信度", () => {
-  const ui = codeOnly(readFileSync(overlayFile("src/components/navigation-content.tsx"), "utf8"));
+  // 这张推荐卡片原先内联在首页的「自定义站点」表单里，后来随表单一起抽成了
+  // 独立组件 AddSiteDialog，取样文件跟着迁移。断言意图不变：
+  // 界面必须自证这是本地字符串重合度，不是 AI 判断。
+  const ui = codeOnly(readFileSync(overlayFile("src/components/add-site-dialog.tsx"), "utf8"));
   const overlayLib = codeOnly(readFileSync(overlayFile("src/lib/modular/diy-presets.ts"), "utf8"));
   const core = codeOnly(readFileSync(repoFile("packages/core/src/diy-layout/suggestion.ts"), "utf8"));
 
@@ -850,7 +853,9 @@ describe("分类推荐：字符串重合度不许冒充 AI 置信度", () => {
   it("界面写「按关键词推荐 / 本地字符串匹配，不是 AI 判断」，并给出命中理由", () => {
     expect(ui).toContain("按关键词推荐分类");
     expect(ui).toContain("本地字符串匹配，不是 AI 判断");
-    expect(ui).toContain("categorySuggestion.matchReason");
+    // 组件化后 prop 名从 categorySuggestion 简化为 suggestion，
+    // 但「必须把命中理由渲染出来」这条不变。
+    expect(ui).toMatch(/suggestion\.matchReason/);
     expect(ui).toContain("重合度");
     expect(ui).not.toContain("AI 推荐分类");
     // 闪光图标是这个含义的视觉承诺，换成标签图标

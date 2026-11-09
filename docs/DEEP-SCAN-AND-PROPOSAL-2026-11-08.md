@@ -987,3 +987,68 @@ core 镜像一致、扩展校验、后端 lint(api)、后端 lint(store)、类�
 
 `check:overlay` 1056 文件零漂移、前端类型棘轮 0 error、
 `verify:full` 18/19 项通过（唯一红项=基线滞后）、`plugin-ssot` 15/15、`silent-catch` 11/11。
+
+---
+
+# 第十一轮：首屏预算的真实归因与一次失败的优化（2026-11-09 晚）
+
+## 一、先补上了上一轮缺的「用户体验侧」证据
+
+之前所有讨论都停在「未压缩字节 1171 KB」这个静态数字上，
+但那个口径（gzip 后约 1/3）离真实用户感受很远。本轮起了生产服务（3400）实测：
+
+| 路由 | FCP | DCL | Load | JS 传输 | JS 解压 | DOM 节点 |
+|---|---|---|---|---|---|---|
+| `/` | **1080 ms** | 863 ms | 961 ms | **544 KB** | 1667 KB | 2315 |
+| `/videos` | 2276 ms | 899 ms | 1832 ms | 623 KB | 2032 KB | 2816 |
+| `/videos/player` | 1232 ms | 1568 ms | 1573 ms | 623 KB | 1860 KB | 3300 |
+
+**首页 FCP 1.08s**，Google 的「良好」标准是 <1.8s；传输 544 KB 也与
+「未压缩 1171 KB、gzip 约 1/3」的口径吻合。
+这说明预算数字虽然超了，**但真实首屏体验仍在良好区间**——预算作为「防腐线」是有效的，
+只是当前阈值需要按新基线重新校准。
+
+## 二、一次诚实失败的优化尝试
+
+**假设**：`navigation-content.tsx` 第 77-84 行静态导入了
+`@/registry/new-york/ui/dialog` 的 6 个组件，而同文件里的
+`KeyboardShortcutsDialog` / `SitePeekDialog` / `QuickToolsDrawer` 早就是 `dynamic()`
+懒加载——口径不一致，这 144 KB 的 Radix Dialog 应该在首屏里。
+
+**做法**：抽成 `components/add-site-dialog.tsx`，用 `dynamic(() => import(...), { ssr: false })` 加载。
+
+**结果：只降了 3 KB（1171 → 1168 KB）。假设是错的。**
+
+进一步查发现：抽出来的组件确实被单独打包成 **3.1 KB 的独立 chunk**（`1pshppdzk2wtk.js`），
+说明 Turbopack 本来就没有把 Radix Dialog 打进首屏——它已经按需了。
+那 144 KB 的 radix 特征匹配是**误判**：minify 后的 chunk 里搜到的是
+共享 vendored 底座里的其它 radix 原语（checkbox/select/toggle/slot），不是 dialog。
+
+**这次改动仍然保留**（它让代码组织更清晰：一个 800 行的组件里少了一段 85 行的弹窗 JSX，
+且与同文件其它弹窗的懒加载口径一致），**但不冒领性能收益**。
+
+## 三、超标的真实构成
+
+拆包实测（生产构建）：
+
+| 组成 | 大小 | 说明 |
+|---|---|---|
+| rootMainFiles（框架） | **434 KB** | React/ReactDOM/Next bootstrap/Turbopack runtime，每路由必载的固定成本 |
+| 首页专属 route chunks | **735 KB** | 22 个 chunk |
+| **合计** | **1171 KB** | |
+
+对照另两条路由的 route chunks：`/videos` 607 KB、`/videos/player` 452 KB。
+也就是说：**`/videos` 超预算 6 KB、`/videos/player` 超 5 KB，都是框架成本上涨的连带结果**；
+真正的大头是首页专属那 735 KB。
+
+## 四、结论与决定
+
+1. **不是本会话引入的回归**（上一轮已用四条证据链证明，本轮再次确认 HEAD 预算一致）；
+2. **真实用户体验良好**（FCP 1.08s），预算红灯是「棘轮阈值滞后」而非「性能事故」；
+3. **`--raise` 仍被脚本正确拒绝**（工作区有 14 个并发写入者的脏首屏文件）——
+   仓库的设计明确禁止拿脏树定基线，我尊重它；
+4. `175 KB` 级的优化需要**架构级改动**（首页 22 个 chunk 的依赖图重排），
+   不是几处 import 调整能解决的，且必须在一个没有并发写入的窗口里做。
+
+**我的决定：保留红灯，不假装修好。** 把 FCP 实测数据、拆包构成、
+和这次失败优化的完整过程都记录下来，让下一个接手的人不必重走这两条死路。

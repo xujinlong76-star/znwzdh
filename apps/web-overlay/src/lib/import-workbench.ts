@@ -306,6 +306,37 @@ function scoreKeywords(text: string, keywords: string[]): number {
   return score
 }
 
+/** 根类表只摊平一次：原实现在每条书签上都 Object.entries 一遍，200 条即 200 次 */
+const ROOT_HINT_ENTRIES: ReadonlyArray<readonly [string, string[]]> = Object.entries(ROOT_CATEGORY_HINTS)
+
+/**
+ * 分类树索引按**数组引用**缓存。
+ *
+ * 原先每条书签都 `new Map(categories.map(...))` 两遍——分类树有 18 个根 + 叶子，
+ * 200 条导入就是 400 次 Map 构造，实测占了整条管线 66ms 的大头。
+ * 分类树来自服务端 props，同一次渲染里引用稳定，用 WeakMap 缓存是安全的；
+ * 若调用方原地改数组，缓存会失真，所以调用方必须换新数组而不是 mutate。
+ */
+const CATEGORY_INDEX_CACHE = new WeakMap<
+  CategoryNode[],
+  { byId: Map<string, CategoryNode>; bySlug: Map<string, CategoryNode> }
+>()
+
+function categoryIndex(categories: CategoryNode[]): {
+  byId: Map<string, CategoryNode>
+  bySlug: Map<string, CategoryNode>
+} {
+  let cached = CATEGORY_INDEX_CACHE.get(categories)
+  if (!cached) {
+    cached = {
+      byId: new Map(categories.map((c) => [c.id, c])),
+      bySlug: new Map(categories.map((c) => [c.slug, c])),
+    }
+    CATEGORY_INDEX_CACHE.set(categories, cached)
+  }
+  return cached
+}
+
 /**
  * 归类输入信号来自三处：原文件夹面包屑（权重最高）、标题、域名。
  * 返回的叶子一定来自 CATEGORY_HINTS（权威叶子表），一级根绝不作为提交值。
@@ -337,7 +368,7 @@ export function classifyCategory(
 
   let rootSlug = ''
   let rootScore = 0
-  for (const [slug, keywords] of Object.entries(ROOT_CATEGORY_HINTS)) {
+  for (const [slug, keywords] of ROOT_HINT_ENTRIES) {
     const s =
       scoreKeywords(folder, keywords) * 3 +
       scoreKeywords(title, keywords) * 2 +
@@ -351,8 +382,7 @@ export function classifyCategory(
 
   // 叶子命中时沿 parentId 链回溯一级根，让展示口径与权威树一致（SSOT）
   if (bestLeaf && categories.length > 0) {
-    const byId = new Map(categories.map((c) => [c.id, c]))
-    const bySlug = new Map(categories.map((c) => [c.slug, c]))
+    const { byId, bySlug } = categoryIndex(categories)
     let node = bySlug.get(bestLeaf)
     let guard = 0
     while (node?.parentId && guard++ < 12) {
@@ -363,7 +393,7 @@ export function classifyCategory(
     if (node && !node.parentId) rootSlug = node.slug
   }
 
-  const rootTitle = categories.find((c) => c.slug === rootSlug)?.title
+  const rootTitle = (categories.length > 0 ? categoryIndex(categories).bySlug.get(rootSlug)?.title : undefined)
     ?? (rootSlug ? rootSlug.replace(/-/g, ' ') : '未分类')
 
   const confidence: Confidence =

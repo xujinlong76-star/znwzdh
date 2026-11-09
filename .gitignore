@@ -51,9 +51,10 @@ apps/web/src/lib/*
 apps/web/src/lib/plugins/*
 !apps/web/src/lib/plugins/plugin-manifest.ts
 
-# 存储接缝的测试（github.ts / storage-adapter.ts 是 NavHub 自己维护的文件，
-# 不是上游代码；根 vitest.config.ts 只放行 apps/web/test 这一个目录）
-!apps/web/test/
+# 2026-11-09 A-1：apps/web/test 是 apps/web-overlay/test 的生成物（vendor-web / mirror:web
+# 逐字节拷贝），不再跟踪。测试的事实源只有 apps/web-overlay/test/**；根 vitest.config.ts
+# 仍从 apps/web/test 运行（overlay 没有自己的 node_modules），所以本地改动测试后需先
+# `pnpm mirror:web`（或 vendor:web）把 overlay 同步进 apps/web 再跑。
 
 !apps/web/src/components/
 apps/web/src/components/*

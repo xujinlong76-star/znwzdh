@@ -99,9 +99,10 @@ function main() {
   const softTotal = (entry.gates ?? []).filter((g) => g.soft).length;
   const softNote = softTotal > 0 ? `（软门禁 ${softTotal} 道：红了不判红、也不挡路）` : "";
   // 可信度声明（run132）：`N 道门禁全部跑过` 说的是「判过」，而它推不出「类型过」——
-  // next.config 的 ignoreBuildErrors 把 next build 的内置类型检查关掉了，全仓唯一的整前端 tsc
-  // 在 test-web 的 web-typecheck。2026-10-30 直证（adf13b3a / d544274e）：同 commit 前端门禁
-  // =failure（8 条 error TS）时，线上 ISR 抽查、镜像冒烟、E2E 两个分片、覆盖层检查全部 success。
+  // 有的作业只 vendor / next start 前端产物，全仓唯一的整前端 tsc 在 test-web 的 web-typecheck。
+  // 2026-10-30 直证（adf13b3a / d544274e）：同 commit 前端门禁 =failure（8 条 error TS）时，
+  // 线上 ISR 抽查、镜像冒烟、E2E 两个分片、覆盖层检查全部 success。
+  // 2026-11-09：ignoreBuildErrors 关闭后，自己跑整前端 build 的作业已从登记表摘掉声明。
   // 一个作业看不到兄弟作业的结论（steps 上下文只有本作业的步骤，而 needs 要改工作流——不在范围内），
   // 所以这里只把「本作业的绿不含类型判定」说死，跨作业的连带标注交给 explain-ci-failure --defused。
   const trustNote = entry.typeTrust && !entry.typeTrust.self ? `｜${typeTrustNoteText(entry.typeTrust)}` : "";

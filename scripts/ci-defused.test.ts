@@ -1068,10 +1068,15 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
  * HarvestModal.tsx:238-247）那一轮，线上 ISR 抽查、镜像冒烟、E2E 两个分片、覆盖层检查全 success。
  *
  * 四条判据各配一次反向：漏登记、声明过期（作业里其实有了 tsc）、self 贴错作业、
- * 以及「配置已不再忽略类型错误 ⇒ 那句措辞成假话」。
+ * 以及「配置恢复构建期类型检查后，自己跑 build 的作业再带声明 ⇒ 过期」。
+ * 2026-11-09（S-6）起 ignoreBuildErrors 已关：只 vendor/next start 的作业继续带声明，
+ * 自己跑整前端 build 的两道（check-isr-live / docker-smoke）已摘掉。
  */
 describe("撤防账：可信度声明（哪些作业的绿不含前端类型判定）", () => {
-  const DEPENDENTS = ["test-sqlite", "check-isr-live", "check-web-overlay", "test-e2e", "docker-smoke"];
+  // 2026-11-09（S-6）后：只 vendor / next start、仍不判类型的 4 道带声明；
+  // check-isr-live 与 docker-smoke 自己跑整前端 build（ignoreBuildErrors 已关），声明被摘掉。
+  const DEPENDENTS = ["test-sqlite", "coverage", "test-e2e", "check-web-overlay"];
+  const BUILD_OWNERS = ["check-isr-live", "docker-smoke"];
 
   // cliText 住在上面那个 describe 里（作用域到不了这儿），这里自己起一份：
   // 真跑一次 CI 内那步读数，写侧与读侧走同一段代码，不拿夹具冒充。
@@ -1088,12 +1093,18 @@ describe("撤防账：可信度声明（哪些作业的绿不含前端类型判�
     return `${res.stdout ?? ""}${res.stderr ?? ""}`;
   }
 
-  it("真 ci.yml：5 道会构建/运行前端产物又没有整前端 tsc 的作业都带声明，权威作业带 self ⇒ 全部无问题", () => {
+  it("真 ci.yml：4 道只 vendor/运行前端产物又没有整前端 tsc 的作业都带声明，权威作业带 self ⇒ 全部无问题", () => {
     for (const job of DEPENDENTS) {
       expect(lib.reliesOnForeignTypecheck(jobBlock(job), job), job).toBe(true);
+      expect(lib.reliesOnForeignTypecheck(jobBlock(job), job, false), job).toBe(true);
       expect(entryOf(job).typeTrust?.dependsOnStepId, job).toBe("web-typecheck");
       expect(
         lib.typeTrustProblems({ jobBlock: jobBlock(job), entry: entryOf(job), ignoreBuildErrors: true }),
+        job,
+      ).toEqual([]);
+      // 构建期恢复类型检查后，只 vendor 的作业仍然不判类型 ⇒ 声明继续有效
+      expect(
+        lib.typeTrustProblems({ jobBlock: jobBlock(job), entry: entryOf(job), ignoreBuildErrors: false }),
         job,
       ).toEqual([]);
     }
@@ -1103,6 +1114,16 @@ describe("撤防账：可信度声明（哪些作业的绿不含前端类型判�
     expect(
       lib.typeTrustProblems({ jobBlock: jobBlock("test-web"), entry: entryOf("test-web"), ignoreBuildErrors: true }),
     ).toEqual([]);
+    // 自己跑整前端 build 的作业：ignoreBuildErrors 关掉后 build 期就判类型 ⇒ 不再依赖别处
+    for (const job of BUILD_OWNERS) {
+      expect(lib.reliesOnForeignTypecheck(jobBlock(job), job, true), job).toBe(true);
+      expect(lib.reliesOnForeignTypecheck(jobBlock(job), job, false), job).toBe(false);
+      expect(entryOf(job).typeTrust, job).toBeUndefined();
+      expect(
+        lib.typeTrustProblems({ jobBlock: jobBlock(job), entry: entryOf(job), ignoreBuildErrors: false }),
+        job,
+      ).toEqual([]);
+    }
     // 根本不碰前端产物的作业不许被算进来（audit / test-postgres 的说明注释里满是 next start 字样）
     for (const job of ["audit", "test-postgres"]) {
       expect(lib.reliesOnForeignTypecheck(jobBlock(job), job), job).toBe(false);
@@ -1120,7 +1141,11 @@ describe("撤防账：可信度声明（哪些作业的绿不含前端类型判�
   it("作业里其实已经有整前端 tsc 却仍带声明 ⇒ 那句「本作业不判整前端类型」被报成假话", () => {
     const moved = `${jobBlock("docker-smoke")}\n      - run: pnpm --filter navsphere exec tsc --noEmit\n        id: docker-tsc\n`;
     expect(lib.reliesOnForeignTypecheck(moved, "docker-smoke")).toBe(false);
-    const problems = lib.typeTrustProblems({ jobBlock: moved, entry: entryOf("docker-smoke"), ignoreBuildErrors: true });
+    const entry = {
+      ...entryOf("docker-smoke"),
+      typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
+    };
+    const problems = lib.typeTrustProblems({ jobBlock: moved, entry, ignoreBuildErrors: true });
     expect(problems.join("\n")).toContain("成了假话");
   });
 
@@ -1141,24 +1166,34 @@ describe("撤防账：可信度声明（哪些作业的绿不含前端类型判�
     expect(problems.join("\n")).toContain("typeTrust:{self:true}");
   });
 
-  it("next.config 不再 ignoreBuildErrors ⇒ 每句声明都报「口径已过期」（配置一改，账必须同步改）", () => {
+  it("next.config 恢复构建期类型检查后，自己跑整前端 build 的作业再带声明 ⇒ 报「声明已过期」", () => {
+    const entry = {
+      ...entryOf("check-isr-live"),
+      typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
+    };
     const problems = lib.typeTrustProblems({
       jobBlock: jobBlock("check-isr-live"),
-      entry: entryOf("check-isr-live"),
+      entry,
       ignoreBuildErrors: false,
     });
     expect(problems.join("\n")).toContain("ignoreBuildErrors");
-    expect(problems.join("\n")).toContain("已经没有这条");
+    expect(problems.join("\n")).toContain("已过期");
+    // 反过来：登记表里真的没有这条声明时，同一份 YAML 不再被判红
+    expect(
+      lib.typeTrustProblems({ jobBlock: jobBlock("check-isr-live"), entry: entryOf("check-isr-live"), ignoreBuildErrors: false }),
+    ).toEqual([]);
   });
 
   it("写侧与读侧闭环：CLI 那行账自带声明，parseDefusedTrace 能把它读回来", () => {
-    const text = cliOut("check-isr-live");
+    const text = cliOut("test-e2e");
     expect(text).toContain("本作业不判整前端类型");
     expect(text).toContain("全量判定只在 test-web 的 web-typecheck");
     const t = lib.parseDefusedTrace(text);
     expect(t.found).toBe(true);
     expect(t.trustNote).toBe(true);
     expect(t.trustDependsOn).toBe("test-web/web-typecheck");
+    // 自己跑整前端 build 的作业已摘掉声明 ⇒ 读侧也读不到 trustNote
+    expect(lib.parseDefusedTrace(cliOut("check-isr-live")).trustNote).toBe(false);
     // 权威作业自己不写这句（否则读者会以为 test-web 也没判类型）
     const self = lib.parseDefusedTrace(cliOut("test-web"));
     expect(self.trustNote).toBe(false);
@@ -1167,16 +1202,16 @@ describe("撤防账：可信度声明（哪些作业的绿不含前端类型判�
 
   it("跨作业连带标注：权威判红时只标注带声明的绿色作业，判绿时一个都不标", () => {
     const rows = [
-      { name: "线上 ISR 抽查", conclusion: "success", ...lib.parseDefusedTrace(cliOut("check-isr-live")) },
+      { name: "浏览器 E2E", conclusion: "success", ...lib.parseDefusedTrace(cliOut("test-e2e")) },
       { name: "前端门禁", conclusion: "failure", ...lib.parseDefusedTrace(cliOut("test-web")) },
     ];
     const red = lib.renderDefusedTable(rows, { job: "test-web", conclusion: "failure" });
-    expect(red[0]).toContain("建立在忽略类型错误的产物上");
-    expect(red[1]).not.toContain("忽略类型错误");
+    expect(red[0]).toContain("建立在未做整前端 tsc 的产物上");
+    expect(red[1]).not.toContain("未做整前端 tsc");
     const green = lib.renderDefusedTable(rows, { job: "test-web", conclusion: "success" });
-    expect(green.join("\n")).not.toContain("忽略类型错误");
+    expect(green.join("\n")).not.toContain("未做整前端 tsc");
     // 没传权威（读不到 test-web 那一行）时不许瞎标
-    expect(lib.renderDefusedTable(rows).join("\n")).not.toContain("忽略类型错误");
+    expect(lib.renderDefusedTable(rows).join("\n")).not.toContain("未做整前端 tsc");
   });
 
   it("拆掉「判据前先剥 YAML 注释」⇒ 只跑 pnpm audit 的作业被算成会构建前端产物", async () => {

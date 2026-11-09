@@ -46,30 +46,47 @@ export const GATE_STEP_RE =
  * 都在类型断裂的分支上。根 `pnpm run typecheck` 只覆盖 @navhub/*（packages/* + apps/api），
  * 前端全量 tsc 只有 ci.yml 里 `pnpm --filter navsphere exec tsc --noEmit` 那一处。
  *
- * 因此：凡「重建 / 构建 / 启动 / 打包前端产物」而自己没有整前端 tsc 的作业，
+ * 因此：凡「重建 / 启动 / 打包前端产物」而自己没有整前端 tsc 的作业，
  * 它的绿必须带上这句可信度声明。判据从 YAML 推（下面两条正则），不靠事故发现。
+ *
+ * 2026-11-09（S-6）：`ignoreBuildErrors` 已关掉，`next build` 恢复内置类型检查。
+ * 于是「作业自己跑整前端 build」的那几道（check-isr-live 的 `--filter navsphere build`、
+ * docker-smoke 的 Dockerfile.web）重新蕴含「类型过」，不再需要声明；
+ * 只 vendor / next start 的作业（test-sqlite / coverage / test-e2e / check-web-overlay）
+ * 仍然不判类型，声明继续有效。
  */
 export const FRONTEND_TYPECHECK_AUTHORITY = { job: "test-web", stepId: "web-typecheck" };
 
 /** 会重建/构建/启动/打包前端产物的命令形状（vendor 底座、next build、next start、镜像里的 Dockerfile.web） */
 export const WEB_PRODUCT_STEP_RE = /vendor-web\.mjs|--filter navsphere build|next start|Dockerfile\.web/;
 
+/** 会自己跑整前端 build 的形状：`ignoreBuildErrors` 关掉后，build 期会做内置类型检查 */
+export const WEB_BUILD_STEP_RE = /--filter\s+navsphere\s+build|Dockerfile\.web/;
+
 /** 真正「判整前端类型」的那一条：`pnpm --filter <web 包> exec tsc …`（根 typecheck 不算，它只覆盖 @navhub/*） */
 export const FRONTEND_TSC_STEP_RE = /--filter\s+\S+\s+exec\s+tsc\b/;
 
-/** 从 YAML 判定：这个作业依赖别的作业的类型结论 */
-export function reliesOnForeignTypecheck(jobBlock, jobName) {
+/**
+ * 从 YAML 判定：这个作业依赖别的作业的类型结论。
+ *
+ * `ignoreBuildErrors` 默认按 true 处理（历史口径）；只有显式传 false 时，
+ * 「自己跑整前端 build」的作业才被认定为自判类型。
+ */
+export function reliesOnForeignTypecheck(jobBlock, jobName, ignoreBuildErrors = true) {
   // 必须剥注释再判：ci.yml 的说明性注释里满是「next start」「vendor 重建 apps/web」这类字样，
   // 不剥就会把只跑 `pnpm audit` 的作业也算成「会构建前端产物」（同仓先例：级联红判定前先剥 YAML 注释）。
   const block = stripYamlCommentLines(String(jobBlock ?? ""));
   if (jobName === FRONTEND_TYPECHECK_AUTHORITY.job) return false;
-  return WEB_PRODUCT_STEP_RE.test(block) && !FRONTEND_TSC_STEP_RE.test(block);
+  if (!WEB_PRODUCT_STEP_RE.test(block)) return false;
+  if (FRONTEND_TSC_STEP_RE.test(block)) return false;
+  if (ignoreBuildErrors === false && WEB_BUILD_STEP_RE.test(block)) return false;
+  return true;
 }
 
 /** 账里那句可信度声明（写侧与读侧共用一份，改文案只改这里） */
 export function typeTrustNoteText(trust) {
   if (!trust?.dependsOnJob || !trust?.dependsOnStepId) return "";
-  return `可信度：本作业不判整前端类型——next build 的内置类型检查被 ignoreBuildErrors 关掉，全量判定只在 ${trust.dependsOnJob} 的 ${trust.dependsOnStepId}`;
+  return `可信度：本作业不判整前端类型——它只重建/运行前端产物、不做整前端 tsc，全量判定只在 ${trust.dependsOnJob} 的 ${trust.dependsOnStepId}`;
 }
 
 const TYPE_TRUST_NOTE_RE = /不判整前端类型[\s\S]*?全量判定只在 ([A-Za-z0-9_.-]+) 的 ([A-Za-z0-9_.-]+)/;
@@ -113,20 +130,24 @@ export function typeTrustProblems({ jobBlock, entry, ignoreBuildErrors }) {
     );
   }
 
-  const derived = reliesOnForeignTypecheck(block, job);
+  const derived = reliesOnForeignTypecheck(block, job, ignoreBuildErrors);
   const declared = Boolean(trust);
 
   if (derived && !declared) {
     problems.push(
       `${job}: 这个作业会重建/构建/启动前端产物，自己却没有整前端 tsc（类型判定只在 ` +
         `${FRONTEND_TYPECHECK_AUTHORITY.job} 的 ${FRONTEND_TYPECHECK_AUTHORITY.stepId}），` +
-        "登记表里却没带 typeTrust——它的绿会被读成「类型也过了」，而 ignoreBuildErrors 让这个推论不成立",
+        "登记表里却没带 typeTrust——它的绿会被读成「类型也过了」",
     );
   }
   if (declared && !derived) {
+    const ownTsc = FRONTEND_TSC_STEP_RE.test(block);
     problems.push(
-      `${job}: 登记表带了 typeTrust，但作业里已经能找到整前端 tsc（或它根本不碰前端产物）——` +
-        "那句「本作业不判整前端类型」成了假话，请把 typeTrust 摘掉",
+      ownTsc
+        ? `${job}: 登记表带了 typeTrust，但作业里已经能找到整前端 tsc（或它根本不碰前端产物）——` +
+            "那句「本作业不判整前端类型」成了假话，请把 typeTrust 摘掉"
+        : `${job}: 登记表还带着 typeTrust，但 next.config 已经不再 ignoreBuildErrors，` +
+            "而本作业每次都会自己跑整前端 build（构建期已恢复类型检查）——这条声明已过期，请摘掉",
     );
   }
   if (declared) {
@@ -134,12 +155,6 @@ export function typeTrustProblems({ jobBlock, entry, ignoreBuildErrors }) {
       problems.push(
         `${job}: typeTrust 指向 ${trust.dependsOnJob}/${trust.dependsOnStepId}，而全仓唯一的整前端 tsc 是 ` +
           `${FRONTEND_TYPECHECK_AUTHORITY.job}/${FRONTEND_TYPECHECK_AUTHORITY.stepId}——指向别处等于没指`,
-      );
-    }
-    if (!ignoreBuildErrors) {
-      problems.push(
-        `${job}: 登记表的措辞写着「next build 的内置类型检查被 ignoreBuildErrors 关掉」，` +
-          "而 next.config 里已经没有这条了——构建期已恢复类型检查，请同步改写 lib/ci-defused.mjs 的口径",
       );
     }
   }
@@ -241,9 +256,8 @@ export const DEFUSED_GATES = [
   {
     job: "check-isr-live",
     reporterStepId: "defused-gates",
-    // 全程不跑 tsc（见下方 env 那套一次性预览站脚手架）⇒ 它的 success 只说明产物能跑，
-    // 不说明源码类型过（2026-10-30 直证：同 commit 前端门禁 failure、本作业 success）。
-    typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
+    // 2026-11-09：本作业自己跑 `pnpm --filter navsphere build`；ignoreBuildErrors 关掉后
+    // build 期会做整前端类型检查 ⇒ 不再需要可信度声明（声明在这里反而会被判过期）。
     // 这个作业的门禁全都挂在一套一次性预览站上（迁移/种子/中枢/next start）。
     // env 因此比别的作业多：它们的红不是「产品红」，而是「检查没跑成」——
     // 根因点名必须指得出是哪一层脚手架塌了（2026-10-23 起吃过 EADDRINUSE、
@@ -294,8 +308,8 @@ export const DEFUSED_GATES = [
     // 它们是这两个作业里**唯一**的判定，红会吞掉同作业后面的判定。
     job: "docker-smoke",
     reporterStepId: "defused-gates",
-    // Dockerfile.web 里跑的就是那个不判类型的 next build ⇒ 镜像冒烟通过 ≠ 类型过。
-    typeTrust: { dependsOnJob: "test-web", dependsOnStepId: "web-typecheck" },
+    // 2026-11-09：Dockerfile.web 里跑整前端 build；ignoreBuildErrors 关掉后
+    // 镜像构建本身就做类型检查 ⇒ 不再需要可信度声明。
     env: [],
     gates: [
       { id: "docker-api", label: "docker build Dockerfile.api" },
@@ -818,7 +832,7 @@ export function renderDefusedTable(rows, authority) {
       const env = r.envTotal === null ? "" : `（准备步骤 ${r.envTotal} 个在册）`;
       // 只在这行自己声明了「我不判整前端类型」时才连带标注：
       // 没声明的作业可能是权威本身（它自己判类型），拿 trustNote 当开关才不会误伤。
-      const trust = authorityRed && r.trustNote ? ` ⚠ ${authorityLabel}，本绿灯建立在忽略类型错误的产物上` : "";
+      const trust = authorityRed && r.trustNote ? ` ⚠ ${authorityLabel}，本绿灯建立在未做整前端 tsc 的产物上` : "";
       return `${name} ${r.conclusion || "?"} — ${r.gateTotal} 道门禁全部跑过${note}${soft}${env}${trust}`;
     }
     const blocker = r.blocker ? `根因 ${r.blocker}` : "根因读不出来";

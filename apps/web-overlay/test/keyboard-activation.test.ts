@@ -365,7 +365,7 @@ describe("这一版补齐的管理端两处", () => {
 
   it("导航卡片紧凑模式的操作行：键盘聚焦时可见（否则聚焦到看不见的按钮）", () => {
     const text = overlaySource("src/components/navigation-card.tsx");
-    const rows = text.match(/sm:group-hover:opacity-100/g) || [];
+    const rows = text.match(/sm:group-hover(?:\/card)?:opacity-100/g) || [];
     const focused = text.match(/focus-within:opacity-100/g) || [];
     expect(rows.length).toBeGreaterThanOrEqual(3);
     // 每一处 hover 才显形的地方，都必须同时支持 focus-within

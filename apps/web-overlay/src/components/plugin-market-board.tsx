@@ -76,6 +76,30 @@ const TOPIC_COLLECTIONS = [
   { id: 'bundle', title: '🧩 精选组合包', kind: 'bundle' },
 ] as const
 
+export function resolveActiveTopicId(kind: string, q: string, sort: MarketplaceSort): string {
+  if (q) {
+    const qTopic = TOPIC_COLLECTIONS.find((t) => 'q' in t && t.q === q)
+    if (qTopic && (!('kind' in qTopic) || qTopic.kind === kind)) {
+      return qTopic.id
+    }
+    return ''
+  }
+
+  if (kind) {
+    const kindTopic = TOPIC_COLLECTIONS.find((t) => 'kind' in t && t.kind === kind && !('q' in t))
+    if (kindTopic) {
+      return kindTopic.id
+    }
+    return ''
+  }
+
+  if (sort === 'trending') {
+    return 'trending'
+  }
+
+  return 'all'
+}
+
 const KIND_LABELS: Record<string, string> = {
   'site-pack': '网站包',
   'workspace-preset': '工作台预设',
@@ -113,7 +137,10 @@ export function PluginMarketBoard({
   const [kind, setKind] = useState('')
   const [sort, setSort] = useState<MarketplaceSort>(DEFAULT_MARKETPLACE_SORT)
   const [qInput, setQInput] = useState('')
-  const [activeTopicId, setActiveTopicId] = useState<string>('all')
+  // 两份查询串：qInput 跟着输入法即时走，q 是 150ms 防抖后的生效值。
+  // 声明顺序很关键——activeTopicId 会立刻读 q，把 q 放到后面就是 TDZ
+  // （ReferenceError: Cannot access 'q' before initialization，整页被 error boundary 接走）。
+  const [q, setQ] = useState('')
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -121,7 +148,9 @@ export function PluginMarketBoard({
     }, 150)
     return () => clearTimeout(timer)
   }, [qInput])
-  const [q, setQ] = useState('')
+
+  const activeTopicId = useMemo(() => resolveActiveTopicId(kind, q, sort), [kind, q, sort])
+
   const [filtersReady, setFiltersReady] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const [installTarget, setInstallTarget] = useState<HubPluginItem | null>(null)
@@ -303,9 +332,11 @@ export function PluginMarketBoard({
   ]
 
   const handleTopicClick = (topic: typeof TOPIC_COLLECTIONS[number]) => {
-    setActiveTopicId(topic.id)
     if (topic.id === 'all') {
-      resetFilters()
+      setKind('')
+      setQ('')
+      setQInput('')
+      setSort('popular')
     } else if (topic.id === 'trending') {
       setKind('')
       setQ('')
@@ -410,14 +441,7 @@ export function PluginMarketBoard({
               精选专题：
             </span>
             {TOPIC_COLLECTIONS.map((topic) => {
-              const isTopicActive =
-                activeTopicId === topic.id ||
-                (!activeTopicId && (
-                  (topic.id === 'all' && !kind && !q && sort !== 'trending') ||
-                  (topic.id === 'trending' && !kind && !q && sort === 'trending') ||
-                  ('kind' in topic && kind === topic.kind && !q) ||
-                  ('q' in topic && q === topic.q && !kind)
-                ))
+              const isTopicActive = activeTopicId === topic.id
               return (
                 <button
                   key={topic.id}
@@ -443,7 +467,7 @@ export function PluginMarketBoard({
             aria-label="按类型筛选"
             className="h-8 rounded-md border border-border-strong bg-background px-2 text-base sm:text-sm"
             value={kind}
-            onChange={(e) => { setKind(e.target.value); setActiveTopicId(e.target.value ? (TOPIC_COLLECTIONS.find(t => "kind" in t && t.kind === e.target.value)?.id || "") : ""); }}
+            onChange={(e) => setKind(e.target.value)}
           >
             <option value="">全部类型</option>
             <option value="site-pack">网站包</option>
@@ -456,7 +480,7 @@ export function PluginMarketBoard({
             aria-label="排序方式"
             className="h-8 rounded-md border border-border-strong bg-background px-2 text-base sm:text-sm"
             value={sort}
-            onChange={(e) => { setSort(e.target.value as MarketplaceSort); if (!kind && !q) { setActiveTopicId(e.target.value === "trending" ? "trending" : "all"); } else { setActiveTopicId(""); } }}
+            onChange={(e) => setSort(e.target.value as MarketplaceSort)}
           >
             <option value="trending">🔥 7天飙升榜</option>
             <option value="new">最新发布</option>
@@ -472,9 +496,14 @@ export function PluginMarketBoard({
               name="q"
               aria-label="搜索插件"
               value={qInput}
-              onChange={(e) => {
-                setQInput(e.target.value)
-                setActiveTopicId('')
+              onChange={(e) => setQInput(e.target.value)}
+              // 去掉显式「搜索」按钮后，回车必须能立刻提交：直接跳过 150ms 防抖，
+              // 与键盘/读屏用户按下「搜索」的语义等价（enterKeyHint 已声明 search）。
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  setQ(qInput.trim())
+                }
               }}
               placeholder="搜索名称、描述、!前缀、#标签…"
               enterKeyHint="search"
@@ -487,7 +516,6 @@ export function PluginMarketBoard({
                 onClick={() => {
                   setQInput('')
                   setQ('')
-                  setActiveTopicId('all')
                 }}
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
               >

@@ -119,7 +119,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
     await page.getByLabel('搜索插件').fill(name);
-    await page.getByRole('button', { name: '搜索', exact: true }).click();
+    await page.getByLabel('搜索插件').press('Enter');
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
     // 筛选条件写回地址栏，统一搜索 /marketplace?q=... 与刷新都能还原
     await expect(page).toHaveURL(/[?&]q=/);
@@ -243,7 +243,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
     await page.getByLabel('搜索插件').fill(name);
-    await page.getByRole('button', { name: '搜索', exact: true }).click();
+    await page.getByLabel('搜索插件').press('Enter');
     await expect(page.getByText('没有匹配的插件，换个筛选条件试试')).toBeVisible();
 
     // 3. 管理员审核上架（开放模式下自动通过一键进入）
@@ -260,7 +260,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
     await page.getByLabel('搜索插件').fill(name);
-    await page.getByRole('button', { name: '搜索', exact: true }).click();
+    await page.getByLabel('搜索插件').press('Enter');
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
   });
 
@@ -318,7 +318,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await page.getByLabel('按类型筛选').selectOption('theme');
     // 检索该插件
     await page.getByLabel('搜索插件').fill(themeName);
-    await page.getByRole('button', { name: '搜索', exact: true }).click();
+    await page.getByLabel('搜索插件').press('Enter');
     await expect(page.getByText(themeName, { exact: true }).first()).toBeVisible();
 
     // 4. 进入详情页并一键安装

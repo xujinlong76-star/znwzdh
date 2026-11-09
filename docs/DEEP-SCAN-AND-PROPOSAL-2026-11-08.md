@@ -2000,3 +2000,80 @@ exit=1
 
 `check-db-integrity` 现在覆盖 **9 项引用完整性 + 5 项保留策略积压**（exit 0）、
 前端 tsc 0 error (exit 0)、docs 43/43 (exit 0)。
+
+---
+
+# 第二十三轮：六维度体检，未发现新缺口（2026-11-10）
+
+延续上一轮「机制在、但没人看着」的角度，本轮系统扫了一遍**阈值/策略常量是否为孤儿**，
+并把 MCP、契约覆盖这两个此前没深入的面也测了。**结论：没有新缺口。**
+
+## 一、扫描方法：哪些「策略常量」没有任何门禁引用
+
+扫 `packages/**` 与 `apps/api/src/**` 里所有 `MAX_/MIN_/DEFAULT_/LIMIT/THRESHOLD/RETENTION/`
+`BUDGET/QUOTA/TTL` 类导出常量，共 20 个，其中 **19 个不被任何 `check-*.mjs` 引用**。
+
+但逐个查证后，绝大多数**不需要**专属门禁：
+
+| 常量 | 为什么不需要门禁 |
+|---|---|
+| `DEFAULT_EMBEDDING_CONFIG` / `DEFAULT_LLM` / `DEFAULT_GUARD` | 运行时配置默认值，由各自功能测试覆盖 |
+| `MAX_BATCH_ITEMS` / `MAX_SEARCH_QUERY_LENGTH` | 由 zod schema 直接约束，`tool-contract.test.ts` 已测 |
+| `MAX_JOB_ATTEMPTS` / `DEFAULT_SCHEDULES` | **已有守卫**：`upgrade-batch1.test.ts` 锁定「排期声明与实际间隔一致」 |
+| `DEFAULT_RETENTION_TARGETS` | 上一轮已补门禁（check-db-integrity） |
+
+### 值得单独说：`DEFAULT_ROLLUP_TARGETS`
+
+`packages/store/src/rollup.ts` 是比 retention **更完整**的机制：
+先把明细聚合成日统计（`events → events_daily`、`audit_logs → audit_daily`），再删明细。
+
+实测：**聚合表 `events_daily` / `audit_daily` 在当前库里都不存在**，rollup 从未运行过。
+但没有运行的原因是「超过 180 天的 events 有 0 行」——库是近期建立的，还没到需要聚合的时候。
+
+所以这不是缺陷，而是**机制就绪、尚未触发**。给它加门禁也没有意义：
+一条「聚合表存在性检查」在库年轻时会永远通过，等真有旧数据时又已经晚了。
+真正该看的是上一轮已经加好的「保留期积压」，rollup 是它的可选上游。
+
+## 二、MCP 层：111/111 通过
+
+`packages/mcp/test/` 8 个测试文件 **111 条全部通过**（含真实数据库读写）：
+
+- `mcp.test.ts`（60 条）：41 个工具的契约与行为，含 SSRF 判定、Wayback 查询等；
+- `tool-contract.test.ts`（19 条）：batch_import / health_check 的边界；
+- `mcp-http.test.ts`（15 条）：HTTP 传输；
+- `mcp-session-binding.test.ts` / `mcp-vault-owner-guard.test.ts` / `user-center-tools.test.ts` /
+  `http-body-encoding.test.ts` / `list-facets-tool.test.ts`。
+
+补充：MCP 不在中枢（:8787）上挂 HTTP 端点（`/mcp` 与 `/api/mcp` 都 404），
+它由 `apps/mcp` 独立进程提供——这与设计一致，不是缺路由。
+
+## 三、契约覆盖率：公开读 Top 20 全覆盖
+
+```
+写路由绑定：98/163（60%，allowlist 65）
+公开读绑定：28/170（Top 20：20/20）
+管理读绑定：7/34（读路由棘轮兜底）
+```
+
+未绑定的 65 条写路由**全部在 allowlist 里登记过**，属有意识的取舍（多为管理端低频操作）。
+公开读的前 20 条高频路由 **100% 有响应契约**，这是最该守住的那条线。
+
+## 四、门禁体系本身：25+ 个入口，无明显空缺
+
+`package.json` 里 verify/check 类脚本 25 个，覆盖：
+`verify`（三档）/ `verify:full` / `verify:all` / `verify:guards` / `verify:web` / `verify:ui` /
+`check:overlay` / `check:hub-policy` / `check:rest-contracts` / `check:generated` /
+`check:ci-gate` / `check:refs` / `check:boundaries` / `check:vendored` / `check:contracts` /
+`check:bundle` / `check:extensions` / `check:health-coverage` / `typecheck` ×3 / `test` / `test:e2e` …
+
+**这一层已经没有"该有但没有"的明显空缺。**
+
+## 五、状态
+
+| 检查 | 结果 |
+|---|---|
+| 数据库完整性 + 保留策略 | exit 0 |
+| MCP 测试 | 111/111，exit 0 |
+| 契约覆盖率 | exit 0（Top 20 全覆盖） |
+
+本轮**未改动生产代码**（只做验证与文档）。

@@ -100,14 +100,28 @@ test.describe('视频链路冒烟', () => {
     await expect(dialog.locator('a[href="/videos/player?id=e2e-video-1"]')).toBeVisible();
   });
 
-  test('/videos/v/:id 详情落地页：h1 与官方内嵌播放 iframe', async ({ page }) => {
+  test('/videos/v/:id 详情落地页：h1 与点击后加载的官方内嵌播放 iframe', async ({ page }) => {
     await page.goto(`/videos/v/${encodeURIComponent('e2e-video-1')}`, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('load', { timeout: 120_000 }).catch(() => {});
     await expect(page.locator('main#main-content h1').first()).toBeVisible({ timeout: 60_000 });
     await expect(page.getByText('MCP 实战第一课', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
 
-    // 播放面板 = 官方内嵌播放器 iframe（player.bilibili.com，详情页 SEO 内嵌）
+    /**
+     * 2026-11-08 隐私面整改：详情页默认不再直出 B 站 iframe（那会让访客一打开
+     * 页面就与 11 个第三方域名建连，含播放器行为埋点）。改为 click-to-load 门面。
+     *
+     * 断言覆盖两层语义，而不是简单删掉 iframe 检查：
+     *   1. 首屏只有门面、没有 iframe（隐私默认值）；
+     *   2. 用户主动点击后，官方内嵌播放器才出现且 src 仍指向 player.bilibili.com。
+     * 服务端直出的 VideoObject JSON-LD 不受影响（SEO 契约另行保证）。
+     */
     const embed = page.locator('iframe[title="MCP 实战第一课"]');
+    await expect(embed).toHaveCount(0);
+
+    const facade = page.getByRole('button', { name: /播放「MCP 实战第一课」/ });
+    await expect(facade).toBeVisible({ timeout: 30_000 });
+    await facade.click();
+
     await expect(embed).toBeVisible({ timeout: 30_000 });
     await expect(embed).toHaveAttribute('src', /player\.bilibili\.com/);
   });

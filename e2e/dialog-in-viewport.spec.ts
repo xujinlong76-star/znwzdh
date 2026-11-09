@@ -29,7 +29,7 @@ test.describe('核心旅程 6：对话框出现在视口内且可交互', () => 
     await page.goto('/');
 
     await page.getByRole('button', { name: /DIY 排版工坊/ }).click();
-    await expect(page.getByRole('button', { name: /完成编排/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /完成/ })).toBeVisible();
     await page.getByTitle('新建专属分类').click();
 
     const dialog = page.getByRole('dialog');
@@ -62,8 +62,8 @@ test.describe('核心旅程 6：对话框出现在视口内且可交互', () => 
     await page.goto('/');
 
     await page.getByRole('button', { name: /DIY 排版工坊/ }).click();
-    await expect(page.getByRole('button', { name: /完成编排/ })).toBeVisible();
-    await page.getByTitle('导出 / 导入配置 JSON').click();
+    await expect(page.getByRole('button', { name: /完成/ })).toBeVisible();
+    await page.getByTitle('排版蓝图 JSON 导入与导出').click();
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();

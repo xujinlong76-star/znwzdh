@@ -29,6 +29,71 @@ import { callLlm } from "../llm-usage.ts";
 import type { AppContext } from "../context.ts";
 import { safeJsonParse } from "./shared.ts";
 
+/** 动态配方候选（与 /api/ai/find 同一立场：模型只能在站内候选里挑） */
+interface RecipeCandidate {
+  id: string;
+  title: string;
+  url: string;
+  description: string;
+}
+
+/**
+ * 把模型给出的配方层逐条对回站内候选（与 ai-finder 的 validateModelPicks 同款纪律）：
+ *  - recommended / alternatives 先按 id 精确命中候选，再按标题精确/互含兜底；
+ *  - 命中后 id/title/url 一律换成候选的真实值（模型写错的网址不下发）；
+ *  - 对不回任何候选的条目直接丢弃；整层丢空就整层不要，一层不剩则返回 null
+ *    （调用方按「无动态配方」处理），不拿候选里的其他站点顶替——顶替出来
+ *    的阶段名与工具对不上，是另一种编造。
+ */
+function sanitizeRecipeLayers(
+  parsed: ArchitectureRecipe,
+  candidates: RecipeCandidate[],
+): ArchitectureRecipe | null {
+  const byId = new Map(candidates.map((c) => [c.id, c]));
+  const resolve = (entry: { id?: unknown; title?: unknown } | undefined): RecipeCandidate | null => {
+    if (!entry || typeof entry !== "object") return null;
+    if (typeof entry.id === "string" && byId.has(entry.id)) return byId.get(entry.id)!;
+    if (typeof entry.title === "string" && entry.title.trim()) {
+      const t = entry.title.trim().toLowerCase();
+      return (
+        candidates.find((c) => c.title.toLowerCase() === t) ??
+        candidates.find((c) => c.title.toLowerCase().includes(t) || t.includes(c.title.toLowerCase())) ??
+        null
+      );
+    }
+    return null;
+  };
+
+  const layers: ArchitectureRecipe["layers"] = [];
+  for (const layer of parsed.layers ?? []) {
+    const rec = resolve(layer?.recommended as { id?: unknown; title?: unknown });
+    if (!rec) continue;
+    const alternatives: NonNullable<ArchitectureRecipe["layers"][number]["alternatives"]> = [];
+    for (const alt of layer.alternatives ?? []) {
+      const c = resolve(alt as { id?: unknown; title?: unknown });
+      if (c && c.id !== rec.id && !alternatives.some((a) => a.id === c.id)) {
+        alternatives.push({ id: c.id, title: c.title, url: c.url });
+      }
+    }
+    layers.push({
+      ...layer,
+      recommended: {
+        id: rec.id,
+        title: rec.title,
+        url: rec.url,
+        description:
+          typeof layer.recommended?.description === "string" && layer.recommended.description
+            ? layer.recommended.description
+            : rec.description,
+        highlights: Array.isArray(layer.recommended?.highlights) ? layer.recommended.highlights : [],
+      },
+      alternatives,
+    });
+  }
+  if (layers.length === 0) return null;
+  return { ...parsed, layers };
+}
+
 export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -71,20 +136,17 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const hitIds = [...new Set((searchRes.hits ?? []).map((h) => h.siteId))];
       const byId = hitIds.length > 0 ? await ctx.repo.getSitesByIds(hitIds) : new Map();
       const matchedSites = hitIds.map((id) => byId.get(id)).filter((s) => Boolean(s));
-      const candidates =
-        matchedSites.length > 0
-          ? matchedSites.map((s) => ({
-              id: s!.id,
-              title: s!.title,
-              url: s!.url,
-              description: s!.description || "",
-            }))
-          : (await ctx.repo.listSites({ status: "active", limit: 15 })).map((s) => ({
-              id: s.id,
-              title: s.title,
-              url: s.url,
-              description: s.description || "",
-            }));
+      // 站内零召回就如实回空：旧实现会退到「全站前 15 个站点」让模型硬凑，
+      // 那批站点与查询毫无关系，凑出来的配方再真诚也是答非所问。
+      if (matchedSites.length === 0) {
+        return { item: null, items: [] };
+      }
+      const candidates = matchedSites.map((s) => ({
+        id: s!.id,
+        title: s!.title,
+        url: s!.url,
+        description: s!.description || "",
+      }));
 
       const candidateContext = candidates
         .slice(0, 8)
@@ -102,9 +164,10 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
       const prompt = `你是全球顶尖的场景化工具链架构师。用户搜索场景需求：「${q}」。
 请结合以下站内工具，定制一套包含 3 个阶段的精炼「场景工作流配方 (ArchitectureRecipe)」。
+硬约束：只能从下面的站内候选里选工具，recommended 与 alternatives 的 id 必须原样使用候选 id，title 与 url 必须与候选条目逐字一致；候选之外的工具一律不许出现。
 
 【站内候选工具】
-${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
+${candidateContext}
 
 请严格返回以下 JSON 格式（包含 3 个阶段 layers，文字精炼）：
 {
@@ -154,6 +217,13 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
       }
 
       if (parsed && parsed.title && Array.isArray(parsed.layers) && parsed.layers.length > 0) {
+        // 形状对不等于内容真：逐层对回站内候选，对不回的丢弃，一层不剩按无结果处理
+        parsed = sanitizeRecipeLayers(parsed, candidates);
+      } else {
+        parsed = null;
+      }
+
+      if (parsed) {
         parsed.id = parsed.id || `ai-recipe-${Date.now()}`;
         parsed.keywords = Array.isArray(parsed.keywords) ? parsed.keywords : [q];
         if (dynamicRecipeCache.size >= 100) {
@@ -222,6 +292,12 @@ ${candidateContext || "（可结合全球知名免费/主流工具推荐）"}
       const infoB = hitB
         ? `${hitB.title} (${hitB.url}): ${hitB.description || ""}`
         : rawB;
+
+      // 两侧都不在站内收录里时，矩阵只能靠模型记忆现编定价与优劣——不生成，
+      // 如实回「站内未收录，无法对比」；至少一侧有真实条目才允许展开。
+      if (!hitA && !hitB) {
+        return { ok: false, matrix: null };
+      }
 
       // 判据必须带上两侧的参考条目：矩阵里的品类/定价/优劣都是从这两条站点记录展开的。
       // 只按工具名缓存，站点被富化改写、或检索开始命中另一个同名工具之后，
@@ -811,18 +887,17 @@ ${candidateContext}
           return { ok: false, isActionable: false };
         }
 
-        // 校验 primaryTool 真实性并补全链接
-        const primaryMatch =
-          candidateSites.find(
-            (s) =>
-              s.title.toLowerCase().includes(parsed.primaryTool.title.toLowerCase()) ||
-              parsed.primaryTool.title.toLowerCase().includes(s.title.toLowerCase())
-          ) || candidateSites[0];
+        // 校验 primaryTool 真实性并补全链接：模型的标题必须真能对回某个候选。
+        // 旧实现对不上时静默拿候选第一名顶替、却仍挂着模型给原工具写的 whyBest
+        // 下发——理由与工具对不上，是另一种编造。现在对不上就如实回不可执行。
+        const primaryMatch = candidateSites.find(
+          (s) =>
+            s.title.toLowerCase().includes(parsed.primaryTool.title.toLowerCase()) ||
+            parsed.primaryTool.title.toLowerCase().includes(s.title.toLowerCase())
+        );
 
-        // candidateSites 为空时 find 与 [0] 都是 undefined —— 直接读 .id/.title 会崩。
-        // 这是「无候选站点」的合法降级路径（本站尚未收录任何站点），返回可解释的空结果。
         if (!primaryMatch) {
-          return { ok: true, cached: false, isActionable: false, actionSummary: "本站尚未收录可执行工具，建议先收录相关站点", primaryTool: null, steps: [], proTip: "", alternativeTool: undefined, model: res.model };
+          return { ok: true, cached: false, isActionable: false, actionSummary: "模型推荐与站内收录对不上，这次先不给方案", primaryTool: null, steps: [], proTip: "", alternativeTool: undefined, model: res.model };
         }
 
         let altMatch = undefined;

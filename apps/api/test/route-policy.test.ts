@@ -106,6 +106,8 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/account/resend-verification",
   "POST /api/account/reset-password",
   "POST /api/account/verify-email",
+  "POST /api/ai/chat",
+  "POST /api/ai/find",
   "POST /api/copilot/chat",
   "POST /api/crdt/sync",
   "POST /api/design/harmony",

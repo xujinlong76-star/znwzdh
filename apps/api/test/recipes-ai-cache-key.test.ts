@@ -38,6 +38,18 @@ function stubLlm() {
     }
     const n = generations.length + 1;
     generations.push(n);
+    // 配方场景的桩必须守「只从候选里挑」的规矩：从请求提示词的站内候选清单里
+    // 解析出第一条真实候选回选它。若按旧桩那样回一个候选外的编造工具，
+    // 路由的候选校验会把整层丢掉，缓存判据断言就测不到东西了。
+    let promptText = "";
+    try {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { messages?: Array<{ content?: string }> };
+      promptText = (body.messages ?? []).map((m) => m.content ?? "").join("\n");
+    } catch { /* 桩解析失败就走旧形状，仅影响配方层断言 */ }
+    const cand = promptText.match(/\[id:([^\]]+)\]\s*([^(\n]+?)\s*\((https?:[^)\s]+)\)/);
+    const recipeLayer = cand
+      ? { layerName: "L1", recommended: { id: cand[1], title: cand[2]!.trim(), url: cand[3], description: "桩回选真实候选" } }
+      : { layerName: "L1", recommended: { title: "声纹切分测试工具", url: "https://voice-cut.example.com" } };
     // 四个场景共用一个壳：scaffold 读 envTemplate、intent 读 steps[0]、
     // recipes 读 title、comparisons 读 verdict，都带上第几次生成。
     // steps 不带数字序号——序号是否被剥掉属展示层口径，本测试只验缓存判据。
@@ -53,7 +65,7 @@ function stubLlm() {
       proTip: "p",
       alternativeTool: { title: "声纹切分测试工具", reason: "开源" },
       title: `第${n}次生成的配方`,
-      layers: [{ layerName: "L1", recommended: { title: "声纹切分测试工具", url: "https://voice-cut.example.com" } }],
+      layers: [recipeLayer],
       verdict: `第${n}次选型结论`,
       itemA: { name: "甲", primaryPros: ["p"], tradeoffs: ["t"], bestFor: "b" },
       itemB: { name: "乙", primaryPros: ["p"], tradeoffs: ["t"], bestFor: "b" },

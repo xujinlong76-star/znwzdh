@@ -859,14 +859,20 @@ describe("F0 / E1 / E5 / E6 / E4 / E3 / F2 API", () => {
   });
 
   it("官方资源库热同步与 Taps 推荐源网络：seed-status、seed-sync 与 public taps", async () => {
-    // 1. 公开端点返回 featuredTaps 推荐列表
+    // 1. 公开端点返回 featuredTaps 推荐列表。
+    // 口径变更（2026-11-10 审计）：原先写死的 3 条 navhub-org/community-taps
+    // 外链实测全部 404，已摘除——本断言不再要求「至少 3 条死链」，只锁
+    // 契约本身：是数组；若将来恢复精选源，每条必须字段齐全。
     const publicTaps = await app.inject({ method: "GET", url: "/api/plugins/taps/public" });
     expect(publicTaps.statusCode).toBe(200);
     const pBody = publicTaps.json();
     expect(pBody.ok).toBe(true);
     expect(Array.isArray(pBody.featuredTaps)).toBe(true);
-    expect(pBody.featuredTaps.length).toBeGreaterThanOrEqual(3);
-    expect(pBody.featuredTaps[0].url).toContain("raw.githubusercontent.com");
+    for (const tap of pBody.featuredTaps) {
+      expect(typeof tap.id).toBe("string");
+      expect(typeof tap.name).toBe("string");
+      expect(typeof tap.url).toBe("string");
+    }
 
     // 2. 检查官方种子库状态
     const statusRes = await app.inject({ method: "GET", url: "/api/admin/plugins/seed-status" });

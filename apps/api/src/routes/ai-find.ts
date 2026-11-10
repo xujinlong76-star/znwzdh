@@ -55,6 +55,12 @@ export const aiFindRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         return { error: "INVALID_REQUEST", message: parsed.error.issues[0]?.message || "请求参数错误" };
       }
       const query = parsed.data.query.trim();
+      // 传了 sceneId 就必须真有这个场景包：静默忽略会让调用方以为在按
+      // 场景出结果、实际拿到普通找站，属假装成功。如实 400。
+      if (parsed.data.sceneId && !scenePackById(parsed.data.sceneId)) {
+        reply.code(400);
+        return { error: "INVALID_REQUEST", message: `场景包不存在：${parsed.data.sceneId}` };
+      }
       const scene = scenePackById(parsed.data.sceneId);
       const startedAt = Date.now();
 
@@ -78,18 +84,24 @@ export const aiFindRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         const groups: CandidateGroup[] = [];
         let retrievalFailed = false;
         if (scene) {
+          // 跨步骤全局去重：同一个站点只出现在它命中的第一个步骤里。
+          // 旧实现只在单步内去重，实测出现「百度地图在 3 个步骤里各来一次」。
+          const usedAcrossSteps = new Set<string>();
           for (const step of scene.steps) {
             const seen = new Set<string>();
             const sites: NavSite[] = [];
             for (const q of step.queries) {
-              const r = await retrieveCopilotCandidates(ctx, retrievalQueryOf(q));
+              const r = await retrieveCopilotCandidates(ctx, retrievalQueryOf(q), { pinCategory: false });
               if (r.failed) retrievalFailed = true;
               for (const s of r.sites) {
-                if (!seen.has(s.id)) { seen.add(s.id); sites.push(s); }
+                if (!seen.has(s.id) && !usedAcrossSteps.has(s.id)) { seen.add(s.id); sites.push(s); }
               }
               if (sites.length >= PER_STEP_LIMIT) break;
             }
-            if (sites.length > 0) groups.push({ label: step.label, sites: sites.slice(0, PER_STEP_LIMIT) });
+            if (sites.length > 0) {
+              for (const s of sites.slice(0, PER_STEP_LIMIT)) usedAcrossSteps.add(s.id);
+              groups.push({ label: step.label, sites: sites.slice(0, PER_STEP_LIMIT) });
+            }
           }
         } else {
           const r = await retrieveCopilotCandidates(ctx, retrievalQueryOf(query));

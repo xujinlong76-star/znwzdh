@@ -34,32 +34,20 @@ import type { AppContext } from "../../context.ts";
  */
 const MAX_TAP_IMPORT_ITEMS = Math.max(1, Number(process.env.NAVHUB_TAP_IMPORT_MAX || 500));
 
-export const FEATURED_TAPS = [
-  {
-    id: "featured:official-community",
-    name: "山羊胡官方精选社区源",
-    description: "由山羊胡官方严选审核的社区精品网址包、小众利基工具与垂直领域扩展",
-    url: "https://raw.githubusercontent.com/navhub-org/community-taps/main/featured.json",
-    isFeatured: true,
-    author: "山羊胡官方",
-  },
-  {
-    id: "featured:ai-innovations",
-    name: "全球前沿 AI 智能体生态源",
-    description: "收录全球高频更新的 AI 智能体、MCP 工具、开源大模型端侧推理生态",
-    url: "https://raw.githubusercontent.com/navhub-org/community-taps/main/ai-agents.json",
-    isFeatured: true,
-    author: "AI Eco Labs",
-  },
-  {
-    id: "featured:homelab-geeks",
-    name: "极客自托管 HomeLab 工具箱",
-    description: "私有云、NAS、Docker 模板、家庭网络与隐私保护精品导航",
-    url: "https://raw.githubusercontent.com/navhub-org/community-taps/main/homelab.json",
-    isFeatured: true,
-    author: "HomeLab 爱好者联盟",
-  },
-];
+/**
+ * 精选订阅源：2026-11-10 审计实测，原先写死的三条 navhub-org/community-taps
+ * 外链（featured.json / ai-agents.json / homelab.json）全部返回 404——源根本
+ * 不存在，却以「官方严选」名义展示给用户订阅，订阅必然失败。已全部摘除；
+ * 之后要恢复精选源，先把真实清单文件发布到可访问的地址、验证 200 再加回来。
+ */
+export const FEATURED_TAPS: Array<{
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  isFeatured: boolean;
+  author: string;
+}> = [];
 
 export const pluginRoutesPart5: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;

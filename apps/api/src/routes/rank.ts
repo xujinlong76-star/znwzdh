@@ -220,13 +220,19 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
 
     let candidates = body.data.candidates;
     if (!candidates || candidates.length === 0) {
-      const sites = await ctx.repo.listSites({ limit: 30 });
-      const dim = body.data.localVector.length || 4;
-      candidates = sites.map((s, idx) => ({
-        id: s.id,
-        name: s.title,
-        featureVector: Array.from({ length: dim }, (_, i) => Math.round((Math.sin(idx + i + 1) * 0.5 + 0.5) * 100) / 100),
-      }));
+      // 调用方没给候选就没有可排序的对象。旧实现拿站内前 30 个站点、再用
+      // Math.sin 现编特征向量打分下发——分数全是假的，推荐再像样也是编造。
+      // 如实回空并标注原因，等调用方带真实候选再算。
+      return {
+        ok: true,
+        count: 0,
+        recommendations: [],
+        degraded: "no_candidates",
+        notice: "未提供候选站点及其特征向量，无法计算联邦推荐；本站不使用编造的特征向量凑结果。",
+        privacy: body.data.privatize
+          ? { epsilon: body.data.epsilon, privatizedVector: privatizeVector(body.data.localVector, body.data.epsilon) }
+          : undefined,
+      };
     }
 
     const globalVec = body.data.globalVector ?? body.data.localVector.map(() => 0.5);

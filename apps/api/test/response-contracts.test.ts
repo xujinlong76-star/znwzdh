@@ -517,7 +517,13 @@ describe("真实响应满足契约", () => {
     expectContract(PublicPluginTapsResponse, body, "GET /api/plugins/taps/public");
     expect(body.items.length).toBe(1);
     expect(body.items[0].url, "公开面泄露了订阅源地址").toBeUndefined();
-    expect(body.featuredTaps.length).toBeGreaterThan(0);
+    // 精选源口径（2026-11-10 审计）：原写死外链实测全 404 已摘除，featuredTaps
+    // 允许为空数组；只锁契约（数组 + 条目字段），不再要求必须有精选源。
+    expect(Array.isArray(body.featuredTaps)).toBe(true);
+    for (const tap of body.featuredTaps) {
+      expect(typeof tap.id).toBe("string");
+      expect(typeof tap.name).toBe("string");
+    }
   });
 
   it("GET /api/plugins/taps：管理面带完整源（含 url）", async () => {
@@ -529,7 +535,13 @@ describe("真实响应满足契约", () => {
     expectContract(PluginTapsResponse, body, "GET /api/plugins/taps");
     expect(body.items[0].url).toBe(TAP_URL);
     expect(body.items[0].enabled).toBe(true);
-    expect(body.featuredTaps.length).toBeGreaterThan(0);
+    // 精选源口径（2026-11-10 审计）：原写死外链实测全 404 已摘除，featuredTaps
+    // 允许为空数组；只锁契约（数组 + 条目字段），不再要求必须有精选源。
+    expect(Array.isArray(body.featuredTaps)).toBe(true);
+    for (const tap of body.featuredTaps) {
+      expect(typeof tap.id).toBe("string");
+      expect(typeof tap.name).toBe("string");
+    }
   });
 
   it("GET /api/sites/{id}：单站详情与列表同形", async () => {

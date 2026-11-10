@@ -28,6 +28,8 @@ PUT /api/user/ai/config | 用户自带 provider 配置视图，字段集由 prov
 DELETE /api/user/ai/config | 同上：删除后回传缺省配置视图
 POST /api/user/ai/config/test | provider 探测结果随目标 API 的响应结构变化
 POST /api/user/ai/chat | 用户自带 provider 的聊天响应：含流式/非流式分支，正文由模型输出
+POST /api/ai/find | AI 找站：响应含模型生成的理由文本与 mode/degraded 分支的可选字段（quota/scene/steps），形状随降级路径变化，已由 ai-find.test.ts 逐分支覆盖
+POST /api/ai/chat | 小猫猫对话：回复正文与推荐理由由模型生成，降级时切换本地口径字段，已由 ai-chat.test.ts 逐分支覆盖
 POST /api/user/ai/canvas/generate | AI 画布生成：结构化内容由模型按提示生成
 POST /api/user/ai/plugin/generate | AI 插件生成：清单与文件由模型输出
 POST /api/tools/synthesize | 工具合成：结果由模型与检索上下文动态生成

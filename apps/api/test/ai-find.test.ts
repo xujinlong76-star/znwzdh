@@ -228,3 +228,58 @@ describe("模型路径：编造 siteId 被丢弃", () => {
     expect(JSON.stringify(body)).not.toContain("编造站点的理由");
   });
 });
+
+describe("分类意图置顶与场景纪律（本轮审计修复）", () => {
+  it("查询点名分类时，该分类头牌被钉在候选最前（本地降级序也成立）", async () => {
+    const cat = await ctx.repo.createCategory({ title: "免费短剧", slug: "free-drama-pin" });
+    const head = await ctx.repo.createSite({
+      url: "https://hongguo-pin.example.com",
+      title: "红果剧场",
+      description: "手机看剧应用",
+      categoryId: cat.id,
+      tags: ["短剧"],
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/ai/find",
+      payload: { query: "我想看免费短剧" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.recommendations.length).toBeGreaterThan(0);
+    expect(body.recommendations[0].siteId).toBe(head.id);
+  });
+
+  it("未知 sceneId 如实 400，不再静默当普通找站", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/ai/find",
+      payload: { query: "随便找找", sceneId: "no-such-scene" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("INVALID_REQUEST");
+  });
+});
+
+describe("分类置顶：一级分类无直属站点时下探二级", () => {
+  it("只点名一级分类，头牌在二级里也能被置顶", async () => {
+    const top = await ctx.repo.createCategory({ title: "短剧宇宙", slug: "drama-universe" });
+    const sub = await ctx.repo.createCategory({ title: "免费专区", slug: "free-zone", parentId: top.id });
+    const head = await ctx.repo.createSite({
+      url: "https://hongguo-universe.example.com",
+      title: "红果宇宙版",
+      description: "手机看剧应用",
+      categoryId: sub.id,
+      tags: ["短剧"],
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/ai/find",
+      payload: { query: "短剧宇宙里有什么好看的" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.recommendations.length).toBeGreaterThan(0);
+    expect(body.recommendations[0].siteId).toBe(head.id);
+  });
+});

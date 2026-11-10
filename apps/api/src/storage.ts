@@ -15,7 +15,8 @@
  */
 import type { AppContext } from "./context.ts";
 import { getEnhancedSiteData, resolveSiteIcon, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
-import { countVideoItems } from "@navhub/store";
+import { countVideoItems, slugify } from "@navhub/store";
+import { indexSitesBatch } from "./index-site.ts";
 import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncReplacementHistorySafely, syncVideoCatalogSafely, VIDEO_REPLACEMENTS_PATH } from "./video-catalog.ts";
 
 /** 外置替换审计文档的 basename（路径事实源在 video-catalog.ts，避免两处硬编码漂移） */
@@ -437,7 +438,11 @@ export async function writeNavigationData(
   data: NsNavigationData,
   guard: ShrinkGuardOptions = {},
 ): Promise<{ categories: number; sites: number }> {
-  return await ctx.repo.withTransaction(async () => {
+  // 标签同步与向量回填在主事务提交后执行（setSiteTags 自带事务、向量索引在
+  // 库外，都不能嵌套进主事务）：事务内只收集待办，提交后逐项落实。
+  const pendingTagSync: Array<{ id: string; tags: string[] }> = [];
+  const pendingReindexIds = new Set<string>();
+  const result = await ctx.repo.withTransaction(async () => {
     const input = Array.isArray(data?.navigationItems) ? data.navigationItems : [];
     let categoryCount = 0;
     let siteCount = 0;
@@ -608,6 +613,40 @@ export async function writeNavigationData(
       );
     }
 
+    // 标签同步的待办收集：SnapshotSiteWrite 刻意不带 tags（批量写行不碰标签表），
+    // 于是在此之前，新导入的站点永远没有标签、文件里改了标签也永不生效——
+    // 搜索的标签通道与「相似站点」对这批站点恒哑。这里把快照文件里的 tags
+    // 与库内现有标签（slug 口径）逐站比对，有差异的记入 pendingTagSync，
+    // 事务提交后由 setSiteTags 落实。（标签不进 embedding 文本——
+    // siteEmbeddingText 只用标题/简介/网址——故标签变化本身不需要重建向量；
+    // 需要重建的是标题/简介/网址真变了的站点，见下方 pendingReindexIds。）
+    const tagsById = new Map<string, string[]>();
+    for (const top of input) {
+      for (const item of top.items ?? []) {
+        if (Array.isArray(item.tags)) tagsById.set(item.id, item.tags);
+      }
+      for (const sub of top.subCategories ?? []) {
+        for (const item of sub.items ?? []) {
+          if (Array.isArray(item.tags)) tagsById.set(item.id, item.tags);
+        }
+      }
+    }
+    const insertedOrRevived = new Set([...toInsert, ...toRevive].map((r) => r.id));
+    for (const row of snapshotSites) {
+      const desired = tagsById.get(row.id);
+      if (!desired) continue;
+      const existingSlugs = new Set((siteIndex.get(row.id)?.tags ?? []).map((t) => slugify(t)));
+      const desiredSlugs = new Set(desired.map((t) => slugify(t)));
+      const differs =
+        insertedOrRevived.has(row.id) ||
+        existingSlugs.size !== desiredSlugs.size ||
+        [...desiredSlugs].some((s) => !existingSlugs.has(s));
+      if (differs) {
+        pendingTagSync.push({ id: row.id, tags: desired });
+      }
+    }
+    for (const row of [...toUpdate, ...toInsert, ...toRevive]) pendingReindexIds.add(row.id);
+
     // 快照语义：本次未出现的「前端托管」站点/类目视为被删除。
     // 这是"全量对齐"必须付的代价，也是它比 diff 更可靠的原因。
     // 但删除范围被 source 严格限界（D1 缺陷修复）：经 API/MCP/AI/投稿创建的
@@ -637,6 +676,18 @@ export async function writeNavigationData(
     }
     return { categories: categoryCount, sites: siteCount };
   });
+
+  // 主事务已提交：落实标签同步与向量回填。单站失败不回滚已提交的导航数据
+  // （与上方 vectors.remove 的处理一致），下一次整包导入会再次比对补齐。
+  for (const t of pendingTagSync) {
+    await ctx.repo.setSiteTags(t.id, t.tags).catch(() => undefined);
+  }
+  if (pendingReindexIds.size > 0) {
+    const fresh = await ctx.repo.getSitesByIds([...pendingReindexIds]);
+    const items = [...fresh.values()].map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
+    await indexSitesBatch(ctx, items).catch(() => undefined);
+  }
+  return result;
 }
 
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];

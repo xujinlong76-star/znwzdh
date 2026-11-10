@@ -91,6 +91,7 @@ export function retrievalQueryOf(message: string): string {
 export async function retrieveCopilotCandidates(
   ctx: AppContext,
   query: string,
+  opts: { pinCategory?: boolean } = {},
 ): Promise<CopilotRetrieval> {
   try {
     const result = await ctx.search.search({
@@ -98,7 +99,46 @@ export async function retrieveCopilotCandidates(
       limit: COPILOT_RETRIEVAL_LIMIT,
       statuses: ["active"],
     });
-    const ids = [...new Set(result.hits.map((h) => h.siteId))];
+    const searchIds = [...new Set(result.hits.map((h) => h.siteId))];
+
+    // 分类意图置顶：查询里点名了某个分类（如「我想看免费短剧」命中分类
+    // 「免费短剧」/「短剧」）时，把该分类按编辑顺序的前几站钉在候选最前。
+    // 为什么必须有这一层：混合检索的 RRF 融合不看分类归属，红果这类
+    // 「分类里的头牌」会被语义相近的大站挤出 12 条候选，模型再会挑也
+    // 无米下炊（实测翻车两次）。置顶只挪顺序、不造数据：站点全部来自
+    // 该分类的真实收录。场景包的步骤检索不启用（步骤问的是工具链，
+    // 把观看类站点钉进创作步骤是帮倒忙），由调用方显式关掉。
+    let pinnedIds: string[] = [];
+    if (opts.pinCategory !== false) {
+      try {
+        const categories = await ctx.repo.listCategories();
+        const q = query.toLowerCase();
+        const matched = categories
+          .filter((c) => c.title && c.title.trim().length >= 2 && q.includes(c.title.trim().toLowerCase()))
+          .sort((a, b) => b.title.length - a.title.length)[0];
+        if (matched) {
+          let catSites = await ctx.repo.listSites({ categoryId: matched.id, status: "active", limit: 4 });
+          if (catSites.length === 0) {
+            // 一级分类常把站点都放在二级下（如「短剧」直属 0 站、红果在
+            // 「免费短剧」里）：直属取空时按子分类顺序下探补满，否则
+            // 「看短剧」这类只点名一级的查询置顶不到任何站（实测翻车）。
+            const children = categories
+              .filter((c) => c.parentId === matched.id)
+              .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
+            for (const child of children) {
+              if (catSites.length >= 4) break;
+              const sub = await ctx.repo.listSites({ categoryId: child.id, status: "active", limit: 4 - catSites.length });
+              catSites = [...catSites, ...sub];
+            }
+          }
+          pinnedIds = catSites.map((s) => s.id);
+        }
+      } catch {
+        /* 分类置顶失败不拖垮主检索：退回纯搜索候选 */
+      }
+    }
+
+    const ids = [...pinnedIds, ...searchIds.filter((id) => !pinnedIds.includes(id))];
     if (ids.length === 0) return { citations: [], sites: [], failed: false };
     const byId = await ctx.repo.getSitesByIds(ids);
     // 搜索命中只保证 id 存在；按召回顺序还原整行信息，排序就是引用顺序的依据

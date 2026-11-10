@@ -86,8 +86,10 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
           prefill: {
             title: scrapedTitle || fallbackHost,
             description: scrapedDesc || `${scrapedTitle || fallbackHost} 官方网站与生产力工具。`,
-            category: catTree[0]?.id || "",
-            subcategory: catTree[0]?.subCategories?.[0]?.id || "",
+            // 分类判断不了就留空让用户自己选，不许默认塞分类树第一个——
+            // 与内容无关的预填分类只会污染目录（旧行为）。
+            category: "",
+            subcategory: "",
             submitterNote: "系统启发式提取",
           },
           fallback: true,
@@ -145,8 +147,9 @@ ${catSpec || "无指定分类树"}
           prefill: {
             title: String(parsed?.title || scrapedTitle || fallbackHost).trim().slice(0, 100),
             description: String(parsed?.description || scrapedDesc || "").trim().slice(0, 400),
-            category: matchedCat?.id || catTree[0]?.id || "",
-            subcategory: matchedSub?.id || matchedCat?.subCategories?.[0]?.id || "",
+            // 模型给的分类对不回分类树就留空，不拿第一个分类/子类顶替
+            category: matchedCat?.id || "",
+            subcategory: matchedSub?.id || "",
             submitterNote: String(parsed?.submitterNote || "").trim().slice(0, 300),
           },
           model: res.model,
@@ -158,8 +161,8 @@ ${catSpec || "无指定分类树"}
           prefill: {
             title: scrapedTitle || fallbackHost,
             description: scrapedDesc || `${scrapedTitle || fallbackHost} 在线工具与资源站点。`,
-            category: catTree[0]?.id || "",
-            subcategory: catTree[0]?.subCategories?.[0]?.id || "",
+            category: "",
+            subcategory: "",
             submitterNote: "",
           },
           fallback: true,

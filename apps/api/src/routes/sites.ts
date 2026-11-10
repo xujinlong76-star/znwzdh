@@ -229,16 +229,19 @@ ${peerContext}
       if (!parsed || typeof parsed !== "object") {
         // 解析不出来 = 这一轮并没有真正产出。回给用户，但**不落库**：
         // 写进去就是把一次抖动固化成永久文案，之后再也纠不回来。
+        // 降级体只许放真实数据：简介用站点自己的、标签用站点自己的、
+        // 平替用同类真实站点；收费/门槛/优劣一律写「未知」，绝不编造
+        // （旧版写死「基础免费+进阶订阅/功能全面」是拿假分析冒充真分析）。
         return {
           success: true,
           radar: {
             summary: site.description || site.title,
-            pricingType: "基础免费+进阶订阅",
-            pricingWarning: "请留意官方最新收费与额度政策",
-            accessRequirement: "需注册账号",
-            bestForScenarios: site.tags?.slice(0, 2) || ["高效工作流"],
-            pros: ["功能全面", "交互流畅"],
-            cons: ["高级特性需订阅"],
+            pricingType: "未知",
+            pricingWarning: "AI 分析这次没有生成成功，收费情况请以官网为准",
+            accessRequirement: "未知",
+            bestForScenarios: site.tags?.slice(0, 2) ?? [],
+            pros: [],
+            cons: [],
             directAlternatives: peers.slice(0, 2).map((p) => p.title),
             peerLinks: peers.slice(0, 2).map((p) => ({ id: p.id, title: p.title, url: p.url })),
           },
@@ -304,16 +307,18 @@ ${peerContext}
       };
     } catch (err) {
       req.log.warn({ err: String(err) }, "站点 AI 透视生成降级");
+      // 与解析失败分支同一口径：降级只给真实数据，收费/门槛/优劣写「未知」，
+      // 不再写死「免登录可用/即开即用」这类无依据结论（与另一分支还互相矛盾）。
       return {
         success: true,
         radar: {
           summary: site.description || site.title,
-          pricingType: "免登录可用",
-          pricingWarning: "基于本地启发式规则分析，建议以官网实际为准",
-          accessRequirement: "免登录直连",
-          bestForScenarios: site.tags?.slice(0, 2) || ["高效工作流"],
-          pros: ["即开即用", "界面直观"],
-          cons: ["海外节点可能偶有网络延迟"],
+          pricingType: "未知",
+          pricingWarning: "AI 分析暂时不可用，收费情况请以官网为准",
+          accessRequirement: "未知",
+          bestForScenarios: site.tags?.slice(0, 2) ?? [],
+          pros: [],
+          cons: [],
           directAlternatives: peers.slice(0, 2).map((p) => p.title),
           peerLinks: peers.slice(0, 2).map((p) => ({ id: p.id, title: p.title, url: p.url })),
         },

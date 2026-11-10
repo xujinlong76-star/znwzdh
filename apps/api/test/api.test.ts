@@ -1847,7 +1847,7 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     expect(json.privacy.epsilon).toBe(1.0);
     expect(json.privacy.privatizedVector).toHaveLength(4);
 
-    // 候选缺省时自动基于库内站点生成
+    // 候选缺省时如实回空：不再拿库内站点编特征向量凑推荐（旧行为是假推荐）
     const autoRes = await app.inject({
       method: "POST",
       url: "/api/rank/federated",
@@ -1858,7 +1858,9 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     expect(autoRes.statusCode).toBe(200);
     const autoJson = autoRes.json();
     expect(autoJson.ok).toBe(true);
-    expect(autoJson.count).toBeGreaterThan(0);
+    expect(autoJson.count).toBe(0);
+    expect(autoJson.recommendations).toEqual([]);
+    expect(autoJson.degraded).toBe("no_candidates");
   });
 
   it("POST /api/speculation/rules 原生 W3C Speculation Rules 预渲染编译器", async () => {

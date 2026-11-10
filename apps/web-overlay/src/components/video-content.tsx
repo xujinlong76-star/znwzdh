@@ -3,8 +3,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
-import { VideoCard, VideoPlayerModal } from '@/components/video-card'
+import { VideoCard } from '@/components/video-card'
 import dynamic from 'next/dynamic'
+
+// 页面级单例播放弹窗：点开视频才加载，不占 /videos 首屏包体积。
+const VideoPlayerModal = dynamic(
+  () => import('@/components/video-player-modal').then(m => m.VideoPlayerModal),
+  { ssr: false }
+)
 
 const VideoAutoHarvestDialog = dynamic(
   () => import('@/components/video-auto-harvest-dialog').then(m => m.VideoAutoHarvestDialog),
@@ -14,7 +20,11 @@ import { Sidebar } from '@/components/sidebar'
 import { SearchBar } from '@/components/search-bar'
 import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
-import { Footer } from '@/components/footer'
+// 页脚在折叠线以下：动态导入，给 /videos 首屏包让出最后一点预算（约 2KB 缺口）。
+const Footer = dynamic(
+  () => import('@/components/footer').then(m => m.Footer),
+  { ssr: false }
+)
 import { MonitorPlay, Menu, Home, Sparkles, Clock, Layers, ChevronRight, ChevronDown, ChevronUp, Zap, Search, X, Video, ArrowUpDown } from 'lucide-react'
 import { NavIcon } from '@/components/nav-icon'
 import { Button } from "@/registry/new-york/ui/button"
@@ -741,10 +751,11 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                             type="button"
                                             onClick={() => setShowHarvestDialog(true)}
                                             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-orange-500/15 to-amber-500/15 hover:from-amber-500/25 hover:to-orange-500/25 text-amber-700 dark:text-amber-300 text-xs font-semibold transition-all shadow-xs hover:shadow-sm cursor-pointer"
-                                            title="自动发现并采集前沿开发者技术视频"
+                                            title="管理员功能：自动发现并采集前沿开发者技术视频（需管理员登录）"
                                         >
                                             <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500/30" />
                                             <span>采集最新技术视频</span>
+                                            <span className="rounded-full border border-amber-500/40 px-1.5 py-px text-[10px] font-medium">管理员</span>
                                         </button>
                                     </div>
                                 </div>

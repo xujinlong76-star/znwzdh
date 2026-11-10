@@ -139,18 +139,11 @@ export async function extractCodeFromCanvas(
     return parseExtractedCodeText('')
   }
 
-  const { width, height } = canvas
-  const imgData = ctx.getImageData(0, 0, width, height)
-  binarizeFrameData(imgData.data, width, height)
-
-  // Simulation fallback: in client browser without local tesseract worker,
-  // extract common mock code or terminal command prompt lines for instant UX.
-  const sampleOutput = [
-    '# DevOps automated production deploy',
-    'docker build -t navhub-service:latest .',
-    'kubectl apply -f k8s/production-deployment.yaml',
-    'kubectl rollout status deployment/navhub-service -n prod',
-  ].join('\n')
-
-  return parseExtractedCodeText(sampleOutput)
+  // 诚实口径（2026-11-10 审计）：浏览器端没有接入任何 OCR 引擎（无 tesseract
+  // worker），旧实现把像素二值化后直接丢弃、恒返回同一段示例代码并标
+  // confidence 0.92——换任何视频结果都一字不差，是假识别。现在如实返回
+  // 「未识别到代码」：调用方 UI 会提示帧 OCR 暂不可用，而不是展示编造结果。
+  // 将来真接入 OCR 时，把识别文本喂给 parseExtractedCodeText 即可恢复。
+  void canvas
+  return parseExtractedCodeText('')
 }

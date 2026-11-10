@@ -60,7 +60,11 @@ export function SitePeekDialog({
   }>>([])
   const [livePing, setLivePing] = useState<PingResult | null>(null)
   const [isPinging, setIsPinging] = useState(false)
-  const [hasReportedBroken, setHasReportedBroken] = useState(false)
+  const [hasReportedBroken, setHasReportedBroken] = useState(() => {
+    try {
+      return typeof window !== 'undefined' && Boolean(window.localStorage.getItem(`navhub:reported-broken:${item?.id ?? ''}`))
+    } catch { return false }
+  })
   const [radar, setRadar] = useState<{
     summary: string
     pricingType: string
@@ -168,9 +172,15 @@ export function SitePeekDialog({
   const handleReportBroken = () => {
     if (hasReportedBroken) return
     setHasReportedBroken(true)
+    // 诚实口径：站内没有站点反馈上报接口，这个动作只是本机标记（并持久化，
+    // 刷新不丢）。旧文案谎称「系统已记录、正在调取备用镜像」——平台根本
+    // 收不到。平台侧的全站链接复查由自动巡检承担，这里如实告知用户。
+    try {
+      window.localStorage.setItem(`navhub:reported-broken:${item?.id ?? ''}`, String(Date.now()))
+    } catch { /* 写不进本机存储则仅本次会话有效 */ }
     toast({
-      title: '已收到失效反馈',
-      description: '感谢反馈！系统已记录该站点异常，正在为您调取备用镜像与平替推荐。',
+      title: '已在本机标记该站点异常',
+      description: '标记只存在这台设备上；平台的自动巡检会定期复查全站链接，下方平替推荐可以先顶上。',
     })
   }
 
@@ -312,7 +322,7 @@ export function SitePeekDialog({
             <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
             <div className="flex-1 space-y-1">
               <div className="font-semibold text-rose-900 dark:text-rose-200">
-                {hasReportedBroken ? '已记录失效反馈：该站点可能已下线或受网络策略阻隔' : `本地探测异常：${livePing?.label || '连接超时'}`}
+                {hasReportedBroken ? '你已在本机标记该站点异常：它可能已下线或受网络策略阻隔' : `本地探测异常：${livePing?.label || '连接超时'}`}
               </div>
               <div className="text-rose-900 dark:text-rose-200 leading-relaxed">
                 建议优先使用下方为您推导的「平替雷达」替代方案，或调取右上角「历史快照」访问网页镜像。

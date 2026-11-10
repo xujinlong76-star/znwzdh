@@ -68,12 +68,15 @@ import { getStoredDanmaku, saveDanmakuItem } from '@/lib/video-danmaku-engine'
 // check-dead-modules 判红（测试引用不计入 src 图）；实测删除还会让 Turbopack
 // 的 chunk 切分变差，/videos/player 从 882 KB 涨回 884 KB。
 import { getP2PStreamCoordinator } from '@/lib/p2p-stream-loader'
-import { VideoHeatmapTimeline } from '@/components/video-heatmap-timeline'
+// 热力波形时间轴与语音指示器都是辅助可视化：动态导入，不占播放器首屏包体积（预算紧）。
+const VideoHeatmapTimeline = dynamic(() => import('@/components/video-heatmap-timeline').then(m => m.VideoHeatmapTimeline), { ssr: false })
+const VideoVoiceIndicator = dynamic(() => import('@/components/video-voice-indicator').then(m => m.VideoVoiceIndicator), { ssr: false })
 import { VideoNetworkSentinel } from '@/components/video-network-sentinel'
-import { VideoVoiceIndicator } from '@/components/video-voice-indicator'
-import { VideoTelestratorCanvas } from '@/components/video-telestrator-canvas'
-import { VideoPipWindowRenderer } from '@/components/video-pip-window-renderer'
-import { VideoGestureHudOverlay } from '@/components/video-gesture-hud-overlay'
+// 涂鸦层与 PiP 渲染层只在对应模式开启时才用到：动态导入，不占播放器首屏包体积。
+const VideoTelestratorCanvas = dynamic(() => import('@/components/video-telestrator-canvas').then(m => m.VideoTelestratorCanvas), { ssr: false })
+const VideoPipWindowRenderer = dynamic(() => import('@/components/video-pip-window-renderer').then(m => m.VideoPipWindowRenderer), { ssr: false })
+// 手势 HUD 只在手势模式下显示：动态导入补足播放器页最后一点预算缺口。
+const VideoGestureHudOverlay = dynamic(() => import('@/components/video-gesture-hud-overlay').then(m => m.VideoGestureHudOverlay), { ssr: false })
 import { generateFilmstripSequence, type FilmstripThumbnail } from '@/lib/video-filmstrip-generator'
 import { SessionActivityRecorder } from '@/lib/video-session-recorder'
 import { type SilenceDetectorConfig, type SilenceDetectorState } from '@/lib/video-silence-detector'
@@ -526,11 +529,11 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             if (parsed.length > 0) {
                 setTranscriptList(parsed)
             } else {
-                setTranscriptList([
-                    { id: 't1', startSec: 0, endSec: 60, text: `${selectedVideo.title}：技术背景与核心架构导读` },
-                    { id: 't2', startSec: 60, endSec: 300, text: '进入实战模块与配置文件编写演示' },
-                    { id: 't3', startSec: 300, endSec: selectedVideo.videoConfig.durationSec || 600, text: '生产级高可用部署与性能优化总结' },
-                ])
+                // 无字幕就如实无字幕（2026-11-10 审计）：旧实现写死 3 句通用
+                // 文案冒充字幕，下游双语/卡拉OK/切片都在消费这份假字幕。
+                // 全站仅 11/6007 个视频自带真字幕，其余宁可空着并由 UI
+                // 呈现「暂无字幕」，也不编造台词。
+                setTranscriptList([])
             }
         }
     }, [selectedVideo])

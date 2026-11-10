@@ -206,6 +206,32 @@ export function EcosystemGraph() {
           return
         }
 
+        // 入口参数 ?category={中枢分类 id}：分类页/首页分类区的图谱按钮带着它跳来，
+        // 旧实现从不读这个参数、永远展示全部分类（假跳转）。按分类标题关键词
+        // 映射到图谱内部分类（dev/design/ai/efficiency）并预先选中；映射不上
+        // 就保持全部，不假装过滤成功。
+        try {
+          const wanted = new URLSearchParams(window.location.search).get('category')
+          if (wanted) {
+            const titleById = new Map<string, string>()
+            for (const cat of cats) {
+              titleById.set(String(cat.id), String(cat.title ?? ''))
+              for (const sub of cat.subCategories || []) titleById.set(String(sub.id), String(sub.title ?? ''))
+            }
+            const raw = (titleById.get(wanted) ?? wanted).toLowerCase()
+            const bucket = raw.includes('ai') || raw.includes('智能') || raw.includes('模型')
+              ? 'ai'
+              : raw.includes('design') || raw.includes('设计') || raw.includes('创意')
+                ? 'design'
+                : raw.includes('效率') || raw.includes('办公') || raw.includes('文档')
+                  ? 'efficiency'
+                  : raw.includes('dev') || raw.includes('开发') || raw.includes('前端') || raw.includes('后端') || raw.includes('编程')
+                    ? 'dev'
+                    : null
+            if (bucket) setActiveCategory(bucket)
+          }
+        } catch { /* 参数解析失败不影响图谱主体 */ }
+
         const existingUrls = new Set(DEFAULT_NODES.map((n) => n.url.replace(/\/$/, '').toLowerCase()))
         const dynamicNodes: GraphNode[] = []
         const rawTagMap = new Map<string, string[]>()
@@ -449,9 +475,9 @@ export function EcosystemGraph() {
                   <Badge
                     variant="outline"
                     className="text-xs font-mono text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                    title={`已接入站点库真实数据，其中 ${liveCount} 个动态节点`}
+                    title={`图中节点 = ${liveCount} 个站内真实站点（均匀抽样，非全量 298 站）+ ${DEFAULT_NODES.length} 个预设示例节点；连线含按同分类/共享标签推导的关系，不是人工录入的生态关系`}
                   >
-                    实时 {liveCount} 个站点
+                    实时抽样 {liveCount} 站 + 预设示例 {DEFAULT_NODES.length} 节点（非全量）
                   </Badge>
                 )}
                 {dataSource === 'sample' && (

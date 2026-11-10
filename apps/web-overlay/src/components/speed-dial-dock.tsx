@@ -133,6 +133,7 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
     <div className="grid grid-cols-12 mb-6">
       <div
         ref={dockRef}
+        id="quick-access-tray"
         data-speed-dial="true"
         className={cn(
           'group relative rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/5 via-accent/10 to-primary/5 p-3 sm:p-4 backdrop-blur-md shadow-xs animate-in fade-in duration-200 transition-all',

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { auth } from '@/lib/auth'
+import NextAuth from 'next-auth'
+import { authConfig, authSecret } from '@/lib/auth.config'
 import { AdminLayoutClient } from './AdminLayoutClient'
 import { Toaster } from "@/registry/new-york/ui/toaster"
 import { readSiteSettings } from '@/lib/site-config-source'
@@ -32,6 +33,17 @@ export async function generateMetadata(): Promise<Metadata> {
     }
   }
 }
+
+/**
+ * 会话读取走 edge 安全的分离配置（auth.config），不引 @/lib/auth 全量模块：
+ * 后者静态 import node:crypto（服务端令牌加密），而 /admin 下多个底座页面
+ * 声明 runtime='edge'，页面运行时会把同段 layout 一起编译到 edge，
+ * 静态加载 node:crypto 直接让生产构建在 Collecting page data 阶段失败
+ * （2026-11-10 实测卡在 /admin/navigation/[id]/items）。读已有会话 Cookie
+ * 只需要 callbacks + secret，不需要 providers 与令牌仓——这是 NextAuth
+ * 官方的 edge 分离模式，proxy.ts 已同款用法。
+ */
+const { auth } = NextAuth({ ...authConfig, secret: authSecret })
 
 export default async function AdminLayout({
   children,

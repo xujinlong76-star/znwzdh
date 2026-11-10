@@ -67,20 +67,26 @@ export async function renderVideoClipPackage(
   const matchingSubs = extractClipSubtitles(transcripts, startSec, endSec)
 
   const safeTitle = videoTitle.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, '_').slice(0, 24)
-  const filename = `clip_${safeTitle}_${Math.round(startSec)}s-${Math.round(endSec)}s.${format}`
+  // 诚实口径（2026-11-10 审计）：浏览器端没有把视频帧真正合成 WebM/GIF 的
+  // 管线，旧实现把一份 JSON 清单塞进 Blob、MIME 谎称 video/webm、文件名
+  // 带 .webm 后缀让用户下载——文件根本播不了。现在如实导出「剪辑清单」
+  // JSON（.clip.json）：含起止时间与字幕片段，可用于在剪辑软件里复现
+  // 这段切片；UI 文案也同步改成导出清单，不再冒充视频文件。
+  const filename = `clip_${safeTitle}_${Math.round(startSec)}s-${Math.round(endSec)}s.clip.json`
 
-  // Create mock binary Blob representing the rendered slice
   const manifest = JSON.stringify({
+    kind: 'navhub-clip-manifest',
+    note: '这是剪辑清单，不是视频文件：浏览器内暂不支持直接生成 WebM/GIF，请用剪辑软件按起止时间复现。',
     title: videoTitle,
     startSec,
     endSec,
     durationSec,
-    format,
+    requestedFormat: format,
     subtitles: matchingSubs,
     exportedAt: new Date().toISOString(),
   })
 
-  const blob = new Blob([manifest], { type: format === 'gif' ? 'image/gif' : 'video/webm' })
+  const blob = new Blob([manifest], { type: 'application/json' })
   const blobUrl = URL.createObjectURL(blob)
 
   return {

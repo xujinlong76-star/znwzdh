@@ -10,6 +10,12 @@ export interface QoEMetrics {
   networkType: string
   healthScore: number // 0 - 100
   status: 'excellent' | 'good' | 'degraded' | 'critical'
+  /**
+   * 是否收到过真实网络样本（TTFB/带宽/卡顿任一）。播放器目前只喂
+   * recordPlaybackTick（观看时长），TTFB 与带宽仍是出厂种子值——
+   * sampled=false 时 UI 必须标注「初始估算」，不许冒充实时测量。
+   */
+  sampled: boolean
 }
 
 export interface QoETracker {
@@ -63,11 +69,15 @@ export function createQoETracker(
     return { score, status }
   }
 
+  let hasRealSample = false
+
   return {
     recordTTFB: (ms: number) => {
       ttfb = Math.max(10, ms)
+      hasRealSample = true
     },
     recordStallStart: () => {
+      hasRealSample = true
       if (currentStallStart === null) {
         currentStallStart = Date.now()
         rebufferCount++
@@ -85,6 +95,7 @@ export function createQoETracker(
     },
     updateBandwidthSample: (bytes: number, durationMs: number) => {
       if (durationMs > 0 && bytes > 0) {
+        hasRealSample = true
         const mbps = (bytes * 8) / (durationMs / 1000) / 1_000_000
         bandwidthSamples.push(mbps)
         if (bandwidthSamples.length > 10) bandwidthSamples.shift()
@@ -107,6 +118,7 @@ export function createQoETracker(
         networkType,
         healthScore: score,
         status,
+        sampled: hasRealSample,
       }
     },
     shouldTriggerAutoFailover: () => {

@@ -135,6 +135,11 @@ export function VideoAutoHarvestDialog({
       })
 
       if (!response.ok) {
+        // 401 是权限问题不是服务故障：采集是管理员功能，普通访客点了必然
+        // 被拒——把原因说成人话，别让他对着「HTTP 401」猜。
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('采集是管理员功能：请先用管理员账号登录后再试，普通访客无法发起采集。')
+        }
         throw new Error(`服务端采集调度返回 HTTP ${response.status}`)
       }
 

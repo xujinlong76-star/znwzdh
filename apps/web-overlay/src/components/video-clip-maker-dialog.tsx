@@ -167,7 +167,7 @@ export function VideoClipMakerDialog({
               className="gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
-              {isExporting ? '正在切片压制...' : '导出切片视频'}
+              {isExporting ? '正在生成清单...' : '导出剪辑清单（JSON）'}
             </Button>
           </div>
         </div>

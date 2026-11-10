@@ -52,11 +52,11 @@ export function VideoNetworkSentinel({
             currentStyle.badge,
             className
           )}
-          title="查看实时流媒体传输质量 (QoE)"
+          title={metrics.sampled ? '查看实时流媒体传输质量 (QoE)' : '暂无真实网络样本：分数为初始估算，不是实时测量'}
         >
           <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", currentStyle.dot)} />
           <Activity className="w-3 h-3" />
-          <span>{metrics.healthScore}分</span>
+          <span>{metrics.healthScore}分{metrics.sampled ? '' : '（估算）'}</span>
         </button>
       </PopoverTrigger>
 

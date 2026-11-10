@@ -64,7 +64,7 @@ export function VideoGestureHudOverlay({
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground flex items-center gap-1 text-[11px]">
               <Eye className="w-3.5 h-3.5 text-primary" />
-              <span>端侧 21 点手部关键点视觉跟踪运行中 (100% 内存离线，无影像上传)</span>
+              <span>模拟手势模式：摄像头识别尚未接入，下方按钮点按即触发对应动作（不会调用你的摄像头）</span>
             </span>
             {lastEvent && (
               <span

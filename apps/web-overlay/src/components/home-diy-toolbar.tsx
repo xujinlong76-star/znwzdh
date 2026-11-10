@@ -312,26 +312,37 @@ export function HomeDIYToolbar({
       feedback.push('极光流光')
     }
 
+    // 类目聚焦：技术与 AI 两个意图可同时成立（旧实现是 else-if，
+    // 「只看AI与前端」永远只命中先写的分支）。合并口径：命中的意图
+    // 模式取并集，隐藏「哪个模式都不匹配」的类目。
+    const focusPatterns: RegExp[] = []
     if (q.includes('前端') || q.includes('技术') || q.includes('开发')) {
-      if (setHiddenCategories) {
-        const techPattern = /前端|后端|运维|安全|开发|云|架构|Dev|AI/i
-        const toHide = allCategoryIds.filter((id) => !techPattern.test(categoryTitleMap[id] || id))
-        setHiddenCategories(toHide)
-        feedback.push('聚焦技术类目')
-      }
-    } else if (q.includes('ai') || q.includes('创作')) {
-      if (setHiddenCategories) {
-        const aiPattern = /AI|智能|设计|创意|模型|Prompt/i
-        const toHide = allCategoryIds.filter((id) => !aiPattern.test(categoryTitleMap[id] || id))
-        setHiddenCategories(toHide)
-        feedback.push('聚焦AI类目')
-      }
+      focusPatterns.push(/前端|后端|运维|安全|开发|云|架构|Dev|AI/i)
+    }
+    if (q.includes('ai') || q.includes('创作')) {
+      focusPatterns.push(/AI|智能|设计|创意|模型|Prompt/i)
+    }
+    if (focusPatterns.length > 0 && setHiddenCategories) {
+      const toHide = allCategoryIds.filter(
+        (id) => !focusPatterns.some((p) => p.test(categoryTitleMap[id] || id)),
+      )
+      setHiddenCategories(toHide)
+      feedback.push(focusPatterns.length > 1 ? '聚焦技术+AI类目' : focusPatterns[0]!.source.includes('前端') ? '聚焦技术类目' : '聚焦AI类目')
     }
 
-    toast({
-      title: '🪄 AI 场景意图已生效',
-      description: feedback.length > 0 ? `已为您匹配：${feedback.join('、')}` : '已根据意图优化排版布局',
-    })
+    // 这是关键词匹配，不是 AI：一个意图都没识别出来时必须如实说没听懂，
+    // 不许再 toast 假成功（旧实现兜底文案「已根据意图优化排版布局」是编造）。
+    if (feedback.length > 0) {
+      toast({
+        title: '🪄 一句话排版已生效',
+        description: `已为您匹配：${feedback.join('、')}`,
+      })
+    } else {
+      toast({
+        title: '这句我没匹配到可执行的排版意图',
+        description: '试试这样说：「3列紧凑」「只看AI与前端」「极光背景」「胶囊模式」。',
+      })
+    }
     setAiPrompt('')
   }
 
@@ -372,7 +383,7 @@ export function HomeDIYToolbar({
                   title="AI 场景预设（自然语言输入或悬停画布瞬间预览）"
                 >
                   <Wand2 className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="font-semibold">AI 预设</span>
+                  <span className="font-semibold">快捷预设</span>
                   <ChevronDown className="w-3 h-3 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
@@ -380,14 +391,14 @@ export function HomeDIYToolbar({
                 <div className="p-2 border-b border-border/40">
                   <div className="flex items-center gap-1.5 mb-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="text-xs font-semibold text-foreground">AI 自然语言意图编排</span>
+                    <span className="text-xs font-semibold text-foreground">一句话排版（关键词匹配）</span>
                   </div>
                   <form onSubmit={handleRunAiPrompt} className="flex items-center gap-1">
                     <Input
                       value={aiPrompt}
                       onChange={(e) => setAiPrompt(e.target.value)}
                       placeholder="如: 6列极简胶囊，只看AI与前端"
-                      aria-label="AI 自然语言意图输入"
+                      aria-label="一句话排版输入"
                       className="h-7 text-xs rounded-lg"
                     />
                     <Button type="submit" size="sm" className="h-7 px-2 text-xs shrink-0 rounded-lg">

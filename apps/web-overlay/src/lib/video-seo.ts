@@ -63,58 +63,8 @@ export function formatIso8601Duration(durationSec?: number): string {
   return `PT${hours}H${mins}M${secs}S`
 }
 
-/**
- * 根据视频平台配置构建标准播放器嵌入地址（支持 12+ 主流国内外视频平台）。
- * 同时支持传入 NavigationSubItem 或 VideoConfig。
- */
-export function buildVideoEmbedUrlForSeo(itemOrConfig: NavigationSubItem | VideoConfig): string {
-  const isSubItem = 'videoConfig' in itemOrConfig || 'href' in itemOrConfig
-  const config: VideoConfig | undefined = isSubItem
-    ? (itemOrConfig as NavigationSubItem).videoConfig
-    : (itemOrConfig as VideoConfig)
-  const fallbackHref = isSubItem ? (itemOrConfig as NavigationSubItem).href || '' : ''
-  if (!config) return fallbackHref
-
-  const platform = config.type || 'custom'
-  const vid = config.bvid || config.videoId || ''
-
-  switch (platform) {
-    case 'bilibili':
-      if (config.bvid || vid.startsWith('BV')) {
-        return `https://player.bilibili.com/player.html?bvid=${config.bvid || vid}&high_quality=1&autoplay=0`
-      }
-      if (config.aid) {
-        return `https://player.bilibili.com/player.html?aid=${config.aid}&high_quality=1&autoplay=0`
-      }
-      return `https://player.bilibili.com/player.html?bvid=${vid}`
-    case 'youtube':
-      return vid ? `https://www.youtube.com/embed/${vid}` : fallbackHref
-    case 'vimeo':
-      return vid ? `https://player.vimeo.com/video/${vid}` : fallbackHref
-    case 'dailymotion':
-      return vid ? `https://www.dailymotion.com/embed/video/${vid}` : fallbackHref
-    case 'ted':
-      return vid ? `https://embed.ted.com/talks/${vid}` : fallbackHref
-    case 'douyin':
-      return vid ? `https://open.douyin.com/player/video?vid=${vid}&autoplay=0` : fallbackHref
-    case 'xigua':
-      return vid ? `https://www.ixigua.com/iframe/${vid}?autoplay=0` : fallbackHref
-    case 'tencent':
-      return vid ? `https://v.qq.com/txp/iframe/player.html?vid=${vid}` : fallbackHref
-    case 'youku':
-      return vid ? `https://player.youku.com/embed/${vid}` : fallbackHref
-    case 'peertube':
-      if (fallbackHref && fallbackHref.includes('/videos/watch/')) {
-        return fallbackHref.replace('/videos/watch/', '/videos/embed/')
-      }
-      if (fallbackHref && fallbackHref.includes('/w/')) {
-        return fallbackHref.replace('/w/', '/videos/embed/')
-      }
-      return fallbackHref
-    default:
-      return fallbackHref
-  }
-}
+import { buildVideoEmbedUrlForSeo } from './video-embed-url'
+export { buildVideoEmbedUrlForSeo }
 
 /**
  * 从视频标题、描述、分类与作者中提取高价值 SEO 关键词（去重，上限 12 个）。

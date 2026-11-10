@@ -50,9 +50,9 @@ services:
       NAVHUB_SQLITE_PATH: /data/navhub.db
       NAVHUB_EMBEDDING_CACHE: /data/models
       NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}
-      NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
+      NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.agnes-ai.cn/v1}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
-      NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-deepseek-chat}
+      NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-agnes-3.0-flash}
       # .env.example 承诺过的其余 LLM 调参项必须一起透传，否则「照文档写了却没效果」。
       # 尤其 NAVHUB_LLM_ALLOW_PRIVATE：本地 Ollama/llama.cpp 没有 API Key，
       # 不透传它就只能得到「尚未配置可用的模型密钥」，对自托管用户是条死路。
@@ -304,12 +304,12 @@ services:
       NAVHUB_DATABASE_URL: postgres://navhub:${POSTGRES_PASSWORD:-navhub}@postgres:5432/navhub
       NAVHUB_EMBEDDING_CACHE: /data/models
       NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}
-      NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
+      NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.agnes-ai.cn/v1}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
       # 与 api 服务同一组 LLM 透传（语义见 api 服务里的注释）。这里此前只给了
-      # BASE_URL/API_KEY，却漏了 MODEL：standard 模式会拿 deepseek 的端点配上
-      # 代码默认的 agnes-3.0-flash 模型名，请求必然 invalid model。
-      NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-deepseek-chat}
+      # BASE_URL/API_KEY，却漏了 MODEL：端点与模型名不匹配时请求必然 invalid model。
+      # 这里与 api 服务统一兜底为 Agnes 3.0 Flash（与 .env.example、config.ts 默认一致）。
+      NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-agnes-3.0-flash}
       NAVHUB_LLM_NAME: ${NAVHUB_LLM_NAME:-}
       NAVHUB_LLM_TIMEOUT_MS: ${NAVHUB_LLM_TIMEOUT_MS:-}
       NAVHUB_LLM_MAX_TOKENS: ${NAVHUB_LLM_MAX_TOKENS:-}

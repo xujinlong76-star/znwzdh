@@ -51,9 +51,21 @@ describe('webSiteLd', () => {  it('输出最小合法 WebSite（含 name/url/inL
     expect(ld.description).toBe('一个导航站')
   })
 
-  it('没有 /search 页面，绝不输出 potentialAction（红线 1）', () => {
+  it('未显式传入搜索端点时，绝不输出 potentialAction（红线 1）', () => {
     const ld = webSiteLd(ORIGIN, 'NavHub') as Record<string, unknown>
     expect(ld.potentialAction).toBeUndefined()
+  })
+
+  it('传入已验证的搜索端点模板时输出 SearchAction（红线 1，2026-11-11 复验 /search 已上线）', () => {
+    const template = `${ORIGIN}/search?q={search_term_string}`
+    const ld = webSiteLd(ORIGIN, 'NavHub', '一个导航站', template) as Record<string, unknown>
+    const action = ld.potentialAction as Record<string, unknown>
+    expect(action['@type']).toBe('SearchAction')
+    expect((action.target as Record<string, unknown>).urlTemplate).toBe(template)
+    expect(action['query-input']).toBe('required name=search_term_string')
+    // 空模板等于没传，不许输出一个坏掉的动作
+    const ld2 = webSiteLd(ORIGIN, 'NavHub', '一个导航站', '  ') as Record<string, unknown>
+    expect(ld2.potentialAction).toBeUndefined()
   })
 
   it('没有评价体系，绝不输出 aggregateRating（红线 2）', () => {

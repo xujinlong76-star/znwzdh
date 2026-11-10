@@ -1,6 +1,7 @@
 import { getFileContent } from '@/lib/github'
 import { hubGet } from '@/lib/server/hub'
 import { siteOrigin } from '@/lib/seo/origin'
+import { normalizeBrandName } from '@/lib/seo/metadata'
 import { buildSiteFeedXml } from '@/lib/seo/feed'
 import type { HubSite } from '@/lib/navhub-api'
 
@@ -46,7 +47,10 @@ export async function GET() {
 
   const xml = buildSiteFeedXml({
     origin,
-    title: siteConfig?.basic?.title ?? '站点导航',
+    // 品牌名必须收敛：site.json 是上游基线文件，没配中枢品牌时 basic.title
+    // 会是上游旧名（实测 feed 标题输出过「NavSphere导航」），其余页面都走
+    // normalizeBrandName，feed 漏了这一步（2026-11-11 修）。
+    title: siteConfig?.basic?.title ? normalizeBrandName(siteConfig.basic.title) : '站点导航',
     description: siteConfig?.basic?.description ?? null,
     sites,
     lastBuildDate: Date.now(),

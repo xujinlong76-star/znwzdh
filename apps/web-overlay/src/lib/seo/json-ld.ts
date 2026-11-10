@@ -3,9 +3,12 @@
  *
  * 三条红线，改这里前先读（都有对应单测在 test/json-ld.test.ts 守着）：
  *
- * 1. **暂不写 SearchAction**：`/search` 结果页已上线（2026-10-31），但
- *    SearchAction 尚未接入该页。接入前不得声明——声明一个点不进去的搜索
- *    端点，Google 可能渲染出无效的 sitelinks 搜索框。
+ * 1. **SearchAction 只在调用方显式传入已验证的搜索端点时才写**：红线原版是
+ *    「/search 未接入前不得声明」（2026-10-31 立）。前置条件已于 2026-11-11
+ *    复验消失：/search 结果页已上线（f8967544），SSR 输出真实结果、`?q=` 参数
+ *    实测可达（本地生产构建 curl /search?q=短剧 → 200 且结果真实）。因此改为：
+ *    `webSiteLd` 默认仍不输出 potentialAction；只有首页调用方把验证过的
+ *    urlTemplate 传进来才输出。改这条前必须先复验端点，没验证不许传。
  * 2. **不写 aggregateRating / 假 star**：站内没有评价体系；
  *    `liveMetrics.githubStars` 历史上被硬编码污染过（125000/86000），
  *    既渲染又参与 DIY 排序，在数据修复前任何星级数字都不能进结构化数据。
@@ -44,12 +47,20 @@ export function absUrl(origin: string, path: string): string {
 }
 
 /**
- * WebSite  schema。
- * 刻意不含 potentialAction：见文件头红线 1。
+ * WebSite schema。
+ * `searchTargetTemplate`：形如 `https://example.com/search?q={search_term_string}`
+ * 的完整模板，只有调用方复验过端点真实可用时才传（见文件头红线 1）；
+ * 不传则不输出 potentialAction。
  */
-export function webSiteLd(origin: string, name: string, description?: string | null): Record<string, unknown> {
+export function webSiteLd(
+  origin: string,
+  name: string,
+  description?: string | null,
+  searchTargetTemplate?: string | null,
+): Record<string, unknown> {
   const cleanName = (name ?? '').trim()
   const cleanDesc = typeof description === 'string' ? description.trim() : ''
+  const target = (searchTargetTemplate ?? '').trim()
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
@@ -57,6 +68,15 @@ export function webSiteLd(origin: string, name: string, description?: string | n
     url: absUrl(origin, '/'),
     inLanguage: 'zh-CN',
     ...(cleanDesc ? { description: cleanDesc.slice(0, 300) } : {}),
+    ...(target
+      ? {
+          potentialAction: {
+            '@type': 'SearchAction',
+            target: { '@type': 'EntryPoint', urlTemplate: target },
+            'query-input': 'required name=search_term_string',
+          },
+        }
+      : {}),
   }
 }
 

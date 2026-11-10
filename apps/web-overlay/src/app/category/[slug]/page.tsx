@@ -7,6 +7,7 @@ import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { categoryHref, categoryUrlKey, isCategoryUuidRef, isHiddenCategory } from '@/lib/seo/category-url'
 import { descendantSiteCounts } from '@/lib/seo/category-totals'
 import { loadActiveCategoryCounts, loadCategories } from '@/lib/server/categories'
+import { categoryMetaDescription, categoryMetaTitle } from '@/lib/seo/site-description'
 import {
   CategoryBoard,
   categoryPageName,
@@ -79,10 +80,23 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const name = categoryPageName(data)
   // canonical 永远写解析后的形态：uuid 入参会被页面 301，元信息不能跟着留旧 URL
   const canonical = categoryHref(data.category ?? safeRef, 1)
-  const title = `「${name}」工具与服务`
-  const description =
-    data.category?.description ??
-    `「${name}」分类下收录了 ${categoryPageTotal(data)} 个站点，可进入详情查看简介、标签与同类推荐。`
+  // title/description 的搜索口径在 lib/seo/site-description.ts 统一合成：
+  // 旧模板「「X」工具与服务」对非工具分类是错位描述，且分类自带短描述
+  // （十余字）撑不起摘要——合成规则与站点详情同源，只用真实字段。
+  const title = categoryMetaTitle(name)
+  const childNames =
+    data.category && data.categories
+      ? data.categories
+          .filter((c) => c.parentId === data.category!.id && c.enabled !== false)
+          .map((c) => c.title)
+      : []
+  const description = categoryMetaDescription({
+    name,
+    rawDescription: data.category?.description,
+    total: categoryPageTotal(data),
+    childNames,
+    topSiteTitles: data.sites.map((s) => s.title),
+  })
 
   return {
     title,

@@ -49,9 +49,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     // 只写页面名：根 layout 的 title.template 会统一追加站点名
-    title: '视频中心',
+    title: '视频教程中心',
     // 点击行为是站内弹窗播放或无播放配置时直达原站，不是「进入站内播放页」
-    description: '按分类浏览收录的视频与教程，支持站内弹窗播放或直达原站',
+    description: '按分类浏览收录的视频教程与精品课程，支持站内弹窗播放或直达原站观看',
     alternates: { canonical: '/videos' },
     // 收录口径（2026-10-28 复核 + 2026-10-31 改判）：
     //   库里是**真实内容**——video_categories 12 个类目（带 harvest_policy）、
@@ -62,8 +62,8 @@ export async function generateMetadata(): Promise<Metadata> {
     robots: { index: true, follow: true },
     ...(await pageShareMetadata({
       url: '/videos',
-      title: '视频中心',
-      description: '按分类浏览收录的视频与教程，支持站内弹窗播放或直达原站',
+      title: '视频教程中心',
+      description: '按分类浏览收录的视频教程与精品课程，支持站内弹窗播放或直达原站观看',
     })),
     keywords: 'Bilibili, YouTube, Videos',
     icons: {

@@ -5,6 +5,7 @@ import { pageShareMetadata } from '@/lib/seo/metadata'
 import { ogImageUrl } from '@/lib/seo/og-text'
 import { categoryHref, isCategoryUuidRef, isHiddenCategory } from '@/lib/seo/category-url'
 import { categoryPageHasSites, categoryPageOffsetIsReachable } from '@/lib/seo/category-pagination'
+import { categoryMetaTitle } from '@/lib/seo/site-description'
 import {
   CategoryBoard,
   PAGE_SIZE,
@@ -85,7 +86,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const urlKey = categoryPageUrlKey(data, safeRef)
   // n === 1 由页面永久回指裸 URL，元信息不替它留一个可索引副本
   const canonical = categoryHref(urlKey, n)
-  const title = `「${name}」工具与服务（第 ${n} 页）`
+  const title = `${categoryMetaTitle(name)}（第 ${n} 页）`
   const description = `「${name}」分类站点列表第 ${n} 页，可进入详情查看简介、标签与同类推荐。`
 
   return {

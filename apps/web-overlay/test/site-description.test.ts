@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   SITE_DESCRIPTION_MAX,
+  categoryMetaDescription,
+  categoryMetaTitle,
   siteMetaDescription,
 } from '../src/lib/seo/site-description'
 
@@ -39,6 +41,48 @@ describe('siteMetaDescription', () => {
     )
     expect(description).toContain('收录于导航分类')
     expect(description).not.toContain('相关标签')
+  })
+})
+
+describe('categoryMetaTitle', () => {
+  it('分类名 + 网站大全，不再用与内容错位的「工具与服务」', () => {
+    expect(categoryMetaTitle('AI 工具')).toBe('AI 工具网站大全')
+    expect(categoryMetaTitle('影音娱乐')).toBe('影音娱乐网站大全')
+    expect(categoryMetaTitle('网络小说网站大全')).toBe('网络小说网站大全')
+    expect(categoryMetaTitle('')).toBe('分类网站大全')
+  })
+})
+
+describe('categoryMetaDescription', () => {
+  it('够长的编辑描述原样用', () => {
+    const raw = '收录主流大模型、AI 绘画与 AI 视频工具，逐个核实官网链接，按使用场景与收费方式整理，方便快速对比挑选。'
+    expect(
+      categoryMetaDescription({ name: 'AI 工具', rawDescription: raw, total: 83 }),
+    ).toBe(raw)
+  })
+
+  it('短描述保留原句并拼真实字段（收录数/子类/代表站点），不编造排名评分', () => {
+    const description = categoryMetaDescription({
+      name: 'AI 工具',
+      rawDescription: '大模型与 AI 产品矩阵',
+      total: 83,
+      childNames: ['AI 对话', 'AI 绘画', 'AI 视频', 'AI 编程', 'AI 办公'],
+      topSiteTitles: ['ChatGPT', 'DeepSeek', '即梦'],
+    })
+    expect(description).toContain('大模型与 AI 产品矩阵')
+    expect(description).toContain('收录 83 个网站')
+    expect(description).toContain('AI 对话、AI 绘画、AI 视频、AI 编程')
+    expect(description).not.toContain('AI 办公')
+    expect(description).toContain('ChatGPT、DeepSeek、即梦')
+    expect(description.length).toBeLessThanOrEqual(SITE_DESCRIPTION_MAX)
+    expect(description).not.toMatch(/最好|最佳|最强|必备|第一|排名|评分/)
+  })
+
+  it('无自带描述时纯合成，无子类/代表站时不拼空段', () => {
+    const description = categoryMetaDescription({ name: '考试备考', rawDescription: null, total: 18 })
+    expect(description).toContain('收录 18 个网站')
+    expect(description).not.toContain('等子类')
+    expect(description).not.toContain('代表站点')
   })
 })
 

@@ -17,9 +17,11 @@ export const revalidate = 3600
 
 /** 标题只写页面名，站点名由根 layout 的 title.template 追加（避免品牌名重复两次） */
 export async function generateMetadata(): Promise<Metadata> {
-  const title = '前沿自适应算法实验室'
+  // 描述说人话（2026-11-11）：旧版堆 LinUCB/Poincaré 等术语，搜索用户零命中；
+  // 页面是推荐与排序算法的交互演示，照实说即可。
+  const title = '算法实验室 - 推荐与排序算法交互演示'
   const description =
-    '探索并交互式体验 LinUCB 多臂老虎机融合、Poincaré 双曲几何平替推演、Shannon 文本熵防软 404 及 0-RTT 意图预执行引擎。'
+    '交互式体验导航站背后的推荐、排序与相似度算法：亲手调一调参数，看站点为什么这样排序、平替推荐是怎么算出来的。'
   return {
     title,
     description,

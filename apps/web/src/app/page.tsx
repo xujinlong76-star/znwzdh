@@ -6,7 +6,7 @@ import { getFileContent } from "@/lib/github";
 import { configuredSiteOrigin } from "@/lib/seo/origin";
 import { webSiteLd, organizationLd } from "@/lib/seo/json-ld";
 import { JsonLd } from "@/components/json-ld";
-import { pageShareMetadata } from "@/lib/seo/metadata";
+import { normalizeBrandName, pageShareMetadata } from "@/lib/seo/metadata";
 import { MIN_SITES_FOR_CATEGORY_INDEX } from "@/lib/seo/thresholds";
 import { descendantSiteCounts } from "@/lib/seo/category-totals";
 import { categoryUrlKey, isHiddenCategory } from "@/lib/seo/category-url";
@@ -174,18 +174,23 @@ async function loadDirectoryLinks() {
  * 搜索引擎站点验证：只在配置了对应环境变量时输出 meta。
  *
  * 空字符串不能输出空标签——Google 会把 `content=""` 当成验证失败，而且
- * 空标签会让打包检查误以为「已经配置」。三家国内常用引擎的 meta 名不同：
+ * 空标签会让打包检查误以为「已经配置」。各家 meta 名不同：
  * 百度是 `baidu-site-verification`，Bing 是 `msvalidate.01`（Next 没有专门
- * 字段，走 verification.other）。
+ * 字段，走 verification.other），360 是 `360-site-verification`，
+ * 搜狗是 `sogou_site_verification`（2026-11-11 补齐这两家）。
  */
 function searchEngineVerification(): Metadata['verification'] | undefined {
   const google = process.env.GOOGLE_SITE_VERIFICATION?.trim();
   const bing = process.env.BING_SITE_VERIFICATION?.trim();
   const baidu = process.env.BAIDU_SITE_VERIFICATION?.trim();
+  const so360 = process.env.SITE_VERIFICATION_360?.trim();
+  const sogou = process.env.SOGOU_SITE_VERIFICATION?.trim();
 
   const other: Record<string, string> = {};
   if (bing) other["msvalidate.01"] = bing;
   if (baidu) other["baidu-site-verification"] = baidu;
+  if (so360) other["360-site-verification"] = so360;
+  if (sogou) other["sogou_site_verification"] = sogou;
 
   const verification: NonNullable<Metadata['verification']> = {};
   if (google) verification.google = google;
@@ -193,13 +198,66 @@ function searchEngineVerification(): Metadata['verification'] | undefined {
   return Object.keys(verification).length > 0 ? verification : undefined;
 }
 
+/**
+ * 首页 title/description 的搜索口径合成（2026-11-11，SEO_PLAN §二）。
+ *
+ * 后台 site.json 的 basic.title/description 是品牌与自述口径，不是搜索口径：
+ * 实测 title 只有品牌名、description 是「支持中文语义检索、拼音与关键词混合
+ * 召回」这类技术自述，搜索用户不搜这些词。所以首页的 <title>/description
+ * 在这里按**真实数据**合成，规则是「尊重完整配置、只补裸品牌」：
+ * - title：后台已写出含「网址导航」或分隔符的完整标题时原样用；只是裸品牌名
+ *   时拼成「品牌 - 网址导航 | AI工具、短剧与在线工具大全」（每个词都有站内
+ *   真实内容对应：AI 工具一级分类、短剧专区、在线工具与场景包）。
+ * - description：后台文案 ≥60 字视为已认真写过、原样用；否则用真实计数合成
+ *   （收录站点数按一级分类后代聚合，与 sitemap/分类页同口径），计数取不到
+ *   时退回后台原文案，绝不编数字。
+ * generateMetadata 与页面 JSON-LD 共用这一份（React cache 去重），保证
+ * head 与结构化数据口径一致。
+ */
+const getHomeSeo = cache(async () => {
+  const { siteData } = await getData();
+  const rawTitle = (siteData.basic.title ?? "").trim();
+  const brand = normalizeBrandName(rawTitle || siteData.basic.title);
+  const titleLooksComplete =
+    rawTitle.includes("网址导航") || /[|｜]/.test(rawTitle) || rawTitle.length >= 12;
+  // 拼接基底用收敛后的品牌名而不是原文案：配置里若还是上游旧名
+  // （NavSphere 系），normalizeBrandName 会给出站内统一品牌，原文案直接拼
+  // 会把旧名带进全站最重要的 title（2026-11-11 沙盒构建实测）。
+  const title = titleLooksComplete ? rawTitle : `${brand} - 网址导航 | AI工具、短剧与在线工具大全`;
+
+  const rawDesc = (siteData.basic.description ?? "").trim();
+  let description = rawDesc;
+  if (rawDesc.length < 60) {
+    const [categories, rawCounts] = await Promise.all([
+      loadCategories(3600),
+      loadActiveCategoryCounts(60),
+    ]);
+    if (categories && rawCounts) {
+      const counts = descendantSiteCounts(categories, rawCounts);
+      const roots = categories.filter((c) => !c.parentId && c.enabled !== false);
+      const totalSites = counts
+        ? roots.reduce((sum, c) => sum + (counts.get(c.id) ?? 0), 0)
+        : 0;
+      if (counts && totalSites > 0) {
+        description =
+          `${brand}收录 ${totalSites} 个精选网站的网址导航，按 ${roots.length} 个大类与使用场景整理，` +
+          `覆盖 AI 工具、热门短剧、效率办公、学习考试与设计创作；输入一句需求，AI 帮你找到顺手的网站与工具。`;
+      }
+    }
+  }
+  return { title, description, brand };
+});
+
 export async function generateMetadata(): Promise<Metadata> {
   const { siteData } = await getData();
   const verification = searchEngineVerification();
+  // title/description 走搜索口径合成（见 getHomeSeo）：后台原文案是品牌自述，
+  // 直接当 <title> 会让全站权重最高的页面没有任何搜索词。
+  const seo = await getHomeSeo();
 
   return {
-    title: siteData.basic.title,
-    description: siteData.basic.description,
+    title: seo.title,
+    description: seo.description,
     // canonical 只写相对路径，交给 metadataBase 解析成绝对地址；
     // RSS 用 alternates.types 声明，聚合器与浏览器扩展据此自动发现 feed
     alternates: {
@@ -210,8 +268,8 @@ export async function generateMetadata(): Promise<Metadata> {
     // type/siteName/locale/images 整体顶掉（Next 不深合并）
     ...(await pageShareMetadata({
       url: '/',
-      title: siteData.basic.title,
-      description: siteData.basic.description,
+      title: seo.title,
+      description: seo.description,
     })),
     keywords: siteData.basic.keywords,
     icons: {
@@ -223,11 +281,13 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function HomePage() {
   // WebSite 结构化数据：全站唯一入口页挂一份即可。
-  // 不写 potentialAction（/search 已上线，但 SearchAction 尚未接入该页），
+  // SearchAction 已接入：/search 结果页上线且 ?q= 端点经 2026-11-11 生产实测
+  // 可达、结果真实（红线 1 的前置条件消失，见 lib/seo/json-ld.ts 文件头）。
   // 不写 aggregateRating（没有评价体系）。
   // origin 只读配置：首页带 revalidate，一旦回退到 headers() 就会在构建期落成 ƒ、
   // 60s 缓存静默作废（缺配置的正确降级是「这份 JSON-LD 不输出」，地址保持相对）。
   const origin = configuredSiteOrigin();
+  const seo = await getHomeSeo();
   // 导航数据与目录带互不依赖：串行 await 等于在白送一个中枢往返的 TTFB，
   // 而首页是爬虫面第一入口（getData 内部已并行，loadDirectoryLinks 内部也已并行）。
   const [{ navigationData, siteData }, directoryLinks] = await Promise.all([getData(), loadDirectoryLinks()]);
@@ -243,9 +303,16 @@ export default async function HomePage() {
       />
       {origin ? (
         <>
-          <JsonLd data={webSiteLd(origin, siteData.basic.title, siteData.basic.description)} />
           <JsonLd
-            data={organizationLd(origin, siteData.basic.title, '/icons/icon-512.png', siteData.basic.description)}
+            data={webSiteLd(
+              origin,
+              siteData.basic.title,
+              seo.description,
+              `${origin.replace(/\/+$/, "")}/search?q={search_term_string}`,
+            )}
+          />
+          <JsonLd
+            data={organizationLd(origin, siteData.basic.title, '/icons/icon-512.png', seo.description)}
           />
         </>
       ) : null}

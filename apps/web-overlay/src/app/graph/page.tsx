@@ -9,8 +9,11 @@ import { pageShareMetadata } from '@/lib/seo/metadata'
  * 这里再拼一次品牌名会渲染成「技术生态与平替拓扑图谱 - NavHub - NavHub」。
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const title = '技术生态与平替拓扑图谱'
-  const description = '全景交互式探索前端、AI、全栈开发与设计工具链生态，发现开源与高性价比替代方案。'
+  // 标题/描述说搜索用户的话（2026-11-11）：旧版「平替拓扑图谱」是自造词，
+  // 用户搜的是「平替/替代工具/开源替代」。页面内容不变，只改 meta 口径；
+  // 面包屑末级仍用站内名，与 H1 保持一致。
+  const title = '工具平替图谱 - 找开源与免费替代工具'
+  const description = '交互式查看前端、AI、开发与设计工具之间的替代关系，帮你为常用付费工具找到开源、免费或更高性价比的平替方案。'
   return {
     title,
     description,

@@ -7,18 +7,18 @@
 
 | 文件 | 行数 | 职责 |
 | --- | --- | --- |
-| [index.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/index.ts) | 8 | 桶导出 |
-| [schema.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/schema.ts) | 283 | **19 张表**的 Drizzle 定义（双驱动共享） |
-| [driver.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/driver.ts) | 436 | `Db` 接口 + 手写幂等 DDL（sqlite/pg 两份）+ `openDb()` |
-| [migrate.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/migrate.ts) | ~90 | **列级增量迁移**（幂等补列） |
-| [repository.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/repository.ts) | 1121 | **`Repository` 类**：全部 CRUD + 标签/收藏/画像/任务/审计 |
-| [search.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/search.ts) | 326 | **`SearchEngine`**：四通道召回 + 过滤 + 融合入口 |
-| [fts.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/fts.ts) | ~120 | `SqliteFtsStore`（FTS5 虚拟表） |
-| [fts-pg.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/fts-pg.ts) | ~130 | `PgFtsStore`（tsvector + GIN 表达式索引） |
-| [vector/types.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/vector/types.ts) | 76 | **`VectorStore` 契约** + `hashSiteId` / `normalize` / blob 转换 |
-| [vector/memory.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/vector/memory.ts) | ~50 | 内存实现（降级用） |
-| [vector/sqlite-vec.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/vector/sqlite-vec.ts) | ~140 | `SqliteVecStore`（vec0 虚拟表） |
-| [vector/pgvector.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/vector/pgvector.ts) | ~130 | `PgVectorStore`（HNSW） |
+| [index.ts](../../packages/store/src/index.ts) | 8 | 桶导出 |
+| [schema.ts](../../packages/store/src/schema.ts) | 283 | **19 张表**的 Drizzle 定义（双驱动共享） |
+| [driver.ts](../../packages/store/src/driver.ts) | 436 | `Db` 接口 + 手写幂等 DDL（sqlite/pg 两份）+ `openDb()` |
+| [migrate.ts](../../packages/store/src/migrate.ts) | ~90 | **列级增量迁移**（幂等补列） |
+| [repository.ts](../../packages/store/src/repository.ts) | 1121 | **`Repository` 类**：全部 CRUD + 标签/收藏/画像/任务/审计 |
+| [search.ts](../../packages/store/src/search.ts) | 326 | **`SearchEngine`**：四通道召回 + 过滤 + 融合入口 |
+| [fts.ts](../../packages/store/src/fts.ts) | ~120 | `SqliteFtsStore`（FTS5 虚拟表） |
+| [fts-pg.ts](../../packages/store/src/fts-pg.ts) | ~130 | `PgFtsStore`（tsvector + GIN 表达式索引） |
+| [vector/types.ts](../../packages/store/src/vector/types.ts) | 76 | **`VectorStore` 契约** + `hashSiteId` / `normalize` / blob 转换 |
+| [vector/memory.ts](../../packages/store/src/vector/memory.ts) | ~50 | 内存实现（降级用） |
+| [vector/sqlite-vec.ts](../../packages/store/src/vector/sqlite-vec.ts) | ~140 | `SqliteVecStore`（vec0 虚拟表） |
+| [vector/pgvector.ts](../../packages/store/src/vector/pgvector.ts) | ~130 | `PgVectorStore`（HNSW） |
 
 测试：`test/store.test.ts`（向量双实现一致性 + 真实 SQLite 集成 + 分类管理/收藏/画像/任务/迁移）、`test/dialect.test.ts`（方言差异）。
 
@@ -289,7 +289,7 @@ async search(q) {
 
 ### 6.3 零结果兜底（两级放宽）
 
-四路全空时**不直接返回空白**，按顺序做两级重试（[search.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/search.ts#L110-L133)）：
+四路全空时**不直接返回空白**，按顺序做两级重试（[search.ts](../../packages/store/src/search.ts#L110-L133)）：
 
 | 级别 | 触发条件 | 放宽动作 | `fallback` 标记 |
 | --- | --- | --- | --- |
@@ -314,7 +314,7 @@ async search(q) {
 
 **RRF 侧**：融合是纯函数（同输入同输出）→ 融合结果按 `offset` 切片即可，无需游标。
 召回池 `pool = (offset + limit) × 3`，保证覆盖「已取走的 + 本页要展示的」。
-翻页间隙底层数据被修改会有轻微漂移——对导航检索可接受，换取免维护游标语义（注释写在 [types.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/types.ts#L239-L251)）。
+翻页间隙底层数据被修改会有轻微漂移——对导航检索可接受，换取免维护游标语义（注释写在 [types.ts](../../packages/core/src/types.ts#L239-L251)）。
 
 **浏览侧**（`browse()`）是排行榜而非 RRF：`OFFSET` 直接下推 SQL，并**多取 1 条**作 hasMore 探针（避免 COUNT 往返）。
 
@@ -398,7 +398,7 @@ export interface VectorRecord { key: number; siteId: string; vector: Float32Arra
 
 ### 8.4 ⚠️ 实测踩到的坑（封装在实现内）
 
-来自 [vector/types.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/vector/types.ts#L6-L13) 的注释：
+来自 [vector/types.ts](../../packages/store/src/vector/types.ts#L6-L13) 的注释：
 
 1. **sqlite-vec 的 vec0 虚拟表主键必须传 BigInt**——传 JS number 报 `Only integers are allows for primary key values`（拼写错误来自上游）
 2. **vec0 的 KNN 查询必须带 `LIMIT` 或 `k = ?` 约束**，否则 `prepare` 阶段直接抛错

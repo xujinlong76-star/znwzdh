@@ -8,12 +8,12 @@
 
 | 文件 | 行数 | 职责 |
 | --- | --- | --- |
-| [tools.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/tools.ts) | ~230 | **15 个工具定义** + zod 输入 schema + 权限模型（`requireScope` / `MAX_BATCH_ITEMS`） |
-| [handlers.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/handlers.ts) | ~360 | **工具实现**（`createHandlers(ctx)`）：权限校验 → 幂等去重 → 审计落库 |
-| [mcp-server.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/mcp-server.ts) | ~75 | **Server 工厂**：`createMcpServer(ctx, toolCtx)`——`ListToolsRequestSchema` / `CallToolRequestSchema` 装配，stdio 与 HTTP 共用 |
-| [stdio.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/stdio.ts) | ~45 | **stdio 传输**：`createMcpServer` + `StdioServerTransport` |
-| [http-server.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/http-server.ts) | ~270 | **HTTP 传输**：标准 MCP Streamable HTTP（`/mcp`）+ 兼容 REST + Bearer/Origin 鉴权；导出 `createMcpHttpServer(options)` 便于测试 |
-| [http.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/http.ts) | ~55 | **HTTP 启动入口**：读环境变量 → 校验生产约束 → `listen` |
+| [tools.ts](../../packages/mcp/src/tools.ts) | ~230 | **15 个工具定义** + zod 输入 schema + 权限模型（`requireScope` / `MAX_BATCH_ITEMS`） |
+| [handlers.ts](../../packages/mcp/src/handlers.ts) | ~360 | **工具实现**（`createHandlers(ctx)`）：权限校验 → 幂等去重 → 审计落库 |
+| [mcp-server.ts](../../packages/mcp/src/mcp-server.ts) | ~75 | **Server 工厂**：`createMcpServer(ctx, toolCtx)`——`ListToolsRequestSchema` / `CallToolRequestSchema` 装配，stdio 与 HTTP 共用 |
+| [stdio.ts](../../apps/mcp/src/stdio.ts) | ~45 | **stdio 传输**：`createMcpServer` + `StdioServerTransport` |
+| [http-server.ts](../../apps/mcp/src/http-server.ts) | ~270 | **HTTP 传输**：标准 MCP Streamable HTTP（`/mcp`）+ 兼容 REST + Bearer/Origin 鉴权；导出 `createMcpHttpServer(options)` 便于测试 |
+| [http.ts](../../apps/mcp/src/http.ts) | ~55 | **HTTP 启动入口**：读环境变量 → 校验生产约束 → `listen` |
 
 依赖：`@modelcontextprotocol/sdk 1.32.1`、`@navhub/api`（复用 `createContext`/`loadConfig`）、`@navhub/core`、`@navhub/store`、`@navhub/ai`、`zod`、`zod-to-json-schema`。
 测试：`test/mcp.test.ts`——权限硬边界、dryRun 默认行为、幂等、审计、admin 级工具；`test/mcp-http.test.ts`——标准 Streamable HTTP 全链路（真实端口 + fetch）、会话头规范行为、scope 收紧、Origin 白名单。
@@ -138,7 +138,7 @@ async function withIdempotency(key: string | undefined, compute: () => Promise<u
 
 ## 5. 两种传输
 
-### 5.1 stdio（[stdio.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/stdio.ts)）
+### 5.1 stdio（[stdio.ts](../../apps/mcp/src/stdio.ts)）
 
 **本地客户端直接拉起，没有网络攻击面**，权限由启动它的用户决定——因此 **scope 默认 `read,write`**（仍可用环境变量收紧）。
 
@@ -147,7 +147,7 @@ async function withIdempotency(key: string | undefined, compute: () => Promise<u
   "mcpServers": {
     "navhub": {
       "command": "node",
-      "args": ["--experimental-strip-types", "packages/mcp/src/stdio.ts"],
+      "args": ["--experimental-strip-types", "apps/mcp/src/stdio.ts"],
       "env": {
         "NAVHUB_MODE": "lite",
         "NAVHUB_SQLITE_PATH": "./data/navhub.db",
@@ -166,7 +166,7 @@ async function withIdempotency(key: string | undefined, compute: () => Promise<u
 | 入参描述 | `zodToJsonSchema(schema, { $refStrategy: "none" })`——全仓 zod 固定 v3，v3 无内置 `toJSONSchema`，故用社区实现 `zod-to-json-schema`；**转换失败退回宽松描述** `{type:"object", additionalProperties:true}`，保证工具仍可被发现与调用 |
 | 错误 | 捕获后返回 `isError: true` + `调用失败：<message>` |
 
-### 5.2 HTTP（[http.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/http.ts)）
+### 5.2 HTTP（[http.ts](../../apps/mcp/src/http.ts)）
 
 **HTTP 模式暴露在网络里，因此必须显式鉴权。**
 
@@ -231,11 +231,11 @@ const handlers = createHandlers(ctx);
 NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 ```
 
-compose 里的服务 `mcp`（[docker/docker-compose.yml](file:///c:/Users/许进龙/Desktop/web/docker/docker-compose.yml#L128-L156)）：
+compose 里的服务 `mcp`（[docker/docker-compose.yml](../../docker/docker-compose.yml#L128-L156)）：
 
 | 配置 | 值 |
 | --- | --- |
-| command | `node --experimental-strip-types packages/mcp/src/http.ts` |
+| command | `node --experimental-strip-types apps/mcp/src/http.ts` |
 | 端口 | `${NAVHUB_MCP_PORT:-8790}:8790` |
 | `NAVHUB_MCP_HTTP_HOST` | `0.0.0.0`（容器内必然要对外） |
 | `NAVHUB_MCP_TOKEN` | `${NAVHUB_MCP_TOKEN:-}` |

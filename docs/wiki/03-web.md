@@ -23,7 +23,7 @@ NavSphere 前端（69 处调用点，零改动）
 
 ### 1.1 `storage-adapter.ts` —— 前端持久化唯一接缝
 
-[storage-adapter.ts](file:///c:/Users/许进龙/Desktop/web/apps/web/src/lib/storage-adapter.ts)：
+[storage-adapter.ts](../../apps/web/src/lib/storage-adapter.ts)：
 
 ```ts
 export type StorageAdapterKind = "github" | "http" | "sqlite";
@@ -46,7 +46,7 @@ export interface StorageAdapter {
 
 ### 1.2 `github.ts` —— 保持原签名的门面
 
-[github.ts](file:///c:/Users/许进龙/Desktop/web/apps/web/src/lib/github.ts)：
+[github.ts](../../apps/web/src/lib/github.ts)：
 
 - **惰性单例** `getAdapter()`：避免每个请求重建适配器（重复读环境变量与构造闭包）
 - `getFileContent<T>(path)`：签名与原版完全一致 → 69 处调用点无需修改
@@ -65,7 +65,7 @@ export interface StorageAdapter {
 
 ## 2. `/api/hub/*` 运行时代理
 
-[route.ts](file:///c:/Users/许进龙/Desktop/web/apps/web/src/app/api/hub/[...path]/route.ts)：
+[route.ts](../../apps/web/src/app/api/hub/[...path]/route.ts)：
 
 ```ts
 const HUB_BASE = (process.env.NAVHUB_STORAGE_BASE_URL
@@ -94,7 +94,7 @@ const HUB_BASE = (process.env.NAVHUB_STORAGE_BASE_URL
 
 ### 2.1 路径归一化（历史 BUG 教训）
 
-[navhub-api.ts](file:///c:/Users/许进龙/Desktop/web/apps/web/src/lib/navhub-api.ts#L16-L32)：
+[navhub-api.ts](../../apps/web/src/lib/navhub-api.ts#L16-L32)：
 
 ```ts
 const BASE = '/api/hub'
@@ -171,7 +171,7 @@ function hubUrl(path: string): string {
 
 ### 4.1 `SearchPalette` —— 接入混合检索的命令面板
 
-[search-palette.tsx](file:///c:/Users/许进龙/Desktop/web/apps/web/src/components/search-palette.tsx)（`'use client'`）
+[search-palette.tsx](../../apps/web/src/components/search-palette.tsx)（`'use client'`）
 
 与上游 `search-bar` 的区别：上游只在客户端对 `navigation.json` 做 `includes()` 过滤，**拼音/语义/BM25/个性化全部闲置**；本组件把同一个 ⌘K 面板接到 `/api/search`。
 
@@ -187,7 +187,7 @@ function hubUrl(path: string): string {
 | **分页** | 首页 `limit=12`；`hasMore` 时渲染「加载更多（已显示 N 条）」，点击 `loadMore()` 追加下一页。`offsetRef` 用 **ref 而非 state**——避免其变化误触发第一页重查（第一页 effect 的依赖不含 offset）；新查询/清空时归零 |
 | 智能卡片 | `parseSpeculativeIntent`（推断意图）、`parseTechComparisonQuery`（技术栈对比）、`findMatchingArchitectureRecipe`（架构配方）——对应 core 的三个模块 |
 | 点击 | `reportClick(site.id, identity)` 上报事件（联动热度与画像） |
-| **关键词高亮** | 结果行的标题与描述走 [lib/highlight.ts](file:///c:/Users/许进龙/Desktop/web/apps/web/src/lib/highlight.ts) 的 `highlightParts(text, query)` → `Highlighted` 组件（命中片段加 `text-primary bg-primary/10`）。与上游 `search-bar` 的 `highlightText` 的区别：上游把 query **原样**塞进 `new RegExp(query)`——含 `+` `(` `.` 等元字符会抛异常或误匹配；这里逐 token 转义、长 token 优先、支持多词查询（任一命中即高亮）。拼音/语义召回无字面命中，不高亮是正确行为 |
+| **关键词高亮** | 结果行的标题与描述走 [lib/highlight.ts](../../apps/web/src/lib/highlight.ts) 的 `highlightParts(text, query)` → `Highlighted` 组件（命中片段加 `text-primary bg-primary/10`）。与上游 `search-bar` 的 `highlightText` 的区别：上游把 query **原样**塞进 `new RegExp(query)`——含 `+` `(` `.` 等元字符会抛异常或误匹配；这里逐 token 转义、长 token 优先、支持多词查询（任一命中即高亮）。拼音/语义召回无字面命中，不高亮是正确行为 |
 
 ### 4.2 其他组件
 
@@ -216,9 +216,9 @@ function hubUrl(path: string): string {
 
 | 部分 | 位置 | 说明 |
 | --- | --- | --- |
-| Manifest | [manifest.ts](file:///c:/Users/许进龙/Desktop/web/apps/web/src/app/manifest.ts) | **静态值**（不走中枢配置）——manifest 被浏览器缓存且参与安装提示，动态化收益低、风险高（中枢不可用时安装元信息会丢）。`standalone` + 主题色 `#378ADD` + 快捷方式（热度榜/标签云/我的收藏） |
+| Manifest | [manifest.ts](../../apps/web/src/app/manifest.ts) | **静态值**（不走中枢配置）——manifest 被浏览器缓存且参与安装提示，动态化收益低、风险高（中枢不可用时安装元信息会丢）。`standalone` + 主题色 `#378ADD` + 快捷方式（热度榜/标签云/我的收藏） |
 | Service Worker | `public/sw.js` | 导航 **network-first** 离线回退；**API 不走缓存**；静态资源 SWR |
-| **更新提示** | [pwa-register.tsx](file:///c:/Users/许进龙/Desktop/web/apps/web/src/components/pwa-register.tsx) | 监听 `updatefound` → `installed` 且**当前页已被旧 SW 控制**（`navigator.serviceWorker.controller` 存在）才提示「有新版本可用」（刷新/稍后浮条）——首次安装时 `controller` 为 null，**不提示**（首次访问不该被要求刷新）。点「刷新」→ `location.reload()`；`controllerchange` 自动刷新用 `updatePromptedRef` + `sessionStorage('pwa-reloaded')` 双闸门，**避免首次 `clients.claim()` 误触发刷新**与多标签页重复刷新 |
+| **更新提示** | [pwa-register.tsx](../../apps/web/src/components/pwa-register.tsx) | 监听 `updatefound` → `installed` 且**当前页已被旧 SW 控制**（`navigator.serviceWorker.controller` 存在）才提示「有新版本可用」（刷新/稍后浮条）——首次安装时 `controller` 为 null，**不提示**（首次访问不该被要求刷新）。点「刷新」→ `location.reload()`；`controllerchange` 自动刷新用 `updatePromptedRef` + `sessionStorage('pwa-reloaded')` 双闸门，**避免首次 `clients.claim()` 误触发刷新**与多标签页重复刷新 |
 | 图标 | `scripts/gen-pwa-icons.mjs` | 从 SVG 栅格化生成 192 / 512 / maskable / apple-touch-icon |
 
 ## 6. 上游 vendoring 与 overlay 机制
@@ -230,7 +230,7 @@ apps/web            ← 实际运行的前端（上游 + 自研覆盖）
 apps/web-overlay    ← NavHub 自有文件的唯一事实源（自研部分）
 ```
 
-[UPSTREAM.md](file:///c:/Users/许进龙/Desktop/web/apps/web-overlay/UPSTREAM.md)：
+[UPSTREAM.md](../../apps/web-overlay/UPSTREAM.md)：
 
 - 上游 ref `main`，commit `6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a`，vendored at `2026-10-12T15:50:42.169Z`
 - **Re-vendor**：`node scripts/vendor-web.mjs`

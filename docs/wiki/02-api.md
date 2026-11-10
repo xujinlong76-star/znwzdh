@@ -8,25 +8,25 @@
 
 | 文件 | 行数 | 职责 |
 | --- | --- | --- |
-| [main.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/main.ts) | 46 | **服务入口**：装配 config → context → server → JobRunner → listen + 优雅关闭 + 启动横幅 |
-| [auth.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/auth.ts) | ~110 | **REST 鉴权**：Bearer token 解析、sha256 哈希、scope 校验（admin ⊇ write ⊇ read）、timingSafeEqual |
-| [server.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/server.ts) | ~285 | **装配与横切关注点**（CORS / 限流 / bodyLimit / trustProxy / 指标 / 错误兜底 / OpenAPI 收集 / 缓存 / 鉴权）；业务路由按域拆至 [routes/](file:///c:/Users/许进龙/Desktop/web/apps/api/src/routes) 24 个插件，共 **85 条 REST 路由** |
-| [openapi.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/openapi.ts) | ~230 | **OpenAPI 3.1 文档生成**：从 Fastify `onRoute` 收集的路由表自动生成 `/api/openapi.json` + `/api/docs` HTML 视图 |
-| [storage.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts) | ~410 | **存储适配层**：NavSphere 的「JSON 文件」语义 → 数据库语义 |
-| [context.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/context.ts) | 144 | **应用上下文装配**：双模式差异的唯一消化点，能力可选、失败不致命 |
-| [config.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/config.ts) | 112 | 运行配置 `loadConfig()`：环境变量解析与默认值 |
-| [jobs.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/jobs.ts) | ~280 | `JobRunner`：4 种定时任务 + 单实例锁 + 防重入 |
-| [index-site.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/index-site.ts) | 30 | `indexSite()`：站点写入后的向量索引共享函数 |
-| [profile-service.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/profile-service.ts) | 62 | `refreshUserProfile()`：画像聚合刷新（60s 节流） |
-| [seed.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/seed.ts) | ~105 | `runSeed()`：50 个精选中文站点播种 + 向量生成 |
-| [seed-main.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/seed-main.ts) | ~22 | 种子独立入口（`pnpm --filter @navhub/api seed`） |
-| [migrate.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/migrate.ts) | ~45 | schema 迁移 CLI 入口（幂等补列） |
-| [seed-data.json](file:///c:/Users/许进龙/Desktop/web/apps/api/src/seed-data.json) | 12KB | 50 个真实中文站点种子数据 |
-| [index.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/index.ts) | 10 | **可复用出口**：`export * from config/context/server/storage` |
+| [main.ts](../../apps/api/src/main.ts) | 46 | **服务入口**：装配 config → context → server → JobRunner → listen + 优雅关闭 + 启动横幅 |
+| [auth.ts](../../apps/api/src/auth.ts) | ~110 | **REST 鉴权**：Bearer token 解析、sha256 哈希、scope 校验（admin ⊇ write ⊇ read）、timingSafeEqual |
+| [server.ts](../../apps/api/src/server.ts) | ~285 | **装配与横切关注点**（CORS / 限流 / bodyLimit / trustProxy / 指标 / 错误兜底 / OpenAPI 收集 / 缓存 / 鉴权）；业务路由按域拆至 [routes/](../../apps/api/src/routes) 24 个插件，共 **85 条 REST 路由** |
+| [openapi.ts](../../apps/api/src/openapi.ts) | ~230 | **OpenAPI 3.1 文档生成**：从 Fastify `onRoute` 收集的路由表自动生成 `/api/openapi.json` + `/api/docs` HTML 视图 |
+| [storage.ts](../../apps/api/src/storage.ts) | ~410 | **存储适配层**：NavSphere 的「JSON 文件」语义 → 数据库语义 |
+| [context.ts](../../apps/api/src/context.ts) | 144 | **应用上下文装配**：双模式差异的唯一消化点，能力可选、失败不致命 |
+| [config.ts](../../apps/api/src/config.ts) | 112 | 运行配置 `loadConfig()`：环境变量解析与默认值 |
+| [jobs.ts](../../apps/api/src/jobs.ts) | ~280 | `JobRunner`：4 种定时任务 + 单实例锁 + 防重入 |
+| [index-site.ts](../../apps/api/src/index-site.ts) | 30 | `indexSite()`：站点写入后的向量索引共享函数 |
+| [profile-service.ts](../../apps/api/src/profile-service.ts) | 62 | `refreshUserProfile()`：画像聚合刷新（60s 节流） |
+| [seed.ts](../../apps/api/src/seed.ts) | ~105 | `runSeed()`：50 个精选中文站点播种 + 向量生成 |
+| [seed-main.ts](../../apps/api/src/seed-main.ts) | ~22 | 种子独立入口（`pnpm --filter @navhub/api seed`） |
+| [migrate.ts](../../apps/api/src/migrate.ts) | ~45 | schema 迁移 CLI 入口（幂等补列） |
+| [seed-data.json](../../apps/api/src/seed-data.json) | 12KB | 50 个真实中文站点种子数据 |
+| [index.ts](../../apps/api/src/index.ts) | 10 | **可复用出口**：`export * from config/context/server/storage` |
 
 ## 2. 启动流程
 
-[main.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/main.ts) 导入即启动（**不使用主模块判断**，规避 Windows 路径形式不一致导致的静默退出）：
+[main.ts](../../apps/api/src/main.ts) 导入即启动（**不使用主模块判断**，规避 Windows 路径形式不一致导致的静默退出）：
 
 ```ts
 const config = loadConfig();            // 1. 环境变量 → AppConfig
@@ -60,7 +60,7 @@ NavHub 已启动
 
 ### 2.1 `AppContext` —— 全局依赖容器
 
-[context.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/context.ts#L25-L35)：
+[context.ts](../../apps/api/src/context.ts#L25-L35)：
 
 ```ts
 export interface AppContext {
@@ -87,7 +87,7 @@ export interface AppContext {
 
 ### 2.2 Fastify 全局配置
 
-[server.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/server.ts#L22-L41)：
+[server.ts](../../apps/api/src/server.ts#L22-L41)：
 
 | 配置 | 值 | 说明 |
 | --- | --- | --- |
@@ -182,7 +182,7 @@ export interface AppContext {
 
 scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每次成功鉴权刷新。
 
-测试：[apps/api/test/auth.test.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/test/auth.test.ts)——42 个用例覆盖开放模式回归、逐级拦截、scope 含义、生命周期（含省略落上限 / 显式永久被拒 / 放行实例）、名称冲突拦截（409 / 吊销后复用 / PATCH 撞名 / 超长名）、审计故障容错、审计身份。
+测试：[apps/api/test/auth.test.ts](../../apps/api/test/auth.test.ts)——42 个用例覆盖开放模式回归、逐级拦截、scope 含义、生命周期（含省略落上限 / 显式永久被拒 / 放行实例）、名称冲突拦截（409 / 吊销后复用 / PATCH 撞名 / 超长名）、审计故障容错、审计身份。
 
 ## 3. REST 路由完整清单（62 条）
 
@@ -202,7 +202,7 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 | GET | `/api/search` | 混合检索 | **限流 120/min**；`searchBody` zod 用 `coerce` 兼容 query string |
 | POST | `/api/search` | 同上（JSON 体） | 与 GET 共用 schema |
 
-**检索流程**（[runSearch](file:///c:/Users/许进龙/Desktop/web/apps/api/src/server.ts#L103-L140)）：
+**检索流程**（[runSearch](../../apps/api/src/server.ts#L103-L140)）：
 1. 解析身份 `userId` / `anonId` → 触发 `refreshUserProfile`（节流 60s，`void` 不阻塞）
 2. 若调用方未显式传 `personalize`，从 `user_profiles` 表读取画像注入
 3. `ctx.search.search()` → hits 补全 `site` 对象
@@ -337,7 +337,7 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 | GET | `/api/storage?path=...` | 读取 NavSphere JSON 语义内容 |
 | PUT | `/api/storage` | `{path, content, message?}` 写入，落 `storage.write` 审计 |
 
-> 注释原话（[server.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/server.ts#L706-L711)）：**「这两个端点就是『不修改前端 69 处调用点』的全部秘密。」** `path` 沿用前端原值（如 `src/navsphere/content/navigation.json`），前端连常量都不用改。
+> 注释原话（[server.ts](../../apps/api/src/server.ts#L706-L711)）：**「这两个端点就是『不修改前端 69 处调用点』的全部秘密。」** `path` 沿用前端原值（如 `src/navsphere/content/navigation.json`），前端连常量都不用改。
 
 **整包覆盖写的缩水保护（P2）**：`videos.json` 与 `navigation.json` 在存量 ≥ **100** 条时，
 待写入低于存量 **80%** 会返回 `409`（`video_shrink_*` / `navigation_shrink_*`），
@@ -396,7 +396,7 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 | GET | `/api/profile` | 读画像 `topCategories` / `topTags` / `visitedSiteIds` / `favoriteSiteIds` / `searchCount`；缺身份 → `{error}` | `userId` 或 `anonId` |
 | DELETE | `/api/profile` | **重置画像**：清 `user_profiles` 行 + 该身份的 `events`（click/favorite，按独立列 `events.identity` 等值删除），返回 `{ok, profileCleared, eventsRemoved}` | 同上 |
 
-**重置语义**（[profile-service.ts `resetUserProfile`](file:///c:/Users/许进龙/Desktop/web/apps/api/src/profile-service.ts)）：两件都清——只删画像行没用，下次搜索的 `refreshUserProfile` 会从残留事件重建。**收藏夹与搜索历史不动**（用户自己的数据，不是被推断的偏好）；同时清掉节流表条目，避免新行为延迟生效。前端入口：`/preferences`（我的偏好页）。
+**重置语义**（[profile-service.ts `resetUserProfile`](../../apps/api/src/profile-service.ts)）：两件都清——只删画像行没用，下次搜索的 `refreshUserProfile` 会从残留事件重建。**收藏夹与搜索历史不动**（用户自己的数据，不是被推断的偏好）；同时清掉节流表条目，避免新行为延迟生效。前端入口：`/preferences`（我的偏好页）。
 
 ### 3.17 响应缓存头（onSend hook）
 
@@ -428,7 +428,7 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 | GET | `/api/openapi.json` | **OpenAPI 3.1** 文档（`maxAge: 60`） | public |
 | GET | `/api/docs` | 文档 HTML 视图（深色端点表格 + 鉴权标注，**不依赖外部 CDN**，内网可直接看） | public |
 
-**为什么自动生成**（[openapi.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/openapi.ts)）：`buildServer` 里注册 `onRoute` 钩子，在每条路由注册时收集 `{method, url, scope}` ——文档与真实路由**同源**，新增/删除路由时同步变化，不存在手写清单漂移（手写清单必然漂移，而本文档存在的唯一目的就是防漂移）。
+**为什么自动生成**（[openapi.ts](../../apps/api/src/openapi.ts)）：`buildServer` 里注册 `onRoute` 钩子，在每条路由注册时收集 `{method, url, scope}` ——文档与真实路由**同源**，新增/删除路由时同步变化，不存在手写清单漂移（手写清单必然漂移，而本文档存在的唯一目的就是防漂移）。
 
 生成内容：
 - `:name` → `{name}` path 模板 + `parameters`（`id` 标注「站点可传 URL，需 encodeURIComponent」）
@@ -454,14 +454,14 @@ VIDEOS_PATH           = "src/navsphere/content/videos.json"
 
 | 函数 | 行号 | 职责 |
 | --- | --- | --- |
-| `buildNavigationData(ctx)` | [#L68](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts#L68) | DB → NavSphere `navigation.json` 形状；类目严格按 `sort` 排序，保证拖拽结果可复现 |
-| `writeNavigationData(ctx, data)` | [#L149](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts#L149) | 前端快照 → **全量对齐**写回 DB，**按 `source` 过滤删除范围** |
-| `readSiteConfig / writeSiteConfig` | [#L284](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts#L284) | `site.json` ↔ KV 存储 |
-| `readResourceMetadata / writeResourceMetadata` | [#L297](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts#L297) | `resource-metadata.json` |
-| `readVideosData / writeVideosData` | [#L313](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts#L313) | `videos.json` |
-| `pathToKey(path)` | [#L370](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts#L370) | 路径 → 通用 JSON 文档的存储键 |
-| `readStoragePath(ctx, path)` | [#L375](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts#L375) | **内容路径分发**：按 path 分派到上述具体读写器 |
-| `writeStoragePath(ctx, path, content)` | [#L387](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts#L387) | 同上（写），返回 `{ok, note}` |
+| `buildNavigationData(ctx)` | [#L68](../../apps/api/src/storage.ts#L68) | DB → NavSphere `navigation.json` 形状；类目严格按 `sort` 排序，保证拖拽结果可复现 |
+| `writeNavigationData(ctx, data)` | [#L149](../../apps/api/src/storage.ts#L149) | 前端快照 → **全量对齐**写回 DB，**按 `source` 过滤删除范围** |
+| `readSiteConfig / writeSiteConfig` | [#L284](../../apps/api/src/storage.ts#L284) | `site.json` ↔ KV 存储 |
+| `readResourceMetadata / writeResourceMetadata` | [#L297](../../apps/api/src/storage.ts#L297) | `resource-metadata.json` |
+| `readVideosData / writeVideosData` | [#L313](../../apps/api/src/storage.ts#L313) | `videos.json` |
+| `pathToKey(path)` | [#L370](../../apps/api/src/storage.ts#L370) | 路径 → 通用 JSON 文档的存储键 |
+| `readStoragePath(ctx, path)` | [#L375](../../apps/api/src/storage.ts#L375) | **内容路径分发**：按 path 分派到上述具体读写器 |
+| `writeStoragePath(ctx, path, content)` | [#L387](../../apps/api/src/storage.ts#L387) | 同上（写），返回 `{ok, note}` |
 
 ### 4.3 ⚠️ D1 缺陷与 source 过滤（重要）
 
@@ -486,7 +486,7 @@ VIDEOS_PATH           = "src/navsphere/content/videos.json"
 
 ### 4.4 NsItem 扩展字段
 
-NavSphere 站点项在 山羊胡侧扩展了 4.0 动态特性（见 [types.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/types.ts#L113-L151) 的 `Site`）：
+NavSphere 站点项在 山羊胡侧扩展了 4.0 动态特性（见 [types.ts](../../packages/core/src/types.ts#L113-L151) 的 `Site`）：
 `tags[]`、`actions[]`（深链微动作）、`relations[]`（生态/替代品）、`liveMetrics`（GitHub Star / 版本 / license）、`workspaces[]`（场景工作台）、`health`。
 
 ## 5. jobs.ts —— 任务队列
@@ -519,31 +519,31 @@ new JobRunner(ctx, { intervalMs = envInterval(), maxPerTick = 10, holder = "pid-
 | **手动触发** | `runner.tick()`（测试用） |
 | **开关** | `NAVHUB_JOBS_ENABLED=0` 关闭 |
 
-> **列迁移**：`jobs.next_run_at` 登记在 [migrate.ts `COLUMN_ALTERS`](file:///c:/Users/许进龙/Desktop/web/packages/store/src/migrate.ts)，老库启动自动补列；DDl 里也带（新建库），并加 `(status, next_run_at)` 索引。
+> **列迁移**：`jobs.next_run_at` 登记在 [migrate.ts `COLUMN_ALTERS`](../../packages/store/src/migrate.ts)，老库启动自动补列；DDl 里也带（新建库），并加 `(status, next_run_at)` 索引。
 > 测试：`apps/api/test/jobs.test.ts`——退避回 pending、到点前不认领、3 次耗尽 + 恰好 1 次告警、`backoffMs` 指数与封顶、`NAVHUB_JOBS_INTERVAL_MS` 配置与非法值回退。
 
 ## 6. 其他关键函数
 
 ### 6.1 `indexSite()` —— 向量索引共享函数
 
-[index-site.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/index-site.ts#L12-L29)：站点创建/更新后调用，
+[index-site.ts](../../apps/api/src/index-site.ts#L12-L29)：站点创建/更新后调用，
 `embedding.encode(siteEmbeddingText({title, description, url}))` → `vectors.upsert()` → `repo.saveEmbedding()`。
 **失败不阻断主流程**，原因记入 `capabilities.notes`。
 
 ### 6.2 `refreshUserProfile()` —— 画像刷新
 
-[profile-service.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/profile-service.ts)：
+[profile-service.ts](../../apps/api/src/profile-service.ts)：
 - `isProfileStale(identity, now)`：60s 节流判断（内存 Map）
 - `refreshUserProfile(ctx, identity)`：从 `events` 聚合 → `buildProfile()` → 写 `user_profiles`
 - `resetProfileThrottle()`：测试用
 
 ### 6.3 `runSeed()` —— 种子数据
 
-[seed.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/seed.ts#L49-L105)：读 `seed-data.json`（50 个真实中文站点）→ 按 URL 去重创建 → 写站点配置 → `withEmbeddings` 时生成向量（首次会下载 24MB 模型）。
+[seed.ts](../../apps/api/src/seed.ts#L49-L105)：读 `seed-data.json`（50 个真实中文站点）→ 按 URL 去重创建 → 写站点配置 → `withEmbeddings` 时生成向量（首次会下载 24MB 模型）。
 
 ### 6.4 配置：`loadConfig()`
 
-见 [config.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/config.ts#L68-L112)，全部环境变量见 [09-run-and-test.md](./09-run-and-test.md)。
+见 [config.ts](../../apps/api/src/config.ts#L68-L112)，全部环境变量见 [09-run-and-test.md](./09-run-and-test.md)。
 
 关键约束：
 - `NAVHUB_MODE` 只能是 `lite` / `standard`，否则启动报错
@@ -554,5 +554,5 @@ new JobRunner(ctx, { intervalMs = envInterval(), maxPerTick = 10, holder = "pid-
 
 | 文件 | 覆盖 |
 | --- | --- |
-| [apps/api/test/api.test.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/test/api.test.ts) | **真实 HTTP 端到端**：检索、CRUD、去重、索引同步、降级、审计、收藏夹、榜单、D1 快照误删回归 |
-| [apps/api/test/jobs.test.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/test/jobs.test.ts) | JobRunner 四任务 + 单实例锁 |
+| [apps/api/test/api.test.ts](../../apps/api/test/api.test.ts) | **真实 HTTP 端到端**：检索、CRUD、去重、索引同步、降级、审计、收藏夹、榜单、D1 快照误删回归 |
+| [apps/api/test/jobs.test.ts](../../apps/api/test/jobs.test.ts) | JobRunner 四任务 + 单实例锁 |

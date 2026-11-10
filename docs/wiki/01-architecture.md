@@ -48,7 +48,7 @@
 ## 3. 目录结构
 
 ```
-c:\Users\许进龙\Desktop\web\
+<仓库根>/
 ├── apps/
 │   ├── api/                 Fastify 中枢（REST + 存储兼容 API + 种子数据 + 任务队列）
 │   ├── web/                 Next.js 15 前端（vendored NavSphere 底座 + NavHub 覆盖）
@@ -75,7 +75,7 @@ c:\Users\许进龙\Desktop\web\
 
 ## 4. 两种运行模式
 
-模式由 `NAVHUB_MODE` 决定，在 [config.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/config.ts#L12) 定义、在 [context.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/context.ts#L37) 被消费——**这是双模式差异被消化掉的唯一位置**。
+模式由 `NAVHUB_MODE` 决定，在 [config.ts](../../apps/api/src/config.ts#L12) 定义、在 [context.ts](../../apps/api/src/context.ts#L37) 被消费——**这是双模式差异被消化掉的唯一位置**。
 
 | 维度 | `lite`（默认） | `standard` |
 | --- | --- | --- |
@@ -90,7 +90,7 @@ c:\Users\许进龙\Desktop\web\
 
 ### 5.1 存储接缝：把改造点压缩到 2 个函数
 
-NavSphere 全站持久化只经过两个函数（[github.ts](file:///c:/Users/许进龙/Desktop/web/apps/web/src/lib/github.ts#L133-L179)）：
+NavSphere 全站持久化只经过两个函数（[github.ts](../../apps/web/src/lib/github.ts#L133-L179)）：
 
 ```
 getFileContent(path)              -> 读 JSON
@@ -105,11 +105,11 @@ commitFile(path, content, ...)    -> 写 JSON
 | `http` | 山羊胡中枢（**默认**） | 自建，获得 AI 检索能力 |
 | `sqlite` | 同进程直连数据库 | 单机部署（**不适用于 Web 前端**，仅 API 侧） |
 
-服务端对应实现是 [storage.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts)：把 JSON 文件语义翻译成数据库语义。
+服务端对应实现是 [storage.ts](../../apps/api/src/storage.ts)：把 JSON 文件语义翻译成数据库语义。
 
 ### 5.2 能力可选、失败不致命
 
-`createContext` 的装配策略是「能力可选、失败不致命」（[context.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/context.ts#L7-L11)）：
+`createContext` 的装配策略是「能力可选、失败不致命」（[context.ts](../../apps/api/src/context.ts#L7-L11)）：
 
 | 缺失能力 | 降级行为 | 上报位置 |
 | --- | --- | --- |
@@ -129,15 +129,15 @@ rrf(1)  = 1/61 = 0.01639
 rrf(8)  = 1/68 = 0.01471   -> 仅差 11%
 ```
 
-任何 ≥11% 的事后加成都能把排 8 顶到排 1——「越用越懂你」会退化成「搜什么都搜不到」。因此 [fusion.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/fusion.ts#L94-L103) 把个性化做成一路权重 **0.3** 的通道（相关性通道 0.9~1.4），翻转能力被权重天然限界，且能通过 `contributions` 解释「它为什么排这儿」。
+任何 ≥11% 的事后加成都能把排 8 顶到排 1——「越用越懂你」会退化成「搜什么都搜不到」。因此 [fusion.ts](../../packages/core/src/fusion.ts#L94-L103) 把个性化做成一路权重 **0.3** 的通道（相关性通道 0.9~1.4），翻转能力被权重天然限界，且能通过 `contributions` 解释「它为什么排这儿」。
 
 ### 5.4 schema 只用双库共支持的列类型
 
-[schema.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/src/schema.ts#L3-L9) 只使用 `integer / real / text / blob`，**不引入任何方言特定类型**。向量与全文索引由适配器层用虚拟表/扩展对象实现。代价是向量列在 schema 里「看不见」，收益是同一份表定义同时跑两种数据库，方言差异收敛到 `driver.ts` 与 `vector/`。
+[schema.ts](../../packages/store/src/schema.ts#L3-L9) 只使用 `integer / real / text / blob`，**不引入任何方言特定类型**。向量与全文索引由适配器层用虚拟表/扩展对象实现。代价是向量列在 schema 里「看不见」，收益是同一份表定义同时跑两种数据库，方言差异收敛到 `driver.ts` 与 `vector/`。
 
 ### 5.5 启动入口独立成 main.ts
 
-[main.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/main.ts#L3-L8) 导入即启动，**不依赖主模块判断**——Windows 上 `process.argv[1]` 与 `import.meta.url` 路径形式不一致会导致脚本静默退出且无输出，比报错更难排查。
+[main.ts](../../apps/api/src/main.ts#L3-L8) 导入即启动，**不依赖主模块判断**——Windows 上 `process.argv[1]` 与 `import.meta.url` 路径形式不一致会导致脚本静默退出且无输出，比报错更难排查。
 
 ## 6. 模块依赖关系
 
@@ -161,7 +161,7 @@ apps/web (navsphere)    ← 独立（不 import 任何 @navhub/* 包，走 HTTP�
 
 ### 6.2 关键点
 
-- **`@navhub/api` 的 `index.ts` 是可复用出口**（[index.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/index.ts#L1-L10)）：导出 `config / context / server / storage`，让 MCP 包与 HTTP 服务共用同一套上下文装配——保证两条入口的检索与写入行为完全一致，不会出现「两套逻辑算出两个答案」。
+- **`@navhub/api` 的 `index.ts` 是可复用出口**（[index.ts](../../apps/api/src/index.ts#L1-L10)）：导出 `config / context / server / storage`，让 MCP 包与 HTTP 服务共用同一套上下文装配——保证两条入口的检索与写入行为完全一致，不会出现「两套逻辑算出两个答案」。
 - **`apps/web` 不 import `@navhub/*`**：前端通过 `STORAGE_ADAPTER=http` + `/api/hub/*` 运行时代理访问中枢，保持前后端解耦（vendored 上游不被打包中枢代码）。
 - **`pnpm` 严格布局**：原生依赖必须是直接依赖——`sqlite-vec` 必须写在 `apps/api` 的 `dependencies` 里，否则不会因 `@navhub/store` 依赖它而暴露给 API。
 

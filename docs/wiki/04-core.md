@@ -8,24 +8,24 @@
 
 | 文件 | 行数 | 职责 |
 | --- | --- | --- |
-| [index.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/index.ts) | 18 | 桶导出（17 个模块） |
-| [types.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/types.ts) | ~280 | **领域模型**：Site / Category / 检索类型 / 富化类型 / NavSphere 兼容类型 |
-| [channels.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/channels.ts) | 68 | **通道注册表**：名单 + 权重，运行时可扩展 |
-| [cjk.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/cjk.ts) | 86 | CJK 分词与 FTS5 MATCH 表达式生成 |
-| [pinyin.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/pinyin.ts) | 45 | 拼音线索生成与查询归一化 |
-| [fusion.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/fusion.ts) | 140 | **RRF 融合** + 个性化通道 + coverage |
-| [ranking.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/ranking.ts) | 58 | 热度 / 新鲜度公式（纯函数） |
-| [profile.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/profile.ts) | ~70 | 画像聚合（半衰期衰减） |
-| [ecosystem.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/ecosystem.ts) | 183+ | 生态增强库：深链动作 / 平替雷达 / 工作台映射 |
-| [speculative-intent.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/speculative-intent.ts) | ~380 | 推测意图 0-RTT 原地预执行（Base64/时间戳/颜色/算术/JSON/URL/哈希/IP） |
-| [comparison.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/comparison.ts) | ~230 | 端侧竞品并排对比矩阵（`react vs vue` 类查询） |
-| [architecture-recipe.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/architecture-recipe.ts) | ~270 | Graph-RAG 多跳技术栈链路配方 |
-| [modular.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/modular.ts) | ~490 | 模块化前端系统协议 + 栅格布局算法 |
-| [vault.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/vault.ts) | ~130 | 零知识端到端加密金库（PBKDF2 + AES-256-GCM） |
-| [prefetch.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/prefetch.ts) | ~110 | 预测性鼠标轨迹预取与 0-RTT 预连接 |
-| [linucb.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/linucb.ts) | ~280 | **LinUCB 上下文多臂老虎机**自适应通道融合 |
-| [hyperbolic.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/hyperbolic.ts) | ~200 | **庞加莱双曲空间**度量与平替推理 |
-| [health-sentinel.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/health-sentinel.ts) | ~160 | 页面视觉感知防劫持与软 404 巡检 |
+| [index.ts](../../packages/core/src/index.ts) | 18 | 桶导出（17 个模块） |
+| [types.ts](../../packages/core/src/types.ts) | ~280 | **领域模型**：Site / Category / 检索类型 / 富化类型 / NavSphere 兼容类型 |
+| [channels.ts](../../packages/core/src/channels.ts) | 68 | **通道注册表**：名单 + 权重，运行时可扩展 |
+| [cjk.ts](../../packages/core/src/cjk.ts) | 86 | CJK 分词与 FTS5 MATCH 表达式生成 |
+| [pinyin.ts](../../packages/core/src/pinyin.ts) | 45 | 拼音线索生成与查询归一化 |
+| [fusion.ts](../../packages/core/src/fusion.ts) | 140 | **RRF 融合** + 个性化通道 + coverage |
+| [ranking.ts](../../packages/core/src/ranking.ts) | 58 | 热度 / 新鲜度公式（纯函数） |
+| [profile.ts](../../packages/core/src/profile.ts) | ~70 | 画像聚合（半衰期衰减） |
+| [ecosystem.ts](../../packages/core/src/ecosystem.ts) | 183+ | 生态增强库：深链动作 / 平替雷达 / 工作台映射 |
+| [speculative-intent.ts](../../packages/core/src/speculative-intent.ts) | ~380 | 推测意图 0-RTT 原地预执行（Base64/时间戳/颜色/算术/JSON/URL/哈希/IP） |
+| [comparison.ts](../../packages/core/src/comparison.ts) | ~230 | 端侧竞品并排对比矩阵（`react vs vue` 类查询） |
+| [architecture-recipe.ts](../../packages/core/src/architecture-recipe.ts) | ~270 | Graph-RAG 多跳技术栈链路配方 |
+| [modular.ts](../../packages/core/src/modular.ts) | ~490 | 模块化前端系统协议 + 栅格布局算法 |
+| [vault.ts](../../packages/core/src/vault.ts) | ~130 | 零知识端到端加密金库（PBKDF2 + AES-256-GCM） |
+| [prefetch.ts](../../packages/core/src/prefetch.ts) | ~110 | 预测性鼠标轨迹预取与 0-RTT 预连接 |
+| [linucb.ts](../../packages/core/src/linucb.ts) | ~280 | **LinUCB 上下文多臂老虎机**自适应通道融合 |
+| [hyperbolic.ts](../../packages/core/src/hyperbolic.ts) | ~200 | **庞加莱双曲空间**度量与平替推理 |
+| [health-sentinel.ts](../../packages/core/src/health-sentinel.ts) | ~160 | 页面视觉感知防劫持与软 404 巡检 |
 
 > `packages/core/test/` 6 个测试文件：`core` / `ranking-profile` / `modular-layout` / `vault-and-prefetch` / `recipes-and-comparison` / `future-algorithms`。
 
@@ -196,7 +196,7 @@ export const DEFAULT_WEIGHTS: FusionWeights = { ...channelWeights(), coverageStr
 
 ### 6.3 为什么个性化必须是「一路通道」
 
-[fusion.ts L94-L103](file:///c:/Users/许进龙/Desktop/web/packages/core/src/fusion.ts#L94-L103) 的注释原话：
+[fusion.ts L94-L103](../../packages/core/src/fusion.ts#L94-L103) 的注释原话：
 
 > RRF 的 k=60 让靠前名次的分数非常接近（排 1 与排 10 只差 ~15%）。如果先算相关性、再乘一个最高 20% 的偏好系数，就能轻易把排 8 顶到排 1 前面——这正是「越用越懂你」变成「搜什么都搜不到」的典型翻车方式。作为独立通道后，翻转能力由通道权重（默认 0.3 vs 相关性 1.0）明确限界，并且能通过 contributions 解释「它为什么排这儿」。
 

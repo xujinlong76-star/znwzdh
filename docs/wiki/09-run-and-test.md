@@ -88,7 +88,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d  # 追加 MCP HTTP
   "mcpServers": {
     "navhub": {
       "command": "node",
-      "args": ["--experimental-strip-types", "packages/mcp/src/stdio.ts"],
+      "args": ["--experimental-strip-types", "apps/mcp/src/stdio.ts"],
       "env": { "NAVHUB_MODE": "lite", "NAVHUB_SQLITE_PATH": "./data/navhub.db" }
     }
   }
@@ -226,18 +226,18 @@ pnpm test:pg       # PostgreSQL 手工验收（scripts/pg-check.mts，需先起 
 
 ### 6.2 跨方言自动化测试（#19）
 
-[packages/store/test/pg-dialect.e2e.test.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/test/pg-dialect.e2e.test.ts)：
+[packages/store/test/pg-dialect.e2e.test.ts](../../packages/store/test/pg-dialect.e2e.test.ts)：
 把 SQLite 套件的**核心断言**（标签聚合、类目物化路径、FTS/拼音/浏览、软删除部分唯一索引、标签删除索引刷新、巡检历史、任务队列退避、审计/事件、画像 roundtrip）复跑到**真 PostgreSQL** 上。
 
 | 要点 | 说明 |
 | --- | --- |
 | **连不上不红** | 未设 `NAVHUB_TEST_DATABASE_URL` → 整套件 skip（并 console.warn 说明原因）；设了但连不上 → **失败**（不能悄悄跳过） |
 | 覆盖的方言坑 | `group_concat` vs `string_agg`、`?` → `$n` 占位符、`BOOLEAN` vs `INTEGER`、PG 别名小写折叠、`WHERE deleted_at IS NULL` 部分唯一索引 |
-| CI | [.github/workflows/ci.yml](file:///c:/Users/许进龙/Desktop/web/.github/workflows/ci.yml)：`test-sqlite`（typecheck + 全量测试）与 `test-postgres`（**pgvector/pgvector:pg16 service** + 只跑本套件）两个 job，PG 连接串经 `NAVHUB_TEST_DATABASE_URL` 注入 |
+| CI | [.github/workflows/ci.yml](../../.github/workflows/ci.yml)：`test-sqlite`（typecheck + 全量测试）与 `test-postgres`（**pgvector/pgvector:pg16 service** + 只跑本套件）两个 job，PG 连接串经 `NAVHUB_TEST_DATABASE_URL` 注入 |
 
 本地跑：起 postgres 后 `set NAVHUB_TEST_DATABASE_URL=postgres://... && pnpm exec vitest run packages/store/test/pg-dialect.e2e.test.ts`。
 
-[vitest.config.ts](file:///c:/Users/许进龙/Desktop/web/vitest.config.ts)：
+[vitest.config.ts](../../vitest.config.ts)：
 
 ```ts
 include: ["packages/**/test/**/*.test.ts", "apps/api/test/**/*.test.ts"],

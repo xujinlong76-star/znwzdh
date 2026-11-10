@@ -7,13 +7,13 @@ test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
 
   test('页面成功加载且包含导航中枢标题与检索框', async ({ page }) => {
     await expect(page).toHaveTitle(/Nav|导航/i);
-    const searchInput = page.getByPlaceholder(/搜索导航/);
+    const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
     await expect(searchInput).toBeVisible();
   });
 
   test('支持快捷键激活检索框并触发 0-RTT 意图卡片 (Speculative Intent)', async ({ page }) => {
     // 聚焦检索框
-    const searchInput = page.getByPlaceholder(/搜索导航/);
+    const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
     await searchInput.click();
 
     // 输入 JSON 串触发 0-RTT 格式化 / 验证意图微部件
@@ -23,7 +23,7 @@ test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
   });
 
   test('输入对比类查询触发技术选型对比矩阵 (Tech Comparison)', async ({ page }) => {
-    const searchInput = page.getByPlaceholder(/搜索导航/);
+    const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
     await searchInput.click();
 
     // 输入框架对比查询
@@ -34,7 +34,7 @@ test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
   });
 
   test('输入架构方案查询触发脚手架决策卡片 (Architecture Recipe)', async ({ page }) => {
-    const searchInput = page.getByPlaceholder(/搜索导航/);
+    const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
     await searchInput.click();
 
     // 输入全栈架构方案

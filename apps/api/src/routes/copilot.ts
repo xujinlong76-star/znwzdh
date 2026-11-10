@@ -91,7 +91,7 @@ export function retrievalQueryOf(message: string): string {
 export async function retrieveCopilotCandidates(
   ctx: AppContext,
   query: string,
-  opts: { pinCategory?: boolean } = {},
+  opts: { pinCategory?: boolean; lexicalOnly?: boolean } = {},
 ): Promise<CopilotRetrieval> {
   try {
     const result = await ctx.search.search({
@@ -99,7 +99,19 @@ export async function retrieveCopilotCandidates(
       limit: COPILOT_RETRIEVAL_LIMIT,
       statuses: ["active"],
     });
-    const searchIds = [...new Set(result.hits.map((h) => h.siteId))];
+    // 策展场景（lexicalOnly）：只保留有词法通道（exact/fts/pinyin）佐证的命中。
+    // 为什么不在检索引擎里一刀切：通用搜索是召回导向，弱语义近邻作为低权重
+    // 补充是引擎的既定契约（见 store 的语义闸门测试）；但场景包步骤是「按顺序
+    // 用这些工具把事办完」的策展呈现，每步只有 4 个位置，无佐证的语义近邻
+    // （实测相似度 0.42~0.52 的各向异性噪声：「分镜」→npmmirror/Docker Hub、
+    // 「配音」→豆瓣/Coolors）会直接占掉领衔位，把整步带偏。精度优先的过滤
+    // 只加在策展调用方，通用搜索与对话候选不受影响。
+    const hits = opts.lexicalOnly
+      ? result.hits.filter((h) =>
+          Object.keys(h.contributions ?? {}).some((c) => c !== "semantic" && c !== "personal"),
+        )
+      : result.hits;
+    const searchIds = [...new Set(hits.map((h) => h.siteId))];
 
     // 分类意图置顶：查询里点名了某个分类（如「我想看免费短剧」命中分类
     // 「免费短剧」/「短剧」）时，把该分类按编辑顺序的前几站钉在候选最前。

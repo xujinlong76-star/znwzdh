@@ -91,7 +91,7 @@ export const aiFindRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             const seen = new Set<string>();
             const sites: NavSite[] = [];
             for (const q of step.queries) {
-              const r = await retrieveCopilotCandidates(ctx, retrievalQueryOf(q), { pinCategory: false });
+              const r = await retrieveCopilotCandidates(ctx, retrievalQueryOf(q), { pinCategory: false, lexicalOnly: true });
               if (r.failed) retrievalFailed = true;
               for (const s of r.sites) {
                 if (!seen.has(s.id) && !usedAcrossSteps.has(s.id)) { seen.add(s.id); sites.push(s); }

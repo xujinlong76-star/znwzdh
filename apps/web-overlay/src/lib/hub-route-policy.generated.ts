@@ -55,6 +55,7 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "POST", path: "/api/admin/plugins/seed-sync", scope: "admin" },
   { method: "GET", path: "/api/admin/stats/trends", scope: "read" },
   { method: "GET", path: "/api/admin/user-center/metrics", scope: "read" },
+  { method: "POST", path: "/api/ai/find", scope: "public" },
   { method: "GET", path: "/api/assets/icon", scope: "public" },
   { method: "POST", path: "/api/backup/restore", scope: "admin" },
   { method: "POST", path: "/api/backup/restore/async", scope: "admin" },

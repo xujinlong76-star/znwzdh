@@ -19,6 +19,7 @@ import {
 } from '@/lib/modular/feature-mask-store'
 import { Footer } from '@/components/footer'
 import { OnboardingCard } from '@/components/onboarding-card'
+import { AiFinderPanel } from '@/components/ai/ai-finder-panel'
 import { useOverlayBehavior } from '@/components/ui/overlay'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { CategoryQuickJumpBar } from '@/components/category-quick-jump-bar'
@@ -706,6 +707,8 @@ export function NavigationContent({
               {siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
             </p>
           </header>
+          {/* AI 智能找站：首屏显眼入口，一句话直达站内站点卡片（服务端保证只出站内收录） */}
+          {viewMode !== 'workbench' && <AiFinderPanel />}
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
           {viewMode !== 'workbench' && !isModuleHidden('mod:onboarding-card') && (
             <div data-feature-id="mod:onboarding-card" className="relative">

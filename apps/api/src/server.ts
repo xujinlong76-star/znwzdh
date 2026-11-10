@@ -81,6 +81,7 @@ import { graphRoutes } from "./routes/graph.ts";
 import { archiveRoutes } from "./routes/archive.ts";
 import { backupRoutes } from "./routes/backup.ts";
 import { copilotRoutes } from "./routes/copilot.ts";
+import { aiFindRoutes } from "./routes/ai-find.ts";
 import { accountRoutes } from "./routes/account.ts";
 import { assetRoutes } from "./routes/assets.ts";
 
@@ -730,6 +731,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(archiveRoutes, { ctx });
   await app.register(backupRoutes, { ctx });
   await app.register(copilotRoutes, { ctx });
+  await app.register(aiFindRoutes, { ctx });
   await app.register(accountRoutes, { ctx });
   await app.register(assetRoutes, { ctx });
 

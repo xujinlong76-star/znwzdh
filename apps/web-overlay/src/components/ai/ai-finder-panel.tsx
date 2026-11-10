@@ -21,7 +21,7 @@ import {
  * 这里不做任何二次拼接 URL。未配密钥/额度用完时服务端会降级并在 notice 里
  * 如实说明，本组件原样展示，不把本地检索结果冒充 AI 推荐。
  *
- * 场景包共 18 个，场景区一页只展示 SCENE_PAGE_SIZE 个，「换一批」整页轮换；
+ * 场景包共 24 个，场景区一页只展示 SCENE_PAGE_SIZE 个，「换一批」整页轮换；
  * 点开过的场景只在本机 localStorage 计数（不回传服务端），常用的自动排前面
  * 并带「常用」标记，无记录时就是下面的默认精选顺序。
  */
@@ -50,17 +50,23 @@ const SCENES: Array<{ id: string; title: string; query: string }> = [
   { id: 'make-ppt', title: '做 PPT', query: '我要做一份 PPT' },
   { id: 'edit-video', title: '剪视频', query: '我要剪一个视频' },
   { id: 'write-paper', title: '写论文', query: '我要写论文查文献' },
+  { id: 'write-novel', title: '写小说', query: '我想写网络小说' },
   { id: 'watch-drama', title: '追短剧', query: '我想看短剧' },
+  { id: 'make-drama', title: '做短剧', query: '我想自己做一部短剧' },
+  { id: 'make-manga-drama', title: '做 AI 漫剧', query: '我想做 AI 漫剧' },
   { id: 'learn-english', title: '学英语', query: '我要学英语' },
   { id: 'design-poster', title: '做图设计', query: '我要做一张海报图' },
   { id: 'generate-video', title: 'AI 生视频', query: '我想用 AI 生成视频' },
   { id: 'learn-coding', title: '学编程', query: '我想学编程' },
+  { id: 'exam-prep', title: '考公考研', query: '我在准备考公考研' },
   { id: 'job-interview', title: '求职面试', query: '我在准备求职面试' },
+  { id: 'make-resume', title: '做简历', query: '我要做一份简历找工作' },
   { id: 'travel-plan', title: '旅行规划', query: '我要出去旅行做攻略' },
   { id: 'mind-map', title: '思维导图', query: '我要画一张思维导图' },
   { id: 'write-code', title: '写代码', query: '我要写代码做开发' },
   { id: 'photo-retouch', title: '修图美化', query: '我想修一张照片' },
   { id: 'meeting-notes', title: '会议纪要', query: '我要整理会议纪要' },
+  { id: 'data-sheets', title: '做表格', query: '我要做一份在线表格' },
   { id: 'make-music', title: '做音乐', query: '我想做一首歌' },
   { id: 'build-agent', title: '搭 AI 智能体', query: '我想搭一个 AI 智能体' },
   { id: 'translate-doc', title: '翻译润色', query: '我要翻译一篇外文' },

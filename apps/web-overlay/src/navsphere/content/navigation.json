@@ -774,6 +774,69 @@
               ]
             }
           ]
+        },
+        {
+          "id": "reg-ai-drama-creation",
+          "title": "AI 短剧与漫剧创作",
+          "description": "从剧本到成片的 AI 短剧、AI 漫剧一站式创作平台",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-2de6e995764d",
+              "title": "有戏AI",
+              "href": "https://youxi.fullpeace.net",
+              "description": "风平智能旗下 AI 短剧与漫剧一站式创作平台：剧本拆解、角色设计、智能分镜、视频生成、配音到成片导出，主打一人一天一部剧",
+              "icon": "https://youxi.fullpeace.net/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI短剧",
+                "漫剧",
+                "分镜",
+                "短剧创作"
+              ]
+            },
+            {
+              "id": "nav-0b76eb465501",
+              "title": "小云雀AI",
+              "href": "https://xyq.jianying.com",
+              "description": "字节跳动剪映团队的 AI 内容创作 Agent，短剧 Agent 能把长剧本自动拆分镜、锁定角色一致性并生成成片",
+              "icon": "https://xyq.jianying.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI短剧",
+                "短剧创作",
+                "分镜",
+                "成片"
+              ]
+            },
+            {
+              "id": "nav-34f7f3f7e468",
+              "title": "Topview",
+              "href": "https://www.topview.ai",
+              "description": "AI 短剧创作工作台：从故事创意、剧本、角色设定与分镜到 AI 视频成片的一站式短剧生产工具",
+              "icon": "https://www.topview.ai/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI短剧",
+                "短剧创作",
+                "剧本"
+              ]
+            },
+            {
+              "id": "nav-90f676a0dbba",
+              "title": "Vidu",
+              "href": "https://www.vidu.cn",
+              "description": "生数科技的 AI 视频生成平台，支持参考生视频与角色一致性，常用于 AI 漫剧与短剧的镜头生成",
+              "icon": "https://www.vidu.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI视频",
+                "漫剧",
+                "图生视频"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -2550,6 +2613,93 @@
               ]
             }
           ]
+        },
+        {
+          "id": "reg-online-docs",
+          "title": "在线文档与表格",
+          "description": "多人协作的在线文档、表格与知识库",
+          "parentId": "reg-office-productivity",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-4bbc476c6a05",
+              "title": "腾讯文档",
+              "href": "https://docs.qq.com",
+              "description": "腾讯旗下在线文档：文档、表格、幻灯片多人实时协作，免费易用",
+              "icon": "https://docs.qq.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "在线文档",
+                "在线表格",
+                "协作"
+              ]
+            },
+            {
+              "id": "nav-954d60ae7ad3",
+              "title": "石墨文档",
+              "href": "https://shimo.im",
+              "description": "轻量在线文档与表格协作工具，界面清爽，适合团队写作",
+              "icon": "https://shimo.im/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "在线文档",
+                "在线表格",
+                "协作"
+              ]
+            },
+            {
+              "id": "nav-b26a8d3266d8",
+              "title": "飞书",
+              "href": "https://www.feishu.cn",
+              "description": "字节跳动旗下协作平台：飞书文档、多维表格、会议与沟通一体",
+              "icon": "https://www.feishu.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "在线文档",
+                "多维表格",
+                "协作"
+              ]
+            },
+            {
+              "id": "nav-a1115612fa68",
+              "title": "金山文档",
+              "href": "https://www.kdocs.cn",
+              "description": "金山办公旗下在线文档：兼容 Office 格式，文档与表格多人协作",
+              "icon": "https://www.kdocs.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "在线文档",
+                "在线表格",
+                "WPS"
+              ]
+            },
+            {
+              "id": "nav-44471e5904f3",
+              "title": "语雀",
+              "href": "https://www.yuque.com",
+              "description": "蚂蚁集团旗下知识库：写文档、记笔记、沉淀团队知识",
+              "icon": "https://www.yuque.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "知识库",
+                "在线文档",
+                "笔记"
+              ]
+            },
+            {
+              "id": "nav-8a80d9483c93",
+              "title": "Notion",
+              "href": "https://www.notion.com",
+              "description": "All-in-one 协作空间：笔记、文档、表格数据库与项目管理",
+              "icon": "https://www.notion.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "知识库",
+                "在线文档",
+                "表格"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -2739,6 +2889,191 @@
               "tags": [
                 "电子书",
                 "公共领域"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-job-hunting",
+          "title": "求职招聘",
+          "description": "主流招聘平台与在线简历制作工具",
+          "parentId": "reg-learning-growth",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-95d39aca99e9",
+              "title": "BOSS直聘",
+              "href": "https://www.zhipin.com",
+              "description": "主流招聘平台，和老板直接开聊，岗位多、反馈快",
+              "icon": "https://www.zhipin.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "招聘",
+                "求职",
+                "找工作"
+              ]
+            },
+            {
+              "id": "nav-49db980929af",
+              "title": "拉勾网",
+              "href": "https://www.lagou.com",
+              "description": "互联网垂直招聘平台，产品、技术、运营岗位集中",
+              "icon": "https://www.lagou.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "招聘",
+                "求职",
+                "互联网"
+              ]
+            },
+            {
+              "id": "nav-5b90a3301077",
+              "title": "智联招聘",
+              "href": "https://www.zhaopin.com",
+              "description": "老牌综合招聘平台，岗位覆盖行业广",
+              "icon": "https://www.zhaopin.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "招聘",
+                "求职"
+              ]
+            },
+            {
+              "id": "nav-e5cdec7f7e3b",
+              "title": "前程无忧",
+              "href": "https://www.51job.com",
+              "description": "综合招聘平台，外企与大型企业岗位多",
+              "icon": "https://www.51job.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "招聘",
+                "求职"
+              ]
+            },
+            {
+              "id": "nav-c0439e70977b",
+              "title": "猎聘",
+              "href": "https://www.liepin.com",
+              "description": "中高端人才招聘平台，猎头资源多，适合有经验的职场人",
+              "icon": "https://www.liepin.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "招聘",
+                "求职",
+                "猎头"
+              ]
+            },
+            {
+              "id": "nav-2684f4944505",
+              "title": "超级简历",
+              "href": "https://www.wondercv.com",
+              "description": "专业在线简历制作工具，大厂 HR 推荐的简历模板，支持简历优化",
+              "icon": "https://www.wondercv.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "简历",
+                "简历模板",
+                "求职"
+              ]
+            },
+            {
+              "id": "nav-3585516fe941",
+              "title": "五百丁",
+              "href": "https://www.500d.me",
+              "description": "在线简历制作平台，海量简历模板与范文，一键导出简历",
+              "icon": "https://www.500d.me/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "简历",
+                "简历模板",
+                "求职"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-exam-prep",
+          "title": "考试备考",
+          "description": "公务员、考研等考试的官方报名入口与备考平台",
+          "parentId": "reg-learning-growth",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-c6c24bd6dc9e",
+              "title": "国家公务员局",
+              "href": "https://www.scs.gov.cn",
+              "description": "国家公务员考试官方网站：招考公告、职位表、报名入口与成绩查询",
+              "icon": "https://www.scs.gov.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "公务员",
+                "国考",
+                "报名"
+              ]
+            },
+            {
+              "id": "nav-9e4479deb10f",
+              "title": "研招网",
+              "href": "https://yz.chsi.com.cn",
+              "description": "中国研究生招生信息网：考研报名、调剂与录取查询的官方平台",
+              "icon": "https://yz.chsi.com.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "考研",
+                "报名",
+                "研究生"
+              ]
+            },
+            {
+              "id": "nav-8ec89effc595",
+              "title": "粉笔",
+              "href": "https://www.fenbi.com",
+              "description": "公务员与事业单位考试备考平台：在线题库、模考大赛与系统课程",
+              "icon": "https://www.fenbi.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "考公",
+                "题库",
+                "刷题"
+              ]
+            },
+            {
+              "id": "nav-ed251f6c67d3",
+              "title": "华图教育",
+              "href": "https://www.huatu.com",
+              "description": "公务员、教师、事业单位考试培训机构，线上线下课程齐全",
+              "icon": "https://www.huatu.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "考公",
+                "培训",
+                "课程"
+              ]
+            },
+            {
+              "id": "nav-99311b7d5a66",
+              "title": "中公教育",
+              "href": "https://www.offcn.com",
+              "description": "公务员与事业单位考试培训机构，行测申论课程与题库",
+              "icon": "https://www.offcn.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "考公",
+                "培训",
+                "课程"
+              ]
+            },
+            {
+              "id": "nav-ea146f992973",
+              "title": "新东方在线",
+              "href": "https://www.koolearn.com",
+              "description": "新东方旗下在线教育平台：考研、英语四六级、雅思托福课程",
+              "icon": "https://www.koolearn.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "考研",
+                "英语",
+                "课程"
               ]
             }
           ]
@@ -3048,6 +3383,119 @@
               ]
             }
           ]
+        },
+        {
+          "id": "reg-web-novels",
+          "title": "网络小说",
+          "description": "主流网络小说阅读与投稿平台",
+          "parentId": "reg-entertainment",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-5c19b7c118cb",
+              "title": "起点中文网",
+              "href": "https://www.qidian.com",
+              "description": "阅文旗下老牌网文平台，玄幻、都市等原创小说的发源地",
+              "icon": "https://www.qidian.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "小说",
+                "网文",
+                "阅读"
+              ]
+            },
+            {
+              "id": "nav-f98a0120c1d4",
+              "title": "番茄小说",
+              "href": "https://www.fanqienovel.com",
+              "description": "字节跳动旗下免费小说平台，全场小说免费看，也是短剧、漫剧的 IP 源头",
+              "icon": "https://www.fanqienovel.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "小说",
+                "免费",
+                "网文"
+              ]
+            },
+            {
+              "id": "nav-bad514336826",
+              "title": "晋江文学城",
+              "href": "https://www.jjwxc.net",
+              "description": "女性向原创小说平台，言情与纯爱作品集中，投稿签约通道完善",
+              "icon": "https://www.jjwxc.net/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "小说",
+                "言情",
+                "投稿"
+              ]
+            },
+            {
+              "id": "nav-71c0be21ab3e",
+              "title": "七猫中文网",
+              "href": "https://www.qimao.com",
+              "description": "免费小说平台，全本小说免费阅读，更新快",
+              "icon": "https://www.qimao.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "小说",
+                "免费",
+                "阅读"
+              ]
+            },
+            {
+              "id": "nav-707afdb954d8",
+              "title": "纵横中文网",
+              "href": "https://www.zongheng.com",
+              "description": "老牌原创小说平台，玄幻、历史等男频作品多，有作者投稿入口",
+              "icon": "https://www.zongheng.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "小说",
+                "网文",
+                "投稿"
+              ]
+            },
+            {
+              "id": "nav-c250c4733925",
+              "title": "飞卢小说网",
+              "href": "https://www.faloo.com",
+              "description": "同人与快节奏爽文小说平台，更新速度快",
+              "icon": "https://www.faloo.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "小说",
+                "同人",
+                "阅读"
+              ]
+            },
+            {
+              "id": "nav-9b096de8b698",
+              "title": "17K小说网",
+              "href": "https://www.17k.com",
+              "description": "中文在线旗下原创小说平台，新人作者扶持多",
+              "icon": "https://www.17k.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "小说",
+                "网文",
+                "投稿"
+              ]
+            },
+            {
+              "id": "nav-a86aaf7153ec",
+              "title": "书旗小说",
+              "href": "https://www.shuqi.com",
+              "description": "阿里旗下免费小说平台，海量小说免费阅读",
+              "icon": "https://www.shuqi.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "小说",
+                "免费",
+                "阅读"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -3354,6 +3802,106 @@
               ]
             }
           ]
+        },
+        {
+          "id": "reg-cross-border-ecommerce",
+          "title": "跨境电商",
+          "description": "海外购物平台与跨境卖货、开店入口",
+          "parentId": "reg-consumer-life",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-e5763f7061cd",
+              "title": "亚马逊",
+              "href": "https://www.amazon.com",
+              "description": "全球最大的电商平台：海淘购物，以及亚马逊全球开店卖家入口",
+              "icon": "https://www.amazon.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "跨境电商",
+                "海淘",
+                "开店"
+              ]
+            },
+            {
+              "id": "nav-dd5ba3e3ccee",
+              "title": "全球速卖通",
+              "href": "https://www.aliexpress.com",
+              "description": "阿里旗下跨境出口电商平台，中国卖家把货卖到全球",
+              "icon": "https://www.aliexpress.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "跨境电商",
+                "外贸",
+                "开店"
+              ]
+            },
+            {
+              "id": "nav-7f0740a202d9",
+              "title": "Temu",
+              "href": "https://www.temu.com",
+              "description": "拼多多旗下跨境购物平台，主打低价全品类，海外用户量大",
+              "icon": "https://www.temu.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "跨境电商",
+                "购物",
+                "海外"
+              ]
+            },
+            {
+              "id": "nav-34ff72968e25",
+              "title": "Shopee虾皮",
+              "href": "https://shopee.com",
+              "description": "东南亚头部电商平台，跨境卖家进入东南亚市场的主要入口",
+              "icon": "https://shopee.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "跨境电商",
+                "东南亚",
+                "开店"
+              ]
+            },
+            {
+              "id": "nav-0f7f3bcd29f5",
+              "title": "SHEIN",
+              "href": "https://www.shein.com",
+              "description": "快时尚跨境购物平台，服装品类在海外热销",
+              "icon": "https://www.shein.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "跨境电商",
+                "服装",
+                "购物"
+              ]
+            },
+            {
+              "id": "nav-26449b88dbf1",
+              "title": "eBay",
+              "href": "https://www.ebay.com",
+              "description": "全球老牌电商与拍卖平台，二手与收藏品交易活跃",
+              "icon": "https://www.ebay.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "跨境电商",
+                "海淘",
+                "拍卖"
+              ]
+            },
+            {
+              "id": "nav-26a7f821637c",
+              "title": "Shopify",
+              "href": "https://www.shopify.com",
+              "description": "独立站建站平台：自己搭品牌官网做跨境生意",
+              "icon": "https://www.shopify.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "独立站",
+                "建站",
+                "跨境电商"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -3564,13 +4112,26 @@
                 "免费",
                 "热门"
               ]
+            },
+            {
+              "id": "nav-0e1d7c09e2d4",
+              "title": "DramaWave",
+              "href": "https://mydramawave.com",
+              "description": "昆仑万维旗下海外短剧平台，海量竖屏短剧免费看，支持多语言字幕",
+              "icon": "https://mydramawave.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "免费",
+                "海外"
+              ]
             }
           ]
         },
         {
           "id": "reg-short-drama-platform",
           "title": "平台短剧",
-          "description": "长视频与短视频平台内的短剧频道",
+          "description": "长视频、短视频平台内的短剧频道与海外短剧平台",
           "parentId": "reg-short-drama",
           "enabled": true,
           "items": [
@@ -3668,6 +4229,32 @@
                 "央视",
                 "主旋律",
                 "官方"
+              ]
+            },
+            {
+              "id": "nav-33fd24586389",
+              "title": "ReelShort",
+              "href": "https://www.reelshort.com",
+              "description": "海外头部竖屏短剧平台，独家短剧与短片，前几集免费、付费解锁全集",
+              "icon": "https://www.reelshort.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "海外",
+                "付费"
+              ]
+            },
+            {
+              "id": "nav-3c1be50acf30",
+              "title": "DramaBox",
+              "href": "https://www.dramaboxdb.com",
+              "description": "海外短剧平台，剧库量大，网页端可直接看，金币与会员解锁",
+              "icon": "https://www.dramaboxdb.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "海外",
+                "付费"
               ]
             }
           ]

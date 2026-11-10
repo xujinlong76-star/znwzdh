@@ -137,14 +137,14 @@ describe("场景包：分步骤、只出站内站点", () => {
 });
 
 describe("场景包注册表：扩充后仍守住结构纪律", () => {
-  it("场景包数量在 16~18 个之间且 id 唯一", () => {
-    expect(SCENE_PACKS.length).toBeGreaterThanOrEqual(16);
-    expect(SCENE_PACKS.length).toBeLessThanOrEqual(18);
+  it("场景包数量在 22~26 个之间且 id 唯一", () => {
+    expect(SCENE_PACKS.length).toBeGreaterThanOrEqual(22);
+    expect(SCENE_PACKS.length).toBeLessThanOrEqual(26);
     expect(new Set(SCENE_PACKS.map((s) => s.id)).size).toBe(SCENE_PACKS.length);
   });
 
   it("每个场景包至少两步、步骤顺序标签连续、每步至少一个非空检索词", () => {
-    const stepNums = ["第一步", "第二步", "第三步", "第四步", "第五步"];
+    const stepNums = ["第一步", "第二步", "第三步", "第四步", "第五步", "第六步"];
     for (const pack of SCENE_PACKS) {
       expect(pack.title.trim().length, pack.id).toBeGreaterThan(0);
       expect(pack.steps.length, pack.id).toBeGreaterThanOrEqual(2);

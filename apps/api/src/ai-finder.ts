@@ -37,7 +37,8 @@ export interface ScenePack {
  * 步骤顺序就是建议使用顺序；每步的站点只来自站内目录对 queries 的真实召回。
  *
  * queries 的选词纪律：只用能在当前站内目录里真实召回对口站点的词（已逐词实测），
- * 目录里没有对应站点的事情（如做简历、在线表格）宁可不立场景包，也不编造步骤。
+ * 目录里没有对应站点的事情宁可不立场景包，也不编造步骤。
+ * （做简历、在线表格、写小说、考公考研等包，是在目录补齐简历/文档/小说/考试类站点后才立的。）
  */
 export const SCENE_PACKS: ScenePack[] = [
   {
@@ -73,6 +74,28 @@ export const SCENE_PACKS: ScenePack[] = [
     steps: [
       { label: "第一步：找短剧平台", queries: ["短剧"] },
       { label: "第二步：看长剧与电影", queries: ["影视", "在线视频"] },
+    ],
+  },
+  {
+    id: "make-drama",
+    title: "做短剧",
+    steps: [
+      { label: "第一步：写剧本与大纲", queries: ["短剧剧本", "剧本"] },
+      { label: "第二步：分镜与角色生图", queries: ["分镜", "AI 生图"] },
+      { label: "第三步：AI 生成视频", queries: ["AI 视频生成", "图生视频"] },
+      { label: "第四步：配音与配乐", queries: ["配音", "AI 音乐"] },
+      { label: "第五步：剪辑成片", queries: ["剪映", "视频剪辑"] },
+      { label: "第六步：发布与变现", queries: ["短剧", "创作者平台"] },
+    ],
+  },
+  {
+    id: "make-manga-drama",
+    title: "做 AI 漫剧",
+    steps: [
+      { label: "第一步：找小说 IP 与题材", queries: ["小说", "免费小说"] },
+      { label: "第二步：一键生成漫剧", queries: ["漫剧", "AI 短剧"] },
+      { label: "第三步：配音与剪辑成片", queries: ["配音", "视频剪辑"] },
+      { label: "第四步：发布到短剧平台", queries: ["短剧", "漫剧平台"] },
     ],
   },
   {
@@ -198,6 +221,42 @@ export const SCENE_PACKS: ScenePack[] = [
       { label: "第一步：逛商城比价", queries: ["电商购物", "购物"] },
       { label: "第二步：批发拿货", queries: ["批发"] },
       { label: "第三步：查快递物流", queries: ["快递", "物流"] },
+    ],
+  },
+  {
+    id: "make-resume",
+    title: "做简历",
+    steps: [
+      { label: "第一步：套模板做简历", queries: ["简历", "简历模板"] },
+      { label: "第二步：找工作投递", queries: ["招聘", "找工作"] },
+      { label: "第三步：刷题备面试", queries: ["面试刷题", "面试经验"] },
+    ],
+  },
+  {
+    id: "data-sheets",
+    title: "做表格",
+    steps: [
+      { label: "第一步：在线建表格", queries: ["在线表格", "表格"] },
+      { label: "第二步：多人协作填表", queries: ["在线文档", "协作"] },
+      { label: "第三步：AI 汇总分析", queries: ["AI 总结", "长文本"] },
+    ],
+  },
+  {
+    id: "write-novel",
+    title: "写小说",
+    steps: [
+      { label: "第一步：找灵感看热门榜", queries: ["小说", "网文"] },
+      { label: "第二步：选平台投稿签约", queries: ["投稿", "小说平台"] },
+      { label: "第三步：AI 辅助写作", queries: ["AI 写作", "写作助手"] },
+    ],
+  },
+  {
+    id: "exam-prep",
+    title: "考公考研",
+    steps: [
+      { label: "第一步：查公告与报名", queries: ["公务员考试", "考研"] },
+      { label: "第二步：学系统课程", queries: ["考公", "考研课程"] },
+      { label: "第三步：刷题与模考", queries: ["题库", "刷题"] },
     ],
   },
 ];

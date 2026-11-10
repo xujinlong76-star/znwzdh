@@ -9,7 +9,7 @@
 
 export const SCENE_USAGE_STORAGE_KEY = 'navhub.aiFinder.sceneUsage.v1'
 
-/** 场景区一页展示几个：与首页首屏版式协调，18 个场景正好 3 页轮换 */
+/** 场景区一页展示几个：与首页首屏版式协调，24 个场景正好 4 页轮换 */
 export const SCENE_PAGE_SIZE = 6
 
 /** sceneId -> 点开次数 */
@@ -88,7 +88,7 @@ export function scenePage<T>(ordered: readonly T[], offset: number, size: number
   return Array.from({ length: size }, (_, i) => ordered[(start + i) % total] as T)
 }
 
-/** 「换一批」的下一页偏移：整页步进，18 个场景分 3 页时 0→6→12→0，相邻两页完全不重叠 */
+/** 「换一批」的下一页偏移：整页步进，24 个场景分 4 页时 0→6→12→18→0，相邻两页完全不重叠 */
 export function nextSceneOffset(offset: number, total: number, size: number = SCENE_PAGE_SIZE): number {
   if (total <= size || size <= 0) return 0
   return (offset + size) % total

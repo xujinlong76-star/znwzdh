@@ -241,6 +241,64 @@
               ]
             }
           ]
+        },
+        {
+          "id": "reg-ai-video-generation",
+          "title": "AI 视频生成",
+          "description": "文生视频、图生视频与 AI 视频创作工具",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-56a9382beb8c",
+              "title": "可灵AI",
+              "href": "https://klingai.kuaishou.com",
+              "description": "快手可灵 AI 视频生成，文生视频与图生视频，国内版入口",
+              "icon": "https://klingai.kuaishou.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI视频",
+                "视频生成"
+              ]
+            },
+            {
+              "id": "nav-6db724ca3b43",
+              "title": "海螺视频",
+              "href": "https://hailuoai.com",
+              "description": "MiniMax 海螺视频，AI 文生视频与图生视频",
+              "icon": "https://hailuoai.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI视频",
+                "视频生成"
+              ]
+            },
+            {
+              "id": "nav-ddfd26e7aee2",
+              "title": "Runway",
+              "href": "https://runway.com",
+              "description": "AI 视频生成与编辑平台，Gen-4.5 模型",
+              "icon": "https://runway.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI视频",
+                "视频生成"
+              ]
+            },
+            {
+              "id": "nav-b65ebed2b9ad",
+              "title": "即梦AI",
+              "href": "https://jimeng.jianying.com",
+              "description": "字节跳动一站式 AI 创作平台，AI 生图与生视频",
+              "icon": "https://jimeng.jianying.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI视频",
+                "AI图像",
+                "视频生成"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -1130,6 +1188,116 @@
               "tags": [
                 "天气",
                 "查询"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-short-drama",
+      "title": "短剧",
+      "icon": "clapperboard",
+      "description": "热门免费短剧与各平台短剧入口",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-short-drama-free",
+          "title": "免费短剧",
+          "description": "看广告免费看全集的短剧平台",
+          "parentId": "reg-short-drama",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-557388e01d50",
+              "title": "红果短剧",
+              "href": "https://www.hongguo.com",
+              "description": "抖音旗下免费短剧平台，海量短剧看广告免费看全集",
+              "icon": "https://www.hongguo.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "免费",
+                "热门"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-short-drama-platform",
+          "title": "平台短剧",
+          "description": "长视频与短视频平台内的短剧频道",
+          "parentId": "reg-short-drama",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-e85ffe7e04f6",
+              "title": "抖音短剧",
+              "href": "https://www.douyin.com",
+              "description": "抖音站内短剧频道，爆款短剧首发多",
+              "icon": "https://www.douyin.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "热门"
+              ]
+            },
+            {
+              "id": "nav-536bfabaa406",
+              "title": "快手短剧",
+              "href": "https://www.kuaishou.com",
+              "description": "快手站内短剧频道",
+              "icon": "https://www.kuaishou.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧"
+              ]
+            },
+            {
+              "id": "nav-675c7a57840e",
+              "title": "爱奇艺·短剧",
+              "href": "https://www.iqiyi.com",
+              "description": "爱奇艺短剧专区，专业制作的高画质短剧，部分免费",
+              "icon": "https://www.iqiyi.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "会员"
+              ]
+            },
+            {
+              "id": "nav-8652182b18e7",
+              "title": "腾讯视频·短剧",
+              "href": "https://v.qq.com",
+              "description": "腾讯视频微短剧专区，前几集免费，会员解锁全集",
+              "icon": "https://v.qq.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "会员"
+              ]
+            },
+            {
+              "id": "nav-9d3e930967bf",
+              "title": "优酷·短剧",
+              "href": "https://www.youku.com",
+              "description": "优酷短剧专区，短剧库更新快，部分免费",
+              "icon": "https://www.youku.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧"
+              ]
+            },
+            {
+              "id": "nav-193880f6c388",
+              "title": "芒果TV·短剧",
+              "href": "https://www.mgtv.com",
+              "description": "芒果TV短剧专区，青春甜宠短剧与综艺，免费 + VIP",
+              "icon": "https://www.mgtv.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "会员"
               ]
             }
           ]

@@ -7,7 +7,7 @@
     "/admin/navigation/[id]/categories/[categoryId]/items": 973824,
     "/admin/navigation/[id]/items": 972800,
     "/admin/navigation/[id]/categories": 960512,
-    "/": 1141766,
+    "/": 1228800,
     "/admin/videos": 1169408,
     "/admin/videos/[id]/categories": 1167360,
     "/admin/site": 916480,
@@ -79,6 +79,19 @@
     "/category": 757760
   },
   "_raise_log": [
+    {
+      "at": "2026-11-10T13:10:00.000Z",
+      "source": "owner-decision",
+      "reason": "产品决策（William 2026-11-10 拍板）：首页 bundle 超限（实测 1,196,846 B ≈ 1168 KB > 预算 1,141,766 B ≈ 1115 KB）选择放宽预算、功能全保留，不砍功能。仅上调 / 一条至 1,228,800 B（1200 KB），其余路由预算不动。本地工作副本无构建产物，未走 --raise 自动写入，数值按仓库文档 docs/DEEP-SCAN-AND-PROPOSAL-2026-11-08.md 记录的 CI 口径实测值落账。",
+      "changes": [
+        {
+          "route": "/",
+          "from": 1141766,
+          "to": 1228800,
+          "measured": 1196846
+        }
+      ]
+    },
     {
       "at": "2026-10-29T00:29:15.238Z",
       "sha": "cbf2614",

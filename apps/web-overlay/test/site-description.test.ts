@@ -24,14 +24,40 @@ describe('siteMetaDescription', () => {
     )
   })
 
-  it('少于 20 字时用站点名/分类/标签兜底，不编造评分与排名', () => {
+  it('少于 20 字时保留原句开头、只补真实字段扩展，不编造评分与排名', () => {
     const description = siteMetaDescription(site({ description: '免费字体' }), '设计资源')
-    expect(description).toContain('Google Fonts')
+    expect(description.startsWith('免费字体。')).toBe(true)
     expect(description).toContain('设计资源')
     expect(description).toContain('字体、设计、开源')
     expect(description.length).toBeGreaterThanOrEqual(20)
     expect(description.length).toBeLessThanOrEqual(SITE_DESCRIPTION_MAX)
     expect(description).not.toMatch(/最好|最佳|最强|必备|第一|排名|评分|aggregateRating/)
+  })
+
+  it('真实短描述逐站各异：ChatGPT / Vite / Kimi 均以原文开头', () => {
+    expect(
+      siteMetaDescription(
+        site({ title: 'ChatGPT', description: 'OpenAI 的对话式 AI 助手', tags: ['对话', '大模型'] }),
+        '对话助手',
+      ),
+    ).toMatch(/^OpenAI 的对话式 AI 助手。收录于对话助手分类/)
+    expect(
+      siteMetaDescription(
+        site({ title: 'Vite', description: '下一代前端开发构建工具', tags: ['构建工具', '脚手架'] }),
+        '开发工具',
+      ),
+    ).toMatch(/^下一代前端开发构建工具。收录于开发工具分类/)
+    // 原句已带句末标点时不重复加「。」（Kimi 实测 19 字，旧版被整句丢弃）
+    const kimi = siteMetaDescription(
+      site({
+        title: 'Kimi',
+        description: '长文本处理能力强，适合深度阅读与总结。',
+        tags: ['长文本', '搜索'],
+      }),
+      '对话助手',
+    )
+    expect(kimi.startsWith('长文本处理能力强，适合深度阅读与总结。收录于')).toBe(true)
+    expect(kimi).not.toContain('。。')
   })
 
   it('分类缺失时退回「导航」，无标签时不拼接空标签段', () => {

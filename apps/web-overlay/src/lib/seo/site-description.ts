@@ -4,9 +4,12 @@ export const SITE_DESCRIPTION_MIN = 20
 export const SITE_DESCRIPTION_MAX = 160
 
 /**
- * 站点详情 meta description：原始描述够长就直接用；少于 20 字时用真实字段
- * （站点名 / 分类名 / 标签）兜底，避免把「免费字体」这类碎片当摘要。
- * 不编造评分、排名、安装量，也不使用「最好 / 必备 / 第一」这类词。
+ * 站点详情 meta description：原始描述够长就直接用；短于 20 字时**保留原句
+ * 开头**、只补分类/标签等真实字段扩展到可读长度（与 categoryMetaDescription
+ * 同一范式）。旧版整句丢弃换模板，导致 201/298 站（67.4%）的搜索摘要与分享
+ * 卡片千篇一律、看不出各站是干什么的；业界共识也是每页摘要必须唯一具体，
+ * 重复模板是最常见的失败。不编造评分、排名、安装量，也不使用「最好 / 必备 /
+ * 第一」这类词。空描述时仍用站点名 + 真实字段兜底，绝不留白。
  */
 export function siteMetaDescription(
   site: Pick<HubSite, 'title' | 'description' | 'tags'>,
@@ -21,10 +24,14 @@ export function siteMetaDescription(
     .filter(Boolean)
     .slice(0, 3)
   const tagPart = tags.length > 0 ? `相关标签：${tags.join('、')}。` : ''
-  return `${site.title}：收录于${category}分类，提供官网入口、同类站点与标签导航。${tagPart}`.slice(
-    0,
-    SITE_DESCRIPTION_MAX,
-  )
+  const suffix = `收录于${category}分类，提供官网入口、同类站点与标签导航。${tagPart}`
+  // 短描述是真实编辑内容（多为 10–19 字的完整短句），保留原句开头再扩展；
+  // 原句已带句末标点时不重复加「。」。
+  if (raw.length > 0) {
+    const sep = /[。？！.!?]$/.test(raw) ? '' : '。'
+    return `${raw}${sep}${suffix}`.slice(0, SITE_DESCRIPTION_MAX)
+  }
+  return `${site.title}：${suffix}`.slice(0, SITE_DESCRIPTION_MAX)
 }
 
 /**

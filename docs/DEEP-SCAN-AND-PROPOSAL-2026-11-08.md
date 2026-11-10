@@ -4023,3 +4023,97 @@ Received string:  "山羊胡导航"
 
 **E2E 24 个 spec（原 23）** · mobile-layout 8/8 · 8 项门禁全绿 ·
 verify 标准档 18/19（唯一红仍是首屏预算，待决策）。
+
+---
+
+# 第四十八轮：把 43 个门禁逐个跑了一遍，修掉配置漂移（2026-11-10）
+
+上轮的方法（找"只有单一维度的配置"）启发了我：**门禁本身也只被间接验证过**。
+所以本轮把 `scripts/check-*.mjs` 全部 43 个逐个跑一遍，出完整清点。
+
+## 一、清点结果
+
+```
+首轮：OK=34  SKIP=3  FAIL=5
+修后：OK=37  SKIP=3  FAIL=3
+```
+
+### 3 个 SKIP 都是正常的
+
+| 门禁 | 为什么跳过 |
+|---|---|
+| `check-commit-closure` | 需要 git 提交区间参数 |
+| `check-defused-thickness` | 需要 CI 快照从 stdin 传入 |
+| `check-rate-limit-exemption` | 同上，CI 专用 |
+
+exit=2 在这里是**正确行为**（"无法判定"而非"失败"），不是缺陷。
+
+## 二、修掉的：`tsconfig.json` 配置漂移
+
+`check-web-config-parity` 报：
+
+```
+✗ tsconfig.json 漂移：apps/web=bbf6f0e4ac2a… ≠ apps/web-overlay=7d2da81bffaf…
+```
+
+逐行对比发现 `apps/web/tsconfig.json` 多了两行：
+
+```json
+".next-e2e/types/**/*.ts",
+".next-e2e/dev/types/**/*.ts"
+```
+
+**这是为 E2E 构建目录补的类型路径** —— 合理的改进，但改在了错误的一侧。
+文件 mtime 也印证：`apps/web` 是 11-10 11:50（今天，并发写入者提交前后），
+`apps/web-overlay` 停在 11-09 00:41。
+
+### 哪一侧是事实源
+
+门禁脚本第 6 行写得很清楚：
+
+> 「apps/web 是 apps/web-overlay 合并式覆写出来的 GENERATED 派生镜像」
+
+所以正确修法是**把新增的 2 行同步到 overlay**，而不是反过来。
+改完 `check-web-config-parity` 从 exit=1 变 exit=0（3/3 一致）。
+
+## 三、连带修好了 `check-governance`
+
+`check-governance` 是 10 个子门禁的聚合入口，其中一项就是 `config-parity`。
+所以 tsconfig 一修，它也从 exit=1 变 exit=0：
+
+```
+[governance] ✅ 前端配置事实源一致性：[config-parity] ✅ 3/3 份配置一致
+[governance] 10 个子门禁全部通过
+```
+
+**一个修复点，两处转绿。**
+
+## 四、剩下 3 个 FAIL 都是已分析过的"非缺陷"
+
+| 门禁 | 状况 | 结论 |
+|---|---|---|
+| `check-bundle-budget` | `/` 1168 > 1115 KB | 待产品决策（第 29 轮已量化三选项） |
+| `check-isr-routes` | 24 页烤进 localhost | 本地 `.env` 配置决定，门禁在正确预警 |
+| `check-search-recall` | 9 条用例失败 | 词法-only 门禁的已知边界（第 46 轮已查证） |
+
+## 五、验证改动安全
+
+```
+前端 tsc            0 error
+覆盖层              1072 文件一致
+生成链              4/4 一致（check-generated-all）
+```
+
+tsconfig 加两行 paths 不影响任何现有类型检查——它只是让 E2E 构建目录的
+类型声明也被纳入扫描，而 E2E 目录本来就不参与 tsc。
+
+## 六、这轮的方法价值
+
+前 47 轮我一直在**读代码找问题**。这轮换成**把门禁当被检查对象**：
+
+43 个门禁里有多少是真正绿的？没人知道，因为它们平时被 `verify` 的某个子集覆盖，
+剩下的只在 CI 或特定场景才跑。**逐个跑一遍，就能看到真实健康度。**
+
+结果：**5 个红里有 2 个是真问题**（配置漂移 + 它的聚合父项），
+3 个是已知的、已分析过的状态。这个信息本身就很有价值——
+它说明这个仓库的门禁体系是**可信的**，红的基本都红得有理由。

@@ -249,7 +249,7 @@ export default async function RootLayout({
           {/* 网络状态提示：全站可见。离线时告诉用户「是你的网络断了，不是站点没数据」 */}
           <OfflineBanner />
           <Toaster />
-          {/* 小猫猫吉祥物挂件：右下角悬浮小猫（public/xiaomaomao/xiaomaomao.js，内嵌 SVG，点击换动作） */}
+          {/* 小猫猫 AI 助手挂件：右下角悬浮小猫（public/xiaomaomao/xiaomaomao.js，头像真图多姿势 + 聊天找站） */}
           <Script src="/xiaomaomao/xiaomaomao.js" strategy="afterInteractive" />
         </ThemeProvider>
       </body>

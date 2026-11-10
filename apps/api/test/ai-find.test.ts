@@ -14,7 +14,7 @@ import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { resetSystemLlmConfig, saveSystemLlmConfig } from "../src/llm-config.ts";
-import { validateModelPicks, suggestCategories } from "../src/ai-finder.ts";
+import { validateModelPicks, suggestCategories, SCENE_PACKS, scenePackById } from "../src/ai-finder.ts";
 
 let dir: string;
 let ctx: AppContext;
@@ -133,6 +133,50 @@ describe("场景包：分步骤、只出站内站点", () => {
     const allUrls = body.steps.flatMap((s: { sites: Array<{ url: string }> }) => s.sites.map((x) => x.url));
     expect(allUrls).toContain(pptSiteUrl);
     for (const u of allUrls) expect(u.endsWith(".example.com/free") || u === pptSiteUrl || u.includes("example")).toBe(true);
+  });
+});
+
+describe("场景包注册表：扩充后仍守住结构纪律", () => {
+  it("场景包数量在 16~18 个之间且 id 唯一", () => {
+    expect(SCENE_PACKS.length).toBeGreaterThanOrEqual(16);
+    expect(SCENE_PACKS.length).toBeLessThanOrEqual(18);
+    expect(new Set(SCENE_PACKS.map((s) => s.id)).size).toBe(SCENE_PACKS.length);
+  });
+
+  it("每个场景包至少两步、步骤顺序标签连续、每步至少一个非空检索词", () => {
+    const stepNums = ["第一步", "第二步", "第三步", "第四步", "第五步"];
+    for (const pack of SCENE_PACKS) {
+      expect(pack.title.trim().length, pack.id).toBeGreaterThan(0);
+      expect(pack.steps.length, pack.id).toBeGreaterThanOrEqual(2);
+      pack.steps.forEach((step, i) => {
+        expect(step.label, `${pack.id} 第 ${i + 1} 步标签`).toContain(stepNums[i]);
+        expect(step.queries.length, `${pack.id} 第 ${i + 1} 步检索词`).toBeGreaterThanOrEqual(1);
+        for (const q of step.queries) expect(q.trim().length).toBeGreaterThan(0);
+      });
+    }
+  });
+
+  it("scenePackById 能查到全部已注册场景，未知 id 返回 null", () => {
+    for (const pack of SCENE_PACKS) expect(scenePackById(pack.id)?.id).toBe(pack.id);
+    expect(scenePackById("no-such-scene")).toBeNull();
+    expect(scenePackById(undefined)).toBeNull();
+  });
+
+  it("新场景 travel-plan 走接口也不编造：返回站点只能来自站内目录", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/ai/find",
+      payload: { query: "我要出去旅行做攻略", sceneId: "travel-plan" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.scene).toMatchObject({ id: "travel-plan", title: "旅行规划" });
+    const fixtureUrls = [pptSiteUrl, "https://slides.example.com/free", "https://pic.example.com/free"];
+    const allUrls = [
+      ...body.recommendations.map((r: { url: string }) => r.url),
+      ...body.steps.flatMap((s: { sites: Array<{ url: string }> }) => s.sites.map((x) => x.url)),
+    ];
+    for (const u of allUrls) expect(fixtureUrls).toContain(u);
   });
 });
 

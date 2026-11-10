@@ -1,8 +1,17 @@
 'use client'
 
-import { useState } from 'react'
-import { ArrowUpRight, Loader2, Search, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowUpRight, Loader2, RefreshCw, Search, Sparkles } from 'lucide-react'
 import { getApiToken, hubUrl } from '@/lib/navhub-api'
+import {
+  SCENE_PAGE_SIZE,
+  loadSceneUsage,
+  nextSceneOffset,
+  orderScenesByUsage,
+  recordSceneUse,
+  scenePage,
+  type SceneUsage,
+} from '@/lib/scene-usage'
 
 /**
  * AI 智能找站（首页首屏入口）。
@@ -11,6 +20,10 @@ import { getApiToken, hubUrl } from '@/lib/navhub-api'
  * 数据只来自 POST /api/ai/find——服务端保证每个链接都是站内真实收录，
  * 这里不做任何二次拼接 URL。未配密钥/额度用完时服务端会降级并在 notice 里
  * 如实说明，本组件原样展示，不把本地检索结果冒充 AI 推荐。
+ *
+ * 场景包共 18 个，场景区一页只展示 SCENE_PAGE_SIZE 个，「换一批」整页轮换；
+ * 点开过的场景只在本机 localStorage 计数（不回传服务端），常用的自动排前面
+ * 并带「常用」标记，无记录时就是下面的默认精选顺序。
  */
 
 interface FinderSite {
@@ -32,12 +45,26 @@ interface FinderResponse {
   scene?: { id: string; title: string }
 }
 
+/** 与服务端 SCENE_PACKS 一一对应（id/标题必须一致），顺序即冷启动的默认精选顺序 */
 const SCENES: Array<{ id: string; title: string; query: string }> = [
   { id: 'make-ppt', title: '做 PPT', query: '我要做一份 PPT' },
   { id: 'edit-video', title: '剪视频', query: '我要剪一个视频' },
   { id: 'write-paper', title: '写论文', query: '我要写论文查文献' },
   { id: 'watch-drama', title: '追短剧', query: '我想看短剧' },
   { id: 'learn-english', title: '学英语', query: '我要学英语' },
+  { id: 'design-poster', title: '做图设计', query: '我要做一张海报图' },
+  { id: 'generate-video', title: 'AI 生视频', query: '我想用 AI 生成视频' },
+  { id: 'learn-coding', title: '学编程', query: '我想学编程' },
+  { id: 'job-interview', title: '求职面试', query: '我在准备求职面试' },
+  { id: 'travel-plan', title: '旅行规划', query: '我要出去旅行做攻略' },
+  { id: 'mind-map', title: '思维导图', query: '我要画一张思维导图' },
+  { id: 'write-code', title: '写代码', query: '我要写代码做开发' },
+  { id: 'photo-retouch', title: '修图美化', query: '我想修一张照片' },
+  { id: 'meeting-notes', title: '会议纪要', query: '我要整理会议纪要' },
+  { id: 'make-music', title: '做音乐', query: '我想做一首歌' },
+  { id: 'build-agent', title: '搭 AI 智能体', query: '我想搭一个 AI 智能体' },
+  { id: 'translate-doc', title: '翻译润色', query: '我要翻译一篇外文' },
+  { id: 'online-shopping', title: '网购购物', query: '我想网购东西' },
 ]
 
 function SiteCard({ site }: { site: FinderSite }) {
@@ -64,6 +91,16 @@ export function AiFinderPanel() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<FinderResponse | null>(null)
+  // 使用习惯只存本机：首屏先按默认顺序渲染，挂载后读 localStorage 再个性化，避免水合不一致
+  const [usage, setUsage] = useState<SceneUsage>({})
+  const [pageOffset, setPageOffset] = useState(0)
+
+  useEffect(() => {
+    setUsage(loadSceneUsage())
+  }, [])
+
+  const orderedScenes = useMemo(() => orderScenesByUsage(SCENES, usage), [usage])
+  const visibleScenes = useMemo(() => scenePage(orderedScenes, pageOffset), [orderedScenes, pageOffset])
 
   async function run(nextQuery: string, sceneId?: string) {
     const q = nextQuery.trim()
@@ -123,22 +160,39 @@ export function AiFinderPanel() {
         </button>
       </form>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="py-1.5 text-sm text-muted-foreground">场景包：</span>
-        {SCENES.map((s) => (
+        {visibleScenes.map((s) => (
           <button
             key={s.id}
             type="button"
             disabled={loading}
             onClick={() => {
+              setUsage(recordSceneUse(s.id))
               setQuery(s.query)
               void run(s.query, s.id)
             }}
-            className="min-h-10 rounded-full border border-border bg-background px-3.5 text-sm font-medium text-foreground transition-colors hover:border-primary/50 disabled:opacity-50"
+            className="inline-flex min-h-10 items-center rounded-full border border-border bg-background px-3.5 text-sm font-medium text-foreground transition-colors hover:border-primary/50 disabled:opacity-50"
           >
             {s.title}
+            {(usage[s.id] ?? 0) > 0 ? (
+              <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium leading-none text-primary">
+                常用
+              </span>
+            ) : null}
           </button>
         ))}
+        {SCENES.length > SCENE_PAGE_SIZE ? (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setPageOffset((o) => nextSceneOffset(o, orderedScenes.length))}
+            className="inline-flex min-h-10 items-center gap-1 rounded-full border border-dashed border-primary/40 bg-background px-3.5 text-sm font-medium text-primary transition-colors hover:border-primary disabled:opacity-50"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            换一批
+          </button>
+        ) : null}
       </div>
 
       {error ? (

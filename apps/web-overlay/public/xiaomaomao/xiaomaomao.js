@@ -1,5 +1,5 @@
-// 小猫猫网站 AI 助手挂件：右下角悬浮的粉色小猫（Muse 当前头像真图 + 同套姿势图），
-// 能聊天找站、会说话、会卖萌、会睡觉。
+// 小猫猫网站 AI 助手挂件 v4：右下角悬浮的粉色小猫（Muse 当前头像真图 + 同套姿势图），
+// 能聊天找站、会说话、会卖萌、会睡觉，还能摸、能喂、能一起玩接星星。
 // 用法：把本文件放进 Next.js 的 public/xiaomaomao/ 目录（6 张姿势真图已 base64 内嵌，无需 assets/ 目录），
 // 在根 layout 的 </body> 前加 <Script src="/xiaomaomao/xiaomaomao.js" strategy="afterInteractive" />
 //
@@ -8,7 +8,16 @@
 //    能下发的站点只出自站内真实收录）；聊天接口不可用时自动退到 /api/hub/ai/find 找站，
 //    再不行就本地话术兜底，绝不报错崩页。会话上下文只存页面内存，不落服务端。
 //  - 开口说话：Web Speech API 朗读（优先中文女声、音调略高），右上角喇叭开关，设置记住。
-//  - 懂时间会过日子：按时段换招呼；闲置久了冒俏皮话，深夜或长闲置会打瞌睡冒 Zzz。
+//  - 语音输入：聊天面板麦克风按钮（Web Speech 识别），浏览器不支持时按钮根本不出现，不摆假按钮。
+//  - 摸猫互动：点猫有反应，连摸情绪递进（卖萌→开心→撒娇），摸太急偶尔会躲开卖个萌。
+//  - 喂小鱼干：每天最多 5 条，饱食度随时间真实衰减、喂食回升，面板数字如实显示；吃够了会拒绝。
+//  - 接星星小游戏：30 秒接住掉落的星星计分（金星 3 分），最高分存本机，新纪录会庆祝。
+//  - 成长联动：只读本机成长档案（navhub.growth.v1），升级/点亮新徽章时庆祝播报；
+//    每日首访结合连续访问天数打招呼。只读不写，绝不替用户改成长数据。
+//  - 分页面感知：在短剧页聊短剧、/me 聊等级、分类/搜索/收藏页各有对应招呼与小提示（基于路径，不假装读懂页面）。
+//  - 时间与节日：早中晚/深夜不同问候；春节/中秋/国庆/圣诞等节日当天有专属台词与头顶小装饰（CSS/emoji 层，不动真图）。
+//  - 表情符号层：思考「？」、开心「♪」、惊讶「！」、得意「★」用 CSS 动画浮在头顶，配合姿势切换。
+//  - 懂时间会过日子：闲置久了冒俏皮话，深夜或长闲置会打瞌睡冒 Zzz。
 //  - 多姿势状态动画：待机/招呼/思考（working）/庆祝（milestone）/卖萌（making）姿势图
 //    交叉淡入淡出，叠加呼吸浮动、入场弹跳、爱心星星粒子、鼠标靠近探头跟随；
 //    动画只用 transform/opacity，prefers-reduced-motion 时自动降级。
@@ -60,6 +69,53 @@
     try { window.localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* 忽略 */ }
   }
 
+  /* ---------- v4 玩法状态（摸猫/喂食/游戏/成长见证，全存本机同一个键，向后兼容 v3） ---------- */
+  var v4 = {
+    seenLevel: 0,          // 小猫上次见证到的成长等级（0 = 还没初始化过）
+    seenBadges: null,      // 小猫上次见证到的已点亮徽章 id 数组（null = 还没初始化过）
+    greetDay: '',          // 节日/连胜招呼当天只说一次
+    fishDay: '',           // 喂鱼计数所属日期
+    fishCount: 0,          // 今日已喂小鱼干条数（上限 5）
+    sat: 62,               // 饱食度 0-100，随时间衰减、喂食回升
+    satAt: 0,              // 饱食度上次结算时间戳
+    gameBest: 0            // 接星星最高分
+  };
+  try {
+    var sv4 = (saved && typeof saved === 'object') ? saved.v4 : null;
+    if (sv4 && typeof sv4 === 'object') {
+      if (typeof sv4.seenLevel === 'number' && sv4.seenLevel >= 0) v4.seenLevel = Math.floor(sv4.seenLevel);
+      if (Array.isArray(sv4.seenBadges)) v4.seenBadges = sv4.seenBadges.filter(function (x) { return typeof x === 'string'; });
+      if (typeof sv4.greetDay === 'string') v4.greetDay = sv4.greetDay;
+      if (typeof sv4.fishDay === 'string') v4.fishDay = sv4.fishDay;
+      if (typeof sv4.fishCount === 'number' && sv4.fishCount >= 0) v4.fishCount = Math.floor(sv4.fishCount);
+      if (typeof sv4.sat === 'number' && isFinite(sv4.sat)) v4.sat = Math.max(0, Math.min(100, sv4.sat));
+      if (typeof sv4.satAt === 'number' && sv4.satAt > 0) v4.satAt = sv4.satAt;
+      if (typeof sv4.gameBest === 'number' && sv4.gameBest >= 0) v4.gameBest = Math.floor(sv4.gameBest);
+    }
+  } catch (e) { /* 脏数据静默退化为默认值 */ }
+  if (!v4.satAt) v4.satAt = Date.now();
+  function persistV4() { store.v4 = v4; persist(); }
+  function todayKeyStr(d) {
+    d = d || new Date();
+    var m = ('0' + (d.getMonth() + 1)).slice(-2);
+    var day = ('0' + d.getDate()).slice(-2);
+    return d.getFullYear() + '-' + m + '-' + day;
+  }
+  function pickOne(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  /* 饱食度：按真实流逝时间衰减（每小时 -5），懒结算，只在喂食/互动时落盘 */
+  function currentSat() {
+    var elH = (Date.now() - v4.satAt) / 3600000;
+    if (elH > 0.2) {
+      v4.sat = Math.max(5, v4.sat - elH * 5);
+      v4.satAt = Date.now();
+    }
+    return v4.sat;
+  }
+  function rollFishDay() {
+    var t = todayKeyStr();
+    if (v4.fishDay !== t) { v4.fishDay = t; v4.fishCount = 0; persistV4(); }
+  }
+
   /* ---------- 语音 ---------- */
   var voiceOn = store.voice;
   function pickVoice() {
@@ -95,7 +151,7 @@
       u.rate = 1.04;
       var voice = pickVoice();
       if (voice) u.voice = voice;
-      u.onstart = function () { speaking = true; stageEl.classList.add('xm-speaking'); };
+      u.onstart = function () { speaking = true; stageEl.classList.add('xm-speaking'); showEmo('♪'); };
       u.onend = u.onerror = function () { speaking = false; stageEl.classList.remove('xm-speaking'); };
       window.speechSynthesis.speak(u);
     } catch (e) { speaking = false; /* 不支持或被拦截时静默 */ }
@@ -191,7 +247,36 @@
     '#xiaomaomao .xm-send:disabled{opacity:.55;cursor:default;box-shadow:none}' +
     /* 移动端与降级 */
     '@media (max-width:640px){#xiaomaomao{right:12px;bottom:12px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-panel{right:100px;width:min(332px,calc(100vw - 112px));max-width:calc(100vw - 112px);height:min(480px,62vh)}#xiaomaomao .xm-bubble{max-width:196px;font-size:12.5px}#xiaomaomao .xm-actions{left:-11px}#xiaomaomao .xm-btn{width:30px;height:30px}}' +
-    '@media (prefers-reduced-motion: reduce){#xiaomaomao *,#xiaomaomao{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important}}';
+    '@media (prefers-reduced-motion: reduce){#xiaomaomao *,#xiaomaomao{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important}}' +
+    /* v4：表情符号层 / 节日装饰 / 躲闪 / 喂鱼 / 麦克风 / 接星星 */
+    '#xiaomaomao .xm-emo{position:absolute;top:-16px;left:2px;z-index:8;font-size:23px;font-weight:700;color:#ff5d8f;opacity:0;pointer-events:none;text-shadow:0 2px 8px rgba(255,255,255,.9)}' +
+    '#xiaomaomao .xm-emo.xm-emo-show{animation:xmEmo 1.5s ease-out forwards}' +
+    '@keyframes xmEmo{0%{opacity:0;transform:translateY(7px) scale(.5) rotate(-10deg)}25%{opacity:1;transform:translateY(0) scale(1.18) rotate(5deg)}70%{opacity:1}100%{opacity:0;transform:translateY(-15px) scale(1) rotate(0deg)}}' +
+    '#xiaomaomao .xm-deco{position:absolute;top:-19px;right:0;z-index:8;font-size:20px;display:none;pointer-events:none;animation:xmFloat 3s ease-in-out infinite;filter:drop-shadow(0 3px 5px rgba(255,120,160,.4))}' +
+    '#xiaomaomao .xm-wrap.xm-dodge .xm-stage{animation:xmDodge .45s ease}' +
+    '@keyframes xmDodge{0%{transform:translateX(0)}30%{transform:translateX(15px) rotate(3deg)}60%{transform:translateX(-6px) rotate(-1deg)}100%{transform:translateX(0)}}' +
+    '#xiaomaomao .xm-fx i.xm-fish-i{animation:xmFish .72s ease-in forwards;font-size:22px}' +
+    '@keyframes xmFish{0%{opacity:0;transform:translate(-50%,-30px) rotate(-26deg) scale(.7)}30%{opacity:1}100%{opacity:0;transform:translate(-50%,30px) rotate(12deg) scale(1.05)}}' +
+    '#xiaomaomao .xm-fish-btn{position:relative}' +
+    '#xiaomaomao .xm-fish-n{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;border-radius:8px;background:#ff5d8f;color:#fff;font-size:9px;font-weight:700;line-height:15px;text-align:center;padding:0 3px;box-shadow:0 2px 6px rgba(255,93,143,.5)}' +
+    '#xiaomaomao .xm-mic{flex:none;width:40px;height:40px;border-radius:50%;border:1.5px solid #ffc7da;background:#fff;font-size:16px;cursor:pointer;padding:0;line-height:1}' +
+    '#xiaomaomao .xm-mic.xm-mic-live{background:#ffe0ec;border-color:#ff5d8f;animation:xmPulse 1.2s ease-in-out infinite}' +
+    '#xiaomaomao .xm-game{position:absolute;bottom:0;right:128px;width:334px;max-width:calc(100vw - 130px);height:min(436px,62vh);display:none;flex-direction:column;background:linear-gradient(180deg,#fff7fa,#fff);border:2px solid #ffc7da;border-radius:20px;box-shadow:0 18px 48px rgba(214,51,108,.25);overflow:hidden;z-index:9}' +
+    '#xiaomaomao .xm-game.xm-on{display:flex;animation:xmPanelIn .26s cubic-bezier(.2,1.3,.4,1) both}' +
+    '#xiaomaomao .xm-game.xm-left{right:auto;left:0}' +
+    '#xiaomaomao .xm-g-head{display:flex;align-items:center;gap:8px;padding:10px 12px;background:linear-gradient(90deg,#ff8fab,#ffb6c9);color:#fff;flex:none;font-size:14px;font-weight:700}' +
+    '#xiaomaomao .xm-g-head .xm-hbtn{margin-left:auto;width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.65);background:rgba(255,255,255,.18);color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}' +
+    '#xiaomaomao .xm-g-hud{display:flex;gap:14px;padding:7px 12px;font-size:12.5px;color:#c2436e;background:#fff0f5;flex:none}' +
+    '#xiaomaomao .xm-g-hud b{color:#ff5d8f;font-size:14px}' +
+    '#xiaomaomao .xm-g-area{position:relative;flex:1;overflow:hidden;background:linear-gradient(180deg,#fff0f6,#ffe3ee)}' +
+    '#xiaomaomao .xm-g-star{position:absolute;width:42px;height:42px;margin-left:-21px;border:none;background:transparent;font-size:26px;cursor:pointer;padding:0;text-shadow:0 2px 7px rgba(255,150,180,.65);animation:xmFall linear forwards;line-height:1}' +
+    '@keyframes xmFall{from{transform:translateY(0) rotate(-8deg)}to{transform:translateY(var(--fall,440px)) rotate(46deg)}}' +
+    '#xiaomaomao .xm-g-pop{position:absolute;font-size:14px;font-weight:700;color:#ff5d8f;pointer-events:none;animation:xmEmo .8s ease-out forwards;z-index:3}' +
+    '#xiaomaomao .xm-g-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:rgba(255,247,250,.85);text-align:center;padding:18px;z-index:4}' +
+    '#xiaomaomao .xm-g-center .xm-g-big{font-size:19px;font-weight:700;color:#c2436e}' +
+    '#xiaomaomao .xm-g-center .xm-g-sub{font-size:13px;color:#b06a84;line-height:1.55}' +
+    '#xiaomaomao .xm-g-start{height:40px;padding:0 22px;border:none;border-radius:999px;background:linear-gradient(135deg,#ff5d8f,#ff8fab);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 5px 14px rgba(255,93,143,.35)}' +
+    '@media (max-width:640px){#xiaomaomao .xm-game{right:100px;width:min(332px,calc(100vw - 112px));max-width:calc(100vw - 112px);height:min(408px,60vh)}}';
   var style = document.createElement('style');
   style.textContent = css;
   document.head.appendChild(style);
@@ -340,6 +425,86 @@
     if (h >= 18 && h < 23) return '晚上好，我是小猫猫，今晚想看点什么？';
     return '夜深啦，我是小猫猫，找完早点休息哦';
   }
+
+  /* ---------- v4：节日（公历用 md，农历节日写死 2026/2027 日期，过期自动不触发） ---------- */
+  var FESTIVALS = [
+    { md: '01-01', name: '元旦', deco: '🎆', line: '新年快乐！新的一年，小猫猫陪你一起找好网站' },
+    { ymd: '2026-02-16', name: '除夕', deco: '🧨', line: '除夕啦！年夜饭吃好没？小猫猫给你拜个早年' },
+    { ymd: '2026-02-17', name: '春节', deco: '🧧', line: '过年好！小猫猫给你拜年啦，红包……就免啦，陪你逛网站' },
+    { ymd: '2027-02-05', name: '除夕', deco: '🧨', line: '除夕啦！年夜饭吃好没？小猫猫给你拜个早年' },
+    { ymd: '2027-02-06', name: '春节', deco: '🧧', line: '过年好！小猫猫给你拜年啦，红包……就免啦，陪你逛网站' },
+    { ymd: '2026-03-03', name: '元宵节', deco: '🏮', line: '元宵节快乐！吃汤圆了没，圆圆满满一整年' },
+    { ymd: '2026-04-05', name: '清明', deco: '🌿', line: '清明时节，踏青正好，回来我陪你逛逛' },
+    { md: '05-01', name: '劳动节', deco: '🌷', line: '劳动节快乐！放假就好好歇着，找站的活交给我' },
+    { md: '06-01', name: '儿童节', deco: '🎈', line: '儿童节快乐！大小朋友都要开开心心的' },
+    { ymd: '2026-06-19', name: '端午节', deco: '🐲', line: '端午安康！粽子是甜的还是咸的呀？' },
+    { ymd: '2026-08-19', name: '七夕', deco: '💫', line: '七夕快乐！今晚的星星特别亮，许个愿吧' },
+    { md: '09-10', name: '教师节', deco: '📚', line: '教师节，谢谢每一位教过我们的人' },
+    { ymd: '2026-09-25', name: '中秋节', deco: '🥮', line: '中秋快乐！月亮圆圆的，记得吃月饼哦' },
+    { md: '10-01', name: '国庆节', deco: '🎊', line: '国庆快乐！假期想去哪玩？我帮你找攻略' },
+    { ymd: '2026-10-18', name: '重阳节', deco: '🍂', line: '重阳节，记得给家里长辈打个电话哦' },
+    { md: '10-31', name: '万圣节', deco: '🎃', line: '万圣节到啦，不给糖就……陪你找网站！' },
+    { md: '12-24', name: '平安夜', deco: '🔔', line: '平安夜快乐，愿你今晚有个好梦' },
+    { md: '12-25', name: '圣诞节', deco: '🎄', line: '圣诞快乐！小猫猫就是你的圣诞礼物本物啦' }
+  ];
+  function festivalToday() {
+    var now = new Date();
+    var ymd = todayKeyStr(now);
+    var md = ymd.slice(5);
+    for (var i = 0; i < FESTIVALS.length; i++) {
+      if (FESTIVALS[i].ymd && FESTIVALS[i].ymd === ymd) return FESTIVALS[i];
+      if (FESTIVALS[i].md && FESTIVALS[i].md === md) return FESTIVALS[i];
+    }
+    return null;
+  }
+
+  /* ---------- v4：分页面感知（只看路径给对应招呼，不假装读懂页面内容） ---------- */
+  function pageTopic() {
+    var p = '';
+    try { p = window.location.pathname || ''; } catch (e) { /* 忽略 */ }
+    if (p.indexOf('/videos') === 0 || p.indexOf('/category/duanju') === 0) {
+      return { greet: '追剧时间到！我是小猫猫，免费短剧我熟，点我帮你找', tip: '想找免费短剧，跟我说一声，我带你去红果、DramaWave' };
+    }
+    if (p.indexOf('/me') === 0) {
+      return { greet: '来看看你的成长啦？等级和徽章都在这儿，我陪你一起攒', tip: '挂机也能涨经验，在页面多停一会儿，我陪着你' };
+    }
+    if (p.indexOf('/category/') === 0) {
+      return { greet: '这个分类里好东西不少，拿不准点我，我帮你挑', tip: '这个分类拿不准选哪个？点我聊天，我按你的用途帮你挑' };
+    }
+    if (p.indexOf('/search') === 0) {
+      return { greet: '搜不到想要的？告诉我，我用 AI 帮你找', tip: '搜索没找到？点我用一句话描述，我用 AI 帮你找' };
+    }
+    if (p.indexOf('/favorites') === 0) {
+      return { greet: '你的收藏都在这儿啦，常回来看看呀', tip: '收藏的站点点开就能用，常用的还可以设成浏览器首页哦' };
+    }
+    if (p.indexOf('/collections') === 0) {
+      return { greet: '合集里都是成套的好站，慢慢挑，不着急', tip: '合集是成套的工具链，做一件事要用的站都配齐了' };
+    }
+    return null;
+  }
+
+  /* 入场招呼的优先级：节日（当天一次）> 连胜（当天一次）> 分页招呼 > 时段招呼 */
+  function composeGreeting() {
+    var today = todayKeyStr();
+    var f = festivalToday();
+    if (f && v4.greetDay !== today) {
+      v4.greetDay = today; persistV4();
+      return f.line;
+    }
+    var g = readGrowth();
+    if (g && v4.greetDay !== today) {
+      var st = streakOf(g);
+      if (st >= 2) {
+        v4.greetDay = today; persistV4();
+        return '你已经连续来 ' + st + ' 天啦🔥 小猫猫都记住你了，今天想找点什么？';
+      }
+    }
+    if (window.location.pathname !== '/') {
+      var pt = pageTopic();
+      if (pt) return pt.greet;
+    }
+    return greetingText();
+  }
   var lastActive = Date.now();
   var lastTipAt = 0, tipIdx = 0, sleeping = false, funIdx = 0, greeted = false;
   function markActive() { lastActive = Date.now(); }
@@ -451,21 +616,52 @@
   applySavedPos();
   alignPanel();
 
-  /* ---------- 猫本体点击：换姿势卖萌 ---------- */
+  /* ---------- v4：摸猫互动（连摸情绪递进，摸太急偶尔躲开） ---------- */
+  var petChain = 0, petLastAt = 0, interacted = false;
+  var PET_WARM = ['嘿嘿，摸到我啦', '嗯～这儿，舒服', '我在陪你呀，摸摸头', '爪爪给你摸一下', '呼噜呼噜……'];
+  var PET_HAPPY = ['哇，好开心！', '继续继续，不要停～', '你最好啦，蹭蹭', '开心到冒泡泡啦'];
+  var PET_MAX = ['爱你爱你！今天的份已经超标啦', '心都要化掉啦，你太会摸了', '呜哇，被宠上天了'];
+  var PET_HUNGRY = ['摸摸好开心……肚子有点饿了，喂我条小鱼干嘛', '嘿嘿，顺便说一句，我想吃小鱼干了'];
+  var PET_DODGE = ['哎呀，痒痒啦！', '嘿，没摸着～', '慢一点点嘛，吓我一跳'];
+  function petCat() {
+    interacted = true;
+    var now = Date.now();
+    petChain = (now - petLastAt < 3200) ? petChain + 1 : 1;
+    petLastAt = now;
+    if (petChain >= 5 && Math.random() < 0.3) {
+      petChain = 0;
+      wrapEl.classList.remove('xm-dodge');
+      void wrapEl.offsetWidth;
+      wrapEl.classList.add('xm-dodge');
+      showEmo('！');
+      showBubble(pickOne(PET_DODGE), true);
+      window.setTimeout(function () { wrapEl.classList.remove('xm-dodge'); }, 500);
+      return;
+    }
+    var pose, line;
+    if (petChain >= 3) {
+      pose = 'milestone';
+      burst(11);
+      showEmo('♪');
+      line = pickOne(petChain >= 5 ? PET_MAX : PET_HAPPY);
+    } else {
+      pose = 'making';
+      burst(6);
+      line = (currentSat() < 35 && Math.random() < 0.35) ? pickOne(PET_HUNGRY) : pickOne(PET_WARM);
+    }
+    setPose(pose);
+    happyBounce();
+    showBubble(line, true);
+    window.setTimeout(function () {
+      if (!sleeping && !root.classList.contains('xm-open') && currentPose === pose) setPose('main');
+    }, 3800);
+  }
   stageEl.addEventListener('click', function () {
     if (drag && drag.moved) return;
     markActive();
     if (sleeping) { wakeUp(true); return; }
     if (root.classList.contains('xm-open')) return;
-    var fun = FUN_CYCLE[funIdx % FUN_CYCLE.length];
-    funIdx += 1;
-    setPose(fun.pose);
-    happyBounce();
-    burst(9);
-    showBubble(fun.text, true);
-    window.setTimeout(function () {
-      if (!sleeping && !root.classList.contains('xm-open') && currentPose === fun.pose) setPose('main');
-    }, 4200);
+    petCat();
   });
 
   /* ---------- 按钮：语音 / 收起 / 唤回 ---------- */
@@ -656,6 +852,7 @@
     var sentHistory = history.slice();
     history.push({ role: 'user', content: q });
     setPose('working');
+    showEmo('？');
     var think = addThinking();
     postJson(CHAT_URL, { message: q, history: sentHistory })
       .then(function (data) {
@@ -698,15 +895,420 @@
     });
   }
 
+  /* ---------- v4：表情符号层 + 节日装饰（CSS/emoji 覆盖层，不动真图） ---------- */
+  var emoEl = document.createElement('div');
+  emoEl.className = 'xm-emo';
+  emoEl.setAttribute('aria-hidden', 'true');
+  wrapEl.appendChild(emoEl);
+  function showEmo(ch) {
+    if (reducedMotion || !emoEl) return;
+    emoEl.textContent = ch;
+    emoEl.classList.remove('xm-emo-show');
+    void emoEl.offsetWidth;
+    emoEl.classList.add('xm-emo-show');
+  }
+  var decoEl = document.createElement('div');
+  decoEl.className = 'xm-deco';
+  decoEl.setAttribute('aria-hidden', 'true');
+  wrapEl.appendChild(decoEl);
+  function showDeco(ch) { decoEl.textContent = ch; decoEl.style.display = 'block'; }
+
+  /* ---------- v4：成长联动（只读 navhub.growth.v1，规则与站内 growth.ts 同口径复刻） ---------- */
+  var GROWTH_KEY = 'navhub.growth.v1';
+  var LEVELS4 = [
+    { level: 1, title: '初来乍到小奶猫', xp: 0 }, { level: 2, title: '好奇小猫', xp: 60 },
+    { level: 3, title: '探险小猫', xp: 180 }, { level: 4, title: '铃铛收藏家', xp: 360 },
+    { level: 5, title: '夜行捕手', xp: 600 }, { level: 6, title: '云端漫游猫', xp: 950 },
+    { level: 7, title: '星空领航猫', xp: 1400 }, { level: 8, title: '传说大猫猫', xp: 2000 }
+  ];
+  function readGrowth() {
+    var base = { totalXp: 0, features: {}, categories: [], scenes: [], activeDates: [], dramaDates: [], idleTotalMinutes: 0, homepageClaimedAt: null };
+    try {
+      var raw = window.localStorage.getItem(GROWTH_KEY);
+      if (!raw) return base;
+      var p = JSON.parse(raw);
+      if (!p || typeof p !== 'object' || Array.isArray(p)) return base;
+      var strArr = function (x) { return Array.isArray(x) ? x.filter(function (s) { return typeof s === 'string'; }) : []; };
+      return {
+        totalXp: (typeof p.totalXp === 'number' && isFinite(p.totalXp) && p.totalXp >= 0) ? Math.floor(p.totalXp) : 0,
+        features: (p.features && typeof p.features === 'object' && !Array.isArray(p.features)) ? p.features : {},
+        categories: strArr(p.categories), scenes: strArr(p.scenes),
+        activeDates: strArr(p.activeDates), dramaDates: strArr(p.dramaDates),
+        idleTotalMinutes: (typeof p.idleTotalMinutes === 'number' && isFinite(p.idleTotalMinutes) && p.idleTotalMinutes >= 0) ? Math.floor(p.idleTotalMinutes) : 0,
+        homepageClaimedAt: typeof p.homepageClaimedAt === 'string' ? p.homepageClaimedAt : null
+      };
+    } catch (e) { return base; }
+  }
+  function levelOf(xp) {
+    var cur = LEVELS4[0];
+    for (var i = 0; i < LEVELS4.length; i++) if (xp >= LEVELS4[i].xp) cur = LEVELS4[i];
+    return cur;
+  }
+  function streakOf(p) {
+    var set = {};
+    p.activeDates.forEach(function (d) { set[d] = 1; });
+    var cursor = new Date();
+    if (!set[todayKeyStr(cursor)]) cursor.setDate(cursor.getDate() - 1);
+    var n = 0;
+    while (set[todayKeyStr(cursor)]) { n += 1; cursor.setDate(cursor.getDate() - 1); }
+    return n;
+  }
+  function featCount(p, k) { var f = p.features[k]; return (f && typeof f.count === 'number') ? f.count : 0; }
+  function badgesOf(p) {
+    var used = Object.keys(p.features).length;
+    var st = streakOf(p);
+    var defs = [
+      { id: 'first-step', title: '第一步', icon: '🐾', ok: used >= 1 },
+      { id: 'ai-helper', title: 'AI 找站新手', icon: '🔍', ok: featCount(p, 'ai_find') >= 1 },
+      { id: 'cat-talk', title: '猫语者', icon: '💬', ok: featCount(p, 'ai_chat') >= 1 },
+      { id: 'scene-explorer', title: '场景探索者', icon: '🧭', ok: p.scenes.length >= 5 },
+      { id: 'scene-master', title: '场景大师', icon: '🎒', ok: p.scenes.length >= 12 },
+      { id: 'category-explorer', title: '分类漫游者', icon: '🗺️', ok: p.categories.length >= 5 },
+      { id: 'category-master', title: '全站通', icon: '🌏', ok: p.categories.length >= 10 },
+      { id: 'drama-fan', title: '追剧达人', icon: '🎬', ok: p.dramaDates.length >= 3 },
+      { id: 'collector', title: '收藏家', icon: '⭐', ok: featCount(p, 'favorite_add') >= 5 },
+      { id: 'streak-3', title: '三天打卡', icon: '🔥', ok: st >= 3 },
+      { id: 'streak-7', title: '一周不断档', icon: '🏆', ok: st >= 7 },
+      { id: 'idle-buddy', title: '陪伴时光', icon: '🌙', ok: p.idleTotalMinutes >= 60 },
+      { id: 'homepage-guardian', title: '首页守护者', icon: '🏠', ok: p.homepageClaimedAt !== null }
+    ];
+    return defs.filter(function (d) { return d.ok; });
+  }
+  function checkGrowth(announce) {
+    var p = readGrowth();
+    var lv = levelOf(p.totalXp);
+    var earned = badgesOf(p);
+    var ids = earned.map(function (b) { return b.id; });
+    if (v4.seenBadges === null) {
+      v4.seenLevel = lv.level;
+      v4.seenBadges = ids;
+      persistV4();
+      return;
+    }
+    if (!announce) return;
+    var newOnes = earned.filter(function (b) { return v4.seenBadges.indexOf(b.id) < 0; });
+    var leveled = lv.level > v4.seenLevel;
+    if (!leveled && !newOnes.length) return;
+    v4.seenLevel = Math.max(v4.seenLevel, lv.level);
+    v4.seenBadges = ids;
+    persistV4();
+    var parts = [];
+    if (leveled) parts.push('哇！你升级啦：Lv.' + lv.level + '「' + lv.title + '」🎉');
+    if (newOnes.length) {
+      parts.push('新徽章点亮：' + newOnes.slice(0, 2).map(function (b) { return b.icon + '「' + b.title + '」'; }).join('、') + (newOnes.length > 2 ? ' 等 ' + newOnes.length + ' 枚' : '') + '！');
+    }
+    var text = parts.join(' ');
+    if (root.classList.contains('xm-open')) { addCatText(text); return; }
+    if (root.classList.contains('xm-closed') || sleeping) return;
+    setPose('milestone');
+    happyBounce();
+    burst(14);
+    showEmo('★');
+    showBubble(text, true);
+    window.setTimeout(function () {
+      if (currentPose === 'milestone' && !root.classList.contains('xm-open')) setPose('main');
+    }, 4200);
+  }
+  function initGrowthWatch() {
+    checkGrowth(false);
+    try { window.addEventListener('navhub:growth-updated', function () { checkGrowth(true); }); } catch (e) { /* 忽略 */ }
+    try {
+      window.addEventListener('storage', function (e) {
+        if (e && e.key === GROWTH_KEY) checkGrowth(true);
+      });
+    } catch (e) { /* 忽略 */ }
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) checkGrowth(true);
+    });
+  }
+
+  /* ---------- v4：喂小鱼干（每日 5 条，饱食度真实衰减/回升，吃够会拒绝） ---------- */
+  var FEED_LINES = ['好香！小鱼干最好吃啦', '咔哧咔哧……嗯，满足', '谢谢投喂，今天也元气满满', '一条小鱼干，快乐一整天'];
+  var actionsEl = root.querySelector('.xm-actions');
+  var closeBtnEl = root.querySelector('.xm-close-btn');
+  var fishBtn = document.createElement('button');
+  fishBtn.className = 'xm-btn xm-fish-btn';
+  fishBtn.type = 'button';
+  fishBtn.innerHTML = '🐟<span class="xm-fish-n"></span>';
+  fishBtn.setAttribute('aria-label', '喂小猫猫吃小鱼干');
+  var fishNEl = fishBtn.querySelector('.xm-fish-n');
+  actionsEl.insertBefore(fishBtn, closeBtnEl);
+  var gameBtn = document.createElement('button');
+  gameBtn.className = 'xm-btn xm-game-btn';
+  gameBtn.type = 'button';
+  gameBtn.textContent = '⭐';
+  gameBtn.title = '和小猫猫玩接星星';
+  gameBtn.setAttribute('aria-label', '和小猫猫玩接星星');
+  actionsEl.insertBefore(gameBtn, closeBtnEl);
+  function updateFishBtn() {
+    rollFishDay();
+    var left = Math.max(0, 5 - v4.fishCount);
+    fishNEl.textContent = left;
+    fishNEl.style.display = left > 0 ? 'block' : 'none';
+    fishBtn.title = left > 0 ? ('喂小猫猫吃小鱼干（今天还剩 ' + left + ' 条）') : '今天的小鱼干喂完啦，明天再来';
+  }
+  function feedFish() {
+    interacted = true;
+    markActive();
+    if (sleeping) { wakeUp(true); return; }
+    if (root.classList.contains('xm-open')) return;
+    rollFishDay();
+    if (v4.fishCount >= 5) {
+      setPose('idle');
+      showBubble('今天的小鱼干吃够啦，明天再喂我哦～（饱食度 ' + Math.round(currentSat()) + '%）', true);
+      window.setTimeout(function () {
+        if (currentPose === 'idle' && !sleeping) setPose('main');
+      }, 2600);
+      updateFishBtn();
+      return;
+    }
+    v4.fishCount += 1;
+    v4.sat = Math.min(100, currentSat() + 22);
+    v4.satAt = Date.now();
+    persistV4();
+    updateFishBtn();
+    var f = document.createElement('i');
+    f.className = 'xm-fish-i';
+    f.textContent = '🐟';
+    fxEl.appendChild(f);
+    window.setTimeout(function () { f.remove(); }, 820);
+    setPose('making');
+    happyBounce();
+    window.setTimeout(function () {
+      if (sleeping) return;
+      setPose('milestone');
+      burst(8);
+      showEmo('♥');
+    }, 430);
+    var line = v4.sat >= 96 ? '嗝～吃饱饱啦，谢谢你！' : pickOne(FEED_LINES);
+    showBubble(line + '（饱食度 ' + Math.round(v4.sat) + '%）', true);
+    window.setTimeout(function () {
+      if (!sleeping && !root.classList.contains('xm-open') && currentPose === 'milestone') setPose('main');
+    }, 3400);
+  }
+  fishBtn.addEventListener('click', function (ev) { ev.stopPropagation(); feedFish(); });
+  updateFishBtn();
+
+  /* ---------- v4：接星星小游戏（30 秒计分，金星 3 分，最高分存本机） ---------- */
+  var gameEl = document.createElement('div');
+  gameEl.className = 'xm-game';
+  gameEl.setAttribute('role', 'dialog');
+  gameEl.setAttribute('aria-label', '接星星小游戏');
+  gameEl.innerHTML =
+    '<div class="xm-g-head"><span>⭐ 接星星</span><button class="xm-hbtn xm-g-close" type="button" title="关掉游戏" aria-label="关掉游戏">✕</button></div>' +
+    '<div class="xm-g-hud"><span>得分 <b class="xm-g-score">0</b></span><span>时间 <b class="xm-g-time">30</b> 秒</span><span>最高 <b class="xm-g-best">0</b></span></div>' +
+    '<div class="xm-g-area">' +
+    '<div class="xm-g-center"><div class="xm-g-big">接住掉下来的星星！</div><div class="xm-g-sub">30 秒里点中星星得分，金色星星 3 分。<br>最高分会记在这台设备上。</div><button class="xm-g-start" type="button">开始游戏</button></div>' +
+    '</div>';
+  root.querySelector('.xm-main-col').appendChild(gameEl);
+  var gArea = gameEl.querySelector('.xm-g-area');
+  var gScoreEl = gameEl.querySelector('.xm-g-score');
+  var gTimeEl = gameEl.querySelector('.xm-g-time');
+  var gBestEl = gameEl.querySelector('.xm-g-best');
+  var gCenter = gameEl.querySelector('.xm-g-center');
+  var gBig = gameEl.querySelector('.xm-g-big');
+  var gSub = gameEl.querySelector('.xm-g-sub');
+  var gStartBtn = gameEl.querySelector('.xm-g-start');
+  var game = { on: false, score: 0, left: 30, spawnT: 0, tickT: 0, stars: [] };
+  function gHud() {
+    gScoreEl.textContent = game.score;
+    gTimeEl.textContent = Math.max(0, Math.ceil(game.left));
+    gBestEl.textContent = v4.gameBest;
+  }
+  function clearStars() {
+    game.stars.slice().forEach(function (s) {
+      window.clearTimeout(s._t);
+      s.remove();
+    });
+    game.stars = [];
+  }
+  function endGame(finished) {
+    if (game.tickT) window.clearInterval(game.tickT);
+    if (game.spawnT) window.clearInterval(game.spawnT);
+    game.tickT = 0;
+    game.spawnT = 0;
+    game.on = false;
+    clearStars();
+    if (finished) {
+      var isBest = game.score > v4.gameBest;
+      if (isBest) { v4.gameBest = game.score; persistV4(); }
+      gBig.textContent = '时间到！';
+      gSub.innerHTML = '你接住了 <b>' + game.score + '</b> 分' + (isBest && game.score > 0 ? '，新纪录！🎉' : '，最高纪录 ' + v4.gameBest + ' 分');
+      gStartBtn.textContent = '再来一局';
+      gCenter.style.display = 'flex';
+      if (isBest && game.score > 0) {
+        setPose('milestone');
+        burst(12);
+        showEmo('★');
+        window.setTimeout(function () {
+          if (currentPose === 'milestone' && !root.classList.contains('xm-open')) setPose('main');
+        }, 3000);
+      }
+    }
+    gHud();
+  }
+  function spawnStar() {
+    if (!game.on) return;
+    var s = document.createElement('button');
+    s.type = 'button';
+    s.className = 'xm-g-star';
+    var gold = Math.random() < 0.18;
+    s.textContent = gold ? '🌟' : '⭐';
+    s.setAttribute('aria-label', '星星，点我接住它');
+    var w = gArea.clientWidth || 300;
+    s.style.left = (24 + Math.random() * Math.max(10, w - 48)) + 'px';
+    s.style.top = '-44px';
+    var dur = 2100 + Math.random() * 1100;
+    s.style.animationDuration = dur + 'ms';
+    s.style.setProperty('--fall', ((gArea.clientHeight || 300) + 80) + 'px');
+    var val = gold ? 3 : 1;
+    var done = false;
+    var kill = function (scored) {
+      if (done) return;
+      done = true;
+      window.clearTimeout(s._t);
+      var idx = game.stars.indexOf(s);
+      if (idx >= 0) game.stars.splice(idx, 1);
+      if (scored) {
+        game.score += val;
+        gHud();
+        var pop = document.createElement('span');
+        pop.className = 'xm-g-pop';
+        pop.textContent = '+' + val;
+        pop.style.left = s.style.left;
+        pop.style.top = '42%';
+        gArea.appendChild(pop);
+        window.setTimeout(function () { pop.remove(); }, 850);
+      }
+      s.remove();
+    };
+    s.addEventListener('click', function () { kill(true); });
+    s._t = window.setTimeout(function () { kill(false); }, dur + 40);
+    game.stars.push(s);
+    gArea.appendChild(s);
+  }
+  function startGame() {
+    endGame(false);
+    game.on = true;
+    game.score = 0;
+    game.left = 30;
+    gCenter.style.display = 'none';
+    gHud();
+    spawnStar();
+    game.spawnT = window.setInterval(spawnStar, 620);
+    game.tickT = window.setInterval(function () {
+      game.left -= 0.25;
+      gTimeEl.textContent = Math.max(0, Math.ceil(game.left));
+      if (game.left <= 0) endGame(true);
+    }, 250);
+    setPose('milestone');
+    happyBounce();
+    window.setTimeout(function () { if (currentPose === 'milestone') setPose('main'); }, 1600);
+  }
+  function openGame() {
+    interacted = true;
+    markActive();
+    if (root.classList.contains('xm-open')) closePanel();
+    root.classList.remove('xm-closed');
+    wakeUp(false);
+    hideBubble();
+    if (panelEl.classList.contains('xm-left')) gameEl.classList.add('xm-left');
+    else gameEl.classList.remove('xm-left');
+    if (!game.on) {
+      gBig.textContent = '接住掉下来的星星！';
+      gSub.innerHTML = '30 秒里点中星星得分，金色星星 3 分。<br>最高分会记在这台设备上。';
+      gStartBtn.textContent = '开始游戏';
+      gCenter.style.display = 'flex';
+    }
+    gameEl.classList.add('xm-on');
+    gHud();
+  }
+  function closeGame() {
+    endGame(false);
+    gameEl.classList.remove('xm-on');
+  }
+  gStartBtn.addEventListener('click', startGame);
+  gameEl.querySelector('.xm-g-close').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    closeGame();
+  });
+  gameBtn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    if (gameEl.classList.contains('xm-on')) closeGame();
+    else openGame();
+  });
+
+  /* ---------- v4：语音输入（不支持的浏览器不创建按钮，绝不摆假按钮） ---------- */
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SR) {
+    var micBtn = document.createElement('button');
+    micBtn.className = 'xm-mic';
+    micBtn.type = 'button';
+    micBtn.textContent = '🎤';
+    micBtn.title = '语音输入：点一下直接说话找站';
+    micBtn.setAttribute('aria-label', '语音输入');
+    root.querySelector('.xm-form').insertBefore(micBtn, sendBtn);
+    var rec = null, listening = false;
+    micBtn.addEventListener('click', function () {
+      if (listening && rec) {
+        try { rec.stop(); } catch (e) { /* 忽略 */ }
+        return;
+      }
+      try {
+        rec = new SR();
+        rec.lang = 'zh-CN';
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+        rec.onresult = function (ev) {
+          var t = '';
+          try { t = ev.results[0][0].transcript || ''; } catch (e) { /* 忽略 */ }
+          if (t) {
+            inputEl.value = t;
+            sendChat(t);
+          }
+        };
+        rec.onerror = function (ev) {
+          if (ev && ev.error === 'not-allowed') addNote('麦克风权限没开，用打字也可以找我～');
+          else if (ev && ev.error === 'no-speech') addNote('没听清，再点一次麦克风试试');
+          else if (ev && ev.error === 'audio-capture') addNote('没找到麦克风，用打字找我吧');
+        };
+        rec.onend = function () {
+          listening = false;
+          micBtn.classList.remove('xm-mic-live');
+        };
+        rec.start();
+        listening = true;
+        micBtn.classList.add('xm-mic-live');
+      } catch (e) { /* 识别不可用时静默，打字通道不受影响 */ }
+    });
+  }
+
+  /* ---------- v4：分页面小提示（进页 26 秒后、没互动过才冒一次） ---------- */
+  window.setTimeout(function () {
+    if (interacted || sleeping) return;
+    if (root.classList.contains('xm-open') || root.classList.contains('xm-closed')) return;
+    if (document.hidden) return;
+    var pt = pageTopic();
+    if (pt) {
+      showBubble(pt.tip, false);
+      happyBounce();
+    }
+  }, 26000);
+
   /* ---------- 入场 ---------- */
   root.classList.add('xm-enter');
+  var festToday = festivalToday();
+  if (festToday) showDeco(festToday.deco);
+  initGrowthWatch();
   window.setTimeout(function () { burst(8); }, 380);
   window.setTimeout(function () {
     greeted = true;
     if (!root.classList.contains('xm-open') && !root.classList.contains('xm-closed')) {
       setPose('waking');
-      showBubble(greetingText(), true);
+      showBubble(composeGreeting(), true);
       window.setTimeout(function () { if (currentPose === 'waking' && !sleeping) setPose('main'); }, 3400);
     }
   }, 850);
+  /* 跨会话的升级/新徽章：等招呼说完再庆祝，不抢戏 */
+  window.setTimeout(function () { checkGrowth(true); }, 9500);
 })();

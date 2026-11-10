@@ -1,7 +1,26 @@
 /**
  * AI 模型配置接口测试（系统级 + 用户级四级解析链）。
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { isIP } from "node:net";
+
+// 保存配置会先对 baseUrl 做 SSRF 校验（解析域名后查 IP 网段）。本文件用例的
+// 被测行为是「公网端点可保存、私网端点被拦」，不应依赖运行环境的真实 DNS：
+// 假 IP 代理环境会把公网域名解析到 198.18.0.0/15（守卫按设计拦截的基准测试
+// 网段），用例便与环境耦合误红（与 packages/ai/test/ai.test.ts、
+// assets-icon-fallback.test.ts 同一处理范式）。处理：域名统一解析到一个确定
+// 的公网 IP；字面 IP 走真实 lookup，保证 127.0.0.1 的拦截用例仍走原路径。
+vi.mock("node:dns/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:dns/promises")>();
+  return {
+    ...actual,
+    lookup: async (hostname: string, options?: { all?: boolean }) => {
+      if (isIP(hostname)) return actual.lookup(hostname, options as never);
+      const addr = { address: "93.184.216.34", family: 4 };
+      return options?.all ? [addr] : addr;
+    },
+  };
+});
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -53,6 +72,8 @@ afterAll(async () => {
   await app.close();
   await ctx.close();
   rmSync(dir, { recursive: true, force: true });
+  // isolate:false 卫生：DNS mock 会驻留 worker 模块缓存，清理避免污染同 worker 后续文件
+  vi.resetModules();
 });
 
 describe("AI 模型配置管理端接口（/api/admin/ai/config）", () => {

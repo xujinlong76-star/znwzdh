@@ -11,7 +11,10 @@
  *   github -> 原版行为（数据存你自己的 GitHub 仓库）
  *   sqlite -> 同进程直连（单机部署，省一次网络往返）
  */
-import { auth } from "@/lib/auth";
+// 注意：不要在这里静态 import @/lib/auth —— 它静态加载 node:crypto，
+// 而本模块被根 layout 的 seo/metadata 链引用，任何声明 runtime='edge' 的
+// 页面都会把这条链编译进 edge，生产构建因此在收集页面数据阶段失败
+// （2026-11-10 实测）。auth 只在下方 getWriteToken 异步回调里用，改动态导入。
 // 构建期即内联的基线数据（NavSphere 自带），用作中枢不可用时的兜底。
 // 注意：这是「内容兜底」而不是「配置兜底」—— 正常情况下数据来自中枢。
 import baselineNavigation from "@/navsphere/content/navigation.json";
@@ -123,6 +126,7 @@ function getAdapter(): StorageAdapter {
       branch: process.env.GITHUB_BRANCH || "main",
       readToken: process.env.GITHUB_PAT ?? null,
       getWriteToken: async () => {
+        const { auth } = await import("@/lib/auth");
         const session = await auth();
         return session?.user?.accessToken ?? process.env.GITHUB_PAT ?? null;
       },

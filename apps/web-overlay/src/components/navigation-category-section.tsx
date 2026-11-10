@@ -22,6 +22,7 @@ import {
 } from '@/lib/modular/diy-presets'
 import { createCustomSiteId } from '@/lib/modular/custom-site-input'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { countCategorySites } from '@/lib/modular/category-counts'
 import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
@@ -104,6 +105,14 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     pinToSpeedDial,
     unpinFromSpeedDial,
   } = useHomeDIY()
+  const {
+    isCategoryHidden,
+    isSubcategoryHidden,
+    isSiteHidden,
+    bypassMaskTemporarily,
+    removeFeature,
+    restoreFeature,
+  } = useFeatureMask()
 
   const linkTarget = useExternalLinkTarget(siteData?.navigation?.linkTarget)
   const siteViewModel = useSiteViewModel()
@@ -204,8 +213,20 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     }
     return gridColumnsClass || 'grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))]'
   }, [effectiveCardMode, gridColumnsClass, moduleColSpan])
-  const directItems = (category.items || []) as NavigationSubItem[]
-  const subCats = (category.subCategories || []) as Array<NavigationCategory & { items?: NavigationSubItem[] }>
+  const directItems = useMemo(
+    () =>
+      ((category.items || []) as NavigationSubItem[]).filter(
+        (item) => bypassMaskTemporarily || !isSiteHidden(item.id)
+      ),
+    [category.items, bypassMaskTemporarily, isSiteHidden]
+  )
+  const subCats = useMemo(
+    () =>
+      ((category.subCategories || []) as Array<NavigationCategory & { items?: NavigationSubItem[] }>).filter(
+        (sub) => bypassMaskTemporarily || !isSubcategoryHidden(sub.id)
+      ),
+    [category.subCategories, bypassMaskTemporarily, isSubcategoryHidden]
+  )
   /**
    * 卡片标签清洗用的分类名集合（运行时从当前分类树派生，不硬编码分类名）。
    * 数据里存在大量「把一级/二级分类名又写进 tags」的复读项，
@@ -242,7 +263,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     () =>
       subCats.map((subCategory) => {
         const subPinnedItemIds = pinnedSiteIdsByCategory[subCategory.id] || []
-        const subItems = (subCategory.items || []) as NavigationSubItem[]
+        const subItems = ((subCategory.items || []) as NavigationSubItem[]).filter(
+          (item) => bypassMaskTemporarily || !isSiteHidden(item.id)
+        )
         return {
           subCategory,
           subPinnedItemIds,
@@ -251,7 +274,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
             : sortCategoryItemsWithPinned(subItems, subPinnedItemIds),
         }
       }),
-    [subCats, pinnedSiteIdsByCategory, isAdaptiveRankingEnabled]
+    [subCats, pinnedSiteIdsByCategory, isAdaptiveRankingEnabled, bypassMaskTemporarily, isSiteHidden]
   )
 
   /**
@@ -467,7 +490,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     [togglePinSiteInCategory, category.id]
   )
 
-  const isHidden = hiddenCategoryIds?.includes(category.id)
+  const isHidden =
+    !bypassMaskTemporarily &&
+    (hiddenCategoryIds?.includes(category.id) || isCategoryHidden(category.id))
   if (isHidden) {
     if (!isEditingLayout) return null
     return (
@@ -488,6 +513,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
             variant="outline"
             onClick={() => {
               unhideCategory(category.id)
+              restoreFeature(`cat:${category.id}`)
               toast({ title: `已恢复显示分类: ${category.title}` })
             }}
             className="h-7 px-2.5 text-xs rounded-lg gap-1 border-primary/40 text-primary hover:bg-primary/10"
@@ -1105,15 +1131,37 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                       </div>
                                       <div className="flex items-center gap-2">
                                         {isEditingLayout && (
-                                          <CategoryInSituControls
-                                            categoryId={subCategory.id}
-                                            title={subCategory.title}
-                                            isPinned={subPinnedItemIds.length > 0}
-                                            canMoveUp={true}
-                                            canMoveDown={true}
-                                            allCategoryIds={subGroups.map((s) => s.subCategory.id)}
-                                            onAddSite={() => setAddSiteTargetCatId(subCategory.id)}
-                                          />
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                removeFeature({
+                                                  id: `sub:${subCategory.id}`,
+                                                  level: 'L2_SUBCATEGORY',
+                                                  title: subCategory.title,
+                                                  parentTitle: `${category.title} > ${subCategory.title}`,
+                                                })
+                                                toast({
+                                                  title: `📁 已隐藏子分类「${subCategory.title}」`,
+                                                  description: '已移入时间轴回收站，按 Ctrl/Cmd+Z 可立即撤销。',
+                                                })
+                                              }}
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                                              title={`隐藏「${subCategory.title}」子分类（可随时在回收站还原）`}
+                                            >
+                                              <EyeOff className="w-3 h-3" />
+                                              <span>－ 移除子分类</span>
+                                            </button>
+                                            <CategoryInSituControls
+                                              categoryId={subCategory.id}
+                                              title={subCategory.title}
+                                              isPinned={subPinnedItemIds.length > 0}
+                                              canMoveUp={true}
+                                              canMoveDown={true}
+                                              allCategoryIds={subGroups.map((s) => s.subCategory.id)}
+                                              onAddSite={() => setAddSiteTargetCatId(subCategory.id)}
+                                            />
+                                          </>
                                         )}
                                         {canExpandSub && (
                                           <button

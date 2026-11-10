@@ -168,6 +168,17 @@ export default async function RootLayout({
                   }
                 }, true);
 
+                // 首屏防闪烁（Anti-FOUC）：在 React Hydration 之前同步读取已删减的模块/分类掩码并挂载到 <html>
+                try {
+                  var prunedRaw = window.localStorage.getItem('nav_pruned_ids');
+                  if (prunedRaw) {
+                    var pruned = JSON.parse(prunedRaw);
+                    if (Array.isArray(pruned) && pruned.length > 0) {
+                      document.documentElement.setAttribute('data-pruned', pruned.join(' '));
+                    }
+                  }
+                } catch (e) {}
+
                 // 本地开发环境自动清理旧 SW 与 CacheStorage，杜绝历史缓存导致的水合与分包不一致
                 if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
                   if ('serviceWorker' in navigator) {

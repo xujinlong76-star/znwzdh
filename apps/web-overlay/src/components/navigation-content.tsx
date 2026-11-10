@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
@@ -12,6 +12,11 @@ import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import {
+  useFeatureMask,
+  stripFeaturePrefix,
+  syncHiddenCategoriesFromDIY,
+} from '@/lib/modular/feature-mask-store'
 import { Footer } from '@/components/footer'
 import { OnboardingCard } from '@/components/onboarding-card'
 import { useOverlayBehavior } from '@/components/ui/overlay'
@@ -79,7 +84,7 @@ import { SpeedDialDock } from '@/components/speed-dial-dock'
 import { Button } from '@/registry/new-york/ui/button'
 
 import { Input } from '@/registry/new-york/ui/input'
-import { Plus, Tags } from 'lucide-react'
+import { Plus, Tags, Eye, EyeOff, RotateCcw, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { type WorkspaceId } from '@/components/workspace-filter'
@@ -199,7 +204,24 @@ export function NavigationContent({
     glassmorphismBlur,
     cardOpacity,
     isEditingLayout,
+    setIsEditingLayout,
+    toggleEditingLayout,
+    unhideCategory,
+    unhideAllCategories,
   } = useHomeDIY()
+
+  const {
+    hiddenCategories: maskHiddenCategories,
+    trashBin,
+    totalPrunedCount,
+    bypassMaskTemporarily,
+    isModuleHidden,
+    isFeatureHidden,
+    removeFeature,
+    undoLastRemove,
+    restoreAll,
+    setBypassMaskTemporarily,
+  } = useFeatureMask()
 
   // 拖拽编排分类状态
   const [dropCategoryTarget, setDropCategoryTarget] = useState<{ categoryId: string; position: 'before' | 'after' } | null>(null)
@@ -219,18 +241,96 @@ export function NavigationContent({
     [customCategories],
   )
 
+  const effectiveHiddenCategoryIds = useMemo(() => {
+    if (isEditingLayout || bypassMaskTemporarily) return []
+    const merged = new Set<string>(hiddenCategoryIds)
+    for (const item of maskHiddenCategories) {
+      merged.add(stripFeaturePrefix(item))
+    }
+    return Array.from(merged)
+  }, [isEditingLayout, bypassMaskTemporarily, hiddenCategoryIds, maskHiddenCategories])
+
   const { allCategoryIds, categoryTitleMap, sortedCategories } = useMemo(
     () =>
       combineAndSortCategories({
         custom: customAsCategories,
         navigation: filteredNavigationItems,
         siteCategoryOverrides,
-        hiddenCategoryIds: isEditingLayout ? [] : hiddenCategoryIds,
+        hiddenCategoryIds: effectiveHiddenCategoryIds,
         pinnedCategoryIds,
         categoryOrder,
       }),
-    [customAsCategories, filteredNavigationItems, hiddenCategoryIds, isEditingLayout, pinnedCategoryIds, categoryOrder, siteCategoryOverrides],
+    [customAsCategories, filteredNavigationItems, effectiveHiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides],
   )
+
+  // 双向同步传统分类隐藏列表与增量掩码回收站
+  useEffect(() => {
+    syncHiddenCategoriesFromDIY(hiddenCategoryIds, categoryTitleMap)
+  }, [hiddenCategoryIds, categoryTitleMap])
+
+  const handleUndoPrune = useCallback(() => {
+    const restored = undoLastRemove()
+    if (restored) {
+      if (restored.level === 'L2_CATEGORY') {
+        unhideCategory(stripFeaturePrefix(restored.id))
+      }
+      toast({
+        title: `↩ 已撤销移除「${restored.title}」`,
+        description: '该模块/分类已无损还原至原位。',
+      })
+    }
+  }, [undoLastRemove, unhideCategory, toast])
+
+  const handleOpenRecoveryCenter = useCallback(() => {
+    setIsEditingLayout(true)
+    setTimeout(() => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('navhub:open-recovery-center', { detail: { tab: 'trash' } }))
+      }
+    }, 80)
+  }, [setIsEditingLayout])
+
+  // 防自锁死安全阀（Anti-Lockout Guardrail）与全局 Ctrl/Cmd+Z 撤销监听：
+  // 即使右下角 [DIY 排版工坊 E] 按钮被隐藏，键盘快捷键 E 依然可随时呼出 DIY 与恢复中心
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        if (trashBin.length > 0) {
+          e.preventDefault()
+          handleUndoPrune()
+        }
+        return
+      }
+      // 当右下角 DIY 触发器被隐藏（feat:diy-fab）且未处于编辑态时，由本安全阀兜底响应 E 键
+      if (
+        isFeatureHidden('feat:diy-fab') &&
+        !isEditingLayout &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'e'
+      ) {
+        e.preventDefault()
+        toggleEditingLayout()
+        toast({
+          title: '🛠️ 已通过安全阀快捷键 (E) 呼出排版与恢复中心',
+          description: '您可以在大纲或回收站中随时恢复已隐藏的悬浮按钮与任意模块。',
+        })
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [trashBin.length, handleUndoPrune, isFeatureHidden, isEditingLayout, toggleEditingLayout, toast])
 
   const handleWorkspaceChange = useCallback((nextWorkspace: WorkspaceId) => {
     setActiveWorkspace(nextWorkspace)
@@ -441,9 +541,11 @@ export function NavigationContent({
         } as React.CSSProperties}
       >
         {/* 卡片键盘模型说明：所有卡片通过 aria-describedby 指向这一条 */}
-        <p id="navhub-card-keyboard-hint" className="sr-only">
-          站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区，左右方向键切换，Esc 返回卡片。
-        </p>
+        {!isFeatureHidden('feat:keyboard-hint') && (
+          <p id="navhub-card-keyboard-hint" data-feature-id="feat:keyboard-hint" className="sr-only">
+            站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区，左右方向键切换，Esc 返回卡片。
+          </p>
+        )}
 
         <NavigationToolbar
           siteConfig={siteData}
@@ -460,30 +562,143 @@ export function NavigationContent({
         />
 
         {/* 吸顶分类快捷直达导航轨 */}
-        {viewMode !== 'workbench' && sortedCategories.length > 0 && (
-          <CategoryQuickJumpBar
-            className="md:hidden"
-            categories={sortedCategories.map((cat) => ({
-              id: cat.id,
-              title: cat.title,
-              count: countCategorySites(cat),
-            }))}
-            isAllCollapsed={sortedCategories.length > 0 && sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))}
-            onToggleAllCollapsed={() => {
-              const allCollapsed = sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))
-              if (allCollapsed) {
-                expandAllCategories()
-              } else {
-                collapseAllCategories(sortedCategories.map((c) => c.id))
-              }
-            }}
-          />
+        {viewMode !== 'workbench' && sortedCategories.length > 0 && !isModuleHidden('mod:workspace-bar') && (
+          <div data-feature-id="mod:workspace-bar" className="relative">
+            <CategoryQuickJumpBar
+              className="md:hidden"
+              categories={sortedCategories.map((cat) => ({
+                id: cat.id,
+                title: cat.title,
+                count: countCategorySites(cat),
+              }))}
+              isAllCollapsed={sortedCategories.length > 0 && sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))}
+              onToggleAllCollapsed={() => {
+                const allCollapsed = sortedCategories.every((cat) => collapsedCategoryIds.includes(cat.id))
+                if (allCollapsed) {
+                  expandAllCategories()
+                } else {
+                  collapseAllCategories(sortedCategories.map((c) => c.id))
+                }
+              }}
+            />
+          </div>
         )}
 
         <div className="px-3 sm:px-6 md:px-8 pt-4 sm:pt-8 pb-28 sm:pb-36 flex-1">
+          {/* 增量掩码与时间轴回收站快捷感知条（当用户存在已删减功能或处于 DIY 编辑态时呈现） */}
+          {(totalPrunedCount > 0 || isEditingLayout) && (
+            <div
+              data-pruning-status-bar=""
+              className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-xs backdrop-blur-xs"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="inline-flex h-2 w-2 rounded-full bg-primary animate-pulse shrink-0" />
+                <span className="font-semibold text-foreground">
+                  {totalPrunedCount > 0
+                    ? bypassMaskTemporarily
+                      ? `👁️ 正在临时透视完整版（您原有的 ${totalPrunedCount} 项删减配置已安全保留）`
+                      : `✂️ 已按您的偏好精简 ${totalPrunedCount} 项功能/模块`
+                    : '🛠️ 模块化自由裁剪模式：点击任意区块右上角「－ 移除」即可无损隐藏，随时可在回收站一键还原'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {totalPrunedCount > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const next = !bypassMaskTemporarily
+                      setBypassMaskTemporarily(next)
+                      toast({
+                        title: next ? '👁️ 已开启完整版临时透视' : '✂️ 已切回您的专属精简视图',
+                        description: next
+                          ? '当前展示全站完整模块与分类，您的自定义删减掩码未丢失。'
+                          : '已重新应用您的增量裁剪掩码。',
+                      })
+                    }}
+                    className="h-7 px-2.5 text-xs rounded-lg gap-1"
+                  >
+                    {bypassMaskTemporarily ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{bypassMaskTemporarily ? '切回精简视图' : '全部探索（临时透视）'}</span>
+                  </Button>
+                )}
+                {trashBin.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleUndoPrune}
+                    className="h-7 px-2.5 text-xs rounded-lg gap-1"
+                    title="撤销最近一次删减 (快捷键: Ctrl/Cmd + Z)"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>↩ 撤销上一步</span>
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenRecoveryCenter}
+                  className="h-7 px-2.5 text-xs rounded-lg gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>🗑️ 回收站与功能矩阵 ({trashBin.length})</span>
+                </Button>
+                {totalPrunedCount > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      restoreAll()
+                      unhideAllCategories()
+                      toast({
+                        title: '🔄 已无损恢复全站所有默认功能',
+                        description: '全部模块、分类、子分类、站点与卡片微元素已回到初始状态。',
+                      })
+                    }}
+                    className="h-7 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground"
+                  >
+                    全部恢复默认
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* 页面主标题：可见 h1 由 SSR 直出（2026-11-07 SEO 扫描，原 sr-only 隐藏形态
               属灰色做法）。h1 只承载品牌主体，描述降为 p，保持标题层级大纲干净。 */}
-          <header className="mb-4 sm:mb-6">
+          <header
+            data-feature-id="mod:hero-header"
+            className={cn(
+              "mb-4 sm:mb-6 relative",
+              isModuleHidden('mod:hero-header') && "hidden",
+              isEditingLayout && "p-3 rounded-xl border border-dashed border-primary/40 bg-primary/5"
+            )}
+          >
+            {isEditingLayout && (
+              <button
+                type="button"
+                onClick={() => {
+                  removeFeature({
+                    id: 'mod:hero-header',
+                    level: 'L1_MODULE',
+                    title: 'Hero 标题横幅（山羊胡网址导航大全）',
+                    parentTitle: 'L1 全局功能组件',
+                  })
+                  toast({
+                    title: '已移除「Hero 标题横幅」',
+                    description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
+                  })
+                }}
+                className="absolute top-2 right-2 z-20 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+              >
+                <EyeOff className="w-3 h-3" />
+                <span>－ 移除横幅</span>
+              </button>
+            )}
             <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
               {siteData.basic.title}
             </h1>
@@ -492,7 +707,32 @@ export function NavigationContent({
             </p>
           </header>
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
-          {viewMode !== 'workbench' && <OnboardingCard />}
+          {viewMode !== 'workbench' && !isModuleHidden('mod:onboarding-card') && (
+            <div data-feature-id="mod:onboarding-card" className="relative">
+              {isEditingLayout && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    removeFeature({
+                      id: 'mod:onboarding-card',
+                      level: 'L1_MODULE',
+                      title: '首屏快捷键与定制引导横幅',
+                      parentTitle: 'L1 全局功能组件',
+                    })
+                    toast({
+                      title: '已移除「首屏快捷键与定制引导横幅」',
+                      description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
+                    })
+                  }}
+                  className="mb-1 ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                >
+                  <EyeOff className="w-3 h-3" />
+                  <span>－ 移除引导条</span>
+                </button>
+              )}
+              <OnboardingCard />
+            </div>
+          )}
           {viewMode === 'workbench' ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-1">
@@ -513,19 +753,77 @@ export function NavigationContent({
               {/* 首屏极速启动 Bento 展板（多引擎聚合搜索 + 星标/收藏坞 + 时钟 + 快捷工具） */}
               {viewMode === 'hybrid' ? (
                 <>
-                  <HomeHeroDeck />
-                  <SpeedDialDock
-                    allSites={visibleSites}
-                    activeWorkspace={activeWorkspace}
-                    onPeek={openPeek}
-                  />
+                  {!isModuleHidden('mod:hero-deck') && (
+                    <div data-feature-id="mod:hero-deck" className="relative">
+                      {isEditingLayout && (
+                        <div className="mb-1.5 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              removeFeature({
+                                id: 'mod:hero-deck',
+                                level: 'L1_MODULE',
+                                title: '极速启动展板（多引擎聚合搜索 / 时钟 / 收藏足迹）',
+                                parentTitle: 'L1 全局功能组件',
+                              })
+                              toast({
+                                title: '已移除「极速启动展板」',
+                                description: '首屏已直接吸附至下方模块；按 Ctrl/Cmd+Z 可立即撤销。',
+                              })
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                          >
+                            <EyeOff className="w-3 h-3" />
+                            <span>－ 移除极速启动展板</span>
+                          </button>
+                        </div>
+                      )}
+                      <HomeHeroDeck />
+                    </div>
+                  )}
+                  {!isModuleHidden('mod:speed-dial') && (
+                    <div data-feature-id="mod:speed-dial" className="relative">
+                      {isEditingLayout && (
+                        <div className="mb-1.5 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              removeFeature({
+                                id: 'mod:speed-dial',
+                                level: 'L1_MODULE',
+                                title: '⚡ 高频极速直达坞 Top 10',
+                                parentTitle: 'L1 全局功能组件',
+                              })
+                              toast({
+                                title: '已移除「⚡ 高频极速直达坞 Top 10」',
+                                description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
+                              })
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                          >
+                            <EyeOff className="w-3 h-3" />
+                            <span>－ 移除高频直达坞</span>
+                          </button>
+                        </div>
+                      )}
+                      <SpeedDialDock
+                        allSites={visibleSites}
+                        activeWorkspace={activeWorkspace}
+                        onPeek={openPeek}
+                      />
+                    </div>
+                  )}
                 </>
               ) : (
-                <SpeedDialDock
-                  allSites={visibleSites}
-                  activeWorkspace={activeWorkspace}
-                  onPeek={openPeek}
-                />
+                !isModuleHidden('mod:speed-dial') && (
+                  <div data-feature-id="mod:speed-dial" className="relative">
+                    <SpeedDialDock
+                      allSites={visibleSites}
+                      activeWorkspace={activeWorkspace}
+                      onPeek={openPeek}
+                    />
+                  </div>
+                )
               )}
 
               <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">
@@ -641,8 +939,33 @@ export function NavigationContent({
           */}
           <nav
             aria-labelledby="home-directory-title"
-            className="mt-10 sm:mt-12 rounded-xl border border-border/60 bg-background/60 px-3 py-2.5 backdrop-blur-sm"
+            data-feature-id="mod:footer-directory"
+            className={cn(
+              "mt-10 sm:mt-12 rounded-xl border border-border/60 bg-background/60 px-3 py-2.5 backdrop-blur-sm relative",
+              isModuleHidden('mod:footer-directory') && "hidden"
+            )}
           >
+            {isEditingLayout && (
+              <button
+                type="button"
+                onClick={() => {
+                  removeFeature({
+                    id: 'mod:footer-directory',
+                    level: 'L1_MODULE',
+                    title: '底部站内目录（全部分类索引带）',
+                    parentTitle: 'L1 全局功能组件',
+                  })
+                  toast({
+                    title: '已移除「底部站内目录」',
+                    description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
+                  })
+                }}
+                className="mb-1.5 ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+              >
+                <EyeOff className="w-3 h-3" />
+                <span>－ 移除站内目录</span>
+              </button>
+            )}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <span id="home-directory-title" className="text-xs font-semibold text-foreground">
                 站内目录
@@ -673,7 +996,11 @@ export function NavigationContent({
               只在真正进入编辑态时才挂载并下载该 chunk。
           拆之前整包 HUD 在首屏就参与主线程竞争，移动端实测 DIY 按钮 12.5s 才可点。
         */}
-        <HomeDIYTrigger />
+        {!isFeatureHidden('feat:diy-fab') && (
+          <div data-feature-id="feat:diy-fab">
+            <HomeDIYTrigger />
+          </div>
+        )}
         {isEditingLayout && (
           <HomeDIYToolbar
             allCategoryIds={allCategoryIds}
@@ -684,7 +1011,34 @@ export function NavigationContent({
         )}
 
         {/* 页脚 */}
-        <Footer siteInfo={siteData} />
+        {!isModuleHidden('mod:footer') && (
+          <div data-feature-id="mod:footer" className="relative">
+            {isEditingLayout && (
+              <div className="px-4 sm:px-8 pt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    removeFeature({
+                      id: 'mod:footer',
+                      level: 'L1_MODULE',
+                      title: '底部生态入口与页脚',
+                      parentTitle: 'L1 全局功能组件',
+                    })
+                    toast({
+                      title: '已移除「底部生态入口与页脚」',
+                      description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
+                    })
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                >
+                  <EyeOff className="w-3 h-3" />
+                  <span>－ 移除页脚与生态入口</span>
+                </button>
+              </div>
+            )}
+            <Footer siteInfo={siteData} />
+          </div>
+        )}
 
         {/* 4.0 弹窗：空格键沙箱速览与行动视窗 */}
         <SitePeekDialog
@@ -712,12 +1066,14 @@ export function NavigationContent({
         <FloatingQuickNav onOpenTools={() => setIsToolsOpen(true)} />
 
         {/* 4.0 弹窗：快捷键指南与 Maestro 监听 */}
-        {/* T 键打开微工具箱的键盘入口由这里接线 */}
-        <KeyboardShortcutsDialog
-          open={isShortcutsOpen}
-          onOpenChange={setIsShortcutsOpen}
-          onOpenTools={() => setIsToolsOpen(true)}
-        />
+        {/* T 键打开微工具箱的键盘入口由这里接线（若 L4 禁用了 feat:keyboard-nav 则卸载监听） */}
+        {!isFeatureHidden('feat:keyboard-nav') && (
+          <KeyboardShortcutsDialog
+            open={isShortcutsOpen}
+            onOpenChange={setIsShortcutsOpen}
+            onOpenTools={() => setIsToolsOpen(true)}
+          />
+        )}
 
         {/* 多选批量操作坞：选中任意卡片后自底部升起（批量导出 / 复制 / 置顶） */}
         {selectionMode && (

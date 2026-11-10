@@ -700,3 +700,17 @@
 [data-nav-grid][data-grid-folded][data-grid-cols="3"] > [data-navhub-site-id]:nth-child(4) {
   display: none;
 }
+
+/* 首屏防闪烁（Anti-FOUC）：在 React 水合前通过 html[data-pruned] 提前隐藏用户已删减的 L1/L4 全局模块 */
+html[data-pruned~="mod:workspace-bar"] [data-feature-id="mod:workspace-bar"],
+html[data-pruned~="mod:hero-header"] [data-feature-id="mod:hero-header"],
+html[data-pruned~="mod:onboarding-card"] [data-feature-id="mod:onboarding-card"],
+html[data-pruned~="mod:hero-deck"] [data-feature-id="mod:hero-deck"],
+html[data-pruned~="mod:speed-dial"] [data-feature-id="mod:speed-dial"],
+html[data-pruned~="mod:crdt-pill"] [data-feature-id="mod:crdt-pill"],
+html[data-pruned~="mod:footer-directory"] [data-feature-id="mod:footer-directory"],
+html[data-pruned~="mod:footer"] [data-feature-id="mod:footer"],
+html[data-pruned~="feat:diy-fab"] [data-feature-id="feat:diy-fab"],
+html[data-pruned~="feat:keyboard-hint"] [data-feature-id="feat:keyboard-hint"] {
+  display: none !important;
+}

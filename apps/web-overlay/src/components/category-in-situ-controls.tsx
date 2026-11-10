@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/registry/new-york/ui/dropdown-menu'
 import { useHomeDIY, type CardDisplayMode } from '@/lib/modular/use-home-diy'
+import { removeFeatureFromMask } from '@/lib/modular/feature-mask-store'
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
@@ -79,9 +80,16 @@ export function CategoryInSituControls({
     e.preventDefault()
     e.stopPropagation()
     toggleHideCategory(categoryId)
+    removeFeatureFromMask({
+      id: `cat:${categoryId}`,
+      level: 'L2_CATEGORY',
+      title: `分类：${title}`,
+      parentTitle: 'L2 一级大类',
+      previousIndex: allCategoryIds.indexOf(categoryId),
+    })
     toast({
       title: `👁️ 已隐藏分类: ${title}`,
-      description: '可在底部排版工坊的「已隐藏」列表中随时恢复。',
+      description: '已移入时间轴回收站，按 Ctrl/Cmd+Z 可立即撤销，或在 DIY 恢复中心随时恢复。',
     })
   }
 

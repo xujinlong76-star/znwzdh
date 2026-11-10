@@ -16,6 +16,7 @@ import {
   Undo2,
   Redo2,
   LayoutGrid,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -39,7 +40,8 @@ import { useHomeDIY, type AccentColor } from '@/lib/modular/use-home-diy'
 import { resetAllModuleWindowSizes } from '@/lib/modular/module-resize-store'
 import { computeLayoutTidyPlan } from '@/lib/modular/layout-tidy'
 import { HomeDIYBackupDialog } from '@/components/home-diy-backup-dialog'
-import { HomeDIYOutlineDialog } from '@/components/home-diy-outline-dialog'
+import { HomeDIYOutlineDialog, type OutlineDialogTab } from '@/components/home-diy-outline-dialog'
+import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { useDensity } from '@/components/density-provider'
 import { BUILTIN_DIY_PRESETS, evaluateLayoutErgonomics, type DIYPreset } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
@@ -141,7 +143,20 @@ export function HomeDIYToolbar({
   const [newCatTitle, setNewCatTitle] = useState('')
   const [isBackupOpen, setIsBackupOpen] = useState(false)
   const [isManagerOpen, setIsManagerOpen] = useState(false)
+  const [managerTab, setManagerTab] = useState<OutlineDialogTab>('outline')
   const [aiPrompt, setAiPrompt] = useState('')
+
+  const { trashBin, totalPrunedCount, restoreAll } = useFeatureMask()
+
+  useEffect(() => {
+    const onOpenRecovery = (e: Event) => {
+      const detail = (e as CustomEvent<{ tab?: OutlineDialogTab }>).detail
+      setManagerTab(detail?.tab || 'trash')
+      setIsManagerOpen(true)
+    }
+    window.addEventListener('navhub:open-recovery-center', onOpenRecovery)
+    return () => window.removeEventListener('navhub:open-recovery-center', onOpenRecovery)
+  }, [])
 
   const handleCreateCategory = () => {
     if (!newCatTitle.trim()) return
@@ -157,9 +172,10 @@ export function HomeDIYToolbar({
   const handleReset = () => {
     resetCategoryLayout()
     resetAllModuleWindowSizes()
+    restoreAll()
     toast({
-      title: '已重置分类排序与模块尺寸',
-      description: '分类排序、显隐状态与所有模块窗口尺寸已恢复系统默认。',
+      title: '已重置全站排版与所有已删减功能',
+      description: '分类排序、模块显隐、卡片微元素与所有模块窗口尺寸已无损恢复系统默认。',
     })
   }
 
@@ -583,16 +599,44 @@ export function HomeDIYToolbar({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* 大纲管理 */}
+            {/* 大纲与功能矩阵管理 */}
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setIsManagerOpen(true)}
+              onClick={() => {
+                setManagerTab('outline')
+                setIsManagerOpen(true)
+              }}
               className="h-8 px-2 rounded-xl text-xs gap-1 border-border/70"
-              title="18大主分类全景大纲管理器"
+              title="18大主分类全景大纲与功能矩阵管理器"
             >
               <Layers className="w-3.5 h-3.5 text-indigo-500" />
-              <span className="hidden sm:inline">大纲</span>
+              <span className="hidden sm:inline">大纲/矩阵</span>
+            </Button>
+
+            {/* 时间轴回收站入口 */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setManagerTab('trash')
+                setIsManagerOpen(true)
+              }}
+              className={cn(
+                'h-8 px-2 rounded-xl text-xs gap-1',
+                trashBin.length > 0 || totalPrunedCount > 0
+                  ? 'border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
+                  : 'border-border/70'
+              )}
+              title="打开时间轴回收站，一键恢复任意已删减模块或站点"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-amber-500" />
+              <span className="hidden sm:inline">回收站</span>
+              {(trashBin.length > 0 || totalPrunedCount > 0) && (
+                <span className="text-[10px] font-mono px-1 rounded-full bg-amber-500/20">
+                  {Math.max(trashBin.length, totalPrunedCount)}
+                </span>
+              )}
             </Button>
 
             {/* 新建分类 */}
@@ -679,12 +723,14 @@ export function HomeDIYToolbar({
           </div>
         </div>
 
-      {/* 分类全景大纲管理抽屉/弹窗 */}
+      {/* 分类全景大纲与时间轴恢复中心抽屉/弹窗 */}
       <HomeDIYOutlineDialog
         open={isManagerOpen}
         onOpenChange={setIsManagerOpen}
+        initialTab={managerTab}
         allCategoryIds={allCategoryIds}
         categoryTitleMap={categoryTitleMap}
+        categories={categories}
         pinnedCategoryIds={pinnedCategoryIds}
         hiddenCategoryIds={hiddenCategoryIds}
         collapsedCategoryIds={collapsedCategoryIds}

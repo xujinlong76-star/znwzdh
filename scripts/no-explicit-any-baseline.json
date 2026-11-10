@@ -1,7 +1,7 @@
 {
   "$comment": "按文件基线的显式 any 棘轮。只允许减少；新增文件/回增会被 node scripts/check-no-explicit-any.mjs 拦下。",
   "scope": "apps/web-overlay/src",
-  "total": 255,
+  "total": 253,
   "files": {
     "apps/web-overlay/src/app/admin/collections/page.tsx": 1,
     "apps/web-overlay/src/app/admin/plugins/page.tsx": 1,
@@ -24,7 +24,6 @@
     "apps/web-overlay/src/components/batch-operation-dock.tsx": 1,
     "apps/web-overlay/src/components/ecosystem-graph.tsx": 1,
     "apps/web-overlay/src/components/graph/knowledge-star-map-modal.tsx": 4,
-    "apps/web-overlay/src/components/home-diy-outline-dialog.tsx": 2,
     "apps/web-overlay/src/components/home-diy-toolbar.tsx": 10,
     "apps/web-overlay/src/components/keyboard-shortcuts-dialog.tsx": 1,
     "apps/web-overlay/src/components/modular/modular-canvas.tsx": 2,

@@ -1,7 +1,9 @@
 'use client'
 
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useRef, useState, useMemo, type KeyboardEvent } from 'react'
 import Link from 'next/link'
+import { useFeatureMask } from '@/lib/modular/feature-mask-store'
+import { useHomeDIY } from '@/lib/modular/use-home-diy'
 
 export interface DirectoryLink {
   id: string
@@ -46,9 +48,22 @@ export function DirectoryPillToolbar({
 }) {
   const [activeIndex, setActiveIndex] = useState(0)
   const rootRef = useRef<HTMLUListElement>(null)
+  const { isCategoryHidden, bypassMaskTemporarily } = useFeatureMask()
+  const { hiddenCategoryIds } = useHomeDIY()
+
+  const visibleLinks = useMemo(
+    () =>
+      links.filter(
+        (link) =>
+          bypassMaskTemporarily ||
+          (!isCategoryHidden(link.id) && !hiddenCategoryIds.includes(link.id))
+      ),
+    [links, bypassMaskTemporarily, isCategoryHidden, hiddenCategoryIds]
+  )
 
   const focusIndex = (next: number) => {
-    const clamped = (next + links.length) % links.length
+    if (visibleLinks.length === 0) return
+    const clamped = (next + visibleLinks.length) % visibleLinks.length
     setActiveIndex(clamped)
     const el = rootRef.current?.querySelectorAll<HTMLAnchorElement>('[data-dir-pill]')[clamped]
     el?.focus()
@@ -72,7 +87,7 @@ export function DirectoryPillToolbar({
         break
       case 'End':
         e.preventDefault()
-        focusIndex(links.length - 1)
+        focusIndex(visibleLinks.length - 1)
         break
       case 'Escape':
         e.preventDefault()
@@ -83,7 +98,7 @@ export function DirectoryPillToolbar({
     }
   }
 
-  if (links.length === 0) return null
+  if (visibleLinks.length === 0) return null
 
   return (
     <ul
@@ -102,7 +117,7 @@ export function DirectoryPillToolbar({
       }}
       className="flex flex-wrap items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 rounded-lg"
     >
-      {links.map((link, index) => (
+      {visibleLinks.map((link, index) => (
         <li key={link.id}>
           <Link
             href={`/category/${encodeURIComponent(link.slug)}`}

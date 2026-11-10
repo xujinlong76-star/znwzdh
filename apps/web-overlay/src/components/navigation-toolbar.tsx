@@ -220,7 +220,7 @@ export function NavigationToolbar({
                       <span className="font-medium text-foreground">我的偏好（个性化画像）</span>
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild className="2xl:hidden">
+                  <DropdownMenuItem asChild className="min-[1536px]:hidden">
                     <Link
                       href="https://github.com/tianyaxiang/NavSphere"
                       target="_blank"
@@ -310,12 +310,12 @@ export function NavigationToolbar({
               <div className="hidden lg:inline-flex"><ViewModeToggle /></div>
               <div className="hidden lg:inline-flex"><DensityToggle /></div>
               <ModeToggle />
-              <div className="h-4 w-px bg-border/60 mx-1 hidden 2xl:block" />
+              <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />
               <Button
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden 2xl:inline-flex"
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden min-[1536px]:inline-flex"
               >
                 <Link
                   href="https://github.com/tianyaxiang/NavSphere"
@@ -323,7 +323,7 @@ export function NavigationToolbar({
                   rel="noopener noreferrer"
                   aria-label="访问 GitHub 仓库"
                   title="GitHub 仓库"
-                  className="hidden 2xl:inline-flex"
+                  className="hidden min-[1536px]:inline-flex"
                 >
                   <Github className="h-4 w-4" />
                 </Link>

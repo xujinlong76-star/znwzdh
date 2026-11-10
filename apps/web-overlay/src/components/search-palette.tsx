@@ -49,6 +49,12 @@ import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
 import { SiteFavicon } from '@/components/site-favicon'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { getModifierKey } from '@/lib/platform'
+import {
+  useFeatureMask,
+  computePrunedSearchRecall,
+  stripFeaturePrefix,
+} from '@/lib/modular/feature-mask-store'
+import { useHomeDIY } from '@/lib/modular/use-home-diy'
 
 
 
@@ -225,6 +231,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const favorites = useFavorites()
   const { toast } = useToast()
   const preferences = useUserPreferences()
+  const featureMask = useFeatureMask()
+  const { unhideCategory } = useHomeDIY()
+
+  const prunedRecall = useMemo(
+    () => computePrunedSearchRecall(query, featureMask, hits),
+    [query, featureMask, hits]
+  )
   /**
    * 「0-RTT 推测意图即时计算」开关决定要不要原地算：关掉后不再产出算式 / CIDR /
    * UUIDv7 / 时间戳 / 色值 / cron / base64 这类即时结果卡。
@@ -1445,6 +1458,58 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       下一页没加载成功（请求失败，不是没有更多了）。已显示的 {hits.length} 条仍然可用，点上面按钮可再试。
                     </p>
                   )}
+                </div>
+              )}
+              {showResults && query.trim() && prunedRecall.count > 0 && (
+                <div
+                  data-search-penetration-recall=""
+                  className="border-t border-amber-500/30 bg-amber-500/10 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-medium min-w-0">
+                    <span>
+                      🔍 在您已删减的功能/分类中匹配到 {prunedRecall.count} 个结果
+                      {prunedRecall.titles.length > 0
+                        ? `（${prunedRecall.titles.slice(0, 2).join('、')}）`
+                        : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        featureMask.setBypassMaskTemporarily(true)
+                        setIsFocused(false)
+                        toast({
+                          title: '👁️ 已开启完整版临时透视',
+                          description: '已临时展现所有已删减分类与站点，您的精简掩码配置未丢失。',
+                        })
+                      }}
+                      className="px-2 py-0.5 rounded-md bg-background/80 hover:bg-background text-foreground border border-border/70 text-[11px] font-medium transition-colors cursor-pointer"
+                    >
+                      点击临时查看
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        for (const item of prunedRecall.matchedTrashItems) {
+                          featureMask.restoreFeature(item.id)
+                          if (item.level === 'L2_CATEGORY') {
+                            unhideCategory(stripFeaturePrefix(item.id))
+                          }
+                        }
+                        for (const siteId of prunedRecall.matchedPrunedSiteIds) {
+                          featureMask.restoreFeature(`site:${siteId}`)
+                        }
+                        toast({
+                          title: `✨ 已恢复 ${prunedRecall.count} 项已删减的功能/站点`,
+                          description: '对应模块与站点已无损还原至原位。',
+                        })
+                      }}
+                      className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-[11px] font-semibold transition-opacity cursor-pointer"
+                    >
+                      一键恢复
+                    </button>
+                  </div>
                 </div>
               )}
               {showResults && query.trim() && hits.length > 0 && (

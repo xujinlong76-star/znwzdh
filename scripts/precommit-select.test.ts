@@ -61,7 +61,9 @@ afterAll(() => {
   vi.resetModules();
 });
 
-describe("pre-commit 选测：改动 → 测试文件", () => {
+// 选测器要现场遍历依赖图并 spawn 子进程，全量套件里磁盘 IO 竞争激烈时
+// 单用例实测会越过 vitest 默认的 30s（单跑约 6~13s）。断言口径不放宽，只放宽预算。
+describe("pre-commit 选测：改动 → 测试文件", { timeout: 120_000 }, () => {
   it("改 routes/backup.ts：backup 自己的测试在，且按图把经 server 引导的测试也带上", () => {
     const files = select(["apps/api/src/routes/backup.ts"]);
     expect(files).toContain("apps/api/test/backup-async-api.test.ts");

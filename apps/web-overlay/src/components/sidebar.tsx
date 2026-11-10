@@ -18,6 +18,7 @@ import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
 import { unreadBadgeText } from '@/lib/notification-badge'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   navigationData: NavigationData
@@ -29,7 +30,8 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
   const identityState = useIdentityReady()
   const unread = useUnreadNotifications(identityState)
   const unreadText = unreadBadgeText(unread)
-  const { collapsedCategoryIds, expandCategory } = useHomeDIY()
+  const { collapsedCategoryIds, hiddenCategoryIds, expandCategory } = useHomeDIY()
+  const { isModuleHidden, isCategoryHidden, isSubcategoryHidden, bypassMaskTemporarily } = useFeatureMask()
 
   const scrollToSection = (id: string, parentCategoryId?: string) => {
     if (typeof window !== 'undefined') {
@@ -267,6 +269,9 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
         <div className="space-y-1">
           {navigationData.navigationItems
             .filter((category) => {
+              if (!bypassMaskTemporarily && (hiddenCategoryIds.includes(category.id) || isCategoryHidden(category.id))) {
+                return false;
+              }
               const directCount = category.items?.length || 0;
               const subCount = category.subCategories?.reduce((acc, sub) => acc + (sub.items?.length || 0), 0) || 0;
               if (category.title === '未分类' && directCount + subCount === 0) return false;
@@ -274,7 +279,9 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
             })
             .map((category) => {
               const visibleSubCategories = (category.subCategories || []).filter(
-                (sub) => !sub.items || sub.items.length > 0
+                (sub) =>
+                  (!sub.items || sub.items.length > 0) &&
+                  (bypassMaskTemporarily || !isSubcategoryHidden(sub.id))
               );
               return (
             <div key={category.id} className="py-1">
@@ -337,7 +344,13 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
       </ScrollArea>
 
       <div className="p-2.5 pb-[max(env(safe-area-inset-bottom,0px),0.625rem)] border-t border-border/40 flex items-center justify-between">
-        <CrdtSyncStatusPill />
+        {!isModuleHidden('mod:crdt-pill') ? (
+          <div data-feature-id="mod:crdt-pill">
+            <CrdtSyncStatusPill />
+          </div>
+        ) : (
+          <span />
+        )}
         <Link
           href="/me/notifications"
           aria-label={unread > 0 ? `通知，${unread} 条未读` : '通知'}

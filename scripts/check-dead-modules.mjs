@@ -39,6 +39,14 @@ let BASELINE = [
   "apps/web-overlay/src/components/speculative-prerender.tsx",
   "apps/web-overlay/src/components/ui/search-input.tsx",
   "apps/web-overlay/src/components/video-scrubber-preview.tsx",
+  "apps/web-overlay/src/components/video-heatmap-timeline.tsx",
+  "apps/web-overlay/src/components/video-shader-filter.tsx",
+  "apps/web-overlay/src/components/video-spectrogram-canvas.tsx",
+  "apps/web-overlay/src/components/video-neural-audio-controls.tsx",
+  "apps/web-overlay/src/components/video-danmaku-mesh-monitor.tsx",
+  "apps/web-overlay/src/components/video-audio-stem-mixer-dialog.tsx",
+  "apps/web-overlay/src/components/video-p2p-swarm-hud.tsx",
+  "apps/web-overlay/src/components/video-terminal-player.tsx",
   "apps/web-overlay/src/lib/lazy-dnd.tsx",
   "apps/web-overlay/src/lib/session.ts",
   "apps/web-overlay/src/registry/new-york/ui/chart.tsx",
@@ -100,6 +108,22 @@ let BASELINE_NOTES = {
     "delete（真死）：除基线外无引用；视频播放器未接入（接入前勿删，见 2026-11-08 外部改动）",
   "apps/web-overlay/src/components/notification-badge.tsx":
     "delete（真死）：组件级死代码；勿与活跃的 lib/notification-badge.ts（unreadBadgeText）混淆",
+  "apps/web-overlay/src/components/video-heatmap-timeline.tsx":
+    "keep（入口已下线，2026-11-11 播放器审计第二批）：章节热力图无全站观众回放数据源，曲线为本地合成；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
+  "apps/web-overlay/src/components/video-shader-filter.tsx":
+    "keep（入口已下线，2026-11-11 播放器审计第二批）：CAS 锐化对 iframe 嵌入视频无任何渲染消费者，调参零效果；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
+  "apps/web-overlay/src/components/video-spectrogram-canvas.tsx":
+    "keep（入口已下线，2026-11-11 播放器审计第二批）：频谱为正弦+噪声合成，与实际播放音频无关；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
+  "apps/web-overlay/src/components/video-neural-audio-controls.tsx":
+    "keep（入口已下线，2026-11-11 播放器审计第二批）：神经降噪控制器从未接进任何 AudioContext 音频链路；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
+  "apps/web-overlay/src/components/video-danmaku-mesh-monitor.tsx":
+    "keep（入口已下线，2026-11-11 播放器审计第二批）：P2P 弹幕网格无传输层，节点/延迟均为本地虚构；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
+  "apps/web-overlay/src/components/video-audio-stem-mixer-dialog.tsx":
+    "keep（入口已下线，2026-11-11 播放器审计第二批）：分轨混音从未有音频喂入，推子不影响声音；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
+  "apps/web-overlay/src/components/video-p2p-swarm-hud.tsx":
+    "keep（入口已下线，2026-11-11 播放器审计第二批）：P2P 分片加速无 RTCPeerConnection，分片只是内存记账；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
+  "apps/web-overlay/src/components/video-terminal-player.tsx":
+    "keep（入口已下线，2026-11-11 播放器审计第二批）：终端回放是按章节合成的录像，并非视频的真实终端记录；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
 };
 
 // ---------- 形状校验（退出码 2） ----------

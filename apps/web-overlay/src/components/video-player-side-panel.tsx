@@ -33,14 +33,13 @@ const VideoCodeDiffViewer = dynamic(() => import('@/components/video-code-diff-v
 const VideoDebuggerStepperPane = dynamic(() => import('@/components/video-debugger-stepper-pane').then(m => m.VideoDebuggerStepperPane), { ssr: false })
 const VideoLiveTestPane = dynamic(() => import('@/components/video-live-test-pane').then(m => m.VideoLiveTestPane), { ssr: false })
 const VideoSandboxRunnerPane = dynamic(() => import('@/components/video-sandbox-runner-pane').then(m => m.VideoSandboxRunnerPane), { ssr: false })
-const VideoTerminalPlayer = dynamic(() => import('@/components/video-terminal-player').then(m => m.VideoTerminalPlayer), { ssr: false })
 const VideoWasmTerminalPane = dynamic(() => import('@/components/video-wasm-terminal-pane').then(m => m.VideoWasmTerminalPane), { ssr: false })
 const VideoConfusionRadar = dynamic(() => import('@/components/video-confusion-radar').then(m => m.VideoConfusionRadar), { ssr: false })
 const VideoAssistantCopilot = dynamic(() => import('@/components/video-assistant-copilot').then(m => m.VideoAssistantCopilot), { ssr: false })
 
 export type VideoPlayerTab =
   | 'playlist' | 'chapters' | 'slides' | 'mindmap' | 'diff' | 'debugger' | 'testrunner'
-  | 'sandbox' | 'terminal' | 'wasm' | 'radar' | 'transcript' | 'copilot' | 'notes' | 'history'
+  | 'sandbox' | 'wasm' | 'radar' | 'transcript' | 'copilot' | 'notes' | 'history'
 
 interface VideoPlayerSidePanelProps {
   activeTab: VideoPlayerTab
@@ -84,6 +83,10 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
     handleExportNotes, setShowNoteDialog, historyList,
   } = props
 
+  // 脑图只在有真实章节派生的数据时才有内容（父组件对无真实章节的视频回空根）：
+  // 无数据不给入口——标签与面板一并隐藏（2026-11-11 审计第二批）。
+  const hasMindmap = (mindmapRoot?.children?.length ?? 0) > 0
+
   return (
                 <div className="hidden md:block w-80 lg:w-96 border-l bg-muted/30">
                     <div className="sticky top-0 p-3 border-b bg-background/95 backdrop-blur flex items-center justify-between gap-2">
@@ -115,15 +118,17 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                             >
                                 课件
                             </button>
-                            <button
-                                className={cn(
-                                    "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
-                                    activeTab === 'mindmap' ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
-                                )}
-                                onClick={() => setActiveTab('mindmap')}
-                            >
-                                脑图
-                            </button>
+                            {hasMindmap && (
+                                <button
+                                    className={cn(
+                                        "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
+                                        activeTab === 'mindmap' ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                    onClick={() => setActiveTab('mindmap')}
+                                >
+                                    脑图
+                                </button>
+                            )}
                             <button
                                 className={cn(
                                     "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
@@ -159,15 +164,6 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                                 onClick={() => setActiveTab('sandbox')}
                             >
                                 联调沙盒
-                            </button>
-                            <button
-                                className={cn(
-                                    "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
-                                    activeTab === 'terminal' ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
-                                )}
-                                onClick={() => setActiveTab('terminal')}
-                            >
-                                终端
                             </button>
                             <button
                                 className={cn(
@@ -322,7 +318,7 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                             </div>
                         )}
 
-                        {activeTab === 'mindmap' && selectedVideo && (
+                        {activeTab === 'mindmap' && selectedVideo && hasMindmap && (
                             <div className="p-3">
                                 <VideoMindmapView
                                     rootNode={mindmapRoot}
@@ -360,16 +356,6 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                         {activeTab === 'sandbox' && (
                             <div className="p-3 h-[520px]">
                                 <VideoSandboxRunnerPane initialCode={sandboxInitialCode} />
-                            </div>
-                        )}
-
-                        {activeTab === 'terminal' && (
-                            <div className="p-3">
-                                <VideoTerminalPlayer
-                                    currentSec={chapterSeekSec || 0}
-                                    title={selectedVideo?.title}
-                                    onSeek={(sec) => setChapterSeekSec(sec)}
-                                />
                             </div>
                         )}
 

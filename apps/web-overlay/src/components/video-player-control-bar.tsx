@@ -62,28 +62,28 @@ import type { VideoPlayerTab } from '@/components/video-player-side-panel'
 export interface VideoPlayerToolOpeners {
   note: () => void
   poster: () => void
-  flashcards: () => void
-  certificate: () => void
+  /** 以下入口由父组件按「无数据不给入口」决定是否传入（2026-11-11 审计第二批）：
+   *  flashcards 仅在真有卡片时；certificate / conceptGraph 仅对自带真实章节
+   *  的视频；bilingual* 仅在有真实字幕稿时。未传入即不渲染按钮。
+   *  频谱 / 神经降噪 / P2P 网格 / 分轨 / P2P 蜂群五个入口已整体下线（无真实
+   *  数据管线），不再保留 opener 位。 */
+  flashcards?: () => void
+  certificate?: () => void
   ocr: () => void
   smartSpeed: () => void
   offline: () => void
-  bilingualSubtitles: () => void
-  spectrogram: () => void
+  bilingualSubtitles?: () => void
   workspaceExport: () => void
   sessionReplay: () => void
-  neuralDenoise: () => void
   clipMaker: () => void
   pomodoro: () => void
-  danmakuMesh: () => void
-  stemMixer: () => void
-  p2pSwarm: () => void
   remedy: () => void
   autoHarvest: () => void
   autonomousHarvest: () => void
   webhook: () => void
   wasmOcr: () => void
-  bilingualTts: () => void
-  conceptGraph: () => void
+  bilingualTts?: () => void
+  conceptGraph?: () => void
   studyRoom: () => void
   quiz: () => void
 }
@@ -112,7 +112,8 @@ interface VideoPlayerControlBarProps {
   showTelestrator: boolean
   onToggleTelestrator: () => void
   smartSpeedEnabled: boolean
-  neuralDenoiseEnabled: boolean
+  /** 脑图是否有真实数据（父组件按真实章节派生）：无则不渲染知识脑图入口 */
+  mindmapAvailable?: boolean
   /** 桌面伴学窗按钮渲染在控制条同一行（该组件静态 import 由首屏体积守卫锁定） */
   pipRenderer: ReactNode
   openers: VideoPlayerToolOpeners
@@ -142,7 +143,7 @@ export function VideoPlayerControlBar({
   showTelestrator,
   onToggleTelestrator,
   smartSpeedEnabled,
-  neuralDenoiseEnabled,
+  mindmapAvailable,
   pipRenderer,
   openers,
 }: VideoPlayerControlBarProps) {
@@ -315,17 +316,19 @@ export function VideoPlayerControlBar({
           </Button>
         )}
 
-        {/* 知识脑图 */}
-        <Button
-          variant={activeTab === 'mindmap' ? 'secondary' : 'outline'}
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={() => onTabChange('mindmap')}
-          title="AI 知识图谱与脑图"
-        >
-          <FolderTree className="w-3.5 h-3.5 text-emerald-500" />
-          <span>知识脑图</span>
-        </Button>
+        {/* 知识脑图：仅在脑图有真实章节数据时出现 */}
+        {mindmapAvailable && (
+          <Button
+            variant={activeTab === 'mindmap' ? 'secondary' : 'outline'}
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => onTabChange('mindmap')}
+            title="AI 知识图谱与脑图"
+          >
+            <FolderTree className="w-3.5 h-3.5 text-emerald-500" />
+            <span>知识脑图</span>
+          </Button>
+        )}
 
         {/* 课后测验 */}
         {quizCount > 0 && (
@@ -341,18 +344,6 @@ export function VideoPlayerControlBar({
           </Button>
         )}
 
-        {/* 终端会话回放 */}
-        <Button
-          variant={activeTab === 'terminal' ? 'secondary' : 'outline'}
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={() => onTabChange('terminal')}
-          title="终端命令行实战会话回放"
-        >
-          <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-          <span>终端回放</span>
-        </Button>
-
         {/* 分享海报 */}
         <Button
           variant="outline"
@@ -366,28 +357,32 @@ export function VideoPlayerControlBar({
         </Button>
 
         {/* 艾宾浩斯抽认卡 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.flashcards}
-          title="艾宾浩斯遗忘曲线抽认卡与复习日程"
-        >
-          <Brain className="w-3.5 h-3.5 text-indigo-500" />
-          <span>抽认卡 ({flashcardsCount})</span>
-        </Button>
+        {openers.flashcards && (
+  <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={openers.flashcards}
+            title="艾宾浩斯遗忘曲线抽认卡与复习日程"
+          >
+            <Brain className="w-3.5 h-3.5 text-indigo-500" />
+            <span>抽认卡 ({flashcardsCount})</span>
+          </Button>
+        )}
 
         {/* 结业微证书 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.certificate}
-          title="全套课程通关与可验证结业微证书"
-        >
-          <Award className="w-3.5 h-3.5 text-yellow-500" />
-          <span>结业证书</span>
-        </Button>
+        {openers.certificate && (
+  <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={openers.certificate}
+            title="全套课程通关与可验证结业微证书"
+          >
+            <Award className="w-3.5 h-3.5 text-yellow-500" />
+            <span>结业证书</span>
+          </Button>
+        )}
 
         {/* 屏幕涂鸦白板 */}
         <Button
@@ -441,30 +436,20 @@ export function VideoPlayerControlBar({
         {pipRenderer}
 
         {/* 双语字幕 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.bilingualSubtitles}
-          title="双语字幕实时对齐与 SRT/WebVTT 导出"
-        >
-          <Languages className="w-3.5 h-3.5 text-indigo-400" />
-          <span>双语字幕</span>
-        </Button>
+        {openers.bilingualSubtitles && (
+  <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={openers.bilingualSubtitles}
+            title="双语字幕实时对齐与 SRT/WebVTT 导出"
+          >
+            <Languages className="w-3.5 h-3.5 text-indigo-400" />
+            <span>双语字幕</span>
+          </Button>
+        )}
 
-        {/* 声波谱图 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.spectrogram}
-          title="实时音频波形频谱与共振峰分析"
-        >
-          <Activity className="w-3.5 h-3.5 text-rose-400" />
-          <span>声波谱图</span>
-        </Button>
-
-        {/* 工程导出 */}
+                {/* 工程导出 */}
         <Button
           variant="outline"
           size="sm"
@@ -488,19 +473,7 @@ export function VideoPlayerControlBar({
           <span>会话复盘</span>
         </Button>
 
-        {/* WebGPU 神经网络音频降噪 */}
-        <Button
-          variant={neuralDenoiseEnabled ? 'secondary' : 'outline'}
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.neuralDenoise}
-          title="WebGPU 神经网络音频实时降噪与人声增强"
-        >
-          <Cpu className={cn("w-3.5 h-3.5", neuralDenoiseEnabled ? "text-emerald-400" : "text-muted-foreground")} />
-          <span>AI 降噪</span>
-        </Button>
-
-        {/* 视频微知识点一键切片 */}
+                {/* 视频微知识点一键切片 */}
         <Button
           variant="outline"
           size="sm"
@@ -524,43 +497,7 @@ export function VideoPlayerControlBar({
           <span>专注番茄</span>
         </Button>
 
-        {/* 分布式 WebRTC P2P 弹幕信标网格 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.danmakuMesh}
-          title="分布式 WebRTC P2P 弹幕信标网格监控"
-        >
-          <Network className="w-3.5 h-3.5 text-sky-400" />
-          <span>P2P 网格</span>
-        </Button>
-
-        {/* 多轨解耦调音台 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.stemMixer}
-          title="人声/伴奏/杂音独立分轨推子混音台"
-        >
-          <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
-          <span>分轨调音</span>
-        </Button>
-
-        {/* P2P 视频分片蜂群 HUD */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.p2pSwarm}
-          title="WebRTC 视频切片 P2P-CDN 蜂群位图遥测"
-        >
-          <Network className="w-3.5 h-3.5 text-emerald-400" />
-          <span>P2P 蜂群</span>
-        </Button>
-
-        {/* 贝叶斯自适应弱项诊断 */}
+                                {/* 贝叶斯自适应弱项诊断 */}
         <Button
           variant="outline"
           size="sm"
@@ -621,28 +558,32 @@ export function VideoPlayerControlBar({
         </Button>
 
         {/* 双语同传与 TTS */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10"
-          onClick={openers.bilingualTts}
-          title="AI 实时双语字幕与语音重译旁白"
-        >
-          <Languages className="w-3.5 h-3.5 text-cyan-400" />
-          <span>双语TTS</span>
-        </Button>
+        {openers.bilingualTts && (
+  <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10"
+            onClick={openers.bilingualTts}
+            title="AI 实时双语字幕与语音重译旁白"
+          >
+            <Languages className="w-3.5 h-3.5 text-cyan-400" />
+            <span>双语TTS</span>
+          </Button>
+        )}
 
         {/* 概念图谱 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-          onClick={openers.conceptGraph}
-          title="交互式全站概念拓扑图谱与 Dijkstra 最短学习路径"
-        >
-          <Network className="w-3.5 h-3.5 text-emerald-400" />
-          <span>概念图谱</span>
-        </Button>
+        {openers.conceptGraph && (
+  <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+            onClick={openers.conceptGraph}
+            title="交互式全站概念拓扑图谱与 Dijkstra 最短学习路径"
+          >
+            <Network className="w-3.5 h-3.5 text-emerald-400" />
+            <span>概念图谱</span>
+          </Button>
+        )}
 
         {/* 伴学自习室 */}
         <Button

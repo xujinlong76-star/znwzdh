@@ -68,8 +68,7 @@ import { getStoredDanmaku, saveDanmakuItem } from '@/lib/video-danmaku-engine'
 // check-dead-modules 判红（测试引用不计入 src 图）；实测删除还会让 Turbopack
 // 的 chunk 切分变差，/videos/player 从 882 KB 涨回 884 KB。
 import { getP2PStreamCoordinator } from '@/lib/p2p-stream-loader'
-// 热力波形时间轴与语音指示器都是辅助可视化：动态导入，不占播放器首屏包体积（预算紧）。
-const VideoHeatmapTimeline = dynamic(() => import('@/components/video-heatmap-timeline').then(m => m.VideoHeatmapTimeline), { ssr: false })
+// 语音指示器是辅助可视化：动态导入，不占播放器首屏包体积（预算紧）。
 const VideoVoiceIndicator = dynamic(() => import('@/components/video-voice-indicator').then(m => m.VideoVoiceIndicator), { ssr: false })
 import { VideoNetworkSentinel } from '@/components/video-network-sentinel'
 // 涂鸦层与 PiP 渲染层只在对应模式开启时才用到：动态导入，不占播放器首屏包体积。
@@ -77,7 +76,6 @@ const VideoTelestratorCanvas = dynamic(() => import('@/components/video-telestra
 const VideoPipWindowRenderer = dynamic(() => import('@/components/video-pip-window-renderer').then(m => m.VideoPipWindowRenderer), { ssr: false })
 // 手势 HUD 只在手势模式下显示：动态导入补足播放器页最后一点预算缺口。
 const VideoGestureHudOverlay = dynamic(() => import('@/components/video-gesture-hud-overlay').then(m => m.VideoGestureHudOverlay), { ssr: false })
-import { generateFilmstripSequence, type FilmstripThumbnail } from '@/lib/video-filmstrip-generator'
 import { SessionActivityRecorder } from '@/lib/video-session-recorder'
 import { type SilenceDetectorConfig, type SilenceDetectorState } from '@/lib/video-silence-detector'
 // 只留类型（编译期擦除）：generateSvgFilterMarkup 在本页从未被调用，而它会
@@ -95,9 +93,7 @@ import { createQoETracker, type QoEMetrics } from '@/lib/video-qoe-telemetry'
 // src 内的唯一引用点，删掉即触发 check-dead-modules 判红（测试引用不计入 src 图）。
 import { calculatePrefetchQueue } from '@/lib/video-cache-manager'
 import { generateFlashcardsFromNotes, generateFlashcardsFromQuizzes, type FlashcardItem } from '@/lib/video-spaced-repetition'
-import { type SharpenerOptions } from '@/lib/video-webgpu-sharpener'
 import { type VoiceCommandIntent } from '@/lib/video-voice-commander'
-import { type NeuralDenoiserConfig } from '@/lib/video-neural-denoiser'
 import { copyText } from '@/lib/clipboard'
 import { VideoPlayerSidePanel, type VideoPlayerTab } from '@/components/video-player-side-panel'
 import { VideoPlayerControlBar } from '@/components/video-player-control-bar'
@@ -111,7 +107,6 @@ import { VideoPlaylistTree } from '@/components/video-playlist-tree'
 const VideoCodeSandbox = dynamic(() => import('@/components/video-code-sandbox').then(m => m.VideoCodeSandbox), { ssr: false })
 const VideoQuizDialog = dynamic(() => import('@/components/video-quiz-dialog').then(m => m.VideoQuizDialog), { ssr: false })
 const VideoSharePosterDialog = dynamic(() => import('@/components/video-share-poster-dialog').then(m => m.VideoSharePosterDialog), { ssr: false })
-const VideoShaderFilterDialog = dynamic(() => import('@/components/video-shader-filter').then(m => m.VideoShaderFilterDialog), { ssr: false })
 const VideoFlashcardDeck = dynamic(() => import('@/components/video-flashcard-deck').then(m => m.VideoFlashcardDeck), { ssr: false })
 const VideoCertificateDialog = dynamic(() => import('@/components/video-certificate-dialog').then(m => m.VideoCertificateDialog), { ssr: false })
 const VideoOfflineManager = dynamic(() => import('@/components/video-offline-manager').then(m => m.VideoOfflineManager), { ssr: false })
@@ -119,16 +114,11 @@ const VideoSmartSpeedDialog = dynamic(() => import('@/components/video-smart-spe
 const VideoFrameOcrDialog = dynamic(() => import('@/components/video-frame-ocr-overlay').then(m => m.VideoFrameOcrDialog), { ssr: false })
 const VideoA11ySettingsDialog = dynamic(() => import('@/components/video-a11y-settings-dialog').then(m => m.VideoA11ySettingsDialog), { ssr: false })
 const VideoSkillTreeDialog = dynamic(() => import('@/components/video-skill-tree-dialog').then(m => m.VideoSkillTreeDialog), { ssr: false })
-const VideoSpectrogramDialog = dynamic(() => import('@/components/video-spectrogram-canvas').then(m => m.VideoSpectrogramDialog), { ssr: false })
 const VideoWorkspaceExportDialog = dynamic(() => import('@/components/video-workspace-export-dialog').then(m => m.VideoWorkspaceExportDialog), { ssr: false })
 const VideoBilingualSubtitlesDialog = dynamic(() => import('@/components/video-bilingual-subtitles-dialog').then(m => m.VideoBilingualSubtitlesDialog), { ssr: false })
 const VideoSessionReplayDialog = dynamic(() => import('@/components/video-session-replay-dialog').then(m => m.VideoSessionReplayDialog), { ssr: false })
-const VideoNeuralAudioControls = dynamic(() => import('@/components/video-neural-audio-controls').then(m => m.VideoNeuralAudioControls), { ssr: false })
-const VideoDanmakuMeshMonitor = dynamic(() => import('@/components/video-danmaku-mesh-monitor').then(m => m.VideoDanmakuMeshMonitor), { ssr: false })
 const VideoClipMakerDialog = dynamic(() => import('@/components/video-clip-maker-dialog').then(m => m.VideoClipMakerDialog), { ssr: false })
 const VideoPomodoroDialog = dynamic(() => import('@/components/video-pomodoro-overlay').then(m => m.VideoPomodoroDialog), { ssr: false })
-const VideoAudioStemMixerDialog = dynamic(() => import('@/components/video-audio-stem-mixer-dialog').then(m => m.VideoAudioStemMixerDialog), { ssr: false })
-const VideoP2PSwarmHud = dynamic(() => import('@/components/video-p2p-swarm-hud').then(m => m.VideoP2PSwarmHud), { ssr: false })
 const VideoAdaptiveRemedyDialog = dynamic(() => import('@/components/video-adaptive-remedy-dialog').then(m => m.VideoAdaptiveRemedyDialog), { ssr: false })
 const VideoAutoHarvestDialog = dynamic(() => import('@/components/video-auto-harvest-dialog').then(m => m.VideoAutoHarvestDialog), { ssr: false })
 const VideoAutonomousHarvestConsole = dynamic(() => import('@/components/video-autonomous-harvest-console').then(m => m.VideoAutonomousHarvestConsole), { ssr: false })
@@ -162,15 +152,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     const [chapterSeekSec, setChapterSeekSec] = useState<number | null>(null)
     const [biliEngine, setBiliEngine] = useState<string>('auto')
     const [showPosterDialog, setShowPosterDialog] = useState<boolean>(false)
-
-    // WebGPU 画质超分辨率与锐化
-    const [showShaderDialog, setShowShaderDialog] = useState<boolean>(false)
-    const [sharpenerOptions, setSharpenerOptions] = useState<SharpenerOptions>({
-        enabled: false,
-        intensity: 1.0,
-        algorithm: 'cas',
-        preserveContrast: true,
-    })
 
     // 艾宾浩斯复习抽认卡与结业证书
     const [showFlashcardsDialog, setShowFlashcardsDialog] = useState<boolean>(false)
@@ -206,30 +187,17 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     })
     const [showSkillTreeDialog, setShowSkillTreeDialog] = useState<boolean>(false)
 
-    // 扩展前沿：频谱分析、工程包导出、双语字幕、会话时空漫游、逐帧缩略图
-    const [showSpectrogramDialog, setShowSpectrogramDialog] = useState<boolean>(false)
+    // 扩展前沿：工程包导出、双语字幕、会话时空漫游
     const [showWorkspaceExportDialog, setShowWorkspaceExportDialog] = useState<boolean>(false)
     const [showBilingualSubtitlesDialog, setShowBilingualSubtitlesDialog] = useState<boolean>(false)
     const [showSessionReplayDialog, setShowSessionReplayDialog] = useState<boolean>(false)
-    const [filmstripThumbnails, setFilmstripThumbnails] = useState<FilmstripThumbnail[]>([])
     const sessionRecorderRef = useRef<SessionActivityRecorder>(new SessionActivityRecorder('init'))
 
-    // WebGPU 神经网络音频降噪、微知识点切片、深度专注番茄钟、P2P 弹幕信标网格
-    const [showNeuralDenoiseDialog, setShowNeuralDenoiseDialog] = useState<boolean>(false)
-    const [neuralDenoiseConfig, setNeuralDenoiseConfig] = useState<NeuralDenoiserConfig>({
-        enabled: false,
-        denoiseIntensity: 0.75,
-        noiseGateThresholdDb: -45,
-        voiceClarityGain: 1.25,
-        overSubtractionFactor: 1.5,
-    })
+    // 微知识点切片、深度专注番茄钟
     const [showClipMakerDialog, setShowClipMakerDialog] = useState<boolean>(false)
     const [showPomodoroDialog, setShowPomodoroDialog] = useState<boolean>(false)
-    const [showDanmakuMeshDialog, setShowDanmakuMeshDialog] = useState<boolean>(false)
 
-    // 演进模块：多轨解耦调音台、P2P 蜂群 HUD、空间手势、自适应弱项诊断、全网热点自动采集
-    const [showStemMixerDialog, setShowStemMixerDialog] = useState<boolean>(false)
-    const [showP2PSwarmHud, setShowP2PSwarmHud] = useState<boolean>(false)
+    // 演进模块：空间手势、自适应弱项诊断、全网热点自动采集
     const [gestureControlEnabled, setGestureControlEnabled] = useState<boolean>(false)
     const [showRemedyDialog, setShowRemedyDialog] = useState<boolean>(false)
     const [showAutoHarvestDialog, setShowAutoHarvestDialog] = useState<boolean>(false)
@@ -267,6 +235,14 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         }
     }
 
+    /**
+     * 本视频是否自带真实章节（目录数据，全库 6007 条仅 23 条有）。
+     * 没有时 chapters 状态会被 AI 摘要的启发式章节顶上——那是按标题套模板
+     * 编的，拿它出测验/脑图/证书等于把编造当课程内容（2026-11-11 审计
+     * 第二批「无数据不给入口」）。以下三个派生与对应入口都以此为闸。
+     */
+    const hasRealChapters = (selectedVideo?.videoConfig?.chapters?.length ?? 0) > 0
+
     // 1. 代码演进 Milestones
     const codeMilestones = useMemo<CodeMilestone[]>(() => {
         return extractCodeMilestones(chapters)
@@ -282,6 +258,9 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 children: []
             }
         }
+        if (!hasRealChapters) {
+            return { id: 'empty', title: selectedVideo.title, type: 'root' as const, children: [] }
+        }
         return generateVideoMindMap({
             videoId: selectedVideo.id,
             title: selectedVideo.title,
@@ -293,9 +272,11 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     // 3. 互动测验与通关门禁
     const [showQuizDialog, setShowQuizDialog] = useState<boolean>(false)
     const quizQuestions = useMemo<VideoQuizQuestion[]>(() => {
-        if (!selectedVideo) return []
+        // 只对自带真实章节的视频出题：题目按章节标题套模板生成，章节本身
+        // 若是启发式编的，题目必然与视频内容无关（审计 #106）。
+        if (!selectedVideo || !hasRealChapters) return []
         return generateVideoQuizzes(selectedVideo.id, chapters, selectedVideo.title)
-    }, [selectedVideo, chapters])
+    }, [selectedVideo, chapters, hasRealChapters])
 
     // 4. WebAudio 信号处理实验室
     const [showAudioDialog, setShowAudioDialog] = useState<boolean>(false)
@@ -483,15 +464,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
 
         sessionRecorderRef.current = new SessionActivityRecorder(selectedVideo.id)
         sessionRecorderRef.current.recordEvent('play', 0)
-        setFilmstripThumbnails(
-            generateFilmstripSequence(
-                selectedVideo.videoConfig.durationSec || 600,
-                (selectedVideo.videoConfig.chapters || []).map(ch => ({
-                    startTime: chapterStartSec(ch),
-                    title: ch.title,
-                }))
-            )
-        )
 
         if (selectedVideo.videoConfig.chapters && selectedVideo.videoConfig.chapters.length > 0) {
             setChapters(selectedVideo.videoConfig.chapters)
@@ -951,14 +923,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                         <Button
                             variant="ghost"
                             size="icon"
-                            title="4K / 超分辨率着色器 (CAS 锐化)"
-                            onClick={() => setShowShaderDialog(true)}
-                        >
-                            <Sparkles className={cn("w-4 h-4", sharpenerOptions.enabled ? "text-amber-400" : "text-muted-foreground")} />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon"
                             title="技能图谱与打卡热力图"
                             onClick={() => setShowSkillTreeDialog(true)}
                         >
@@ -1060,15 +1024,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             }}
                         />
 
-                        {/* 客户端热力波形时间轴 */}
-                        <VideoHeatmapTimeline
-                            durationSec={selectedVideo?.videoConfig?.durationSec || 600}
-                            currentSec={chapterSeekSec || 0}
-                            chapters={chapters}
-                            danmaku={danmakuList}
-                            onSeek={(sec) => setChapterSeekSec(sec)}
-                        />
-
                         {/* 双语卡拉OK逐字字幕与术语释义 */}
                         {transcriptList.length > 0 && (
                             <VideoKaraokeSubtitles
@@ -1103,7 +1058,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             showTelestrator={showTelestrator}
                             onToggleTelestrator={() => setShowTelestrator(prev => !prev)}
                             smartSpeedEnabled={smartSpeedConfig.enabled}
-                            neuralDenoiseEnabled={neuralDenoiseConfig.enabled}
+                            mindmapAvailable={mindmapRoot.children.length > 0}
                             pipRenderer={(
                                 <VideoPipWindowRenderer
                                     videoTitle={selectedVideo?.title || '技术课程'}
@@ -1114,28 +1069,29 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             openers={{
                                 note: () => setShowNoteDialog(true),
                                 poster: () => setShowPosterDialog(true),
-                                flashcards: () => setShowFlashcardsDialog(true),
-                                certificate: () => setShowCertDialog(true),
+                                // 无数据不给入口（2026-11-11 审计第二批）：抽认卡只在真有
+                                // 卡片（用户笔记 / 真章节测验派生）时出现；证书与概念图谱
+                                // 只对自带真实章节的视频出现；双语类只在有真实字幕稿时
+                                // 出现。频谱 / 神经降噪 / P2P 网格 / 分轨 / P2P 蜂群五个
+                                // 入口整体下线——背后没有真实数据管线，组件保留在仓内
+                                // （见 scripts/check-dead-modules.mjs 基线登记）。
+                                ...(flashcards.length > 0 ? { flashcards: () => setShowFlashcardsDialog(true) } : {}),
+                                ...(hasRealChapters ? { certificate: () => setShowCertDialog(true) } : {}),
                                 ocr: () => setShowOcrDialog(true),
                                 smartSpeed: () => setShowSmartSpeedDialog(true),
                                 offline: () => setShowOfflineDialog(true),
-                                bilingualSubtitles: () => setShowBilingualSubtitlesDialog(true),
-                                spectrogram: () => setShowSpectrogramDialog(true),
+                                ...(transcriptList.length > 0 ? { bilingualSubtitles: () => setShowBilingualSubtitlesDialog(true) } : {}),
                                 workspaceExport: () => setShowWorkspaceExportDialog(true),
                                 sessionReplay: () => setShowSessionReplayDialog(true),
-                                neuralDenoise: () => setShowNeuralDenoiseDialog(true),
                                 clipMaker: () => setShowClipMakerDialog(true),
                                 pomodoro: () => setShowPomodoroDialog(true),
-                                danmakuMesh: () => setShowDanmakuMeshDialog(true),
-                                stemMixer: () => setShowStemMixerDialog(true),
-                                p2pSwarm: () => setShowP2PSwarmHud(true),
                                 remedy: () => setShowRemedyDialog(true),
                                 autoHarvest: () => setShowAutoHarvestDialog(true),
                                 autonomousHarvest: () => setShowAutonomousHarvestConsole(true),
                                 webhook: () => setShowWebhookDialog(true),
                                 wasmOcr: () => setShowWasmOcrDialog(true),
-                                bilingualTts: () => setShowBilingualTtsDialog(true),
-                                conceptGraph: () => setShowConceptGraphDialog(true),
+                                ...(transcriptList.length > 0 ? { bilingualTts: () => setShowBilingualTtsDialog(true) } : {}),
+                                ...(hasRealChapters ? { conceptGraph: () => setShowConceptGraphDialog(true) } : {}),
                                 studyRoom: () => setShowStudyRoomDialog(true),
                                 quiz: () => setShowQuizDialog(true),
                             }}
@@ -1587,14 +1543,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 />
             )}
 
-            {/* CAS 超分锐化着色器调节弹窗 */}
-            <VideoShaderFilterDialog
-                open={showShaderDialog}
-                onOpenChange={setShowShaderDialog}
-                options={sharpenerOptions}
-                onOptionsChange={setSharpenerOptions}
-            />
-
             {/* 艾宾浩斯智能抽认卡复习弹窗 */}
             <VideoFlashcardDeck
                 open={showFlashcardsDialog}
@@ -1652,12 +1600,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 onOpenChange={setShowSkillTreeDialog}
             />
 
-            {/* 音频频谱与共振峰可视化弹窗 */}
-            <VideoSpectrogramDialog
-                open={showSpectrogramDialog}
-                onOpenChange={setShowSpectrogramDialog}
-            />
-
             {/* Git 工程与 Gist 导出弹窗 */}
             <VideoWorkspaceExportDialog
                 open={showWorkspaceExportDialog}
@@ -1684,14 +1626,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 onSeekToHotspot={(sec) => setChapterSeekSec(sec)}
             />
 
-            {/* WebGPU 神经网络音频降噪控制弹窗 */}
-            <VideoNeuralAudioControls
-                open={showNeuralDenoiseDialog}
-                onOpenChange={setShowNeuralDenoiseDialog}
-                config={neuralDenoiseConfig}
-                onConfigChange={(newCfg) => setNeuralDenoiseConfig(prev => ({ ...prev, ...newCfg }))}
-            />
-
             {/* 视频微知识点一键切片生成器弹窗 */}
             <VideoClipMakerDialog
                 open={showClipMakerDialog}
@@ -1706,25 +1640,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             <VideoPomodoroDialog
                 open={showPomodoroDialog}
                 onOpenChange={setShowPomodoroDialog}
-            />
-
-            {/* 分布式 WebRTC P2P 弹幕信标网格监控弹窗 */}
-            <VideoDanmakuMeshMonitor
-                open={showDanmakuMeshDialog}
-                onOpenChange={setShowDanmakuMeshDialog}
-                videoId={selectedVideo?.id || 'demo'}
-            />
-
-            {/* 多轨音频解耦混音台弹窗 */}
-            <VideoAudioStemMixerDialog
-                open={showStemMixerDialog}
-                onOpenChange={setShowStemMixerDialog}
-            />
-
-            {/* WebRTC 视频切片 P2P-CDN 蜂群遥测 HUD 弹窗 */}
-            <VideoP2PSwarmHud
-                open={showP2PSwarmHud}
-                onOpenChange={setShowP2PSwarmHud}
             />
 
             {/* 贝叶斯自适应弱项诊断与补救弹窗 */}

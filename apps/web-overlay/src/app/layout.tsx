@@ -255,7 +255,7 @@ export default async function RootLayout({
           {/* 网络状态提示：全站可见。离线时告诉用户「是你的网络断了，不是站点没数据」 */}
           <OfflineBanner />
           <Toaster />
-          {/* 小猫猫 AI 助手挂件 v4：右下角悬浮小猫（public/xiaomaomao/xiaomaomao.js，头像真图多姿势 + 聊天找站 + 摸猫/喂鱼/接星星/成长联动/语音输入） */}
+          {/* 小猫猫 AI 助手挂件 v5：右下角悬浮小猫（public/xiaomaomao/xiaomaomao.js，头像真图多姿势 + 聊天找站 + 摸猫/喂鱼/接星星/成长联动/语音输入；v5 美工升级：设计令牌 + 深浅双主题 + 玻璃格操作区） */}
           <Script src="/xiaomaomao/xiaomaomao.js" strategy="afterInteractive" />
           {/* 成长档案感知层（挂机/路由/点击计数，无可见 UI）与首页「设为首页」引导条。
               GrowthTracker 用了 useSearchParams，必须包 Suspense，否则静态生成

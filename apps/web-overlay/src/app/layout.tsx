@@ -13,7 +13,11 @@ import { WebVitalsReporter } from '@/components/web-vitals-reporter'
 import { OfflineBanner } from '@/components/offline-banner'
 import MobileNav from '@/components/mobile-nav'
 import { SessionSync } from '@/components/user-center/session-sync'
+import { Suspense } from 'react'
+import { GrowthTracker } from '@/components/growth/growth-tracker'
+import { HomepageBanner } from '@/components/growth/homepage-banner'
 import { DENSITY_PREPAINT_SCRIPT } from '@/lib/density-bootstrap'
+import { FONT_SIZE_PREPAINT_SCRIPT } from '@/lib/font-size'
 import { readSiteSettings } from '@/lib/site-config-source'
 import { resolveDefaultTheme } from '@/lib/site-settings'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
@@ -140,6 +144,8 @@ export default async function RootLayout({
             等 DensityProvider 的 effect 再落就变成「先按默认档画一屏、水合后集体重排」。
             必须排在 head 最前，样式表之前。 */}
         <script id="density-prepaint" dangerouslySetInnerHTML={{ __html: DENSITY_PREPAINT_SCRIPT }} />
+        {/* 水合前把用户存的字号档位写进 <html> font-size：与密度同理，防大字用户首屏闪烁重排 */}
+        <script id="font-size-prepaint" dangerouslySetInnerHTML={{ __html: FONT_SIZE_PREPAINT_SCRIPT }} />
         {/* 浏览器插件隔离护盾：阻断宿主浏览器第三方插件（如 QoderWork 等）产生的无害通讯断开报错 */}
         <script
           dangerouslySetInnerHTML={{
@@ -251,6 +257,13 @@ export default async function RootLayout({
           <Toaster />
           {/* 小猫猫 AI 助手挂件：右下角悬浮小猫（public/xiaomaomao/xiaomaomao.js，头像真图多姿势 + 聊天找站） */}
           <Script src="/xiaomaomao/xiaomaomao.js" strategy="afterInteractive" />
+          {/* 成长档案感知层（挂机/路由/点击计数，无可见 UI）与首页「设为首页」引导条。
+              GrowthTracker 用了 useSearchParams，必须包 Suspense，否则静态生成
+              /404 时报 missing-suspense-with-csr-bailout（2026-11-10 构建实测）。 */}
+          <Suspense fallback={null}>
+            <GrowthTracker />
+          </Suspense>
+          <HomepageBanner />
         </ThemeProvider>
       </body>
     </html>

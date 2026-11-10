@@ -29,6 +29,8 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/me" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">用户中心</Link>
           <span className="text-border" aria-hidden="true">·</span>
+          <Link href="/me" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">设为首页领经验加速</Link>
+          <span className="text-border" aria-hidden="true">·</span>
           <Link href="/favorites" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">我的收藏 (E2EE)</Link>
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/graph" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">技术生态图谱</Link>
@@ -49,7 +51,7 @@ export function Footer({ siteInfo }: FooterProps) {
           {/* emerald-600 在 12px 白底上只有 3.62:1（AA 需 4.5），700 才达标 */}
           <Link href="/custom" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">模块化工作台<span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">DIY</span></Link>
           <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/marketplace" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">插件市场<span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20">77</span></Link>
+          <Link href="/marketplace" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">插件市场</Link>
           <span className="text-border" aria-hidden="true">·</span>
           {/* SEO：/videos 与 /submit 入口 */}
           <Link href="/videos" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">视频资源墙</Link>

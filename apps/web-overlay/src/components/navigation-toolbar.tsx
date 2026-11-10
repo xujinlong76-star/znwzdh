@@ -41,6 +41,7 @@ import type { SiteConfig } from '@/types/site'
 import { SearchPalette } from '@/components/search-palette'
 import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
+import { FontSizeToggle } from '@/components/font-size-toggle'
 import { ViewModeToggle } from '@/components/view-mode-toggle'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
 import { cn } from '@/lib/utils'
@@ -309,6 +310,7 @@ export function NavigationToolbar({
               <div className="h-4 w-px bg-border/60 mx-1 hidden lg:block" />
               <div className="hidden lg:inline-flex"><ViewModeToggle /></div>
               <div className="hidden lg:inline-flex"><DensityToggle /></div>
+              <div className="hidden lg:inline-flex"><FontSizeToggle /></div>
               <ModeToggle />
               <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />
               <Button

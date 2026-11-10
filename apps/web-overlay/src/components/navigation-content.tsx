@@ -20,6 +20,11 @@ import {
 import { Footer } from '@/components/footer'
 import { OnboardingCard } from '@/components/onboarding-card'
 import { AiFinderPanel } from '@/components/ai/ai-finder-panel'
+// 沉浸影院带在首屏下方且自带懒挂载：动态导入，不占首页首屏包体积（预算紧）。
+const HomeDramaCinema = dynamic(
+  () => import('@/components/home-drama-cinema').then((m) => m.HomeDramaCinema),
+  { ssr: false },
+)
 import { useOverlayBehavior } from '@/components/ui/overlay'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { CategoryQuickJumpBar } from '@/components/category-quick-jump-bar'
@@ -709,6 +714,8 @@ export function NavigationContent({
           </header>
           {/* AI 智能找站：首屏显眼入口，一句话直达站内站点卡片（服务端保证只出站内收录） */}
           {viewMode !== 'workbench' && <AiFinderPanel />}
+          {/* 沉浸影院（设计稿 E 落地）：短剧海报横滑 + 热播榜 + 分类横幅，懒挂载取数 */}
+          {viewMode !== 'workbench' && <HomeDramaCinema />}
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
           {viewMode !== 'workbench' && !isModuleHidden('mod:onboarding-card') && (
             <div data-feature-id="mod:onboarding-card" className="relative">

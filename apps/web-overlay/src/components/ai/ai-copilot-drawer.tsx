@@ -36,6 +36,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { hubSend } from '@/lib/navhub-api'
+import { recordGrowthEvent } from '@/lib/growth'
 import { streamCopilotChat, type CopilotCitation, type CopilotReplyBody } from '@/lib/copilot-stream'
 import { describeDegrade } from '@/lib/degrade'
 import {
@@ -249,6 +250,7 @@ export function AiCopilotDrawer() {
   const handleSend = async (textToSend?: string) => {
     const content = (textToSend || input).trim()
     if (!content || loading) return
+    recordGrowthEvent('ai_chat')
 
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,

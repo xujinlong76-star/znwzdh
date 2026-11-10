@@ -12,6 +12,7 @@ import {
   scenePage,
   type SceneUsage,
 } from '@/lib/scene-usage'
+import { recordGrowthEvent } from '@/lib/growth'
 
 /**
  * AI 智能找站（首页首屏入口）。
@@ -113,6 +114,7 @@ export function AiFinderPanel() {
     if (!q || loading) return
     setLoading(true)
     setError(null)
+    recordGrowthEvent('ai_find')
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const token = getApiToken()
@@ -175,6 +177,7 @@ export function AiFinderPanel() {
             disabled={loading}
             onClick={() => {
               setUsage(recordSceneUse(s.id))
+              recordGrowthEvent('scene_open', { sceneId: s.id })
               setQuery(s.query)
               void run(s.query, s.id)
             }}

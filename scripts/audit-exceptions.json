@@ -12,6 +12,28 @@
       "upstreamIssue": "https://github.com/micromatch/braces/issues",
       "reviewCadenceDays": 90,
       "recheck": "braces 发布 >=3.0.3 或上游 eslint 链移除该依赖时，删除本条恢复硬门禁"
+    },
+    {
+      "ghsa": "GHSA-g3hv-75wg-m249",
+      "package": "minimatch",
+      "reason": "glob 展开 DoS（moderate）。两条引入链的 spec 都封顶大版本：@eslint/config-array 要求 minimatch ^10、@ts-morph/common 要求 ^7，而修复版只有 >=11.0.1，无区间内修复可钉；两条链均为 dev-only 工具链（eslint / shadcn CLI），不进生产产物，glob 输入为仓库内文件而非用户输入。",
+      "owner": "工程化",
+      "createdAt": "2026-11-10",
+      "expiresAt": "2027-03-31",
+      "upstreamIssue": "https://github.com/isaacs/minimatch/issues",
+      "reviewCadenceDays": 90,
+      "recheck": "@eslint/config-array 或 @ts-morph/common 放行 minimatch >=11 时，改用 overrides 钉版并删除本条"
+    },
+    {
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "package": "deepmerge",
+      "reason": "mergeObject 原型污染（low）。经 shadcn CLI（dev-only 工具链）引入，不进生产产物；公告标注修复版 >=4.3.2，但截至 2026-11-10 npm 最新仍是 4.3.1，修复版尚未发布，override 无版本可钉（与 braces 同例）。",
+      "owner": "工程化",
+      "createdAt": "2026-11-10",
+      "expiresAt": "2027-03-31",
+      "upstreamIssue": "https://github.com/TehShrike/deepmerge/issues",
+      "reviewCadenceDays": 90,
+      "recheck": "deepmerge 发布 >=4.3.2 时，改用 overrides 钉版并删除本条"
     }
   ]
 }

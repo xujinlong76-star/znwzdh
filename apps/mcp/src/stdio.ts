@@ -9,7 +9,7 @@
  *     "mcpServers": {
  *       "navhub": {
  *         "command": "node",
- *         "args": ["--experimental-strip-types", "packages/mcp/src/stdio.ts"],
+ *         "args": ["--experimental-strip-types", "apps/mcp/src/stdio.ts"],
  *         "env": { "NAVHUB_MODE": "lite", "NAVHUB_SQLITE_PATH": "./data/navhub.db",
  *                  "NAVHUB_MCP_SCOPES": "read" }
  *       }

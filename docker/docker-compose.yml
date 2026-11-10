@@ -378,7 +378,7 @@ services:
     container_name: navhub-mcp
     profiles: ["mcp"]
     restart: unless-stopped
-    command: ["node", "packages/mcp/src/http.ts"]
+    command: ["node", "apps/mcp/src/http.ts"]
     ports:
       - "${NAVHUB_MCP_PORT:-8790}:8790"
     healthcheck:

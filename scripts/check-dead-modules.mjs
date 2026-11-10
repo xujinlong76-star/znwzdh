@@ -33,6 +33,8 @@ const UNKNOWN = argv.filter((a) => a !== "--json" && a !== "--update");
 
 /** 首次实测（2026-11-06）登记的 0 引用候选；新增项才判红。 */
 let BASELINE = [
+  "apps/web-overlay/src/app/admin/navigation/components/AddCategoryForm.tsx",
+  "apps/web-overlay/src/app/admin/navigation/components/AddItemForm.tsx",
   "apps/web-overlay/src/components/quick-access-tray.tsx",
   "apps/web-overlay/src/components/speculative-prerender.tsx",
   "apps/web-overlay/src/components/ui/search-input.tsx",
@@ -41,6 +43,7 @@ let BASELINE = [
   "apps/web-overlay/src/lib/session.ts",
   "apps/web-overlay/src/registry/new-york/ui/chart.tsx",
   "apps/web-overlay/src/registry/new-york/ui/input-otp.tsx",
+  "apps/web-overlay/src/registry/new-york/ui/toggle.tsx",
 ];
 
 /**
@@ -71,6 +74,12 @@ let BASELINE = [
  *     （最后一个注意与**活跃**的 lib/notification-badge.ts 区分：前者是组件、后者是工具）
  */
 let BASELINE_NOTES = {
+  "apps/web-overlay/src/app/admin/navigation/components/AddCategoryForm.tsx":
+    "keep（C 守卫测试）：test/admin-lazy-guard.test.ts 按源码路径读取包装器并断言其 dynamic 懒加载形态；同目录 .impl 才引表单库，包装器本身无业务引用是该模式的预期形态（2026-11-10 复核）",
+  "apps/web-overlay/src/app/admin/navigation/components/AddItemForm.tsx":
+    "keep（C 守卫测试）：同 AddCategoryForm，admin-lazy-guard.test.ts 按源码路径读取断言（2026-11-10 复核）",
+  "apps/web-overlay/src/registry/new-york/ui/toggle.tsx":
+    "keep（C 守卫测试）：a11y-token-contrast.test.ts 的 CONTROL_FILES 清单按源码路径读取并断言 border-border-strong（2026-11-10 复核）",
   "apps/web-overlay/src/lib/lazy-dnd.tsx":
     "keep（A 别名目标）：package.json 把 @hello-pangea/dnd 指向本文件，构建期解析；另有 types/hello-pangea-dnd-deep.d.ts 与 test/lazy-dnd-guard.test.ts 依赖",
   "apps/web-overlay/src/registry/new-york/ui/chart.tsx":

@@ -29,7 +29,7 @@
     "site:heal:check": "node scripts/self-healing-agent.mjs --dry-run",
     "db:clean": "node scripts/clean-taxonomy-and-duplicates.mjs",
     "seed": "node apps/api/src/seed-main.ts",
-    "mcp:stdio": "pnpm --filter @navhub/mcp start",
+    "mcp:stdio": "pnpm --filter @navhub/mcp-app start",
     "vendor:web": "node scripts/vendor-web.mjs",
     "nav:baseline": "node scripts/gen-nav-baseline.mts",
     "//load:seed": "压测种子：必须显式 NAVHUB_SQLITE_PATH 指向隔离库；--fresh 只删 loadtest*.db（规划 P2 压测基线）",

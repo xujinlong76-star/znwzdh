@@ -34,7 +34,7 @@ pnpm --filter @navhub/api start
 | `pnpm test:watch` | `vitest` | 监听模式 |
 | `pnpm typecheck` | `pnpm -r exec tsc --noEmit` | 全仓类型检查 |
 | `pnpm seed` | `node apps/api/src/seed-main.ts` | 播种（必须根目录 CWD；子包脚本 `pnpm --filter @navhub/api seed` 会写错库） |
-| `pnpm mcp:stdio` | `pnpm --filter @navhub/mcp start` | 启动 MCP stdio |
+| `pnpm mcp:stdio` | `pnpm --filter @navhub/mcp-app start` | 启动 MCP stdio |
 | `pnpm vendor:web` | `node scripts/vendor-web.mjs` | 拉取上游底座 |
 | `pnpm test:pg` | `node --experimental-strip-types scripts/pg-check.mts` | PostgreSQL 分档验收 |
 | `pnpm load:seed` | `node scripts/seed-loadtest.mts` | 压测种子（隔离库，见 §6.5） |

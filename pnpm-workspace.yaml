@@ -80,6 +80,7 @@ minimumReleaseAgeExclude:
 #  tinypool / postcss / ws / esbuild             工具链安全版本                     2026-12-31
 #  nodemailer                                    GHSA-p6gq-j5cr-w38f / GHSA-8h2f-cmhf-554p 2026-12-31
 #  fast-uri                                      GHSA-333x-w4r6-6crp                 2026-12-31
+#  qs / ip-address                               GHSA-6pq8-jhm2-2vcw / GHSA-rxp7-6hxx-x8q5  2027-03-31
 #  zod                                           GHSA-mrhx-c7xc-m3w5                2026-12-31
 #  ignoreGhsas: braces（dev-only）                上游未发修复版，季度复核            2026-12-31
 # ---------------------------------------------------------------------------
@@ -88,10 +89,10 @@ overrides:
   # package.json 的 pnpm 字段（overrides 迁到 pnpm-workspace.yaml），那里实际已失效。
   # 统一搬到 workspace 配置，顺带消除 Docker 只拷部分清单时的
   # ERR_PNPM_LOCKFILE_CONFIG_MISMATCH（见 docker/Dockerfile.api 注释）。
-  brace-expansion@<2: 1.1.20
-  # >=2 <5 仍钉安全维护版 2.1.6；>=5 放行：ESLint 10 的 @eslint/config-array
+  brace-expansion@<2: 1.1.21
+  # >=2 <5 仍钉安全维护版 2.1.7；>=5 放行：ESLint 10 的 @eslint/config-array
   # 依赖 minimatch@10，后者要求 brace-expansion ^5。
-  brace-expansion@>=2 <5: 2.1.6
+  brace-expansion@>=2 <5: 2.1.7
   brace-expansion@>=5: 5.0.12
   # nanoid v3 的 ReDoS/无限循环：GHSA-2v37-7h3g-55p8，修复版 >=3.3.18。
   # 原钉 3.3.16 本身就在受影响区间（这条 overrides 从 apps/web/package.json 的
@@ -111,6 +112,11 @@ overrides:
   nodemailer: '>=9.1.0'
   # fast-uri: GHSA-333x-w4r6-6crp
   fast-uri: '>=3.1.9'
+  # qs: GHSA-6pq8-jhm2-2vcw（express@5.3.0 经 MCP SDK 解析到 6.16.0，修复版 >=6.16.1；
+  # 与 body-parser 同例：上游 spec 钉住旧版时用全局下限抬升）
+  qs: '>=6.16.1'
+  # ip-address: GHSA-rxp7-6hxx-x8q5（express-rate-limit 经 MCP SDK 解析到 10.7.3，修复版 >=10.7.4）
+  ip-address: '>=10.7.4'
   # zod 全仓统一使用安全版本 >=4.6.7（彻底解决 GHSA-mrhx-c7xc-m3w5 内存耗尽漏洞）
   zod: '>=4.6.7'
 

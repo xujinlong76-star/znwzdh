@@ -32,6 +32,9 @@ interface TagRow {
   aliases: string[]
 }
 
+/** 标签治理表格每页行数：全量 2400+ 行一次性渲染会造出 4 万个 DOM 节点（实测 6.2s）。
+ * 分页后首屏只渲染一页，管理端操作本来就靠筛选定位，不需要一次铺开全部。 */
+const PAGE_SIZE = 50
 const COMMON_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'topic', label: '领域 (Topic)' },
@@ -47,6 +50,8 @@ export default function AdminTagsPage() {
   const [filter, setFilter] = useState('')
   const [selectedGroup, setSelectedGroup] = useState('all')
   const [busyId, setBusyId] = useState<string | null>(null)
+  // 分页：只渲染当前页，避免 2400+ 标签一次性铺开拖垮管理端
+  const [page, setPage] = useState(1)
   // 「没拉到」和「真的没有」必须分开（见 lib/admin-load-failure.ts）
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -86,6 +91,14 @@ export default function AdminTagsPage() {
       t.group.toLowerCase().includes(q)
     )
   })
+
+  // 筛选框或分组变化时回到第 1 页，否则会停在一个空页上
+  useEffect(() => { setPage(1) }, [filter, selectedGroup])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  // 页码可能因筛选变小而越界，钳到最后一页
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   return (
     <div className="p-3 sm:p-6 max-w-5xl mx-auto space-y-5 sm:space-y-6">
@@ -151,7 +164,7 @@ export default function AdminTagsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((t) => (
+              {paged.map((t) => (
                 <tr key={t.id} className="border-b last:border-0 hover:bg-muted/20">
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
@@ -247,6 +260,23 @@ export default function AdminTagsPage() {
               ))}
             </tbody>
           </table>
+          {/* 分页：全量标签不再一次性渲染 */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 border-t bg-muted/20 text-xs">
+            <span className="text-muted-foreground font-mono">
+              共 {filtered.length} 个标签 · 第 {safePage}/{totalPages} 页 · 每页 {PAGE_SIZE}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
+                disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
+                上一页
+              </Button>
+              <span className="font-mono px-1">{safePage} / {totalPages}</span>
+              <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
+                disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>
+                下一页
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

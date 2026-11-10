@@ -157,10 +157,20 @@ const nextConfig = {
   async rewrites() {
     // /api/hub/* 不走 rewrite：改用 src/app/api/hub/[...path]/route.ts 运行时转发
     // （rewrite 目标在构建期固化，改中枢地址要重新构建；路由在运行时读环境变量）。
-    return [
+    const rules = [
       { source: "/api/auth/:path*", destination: "/api/auth/:path*" },
       { source: "/auth/:path*", destination: "/auth/:path*" },
     ];
+    // IndexNow 默认位置的 key 文件：/{key}.txt → /indexnow-key.txt。
+    // 注意这里与 /api/hub 同一个约束：rewrite 在构建期求值，key 必须在
+    // build 时就注入（Docker 用 --build-arg）；运行时才给 key 的部署走
+    // keyLocation 形态（提交脚本恒带，指向 /indexnow-key.txt 路由），
+    // 不依赖这条 rewrite。格式校验与路由侧保持一致，非法值不生成规则。
+    const indexNowKey = (process.env.NAVHUB_INDEXNOW_KEY || "").trim();
+    if (/^[A-Za-z0-9-]{8,128}$/.test(indexNowKey)) {
+      rules.push({ source: `/${indexNowKey}.txt`, destination: "/indexnow-key.txt" });
+    }
+    return rules;
   },
   devIndicators: false,
   // 拖拽库懒加载：管理端几个上游列表页直接 import '@hello-pangea/dnd'，

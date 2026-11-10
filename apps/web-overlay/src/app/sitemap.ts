@@ -36,6 +36,14 @@ import {
  *
  * 中枢不可用时只输出已取到的部分，绝不 500：sitemap 是辅助，不该因一次上游
  * 抖动把整站爬虫体验打穿。
+ *
+ * 4. 例外（2026-11-11）：五路数据源**全部失败**时改为抛错。实测教训：中枢
+ *    抖动期生成的「只剩 10 条静态 URL」降级版会被 ISR 缓存 300s，爬虫在窗口
+ *    内抓到会以为全站只剩 10 页；而生成抛错时 ISR 继续供上次的好版本并后台
+ *    重试，严格优于把降级版钉死。判据必须精确：四路内容数据（站点/标签/
+ *    分类/合集）的取数都返回失败信号才抛；任一路拿到数据（哪怕空数组——
+ *    首部署空库是合法状态）都照常输出。插件不计入判据（它是附属清单，
+ *    且其加载器把失败吞成空数组，无失败信号可读）。
  */
 
 export const revalidate = 300
@@ -98,12 +106,17 @@ async function loadPublishedPlugins(): Promise<SitemapPluginRef[]> {
  */
 const SITE_BATCH = 4
 
-async function loadActiveSites(): Promise<SiteRef[]> {
+/**
+ * 返回 null 表示**取数失败**（首page 请求就失败），与「取到空数组」（库里
+ * 真没站点）严格区分——sitemap() 靠这个信号判断是否全线失败（文件头第 4 条）。
+ */
+async function loadActiveSites(): Promise<SiteRef[] | null> {
   const first = await hubGet<SiteRef[]>(
     `/api/sites?status=active&limit=${SITE_LIMIT}&offset=0`,
     300,
   )
-  if (!first?.length) return []
+  if (first === null) return null
+  if (first.length === 0) return []
   if (first.length < SITE_LIMIT) return first
 
   const out: SiteRef[] = [...first]
@@ -151,16 +164,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     hubGet<CollectionRef[]>('/api/collections', 3600),
   ])
 
+  // 四路内容数据全线失败：抛错让 ISR 保留上次的好版本（文件头第 4 条），
+  // 不把「只有静态页」的降级清单缓存下来冒充全站地图。
+  if (sites === null && tags === null && categories === null && collections === null) {
+    throw new Error('sitemap: 中枢四路内容数据全部取数失败，保留上次生成的版本')
+  }
+
   return [
     ...staticEntries(origin),
-    ...siteEntries(origin, sites),
+    ...siteEntries(origin, sites ?? []),
     ...tagEntries(origin, tags ?? [], MIN_SITES_FOR_TAG_INDEX),
     // 根页也要进 sitemap：新树里它是一级导航入口，站点数来自子树聚合。
     // 直接把 countCategorySites 的原始计数喂进去，18 个根会全被门槛挡掉。
     ...categoryEntries(
       origin,
       categories ?? [],
-      descendantSiteCounts(categories ?? [], countCategorySites(sites)),
+      descendantSiteCounts(categories ?? [], countCategorySites(sites ?? [])),
       MIN_SITES_FOR_CATEGORY_INDEX,
     ),
     ...collectionEntries(origin, collections ?? []),

@@ -38,7 +38,7 @@ import {
   User,
 } from 'lucide-react'
 import type { SiteConfig } from '@/types/site'
-import { SearchPalette } from '@/components/search-palette'
+import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
 import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'

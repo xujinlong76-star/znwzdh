@@ -24,7 +24,7 @@ import { Tag, Hash, LayoutGrid, MonitorPlay, ArrowRight, Search, X } from 'lucid
 import { searchSites, type HubSite } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
-import { SearchPalette } from '@/components/search-palette'
+import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
 import { SiteFavicon } from '@/components/site-favicon'
 import { EmptyState } from '@/components/ui/empty-state'
 

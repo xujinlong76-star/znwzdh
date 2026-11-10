@@ -9,6 +9,8 @@
  *   - integrity_check / foreign_key_check：文件级损坏与悬空引用
  *   - 自包含：旁边不得有 -wal/-shm（单文件拷贝会漏掉它们，恢复出的数据会旧一截）
  *   - 必需表存在且可读：空库 / 半截传输在这里暴露
+ *   - 清单：<file>.sha256 存在时比对（--require-manifest 则必须有且一致），
+ *     证明拿到的就是备份当时那份字节，而不是「同库的另一份历史备份」
  *   - 新鲜度：默认 26 小时（--max-age-hours 0 关闭），过期备份不算通过
  *   - 可选 --baseline：对照线上库只输出行数差值，供人工判断新鲜度（不作判据）
  *
@@ -16,11 +18,12 @@
  *
  * 用法：
  *   node scripts/db-backup-verify.mjs [--file <path>] [--baseline <path>]
- *                                     [--max-age-hours <n>] [--json]
+ *                                     [--max-age-hours <n>] [--json] [--require-manifest]
  * 未给 --file 时取 data/backups/ 下最新一份 navhub-*.db。
  */
 import { createRequire } from "node:module";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,20 +36,22 @@ const REQUIRED_TABLES = ["categories", "sites", "tags", "site_tags", "events", "
 const COUNT_TABLES = REQUIRED_TABLES;
 
 function parseArgs(argv) {
-  const args = { file: null, baseline: null, maxAgeHours: 26, json: false };
+  const args = { file: null, baseline: null, maxAgeHours: 26, json: false, requireManifest: false };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--file") args.file = argv[++i];
     else if (a === "--baseline") args.baseline = argv[++i];
     else if (a === "--max-age-hours") args.maxAgeHours = Math.max(0, Number(argv[++i]) || 0);
     else if (a === "--json") args.json = true;
+    else if (a === "--require-manifest") args.requireManifest = true;
     else if (a === "--help" || a === "-h") {
       console.log(
-        "用法: node scripts/db-backup-verify.mjs [--file <path>] [--baseline <path>] [--max-age-hours <n>] [--json]",
+        "用法: node scripts/db-backup-verify.mjs [--file <path>] [--baseline <path>] [--max-age-hours <n>] [--json] [--require-manifest]",
       );
-      console.log("  --file           要校验的备份文件（默认 data/backups 下最新一份 navhub-*.db）");
-      console.log("  --baseline       对照库（通常是在线库），仅输出行数差值，不作判据");
-      console.log("  --max-age-hours  新鲜度上限，默认 26；传 0 关闭");
+      console.log("  --file             要校验的备份文件（默认 data/backups 下最新一份 navhub-*.db）");
+      console.log("  --baseline         对照库（通常是在线库），仅输出行数差值，不作判据");
+      console.log("  --max-age-hours    新鲜度上限，默认 26；传 0 关闭");
+      console.log("  --require-manifest 必须有 <file>.sha256 且哈希一致，缺失也判失败（恢复前建议开启）");
       process.exit(0);
     } else {
       console.error(`未知参数: ${a}（--help 查看用法）`);
@@ -67,6 +72,13 @@ function newestBackup(dir) {
 
 const args = parseArgs(process.argv);
 
+/** 流式计算 sha256：备份可能上百 MB，读进内存只为算哈希不值当 */
+async function sha256File(file) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
 let Database;
 try {
   Database = storeRequire("better-sqlite3");
@@ -85,7 +97,14 @@ const result = {
   file,
   sizeBytes: 0,
   ageHours: null,
-  checks: { integrity: null, foreignKeys: null, selfContained: null, requiredTables: null, fresh: null },
+  checks: {
+    integrity: null,
+    foreignKeys: null,
+    selfContained: null,
+    requiredTables: null,
+    fresh: null,
+    manifest: null,
+  },
   counts: {},
   baseline: null,
   failures,
@@ -120,6 +139,22 @@ try {
   result.checks.selfContained = sidecars.length === 0 && stat.size > 0;
   if (sidecars.length > 0) fail(`备份不自包含：存在 ${sidecars.map((s) => "…" + s).join(" / ")}`);
   if (stat.size === 0) fail("备份文件为空");
+
+  // 清单校验：备份脚本会写 <file>.sha256（sha256sum 格式）。
+  // integrity_check 只证明页结构合法，证明不了「这份字节就是当时那一份」——
+  // 拷盘截断到页边界、误覆盖成同库另一份历史备份都能通过 page 级检查。
+  const manifestPath = file + ".sha256";
+  if (existsSync(manifestPath)) {
+    const expected = readFileSync(manifestPath, "utf8").trim().split(/\s+/)[0].toLowerCase();
+    const actual = await sha256File(file);
+    result.checks.manifest = actual === expected;
+    if (!result.checks.manifest) {
+      fail(`清单不匹配：清单 ${expected.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…（文件在备份后被改动或拷坏）`);
+    }
+  } else if (args.requireManifest) {
+    result.checks.manifest = false;
+    fail(`缺少清单文件 ${path.basename(manifestPath)}（--require-manifest 要求必须有）`);
+  }
 
   if (args.maxAgeHours > 0 && result.ageHours > args.maxAgeHours) {
     result.checks.fresh = false;
@@ -200,6 +235,9 @@ if (args.json) {
     console.log(`[verify] 备份 ${file}（${(result.sizeBytes / 1024 / 1024).toFixed(2)} MB，距今 ${result.ageHours} 小时）`);
   }
   if (result.checks.integrity) console.log(`[verify] integrity_check=${result.checks.integrity}`);
+  if (result.checks.manifest !== null) {
+    console.log(`[verify] 清单 sha256 ${result.checks.manifest ? "一致" : "不匹配"}`);
+  }
   if (result.checks.foreignKeys !== null) console.log(`[verify] foreign_key_check ${result.checks.foreignKeys} 处违例`);
   if (result.checks.requiredTables) {
     const counts = Object.entries(result.counts)

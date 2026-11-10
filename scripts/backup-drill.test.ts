@@ -9,8 +9,9 @@
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,6 +68,13 @@ describe("备份演练（scripts/backup.mjs）", () => {
       const backupPath = join(outDir, files[0]!);
       expect(existsSync(backupPath + "-wal")).toBe(false);
       expect(existsSync(backupPath + "-shm")).toBe(false);
+
+      // 清单：backup.mjs 必须给每份备份留下 sha256，供恢复前核对「是不是当时那一份」
+      const manifestPath = backupPath + ".sha256";
+      expect(existsSync(manifestPath)).toBe(true);
+      const declared = readFileSync(manifestPath, "utf8").trim().split(/\s+/)[0];
+      const actual = createHash("sha256").update(readFileSync(backupPath)).digest("hex");
+      expect(declared).toBe(actual);
 
       const restored = new Database(backupPath, { readonly: true, fileMustExist: true });
       try {

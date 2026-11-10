@@ -45,16 +45,23 @@ systemctl stop navhub-api
 mv data/navhub.db data/navhub.db.before-restore
 rm -f data/navhub.db-wal data/navhub.db-shm
 
-# 3) 放入备份（确认同目录没有残留 -wal/-shm）
-cp data/backups/navhub-2026-10-20_03-17-00.db data/navhub.db
+# 3) 放入备份（确认同目录没有残留 -wal/-shm，且 .sha256 清单一起拷过来）
+cp data/backups/navhub-2026-10-20_03-17-00.db        data/navhub.db
+cp data/backups/navhub-2026-10-20_03-17-00.db.sha256 data/navhub.db.sha256
 
-# 4) 恢复前先自检
-node -e "const D=require('better-sqlite3');const d=new D('data/navhub.db',{readonly:true});console.log(d.pragma('integrity_check',{simple:true}));d.close()"
+# 4) 恢复前先自检：清单哈希 + integrity_check + 必需表 + 自包含
+#    --require-manifest：没有清单或哈希不一致直接失败（证明拿到的是备份当时那份字节，
+#    而不是同库的另一份历史备份、或传输中被截断/改动的文件）
+node scripts/db-backup-verify.mjs --file data/navhub.db --require-manifest --max-age-hours 0
 
 # 5) 启动并验证
 systemctl start navhub-api
 curl -fsS http://localhost:8787/api/health
 ```
+
+> 老备份没有 `.sha256` 时，第 4 步去掉 `--require-manifest` 仍可做其余检查；
+> 新备份（`pnpm backup`）会自动在 `.db` 旁写同名 `.sha256`，随备份文件一起传输。清单位于
+> 备份目录、与 `.db` 同源，能证明「这份字节没被换过」，但**不能**替代异地把备份分开存放。
 
 验证数据（按业务选择）：
 

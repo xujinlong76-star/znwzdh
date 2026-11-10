@@ -17,7 +17,8 @@
  * 退出码：0 成功；1 失败（含完整性校验不过）。供 cron / CI / 人工使用。
  */
 import { createRequire } from "node:module";
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -116,6 +117,17 @@ for (const suffix of ["-wal", "-shm"]) {
   if (existsSync(sidecar)) unlinkSync(sidecar);
 }
 
+// 清单：把备份的 sha256 落成同名 .sha256（sha256sum 格式）。
+// integrity_check 只证明「页结构没坏」，证明不了「这份文件就是当时那一份」：
+// 传输/拷盘截断、误覆盖成同库的另一份历史备份时，页结构照样合法。
+// 恢复前用 scripts/db-backup-verify.mjs 比对清单，才能确认拿到的是同一份字节。
+const manifestPath = dest + ".sha256";
+const hash = createHash("sha256");
+for await (const chunk of createReadStream(dest)) hash.update(chunk);
+const digest = hash.digest("hex");
+writeFileSync(manifestPath, `${digest}  ${path.basename(dest)}\n`);
+console.log(`清单:   ${path.basename(manifestPath)}（sha256 ${digest.slice(0, 12)}…）`);
+
 // 轮换：只保留最近 keep 份，防止备份目录无限增长把磁盘写满
 if (args.rotate) {
   const backups = readdirSync(outDir)
@@ -124,7 +136,7 @@ if (args.rotate) {
     .sort((a, b) => b.mtime - a.mtime);
   for (const stale of backups.slice(args.keep)) {
     unlinkSync(path.join(outDir, stale.f));
-    for (const suffix of ["-wal", "-shm"]) {
+    for (const suffix of ["-wal", "-shm", ".sha256"]) {
       const sidecar = path.join(outDir, stale.f + suffix);
       if (existsSync(sidecar)) unlinkSync(sidecar);
     }

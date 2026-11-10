@@ -11,8 +11,9 @@
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -166,5 +167,45 @@ describe("备份可恢复性校验（scripts/db-backup-verify.mjs）", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("备份文件不存在");
     expect(r.stderr).toContain("missing.db");
+  });
+
+  it("清单一致：报 manifest=true", () => {
+    const dir = tempDir();
+    const file = join(dir, backupName);
+    createNavDb(file);
+    const digest = createHash("sha256").update(readFileSync(file)).digest("hex");
+    writeFileSync(file + ".sha256", `${digest}  ${backupName}\n`);
+
+    const r = run(["--file", file, "--require-manifest", "--json"]);
+    expect(r.status, r.stderr).toBe(0);
+    const out = JSON.parse(r.stdout) as { ok: boolean; checks: { manifest: boolean | null } };
+    expect(out.ok).toBe(true);
+    expect(out.checks.manifest).toBe(true);
+  });
+
+  it("清单不一致：判失败（页结构完好也拦得住被替换的字节）", () => {
+    const dir = tempDir();
+    const file = join(dir, backupName);
+    createNavDb(file);
+    writeFileSync(file + ".sha256", `${"0".repeat(64)}  ${backupName}\n`);
+
+    const r = run(["--file", file]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("清单不匹配");
+  });
+
+  it("--require-manifest 时缺清单也判失败；不加该参数时只是不校验", () => {
+    const dir = tempDir();
+    const file = join(dir, backupName);
+    createNavDb(file);
+
+    const strict = run(["--file", file, "--require-manifest"]);
+    expect(strict.status).toBe(1);
+    expect(strict.stderr).toContain("缺少清单文件");
+
+    const lax = run(["--file", file, "--json"]);
+    expect(lax.status, lax.stderr).toBe(0);
+    const out = JSON.parse(lax.stdout) as { checks: { manifest: boolean | null } };
+    expect(out.checks.manifest).toBeNull();
   });
 });

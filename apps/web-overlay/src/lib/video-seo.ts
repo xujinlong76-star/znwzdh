@@ -277,7 +277,7 @@ export function generateVideoObjectSchema(
   item: NavigationSubItem,
   siteUrl: string = 'https://devops.example.com',
   categoryTitle?: string
-): Record<string, any> {
+): Record<string, unknown> {
   const cleanSiteUrl = siteUrl.replace(/\/+$/, '')
   const config = item.videoConfig
   const uploadDate = config?.publishedAt
@@ -304,7 +304,7 @@ export function generateVideoObjectSchema(
     : extractVideoSeoKeywords(item, categoryTitle)
 
   // 构建 Google Search Key Moments (Clip 结构化章节)，支持在搜索结果直接渲染视频进度节点
-  const clips: Array<Record<string, any>> = []
+  const clips: Array<Record<string, unknown>> = []
   const chapters: VideoChapter[] = config?.chapters || []
   if (chapters.length > 0 && !config?.synthetic) {
     for (let i = 0; i < chapters.length; i++) {
@@ -326,7 +326,7 @@ export function generateVideoObjectSchema(
   }
 
   // 构建互动统计数据 (InteractionCounter)
-  const interactionStatistic: Array<Record<string, any>> = []
+  const interactionStatistic: Array<Record<string, unknown>> = []
   if (config?.stats?.views && config.stats.views > 0) {
     interactionStatistic.push({
       '@type': 'InteractionCounter',
@@ -342,7 +342,7 @@ export function generateVideoObjectSchema(
     })
   }
 
-  const schema: Record<string, any> = {
+  const schema: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': 'VideoObject',
     '@id': canonicalVideoUrl,
@@ -390,7 +390,7 @@ export function generateVideoBreadcrumbSchema(
   siteUrlOrCategoryTitle: string = 'https://devops.example.com',
   categoryOrId?: { id: string; title: string } | string,
   maybeSiteUrl?: string
-): Record<string, any> {
+): Record<string, unknown> {
   const isLegacyOrder = typeof categoryOrId === 'string'
   const rawSiteUrl = isLegacyOrder
     ? maybeSiteUrl || 'https://devops.example.com'
@@ -399,7 +399,7 @@ export function generateVideoBreadcrumbSchema(
     ? { id: categoryOrId, title: siteUrlOrCategoryTitle }
     : categoryOrId
   const cleanSiteUrl = rawSiteUrl.replace(/\/+$/, '')
-  const itemListElement: Array<Record<string, any>> = [
+  const itemListElement: Array<Record<string, unknown>> = [
     {
       '@type': 'ListItem',
       'position': 1,
@@ -444,7 +444,7 @@ export function generateVideoItemListSchema(
   items: NavigationSubItem[],
   siteUrl: string = 'https://devops.example.com',
   listName: string = '精选技术视频教程列表'
-): Record<string, any> {
+): Record<string, unknown> {
   const cleanSiteUrl = siteUrl.replace(/\/+$/, '')
   const validItems = items
     .filter(it => it.enabled !== false && it.videoConfig && it.videoConfig.healthStatus !== 'broken')

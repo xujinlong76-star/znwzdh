@@ -45,6 +45,7 @@ import {
   FileText,
   Loader2,
   RefreshCw,
+  type LucideIcon,
 } from 'lucide-react'
 import { probeSiteLatency, type PingResult } from '@/lib/site-ping'
 import {
@@ -109,7 +110,7 @@ const RELATION_TYPE_LABEL: Record<string, { label: string; color: string; bg: st
   },
 }
 
-const FACET_LABELS: Record<string, { label: string; icon: any }> = {
+const FACET_LABELS: Record<string, { label: string; icon: LucideIcon }> = {
   pricing: { label: '付费模式', icon: DollarSign },
   platform: { label: '运行平台', icon: Laptop },
   form: { label: '形态架构', icon: Box },

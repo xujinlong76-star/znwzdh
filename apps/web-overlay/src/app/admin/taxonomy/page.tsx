@@ -25,6 +25,7 @@ import {
   SlidersHorizontal,
   Layers,
   Copy,
+  type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,7 +60,7 @@ interface CategoryOption {
   slug?: string | null
 }
 
-const KIND_META: Record<TaxonomyProposal['kind'], { label: string; icon: any; color: string; bg: string }> = {
+const KIND_META: Record<TaxonomyProposal['kind'], { label: string; icon: LucideIcon; color: string; bg: string }> = {
   tag_consolidation: {
     label: '标签冗余收敛',
     icon: Tag,

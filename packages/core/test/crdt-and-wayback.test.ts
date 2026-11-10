@@ -115,6 +115,25 @@ describe('坏链自愈与时间机器历史镜像回溯 (Wayback Resolver Engine
     expect(clean).toBe('https://example.com/docs?key=value')
   })
 
+  it('脏输入不抛异常，且解析失败一律返回空串（保护分支必须可达）', () => {
+    // 原实现 catch 分支返回 url.trim()，导致所有调用方的 `if (!clean)` 保护失效：
+    // "https://" 这类脏输入会得到一个非空的"清洗后 URL"，被当成合法地址继续使用。
+    // 2026-11-10 改为返回空串，这条测试钉住新语义。
+    expect(normalizeTargetUrl('https://')).toBe('')
+    expect(normalizeTargetUrl(':::')).toBe('')
+    expect(normalizeTargetUrl('   ')).toBe('')
+    expect(normalizeTargetUrl('')).toBe('')
+  })
+
+  it('解析失败时，两个 Wayback 链接构造函数返回空串而不是拼脏 URL', () => {
+    expect(buildWaybackSnapshotUrl('https://')).toBe('')
+    expect(buildWaybackSaveUrl('https://')).toBe('')
+  })
+
+  it('无协议头的输入会补成 https', () => {
+    expect(normalizeTargetUrl('example.com/x')).toBe('https://example.com/x')
+  })
+
   it('构造准确的 Wayback Machine 历史快照与存档 URL', () => {
     const target = 'https://news.ycombinator.com'
     const snapshotDefault = buildWaybackSnapshotUrl(target)

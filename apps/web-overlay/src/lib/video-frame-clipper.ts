@@ -1,3 +1,5 @@
+import { getBrowserStorage } from '@/lib/browser-storage'
+
 export interface VideoStudyNote {
   id: string
   videoId: string
@@ -11,12 +13,6 @@ export interface VideoStudyNote {
 }
 
 const NOTES_STORAGE_KEY = 'devops_video_study_notes_v1'
-
-function getStorage(): Storage | null {
-  if (typeof window !== 'undefined' && window.localStorage) return window.localStorage
-  if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) return (globalThis as any).localStorage
-  return null
-}
 
 /**
  * Captures the current frame of an HTMLVideoElement into a PNG DataURL.
@@ -86,7 +82,7 @@ export function extractCodeFromOCR(ocrRaw: string): { codeSnippet?: string; plai
  * Saves a study note into persistent storage.
  */
 export function saveStudyNote(note: VideoStudyNote): void {
-  const storage = getStorage()
+  const storage = getBrowserStorage()
   if (!storage) return
 
   try {
@@ -110,7 +106,7 @@ export function saveStudyNote(note: VideoStudyNote): void {
  * Retrieves all notes, optionally filtered by videoId.
  */
 export function listStudyNotes(videoId?: string): VideoStudyNote[] {
-  const storage = getStorage()
+  const storage = getBrowserStorage()
   if (!storage) return []
 
   try {
@@ -130,7 +126,7 @@ export function listStudyNotes(videoId?: string): VideoStudyNote[] {
  * Deletes a note by ID.
  */
 export function deleteStudyNote(noteId: string): void {
-  const storage = getStorage()
+  const storage = getBrowserStorage()
   if (!storage) return
 
   try {

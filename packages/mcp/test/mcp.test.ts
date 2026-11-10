@@ -781,6 +781,48 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     expect(body.recoveryUrl).toContain("web.archive.org/web");
     expect(body.saveUrl).toContain("web.archive.org/save");
   });
+
+  it("resolve_wayback：无法解析的网址返回 isError（保护分支现在真的可达了）", async () => {
+    // 2026-11-10 修复：normalizeTargetUrl 的 catch 曾返回 url.trim()，
+    // 导致 "https://" 这类脏输入得到一个非空结果，"无效的网址"分支几乎不可达。
+    // 改为返回空串后，这条保护才对所有解析失败输入生效。
+    for (const bad of ["", "https://", ":::"]) {
+      const res = await handlers.resolve_wayback({ url: bad }, READONLY)
+      expect(res.isError).toBe(true)
+      expect(text(res)).toContain("无效的网址")
+    }
+  })
+
+  it("resolve_wayback：已收录站点会用库里的 url 归一化，而不是传进来的原始串", async () => {
+    // 建一个站点，再用它的 id 当 url 传入 —— 命中 existing 分支后 targetUrl 应变成库里的 url
+    const cat = await ctx.repo.createCategory({ id: "cat-wb", title: "Wayback 测试" })
+    const site = await ctx.repo.createSite({
+      url: "https://wayback-target.example.com/page",
+      title: "Wayback 目标",
+      description: "",
+      categoryId: cat.id,
+      tags: [],
+      status: "active",
+      enabled: true,
+      sort: 0,
+      iconKey: null,
+    } as any)
+    const res = await handlers.resolve_wayback({ url: site.id }, READONLY)
+    const body = payload(res)
+    expect(body.targetUrl).toBe("https://wayback-target.example.com/page")
+  })
+
+  it("get_alternatives：目标站点不存在时返回 isError", async () => {
+    const res = await handlers.get_alternatives({ idOrUrl: "no-such-site-xyz" }, READONLY)
+    expect(res.isError).toBe(true)
+    expect(text(res)).toContain("未找到目标站点")
+  })
+
+  it("discovery 的两个工具都要求 read 权限", async () => {
+    const NONE = { actor: "mcp:none", scopes: [] as any[], has: () => false }
+    await expect(handlers.get_alternatives({ idOrUrl: "x" }, NONE)).rejects.toThrow(/权限/)
+    await expect(handlers.resolve_wayback({ url: "https://x.example.com" }, NONE)).rejects.toThrow(/权限/)
+  })
 });
 
 describe("插件市场工具", () => {
@@ -855,6 +897,29 @@ describe("插件市场工具", () => {
     expect(res.isError).toBe(true);
     expect(text(res)).toContain("不可安装");
   });
+
+  it("update_plugin：只读 token 被权限拦下（写工具硬边界）", async () => {
+    await expect(
+      handlers.update_plugin({ slug: publishedSlug, manifest: makeManifest("x", "https://x.example.com") }, READONLY),
+    ).rejects.toThrow(/权限/)
+  })
+
+  it("update_plugin：清单校验失败时返回 isError 并给出原因，而不是抛异常", async () => {
+    // 缺 version 的清单必然校验失败；断言的是「失败被转成 isError 结果」这条分支
+    const bad = { kind: "site-pack", name: "坏清单", payload: { sites: [] } }
+    const res = await handlers.update_plugin({ slug: publishedSlug, manifest: bad }, FULL)
+    expect(res.isError).toBe(true)
+    expect(text(res)).toContain("校验失败")
+  })
+
+  it("update_plugin：插件不存在时返回 isError", async () => {
+    const res = await handlers.update_plugin(
+      { slug: "no-such-plugin-xyz", manifest: makeManifest("x", "https://x.example.com") },
+      FULL,
+    )
+    expect(res.isError).toBe(true)
+    expect(text(res)).toContain("不存在")
+  })
 });
 
 describe("用户域只读工具（B2：收藏、搜索历史、画像）", () => {

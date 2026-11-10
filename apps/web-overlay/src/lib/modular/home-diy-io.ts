@@ -52,6 +52,19 @@ function summarizeDiyCounts(config: any): string {
  * 把清洗台账翻成给用户看的一句话。
  * 「全量还原」是无法验证的断言：清洗本身带白名单和上限，只有 dropped===0 且 notes 为空才谈得上全量。
  */
+/**
+ * 从 catch 的 unknown 里安全取出可读消息。
+ *
+ * 为什么需要：catch (e: any) 会让 e.message 绕过类型检查，而 any 是显式
+ * 类型债务（本仓库有棘轮守卫盯着）。改成 unknown 后直接访问 .message 会编译失败，
+ * 所以统一走这个收窄助手 —— 它同时兜住「抛出的是字符串」「抛出的是 null」这类真实情况。
+ */
+function errorMessageOf(e: unknown, fallback: string): string {
+  if (e instanceof Error && e.message) return e.message
+  if (typeof e === "string" && e) return e
+  return fallback
+}
+
 export function describeDiyRestoreReport(config: any, report: { dropped: number; notes: string[] }): string {
   const counts = summarizeDiyCounts(config)
   if (!report.notes.length) return `${counts}，未发现被丢弃的内容`
@@ -87,10 +100,10 @@ export function importDIYConfig(
       notes: res.notes,
       summary,
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     return {
       ok: false,
-      message: `JSON 解析失败: ${e.message || '格式错误'}`,
+      message: `JSON 解析失败: ${errorMessageOf(e, '格式错误')}`,
       dropped: 0,
       notes: [],
       code: 'invalid_json',
@@ -114,10 +127,10 @@ export async function importEncryptedDIYConfig(
   let parsed: any
   try {
     parsed = JSON.parse(encryptedJsonStr)
-  } catch (e: any) {
+  } catch (e: unknown) {
     return {
       ok: false,
-      message: `JSON 解析失败: ${e.message || '格式错误'}`,
+      message: `JSON 解析失败: ${errorMessageOf(e, '格式错误')}`,
       dropped: 0,
       notes: [],
       code: 'invalid_json',
@@ -141,10 +154,10 @@ export async function importEncryptedDIYConfig(
       notes: res.notes,
       summary,
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     return {
       ok: false,
-      message: e.message || '解密失败：主密码不匹配或密文已被篡改',
+      message: errorMessageOf(e, '解密失败：主密码不匹配或密文已被篡改'),
       dropped: 0,
       notes: [],
       code: 'decrypt_failed',

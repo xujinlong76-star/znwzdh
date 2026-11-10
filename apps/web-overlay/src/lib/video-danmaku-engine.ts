@@ -1,4 +1,5 @@
 import type { VideoDanmakuItem } from '@/types/navigation'
+import { getBrowserStorage } from '@/lib/browser-storage'
 
 export interface DanmakuRenderConfig {
   fontSize: number
@@ -17,12 +18,6 @@ export interface ActiveDanmakuTrack {
 }
 
 const DANMAKU_STORAGE_PREFIX = 'devops_video_danmaku_v1_'
-
-function getStorage(): Storage | null {
-  if (typeof window !== 'undefined' && window.localStorage) return window.localStorage
-  if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) return (globalThis as any).localStorage
-  return null
-}
 
 /**
  * High-performance Canvas Danmaku Engine with track allocation and collision avoidance.
@@ -153,7 +148,7 @@ export class DanmakuEngine {
  * Storage persistence for user danmaku comments.
  */
 export function getStoredDanmaku(videoId: string): VideoDanmakuItem[] {
-  const storage = getStorage()
+  const storage = getBrowserStorage()
   if (!storage) return []
 
   try {
@@ -170,7 +165,7 @@ export function saveDanmakuItem(videoId: string, item: Omit<VideoDanmakuItem, 'i
     id: `dmk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
   }
 
-  const storage = getStorage()
+  const storage = getBrowserStorage()
   if (storage) {
     try {
       const list = getStoredDanmaku(videoId)

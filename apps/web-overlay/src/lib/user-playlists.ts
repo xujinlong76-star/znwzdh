@@ -1,4 +1,5 @@
 import type { NavigationSubItem } from '@/types/navigation'
+import { getBrowserStorage } from '@/lib/browser-storage'
 
 export interface UserPlaylist {
   id: string
@@ -19,16 +20,6 @@ let _cachedPlaylists: UserPlaylist[] | null = null;
 
 export function invalidatePlaylistsCache(): void {
   _cachedPlaylists = null;
-}
-
-function getStorage(): Storage | null {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    return window.localStorage
-  }
-  if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) {
-    return (globalThis as any).localStorage
-  }
-  return null
 }
 
 function notifySubscribers(): void {
@@ -66,7 +57,7 @@ function initializeDefaultPlaylists(): UserPlaylist[] {
  */
 export function getUserPlaylists(): UserPlaylist[] {
   if (_cachedPlaylists) return _cachedPlaylists
-  const storage = getStorage()
+  const storage = getBrowserStorage()
   if (!storage) return initializeDefaultPlaylists()
 
   try {
@@ -98,7 +89,7 @@ export function getUserPlaylists(): UserPlaylist[] {
 
 function savePlaylists(lists: UserPlaylist[]): void {
   _cachedPlaylists = lists
-  const storage = getStorage()
+  const storage = getBrowserStorage()
   if (!storage) return
   try {
     storage.setItem(STORAGE_KEY, JSON.stringify(lists))

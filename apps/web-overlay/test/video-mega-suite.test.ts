@@ -246,7 +246,7 @@ describe('6. Google Video SEO, Sitemap & RSS Enclosure Feeds', () => {
     expect(schema['@type']).toBe('VideoObject')
     expect(schema.name).toBe('Prometheus 生产监控报警实战')
     expect(schema.duration).toBe('PT25M40S')
-    expect(schema.author?.name).toBe('云原生架构师')
+    expect((schema.author as { name?: string } | undefined)?.name).toBe('云原生架构师')
     expect(schema.embedUrl).toContain('bilibili.com')
   })
 

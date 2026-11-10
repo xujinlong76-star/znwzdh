@@ -41,7 +41,20 @@ export function normalizeTargetUrl(url: string): string {
     }
     return result
   } catch {
-    return url.trim()
+    /**
+     * 解析失败返回空串，**不能返回原始输入**。
+     *
+     * 原实现返回 `url.trim()`，后果是所有调用方的 `if (!clean) …` 保护全部失效：
+     * 任何脏输入（如 `"https://"`、`":::"`）都得到一个非空的"清洗后 URL"，
+     * 于是被当成合法地址继续拼进 archive.org 请求或快照链接。
+     *
+     * 实测：`normalizeTargetUrl("https://")` 曾返回 `"https://"`，
+     * 让 `discovery.ts` 的「无效的网址」分支几乎不可达。
+     *
+     * 改为空串后，调用方的既有判断（`if (!clean) return ''` /
+     * `if (!cleanUrl) return fail(...)`）才真正生效。
+     */
+    return ''
   }
 }
 

@@ -70,9 +70,12 @@ export async function probeSiteLatency(
       label,
       testedAt,
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(timer)
-    const isTimeout = err?.name === 'AbortError' || err?.message?.includes('aborted')
+    // unknown 收窄：抛出值不一定是 Error（可能是字符串/null），属性访问必须先判定
+    const errName = err instanceof Error ? err.name : undefined
+    const errMsg = err instanceof Error ? err.message : typeof err === "string" ? err : ""
+    const isTimeout = errName === 'AbortError' || errMsg.includes('aborted')
     return {
       reachable: false,
       quality: 'unreachable',

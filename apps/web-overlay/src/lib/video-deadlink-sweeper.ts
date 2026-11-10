@@ -1,6 +1,7 @@
 import type { NavigationData, NavigationSubItem, VideoPlatformType, VideoReplacementRecord } from '@/types/navigation'
 import { videoLog } from './video-log'
 import { recordSweepRun } from '@/lib/video-harvest-metrics'
+import { getBrowserStorage } from '@/lib/browser-storage'
 
 export const PRUNE_AFTER_CONSECUTIVE_FAILURES = 2
 
@@ -39,12 +40,6 @@ export interface SweepReport {
 }
 
 const SWEEP_STORAGE_KEY = 'devops_video_sweep_report_v1'
-
-function getStorage(): Storage | null {
-  if (typeof window !== 'undefined' && window.localStorage) return window.localStorage
-  if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) return (globalThis as any).localStorage
-  return null
-}
 
 /**
  * Checks single video embed/metadata status.
@@ -420,7 +415,7 @@ export async function sweepVideoHealth(
   }
 
   try {
-    const storage = getStorage()
+    const storage = getBrowserStorage()
     if (storage) {
       storage.setItem(SWEEP_STORAGE_KEY, JSON.stringify(report))
     }
@@ -444,7 +439,7 @@ export async function sweepVideoHealth(
  */
 export function getLatestSweepReport(): SweepReport | null {
   try {
-    const storage = getStorage()
+    const storage = getBrowserStorage()
     if (!storage) return null
     const raw = storage.getItem(SWEEP_STORAGE_KEY)
     return raw ? JSON.parse(raw) : null

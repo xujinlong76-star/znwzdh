@@ -1,4 +1,5 @@
 import type { VideoChapter } from '@/types/navigation'
+import { getBrowserStorage } from '@/lib/browser-storage'
 
 export interface VideoAISummary {
   videoId: string
@@ -12,16 +13,6 @@ export interface VideoAISummary {
 
 const SUMMARY_STORAGE_KEY = 'devops_video_ai_summaries_v1'
 const memoryCache = new Map<string, VideoAISummary>()
-
-function getStorage(): Storage | null {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    return window.localStorage
-  }
-  if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) {
-    return (globalThis as any).localStorage
-  }
-  return null
-}
 
 /**
  * Converts a timestamp string (HH:MM:SS or MM:SS) to total seconds.
@@ -164,7 +155,7 @@ export function getCachedAISummary(videoId: string): VideoAISummary | null {
   }
 
   try {
-    const storage = getStorage()
+    const storage = getBrowserStorage()
     if (!storage) return null
     const raw = storage.getItem(SUMMARY_STORAGE_KEY)
     if (!raw) return null
@@ -186,7 +177,7 @@ export function getCachedAISummary(videoId: string): VideoAISummary | null {
 export function saveAISummaryToCache(summary: VideoAISummary): void {
   memoryCache.set(summary.videoId, summary)
   try {
-    const storage = getStorage()
+    const storage = getBrowserStorage()
     if (!storage) return
     const raw = storage.getItem(SUMMARY_STORAGE_KEY)
     const dict: Record<string, VideoAISummary> = raw ? JSON.parse(raw) : {}

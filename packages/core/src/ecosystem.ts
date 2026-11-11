@@ -214,11 +214,21 @@ interface EcosystemTarget {
   data: EnhancedSiteData;
 }
 
+/**
+ * 已整体迁域名的产品：旧域名实测 301 跳到新域名，两边是同一个站。
+ * 归一时把旧域名并到新域名，否则用户手里 notion.so 形态的书签 / 网址包里
+ * notion.so 形态的条目永远匹配不到以 notion.com 为键的策划数据。
+ */
+const ECOSYSTEM_HOST_ALIASES: Record<string, string> = {
+  "notion.so": "notion.com",
+};
+
 function parseEcosystemUrl(raw: string): { host: string; path: string } | null {
   try {
     const parsed = new URL(raw);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const bareHost = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const host = ECOSYSTEM_HOST_ALIASES[bareHost] ?? bareHost;
     const path = parsed.pathname.replace(/\/+$/, "") || "/";
     return { host, path: path.toLowerCase() };
   } catch {

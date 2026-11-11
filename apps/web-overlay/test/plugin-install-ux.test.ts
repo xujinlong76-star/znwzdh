@@ -131,3 +131,23 @@ describe("卸载回执不谎报清理范围", () => {
     expect(modal).not.toContain("`已清理关联站点${res.sitesRemoved")
   })
 })
+
+describe("插件卡片：父级刷新后本地安装态必须跟 prop 走", () => {
+  const card = overlaySource("src/components/plugins/plugin-card.tsx")
+  const board = overlaySource("src/components/plugin-market-board.tsx")
+
+  it("弹窗安装成功后父级重取列表，卡片 installed/starred 随 prop 同步（否则按钮一直停在「安装」）", () => {
+    // 弹窗成功回调是列表重取：board 把 onSuccess 接到 reload 上
+    expect(board).toContain("onSuccess={reload}")
+    // 卡片必须有从 prop 同步本地态的 effect，不能只靠 useState 初值
+    expect(card).toContain("useEffect")
+    expect(card).toContain("setInstalled(Boolean(plugin.installed))")
+    expect(card).toContain("setStarred(Boolean(plugin.starred))")
+    expect(card).toContain("setStarCount(plugin.starCount || 0)")
+  })
+
+  it("同步 effect 只监听 prop 变化，不干扰卡片自身的乐观更新", () => {
+    expect(card).toContain("[plugin.installed]")
+    expect(card).toContain("[plugin.starred, plugin.starCount]")
+  })
+})

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   type HubPluginItem,
@@ -66,6 +66,18 @@ export function PluginCard({
 
   // D1 更新链路：本地升级成功后不等父级刷新即切换为「已安装」
   const [upgradedTo, setUpgradedTo] = useState<string | null>(null)
+
+  // 父级数据刷新后 prop 会变（如弹窗安装成功后列表重取），本地态必须跟上：
+  // 同一 key 的卡片实例不会因 prop 变化重建，useState 只取初值，装完按钮会
+  // 一直停在「安装」上，用户可能重复点安装。星标/星数同理（父级重取后回落）。
+  // 乐观更新不受影响：本地先改、随后 onStatusChange 补丁回来的 prop 是同一值。
+  useEffect(() => {
+    setInstalled(Boolean(plugin.installed))
+  }, [plugin.installed])
+  useEffect(() => {
+    setStarred(Boolean(plugin.starred))
+    setStarCount(plugin.starCount || 0)
+  }, [plugin.starred, plugin.starCount])
   const needsUpdate =
     installed &&
     upgradedTo !== plugin.version &&

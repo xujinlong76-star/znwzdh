@@ -153,7 +153,7 @@ export default function LinkHealthPage() {
 
       {error && (
         <Card className="border-destructive/50">
-          <CardContent className="flex items-center gap-2 py-4 text-sm text-destructive">
+          <CardContent className="flex items-center gap-2 py-4 text-sm text-destructive-text">
             <AlertTriangle className="h-4 w-4" aria-hidden />
             {error}
           </CardContent>
@@ -180,7 +180,7 @@ export default function LinkHealthPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>已确认失效</CardDescription>
-              <CardTitle className="text-2xl text-destructive">{summary.brokenCount}</CardTitle>
+              <CardTitle className="text-2xl text-destructive-text">{summary.brokenCount}</CardTitle>
             </CardHeader>
           </Card>
           <Card>

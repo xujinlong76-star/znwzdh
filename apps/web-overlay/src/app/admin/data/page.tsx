@@ -95,7 +95,7 @@ function formatDate(d: Date): string {
 const STATUS_COPY: Record<SeedStatus, { label: string; className: string }> = {
   seeded: { label: '已灌入', className: 'text-emerald-700 dark:text-emerald-500' },
   'below-baseline': { label: '低于基线', className: 'text-amber-700 dark:text-amber-500' },
-  empty: { label: '未灌入', className: 'text-destructive' },
+  empty: { label: '未灌入', className: 'text-destructive-text' },
 }
 
 function SeedBadge({ status }: { status: SeedStatus }) {
@@ -116,7 +116,7 @@ const BASELINE_STATUS_META: Record<BaselineStatus, { label: string; className: s
   },
   skipped_existing: {
     label: '已有数据，已跳过（正常）',
-    className: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400',
+    className: 'bg-zinc-500/10 text-zinc-700 dark:text-zinc-400',
   },
   missing_file: {
     label: '基线文件缺失',
@@ -306,7 +306,7 @@ export default function DataManagementPage() {
                   <Stat label="库大小" value={formatBytes(overview.storage.dbSizeBytes)} />
                 </div>
                 {sitesStatus === 'empty' && (
-                  <p className="text-sm text-destructive" role="alert">
+                  <p className="text-sm text-destructive-text" role="alert">
                     中枢站点是 0：部署时漏了整包导入。前台目录看着正常，但 AI 找站与走中枢的功能都没有数据。
                     用下面的「冷备恢复」补一份，或重新导入整包。
                   </p>
@@ -357,7 +357,7 @@ export default function DataManagementPage() {
                   <Stat label="数据来源" value={videos.source === 'db' ? '关系表' : 'KV 文档'} />
                 </div>
                 {videosStatus === 'empty' && (
-                  <p className="text-sm text-destructive" role="alert">
+                  <p className="text-sm text-destructive-text" role="alert">
                     视频库是空的：部署时漏了视频整包导入，视频相关功能没有数据。
                     用「冷备恢复」从备份包补齐。
                   </p>
@@ -440,7 +440,7 @@ export default function DataManagementPage() {
                       )}
                     </p>
                     {part.error && (
-                      <p className="mt-1 text-xs text-destructive">{part.error}</p>
+                      <p className="mt-1 text-xs text-destructive-text">{part.error}</p>
                     )}
                   </div>
                 ))}
@@ -475,7 +475,7 @@ export default function DataManagementPage() {
             </Button>
           </div>
           {exportError && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm text-destructive-text" role="alert">
               冷备导出失败：{exportError}
             </p>
           )}

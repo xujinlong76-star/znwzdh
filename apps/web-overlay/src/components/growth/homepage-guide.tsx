@@ -88,7 +88,7 @@ export function HomepageGuideCard({ compact = false }: { compact?: boolean }) {
             <Zap className="h-3 w-3" aria-hidden /> 经验加速 ×{BOOST_MULTIPLIER} 进行中
           </span>
         ) : (
-          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
             设置好可领 +{HOMEPAGE_CLAIM_XP} 经验并开启 ×{BOOST_MULTIPLIER} 加速
           </span>
         )}

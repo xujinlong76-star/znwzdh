@@ -18,6 +18,19 @@
  *   - 每片的条数必须与 index 登记的 itemCount 相等、分类 id 对得上；
  *   - 分片缺失（中枢从未派生过、或被人为删除）→ 回落。
  *
+ * 降级信号 degraded（2026-11-11 验收实测后立的纪律）：分片校验不过回落时，
+ * 整包读在静态生成上下文里读的是 no-store 豁免路径、取不到就会退到构建期
+ * 基线——基线不含刚写入的新条目。若详情页据此把新条目定性为 404，404 会被
+ * ISR 按路由 revalidate（300 秒）缓存，把一次秒级的缓存版本撕裂放大成数
+ * 分钟不可见。故 loadVideoCatalog 明确标出 degraded：数据来自回落/基线
+ * 替代时为 true；调用方（详情页）在 degraded 数据里查无此条时不得定性
+ * 404，须抛错让本次生成不落缓存（错误响应不进 ISR 缓存），数据恢复后
+ * 下个请求即成功。撕裂的成因是带外写（直调中枢 PUT / CLI 导入）后 web
+ * 侧各文档 Data Cache 条目按各自 60 秒窗口独立过期；站内写路径
+ * （commitFile）在写后逐片失效标签，不产生撕裂。静态生成上下文内无法
+ * 合法收敛（no-store 直读会被 Next 以 Dynamic server usage 拒绝并触发
+ * 存储层连接冷静期），故不在读侧硬凑，以「不提交错误定性」兜底。
+ *
  * 灰度/回滚开关 NAVHUB_VIDEOS_READ_MODE：
  *   - 未设置或 shard → 分片读（默认）；
  *   - doc → 整包读（= 本模块上线前的行为，秒级回滚位）；
@@ -25,7 +38,7 @@
  *     revalidateFromEnv 的纪律一致）。
  */
 
-import { getFileContent } from "@/lib/github";
+import { getFileContent, getFileContentWithStatus } from "@/lib/github";
 import baselineVideos from "@/navsphere/content/videos.json";
 import {
   VIDEOS_DOC_PATH,
@@ -137,11 +150,18 @@ export interface VideoCatalogLoad {
   data: NavigationData;
   mode: VideoReadMode;
   sourceVersion: number | null;
+  /**
+   * 数据是否处于降级态：分片不可用回落、或整包读拿到的是基线替代。
+   * 降级数据只能证明「条目在场」（命中即真），不能证明「条目不存在」——
+   * 详情页据此查无此条时不得定性 404（见文件头纪律）。
+   */
+  degraded: boolean;
 }
 
 async function loadWholeDoc(): Promise<VideoCatalogLoad> {
-  const data = (await getFileContent(VIDEOS_DOC_PATH)) as NavigationData;
-  return { data, mode: "doc", sourceVersion: null };
+  const { data, degraded } = await getFileContentWithStatus<NavigationData>(VIDEOS_DOC_PATH);
+  const usable = !!data && Array.isArray((data as NavigationData).navigationItems);
+  return { data, mode: "doc", sourceVersion: null, degraded: degraded || !usable };
 }
 
 function fallback(reason: string): Promise<VideoCatalogLoad> {
@@ -156,15 +176,17 @@ function fallback(reason: string): Promise<VideoCatalogLoad> {
       data: baselineVideos as unknown as NavigationData,
       mode: "doc",
       sourceVersion: null,
+      degraded: true,
     });
   }
   console.info("[videos-read] 回落整包读：" + reason);
-  return loadWholeDoc();
+  return loadWholeDoc().then((load) => ({ ...load, degraded: true }));
 }
 
 /**
  * 读整份视频目录。shard 模式下拼装结果与整包读逐字等值（分片里存的是
- * 分类对象本体，replacementHistory 随 index 走）；任何校验不过回落整包。
+ * 分类对象本体，replacementHistory 随 index 走）；任何校验不过回落整包
+ * 并标记 degraded。
  */
 export async function loadVideoCatalog(): Promise<VideoCatalogLoad> {
   if (videoReadMode() === "doc") return loadWholeDoc();
@@ -191,6 +213,7 @@ export async function loadVideoCatalog(): Promise<VideoCatalogLoad> {
     },
     mode: "shard",
     sourceVersion: index.sourceVersion,
+    degraded: false,
   };
 }
 
@@ -204,7 +227,8 @@ export interface VideoCategoryHit {
  *
  * 返回 null 的情形都由调用方回落全量扫描兜底：doc 模式、idmap/索引缺失、
  * 版本撕裂、标识不在映射里（可能是源数据刚更新而分片未跟上，或本来就是
- * 不存在的 id——404 与否由全量扫描按原语义裁定）。
+ * 不存在的 id——404 与否由全量扫描按原语义裁定，全量扫描的数据若是降级
+ * 态则不定性，见 loadVideoCatalog 的 degraded 纪律）。
  */
 export async function loadVideoCategoryByIdentifier(
   identifier: string,

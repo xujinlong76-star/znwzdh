@@ -2,7 +2,8 @@
  * 视频目录分片读路径（VIDEOS_ISR_PLAN 路线 b 的 web 侧）：
  * 起一个真实 node:http 假中枢，按路径供数并记录请求，验证：
  *   1. 分片齐备且版本一致 → 走分片拼装，绝不请求整包 videos.json；
- *   2. 版本撕裂 / 分片缺失 / 条数对不上 / 索引缺失 → 一律回落整包读；
+ *   2. 版本撕裂 / 分片缺失 / 条数对不上 / 索引缺失 → 一律回落整包读，
+ *      且回落结果带 degraded 标记（详情页据此不定性 404）；
  *   3. NAVHUB_VIDEOS_READ_MODE=doc → 直走整包（回滚位）；脏值 → 回 doc；
  *   4. 详情页定位：id / bvid（大小写不敏感）命中单分片；未知标识返回 null。
  */
@@ -129,6 +130,7 @@ describe("loadVideoCatalog", () => {
     seedWholeDoc();
     const load = await loadVideoCatalog();
     expect(load.mode).toBe("shard");
+    expect(load.degraded).toBe(false);
     expect(load.sourceVersion).toBe(VERSION);
     expect(load.data.navigationItems.map((c) => c.title)).toEqual(["分片版·分类A", "分片版·分类B"]);
     expect(load.data.replacementHistory).toEqual([{ note: "hist" }]);
@@ -143,8 +145,22 @@ describe("loadVideoCatalog", () => {
     store.set(videoShardPath("cat-b"), { ...shard, sourceVersion: VERSION - 1 });
     const load = await loadVideoCatalog();
     expect(load.mode).toBe("doc");
+    expect(load.degraded).toBe(true);
     expect(load.data.navigationItems[0].title).toBe("整包版·分类A");
     expect(seenPaths).toContain(VIDEOS_DOC_PATH);
+  });
+
+  it("doc 模式整包可读 → degraded 为 false；中枢无整包（基线替代）→ degraded 为 true", async () => {
+    seedWholeDoc();
+    vi.stubEnv("NAVHUB_VIDEOS_READ_MODE", "doc");
+    const ok = await loadVideoCatalog();
+    expect(ok.mode).toBe("doc");
+    expect(ok.degraded).toBe(false);
+    store.clear();
+    invalidateContentCache();
+    const degraded = await loadVideoCatalog();
+    expect(degraded.mode).toBe("doc");
+    expect(degraded.degraded).toBe(true);
   });
 
   it("某片缺失 → 回落整包", async () => {

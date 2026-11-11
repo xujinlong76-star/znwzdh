@@ -102,12 +102,24 @@ async function loadVideoContext(rawId: string): Promise<MatchedVideoContext | nu
     if (matched) return matched
   }
 
-  const data = (await loadVideoCatalog()).data as NavigationData
+  const load = await loadVideoCatalog()
+  const data = load.data as NavigationData
   const categories = data?.navigationItems || []
 
   for (const cat of categories) {
     const matched = matchInCategory(cat, safeId)
     if (matched) return matched
+  }
+
+  // 数据降级（分片不可用回落、或整包读拿到基线替代）时查无此条不能定性
+  // 404：基线/旧分片可能只是还没收录刚写入的新条目，而 404 会被 ISR 按
+  // revalidate=300 缓存、把秒级数据滞后放大成数分钟不可见。抛错让本次
+  // 生成不落缓存（错误响应不进 ISR 缓存），数据恢复后下个请求即成功。
+  // 纪律全文见 lib/video-catalog-read.ts 文件头的 degraded 说明。
+  if (load.degraded) {
+    throw new Error(
+      '[videos] 目录数据降级期间无法确认条目不存在，延迟定性 404：' + safeId,
+    )
   }
 
   return null

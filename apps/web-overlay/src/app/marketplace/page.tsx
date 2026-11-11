@@ -4,6 +4,10 @@ import { Footer } from '@/components/footer'
 import { hubGet } from '@/lib/server/hub'
 import { PluginMarketBoard } from '@/components/plugin-market-board'
 import {
+  isShortlinkInvalidNotice,
+  SHORTLINK_INVALID_NOTICE,
+} from '@/lib/shortlink-notice'
+import {
   buildMarketplaceQuery,
   DEFAULT_MARKETPLACE_SORT,
   parseMarketplaceFilters,
@@ -91,6 +95,8 @@ function searchToString(sp: Record<string, string | string[] | undefined>): stri
  * 筛选视图不制造可索引的薄 URL：默认市场页可索引，带 q/kind/非默认 sort
  * 的视图一律 noindex,follow + 自指 canonical。canonical 走同一套归一化
  * （默认 sort 不写回），避免 ?sort=trending 与 /marketplace 各自成页。
+ * 短链失效视图（?shortlink=invalid）同样是瞬态、不 noindex 会把它当
+ * 成一个可收录的独立页——它只是 /marketplace 的一种到达方式。
  */
 export async function generateMetadata({
   searchParams,
@@ -99,8 +105,11 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const sp = await searchParams
   const state = parseMarketplaceFilters(searchToString(sp))
+  const shortlinkInvalid = isShortlinkInvalidNotice(sp)
   const filtered =
-    Boolean(state.kind || state.q) || state.sort !== DEFAULT_MARKETPLACE_SORT
+    Boolean(state.kind || state.q) ||
+    state.sort !== DEFAULT_MARKETPLACE_SORT ||
+    shortlinkInvalid
   const canonical = `/marketplace${buildMarketplaceQuery(state)}`
   const title = state.q
     ? `插件市场 · 搜索「${state.q}」`
@@ -127,6 +136,9 @@ export default async function MarketplacePage({
   const sp = await searchParams
   const { kind, q, sort } = parseMarketplaceFilters(searchToString(sp))
   const hasFilter = Boolean(q || kind) || sort !== DEFAULT_MARKETPLACE_SORT
+  // 短链打不开时 /s 处理器 302 到这里（?shortlink=invalid）：以前参数没人读，
+  // 用户被悄悄扔到通用页、没有任何解释。只认处理器实际发出的那一个值。
+  const showShortlinkInvalid = isShortlinkInvalidNotice(sp)
 
   const listQuery = new URLSearchParams()
   if (kind) listQuery.set('kind', kind)
@@ -161,6 +173,20 @@ export default async function MarketplacePage({
   return (
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
+        {showShortlinkInvalid && (
+          <div
+            data-testid="shortlink-invalid-notice"
+            role="alert"
+            className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3"
+          >
+            <div>
+              <p className="text-sm font-medium">{SHORTLINK_INVALID_NOTICE.title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {SHORTLINK_INVALID_NOTICE.body}
+              </p>
+            </div>
+          </div>
+        )}
         <PluginMarketBoard
           initialItems={list ? list.items : null}
           initialTotal={list?.total ?? 0}

@@ -8,13 +8,15 @@
  *  - 路由感知：进分类页记 category_visit（短剧分类额外记 drama_visit），
  *    进搜索结果页记 search；同一路由键一会话只记一次，避免重复渲染刷计数；
  *  - 点开外站链接记 site_open（经验规则里有每日递减，刷不动）；
+ *  - 小猫猫挂件聊天记 ai_chat：挂件只 dispatch navhub:ai-chat-used 事件，
+ *    本组件监听后落账（挂件本身不写成长档案）；
  *  - 捕获 PWA 的 beforeinstallprompt，供「设为首页」引导组件使用。
  * 本组件不渲染任何可见 UI。
  */
 
 import { useEffect, useRef } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { recordDailyVisitOnce, recordGrowthEvent, recordIdleMinute } from '@/lib/growth'
+import { AI_CHAT_USED_EVENT, recordDailyVisitOnce, recordGrowthEvent, recordIdleMinute } from '@/lib/growth'
 
 declare global {
   interface Window {
@@ -54,6 +56,13 @@ export function GrowthTracker() {
     }
     document.addEventListener('click', onClick)
     return () => document.removeEventListener('click', onClick)
+  }, [])
+
+  // 小猫猫挂件聊天桥（A12）：挂件只发事件，落账仍走统一规则
+  useEffect(() => {
+    const onWidgetChat = () => recordGrowthEvent('ai_chat')
+    window.addEventListener(AI_CHAT_USED_EVENT, onWidgetChat)
+    return () => window.removeEventListener(AI_CHAT_USED_EVENT, onWidgetChat)
   }, [])
 
   useEffect(() => {

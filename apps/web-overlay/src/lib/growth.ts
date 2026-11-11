@@ -18,6 +18,13 @@
 
 export const GROWTH_STORAGE_KEY = 'navhub.growth.v1'
 export const GROWTH_UPDATED_EVENT = 'navhub:growth-updated'
+/**
+ * 小猫猫挂件的聊天事件桥（A12）：挂件是独立脚本、按设计只读成长档案，
+ * 它在用户发出一条聊天消息时只 dispatch 这个事件、不写任何成长数据；
+ * 站内 GrowthTracker 监听后走 recordGrowthEvent('ai_chat') 统一落账，
+ * 经验口径（首次/每日/重复递减）与其它功能完全一致。
+ */
+export const AI_CHAT_USED_EVENT = 'navhub:ai-chat-used'
 export const HOMEPAGE_BANNER_DISMISSED_KEY = 'navhub.growth.homepageBannerDismissed.v1'
 
 export type GrowthFeature =

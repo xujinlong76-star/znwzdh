@@ -11,6 +11,22 @@
  *   2. 提示文案要说清「搜的是全部站点」，否则用户会以为只在本页范围内搜；
  *   3. 两个有意例外（/videos 有自己的视频检索；/favorites 是「我的收藏」）
  *      必须保持原样，别顺手加错。
+ *
+ * 「接入形式」口径（2026-11-11 William 拍板）：SearchPalette 本体约 1,500 行，
+ * 静态引入会随首屏下发——实测改回静态引入，/category/[slug]、/hot、专题、
+ * 标签四条路由首屏全部破预算（958>913、999>951、981>914、968>913 KB）。
+ * 因此合法接入有三种，下面的 searchPaletteAccess 逐一严格识别（必须证明
+ * 面板真进了渲染路径，不是提了个名字就算数）：
+ *   a. 静态引入：import { SearchPalette } from '@/components/search-palette'；
+ *   b. 内联按需加载：dynamic(() => import('@/components/search-palette')…)
+ *      （not-found、navigation-toolbar 的范式）；
+ *   c. 全站懒加载包装：从 '@/components/search-palette-lazy' 引入
+ *      SearchPaletteLazy（可 as 别名），包装本体由本文件单独一条用例钉死
+ *      （它必须真按需加载并渲染 SearchPalette 本体，包装若被掏空这里会红）。
+ *
+ * 特别注意 category-board：它是**服务端组件**（文件头没有 'use client'），
+ * Next 硬性禁止在服务端组件里内联 dynamic(..., { ssr: false })，形式 b 对它
+ * 不可用；它只能走 c 的客户端包装。这不是偷懒，别再当 bug 改回静态引入。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -27,7 +43,38 @@ function overlaySource(rel: string): string {
   return readFileSync(hit, "utf8");
 }
 
-/** 有搜索入口的页面（首页 + 404 + 站点列表页），搜索面板就在页面源码里 */
+type PaletteAccess = "static" | "inline-dynamic" | "lazy-wrapper";
+
+/**
+ * 严格识别一个文件以哪种合法形式接入 SearchPalette（口径见文件头）：
+ * 三种形式都要求「引入 + 实际渲染」同时成立，只 import 不渲染、或只在注释
+ * 里提名字都不算。返回 null = 没接（正是本守卫要拦的退化）。
+ */
+function searchPaletteAccess(src: string): PaletteAccess | null {
+  const rendersPalette = /<SearchPalette(?=[\s/>])/.test(src);
+  // a. 静态引入
+  if (/import \{ SearchPalette \} from '@\/components\/search-palette'/.test(src) && rendersPalette) {
+    return "static";
+  }
+  // b. 内联按需加载：必须真是 dynamic(() => import(本体))，裸 import() 不算
+  if (
+    /dynamic\(\s*\(\)\s*=>\s*import\('@\/components\/search-palette'\)/.test(src) &&
+    rendersPalette
+  ) {
+    return "inline-dynamic";
+  }
+  // c. 全站懒加载包装：引入 SearchPaletteLazy（可带 as 别名）且渲染该本地名
+  const lazyImport = src.match(
+    /import \{ SearchPaletteLazy(?: as ([A-Za-z_$][\w$]*))? \} from '@\/components\/search-palette-lazy'/,
+  );
+  if (lazyImport) {
+    const localName = lazyImport[1] ?? "SearchPaletteLazy";
+    if (new RegExp(`<${localName}(?=[\\s/>])`).test(src)) return "lazy-wrapper";
+  }
+  return null;
+}
+
+/** 有搜索入口的页面（工具栏 + 404 + 分类 hub），面板接入形式见文件头口径 */
 const PAGES_WITH_SEARCH = [
   "src/components/navigation-toolbar.tsx",
   "src/app/not-found.tsx",
@@ -61,19 +108,29 @@ const SITE_LIST_PAGES = [
 describe("站点列表页必须有搜索入口", () => {
   it.each(PAGES_WITH_SEARCH)("%s 渲染 SearchPalette", (rel) => {
     const src = overlaySource(rel);
-    // 允许按需加载（not-found 边界在每条路由的初始树里，见 not-found.test.ts）
+    // 接入形式不限（静态 / 内联按需 / 懒加载包装，见文件头），但必须真接进渲染路径
+    expect(searchPaletteAccess(src)).not.toBeNull();
+  });
+
+  it("懒加载包装 search-palette-lazy 本体是真的：按需加载并渲染 SearchPalette", () => {
+    // 形式 c 的前提：包装若哪天被掏空（比如只剩占位 div），所有走包装的页面
+    // 会一起丢搜索，所以包装本体单独钉死，不许它变成空壳。
+    const src = overlaySource("src/components/search-palette-lazy.tsx");
+    expect(src).toContain("'use client'");
     expect(src).toMatch(
-      /import\('@\/components\/search-palette'\)|import \{ SearchPalette \} from '@\/components\/search-palette'/,
+      /dynamic\(\s*\(\)\s*=>\s*import\('@\/components\/search-palette'\)\.then\(\(m\) => m\.SearchPalette\)/,
     );
-    expect(src).toMatch(/<SearchPalette/);
+    expect(src).toContain("ssr: false");
+    expect(src).toContain("export function SearchPaletteLazy");
+    expect(src).toMatch(/<SearchPalette \{\.\.\.props\} \/>/);
   });
 
   it.each(ISLAND_SEARCH_PAGES)("$page 经客户端岛 $island 提供搜索", ({ page, island, marker }) => {
     const shell = overlaySource(page);
     const board = overlaySource(island);
     expect(shell).toContain(marker);
-    expect(board).toContain("import { SearchPalette } from '@/components/search-palette'");
-    expect(board).toMatch(/<SearchPalette/);
+    // 岛的接入形式同样认三种合法形式（口径见文件头），功能不变、形式不锁死
+    expect(searchPaletteAccess(board)).not.toBeNull();
   });
 
   it.each(SITE_LIST_PAGES)("%s 的提示文案要说清「搜的是全部站点」", (rel) => {

@@ -1,0 +1,1467 @@
+{
+ "chatgpt.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与 Plus/Pro 付费档",
+  "title": "ChatGPT"
+ },
+ "chat.deepseek.com": {
+  "pricing": "free",
+  "evidence": "官方聊天服务免费开放，API 另按量计费",
+  "title": "DeepSeek"
+ },
+ "claude.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与 Pro/Max 付费档",
+  "title": "Claude"
+ },
+ "kimi.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与会员付费档",
+  "title": "Kimi"
+ },
+ "qianwen.aliyun.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "通义千问"
+ },
+ "doubao.com": {
+  "pricing": "free",
+  "evidence": "官方应用免费使用",
+  "title": "豆包"
+ },
+ "wenxin.baidu.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与会员付费档",
+  "title": "文心一言"
+ },
+ "chatglm.cn": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与会员付费档",
+  "title": "智谱清言"
+ },
+ "xinghuo.xfyun.cn": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与会员付费档",
+  "title": "讯飞星火"
+ },
+ "github.com/cline/cline": {
+  "pricing": "open_source",
+  "evidence": "GitHub 开源仓库",
+  "title": "Cline"
+ },
+ "github.com/features/copilot": {
+  "pricing": "freemium",
+  "evidence": "官网设限量免费层与付费订阅",
+  "title": "GitHub Copilot"
+ },
+ "cursor.com": {
+  "pricing": "freemium",
+  "evidence": "官网设定价页：免费层 + Pro 付费档",
+  "title": "Cursor"
+ },
+ "windsurf.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Windsurf"
+ },
+ "codegeex.cn": {
+  "pricing": "freemium",
+  "evidence": "个人免费、企业版付费",
+  "title": "CodeGeeX"
+ },
+ "trae.cn": {
+  "pricing": "free",
+  "evidence": "官方 AI IDE 免费下载使用",
+  "title": "Trae"
+ },
+ "comate.baidu.com": {
+  "pricing": "freemium",
+  "evidence": "个人版免费、企业版付费",
+  "title": "Baidu Comate"
+ },
+ "lingma.aliyun.com": {
+  "pricing": "freemium",
+  "evidence": "个人版免费、企业版付费",
+  "title": "Tongyi Lingma"
+ },
+ "midjourney.com": {
+  "pricing": "paid",
+  "evidence": "官网仅订阅制，无免费层",
+  "title": "Midjourney"
+ },
+ "openai.com/dall-e-3": {
+  "pricing": "freemium",
+  "evidence": "随 ChatGPT 免费层限量可用，付费档额度更高",
+  "title": "DALL-E 3"
+ },
+ "adobe.com/products/firefly.html": {
+  "pricing": "freemium",
+  "evidence": "官网设免费额度与付费档",
+  "title": "Adobe Firefly"
+ },
+ "canva.com/ai-image-generator": {
+  "pricing": "freemium",
+  "evidence": "Canva 免费层可用，Pro 付费档额度更高",
+  "title": "Canva AI"
+ },
+ "leonardo.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Leonardo AI"
+ },
+ "krea.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Krea"
+ },
+ "deepdreamgenerator.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Deep Dream Generator"
+ },
+ "suno.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Suno"
+ },
+ "capcut.cn": {
+  "pricing": "freemium",
+  "evidence": "基础功能免费 + VIP 付费档",
+  "title": "剪映专业版"
+ },
+ "xfyun.cn": {
+  "pricing": "freemium",
+  "evidence": "开放平台设免费额度，超出按量付费",
+  "title": "讯飞开放平台"
+ },
+ "tianyin.163.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "网易天音"
+ },
+ "github.com/langchain-ai/langgraph": {
+  "pricing": "open_source",
+  "evidence": "GitHub 开源仓库",
+  "title": "LangGraph"
+ },
+ "coze.cn": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Coze"
+ },
+ "dify.ai": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源，GitHub 有开源仓库",
+  "title": "Dify"
+ },
+ "n8n.io": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源工作流工具",
+  "title": "n8n"
+ },
+ "flowiseai.com": {
+  "pricing": "open_source",
+  "evidence": "GitHub 开源仓库",
+  "title": "Flowise"
+ },
+ "apify.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Apify"
+ },
+ "modelscope.cn": {
+  "pricing": "free",
+  "evidence": "模型社区免费下载与使用",
+  "title": "魔搭 ModelScope"
+ },
+ "huggingface.co": {
+  "pricing": "freemium",
+  "evidence": "社区免费 + Pro 付费档",
+  "title": "Hugging Face"
+ },
+ "ollama.com": {
+  "pricing": "open_source",
+  "evidence": "开源本地运行工具（GitHub 仓库）",
+  "title": "Ollama"
+ },
+ "github.com/QwenLM/Qwen2.5": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源大模型",
+  "title": "Qwen 2.5"
+ },
+ "github.com/vllm-project/vllm": {
+  "pricing": "open_source",
+  "evidence": "GitHub 开源仓库",
+  "title": "vLLM"
+ },
+ "paddlepaddle.org.cn": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源深度学习平台",
+  "title": "百度飞桨"
+ },
+ "stability.ai": {
+  "pricing": "freemium",
+  "evidence": "API 设免费额度与付费档",
+  "title": "Stability AI"
+ },
+ "mistral.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Mistral AI"
+ },
+ "llama.com": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源模型、免费商用",
+  "title": "Llama"
+ },
+ "klingai.kuaishou.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费额度与付费档",
+  "title": "可灵AI"
+ },
+ "hailuoai.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费额度与付费档",
+  "title": "海螺视频"
+ },
+ "runway.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Runway"
+ },
+ "jimeng.jianying.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费额度与付费档",
+  "title": "即梦AI"
+ },
+ "pika.art": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Pika"
+ },
+ "lumalabs.ai/dream-machine": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Luma Dream Machine"
+ },
+ "sora.com": {
+  "pricing": "freemium",
+  "evidence": "随 ChatGPT 付费档为主，设限量免费体验",
+  "title": "Sora"
+ },
+ "viggle.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Viggle AI"
+ },
+ "kling.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费额度与付费档",
+  "title": "Kling AI"
+ },
+ "haiper.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Haiper"
+ },
+ "xyq.jianying.com": {
+  "pricing": "freemium",
+  "evidence": "剪映生态免费创作 + 付费额度",
+  "title": "小云雀AI"
+ },
+ "topview.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设定价页：免费试用 + 付费档",
+  "title": "Topview"
+ },
+ "vidu.cn": {
+  "pricing": "freemium",
+  "evidence": "官网设免费额度与付费档",
+  "title": "Vidu"
+ },
+ "registry.npmmirror.com": {
+  "pricing": "free",
+  "evidence": "公共 NPM 镜像，免费使用",
+  "title": "npmmirror"
+ },
+ "npmjs.com": {
+  "pricing": "freemium",
+  "evidence": "公共仓库免费 + 付费组织档",
+  "title": "npm"
+ },
+ "vite.dev": {
+  "pricing": "open_source",
+  "evidence": "开源构建工具（GitHub 仓库）",
+  "title": "Vite"
+ },
+ "rollupjs.org": {
+  "pricing": "open_source",
+  "evidence": "开源打包器（GitHub 仓库）",
+  "title": "Rollup"
+ },
+ "webpack.js.org": {
+  "pricing": "open_source",
+  "evidence": "开源打包器（GitHub 仓库）",
+  "title": "Webpack"
+ },
+ "esbuild.github.io": {
+  "pricing": "open_source",
+  "evidence": "开源编译器（GitHub 仓库）",
+  "title": "esbuild"
+ },
+ "turborepo.dev": {
+  "pricing": "open_source",
+  "evidence": "Turborepo 开源（MIT）",
+  "title": "Turbo"
+ },
+ "storybook.js.org": {
+  "pricing": "open_source",
+  "evidence": "开源组件开发环境（GitHub 仓库）",
+  "title": "Storybook"
+ },
+ "uiverse.io": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源 UI 组件社区",
+  "title": "Uiverse"
+ },
+ "ant.design": {
+  "pricing": "open_source",
+  "evidence": "开源设计系统（MIT）",
+  "title": "Ant Design"
+ },
+ "element-plus.org": {
+  "pricing": "open_source",
+  "evidence": "开源组件库（MIT）",
+  "title": "Element Plus"
+ },
+ "naiveui.com": {
+  "pricing": "open_source",
+  "evidence": "开源组件库（MIT）",
+  "title": "Naive UI"
+ },
+ "mantine.dev": {
+  "pricing": "open_source",
+  "evidence": "开源 UI 库（MIT）",
+  "title": "Mantine"
+ },
+ "ui.shadcn.com": {
+  "pricing": "open_source",
+  "evidence": "开源组件集合（MIT）",
+  "title": "Shadcn/UI"
+ },
+ "radix-ui.com": {
+  "pricing": "open_source",
+  "evidence": "开源 UI 原语（MIT）",
+  "title": "Radix UI"
+ },
+ "chakra-ui.com": {
+  "pricing": "open_source",
+  "evidence": "开源 UI 库（MIT）",
+  "title": "Chakra UI"
+ },
+ "bun.sh": {
+  "pricing": "open_source",
+  "evidence": "开源运行时（MIT）",
+  "title": "Bun"
+ },
+ "nodejs.org": {
+  "pricing": "open_source",
+  "evidence": "开源运行时",
+  "title": "Node.js"
+ },
+ "python.org": {
+  "pricing": "open_source",
+  "evidence": "开源编程语言（PSF 许可）",
+  "title": "Python"
+ },
+ "rust-lang.org": {
+  "pricing": "open_source",
+  "evidence": "开源编程语言",
+  "title": "Rust"
+ },
+ "go.dev": {
+  "pricing": "open_source",
+  "evidence": "开源编程语言（BSD 许可）",
+  "title": "Go"
+ },
+ "fastify.dev": {
+  "pricing": "open_source",
+  "evidence": "开源后端框架（MIT）",
+  "title": "Fastify"
+ },
+ "expressjs.com": {
+  "pricing": "open_source",
+  "evidence": "开源后端框架（MIT）",
+  "title": "Express"
+ },
+ "nestjs.com": {
+  "pricing": "open_source",
+  "evidence": "开源后端框架（MIT）",
+  "title": "NestJS"
+ },
+ "laravel.com": {
+  "pricing": "open_source",
+  "evidence": "开源后端框架（MIT）",
+  "title": "Laravel"
+ },
+ "djangoproject.com": {
+  "pricing": "open_source",
+  "evidence": "开源后端框架（BSD 许可）",
+  "title": "Django"
+ },
+ "spring.io/projects/spring-boot": {
+  "pricing": "open_source",
+  "evidence": "开源后端框架（Apache 许可）",
+  "title": "Spring Boot"
+ },
+ "go-zero.dev": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源微服务框架",
+  "title": "Go Zero"
+ },
+ "orm.drizzle.team": {
+  "pricing": "open_source",
+  "evidence": "开源 ORM（MIT/Apache）",
+  "title": "Drizzle ORM"
+ },
+ "mysql.com": {
+  "pricing": "open_source",
+  "evidence": "开源关系型数据库",
+  "title": "MySQL"
+ },
+ "postgresql.org": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源数据库",
+  "title": "PostgreSQL"
+ },
+ "redis.io": {
+  "pricing": "open_source",
+  "evidence": "开源键值存储",
+  "title": "Redis"
+ },
+ "mongodb.com": {
+  "pricing": "freemium",
+  "evidence": "Atlas 设免费层与付费档",
+  "title": "MongoDB"
+ },
+ "min.io": {
+  "pricing": "open_source",
+  "evidence": "开源对象存储（AGPL）",
+  "title": "MinIO"
+ },
+ "cloud.tencent.com/product/cdb": {
+  "pricing": "paid",
+  "evidence": "云数据库为按量付费服务",
+  "title": "Tencent Cloud Database"
+ },
+ "hub.docker.com": {
+  "pricing": "freemium",
+  "evidence": "公共仓库免费 + 付费档",
+  "title": "Docker Hub"
+ },
+ "kubernetes.io": {
+  "pricing": "open_source",
+  "evidence": "开源容器编排系统",
+  "title": "Kubernetes"
+ },
+ "podman.io": {
+  "pricing": "open_source",
+  "evidence": "开源容器引擎",
+  "title": "Podman"
+ },
+ "helm.sh": {
+  "pricing": "open_source",
+  "evidence": "开源 K8s 包管理器",
+  "title": "Helm"
+ },
+ "docs.docker.com/compose": {
+  "pricing": "open_source",
+  "evidence": "开源多容器编排工具",
+  "title": "Compose"
+ },
+ "kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard": {
+  "pricing": "open_source",
+  "evidence": "K8s 官方开源管理界面",
+  "title": "Kubernetes Dashboard"
+ },
+ "vercel.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层（Hobby）与付费档",
+  "title": "Vercel"
+ },
+ "developer.hashicorp.com/terraform": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源 IaC 工具",
+  "title": "Terraform"
+ },
+ "ansible.com": {
+  "pricing": "open_source",
+  "evidence": "开源自动化工具",
+  "title": "Ansible"
+ },
+ "pulumi.com": {
+  "pricing": "open_source",
+  "evidence": "Pulumi CLI 开源",
+  "title": "Pulumi"
+ },
+ "aliyun.com": {
+  "pricing": "paid",
+  "evidence": "云服务按量付费",
+  "title": "Alibaba Cloud"
+ },
+ "qiniu.com": {
+  "pricing": "freemium",
+  "evidence": "对象存储/CDN 设长期免费额度",
+  "title": "Qiniu Cloud"
+ },
+ "cloud.tencent.com": {
+  "pricing": "paid",
+  "evidence": "云服务按量付费",
+  "title": "腾讯云"
+ },
+ "huaweicloud.com": {
+  "pricing": "paid",
+  "evidence": "云服务按量付费",
+  "title": "华为云"
+ },
+ "cloudflare.com": {
+  "pricing": "freemium",
+  "evidence": "官网设知名免费层与付费档",
+  "title": "Cloudflare"
+ },
+ "aws.amazon.com/waf": {
+  "pricing": "paid",
+  "evidence": "AWS 付费安全服务",
+  "title": "AWS WAF"
+ },
+ "akamai.com": {
+  "pricing": "paid",
+  "evidence": "企业级付费 CDN/安全服务",
+  "title": "Akamai"
+ },
+ "f5.com": {
+  "pricing": "paid",
+  "evidence": "企业级付费流量管理",
+  "title": "F5 Networks"
+ },
+ "imperva.com": {
+  "pricing": "paid",
+  "evidence": "企业级付费 WAF 服务",
+  "title": "Imperva"
+ },
+ "gitee.com": {
+  "pricing": "freemium",
+  "evidence": "托管免费 + 企业付费档",
+  "title": "Gitee 码云"
+ },
+ "github.com": {
+  "pricing": "freemium",
+  "evidence": "托管免费 + 付费档",
+  "title": "GitHub"
+ },
+ "gitlab.com": {
+  "pricing": "freemium",
+  "evidence": "SaaS 免费层 + 付费档，另有开源 CE",
+  "title": "GitLab"
+ },
+ "gitcode.com": {
+  "pricing": "freemium",
+  "evidence": "代码托管免费 + 企业服务",
+  "title": "GitCode"
+ },
+ "coding.net": {
+  "pricing": "freemium",
+  "evidence": "研发平台免费层 + 付费档",
+  "title": "Coding"
+ },
+ "codeup.aliyun.com": {
+  "pricing": "freemium",
+  "evidence": "代码管理免费层 + 企业付费档",
+  "title": "Codeup"
+ },
+ "sourcehut.org": {
+  "pricing": "paid",
+  "evidence": "托管服务为付费制（官方定价页）",
+  "title": "SourceHut"
+ },
+ "gogs.io": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源代码托管",
+  "title": "Gogs"
+ },
+ "bitbucket.org": {
+  "pricing": "freemium",
+  "evidence": "托管免费层 + 付费档",
+  "title": "Bitbucket"
+ },
+ "stackoverflow.com": {
+  "pricing": "free",
+  "evidence": "问答社区免费使用",
+  "title": "Stack Overflow"
+ },
+ "juejin.cn": {
+  "pricing": "free",
+  "evidence": "技术社区免费使用",
+  "title": "掘金"
+ },
+ "csdn.net": {
+  "pricing": "freemium",
+  "evidence": "内容免费 + 会员付费档",
+  "title": "CSDN"
+ },
+ "segmentfault.com": {
+  "pricing": "free",
+  "evidence": "问答社区免费使用",
+  "title": "SegmentFault"
+ },
+ "xie.infoq.cn": {
+  "pricing": "free",
+  "evidence": "开发者社区免费使用",
+  "title": "InfoQ 开发者社区"
+ },
+ "developer.mozilla.org": {
+  "pricing": "free",
+  "evidence": "官方技术文档免费开放",
+  "title": "MDN Web Docs"
+ },
+ "developer.mozilla.org/zh-CN": {
+  "pricing": "free",
+  "evidence": "官方技术文档免费开放",
+  "title": "MDN 中文"
+ },
+ "docs.oracle.com/en/java/javase": {
+  "pricing": "free",
+  "evidence": "官方文档免费开放",
+  "title": "Java 官方文档"
+ },
+ "w3.org/standards": {
+  "pricing": "free",
+  "evidence": "标准文档免费开放浏览",
+  "title": "W3C 标准"
+ },
+ "datatracker.ietf.org": {
+  "pricing": "free",
+  "evidence": "RFC 全文库免费开放",
+  "title": "IETF RFC 搜索"
+ },
+ "nodejs.org/en/docs": {
+  "pricing": "free",
+  "evidence": "官方文档免费开放",
+  "title": "Node.js 文档"
+ },
+ "postgresql.org/docs": {
+  "pricing": "free",
+  "evidence": "官方文档免费开放",
+  "title": "PostgreSQL 文档"
+ },
+ "iso.org/standards.html": {
+  "pricing": "paid",
+  "evidence": "ISO 标准文件付费购买",
+  "title": "ISO/IEC 标准"
+ },
+ "ieeexplore.ieee.org": {
+  "pricing": "paid",
+  "evidence": "论文与标准以订阅/付费下载为主",
+  "title": "IEEE Xplore"
+ },
+ "roadmap.sh": {
+  "pricing": "free",
+  "evidence": "学习路线图免费开放",
+  "title": "roadmap.sh"
+ },
+ "imooc.com": {
+  "pricing": "freemium",
+  "evidence": "免费课 + 付费课并存",
+  "title": "慕课网"
+ },
+ "time.geekbang.org": {
+  "pricing": "paid",
+  "evidence": "专栏课程付费制",
+  "title": "极客时间"
+ },
+ "leetcode.cn": {
+  "pricing": "freemium",
+  "evidence": "题库免费 + 会员付费档",
+  "title": "力扣 LeetCode"
+ },
+ "nowcoder.com": {
+  "pricing": "freemium",
+  "evidence": "题库免费 + 付费服务",
+  "title": "牛客网"
+ },
+ "luogu.com.cn": {
+  "pricing": "freemium",
+  "evidence": "评测免费 + 付费课程",
+  "title": "洛谷"
+ },
+ "codeforces.com": {
+  "pricing": "free",
+  "evidence": "竞赛平台免费使用",
+  "title": "Codeforces"
+ },
+ "atcoder.jp": {
+  "pricing": "free",
+  "evidence": "竞赛平台免费使用",
+  "title": "AtCoder"
+ },
+ "lintcode.com": {
+  "pricing": "freemium",
+  "evidence": "题库免费层 + 付费档",
+  "title": "LintCode"
+ },
+ "leetcode.com": {
+  "pricing": "freemium",
+  "evidence": "题库免费 + 会员付费档",
+  "title": "LeetCode国际版"
+ },
+ "dribbble.com": {
+  "pricing": "freemium",
+  "evidence": "社区免费 + Pro 付费档",
+  "title": "Dribbble"
+ },
+ "behance.net": {
+  "pricing": "free",
+  "evidence": "创意社区免费使用",
+  "title": "Behance"
+ },
+ "pinterest.com": {
+  "pricing": "free",
+  "evidence": "灵感平台免费使用",
+  "title": "Pinterest"
+ },
+ "awwwards.com": {
+  "pricing": "freemium",
+  "evidence": "站点免费 + 会员付费档",
+  "title": "Awwwards"
+ },
+ "siteinspire.com": {
+  "pricing": "free",
+  "evidence": "案例站免费浏览",
+  "title": "SiteInspire"
+ },
+ "mobbin.com": {
+  "pricing": "paid",
+  "evidence": "界面库以订阅制为主",
+  "title": "Mobbin"
+ },
+ "tinypng.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费压缩额度与付费档",
+  "title": "TinyPNG"
+ },
+ "remove.bg": {
+  "pricing": "freemium",
+  "evidence": "官网设免费额度与付费档",
+  "title": "Remove.bg"
+ },
+ "canva.com": {
+  "pricing": "freemium",
+  "evidence": "设计平台免费层 + Pro 付费档",
+  "title": "Canva"
+ },
+ "adobe.com/products/illustrator.html": {
+  "pricing": "paid",
+  "evidence": "Adobe Creative Cloud 订阅制",
+  "title": "Adobe Illustrator"
+ },
+ "iconify.design": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源图标聚合",
+  "title": "Iconify"
+ },
+ "fonts.google.com": {
+  "pricing": "free",
+  "evidence": "站点描述明示免费开源字体库",
+  "title": "Google Fonts"
+ },
+ "fontawesome.com": {
+  "pricing": "freemium",
+  "evidence": "免费图标层 + Pro 付费档",
+  "title": "Font Awesome"
+ },
+ "flaticon.com": {
+  "pricing": "freemium",
+  "evidence": "图标免费下载 + Premium 付费档",
+  "title": "Flaticon"
+ },
+ "dafont.com": {
+  "pricing": "free",
+  "evidence": "站点描述明示免费字体下载",
+  "title": "Dafont"
+ },
+ "creativemarket.com": {
+  "pricing": "paid",
+  "evidence": "数字资源付费交易市场",
+  "title": "Creative Market"
+ },
+ "adobe.com/typekit": {
+  "pricing": "paid",
+  "evidence": "站点描述明示字体订阅服务",
+  "title": "Typekit"
+ },
+ "coolors.co": {
+  "pricing": "freemium",
+  "evidence": "配色工具免费 + Pro 付费档",
+  "title": "Coolors"
+ },
+ "color.adobe.com": {
+  "pricing": "free",
+  "evidence": "配色工具免费使用",
+  "title": "Adobe Color"
+ },
+ "colorhunter.com": {
+  "pricing": "free",
+  "evidence": "取色工具免费使用",
+  "title": "ColorHunter"
+ },
+ "unsplash.com": {
+  "pricing": "freemium",
+  "evidence": "素材免费 + Unsplash+ 付费层",
+  "title": "Unsplash"
+ },
+ "pexels.com": {
+  "pricing": "free",
+  "evidence": "站点描述明示免费图片视频素材",
+  "title": "Pexels"
+ },
+ "pixabay.com": {
+  "pricing": "free",
+  "evidence": "CC0 许可免费素材库",
+  "title": "Pixabay"
+ },
+ "mixkit.co": {
+  "pricing": "free",
+  "evidence": "站点描述明示高质量免费视频素材库",
+  "title": "Mixkit"
+ },
+ "storyblocks.com": {
+  "pricing": "paid",
+  "evidence": "站点描述明示订阅制素材库",
+  "title": "Storyblocks"
+ },
+ "istockphoto.com": {
+  "pricing": "paid",
+  "evidence": "付费图片视频素材库",
+  "title": "iStock"
+ },
+ "figma.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Figma"
+ },
+ "sketch.com": {
+  "pricing": "paid",
+  "evidence": "付费设计软件（订阅/买断）",
+  "title": "Sketch"
+ },
+ "adobe.com/products/xd.html": {
+  "pricing": "paid",
+  "evidence": "Adobe Creative Cloud 订阅制",
+  "title": "Adobe XD"
+ },
+ "miro.com": {
+  "pricing": "freemium",
+  "evidence": "白板免费层 + 付费档",
+  "title": "Miro"
+ },
+ "excalidraw.com": {
+  "pricing": "open_source",
+  "evidence": "开源白板项目（GitHub 仓库）",
+  "title": "Excalidraw"
+ },
+ "xmind.cn": {
+  "pricing": "freemium",
+  "evidence": "导图免费层 + 付费档",
+  "title": "XMind"
+ },
+ "mindmanager.com": {
+  "pricing": "paid",
+  "evidence": "企业级付费导图软件",
+  "title": "MindManager"
+ },
+ "processon.com": {
+  "pricing": "freemium",
+  "evidence": "在线绘图免费层 + 付费档",
+  "title": "ProcessOn"
+ },
+ "boardmix.cn": {
+  "pricing": "freemium",
+  "evidence": "在线白板免费层 + 付费档",
+  "title": "Boardmix"
+ },
+ "gitmind.com": {
+  "pricing": "freemium",
+  "evidence": "导图免费层 + 付费档",
+  "title": "GitMind"
+ },
+ "docs.qq.com": {
+  "pricing": "freemium",
+  "evidence": "基础协作免费 + 会员付费档",
+  "title": "腾讯文档"
+ },
+ "shimo.im": {
+  "pricing": "freemium",
+  "evidence": "文档协作免费层 + 付费档",
+  "title": "石墨文档"
+ },
+ "feishu.cn": {
+  "pricing": "freemium",
+  "evidence": "协作平台免费层 + 付费档",
+  "title": "飞书"
+ },
+ "kdocs.cn": {
+  "pricing": "freemium",
+  "evidence": "在线文档免费 + 会员付费档",
+  "title": "金山文档"
+ },
+ "yuque.com": {
+  "pricing": "freemium",
+  "evidence": "知识库免费层 + 付费档",
+  "title": "语雀"
+ },
+ "notion.com": {
+  "pricing": "freemium",
+  "evidence": "协作空间免费层 + 付费档",
+  "title": "Notion"
+ },
+ "runoob.com": {
+  "pricing": "free",
+  "evidence": "编程教程免费开放",
+  "title": "菜鸟教程"
+ },
+ "codecademy.com": {
+  "pricing": "freemium",
+  "evidence": "课程免费层 + Pro 付费档",
+  "title": "Codecademy"
+ },
+ "bilibili.com": {
+  "pricing": "freemium",
+  "evidence": "视频免费 + 大会员付费档",
+  "title": "哔哩哔哩"
+ },
+ "coursera.org": {
+  "pricing": "freemium",
+  "evidence": "课程免费旁听 + 付费证书",
+  "title": "Coursera"
+ },
+ "icourse163.org": {
+  "pricing": "free",
+  "evidence": "高校开放课程免费",
+  "title": "中国大学MOOC"
+ },
+ "udemy.com": {
+  "pricing": "paid",
+  "evidence": "课程以付费购买为主",
+  "title": "Udemy"
+ },
+ "study.163.com": {
+  "pricing": "freemium",
+  "evidence": "课程免费 + 付费并存",
+  "title": "网易云课堂"
+ },
+ "khanacademy.org": {
+  "pricing": "free",
+  "evidence": "站点描述明示全球免费教育资源平台",
+  "title": "Khan Academy"
+ },
+ "skillshare.com": {
+  "pricing": "paid",
+  "evidence": "技能课程订阅制",
+  "title": "Skillshare"
+ },
+ "zh.wikipedia.org": {
+  "pricing": "free",
+  "evidence": "自由百科全书，免费",
+  "title": "维基百科"
+ },
+ "nlc.cn": {
+  "pricing": "free",
+  "evidence": "国家图书馆官方数字资源，免费",
+  "title": "国家数字图书馆"
+ },
+ "jstor.org": {
+  "pricing": "freemium",
+  "evidence": "个人限量免费 + 机构订阅",
+  "title": "JSTOR"
+ },
+ "gutenberg.org": {
+  "pricing": "free",
+  "evidence": "公共领域电子书文库，免费",
+  "title": "Project Gutenberg"
+ },
+ "zhipin.com": {
+  "pricing": "free",
+  "evidence": "求职者端免费使用",
+  "title": "BOSS直聘"
+ },
+ "lagou.com": {
+  "pricing": "free",
+  "evidence": "求职者端免费使用",
+  "title": "拉勾网"
+ },
+ "zhaopin.com": {
+  "pricing": "free",
+  "evidence": "求职者端免费使用",
+  "title": "智联招聘"
+ },
+ "51job.com": {
+  "pricing": "free",
+  "evidence": "求职者端免费使用",
+  "title": "前程无忧"
+ },
+ "liepin.com": {
+  "pricing": "freemium",
+  "evidence": "求职免费 + 增值付费服务",
+  "title": "猎聘"
+ },
+ "wondercv.com": {
+  "pricing": "freemium",
+  "evidence": "简历制作免费层 + 付费模板",
+  "title": "超级简历"
+ },
+ "500d.me": {
+  "pricing": "freemium",
+  "evidence": "简历制作免费层 + 付费模板",
+  "title": "五百丁"
+ },
+ "scs.gov.cn": {
+  "pricing": "free",
+  "evidence": "政府官方网站，免费",
+  "title": "国家公务员局"
+ },
+ "yz.chsi.com.cn": {
+  "pricing": "free",
+  "evidence": "研究生招生官方平台，免费",
+  "title": "研招网"
+ },
+ "fenbi.com": {
+  "pricing": "freemium",
+  "evidence": "题库免费 + 系统课付费",
+  "title": "粉笔"
+ },
+ "huatu.com": {
+  "pricing": "freemium",
+  "evidence": "资讯免费 + 培训课程付费",
+  "title": "华图教育"
+ },
+ "offcn.com": {
+  "pricing": "freemium",
+  "evidence": "资讯免费 + 培训课程付费",
+  "title": "中公教育"
+ },
+ "koolearn.com": {
+  "pricing": "freemium",
+  "evidence": "课程免费层 + 付费课",
+  "title": "新东方在线"
+ },
+ "arxiv.org": {
+  "pricing": "free",
+  "evidence": "预印本论文库免费开放",
+  "title": "arXiv"
+ },
+ "paperswithcode.com": {
+  "pricing": "free",
+  "evidence": "论文与代码对照库免费开放",
+  "title": "Papers with Code"
+ },
+ "cnki.net": {
+  "pricing": "paid",
+  "evidence": "学术数据库以机构订阅/付费为主",
+  "title": "中国知网"
+ },
+ "wanfangdata.com.cn": {
+  "pricing": "paid",
+  "evidence": "学术全文以机构订阅为主",
+  "title": "万方数据"
+ },
+ "webofscience.com": {
+  "pricing": "paid",
+  "evidence": "引文数据库订阅制",
+  "title": "Web of Science"
+ },
+ "scopus.com": {
+  "pricing": "paid",
+  "evidence": "引文数据库订阅制",
+  "title": "Scopus"
+ },
+ "duxiu.com": {
+  "pricing": "paid",
+  "evidence": "图书全文以机构订阅为主",
+  "title": "读秀"
+ },
+ "semanticscholar.org": {
+  "pricing": "free",
+  "evidence": "学术搜索免费使用",
+  "title": "Semantic Scholar"
+ },
+ "ncpssd.org": {
+  "pricing": "free",
+  "evidence": "社科文献免费开放平台",
+  "title": "国家哲学社会科学文献中心"
+ },
+ "github.com/trending": {
+  "pricing": "free",
+  "evidence": "开源趋势榜免费浏览",
+  "title": "GitHub Trending"
+ },
+ "36kr.com": {
+  "pricing": "free",
+  "evidence": "科技媒体免费浏览",
+  "title": "36氪"
+ },
+ "huxiu.com": {
+  "pricing": "freemium",
+  "evidence": "报道免费 + 会员付费档",
+  "title": "虎嗅"
+ },
+ "geekpark.net": {
+  "pricing": "free",
+  "evidence": "科技媒体免费浏览",
+  "title": "极客公园"
+ },
+ "infoq.cn": {
+  "pricing": "free",
+  "evidence": "技术媒体免费浏览",
+  "title": "InfoQ"
+ },
+ "sspai.com": {
+  "pricing": "freemium",
+  "evidence": "文章免费 + 付费专栏",
+  "title": "少数派"
+ },
+ "ifanr.com": {
+  "pricing": "free",
+  "evidence": "科技媒体免费浏览",
+  "title": "爱范儿"
+ },
+ "douban.com": {
+  "pricing": "free",
+  "evidence": "评分社区免费使用",
+  "title": "豆瓣"
+ },
+ "imdb.com": {
+  "pricing": "free",
+  "evidence": "影视数据库免费使用",
+  "title": "IMDb"
+ },
+ "maoyan.com": {
+  "pricing": "free",
+  "evidence": "电影资讯购票平台，浏览免费",
+  "title": "猫眼电影"
+ },
+ "mtime.com": {
+  "pricing": "free",
+  "evidence": "影视社区免费使用",
+  "title": "时光网"
+ },
+ "letterboxd.com": {
+  "pricing": "freemium",
+  "evidence": "电影日志免费 + Pro 付费档",
+  "title": "Letterboxd"
+ },
+ "qidian.com": {
+  "pricing": "freemium",
+  "evidence": "小说免费章节 + 付费章节/VIP",
+  "title": "起点中文网"
+ },
+ "fanqienovel.com": {
+  "pricing": "free",
+  "evidence": "站点描述明示免费小说平台、全场免费看",
+  "title": "番茄小说"
+ },
+ "jjwxc.net": {
+  "pricing": "freemium",
+  "evidence": "小说免费章节 + 付费/VIP",
+  "title": "晋江文学城"
+ },
+ "qimao.com": {
+  "pricing": "free",
+  "evidence": "站点描述明示免费小说平台、全本免费读",
+  "title": "七猫中文网"
+ },
+ "zongheng.com": {
+  "pricing": "freemium",
+  "evidence": "小说免费章节 + 付费章节",
+  "title": "纵横中文网"
+ },
+ "faloo.com": {
+  "pricing": "freemium",
+  "evidence": "小说免费章节 + 付费章节",
+  "title": "飞卢小说网"
+ },
+ "17k.com": {
+  "pricing": "freemium",
+  "evidence": "小说免费章节 + 付费章节",
+  "title": "17K小说网"
+ },
+ "shuqi.com": {
+  "pricing": "free",
+  "evidence": "站点描述明示免费小说平台、海量免费读",
+  "title": "书旗小说"
+ },
+ "taobao.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "淘宝"
+ },
+ "jd.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "京东"
+ },
+ "pinduoduo.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "拼多多"
+ },
+ "vip.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "唯品会"
+ },
+ "suning.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "苏宁易购"
+ },
+ "1688.com": {
+  "pricing": "free",
+  "evidence": "批发平台买家端免费",
+  "title": "1688"
+ },
+ "map.baidu.com": {
+  "pricing": "free",
+  "evidence": "地图服务免费使用",
+  "title": "百度地图"
+ },
+ "12306.cn": {
+  "pricing": "free",
+  "evidence": "官方购票平台，免费使用",
+  "title": "铁路 12306"
+ },
+ "amap.com": {
+  "pricing": "free",
+  "evidence": "地图服务免费使用",
+  "title": "高德地图"
+ },
+ "ctrip.com": {
+  "pricing": "free",
+  "evidence": "旅行预订平台，免费使用",
+  "title": "携程旅行"
+ },
+ "didiglobal.com": {
+  "pricing": "free",
+  "evidence": "出行平台乘客端免费",
+  "title": "滴滴出行"
+ },
+ "dianping.com": {
+  "pricing": "free",
+  "evidence": "本地生活平台免费使用",
+  "title": "大众点评"
+ },
+ "sf-express.com": {
+  "pricing": "free",
+  "evidence": "官网查询免费，寄件按单计费",
+  "title": "顺丰速运"
+ },
+ "yto.net.cn": {
+  "pricing": "free",
+  "evidence": "官网查询免费，寄件按单计费",
+  "title": "圆通速递"
+ },
+ "xiaohongshu.com": {
+  "pricing": "free",
+  "evidence": "社区免费使用",
+  "title": "小红书"
+ },
+ "zhihu.com": {
+  "pricing": "free",
+  "evidence": "问答社区免费使用",
+  "title": "知乎"
+ },
+ "soulapp.cn": {
+  "pricing": "freemium",
+  "evidence": "社交免费 + 会员付费档",
+  "title": "Soul"
+ },
+ "jimoapp.com": {
+  "pricing": "freemium",
+  "evidence": "社交免费 + 会员付费档",
+  "title": "积目"
+ },
+ "tantan.com": {
+  "pricing": "freemium",
+  "evidence": "社交免费 + 会员付费档",
+  "title": "探探"
+ },
+ "baihe.com": {
+  "pricing": "freemium",
+  "evidence": "注册免费 + 会员付费服务",
+  "title": "百合网"
+ },
+ "jiayuan.com": {
+  "pricing": "freemium",
+  "evidence": "注册免费 + 红娘付费服务",
+  "title": "世纪佳缘"
+ },
+ "yidui.net": {
+  "pricing": "freemium",
+  "evidence": "相亲免费层 + 付费服务",
+  "title": "伊对"
+ },
+ "amazon.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "亚马逊"
+ },
+ "aliexpress.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "全球速卖通"
+ },
+ "temu.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "Temu"
+ },
+ "shopee.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "Shopee虾皮"
+ },
+ "shein.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "SHEIN"
+ },
+ "ebay.com": {
+  "pricing": "free",
+  "evidence": "购物平台消费者端免费",
+  "title": "eBay"
+ },
+ "shopify.com": {
+  "pricing": "paid",
+  "evidence": "独立站建站订阅制",
+  "title": "Shopify"
+ },
+ "12377.cn": {
+  "pricing": "free",
+  "evidence": "政府官方平台，免费",
+  "title": "国家网信办举报中心"
+ },
+ "gov.cn": {
+  "pricing": "free",
+  "evidence": "政府官方网站，免费",
+  "title": "中国政府网"
+ },
+ "gjzwfw.gov.cn": {
+  "pricing": "free",
+  "evidence": "政务服务平台，免费",
+  "title": "国家政务服务网"
+ },
+ "gjxfj.gov.cn": {
+  "pricing": "free",
+  "evidence": "政府官方网站，免费",
+  "title": "国家信访局"
+ },
+ "mps.gov.cn": {
+  "pricing": "free",
+  "evidence": "政府官方门户，免费",
+  "title": "公安部"
+ },
+ "chinatax.gov.cn": {
+  "pricing": "free",
+  "evidence": "政府官方网站，免费",
+  "title": "国家税务局"
+ },
+ "nhsa.gov.cn": {
+  "pricing": "free",
+  "evidence": "政府官方网站，免费",
+  "title": "国家医保局"
+ },
+ "weather.com.cn": {
+  "pricing": "free",
+  "evidence": "天气预报官方站，免费",
+  "title": "中国天气网"
+ },
+ "nmc.cn": {
+  "pricing": "free",
+  "evidence": "气象官方机构站，免费",
+  "title": "中央气象台"
+ },
+ "mee.gov.cn": {
+  "pricing": "free",
+  "evidence": "政府官方网站，免费",
+  "title": "生态环境部"
+ },
+ "permit.mee.gov.cn": {
+  "pricing": "free",
+  "evidence": "政府信息公开平台，免费",
+  "title": "全国排污许可证管理信息平台"
+ },
+ "forestry.gov.cn": {
+  "pricing": "free",
+  "evidence": "政府官方网站，免费",
+  "title": "国家林业和草原局"
+ },
+ "hongguo.com": {
+  "pricing": "free",
+  "evidence": "站点描述明示：抖音旗下免费短剧平台，看广告免费看全集",
+  "title": "红果短剧"
+ },
+ "mydramawave.com": {
+  "pricing": "free",
+  "evidence": "站点描述明示：海量竖屏短剧免费看",
+  "title": "DramaWave"
+ },
+ "douyin.com": {
+  "pricing": "free",
+  "evidence": "短剧频道免费观看（站内）",
+  "title": "抖音短剧"
+ },
+ "kuaishou.com": {
+  "pricing": "free",
+  "evidence": "短剧频道免费观看（站内）",
+  "title": "快手短剧"
+ },
+ "iqiyi.com": {
+  "pricing": "freemium",
+  "evidence": "站点描述明示：部分免费，会员看更多",
+  "title": "爱奇艺·短剧"
+ },
+ "v.qq.com": {
+  "pricing": "freemium",
+  "evidence": "站点描述明示：前几集免费，会员解锁全集",
+  "title": "腾讯视频·短剧"
+ },
+ "youku.com": {
+  "pricing": "freemium",
+  "evidence": "站点描述明示：部分免费",
+  "title": "优酷·短剧"
+ },
+ "mgtv.com": {
+  "pricing": "freemium",
+  "evidence": "站点描述明示：免费 + VIP",
+  "title": "芒果TV·短剧"
+ },
+ "miguvideo.com": {
+  "pricing": "freemium",
+  "evidence": "视频平台免费 + 会员付费档",
+  "title": "咪咕视频·短剧"
+ },
+ "m.yangshipin.cn": {
+  "pricing": "free",
+  "evidence": "央视官方新媒体，免费观看",
+  "title": "央视频·短剧"
+ },
+ "reelshort.com": {
+  "pricing": "freemium",
+  "evidence": "站点描述明示：前几集免费、付费解锁全集",
+  "title": "ReelShort"
+ },
+ "dramaboxdb.com": {
+  "pricing": "freemium",
+  "evidence": "站点描述明示：金币与会员解锁",
+  "title": "DramaBox"
+ }
+}

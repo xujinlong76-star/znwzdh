@@ -49,6 +49,7 @@ export * from "./federated-recommendation.ts";
 export * from "./semantic-clustering.ts";
 export * from "./dynamic-tool-synthesizer.ts";
 export * from "./facets.ts";
+export * from "./pricing.ts";
 export * from "./search-limits.ts";
 export * from "./search-eval.ts";
 export * from "./relations.ts";

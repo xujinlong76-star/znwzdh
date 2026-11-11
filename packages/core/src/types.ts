@@ -370,6 +370,15 @@ export interface SearchResult {
    */
   fallback?: "filter" | "fuzzy";
   /**
+   * fallback="filter" 时被丢弃的分面条件（键=分面键，值=被放宽掉的取值）。
+   *
+   * A3 诚实化：旧行为是静默放宽——用户筛「免费」归零后偷偷给全量结果，
+   * 看到收费站还以为筛选生效。有了这个字段，前端能点名说明「你选的付费
+   * 条件（完全免费）下暂无已标注的站点，下面是放宽后的结果，可能含收费
+   * 站点」，而不是一句含糊的「已放宽筛选」。仅在确实丢弃了分面时出现。
+   */
+  relaxedFacets?: Record<string, string[]>;
+  /**
    * Query Planner 决策（v2 新增）。
    *   "early-exit"  exact 强命中，语义通道被剪枝（省一次 embedding 推理）
    *   缺席        全通道正常跑（或 fuzzy 兜底）

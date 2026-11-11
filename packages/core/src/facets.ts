@@ -57,6 +57,11 @@ export const CONTROLLED_FACETS: FacetDefinition[] = [
       { value: "freemium", label: "免费增值", labelEn: "Freemium", description: "基础功能免费，高级特性或配额收费" },
       { value: "paid", label: "商业付费", labelEn: "Paid / Commercial", description: "需付费购买或按月订阅" },
       { value: "open_source", label: "开源免费", labelEn: "Open Source", description: "遵循开源协议发布且完全可用" },
+      // A3（DEV_BACKLOG）：拿不准的站点显式落 unknown，而不是留空——留空与
+      // 「没标过」在筛选层无法区分，零结果放宽时也无从点名说明。unknown 是
+      // 数据完备性标记：derivePricing（pricing.ts）保证每站必有一个值；
+      // 人工核实后可在后台改为确定值，回填一律 fill-if-absent、永不覆盖。
+      { value: "unknown", label: "未标注", labelEn: "Not labeled", description: "付费模式尚未核实标注" },
     ],
   },
   {

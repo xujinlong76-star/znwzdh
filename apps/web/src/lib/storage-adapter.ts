@@ -153,17 +153,54 @@ export function storageTag(path: string): string {
  * 首屏停在两天前的旧目录上——同一屏里旧目录的条目数与中枢实时计数并排显示，
  * 就是「同一个分类两个数字」的来源。
  *
- * 这几份文档只会变大、不会缩回 2MB 以内，缓存对它们是纯风险，因此直接实时读：
+ * 2026-11-11 修正：navigation.json / navigation-default.json **移出**豁免。
+ * 当年的 3MB 是自动抓取灌库的数据状态；现在的导航快照是人工策划的
+ * （334 站，实测约 0.2MB，离 2MB 上限有 10 倍余量）。而 no-store 的代价在
+ * ISR 页面上被证明更致命：首页（revalidate=60）的渲染树里有一次 no-store
+ * fetch，运行时再生成必抛 `Page changed from static to dynamic at runtime`，
+ * 整页冻结在构建期快照上——导航本身、首页简报条都永远刷不出来，比当年
+ * 要防的「旧快照」还彻底。移出后导航读与 site.json 同路：带
+ * `storage:<path>` + HUB_CACHE_TAG 双标签进 Data Cache，写侧
+ * revalidateTag 保证「保存后刷新即见新值」。防旧陷阱复活靠
+ * `warnIfNavigationNearCacheLimit`：体积到 1.5MB 先在日志里报警，
+ * 在撞限之前拆快照，而不是撞限之后查事故。
+ *
+ * videos.json（7MB+，真超限）与 resource-metadata.json 继续豁免实时读：
  * 本机中枢读延迟毫秒级，上面还有 `getFileContent` 的 2.5 秒进程内微缓存与
  * 单飞（`inflightReads`）兜并发惊群。小文件（site.json 等）继续吃缓存——
  * 那才是 ISR 真正在用的那一层，收益与风险都在这里划算。
  */
 const DATA_CACHE_EXEMPT_FILES = [
-  "navigation.json",
-  "navigation-default.json",
   "videos.json",
   "resource-metadata.json",
 ];
+
+/** navigation 快照的 Data Cache 体积预警线（字节）：2MB 硬上限的 75% */
+const NAVIGATION_CACHE_SIZE_WARN_BYTES = 1_500_000;
+
+/**
+ * navigation 移出豁免后的护栏（见 DATA_CACHE_EXEMPT_FILES 注释）：
+ * 体积逼近 Data Cache 单条目上限时提前报警。只警告、不改行为——
+ * 真到 2MB 该拆快照还是换取数，是届时的人工决策，不是这里的自动降级。
+ */
+function warnIfNavigationNearCacheLimit(path: string, data: unknown): void {
+  if (!path.includes("navigation")) return;
+  let size = 0;
+  try {
+    size = JSON.stringify(data)?.length ?? 0;
+  } catch {
+    return;
+  }
+  if (size >= NAVIGATION_CACHE_SIZE_WARN_BYTES) {
+    console.warn(
+      "[storage] navigation 快照体积已达 " +
+        size +
+        " 字节，接近 Next Data Cache 单条目 2MB 上限（" +
+        path +
+        "）。请在撞限前拆分快照或改取数方式，避免重演 2026-11-05 的旧快照冻结事故。",
+    );
+  }
+}
 
 function isDataCacheExempt(url: string): boolean {
   return DATA_CACHE_EXEMPT_FILES.some((name) => url.includes(name));
@@ -258,7 +295,7 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
     const isRead = !init.method || init.method.toUpperCase() === "GET";
     // noStore 用于「必须实时」的读：版本号（乐观并发的判据）绝不能吃 60s 缓存，
     // 否则客户端会拿着过时版本去写，白撞一次 409。
-    // 大文档同样必须实时读，理由见 DATA_CACHE_EXEMPT_FILES。
+    // 超限大文档（videos 等）同样必须实时读，理由见 DATA_CACHE_EXEMPT_FILES。
     const useDataCache = isRead && revalidateS > 0 && !opts.noStore && !isDataCacheExempt(url);
     // 静态标签（构造时给定，用于「整类内容一起失效」）与按路径标签合并去重：
     // 后者是写侧定点失效的抓手，前者保留给需要批量失效的部署。
@@ -308,11 +345,13 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
       throwIfCoolingDown();
       // 每个内容路径一个独立标签：写侧按同一标签 revalidateTag，
       // 才能做到「保存后刷新即见新值」而不用把整个 Data Cache 清空。
-      return call(
+      const data = await call(
         base + "/api/storage?path=" + encodeURIComponent(path),
         { method: "GET" },
         { tags: [storageTag(path)] },
       );
+      warnIfNavigationNearCacheLimit(path, data);
+      return data;
     },
     async write(path: string, content: string, message: string, writeOpts?: StorageWriteOptions) {
       throwIfCoolingDown();

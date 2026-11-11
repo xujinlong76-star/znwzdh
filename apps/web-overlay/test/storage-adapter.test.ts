@@ -323,10 +323,14 @@ describe("装不进 Data Cache 的大文档改为实时读", () => {
   // 写不进去被清掉**——页面于是无限期读最早那份「还装得下」的快照，只在日志里
   // 留一行 WARN。实测事故：中枢 2026-11-05 22:50 的 navigation.json（1365 条，
   // 898KB）进了 fetch-cache，之后数据涨到 4841 条（序列化 3.03MB），每次再生都
-  // 失败，首屏就此停在两天前的目录上。这几份文档只会更大，所以根本不进缓存。
+  // 失败，首屏就此停在两天前的目录上。
+  //
+  // 2026-11-11 起豁免只剩真超限的两份：videos.json（7MB+）与
+  // resource-metadata.json。navigation.json 已移出（人工策划快照约 0.2MB）：
+  // no-store 读出现在 ISR 首页的渲染树里，运行时再生成必抛
+  // `Page changed from static to dynamic at runtime`，整页冻结在构建期
+  // 快照上——比要防的旧快照更糟。移出后的回归护栏是体积预警（见下）。
   const oversized = [
-    "src/navsphere/content/navigation.json",
-    "src/navsphere/content/navigation-default.json",
     "src/navsphere/content/videos.json",
     "src/navsphere/content/resource-metadata.json",
   ];
@@ -365,5 +369,51 @@ describe("装不进 Data Cache 的大文档改为实时读", () => {
     const init = lastInit(fetchImpl);
     expect(init.next).toBeUndefined();
     expect(init.method).toBe("PUT");
+  });
+});
+
+describe("navigation 快照进 Data Cache（2026-11-11 移出豁免）", () => {
+  /** 取最近一次 fetch 的 init（含 next 扩展字段） */
+  function lastInit(fetchImpl: ReturnType<typeof vi.fn>): RequestInit & { next?: { revalidate?: number; tags: string[] } } {
+    return fetchImpl.mock.calls.at(-1)?.[1] as RequestInit & { next?: { revalidate?: number; tags: string[] } };
+  }
+
+  // 首页是 ISR（revalidate=60）：渲染树里的 no-store fetch 会让运行时再生成
+  // 抛 `Page changed from static to dynamic at runtime`，整页冻结在构建期
+  // 快照上（简报条、导航更新都刷不出来）。navigation 读必须与 site.json
+  // 同路：next.revalidate + 双标签，写侧 revalidateTag 保证保存即失效。
+  it.each([
+    "src/navsphere/content/navigation.json",
+    "src/navsphere/content/navigation-default.json",
+  ])("%s 走 Data Cache：附 next.revalidate 与双标签，不带 no-store", async (path) => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ navigationItems: [] }));
+    const adapter = createHttpAdapter({
+      baseUrl: BASE,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      revalidateS: 60,
+      tags: ["navhub-hub"],
+    });
+
+    await adapter.read(path);
+    const init = lastInit(fetchImpl);
+    expect(init.cache).toBeUndefined();
+    expect(init.next).toEqual({ revalidate: 60, tags: ["navhub-hub", `storage:${path}`] });
+  });
+
+  it("体积逼近 2MB 上限（≥1.5MB）时打预警日志，小体积不打", async () => {
+    const { warn } = spyConsole();
+    const big = { navigationItems: [{ pad: "x".repeat(1_600_000) }] };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(big));
+    const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await adapter.read("src/navsphere/content/navigation.json");
+    expect(warn.mock.calls.some((args) => String(args[0]).includes("接近 Next Data Cache 单条目 2MB 上限"))).toBe(true);
+
+    warn.mockClear();
+    const smallFetch = vi.fn().mockResolvedValue(jsonResponse({ navigationItems: [] }));
+    const smallAdapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: smallFetch as unknown as typeof fetch });
+    await smallAdapter.read("src/navsphere/content/navigation.json");
+    expect(warn.mock.calls.some((args) => String(args[0]).includes("2MB"))).toBe(false);
   });
 });

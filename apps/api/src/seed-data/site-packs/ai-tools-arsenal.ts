@@ -54,7 +54,7 @@ export const aiToolsArsenal: SeedPluginDef = {
         { url: "https://huggingface.co/chat/", title: "HuggingChat", description: "Hugging Face 官方聊天界面，可切换多种开源模型。", category: "大模型对话助手", subCategory: "开源", tags: ["开源", "Hugging Face"] },
         { url: "https://x.ai/", title: "Grok", description: "xAI 出品的对话助手，实时信息接入是特色。", category: "大模型对话助手", subCategory: "海外", tags: ["xAI", "实时信息"] },
         { url: "https://chat.deepseek.com/", title: "DeepSeek", description: "深度求索对话助手，推理与代码能力出色且性价比高。", category: "大模型对话助手", subCategory: "国产", tags: ["国产", "推理"] },
-        { url: "https://kimi.moonshot.cn/", title: "Kimi", description: "月之暗面长文本助手，适合超长资料阅读与整理。", category: "大模型对话助手", subCategory: "国产", tags: ["国产", "长文本"] },
+        { url: "https://www.kimi.com/", title: "Kimi", description: "月之暗面长文本助手，适合超长资料阅读与整理。", category: "大模型对话助手", subCategory: "国产", tags: ["国产", "长文本"] },
         { url: "https://www.doubao.com/", title: "豆包", description: "字节跳动 AI 助手，日常问答与创作场景覆盖广。", category: "大模型对话助手", subCategory: "国产", tags: ["国产", "日常助手"] },
         { url: "https://chatglm.cn/", title: "智谱清言", description: "智谱 AI 对话助手，GLM 系列模型官方入口。", category: "大模型对话助手", subCategory: "国产", tags: ["国产", "GLM"] },
         { url: "https://tongyi.aliyun.com/", title: "通义千问", description: "阿里通义千问，支持多模态与长文档处理。", category: "大模型对话助手", subCategory: "国产", tags: ["国产", "阿里"] },

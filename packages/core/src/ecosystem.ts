@@ -36,7 +36,7 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
     relations: [
       { targetTitle: "Claude", targetUrl: "https://claude.ai", relationType: "alternative", isFreeOrOpenSource: false, note: "长文本与代码见长的对话助手" },
       { targetTitle: "DeepSeek", targetUrl: "https://chat.deepseek.com", relationType: "alternative", isFreeOrOpenSource: true, note: "开源权重、网页端免费" },
-      { targetTitle: "Kimi", targetUrl: "https://kimi.moonshot.cn", relationType: "alternative", isFreeOrOpenSource: true, note: "超长上下文与中文检索问答" },
+      { targetTitle: "Kimi", targetUrl: "https://www.kimi.com", relationType: "alternative", isFreeOrOpenSource: true, note: "超长上下文与中文检索问答" },
       { targetTitle: "Google Gemini", targetUrl: "https://gemini.google.com", relationType: "alternative", isFreeOrOpenSource: false, note: "Google 多模态助手" },
       { targetTitle: "智谱清言", targetUrl: "https://chatglm.cn", relationType: "alternative", isFreeOrOpenSource: true, note: "GLM 系国产对话模型" },
       { targetTitle: "Ollama", targetUrl: "https://ollama.com", relationType: "alternative", isFreeOrOpenSource: true, note: "本地私有化跑开源模型" },
@@ -84,8 +84,9 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { id: "trending", label: "Trending", urlTemplate: "https://github.com/trending", icon: "flame" },
     ],
     relations: [
-      // 收录的是 about.gitlab.com（GitLab 官方站条目），写成 gitlab.com 会永远对不上
-      { targetTitle: "GitLab", targetUrl: "https://about.gitlab.com", relationType: "alternative", isFreeOrOpenSource: true, note: "支持私有化部署的代码托管平台" },
+      // 库里收的是 gitlab.com（GitLab 应用首页），写成 about.gitlab.com（营销站）
+      // 会永远对不上，面板上这条平替永远点不进站内。
+      { targetTitle: "GitLab", targetUrl: "https://gitlab.com", relationType: "alternative", isFreeOrOpenSource: true, note: "支持私有化部署的代码托管平台" },
       { targetTitle: "Gitee", targetUrl: "https://gitee.com", relationType: "alternative", isFreeOrOpenSource: false, note: "国内快速访问的代码托管" },
     ],
   },
@@ -95,7 +96,8 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { id: "search-package", label: "搜索 npm 包", urlTemplate: "https://www.npmjs.com/search?q={q}", placeholder: "输入包名 (如 react, fastify, zod)" },
     ],
     relations: [
-      { targetTitle: "npmmirror", targetUrl: "https://npmmirror.com", relationType: "mirror", isFreeOrOpenSource: true, note: "国内极速镜像源" },
+      // 库里收的是 registry.npmmirror.com（镜像站本身），写成 npmmirror.com 会永远对不上
+      { targetTitle: "npmmirror", targetUrl: "https://registry.npmmirror.com", relationType: "mirror", isFreeOrOpenSource: true, note: "国内极速镜像源" },
     ],
   },
   "developer.mozilla.org": {
@@ -145,8 +147,10 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { id: "search-photo", label: "免版权高清搜图", urlTemplate: "https://unsplash.com/s/photos/{q}", placeholder: "输入英文搜图 (如 office, nature)" },
     ],
     relations: [
-      { targetTitle: "Pexels", targetUrl: "https://www.pexels.com/zh-cn/", relationType: "alternative", isFreeOrOpenSource: true, note: "免费商用高清图库与短视频" },
-      { targetTitle: "Pixabay", targetUrl: "https://pixabay.com/zh/", relationType: "alternative", isFreeOrOpenSource: true, note: "海量免费插画、矢量图与音效" },
+      // 库里收的是两个站的首页形态（www.pexels.com / pixabay.com），
+      // 写带 /zh-cn/、/zh/ 语言路径的 URL 会永远对不上。
+      { targetTitle: "Pexels", targetUrl: "https://www.pexels.com", relationType: "alternative", isFreeOrOpenSource: true, note: "免费商用高清图库与短视频" },
+      { targetTitle: "Pixabay", targetUrl: "https://pixabay.com", relationType: "alternative", isFreeOrOpenSource: true, note: "海量免费插画、矢量图与音效" },
     ],
   },
   "tinypng.com": {
@@ -180,7 +184,9 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
   },
 
   // --- 效率与笔记 ---
-  "notion.so": {
+  // 键用 notion.com：库里收的是 https://www.notion.com，notion.so 已 301 到 notion.com；
+  // 写旧域名会让整条策划边落在 missingSources 里。
+  "notion.com": {
     workspaces: ["efficiency", "content"],
     relations: [
       { targetTitle: "AppFlowy", targetUrl: "https://appflowy.io", relationType: "alternative", isFreeOrOpenSource: true, note: "Notion 开源私有化看板与知识库" },

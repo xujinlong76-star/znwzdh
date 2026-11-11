@@ -126,8 +126,8 @@ describe("seedEcosystemRelations", () => {
   });
 
   it("库里是 www + 尾斜杠形态也算同一条产品，不报成站外目标", async () => {
-    const curated = ECOSYSTEM_MAP["notion.so"].relations ?? [];
-    const source = await addSite("https://www.notion.so/", "Notion");
+    const curated = ECOSYSTEM_MAP["notion.com"].relations ?? [];
+    const source = await addSite("https://www.notion.com/", "Notion");
     const stored = new Map<string, string>();
     for (const rel of curated) {
       const key = ecosystemUrlKey(rel.targetUrl)!;
@@ -137,8 +137,8 @@ describe("seedEcosystemRelations", () => {
     }
 
     const res = await seedEcosystemRelations(ctx.repo, await siteRows());
-    expect(res.missingSources).not.toContain("notion.so");
-    expect(res.danglingTargets.filter((d) => d.startsWith("notion.so → "))).toEqual([]);
+    expect(res.missingSources).not.toContain("notion.com");
+    expect(res.danglingTargets.filter((d) => d.startsWith("notion.com → "))).toEqual([]);
 
     const outgoing = (await ctx.repo.getDetailedSiteRelations(source.id)).outgoing;
     expect(outgoing).toHaveLength(curated.length);
@@ -259,10 +259,10 @@ describe("seedEcosystemRelations", () => {
    */
   const DANGLING_TARGET_PACKS: Record<string, string> = {
     "continue.dev": "seed-dev-efficiency",
-    "kimi.moonshot.cn": "ai-tools-arsenal",
+    "kimi.com": "ai-tools-arsenal",
     "gemini.google.com": "ai-tools-arsenal",
     "chatglm.cn": "ai-tools-arsenal",
-    "about.gitlab.com": "seed-dev-efficiency",
+    "gitlab.com": "seed-dev-efficiency",
     "penpot.app": "seed-design-inspiration",
     "pixso.cn": "seed-design-inspiration",
     "squoosh.app": "front-end-arsenal",

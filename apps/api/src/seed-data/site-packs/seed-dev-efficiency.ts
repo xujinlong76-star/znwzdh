@@ -45,7 +45,7 @@ export const seedDevEfficiency: SeedPluginDef = {
       ],
       sites: [
         { url: "https://github.com/", title: "GitHub", description: "全球最大代码托管与协作平台，开源项目主战场。", category: "代码托管与协作", subCategory: "远程仓库", tags: ["GitHub", "开源"] },
-        { url: "https://about.gitlab.com/", title: "GitLab", description: "一体化 DevOps 平台，内置 CI/CD 与私有仓库。", category: "代码托管与协作", subCategory: "远程仓库", tags: ["GitLab", "CI"] },
+        { url: "https://gitlab.com/", title: "GitLab", description: "一体化 DevOps 平台，内置 CI/CD 与私有仓库。", category: "代码托管与协作", subCategory: "远程仓库", tags: ["GitLab", "CI"] },
         { url: "https://bitbucket.org/", title: "Bitbucket", description: "Atlassian 系代码托管，与 Jira 深度联动。", category: "代码托管与协作", subCategory: "远程仓库", tags: ["Bitbucket", "Atlassian"] },
         { url: "https://gitee.com/", title: "Gitee 码云", description: "国内主流代码托管平台，访问速度快且支持国产生态。", category: "代码托管与协作", subCategory: "国内平台", tags: ["中文", "托管"] },
         { url: "https://codeberg.org/", title: "Codeberg", description: "非营利开源社区托管平台，强调自由软件精神。", category: "代码托管与协作", subCategory: "远程仓库", tags: ["开源", "社区"] },

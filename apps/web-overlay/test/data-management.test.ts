@@ -4,9 +4,9 @@
  * 锁住三件事：
  *   1. 灌入判定是纯函数、可枚举：0 = 空、(0, 基线) = 低于基线、≥ 基线 = 已灌入。
  *   2. 基线数字不是拍脑袋的：每次跑测试都重数一遍仓库事实源——
- *      navigation.json（298 站 / 46 二级 / 14 一级）与 videos.json（6007 条）。
+ *      navigation.json（314 站 / 46 二级 / 14 一级）与 videos.json（6007 条）。
  *      仓库扩容时这里会先红，提醒人同步改基线，而不是页面悄悄拿旧数比较。
- *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 298/6007 的
+ *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 314/6007 的
  *      字面量（基线只能来自 lib 常量），两个计数端点与三个管理入口必须在位，
  *      冷备导出必须走带 token 的 hubGet（普通 <a href> 带不上 admin token）。
  */
@@ -55,7 +55,7 @@ function countWhere(node: unknown, pred: (obj: Record<string, unknown>) => boole
 const PAGE = overlaySource('src/app/admin/data/page.tsx')
 
 /**
- * 剥掉注释后的源码：页头注释里为了解释基线出处会真的写出 298/6007，
+ * 剥掉注释后的源码：页头注释里为了解释基线出处会真的写出 314/6007，
  * 「页面不许出现字面量」的断言必须对它用，否则自己把自己判红
  * （restore-page-guard 同款教训，见 TESTING-CONVENTIONS 第 4 条）。
  */
@@ -85,7 +85,7 @@ describe('灌入判定 seedStatus', () => {
 })
 
 describe('基线数字钉住仓库事实源', () => {
-  it('站点基线 = navigation.json 实测（14 一级 / 46 二级 / 298 站）', () => {
+  it('站点基线 = navigation.json 实测（14 一级 / 46 二级 / 314 站）', () => {
     const nav = overlayJson('src/navsphere/content/navigation.json') as {
       navigationItems: Array<{ subCategories?: unknown[] }>
     }
@@ -96,8 +96,8 @@ describe('基线数字钉住仓库事实源', () => {
     )
     expect(nav.navigationItems.length).toBe(14)
     expect(subs).toBe(46)
-    expect(sites).toBe(298)
-    expect(BASELINE_SITES).toBe(298)
+    expect(sites).toBe(314)
+    expect(BASELINE_SITES).toBe(314)
   })
 
   it('视频基线 = videos.json 实测 6007 条', () => {

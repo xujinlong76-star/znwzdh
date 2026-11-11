@@ -224,7 +224,7 @@ describe("4.0 生态增强与平替雷达", () => {
 
   it("能匹配 Notion 的本地化双链平替 Obsidian 与 AppFlowy", async () => {
     const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
-    const data = getEnhancedSiteData("https://notion.so");
+    const data = getEnhancedSiteData("https://notion.com");
     expect(data.workspaces).toContain("efficiency");
     const obsidian = data.relations?.find((r) => r.targetTitle === "Obsidian");
     expect(obsidian).toBeDefined();

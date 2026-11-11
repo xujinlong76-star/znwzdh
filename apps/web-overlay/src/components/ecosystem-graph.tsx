@@ -477,7 +477,7 @@ export function EcosystemGraph() {
                   <Badge
                     variant="outline"
                     className="text-xs font-mono text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                    title={`图中节点 = ${liveCount} 个站内真实站点（均匀抽样，非全量 298 站）；连线为按共享标签推导的关系，不是人工录入的生态关系`}
+                    title={`图中节点 = ${liveCount} 个站内真实站点（均匀抽样，非全量 314 站）；连线为按共享标签推导的关系，不是人工录入的生态关系`}
                   >
                     实时抽样 {liveCount} 站（真实站点，非全量）
                   </Badge>

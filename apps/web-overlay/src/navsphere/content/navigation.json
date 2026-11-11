@@ -127,6 +127,19 @@
                 "语音",
                 "翻译"
               ]
+            },
+            {
+              "id": "nav-0bc5477b0ff7",
+              "title": "Gemini",
+              "href": "https://gemini.google.com",
+              "description": "Google 的多模态 AI 助手，搜索与 Workspace 深度整合",
+              "icon": "https://gemini.google.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "Google",
+                "多模态",
+                "对话"
+              ]
             }
           ]
         },
@@ -249,6 +262,19 @@
                 "代码审查",
                 "Gitee",
                 "生成"
+              ]
+            },
+            {
+              "id": "nav-42968eaf9722",
+              "title": "Continue.dev",
+              "href": "https://continue.dev",
+              "description": "开源 AI 编程助手，VS Code 与 JetBrains 插件，可接本地模型",
+              "icon": "https://continue.dev/favicon.png",
+              "enabled": true,
+              "tags": [
+                "开源",
+                "编程",
+                "AI 助手"
               ]
             }
           ]
@@ -1545,6 +1571,45 @@
                 "WAF",
                 "网络防护"
               ]
+            },
+            {
+              "id": "nav-4ca5d219ba78",
+              "title": "Coolify",
+              "href": "https://coolify.io",
+              "description": "开源自托管部署平台，在自己服务器上一键部署应用与数据库",
+              "icon": "https://coolify.io/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "自托管",
+                "部署",
+                "开源"
+              ]
+            },
+            {
+              "id": "nav-7303368fd060",
+              "title": "Zeabur",
+              "href": "https://zeabur.com",
+              "description": "一键部署全栈应用的云平台，支持多语言与数据库",
+              "icon": "https://zeabur.com/favicon.svg",
+              "enabled": true,
+              "tags": [
+                "部署",
+                "云平台",
+                "全栈"
+              ]
+            },
+            {
+              "id": "nav-7dfb3eaa0680",
+              "title": "Cloudflare Pages",
+              "href": "https://pages.cloudflare.com",
+              "description": "Cloudflare 边缘静态托管，推送即全球上线，免费额度慷慨",
+              "icon": "https://pages.cloudflare.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "静态托管",
+                "边缘",
+                "部署"
+              ]
             }
           ]
         }
@@ -2245,6 +2310,19 @@
                 "矢量",
                 "专业"
               ]
+            },
+            {
+              "id": "nav-c78272fc0703",
+              "title": "Squoosh",
+              "href": "https://squoosh.app",
+              "description": "Google 开源在线图片压缩，端侧处理不上传，画质可调",
+              "icon": "https://squoosh.app/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "压缩",
+                "图片处理",
+                "开源"
+              ]
             }
           ]
         },
@@ -2337,6 +2415,19 @@
               "tags": [
                 "字体",
                 "订阅"
+              ]
+            },
+            {
+              "id": "nav-f8381fa7fe59",
+              "title": "Lucide",
+              "href": "https://lucide.dev",
+              "description": "开源线性图标库，风格统一，支持 React/Vue 与 Figma 插件",
+              "icon": "https://lucide.dev/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "图标",
+                "开源",
+                "UI"
               ]
             }
           ]
@@ -2521,6 +2612,32 @@
                 "白板",
                 "协作"
               ]
+            },
+            {
+              "id": "nav-bb6600ff3c9d",
+              "title": "Penpot",
+              "href": "https://penpot.app",
+              "description": "开源在线设计与原型工具，Figma 平替，可自托管",
+              "icon": "https://penpot.app/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "开源",
+                "UI 设计",
+                "原型"
+              ]
+            },
+            {
+              "id": "nav-c4aa035078dc",
+              "title": "Pixso",
+              "href": "https://pixso.cn",
+              "description": "国产在线协同设计工具，Figma 平替，中文支持完善",
+              "icon": "https://pixso.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "UI 设计",
+                "协作",
+                "国产"
+              ]
             }
           ]
         }
@@ -2611,6 +2728,32 @@
                 "版本控制",
                 "思维导图"
               ]
+            },
+            {
+              "id": "nav-c79fd62efe2a",
+              "title": "tldraw",
+              "href": "https://www.tldraw.com",
+              "description": "免费轻量在线白板与无限画布，打开即画，适合快速梳理思路",
+              "icon": "https://www.tldraw.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "白板",
+                "画布",
+                "协作"
+              ]
+            },
+            {
+              "id": "nav-d519870cfd13",
+              "title": "Draw.io",
+              "href": "https://app.diagrams.net",
+              "description": "免费开源流程图工具，画架构图与 UML，支持离线与云盘保存",
+              "icon": "https://app.diagrams.net/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "流程图",
+                "架构图",
+                "开源"
+              ]
             }
           ]
         },
@@ -2697,6 +2840,71 @@
                 "知识库",
                 "在线文档",
                 "表格"
+              ]
+            },
+            {
+              "id": "nav-74ad124ca53c",
+              "title": "Obsidian",
+              "href": "https://obsidian.md",
+              "description": "本地 Markdown 双链知识库，插件生态丰富，数据完全归自己",
+              "icon": "https://obsidian.md/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "笔记",
+                "知识库",
+                "Markdown"
+              ]
+            },
+            {
+              "id": "nav-de3563796222",
+              "title": "AppFlowy",
+              "href": "https://appflowy.io",
+              "description": "开源 Notion 平替，本地优先的笔记与看板，可自托管",
+              "icon": "https://appflowy.io/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "笔记",
+                "开源",
+                "看板"
+              ]
+            },
+            {
+              "id": "nav-76126d553f44",
+              "title": "AFFiNE",
+              "href": "https://affine.pro",
+              "description": "开源一体化工作区，文档、白板与数据库三合一",
+              "icon": "https://affine.pro/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "笔记",
+                "白板",
+                "开源"
+              ]
+            },
+            {
+              "id": "nav-0ad94ff7e2cf",
+              "title": "Logseq",
+              "href": "https://logseq.com",
+              "description": "开源大纲笔记，本地优先双链，支持任务与白板",
+              "icon": "https://logseq.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "笔记",
+                "大纲",
+                "开源"
+              ]
+            },
+            {
+              "id": "nav-50edd79acc4e",
+              "title": "思源笔记",
+              "href": "https://b3log.org/siyuan",
+              "description": "开源块级编辑器，可完全离线，双链与挂件生态完善",
+              "icon": "https://b3log.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "笔记",
+                "开源",
+                "双链"
               ]
             }
           ]

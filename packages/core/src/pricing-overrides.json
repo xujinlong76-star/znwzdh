@@ -1463,5 +1463,85 @@
   "pricing": "freemium",
   "evidence": "站点描述明示：金币与会员解锁",
   "title": "DramaBox"
+ },
+ "gemini.google.com": {
+  "pricing": "freemium",
+  "evidence": "Google One AI Premium 订阅解锁 Gemini Advanced，基础版免费",
+  "title": "Gemini"
+ },
+ "continue.dev": {
+  "pricing": "open_source",
+  "evidence": "GitHub continuedev/continue 仓库 Apache-2.0 开源",
+  "title": "Continue.dev"
+ },
+ "coolify.io": {
+  "pricing": "open_source",
+  "evidence": "GitHub coollabsio/coolify 仓库 Apache-2.0 开源",
+  "title": "Coolify"
+ },
+ "zeabur.com": {
+  "pricing": "freemium",
+  "evidence": "官网定价：免费额度 + 按量付费",
+  "title": "Zeabur"
+ },
+ "pages.cloudflare.com": {
+  "pricing": "freemium",
+  "evidence": "Cloudflare 官网：Pages 免费版 + 付费 Workers 套餐",
+  "title": "Cloudflare Pages"
+ },
+ "penpot.app": {
+  "pricing": "open_source",
+  "evidence": "GitHub penpot/penpot 仓库 MPL-2.0 开源",
+  "title": "Penpot"
+ },
+ "pixso.cn": {
+  "pricing": "freemium",
+  "evidence": "官网定价：个人免费版 + 团队付费版",
+  "title": "Pixso"
+ },
+ "squoosh.app": {
+  "pricing": "open_source",
+  "evidence": "GitHub GoogleChromeLabs/squoosh 仓库 Apache-2.0 开源",
+  "title": "Squoosh"
+ },
+ "tldraw.com": {
+  "pricing": "free",
+  "evidence": "tldraw.com 在线白板免费使用；SDK 自 4.0 起生产环境需商业授权，源码仅 source-available",
+  "title": "tldraw"
+ },
+ "app.diagrams.net": {
+  "pricing": "open_source",
+  "evidence": "draw.io 核心编辑器 Apache-2.0 开源，网页版完全免费",
+  "title": "Draw.io"
+ },
+ "lucide.dev": {
+  "pricing": "open_source",
+  "evidence": "GitHub lucide-icons/lucide 仓库 ISC 开源",
+  "title": "Lucide"
+ },
+ "obsidian.md": {
+  "pricing": "freemium",
+  "evidence": "官网定价：个人免费 + Sync/Catalyst 付费",
+  "title": "Obsidian"
+ },
+ "appflowy.io": {
+  "pricing": "open_source",
+  "evidence": "GitHub AppFlowy-IO/AppFlowy 仓库 AGPL-3.0 开源",
+  "title": "AppFlowy"
+ },
+ "affine.pro": {
+  "pricing": "freemium",
+  "evidence": "官网定价：免费版 + Pro 付费版",
+  "title": "AFFiNE"
+ },
+ "logseq.com": {
+  "pricing": "open_source",
+  "evidence": "GitHub logseq/logseq 仓库 AGPL-3.0 开源",
+  "title": "Logseq"
+ },
+ "b3log.org/siyuan": {
+  "pricing": "open_source",
+  "evidence": "GitHub siyuan-note/siyuan 仓库 AGPL-3.0 开源",
+  "title": "思源笔记"
  }
 }

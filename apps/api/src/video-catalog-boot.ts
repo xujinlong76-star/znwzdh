@@ -112,7 +112,8 @@ export async function reconcileVideoCatalogOnBoot(
         // 键名与 video-catalog-main.ts 对账 CLI 同口径（"videos" = kv:videos 原始载荷）
         loadDoc: () => readKv(ctx, "videos"),
         check: (data) => checkVideoCatalogConsistency(ctx, data),
-        repair: (data) => syncVideoCatalog(ctx, data),
+        // force：启动修表是 json 模式下唯一允许写影子表的路径（见 syncVideoCatalog 注释）
+        repair: (data) => syncVideoCatalog(ctx, data, { force: true }),
       },
       log,
     )

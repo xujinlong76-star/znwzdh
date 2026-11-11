@@ -407,9 +407,15 @@ export function rebuildReplacementHistory(
 export async function syncVideoCatalog(
   ctx: AppContext,
   data: unknown,
+  opts: { force?: boolean } = {},
 ): Promise<{ categories: number; items: number; replacements: number } | null> {
   const mode = resolveVideoStoreMode()
-  if (mode === "json") return null
+  // json 模式下日常写路径不同步影子表（writeVideosData 调用前已按模式把关，
+  // 这里是第二道闸）。但启动对账的「修表」是刻意例外：video-catalog-boot 的
+  // 设计就是 json/dual 漂移时用 KV 全量替换修表、把影子表养热备切换；
+  // 若这里无条件拒绝，修表会静默空转、复检永远不一致并误报「请人工排查」，
+  // 故对账路径以 force 显式越过这道闸（decideBootRepair 的测试口径即如此）。
+  if (mode === "json" && !opts.force) return null
 
   const flattened = flattenVideoCatalog(data)
   const counts = await replaceVideoCatalog(ctx.repo, flattened.categories, flattened.items)

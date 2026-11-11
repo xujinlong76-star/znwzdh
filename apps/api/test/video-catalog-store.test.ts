@@ -321,6 +321,23 @@ describe("模式行为", () => {
     warn.mockRestore()
   })
 
+  it("启动修表（force）能越过 json 闸真写影子表，日常同步仍被闸住", async () => {
+    // 背景：video-catalog-boot 的设计是 json 模式漂移也要修表，但
+    // syncVideoCatalog 曾在 json 模式无条件 return null，修表静默空转、
+    // 开机日志误报「修表后复检仍不一致」。这里钉住两边的口径都不许退化。
+    process.env.NAVHUB_VIDEO_STORE = "json";
+    await writeVideosData(ctx, DOC);
+
+    // 日常同步：json 模式返回 null、表保持空
+    await expect(syncVideoCatalog(ctx, DOC)).resolves.toBeNull();
+    expect((await checkVideoCatalogConsistency(ctx, DOC)).ok).toBe(false);
+
+    // 启动修表：force 后真写入，复检一致
+    const repaired = await syncVideoCatalog(ctx, DOC, { force: true });
+    expect(repaired?.items).toBeGreaterThan(0);
+    expect((await checkVideoCatalogConsistency(ctx, DOC)).ok).toBe(true);
+  });
+
   it("一致性检查：同步后一致，删表后能报出缺失", async () => {
     process.env.NAVHUB_VIDEO_STORE = "dual"
     await writeVideosData(ctx, DOC)

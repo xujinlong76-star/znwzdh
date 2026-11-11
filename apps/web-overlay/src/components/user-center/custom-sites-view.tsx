@@ -14,6 +14,7 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { safeHref } from '@/lib/safe-url'
+import { recordCustomSiteAddedAction } from '@/lib/growth'
 
 interface CustomSite {
   id: string
@@ -88,6 +89,8 @@ export function CustomSitesView() {
       })
       setItems((cur) => [...cur, data.item])
       setForm({ title: '', url: '', note: '' })
+      // 成长沉淀槽信号：新增了 1 个自己的站（只记账，任务达标由引擎结算）
+      recordCustomSiteAddedAction()
     })
 
   const saveEdit = (id: string) =>

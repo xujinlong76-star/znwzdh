@@ -299,6 +299,9 @@
        像从猫身上荡开），退场随坞整体淡出；聊天钮只用渐变主色区分主次，不再骑角放大。 */
     '#xiaomaomao .xm-dock{position:absolute;right:-4px;bottom:calc(100% + 10px);display:flex;flex-direction:row-reverse;gap:6px;padding:6px;border-radius:999px;background:var(--xm-surface);-webkit-backdrop-filter:blur(14px) saturate(1.5);backdrop-filter:blur(14px) saturate(1.5);border:1px solid var(--xm-ring);box-shadow:var(--xm-shadow-pop);z-index:11;opacity:0;visibility:hidden;transform:translateY(8px) scale(.96);transform-origin:bottom right;transition:opacity .22s var(--xm-ease),transform .22s var(--xm-ease),visibility 0s linear .22s;pointer-events:none}' +
     '#xiaomaomao .xm-dock.xm-fan-r{right:auto;left:-4px;transform-origin:bottom left}' +
+    '#xiaomaomao .xm-dock{flex-wrap:wrap}' +
+    '#xiaomaomao .xm-growth-chip{flex:0 0 100%;display:none;align-items:center;justify-content:center;gap:4px;padding:2px 6px 0;font-size:11px;line-height:1.35;color:var(--xm-ink-soft);white-space:nowrap;letter-spacing:.02em}' +
+    '#xiaomaomao .xm-growth-chip.xm-on{display:flex}' +
     '#xiaomaomao.xm-ctl .xm-dock{opacity:1;visibility:visible;transform:translateY(0) scale(1);transition:opacity .22s var(--xm-ease),transform .22s var(--xm-ease);pointer-events:auto}' +
     '#xiaomaomao .xm-btn{width:36px;height:36px;border-radius:50%;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-ink);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;box-shadow:0 2px 6px rgba(43,10,24,.10);transition:transform .14s var(--xm-ease),background .12s var(--xm-ease),box-shadow .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
     '#xiaomaomao .xm-dock .xm-btn{opacity:0;transition:opacity .18s var(--xm-ease),transform .14s var(--xm-ease),background .12s var(--xm-ease),box-shadow .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
@@ -1303,14 +1306,29 @@
 
   /* ---------- v4：成长联动（只读 navhub.growth.v1，规则与站内 growth.ts 同口径复刻） ---------- */
   var GROWTH_KEY = 'navhub.growth.v1';
+  /* v2 起引擎落盘时顺手写只读摘要（等级/连胜/今日三槽/冻结卡），挂件优先读摘要不复刻任务逻辑 */
+  var GROWTH_SUMMARY_KEY = 'navhub.growth.summary.v1';
   var LEVELS4 = [
     { level: 1, title: '初来乍到小奶猫', xp: 0 }, { level: 2, title: '好奇小猫', xp: 60 },
     { level: 3, title: '探险小猫', xp: 180 }, { level: 4, title: '铃铛收藏家', xp: 360 },
     { level: 5, title: '夜行捕手', xp: 600 }, { level: 6, title: '云端漫游猫', xp: 950 },
-    { level: 7, title: '星空领航猫', xp: 1400 }, { level: 8, title: '传说大猫猫', xp: 2000 }
+    { level: 7, title: '星空领航猫', xp: 1400 }, { level: 8, title: '传说大猫猫', xp: 2000 },
+    { level: 9, title: '浅滩试水猫', xp: 2900 }, { level: 10, title: '鱼干品鉴师', xp: 4000 },
+    { level: 11, title: '深海垂钓猫', xp: 5300 }, { level: 12, title: '月光守夜猫', xp: 6800 },
+    { level: 13, title: '云端长老猫', xp: 8500 }, { level: 14, title: '星图绘制者', xp: 10500 },
+    { level: 15, title: '银河放牧猫', xp: 13000 }, { level: 16, title: '导航守护神猫', xp: 16000 }
   ];
+  function readGrowthSummary() {
+    try {
+      var raw = window.localStorage.getItem(GROWTH_SUMMARY_KEY);
+      if (!raw) return null;
+      var s = JSON.parse(raw);
+      if (!s || typeof s !== 'object') return null;
+      return s;
+    } catch (e) { return null; }
+  }
   function readGrowth() {
-    var base = { totalXp: 0, features: {}, categories: [], scenes: [], activeDates: [], dramaDates: [], idleTotalMinutes: 0, homepageClaimedAt: null };
+    var base = { totalXp: 0, features: {}, categories: [], scenes: [], activeDates: [], dramaDates: [], dayStates: {}, idleTotalMinutes: 0, homepageClaimedAt: null };
     try {
       var raw = window.localStorage.getItem(GROWTH_KEY);
       if (!raw) return base;
@@ -1322,6 +1340,7 @@
         features: (p.features && typeof p.features === 'object' && !Array.isArray(p.features)) ? p.features : {},
         categories: strArr(p.categories), scenes: strArr(p.scenes),
         activeDates: strArr(p.activeDates), dramaDates: strArr(p.dramaDates),
+        dayStates: (p.dayStates && typeof p.dayStates === 'object' && !Array.isArray(p.dayStates)) ? p.dayStates : {},
         idleTotalMinutes: (typeof p.idleTotalMinutes === 'number' && isFinite(p.idleTotalMinutes) && p.idleTotalMinutes >= 0) ? Math.floor(p.idleTotalMinutes) : 0,
         homepageClaimedAt: typeof p.homepageClaimedAt === 'string' ? p.homepageClaimedAt : null
       };
@@ -1333,12 +1352,28 @@
     return cur;
   }
   function streakOf(p) {
-    var set = {};
-    p.activeDates.forEach(function (d) { set[d] = 1; });
+    // v2：优先读引擎摘要（04:00 切日 + 冻结/抢救口径都在引擎里算好）
+    var sum = readGrowthSummary();
+    if (sum && typeof sum.streak === 'number') return sum.streak;
+    // 回退（档案还是 v1 或摘要未生成）：点亮日 ∪ 垫付/抢救日，休息日透明
+    var present = {};
+    p.activeDates.forEach(function (d) { present[d] = 1; });
+    Object.keys(p.dayStates || {}).forEach(function (k) {
+      var s = p.dayStates[k];
+      if (s === 'lit' || s === 'frozen' || s === 'rescued') present[k] = 1;
+      else if (s === 'rest') present[k] = 2;
+    });
     var cursor = new Date();
-    if (!set[todayKeyStr(cursor)]) cursor.setDate(cursor.getDate() - 1);
-    var n = 0;
-    while (set[todayKeyStr(cursor)]) { n += 1; cursor.setDate(cursor.getDate() - 1); }
+    if (!present[todayKeyStr(cursor)]) cursor.setDate(cursor.getDate() - 1);
+    var n = 0, guard = 0;
+    while (guard < 4000) {
+      var v = present[todayKeyStr(cursor)];
+      if (v === 1) n += 1;
+      else if (v === 2) { /* 休息日透明 */ }
+      else break;
+      cursor.setDate(cursor.getDate() - 1);
+      guard += 1;
+    }
     return n;
   }
   function featCount(p, k) { var f = p.features[k]; return (f && typeof f.count === 'number') ? f.count : 0; }
@@ -1362,8 +1397,24 @@
     ];
     return defs.filter(function (d) { return d.ok; });
   }
+  var growthChipEl = null;
+  function refreshGrowthChip() {
+    if (!growthChipEl) return;
+    var s = readGrowthSummary();
+    if (!s || typeof s.level !== 'number') { growthChipEl.classList.remove('xm-on'); return; }
+    var tierIcon = s.level <= 4 ? '🐾' : s.level <= 8 ? '🔔' : s.level <= 12 ? '🐟' : '👑';
+    var dots = (s.dots || []).map(function (d) { return d ? '●' : '○'; }).join('');
+    growthChipEl.textContent =
+      tierIcon + ' Lv.' + s.level +
+      (s.streak > 0 ? ' · 连胜 ' + s.streak + ' 天' : '') +
+      (dots ? ' · 今日 ' + dots : '') +
+      (s.freezeCards > 0 ? ' · ❄' + s.freezeCards : '') +
+      (s.chestAvailable ? ' · 🎁可开' : '');
+    growthChipEl.classList.add('xm-on');
+  }
   function checkGrowth(announce) {
     var p = readGrowth();
+    refreshGrowthChip();
     var lv = levelOf(p.totalXp);
     var earned = badgesOf(p);
     var ids = earned.map(function (b) { return b.id; });
@@ -1416,6 +1467,13 @@
   var FEED_LINES = ['好香！小鱼干最好吃啦', '咔哧咔哧……嗯，满足', '谢谢投喂，今天也元气满满', '一条小鱼干，快乐一整天'];
   var dockBox = root.querySelector('.xm-dock');
   var closeBtnEl = root.querySelector('.xm-close-btn');
+  // 成长等级行：坞内第一行（整行宽，不遮猫本体），只读引擎摘要
+  var chipEl = document.createElement('div');
+  chipEl.className = 'xm-growth-chip';
+  chipEl.setAttribute('aria-hidden', 'true');
+  dockBox.insertBefore(chipEl, dockBox.firstChild);
+  growthChipEl = chipEl;
+  refreshGrowthChip();
   var fishBtn = document.createElement('button');
   fishBtn.className = 'xm-btn xm-fish-btn';
   fishBtn.type = 'button';

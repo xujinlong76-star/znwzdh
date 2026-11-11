@@ -208,6 +208,8 @@ export function useWatchlist(): WatchlistApi {
       }
       if (!persist([entry, ...current])) return null
       markDirty([key])
+      // 新剧入清单：记一次追剧进度信号并标 newDrama（沉淀/核心任务口径与单纯推进进度区分）
+      recordGrowthEvent('watchlist_progress', { newDrama: true })
       return entry
     },
     [persist],

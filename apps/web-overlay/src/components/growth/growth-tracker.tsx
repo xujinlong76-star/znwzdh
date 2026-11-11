@@ -16,7 +16,26 @@
 
 import { useEffect, useRef } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { AI_CHAT_USED_EVENT, recordDailyVisitOnce, recordGrowthEvent, recordIdleMinute } from '@/lib/growth'
+import {
+  AI_CHAT_USED_EVENT,
+  claimPwaInstallAction,
+  markMemberSeenAction,
+  recordDailyVisitOnce,
+  recordGrowthEvent,
+  recordIdleMinute,
+  recordPageVisitAction,
+} from '@/lib/growth'
+import { probeClientSession } from '@/lib/client-session'
+
+/** 站点 key 规范化（同站同日硬化与百站寻宝的去重口径）：去 query/hash 与尾斜杠 */
+function siteKeyOf(href: string): string {
+  try {
+    const u = new URL(href)
+    return `${u.origin}${u.pathname.replace(/\/+$/, '')}`
+  } catch {
+    return href.split(/[?#]/)[0]!.replace(/\/+$/, '')
+  }
+}
 
 declare global {
   interface Window {
@@ -31,6 +50,22 @@ export function GrowthTracker() {
 
   useEffect(() => {
     recordDailyVisitOnce()
+    // 身份档：探测登录态同步进成长档案（×1.2 档）；探测失败不猜、不改
+    let cancelled = false
+    void probeClientSession().then((probe) => {
+      if (cancelled) return
+      if (probe.kind === 'ok') markMemberSeenAction(!!probe.session.user?.id)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // PWA 真实安装（appinstalled 事件）→ +60 一次性奖励 + ×1.5 身份档
+  useEffect(() => {
+    const onInstalled = () => claimPwaInstallAction()
+    window.addEventListener('appinstalled', onInstalled)
+    return () => window.removeEventListener('appinstalled', onInstalled)
   }, [])
 
   useEffect(() => {
@@ -51,7 +86,7 @@ export function GrowthTracker() {
       const target = e.target as HTMLElement | null
       const anchor = target?.closest?.('a[href^="http"]') as HTMLAnchorElement | null
       if (anchor && !anchor.href.startsWith(window.location.origin)) {
-        recordGrowthEvent('site_open')
+        recordGrowthEvent('site_open', { siteKey: siteKeyOf(anchor.href) })
       }
     }
     document.addEventListener('click', onClick)
@@ -89,7 +124,17 @@ export function GrowthTracker() {
     }
     if (pathname === '/search' && searchParams?.get('q')) {
       awardedRoutes.current.add(key)
-      recordGrowthEvent('search')
+      recordGrowthEvent('search', { term: searchParams.get('q') ?? undefined })
+      return
+    }
+    if (pathname === '/brief') {
+      awardedRoutes.current.add(key)
+      recordGrowthEvent('brief_read')
+      return
+    }
+    if (pathname === '/hot') {
+      awardedRoutes.current.add(key)
+      recordPageVisitAction('hot')
     }
   }, [pathname, searchParams])
 

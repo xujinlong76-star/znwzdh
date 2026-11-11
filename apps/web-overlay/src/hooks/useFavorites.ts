@@ -228,8 +228,8 @@ export function useFavorites(): FavoritesApi {
     // 写不进去就返回未改变的状态：调用方据此提示，界面不会出现「点了但没变化」
     if (!persist(next)) return existed
 
-    // 真的新增收藏时记一次成长经验（取消收藏不记）
-    if (!existed) recordGrowthEvent('favorite_add')
+    // 真的新增收藏时记一次成长经验（取消收藏不记）；siteId 进收藏净增锁，同站终身只给 1 次
+    if (!existed) recordGrowthEvent('favorite_add', { siteId: site.siteId })
 
     // 新增与取消都是待推变更：新增在本地列表里（同步推 add），
     // 取消后已不在本地列表（同步推 remove）——同一条置脏路径覆盖两种 op

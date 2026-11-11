@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { NavigationContent } from "@/components/navigation-content";
 import { HomeBriefStrip } from "@/components/home-brief-strip";
+import { StreakBar } from "@/components/growth/streak-bar";
 import { Metadata } from "next/types";
 import { getProcessedData } from "@/lib/data-loader";
 import { getFileContent } from "@/lib/github";
@@ -296,6 +297,7 @@ export default async function HomePage() {
   return (
     <>
       <HomeBriefStrip />
+      <StreakBar />
       <NavigationContent
         navigationData={navigationData}
         siteData={siteData}

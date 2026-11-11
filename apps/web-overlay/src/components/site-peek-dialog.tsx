@@ -53,6 +53,8 @@ export function SitePeekDialog({
   const { toast } = useToast()
   const [actionInputs, setActionInputs] = useState<Record<string, string>>({})
   const [showIframe, setShowIframe] = useState(false)
+  /** 速览 iframe 状态：loading 中显示加载态，超时未 load 判定为被对方禁嵌并给兜底（A6） */
+  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'loaded' | 'blocked'>('idle')
   const [hyperbolicAlts, setHyperbolicAlts] = useState<Array<{
     site: { id: string; title: string; url: string; description?: string }
     geodesicDistance: number
@@ -130,8 +132,7 @@ export function SitePeekDialog({
       setVisualUrl(null)
       setVisualLoading(false)
       return
-    }
-    let cancelled = false
+    }    let cancelled = false
     fetch(`/api/hub/rank/alternatives/${encodeURIComponent(item.id)}?limit=4`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -146,6 +147,23 @@ export function SitePeekDialog({
       cancelled = true
     }
   }, [open, item?.id])
+
+  // 速览 iframe 失败兜底（DEV_BACKLOG A6）：不少站点用 X-Frame-Options / CSP
+  // frame-ancestors 禁止被内嵌，这类失败既不触发 iframe 的 error 事件、
+  // 也没有可靠的 JS 检测手段，此前用户点开只会看到一块白屏、没有任何解释，
+  // 以为是本站坏了。这里以 load 事件为成功信号：5 秒未 load 即判定大概率
+  // 被对方禁嵌，撤掉白屏、给出说明与「打开原站」入口。
+  useEffect(() => {
+    if (!open || !showIframe || !item?.href || !safeSrc(item.href)) {
+      setPreviewState('idle')
+      return
+    }
+    setPreviewState('loading')
+    const timer = window.setTimeout(() => {
+      setPreviewState((s) => (s === 'loading' ? 'blocked' : s))
+    }, 5000)
+    return () => window.clearTimeout(timer)
+  }, [open, showIframe, item?.id, item?.href])
 
   if (!item) return null
 
@@ -718,7 +736,27 @@ export function SitePeekDialog({
                 sandbox="allow-scripts allow-forms allow-popups"
                 loading="lazy"
                 title={`Preview of ${item.title}`}
+                onLoad={() => setPreviewState((s) => (s === 'loading' ? 'loaded' : s))}
               />
+              {previewState === 'loading' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/30 text-xs text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>正在加载 {item.title} 的预览…</span>
+                </div>
+              )}
+              {previewState === 'blocked' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-card p-6 text-center">
+                  <AlertTriangle className="w-6 h-6 text-amber-500" />
+                  <p className="text-sm font-medium">这个站点没能在预览窗里打开</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed max-w-sm">
+                    不少站点（如 GitHub、知乎）出于安全策略禁止被嵌入到其他网页中，这不是本站故障。你可以直接去原站查看：
+                  </p>
+                  <Button size="sm" className="gap-1.5" onClick={() => safeWindowOpen(previewSrc)}>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    打开原站
+                  </Button>
+                </div>
+              )}
             </div>
             ) : (
               <div className="p-4 rounded-xl border border-dashed border-rose-500/40 text-center text-xs text-muted-foreground bg-muted/10">

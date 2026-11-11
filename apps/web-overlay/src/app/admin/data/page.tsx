@@ -11,9 +11,14 @@
  *      计数，对照仓库基线（298 站 / 6007 条视频）判断「灌了没有」——
  *      这正是 A1 的「半空站」陷阱：全新部署漏了整包导入时，前台看着正常、
  *      中枢却是空的，本页是唯一能一眼看出来的地方。
- *   2. 备份导出：冷备包（/api/export/backup.json，含未发布站点，仅管理员）
+ *   2. 冷启动基线导入标记：A1 的种子基线检查每次都会把结论写成
+ *      baseline-import.json 文档（导入了没有、多少条、什么时候），本页
+ *      读它展示「导入标记卡」——与上面的实时计数互相印证：一边是
+ *      「当时导入的结论」，一边是「现在库里的实数」。老部署从没写过
+ *      这份标记时如实显示「暂无基线导入记录」，不报错、不假装。
+ *   3. 备份导出：冷备包（/api/export/backup.json，含未发布站点，仅管理员）
  *      与书签 HTML（公开口径）各一个真入口。
- *   3. 导入与恢复：冷备恢复（整库导入）、站点管理（逐条增改）、视频管理。
+ *   4. 导入与恢复：冷备恢复（整库导入）、站点管理（逐条增改）、视频管理。
  *
  * 诚实规则：任一计数取不到时，那张卡只说「暂时读不到」，绝不拿 0 或
  * 缓存旧值充数；基线只用于「低于/达到」的比较，超基线是正常的（管理员
@@ -30,8 +35,10 @@ import {
   FileJson,
   Film,
   Globe,
+  Info,
   Loader2,
   RefreshCw,
+  Rocket,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -41,7 +48,10 @@ import { describeDegrade } from '@/lib/degrade'
 import {
   BASELINE_SITES,
   BASELINE_VIDEOS,
+  parseBaselineMarker,
   seedStatus,
+  type BaselineMarker,
+  type BaselineStatus,
   type SeedStatus,
 } from '@/lib/data-management'
 
@@ -99,6 +109,42 @@ function SeedBadge({ status }: { status: SeedStatus }) {
   )
 }
 
+const BASELINE_STATUS_META: Record<BaselineStatus, { label: string; className: string }> = {
+  imported: {
+    label: '已自动导入',
+    className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  },
+  skipped_existing: {
+    label: '已有数据，已跳过（正常）',
+    className: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400',
+  },
+  missing_file: {
+    label: '基线文件缺失',
+    className: 'bg-red-500/10 text-red-700 dark:text-red-400',
+  },
+  failed: { label: '导入失败', className: 'bg-red-500/10 text-red-700 dark:text-red-400' },
+  disabled: {
+    label: '基线导入已关闭',
+    className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  },
+}
+
+function BaselineBadge({ status }: { status: BaselineStatus }) {
+  const meta = BASELINE_STATUS_META[status]
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${meta.className}`}
+    >
+      {meta.label}
+    </span>
+  )
+}
+
+function formatBaselineTime(at: string): string {
+  const d = new Date(at)
+  return Number.isNaN(d.getTime()) ? at : d.toLocaleString('zh-CN')
+}
+
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-md border border-border p-2.5">
@@ -113,21 +159,27 @@ export default function DataManagementPage() {
   const [overviewError, setOverviewError] = useState<string | null>(null)
   const [videos, setVideos] = useState<VideosSummary | null>(null)
   const [videosError, setVideosError] = useState<string | null>(null)
+  const [baseline, setBaseline] = useState<BaselineMarker | null>(null)
+  const [baselineMissing, setBaselineMissing] = useState(false)
+  const [baselineError, setBaselineError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [exportBusy, setExportBusy] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
 
   /**
-   * 两路计数各自 try/catch：站点库读不到不该连累视频库也显示失败，
-   * 反之亦然——它们是两个独立的事实源（关系表 vs KV 文档）。
+   * 三路取数各自 try/catch：站点库读不到不该连累视频库也显示失败，
+   * 基线标记读不到也只坏标记卡自己——它们是三个独立的事实源
+   * （关系表 vs KV 视频文档 vs KV 标记文档）。
    */
   const load = useCallback(async () => {
     setLoading(true)
     setOverviewError(null)
     setVideosError(null)
-    const [overviewResult, videosResult] = await Promise.allSettled([
+    setBaselineError(null)
+    const [overviewResult, videosResult, baselineResult] = await Promise.allSettled([
       hubGet<DashboardOverview>('/api/admin/dashboard/overview'),
       hubGet<VideosSummary>('/api/videos?limit=1'),
+      hubGet<unknown>('/api/storage?path=baseline-import.json'),
     ])
     if (overviewResult.status === 'fulfilled') {
       setOverview(overviewResult.value)
@@ -140,6 +192,24 @@ export default function DataManagementPage() {
     } else {
       setVideos(null)
       setVideosError(describeDegrade(videosResult.reason).message)
+    }
+    if (baselineResult.status === 'fulfilled') {
+      const parsed = parseBaselineMarker(baselineResult.value)
+      if (parsed.kind === 'present') {
+        setBaseline(parsed.marker)
+        setBaselineMissing(false)
+      } else if (parsed.kind === 'missing') {
+        setBaseline(null)
+        setBaselineMissing(true)
+      } else {
+        setBaseline(null)
+        setBaselineMissing(false)
+        setBaselineError('返回结构不符合预期')
+      }
+    } else {
+      setBaseline(null)
+      setBaselineMissing(false)
+      setBaselineError(describeDegrade(baselineResult.reason).message)
     }
     setLoading(false)
   }, [])
@@ -310,6 +380,75 @@ export default function DataManagementPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Rocket className="h-4 w-4 text-muted-foreground" aria-hidden />
+            冷启动基线导入
+          </CardTitle>
+          <CardDescription>
+            种子基线检查写下的导入结论（baseline-import.json）：当时导入了没有、多少条
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {loading ? (
+            <p className="inline-flex items-center gap-1 text-sm text-muted-foreground" role="status">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              读取中…
+            </p>
+          ) : baselineMissing ? (
+            <p className="flex items-start gap-1.5 text-sm text-muted-foreground">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>
+                暂无基线导入记录。这台中枢要么是基线功能上线前就已部署的老库（数据靠别的方式进入，属正常），
+                要么种子步骤还没跑过。新部署首次启动后这里会出现导入结论。
+              </span>
+            </p>
+          ) : baselineError ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              基线导入记录暂时读不到：{baselineError}
+            </p>
+          ) : baseline ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                最近一次种子检查：{formatBaselineTime(baseline.at)}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(
+                  [
+                    { title: '导航数据', part: baseline.navigation, unit: '站' },
+                    { title: '视频库', part: baseline.videos, unit: '条' },
+                  ] as const
+                ).map(({ title, part, unit }) => (
+                  <div key={title} className="rounded-md border border-border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">{title}</span>
+                      <BaselineBadge status={part.status} />
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {part.status === 'skipped_existing' ? (
+                        <>
+                          库内现有 {part.count ?? '—'} {unit}，基线未覆盖
+                        </>
+                      ) : (
+                        <>
+                          库内 {part.count ?? '—'} {unit}
+                          {part.fileCount !== null && <> · 基线文件 {part.fileCount} {unit}</>}
+                          {part.categories !== null && <> · 类目 {part.categories} 个</>}
+                        </>
+                      )}
+                    </p>
+                    {part.error && (
+                      <p className="mt-1 text-xs text-destructive">{part.error}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

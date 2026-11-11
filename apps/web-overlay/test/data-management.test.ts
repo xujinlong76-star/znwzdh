@@ -15,7 +15,12 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { BASELINE_SITES, BASELINE_VIDEOS, seedStatus } from '../src/lib/data-management'
+import {
+  BASELINE_SITES,
+  BASELINE_VIDEOS,
+  parseBaselineMarker,
+  seedStatus,
+} from '../src/lib/data-management'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -156,5 +161,114 @@ describe('数据管理页：结构与端点契约', () => {
   it('刷新按钮复用同一份加载逻辑，不另写一套取数', () => {
     expect(PAGE).toMatch(/onClick=\{\(\) => void load\(\)\}/)
     expect(PAGE).toContain('const load = useCallback')
+  })
+})
+
+describe('基线导入标记解析 parseBaselineMarker', () => {
+  const marker = {
+    version: 1,
+    at: '2026-11-11T02:00:00.000Z',
+    navigation: { status: 'imported', count: 298, fileCount: 298, categories: 60 },
+    videos: { status: 'skipped_existing', count: 6007, fileCount: 6007 },
+  }
+
+  it('标记本体（中枢当前实际返回）解析为 present，字段逐项对齐 baseline.ts 口径', () => {
+    const parsed = parseBaselineMarker(marker)
+    expect(parsed.kind).toBe('present')
+    if (parsed.kind !== 'present') return
+    expect(parsed.marker.version).toBe(1)
+    expect(parsed.marker.at).toBe(marker.at)
+    expect(parsed.marker.navigation.status).toBe('imported')
+    expect(parsed.marker.navigation.count).toBe(298)
+    expect(parsed.marker.navigation.categories).toBe(60)
+    expect(parsed.marker.videos.status).toBe('skipped_existing')
+    expect(parsed.marker.videos.fileCount).toBe(6007)
+    expect(parsed.marker.videos.categories).toBeNull()
+  })
+
+  it('count/fileCount 为 null（关闭/文件不可读）时保留 null，不拿 0 充数', () => {
+    const parsed = parseBaselineMarker({
+      version: 1,
+      at: '2026-11-11T02:00:00.000Z',
+      navigation: { status: 'disabled', count: null, fileCount: null, categories: null },
+      videos: { status: 'failed', count: 0, fileCount: 12, error: 'boom' },
+    })
+    expect(parsed.kind).toBe('present')
+    if (parsed.kind !== 'present') return
+    expect(parsed.marker.navigation.count).toBeNull()
+    expect(parsed.marker.videos.error).toBe('boom')
+  })
+
+  it('文档不存在的各种回法都判 missing（老部署无记录）', () => {
+    expect(parseBaselineMarker(null).kind).toBe('missing')
+    expect(parseBaselineMarker(undefined).kind).toBe('missing')
+    expect(parseBaselineMarker('null').kind).toBe('missing')
+    expect(parseBaselineMarker({ synced: false, document: null }).kind).toBe('missing')
+    expect(parseBaselineMarker({ document: null }).kind).toBe('missing')
+  })
+
+  it('信封包了一层时拆开解析', () => {
+    expect(parseBaselineMarker({ document: marker }).kind).toBe('present')
+    expect(parseBaselineMarker({ synced: true, document: marker }).kind).toBe('present')
+    expect(parseBaselineMarker(JSON.stringify(marker)).kind).toBe('present')
+  })
+
+  it('结构对不上判 invalid，不误报 missing 也不硬凑 present', () => {
+    expect(parseBaselineMarker({}).kind).toBe('invalid')
+    expect(parseBaselineMarker(42).kind).toBe('invalid')
+    expect(parseBaselineMarker('not-json').kind).toBe('invalid')
+    expect(
+      parseBaselineMarker({
+        version: 1,
+        at: '2026-11-11T02:00:00.000Z',
+        navigation: { status: 'weird', count: 1, fileCount: 1 },
+        videos: { status: 'imported', count: 1, fileCount: 1 },
+      }).kind,
+    ).toBe('invalid')
+    expect(
+      parseBaselineMarker({
+        version: 1,
+        navigation: marker.navigation,
+        videos: marker.videos,
+      }).kind,
+    ).toBe('invalid')
+  })
+
+  it('五种状态全认：imported/skipped_existing/missing_file/failed/disabled', () => {
+    for (const status of ['imported', 'skipped_existing', 'missing_file', 'failed', 'disabled']) {
+      const parsed = parseBaselineMarker({
+        version: 1,
+        at: '2026-11-11T02:00:00.000Z',
+        navigation: { status, count: 1, fileCount: 1 },
+        videos: { status, count: 1, fileCount: 1 },
+      })
+      expect(parsed.kind).toBe('present')
+    }
+  })
+})
+
+describe('数据管理页：基线导入标记卡（A9 合并）', () => {
+  it('标记走与其它卡同一条取数通道：hubGet 读 /api/storage 的 baseline-import.json', () => {
+    expect(PAGE).toContain("hubGet<unknown>('/api/storage?path=baseline-import.json')")
+    expect(PAGE).toContain('parseBaselineMarker(')
+    expect(PAGE).toContain('baselineError')
+    expect(PAGE).toContain('baselineMissing')
+  })
+
+  it('卡片在位：标题、五种状态文案与无记录降级文案齐全', () => {
+    expect(PAGE).toContain('冷启动基线导入')
+    expect(PAGE).toContain('已自动导入')
+    expect(PAGE).toContain('已有数据，已跳过（正常）')
+    expect(PAGE).toContain('基线文件缺失')
+    expect(PAGE).toContain('导入失败')
+    expect(PAGE).toContain('基线导入已关闭')
+    expect(PAGE).toContain('暂无基线导入记录')
+    // 读取失败只坏这一张卡：同款「暂时读不到」口径，不整页报错
+    expect(PAGE).toContain('基线导入记录暂时读不到')
+  })
+
+  it('标记卡取数并入同一份 load 的 allSettled，三路互不连累', () => {
+    expect(PAGE).toContain('baselineResult')
+    expect(PAGE).toMatch(/Promise\.allSettled\(\[[\s\S]*baseline-import\.json/)
   })
 })

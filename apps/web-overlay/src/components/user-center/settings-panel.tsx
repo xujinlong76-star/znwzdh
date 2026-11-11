@@ -20,7 +20,61 @@ import {
   type UserSettingsPatch,
 } from '@/lib/user-settings'
 import { Settings2, Zap, ChevronDown, Command } from 'lucide-react'
-import type { ComponentProps } from 'react'
+import { useEffect, useState, type ComponentProps } from 'react'
+import {
+  FONT_SIZE_LABEL,
+  FONT_SIZE_PX,
+  FONT_SIZE_STORAGE_KEY,
+  applyFontSizeLevel,
+  loadFontSizeLevel,
+  type FontSizeLevel,
+} from '@/lib/font-size'
+
+const FONT_SIZE_LEVELS: FontSizeLevel[] = ['standard', 'large', 'xlarge']
+
+/**
+ * 字号大小（本机设置）：与工具栏字号按钮共用 lib/font-size 的同一份
+ * localStorage，不走服务端用户设置（字号是这台设备的显示偏好）。
+ * A13：此前字号入口只有工具栏且 hidden lg:，手机上无处可改；
+ * 设置页给一个带文字标签的入口，年长用户找得到、点得到。
+ */
+function FontSizeField({ idPrefix }: { idPrefix: string }) {
+  const [level, setLevel] = useState<FontSizeLevel>('standard')
+  useEffect(() => {
+    setLevel(loadFontSizeLevel(window.localStorage))
+  }, [])
+  const choose = (next: FontSizeLevel) => {
+    setLevel(next)
+    applyFontSizeLevel(next, document.documentElement)
+    try {
+      window.localStorage.setItem(FONT_SIZE_STORAGE_KEY, next)
+    } catch {
+      /* 写不进本机存储时本次会话内仍生效 */
+    }
+  }
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={`${idPrefix}-font-size`} className="block text-xs font-medium text-foreground">
+        字号大小
+      </label>
+      <SettingsSelect
+        id={`${idPrefix}-font-size`}
+        label="字号大小"
+        value={level}
+        onChange={(e) => choose(e.target.value as FontSizeLevel)}
+      >
+        {FONT_SIZE_LEVELS.map((lv) => (
+          <option key={lv} value={lv}>
+            {FONT_SIZE_LABEL[lv]}（{FONT_SIZE_PX[lv]}px）
+          </option>
+        ))}
+      </SettingsSelect>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        与首页右上角的字号按钮是同一份设置，改一处两处同步；只存这台设备。
+      </p>
+    </div>
+  )
+}
 
 /**
  * 原生 select 的轻量皮肤：保留原生语义与键盘行为，仅统一为设计语言
@@ -159,6 +213,8 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
             与首页右上角的密度切换按钮是同一份设置，改一处两处同步。
           </p>
         </div>
+
+        <FontSizeField idPrefix={idPrefix} />
 
         <div className="space-y-1.5">
           <label htmlFor={`${idPrefix}-spotlight-shortcut`} className="block text-xs font-medium text-foreground">

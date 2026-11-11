@@ -310,7 +310,9 @@ export function NavigationToolbar({
               <div className="h-4 w-px bg-border/60 mx-1 hidden lg:block" />
               <div className="hidden lg:inline-flex"><ViewModeToggle /></div>
               <div className="hidden lg:inline-flex"><DensityToggle /></div>
-              <div className="hidden lg:inline-flex"><FontSizeToggle /></div>
+              {/* 字号切换全尺寸可见（A13）：目标人群（年长/视力弱）主力设备是手机，
+                  此前 hidden lg: 让移动端根本没有入口；与主题切换同排，不新增浮层不遮挡内容 */}
+              <div className="inline-flex"><FontSizeToggle /></div>
               <ModeToggle />
               <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />
               <Button

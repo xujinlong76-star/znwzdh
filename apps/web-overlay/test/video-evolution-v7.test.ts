@@ -228,24 +228,41 @@ describe('Proposal [5]: Micro-Learning Video Clip Exporter & Subtitle Slicer', (
   })
 
   it('renders package payload with filename and blob metadata', async () => {
-    const pkg = await renderVideoClipPackage(
-      'React 性能深度优化',
-      [{ id: 'sub-1', startSec: 12, endSec: 20, text: '避免大对象深度比对' }],
-      {
-        startSec: 10,
-        endSec: 25,
-        format: 'webm',
-        quality: '1080p',
-        includeSubtitles: true,
-        includeWatermark: true,
-      }
-    )
+    // 抓下真正交给 createObjectURL 的 Blob，钉住「导出物如实是 JSON 清单」
+    let exportedBlob: Blob | undefined
+    const originalCreateObjectURL = globalThis.URL.createObjectURL
+    globalThis.URL.createObjectURL = vi.fn((blob: Blob | MediaSource) => {
+      exportedBlob = blob as Blob
+      return 'blob:https://mock-domain/mock-clip-uuid'
+    })
+    try {
+      const pkg = await renderVideoClipPackage(
+        'React 性能深度优化',
+        [{ id: 'sub-1', startSec: 12, endSec: 20, text: '避免大对象深度比对' }],
+        {
+          startSec: 10,
+          endSec: 25,
+          format: 'webm',
+          quality: '1080p',
+          includeSubtitles: true,
+          includeWatermark: true,
+        }
+      )
 
-    expect(pkg.durationSec).toBe(15)
-    expect(pkg.filename).toContain('.webm')
-    expect(pkg.filename).toContain('10s-25s')
-    expect(pkg.associatedSubtitles.length).toBe(1)
-    expect(pkg.blobUrl).toBeDefined()
+      expect(pkg.durationSec).toBe(15)
+      // 诚实化口径（video-clip-exporter.ts 注释有据）：浏览器端没有合成 WebM 的
+      // 管线，导出物是剪辑清单 JSON，文件名如实带 .clip.json，绝不许再冒充 .webm。
+      expect(pkg.filename).toContain('.clip.json')
+      expect(pkg.filename).not.toContain('.webm')
+      expect(pkg.filename).toContain('10s-25s')
+      expect(pkg.associatedSubtitles.length).toBe(1)
+      expect(pkg.blobUrl).toBeDefined()
+      // Blob 类型同样如实写 application/json，不许谎称 video/*
+      expect(exportedBlob).toBeDefined()
+      expect(exportedBlob!.type).toBe('application/json')
+    } finally {
+      globalThis.URL.createObjectURL = originalCreateObjectURL
+    }
   })
 })
 

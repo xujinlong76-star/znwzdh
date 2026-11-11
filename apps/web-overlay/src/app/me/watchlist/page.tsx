@@ -286,7 +286,10 @@ export default function WatchlistPage() {
         setPlatforms(sites)
         setAddPlatformId((prev) => prev || sites[0]?.id || '')
       })
-      .catch(() => undefined)
+      .catch(() => {
+        // 平台选项只是添加表单的候选来源：拉不到就保持空列表，
+        // 追剧清单的查看与同步不依赖它，失败对用户无感知损失，故吞掉
+      })
     return () => {
       cancelled = true
     }

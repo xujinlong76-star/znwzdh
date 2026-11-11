@@ -19,6 +19,7 @@ import {
   claimHomepage,
   loadGrowthProfile,
 } from '@/lib/growth'
+import { copyText } from '@/lib/clipboard'
 import { BROWSER_LABEL, detectBrowser, homepageSteps, type BrowserKind } from '@/lib/homepage-guide'
 import { cn } from '@/lib/utils'
 
@@ -49,13 +50,12 @@ export function HomepageGuideCard({ compact = false }: { compact?: boolean }) {
   }, [refresh])
 
   const copyUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(origin)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
-    } catch {
-      /* 剪贴板不可用时用户可长按上方网址手动复制 */
-    }
+    // 走全站统一的 copyText：只有真的写入成功才显示「已复制」；
+    // 失败时不报喜——网址就显示在上方，用户可长按手动复制。
+    const result = await copyText(origin)
+    if (!result.ok) return
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
   }
 
   const install = async () => {

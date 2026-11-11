@@ -256,12 +256,23 @@ describe('站外引擎：设置里的每个选项都能真的跳出去', () => {
 const panelBase = { loading: false, degraded: false, hitCount: 0, query: 'react vue', hasWidgetResult: false }
 
 describe('零结果出口：站外直达只在用户选了外部引擎时出现', () => {
-  it('没传引擎（其它调用点）时行为与改造前完全一致', () => {
+  it('没传引擎（其它调用点）时：真零结果先给两个站内真出口，站外动作绝不出现', () => {
+    // A11（刻意改动，search-panel.ts 注释有据）：真零结果把「AI 找站 / 投稿收录」
+    // 两个站内真出口排最前——它们走站内中枢，不依赖外部引擎开关。
     expect(planSearchPanel(panelBase).actions.map((a) => a.kind)).toEqual([
+      'ai-find',
+      'submit-site',
       'clear',
       'browse-tags',
       'browse-hot',
     ])
+    // 门控断言（本 describe 的核心命题，不许丢）：没传引擎时 externalAction
+    // 返回 null，站外直达绝不出现，也没有任何动作带 external 标记。
+    const noEngine = planSearchPanel(panelBase)
+    expect(noEngine.actions.some((a) => a.kind === 'external-search')).toBe(false)
+    expect(noEngine.actions.some((a) => a.external)).toBe(false)
+    // 降级态不给 A11 两条：连「有没有」都没问成功，AI 找站同样走中枢、一样没谱，
+    // 这一支与改造前完全一致。
     expect(planSearchPanel({ ...panelBase, degraded: true }).actions.map((a) => a.kind)).toEqual([
       'retry',
       'browse-tags',

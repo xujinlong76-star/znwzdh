@@ -71,7 +71,9 @@ export function HomeDramaCinema() {
         setPosters(Array.isArray(data.posters) ? data.posters : [])
         setBanners(Array.isArray(data.banners) ? data.banners : [])
       })
-      .catch(() => undefined)
+      .catch(() => {
+        // 海报/横幅是装饰素材：拉不到就保持空数组，影院区的平台直达入口照常渲染，故吞掉
+      })
     fetch('/api/home/navigation')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -79,7 +81,10 @@ export function HomeDramaCinema() {
         // 收集口径在 @/lib/drama-sites：已确认失效（broken）的站不上推荐位（A10）
         setDramaSites(collectDramaSites(data.navigationItems))
       })
-      .catch(() => undefined)
+      .catch(() => {
+        // 首页影院只是推荐位：导航数据拉不到时推荐保持空，页面主目录不受影响，
+        // 不为次要模块弹错打扰用户，故吞掉
+      })
     return () => {
       cancelled = true
     }

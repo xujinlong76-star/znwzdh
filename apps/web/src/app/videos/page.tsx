@@ -4,6 +4,7 @@ import { Metadata } from 'next/types'
 import { ScrollToTop } from '@/components/ScrollToTop'
 import { getProcessedData } from '@/lib/data-loader'
 import { getFileContent } from '@/lib/github'
+import { loadVideoCatalog } from '@/lib/video-catalog-read'
 import { withSignedVideoIcons } from '@/lib/media-proxy'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import type { NavigationData } from '@/types/navigation'
@@ -26,19 +27,23 @@ import type { NavigationData } from '@/types/navigation'
  */
 export const revalidate = 60
 
-const VIDEOS_PATH = 'src/navsphere/content/videos.json'
 const SITE_PATH = 'src/navsphere/content/site.json'
 
 /**
  * `generateMetadata` 与页面组件各调一次，用 React 的 `cache` 合并成**同一请求内一次读取**。
  * （Data Cache 命中时本来也不贵，但两条链路各自 await 会让首字节多等一轮微任务调度，
  * 且一旦适配器冷却降级，重复调用就是双倍失败重试。）
+ *
+ * 视频目录走 loadVideoCatalog（分片读）：videos.json 本体 7MB+ 超 Data Cache
+ * 上限、只能 no-store 实时读，曾让本页 ISR 名存实亡；中枢写后派生的分类
+ * 分片每片 ≤457KB 可正常进缓存，分片不可用时该模块自动回落整包读。
  */
 const getData = cache(async () => {
-  const [videosRaw, siteRaw] = await Promise.all([
-    getFileContent(VIDEOS_PATH),
+  const [catalog, siteRaw] = await Promise.all([
+    loadVideoCatalog(),
     getFileContent(SITE_PATH),
   ])
+  const videosRaw = catalog.data
   const processed = getProcessedData(videosRaw as never, siteRaw as never)
   // 图片代理签名在服务端算好下发：客户端自己签会把 node:crypto 垫片打进首屏包
   return { ...processed, navigationData: withSignedVideoIcons(processed.navigationData) }

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getFileContent } from '@/lib/github'
+import { loadVideoCatalog, loadVideoCategoryByIdentifier } from '@/lib/video-catalog-read'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { safeHref, safeSrc } from '@/lib/safe-url'
 import { jsonLdScript } from '@/lib/seo/json-ld'
@@ -44,22 +44,33 @@ interface MatchedVideoContext {
   relatedItems: NavigationSubItem[]
 }
 
-async function loadVideoContext(rawId: string): Promise<MatchedVideoContext | null> {
-  const safeId = safeDecodeParam(rawId)
-  if (!safeId) return null
+/** 在单个分类内按原线性扫描语义找条目（直属条目先于子分类条目） */
+function matchInCategory(cat: NavigationData["navigationItems"][number], safeId: string): MatchedVideoContext | null {
+  const catItems: NavigationSubItem[] = [
+    ...(cat.items || []),
+    ...(cat.subCategories || []).flatMap((s) => s.items || []),
+  ]
 
-  const data = (await getFileContent('src/navsphere/content/videos.json')) as NavigationData
-  const categories = data?.navigationItems || []
+  for (const candidate of cat.items || []) {
+    if (matchesVideoIdentifier(candidate, safeId)) {
+      const enriched = enrichVideoItemSeo(candidate, cat.title)
+      const related = catItems
+        .filter((it) => it.id !== candidate.id && it.enabled !== false)
+        .slice(0, 6)
+        .map((it) => enrichVideoItemSeo(it, cat.title))
+      return {
+        item: enriched,
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        relatedItems: related,
+      }
+    }
+  }
 
-  for (const cat of categories) {
-    const catItems: NavigationSubItem[] = [
-      ...(cat.items || []),
-      ...(cat.subCategories || []).flatMap((s) => s.items || []),
-    ]
-
-    for (const candidate of cat.items || []) {
+  for (const sub of cat.subCategories || []) {
+    for (const candidate of sub.items || []) {
       if (matchesVideoIdentifier(candidate, safeId)) {
-        const enriched = enrichVideoItemSeo(candidate, cat.title)
+        const enriched = enrichVideoItemSeo(candidate, `${cat.title} ${sub.title}`)
         const related = catItems
           .filter((it) => it.id !== candidate.id && it.enabled !== false)
           .slice(0, 6)
@@ -68,29 +79,35 @@ async function loadVideoContext(rawId: string): Promise<MatchedVideoContext | nu
           item: enriched,
           categoryId: cat.id,
           categoryTitle: cat.title,
+          subCategoryTitle: sub.title,
           relatedItems: related,
         }
       }
     }
+  }
 
-    for (const sub of cat.subCategories || []) {
-      for (const candidate of sub.items || []) {
-        if (matchesVideoIdentifier(candidate, safeId)) {
-          const enriched = enrichVideoItemSeo(candidate, `${cat.title} ${sub.title}`)
-          const related = catItems
-            .filter((it) => it.id !== candidate.id && it.enabled !== false)
-            .slice(0, 6)
-            .map((it) => enrichVideoItemSeo(it, cat.title))
-          return {
-            item: enriched,
-            categoryId: cat.id,
-            categoryTitle: cat.title,
-            subCategoryTitle: sub.title,
-            relatedItems: related,
-          }
-        }
-      }
-    }
+  return null
+}
+
+async function loadVideoContext(rawId: string): Promise<MatchedVideoContext | null> {
+  const safeId = safeDecodeParam(rawId)
+  if (!safeId) return null
+
+  // 分片优先：idmap 把标识定位到单个分类分片时只读那一片（详情页原本是
+  // 整包读 + 线性扫描 6007 条，且整包读 no-store 让本页 ISR 失效）。
+  // 分片未命中/不可用 → 回落全量扫描，匹配语义与原实现逐字一致。
+  const hit = await loadVideoCategoryByIdentifier(safeId)
+  if (hit) {
+    const matched = matchInCategory(hit.category, safeId)
+    if (matched) return matched
+  }
+
+  const data = (await loadVideoCatalog()).data as NavigationData
+  const categories = data?.navigationItems || []
+
+  for (const cat of categories) {
+    const matched = matchInCategory(cat, safeId)
+    if (matched) return matched
   }
 
   return null

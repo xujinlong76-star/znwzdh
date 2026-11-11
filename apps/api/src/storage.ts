@@ -19,6 +19,7 @@ import { countVideoItems, slugify } from "@navhub/store";
 import { backfillDerivedFacets, formatFacetBackfillReport } from "./facet-backfill.ts";
 import { indexSitesBatch } from "./index-site.ts";
 import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncReplacementHistorySafely, syncVideoCatalogSafely, VIDEO_REPLACEMENTS_PATH } from "./video-catalog.ts";
+import { deriveVideoShards } from "./video-shards.ts";
 
 /** 外置替换审计文档的 basename（路径事实源在 video-catalog.ts，避免两处硬编码漂移） */
 const REPLACEMENTS_BASENAME = VIDEO_REPLACEMENTS_PATH.split("/").pop()!;
@@ -1116,6 +1117,23 @@ export async function writeVideosData(
   // 写成功即失效视频快照缓存（P1-4）：版本号判据本会在下一次读时自然失效，
   // 显式失效把「降级读（版本号拿不到）」窗口内的一致性也补齐，与导航侧同款三层纪律。
   invalidateVideoSnapshotCache();
+  // 快照分片派生（VIDEOS_ISR_PLAN 路线 b）：源文档落库后同步派生 index / 分类
+  // 分片 / idmap，web 读路径改读分片进 Data Cache，/videos 的 ISR 才真生效。
+  // 纪律：派生失败只记 error 日志、**不连带写失败**——源文档已经落库，
+  // 读路径靠 sourceVersion 校验发现分片缺失/不一致时自动回落整包读。
+  // 落库顺序由 deriveVideoShards 的 writes 数组保证：分片 → idmap → index
+  // （index 是提交标记，最后写，读到新 index 即代表同版本分片已就位）。
+  try {
+    const version = await readKvVersion(ctx, "videos");
+    if (version !== null) {
+      const derived = deriveVideoShards(data, version);
+      for (const w of derived.writes) {
+        await writeKv(ctx, pathToKey(w.path), w.data);
+      }
+    }
+  } catch (err) {
+    console.error("[videos] 分片派生失败（读路径将回落整包读）:", err);
+  }
   // 确认放行只在写入真的落库之后记账：半途失败留一条「已放行」的审计，
   // 比不留更糟——它会让排查者以为数据已经按新内容覆盖了。
   if (shrink) await guard.onLargeDeletionConfirmed?.(shrink);

@@ -169,6 +169,14 @@ export function storageTag(path: string): string {
  * 本机中枢读延迟毫秒级，上面还有 `getFileContent` 的 2.5 秒进程内微缓存与
  * 单飞（`inflightReads`）兜并发惊群。小文件（site.json 等）继续吃缓存——
  * 那才是 ISR 真正在用的那一层，收益与风险都在这里划算。
+ *
+ * 2026-11-11 补注（/videos ISR 修复，VIDEOS_ISR_PLAN 路线 b）：videos.json
+ * 本体**继续豁免**——整包回落读与 BFF 需要它的 no-store 实时性。但 /videos、
+ * /videos/v/[id]、sitemap、feed 已改读中枢写后派生的分片文档
+ * （videos-index.json / videos-cat-<分类 id>.json / videos-idmap.json，
+ * 每片 ≤457KB，读路径在 lib/video-catalog-read.ts）。**分片路径不许加进
+ * 本名单**：它们进 Data Cache + storageTag 标签失效正是修复的本体，
+ * 加进来等于把 ISR 失效原样搬到分片上。
  */
 const DATA_CACHE_EXEMPT_FILES = [
   "videos.json",

@@ -314,13 +314,40 @@ export async function getStorageVersion(path: string): Promise<number | null> {
  * 动态 import + try/catch 是必需的：脚本与 vitest 环境没有 `next/cache`，
  * 且 `revalidateTag` 只能在请求上下文里调用。这些情况属于预期，不能影响写入结果。
  */
-async function revalidateStorageTag(path: string): Promise<void> {
+async function revalidateStorageTag(path: string, content?: string): Promise<void> {
   try {
     const { revalidateTag, revalidatePath } = await import("next/cache");
     revalidateTag(storageTag(path), "max");
     if (path.includes("videos.json")) {
       revalidatePath("/videos");
       revalidatePath("/api/videos");
+      // 视频分片（VIDEOS_ISR_PLAN 路线 b）：/videos 等页面改读中枢派生的
+      // index/分片/idmap，它们的 Data Cache 条目挂的是各自路径的标签，
+      // 只失效 videos.json 本体的话页面会继续吃旧分片——这里一并失效。
+      // 分片路径里的分类 id 从本次写入的内容里取（内容不可解析时至少
+      // 失效 index 与 idmap，分片靠各自的 revalidate 窗口兜底）。
+      const { VIDEOS_INDEX_PATH, VIDEOS_IDMAP_PATH, videoShardPath } = await import(
+        "@/lib/video-catalog-paths"
+      );
+      revalidateTag(storageTag(VIDEOS_INDEX_PATH), "max");
+      revalidateTag(storageTag(VIDEOS_IDMAP_PATH), "max");
+      if (content) {
+        try {
+          const parsed = JSON.parse(content) as {
+            navigationItems?: Array<{ id?: unknown }>;
+          };
+          for (const cat of parsed.navigationItems ?? []) {
+            if (typeof cat?.id === "string" && cat.id) {
+              revalidateTag(storageTag(videoShardPath(cat.id)), "max");
+            }
+          }
+        } catch {
+          // 内容不可解析：分片标签靠 revalidate 窗口失效，不影响写入结果
+        }
+      }
+      revalidatePath("/videos/v/[id]", "page");
+      revalidatePath("/videos/sitemap.xml");
+      revalidatePath("/videos/feed.xml");
     }
   } catch {
     // 非 Next 运行时 / 非请求上下文：忽略
@@ -352,7 +379,7 @@ export async function commitFile(
           : undefined,
       );
       invalidateContentCache(path);
-      await revalidateStorageTag(path);
+      await revalidateStorageTag(path, content);
       return { ok: true, note: result.note, version: result.version, attempts: attempt };
     } catch (error) {
       lastError = error;

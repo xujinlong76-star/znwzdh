@@ -130,9 +130,9 @@ describe('真实数据里的图标名必须命中静态映射', () => {
     expect(misses, `这些名字没进静态表：${misses.join(', ')}`).toEqual([])
   })
 
-  it('权威树的图标 token 全部命中静态表（18 个根的图标都在库里）', () => {
+  it('权威树的图标 token 全部命中静态表（19 个根的图标都在库里）', () => {
     const names = [...new Set(registryIconNames())]
-    expect(names.length).toBeGreaterThanOrEqual(18)
+    expect(names.length).toBeGreaterThanOrEqual(19)
     const misses = names.filter((n) => resolveNavIcon(n) === null)
     expect(misses, `这些名字没进静态表：${misses.join(', ')}`).toEqual([])
   })

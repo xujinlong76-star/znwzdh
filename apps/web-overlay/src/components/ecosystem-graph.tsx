@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { safeWindowOpen } from '@/lib/safe-url'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +16,11 @@ import {
   rovingNodeId,
   type GraphDirection,
 } from '@/lib/graph-nav'
+import {
+  resolveGraphCategory,
+  sampleUniform,
+  type GraphCategoryFocus,
+} from '@/lib/graph-category'
 
 export interface GraphNode {
   id: string
@@ -105,6 +111,13 @@ const CATEGORY_COLORS = {
 }
 
 export function EcosystemGraph() {
+  // ?category= 入口（首页/分类页的「查看该领域技术生态图谱」按钮带过来）：
+  // 用 useSearchParams 读，参数变化时重拉重算；不用 window.location 一次性读
+  // （客户端导航换参数时不刷新页面，一次性读会读到旧值，等于假跳转）。
+  const searchParams = useSearchParams()
+  const categoryParam = searchParams.get('category')
+  /** 分类域焦点：命中时只展示该分类自己的站点；null = 全局视图 */
+  const [focusedCategory, setFocusedCategory] = useState<GraphCategoryFocus | null>(null)
   const [activeCategory, setActiveCategory] = useState<'all' | 'dev' | 'design' | 'ai' | 'efficiency'>('all')
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -207,36 +220,30 @@ export function EcosystemGraph() {
           }
         }
 
+        // 入口参数 ?category={中枢分类 id}：按 id 精确匹配一级/二级分类
+        // （lib/graph-category.ts 的 resolveGraphCategory，不猜标题关键词——
+        // 旧实现按标题猜桶：14 个一级分类里 7 个没有任何关键词能命中，点进来
+        // 仍是「全部」，等于假跳转）。匹配不上、被禁用时返回 null，保持全局视图。
+        const activeFocus = resolveGraphCategory(categoryParam, cats)
+        setFocusedCategory(activeFocus)
+
         if (flat.length === 0) {
+          setFocusedCategory(null)
           setDataSource('sample')
           return
         }
 
-        // 入口参数 ?category={中枢分类 id}：分类页/首页分类区的图谱按钮带着它跳来，
-        // 旧实现从不读这个参数、永远展示全部分类（假跳转）。按分类标题关键词
-        // 映射到图谱内部分类（dev/design/ai/efficiency）并预先选中；映射不上
-        // 就保持全部，不假装过滤成功。
-        try {
-          const wanted = new URLSearchParams(window.location.search).get('category')
-          if (wanted) {
-            const titleById = new Map<string, string>()
-            for (const cat of cats) {
-              titleById.set(String(cat.id), String(cat.title ?? ''))
-              for (const sub of cat.subCategories || []) titleById.set(String(sub.id), String(sub.title ?? ''))
-            }
-            const raw = (titleById.get(wanted) ?? wanted).toLowerCase()
-            const bucket = raw.includes('ai') || raw.includes('智能') || raw.includes('模型')
-              ? 'ai'
-              : raw.includes('design') || raw.includes('设计') || raw.includes('创意')
-                ? 'design'
-                : raw.includes('效率') || raw.includes('办公') || raw.includes('文档')
-                  ? 'efficiency'
-                  : raw.includes('dev') || raw.includes('开发') || raw.includes('前端') || raw.includes('后端') || raw.includes('编程')
-                    ? 'dev'
-                    : null
-            if (bucket) setActiveCategory(bucket)
-          }
-        } catch { /* 参数解析失败不影响图谱主体 */ }
+        // 分类域只抽样该分类自己的站点（顶级 + 其全部二级）；全局域抽样全部。
+        // 分类命中了、但 live 数据里 0 站点时不假装过滤成功：清掉焦点、退回示例态，
+        // 不然横幅会写着「正在查看某分类 · 展示 0 站」，图里却是示例节点。
+        const scopeFlat = activeFocus
+          ? flat.filter((s) => activeFocus.memberIds.includes(s.categoryId ?? ''))
+          : flat
+        if (scopeFlat.length === 0) {
+          setFocusedCategory(null)
+          setDataSource('sample')
+          return
+        }
 
         // live 口径：只按真实站点自身去重，不再拿预设集顶替同 URL 的真实站
         const seenUrls = new Set<string>()
@@ -244,9 +251,9 @@ export function EcosystemGraph() {
         const rawTagMap = new Map<string, string[]>()
 
         // 采样策略：均匀抽样而非「取前 N 条」，否则图谱永远只反映第一个类目。
+        // 分类域与全局域共用同一均匀抽样规则（lib/graph-category.ts 的 sampleUniform）。
         const MAX_NODES = 24
-        const stride = Math.max(1, Math.floor(flat.length / MAX_NODES))
-        const sampled = flat.filter((_, i) => i % stride === 0).slice(0, MAX_NODES)
+        const sampled = sampleUniform(scopeFlat, MAX_NODES)
 
         for (const s of sampled) {
           const normUrl = s.href.replace(/\/$/, '').toLowerCase()
@@ -324,7 +331,7 @@ export function EcosystemGraph() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [categoryParam])
 
   // 简易力导引松弛算法（使得连接更舒展）
   useEffect(() => {
@@ -375,14 +382,16 @@ export function EcosystemGraph() {
   // 过滤后的节点与连线
   const filteredNodes = useMemo(() => {
     return nodes.filter((n) => {
-      const catMatch = activeCategory === 'all' || n.category === activeCategory
+      // 分类域不按桶过滤：非技术类站点按关键词全落 dev 桶，筛一下就空了。
+      // 分类域的范围已由抽样（scopeFlat）保证，这里只放行。
+      const catMatch = focusedCategory ? true : activeCategory === 'all' || n.category === activeCategory
       const queryMatch =
         !searchQuery ||
         n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         n.description.toLowerCase().includes(searchQuery.toLowerCase())
       return catMatch && queryMatch
     })
-  }, [nodes, activeCategory, searchQuery])
+  }, [nodes, activeCategory, searchQuery, focusedCategory])
 
   const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map((n) => n.id)), [filteredNodes])
@@ -496,7 +505,8 @@ export function EcosystemGraph() {
           </div>
         </div>
 
-        {/* 场景分类过滤 */}
+        {/* 场景分类过滤：分类域不展示（范围已由 ?category= 圈定，再按桶筛会筛空） */}
+        {!focusedCategory && (
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-pan-x p-1 rounded-xl bg-muted/40 border border-border/50">
           {(['all', 'dev', 'design', 'ai', 'efficiency'] as const).map((cat) => (
             <Button
@@ -510,6 +520,7 @@ export function EcosystemGraph() {
             </Button>
           ))}
         </div>
+        )}
 
         {/* 搜索与缩放控制 */}
         <div className="flex items-center gap-2">
@@ -548,6 +559,16 @@ export function EcosystemGraph() {
           </div>
         </div>
       </div>
+
+      {/* 分类域横幅：?category= 命中时只展示该分类自己的站点，点「查看全部」回到全局 */}
+      {focusedCategory && (
+        <div className="flex flex-wrap items-center gap-2 px-3 sm:px-6 py-2 text-xs border-b border-border/60 bg-indigo-500/5 z-20">
+          <span>正在查看「{focusedCategory.title}」分类 · 展示 {liveCount} 站</span>
+          <Link href="/graph" className="font-medium text-indigo-500 hover:underline">
+            查看全部
+          </Link>
+        </div>
+      )}
 
       {/* SVG 画布 */}
       <div

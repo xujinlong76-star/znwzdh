@@ -30,7 +30,7 @@ export interface RegistryLeafInput {
 }
 
 export interface RegistryRootInput extends RegistryLeafInput {
-  /** 首页目录带按此排序（1–18），不再按站点数降序，避免哪 8 个随数据漂移 */
+  /** 首页目录带按此排序（1–19），不再按站点数降序，避免哪 8 个随数据漂移 */
   sort: number;
   leaves: RegistryLeafInput[];
 }
@@ -77,6 +77,10 @@ export const CATEGORY_REGISTRY_ROOTS: readonly RegistryRootInput[] = [
       { slug: "models-and-datasets", title: "模型与数据集", titleEn: "Models & Datasets", description: "模型社区、数据集与标注服务", legacyTitles: ["模型与数据集社区", "AI 数据标注与数据集服务"] },
       { slug: "ai-hardware-and-embodied", title: "AI 硬件与具身", titleEn: "AI Hardware & Embodied AI", description: "机器人操作系统、具身基础模型、空间智能与 AI 硬件设备", altLabels: ["AI硬件", "具身智能", "机器人"], legacyTitles: ["具身智能与硬件", "具身智能与机器人", "embodied-ai-and-robotics"] },
       { slug: "ai-eval-and-learning", title: "AI 评测与学习", titleEn: "AI Evals & Learning", description: "榜单基准、论文资讯与 AI 课程", legacyTitles: ["评测与基准榜单", "论文资讯与学习", "AI 教育与企业落地", "AI 产品评测与导航站"] },
+      // 2026-11-11：基线/线上目录已有的「AI 短剧与漫剧创作」（4 站）必须有归宿。
+      // 注册标题取合规短名「AI 短剧创作」（5.5 单位；原标题 9.5 单位超 7 单位上限，
+      // 且「漫剧」是口语缩写）；线上标题走 legacyTitles 继续解析，不改用户已见的目录名。
+      { slug: "ai-drama-creation", title: "AI 短剧创作", titleEn: "AI Drama Creation", description: "从剧本到成片的 AI 短剧、AI 漫剧一站式创作平台", legacyTitles: ["AI 短剧与漫剧创作"] },
     ],
   },
   {
@@ -213,6 +217,12 @@ export const CATEGORY_REGISTRY_ROOTS: readonly RegistryRootInput[] = [
       { slug: "calendar-and-tasks", title: "日历与待办", titleEn: "Calendar & Tasks", description: "日程、待办与专注计时", legacyTitles: ["日历与日程安排", "待办与专注", "时间管理与专注工具"] },
       { slug: "screenshots-and-pdf", title: "截图与 PDF", titleEn: "Screenshots & PDF", description: "截图标注、PDF 处理与扫描 OCR", legacyTitles: ["截图录屏与标注", "PDF 与文档转换", "扫描与电子签名", "PDF 与扫描 OCR", "截图录屏与录制"] },
       { slug: "desktop-utilities", title: "桌面实用工具", titleEn: "Desktop Utilities", description: "系统工具、启动器与硬件检测", legacyTitles: ["系统工具与驱动", "压缩与文件管理", "清理优化与硬件检测", "输入法与字体", "虚拟化与远程桌面", "效率启动器与搜索", "剪贴板与快捷启动"] },
+      // 2026-11-11：基线/线上目录已有的「在线文档与表格」（11 站）必须有归宿；
+      // 旧测试 fail-fast 只报了第一个坏叶子（AI 短剧叶），修掉后这一个才浮现。
+      // 注意：它与「协作文档」「笔记与知识库」概念重叠（11 站里既有腾讯文档/飞书，
+      // 也有 Notion/Obsidian 等笔记工具）——线上叶子就是这么合着用的，先如实收进树；
+      // 拆成两叶是动用户可见目录的大手术，留待以后单独决策，不在本轮顺手拆。
+      { slug: "online-docs", title: "在线文档与表格", titleEn: "Online Docs", description: "多人协作的在线文档、表格与知识库" },
     ],
   },
   {
@@ -255,6 +265,12 @@ export const CATEGORY_REGISTRY_ROOTS: readonly RegistryRootInput[] = [
       { slug: "kids-and-hobbies", title: "儿童与兴趣", titleEn: "Kids & Hobbies", description: "儿童教育、兴趣培养与亲子学习", legacyTitles: ["兴趣与儿童教育", "早教与启蒙", "儿童读物与绘本"] },
       { slug: "popular-science", title: "科普与通识", titleEn: "Popular Science", description: "科普媒体、科学视频与通识内容", legacyTitles: ["科普媒体", "科普与通识教育", "科学视频与播客"] },
       { slug: "school-subjects", title: "学科基础", titleEn: "School Subjects", description: "数理、生命科学与人文社科学科站", legacyTitles: ["天文与航天", "物理与化学", "生命科学与医学", "地球与环境", "数学", "历史与考古", "哲学", "心理学", "经济与社会", "博物馆与文博"] },
+      // 2026-11-11：基线/线上目录已有的两个实叶（求职招聘 7 站、考试备考 6 站）。
+      // 「求职招聘」原是综合招聘的 legacyTitles（包标题归宿）；线上叶子挂在学习成长下，
+      // 且种子是把基线文件原样灌入新库的——注册表必须跟线上走，legacyTitles 从综合招聘上
+      // 移过来，cn-daily-navigation 包的「求职招聘」类目此后解析到本叶（与线上位置一致）。
+      { slug: "job-hunting", title: "求职招聘", titleEn: "Job Hunting", description: "主流招聘平台与在线简历制作工具" },
+      { slug: "exam-prep", title: "考试备考", titleEn: "Exam Prep", description: "公务员、考研等考试的官方报名入口与备考平台" },
     ],
   },
   {
@@ -332,7 +348,7 @@ export const CATEGORY_REGISTRY_ROOTS: readonly RegistryRootInput[] = [
     altLabels: ["招聘", "求职"],
     sort: 13,
     leaves: [
-      { slug: "general-job-boards", title: "综合招聘", titleEn: "General Job Boards", description: "全行业招聘平台与垂直岗位", legacyTitles: ["综合招聘平台", "教师招聘与教育人才", "行业垂直招聘平台", "求职招聘"] },
+      { slug: "general-job-boards", title: "综合招聘", titleEn: "General Job Boards", description: "全行业招聘平台与垂直岗位", legacyTitles: ["综合招聘平台", "教师招聘与教育人才", "行业垂直招聘平台"] },
       { slug: "tech-hiring", title: "技术招聘", titleEn: "Tech Hiring", description: "研发岗位、大厂内推与开发者简历", legacyTitles: ["互联网与科技招聘", "互联网大厂与科技公司招聘", "开发者求职与简历"] },
       { slug: "campus-and-internship", title: "校招实习", titleEn: "Campus & Internship", description: "校园招聘、实习与宣讲会", legacyTitles: ["校园招聘与实习"] },
       { slug: "executive-search", title: "猎头中高端", titleEn: "Executive Search", description: "猎头服务与中高端人才平台", legacyTitles: ["中高端人才与猎头服务"] },
@@ -396,6 +412,8 @@ export const CATEGORY_REGISTRY_ROOTS: readonly RegistryRootInput[] = [
       { slug: "overseas-streaming", title: "海外流媒体", titleEn: "Overseas Streaming", description: "境外流媒体与区域片库", legacyTitles: ["海外流媒体"] },
       { slug: "cinema-ticketing", title: "影院票务", titleEn: "Cinema Ticketing", description: "院线、排片与购票平台", legacyTitles: ["电影院线与购票"] },
       { slug: "film-criticism", title: "影评媒体", titleEn: "Film Criticism", description: "影评刊物、行业观察与影史资料", legacyTitles: ["影视行业与影评媒体"] },
+      // 2026-11-11：基线/线上目录已有的实叶「网络小说」（8 站），权威树一直没收。
+      { slug: "web-novels", title: "网络小说", titleEn: "Web Novels", description: "主流网络小说阅读与投稿平台" },
     ],
   },
   {
@@ -443,6 +461,10 @@ export const CATEGORY_REGISTRY_ROOTS: readonly RegistryRootInput[] = [
       { slug: "sports-and-outdoor", title: "运动与户外", titleEn: "Sports & Outdoor", description: "综合运动、赛事数据与户外装备", legacyTitles: ["体育综合媒体", "足球", "篮球", "网球", "跑步与田径", "健身与力量", "游泳与水上运动", "骑行", "登山徒步与露营", "滑雪与冬季运动", "钓鱼", "瑜伽与普拉提", "羽毛球与乒乓球", "格斗与搏击", "赛事直播与数据", "运动装备与电商", "运动医学与康复", "体育产业与政策", "户外露营与徒步", "运动健身与训练计划"] },
       { slug: "pets-and-family", title: "宠物与家庭", titleEn: "Pets & Family", description: "宠物养护、母婴育儿与家校服务", legacyTitles: ["宠物综合社区与媒体", "宠物医疗与健康", "宠物领养与救助", "宠物用品与电商", "宠物训练与行为", "宠物品种与百科", "宠物保险与出行服务", "母婴综合平台", "孕期与产后", "婴幼儿护理", "儿童健康与医疗", "育儿知识科普", "亲子活动与场馆", "家校衔接与家庭教育", "儿童安全与保护", "家庭关系与心理", "母婴与育儿"] },
       { slug: "social-and-dating", title: "社交与婚恋", titleEn: "Social & Dating", description: "社交平台、社区与婚恋服务", legacyTitles: ["社交社区", "婚恋与社交"] },
+      // 2026-11-11：基线/线上目录已有的实叶「跨境电商」（7 站），权威树一直没收。
+      // 注意与「跨境海淘」概念重叠（海淘即面向消费者的跨境电商）；线上叶子就是这么用的，
+      // 先如实收进树，拆/合是动用户可见目录的决定，留待以后单独决策。
+      { slug: "cross-border-ecommerce", title: "跨境电商", titleEn: "Cross-border Ecommerce", description: "海外购物平台与跨境卖货、开店入口" },
     ],
   },
   {
@@ -467,6 +489,23 @@ export const CATEGORY_REGISTRY_ROOTS: readonly RegistryRootInput[] = [
       { slug: "weather-and-environment", title: "气象与环境", titleEn: "Weather & Environment", description: "天气预报、空气质量与环境监测", legacyTitles: ["天气与空气质量", "气象与环境"] },
       { slug: "education-and-civic-services", title: "教育民生服务", titleEn: "Education & Civic Services", description: "学历认证、教育考试与人才服务", legacyTitles: ["教育与学历服务", "就业与人才服务", "文化旅游与文物保护"] },
       { slug: "charity-and-volunteering", title: "公益志愿", titleEn: "Charity & Volunteering", description: "公益组织、捐赠与志愿服务", legacyTitles: ["民政与公益服务", "公益志愿"] },
+    ],
+  },
+  {
+    // 2026-11-11：第 19 根。短剧是 William 定下的顶级专区（2026-11-10 要求），
+    // 线上目录与基线早已把它当一级根（14 根之一），权威树一直没跟上，
+    // 导致基线快照测试红（根与两片叶子解析不到）。sort 19 排最后，与目录顺序一致。
+    slug: "short-drama",
+    title: "短剧",
+    titleEn: "Short Drama",
+    icon: "clapperboard",
+    description: "热门免费短剧与各平台短剧入口",
+    sort: 19,
+    leaves: [
+      // 注册标题取合规短名「畅看短剧」：「免费」是定价轴禁词（taxonomy-rules BANNED_CATEGORY_AXES），
+      // 不能进注册标题；线上标题「免费短剧」走 legacyTitles 继续解析，不改用户已见的目录名。
+      { slug: "short-drama-free", title: "畅看短剧", titleEn: "Free Short Dramas", description: "看广告免费看全集的短剧平台", legacyTitles: ["免费短剧"] },
+      { slug: "short-drama-platform", title: "平台短剧", titleEn: "Short Drama Platform", description: "长视频、短视频平台内的短剧频道与海外短剧平台" },
     ],
   },
 ];

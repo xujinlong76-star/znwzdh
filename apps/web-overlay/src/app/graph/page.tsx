@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Metadata } from 'next'
 import { EcosystemGraph } from '@/components/ecosystem-graph'
 import { Breadcrumbs } from '@/components/breadcrumbs'
@@ -33,7 +34,10 @@ export default function GraphPage() {
           { label: '技术生态与平替拓扑图谱', path: '/graph' },
         ]}
       />
-      <EcosystemGraph />
+      {/* useSearchParams 需要 Suspense 边界（否则构建期静态渲染会抛错） */}
+      <Suspense fallback={<div className="w-full h-[calc(100vh-64px)] flex items-center justify-center text-sm text-muted-foreground">图谱加载中…</div>}>
+        <EcosystemGraph />
+      </Suspense>
       {/* 静态说明：图谱本身是 SVG 与交互控件，没有可读正文；
           这里用真实存在的功能补齐文本内容，也是页面参与收录的依据。 */}
       <section aria-labelledby="graph-guide-title" className="border-t border-border/60 bg-muted/20 py-10">

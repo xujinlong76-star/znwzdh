@@ -15,6 +15,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../packages/store/src/driver.ts";
+import { CATEGORY_REGISTRY } from "../packages/core/src/category-registry.ts";
 import { runTaxonomyMigrate } from "./taxonomy-migrate.mjs";
 
 const storeRequire = createRequire(new URL("../packages/store/package.json", import.meta.url));
@@ -146,8 +147,9 @@ describe("taxonomy-migrate（P3）", () => {
       const q = (sql: string, ...args: unknown[]) => db.prepare(sql).get(...args);
       const all = (sql: string, ...args: unknown[]) => db.prepare(sql).all(...args);
 
-      // 投影：235 条 registry + 未分类；旧种子根已删除；旧根与 registry 根不再同名并存
-      expect(Number(q("SELECT COUNT(*) AS n FROM categories").n)).toBe(236);
+      // 投影：registry 全量 + 未分类；旧种子根已删除；旧根与 registry 根不再同名并存。
+      // 计数从 registry 派生（此前写死的 236 在树长大 9 条后就过期了）。
+      expect(Number(q("SELECT COUNT(*) AS n FROM categories").n)).toBe(CATEGORY_REGISTRY.length + 1);
       expect(all("SELECT id FROM categories WHERE title = 'AI 工具' AND parent_id IS NULL").map((r: any) => r.id)).toEqual([
         "reg-ai-tools",
       ]);

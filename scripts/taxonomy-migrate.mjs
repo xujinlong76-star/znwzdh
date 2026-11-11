@@ -35,6 +35,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   CATEGORY_REGISTRY,
+  CATEGORY_REGISTRY_ROOTS,
   REGISTRY_BY_SLUG,
   UNCATEGORIZED_SLUG,
   isRegistryLeaf,
@@ -1039,7 +1040,7 @@ function printReport(report, applied) {
   console.log(`旧种子根:   ${report.legacyRoots.map((r) => `${r.id}(${r.title}, refs=${r.refs})`).join("、") || "(无)"}`);
   console.log(`标题重复:   ${report.duplicates.length === 0 ? "0（可建唯一索引）" : report.duplicates.map((d) => `${d.title}×${d.count}`).join("、")}`);
   console.log(`标签:       回收站 site_tags 行 ${report.tags.orphanTagRows}，零引用标签 ${report.tags.zeroRefTags.length}`);
-  console.log(`registry:   ${CATEGORY_REGISTRY.length} 条（18 根 / ${CATEGORY_REGISTRY.length - 18} 叶）`);
+  console.log(`registry:   ${CATEGORY_REGISTRY.length} 条（${CATEGORY_REGISTRY_ROOTS.length} 根 / ${CATEGORY_REGISTRY.length - CATEGORY_REGISTRY_ROOTS.length} 叶）`);
   if (applied) {
     const a = report.applied ?? {};
     console.log("");

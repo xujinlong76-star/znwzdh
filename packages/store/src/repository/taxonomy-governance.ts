@@ -278,7 +278,7 @@ export async function applyTaxonomyProposal(
     const titleEn = typeof proposal.meta?.titleEn === "string" ? proposal.meta.titleEn : null;
     const icon = typeof proposal.meta?.icon === "string" ? proposal.meta.icon : null;
     const parentId = typeof proposal.meta?.parentId === "string" ? proposal.meta.parentId : null;
-    // 必须挂在某个父级下：一级根的数量是编辑决策（新树 18 根），不能由提案随手加柱子。
+    // 必须挂在某个父级下：一级根的数量是编辑决策（新树 19 根），不能由提案随手加柱子。
     // 真要新增一级根，走类目管理页 —— 那里是显式的人工动作。
     if (!parentId) {
       throw new Error("该提案需要先指定父类目（meta.parentId）：站点只挂子类目，新增一级根请走类目管理");

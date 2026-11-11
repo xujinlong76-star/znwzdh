@@ -28,6 +28,7 @@ import {
   Calendar,
   Clock,
   Cloud,
+  Clapperboard,
   Code,
   Coffee,
   Compass,
@@ -111,6 +112,8 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   image: Image,
   music: Music,
   film: Film,
+  // 短剧根的图标（navigation.json 里短剧分类的 icon；lucide 有同名导出）。
+  clapperboard: Clapperboard,
   gamepad2: Gamepad2,
   layers: Layers,
   link: Link,

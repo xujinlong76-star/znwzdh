@@ -3,7 +3,9 @@
  *
  * 这棵树是安装/富化/MCP 唯一能解析到的封闭集合，所以它自己必须先立住：
  * 1. **深度硬上限 2**——`sidebar.tsx` 只渲染两级，对标样本里没有任何可达目录用 3 层；
- * 2. **每根 ≤14 叶**——超过 14 就没法在侧栏一屏内扫完（对标中文专业站 13–19 根）；
+ * 2. **每根 ≤16 叶**——超过 16 就没法在侧栏一屏内扫完（对标中文专业站 13–19 根）；
+ *    15 是 2026-11-11 为 AI 工具新叶「AI 短剧创作」抬的一格，16 是同日学习成长
+ *    一次收进两个线上实叶（求职招聘、考试备考）后到达的实数；其余根仍 ≤15；
  * 3. **命名规则自洽**——registry 是「人工/AI 不许造名」的依据，自己违规就是双倍违规；
  * 4. **一个旧标题只能有一个归宿**——`legacyTitles`/`altLabels` 撞车会让标题解析
  *    重新退化成「凭存储顺序挑一个」（就是今天「语言」×3 的形态）。
@@ -36,17 +38,17 @@ import {
 const SLUG_SHAPE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 describe("结构", () => {
-  it("18 个一级根，sort 恰为 1–18", () => {
-    expect(CATEGORY_REGISTRY_ROOTS).toHaveLength(18);
-    expect(registryRoots()).toHaveLength(18);
+  it("19 个一级根，sort 恰为 1–19", () => {
+    expect(CATEGORY_REGISTRY_ROOTS).toHaveLength(19);
+    expect(registryRoots()).toHaveLength(19);
     expect(CATEGORY_REGISTRY_ROOTS.map((r) => r.sort)).toEqual(
-      Array.from({ length: 18 }, (_, i) => i + 1),
+      Array.from({ length: 19 }, (_, i) => i + 1),
     );
   });
 
-  it("每个根 ≤14 叶", () => {
+  it("每个根 ≤16 叶", () => {
     for (const root of CATEGORY_REGISTRY_ROOTS) {
-      expect(root.leaves.length, `${root.title} 叶子数 ${root.leaves.length}`).toBeLessThanOrEqual(14);
+      expect(root.leaves.length, `${root.title} 叶子数 ${root.leaves.length}`).toBeLessThanOrEqual(16);
       expect(root.leaves.length, `${root.title} 没有叶子，站点无处可挂`).toBeGreaterThan(0);
       expect(registryLeaves(root.slug)).toHaveLength(root.leaves.length);
     }
@@ -145,9 +147,9 @@ describe("解析", () => {
     expect(registryId(UNCATEGORIZED_SLUG)).toBe("reg-uncategorized");
   });
 
-  it("条目总数 = 18 根 + 各根叶子数", () => {
+  it("条目总数 = 19 根 + 各根叶子数", () => {
     const leaves = CATEGORY_REGISTRY_ROOTS.reduce((n, r) => n + r.leaves.length, 0);
-    expect(CATEGORY_REGISTRY.length).toBe(18 + leaves);
+    expect(CATEGORY_REGISTRY.length).toBe(19 + leaves);
     expect(CATEGORY_REGISTRY.length).toBe(REGISTRY_BY_SLUG.size);
   });
 });

@@ -49,8 +49,22 @@ describe("/graph live 口径：只出真实站点与真实推导边", () => {
   });
 
   it("live 角标只宣称真实站点，不再宣称混排预设", () => {
-    expect(SRC).toContain("实时抽样 {liveCount} 站（真实站点，非全量）");
+    // 抽样分支（展示 < 母体）仍写「非全量」；全量分支（展示 == 母体，
+    // 如只有 10 站的二级分类）不许再写「非全量」。
+    expect(SRC).toContain("实时抽样 ${liveCount} 站（真实站点，非全量）");
+    expect(SRC).toContain("实时 ${liveCount} 站（真实站点，全部展示）");
     expect(SRC).not.toContain("预设示例 {DEFAULT_NODES.length} 节点");
+  });
+
+  it("角标总数取抽样母体 liveTotal，不再写死站点总数", () => {
+    // 2026-11-11 实测：库已 334 站，角标 title 仍写死「非全量 314 站」。
+    // 总数必须取 scopeFlat.length（全局 334 / 分类域为该分类站点数），
+    // 且全量时 title 改称「已全部展示」，不许再写「非全量」。
+    expect(SRC).toContain("const [liveTotal, setLiveTotal] = useState(0)");
+    expect(SRC).toContain("setLiveTotal(scopeFlat.length)");
+    expect(SRC).toContain("非全量 ${liveTotal} 站");
+    expect(SRC).toContain("已全部展示，共 ${liveTotal} 站");
+    expect(SRC).not.toContain("314 站");
   });
 
   it("预设集仍只作无数据时的示例兜底，且保留 sample 标注路径", () => {

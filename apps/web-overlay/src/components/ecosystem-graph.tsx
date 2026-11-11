@@ -128,6 +128,13 @@ export function EcosystemGraph() {
 
   const [edges, setEdges] = useState<GraphEdge[]>(DEFAULT_EDGES)
   const [liveCount, setLiveCount] = useState(0)
+  /**
+   * 本次 live 视图的抽样母体大小（全局 = 全库站点数 / 分类域 = 该分类站点数）。
+   * 角标「非全量 N 站」的 N 必须取它：写死总数一改库就失真
+   * （2026-11-11 实测：库已 334 站，角标 title 仍写 314）。
+   * liveCount === liveTotal 时是全量展示，角标与 title 都不许再写「非全量」。
+   */
+  const [liveTotal, setLiveTotal] = useState(0)
   /** 图谱数据来源：'live' = 真实站点库；'sample' = 内置示例集（必须在界面上如实标注） */
   const [dataSource, setDataSource] = useState<'live' | 'sample' | 'loading'>('loading')
 
@@ -191,11 +198,12 @@ export function EcosystemGraph() {
       .then((data) => {
         if (cancelled) return
         if (!data) {
+          setLiveTotal(0)
           setDataSource('sample')
           return
         }
 
-        // 展平 19 个一级类目（含直属站点与子分类站点）为统一站点列表
+        // 展平 20 个一级类目（含直属站点与子分类站点）为统一站点列表
         const flat: Array<{ id: string; title: string; href: string; description?: string; tags?: string[]; categoryId?: string }> = []
         const cats = Array.isArray(data.navigationItems) ? data.navigationItems : []
         for (const cat of cats) {
@@ -228,6 +236,7 @@ export function EcosystemGraph() {
         setFocusedCategory(activeFocus)
 
         if (flat.length === 0) {
+          setLiveTotal(0)
           setFocusedCategory(null)
           setDataSource('sample')
           return
@@ -240,6 +249,7 @@ export function EcosystemGraph() {
           ? flat.filter((s) => activeFocus.memberIds.includes(s.categoryId ?? ''))
           : flat
         if (scopeFlat.length === 0) {
+          setLiveTotal(0)
           setFocusedCategory(null)
           setDataSource('sample')
           return
@@ -283,6 +293,7 @@ export function EcosystemGraph() {
         }
 
         if (dynamicNodes.length === 0) {
+          setLiveTotal(0)
           setDataSource('sample')
           return
         }
@@ -322,11 +333,15 @@ export function EcosystemGraph() {
         setNodes(positioned)
         setEdges(extraEdges)
         setLiveCount(dynamicNodes.length)
+        setLiveTotal(scopeFlat.length)
         setDataSource('live')
       })
       .catch(() => {
         // 拉不到数据：保留内置静态图谱保证可视化不空白，但把「示例数据」如实标注出来
-        if (!cancelled) setDataSource('sample')
+        if (!cancelled) {
+          setLiveTotal(0)
+          setDataSource('sample')
+        }
       })
     return () => {
       cancelled = true
@@ -486,9 +501,15 @@ export function EcosystemGraph() {
                   <Badge
                     variant="outline"
                     className="text-xs font-mono text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                    title={`图中节点 = ${liveCount} 个站内真实站点（均匀抽样，非全量 314 站）；连线为按共享标签推导的关系，不是人工录入的生态关系`}
+                    title={
+                      liveCount < liveTotal
+                        ? `图中节点 = ${liveCount} 个站内真实站点（均匀抽样，非全量 ${liveTotal} 站）；连线为按共享标签推导的关系，不是人工录入的生态关系`
+                        : `图中节点 = ${liveCount} 个站内真实站点（已全部展示，共 ${liveTotal} 站）；连线为按共享标签推导的关系，不是人工录入的生态关系`
+                    }
                   >
-                    实时抽样 {liveCount} 站（真实站点，非全量）
+                    {liveCount < liveTotal
+                      ? `实时抽样 ${liveCount} 站（真实站点，非全量）`
+                      : `实时 ${liveCount} 站（真实站点，全部展示）`}
                   </Badge>
                 )}
                 {dataSource === 'sample' && (

@@ -131,7 +131,9 @@
     '首页场景包点「换一批」，能看到更多玩法',
     '想做 PPT、剪视频、学英语，跟我说一声就行',
     '做短剧的全套工具我也能给你配齐哦',
-    '我会记住你常用的场景，越用越顺手'
+    '我会记住你常用的场景，越用越顺手',
+    '双击我，我给你表演一个',
+    '长按我可以摸摸我'
   ];
 
   /* ---------- 持久化（只存本机：语音开关 + 拖动位置） ---------- */
@@ -330,9 +332,9 @@
     'html.dark #xiaomaomao .xm-stage{background:linear-gradient(155deg,#fff9ec 0%,#ffeef2 100%);border-color:rgba(255,196,120,.55);box-shadow:0 16px 34px -12px rgba(255,176,102,.45),var(--xm-shadow-pop)}' +
     'html.dark #xiaomaomao .xm-tab{background:#fff6e6;border-color:rgba(255,196,120,.55)}' +
     '@keyframes xmFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}' +
-    /* 说话态：环形脉动（动效映射语义），不再旋转摇晃 */
+    /* 说话态：环形脉动（动效映射语义），不再旋转摇晃；P1：光圈改吃 --xm-accent 令牌（color-mix），深浅色自动跟随 */
     '#xiaomaomao .xm-stage.xm-speaking{animation:xmSpeak 1.6s ease-in-out infinite}' +
-    '@keyframes xmSpeak{0%,100%{transform:translateY(0);box-shadow:var(--xm-shadow-pop),0 0 0 0 rgba(244,80,126,.35)}50%{transform:translateY(-2px);box-shadow:var(--xm-shadow-pop),0 0 0 7px rgba(244,80,126,0)}}' +
+    '@keyframes xmSpeak{0%,100%{transform:translateY(0);box-shadow:var(--xm-shadow-pop),0 0 0 0 color-mix(in srgb, var(--xm-accent) 35%, transparent)}50%{transform:translateY(-2px);box-shadow:var(--xm-shadow-pop),0 0 0 7px transparent}}' +
     '#xiaomaomao .xm-lean{position:absolute;inset:0;transition:transform .32s var(--xm-ease);will-change:transform}' +
     '#xiaomaomao .xm-lean img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 18%;opacity:0;transition:opacity .32s var(--xm-ease);pointer-events:none;user-select:none;-webkit-user-drag:none}' +
     '#xiaomaomao .xm-lean img.xm-on{opacity:1}' +
@@ -767,8 +769,13 @@
     if (reducedMotion || avatarPick || sleeping) return;
     /* v8 复审返工：语音总开关管着有声版——关了语音只播静音版；snd 探活失败回退同名静音版
        （webm 本身无音轨，沿用 sound 选项播它也不会出声）。 */
-    if (withSound && voiceOn) tryCelebVideo(['snd-' + exprKey, 'expr-' + exprKey], { sound: true, ms: 10500 });
-    else tryCelebVideo(['expr-' + exprKey], { loop: true, ms: 6500 });
+    /* P1（合并后细节）：心情视频补齐回退链——原静音版只探单个文件、失败就没视频；
+       现在目标文件探活失败时串行回退到庆祝链的 expr-happy（皇冠套里 celebrate 的等价
+       动画）；有声版在既有 snd→expr 回退之后同样续上这一环。 */
+    var silentChain = ['expr-' + exprKey];
+    if (exprKey !== 'happy') silentChain.push('expr-happy');
+    if (withSound && voiceOn) tryCelebVideo(['snd-' + exprKey].concat(silentChain), { sound: true, ms: 10500 });
+    else tryCelebVideo(silentChain, { loop: true, ms: 6500 });
   }
   /* v8：离屏/切后台停播——猫滚出视口就暂停，切到别的标签页直接收视频（声音版尤其不许在后台响） */
   try {
@@ -1492,6 +1499,12 @@
             think.remove();
             addCatText('哎呀，我这会儿有点迷糊，没能帮你找成。你可以先去首页的「AI 智能找站」试试，或者等会儿再喊我。');
             finishWithReply('', [], [], 'error');
+            /* P1（合并后细节）：聊天彻底失败时猫要有情绪反馈——切委屈泪汪汪陪着用户，
+               不只是面板里一行文字（finishWithReply 会先切 making，这里再覆盖为 teary） */
+            setPose('teary');
+            window.setTimeout(function () {
+              if (!sleeping && currentPose === 'teary') setPose('main');
+            }, 3800);
           });
       });
   }

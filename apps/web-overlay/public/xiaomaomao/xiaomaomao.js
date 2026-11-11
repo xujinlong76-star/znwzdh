@@ -1,5 +1,17 @@
-// 小猫猫网站 AI 助手挂件 v6：右下角悬浮的粉色小猫（Muse 当前头像真图 + 同套姿势图），
+// 小猫猫网站 AI 助手挂件 v7：右下角悬浮的粉色小猫（Muse 当前头像真图 + 同套姿势图），
 // 能聊天找站、会说话、会卖萌、会睡觉，还能摸、能喂、能一起玩接星星。
+// v7 为交互与图标重做（William 点名：平时看不了猫）：
+//   ①平时零遮挡——静止状态只剩猫本体，v5/v6 常驻舞台角的操作格（语音/喂鱼/星星/关闭）
+//   与骑角的聊天徽全部撤掉；控件收进猫上方留白处的悬浮坞（.xm-dock，bottom:100%+10px，
+//   与舞台纵向零重叠），只在桌面悬停、移动端轻点猫时淡入展开，移开/点别处/闲置 3 秒自动收起，
+//   与气泡互斥（气泡出坞必收、坞开气泡不冒），唤出/收起只动坞自身、不挪猫位不闪烁；
+//   首次访问自动展示一次当自我介绍（store.hinted 落盘，之后不再自动出）。
+//   ②图标全套重做——UI 控件图标一律换手工 inline SVG（24 网格、圆角线条、统一 1.8 线宽、
+//   currentColor 吃设计令牌）：聊天/摸猫(爪印)/喂鱼/接星星/语音开/语音关/关闭/换形象/相机/麦克风/
+//   卡片箭头/收起角标/游戏星星/飞鱼，不再用 emoji 或字符充当控件图标（台词、表情符号层、
+//   节日装饰、粒子属内容与表现层，不在此列）。
+//   ③功能与 v6 完全一致：6+6 真图姿势、深色套、拖动（含触摸/钳制）、贴边半藏、自改形象、
+//   喂食/接星星/台词/语音输入/聊天面板/成长桥 A12 一个不少；真图 base64 零改动。
 // v6 四件规格：①整套形象补齐——深色模式整套深色图（POSES_DARK，512px 编码）自动切换；
 //   庆祝视频钩子：public/xiaomaomao/media/ 下放 celebrate.mp4 / dance-1..5.mp4 即自动生效
 //   （或用 window.XIAOMAOMAO_MEDIA 指向 CDN），文件不在时回退既有图片庆祝，绝不摆假视频；
@@ -80,11 +92,12 @@
   ];
 
   /* ---------- 持久化（只存本机：语音开关 + 拖动位置） ---------- */
-  var store = { voice: true, pos: null };
+  var store = { voice: true, pos: null, hinted: false };
   try {
     var saved = JSON.parse(window.localStorage.getItem(STORE_KEY) || 'null');
     if (saved && typeof saved === 'object') {
       if (typeof saved.voice === 'boolean') store.voice = saved.voice;
+      if (typeof saved.hinted === 'boolean') store.hinted = saved.hinted;
       if (saved.pos && typeof saved.pos.left === 'number' && typeof saved.pos.top === 'number') store.pos = saved.pos;
     }
   } catch (e) { /* 隐私模式等场景下静默退化 */ }
@@ -208,6 +221,37 @@
     if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch (e) { /* 忽略 */ } }
   }
 
+  /* ---------- v7 图标库：全套手工 inline SVG（24 网格 / 圆角线条 / 线宽 1.8 / currentColor 吃令牌色） ----------
+     UI 控件只许用这里的图标，不许再拿 emoji 或字符充数；尺寸由各容器 CSS 决定，SVG 本身不写死宽高。 */
+  var SVG_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
+  var ICONS = {
+    /* 聊天：圆角气泡 + 三点（在说话） */
+    chat: SVG_OPEN + '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/><circle cx="8.4" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="15.6" cy="11.5" r="1" fill="currentColor" stroke="none"/></svg>',
+    /* 摸猫：实心爪印（四趾 + 掌垫，与线条图标同视觉重量） */
+    paw: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="4.9" cy="10.6" r="1.8"/><circle cx="8.6" cy="6.3" r="2"/><circle cx="15.4" cy="6.3" r="2"/><circle cx="19.1" cy="10.6" r="1.8"/><path d="M12 11.4c2.8 0 5.3 2.2 5.3 4.7 0 1.9-1.4 3.1-3.2 3.1-1 0-1.5-.3-2.1-.3s-1.1.3-2.1.3c-1.8 0-3.2-1.2-3.2-3.1 0-2.5 2.5-4.7 5.3-4.7z"/></svg>',
+    /* 喂鱼：鱼身 + 分叉尾 + 眼点 */
+    fish: SVG_OPEN + '<path d="M20.8 12c-2.4 3.3-5.5 5-9.1 5-3.2 0-6-1.6-7.9-4.1-.3-.4-.3-1 0-1.4C5.7 8.6 8.5 7 11.7 7c3.6 0 6.7 1.7 9.1 5z"/><path d="M4.6 9.4 7.4 12l-2.8 2.6"/><circle cx="16.9" cy="10.7" r="1" fill="currentColor" stroke="none"/></svg>',
+    /* 游戏：圆角五角星 */
+    star: SVG_OPEN + '<path d="M12 3.8l2.4 5 5.5.7-4.1 3.8 1.1 5.4L12 16l-4.9 2.7 1.1-5.4L4.1 9.5l5.5-.7z"/></svg>',
+    /* 游戏里掉落的星星（内容图形，填色版）：普通 / 金色 */
+    starSoft: '<svg viewBox="0 0 24 24" fill="#ffd166" stroke="#eda33a" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.8l2.4 5 5.5.7-4.1 3.8 1.1 5.4L12 16l-4.9 2.7 1.1-5.4L4.1 9.5l5.5-.7z"/></svg>',
+    starGold: '<svg viewBox="0 0 24 24" fill="#ffb703" stroke="#d97706" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.8l2.4 5 5.5.7-4.1 3.8 1.1 5.4L12 16l-4.9 2.7 1.1-5.4L4.1 9.5l5.5-.7z"/><circle cx="9.2" cy="9.6" r="1.1" fill="#ffe9a8" stroke="none"/></svg>',
+    /* 语音开：喇叭（实心）+ 两道声波 */
+    volOn: SVG_OPEN + '<path d="M11 5.2 6.6 9H3.2v6h3.4L11 18.8z" fill="currentColor" stroke="none"/><path d="M15.2 9.4a3.8 3.8 0 0 1 0 5.2"/><path d="M17.9 7a7.6 7.6 0 0 1 0 10"/></svg>',
+    /* 语音关：喇叭 + 叉 */
+    volOff: SVG_OPEN + '<path d="M11 5.2 6.6 9H3.2v6h3.4L11 18.8z" fill="currentColor" stroke="none"/><path d="M15.8 9.8l4.4 4.4M20.2 9.8l-4.4 4.4"/></svg>',
+    /* 关闭：两条圆角斜线 */
+    close: SVG_OPEN + '<path d="M6 6l12 12M18 6L6 18"/></svg>',
+    /* 换形象：相框 + 太阳 + 山峦 */
+    image: SVG_OPEN + '<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.2 17.3 10 12l3.4 2.9L17 11.4l2.8 2.9"/></svg>',
+    /* 麦克风：胶囊话筒 + 支架 + 底座 */
+    mic: SVG_OPEN + '<rect x="9" y="2.8" width="6" height="11" rx="3"/><path d="M5.6 11.2a6.4 6.4 0 0 0 12.8 0"/><path d="M12 17.6V21"/></svg>',
+    /* 相机：机身 + 镜头（上传图片钮） */
+    camera: SVG_OPEN + '<path d="M4 8.2h2.8L8.7 5.6h6.6L17.2 8.2H20a1.2 1.2 0 0 1 1.2 1.2V17a1.8 1.8 0 0 1-1.8 1.8H4.6A1.8 1.8 0 0 1 2.8 17V9.4A1.2 1.2 0 0 1 4 8.2z"/><circle cx="12" cy="13.2" r="3.3"/></svg>',
+    /* 卡片箭头：向右 */
+    arrow: SVG_OPEN + '<path d="M4.5 12h14M13 6l6 6-6 6"/></svg>'
+  };
+
   /* ---------- DOM 骨架 ---------- */
   var css =
     /* v5 设计令牌：颜色/阴影/缓动收敛成变量，深色只换令牌值（站点 .dark 挂在 html 上） */
@@ -249,21 +293,34 @@
     '#xiaomaomao .xm-fx{position:absolute;inset:-30px;pointer-events:none;z-index:6;overflow:visible}' +
     '#xiaomaomao .xm-fx i{position:absolute;left:50%;top:38%;font-style:normal;opacity:0;animation:xmFly .95s ease-out forwards;text-shadow:0 2px 8px rgba(255,255,255,.85)}' +
     '@keyframes xmFly{0%{opacity:0;transform:translate(-50%,-50%) scale(.4) rotate(0deg)}18%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) scale(1.15) rotate(var(--rr))}}' +
-    /* 操作区：2×2 玻璃格内嵌舞台左下角（永不溢出视口）+ 聊天徽独立挂舞台右下角 */
-    '#xiaomaomao .xm-actions{position:absolute;left:6px;bottom:6px;display:grid;grid-template-columns:repeat(2,31px);gap:5px;z-index:7}' +
-    '#xiaomaomao .xm-btn{width:31px;height:31px;border-radius:50%;border:1px solid var(--xm-ring);background:var(--xm-surface);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;box-shadow:0 3px 8px rgba(43,10,24,.14);transition:transform .12s var(--xm-ease),background .12s var(--xm-ease),box-shadow .12s var(--xm-ease)}' +
+    /* v7 操作区：悬浮坞——平时完全收起（opacity 0 + visibility hidden，零遮挡、不可点、不可聚焦）；
+       展开时悬在猫上方留白处：bottom:calc(100% + 10px) 与舞台纵向零重叠，默认右对齐向左长，
+       猫靠左时由 alignPanel 加 .xm-fan-r 翻向右。按钮入场走 xmDockIn（fill backwards + 逐个延迟，
+       像从猫身上荡开），退场随坞整体淡出；聊天钮只用渐变主色区分主次，不再骑角放大。 */
+    '#xiaomaomao .xm-dock{position:absolute;right:-4px;bottom:calc(100% + 10px);display:flex;flex-direction:row-reverse;gap:6px;padding:6px;border-radius:999px;background:var(--xm-surface);-webkit-backdrop-filter:blur(14px) saturate(1.5);backdrop-filter:blur(14px) saturate(1.5);border:1px solid var(--xm-ring);box-shadow:var(--xm-shadow-pop);z-index:11;opacity:0;visibility:hidden;transform:translateY(8px) scale(.96);transform-origin:bottom right;transition:opacity .22s var(--xm-ease),transform .22s var(--xm-ease),visibility 0s linear .22s;pointer-events:none}' +
+    '#xiaomaomao .xm-dock.xm-fan-r{right:auto;left:-4px;transform-origin:bottom left}' +
+    '#xiaomaomao.xm-ctl .xm-dock{opacity:1;visibility:visible;transform:translateY(0) scale(1);transition:opacity .22s var(--xm-ease),transform .22s var(--xm-ease);pointer-events:auto}' +
+    '#xiaomaomao .xm-btn{width:36px;height:36px;border-radius:50%;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-ink);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;box-shadow:0 2px 6px rgba(43,10,24,.10);transition:transform .14s var(--xm-ease),background .12s var(--xm-ease),box-shadow .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-dock .xm-btn{opacity:0;transition:opacity .18s var(--xm-ease),transform .14s var(--xm-ease),background .12s var(--xm-ease),box-shadow .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
+    '#xiaomaomao.xm-ctl .xm-dock .xm-btn{opacity:1;animation:xmDockIn .26s var(--xm-spring) backwards}' +
+    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(2){animation-delay:.03s}' +
+    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(3){animation-delay:.06s}' +
+    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(4){animation-delay:.09s}' +
+    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(5){animation-delay:.12s}' +
+    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(6){animation-delay:.15s}' +
+    '@keyframes xmDockIn{0%{opacity:0;transform:translateY(10px) scale(.55)}100%{opacity:1;transform:translateY(0) scale(1)}}' +
     '#xiaomaomao .xm-btn:hover{transform:translateY(-1px);background:var(--xm-solid);box-shadow:0 5px 12px rgba(43,10,24,.18)}' +
     '#xiaomaomao .xm-btn:active{transform:scale(.93)}' +
-    '#xiaomaomao .xm-chat-btn{position:absolute;right:-9px;bottom:-9px;z-index:8;width:38px;height:38px;border-radius:50%;border:2px solid var(--xm-solid);background:linear-gradient(135deg,var(--xm-accent),#ff8fab);color:#fff;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;box-shadow:0 8px 18px -4px rgba(244,80,126,.5);transition:transform .12s var(--xm-ease)}' +
-    '#xiaomaomao .xm-chat-btn:hover{transform:scale(1.08)}' +
-    '#xiaomaomao .xm-chat-btn:active{transform:scale(.94)}' +
-    '#xiaomaomao .xm-chat-btn.xm-pulse{animation:xmPulse 1.8s ease-in-out infinite}' +
-    '@keyframes xmPulse{0%,100%{box-shadow:0 8px 18px -4px rgba(244,80,126,.5),0 0 0 0 rgba(244,80,126,.45)}50%{box-shadow:0 8px 18px -4px rgba(244,80,126,.5),0 0 0 8px rgba(244,80,126,0)}}' +
+    '#xiaomaomao .xm-btn svg{width:20px;height:20px;flex:none;display:block}' +
+    '#xiaomaomao .xm-chat-btn{background:linear-gradient(135deg,var(--xm-accent),#ff8fab);color:#fff;border-color:transparent;box-shadow:0 6px 14px -4px rgba(244,80,126,.5)}' +
+    '#xiaomaomao .xm-chat-btn:hover{background:linear-gradient(135deg,var(--xm-accent),#ff8fab);filter:brightness(1.07)}' +
     /* 收起小圆标：加深度投影，浅底上不再隐形 */
-    '#xiaomaomao .xm-tab{display:none;width:58px;height:58px;border-radius:50%;overflow:hidden;border:2px solid var(--xm-stage-ring);background:#fff;cursor:pointer;padding:0;box-shadow:var(--xm-shadow-pop);position:relative;transition:transform .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-tab{display:none;width:58px;height:58px;border-radius:50%;overflow:visible;border:2px solid var(--xm-stage-ring);background:#fff;cursor:pointer;padding:0;box-shadow:var(--xm-shadow-pop);position:relative;transition:transform .12s var(--xm-ease)}' +
     '#xiaomaomao .xm-tab:hover{transform:scale(1.06)}' +
-    '#xiaomaomao .xm-tab img{width:100%;height:100%;object-fit:cover;object-position:50% 15%}' +
-    '#xiaomaomao .xm-tab:after{content:"聊";position:absolute;right:-1px;bottom:-1px;background:var(--xm-accent);color:#fff;font-size:10px;line-height:1;padding:3px 5px;border-radius:9px;border:2px solid var(--xm-solid)}' +
+    '#xiaomaomao .xm-tab img{width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:50% 15%;display:block}' +
+    /* v7：收起角标由「聊」字改成 SVG 气泡角标（与全套图标同风格） */
+    '#xiaomaomao .xm-tab-badge{position:absolute;right:-2px;bottom:-2px;width:20px;height:20px;border-radius:50%;background:var(--xm-accent);border:2px solid var(--xm-solid);display:flex;align-items:center;justify-content:center;color:#fff;pointer-events:none}' +
+    '#xiaomaomao .xm-tab-badge svg{width:11px;height:11px;display:block}' +
     '#xiaomaomao.xm-closed .xm-tab{display:block}' +
     '#xiaomaomao.xm-closed .xm-main-col{display:none}' +
     /* 聊天面板：锚定主列左侧 14px，玻璃面 + 1px 环 + 中性深影 */
@@ -279,6 +336,7 @@
     '#xiaomaomao .xm-p-head .xm-hbtn:hover{background:var(--xm-solid)}' +
     '#xiaomaomao .xm-p-head .xm-hbtn:active{transform:scale(.93)}' +
     '#xiaomaomao .xm-p-head .xm-hbtn + .xm-hbtn{margin-left:0}' +
+    '#xiaomaomao .xm-hbtn svg{width:15px;height:15px;display:block}' +
     '#xiaomaomao .xm-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:9px;scrollbar-width:thin;scrollbar-color:var(--xm-ring) transparent}' +
     '#xiaomaomao .xm-msgs::-webkit-scrollbar{width:5px}#xiaomaomao .xm-msgs::-webkit-scrollbar-thumb{background:var(--xm-ring);border-radius:3px}' +
     '#xiaomaomao .xm-m{max-width:88%;padding:8px 11px;font-size:13.5px;line-height:1.6;border-radius:16px;word-break:break-word;animation:xmMsgIn .2s var(--xm-ease) both}' +
@@ -297,6 +355,7 @@
     '#xiaomaomao .xm-card-t{font-size:13.5px;font-weight:600;color:var(--xm-ink);line-height:1.3}' +
     '#xiaomaomao .xm-card-r{font-size:12px;color:var(--xm-ink-soft);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
     '#xiaomaomao .xm-card-go{flex:none;color:var(--xm-accent);font-size:16px;font-weight:700}' +
+    '#xiaomaomao .xm-card-go svg{width:17px;height:17px;display:block}' +
     '#xiaomaomao .xm-sugs{display:flex;flex-wrap:wrap;gap:6px;align-self:flex-start;animation:xmMsgIn .2s var(--xm-ease) both}' +
     '#xiaomaomao .xm-sug{display:inline-flex;align-items:center;min-height:30px;padding:4px 11px;border-radius:999px;background:var(--xm-chip);border:1px solid var(--xm-ring);color:var(--xm-accent-deep);font-size:12.5px;text-decoration:none;cursor:pointer;transition:background .12s var(--xm-ease),transform .12s var(--xm-ease)}' +
     '#xiaomaomao .xm-sug:hover{background:var(--xm-solid)}' +
@@ -318,12 +377,14 @@
     '#xiaomaomao .xm-deco{position:absolute;top:-20px;right:-2px;z-index:8;font-size:20px;display:none;pointer-events:none;animation:xmFloat 5.2s ease-in-out infinite;filter:drop-shadow(0 3px 5px rgba(43,10,24,.25))}' +
     '#xiaomaomao .xm-wrap.xm-dodge .xm-stage{animation:xmDodge .45s var(--xm-ease)}' +
     '@keyframes xmDodge{0%{transform:translateX(0)}30%{transform:translateX(15px) rotate(3deg)}60%{transform:translateX(-6px) rotate(-1deg)}100%{transform:translateX(0)}}' +
-    '#xiaomaomao .xm-fx i.xm-fish-i{animation:xmFish .72s ease-in forwards;font-size:22px}' +
+    '#xiaomaomao .xm-fx i.xm-fish-i{animation:xmFish .72s ease-in forwards;font-size:22px;color:#3aa7c7}' +
+    '#xiaomaomao .xm-fx i.xm-fish-i svg{width:24px;height:24px;display:block}' +
     '@keyframes xmFish{0%{opacity:0;transform:translate(-50%,-30px) rotate(-26deg) scale(.7)}30%{opacity:1}100%{opacity:0;transform:translate(-50%,30px) rotate(12deg) scale(1.05)}}' +
     '#xiaomaomao .xm-fish-btn{position:relative}' +
     '#xiaomaomao .xm-fish-n{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;border-radius:8px;background:var(--xm-accent);color:#fff;font-size:9px;font-weight:700;line-height:15px;text-align:center;padding:0 3px;box-shadow:0 0 0 1.5px var(--xm-solid),0 2px 6px rgba(244,80,126,.5)}' +
     '#xiaomaomao .xm-mic{flex:none;width:40px;height:40px;border-radius:50%;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-ink);font-size:16px;cursor:pointer;padding:0;line-height:1;transition:transform .12s var(--xm-ease)}' +
     '#xiaomaomao .xm-mic:active{transform:scale(.93)}' +
+    '#xiaomaomao .xm-mic svg{width:20px;height:20px;display:block}' +
     '#xiaomaomao .xm-mic.xm-mic-live{background:var(--xm-chip);border-color:var(--xm-accent);animation:xmMicPulse 1.2s ease-in-out infinite}' +
     '@keyframes xmMicPulse{0%,100%{box-shadow:0 0 0 0 rgba(244,80,126,.4)}50%{box-shadow:0 0 0 6px rgba(244,80,126,0)}}' +
     '#xiaomaomao .xm-game{position:absolute;bottom:0;right:calc(100% + 14px);width:336px;max-width:calc(100vw - 156px);height:min(436px,62vh);display:none;flex-direction:column;background:var(--xm-surface);-webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5);border:1px solid var(--xm-ring);border-radius:20px;box-shadow:var(--xm-shadow-panel);overflow:hidden;transform-origin:bottom right;z-index:10}' +
@@ -337,7 +398,10 @@
     '#xiaomaomao .xm-g-hud b{color:var(--xm-accent);font-size:14px}' +
     '#xiaomaomao .xm-g-area{position:relative;flex:1;overflow:hidden;background:linear-gradient(180deg,#fff0f6,#ffe3ee)}' +
     'html.dark #xiaomaomao .xm-g-area{background:linear-gradient(180deg,rgba(255,112,150,.10),rgba(255,112,150,.05))}' +
-    '#xiaomaomao .xm-g-star{position:absolute;width:42px;height:42px;margin-left:-21px;border:none;background:transparent;font-size:26px;cursor:pointer;padding:0;text-shadow:0 2px 7px rgba(255,150,180,.55);animation:xmFall linear forwards;line-height:1}' +
+    '#xiaomaomao .xm-g-star{position:absolute;width:42px;height:42px;margin-left:-21px;border:none;background:transparent;cursor:pointer;padding:0;animation:xmFall linear forwards;line-height:1;filter:drop-shadow(0 2px 5px rgba(255,150,180,.55))}' +
+    '#xiaomaomao .xm-g-star svg{width:30px;height:30px;display:block;margin:6px auto 0}' +
+    '#xiaomaomao .xm-g-title{display:inline-flex;align-items:center;gap:6px}' +
+    '#xiaomaomao .xm-g-title svg{width:17px;height:17px;color:var(--xm-accent)}' +
     '@keyframes xmFall{from{transform:translateY(0) rotate(-8deg)}to{transform:translateY(var(--fall,440px)) rotate(46deg)}}' +
     '#xiaomaomao .xm-g-pop{position:absolute;font-size:14px;font-weight:700;color:var(--xm-accent);pointer-events:none;animation:xmEmo .8s ease-out forwards;z-index:3}' +
     '#xiaomaomao .xm-g-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:var(--xm-surface);text-align:center;padding:18px;z-index:4}' +
@@ -372,8 +436,9 @@
     '#xiaomaomao .xm-look-foot{padding:2px 12px 12px;display:flex;flex-direction:column;gap:8px;flex:none}' +
     '#xiaomaomao .xm-look-act{height:38px;border-radius:999px;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-accent-deep);font-size:13px;font-weight:700;cursor:pointer;font:inherit}' +
     '#xiaomaomao .xm-look-act:hover{background:var(--xm-solid)}' +
+    '#xiaomaomao .xm-look-act svg{width:16px;height:16px;vertical-align:-3px;margin-right:5px}' +
     '#xiaomaomao .xm-look-act:active{transform:scale(.97)}' +
-    '@media (max-width:640px){#xiaomaomao{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(12px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-actions{left:5px;bottom:5px;grid-template-columns:repeat(2,27px);gap:5px}#xiaomaomao .xm-btn{width:27px;height:27px;font-size:12.5px}#xiaomaomao .xm-chat-btn{width:34px;height:34px;font-size:15px;right:-7px;bottom:-7px}#xiaomaomao .xm-bubble{max-width:min(248px,calc(100vw - 130px));font-size:12.5px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(104px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(508px,62vh)}#xiaomaomao .xm-game{height:min(436px,58vh)}}' +
+    '@media (max-width:640px){#xiaomaomao{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(12px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-dock{gap:5px;padding:5px;bottom:calc(100% + 8px)}#xiaomaomao .xm-dock .xm-btn{width:34px;height:34px}#xiaomaomao .xm-dock .xm-btn svg{width:19px;height:19px}#xiaomaomao .xm-bubble{max-width:min(248px,calc(100vw - 130px));font-size:12.5px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(104px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(508px,62vh)}#xiaomaomao .xm-game{height:min(436px,58vh)}}' +
     '@media (prefers-reduced-motion: reduce){#xiaomaomao *,#xiaomaomao{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important}}';
   var style = document.createElement('style');
   style.textContent = css;
@@ -390,22 +455,25 @@
         '<div class="xm-stage" role="button" aria-label="小猫猫，点我玩一玩" title="小猫猫"><div class="xm-lean">' +
           '<img class="xm-img-a" alt="小猫猫"><img class="xm-img-b" alt="" aria-hidden="true">' +
         '</div></div>' +
-        '<div class="xm-actions">' +
-          '<button class="xm-btn xm-voice-btn" type="button" title="开关小猫语音" aria-label="开关小猫语音">🔊</button>' +
-          '<button class="xm-btn xm-close-btn" type="button" title="先把小猫收起来" aria-label="收起小猫猫">✕</button>' +
-        '</div>' +
-        '<button class="xm-chat-btn xm-pulse" type="button" title="跟小猫猫聊天找站" aria-label="跟小猫猫聊天找站">💬</button>' +
+      '</div>' +
+      /* v7：悬浮坞挂在主列里、舞台之外（猫上方留白处），平时隐藏；DOM 顺序=聊天/摸猫/语音/关闭，
+         喂鱼与接星星钮由 JS 插到关闭钮之前；flex row-reverse 让聊天钮始终贴猫那一端 */
+      '<div class="xm-dock" role="toolbar" aria-label="小猫猫的操作按钮">' +
+        '<button class="xm-btn xm-chat-btn" type="button" title="跟小猫猫聊天找站" aria-label="跟小猫猫聊天找站">' + ICONS.chat + '</button>' +
+        '<button class="xm-btn xm-pet-btn" type="button" title="摸摸小猫猫" aria-label="摸摸小猫猫">' + ICONS.paw + '</button>' +
+        '<button class="xm-btn xm-voice-btn" type="button" title="开关小猫语音" aria-label="开关小猫语音">' + ICONS.volOn + '</button>' +
+        '<button class="xm-btn xm-close-btn" type="button" title="先把小猫收起来" aria-label="收起小猫猫">' + ICONS.close + '</button>' +
       '</div>' +
       '<div class="xm-panel" role="dialog" aria-label="小猫猫聊天">' +
         '<div class="xm-p-head"><img alt=""><div><div class="xm-p-title">小猫猫</div><div class="xm-p-sub">AI 找站小助手 · 只推站内收录</div></div>' +
-        '<button class="xm-hbtn xm-look-btn" type="button" title="换个伙伴形象" aria-label="换个伙伴形象">🖼</button>' +
-        '<button class="xm-hbtn xm-voice-btn" type="button" title="开关小猫语音" aria-label="开关小猫语音">🔊</button>' +
-        '<button class="xm-hbtn xm-p-close" type="button" title="收起聊天" aria-label="收起聊天">✕</button></div>' +
+        '<button class="xm-hbtn xm-look-btn" type="button" title="换个伙伴形象" aria-label="换个伙伴形象">' + ICONS.image + '</button>' +
+        '<button class="xm-hbtn xm-voice-btn" type="button" title="开关小猫语音" aria-label="开关小猫语音">' + ICONS.volOn + '</button>' +
+        '<button class="xm-hbtn xm-p-close" type="button" title="收起聊天" aria-label="收起聊天">' + ICONS.close + '</button></div>' +
         '<div class="xm-look">' +
-          '<div class="xm-look-bar"><span>我的伙伴形象</span><button class="xm-look-back" type="button">‹ 返回聊天</button></div>' +
+          '<div class="xm-look-bar"><span>我的伙伴形象</span><button class="xm-look-back" type="button">返回聊天</button></div>' +
           '<div class="xm-look-grid"></div>' +
           '<div class="xm-look-foot">' +
-            '<button class="xm-look-act xm-look-upload" type="button">📷 上传我的图片</button>' +
+            '<button class="xm-look-act xm-look-upload" type="button">' + ICONS.camera + '上传我的图片</button>' +
             '<button class="xm-look-act xm-look-default" type="button">恢复默认形象</button>' +
             '<input class="xm-look-file" type="file" accept="image/*" hidden>' +
             '<div class="xm-note xm-look-note">从整套在用图里挑一张，或者上传你自己的图。只保存在这台设备的浏览器里，不会上传到任何地方。</div>' +
@@ -422,7 +490,7 @@
         '<form class="xm-form"><input class="xm-input" type="text" maxlength="200" placeholder="想找什么，跟小猫猫说…" aria-label="想找什么，跟小猫猫说"><button class="xm-send" type="submit">发送</button></form>' +
       '</div>' +
     '</div>' +
-    '<button class="xm-tab" type="button" title="叫出小猫猫" aria-label="叫出小猫猫"><img alt="小猫猫"></button>';
+    '<button class="xm-tab" type="button" title="叫出小猫猫" aria-label="叫出小猫猫"><img alt="小猫猫"><span class="xm-tab-badge" aria-hidden="true">' + ICONS.chat + '</span></button>';
   document.body.appendChild(root);
 
   var wrapEl = root.querySelector('.xm-wrap');
@@ -586,6 +654,7 @@
   /* ---------- 气泡（打字机） ---------- */
   var typeTimer = null, bubbleHideTimer = null;
   function showBubble(text, speakIt) {
+    hideControls(); /* v7：气泡与悬浮坞互斥——猫说话时坞先退场，不许两样东西一起围着猫 */
     if (root.classList.contains('xm-open')) return;
     window.clearTimeout(bubbleHideTimer);
     window.clearInterval(typeTimer);
@@ -774,7 +843,7 @@
   document.addEventListener('pointermove', function (ev) {
     if (!drag) return;
     var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
-    if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 7) drag.moved = true;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 7) { drag.moved = true; hideControls(); }
     if (drag.moved) {
       var maxL = Math.max(4, window.innerWidth - (drag.w || 112) - 4);
       var maxT = Math.max(4, window.innerHeight - (drag.h || 112) - 4);
@@ -810,6 +879,9 @@
     var r = root.getBoundingClientRect();
     var cx = r.left + r.width / 2;
     if (cx < 380) panelEl.classList.add('xm-left'); else panelEl.classList.remove('xm-left');
+    /* v7：悬浮坞同理——猫靠左（左侧放不下一条坞）时翻向右展开 */
+    var dock = root.querySelector('.xm-dock');
+    if (dock) { if (cx < 300) dock.classList.add('xm-fan-r'); else dock.classList.remove('xm-fan-r'); }
   }
   window.addEventListener('resize', function () {
     undock();
@@ -854,10 +926,61 @@
     if (!docked && Date.now() - xmLastAct > DOCK_AFTER) doDock();
   }, 4000);
   root.addEventListener('pointerenter', function () {
+    var wasDocked = docked;
     if (docked) undock();
     noteXmAct();
+    /* v7：贴边弹回的那次进入只弹回、不顺带出坞（免得猫刚弹回来又被坞围住） */
+    if (!wasDocked) showControls();
   });
   root.addEventListener('pointerdown', function () { noteXmAct(); }, true);
+
+  /* ---------- v7：控件按需唤出（平时零遮挡） ----------
+     参考系：Shimeji 角色本体零控件（菜单全在右键）；live2d-widget 工具栏 opacity 0、
+     悬停容器才淡入且立在角色身侧；AssistiveTouch 闲置自动变淡、点开才出菜单。
+     本站落法：静止只剩猫；桌面悬停 / 移动端轻点猫 → 坞在猫上方留白处淡入展开；
+     鼠标移开（350ms 宽限）、点页面别处、Esc、或闲置 3 秒 → 自动收起。
+     面板/游戏开着、收起态时坞不出（各有自己的界面）；与气泡互斥（showBubble 里先收坞）。
+     唤出/收起只切 root 的 .xm-ctl 类，猫的 left/top/transform 一概不碰，不跳位不闪烁。 */
+  var dockEl = root.querySelector('.xm-dock');
+  var ctlShown = false, ctlTimer = 0, ctlLeaveTimer = 0;
+  var CTL_HIDE_AFTER = 3000;
+  var coarsePointer = false;
+  try { coarsePointer = window.matchMedia('(pointer: coarse)').matches; } catch (e) { /* 忽略 */ }
+  function ctlBlocked() {
+    return root.classList.contains('xm-open') || root.classList.contains('xm-closed') ||
+      (typeof gameEl !== 'undefined' && gameEl && gameEl.classList.contains('xm-on'));
+  }
+  function showControls() {
+    if (ctlBlocked()) return;
+    window.clearTimeout(ctlLeaveTimer);
+    root.classList.add('xm-ctl');
+    ctlShown = true;
+    scheduleCtlHide();
+  }
+  function hideControls() {
+    window.clearTimeout(ctlTimer);
+    window.clearTimeout(ctlLeaveTimer);
+    if (ctlShown) root.classList.remove('xm-ctl');
+    ctlShown = false;
+  }
+  function scheduleCtlHide() {
+    window.clearTimeout(ctlTimer);
+    ctlTimer = window.setTimeout(hideControls, CTL_HIDE_AFTER);
+  }
+  root.addEventListener('pointerleave', function () {
+    if (!ctlShown) return;
+    window.clearTimeout(ctlTimer);
+    ctlLeaveTimer = window.setTimeout(hideControls, 350);
+  });
+  document.addEventListener('pointerdown', function (ev) {
+    if (ctlShown && !root.contains(ev.target)) hideControls();
+  }, true);
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') hideControls();
+  });
+  /* 坞内有动静（点按/聚焦）就续命 3 秒，不会在手边自己消失 */
+  dockEl.addEventListener('pointerdown', function () { if (ctlShown) scheduleCtlHide(); });
+  dockEl.addEventListener('focusin', function () { if (ctlShown) scheduleCtlHide(); });
 
   /* ---------- v4：摸猫互动（连摸情绪递进，摸太急偶尔躲开） ---------- */
   var petChain = 0, petLastAt = 0, interacted = false;
@@ -904,14 +1027,20 @@
     markActive();
     if (sleeping) { wakeUp(true); return; }
     if (root.classList.contains('xm-open')) return;
+    /* v7：触摸设备没有悬停——轻点猫只负责唤出/收起坞，摸猫走坞里的爪印钮，
+       免得每点一次猫又出气泡又出坞、两样东西打架 */
+    if (coarsePointer) {
+      if (ctlShown) hideControls(); else showControls();
+      return;
+    }
     petCat();
   });
 
   /* ---------- 按钮：语音 / 收起 / 唤回 ---------- */
   function syncVoiceBtns() {
-    var label = voiceOn ? '🔊' : '🔇';
+    var icon = voiceOn ? ICONS.volOn : ICONS.volOff;
     var btns = root.querySelectorAll('.xm-voice-btn');
-    for (var i = 0; i < btns.length; i++) btns[i].textContent = label;
+    for (var i = 0; i < btns.length; i++) btns[i].innerHTML = icon;
   }
   var voiceBtns = root.querySelectorAll('.xm-voice-btn');
   for (var vi = 0; vi < voiceBtns.length; vi++) {
@@ -928,10 +1057,19 @@
   syncVoiceBtns();
   root.querySelector('.xm-close-btn').addEventListener('click', function (ev) {
     ev.stopPropagation();
+    hideControls();
     root.classList.add('xm-closed');
     root.classList.remove('xm-open');
     hideBubble();
     stopSpeak();
+  });
+  /* v7：坞里的摸猫钮——桌面点猫本体也能摸，这颗给触摸设备和爱用按钮的人 */
+  root.querySelector('.xm-pet-btn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    markActive();
+    if (sleeping) { wakeUp(true); return; }
+    if (root.classList.contains('xm-open')) return;
+    petCat();
   });
   root.querySelector('.xm-tab').addEventListener('click', function () {
     root.classList.remove('xm-closed');
@@ -950,6 +1088,7 @@
   var chatted = false;
   function openPanel() {
     undock();
+    hideControls();
     closeLook();
     root.classList.add('xm-open');
     root.classList.remove('xm-closed');
@@ -1026,7 +1165,7 @@
       mid.appendChild(t); mid.appendChild(r);
       var go = document.createElement('span');
       go.className = 'xm-card-go';
-      go.textContent = '›';
+      go.innerHTML = ICONS.arrow;
       a.appendChild(mono); a.appendChild(mid); a.appendChild(go);
       box.appendChild(a);
     });
@@ -1275,22 +1414,22 @@
 
   /* ---------- v4：喂小鱼干（每日 5 条，饱食度真实衰减/回升，吃够会拒绝） ---------- */
   var FEED_LINES = ['好香！小鱼干最好吃啦', '咔哧咔哧……嗯，满足', '谢谢投喂，今天也元气满满', '一条小鱼干，快乐一整天'];
-  var actionsEl = root.querySelector('.xm-actions');
+  var dockBox = root.querySelector('.xm-dock');
   var closeBtnEl = root.querySelector('.xm-close-btn');
   var fishBtn = document.createElement('button');
   fishBtn.className = 'xm-btn xm-fish-btn';
   fishBtn.type = 'button';
-  fishBtn.innerHTML = '🐟<span class="xm-fish-n"></span>';
+  fishBtn.innerHTML = ICONS.fish + '<span class="xm-fish-n"></span>';
   fishBtn.setAttribute('aria-label', '喂小猫猫吃小鱼干');
   var fishNEl = fishBtn.querySelector('.xm-fish-n');
-  actionsEl.insertBefore(fishBtn, closeBtnEl);
+  dockBox.insertBefore(fishBtn, closeBtnEl);
   var gameBtn = document.createElement('button');
   gameBtn.className = 'xm-btn xm-game-btn';
   gameBtn.type = 'button';
-  gameBtn.textContent = '⭐';
+  gameBtn.innerHTML = ICONS.star;
   gameBtn.title = '和小猫猫玩接星星';
   gameBtn.setAttribute('aria-label', '和小猫猫玩接星星');
-  actionsEl.insertBefore(gameBtn, closeBtnEl);
+  dockBox.insertBefore(gameBtn, closeBtnEl);
   function updateFishBtn() {
     rollFishDay();
     var left = Math.max(0, 5 - v4.fishCount);
@@ -1320,7 +1459,7 @@
     updateFishBtn();
     var f = document.createElement('i');
     f.className = 'xm-fish-i';
-    f.textContent = '🐟';
+    f.innerHTML = ICONS.fish;
     fxEl.appendChild(f);
     window.setTimeout(function () { f.remove(); }, 820);
     setPose('making');
@@ -1346,7 +1485,7 @@
   gameEl.setAttribute('role', 'dialog');
   gameEl.setAttribute('aria-label', '接星星小游戏');
   gameEl.innerHTML =
-    '<div class="xm-g-head"><span>⭐ 接星星</span><button class="xm-hbtn xm-g-close" type="button" title="关掉游戏" aria-label="关掉游戏">✕</button></div>' +
+    '<div class="xm-g-head"><span class="xm-g-title">' + ICONS.star + '接星星</span><button class="xm-hbtn xm-g-close" type="button" title="关掉游戏" aria-label="关掉游戏">' + ICONS.close + '</button></div>' +
     '<div class="xm-g-hud"><span>得分 <b class="xm-g-score">0</b></span><span>时间 <b class="xm-g-time">30</b> 秒</span><span>最高 <b class="xm-g-best">0</b></span></div>' +
     '<div class="xm-g-area">' +
     '<div class="xm-g-center"><div class="xm-g-big">接住掉下来的星星！</div><div class="xm-g-sub">30 秒里点中星星得分，金色星星 3 分。<br>最高分会记在这台设备上。</div><button class="xm-g-start" type="button">开始游戏</button></div>' +
@@ -1405,7 +1544,7 @@
     s.type = 'button';
     s.className = 'xm-g-star';
     var gold = Math.random() < 0.18;
-    s.textContent = gold ? '🌟' : '⭐';
+    s.innerHTML = gold ? ICONS.starGold : ICONS.starSoft;
     s.setAttribute('aria-label', '星星，点我接住它');
     var w = gArea.clientWidth || 300;
     s.style.left = (24 + Math.random() * Math.max(10, w - 48)) + 'px';
@@ -1461,6 +1600,7 @@
     interacted = true;
     markActive();
     undock();
+    hideControls();
     if (root.classList.contains('xm-open')) closePanel();
     root.classList.remove('xm-closed');
     wakeUp(false);
@@ -1497,7 +1637,7 @@
     var micBtn = document.createElement('button');
     micBtn.className = 'xm-mic';
     micBtn.type = 'button';
-    micBtn.textContent = '🎤';
+    micBtn.innerHTML = ICONS.mic;
     micBtn.title = '语音输入：点一下直接说话找站';
     micBtn.setAttribute('aria-label', '语音输入');
     root.querySelector('.xm-form').insertBefore(micBtn, sendBtn);
@@ -1677,6 +1817,15 @@
 
   /* ---------- 入场 ---------- */
   root.classList.add('xm-enter');
+  /* v7：控件平时藏起来，新访客可能不知道猫能点——首次访问时坞自动展示一次当自我介绍
+     （1.5 秒后淡入、按 3 秒规则自己收起），store.hinted 落盘，之后永不自动出 */
+  if (!store.hinted) {
+    store.hinted = true;
+    persist();
+    window.setTimeout(function () {
+      if (!root.classList.contains('xm-open') && !root.classList.contains('xm-closed') && !docked) showControls();
+    }, 1500);
+  }
   var festToday = festivalToday();
   if (festToday) showDeco(festToday.deco);
   initGrowthWatch();

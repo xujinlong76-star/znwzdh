@@ -35,7 +35,7 @@ import {
   vaultExportFilename,
   vaultItemsToFavorites,
 } from '@/lib/favorites-vault'
-import { describeSyncBanner, shouldOfferRetry, type SyncBannerInput } from '@/lib/favorites-sync-copy'
+import { describeAnonymousFavoritesNote, describeSyncBanner, shouldOfferRetry, type SyncBannerInput } from '@/lib/favorites-sync-copy'
 import {
   filterFavorites,
   describeFavoritesFilter,
@@ -268,6 +268,12 @@ export default function FavoritesPage() {
         }
       : null
   const syncBanner = describeSyncBanner(syncBannerInput)
+
+  // B15：匿名收藏只活在本机。判定与上面「确认匿名」的效果同款（无身份或 anon- 前缀），
+  // 且必须等 identityReady.ready——否则登录用户在会话同步完成前会闪一下这条提示。
+  // 登录用户不触发云端同步失败时 syncBanner 为 hidden，这条提示是匿名态唯一的同步风险说明。
+  const showAnonymousNote =
+    identityReady.ready && (!identityReady.identity || identityReady.identity.startsWith('anon-'))
 
   useEffect(() => {
     setSyncLast(readSyncStatus())
@@ -907,6 +913,26 @@ export default function FavoritesPage() {
                 重试同步
               </Button>
             )}
+          </div>
+        )}
+
+        {/* B15：匿名收藏只活在本机——登录前没有任何同步尝试，状态条恒为 hidden，
+            必须在这里把风险说出来，否则用户攒了收藏、清一次缓存才发现全丢了。
+            登录后自动同步，这条提示随身份切换消失（不与同步状态条叠加出现）。 */}
+        {showAnonymousNote && (
+          <div
+            data-testid="anonymous-favorites-note"
+            className="mb-6 p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400 flex flex-wrap items-center gap-2"
+          >
+            <CloudOff className="w-4 h-4 flex-shrink-0" />
+            <span className="flex-1 min-w-0">{describeAnonymousFavoritesNote()}</span>
+            <Link
+              href="/auth/signin?callbackUrl=/favorites"
+              className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:text-amber-800 dark:hover:text-amber-300"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              登录同步收藏
+            </Link>
           </div>
         )}
 

@@ -64,3 +64,18 @@ export function describeSyncBanner(input: SyncBannerInput | null): SyncBanner {
 export function shouldOfferRetry(input: SyncBannerInput | null): boolean {
   return Boolean(input && !input.syncing && input.ok === false && input.retryable === true)
 }
+
+/**
+ * B15：匿名收藏只活在本机——文案决策。
+ *
+ * 匿名用户从不触发云端同步，于是 `describeSyncBanner(null)` 恒为 hidden：
+ * 收藏页没有任何地方告诉他「收藏只保存在这台设备的浏览器里，清除浏览器
+ * 数据或换设备会丢」。「本地收藏 N 条」徽章只报数量，不报风险——攒了几十条
+ * 才发现清缓存就全没了，是最伤留存的静默丢失。
+ *
+ * 文案只说三件实事（只存本机 / 怎么丢 / 登录能找回），不承诺做不到的事；
+ * 登录入口由调用方渲染（带 callbackUrl 回收藏页），不塞进纯函数。
+ */
+export function describeAnonymousFavoritesNote(): string {
+  return '未登录：收藏只保存在这台设备的浏览器里，清除浏览器数据或换设备会丢失。登录后可同步到云端，随时找回。'
+}

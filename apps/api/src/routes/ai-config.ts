@@ -39,10 +39,27 @@ import type { AppContext } from "../context.ts";
 export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
-  /** 统一把 SSRF/配置类失败转成 400（其余异常交给全局兜底） */
-  function replyLlmError(reply: FastifyReply, err: unknown): { error: string; code?: string } {
+  /**
+   * 统一把 SSRF/配置类失败转成 400（其余异常交给全局兜底）。
+   * 「受保护网段」拦截单独翻译成人话并给出自救路径（A7）：校验本身不动，
+   * 只改报错文案——用户看到底层原文只会以为是本站坏了。
+   * scope=system（管理端）：可勾选表单开关或设环境变量放行；
+   * scope=user（个人配置）：写死不允许内网，只能改用公网地址。
+   */
+  function replyLlmError(
+    reply: FastifyReply,
+    err: unknown,
+    scope: "system" | "user" = "system",
+  ): { error: string; code?: string } {
     if (err instanceof LlmError) {
       reply.code(400);
+      if (err.code === "ssrf" && err.message.includes("受保护网段")) {
+        const hint =
+          scope === "user"
+            ? "个人配置出于安全原因不支持内网/受保护网段的接口地址，只能填写公网可访问的地址（例如 https://api.example.com/v1）。如需连接本地模型，请联系站点管理员在系统配置中开启。"
+            : "这个地址解析到了内网/受保护网段，默认被安全策略拦截（防 SSRF）。如果这是你自己的本地模型服务（如 Ollama），请在配置表单勾选「允许内网接口地址（本地 Ollama 等）」后重试，或在服务端设置环境变量 NAVHUB_LLM_ALLOW_PRIVATE=true。";
+        return { error: `${hint}（原始信息：${err.message}）`, code: err.code };
+      }
       return { error: err.message, code: err.code };
     }
     throw err;
@@ -337,7 +354,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       const config = await saveUserLlmConfig(ctx, identity, body.data, req.ip);
       return { config };
     } catch (err) {
-      return replyLlmError(reply, err);
+      return replyLlmError(reply, err, "user");
     }
   });
 
@@ -372,7 +389,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         const result = await testLlmProvider(ctx, { ...body.data, allowPrivateNetwork: false }, identity);
         return { result };
       } catch (err) {
-        return replyLlmError(reply, err);
+        return replyLlmError(reply, err, "user");
       }
     },
   );

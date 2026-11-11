@@ -150,6 +150,61 @@ describe("AI 模型配置管理端接口（/api/admin/ai/config）", () => {
   });
 });
 
+describe("A7：SSRF 拦截报错人话化（给自救路径，不削弱校验）", () => {
+  it("管理端测试连通性被拦：给出表单勾选与环境变量两条自救路径", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai/config/test",
+      payload: { baseUrl: "http://127.0.0.1:11434/v1", model: "llama3", allowPrivateNetwork: false },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.code).toBe("ssrf");
+    expect(body.error).toContain("允许内网接口地址（本地 Ollama 等）");
+    expect(body.error).toContain("NAVHUB_LLM_ALLOW_PRIVATE=true");
+    // 原始信息保留，便于排查
+    expect(body.error).toContain("受保护网段");
+  });
+
+  it("管理端保存被拦：同样给出自救路径，且配置没有被存下", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/admin/ai/config",
+      payload: {
+        name: "本地 Ollama",
+        baseUrl: "http://127.0.0.1:11434/v1",
+        model: "llama3",
+        apiKey: "sk-local-test",
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("NAVHUB_LLM_ALLOW_PRIVATE=true");
+  });
+
+  it("用户级保存被拦：明说个人配置不支持内网，不给环境变量误导", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/user/ai/config?anonId=test-user-a7",
+      payload: { baseUrl: "http://127.0.0.1:11434/v1", model: "llama3", apiKey: "sk-user-local" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error).toContain("不支持内网");
+    expect(body.error).toContain("公网");
+    expect(body.error).not.toContain("NAVHUB_LLM_ALLOW_PRIVATE");
+  });
+
+  it("用户级测试被拦：同口径人话", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/user/ai/config/test?anonId=test-user-a7",
+      payload: { baseUrl: "http://192.168.1.10:8000/v1", model: "llama3", apiKey: "sk-user-local" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("不支持内网");
+  });
+});
+
 describe("AI 模型用户级个人配置接口（/api/user/ai/config）", () => {
   it("无个人配置时 configured 为 false", async () => {
     const res = await app.inject({

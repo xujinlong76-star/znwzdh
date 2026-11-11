@@ -39,7 +39,7 @@ import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { openCopilot } from '@/lib/ai-entry'
 import { getIdentity } from '@/lib/identity'
-import { searchHref } from '@/lib/search-page'
+import { relaxedPricingNotice, searchHref } from '@/lib/search-page'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useToast } from '@/components/ui/use-toast'
 import type { SiteConfig } from '@/types/site'
@@ -193,6 +193,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [popular, setPopular] = useState<string[]>([])
   const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
+  /** A3：放宽时被丢弃的分面条件，用于把「已放宽」点名到付费条件上 */
+  const [relaxedFacets, setRelaxedFacets] = useState<Record<string, string[]> | undefined>(undefined)
   const [recent, setRecent] = useState<string[]>([])
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
   /** 中枢不可用（历史拉取降级）：与「真的没有历史」区分，避免把故障渲染成「暂无数据」 */
@@ -421,6 +423,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setDidYouMean(undefined)
     setQueryExpansion([])
     setFallbackHint(undefined)
+    setRelaxedFacets(undefined)
     setDegraded(false)
     setLoadingMore(false)
     if (!q) {
@@ -480,6 +483,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setDidYouMean(res.didYouMean)
           setQueryExpansion(res.queryExpansion ?? [])
           setFallbackHint(res.fallback)
+          setRelaxedFacets(res.relaxedFacets)
           offsetRef.current = res.hits.length
           setLoading(false)
         })
@@ -931,7 +935,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {fallbackHint && hits.length > 0 && (
                 <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b">
                   {fallbackHint === 'filter'
-                    ? '当前筛选下没有结果，已放宽到全库匹配（结果可能来自其他类目）。'
+                    ? (relaxedPricingNotice(relaxedFacets) ??
+                      '当前筛选下没有结果，已放宽到全库匹配（结果可能来自其他类目）。')
                     : '没有精确匹配，以下是放宽匹配后的结果。'}
                 </div>
               )}

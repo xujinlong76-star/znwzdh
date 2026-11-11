@@ -7,6 +7,7 @@ import { isSafeHttpUrl, safeHref } from '@/lib/safe-url'
 import {
   SEARCH_QUERY_MAX_LENGTH,
   inferredConditionLabels,
+  relaxedPricingNotice,
   searchHref,
   searchMaxPage,
   searchPageWindow,
@@ -612,11 +613,12 @@ export function SearchResults({
             >
               <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
               <span>
-                {tag
-                  ? `标签「${tag}」等筛选没有命中，已放宽为更宽的结果；下面的站点不保证符合该标签。`
-                  : inferred.length > 0
-                    ? `查询里的条件（${inferred.join('、')}）没有命中，已放宽为更宽的结果；下面的站点不保证符合这些条件。`
-                    : '筛选条件没有命中，已放宽为更宽的结果；下面的站点不保证符合原条件。'}
+                {relaxedPricingNotice(result?.relaxedFacets) ??
+                  (tag
+                    ? `标签「${tag}」等筛选没有命中，已放宽为更宽的结果；下面的站点不保证符合该标签。`
+                    : inferred.length > 0
+                      ? `查询里的条件（${inferred.join('、')}）没有命中，已放宽为更宽的结果；下面的站点不保证符合这些条件。`
+                      : '筛选条件没有命中，已放宽为更宽的结果；下面的站点不保证符合原条件。')}
               </span>
               {tag ? (
                 <Link

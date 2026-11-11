@@ -15,12 +15,24 @@
  *   4. platform=web 对全部站点成立（本系统的收录对象就是可在线访问的网址），
  *      这是唯一一条「无条件」推断，其余都要证据。
  *
+ * A3（DEV_BACKLOG）后的分工：运行时回填已接进主流程（apps/api 的
+ * facet-backfill.ts 在 seed 与快照写回后自动补齐，同一套口径），本脚本只作
+ * 存量库的一次性运维/校验工具保留。pricing 口径与 core 严格一致：
+ *   - 先查人工核实覆盖表（packages/core/src/pricing-overrides.json，与
+ *     packages/core/src/pricing.ts 共用同一数据源）；
+ *   - 再走收紧版强信号规则（旧版「有『免费』二字就判 free」已废除——那会把
+ *     收费站误标免费，比不标更坏）；
+ *   - 都不命中 → 显式写 unknown（未标注），不留空、不猜；
+ *   - --apply 时**永不覆盖已有 pricing**（管理员手标优先）：已有 pricing 的
+ *     站点原样保留其值，只重写其余维度。
+ *
  * 用法：
  *   node scripts/backfill-facets.mjs                 # 只统计，不写
  *   node scripts/backfill-facets.mjs --apply         # 真正写入
  *   node scripts/backfill-facets.mjs --db data/navhub.db --apply
  */
 import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
@@ -49,18 +61,61 @@ const dbPath = path.resolve(
  * 两侧不一致时以 core 为准，scripts/test/backfill-facets.test.mjs 会比对。
  */
 const ALLOWED = {
-  pricing: ["free", "freemium", "paid", "open_source"],
+  pricing: ["free", "freemium", "paid", "open_source", "unknown"],
   platform: ["web", "ios", "android", "macos", "windows", "linux", "extension"],
   form: ["saas", "self_hosted", "cli", "api", "desktop"],
 };
 
-/** 标签/描述关键词 → 分面值。顺序即优先级，同一键内先命中先得（后续不覆盖）。 */
+/**
+ * pricing 推导（与 packages/core/src/pricing.ts 的 PRICING_RULES 逐条对应，
+ * 改一处必须同步另一处）：人工覆盖表 > 强信号规则 > unknown。
+ * 规则只看标题+描述+标签（不含 URL——URL 里的词不是定价证据）。
+ */
+const PRICING_OVERRIDES = (() => {
+  try {
+    return JSON.parse(
+      readFileSync(path.join(ROOT, "packages/core/src/pricing-overrides.json"), "utf8"),
+    );
+  } catch {
+    return {};
+  }
+})();
+
+function pricingOverrideKey(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return u.hostname.toLowerCase().replace(/^www\./, "") + u.pathname.replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+const PRICING_RULES = [
+  { value: "open_source", re: /开源|open[\s-]?source/i },
+  {
+    value: "freemium",
+    re: /免费增值|freemium|免费试用|免费额度|免费层|免费版|部分免费|前几集免费|免费旁听|会员解锁|付费解锁|付费章节|付费内容|免费\s*\+|免费\+/i,
+  },
+  {
+    value: "free",
+    re: /完全免费|永久免费|全场免费|全本免费|免费看|免费阅读|免费读|免费小说|免费素材|免费字体|免费开放|免费平台|免费教育|免费使用|免费下载/,
+  },
+  { value: "paid", re: /订阅制|付费订阅|付费购买|付费下载|仅付费|付费制/ },
+];
+
+function derivePricing(site, tags) {
+  const key = pricingOverrideKey(site.url ?? "");
+  const override = key ? PRICING_OVERRIDES[key] : undefined;
+  if (override?.pricing) return override.pricing;
+  const blob = [site.title ?? "", site.description ?? "", tags.join(" ")].join(" ");
+  for (const rule of PRICING_RULES) {
+    if (rule.re.test(blob)) return rule.value;
+  }
+  return "unknown";
+}
+
+/** 标签/描述关键词 → 分面值（platform/form 用）。顺序即优先级。 */
 const RULES = [
-  // 付费模式
-  { key: "pricing", value: "open_source", re: /开源|open[-_ ]?source|\boss\b/i },
-  { key: "pricing", value: "freemium", re: /免费增值|freemium|免费额度/i },
-  { key: "pricing", value: "free", re: /完全免费|免费/ },
-  { key: "pricing", value: "paid", re: /付费|商业|订阅|paid|commercial/i },
   // 运行平台（web 无条件另算）
   { key: "platform", value: "extension", re: /浏览器(插件|扩展)|chrome\s*扩展|extension/i },
   { key: "platform", value: "ios", re: /\bios\b|ipados|iphone/i },
@@ -111,13 +166,8 @@ function deriveFacets(site, tags) {
     if (rule.re.test(corpus)) push(rule.key, rule.value);
   }
 
-  // pricing 是单选维度：同时命中时保留更强的（open_source > freemium > free > paid）
-  const pricing = picked.get("pricing");
-  if (pricing && pricing.size > 1) {
-    const order = ["open_source", "freemium", "free", "paid"];
-    const best = order.find((v) => pricing.has(v));
-    picked.set("pricing", new Set([best]));
-  }
+  // pricing 单选且必有一个值（含 unknown），走独立推导（覆盖表 > 规则 > unknown）
+  picked.set("pricing", new Set([derivePricing(site, tags)]));
 
   const out = {};
   for (const [key, set] of picked) out[key] = [...set];
@@ -156,11 +206,33 @@ function main() {
     }
     const labelled = perSite.filter((s) => Object.keys(s.facets).length > 1).length;
     console.log(`[facets] 至少带 1 个非 web 维度的站点：${labelled} / ${rows.length}`);
+    const determinate = perSite.filter(
+      (s) => s.facets.pricing && s.facets.pricing[0] !== "unknown",
+    ).length;
+    console.log(`[facets] pricing 有确定值（非未标注）：${determinate} / ${rows.length}`);
 
     if (!apply) {
       console.log("[facets] 未写入。确认无误后执行：node scripts/backfill-facets.mjs --apply");
       return;
     }
+
+    // A3：已有 pricing 永不覆盖（管理员手标优先于推导）。先读存量 pricing，
+    // 写回时这些站点沿用原值——本脚本的全量重写只作用于其余维度。
+    const existingPricing = new Map(
+      db
+        .prepare("SELECT site_id, facet_value FROM site_facets WHERE facet_key = 'pricing'")
+        .all()
+        .map((r) => [r.site_id, r.facet_value]),
+    );
+    let preserved = 0;
+    for (const item of perSite) {
+      const kept = existingPricing.get(item.id);
+      if (kept && ALLOWED.pricing.includes(kept)) {
+        item.facets.pricing = [kept];
+        preserved++;
+      }
+    }
+    if (preserved > 0) console.log(`[facets] 已有 pricing 保留不覆盖：${preserved} 站`);
 
     const del = db.prepare("DELETE FROM site_facets WHERE site_id = ?");
     const ins = db.prepare(

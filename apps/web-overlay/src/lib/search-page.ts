@@ -184,6 +184,31 @@ const FACET_KEY_LABELS: Record<string, string> = {
   scene: '场景',
 }
 
+/** pricing 受控值 → 中文名（与 core CONTROLLED_FACETS 的 pricing 词表一致）。 */
+const PRICING_VALUE_LABELS: Record<string, string> = {
+  free: '完全免费',
+  freemium: '免费增值',
+  paid: '商业付费',
+  open_source: '开源免费',
+  unknown: '未标注',
+}
+
+/**
+ * A3：付费条件被放宽时的点名提示。
+ *
+ * 中枢在「带分面筛选却零命中」时会放宽筛选重试并回 relaxedFacets 点名被
+ * 丢弃的条件。此前前端只显示一句含糊的「已放宽筛选」——用户筛「免费」却
+ * 在结果里看到收费站，还以为筛选生效。pricing 被放宽时必须把话说死：
+ * 暂无已标注为该付费模式的站点、下面结果可能含收费站。无 pricing 放宽
+ * 时返回 null，调用方走原有通用文案。
+ */
+export function relaxedPricingNotice(relaxedFacets?: Record<string, string[]>): string | null {
+  const values = relaxedFacets?.pricing ?? []
+  if (values.length === 0) return null
+  const labels = values.map((v) => PRICING_VALUE_LABELS[v] ?? v)
+  return `暂无已标注为「${labels.join('、')}」的站点，已放宽付费条件显示更宽的结果；下面的站点可能包含收费站，请留意各站的付费标注。`
+}
+
 export function inferredConditionLabels(input: {
   inferredTag?: string
   inferredCategory?: string

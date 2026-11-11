@@ -67,6 +67,7 @@ export const STATIC_PATHS = [
   '/algorithms',
   '/sites',
   '/videos',
+  '/scenes',
 ] as const
 
 /** origin 归一：去掉末尾斜杠，避免拼出 `//` 这类重复斜杠 URL */
@@ -195,6 +196,35 @@ export function collectionEntries(origin: string, collections: CollectionRef[]):
       ...(lastModified ? { lastModified } : {}),
       changeFrequency: 'weekly',
       priority: 0.5,
+    })
+  }
+  return out
+}
+
+/** 场景接口（GET /api/scenes）摘要里 sitemap 需要的最小形状 */
+export interface SceneRef {
+  id: string
+  /** 页面所含站点最近更新时间（毫秒戳）；接口按真实召回算，无站点时缺省 */
+  updatedAt?: number | null
+}
+
+/**
+ * 场景落地页条目（/scenes/{id}）：lastmod 用接口给的真实更新时间
+ * （页面站点 updatedAt 最大值），没有就不写——不拿生成时刻冒充内容更新。
+ */
+export function sceneEntries(origin: string, scenes: SceneRef[]): MetadataRoute.Sitemap {
+  const seen = new Set<string>()
+  const out: MetadataRoute.Sitemap = []
+  for (const s of scenes ?? []) {
+    const id = typeof s?.id === 'string' ? s.id.trim() : ''
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    const lastModified = toDate(s.updatedAt)
+    out.push({
+      url: `${normOrigin(origin)}/scenes/${encodeURIComponent(id)}`,
+      ...(lastModified ? { lastModified } : {}),
+      changeFrequency: 'weekly',
+      priority: 0.6,
     })
   }
   return out

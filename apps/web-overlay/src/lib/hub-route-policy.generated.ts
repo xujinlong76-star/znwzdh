@@ -219,6 +219,8 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "GET", path: "/api/recipes", scope: "public" },
   { method: "POST", path: "/api/recipes/scaffold", scope: "public" },
   { method: "GET", path: "/api/relations/types", scope: "public" },
+  { method: "GET", path: "/api/scenes", scope: "public" },
+  { method: "GET", path: "/api/scenes/:id", scope: "public" },
   { method: "GET", path: "/api/search", scope: "public" },
   { method: "POST", path: "/api/search", scope: "public" },
   { method: "DELETE", path: "/api/search-history", scope: "public" },

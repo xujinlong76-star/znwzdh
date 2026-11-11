@@ -8,11 +8,13 @@ import {
   categoryEntries,
   collectionEntries,
   countCategorySites,
+  sceneEntries,
   siteEntries,
   staticEntries,
   tagEntries,
   type CategoryRef,
   type CollectionRef,
+  type SceneRef,
   type SiteRef,
   type TagRef,
 } from '@/lib/seo/sitemap-entries'
@@ -155,13 +157,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = await siteOrigin()
   if (!origin) return []
 
-  // 并行取五路数据；任何一路失败都返回 null，由下面的纯函数自然产出空数组
-  const [plugins, sites, tags, categories, collections] = await Promise.all([
+  // 并行取六路数据；任何一路失败都返回 null，由下面的纯函数自然产出空数组。
+  // 场景一路不进下面「全线失败」的判定：场景接口是新增只读面，它的抖动
+  // 不该让整张 sitemap 退回上个版本，老四路的防降级判据保持原样。
+  const [plugins, sites, tags, categories, collections, scenePayload] = await Promise.all([
     loadPublishedPlugins(),
     loadActiveSites(),
     hubGet<TagRef[]>('/api/tags', 3600),
     hubGet<CategoryRef[]>('/api/categories', 3600),
     hubGet<CollectionRef[]>('/api/collections', 3600),
+    hubGet<{ scenes?: SceneRef[] }>('/api/scenes', 3600),
   ])
 
   // 四路内容数据全线失败：抛错让 ISR 保留上次的好版本（文件头第 4 条），
@@ -183,6 +188,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       MIN_SITES_FOR_CATEGORY_INDEX,
     ),
     ...collectionEntries(origin, collections ?? []),
+    ...sceneEntries(origin, scenePayload?.scenes ?? []),
     ...pluginSitemapEntries(origin, plugins),
     ...authorSitemapEntries(origin, plugins),
   ]

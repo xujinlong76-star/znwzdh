@@ -18,6 +18,7 @@ import { llmProviderReadyAny, resolveLlm } from "../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import { callLlm, INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
 import { retrieveCopilotCandidates, retrievalQueryOf } from "./copilot.ts";
+import { resolveSceneGroups } from "../scene-resolve.ts";
 import { identityTrusted, requestIdentityOf } from "./shared.ts";
 import {
   finderSiteOf,
@@ -34,7 +35,6 @@ const findSchema = z.object({
   sceneId: z.string().max(64).optional(),
 });
 
-const PER_STEP_LIMIT = 4;
 const FLAT_LIMIT = 6;
 
 interface CandidateGroup {
@@ -84,25 +84,11 @@ export const aiFindRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         const groups: CandidateGroup[] = [];
         let retrievalFailed = false;
         if (scene) {
-          // 跨步骤全局去重：同一个站点只出现在它命中的第一个步骤里。
-          // 旧实现只在单步内去重，实测出现「百度地图在 3 个步骤里各来一次」。
-          const usedAcrossSteps = new Set<string>();
-          for (const step of scene.steps) {
-            const seen = new Set<string>();
-            const sites: NavSite[] = [];
-            for (const q of step.queries) {
-              const r = await retrieveCopilotCandidates(ctx, retrievalQueryOf(q), { pinCategory: false, lexicalOnly: true });
-              if (r.failed) retrievalFailed = true;
-              for (const s of r.sites) {
-                if (!seen.has(s.id) && !usedAcrossSteps.has(s.id)) { seen.add(s.id); sites.push(s); }
-              }
-              if (sites.length >= PER_STEP_LIMIT) break;
-            }
-            if (sites.length > 0) {
-              for (const s of sites.slice(0, PER_STEP_LIMIT)) usedAcrossSteps.add(s.id);
-              groups.push({ label: step.label, sites: sites.slice(0, PER_STEP_LIMIT) });
-            }
-          }
+          // 展开逻辑与 GET /api/scenes 共用 scene-resolve（同口径：策展过滤、
+          // 跨步去重、每步上限），避免落地页与交互找站两条链路漂移。
+          const resolved = await resolveSceneGroups(ctx, scene);
+          if (resolved.retrievalFailed) retrievalFailed = true;
+          for (const g of resolved.groups) groups.push({ label: g.label, sites: g.sites });
         } else {
           const r = await retrieveCopilotCandidates(ctx, retrievalQueryOf(query));
           retrievalFailed = r.failed;

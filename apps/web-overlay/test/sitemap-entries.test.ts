@@ -4,6 +4,7 @@ import {
   categoryEntries,
   collectionEntries,
   countCategorySites,
+  sceneEntries,
   siteEntries,
   staticEntries,
   tagEntries,
@@ -144,5 +145,33 @@ describe('collectionEntries', () => {
       { slug: 'ai-coding', enabled: true },
     ])
     expect(entries.map((e) => e.url)).toEqual([`${base}/collections/ai-coding`])
+  })
+})
+
+describe('sceneEntries', () => {
+  it('生成 /scenes/{id} 条目、去重、空 id 跳过', () => {
+    const entries = sceneEntries(base, [
+      { id: 'make-ppt' },
+      { id: 'make-ppt' },
+      { id: '  ' },
+      { id: 'make-drama' },
+    ])
+    expect(entries.map((e) => e.url)).toEqual([`${base}/scenes/make-ppt`, `${base}/scenes/make-drama`])
+  })
+
+  it('lastmod 只用真实 updatedAt：有值才写、未来时间不写', () => {
+    const past = Date.now() - 3600_000
+    const entries = sceneEntries(base, [
+      { id: 'a', updatedAt: past },
+      { id: 'b', updatedAt: null },
+      { id: 'c', updatedAt: Date.now() + 7 * 24 * 3600_000 },
+    ])
+    expect(entries[0]?.lastModified).toEqual(new Date(past))
+    expect(entries[1]?.lastModified).toBeUndefined()
+    expect(entries[2]?.lastModified).toBeUndefined()
+  })
+
+  it('静态清单含 /scenes 索引页', () => {
+    expect(STATIC_PATHS).toContain('/scenes')
   })
 })

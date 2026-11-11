@@ -1813,6 +1813,10 @@ async savedPluginEmbeddings(filter?: {
     return pluginsRepo.listPluginInstallsByIdentity(this, identity);
   }
 
+  async listStarredPluginIdsByIdentity(identity: string): Promise<string[]> {
+    return pluginsRepo.listStarredPluginIdsByIdentity(this, identity);
+  }
+
   async getPluginInstalledManifest(pluginId: string, identity: string): Promise<pluginsRepo.PluginManifest | null> {
     return pluginsRepo.getPluginInstalledManifest(this, pluginId, identity);
   }

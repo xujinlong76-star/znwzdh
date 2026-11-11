@@ -1693,9 +1693,13 @@ export async function fetchPlugins(
   if (params.offset) sp.set('offset', String(params.offset))
   const qs = sp.toString()
   const path = '/api/plugins' + (qs ? `?${qs}` : '')
+  // 列表必须带身份，否则服务端无法标注 installed：卡片装完重取也拿不到
+  // 已装态、按钮永远翻不过来。与 fetchInstalledPlugins / fetchPluginDetail
+  // 同口径；SSR 下 getIdentity() 返回空串，不带头、不读 window。
+  const effectiveIdentity = typeof window !== 'undefined' ? getIdentity() : ''
   return degrade<HubPluginsResponse>(
     { items: [], total: 0, limit: params.limit ?? 24, offset: params.offset ?? 0 },
-    () => getJson<HubPluginsResponse>(path),
+    () => getJson<HubPluginsResponse>(path, undefined, effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined),
     onDegraded,
   )
 }

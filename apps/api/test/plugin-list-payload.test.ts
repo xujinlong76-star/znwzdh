@@ -113,6 +113,74 @@ describe("GET /api/plugins 载荷契约", () => {
 });
 
 /**
+ * 列表的安装态标注（与详情页同口径）。
+ *
+ * 背景：列表以前从不带身份、也不标注 installed，卡片装完重取也拿不到已装态，
+ * 按钮永远翻不过来（卡片本地态同步 effect 只能接住父级给的数据，给不到就白搭）。
+ * 现在带 x-navhub-anon-id 时逐条标注；无身份/他人身份一律 false，不串台。
+ */
+describe("GET /api/plugins 安装态标注", () => {
+  const OWNER = "anon-list-installed-a";
+  const OTHER = "anon-list-installed-b";
+
+  beforeAll(async () => {
+    await ctx.repo.installPlugin("payload-theme", OWNER);
+    await ctx.repo.starPlugin("payload-theme", OWNER);
+  });
+
+  it("带安装者身份：装过的 installed=true + 版本，未装的 false", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/plugins?limit=50",
+      headers: { "x-navhub-anon-id": OWNER },
+    });
+    expect(res.statusCode).toBe(200);
+    const items = res.json().items as Array<Record<string, any>>;
+    const theme = items.find((i) => i.slug === "payload-theme");
+    expect(theme!.installed).toBe(true);
+    expect(theme!.installedVersion).toBe("1.0.0");
+    expect(theme!.starred).toBe(true);
+    const pack = items.find((i) => i.slug === "payload-site-pack");
+    expect(pack!.installed).toBe(false);
+    expect(pack!.installedVersion).toBeNull();
+    expect(pack!.starred).toBe(false);
+  });
+
+  it("不带身份：全部 false，不谎称已装", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins?limit=50" });
+    const items = res.json().items as Array<Record<string, any>>;
+    for (const item of items) {
+      expect(item.installed).toBe(false);
+      expect(item.installedVersion).toBeNull();
+      expect(item.starred).toBe(false);
+    }
+  });
+
+  it("他人身份：看不到安装者的已装态", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/plugins?limit=50",
+      headers: { "x-navhub-anon-id": OTHER },
+    });
+    const items = res.json().items as Array<Record<string, any>>;
+    const theme = items.find((i) => i.slug === "payload-theme");
+    expect(theme!.installed).toBe(false);
+    expect(theme!.installedVersion).toBeNull();
+    expect(theme!.starred).toBe(false);
+  });
+
+  it("带身份的响应声明 Vary 身份头，不进共享缓存", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/plugins?limit=50",
+      headers: { "x-navhub-anon-id": OWNER },
+    });
+    expect(String(res.headers["cache-control"] ?? "")).toContain("private");
+    expect(String(res.headers["vary"] ?? "")).toContain("x-navhub-anon-id");
+  });
+});
+
+/**
  * 搜索是「输入即请求」的高频路径：limit=5 时若每条都带完整 site-pack 清单，
  * 一次按键就是数百 KB。搜索面板/相似区/MCP 都只读 summary，因此同样裁剪。
  */

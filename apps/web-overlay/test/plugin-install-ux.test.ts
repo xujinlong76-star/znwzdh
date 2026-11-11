@@ -135,6 +135,7 @@ describe("卸载回执不谎报清理范围", () => {
 describe("插件卡片：父级刷新后本地安装态必须跟 prop 走", () => {
   const card = overlaySource("src/components/plugins/plugin-card.tsx")
   const board = overlaySource("src/components/plugin-market-board.tsx")
+  const api = overlaySource("src/lib/navhub-api.ts")
 
   it("弹窗安装成功后父级重取列表，卡片 installed/starred 随 prop 同步（否则按钮一直停在「安装」）", () => {
     // 弹窗成功回调是列表重取：board 把 onSuccess 接到 reload 上
@@ -149,5 +150,25 @@ describe("插件卡片：父级刷新后本地安装态必须跟 prop 走", () =
   it("同步 effect 只监听 prop 变化，不干扰卡片自身的乐观更新", () => {
     expect(card).toContain("[plugin.installed]")
     expect(card).toContain("[plugin.starred, plugin.starCount]")
+  })
+
+  it("列表请求必须带匿名身份头，否则服务端标不出 installed、重取也拿不到已装态", () => {
+    // fetchPlugins 与 fetchInstalledPlugins / fetchPluginDetail 同口径
+    expect(api).toContain("anonHeaders(effectiveIdentity)")
+    const fetchPluginsBlock = api.slice(api.indexOf("export async function fetchPlugins"))
+    expect(fetchPluginsBlock).toContain("anonHeaders(effectiveIdentity)")
+    expect(fetchPluginsBlock).toContain("getIdentity()")
+  })
+
+  it("SSR 首帧没有身份：挂载后静默重取一次补已装/星标态，不闪骨架、不抹首帧", () => {
+    // 挂载仍取数（不是跳过），但走静默分支
+    expect(board).toContain("void load(0, false, true)")
+    expect(board).toContain("async (offset: number, append: boolean, silent = false)")
+    // 静默失败不覆盖 SSR 数据、不亮失败提示
+    expect(board).toContain("!(silent && failed)")
+    expect(board).toContain("if (!silent) setNotice(describeDegrade(error, '插件市场'))")
+    // 精选区同样挂载同步，且等地址栏解析完再取
+    expect(board).toContain("if (!filtersReady || hasFilter) return")
+    expect(board).not.toContain("skipFirstSide")
   })
 })

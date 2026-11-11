@@ -1439,6 +1439,20 @@ export async function hasUserStarredPlugin(
   return Boolean(rows[0]);
 }
 
+/**
+ * 列表星标标注：某身份点亮过的全部插件 id，一次查询。
+ * 与 listPluginInstallsByIdentity 同款批量口径，不逐条 hasUserStarredPlugin。
+ */
+export async function listStarredPluginIdsByIdentity(
+  repo: Repository,
+  identity: string,
+): Promise<string[]> {
+  const who = identity.trim().slice(0, 120);
+  if (!who) return [];
+  const rows = await repo.raw("SELECT plugin_id FROM plugin_stars WHERE identity = ?", [who]);
+  return rows.map((r) => String(r.plugin_id));
+}
+
 /** 获取某用户安装时保留的清单快照 */
 export async function getPluginInstalledManifest(
   repo: Repository,

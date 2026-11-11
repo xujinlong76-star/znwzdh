@@ -203,14 +203,16 @@ export function PluginMarketBoard({
   }, [filtersReady, kind, q, sort])
 
   const load = useCallback(
-    async (offset: number, append: boolean) => {
-      if (append) setLoadingMore(true)
-      else setLoading(true)
-      if (!append) setNotice(null)
+    async (offset: number, append: boolean, silent = false) => {
+      if (!silent) {
+        if (append) setLoadingMore(true)
+        else setLoading(true)
+        if (!append) setNotice(null)
+      }
       let failed = false
       const onDegraded = (error: unknown) => {
         failed = true
-        setNotice(describeDegrade(error, '插件市场'))
+        if (!silent) setNotice(describeDegrade(error, '插件市场'))
       }
       const res = await fetchPlugins(
         { kind: kind || undefined, q: q || undefined, sort, limit: PAGE_SIZE, offset },
@@ -219,25 +221,30 @@ export function PluginMarketBoard({
       // 追加页失败时 res 是降级兜底（items 空、total 0），不能拿它覆盖现有状态：
       // 一次瞬间故障会把「共 N 个」改成 0、加载更多按钮随之消失，后面的页再也到不了，
       // 而列表里明明还留着前面那些插件。失败就保持原样，让用户重试。
-      if (!(append && failed)) {
+      // 静默同步失败同理：不能用空兜底把 SSR 首帧抹掉。
+      if (!(append && failed) && !(silent && failed)) {
         setItems((prev) => (append ? [...prev, ...res.items] : res.items))
         setTotal(res.total)
       }
-      if (append) setLoadingMore(false)
-      else setLoading(false)
+      if (!silent) {
+        if (append) setLoadingMore(false)
+        else setLoading(false)
+      }
     },
     [kind, q, sort],
   )
 
-  // 首帧用服务端数据：仅跳过挂载后的第一次取数（ref 单次消费）；
-  // 筛选/排序/搜索变化会改 load 身份触发重取，reloadToken 同理——不能用
-  // 「initialItems 非 null 就跳过」的粗守卫，那会把筛选重取一起吃掉。
+  // 首帧用服务端数据，但 SSR 拿不到浏览器的匿名身份：挂载后静默重取一次
+  // （带身份），只补已装/星标态，不动 loading、不闪骨架——否则刷新后装过
+  // 的插件又显示「安装」。无服务端数据时走正常加载（骨架 + 失败提示）。
+  // 筛选/排序/搜索变化会改 load 身份触发重取，reloadToken 同理。
   const skipFirstLoad = useRef(initialItems !== null)
 
   useEffect(() => {
     if (!filtersReady) return
     if (skipFirstLoad.current) {
       skipFirstLoad.current = false
+      void load(0, false, true)
       return
     }
     void load(0, false)
@@ -265,15 +272,10 @@ export function PluginMarketBoard({
   const hasFilter = Boolean(q || kind)
 
   // 精选与三榜只在“无筛选”时加载：避免与主列表抢请求，也避免筛选后仍显示无关推荐
-  // 首帧吃服务端预取（skipFirstSide 单次消费）；清空筛选后回到无筛选态仍会刷新
-  const skipFirstSide = useRef(initialFeatured !== null)
-
+  // 首帧同样要静默同步一次（SSR 数据没有身份，精选卡片的已装态同理会丢）；
+  // 等地址栏筛选解析完（filtersReady）再取，避免带错筛选条件白跑一趟。
   useEffect(() => {
-    if (hasFilter) return
-    if (skipFirstSide.current) {
-      skipFirstSide.current = false
-      return
-    }
+    if (!filtersReady || hasFilter) return
     let cancelled = false
     void Promise.all([
       fetchPlugins({ featured: true, sort: 'featured', limit: 6 }),
@@ -288,7 +290,7 @@ export function PluginMarketBoard({
     return () => {
       cancelled = true
     }
-  }, [hasFilter, reloadToken])
+  }, [filtersReady, hasFilter, reloadToken])
 
   function cleanLeaderboardTitle(name: string): string {
     const match = name.match(/^([^\(（]+)[\(（]/)

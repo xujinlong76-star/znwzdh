@@ -24,6 +24,7 @@ import { safeDecodeParam,
 } from "../shared.ts";
 import {
   extractPluginIdentity,
+  pluginIdentity,
   publicPlugin,
   } from "../plugin-presentation.ts";
 import type { AppContext } from "../../context.ts";
@@ -37,10 +38,18 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
   /**
    * 插件市场列表查询（默认仅返回 published 插件）
+   *
+   * 带身份时逐条标注 installed / installedVersion / starred（与详情页同口径）：
+   * 列表页卡片只认这一份数据——以前列表从不带身份，装完重取也拿不到已装态，
+   * 卡片按钮永远翻不过来，星标刷新就丢。一次 listPluginInstallsByIdentity
+   * 查全量安装、一次 listStarredPluginIdsByIdentity 查全量星标，不逐条查库。
+   * 无身份时三字段恒为 false/null，不谎称未装也不漏标。
+   * 响应已是 per-identity：maxAge 0（private, no-cache）+ Vary 身份头，
+   * 与 /api/search 同口径，不进共享缓存。
    */
   app.get(
     "/api/plugins",
-    { config: { scope: "public", cache: { maxAge: 0 } } },
+    { config: { scope: "public", cache: { maxAge: 0, vary: ["x-navhub-anon-id", "x-navhub-user-id", "authorization", "cookie"] } } },
     async (req) => {
       const q = req.query as Record<string, string | undefined>;
       const kind = q.kind?.trim();
@@ -62,6 +71,19 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
         offset,
       });
 
+      const identity = pluginIdentity(ctx, req);
+      const installedById = new Map<string, { version: string; installedAt: number }>();
+      let starredIds = new Set<string>();
+      if (identity) {
+        for (const item of await ctx.repo.listPluginInstallsByIdentity(identity)) {
+          installedById.set(item.plugin.id, {
+            version: item.install.version,
+            installedAt: item.install.installedAt,
+          });
+        }
+        starredIds = new Set(await ctx.repo.listStarredPluginIdsByIdentity(identity));
+      }
+
       /**
        * 列表瘦身（2026-10 实测）：一页 24 条的响应 **1.16MB**，其中 730KB 是
        * site-pack 的 manifest（单个约 34KB，内含最多 200 个站点 + 20 个分类）。
@@ -79,6 +101,10 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
           ...publicPlugin(plugin),
           summary: summarizePluginManifest(plugin.manifest),
         };
+        const installed = installedById.get(plugin.id);
+        item.installed = Boolean(installed);
+        item.installedVersion = installed ? installed.version : null;
+        item.starred = starredIds.has(plugin.id);
         if (!includeManifest && plugin.kind === "site-pack") delete item.manifest;
         return item;
       });

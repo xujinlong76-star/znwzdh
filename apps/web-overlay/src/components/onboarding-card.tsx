@@ -7,7 +7,8 @@
  * 立刻关掉，甚至直接离开。这里做成**内容区顶部的一张卡片**：
  *   - 不遮挡任何内容，滚过去就看不见了；
  *   - 每步都能真的点进去（导入 / 搜索 / 收藏），不是纯文字说明；
- *   - 关掉后写 localStorage，设置页可重新打开（清除该键即可）。
+ *   - 关掉后写 localStorage，设置页（/me/settings）有「重新查看新手引导」
+ *     入口可清除该键重看（B11；键名见 lib/onboarding.ts，两边共用一把键）。
  *
  * 只讲三件「不知道就等于白来」的事：
  *   1. 可以把浏览器书签整包导入（大多数新用户的第一诉求）；
@@ -23,9 +24,8 @@ import Link from 'next/link'
 import { BookmarkPlus, Command, Star, X, ArrowRight } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { getModifierKey } from '@/lib/platform'
+import { ONBOARDING_DISMISSED_VALUE, ONBOARDING_STORAGE_KEY } from '@/lib/onboarding'
 import { spotlightHotkeyHint, useSpotlightShortcutMode } from '@/lib/user-preferences'
-
-const STORAGE_KEY = 'navhub:onboarding:v1'
 
 export function OnboardingCard() {
   const [visible, setVisible] = useState(false)
@@ -35,7 +35,7 @@ export function OnboardingCard() {
     // 必须等挂载后再读 localStorage：服务端渲染时没有它，
     // 直接放进初始 state 会造成 hydration 不一致（服务端 true / 客户端 false）。
     try {
-      if (localStorage.getItem(STORAGE_KEY) !== 'done') setVisible(true)
+      if (localStorage.getItem(ONBOARDING_STORAGE_KEY) !== ONBOARDING_DISMISSED_VALUE) setVisible(true)
     } catch {
       // 隐私模式下 localStorage 可能抛错：静默不显示，不影响主流程
     }
@@ -44,7 +44,7 @@ export function OnboardingCard() {
   const dismiss = () => {
     setVisible(false)
     try {
-      localStorage.setItem(STORAGE_KEY, 'done')
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, ONBOARDING_DISMISSED_VALUE)
     } catch {
       // 存不进去也无妨：本次会话已隐藏
     }

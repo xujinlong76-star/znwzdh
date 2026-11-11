@@ -7,6 +7,11 @@
  * （select + 双态按钮），避免为一个表单引入新的 UI 依赖。
  */
 import { Button } from '@/components/ui/button'
+import Link from 'next/link'
+import {
+  isOnboardingDismissed,
+  resetOnboarding,
+} from '@/lib/onboarding'
 import {
   CARD_DENSITY_OPTIONS,
   RETENTION_DAY_OPTIONS,
@@ -72,6 +77,43 @@ function FontSizeField({ idPrefix }: { idPrefix: string }) {
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         与首页右上角的字号按钮是同一份设置，改一处两处同步；只存这台设备。
       </p>
+    </div>
+  )
+}
+
+/**
+ * 新手引导重看（本机设置）：与字号同款纪律，只动本机 localStorage。
+ * B11：引导卡注释承诺「设置页可重新打开」，此前却没有任何入口——
+ * 关掉引导的用户除手动清 localStorage 外再也看不到它。
+ * 点按即清除关闭记录并回首页，卡片重新出现；引导本来就没关过时
+ * 按钮只是直达首页，不说「重新查看」的假话。
+ */
+function OnboardingReplayField() {
+  const [dismissed, setDismissed] = useState<boolean | null>(null)
+  useEffect(() => {
+    setDismissed(isOnboardingDismissed(window.localStorage))
+  }, [])
+  const replay = () => {
+    resetOnboarding(window.localStorage)
+    setDismissed(false)
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/50 p-3">
+      <div className="min-w-0">
+        <p className="text-xs font-medium">新手引导</p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          {dismissed === null
+            ? '首页的三步引导（导入书签 / 搜索 / 收藏），关掉后可从这里重新查看。'
+            : dismissed
+              ? '你之前关掉了首页的三步引导。点这里清除关闭记录，回到首页即可重新查看。'
+              : '首页的三步引导还没关过，回到首页就能看到。'}
+        </p>
+      </div>
+      <Button asChild size="sm" variant="outline" className="h-7 shrink-0 text-[11px]">
+        <Link href="/" onClick={replay}>
+          {dismissed ? '重新查看新手引导' : '去首页查看引导'}
+        </Link>
+      </Button>
     </div>
   )
 }
@@ -299,6 +341,11 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
           busy={busy}
           onToggle={() => onChange({ telemetryEnabled: !value.telemetryEnabled })}
         />
+      </div>
+
+      {/* 本机显示类入口：只存这台设备，与服务端偏好分开 */}
+      <div className="mt-4">
+        <OnboardingReplayField />
       </div>
       {/* 快捷键与键盘微动作速查矩阵 (P1-2 #shortcuts 锚点) */}
       <div

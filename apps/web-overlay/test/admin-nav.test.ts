@@ -18,12 +18,14 @@ import { describe, expect, it } from "vitest";
 
 /** 上游底座自带、overlay 不持有源码的管理页 */
 const UPSTREAM_ADMIN_ROUTES = new Set([
-  "/admin/data",
   "/admin/resources/download",
   "/admin/site",
   "/admin/submissions",
   "/admin/videos",
 ]);
+// 注意：/admin/data 曾在这里（上游占位、overlay 无源码），2026-11-11 A9 落地后
+// overlay 自带 page.tsx，已从白名单移除——留在这里会掩盖「overlay 删了页
+// 面、测试还以为上游兜底」的回归。
 
 /**
  * 定位 overlay 的 src/app。

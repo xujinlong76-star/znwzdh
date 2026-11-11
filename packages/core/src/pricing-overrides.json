@@ -1543,5 +1543,15 @@
   "pricing": "open_source",
   "evidence": "GitHub siyuan-note/siyuan 仓库 AGPL-3.0 开源",
   "title": "思源笔记"
+ },
+ "elevenlabs.io": {
+  "pricing": "freemium",
+  "evidence": "官网标题即 Free AI Voice Generator，设免费生成层与付费订阅档",
+  "title": "ElevenLabs"
+ },
+ "speechify.com": {
+  "pricing": "freemium",
+  "evidence": "官网定价页设 Free Plan 与 Premium 付费档",
+  "title": "Speechify"
  }
 }

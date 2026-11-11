@@ -429,6 +429,260 @@
                 "音频生成",
                 "创作工具"
               ]
+            },
+            {
+              "id": "nav-b0837c2ee567",
+              "title": "Udio",
+              "href": "https://www.udio.com",
+              "description": "AI 音乐生成平台，输入文字描述即可生成完整歌曲",
+              "icon": "https://www.udio.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI音乐",
+                "歌曲生成"
+              ]
+            },
+            {
+              "id": "nav-c52c89f12a4a",
+              "title": "Soundraw",
+              "href": "https://soundraw.io",
+              "description": "AI 配乐生成工具，为视频与播客生成免版税背景音乐",
+              "icon": "https://soundraw.io/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI音乐",
+                "配乐",
+                "免版税"
+              ]
+            },
+            {
+              "id": "nav-e4d55a8be74f",
+              "title": "AIVA",
+              "href": "https://www.aiva.ai",
+              "description": "AI 作曲助手，生成影视、游戏与广告配乐",
+              "icon": "https://www.aiva.ai/assets/img/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI作曲",
+                "配乐"
+              ]
+            },
+            {
+              "id": "nav-1924d27a118b",
+              "title": "Boomy",
+              "href": "https://boomy.com",
+              "description": "生成式 AI 音乐平台，几秒生成原创歌曲并支持发行到流媒体",
+              "icon": "https://boomy.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI音乐",
+                "歌曲生成"
+              ]
+            },
+            {
+              "id": "nav-c0c8b539d7c7",
+              "title": "Mubert",
+              "href": "https://mubert.com",
+              "description": "AI 音乐生成平台，为创作者与品牌提供免版税配乐",
+              "icon": "https://mubert.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI音乐",
+                "免版税",
+                "配乐"
+              ]
+            },
+            {
+              "id": "nav-75486766407b",
+              "title": "Beatoven.ai",
+              "href": "https://www.beatoven.ai",
+              "description": "AI 背景音乐生成工具，按视频情绪与节奏自动配乐",
+              "icon": "https://cdn.prod.website-files.com/65d772a7cbf713010f7736f6/66634faf309426cbf03b120b_logo%20(1).png",
+              "enabled": true,
+              "tags": [
+                "AI音乐",
+                "配乐"
+              ]
+            },
+            {
+              "id": "nav-15c56bbff0dd",
+              "title": "Loudly",
+              "href": "https://www.loudly.com",
+              "description": "面向创作者与品牌的 AI 音乐平台，快速生成与定制歌曲",
+              "icon": "https://www.loudly.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI音乐",
+                "歌曲生成"
+              ]
+            },
+            {
+              "id": "nav-1b91a11a69f5",
+              "title": "ElevenLabs",
+              "href": "https://elevenlabs.io",
+              "description": "AI 语音生成平台，逼真的文字转语音与声音克隆",
+              "icon": "https://elevenlabs.io/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI配音",
+                "语音合成",
+                "声音克隆"
+              ]
+            },
+            {
+              "id": "nav-ff38a522ca4c",
+              "title": "Murf AI",
+              "href": "https://murf.ai",
+              "description": "AI 配音平台，为视频、播客与演示生成专业旁白",
+              "icon": "https://cdn.prod.website-files.com/66b3765153a8a0c399c70981/670cb2af23deffa700aa8a09_favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI配音",
+                "语音合成"
+              ]
+            },
+            {
+              "id": "nav-4ac24710e562",
+              "title": "Speechify",
+              "href": "https://speechify.com",
+              "description": "文字转语音阅读助手，把文档、PDF 与电子书朗读出来",
+              "icon": "https://speechify.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "文字转语音",
+                "朗读"
+              ]
+            },
+            {
+              "id": "nav-87e88de1f698",
+              "title": "WellSaid",
+              "href": "https://www.wellsaid.io",
+              "description": "面向团队的 AI 配音制作平台，生成企业级旁白音频",
+              "icon": "https://cdn.prod.website-files.com/673384264721b089c7e053a7/6af242f7fcd95abf454dceda_favicon.png",
+              "enabled": true,
+              "tags": [
+                "AI配音",
+                "企业旁白"
+              ]
+            },
+            {
+              "id": "nav-ecbadcf00f06",
+              "title": "NaturalReader",
+              "href": "https://www.naturalreaders.com",
+              "description": "AI 文字转语音工具，用自然语音朗读文档、PDF 与网页",
+              "icon": "https://www.naturalreaders.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "文字转语音",
+                "朗读"
+              ]
+            },
+            {
+              "id": "nav-6c22d8dc6a1b",
+              "title": "魔音工坊",
+              "href": "https://moyin.com",
+              "description": "AI 配音平台，主打短视频与有声书配音，音色选择丰富",
+              "icon": "https://moyin.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI配音",
+                "短视频",
+                "中文"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-ai-writing-office",
+          "title": "AI 写作办公",
+          "description": "AI 写作、PPT 与办公流程助手",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-9f7a344d7cbe",
+              "title": "Jasper",
+              "href": "https://www.jasper.ai",
+              "description": "面向营销团队的 AI 写作平台，生成广告文案、博客与社媒内容",
+              "icon": "https://cdn.prod.website-files.com/6807ee8d73c233fb82842313/681e121b52f97ed0b2098aab_Favicon.png",
+              "enabled": true,
+              "tags": [
+                "AI写作",
+                "营销文案"
+              ]
+            },
+            {
+              "id": "nav-f969b96580c7",
+              "title": "Copy.ai",
+              "href": "https://www.copy.ai",
+              "description": "面向市场与销售团队的 AI 平台，生成营销文案与客户触达内容",
+              "icon": "https://cdn.prod.website-files.com/628288c5cd3e8411b90a36a4/6793eea386b5ac27242bb8eb_favicon_32x32px%20(1).png",
+              "enabled": true,
+              "tags": [
+                "AI写作",
+                "营销文案"
+              ]
+            },
+            {
+              "id": "nav-6c112160b49c",
+              "title": "Writesonic",
+              "href": "https://writesonic.com",
+              "description": "AI 内容平台，提供文章写作与品牌在 AI 搜索中的可见度监测",
+              "icon": "https://writesonic.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI写作",
+                "内容生成"
+              ]
+            },
+            {
+              "id": "nav-205506d136ca",
+              "title": "Grammarly",
+              "href": "https://www.grammarly.com",
+              "description": "AI 写作助手，英语语法校对、拼写检查与语气润色",
+              "icon": "https://static-web.grammarly.com/cms/master/public/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "语法校对",
+                "写作润色",
+                "英文写作"
+              ]
+            },
+            {
+              "id": "nav-59d422f6f2b9",
+              "title": "秘塔写作猫",
+              "href": "https://xiezuocat.com",
+              "description": "中文 AI 写作与校对工具，智能纠正错别字、语法与标点问题",
+              "icon": "https://xiezuocat.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "中文写作",
+                "校对纠错"
+              ]
+            },
+            {
+              "id": "nav-63b511531390",
+              "title": "Sudowrite",
+              "href": "https://www.sudowrite.com",
+              "description": "面向小说作者的 AI 写作伙伴，辅助续写、扩写与情节构思",
+              "icon": "https://framerusercontent.com/images/5P8G75bSTVJjQUUwQiqbW3rrU74.png",
+              "enabled": true,
+              "tags": [
+                "小说写作",
+                "AI写作"
+              ]
+            },
+            {
+              "id": "nav-22d8a9ca8c1f",
+              "title": "Wordtune",
+              "href": "https://www.wordtune.com",
+              "description": "AI 英文改写润色工具，一键换词改句并调整语气与篇幅",
+              "icon": "https://cdn.prod.website-files.com/5f7e0f9d75fee6f6f546df46/64edbd73b743162bd24f64bc_favicon.png",
+              "enabled": true,
+              "tags": [
+                "改写润色",
+                "英文写作"
+              ]
             }
           ]
         },

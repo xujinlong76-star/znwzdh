@@ -873,6 +873,8 @@
     var q = (text || '').trim();
     if (!q || busy) return;
     busy = true;
+    // 成长桥（A12）：只发事件、不碰成长档案；站内 GrowthTracker 监听后按既有规则记 ai_chat 经验。
+    try { window.dispatchEvent(new CustomEvent('navhub:ai-chat-used')); } catch (e) { /* 事件发不出不影响聊天 */ }
     sendBtn.disabled = true;
     markActive();
     wakeUp(false);

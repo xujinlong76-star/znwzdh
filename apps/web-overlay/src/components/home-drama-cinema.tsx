@@ -12,11 +12,14 @@
  * fetch，完全不进首页 JS bundle（首页预算只剩约 30KB 余量）。fetch 失败
  * 时退化为渐变海报卡 + 文字链接，功能不假装、入口不丢。
  * 站点数据走既有的 /api/home/navigation（与生态图谱同款公开只读口）。
+ * 推荐位口径（A10）：巡检确认失效（broken）的站不上海报墙与热播榜，
+ * 收集逻辑在 @/lib/drama-sites；分类列表里它们仍保留并标失效。
  */
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ChevronRight, Clapperboard, Flame } from 'lucide-react'
+import { collectDramaSites, type DramaSite } from '@/lib/drama-sites'
 
 interface MediaEntry {
   key: string
@@ -24,13 +27,6 @@ interface MediaEntry {
   width: number
   height: number
   data: string
-}
-
-interface DramaSite {
-  id: string
-  title: string
-  href: string
-  description?: string
 }
 
 const BANNER_LINKS: Record<string, { href: string; caption: string }> = {
@@ -78,21 +74,8 @@ export function HomeDramaCinema() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return
-        const cats = Array.isArray(data.navigationItems) ? data.navigationItems : []
-        const drama = cats.find((c: { id?: string; title?: string }) => c.id === 'duanju' || c.title === '短剧')
-        if (!drama) return
-        const flat: DramaSite[] = []
-        const seen = new Set<string>()
-        const push = (items: Array<{ id?: string; title?: string; href?: string; description?: string; enabled?: boolean }> | undefined) => {
-          for (const it of items || []) {
-            if (!it?.id || !it.title || !it.href || it.enabled === false || seen.has(it.id)) continue
-            seen.add(it.id)
-            flat.push({ id: it.id, title: it.title, href: it.href, description: it.description })
-          }
-        }
-        push(drama.items)
-        for (const sub of drama.subCategories || []) push(sub.items)
-        setDramaSites(flat)
+        // 收集口径在 @/lib/drama-sites：已确认失效（broken）的站不上推荐位（A10）
+        setDramaSites(collectDramaSites(data.navigationItems))
       })
       .catch(() => undefined)
     return () => {

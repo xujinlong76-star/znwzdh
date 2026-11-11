@@ -1779,6 +1779,55 @@ export interface MaintenanceStatusResponse {
 }
 
 /**
+ * GET /api/admin/link-health
+ */
+export interface LinkHealthOverviewResponse {
+  ok: boolean;
+  summary: {
+    totalSites: number;
+    checkedSites: number;
+    uncheckedSites: number;
+    coveragePct: number;
+    brokenCount: number;
+    failingCount: number;
+    failThreshold: number;
+    lastPatrolAt: number | null;
+    [key: string]: unknown;
+  };
+  items: ({
+    siteId: string;
+    title: string;
+    url: string;
+    categoryId: string;
+    status: string;
+    enabled: boolean;
+    consecutiveFailures: number;
+    lastCheckedAt: number | null;
+    httpStatus: number | null;
+    error: string | null;
+    errorKind: string;
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/admin/link-health/visibility
+ */
+export interface LinkHealthVisibilityResponse {
+  ok: boolean;
+  updated: number;
+  results: {
+    siteId: string;
+    ok: boolean;
+    enabled?: boolean;
+    reason?: string;
+    [key: string]: unknown;
+  }[];
+  [key: string]: unknown;
+}
+
+/**
  * POST /api/admin/maintenance/checkpoint
  * POST /api/admin/maintenance/optimize
  * POST /api/admin/maintenance/vacuum
@@ -2213,6 +2262,7 @@ export interface RestContractRoutes {
   "DELETE /api/trash/{id}": undefined;
   "DELETE /api/workspaces/{id}/members/{userId}": WorkspaceMembersResponse;
   "GET /api/admin/ai/prices": AdminAiPricesResponse;
+  "GET /api/admin/link-health": LinkHealthOverviewResponse;
   "GET /api/admin/maintenance/status": MaintenanceStatusResponse;
   "GET /api/admin/notifications": NotificationListResponse;
   "GET /api/admin/notifications/deliveries": NotificationDeliveryListResponse;
@@ -2270,6 +2320,7 @@ export interface RestContractRoutes {
   "POST /api/account/verify-email": OkMessageResponse;
   "POST /api/admin/audit/apply": SiteAuditApplyResponse;
   "POST /api/admin/audit/scan": SiteAuditScanResponse;
+  "POST /api/admin/link-health/visibility": LinkHealthVisibilityResponse;
   "POST /api/admin/maintenance/checkpoint": MaintenanceActionResult;
   "POST /api/admin/maintenance/optimize": MaintenanceActionResult;
   "POST /api/admin/maintenance/vacuum": MaintenanceActionResult;

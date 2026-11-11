@@ -38,6 +38,8 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "GET", path: "/api/admin/dashboard/security", scope: "read" },
   { method: "GET", path: "/api/admin/dashboard/stream", scope: "read" },
   { method: "GET", path: "/api/admin/health/trend", scope: "admin" },
+  { method: "GET", path: "/api/admin/link-health", scope: "admin" },
+  { method: "POST", path: "/api/admin/link-health/visibility", scope: "admin" },
   { method: "POST", path: "/api/admin/maintenance/checkpoint", scope: "admin" },
   { method: "POST", path: "/api/admin/maintenance/optimize", scope: "admin" },
   { method: "GET", path: "/api/admin/maintenance/status", scope: "admin" },

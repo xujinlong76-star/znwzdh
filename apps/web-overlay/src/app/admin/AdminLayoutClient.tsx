@@ -32,6 +32,7 @@ import {
   Package,
   Bot,
   DatabaseBackup,
+  HeartPulse,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -190,6 +191,15 @@ const menuItems = [
     title: "冷备恢复",
     href: "/admin/data/restore",
     icon: DatabaseBackup
+  },
+  {
+    /**
+     * 链接巡检（A10）同样独立一项：与冷备恢复同一层级，落在「数据管理」语义下，
+     * 但不塞 subItems（理由同上）。页面本体在 /admin/data/link-health。
+     */
+    title: "链接巡检",
+    href: "/admin/data/link-health",
+    icon: HeartPulse
   },
   {
     title: "站点设置",

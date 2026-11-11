@@ -120,7 +120,7 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
     relations: [
       { targetTitle: "Coolify", targetUrl: "https://coolify.io", relationType: "alternative", isFreeOrOpenSource: true, note: "开源可自托管的 Vercel/Heroku 替代品" },
       { targetTitle: "Zeabur", targetUrl: "https://zeabur.com", relationType: "alternative", isFreeOrOpenSource: false, note: "多语言无感部署云平台" },
-      { targetTitle: "Cloudflare Pages", targetUrl: "https://pages.cloudflare.com", relationType: "alternative", isFreeOrOpenSource: true, note: "全球边缘极速静态托管" },
+      { targetTitle: "Cloudflare Pages", targetUrl: "https://www.cloudflare.com/products/pages/", relationType: "alternative", isFreeOrOpenSource: true, note: "全球边缘极速静态托管" },
     ],
   },
   "hub.docker.com": {
@@ -189,7 +189,7 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
   "notion.com": {
     workspaces: ["efficiency", "content"],
     relations: [
-      { targetTitle: "AppFlowy", targetUrl: "https://appflowy.io", relationType: "alternative", isFreeOrOpenSource: true, note: "Notion 开源私有化看板与知识库" },
+      { targetTitle: "AppFlowy", targetUrl: "https://appflowy.com/", relationType: "alternative", isFreeOrOpenSource: true, note: "Notion 开源私有化看板与知识库" },
       { targetTitle: "Obsidian", targetUrl: "https://obsidian.md", relationType: "alternative", isFreeOrOpenSource: true, note: "本地 Markdown 离线双链知识库" },
       { targetTitle: "AFFiNE", targetUrl: "https://affine.pro", relationType: "alternative", isFreeOrOpenSource: true, note: "下一代开源全能画布与协同工作区" },
       // 这两条是「点了能进站内详情页」的补集：AppFlowy / AFFiNE 库里还没收，

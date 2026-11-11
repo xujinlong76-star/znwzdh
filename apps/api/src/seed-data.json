@@ -144,8 +144,8 @@
       }
     },
     {
-      "url": "https://windsurf.ai",
-      "title": "Windsurf",
+      "url": "https://devin.ai/desktop",
+      "title": "Devin Desktop",
       "description": "Codeium 打造的下一代 Agentic AI IDE，支持级联思考 (Cascade)",
       "categorySlug": "ai-coding-assistant",
       "tags": [
@@ -171,8 +171,8 @@
       }
     },
     {
-      "url": "https://github.com/QwenLM/Qwen2.5",
-      "title": "Qwen 2.5",
+      "url": "https://github.com/QwenLM/Qwen3",
+      "title": "Qwen 3",
       "description": "阿里通义千问开源大模型，具备极强代码与数学推理能力",
       "categorySlug": "models-and-datasets",
       "tags": [
@@ -559,8 +559,8 @@
       "icon": "https://github.com/favicon.ico"
     },
     {
-      "url": "https://paperswithcode.com",
-      "title": "Papers with Code",
+      "url": "https://huggingface.co/papers/trending",
+      "title": "Hugging Face Papers",
       "description": "论文与开源实现对照，AI 研究必备",
       "categorySlug": "literature-search",
       "tags": [
@@ -991,7 +991,7 @@
       "icon": "https://zeabur.com/favicon.ico"
     },
     {
-      "url": "https://pages.cloudflare.com",
+      "url": "https://www.cloudflare.com/products/pages/",
       "title": "Cloudflare Pages",
       "description": "Cloudflare 的静态站与全栈前端托管：Git 推送即部署，全球边缘网络分发，免费额度覆盖多数个人项目。",
       "categorySlug": "cloud-and-iac",
@@ -1059,7 +1059,7 @@
           "sort": 0
         },
         {
-          "site": "https://windsurf.ai",
+          "site": "https://devin.ai/desktop",
           "note": "Codeium 打造的 Cascade 协同心流 IDE，支持主动感知与工具调用",
           "sort": 1
         },

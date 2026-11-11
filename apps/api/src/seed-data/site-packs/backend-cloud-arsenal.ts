@@ -108,7 +108,7 @@ export const backendCloudArsenal: SeedPluginDef = {
         { url: "https://developer.hashicorp.com/terraform", title: "Terraform", description: "基础设施即代码标杆，多云资源统一编排。", category: "IaC 与云厂商", subCategory: "IaC", tags: ["Terraform", "IaC"] },
         { url: "https://opentofu.org/", title: "OpenTofu", description: "Terraform 的开源社区分支，保持 MPL 许可。", category: "IaC 与云厂商", subCategory: "IaC", tags: ["OpenTofu", "开源"] },
         { url: "https://www.pulumi.com/", title: "Pulumi", description: "用通用语言写 IaC，复用现有工程与测试能力。", category: "IaC 与云厂商", subCategory: "IaC", tags: ["Pulumi", "编程式"] },
-        { url: "https://www.ansible.com/", title: "Ansible", description: "无代理自动化运维工具，配置管理与批量执行常用。", category: "IaC 与云厂商", subCategory: "配置管理", tags: ["Ansible", "自动化"] },
+        { url: "https://www.redhat.com/en/ansible-collaborative", title: "Ansible Collaborative", description: "无代理自动化运维工具，配置管理与批量执行常用。", category: "IaC 与云厂商", subCategory: "配置管理", tags: ["Ansible", "自动化"] },
         { url: "https://saltproject.io/", title: "Salt Project", description: "高速配置管理与远程执行框架，大规模节点友好。", category: "IaC 与云厂商", subCategory: "配置管理", tags: ["Salt", "配置管理"] },
         { url: "https://www.crossplane.io/", title: "Crossplane", description: "用 K8s 声明式管理云资源，构建内部云平台。", category: "IaC 与云厂商", subCategory: "IaC", tags: ["Crossplane", "控制面"] },
         { url: "https://aws.amazon.com/", title: "AWS", description: "全球份额最高的公有云，服务最全、文档与生态成熟。", category: "IaC 与云厂商", subCategory: "公有云", tags: ["AWS", "公有云"] },

@@ -123,13 +123,13 @@ export const aiAgenticCoding: SeedPluginDef = {
           ]
         },
         {
-          "url": "https://windsurf.ai/",
-          "title": "Windsurf",
+          "url": "https://devin.ai/desktop",
+          "title": "Devin Desktop",
           "description": "Codeium 打造的智能代理 IDE，深度融合 Cascade 自主工作流。",
           "category": "AI 编程助手",
           "subCategory": "AI IDE",
           "tags": [
-            "Windsurf",
+            "Devin Desktop",
             "Cascade"
           ]
         },
@@ -640,13 +640,13 @@ export const aiAgenticCoding: SeedPluginDef = {
           ]
         },
         {
-          "url": "https://paperswithcode.com/datasets",
-          "title": "Papers with Code",
+          "url": "https://huggingface.co/papers/trending",
+          "title": "Hugging Face Papers",
           "description": "追踪学术文献对应代码复现、评测基准与开放数据集的专业学术平台。",
           "category": "模型与数据集",
           "subCategory": "学术标杆",
           "tags": [
-            "Papers with Code",
+            "Hugging Face Papers",
             "基准"
           ]
         },

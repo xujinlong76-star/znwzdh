@@ -268,7 +268,7 @@ describe("seedEcosystemRelations", () => {
     "squoosh.app": "front-end-arsenal",
     "tldraw.com": "seed-design-inspiration",
     "lucide.dev": "front-end-arsenal",
-    "appflowy.io": "homelab-selfhosted-pro",
+    "appflowy.com": "homelab-selfhosted-pro",
     "obsidian.md": "seed-dev-efficiency",
     "affine.pro": "homelab-selfhosted-pro",
     "logseq.com": "seed-dev-efficiency",

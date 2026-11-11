@@ -174,8 +174,8 @@ export const openModelsLocalInference: SeedPluginDef = {
           ]
         },
         {
-          "url": "https://github.com/QwenLM/Qwen2.5",
-          "title": "通义千问 Qwen2.5",
+          "url": "https://github.com/QwenLM/Qwen3",
+          "title": "通义千问 Qwen 3",
           "description": "阿里巴巴开源的旗舰大模型家族，涵盖 0.5B 到 72B 全尺寸与优秀多模态。",
           "category": "模型与数据集",
           "subCategory": "国内开源",
@@ -1945,13 +1945,13 @@ export const openModelsLocalInference: SeedPluginDef = {
           ]
         },
         {
-          "url": "https://paperswithcode.com/",
-          "title": "Papers with Code 主站",
+          "url": "https://huggingface.co/papers/trending",
+          "title": "Hugging Face Papers",
           "description": "将全球顶尖 AI 论文、对应开源实现代码与标准化测试基准建立完整关联的枢纽。",
           "category": "学术社区",
           "subCategory": "论文代码互联",
           "tags": [
-            "Papers with Code",
+            "Hugging Face Papers",
             "代码复现"
           ]
         },

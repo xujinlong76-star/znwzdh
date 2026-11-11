@@ -252,13 +252,13 @@ export const mcpEcosystemArsenal: SeedPluginDef = {
           ]
         },
         {
-          "url": "https://codeium.com/windsurf/features",
-          "title": "Windsurf (Cascade MCP)",
+          "url": "https://devin.ai/desktop",
+          "title": "Devin Desktop (Cascade MCP)",
           "description": "首批原生支持 MCP 协议的智能 IDE，让代理自主读写外部数据源。",
           "category": "AI 编程助手",
           "subCategory": "AI IDE",
           "tags": [
-            "Windsurf",
+            "Devin Desktop",
             "Cascade"
           ]
         },

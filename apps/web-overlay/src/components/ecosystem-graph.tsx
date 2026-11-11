@@ -76,7 +76,7 @@ const DEFAULT_NODES: GraphNode[] = [
   // Efficiency
   { id: 'notion', title: 'Notion', url: 'https://notion.so', category: 'efficiency', description: '全能一体化模块化笔记与工作区' },
   { id: 'obsidian', title: 'Obsidian', url: 'https://obsidian.md', category: 'efficiency', description: '本地优先离线双链 Markdown 知识库', openSource: false },
-  { id: 'appflowy', title: 'AppFlowy', url: 'https://appflowy.io', category: 'efficiency', description: '开源私有化 Notion 替代品', openSource: true },
+  { id: 'appflowy', title: 'AppFlowy', url: 'https://appflowy.com', category: 'efficiency', description: '开源私有化 Notion 替代品', openSource: true },
 ]
 
 const DEFAULT_EDGES: GraphEdge[] = [

@@ -1186,7 +1186,7 @@ export const homelabSelfhostedPro: SeedPluginDef = {
           ]
         },
         {
-          "url": "https://www.appflowy.io/",
+          "url": "https://appflowy.com/",
           "title": "AppFlowy",
           "description": "基于 Flutter 与 Rust 构建的开源本地优先通用工作区，Notion 的开源竞品。",
           "category": "办公套件",

@@ -98,8 +98,8 @@
             },
             {
               "id": "nav-ee398c68f878",
-              "title": "Windsurf",
-              "href": "https://windsurf.ai",
+              "title": "Devin Desktop",
+              "href": "https://devin.ai/desktop",
               "description": "Codeium 打造的下一代 Agentic AI IDE，支持级联思考 (Cascade)",
               "icon": "https://windsurf.ai/favicon.ico",
               "enabled": true,
@@ -218,8 +218,8 @@
             },
             {
               "id": "nav-55a843da50d7",
-              "title": "Qwen 2.5",
-              "href": "https://github.com/QwenLM/Qwen2.5",
+              "title": "Qwen 3",
+              "href": "https://github.com/QwenLM/Qwen3",
               "description": "阿里通义千问开源大模型，具备极强代码与数学推理能力",
               "icon": "https://github.com/favicon.ico",
               "enabled": true,
@@ -891,8 +891,8 @@
             },
             {
               "id": "nav-0ab4df3bab56",
-              "title": "Papers with Code",
-              "href": "https://paperswithcode.com",
+              "title": "Hugging Face Papers",
+              "href": "https://huggingface.co/papers/trending",
               "description": "论文与开源实现对照，AI 研究必备",
               "icon": "https://paperswithcode.com/favicon.ico",
               "enabled": true,

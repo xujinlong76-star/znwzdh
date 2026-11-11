@@ -95,7 +95,7 @@ export function GrowthPanel() {
               <p className="mt-0.5 flex items-center gap-1 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-0.5" aria-label={`进阶阶段：${LEVEL_TIER_LABEL[tier.kind]}，已点亮 ${tier.count} 枚`}>
                   {Array.from({ length: 4 }, (_, i) => (
-                    <TierIcon key={i} className={cn('h-4 w-4', i < tier.count ? 'text-primary' : 'text-muted-foreground/30')} aria-hidden />
+                    <TierIcon key={i} className={cn('h-4 w-4', i < tier.count ? 'text-primary' : 'text-muted-foreground')} aria-hidden />
                   ))}
                 </span>
                 <span>{LEVEL_TIER_LABEL[tier.kind]}阶段</span>

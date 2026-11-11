@@ -69,7 +69,9 @@ export function trackGrowthEvent(event: GrowthAnalyticsEvent, properties: Record
       headers: { 'Content-Type': 'application/json' },
       body,
       keepalive: true,
-    }).catch(() => undefined)
+    }).catch(() => {
+      /* 埋点发送失败可以吞：统计丢失不影响任何功能，绝不冒泡打扰用户 */
+    })
   } catch {
     /* 埋点失败不冒泡 */
   }

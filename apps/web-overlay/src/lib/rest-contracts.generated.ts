@@ -2124,6 +2124,17 @@ export interface MeFavoritesSyncResponse {
 }
 
 /**
+ * POST /api/me/watchlist/sync
+ */
+export interface MeWatchlistSyncResponse {
+  ok: true;
+  applied: number;
+  version: number;
+  entries: unknown[];
+  [key: string]: unknown;
+}
+
+/**
  * POST /api/me/import
  */
 export interface MeImportResponse {
@@ -2403,6 +2414,7 @@ export interface RestContractRoutes {
   "POST /api/me/prune": MePruneResponse;
   "POST /api/me/sessions/check": MeSessionCheckResponse;
   "POST /api/me/tokens": MeTokenCreateResponse;
+  "POST /api/me/watchlist/sync": MeWatchlistSyncResponse;
   "POST /api/plugins/{slug}/install": PluginInstallResponse;
   "POST /api/plugins/{slug}/star": PluginStarResponse;
   "POST /api/plugins/{slug}/uninstall": PluginUninstallResponse;

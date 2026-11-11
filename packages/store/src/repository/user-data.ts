@@ -213,6 +213,7 @@ export async function exportUserData(repo: Repository, identity: string): Promis
 export interface UserDataDeletionCounts {
   favorites: number;
   favoriteFolders: number;
+  watchEntries: number;
   searchHistory: number;
   events: number;
   profile: number;
@@ -245,6 +246,7 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
     const counts: UserDataDeletionCounts = {
       favorites: await count("SELECT COUNT(*) AS c FROM favorites WHERE user_id = ?", [identity]),
       favoriteFolders: await count("SELECT COUNT(*) AS c FROM favorite_folders WHERE user_id = ?", [identity]),
+      watchEntries: await count("SELECT COUNT(*) AS c FROM watch_entries WHERE user_id = ?", [identity]),
       searchHistory: await count("SELECT COUNT(*) AS c FROM search_history WHERE user_id = ?", [identity]),
       events: await count("SELECT COUNT(*) AS c FROM events WHERE identity = ?", [identity]),
       profile: await count("SELECT COUNT(*) AS c FROM user_profiles WHERE user_id = ?", [identity]),

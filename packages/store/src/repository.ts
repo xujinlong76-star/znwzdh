@@ -51,6 +51,7 @@ import * as navVersionRepo from "./repository/nav-version.ts";
 import * as healthRepo from "./repository/health.ts";
 import * as tagsRepo from "./repository/tags.ts";
 import * as favoritesRepo from "./repository/favorites.ts";
+import * as watchlistRepo from "./repository/watchlist.ts";
 import * as behaviorRepo from "./repository/behavior.ts";
 import * as profilesRepo from "./repository/profiles.ts";
 import * as vaultRepo from "./repository/vault.ts";
@@ -967,6 +968,28 @@ async savedPluginEmbeddings(filter?: {
     ops: favoritesRepo.FavoriteOp[],
   ): Promise<{ applied: number; version: number }> {
     return favoritesRepo.applyFavoriteOps(this, userId, ops);
+  }
+
+  /* ------------------------- 追剧清单 ------------------------- */
+
+  async listWatchEntries(userId: string) {
+    return watchlistRepo.listWatchEntries(this, userId);
+  }
+
+  async listWatchSince(userId: string, since: number): Promise<watchlistRepo.WatchSyncSlice> {
+    return watchlistRepo.listWatchSince(this, userId, since);
+  }
+
+  /** 批量应用客户端追剧 ops（与收藏同一套 LWW + 墓碑协议） */
+  async applyWatchOps(
+    userId: string,
+    ops: watchlistRepo.WatchOp[],
+  ): Promise<{ applied: number; version: number }> {
+    return watchlistRepo.applyWatchOps(this, userId, ops);
+  }
+
+  async clearWatchEntries(userId: string): Promise<number> {
+    return watchlistRepo.clearWatchEntries(this, userId);
   }
 
   async updateFavoriteFolder(

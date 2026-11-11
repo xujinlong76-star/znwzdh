@@ -150,6 +150,7 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "POST", path: "/api/me/tokens", scope: "public" },
   { method: "DELETE", path: "/api/me/tokens/:id", scope: "public" },
   { method: "GET", path: "/api/me/visits", scope: "public" },
+  { method: "POST", path: "/api/me/watchlist/sync", scope: "public" },
   { method: "GET", path: "/api/metrics", scope: "read" },
   { method: "GET", path: "/api/openapi.json", scope: "public" },
   { method: "POST", path: "/api/p2p/signal", scope: "public" },

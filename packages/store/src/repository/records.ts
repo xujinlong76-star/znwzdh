@@ -171,6 +171,44 @@ export interface FavoriteFolderRecord {
   createdAt: number;
 }
 
+/**
+ * 追剧条目的更新节奏标注。站内没有任何平台排播数据源，节奏只能由用户
+ * 按平台公示自己标注（或留 unknown）；服务端只存不造，unknown 永远不产生
+ * 「已更新」断言，只产生「去看看」的入口。
+ */
+export type WatchCadence =
+  | { kind: "daily" }
+  | { kind: "weekly"; weekdays: number[] }
+  | { kind: "finished" }
+  | { kind: "unknown" };
+
+/** 追剧清单条目（在追的剧 = 用户自记的剧名 + 所在平台站快照 + 进度） */
+export interface WatchEntryRecord {
+  id: string;
+  userId: string;
+  /** 同步键：`${platformSiteId}::${归一化剧名}`，同一用户内唯一 */
+  key: string;
+  title: string;
+  platformSiteId: string;
+  platformTitle: string;
+  /** 官方播放页（平台站地址快照）；前端渲染时仍须过 safeHref */
+  playUrl: string;
+  icon: string | null;
+  /** 看到第几集（0 = 还没开始），只由用户手动改 */
+  episode: number;
+  priority: "high" | "normal";
+  cadence: WatchCadence;
+  remind: boolean;
+  /** 已在某天手动关掉当天提醒的本地日期（YYYY-MM-DD）；与节奏判定同口径 */
+  dismissedOn: string | null;
+  /** 最近一次改进度的时间戳（提醒判定：今天已改进度就不再提醒） */
+  lastProgressAt: number;
+  createdAt: number;
+  updatedAt: number;
+  /** 软删墓碑时间戳；非空即「已删」。增量同步靠它把删除传播给客户端。 */
+  deletedAt?: number | null;
+}
+
 export interface UserProfileRecord {
   userId: string;
   topCategories: string[];

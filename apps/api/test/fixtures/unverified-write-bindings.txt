@@ -74,6 +74,7 @@ POST /api/me/prune | 按域清理用户数据（破坏性），在 user-data 用
 DELETE /api/me | 注销账号（破坏性），在 user-data 用例覆盖
 POST /api/me/merge | 需要匿名+登录双身份与签名前置，在 identity-merge 用例覆盖
 POST /api/me/favorites/sync | 需要收藏基线；在 favorites-sync 用例覆盖
+POST /api/me/watchlist/sync | 需要签名身份与追剧基线；在 me-watchlist-sync 用例覆盖
 POST /api/me/import | 需要完整导出备份前置，在 me-import 用例覆盖
 DELETE /api/profile | 会重置画像与行为事件，影响本文件 ME 概览断言
 DELETE /api/profile/signals/{kind} | 按信号清理并重建画像，同上

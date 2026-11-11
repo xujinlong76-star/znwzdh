@@ -21,6 +21,7 @@ import Link from 'next/link'
 import { ChevronRight, Clapperboard, Flame } from 'lucide-react'
 import { collectDramaSites, type DramaSite } from '@/lib/drama-sites'
 import { safeHref } from '@/lib/safe-url'
+import { WatchlistAddButton } from '@/components/watchlist-add-button'
 
 interface MediaEntry {
   key: string
@@ -94,9 +95,14 @@ export function HomeDramaCinema() {
           短剧影院
           <span className="hidden text-xs font-normal text-zinc-400 sm:inline">免费短剧 + 各大平台，一站直达</span>
         </h2>
-        <Link href="/category/duanju" className="inline-flex items-center gap-0.5 text-sm text-zinc-300 transition-colors hover:text-white">
-          进入短剧专区 <ChevronRight className="h-4 w-4" aria-hidden />
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/me/watchlist" className="inline-flex items-center gap-0.5 text-sm text-zinc-300 transition-colors hover:text-white">
+            我的追剧 <ChevronRight className="h-4 w-4" aria-hidden />
+          </Link>
+          <Link href="/category/duanju" className="inline-flex items-center gap-0.5 text-sm text-zinc-300 transition-colors hover:text-white">
+            进入短剧专区 <ChevronRight className="h-4 w-4" aria-hidden />
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_300px]">
@@ -123,21 +129,28 @@ export function HomeDramaCinema() {
             </Link>
           )}
           {dramaSites.map((s) => (
-            <a
+            <div
               key={s.id}
-              href={safeHref(s.href)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-36 shrink-0 flex-col justify-between rounded-2xl border border-white/10 bg-white/5 p-3 transition-colors hover:bg-white/10 sm:w-44"
+              className="flex w-36 shrink-0 flex-col rounded-2xl border border-white/10 bg-white/5 p-3 transition-colors hover:bg-white/10 sm:w-44"
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/20 text-lg font-bold text-rose-300" aria-hidden>
-                {s.title.slice(0, 1)}
+              <a
+                href={safeHref(s.href)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-1 flex-col justify-between"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/20 text-lg font-bold text-rose-300" aria-hidden>
+                  {s.title.slice(0, 1)}
+                </span>
+                <span>
+                  <span className="block truncate text-sm font-semibold">{s.title}</span>
+                  <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-zinc-400">{s.description || '点开直接看'}</span>
+                </span>
+              </a>
+              <span className="mt-2 block">
+                <WatchlistAddButton platform={{ siteId: s.id, title: s.title, href: s.href }} variant="dark" />
               </span>
-              <span>
-                <span className="block truncate text-sm font-semibold">{s.title}</span>
-                <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-zinc-400">{s.description || '点开直接看'}</span>
-              </span>
-            </a>
+            </div>
           ))}
         </div>
 

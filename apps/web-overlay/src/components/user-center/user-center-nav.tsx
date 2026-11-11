@@ -42,6 +42,7 @@ const DOMAINS: readonly DomainItem[] = [
     label: '内容与收藏',
     subItems: [
       { href: '/favorites', label: '收藏与文件夹' },
+      { href: '/me/watchlist', label: '追剧清单' },
       { href: '/me/history', label: '搜索历史' },
     ],
   },

@@ -125,6 +125,9 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/me/prune",
   "POST /api/me/sessions/check",
   "POST /api/me/tokens",
+  // 追剧清单同步：写的是调用者自己的数据，处理器有 identityTrusted 签名校验
+  // 与 userDomainWriteAllowed 域闸（favorites 档令牌不可写，走 write 域），与收藏同步同级。
+  "POST /api/me/watchlist/sync",
   "POST /api/p2p/signal",
   "POST /api/plugins",
   "POST /api/plugins/:slug/ai-audit",

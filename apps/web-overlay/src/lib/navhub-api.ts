@@ -17,6 +17,7 @@ import { isNotFound, type DegradedHandler } from './degrade'
 import { getIdentity } from './identity'
 import { enqueueClickReport, readClickOutbox, removeClickReports, type ClickOutboxEntry } from './offline-recent'
 import { readLocalUserSettings } from './user-settings'
+import type { HubWatchEntry, WatchCadence } from './watchlist'
 import type { PluginDiffResult, PluginManifest, PluginKind } from './plugins/plugin-manifest'
 // 响应形状来自中枢契约的生成物（scripts/generate-rest-contract-types.mjs）：
 // 手抄一份接口曾经是最大的漂移面——中枢改了字段，前端照旧编译通过、运行时 undefined。
@@ -992,6 +993,65 @@ export async function syncFavoritesBatch(
         }
         const text = await res.text()
         return (text ? JSON.parse(text) : {}) as HubFavoritesSyncPayload
+    },
+    onDegraded,
+  )
+}
+
+/* ------------------------------ 追剧清单同步 ------------------------------ */
+
+export interface WatchSyncOp {
+  op: 'add' | 'update' | 'remove'
+  key: string
+  title?: string
+  platformSiteId?: string
+  platformTitle?: string
+  playUrl?: string
+  icon?: string | null
+  episode?: number
+  priority?: 'high' | 'normal'
+  cadence?: WatchCadence
+  remind?: boolean
+  dismissedOn?: string | null
+  lastProgressAt?: number
+  createdAt?: number
+  /** 客户端发生时间；省略则由服务端取当前时间（LWW 依据） */
+  at?: number
+}
+
+export interface HubWatchSyncPayload {
+  ok: boolean
+  applied: number
+  version: number
+  items: HubWatchEntry[]
+  truncatedTitles: number
+}
+
+/**
+ * 追剧清单批量同步：与收藏同步同一套协议（ops + since 增量 + 墓碑），
+ * 走 BFF `/api/me/watchlist/sync`（会话派生身份）——匿名身份不适用，
+ * 未登录时清单只存本机（见 useWatchlist 的 syncWatchlistToCloud）。
+ */
+export async function syncWatchlistBatch(
+  ops: WatchSyncOp[],
+  since: number,
+  onDegraded?: DegradedHandler,
+): Promise<HubWatchSyncPayload | null> {
+  return degrade<HubWatchSyncPayload | null>(
+    null,
+    async () => {
+      const res = await fetch('/api/me/watchlist/sync', {
+        method: 'POST',
+        signal: readSignal(undefined),
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ops, since }),
+      })
+      if (!res.ok) {
+        const detail = await hubServerMessage(res)
+        throw hubError(res.status, detail.message, detail.payload)
+      }
+      const text = await res.text()
+      return (text ? JSON.parse(text) : {}) as HubWatchSyncPayload
     },
     onDegraded,
   )

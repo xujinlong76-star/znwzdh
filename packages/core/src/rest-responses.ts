@@ -758,6 +758,17 @@ export const MeFavoritesSyncResponse = z.looseObject({
   truncatedNotes: z.number().int(),
 });
 
+/**
+ * POST /api/me/watchlist/sync：与收藏同步同一信封口径（applied/version）；
+ * entries 的条目形状由追剧仓储演进，集成方以同步回执的 entries 为准。
+ */
+export const MeWatchlistSyncResponse = z.looseObject({
+  ok: z.literal(true),
+  applied: z.number().int(),
+  version: z.number(),
+  entries: z.array(z.unknown()),
+});
+
 /** POST /api/me/import：回执只报「实际恢复了多少」，跳过/截断/失败分支都要能说清 */
 export const MeImportResponse = z.looseObject({
   ok: z.literal(true),
@@ -1882,6 +1893,7 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "DELETE /api/me": { schema: MeDeleteResponse, name: "MeDeleteResponse" },
   "POST /api/me/merge": { schema: MeMergeResponse, name: "MeMergeResponse" },
   "POST /api/me/favorites/sync": { schema: MeFavoritesSyncResponse, name: "MeFavoritesSyncResponse" },
+  "POST /api/me/watchlist/sync": { schema: MeWatchlistSyncResponse, name: "MeWatchlistSyncResponse" },
   "POST /api/me/import": { schema: MeImportResponse, name: "MeImportResponse" },
   "DELETE /api/profile": { schema: ProfileResetResponse, name: "ProfileResetResponse" },
   "DELETE /api/profile/signals/{kind}": {

@@ -290,6 +290,28 @@ CREATE TABLE IF NOT EXISTS favorites (
 CREATE UNIQUE INDEX IF NOT EXISTS favorites_user_site_idx ON favorites(user_id, site_id);
 CREATE INDEX IF NOT EXISTS favorites_user_idx ON favorites(user_id);
 
+CREATE TABLE IF NOT EXISTS watch_entries (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  drama_key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  platform_site_id TEXT NOT NULL,
+  platform_title TEXT NOT NULL,
+  play_url TEXT NOT NULL,
+  icon TEXT,
+  episode INTEGER NOT NULL DEFAULT 0,
+  priority TEXT NOT NULL DEFAULT 'normal',
+  cadence TEXT NOT NULL DEFAULT '{"kind":"unknown"}',
+  remind INTEGER NOT NULL DEFAULT 1,
+  dismissed_on TEXT,
+  last_progress_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS watch_entries_user_key_idx ON watch_entries(user_id, drama_key);
+CREATE INDEX IF NOT EXISTS watch_entries_user_idx ON watch_entries(user_id);
+
 CREATE TABLE IF NOT EXISTS favorite_folders (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -870,6 +892,28 @@ CREATE TABLE IF NOT EXISTS favorites (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS favorites_user_site_idx ON favorites(user_id, site_id);
 CREATE INDEX IF NOT EXISTS favorites_user_idx ON favorites(user_id);
+
+CREATE TABLE IF NOT EXISTS watch_entries (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  drama_key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  platform_site_id TEXT NOT NULL,
+  platform_title TEXT NOT NULL,
+  play_url TEXT NOT NULL,
+  icon TEXT,
+  episode INTEGER NOT NULL DEFAULT 0,
+  priority TEXT NOT NULL DEFAULT 'normal',
+  cadence TEXT NOT NULL DEFAULT '{"kind":"unknown"}',
+  remind INTEGER NOT NULL DEFAULT 1,
+  dismissed_on TEXT,
+  last_progress_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS watch_entries_user_key_idx ON watch_entries(user_id, drama_key);
+CREATE INDEX IF NOT EXISTS watch_entries_user_idx ON watch_entries(user_id);
 
 CREATE TABLE IF NOT EXISTS favorite_folders (
   id TEXT PRIMARY KEY,

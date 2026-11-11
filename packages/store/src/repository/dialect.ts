@@ -19,6 +19,8 @@ import type {
   SiteInput,
   UserProfileRecord,
   UserRecord,
+  WatchCadence,
+  WatchEntryRecord,
 } from "./records.ts";
 
 /** 把站点转成可索引形态：标题+描述+标签一起进语料 */
@@ -213,6 +215,63 @@ export function rowToFavorite(row: Record<string, any>): FavoriteRecord {
     note: row.note ?? null,
     // 标签（T22）：JSON 数组；坏数据按「未打标签」处理（不因一行坏 JSON 打不开列表）
     tags: parseFavoriteTags(row.tags),
+    createdAt: Number(row.created_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+    deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),
+  };
+}
+
+/**
+ * 库里的节奏 JSON → WatchCadence（读取侧）。
+ * 坏数据一律收敛成 unknown —— 节奏读不出来时最诚实的状态就是「不知道」，
+ * 绝不能因为一行坏 JSON 猜出一个更新日去提醒用户。
+ */
+export function parseWatchCadence(raw: unknown): WatchCadence {
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return { kind: "unknown" };
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { kind: "unknown" };
+    }
+  }
+  if (!parsed || typeof parsed !== "object") return { kind: "unknown" };
+  const kind = (parsed as { kind?: unknown }).kind;
+  if (kind === "daily") return { kind: "daily" };
+  if (kind === "finished") return { kind: "finished" };
+  if (kind === "weekly") {
+    const days = (parsed as { weekdays?: unknown }).weekdays;
+    if (Array.isArray(days)) {
+      const weekdays = [...new Set(days.filter((d): d is number => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6))].sort((a, b) => a - b);
+      if (weekdays.length > 0) return { kind: "weekly", weekdays };
+    }
+    return { kind: "unknown" };
+  }
+  return { kind: "unknown" };
+}
+
+/** 节奏落库前的归一（写入侧，与 parseWatchCadence 同口径，非法形状收敛成 unknown） */
+export function serializeWatchCadence(cadence: unknown): string {
+  return JSON.stringify(parseWatchCadence(cadence));
+}
+
+export function rowToWatchEntry(row: Record<string, any>): WatchEntryRecord {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    key: String(row.drama_key),
+    title: String(row.title),
+    platformSiteId: String(row.platform_site_id),
+    platformTitle: String(row.platform_title),
+    playUrl: String(row.play_url),
+    icon: row.icon ?? null,
+    episode: Math.max(0, Math.trunc(Number(row.episode ?? 0)) || 0),
+    priority: row.priority === "high" ? "high" : "normal",
+    cadence: parseWatchCadence(row.cadence),
+    remind: Number(row.remind ?? 1) !== 0,
+    dismissedOn: row.dismissed_on ?? null,
+    lastProgressAt: Number(row.last_progress_at ?? 0),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
     deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),

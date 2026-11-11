@@ -18,6 +18,7 @@
  *  - GET    /api/me/export/bookmarks.html 导出浏览器标准 Netscape 书签（HTML）
  *  - GET    /api/me/activity             我的操作记录
  *  - POST   /api/me/favorites/sync       收藏增量同步
+ *  - POST   /api/me/watchlist/sync       追剧清单增量同步（与收藏同一套协议）
  *  - POST   /api/me/merge                匿名数据合并到登录身份（幂等、事务、审计）
  *  - DELETE /api/me                      注销并清空云端个人数据
  */
@@ -1235,6 +1236,86 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         items: slice.items.map((item) => ({ ...item, site: siteMap.get(item.siteId) ?? null })),
         folders,
         truncatedNotes,
+      };
+    },
+  );
+
+  /**
+   * 追剧清单批量同步：与收藏同步同一套协议（批量 ops + 版本游标 + 墓碑），
+   * 条目自带平台快照，不需要收藏那样的站点 JOIN。
+   *
+   * 内容字段的口径与收藏 note 一致：结构字段（key / platformSiteId / episode /
+   * cadence）超限整批 400；剧名、平台名是用户内容，超长只逐条截断并计数回传，
+   * 不许让一条脏数据把整批同步永久卡死。
+   */
+  app.post(
+    "/api/me/watchlist/sync",
+    // scope 显式声明（route-policy 闸门要求新写路由不许漏写）：public = 用户域写面，
+    // 与收藏同步同级——真正的闸门是处理器里的 identityTrusted 签名身份校验，
+    // 无可信身份一律 401，「匿名可写」只是网关等级口径，不是无鉴权。
+    { config: { scope: "public", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = requestIdentityOf(req as never);
+      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      const cadenceSchema = z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("daily") }),
+        z.object({
+          kind: z.literal("weekly"),
+          weekdays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+        }),
+        z.object({ kind: z.literal("finished") }),
+        z.object({ kind: z.literal("unknown") }),
+      ]);
+      const parsed = z.object({
+        ops: z.array(z.object({
+          op: z.enum(["add", "update", "remove"]),
+          key: z.string().min(1).max(200),
+          // 内容字段结构上限放宽：超长在下方截断并计数，不整批 400（同收藏 note 口径）
+          title: z.string().max(500).optional(),
+          platformSiteId: z.string().max(64).optional(),
+          platformTitle: z.string().max(500).optional(),
+          playUrl: z.string().max(2048).optional(),
+          icon: z.string().max(2048).optional().nullable(),
+          episode: z.number().int().min(0).max(100_000).optional(),
+          priority: z.enum(["high", "normal"]).optional(),
+          cadence: cadenceSchema.optional(),
+          remind: z.boolean().optional(),
+          dismissedOn: z.string().max(10).optional().nullable(),
+          lastProgressAt: z.number().optional(),
+          createdAt: z.number().optional(),
+          at: z.number().optional(),
+        })).max(500),
+        since: z.number().optional(),
+      }).safeParse(req.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: "参数无效", detail: parsed.error.issues };
+      }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+      const TITLE_MAX = 80;
+      const PLATFORM_TITLE_MAX = 60;
+      let truncatedTitles = 0;
+      const ops = parsed.data.ops.map((op) => {
+        let next = op;
+        if (typeof next.title === "string" && next.title.length > TITLE_MAX) {
+          truncatedTitles += 1;
+          next = { ...next, title: next.title.slice(0, TITLE_MAX) };
+        }
+        if (typeof next.platformTitle === "string" && next.platformTitle.length > PLATFORM_TITLE_MAX) {
+          truncatedTitles += 1;
+          next = { ...next, platformTitle: next.platformTitle.slice(0, PLATFORM_TITLE_MAX) };
+        }
+        return next;
+      });
+      const applied = await ctx.repo.applyWatchOps(canonical, ops);
+      const slice = await ctx.repo.listWatchSince(canonical, parsed.data.since ?? 0);
+      return {
+        ok: true,
+        applied: applied.applied,
+        version: Math.max(applied.version, slice.version),
+        items: slice.items,
+        truncatedTitles,
       };
     },
   );

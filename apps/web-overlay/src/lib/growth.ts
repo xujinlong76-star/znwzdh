@@ -36,6 +36,7 @@ export type GrowthFeature =
   | 'drama_visit'
   | 'site_open'
   | 'favorite_add'
+  | 'watchlist_progress'
 
 export const FEATURE_META: Record<GrowthFeature, { title: string; desc: string; href: string }> = {
   ai_find: { title: 'AI 智能找站', desc: '在首页用一句话描述想找的网站', href: '/' },
@@ -46,6 +47,7 @@ export const FEATURE_META: Record<GrowthFeature, { title: string; desc: string; 
   drama_visit: { title: '短剧专区', desc: '免费短剧和各大平台短剧都在这', href: '/category/duanju' },
   site_open: { title: '打开站点', desc: '点开任意站点卡片去逛逛', href: '/' },
   favorite_add: { title: '收藏站点', desc: '把常用的站收进「我的收藏」', href: '/favorites' },
+  watchlist_progress: { title: '追剧记进度', desc: '在追剧清单里更新一部剧的观看进度', href: '/me/watchlist' },
 }
 
 export const FEATURE_FIRST_EVER_XP = 20

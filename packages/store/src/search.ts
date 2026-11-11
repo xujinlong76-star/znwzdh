@@ -580,6 +580,8 @@ export class SearchEngine {
     const keepModeChannels = (list: SearchCandidate[]): SearchCandidate[] =>
       wantSemanticOnly ? list.filter((c) => c.channel === "semantic") : list;
     let fallback: SearchResult["fallback"];
+    /** A3：放宽时被丢弃的分面条件，随结果回前端点名提示（见 SearchResult.relaxedFacets）。 */
+    let relaxedFacets: Record<string, string[]> | undefined;
     // 过滤集合按「一次 search」缓存，四个通道共用 —— 见 FilterCache 注释
     const filterCache: FilterCache = {};
     let { candidates, timings } = await this.runChannels(
@@ -608,6 +610,10 @@ export class SearchEngine {
         candidates = widenedKept;
         timings = widened.timings;
         fallback = "filter";
+        // 记录被丢弃的分面：前端要能点名说清是哪个条件被放宽（A3 静默放宽修复）
+        if (effectiveOpt.facets && Object.keys(effectiveOpt.facets).length > 0) {
+          relaxedFacets = effectiveOpt.facets;
+        }
       }
     }
     // 第 2 级：拼音从「前缀」放宽为「包含」、英文多词改逐词 OR。
@@ -622,6 +628,11 @@ export class SearchEngine {
     }
     // 字面回落：结果来自「丢掉推断过滤」，如实按筛选放宽上报（前端据此提示）
     if (literalFallback && candidates.length > 0 && !fallback) fallback = "filter";
+    // 字面回落丢弃的是「推断」分面（如搜「免费短剧」推断出的 pricing=free）：
+    // 同样点名上报，否则用户筛免费却看到收费站且无任何解释（A3）。
+    if (literalFallback && candidates.length > 0 && hasInferredFacets && !relaxedFacets) {
+      relaxedFacets = parsedIntent.inferredFacets;
+    }
 
     // 语义独占的严格闸门：词法通道全线无命中时，剩下的只有「最近的向量邻居」。
     // KNN 对任何输入都有输出，乱码查询的最近邻相似度也能到 0.5 上下（bge 的各向异性），
@@ -696,6 +707,7 @@ export class SearchEngine {
       offset,
       hasMore: offset + limit < hits.length,
       ...(fallback ? { fallback } : {}),
+      ...(relaxedFacets ? { relaxedFacets } : {}),
       ...(timings.skippedSemantic && !effectiveOpt.disableSemantic ? { planner: "early-exit" as const } : {}),
       channelTimings: timings,
       ...(hasInferredFacets && !literalFallback ? { inferredFacets: parsedIntent.inferredFacets } : {}),

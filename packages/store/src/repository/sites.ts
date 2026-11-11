@@ -1071,6 +1071,33 @@ export async function setSiteFacets(
   });
 }
 
+/**
+ * A3 回填专用：仅当站点在该 facet_key 下**一行都没有**时才插入一个值。
+ *
+ * 与 setSiteFacets（全量替换）的分工：setSiteFacets 是管理员编辑语义；
+ * 本函数是自动推导回填语义——推导结果可信度低于人工标注，绝不能覆盖
+ * 已有值（包括管理员把 pricing 改成确定值、或种子数据自带的分面）。
+ * 单条 INSERT ... WHERE NOT EXISTS 完成判断+写入，SQLite/PG 通用，
+ * 并发下也不会重复插（site_facets 有唯一约束兜底时更稳）。
+ */
+export async function fillSiteFacetIfAbsent(
+  repo: Repository,
+  siteId: string,
+  facetKey: string,
+  facetValue: string,
+): Promise<void> {
+  const key = facetKey.trim().toLowerCase();
+  const val = facetValue.trim().toLowerCase();
+  if (!key || !val) return;
+  await repo.run(
+    `INSERT INTO site_facets (site_id, facet_key, facet_value)
+     SELECT ?, ?, ? WHERE NOT EXISTS (
+       SELECT 1 FROM site_facets WHERE site_id = ? AND facet_key = ?
+     )`,
+    [siteId, key, val, siteId, key],
+  );
+}
+
 export async function getSiteFacets(repo: Repository, siteId: string): Promise<Record<string, string[]>> {
   const rows = await repo.raw(
     "SELECT facet_key, facet_value FROM site_facets WHERE site_id = ? ORDER BY facet_key ASC, facet_value ASC",

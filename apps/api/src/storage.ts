@@ -16,6 +16,7 @@
 import type { AppContext } from "./context.ts";
 import { getEnhancedSiteData, resolveSiteIcon, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
 import { countVideoItems, slugify } from "@navhub/store";
+import { backfillDerivedFacets, formatFacetBackfillReport } from "./facet-backfill.ts";
 import { indexSitesBatch } from "./index-site.ts";
 import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncReplacementHistorySafely, syncVideoCatalogSafely, VIDEO_REPLACEMENTS_PATH } from "./video-catalog.ts";
 
@@ -686,6 +687,20 @@ export async function writeNavigationData(
     const fresh = await ctx.repo.getSitesByIds([...pendingReindexIds]);
     const items = [...fresh.values()].map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
     await indexSitesBatch(ctx, items).catch(() => undefined);
+  }
+  // A3 分面回填：快照不带 facets（见上方注释），新导入的站点 pricing 恒为空——
+  // 在此对全库 heal 一遍：缺 pricing/platform 的按 core 推导补齐（人工核实
+  // 覆盖表 > 强信号规则 > unknown 显式未标注），已有值永不覆盖（管理员手标
+  // 优先）。必须排在标签同步之后：推导信号包含标签。失败只吞掉记日志，
+  // 与标签/向量两项 post-commit 的容错口径一致，下次写回会再次 heal。
+  try {
+    const allSites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES, {});
+    const facetReport = await backfillDerivedFacets(ctx, allSites);
+    if (facetReport.filledPricing > 0 || facetReport.filledPlatform > 0) {
+      console.info(`[storage] 分面回填：${formatFacetBackfillReport(facetReport)}`);
+    }
+  } catch (err) {
+    console.warn("[storage] 分面回填失败（不影响本次写回）:", err);
   }
   return result;
 }

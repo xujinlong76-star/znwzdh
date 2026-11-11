@@ -418,6 +418,10 @@ export class Repository {
     return sitesRepo.setSiteFacets(this, siteId, facets);
   }
 
+  async fillSiteFacetIfAbsent(siteId: string, facetKey: string, facetValue: string): Promise<void> {
+    return sitesRepo.fillSiteFacetIfAbsent(this, siteId, facetKey, facetValue);
+  }
+
   async getSiteFacets(siteId: string): Promise<Record<string, string[]>> {
     return sitesRepo.getSiteFacets(this, siteId);
   }

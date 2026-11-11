@@ -14,6 +14,7 @@ import { siteEmbeddingText } from "@navhub/ai";
 import { comparePluginVersions, resolveSiteIcon, validateAndCleanPluginManifest, canonicalJsonStringify, ECOSYSTEM_MAP, ecosystemUrlKey, type SiteRelation } from "@navhub/core";
 import { loadConfig } from "./config.ts";
 import { createContext, type AppContext } from "./context.ts";
+import { backfillDerivedFacets, formatFacetBackfillReport } from "./facet-backfill.ts";
 import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
 import { seedPluginDefs } from "./seed-plugins.ts";
 import { DEFAULT_SITE_CONFIG, writeSiteConfig } from "./storage.ts";
@@ -416,6 +417,17 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   }
   if (ecosystem.danglingTargets.length > 0) {
     console.warn(`[seed] 平替雷达有 ${ecosystem.danglingTargets.length} 条目标站不在库里（面板显示但点不进站内）：${ecosystem.danglingTargets.join("、")}`);
+  }
+
+  // A3 分面回填：种子落库后给缺失 pricing/platform 的站点补推导值，让冷启动
+  // 的新库「免费/收费」筛选立刻有数据（此前分面数据近乎为空、筛选形同虚设）。
+  // 只填空缺、永不覆盖种子自带或人工标注；失败只警告，不拖垮种子主流程。
+  try {
+    const allSites = await ctx.repo.listAllSites(undefined, {});
+    const facetReport = await backfillDerivedFacets(ctx, allSites);
+    console.info(`[seed] 分面回填完成：${formatFacetBackfillReport(facetReport)}`);
+  } catch (err) {
+    console.warn("[seed] 分面回填失败（不影响种子主流程）:", err);
   }
 
   await ctx.close();

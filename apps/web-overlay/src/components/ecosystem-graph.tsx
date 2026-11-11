@@ -164,6 +164,12 @@ export function EcosystemGraph() {
    * 它返回完整 19 个一级类目 + 全部子分类站点。若仍然拿不到数据，
    * 用 `dataSource='sample'` 在页面上打出显式「示例数据」角标，
    * 不再让访客把内置演示集误认成真实图谱。
+   *
+   * 口径再修正（2026-11-11，DEV_BACKLOG A5）：此前 live 分支把抽样到的真实
+   * 站点与 DEFAULT_NODES/DEFAULT_EDGES 恒定混排（真实站里与预设同 URL 的
+   * 还会被预设顶替），标着 live 却分不清哪些是真数据。现改为：拿到真实
+   * 数据时图中只有真实节点与真实推导边，预设集仅在拿不到数据时作示例
+   * 兜底（dataSource='sample'，角标明示）。
    */
   useEffect(() => {
     let cancelled = false
@@ -232,7 +238,8 @@ export function EcosystemGraph() {
           }
         } catch { /* 参数解析失败不影响图谱主体 */ }
 
-        const existingUrls = new Set(DEFAULT_NODES.map((n) => n.url.replace(/\/$/, '').toLowerCase()))
+        // live 口径：只按真实站点自身去重，不再拿预设集顶替同 URL 的真实站
+        const seenUrls = new Set<string>()
         const dynamicNodes: GraphNode[] = []
         const rawTagMap = new Map<string, string[]>()
 
@@ -243,8 +250,8 @@ export function EcosystemGraph() {
 
         for (const s of sampled) {
           const normUrl = s.href.replace(/\/$/, '').toLowerCase()
-          if (existingUrls.has(normUrl)) continue
-          existingUrls.add(normUrl)
+          if (seenUrls.has(normUrl)) continue
+          seenUrls.add(normUrl)
 
           const catStr = `${s.categoryId || ''} ${(s.tags || []).join(' ')}`.toLowerCase()
           const cat: GraphNode['category'] = catStr.includes('ai') || catStr.includes('模型')
@@ -273,14 +280,13 @@ export function EcosystemGraph() {
           return
         }
 
-        const allCombined = [...DEFAULT_NODES, ...dynamicNodes]
         const width = 900
         const height = 600
         const cx = width / 2
         const cy = height / 2
 
-        const positioned = allCombined.map((n, i) => {
-          const angle = (i / allCombined.length) * 2 * Math.PI
+        const positioned = dynamicNodes.map((n, i) => {
+          const angle = (i / dynamicNodes.length) * 2 * Math.PI
           const r = 170 + ((i % 4) * 65)
           return {
             ...n,
@@ -291,15 +297,11 @@ export function EcosystemGraph() {
           }
         })
 
-        // 基于共享标签与同分类自动推导动态关联边
+        // 只在真实节点之间按共享标签推导关联边，不再连向预设节点
         const extraEdges: GraphEdge[] = []
         for (let i = 0; i < dynamicNodes.length; i++) {
           const a = dynamicNodes[i]!
           const tagsA = rawTagMap.get(a.id) || []
-          const matchPreset = DEFAULT_NODES.find((p) => p.category === a.category)
-          if (matchPreset) {
-            extraEdges.push({ source: a.id, target: matchPreset.id, type: 'ecosystem', label: '同域生态' })
-          }
           for (let j = i + 1; j < dynamicNodes.length; j++) {
             const b = dynamicNodes[j]!
             const tagsB = rawTagMap.get(b.id) || []
@@ -311,7 +313,7 @@ export function EcosystemGraph() {
         }
 
         setNodes(positioned)
-        setEdges([...DEFAULT_EDGES, ...extraEdges])
+        setEdges(extraEdges)
         setLiveCount(dynamicNodes.length)
         setDataSource('live')
       })
@@ -475,9 +477,9 @@ export function EcosystemGraph() {
                   <Badge
                     variant="outline"
                     className="text-xs font-mono text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                    title={`图中节点 = ${liveCount} 个站内真实站点（均匀抽样，非全量 298 站）+ ${DEFAULT_NODES.length} 个预设示例节点；连线含按同分类/共享标签推导的关系，不是人工录入的生态关系`}
+                    title={`图中节点 = ${liveCount} 个站内真实站点（均匀抽样，非全量 298 站）；连线为按共享标签推导的关系，不是人工录入的生态关系`}
                   >
-                    实时抽样 {liveCount} 站 + 预设示例 {DEFAULT_NODES.length} 节点（非全量）
+                    实时抽样 {liveCount} 站（真实站点，非全量）
                   </Badge>
                 )}
                 {dataSource === 'sample' && (

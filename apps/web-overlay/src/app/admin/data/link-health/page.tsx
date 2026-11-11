@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { hubGet, hubSend } from '@/lib/navhub-api'
+import { safeHref } from '@/lib/safe-url'
 
 interface LinkHealthItem {
   siteId: string
@@ -281,7 +282,7 @@ export default function LinkHealthPage() {
                       <td className="max-w-[260px] py-2.5 pr-3">
                         <div className="truncate font-medium">{item.title}</div>
                         <a
-                          href={item.url}
+                          href={safeHref(item.url)}
                           target="_blank"
                           rel="noreferrer"
                           className="block truncate text-xs text-muted-foreground hover:underline"

@@ -321,6 +321,21 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
       "过不了就落到无链接的 <span> 分支，所以 href 这个位置不存在「外部数据直接进 href」。",
     evidence: ["const href = safeHref(citation.url, '')", 'rel="noopener noreferrer"'],
   },
+  // ---- 本地写死的站内路径常量（功能图鉴与影院横幅，取值全是站内路径）----
+  {
+    file: "src/components/user-center/growth-panel.tsx",
+    kind: "href",
+    expr: "meta.href",
+    why: "功能图鉴的「去体验」链接来自 lib/growth.ts 的 FEATURE_META 常量表，href 取值全是写死的站内路径（/、/search、/favorites 等），不是外部数据",
+    evidence: ["const meta = FEATURE_META[id]", "href={meta.href}"],
+  },
+  {
+    file: "src/components/home-drama-cinema.tsx",
+    kind: "href",
+    expr: "link.href",
+    why: "横幅链接来自同文件 BANNER_LINKS 常量表，href 取值全是写死的 /category/* 站内路径，不是外部数据（同文件的 s.href 是接口返回的目录数据，不在此列，须过 safeHref）",
+    evidence: ["const link = BANNER_LINKS[b.key]", "href: '/category/ai-tools'"],
+  },
 ];
 
 describe("渲染期 URL 卫生：外部可控地址一律过安全闸", () => {

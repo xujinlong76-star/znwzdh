@@ -113,7 +113,7 @@ describe("点击即操作的元素必须是真按钮", () => {
   });
 
   it("视频弹窗的读屏描述是中文（原来是 Playing video:）", () => {
-    const text = overlaySource("src/components/video-card.tsx");
+    const text = overlaySource("src/components/video-player-modal.tsx");
     expect(text).toContain("正在播放：");
     expect(text).not.toContain("Playing video:");
   });

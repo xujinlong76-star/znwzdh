@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ChevronRight, Clapperboard, Flame } from 'lucide-react'
 import { collectDramaSites, type DramaSite } from '@/lib/drama-sites'
+import { safeHref } from '@/lib/safe-url'
 
 interface MediaEntry {
   key: string
@@ -124,7 +125,7 @@ export function HomeDramaCinema() {
           {dramaSites.map((s) => (
             <a
               key={s.id}
-              href={s.href}
+              href={safeHref(s.href)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex w-36 shrink-0 flex-col justify-between rounded-2xl border border-white/10 bg-white/5 p-3 transition-colors hover:bg-white/10 sm:w-44"
@@ -148,7 +149,7 @@ export function HomeDramaCinema() {
             <ol className="mt-3 space-y-2">
               {chart.map((s, i) => (
                 <li key={s.id}>
-                  <a href={s.href} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-2.5 text-sm">
+                  <a href={safeHref(s.href)} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-2.5 text-sm">
                     <span className={`w-5 shrink-0 text-center font-mono text-base font-bold ${i < 3 ? 'text-rose-500' : 'text-zinc-500'}`}>{i + 1}</span>
                     <span className="min-w-0 flex-1 truncate group-hover:underline">{s.title}</span>
                   </a>

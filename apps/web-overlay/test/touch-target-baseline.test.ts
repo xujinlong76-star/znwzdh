@@ -87,7 +87,7 @@ describe("无障碍细节（footer 分隔符与移动表单字号）", () => {
     const bare = src.match(/<span(?![^>]*aria-hidden)[^>]*>·<\/span>/g);
     expect(bare, "存在未 aria-hidden 的「·」分隔符（读屏会念成无意义字符）").toBeNull();
     const hidden = src.split('aria-hidden="true">·</span>').length - 1;
-    expect(hidden, "13 处分隔符都应带 aria-hidden").toBe(13);
+    expect(hidden, "14 处分隔符都应带 aria-hidden").toBe(14);
   });
 
   it("globals.css 有移动端表单字号 ≥16px 规则（防 iOS 聚焦缩放）", () => {

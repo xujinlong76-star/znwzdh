@@ -45,6 +45,8 @@ services:
       - "${NAVHUB_PORT:-8787}:8787"
     volumes:
       - navhub-data:/data
+      # 密钥分离（A14）：session secret 落独立卷，不与数据库同卷
+      - navhub-secrets:/secrets
     environment:
       NAVHUB_MODE: lite
       NAVHUB_SQLITE_PATH: /data/navhub.db
@@ -82,9 +84,11 @@ services:
       # 显式关掉整个闸门才允许生产环境六档全 0（config.ts 会为此拒绝启动）
       NAVHUB_LLM_QUOTA_DISABLED: ${NAVHUB_LLM_QUOTA_DISABLED:-}
       # 不设公开可查的默认值（升级改造方案 P0-1）：未显式提供时由
-      # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
-      # api 与 web 共享同一份；显式设置则优先生效。
+      # entrypoint.sh 生成随机值并持久化到密钥文件，api 与 web 共享同一份；
+      # 显式设置则优先生效。密钥文件默认 /data/.session-secret，这里指向
+      # 独立的 navhub-secrets 卷（A14 密钥分离：备份库外流不连带丢密钥）。
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
+      NAVHUB_SESSION_SECRET_FILE: ${NAVHUB_SESSION_SECRET_FILE:-/secrets/.session-secret}
       # X-Forwarded-For 信任度。取值：0 不读（默认）/ 1 信任整条链 / 可信代理网段列表。
       # 默认关：本文件把 8787 直接 publish 到宿主机，前面没有必然存在的反向代理，
       # 开启后客户端每个请求换一个伪造 XFF 就能换一个限流桶（300/min、投稿 5/hour 全部失效）。
@@ -205,12 +209,14 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
-    # 与 api 共享数据卷：读取 api 入口生成的 /data/.session-secret，
-    # 保证两容器 session 签名密钥一致且重启不失效（方案 P0-1）。
-    # 只读挂载：web 入口只 cat 这个文件（entrypoint-web.sh 里没有任何写操作），
-    # 给它写权限等于让前端容器能改中枢的 navhub.db。
+    # 与 api 共享 session secret：api 入口把它生成到密钥文件，web 只读复用，
+    # 保证两容器 session 签名密钥一致且重启不失效（方案 P0-1）。密钥文件在
+    # 独立的 navhub-secrets 卷（A14 密钥分离）；/data:ro 保留给其它只读用途。
+    # 只读挂载：web 入口只 cat 密钥文件（entrypoint-web.sh 里没有任何写操作），
+    # 给它写权限等于让前端容器能改中枢的密钥或数据库。
     volumes:
       - navhub-data:/data:ro
+      - navhub-secrets:/secrets:ro
     environment:
       STORAGE_ADAPTER: http
       # 指向哪个中枢必须可覆盖：--profile standard 跑的是 api-standard，
@@ -230,6 +236,8 @@ services:
       # 代理上游超时（毫秒）：卡死的中枢不能把前端请求无限期挂住；SSE 长连接不受影响
       NAVHUB_HUB_TIMEOUT_MS: ${NAVHUB_HUB_TIMEOUT_MS:-30000}
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
+      # 密钥文件路径与 api 保持一致（A14）：默认 /secrets/.session-secret（独立卷）
+      NAVHUB_SESSION_SECRET_FILE: ${NAVHUB_SESSION_SECRET_FILE:-/secrets/.session-secret}
       # **必须与 api 服务的同名变量完全一致**：Web 的 /api/hub/* 代理用它给转发的
       # userId/anonId 计算 HMAC 签名，中枢用同一把密钥校验。两边不同 = 站点里所有
       # 带身份的请求 401；只有中枢有、代理没有 = 同样 401（代理不会补签名头）。
@@ -299,6 +307,8 @@ services:
       - "${NAVHUB_STANDARD_PORT:-8788}:8787"
     volumes:
       - navhub-data:/data
+      # 密钥分离（A14）：与 lite api 同口径，secret 落独立卷
+      - navhub-secrets:/secrets
     environment:
       NAVHUB_MODE: standard
       NAVHUB_DATABASE_URL: postgres://navhub:${POSTGRES_PASSWORD:-navhub}@postgres:5432/navhub
@@ -328,9 +338,10 @@ services:
       NAVHUB_LLM_QUOTA_TTL_MS: ${NAVHUB_LLM_QUOTA_TTL_MS:-}
       NAVHUB_LLM_QUOTA_DISABLED: ${NAVHUB_LLM_QUOTA_DISABLED:-}
       # 不设公开可查的默认值（升级改造方案 P0-1）：未显式提供时由
-      # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
-      # api 与 web 共享同一份；显式设置则优先生效。
+      # entrypoint.sh 生成随机值并持久化到密钥文件，api 与 web 共享同一份；
+      # 显式设置则优先生效。密钥文件指向独立 secrets 卷（A14，见 api 服务注释）。
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
+      NAVHUB_SESSION_SECRET_FILE: ${NAVHUB_SESSION_SECRET_FILE:-/secrets/.session-secret}
       # 同 api：8787 直接 publish，默认可伪造 XFF 不参与限流分桶（详见 api 服务注释）
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-0}
       # 以下五项与 api 服务保持同一组透传（语义见 api 服务里的注释）。
@@ -409,6 +420,45 @@ services:
       NAVHUB_EMBEDDING_CACHE: /data/models
       NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}
 
+  # 自动备份旁路（A14）：定时对 SQLite 整库在线热备（scripts/backup.mjs：
+  # integrity_check + sha256 清单 + 保留 35 份轮换），备份落独立卷
+  # navhub-backups。opt-in：`docker compose --profile backup up -d`。
+  # 只对 lite（SQLite）模式有意义；standard（Postgres）走 pg_dump 另行安排，
+  # 不要把这个服务和 standard 一起开——它备的是 /data/navhub.db。
+  backup:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-deb.debian.org}
+    image: navhub/api:0.1.0
+    container_name: navhub-backup
+    profiles: ["backup"]
+    restart: unless-stopped
+    depends_on:
+      - api
+    # 镜像自带 HEALTHCHECK 打的是中枢 :8787/api/ready，本容器不跑中枢，
+    # 沿用会永远 unhealthy（与 mcp 服务同坑），故禁用。
+    healthcheck:
+      disable: true
+    entrypoint: ["sh", "/app/scripts/backup-loop.sh"]
+    volumes:
+      # 源库所在卷：backup() 以只读方式打开源库，但 WAL 模式要读 -shm，
+      # 故不做 :ro 挂载；脚本本身从不写主库文件。
+      - navhub-data:/data
+      - navhub-backups:/backups
+    environment:
+      NAVHUB_SQLITE_PATH: /data/navhub.db
+      NAVHUB_BACKUP_DIR: /backups
+      NAVHUB_BACKUP_KEEP: ${NAVHUB_BACKUP_KEEP:-35}
+      NAVHUB_BACKUP_INTERVAL_SECONDS: ${NAVHUB_BACKUP_INTERVAL_SECONDS:-86400}
+      NAVHUB_BACKUP_INITIAL_DELAY_SECONDS: ${NAVHUB_BACKUP_INITIAL_DELAY_SECONDS:-120}
+
 volumes:
   navhub-data:
+  # session secret 专用卷（A14 密钥分离）：只装密钥文件，与数据库分开备份/轮换
+  navhub-secrets:
+  # 自动备份输出卷（backup 服务写、恢复时读）：与数据卷分开，防同卷同毁
+  navhub-backups:
   navhub-pg:

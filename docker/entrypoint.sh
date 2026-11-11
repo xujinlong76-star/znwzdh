@@ -8,22 +8,27 @@
 #   也让 `docker run` 与 compose 行为一致。
 set -e
 
-# ---- Session Secret 自举（升级改造方案 P0-1）----
+# ---- Session Secret 自举（升级改造方案 P0-1；密钥分离见 A14）----
 # 生产环境拒绝公开可查的默认密钥：Web 侧 auth.config.ts 无 secret 直接抛错，
 # API 侧 config.ts 拒绝已知占位值。未显式提供 NAVHUB_SESSION_SECRET 时：
-#   1. 复用 /data/.session-secret（卷内持久，容器重启不失效）；
+#   1. 复用密钥文件（卷内持久，容器重启不失效）；
 #   2. 首次启动生成 48 字符随机值落盘，api 与 web 两个容器共享同一份
 #      （web 入口读同一路径，见 entrypoint-web.sh）。
-# /data 不存在（未挂卷的裸跑）时跳过——此时生产无 secret 会由应用层
-# fail-closed 拒绝启动，正是预期行为。
-if [ -z "$NAVHUB_SESSION_SECRET" ] && [ -d /data ]; then
-  if [ -f /data/.session-secret ]; then
-    NAVHUB_SESSION_SECRET="$(cat /data/.session-secret)"
+# 密钥文件路径由 NAVHUB_SESSION_SECRET_FILE 决定（默认 /data/.session-secret
+# 与历史行为一致）。compose 部署把它指向独立的 navhub-secrets 卷
+# （/secrets/.session-secret）：密钥不再与数据库同卷——备份数据库外流时
+# 不会连 session 签名密钥一起丢，轮换/销毁密钥也不必动数据卷。
+# 密钥文件所在目录不存在（未挂卷的裸跑）时跳过——此时生产无 secret 会由
+# 应用层 fail-closed 拒绝启动，正是预期行为。
+SECRET_FILE="${NAVHUB_SESSION_SECRET_FILE:-/data/.session-secret}"
+if [ -z "$NAVHUB_SESSION_SECRET" ] && [ -d "$(dirname "$SECRET_FILE")" ]; then
+  if [ -f "$SECRET_FILE" ]; then
+    NAVHUB_SESSION_SECRET="$(cat "$SECRET_FILE")"
   else
     NAVHUB_SESSION_SECRET="$(node -e "process.stdout.write(require('crypto').randomBytes(24).toString('hex'))")"
-    printf '%s' "$NAVHUB_SESSION_SECRET" > /data/.session-secret
-    chmod 600 /data/.session-secret 2>/dev/null || true
-    echo "[navhub] 已生成随机 NAVHUB_SESSION_SECRET 并持久化到 /data/.session-secret（重启不失效；显式设置环境变量可覆盖）"
+    printf '%s' "$NAVHUB_SESSION_SECRET" > "$SECRET_FILE"
+    chmod 600 "$SECRET_FILE" 2>/dev/null || true
+    echo "[navhub] 已生成随机 NAVHUB_SESSION_SECRET 并持久化到 $SECRET_FILE（重启不失效；显式设置环境变量可覆盖）"
   fi
   export NAVHUB_SESSION_SECRET
 fi

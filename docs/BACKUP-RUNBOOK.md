@@ -24,14 +24,43 @@ node scripts/backup.mjs --db ./data/navhub.db --out ./data/backups --no-rotate
 - 自动删除备份的 `-wal` / `-shm`，保证每个 `.db` 是自包含单文件。
 - 轮换只匹配 `navhub-YYYY-MM-DD_HH-mm-ss.db`，不会误删其他文件。
 
-### 定时任务（示例）
+### 定时任务（两种正规形态，二选一）
+
+**形态 A：compose 备份旁路（推荐，A14 落地）**——跟着部署一起走，不用登服务器配 cron：
+
+```bash
+docker compose --profile backup up -d   # 多起一个 navhub-backup 容器
+```
+
+它用 api 镜像里的 `scripts/backup-loop.sh` 定时执行本节的 backup.mjs：默认首次
+延后 120 秒（等中枢建库/迁移完）、周期 24 小时、保留 35 份，备份写独立卷
+`navhub-backups`（与数据卷分开，防同卷同毁）。调参：`NAVHUB_BACKUP_KEEP` /
+`NAVHUB_BACKUP_INTERVAL_SECONDS` / `NAVHUB_BACKUP_INITIAL_DELAY_SECONDS`。
+单次失败只打日志、下一周期重试（不 crash-loop）；**只对 lite（SQLite）模式
+有意义**，standard（Postgres）不要开这个 profile。
+
+**形态 B：宿主机 cron**（不用 compose 备份服务时）：
 
 ```cron
 # 每天 03:17 备份，保留 35 份（覆盖 30 天回收站窗口）
 17 3 * * * cd /srv/navhub && /usr/bin/node scripts/backup.mjs --keep 35 >> /var/log/navhub-backup.log 2>&1
 ```
 
-建议再加一条「备份文件数量/最新文件时间」告警，避免 cron 静默失败。
+两种形态都要再加一条「备份文件数量/最新文件时间」告警，避免静默失败
+（见 §3 待演练）。
+
+### 异地副本（必须手工接，代码里没有替你传）
+
+本地/同卷备份只防误删与库损坏，**不防整机磁盘丢失**。部署后请把
+`navhub-backups` 卷（或宿主机备份目录）再同步一份到机器之外，任选其一：
+
+1. 对象存储：`rclone sync /srv/navhub/backups remote:navhub-backups --include "navhub-*.db*"`（rclone 自行安装配置，凭据不进仓库）；
+2. 另一台机器：`rsync -az /srv/navhub/backups/ user@backup-host:/srv/navhub-backups/`，配 ssh key 与 cron；
+3. 至少做到：定期把最新一份 `.db` + `.sha256` 下载到本地电脑留存。
+
+同步频率与备份周期对齐（每天一份即可）；**同步后抽查一次**：在目标侧跑
+`node scripts/db-backup-verify.mjs --file <那份.db> --require-manifest` 能通过，
+才算异地副本成立（RUNBOOK §3 待演练项）。
 
 ## 2. 恢复
 
@@ -179,6 +208,20 @@ GET  /api/backup/restore/status/:id   → { status, progress:{done,total}, error
 
 ## 3. 演练记录
 
+### 2026-11-11（本地隔离环境，全量真实数据，A14）
+
+- 场景：冷启动基线导入出的完整库（298 站 / 6007 条视频 / 245 类目，25.58 MB），
+  API 在线运行中（WAL 模式）直接热备；其间库里含一条经 API 改名的运营数据。
+- 命令：`node scripts/backup.mjs --db <full.db> --out <backups> --keep 35`
+  → 完成 25.58 MB、耗时约 2 秒、`integrity_check=ok`、`.sha256` 清单生成；
+  `node scripts/db-backup-verify.mjs --file <备份> --require-manifest --max-age-hours 0`
+  → 通过（清单一致、fk 违例 0、必需表 7/7）。
+- 恢复：按 §2 步骤把备份落成新库文件并启动中枢 → 站点 298、视频 6007、
+  视频影子表 6007、基线标记可读、运营改名的标题原样保留。**全量恢复流程打通**。
+- 同日另验：compose 备份旁路与密钥分离目前只做到配置与脚本层（本机无 Docker
+  守护进程，未做容器级实跑）——上线后请在服务器上 `docker compose --profile backup up -d`
+  并看 `docker logs navhub-backup` 出现首份备份，再把这一项勾掉。
+
 ### 2026-10-20（本地，临时库）
 
 - 场景：WAL 模式、写入 50 行后**不关闭连接**（最新提交仍在 WAL，模拟在线服务）。
@@ -191,10 +234,37 @@ GET  /api/backup/restore/status/:id   → { status, progress:{done,total}, error
 
 ### 待演练（需要预发/生产环境）
 
-- [ ] 真实数据量下的备份耗时与磁盘占用
-- [ ] 完整恢复流程（停服 → 替换 → 启动 → 核心接口验证）
-- [ ] 备份文件异地/对象存储传输后的可恢复性
-- [ ] cron 失败告警
+- [x] 真实数据量下的备份耗时与磁盘占用（2026-11-11 全量库演练：25.58 MB、约 2 秒/份；35 份 ≈ 0.9 GB）
+- [x] 完整恢复流程（停服 → 替换 → 启动 → 核心接口验证）（2026-11-11 本地隔离环境全量库打通；生产首恢仍建议按 §2 逐步留痕）
+- [ ] 备份文件异地/对象存储传输后的可恢复性（§1 异地副本步骤，部署后在目标侧跑 verify 确认）
+- [ ] cron / 备份旁路失败告警（建议：监控 navhub-backups 卷内最新文件 mtime，超过 48 小时无新备份即告警）
+
+## 3b. 密钥与凭据保管（A14）
+
+**Session secret 与数据库分离**（2026-11-11 起）：
+
+- 机制：`NAVHUB_SESSION_SECRET_FILE` 指定密钥文件路径。未显式设置
+  `NAVHUB_SESSION_SECRET` 时，api 入口在该文件不存在时生成随机值落盘，
+  web 入口读同一文件，两边签名密钥一致。
+- compose 部署默认 `/secrets/.session-secret`（独立卷 `navhub-secrets`）：
+  数据库备份（navhub-backups 卷）外流时不会连带 session 签名密钥；
+  销毁/轮换密钥只需处理 secrets 卷，不必动数据卷。
+- 从老部署升级：老密钥在 `/data/.session-secret`。升级后入口只看新路径，
+  首次启动会在 secrets 卷生成**新**密钥——效果等同一次密钥轮换：已有登录
+  session 全部失效（用户重新登录即可），数据不受影响。若想保住 session，
+  升级前先把老文件拷进新卷：`docker run --rm -v navhub-data:/data -v navhub-secrets:/secrets alpine cp /data/.session-secret /secrets/.session-secret`（卷名以实际部署为准）。
+- 分开保管口令：部署用的 `.env`（含 ADMIN_TOKEN、LLM 密钥）不要与数据库
+  备份放在同一处；备份外传时只传 `.db` + `.sha256`，不传 `.env`。
+
+**管理员令牌（NAVHUB_ADMIN_TOKEN）遗失恢复**：
+
+1. 它就是最高凭据本身，没有「找回」一说——恢复 = 换新：在服务器部署目录的
+   `.env` 里把 `NAVHUB_ADMIN_TOKEN` 改成新的 ≥32 字符随机串；
+2. 重启 api（`docker compose up -d api`），旧令牌立即失效、新令牌生效，
+   **不需要动数据库**，库内数据与用户不受影响；
+3. 注意区分：`/admin/tokens` 里管理的是库内签发的 API Token（校验走库内
+   哈希，不依赖 ADMIN_TOKEN 明文），换 ADMIN_TOKEN 不会让它们失效；
+   部署私密 env 文件（部署方自备的那份）里若存了旧令牌，记得同步更新。
 
 ## 4. 退出码
 

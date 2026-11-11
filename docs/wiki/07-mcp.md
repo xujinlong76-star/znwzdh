@@ -1,6 +1,6 @@
-# 07 · packages/mcp —— MCP Server
+# 07 · MCP Server —— packages/mcp（库）+ apps/mcp（可执行）
 
-> 包名 `@navhub/mcp`，bin `navhub-mcp`。让 AI Agent（Claude Desktop / Cursor 等）通过标准 MCP 协议**读写导航数据**。
+> 库包 `packages/mcp`（包名 `@navhub/mcp`，**无 bin**，提供工具定义、实现与 Server 工厂）；可执行入口在 `apps/mcp`（包名 `@navhub/mcp-app`，bin `navhub-mcp` → `./src/stdio.ts`）。让 AI Agent（Claude Desktop / Cursor 等）通过标准 MCP 协议**读写导航数据**。
 > 两种传输：**stdio**（本地）与 **HTTP**（远程）。
 > 核心安全模型对齐 MCP 官方 Security Best Practices——**这些约束不是「文档建议」，而是写在代码里、有测试覆盖的硬边界**。
 

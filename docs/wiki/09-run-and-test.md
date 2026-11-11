@@ -20,7 +20,7 @@ cp .env.example .env
 pnpm seed
 
 # 2) 启动中枢 → http://localhost:8787
-pnpm --filter @navhub/api start
+pnpm --filter @navhub/api start:ts
 ```
 
 ### 2.1 根 package.json 脚本
@@ -30,7 +30,7 @@ pnpm --filter @navhub/api start
 | `pnpm dev` | `node apps/api/src/main.ts` | 中枢开发模式（以仓库根为 CWD，与 dev-all/Docker 同一套相对路径口径） |
 | `pnpm dev:web` | `node scripts/run.mjs --filter navsphere dev` | 前端（:3000） |
 | `pnpm build` | `pnpm -r --filter "@navhub/*" build` | 全部包构建 |
-| `pnpm test` | `vitest run` | 711 通过 / 11 跳过（42 个测试文件；其中 PG 跨方言 12 项未配 `NAVHUB_TEST_DATABASE_URL` 时 skip） |
+| `pnpm test` | `vitest run` | 通过 / 跳过数随代码演进变化，以实测输出为准（勿再引用固定数字）；测试文件由根 `vitest.config.ts` 的 include 收集（2026-11-11 实测：全新检出 416 个，`pnpm vendor:web` 生成 apps/web/test 镜像后 710 个）；其中 PG 跨方言套件 35 项未配 `NAVHUB_TEST_DATABASE_URL` 时 skip |
 | `pnpm test:watch` | `vitest` | 监听模式 |
 | `pnpm typecheck` | `pnpm -r exec tsc --noEmit` | 全仓类型检查 |
 | `pnpm seed` | `node apps/api/src/seed-main.ts` | 播种（必须根目录 CWD；子包脚本 `pnpm --filter @navhub/api seed` 会写错库） |
@@ -57,7 +57,7 @@ pnpm --filter @navhub/api start
 
 ```bash
 # 终端 1：中枢
-pnpm --filter @navhub/api start        # :8787
+pnpm --filter @navhub/api start:ts     # :8787（直接跑 TS 源码；`start` 跑 dist/main.mjs，需先 `pnpm --filter @navhub/api bundle` 生成）
 
 # 终端 2：前端
 pnpm dev:web                           # :3000
@@ -219,7 +219,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 ### 6.1 运行
 
 ```bash
-pnpm test          # 全部 653 个测试
+pnpm test          # 全部测试（用例数以实测输出为准）
 pnpm test:watch    # 监听
 pnpm test:pg       # PostgreSQL 手工验收（scripts/pg-check.mts，需先起 postgres）
 ```
@@ -285,7 +285,7 @@ node --experimental-strip-types scripts/pg-check.mts     # 或 pnpm test:pg
 #    必须显式给 NAVHUB_SQLITE_PATH；脚本会拒绝共享开发库 data/navhub.db
 NAVHUB_SQLITE_PATH=./data/loadtest.db node scripts/seed-loadtest.mts --sites 10000 --fresh
 
-# 2) 用隔离端口起 API（不要去动 8787 / 3200 上的并行开发栈）
+# 2) 用隔离端口起 API（8799 为示例临时端口，可换任意空闲端口；不要去动 8787 / 3200 上的并行开发栈）
 NAVHUB_SQLITE_PATH=./data/loadtest.db NAVHUB_PORT=8799 node apps/api/src/main.ts &
 
 # 3) 压测；给阈值时超限退出码 1，可直接接夜间任务
@@ -410,7 +410,7 @@ cp data/backups/navhub-2026-10-16_03-00-00.db data/navhub.db
 # 3. 清掉可能残留的 WAL 附属文件（旧 WAL 与新主库不匹配会损坏数据）
 rm -f data/navhub.db-wal data/navhub.db-shm
 # 4. 启动服务并验证
-pnpm --filter @navhub/api start && curl http://localhost:8787/api/health
+pnpm --filter @navhub/api start:ts && curl http://localhost:8787/api/health
 ```
 
 `standard` 模式（PostgreSQL）的备份不适用本脚本，请使用 `pg_dump`。

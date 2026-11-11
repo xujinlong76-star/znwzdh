@@ -8,7 +8,7 @@
 | 文件 | 行数 | 职责 |
 | --- | --- | --- |
 | [index.ts](../../packages/store/src/index.ts) | 8 | 桶导出 |
-| [schema.ts](../../packages/store/src/schema.ts) | 283 | **19 张表**的 Drizzle 定义（双驱动共享） |
+| [schema.ts](../../packages/store/src/schema.ts) | 766 | **46 张表**的 Drizzle 定义（双驱动共享） |
 | [driver.ts](../../packages/store/src/driver.ts) | 436 | `Db` 接口 + 手写幂等 DDL（sqlite/pg 两份）+ `openDb()` |
 | [migrate.ts](../../packages/store/src/migrate.ts) | ~90 | **列级增量迁移**（幂等补列） |
 | [repository.ts](../../packages/store/src/repository.ts) | 1121 | **`Repository` 类**：全部 CRUD + 标签/收藏/画像/任务/审计 |
@@ -22,7 +22,7 @@
 
 测试：`test/store.test.ts`（向量双实现一致性 + 真实 SQLite 集成 + 分类管理/收藏/画像/任务/迁移）、`test/dialect.test.ts`（方言差异）。
 
-## 2. 数据库 schema（19 张表）
+## 2. 数据库 schema（46 张表）
 
 **设计取舍**：只使用 `integer / real / text / blob`，**不引入方言特定类型**。向量与全文索引由适配器层用虚拟表/扩展对象实现，不放进主 schema。
 

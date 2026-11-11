@@ -39,7 +39,7 @@ curl -fsS http://127.0.0.1:8787/api/health
 curl -fsS http://127.0.0.1:8787/api/metrics | head
 ```
 
-发布前必跑（与 CI 同款）：`pnpm verify`（overlay + 扩展 + typecheck + 711 单测），
+发布前必跑（与 CI 同款）：`pnpm verify`（overlay + 扩展 + typecheck + `pnpm test` 单测），
 涉及前端再跑 `pnpm verify:all`（含 Playwright 与 lint）。
 
 ### 2.2 回滚
@@ -65,7 +65,7 @@ curl -fsS http://127.0.0.1:8787/api/health
 | 上游 ref 一致 | `node scripts/check-upstream-ref.mjs` | vendor / Dockerfile / UPSTREAM.md 三处声明不一致 |
 | 扩展规范 | `node scripts/check-extensions.mjs` | Chrome / Raycast 扩展产物不合规 |
 | 类型 | `pnpm typecheck` | 包层类型错误 |
-| 单测 | `pnpm test` | 711 通过 / 11 跳过（PG 套件未配置时跳过） |
+| 单测 | `pnpm test` | 通过 / 跳过数以实测输出为准（PG 跨方言套件 35 项未配置时跳过） |
 | 前端 lint | `pnpm lint` | 0 error（warning 不卡门禁，当前 269 条） |
 | 镜像可构建 | `docker build -f docker/Dockerfile.{api,web}` | CI 的 docker-smoke job 同款 |
 

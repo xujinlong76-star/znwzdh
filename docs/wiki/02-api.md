@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | [main.ts](../../apps/api/src/main.ts) | 46 | **服务入口**：装配 config → context → server → JobRunner → listen + 优雅关闭 + 启动横幅 |
 | [auth.ts](../../apps/api/src/auth.ts) | ~110 | **REST 鉴权**：Bearer token 解析、sha256 哈希、scope 校验（admin ⊇ write ⊇ read）、timingSafeEqual |
-| [server.ts](../../apps/api/src/server.ts) | ~285 | **装配与横切关注点**（CORS / 限流 / bodyLimit / trustProxy / 指标 / 错误兜底 / OpenAPI 收集 / 缓存 / 鉴权）；业务路由按域拆至 [routes/](../../apps/api/src/routes) 24 个插件，共 **85 条 REST 路由** |
+| [server.ts](../../apps/api/src/server.ts) | 759 | **装配与横切关注点**（CORS / 限流 / bodyLimit / trustProxy / 指标 / 错误兜底 / OpenAPI 收集 / 缓存 / 鉴权）；业务路由按域拆至 [routes/](../../apps/api/src/routes)（54 个 TS 文件），共 **307 条 REST 路由**（注册实测，统计方法见 §3） |
 | [openapi.ts](../../apps/api/src/openapi.ts) | ~230 | **OpenAPI 3.1 文档生成**：从 Fastify `onRoute` 收集的路由表自动生成 `/api/openapi.json` + `/api/docs` HTML 视图 |
 | [storage.ts](../../apps/api/src/storage.ts) | ~410 | **存储适配层**：NavSphere 的「JSON 文件」语义 → 数据库语义 |
 | [context.ts](../../apps/api/src/context.ts) | 144 | **应用上下文装配**：双模式差异的唯一消化点，能力可选、失败不致命 |
@@ -31,7 +31,7 @@
 ```ts
 const config = loadConfig();            // 1. 环境变量 → AppConfig
 const ctx    = await createContext(config);  // 2. 装配 DB / 向量 / 全文 / embedding / 检索
-const app    = await buildServer(ctx);       // 3. Fastify + 85 条路由（按域 register）
+const app    = await buildServer(ctx);       // 3. Fastify + 307 条路由（按域 register）
 
 const jobsEnabled = process.env.NAVHUB_JOBS_ENABLED !== "0" && ... ;
 const runner = jobsEnabled ? new JobRunner(ctx) : null;
@@ -184,7 +184,9 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 
 测试：[apps/api/test/auth.test.ts](../../apps/api/test/auth.test.ts)——42 个用例覆盖开放模式回归、逐级拦截、scope 含义、生命周期（含省略落上限 / 显式永久被拒 / 放行实例）、名称冲突拦截（409 / 吊销后复用 / PATCH 撞名 / 超长名）、审计故障容错、审计身份。
 
-## 3. REST 路由完整清单（62 条）
+## 3. REST 路由清单（注册实测 307 条）
+
+> 统计方法：以 Fastify 注册表（方法 × 路径）为准，2026-11-11 实测共 **307 条**；其中 305 条可由启动后 `GET /api/openapi.json` 计数复核，另 2 条为 `/api/openapi.json` 与 `/api/docs` 端点自身（不进文档）。下表为核心路由子集，全量以 OpenAPI 文档为准。
 
 ### 3.1 健康与能力
 

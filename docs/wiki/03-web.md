@@ -1,6 +1,6 @@
 # 03 · apps/web —— Next.js 前端
 
-> package 名 `navsphere`（**不是** `@navhub/web`），Next.js 15 App Router + React 18.2 + Tailwind CSS 4。
+> package 名 `navsphere`（**不是** `@navhub/web`），Next.js 16 App Router + React 19 + Tailwind CSS 4。
 > 派生自 [NavSphere](https://github.com/tianyaxiang/NavSphere)（MIT），通过 **vendoring + overlay** 机制跟进上游。
 
 ## 1. 与 山羊胡的关系：一条接缝、两个函数

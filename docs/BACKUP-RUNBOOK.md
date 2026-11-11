@@ -210,13 +210,13 @@ GET  /api/backup/restore/status/:id   → { status, progress:{done,total}, error
 
 ### 2026-11-11（本地隔离环境，全量真实数据，A14）
 
-- 场景：冷启动基线导入出的完整库（298 站 / 6007 条视频 / 245 类目，25.58 MB），
+- 场景：冷启动基线导入出的完整库（334 站 / 6007 条视频 / 61 个导航类目（一级 14 + 二级 47），25.58 MB），
   API 在线运行中（WAL 模式）直接热备；其间库里含一条经 API 改名的运营数据。
 - 命令：`node scripts/backup.mjs --db <full.db> --out <backups> --keep 35`
   → 完成 25.58 MB、耗时约 2 秒、`integrity_check=ok`、`.sha256` 清单生成；
   `node scripts/db-backup-verify.mjs --file <备份> --require-manifest --max-age-hours 0`
   → 通过（清单一致、fk 违例 0、必需表 7/7）。
-- 恢复：按 §2 步骤把备份落成新库文件并启动中枢 → 站点 298、视频 6007、
+- 恢复：按 §2 步骤把备份落成新库文件并启动中枢 → 站点 334、视频 6007、
   视频影子表 6007、基线标记可读、运营改名的标题原样保留。**全量恢复流程打通**。
 - 同日另验：compose 备份旁路与密钥分离目前只做到配置与脚本层（本机无 Docker
   守护进程，未做容器级实跑）——上线后请在服务器上 `docker compose --profile backup up -d`

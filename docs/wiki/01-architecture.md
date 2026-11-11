@@ -15,7 +15,7 @@
 
 ```
 ┌─────────────────────────── 客户端层 ───────────────────────────┐
-│  apps/web (Next.js 15)      extensions/ (Chrome / Raycast)    │
+│  apps/web (Next.js 16)      extensions/ (Chrome / Raycast)    │
 │  PWA + Service Worker       AI 客户端 (Claude Desktop/Cursor) │
 └──────────────┬──────────────────────┬─────────────────────────┘
                │ STORAGE_ADAPTER=http │ MCP stdio / HTTP
@@ -23,7 +23,7 @@
 ┌──────────────▼──────────────────────▼─────────────────────────┐
 │                      apps/api (Fastify 5)                     │
 │  ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
-│  │ REST 路由×42 │ │ 存储兼容 API    │ │ JobRunner (4 任务)   │  │
+│  │ REST 路由×307│ │ 存储兼容 API    │ │ JobRunner (4 任务)   │  │
 │  │ /api/*       │ │ /api/storage   │ │ 30s 轮询 + 单实例锁  │  │
 │  └──────┬───────┘ └───────┬────────┘ └──────────┬───────────┘  │
 │         └───────── AppContext (context.ts) ─────┘             │
@@ -51,7 +51,7 @@
 <仓库根>/
 ├── apps/
 │   ├── api/                 Fastify 中枢（REST + 存储兼容 API + 种子数据 + 任务队列）
-│   ├── web/                 Next.js 15 前端（vendored NavSphere 底座 + NavHub 覆盖）
+│   ├── web/                 Next.js 16 前端（vendored NavSphere 底座 + NavHub 覆盖）
 │   └── web-overlay/         NavHub 自有覆盖文件的源（同步到 apps/web）
 ├── packages/
 │   ├── core/                领域层：模型 / CJK 分词 / 拼音 / RRF / 排序 / 画像 / 扩展算法
@@ -246,7 +246,7 @@ MCP create_site (scope=write)
 
 ## 9. 质量保障
 
-- **测试**：653 个测试（+ 10 个 PostgreSQL 跨方言用例，设 `NAVHUB_TEST_DATABASE_URL` 时运行，否则 skip），`pnpm test`（套件清单见 [09-run-and-test.md](./09-run-and-test.md)）
+- **测试**：用例总数随代码演进变化，以 `pnpm test` 实测输出为准（套件清单见 [09-run-and-test.md](./09-run-and-test.md)）；另有 PostgreSQL 跨方言套件 35 项（3 个文件，设 `NAVHUB_TEST_DATABASE_URL` 时运行，否则 skip，入口 `pnpm test:pg:suite`）
 - **类型检查**：`pnpm typecheck`（`packages/*` + `apps/api` 严格 tsc；`apps/web` 因上游依赖组合问题在 next.config 中忽略）
 - **验收**：PostgreSQL 分档验证 17/17 通过，见 [docs/acceptance-report.md](../acceptance-report.md)
 - **回归**：D1 缺陷（navigation.json 全量对齐误删）有专门回归测试与脚本 `scripts/d1-regression.mjs`

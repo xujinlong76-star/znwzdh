@@ -27,7 +27,7 @@
 ### 1.2 拓扑分层图
 ```
 ┌─────────────────────────── 客户端与终端层 ───────────────────────────┐
-│  Web 前端 (Bento 画布 / Next.js 15)  │  Chrome 浏览器插件 (一键富化收录)   │
+│  Web 前端 (Bento 画布 / Next.js 16)  │  Chrome 浏览器插件 (一键富化收录)   │
 │  Raycast 极速桌面扩展 (全局检索)     │  AI Agent 客户端 (Claude / Cursor) │
 └──────────────┬──────────────────────┴────────────────────┬────────────┘
                │ STORAGE_ADAPTER=http                      │ MCP stdio / HTTP
@@ -35,7 +35,7 @@
 ┌──────────────▼───────────────────────────────────────────▼────────────┐
 │                         Fastify 5 API 服务中枢                        │
 │  ┌──────────────────────┐  ┌──────────────────┐  ┌─────────────────┐  │
-│  │ 62 条 REST 业务路由   │  │ 兼容存储接缝 API  │  │ JobRunner 队列  │  │
+│  │ 307 条 REST 路由     │  │ 兼容存储接缝 API  │  │ JobRunner 队列  │  │
 │  │ /api/sites, search.. │  │ /api/storage/*   │  │ 可用性/权重重算 │  │
 │  └──────────┬───────────┘  └────────┬─────────┘  └────────┬────────┘  │
 │             └─────────── AppContext (全局注入) ───────────┘           │
@@ -68,7 +68,7 @@
 * `STORAGE_ADAPTER=github`：兼容原版行为，数据直接提交到用户自己的私有 GitHub 仓库。
 
 ### 2.2 核心路由分布
-中枢共挂载 62 条路由，涵盖：
+中枢共挂载 307 条路由（注册实测，统计方法见 [02-api.md](./02-api.md) §3），涵盖：
 * **公开只读**：`GET /api/sites`（支持按 source 过滤）、`GET /api/categories`、`GET /api/tags`、`GET /api/collections`、`GET /api/search`。
 * **管理写操作**：`POST /api/sites`、`POST /api/sites/batch`（批量导入）、`POST /api/sites/auto`（URL 自动抓取富化）、`DELETE /api/sites/:id`。
 * **Token 治理**：`GET /api/tokens`、`POST /api/tokens`、`DELETE /api/tokens/:id`。

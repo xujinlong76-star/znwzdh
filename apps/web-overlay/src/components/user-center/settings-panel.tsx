@@ -35,6 +35,7 @@ import {
 } from '@/lib/navhub-api'
 import {
   getActiveTheme,
+  isThemeSuspended,
   resetTheme,
   setActiveTheme,
   type ActiveThemeConfig,
@@ -102,10 +103,14 @@ function FontSizeField({ idPrefix }: { idPrefix: string }) {
  * 本字段把已安装主题列进设置页：系统默认在首位，一点即换；没装主题时给去
  * 市场主题分类的直达链接，不谎称已装；拉取失败时明说取不到并给重试。
  * 切换与管家页共用 lib/plugins/theme-runtime 的同一套函数，不另立真相。
+ * B12 后半句：主题只在浅色模式下生效，深色下暂停——本字段读
+ * isThemeSuspended()，暂停时明说「已保存，深色模式下暂停，回到浅色自动恢复」，
+ * 不谎称正在使用。
  */
 function ThemeField({ idPrefix }: { idPrefix: string }) {
   const [themes, setThemes] = useState<HubPluginInstalledItem[]>([])
   const [activeTheme, setActiveThemeState] = useState<ActiveThemeConfig | null>(null)
+  const [themeSuspended, setThemeSuspended] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -127,8 +132,12 @@ function ThemeField({ idPrefix }: { idPrefix: string }) {
 
   useEffect(() => {
     setActiveThemeState(getActiveTheme())
+    setThemeSuspended(isThemeSuspended())
     void loadThemes()
-    const onThemeChange = () => setActiveThemeState(getActiveTheme())
+    const onThemeChange = () => {
+      setActiveThemeState(getActiveTheme())
+      setThemeSuspended(isThemeSuspended())
+    }
     window.addEventListener('navhub_theme_changed', onThemeChange)
     return () => window.removeEventListener('navhub_theme_changed', onThemeChange)
   }, [loadThemes])
@@ -190,9 +199,11 @@ function ThemeField({ idPrefix }: { idPrefix: string }) {
             ? '主题列表暂时取不到，稍后再试。'
             : themes.length === 0
               ? '还没安装主题，去插件市场挑一套装上就能在这里切换。'
-              : activeTheme
-                ? `正在使用「${activeTheme.name}」，只存这台设备；换设备要重新安装。`
-                : '使用系统默认外观；选一套主题立即换上，只存这台设备。'}
+              : activeTheme && themeSuspended
+                ? `「${activeTheme.name}」已保存，深色模式下暂停，回到浅色自动恢复。`
+                : activeTheme
+                  ? `正在使用「${activeTheme.name}」，只存这台设备；换设备要重新安装。`
+                  : '使用系统默认外观；选一套主题立即换上，只存这台设备。'}
       </p>
       {themes.length === 0 && !loading && !loadFailed && (
         <p className="text-[11px] leading-relaxed">

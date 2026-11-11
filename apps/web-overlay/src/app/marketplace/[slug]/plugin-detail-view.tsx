@@ -37,7 +37,7 @@ import { PluginSimilar } from '@/components/plugins/plugin-similar'
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
-import { startThemeTryout, cancelThemeTryout, isThemeInTryout, getActiveTheme } from '@/lib/plugins/theme-runtime'
+import { startThemeTryout, cancelThemeTryout, isThemeInTryout, isThemeSuspended, getActiveTheme } from '@/lib/plugins/theme-runtime'
 import { copyText } from '@/lib/clipboard'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { Badge } from '@/components/ui/badge'
@@ -154,6 +154,7 @@ export default function PluginDetailView({
 
   // 主题免安装试用状态
   const [inTryout, setInTryout] = useState(false)
+  const [tryoutSuspended, setTryoutSuspended] = useState(false)
   // 值由 loadDetail 异步回填；拆分后仅剩写入方（读取方随 hero 区迁出后已无人消费）
   const [, setIsThemeApplied] = useState(false)
   const [studioModalOpen, setStudioModalOpen] = useState(false)
@@ -175,9 +176,19 @@ export default function PluginDetailView({
   useEffect(() => {
     if (plugin?.kind === 'theme') {
       setInTryout(isThemeInTryout(plugin.slug))
-      const onTryoutChange = () => setInTryout(isThemeInTryout(plugin.slug))
+      setTryoutSuspended(isThemeSuspended())
+      const onTryoutChange = () => {
+        setInTryout(isThemeInTryout(plugin.slug))
+        setTryoutSuspended(isThemeSuspended())
+      }
+      // 深浅翻转时运行时派发主题变更事件，按钮文案据此刷新暂停态
+      const onThemeChange = () => setTryoutSuspended(isThemeSuspended())
       window.addEventListener('navhub_theme_tryout_changed', onTryoutChange)
-      return () => window.removeEventListener('navhub_theme_tryout_changed', onTryoutChange)
+      window.addEventListener('navhub_theme_changed', onThemeChange)
+      return () => {
+        window.removeEventListener('navhub_theme_tryout_changed', onTryoutChange)
+        window.removeEventListener('navhub_theme_changed', onThemeChange)
+      }
     }
   }, [plugin?.slug, plugin?.kind])
 
@@ -362,7 +373,12 @@ export default function PluginDetailView({
         tokens: payload?.tokens,
         accent: payload?.accent,
       })
-      toast.success(`正在免安装沙箱试用「${plugin.name}」主题！`)
+      // 深色下试用只记录不生效：别谎称正在试用，明说暂停、回浅色可见效果
+      if (isThemeSuspended()) {
+        toast.info(`已开始试用「${plugin.name}」，深色模式下暂停，回到浅色可见效果`)
+      } else {
+        toast.success(`正在免安装沙箱试用「${plugin.name}」主题！`)
+      }
     }
   }
 
@@ -781,7 +797,13 @@ export default function PluginDetailView({
                   )}
                 >
                   <Palette className="w-3.5 h-3.5" />
-                  <span>{inTryout ? '正在试用中 (点击退出)' : '免安装沙箱试用'}</span>
+                  <span>
+                    {inTryout
+                      ? tryoutSuspended
+                        ? '试用已暂停 (点击退出)'
+                        : '正在试用中 (点击退出)'
+                      : '免安装沙箱试用'}
+                  </span>
                 </button>
               )}
             </div>

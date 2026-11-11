@@ -6,6 +6,7 @@ import {
   getActiveTryout,
   cancelThemeTryout,
   commitThemeTryout,
+  isThemeSuspended,
   type ThemeTryoutConfig,
 } from '@/lib/plugins/theme-runtime'
 import { Button } from '@/components/ui/button'
@@ -14,19 +15,27 @@ import { toast } from 'sonner'
 
 export function ThemeTryoutRibbon() {
   const [tryout, setTryout] = useState<ThemeTryoutConfig | null>(null)
+  const [suspended, setSuspended] = useState(false)
 
   useEffect(() => {
     // 初始化同步
     setTryout(getActiveTryout())
+    setSuspended(isThemeSuspended())
 
     const handleTryoutChange = (e: Event) => {
       const custom = e as CustomEvent<ThemeTryoutConfig | null>
       setTryout(custom.detail ?? getActiveTryout())
+      setSuspended(isThemeSuspended())
     }
 
+    // 深浅翻转时运行时派发主题变更事件，飘带据此刷新暂停提示
+    const handleThemeChange = () => setSuspended(isThemeSuspended())
+
     window.addEventListener('navhub_theme_tryout_changed', handleTryoutChange)
+    window.addEventListener('navhub_theme_changed', handleThemeChange)
     return () => {
       window.removeEventListener('navhub_theme_tryout_changed', handleTryoutChange)
+      window.removeEventListener('navhub_theme_changed', handleThemeChange)
     }
   }, [])
 
@@ -39,7 +48,12 @@ export function ThemeTryoutRibbon() {
 
   const handleCommit = () => {
     commitThemeTryout()
-    toast.success(`已正式保存并应用主题：${tryout.name}`)
+    // 深色下只保存不注入：别谎称「已应用」，明说暂停、回浅色自动恢复
+    if (suspended) {
+      toast.info(`已保存主题「${tryout.name}」，深色模式下暂停，回到浅色自动恢复`)
+    } else {
+      toast.success(`已正式保存并应用主题：${tryout.name}`)
+    }
   }
 
   // 定位/宽度用内联样式：当前 Tailwind v4 构建漏生成了 bottom-5 与
@@ -57,15 +71,25 @@ export function ThemeTryoutRibbon() {
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold px-1.5 py-0.5 rounded-md bg-primary/15 text-primary tracking-wide">
-              免安装试用中
+            <span
+              className={`text-xs font-semibold px-1.5 py-0.5 rounded-md tracking-wide ${
+                suspended ? 'bg-muted text-muted-foreground' : 'bg-primary/15 text-primary'
+              }`}
+            >
+              {suspended ? '深色模式已暂停' : '免安装试用中'}
             </span>
             <span className="text-xs font-medium text-foreground truncate max-w-[180px]">
               {tryout.name}
             </span>
           </div>
-          <p className="text-[11px] text-muted-foreground truncate hidden sm:block">
-            当前处于纯前端沙箱预览，刷新或点击退出随时还原
+          <p
+            className={`text-[11px] text-muted-foreground truncate ${
+              suspended ? '' : 'hidden sm:block'
+            }`}
+          >
+            {suspended
+              ? '深色模式下试用暂停，回到浅色可见效果'
+              : '当前处于纯前端沙箱预览，刷新或点击退出随时还原'}
           </p>
         </div>
       </div>

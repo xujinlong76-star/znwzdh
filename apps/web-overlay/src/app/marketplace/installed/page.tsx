@@ -25,6 +25,7 @@ import {
 import { getIdentity } from '@/lib/identity'
 import {
   getActiveTheme,
+  isThemeSuspended,
   setActiveTheme,
   resetTheme,
   type ActiveThemeConfig,
@@ -59,6 +60,7 @@ export default function InstalledPluginsPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<KindTab>('all')
   const [activeThemeState, setActiveThemeState] = useState<ActiveThemeConfig | null>(null)
+  const [themeSuspended, setThemeSuspended] = useState(false)
   const [searchEngines, setSearchEngines] = useState<InstalledSearchEngine[]>([])
   const [upgradingSlug, setUpgradingSlug] = useState<string | null>(null)
   const [uninstallingSlug, setUninstallingSlug] = useState<string | null>(null)
@@ -71,6 +73,7 @@ export default function InstalledPluginsPage() {
       const res = await fetchInstalledPlugins(identity)
       setItems(res.items)
       setActiveThemeState(getActiveTheme())
+      setThemeSuspended(isThemeSuspended())
       setSearchEngines(getAllSearchEngines())
     } finally {
       setLoading(false)
@@ -80,7 +83,10 @@ export default function InstalledPluginsPage() {
   useEffect(() => {
     void loadData()
 
-    const onThemeChange = () => setActiveThemeState(getActiveTheme())
+    const onThemeChange = () => {
+      setActiveThemeState(getActiveTheme())
+      setThemeSuspended(isThemeSuspended())
+    }
     const onSearchChange = () => setSearchEngines(getAllSearchEngines())
     window.addEventListener('navhub_theme_changed', onThemeChange)
     window.addEventListener('navhub_search_engines_changed', onSearchChange)
@@ -105,7 +111,13 @@ export default function InstalledPluginsPage() {
         accent: payload.accent,
       })
       setActiveThemeState(getActiveTheme())
-      setActionMessage(`已成功启用主题「${item.name}」`)
+      setThemeSuspended(isThemeSuspended())
+      // 深色模式下主题只保存不注入：别谎称已启用，明说暂停、回浅色自动恢复
+      setActionMessage(
+        isThemeSuspended()
+          ? `已保存主题「${item.name}」，深色模式下暂停，回到浅色自动恢复`
+          : `已成功启用主题「${item.name}」`
+      )
       setTimeout(() => setActionMessage(null), 3000)
     } catch (err) {
       setActionMessage(`主题应用失败：${err instanceof Error ? err.message : String(err)}`)
@@ -115,6 +127,7 @@ export default function InstalledPluginsPage() {
   const handleResetTheme = () => {
     resetTheme()
     setActiveThemeState(null)
+    setThemeSuspended(false)
     setActionMessage('已恢复系统默认主题')
     setTimeout(() => setActionMessage(null), 3000)
   }
@@ -138,6 +151,7 @@ export default function InstalledPluginsPage() {
             accent: payload.accent,
           })
           setActiveThemeState(getActiveTheme())
+          setThemeSuspended(isThemeSuspended())
         }
       }
 
@@ -293,9 +307,14 @@ export default function InstalledPluginsPage() {
                         <span className="text-sm font-semibold truncate text-foreground">
                           {theme.name}
                         </span>
-                        {isActive && (
+                        {isActive && !themeSuspended && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-primary text-primary-foreground leading-none">
                             生效中
+                          </span>
+                        )}
+                        {isActive && themeSuspended && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-muted text-muted-foreground leading-none">
+                            深色模式已暂停
                           </span>
                         )}
                       </div>

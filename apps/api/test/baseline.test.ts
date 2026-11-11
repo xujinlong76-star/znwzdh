@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { countNavigationDoc, runBaselineImport } from "../src/baseline.ts";
+import { countNavigationDoc, collectFileSites, normalizeUrlForCompare, runBaselineImport } from "../src/baseline.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { buildNavigationData, countVideoDocItems, readKv, readStoragePath, writeNavigationData } from "../src/storage.ts";
@@ -101,6 +101,177 @@ describe("countNavigationDoc", () => {
     expect(countNavigationDoc(NAV_FIXTURE)).toEqual({ categories: 2, sites: 3 });
     expect(countNavigationDoc(null)).toEqual({ categories: 0, sites: 0 });
     expect(countNavigationDoc({})).toEqual({ categories: 0, sites: 0 });
+  });
+});
+
+describe("normalizeUrlForCompare / collectFileSites", () => {
+  it("只去尾斜杠，路径不同仍算不同", () => {
+    expect(normalizeUrlForCompare("https://example.com/")).toBe("https://example.com");
+    expect(normalizeUrlForCompare("https://example.com")).toBe("https://example.com");
+    expect(normalizeUrlForCompare("https://example.com/a/")).toBe("https://example.com/a");
+    expect(normalizeUrlForCompare("https://example.com/a")).not.toBe("https://example.com/b");
+  });
+
+  it("顶级与二级站点都抽出，id/title/href 齐全", () => {
+    const sites = collectFileSites(NAV_FIXTURE);
+    expect(sites.map((s) => s.id).sort()).toEqual(["nav-fix-1", "nav-fix-2", "nav-fix-3"]);
+    expect(sites.find((s) => s.id === "nav-fix-1")).toMatchObject({ title: "示例甲", href: "https://example-a.com" });
+  });
+});
+
+describe("runBaselineImport：已有库的 URL 漂移修复", () => {
+  const syncDir = join(dir, "sync-content");
+  mkdirSync(syncDir, { recursive: true });
+  const syncNavPath = join(syncDir, "navigation.json");
+  const syncVideosPath = join(syncDir, "videos.json");
+
+  const syncFixture = (hrefA: string) => ({
+    navigationItems: [
+      {
+        id: "reg-sync",
+        title: "同步类目",
+        enabled: true,
+        items: [
+          { id: "sync-1", title: "搬家站", href: hrefA, description: "搬家站描述", enabled: true, tags: [] },
+          { id: "sync-2", title: "不动站", href: "https://stable.example.com", description: "不动站描述", enabled: true, tags: [] },
+        ],
+      },
+    ],
+  });
+
+  let ctx: AppContext;
+  beforeAll(async () => {
+    // 库里先有 v1 数据：sync-1 是旧址，另有一条文件里没有的运营站
+    writeFileSync(syncNavPath, JSON.stringify(syncFixture("https://old-a.example.com")));
+    writeFileSync(syncVideosPath, JSON.stringify(VIDEOS_FIXTURE));
+    ctx = await makeCtx("sync.db");
+    // 一次快照写两个类目：v1 的两个文件站 + 一条文件里没有的运营站
+    await writeNavigationData(ctx, {
+      navigationItems: [
+        ...(syncFixture("https://old-a.example.com") as any).navigationItems,
+        {
+          id: "reg-sync-ops",
+          title: "运营类目",
+          enabled: true,
+          items: [{ id: "ops-9", title: "运营站", href: "https://ops9.example.com", description: "运营手工维护", enabled: true, tags: [] }],
+        },
+      ],
+    } as never);
+  });
+  afterAll(async () => {
+    await ctx.close();
+  });
+
+  it("文件改了 URL：只修对上 id 的那条，不增不删、不动标题/描述", async () => {
+    // v2：sync-1 换新址；另加一个文件新增站 sync-9（应不被插入）
+    const v2 = syncFixture("https://new-a.example.com") as any;
+    v2.navigationItems[0].items.push({
+      id: "sync-9",
+      title: "文件新增站",
+      href: "https://new9.example.com",
+      description: "新增",
+      enabled: true,
+      tags: [],
+    });
+    writeFileSync(syncNavPath, JSON.stringify(v2));
+
+    const result = await runBaselineImport(ctx, () => undefined, { dirs: [syncDir] });
+    expect(result.navigation.status).toBe("skipped_existing");
+    expect(result.urlSync.status).toBe("synced");
+    expect(result.urlSync.checked).toBe(3);
+    expect(result.urlSync.updated).toBe(1);
+    expect(result.urlSync.repairs).toEqual([
+      { id: "sync-1", title: "搬家站", from: "https://old-a.example.com", to: "https://new-a.example.com" },
+    ]);
+
+    const snapshot = await buildNavigationData(ctx);
+    expect(countNavigationDoc(snapshot).sites).toBe(3); // 2 文件站 + 1 运营站，不增不删
+    const moved = (snapshot.navigationItems ?? [])
+      .flatMap((c: any) => [...(c.items ?? []), ...((c.subCategories ?? []).flatMap((s: any) => s.items ?? []))])
+      .find((i: any) => i.id === "sync-1") as any;
+    expect(moved.href).toBe("https://new-a.example.com");
+    expect(moved.title).toBe("搬家站");
+    expect(moved.description).toBe("搬家站描述");
+    const titles = (snapshot.navigationItems ?? [])
+      .flatMap((c: any) => [...(c.items ?? []), ...((c.subCategories ?? []).flatMap((s: any) => s.items ?? []))])
+      .map((i: any) => i.id);
+    expect(titles).not.toContain("sync-9"); // 文件新增站不插入
+    expect(titles).toContain("ops-9"); // 文件外运营站不删
+
+    // 结论标记里有 urlSync 账
+    const marker = (await readStoragePath(ctx, "baseline-import.json")) as any;
+    expect(marker?.urlSync?.updated).toBe(1);
+    expect(marker?.urlSync?.repairs?.[0]?.id).toBe("sync-1");
+  });
+
+  it("再跑一次：零改动（幂等）；仅尾斜杠之差不算漂移", async () => {
+    const again = await runBaselineImport(ctx, () => undefined, { dirs: [syncDir] });
+    expect(again.urlSync.status).toBe("synced");
+    expect(again.urlSync.updated).toBe(0);
+
+    // sync-2 的 href 只加一个尾斜杠：应不触发改写，库里保持原值
+    const v3 = syncFixture("https://new-a.example.com") as any;
+    v3.navigationItems[0].items[1].href = "https://stable.example.com/";
+    writeFileSync(syncNavPath, JSON.stringify(v3));
+    const slash = await runBaselineImport(ctx, () => undefined, { dirs: [syncDir] });
+    expect(slash.urlSync.updated).toBe(0);
+    const snapshot = await buildNavigationData(ctx);
+    const stable = (snapshot.navigationItems ?? [])
+      .flatMap((c: any) => [...(c.items ?? []), ...((c.subCategories ?? []).flatMap((s: any) => s.items ?? []))])
+      .find((i: any) => i.id === "sync-2") as any;
+    expect(stable.href).toBe("https://stable.example.com");
+  });
+});
+
+describe("runBaselineImport：URL 同步可一键关闭", () => {
+  const offDir = join(dir, "sync-off-content");
+  mkdirSync(offDir, { recursive: true });
+  const prevUrlSync = process.env.NAVHUB_BASELINE_URL_SYNC;
+
+  let ctx: AppContext;
+  beforeAll(async () => {
+    process.env.NAVHUB_BASELINE_URL_SYNC = "0";
+    writeFileSync(
+      join(offDir, "navigation.json"),
+      JSON.stringify({
+        navigationItems: [
+          {
+            id: "reg-off",
+            title: "关闭类目",
+            enabled: true,
+            items: [{ id: "off-1", title: "旧址站", href: "https://new-off.example.com", description: "新址", enabled: true, tags: [] }],
+          },
+        ],
+      }),
+    );
+    writeFileSync(join(offDir, "videos.json"), JSON.stringify(VIDEOS_FIXTURE));
+    ctx = await makeCtx("sync-off.db");
+    await writeNavigationData(ctx, {
+      navigationItems: [
+        {
+          id: "reg-off",
+          title: "关闭类目",
+          enabled: true,
+          items: [{ id: "off-1", title: "旧址站", href: "https://old-off.example.com", description: "新址", enabled: true, tags: [] }],
+        },
+      ],
+    } as never);
+  });
+  afterAll(async () => {
+    if (prevUrlSync === undefined) delete process.env.NAVHUB_BASELINE_URL_SYNC;
+    else process.env.NAVHUB_BASELINE_URL_SYNC = prevUrlSync;
+    await ctx.close();
+  });
+
+  it("NAVHUB_BASELINE_URL_SYNC=0：URL 保持旧址", async () => {
+    const result = await runBaselineImport(ctx, () => undefined, { dirs: [offDir] });
+    expect(result.urlSync.status).toBe("skipped_disabled");
+    expect(result.urlSync.updated).toBe(0);
+    const snapshot = await buildNavigationData(ctx);
+    const row = (snapshot.navigationItems ?? [])
+      .flatMap((c: any) => [...(c.items ?? []), ...((c.subCategories ?? []).flatMap((s: any) => s.items ?? []))])
+      .find((i: any) => i.id === "off-1") as any;
+    expect(row.href).toBe("https://old-off.example.com");
   });
 });
 

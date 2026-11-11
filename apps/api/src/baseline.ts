@@ -18,6 +18,17 @@
  * `[baseline]` 前缀打 error 日志、写进基线标记，并在 seed 结果里如实回报，
  * 不静默。
  *
+ * 已有库的 URL 漂移修复（A1 收尾）：只做整包导入的库，之后文件里的搬家
+ * （改名换址、域名迁移）永远到不了库——实测 2026-11-12 预览库仍在服
+ * klingai.kuaishou.com 等 8 条旧址，而文件早已改成新址。于是导航段为
+ * `skipped_existing` 时再跑一遍窄口径 URL 同步（syncMovedSiteUrls）：
+ * 只按文件站点的稳定 id（nav-xxxx）对上库里的行、且 URL 变了才改；
+ * 只改 url 与按快照口径重算的 iconKey，不增、不删、不动标题/描述/分类/
+ * 标签/分面；文件里没有的旧行（如下架站、改名换 id 的旧行）一律不动。
+ * 文件是事实源的既有语义：后台手工改过的 URL 若与文件不一致也会被拉回
+ * 文件值（与全新部署直接导文件一致）；想关掉它设
+ * NAVHUB_BASELINE_URL_SYNC=0。每次结论写进 urlSync 段，随标记落库。
+ *
  * 结果标记：每次种子运行结束都把本次基线检查的结论写成一份普通存储文档
  * `baseline-import.json`（kv:doc:），后台「数据管理」页据此展示灌入状态；
  * 标记只是账本，不是闸门——闸门永远只看真实数据（站点数 / KV 是否存在），
@@ -34,6 +45,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveSiteIcon } from "@navhub/core";
 import type { AppContext } from "./context.ts";
 import {
   countVideoDocItems,
@@ -76,8 +88,94 @@ export interface BaselineImportResult {
   at: string;
   navigation: BaselineNavigationResult;
   videos: BaselineSectionResult;
+  /** 已有库的 URL 漂移修复结论（见 syncMovedSiteUrls） */
+  urlSync: UrlSyncResult;
   /** 结论标记是否成功落库（A9 后台页靠它展示；落不了不影响数据本身） */
   markerWritten: boolean;
+}
+
+/** URL 同步修复的结论状态 */
+export type UrlSyncStatus =
+  | "synced" // 已比对（updated 可能为 0，即无漂移）
+  | "skipped_fresh" // 本次刚导入基线，无存量可修
+  | "skipped_disabled" // NAVHUB_BASELINE_IMPORT=0 或 NAVHUB_BASELINE_URL_SYNC=0
+  | "missing_file" // 读不到 navigation.json
+  | "failed"; // 比对/写库出错，或导航基线导入失败导致本次跳过
+
+export interface UrlRepair {
+  id: string;
+  title: string;
+  from: string;
+  to: string;
+}
+
+export interface UrlSyncResult {
+  status: UrlSyncStatus;
+  /** 本次比对的文件站点数 */
+  checked: number;
+  /** 本次改写 URL 的行数 */
+  updated: number;
+  /** 改写明细（量小：文件 332 站，全列也不大） */
+  repairs: UrlRepair[];
+  error?: string;
+}
+
+/** URL 比对只去尾斜杠：`https://gogs.io` 与 `https://gogs.io/` 视为同一地址，避免无意义改写 */
+export function normalizeUrlForCompare(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+/** 从一份导航文档里抽出全部站点（顶级 items + 二级 items，与 countNavigationDoc 同口径） */
+export function collectFileSites(data: unknown): Array<{ id: string; title: string; href: string; icon?: string }> {
+  const items = (data as { navigationItems?: any[] })?.navigationItems || [];
+  const out: Array<{ id: string; title: string; href: string; icon?: string }> = [];
+  for (const top of items) {
+    for (const item of top.items ?? []) {
+      out.push({ id: item.id, title: item.title ?? item.href, href: item.href, icon: item.icon });
+    }
+    for (const sub of top.subCategories ?? []) {
+      for (const item of sub.items ?? []) {
+        out.push({ id: item.id, title: item.title ?? item.href, href: item.href, icon: item.icon });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 已有库的 URL 漂移修复：文件站点按稳定 id 对上库里的行、URL 变了才改写。
+ *
+ * 只改 url 与 iconKey（iconKey 按 snapshotSiteWrite 同口径重算：文件 icon
+ * 优先、否则按新地址推导；旧行若被人工改过自定义图标也会被拉回文件口径，
+ * 与「文件是事实源」的既有语义一致）。不增、不删：文件里没有的旧行
+ * （下架站、改名换 id 的旧行）不动；文件新增的 id 也不插入——插站是基线
+ * 导入的职责，且种子无法区分「管理员删站」与「文件新增」，擅自插回会把
+ * 删站复活。updateSite 会同步重建该行的全文/pinyin 索引，搜新地址可搜到。
+ */
+export async function syncMovedSiteUrls(
+  ctx: AppContext,
+  navData: unknown,
+  log: (line: string) => void = (line) => console.info(line),
+): Promise<UrlSyncResult> {
+  const fileSites = collectFileSites(navData);
+  const rows = (await ctx.repo.raw(
+    "SELECT id, url, icon_key FROM sites WHERE deleted_at IS NULL",
+  )) as unknown as Array<{ id: string; url: string; icon_key: string | null }>;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const repairs: UrlRepair[] = [];
+  for (const site of fileSites) {
+    if (!site.id || !site.href) continue;
+    const row = byId.get(site.id);
+    if (!row) continue;
+    if (normalizeUrlForCompare(row.url) === normalizeUrlForCompare(site.href)) continue;
+    const newIconKey = resolveSiteIcon(site.href, site.title, site.icon ?? null) || null;
+    const patch: { url: string; iconKey?: string | null } = { url: site.href };
+    if (newIconKey !== row.icon_key) patch.iconKey = newIconKey;
+    await ctx.repo.updateSite(site.id, patch);
+    repairs.push({ id: site.id, title: site.title, from: row.url, to: site.href });
+    log(`[baseline] URL 同步修复：${site.title} ${row.url} → ${site.href}`);
+  }
+  return { status: "synced", checked: fileSites.length, updated: repairs.length, repairs };
 }
 
 /** 数一份导航文档的类目与站点（与 writeNavigationData 的遍历口径一致） */
@@ -193,6 +291,41 @@ export async function runBaselineImport(
     }
   }
 
+  /* ---------------- URL 漂移修复 ---------------- */
+  // 只在「库里已有站点、本次没重灌」时跑：刚灌入的库与文件天然一致，无可修；
+  // 导航导入失败时也跳过——库状态不明，不拿文件值乱写。
+  let urlSync: UrlSyncResult;
+  if (disabled) {
+    urlSync = { status: "skipped_disabled", checked: 0, updated: 0, repairs: [] };
+  } else if (navigation.status === "imported") {
+    urlSync = { status: "skipped_fresh", checked: 0, updated: 0, repairs: [] };
+  } else if (navigation.status !== "skipped_existing") {
+    urlSync = {
+      status: "failed",
+      checked: 0,
+      updated: 0,
+      repairs: [],
+      error: `导航基线导入失败（${navigation.status}），本次跳过 URL 同步`,
+    };
+  } else if (!navFile || !navFileCounts) {
+    urlSync = { status: "missing_file", checked: 0, updated: 0, repairs: [] };
+  } else if (process.env.NAVHUB_BASELINE_URL_SYNC === "0") {
+    urlSync = { status: "skipped_disabled", checked: 0, updated: 0, repairs: [] };
+  } else {
+    try {
+      urlSync = await syncMovedSiteUrls(ctx, readJsonFile(navFile), log);
+      log(
+        urlSync.updated > 0
+          ? `[baseline] URL 同步修复完成：${urlSync.updated} 条（共比对 ${urlSync.checked} 站）`
+          : `[baseline] URL 同步检查：无漂移（共比对 ${urlSync.checked} 站）`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      urlSync = { status: "failed", checked: 0, updated: 0, repairs: [], error: message };
+      console.error(`[baseline] 错误：URL 同步修复失败（不影响种子主流程）：${message}`);
+    }
+  }
+
   /* ---------------- 视频 ---------------- */
   const videoFile = resolveBaselineFile("videos.json", dirs);
   let videoFileCount: number | null = null;
@@ -235,7 +368,7 @@ export async function runBaselineImport(
   /* ---------------- 结论标记 ---------------- */
   // 落库的标记不含 markerWritten 字段：文档能被读到本身就是「已写入」的证据，
   // 把结论写进返回值即可，没必要让标记自证。
-  const marker = { version: 1 as const, at, navigation, videos };
+  const marker = { version: 1 as const, at, navigation, videos, urlSync };
   let markerWritten = false;
   try {
     await writeStoragePath(ctx, BASELINE_MARKER_PATH, JSON.stringify(marker));

@@ -896,7 +896,7 @@
               "title": "Meta AI Developers",
               "href": "https://dev.meta.ai/",
               "description": "Meta开源大模型系列，支持多规模免费商用。",
-              "icon": "https://www.llama.com/favicon.ico",
+              "icon": "https://dev.meta.ai/favicon.ico",
               "enabled": true,
               "tags": [
                 "Meta",

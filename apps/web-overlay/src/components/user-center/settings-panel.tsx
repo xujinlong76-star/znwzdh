@@ -25,7 +25,18 @@ import {
   type UserSettingsPatch,
 } from '@/lib/user-settings'
 import { Settings2, Zap, ChevronDown, Command } from 'lucide-react'
-import { useEffect, useState, type ComponentProps } from 'react'
+import { useCallback, useEffect, useState, type ComponentProps } from 'react'
+import {
+  fetchInstalledPlugins,
+  fetchPluginDetail,
+  type HubPluginInstalledItem,
+} from '@/lib/navhub-api'
+import {
+  getActiveTheme,
+  resetTheme,
+  setActiveTheme,
+  type ActiveThemeConfig,
+} from '@/lib/plugins/theme-runtime'
 import {
   FONT_SIZE_LABEL,
   FONT_SIZE_PX,
@@ -77,6 +88,133 @@ function FontSizeField({ idPrefix }: { idPrefix: string }) {
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         与首页右上角的字号按钮是同一份设置，改一处两处同步；只存这台设备。
       </p>
+    </div>
+  )
+}
+
+/**
+ * 主题外观（本机设置）：与字号同款纪律，只动本机 localStorage 与主题运行时，
+ * 不走服务端用户设置（主题是这台设备的显示偏好）。
+ * B12：种子主题早已能经「市场安装→本机激活」链用上，但普通用户日常入口
+ * 只有 /marketplace/installed 管家页，设置页没有主题选择器——等于白做一半。
+ * 本字段把已安装主题列进设置页：系统默认在首位，一点即换；没装主题时给去
+ * 市场主题分类的直达链接，不谎称已装；拉取失败时明说取不到并给重试。
+ * 切换与管家页共用 lib/plugins/theme-runtime 的同一套函数，不另立真相。
+ */
+function ThemeField({ idPrefix }: { idPrefix: string }) {
+  const [themes, setThemes] = useState<HubPluginInstalledItem[]>([])
+  const [activeTheme, setActiveThemeState] = useState<ActiveThemeConfig | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadThemes = useCallback(async () => {
+    setLoading(true)
+    setLoadFailed(false)
+    setError(null)
+    try {
+      const res = await fetchInstalledPlugins(undefined, () => setLoadFailed(true))
+      setThemes(res.items.filter((item) => item.kind === 'theme'))
+    } catch {
+      setLoadFailed(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    setActiveThemeState(getActiveTheme())
+    void loadThemes()
+    const onThemeChange = () => setActiveThemeState(getActiveTheme())
+    window.addEventListener('navhub_theme_changed', onThemeChange)
+    return () => window.removeEventListener('navhub_theme_changed', onThemeChange)
+  }, [loadThemes])
+
+  const choose = async (slug: string) => {
+    setError(null)
+    if (!slug) {
+      resetTheme()
+      setActiveThemeState(null)
+      return
+    }
+    setApplying(true)
+    try {
+      const detail = await fetchPluginDetail(slug)
+      const payload = detail?.plugin?.manifest?.payload
+      if (!payload) {
+        setError('无法激活主题：未能加载清单配置')
+        return
+      }
+      const target = themes.find((t) => t.slug === slug)
+      setActiveTheme({
+        slug,
+        name: target?.name ?? detail.plugin.name,
+        tokens: payload.tokens,
+        accent: payload.accent,
+      })
+      setActiveThemeState(getActiveTheme())
+    } catch (err) {
+      setError(`主题应用失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  const activeSlug = activeTheme?.slug ?? ''
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={`${idPrefix}-theme`} className="block text-xs font-medium text-foreground">
+        主题外观
+      </label>
+      <SettingsSelect
+        id={`${idPrefix}-theme`}
+        label="主题外观"
+        value={activeSlug}
+        disabled={loading || applying}
+        onChange={(e) => void choose(e.target.value)}
+      >
+        <option value="">系统默认</option>
+        {themes.map((theme) => (
+          <option key={theme.slug} value={theme.slug}>
+            {theme.name}
+          </option>
+        ))}
+      </SettingsSelect>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {loading
+          ? '正在加载已安装的主题…'
+          : loadFailed
+            ? '主题列表暂时取不到，稍后再试。'
+            : themes.length === 0
+              ? '还没安装主题，去插件市场挑一套装上就能在这里切换。'
+              : activeTheme
+                ? `正在使用「${activeTheme.name}」，只存这台设备；换设备要重新安装。`
+                : '使用系统默认外观；选一套主题立即换上，只存这台设备。'}
+      </p>
+      {themes.length === 0 && !loading && !loadFailed && (
+        <p className="text-[11px] leading-relaxed">
+          <Link href="/marketplace?kind=theme" className="font-medium text-primary underline underline-offset-2">
+            去插件市场看看主题
+          </Link>
+        </p>
+      )}
+      {loadFailed && !loading && (
+        <p>
+          <button
+            type="button"
+            onClick={() => void loadThemes()}
+            className="text-[11px] font-medium text-primary underline underline-offset-2"
+          >
+            重新加载主题列表
+          </button>
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-[11px] leading-relaxed text-destructive-text">
+          {error}
+        </p>
+      )}
     </div>
   )
 }
@@ -257,6 +395,8 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
         </div>
 
         <FontSizeField idPrefix={idPrefix} />
+
+        <ThemeField idPrefix={idPrefix} />
 
         <div className="space-y-1.5">
           <label htmlFor={`${idPrefix}-spotlight-shortcut`} className="block text-xs font-medium text-foreground">

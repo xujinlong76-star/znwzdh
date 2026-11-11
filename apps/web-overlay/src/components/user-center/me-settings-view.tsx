@@ -65,7 +65,7 @@ export function MeSettingsView() {
         icon={Settings2}
         eyebrow="导航与隐私"
         back={{ href: '/me', label: '用户中心' }}
-        description="默认搜索引擎、卡片密度、0-RTT、快捷键、历史保留与遥测开关都在这里统一管理。"
+        description="默认搜索引擎、卡片密度、主题外观、0-RTT、快捷键、历史保留与遥测开关都在这里统一管理。"
       />
 
       {notice && (

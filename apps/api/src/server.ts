@@ -3,7 +3,7 @@
  *
  * 业务路由已按域拆分至 ./routes/*.ts（升级改造方案 P1-3：原 2600+ 行单体按域拆为
  * 24 个路由插件 + shared/metrics，行为逐字节一致，OpenAPI 由 onRoute hook 同源收集，
- * 插件 register 顺序即原 server.ts 路由顺序）。
+ * 插件 register 顺序即原 server.ts 路由顺序；后陆续增至 49 个路由插件，截至 2026-11-11）。
  * 本文件只保留：
  *   - Fastify 实例与横切插件装配（cors / rate-limit）
  *   - 指标采集 hook（数据与文本渲染在 ./metrics.ts）

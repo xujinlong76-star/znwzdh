@@ -1,22 +1,22 @@
 {
   "_note": "由 scripts/gen-docs-metrics.mjs 生成；--check 进 verify/CI 防漂移。文档引用数字请指向本文件，不要再手写。",
-  "generatedAt": "2026-11-08T14:52:54.159Z",
+  "generatedAt": "2026-11-11T15:09:56.340Z",
   "source": {
     "apps/api/src": {
-      "files": 168,
-      "lines": 56830
+      "files": 185,
+      "lines": 60191
     },
     "apps/web-overlay/src": {
-      "files": 742,
-      "lines": 169607
+      "files": 800,
+      "lines": 183716
     },
     "packages/core/src": {
-      "files": 84,
-      "lines": 20793
+      "files": 86,
+      "lines": 21582
     },
     "packages/store/src": {
-      "files": 60,
-      "lines": 21896
+      "files": 64,
+      "lines": 23006
     },
     "packages/ai/src": {
       "files": 11,
@@ -24,22 +24,22 @@
     },
     "packages/mcp/src": {
       "files": 14,
-      "lines": 1701
+      "lines": 1689
     },
     "scripts": {
-      "files": 263,
-      "lines": 56647
+      "files": 266,
+      "lines": 57546
     }
   },
   "scriptsIndex": {
-    "files": 263,
-    "topLevelMjs": 166,
-    "topLevelCheckMjs": 42
+    "files": 266,
+    "topLevelMjs": 168,
+    "topLevelCheckMjs": 43
   },
-  "restRoutes": 298,
-  "bffRoutes": 46,
-  "pages": 67,
-  "testFiles": 979,
+  "restRoutes": 312,
+  "bffRoutes": 48,
+  "pages": 72,
+  "testFiles": 1060,
   "vitestCollected": {
     "note": "apps/web-overlay/test 是镜像双份，vitest 只收集 apps/web/test",
     "collectedApprox": 641
@@ -47,9 +47,9 @@
   "tables": 46,
   "ci": {
     "jobs": 11,
-    "steps": 109,
-    "lines": 1067
+    "steps": 110,
+    "lines": 1075
   },
-  "docsMd": 95,
-  "node": "v22.22.3"
+  "docsMd": 96,
+  "node": "v24.22.1"
 }

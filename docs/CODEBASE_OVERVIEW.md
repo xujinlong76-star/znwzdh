@@ -1,6 +1,6 @@
 # 山羊胡 4.0 代码库架构总览
 
-> 本文基于关键模块源码通读写成。⚠️ **规模数字已改为引用 machine-readable 的 [`metrics.json`](./metrics.json)**（由 `node scripts/gen-docs-metrics.mjs` 生成、`--check` 进 `pnpm verify` 防漂移，2026-11-06 落地）：实测源码约 **28 万行**（`apps/api/src` 157 文件/54,568 行、`apps/web-overlay/src` 725 文件/163,618 行、`scripts` 202 文件等）、**289 REST 路由声明 / 46 BFF 路由 / 67 页面 / 45 表声明 / 939 测试文件**。
+> 本文基于关键模块源码通读写成。⚠️ **规模数字已改为引用 machine-readable 的 [`metrics.json`](./metrics.json)**（由 `node scripts/gen-docs-metrics.mjs` 生成、`--check` 进 `pnpm verify` 防漂移，2026-11-06 落地）：实测源码约 **35 万行**（`apps/api/src` 185 文件/60,191 行、`apps/web-overlay/src` 800 文件/183,716 行、`scripts` 266 文件等）、**312 REST 路由声明 / 48 BFF 路由 / 72 页面 / 46 表声明 / 1060 测试文件**。
 >
 > 旧版本此处写「778 个文件 / 155,150 行 / 117 端点 / 25 表」（2026-10-18 快照），与当前实物相差近一倍且长期无人核对——这正是引入 `metrics.json` 的原因。下方 §1 的历史表格保留作**当时快照**，不再作为当前事实；要看当前值请读 `metrics.json`。逐文件的职责/导出/依赖见 [`CODEBASE_FILE_INDEX.md`](./CODEBASE_FILE_INDEX.md)，也可用可搜索的单页版 [`codebase-index.html`](./codebase-index.html)。
 
@@ -69,7 +69,7 @@
                ▼                      ▼
 ┌──────────────┴──────────────────────┴──────────────────┐
 │ Fastify 中枢 :8787                                     │
-│ · 28 个路由插件 / 117 个 REST 端点 / OpenAPI           │
+│ · 49 个路由插件 / 312 个 REST 路由声明 / OpenAPI         │
 │ · AppContext 装配（能力可选、失败不致命）              │
 │ · JobRunner（9 类任务 / 6 条默认 cron）                │
 │ · 横切：CORS 限流 安全头 请求ID 指标 缓存 鉴权         │
@@ -231,8 +231,8 @@ MCP Client ──initialize/tools/list/tools/call──► mcp-server.ts
                                                      │
                                         ┌────────────┴────────────┐
                                         ▼                         ▼
-                              tools.ts（32 个定义）        handlers.ts（按域组装）
-                              scope: read 22 / write 9 / admin 1        │
+                              tools.ts（41 个定义）        handlers.ts（按域组装）
+                              scope: read 28 / write 12 / admin 1        │
                                                                         ▼
                                             handlers/{sites,catalog,jobs,algorithms,discovery,state-sync,developer-tools}
                                                                         │
@@ -279,13 +279,13 @@ JobRunner.tick()（定时）
 | 协同与布局 | `crdt-sync.ts`、`layout-sync.ts`、`diy-layout/*`、`modular.ts` | LWW 操作日志、Lamport 插槽合并、排版算法 |
 | 体验增强 | `prefetch.ts`、`speculative-prerender.ts`、`deterministic-favicon.ts`、`keyboard-nav.ts` | 卡尔曼轨迹预取、Speculation Rules、确定性图标 |
 | 治理与安全 | `facets.ts`、`taxonomy-governance.ts`、`relations.ts`、`vault.ts`、`health-sentinel.ts` | 分面词表、治理提案、关系类型、E2EE、软 404 检测 |
-| 契约 | `mcp-schemas.ts` | 32 个 MCP 工具的 zod 入参 + 元数据（REST/OpenAPI 同源） |
+| 契约 | `mcp-schemas.ts` | 41 个 MCP 工具的 zod 入参 + 元数据（REST/OpenAPI 同源） |
 
 ### 5.2 `packages/store`：双方言 + 双索引
 
-**25 张表**（`schema.ts`，只用两库都支持的基础列类型）：
+**46 张表**（`schema.ts`，只用两库都支持的基础列类型）：
 
-`categories`、`sites`、`tags`、`tag_aliases`、`site_tags`、`site_facets`、`site_relations`、`collections`、`collection_items`、`users`、`sessions`、`api_tokens`、`events`、`health_checks`、`audit_logs`、`jobs`、`idempotency`、`embeddings`、`favorites`、`favorite_folders`、`user_profiles`、`search_history`、`user_vault_sync`、`system_states`、`taxonomy_proposals`
+`categories`、`sites`、`tags`、`tag_aliases`、`site_tags`、`site_facets`、`site_relations`、`collections`、`collection_items`、`users`、`sessions`、`auth_tokens`、`notifications`、`identity_aliases`、`identity_merges`、`api_tokens`、`events`、`health_checks`、`audit_logs`、`jobs`、`idempotency`、`embeddings`、`plugin_embeddings`、`site_radar`、`favorites`、`favorite_folders`、`user_profiles`、`search_history`、`user_vault_sync`、`user_workspace_blobs`、`system_states`、`user_llm_configs`、`user_settings`、`taxonomy_proposals`、`plugins`、`plugin_installs`、`plugin_stars`、`plugin_reports`、`plugin_versions`、`plugin_reviews`、`short_links`、`site_archives`、`llm_usage`、`llm_model_prices`、`llm_quota_reservations`、`data_version`
 
 方言差异被收敛到 3 个位置：
 
@@ -312,56 +312,80 @@ JobRunner.tick()（定时）
 | `enrich.ts` | LLM 结构化输出 + zod 校验 + 一次重试，失败降级 heuristic |
 | `with-timeout.ts` | Promise 超时，落地即清定时器 |
 
-### 5.4 `apps/api`：117 个端点 / 28 个插件
+### 5.4 `apps/api`：312 个端点 / 49 个路由插件
 
-| 插件 | 端点数 | 端点 |
+按路由文件分组（`apps/api/src/routes/*.ts`，`routes/plugins/*` 五个市场子文件合并为一行；计数口径与 `docs/metrics.json` 的 `restRoutes` 同源：`app.<verb>(` 字面量注册数，2026-11-11 实测；另有 `/api/openapi.json`、`/api/docs` 由 `server.ts` 提供）：
+
+| 路由文件 | 注册数 | 示例端点 |
 | :--- | ---: | :--- |
-| `sites.ts` | 7 | GET/POST `/api/sites`、GET/PATCH/DELETE `/api/sites/:id`、POST `/api/sites/bulk`、`/api/sites/batch` |
-| `categories.ts` | 9 | `/api/categories` CRUD、`/skos`、`/:id/related`、`/:id/move`、`/merge` |
-| `recipes.ts` | 9 | `/api/recipes`、`/comparisons`、`/graph/path`、`/graph/compatibility`、`/graph/centrality`、`/favicon/:id`、`/sites/:id/heal`、`/sites/:id/wayback`、`/sites/cluster` |
-| `stats.ts` | 10 | `/api/admin/dashboard/*`（overview/security/search-ai/stream）、`health/trend`、`stats/trends`、`maintenance/*` |
-| `jobs.ts` | 8 | `/api/jobs` CRUD、`/:id/cancel`、`/:id/retry`、`/prune`、`/stream`、`/:id/events` |
-| `tokens.ts` | 6 | `/api/tokens` CRUD、`/:id/rotate`、`/:id/revoke` |
-| `rank.ts` | 6 | `/api/rank/trending`、`/new`、`/similar/:siteId`、`/alternatives/:siteId`、`/search/linucb`、`/rank/federated` |
-| `tags.ts` | 7 | `/api/tags`、`/resolve`、`/:id`、`/merge`、`/:id/aliases` |
-| `favorites.ts` | 5 | `/api/favorites`、`/favorites/folders` |
-| `taxonomy.ts` | 5 | `/api/taxonomy/proposals`、`/audit`、`/:id/apply`、`/:id/dismiss`、`/batch` |
-| `health.ts` | 4 | `/api/health`、`/ready`、`/metrics`、`/warmup` |
-| `relations.ts` | 4 | `/api/relations/types`、`/sites/:id/relations`、`/sites/:id/graph` |
-| `agents.ts` | 3 | `/api/speculation/rules`、`/tools/synthesize`、`/p2p/signal` |
-| `crdt.ts` | 3 | `/api/crdt/sync` GET/POST/DELETE |
-| `vault.ts` | 3 | `/api/vault/sync` GET/PUT/DELETE |
-| `trash.ts` | 3 | `/api/trash`、`/:id/restore`、`/:id` |
-| `submissions.ts` | 3 | `/api/submissions` POST/GET、`/:number` PATCH |
-| `facets.ts` | 3 | `/api/facets`、`/sites/:id/facets` |
-| `search.ts` | 2 | GET/POST `/api/search` |
+| `plugins/*.ts` | 50 | GET/POST `/api/plugins`、`/api/plugins/mine`、`/api/plugins/author/:key` |
+| `me.ts` | 27 | DELETE/GET `/api/me`、GET/PATCH `/api/me/settings`、`/api/me/profile` |
+| `plugin-audit.ts` | 15 | `/api/plugins/:slug/audit`、`/api/plugins/health`、`/api/plugins/:slug/health` |
+| `ai-config.ts` | 14 | GET/PUT `/api/admin/ai/config`、`/api/admin/ai/config/reset`、`/api/admin/ai/config/test` |
+| `sites.ts` | 14 | GET/POST `/api/sites`、DELETE/GET/PATCH `/api/sites/:id`、`/api/sites/:id/similar` |
+| `categories.ts` | 13 | GET/POST `/api/categories`、`/api/categories/page`、`/api/categories/counts` |
+| `jobs.ts` | 12 | `/api/admin/notifications/deliveries`、`/api/admin/notifications`、`/api/admin/notifications/read-all` |
+| `recipes.ts` | 12 | `/api/recipes`、`/api/comparisons`、`/api/graph/path` |
+| `stats.ts` | 12 | `/api/admin/dashboard/overview`、`/api/admin/dashboard/security`、`/api/admin/dashboard/search-ai` |
+| `collections.ts` | 10 | GET/POST `/api/collections`、`/api/collections/by-id/:id`、`/api/collections/:slug` |
+| `favorites.ts` | 9 | `/api/favorites/version`、DELETE/GET/POST `/api/favorites`、DELETE/PATCH `/api/favorites/:siteId` |
+| `tags.ts` | 8 | `/api/tags`、`/api/tags/resolve`、`/api/tags/:id/related` |
+| `account.ts` | 7 | `/api/account/register`、`/api/account/verify-email`、`/api/account/resend-verification` |
+| `rank.ts` | 6 | `/api/rank/trending`、`/api/rank/new`、`/api/rank/similar/:siteId` |
+| `taxonomy.ts` | 6 | `/api/taxonomy/proposals`、`/api/taxonomy/tags/stats`、`/api/taxonomy/audit` |
+| `tokens.ts` | 6 | GET/POST `/api/tokens`、DELETE/PATCH `/api/tokens/:id`、`/api/tokens/:id/rotate` |
+| `backup.ts` | 5 | `/api/export/bookmarks.html`、`/api/export/backup.json`、`/api/backup/restore` |
+| `custom-sites.ts` | 5 | GET/POST `/api/me/custom-sites`、DELETE/PATCH `/api/me/custom-sites/:id`、`/api/me/custom-sites/reorder` |
+| `navsphere.ts` | 5 | DELETE/GET/PUT `/api/storage`、`/api/storage/version`、`/api/storage/list` |
+| `workspaces.ts` | 5 | GET/POST `/api/workspaces`、GET/POST `/api/workspaces/:id/members`、`/api/workspaces/:id/members/:userId` |
+| `health.ts` | 4 | `/api/health`、`/api/ready`、`/api/metrics` |
+| `health-audit.ts` | 4 | `/api/admin/audit/report`、`/api/admin/audit/scan`、`/api/admin/audit/apply` |
+| `history.ts` | 4 | DELETE/GET `/api/search-history`、`/api/search-history/:id`、`/api/search-history/batch-delete` |
+| `relations.ts` | 4 | `/api/relations/types`、GET/PUT `/api/sites/:id/relations`、`/api/sites/:id/graph` |
+| `submissions.ts` | 4 | `/api/submissions/prefill`、GET/POST `/api/submissions`、`/api/submissions/:number` |
+| `agents.ts` | 3 | `/api/speculation/rules`、`/api/tools/synthesize`、`/api/p2p/signal` |
+| `crdt.ts` | 3 | DELETE/GET/POST `/api/crdt/sync` |
+| `errors.ts` | 3 | `/api/errors`、DELETE/GET `/api/admin/client-errors` |
+| `facets.ts` | 3 | `/api/facets`、GET/PUT `/api/sites/:id/facets` |
+| `profile.ts` | 3 | DELETE/GET `/api/profile`、`/api/profile/signals/:kind` |
+| `telemetry.ts` | 3 | `/api/stats`、`/api/events`、`/api/vitals` |
+| `trash.ts` | 3 | `/api/trash`、`/api/trash/:id/restore`、`/api/trash/:id` |
+| `vault.ts` | 3 | DELETE/GET/PUT `/api/vault/sync` |
+| `videos.ts` | 3 | `/api/videos`、`/api/videos/:id`、`/api/videos/copilot` |
+| `archive.ts` | 2 | GET/POST `/api/sites/:id/archive` |
+| `audit.ts` | 2 | `/api/admin/audit`、`/api/admin/audit/export` |
 | `enrich.ts` | 2 | `/api/enrich`、`/api/sites/auto` |
-| `collections.ts` | 2 | `/api/collections`、`/:slug` |
-| `audit.ts` | 2 | `/api/admin/audit`、`/export` |
-| `telemetry.ts` | 2 | `/api/stats`、`/api/events` |
-| `history.ts` | 2 | `/api/search-history` |
-| `profile.ts` | 2 | `/api/profile` |
+| `graph.ts` | 2 | `/api/graph/mesh`、`/api/sites/duplicates` |
+| `hotlist.ts` | 2 | `/api/hotlist`、`/api/brief/today` |
+| `link-health.ts` | 2 | `/api/admin/link-health`、`/api/admin/link-health/visibility` |
+| `scenes.ts` | 2 | `/api/scenes`、`/api/scenes/:id` |
+| `search.ts` | 2 | GET/POST `/api/search` |
 | `visual.ts` | 2 | `/api/design/harmony`、`/api/mcp` |
-| `navsphere.ts` | 2 | `/api/storage` GET/PUT（JSON 快照兼容层） |
+| `ai-chat.ts` | 1 | `/api/ai/chat` |
+| `ai-find.ts` | 1 | `/api/ai/find` |
+| `assets.ts` | 1 | `/api/assets/icon` |
+| `copilot.ts` | 1 | `/api/copilot/chat` |
 | `identity.ts` | 1 | `/api/users/sync` |
-| **合计** | **117** | 另有 `/api/openapi.json`、`/api/docs` 由 `server.ts` 提供 |
+| `plugin-overlap.ts` | 1 | `/api/plugins/:slug/overlap` |
+| **合计** | **312** | 另有 `/api/openapi.json`、`/api/docs` 由 `server.ts` 提供 |
 
 横切关注点全部在 `server.ts`（384 行）：`onRoute` 收集 OpenAPI、`onRequest` 做请求 ID + 分级鉴权、`onSend` 做安全头 + 路由级缓存/ETag、`onResponse` 记指标、`setErrorHandler` 兜底。
 
-### 5.5 `packages/mcp`：35 个工具
+### 5.5 `packages/mcp`：41 个工具
 
-24 个 read、11 个 write（其中 `run_job` 为 admin 专属，会触发全站扫描）。按域拆在 `handlers/`：
+28 个 read、12 个 write、1 个 admin（其中 `run_job` 为 admin 专属，会触发全站扫描）。按域拆在 `handlers/`：
 
 | 域 | 工具 |
 | :--- | :--- |
 | sites | `search_sites`、`get_site`、`create_site`、`update_site`、`set_status`、`batch_import`、`export_sites`、`health_check`、`refresh_site`、`delete_site` |
-| catalog | `list_categories`、`list_tags`、`get_stats`、`get_trending`、`list_collections` |
-| plugins | `list_plugins`、`search_plugins`、`install_plugin` |
+| catalog | `list_categories`、`list_tags`、`get_stats`、`get_trending`、`list_collections`、`get_collection` |
+| plugins | `list_plugins`、`search_plugins`、`install_plugin`、`star_plugin`、`update_plugin` |
 | jobs | `run_job`、`list_jobs` |
 | algorithms | `get_architecture_recipe`、`compare_technologies`、`heal_broken_site`、`find_tech_path`、`analyze_stack_compatibility`、`cluster_sites` |
 | discovery | `get_alternatives`、`resolve_wayback` |
 | state-sync | `sync_crdt_operations`、`exchange_p2p_mesh` |
 | developer-tools | `evaluate_developer_intent`、`analyze_color_harmony`、`get_federated_recommendations`、`compile_speculation_rules`、`synthesize_agent_tool` |
+| user-center | `list_favorites`、`list_search_history`、`get_profile_summary` |
 
 传输：`stdio.ts`（本地进程）、`http-server.ts`（标准 Streamable HTTP，有状态会话 + SSE，默认仅监听 127.0.0.1，必须 Bearer，校验 Origin）。
 
@@ -445,12 +469,12 @@ JobRunner.tick()（定时）
 
 | 文档说法 | 实际代码 | 位置 |
 | :--- | :--- | :--- |
-| 「62 条 REST 路由」 | **117 个端点**（28 个路由插件） | `README.md`、`wiki.md` §2.2 |
-| MCP「15 个 / 17 个工具」 | **32 个**（22 read / 9 write / 1 admin） | `README.md`、`wiki.md` §7 |
-| 「19 张核心表」 | **25 张** | `wiki.md` §5.2 |
-| 「洛伦兹双曲超曲面 / 闵可夫斯基内积」 | 实现为**庞加莱球模型**（`poincareDistance`、`mobiusAdd`、`expMap0`）；两者数学等价但术语不一致 | `README.md` §5 vs `core/src/hyperbolic.ts` |
-| 「web 与 web-overlay 保持 100% 同步」 | 当前确实一致（272 个文件通过 `check:overlay`），但这是脚本强制的结果；扫描期间曾观测到 74 个漂移 + 25 个缺失，说明机制脆弱 | `wiki.md` §3.1 |
-| 「24 个路由插件」 | **28 个**（`server.ts` 的 register 调用） | `server.ts` 头注释 |
+| 「62 条 REST 路由」 | **312 个端点**（49 个路由插件，见 `docs/metrics.json` 的 `restRoutes`） | `wiki.md` §2.2（`README.md` 无此说法） |
+| MCP「15 个 / 17 个工具」 | **41 个**（28 read / 12 write / 1 admin） | `wiki.md` §7（`README.md` 无此说法） |
+| 「19 张核心表」 | **46 张** | `wiki.md` §5.2 |
+| 「洛伦兹双曲超曲面 / 闵可夫斯基内积」 | **双模型并存，非术语不一致**：`core/src/hyperbolic.ts`（284 行）同时实现庞加莱球（`poincareDistance`、`mobiusAdd`、`expMap0`，供算法实验室面板经 `findTopAlternativesInHyperbolicSpace` 调用）与洛伦兹（`lorentzInnerProduct`、`lorentzDistance`，附双向换算 `poincareToLorentz`/`lorentzToPoincare`）；线上排序 `api/src/routes/rank.ts` 用洛伦兹距离重排并回 `manifold: "lorentz-hyperboloid"`。README §5 与 wiki §4.2 的洛伦兹说法属实（2026-11-11 核对，原行「仅庞加莱实现」为误判） | `README.md` §5、`wiki.md` §4.2 vs `core/src/hyperbolic.ts`、`api/src/routes/rank.ts` |
+| 「web 与 web-overlay 保持 100% 同步」 | **该说法现行文档已无出处**（`wiki.md` §3.1 现讲生成镜像机制，不再提 100% 同步；本表为唯一引用处）；机制是生成镜像而非人工同步：`apps/web` 由 `mirror:web` 从 overlay 生成，CI 先 vendor 再校验。2026-11-11 复测：`mirror:web` 后 `check:overlay` 通过，1153 个覆盖层文件一致；未重新生成的旧克隆会报漂移（本次实测 11 漂移 + 7 缺失，均为成长/视频线已推 main 的文件，须先 `mirror:web`）。扫描期间曾观测到的 74 漂移 + 25 缺失为历史记录 | `docs/CODEBASE_OVERVIEW.md` §10 P0、`wiki.md` §3.1 |
+| 「24 个路由插件」 | **49 个**（`server.ts` 的 register 调用） | `server.ts` 头注释 |
 
 ---
 
@@ -460,7 +484,7 @@ JobRunner.tick()（定时）
 
 ### P0 — 双目录同步机制（当前一致，但极易再次漂移）
 
-`node scripts/check-web-overlay.mjs` 当前通过（272 个覆盖层文件与 `apps/web` 一致），但本次扫描过程中曾实测到 **74 个漂移 + 25 个缺失**，几分钟后由外部同步收敛。这说明：
+`node scripts/check-web-overlay.mjs` 在重新生成镜像后通过（2026-11-11 复测：`mirror:web` 后 1153 个覆盖层文件与 `apps/web` 一致；未重新生成的旧克隆会报漂移，本次实测 11 漂移 + 7 缺失，均为成长/视频线已推 main 的文件），但本次扫描过程中曾实测到 **74 个漂移 + 25 个缺失**，几分钟后由外部同步收敛。这说明：
 
 - 影响：Docker 构建与 `vendor-web` 以 overlay 为准，一旦漂移，**部分自研改动不会进入镜像**；反向漂移则会让本地开发看不到已部署的逻辑。
 - 根因：同一份代码存在两个物理副本（`apps/web` 与 `apps/web-overlay`），同步完全依赖人工执行脚本。

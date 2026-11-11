@@ -165,7 +165,7 @@ Drizzle + 双方言驱动（SQLite/PostgreSQL）、24 个域仓储、混合检�
 | `packages/store/src/repository/vault.ts` | 89 | 金库仓储：用户密文 Blob 的读写与删除。 | `getUserVault`、`saveUserVault`、`deleteUserVault` | 包 @navhub/core；相对模块 4 个（../repository.ts、./records.ts、./dialect.ts…） |
 | `packages/store/src/retention.ts` | 179 | 数据保留策略：对 events/audit_logs 先逐行归档再删除，通过注入 RetentionAdapter 保持方言无关。 | `runRetention`、`DEFAULT_RETENTION_TARGETS`、`RetentionTable`、`RetentionRow`、`RetentionAdapter`、`RetentionTarget`、`RetentionOptions`、`RetentionTableResult`… | — |
 | `packages/store/src/rollup.ts` | 332 | 明细聚合：把过期明细压成日统计后删除明细（舍明细保统计），与 retention 共用适配器端口。 | `rollupDdl`、`runRollup`、`EVENT_DAILY_ROLLUP`、`AUDIT_DAILY_ROLLUP`、`DEFAULT_ROLLUP_TARGETS`、`RollupDialect`、`RollupGroupColumn`、`RollupSpec`… | 相对模块 1 个（./retention.ts） |
-| `packages/store/src/schema.ts` | 386 | Drizzle 表定义（双驱动共享）：只用两库都支持的基础列类型，向量与全文索引留给适配器，共 19 张核心表。 | `categories`、`sites`、`tags`、`tagAliases`、`siteTags`、`siteFacets`、`siteRelations`、`collections`… | 外部 drizzle-orm/sqlite-core |
+| `packages/store/src/schema.ts` | 386 | Drizzle 表定义（双驱动共享）：只用两库都支持的基础列类型，向量与全文索引留给适配器，共 46 张表。 | `categories`、`sites`、`tags`、`tagAliases`、`siteTags`、`siteFacets`、`siteRelations`、`collections`… | 外部 drizzle-orm/sqlite-core |
 | `packages/store/src/search.ts` | 850 | 混合检索引擎：exact/fts/pinyin/semantic 四路并行召回 + RRF 融合 + coverage 乘子 + personal 通道，含 Query Planner early-exit、LinUCB 权重注入与通道耗时计量。 | `SearchEngine`、`SearchEngineDeps`、`SearchEngineOptions`、`ChannelTimings` | 包 @navhub/core；相对模块 4 个（./driver.ts、./fts.ts、./repository.ts…） |
 | `packages/store/src/vector/codec.ts` | 118 | 向量编解码收敛点：清洗非有限值、维度对齐、SQLite BLOB 与 pgvector 文本字面量互转，规避 SQLite 静默写入 NaN 的隐性故障。 | `sanitizeFinite`、`hasNonFinite`、`fitDimension`、`toBlobParam`、`toPostgresParam`、`SeamVectorCodec`、`VECTOR_NON_FINITE_FALLBACK`、`VectorDialect`… | — |
 | `packages/store/src/vector/index.ts` | 6 | 向量适配器出口：统一导出 codec、内存/ sqlite-vec / pgvector 三种实现。 | — | 相对模块 5 个（./codec.ts、./types.ts、./memory.ts…） |
@@ -298,7 +298,7 @@ REST 中枢：配置/上下文装配、横切关注点、28 个路由插件（11
 | `apps/api/src/seed-data.json` | 718 | 种子数据：分类、精选技术站点、专题合集与视频条目的静态清单，供 seed 脚本幂等导入。 | — | — |
 | `apps/api/src/seed-main.ts` | 19 | 种子数据 CLI 入口：导入即执行，避免 Windows 下主模块判断失效导致静默不执行。 | — | 相对模块 1 个（./seed.ts） |
 | `apps/api/src/seed.ts` | 133 | 种子导入逻辑：按 URL 去重幂等写入分类/站点/专题，保证 docker compose up 后即是可用站点而非空壳。 | `runSeed`、`SeedResult` | 包 @navhub/ai、@navhub/core、@navhub/store；相对模块 3 个（./config.ts、./context.ts、./storage.ts） |
-| `apps/api/src/server.ts` | 384 | Fastify 中枢装配层：CORS/限流/安全响应头/请求 ID/指标 hook/全局错误/响应缓存/分级鉴权/OpenAPI 收集，并按域注册 24 个路由插件。 | `buildServer` | 相对模块 34 个（./context.ts、./openapi.ts、./metrics.ts…）；外部 @fastify/cors、@fastify/rate-limit、fastify |
+| `apps/api/src/server.ts` | 384 | Fastify 中枢装配层：CORS/限流/安全响应头/请求 ID/指标 hook/全局错误/响应缓存/分级鉴权/OpenAPI 收集，并按域注册 49 个路由插件。 | `buildServer` | 相对模块 34 个（./context.ts、./openapi.ts、./metrics.ts…）；外部 @fastify/cors、@fastify/rate-limit、fastify |
 | `apps/api/src/storage.ts` | 467 | 存储适配层：把 NavSphere 的 JSON 文件语义（navigation/site/resource-metadata/videos）翻译为数据库读写，是 69 处业务调用点零改动切换存储的关键。 | `buildNavigationData`、`writeNavigationData`、`readSiteConfig`、`writeSiteConfig`、`readResourceMetadata`、`writeResourceMetadata`、`readVideosData`、`writeVideosData`… | 包 @navhub/core；相对模块 1 个（./context.ts） |
 
 ### 测试文件
@@ -321,7 +321,7 @@ REST 中枢：配置/上下文装配、横切关注点、28 个路由插件（11
 
 ## 6. `apps/web-overlay` — 前端事实源（202 个自研文件，45,689 行）
 
-山羊胡自研前端的唯一事实源：Next.js 15 App Router 页面、Bento 工作台、DIY 排版、模块系统、BFF 代理、纯函数工具库。`apps/web` 中的同名文件是它的镜像。
+山羊胡自研前端的唯一事实源：Next.js 16 App Router 页面、Bento 工作台、DIY 排版、模块系统、BFF 代理、纯函数工具库。`apps/web` 中的同名文件是它的镜像。
 
 | 文件 | 行数 | 职责与实现要点 | 关键导出 | 主要依赖 |
 | :--- | ---: | :--- | :--- | :--- |

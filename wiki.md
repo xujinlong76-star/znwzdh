@@ -27,7 +27,7 @@
 ### 1.2 拓扑分层图
 ```
 ┌─────────────────────────── 客户端与终端层 ───────────────────────────┐
-│  Web 前端 (Bento 画布 / Next.js 15)  │  Chrome 浏览器插件 (一键富化收录)   │
+│  Web 前端 (Bento 画布 / Next.js 16)  │  Chrome 浏览器插件 (一键富化收录)   │
 │  Raycast 极速桌面扩展 (全局检索)     │  AI Agent 客户端 (Claude / Cursor) │
 └──────────────┬──────────────────────┴────────────────────┬────────────┘
                │ STORAGE_ADAPTER=http                      │ MCP stdio / HTTP
@@ -35,7 +35,7 @@
 ┌──────────────▼───────────────────────────────────────────▼────────────┐
 │                         Fastify 5 API 服务中枢                        │
 │  ┌──────────────────────┐  ┌──────────────────┐  ┌─────────────────┐  │
-│  │ 62 条 REST 业务路由   │  │ 兼容存储接缝 API  │  │ JobRunner 队列  │  │
+│  │ 312 个 REST 路由声明  │  │ 兼容存储接缝 API  │  │ JobRunner 队列  │  │
 │  │ /api/sites, search.. │  │ /api/storage/*   │  │ 可用性/权重重算 │  │
 │  └──────────┬───────────┘  └────────┬─────────┘  └────────┬────────┘  │
 │             └─────────── AppContext (全局注入) ───────────┘           │
@@ -43,7 +43,7 @@
          ┌──────────────────────┼──────────────────────┐
 ┌────────▼────────┐    ┌────────▼─────────┐    ┌───────▼───────────┐
 │ @navhub/ai      │    │ @navhub/store    │    │ @navhub/mcp       │
-│ 本地 Embedding   │    │ Drizzle 双驱动   │    │ 15 个 MCP 标准工具 │
+│ 本地 Embedding   │    │ Drizzle 双驱动   │    │ 41 个 MCP 标准工具 │
 │ SSRF 物理防击穿  │    │ 向量检索 (HNSW)  │    │ 读写隔离 / 审计落库│
 │ 多模型 LLM 轮换 │    │ FTS5 / BM25 引擎 │    └───────────────────┘
 └─────────────────┘    └────────┬─────────┘
@@ -68,7 +68,7 @@
 * `STORAGE_ADAPTER=github`：兼容原版行为，数据直接提交到用户自己的私有 GitHub 仓库。
 
 ### 2.2 核心路由分布
-中枢共挂载 62 条路由，涵盖：
+中枢共挂载 312 个 REST 路由声明（49 个路由插件，数字以 `docs/metrics.json` 为准），涵盖：
 * **公开只读**：`GET /api/sites`（支持按 source 过滤）、`GET /api/categories`、`GET /api/tags`、`GET /api/collections`、`GET /api/search`。
 * **管理写操作**：`POST /api/sites`、`POST /api/sites/batch`（批量导入）、`POST /api/sites/auto`（URL 自动抓取富化）、`DELETE /api/sites/:id`。
 * **Token 治理**：`GET /api/tokens`、`POST /api/tokens`、`DELETE /api/tokens/:id`。
@@ -129,7 +129,7 @@
 * **Standard 模式**：基于 PostgreSQL 16+ + pgvector + tsvector + pg_trgm，支持 HNSW 索引加速与多实例高并发。
 
 ### 5.2 核心数据表结构
-涵盖 `sites`、`categories`、`tags`、`site_tags`、`collections`、`collection_items`、`api_tokens`、`audit_logs`、`jobs`、`health_checks` 等 19 张核心表，均具备事务一致性保障与 Drizzle 幂等迁移。
+涵盖 `sites`、`categories`、`tags`、`site_tags`、`collections`、`collection_items`、`api_tokens`、`audit_logs`、`jobs`、`health_checks` 等 46 张表，均具备事务一致性保障与 Drizzle 幂等迁移。
 
 ---
 
@@ -148,7 +148,7 @@
 ## 7. MCP Server 智能体协议 (`packages/mcp`)
 
 标准 Model Context Protocol 实现，支持 stdio 与 HTTP 两种传输协议：
-* **17 个标准工具**：`search_sites`、`get_site`、`list_categories`、`create_site`、`update_site`、`delete_site`、`batch_import`、`get_trending`、`run_job`、`health_check` 等。
+* **41 个标准工具（28 read / 12 write / 1 admin）**：`search_sites`、`get_site`、`list_categories`、`create_site`、`update_site`、`delete_site`、`batch_import`、`get_trending`、`run_job`、`health_check` 等。
 * **安全护栏**：严格执行 Scope 读写分离（`read` / `write` / `admin`）、写操作幂等去重与 `audit_logs` 全流程审计。
 
 ---

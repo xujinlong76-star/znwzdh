@@ -2,7 +2,7 @@
  * 种子数据聚合入口：把 `seed-data/**` 下的插件定义汇总成一份清单。
  *
  * 目录约定（2026-10-20 内容升级批次定型）：
- *   site-packs/   20 个专业网址包，一包一文件（每包 18~20 分类 / 200~320 站点）
+ *   site-packs/   34 个专业网址包，一包一文件（每包 18~21 分类 / 190~223 站点）
  *   search-packs  3 个搜索引擎包（!前缀全局唯一，可同时安装不互相覆盖）
  *   themes        完整主题皮肤（20 项色板变量 + 圆角）
  *   presets       工作台预设（模块 type 必须在 WIDGET_REGISTRY 且跨度合法）
@@ -15,7 +15,7 @@
  */
 import type { SeedPluginDef } from "./types.ts";
 
-// ---- 网址包（site-pack）×20 ----
+// ---- 网址包（site-pack）×34 ----
 import { frontEndArsenal } from "./site-packs/front-end-arsenal.ts";
 import { seedDesignInspiration } from "./site-packs/seed-design-inspiration.ts";
 import { seedDevEfficiency } from "./site-packs/seed-dev-efficiency.ts";

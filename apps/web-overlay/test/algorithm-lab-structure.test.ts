@@ -161,8 +161,9 @@ describe('庞加莱双曲面板必须用 core 引擎，不许手写距离公式'
   //  1. 缺 clampToBall 边界钳制 —— 公式要求 ‖u‖<1，越界时 denom≤0 直接返回魔法值；
   //  2. 上界截断写 25.0（引擎 30.0），同场景两个答案；
   //  3. 打分缺 beta=1.5 指数，排序会不同。
-  // 真引擎 packages/core/src/hyperbolic.ts（285 行，含 expMap0/logMap0/mobiusAdd/
-  // lorentzDistance 等完整双曲几何）一直存在但零调用。
+  // 真引擎 packages/core/src/hyperbolic.ts（284 行，含 expMap0/logMap0/mobiusAdd/
+  // lorentzDistance 等完整双曲几何）；洛伦兹距离由线上排序 routes/rank.ts 实际调用，
+  // 庞加莱函数由本面板经 findTopAlternativesInHyperbolicSpace 调用（2026-11-11 核对）。
   it('调用 findTopAlternativesInHyperbolicSpace', () => {
     const panel = overlayRead('src/components/algorithm-lab/hyperbolic-panel.tsx')
     expect(panel).toContain("from '@/lib/hyperbolic'")

@@ -322,6 +322,76 @@ export const RankNewResponse = z.looseObject({
 });
 
 /* ------------------------------------------------------------------ *
+ * 场景包（A2 落地页只读接口，与 ai/find 共用 scene-resolve 展开）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 场景步骤里的一条站点：与 ai/find 的 FinderSite 同形——只带引用级字段
+ * 与一句本地拼装的推荐理由（分类 + 简介），不下发完整站点负载。
+ */
+const SceneSitePayload = z.looseObject({
+  siteId: z.string(),
+  title: z.string(),
+  url: z.string(),
+  description: z.string().nullable(),
+  categoryId: z.string(),
+  reason: z.string(),
+});
+
+/** 场景包摘要（列表口径）：计数全部按本次真实召回算，不是定义里的写死数字 */
+const SceneSummaryPayload = z.looseObject({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  intro: z.string(),
+  /** 场景定义的步骤数（含本次未召回站点的步骤——那是流程本身的长度） */
+  stepCount: z.number().int(),
+  /** 本次真实召回到的站点步数：口径与 stepCount 分开，页面文案不得混用 */
+  resolvedStepCount: z.number().int(),
+  siteCount: z.number().int(),
+  /** 每步的标题（定义顺序），索引页做流程预览 */
+  stepLabels: z.array(z.string()),
+  /** 本包站点的最近更新时间（毫秒戳）；无站点时为 null */
+  updatedAt: z.number().nullable(),
+});
+
+/**
+ * GET /api/scenes：场景包索引。
+ * degraded 只会在检索失败时为 "error"：接口不 500、也不把部分结果冒充完整，
+ * 所以它和 ok 一样是契约的一部分，前端据此决定要不要提示「内容可能不全」。
+ */
+export const SceneListResponse = z.looseObject({
+  ok: z.literal(true),
+  degraded: z.enum(["error"]).nullable(),
+  total: z.number().int(),
+  scenes: z.array(SceneSummaryPayload),
+});
+
+/** 场景包详情里的一步：站点只来自站内真实召回，召回不到的步骤整步不下发 */
+const SceneStepPayload = z.looseObject({
+  label: z.string(),
+  /** 这一步的检索词（页面不展示，留作口径可审计：站点就是按它们召回的） */
+  queries: z.array(z.string()),
+  sites: z.array(SceneSitePayload),
+});
+
+/** GET /api/scenes/{id}：场景包落地页数据；未知 id 走统一 404 错误包络 */
+export const SceneDetailResponse = z.looseObject({
+  ok: z.literal(true),
+  degraded: z.enum(["error"]).nullable(),
+  scene: z.looseObject({
+    id: z.string(),
+    title: z.string(),
+    description: z.string(),
+    intro: z.string(),
+    steps: z.array(SceneStepPayload),
+    /** 全部步骤去重后的真实站点数（按本次召回算） */
+    siteCount: z.number().int(),
+    updatedAt: z.number().nullable(),
+  }),
+});
+
+/* ------------------------------------------------------------------ *
  * 搜索历史（「最近搜索」与历史管理页）
  * ------------------------------------------------------------------ */
 
@@ -1656,6 +1726,9 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/tags": { schema: TagListResponse, name: "TagListResponse" },
   "GET /api/rank/trending": { schema: RankTrendingResponse, name: "RankTrendingResponse" },
   "GET /api/rank/new": { schema: RankNewResponse, name: "RankNewResponse" },
+  // 场景包落地页取数：列表是索引页数据源、详情是 /scenes/{id} 的数据源
+  "GET /api/scenes": { schema: SceneListResponse, name: "SceneListResponse" },
+  "GET /api/scenes/{id}": { schema: SceneDetailResponse, name: "SceneDetailResponse" },
   "GET /api/plugins": { schema: PluginListResponse, name: "PluginListResponse" },
   "GET /api/plugins/installed": { schema: InstalledPluginsResponse, name: "InstalledPluginsResponse" },
   "GET /api/plugins/taps": { schema: PluginTapsResponse, name: "PluginTapsResponse" },

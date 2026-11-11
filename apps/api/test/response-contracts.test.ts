@@ -46,6 +46,8 @@ import {
   RESPONSE_SCHEMA_BINDINGS,
   RankNewResponse,
   RankTrendingResponse,
+  SceneDetailResponse,
+  SceneListResponse,
   SEARCH_HIT_CORE_FIELDS,
   SITE_CORE_FIELDS,
   SearchHistoryPageResponse,
@@ -470,6 +472,34 @@ describe("真实响应满足契约", () => {
     const body = res.json();
     expectContract(RankNewResponse, body, "GET /api/rank/new");
     expect(body.hits.length).toBe(SITES.length);
+  });
+
+  it("GET /api/scenes：索引计数按真实召回，total 与清单等长", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/scenes" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(SceneListResponse, body, "GET /api/scenes");
+    expect(body.total).toBe(body.scenes.length);
+    expect(body.total).toBeGreaterThan(0);
+    // stepLabels 是定义顺序的流程预览：与 stepCount 必须等长，不能靠召回结果凑
+    for (const scene of body.scenes) {
+      expect(scene.stepLabels.length).toBe(scene.stepCount);
+    }
+  });
+
+  it("GET /api/scenes/{id}：详情步骤与未知 id 的 404 包络", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/scenes/make-ppt" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(SceneDetailResponse, body, "GET /api/scenes/{id}");
+    expect(body.scene.id).toBe("make-ppt");
+    // siteCount 是全部步骤去重后的真实站点数：不得大于各步站点数之和
+    const stepSites = (body.scene.steps as Array<{ sites: unknown[] }>).reduce((n, s) => n + s.sites.length, 0);
+    expect(body.scene.siteCount).toBeLessThanOrEqual(stepSites);
+
+    const missing = await app.inject({ method: "GET", url: "/api/scenes/definitely-not-a-scene" });
+    expect(missing.statusCode).toBe(404);
+    expectContract(ErrorResponse, missing.json(), "GET /api/scenes/{id} 404");
   });
 
   it("GET /api/plugins：列表带 summary、默认不带 manifest", async () => {

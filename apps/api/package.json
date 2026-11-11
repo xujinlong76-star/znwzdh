@@ -9,6 +9,7 @@
     "start:ts": "node src/main.ts",
     "migrate": "node src/migrate.ts",
     "seed": "node src/seed-main.ts",
+    "test": "vitest run --root ../.. --reporter=default --reporter=../../scripts/vitest-github-reporter.mjs apps/api/test",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "build": "tsc -p tsconfig.json",

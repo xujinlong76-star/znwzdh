@@ -421,6 +421,60 @@ export interface RankNewResponse {
 }
 
 /**
+ * GET /api/scenes
+ */
+export interface SceneListResponse {
+  ok: true;
+  degraded: "error" | null;
+  total: number;
+  scenes: ({
+    id: string;
+    title: string;
+    description: string;
+    intro: string;
+    stepCount: number;
+    resolvedStepCount: number;
+    siteCount: number;
+    stepLabels: string[];
+    updatedAt: number | null;
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/scenes/{id}
+ */
+export interface SceneDetailResponse {
+  ok: true;
+  degraded: "error" | null;
+  scene: {
+    id: string;
+    title: string;
+    description: string;
+    intro: string;
+    steps: ({
+      label: string;
+      queries: string[];
+      sites: ({
+        siteId: string;
+        title: string;
+        url: string;
+        description: string | null;
+        categoryId: string;
+        reason: string;
+        [key: string]: unknown;
+      })[];
+      [key: string]: unknown;
+    })[];
+    siteCount: number;
+    updatedAt: number | null;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
  * GET /api/plugins
  */
 export interface PluginListResponse {
@@ -2287,6 +2341,8 @@ export interface RestContractRoutes {
   "GET /api/plugins/{slug}": PluginDetailResponse;
   "GET /api/rank/new": RankNewResponse;
   "GET /api/rank/trending": RankTrendingResponse;
+  "GET /api/scenes": SceneListResponse;
+  "GET /api/scenes/{id}": SceneDetailResponse;
   "GET /api/search": SearchResponse;
   "GET /api/search-history": SearchHistoryPageResponse;
   "GET /api/sites": SiteListResponse;

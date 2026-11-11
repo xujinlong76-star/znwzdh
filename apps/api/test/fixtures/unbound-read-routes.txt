@@ -195,6 +195,8 @@ HEAD /api/rank/trending
 HEAD /api/ready
 HEAD /api/recipes
 HEAD /api/relations/types
+HEAD /api/scenes
+HEAD /api/scenes/{id}
 HEAD /api/search
 HEAD /api/search-history
 HEAD /api/search/linucb

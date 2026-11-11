@@ -446,6 +446,11 @@ export async function writeNavigationData(
   // 库外，都不能嵌套进主事务）：事务内只收集待办，提交后逐项落实。
   const pendingTagSync: Array<{ id: string; tags: string[] }> = [];
   const pendingReindexIds = new Set<string>();
+  // 本轮被快照复活的站点：复活语义是「按 createSiteWithId 分支清零关联数据」，
+  // post-commit 的分面回填若在同一轮把 pricing/platform 又补回去，复活就不再
+  // 等价于重建（回填会把刚清掉的 site_facets 重新写出 2 行）。这批站点与
+  // createSiteWithId 直建/复活的站点同等对待：本轮不 heal，下一次写回再补齐。
+  const revivedIds = new Set<string>();
   const result = await ctx.repo.withTransaction(async () => {
     const input = Array.isArray(data?.navigationItems) ? data.navigationItems : [];
     let categoryCount = 0;
@@ -610,6 +615,7 @@ export async function writeNavigationData(
 
     if (toUpdate.length > 0) await ctx.repo.updateSitesFromSnapshot(toUpdate);
     if (toRevive.length > 0) await ctx.repo.reviveSitesFromSnapshot(toRevive);
+    for (const row of toRevive) revivedIds.add(row.id);
     if (toInsert.length > 0) {
       await ctx.repo.insertSitesBulk(
         toInsert.map((row) => ({ ...row, source: "navsphere" })),
@@ -698,7 +704,11 @@ export async function writeNavigationData(
   // 与标签/向量两项 post-commit 的容错口径一致，下次写回会再次 heal。
   try {
     const allSites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES, {});
-    const facetReport = await backfillDerivedFacets(ctx, allSites);
+    // 复活站点本轮跳过（见 revivedIds 注释）：它们的 facets 是被复活语义刻意
+    // 清零的，同轮补回等于把「清空」改回「继承推导值」，与测试钉住的
+    // createSiteWithId 等价性冲突；下一次写回的 heal 会照常给它们补齐。
+    const healSites = revivedIds.size > 0 ? allSites.filter((s) => !revivedIds.has(s.id)) : allSites;
+    const facetReport = await backfillDerivedFacets(ctx, healSites);
     if (facetReport.filledPricing > 0 || facetReport.filledPlatform > 0) {
       console.info(`[storage] 分面回填：${formatFacetBackfillReport(facetReport)}`);
     }

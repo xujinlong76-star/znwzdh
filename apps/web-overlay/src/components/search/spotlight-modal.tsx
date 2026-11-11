@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import {
   Search,
@@ -81,6 +82,7 @@ import {
 } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { openCopilot } from '@/lib/ai-entry'
+import { submitPrefillHref } from '@/lib/submit-prefill'
 import { searchChannelStatus } from '@/lib/search-degrade'
 import { searchHref } from '@/lib/search-page'
 import { getModifierKey } from '@/lib/platform'
@@ -1623,6 +1625,29 @@ export function SpotlightModal({
                           </div>
                         </div>
                       )}
+                      {/* A11：零结果不是死胡同——问 AI 找站（查询词自动发过去）、
+                          投稿收录（查询词预填进表单）；与 /search 页、首页搜索
+                          面板同一对出口、同一份预填规则（lib/submit-prefill） */}
+                      <div className="pt-1 flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpen(false)
+                            openCopilot({ query: query.trim(), source: 'spotlight' })
+                          }}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer inline-flex items-center gap-1"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          让 AI 帮我找「{query.trim().length > 24 ? `${query.trim().slice(0, 24)}…` : query.trim()}」
+                        </button>
+                        <Link
+                          href={submitPrefillHref(query.trim())}
+                          onClick={() => setOpen(false)}
+                          className="text-xs px-3 py-1.5 rounded-lg border border-border bg-card text-foreground hover:bg-accent transition-colors inline-flex items-center gap-1"
+                        >
+                          投稿收录这个站
+                        </Link>
+                      </div>
                       <div className="text-[11px] text-muted-foreground">
                         提示：输入 <span className="font-mono text-primary">&gt;</span> 可执行系统控制指令，或输入 <span className="font-mono text-primary">?</span> 呼出 AI 助手
                       </div>

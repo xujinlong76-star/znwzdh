@@ -27,12 +27,15 @@ import type { SubmissionData, SubmissionResponse } from '@/types/submission'
 
 interface SubmissionFormProps {
     navigationData: NavigationData
+    /** A11：从搜索零结果带词跳来时的预填（只作表单初始值，用户可改；非法值由 parseSubmitPrefill 事先滤掉） */
+    initialTitle?: string
+    initialUrl?: string
 }
 
-export function SubmissionForm({ navigationData }: SubmissionFormProps) {
+export function SubmissionForm({ navigationData, initialTitle, initialUrl }: SubmissionFormProps) {
     const [formData, setFormData] = useState<SubmissionData>({
-        title: '',
-        url: '',
+        title: initialTitle ?? '',
+        url: initialUrl ?? '',
         description: '',
         category: '',
         subcategory: '',

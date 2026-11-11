@@ -17,6 +17,7 @@
  */
 
 import { externalSearchEngineName, externalSearchUrl, type SearchEngineId } from './user-settings'
+import { submitPrefillHref } from './submit-prefill'
 
 export type SearchPanelActionKind =
   | 'retry'
@@ -24,6 +25,10 @@ export type SearchPanelActionKind =
   | 'browse-tags'
   | 'browse-hot'
   | 'external-search'
+  /** 零结果出口：唤起 AI 找站抽屉，查询词自动发过去（无 href，走按钮动作） */
+  | 'ai-find'
+  /** 零结果出口：跳投稿页，查询词按 submit-prefill 规则预填（带 href，走 <Link>） */
+  | 'submit-site'
 
 export interface SearchPanelAction {
   kind: SearchPanelActionKind
@@ -96,13 +101,26 @@ export function planSearchPanel(input: SearchPanelInput): SearchPanelPlan {
     }
   }
 
-  // 真的零结果：给出口，且不要因为微组件命中就隐瞒「导航检索为空」
+  // 真的零结果：给出口，且不要因为微组件命中就隐瞒「导航检索为空」。
+  // A11：两个真出口排在最前——问 AI 找站（查询词自动发过去）、投稿收录
+  // （查询词预填进表单）；清空/浏览是次要出口，放后面。降级（outage）时
+  // 不给这两条：我们连「有没有」都没问成功，AI 找站同样走中枢、一样没谱。
+  const trimmed = query.trim()
+  // 按钮文案只露前 24 字（查询词最长 256 字，全塞进胶囊会撑爆面板）；
+  // 发给 AI 的仍是完整查询词（runPanelAction 用组件内的 query，不读 label）。
+  const labelQuery = trimmed.length > 24 ? `${trimmed.slice(0, 24)}…` : trimmed
+  const aiFind: SearchPanelAction = { kind: 'ai-find', label: `让 AI 帮我找「${labelQuery}」` }
+  const submitSite: SearchPanelAction = {
+    kind: 'submit-site',
+    label: '投稿收录这个站',
+    href: submitPrefillHref(trimmed),
+  }
   return {
     mode: 'no-results',
-    title: `未找到与 “${query.trim()}” 相关的导航`,
+    title: `未找到与 “${trimmed}” 相关的导航`,
     hint: hasWidgetResult
       ? '上方卡片是根据这句话即时生成的；导航检索没有匹配，可以换更短的关键词。'
       : '试试拼音首字母（如 zgtqw）或描述你的需求',
-    actions: [CLEAR, ...(external ? [external] : []), BROWSE_TAGS, BROWSE_HOT],
+    actions: [aiFind, submitSite, CLEAR, ...(external ? [external] : []), BROWSE_TAGS, BROWSE_HOT],
   }
 }

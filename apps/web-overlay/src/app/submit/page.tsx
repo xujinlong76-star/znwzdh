@@ -8,6 +8,7 @@ import { Button } from '@/registry/new-york/ui/button'
 import type { NavigationData } from '@/types/navigation'
 import { Footer } from '@/components/footer'
 import { pageShareMetadata } from '@/lib/seo/metadata'
+import { parseSubmitPrefill } from '@/lib/submit-prefill'
 
 /**
  * NavHub 改动：
@@ -39,8 +40,14 @@ export async function generateMetadata(): Promise<Metadata> {
     }
 }
 
-export default async function SubmitPage() {
+export default async function SubmitPage({
+    searchParams,
+}: {
+    // Next 16：searchParams 是 Promise；A11 零结果导流用 ?title= / ?url= 预填表单
+    searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
     const { navigationData } = await getData()
+    const prefill = parseSubmitPrefill(await searchParams)
 
     return (
         <Container as="main" id="main-content">
@@ -66,8 +73,12 @@ export default async function SubmitPage() {
                     </p>
                 </div>
 
-                {/* 投稿表单 */}
-                <SubmissionForm navigationData={navigationData} />
+                {/* 投稿表单（A11：从搜索零结果带词跳来时，标题/网址按预填规则带入） */}
+                <SubmissionForm
+                    navigationData={navigationData}
+                    initialTitle={prefill.initialTitle}
+                    initialUrl={prefill.initialUrl}
+                />
 
                 {/* 投稿说明 */}
                 <div className="p-4 sm:p-6 rounded-2xl border border-border/60 bg-muted/20 space-y-3.5 text-xs shadow-2xs">

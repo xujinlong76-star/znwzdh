@@ -15,6 +15,7 @@ import type { HubSearchHit, HubSearchResult } from '@/lib/navhub-api'
 import { Fragment } from 'react'
 import { highlightParts } from '@/lib/highlight'
 import { SearchFacetBar, type FacetGroup } from '@/components/search-facet-bar'
+import { ZeroResultActions } from '@/components/search/zero-result-actions'
 
 /**
  * /search 的视图（纯服务端组件）。
@@ -262,6 +263,9 @@ function EmptyResults({
               : `标签「${tag}」下暂时没有站点。`
             : `没有找到与“${q}”匹配的站点。`}
       </p>
+      {/* A11：零结果不是死胡同——两个真出口放最前（AI 找站带词自动问、
+          投稿收录带词预填），再往下才是换词/热门词/全网穿透这些次要出口 */}
+      {q ? <ZeroResultActions query={q} /> : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {page > 1 ? (
           <Link href={searchHref({ q, tag })} className="text-xs text-primary hover:underline">

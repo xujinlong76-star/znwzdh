@@ -37,6 +37,7 @@ import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
+import { openCopilot } from '@/lib/ai-entry'
 import { getIdentity } from '@/lib/identity'
 import { searchHref } from '@/lib/search-page'
 import { useFavorites } from '@/hooks/useFavorites'
@@ -534,8 +535,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       setIsFocused(false)
       return
     }
-    // browse-* 由 <Link> 渲染，走客户端路由，不发生整页刷新
-  }, [])
+    if (action.kind === 'ai-find') {
+      // A11 零结果出口：唤起全局 AI 找站抽屉并把完整查询词自动发过去；
+      // 先收起面板，抽屉是全局挂载的（providers → GlobalAiGateway），不依赖面板存活。
+      const q = query.trim()
+      if (!q) return
+      setIsFocused(false)
+      openCopilot({ query: q, source: 'programmatic' })
+      return
+    }
+    // browse-* / submit-site 由 <Link> 渲染，走客户端路由，不发生整页刷新
+  }, [query])
 
   // 打开方式听用户中心的开关，站点配置只当默认值
   const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)

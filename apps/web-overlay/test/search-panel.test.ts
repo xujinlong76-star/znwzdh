@@ -66,7 +66,51 @@ describe("planSearchPanel：真零结果也必须有出口", () => {
   it("标题带上查询词，并给出清空/浏览出口（不依赖服务端 suggestions）", () => {
     expect(plan.mode).toBe("no-results");
     expect(plan.title).toBe("未找到与 “react vue” 相关的导航");
-    expect(plan.actions.map((a) => a.kind)).toEqual(["clear", "browse-tags", "browse-hot"]);
+    // A11：两个真出口排最前（AI 找站、投稿收录），清空/浏览是次要出口
+    expect(plan.actions.map((a) => a.kind)).toEqual([
+      "ai-find",
+      "submit-site",
+      "clear",
+      "browse-tags",
+      "browse-hot",
+    ]);
+  });
+
+  it("A11：AI 找站出口是按钮动作（无 href，组件内唤起抽屉并带词）", () => {
+    const aiFind = plan.actions.find((a) => a.kind === "ai-find");
+    expect(aiFind).toBeDefined();
+    expect(aiFind?.href).toBeUndefined();
+    expect(aiFind?.label).toContain("让 AI 帮我找");
+    expect(aiFind?.label).toContain("react vue");
+  });
+
+  it("A11：投稿出口带查询词预填链接（关键词进 title）", () => {
+    const submit = plan.actions.find((a) => a.kind === "submit-site");
+    expect(submit?.href).toBe("/submit?title=react%20vue");
+  });
+
+  it("A11：网址形查询词进 url 参数（不硬把关键词拼成网址）", () => {
+    const byDomain = planSearchPanel({ ...base, query: "example.com" });
+    expect(byDomain.actions.find((a) => a.kind === "submit-site")?.href).toBe(
+      "/submit?url=https%3A%2F%2Fexample.com%2F",
+    );
+    const byUrl = planSearchPanel({ ...base, query: "https://foo.dev/x" });
+    expect(byUrl.actions.find((a) => a.kind === "submit-site")?.href).toBe(
+      "/submit?url=https%3A%2F%2Ffoo.dev%2Fx",
+    );
+  });
+
+  it("A11：降级（outage）不给 AI 找站/投稿出口——没问成功就别假装能问 AI", () => {
+    const outage = planSearchPanel({ ...base, degraded: true });
+    expect(outage.actions.map((a) => a.kind)).not.toContain("ai-find");
+    expect(outage.actions.map((a) => a.kind)).not.toContain("submit-site");
+  });
+
+  it("A11：超长查询词只截断按钮文案，不截断实际发给 AI 的词（label 封顶 24 字）", () => {
+    const long = planSearchPanel({ ...base, query: "免费修图工具推荐".repeat(10) });
+    const aiFind = long.actions.find((a) => a.kind === "ai-find");
+    expect(aiFind?.label.length).toBeLessThan(40);
+    expect(aiFind?.label).toContain("…");
   });
 
   it("查询词两侧空白被裁掉", () => {
@@ -156,6 +200,39 @@ describe("search-palette 源码：竞态与矛盾文案的回归守卫", () => {
   it("检索面板接入知识图谱对标方案推荐 (relationHits)", () => {
     expect(src).toContain("relationHits.length > 0");
     expect(src).toContain("setRelationHits(res.relationHits ?? [])");
+  });
+});
+
+describe("A11：三处零结果入口共用同一对出口（AI 找站 + 投稿收录）", () => {
+  it("首页搜索面板：ai-find 动作唤起抽屉并把完整查询词发过去", () => {
+    const palette = overlayFile("src/components/search-palette.tsx");
+    expect(palette).toContain("openCopilot({ query: q, source: 'programmatic' })");
+    expect(palette).toContain("action.kind === 'ai-find'");
+  });
+
+  it("/search 页：零结果区渲染 ZeroResultActions（客户端岛，服务端页其余不动）", () => {
+    const results = overlayFile("src/app/search/search-results.tsx");
+    expect(results).toContain("ZeroResultActions");
+    expect(results).toContain("{q ? <ZeroResultActions query={q} /> : null}");
+    const island = overlayFile("src/components/search/zero-result-actions.tsx");
+    expect(island).toContain("openCopilot({ query: q, source: 'programmatic' })");
+    expect(island).toContain("submitPrefillHref(q)");
+  });
+
+  it("⌘K 超级搜索：零结果区同一对出口，点开抽屉/跳投稿时先关弹窗", () => {
+    const spotlight = overlayFile("src/components/search/spotlight-modal.tsx");
+    expect(spotlight).toContain("openCopilot({ query: query.trim(), source: 'spotlight' })");
+    expect(spotlight).toContain("submitPrefillHref(query.trim())");
+  });
+
+  it("/submit 页：解析 ?title= / ?url= 并预填表单（非法值由 parseSubmitPrefill 滤掉）", () => {
+    const page = overlayFile("src/app/submit/page.tsx");
+    expect(page).toContain("parseSubmitPrefill(await searchParams)");
+    expect(page).toContain("initialTitle={prefill.initialTitle}");
+    expect(page).toContain("initialUrl={prefill.initialUrl}");
+    const form = overlayFile("src/components/submission-form.tsx");
+    expect(form).toContain("initialTitle");
+    expect(form).toContain("initialUrl");
   });
 });
 

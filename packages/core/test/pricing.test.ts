@@ -3,7 +3,7 @@
  * 1. 人工核实覆盖表优先，键归一化（www./大小写/尾斜杠）不影响命中；
  * 2. 强信号规则收紧：裸「免费」不判 free、「免费试用」判 freemium 而非 free；
  * 3. 无证据一律 unknown，绝不猜；
- * 4. 数据完整性：线上导航 332 站逐站过推导，确定值/未标注集合与撰写时的
+ * 4. 数据完整性：线上导航 322 站逐站过推导，确定值/未标注集合与撰写时的
  *    核实结论一致（新增站点落 unknown 是预期——提醒后来者先核实再入表）。
  */
 import { describe, expect, it } from "vitest";
@@ -23,7 +23,7 @@ describe("pricingOverrideKey 归一化", () => {
 
 describe("derivePricing 覆盖表优先", () => {
   it("短剧三家与证据一致：红果 free / DramaBox freemium / ReelShort freemium", () => {
-    expect(derivePricing({ url: "https://hongguo.com" }).value).toBe("free");
+    expect(derivePricing({ url: "https://hongguoduanju.com" }).value).toBe("free");
     expect(derivePricing({ url: "https://www.dramaboxdb.com" }).value).toBe("freemium");
     expect(derivePricing({ url: "https://www.reelshort.com" }).value).toBe("freemium");
   });
@@ -64,7 +64,7 @@ describe("derivePricing 强信号规则（收紧版）", () => {
   });
 });
 
-describe("导航 332 站全量推导（数据完整性基线）", () => {
+describe("导航 322 站全量推导（数据完整性基线）", () => {
   const navPath = fileURLToPath(new URL("../../../apps/web-overlay/src/navsphere/content/navigation.json", import.meta.url));
   const nav = JSON.parse(readFileSync(navPath, "utf8")) as {
     navigationItems: Array<{
@@ -73,11 +73,11 @@ describe("导航 332 站全量推导（数据完整性基线）", () => {
   };
   const sites = nav.navigationItems.flatMap((c) => c.subCategories.flatMap((s) => s.items));
 
-  it("共 332 站", () => {
-    expect(sites.length).toBe(332);
+  it("共 322 站", () => {
+    expect(sites.length).toBe(322);
   });
 
-  it("确定值 309 站、未标注恰为核实不了的 23 站", () => {
+  it("确定值 300 站、未标注恰为核实不了的 22 站", () => {
     const unknownTitles: string[] = [];
     let determinate = 0;
     for (const s of sites) {
@@ -85,10 +85,10 @@ describe("导航 332 站全量推导（数据完整性基线）", () => {
       if (r.value === "unknown") unknownTitles.push(s.title);
       else determinate++;
     }
-    expect(determinate).toBe(309);
+    expect(determinate).toBe(300);
     expect(unknownTitles.sort()).toEqual(
       [
-        "Gitee AI", "Java", "OpenAI", "Genmo", "有戏AI",
+        "Java", "OpenAI", "Genmo", "有戏AI",
         "Jasper", "Copy.ai", "Writesonic", "Grammarly", "秘塔写作猫", "Sudowrite", "Wordtune",
         "Udio", "Soundraw", "AIVA", "Boomy", "Mubert", "Beatoven.ai", "Loudly",
         "Murf AI", "WellSaid", "NaturalReader", "魔音工坊",

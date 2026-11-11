@@ -2,7 +2,7 @@
  * 数据管理页（/admin/data）的纯逻辑：部署基线与灌入状态判定。
  *
  * 基线数字的出处（都不许凭空改）：
- *   - 站点 332：一级 14 / 二级 47 / 站点 332，实测自
+ *   - 站点 322：一级 14 / 二级 47 / 站点 322，实测自
  *     `apps/web-overlay/src/navsphere/content/navigation.json`
  *     （data-management.test.ts 每次跑测试都会重数一遍，漂移即红）。
  *   - 视频 6007：实测自 `apps/web-overlay/src/navsphere/content/videos.json`
@@ -16,7 +16,7 @@
  *   - ≥ 基线 = 已灌入（之后管理员自己加站，超基线是正常的）。
  */
 
-export const BASELINE_SITES = 332
+export const BASELINE_SITES = 322
 export const BASELINE_VIDEOS = 6007
 
 export type SeedStatus = 'seeded' | 'below-baseline' | 'empty'

@@ -208,7 +208,7 @@
               "enabled": true,
               "tags": [
                 "代码生成",
-                "通义",
+                "智谱",
                 "IDE插件"
               ]
             },
@@ -249,19 +249,6 @@
                 "阿里云",
                 "企业级",
                 "代码解释"
-              ]
-            },
-            {
-              "id": "nav-192a544535c8",
-              "title": "Gitee AI",
-              "href": "https://moark.com",
-              "description": "码云推出的AI编程平台，集成代码审查与生成。",
-              "icon": "https://moark.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "代码审查",
-                "Gitee",
-                "生成"
               ]
             },
             {
@@ -323,18 +310,6 @@
               ]
             },
             {
-              "id": "nav-781c7d6ca5ee",
-              "title": "Canva AI",
-              "href": "https://www.canva.com/ai-image-generator/",
-              "description": "集成在设计平台中的 AI 图像生成",
-              "icon": "https://www.canva.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "设计",
-                "文生图"
-              ]
-            },
-            {
               "id": "nav-ea54fb1dc6d7",
               "title": "Leonardo AI",
               "href": "https://leonardo.ai",
@@ -368,6 +343,18 @@
               "tags": [
                 "艺术风格",
                 "视觉模型"
+              ]
+            },
+            {
+              "id": "nav-03b44480b539",
+              "title": "Remove.bg",
+              "href": "https://www.remove.bg",
+              "description": "AI 一键抠图去背景",
+              "icon": "https://remove.bg/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "ai",
+                "抠图"
               ]
             }
           ]
@@ -903,6 +890,19 @@
                 "开源模型",
                 "多模态"
               ]
+            },
+            {
+              "id": "nav-192a544535c8",
+              "title": "Gitee AI",
+              "href": "https://moark.com",
+              "description": "Gitee 旗下模力方舟（Gitee AI）开源大模型与数据集社区，提供模型体验、推理与算力服务",
+              "icon": "https://moark.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "模型社区",
+                "数据集",
+                "Gitee"
+              ]
             }
           ]
         },
@@ -979,7 +979,7 @@
               "id": "nav-9f9aa4dddd80",
               "title": "Luma AI",
               "href": "https://lumalabs.ai/app",
-              "description": "基于Gen模型的高画质AI视频生成工具，操作简便。",
+              "description": "Luma AI 推出的基于自研 Ray 模型的高画质 AI 视频生成工具，操作简便",
               "icon": "https://lumalabs.ai/favicon.ico",
               "enabled": true,
               "tags": [
@@ -1015,19 +1015,6 @@
               ]
             },
             {
-              "id": "nav-8bed9a006e56",
-              "title": "Kling AI",
-              "href": "https://kling.ai",
-              "description": "快手旗下国际版可灵，提供高精度AI视频生成服务。",
-              "icon": "https://kling.ai/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "文生视频",
-                "国际版",
-                "视频创作"
-              ]
-            },
-            {
               "id": "nav-2e727d29bc5d",
               "title": "Haiper",
               "href": "https://haiper.ai",
@@ -1051,6 +1038,19 @@
                 "实时视频",
                 "开发工具",
                 "AI引擎"
+              ]
+            },
+            {
+              "id": "nav-90f676a0dbba",
+              "title": "Vidu",
+              "href": "https://www.vidu.cn",
+              "description": "生数科技的 AI 视频生成平台，支持参考生视频与角色一致性，常用于 AI 漫剧与短剧的镜头生成",
+              "icon": "https://www.vidu.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI视频",
+                "漫剧",
+                "图生视频"
               ]
             }
           ]
@@ -1094,26 +1094,13 @@
               "id": "nav-34f7f3f7e468",
               "title": "Topview",
               "href": "https://www.topview.ai",
-              "description": "AI 短剧创作工作台：从故事创意、剧本、角色设定与分镜到 AI 视频成片的一站式短剧生产工具",
+              "description": "AI 视频创作 Agent：可从剧本生成短剧与短片，也支持商品链接一键转营销带货视频",
               "icon": "https://www.topview.ai/favicon.ico",
               "enabled": true,
               "tags": [
                 "AI短剧",
                 "短剧创作",
                 "剧本"
-              ]
-            },
-            {
-              "id": "nav-90f676a0dbba",
-              "title": "Vidu",
-              "href": "https://www.vidu.cn",
-              "description": "生数科技的 AI 视频生成平台，支持参考生视频与角色一致性，常用于 AI 漫剧与短剧的镜头生成",
-              "icon": "https://www.vidu.cn/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "AI视频",
-                "漫剧",
-                "图生视频"
               ]
             }
           ]
@@ -1216,18 +1203,6 @@
               "tags": [
                 "Monorepo",
                 "构建工具"
-              ]
-            },
-            {
-              "id": "nav-8f3af80ff09f",
-              "title": "Storybook",
-              "href": "https://storybook.js.org",
-              "description": "UI组件开发与测试环境",
-              "icon": "https://storybook.js.org/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "组件开发",
-                "测试工具"
               ]
             }
           ]
@@ -1333,6 +1308,18 @@
               "tags": [
                 "React",
                 "主题化"
+              ]
+            },
+            {
+              "id": "nav-8f3af80ff09f",
+              "title": "Storybook",
+              "href": "https://storybook.js.org",
+              "description": "UI组件开发与测试环境",
+              "icon": "https://storybook.js.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "组件开发",
+                "测试工具"
               ]
             }
           ]
@@ -1615,19 +1602,6 @@
                 "S3",
                 "分布式"
               ]
-            },
-            {
-              "id": "nav-e3e74bb69686",
-              "title": "Tencent Cloud Database",
-              "href": "https://cloud.tencent.com/product/cdb",
-              "description": "腾讯云提供的安全可靠的云数据库服务",
-              "icon": "https://cloud.tencent.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "云服务",
-                "托管",
-                "数据库"
-              ]
             }
           ]
         },
@@ -1699,19 +1673,6 @@
                 "Docker",
                 "编排",
                 "多容器"
-              ]
-            },
-            {
-              "id": "nav-3e6c73a0f480",
-              "title": "Kubernetes Dashboard",
-              "href": "https://kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard/",
-              "description": "Kubernetes集群的图形化Web管理界面",
-              "icon": "https://kubernetes.io/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "K8s",
-                "Web",
-                "管理"
               ]
             }
           ]
@@ -1804,26 +1765,26 @@
               "id": "nav-55baf56ce162",
               "title": "腾讯云",
               "href": "https://cloud.tencent.com/",
-              "description": "腾讯云的安全与网络加速服务",
+              "description": "腾讯旗下综合公有云平台，提供云服务器、数据库、存储、AI 与云原生等全栈云计算服务",
               "icon": "https://cloud.tencent.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "腾讯云",
-                "CDN",
-                "安全加速"
+                "云计算",
+                "公有云",
+                "腾讯云"
               ]
             },
             {
               "id": "nav-c0e3676b2ff2",
               "title": "华为云",
               "href": "https://www.huaweicloud.com/",
-              "description": "华为云提供的Web应用防火墙",
+              "description": "华为旗下综合公有云平台，提供弹性计算、存储、AI 算力与云原生基础设施服务",
               "icon": "https://www.huaweicloud.com/favicon.ico",
               "enabled": true,
               "tags": [
                 "华为云",
-                "WAF",
-                "网络防护"
+                "云计算",
+                "公有云"
               ]
             },
             {
@@ -1850,19 +1811,6 @@
                 "部署",
                 "云平台",
                 "全栈"
-              ]
-            },
-            {
-              "id": "nav-7dfb3eaa0680",
-              "title": "Cloudflare Pages",
-              "href": "https://www.cloudflare.com/products/pages/",
-              "description": "Cloudflare 边缘静态托管，推送即全球上线，免费额度慷慨",
-              "icon": "https://pages.cloudflare.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "静态托管",
-                "边缘",
-                "部署"
               ]
             }
           ]
@@ -2046,7 +1994,7 @@
               "id": "nav-be6e65140a3f",
               "title": "SourceHut",
               "href": "https://sourcehut.org",
-              "description": "极简主义代码托管平台，支持P2P克隆",
+              "description": "极简主义开源代码托管与协作平台，基于邮件列表工作流，全站无 JavaScript",
               "icon": "https://sourcehut.org/favicon.ico",
               "enabled": true,
               "tags": [
@@ -2139,15 +2087,15 @@
               ]
             },
             {
-              "id": "nav-a41d2af54037",
-              "title": "InfoQ 开发者社区",
-              "href": "https://xie.infoq.cn",
-              "description": "面向架构师与技术管理人员的信息门户",
-              "icon": "https://xie.infoq.cn/favicon.ico",
+              "id": "nav-240d7ed2bb28",
+              "title": "知乎",
+              "href": "https://www.zhihu.com",
+              "description": "中文问答社区，深度讨论与经验分享",
+              "icon": "https://zhihu.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "架构",
-                "资讯"
+                "问答",
+                "社区"
               ]
             }
           ]
@@ -2169,18 +2117,6 @@
               "tags": [
                 "web",
                 "文档"
-              ]
-            },
-            {
-              "id": "nav-e8e654c9c7e4",
-              "title": "MDN 中文",
-              "href": "https://developer.mozilla.org/zh-CN",
-              "description": "MDN Web 文档中文版，前端必读",
-              "icon": "https://developer.mozilla.org/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "文档",
-                "前端"
               ]
             },
             {
@@ -2223,32 +2159,6 @@
               ]
             },
             {
-              "id": "nav-134c30035d3d",
-              "title": "Node.js 文档",
-              "href": "https://nodejs.org/docs/latest/api/",
-              "description": "Node.js 运行时官方指南与 API 文档",
-              "icon": "https://nodejs.org/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "Node.js",
-                "JavaScript",
-                "运行时"
-              ]
-            },
-            {
-              "id": "nav-93ab60be25c5",
-              "title": "PostgreSQL 文档",
-              "href": "https://www.postgresql.org/docs/",
-              "description": "开源对象关系型数据库官方用户手册",
-              "icon": "https://www.postgresql.org/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "数据库",
-                "SQL",
-                "官方"
-              ]
-            },
-            {
               "id": "nav-0b22dcd111c1",
               "title": "ISO/IEC 标准",
               "href": "https://www.iso.org/standards.html",
@@ -2259,19 +2169,6 @@
                 "国际标准",
                 "ISO",
                 "规范"
-              ]
-            },
-            {
-              "id": "nav-eacbada04668",
-              "title": "IEEE Xplore",
-              "href": "https://ieeexplore.ieee.org/",
-              "description": "电气电子工程师学会技术论文与标准",
-              "icon": "https://ieeexplore.ieee.org/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "IEEE",
-                "论文",
-                "标准"
               ]
             }
           ]
@@ -2293,30 +2190,6 @@
               "tags": [
                 "路线图",
                 "规划"
-              ]
-            },
-            {
-              "id": "nav-e8931ffa1ac0",
-              "title": "慕课网",
-              "href": "https://www.imooc.com/",
-              "description": "提供丰富编程课程与技术培训平台",
-              "icon": "https://www.imooc.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "课程",
-                "编程"
-              ]
-            },
-            {
-              "id": "nav-e7f533e4d7cd",
-              "title": "极客时间",
-              "href": "https://time.geekbang.org/",
-              "description": "面向工程师的系统化技术课程平台",
-              "icon": "https://time.geekbang.org/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "课程",
-                "进阶"
               ]
             }
           ]
@@ -2530,18 +2403,6 @@
               ]
             },
             {
-              "id": "nav-03b44480b539",
-              "title": "Remove.bg",
-              "href": "https://www.remove.bg",
-              "description": "AI 一键抠图去背景",
-              "icon": "https://remove.bg/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "ai",
-                "抠图"
-              ]
-            },
-            {
               "id": "nav-ba05aba02c2c",
               "title": "Canva",
               "href": "https://www.canva.com",
@@ -2551,18 +2412,6 @@
               "tags": [
                 "设计",
                 "模板"
-              ]
-            },
-            {
-              "id": "nav-5606e02108f9",
-              "title": "Adobe Illustrator",
-              "href": "https://www.adobe.com/products/illustrator.html",
-              "description": "专业矢量图形编辑软件",
-              "icon": "https://www.adobe.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "矢量",
-                "专业"
               ]
             },
             {
@@ -2576,6 +2425,18 @@
                 "压缩",
                 "图片处理",
                 "开源"
+              ]
+            },
+            {
+              "id": "nav-6649c4e5e1b6",
+              "title": "Creative Market",
+              "href": "https://creativemarket.com",
+              "description": "设计师数字资源交易平台",
+              "icon": "https://creativemarket.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "资源",
+                "交易"
               ]
             }
           ]
@@ -2648,23 +2509,11 @@
               ]
             },
             {
-              "id": "nav-6649c4e5e1b6",
-              "title": "Creative Market",
-              "href": "https://creativemarket.com",
-              "description": "设计师数字资源交易平台",
-              "icon": "https://creativemarket.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "资源",
-                "交易"
-              ]
-            },
-            {
               "id": "nav-242b3358fa0c",
-              "title": "Typekit",
-              "href": "https://adobe.com/typekit",
-              "description": "Adobe 高端字体订阅服务",
-              "icon": "https://adobe.com/favicon.ico",
+              "title": "Adobe Fonts",
+              "href": "https://fonts.adobe.com",
+              "description": "Adobe 旗下字体订阅服务（原 Typekit），提供高质量商用字体库",
+              "icon": "https://fonts.adobe.com/favicon.ico",
               "enabled": true,
               "tags": [
                 "字体",
@@ -2844,18 +2693,6 @@
               ]
             },
             {
-              "id": "nav-91d93ca93df4",
-              "title": "Miro",
-              "href": "https://miro.com",
-              "description": "在线白板与团队协作工具",
-              "icon": "https://miro.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "白板",
-                "协作"
-              ]
-            },
-            {
               "id": "nav-bb6600ff3c9d",
               "title": "Penpot",
               "href": "https://penpot.app",
@@ -2879,6 +2716,18 @@
                 "UI 设计",
                 "协作",
                 "国产"
+              ]
+            },
+            {
+              "id": "nav-5606e02108f9",
+              "title": "Adobe Illustrator",
+              "href": "https://www.adobe.com/products/illustrator.html",
+              "description": "专业矢量图形编辑软件",
+              "icon": "https://www.adobe.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "矢量",
+                "专业"
               ]
             }
           ]
@@ -2963,11 +2812,11 @@
               "id": "nav-536ff253de93",
               "title": "GitMind",
               "href": "https://gitmind.com/",
-              "description": "支持Git的版本化思维导图工具",
+              "description": "AI 驱动的免费在线思维导图与流程图协作工具",
               "icon": "https://gitmind.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "版本控制",
+                "AI思维导图",
                 "思维导图"
               ]
             },
@@ -2995,6 +2844,18 @@
                 "流程图",
                 "架构图",
                 "开源"
+              ]
+            },
+            {
+              "id": "nav-91d93ca93df4",
+              "title": "Miro",
+              "href": "https://miro.com",
+              "description": "在线白板与团队协作工具",
+              "icon": "https://miro.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "白板",
+                "协作"
               ]
             }
           ]
@@ -3283,6 +3144,30 @@
                 "创意",
                 "设计"
               ]
+            },
+            {
+              "id": "nav-e8931ffa1ac0",
+              "title": "慕课网",
+              "href": "https://www.imooc.com/",
+              "description": "提供丰富编程课程与技术培训平台",
+              "icon": "https://www.imooc.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "课程",
+                "编程"
+              ]
+            },
+            {
+              "id": "nav-e7f533e4d7cd",
+              "title": "极客时间",
+              "href": "https://time.geekbang.org/",
+              "description": "面向工程师的系统化技术课程平台",
+              "icon": "https://time.geekbang.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "课程",
+                "进阶"
+              ]
             }
           ]
         },
@@ -3315,18 +3200,6 @@
               "tags": [
                 "官方",
                 "文献"
-              ]
-            },
-            {
-              "id": "nav-e86e62a25ee1",
-              "title": "JSTOR",
-              "href": "https://www.jstor.org",
-              "description": "全球学术文章数字图书馆",
-              "icon": "https://www.jstor.org/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "学术",
-                "论文"
               ]
             },
             {
@@ -3651,6 +3524,31 @@
                 "社科资源",
                 "智库成果"
               ]
+            },
+            {
+              "id": "nav-eacbada04668",
+              "title": "IEEE Xplore",
+              "href": "https://ieeexplore.ieee.org/",
+              "description": "电气电子工程师学会技术论文与标准",
+              "icon": "https://ieeexplore.ieee.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "IEEE",
+                "论文",
+                "标准"
+              ]
+            },
+            {
+              "id": "nav-e86e62a25ee1",
+              "title": "JSTOR",
+              "href": "https://www.jstor.org",
+              "description": "全球学术文章数字图书馆",
+              "icon": "https://www.jstor.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "学术",
+                "论文"
+              ]
             }
           ]
         }
@@ -3670,18 +3568,6 @@
           "parentId": "reg-news-and-media",
           "enabled": true,
           "items": [
-            {
-              "id": "nav-587f03113c25",
-              "title": "GitHub Trending",
-              "href": "https://github.com/trending",
-              "description": "每日热门开源项目榜，追踪技术趋势",
-              "icon": "https://github.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "趋势",
-                "开源"
-              ]
-            },
             {
               "id": "nav-c731fcdf3886",
               "title": "36氪",
@@ -4162,18 +4048,6 @@
               ]
             },
             {
-              "id": "nav-240d7ed2bb28",
-              "title": "知乎",
-              "href": "https://www.zhihu.com",
-              "description": "中文问答社区，深度讨论与经验分享",
-              "icon": "https://zhihu.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "问答",
-                "社区"
-              ]
-            },
-            {
               "id": "nav-10fac05d53d0",
               "title": "Soul",
               "href": "https://www.soulapp.cn",
@@ -4445,6 +4319,19 @@
                 "社保",
                 "服务"
               ]
+            },
+            {
+              "id": "nav-e75c46240bd4",
+              "title": "国家林业和草原局",
+              "href": "https://www.forestry.gov.cn",
+              "description": "负责森林草原资源管理与保护",
+              "icon": "https://www.forestry.gov.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "林业",
+                "草原",
+                "保护"
+              ]
             }
           ]
         },
@@ -4505,19 +4392,6 @@
                 "许可",
                 "环保"
               ]
-            },
-            {
-              "id": "nav-e75c46240bd4",
-              "title": "国家林业和草原局",
-              "href": "https://www.forestry.gov.cn",
-              "description": "负责森林草原资源管理与保护",
-              "icon": "https://www.forestry.gov.cn/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "林业",
-                "草原",
-                "保护"
-              ]
             }
           ]
         }
@@ -4540,9 +4414,9 @@
             {
               "id": "nav-557388e01d50",
               "title": "红果短剧",
-              "href": "https://www.hongguo.com",
+              "href": "https://hongguoduanju.com/",
               "description": "抖音旗下免费短剧平台，海量短剧看广告免费看全集",
-              "icon": "https://www.hongguo.com/favicon.ico",
+              "icon": "https://hongguoduanju.com/favicon.ico",
               "enabled": true,
               "tags": [
                 "短剧",

@@ -754,11 +754,6 @@
   "evidence": "数字资源付费交易市场",
   "title": "Creative Market"
  },
- "adobe.com/typekit": {
-  "pricing": "paid",
-  "evidence": "站点描述明示字体订阅服务",
-  "title": "Typekit"
- },
  "coolors.co": {
   "pricing": "freemium",
   "evidence": "配色工具免费 + Pro 付费档",
@@ -1349,11 +1344,6 @@
   "evidence": "政府官方网站，免费",
   "title": "国家林业和草原局"
  },
- "hongguo.com": {
-  "pricing": "free",
-  "evidence": "站点描述明示：抖音旗下免费短剧平台，看广告免费看全集",
-  "title": "红果短剧"
- },
  "mydramawave.com": {
   "pricing": "free",
   "evidence": "站点描述明示：海量竖屏短剧免费看",
@@ -1543,5 +1533,15 @@
   "pricing": "open_source",
   "evidence": "站点描述明示开源代码托管",
   "title": "Gogs"
+ },
+ "fonts.adobe.com": {
+  "pricing": "paid",
+  "evidence": "站点描述明示字体订阅服务",
+  "title": "Adobe Fonts"
+ },
+ "hongguoduanju.com": {
+  "pricing": "free",
+  "evidence": "站点描述明示：抖音旗下免费短剧平台，看广告免费看全集",
+  "title": "红果短剧"
  }
 }

@@ -128,6 +128,18 @@
                 "ai-绘图",
                 "生成"
               ]
+            },
+            {
+              "id": "nav-03b44480b539",
+              "title": "Remove.bg",
+              "href": "https://www.remove.bg",
+              "description": "AI 一键抠图去背景",
+              "icon": "https://remove.bg/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "ai",
+                "抠图"
+              ]
             }
           ]
         },
@@ -510,6 +522,18 @@
                 "问答",
                 "社区"
               ]
+            },
+            {
+              "id": "nav-240d7ed2bb28",
+              "title": "知乎",
+              "href": "https://www.zhihu.com",
+              "description": "中文问答社区，深度讨论与经验分享",
+              "icon": "https://zhihu.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "问答",
+                "社区"
+              ]
             }
           ]
         },
@@ -530,18 +554,6 @@
               "tags": [
                 "web",
                 "文档"
-              ]
-            },
-            {
-              "id": "nav-e8e654c9c7e4",
-              "title": "MDN 中文",
-              "href": "https://developer.mozilla.org/zh-CN",
-              "description": "MDN Web 文档中文版，前端必读",
-              "icon": "https://developer.mozilla.org/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "文档",
-                "前端"
               ]
             }
           ]
@@ -635,18 +647,6 @@
               "tags": [
                 "压缩",
                 "图片处理"
-              ]
-            },
-            {
-              "id": "nav-03b44480b539",
-              "title": "Remove.bg",
-              "href": "https://www.remove.bg",
-              "description": "AI 一键抠图去背景",
-              "icon": "https://remove.bg/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "ai",
-                "抠图"
               ]
             }
           ]
@@ -918,20 +918,7 @@
           "description": "科技媒体、行业观察与开发者新闻",
           "parentId": "reg-news-and-media",
           "enabled": true,
-          "items": [
-            {
-              "id": "nav-587f03113c25",
-              "title": "GitHub Trending",
-              "href": "https://github.com/trending",
-              "description": "每日热门开源项目榜，追踪技术趋势",
-              "icon": "https://github.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "趋势",
-                "开源"
-              ]
-            }
-          ]
+          "items": []
         }
       ]
     },
@@ -1066,18 +1053,6 @@
               "enabled": true,
               "tags": [
                 "生活",
-                "社区"
-              ]
-            },
-            {
-              "id": "nav-240d7ed2bb28",
-              "title": "知乎",
-              "href": "https://www.zhihu.com",
-              "description": "中文问答社区，深度讨论与经验分享",
-              "icon": "https://zhihu.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "问答",
                 "社区"
               ]
             }

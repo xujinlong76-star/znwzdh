@@ -130,7 +130,7 @@ describe('等级与档案解析', () => {
     expect(levelProgress(59).level).toBe(1)
     expect(levelProgress(60).level).toBe(2)
     expect(levelProgress(60).toNext).toBe(120)
-    expect(levelProgress(99999).level).toBe(8)
+    expect(levelProgress(99999).level).toBe(16) // v2 扩容至 16 级（Lv1–8 门槛不变）
     expect(levelProgress(99999).toNext).toBe(0)
   })
 

@@ -90,6 +90,84 @@ function quote(term: string): string {
 }
 
 /**
+ * A4「AI 泛词」假朋友治理：词元覆盖原语。
+ *
+ * 背景：`buildFtsQuery` 的二元组 OR 召回 + RRF 只看排名，只命中泛词
+ * （如「ai」）的站点能靠字段权重挤进创作类查询的尾部（实测「AI 音乐」
+ * 第 3–6 位全是生图/生视频工具）。引擎的召回契约不动（弱语义低权重
+ * 补充是刻意设计），治理放在候选呈现层：调用方用这里的覆盖判定把
+ * 「覆盖了判别词」的候选排前、只覆盖泛词的沉底。
+ *
+ * 拆词口径必须与 `buildFtsQuery`/`buildFtsTokens` 严格一致，否则
+ * 覆盖判定与实际召回对不上：汉字二元组（单字串保留单字）、拉丁词
+ * 小写、去重保序（汉字词元在前、拉丁词元在后）。
+ */
+export function extractQueryTerms(q: string): string[] {
+  const terms: string[] = [];
+  for (const run of hanRuns(q)) {
+    const chars = [...run];
+    if (chars.length === 1) {
+      terms.push(chars[0]!);
+      continue;
+    }
+    for (let i = 0; i < chars.length - 1; i++) terms.push(chars[i]! + chars[i + 1]!);
+  }
+  const latin = q.match(/[A-Za-z0-9_+#.-]{2,}/g) ?? [];
+  for (const w of latin) terms.push(w.toLowerCase());
+  return [...new Set(terms)];
+}
+
+/**
+ * 站点的词元集合，与写入期 `buildFtsTokens` 同口径（`hanToTokens`
+ * 展开后切分、拉丁词小写）。调用方应按写入期相同的字段传入
+ * （title / description / url / tags），覆盖判定才与 fts 召回对齐。
+ */
+export function siteTokenSet(parts: Array<string | null | undefined>): Set<string> {
+  const tokens = new Set<string>();
+  for (const p of parts) {
+    if (!p) continue;
+    const t = p.trim();
+    if (!t) continue;
+    for (const tok of hanToTokens(t).split(/\s+/)) {
+      if (tok) tokens.add(tok.toLowerCase());
+    }
+  }
+  return tokens;
+}
+
+/**
+ * 查询词元是否被站点「覆盖」：
+ *  - 站点文案词元集直接命中 → 覆盖；
+ *  - 汉字词元额外允许分类回退：文案没写这个词、但分类标题链里能
+ *    凑齐它的每个字（如 Leonardo 文案只有英文、分类是「AI 图像
+ *    生成」，之于「生图」是真对口）→ 覆盖。回退只认「字都在」，
+ *    分类八竿子打不着的假朋友凑不齐（Cursor 之于「生图」）；
+ *  - 拉丁词元不吃回退：分类叫「PPT 模板」不等于站点文案与 PPT 有关。
+ */
+export function termCoveredBySite(
+  term: string,
+  tokens: ReadonlySet<string>,
+  categoryText?: string | null,
+): boolean {
+  if (tokens.has(term)) return true;
+  if (!categoryText) return false;
+  const chars = [...term];
+  if (chars.length === 0 || !chars.every((c) => isHan(c))) return false;
+  return chars.every((c) => categoryText.includes(c));
+}
+
+/** 一组查询词元里被站点覆盖到的个数（供调用方做亲和判定/诊断）。 */
+export function countCoveredTerms(
+  terms: readonly string[],
+  tokens: ReadonlySet<string>,
+  categoryText?: string | null,
+): number {
+  let n = 0;
+  for (const t of terms) if (termCoveredBySite(t, tokens, categoryText)) n++;
+  return n;
+}
+
+/**
  * 把用户查询转成 PostgreSQL `to_tsquery` 表达式（查询期调用，standard 模式）。
  *
  * 为什么不能复用 `buildFtsQuery`：FTS5 与前缀语法不同——

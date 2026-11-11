@@ -10,6 +10,7 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { isUpstreamCancelNotice, LlmError } from "@navhub/ai";
+import { extractQueryTerms, siteTokenSet, termCoveredBySite } from "@navhub/core";
 import type { CopilotFrame, Site as NavSite } from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { llmProviderReadyAny, resolveLlm, type ResolvedLlm } from "../llm-config.ts";
@@ -63,6 +64,15 @@ const chatSchema = z.object({
 
 /** 候选召回条数：提案要求 8–12 条，12 条是「模型够用」与「提示词不爆炸」的交点 */
 const COPILOT_RETRIEVAL_LIMIT = 12;
+/**
+ * 内部过采样倍数（A4）：检索先取 3 倍候选，亲和重排把覆盖判别词的候选
+ * 从深处提上来后再截回 12 条——只取 12 条时池子太浅，对口站常年排在
+ * 12 名外（实测「AI 写作」36 条池里也只有 1 个对口站贴着池底），重排
+ * 无米下炊。对外候选上限不变，提示词体量不变。
+ */
+const CANDIDATE_OVERFETCH = 3;
+/** 泛词判定线（A4）：词元在候选池内的覆盖率 ≥0.8 即视为无区分度的泛词 */
+const GENERIC_COVERAGE_RATIO = 0.8;
 /** 本地降级最多列 5 条，与旧版兜底的可读长度对齐 */
 const COPILOT_FALLBACK_LIMIT = 5;
 /** message 最长 8000 字符，原样送进检索会产生大量无意义词组并拖慢 FTS */
@@ -82,6 +92,69 @@ export function retrievalQueryOf(message: string): string {
 }
 
 /**
+ * 判别词亲和重排（A4「AI 泛词」假朋友治理）：稳定分区，只挪顺序、不删候选。
+ *
+ * 为什么需要：二元组 OR 召回 + RRF 只看通道内排名，只命中泛词的站点能靠
+ * fts 字段权重挤进尾部——实测平铺查询「AI 写作/音乐/配音」的第 3–6 位被
+ * 生图/生视频工具霸占，场景步尾部也混进模型平台。为什么不改引擎权重、
+ * 不加硬过滤：全站搜索是召回导向、弱语义低权重补充是引擎既定契约，上轮
+ * 在引擎里加硬闸门已经回退过一次；治理只落在候选呈现层（找站/场景/对话
+ * 三处共用），爆炸半径最小且零召回损失——沉底的站点还在候选里，模型与
+ * 兜底列表仍可达。
+ *
+ * 判定：把查询按 `extractQueryTerms` 拆词，逐候选算覆盖（文案命中，或
+ * 分类标题链凑齐汉字词元的字）。覆盖率按**候选池内占比**算：占比 ≥0.8
+ * 的词元在本池里没有区分度（「AI 生图」池里 ai 占 0.94、「AI 编程」池
+ * 里占 0.72——绝对口径划不出这条线，必须看池内占比），是泛词；占比低
+ * 的是判别词。覆盖判别词的候选排前（组内按覆盖到的判别词数降序、同数
+ * 保持召回原序，即 DEV_BACKLOG 的「命中词覆盖率」用软排序实现——硬性
+ * 「≥2 个二元组」闸门会误杀只有单个判别词的查询，如「AI 写作」里唯一
+ * 对口的石墨文档只覆盖 1 个），一个判别词都没覆盖的沉底。安全阀：无判
+ * 别词、无人覆盖、或人人覆盖时整体不重排（已对口的查询不被误动）。
+ */
+function affinityPartition(
+  sites: NavSite[],
+  query: string,
+  categories: ReadonlyArray<{ id: string; title: string; parentId?: string | null }>,
+): NavSite[] {
+  if (sites.length < 2) return sites;
+  const terms = extractQueryTerms(query);
+  if (terms.length === 0) return sites;
+  const catById = new Map(categories.map((c) => [c.id, c]));
+  const categoryTextOf = (site: NavSite): string | null => {
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    let cur = catById.get(site.categoryId);
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      parts.unshift(cur.title);
+      cur = cur.parentId ? catById.get(cur.parentId) : undefined;
+    }
+    return parts.length > 0 ? parts.join(" ") : null;
+  };
+  const cover = sites.map((s) => {
+    const tokens = siteTokenSet([s.title, s.description, s.url, ...(s.tags ?? [])]);
+    const catText = categoryTextOf(s);
+    return terms.map((t) => termCoveredBySite(t, tokens, catText));
+  });
+  const discriminative = terms.map(
+    (_, j) => cover.filter((row) => row[j]).length / sites.length < GENERIC_COVERAGE_RATIO,
+  );
+  if (!discriminative.some(Boolean)) return sites;
+  const counts = cover.map((row) =>
+    row.reduce((n, c, j) => n + (c && discriminative[j] ? 1 : 0), 0),
+  );
+  if (!counts.some((n) => n > 0) || counts.every((n) => n > 0)) return sites;
+  const front = sites
+    .map((s, i) => ({ s, i, n: counts[i]! }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n || a.i - b.i)
+    .map((x) => x.s);
+  const back = sites.filter((_, i) => counts[i] === 0);
+  return [...front, ...back];
+}
+
+/**
  * 用全站混合检索（exact/fts/pinyin/语义）为本次提问召回候选站点。
  *
  * 这取代了「固定取前 40 个站点、前 25 个塞进提示词」的静态上下文：
@@ -96,7 +169,7 @@ export async function retrieveCopilotCandidates(
   try {
     const result = await ctx.search.search({
       q: query,
-      limit: COPILOT_RETRIEVAL_LIMIT,
+      limit: COPILOT_RETRIEVAL_LIMIT * CANDIDATE_OVERFETCH,
       statuses: ["active"],
     });
     // 策展场景（lexicalOnly）：只保留有词法通道（exact/fts/pinyin）佐证的命中。
@@ -113,6 +186,15 @@ export async function retrieveCopilotCandidates(
       : result.hits;
     const searchIds = [...new Set(hits.map((h) => h.siteId))];
 
+    // 分类表供两处共用：分类意图置顶与下面的判别词亲和重排（覆盖判定要
+    // 读分类标题链）。取不到时两处同时降级为无操作，不拖垮主检索。
+    let categories: Awaited<ReturnType<typeof ctx.repo.listCategories>> = [];
+    try {
+      categories = await ctx.repo.listCategories();
+    } catch {
+      /* 降级：categories 留空 */
+    }
+
     // 分类意图置顶：查询里点名了某个分类（如「我想看免费短剧」命中分类
     // 「免费短剧」/「短剧」）时，把该分类按编辑顺序的前几站钉在候选最前。
     // 为什么必须有这一层：混合检索的 RRF 融合不看分类归属，红果这类
@@ -123,7 +205,6 @@ export async function retrieveCopilotCandidates(
     let pinnedIds: string[] = [];
     if (opts.pinCategory !== false) {
       try {
-        const categories = await ctx.repo.listCategories();
         const q = query.toLowerCase();
         const matched = categories
           .filter((c) => c.title && c.title.trim().length >= 2 && q.includes(c.title.trim().toLowerCase()))
@@ -155,7 +236,18 @@ export async function retrieveCopilotCandidates(
     const byId = await ctx.repo.getSitesByIds(ids);
     // 搜索命中只保证 id 存在；按召回顺序还原整行信息，排序就是引用顺序的依据
     const sites = ids.map((id) => byId.get(id)).filter((s): s is NavSite => Boolean(s));
-    return { citations: sites.map(citationOfSite), sites, failed: false };
+    // 判别词亲和重排（A4）：只作用于搜索召回部分，分类置顶的站点保持领衔
+    // 不动。重排本身失败不许拖垮检索，退回原始召回顺序。
+    let ordered = sites;
+    try {
+      const pinnedSet = new Set(pinnedIds);
+      const head = sites.filter((s) => pinnedSet.has(s.id));
+      const tail = sites.filter((s) => !pinnedSet.has(s.id));
+      ordered = [...head, ...affinityPartition(tail, query, categories).slice(0, COPILOT_RETRIEVAL_LIMIT)];
+    } catch {
+      ordered = sites;
+    }
+    return { citations: ordered.map(citationOfSite), sites: ordered, failed: false };
   } catch {
     return { citations: [], sites: [], failed: true };
   }

@@ -801,7 +801,7 @@ export async function writeResourceMetadata(ctx: AppContext, data: unknown): Pro
  * 口径与关系表同步（video-catalog.ts 的 flatten）保持一致，否则缩水保护
  * 会比错两把尺子——文档里 300 条、表里 320 条时按比例判定毫无意义。
  */
-function countVideoDocItems(data: unknown): number {
+export function countVideoDocItems(data: unknown): number {
   const items = (data as { navigationItems?: any[] })?.navigationItems || [];
   return items.reduce((acc: number, c: any) => {
     return acc + (c.items?.length || 0) + (c.subCategories || []).reduce((s: number, sub: any) => s + (sub.items?.length || 0), 0);

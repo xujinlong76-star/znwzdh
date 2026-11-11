@@ -113,3 +113,7 @@ storage-state.json
 # --- 临时调试产物：脚本、导出、日志。不属于产品代码，新文件一律不入库 ---
 # 少量历史文件（tmp/run8*.cjs 等）已被跟踪，忽略规则只影响未跟踪文件，不会动它们
 /tmp/
+
+# 冷启动基线内容（A1）：只在 Docker 构建时由 Dockerfile.api 从 web-overlay
+# 内容目录拷入镜像，仓库里不留副本，防止与事实源分叉
+apps/api/seed-content/

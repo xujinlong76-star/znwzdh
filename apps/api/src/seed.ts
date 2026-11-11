@@ -18,6 +18,7 @@ import { backfillDerivedFacets, formatFacetBackfillReport } from "./facet-backfi
 import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
 import { seedPluginDefs } from "./seed-plugins.ts";
 import { DEFAULT_SITE_CONFIG, writeSiteConfig } from "./storage.ts";
+import { runBaselineImport, type BaselineImportResult } from "./baseline.ts";
 
 /**
  * 重复 URL 的「描述择优」门槛：新描述至少比库里那条长这么多字才覆盖。
@@ -183,6 +184,8 @@ export interface SeedResult {
   siteConfigSeeded: boolean;
   /** 平替雷达（ECOSYSTEM_MAP）的落地账 */
   ecosystem: EcosystemSeedResult;
+  /** 冷启动基线导入（仓库内容文件 298 站 + 视频库）的结论账（A1） */
+  baseline: BaselineImportResult;
 }
 
 export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<SeedResult> {
@@ -240,6 +243,23 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
     categories++;
   }
 
+  /**
+   * 冷启动基线（A1）：在写入任何站点之前先检查——库里一个站点都没有时，
+   * 把仓库内容文件的导航（298 站）与视频库整包导入（走 /api/storage 同一条
+   * 写回通道）；已有数据则整段跳过。基线结论决定下面 seed-data 站点循环
+   * 还跑不跑：
+   *  - imported / skipped_existing：部署带了内容文件且库已与之对齐——文件
+   *    就是事实源，84 站兜底循环必须跳过。否则每次重启都会把 26 个只在
+   *    seed-data 里有的站重新塞回库（总数涨到 324 与文件对不上），还会用
+   *    种子里的长描述覆盖运营在后台改过的短描述；
+   *  - missing_file / failed / disabled：没有可用的基线（独立跑中枢包、
+   *    导入出错、显式关闭），落回 84 站兜底，保证站点不至于空着。
+   * 基线失败本身不抛错（结论在 baseline 里、日志里有 error）。
+   */
+  const baseline = await runBaselineImport(ctx);
+  const baselineNavigationCovered =
+    baseline.navigation.status === "imported" || baseline.navigation.status === "skipped_existing";
+
   let sites = 0;
   let skipped = 0;
   let improved = 0;
@@ -247,7 +267,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   const leafIdBySlug = new Map<string, string>();
   const wantsEmbeddings = opts.withEmbeddings ?? true;
 
-  for (const s of raw.sites) {
+  for (const s of baselineNavigationCovered ? [] : raw.sites) {
     const dup = await ctx.repo.findSiteByUrl(s.url);
     if (dup) {
       /**
@@ -431,7 +451,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   }
 
   await ctx.close();
-  return { categories, registry, sites, collections, plugins, pluginsUpgraded, skipped, improved, embedded, siteConfigSeeded, ecosystem };
+  return { categories, registry, sites, collections, plugins, pluginsUpgraded, skipped, improved, embedded, siteConfigSeeded, ecosystem, baseline };
 }
 
 /**

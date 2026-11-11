@@ -107,6 +107,7 @@ HEAD /api/admin/dashboard/search-ai
 HEAD /api/admin/dashboard/security
 HEAD /api/admin/dashboard/stream
 HEAD /api/admin/health/trend
+HEAD /api/admin/link-health
 HEAD /api/admin/maintenance/status
 HEAD /api/admin/notifications
 HEAD /api/admin/notifications/deliveries

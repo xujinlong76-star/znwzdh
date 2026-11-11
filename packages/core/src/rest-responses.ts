@@ -1320,6 +1320,52 @@ export const MaintenanceActionResult = z.looseObject({
   logSize: z.number().optional(),
 });
 
+/* ------------------------------------------------------------------ *
+ * 链接巡检后台（A10）：坏站清单与可见性处置回执
+ * ------------------------------------------------------------------ */
+
+export const LinkHealthItem = z.looseObject({
+  siteId: z.string(),
+  title: z.string(),
+  url: z.string(),
+  categoryId: z.string(),
+  status: z.string(),
+  enabled: z.boolean(),
+  consecutiveFailures: z.number(),
+  lastCheckedAt: z.number().nullable(),
+  httpStatus: z.number().nullable(),
+  error: z.string().nullable(),
+  errorKind: z.string(),
+});
+
+export const LinkHealthOverviewResponse = z.looseObject({
+  ok: z.boolean(),
+  summary: z.looseObject({
+    totalSites: z.number(),
+    checkedSites: z.number(),
+    uncheckedSites: z.number(),
+    coveragePct: z.number(),
+    brokenCount: z.number(),
+    failingCount: z.number(),
+    failThreshold: z.number(),
+    lastPatrolAt: z.number().nullable(),
+  }),
+  items: z.array(LinkHealthItem),
+});
+
+export const LinkHealthVisibilityResponse = z.looseObject({
+  ok: z.boolean(),
+  updated: z.number(),
+  results: z.array(
+    z.looseObject({
+      siteId: z.string(),
+      ok: z.boolean(),
+      enabled: z.boolean().optional(),
+      reason: z.string().optional(),
+    }),
+  ),
+});
+
 export const StorageWriteResponse = z.looseObject({
   ok: z.literal(true),
   note: z.string(),
@@ -1738,6 +1784,8 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
 
   /* 运维/存储管理面 */
   "GET /api/admin/maintenance/status": { schema: MaintenanceStatusResponse, name: "MaintenanceStatusResponse" },
+  "GET /api/admin/link-health": { schema: LinkHealthOverviewResponse, name: "LinkHealthOverviewResponse" },
+  "POST /api/admin/link-health/visibility": { schema: LinkHealthVisibilityResponse, name: "LinkHealthVisibilityResponse" },
   "POST /api/admin/maintenance/checkpoint": { schema: MaintenanceActionResult, name: "MaintenanceActionResult" },
   "POST /api/admin/maintenance/optimize": { schema: MaintenanceActionResult, name: "MaintenanceActionResult" },
   "POST /api/admin/maintenance/vacuum": { schema: MaintenanceActionResult, name: "MaintenanceActionResult" },

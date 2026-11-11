@@ -38,6 +38,8 @@ interface NsItem {
   icon?: string;
   useDefaultIcon?: boolean;
   enabled: boolean;
+  /** 站点状态（A10）：前台展示面靠它把 broken 站挡在精选/推荐位之外；分类列表仍保留展示并标失效。 */
+  status?: string;
   weight?: number;
   trendScore?: number;
   tags?: string[];
@@ -343,6 +345,7 @@ function projectNavigation(
       // 指向第三方图标服务的脏值会在这里被视同没有自定义图标，避免进快照 / RSC payload。
       icon: resolveSiteIcon(s.url, s.title, s.iconKey),
       enabled: s.enabled,
+      status: s.status,
       weight: s.weight,
       trendScore: s.trendScore,
       tags: s.tags ?? tags,

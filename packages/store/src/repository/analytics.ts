@@ -150,7 +150,10 @@ export async function zeroResultQueries(repo: Repository, days = 30, limit = 20)
 export async function hotSites(repo: Repository, limit = 20): Promise<Site[]> {
   const rows = await repo.raw(
     repo.selectSitesSql() +
-      " WHERE s.enabled = " + repo.enabledLiteral + " AND s.status != 'archived' AND s.deleted_at IS NULL" +
+      // 榜单口径（A10）：热榜/新品榜是公开推荐位，只收 active——巡检确认失效
+      // （broken）与待审（pending）都不上榜，与 rank/copilot 只推 active 一致；
+      // 后台仪表盘复用同一查询，看到的就该是用户看到的同一张榜。
+      " WHERE s.enabled = " + repo.enabledLiteral + " AND s.status = 'active' AND s.deleted_at IS NULL" +
       " GROUP BY s.id ORDER BY s.trend_score DESC, s.visit_count DESC, s.sort ASC LIMIT ?",
     [limit],
   );
@@ -160,7 +163,7 @@ export async function hotSites(repo: Repository, limit = 20): Promise<Site[]> {
 export async function newestSites(repo: Repository, limit = 20): Promise<Site[]> {
   const rows = await repo.raw(
     repo.selectSitesSql() +
-      " WHERE s.enabled = " + repo.enabledLiteral + " AND s.status != 'archived' AND s.deleted_at IS NULL" +
+      " WHERE s.enabled = " + repo.enabledLiteral + " AND s.status = 'active' AND s.deleted_at IS NULL" +
       " GROUP BY s.id ORDER BY s.created_at DESC LIMIT ?",
     [limit],
   );

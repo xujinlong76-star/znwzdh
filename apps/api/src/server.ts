@@ -77,6 +77,7 @@ import { videoRoutes } from "./routes/videos.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
 import { workspacesRoutes } from "./routes/workspaces.ts";
 import { healthAuditRoutes } from "./routes/health-audit.ts";
+import { linkHealthRoutes } from "./routes/link-health.ts";
 import { graphRoutes } from "./routes/graph.ts";
 import { archiveRoutes } from "./routes/archive.ts";
 import { backupRoutes } from "./routes/backup.ts";
@@ -728,6 +729,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(tokenRoutes, { ctx });
   await app.register(workspacesRoutes, { ctx });
   await app.register(healthAuditRoutes, { ctx });
+  await app.register(linkHealthRoutes, { ctx });
   await app.register(graphRoutes, { ctx });
   await app.register(archiveRoutes, { ctx });
   await app.register(backupRoutes, { ctx });

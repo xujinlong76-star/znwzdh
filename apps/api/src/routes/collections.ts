@@ -47,7 +47,11 @@ export const collectionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
       return notFound(reply, "专题不存在或已下架");
     }
     const sites = await ctx.repo.listCollectionSites(slug);
-    return { collection: col, sites };
+    // 精选口径（A10）：专题详情是公开精选面，巡检已确认失效（broken）的站不再展示——
+    // 与 rank/copilot 只推 active、首页推荐位剔除 broken 同一口径；分类列表里
+    // broken 仍保留并标失效（那是如实告知，不是推荐）。专题成员关系本身不动，
+    // 站点恢复后自动回到专题里。
+    return { collection: col, sites: sites.filter((s) => s.status !== "broken") };
   });
 
   /**

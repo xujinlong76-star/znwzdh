@@ -33,6 +33,8 @@ import {
   FavoriteUpdateResponse,
   HealthResponse,
   InstalledPluginsResponse,
+  LinkHealthOverviewResponse,
+  LinkHealthVisibilityResponse,
   MeOverviewResponse,
   OkResponse,
   PluginInstallResponse,
@@ -910,6 +912,42 @@ describe("写路由真实响应满足契约（状态码 + 形状）", () => {
     const deletedBody = deleted.json();
     expectRoutedContract("DELETE /api/collections/{id}", CollectionDeleteResponse, deletedBody);
     expect(deletedBody.id).toBe(col.id);
+  });
+});
+
+describe("链接巡检真实响应满足契约（A10）", () => {
+  it("GET 清单与 POST 处置的响应形状与契约一致", async () => {
+    const headers = { authorization: "Bearer " + ADMIN_TOKEN };
+    // 独立样本：不复用计数敏感的夹具站点，造一个站并直接打成 broken
+    const site = await ctx.repo.createSite({
+      url: "https://link-health-contract.example.com",
+      title: "契约巡检样本",
+      description: "响应契约测试专用",
+      categoryId: "cat-life",
+      tags: [],
+    });
+    await ctx.repo.updateSiteHealth(site.id, {
+      httpStatus: 503,
+      ok: false,
+      latencyMs: 10,
+      redirectTo: null,
+      error: "HTTP 503",
+      markBroken: true,
+      currentStatus: "active",
+    });
+
+    const list = await app.inject({ method: "GET", url: "/api/admin/link-health", headers });
+    expect(list.statusCode).toBe(200);
+    expectRoutedContract("GET /api/admin/link-health", LinkHealthOverviewResponse, list.json());
+
+    const post = await app.inject({
+      method: "POST",
+      url: "/api/admin/link-health/visibility",
+      headers,
+      payload: { siteIds: [site.id], visible: false },
+    });
+    expect(post.statusCode).toBe(200);
+    expectRoutedContract("POST /api/admin/link-health/visibility", LinkHealthVisibilityResponse, post.json());
   });
 });
 

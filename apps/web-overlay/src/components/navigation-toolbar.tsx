@@ -37,8 +37,8 @@ import {
   Sparkles,
   User,
 } from 'lucide-react'
+import dynamic from 'next/dynamic'
 import type { SiteConfig } from '@/types/site'
-import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
 import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
@@ -46,6 +46,25 @@ import { ViewModeToggle } from '@/components/view-mode-toggle'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
 import { cn } from '@/lib/utils'
 import { summarizeSelection } from '@/lib/selection'
+
+/**
+ * 搜索面板按需加载（与 not-found.tsx 同一范式）：SearchPalette 本体约 1,500 行、
+ * 还拖着收藏/偏好/语义等依赖，静态引入会随首页首屏一起下发并超首屏预算，
+ * 故只在客户端按需加载，加载期间用同高占位保持布局不跳。
+ * 工具栏本身是客户端组件，可以内联 dynamic；服务端壳页面（分类页等）
+ * 无法内联 ssr:false，仍走 @/components/search-palette-lazy 客户端包装。
+ */
+const SearchPalette = dynamic(
+  () => import('@/components/search-palette').then((m) => m.SearchPalette),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-11 rounded-xl border border-border/60 bg-muted/30" aria-busy="true">
+        <span className="sr-only">正在加载搜索面板…</span>
+      </div>
+    ),
+  }
+)
 
 export interface NavigationToolbarProps {
   siteConfig: SiteConfig

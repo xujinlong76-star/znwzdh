@@ -847,11 +847,13 @@ export function SitePeekDialog({
               </Button>
             )}
 
-            {/* 反馈失效按钮 */}
+            {/* 反馈失效按钮：点击后在原位变成确认态「已收到失效反馈」；
+                收到的是本机标记（见 handleReportBroken 的诚实口径注释），
+                toast 与上方横幅会同时讲清标记只存本机、平台靠自动巡检复查。 */}
             {hasReportedBroken ? (
               <span className="text-[11px] text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1 px-1">
                 <Check className="w-3 h-3 text-emerald-500" />
-                <span>已反馈失效</span>
+                <span>已收到失效反馈</span>
               </span>
             ) : (
               <Button

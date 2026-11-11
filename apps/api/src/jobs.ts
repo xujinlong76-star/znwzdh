@@ -41,6 +41,8 @@ import {
   handleRecomputeRank,
   handleRefetchMetadata,
   handleDataRetention,
+  handleHotlistRefresh,
+  handleDailyBrief,
 } from "./jobs/index.ts";
 
 export {
@@ -51,6 +53,8 @@ export {
   handleRecomputeRank,
   handleRefetchMetadata,
   handleDataRetention,
+  handleHotlistRefresh,
+  handleDailyBrief,
 };
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
@@ -130,9 +134,9 @@ export interface PatrolSelection {
   depth: { unchecked: number; checked: number };
 }
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief"];
 
 /** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
 export interface DataRetentionPayload {
@@ -195,6 +199,10 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   // 用户数据质量巡检（T24）：只统计与上报，不修复不删除——
   // 修复动作属于用户自检（POST /api/me/diagnostics 自动修）或运维决策。
   { kind: "user_data_audit", intervalMs: 86_400_000 },
+  // 全网热榜刷新：每小时逐源拉取公开榜单进缓存（单源失败保留旧缓存）
+  { kind: "hotlist_refresh", intervalMs: 3600_000 },
+  // 每日简报：按天组版落库（热榜精选 + 新收录 + 小猫猫开场白）
+  { kind: "daily_brief", intervalMs: 86_400_000 },
 ];
 
 /**
@@ -515,6 +523,8 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
    * 预算按 5 万条 + 分片写锁给到 30 分钟。
    */
   backup_restore: { cron: "MANUAL", timeoutMs: 1_800_000, maxConcurrency: 1 },
+  hotlist_refresh: { cron: "HOURLY", timeoutMs: 180_000, maxConcurrency: 1 },
+  daily_brief: { cron: "DAILY5AM", timeoutMs: 300_000, maxConcurrency: 1 },
 };
 
 /**
@@ -730,7 +740,7 @@ export class JobRunner {
     this.budgetOverrides = opts.budgetOverrides;
     this.taskRegistry = new TaskRegistry();
     /**
-     * 执行分派的**唯一**事实源（ARC-02 收口）：12 个 kind 全部在此登记。
+     * 执行分派的**唯一**事实源（ARC-02 收口）：14 个 kind 全部在此登记。
      * 此前注册表只登记 4 个 kind，而 process() 另有一套 switch 覆盖 12 个分支——
      * 新增 kind 要改两处，漏改一处就会出现「注册了不执行」或「执行了没登记」的漂移。
      * 构造函数末尾的覆盖断言会把这种漂移变成启动即失败。
@@ -767,6 +777,12 @@ export class JobRunner {
     });
     this.taskRegistry.register("user_data_audit", async () => {
       await this.runUserDataAudit();
+    });
+    this.taskRegistry.register("hotlist_refresh", async () => {
+      await this.runHotlistRefresh();
+    });
+    this.taskRegistry.register("daily_brief", async () => {
+      await this.runDailyBrief();
     });
     this.taskRegistry.register("backup_restore", async ({ payload, run }) => {
       // jobId 由 Runner 通过执行句柄注入而不是放在 payload 里：入队时还拿不到 id
@@ -1537,6 +1553,14 @@ export class JobRunner {
   /** 重算热度分：近 7 天点击 + 近 7 天收藏 − 年龄惩罚（委派给 tasks/rank-recompute.task.ts） */
   private async runRecomputeRank(): Promise<void> {
     return handleRecomputeRank(this.ctx);
+  }
+
+  private async runHotlistRefresh(): Promise<void> {
+    return handleHotlistRefresh(this.ctx);
+  }
+
+  private async runDailyBrief(): Promise<void> {
+    return handleDailyBrief(this.ctx);
   }
 
   /**

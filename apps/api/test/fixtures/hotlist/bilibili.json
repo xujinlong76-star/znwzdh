@@ -1,0 +1,94 @@
+{
+ "code": 0,
+ "message": "OK",
+ "ttl": 1,
+ "data": {
+  "trending": {
+   "title": "bilibili热搜",
+   "trackid": "8121427200225590821",
+   "list": [
+    {
+     "keyword": "空军多型主力战机列阵长空",
+     "show_name": "空军多型主力战机列阵长空",
+     "icon": "http://i0.hdslb.com/bfs/activity-plat/static/20221213/eaf2dd702d7cc14d8d9511190245d057/lrx9rnKo24.png",
+     "uri": "",
+     "goto": "",
+     "heat_score": 1992815
+    },
+    {
+     "keyword": "76人惨败凯尔特人谁需要背锅",
+     "show_name": "76人惨败凯尔特人谁需要背锅",
+     "icon": "http://i0.hdslb.com/bfs/activity-plat/static/20221213/eaf2dd702d7cc14d8d9511190245d057/lrx9rnKo24.png",
+     "uri": "",
+     "goto": "",
+     "heat_score": 1506858
+    },
+    {
+     "keyword": "BLG晋级决赛单曲三年炼",
+     "show_name": "BLG晋级决赛单曲三年炼",
+     "icon": "",
+     "uri": "",
+     "goto": "",
+     "heat_score": 1067180
+    },
+    {
+     "keyword": "星铁4.7阿哈实况",
+     "show_name": "星铁4.7阿哈实况",
+     "icon": "https://i0.hdslb.com/bfs/activity-plat/static/20251027/aafcb8031fd171c428daaa9b45867226/VaxAnHMq6w.gif",
+     "uri": "",
+     "goto": "",
+     "heat_score": 927129
+    },
+    {
+     "keyword": "Fable 5.2真实使用体验如何",
+     "show_name": "Fable 5.2真实使用体验如何",
+     "icon": "http://i0.hdslb.com/bfs/activity-plat/static/20221118/eaf2dd702d7cc14d8d9511190245d057/UF7B1wVKT2.png",
+     "uri": "",
+     "goto": "",
+     "heat_score": 782235
+    },
+    {
+     "keyword": "浪浪山小妖怪金鸡最佳动画片",
+     "show_name": "浪浪山小妖怪金鸡最佳动画片",
+     "icon": "",
+     "uri": "",
+     "goto": "",
+     "heat_score": 671688
+    },
+    {
+     "keyword": "从BP博弈看BLG战胜T1",
+     "show_name": "从BP博弈看BLG战胜T1",
+     "icon": "http://i0.hdslb.com/bfs/activity-plat/static/20221118/eaf2dd702d7cc14d8d9511190245d057/UF7B1wVKT2.png",
+     "uri": "",
+     "goto": "",
+     "heat_score": 669316
+    },
+    {
+     "keyword": "BLG官宣续约Knight一年",
+     "show_name": "BLG官宣续约Knight一年",
+     "icon": "http://i0.hdslb.com/bfs/activity-plat/static/20221118/eaf2dd702d7cc14d8d9511190245d057/UF7B1wVKT2.png",
+     "uri": "",
+     "goto": "",
+     "heat_score": 667781
+    },
+    {
+     "keyword": "用AI制作灭霸全家福MV",
+     "show_name": "用AI制作灭霸全家福MV",
+     "icon": "http://i0.hdslb.com/bfs/activity-plat/static/20221117/eaf2dd702d7cc14d8d9511190245d057/EeuqbMwao9.png",
+     "uri": "",
+     "goto": "",
+     "heat_score": 664219
+    },
+    {
+     "keyword": "许飞何炅合唱思念的距离",
+     "show_name": "许飞何炅合唱思念的距离",
+     "icon": "",
+     "uri": "",
+     "goto": "",
+     "heat_score": 646959
+    }
+   ],
+   "top_list": []
+  }
+ }
+}

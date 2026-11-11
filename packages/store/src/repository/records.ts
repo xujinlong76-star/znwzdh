@@ -209,6 +209,42 @@ export interface WatchEntryRecord {
   deletedAt?: number | null;
 }
 
+/** 全网热榜缓存条目（只存标题+链接+热度，不搬运正文） */
+export interface HotlistEntryRecord {
+  source: string;
+  rank: number;
+  title: string;
+  url: string;
+  /** 源站给的热度数值（各源口径不同，只并列展示、绝不跨源混算） */
+  hotValue: number | null;
+  /** 源站给的热度标签原文（如「沸」「热」），没有则为 null */
+  hotLabel: string | null;
+  fetchedAt: number;
+}
+
+/** 热榜源的最近一次抓取状态（前端据此标「更新时间/数据可能过期」） */
+export interface HotlistSourceRecord {
+  source: string;
+  /** ok = 最近一次成功；failed = 最近一次失败（条目仍是上次成功的缓存）；pending = 还没抓过 */
+  status: "ok" | "failed" | "pending";
+  lastOkAt: number | null;
+  lastAttemptAt: number | null;
+  lastError: string | null;
+  itemCount: number;
+}
+
+/** 每日简报（按天生成并落库，公共版；个性化在追提醒在读时按用户现算，不落这张表） */
+export interface DailyBriefRecord {
+  /** 本地日期 YYYY-MM-DD（Asia/Shanghai） */
+  date: string;
+  generatedAt: number;
+  /** 小猫猫开场一句话（锚定当天真实条目生成；openingMode 记录它是模型还是模板） */
+  opening: string;
+  openingMode: "ai" | "template";
+  /** 组版后的完整公共载荷（JSON 文本，形状由 brief 模块定义） */
+  payload: string;
+}
+
 export interface UserProfileRecord {
   userId: string;
   topCategories: string[];

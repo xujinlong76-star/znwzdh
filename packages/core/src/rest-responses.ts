@@ -322,6 +322,93 @@ export const RankNewResponse = z.looseObject({
 });
 
 /* ------------------------------------------------------------------ *
+ * 全网热榜 + 每日简报（热榜管道缓存只读；简报按天落库）
+ * ------------------------------------------------------------------ */
+
+const HotlistItemPayload = z.looseObject({
+  rank: z.number().int(),
+  title: z.string(),
+  url: z.string(),
+  hotValue: z.number().nullable(),
+  hotLabel: z.string().nullable(),
+});
+
+/**
+ * GET /api/hotlist：全源热榜缓存。
+ * status 如实区分 ok / stale（最近一次失败、下发上次缓存）/ empty（还没抓到过），
+ * fetchedAt 是该源缓存的真实抓取时间；uncovered 是逐源核查后登记的未覆盖源与原因。
+ */
+export const HotlistResponse = z.looseObject({
+  ok: z.literal(true),
+  generatedAt: z.number().nullable(),
+  sources: z.array(
+    z.looseObject({
+      id: z.string(),
+      name: z.string(),
+      homeUrl: z.string(),
+      status: z.enum(["ok", "stale", "empty"]),
+      fetchedAt: z.number().nullable(),
+      items: z.array(HotlistItemPayload),
+    }),
+  ),
+  uncovered: z.array(
+    z.looseObject({
+      id: z.string(),
+      name: z.string(),
+      homeUrl: z.string(),
+      reason: z.string(),
+    }),
+  ),
+});
+
+const BriefHotPickPayload = HotlistItemPayload.extend({
+  source: z.string(),
+  sourceName: z.string(),
+  fetchedAt: z.number(),
+});
+
+const BriefNewSitePayload = z.looseObject({
+  id: z.string(),
+  title: z.string(),
+  url: z.string(),
+  description: z.string().nullable(),
+  createdAt: z.number(),
+  addedOn: z.string(),
+});
+
+const BriefWatchItemPayload = z.looseObject({
+  key: z.string(),
+  title: z.string(),
+  platformTitle: z.string(),
+  playUrl: z.string(),
+  episode: z.number().int(),
+  priority: z.enum(["high", "normal"]),
+});
+
+/**
+ * GET /api/brief/today：今日简报。
+ * watch 是唯一的用户维度段：无可信身份时为 null（通用版），有身份时
+ * 按其追剧清单现算 due（到更新日）/ check（节奏未标注、只提示去看看）。
+ */
+export const BriefTodayResponse = z.looseObject({
+  ok: z.literal(true),
+  date: z.string(),
+  isToday: z.boolean(),
+  generatedAt: z.number(),
+  opening: z.string(),
+  openingMode: z.enum(["ai", "template"]),
+  hotPicks: z.array(BriefHotPickPayload),
+  newSitesScope: z.enum(["today", "recent"]),
+  newSites: z.array(BriefNewSitePayload),
+  watch: z
+    .looseObject({
+      due: z.array(BriefWatchItemPayload),
+      check: z.array(BriefWatchItemPayload),
+    })
+    .nullable(),
+});
+
+/* ------------------------------------------------------------------ *
  * 场景包（A2 落地页只读接口，与 ai/find 共用 scene-resolve 展开）
  * ------------------------------------------------------------------ */
 
@@ -1740,6 +1827,9 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   // 场景包落地页取数：列表是索引页数据源、详情是 /scenes/{id} 的数据源
   "GET /api/scenes": { schema: SceneListResponse, name: "SceneListResponse" },
   "GET /api/scenes/{id}": { schema: SceneDetailResponse, name: "SceneDetailResponse" },
+  // 全网热榜缓存与每日简报：/brief 页与首页简报模块的数据源
+  "GET /api/hotlist": { schema: HotlistResponse, name: "HotlistResponse" },
+  "GET /api/brief/today": { schema: BriefTodayResponse, name: "BriefTodayResponse" },
   "GET /api/plugins": { schema: PluginListResponse, name: "PluginListResponse" },
   "GET /api/plugins/installed": { schema: InstalledPluginsResponse, name: "InstalledPluginsResponse" },
   "GET /api/plugins/taps": { schema: PluginTapsResponse, name: "PluginTapsResponse" },

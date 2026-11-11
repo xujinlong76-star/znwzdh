@@ -250,6 +250,11 @@ export const USER_DATA_EXEMPT_TABLES: readonly string[] = [
   "short_links",
   "schema_migrations",
   "sqlite_sequence",
+  // 全网热榜缓存与每日简报：全站公共内容（标题+链接+热度 / 按天组版），
+  // 不含任何用户归属与个人数据，注销无需处理。
+  "hotlist_entries",
+  "hotlist_sources",
+  "daily_briefs",
 ];
 
 /** 注销时走通用精确删除的表（custom/key-prefix/nullify 由 deleteUserData 单独处理） */

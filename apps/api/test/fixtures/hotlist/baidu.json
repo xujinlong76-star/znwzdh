@@ -1,0 +1,220 @@
+{
+ "success": true,
+ "data": {
+  "cards": [
+   {
+    "component": "tabTextList",
+    "content": [
+     {
+      "content": [
+       {
+        "isTop": true,
+        "url": "https://m.baidu.com/s?word=%E6%80%BB%E4%B9%A6%E8%AE%B0%E8%BF%99%E6%A0%B7%E5%91%BC%E5%90%81%E6%B5%B7%E5%86%85%E5%A4%96%E5%85%A8%E4%BD%93%E4%B8%AD%E5%8D%8E%E5%84%BF%E5%A5%B3&sa=fyb_news",
+        "word": "总书记这样呼吁海内外全体中华儿女"
+       },
+       {
+        "isTop": false,
+        "index": 1,
+        "url": "https://m.baidu.com/s?word=%E2%80%9C%E5%8F%96%E6%B6%88%E5%A4%96%E5%8D%96%E2%80%9D%EF%BC%9F%E6%98%AF%E4%BD%95%E5%B1%85%E5%BF%83&sa=fyb_news",
+        "word": "“取消外卖”？是何居心",
+        "hotTag": "0"
+       },
+       {
+        "isTop": false,
+        "index": 2,
+        "url": "https://m.baidu.com/s?word=%E5%87%80%E6%B0%B4%E5%99%A8%E9%AA%97%E5%B1%80%E7%B2%BE%E5%87%86%E6%94%B6%E5%89%B2%E2%80%9C%E5%85%BB%E8%80%81%E9%92%B1%E2%80%9D&sa=fyb_news",
+        "word": "净水器骗局精准收割“养老钱”",
+        "hotTag": "0"
+       },
+       {
+        "isTop": false,
+        "index": 3,
+        "url": "https://m.baidu.com/s?word=%E2%80%9C%E5%8D%81%E4%BA%94%E4%BA%94%E2%80%9D%E5%A2%9E%E8%BF%9B%E6%B0%91%E7%94%9F%E7%A6%8F%E7%A5%89%E8%BF%99%E4%B9%88%E5%B9%B2&sa=fyb_news",
+        "word": "“十五五”增进民生福祉这么干",
+        "hotTag": "0"
+       },
+       {
+        "isTop": false,
+        "index": 4,
+        "url": "https://m.baidu.com/s?word=18%E5%B2%81%E2%80%9C%E5%8F%8C11%E2%80%9D%E4%B8%8D%E5%86%8D%E7%96%AF%E7%8B%82&sa=fyb_news",
+        "word": "18岁“双11”不再疯狂",
+        "hotTag": "0"
+       },
+       {
+        "isTop": false,
+        "index": 5,
+        "url": "https://m.baidu.com/s?word=%E6%98%8E%E6%99%9A%E5%9B%BD%E5%86%85%E6%B2%B9%E4%BB%B7%E5%B0%86%E8%B0%83%E6%95%B4&sa=fyb_news",
+        "word": "明晚国内油价将调整",
+        "hotTag": "0"
+       },
+       {
+        "isTop": false,
+        "index": 6,
+        "url": "https://m.baidu.com/s?word=%E7%82%96%E8%82%89%E6%B5%AE%E6%B2%AB%E6%98%AF%E8%90%A5%E5%85%BB%E7%B2%BE%E5%8D%8E%E8%BF%98%E6%98%AF%E8%84%8F%E4%B8%9C%E8%A5%BF&sa=fyb_news",
+        "word": "炖肉浮沫是营养精华还是脏东西",
+        "hotTag": "0"
+       },
+       {
+        "isTop": false,
+        "index": 7,
+        "url": "https://m.baidu.com/s?word=%E9%AB%98%E5%8F%B6%E5%90%AB%E6%B3%AA%E6%84%9F%E8%B0%A2%E5%90%8C%E7%8F%AD%E5%90%8C%E5%AD%A6%E6%9C%B1%E4%B8%80%E9%BE%99&sa=fyb_news",
+        "word": "高叶含泪感谢同班同学朱一龙",
+        "hotTag": "3",
+        "newHotTag": {
+         "dark": {
+          "height": "51",
+          "label_image": "https://b.bdstatic.com/searchbox/image/gcp/20250115/3050076711.png",
+          "width": "51"
+         },
+         "day": {
+          "height": "51",
+          "label_image": "https://b.bdstatic.com/searchbox/image/gcp/20250115/3050076711.png",
+          "width": "51"
+         },
+         "night": {
+          "height": "51",
+          "label_image": "https://b.bdstatic.com/searchbox/image/gcp/20250115/2856595153.png",
+          "width": "51"
+         }
+        },
+        "newHotName": "热"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "currentBoard": {
+   "header": {
+    "bgImg": "https://gips0.baidu.com/it/u=1094683221,2956708427&fm=3028&app=3028&f=JPEG&fmt=auto&q=75&size=f1242_512",
+    "d25BgImg": "https://b.bdstatic.com/searchbox/image/gcp/20250609/1099538042.jpg",
+    "d25StickyBgImg": "https://b.bdstatic.com/searchbox/image/gcp/20250609/1640625937.jpg",
+    "titleImg": "https://b.bdstatic.com/searchbox/image/gcp/20241217/1495922617.png",
+    "gradientColor": [
+     "rgba(255, 80, 73, 1)",
+     "rgba(242, 242, 245, .01)"
+    ]
+   },
+   "rule": {
+    "bgImg": "https://gips0.baidu.com/it/u=2248281710,2169737799&fm=3028&app=3028&f=PNG&fmt=auto&q=100&size=f1242_240",
+    "content": [
+     {
+      "type": "title",
+      "text": "一、榜单介绍"
+     },
+     {
+      "type": "text",
+      "text": "百度热搜热点榜以数亿用户海量的真实数据为基础，通过专业的数据挖掘方法，计算各热点事件的热搜指数，综合反映热点事件在百度平台的热度。"
+     },
+     {
+      "type": "title",
+      "text": "二、上榜规则"
+     },
+     {
+      "type": "text",
+      "text": "上榜热点事件基于各事件在百度平台上的热度排序得出。"
+     },
+     {
+      "type": "title",
+      "text": "三、更新规则"
+     },
+     {
+      "type": "text",
+      "text": "百度热搜热点榜每5分钟更新一次。"
+     },
+     {
+      "type": "title",
+      "text": "四、计分规则"
+     },
+     {
+      "type": "text",
+      "text": "热搜指数主要考量的因素为搜索指数、资讯指数、互动指数。"
+     },
+     {
+      "type": "text",
+      "text": "• 搜索指数：搜索指数是以用户在百度的搜索量为数据基础，以关键词为统计对象，将各个关键词在百度搜索中的搜索频次加权求和、指数化处理后得出。"
+     },
+     {
+      "type": "text",
+      "text": "• 资讯指数：资讯指数以百度智能分发和推荐内容数据为基础，将用户的阅读、播放、不喜欢等行为的数量加权求和、指数化处理后得出"
+     },
+     {
+      "type": "text",
+      "text": "• 互动指数：互动指数以用户对某具体事件的评论、转发、点赞量为基础，对互动行为数量加权求和、指数化处理后得出。"
+     },
+     {
+      "type": "title",
+      "text": "五、反馈入口"
+     },
+     {
+      "type": "text",
+      "text": "百度热搜旨在建立权威、全面、热门、时效的各类关键词排行榜，欢迎广大用户积极反馈，您的建议是我们改进产品的不竭动力。"
+     },
+     {
+      "type": "text",
+      "text": "反馈邮箱 ext_baidu-top@baidu.com"
+     }
+    ]
+   },
+   "text": "热搜榜"
+  },
+  "logid": "3269476372",
+  "tabBoard": [
+   {
+    "text": "首页",
+    "typeName": "homepage"
+   },
+   {
+    "text": "热搜榜",
+    "typeName": "realtime"
+   },
+   {
+    "text": "民生榜",
+    "typeName": "livelihood"
+   },
+   {
+    "text": "财经榜",
+    "typeName": "finance"
+   },
+   {
+    "text": "体育榜",
+    "typeName": "sports"
+   },
+   {
+    "text": "文娱榜",
+    "typeName": "new_entertainment"
+   },
+   {
+    "text": "国际榜",
+    "typeName": "internation_news"
+   },
+   {
+    "text": "挑战榜",
+    "typeName": "challenge"
+   },
+   {
+    "text": "电影榜",
+    "typeName": "movie"
+   },
+   {
+    "text": "电视剧榜",
+    "typeName": "teleplay"
+   },
+   {
+    "text": "小说榜",
+    "typeName": "novel"
+   },
+   {
+    "text": "短剧榜",
+    "typeName": "drama"
+   }
+  ],
+  "userInfo": {
+   "isLogin": 0
+  }
+ },
+ "error": {
+  "code": 0,
+  "message": "api response ok"
+ }
+}

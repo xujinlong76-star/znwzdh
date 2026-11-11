@@ -13,8 +13,11 @@ import {
 import type {
   ApiTokenRecord,
   AuditLogRecord,
+  DailyBriefRecord,
   FavoriteFolderRecord,
   FavoriteRecord,
+  HotlistEntryRecord,
+  HotlistSourceRecord,
   JobRecord,
   SiteInput,
   UserProfileRecord,
@@ -275,6 +278,40 @@ export function rowToWatchEntry(row: Record<string, any>): WatchEntryRecord {
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
     deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),
+  };
+}
+
+export function rowToHotlistEntry(row: Record<string, any>): HotlistEntryRecord {
+  return {
+    source: String(row.source),
+    rank: Math.trunc(Number(row.rank ?? 0)),
+    title: String(row.title),
+    url: String(row.url),
+    hotValue: row.hot_value == null ? null : Number(row.hot_value),
+    hotLabel: row.hot_label ?? null,
+    fetchedAt: Number(row.fetched_at ?? 0),
+  };
+}
+
+export function rowToHotlistSource(row: Record<string, any>): HotlistSourceRecord {
+  const status = row.status === "ok" || row.status === "failed" ? row.status : "pending";
+  return {
+    source: String(row.source),
+    status,
+    lastOkAt: row.last_ok_at == null ? null : Number(row.last_ok_at),
+    lastAttemptAt: row.last_attempt_at == null ? null : Number(row.last_attempt_at),
+    lastError: row.last_error ?? null,
+    itemCount: Math.max(0, Math.trunc(Number(row.item_count ?? 0)) || 0),
+  };
+}
+
+export function rowToDailyBrief(row: Record<string, any>): DailyBriefRecord {
+  return {
+    date: String(row.date),
+    generatedAt: Number(row.generated_at ?? 0),
+    opening: String(row.opening ?? ""),
+    openingMode: row.opening_mode === "ai" ? "ai" : "template",
+    payload: String(row.payload ?? "{}"),
   };
 }
 

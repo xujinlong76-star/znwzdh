@@ -89,6 +89,10 @@ export const JobPayloadSchemas = {
       stagingPath: z.string().min(1).max(4096),
     })
     .strict(),
+
+  hotlist_refresh: z.object({}).strict(),
+
+  daily_brief: z.object({}).strict(),
 } as const;
 
 export type JobPayloadKind = keyof typeof JobPayloadSchemas;

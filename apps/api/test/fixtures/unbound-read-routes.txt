@@ -121,6 +121,7 @@ HEAD /api/admin/stats/trends
 HEAD /api/admin/user-center/metrics
 HEAD /api/assets/icon
 HEAD /api/backup/restore/status/{jobId}
+HEAD /api/brief/today
 HEAD /api/categories
 HEAD /api/categories/by-slug/{slug}
 HEAD /api/categories/counts
@@ -146,6 +147,7 @@ HEAD /api/graph/compatibility
 HEAD /api/graph/mesh
 HEAD /api/graph/path
 HEAD /api/health
+HEAD /api/hotlist
 HEAD /api/jobs
 HEAD /api/jobs/stream
 HEAD /api/jobs/{id}

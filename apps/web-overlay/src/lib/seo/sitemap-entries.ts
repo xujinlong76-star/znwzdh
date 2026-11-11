@@ -60,6 +60,7 @@ export const STATIC_PATHS = [
   '/',
   '/marketplace',
   '/hot',
+  '/brief',
   '/tags',
   '/collections',
   '/category',

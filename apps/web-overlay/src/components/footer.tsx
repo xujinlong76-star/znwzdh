@@ -41,6 +41,8 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/hot" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">热度趋势榜</Link>
           <span className="text-border" aria-hidden="true">·</span>
+          <Link href="/brief" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">每日简报</Link>
+          <span className="text-border" aria-hidden="true">·</span>
           <Link href="/tags" className="inline-flex items-center min-h-6 py-0.5 px-1 rounded-md hover:text-foreground transition-colors">全景标签云</Link>
           <span className="text-border" aria-hidden="true">·</span>
           {/* SEO：站点目录与合集入口 */}

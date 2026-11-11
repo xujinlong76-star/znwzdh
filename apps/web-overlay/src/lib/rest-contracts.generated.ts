@@ -475,6 +475,93 @@ export interface SceneDetailResponse {
 }
 
 /**
+ * GET /api/hotlist
+ */
+export interface HotlistResponse {
+  ok: true;
+  generatedAt: number | null;
+  sources: ({
+    id: string;
+    name: string;
+    homeUrl: string;
+    status: "ok" | "stale" | "empty";
+    fetchedAt: number | null;
+    items: ({
+      rank: number;
+      title: string;
+      url: string;
+      hotValue: number | null;
+      hotLabel: string | null;
+      [key: string]: unknown;
+    })[];
+    [key: string]: unknown;
+  })[];
+  uncovered: {
+    id: string;
+    name: string;
+    homeUrl: string;
+    reason: string;
+    [key: string]: unknown;
+  }[];
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/brief/today
+ */
+export interface BriefTodayResponse {
+  ok: true;
+  date: string;
+  isToday: boolean;
+  generatedAt: number;
+  opening: string;
+  openingMode: "ai" | "template";
+  hotPicks: ({
+    rank: number;
+    title: string;
+    url: string;
+    hotValue: number | null;
+    hotLabel: string | null;
+    source: string;
+    sourceName: string;
+    fetchedAt: number;
+    [key: string]: unknown;
+  })[];
+  newSitesScope: "today" | "recent";
+  newSites: ({
+    id: string;
+    title: string;
+    url: string;
+    description: string | null;
+    createdAt: number;
+    addedOn: string;
+    [key: string]: unknown;
+  })[];
+  watch: {
+    due: ({
+      key: string;
+      title: string;
+      platformTitle: string;
+      playUrl: string;
+      episode: number;
+      priority: "high" | "normal";
+      [key: string]: unknown;
+    })[];
+    check: ({
+      key: string;
+      title: string;
+      platformTitle: string;
+      playUrl: string;
+      episode: number;
+      priority: "high" | "normal";
+      [key: string]: unknown;
+    })[];
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
+}
+
+/**
  * GET /api/plugins
  */
 export interface PluginListResponse {
@@ -2331,6 +2418,7 @@ export interface RestContractRoutes {
   "GET /api/admin/maintenance/status": MaintenanceStatusResponse;
   "GET /api/admin/notifications": NotificationListResponse;
   "GET /api/admin/notifications/deliveries": NotificationDeliveryListResponse;
+  "GET /api/brief/today": BriefTodayResponse;
   "GET /api/categories": CategoryListResponse;
   "GET /api/categories/by-slug/{slug}": CategoryPayload;
   "GET /api/categories/counts": CategoryCountsResponse;
@@ -2342,6 +2430,7 @@ export interface RestContractRoutes {
   "GET /api/facets": FacetsResponse;
   "GET /api/favorites": FavoritesListResponse;
   "GET /api/health": HealthResponse;
+  "GET /api/hotlist": HotlistResponse;
   "GET /api/me": MeOverviewResponse;
   "GET /api/me/notifications": NotificationListResponse;
   "GET /api/me/notifications/unread-count": NotificationUnreadCountResponse;

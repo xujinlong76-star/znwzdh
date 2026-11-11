@@ -52,6 +52,7 @@ import * as healthRepo from "./repository/health.ts";
 import * as tagsRepo from "./repository/tags.ts";
 import * as favoritesRepo from "./repository/favorites.ts";
 import * as watchlistRepo from "./repository/watchlist.ts";
+import * as hotlistRepo from "./repository/hotlist.ts";
 import * as behaviorRepo from "./repository/behavior.ts";
 import * as profilesRepo from "./repository/profiles.ts";
 import * as vaultRepo from "./repository/vault.ts";
@@ -990,6 +991,44 @@ async savedPluginEmbeddings(filter?: {
 
   async clearWatchEntries(userId: string): Promise<number> {
     return watchlistRepo.clearWatchEntries(this, userId);
+  }
+
+  /* ------------------------- 全网热榜缓存 / 每日简报 ------------------------- */
+
+  async replaceHotlistSource(
+    source: string,
+    items: Array<Omit<import("./repository/records.ts").HotlistEntryRecord, "source" | "fetchedAt">>,
+    fetchedAt: number,
+  ): Promise<void> {
+    return hotlistRepo.replaceHotlistSource(this, source, items, fetchedAt);
+  }
+
+  async markHotlistSourceFailed(source: string, error: string, attemptedAt: number): Promise<void> {
+    return hotlistRepo.markHotlistSourceFailed(this, source, error, attemptedAt);
+  }
+
+  async listHotlistSources() {
+    return hotlistRepo.listHotlistSources(this);
+  }
+
+  async listHotlistEntries(source: string) {
+    return hotlistRepo.listHotlistEntries(this, source);
+  }
+
+  async listAllHotlistEntries() {
+    return hotlistRepo.listAllHotlistEntries(this);
+  }
+
+  async upsertDailyBrief(brief: import("./repository/records.ts").DailyBriefRecord): Promise<void> {
+    return hotlistRepo.upsertDailyBrief(this, brief);
+  }
+
+  async getDailyBrief(date: string) {
+    return hotlistRepo.getDailyBrief(this, date);
+  }
+
+  async getLatestDailyBrief() {
+    return hotlistRepo.getLatestDailyBrief(this);
   }
 
   async updateFavoriteFolder(

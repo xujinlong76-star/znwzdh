@@ -312,6 +312,35 @@ CREATE TABLE IF NOT EXISTS watch_entries (
 CREATE UNIQUE INDEX IF NOT EXISTS watch_entries_user_key_idx ON watch_entries(user_id, drama_key);
 CREATE INDEX IF NOT EXISTS watch_entries_user_idx ON watch_entries(user_id);
 
+CREATE TABLE IF NOT EXISTS hotlist_entries (
+  source TEXT NOT NULL,
+  rank INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  hot_value INTEGER,
+  hot_label TEXT,
+  fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (source, rank)
+);
+CREATE INDEX IF NOT EXISTS hotlist_entries_source_idx ON hotlist_entries(source);
+
+CREATE TABLE IF NOT EXISTS hotlist_sources (
+  source TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'pending',
+  last_ok_at INTEGER,
+  last_attempt_at INTEGER,
+  last_error TEXT,
+  item_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS daily_briefs (
+  date TEXT PRIMARY KEY,
+  generated_at INTEGER NOT NULL,
+  opening TEXT NOT NULL,
+  opening_mode TEXT NOT NULL DEFAULT 'template',
+  payload TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS favorite_folders (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -914,6 +943,35 @@ CREATE TABLE IF NOT EXISTS watch_entries (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS watch_entries_user_key_idx ON watch_entries(user_id, drama_key);
 CREATE INDEX IF NOT EXISTS watch_entries_user_idx ON watch_entries(user_id);
+
+CREATE TABLE IF NOT EXISTS hotlist_entries (
+  source TEXT NOT NULL,
+  rank INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  hot_value BIGINT,
+  hot_label TEXT,
+  fetched_at BIGINT NOT NULL,
+  PRIMARY KEY (source, rank)
+);
+CREATE INDEX IF NOT EXISTS hotlist_entries_source_idx ON hotlist_entries(source);
+
+CREATE TABLE IF NOT EXISTS hotlist_sources (
+  source TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'pending',
+  last_ok_at BIGINT,
+  last_attempt_at BIGINT,
+  last_error TEXT,
+  item_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS daily_briefs (
+  date TEXT PRIMARY KEY,
+  generated_at BIGINT NOT NULL,
+  opening TEXT NOT NULL,
+  opening_mode TEXT NOT NULL DEFAULT 'template',
+  payload TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS favorite_folders (
   id TEXT PRIMARY KEY,

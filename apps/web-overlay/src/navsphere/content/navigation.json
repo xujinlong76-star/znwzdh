@@ -189,8 +189,8 @@
             },
             {
               "id": "nav-ee398c68f878",
-              "title": "Windsurf",
-              "href": "https://windsurf.ai",
+              "title": "Devin Desktop",
+              "href": "https://devin.ai/desktop",
               "description": "Codeium 打造的下一代 Agentic AI IDE，支持级联思考 (Cascade)",
               "icon": "https://windsurf.ai/favicon.ico",
               "enabled": true,
@@ -817,8 +817,8 @@
             },
             {
               "id": "nav-55a843da50d7",
-              "title": "Qwen 2.5",
-              "href": "https://github.com/QwenLM/Qwen2.5",
+              "title": "Qwen 3",
+              "href": "https://github.com/QwenLM/Qwen3",
               "description": "阿里通义千问开源大模型，具备极强代码与数学推理能力",
               "icon": "https://github.com/favicon.ico",
               "enabled": true,
@@ -893,8 +893,8 @@
             },
             {
               "id": "nav-ee616ea65ac4",
-              "title": "Llama",
-              "href": "https://www.llama.com",
+              "title": "Meta AI Developers",
+              "href": "https://dev.meta.ai/",
               "description": "Meta开源大模型系列，支持多规模免费商用。",
               "icon": "https://www.llama.com/favicon.ico",
               "enabled": true,
@@ -977,8 +977,8 @@
             },
             {
               "id": "nav-9f9aa4dddd80",
-              "title": "Luma Dream Machine",
-              "href": "https://lumalabs.ai/dream-machine",
+              "title": "Luma AI",
+              "href": "https://lumalabs.ai/app",
               "description": "基于Gen模型的高画质AI视频生成工具，操作简便。",
               "icon": "https://lumalabs.ai/favicon.ico",
               "enabled": true,
@@ -1079,7 +1079,7 @@
             {
               "id": "nav-0b76eb465501",
               "title": "小云雀AI",
-              "href": "https://xyq.jianying.com",
+              "href": "https://www.xiaoyunque.com/",
               "description": "字节跳动剪映团队的 AI 内容创作 Agent，短剧 Agent 能把长剧本自动拆分镜、锁定角色一致性并生成成片",
               "icon": "https://xyq.jianying.com/favicon.ico",
               "enabled": true,
@@ -1750,8 +1750,8 @@
             },
             {
               "id": "nav-b142882485da",
-              "title": "Ansible",
-              "href": "https://www.ansible.com/",
+              "title": "Ansible Collaborative",
+              "href": "https://www.redhat.com/en/ansible-collaborative",
               "description": "极简的IT自动化与配置管理工具",
               "icon": "https://www.ansible.com/favicon.ico",
               "enabled": true,
@@ -1855,7 +1855,7 @@
             {
               "id": "nav-7dfb3eaa0680",
               "title": "Cloudflare Pages",
-              "href": "https://pages.cloudflare.com",
+              "href": "https://www.cloudflare.com/products/pages/",
               "description": "Cloudflare 边缘静态托管，推送即全球上线，免费额度慷慨",
               "icon": "https://pages.cloudflare.com/favicon.ico",
               "enabled": true,
@@ -2058,7 +2058,7 @@
             {
               "id": "nav-523ff7ca16c3",
               "title": "Gogs",
-              "href": "https://gogs.io",
+              "href": "https://gogs.io/getting-started/introduction",
               "description": "轻量级开源代码托管服务，易自建部署",
               "icon": "https://gogs.io/favicon.ico",
               "enabled": true,
@@ -2225,7 +2225,7 @@
             {
               "id": "nav-134c30035d3d",
               "title": "Node.js 文档",
-              "href": "https://nodejs.org/en/docs/",
+              "href": "https://nodejs.org/docs/latest/api/",
               "description": "Node.js 运行时官方指南与 API 文档",
               "icon": "https://nodejs.org/favicon.ico",
               "enabled": true,
@@ -2716,18 +2716,6 @@
                 "配色",
                 "工具"
               ]
-            },
-            {
-              "id": "nav-fcdf9778fba2",
-              "title": "ColorHunter",
-              "href": "https://colorhunter.com",
-              "description": "从图片中提取颜色色板",
-              "icon": "https://colorhunter.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "取色",
-                "提取"
-              ]
             }
           ]
         },
@@ -3112,7 +3100,7 @@
             {
               "id": "nav-de3563796222",
               "title": "AppFlowy",
-              "href": "https://appflowy.io",
+              "href": "https://appflowy.com/",
               "description": "开源 Notion 平替，本地优先的笔记与看板，可自托管",
               "icon": "https://appflowy.io/favicon.ico",
               "enabled": true,
@@ -3570,8 +3558,8 @@
             },
             {
               "id": "nav-0ab4df3bab56",
-              "title": "Papers with Code",
-              "href": "https://paperswithcode.com",
+              "title": "Hugging Face Papers",
+              "href": "https://huggingface.co/papers/trending",
               "description": "论文与开源实现对照，AI 研究必备",
               "icon": "https://paperswithcode.com/favicon.ico",
               "enabled": true,
@@ -4404,19 +4392,6 @@
                 "政务",
                 "新闻",
                 "政策"
-              ]
-            },
-            {
-              "id": "nav-fb7d2cbdf14f",
-              "title": "国家政务服务网",
-              "href": "https://www.gjzwfw.gov.cn",
-              "description": "全国一体化在线政务服务平台",
-              "icon": "https://www.gjzwfw.gov.cn/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "办事",
-                "服务",
-                "政府"
               ]
             },
             {

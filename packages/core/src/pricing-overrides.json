@@ -59,11 +59,6 @@
   "evidence": "官网设定价页：免费层 + Pro 付费档",
   "title": "Cursor"
  },
- "windsurf.ai": {
-  "pricing": "freemium",
-  "evidence": "官网设免费层与付费档",
-  "title": "Windsurf"
- },
  "codegeex.cn": {
   "pricing": "freemium",
   "evidence": "个人免费、企业版付费",
@@ -184,11 +179,6 @@
   "evidence": "开源本地运行工具（GitHub 仓库）",
   "title": "Ollama"
  },
- "github.com/QwenLM/Qwen2.5": {
-  "pricing": "open_source",
-  "evidence": "站点描述明示开源大模型",
-  "title": "Qwen 2.5"
- },
  "github.com/vllm-project/vllm": {
   "pricing": "open_source",
   "evidence": "GitHub 开源仓库",
@@ -208,11 +198,6 @@
   "pricing": "freemium",
   "evidence": "官网设免费层与付费档",
   "title": "Mistral AI"
- },
- "llama.com": {
-  "pricing": "open_source",
-  "evidence": "站点描述明示开源模型、免费商用",
-  "title": "Llama"
  },
  "klingai.kuaishou.com": {
   "pricing": "freemium",
@@ -239,11 +224,6 @@
   "evidence": "官网设免费层与付费档",
   "title": "Pika"
  },
- "lumalabs.ai/dream-machine": {
-  "pricing": "freemium",
-  "evidence": "官网设免费层与付费档",
-  "title": "Luma Dream Machine"
- },
  "sora.com": {
   "pricing": "freemium",
   "evidence": "随 ChatGPT 付费档为主，设限量免费体验",
@@ -263,11 +243,6 @@
   "pricing": "freemium",
   "evidence": "官网设免费层与付费档",
   "title": "Haiper"
- },
- "xyq.jianying.com": {
-  "pricing": "freemium",
-  "evidence": "剪映生态免费创作 + 付费额度",
-  "title": "小云雀AI"
  },
  "topview.ai": {
   "pricing": "freemium",
@@ -494,11 +469,6 @@
   "evidence": "站点描述明示开源 IaC 工具",
   "title": "Terraform"
  },
- "ansible.com": {
-  "pricing": "open_source",
-  "evidence": "开源自动化工具",
-  "title": "Ansible"
- },
  "pulumi.com": {
   "pricing": "open_source",
   "evidence": "Pulumi CLI 开源",
@@ -584,11 +554,6 @@
   "evidence": "托管服务为付费制（官方定价页）",
   "title": "SourceHut"
  },
- "gogs.io": {
-  "pricing": "open_source",
-  "evidence": "站点描述明示开源代码托管",
-  "title": "Gogs"
- },
  "bitbucket.org": {
   "pricing": "freemium",
   "evidence": "托管免费层 + 付费档",
@@ -643,11 +608,6 @@
   "pricing": "free",
   "evidence": "RFC 全文库免费开放",
   "title": "IETF RFC 搜索"
- },
- "nodejs.org/en/docs": {
-  "pricing": "free",
-  "evidence": "官方文档免费开放",
-  "title": "Node.js 文档"
  },
  "postgresql.org/docs": {
   "pricing": "free",
@@ -808,11 +768,6 @@
   "pricing": "free",
   "evidence": "配色工具免费使用",
   "title": "Adobe Color"
- },
- "colorhunter.com": {
-  "pricing": "free",
-  "evidence": "取色工具免费使用",
-  "title": "ColorHunter"
  },
  "unsplash.com": {
   "pricing": "freemium",
@@ -1058,11 +1013,6 @@
   "pricing": "free",
   "evidence": "预印本论文库免费开放",
   "title": "arXiv"
- },
- "paperswithcode.com": {
-  "pricing": "free",
-  "evidence": "论文与代码对照库免费开放",
-  "title": "Papers with Code"
  },
  "cnki.net": {
   "pricing": "paid",
@@ -1354,11 +1304,6 @@
   "evidence": "政府官方网站，免费",
   "title": "中国政府网"
  },
- "gjzwfw.gov.cn": {
-  "pricing": "free",
-  "evidence": "政务服务平台，免费",
-  "title": "国家政务服务网"
- },
  "gjxfj.gov.cn": {
   "pricing": "free",
   "evidence": "政府官方网站，免费",
@@ -1484,11 +1429,6 @@
   "evidence": "官网定价：免费额度 + 按量付费",
   "title": "Zeabur"
  },
- "pages.cloudflare.com": {
-  "pricing": "freemium",
-  "evidence": "Cloudflare 官网：Pages 免费版 + 付费 Workers 套餐",
-  "title": "Cloudflare Pages"
- },
  "penpot.app": {
   "pricing": "open_source",
   "evidence": "GitHub penpot/penpot 仓库 MPL-2.0 开源",
@@ -1524,11 +1464,6 @@
   "evidence": "官网定价：个人免费 + Sync/Catalyst 付费",
   "title": "Obsidian"
  },
- "appflowy.io": {
-  "pricing": "open_source",
-  "evidence": "GitHub AppFlowy-IO/AppFlowy 仓库 AGPL-3.0 开源",
-  "title": "AppFlowy"
- },
  "affine.pro": {
   "pricing": "freemium",
   "evidence": "官网定价：免费版 + Pro 付费版",
@@ -1553,5 +1488,60 @@
   "pricing": "freemium",
   "evidence": "官网定价页设 Free Plan 与 Premium 付费档",
   "title": "Speechify"
+ },
+ "devin.ai/desktop": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Devin Desktop"
+ },
+ "github.com/QwenLM/Qwen3": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源大模型",
+  "title": "Qwen 3"
+ },
+ "huggingface.co/papers/trending": {
+  "pricing": "free",
+  "evidence": "论文与代码对照库免费开放",
+  "title": "Hugging Face Papers"
+ },
+ "lumalabs.ai/app": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与付费档",
+  "title": "Luma AI"
+ },
+ "dev.meta.ai": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源模型、免费商用",
+  "title": "Meta AI Developers"
+ },
+ "redhat.com/en/ansible-collaborative": {
+  "pricing": "open_source",
+  "evidence": "开源自动化工具",
+  "title": "Ansible Collaborative"
+ },
+ "xiaoyunque.com": {
+  "pricing": "freemium",
+  "evidence": "剪映生态免费创作 + 付费额度",
+  "title": "小云雀AI"
+ },
+ "appflowy.com": {
+  "pricing": "open_source",
+  "evidence": "GitHub AppFlowy-IO/AppFlowy 仓库 AGPL-3.0 开源",
+  "title": "AppFlowy"
+ },
+ "cloudflare.com/products/pages": {
+  "pricing": "freemium",
+  "evidence": "Cloudflare 官网：Pages 免费版 + 付费 Workers 套餐",
+  "title": "Cloudflare Pages"
+ },
+ "nodejs.org/docs/latest/api": {
+  "pricing": "free",
+  "evidence": "官方文档免费开放",
+  "title": "Node.js 文档"
+ },
+ "gogs.io/getting-started/introduction": {
+  "pricing": "open_source",
+  "evidence": "站点描述明示开源代码托管",
+  "title": "Gogs"
  }
 }

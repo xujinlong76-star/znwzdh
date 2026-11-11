@@ -155,7 +155,7 @@ export function storageTag(path: string): string {
  *
  * 2026-11-11 修正：navigation.json / navigation-default.json **移出**豁免。
  * 当年的 3MB 是自动抓取灌库的数据状态；现在的导航快照是人工策划的
- * （334 站，实测约 0.2MB，离 2MB 上限有 10 倍余量）。而 no-store 的代价在
+ * （332 站，实测约 0.2MB，离 2MB 上限有 10 倍余量）。而 no-store 的代价在
  * ISR 页面上被证明更致命：首页（revalidate=60）的渲染树里有一次 no-store
  * fetch，运行时再生成必抛 `Page changed from static to dynamic at runtime`，
  * 整页冻结在构建期快照上——导航本身、首页简报条都永远刷不出来，比当年

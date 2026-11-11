@@ -17,6 +17,9 @@ export type CardDensityMode = 'comfortable' | 'compact' | 'minimal'
 export type SpotlightShortcutMode = 'mod+k' | 'slash' | 'both'
 export type HistoryRetentionDays = 30 | 90 | 180 | 365
 
+/** 账号级主题偏好：null = 未设置（跟随全站默认/系统） */
+export type ThemePreference = 'light' | 'dark' | 'system' | null
+
 export interface UserSettingsModel {
   personalizationEnabled: boolean
   favoriteSignalCutoff: number
@@ -29,6 +32,10 @@ export interface UserSettingsModel {
   searchHistoryEnabled: boolean
   telemetryEnabled: boolean
   historyRetentionDays: HistoryRetentionDays
+  /** 账号级主题偏好（跨设备，登录后由 UserPrefsSync 应用到 next-themes） */
+  themePreference: ThemePreference
+  /** 账号级首页隐藏模块键名（与全站 features 同名；个人优先于全站默认） */
+  hiddenHomeModules: string[]
   /** 0 表示从未保存过；云端返回的 Overview.settings 契约要求该字段必填 */
   updatedAt: number
 }
@@ -54,6 +61,8 @@ export const DEFAULT_USER_SETTINGS: UserSettingsModel = {
   searchHistoryEnabled: true,
   telemetryEnabled: true,
   historyRetentionDays: 180,
+  themePreference: null,
+  hiddenHomeModules: [],
   updatedAt: 0,
 }
 
@@ -168,6 +177,14 @@ export function normalizeUserSettings(raw?: unknown): UserSettingsModel {
         ? s.telemetryEnabled
         : DEFAULT_USER_SETTINGS.telemetryEnabled,
     historyRetentionDays,
+    themePreference:
+      s.themePreference === 'light' || s.themePreference === 'dark' || s.themePreference === 'system'
+        ? s.themePreference
+        : null,
+    // 键名合法性由消费方（personal-home-modules）再按 FEATURE_KEYS 过滤，这里只收口形状
+    hiddenHomeModules: Array.isArray(s.hiddenHomeModules)
+      ? [...new Set(s.hiddenHomeModules.filter((v): v is string => typeof v === 'string' && v.length <= 32))].slice(0, 8)
+      : [],
     updatedAt:
       typeof s.updatedAt === 'number' && Number.isFinite(s.updatedAt)
         ? s.updatedAt
@@ -309,7 +326,13 @@ export function verifySettingsConsistency(
     if (k === 'updatedAt') continue
     const expectedVal = normalizedExpected[k]
     const localVal = localWritten[k]
-    if (expectedVal !== localVal) {
+    // 数组类字段（hiddenHomeModules）按值比较：引用比较永远不等，
+    // 会把每次保存都误报成「修复了 1 项偏差」
+    const same =
+      Array.isArray(expectedVal) || Array.isArray(localVal)
+        ? JSON.stringify(expectedVal) === JSON.stringify(localVal)
+        : expectedVal === localVal
+    if (!same) {
       mismatchedKeys.push(k)
     }
   }

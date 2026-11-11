@@ -26,6 +26,11 @@ const HomeDramaCinema = dynamic(
   { ssr: false },
 )
 import { useOverlayBehavior } from '@/components/ui/overlay'
+import {
+  normalizeSettings,
+  type FeatureKey,
+} from '@/lib/site-settings'
+import { readLocalHiddenHomeModules } from '@/lib/personal-home-modules'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { CategoryQuickJumpBar } from '@/components/category-quick-jump-bar'
 import { FloatingQuickNav } from '@/components/floating-quick-nav'
@@ -228,6 +233,20 @@ export function NavigationContent({
     restoreAll,
     setBypassMaskTemporarily,
   } = useFeatureMask()
+
+  // 全站配置（后台「站点设置」）：功能开关 + 首页板块顺序。siteData 是上游
+  // SiteConfig 形状，用客户端安全的 normalizeSettings 收口（脏值回退默认全开）。
+  const homeControl = useMemo(() => normalizeSettings(siteData as unknown), [siteData])
+  // 个人隐藏（账号级偏好，登录后同步到本机）：全站开启之上再叠一层，
+  // 个人设置优先于全站默认。水合后再读本机值，避免 SSR/CSR 首帧不一致。
+  const [personalHidden, setPersonalHidden] = useState<ReadonlySet<FeatureKey>>(new Set())
+  useEffect(() => {
+    setPersonalHidden(new Set(readLocalHiddenHomeModules()))
+  }, [])
+  const sectionOn = useCallback(
+    (key: FeatureKey) => homeControl.features[key] && !personalHidden.has(key),
+    [homeControl, personalHidden],
+  )
 
   // 拖拽编排分类状态
   const [dropCategoryTarget, setDropCategoryTarget] = useState<{ categoryId: string; position: 'before' | 'after' } | null>(null)
@@ -709,16 +728,26 @@ export function NavigationContent({
               {siteData.basic.title}
             </h1>
             <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
-              {siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
+              {homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
             </p>
           </header>
-          {/* AI 智能找站：首屏显眼入口，一句话直达站内站点卡片（服务端保证只出站内收录） */}
-          {viewMode !== 'workbench' && <AiFinderPanel />}
-          {/* 沉浸影院（设计稿 E 落地）：短剧海报横滑 + 热播榜 + 分类横幅，懒挂载取数 */}
-          {viewMode !== 'workbench' && <HomeDramaCinema />}
-          {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
-          {viewMode !== 'workbench' && !isModuleHidden('mod:onboarding-card') && (
-            <div data-feature-id="mod:onboarding-card" className="relative">
+          {/* 可编排板块（后台「站点设置 → 公告与功能」控制开关与顺序；
+              个人隐藏再叠加一层）：按 home.order 渲染，全站关或个人隐藏的直接跳过 */}
+          {viewMode !== 'workbench' &&
+            homeControl.home.order.map((sectionKey) => {
+              if (!sectionOn(sectionKey)) return null
+              if (sectionKey === 'aiFinder') {
+                /* AI 智能找站：首屏显眼入口，一句话直达站内站点卡片（服务端保证只出站内收录） */
+                return <AiFinderPanel key={sectionKey} />
+              }
+              if (sectionKey === 'dramaCinema') {
+                /* 沉浸影院（设计稿 E 落地）：短剧海报横滑 + 热播榜 + 分类横幅，懒挂载取数 */
+                return <HomeDramaCinema key={sectionKey} />
+              }
+              /* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */
+              if (isModuleHidden('mod:onboarding-card')) return null
+              return (
+            <div key={sectionKey} data-feature-id="mod:onboarding-card" className="relative">
               {isEditingLayout && (
                 <button
                   type="button"
@@ -742,7 +771,8 @@ export function NavigationContent({
               )}
               <OnboardingCard />
             </div>
-          )}
+              )
+            })}
           {viewMode === 'workbench' ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-1">
@@ -763,7 +793,7 @@ export function NavigationContent({
               {/* 首屏极速启动 Bento 展板（多引擎聚合搜索 + 星标/收藏坞 + 时钟 + 快捷工具） */}
               {viewMode === 'hybrid' ? (
                 <>
-                  {!isModuleHidden('mod:hero-deck') && (
+                  {!isModuleHidden('mod:hero-deck') && sectionOn('heroDeck') && (
                     <div data-feature-id="mod:hero-deck" className="relative">
                       {isEditingLayout && (
                         <div className="mb-1.5 flex justify-end">

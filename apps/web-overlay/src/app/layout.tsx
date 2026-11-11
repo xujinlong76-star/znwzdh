@@ -13,13 +13,15 @@ import { WebVitalsReporter } from '@/components/web-vitals-reporter'
 import { OfflineBanner } from '@/components/offline-banner'
 import MobileNav from '@/components/mobile-nav'
 import { SessionSync } from '@/components/user-center/session-sync'
+import { UserPrefsSync } from '@/components/user-center/user-prefs-sync'
 import { Suspense } from 'react'
 import { GrowthTracker } from '@/components/growth/growth-tracker'
 import { HomepageBanner } from '@/components/growth/homepage-banner'
 import { DENSITY_PREPAINT_SCRIPT } from '@/lib/density-bootstrap'
 import { FONT_SIZE_PREPAINT_SCRIPT } from '@/lib/font-size'
 import { readSiteSettings } from '@/lib/site-config-source'
-import { resolveDefaultTheme } from '@/lib/site-settings'
+import { isAnnouncementVisible, resolveDefaultTheme } from '@/lib/site-settings'
+import { AnnouncementBar } from '@/components/announcement-bar'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { DEFAULT_OG_IMAGE, normalizeBrandName } from '@/lib/seo/metadata'
 import type { Metadata, Viewport } from 'next'
@@ -235,6 +237,10 @@ export default async function RootLayout({
         <a href="#main-content" className="skip-to-content">
           跳到主要内容
         </a>
+        {/* 全站公告（后台站点设置控制：开关 + 定时窗口在此判断，关/未到/过期都不渲染） */}
+        {isAnnouncementVisible(settings) ? (
+          <AnnouncementBar announcement={settings.announcement} />
+        ) : null}
         {/* 登录后把会话身份同步到用户中心，并合并本机匿名数据（幂等） */}
         <SessionSync />
         <PwaRegister />
@@ -250,13 +256,17 @@ export default async function RootLayout({
           <Providers site={siteView}>
             {children}
           </Providers>
+          {/* 账号级偏好落地：登录后把云端主题/首页模块隐藏同步到本机运行时 */}
+          <UserPrefsSync />
           {/* 移动端底部导航（sm 以下可见；footer 已预留安全区，勿再加负 margin） */}
           <MobileNav />
           {/* 网络状态提示：全站可见。离线时告诉用户「是你的网络断了，不是站点没数据」 */}
           <OfflineBanner />
           <Toaster />
           {/* 小猫猫 AI 助手挂件 v7：右下角悬浮小猫（public/xiaomaomao/xiaomaomao.js，头像真图多姿势 + 聊天找站 + 摸猫/喂鱼/接星星/成长联动/语音输入；v6：深色整套图自动切换 + 庆祝视频钩子（media 文件就位即生效）+ 拖动补强（触摸/真尺寸钳制）+ 闲时贴边半藏 + 用户自改形象（图库/上传，本机保存）；v7：平时零遮挡——控件收进猫上方悬浮坞、悬停/轻点才唤出、闲置 3 秒自动收起，全套 UI 图标换手工 SVG） */}
-          <Script src="/xiaomaomao/xiaomaomao.js" strategy="afterInteractive" />
+          {settings.features.xiaomaomao ? (
+            <Script src="/xiaomaomao/xiaomaomao.js" strategy="afterInteractive" />
+          ) : null}
           {/* 成长档案感知层（挂机/路由/点击计数，无可见 UI）与首页「设为首页」引导条。
               GrowthTracker 用了 useSearchParams，必须包 Suspense，否则静态生成
               /404 时报 missing-suspense-with-csr-bailout（2026-11-10 构建实测）。 */}

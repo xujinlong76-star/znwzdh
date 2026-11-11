@@ -22,6 +22,8 @@ export type SearchEngineId = "internal" | "google" | "bing" | "duckduckgo" | "gi
 export type CardDensityMode = "comfortable" | "compact" | "minimal";
 export type SpotlightShortcutMode = "mod+k" | "slash" | "both";
 export type HistoryRetentionDays = 30 | 90 | 180 | 365;
+/** 主题偏好：null = 未设置（跟随全站默认/系统），与 next-themes 的用户选择互通 */
+export type ThemePreference = "light" | "dark" | "system" | null;
 
 export interface ExtendedUserPreferences {
   defaultSearchEngine: SearchEngineId;
@@ -33,6 +35,10 @@ export interface ExtendedUserPreferences {
   searchHistoryEnabled: boolean;
   telemetryEnabled: boolean;
   historyRetentionDays: HistoryRetentionDays;
+  /** 账号级主题偏好（跨设备）：null = 未设置过 */
+  themePreference: ThemePreference;
+  /** 账号级「首页隐藏模块」键名列表（与前端 FEATURE_KEYS 同名；个人优先于全站开关） */
+  hiddenHomeModules: string[];
 }
 
 export interface UserSettingsRecord extends ExtendedUserPreferences {
@@ -54,6 +60,8 @@ export const DEFAULT_EXTENDED_PREFERENCES: ExtendedUserPreferences = {
   searchHistoryEnabled: true,
   telemetryEnabled: true,
   historyRetentionDays: 180,
+  themePreference: null,
+  hiddenHomeModules: [],
 };
 
 const VALID_ENGINES = new Set<SearchEngineId>(["internal", "google", "bing", "duckduckgo", "github", "perplexity"]);
@@ -109,6 +117,14 @@ export function parseExtendedPreferences(raw: unknown): ExtendedUserPreferences 
     historyRetentionDays: VALID_RETENTION_DAYS.has(retention)
       ? retention
       : DEFAULT_EXTENDED_PREFERENCES.historyRetentionDays,
+    themePreference:
+      parsed.themePreference === "light" || parsed.themePreference === "dark" || parsed.themePreference === "system"
+        ? parsed.themePreference
+        : null,
+    // 只做形状收口（字符串、去重、限长限量）；键名合法性由前端按 FEATURE_KEYS 再过滤
+    hiddenHomeModules: Array.isArray(parsed.hiddenHomeModules)
+      ? [...new Set(parsed.hiddenHomeModules.filter((v): v is string => typeof v === "string" && v.length <= 32))].slice(0, 8)
+      : [],
   };
 }
 
@@ -185,6 +201,9 @@ export async function updateUserSettings(
     searchHistoryEnabled: patch.searchHistoryEnabled ?? current.searchHistoryEnabled,
     telemetryEnabled: patch.telemetryEnabled ?? current.telemetryEnabled,
     historyRetentionDays: patch.historyRetentionDays ?? current.historyRetentionDays,
+    // themePreference 允许显式写 null（清除偏好），故用 !== undefined 区分「没动」与「清掉」
+    themePreference: patch.themePreference !== undefined ? patch.themePreference : current.themePreference,
+    hiddenHomeModules: patch.hiddenHomeModules ?? current.hiddenHomeModules,
   });
 
   const next: UserSettingsRecord = {

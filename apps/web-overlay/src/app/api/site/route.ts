@@ -45,7 +45,11 @@ function isEmptySettings(s: ReturnType<typeof normalizeSettings>): boolean {
     !s.appearance.pwaMaskable512 &&
     !s.appearance.themeColor &&
     !s.footer?.text &&
-    !s.footer?.icp
+    !s.footer?.icp &&
+    !s.basic.tagline &&
+    !s.announcement.text &&
+    // 功能全开是缺省态：任一被关都说明有人配过，不能再判「未配置」
+    Object.values(s.features).every(Boolean)
   )
 }
 

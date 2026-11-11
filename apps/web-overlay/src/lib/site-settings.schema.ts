@@ -1,7 +1,7 @@
 import { z } from 'zod'
 // 同目录互引走相对路径：本文件会被 vitest / 脚本 / Next 三套解析器分别处理，
 // 相对路径在三处都成立，不依赖 tsconfig paths 或 vite alias 的配置是否对齐。
-import { ASSET_RE, pwaAssetPattern, type PwaAssetKind } from './site-settings'
+import { ASSET_RE, FEATURE_KEYS, HOME_SECTION_KEYS, pwaAssetPattern, type PwaAssetKind } from './site-settings'
 
 /**
  * 站点设置的**写侧校验口径**（zod）。
@@ -52,6 +52,33 @@ export const siteSettingsPatchSchema = z.object({
       description: z.string().trim().min(10, '描述至少 10 个字符').max(500).optional(),
       keywords: z.string().trim().max(300).nullable().optional(),
       ogImage: assetField.nullable().optional(),
+      tagline: z.string().trim().max(120).nullable().optional(),
+    })
+    .strict()
+    .optional(),
+  announcement: z
+    .object({
+      enabled: z.boolean().optional(),
+      text: z.string().trim().max(200).nullable().optional(),
+      linkUrl: assetField.nullable().optional(),
+      linkLabel: z.string().trim().max(30).nullable().optional(),
+      startAt: z.number().int().min(0).max(4_102_444_800_000).nullable().optional(),
+      endAt: z.number().int().min(0).max(4_102_444_800_000).nullable().optional(),
+    })
+    .strict()
+    .optional(),
+  features: z
+    .object(
+      Object.fromEntries(FEATURE_KEYS.map((k) => [k, z.boolean().optional()])),
+    )
+    .strict()
+    .optional(),
+  home: z
+    .object({
+      order: z
+        .array(z.enum(HOME_SECTION_KEYS))
+        .max(HOME_SECTION_KEYS.length)
+        .optional(),
     })
     .strict()
     .optional(),

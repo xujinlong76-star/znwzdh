@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 // 读侧归一化/合并与展示辅助来自客户端安全模块；写侧 schema 单独成模块（它依赖 zod）。
-import { externalLinkRelAttr, mergeSettings, normalizeSettings } from '../src/lib/site-settings'
+import { externalLinkRelAttr, isAnnouncementVisible, mergeSettings, normalizeSettings } from '../src/lib/site-settings'
 import { siteSettingsPatchSchema } from '../src/lib/site-settings.schema'
 
 describe('站点品牌设置', () => {
@@ -96,6 +96,58 @@ describe('站点品牌设置', () => {
       for (const dirty of [undefined, null, '', 'other', {}, 1]) {
         expect(externalLinkRelAttr(dirty)).toBe('nofollow noopener noreferrer')
       }
+    })
+  })
+
+  describe('公告 / 功能开关 / 首页编排 / 标语', () => {
+    it('缺省：公告关、功能全开、首页默认序、无标语', () => {
+      const s = normalizeSettings(null)
+      expect(s.announcement).toEqual({ enabled: false, text: '' })
+      expect(Object.values(s.features).every(Boolean)).toBe(true)
+      expect(s.home.order).toEqual(['aiFinder', 'dramaCinema', 'onboarding'])
+      expect(s.basic.tagline).toBeUndefined()
+    })
+
+    it('features 只有显式 false 才关，脏值按开处理', () => {
+      const s = normalizeSettings({ features: { dramaCinema: false, aiFinder: 'no', xiaomaomao: 0 } })
+      expect(s.features.dramaCinema).toBe(false)
+      expect(s.features.aiFinder).toBe(true)
+      expect(s.features.xiaomaomao).toBe(true)
+    })
+
+    it('home.order 去重、丢未知键、缺失键按默认序补齐', () => {
+      const s = normalizeSettings({ home: { order: ['onboarding', 'bogus', 'onboarding', 'aiFinder'] } })
+      expect(s.home.order).toEqual(['onboarding', 'aiFinder', 'dramaCinema'])
+    })
+
+    it('公告开但无文案时归一化为关；定时窗口由 isAnnouncementVisible 判断', () => {
+      const empty = normalizeSettings({ announcement: { enabled: true, text: '  ' } })
+      expect(empty.announcement.enabled).toBe(false)
+      const timed = normalizeSettings({
+        announcement: { enabled: true, text: '限时公告', startAt: 1_000, endAt: 2_000 },
+      })
+      expect(isAnnouncementVisible(timed, 500)).toBe(false)
+      expect(isAnnouncementVisible(timed, 1_500)).toBe(true)
+      expect(isAnnouncementVisible(timed, 2_500)).toBe(false)
+    })
+
+    it('合并：只关短剧不清其他段；标语可写可清', () => {
+      const current = normalizeSettings({
+        basic: { title: 'NavHub', description: '一个足够长的网站描述', tagline: '旧标语' },
+        announcement: { enabled: true, text: '公告' },
+      })
+      const merged = mergeSettings(current, { features: { dramaCinema: false } })
+      expect(merged.features.dramaCinema).toBe(false)
+      expect(merged.features.aiFinder).toBe(true)
+      expect(merged.announcement.text).toBe('公告')
+      expect(mergeSettings(merged, { basic: { tagline: null } }).basic.tagline).toBeUndefined()
+    })
+
+    it('写侧 schema：拒绝伪协议公告链接与未知功能键', () => {
+      expect(siteSettingsPatchSchema.safeParse({ announcement: { linkUrl: 'javascript:alert(1)' } }).success).toBe(false)
+      expect(siteSettingsPatchSchema.safeParse({ announcement: { linkUrl: '/videos' } }).success).toBe(true)
+      expect(siteSettingsPatchSchema.safeParse({ features: { nope: true } }).success).toBe(false)
+      expect(siteSettingsPatchSchema.safeParse({ home: { order: ['dramaCinema', 'aiFinder'] } }).success).toBe(true)
     })
   })
 })

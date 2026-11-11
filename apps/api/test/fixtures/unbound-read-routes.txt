@@ -154,6 +154,7 @@ HEAD /api/jobs/{id}
 HEAD /api/jobs/{id}/events
 HEAD /api/me
 HEAD /api/me/activity
+HEAD /api/me/custom-sites
 HEAD /api/me/export
 HEAD /api/me/export/bookmarks.html
 HEAD /api/me/llm-usage

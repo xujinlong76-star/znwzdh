@@ -75,12 +75,14 @@ import * as pluginsRepo from "./repository/plugins.ts";
 import * as ioRepo from "./repository/io.ts";
 import * as identityRepo from "./repository/identity.ts";
 import * as settingsRepo from "./repository/settings.ts";
+import * as customSitesRepo from "./repository/custom-sites.ts";
 import * as userDataRepo from "./repository/user-data.ts";
 export * from "./repository/records.ts";
 export { bindSqlite, normalizeTokenScopes, slugify, toPgSql } from "./repository/dialect.ts";
 export { TOKEN_TOUCH_THROTTLE_MS } from "./repository/tokens.ts";
 // 导入侧的条数上限要跟导出侧对齐，否则合法备份会被自己的上限拒掉
 export { EXPORT_HISTORY_LIMIT, EXPORT_FAVORITES_LIMIT, EXPORT_SCHEMA_VERSION } from "./repository/user-data.ts";
+export { CUSTOM_SITES_MAX_PER_USER, type CustomSiteRecord } from "./repository/custom-sites.ts";
 export type { SessionDeviceRecord } from "./repository/sessions.ts";
 export type { NotificationRecord } from "./repository/notifications.ts";
 /**
@@ -1337,6 +1339,41 @@ async savedPluginEmbeddings(filter?: {
 
   async deleteUserSettings(identity: string): Promise<void> {
     return settingsRepo.deleteUserSettings(this, identity);
+  }
+
+  /* ------------------------- 用户自定义站点 ------------------------- */
+
+  async listCustomSites(userId: string): Promise<customSitesRepo.CustomSiteRecord[]> {
+    return customSitesRepo.listCustomSites(this, userId);
+  }
+
+  async createCustomSite(input: {
+    userId: string;
+    title: string;
+    url: string;
+    note?: string | null;
+  }): Promise<customSitesRepo.CustomSiteRecord | null> {
+    return customSitesRepo.createCustomSite(this, input);
+  }
+
+  async updateCustomSite(
+    userId: string,
+    id: string,
+    patch: { title?: string; url?: string; note?: string | null },
+  ): Promise<customSitesRepo.CustomSiteRecord | null> {
+    return customSitesRepo.updateCustomSite(this, userId, id, patch);
+  }
+
+  async deleteCustomSite(userId: string, id: string): Promise<boolean> {
+    return customSitesRepo.deleteCustomSite(this, userId, id);
+  }
+
+  async reorderCustomSites(userId: string, ids: string[]): Promise<customSitesRepo.CustomSiteRecord[] | null> {
+    return customSitesRepo.reorderCustomSites(this, userId, ids);
+  }
+
+  async deleteAllCustomSites(userId: string): Promise<number> {
+    return customSitesRepo.deleteAllCustomSites(this, userId);
   }
 
   /** 导出用户全部数据（密钥字段已脱敏，金库只带版本元信息） */

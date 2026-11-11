@@ -21,9 +21,11 @@ import {
   type HistoryRetentionDays,
   type SearchEngineId,
   type SpotlightShortcutMode,
+  type ThemePreference,
   type UserSettingsModel,
   type UserSettingsPatch,
 } from '@/lib/user-settings'
+import type { FeatureKey } from '@/lib/site-settings'
 import { Settings2, Zap, ChevronDown, Command } from 'lucide-react'
 import { useCallback, useEffect, useState, type ComponentProps } from 'react'
 import {
@@ -441,6 +443,68 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
               </option>
             ))}
           </SettingsSelect>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <label htmlFor={`${idPrefix}-theme-preference`} className="block text-xs font-medium text-foreground">
+            主题（账号级，跨设备）
+          </label>
+          <SettingsSelect
+            id={`${idPrefix}-theme-preference`}
+            label="主题偏好"
+            value={value.themePreference ?? ''}
+            disabled={busy}
+            onChange={(e) =>
+              onChange(
+                { themePreference: (e.target.value || null) as ThemePreference },
+                '主题偏好已更新',
+              )
+            }
+          >
+            <option value="">未设置（跟随全站默认）</option>
+            <option value="system">跟随系统</option>
+            <option value="light">始终浅色</option>
+            <option value="dark">始终深色</option>
+          </SettingsSelect>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            登录后在任何设备打开都会按这个偏好显示；本机工具栏的手动切换只影响当前设备。
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <p className="block text-xs font-medium text-foreground">首页模块显示（个人）</p>
+          <div className="grid gap-2">
+            {(
+              [
+                ['aiFinder', 'AI 智能找站'],
+                ['dramaCinema', '短剧沉浸影院'],
+                ['onboarding', '首访引导卡'],
+                ['heroDeck', '极速启动展板'],
+              ] as Array<[FeatureKey, string]>
+            ).map(([key, label]) => {
+              const visible = !value.hiddenHomeModules.includes(key)
+              return (
+                <ToggleRow
+                  key={key}
+                  title={label}
+                  hint={visible ? '首页显示这个模块' : '已对你隐藏（全站设置不受影响）'}
+                  enabled={visible}
+                  busy={busy}
+                  onToggle={() =>
+                    onChange(
+                      {
+                        hiddenHomeModules: visible
+                          ? [...value.hiddenHomeModules, key]
+                          : value.hiddenHomeModules.filter((k) => k !== key),
+                      },
+                      visible ? `已隐藏「${label}」` : `已恢复显示「${label}」`,
+                    )
+                  }
+                />
+              )
+            })}
+          </div>
         </div>
       </div>
 

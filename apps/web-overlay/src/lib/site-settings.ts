@@ -26,10 +26,35 @@ import type { SiteConfig } from '@/types/site'
 /** 中枢存储路径（与 layout / api/site / metadata 共用同一常量） */
 export const SITE_CONTENT_PATH = 'src/navsphere/content/site.json'
 
+/** 首页可被后台编排/开关的板块键（顺序与开关共用同一组键名） */
+export const HOME_SECTION_KEYS = ['aiFinder', 'dramaCinema', 'onboarding'] as const
+export type HomeSectionKey = (typeof HOME_SECTION_KEYS)[number]
+
+/** 全站功能开关的键名（features 段） */
+export const FEATURE_KEYS = [...HOME_SECTION_KEYS, 'heroDeck', 'xiaomaomao'] as const
+export type FeatureKey = (typeof FEATURE_KEYS)[number]
+
 export interface SiteSettingsExtra {
   basic: {
     /** 分享卡大图（1200×630）。缺省时用 /og-default.png */
     ogImage?: string
+    /** 标语/副标题：首页主标题下的展示文案。与 description（SEO）分离，缺省回退 description */
+    tagline?: string
+  }
+  /** 全站公告：开关 + 文案 + 可选链接 + 可选定时窗口（epoch ms，缺省 = 不限时） */
+  announcement: {
+    enabled: boolean
+    text: string
+    linkUrl?: string
+    linkLabel?: string
+    startAt?: number
+    endAt?: number
+  }
+  /** 功能开关：缺省全开。关掉的板块前端不渲染（个人隐藏在此之上再叠加） */
+  features: Record<FeatureKey, boolean>
+  /** 首页编排：可控板块的展示顺序（缺失/脏值回退 HOME_SECTION_KEYS 默认序） */
+  home: {
+    order: HomeSectionKey[]
   }
   appearance: {
     /** 品牌主色，进 PWA manifest 的 theme_color */
@@ -59,7 +84,17 @@ export type SiteSettings = SiteConfig & SiteSettingsExtra
 
 /** 表单每个 tab 提交的“部分更新”形状（字段级 null = 显式清空） */
 export type SiteSettingsPatch = {
-  basic?: Partial<Omit<SiteSettings['basic'], 'ogImage'>> & { ogImage?: string | null }
+  basic?: Partial<Omit<SiteSettings['basic'], 'ogImage' | 'tagline'>> & { ogImage?: string | null; tagline?: string | null }
+  announcement?: Partial<{
+    enabled: boolean
+    text: string | null
+    linkUrl: string | null
+    linkLabel: string | null
+    startAt: number | null
+    endAt: number | null
+  }>
+  features?: Partial<Record<FeatureKey, boolean>>
+  home?: { order?: HomeSectionKey[] }
   appearance?: Partial<Omit<SiteSettings['appearance'], 'logo' | 'favicon' | 'appleTouchIcon' | PwaAssetKind | 'themeColor'>> & {
     logo?: string | null
     favicon?: string | null
@@ -157,6 +192,35 @@ export function normalizeSettings(raw: unknown): SiteSettings {
     : undefined
   const footerText = text(footer.text, 200)
   const footerIcp = text(footer.icp, 60)
+  const tagline = text(basic.tagline, 120)
+
+  const announcementSrc = (src.announcement ?? {}) as Record<string, unknown>
+  const announcementText = text(announcementSrc.text, 200)
+  const announcementLink = asset(announcementSrc.linkUrl)
+  const announcementLabel = text(announcementSrc.linkLabel, 30)
+  const epoch = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 4_102_444_800_000 ? Math.floor(v) : undefined
+  const announcementStart = epoch(announcementSrc.startAt)
+  const announcementEnd = epoch(announcementSrc.endAt)
+
+  const featuresSrc = (src.features ?? {}) as Record<string, unknown>
+  const features = {} as Record<FeatureKey, boolean>
+  for (const key of FEATURE_KEYS) {
+    // 只有显式 false 才关：缺失/脏值一律按开处理，避免脏数据把首页板块误杀
+    features[key] = featuresSrc[key] !== false
+  }
+
+  const homeSrc = (src.home ?? {}) as Record<string, unknown>
+  const rawOrder = Array.isArray(homeSrc.order) ? homeSrc.order : []
+  const seen = new Set<HomeSectionKey>()
+  const order: HomeSectionKey[] = []
+  for (const item of rawOrder) {
+    if ((HOME_SECTION_KEYS as readonly string[]).includes(item as string) && !seen.has(item as HomeSectionKey)) {
+      seen.add(item as HomeSectionKey)
+      order.push(item as HomeSectionKey)
+    }
+  }
+  for (const key of HOME_SECTION_KEYS) if (!seen.has(key)) order.push(key)
 
   return {
     basic: {
@@ -164,7 +228,18 @@ export function normalizeSettings(raw: unknown): SiteSettings {
       description: text(basic.description, 500) ?? '',
       keywords: text(basic.keywords, 300) ?? '',
       ...(ogImage ? { ogImage } : {}),
+      ...(tagline ? { tagline } : {}),
     },
+    announcement: {
+      enabled: announcementSrc.enabled === true && !!announcementText,
+      text: announcementText ?? '',
+      ...(announcementLink ? { linkUrl: announcementLink } : {}),
+      ...(announcementLabel ? { linkLabel: announcementLabel } : {}),
+      ...(announcementStart ? { startAt: announcementStart } : {}),
+      ...(announcementEnd ? { endAt: announcementEnd } : {}),
+    },
+    features,
+    home: { order },
     appearance: {
       logo: asset(appearance.logo) ?? '',
       favicon: asset(appearance.favicon) ?? '',
@@ -187,7 +262,7 @@ export function normalizeSettings(raw: unknown): SiteSettings {
 
 /** 本模块未建模、但可能由其它工具写入的顶层键 */
 function unknownSections(src: Record<string, unknown>): Record<string, unknown> {
-  const known = new Set(['basic', 'appearance', 'navigation', 'footer'])
+  const known = new Set(['basic', 'appearance', 'navigation', 'footer', 'announcement', 'features', 'home'])
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(src)) if (!known.has(k)) out[k] = v
   return out
@@ -208,7 +283,7 @@ export function mergeSettings(current: unknown, patch: SiteSettingsPatch): SiteS
   const base = normalizeSettings(current)
   const merged: Record<string, unknown> = { ...base }
 
-  for (const section of ['basic', 'appearance', 'navigation', 'footer'] as const) {
+  for (const section of ['basic', 'appearance', 'navigation', 'footer', 'announcement', 'features', 'home'] as const) {
     const incoming = patch[section]
     if (!incoming) continue
     const sectionBase = base[section]
@@ -227,7 +302,7 @@ export function mergeSettings(current: unknown, patch: SiteSettingsPatch): SiteS
 
 /** 至少要有一个「本次要动的字段」，否则等于让管理员点了一次空保存 */
 export function hasPatchContent(patch: SiteSettingsPatch): boolean {
-  return (['basic', 'appearance', 'navigation', 'footer'] as const).some((section) => {
+  return (['basic', 'appearance', 'navigation', 'footer', 'announcement', 'features', 'home'] as const).some((section) => {
     const value = patch[section]
     return !!value && Object.values(value).some((v) => v !== undefined)
   })
@@ -238,6 +313,18 @@ export function hasPatchContent(patch: SiteSettingsPatch): boolean {
  * ------------------------------------------------------------------ */
 
 export const BRAND_FALLBACK = '山羊胡'
+
+/** 公告是否应在当前时刻展示：开关开、有文案、且落在定时窗口内（窗口缺省 = 不限时） */
+export function isAnnouncementVisible(
+  settings: Pick<SiteSettings, 'announcement'> | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  const a = settings?.announcement
+  if (!a?.enabled || !a.text) return false
+  if (typeof a.startAt === 'number' && now < a.startAt) return false
+  if (typeof a.endAt === 'number' && now >= a.endAt) return false
+  return true
+}
 
 /**
  * 收录站点外链的 rel 属性（SEO，2026-11-07）。

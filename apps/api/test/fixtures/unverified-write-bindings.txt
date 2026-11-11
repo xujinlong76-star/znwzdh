@@ -99,3 +99,7 @@ POST /api/account/resend-verification | 需要「已注册未验证」状态与�
 POST /api/account/forgot-password | 需要已验证账号并会真发信；在 account-api.test.ts 覆盖「不泄露账号是否存在」分支
 POST /api/account/reset-password | 需要重置令牌；在 account-api.test.ts 覆盖令牌校验与改密后旧密码失效
 POST /api/account/login | 需要注册完成态与邮箱验证态；在 account-api.test.ts 覆盖 200/401/403 三支
+POST /api/me/custom-sites | 需签名身份前置状态；由 apps/api/test/me-custom-sites.test.ts 全流程用例覆盖（增删改查/排序/隔离）
+PATCH /api/me/custom-sites/{id} | 同上：me-custom-sites.test.ts 覆盖改名与跨用户 404
+DELETE /api/me/custom-sites/{id} | 同上：me-custom-sites.test.ts 覆盖删除与删后清单
+POST /api/me/custom-sites/reorder | 同上：me-custom-sites.test.ts 覆盖全集重排与非全集 400

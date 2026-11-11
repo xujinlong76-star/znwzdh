@@ -50,6 +50,13 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     note: "收藏夹",
   },
   {
+    id: "customSites",
+    table: "user_custom_sites",
+    ownerColumns: ["user_id"],
+    disposition: "delete",
+    note: "用户自定义站点（用户在用户中心自加的网址）；本期不进导出包，注销必须删净",
+  },
+  {
     id: "watchEntries",
     table: "watch_entries",
     ownerColumns: ["user_id"],

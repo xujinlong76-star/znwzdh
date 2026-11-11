@@ -53,6 +53,7 @@ import { collectionRoutes } from "./routes/collections.ts";
 import { recipeRoutes } from "./routes/recipes.ts";
 import { visualRoutes } from "./routes/visual.ts";
 import { favoriteRoutes } from "./routes/favorites.ts";
+import { customSiteRoutes } from "./routes/custom-sites.ts";
 import { rankRoutes } from "./routes/rank.ts";
 import { agentRoutes } from "./routes/agents.ts";
 import { historyRoutes } from "./routes/history.ts";
@@ -706,6 +707,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(recipeRoutes, { ctx });
   await app.register(visualRoutes, { ctx });
   await app.register(favoriteRoutes, { ctx });
+  await app.register(customSiteRoutes, { ctx });
   await app.register(rankRoutes, { ctx });
   await app.register(agentRoutes, { ctx });
   await app.register(historyRoutes, { ctx });

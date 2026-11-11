@@ -321,6 +321,26 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
       "过不了就落到无链接的 <span> 分支，所以 href 这个位置不存在「外部数据直接进 href」。",
     evidence: ["const href = safeHref(citation.url, '')", 'rel="noopener noreferrer"'],
   },
+  // ---- 公告条 / 我的站点：href 变量在渲染前一句已过 safeHref 闸 ----
+  {
+    file: "src/components/announcement-bar.tsx",
+    kind: "href",
+    expr: "href",
+    why:
+      "公告链接来自后台站点设置（管理员可控数据），渲染前一句 " +
+      "`const href = announcement.linkUrl ? safeHref(announcement.linkUrl, '') : ''` 已过闸；" +
+      "过不了就 href 为空串、链接不渲染，所以 href 位置不存在未过闸的外部数据。",
+    evidence: ["const href = announcement.linkUrl ? safeHref(announcement.linkUrl, '') : ''"],
+  },
+  {
+    file: "src/components/user-center/custom-sites-view.tsx",
+    kind: "href",
+    expr: "href",
+    why:
+      "用户自定义站点链接渲染前一句 `const href = safeHref(site.url, '')` 已过闸" +
+      "（服务端写入时另有 http(s) 白名单校验），href 为空时不渲染链接。",
+    evidence: ["const href = safeHref(site.url, '')"],
+  },
   // ---- 本地写死的站内路径常量（功能图鉴与影院横幅，取值全是站内路径）----
   {
     file: "src/components/user-center/growth-panel.tsx",

@@ -77,6 +77,7 @@ const LANDMARK_ELSEWHERE: Record<string, string> = {
   "src/app/me/account/page.tsx": "账号设置主体在 app/me/account/account-view.tsx（服务端壳只注入首屏数据）",
   "src/app/me/plugins/page.tsx": "插件管理主体在 app/me/plugins/me-plugins-view.tsx（服务端壳只注入首屏数据）",
   "src/app/me/settings/page.tsx": "个性偏好主体在 components/user-center/me-settings-view.tsx（服务端壳只注入首屏数据）",
+  "src/app/me/sites/page.tsx": "我的站点主体在 components/user-center/custom-sites-view.tsx（服务端壳只做元数据与挂载）",
 };
 
 /** 这些文件必须真的带地标（承载了委托页面的主体） */
@@ -94,6 +95,8 @@ const COMPONENTS_WITH_LANDMARK = [
   "src/app/me/account/account-view.tsx",
   "src/app/me/plugins/me-plugins-view.tsx",
   "src/components/user-center/me-settings-view.tsx",
+  // 我的站点：地标在客户端视图组件上（page.tsx 只是元数据 + 挂载壳）
+  "src/components/user-center/custom-sites-view.tsx",
   // 分类 hub：第 1 页与 p/{n} 共用同一个服务端主体，地标在它身上
   "src/app/category/[slug]/category-board.tsx",
   // 站点目录：第 1 页与 p/{n} 共用同一个服务端主体，地标在它身上

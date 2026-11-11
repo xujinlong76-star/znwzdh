@@ -65,6 +65,13 @@ const settingsPatchSchema = z
     searchHistoryEnabled: z.boolean().optional(),
     telemetryEnabled: z.boolean().optional(),
     historyRetentionDays: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(365)]).optional(),
+    // 账号级主题偏好：null = 显式清除（回退全站默认/系统）
+    themePreference: z.enum(["light", "dark", "system"]).nullable().optional(),
+    // 账号级首页隐藏模块：键名与前端 FEATURE_KEYS 对齐（此处按同一名单收口）
+    hiddenHomeModules: z
+      .array(z.enum(["aiFinder", "dramaCinema", "onboarding", "heroDeck", "xiaomaomao"]))
+      .max(5)
+      .optional(),
   })
   .refine(
     (v) => Object.values(v).some((val) => val !== undefined),

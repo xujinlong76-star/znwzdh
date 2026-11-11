@@ -31,7 +31,15 @@ import {
   type AssetKind,
   type SiteAsset,
 } from "@/services/siteConfigService"
-import { type SiteSettings, type SiteSettingsPatch } from "@/lib/site-settings"
+import { Checkbox } from "@/registry/new-york/ui/checkbox"
+import {
+  FEATURE_KEYS,
+  HOME_SECTION_KEYS,
+  type FeatureKey,
+  type HomeSectionKey,
+  type SiteSettings,
+  type SiteSettingsPatch,
+} from "@/lib/site-settings"
 // 表单 schema 依赖 zod；本页自己也要用 zod 建 uiSchema，所以走 schema 模块不增负担，
 // 而站点设置的类型/纯函数仍从 @/lib/site-settings 取（保持客户端安全的单一来源）。
 import { pwaAssetField } from "@/lib/site-settings.schema"
@@ -64,6 +72,26 @@ const uiSchema = z.object({
     description: z.string().trim().min(10, "描述至少需要 10 个字符").max(500, "描述最长 500 字符"),
     keywords: z.string().trim().max(300, "关键词最长 300 字符"),
     ogImage: assetInput,
+    tagline: z.string().trim().max(120, "标语最长 120 字符"),
+  }),
+  announcement: z.object({
+    enabled: z.boolean(),
+    text: z.string().trim().max(200, "公告文案最长 200 字符"),
+    linkUrl: assetInput,
+    linkLabel: z.string().trim().max(30, "链接文字最长 30 字符"),
+    // datetime-local 的字符串形态；落库时换算 epoch ms，空串 = 不限时
+    startAt: z.string().trim().max(30),
+    endAt: z.string().trim().max(30),
+  }),
+  features: z.object({
+    aiFinder: z.boolean(),
+    dramaCinema: z.boolean(),
+    onboarding: z.boolean(),
+    heroDeck: z.boolean(),
+    xiaomaomao: z.boolean(),
+  }),
+  home: z.object({
+    order: z.array(z.enum(["aiFinder", "dramaCinema", "onboarding"])).length(3),
   }),
   appearance: z.object({
     logo: assetInput,
@@ -97,10 +125,43 @@ const uiSchema = z.object({
 type UiValues = z.infer<typeof uiSchema>
 
 const EMPTY: UiValues = {
-  basic: { title: "", description: "", keywords: "", ogImage: "" },
+  basic: { title: "", description: "", keywords: "", ogImage: "", tagline: "" },
   appearance: { logo: "", favicon: "", appleTouchIcon: "", pwaIcon192: "", pwaIcon512: "", pwaMaskable512: "", theme: "system", themeColor: "" },
   navigation: { linkTarget: "_blank", externalLinkRel: "nofollow" },
   footer: { text: "", icp: "" },
+  announcement: { enabled: false, text: "", linkUrl: "", linkLabel: "", startAt: "", endAt: "" },
+  features: { aiFinder: true, dramaCinema: true, onboarding: true, heroDeck: true, xiaomaomao: true },
+  home: { order: [...HOME_SECTION_KEYS] },
+}
+
+/** 功能开关与首页板块的展示名（顺序与 FEATURE_KEYS / HOME_SECTION_KEYS 对齐维护） */
+const FEATURE_LABELS: Record<FeatureKey, string> = {
+  aiFinder: "AI 智能找站（首页）",
+  dramaCinema: "短剧沉浸影院（首页）",
+  onboarding: "首访引导卡（首页）",
+  heroDeck: "极速启动展板（混合视图首页）",
+  xiaomaomao: "小猫猫挂件（全站）",
+}
+const HOME_SECTION_LABELS: Record<HomeSectionKey, string> = {
+  aiFinder: "AI 智能找站",
+  dramaCinema: "短剧沉浸影院",
+  onboarding: "首访引导卡",
+}
+
+/** epoch ms → datetime-local 输入值（本地时区）；无效/缺省回空串 */
+function epochToLocalInput(epoch?: number): string {
+  if (!epoch || !Number.isFinite(epoch)) return ""
+  const d = new Date(epoch)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** datetime-local 输入值 → epoch ms；空串/非法回 null（= 清除该窗口边界） */
+function localInputToEpoch(value: string): number | null {
+  const v = value.trim()
+  if (!v) return null
+  const t = new Date(v).getTime()
+  return Number.isFinite(t) ? t : null
 }
 
 /** 每个 tab 的字段路径，用于「只校验本 tab」与「只提交本 tab」 */
@@ -110,11 +171,12 @@ const TAB_FIELDS: Record<string, Array<keyof UiValues>> = {
   share: ["basic"],
   navigation: ["navigation"],
   footer: ["footer"],
+  control: ["announcement", "features", "home"],
 }
 
 /** tab → 该 tab 实际要提交的字段（share 只提交 ogImage，不碰同段的 title/description） */
 const TAB_PATCH_FIELDS: Record<string, Record<string, string[]>> = {
-  basic: { basic: ["title", "description", "keywords"] },
+  basic: { basic: ["title", "description", "keywords", "tagline"] },
   appearance: { appearance: ["logo", "favicon", "appleTouchIcon", "pwaIcon192", "pwaIcon512", "pwaMaskable512", "theme", "themeColor"] },
   share: { basic: ["ogImage"] },
   navigation: { navigation: ["linkTarget", "externalLinkRel"] },
@@ -128,7 +190,18 @@ function toFormValues(s: SiteSettings): UiValues {
       description: s.basic.description ?? "",
       keywords: s.basic.keywords ?? "",
       ogImage: (s.basic as { ogImage?: string }).ogImage ?? "",
+      tagline: s.basic.tagline ?? "",
     },
+    announcement: {
+      enabled: s.announcement.enabled,
+      text: s.announcement.text ?? "",
+      linkUrl: s.announcement.linkUrl ?? "",
+      linkLabel: s.announcement.linkLabel ?? "",
+      startAt: epochToLocalInput(s.announcement.startAt),
+      endAt: epochToLocalInput(s.announcement.endAt),
+    },
+    features: { ...s.features },
+    home: { order: [...s.home.order] },
     appearance: {
       logo: s.appearance.logo ?? "",
       favicon: s.appearance.favicon ?? "",
@@ -218,6 +291,28 @@ export default function SiteSettings() {
     return patch
   }
 
+  /**
+   * 「公告与功能」tab 的补丁构建：这三段含布尔/数值/数组，通用 buildPatch 的
+   * 字符串化会把它们写坏（"false" 字符串、数组 toString），必须单独成形。
+   * 空串字段照旧折叠 null（显式清空）；起止时间换算 epoch，非法输入按清除处理。
+   */
+  const buildControlPatch = (): SiteSettingsPatch => {
+    const values = form.getValues()
+    const a = values.announcement
+    return {
+      announcement: {
+        enabled: a.enabled,
+        text: a.text.trim() || null,
+        linkUrl: a.linkUrl.trim() || null,
+        linkLabel: a.linkLabel.trim() || null,
+        startAt: localInputToEpoch(a.startAt),
+        endAt: localInputToEpoch(a.endAt),
+      },
+      features: { ...values.features },
+      home: { order: [...values.home.order] as HomeSectionKey[] },
+    }
+  }
+
   const submitTab = async (name: string) => {
     setBanner(null)
     const fields = TAB_FIELDS[name] ?? []
@@ -232,7 +327,7 @@ export default function SiteSettings() {
     }
     setSaving(true)
     try {
-      const { settings } = await saveSiteSettings(buildPatch(name))
+      const { settings } = await saveSiteSettings(name === "control" ? buildControlPatch() : buildPatch(name))
       form.reset(toFormValues(settings))
       setDegraded(false)
       setMissing(false)
@@ -455,6 +550,7 @@ export default function SiteSettings() {
             <TabsTrigger value="share">分享图</TabsTrigger>
             <TabsTrigger value="navigation">导航设置</TabsTrigger>
             <TabsTrigger value="footer">页脚与备案</TabsTrigger>
+            <TabsTrigger value="control">公告与功能</TabsTrigger>
             <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={() => void load()}>
               重新读取
             </Button>
@@ -498,6 +594,18 @@ export default function SiteSettings() {
                           <FormLabel>关键词</FormLabel>
                           <FormControl><Input placeholder="输入关键词，用英文逗号分隔" {...field} /></FormControl>
                           <FormDescription>多个关键词请用英文逗号分隔</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="basic.tagline"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>标语（副标题）</FormLabel>
+                          <FormControl><Input placeholder="首页主标题下的一句话，如：好站都在这儿" {...field} /></FormControl>
+                          <FormDescription>只管首页展示，与上面的「网站描述」（搜索摘要）分开；留空则首页继续用描述兼任</FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -722,6 +830,154 @@ export default function SiteSettings() {
                       )}
                     />
                     {saveButton("footer")}
+                  </div>
+                </Form>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="control">
+            <Card>
+              <CardHeader><CardTitle>公告与功能</CardTitle></CardHeader>
+              <CardContent>
+                <Form {...form}>
+                  <div className="space-y-8">
+                    <div className="space-y-4">
+                      <p className="text-sm font-medium">全站公告</p>
+                      <FormField
+                        control={form.control}
+                        name="announcement.enabled"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-2 space-y-0">
+                            <FormControl>
+                              <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(v === true)} />
+                            </FormControl>
+                            <FormLabel className="!mt-0">显示公告条</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="announcement.text"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>公告文案</FormLabel>
+                            <FormControl><Input placeholder="例如：本周新增短剧专区，去看看 →" {...field} /></FormControl>
+                            <FormDescription>纯文本展示在全站顶部；开关打开但文案为空时前台不显示</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <FormField
+                          control={form.control}
+                          name="announcement.linkUrl"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>公告链接（可选）</FormLabel>
+                              <FormControl><Input placeholder="/videos 或 https://…" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="announcement.linkLabel"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>链接文字（可选）</FormLabel>
+                              <FormControl><Input placeholder="查看详情" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="announcement.startAt"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>开始展示（可选，定时上线）</FormLabel>
+                              <FormControl><Input type="datetime-local" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="announcement.endAt"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>结束展示（可选，定时下线）</FormLabel>
+                              <FormControl><Input type="datetime-local" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium">功能开关</p>
+                      <p className="text-xs text-muted-foreground">关掉的模块前台直接不渲染。用户个人的隐藏偏好在此之上叠加，不影响这里的全站设置。</p>
+                      {FEATURE_KEYS.map((key) => (
+                        <FormField
+                          key={key}
+                          control={form.control}
+                          name={`features.${key}` as never}
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value as boolean}
+                                  onCheckedChange={(v) => field.onChange(v === true)}
+                                />
+                              </FormControl>
+                              <FormLabel className="!mt-0">{FEATURE_LABELS[key]}</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      ))}
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium">首页板块顺序</p>
+                      <p className="text-xs text-muted-foreground">用 ↑ ↓ 调整三块内容在首页的先后顺序（关掉的板块自动跳过）。</p>
+                      <div className="space-y-2">
+                        {(watchedValues.home?.order ?? [...HOME_SECTION_KEYS]).map((key, idx, arr) => (
+                          <div key={key} className="flex items-center gap-2">
+                            <span className="text-sm">{idx + 1}. {HOME_SECTION_LABELS[key as HomeSectionKey]}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={idx === 0}
+                              onClick={() => {
+                                const next = [...arr]
+                                ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+                                form.setValue("home.order", next as HomeSectionKey[], { shouldDirty: true })
+                              }}
+                            >
+                              上移
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={idx === arr.length - 1}
+                              onClick={() => {
+                                const next = [...arr]
+                                ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
+                                form.setValue("home.order", next as HomeSectionKey[], { shouldDirty: true })
+                              }}
+                            >
+                              下移
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {saveButton("control")}
                   </div>
                 </Form>
               </CardContent>

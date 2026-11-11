@@ -396,6 +396,11 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff BIGINT NOT NULL DEFAULT 0, preferences_json TEXT NOT NULL DEFAULT '{}', created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
       : "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff INTEGER NOT NULL DEFAULT 0, preferences_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    // 用户自定义站点（用户中心「我的站点」）：旧库补齐，新库由 driver.ts DDL 建
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS user_custom_sites (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, note TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS user_custom_sites (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, note TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS user_custom_sites_user_idx ON user_custom_sites(user_id, sort_order, created_at)",
     // 类目 slug 全局唯一（URL 是 /category/{slug}，不带父级路径）。
     // 部分索引：NULL 不进索引，所以回填窗口里多行 NULL 不冲突。
     // 标题的「每父唯一」索引在 P3 收敛重名后登记（两条部分索引分别覆盖子树与根层：

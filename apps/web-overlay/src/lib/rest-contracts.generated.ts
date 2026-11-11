@@ -2222,6 +2222,74 @@ export interface MeWatchlistSyncResponse {
 }
 
 /**
+ * GET /api/me/custom-sites
+ */
+export interface MeCustomSitesListResponse {
+  ok: true;
+  items: ({
+    id: string;
+    userId: string;
+    title: string;
+    url: string;
+    note: string | null;
+    sortOrder: number;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  })[];
+  total: number;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/me/custom-sites
+ * PATCH /api/me/custom-sites/{id}
+ */
+export interface MeCustomSiteItemResponse {
+  ok: true;
+  item: {
+    id: string;
+    userId: string;
+    title: string;
+    url: string;
+    note: string | null;
+    sortOrder: number;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/me/custom-sites/{id}
+ */
+export interface MeCustomSiteDeleteResponse {
+  ok: true;
+  removed: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/me/custom-sites/reorder
+ */
+export interface MeCustomSitesReorderResponse {
+  ok: true;
+  items: ({
+    id: string;
+    userId: string;
+    title: string;
+    url: string;
+    note: string | null;
+    sortOrder: number;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
  * POST /api/me/import
  */
 export interface MeImportResponse {
@@ -2398,6 +2466,7 @@ export interface RestContractRoutes {
   "DELETE /api/favorites/folders/{id}": OkResponse;
   "DELETE /api/favorites/{siteId}": FavoriteSiteRemovalResponse;
   "DELETE /api/me": MeDeleteResponse;
+  "DELETE /api/me/custom-sites/{id}": MeCustomSiteDeleteResponse;
   "DELETE /api/me/sessions/{id}": OkResponse;
   "DELETE /api/me/tokens/{id}": OkResponse;
   "DELETE /api/plugins/{slug}/install": PluginUninstallResponse;
@@ -2432,6 +2501,7 @@ export interface RestContractRoutes {
   "GET /api/health": HealthResponse;
   "GET /api/hotlist": HotlistResponse;
   "GET /api/me": MeOverviewResponse;
+  "GET /api/me/custom-sites": MeCustomSitesListResponse;
   "GET /api/me/notifications": NotificationListResponse;
   "GET /api/me/notifications/unread-count": NotificationUnreadCountResponse;
   "GET /api/plugins": PluginListResponse;
@@ -2461,6 +2531,7 @@ export interface RestContractRoutes {
   "PATCH /api/collections/{id}/items/{siteId}": CollectionItemMutationResponse;
   "PATCH /api/favorites/folders/{id}": FavoriteFolderUpdateResponse;
   "PATCH /api/favorites/{siteId}": FavoriteUpdateResponse;
+  "PATCH /api/me/custom-sites/{id}": MeCustomSiteItemResponse;
   "PATCH /api/me/profile": MeProfileUpdateResponse;
   "PATCH /api/me/settings": MeSettingsResponse;
   "PATCH /api/plugins/{slug}/featured": PluginFeaturedResponse;
@@ -2494,6 +2565,8 @@ export interface RestContractRoutes {
   "POST /api/jobs/prune": JobPruneResponse;
   "POST /api/jobs/{id}/cancel": JobCancelResponse;
   "POST /api/jobs/{id}/retry": JobRetryResponse;
+  "POST /api/me/custom-sites": MeCustomSiteItemResponse;
+  "POST /api/me/custom-sites/reorder": MeCustomSitesReorderResponse;
   "POST /api/me/diagnostics": MeDiagnosticsResponse;
   "POST /api/me/favorites/sync": MeFavoritesSyncResponse;
   "POST /api/me/import": MeImportResponse;

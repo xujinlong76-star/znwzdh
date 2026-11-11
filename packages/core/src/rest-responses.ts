@@ -856,6 +856,46 @@ export const MeWatchlistSyncResponse = z.looseObject({
   entries: z.array(z.unknown()),
 });
 
+/**
+ * 用户自定义站点（/api/me/custom-sites）：条目形状由自定义站点仓储定义，
+ * 字段与建表列一一对应；note 可空，其余必填。
+ */
+export const CustomSiteItem = z.looseObject({
+  id: z.string(),
+  userId: z.string(),
+  title: z.string(),
+  url: z.string(),
+  note: z.string().nullable(),
+  sortOrder: z.number().int(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+/** GET /api/me/custom-sites */
+export const MeCustomSitesListResponse = z.looseObject({
+  ok: z.literal(true),
+  items: z.array(CustomSiteItem),
+  total: z.number().int(),
+});
+
+/** POST /api/me/custom-sites（201）与 PATCH /api/me/custom-sites/{id}（200） */
+export const MeCustomSiteItemResponse = z.looseObject({
+  ok: z.literal(true),
+  item: CustomSiteItem,
+});
+
+/** POST /api/me/custom-sites/reorder：返回重排后的全量清单 */
+export const MeCustomSitesReorderResponse = z.looseObject({
+  ok: z.literal(true),
+  items: z.array(CustomSiteItem),
+});
+
+/** DELETE /api/me/custom-sites/{id} */
+export const MeCustomSiteDeleteResponse = z.looseObject({
+  ok: z.literal(true),
+  removed: z.boolean(),
+});
+
 /** POST /api/me/import：回执只报「实际恢复了多少」，跳过/截断/失败分支都要能说清 */
 export const MeImportResponse = z.looseObject({
   ok: z.literal(true),
@@ -1984,6 +2024,11 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "POST /api/me/merge": { schema: MeMergeResponse, name: "MeMergeResponse" },
   "POST /api/me/favorites/sync": { schema: MeFavoritesSyncResponse, name: "MeFavoritesSyncResponse" },
   "POST /api/me/watchlist/sync": { schema: MeWatchlistSyncResponse, name: "MeWatchlistSyncResponse" },
+  "GET /api/me/custom-sites": { schema: MeCustomSitesListResponse, name: "MeCustomSitesListResponse" },
+  "POST /api/me/custom-sites": { schema: MeCustomSiteItemResponse, name: "MeCustomSiteItemResponse" },
+  "PATCH /api/me/custom-sites/{id}": { schema: MeCustomSiteItemResponse, name: "MeCustomSiteItemResponse" },
+  "DELETE /api/me/custom-sites/{id}": { schema: MeCustomSiteDeleteResponse, name: "MeCustomSiteDeleteResponse" },
+  "POST /api/me/custom-sites/reorder": { schema: MeCustomSitesReorderResponse, name: "MeCustomSitesReorderResponse" },
   "POST /api/me/import": { schema: MeImportResponse, name: "MeImportResponse" },
   "DELETE /api/profile": { schema: ProfileResetResponse, name: "ProfileResetResponse" },
   "DELETE /api/profile/signals/{kind}": {

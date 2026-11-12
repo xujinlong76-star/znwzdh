@@ -18,7 +18,7 @@
  * 固定文案（匿名 / 加载失败 / 登录状态无法确认）与 E2E 断言保持一致。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
@@ -61,6 +61,30 @@ import { EntryGroups } from '@/components/user-center/dashboard/entry-groups'
 import { ArrowRight, CheckCircle2, RefreshCw, Settings2, User } from 'lucide-react'
 
 /** 设置面板：原地即时交互控件（In-Place Controls），完整表单可前往 /me/settings */
+// 单选组方向键：遵循 WAI-ARIA 单选组模式——方向键在组内移动并选中，
+// Home/End 跳到两端；roving tabindex 保证整组只有一个 Tab 停靠点。
+// 只在未禁用的选项之间移动；方向键与点击 pill 走同一条 onPatch 路径。
+function moveRadioSelection(event: KeyboardEvent<HTMLDivElement>) {
+  const buttons = Array.from(
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]:not([disabled])'),
+  )
+  if (buttons.length === 0) return
+  const current = buttons.indexOf(event.target as HTMLButtonElement)
+  if (current === -1) return
+  let next = -1
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown')
+    next = (current + 1) % buttons.length
+  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp')
+    next = (current - 1 + buttons.length) % buttons.length
+  else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = buttons.length - 1
+  else return
+  event.preventDefault()
+  const target = buttons[next]
+  target.focus()
+  target.click()
+}
+
 function SettingsSummary({
   settings,
   local,
@@ -104,7 +128,7 @@ function SettingsSummary({
             disabled={busy || !onPatch}
             value={settings.defaultSearchEngine}
             onChange={(e) => onPatch?.({ defaultSearchEngine: e.target.value as SearchEngineId })}
-            className="h-8 w-full rounded-lg border border-border/70 bg-background/90 px-2.5 text-xs font-medium text-foreground transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+            className="h-8 w-full rounded-lg border border-border/70 bg-background/90 px-2.5 text-xs font-medium text-foreground transition-colors focus:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
           >
             {SEARCH_ENGINE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -124,6 +148,7 @@ function SettingsSummary({
             role="radiogroup"
             aria-label="卡片展示密度"
             className="grid grid-cols-3 rounded-lg border border-border/70 bg-muted/40 p-0.5"
+            onKeyDown={moveRadioSelection}
           >
             {CARD_DENSITY_OPTIONS.map((opt) => {
               const active = settings.cardDensity === opt.value
@@ -136,8 +161,9 @@ function SettingsSummary({
                   aria-checked={active}
                   disabled={busy || !onPatch}
                   onClick={() => onPatch?.({ cardDensity: opt.value as CardDensityMode })}
+                  tabIndex={active ? 0 : -1}
                   className={cn(
-                    'rounded-md py-1 text-center text-xs font-medium transition-all',
+                    'rounded-md py-1 text-center text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     active
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground disabled:opacity-50',
@@ -160,6 +186,7 @@ function SettingsSummary({
             role="radiogroup"
             aria-label="历史保留周期"
             className="grid grid-cols-4 gap-1"
+            onKeyDown={moveRadioSelection}
           >
             {RETENTION_DAY_OPTIONS.map((opt) => {
               const active = settings.historyRetentionDays === opt.value
@@ -171,8 +198,9 @@ function SettingsSummary({
                   aria-checked={active}
                   disabled={busy || !onPatch}
                   onClick={() => onPatch?.({ historyRetentionDays: opt.value as HistoryRetentionDays })}
+                  tabIndex={active ? 0 : -1}
                   className={cn(
-                    'rounded-lg border py-1 text-center text-[11px] font-medium transition-all',
+                    'rounded-lg border py-1 text-center text-[11px] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     active
                       ? 'border-primary bg-primary text-primary-foreground shadow-xs'
                       : 'border-border/60 bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground disabled:opacity-50',
@@ -405,7 +433,7 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
           <button
             type="button"
             onClick={() => setVerifyNotice(null)}
-            className="text-[11px] underline underline-offset-2 opacity-80 hover:opacity-100"
+            className="text-[11px] underline underline-offset-2 opacity-80 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             知道了
           </button>
@@ -424,7 +452,7 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
           <button
             type="button"
             onClick={() => dismissSettingsNotice()}
-            className="text-[11px] underline underline-offset-2 opacity-80 hover:opacity-100"
+            className="text-[11px] underline underline-offset-2 opacity-80 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             知道了
           </button>

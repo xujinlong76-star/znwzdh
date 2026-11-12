@@ -1,0 +1,24 @@
+{
+  "name": "znwzdh",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:24",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-playwright.playwright",
+        "vitest.explorer",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens",
+        "usernamehw.errorlens",
+        "yoavbls.pretty-ts-errors"
+      ]
+    }
+  },
+  "forwardPorts": [
+    8787,
+    3000
+  ],
+  "postCreateCommand": "pnpm install"
+}

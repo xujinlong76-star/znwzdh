@@ -160,6 +160,11 @@ export interface HomeDiyStorage {
   setItem(key: string, value: string): void
 }
 
+export interface PendingHomeDiyShare {
+  imported: HomeDIYConfig
+  diff: string[]
+}
+
 export interface HomeDiySharedState {
   config: HomeDIYConfig
   history: LayoutHistoryState<HomeDIYConfig>
@@ -167,6 +172,7 @@ export interface HomeDiySharedState {
   isEditingLayout: boolean
   /** 非 null = 上次落盘失败；改动已在内存生效，但刷新会丢 */
   storageWarning: string | null
+  pendingShare: PendingHomeDiyShare | null
 }
 
 const HASH_SHARE_MAX_BYTES = 4096
@@ -176,6 +182,7 @@ const INITIAL_SHARED_STATE: HomeDiySharedState = {
   history: createLayoutHistory(DEFAULT_CONFIG),
   isEditingLayout: false,
   storageWarning: null,
+  pendingShare: null,
 }
 
 let sharedState: HomeDiySharedState = INITIAL_SHARED_STATE
@@ -596,7 +603,7 @@ export function applyHomeDiyShareHash(): { applied: boolean; warning: string | n
       updatedAt: Date.now(),
     }
     // 导入即生效并落盘（与旧行为一致）；撤销历史重置为导入后的状态
-    writeHomeDiyState(imported, createLayoutHistory(imported))
+    commitSharedState({ pendingShare: { imported, diff: [] } })
     clearHash()
     // 分享链接只有 4KB，超限/非法内容被悄悄吃掉时，接收方完全看不出来：这里申报
     let warning: string | null = null
@@ -607,7 +614,7 @@ export function applyHomeDiyShareHash(): { applied: boolean; warning: string | n
       const more = check.notes.length > 3 ? ` 等 ${check.notes.length} 项` : ''
       warning = `分享链接已应用，但${head}：${shown}${more}`
     }
-    return { applied: true, warning }
+    return { applied: false, warning }
   } catch (e) {
     // 失败 quiet：清掉 hash 后回落默认配置，不抛错（避免「打开链接即报错」）
     console.warn('[diy] 分享 hash 解析失败，已忽略', e)

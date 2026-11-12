@@ -209,7 +209,7 @@ export function HomeHeroDeck() {
                           {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-xs font-semibold truncate text-foreground">{def.title}</div>
+                          <div className="text-xs font-semibold truncate text-foreground" title={def.title}>{def.title}</div>
                           <div className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
                             {def.description}
                           </div>

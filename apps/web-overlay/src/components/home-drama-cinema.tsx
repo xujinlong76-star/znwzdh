@@ -164,7 +164,7 @@ export function HomeDramaCinema() {
                   {s.title.slice(0, 1)}
                 </span>
                 <span>
-                  <span className="block truncate text-sm font-semibold">{s.title}</span>
+                  <span className="block truncate text-sm font-semibold" title={s.title}>{s.title}</span>
                   <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-zinc-400">{s.description || '点开直接看'}</span>
                 </span>
               </a>
@@ -185,7 +185,7 @@ export function HomeDramaCinema() {
                 <li key={s.id}>
                   <a href={safeHref(s.href)} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-2.5 text-sm">
                     <span className={`w-5 shrink-0 text-center font-mono text-base font-bold ${i < 3 ? 'text-rose-500' : 'text-zinc-500'}`}>{i + 1}</span>
-                    <span className="min-w-0 flex-1 truncate group-hover:underline">{s.title}</span>
+                    <span className="min-w-0 flex-1 truncate group-hover:underline" title={s.title}>{s.title}</span>
                   </a>
                 </li>
               ))}

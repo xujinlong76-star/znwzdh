@@ -440,12 +440,13 @@ export const NavigationCard = memo(function NavigationCard({
                       href={siteDetailHref}
                       onClick={handleDetailClick}
                       tabIndex={-1}
+                      title={item.title}
                       className="pointer-events-auto truncate rounded text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none min-w-0 flex-1"
                     >
                       {item.title}
                     </Link>
                   ) : (
-                    <span className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
+                    <span title={item.title} className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                       {item.title}
                     </span>
                   )}
@@ -652,12 +653,12 @@ export const NavigationCard = memo(function NavigationCard({
                               href={siteDetailHref}
                               onClick={handleDetailClick}
                               tabIndex={-1}
-                              className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
+                              title={item.title} className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
                             >
                               {item.title}
                             </Link>
                           ) : (
-                            <span className="block text-foreground group-hover/card:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
+                            <span title={item.title} className="block text-foreground group-hover/card:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
                           )}
                         </CardTitle>
                       </div>
@@ -922,12 +923,12 @@ export const NavigationCard = memo(function NavigationCard({
                         href={siteDetailHref}
                         onClick={handleDetailClick}
                         tabIndex={-1}
-                        className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
+                        title={item.title} className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
                       >
                         {item.title}
                       </Link>
                     ) : (
-                      <span className="block text-foreground group-hover/card:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
+                      <span title={item.title} className="block text-foreground group-hover/card:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
                     )}
                   </CardTitle>
                 </div>

@@ -61,9 +61,9 @@ function repo(i = 0): Repository {
   return r;
 }
 
-/** 系统档口径：只看非用户自带 key 的消耗。身份限定到 IDENTITY，避免吃进同库其它套件的用量 */
+/** 系统档口径：只看非用户自带 key 的消耗。身份限定到 IDENTITY，避免吃进同库其它套件的用量；上限只给 1：first 占满后 second 必须被拦（used=1）才能断言 blocked；写 2 会让 second 恰好占满而不被拦。 */
 const systemTiers = (): LlmQuotaTier[] => [
-  { scope: "system", identity: IDENTITY, excludeUserSource: true, maxCalls: 2, maxTokens: 0 },
+  { scope: "system", identity: IDENTITY, excludeUserSource: true, maxCalls: 1, maxTokens: 0 },
 ];
 
 const burstTiers = (): LlmQuotaTier[] => [{ scope: "identity", identity: IDENTITY, maxCalls: 5, maxTokens: 0 }];

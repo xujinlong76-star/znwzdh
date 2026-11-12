@@ -1,196 +1,250 @@
-# 山羊胡 4.0 - 次世代 AI 开发者智能导航与知识工作台
+# 山羊胡 4.0 — AI 原生开发者网址导航与知识工作台
 
 <p align="center">
-  <b>AI 原生混合检索</b> · <b>Bento-Flow 自由排版工作台</b> · <b>时序衰减自适应算法</b> · <b>0-RTT 原地推测执行</b> · <b>全生态 Agent MCP Server</b>
+  <b>五路混合检索</b> · <b>Bento-Flow 自由排版工作台</b> · <b>0-RTT 原地微工具</b> · <b>MCP Server</b>
 </p>
 
----
+**山羊胡**是一款专为开发者与技术团队打造的 AI 原生网址导航与知识工作台（Developer Knowledge OS），原名 NavHub。底座派生自开源项目 NavSphere（MIT），山羊胡在它的存储接缝上做替换与扩展，而非重写。
 
-## 🌟 项目概览 (Overview)
+本地种子库实测（`pnpm seed` 后，`data/navhub.db`，2026-11-12 核查）：**322 个站点、245 个分类行（20 个一级、225 个二级，站点实际使用其中 47 个）、6,007 条视频、12 个视频分类、6 个合集**。数字随种子数据更新而变，以实际库为准。
 
-**山羊胡** 是一款专为极客与工程研发团队打造的 **AI 原生网址导航系统与开发者知识工作台 (Next-Gen Developer Knowledge OS)**。
+> 状态：本地开发版（`v0.1.0`），未正式上线。README 里的功能以代码实测为准，提案中、未落地的功能不会写成已上线。
 
-系统在成熟的前端基底上进行了深度的架构重构与能力跃升：突破了传统网址导航单向展示、割裂静态的局限，融合了**五路混合召回智能检索**、**Bento-Flow 模块化自适应画布**、**双曲几何平替推理**与**端侧 0-RTT 语法微解析器**，并向外部 AI Agent（Claude / Cursor / Raycast）提供标准 MCP 工具协议，实现从静态收藏夹到个人智能工作台的跨越。
+## 预览与官网
 
----
-
-## 🚀 核心特性矩阵 (Core Features)
-
-### 1. 五路混合检索引擎与自适应动态融合
-* **五路异构召回通道**：
-  * `exact`：精确中文/英文子串极速召回。
-  * `fts`：基于 BM25 算法的 CJK 二元分词全文检索。
-  * `pinyin`：全拼、拼音首字母缩写智能匹配（如 `qdjb` $\to$ `启动脚本`）。
-  * `semantic`：本地量化 Embedding 向量检索（基于 BGE-Small-ZH 模型），实现「语义搜自然语言」（如「代码补全AI」$\to$ `GitHub Copilot`）。
-  * `personal`：用户个人访问频次与置顶收藏权重微调。
-* **时序衰减多臂老虎机 (Discounted-LinUCB)**：动态自适应调整多通道融合置信度上界，引入时间衰减因子 $\gamma=0.98$ 消除历史协方差矩阵钝化，结合驻留时长（Dwell Time）实现隐式负向惩罚与正向强化自学习。
-
-### 2. Bento-Flow 次世代 DIY 智能工作台
-* **卡片跨分类无缝拖拽重组 (Drag & Reclassify)**：进入排版模式后，站点卡片可自由拖拽并吸附投递到任意目标分类，底层通过 `siteCategoryOverrides` 响应式映射即时重新编排。
-* **香农信息熵一键自愈排版 (Smart Auto-Tidy)**：内置人机工程学健康度模型，计算分类分布的信息熵 $H = -\sum p_i \log_2 p_i$。一键点击即可自动隐藏收录为 0 的空分类，折叠超载分类，开启物理半衰期热度推荐。
-* **免登 URL-Hash 预设分享**：整套桌面排版、强调色、背景壁纸与重归类关系无损 Base64 编码为 `#diy=...` 轻量短链，好友打开链接即可秒级预览并一键应用相同桌面。
-* **沉浸式环境光与自定义壁纸美学**：支持接入高清自定义壁纸、无级毛玻璃模糊（Backdrop Blur 0~30px）与卡片半透明度调节，营造沉浸式极客桌面。
-
-### 3. 端侧 0-RTT 推测执行微应用 (Speculative Intent)
-当在全局搜索框输入特定技术文本时，无需跳转外链，端侧 0 毫秒原地构建微组件并提供交互：
-* **Cron 表达式解析器**：实时解析 5 段/6 段 Cron 语法，原地呈现自然语言执行频率与结构化分词。
-* **JWT 离线解码与过期探测**：零网络开销反序列化 Header/Payload，实时计算有效期倒计时。
-* **Curl-to-Fetch 代码生成器**：提取命令行请求动词与参数，自动反向生成标准 Fetch 语法块。
-* **常用微工具**：时间戳秒/毫秒互转、十六进制/RGB 颜色速览调色、Base64 编解码、JSON 格式化校验、哈希指纹识别。
-
-### 4. 低代码动态微组件生态 (Live Widgets)
-* **REST API 动态遥测小组件 (`LiveApiWidget`)**：支持填入任意目标接口 URL、提取 JSONPath 字段（如 `data.status`）与设定轮询周期，展示实时健康状态与数值。
-* **技术早报与社区动态小组件 (`RssFeedWidget`)**：内置主流框架 Release 动态与技术资讯流，支持一键洗牌换一批与外链瞬开。
-* **12+ 经典内置组件**：番茄钟时钟、天气气象、GitHub 贡献热力图、双曲平替雷达、本地备忘便签、系统性能监控指标。
-
-### 5. 双曲几何平替推理与技术图谱 (Hyperbolic & Graph)
-* **洛伦兹双曲超曲面模型 (Lorentz Hyperboloid)**：实现闵可夫斯基双线性内积与双曲测地线距离计算，消除庞加莱圆盘边缘奇点，准确度量技术工具间的层级包含与等阶平替关联。
-* **多跳技术栈链路配方 (Architecture Recipes)**：通过拓扑知识遍历，为复杂开发目标（如协同文档、本地大模型）自动合成端到端架构选型方案。
-
-### 6. 企业级安全与全生态集成
-* **零知识 E2EE 金库**：采用 WebCrypto AES-GCM + PBKDF2（100,000次迭代）对敏感私密书签进行客户端端到端加密，密文同步至云端。
-* **三层 SSRF 物理防击穿安全沙箱**：AI 自动抓取富化时严格执行协议白名单、解析后真实 IP 网段校验（防御 DNS Rebinding）与重定向逐跳审查。
-* **MCP Server 扩展协议**：全面兼容 Model Context Protocol（stdio + HTTP），支持权限分级与操作审计，供 Claude Desktop、Cursor 等 Agent 直接调度。
-* **双端扩展集成**：内置 Chrome 浏览器扩展（支持 Token 鉴权一键收录网页）与 Raycast 极速搜索扩展（支持一键复制 Markdown 链接）。
-
-### 7. 用户自助账号体系（商用级门槛）
-
-* **自助注册与邮箱验证**：访客可用邮箱 + 用户名 + 密码注册账号；系统发送一次性验证链接激活邮箱，令牌只存 SHA-256、一次性消费、带过期，杜绝重放与冒用。
-* **邮箱 + 密码登录**：口令采用 **scrypt**（OWASP 推荐，memory-hard）加盐哈希存储，校验用常量时间比较；对「用户不存在」与「密码错误」返回同一结果，防账号枚举。
-* **忘记密码 / 重置密码**：通过邮箱发送一次性重置链接（默认 1 小时有效），重置后旧口令立即失效。
-* **邮件投递适配器**：可配置 SMTP（`NAVHUB_SMTP_*`）；未配置时退化为服务端日志投递，保证开发/内网开箱即用，生产配置后自动切换真实投递。通知 outbox 的 `email` 渠道由「入队即 deferred 且永不投递」的静默失败，修复为真实外发并带退避重试。
+- 官网：http://www.shanyanghu.com/（网站尚未上线，先行填写）
+- 截图（待补充）：首页、DIY 工作台、每日简报页。
 
 ---
 
-## 🏗️ 架构拓扑 (Architecture Topology)
+## 核心功能
 
-山羊胡采用清晰的 pnpm Workspace Monorepo 组织结构，前后端通过契约严密解耦：
+### 1. 网址导航与分类
+
+- 首页按分类分区展示站点卡片，站点页、分类页（`/category/[slug]`）、标签页、站点详情页（`/site/[id]`）齐全；支持收藏、置顶、搜索历史、自定义站点。
+- 站点有健康巡检：定时任务轮询站点可用性，连续多次失败才标记 broken；有断链自愈、分类清洗与去重脚本。
+- 视频导航（`/videos`）：6,007 条视频条目，含分类、播放器、章节与字幕；场景包（`/scenes`）按「做短剧、做简历、考公考研」等目标组织站点。
+
+### 2. 五路混合检索与自适应调权
+
+搜索框（`⌘K`）与 `/search` 页背后是五路异构召回，再用 RRF 融合：
+
+| 通道 | 做法 |
+|---|---|
+| `exact` | 精确中文/英文子串 |
+| `fts` | BM25 全文检索，CJK 写入期展开为单字 + 相邻二元组后喂 FTS5 |
+| `pinyin` | 全拼与拼音首字母，如 `qdjb` → `启动脚本` |
+| `semantic` | 本地量化 Embedding 向量检索（`Xenova/bge-small-zh-v1.5`，512 维 q8） |
+| `personal` | 个人访问频次与置顶收藏权重 |
+
+融合默认 RRF（`w/(60+rank)`），多路共识有加权奖励；再由 Discounted-LinUCB（γ=0.98，5 维上下文：长度 / CJK 比 / 字母比 / 拼音似然 / 数字比）按停留时长动态调整各通道权重，模型持久化在 `system_states`。
+
+> 注意：语义检索依赖本地 ONNX 模型首次下载（默认镜像 `hf-mirror.com`，缓存 `./data/models`）。模型未就绪时搜索自动降级为其余通道，不会报错。种子库自带 322 条 512 维向量，但运行时若模型未加载，`/api/health` 会显示 `semantic:false`。
+
+### 3. Bento-Flow 工作台：DIY 排版与分享
+
+- 排版模式下站点卡片可重归类到任意分类，映射存在 `HomeDIYConfig.siteCategoryOverrides`；分类与站点可置顶，支持撤销/重做。
+- 一键整理按分类分布的信息熵自动隐藏空分类、折叠超载分类。
+- 免登分享：整套排版、强调色、画布背景与重归类关系经 Base64 编码进 `#diy=...` 链接（上限 4KB），好友打开即可预览并一键应用；配置本机保存在 `navhub_home_diy_config_v3`。
+- 画布背景（mesh / dots / grid / aurora / clean）、强调色、毛玻璃卡片与自定义壁纸可调；另有流体玻璃画布与深色模式。
+
+### 4. 0-RTT 原地微工具
+
+在搜索框输入特定文本时，端侧直接解析并原地渲染微组件，无需跳转（仅在偏好里开启 `speculativeZeroRttEnabled` 时生效；另有独立快捷工具抽屉）：Cron 表达式解析、JWT 离线解码与过期倒计时、Curl 转 Fetch、Base64 编解码、时间戳互转、颜色速览、JSON 格式化校验、哈希识别/计算、IP / CIDR、UUID、字节大小、正则、semver、HTTP 状态码、日期转时间戳等 19 类。
+
+### 5. Live Widgets（低代码动态微组件）
+
+模块化画布上的小组件：番茄钟、天气（经服务端取 Open-Meteo）、RSS 技术早报、GitHub 贡献热力图、LiveApiWidget（填任意接口 URL + JSONPath + 轮询周期，展示实时健康状态与数值）、本地备忘、快捷工具、双曲平替雷达等。注册表与默认布局在 `lib/modular/registry.ts`。
+
+### 6. 每日简报、热榜与追剧清单（已落地）
+
+- **每日简报**（`/brief`）：一页看完小猫猫开场白、全网热榜精选、站内新收录与在追短剧提醒；开场白锚定真实条目生成，失败走模板。
+- **全网热榜**（`/hot`、`/api/hotlist`）：注册了 7 个源，已覆盖 5 个——微博热搜、百度热搜、今日头条热榜、抖音热榜、B站热搜；未覆盖 2 个——知乎热榜、快手热榜（登记了未覆盖原因）。只存标题 + 链接 + 热度，不搬运正文；源站改版导致解析失败时保留旧缓存并标记，不写坏数据。本地种子库的热榜缓存初始为空，需等 `hotlist_refresh` 任务跑过才有数据。
+- **追剧清单**（`/me/watchlist`，需登录）：记「剧」而不是「站点」——看到第几集、按自己标注的节奏到更新日提醒。站内没有平台排播数据，提醒只断言「按你标注的节奏，今天是更新日」，不写「已更新」，也不做站外推送。
+- **账号级个性化（部分落地）**：登录后收藏、追剧清单、设置等通过同一套同步协议（含 CRDT）跨设备同步；用户中心（`/me`）有收藏、历史、自定义站点、主题与模块显隐偏好、注销删净。
+
+### 7. 小猫猫挂件
+
+右下角悬浮小猫（`apps/web-overlay/public/xiaomaomao/xiaomaomao.js`，3.4MB，`layout.tsx` 以 `afterInteractive` 引入，功能开关 `settings.features.xiaomaomao`）。当前为 v7，含 v6 的全部能力：
+
+- 头像真图多姿势（浅色 + 深色整套 6 图，深色自动切换）、聊天找站（`POST /api/ai/chat`，站内检索锚定）、摸猫、喂小鱼干（每日 5 条）、接星星游戏、语音输入、成长联动
+- 可拖动并持久化位置（补齐移动端触摸与真尺寸钳制），无人互动时自动缩到窗口边缘半藏，点/悬停弹回
+- 用户自改形象：图库 13 项 + 上传自图，本机保存，可恢复默认
+- 庆祝视频钩子：媒体文件就位即生效，探活失败自动回退图片庆祝
+- v7 新增：平时零遮挡，控件收进猫上方悬浮坞，悬停/轻点才唤出，闲置 3 秒自动收起；全套 UI 图标换手工 SVG
+
+### 8. 技术图谱与平替推理
+
+- 技术图谱页（`/graph`）：站点关系（平替 / 生态 / 互补 / 从属 / 上游 / 镜像 / 相关）与多跳技术栈链路配方（为「协同文档」「本地大模型」等目标自动合成端到端选型方案）。
+- 双曲几何（庞加莱球 + 洛伦兹超曲面）用于平替与上下游推理。实话实说：向量投影到固定半径球面后，排序与余弦基本同序，双曲更多是几何解释层，不是独立排序信号。
+
+### 9. 账号体系与管理后台
+
+- 自助注册 + 邮箱验证（令牌只存 SHA-256、24 小时有效、一次性原子消费）、邮箱 + 密码登录（scrypt 加盐哈希、常量时间比较、用户不存在与密码错误返回同一结果以防账号枚举）、忘记/重置密码（重置链接 1 小时有效）。
+- 邮件投递适配器：可配 SMTP（`NAVHUB_SMTP_*`）；未配置时退化为服务端日志投递。注意：日志投递会把验证/重置链接全文打印到 stdout，生产务必配 SMTP。
+- 管理后台（`/admin`）：分类、站点、插件、统计、审计、API Token 签发与生命周期管理；用户中心有等级成长玩法（用不同功能涨经验）。
+
+### 刻意没写的功能（提案中或未落地）
+
+- **长辈模式（完整版）未落地**：目前只有大字模式——三档字号（标准 16 / 大字 18 / 特大 20）与特大字档下隐藏连胜条；没有独立的长辈模式入口与整套适老流程。
+- **多套皮肤自选未落地**：目前只有 DIY 强调色、画布背景与深色模式可调，没有成套皮肤市场。
+- **热榜「全量聚合」是已拍板的方向，不是已完成的状态**：7 个源里 2 个仍未覆盖，见上。
+
+---
+
+## 架构与目录
 
 ```
-navhub/
 ├── apps/
-│   ├── api/             # Fastify 后端中枢：REST API + 种子数据 + 任务队列 + 鉴权中心
-│   ├── web-overlay/     # NavHub 自研前端事实源：Bento 画布 / DIY 排版 / 0-RTT 意图卡片
-│   └── web/             # 前端运行环境镜像（与 web-overlay 保持 100% 同步）
+│   ├── api/             # Fastify 后端中枢：REST API + 种子数据 + 任务队列 + 鉴权
+│   ├── web-overlay/     # 前端唯一事实源：Next.js 16，Bento 画布 / DIY / 0-RTT / 挂件
+│   ├── web/             # 前端运行镜像：由 overlay 生成的 GENERATED 产物，不是双胞胎
+│   └── mcp/             # MCP App：stdio 入口
 ├── packages/
-│   ├── core/            # 核心领域模型 / Discounted-LinUCB / 洛伦兹双曲 / 卡尔曼滤波 / 0-RTT AST
-│   ├── store/           # 存储层：Drizzle ORM + SQLite/PostgreSQL 双驱动 + 向量扩展 + FTS5
-│   ├── ai/              # AI 能力包：ONNX embedding (bge-small-zh) + SSRF 防护 + 多模型 LLM 轮换
-│   └── mcp/             # MCP Server：标准 Agent 工具接入协议 (stdio & HTTP)
+│   ├── core/            # 纯算法零 IO：检索融合、LinUCB、拼音、CJK、双曲、0-RTT、CRDT、金库
+│   ├── store/           # 存储层：Drizzle 类型/校验 + 手写幂等 DDL，SQLite/PG 双驱动，约 50 张业务表
+│   ├── ai/              # AI 能力：ONNX embedding、SSRF 防护、LLM、富化抓取、邮件
+│   └── mcp/             # MCP Server：41 个工具
 ├── extensions/
-│   ├── chrome-extension/# 浏览器随身扩展：一键 AI 富化收录 + 弹出搜索 + Token 鉴权
-│   └── raycast-extension/# Raycast 桌面快捷扩展：全局模糊检索 + Markdown 链接复制
-├── docker/              # 生产级 Dockerfile 与多模式 Compose 编排
-└── scripts/             # 自动化验证、上游同步与一键 GitHub 推仓脚本
+│   ├── chrome-extension/# Chrome 扩展（MV3）：omnibox 搜索、一键收录
+│   └── raycast-extension/# Raycast 扩展：全局模糊检索、Markdown 链接复制
+├── docker/              # 生产级 Dockerfile 与多模式 Compose 编排（以此为准）
+├── scripts/             # 约 269 个脚本：校验、验证、上游同步、备份、SEO 等
+└── docs/                # 68 篇文档 + wiki 13 篇 + ADR / 契约 / SEO
 ```
 
-### 两种运行模式 (Run Modes)
+依赖方向：`core`（底层）← `store` / `ai` ← `api` ← `mcp`；前端不 import `@navhub/*`，走 `STORAGE_ADAPTER=http` + `/api/hub/*` BFF 代理。`apps/web` 本地只有 13 个文件快照，**不能直接构建运行**，必须先 `pnpm vendor:web` 拉上游底座，再 `pnpm mirror:web` 覆盖 overlay。
 
-| 特性 | `lite` 模式（默认开箱即用） | `standard` 模式（企业/大规模） |
-| :--- | :--- | :--- |
-| **数据库** | 嵌入式 SQLite（纯本地文件存储） | PostgreSQL 16+ |
-| **向量引擎** | sqlite-vec（支持内存自动回退） | pgvector（支持 HNSW 索引加速） |
-| **全文检索** | FTS5 + CJK 二元分词索引 | tsvector + pg_trgm 混合模糊索引 |
-| **适用场景** | 个人极客、本地开发、家庭 NAS 容器部署 | 团队协作、企业内部公开站、多租户海量数据 |
+后端（`apps/api`，Fastify 5）：49 个路由插件按域拆分，REST 路由约 300 条（不同口径统计会漂移，以 `docs/CODEBASE_OVERVIEW.md` 为准）；鉴权 scope 分级 `public / read / favorites / write / admin`；API token 为 `nh_` + 24 字节随机，库内只存 SHA-256；14 种定时任务（健康巡检、权重重算、热榜刷新、每日简报、站点自愈、备份等），单实例锁（lite 用幂等表，standard 用 PG advisory lock）。
 
----
+## 技术栈
 
-## 🛠️ 快速开始 (Quickstart)
+| 层 | 技术 |
+|---|---|
+| 运行时 / 包管理 | Node.js ≥ 24、pnpm ≥ 11.7（`packageManager: pnpm@11.7.0`） |
+| 语言 / 类型 | TypeScript 严格模式（Node 24 strip-types 直跑源码） |
+| 后端 | Fastify 5、Drizzle ORM、better-sqlite3 / pg |
+| 检索 | sqlite-vec（vec0）/ pgvector、FTS5 / tsvector + pg_trgm、ONNX（`bge-small-zh-v1.5`） |
+| 前端 | Next.js 16.4.2（App Router）、React 19、Tailwind CSS 4、Radix UI、next-auth 5 beta、SWR |
+| 测试 | Vitest、Playwright（E2E，Desktop Chrome） |
+| 部署 | Docker（`node:24-bookworm-slim`） |
 
-### 本地环境要求
-- **Node.js**：`v24.x`（LTS）及以上（内置标准 ES 模块支持）
-- **包管理器**：`pnpm` (`v11+` 推荐)
+## 两种运行模式
 
-### 1. 克隆与安装依赖
+| 特性 | `lite`（默认） | `standard` |
+|---|---|---|
+| 数据库 | 嵌入式 SQLite，默认 `./data/navhub.db` | PostgreSQL 16/17（`NAVHUB_DATABASE_URL`，缺失则启动报错） |
+| 向量 | sqlite-vec（`vec0`，支持内存回退） | pgvector（HNSW 索引） |
+| 全文 | FTS5 + CJK 二元分词 | tsvector + pg_trgm |
+| 单实例锁 | 幂等表持久锁（TTL 120s） | PG advisory lock |
+| 适用 | 个人、本地开发、家庭 NAS 单容器 | 团队协作、企业内部公开站、多用户 |
+
+## 快速开始
+
+### 环境要求
+
+- Node.js ≥ 24、pnpm ≥ 11.7；仓库根目录操作。
+
+### 1. 拉底座、生成镜像、安装依赖
+
 ```bash
-# 进入工程根目录
+git clone https://github.com/xujinlong76-star/znwzdh.git
+cd znwzdh
+
+# apps/web 本地不完整：先拉上游 NavSphere 底座，再用 overlay 覆盖生成镜像
+pnpm vendor:web
+pnpm mirror:web
+
 pnpm install
 cp .env.example .env
 ```
 
-### 2. 播种初始化数据
+### 2. 播种初始化数据（必须在仓库根目录执行）
+
 ```bash
-# 初始化分类并注入精选技术站点与专题合集
-# 注意：必须在仓库根目录执行 —— config.ts 的库路径默认是 cwd 相对的 ./data/navhub.db，
-# 而 dev-all / Docker 用的都是仓库根的 data/navhub.db（写成 pnpm --filter @navhub/api seed
-# 会以 apps/api 为 CWD，把种子播进 apps/api/data/navhub.db，开发服务器永远看不到）
+# config.ts 的库路径默认是 cwd 相对的 ./data/navhub.db；
+# 用 pnpm --filter @navhub/api seed 会把种子播进 apps/api/data/navhub.db，开发服务器永远看不到
 pnpm seed
 ```
 
 ### 3. 启动开发服务
-```bash
-# 启动 API 中枢服务 (默认端口: http://localhost:8787)
-pnpm dev
 
-# 在新终端启动 Web 前端服务 (默认端口: http://localhost:3000)
-pnpm dev:web
+```bash
+# 前后端同启：API http://localhost:8787，Web http://localhost:3000
+pnpm dev:all
+
+# 或分开启动
+pnpm dev        # 仅 API
+pnpm dev:web    # 仅 Web
 ```
 
-### 4. 运行质量与一致性验证
-```bash
-# 检查前端覆盖层镜像一致性
-pnpm check:overlay
+启动后核查：`http://localhost:8787/api/health`、`/api/ready` 应返回 200；Web 首页应返回 200；搜 `github` 应有命中。
 
-# 运行全库单元测试与核心算法验证
-pnpm test
+### 4. 验证
+
+```bash
+pnpm check:overlay   # 前端覆盖层镜像一致性
+pnpm verify          # 类型检查、覆盖层、契约、边界等聚合验证
+pnpm test            # Vitest 单元测试
+pnpm test:e2e        # Playwright 端到端（需先停掉 pnpm dev:all，端口会冲突）
 ```
 
----
+## Docker 部署
 
-## 🐳 Docker 生产容器化部署 (Deployment)
-
-山羊胡提供了多阶段构建的轻量镜像，不依赖宿主机复杂的构建环境。
+**以 `docker/docker-compose.yml` 为准**（5 个服务、4 个 profile：`api` :8787、`web` :3000、`postgres` 仅绑 `127.0.0.1:5432`、`api-standard` :8788、`mcp` :8790，另有 `backup`）。根 `Dockerfile` 与根 `docker-compose.yml` 已废弃，勿用。
 
 ```bash
 cd docker
 
-# 1. 采用 lite 模式一键启动（单机零外部依赖）
+# lite 模式一键启动（单机零外部依赖）
 docker compose up -d
 
-# 2. 采用 standard 模式启动（联动真实 PostgreSQL 与 pgvector）
+# standard 模式（联动真实 PostgreSQL 与 pgvector，需先设 POSTGRES_PASSWORD，见下）
 docker compose --profile standard up -d
 ```
 
-启动完成后：
-- Web 前端访问地址：`http://localhost:3000`
-- API 接口文档地址：`http://localhost:8787/api/docs`（OpenAPI Swagger 交互界面）
-- 探针健康检查地址：`http://localhost:8787/api/health`
+启动完成后：Web `http://localhost:3000`；API 文档 `http://localhost:8787/api/docs`（OpenAPI）；健康检查 `http://localhost:8787/api/health`、`/api/ready`。
 
----
+## 环境变量要点
 
-## ⚙️ 核心环境变量指南 (Environment Variables)
+详细配置见 [`.env.example`](.env.example)（约 310 行）。关键项：
 
-详细配置项见 [`.env.example`](.env.example)。关键核心项说明如下：
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `NAVHUB_MODE` | `lite` | `lite`（SQLite）或 `standard`（PostgreSQL） |
+| `PORT` | `8787` | API 监听端口 |
+| `STORAGE_ADAPTER` | `http` | Web 端存储适配器：`http`（指向中枢）、`github`、`sqlite` |
+| `NAVHUB_AUTH_REQUIRED` | 生产默认开启，开发默认关闭 | 公网部署请设为 `1`；开发模式启动时会打印开放模式警告 |
+| `NAVHUB_IDENTITY_SECRET` | （无默认值） | 终端身份 HMAC 签名密钥，需 ≥ 32 字符；生产缺失则拒绝启动；未配时任意请求可自称任意身份，请勿暴露 8787 到公网 |
+| `NAVHUB_CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | `*` 只有显式配置时才生效，生产请显式列为前端域名 |
+| `POSTGRES_PASSWORD` | （无默认值） | standard 模式必填强口令，缺失时 compose 直接报错拒绝启动，不再提供默认口令 |
+| `NAVHUB_EMBEDDING_ENDPOINT` | `https://hf-mirror.com` | 本地 Embedding 模型下载镜像源 |
+| `NAVHUB_LLM_BASE_URL` | `https://api.agnes-ai.cn/v1` | LLM 兼容接口（OpenAI 兼容），可换 DeepSeek / Ollama |
+| `NAVHUB_LLM_API_KEY` | （可选） | 未配置时 LLM 富化自动降级为纯规则启发式，并标注来源 `provenance: llm\|heuristic` |
 
-| 变量名 | 默认值 | 作用说明 |
-| :--- | :--- | :--- |
-| `NAVHUB_MODE` | `lite` | 运行模式：可选 `lite`（SQLite）或 `standard`（PostgreSQL） |
-| `PORT` | `8787` | API 中枢监听端口 |
-| `STORAGE_ADAPTER` | `http` | Web 端存储适配器：`http`（指向中枢）、`github`（个人仓库） |
-| `NAVHUB_AUTH_REQUIRED` | `false` | 是否开启 API 鉴权。公开部署建议设为 `true`，保护写操作 |
-| `NAVHUB_IDENTITY_SECRET` | `(可选)` | 终端用户身份的 HMAC 签名密钥。配置后带身份的请求必须携带 `x-navhub-identity-signature`（由 Web 的 `/api/hub/*` 代理自动附带），否则 401；不配置则行为不变 |
-| `NAVHUB_EMBEDDING_ENDPOINT`| `https://hf-mirror.com` | 本地 Embedding 模型下载镜像源，保障国内稳定拉取 |
-| `NAVHUB_LLM_BASE_URL` | `https://api.agnes-ai.cn/v1` | 大语言模型兼容接口地址（OpenAI 兼容 /v1/chat/completions，代码默认；DeepSeek / Ollama 等可换入，docker-compose 的示例默认是 DeepSeek） |
-| `NAVHUB_LLM_API_KEY` | `(可选)` | LLM 密钥。未配置时自动降级为纯规则启发式元数据提取 |
+## MCP 与扩展
 
----
+- **MCP Server**：工具清单单一来源 `packages/core/src/mcp-schemas.ts`，共 **41 个**（28 read / 12 write / 1 admin，如 `search_sites`、`get_site`、`list_categories`、`create_site`、`batch_import`、`install_plugin`、`run_job`）。权限 `read | write | admin`，写操作入 `audit_logs`、支持幂等键、批量导入默认 `dryRun`。
+  - stdio：`apps/mcp/src/stdio.ts`（默认仅 `read`）
+  - Streamable HTTP：`apps/mcp/src/http-server.ts`（默认 `127.0.0.1:8790`，端点 `/mcp`、健康检查 `/health`），每请求重校验 Bearer token、会话绑定 token 指纹 / scope / owner、Origin 白名单
+  - 供 Claude Desktop、Cursor 等 Agent 直接调度。
+- **Chrome 扩展**（MV3）：`nh` omnibox 搜索、弹窗一键收录，token 存 `chrome.storage.local`，Bearer 仅发往回环地址。
+- **Raycast 扩展**：`search-navhub`、`browse-plugins` 两个命令，`apiUrl` 默认 `http://127.0.0.1:8787`。
 
-## 📦 自动化 GitHub 仓库推仓脚本 (Repository Push)
+## 测试
 
-项目已内置跨平台的快速推仓脚本，支持自动绑定目标远端、建立 `main` 分支并完成代码同步：
+- Vitest：覆盖 `packages/**`、`apps/api`、`apps/web/test`、`scripts/**`；覆盖率门禁在 `coverage-thresholds.json`（2026-11-06 基线：641 文件 / 7,235 用例，总行覆盖 85.68%、分支 71.68%；`packages/mcp` 分支仅 58.96%）。
+- Playwright：`e2e/` 24 个 spec、单 worker、独立 E2E 库，覆盖搜索、工作台、管理后台 token / 恢复 / 插件等。
+- 安全测试：`apps/api/test/security-readiness.test.ts` 22/22（生产拒绝不安全启动、CORS 默认值等）。
 
-* **Windows 环境（CMD / PowerShell）**：
-  ```cmd
-  scripts\push-to-github.bat xujinlong76-star/znwzdh <您的GitHub_PAT>
-  ```
-* **macOS / Linux 环境**：
-  ```bash
-  ./scripts/push-to-github.sh xujinlong76-star/znwzdh <您的GitHub_PAT>
-  ```
+## 安全要点
 
----
+- **E2EE 金库**：WebCrypto PBKDF2 10 万次 + AES-256-GCM、12 字节 IV，端侧零知识加密，密文同步至云端。注意 `core` 与 `web-overlay` 各有一份 vault 实现，存在漂移风险。
+- **SSRF 三层防护**：仅 http/https；DNS 解析后按真实 IP 拦环回 / 私网 / 链路本地 / 云元数据 169.254（含 IPv6 展开防绕过）；重定向逐跳重检；超时 10s、2MB、最多 3 跳。LLM baseUrl 同样过此关。
+- **鉴权与口令**：scrypt（N=16384、r=8、p=1、keylen 64）加盐哈希；验证令牌 24h、重置令牌 1h，只存 SHA-256，原子消费防重放；各账号端点按小时限流 5–20 次，防枚举。
+- **生产红线**：不要把 8787 暴露到公网而不开鉴权；不要把 LLM / SMTP 密钥写进公开仓库；未配 SMTP 时验证链接会打印到日志，生产务必配 SMTP。
 
-## 📜 许可证 (License)
+## 许可证
 
-* 山羊胡核心自研模块与算法库遵循 [MIT License](LICENSE)。
-* 前端基底派生自开源项目 NavSphere（MIT），严格保留其原始版权声明。
+- 山羊胡核心自研模块与算法库遵循 [MIT License](LICENSE)。
+- 前端基底派生自开源项目 NavSphere（MIT），严格保留其原始版权声明。

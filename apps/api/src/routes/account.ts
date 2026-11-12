@@ -254,7 +254,14 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       const user = await ctx.repo.findUserByEmail(email);
       // 防枚举（P0-1）：三个分支统一返回同一响应，攻击者无法区分
       // 「邮箱未注册」「已注册已验证」「已注册未验证」——审计走独立通道
-      const UNIFORM = { ok: true, message: "若该邮箱已注册且未验证，验证邮件已发送" };
+      // 未配 SMTP 时不谎报“已发送”：邮件只进了日志投递（脱敏），用户收不到。
+  // 防枚举：两种文案与用户是否存在无关。
+  const UNIFORM = {
+    ok: true,
+    message: ctx.mail.isConfigured()
+      ? "若该邮箱已注册且未验证，验证邮件已发送"
+      : "若该邮箱已注册且未验证，验证邮件无法发送：本站未配置邮件发送，请联系管理员",
+  };
       if (!user) {
         return UNIFORM;
       }
@@ -312,7 +319,13 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
           target: email,
         });
       }
-      return { ok: true, message: "若该邮箱已注册，重置链接已发送" };
+      // 未配 SMTP 时不谎报“已发送”：重置链接已生成并记入日志投递（脱敏），但未投递到用户邮箱。
+  return {
+    ok: true,
+    message: ctx.mail.isConfigured()
+      ? "若该邮箱已注册，重置链接已发送"
+      : "若该邮箱已注册，重置链接已生成，但本站未配置邮件发送，无法投递，请联系管理员",
+  };
     },
   );
 

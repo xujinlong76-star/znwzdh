@@ -548,8 +548,11 @@ describe("生产配置硬校验与批量查询回归", () => {
     const prevAdmin = process.env.NAVHUB_ADMIN_TOKEN;
     const prevBootstrap = process.env.NAVHUB_BOOTSTRAP_TOKEN;
     const prevAuth = process.env.NAVHUB_AUTH_REQUIRED;
+  const prevMailOptIn = process.env.NAVHUB_MAIL_LOG_TRANSPORT_OK;
     try {
       process.env.NODE_ENV = "production";
+    // P0-4 §6：生产未配 SMTP 时，日志投递 opt-in 才能放行（否则 loadConfig 抛错）。
+    process.env.NAVHUB_MAIL_LOG_TRANSPORT_OK = "1";
       delete process.env.NAVHUB_SESSION_SECRET;
       expect(() => loadConfig()).toThrow(/NAVHUB_SESSION_SECRET/);
 
@@ -588,6 +591,7 @@ describe("生产配置硬校验与批量查询回归", () => {
       if (prevAdmin === undefined) delete process.env.NAVHUB_ADMIN_TOKEN; else process.env.NAVHUB_ADMIN_TOKEN = prevAdmin;
       if (prevBootstrap === undefined) delete process.env.NAVHUB_BOOTSTRAP_TOKEN; else process.env.NAVHUB_BOOTSTRAP_TOKEN = prevBootstrap;
       if (prevAuth === undefined) delete process.env.NAVHUB_AUTH_REQUIRED; else process.env.NAVHUB_AUTH_REQUIRED = prevAuth;
+    if (prevMailOptIn === undefined) delete process.env.NAVHUB_MAIL_LOG_TRANSPORT_OK; else process.env.NAVHUB_MAIL_LOG_TRANSPORT_OK = prevMailOptIn;
     }
   });
 
@@ -600,6 +604,7 @@ describe("生产配置硬校验与批量查询回归", () => {
       ALLOW_LOCAL: process.env.NAVHUB_ALLOW_INSECURE_LOCALHOST,
       ALLOW_PUBLIC: process.env.NAVHUB_ALLOW_INSECURE_PUBLIC,
       ADMIN: process.env.NAVHUB_ADMIN_TOKEN,
+    MAIL_OPTIN: process.env.NAVHUB_MAIL_LOG_TRANSPORT_OK,
     };
     const restore = () => {
       for (const [k, v] of Object.entries({
@@ -610,12 +615,15 @@ describe("生产配置硬校验与批量查询回归", () => {
         NAVHUB_ALLOW_INSECURE_LOCALHOST: prev.ALLOW_LOCAL,
         NAVHUB_ALLOW_INSECURE_PUBLIC: prev.ALLOW_PUBLIC,
         NAVHUB_ADMIN_TOKEN: prev.ADMIN,
+      NAVHUB_MAIL_LOG_TRANSPORT_OK: prev.MAIL_OPTIN,
       })) {
         if (v === undefined) delete process.env[k]; else process.env[k] = v;
       }
     };
     try {
       process.env.NODE_ENV = "production";
+    // P0-4 §6：生产未配 SMTP 时，日志投递 opt-in 才能放行（否则 loadConfig 抛错）。
+    process.env.NAVHUB_MAIL_LOG_TRANSPORT_OK = "1";
       process.env.NAVHUB_SESSION_SECRET = "a-very-strong-production-secret-with-at-least-32-chars!";
       // S-1：生产缺管理 token 会先于鉴权校验抛错，这里显式提供以隔离被测分支
       process.env.NAVHUB_ADMIN_TOKEN = "a-very-strong-admin-token-with-at-least-32-chars-ok";

@@ -340,7 +340,7 @@ function isLocalHostname(hostname: string): boolean {
   return false;
 }
 
-function assertSecurityConstraints(
+export function assertSecurityConstraints(
   config: AppConfig,
   isProd: boolean,
   allowInsecureLocalhost: boolean
@@ -535,6 +535,24 @@ function assertSecurityConstraints(
   if (!VALID_EMBEDDING_DTYPES.has(config.embedding.dtype)) {
     throw new Error(`NAVHUB_EMBEDDING_DTYPE 非法: ${config.embedding.dtype}`);
   }
+  // 6. 生产邮件投递（SMTP）：未配 SMTP 时密码重置/验证邮件只能进日志投递，
+  // 用户收不到真实邮件。生产环境必须配好 SMTP，或显式设置
+  // NAVHUB_MAIL_LOG_TRANSPORT_OK=1 选择加入日志投递（链接仍脱敏）。
+  // “已配置”与 packages/ai/src/mail.ts 的 parseSmtpConfig 同义：
+  // NAVHUB_SMTP_HOST（或 legacy SMTP_HOST）与 NAVHUB_SMTP_FROM
+  //（或 legacy SMTP_FROM）缺一不可。
+  if (isProd) {
+    const smtpHost = (process.env.NAVHUB_SMTP_HOST || process.env.SMTP_HOST || "").trim();
+    const smtpFrom = (process.env.NAVHUB_SMTP_FROM || process.env.SMTP_FROM || "").trim();
+    const mailLogTransportOptIn = process.env.NAVHUB_MAIL_LOG_TRANSPORT_OK === "1";
+    if ((!smtpHost || !smtpFrom) && !mailLogTransportOptIn) {
+      throw new Error(
+        "生产环境未配置 SMTP：密码重置/验证邮件无法投递，请设置 NAVHUB_SMTP_HOST 与 NAVHUB_SMTP_FROM；" +
+          "如确认接受日志投递（重置链接仅以脱敏形式进日志、用户收不到邮件），请显式设置 NAVHUB_MAIL_LOG_TRANSPORT_OK=1",
+      );
+    }
+  }
+
 }
 
 /* ------------------------------------------------------------------ *

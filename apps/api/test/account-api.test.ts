@@ -18,9 +18,27 @@ import type { MailMessage, MailResult, MailTransport } from "@navhub/ai";
 const dir = mkdtempSync(join(tmpdir(), "navhub-account-"));
 const base = {
   mode: "lite" as const,
-  embedding: { model: "m", endpoint: "https://hf-mirror.com", dtype: "q8" as const, cacheDir: join(dir, "models"), dim: 512, enabled: false },
-  llm: { baseUrl: "https://api.deepseek.com", apiKey: null, model: "deepseek-chat", timeoutMs: 3000 },
-  fetch: { timeoutMs: 1000, maxBytes: 65536, maxRedirects: 1, allowPrivateNetworks: false, userAgent: "NavHubTest/0.1" },
+  embedding: {
+    model: "m",
+    endpoint: "https://hf-mirror.com",
+    dtype: "q8" as const,
+    cacheDir: join(dir, "models"),
+    dim: 512,
+    enabled: false,
+  },
+  llm: {
+    baseUrl: "https://api.deepseek.com",
+    apiKey: null,
+    model: "deepseek-chat",
+    timeoutMs: 3000,
+  },
+  fetch: {
+    timeoutMs: 1000,
+    maxBytes: 65536,
+    maxRedirects: 1,
+    allowPrivateNetworks: false,
+    userAgent: "NavHubTest/0.1",
+  },
   corsOrigins: ["*"],
 };
 
@@ -30,7 +48,9 @@ let app: Awaited<ReturnType<typeof buildServer>>;
 const captured: MailMessage[] = [];
 
 beforeAll(async () => {
-  ctx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "account.db") }));
+  ctx = await createContext(
+    loadConfig({ ...base, sqlitePath: join(dir, "account.db") }),
+  );
   // 覆盖邮件发送器：捕获正文，返回成功（不发真实邮件）
   const fakeMail: MailTransport = {
     isConfigured: () => true,
@@ -53,7 +73,9 @@ afterAll(async () => {
 
 /** 从捕获邮件里提取 URL 中的 token 参数 */
 function extractToken(message: MailMessage, label: string): string {
-  const match = message.text.match(new RegExp(`${label}[^\\s]*token=([A-Za-z0-9_-]+)`));
+  const match = message.text.match(
+    new RegExp(`${label}[^\\s]*token=([A-Za-z0-9_-]+)`),
+  );
   expect(match, `邮件里应包含 ${label} 令牌`).not.toBeNull();
   return match![1];
 }
@@ -131,8 +153,12 @@ describe("账号生命周期 API", () => {
       password: "S3cret-Passw0rd!",
     });
     const token = extractToken(captured[0], "verify-email");
-    expect((await post("/api/account/verify-email", { token })).statusCode).toBe(200);
-    expect((await post("/api/account/verify-email", { token })).statusCode).toBe(400);
+    expect(
+      (await post("/api/account/verify-email", { token })).statusCode,
+    ).toBe(200);
+    expect(
+      (await post("/api/account/verify-email", { token })).statusCode,
+    ).toBe(400);
   });
 
   it("登录：正确口令返回用户，错误口令 401", async () => {
@@ -141,21 +167,34 @@ describe("账号生命周期 API", () => {
       email: "dave@example.com",
       password: "S3cret-Passw0rd!",
     });
-    const ok = await post("/api/account/login", { identifier: "dave@example.com", password: "S3cret-Passw0rd!" });
+    const ok = await post("/api/account/login", {
+      identifier: "dave@example.com",
+      password: "S3cret-Passw0rd!",
+    });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().user.email).toBe("dave@example.com");
 
-    const bad = await post("/api/account/login", { identifier: "dave@example.com", password: "wrong" });
+    const bad = await post("/api/account/login", {
+      identifier: "dave@example.com",
+      password: "wrong",
+    });
     expect(bad.statusCode).toBe(401);
 
-    const missing = await post("/api/account/login", { identifier: "nobody@example.com", password: "x" });
+    const missing = await post("/api/account/login", {
+      identifier: "nobody@example.com",
+      password: "x",
+    });
     expect(missing.statusCode).toBe(401);
   });
 
   it("忘记密码：无论邮箱是否存在都返回同一文案", async () => {
     captured.length = 0;
-    const existing = await post("/api/account/forgot-password", { email: "dave@example.com" });
-    const unknown = await post("/api/account/forgot-password", { email: "ghost@example.com" });
+    const existing = await post("/api/account/forgot-password", {
+      email: "dave@example.com",
+    });
+    const unknown = await post("/api/account/forgot-password", {
+      email: "ghost@example.com",
+    });
     expect(existing.statusCode).toBe(200);
     expect(unknown.statusCode).toBe(200);
     expect(existing.json().message).toBe(unknown.json().message);
@@ -176,13 +215,22 @@ describe("账号生命周期 API", () => {
     expect(resetMsg).toBeDefined();
     const token = extractToken(resetMsg!, "reset-password");
 
-    const res = await post("/api/account/reset-password", { token, password: "NewPassw0rd!" });
+    const res = await post("/api/account/reset-password", {
+      token,
+      password: "NewPassw0rd!",
+    });
     expect(res.statusCode).toBe(200);
 
-    const login = await post("/api/account/login", { identifier: "erin@example.com", password: "NewPassw0rd!" });
+    const login = await post("/api/account/login", {
+      identifier: "erin@example.com",
+      password: "NewPassw0rd!",
+    });
     expect(login.statusCode).toBe(200);
 
-    const oldLogin = await post("/api/account/login", { identifier: "erin@example.com", password: "OldPassw0rd!" });
+    const oldLogin = await post("/api/account/login", {
+      identifier: "erin@example.com",
+      password: "OldPassw0rd!",
+    });
     expect(oldLogin.statusCode).toBe(401);
   });
 
@@ -199,11 +247,19 @@ describe("账号生命周期 API", () => {
     const canonical = "credentials:" + (user?.id ?? "");
     const sid = "test-sid-acct-gail-0001";
     const sidToken = createHash("sha256").update(sid).digest("hex");
-    await ctx.repo.upsertSessionActivity({ token: sidToken, userId: canonical, userAgent: "acct-test", expiresAt: Date.now() + 86_400_000 });
+    await ctx.repo.upsertSessionActivity({
+      token: sidToken,
+      userId: canonical,
+      userAgent: "acct-test",
+      expiresAt: Date.now() + 86_400_000,
+    });
     await post("/api/account/forgot-password", { email: "gail@example.com" });
     const resetMsg = captured.find((m) => m.text.includes("reset-password"));
     const resetToken = extractToken(resetMsg!, "reset-password");
-    const res = await post("/api/account/reset-password", { token: resetToken, password: "NewPassw0rd!" });
+    const res = await post("/api/account/reset-password", {
+      token: resetToken,
+      password: "NewPassw0rd!",
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().sessionsRevoked).toBe(1);
     expect(await ctx.repo.isSessionRevoked(sidToken, canonical)).toBe(true);
@@ -219,11 +275,16 @@ describe("账号生命周期 API", () => {
     const user = await ctx.repo.findUserByEmail("hank@example.com");
     expect(user).not.toBeNull();
     const rawId = user?.id ?? "";
-    vi.spyOn(ctx.repo, "revokeAllSessions").mockRejectedValueOnce(new Error("revoke boom"));
+    vi.spyOn(ctx.repo, "revokeAllSessions").mockRejectedValueOnce(
+      new Error("revoke boom"),
+    );
     await post("/api/account/forgot-password", { email: "hank@example.com" });
     const resetMsg = captured.find((m) => m.text.includes("reset-password"));
     const resetToken = extractToken(resetMsg!, "reset-password");
-    const res = await post("/api/account/reset-password", { token: resetToken, password: "NewPassw0rd!" });
+    const res = await post("/api/account/reset-password", {
+      token: resetToken,
+      password: "NewPassw0rd!",
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().sessionsRevoked).toBe(0);
     const rows = await ctx.repo.raw(
@@ -231,7 +292,10 @@ describe("账号生命周期 API", () => {
       [rawId, "account.password_reset_sessions_revoke_failed"],
     );
     expect(rows.length).toBeGreaterThan(0);
-    const login = await post("/api/account/login", { identifier: "hank@example.com", password: "NewPassw0rd!" });
+    const login = await post("/api/account/login", {
+      identifier: "hank@example.com",
+      password: "NewPassw0rd!",
+    });
     expect(login.statusCode).toBe(200);
   });
 
@@ -245,21 +309,135 @@ describe("账号生命周期 API", () => {
     await post("/api/account/forgot-password", { email: "frank@example.com" });
     const resetMsg = captured.find((m) => m.text.includes("reset-password"));
     const token = extractToken(resetMsg!, "reset-password");
-    expect((await post("/api/account/reset-password", { token, password: "NewPassw0rd!" })).statusCode).toBe(200);
-    expect((await post("/api/account/reset-password", { token, password: "Another1!" })).statusCode).toBe(400);
+    expect(
+      (
+        await post("/api/account/reset-password", {
+          token,
+          password: "NewPassw0rd!",
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await post("/api/account/reset-password", {
+          token,
+          password: "Another1!",
+        })
+      ).statusCode,
+    ).toBe(400);
   });
 
   it("邮箱状态查询：恒定响应，不泄露账号存在性/验证状态（防枚举 S-6）", async () => {
     // 2026-11-06：email-status 是 public 路由，旧实现返回 registered/verified 两个
     // 布尔，等于把「某邮箱是否注册、是否已验证」做成批量枚举 oracle。改为恒定 { ok: true }。
-    const res = await app.inject({ method: "GET", url: "/api/account/email-status?email=bob@example.com" });
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/account/email-status?email=bob@example.com",
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
 
-    const unknown = await app.inject({ method: "GET", url: "/api/account/email-status?email=ghost@example.com" });
+    const unknown = await app.inject({
+      method: "GET",
+      url: "/api/account/email-status?email=ghost@example.com",
+    });
     expect(unknown.statusCode).toBe(200);
     // 存在与不存在邮箱的响应体必须逐字节一致，否则仍是 oracle
     expect(unknown.json()).toEqual(res.json());
     expect(unknown.body).toBe(res.body);
+  });
+});
+
+describe("未配置邮件发送（isConfigured: () => false）", () => {
+  const unconfiguredCaptured: MailMessage[] = [];
+  const unconfiguredMail: MailTransport = {
+    isConfigured: () => false,
+    describe: () => "test://unconfigured",
+    sendMail: async (message) => {
+      unconfiguredCaptured.push(message);
+      return { ok: true, messageId: "test-unconfigured" };
+    },
+  };
+  let unconfiguredCtx: AppContext;
+  let unconfiguredApp: Awaited<ReturnType<typeof buildServer>>;
+  let unconfiguredDir: string;
+  const unconfiguredPost = (path: string, body: unknown) =>
+    unconfiguredApp.inject({
+      method: "POST",
+      url: path,
+      payload: body,
+      headers: { "content-type": "application/json" },
+    });
+
+  beforeAll(async () => {
+    unconfiguredDir = mkdtempSync(
+      join(tmpdir(), "navhub-account-unconfigured-"),
+    );
+    unconfiguredCtx = await createContext(
+      loadConfig({ ...base, sqlitePath: join(unconfiguredDir, "account.db") }),
+    );
+    (unconfiguredCtx as { mail: MailTransport }).mail = unconfiguredMail;
+    unconfiguredApp = await buildServer(unconfiguredCtx);
+    await unconfiguredApp.ready();
+  });
+
+  afterAll(async () => {
+    await unconfiguredApp.close();
+    await unconfiguredCtx.close();
+    rmSync(unconfiguredDir, { recursive: true, force: true });
+  });
+
+  it("忘记密码：已注册邮箱返回不谎报的文案且 ok: true", async () => {
+    const register = await unconfiguredPost("/api/account/register", {
+      username: "mallory",
+      email: "mallory@example.com",
+      password: "Test123!@#456",
+      displayName: "mallory",
+    });
+    expect(register.statusCode).toBe(201);
+    const res = await unconfiguredPost("/api/account/forgot-password", {
+      email: "mallory@example.com",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      ok: true,
+      message:
+        "若该邮箱已注册，重置链接已生成，但本站未配置邮件发送，无法投递，请联系管理员",
+    });
+    expect(res.json().message).not.toContain("已发送");
+  });
+
+  it("忘记密码：不存在的邮箱返回同一文案", async () => {
+    const res = await unconfiguredPost("/api/account/forgot-password", {
+      email: "ghost@example.com",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      ok: true,
+      message:
+        "若该邮箱已注册，重置链接已生成，但本站未配置邮件发送，无法投递，请联系管理员",
+    });
+  });
+
+  it("重发验证：未验证用户返回不谎报的文案", async () => {
+    const register = await unconfiguredPost("/api/account/register", {
+      username: "nina",
+      email: "nina@example.com",
+      password: "Test123!@#456",
+      displayName: "nina",
+    });
+    expect(register.statusCode).toBe(201);
+    unconfiguredCaptured.length = 0;
+    const res = await unconfiguredPost("/api/account/resend-verification", {
+      email: "nina@example.com",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      ok: true,
+      message:
+        "若该邮箱已注册且未验证，验证邮件无法发送：本站未配置邮件发送，请联系管理员",
+    });
+    expect(res.json().message).not.toContain("已发送");
+    expect(unconfiguredCaptured).toHaveLength(0);
   });
 });

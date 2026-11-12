@@ -84,7 +84,7 @@
 ### 9. 账号体系与管理后台
 
 - 自助注册 + 邮箱验证（令牌只存 SHA-256、24 小时有效、一次性原子消费）、邮箱 + 密码登录（scrypt 加盐哈希、常量时间比较、用户不存在与密码错误返回同一结果以防账号枚举）、忘记/重置密码（重置链接 1 小时有效）。
-- 邮件投递适配器：可配 SMTP（`NAVHUB_SMTP_*`，`NAVHUB_SMTP_HOST` 与 `NAVHUB_SMTP_FROM` 缺一不可，否则仍退化为日志投递）；未配置时退化为服务端日志投递。注意：日志投递已脱敏（`packages/ai/src/mail.ts` 的 `LogMailTransport` 经 `redactMailLogText` 处理，验证/重置链接与长令牌替换为 `[REDACTED]`，读日志拿不到可用链接；独立出现的 6 位数字验证码仍可见），但用户收不到真实邮件，生产务必配 SMTP（上线前检查见 `.env.example` 邮件一节）。
+- 邮件投递适配器：可配 SMTP（`NAVHUB_SMTP_*`，`NAVHUB_SMTP_HOST` 与 `NAVHUB_SMTP_FROM` 缺一不可，否则仍退化为日志投递）；未配置时退化为服务端日志投递。注意：日志投递已脱敏（`packages/ai/src/mail.ts` 的 `LogMailTransport` 经 `redactMailLogText` 处理，验证/重置链接与长令牌替换为 `[REDACTED]`，读日志拿不到可用链接；独立出现的 6 位数字验证码仍可见），但用户收不到真实邮件；生产未配 SMTP 现在拒绝启动（除非显式设置 NAVHUB_MAIL_LOG_TRANSPORT_OK=1 选择加入日志投递），上线前检查见 `.env.example` 邮件一节。
 - 管理后台（`/admin`）：分类、站点、插件、统计、审计、API Token 签发与生命周期管理；用户中心有等级成长玩法（用不同功能涨经验）。
 
 ### 已落地（2026-11-12）：此前写在这里的三项已完成
@@ -242,14 +242,14 @@ docker compose --profile standard up -d
 
 - Vitest：覆盖 `packages/**`、`apps/api`、`apps/web/test`、`scripts/**`；覆盖率门禁在 `coverage-thresholds.json`（2026-11-06 基线：641 文件 / 7,235 用例，总行覆盖 85.68%、分支 71.68%；`packages/mcp` 分支 60.96%（W1 阈值 58.96%））。
 - Playwright：`e2e/` 24 个 spec、单 worker、独立 E2E 库，覆盖搜索、工作台、管理后台 token / 恢复 / 插件等。
-- 安全测试：`apps/api/test/security-readiness.test.ts` 22/22（生产拒绝不安全启动、CORS 默认值等）。
+- 安全测试：`apps/api/test/security-readiness.test.ts` 30/30（生产拒绝不安全启动、CORS 默认值等）。
 
 ## 安全要点
 
 - **E2EE 金库**：WebCrypto PBKDF2 10 万次 + AES-256-GCM、12 字节 IV，端侧零知识加密，密文同步至云端。注意 `core` 与 `web-overlay` 各有一份 vault 实现，存在漂移风险。
 - **SSRF 三层防护**：仅 http/https；DNS 解析后按真实 IP 拦环回 / 私网 / 链路本地 / 云元数据 169.254（含 IPv6 展开防绕过）；重定向逐跳重检；超时 10s、2MB、最多 3 跳。LLM baseUrl 同样过此关。
 - **鉴权与口令**：scrypt（N=16384、r=8、p=1、keylen 64）加盐哈希；验证令牌 24h、重置令牌 1h，只存 SHA-256，原子消费防重放；各账号端点按小时限流 5–20 次，防枚举。
-- **生产红线**：不要把 8787 暴露到公网而不开鉴权；不要把 LLM / SMTP 密钥写进公开仓库；未配 SMTP 时验证链接只以脱敏形式进日志（token/链接为 `[REDACTED]`），但用户收不到真实邮件，生产务必配 SMTP。
+- **生产红线**：不要把 8787 暴露到公网而不开鉴权；不要把 LLM / SMTP 密钥写进公开仓库；未配 SMTP 时验证链接只以脱敏形式进日志（token/链接为 `[REDACTED]`），但用户收不到真实邮件；生产未配 SMTP 时拒绝启动（除非 NAVHUB_MAIL_LOG_TRANSPORT_OK=1）。
 
 ## 许可证
 

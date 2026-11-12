@@ -3337,9 +3337,9 @@
             {
               "id": "nav-c6c24bd6dc9e",
               "title": "国家公务员局",
-              "href": "https://www.scs.gov.cn",
+              "href": "http://www.scs.gov.cn",
               "description": "国家公务员考试官方网站：招考公告、职位表、报名入口与成绩查询",
-              "icon": "https://www.scs.gov.cn/favicon.ico",
+              "icon": "http://www.scs.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
                 "公务员",

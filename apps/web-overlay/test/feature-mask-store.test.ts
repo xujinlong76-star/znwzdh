@@ -48,7 +48,7 @@ describe('不可变基础配置 + 用户差异掩码层 + 时间轴回收站 (Fe
     removeFeatureFromMask({
       id: 'mod:speed-dial',
       level: 'L1_MODULE',
-      title: '⚡ 高频极速直达坞 Top 10',
+      title: '⚡ 极速直达坞 Top 10',
       deletedAt: 1000,
     })
     removeFeatureFromMask({

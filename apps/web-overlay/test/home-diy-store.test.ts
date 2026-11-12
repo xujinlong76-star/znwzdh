@@ -967,6 +967,30 @@ describe('W2：预设的 speedDialEnabled 真的写进配置（速览坞读得�
   })
 })
 
+/* ------------------------------------------------------------------ *
+ * 速览坞默认开：新用户一进站就看到极速直达坞；已存配置不被覆盖。
+ * 「高频」改名同步：新用户尚无访问历史，填充来自星标/最近/关键词/
+ * 顺序凑数，顶着「高频」标题名不副实，改为「极速直达坞」。
+ * ------------------------------------------------------------------ */
+describe('速览坞默认开：只影响新用户，已存配置不被覆盖', () => {
+  it('DEFAULT_CONFIG 默认打开速览坞', () => {
+    expect(DEFAULT_CONFIG.speedDialEnabled).toBe(true)
+  })
+
+  it('空存储的新用户 hydrate 后速览坞是开的', () => {
+    hydrateHomeDiy()
+    expect(getHomeDiySnapshot().config.speedDialEnabled).toBe(true)
+  })
+
+  it('已存 speedDialEnabled: false 的老用户 hydrate 后仍是关的', () => {
+    browser = installBrowser({
+      [STORAGE_KEY]: JSON.stringify({ ...DEFAULT_CONFIG, speedDialEnabled: false }),
+    })
+    hydrateHomeDiy()
+    expect(getHomeDiySnapshot().config.speedDialEnabled).toBe(false)
+  })
+})
+
 describe('W2：confirmPendingShare 先刷盘再读 warning（不读上一次的旧状态）', () => {
   it('confirmPendingShare 里 flush 在 getHomeDiySnapshot 之前', () => {
     const hook = readSrc('src/lib/modular/use-home-diy.ts')

@@ -51,9 +51,6 @@ import { useVideoPlayer } from '@/contexts/VideoPlayerContext'
 import { parseWebVTT, searchTranscript, exportTranscriptAsMarkdown } from '@/lib/video-transcript-sync'
 import { saveStudyNote, listStudyNotes, exportNotesAsMarkdown, type VideoStudyNote } from '@/lib/video-frame-clipper'
 import { getStoredDanmaku, saveDanmakuItem } from '@/lib/video-danmaku-engine'
-// 未使用但不可删：这是 p2p-stream-loader 在 src 内的唯一引用点，删掉即触发
-// check-dead-modules 判红（测试引用不计入 src 图）；实测删除还会让 Turbopack
-// 的 chunk 切分变差，/videos/player 从 882 KB 涨回 884 KB。
 // 语音指示器是辅助可视化：动态导入，不占播放器首屏包体积（预算紧）。
 const VideoVoiceIndicator = dynamic(() => import('@/components/video-voice-indicator').then(m => m.VideoVoiceIndicator), { ssr: false })
 import { VideoNetworkSentinel } from '@/components/video-network-sentinel'
@@ -75,8 +72,6 @@ import { generateVideoQuizzes, type VideoQuizQuestion } from '@/lib/video-quiz-g
 import { generateVideoMindMap, type MindMapNode } from '@/lib/video-mindmap-generator'
 import { generateVideoObjectSchema } from '@/lib/video-seo'
 import { createQoETracker, type QoEMetrics } from '@/lib/video-qoe-telemetry'
-// 同上：calculatePrefetchQueue 未被调用，但它与 p2p-stream-loader 都是各自模块在
-// src 内的唯一引用点，删掉即触发 check-dead-modules 判红（测试引用不计入 src 图）。
 import { generateFlashcardsFromNotes, generateFlashcardsFromQuizzes, type FlashcardItem } from '@/lib/video-spaced-repetition'
 import { type VoiceCommandIntent } from '@/lib/video-voice-commander'
 import { copyText } from '@/lib/clipboard'

@@ -159,7 +159,7 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
               <Zap className="h-3.5 w-3.5 fill-primary" />
             </span>
             <h2 className="text-xs sm:text-sm font-bold tracking-tight text-foreground flex items-center gap-1.5">
-              <span>⚡ 高频极速直达坞</span>
+              <span>⚡ 极速直达坞</span>
               <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-primary/10 text-primary border border-primary/20">
                 Top {pinnedSites.length}
               </span>

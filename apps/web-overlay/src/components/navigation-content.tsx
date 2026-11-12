@@ -874,11 +874,11 @@ export function NavigationContent({
                               removeFeature({
                                 id: 'mod:speed-dial',
                                 level: 'L1_MODULE',
-                                title: '⚡ 高频极速直达坞 Top 10',
+                                title: '⚡ 极速直达坞 Top 10',
                                 parentTitle: 'L1 全局功能组件',
                               })
                               toast({
-                                title: '已移除「⚡ 高频极速直达坞 Top 10」',
+                                title: '已移除「⚡ 极速直达坞 Top 10」',
                                 description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
                               })
                             }}

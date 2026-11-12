@@ -5,7 +5,7 @@
  * 1. 绝不直接修改或破坏底层 4,839 个站点 JSON 与默认组件树（Immutable Base）。
  * 2. 在本地（localStorage: `navhub_feature_mask_v1` + 轻量首屏防闪烁键 `nav_pruned_ids`）维护用户的增量裁剪掩码。
  * 3. 覆盖 4 层颗粒度模型：
- *    - L1_MODULE: 全局功能组件（视角条、Hero 横幅、极速启动展板、高频极速直达坞 Top 10、实时协同状态、站内目录、页脚生态入口）
+ *    - L1_MODULE: 全局功能组件（视角条、Hero 横幅、极速启动展板、极速直达坞 Top 10、实时协同状态、站内目录、页脚生态入口）
  *    - L2_CATEGORY / L2_SUBCATEGORY: 18 个一级大类与 200+ 二级子分类
  *    - L3_SITE / L3_MICRO: 单个特定站点卡片、卡片内部微元素（简介文本、#标签栏、Space 速览角标、置顶/热度徽标）
  *    - L4_FEATURE: 交互与实验室特性（顶部操作提示条、键盘巡航、悬浮气泡提示、右下角 DIY 悬浮按钮）
@@ -29,7 +29,7 @@ export type FeatureGranularityLevel =
 export interface TrashItem {
   id: string // 如 'mod:speed-dial' | 'cat:life' | 'sub:ai-audio' | 'site:40'
   level: FeatureGranularityLevel
-  title: string // 用于在恢复中心展示人类可读的名称，如 "⚡ 高频极速直达坞 Top 10"
+  title: string // 用于在恢复中心展示人类可读的名称，如 "⚡ 极速直达坞 Top 10"
   parentTitle?: string // 如 "AI 工具 > AI 音频语音"
   deletedAt: number // 删除时间戳，支持按最近删除排序与一键 Ctrl+Z 撤销
   previousIndex?: number // 原有位置索引，确保恢复后回到原位而非末尾
@@ -109,7 +109,7 @@ export const L1_MODULE_CATALOG: readonly FeatureCatalogDefinition[] = [
   {
     id: 'mod:speed-dial',
     level: 'L1_MODULE',
-    title: '⚡ 高频极速直达坞 Top 10',
+    title: '⚡ 极速直达坞 Top 10',
     description: '基于访问频次与手动固定的首屏 Top 10 极速启动条',
     parentTitle: 'L1 全局功能组件',
   },

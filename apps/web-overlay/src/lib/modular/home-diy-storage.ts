@@ -109,7 +109,7 @@ export const DEFAULT_CONFIG: HomeDIYConfig = {
   customCategories: [],
   siteCategoryOverrides: {},
   categoryDensityOverrides: {},
-  speedDialEnabled: false,
+  speedDialEnabled: true,
   speedDialPinnedIds: [],
   customWallpaperUrl: '',
   glassmorphismBlur: 12,

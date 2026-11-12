@@ -205,7 +205,9 @@ describe("正点版任务语义", () => {
       openingMode: "template",
       payload: JSON.stringify({ date: today, hotPicks: [], newSitesScope: "recent", newSites: [] }),
     });
-    await handleDailyBrief(ctx);
+    // 注入 fakeFetch：handleDailyBrief 会先全源刷新热榜；不注入会走真网，
+    // 把 fixture 种子换成实时榜单，导致后续开场白锚定校验找不到锚点条目。
+    await handleDailyBrief(ctx, { fetchImpl: fakeFetch() });
     const stored = await ctx.repo.getDailyBrief(today);
     expect(stored?.opening).not.toBe("哨兵早期版开场白");
     expect(stored?.generatedAt).toBeGreaterThan(1);

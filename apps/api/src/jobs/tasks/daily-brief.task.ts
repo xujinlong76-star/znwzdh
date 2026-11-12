@@ -10,14 +10,19 @@
  * （刷新失败不阻断组版：用现有缓存如实组版，源状态会在页面上标注）。
  * 请求路径（GET /api/brief/today）仍走 getOrGenerate：有缓存直读、
  * 没缓存才补生成，页面永不开天窗。
+ * 测试时可经 opts.fetchImpl 注入假抓取，避免真网刷新冲掉种子数据；
+ * 生产不传，默认走真网。
  */
 
 import type { AppContext } from "../../context.ts";
 import { generateDailyBrief } from "../../brief/brief.ts";
-import { refreshHotlist } from "../../hotlist/refresh.ts";
+import { refreshHotlist, type HotlistFetch } from "../../hotlist/refresh.ts";
 
-export async function handleDailyBrief(ctx: AppContext): Promise<void> {
-  await refreshHotlist(ctx).catch(() => undefined);
+export async function handleDailyBrief(
+  ctx: AppContext,
+  opts: { fetchImpl?: HotlistFetch } = {},
+): Promise<void> {
+  await refreshHotlist(ctx, { fetchImpl: opts.fetchImpl }).catch(() => undefined);
   const brief = await generateDailyBrief(ctx);
   await ctx.repo
     .recordEvent("daily_brief", {

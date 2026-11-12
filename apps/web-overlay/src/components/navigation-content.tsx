@@ -652,7 +652,7 @@ export function NavigationContent({
           </div>
         )}
 
-        <div className="px-3 sm:px-6 md:px-8 pt-4 sm:pt-8 pb-28 sm:pb-36 flex-1">
+        <div className="px-3 sm:px-6 md:px-8 pt-4 sm:pt-8 pb-8 flex-1">
           {/* 增量掩码与时间轴回收站快捷感知条（当用户存在已删减功能或处于 DIY 编辑态时呈现） */}
           {(totalPrunedCount > 0 || isEditingLayout) && (
             <div

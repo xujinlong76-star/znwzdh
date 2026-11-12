@@ -27,9 +27,14 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { describeDiyRestoreReport, importDIYConfig, importEncryptedDIYConfig, syncFromCloudVault } from '@/lib/modular/home-diy-io'
 import {
   applyHomeDiyShareHash,
+  commitHomeDiyConfig,
+  computeHomeDiyShareDiff,
+  confirmHomeDiyShare,
+  dismissHomeDiyShare,
   getHomeDiySnapshot,
   hydrateHomeDiy,
   resetHomeDiySharedState,
+  undoHomeDiy,
 } from '@/lib/modular/home-diy-storage'
 import { validateAndCleanDIYConfig } from '@/lib/modular/diy-presets'
 import { fetchCloudVault } from '@/lib/navhub-api'
@@ -339,19 +344,27 @@ describe('分享链接接收侧：被吃掉的内容挂到横幅上', () => {
 
   const encode = (obj: unknown) => '#diy=' + btoa(encodeURIComponent(JSON.stringify(obj)))
 
-  it('链接里有非法条目：applied 仍为真，但 warning 说清丢了几条', () => {
+  it('链接里有非法条目：挂起待确认，但 warning 说清丢了几条', () => {
     win.location.hash = encode({ vm: 'hybrid', co: ['cat-a', 'cat-b', 5, {}, '__proto__'] })
     const res = applyHomeDiyShareHash()
-    expect(res.applied).toBe(true)
+    expect(res.applied).toBe(false)
     expect(res.warning).toContain('3 项内容被丢弃或截断')
     expect(res.warning).toContain('分类顺序')
+    const pending = getHomeDiySnapshot().pendingShare
+    expect(pending).not.toBeNull()
+    expect(pending?.imported.viewMode).toBe('hybrid')
+    expect(pending?.warning).toContain('3 项内容被丢弃或截断')
   })
 
   it('干净链接：不制造噪音，warning 为空', () => {
     win.location.hash = encode({ vm: 'classic', co: ['cat-a'] })
     const res = applyHomeDiyShareHash()
-    expect(res.applied).toBe(true)
+    expect(res.applied).toBe(false)
     expect(res.warning).toBeNull()
+    const pending = getHomeDiySnapshot().pendingShare
+    expect(pending).not.toBeNull()
+    expect(pending?.imported.viewMode).toBe('classic')
+    expect(pending?.warning).toBeNull()
   })
 
   it('超出 4KB 的链接整条忽略，也要告诉用户「沿用了本地排版」', () => {
@@ -374,8 +387,76 @@ describe('分享链接接收侧：被吃掉的内容挂到横幅上', () => {
     win.location.hash = encode({ vm: 'hybrid', wp: 'javascript:alert(1)' })
     hydrateHomeDiy()
     const snap = getHomeDiySnapshot()
-    expect(snap.storageWarning).toContain('分享链接已应用')
+    expect(snap.storageWarning).toContain('分享链接待你确认')
     expect(snap.storageWarning).toContain('自定义壁纸')
+    expect(snap.pendingShare).not.toBeNull()
+    expect(snap.pendingShare?.imported.viewMode).toBe('hybrid')
+  })
+
+  it('差异预览：自建分类/折叠/壁纸被分享压回默认时，逐项列出', () => {
+    commitHomeDiyConfig((prev) => ({
+      ...prev,
+      customCategories: [{ id: 'my-cat', title: '我的分类', items: [], createdAt: 1 }],
+      collapsedCategoryIds: ['cat-a'],
+      customWallpaperUrl: 'https://example.com/w.jpg',
+    }))
+    const before = getHomeDiySnapshot().config
+    win.location.hash = encode({ vm: 'hybrid', co: ['cat-a'] })
+    const res = applyHomeDiyShareHash()
+    expect(res.applied).toBe(false)
+    const pending = getHomeDiySnapshot().pendingShare
+    expect(pending).not.toBeNull()
+    expect((pending?.diff ?? []).join(' ')).toContain('自建分类')
+    expect((pending?.diff ?? []).join(' ')).toContain('折叠状态')
+    expect((pending?.diff ?? []).join(' ')).toContain('自定义壁纸')
+    expect(getHomeDiySnapshot().config).toBe(before)
+  })
+
+  it('确认分享：先备份当前配置，再应用，旧配置可 Ctrl+Z 撤回', () => {
+    commitHomeDiyConfig((prev) => ({
+      ...prev,
+      customCategories: [{ id: 'my-cat', title: '我的分类', items: [], createdAt: 1 }],
+      collapsedCategoryIds: ['cat-a'],
+    }))
+    const before = getHomeDiySnapshot().config
+    win.location.hash = encode({ vm: 'classic', co: ['cat-a'] })
+    applyHomeDiyShareHash()
+    const out = confirmHomeDiyShare()
+    expect(out.applied).toBe(true)
+    expect(out.backupKey).not.toBeNull()
+    const backupRaw = win.localStorage.getItem(out.backupKey as string)
+    expect(backupRaw).not.toBeNull()
+    expect(JSON.parse(backupRaw as string).customCategories[0].title).toBe('我的分类')
+    expect(getHomeDiySnapshot().config.viewMode).toBe('classic')
+    expect(getHomeDiySnapshot().config.customCategories).toEqual([])
+    expect(getHomeDiySnapshot().pendingShare).toBeNull()
+    undoHomeDiy()
+    expect(getHomeDiySnapshot().config).toEqual(before)
+  })
+
+  it('取消分享：本地配置原样不动，待确认状态与横幅提示一起清掉', () => {
+    commitHomeDiyConfig((prev) => ({
+      ...prev,
+      customCategories: [{ id: 'my-cat', title: '我的分类', items: [], createdAt: 1 }],
+    }))
+    const before = getHomeDiySnapshot().config
+    win.location.hash = encode({ vm: 'hybrid', co: ['cat-a', 'cat-b', 5] })
+    hydrateHomeDiy()
+    expect(getHomeDiySnapshot().pendingShare).not.toBeNull()
+    expect(getHomeDiySnapshot().storageWarning).toContain('分享链接待你确认')
+    expect(dismissHomeDiyShare()).toBe(true)
+    expect(getHomeDiySnapshot().pendingShare).toBeNull()
+  expect(getHomeDiySnapshot().config.customCategories).toHaveLength(before.customCategories.length)
+  expect(getHomeDiySnapshot().config.customCategories.map((c) => c.title)).toEqual(before.customCategories.map((c) => c.title))
+    expect(getHomeDiySnapshot().storageWarning).toBeNull()
+    expect(dismissHomeDiyShare()).toBe(false)
+  })
+
+  it('差异预览：两份相同配置返回空数组，单字段变化只列一行', () => {
+    const current = getHomeDiySnapshot().config
+    expect(computeHomeDiyShareDiff(current, current)).toEqual([])
+    const imported = { ...current, cardOpacity: (current.cardOpacity ?? 0.9) + 0.01 }
+    expect(computeHomeDiyShareDiff(current, imported)).toHaveLength(1)
   })
 })
 

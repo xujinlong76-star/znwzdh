@@ -194,7 +194,10 @@ describe('分享入口：分享失败必须说出来', () => {
     expect(/const importPresetFromUrlHash\s*=/.test(hookAndStorage)).toBe(false)
     expect(/^\s*importPresetFromUrlHash,?\s*$/m.test(hookAndStorage)).toBe(false)
     expect(/const share = applyHomeDiyShareHash\(\)/.test(storage)).toBe(true)
-    expect(/if \(share\.applied\) return/.test(storage)).toBe(true)
+    // 分享不再立即应用、也不提前返回：只挂起待确认，本地配置照常读
+    expect(/if \(share\.applied\) return/.test(storage)).toBe(false)
+    expect(/pendingShare: \{ imported, diff, warning \}/.test(storage)).toBe(true)
+    expect(/computeHomeDiyShareDiff\(sharedState\.config, imported\)/.test(storage)).toBe(true)
     // 链接里被白名单/上限吃掉的内容必须挂到用户看得见的横幅上，不能只 console.warn
     expect(/if \(share\.warning\) commitSharedState\(\{ storageWarning: share\.warning \}\)/.test(storage)).toBe(true)
   })

@@ -163,6 +163,7 @@ export interface HomeDiyStorage {
 export interface PendingHomeDiyShare {
   imported: HomeDIYConfig
   diff: string[]
+  warning: string | null
 }
 
 export interface HomeDiySharedState {
@@ -443,9 +444,6 @@ export function hydrateHomeDiy(): void {
   sharedHydrated = true
   const storage = safeLocalStorage()
   if (!storage) return
-  const share = applyHomeDiyShareHash()
-  if (share.warning) commitSharedState({ storageWarning: share.warning })
-  if (share.applied) return
   let raw: string | null = null
   try {
     raw = storage.getItem(STORAGE_KEY)
@@ -457,7 +455,6 @@ export function hydrateHomeDiy(): void {
   const stored = readStoredHomeDiyConfig(raw)
   if (stored.status === 'ok') {
     commitSharedState({ config: stored.config, history: createLayoutHistory(stored.config) })
-    return
   }
   if (stored.status === 'corrupt') {
     const backupKey = stored.corruptRaw ? backupCorruptHomeDiyConfig(storage, stored.corruptRaw) : null
@@ -466,12 +463,16 @@ export function hydrateHomeDiy(): void {
       history: createLayoutHistory(stored.config),
       storageWarning: describeCorruptHomeDiyConfig(backupKey),
     })
-    return
   }
   const migrated = migrateLegacyHomeDiyConfig(storage)
   if (migrated) {
     commitSharedState({ config: migrated, history: createLayoutHistory(migrated) })
   }
+  // 顺序很关键：先让本地配置（含旧版迁移）落位，再解析 #diy 分享——
+  // 差异预览要对照『用户真实的本地配置』算，而不是对照默认配置；
+  // 分享只挂起待确认，绝不整表替换本地配置。
+  const share = applyHomeDiyShareHash()
+  if (share.warning) commitSharedState({ storageWarning: share.warning })
 }
 
 /** v2 → v1 迁移（老的键名仍然留着，迁移成功后写回 v3 键） */
@@ -542,25 +543,18 @@ export function migrateLegacyHomeDiyConfig(storage: HomeDiyStorage): HomeDIYConf
 
 /**
  * 处理 `#diy=` 免登分享链接（不可信输入：统一走 validateAndCleanDIYConfig + 4KB 上限）。
- * 成功即落盘生效；warning 非空表示链接里有内容被白名单/上限吃掉，必须让用户看到。
+ * 成功只挂起待确认（pendingShare），不落盘、不替换本地配置；warning 非空表示链接里有内容被白名单/上限吃掉，必须让用户看到。
  */
 export function applyHomeDiyShareHash(): { applied: boolean; warning: string | null } {
   if (typeof window === 'undefined') return { applied: false, warning: null }
   const hash = window.location.hash || ''
   if (!hash.startsWith('#diy=')) return { applied: false, warning: null }
-  const clearHash = () => {
-    try {
-      window.history.replaceState(null, '', window.location.pathname + window.location.search)
-    } catch {
-      // 清 hash 只是顺手收拾现场；清不掉也没有别的可做
-    }
-  }
   try {
     const b64 = hash.replace(/^#diy=/, '')
     // 长度上限 4KB：超限直接丢弃（防 hash 炸弹撑爆 JSON.parse / localStorage）
     if (b64.length > HASH_SHARE_MAX_BYTES) {
       console.warn('[diy] 分享 hash 超过 4KB 上限，已忽略')
-      clearHash()
+      clearDiyShareHash()
       return { applied: false, warning: '分享链接超过 4KB 上限，已整条忽略，沿用本地排版。' }
     }
     const json = decodeURIComponent(atob(b64))
@@ -591,7 +585,7 @@ export function applyHomeDiyShareHash(): { applied: boolean; warning: string | n
     const check = validateAndCleanDIYConfig(normalized)
     if (!check.valid || !check.config) {
       console.warn('[diy] 分享 hash 校验失败，已忽略:', check.error)
-      clearHash()
+      clearDiyShareHash()
       return { applied: false, warning: `分享链接未能应用：${check.error || '配置不合法'}，已沿用本地排版。` }
     }
     const imported: HomeDIYConfig = {
@@ -602,9 +596,8 @@ export function applyHomeDiyShareHash(): { applied: boolean; warning: string | n
         : [],
       updatedAt: Date.now(),
     }
-    // 导入即生效并落盘（与旧行为一致）；撤销历史重置为导入后的状态
-    commitSharedState({ pendingShare: { imported, diff: [] } })
-    clearHash()
+  // 只挂起待确认：不落盘、不替换本地配置；用户确认后才走 commitHomeDiyConfig 应用
+    clearDiyShareHash()
     // 分享链接只有 4KB，超限/非法内容被悄悄吃掉时，接收方完全看不出来：这里申报
     let warning: string | null = null
     if (check.notes.length > 0) {
@@ -612,14 +605,156 @@ export function applyHomeDiyShareHash(): { applied: boolean; warning: string | n
         check.dropped > 0 ? `${check.dropped} 项内容被丢弃或截断` : '部分设置值不在支持列表，已回退默认'
       const shown = check.notes.slice(0, 3).join('；')
       const more = check.notes.length > 3 ? ` 等 ${check.notes.length} 项` : ''
-      warning = `分享链接已应用，但${head}：${shown}${more}`
+      warning = `分享链接待你确认，但${head}：${shown}${more}`
     }
+  const diff = computeHomeDiyShareDiff(sharedState.config, imported)
+  commitSharedState({ pendingShare: { imported, diff, warning } })
     return { applied: false, warning }
   } catch (e) {
     // 失败 quiet：清掉 hash 后回落默认配置，不抛错（避免「打开链接即报错」）
     console.warn('[diy] 分享 hash 解析失败，已忽略', e)
-    clearHash()
+    clearDiyShareHash()
     return { applied: false, warning: '分享链接解析失败，已沿用本地排版。' }
   }
 }
 
+// —— #diy 分享：只挂起待确认，绝不整表替换 ——
+// 分享只带少量字段，其余字段在 imported 里是 DEFAULT_CONFIG 的值。
+// 差异预览按整份 HomeDIYConfig 全字段比对，而不是只比分享带了什么。
+export function computeHomeDiyShareDiff(current: HomeDIYConfig, imported: HomeDIYConfig): string[] {
+  const diff: string[] = []
+  const eqList = (a: readonly string[] | undefined, b: readonly string[] | undefined): boolean => {
+    const x = a ?? []
+    const y = b ?? []
+    return x.length === y.length && x.every((v, i) => v === y[i])
+  }
+  const setDiff = (a: readonly string[] | undefined, b: readonly string[] | undefined) => {
+    const x = new Set(a ?? [])
+    const y = new Set(b ?? [])
+    return { add: [...y].filter((v) => !x.has(v)), del: [...x].filter((v) => !y.has(v)) }
+  }
+  const idList = (label: string, a: readonly string[] | undefined, b: readonly string[] | undefined): void => {
+    const d = setDiff(a, b)
+    if (d.add.length === 0 && d.del.length === 0) return
+    const p: string[] = []
+    if (d.add.length > 0) p.push('新增 ' + d.add.length + ' 个')
+    if (d.del.length > 0) p.push('移除 ' + d.del.length + ' 个')
+    diff.push(label + '：' + p.join('、'))
+  }
+  if (!eqList(current.categoryOrder, imported.categoryOrder)) {
+    const d = setDiff(current.categoryOrder, imported.categoryOrder)
+    if (d.add.length === 0 && d.del.length === 0) diff.push('分类顺序会改变（分类不变，仅重新排序）')
+    else diff.push('分类顺序会改变（新增 ' + d.add.length + ' 个、移除 ' + d.del.length + ' 个）')
+  }
+  idList('置顶分类', current.pinnedCategoryIds, imported.pinnedCategoryIds)
+  idList('隐藏分类', current.hiddenCategoryIds, imported.hiddenCategoryIds)
+  idList('折叠状态', current.collapsedCategoryIds, imported.collapsedCategoryIds)
+  idList('速览坞组件', current.heroDeckWidgets, imported.heroDeckWidgets)
+  idList('速览星标', current.speedDialPinnedIds, imported.speedDialPinnedIds)
+  {
+    const cur = new Map(current.customCategories.map((c) => [c.id, c]))
+    const imp = new Map(imported.customCategories.map((c) => [c.id, c]))
+    const add = [...imp.keys()].filter((id) => !cur.has(id))
+    const del = [...cur.keys()].filter((id) => !imp.has(id))
+    const chg = [...imp.keys()].filter((id) => {
+      const a = cur.get(id)
+      const b = imp.get(id)
+      return !!a && !!b && (a.title !== b.title || a.items.length !== b.items.length)
+    })
+    const p: string[] = []
+    if (add.length > 0) p.push('新增 ' + add.length + ' 个')
+    if (del.length > 0) {
+      p.push('删除 ' + del.length + ' 个（' + del.map((id) => cur.get(id)?.title ?? id).join('、') + '）')
+    }
+    if (chg.length > 0) p.push('修改 ' + chg.length + ' 个')
+    if (p.length > 0) diff.push('自建分类：' + p.join('、'))
+  }
+  {
+    const keys = new Set([...Object.keys(current.siteCategoryOverrides), ...Object.keys(imported.siteCategoryOverrides)])
+    const chg = [...keys].filter((k) => current.siteCategoryOverrides[k] !== imported.siteCategoryOverrides[k])
+    if (chg.length > 0) diff.push('站点归属：' + chg.length + ' 个站点改分类')
+  }
+  {
+    const keys = new Set([...Object.keys(current.pinnedSiteIdsByCategory), ...Object.keys(imported.pinnedSiteIdsByCategory)])
+    const chg = [...keys].filter((k) => !eqList(current.pinnedSiteIdsByCategory[k], imported.pinnedSiteIdsByCategory[k]))
+    if (chg.length > 0) diff.push('站内置顶：' + chg.length + ' 个分类的置顶站点会变')
+  }
+  if (current.heroDeckCollapsed !== imported.heroDeckCollapsed) {
+    diff.push('速览坞将' + (imported.heroDeckCollapsed ? '折叠' : '展开'))
+  }
+  if (current.speedDialEnabled !== imported.speedDialEnabled) {
+    diff.push('速览星标坞将' + (imported.speedDialEnabled ? '开启' : '关闭'))
+  }
+  if (current.enableAdaptiveRanking !== imported.enableAdaptiveRanking) {
+    diff.push('自适应排序将' + (imported.enableAdaptiveRanking ? '开启' : '关闭'))
+  }
+  const values: Array<[string, string | number | undefined, string | number | undefined]> = [
+    ['视图模式', current.viewMode, imported.viewMode],
+    ['卡片形态', current.cardDisplayMode, imported.cardDisplayMode],
+    ['画布背景', current.canvasBackground, imported.canvasBackground],
+    ['强调色', current.accentColor, imported.accentColor],
+    ['毛玻璃模糊', current.glassmorphismBlur, imported.glassmorphismBlur],
+    ['卡片不透明度', current.cardOpacity, imported.cardOpacity],
+    ['当前工作区', current.currentWorkspace, imported.currentWorkspace],
+  ]
+  for (const [label, a, b] of values) {
+    if (a !== b) diff.push(label + '：' + (a ?? '未设置') + ' → ' + (b ?? '未设置'))
+  }
+  if (current.customWallpaperUrl !== imported.customWallpaperUrl) {
+    diff.push(imported.customWallpaperUrl ? '自定义壁纸将更换' : '自定义壁纸将被清除')
+  }
+  return diff
+}
+
+// 清掉地址栏里的 #diy= 分享 hash：确认/取消/忽略分享时都要做；
+// 清不掉也无妨（只是收拾现场），不抛错。
+function clearDiyShareHash(): void {
+  try {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  } catch {
+    // 清 hash 只是顺手收拾现场；清不掉也没有别的可做
+  }
+}
+
+// 分享确认前的备份键：带时间戳，连续确认多份分享时不会互相覆盖。
+export function homeDiyShareBackupKey(now: number): string {
+  return STORAGE_KEY + '.share-backup.' + String(now)
+}
+
+// 确认分享前，把当前配置原样备份到独立备份键，返回备份键名（写不进去返回 null）。
+export function backupHomeDiyShareConfig(storage: HomeDiyStorage, config: HomeDIYConfig): string | null {
+  const key = homeDiyShareBackupKey(Date.now())
+  try {
+    storage.setItem(key, JSON.stringify(config))
+    return key
+  } catch {
+    return null
+  }
+}
+
+// 确认应用待确认的 #diy 分享：先把当前配置备份到独立备份键，
+// 再走标准提交路径（commitHomeDiyConfig 默认把旧配置压进撤销栈，可 Ctrl+Z 撤回），
+// 最后清掉分享状态与地址栏 hash。备份失败也不拦确认——撤销栈里还留着旧配置。
+export function confirmHomeDiyShare(): { applied: boolean; backupKey: string | null } {
+  const pending = sharedState.pendingShare
+  if (!pending) return { applied: false, backupKey: null }
+  const storage = safeLocalStorage()
+  const backupKey = storage ? backupHomeDiyShareConfig(storage, sharedState.config) : null
+  commitHomeDiyConfig(() => pending.imported)
+  commitSharedState({ pendingShare: null })
+  clearDiyShareHash()
+  return { applied: true, backupKey }
+}
+
+// 取消待确认的 #diy 分享：本地配置原样不动，只清掉分享状态与地址栏 hash。
+// 若横幅上还挂着这份分享的提示（storageWarning 与 pending.warning 相同），一并清除。
+export function dismissHomeDiyShare(): boolean {
+  const pending = sharedState.pendingShare
+  if (!pending) return false
+  commitSharedState({
+    pendingShare: null,
+    storageWarning: sharedState.storageWarning === pending.warning ? null : sharedState.storageWarning,
+  })
+  clearDiyShareHash()
+  return true
+}

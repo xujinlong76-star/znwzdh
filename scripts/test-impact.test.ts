@@ -13,7 +13,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { isShallow } from "./lib/git-blobs.mjs";
+import { isShallow, refExists } from "./lib/git-blobs.mjs";
 import { buildGraph, canonicalPath, graphFor, impactedTests, impactedWithPaths, pathLiteralDeps } from "./lib/test-impact.mjs";
 
 const ROOT = process.cwd();
@@ -307,23 +307,36 @@ describe("CLI：--why / --diff", () => {
 
   it("--diff：回放 HEAD~1 —— 按克隆深度说真话，不假设 HEAD~1 存在", () => {
     /**
-     * 「HEAD~1 存不存在」本身就是环境事实，所以这条必须分两支：
-     *   - **浅克隆**（CI 的 actions/checkout 默认 `fetch-depth: 1`，历史里只有一个提交）
-     *     ⇒ rc2 + 点名浅克隆与 fetch-depth。把它钉成 rc0 的写法在 CI 必红
-     *     （2026-10-29 run40897350154 · test-sqlite 分片 2/3）：77d0d52a 之前 `--diff`
-     *     把「读不到 base」当成「没有可回放」静默 rc0，浅克隆这件事从未被说出来。
-     *   - **全量克隆**（本机）⇒ rc0 + 说清回放了什么：有图命中就给数，
-     *     没有就明说「没有改动图看得见的文件」。
+     * 「HEAD~1 存不存在」本身就是环境事实，所以这条必须按它分叉——
+     * 分叉谓词是 `refExists("HEAD~1")`，不是 `isShallow()`：
+     * 「是浅克隆」≠「HEAD~1 不存在」，depth > 1 的浅克隆里 HEAD~1 真实存在
+     * （2026-11-12 实测：本克隆 `isShallow()` 为 true，但 `HEAD~1` 可解析，
+     * CLI 回 rc0；旧写法按浅克隆分支硬要 rc2，是假红）。
+     * 三支与 CLI `runDiff` 的决策树一一对应：
+     *   - HEAD~1 不存在 + 浅克隆（CI 的 actions/checkout 默认 `fetch-depth: 1`，
+     *     历史里只有一个提交）⇒ rc2 + 点名浅克隆与 fetch-depth。把它钉成 rc0
+     *     的写法在 CI 必红（2026-10-29 run40897350154 · test-sqlite 分片 2/3）：
+     *     77d0d52a 之前 `--diff` 把「读不到 base」当成「没有可回放」静默 rc0，
+     *     浅克隆这件事从未被说出来。
+     *   - HEAD~1 不存在 + 非浅克隆（单提交全量库等）⇒ rc2 + 说是 ref 不存在，
+     *     不许往「浅克隆」上带。
+     *   - HEAD~1 存在（全量克隆，或 depth > 1 的浅克隆）⇒ rc0 + 说清回放了什么：
+     *     有图命中就给数，没有就明说「没有改动图看得见的文件」。
      *
      * 刻意不钉具体数字，也不钉上一笔提交的内容——真实仓库的 HEAD 由多个会话共同推进，
      * 钉历史必然反复假红（同日实测：一笔只改 ci.yml 的提交就把「必须有图命中数」打红过）。
-     * 两支各自的可复现版本在 `scripts/test-impact-diff.test.ts`（一次性仓库 + 真浅克隆）。
+     * 前两支各自的可复现版本在 `scripts/test-impact-diff.test.ts`（一次性仓库 + 真浅克隆）。
      */
     const res = cli(["--diff", "HEAD~1", "--limit", "1", "--no-selector"]);
-    if (isShallow({ cwd: ROOT })) {
+    if (!refExists("HEAD~1", { cwd: ROOT })) {
+      if (isShallow({ cwd: ROOT })) {
+        expect(res.status, res.out).toBe(2);
+        expect(res.out).toContain("浅克隆");
+        expect(res.out).toContain("fetch-depth");
+        return;
+      }
       expect(res.status, res.out).toBe(2);
-      expect(res.out).toContain("浅克隆");
-      expect(res.out).toContain("fetch-depth");
+      expect(res.out).toContain("不是本仓库里真实存在的 ref");
       return;
     }
     expect(res.status, res.out).toBe(0);

@@ -39,6 +39,7 @@ import { useHomeDIY, type AccentColor } from '@/lib/modular/use-home-diy'
 import { resetAllModuleWindowSizes } from '@/lib/modular/module-resize-store'
 import { computeLayoutTidyPlan } from '@/lib/modular/layout-tidy'
 import { HomeDIYBackupDialog } from '@/components/home-diy-backup-dialog'
+import { HomeDiyShareConfirmDialog } from '@/components/diy/home-diy-share-confirm-dialog'
 import { HomeDIYOutlineDialog, type OutlineDialogTab } from '@/components/home-diy-outline-dialog'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { useDensity } from '@/components/density-provider'
@@ -758,6 +759,9 @@ export function HomeDIYToolbar({
         expandAllCategories={expandAllCategories}
         setHiddenCategories={setHiddenCategories}
       />
+
+      {/* #diy= 分享确认对话框：挂起的分享在此确认/忽略（组件自读 useHomeDIY 的 pendingShare） */}
+      <HomeDiyShareConfirmDialog />
 
       {/* 备份与分享模态框 */}
       <HomeDIYBackupDialog

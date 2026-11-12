@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Library, ListX, ExternalLink, MessageSquareText, Layers, Compass, MapPin, Route, ArrowUp, ArrowDown } from 'lucide-react'
+import { Library, ListX, ExternalLink, MessageSquareText, Layers, ArrowUp, ArrowDown } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { LoadErrorNotice } from '@/components/admin/load-error-notice'
 import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'

@@ -42,6 +42,8 @@ import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
+import { ElderModeToggle } from '@/components/elder-mode-toggle'
+import { SkinPicker } from '@/components/skin-picker'
 import { ViewModeToggle } from '@/components/view-mode-toggle'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
 import { cn } from '@/lib/utils'
@@ -332,6 +334,9 @@ export function NavigationToolbar({
               {/* 字号切换全尺寸可见（A13）：目标人群（年长/视力弱）主力设备是手机，
                   此前 hidden lg: 让移动端根本没有入口；与主题切换同排，不新增浮层不遮挡内容 */}
               <div className="inline-flex"><FontSizeToggle /></div>
+              {/* 长辈模式与皮肤选择：与字号、明暗切换同排，都是「一眼能换」的外观入口 */}
+              <div className="inline-flex"><ElderModeToggle /></div>
+              <div className="inline-flex"><SkinPicker /></div>
               <ModeToggle />
               <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />
               <Button

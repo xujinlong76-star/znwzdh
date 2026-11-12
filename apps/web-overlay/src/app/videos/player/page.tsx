@@ -1,4 +1,4 @@
-import { VideoPlayerPage } from '@/components/video-player-page'
+import { VideoPlayerPageLazy } from './video-player-lazy'
 import { Metadata } from 'next/types'
 import { getProcessedData } from '@/lib/data-loader'
 import { getFileContent } from '@/lib/github'
@@ -40,7 +40,7 @@ export default async function VideoPlayerRoute() {
 
     return (
         <main id="main-content">
-            <VideoPlayerPage navigationData={navigationData} siteData={siteData} />
+            <VideoPlayerPageLazy navigationData={navigationData} siteData={siteData} />
         </main>
     )
 }

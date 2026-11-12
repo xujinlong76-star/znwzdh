@@ -300,7 +300,11 @@ describe("SSRF: 敏感端口与重定向链", () => {
   it("写请求：方法/请求体透传，302/303 降级 GET，307/308 保留，跨源剥离凭据", async () => {
     const seen: Array<{ path: string; method: string; body: string; authorization?: string }> = [];
     let port = 0;
-    const server = createServer((req, res) => {
+    let crossPort = 0;
+    // 跨源目标用 127.0.0.1 换一个端口（仍与源站 scheme+host+port 三元组不同，
+    // 故仍算跨源、凭据照常剥离）；不用 127.0.0.2——该地址在本沙箱里会挂起，
+    // 直到 2000ms 超时守卫把请求 abort 掉，导致本用例 flaky。
+    const handle = (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
       let body = "";
       req.on("data", (chunk) => { body += chunk; });
       req.on("end", () => {
@@ -310,13 +314,17 @@ describe("SSRF: 敏感端口与重定向链", () => {
         if (path === "/start303") { res.writeHead(303, { location: "/echo" }); res.end(); return; }
         if (path === "/start307") { res.writeHead(307, { location: "/echo" }); res.end(); return; }
         if (path === "/start308") { res.writeHead(308, { location: "/echo" }); res.end(); return; }
-        if (path === "/cross") { res.writeHead(302, { location: "http://127.0.0.2:" + port + "/echo" }); res.end(); return; }
+        if (path === "/cross") { res.writeHead(302, { location: "http://127.0.0.1:" + crossPort + "/echo" }); res.end(); return; }
         res.writeHead(200, { "content-type": "text/plain" });
         res.end((req.method ?? "") + ":" + body);
       });
-    });
+    };
+    const server = createServer(handle);
+    const crossServer = createServer(handle);
     await new Promise<void>((r) => server.listen(0, "0.0.0.0", r));
     port = (server.address() as { port: number }).port;
+    await new Promise<void>((r) => crossServer.listen(0, "127.0.0.1", r));
+    crossPort = (crossServer.address() as { port: number }).port;
     const base = "http://127.0.0.1:" + port;
     const guard = { allowPrivateNetworks: true, timeoutMs: 2000 };
     try {
@@ -352,6 +360,7 @@ describe("SSRF: 敏感端口与重定向链", () => {
       expect(cross?.authorization).toBeUndefined();
     } finally {
       await new Promise((r) => server.close(r));
+      await new Promise((r) => crossServer.close(r));
     }
   });
 });

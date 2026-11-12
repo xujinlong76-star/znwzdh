@@ -386,6 +386,25 @@
     --density-icon-size: 2.875rem;
     --density-item-gap: 1rem;
   }
+
+  /* 长辈模式 (Elder Mode)：一键适老 = 特大字（lib/elder-mode.ts 置 20px）
+     + 宽松间距（与 spacious 同值，但不改用户存的密度偏好，关闭即还原）
+     + 主内容与导航内控件 44px 最小触控目标。排在密度档之后，同权重下
+     后写的胜出；密度档本身不动，长辈模式关闭后原档位原样回来。 */
+  [data-elder-mode="on"] {
+    --density-factor: 1.25;
+    --density-card-padding: 1.25rem;
+    --density-grid-gap: 1.375rem;
+    --density-icon-size: 2.875rem;
+    --density-item-gap: 1rem;
+  }
+
+  [data-elder-mode="on"] main a,
+  [data-elder-mode="on"] main button,
+  [data-elder-mode="on"] nav a,
+  [data-elder-mode="on"] nav button {
+    min-height: 44px;
+  }
 }
 
 @layer base {

@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Activity, ArrowRight, Clock, ExternalLink, Flame, PlusCircle, RefreshCw, Search, Sparkles, TrendingUp, User } from 'lucide-react'
+import { Activity, ExternalLink, Flame, PlusCircle, RefreshCw, Search, Sparkles, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'

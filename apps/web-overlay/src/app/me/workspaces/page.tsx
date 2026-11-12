@@ -17,13 +17,22 @@ import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import dynamic from 'next/dynamic'
 import { Input } from '@/components/ui/input'
-import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { SectionState } from '@/components/user-center/section-state'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
+// 新建空间弹窗只在点开时才需要：Radix Dialog（含 portal / focus-scope）走异步
+// chunk，chunk 在首次点开时才下载，给 /me/workspaces 首屏让出 6 KB 缺口。
+const CreateWorkspaceDialog = dynamic(
+  () => import('./create-workspace-dialog').then((m) => m.CreateWorkspaceDialog),
+  { ssr: false },
+)
+
+// 页脚在折叠线以下：动态导入（与 /videos 的 Footer 处理一致）。
+const Footer = dynamic(() => import('@/components/footer').then((m) => m.Footer), { ssr: false })
+
 import {
   addWorkspaceMember,
   createWorkspace,
@@ -431,54 +440,19 @@ export default function WorkspacesPage() {
       )}
 
       {createOpen && (
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-sm">新建工作空间</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <label htmlFor="ws-name" className="block text-xs font-medium text-muted-foreground">
-                  名称
-                </label>
-                <Input id="ws-name" value={newName} maxLength={64} onChange={(e) => setNewName(e.target.value)} className="h-9 text-xs" />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="ws-desc" className="block text-xs font-medium text-muted-foreground">
-                  描述（可选）
-                </label>
-                <Input id="ws-desc" value={newDesc} maxLength={200} onChange={(e) => setNewDesc(e.target.value)} className="h-9 text-xs" />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="ws-type" className="block text-xs font-medium text-muted-foreground">
-                  类型
-                </label>
-                <select
-                  id="ws-type"
-                  value={identityReady.isAnonymous ? 'personal' : newType}
-                  disabled={identityReady.isAnonymous}
-                  onChange={(e) => setNewType(e.target.value as 'personal' | 'team')}
-                  className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs"
-                >
-                  <option value="team">团队协作</option>
-                  <option value="personal">个人私有</option>
-                </select>
-                {identityReady.isAnonymous && (
-                  <p className="text-[11px] text-muted-foreground">匿名身份只能创建个人空间；登录后可创建团队空间。</p>
-                )}
-              </div>
-              <div className="flex gap-2 pt-1">
-                <Button size="sm" className="text-xs" disabled={creating || !newName.trim()} onClick={() => void handleCreate()}>
-                  {creating ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                  创建
-                </Button>
-                <Button size="sm" variant="outline" className="text-xs" disabled={creating} onClick={() => setCreateOpen(false)}>
-                  取消
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <CreateWorkspaceDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          name={newName}
+          onNameChange={setNewName}
+          description={newDesc}
+          onDescriptionChange={setNewDesc}
+          type={newType}
+          onTypeChange={setNewType}
+          isAnonymous={identityReady.isAnonymous}
+          creating={creating}
+          onCreate={() => void handleCreate()}
+        />
       )}
 
       <Footer />

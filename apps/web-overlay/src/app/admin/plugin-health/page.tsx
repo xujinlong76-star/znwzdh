@@ -11,9 +11,29 @@
 
 import Link from 'next/link'
 import { ArrowLeft, BookOpen, ChevronRight, Gauge, LayoutDashboard, ShieldAlert, Sparkles, Wand2 } from 'lucide-react'
+import dynamic from 'next/dynamic'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { PluginUrlHealthPanel } from '@/components/plugins/plugin-url-health-panel'
+
+/**
+ * /admin/plugin-health 首屏预算超 19 KB：PluginUrlHealthPanel（3091 行，
+ * 全市场网址包探活 / L2 防劫持 / AI 平替工作台）是本页唯一的重型组件。
+ * 面包屑与头部横幅仍静态渲染（首屏即见），面板本体走异步 chunk；面板本
+ * 就是客户端拉数渲染，ssr:false 无内容损失。
+ */
+const PluginUrlHealthPanel = dynamic(
+  () =>
+    import('@/components/plugins/plugin-url-health-panel').then((m) => m.PluginUrlHealthPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-3" aria-busy="true" aria-label="正在加载体检工作台">
+        <div className="h-12 animate-pulse rounded-xl border bg-muted/40" />
+        <div className="h-96 animate-pulse rounded-xl border bg-muted/40" />
+      </div>
+    ),
+  },
+)
 
 export default function AdminPluginHealthPage() {
   return (

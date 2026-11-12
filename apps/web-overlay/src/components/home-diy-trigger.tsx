@@ -1,10 +1,24 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { AlertTriangle, SlidersHorizontal, X } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { cn } from '@/lib/utils'
+
+/**
+ * #diy= 分享确认对话框：接收方通常还没进编排模式，工具栏（只在编排态挂载）
+ * 够不着这里。经 dynamic + ssr:false 懒加载，静息入口本身不背 Dialog 的包：
+ * 没有挂起的分享时这个 chunk 根本不会下载。
+ */
+const HomeDiyShareConfirmDialog = dynamic(
+  () =>
+    import('@/components/diy/home-diy-share-confirm-dialog').then(
+      (m) => m.HomeDiyShareConfirmDialog,
+    ),
+  { ssr: false },
+)
 
 /**
  * DIY 排版工坊的**静息态入口**（2026-11-08 深度扫描 P0-3 的延迟部分）。
@@ -76,6 +90,10 @@ export function HomeDIYTrigger() {
 
   return (
     <>
+      {/* #diy= 分享确认：只在静息态挂载；编排态由工具栏挂载同一组件。
+          这里显式再守一次 isEditingLayout，不只依赖上面 return null 的早退，
+          否则两个挂载点会同时存在（Dialog 双实例、确认/忽略各跑一遍）。 */}
+      {!isEditingLayout && <HomeDiyShareConfirmDialog />}
       {storageWarning && (
         <div
           role="alert"

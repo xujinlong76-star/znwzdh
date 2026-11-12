@@ -19,6 +19,7 @@ import { GrowthTracker } from '@/components/growth/growth-tracker'
 import { HomepageBanner } from '@/components/growth/homepage-banner'
 import { DENSITY_PREPAINT_SCRIPT } from '@/lib/density-bootstrap'
 import { FONT_SIZE_PREPAINT_SCRIPT } from '@/lib/font-size'
+import { ELDER_MODE_PREPAINT_SCRIPT } from '@/lib/elder-mode'
 import { readSiteSettings } from '@/lib/site-config-source'
 import { isAnnouncementVisible, resolveDefaultTheme } from '@/lib/site-settings'
 import { AnnouncementBar } from '@/components/announcement-bar'
@@ -148,6 +149,8 @@ export default async function RootLayout({
         <script id="density-prepaint" dangerouslySetInnerHTML={{ __html: DENSITY_PREPAINT_SCRIPT }} />
         {/* 水合前把用户存的字号档位写进 <html> font-size：与密度同理，防大字用户首屏闪烁重排 */}
         <script id="font-size-prepaint" dangerouslySetInnerHTML={{ __html: FONT_SIZE_PREPAINT_SCRIPT }} />
+        {/* 长辈模式：开启时在字号脚本之后覆盖为特大字 + data-elder-mode（宽松间距与触控目标见 globals.css），顺序不能反 */}
+        <script id="elder-mode-prepaint" dangerouslySetInnerHTML={{ __html: ELDER_MODE_PREPAINT_SCRIPT }} />
         {/* 浏览器插件隔离护盾：阻断宿主浏览器第三方插件（如 QoderWork 等）产生的无害通讯断开报错 */}
         <script
           dangerouslySetInnerHTML={{

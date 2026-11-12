@@ -11,6 +11,16 @@
  *
  * 连接示例（CI 的 postgres service 或 docker compose）：
  *   set NAVHUB_TEST_DATABASE_URL=postgres://navhub:navhub@127.0.0.1:5432/navhub_test
+ *
+ * pg_trgm 前置条件：本套件跑在 public schema，DDL 里那句裸
+ * `CREATE EXTENSION IF NOT EXISTS pg_trgm` 只保证扩展存在、不保证装进 public。
+ * 三个 e2e 套件并行共用同一库时，rollup-pg 的 search_path 会让扩展先落在
+ * rollup_e2e，之后这里的 CREATE INDEX ... gin_trgm_ops 就报 operator class
+ * 不存在、createContext 抛错、ctx 为空，红在下面那条连接断言上。
+ * 所以扩展必须在套件启动前就钉在 public：CI 由 test-postgres 作业的
+ * 「预装 pg_trgm 到 public」步骤 + scripts/run-pg-suite.mjs（spawn vitest 前）
+ * 负责；不要只靠 DDL 兜底，也不要在本文件里再装一次——并行 worker 各装各的，
+ * 正是这个 race 的来源。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../../../apps/api/src/config.ts";

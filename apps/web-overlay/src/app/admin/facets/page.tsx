@@ -192,9 +192,6 @@ export default function AdminFacetsPage() {
     )
   }) ?? []
 
-  // 计算全站分面覆盖度指标
-  const totalTaggedCount = currentFacet?.options.reduce((sum, o) => sum + o.count, 0) ?? 0
-
   const degradeNotice = loadError ? describeDegrade(loadError) : null
   const samplesNotice = samplesError ? describeDegrade(samplesError) : null
 

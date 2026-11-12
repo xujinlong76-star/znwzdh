@@ -40,20 +40,27 @@ export function StreakBar() {
   const refresh = useCallback(() => setProfile(loadGrowthProfile()), [])
 
   useEffect(() => {
-    // 特大字档（长辈近似信号）不展示连胜条
-    let fontOk = true
-    try {
-      fontOk = parseFontSizeLevel(window.localStorage.getItem(FONT_SIZE_STORAGE_KEY)) !== 'xlarge'
-    } catch {
-      fontOk = true
+    // 特大字档（长辈近似信号）不展示连胜条；长辈模式开关即时重判，
+    // 不必等刷新（开关本身就是把字号置为特大字档）。
+    // 监听器任何情况下都要挂上：首屏已隐藏时若不挂，长辈模式关闭后
+    // 永远收不到重判事件、连胜条就再也回不来了。
+    const check = () => {
+      let fontOk = true
+      try {
+        fontOk = parseFontSizeLevel(window.localStorage.getItem(FONT_SIZE_STORAGE_KEY)) !== 'xlarge'
+      } catch {
+        fontOk = true
+      }
+      setHidden(!fontOk)
+      if (fontOk) refresh()
     }
-    if (!fontOk) {
-      setHidden(true)
-      return
-    }
-    refresh()
+    check()
     window.addEventListener(GROWTH_UPDATED_EVENT, refresh)
-    return () => window.removeEventListener(GROWTH_UPDATED_EVENT, refresh)
+    window.addEventListener('navhub:elder-mode-changed', check)
+    return () => {
+      window.removeEventListener(GROWTH_UPDATED_EVENT, refresh)
+      window.removeEventListener('navhub:elder-mode-changed', check)
+    }
   }, [refresh])
 
   if (!profile || hidden) return null

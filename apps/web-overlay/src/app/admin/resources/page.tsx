@@ -438,7 +438,6 @@ export default function ResourceManagement() {
     // 获取选中资源的路径和hash
     const selectedResourcesData = filteredResources.filter(r => selectedResources.has(r.id));
     const resourcePaths = selectedResourcesData.map(r => r.items[0].url);
-    const resourceHashes = selectedResourcesData.map(r => r.id);
 
     // 检查引用
     const references = await checkResourceReferences(resourcePaths);

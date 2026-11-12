@@ -152,7 +152,9 @@ function sha1Hex(msg: string): string {
   padded[len] = 0x80;
 
   const view = new DataView(padded.buffer);
-  view.setUint32(padded.length - 8, bitLen, false);
+  // 64 位大端长度：高 32 位在前（len-8），低 32 位在后（len-4）。
+  view.setUint32(padded.length - 8, Math.floor(bitLen / 0x100000000), false);
+  view.setUint32(padded.length - 4, bitLen >>> 0, false);
 
   let h0 = 0x67452301, h1 = 0xefcdab89, h2 = 0x98badcfe, h3 = 0x10325476, h4 = 0xc3d2e1f0;
 
@@ -206,8 +208,9 @@ function sha256Hex(msg: string): string {
   padded[len] = 0x80;
 
   const view = new DataView(padded.buffer);
-  view.setUint32(padded.length - 8, bitLen >>> 0, false);
-  view.setUint32(padded.length - 4, Math.floor(bitLen / 0x100000000), false);
+  // 64 位大端长度：高 32 位在前（len-8），低 32 位在后（len-4）。
+  view.setUint32(padded.length - 8, Math.floor(bitLen / 0x100000000), false);
+  view.setUint32(padded.length - 4, bitLen >>> 0, false);
 
   const K = new Uint32Array([
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -292,7 +295,7 @@ function sha512Hex(msg: string): string {
     0x391c0cb3c5c95a63n, 0x4ed8aa4ae3418acbn, 0x5b9cca4f7763e373n, 0x682e6ff3d6b2b8a3n,
     0x748f82ee5defb2fcn, 0x78a5636f43172f60n, 0x84c87814a1f0ab72n, 0x8cc702081a6439ecn,
     0x90befffa23631e28n, 0xa4506cebde82bde9n, 0xbef9a3f7b2c67915n, 0xc67178f2e372532bn,
-    0xca273eceea86b36cn, 0xd186b8c721c0c207n, 0xeada7dd6cde0eb1en, 0xf57d4f7fee6ed178n,
+    0xca273eceea26619cn, 0xd186b8c721c0c207n, 0xeada7dd6cde0eb1en, 0xf57d4f7fee6ed178n,
     0x06f067aa72176fban, 0x0a637dc5a2c898a6n, 0x113f9804bef90daen, 0x1b710b35131c471bn,
     0x28db77f523047d84n, 0x32caab7b40c72493n, 0x3c9ebe0a15c9bebcn, 0x431d67c49c100d4cn,
     0x4cc5d4becb3e42b6n, 0x597f299cfc657e2an, 0x5fcb6fab3ad6faecn, 0x6c44198c4a475817n,
@@ -303,7 +306,11 @@ function sha512Hex(msg: string): string {
     0x510e527fade682d1n, 0x9b05688c2b3e6c1fn, 0x1f83d9abfb41bd6bn, 0x5be0cd19137e2179n,
   ]);
 
-  function rotr(x: bigint, n: bigint): bigint { return (x >> n) | (x << (64n - n)); }
+  // BigInt 没有固定位宽：左移不会自动截断到 64 位，轮函数与消息扩展
+  // 的每一步都必须显式掩码回 64 位，否则摘要与标准 SHA-512 不一致。
+  const MASK64 = (1n << 64n) - 1n;
+
+  function rotr(x: bigint, n: bigint): bigint { return ((x >> n) | (x << (64n - n))) & MASK64; }
 
   for (let i = 0; i < padded.length; i += 128) {
     const w = new BigUint64Array(80);
@@ -313,7 +320,7 @@ function sha512Hex(msg: string): string {
     for (let j = 16; j < 80; j++) {
       const s0 = rotr(w[j-15], 1n) ^ rotr(w[j-15], 8n) ^ (w[j-15] >> 7n);
       const s1 = rotr(w[j-2], 19n) ^ rotr(w[j-2], 61n) ^ (w[j-2] >> 6n);
-      w[j] = (w[j-16] + s0 + w[j-7] + s1);
+      w[j] = (w[j-16] + s0 + w[j-7] + s1) & MASK64;
     }
 
     let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
@@ -321,15 +328,15 @@ function sha512Hex(msg: string): string {
     for (let j = 0; j < 80; j++) {
       const S1 = rotr(e, 14n) ^ rotr(e, 18n) ^ rotr(e, 41n);
       const ch = (e & f) ^ (~e & g);
-      const t1 = (h + S1 + ch + K[j] + w[j]);
+      const t1 = (h + S1 + ch + K[j] + w[j]) & MASK64;
       const S0 = rotr(a, 28n) ^ rotr(a, 34n) ^ rotr(a, 39n);
       const maj = (a & b) ^ (a & c) ^ (b & c);
-      const t2 = (S0 + maj);
-      h = g; g = f; f = e; e = (d + t1); d = c; c = b; b = a; a = (t1 + t2);
+      const t2 = (S0 + maj) & MASK64;
+      h = g; g = f; f = e; e = (d + t1) & MASK64; d = c; c = b; b = a; a = (t1 + t2) & MASK64;
     }
 
-    H[0] = (H[0] + a); H[1] = (H[1] + b); H[2] = (H[2] + c); H[3] = (H[3] + d);
-    H[4] = (H[4] + e); H[5] = (H[5] + f); H[6] = (H[6] + g); H[7] = (H[7] + h);
+    H[0] = (H[0] + a) & MASK64; H[1] = (H[1] + b) & MASK64; H[2] = (H[2] + c) & MASK64; H[3] = (H[3] + d) & MASK64;
+    H[4] = (H[4] + e) & MASK64; H[5] = (H[5] + f) & MASK64; H[6] = (H[6] + g) & MASK64; H[7] = (H[7] + h) & MASK64;
   }
 
   const result = new Uint8Array(64);

@@ -130,8 +130,8 @@ describe("热榜刷新与缓存降级", () => {
       expect(source.fetchedAt).toBeGreaterThan(0);
     }
     const uncovered = body.uncovered as Array<{ id: string; reason: string }>;
-    expect(uncovered.map((u) => u.id)).toEqual(["zhihu", "kuaishou"]);
-    expect(uncovered[0]?.reason).toContain("401");
+    expect(uncovered.map((u) => u.id)).toEqual(["kuaishou"]);
+    expect(uncovered[0]?.reason).toContain("无官方公开");
   });
 
   it("单源失败标 stale 且保留上次条目，其余源不受影响", async () => {

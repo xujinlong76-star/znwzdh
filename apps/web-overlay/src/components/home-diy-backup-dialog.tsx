@@ -410,7 +410,7 @@ export function HomeDIYBackupDialog({
     }
     toast({
       title: '🔗 已复制免登专属分享链接！',
-      description: '好友直接在浏览器打开该链接，即可一键预览并应用您的专属排版与壁纸。',
+      description: '好友直接在浏览器打开该链接，即可预览，确认后应用您的专属排版与壁纸。',
     })
   }
 

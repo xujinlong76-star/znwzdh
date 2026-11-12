@@ -1,4 +1,6 @@
 
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { loadConfig, createContext } from "../apps/api/src/index.ts";
 import { cleanupOrphanPluginCategories, migrateCategorySlugs } from "../packages/store/src/migrate.ts";
 
@@ -39,6 +41,22 @@ if (!/(^|[_-])(test|ci)([_-]|$)/i.test(dbName) && !process.env.NAVHUB_PG_CHECK_A
   process.exit(2);
 }
 console.log("目标测试库：" + testUrl.replace(/\/\/[^@/]*@/, "//***@") + "（本脚本会清空其中的业务表）");
+
+// pg_trgm 预装进 public（与 run-pg-suite.mjs 同一份逻辑，不另起一套）：
+// DDL 里裸的 CREATE EXTENSION IF NOT EXISTS 只保证扩展存在，不保证装进 public。
+// 这个库若之前被 rollup-pg 的并行 worker 先装过扩展（落在 rollup_e2e），
+// createContext 跑 DDL 时 CREATE EXTENSION 是 no-op，gin_trgm_ops 对 public
+// 不可见，CREATE INDEX 直接炸——本脚本在 createContext 之前先把扩展钉回 public。
+// CI 里套件步骤已经装过一次，这里是幂等 no-op；单跑 `pnpm test:pg` 时它是唯一防线。
+const provision = spawnSync(
+  process.execPath,
+  [fileURLToPath(new URL("./run-pg-suite.mjs", import.meta.url)), "--provision-only"],
+  { stdio: "inherit", env: process.env },
+);
+if (provision.status !== 0) {
+  console.error("pg-check 拒绝执行：pg_trgm 预装失败（见上），否则 DDL 的 gin_trgm_ops 索引会报不存在。");
+  process.exit(provision.status ?? 1);
+}
 
 const config = loadConfig({
   mode: "standard",

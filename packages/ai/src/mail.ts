@@ -7,8 +7,9 @@
  *
  * 设计取舍：
  *  - **默认不接真 SMTP**：未配置 `NAVHUB_SMTP_*` 时退化为「日志投递」
- *    （把邮件正文打到服务端日志），保证开发/内网部署开箱即用、不因缺配置而 500；
- *    生产配置 SMTP 后自动切真实投递。
+ *    （把邮件以脱敏形式打到服务端日志：收件人/主题/正文大意可见，
+ *    验证/重置链接与令牌替换为 `[REDACTED]`），保证开发/内网部署开箱即用、
+ *    不因缺配置而 500；生产配置 SMTP 后自动切真实投递（发送完整原文）。
  *  - **接口最小**：只暴露 `sendMail` 与 `isConfigured`，调用方不感知 SMTP 细节。
  *  - **失败不抛出到业务事务**：投递失败返回 `{ ok: false, error }`，
  *    由 outbox 的 attempts/退避机制重试，绝不让一封邮件拖垮注册/重置事务。
@@ -133,11 +134,52 @@ export class SmtpMailTransport implements MailTransport {
   }
 }
 
+/** 日志里绝不能出现的敏感值，一律替换为这个占位符 */
+export const REDACTED = "[REDACTED]";
+
+/** 出现在 URL / 参数名里即视为敏感的凭据类字段 */
+const SENSITIVE_PARAM = /(?:token|reset|verify|verification|code|auth|password|secret|session|api[-_]?key)/i;
+
+/**
+ * 脱敏邮件日志文本。
+ *
+ * 只用于日志输出，绝不用于真实投递（SmtpMailTransport 始终发送完整原文）。
+ * 规则：
+ *  - 含敏感参数（token / verify / reset / code 等）的完整 URL（绝对或相对）
+ *    整个替换为 [REDACTED]，不留可用链接；
+ *  - 残留的 `token=xxx` / `code=xxx` 这类裸参数值同样替换；
+ *  - 独立出现的长令牌（≥32 位连续 base64url/十六进制字符，如 generateToken(32)
+ *    的 43 位令牌）替换；短验证码（如 6 位数字）不在此列，开发时仍可见。
+ * 其余文本（收件人、主题、非敏感正文）原样保留，日志仍能看出发了什么邮件。
+ */
+export function redactMailLogText(text: string): string {
+  let out = text;
+  // 1. 绝对 URL：只有含敏感参数或指向验证/重置路径的才整条脱敏，普通链接保留。
+  out = out.replace(/https?:\/\/[^\s"'<>]+/g, (url) =>
+    SENSITIVE_PARAM.test(url) || /verify-email|reset-password|\/auth\//i.test(url) ? REDACTED : url,
+  );
+  // 2. 相对 URL：带敏感查询参数的整条脱敏（如 /auth/verify-email?token=...）。
+  out = out.replace(
+    /(^|[\s"'<(])\/[^\s"'<>]*[?&](?:token|code|auth|key|secret|password|session)=[^\s"'<>&]*/gi,
+    (_match, prefix: string) => prefix + REDACTED,
+  );
+  // 3. 残留的裸敏感参数值（如正文里单独出现的 token=xxx）。
+  out = out.replace(
+    /((?:token|verification|verify|reset|code|auth|password|secret|session|api[-_]?key)=)[^\s"'<>&]+/gi,
+    `$1${REDACTED}`,
+  );
+  // 4. 独立长令牌（≥32 位连续字符）。
+  out = out.replace(/\b[A-Za-z0-9_-]{32,}\b/g, REDACTED);
+  return out;
+}
+
 /**
  * 日志投递器（开发/内网默认）。
  *
- * 把邮件完整打到 stdout，方便本地开发时直接在终端看到验证码 / 重置链接，
- * 而不必真的接 SMTP。生产环境未配 SMTP 时也会降级到这里，并在 health 里如实上报。
+ * 邮件以脱敏形式打到 stdout：收件人、主题和正文大意仍可见，
+ * 但验证/重置链接和令牌会被替换为 [REDACTED]，日志泄露也不等于
+ * 拿到可用链接。生产环境未配 SMTP 时也会降级到这里，并在 health 里如实上报。
+ * 真实投递（SmtpMailTransport）不受影响，始终发送完整原文。
  */
 export class LogMailTransport implements MailTransport {
   isConfigured(): boolean {
@@ -145,19 +187,20 @@ export class LogMailTransport implements MailTransport {
   }
 
   describe(): string {
-    return "log://stdout (未配置 SMTP，邮件仅打印到服务端日志)";
+    return "log://stdout (未配置 SMTP，邮件仅以脱敏形式打印到服务端日志)";
   }
 
   async sendMail(message: MailMessage): Promise<MailResult> {
-    // 用单行前缀 + JSON，避免多行正文把日志结构打散；同时保留可复制的链接。
+    // 用单行前缀 + JSON，避免多行正文把日志结构打散；正文/主题先脱敏，
+    // 令牌链接绝不进日志。真实投递不受影响（见 SmtpMailTransport）。
     const line = [
       "[navhub:mail]",
       "to=" + message.to,
-      "subject=" + message.subject,
-      "text=" + message.text,
+      "subject=" + redactMailLogText(message.subject),
+      "text=" + redactMailLogText(message.text),
     ].join(" ");
     console.log(line);
-    if (message.html) console.log("[navhub:mail:html]\n" + message.html);
+    if (message.html) console.log("[navhub:mail:html]\n" + redactMailLogText(message.html));
     return { ok: true, messageId: "log://" + message.to };
   }
 }

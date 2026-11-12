@@ -1,5 +1,5 @@
 import { cache } from 'react'
-import { VideoContent } from '@/components/video-content'
+import { VideoContentLazy } from './video-content-lazy'
 import { Metadata } from 'next/types'
 import { ScrollToTop } from '@/components/ScrollToTop'
 import { getProcessedData } from '@/lib/data-loader'
@@ -107,7 +107,7 @@ export default async function VideosPage() {
 
   return (
     <>
-      <VideoContent navigationData={initialNavigationData} siteData={siteData} />
+      <VideoContentLazy navigationData={initialNavigationData} siteData={siteData} />
       <ScrollToTop />
     </>
   )

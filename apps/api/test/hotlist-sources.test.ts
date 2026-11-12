@@ -44,8 +44,10 @@ describe("热榜源注册表", () => {
         expect(def.uncoveredReason?.length, `${def.id} 未覆盖必须写实测原因`).toBeGreaterThan(20);
       }
     }
-    expect(hotlistSourceById("zhihu")?.uncoveredReason).toContain("401");
-    expect(hotlistSourceById("kuaishou")?.uncoveredReason).toContain("无公开");
+    expect(hotlistSourceById("zhihu")?.covered).toBe(true);
+    expect(hotlistSourceById("zhihu")?.endpoint).toBeTruthy();
+    expect(hotlistSourceById("zhihu")?.parse).toBeTypeOf("function");
+    expect(hotlistSourceById("kuaishou")?.uncoveredReason).toContain("无官方公开");
   });
 });
 

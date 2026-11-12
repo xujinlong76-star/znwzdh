@@ -15,13 +15,11 @@ import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
 import { probeClientSession } from '@/lib/client-session'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { AnonymousHint } from '@/components/user-center/anonymous-hint'
-import { LocalDataManager } from '@/components/user-center/local-data-manager'
 import dynamic from 'next/dynamic'
 
 // 隔离区只在「本机收藏/设置出现过坏数据」时才有用，对多数访问者是死重：
@@ -41,6 +39,19 @@ const BookmarkImportButton = dynamic(
   () => import('@/components/user-center/bookmark-import-button').then((m) => m.BookmarkImportButton),
   { ssr: false },
 )
+
+// 本机数据管理只在折叠线以下（匿名态一段、登录态一段），且自带 use-home-diy
+//（751 行）与离线缓存清点：按需加载，给 /me/data 首屏预算让出 12 KB 缺口。
+const LocalDataManager = dynamic(
+  () => import('@/components/user-center/local-data-manager').then((m) => m.LocalDataManager),
+  {
+    ssr: false,
+    loading: () => <div className="h-32 animate-pulse rounded-2xl border border-border/70 bg-card/50" aria-busy="true" />,
+  },
+)
+
+// 页脚在折叠线以下：动态导入（与 /videos 的 Footer 处理一致）。
+const Footer = dynamic(() => import('@/components/footer').then((m) => m.Footer), { ssr: false })
 import { SectionState } from '@/components/user-center/section-state'
 import {
   AlertTriangle,

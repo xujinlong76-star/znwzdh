@@ -173,6 +173,52 @@ function parseBilibili(json: unknown): HotlistItem[] {
   );
 }
 
+/* -------------------------------- 知乎 ---------------------------------
+ *
+ * 2026-11-11 的旧结论（v3 接口 api/v3/feed/topstory/hot-lists/total 实测
+ * 401）只针对那条需登录的路径；2026-11-12 复核发现热榜页自身的移动端
+ * feed 接口 api.zhihu.com/topstory/hot-list 免登录返回 200（本机浏览器
+ * 实测，当日榜首「网传腾讯裁员 15-20%」等条目逐字对上），改用这条。
+ * 只取 target.title / target.id（拼站内问题链接）/ detail_text 热度，
+ * 响应里的 excerpt 摘要、正文一律不存、不搬运。 */
+
+function parseZhihuHeat(detailText: unknown): number | null {
+  if (typeof detailText !== "string") return null;
+  const wan = detailText.match(/([\d.]+)\s*万/);
+  if (wan) {
+    const n = Number(wan[1]);
+    return Number.isFinite(n) && n > 0 ? Math.trunc(n * 10000) : null;
+  }
+  const plain = detailText.match(/([\d.]+)/);
+  if (!plain) return null;
+  return toHotValue(plain[1]);
+}
+
+const ZHIHU_LABEL: Record<string, string> = { boiling: "沸", hot: "热", new: "新" };
+
+function parseZhihu(json: unknown): HotlistItem[] {
+  const data = asArray(asRecord(json).data);
+  return finish(
+    data.map((raw) => {
+      const r = asRecord(raw);
+      const target = asRecord(r.target);
+      // 问题 id 超过 2^53（JSON.parse 后尾数会被舍入），不能走数值 id；
+      // 源站给的 target.url 是字符串，末尾的数字 id 精确无损，从这里取
+      const urlId = typeof target.url === "string" ? target.url.match(/\/questions\/(\d+)/)?.[1] ?? "" : "";
+      const id = urlId || (target.id === undefined || target.id === null ? "" : String(target.id));
+      // 标题里常带换行/多空格（源站原样返回），折成单空格再展示
+      const title = cleanTitle(target.title).replace(/\s+/g, " ");
+      const labelRaw = r.card_label === undefined || r.card_label === null ? null : asRecord(r.card_label).type;
+      return {
+        title,
+        url: id ? `https://www.zhihu.com/question/${encodeURIComponent(id)}` : "",
+        hotValue: parseZhihuHeat(r.detail_text),
+        hotLabel: typeof labelRaw === "string" ? (ZHIHU_LABEL[labelRaw] ?? null) : null,
+      };
+    }),
+  );
+}
+
 /* ------------------------------ 源注册表 -------------------------------- */
 
 export const HOTLIST_SOURCES: readonly HotlistSourceDef[] = [
@@ -230,19 +276,21 @@ export const HOTLIST_SOURCES: readonly HotlistSourceDef[] = [
     id: "zhihu",
     name: "知乎热榜",
     homeUrl: "https://www.zhihu.com/hot",
-    basis: "逐源核查：官方热榜 API 需登录授权、robots 全禁抓",
-    covered: false,
-    uncoveredReason:
-      "知乎热榜 API（api/v3/feed/topstory/hot-lists/total）2026-11-11 实测返回 401 身份未验证，网页版 403，且 robots 全站禁抓——无合规公开取数路径，暂未覆盖（不绕过登录与 robots）",
+    basis:
+      "知乎热榜页移动端 feed 接口 api.zhihu.com/topstory/hot-list，2026-11-12 实测免登录返回 200（此前 2026-11-11 测的 v3 接口 api/v3/feed/topstory/hot-lists/total 返回 401，那条需登录，不用它）；只存标题 + 链接 + 热度，不存 excerpt/正文",
+    covered: true,
+    endpoint: "https://api.zhihu.com/topstory/hot-list",
+    headers: { Referer: "https://www.zhihu.com/", "User-Agent": BROWSER_UA },
+    parse: parseZhihu,
   },
   {
     id: "kuaishou",
     name: "快手热榜",
     homeUrl: "https://www.kuaishou.com/?isHome=1",
-    basis: "逐源核查：无公开 JSON 榜单接口",
+    basis: "逐源核查：无公开 JSON 榜单接口（2026-11-12 复核）",
     covered: false,
     uncoveredReason:
-      "快手无公开热榜 JSON 接口：官网为前端渲染、GraphQL 需会话凭据，2026-11-11 实测连接失败——暂未覆盖，等官方开放接口再补",
+      "快手无官方公开热榜接口、无免登录取数路径：官网为前端渲染、GraphQL 需会话凭据，2026-11-11 实测连接失败；2026-11-12 复核仍无官方开放接口，只有付费第三方聚合（SandBase / TikHub / Scavio，按调用约 $0.001–0.002/次、需另购 key），未接入——暂未覆盖，等官方开放接口再补",
   },
 ];
 

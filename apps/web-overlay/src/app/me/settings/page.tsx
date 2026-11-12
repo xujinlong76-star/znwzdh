@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { MeSettingsView } from '@/components/user-center/me-settings-view'
+import { MeSettingsViewLazy } from './me-settings-view-lazy'
 
 /**
  * 用户中心「设置」。
@@ -13,5 +13,5 @@ export const metadata: Metadata = {
 }
 
 export default function MeSettingsPage() {
-  return <MeSettingsView />
+  return <MeSettingsViewLazy />
 }

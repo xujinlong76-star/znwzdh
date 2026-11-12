@@ -18,6 +18,7 @@ import {
 import {
   createLayoutSyncChannel,
   getLayoutClientId,
+  readSlotClocks,
   type LayoutSlotClocks,
   type LayoutSyncChannel,
 } from '@/lib/modular/layout-sync'
@@ -26,6 +27,8 @@ import {
   DEFAULT_CONFIG,
   applyRemoteHomeDiyConfig,
   commitHomeDiyConfig,
+  confirmHomeDiyShare,
+  dismissHomeDiyShare,
   dismissHomeDiyStorageWarning,
   getHomeDiySnapshot,
   hydrateHomeDiy,
@@ -58,7 +61,7 @@ import {
 export * from './home-diy-storage'
 
 export function useHomeDIY() {
-  const { config, history, isEditingLayout, storageWarning } = useSyncExternalStore(
+  const { config, history, isEditingLayout, storageWarning, pendingShare } = useSyncExternalStore(
     subscribeHomeDiy,
     getHomeDiySnapshot,
     getHomeDiySnapshot,
@@ -495,6 +498,29 @@ export function useHomeDIY() {
     setHomeDiyEditingLayout(next)
   }, [])
 
+  // #diy= 分享第二阶段：挂起的分享由确认对话框消费。
+  // 确认 = 先自动备份当前本地配置、再整表替换（可 Ctrl+Z 撤销），并广播给其它标签页；
+  // 忽略 = 只清 pendingShare，本地排版一概不动。两者都经共享状态，任何挂载的
+  // useHomeDIY() 实例看到的都是同一份 pendingShare。
+  const confirmPendingShare = useCallback((): { applied: boolean; backupKey: string | null } => {
+    const result = confirmHomeDiyShare()
+    if (result.applied) {
+      // Ryan 版 home-diy-storage 的 confirm 只返回 { applied, backupKey }，
+      // 不返回 writeResult：跨标签广播改从共享快照取新配置，落盘成败以
+      // storageWarning 为准（confirm 内的写盘同步完成，调用后立即能读到）。
+      // 时钟键与 home-diy-storage.ts 的 STORAGE_CLOCKS_KEY 同值（该常量未导出）。
+      const snapshot = getHomeDiySnapshot()
+      publishToOtherTabs({
+        config: snapshot.config,
+        clocks: readSlotClocks('navhub_home_diy_clocks_v1'),
+        ok: snapshot.storageWarning === null,
+      })
+    }
+    return result
+  }, [publishToOtherTabs])
+
+  const dismissPendingShare = useCallback((): boolean => dismissHomeDiyShare(), [])
+
   /** 编排模式开关：工具栏与导航区读同一份状态，拖拽手柄才会真的出现 */
   const toggleEditingLayout = useCallback(() => {
     setHomeDiyEditingLayout(!getHomeDiySnapshot().isEditingLayout)
@@ -701,6 +727,10 @@ export function useHomeDIY() {
     /** 非 null = 上次落盘失败（改动已生效但刷新会丢）：界面必须显示出来 */
     storageWarning,
     dismissStorageWarning: dismissHomeDiyStorageWarning,
+    /** 非 null = 有一条 #diy= 分享链接挂起待确认：本地排版暂未改动 */
+    pendingShare,
+    confirmPendingShare,
+    dismissPendingShare,
     canUndo,
     canRedo,
     undo,

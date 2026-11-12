@@ -41,6 +41,7 @@ import { computeLayoutTidyPlan } from '@/lib/modular/layout-tidy'
 import { HomeDIYBackupDialog } from '@/components/home-diy-backup-dialog'
 import { HomeDiyShareConfirmDialog } from '@/components/diy/home-diy-share-confirm-dialog'
 import { HomeDIYOutlineDialog, type OutlineDialogTab } from '@/components/home-diy-outline-dialog'
+import { HomeDIYShareDialog } from '@/components/home-diy-share-dialog'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { useDensity } from '@/components/density-provider'
 import { BUILTIN_DIY_PRESETS, evaluateLayoutErgonomics, type DIYPreset } from '@/lib/modular/diy-presets'
@@ -123,6 +124,9 @@ export function HomeDIYToolbar({
     currentWorkspace,
     setCurrentWorkspace,
     applySmartAutoTune,
+  pendingShare,
+  confirmPendingShare,
+  dismissPendingShare,
   } = useHomeDIY()
 
   const { density, setDensity } = useDensity()
@@ -777,6 +781,11 @@ export function HomeDIYToolbar({
         checkCloudVaultStatus={checkCloudVaultStatus}
         clearCloudVault={clearCloudVault}
       />
+    <HomeDIYShareDialog
+      pendingShare={pendingShare}
+      onConfirm={confirmPendingShare}
+      onDismiss={dismissPendingShare}
+    />
 
       {/* 新建专属分类对话框 */}
       <Dialog open={isAddCatOpen} onOpenChange={setIsAddCatOpen}>

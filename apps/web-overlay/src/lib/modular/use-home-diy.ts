@@ -726,11 +726,13 @@ export function useHomeDIY() {
     toggleEditingLayout,
     /** 非 null = 上次落盘失败（改动已生效但刷新会丢）：界面必须显示出来 */
     storageWarning,
-    dismissStorageWarning: dismissHomeDiyStorageWarning,
-    /** 非 null = 有一条 #diy= 分享链接挂起待确认：本地排版暂未改动 */
+    /** 非 null = 有一条 #diy= 分享链接挂起待确认：本地排版尚未改动 */
     pendingShare,
+    dismissStorageWarning: dismissHomeDiyStorageWarning,
     confirmPendingShare,
     dismissPendingShare,
+    confirmHomeDiyShare,
+    dismissHomeDiyShare,
     canUndo,
     canRedo,
     undo,

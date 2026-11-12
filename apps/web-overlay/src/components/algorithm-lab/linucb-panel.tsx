@@ -19,18 +19,31 @@ import { Sparkles, RefreshCw, Layers } from 'lucide-react'
  * 描述与实现对不上；真正的引擎 packages/core/src/linucb.ts（含单位阵、求逆、
  * 逐臂 UCB 计算）一直存在但零调用。
  *
- * 现在改为直接调用引擎：模型只在本地 useState 里持有（可后续接 serializeLinUCB 持久化），
+ * 现在改为直接调用引擎：模型只在本地 useState 里持有（已接 serializeLinUCB 持久化到 localStorage（navhub.linucb.model.v1）），
  * 每次预测与更新都走真算法，页面展示的权重就是引擎算出来的。
  */
 import {
   CHANNELS,
   createLinUCBModel,
+  deserializeLinUCB,
   predictArmWeights,
+  serializeLinUCB,
   updateArmReward,
   extractContextFeatures,
   type LinUCBModel,
   type RetrievalChannel,
 } from '@/lib/linucb'
+
+const LINUCB_STORAGE_KEY = 'navhub.linucb.model.v1'
+
+function loadStoredLinUCBModel(): LinUCBModel {
+  try {
+    const raw = window.localStorage.getItem(LINUCB_STORAGE_KEY)
+    return raw ? deserializeLinUCB(raw) : createLinUCBModel(0.25)
+  } catch {
+    return createLinUCBModel(0.25)
+  }
+}
 
 
 export function LinucbPanel() {
@@ -44,6 +57,19 @@ export function LinucbPanel() {
    */
   const [model, setModel] = useState<LinUCBModel>(() => createLinUCBModel(0.25))
   const [tick, setTick] = useState(0)
+  const restoredRef = useRef(false)
+  useEffect(() => {
+    if (!restoredRef.current) {
+      restoredRef.current = true
+      setModel(loadStoredLinUCBModel())
+      return
+    }
+    try {
+      window.localStorage.setItem(LINUCB_STORAGE_KEY, serializeLinUCB(model))
+    } catch {
+      // 本地存储不可用时静默跳过
+    }
+  }, [tick])
 
   /** 上下文特征向量（5 维原始值，供界面展示） */
   const contextFeatures = useMemo(() => {
@@ -96,7 +122,7 @@ export function LinucbPanel() {
                     <span>LinUCB 情境自适应多臂融合实时推演</span>
                   </CardTitle>
                   <CardDescription className="mt-1 text-xs sm:text-sm">
-                    终结传统静态 RRF 的经验常数权重，根据当前输入的特征（中文/拼音/长度）动态求解最优置信上界权重。
+                    终结传统静态 RRF 的经验常数权重，根据当前输入的特征（中文/拼音/长度）动态求解最优置信上界权重。模型保存在本浏览器（localStorage），刷新与切换 Tab 后恢复，只影响本面板。
                   </CardDescription>
                 </div>
                 <Button

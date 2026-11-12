@@ -28,8 +28,11 @@ export interface EncryptedVaultPayload {
   updatedAt: number;
 }
 
-const PBKDF2_ITERATIONS = 100_000; // 兼顾安全性与客户端毫秒级性能
-const KEY_LENGTH_BITS = 256;
+export const PBKDF2_ITERATIONS = 100_000; // 兼顾安全性与客户端毫秒级性能
+export const KEY_LENGTH_BITS = 256;
+export const PBKDF2_HASH = 'SHA-256';
+export const VAULT_SALT_LENGTH_BYTES = 16;
+export const VAULT_IV_LENGTH_BYTES = 12;
 
 /**
  * 取 Web Crypto 实例。
@@ -109,7 +112,7 @@ export async function deriveVaultKey(password: string, salt: Uint8Array<ArrayBuf
       name: 'PBKDF2',
       salt,
       iterations: PBKDF2_ITERATIONS,
-      hash: 'SHA-256',
+      hash: PBKDF2_HASH,
     },
     keyMaterial,
     { name: 'AES-GCM', length: KEY_LENGTH_BITS },
@@ -118,6 +121,17 @@ export async function deriveVaultKey(password: string, salt: Uint8Array<ArrayBuf
   );
 }
 
+/**
+ * 实验室：度量一次 PBKDF2 密钥派生耗时（毫秒）。
+ * 仅做本地计时演示，不导出任何密钥材料。
+ */
+export async function measureVaultDeriveMs(password: string): Promise<number> {
+  const salt = new Uint8Array(VAULT_SALT_LENGTH_BYTES);
+  getCrypto().getRandomValues(salt);
+  const start = performance.now();
+  await deriveVaultKey(password, salt);
+  return performance.now() - start;
+}
 /**
  * 加密书签集合为零知识密文包
  */
@@ -129,10 +143,10 @@ export async function encryptVault(
     throw new Error('密码不能为空');
   }
 
-  const salt = new Uint8Array(16);
+  const salt = new Uint8Array(VAULT_SALT_LENGTH_BYTES);
   getCrypto().getRandomValues(salt);
 
-  const iv = new Uint8Array(12); // AES-GCM 标准 96 位初始化向量
+  const iv = new Uint8Array(VAULT_IV_LENGTH_BYTES); // AES-GCM 标准 96 位初始化向量
   getCrypto().getRandomValues(iv);
 
   const key = await deriveVaultKey(passphrase, salt);
@@ -221,10 +235,10 @@ export async function encryptGenericPayload<T>(
     throw new Error('密码不能为空');
   }
 
-  const salt = new Uint8Array(16);
+  const salt = new Uint8Array(VAULT_SALT_LENGTH_BYTES);
   getCrypto().getRandomValues(salt);
 
-  const iv = new Uint8Array(12);
+  const iv = new Uint8Array(VAULT_IV_LENGTH_BYTES);
   getCrypto().getRandomValues(iv);
 
   const key = await deriveVaultKey(passphrase, salt);

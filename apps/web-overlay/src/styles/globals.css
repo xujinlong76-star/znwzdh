@@ -38,7 +38,7 @@
 @source '../app/indexnow-key.txt/**/*.{js,ts,jsx,tsx,mdx}';
 
 /* components 子树（被 apps/web/src/components/* 忽略）。 */
-@source '../components/{admin,ai,algorithm-lab,crdt,graph,modular,p2p,reader,search,theme,tools,ui,user-center,workspace}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../components/{admin,ai,algorithm-lab,crdt,diy,graph,modular,p2p,reader,search,theme,tools,ui,user-center,workspace}/**/*.{js,ts,jsx,tsx,mdx}';
 /* growth（首页增长三件套）不在上面的花括号枚举里，同为被忽略子树，单独指到目录内部 */
 @source '../components/growth/**/*.{js,ts,jsx,tsx,mdx}';
 

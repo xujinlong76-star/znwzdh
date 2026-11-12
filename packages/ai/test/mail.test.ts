@@ -4,7 +4,13 @@
  * mail.ts 此前没有任何测试引用（0% 覆盖）：验证码/重置邮件的投递路径
  * 完全没有回归保护，改动 SMTP 默认端口或日志格式都不会变红。
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe,
+  expect,
+  it,
+  vi,
+  beforeEach,
+  afterEach,
+  afterAll } from "vitest";
 
 const { mockCreateTransport, mockSendMail } = vi.hoisted(() => ({
   mockCreateTransport: vi.fn(),
@@ -34,6 +40,12 @@ const BASE: SmtpConfig = {
   from: "noreply@example.com",
   replyTo: "support@example.com",
 };
+
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
 
 describe("parseSmtpConfig", () => {
   it("无 host 返回 null（未配置）", () => {

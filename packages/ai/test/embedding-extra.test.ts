@@ -6,7 +6,12 @@
  * 本文件只覆盖 warmup 的 Worker 入口（非法 dtype 时快速失败回退），
  * 不对 30s 超时内的真实模型下载做断言。
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe,
+  expect,
+  it,
+  vi,
+  beforeEach,
+  afterAll } from "vitest";
 
 const { mockEnv, mockPipeline } = vi.hoisted(() => ({
   mockEnv: {} as Record<string, unknown>,
@@ -28,6 +33,12 @@ import {
 function fakeExtractor(dim: number, fill = 0.5) {
   return vi.fn(async () => ({ data: Array.from({ length: dim }, () => fill) }));
 }
+
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
 
 describe("createEmbeddingCache().size", () => {
   it("size 随写入增长", async () => {

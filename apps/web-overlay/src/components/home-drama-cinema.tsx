@@ -22,7 +22,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ChevronRight, Clapperboard, Flame } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clapperboard, Flame } from 'lucide-react'
 import { collectDramaSites, countCategorySites, type DramaSite } from '@/lib/drama-sites'
 import { safeHref } from '@/lib/safe-url'
 import { WatchlistAddButton } from '@/components/watchlist-add-button'
@@ -108,6 +108,33 @@ export function HomeDramaCinema() {
   }, [started])
 
   const chart = dramaSites.slice(0, 8)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [canPagePrev, setCanPagePrev] = useState(false)
+  const [canPageNext, setCanPageNext] = useState(false)
+  const pageScroll = (dir: 1 | -1) => {
+    const el = scrollRef.current
+    if (!el) return
+    const first = el.firstElementChild as HTMLElement | null
+    const step = (first ? first.offsetWidth : 176) + 12
+    const page = Math.max(step, Math.floor(el.clientWidth / step) * step)
+    const max = Math.max(0, el.scrollWidth - el.clientWidth)
+    el.scrollTo({ left: Math.min(max, Math.max(0, Math.round((el.scrollLeft + dir * page) / step) * step)), behavior: 'smooth' })
+  }
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const update = () => {
+      setCanPagePrev(el.scrollLeft > 4)
+      setCanPageNext(el.scrollLeft < el.scrollWidth - el.clientWidth - 4)
+    }
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    return () => {
+      el.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [posters, dramaSites])
 
   return (
     <section ref={rootRef} aria-label="短剧影院" className="mt-8 overflow-hidden rounded-3xl bg-zinc-950 text-zinc-100 shadow-xl">
@@ -124,19 +151,27 @@ export function HomeDramaCinema() {
           <Link href="/category/duanju" className="inline-flex items-center gap-0.5 text-sm text-zinc-300 transition-colors hover:text-white">
             进入短剧专区 <ChevronRight className="h-4 w-4" aria-hidden />
           </Link>
+        <div className="flex items-center gap-1.5" role="group" aria-label="短剧海报翻页">
+          <button type="button" onClick={() => pageScroll(-1)} disabled={!canPagePrev} aria-label="向左翻页" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-zinc-200 transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40">
+            <ChevronLeft className="h-4 w-4" aria-hidden />
+          </button>
+          <button type="button" onClick={() => pageScroll(1)} disabled={!canPageNext} aria-label="向右翻页" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-zinc-200 transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40">
+            <ChevronRight className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
         </div>
       </div>
 
       <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_300px]">
-        <div className="flex gap-3 overflow-x-auto pb-2" aria-label="短剧海报与平台">
-          {posters.map((p) => (
+        <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-2" aria-label="短剧海报与平台">
+          {posters.map((p, i) => (
             <Link
               key={p.key}
               href="/category/duanju"
               className="group relative w-36 shrink-0 overflow-hidden rounded-2xl sm:w-44"
               title={`${p.title} · 去短剧专区`}
             >
-              <img src={p.data} alt={p.title} width={p.width} height={p.height} className="aspect-[440/784] w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+              <img src={p.data} alt={p.title} width={p.width} height={p.height} className="aspect-[440/784] w-full object-cover transition-transform duration-300 group-hover:scale-105" loading={i === 0 ? 'eager' : 'lazy'} fetchPriority={i === 0 ? 'high' : undefined} />
               <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2.5 pt-8 text-sm font-semibold">
                 {p.title}
               </span>
@@ -184,7 +219,7 @@ export function HomeDramaCinema() {
               {chart.map((s, i) => (
                 <li key={s.id}>
                   <a href={safeHref(s.href)} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-2.5 text-sm">
-                    <span className={`w-5 shrink-0 text-center font-mono text-base font-bold ${i < 3 ? 'text-rose-500' : 'text-zinc-500'}`}>{i + 1}</span>
+                    <span className={`w-5 shrink-0 text-center font-mono text-base font-bold ${i < 3 ? 'text-rose-500' : 'text-zinc-400'}`}>{i + 1}</span>
                     <span className="min-w-0 flex-1 truncate group-hover:underline" title={s.title}>{s.title}</span>
                   </a>
                 </li>
@@ -197,7 +232,7 @@ export function HomeDramaCinema() {
                 : '榜单加载中…也可以直接进短剧专区逛。'}
             </p>
           )}
-          <p className="mt-3 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-zinc-500">
+          <p className="mt-3 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-zinc-400">
             按站内编辑推荐顺序排列；全站真实热度统计还在积累中，暂不冒充播放量榜单。
           </p>
         </aside>

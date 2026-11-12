@@ -352,6 +352,89 @@ describe("表单控件边界（border-border-strong，禁 border-input）", () =
 });
 
 // ============================================================
+// 4c. 深色下 0-RTT 开关（P0-5）：关态轨道填充 --muted 对深色背景仅 ~1.34:1，
+//     轨道必须靠 --border-strong（深色 3.17:1）显形；开态轨道 --primary
+//     在默认深色（19.05:1）与 ocean/sky/latte 三皮肤（4.95/4.44/5.75:1）下均可见。
+//     注：深色 --border-strong 对背景 ≥3:1 已由 4. 双模式断言锁定，此处不再重复。
+// ============================================================
+describe("深色下 0-RTT 开关（P0-5）", () => {
+  const darkBg = hslToRgb(...hslOf(darkVars, "background"));
+  const DARK_SKINS = ["ocean", "sky", "latte"] as const;
+
+  it("回归：关态填充 --muted 对深色背景 < 3:1，单靠填充看不见轨道（实测 1.34:1）", () => {
+    const { ratio: r, hex: hx } = ratio(darkVars, "muted", darkBg);
+    expect(
+      r,
+      "--muted " + hx + " vs --background " + hex(darkBg) + " = " + r.toFixed(2) + ":1",
+    ).toBeLessThan(3);
+  });
+
+  it("默认深色开态轨道 --primary 对背景 ≥3:1", () => {
+    const { ratio: r, hex: hx } = ratio(darkVars, "primary", darkBg);
+    expect(
+      r,
+      "--primary " + hx + " vs --background " + hex(darkBg) + " = " + r.toFixed(2) + ":1",
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("三皮肤开态轨道 --primary 对深色背景均 ≥3:1（ocean/sky/latte）", () => {
+    for (const name of DARK_SKINS) {
+      const { ratio: r, hex: hx } = ratio(accentVars(name), "primary", darkBg);
+      expect(
+        r,
+        "accent=" + name + " --primary " + hx + " vs --background " + hex(darkBg) + " = " + r.toFixed(2) + ":1",
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("白滑块对关态轨道 --muted ≥3:1", () => {
+    const mutedRgb = hslToRgb(...hslOf(darkVars, "muted"));
+    const r = contrast(WHITE, mutedRgb);
+    expect(
+      r,
+      "white vs --muted " + hex(mutedRgb) + " = " + r.toFixed(2) + ":1",
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("白滑块对三皮肤开态轨道 --primary 均 ≥3:1（ocean/sky/latte）", () => {
+    for (const name of DARK_SKINS) {
+      const primaryRgb = hslToRgb(...hslOf(accentVars(name), "primary"));
+      const r = contrast(WHITE, primaryRgb);
+      expect(
+        r,
+        "white vs accent=" + name + " --primary " + hex(primaryRgb) + " = " + r.toFixed(2) + ":1",
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("开关标签 --foreground 对深色背景 ≥4.5:1", () => {
+    const { ratio: r, hex: hx } = ratio(darkVars, "foreground", darkBg);
+    expect(
+      r,
+      "--foreground " + hx + " vs --background " + hex(darkBg) + " = " + r.toFixed(2) + ":1",
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("开关描述 --muted-foreground 对深色背景 ≥4.5:1", () => {
+    const { ratio: r, hex: hx } = ratio(darkVars, "muted-foreground", darkBg);
+    expect(
+      r,
+      "--muted-foreground " + hx + " vs --background " + hex(darkBg) + " = " + r.toFixed(2) + ":1",
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("0-RTT 开关轨道必须用 border-border-strong（不得回退 border-transparent）", () => {
+    const src = readFileSync(overlayPath("src/app/me/me-view.tsx"), "utf8");
+    expect(src).toContain('role="switch"');
+    expect(
+      src,
+      "开关轨道（h-6 w-11）边界需 border-border-strong（深色下 muted 填充仅 1.34:1）",
+    ).toContain("h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-border-strong");
+    expect(src, "开关轨道边界不得回退 border-transparent").not.toContain("border-transparent");
+  });
+});
+
+// ============================================================
 // 5. --muted-foreground（浅色）对白 ≥4.5:1
 // ============================================================
 describe("--muted-foreground 次要文本", () => {

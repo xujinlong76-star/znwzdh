@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useAlgorithmHud } from '../lib/algorithm-hud'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/registry/new-york/ui/tabs'
 
 const LAB_TABS = ['linucb', 'hyperbolic', 'graph', 'visual', 'webmcp', 'federated', 'speculation', 'synthesizer', 'mesh', 'health', 'intent', 'vault'] as const
@@ -47,6 +48,7 @@ import { MeshPanel } from './algorithm-lab/mesh-panel'
  */
 export function AlgorithmLab() {
   const [activeTab, setActiveTab] = useState('linucb')
+const hud = useAlgorithmHud()
   useEffect(() => { setActiveTab((cur) => { const t = tabFromHash(); return t === cur ? cur : t }) }, [])
   useEffect(() => { const next = "#" + activeTab; if (window.location.hash !== next) window.history.replaceState(null, "", next) }, [activeTab])
   useEffect(() => { const sync = () => { setActiveTab((cur) => { const t = tabFromHash(); return t === cur ? cur : t }) }; window.addEventListener("hashchange", sync); return () => window.removeEventListener("hashchange", sync) }, [])
@@ -83,6 +85,11 @@ export function AlgorithmLab() {
                 12 大前沿认知与自治计算引擎 · 实验室演示
               </span>
             </div>
+      <button type="button" role="switch" aria-checked={hud.enabled} aria-label="算法 HUD：显示主导通道角标" data-testid="algorithm-hud-toggle" onClick={hud.toggle} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-1 font-mono text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+        <span aria-hidden="true">{hud.enabled ? "●" : "○"}</span>
+        <span>算法 HUD {hud.enabled ? "开" : "关"}</span>
+      </button>
+      <span className="text-xs text-muted-foreground">仅本地展示，不上报；personal 角标出现即代表用了登录画像</span>
           </div>
 
           <div className="max-w-3xl space-y-2">

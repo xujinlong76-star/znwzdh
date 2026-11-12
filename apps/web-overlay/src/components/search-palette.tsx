@@ -86,6 +86,7 @@ const ActionIntentCard = dynamic(
   { ssr: false }
 )
 import type { ActionIntentCardData } from '@/components/action-intent-card'
+import { AlgorithmHudBadge } from './algorithm-hud-badge'
 
 export const OMNI_ENGINES: Record<string, { name: string; url: (q: string) => string }> = {
   g: { name: 'Google', url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
@@ -1646,6 +1647,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                               {CHANNEL_LABELS[c] ?? c}
                             </span>
                           ))}
+            <AlgorithmHudBadge contributions={hit.contributions} />
                           {site.tags?.slice(0, 3).map((t) => (
                             <span key={t} className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary">{t}</span>
                           ))}

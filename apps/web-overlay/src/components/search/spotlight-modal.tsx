@@ -87,6 +87,7 @@ import { getModifierKey } from '@/lib/platform'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
+import { AlgorithmHudBadge } from '../algorithm-hud-badge'
 
 // 这些是 Spotlight 的「按需面板」，只在对应快捷键/指令被激活时才需要。
 // 静态 import 会把它们全部塞进全局首屏 chunk（Spotlight 挂在 Providers 上），
@@ -1343,6 +1344,7 @@ export function SpotlightModal({
                                 </span>
                               )
                             })}
+            <AlgorithmHudBadge contributions={hit.contributions} />
                           </div>
 
                           {/* 死链一键自愈按钮 */}

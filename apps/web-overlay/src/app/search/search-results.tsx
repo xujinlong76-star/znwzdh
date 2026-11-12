@@ -17,6 +17,7 @@ import { Fragment } from 'react'
 import { highlightParts } from '@/lib/highlight'
 import { SearchFacetBar, type FacetGroup } from '@/components/search-facet-bar'
 import { ZeroResultActions } from '@/components/search/zero-result-actions'
+import { AlgorithmHudBadge } from '@/components/algorithm-hud-badge'
 
 /**
  * /search 的视图（纯服务端组件）。
@@ -226,6 +227,7 @@ export function ResultRow({
                 {CHANNEL_LABELS[channel]}命中
               </span>
             ))}
+            <AlgorithmHudBadge contributions={hit.contributions} />
           </div>
         </div>
         <Link

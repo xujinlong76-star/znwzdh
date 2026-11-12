@@ -49,6 +49,8 @@ let BASELINE = [
   "apps/web-overlay/src/components/video-terminal-player.tsx",
   "apps/web-overlay/src/lib/lazy-dnd.tsx",
   "apps/web-overlay/src/lib/session.ts",
+  "apps/web-overlay/src/lib/p2p-stream-loader.ts",
+  "apps/web-overlay/src/lib/video-cache-manager.ts",
   "apps/web-overlay/src/registry/new-york/ui/chart.tsx",
   "apps/web-overlay/src/registry/new-york/ui/input-otp.tsx",
   "apps/web-overlay/src/registry/new-york/ui/toggle.tsx",
@@ -94,6 +96,10 @@ let BASELINE_NOTES = {
     "keep（D vendored 覆盖）：为修 CI tsc 存量 recharts 类型错误刻意纳入 overlay（docs/UPGRADE-EXECUTION-2026-10-18.md 第五轮更正）；删除会被 vendored 重建覆盖回坏版本",
   "apps/web-overlay/src/lib/session.ts":
     "keep（D 上游占位）：上游 src/lib/session.ts 依赖已移除的 iron-session，本文件是覆盖用的空模块，删了 tsc 会 Cannot find module",
+  "apps/web-overlay/src/lib/p2p-stream-loader.ts":
+    "keep（C 守卫测试 + 功能待接线）：test/video-super-evolution.test.ts 直接 import 并断言 getP2PStreamCoordinator 的行为；模块是 P2P 流加载协调器，播放器尚未接线（src 内无业务 import）；删除会先让测试变红，勿当普通死代码删除（2026-11-12 复核）",
+  "apps/web-overlay/src/lib/video-cache-manager.ts":
+    "keep（C 守卫测试 + 功能待接线）：test/video-evolution-v3.test.ts 直接 import 并断言 calculatePrefetchQueue / isStorageAvailable，test/video-remediation.test.ts 直接 import 并断言 selectEvicted / MAX_CACHED_VIDEOS；模块是视频缓存与预取队列工具，播放器尚未调用 calculatePrefetchQueue；删除会先让测试变红（2026-11-12 复核）",
   "apps/web-overlay/src/components/speculative-prerender.tsx":
     "keep（C 守卫测试）：test/prerender-cleanup-guard.test.ts 按源码路径读取断言；注意业务引用的是同名的 lib/speculative-prerender.ts",
   "apps/web-overlay/src/components/ui/search-input.tsx":

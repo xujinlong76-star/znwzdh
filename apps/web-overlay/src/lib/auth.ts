@@ -303,7 +303,7 @@ const config = {
       token.issuedAt = issuedAt
       const identity = canonicalUserId({ id: user.id, provider: account?.provider })
       if (identity) {
-        const revoked = await hubSessionRevoked(token.sid, identity, issuedAt).catch(() => null)
+        const revoked = await hubSessionRevoked(token.sid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null })
         if (revoked === true) console.warn('[session-register] unexpected revoked at login')
         else if (revoked === null) console.warn('[session-register] sessions/check unavailable')
       }
@@ -355,7 +355,7 @@ export async function verifyAdminSession() {
   if (typeof sessionSid === 'string' && sessionSid) {
     const identity = canonicalUserId(user)
     const issuedAt = (session as { sessionIssuedAt?: number }).sessionIssuedAt
-    const revoked = identity ? await hubSessionRevoked(sessionSid, identity, issuedAt).catch(() => null) : null
+    const revoked = identity ? await hubSessionRevoked(sessionSid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null }) : null
     if (revoked === true) return { ok: false as const, error: 'Unauthorized', status: 401 }
     if (revoked === null && identity) console.warn('[admin-session] sessions/check unavailable, fail-open')
   }

@@ -172,7 +172,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     const sessionSid = (session as { sessionSid?: string } | null)?.sessionSid
     if (typeof sessionSid === 'string' && sessionSid && sessionIdentity) {
       const issuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
-      const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => null)
+      const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null })
       if (revoked === true) {
         return NextResponse.json(
           { error: '会话已被吊销，请重新登录' },

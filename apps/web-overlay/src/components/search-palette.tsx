@@ -816,7 +816,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const omniCommand = useMemo(() => parseOmniCommand(query), [query])
 
   return (
-    <div ref={searchRef} className="relative w-full max-w-2xl min-w-[340px] sm:min-w-[380px] lg:min-w-[420px] mx-auto">
+    <div ref={searchRef} className="relative w-full max-w-2xl min-w-0 sm:min-w-[380px] lg:min-w-[420px] mx-auto">
       {/* DIY「导入」的文件选择框 */}
       <input
         ref={diyImportInputRef}

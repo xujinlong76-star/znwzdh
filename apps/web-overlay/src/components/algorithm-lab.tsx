@@ -69,7 +69,7 @@ export function AlgorithmLab() {
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                12 大前沿认知与自治计算引擎全就绪
+                12 大前沿认知与自治计算引擎 · 实验室演示
               </span>
             </div>
           </div>

@@ -124,8 +124,9 @@ RUN chmod +x /usr/local/bin/navhub-entrypoint
 
 # ---- 最小权限运行 ----
 # /data 预先 chown 给 node（SQLite/embedding 缓存要写这里），
+# /secrets 预先 chown 给 node（entrypoint 未设 NAVHUB_SESSION_SECRET 时要在这里写密钥文件；全新 navhub-secrets 卷默认 root 所有，不预建会 Permission denied），
 # /app 只读即可（node_modules 与源码运行时不需要写）。
-RUN mkdir -p /data && chown -R node:node /data /app
+RUN mkdir -p /data /secrets && chown -R node:node /data /app /secrets
 USER node
 
 ENTRYPOINT ["/usr/local/bin/navhub-entrypoint"]

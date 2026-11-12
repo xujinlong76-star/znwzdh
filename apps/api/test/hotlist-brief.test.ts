@@ -1,5 +1,8 @@
 /**
  * 热榜管道 + 每日简报的端到端约束（临时库 + 注入假取数，响应体用真实录制 fixture）：
+ *  0. 用例彼此独立：前置的 fixture 刷新在 beforeAll 里做完，任何 it
+ *     单跑（-t）、乱序跑都不依赖其他 it 先跑；正点版任务注入假取数，
+ *     全程不碰真实外网——否则缓存是否被线上榜单换掉全看机器网络通断。
  *  1. 刷新把五源真实榜单写进缓存，/api/hotlist 如实下发（含未覆盖源及原因）；
  *  2. 单源失败只标 stale 并保留上次条目，不清空、不拖垮整轮；
  *  3. 简报组版只用真实素材：热榜精选来自缓存、新收录来自 sites.created_at
@@ -96,6 +99,11 @@ beforeAll(async () => {
       at: Date.now() - 1000,
     },
   ]);
+
+  // 前置刷新进 beforeAll（见文件头约束 0）：第一个 it 不再是全文件的
+  // 隐式前置——单跑、乱序时后面的 it 仍有完整的 fixture 缓存可用。
+  const seeded = await refreshHotlist(ctx, { fetchImpl: fakeFetch() });
+  expect(seeded.okCount).toBe(5);
 });
 
 afterAll(async () => {

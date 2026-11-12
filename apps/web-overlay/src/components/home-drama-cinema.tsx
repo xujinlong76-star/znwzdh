@@ -5,7 +5,11 @@
  *  - 深色影院带：短剧海报横滑（Agnes 生成的 2 张竖版海报打头）+ 短剧平台站卡；
  *  - 右侧热播榜：短剧分类内站点按编辑推荐顺序（分类 sort 即编辑序）呈现，
  *    脚注如实标注口径——全站真实热度统计尚在积累，不冒充播放量榜单；
- *  - 下方 4 张分类横幅（同为 Agnes 生成图）做分类入口卡。
+ *  - 下方 4 张分类横幅（同为 Agnes 生成图）做分类入口卡。横幅上的站数不写死，
+ *    而是从同一份导航数据实时数出来（@/lib/drama-sites 的 countCategorySites，
+ *    口径与分类页一致），收录增减后数字自动跟上，不再漂移。
+ *    海报是通用装饰图，不贴「热播」徽标——徽标会暗示对应具体剧集热播，而点开
+ *    只是分类页；榜单拉取失败时如实说「暂时拉不到」，不一直写「加载中…」。
  *
  * 图片为什么走 public/drama-media.json 而不是打包进 JS：6 张原图约 17MB，
  * 压成 WebP 后共 162KB、以 base64 放进一个静态 JSON，组件懒挂载时才
@@ -19,7 +23,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ChevronRight, Clapperboard, Flame } from 'lucide-react'
-import { collectDramaSites, type DramaSite } from '@/lib/drama-sites'
+import { collectDramaSites, countCategorySites, type DramaSite } from '@/lib/drama-sites'
 import { safeHref } from '@/lib/safe-url'
 import { WatchlistAddButton } from '@/components/watchlist-add-button'
 
@@ -32,7 +36,7 @@ interface MediaEntry {
 }
 
 const BANNER_LINKS: Record<string, { href: string; caption: string }> = {
-  'banner-ai-tools': { href: '/category/ai-tools', caption: 'AI 工具 · 60 站' },
+  'banner-ai-tools': { href: '/category/ai-tools', caption: 'AI 工具' },
   'banner-entertainment': { href: '/category/entertainment', caption: '影音娱乐' },
   'banner-learning': { href: '/category/learning-growth', caption: '学习成长' },
   'banner-productivity': { href: '/category/office-productivity', caption: '效率办公' },
@@ -44,6 +48,10 @@ export function HomeDramaCinema() {
   const [banners, setBanners] = useState<MediaEntry[]>([])
   const [dramaSites, setDramaSites] = useState<DramaSite[]>([])
   const [started, setStarted] = useState(false)
+  // 横幅站数：导航数据到手后才有数；null = 还没数出来，只显示分类名不编数字
+  const [aiToolsCount, setAiToolsCount] = useState<number | null>(null)
+  // 榜单状态：pending = 还没开始拉（首屏未进入视口），failed = 已拉取失败
+  const [navStatus, setNavStatus] = useState<'pending' | 'loading' | 'done' | 'failed'>('pending')
 
   useEffect(() => {
     const el = rootRef.current
@@ -74,16 +82,25 @@ export function HomeDramaCinema() {
       .catch(() => {
         // 海报/横幅是装饰素材：拉不到就保持空数组，影院区的平台直达入口照常渲染，故吞掉
       })
+    setNavStatus('loading')
     fetch('/api/home/navigation')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (cancelled || !data) return
+        if (cancelled) return
+        if (!data) {
+          setNavStatus('failed')
+          return
+        }
         // 收集口径在 @/lib/drama-sites：已确认失效（broken）的站不上推荐位（A10）
         setDramaSites(collectDramaSites(data.navigationItems))
+        // 横幅站数与分类页同口径实时数；数不到就不显示数字，不编数
+        setAiToolsCount(countCategorySites(data.navigationItems, 'reg-ai-tools', 'AI 工具'))
+        setNavStatus('done')
       })
       .catch(() => {
         // 首页影院只是推荐位：导航数据拉不到时推荐保持空，页面主目录不受影响，
-        // 不为次要模块弹错打扰用户，故吞掉
+        // 不为次要模块弹错打扰用户，故吞掉；榜单区如实显示拉取失败而非一直「加载中」
+        if (!cancelled) setNavStatus('failed')
       })
     return () => {
       cancelled = true
@@ -123,7 +140,7 @@ export function HomeDramaCinema() {
               <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2.5 pt-8 text-sm font-semibold">
                 {p.title}
               </span>
-              <span className="absolute left-2 top-2 rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-semibold">热播</span>
+              {/* 海报是通用装饰图：不贴「热播」徽标，点开只是短剧分类页，并无对应剧集 */}
             </Link>
           ))}
           {posters.length === 0 && (
@@ -174,7 +191,11 @@ export function HomeDramaCinema() {
               ))}
             </ol>
           ) : (
-            <p className="mt-3 text-sm text-zinc-400">榜单加载中…也可以直接进短剧专区逛。</p>
+            <p className="mt-3 text-sm text-zinc-400">
+              {navStatus === 'failed'
+                ? '榜单暂时拉不到，可以直接进短剧专区逛。'
+                : '榜单加载中…也可以直接进短剧专区逛。'}
+            </p>
           )}
           <p className="mt-3 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-zinc-500">
             按站内编辑推荐顺序排列；全站真实热度统计还在积累中，暂不冒充播放量榜单。
@@ -187,11 +208,16 @@ export function HomeDramaCinema() {
           {banners.map((b) => {
             const link = BANNER_LINKS[b.key]
             if (!link) return null
+            // AI 工具横幅的站数是实时数出来的（导航数据到手前只显示分类名，不编数字）
+            const caption =
+              b.key === 'banner-ai-tools' && aiToolsCount !== null
+                ? `AI 工具 · ${aiToolsCount} 站`
+                : link.caption
             return (
-              <Link key={b.key} href={link.href} className="group relative overflow-hidden rounded-2xl" title={link.caption}>
+              <Link key={b.key} href={link.href} className="group relative overflow-hidden rounded-2xl" title={caption}>
                 <img src={b.data} alt={b.title} width={b.width} height={b.height} className="aspect-[1000/561] w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
                 <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-3 pb-2 pt-6 text-sm font-semibold">
-                  {link.caption}
+                  {caption}
                 </span>
               </Link>
             )

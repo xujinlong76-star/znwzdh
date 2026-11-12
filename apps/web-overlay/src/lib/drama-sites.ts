@@ -51,3 +51,41 @@ export function collectDramaSites(navigationItems: unknown): DramaSite[] {
   for (const sub of drama.subCategories || []) push(sub.items)
   return flat
 }
+
+/**
+ * 数某分类下分类页可见的站点数（首页横幅文案用，与分类页口径对齐）。
+ *
+ * 分类页经 filterNavigationData 只滤掉 enabled=false 的站，broken 的站仍保留
+ * 并标失效，所以这里只剔除 enabled=false、不剔 broken；递归数所有带 href 的
+ * 节点（items/subCategories 任意嵌套）。找不到分类返回 null，调用方不显示
+ * 数字——绝不拿写死数字或 0 顶替，数字漂移就该没有数字而不是错数字。
+ */
+export function countCategorySites(
+  navigationItems: unknown,
+  categoryId: string,
+  categoryTitle?: string,
+): number | null {
+  const cats = Array.isArray(navigationItems) ? (navigationItems as DramaCategoryLike[]) : []
+  const cat = cats.find(
+    (c) => c?.id === categoryId || (categoryTitle !== undefined && c?.title === categoryTitle),
+  )
+  if (!cat) return null
+  let n = 0
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child)
+      return
+    }
+    if (!node || typeof node !== 'object') return
+    const item = node as DramaSiteLike & { items?: unknown; subCategories?: unknown }
+    if (typeof item.href === 'string' && item.href.length > 0) {
+      if (item.enabled !== false) n += 1
+      return
+    }
+    walk(item.items)
+    walk(item.subCategories)
+  }
+  walk(cat.items)
+  walk(cat.subCategories)
+  return n
+}

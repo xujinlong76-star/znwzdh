@@ -33,14 +33,19 @@ import { takeStagedWorkspacePreset } from '@/lib/plugins/preset-staging'
 import { formatLayoutReport, type NoticeTone } from '@/lib/modular/layout-report'
 import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
 import {
-  ITEM_INDEX_ATTR,
-  isCoarsePointer,
-  readItemIndex,
-  resolveDropIndex,
-  resolveTouchDragEnd,
-  shouldActivateTouchDrag,
-  type ItemRect,
-} from '@/lib/modular/touch-reorder'
+  DiyDragProvider,
+  DiyDroppableZone,
+  DiySortableWidget,
+  readDiyDragData,
+} from '@/components/diy/diy-drag-kit'
+import type { DragEndEvent } from '@dnd-kit/react'
+import { DiyRglGrid } from '@/components/diy/diy-rgl-grid'
+import {
+  GRID_COLS,
+  applyGridLayoutToWidgets,
+  planOrderMoves,
+  type GridItem,
+} from '@/lib/modular/grid-layout'
 
 export function ModularCanvas() {
   const {
@@ -78,8 +83,6 @@ export function ModularCanvas() {
   const [isAiGenOpen, setIsAiGenOpen] = useState(false)
   const [isExportPluginOpen, setIsExportPluginOpen] = useState(false)
   const [configTargetWidget, setConfigTargetWidget] = useState<any | null>(null)
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [exportNotice, setExportNotice] = useState<{ text: string; tone: NoticeTone } | null>(null)
   const [isCreatingBoard, setIsCreatingBoard] = useState(false)
   const [newBoardName, setNewBoardName] = useState('')
@@ -104,13 +107,6 @@ export function ModularCanvas() {
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
     }
   }, [])
-
-  // reorderWidgets 的 ref 镜像：handleDragEnd 通过函数式 setState 嵌套读取最新值，
-  // 避免 useCallback 依赖 reorderWidgets（其引用随 activeBoardId 变化，会破坏 memo）
-  const reorderWidgetsRef = useRef(reorderWidgets)
-  useEffect(() => {
-    reorderWidgetsRef.current = reorderWidgets
-  }, [reorderWidgets])
 
   // 初始化画布背景样式偏好
   useEffect(() => {
@@ -152,6 +148,19 @@ export function ModularCanvas() {
     setConfigTargetWidget(w)
   }, [])
 
+  /** 撤销 / 重做：按钮与 Ctrl+Z 共用，操作完报一声（读屏用户否则不知道成功没） */
+  const handleUndo = useCallback(() => {
+    if (!canUndo) return
+    undo()
+    showNotice('已撤销上一步操作')
+  }, [canUndo, undo, showNotice])
+
+  const handleRedo = useCallback(() => {
+    if (!canRedo) return
+    redo()
+    showNotice('已重做操作')
+  }, [canRedo, redo, showNotice])
+
   // 快捷键支持：Ctrl+Z (撤销) 与 Ctrl+Y / Ctrl+Shift+Z (重做)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -160,151 +169,135 @@ export function ModularCanvas() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         if (e.shiftKey) {
           e.preventDefault()
-          if (canRedo) redo()
+          handleRedo()
         } else {
           e.preventDefault()
-          if (canUndo) undo()
+          handleUndo()
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
         e.preventDefault()
-        if (canRedo) redo()
+        handleRedo()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [undo, redo, canUndo, canRedo])
-
-  // 拖拽开始（useCallback：ModularItem 已 memo 化，引用稳定才能让未受拖拽影响的卡片跳过重渲染）
-  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
-    setDraggedIndex(index)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', String(index))
-  }, [])
-
-  // 拖拽悬停 (Drop Target)：函数式 setState 消除 dragOverIndex 依赖，保持引用稳定
-  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    setDragOverIndex((prev) => (prev === index ? prev : index))
-  }, [])
-
-  // 拖拽结束释放：读已提交的拖拽状态后一次性收尾。
-  // 此前是 setDraggedIndex 里嵌套 setDragOverIndex、并在嵌套的 setState updater 内调
-  // reorderWidgets —— updater 双跑（StrictMode）会让 reorderWidgets 执行两次，
-  // 表现为「拖一次，模块跳两格」。现在 updater 保持纯粹，副作用只发生在事件处理器里。
-  const handleDragEnd = useCallback(() => {
-    if (draggedIndex !== null && dragOverIndex !== null && draggedIndex !== dragOverIndex) {
-      reorderWidgetsRef.current(draggedIndex, dragOverIndex)
-    }
-    setDraggedIndex(null)
-    setDragOverIndex(null)
-  }, [draggedIndex, dragOverIndex])
+  }, [handleUndo, handleRedo])
 
   /**
-   * 移动端拖拽排序：长按手柄 → 拖到目标卡片 → 松手换位。
+   * RGL 网格布局提交（DRAG-2）：拖拽/缩放结束时一次写盘。
    *
-   * 背景：HTML5 drag/drop 在移动端浏览器根本不触发，桌面端那套在手机上完全失效，
-   * 只能退回 ⬆️/⬇️ 按钮。这里用 Pointer Events 补一套触控通道：
-   *  - 仅在 `(pointer: coarse)` 的设备上启用，桌面端行为完全不变；
-   *  - 长按 180ms 且移动超过 8px 才激活，避免和页面滚动/点击打架；
-   *  - 命中判定走纯函数 `resolveDropIndex`（见 lib/modular/touch-reorder.ts）。
+   * 撤销只记一步的写法（W4 + W5）：
+   *  - 拖拽开始时 onDragStart 已 beginInteraction 压过一份拖拽前快照；
+   *  - 这里先做顺序移动、再做尺寸：顺序移动走 reorderWidgets(..., false)，
+   *    不再每步推一条中间态历史——一次拖拽带出多步 planOrderMoves（RGL 压实
+   *    顶开多个组件）时，撤销也只有一步（回到 beginInteraction 那份快照）；
+   *    尺寸走 resizeWidget(..., recordHistory=false) 不再推历史。
+   *    单步拖拽同样只有 beginInteraction 那一份快照，一步撤销回到拖拽前。
+   *  - 窄屏断点下 RGL 的 w 是断点相对值：只提交顺序，不写回尺寸。
+   *  - 注意：没有「整表 setWidgets」入口可用（use-modular-layout
+   *    只暴露单步 reorder/resize），所以不用全量替换。
    */
-  const touchDragRef = useRef<{
-    pointerId: number
-    fromIndex: number
-    startX: number
-    startY: number
-    startTime: number
-    active: boolean
-    overIndex: number | null
-  } | null>(null)
-  const [touchDragSession, setTouchDragSession] = useState(0)
-  // beginInteraction 引用随 activeBoardId 变化，用 ref 镜像避免反复重订监听
-  const beginInteractionRef = useRef(beginInteraction)
-  useEffect(() => {
-    beginInteractionRef.current = beginInteraction
+  const commitGridLayout = useCallback(
+    (layout: GridItem[], cols: number = GRID_COLS) => {
+      const next = applyGridLayoutToWidgets(widgets, layout, cols)
+      // 窄屏断点下 RGL 的 w/h 是断点相对值（2 列里的 2 ≠ 12 列里的 2），
+      // 只提交顺序，不写回尺寸，否则一次手机拖动会把组件永久缩成 2 列。
+      const sized =
+        cols === GRID_COLS
+          ? next
+          : next.map((w) => {
+              const prev = widgets.find((item) => item.id === w.id)
+              return prev ? { ...w, colSpan: prev.colSpan, rowSpan: prev.rowSpan } : w
+            })
+      const widgetTitle = (w: { id: string; type: string; customTitle?: string }) =>
+        w.customTitle || WIDGET_REGISTRY[w.type]?.title || w.id
+      // 先顺序、后尺寸（见上：第一次 reorder 推的快照就是拖拽前状态）。
+      const moves = planOrderMoves(
+        widgets.map((w) => w.id),
+        sized.map((w) => w.id),
+      )
+      for (const [from, to] of moves) reorderWidgets(from, to, false)
+      let resizedWidget: { id: string; type: string; customTitle?: string; colSpan: number; rowSpan: number } | null = null
+      for (const w of sized) {
+        const prev = widgets.find((item) => item.id === w.id)
+        if (prev && (prev.colSpan !== w.colSpan || prev.rowSpan !== w.rowSpan)) {
+          resizeWidget(w.id, w.colSpan, w.rowSpan, false)
+          resizedWidget ??= w
+        }
+      }
+      // 读屏播报：RGL 拖拽不走 dnd-kit，provider 的 live-region 报不到，
+      // 这里用画布已有的 showNotice（role=status）报一次；没变化不报。
+      if (moves.length > 0 || resizedWidget) {
+        const parts: string[] = []
+        if (moves.length > 0) {
+          // 第一个顺序发生变化的位置就是被搬动的组件落点
+          const movedIndex = sized.findIndex((w, i) => widgets[i]?.id !== w.id)
+          const moved = movedIndex >= 0 ? sized[movedIndex] : undefined
+          if (moved) {
+            parts.push(`已将「${widgetTitle(moved)}」移到第 ${movedIndex + 1} 个，共 ${sized.length} 个`)
+          }
+        }
+        if (resizedWidget) {
+          parts.push(`已将「${widgetTitle(resizedWidget)}」调整为 ${resizedWidget.colSpan} 列 × ${resizedWidget.rowSpan} 行`)
+        }
+        showNotice(parts.join('，'))
+      }
+    },
+    [widgets, resizeWidget, reorderWidgets, showNotice],
+  )
+
+  /** RGL 拖拽开始：压一份快照，整段拖拽 = 一步撤销（缩放同理，见下） */
+  const handleGridDragStart = useCallback(() => {
+    beginInteraction()
   }, [beginInteraction])
 
-  const handleTouchDragPointerDown = useCallback((e: React.PointerEvent, index: number) => {
-    // 鼠标走桌面端 HTML5 drag；触摸/笔才进触控通道
-    if (e.pointerType === 'mouse') return
-    if (!isCoarsePointer(typeof window !== 'undefined' ? window : null)) return
-    // 已有手指正在拖拽：第二根手指按到手柄上不能覆盖当前会话
-    if (touchDragRef.current) return
-    touchDragRef.current = {
-      pointerId: e.pointerId,
-      fromIndex: index,
-      startX: e.clientX,
-      startY: e.clientY,
-      startTime: Date.now(),
-      active: false,
-      overIndex: index,
-    }
-    // 触发一次 effect 重订阅（ref 变化不会触发重渲染）
-    setTouchDragSession((n) => n + 1)
-  }, [])
+  /** RGL 缩放开始：压一份快照，整段缩放 = 一步撤销 */
+  const handleGridResizeStart = useCallback(() => {
+    beginInteraction()
+  }, [beginInteraction])
 
-  useEffect(() => {
-    if (touchDragSession === 0) return
+  /** 小组件 ↑/↓ 移位：单步 reorder（一次历史），用画布 notice 播报位置 */
+  const handleShiftWidget = useCallback(
+    (index: number, direction: 'up' | 'down') => {
+      const widget = widgets[index]
+      if (!widget) return
+      const title = widget.customTitle || WIDGET_REGISTRY[widget.type]?.title || widget.id
+      const toIndex = direction === 'up' ? index - 1 : index + 1
+      if (toIndex < 0 || toIndex >= widgets.length) return
+      shiftWidget(index, direction)
+      showNotice(
+        `已将「${title}」${direction === 'up' ? '上移' : '下移'}，现在是第 ${toIndex + 1} 个，共 ${widgets.length} 个`,
+      )
+    },
+    [widgets, shiftWidget, showNotice],
+  )
 
-    const readItemRects = () => {
-      const nodes = Array.from(document.querySelectorAll(`[${ITEM_INDEX_ATTR}]`))
-      const rects: ItemRect[] = []
-      for (const node of nodes) {
-        const index = readItemIndex(node)
-        if (index === null) continue
-        const rect = node.getBoundingClientRect()
-        rects.push({ index, top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right })
+  /**
+   * dnd-kit 落点处理（触屏/键盘排序通道 + 调色板拖入）。
+   *
+   *  - widget → widget：单步 reorderWidgets（一次历史）；
+   *  - palette-widget → canvas-grid：调色板拖入，addWidget 落盘。
+   *    调色板弹窗本身不在本次文件范围内：它只需把条目挂成
+   *    useDraggable({ data: { kind: 'palette-widget', widgetType, title } })
+   *    即可接线（见 diy-drag.ts 的 DiyPaletteDragData）。
+   */
+  const handleWidgetDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (event.canceled) return
+      const source = readDiyDragData(event.operation.source)
+      const target = readDiyDragData(event.operation.target)
+      if (source?.kind === 'widget' && target?.kind === 'widget' && source.widgetId !== target.widgetId) {
+        reorderWidgets(source.index, target.index)
+        return
       }
-      return rects
-    }
-
-    const handleMove = (ev: PointerEvent) => {
-      const state = touchDragRef.current
-      if (!state || ev.pointerId !== state.pointerId) return
-      const distance = Math.hypot(ev.clientX - state.startX, ev.clientY - state.startY)
-      const elapsed = Date.now() - state.startTime
-      if (!state.active) {
-        if (!shouldActivateTouchDrag({ pointerType: ev.pointerType, elapsedMs: elapsed, distancePx: distance })) {
-          return
-        }
-        state.active = true
-        setDraggedIndex(state.fromIndex)
-        setDragOverIndex(state.fromIndex)
-        // 压入一份历史快照，保证整段拖拽可以整体撤销
-        beginInteractionRef.current?.()
+      const targetKind = (event.operation.target?.data as { kind?: string } | undefined)?.kind
+      if (source?.kind === 'palette-widget' && targetKind === 'canvas-grid') {
+        addWidget(source.widgetType)
       }
-      // 手势已被接管：阻止默认行为（避免页面跟着滚动）
-      if (ev.cancelable) ev.preventDefault()
-      const over = resolveDropIndex(ev.clientX, ev.clientY, readItemRects())
-      if (over !== null && over !== state.overIndex) {
-        state.overIndex = over
-        setDragOverIndex(over)
-      }
-    }
-
-    const finish = (ev: PointerEvent, cancelled: boolean) => {
-      const decision = resolveTouchDragEnd(touchDragRef.current, ev.pointerId, cancelled)
-      // 不是发起拖拽的那根手指：保持原会话不动
-      if (!decision.clear) return
-      touchDragRef.current = null
-      if (decision.reorder) reorderWidgetsRef.current(decision.reorder[0], decision.reorder[1])
-      setDraggedIndex(null)
-      setDragOverIndex(null)
-    }
-    const handleUp = (ev: PointerEvent) => finish(ev, false)
-    const handleCancel = (ev: PointerEvent) => finish(ev, true)
-
-    window.addEventListener('pointermove', handleMove, { passive: false })
-    window.addEventListener('pointerup', handleUp)
-    window.addEventListener('pointercancel', handleCancel)
-    return () => {
-      window.removeEventListener('pointermove', handleMove)
-      window.removeEventListener('pointerup', handleUp)
-      window.removeEventListener('pointercancel', handleCancel)
-    }
-  }, [touchDragSession])
+    },
+    [reorderWidgets, addWidget],
+  )
 
   // 创建新看板
   const handleCreateBoardSubmit = (e: React.FormEvent) => {
@@ -369,6 +362,13 @@ export function ModularCanvas() {
 
   return (
     <div className="space-y-6">
+      {/*
+        * dnd-kit provider 抬到整个画布 return 的最外层：画布网格落点
+        * （canvas-grid）与模块库弹窗里的调色板拖入源必须共用同一个
+        * DragDropProvider，源和落点分属两个 provider 就接不上。
+        * provider 本身不渲染可见内容，只提供拖拽上下文与播报。
+        */}
+      <DiyDragProvider enableCardDrops={false} onDragEnd={handleWidgetDragEnd}>
       {/* 多看板工作区切换标签栏 (Multi-Board Switcher) */}
       <div className="flex items-center justify-between gap-3 overflow-x-auto no-scrollbar touch-pan-x pb-1.5 border-b border-border/50 text-xs">
         <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
@@ -395,6 +395,7 @@ export function ModularCanvas() {
                   onClick={() => deleteBoard(b.id)}
                   className="p-1 text-muted-foreground hover:text-red-500 transition-opacity ml-0.5 opacity-50 sm:opacity-0 sm:group-hover/tab:opacity-100"
                   title="删除此看板"
+                  aria-label={`删除看板：${b.name}`}
                 >
                   <Trash2 className="w-3 h-3" />
                 </button>
@@ -457,7 +458,7 @@ export function ModularCanvas() {
             </div>
             <p className="text-xs text-muted-foreground">
               {isEditing
-                ? '💡 编辑模式：可拖拽把手换位、拖动右下角手柄缩放尺寸，小屏可用 ⬆️/⬇️ 按钮快速上下移动'
+                ? '💡 编辑模式：鼠标拖动卡片换位、右下角手柄缩放；触屏与键盘用卡片左上角手柄拖动（空格开始，方向键移动，回车放下），或用 ⬆️/⬇️ 按钮移动'
                 : '模块沙箱独立运行，点击右侧按钮开启自由排版'}
             </p>
           </div>
@@ -514,9 +515,10 @@ export function ModularCanvas() {
                   size="sm"
                   variant="ghost"
                   className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
-                  onClick={undo}
+                  onClick={handleUndo}
                   disabled={!canUndo}
                   title="撤销历史操作 (Ctrl+Z)"
+                  aria-label="撤销上一步操作"
                 >
                   <Undo2 className="w-3.5 h-3.5" />
                 </Button>
@@ -524,9 +526,10 @@ export function ModularCanvas() {
                   size="sm"
                   variant="ghost"
                   className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
-                  onClick={redo}
+                  onClick={handleRedo}
                   disabled={!canRedo}
                   title="重做撤销操作 (Ctrl+Y / Ctrl+Shift+Z)"
+                  aria-label="重做撤销的操作"
                 >
                   <Redo2 className="w-3.5 h-3.5" />
                 </Button>
@@ -692,42 +695,66 @@ export function ModularCanvas() {
             ? 'relative before:absolute before:inset-0 before:bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] before:from-primary/10 before:via-transparent before:to-transparent before:pointer-events-none'
             : ''
         }`}>
-          <div className="grid grid-cols-12 transition-all duration-300" style={{ gap: 'var(--density-grid-gap, 1rem)' }}>
-            {widgets.map((widget, index) => (
-              <ModularItem
-                key={widget.id}
-                widget={widget}
-                index={index}
-                totalWidgets={widgets.length}
+          {/*
+            * 外层 Bento 网格（DRAG-2）：CSS grid + HTML5 DnD + 手写触控长按
+            * 全部退役，改走 RGL v2（鼠标拖拽/缩放）+ dnd-kit sortable
+            * （触屏/键盘拖拽，手柄在卡片左上角）。
+            * RGL 只管外层定位；内层 DiySortableWidget 包着 ModularItem，
+            * 两套 transform 各管一层（见 diy-rgl-grid / diy-drag-kit）。
+            * ModularItem 的原生拖拽 props（draggable/onDragStart/
+            * onDragOver/onDragEnd）已从接口里删掉，画布不再传原生
+            * 拖拽处理函数，无需再用 preventDefault 中和。
+            */}
+          <DiyDroppableZone id="canvas-grid" data={{ kind: 'canvas-grid' }}>
+              <DiyRglGrid
+                widgets={widgets}
                 isEditing={isEditing}
-                onRemove={removeWidget}
-                onResize={resizeWidget}
-                onBeginInteraction={beginInteraction}
-                onShiftPosition={shiftWidget}
-                onOpenConfig={handleOpenConfig}
-                onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
-                onDragEnd={handleDragEnd}
-                onTouchDragPointerDown={handleTouchDragPointerDown}
-                isDragging={draggedIndex === index}
-                isDraggedOver={dragOverIndex === index && draggedIndex !== index}
+                onDragStart={handleGridDragStart}
+                onResizeStart={handleGridResizeStart}
+                onCommitLayout={commitGridLayout}
+                renderItem={(widget, index) => (
+                  <DiySortableWidget
+                    data={{
+                      kind: 'widget',
+                      widgetId: widget.id,
+                      index,
+                      title:
+                        widget.customTitle ||
+                        WIDGET_REGISTRY[widget.type]?.title ||
+                        widget.id,
+                    }}
+                    group="canvas-widgets"
+                    disabled={!isEditing}
+                  >
+                    <ModularItem
+                      widget={widget}
+                      index={index}
+                      totalWidgets={widgets.length}
+                      isEditing={isEditing}
+                      onRemove={removeWidget}
+                      onResize={resizeWidget}
+                      onBeginInteraction={beginInteraction}
+                      onShiftPosition={handleShiftWidget}
+                      onOpenConfig={handleOpenConfig}
+                    />
+                  </DiySortableWidget>
+                )}
               />
-            ))}
+            </DiyDroppableZone>
 
-            {isEditing && (
-              <button
-                type="button"
-                onClick={() => setIsLibraryOpen(true)}
-                className="col-span-12 sm:col-span-6 md:col-span-4 lg:col-span-3 min-h-[175px] rounded-2xl border-2 border-dashed border-border/80 hover:border-primary/60 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary group shadow-2xs"
-              >
-                <div className="w-10 h-10 rounded-xl bg-muted/60 group-hover:bg-primary/10 flex items-center justify-center transition-colors">
-                  <Plus className="w-5 h-5 text-muted-foreground group-hover:text-primary" />
-                </div>
-                <span className="text-xs font-semibold">添加更多功能模块</span>
-                <span className="text-xs text-muted-foreground">浏览 {Object.keys(WIDGET_REGISTRY).length} 大组件库</span>
-              </button>
-            )}
-          </div>
+          {isEditing && (
+            <button
+              type="button"
+              onClick={() => setIsLibraryOpen(true)}
+              className="mt-4 w-full min-h-[64px] rounded-2xl border-2 border-dashed border-border/80 hover:border-primary/60 hover:bg-primary/5 transition-all flex items-center justify-center gap-2 text-muted-foreground hover:text-primary group shadow-2xs"
+            >
+              <div className="w-8 h-8 rounded-xl bg-muted/60 group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                <Plus className="w-4 h-4 text-muted-foreground group-hover:text-primary" />
+              </div>
+              <span className="text-xs font-semibold">添加更多功能模块</span>
+              <span className="text-xs text-muted-foreground">浏览 {Object.keys(WIDGET_REGISTRY).length} 大组件库</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -804,6 +831,7 @@ export function ModularCanvas() {
           })),
         }}
       />
+      </DiyDragProvider>
     </div>
   )
 }

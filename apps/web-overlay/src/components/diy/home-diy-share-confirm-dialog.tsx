@@ -10,7 +10,8 @@
  *     逐条列出确认后会变什么（computeHomeDiyShareDiff 按水合后的本地配置重算，
  *     不以挂起时的快照为准）；
  *   - 「确认应用」→ confirmPendingShare()：先把当前本地配置自动备份到
- *     `<STORAGE_KEY>.share-backup.<时间戳>`，再整表替换（可 Ctrl+Z 撤销）；
+ *     `<STORAGE_KEY>.share-backup.<时间戳>`，再按字段级合并应用（只写链接
+ *     实际携带的字段，没携带的字段保持本地值；可 Ctrl+Z 撤销）；
  *   - 「暂不应用」/ Esc / 点遮罩 → dismissPendingShare()：只清 pendingShare，
  *     本地排版一概不动。
  *
@@ -39,9 +40,20 @@ export function HomeDiyShareConfirmDialog() {
   const { config, pendingShare, confirmPendingShare, dismissPendingShare } = useHomeDIY()
   const { toast } = useToast()
 
+  // 待确认的来源：'share'（#diy= 分享链接）或 'import'（备份弹窗里粘贴/
+  // 上传的 JSON 导入）。import 的 pending 由 prepareHomeDiyImport 产出，
+  // 经 stageHomeDiyPendingShare 挂进同一份 pendingShare（见 home-diy-io.ts
+  // 的 P0-5 注释）；source 字段是 coordinator 在 storage 的
+  // PendingHomeDiyShare 上补的类型，旧分享没有它，默认按 'share' 读。
+  // 两个来源的流程完全相同：确认 = 自动备份 + 字段级合并 + 可撤销；
+  // 忽略 = 本地排版一概不动。只换文案，不分叉。
+  const source = (pendingShare as (typeof pendingShare & { source?: 'share' | 'import' }) | null)?.source ?? 'share'
+  const isImport = source === 'import'
+
   // 差异按当前本地配置重算：挂起发生在水合读本地存储之前，pendingShare.diff
   // 那份快照是对默认配置算的，会把「本地本来就有、链接没带」的字段也算成变化。
-  const diff = pendingShare ? computeHomeDiyShareDiff(config, pendingShare.imported) : []
+  // 只比链接实际携带的字段（pendingShare.carriedFields），没携带的字段不列入。
+  const diff = pendingShare ? computeHomeDiyShareDiff(config, pendingShare.imported, pendingShare.carriedFields) : []
 
   const handleConfirm = () => {
     const res = confirmPendingShare()
@@ -54,7 +66,7 @@ export function HomeDiyShareConfirmDialog() {
       return
     }
     toast({
-      title: '✅ 分享排版已应用',
+      title: isImport ? '✅ 导入的排版已应用' : '✅ 分享排版已应用',
       description: res.backupKey
         ? `应用前已把当前排版备份到 ${res.backupKey}；按 Ctrl/Cmd+Z 也可撤销这次应用。`
         : '当前排版没能自动备份（本地存储写入失败），但按 Ctrl/Cmd+Z 仍可撤销这次应用。',
@@ -67,7 +79,7 @@ export function HomeDiyShareConfirmDialog() {
   const handleDismiss = () => {
     if (!dismissPendingShare()) return
     toast({
-      title: '已忽略这条分享链接',
+      title: isImport ? '已取消导入' : '已忽略这条分享链接',
       description: '本地排版未作任何改动。',
     })
   }
@@ -84,18 +96,24 @@ export function HomeDiyShareConfirmDialog() {
         <DialogHeader className="pr-8 sm:pr-6">
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="w-5 h-5 text-violet-500" />
-            <span>应用好友分享的排版？</span>
+            <span>{isImport ? '应用导入的排版配置？' : '应用好友分享的排版？'}</span>
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            这条分享链接不会静默替换你的本地排版：下面是确认后会改动的地方。
-            确认前会自动把当前排版备份到浏览器本地存储，应用后按 Ctrl/Cmd+Z 也可撤销。
+            {isImport
+              ? '这份导入的配置不会静默替换你的本地排版：下面是确认后会改动的地方。确认前会自动把当前排版备份到浏览器本地存储，应用后按 Ctrl/Cmd+Z 也可撤销。'
+              : '这条分享链接不会静默替换你的本地排版：下面是确认后会改动的地方。确认前会自动把当前排版备份到浏览器本地存储，应用后按 Ctrl/Cmd+Z 也可撤销。'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-3">
+          {pendingShare?.warning ? (
+            <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400 pb-2">
+              {pendingShare.warning}
+            </p>
+          ) : null}
           {diff.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              分享的排版与本地排版完全一致，无需改动。
+              {isImport ? '导入的排版与本地排版完全一致，无需改动。' : '分享的排版与本地排版完全一致，无需改动。'}
             </p>
           ) : (
             <ul className="space-y-1.5 text-xs leading-relaxed">

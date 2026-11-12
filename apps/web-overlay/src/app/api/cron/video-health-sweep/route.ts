@@ -19,6 +19,10 @@ export const runtime = 'nodejs'
  * `src/navsphere/content/videos.json`。后果：巡检读到的是站点导航（里面没有
  * videoConfig），`totalScanned` 恒为 0，能力完全空转；一旦条件成立还会把
  * 整站导航覆盖成视频数据（中枢对 navigation.json 走的是 writeNavigationData）。
+ *
+ * 数据实际经 `readVideoLibrary()`（见 `@/lib/video-library-store`，其内部用的
+ * 就是同一路径）加载，该函数不接受路径参数，所以这里不重复传参；本常量用于
+ * 读库失败时的诊断日志，标明巡检期望读的是哪份视频库文件。
  */
 const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
@@ -157,6 +161,7 @@ async function handleHealthSweep(request: Request) {
 
     const snapshot = await readVideoLibrary()
     if (!Array.isArray(snapshot.navigationItems)) {
+      console.error(`[VideoHealthSweep] Failed to read video library at ${VIDEOS_FILE_PATH}: navigationItems is not an array`)
       return NextResponse.json({ error: 'Failed to read video library' }, { status: 500 })
     }
 

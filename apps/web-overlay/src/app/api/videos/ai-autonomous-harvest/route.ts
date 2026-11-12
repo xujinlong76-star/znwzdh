@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { readVideoLibrary } from '@/lib/video-library-store'
-import type { NavigationData } from '@/types/navigation'
 import {
   evaluateVideoWithAIModel,
 } from '@/lib/video-autonomous-ai-harvester'
@@ -9,8 +8,6 @@ import { CURATED_TRENDING_TOPICS } from '@/lib/video-trending-harvester'
 import { runAutonomousCycle, clampPositiveInt } from '@/lib/video-harvest-service'
 
 export const runtime = 'nodejs'
-
-const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
 export async function GET() {
   try {

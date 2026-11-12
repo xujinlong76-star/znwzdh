@@ -108,6 +108,56 @@ export interface LayoutMergeResult<T> {
   config: T
   clocks: LayoutSlotClocks
   changed: boolean
+  /**
+   * 远端赢下来的插槽（值确实变了）：用来告诉用户「另一标签页改了什么」。
+   * 元素容器字段会同时带上字段级插槽（customCategories）与元素级插槽
+   * （customCategories::<id>），调用方按标签去重后再展示。
+   */
+  remoteWon: string[]
+  /**
+   * remoteWon 的子集：本地曾经改过这个插槽（本地时钟 > 0），却被远端
+   * 更晚的改动覆盖 —— 也就是「本地改动被丢弃」的冲突项，必须明确告诉用户。
+   */
+  discardedLocal: string[]
+}
+
+/** 读一个插槽的值：字段级取 config[field]；元素级取容器里对应 id 的元素/条目 */
+export function slotValue(config: Record<string, unknown>, slot: string): unknown {
+  const [field, id] = slot.split(LAYOUT_SLOT_SEP)
+  const v = (config ?? {})[field as string]
+  if (id === undefined) return v
+  if (Array.isArray(v)) return v.find((e) => idOfElement(e) === id)
+  if (v && typeof v === 'object') return (v as Record<string, unknown>)[id]
+  return undefined
+}
+
+const LAYOUT_SLOT_LABELS: Record<string, string> = {
+  viewMode: '视图模式',
+  cardDisplayMode: '卡片样式',
+  canvasBackground: '画布背景',
+  accentColor: '强调色',
+  heroDeckCollapsed: '首屏组件展板',
+  heroDeckWidgets: '首屏组件',
+  categoryOrder: '分类顺序',
+  pinnedCategoryIds: '置顶分类',
+  hiddenCategoryIds: '隐藏分类',
+  collapsedCategoryIds: '折叠分类',
+  pinnedSiteIdsByCategory: '分类内置顶站点',
+  categoryDensityOverrides: '分类卡片密度',
+  speedDialEnabled: '速览坞开关',
+  speedDialPinnedIds: '速览坞站点',
+  customCategories: '专属分类',
+  siteCategoryOverrides: '站点归类',
+  customWallpaperUrl: '自定义壁纸',
+  glassmorphismBlur: '毛玻璃模糊',
+  cardOpacity: '卡片不透明度',
+  enableAdaptiveRanking: '自适应排序',
+}
+
+/** 插槽键 → 用户能看懂的中文名（元素级插槽只取字段部分，如 customCategories::x → 专属分类） */
+export function describeLayoutSlot(slot: string): string {
+  const field = slot.split(LAYOUT_SLOT_SEP)[0] as string
+  return LAYOUT_SLOT_LABELS[field] ?? field
 }
 
 export function mergeLayoutSlots<T extends Record<string, any>>(
@@ -119,6 +169,8 @@ export function mergeLayoutSlots<T extends Record<string, any>>(
   const out: Record<string, any> = { ...lc }
   const clocks: LayoutSlotClocks = { ...local.clocks }
   let changed = false
+  const remoteWon: string[] = []
+  const discardedLocal: string[] = []
 
   for (const k of new Set([...Object.keys(lc), ...Object.keys(rc)])) {
     if (NON_MERGEABLE_FIELDS.has(k)) continue
@@ -128,6 +180,12 @@ export function mergeLayoutSlots<T extends Record<string, any>>(
       out[k] = merged.value
       for (const [slot, v] of Object.entries(merged.clocks)) clocks[slot] = v
       if (stableStringify(merged.value) !== stableStringify(lc[k])) changed = true
+      if (merged.remoteWon.length > 0) {
+        // 字段级插槽与元素级插槽都记：diffChangedSlots 也是这个口径，
+        // 调用方按 describeLayoutSlot() 的标签去重后再展示。
+        remoteWon.push(slotKey(k), ...merged.remoteWon)
+        discardedLocal.push(...merged.discardedLocal)
+      }
       continue
     }
 
@@ -136,7 +194,12 @@ export function mergeLayoutSlots<T extends Record<string, any>>(
     if (rv > lv) {
       out[k] = rc[k]
       clocks[k] = rv
-      if (stableStringify(out[k]) !== stableStringify(lc[k])) changed = true
+      if (stableStringify(out[k]) !== stableStringify(lc[k])) {
+        changed = true
+        remoteWon.push(k)
+        // 本地改过这个插槽（时钟 > 0）却被远端覆盖 = 本地改动被丢弃
+        if (lv > 0) discardedLocal.push(k)
+      }
     } else {
       out[k] = lc[k]
       clocks[k] = lv
@@ -147,7 +210,7 @@ export function mergeLayoutSlots<T extends Record<string, any>>(
   const ru = typeof rc.updatedAt === 'number' ? rc.updatedAt : 0
   out.updatedAt = Math.max(lu, ru) || Date.now()
 
-  return { config: out as T, clocks, changed }
+  return { config: out as T, clocks, changed, remoteWon, discardedLocal }
 }
 
 function mergeElementContainer(
@@ -156,8 +219,10 @@ function mergeElementContainer(
   remoteVal: unknown,
   localClocks: LayoutSlotClocks,
   remoteClocks: LayoutSlotClocks
-): { value: any; clocks: LayoutSlotClocks } {
+): { value: any; clocks: LayoutSlotClocks; remoteWon: string[]; discardedLocal: string[] } {
   const clocks: LayoutSlotClocks = {}
+  const remoteWon: string[] = []
+  const discardedLocal: string[] = []
 
   if (Array.isArray(localVal) || Array.isArray(remoteVal)) {
     const lArr = Array.isArray(localVal) ? localVal : []
@@ -178,13 +243,18 @@ function mergeElementContainer(
       const rv = remoteClocks[slot] ?? 0
       if (rv > lv) {
         clocks[slot] = rv
+        // 远端赢：值不同（改了内容）或存在性不同（远端删了本地元素 / 加了新元素）
+        if (stableStringify(rMap.get(id)) !== stableStringify(lMap.get(id))) {
+          remoteWon.push(slot)
+          if (lv > 0) discardedLocal.push(slot)
+        }
         if (rMap.has(id)) result.push(rMap.get(id))
       } else {
         clocks[slot] = lv
         if (lMap.has(id)) result.push(lMap.get(id))
       }
     }
-    return { value: result, clocks }
+    return { value: result, clocks, remoteWon, discardedLocal }
   }
 
   const lMap = new Map(entriesOfRecord(localVal))
@@ -196,13 +266,17 @@ function mergeElementContainer(
     const rv = remoteClocks[slot] ?? 0
     if (rv > lv) {
       clocks[slot] = rv
+      if (stableStringify(rMap.get(id)) !== stableStringify(lMap.get(id))) {
+        remoteWon.push(slot)
+        if (lv > 0) discardedLocal.push(slot)
+      }
       if (rMap.has(id)) result[id] = rMap.get(id)
     } else {
       clocks[slot] = lv
       if (lMap.has(id)) result[id] = lMap.get(id)
     }
   }
-  return { value: result, clocks }
+  return { value: result, clocks, remoteWon, discardedLocal }
 }
 
 /* ------------------------------------------------------------------ *

@@ -29,6 +29,7 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const url = process.env.NAVHUB_TEST_DATABASE_URL;
 
@@ -67,8 +68,10 @@ async function ensurePgTrgmInPublic(connectionString) {
   try {
     // pnpm 严格布局下 pg 是 packages/store 的依赖，从本文件位置回退解析
     //（与 rollup-pg.e2e.test.ts 同款取法，根 node_modules 里没有 pg）。
+    // 相对 import.meta.url 解析而非 process.cwd()，从任意 cwd 运行结果相同。
     const require = createRequire(import.meta.url);
-    pg = require(path.join(process.cwd(), "packages/store/node_modules/pg"));
+    const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+    pg = require(path.join(scriptDir, "..", "packages/store/node_modules/pg"));
   } catch {
     throw new Error(
       "找不到 pg 客户端（packages/store/node_modules/pg），请先 pnpm install --frozen-lockfile",

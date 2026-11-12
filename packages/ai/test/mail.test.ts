@@ -22,6 +22,12 @@ vi.mock("nodemailer", () => ({
   createTransport: mockCreateTransport,
 }));
 
+// isolate:false 卫生（D2）：上面的 nodemailer mock 实例会驻留 worker 的模块缓存，
+// 不清理会把同 worker 后续文件里该模块的加载全部带偏。
+afterAll(() => {
+  vi.resetModules();
+});
+
 import {
   createMailTransport,
   LogMailTransport,

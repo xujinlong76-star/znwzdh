@@ -117,8 +117,6 @@ const ALLOWLIST: Record<string, string> = {
     "入参是自有结构 { startTime: number }（必填），调用方在边界归一：video-player-page 传 chapterStartSec(ch)",
   "src/components/web-vitals-reporter.tsx":
     "PerformanceEntry.startTime（LCP/FCP 指标），与 VideoChapter 无关",
-  "src/components/modular/modular-canvas.tsx":
-    "动画计时器的 state.startTime（毫秒时间戳），与 VideoChapter 无关",
 };
 
 /** 归一调用点的下限：守卫不能只是空跑，归一化必须真的在被用 */

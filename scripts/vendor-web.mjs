@@ -28,6 +28,9 @@ try {
   const r = await fetch("https://api.github.com/repos/tianyaxiang/NavSphere/commits/" + REF, { headers: API });
   if (r.ok) sha = (await r.json()).sha;
 } catch { /* offline ok */ }
+// API 失败（离线/限流）时不写 unknown：REF 本身就是 pinned 的 40 位
+// commit，解析出的 commit 就是它；只有分支/tag 之类的可变 ref 才保留 unknown。
+if (sha === "unknown" && /^[0-9a-f]{40}$/i.test(REF)) sha = REF;
 console.log("[vendor] upstream sha=" + sha);
 
 // 2) download tarball

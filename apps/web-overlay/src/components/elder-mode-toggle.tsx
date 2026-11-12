@@ -3,7 +3,7 @@
 /**
  * 长辈模式开关：一键适老（特大字 + 宽松间距 + 44px 触控目标 + 隐藏连胜条），
  * 与字号、密度切换并排在工具栏。状态只存本机 localStorage
- *（lib/elder-mode），关闭后字号还原为开启前的档位。
+ *（lib/elder-mode），关闭后恢复之前的字号；开着期间手动改过的字号会保留。
  */
 
 import React from 'react'

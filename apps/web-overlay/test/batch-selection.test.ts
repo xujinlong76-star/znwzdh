@@ -211,9 +211,12 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
     expect(toolbar).toContain("aria-pressed={selectionMode}");
     expect(toolbar).toMatch(/onClick=\{(on)?[Tt]oggleSelectMode\}/);
     expect(src).toContain("onSelectAll={selectAllVisible}");
-    // 两个卡片渲染点（一级分类 + 二级分类）都要进入多选
-    expect(countOccurrences(section, "selectable={selectionMode}")).toBe(2);
-    expect(countOccurrences(section, "onToggleSelect={toggleSelectOne}")).toBe(2);
+    // 两个卡片渲染点（一级分类 + 二级分类）都要进入多选：两处都调用共用的
+    // renderSiteCard helper，helper 内只写一次 selectable/onToggleSelect，
+    // 所以两个调用点都经由它进入多选。
+    expect(countOccurrences(section, "selectable={selectionMode}")).toBe(1);
+    expect(countOccurrences(section, "onToggleSelect={toggleSelectOne}")).toBe(1);
+    expect(countOccurrences(section, "renderSiteCard(item, {")).toBe(2);
     // 列表变化后剪枝，避免导出到用户已经看不见的站点
     // （P1-2：剪枝随选中态一起抽进 use-site-selection hook；守卫改查 hook 源 + 消费接线）
     const hook = overlaySource("src/lib/modular/use-site-selection.ts");

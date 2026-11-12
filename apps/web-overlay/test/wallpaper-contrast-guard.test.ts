@@ -20,6 +20,10 @@ import { validateAndCleanDIYConfig } from "@/lib/modular/diy-presets";
  * 下限取 0.88 的依据（2026-11-02 独立复核）：0.88 时黑壁纸描述文字实测 4.60:1；
  * 0.85 按实测曲线外推 ≈4.4:1，跌破 AA——故 F4 初版的 0.85 下限被 P1 修正为 0.88。
  *
+ * 2026-11-12：四处内联 clamp 已收敛为共享 clampCardOpacity（diy-presets.ts，
+ * CARD_OPACITY_MIN = 0.88）；本文件断言改为 helper 调用形式，口径不变——
+ * 写入端测试另锚定 helper 本身的 0.88 下限定义，使调用形式断言与旧内联断言等价。
+ *
  * 非空性证据（2026-11-02）：写入 clamp 临时改回 0.2 → 第 1 项变红；
  * 复原 0.88 后全绿。
  */
@@ -40,9 +44,18 @@ const MIN = 0.88;
 describe("cardOpacity 可读性下限（读写双端 clamp ≥0.88）", () => {
   it("use-home-diy 写入端 clamp 下限 0.88", () => {
     const src = overlayFile("src/lib/modular/use-home-diy.ts");
-    expect(src, "写入端应 clamp 到 ≥0.88").toContain("Math.min(1.0, Math.max(0.88, opacity))");
+    expect(src, "写入端应经共享 clampCardOpacity 夹取到 ≥0.88").toContain(
+      "cardOpacity: clampCardOpacity(opacity)",
+    );
     expect(src, "不得残留 0.2 旧下限").not.toContain("Math.max(0.2, opacity)");
     expect(src, "不得残留 0.85 旧下限").not.toContain("Math.max(0.85, opacity)");
+    // 共享 helper 本身的下限锚点：四个站点的 clampCardOpacity(...) 断言
+    // 之所以等价于旧的内联 0.88 断言，全靠这里——CARD_OPACITY_MIN 必须仍是 0.88。
+    const presets = overlayFile("src/lib/modular/diy-presets.ts");
+    expect(presets, "共享 helper 下限必须是 0.88").toContain("CARD_OPACITY_MIN = 0.88");
+    expect(presets, "共享 helper 必须用 CARD_OPACITY_MIN 夹取").toMatch(
+      /Math\.max\(CARD_OPACITY_MIN, n\)/,
+    );
   });
 
   it("use-home-diy 读取端同样 clamp（旧配置 0.2 读到即抬升）", () => {
@@ -51,7 +64,7 @@ describe("cardOpacity 可读性下限（读写双端 clamp ≥0.88）", () => {
       src,
       "config.cardOpacity ?? 0.9 的裸读取路径必须 clamp（旧配置存过 0.2）",
     ).not.toMatch(/cardOpacity:\s*config\.cardOpacity\s*\?\?\s*0\.9/);
-    expect(src).toMatch(/Math\.min\(1\.0, Math\.max\(0\.88, config\.cardOpacity \?\? 0\.9\)\)/);
+    expect(src).toContain("cardOpacity: clampCardOpacity(config.cardOpacity)");
   });
 });
 
@@ -69,7 +82,9 @@ describe("旧值迁移（normalize 等价归一函数级单测）", () => {
     expect(r.config?.cardOpacity).toBeGreaterThanOrEqual(MIN);
     // 存储层解析路径自身也带 clamp（双保险，防归一函数被绕过）
     const src = overlayFile("src/lib/modular/home-diy-storage.ts");
-    expect(src).toMatch(/Math\.max\(0\.88/);
+    expect(src, "存储层解析路径自身也带 clamp（双保险，防归一函数被绕过）").toContain(
+      "out.cardOpacity = clampCardOpacity(parsed.cardOpacity)",
+    );
     expect(src, "hash 解析必须经归一函数").toContain("validateAndCleanDIYConfig");
   });
 });
@@ -124,8 +139,8 @@ describe("P1 接线：cardOpacity 经 --card-alpha 真正驱动卡片底色", ()
   it("navigation-content 注入 --card-alpha 且 JS 侧 clamp 0.88~1", () => {
     const src = overlayFile("src/components/navigation-content.tsx");
     expect(src, "未注入 --card-alpha，滑杆将是空转控件（F4 复核指出的缺口）").toContain("'--card-alpha'");
-    expect(src, "注入值必须与下限同口径 clamp").toMatch(
-      /Math\.min\(1, Math\.max\(0\.88, cardOpacity \?\? 0\.9\)\)/,
+    expect(src, "注入值必须与下限同口径 clamp").toContain(
+      "'--card-alpha': String(clampCardOpacity(cardOpacity))",
     );
   });
 

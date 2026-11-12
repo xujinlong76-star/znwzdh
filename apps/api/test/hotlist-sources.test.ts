@@ -103,3 +103,90 @@ describe("逐源解析器（真实录制响应）", () => {
     expect(() => parseOf("douyin")({ data: { word_list: [] } })).toThrow();
   });
 });
+
+describe("知乎：亿级热度与超大问题 id", () => {
+  function zhihuPayload(
+    entries: Array<{ id?: unknown; url?: string; title: string; detail_text: string }>,
+  ): unknown {
+    return {
+      data: entries.map((e) => ({
+        target: { id: e.id, url: e.url, title: e.title },
+        detail_text: e.detail_text,
+        card_label: null,
+      })),
+    };
+  }
+
+  it("亿级热度按 1 亿 = 100,000,000 换算，万与纯数字不受影响", () => {
+    const items = parseOf("zhihu")(
+      zhihuPayload([
+        { id: 101, url: "https://api.zhihu.com/questions/101", title: "1.2亿热度", detail_text: "1.2亿热度" },
+        { id: 102, url: "https://api.zhihu.com/questions/102", title: "2亿热度", detail_text: "2亿热度" },
+        // 真实 detail_text 是 "3695\n万热度" 这种数字换行再跟单位的写法，亿也一样
+        { id: 103, url: "https://api.zhihu.com/questions/103", title: "换行亿", detail_text: "1.2\n亿热度" },
+        { id: 104, url: "https://api.zhihu.com/questions/104", title: "纯数字", detail_text: "12345热度" },
+        { id: 105, url: "https://api.zhihu.com/questions/105", title: "万级回归", detail_text: "1.5万热度" },
+      ]),
+    );
+    expect(items.map((i) => i.hotValue)).toEqual([120000000, 200000000, 120000000, 12345, 15000]);
+    expect(items.map((i) => i.url)).toEqual([
+      "https://www.zhihu.com/question/101",
+      "https://www.zhihu.com/question/102",
+      "https://www.zhihu.com/question/103",
+      "https://www.zhihu.com/question/104",
+      "https://www.zhihu.com/question/105",
+    ]);
+    expect(items.map((i) => i.rank)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("真实录制 fixture：超大 id 从 url 精确恢复，万级热度换算正确", () => {
+    const items = parseOf("zhihu")(fixture("zhihu.json"));
+    expect(items.length).toBe(5);
+    expect(items[0]?.title).toContain("网传腾讯裁员");
+    expect(items[0]?.hotValue).toBe(36950000);
+    expect(items[0]?.url).toBe("https://www.zhihu.com/question/2104132164308530649");
+    expect(items[1]?.url).toBe("https://www.zhihu.com/question/2103852272970987363");
+    // 任何一条都不许出现 JSON.parse 舍入后的错 id
+    for (const item of items) expect(item.url).not.toContain("2104132164308530700");
+  });
+
+  it("超大数值 id 但 url 含 /questions/<id> 时从 url 精确恢复，绝不用舍入值", () => {
+    // 字面量 2104132164308530649 在 JS 里解析时就已被舍入（与 JSON.parse 一致），
+    // 先把这个前提钉住：下面断言的恢复只能来自 url 字符串，不可能来自数值 id。
+    expect(String(2104132164308530649)).toBe("2104132164308530700");
+    const items = parseOf("zhihu")(
+      zhihuPayload([
+        {
+          id: 2104132164308530649,
+          url: "https://api.zhihu.com/questions/2104132164308530649",
+          title: "超大 id 从 url 恢复",
+          detail_text: "3695万热度",
+        },
+      ]),
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]?.url).toBe("https://www.zhihu.com/question/2104132164308530649");
+    expect(items[0]?.url).not.toContain("2104132164308530700");
+  });
+
+  it("超大数值 id 且 url 里没有 /questions/<id> 时丢弃该条，绝不链到错问题", () => {
+    const items = parseOf("zhihu")(
+      zhihuPayload([
+        { id: 101, url: "https://api.zhihu.com/questions/101", title: "正常条目", detail_text: "100热度" },
+        // 无 url：数值 id 已舍入，无处恢复精确 id
+        { id: 2104132164308530649, title: "超大 id 无 url", detail_text: "3695万热度" },
+        // url 里没有 /questions/<id>：同样无处恢复
+        {
+          id: 2104132164308530649,
+          url: "https://www.zhihu.com/answer/999",
+          title: "超大 id 的 url 不是问题链接",
+          detail_text: "3695万热度",
+        },
+      ]),
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe("正常条目");
+    expect(items[0]?.url).toBe("https://www.zhihu.com/question/101");
+    for (const item of items) expect(item.url).not.toContain("2104132164308530700");
+  });
+});

@@ -17,6 +17,7 @@
   },
   "//deployment": "部署形态已收敛到 Docker（docker/docker-compose.yml + Dockerfile.{api,web}）。Cloudflare Pages 相关的 cf:build / cf:deploy 与 wrangler 依赖已删除：仓库里没有可用的 wrangler.toml，脚本输出目录也与 next 产物互相矛盾，留着只会误导。",
   "dependencies": {
+    "@dnd-kit/react": "0.5.3",
     "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^5.9.2",
     "@monaco-editor/react": "^4.7.0",
@@ -61,7 +62,9 @@
     "next-themes": "^0.2.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-grid-layout": "2.0.0",
     "react-hook-form": "^7.53.2",
+    "react-resizable": "3.2.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "^3.10.1",
     "sonner": "^1.7.1",

@@ -271,6 +271,17 @@ describe("Phase 4 新工具", () => {
   };
 
   it("get_trending 返回带热度分量与名次的榜单", async () => {
+    // 不复用模块级 fixture 站点：前面的「健康巡检」把所有不可达站点都标成了 broken，
+    // 而热榜只收 status='active' 的站点（见 hotSites 的 A10 口径），依赖既有数据
+    // 就等于让结果取决于「前面跑了哪些用例」—— 单独跑通过、整文件按序跑拿 0 条。
+    // 现造一个活站点来断言（与下面 list_tags 的探针做法一致）。
+    await ctx.repo.createSite({
+      url: "https://trending-probe.example",
+      title: "热榜探针",
+      description: "只用于验证热榜可见性",
+      categoryId: "cat-dev-ops",
+      tags: ["热榜探针"],
+    });
     const res = await handlers.get_trending({ limit: 5 }, READONLY);
     const body = payload(res);
     expect(body.count).toBeGreaterThan(0);

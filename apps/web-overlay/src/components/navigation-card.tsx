@@ -12,8 +12,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Eye, EyeOff, Star, Zap, Pin, Clock, Info, Copy, ArrowUpToLine } from 'lucide-react'
+import { Eye, EyeOff, Star, Zap, Pin, Clock, Info, Copy, ArrowUpToLine, GripVertical } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { DiyCardMenu } from '@/components/diy/diy-card-menu'
+import { DIY_DRAG_INSTRUCTIONS_ID, type CardMoveDirection } from '@/lib/modular/diy-drag'
+import { useDiyDragHandleRef, useDiyDragActive } from '@/components/diy/diy-drag-context'
 import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
@@ -47,11 +50,20 @@ export interface NavigationCardProps {
   onToggleSpeedDialPin?: (siteId: string) => void
   linkTarget?: '_blank' | '_self'
   externalRel?: string
+  /**
+   * 卡片 ⋯ 菜单的移动回调（编辑态由 navigation-category-section 传入，
+   * 走 use-home-diy-grid 的置顶列表重排；不传则不渲染菜单）。
+   * 与拖拽互为等效替代（WCAG 2.2 2.5.7），不依赖任何拖拽库。
+   */
+  onMoveCard?: (direction: CardMoveDirection) => void
+  /** 该卡在当前显示列表里的序号（菜单的禁用态与播报用） */
+  cardIndex?: number
+  /** 当前显示列表的总卡数 */
+  cardTotal?: number
 }
 
 export const NavigationCard = memo(function NavigationCard({
   item,
-  siteConfig,
   onPeek,
   cardDisplayMode = 'standard',
   isPinnedInCategory = false,
@@ -67,12 +79,82 @@ export const NavigationCard = memo(function NavigationCard({
   onToggleSpeedDialPin,
   linkTarget: propLinkTarget = '_blank',
   externalRel = 'noopener noreferrer nofollow',
+  onMoveCard,
+  cardIndex = 0,
+  cardTotal = 1,
 }: NavigationCardProps) {
   const linkTarget = useExternalLinkTarget(propLinkTarget)
   const { toast } = useToast()
   const isEditingLayout = propIsEditingLayout ?? isDraggable
   const { effectiveCardElements, isFeatureHidden, removeFeature } = useFeatureMask()
   const isCapsuleCollapsed = !effectiveCardElements.showDescription && !effectiveCardElements.showTags
+
+  /**
+   * dnd-kit 拖拽手柄的 ref 回调（轻量 context，不 import dnd-kit）。
+   * 祖先里没有 DiyDraggableCard（provider 未接线或非编辑态）时为 null，
+   * 手柄不渲染——卡片退化为「仅 ⋯ 菜单可移动」，功能不丢。
+   */
+  const dragHandleRef = useDiyDragHandleRef()
+  const showDragHandle = isDraggable && dragHandleRef !== null
+  // dnd-kit 键盘拖拽是否正在进行（Space 已拿起卡片）：进行中方向键归传感器
+  const keyboardDragActive = useDiyDragActive()
+
+  /**
+   * 卡片 ⋯ 菜单的移动：菜单只负责选方向，播报在这里（调用点）做——
+   * 这里知道卡片标题、移动方向与移动后的序号；菜单的禁用态已保证
+   * 只有合法移动才会调到这里，播报可以按成功写。
+   */
+  const handleMenuMove = (direction: CardMoveDirection) => {
+    onMoveCard?.(direction)
+    const directionLabel =
+      direction === 'up' ? '上移' : direction === 'down' ? '下移' : direction === 'top' ? '移到顶部' : '移到末尾'
+    const toPosition =
+      direction === 'up' ? cardIndex : direction === 'down' ? cardIndex + 2 : direction === 'top' ? 1 : cardTotal
+    toast({
+      title: `已将「${item.title}」${directionLabel}，现在是第 ${toPosition} 个，共 ${cardTotal} 个`,
+    })
+  }
+
+  /**
+   * 拖拽手柄 + ⋯ 菜单：三处卡片形态共用。
+   *
+   * 手柄是 dnd-kit 的 handle（touch-action:none，激活阈值走
+   * PointerSensor 库默认值：鼠标按下即激活，触屏 250ms + 5px 容差）：
+   * 鼠标、触屏、键盘（Space 拿起 → 方向键 → Enter 放下 → Esc 取消）
+   * 都从它出发；菜单是完全不依赖拖拽库的等效替代。
+   * 两个按钮都带 data-card-action，进卡片操作区的方向键漫游。
+   */
+  const renderDragControls = (sizeClass: string) => (
+    <>
+      {showDragHandle && dragHandleRef && (
+        <button
+          type="button"
+          tabIndex={-1}
+          data-card-action=""
+          data-diy-drag-handle=""
+          ref={dragHandleRef}
+          style={{ touchAction: 'none' }}
+          className={cn(sizeClass, 'text-muted-foreground hover:text-foreground hover:bg-accent cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60')}
+          title="拖动排序（按住拖动；键盘：聚焦后按空格开始，方向键移动，回车放下，Esc 取消）"
+          aria-label={`拖动排序：${item.title}`}
+          aria-describedby={DIY_DRAG_INSTRUCTIONS_ID}
+        >
+          <GripVertical className="w-3.5 h-3.5" />
+        </button>
+      )}
+      {isEditingLayout && onMoveCard && (
+        <DiyCardMenu
+          title={item.title}
+          index={cardIndex}
+          total={cardTotal}
+          onMove={handleMenuMove}
+          onCopy={() => void handleCopyLink()}
+          onDelete={() => handlePruneSite()}
+          sizeClass={sizeClass}
+        />
+      )}
+    </>
+  )
 
   const handlePruneSite = (e?: React.MouseEvent | React.KeyboardEvent) => {
     if (e) {
@@ -132,21 +214,12 @@ export const NavigationCard = memo(function NavigationCard({
     onToggleSelect?.(item.id)
   }
 
-  const handleDragStart = (e: React.DragEvent) => {
-    if (!isDraggable) return
-    e.dataTransfer.setData(
-      'text/navhub-card-payload',
-      JSON.stringify({
-        id: item.id,
-        title: item.title,
-        href: item.href,
-        description: item.description,
-        icon: item.icon,
-        sourceCategoryId,
-      })
-    )
-    e.dataTransfer.effectAllowed = 'copy'
-  }
+  /**
+   * HTML5 DnD 已移除（DRAG-2）：原生拖拽属性在触屏上根本不触发，
+   * 也没有键盘路径。拖拽改走 dnd-kit（手柄 + PointerSensor/KeyboardSensor，
+   * 见本文件顶部的 renderDragControls 与 DiyDraggableCard），
+   * 不拖拽的等效操作走 ⋯ 菜单。
+   */
 
   // 提取首个平替
   const topAlternative = item.relations?.find((r) => r.relationType === 'alternative')
@@ -187,6 +260,17 @@ export const NavigationCard = memo(function NavigationCard({
 
   /** 操作区内方向键导航：←/→ 移动，Esc 回到主链接 */
   const handleActionsKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // 键盘拖拽进行中（Space 已拿起卡片）且焦点就在拖拽手柄上：
+    // ←/→/Esc 归 dnd-kit KeyboardSensor——它在 document 捕获阶段监听，
+    // 先于这里收到事件；这里再 preventDefault + 挪焦点，方向键就只动
+    // 焦点、拖不动卡片，Esc 还会把焦点抢回主链接。所以直接放行，
+    // 一个键也不拦；拖拽结束（放下/取消）后漫游自动恢复。
+    if (
+      keyboardDragActive &&
+      (document.activeElement as HTMLElement | null)?.hasAttribute('data-diy-drag-handle')
+    ) {
+      return
+    }
     const actions = Array.from(
       e.currentTarget.querySelectorAll<HTMLElement>('[data-card-action]'),
     )
@@ -258,9 +342,9 @@ export const NavigationCard = memo(function NavigationCard({
     onToggleSelect?.(item.id)
   }
 
-  const handleCopyLink = async (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+  const handleCopyLink = async (e?: React.MouseEvent) => {
+    e?.preventDefault()
+    e?.stopPropagation()
     const res = await copyText(item.href)
     if (res.ok) {
       toast({
@@ -316,12 +400,9 @@ export const NavigationCard = memo(function NavigationCard({
             <div
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
-              draggable={isDraggable}
-              onDragStart={handleDragStart}
               className={cn(
                 "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
-                isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
                 selectionClass
               )}
             >
@@ -399,6 +480,7 @@ export const NavigationCard = memo(function NavigationCard({
                 "relative z-20 flex items-center gap-0.5 transition-opacity",
                 isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
               )} onKeyDown={handleActionsKeyDown}>
+                {renderDragControls('h-6 w-6 rounded-md')}
                 <Button
                   type="button"
                   tabIndex={-1}
@@ -517,12 +599,9 @@ export const NavigationCard = memo(function NavigationCard({
             <Card
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
-              draggable={isDraggable}
-              onDragStart={handleDragStart}
               className={cn(
                 "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
-                isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/70 hover:ring-1 hover:ring-primary/40",
                 selectionClass
               )}
             >
@@ -657,6 +736,7 @@ export const NavigationCard = memo(function NavigationCard({
                 "absolute top-2 right-2 z-20 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs transition-all duration-150",
                 isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
               )} onKeyDown={handleActionsKeyDown}>
+                {renderDragControls('h-7 w-7 rounded-full')}
                 <Button
                   type="button"
                   tabIndex={-1}
@@ -774,12 +854,9 @@ export const NavigationCard = memo(function NavigationCard({
           <Card
             data-navhub-site-id={item.id}
             data-navhub-selected={selected ? 'true' : undefined}
-            draggable={isDraggable}
-            onDragStart={handleDragStart}
             className={cn(
               "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
-              isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
               selectionClass
             )}
           >
@@ -925,6 +1002,7 @@ export const NavigationCard = memo(function NavigationCard({
               "absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs transition-all duration-150",
               isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
             )} onKeyDown={handleActionsKeyDown}>
+              {renderDragControls('h-6.5 w-6.5 rounded-full')}
               <Button
                 type="button"
                 tabIndex={-1}

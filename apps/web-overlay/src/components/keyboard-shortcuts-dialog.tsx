@@ -35,7 +35,7 @@ function buildShortcutGroups(spotlightKey: string) {
       { key: '1', desc: '切换为极客混合流 (Hybrid)' },
       { key: '2', desc: '切换为经典全景流 (Classic)' },
       { key: '3', desc: '切换为沉浸工作台 (Workbench)' },
-      { key: 'E', desc: '开关首页 DIY 可视化排版工坊' },
+      { key: 'Ctrl/Cmd+E', desc: '开关首页 DIY 可视化排版工坊' },
       { key: 'D', desc: '循环切换内容密度 (紧凑 / 舒适 / 宽松)' },
       { key: 'B', desc: '循环切换画布背景 (微网格 / 科技点 / 极客网 / 极光 / 纯净)' },
     ],
@@ -102,7 +102,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
       if (isInput) return
 
       // 模态打开期间只保留「?」呼出本身：此时用户正在对话框里操作，
-      // 1/2/3 切视图、E 开工坊、D 切密度、B 换背景这些全局键必须让位，
+      // 1/2/3 切视图、Ctrl/Cmd+E 开工坊、D 切密度、B 换背景这些全局键必须让位，
       // 否则在速览窗里按个 e 就把首页排版改了，属于按键劫持。
       // 判定用 role=dialog（Radix 与我们自己的浮层都会带），不用组件状态：
       // 快捷键是全局的，得能感知别的组件打开的浮层。
@@ -135,8 +135,11 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
         toast({ title: '已切换为沉浸工作台 (Workbench)' })
       }
 
-      // 按 E 开关 DIY 编排工坊
-      if (e.key === 'e' || e.key === 'E') {
+      // 按 Ctrl/Cmd+E 开关 DIY 编排工坊（WCAG 2.1.4：单字符快捷键会与
+      // 读屏软件冲突，裸按 E 已废止）。这是 Ctrl/Cmd+E 唯一的按键处理入口：
+      // 工具栏只有一个「完成」按钮（handleFinishEditing）、导航区没有按键处理，
+      // 不要再别处另起一个同样的绑定，否则两次 toggle 会互相抵消。
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
         e.preventDefault()
         toggleEditingLayout()
       }

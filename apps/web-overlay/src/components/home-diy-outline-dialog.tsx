@@ -435,6 +435,12 @@ export function HomeDIYOutlineDialog({
 
             {/* 分类列表 */}
             <div className="py-2 flex-1 overflow-y-auto space-y-1.5 pr-1">
+              {searchQuery.trim() !== '' && filteredCategoryIds.length === 0 && (
+                <div className="py-10 text-center space-y-1 border border-dashed border-border/60 rounded-xl bg-muted/15">
+                  <p className="text-xs font-semibold text-foreground">无匹配「{searchQuery.trim()}」的分类</p>
+                  <p className="text-[11px] text-muted-foreground">换个关键词试试，或清空搜索查看全部分类。</p>
+                </div>
+              )}
               {filteredCategoryIds.map((id, index) => {
                 const title = categoryTitleMap[id] || id
                 const isPinned = pinnedCategoryIds.includes(id)

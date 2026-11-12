@@ -20,11 +20,15 @@ import {
   Palette,
   HardDriveDownload,
   Loader2,
+  RotateCcw,
+  Save,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useHomeDIY, commitHomeDiyConfig } from '@/lib/modular/use-home-diy'
+import { validateAndCleanDIYConfig } from '@/lib/modular/diy-presets'
 import { readLocalUserSettings, writeLocalUserSettings } from '@/lib/user-settings'
 import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders, serializeLocalFolders } from '@/lib/favorites-folders'
 import {
@@ -38,6 +42,14 @@ import {
   clearOfflineCache,
   type OfflineCacheStats,
 } from '@/lib/offline-video-cache'
+import {
+  browserDiySnapshotStorage,
+  deleteDiySnapshot,
+  listDiySnapshots,
+  readDiySnapshotConfig,
+  saveDiySnapshot,
+  type DiySnapshot,
+} from '@/lib/modular/diy-snapshots'
 
 export interface LocalDataBackupPayload {
   format: 'navhub-local-full-backup'
@@ -65,6 +77,113 @@ export function LocalDataManager() {
   const [loadingVisits, setLoadingVisits] = useState(true)
   const [restoring, setRestoring] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // 排版版本快照（8e）：与撤销栈分离的命名版本
+  const [snapshots, setSnapshots] = useState<DiySnapshot[]>([])
+  const [snapshotName, setSnapshotName] = useState('')
+  const [restoringSnapshot, setRestoringSnapshot] = useState<string | null>(null)
+
+  const refreshSnapshots = useCallback(() => {
+    const storage = browserDiySnapshotStorage()
+    setSnapshots(storage ? listDiySnapshots(storage) : [])
+  }, [])
+
+  useEffect(() => {
+    refreshSnapshots()
+  }, [refreshSnapshots])
+
+  /** 手动保存当前排版为一个版本 */
+  const handleSaveSnapshot = useCallback(() => {
+    const storage = browserDiySnapshotStorage()
+    if (!storage) {
+      toast({ title: '保存失败', description: '浏览器本地存储不可用。', variant: 'destructive' })
+      return
+    }
+    const entry = saveDiySnapshot(storage, diyConfig, snapshotName || undefined)
+    if (!entry) {
+      toast({
+        title: '保存失败',
+        description: '本地存储写入失败（可能已满或处于隐私模式）。',
+        variant: 'destructive',
+      })
+      return
+    }
+    setSnapshotName('')
+    refreshSnapshots()
+    toast({
+      title: '版本已保存',
+      description: `「${entry.name}」已存入本机，可在下方列表里一键恢复。`,
+    })
+  }, [diyConfig, snapshotName, refreshSnapshots, toast])
+
+  /**
+   * 一键恢复某版本：恢复前先把当前排版自动存为「恢复前自动备份」，
+   * 再走 commitHomeDiyConfig（压撤销栈，Ctrl/Cmd+Z 也能撤回这次恢复）。
+   */
+  const handleRestoreSnapshot = useCallback((id: string) => {
+    const storage = browserDiySnapshotStorage()
+    if (!storage) {
+      toast({ title: '恢复失败', description: '浏览器本地存储不可用。', variant: 'destructive' })
+      return
+    }
+    const res = readDiySnapshotConfig(storage, id)
+    if (!res.ok) {
+      toast({ title: '恢复失败', description: res.reason, variant: 'destructive' })
+      return
+    }
+    if (
+      !window.confirm(
+        `确定要把首页排版恢复到「${res.snapshot.name}」（${new Date(res.snapshot.createdAt).toLocaleString()}）吗？恢复前会自动把当前排版另存为一个版本，恢复后按 Ctrl/Cmd+Z 也可撤销。`,
+      )
+    ) {
+      return
+    }
+    setRestoringSnapshot(id)
+    try {
+      // 自动备份的返回值必须验：存不进去（配额满 / 隐私模式）时 saveDiySnapshot
+      // 返回 null，之前却照样 toast「恢复前那份已自动存为版本」。
+      const autoBackup = saveDiySnapshot(storage, diyConfig, '恢复前自动备份')
+      const result = commitHomeDiyConfig(() => ({
+        ...diyConfig,
+        ...res.config,
+        updatedAt: Date.now(),
+      }))
+      if (!result.ok) {
+        // 配置已经进了内存（commit 先改共享状态、再排队落盘），「排版未改动」
+        // 是假话：内存里的排版已经变了，只是刷新会丢；撤销栈里还留着旧配置。
+        refreshSnapshots()
+        toast({
+          title: '恢复未存住',
+          description: '新排版已在内存中生效，但本地存储写入失败，刷新后会丢失。按 Ctrl/Cmd+Z 可撤销这次恢复。',
+          variant: 'destructive',
+        })
+        return
+      }
+      refreshSnapshots()
+      toast({
+        title: '已恢复到指定版本',
+        description: autoBackup
+          ? `当前排版已切换为「${res.snapshot.name}」，恢复前那份已自动存为版本。按 Ctrl/Cmd+Z 可撤销。`
+          : `当前排版已切换为「${res.snapshot.name}」。注意：恢复前自动备份失败（本地存储写入失败），旧排版只留在撤销历史里，刷新后无法找回；按 Ctrl/Cmd+Z 可撤销。`,
+      })
+    } finally {
+      setRestoringSnapshot(null)
+    }
+  }, [diyConfig, refreshSnapshots, toast])
+
+  const handleDeleteSnapshot = useCallback((id: string) => {
+    const storage = browserDiySnapshotStorage()
+    if (!storage) return
+    const snap = snapshots.find((s) => s.id === id)
+    if (!snap) return
+    if (!window.confirm(`确定要删除版本「${snap.name}」吗？删除后无法找回。`)) return
+    if (deleteDiySnapshot(storage, id)) {
+      refreshSnapshots()
+      toast({ title: '版本已删除', description: `「${snap.name}」已从本机移除。` })
+    } else {
+      toast({ title: '删除失败', description: '浏览器本地存储不可用。', variant: 'destructive' })
+    }
+  }, [snapshots, refreshSnapshots, toast])
 
   // 刷新离线足迹
   const refreshVisits = useCallback(async () => {
@@ -191,6 +310,8 @@ export function LocalDataManager() {
       let restoredFavorites = 0
       let restoredCustomSites = 0
       let restoredVisits = 0
+      /** 排版配置没还原的原因（null = 已还原或备份里本来就没有）；最终 toast 据此说真话 */
+      let diyRestoreFailed: string | null = null
 
       // 1. 恢复书签收藏
       if (Array.isArray(data.favorites) && data.favorites.length > 0) {
@@ -200,17 +321,40 @@ export function LocalDataManager() {
         }
       }
 
-      // 2. 恢复 DIY 布局与专属分类
+      // 2. 恢复 DIY 布局与专属分类：先白名单校验（validateAndCleanDIYConfig，
+      // 与读盘 / 分享链接同一道闸），再看 commit 的返回值；落盘失败时改动只在
+      // 内存里，绝不能按输入原样报「已恢复 N 个网址」。
       if (data.diyConfig && typeof data.diyConfig === 'object') {
-        commitHomeDiyConfig({
-          ...diyConfig,
-          ...data.diyConfig,
-        })
-        const importedCustomCats = data.diyConfig.customCategories || []
-        restoredCustomSites = importedCustomCats.reduce(
-          (acc: number, c: any) => acc + (c.items?.length || 0),
-          0,
-        )
+        const check = validateAndCleanDIYConfig(data.diyConfig)
+        if (!check.valid || !check.config) {
+          diyRestoreFailed = check.error || '排版配置格式无效'
+          toast({
+            title: '排版配置未还原',
+            description: `备份里的排版配置无效（${diyRestoreFailed}），已跳过；书签与足迹照常还原。`,
+            variant: 'destructive',
+          })
+        } else {
+          const result = commitHomeDiyConfig((prev) => ({
+            ...prev,
+            ...check.config,
+            updatedAt: Date.now(),
+          }))
+          if (!result.ok) {
+            diyRestoreFailed = '本地存储写入失败'
+            toast({
+              title: '排版配置未存住',
+              description: '排版已在内存中生效，但本地存储写入失败，刷新后会丢失。',
+              variant: 'destructive',
+            })
+          } else {
+            // 个数按真正落地那份算，不按输入原样算（清洗可能丢弃整类内容）
+            const landedCats = result.config.customCategories || []
+            restoredCustomSites = landedCats.reduce(
+              (acc: number, c: any) => acc + (c.items?.length || 0),
+              0,
+            )
+          }
+        }
       }
 
       // 3. 恢复离线足迹
@@ -243,10 +387,18 @@ export function LocalDataManager() {
         }
       }
 
-      toast({
-        title: '本地数据还原成功',
-        description: `成功恢复 ${restoredFavorites} 条书签、${restoredCustomSites} 个自定义网址与 ${restoredVisits} 条历史足迹。`,
-      })
+      toast(
+        diyRestoreFailed
+          ? {
+              title: '本地数据已部分还原',
+              description: `已恢复 ${restoredFavorites} 条书签、${restoredCustomSites} 个自定义网址与 ${restoredVisits} 条历史足迹；排版配置未还原（${diyRestoreFailed}）。`,
+              variant: 'destructive' as const,
+            }
+          : {
+              title: '本地数据还原成功',
+              description: `成功恢复 ${restoredFavorites} 条书签、${restoredCustomSites} 个自定义网址与 ${restoredVisits} 条历史足迹。`,
+            },
+      )
     } catch (err) {
       toast({
         title: '还原失败',
@@ -441,6 +593,88 @@ export function LocalDataManager() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* 排版版本快照（8e）：与撤销栈分离的命名版本，可一键恢复 */}
+      <div className="rounded-xl border border-border/70 bg-card p-4 space-y-3 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold flex items-center gap-2 text-foreground">
+              <History className="w-4 h-4 text-violet-500" />
+              <span>排版版本快照</span>
+            </h3>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              手动保存当前排版为一个版本，随时一键恢复；恢复前会自动把当前排版另存一份。分享链接确认前自动备份的版本也会出现在这里。
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              value={snapshotName}
+              onChange={(e) => setSnapshotName(e.target.value)}
+              placeholder="版本名称（可选）"
+              aria-label="版本名称"
+              className="h-8 w-40 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground placeholder:text-muted-foreground"
+            />
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveSnapshot}
+              className="h-8 text-xs gap-1.5 shadow-2xs font-medium cursor-pointer"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>保存当前版本</span>
+            </Button>
+          </div>
+        </div>
+
+        {snapshots.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            还没有保存过版本。点「保存当前版本」，改坏了也能一键回来。
+          </p>
+        ) : (
+          <ul className="divide-y divide-border/60">
+            {snapshots.map((snap) => (
+              <li key={snap.id} className="flex items-center gap-2 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-foreground truncate">{snap.name}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                      {snap.source === 'manual' ? '手动保存' : '分享前自动备份'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {new Date(snap.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleRestoreSnapshot(snap.id)}
+                  disabled={restoringSnapshot !== null}
+                  className="h-7 text-xs gap-1 cursor-pointer"
+                >
+                  {restoringSnapshot === snap.id ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-3 h-3" />
+                  )}
+                  <span>恢复</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDeleteSnapshot(snap.id)}
+                  aria-label={`删除版本 ${snap.name}`}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   )

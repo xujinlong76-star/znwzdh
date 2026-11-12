@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
+  AlertTriangle,
   Palette,
   RotateCcw,
   Check,
@@ -16,6 +17,7 @@ import {
   Undo2,
   Redo2,
   Trash2,
+  X,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -35,16 +37,16 @@ import {
   DropdownMenuTrigger,
 } from '@/registry/new-york/ui/dropdown-menu'
 import { Input } from '@/registry/new-york/ui/input'
-import { useHomeDIY, type AccentColor } from '@/lib/modular/use-home-diy'
+import { useHomeDIY, setHomeDiyPreview, type AccentColor } from '@/lib/modular/use-home-diy'
 import { resetAllModuleWindowSizes } from '@/lib/modular/module-resize-store'
-import { computeLayoutTidyPlan } from '@/lib/modular/layout-tidy'
 import { HomeDIYBackupDialog } from '@/components/home-diy-backup-dialog'
 import { HomeDiyShareConfirmDialog } from '@/components/diy/home-diy-share-confirm-dialog'
 import { HomeDIYOutlineDialog, type OutlineDialogTab } from '@/components/home-diy-outline-dialog'
 import { HomeDIYShareDialog } from '@/components/home-diy-share-dialog'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { useDensity } from '@/components/density-provider'
-import { BUILTIN_DIY_PRESETS, evaluateLayoutErgonomics, type DIYPreset } from '@/lib/modular/diy-presets'
+import { isAppleDevice } from '@/lib/platform'
+import { BUILTIN_DIY_PRESETS, clampCardOpacity, evaluateLayoutErgonomics, parseDiyShortcut, type DIYPreset } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -111,6 +113,7 @@ export function HomeDIYToolbar({
     collapseAllCategories,
     expandAllCategories,
     exportPresetToUrlHash,
+    stageImportForConfirm,
     customWallpaperUrl,
     glassmorphismBlur,
     cardOpacity,
@@ -121,16 +124,23 @@ export function HomeDIYToolbar({
     speedDialEnabled,
     toggleSpeedDial,
     speedDialPinnedIds,
-    currentWorkspace,
-    setCurrentWorkspace,
     applySmartAutoTune,
-  pendingShare,
-  confirmPendingShare,
-  dismissPendingShare,
+    pendingShare,
+    confirmPendingShare,
+    dismissPendingShare,
+    storageWarning,
+    dismissStorageWarning,
   } = useHomeDIY()
 
   const { density, setDensity } = useDensity()
   const { toast } = useToast()
+
+  // 平台感知的撤销/重做标题：Mac 上重做是 Cmd+Shift+Z，Ctrl+Y 不可用；
+  // navigator 只在客户端可读，挂载后再判，避免 SSR 与水合文案不一致。
+  const [isMac, setIsMac] = useState(false)
+  useEffect(() => {
+    setIsMac(isAppleDevice())
+  }, [])
 
   const healthReport = useMemo(() => {
     const targetCats =
@@ -191,36 +201,54 @@ export function HomeDIYToolbar({
     })
   }
 
+  // 焦点管理：工具栏只在编排态挂载。进编排时记下当时聚焦的元素、把焦点
+  // 移进工具栏首个控件；退出（卸载）时把焦点还回去。触发按钮在编排态
+  // 不渲染（home-diy-trigger 在 isEditingLayout 时 return null），所以
+  // 原元素可能已卸载——卸载后等一拍再还，找不到原元素就回退到重新出现
+  // 的触发按钮（按 title 找，触发按钮无 aria-label/data 属性）。
+  const toolbarRootRef = useRef<HTMLDivElement | null>(null)
+  const previouslyFocusedRef = useRef<Element | null>(null)
+  useEffect(() => {
+    previouslyFocusedRef.current = document.activeElement
+    toolbarRootRef.current
+      ?.querySelector<HTMLElement>('button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])')
+      ?.focus()
+    return () => {
+      const prev = previouslyFocusedRef.current
+      window.setTimeout(() => {
+        if (prev && prev.isConnected && prev instanceof HTMLElement) {
+          prev.focus()
+          return
+        }
+        document.querySelector<HTMLElement>('button[title^="开启 DIY 排版"]')?.focus()
+      }, 0)
+    }
+  }, [])
+
+  const finishEditingRef = useRef(handleFinishEditing)
+  finishEditingRef.current = handleFinishEditing
+
   const handleApplyPreset = (presetId: string) => {
     const ok = applyDIYPreset(presetId, (d) => setDensity(d as any))
     if (ok) {
+      // 长辈模式开着时 globals.css 的 [data-elder-mode="on"] 会把密度变量
+      // 覆盖成宽松档：预设写了 data-density，间距仍是宽松，必须明说，
+      // 否则用户会以为预设的密度生效了。
+      const elderOn =
+        typeof document !== 'undefined' &&
+        document.documentElement.getAttribute('data-elder-mode') === 'on'
       toast({
         title: '✨ 预设情境已应用',
-        description: '视窗形态、卡片密度与画布背景已完成智能匹配。',
+        description: elderOn
+          ? '视窗形态与画布背景已应用；长辈模式开启中，密度仍保持宽松间距，关闭长辈模式后恢复。'
+          : '视窗形态、卡片密度与画布背景已完成智能匹配。',
       })
     }
   }
 
-  const handleAutoTidyLayout = () => {
-    const targetCats =
-      categories && categories.length > 0
-        ? categories
-        : allCategoryIds.map((id) => ({ id, title: categoryTitleMap[id] || id, items: [] }))
-
-    const plan = computeLayoutTidyPlan(targetCats, {
-      hiddenCategoryIds,
-      collapsedCategoryIds,
-      isAdaptiveRankingEnabled,
-    })
-    for (const id of plan.toHide) toggleHideCategory(id)
-    for (const id of plan.toCollapse) toggleCollapseCategory(id)
-    if (plan.enableAdaptiveRanking) toggleAdaptiveRanking()
-    toast({
-      title: '🎉 算法智能自愈整理已完成！',
-      description: '已自动优化排版结构，隐藏闲置分类并开启时序半衰期推荐，健康度显著提升。',
-    })
-  }
-
+  // Esc 退出编排。Ctrl/Cmd+E 不在这里处理：唯一入口是
+  // keyboard-shortcuts-dialog.tsx:140（单源），工具栏再挂一份
+  // 会和它抢 toggle（两处同时 preventDefault + toggle 会互相抵消）。
   useEffect(() => {
     const handleGlobalKey = (e: KeyboardEvent) => {
       const activeEl = document.activeElement
@@ -231,123 +259,91 @@ export function HomeDIYToolbar({
           (activeEl as HTMLElement).isContentEditable)
       if (isInput) return
 
-      if (e.key.toLowerCase() === 'e' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (e.key === 'Escape' && isEditingLayout) {
         e.preventDefault()
-        toggleEditingLayout()
-      } else if (e.key === 'Escape' && isEditingLayout) {
-        e.preventDefault()
-        handleFinishEditing()
+        finishEditingRef.current()
       }
     }
     window.addEventListener('keydown', handleGlobalKey)
     return () => window.removeEventListener('keydown', handleGlobalKey)
-  }, [toggleEditingLayout, isEditingLayout])
+  }, [isEditingLayout])
 
-  const previewStateRef = useRef<{
-    cardDisplayMode: any
-    canvasBackground: any
-    density: any
-  } | null>(null)
-
+  // 预设悬停/聚焦预览：只覆盖快照与 data-density 属性，不提交、不落盘、不进撤销栈。
+  // 悬停结束 / 菜单关闭 / 点击应用 / 组件卸载时都要清掉，否则预览值会一直盖着真实配置。
+  // 覆盖面 = setHomeDiyPreview 的 DiyPreviewPatch（home-diy-storage.ts）：
+  // cardDisplayMode / canvasBackground / viewMode / heroDeckCollapsed /
+  // heroDeckWidgets——渲染层读的是快照 config（真实配置 + 预览覆盖），所以悬停
+  // zen-focus 时就能看到 classic 视图 + 折叠展板，不必等点击。密度走 data-density。
+  // 键盘聚焦也要预览：只挂 onMouseEnter 是鼠标专属，键盘用户收不到任何预览。
   const handlePresetHover = (preset: DIYPreset | null) => {
     if (preset) {
-      if (!previewStateRef.current) {
-        previewStateRef.current = {
-          cardDisplayMode,
-          canvasBackground,
-          density,
-        }
-      }
-      setCardDisplayMode(preset.config.cardDisplayMode)
-      setCanvasBackground(preset.config.canvasBackground)
-      setDensity(preset.config.density as any)
-    } else if (previewStateRef.current) {
-      setCardDisplayMode(previewStateRef.current.cardDisplayMode)
-      setCanvasBackground(previewStateRef.current.canvasBackground)
-      setDensity(previewStateRef.current.density)
-      previewStateRef.current = null
+      setHomeDiyPreview({
+        cardDisplayMode: preset.config.cardDisplayMode,
+        canvasBackground: preset.config.canvasBackground,
+        viewMode: preset.config.viewMode,
+        heroDeckCollapsed: preset.config.heroDeckCollapsed,
+        heroDeckWidgets: preset.config.heroDeckWidgets,
+      })
+      document.documentElement.setAttribute('data-density', preset.config.density)
+    } else {
+      setHomeDiyPreview(null)
+      document.documentElement.setAttribute('data-density', density)
     }
   }
 
   const handleApplyPresetAndClearPreview = (presetId: string) => {
-    previewStateRef.current = null
+    setHomeDiyPreview(null)
+    // 点击即提交：密度由 applyDIYPreset 经 setDensity 写回偏好，
+    // 偏好 effect 会把 data-density 设回新档位；这里先恢复，避免中途闪一下旧值。
+    document.documentElement.setAttribute('data-density', density)
     handleApplyPreset(presetId)
   }
 
+  // 卸载时清掉可能残留的预览（例如菜单开着就切走了页面）
+  useEffect(() => {
+    return () => setHomeDiyPreview(null)
+  }, [])
+
+  // 快捷指令：只是关键词匹配（见 diy-presets.parseDiyShortcut），不是 AI。
+  // 占位符与提示只列真正能识别的词；一个意图都没识别出来时必须如实说没听懂，
+  // 不许再 toast 假成功（旧实现兜底文案「已根据意图优化排版布局」是编造）。
   const handleRunAiPrompt = (e?: React.FormEvent) => {
     e?.preventDefault()
     if (!aiPrompt.trim()) return
-    const q = aiPrompt.toLowerCase()
-    const feedback: string[] = []
-
-    if (q.includes('3列') || q.includes('宽松')) {
-      setDensity('spacious')
-      feedback.push('宽松')
-    } else if (q.includes('4列') || q.includes('标准')) {
-      setDensity('comfortable')
-      feedback.push('标准')
-    } else if (q.includes('5列') || q.includes('6列') || q.includes('高密') || q.includes('紧凑')) {
-      setDensity('dense')
-      feedback.push('紧凑高密')
+    const match = parseDiyShortcut(aiPrompt, { allCategoryIds, categoryTitleMap })
+    if (match.density) setDensity(match.density)
+    if (match.cardDisplayMode) setCardDisplayMode(match.cardDisplayMode)
+    if (match.canvasBackground) setCanvasBackground(match.canvasBackground)
+    if (match.hiddenCategoryIds && setHiddenCategories) {
+      setHiddenCategories(match.hiddenCategoryIds)
     }
-
-    if (q.includes('胶囊') || q.includes('mini')) {
-      setCardDisplayMode('minimal')
-      feedback.push('极速胶囊')
-    } else if (q.includes('紧凑')) {
-      setCardDisplayMode('compact')
-      feedback.push('紧凑条形')
-    } else if (q.includes('标准')) {
-      setCardDisplayMode('standard')
-      feedback.push('标准图文')
-    } else if (q.includes('丰富') || q.includes('深度')) {
-      setCardDisplayMode('rich')
-      feedback.push('深度大卡')
-    }
-
-    if (q.includes('极简') || q.includes('clean')) {
-      setCanvasBackground('clean')
-      feedback.push('纯净极简')
-    } else if (q.includes('网格') || q.includes('grid')) {
-      setCanvasBackground('grid')
-      feedback.push('工程网格')
-    } else if (q.includes('极光') || q.includes('aurora')) {
-      setCanvasBackground('aurora')
-      feedback.push('极光流光')
-    }
-
-    // 类目聚焦：技术与 AI 两个意图可同时成立（旧实现是 else-if，
-    // 「只看AI与前端」永远只命中先写的分支）。合并口径：命中的意图
-    // 模式取并集，隐藏「哪个模式都不匹配」的类目。
-    const focusPatterns: RegExp[] = []
-    if (q.includes('前端') || q.includes('技术') || q.includes('开发')) {
-      focusPatterns.push(/前端|后端|运维|安全|开发|云|架构|Dev|AI/i)
-    }
-    if (q.includes('ai') || q.includes('创作')) {
-      focusPatterns.push(/AI|智能|设计|创意|模型|Prompt/i)
-    }
-    if (focusPatterns.length > 0 && setHiddenCategories) {
-      const toHide = allCategoryIds.filter(
-        (id) => !focusPatterns.some((p) => p.test(categoryTitleMap[id] || id)),
-      )
-      setHiddenCategories(toHide)
-      feedback.push(focusPatterns.length > 1 ? '聚焦技术+AI类目' : focusPatterns[0]!.source.includes('前端') ? '聚焦技术类目' : '聚焦AI类目')
-    }
-
-    // 这是关键词匹配，不是 AI：一个意图都没识别出来时必须如实说没听懂，
-    // 不许再 toast 假成功（旧实现兜底文案「已根据意图优化排版布局」是编造）。
-    if (feedback.length > 0) {
+    if (match.feedback.length > 0) {
       toast({
-        title: '🪄 一句话排版已生效',
-        description: `已为您匹配：${feedback.join('、')}`,
+        title: '🪄 快捷指令已生效',
+        description: `已为您匹配：${match.feedback.join('、')}`,
       })
     } else {
       toast({
         title: '这句我没匹配到可执行的排版意图',
-        description: '试试这样说：「3列紧凑」「只看AI与前端」「极光背景」「胶囊模式」。',
+        description: '试试这样说：「5列紧凑」「只看AI与前端」「极光背景」「胶囊模式」。',
       })
     }
     setAiPrompt('')
+  }
+
+  // 卡片不透明度滑杆：拖动时只改本地草稿（数字即时显示），松开 / 失焦 /
+  // 按键抬起 / 菜单关闭时才提交一次。以前 onChange 每 tick 就 commit，
+  // 一次拖动能刷出几十条撤销记录和几十次落盘。
+  const [opacityDraft, setOpacityDraft] = useState<number | null>(null)
+  const committedOpacity = clampCardOpacity(cardOpacity)
+  const shownOpacity = opacityDraft ?? committedOpacity
+  const commitOpacityDraft = () => {
+    if (opacityDraft === null) return
+    const target = opacityDraft
+    setOpacityDraft(null)
+    if (target !== committedOpacity) {
+      setAestheticSliders(glassmorphismBlur ?? 12, target)
+    }
   }
 
   const handleRunSmartAutoTune = () => {
@@ -355,16 +351,44 @@ export function HomeDIYToolbar({
       ...(c.items || []),
       ...(c.subCategories || []).flatMap((sub: any) => sub.items || []),
     ])
-    applySmartAutoTune(allSites, categories)
+    // applySmartAutoTune 返回真实落盘的结果：速览坞取的是按访问频次 + 星标
+    // 排前 10 的站点（站点不足 10 就只取现有的），不改任何密度/网格设置，
+    // 分类按访问热度全量重排（不限于技术类目）。toast 必须按这个结果说，
+    // 不许编数字、密度功效或类目定向。
+    const result = applySmartAutoTune(allSites, categories)
+    const counts = result.appliedCounts
     toast({
       title: '✨ 智能调优已生效',
-      description: '已为您开启顶部 8 大高频速览坞、置顶核心技术类目并优化网格密度（可按 ↩ 撤销）',
+      description: `已按访问频次与星标把 ${counts.speedDialCount} 个高频站点置入速览坞，按访问热度重排分类${counts.collapsedCount > 0 ? `并折叠 ${counts.collapsedCount} 个无访问的长尾分类` : '、折叠无访问的长尾分类'}，同时开启自适应排序（可按 ↩ 撤销）`,
     })
   }
 
   return (
     <>
+        {storageWarning && (
+          <div
+            role="alert"
+            className={cn(
+              'fixed left-1/2 -translate-x-1/2 z-50 pointer-events-auto max-w-[92vw] w-max flex items-start gap-2 rounded-xl',
+              'border border-amber-500/40 bg-amber-50/95 dark:bg-amber-950/90 backdrop-blur-md',
+              'px-3 py-2 text-[11px] leading-snug text-amber-900 dark:text-amber-100 shadow-lg',
+              'bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+4.25rem)] sm:bottom-[4.75rem]',
+            )}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span className="flex-1">{storageWarning}</span>
+            <button
+              type="button"
+              onClick={dismissStorageWarning}
+              aria-label="关闭提示"
+              className="shrink-0 rounded p-0.5 hover:bg-amber-500/20 transition-colors cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
         <div
+          ref={toolbarRootRef}
           data-diy-hud="true"
           className={cn(
             'fixed left-1/2 lg:left-[calc(50%+110px)] -translate-x-1/2 z-50 pointer-events-auto',
@@ -375,16 +399,16 @@ export function HomeDIYToolbar({
             'animate-in fade-in slide-in-from-bottom-3 duration-200'
           )}
         >
-          {/* 左侧控制簇：AI场景预设、智能自适应调优、卡片形态、速览坞、作用域 */}
+          {/* 左侧控制簇：快捷预设、智能自适应调优、卡片形态、速览坞 */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* AI 场景预设 */}
-            <DropdownMenu>
+            {/* 快捷预设 */}
+            <DropdownMenu onOpenChange={(open) => { if (!open) handlePresetHover(null) }}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-8 px-2.5 rounded-xl text-xs gap-1.5 border-border/70 hover:border-primary/50"
-                  title="AI 场景预设（自然语言输入或悬停画布瞬间预览）"
+                  title="快捷指令或悬停预览预设（悬停只预览，不改配置、不留撤销记录）"
                 >
                   <Wand2 className="w-3.5 h-3.5 text-amber-500" />
                   <span className="font-semibold">快捷预设</span>
@@ -395,23 +419,26 @@ export function HomeDIYToolbar({
                 <div className="p-2 border-b border-border/40">
                   <div className="flex items-center gap-1.5 mb-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="text-xs font-semibold text-foreground">一句话排版（关键词匹配）</span>
+                    <span className="text-xs font-semibold text-foreground">快捷指令（关键词匹配）</span>
                   </div>
                   <form onSubmit={handleRunAiPrompt} className="flex items-center gap-1">
                     <Input
                       value={aiPrompt}
                       onChange={(e) => setAiPrompt(e.target.value)}
-                      placeholder="如: 6列极简胶囊，只看AI与前端"
-                      aria-label="一句话排版输入"
+                      placeholder="如：5列紧凑胶囊、极光背景、只看AI与前端"
+                      aria-label="快捷指令输入"
                       className="h-7 text-xs rounded-lg"
                     />
                     <Button type="submit" size="sm" className="h-7 px-2 text-xs shrink-0 rounded-lg">
                       执行
                     </Button>
                   </form>
+                  <p className="text-[11px] text-muted-foreground leading-snug mt-1.5">
+                    只认这些关键词：3列/4列/5列/6列 · 宽松/标准/紧凑 · 胶囊/丰富/深度 · 极简/网格/极光 · 只看AI/前端
+                  </p>
                 </div>
                 <DropdownMenuLabel className="text-xs text-muted-foreground px-2 py-1">
-                  经典场景预设方案 (鼠标悬停即时预览)
+                  经典场景预设方案 (悬停或聚焦即时预览：卡片形态、背景、密度、视图与首屏展板)
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator className="my-1" />
                 {BUILTIN_DIY_PRESETS.map((preset: DIYPreset) => (
@@ -419,6 +446,8 @@ export function HomeDIYToolbar({
                     key={preset.id}
                     onMouseEnter={() => handlePresetHover(preset)}
                     onMouseLeave={() => handlePresetHover(null)}
+                    onFocus={() => handlePresetHover(preset)}
+                    onBlur={() => handlePresetHover(null)}
                     onClick={() => handleApplyPresetAndClearPreview(preset.id)}
                     className="flex flex-col items-start gap-0.5 p-2 rounded-xl cursor-pointer hover:bg-accent/80 transition-colors"
                   >
@@ -487,29 +516,8 @@ export function HomeDIYToolbar({
               <span>{speedDialEnabled ? '已开' : '关'}</span>
             </Button>
 
-            {/* 作用域与多工作区切换 */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 px-2.5 rounded-xl text-xs gap-1 border-border/70" title="选择排版作用域（全局或当前工作区）">
-                  <Layers className="w-3.5 h-3.5 text-indigo-500" />
-                  <span className="hidden sm:inline">作用域:</span>
-                  <span className="font-semibold">{currentWorkspace === 'dev' ? '研发' : currentWorkspace === 'ai' ? 'AI' : currentWorkspace === 'indie' ? '独立' : currentWorkspace === 'design' ? '设计' : '全局'}</span>
-                  <ChevronDown className="w-3 h-3 text-muted-foreground" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-44 p-1.5">
-                <DropdownMenuLabel className="text-xs text-muted-foreground">排版生效作用域</DropdownMenuLabel>
-                <DropdownMenuSeparator className="my-1" />
-                <DropdownMenuItem onClick={() => setCurrentWorkspace('all')} className={cn('text-xs flex items-center justify-between cursor-pointer', currentWorkspace === 'all' && 'font-bold text-primary')}><span>🌐 全局默认</span>{currentWorkspace === 'all' && <Check className="w-3.5 h-3.5" />}</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCurrentWorkspace('dev')} className={cn('text-xs flex items-center justify-between cursor-pointer', currentWorkspace === 'dev' && 'font-bold text-primary')}><span>💼 研发全栈</span>{currentWorkspace === 'dev' && <Check className="w-3.5 h-3.5" />}</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCurrentWorkspace('ai')} className={cn('text-xs flex items-center justify-between cursor-pointer', currentWorkspace === 'ai' && 'font-bold text-primary')}><span>🤖 AI 实验室</span>{currentWorkspace === 'ai' && <Check className="w-3.5 h-3.5" />}</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCurrentWorkspace('indie')} className={cn('text-xs flex items-center justify-between cursor-pointer', currentWorkspace === 'indie' && 'font-bold text-primary')}><span>🚀 独立开发</span>{currentWorkspace === 'indie' && <Check className="w-3.5 h-3.5" />}</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCurrentWorkspace('design')} className={cn('text-xs flex items-center justify-between cursor-pointer', currentWorkspace === 'design' && 'font-bold text-primary')}><span>🎨 视觉设计</span>{currentWorkspace === 'design' && <Check className="w-3.5 h-3.5" />}</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             {/* 美学背景、列数与强调色 */}
-            <DropdownMenu>
+            <DropdownMenu onOpenChange={(open) => { if (!open) commitOpacityDraft() }}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
@@ -580,7 +588,7 @@ export function HomeDIYToolbar({
                 {/* P1 可读性下限：滑杆最小 0.88（88%）——按壁纸实测曲线，0.85 时描述文字外推 ≈4.4:1（跌破 AA），0.88 实测最坏 4.60:1；下限与配置 clamp / CSS 兜底同口径 */}
                 <div className="px-1 py-1 space-y-1">
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>卡片不透明度: {Math.round((cardOpacity ?? 0.9) * 100)}%（可读性下限 88%）</span>
+                    <span>卡片不透明度: {Math.round(shownOpacity * 100)}%（可读性下限 88%）</span>
                   </div>
                   <input
                     type="range"
@@ -588,8 +596,12 @@ export function HomeDIYToolbar({
                     min={0.88}
                     max={1}
                     step={0.01}
-                    value={Math.min(1, Math.max(0.88, cardOpacity ?? 0.9))}
-                    onChange={(e) => setAestheticSliders(glassmorphismBlur ?? 12, Number(e.target.value))}
+                    value={shownOpacity}
+                    onChange={(e) => setOpacityDraft(Number(e.target.value))}
+                    onPointerUp={commitOpacityDraft}
+                    onTouchEnd={commitOpacityDraft}
+                    onBlur={commitOpacityDraft}
+                    onKeyUp={commitOpacityDraft}
                     className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer"
                   />
                 </div>
@@ -679,7 +691,8 @@ export function HomeDIYToolbar({
                 'h-8 w-8 rounded-full',
                 !canUndo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-muted text-muted-foreground hover:text-foreground'
               )}
-              title="撤销 (↩ Ctrl+Z)"
+              title={isMac ? '撤销 (↩ ⌘Z)' : '撤销 (↩ Ctrl+Z)'}
+              aria-label="撤销"
             >
               <Undo2 className="w-3.5 h-3.5" />
             </Button>
@@ -692,7 +705,8 @@ export function HomeDIYToolbar({
                 'h-8 w-8 rounded-full',
                 !canRedo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-muted text-muted-foreground hover:text-foreground'
               )}
-              title="重做 (↪ Ctrl+Y)"
+              title={isMac ? '重做 (↪ ⌘⇧Z)' : '重做 (↪ Ctrl+Y)'}
+              aria-label="重做"
             >
               <Redo2 className="w-3.5 h-3.5" />
             </Button>
@@ -704,6 +718,7 @@ export function HomeDIYToolbar({
               onClick={() => setIsBackupOpen(true)}
               className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
               title="排版蓝图 JSON 导入与导出"
+              aria-label="排版蓝图 JSON 导入与导出"
             >
               <Download className="w-3.5 h-3.5" />
             </Button>
@@ -715,6 +730,7 @@ export function HomeDIYToolbar({
               onClick={handleReset}
               className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
               title="🔄 恢复系统默认排版"
+              aria-label="恢复系统默认排版"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </Button>
@@ -774,6 +790,7 @@ export function HomeDIYToolbar({
         exportPresetToUrlHash={exportPresetToUrlHash}
         exportDIYConfig={exportDIYConfig}
         importDIYConfig={importDIYConfig}
+        stageImportForConfirm={stageImportForConfirm}
         exportEncryptedDIYConfig={exportEncryptedDIYConfig}
         importEncryptedDIYConfig={importEncryptedDIYConfig}
         syncToCloudVault={syncToCloudVault}

@@ -12,6 +12,11 @@
  *
  * 只存本机 localStorage（与字号、密度同一纪律，不进账号同步）：
  * 开启时记住此前的字号档，关闭时还原——不开长辈模式的人不受任何影响。
+ * 例外：长辈模式开着时用户经字号入口（工具栏 / 设置页）手动改档，
+ * 只写字号存储键，不会更新这里记下的开启前档位；关闭时若仍照旧还原，
+ * 会把这次手动改档悄悄丢掉。因此关闭时以「当前档」为准：当前档已不是
+ * 特大字，说明开着期间被手动改过，就保留当前档；仍是特大字才还原
+ * 开启前记住的档（手动改成特大字与「没改过」无法区分，是已知局限）。
  * 水合前由内联脚本先落值防闪烁（与 font-size / density 同款做法）。
  */
 
@@ -38,7 +43,10 @@ interface ElderModeRecord {
 function parseRecord(raw: string | null): ElderModeRecord {
   if (!raw) return { on: false }
   try {
-    const parsed = JSON.parse(raw) as Partial<ElderModeRecord>
+    const parsed = JSON.parse(raw) as Partial<ElderModeRecord> | boolean
+    // 旧版只存过布尔字符串：JSON.parse('true') 成功但 parsed 是布尔值不是
+    // 对象，不加这支判断会走到 parsed.on === undefined → 误判为关闭。
+    if (typeof parsed === 'boolean') return { on: parsed }
     return {
       on: parsed.on === true,
       prevFontSize:
@@ -91,15 +99,20 @@ export function applyElderMode(on: boolean, root: HTMLElement | null): void {
 }
 
 /**
- * 切换长辈模式并持久化。开启：记住当前字号、置特大字；关闭：还原记住的字号
- *（没记住过就回标准档）。调用后发事件，StreakBar 等监听者即时重判。
+ * 切换长辈模式并持久化。开启：记住当前字号、置特大字（已开着时重复开启
+ * 不覆盖记住的档位，避免把特大字本身记成「开启前档位」）；关闭：还原
+ * 记住的字号（没记住过就回标准档），但开着期间用户手动改过字号时以
+ * 当前档为准（见文件头注释），不让关闭动作丢掉那次手动改档。
+ * 调用后发事件，StreakBar 等监听者即时重判。
  */
 export function setElderMode(on: boolean, storage: Storage | null = null): boolean {
   const store = storage ?? (typeof window !== 'undefined' ? window.localStorage : null)
   const prev = readRecord(store)
   if (on) {
-    const current = loadFontSizeLevel(store)
-    writeRecord(store, { on: true, prevFontSize: current })
+    // 已开着时重复开启：当前档就是特大字，照旧记会把 prevFontSize 写成
+    // 'xlarge'，之后关闭就再也回不到真正的开启前档位。
+    const prevFontSize = prev.on && prev.prevFontSize ? prev.prevFontSize : loadFontSizeLevel(store)
+    writeRecord(store, { on: true, prevFontSize })
     try {
       store?.setItem(FONT_SIZE_STORAGE_KEY, 'xlarge')
     } catch {
@@ -107,7 +120,10 @@ export function setElderMode(on: boolean, storage: Storage | null = null): boole
     }
     applyElderMode(true, typeof document !== 'undefined' ? document.documentElement : null)
   } else {
-    const restore = prev.prevFontSize ?? 'standard'
+    // 手动改档检测：长辈模式只把字号置为特大字，当前档不是特大字，
+    // 说明开着期间用户经字号入口手动改过档——保留当前档，不还原旧值。
+    const current = loadFontSizeLevel(store)
+    const restore = current !== 'xlarge' ? current : (prev.prevFontSize ?? 'standard')
     writeRecord(store, { on: false, prevFontSize: restore })
     try {
       store?.setItem(FONT_SIZE_STORAGE_KEY, restore)
@@ -143,5 +159,5 @@ export const ELDER_MODE_PREPAINT_SCRIPT = [
 export const ELDER_MODE_LABEL = {
   on: '长辈模式已开启',
   off: '长辈模式',
-  hint: `一键适老：${FONT_SIZE_LABEL.xlarge}（20px）+ 宽松间距 + 44px 触控目标，关闭后字号还原`,
+  hint: `一键适老：${FONT_SIZE_LABEL.xlarge}（20px）+ 宽松间距 + 44px 触控目标，关闭后恢复之前的字号；期间手动改过的字号会保留`,
 } as const

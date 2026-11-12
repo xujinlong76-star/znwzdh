@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server'
 import { isSafeMediaHost, verifyMediaSignature } from '@/lib/media-proxy'
 import { envPositiveInt } from '@/lib/stream-budget'
 import { createHash } from 'node:crypto'

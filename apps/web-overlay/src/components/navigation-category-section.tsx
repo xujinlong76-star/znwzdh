@@ -17,11 +17,11 @@ import { Button } from '@/registry/new-york/ui/button'
 import { cn } from '@/lib/utils'
 import {
   computeAdaptiveSiteRanking,
-  isSafeSiteHref,
   sortCategoryItemsWithPinned,
 } from '@/lib/modular/diy-presets'
-import { createCustomSiteId } from '@/lib/modular/custom-site-input'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
+import type { DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { countCategorySites } from '@/lib/modular/category-counts'
 import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
@@ -35,11 +35,6 @@ import { useExternalLinkTarget } from '@/lib/user-preferences'
 import { useSiteViewModel } from '@/components/site-view-context'
 import { externalLinkRelAttr } from '@/lib/site-settings'
 
-interface DropCategoryTarget {
-  categoryId: string
-  position: 'before' | 'after'
-}
-
 export interface NavigationCategorySectionProps {
   category: CategoryNode | (NavigationItem & { isCustom?: boolean })
   index: number
@@ -50,9 +45,7 @@ export interface NavigationCategorySectionProps {
   selectionMode: boolean
   selectedIds: string[]
   siteData: SiteConfig
-  dropCategoryTarget: DropCategoryTarget | null
   dragOverCustomCatId: string | null
-  setDropCategoryTarget: (target: DropCategoryTarget | null) => void
   setDragOverCustomCatId: (id: string | null) => void
   setAddSiteTargetCatId: (id: string | null) => void
   setPeekItem: (item: NavigationSubItem | null, categoryId?: string) => void
@@ -76,10 +69,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   selectionMode,
   selectedIds,
   siteData,
-  dropCategoryTarget,
   dragOverCustomCatId,
-  setDropCategoryTarget,
-  setDragOverCustomCatId,
   setAddSiteTargetCatId,
   setPeekItem,
   keyboardHintId,
@@ -96,15 +86,44 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     categoryDensityOverrides,
     collapsedCategoryIds,
     pinnedSiteIdsByCategory,
-    addSiteToCustomCategory,
-    reclassifySite,
     togglePinSiteInCategory,
     toggleCollapseCategory,
-    reorderCategory,
     speedDialPinnedIds,
     pinToSpeedDial,
     unpinFromSpeedDial,
   } = useHomeDIY()
+
+  /**
+   * 网格 hook：卡片 ⋯ 菜单的移动走这里（置顶列表重排，不改其它文件）。
+   * 分类网格坐标本身目前只作读时派生（gridLayout 未直接渲染）——
+   * 分类区块是通栏 section，RGL 的二维坐标对它没有增益；
+   * 网格模型真正落地在模块化画布（DiyRglGrid）。
+   */
+  const { moveCard } = useHomeDiyGrid(allCategoryIds)
+
+  /**
+   * dnd-kit 重型层：挂载后在后台 import（不阻塞首屏，chunk 到达前
+   * 卡片只渲染 ⋯ 菜单；到达后编辑态再包上可拖拽层）。
+   * 失败也不影响菜单（catch 里静默：拖拽是增强，不是必需）。
+   */
+  type DiyDragKitModule = typeof import('@/components/diy/diy-drag-kit')
+  const [dragKit, setDragKit] = useState<DiyDragKitModule | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    import('@/components/diy/diy-drag-kit')
+      .then((mod) => {
+        if (!cancelled) setDragKit(mod)
+      })
+      .catch(() => {
+        // 拖拽库加载失败：菜单仍可用，不弹错打扰用户
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  /** dnd-kit 落点高亮（本区块正被卡片悬停）：复用旧的高亮条样式 */
+  const [isCategoryDropTarget, setIsCategoryDropTarget] = useState(false)
   const {
     isCategoryHidden,
     isSubcategoryHidden,
@@ -390,6 +409,12 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     return { items: all.slice(0, limit) }
   }, [filteredDirectItems, forceFull, isFilterActive, expandedGroups, limit])
 
+  /** 直属组当前显示的卡片 id（⋯ 菜单移动的基准列表） */
+  const directDisplayedIds = useMemo(
+    () => directGroup.items.map((item) => item.id),
+    [directGroup.items],
+  )
+
   const subGroups = useMemo(
     () => {
       const activeList = selectedSubCatId === '__direct__'
@@ -408,9 +433,12 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
          * 「展开全部 N 个」。只有「全部」视图仍保留逐组截断。
          */
         const expanded = forceFull || isFilterActive || selectedSubCatId !== null || Boolean(expandedGroups[entry.subCategory.id])
+        const items = expanded || all.length <= limit ? all : all.slice(0, limit)
         return {
           ...entry,
-          items: expanded || all.length <= limit ? all : all.slice(0, limit),
+          items,
+          /** 该子分类组当前显示的卡片 id（⋯ 菜单移动的基准列表） */
+          displayedIds: items.map((item) => item.id),
         }
       })
     },
@@ -490,6 +518,71 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     [togglePinSiteInCategory, category.id]
   )
 
+  /**
+   * 卡片渲染（含编辑态的 dnd-kit 可拖拽包装）。
+   *
+   * 包装器只在「编辑态 + 重型层已加载」时出现：平时卡片就是普通卡片，
+   * 首屏不付 dnd-kit 的包体；编辑态下每张卡外面多一个 div（grid item），
+   * 手柄经 context 交给卡片里的 grip 按钮。
+   * ⋯ 菜单的移动走 use-home-diy-grid（置顶列表重排），与拖拽无关，
+   * 所以菜单在重型层加载失败时照样能用。
+   */
+  const renderSiteCard = (
+    item: NavigationSubItem,
+    opts: {
+      sourceCategoryId: string
+      pinnedIds: string[]
+      onTogglePin: (siteId: string) => void
+      onPeek: (item: NavigationSubItem) => void
+      displayedIds: string[]
+      index: number
+    },
+  ) => {
+    const node = (
+      <NavigationCard
+        key={item.id}
+        item={sanitizeSiteTags(item, categoryNameIndex)}
+        siteConfig={siteData}
+        onPeek={opts.onPeek}
+        keyboardHintId={keyboardHintId}
+        cardDisplayMode={effectiveCardMode}
+        isPinnedInCategory={opts.pinnedIds.includes(item.id)}
+        onTogglePinInCategory={opts.onTogglePin}
+        isDraggable={isEditingLayout}
+        sourceCategoryId={opts.sourceCategoryId}
+        selectable={selectionMode}
+        selected={selectedIdSet.has(item.id)}
+        onToggleSelect={toggleSelectOne}
+        isEditingLayout={isEditingLayout}
+        isSpeedDialPinned={speedDialPinnedSet.has(item.id)}
+        onToggleSpeedDialPin={handleToggleSpeedDialPin}
+        linkTarget={linkTarget}
+        externalRel={externalRel}
+        onMoveCard={(direction) => {
+          moveCard(opts.sourceCategoryId, opts.displayedIds, item.id, direction)
+        }}
+        cardIndex={opts.index}
+        cardTotal={opts.displayedIds.length}
+      />
+    )
+    if (!isEditingLayout || !dragKit) return node
+    const { DiyDraggableCard } = dragKit
+    const dragData: DiyCardDragData = {
+      kind: 'card',
+      siteId: item.id,
+      title: item.title,
+      href: item.href,
+      description: item.description,
+      icon: item.icon,
+      sourceCategoryId: opts.sourceCategoryId,
+    }
+    return (
+      <DiyDraggableCard key={item.id} data={dragData}>
+        {node}
+      </DiyDraggableCard>
+    )
+  }
+
   const isHidden =
     !bypassMaskTemporarily &&
     (hiddenCategoryIds?.includes(category.id) || isCategoryHidden(category.id))
@@ -526,178 +619,29 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     )
   }
 
-  return (
-                    <section
-                      ref={sectionRef}
-                      key={category.id}
-                      id={category.id}
-                      onDragOver={(e) => {
-                        if (isResizingModuleRef.current) return
-                        // 1. 如果拖拽的是卡片，且当前是自定义专属分类
-                        if (e.dataTransfer.types.includes('text/navhub-card-payload')) {
-                          if (isCustom) {
-                            e.preventDefault()
-                            e.dataTransfer.dropEffect = 'copy'
-                            if (dragOverCustomCatId !== category.id) {
-                              setDragOverCustomCatId(category.id)
-                            }
-                          }
-                          return
-                        }
+  const sectionClassName = cn(
+    "cv-auto-section group relative scroll-m-16",
+    isResizingSelf ? "transition-none! select-none!" : "transition-all duration-200",
+    sectionColSpanClass,
+    isModuleCustomSized && !isPinned && !isEditingLayout && "p-3 sm:p-4 rounded-2xl border border-border/70 bg-card/35 backdrop-blur-xs shadow-2xs",
+    isPinned && "p-3 sm:p-4 rounded-2xl bg-primary/3 border border-primary/20 depth-surface",
+    isEditingLayout && "p-3 sm:p-4 rounded-2xl border-2 border-dashed border-primary/30 bg-muted/20",
+    (dragOverCustomCatId === category.id || isCategoryDropTarget) && "ring-2 ring-emerald-500 bg-emerald-500/10 rounded-2xl border-emerald-500/60"
+  )
 
-                        // 2. 如果处于排版编排模式且拖拽的是分类
-                        if (isEditingLayout && e.dataTransfer.types.includes('text/navhub-category-id')) {
-                          e.preventDefault()
-                          e.dataTransfer.dropEffect = 'move'
-                          const rect = e.currentTarget.getBoundingClientRect()
-                          const midY = rect.top + rect.height / 2
-                          const pos = e.clientY < midY ? 'before' : 'after'
-                          setDropCategoryTarget({ categoryId: category.id, position: pos })
-                        }
-                      }}
-                      onDragLeave={() => {
-                        if (dropCategoryTarget?.categoryId === category.id) {
-                          setDropCategoryTarget(null)
-                        }
-                        if (dragOverCustomCatId === category.id) {
-                          setDragOverCustomCatId(null)
-                        }
-                      }}
-                      onDrop={(e) => {
-                        // 1. 处理卡片拖拽跨分类移动与自建分类收录
-                        if (e.dataTransfer.types.includes('text/navhub-card-payload')) {
-                          e.preventDefault()
-                          setDragOverCustomCatId(null)
-                          try {
-                            const raw = e.dataTransfer.getData('text/navhub-card-payload')
-                            if (raw) {
-                              const card = JSON.parse(raw)
-                              if (isCustom && card.title && card.href) {
-                                if (!isSafeSiteHref(card.href)) {
-                                  toast({
-                                    title: '⚠️ 拖拽收录已拦截',
-                                    description: '该卡片地址不安全，仅允许 http/https 或站内路径。',
-                                  })
-                                  return
-                                }
-                                const exists = category.items?.some(
-                                  (item) => item.href === card.href || item.title === card.title
-                                )
-                                if (exists) {
-                                  toast({
-                                    title: 'ℹ️ 站点已存在',
-                                    description: `站点「${card.title}」已收录在「${category.title}」中。`,
-                                  })
-                                  return
-                                }
-                                const outcome = addSiteToCustomCategory(category.id, {
-                                  id: createCustomSiteId(),
-                                  title: card.title,
-                                  href: card.href,
-                                  description: card.description || undefined,
-                                  icon: card.icon || undefined,
-                                })
-                                if (outcome === 'failed') {
-                                  toast({
-                                    title: '这一下没能保存',
-                                    description: '浏览器拒绝写入本地存储（隐私模式或空间已满），刷新后这条收录会消失。',
-                                    variant: 'destructive',
-                                  })
-                                } else if (outcome === 'duplicate') {
-                                  toast({ title: 'ℹ️ 站点已存在', description: `「${card.title}」已在「${category.title}」中。` })
-                                } else {
-                                  toast({
-                                    title: '📥 拖拽收录成功',
-                                    description: `已成功将站点「${card.title}」收录进专属分类「${category.title}」！`,
-                                  })
-                                }
-                                return
-                              } else if (isEditingLayout && card.id && card.sourceCategoryId !== category.id) {
-                                reclassifySite(card.id, category.id)
-                                toast({
-                                  title: '🔄 跨分类迁移成功',
-                                  description: `已将站点「${card.title}」重排归类至「${category.title}」！`,
-                                })
-                                return
-                              }
-                            }
-                          } catch (err) {
-                            console.error('拖拽卡片解析失败', err)
-                          }
-                          return
-                        }
-                        if (false && isCustom) {
-                          e.preventDefault()
-                          setDragOverCustomCatId(null)
-                          try {
-                            const raw = e.dataTransfer.getData('text/navhub-card-payload')
-                            if (raw) {
-                              const card = JSON.parse(raw)
-                              if (card.title && card.href) {
-                                const exists = category.items?.some(
-                                  (item) => item.href === card.href || item.title === card.title
-                                )
-                                if (exists) {
-                                  toast({
-                                    title: 'ℹ️ 站点已存在',
-                                    description: `站点「${card.title}」已收录在「${category.title}」中。`,
-                                  })
-                                  return
-                                }
-                                const outcome = addSiteToCustomCategory(category.id, {
-                                  id: createCustomSiteId(),
-                                  title: card.title,
-                                  href: card.href,
-                                  description: card.description || undefined,
-                                  icon: card.icon || undefined,
-                                })
-                                if (outcome === 'failed') {
-                                  toast({
-                                    title: '这一下没能保存',
-                                    description: '浏览器拒绝写入本地存储（隐私模式或空间已满），刷新后这条收录会消失。',
-                                    variant: 'destructive',
-                                  })
-                                } else if (outcome === 'duplicate') {
-                                  toast({ title: 'ℹ️ 站点已存在', description: `「${card.title}」已在「${category.title}」中。` })
-                                } else {
-                                  toast({
-                                    title: '📥 拖拽收录成功',
-                                    description: `已成功将站点「${card.title}」收录进专属分类「${category.title}」！`,
-                                  })
-                                }
-                              }
-                            }
-                          } catch (err) {
-                            console.error('拖拽卡片解析失败', err)
-                          }
-                          return
-                        }
-
-                        // 2. 处理分类位置重排
-                        if (isEditingLayout && e.dataTransfer.types.includes('text/navhub-category-id')) {
-                          e.preventDefault()
-                          const sourceCatId = e.dataTransfer.getData('text/navhub-category-id')
-                          const targetPos = dropCategoryTarget?.position || 'before'
-                          setDropCategoryTarget(null)
-                          if (sourceCatId && sourceCatId !== category.id) {
-                            reorderCategory(sourceCatId, category.id, targetPos, allCategoryIds)
-                            toast({
-                              title: '✨ 分类编排已更新',
-                              description: `已将分类重排至「${category.title}」${targetPos === 'after' ? '之后' : '之前'}。`,
-                            })
-                          }
-                        }
-                      }}
-                      className={cn(
-                        "cv-auto-section group relative scroll-m-16",
-                        isResizingSelf ? "transition-none! select-none!" : "transition-all duration-200",
-                        sectionColSpanClass,
-                        isModuleCustomSized && !isPinned && !isEditingLayout && "p-3 sm:p-4 rounded-2xl border border-border/70 bg-card/35 backdrop-blur-xs shadow-2xs",
-                        isPinned && "p-3 sm:p-4 rounded-2xl bg-primary/3 border border-primary/20 depth-surface",
-                        isEditingLayout && "p-3 sm:p-4 rounded-2xl border-2 border-dashed border-primary/30 bg-muted/20",
-                        dragOverCustomCatId === category.id && "ring-2 ring-emerald-500 bg-emerald-500/10 rounded-2xl border-emerald-500/60"
-                      )}
-                    >
+  /**
+   * HTML5 DnD 已移除（DRAG-2）：section 上的原生拖拽处理在触屏上
+   * 根本不触发，也没有键盘路径，解析失败还静默吞错。
+   * 卡片跨分类拖拽改走 dnd-kit（DiyDragProvider 由 coordinator 接在
+   * navigation-content，落点处理在 diy-drag-kit）；本区块在编辑态
+   * 通过 DiyCategoryDropTarget 把 section 本身注册为落点。
+   * 分类拖拽源同样已是 dnd-kit：category-in-situ-controls 里的手柄
+   * 是 DiyCategoryDragGrip（useDraggable，dnd-kit chunk 加载后传入），
+   * 落下后 navigation-content 的 handleCategoryDragEnd 调
+   * moveCategoryToIndex 重排。
+   */
+  const sectionInner = (
+    <>
                       {/* 四向边框与双下角自由拖拉调整模块窗口大小手柄 */}
                       <ModuleResizeHandles
                         moduleRef={sectionRef}
@@ -724,16 +668,8 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                         }}
                       />
 
-                      {/* 分类拖拽放置指示标线 */}
-                      {dropCategoryTarget && dropCategoryTarget.categoryId === category.id && dropCategoryTarget.position === 'before' && (
-                        <div className="absolute -top-1.5 inset-x-2 h-1 bg-primary rounded-full shadow-md shadow-primary/60 animate-pulse z-30" />
-                      )}
-                      {dropCategoryTarget && dropCategoryTarget.categoryId === category.id && dropCategoryTarget.position === 'after' && (
-                        <div className="absolute -bottom-1.5 inset-x-2 h-1 bg-primary rounded-full shadow-md shadow-primary/60 animate-pulse z-30" />
-                      )}
-
                       {/* 卡片拖拽进专属分类的引导高亮条 */}
-                      {dragOverCustomCatId === category.id && (
+                      {(dragOverCustomCatId === category.id || isCategoryDropTarget) && (
                         <div className="mb-3 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-500/15 border-2 border-dashed border-emerald-500 text-emerald-600 dark:text-emerald-400 font-semibold text-xs animate-in zoom-in-95 duration-150">
                           <Sparkles className="w-4 h-4 animate-bounce" />
                           <span>松开鼠标，直接收录卡片至「{category.title}」专属分类</span>
@@ -946,6 +882,8 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               canMoveUp={index > 0}
                               canMoveDown={index < totalCategories - 1}
                               allCategoryIds={allCategoryIds}
+                              dragEnabled
+                              dragGrip={dragKit?.DiyCategoryDragGrip}
                               onAddSite={() => setAddSiteTargetCatId(category.id)}
                             />
                           )}
@@ -1068,28 +1006,16 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 className={cn(effectiveGridClass, "transition-all duration-200")}
                                 style={{ gap: 'var(--density-grid-gap, 14px)' }}
                               >
-                                {directGroup.items.map((item: any) => (
-                                  <NavigationCard
-                                    key={item.id}
-                                    item={sanitizeSiteTags(item, categoryNameIndex)}
-                                    siteConfig={siteData}
-                                    onPeek={handlePeekDirect}
-                                    keyboardHintId={keyboardHintId}
-                                    cardDisplayMode={effectiveCardMode}
-                                    isPinnedInCategory={categoryPinnedItemIds.includes(item.id)}
-                                    onTogglePinInCategory={handleTogglePinDirect}
-                                    isDraggable={isEditingLayout}
-                                    sourceCategoryId={category.id}
-                                    selectable={selectionMode}
-                                    selected={selectedIdSet.has(item.id)}
-                                    onToggleSelect={toggleSelectOne}
-                                    isEditingLayout={isEditingLayout}
-                                    isSpeedDialPinned={speedDialPinnedSet.has(item.id)}
-                                    onToggleSpeedDialPin={handleToggleSpeedDialPin}
-                                    linkTarget={linkTarget}
-                                    externalRel={externalRel}
-                                  />
-                                ))}
+                                {directGroup.items.map((item: any, index: number) =>
+                                  renderSiteCard(item, {
+                                    sourceCategoryId: category.id,
+                                    pinnedIds: categoryPinnedItemIds,
+                                    onTogglePin: handleTogglePinDirect,
+                                    onPeek: handlePeekDirect,
+                                    displayedIds: directDisplayedIds,
+                                    index,
+                                  }),
+                                )}
 
                                 {/* 专属私人分类末尾的“添加自定义网址”槽位 */}
                                 {isCustom && (
@@ -1113,7 +1039,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
 
                             {/* 二级分类及其站点 */}
                             {subGroups.length > 0 &&
-                              subGroups.map(({ subCategory, subPinnedItemIds, sortedSubItems, items }) => {
+                              subGroups.map(({ subCategory, subPinnedItemIds, sortedSubItems, items, displayedIds }) => {
                                 const hasSubCatRail = !isEditingLayout && subCats.length > 1
                                 const isSubExpanded = Boolean(expandedGroups[subCategory.id])
                                 const canExpandSub = !forceFull && Number.isFinite(limit) && sortedSubItems.length > limit
@@ -1186,28 +1112,16 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                       className={cn(effectiveGridClass, "transition-all duration-200")}
                                       style={{ gap: 'var(--density-grid-gap, 14px)' }}
                                     >
-                                      {items.map((item: any) => (
-                                        <NavigationCard
-                                          key={item.id}
-                                          item={sanitizeSiteTags(item, categoryNameIndex)}
-                                          siteConfig={siteData}
-                                          onPeek={(item) => setPeekItem(item, subCategory.id)}
-                                          keyboardHintId={keyboardHintId}
-                                          cardDisplayMode={effectiveCardMode}
-                                          isPinnedInCategory={subPinnedItemIds.includes(item.id)}
-                                          onTogglePinInCategory={(siteId) => togglePinSiteInCategory(subCategory.id, siteId)}
-                                          isDraggable={isEditingLayout}
-                                          sourceCategoryId={subCategory.id}
-                                          selectable={selectionMode}
-                                          selected={selectedIdSet.has(item.id)}
-                                          onToggleSelect={toggleSelectOne}
-                                          isEditingLayout={isEditingLayout}
-                                          isSpeedDialPinned={speedDialPinnedSet.has(item.id)}
-                                          onToggleSpeedDialPin={handleToggleSpeedDialPin}
-                                          linkTarget={linkTarget}
-                                          externalRel={externalRel}
-                                        />
-                                      ))}
+                                      {items.map((item: any, index: number) =>
+                                        renderSiteCard(item, {
+                                          sourceCategoryId: subCategory.id,
+                                          pinnedIds: subPinnedItemIds,
+                                          onTogglePin: (siteId) => togglePinSiteInCategory(subCategory.id, siteId),
+                                          onPeek: (peekItem) => setPeekItem(peekItem, subCategory.id),
+                                          displayedIds,
+                                          index,
+                                        }),
+                                      )}
                                     </div>
                                   </div>
                                 )
@@ -1222,6 +1136,36 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                           </div>
                         )}
                       </div>
-                    </section>
+    </>
+  )
+
+  if (isEditingLayout && dragKit) {
+    const { DiyCategoryDropTarget } = dragKit
+    return (
+      <section
+        ref={sectionRef}
+        key={category.id}
+        id={category.id}
+        className={sectionClassName}
+      >
+        <DiyCategoryDropTarget
+          data={{ kind: 'category', categoryId: category.id, isCustom, title: category.title }}
+          element={sectionRef}
+          onDropTargetChange={setIsCategoryDropTarget}
+        />
+        {sectionInner}
+      </section>
+    )
+  }
+
+  return (
+    <section
+      ref={sectionRef}
+      key={category.id}
+      id={category.id}
+      className={sectionClassName}
+    >
+      {sectionInner}
+    </section>
   )
 })

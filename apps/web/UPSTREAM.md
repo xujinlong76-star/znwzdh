@@ -4,7 +4,7 @@ This directory is derived from [NavSphere](https://github.com/tianyaxiang/NavSph
 
 - Upstream ref: 6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a
 - Upstream commit: 6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a
-- Vendored at: 2026-10-18T11:12:29.463Z
+- Vendored at: 2026-11-12T12:15:28.110Z
 - Re-vendor: node scripts/vendor-web.mjs
 
 NavHub-owned files live in apps/web-overlay/ (applied on top of upstream):

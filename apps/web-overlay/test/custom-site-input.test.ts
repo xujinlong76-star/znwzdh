@@ -109,11 +109,15 @@ describe("源码守卫：录入路径真的用上了纯函数", () => {
     expect(src).toContain("normalizeCustomSiteHref(customSiteHref)");
   });
 
-  it("四处 id 生成全部收敛到 createCustomSiteId（不再内联随机后缀）", () => {
+  it("三处 id 生成全部收敛到 createCustomSiteId（不再内联随机后缀）", () => {
     const src = overlaySource("src/components/navigation-content.tsx");
-    // P1-2：一级/二级卡片的拖拽收录在 navigation-category-section.tsx
+    // DIY：卡片渲染收敛到 navigation-category-section.tsx 的 renderSiteCard，
+    // 一级/二级卡片的拖拽收录收敛到 diy-drag-kit.tsx 的 resolveCardDrop
+    // 'collect' 分支（f8119af 前两处拖拽收录在 navigation-category-section.tsx，
+    // 合并后只剩一处）；手工录入与批量收录仍在 navigation-content.tsx。
     const section = overlaySource("src/components/navigation-category-section.tsx");
-    expect(countOccurrences(src + section, "createCustomSiteId()")).toBeGreaterThanOrEqual(4);
-    expect(src + section).not.toContain("custom_site_${Date.now()}");
+    const dragKit = overlaySource("src/components/diy/diy-drag-kit.tsx");
+    expect(countOccurrences(src + section + dragKit, "createCustomSiteId()")).toBeGreaterThanOrEqual(3);
+    expect(src + section + dragKit).not.toContain("custom_site_${Date.now()}");
   });
 });

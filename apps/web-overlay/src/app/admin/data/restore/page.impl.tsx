@@ -552,7 +552,7 @@ export default function RestoreBackupPage() {
           )}
 
           {parseError && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm text-destructive-text" role="alert">
               解析失败：{parseError}
             </p>
           )}
@@ -685,7 +685,7 @@ export default function RestoreBackupPage() {
       {error && (
         <Card className="border-destructive/40">
           <CardContent className="space-y-2 pt-6">
-            <p className="flex items-center gap-2 text-sm font-medium text-destructive" role="alert">
+            <p className="flex items-center gap-2 text-sm font-medium text-destructive-text" role="alert">
               <AlertTriangle className="h-4 w-4" aria-hidden />
               {errorKind === 'sync'
                 ? '恢复失败，已整体回滚'
@@ -886,7 +886,7 @@ function JobProgress({
 
         {isFailed && (
           <div className="space-y-2">
-            <p className="flex items-center gap-2 text-sm font-medium text-destructive" role="alert">
+            <p className="flex items-center gap-2 text-sm font-medium text-destructive-text" role="alert">
               <AlertTriangle className="h-4 w-4" aria-hidden />
               恢复中断：已处理 {done} 条后失败
             </p>

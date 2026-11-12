@@ -1,12 +1,14 @@
 /**
- * P1-2 拆分的源码守卫：备份弹窗与整理算法都必须「被引用且被渲染」，
+ * P1-2 拆分的源码守卫：备份弹窗必须「被引用且被渲染」，
  * 防止拆出去的代码重新腐化成死代码（这个仓库有过 batch-operation-dock
  * 写好了却全仓无人渲染的先例，见 batch-selection.test.ts 的注释）。
+ * 一键整理功能已于 2026-11-12 删除（无任何调用方：handleAutoTidyLayout
+ * 与纯函数 computeLayoutTidyPlan 一并移除），工具栏不得残留整理算法。
  *
  * 锁三件事：
  *   1. 工具栏渲染 <HomeDIYBackupDialog> 并注入 9 个依赖；
  *   2. 工具栏不再内联备份弹窗的 230 行（用载荷特征串做反向断言）；
- *   3. 整理算法走纯函数 computeLayoutTidyPlan，不再内联阈值判断。
+ *   3. 工具栏无一键整理残留（无 computeLayoutTidyPlan 调用、无内联阈值判断）。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -60,9 +62,10 @@ describe("home-diy 拆分后的接线", () => {
     expect(s).toContain("export function HomeDIYBackupDialog");
   });
 
-  it("整理算法走纯函数，工具栏不再内联阈值", () => {
+  it("一键整理已删除，工具栏无整理算法残留", () => {
     const s = toolbar();
-    expect(s).toContain("computeLayoutTidyPlan(");
+    expect(s).not.toContain("computeLayoutTidyPlan(");
+    expect(s).not.toContain("handleAutoTidyLayout");
     expect(s).not.toContain("total > 25");
     expect(s).not.toContain("hiddenCategoryIds.includes(cat.id)");
   });

@@ -35,7 +35,6 @@ import {
     ChevronLeft,
     ChevronRight,
     FileText,
-    Sparkles,
 } from 'lucide-react'
 
 function CategoryVideoThumbnail({ item }: { item: NavigationSubItem }) {

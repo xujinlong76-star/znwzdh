@@ -5,6 +5,7 @@ import { Toaster as SonnerToaster } from 'sonner'
 import { initThemeRuntime } from '@/lib/plugins/theme-runtime'
 import { SessionProvider } from 'next-auth/react'
 import { Toaster } from '@/components/ui/toaster'
+import { LayoutSyncAnnouncer } from '@/components/diy/layout-sync-announcer'
 import { PredictivePrefetchProvider } from '@/components/predictive-prefetch-provider'
 import { OfflineBanner } from '@/components/offline-banner'
 
@@ -40,6 +41,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {children}
         <OfflineBanner />
         <Toaster />
+        {/* 跨标签页 DIY 布局合并播报：LayoutSyncAnnouncer 经
+            subscribeLayoutSyncEvents 订阅合并摘要，有远端改动时弹 toast + 写 aria-live 播报；
+            不挂它，合并事件只发不收 */}
+        <LayoutSyncAnnouncer />
         {/* 插件市场（components/plugins/** 与市场/后台页）使用 sonner 通知通道；
             没有这个挂载点，toast 调用会被静默丢弃 */}
         <SonnerToaster richColors position="top-center" />

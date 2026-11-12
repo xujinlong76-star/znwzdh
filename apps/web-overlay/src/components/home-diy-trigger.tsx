@@ -85,8 +85,11 @@ export function HomeDIYTrigger() {
     }
   }, [checkScroll])
 
-  // 编辑态由 HUD 接管，静息入口必须让位（否则两个浮层会叠在同一位置）
-  if (isEditingLayout) return null
+  // 编辑态由 HUD 接管，静息入口（FAB 与分享确认框）必须让位，否则两个浮层会
+  // 叠在同一位置；但存储告警条例外：配额失败恰恰发生在编辑态（拖拽、改配置
+  // 都在那时写盘），return null 会把告警连 FAB 一起吞掉，用户永远看不到
+  // 「改动没存住」。所以编辑态只隐藏 FAB 与确认框，告警横幅照常渲染。
+  if (isEditingLayout && !storageWarning) return null
 
   return (
     <>
@@ -117,29 +120,31 @@ export function HomeDIYTrigger() {
         </div>
       )}
 
-      <div
-        className={cn(
-          "fixed z-40 left-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:left-auto sm:right-4 sm:bottom-3.5 transition-all duration-200",
-          isScrollingDown ? "opacity-0 translate-y-3 pointer-events-none" : "opacity-90 hover:opacity-100 translate-y-0 pointer-events-auto"
-        )}
-        onMouseEnter={warmToolbarChunk}
-        onFocus={warmToolbarChunk}
-        onTouchStart={warmToolbarChunk}
-      >
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={toggleEditingLayout}
-          className="h-7.5 px-2.5 rounded-full text-xs font-semibold gap-1.5 shadow-sm hover:shadow-md bg-background/85 dark:bg-card/85 backdrop-blur-md border border-border/80 text-foreground hover:text-primary transition-all duration-200 opacity-90 hover:opacity-100"
-          title="开启 DIY 排版与智能编排工坊 (快捷键: E)"
+      {!isEditingLayout && (
+        <div
+          className={cn(
+            "fixed z-40 left-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:left-auto sm:right-4 sm:bottom-3.5 transition-all duration-200",
+            isScrollingDown ? "opacity-0 translate-y-3 pointer-events-none" : "opacity-90 hover:opacity-100 translate-y-0 pointer-events-auto"
+          )}
+          onMouseEnter={warmToolbarChunk}
+          onFocus={warmToolbarChunk}
+          onTouchStart={warmToolbarChunk}
         >
-          <SlidersHorizontal className="w-3.5 h-3.5 text-primary" />
-          <span>DIY 排版工坊</span>
-          <kbd className="hidden sm:inline-block sm:pointer-coarse:hidden text-[10px] px-1 py-0.2 bg-muted rounded font-mono">
-            E
-          </kbd>
-        </Button>
-      </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleEditingLayout}
+            className="h-7.5 px-2.5 rounded-full text-xs font-semibold gap-1.5 shadow-sm hover:shadow-md bg-background/85 dark:bg-card/85 backdrop-blur-md border border-border/80 text-foreground hover:text-primary transition-all duration-200 opacity-90 hover:opacity-100"
+            title="开启 DIY 排版与智能编排工坊 (快捷键: Ctrl/Cmd+E)"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 text-primary" />
+            <span>DIY 排版工坊</span>
+            <kbd className="hidden sm:inline-block sm:pointer-coarse:hidden text-[10px] px-1 py-0.2 bg-muted rounded font-mono">
+              Ctrl/⌘+E
+            </kbd>
+          </Button>
+        </div>
+      )}
     </>
   )
 }

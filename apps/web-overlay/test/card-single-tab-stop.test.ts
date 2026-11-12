@@ -46,7 +46,10 @@ describe("站点卡片：单一 Tab 入口 + 方向键操作区", () => {
   it("操作按钮全部退出 Tab 序列（三个变体 × 置顶/速览/工作台 + 共用详情入口）", () => {
     const marked = card.match(/data-card-action=""/g) ?? [];
     // 9 个内联按钮 + detailAction() 里那 1 个共用详情入口
-    expect(marked.length).toBe(13);
+    // + DRAG-2：renderDragControls 里 1 个拖拽手柄（三个变体共用同一份
+    // 源码，只计 1 次；⋯ 菜单触发器在 diy-card-menu.tsx 里，不计入本文件），
+    // 同样 tabIndex={-1}、同样进方向键漫游，不增加 Tab 停留点。
+    expect(marked.length).toBe(14);
     // 详情入口必须真的被三个变体各用一次，否则有一种密度无法用键盘进入站点详情
     expect((card.match(/detailAction\(/g) ?? []).length).toBe(3);
     // 收藏按钮走组件参数，三处都必须显式传入
@@ -57,6 +60,24 @@ describe("站点卡片：单一 Tab 入口 + 方向键操作区", () => {
   it("主链接声明快捷键与操作说明（读屏用户能发现方向键入口）", () => {
     expect(card).toContain('aria-keyshortcuts="Space ArrowRight"');
     expect(card).toContain("aria-describedby={keyboardHintId}");
+  });
+
+  it("键盘拖拽进行中 ←/→/Esc 交给 dnd-kit 传感器，不抢焦点（W4）", () => {
+    // dnd-kit KeyboardSensor 在 document 捕获阶段先收到方向键；
+    // 操作区漫游再 preventDefault + 挪焦点，方向键就只动焦点、拖不动卡片。
+    // 所以拖拽进行中且焦点在手柄上时，漫游必须直接放行。
+    expect(card).toContain("useDiyDragActive");
+    expect(card).toContain("keyboardDragActive");
+    expect(card).toContain("hasAttribute('data-diy-drag-handle')");
+  });
+
+  it("拖拽手柄有可见焦点环（W4，WCAG 2.4.7）", () => {
+    expect(card).toContain("focus-visible:ring-2 focus-visible:ring-primary/60");
+  });
+
+  it("⋯ 菜单移动在调用点播报标题、方向与新序号（W4）", () => {
+    expect(card).toContain("handleMenuMove");
+    expect(card).toContain("现在是第");
   });
 
   it("收藏按钮组件支持退出 Tab 序列并标记为卡片操作", () => {

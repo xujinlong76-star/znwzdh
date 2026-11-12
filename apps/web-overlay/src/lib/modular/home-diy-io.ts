@@ -15,9 +15,18 @@ import {
   type VaultTelemetryOutcome,
 } from '@/lib/navhub-api'
 import { validateAndCleanDIYConfig } from '@/lib/modular/diy-presets'
+import { DIY_IMPORT_MAX_BYTES } from '@/lib/modular/diy-layout-schema'
 import { VAULT_REBUILD_VERSION_COPY } from '@/lib/modular/vault-copy'
 import { decryptGenericPayload, encryptGenericPayload } from '@/lib/vault'
-import type { HomeDIYConfig } from './home-diy-storage'
+import {
+  backupHomeDiyShareConfig,
+  computeHomeDiyShareDiff,
+  mergeHomeDiyShareFields,
+  safeLocalStorage,
+  type HomeDiyShareField,
+  type HomeDiyStorage,
+  type HomeDIYConfig,
+} from './home-diy-storage'
 
 export type HomeDiyPersist = (updater: (prev: HomeDIYConfig) => HomeDIYConfig) => void
 
@@ -32,6 +41,8 @@ export interface HomeDiyImportResult {
   summary?: string
   /** 失败原因码（成功时不带）；供埋点与分支判断，不替代 message */
   code?: VaultResultCode
+  /** 应用前自动备份的键（`<STORAGE_KEY>.share-backup.<时间戳>`）；备份失败为 null */
+  backupKey?: string | null
 }
 
 function summarizeDiyCounts(config: any): string {
@@ -81,25 +92,140 @@ export function exportDIYConfig(config: HomeDIYConfig): string {
   return JSON.stringify(config, null, 2)
 }
 
-export function importDIYConfig(
-  jsonString: string,
-  persist: HomeDiyPersist,
-): HomeDiyImportResult {
-  try {
-    const parsed = JSON.parse(jsonString)
-    const res = validateAndCleanDIYConfig(parsed)
-    if (!res.valid || !res.config) {
-      return { ok: false, message: res.error || '无效的配置格式', dropped: 0, notes: res.notes, code: 'validation_failed' }
+/* ------------------------------------------------------------------ *
+ * 导入改走分享确认管线（P0-5）
+ *
+ * 旧的 importDIYConfig 是整表替换：清洗后的全量配置一把盖掉本地，
+ * 没带 diff 预览、没确认、没备份。新的分两步，与 #diy= 分享同一套
+ * 形状（PendingHomeDiyShare）：
+ *   1. prepareHomeDiyImport：只校验 + 清洗 + 算 diff，不写任何东西。
+ *      返回的 pending 可以直接挂进共享状态的 pendingShare，
+ *      由 HomeDiyShareConfirmDialog 消费（确认/忽略同一套按钮）；
+ *   2. applyPreparedHomeDiyImport：先把导入前那份配置自动备份到
+ *      时间戳备份键，再按字段级合并应用，一次 persist = 一次可撤销提交。
+ *
+ * 接线（coordinator 在合并时做，见本任务报告）：
+ *   - home-diy-storage.ts：加一个 stageHomeDiyPendingShare(pending)，
+ *     把 prepare 的结果写进共享状态（commitSharedState 是模块私有的，
+ *     这里调不到）；
+ *   - use-home-diy.ts：把 importDIYConfig 改成「prepare + 挂起」，
+ *     确认走现成的 confirmPendingShare；
+ *   - home-diy-backup-dialog.tsx：提交时调新的 stageImportForConfirm
+ *     prop（本文件里已接好，没传时回退到直接导入）。
+ * 在接线完成前，importDIYConfig 仍是「直接应用」，但已经是
+ * 备份 + 字段级合并，不再是整表替换。
+ * ------------------------------------------------------------------ */
+
+/** 导入能携带的字段：分享只有 11 个，导入是全量配置都能带 */
+export type HomeDiyImportField = keyof HomeDIYConfig
+
+/** 待确认的导入：与 PendingHomeDiyShare 同形，只多一个 source 标记 */
+export interface PendingHomeDiyImport {
+  imported: HomeDIYConfig
+  diff: string[]
+  warning: string | null
+  carriedFields: HomeDiyImportField[]
+  /** 确认对话框据此换文案；分享的 pending 没有这个字段，默认按 'share' 读 */
+  source: 'import'
+}
+
+export type PreparedHomeDiyImport = Extract<PrepareHomeDiyImportResult, { ok: true }>
+
+export type PrepareHomeDiyImportResult =
+  | {
+      ok: true
+      pending: PendingHomeDiyImport
+      dropped: number
+      notes: string[]
+      summary: string
     }
-    persist(() => ({ ...(res.config as HomeDIYConfig), updatedAt: Date.now() }))
-    const summary = describeDiyRestoreReport(res.config, res)
+  | { ok: false; message: string; dropped: 0; notes: string[]; code?: VaultResultCode }
+
+/**
+ * 导入的字段级合并只写 carriedFields 列出的字段；分享的
+ * HomeDiyShareField 联合类型只有 11 个分享字段，导入的携带集可以更宽
+ * （自建分类、速览坞、折叠状态……），运行时 computeHomeDiyShareDiff /
+ * mergeHomeDiyShareFields 本来就是按字段名驱动的，这层转换只是过类型。
+ */
+export function asShareFields(fields: readonly HomeDiyImportField[]): readonly HomeDiyShareField[] {
+  return fields as unknown as readonly HomeDiyShareField[]
+}
+
+/**
+ * 导入第一步：校验 → 清洗 → diff 预览。不碰存储、不写配置。
+ *
+ * current 不传时 diff 为空（调用方只想要「能不能导、丢了什么」）；
+ * 传了就按当前配置算差异预览，供确认对话框逐条列出。
+ */
+export async function prepareHomeDiyImportFromValue(
+  parsed: unknown,
+  current?: HomeDIYConfig,
+): Promise<PrepareHomeDiyImportResult> {
+  // zod 约 103 KB，静态 import 会进首页首屏：结构校验只在用户点「导入」时
+  // 才跑，这里 dynamic import（见 diy-layout-schema-zod.ts 文件头）。
+  const { sanitizeDiyLayoutInput } = await import('@/lib/modular/diy-layout-schema-zod')
+  const sanitized = sanitizeDiyLayoutInput(parsed)
+  if (!sanitized.ok || !sanitized.config) {
     return {
-      ok: true,
-      message: `配置已导入并生效：${summary}`,
-      dropped: res.dropped,
-      notes: res.notes,
-      summary,
+      ok: false,
+      message: sanitized.error || '无效的配置格式',
+      dropped: 0,
+      notes: [],
+      code: 'validation_failed',
     }
+  }
+  const res = validateAndCleanDIYConfig(sanitized.config)
+  if (!res.valid || !res.config) {
+    return {
+      ok: false,
+      message: res.error || '无效的配置格式',
+      dropped: 0,
+      notes: [...sanitized.notes, ...res.notes],
+      code: 'validation_failed',
+    }
+  }
+  const dropped = sanitized.dropped + res.dropped
+  const notes = [...sanitized.notes, ...res.notes]
+  const imported = res.config as HomeDIYConfig
+  // 只写输入实际携带的字段：没带的字段在 imported 里是清洗默认值，
+  // 合并时绝不能拿默认值压掉本地值（这就是旧整表替换的 bug）。
+  const knownFields = new Set(Object.keys(imported))
+  const carriedFields = sanitized.carriedFields.filter((f) => knownFields.has(f)) as HomeDiyImportField[]
+  const diff = current ? computeHomeDiyShareDiff(current, imported, asShareFields(carriedFields)) : []
+  let warning: string | null = null
+  if (notes.length > 0) {
+    const head = dropped > 0 ? `${dropped} 项内容被丢弃或截断` : '部分设置值不在支持列表，已回退默认'
+    const shown = notes.slice(0, 3).join('；')
+    const more = notes.length > 3 ? ` 等 ${notes.length} 项` : ''
+    warning = `导入的配置里${head}：${shown}${more}`
+  }
+  const summary = describeDiyRestoreReport(imported, { dropped, notes })
+  return {
+    ok: true,
+    pending: { imported, diff, warning, carriedFields, source: 'import' },
+    dropped,
+    notes,
+    summary,
+  }
+}
+
+/** 明文导入第一步：JSON 解析 + 5MB 硬上限，再走 prepareHomeDiyImportFromValue */
+export async function prepareHomeDiyImport(
+  jsonString: string,
+  current?: HomeDIYConfig,
+): Promise<PrepareHomeDiyImportResult> {
+  if (typeof jsonString !== 'string' || jsonString.length > DIY_IMPORT_MAX_BYTES) {
+    return {
+      ok: false,
+      message: `导入文件超过 ${DIY_IMPORT_MAX_BYTES / 1024 / 1024}MB 上限`,
+      dropped: 0,
+      notes: [],
+      code: 'validation_failed',
+    }
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonString)
   } catch (e: unknown) {
     return {
       ok: false,
@@ -108,6 +234,59 @@ export function importDIYConfig(
       notes: [],
       code: 'invalid_json',
     }
+  }
+  return prepareHomeDiyImportFromValue(parsed, current)
+}
+
+export interface AppliedHomeDiyImport {
+  applied: boolean
+  /** 应用前自动备份的键；存储不可用或写不进去为 null（不拦导入） */
+  backupKey: string | null
+  summary: string
+}
+
+/**
+ * 导入第二步：自动备份 → 字段级合并 → 一次可撤销提交。
+ *
+ * 备份在 persist 的 updater 里取 prev 做 —— commitHomeDiyConfig 只调一次
+ * updater（同步），这里拿到的恰好是导入前那一份；备份写不进去也不拦导入，
+ * 撤销栈里还留着旧配置。storage 不传时取 safeLocalStorage()（SSR/隐私模式为 null）。
+ */
+export function applyPreparedHomeDiyImport(
+  prepared: PreparedHomeDiyImport,
+  persist: HomeDiyPersist,
+  storage?: HomeDiyStorage | null,
+): AppliedHomeDiyImport {
+  const store = storage === undefined ? safeLocalStorage() : storage
+  let backupKey: string | null = null
+  let backupAttempted = false
+  persist((prev) => {
+    if (!backupAttempted) {
+      backupAttempted = true
+      backupKey = store ? backupHomeDiyShareConfig(store, prev) : null
+    }
+    return mergeHomeDiyShareFields(prev, prepared.pending.imported, asShareFields(prepared.pending.carriedFields))
+  })
+  return { applied: true, backupKey, summary: prepared.summary }
+}
+
+export async function importDIYConfig(
+  jsonString: string,
+  persist: HomeDiyPersist,
+  current?: HomeDIYConfig,
+): Promise<HomeDiyImportResult> {
+  const prepared = await prepareHomeDiyImport(jsonString, current)
+  if (!prepared.ok) {
+    return { ok: false, message: prepared.message, dropped: 0, notes: prepared.notes, code: prepared.code }
+  }
+  const applied = applyPreparedHomeDiyImport(prepared, persist)
+  return {
+    ok: true,
+    message: `配置已导入并生效：${prepared.summary}`,
+    dropped: prepared.dropped,
+    notes: prepared.notes,
+    summary: prepared.summary,
+    backupKey: applied.backupKey,
   }
 }
 
@@ -141,18 +320,20 @@ export async function importEncryptedDIYConfig(
   }
   try {
     const decrypted = await decryptGenericPayload<HomeDIYConfig>(parsed, passphrase)
-    const res = validateAndCleanDIYConfig(decrypted)
-    if (!res.valid || !res.config) {
-      return { ok: false, message: res.error || '解密数据校验失败', dropped: 0, notes: res.notes, code: 'validation_failed' }
+    // 与明文导入同一条管线：先 prepare（校验 + 清洗 + 携带字段），再
+    // apply（自动备份 + 字段级合并），不再拿解密出的全量配置整表替换。
+    const prepared = await prepareHomeDiyImportFromValue(decrypted)
+    if (!prepared.ok) {
+      return { ok: false, message: prepared.message, dropped: 0, notes: prepared.notes, code: prepared.code ?? 'validation_failed' }
     }
-    persist(() => ({ ...(res.config as HomeDIYConfig), updatedAt: Date.now() }))
-    const summary = describeDiyRestoreReport(res.config, res)
+    const applied = applyPreparedHomeDiyImport(prepared, persist)
     return {
       ok: true,
-      message: `零知识金库解密成功，配置已还原：${summary}`,
-      dropped: res.dropped,
-      notes: res.notes,
-      summary,
+      message: `零知识金库解密成功，配置已还原：${prepared.summary}`,
+      dropped: prepared.dropped,
+      notes: prepared.notes,
+      summary: prepared.summary,
+      backupKey: applied.backupKey,
     }
   } catch (e: unknown) {
     return {

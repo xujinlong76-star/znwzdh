@@ -7,7 +7,6 @@ import { WIDGET_REGISTRY } from '@/lib/modular/registry'
 import { ModuleErrorBoundary } from './module-error-boundary'
 import { ModuleResizeHandles } from './module-resize-handles'
 import { 
-  GripVertical, 
   Trash2, 
   MoveHorizontal,
   ArrowUp,
@@ -28,13 +27,6 @@ interface ModularItemProps {
   onBeginInteraction?: () => void
   onShiftPosition?: (index: number, direction: 'up' | 'down') => void
   onOpenConfig?: (widget: WidgetInstance) => void
-  onDragStart: (e: React.DragEvent, index: number) => void
-  onDragOver: (e: React.DragEvent, index: number) => void
-  onDragEnd: (e: React.DragEvent) => void
-  /** 触控端长按拖拽：HTML5 drag 在移动端不触发，这里用 Pointer Events 兜底 */
-  onTouchDragPointerDown?: (e: React.PointerEvent, index: number) => void
-  isDraggedOver?: boolean
-  isDragging?: boolean
 }
 
 // 快速尺寸预设选项
@@ -56,12 +48,6 @@ function ModularItemImpl({
   onBeginInteraction,
   onShiftPosition,
   onOpenConfig,
-  onDragStart,
-  onDragOver,
-  onDragEnd,
-  onTouchDragPointerDown,
-  isDraggedOver,
-  isDragging,
 }: ModularItemProps) {
   const def = WIDGET_REGISTRY[widget.type]
   const [showSizeMenu, setShowSizeMenu] = useState(false)
@@ -263,25 +249,10 @@ function ModularItemImpl({
     <div
       ref={itemRef}
       data-modular-item-index={index}
-      draggable={isEditing}
-      onDragStart={(e) => {
-        // 缩放手柄按下后指针还在本卡片内，移动会触发父级的原生 HTML5 拖拽，
-        // 浏览器随即 pointercancel 掉指针流（实测 ds:1/pc:1/pu:0）——缩放永远失败。
-        // 因此缩放进行中必须拒绝原生拖拽，让 pointermove 继续驱动缩放。
-        if (isResizingRef.current) {
-          e.preventDefault()
-          return
-        }
-        onDragStart(e, index)
-      }}
-      onDragOver={(e) => onDragOver(e, index)}
-      onDragEnd={onDragEnd}
       className={`relative group @container rounded-2xl border transition-all duration-200 flex flex-col justify-between ${colSpanClass} ${minHeightStyle} ${
         isEditing
           ? 'cursor-grab active:cursor-grabbing border-primary/40 ring-1 ring-primary/20 hover:border-primary/80 bg-card/90 shadow-sm'
           : 'border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs shadow-xs hover:shadow-md'
-      } ${isDragging ? 'opacity-40 scale-95 border-dashed border-primary' : ''} ${
-        isDraggedOver ? 'ring-2 ring-primary ring-offset-2 scale-[1.01]' : ''
       }`}
     >
       {/* 四向边框与双下角自由拖拉调整模块窗口大小手柄 */}
@@ -317,14 +288,6 @@ function ModularItemImpl({
       {isEditing && (
         <div className="flex items-center justify-between px-3 py-1.5 bg-muted/60 border-b border-border/50 text-xs rounded-t-2xl">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span
-              className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-grab select-none"
-              style={{ touchAction: 'none' }}
-              title="拖动排序（移动端长按手柄拖动）"
-              onPointerDown={(e) => onTouchDragPointerDown?.(e, index)}
-            >
-              <GripVertical className="w-3.5 h-3.5" />
-            </span>
             <span className="font-semibold text-foreground truncate text-xs">
               {widget.customTitle || def.title}
             </span>
@@ -345,6 +308,7 @@ function ModularItemImpl({
                   onClick={() => onShiftPosition(index, 'up')}
                   className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
                   title="向前移动此模块"
+                  aria-label={`向前移动小组件：${widget.customTitle || def.title}`}
                 >
                   <ArrowUp className="w-2.5 h-2.5" />
                 </button>
@@ -354,6 +318,7 @@ function ModularItemImpl({
                   onClick={() => onShiftPosition(index, 'down')}
                   className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
                   title="向后移动此模块"
+                  aria-label={`向后移动小组件：${widget.customTitle || def.title}`}
                 >
                   <ArrowDown className="w-2.5 h-2.5" />
                 </button>

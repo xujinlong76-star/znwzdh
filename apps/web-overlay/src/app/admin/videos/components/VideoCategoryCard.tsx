@@ -170,7 +170,6 @@ export function VideoCategoryCard({
     const subCategories = item.subCategories || []
     const subVideoCount = subCategories.reduce((sum, sub) => sum + (sub.items?.length || 0), 0)
     const totalVideoCount = directVideoCount + subVideoCount
-    const maxCapacity = item.harvestPolicy?.maxItems || 500
     const policy = item.harvestPolicy
 
     return (

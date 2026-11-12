@@ -19,7 +19,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList } from '@/registry/new-york/ui/command'
-import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink } from 'lucide-react'
+import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink, PencilLine, Share2, Upload, RotateCcw, LayoutTemplate } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   searchSites,
@@ -56,6 +56,14 @@ import {
   stripFeaturePrefix,
 } from '@/lib/modular/feature-mask-store'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { useDensity, type ContentDensity } from '@/components/density-provider'
+import { BUILTIN_DIY_PRESETS } from '@/lib/modular/diy-presets'
+import { copyFailureToast, copyText } from '@/lib/clipboard'
+import {
+  matchDiyPaletteActions,
+  type DiyPaletteActionId,
+  type DiyPaletteActionItem,
+} from '@/lib/modular/diy-palette-actions'
 
 
 
@@ -113,6 +121,15 @@ const CHANNEL_LABELS: Record<string, string> = {
   pinyin: '拼音',
   semantic: '语义',
   personal: '个性化',
+}
+
+/** DIY 操作行图标（8c） */
+const DIY_ACTION_ICONS: Record<DiyPaletteActionId, typeof PencilLine> = {
+  edit: PencilLine,
+  preset: LayoutTemplate,
+  share: Share2,
+  import: Upload,
+  reset: RotateCcw,
 }
 
 /** 结果行文本高亮：命中片段上色，未命中原样（仅字面命中的词有高亮，拼音/语义召回本就无字面） */
@@ -235,7 +252,19 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const { toast } = useToast()
   const preferences = useUserPreferences()
   const featureMask = useFeatureMask()
-  const { unhideCategory } = useHomeDIY()
+  const {
+    unhideCategory,
+    isEditingLayout,
+    toggleEditingLayout,
+    applyDIYPreset,
+    exportPresetToUrlHash,
+    stageImportForConfirm,
+    resetDIYConfig,
+  } = useHomeDIY()
+  /** 卡片密度住在用户偏好里（不在 DIY 配置里）：预设应用时当回调传给 applyDIYPreset */
+  const { setDensity } = useDensity()
+  /** DIY「导入」的文件选择框（与备份对话框同一条 stageImportForConfirm 路，不复制导入逻辑） */
+  const diyImportInputRef = useRef<HTMLInputElement | null>(null)
 
   const prunedRecall = useMemo(
     () => computePrunedSearchRecall(query, featureMask, hits),
@@ -554,6 +583,101 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   // 打开方式听用户中心的开关，站点配置只当默认值
   const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)
 
+  /**
+   * DIY 快捷操作（8c）：执行全部复用 useHomeDIY / 备份对话框已有的函数，
+   * 这里只做分发与提示。分享的复制流程与备份对话框的 handleShareUrlHash
+   * 同口径（copyText + copyFailureToast），失败不谎称成功。
+   */
+  const handleDiyAction = useCallback(async (actionId: DiyPaletteActionId, presetId?: string) => {
+    setIsFocused(false)
+    if (actionId === 'edit') {
+      toggleEditingLayout()
+      toast({
+        title: isEditingLayout ? '已退出排版编辑模式' : '已进入排版编辑模式',
+        description: isEditingLayout ? '配置已自动持久化至本地' : '拖拽分类即可调整首页排版，按 Esc 退出。',
+      })
+      return
+    }
+    if (actionId === 'preset' && presetId) {
+      // 密度不在 DIY 配置里，住在用户偏好（useDensity）：工具栏是把 setDensity
+      // 当回调传给 applyDIYPreset 才让密度真正落地；这里以前没传，密度被丢掉，
+      // toast 还照样宣称「卡片密度已完成智能匹配」。回调是同步调的，跑没跑
+      // 用 densityApplied 当场验，toast 只在密度真的应用后才敢这么说。
+      let densityApplied = false
+      const ok = applyDIYPreset(presetId, (d) => {
+        densityApplied = true
+        setDensity(d as ContentDensity)
+      })
+      toast(
+        !ok
+          ? { title: '预设应用失败', description: '找不到这个预设。', variant: 'destructive' }
+          : densityApplied
+            ? { title: '✨ 预设情境已应用', description: '视窗形态、卡片密度与画布背景已完成智能匹配。' }
+            : { title: '✨ 预设情境已应用', description: '视窗形态与画布背景已应用，卡片密度未改变。' },
+      )
+      return
+    }
+    if (actionId === 'share') {
+      const out = exportPresetToUrlHash()
+      if (!out.ok) {
+        toast({ title: '❌ 分享链接生成失败', description: out.reason, variant: 'destructive' })
+        return
+      }
+      const result = await copyText(out.url)
+      if (!result.ok) {
+        toast({ ...copyFailureToast(result), variant: 'destructive' })
+        return
+      }
+      toast({
+        title: '🔗 已复制免登专属分享链接！',
+        description: '好友直接在浏览器打开该链接，即可预览，确认后应用您的专属排版与壁纸。',
+      })
+      return
+    }
+    if (actionId === 'import') {
+      diyImportInputRef.current?.click()
+      return
+    }
+    if (actionId === 'reset') {
+      if (!window.confirm('确定要把首页排版恢复为系统默认吗？当前排版会先压入撤销历史，恢复后按 Ctrl/Cmd+Z 可撤销。')) {
+        return
+      }
+      resetDIYConfig()
+      toast({ title: '已重置为默认排版', description: '按 Ctrl/Cmd+Z 可撤销这次重置。' })
+    }
+  }, [isEditingLayout, toggleEditingLayout, applyDIYPreset, exportPresetToUrlHash, resetDIYConfig, setDensity, toast])
+
+  /** DIY「导入」：读文件 → 先挂起待确认（确认对话框核对 diff 后才应用，应用前自动备份），与备份对话框同一条路；不再直接 importDIYConfig 一把应用。 */
+  const handleDiyImportFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const staged = await stageImportForConfirm((await file.text()).trim())
+      if (!staged.ok) {
+        toast({ title: '导入失败', description: staged.message, variant: 'destructive' })
+        return
+      }
+      toast({
+        title: '请核对导入内容',
+        description: '已按字段列出这次导入会改动的地方，确认后才会应用；应用前会自动备份当前排版。',
+      })
+    } catch (err) {
+      toast({
+        title: '导入失败',
+        description: err instanceof Error ? err.message : '读取备份文件时遇到异常',
+        variant: 'destructive',
+      })
+    } finally {
+      if (diyImportInputRef.current) diyImportInputRef.current.value = ''
+    }
+  }, [stageImportForConfirm, toast])
+
+  /** 有查询词时命中的 DIY 操作行（空查询面板直接展示全部操作，不走匹配） */
+  const matchedDiyActions = useMemo(
+    () => matchDiyPaletteActions(query, BUILTIN_DIY_PRESETS, { isEditingLayout }),
+    [query, isEditingLayout],
+  )
+
   const openSite = useCallback((hit: HubSearchHit) => {
     const site = hit.site
     if (!site) return
@@ -590,18 +714,19 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const pluginItems = pluginHits?.items ?? []
 
   /**
-   * 键盘可导航项：与渲染顺序严格一致（插件分区在站点命中之前）。
+   * 键盘可导航项：与渲染顺序严格一致（DIY 操作在前、插件在中、站点在后）。
    * 站点命中里 site 为空的脏数据不渲染，也不进导航列表——否则索引会错位。
    */
   const navItems = useMemo(() => {
-    if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' }>
-    const items: Array<{ id: string; kind: 'plugin' | 'site' }> = []
+    if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' | 'diy' }>
+    const items: Array<{ id: string; kind: 'plugin' | 'site' | 'diy' }> = []
+    for (const d of matchedDiyActions) items.push({ id: `diy-${d.key}`, kind: 'diy' })
     for (const p of pluginItems) items.push({ id: `plugin-${p.id}`, kind: 'plugin' })
     for (const h of hits) {
       if (h.site) items.push({ id: `site-${h.siteId}`, kind: 'site' })
     }
     return items
-  }, [showResults, pluginItems, hits])
+  }, [showResults, matchedDiyActions, pluginItems, hits])
 
   const navIndexById = useMemo(() => {
     const map = new Map<string, number>()
@@ -692,6 +817,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
   return (
     <div ref={searchRef} className="relative w-full max-w-2xl min-w-[340px] sm:min-w-[380px] lg:min-w-[420px] mx-auto">
+      {/* DIY「导入」的文件选择框 */}
+      <input
+        ref={diyImportInputRef}
+        type="file"
+        accept=".json,application/json"
+        aria-label="选择排版配置 JSON 文件"
+        onChange={handleDiyImportFile}
+        className="hidden"
+      />
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input aria-label={placeholder}
@@ -743,6 +877,64 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
       {isFocused && !query.trim() && (
         <div id="navhub-search-suggest-panel" className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
+          {/* DIY 排版快捷操作（8c）：空查询时直接展示全部操作；有查询词时改走匹配行 */}
+          <div className="p-2.5">
+            <div className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5 mb-2 px-1">
+              <LayoutTemplate className="h-3 w-3 text-violet-500" />
+              <span>DIY 排版快捷操作</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => void handleDiyAction('edit')}
+                className="flex items-center gap-2 p-2 rounded-lg border border-border/50 bg-background/60 hover:bg-accent/50 hover:border-primary/30 transition-all text-xs font-medium text-left cursor-pointer"
+              >
+                <PencilLine className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                <span className="flex-1 truncate">{isEditingLayout ? '退出编辑模式' : '进入编辑模式'}</span>
+                <kbd className="px-1 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px] text-muted-foreground shrink-0">
+                  {isEditingLayout ? 'Esc' : 'Ctrl/⌘+E'}
+                </kbd>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDiyAction('share')}
+                className="flex items-center gap-2 p-2 rounded-lg border border-border/50 bg-background/60 hover:bg-accent/50 hover:border-primary/30 transition-all text-xs font-medium text-left cursor-pointer"
+              >
+                <Share2 className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                <span className="flex-1 truncate">分享当前排版</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDiyAction('import')}
+                className="flex items-center gap-2 p-2 rounded-lg border border-border/50 bg-background/60 hover:bg-accent/50 hover:border-primary/30 transition-all text-xs font-medium text-left cursor-pointer"
+              >
+                <Upload className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                <span className="flex-1 truncate">导入排版配置</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDiyAction('reset')}
+                className="flex items-center gap-2 p-2 rounded-lg border border-border/50 bg-background/60 hover:bg-accent/50 hover:border-primary/30 transition-all text-xs font-medium text-left cursor-pointer"
+              >
+                <RotateCcw className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                <span className="flex-1 truncate">重置排版为默认</span>
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {BUILTIN_DIY_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => void handleDiyAction('preset', preset.id)}
+                  className="px-2 py-1 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-400 hover:bg-violet-500/20 border border-violet-500/20 transition-colors text-xs cursor-pointer"
+                  title={preset.description}
+                >
+                  {preset.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* 常用与最近常去站点快捷直达 */}
           {recentVisits.length > 0 && (
             <div className="p-2.5 bg-muted/20">
@@ -938,6 +1130,50 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     ? (relaxedPricingNotice(relaxedFacets) ??
                       '当前筛选下没有结果，已放宽到全库匹配（结果可能来自其他类目）。')
                     : '没有精确匹配，以下是放宽匹配后的结果。'}
+                </div>
+              )}
+              {/* DIY 排版操作（8c）：查询命中操作关键词时置顶展示，参与 ↑↓/Enter 键盘导航 */}
+              {matchedDiyActions.length > 0 && (
+                <div className="border-b border-border/60">
+                  <div className="px-3.5 py-2 flex items-center gap-1.5 bg-violet-500/5">
+                    <LayoutTemplate className="h-3.5 w-3.5 text-violet-500" />
+                    <span className="text-xs font-semibold text-violet-700 dark:text-violet-400">DIY 排版操作</span>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {matchedDiyActions.map((item: DiyPaletteActionItem) => {
+                      const idx = navIndexById.get(`diy-${item.key}`) ?? -1
+                      const Icon = DIY_ACTION_ICONS[item.actionId]
+                      return (
+                        <div
+                          key={item.key}
+                          role="option"
+                          id={`navhub-search-opt-${idx}`}
+                          data-nav-index={idx}
+                          data-nav-item="diy"
+                          aria-selected={idx === activeIndex}
+                          onClick={() => void handleDiyAction(item.actionId, item.presetId)}
+                          className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer ${
+                            idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                          }`}
+                        >
+                          <span className="w-8 h-8 rounded-lg bg-violet-500/10 border border-violet-500/15 flex items-center justify-center shrink-0">
+                            <Icon className="h-4 w-4 text-violet-500" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium truncate">{item.title}</span>
+                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                              {item.description}
+                            </span>
+                          </span>
+                          {item.hint && (
+                            <kbd className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px] text-muted-foreground shrink-0">
+                              {item.hint}
+                            </kbd>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
               {actionIntentData && (

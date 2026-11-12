@@ -10,7 +10,9 @@
  *    - L3_SITE / L3_MICRO: 单个特定站点卡片、卡片内部微元素（简介文本、#标签栏、Space 速览角标、置顶/热度徽标）
  *    - L4_FEATURE: 交互与实验室特性（顶部操作提示条、键盘巡航、悬浮气泡提示、右下角 DIY 悬浮按钮）
  * 4. 防自锁死安全阀（Anti-Lockout Guardrail）：
- *    即使隐藏了右下角 DIY 按钮或顶栏入口，键盘快捷键 `E` 与 `Cmd/Ctrl + K` 搜索穿透召回始终保持最高优先级激活。
+ *    即使隐藏了右下角 DIY 按钮或顶栏入口，键盘快捷键 `Ctrl/Cmd + E` 与
+ *    `Cmd/Ctrl + K` 搜索穿透召回始终保持最高优先级激活（裸按 E 已按
+ *    WCAG 2.1.4 废止：单字符快捷键会与读屏软件冲突）。
  */
 
 import { useSyncExternalStore, useCallback, useMemo } from 'react'
@@ -189,7 +191,7 @@ export const L4_FEATURE_CATALOG: readonly FeatureCatalogDefinition[] = [
     id: 'feat:keyboard-nav',
     level: 'L4_FEATURE',
     title: '全局键盘巡航与 T 键微工具箱',
-    description: '关闭后卸载非核心快捷键监听（防自锁死保护：E 键与 Cmd+K 永久保留）',
+    description: '关闭后卸载非核心快捷键监听（防自锁死保护：Ctrl/Cmd+E 与 Cmd+K 永久保留）',
     parentTitle: 'L4 交互与实验室特性',
   },
   {
@@ -202,8 +204,8 @@ export const L4_FEATURE_CATALOG: readonly FeatureCatalogDefinition[] = [
   {
     id: 'feat:diy-fab',
     level: 'L4_FEATURE',
-    title: '右下角 [DIY 排版工坊 E] 悬浮按钮',
-    description: '隐藏右下角常驻悬浮按钮（仍可随时按键盘 E 键呼出恢复中心）',
+    title: '右下角 [DIY 排版工坊 Ctrl/⌘+E] 悬浮按钮',
+    description: '隐藏右下角常驻悬浮按钮（仍可随时按 Ctrl/Cmd+E 呼出恢复中心）',
     parentTitle: 'L4 交互与实验室特性',
   },
 ] as const

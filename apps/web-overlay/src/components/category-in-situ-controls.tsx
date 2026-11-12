@@ -1,5 +1,6 @@
 'use client'
 
+import type { ComponentType } from 'react'
 import { Pin, ArrowUp, ArrowDown, EyeOff, Trash2, GripVertical, SlidersHorizontal, Check, Plus } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -10,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/registry/new-york/ui/dropdown-menu'
-import { useHomeDIY, type CardDisplayMode } from '@/lib/modular/use-home-diy'
+import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { removeFeatureFromMask } from '@/lib/modular/feature-mask-store'
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
 import { useToast } from '@/components/ui/use-toast'
@@ -24,7 +25,16 @@ interface CategoryInSituControlsProps {
   canMoveUp: boolean
   canMoveDown: boolean
   allCategoryIds: string[]
-  onDragStart?: (e: React.DragEvent) => void
+  /**
+   * 是否启用拖拽手柄（仅顶级分类）：调用方在 dnd-kit chunk 已加载时传
+   * dragEnabled + dragGrip（DiyCategoryDragGrip，来自重型 diy-drag-kit，
+   * 调用方后台 import 到才传）。手柄组件本身调用 useDraggable，必须在
+   * DragDropProvider 内——所以用组件 prop 传进来，本文件绝不静态 import
+   * @dnd-kit/react（否则 133KB 进首页首屏）。子分类不传：跨分类拖子分类
+   * 没有定义好的语义，留 ↑/↓ 按钮。
+   */
+  dragEnabled?: boolean
+  dragGrip?: ComponentType<{ categoryId: string; isCustom: boolean; title: string }>
   onAddSite?: () => void
 }
 
@@ -36,7 +46,8 @@ export function CategoryInSituControls({
   canMoveUp,
   canMoveDown,
   allCategoryIds,
-  onDragStart,
+  dragEnabled = false,
+  dragGrip: DragGrip,
   onAddSite,
 }: CategoryInSituControlsProps) {
   const {
@@ -68,12 +79,20 @@ export function CategoryInSituControls({
     e.preventDefault()
     e.stopPropagation()
     moveCategory(categoryId, 'up', allCategoryIds)
+    const from = allCategoryIds.indexOf(categoryId)
+    if (from > 0) {
+      toast({ title: `已将分类「${title}」上移，现在是第 ${from} 个，共 ${allCategoryIds.length} 个` })
+    }
   }
 
   const handleMoveDown = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     moveCategory(categoryId, 'down', allCategoryIds)
+    const from = allCategoryIds.indexOf(categoryId)
+    if (from >= 0 && from < allCategoryIds.length - 1) {
+      toast({ title: `已将分类「${title}」下移，现在是第 ${from + 2} 个，共 ${allCategoryIds.length} 个` })
+    }
   }
 
   const handleHide = (e: React.MouseEvent) => {
@@ -104,18 +123,20 @@ export function CategoryInSituControls({
 
   return (
     <div data-category-in-situ="" className="flex items-center gap-1 bg-background/90 dark:bg-card/90 backdrop-blur-md px-2 py-0.5 rounded-full border border-border/80 shadow-xs animate-in fade-in zoom-in-95 duration-150">
-      <div
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData('text/navhub-category-id', categoryId)
-          e.dataTransfer.effectAllowed = 'move'
-          onDragStart?.(e)
-        }}
-        className="flex items-center justify-center h-6.5 w-5 rounded-md cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-        title="按住拖拽调整此分类在页面上的排列位置"
-      >
-        <GripVertical className="w-3.5 h-3.5" />
-      </div>
+      {dragEnabled && DragGrip ? (
+        <DragGrip categoryId={categoryId} isCustom={isCustom} title={title} />
+      ) : (
+        <div
+          className="flex items-center justify-center h-6.5 w-5 rounded-md text-muted-foreground"
+          title={
+            dragEnabled
+              ? '拖拽手柄加载中，稍候即可拖拽；也可直接用 ↑/↓ 按钮移动'
+              : '子分类暂不支持拖拽，请用 ↑/↓ 按钮移动'
+          }
+        >
+          <GripVertical className="w-3.5 h-3.5" />
+        </div>
+      )}
 
       <Button
         variant="ghost"
@@ -128,6 +149,7 @@ export function CategoryInSituControls({
             : "text-muted-foreground hover:text-foreground"
         )}
         title={isPinned ? "取消置顶" : "置顶该分类到最上方"}
+        aria-label={isPinned ? `取消置顶分类：${title}` : `置顶分类：${title}`}
       >
         <Pin className={cn("w-3.5 h-3.5", isPinned && "fill-primary")} />
       </Button>
@@ -139,6 +161,7 @@ export function CategoryInSituControls({
         disabled={!canMoveUp}
         className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-foreground disabled:opacity-30"
         title="向上移动分类"
+        aria-label={`上移分类：${title}`}
       >
         <ArrowUp className="w-3.5 h-3.5" />
       </Button>
@@ -150,6 +173,7 @@ export function CategoryInSituControls({
         disabled={!canMoveDown}
         className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-foreground disabled:opacity-30"
         title="向下移动分类"
+        aria-label={`下移分类：${title}`}
       >
         <ArrowDown className="w-3.5 h-3.5" />
       </Button>
@@ -160,6 +184,7 @@ export function CategoryInSituControls({
         onClick={handleHide}
         className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
         title="隐藏该分类"
+        aria-label={`隐藏分类：${title}`}
       >
         <EyeOff className="w-3.5 h-3.5" />
       </Button>
@@ -329,6 +354,7 @@ export function CategoryInSituControls({
           }}
           className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10"
           title="添加站点到该分类"
+          aria-label={`添加站点到分类：${title}`}
         >
           <Plus className="w-3.5 h-3.5" />
         </Button>
@@ -341,6 +367,7 @@ export function CategoryInSituControls({
           onClick={handleDelete}
           className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
           title="删除此自建专属分类"
+          aria-label={`删除专属分类：${title}`}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </Button>

@@ -9,7 +9,6 @@ import {
   Clock,
   Flame,
   Loader2,
-  Play,
   RotateCw,
   Sparkles,
   TrendingUp,
@@ -20,7 +19,6 @@ import { Badge } from '@/registry/new-york/ui/badge'
 import { Progress } from '@/registry/new-york/ui/progress'
 import { useToast } from '@/registry/new-york/hooks/use-toast'
 import type { NavigationItem, NavigationSubItem } from '@/types/navigation'
-import { formatDuration } from '@/lib/video-format'
 
 interface VideoHarvestTaskState {
   id: string

@@ -1,11 +1,13 @@
 'use client'
 
 import React, { useState, useRef } from 'react'
+import { useDraggable } from '@dnd-kit/react'
 import { WIDGET_REGISTRY } from '@/lib/modular/registry'
 import {
   X,
   Search,
   Plus,
+  GripVertical,
   LayoutGrid,
   Sparkles,
   Clock,
@@ -54,6 +56,81 @@ const CATEGORIES = [
   { id: 'ai', label: '🤖 前沿与平替' },
   { id: 'content', label: '📝 内容与备忘' },
 ]
+
+/**
+ * 模块库条目（dnd-kit 拖拽源）：按住右上角手柄拖到画布上添加；
+ * 点「添加」按钮仍是等价操作（WCAG 2.2 2.5.7 非拖拽替代）。
+ * 本文件随 modular-canvas 一起进 ssr:false 动态 chunk，
+ * 静态 import @dnd-kit/react 不影响任何首屏路由。
+ * 拖拽源与画布落点（canvas-grid）共用 modular-canvas 里抬高的
+ * DiyDragProvider；弹窗关闭时不渲染，手柄不会无 provider 调用。
+ */
+function ModuleLibraryItem({
+  m,
+  onAddModule,
+  onClose,
+}: {
+  m: (typeof WIDGET_REGISTRY)[string]
+  onAddModule: (type: string) => void
+  onClose: () => void
+}) {
+  const Icon = ICON_MAP[m.icon] || Sparkles
+  const { ref, handleRef, isDragging } = useDraggable({
+    id: `palette:${m.type}`,
+    data: { kind: 'palette-widget', widgetType: m.type, title: m.title },
+  })
+  return (
+    <div
+      ref={ref}
+      className={`group relative p-3.5 rounded-xl border border-border/70 hover:border-primary/50 bg-card/70 hover:bg-card transition-all flex flex-col justify-between space-y-3 shadow-xs${isDragging ? ' opacity-60' : ''}`}
+    >
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
+              <Icon className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-semibold text-xs text-foreground">{m.title}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {m.badge && (
+              <span className="text-xs font-mono px-1.5 py-0.5 rounded-full bg-muted border font-medium text-muted-foreground">
+                {m.badge}
+              </span>
+            )}
+            <div
+              ref={handleRef}
+              title={`按住拖到画布上添加「${m.title}」`}
+              className="flex items-center justify-center h-6 w-4 rounded-md cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors touch-none"
+            >
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+          {m.description}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs text-muted-foreground gap-2">
+        <span className="font-mono text-[11px] sm:text-xs truncate">
+          默认跨度: {m.defaultColSpan}格宽 / {m.defaultRowSpan}格高
+        </span>
+        <Button
+          size="sm"
+          className="h-7 px-2.5 text-xs rounded-lg gap-1 shadow-xs shrink-0"
+          onClick={() => {
+            onAddModule(m.type)
+            onClose()
+          }}
+        >
+          <Plus className="w-3 h-3" />
+          <span>添加</span>
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibraryModalProps) {
   const [searchTerm, setSearchTerm] = useState('')
@@ -135,51 +212,9 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
 
         {/* 模块列表卡片流 */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
-          {modules.map((m) => {
-            const Icon = ICON_MAP[m.icon] || Sparkles
-            return (
-              <div
-                key={m.type}
-                className="group relative p-3.5 rounded-xl border border-border/70 hover:border-primary/50 bg-card/70 hover:bg-card transition-all flex flex-col justify-between space-y-3 shadow-xs"
-              >
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
-                        <Icon className="w-3.5 h-3.5" />
-                      </div>
-                      <span className="font-semibold text-xs text-foreground">{m.title}</span>
-                    </div>
-                    {m.badge && (
-                      <span className="text-xs font-mono px-1.5 py-0.5 rounded-full bg-muted border font-medium text-muted-foreground">
-                        {m.badge}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                    {m.description}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs text-muted-foreground gap-2">
-                  <span className="font-mono text-[11px] sm:text-xs truncate">
-                    默认跨度: {m.defaultColSpan}格宽 / {m.defaultRowSpan}格高
-                  </span>
-                  <Button
-                    size="sm"
-                    className="h-7 px-2.5 text-xs rounded-lg gap-1 shadow-xs shrink-0"
-                    onClick={() => {
-                      onAddModule(m.type)
-                      onClose()
-                    }}
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>添加</span>
-                  </Button>
-                </div>
-              </div>
-            )
-          })}
+          {modules.map((m) => (
+            <ModuleLibraryItem key={m.type} m={m} onAddModule={onAddModule} onClose={onClose} />
+          ))}
         </div>
 
         {/* 底部信息提示 */}

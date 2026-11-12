@@ -184,6 +184,11 @@ function parseBilibili(json: unknown): HotlistItem[] {
 
 function parseZhihuHeat(detailText: unknown): number | null {
   if (typeof detailText !== "string") return null;
+  const yi = detailText.match(/([\d.]+)\s*亿/);
+  if (yi) {
+    const n = Number(yi[1]);
+    return Number.isFinite(n) && n > 0 ? Math.trunc(n * 100000000) : null;
+  }
   const wan = detailText.match(/([\d.]+)\s*万/);
   if (wan) {
     const n = Number(wan[1]);
@@ -203,9 +208,18 @@ function parseZhihu(json: unknown): HotlistItem[] {
       const r = asRecord(raw);
       const target = asRecord(r.target);
       // 问题 id 超过 2^53（JSON.parse 后尾数会被舍入），不能走数值 id；
-      // 源站给的 target.url 是字符串，末尾的数字 id 精确无损，从这里取
+      // 源站给的 target.url 是字符串，末尾的数字 id 精确无损，从这里取。
+      // 只有 /questions/<id> 里的 id 才精确：url 里没有它时，数值 id 若超过
+      // Number.MAX_SAFE_INTEGER 必然已被舍入（例如 2104132164308530649 会
+      // 变成 2104132164308530700），String(target.id) 会拼出错误问题的链接，
+      // 宁可丢弃该条（url 留空，finish 会过滤），也不链到错的问题。
+      // 字符串 id 未经过数值舍入、数字 id 在安全整数内时，才可直接用。
       const urlId = typeof target.url === "string" ? target.url.match(/\/questions\/(\d+)/)?.[1] ?? "" : "";
-      const id = urlId || (target.id === undefined || target.id === null ? "" : String(target.id));
+      let id = urlId;
+      if (!id) {
+        if (typeof target.id === "string" && target.id.trim() !== "") id = target.id.trim();
+        else if (typeof target.id === "number" && Number.isSafeInteger(target.id)) id = String(target.id);
+      }
       // 标题里常带换行/多空格（源站原样返回），折成单空格再展示
       const title = cleanTitle(target.title).replace(/\s+/g, " ");
       const labelRaw = r.card_label === undefined || r.card_label === null ? null : asRecord(r.card_label).type;

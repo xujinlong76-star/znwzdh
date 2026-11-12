@@ -4,25 +4,24 @@
  * 首页 DIY hook：只保留 React 状态编排。共享状态/本地存储在同目录
  * home-diy-storage.ts，导入导出/云金库在 home-diy-io.ts（2026-10-19 P1-1 拆分）。
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import {
   BUILTIN_DIY_PRESETS,
+  clampCardOpacity,
   collapseAllCategories as collapseAllCategoriesPure,
   computeSmartAutoTune,
   expandAllCategories as expandAllCategoriesPure,
+  isSafeWallpaperUrl,
   reorderCategoryToTarget,
   toggleCollapsedCategory as toggleCollapsedCategoryPure,
   togglePinnedSiteInCategory,
   type DIYPreset,
 } from '@/lib/modular/diy-presets'
 import {
-  createLayoutSyncChannel,
-  getLayoutClientId,
   readSlotClocks,
   type LayoutSlotClocks,
-  type LayoutSyncChannel,
 } from '@/lib/modular/layout-sync'
-import { encodeShareLink, type ShareLinkOutcome } from '@/lib/diy-share-link'
+import { encodeVersionedShareLink, type ShareLinkOutcome } from '@/lib/diy-share-link'
 import {
   DEFAULT_CONFIG,
   applyRemoteHomeDiyConfig,
@@ -30,10 +29,14 @@ import {
   confirmHomeDiyShare,
   dismissHomeDiyShare,
   dismissHomeDiyStorageWarning,
+  flushHomeDiyDiskWrites,
+  getEffectiveSlotClocks,
   getHomeDiySnapshot,
   hydrateHomeDiy,
   redoHomeDiy,
   setHomeDiyEditingLayout,
+  stageHomeDiyPendingShare,
+  STORAGE_CLOCKS_KEY,
   subscribeHomeDiy,
   undoHomeDiy,
   type AccentColor,
@@ -46,15 +49,22 @@ import {
   type HomeViewMode,
 } from './home-diy-storage'
 import {
+  asShareFields,
   checkCloudVaultStatus as checkCloudVaultStatusPure,
   clearCloudVault as clearCloudVaultPure,
   exportDIYConfig as exportDIYConfigPure,
   exportEncryptedDIYConfig as exportEncryptedDIYConfigPure,
   importDIYConfig as importDIYConfigPure,
   importEncryptedDIYConfig as importEncryptedDIYConfigPure,
+  prepareHomeDiyImport,
   syncFromCloudVault as syncFromCloudVaultPure,
   syncToCloudVault as syncToCloudVaultPure,
 } from './home-diy-io'
+import { notifyLayoutSyncMerge } from './layout-sync-events'
+import {
+  publishSharedLayoutSync,
+  subscribeSharedLayoutSyncChannel,
+} from './use-home-diy-grid'
 
 // 保持既有导入路径可用：所有从 '@/lib/modular/use-home-diy' 导入
 // DEFAULT_CONFIG / STORAGE_KEY / 存储函数 / 类型的调用方无需改动。
@@ -67,8 +77,6 @@ export function useHomeDIY() {
     getHomeDiySnapshot,
   )
   const [mounted, setMounted] = useState(false)
-  // 跨标签页通道（挂载后才建立，SSR 阶段为 null）
-  const syncChannelRef = useRef<LayoutSyncChannel<HomeDIYConfig> | null>(null)
 
   // 1. 客户端挂载时读本地存储（v3 / v2 / v1 迁移 + #diy 分享链接）并填充共享状态。
   //    只让第一个挂载的组件去读：共享状态只有一份，后挂载的组件
@@ -92,13 +100,10 @@ export function useHomeDIY() {
   // 3. 持久化 + 跨标签广播（撤销历史已挪进共享状态，见本文件顶部说明）
   const publishToOtherTabs = useCallback((result: HomeDiyWriteResult) => {
     // 落盘成功才广播：本地都没存住，广播出去只会让别的标签页拿到一份
-    // 本标签页刷新后就消失的布局
+    // 本标签页刷新后就消失的布局。通道走 use-home-diy-grid.ts 的模块级
+    // 单例（与网格 hook 共用一条 BroadcastChannel，见该文件顶部注释）。
     if (!result.ok) return
-    syncChannelRef.current?.publish({
-      clientId: getLayoutClientId(),
-      config: result.config,
-      clocks: result.clocks,
-    })
+    publishSharedLayoutSync({ config: result.config, clocks: result.clocks })
   }, [])
 
   /**
@@ -117,19 +122,36 @@ export function useHomeDIY() {
   const applyRemoteConfig = useCallback((payload: { config: HomeDIYConfig; clocks: LayoutSlotClocks }) => {
     // 合并、落盘、更新共享状态都在 lib 里做：不压撤销历史（远端改动不是本标签页的
     // 操作，进栈会让 Ctrl+Z 行为不可预测），也不再广播（否则两边互相推回声）
-    applyRemoteHomeDiyConfig(payload)
+    const before = getHomeDiySnapshot().config
+    // 合并前的本地时钟必须用有效时钟（磁盘 + 内存里尚未落盘的）：防抖期内
+    // 刚提交的本地改动还在 300ms 定时器里，磁盘时钟还是旧的；只读磁盘会把
+    // 这次本地改动当成「从来没改过」，远端赢下来时 discardedLocal 就漏报了。
+    const beforeClocks = getEffectiveSlotClocks()
+    const result = applyRemoteHomeDiyConfig(payload)
+    if (result && result.ok) {
+      // 只在合并确实落盘后才通知：result.ok 为 false 时合并只在内存里生效，
+      // 刷新即丢，此时弹「已同步对方标签页的改动」是假成功；落盘失败本身已由
+      // storageWarning 横幅（home-diy-trigger 渲染）如实告知用户。
+      notifyLayoutSyncMerge({ before, after: result.config, remote: payload.config, beforeClocks })
+    }
   }, [])
 
-  // 3.2 建立 / 拆除跨标签页通道
+  // 3.2 建立 / 拆除跨标签页通道：走模块级单例（use-home-diy-grid.ts），
+  // 全标签页不论挂了多少个 useHomeDIY / useHomeDiyGrid 实例都只建一条
+  // BroadcastChannel；最后一个实例卸载时才关闭。
   useEffect(() => {
     if (!mounted) return
-    const channel = createLayoutSyncChannel<HomeDIYConfig>(applyRemoteConfig)
-    syncChannelRef.current = channel
-    return () => {
-      channel.close()
-      syncChannelRef.current = null
-    }
+    return subscribeSharedLayoutSyncChannel(applyRemoteConfig)
   }, [mounted, applyRemoteConfig])
+
+  // 3.3 落盘是防抖的：关标签页前把挂起的写立即刷掉，否则最后 300ms 内的
+  // 改动会丢（内存里有、磁盘上没有）。
+  useEffect(() => {
+    if (!mounted) return
+    const flush = () => flushHomeDiyDiskWrites()
+    window.addEventListener('beforeunload', flush)
+    return () => window.removeEventListener('beforeunload', flush)
+  }, [mounted])
 
   // 4. 视图模态切换
   const setViewMode = useCallback((mode: HomeViewMode) => {
@@ -290,15 +312,6 @@ export function useHomeDIY() {
     }))
   }, [persistConfig])
 
-  // 15.3 多工作区切换与蓝图存取
-  const setCurrentWorkspace = useCallback((workspaceId: string) => {
-    persistConfig((prev) => ({
-      ...prev,
-      currentWorkspace: workspaceId,
-      updatedAt: Date.now(),
-    }))
-  }, [persistConfig])
-
   // 15.4 智能自适应一键调优
   const applySmartAutoTune = useCallback((sites: any[], categories: any[]) => {
     let visitStats: Record<string, { count: number }> = {}
@@ -448,6 +461,10 @@ export function useHomeDIY() {
       canvasBackground: target.config.canvasBackground,
       heroDeckCollapsed: target.config.heroDeckCollapsed,
       heroDeckWidgets: target.config.heroDeckWidgets,
+      // 预设自带的速览星标坞开关：speed-dial-dock 直接读 config.speedDialEnabled，
+      // 以前这里不写它，四个预设文案里承诺的速览坞一个都没生效。没写该字段的
+      // 旧预设保持本地值，不拿默认值压掉。
+      speedDialEnabled: target.config.speedDialEnabled ?? prev.speedDialEnabled,
       updatedAt: Date.now(),
     }))
 
@@ -463,6 +480,32 @@ export function useHomeDIY() {
   const importDIYConfig = useCallback(
     (jsonString: string) => importDIYConfigPure(jsonString, persistConfig),
     [persistConfig],
+  )
+
+  /**
+   * 导入第一步（挂起待确认）：先验证 + 生成 diff 预览，把结果挂到
+   * pendingShare（source: 'import'），由分享确认对话框确认/忽略；
+   * 不直接写盘。备份对话框有这个 prop 时走这条路，没传时回落直接导入。
+   * 异步：验证要动态加载 zod 模块（约 103 KB，不进首屏）。
+   */
+  const stageImportForConfirm = useCallback(
+    async (jsonString: string): Promise<{ ok: boolean; message: string }> => {
+      const prepared = await prepareHomeDiyImport(jsonString, config)
+      if (!prepared.ok) {
+        return { ok: false, message: prepared.message }
+      }
+      // pending 是导入形（carriedFields 为 keyof 全集），确认对话框与
+      // merge 只认分享字段集：asShareFields 只是过类型（见 home-diy-io.ts）。
+      stageHomeDiyPendingShare({
+        imported: prepared.pending.imported,
+        diff: prepared.pending.diff,
+        warning: prepared.pending.warning,
+        carriedFields: [...asShareFields(prepared.pending.carriedFields)],
+        source: 'import',
+      })
+      return { ok: true, message: '' }
+    },
+    [config],
   )
 
   // 24. 重置全量配置
@@ -499,7 +542,8 @@ export function useHomeDIY() {
   }, [])
 
   // #diy= 分享第二阶段：挂起的分享由确认对话框消费。
-  // 确认 = 先自动备份当前本地配置、再整表替换（可 Ctrl+Z 撤销），并广播给其它标签页；
+  // 确认 = 先自动备份当前本地配置、再按字段级合并应用（只写链接实际携带的
+  // 字段，没携带的字段保持本地值；可 Ctrl+Z 撤销），并广播给其它标签页；
   // 忽略 = 只清 pendingShare，本地排版一概不动。两者都经共享状态，任何挂载的
   // useHomeDIY() 实例看到的都是同一份 pendingShare。
   const confirmPendingShare = useCallback((): { applied: boolean; backupKey: string | null } => {
@@ -507,12 +551,15 @@ export function useHomeDIY() {
     if (result.applied) {
       // Ryan 版 home-diy-storage 的 confirm 只返回 { applied, backupKey }，
       // 不返回 writeResult：跨标签广播改从共享快照取新配置，落盘成败以
-      // storageWarning 为准（confirm 内的写盘同步完成，调用后立即能读到）。
-      // 时钟键与 home-diy-storage.ts 的 STORAGE_CLOCKS_KEY 同值（该常量未导出）。
+      // storageWarning 为准。但 confirm 内的写盘只是排队了 300ms 防抖定时器，
+      // 不先刷掉就读到的是上一次写入的旧 warning，ok 会撒谎（上次成功、
+      // 这次配额满也会报 ok）。先把挂起的写立即刷掉，再读 warning，
+      // 读到的才是这次确认真正的落盘结果。
+      flushHomeDiyDiskWrites()
       const snapshot = getHomeDiySnapshot()
       publishToOtherTabs({
         config: snapshot.config,
-        clocks: readSlotClocks('navhub_home_diy_clocks_v1'),
+        clocks: readSlotClocks(STORAGE_CLOCKS_KEY),
         ok: snapshot.storageWarning === null,
       })
     }
@@ -640,11 +687,9 @@ export function useHomeDIY() {
   const setCustomWallpaper = useCallback((url: string) => {
     persistConfig((prev) => {
       const raw = (url || '').trim().slice(0, 2048)
-      let next = ''
-      try {
-        // 动态 import 会增加包体，直接用轻量正则（与 diy-presets 同口径）
-        if (/^(https?:\/\/[^'"()\s]+|\/[^'"()\s]*|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)$/i.test(raw)) next = raw
-      } catch { next = '' }
+      // 与 diy-presets 的清洗器 / 渲染层同口径：只认共享的 isSafeWallpaperUrl，
+      // 不在这里再抄一份正则（两处正则一旦分叉，入口放行、渲染拦截或反过来）。
+      const next = isSafeWallpaperUrl(raw) ? raw : ''
       return { ...prev, customWallpaperUrl: next, updatedAt: Date.now() };
     });
   }, [persistConfig]);
@@ -655,34 +700,23 @@ export function useHomeDIY() {
       glassmorphismBlur: Math.min(30, Math.max(0, blur)),
       // P1 可读性下限：卡片不透明度 ≥0.88，写入端就地兜住（0.85 时黑壁纸描述文字外推 ≈4.4:1 跌破 AA；
       // 0.88 为实测达标值 4.60:1。旧配置 0.2 读到同样抬升，见读取端）
-      cardOpacity: Math.min(1.0, Math.max(0.88, opacity)),
+      cardOpacity: clampCardOpacity(opacity),
       updatedAt: Date.now(),
     }))
   }, [persistConfig])
 
   // URL Hash 免登预设分享。编码逻辑在 lib/diy-share-link.ts：失败会带上原因，
   // 不再像以前那样返回空串让调用方静默吞掉。
+  // 发 v1 信封（{ diy: 1, config } + Zod 校验）：旧 #diy= 链接仍可读，
+  // 新链接带显式版本号与丢弃清单。
   const exportPresetToUrlHash = useCallback((): ShareLinkOutcome => {
     if (typeof window === 'undefined') {
       return { ok: false, reason: '当前页面还没有准备好，稍后再试' }
     }
-    return encodeShareLink(
-      {
-        v: config.version,
-        vm: config.viewMode,
-        cdm: config.cardDisplayMode,
-        bg: config.canvasBackground,
-        ac: config.accentColor,
-        co: config.categoryOrder,
-        pco: config.pinnedCategoryIds,
-        hco: config.hiddenCategoryIds,
-        sco: config.siteCategoryOverrides,
-        wp: config.customWallpaperUrl,
-        gb: config.glassmorphismBlur,
-        co_op: config.cardOpacity,
-      },
-      { origin: window.location.origin, pathname: window.location.pathname },
-    )
+    return encodeVersionedShareLink(config, {
+      origin: window.location.origin,
+      pathname: window.location.pathname,
+    })
   }, [config]);
 
   // 注：以前这里还有一个 importPresetFromUrlHash，从没被调用过
@@ -702,7 +736,7 @@ export function useHomeDIY() {
     glassmorphismBlur: config.glassmorphismBlur ?? 12,
     // P1 可读性下限：读取端同样 clamp 0.88——旧配置/旧分享链接可能存着 0.2 或 0.85，读到即抬到 0.88
     //（与写入端 setAestheticSliders 同口径，分享方/接收方观感一致无分叉）
-    cardOpacity: Math.min(1.0, Math.max(0.88, config.cardOpacity ?? 0.9)),
+    cardOpacity: clampCardOpacity(config.cardOpacity),
 
     mounted,
     viewMode: config.viewMode,
@@ -719,7 +753,6 @@ export function useHomeDIY() {
     categoryDensityOverrides: config.categoryDensityOverrides || {},
     speedDialEnabled: Boolean(config.speedDialEnabled),
     speedDialPinnedIds: config.speedDialPinnedIds || [],
-    currentWorkspace: config.currentWorkspace || 'all',
     customCategories: config.customCategories,
     isEditingLayout,
     setIsEditingLayout,
@@ -748,7 +781,6 @@ export function useHomeDIY() {
     toggleSpeedDial,
     pinToSpeedDial,
     unpinFromSpeedDial,
-    setCurrentWorkspace,
     applySmartAutoTune,
     setCanvasBackground,
     setAccentColor,
@@ -772,6 +804,7 @@ export function useHomeDIY() {
     applyDIYPreset,
     exportDIYConfig,
     importDIYConfig,
+    stageImportForConfirm,
     exportEncryptedDIYConfig,
     importEncryptedDIYConfig,
     syncToCloudVault,

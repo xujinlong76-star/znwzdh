@@ -670,6 +670,19 @@ const SAFE_WALLPAPER_RE = /^(https?:\/\/[^'"()\s]+|\/[^'"()\s]*|data:image\/(png
 const SAFE_HREF_RE = /^(https?:\/\/[^'"()\s<>]+|\/[^'"()\s<>]*|#[^'"()\s<>]*|\.\/[^'"()\s<>]*|\.\.\/[^'"()\s<>]*)$/i
 const SAFE_ID_RE = /^[A-Za-z0-9_\-:.]{1,128}$/
 
+/** 卡片不透明度可读性下限 0.88（实测：0.85 时黑壁纸描述文字外推 ≈4.4:1 跌破 AA，0.88 实测 4.60:1） */
+export const CARD_OPACITY_MIN = 0.88
+
+/**
+ * 卡片不透明度夹取：非数字回退 0.9，夹到 [0.88, 1]。
+ * 唯一实现：清洗器、旧配置/旧分享链接读入、迁移都走这里；
+ * use-home-diy 的读写端另有两处同口径内联（那个文件不在本次任务范围内，见报告）。
+ */
+export function clampCardOpacity(v: unknown, fallback = 0.9): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? Math.min(1, Math.max(CARD_OPACITY_MIN, n)) : fallback
+}
+
 function cleanWallpaperUrl(v: unknown): string {
   if (typeof v !== 'string') return ''
   const s = v.trim().slice(0, 2048)
@@ -904,8 +917,6 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
     heroDeckCollapsed: Boolean(raw.heroDeckCollapsed),
     heroDeckWidgets,
     enableAdaptiveRanking: Boolean(raw.enableAdaptiveRanking),
-    enableTemporalRanking: Boolean(raw.enableTemporalRanking),
-    enableKeyboardNav: raw.enableKeyboardNav !== false,
     categoryOrder: cleanIdList(raw.categoryOrder, ledger, '分类顺序'),
     pinnedCategoryIds: cleanIdList(raw.pinnedCategoryIds, ledger, '置顶分类'),
     hiddenCategoryIds: cleanIdList(raw.hiddenCategoryIds, ledger, '隐藏分类'),
@@ -914,8 +925,6 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
     categoryDensityOverrides,
     speedDialEnabled: Boolean(raw.speedDialEnabled),
     speedDialPinnedIds: cleanIdList(raw.speedDialPinnedIds, ledger, '速览星标'),
-    currentWorkspace: typeof raw.currentWorkspace === 'string' ? raw.currentWorkspace : 'all',
-    workspaceLayouts: typeof raw.workspaceLayouts === 'object' && raw.workspaceLayouts !== null && !Array.isArray(raw.workspaceLayouts) ? raw.workspaceLayouts : {},
     // 跨分类重映射：键值均为内部 id，白名单外直接丢弃（防原型污染与非法注入）
     siteCategoryOverrides: cleanOverrides((raw as any).siteCategoryOverrides, ledger),
     // 自定义壁纸：仅 http/https、/ 开头相对路径、data:image/(png|jpeg|webp);base64,，否则置空不渲染
@@ -925,10 +934,7 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
       : 12,
     cardOpacity: typeof raw.cardOpacity === 'number' || typeof (raw as any).co_op === 'number'
       // P1 可读性下限 0.88：旧预设/旧分享链接（含 co_op=0.2）读入即抬到 0.88，与 use-home-diy 读写端同口径
-      ? (() => {
-          const n = Number(typeof raw.cardOpacity === 'number' ? raw.cardOpacity : (raw as any).co_op);
-          return Number.isFinite(n) ? Math.min(1, Math.max(0.88, n)) : 0.9;
-        })()
+      ? clampCardOpacity(typeof raw.cardOpacity === 'number' ? raw.cardOpacity : (raw as any).co_op)
       : 0.9,
     customCategories,
     updatedAt: Date.now(),
@@ -958,7 +964,7 @@ export function createLayoutHistory<T>(initial: T): LayoutHistoryState<T> {
 export function pushLayoutHistory<T>(
   history: LayoutHistoryState<T>,
   nextState: T,
-  maxDepth = 25
+  maxDepth = 50
 ): LayoutHistoryState<T> {
   if (JSON.stringify(history.present) === JSON.stringify(nextState)) {
     return history
@@ -1019,4 +1025,103 @@ export function collapseAllCategories(allCategoryIds: string[]): string[] {
 
 export function expandAllCategories(): string[] {
   return []
+}
+
+// =========================================================================
+// 13. 快捷指令解析 (Shortcut Command Parser)
+// =========================================================================
+
+/**
+ * 「快捷指令」的关键词匹配器（从 home-diy-toolbar 的 handleRunAiPrompt 抽出，
+ * 让匹配口径可单测、工具栏只剩接线）。
+ *
+ * 诚实边界：这就是关键词匹配，不是 AI。能识别的只有下面这几组词，
+ * 工具栏的占位符与提示文案必须只列这些词，不许再承诺自然语言：
+ *   - 密度：3列/宽松 → 宽松；4列/标准 → 标准；5列/6列/高密/紧凑 → 紧凑
+ *   - 卡片形态：胶囊/mini → 极速胶囊；紧凑 → 紧凑条形；标准 → 标准图文；
+ *     丰富/深度 → 深度大卡
+ *   - 画布背景：极简/clean → 纯净极简；网格/grid → 工程网格；极光/aurora → 极光流光
+ *   - 类目聚焦：前端/技术/开发 → 技术类目；ai/创作 → AI 类目；两者可并存
+ *     （「只看AI与前端」同时命中两组，隐藏「哪个模式都不匹配」的类目）。
+ * 一个意图都没识别出来时 feedback 为空，调用方必须如实说没听懂，
+ * 不许弹假成功。
+ */
+export interface DiyShortcutMatch {
+  density?: 'dense' | 'comfortable' | 'spacious'
+  cardDisplayMode?: 'compact' | 'standard' | 'rich' | 'minimal'
+  canvasBackground?: 'mesh' | 'dots' | 'grid' | 'aurora' | 'clean'
+  /** 命中类目聚焦意图时，要隐藏的类目 id（没命中时为 undefined） */
+  hiddenCategoryIds?: string[]
+  /** 命中了哪些意图（按 UI 文案原样返回，供 toast 拼接） */
+  feedback: string[]
+}
+
+export function parseDiyShortcut(
+  input: string,
+  opts: { allCategoryIds: string[]; categoryTitleMap: Record<string, string> },
+): DiyShortcutMatch {
+  const q = input.toLowerCase()
+  const feedback: string[] = []
+  const match: DiyShortcutMatch = { feedback }
+
+  if (q.includes('3列') || q.includes('宽松')) {
+    match.density = 'spacious'
+    feedback.push('宽松')
+  } else if (q.includes('4列') || q.includes('标准')) {
+    match.density = 'comfortable'
+    feedback.push('标准')
+  } else if (q.includes('5列') || q.includes('6列') || q.includes('高密') || q.includes('紧凑')) {
+    match.density = 'dense'
+    feedback.push('紧凑高密')
+  }
+
+  if (q.includes('胶囊') || q.includes('mini')) {
+    match.cardDisplayMode = 'minimal'
+    feedback.push('极速胶囊')
+  } else if (q.includes('紧凑')) {
+    match.cardDisplayMode = 'compact'
+    feedback.push('紧凑条形')
+  } else if (q.includes('标准')) {
+    match.cardDisplayMode = 'standard'
+    feedback.push('标准图文')
+  } else if (q.includes('丰富') || q.includes('深度')) {
+    match.cardDisplayMode = 'rich'
+    feedback.push('深度大卡')
+  }
+
+  if (q.includes('极简') || q.includes('clean')) {
+    match.canvasBackground = 'clean'
+    feedback.push('纯净极简')
+  } else if (q.includes('网格') || q.includes('grid')) {
+    match.canvasBackground = 'grid'
+    feedback.push('工程网格')
+  } else if (q.includes('极光') || q.includes('aurora')) {
+    match.canvasBackground = 'aurora'
+    feedback.push('极光流光')
+  }
+
+  // 类目聚焦：技术与 AI 两个意图可同时成立（旧实现是 else-if，
+  // 「只看AI与前端」永远只命中先写的分支）。合并口径：命中的意图
+  // 模式取并集，隐藏「哪个模式都不匹配」的类目。
+  const focusPatterns: RegExp[] = []
+  if (q.includes('前端') || q.includes('技术') || q.includes('开发')) {
+    focusPatterns.push(/前端|后端|运维|安全|开发|云|架构|Dev|AI/i)
+  }
+  if (q.includes('ai') || q.includes('创作')) {
+    focusPatterns.push(/AI|智能|设计|创意|模型|Prompt/i)
+  }
+  if (focusPatterns.length > 0) {
+    match.hiddenCategoryIds = opts.allCategoryIds.filter(
+      (id) => !focusPatterns.some((p) => p.test(opts.categoryTitleMap[id] || id)),
+    )
+    feedback.push(
+      focusPatterns.length > 1
+        ? '聚焦技术+AI类目'
+        : focusPatterns[0]!.source.includes('前端')
+          ? '聚焦技术类目'
+          : '聚焦AI类目',
+    )
+  }
+
+  return match
 }

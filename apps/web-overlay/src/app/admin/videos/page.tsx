@@ -199,7 +199,7 @@ export default function VideosAdminPage() {
             {/* 视频时效质量与后台长任务遥测看板 */}
             <VideoTelemetryDashboard
                 categories={items}
-                onTriggerHarvest={(catId) => {
+                onTriggerHarvest={() => {
                     setIsHarvestModalOpen(true)
                 }}
                 onRefreshCategories={() => {

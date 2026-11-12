@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect, type ReactNode } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import type { DragEndEvent } from '@dnd-kit/react'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { Sidebar } from '@/components/sidebar'
@@ -12,6 +13,8 @@ import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
+import { readDiyDragData } from '@/lib/modular/diy-drag'
 import {
   useFeatureMask,
   stripFeaturePrefix,
@@ -20,6 +23,26 @@ import {
 import { Footer } from '@/components/footer'
 import { OnboardingCard } from '@/components/onboarding-card'
 import { AiFinderPanel } from '@/components/ai/ai-finder-panel'
+// 拖拽 provider 边界（DRAG-2 接线）：dnd-kit 约 133KB，绝不能静态进首屏。
+// kit 在挂载后后台 import，到达前直接渲染 children；到达后包上
+// DiyDragProvider。注意：切换瞬间 grid 子树会 remount 一次——只发生
+// 在 chunk 到达后、用户操作前（与 section 里的后台 import 同一时机），
+// 之后进出编辑态不再动 provider（卡片手柄的挂载/卸载是既有设计）。
+// 若 Ryan 实测到加载闪烁，备选是静态 import provider（以首屏包体积换零闪烁）。
+function DiyGridDragBoundary({
+  kit,
+  onDragEnd,
+  children,
+}: {
+  kit: typeof import('@/components/diy/diy-drag-kit') | null
+  onDragEnd: (event: DragEndEvent) => void
+  children: ReactNode
+}) {
+  if (!kit) return <>{children}</>
+  const { DiyDragProvider } = kit
+  return <DiyDragProvider onDragEnd={onDragEnd}>{children}</DiyDragProvider>
+}
+
 // 沉浸影院带在首屏下方且自带懒挂载：动态导入，不占首页首屏包体积（预算紧）。
 const HomeDramaCinema = dynamic(
   () => import('@/components/home-drama-cinema').then((m) => m.HomeDramaCinema),
@@ -101,6 +124,7 @@ import { cn } from '@/lib/utils'
 import { type WorkspaceId } from '@/components/workspace-filter'
 import {
   suggestCategoryForSite,
+  clampCardOpacity,
   isSafeWallpaperUrl,
   isSafeSiteHref,
 } from '@/lib/modular/diy-presets'
@@ -216,7 +240,6 @@ export function NavigationContent({
     cardOpacity,
     isEditingLayout,
     setIsEditingLayout,
-    toggleEditingLayout,
     unhideCategory,
     unhideAllCategories,
   } = useHomeDIY()
@@ -248,8 +271,6 @@ export function NavigationContent({
     [homeControl, personalHidden],
   )
 
-  // 拖拽编排分类状态
-  const [dropCategoryTarget, setDropCategoryTarget] = useState<{ categoryId: string; position: 'before' | 'after' } | null>(null)
   // 拖拽卡片收录状态 (悬停的目标自定义分类 ID)
   const [dragOverCustomCatId, setDragOverCustomCatId] = useState<string | null>(null)
 
@@ -288,6 +309,41 @@ export function NavigationContent({
     [customAsCategories, filteredNavigationItems, effectiveHiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides],
   )
 
+  // dnd-kit 重型层：挂载后在后台 import（不阻塞首屏；与 section 里的
+  // 后台 import 同一个 chunk，到达后 DiyGridDragBoundary 包上 provider）。
+  // 失败也不影响 ⋯ 菜单（拖拽是增强，不是必需）。
+  type DiyDragKitModule = typeof import('@/components/diy/diy-drag-kit')
+  const [dragKit, setDragKit] = useState<DiyDragKitModule | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    import('@/components/diy/diy-drag-kit')
+      .then((mod) => {
+        if (!cancelled) setDragKit(mod)
+      })
+      .catch(() => {
+        // 拖拽库加载失败：菜单仍可用，不弹错打扰用户
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // 分类拖拽落点：provider 的 onDragEnd 先于内置卡片处理调用；只处理
+  // category→category，卡片落点走内置逻辑。目标 id 不在列表里时不动
+  // （moveCategoryToIndex 会把 -1 夹到 0 误插到顶部，所以这里先拦住）。
+  const { moveCategoryToIndex } = useHomeDiyGrid(allCategoryIds)
+  const handleCategoryDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const source = readDiyDragData(event.operation.source)
+      const target = readDiyDragData(event.operation.target)
+      if (event.canceled || source?.kind !== 'category' || target?.kind !== 'category') return
+      const toIndex = allCategoryIds.indexOf(target.categoryId)
+      if (toIndex === -1) return
+      moveCategoryToIndex(source.categoryId, toIndex)
+    },
+    [allCategoryIds, moveCategoryToIndex],
+  )
+
   // 双向同步传统分类隐藏列表与增量掩码回收站
   useEffect(() => {
     syncHiddenCategoriesFromDIY(hiddenCategoryIds, categoryTitleMap)
@@ -315,8 +371,11 @@ export function NavigationContent({
     }, 80)
   }, [setIsEditingLayout])
 
-  // 防自锁死安全阀（Anti-Lockout Guardrail）与全局 Ctrl/Cmd+Z 撤销监听：
-  // 即使右下角 [DIY 排版工坊 E] 按钮被隐藏，键盘快捷键 E 依然可随时呼出 DIY 与恢复中心
+  // 全局 Ctrl/Cmd+Z 撤销监听（删减进回收站后可撤销）。
+  // 注意：这里曾经还有一个 Ctrl/Cmd+E 安全阀（右下角 DIY 按钮被隐藏时兜底呼出
+  // 排版与恢复中心），因与快捷键帮助对话框的同一绑定重复触发、一次按键开关两次
+  // 等于没按，已删除；Ctrl/Cmd+E 的唯一入口是 keyboard-shortcuts-dialog.tsx。
+  // 单字符 E 已按 WCAG 2.1.4 废止：裸按 E 会与读屏软件冲突。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
@@ -336,26 +395,10 @@ export function NavigationContent({
         }
         return
       }
-      // 当右下角 DIY 触发器被隐藏（feat:diy-fab）且未处于编辑态时，由本安全阀兜底响应 E 键
-      if (
-        isFeatureHidden('feat:diy-fab') &&
-        !isEditingLayout &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        e.key.toLowerCase() === 'e'
-      ) {
-        e.preventDefault()
-        toggleEditingLayout()
-        toast({
-          title: '🛠️ 已通过安全阀快捷键 (E) 呼出排版与恢复中心',
-          description: '您可以在大纲或回收站中随时恢复已隐藏的悬浮按钮与任意模块。',
-        })
-      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [trashBin.length, handleUndoPrune, isFeatureHidden, isEditingLayout, toggleEditingLayout, toast])
+  }, [trashBin.length, handleUndoPrune])
 
   const handleWorkspaceChange = useCallback((nextWorkspace: WorkspaceId) => {
     setActiveWorkspace(nextWorkspace)
@@ -562,7 +605,7 @@ export function NavigationContent({
           } : {}),
           // P1 接线：DIY 卡片不透明度经 CSS 变量驱动 .nav-card-deferred 底色；
           // JS 侧 clamp 0.88~1.0（0.88 为壁纸实测可读性下限，0.85 外推 ≈4.4:1 跌破 AA）
-          '--card-alpha': String(Math.min(1, Math.max(0.88, cardOpacity ?? 0.9))),
+          '--card-alpha': String(clampCardOpacity(cardOpacity)),
         } as React.CSSProperties}
       >
         {/* 卡片键盘模型说明：所有卡片通过 aria-describedby 指向这一条 */}
@@ -866,6 +909,7 @@ export function NavigationContent({
                 )
               )}
 
+              <DiyGridDragBoundary kit={dragKit} onDragEnd={handleCategoryDragEnd}>
               <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">
                 {renderedCategories.map((category, index) => {
                   const section = (
@@ -880,9 +924,7 @@ export function NavigationContent({
                       selectionMode={selectionMode}
                       selectedIds={selectedIds}
                       siteData={siteData}
-                      dropCategoryTarget={dropCategoryTarget}
                       dragOverCustomCatId={dragOverCustomCatId}
-                      setDropCategoryTarget={setDropCategoryTarget}
                       setDragOverCustomCatId={setDragOverCustomCatId}
                       setAddSiteTargetCatId={setAddSiteTargetCatId}
                       setPeekItem={openPeek}
@@ -944,6 +986,8 @@ export function NavigationContent({
                                   canMoveUp={index > 0}
                                   canMoveDown={index < renderedCategories.length - 1}
                                   allCategoryIds={allCategoryIds}
+                                  dragEnabled
+                                  dragGrip={dragKit?.DiyCategoryDragGrip}
                                 />
                               </div>
                             </div>
@@ -968,6 +1012,7 @@ export function NavigationContent({
                   </div>
                 )}
               </div>
+              </DiyGridDragBoundary>
             </>
           )}
 

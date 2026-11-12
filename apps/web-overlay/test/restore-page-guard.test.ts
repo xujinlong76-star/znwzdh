@@ -21,15 +21,39 @@ import { describe, expect, it } from "vitest";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-function overlaySource(rel: string): string {
+function overlayPath(rel: string): string {
   const candidates = [resolve(HERE, "..", rel), resolve(HERE, "..", "..", "web-overlay", rel)];
   const hit = candidates.find((p) => p.replace(/\\/g, "/").includes("/web-overlay/") && existsSync(p));
   if (!hit) throw new Error("无法定位 overlay 文件 " + rel + "（候选：" + candidates.join(" | ") + "）");
-  return readFileSync(hit, "utf8");
+  return hit;
+}
+
+function overlaySource(rel: string): string {
+  return readFileSync(overlayPath(rel), "utf8");
 }
 
 const PAGE_PATH = "src/app/admin/data/restore/page.tsx";
-const PAGE = overlaySource(PAGE_PATH);
+const SHELL_PATH = overlayPath(PAGE_PATH);
+const SHELL = readFileSync(SHELL_PATH, "utf8");
+
+/**
+ * 懒加载壳跟随：/admin/data/restore 在 34b8546 把整页实现挪进 ./page.impl，
+ * page.tsx 只剩 dynamic 壳 + 骨架（首屏预算）。守卫断言的实现字符串都在
+ * 实现文件里，所以跟随壳里的 dynamic import 目标再断言；壳本身仍由下面
+ * 「仍是懒加载壳」用例锁住，不允许把实现搬回 page.tsx 撑大首屏。
+ * 只认同目录的 `.impl` 目标：壳里没有 `.impl` 导入时就直接断言壳本身，
+ * 守卫不会静默跳过；目标文件不存在则直接抛错，不回退。
+ */
+function resolveLazyImpl(shellPath: string, shellSource: string): string {
+  const m = shellSource.match(/import\(\s*['"](\.\/[^'"]*\.impl)['"]\s*\)/);
+  if (!m) return shellSource;
+  const base = resolve(dirname(shellPath), m[1]);
+  const implPath = [base + ".tsx", base + ".ts", base].find((p) => existsSync(p));
+  if (!implPath) throw new Error("懒加载壳指向的实现文件不存在：" + base + "（.tsx/.ts）");
+  return readFileSync(implPath, "utf8");
+}
+
+const PAGE = resolveLazyImpl(SHELL_PATH, SHELL);
 
 /**
  * 剥掉注释后的源码。
@@ -44,6 +68,14 @@ const CODE_ONLY = PAGE.replace(/\/\*[\s\S]*?\*\//g, "")
   .join("\n");
 
 describe("恢复页面：结构与端点契约", () => {
+  it("仍是懒加载壳：实现在 ./page.impl，壳只留骨架（首屏预算）", () => {
+    expect(SHELL).toContain("dynamic(");
+    expect(SHELL).toContain("import('./page.impl')");
+    expect(SHELL).toMatch(/ssr:\s*false/);
+    // 守卫确实跟随到了实现文件，而不是原地断言壳
+    expect(PAGE).not.toBe(SHELL);
+  });
+
   it("是客户端组件（要读本地文件与状态）", () => {
     expect(PAGE.startsWith("'use client'")).toBe(true);
   });

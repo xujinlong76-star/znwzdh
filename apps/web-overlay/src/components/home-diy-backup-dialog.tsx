@@ -84,7 +84,15 @@ export interface HomeDIYBackupDialogProps {
   /* ---- 由 useHomeDIY 注入（组件不持有 DIY 状态） ---- */
   exportPresetToUrlHash: () => ShareLinkOutcome
   exportDIYConfig: () => string
-  importDIYConfig: (json: string) => HomeDiyImportResult
+  importDIYConfig: (json: string) => Promise<HomeDiyImportResult>
+  /**
+   * 导入改走分享确认管线（P0-5）：有这条时，明文导入先 prepare + 挂起
+   * 待确认（HomeDiyShareConfirmDialog 弹出 diff 预览），确认后才应用；
+   * 没传时回退到 importDIYConfig 直接导入（现已是备份 + 字段级合并，
+   * 不再是整表替换）。hook 侧由 coordinator 接线：prepareHomeDiyImport
+   * + stageHomeDiyPendingShare，见 home-diy-io.ts 的 P0-5 注释。
+   */
+  stageImportForConfirm?: (json: string) => Promise<{ ok: boolean; message: string }>
   exportEncryptedDIYConfig: (passphrase: string) => Promise<string>
   importEncryptedDIYConfig: (json: string, passphrase: string) => Promise<HomeDiyImportResult>
   syncToCloudVault: (passphrase: string, expectedVersion: number) => Promise<CloudVaultSyncResult>
@@ -121,6 +129,7 @@ export function HomeDIYBackupDialog({
   exportPresetToUrlHash,
   exportDIYConfig,
   importDIYConfig,
+  stageImportForConfirm,
   exportEncryptedDIYConfig,
   importEncryptedDIYConfig,
   syncToCloudVault,
@@ -483,10 +492,26 @@ export function HomeDIYBackupDialog({
     }
   }
 
-  // 导入明文配置
-  const handleImportSubmit = () => {
+  // 导入明文配置：有 stageImportForConfirm 时先挂起待确认（确认对话框
+  // 里核对 diff 后才应用，应用前自动备份）；没接线时直接导入（现已是
+  // 备份 + 字段级合并，不再是整表替换）。
+  const handleImportSubmit = async () => {
     if (!importJsonText.trim()) return
-    const res = importDIYConfig(importJsonText.trim())
+    if (stageImportForConfirm) {
+      const staged = await stageImportForConfirm(importJsonText.trim())
+      if (!staged.ok) {
+        toast({ title: '导入失败', description: staged.message, variant: 'destructive' })
+        return
+      }
+      toast({
+        title: '请核对导入内容',
+        description: '已按字段列出这次导入会改动的地方，确认后才会应用；应用前会自动备份当前排版。',
+      })
+      onOpenChange(false)
+      setImportJsonText('')
+      return
+    }
+    const res = await importDIYConfig(importJsonText.trim())
     toast({
       title: !res.ok ? '导入失败' : res.dropped > 0 ? '⚠️ 已导入，但部分内容被丢弃' : '🎉 导入成功',
       description: res.message,
@@ -537,6 +562,16 @@ export function HomeDIYBackupDialog({
       if (content) {
         setImportJsonText(content)
       }
+    }
+    // 只挂 onload 时读盘失败是静默的：点了「选择文件导入」、挑了文件，
+    // 界面毫无反应，用户只会以为按钮坏了。
+    reader.onerror = () => {
+      toast({
+        title: '读取文件失败',
+        description: '无法读取所选文件，请重试或改用粘贴导入。',
+        variant: 'destructive',
+      })
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
     reader.readAsText(file)
   }

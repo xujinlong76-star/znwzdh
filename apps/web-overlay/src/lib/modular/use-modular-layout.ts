@@ -276,8 +276,13 @@ export function useModularLayout() {
   )
 
   // 5. 拖拽重新排序
+  // recordHistory=false 用于一次提交里的多步顺序移动（commitGridLayout）：
+  // RGL 压实一次顶开多个组件时 planOrderMoves 拆成多步 reorder，每步都推
+  // 历史会让一次拖拽变成多步撤销；拖拽开始时 beginInteraction 已压过一份
+  // 拖拽前快照，提交里的各步不再推历史，一次拖拽 = 一步撤销。
+  // 默认 true：单步移动（移位按钮 / dnd-kit 落点）仍是一步一历史。
   const reorderWidgets = useCallback(
-    (sourceIndex: number, destinationIndex: number) => {
+    (sourceIndex: number, destinationIndex: number, recordHistory = true) => {
       if (sourceIndex === destinationIndex) return
       updateCurrentWidgets((prev) => {
         if (sourceIndex < 0 || sourceIndex >= prev.length) return prev
@@ -289,7 +294,7 @@ export function useModularLayout() {
           next.splice(destinationIndex, 0, moved)
         }
         return next
-      })
+      }, recordHistory)
     },
     [updateCurrentWidgets]
   )

@@ -5,12 +5,13 @@
  * 从 algorithm-lab.tsx 拆出（第五批 A1）：状态与逻辑原样搬运，行为由
  * algorithm-lab-structure.test.ts 与 e2e/algorithms.spec.ts 双守卫锁定。
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Radio, Sliders, Activity } from 'lucide-react'
 import { privatizeVector, rankItemsWithPrivacy, type CandidateItem } from '@/lib/federated-recommendation'
+import { LDP_EPSILON_MAX, LDP_EPSILON_MIN, LDP_EPSILON_PRESETS, LDP_EPSILON_STEP, LDP_NOISE_THRESHOLD, LDP_SAMPLE_COUNT, originalPosition, rankChangeLabel, sampleLdpDimension } from '@/lib/lab-ldp'
 
 
 export function FederatedPanel() {
@@ -19,6 +20,7 @@ export function FederatedPanel() {
   const [fedPersonalWeight, setFedPersonalWeight] = useState<number>(0.6)
   const [localFeatureVector] = useState<number[]>([0.9, 0.8, 0.3, 0.2, 0.7])
   const [noisyVector, setNoisyVector] = useState<number[]>([])
+  const [sampleNonce, setSampleNonce] = useState(0)
   const [globalFedVector] = useState<number[]>([0.7, 0.95, 0.6, 0.4, 0.8])
 
   const fedCandidates: CandidateItem[] = useMemo(() => [
@@ -37,6 +39,18 @@ export function FederatedPanel() {
   const fedRecommendations = useMemo(() => {
     return rankItemsWithPrivacy(localFeatureVector, globalFedVector, fedCandidates, fedPersonalWeight)
   }, [localFeatureVector, globalFedVector, fedCandidates, fedPersonalWeight])
+
+  const noisyRecommendations = useMemo(() => {
+    if (noisyVector.length === 0) return []
+    return rankItemsWithPrivacy(noisyVector, globalFedVector, fedCandidates, fedPersonalWeight)
+  }, [noisyVector, globalFedVector, fedCandidates, fedPersonalWeight])
+
+  // 直方图采样只在客户端挂载后进行：sampleLaplace 用 crypto 随机数，
+  // 渲染期（含 SSR）采样会使服务端与客户端首绘不同，触发水合不匹配。
+  const [ldpSamples, setLdpSamples] = useState<ReturnType<typeof sampleLdpDimension>[]>([])
+  useEffect(() => {
+    setLdpSamples(localFeatureVector.map((value, idx) => sampleLdpDimension(value, fedEpsilon, LDP_SAMPLE_COUNT, idx)))
+  }, [localFeatureVector, fedEpsilon, sampleNonce])
 
   return (
     <div className="space-y-4">
@@ -72,21 +86,36 @@ export function FederatedPanel() {
                       {fedEpsilon <= 0.5 ? '极高隐私 (强混淆)' : fedEpsilon <= 1.0 ? '均衡隐私' : '效用优先 (弱扰动)'}
                     </Badge>
                   </div>
-                  <div className="flex gap-2">
-                    {[0.2, 0.5, 1.0, 2.0, 5.0].map((eps) => (
-                      <Button
+                  <input
+                    type="range"
+                    min={LDP_EPSILON_MIN}
+                    max={LDP_EPSILON_MAX}
+                    step={LDP_EPSILON_STEP}
+                    value={fedEpsilon}
+                    onChange={(event) => setFedEpsilon(Number(event.target.value))}
+                    aria-label="隐私预算 ε"
+                    className="w-full"
+                  />
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>{LDP_EPSILON_MIN}（强隐私）</span>
+                    <span>当前 ε = {fedEpsilon.toFixed(1)}</span>
+                    <span>{LDP_EPSILON_MAX}（弱扰动）</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {LDP_EPSILON_PRESETS.map((eps) => (
+                      <button
                         key={eps}
-                        size="sm"
-                        variant={fedEpsilon === eps ? 'default' : 'outline'}
+                        type="button"
                         onClick={() => setFedEpsilon(eps)}
-                        className="text-xs h-8 flex-1"
+                        aria-pressed={fedEpsilon === eps}
+                        className="rounded-full border border-border/60 px-2.5 py-1 text-[11px]"
                       >
-                        {eps}
-                      </Button>
+                        ε = {eps}
+                      </button>
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    拉普拉斯分布标度参数 b = sensitivity / ε。ε 越小，采样方差越大，个体身份越难被反推。
+                    拉普拉斯分布标度参数 b = sensitivity / ε。ε 越小，采样方差越大，个体身份越难被反推。演示用聚合——本页不上传任何向量；群体向量为写死示例；真实上报不存在。
                   </p>
                 </div>
 
@@ -148,9 +177,48 @@ export function FederatedPanel() {
                 </div>
               </div>
 
-              {/* 实时协同推荐排序结果 */}
+              {/* 每维噪声分布：每维采样 N=200，复用 sampleLaplace */}
+      <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-semibold">每维噪声分布（每维采样 N={LDP_SAMPLE_COUNT}）</span>
+          <Button size="sm" variant="outline" onClick={() => setSampleNonce((n) => n + 1)} className="text-xs h-8">
+            重新采样
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          每组为当前 ε 下该维加噪值（原始值 + Laplace(0, 1/ε)）的 {LDP_SAMPLE_COUNT} 次采样直方图；红色竖线标出原始值位置。
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {ldpSamples.length === 0 && <p className="text-xs text-muted-foreground">正在采样…</p>}
+          {ldpSamples.map((dim) => {
+            const maxBucket = Math.max(...dim.buckets, 1)
+            return (
+              <div key={dim.index} className="p-2.5 rounded-lg border border-border/50 space-y-1.5">
+                <div className="text-[11px] font-semibold">
+                  {['前端', 'AI模型', '云原生', '数据库', '工具链'][dim.index]} · 原始值 {dim.original.toFixed(2)}
+                </div>
+                <div className="relative flex items-end gap-px h-14">
+                  {dim.buckets.map((count, bucketIndex) => (
+                    <div
+                      key={bucketIndex}
+                      className="flex-1 bg-blue-500/70 rounded-t-sm"
+                      style={{ height: `${Math.max(4, (count / maxBucket) * 100)}%` }}
+                      title={`区间 ${bucketIndex + 1}：${count} 次`}
+                    />
+                  ))}
+                  <div className="absolute inset-y-0 w-px bg-red-500" style={{ left: `${originalPosition(dim) * 100}%` }} title={`原始值 ${dim.original.toFixed(2)}`} />
+                </div>
+                <div className="text-[10px] text-muted-foreground">均值 {dim.mean.toFixed(2)} ± SD {dim.sd.toFixed(2)}</div>
+                <div className="text-[10px] text-muted-foreground">{`P(|噪声|>${LDP_NOISE_THRESHOLD}) = ${dim.pAbsNoiseGtHalf.toFixed(2)}`}</div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 实时协同推荐排序结果 */}
               <div className="space-y-3">
-                <span className="text-xs font-semibold text-muted-foreground">实时隐私协同推荐排序清单：</span>
+                <span className="text-xs font-semibold text-muted-foreground">原始向量排序（未加噪对照）：</span>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {fedRecommendations.map((item, idx) => (
                     <div key={item.itemId} className="p-3.5 rounded-xl border border-border/60 bg-muted/20 space-y-2">
@@ -179,7 +247,49 @@ export function FederatedPanel() {
                   ))}
                 </div>
               </div>
-            </CardContent>
+              {/* 加噪向量排序：以加噪向量重排，附名次变化 */}
+      <div className="space-y-3">
+        <span className="text-sm font-semibold text-muted-foreground">加噪向量排序（以加噪向量重排）：</span>
+        {noisyRecommendations.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">
+            尚未注入扰动：点击「注入 Laplace 差分隐私扰动」后，此处按加噪向量重排，并标出每项相对原始榜单的名次变化。
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {noisyRecommendations.map((item, idx) => {
+              const oldRank = fedRecommendations.findIndex((r) => r.itemId === item.itemId) + 1
+              return (
+                <div key={item.itemId} className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-blue-500/10 text-blue-500 font-mono text-[10px] flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      {item.name}
+                    </span>
+                    <Badge variant="outline" className="text-blue-500 border-blue-500/30 text-xs font-mono font-bold">
+                      {item.score}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+                    <span>个人匹配度：{item.personalMatch}</span>
+                    <span>群体趋势度：{item.globalTrendMatch}</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">{`名次变化 ${rankChangeLabel(oldRank, idx + 1)}（原始 #${oldRank} → 加噪 #${idx + 1}）`}</div>
+                  <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, Math.round(item.score * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+    </CardContent>
           </Card>
     </div>
   )

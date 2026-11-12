@@ -252,3 +252,51 @@ describe('防虚假 200 面板必须用 core 引擎，不许手写熵 + 硬编�
     expect(mirror).toContain('blocked by cloudflare')
   })
 })
+describe('算法实验室 W1-2：LDP ε 滑块 + 分布对比 + 加噪排序', () => {
+  const panel = () => overlayRead('src/components/algorithm-lab/federated-panel.tsx')
+  const lib = () => overlayRead('src/lib/lab-ldp.ts')
+
+  it('ε 由 5 档按钮改为 range 滑块 0.2–5 step 0.1，并保留 5 档 chips', () => {
+    expect(panel()).toContain('type="range"')
+    expect(panel()).toContain('aria-label="隐私预算 ε"')
+    expect(panel()).toContain('LDP_EPSILON_PRESETS')
+    expect(panel()).toContain('LDP_EPSILON_MIN')
+    expect(panel()).toContain('LDP_EPSILON_MAX')
+    expect(panel()).toContain('LDP_EPSILON_STEP')
+    expect(panel()).not.toContain('[0.2, 0.5, 1.0, 2.0, 5.0].map((eps)')
+  })
+
+  it('每维 N=200 采样直方图：原始值刻度线 + 均值±SD + P(|噪声|>0.5)', () => {
+    expect(panel()).toContain('每维噪声分布')
+    expect(panel()).toContain('LDP_SAMPLE_COUNT')
+    expect(panel()).toContain('sampleLdpDimension')
+    expect(panel()).toContain('均值')
+    expect(panel()).toContain('P(|噪声|>')
+    expect(panel()).toContain('重新采样')
+  })
+
+  it('排序改用加噪向量：原始/加噪双榜单 + 名次变化标记', () => {
+    expect(panel()).toContain('rankItemsWithPrivacy(noisyVector')
+    expect(panel()).toContain('原始向量排序')
+    expect(panel()).toContain('加噪向量排序')
+    expect(panel()).toContain('名次变化')
+    expect(panel()).toContain('rankChangeLabel')
+  })
+
+  it('强制诚实文案：演示用聚合，本页不上传任何向量；群体向量为写死示例', () => {
+    expect(panel()).toContain('演示用聚合——本页不上传任何向量；群体向量为写死示例；真实上报不存在')
+  })
+
+  it('面板零网络请求：不含 fetch/axios/XMLHttpRequest', () => {
+    expect(panel()).not.toContain('fetch(')
+    expect(panel()).not.toContain('axios')
+    expect(panel()).not.toContain('XMLHttpRequest')
+  })
+
+  it('lab-ldp 导出滑块常量与采样/名次变化工具', () => {
+    expect(lib()).toContain('LDP_SAMPLE_COUNT = 200')
+    expect(lib()).toContain('LDP_EPSILON_PRESETS')
+    expect(lib()).toContain('export function sampleLdpDimension')
+    expect(lib()).toContain('export function rankChangeLabel')
+  })
+})

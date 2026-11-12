@@ -1543,5 +1543,15 @@
   "pricing": "free",
   "evidence": "站点描述明示：抖音旗下免费短剧平台，看广告免费看全集",
   "title": "红果短剧"
+ },
+ "weixin.qq.com": {
+  "pricing": "free",
+  "evidence": "微信官网 weixin.qq.com 定位为免费跨平台通讯工具，个人聊天与支付功能免费使用，App 免费下载",
+  "title": "微信"
+ },
+ "alipay.com": {
+  "pricing": "free",
+  "evidence": "支付宝官网 alipay.com 定位为个人电子支付与生活服务平台，个人用户注册与支付/转账/缴费免费使用（商家服务另计费）",
+  "title": "支付宝"
  }
 }

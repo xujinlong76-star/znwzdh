@@ -14,11 +14,20 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const ROOT = process.cwd();
-const PAYLOAD = join(ROOT, ".git", "hooks", "navhub-precommit-tests.mjs");
+// 生成物在公共钩子目录：linked worktree 里 .git 是文件，join(ROOT, '.git', 'hooks')
+// 不存在；--git-path hooks 在主库返回 .git/hooks、在 worktree 返回公共 .git/hooks。
+function repoHooksDir(): string {
+  try {
+    return resolve(execFileSync("git", ["rev-parse", "--git-path", "hooks"], { encoding: "utf-8", cwd: ROOT }).trim());
+  } catch {
+    return join(ROOT, ".git", "hooks");
+  }
+}
+const PAYLOAD = join(repoHooksDir(), "navhub-precommit-tests.mjs");
 
 beforeAll(() => {
   // 选测器是生成物：先按当前生成源重装，保证测的是最新逻辑

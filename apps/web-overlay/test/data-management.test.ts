@@ -4,9 +4,9 @@
  * 锁住三件事：
  *   1. 灌入判定是纯函数、可枚举：0 = 空、(0, 基线) = 低于基线、≥ 基线 = 已灌入。
  *   2. 基线数字不是拍脑袋的：每次跑测试都重数一遍仓库事实源——
- *      navigation.json（323 站 / 47 二级 / 14 一级）与 videos.json（6007 条）。
+ *      navigation.json（325 站 / 47 二级 / 14 一级）与 videos.json（6007 条）。
  *      仓库扩容时这里会先红，提醒人同步改基线，而不是页面悄悄拿旧数比较。
- *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 323/6007 的
+ *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 325/6007 的
  *      字面量（基线只能来自 lib 常量），两个计数端点与三个管理入口必须在位，
  *      冷备导出必须走带 token 的 hubGet（普通 <a href> 带不上 admin token）。
  */
@@ -85,7 +85,7 @@ describe('灌入判定 seedStatus', () => {
 })
 
 describe('基线数字钉住仓库事实源', () => {
-  it('站点基线 = navigation.json 实测（14 一级 / 47 二级 / 323 站）', () => {
+  it('站点基线 = navigation.json 实测（14 一级 / 47 二级 / 325 站）', () => {
     const nav = overlayJson('src/navsphere/content/navigation.json') as {
       navigationItems: Array<{ subCategories?: unknown[] }>
     }
@@ -96,8 +96,8 @@ describe('基线数字钉住仓库事实源', () => {
     )
     expect(nav.navigationItems.length).toBe(14)
     expect(subs).toBe(47)
-    expect(sites).toBe(323)
-    expect(BASELINE_SITES).toBe(323)
+    expect(sites).toBe(325)
+    expect(BASELINE_SITES).toBe(325)
   })
 
   it('视频基线 = videos.json 实测 6007 条', () => {
@@ -121,9 +121,9 @@ describe('数据管理页：结构与端点契约', () => {
   it('两个计数都走 live 端点（总览 + 视频），不是写死数', () => {
     expect(PAGE).toContain("hubGet<DashboardOverview>('/api/admin/dashboard/overview')")
     expect(PAGE).toContain("hubGet<VideosSummary>('/api/videos?limit=1')")
-    // 基线只能来自 lib 常量：页面代码里出现 323/6007 字面量就是在展示假数
+    // 基线只能来自 lib 常量：页面代码里出现 325/6007 字面量就是在展示假数
     // （注释不算：页头注释要写明出处，见 CODE_ONLY 的说明）
-    expect(CODE_ONLY).not.toContain('323')
+    expect(CODE_ONLY).not.toContain('325')
     expect(CODE_ONLY).not.toContain('6007')
     expect(PAGE).toContain('BASELINE_SITES')
     expect(PAGE).toContain('BASELINE_VIDEOS')

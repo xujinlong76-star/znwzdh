@@ -118,7 +118,15 @@ describe("钩子新鲜度：模板 ↔ 生成物", () => {
   });
 
   it("真实仓库：镜像 prepare 闭包已被两个 Dockerfile 覆盖", () => {
-    const res = run(join(REPO_ROOT, ".git", "hooks"), join(REPO_ROOT, "scripts/install-git-hooks.mjs"));
+    // 钩子目录用 rev-parse 定位：linked worktree 里 REPO_ROOT/.git 是文件，
+    // join(REPO_ROOT, '.git', 'hooks') 不存在，checker 会直接跳过、断言不到闭包那句话。
+    let hooksDir = join(REPO_ROOT, ".git", "hooks");
+    try {
+      hooksDir = resolve(execFileSync("git", ["rev-parse", "--git-path", "hooks"], { encoding: "utf-8", cwd: REPO_ROOT }).trim());
+    } catch {
+      // 不在 git 仓库里：沿用旧路径，run 会按不存在处理。
+    }
+    const res = run(hooksDir, join(REPO_ROOT, "scripts/install-git-hooks.mjs"));
     // 本机钩子可能确实过期（退出码交给上面的用例判），这里只钉闭包那句话
     expect(res.out).toContain("镜像 prepare 闭包已覆盖");
     expect(res.out).toContain("Dockerfile.api");

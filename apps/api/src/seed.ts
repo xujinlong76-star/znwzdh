@@ -184,7 +184,7 @@ export interface SeedResult {
   siteConfigSeeded: boolean;
   /** 平替雷达（ECOSYSTEM_MAP）的落地账 */
   ecosystem: EcosystemSeedResult;
-  /** 冷启动基线导入（仓库内容文件 323 站 + 视频库）的结论账（A1） */
+  /** 冷启动基线导入（仓库内容文件 325 站 + 视频库）的结论账（A1） */
   baseline: BaselineImportResult;
 }
 
@@ -245,7 +245,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
 
   /**
    * 冷启动基线（A1）：在写入任何站点之前先检查——库里一个站点都没有时，
-   * 把仓库内容文件的导航（323 站）与视频库整包导入（走 /api/storage 同一条
+   * 把仓库内容文件的导航（325 站）与视频库整包导入（走 /api/storage 同一条
    * 写回通道）；已有数据则整段跳过。基线结论决定下面 seed-data 站点循环
    * 还跑不跑：
    *  - imported / skipped_existing：部署带了内容文件且库已与之对齐——文件

@@ -9,13 +9,23 @@
  * 它只在 pre-commit 里跑（没有钩子目录时无提交可言，直接放行）。
  */
 import { existsSync, readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { checkFresh, PREPARE_DOCKERFILES, PREPARE_ENTRY, prepareClosureProblems } from "./lib/hooks-fresh.mjs";
 
 const P = "[hooks-fresh] ";
 
+// 默认钩子目录用 git rev-parse 定位：linked worktree 里 .git 是文件，
+// join(cwd, '.git', 'hooks') 会判不存在而静默跳过新鲜度门禁。
+let defaultHooksDir = join(process.cwd(), ".git", "hooks");
+try {
+  defaultHooksDir = resolve(execSync("git rev-parse --git-path hooks", { encoding: "utf-8" }).trim());
+} catch {
+  // 不在 git 仓库里：沿用旧路径，后面的 existsSync 会跳过。
+}
+
 const opts = {
-  hooksDir: join(process.cwd(), ".git", "hooks"),
+  hooksDir: defaultHooksDir,
   source: join(process.cwd(), "scripts", "install-git-hooks.mjs"),
 };
 const argv = process.argv.slice(2);

@@ -3933,6 +3933,18 @@
                 "批发源头",
                 "商家进货"
               ]
+            },
+            {
+              "id": "nav-8ee7dd8ec36a",
+              "title": "支付宝",
+              "href": "https://www.alipay.com/",
+              "description": "国民级支付工具，支付与缴费需登录账号、建议使用 App",
+              "icon": "https://www.alipay.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "支付",
+                "生活缴费"
+              ]
             }
           ]
         },
@@ -4136,6 +4148,19 @@
                 "直播相亲",
                 "红娘助友",
                 "婚恋交友"
+              ]
+            },
+            {
+              "id": "nav-8aa78c99ac0e",
+              "title": "微信",
+              "href": "https://weixin.qq.com/",
+              "description": "国民级聊天与支付工具，聊天与支付需在 App 内使用",
+              "icon": "https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico",
+              "enabled": true,
+              "tags": [
+                "聊天",
+                "社交",
+                "支付"
               ]
             }
           ]

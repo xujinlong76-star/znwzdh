@@ -5,11 +5,20 @@
  */
 
 import { writeFileSync, existsSync, chmodSync } from 'node:fs'
-import { join } from 'node:path'
+import { execSync } from 'node:child_process'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MANIFEST_NAME, buildManifest } from './lib/hooks-fresh.mjs'
 
-const gitHooksDir = join(process.cwd(), '.git', 'hooks')
+// 钩子目录用 git rev-parse 定位：linked worktree 里 .git 是文件不是目录，
+// join(cwd, '.git', 'hooks') 会判不存在而静默跳过安装；--git-path hooks 在
+// 主库返回 .git/hooks、在 worktree 返回公共 .git/hooks（绝对路径）。
+let gitHooksDir = join(process.cwd(), '.git', 'hooks')
+try {
+  gitHooksDir = resolve(execSync('git rev-parse --git-path hooks', { encoding: 'utf-8' }).trim())
+} catch {
+  // 不在 git 仓库里：沿用旧路径，后面的 existsSync 会跳过安装。
+}
 
 if (!existsSync(gitHooksDir)) {
   console.log('未检测到 .git/hooks 目录，跳过 Git 钩子安装。')
@@ -618,7 +627,8 @@ const selector = [
   '  process.exit(1);',
   '}',
   '',
-  '// 输出同时落盘到 .git/navhub-precommit.log。',
+  '// 输出同时落盘到 <git-dir>/navhub-precommit.log。git-dir 用 rev-parse 定位：',  '// linked worktree 里 .git 是文件，join(cwd, ".git", ...) 会以 ENOTDIR 崩掉',  '// 整个钩子；--absolute-git-dir 在主库返回 <root>/.git，在 worktree 返回',  '// .git/worktrees/<name>（每 worktree 一份日志，互不串写）。',
+  'const LOG_PATH = join(execFileSync("git", ["rev-parse", "--absolute-git-dir"], { encoding: "utf-8" }).trim(), "navhub-precommit.log");',
   '// 起因：一次 271 文件 / 2869 例的组合运行报「1 failed」，但失败用例名被终端截断，',
   '// 事后完全无法定位是哪一例、也无法判断是真回归还是 worker 崩溃。',
   '// 用 spawn + 转手写而不是 spawnSync + pipe：后者会把 10 分钟的测试输出',
@@ -629,7 +639,6 @@ const selector = [
   '  process.exit(0);',
   '}',
   '',
-  'const LOG_PATH = join(process.cwd(), ".git", "navhub-precommit.log");',
   'const logStream = createWriteStream(LOG_PATH, { encoding: "utf-8" });',
   'const logDone = new Promise((resolve) => logStream.on("finish", resolve));',
   'logStream.write("# " + new Date().toISOString() + "  targets=" + Array.from(targets).join(",") + "\\n");',

@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const COMPOSE = join(ROOT, "docker", "docker-compose.yml");
+const COMPOSE_STANDARD = join(ROOT, "docker", "docker-compose.standard.yml");
 const ENV_EXAMPLE = join(ROOT, ".env.example");
 
 /** 服务名 → 「活跃」的 environment 键值；注释掉的键单独收集，用于识别「写了但没生效」 */
@@ -63,7 +64,12 @@ function parseEnvBlocks(yaml: string): {
   return { active, commented };
 }
 
-const source = readFileSync(COMPOSE, "utf8");
+// standard 的服务（postgres、api-standard）已拆到 docker-compose.standard.yml，
+// 两文件拼起来才是部署全貌（服务名在两文件间唯一，按行解析的边界安全）。
+const source =
+  readFileSync(COMPOSE, "utf8") +
+  "\n" +
+  readFileSync(COMPOSE_STANDARD, "utf8");
 const { active: envBlocks, commented: commentedBlocks } = parseEnvBlocks(source);
 
 /**

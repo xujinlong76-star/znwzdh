@@ -1,0 +1,134 @@
+# NavHub Docker Compose — standard 模式（PostgreSQL + pgvector）
+#
+# 本文件与 docker-compose.yml（lite）叠加使用，请在 docker/ 目录执行：
+#   docker compose -f docker-compose.yml -f docker-compose.standard.yml --profile standard up -d
+# 也可以只校验/启动 standard 两件套：
+#   docker compose -f docker-compose.standard.yml --profile standard config
+#   docker compose -f docker-compose.standard.yml --profile standard up -d
+#
+# standard 模式必须设置强口令 POSTGRES_PASSWORD（不再提供默认数据库口令）。
+# 未设置时 docker compose config 会在解析时以原提示失败：
+#   请设置 POSTGRES_PASSWORD（强口令）：standard 模式不再提供默认数据库口令
+#
+# 之所以拆到本文件：Compose 会在解析时校验所有 profile 的变量，docker-compose.yml 里一旦出现 :? 强制校验，仅跑 lite 的命令也会直接失败。
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: navhub-postgres
+    profiles: ["standard"]
+    restart: unless-stopped
+    ports:
+      # 默认只绑回环：POSTGRES_PASSWORD 不再有默认值，未设置时 compose 直接报错拒绝启动。
+      # `${POSTGRES_PORT:-5432}:5432` 的写法会把数据库 publish 到宿主机所有网卡，
+      # 本机开发走 127.0.0.1:5432 不受影响；确实要对外时显式设 POSTGRES_PORT="0.0.0.0:5432"
+      # 并先设好强口令 POSTGRES_PASSWORD。
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: navhub
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD（强口令）：standard 模式不再提供默认数据库口令}"
+      POSTGRES_DB: navhub
+    volumes:
+      - navhub-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U navhub -d navhub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-standard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+      args:
+        # Docker Hub 不可达时可覆盖为镜像源地址
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
+        # Docker Hub 不可达时指向镜像源；deb.debian.org 被中断时可换 APT 镜像
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-deb.debian.org}
+    image: navhub/api:0.1.0
+    container_name: navhub-api-standard
+    profiles: ["standard"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # 必须与 lite 的 api 分开：`api` 服务没有 profile，`--profile standard` 会把它
+      # 一起带起来，两个容器抢同一个宿主机 8787 → 后启动的那个直接
+      # "port is already allocated"，standard 这条路径开箱就是坏的。
+      - "${NAVHUB_STANDARD_PORT:-8788}:8787"
+    volumes:
+      - navhub-data:/data
+      # 密钥分离（A14）：与 lite api 同口径，secret 落独立卷
+      - navhub-secrets:/secrets
+    environment:
+      NAVHUB_MODE: standard
+      NAVHUB_DATABASE_URL: postgres://navhub:${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD（强口令）：standard 模式不再提供默认数据库口令}@postgres:5432/navhub
+      NAVHUB_EMBEDDING_CACHE: /data/models
+      NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}
+      NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.agnes-ai.cn/v1}
+      NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
+      # 与 api 服务同一组 LLM 透传（语义见 api 服务里的注释）。这里此前只给了
+      # BASE_URL/API_KEY，却漏了 MODEL：端点与模型名不匹配时请求必然 invalid model。
+      # 这里与 api 服务统一兜底为 Agnes 3.0 Flash（与 .env.example、config.ts 默认一致）。
+      NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-agnes-3.0-flash}
+      NAVHUB_LLM_NAME: ${NAVHUB_LLM_NAME:-}
+      NAVHUB_LLM_TIMEOUT_MS: ${NAVHUB_LLM_TIMEOUT_MS:-}
+      NAVHUB_LLM_MAX_TOKENS: ${NAVHUB_LLM_MAX_TOKENS:-}
+      NAVHUB_LLM_TEMPERATURE: ${NAVHUB_LLM_TEMPERATURE:-}
+      NAVHUB_LLM_JSON_MODE: ${NAVHUB_LLM_JSON_MODE:-}
+      NAVHUB_LLM_THINKING: ${NAVHUB_LLM_THINKING:-}
+      NAVHUB_LLM_ALLOW_PRIVATE: ${NAVHUB_LLM_ALLOW_PRIVATE:-}
+      NAVHUB_LLM_COST_PER_1K_TOKENS: ${NAVHUB_LLM_COST_PER_1K_TOKENS:-}
+      NAVHUB_LLM_QUOTA_IDENTITY_CALLS: ${NAVHUB_LLM_QUOTA_IDENTITY_CALLS:-}
+      NAVHUB_LLM_QUOTA_IDENTITY_TOKENS: ${NAVHUB_LLM_QUOTA_IDENTITY_TOKENS:-}
+      NAVHUB_LLM_QUOTA_ANON_CALLS: ${NAVHUB_LLM_QUOTA_ANON_CALLS:-}
+      NAVHUB_LLM_QUOTA_ANON_TOKENS: ${NAVHUB_LLM_QUOTA_ANON_TOKENS:-}
+      NAVHUB_LLM_QUOTA_SYSTEM_CALLS: ${NAVHUB_LLM_QUOTA_SYSTEM_CALLS:-}
+      NAVHUB_LLM_QUOTA_SYSTEM_TOKENS: ${NAVHUB_LLM_QUOTA_SYSTEM_TOKENS:-}
+      NAVHUB_LLM_QUOTA_RESERVE_TOKENS: ${NAVHUB_LLM_QUOTA_RESERVE_TOKENS:-}
+      NAVHUB_LLM_QUOTA_TTL_MS: ${NAVHUB_LLM_QUOTA_TTL_MS:-}
+      NAVHUB_LLM_QUOTA_DISABLED: ${NAVHUB_LLM_QUOTA_DISABLED:-}
+      # 不设公开可查的默认值（升级改造方案 P0-1）：未显式提供时由
+      # entrypoint.sh 生成随机值并持久化到密钥文件，api 与 web 共享同一份；
+      # 显式设置则优先生效。密钥文件指向独立 secrets 卷（A14，见 api 服务注释）。
+      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
+      NAVHUB_SESSION_SECRET_FILE: ${NAVHUB_SESSION_SECRET_FILE:-/secrets/.session-secret}
+      # 同 api：8787 直接 publish，默认可伪造 XFF 不参与限流分桶（详见 api 服务注释）
+      NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-0}
+      # 以下五项与 api 服务保持同一组透传（语义见 api 服务里的注释）。
+      # 这里漏一项，standard 模式就等于「鉴权/引导凭据/身份签名/公网 fail-closed 全都配不上」，
+      # 只能改 compose 文件本身。
+      NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-1}
+      NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
+      NAVHUB_ADMIN_TOKEN: ${NAVHUB_ADMIN_TOKEN:-}
+      NAVHUB_ALLOW_INSECURE_LOCALHOST: ${NAVHUB_ALLOW_INSECURE_LOCALHOST:-0}
+      NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
+      # 与 api 同一道生产身份签名总闸（语义见 api 服务）；standard 模式漏透传
+      # 会导致内网开放模式无法显式 opt-out，只能改 compose 本身。
+      NAVHUB_ALLOW_UNSIGNED_IDENTITY: ${NAVHUB_ALLOW_UNSIGNED_IDENTITY:-0}
+      # 与 api 同值（C-1 严格签名模式 / C-4 cron 凭据）
+      NAVHUB_IDENTITY_SIGNATURE_STRICT: ${NAVHUB_IDENTITY_SIGNATURE_STRICT:-0}
+      CRON_SECRET: ${CRON_SECRET:-}
+      # 限流豁免凭据（standard 模式同样要有，否则 web 侧 SSR 取数会撞 300/min 桶）
+      NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
+      NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-http://localhost:8788}
+      NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
+      NAVHUB_ALERT_WEBHOOK: ${NAVHUB_ALERT_WEBHOOK:-}
+      # 默认仅本地前端（http://localhost:3000 / http://127.0.0.1:3000）：
+      # 浏览器侧调用全部走 Next.js BFF 同源代理，不直连 8787。
+      # 生产请显式写白名单，例如 NAVHUB_CORS_ORIGINS=https://nav.example.com
+      # （NODE_ENV=production 且显式设为 * 时，启动日志会打一条警告。）
+      NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 45s
+
+volumes:
+  navhub-pg:
+  navhub-data:
+  # session secret 专用卷（A14 密钥分离）：只装密钥文件，与数据库分开备份/轮换
+  navhub-secrets:

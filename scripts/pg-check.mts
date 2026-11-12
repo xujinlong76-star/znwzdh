@@ -8,7 +8,7 @@ import { cleanupOrphanPluginCategories, migrateCategorySlugs } from "../packages
 // 所以目标库必须是显式声明的测试库。
 // 之前这里回退到 NAVHUB_DATABASE_URL，再回退到硬编码的
 // postgres://navhub:navhub@127.0.0.1:5432/navhub —— 那正好是
-// `docker compose --profile standard` 起的那个库（默认口令、publish 到宿主机 5432）。
+// `docker compose -f docker-compose.yml -f docker-compose.standard.yml --profile standard` 起的那个库（默认口令、publish 到宿主机 5432）。
 // 于是「跑一下 pnpm test:pg 验证 PG 通路」= 把真实数据全删了，且没有任何提示。
 // CI 一直显式注入 NAVHUB_TEST_DATABASE_URL（见 .github/workflows/ci.yml），
 // 取消回退不会影响它。

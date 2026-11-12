@@ -198,7 +198,7 @@ pnpm test:e2e        # Playwright 端到端（需先停掉 pnpm dev:all，端口
 
 ## Docker 部署
 
-**以 `docker/docker-compose.yml` 为准**（5 个服务、4 个 profile：`api` :8787、`web` :3000、`postgres` 仅绑 `127.0.0.1:5432`、`api-standard` :8788、`mcp` :8790，另有 `backup`）。根 `Dockerfile` 与根 `docker-compose.yml` 已废弃，勿用。
+**以 `docker/docker-compose.yml` 为准**（lite：`api`:8787、`web`:3000、`mcp`:8790，另有 `backup`；standard 另有 `docker/docker-compose.standard.yml`，提供 `postgres`（仅绑 127.0.0.1:5432）与 `api-standard`:8788）。根 `Dockerfile` 与根 `docker-compose.yml` 已废弃，勿用。
 
 ```bash
 cd docker
@@ -207,7 +207,7 @@ cd docker
 docker compose up -d
 
 # standard 模式（联动真实 PostgreSQL 与 pgvector，需先设 POSTGRES_PASSWORD，见下）
-docker compose --profile standard up -d
+docker compose -f docker-compose.yml -f docker-compose.standard.yml --profile standard up -d
 ```
 
 启动完成后：Web `http://localhost:3000`；API 文档 `http://localhost:8787/api/docs`（OpenAPI）；健康检查 `http://localhost:8787/api/health`、`/api/ready`。

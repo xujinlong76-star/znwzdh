@@ -316,10 +316,15 @@ describe("接线与部署一致性", () => {
   });
 
   it("compose 的 api 与 api-standard 都透传 opt-out（默认 0）", () => {
-    const source = readFileSync(
-      new URL("../../../docker/docker-compose.yml", import.meta.url),
-      "utf8",
-    );
+    const source =
+      readFileSync(
+        new URL("../../../docker/docker-compose.yml", import.meta.url),
+        "utf8",
+      ) +
+      readFileSync(
+        new URL("../../../docker/docker-compose.standard.yml", import.meta.url),
+        "utf8",
+      );
     const matches = source.match(
       /NAVHUB_ALLOW_UNSIGNED_IDENTITY: \$\{NAVHUB_ALLOW_UNSIGNED_IDENTITY:-0\}/g,
     );
@@ -332,12 +337,13 @@ describe("接线与部署一致性", () => {
  *
  * /api/health 刻意不看数据库，把它当 healthcheck 会得到「DB 已坏但容器 healthy」，
  * 于是 depends_on: service_healthy 与 restart 策略都成了空判据。这条约束横跨
- * 4 个部署文件，靠人记必然漏，所以逐文件断言。
+ * 5 个部署文件，靠人记必然漏，所以逐文件断言。
  */
 describe("部署探针一致性", () => {
   const PROBE_FILES = [
     "../../../docker-compose.yml",
     "../../../docker/docker-compose.yml",
+    "../../../docker/docker-compose.standard.yml",
     "../../../docker/Dockerfile.api",
   ] as const;
   // 根 Dockerfile 自己没有探针（CMD 直接起服务），但也不能悄悄留一个旧探针
@@ -370,11 +376,16 @@ describe("部署探针一致性", () => {
 
   it("两个 compose 模板都把 CORS 白名单透传出来（默认仅本地前端）", () => {
     // 只认「活的一行」：注释掉的透传等于没透传，正则若不排注释就拦不住误删
-    const active = (rel: string, pattern: RegExp) =>
-      read(rel).filter((line) => !/^\s*#/.test(line) && pattern.test(line));
+    const active = (rel: string | string[], pattern: RegExp) =>
+      (Array.isArray(rel) ? rel : [rel])
+        .flatMap((r) => read(r))
+        .filter((line) => !/^\s*#/.test(line) && pattern.test(line));
     expect(
       active(
-        "../../../docker/docker-compose.yml",
+        [
+          "../../../docker/docker-compose.yml",
+          "../../../docker/docker-compose.standard.yml",
+        ],
         /NAVHUB_CORS_ORIGINS: \$\{NAVHUB_CORS_ORIGINS:-http:\/\/localhost:3000,http:\/\/127\.0\.0\.1:3000\}/,
       ),
     ).toHaveLength(2);

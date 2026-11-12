@@ -208,8 +208,14 @@ describe("生产 CORS 通配默认可见化", () => {
     }
   });
 
-  it("生产 + 未配 → 仍是通配（不改行为），但告警必须出现", () => {
+  it("生产 + 未配 → 默认仅本地前端，不告警", () => {
     const { config, corsWarnings } = loadWith(undefined, "production");
+    expect(config.corsOrigins).toEqual(["http://localhost:3000", "http://127.0.0.1:3000"]);
+    expect(corsWarnings).toHaveLength(0);
+  });
+
+  it("生产 + 显式通配 → 告警必须出现", () => {
+    const { config, corsWarnings } = loadWith("*", "production");
     expect(config.corsOrigins).toEqual(["*"]);
     expect(corsWarnings).toHaveLength(1);
     expect(corsWarnings[0]).toContain("credentials");
@@ -291,15 +297,21 @@ describe("部署探针一致性", () => {
     }
   });
 
-  it("两个 compose 模板都把 CORS 白名单透传出来（默认仍是 *，但可见）", () => {
+  it("两个 compose 模板都把 CORS 白名单透传出来（默认仅本地前端）", () => {
     // 只认「活的一行」：注释掉的透传等于没透传，正则若不排注释就拦不住误删
     const active = (rel: string, pattern: RegExp) =>
       read(rel).filter((line) => !/^\s*#/.test(line) && pattern.test(line));
     expect(
-      active("../../../docker/docker-compose.yml", /NAVHUB_CORS_ORIGINS: \$\{NAVHUB_CORS_ORIGINS:-\*\}/)
+      active(
+        "../../../docker/docker-compose.yml",
+        /NAVHUB_CORS_ORIGINS: \$\{NAVHUB_CORS_ORIGINS:-http:\/\/localhost:3000,http:\/\/127\.0\.0\.1:3000\}/
+      )
     ).toHaveLength(2);
     expect(
-      active("../../../docker-compose.yml", /NAVHUB_CORS_ORIGINS=\$\{NAVHUB_CORS_ORIGINS:-\*\}/)
+      active(
+        "../../../docker-compose.yml",
+        /NAVHUB_CORS_ORIGINS=\$\{NAVHUB_CORS_ORIGINS:-http:\/\/localhost:3000,http:\/\/127\.0\.0\.1:3000\}/
+      )
     ).toHaveLength(1);
   });
 });

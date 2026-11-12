@@ -16,10 +16,10 @@ services:
       - NAVHUB_PORT=8787
       - NAVHUB_HOST=0.0.0.0
       - NAVHUB_DB_PATH=/app/data/navhub.db
-      # 与 docker/docker-compose.yml 同口径：不写就等于 *（任意来源可读，且浏览器
-      # 凭据模式被自动关闭）。生产请从宿主 .env 传入显式白名单，例如
-      # NAVHUB_CORS_ORIGINS=https://nav.example.com
-      - NAVHUB_CORS_ORIGINS=${NAVHUB_CORS_ORIGINS:-*}
+      # 与 docker/docker-compose.yml 同口径：默认仅本地前端
+      # （http://localhost:3000 / http://127.0.0.1:3000）。生产请从宿主 .env
+      # 传入显式白名单，例如 NAVHUB_CORS_ORIGINS=https://nav.example.com
+      - NAVHUB_CORS_ORIGINS=${NAVHUB_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     volumes:
       - navhub-data:/app/data
     restart: unless-stopped

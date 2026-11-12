@@ -515,16 +515,17 @@ function assertSecurityConstraints(
     );
   }
 
-  // 4. CORS 仍是默认通配。
+  // 4. CORS 显式通配仍需告警。
   //
-  // 不改默认值：`*` 是「本地/CORS 无关」部署的合法默认，收紧成空列表会让所有
-  // 浏览器侧请求立刻 403。但通配的真实代价必须在日志里看得见 —— 它同时把
-  // `credentials` 关掉（server.ts 里 allowAll ⇒ credentials:false），于是任何
-  // 想带 cookie 的第三方前端都会「配了 CORS 还是不回凭据」，排查起来最费时间。
-  // 至少要让人在启动第一屏看到：你现在是谁都能读，且凭据模式已自动关闭。
+  // 默认值已收紧为本地前端（http://localhost:3000 / http://127.0.0.1:3000）：
+  // 浏览器侧调用全部走 Next.js BFF 同源代理，不直连 8787，因此本地开发不受影响；
+  // 生产部署必须显式把 NAVHUB_CORS_ORIGINS 列为前端域名。`*` 只有显式配置时才生效，
+  // 且它同时把 `credentials` 关掉（server.ts 里 allowAll ⇒ credentials:false），
+  // 于是任何想带 cookie 的第三方前端都会「配了 CORS 还是不回凭据」，排查起来最费时间。
+  // 显式通配时至少要让人在启动第一屏看到：你现在是谁都能读，且凭据模式已自动关闭。
   if (isProd && config.corsOrigins.includes("*")) {
     console.warn(
-      "[navhub] 警告：NAVHUB_CORS_ORIGINS 仍为默认通配（*）——任意来源都能跨域读取接口，" +
+      "[navhub] 警告：NAVHUB_CORS_ORIGINS 显式设为通配（*）——任意来源都能跨域读取接口，" +
         "同时 credentials 已被自动关闭（浏览器禁止 * 与凭据并存）。" +
         "生产请显式列为前端域名，例如 NAVHUB_CORS_ORIGINS=https://nav.example.com"
     );
@@ -609,7 +610,10 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
       userAgent: env("NAVHUB_USER_AGENT", "NavHubBot/0.1"),
     },
 
-    corsOrigins: env("NAVHUB_CORS_ORIGINS", "*")
+    corsOrigins: env(
+      "NAVHUB_CORS_ORIGINS",
+      "http://localhost:3000,http://127.0.0.1:3000"
+    )
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
@@ -674,6 +678,20 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     search: { ...base.search, ...(overrides.search ?? {}) },
   };
   assertSecurityConstraints(finalConfig, isProd, allowInsecureLocalhost);
+
+  // 开发开放模式明示风险：非生产、非测试且未开鉴权时，匿名身份默认持有
+  // read/write/admin 全部 scope，且未配 NAVHUB_IDENTITY_SECRET 时任何请求
+  // 可自称任意身份；仅限本机回环开发使用，切勿把 8787 暴露到局域网或公网。
+  // 生产部署请设 NAVHUB_AUTH_REQUIRED=1 并配置 ≥32 字符的 NAVHUB_IDENTITY_SECRET。
+  // （生产侧的拒绝启动由 assertSecurityConstraints / assertIdentitySecurity 负责，
+  // 这里只在开发模式把风险写进启动日志，避免「默认开放」被静默当成安全。）
+  if (!isProd && !isTest && !finalConfig.authRequired) {
+    console.warn(
+      "[navhub] 警告：开放模式（NAVHUB_AUTH_REQUIRED=false）——匿名请求默认拥有 read/write/admin 全部 scope，" +
+        "且未配置 NAVHUB_IDENTITY_SECRET 时任何请求可自称任意身份；仅限本机开发使用，请勿把 8787 暴露到局域网或公网；" +
+        "生产部署请设 NAVHUB_AUTH_REQUIRED=1 并配置 ≥32 字符的 NAVHUB_IDENTITY_SECRET。"
+    );
+  }
 
   return finalConfig;
 }

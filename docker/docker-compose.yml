@@ -98,11 +98,11 @@ services:
       # 注意：profile web 的 Next.js /api/hub/* 代理只转发客户端带来的 XFF、无法追加对端地址
       # （Next 15 路由处理器拿不到 socket IP），单独跑 api+web 时开着它并不等于可信。
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-0}
-      # 默认 * 保留（改了会让所有没配的存量部署立刻 403），但它不是「安全的默认」：
-      # * 与浏览器凭据互斥，服务端会自动关掉 credentials，且任意来源都能跨域读接口。
+      # 默认仅本地前端（http://localhost:3000 / http://127.0.0.1:3000）：
+      # 浏览器侧调用全部走 Next.js BFF 同源代理，不直连 8787。
       # 生产请显式写白名单，例如 NAVHUB_CORS_ORIGINS=https://nav.example.com
-      # （NODE_ENV=production 且仍为 * 时，启动日志会打一条警告。）
-      NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
+      # （NODE_ENV=production 且显式设为 * 时，启动日志会打一条警告。）
+      NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       NAVHUB_SEED_ON_START: ${NAVHUB_SEED_ON_START:-1}
       # 默认开启（2026-11-09 S-2）：生产默认鉴权，避免「上线即裸奔」。
       # 开启后用 NAVHUB_BOOTSTRAP_TOKEN 创建正式 token，再删除该变量重启。
@@ -267,14 +267,14 @@ services:
     profiles: ["standard"]
     restart: unless-stopped
     ports:
-      # 默认只绑回环：这个服务默认口令是 navhub，`${POSTGRES_PORT:-5432}:5432` 的写法
-      # 会把带默认口令的数据库 publish 到宿主机所有网卡（公网机器上等于公开）。
+      # 默认只绑回环：POSTGRES_PASSWORD 不再有默认值，未设置时 compose 直接报错拒绝启动。
+      # `${POSTGRES_PORT:-5432}:5432` 的写法会把数据库 publish 到宿主机所有网卡，
       # 本机开发走 127.0.0.1:5432 不受影响；确实要对外时显式设 POSTGRES_PORT="0.0.0.0:5432"
-      # 并先改掉 POSTGRES_PASSWORD。
+      # 并先设好强口令 POSTGRES_PASSWORD。
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: navhub
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-navhub}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD（强口令）：standard 模式不再提供默认数据库口令}"
       POSTGRES_DB: navhub
     volumes:
       - navhub-pg:/var/lib/postgresql/data
@@ -311,7 +311,7 @@ services:
       - navhub-secrets:/secrets
     environment:
       NAVHUB_MODE: standard
-      NAVHUB_DATABASE_URL: postgres://navhub:${POSTGRES_PASSWORD:-navhub}@postgres:5432/navhub
+      NAVHUB_DATABASE_URL: postgres://navhub:${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD（强口令）：standard 模式不再提供默认数据库口令}@postgres:5432/navhub
       NAVHUB_EMBEDDING_CACHE: /data/models
       NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}
       NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.agnes-ai.cn/v1}
@@ -363,11 +363,11 @@ services:
       NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-http://localhost:8788}
       NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
       NAVHUB_ALERT_WEBHOOK: ${NAVHUB_ALERT_WEBHOOK:-}
-      # 默认 * 保留（改了会让所有没配的存量部署立刻 403），但它不是「安全的默认」：
-      # * 与浏览器凭据互斥，服务端会自动关掉 credentials，且任意来源都能跨域读接口。
+      # 默认仅本地前端（http://localhost:3000 / http://127.0.0.1:3000）：
+      # 浏览器侧调用全部走 Next.js BFF 同源代理，不直连 8787。
       # 生产请显式写白名单，例如 NAVHUB_CORS_ORIGINS=https://nav.example.com
-      # （NODE_ENV=production 且仍为 * 时，启动日志会打一条警告。）
-      NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
+      # （NODE_ENV=production 且显式设为 * 时，启动日志会打一条警告。）
+      NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/ready"]
       interval: 30s

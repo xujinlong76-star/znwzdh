@@ -12,7 +12,7 @@
  *  4. token 的 scope 决定可调用的工具集合。
  */
 import { createContext, loadConfig } from "@navhub/api";
-import { createMcpHttpServer, mcpHttpOptionsFromEnv } from "../../../packages/mcp/src/http-server.ts";
+import { createMcpHttpServer, mcpHttpOptionsFromEnv } from "./http-server.ts";
 import { TOOL_DEFS } from "../../../packages/mcp/src/tools.ts";
 
 const HOST = process.env.NAVHUB_MCP_HTTP_HOST ?? "127.0.0.1";

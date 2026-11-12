@@ -249,5 +249,87 @@ describe("数据主权补齐（M2）：导出覆盖四类、注销不留残渣",
     expect((await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", [user])).length).toBe(0);
     // 内置管理员（id 不含 ':'）不受影响
     expect((await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", [admin])).length).toBe(1);
+});
+
+  it("注销删除凭据用户裸 UUID 行，墓碑与审计保留，对照账号不受影响", async () => {
+    const now = Date.now();
+    const userA = "11111111-2222-3333-4444-555555555555";
+    const canonicalA = "credentials:" + userA;
+    const userB = "22222222-3333-4444-5555-666666666666";
+    const canonicalB = "credentials:" + userB;
+    await repo.run(
+      "INSERT INTO users (id, username, password_hash, role, email, source, created_at) VALUES (?,?,?,?,?,?,?)",
+      [userA, "cred-a", "scrypt-hash-a", "user", "a@delete.example", "local", now],
+    );
+    await repo.run(
+      "INSERT INTO users (id, username, password_hash, role, email, source, created_at) VALUES (?,?,?,?,?,?,?)",
+      [userB, "cred-b", "scrypt-hash-b", "user", "b@delete.example", "local", now],
+    );
+    const cat = await repo.createCategory({ title: "凭据注销" });
+    const site = await repo.createSite({
+      url: "https://cred-delete.example.com",
+      title: "CredDelete",
+      categoryId: cat.id,
+    });
+    await repo.addFavorite({ userId: canonicalA, siteId: site.id });
+    await repo.addFavorite({ userId: canonicalB, siteId: site.id });
+    await repo.run("INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?,?,?,?)", [
+      "tk-cred-a",
+      canonicalA,
+      now + 86400000,
+      now,
+    ]);
+    await repo.run(
+      "INSERT INTO llm_usage (id, scenario, source, model, identity, prompt_tokens, completion_tokens, latency_ms, ok, thinking, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      ["lu-cred-a", "search", "user", "gpt-x", canonicalA, 10, 5, 100, 1, 0, now],
+    );
+    await repo.run("INSERT INTO revoked_users (user_id, revoked_before) VALUES (?,?)", [canonicalA, now]);
+  await repo.run(
+    "INSERT INTO auth_tokens (id, user_id, purpose, token_hash, expires_at, consumed_at, created_at) VALUES (?,?,?,?,?,?,?)",
+    ["at-cred-a", userA, "email_verification", "hash-cred-a", now + 86400000, null, now],
+  );
+  await repo.run(
+    "INSERT INTO auth_tokens (id, user_id, purpose, token_hash, expires_at, consumed_at, created_at) VALUES (?,?,?,?,?,?,?)",
+    ["at-cred-b", userB, "email_verification", "hash-cred-b", now + 86400000, null, now],
+  );
+    await repo.audit({ actor: canonicalA, action: "user.delete", diff: { userRow: 1 } });
+
+    const counts = await repo.deleteUserData(canonicalA);
+    expect(counts.userRow).toBe(1);
+    expect(counts.sessions).toBe(1);
+    expect(counts.favorites).toBe(1);
+    expect(counts.llmUsage).toBe(1);
+
+    expect(await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", [userA])).toHaveLength(0);
+    expect(await repo.raw("SELECT 1 AS ok FROM users WHERE email = ?", ["a@delete.example"])).toHaveLength(0);
+    expect(await repo.raw("SELECT 1 AS ok FROM sessions WHERE user_id = ?", [canonicalA])).toHaveLength(0);
+    expect(await repo.raw("SELECT 1 AS ok FROM favorites WHERE user_id = ?", [canonicalA])).toHaveLength(0);
+    const usage = await repo.raw("SELECT identity FROM llm_usage WHERE id = ?", ["lu-cred-a"]);
+    expect(usage).toHaveLength(1);
+    expect(usage[0].identity).toBeNull();
+    expect(await repo.raw("SELECT 1 AS ok FROM revoked_users WHERE user_id = ?", [canonicalA])).toHaveLength(1);
+  expect(await repo.raw("SELECT 1 AS ok FROM auth_tokens WHERE user_id = ?", [userA])).toHaveLength(0);
+    expect(
+      await repo.raw("SELECT 1 AS ok FROM audit_logs WHERE actor = ? AND action = ?", [canonicalA, "user.delete"]),
+    ).toHaveLength(1);
+    // 对照账号 B 不受影响
+    expect(await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", [userB])).toHaveLength(1);
+    expect(await repo.raw("SELECT 1 AS ok FROM favorites WHERE user_id = ?", [canonicalB])).toHaveLength(1);
+  expect(await repo.raw("SELECT 1 AS ok FROM auth_tokens WHERE user_id = ?", [userB])).toHaveLength(1);
+  });
+
+  it("注销不删除内置管理员，凭据形态与裸形态均返回 0", async () => {
+    const now = Date.now();
+    await repo.run(
+      "INSERT INTO users (id, username, password_hash, role, source, created_at) VALUES (?,?,?,?,?,?)",
+      ["admin", "admin", "x", "admin", "local", now],
+    );
+
+    const credentialCounts = await repo.deleteUserData("credentials:admin");
+    expect(credentialCounts.userRow).toBe(0);
+    expect(await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", ["admin"])).toHaveLength(1);
+    const bareCounts = await repo.deleteUserData("admin");
+    expect(bareCounts.userRow).toBe(0);
+    expect(await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", ["admin"])).toHaveLength(1);
   });
 });

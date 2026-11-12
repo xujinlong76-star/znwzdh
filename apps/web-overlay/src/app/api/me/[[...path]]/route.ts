@@ -258,7 +258,12 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     // 读请求 fail-open：核对失败不阻断主请求，但失败已被计数
   }
 
-  // 设备列表特判（T8）：hub 只认 sidHash，由 BFF 标记「当前设备」
+  // v2 签名带重放守卫：同一签名在 sessions/check 验过一次后不可再用于正向转发，核对后换一套新签名。
+    if (secret) {
+      Object.assign(headers, await identitySignatureHeaders(secret, identity))
+    }
+
+    // 设备列表特判（T8）：hub 只认 sidHash，由 BFF 标记「当前设备」
   if (path[0] === 'sessions' && method === 'GET' && path.length === 1) {
     const upstreamList = await fetch(HUB_BASE + '/api/me/sessions', {
       method: 'GET',

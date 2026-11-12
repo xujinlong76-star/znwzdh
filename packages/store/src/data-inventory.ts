@@ -17,7 +17,7 @@
  * 这样「新增用户表」不再依赖人记得改注销逻辑。
  */
 
-export type UserDataDisposition = "delete" | "nullify" | "key-prefix" | "custom";
+export type UserDataDisposition = "delete" | "nullify" | "key-prefix" | "custom" | "retain";
 
 export interface UserDataDomain {
   /** 稳定标识，同时用作 UserDataDeletionCounts 的键（没有对应计数时为空） */
@@ -122,8 +122,8 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     id: "revokedUsers",
     table: "revoked_users",
     ownerColumns: ["user_id"],
-    disposition: "delete",
-    note: "整体吊销标记：用户级吊销兜底；注销后删除。",
+    disposition: "retain",
+    note: "整体吊销标记：用户级吊销兜底；注销后保留作墓碑，旧 JWT 凭此拒绝重建会话，不随注销删除。",
   },
   {
     id: "authTokens",

@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
+import { signOut } from "next-auth/react"
 import { probeClientSession } from '@/lib/client-session'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { AnonymousHint } from '@/components/user-center/anonymous-hint'
@@ -437,8 +438,13 @@ export default function MeDataPage() {
       if (!res.ok) throw new Error(data.error || '删除失败')
       // 云端已清空：本机收藏缓存一并清掉，避免下次同步又把旧数据推回云端
       favorites.clear()
+  for (const key of Object.keys(window.localStorage)) {
+    if (key.startsWith('navhub.growth.')) window.localStorage.removeItem(key)
+  }
       setState('deleted')
-      toast({ title: '云端数据已删除', description: '登录账号保留，重新登录后是空账号。' })
+      toast({ title: '云端数据已删除', description: '登录账号已一并删除，邮箱与密码不再可用；重新注册是全新的空账号。' })
+  // 先删后登出：云端账号已删除，再退出本地会话、回到匿名态。
+  await signOut({ callbackUrl: '/' })
     } catch (err) {
       setError(err instanceof Error ? err.message : '删除失败')
     } finally {
@@ -752,7 +758,7 @@ export default function MeDataPage() {
               <li className="break-words">搜索历史与行为事件：画像会随之清空，之后按新行为重新积累。</li>
               <li className="break-words">LLM 配置：个人模型密钥（加密存储）一并删除，系统回退到全局配置。</li>
               <li className="break-words">插件安装与星标：安装记录清除，已安装的插件页面不受影响。</li>
-              <li className="break-words">登录账号保留：NextAuth 会话仍然有效，重新登录后是空账号。</li>
+              <li className="break-words">登录账号真删：邮箱账号与密码哈希一并删除，旧密码无法再登录；重新注册是全新的空账号。</li>
             </ul>
           </section>
 

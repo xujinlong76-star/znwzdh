@@ -243,6 +243,11 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
     const count = async (sql: string, params: unknown[]): Promise<number> =>
       Number((await repo.raw(sql, params))[0]?.c ?? 0);
 
+    // 凭据用户：users 行主键是裸 UUID（source='local'），canonical 为 credentials:<uuid>；
+    // 只有凭据分支才按裸 id 锚定，绝不写无锚定的 DELETE/COUNT ... WHERE source='local'。
+    const credentialId = identity.startsWith("credentials:")
+      ? identity.slice("credentials:".length)
+      : null;
     const counts: UserDataDeletionCounts = {
       favorites: await count("SELECT COUNT(*) AS c FROM favorites WHERE user_id = ?", [identity]),
       favoriteFolders: await count("SELECT COUNT(*) AS c FROM favorite_folders WHERE user_id = ?", [identity]),
@@ -279,10 +284,17 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
           "SELECT COUNT(*) AS c FROM user_vault_sync WHERE user_id = ? OR user_id LIKE ? ESCAPE '\\'",
           ["workspaces:" + identity, escapeLikePrefix("ws_members:" + identity + ":") + "%"],
         )),
-      userRow: await count("SELECT COUNT(*) AS c FROM users WHERE id = ? AND id LIKE '%:%'", [identity]),
+      // 凭据分支按裸 UUID + source='local' + 排除内置 admin 计数；其他身份仍按 canonical 行计数。
+      userRow: credentialId
+        ? await count(
+            "SELECT COUNT(*) AS c FROM users WHERE id = ? AND source = 'local' AND id <> 'admin'",
+            [credentialId],
+          )
+        : await count("SELECT COUNT(*) AS c FROM users WHERE id = ? AND id LIKE '%:%'", [identity]),
     };
 
     // 通用路径：清单里 disposition=delete 的表按 owner 列精确删除
+    // revoked_users 为 retain（墓碑）：注销不删，旧 JWT 凭此拒绝重建会话，见 data-inventory.ts。
     // （收藏/收藏夹/历史/事件/画像/LLM 配置/设置/评价/会话/通知/令牌）。
     // 新增用户表时只需登记到 data-inventory.ts，这里自动覆盖；表名/列名来自
     // 冻结的内部常量（不是用户输入），不构成 SQL 注入面。
@@ -296,6 +308,11 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
     // 身份别名/合并记录：alias/canonical、source/target 双列归属
     await repo.run("DELETE FROM identity_aliases WHERE alias = ? OR canonical = ?", [identity, identity]);
     await repo.run("DELETE FROM identity_merges WHERE source = ? OR target = ?", [identity, identity]);
+  // auth_tokens 的 user_id 存裸 UUID（凭据用户注册/重置以原始 users.id 落库），
+  // 通用循环只按 canonical 删会漏掉；凭据分支再按裸 UUID 删一次，避免残留令牌被冒用。
+  if (credentialId) {
+    await repo.run("DELETE FROM auth_tokens WHERE user_id = ?", [credentialId]);
+  }
 
     // 同步扣减活跃插件安装数与星标数，避免重复注册-安装/星标-注销造成计数无限膨胀与失真
     const activeInstallRows = await repo.raw(
@@ -331,8 +348,18 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
       "workspaces:" + identity,
       escapeLikePrefix("ws_members:" + identity + ":") + "%",
     ]);
-    // OAuth 账号行：只删 canonical 形态（含 ':'）——内置管理员账号 id 不含 ':'，不会被误删
-    await repo.run("DELETE FROM users WHERE id = ? AND id LIKE '%:%'", [identity]);
+    // 账号行真删：凭据用户删裸 UUID 行，OAuth 用户删 canonical 行；内置 admin 永远不删。
+    if (credentialId) {
+      // 凭据账号行：主键是裸 UUID，按 id + source='local' + 排除内置 admin 锚定删除；
+      // 绝不写无锚定的 DELETE FROM users WHERE source='local'。
+      await repo.run(
+        "DELETE FROM users WHERE id = ? AND source = 'local' AND id <> 'admin'",
+        [credentialId],
+      );
+    } else {
+      // OAuth 账号行：只删 canonical 形态（含 ':'）—内置管理员账号 id 不含 ':'，不会被误删。
+      await repo.run("DELETE FROM users WHERE id = ? AND id LIKE '%:%'", [identity]);
+    }
 
     return counts;
   });

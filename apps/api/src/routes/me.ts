@@ -1394,7 +1394,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   );
 
   /**
-   * 注销：删除该身份的全部个人数据（保留登录账号本身，重新登录后是空账号）。
+   * 注销：删除该身份的全部个人数据，包括登录账号本身（凭据账号的邮箱与密码哈希一并删除）；重新登录是全新的空账号。
    */
   app.delete("/api/me", { config: { rateLimit: { max: 3, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
@@ -1410,7 +1410,16 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       return { error: '需要 confirm: "DELETE" 二次确认' };
     }
     const canonical = await ctx.repo.resolveIdentity(identity);
-    const counts = await ctx.repo.deleteUserData(canonical);
+    // 内置管理员账号（id='admin'）永远不得删除：裸 admin 或 credentials:admin 一律 403。
+  if (canonical === "admin" || canonical === "credentials:admin") {
+    reply.code(403);
+    return { error: "内置管理员账号不允许注销" };
+  }
+  // 凭据用户在库内的会话与域表身份是 credentials:<uuid>，而令牌里的身份可能是裸 UUID；
+  // 与 account.ts 密码重置同一口径，先规范化再吊销/删除。
+  const canonicalIdentity = canonical.includes(":") ? canonical : "credentials:" + canonical;
+  await ctx.repo.revokeAllSessions(canonicalIdentity);
+  const counts = await ctx.repo.deleteUserData(canonicalIdentity);
     recordUserCenterMetric("dataSovereignty.deleteAccount");
     await ctx.repo.audit({
       ip: req.ip,

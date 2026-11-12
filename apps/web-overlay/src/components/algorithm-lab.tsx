@@ -1,7 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/registry/new-york/ui/tabs'
+
+const LAB_TABS = ['linucb', 'hyperbolic', 'graph', 'visual', 'webmcp', 'federated', 'speculation', 'synthesizer', 'mesh', 'health', 'intent', 'vault'] as const
+
+function tabFromHash(): string {
+  if (typeof window === 'undefined') return 'linucb'
+  const h = window.location.hash.replace(/^#/, "")
+  return (LAB_TABS as readonly string[]).includes(h) ? h : 'linucb'
+}
 import { Badge } from '@/components/ui/badge'
 import {
   Cpu,
@@ -39,6 +47,9 @@ import { MeshPanel } from './algorithm-lab/mesh-panel'
  */
 export function AlgorithmLab() {
   const [activeTab, setActiveTab] = useState('linucb')
+  useEffect(() => { setActiveTab((cur) => { const t = tabFromHash(); return t === cur ? cur : t }) }, [])
+  useEffect(() => { const next = "#" + activeTab; if (window.location.hash !== next) window.history.replaceState(null, "", next) }, [activeTab])
+  useEffect(() => { const sync = () => { setActiveTab((cur) => { const t = tabFromHash(); return t === cur ? cur : t }) }; window.addEventListener("hashchange", sync); return () => window.removeEventListener("hashchange", sync) }, [])
   const scrollToSandbox = (tab: string) => { setActiveTab(tab); document.getElementById('algorithm-sandbox')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 
   return (

@@ -9,7 +9,18 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { derivePricing, lookupPricingOverride, pricingOverrideKey, PRICING_OVERRIDES } from "../src/pricing.ts";
+import {
+  derivePricing,
+  lookupPricingOverride,
+  pricingOverrideKey,
+  type PricingOverride,
+  type PricingOverrides,
+} from "../src/pricing.ts";
+
+/** 测试自己读覆盖表（core 零 IO，覆盖表由调用方注入，测试文件可用 node:fs）。 */
+const PRICING_OVERRIDES = JSON.parse(
+  readFileSync(fileURLToPath(new URL("../src/pricing-overrides.json", import.meta.url)), "utf8"),
+) as Record<string, PricingOverride>;
 
 describe("pricingOverrideKey 归一化", () => {
   it("去掉 www.、协议与尾斜杠，host 小写", () => {
@@ -23,14 +34,14 @@ describe("pricingOverrideKey 归一化", () => {
 
 describe("derivePricing 覆盖表优先", () => {
   it("短剧三家与证据一致：红果 free / DramaBox freemium / ReelShort freemium", () => {
-    expect(derivePricing({ url: "https://hongguoduanju.com" }).value).toBe("free");
-    expect(derivePricing({ url: "https://www.dramaboxdb.com" }).value).toBe("freemium");
-    expect(derivePricing({ url: "https://www.reelshort.com" }).value).toBe("freemium");
+    expect(derivePricing({ url: "https://hongguoduanju.com" }, PRICING_OVERRIDES).value).toBe("free");
+    expect(derivePricing({ url: "https://www.dramaboxdb.com" }, PRICING_OVERRIDES).value).toBe("freemium");
+    expect(derivePricing({ url: "https://www.reelshort.com" }, PRICING_OVERRIDES).value).toBe("freemium");
   });
   it("Midjourney paid / Dify open_source / Cursor freemium", () => {
-    expect(derivePricing({ url: "https://midjourney.com" }).value).toBe("paid");
-    expect(derivePricing({ url: "https://dify.ai" }).value).toBe("open_source");
-    expect(derivePricing({ url: "https://cursor.com" }).value).toBe("freemium");
+    expect(derivePricing({ url: "https://midjourney.com" }, PRICING_OVERRIDES).value).toBe("paid");
+    expect(derivePricing({ url: "https://dify.ai" }, PRICING_OVERRIDES).value).toBe("open_source");
+    expect(derivePricing({ url: "https://cursor.com" }, PRICING_OVERRIDES).value).toBe("freemium");
   });
   it("覆盖表条目都带非空 evidence 且值合法", () => {
     for (const [key, entry] of Object.entries(PRICING_OVERRIDES)) {
@@ -39,12 +50,18 @@ describe("derivePricing 覆盖表优先", () => {
     }
   });
   it("lookupPricingOverride 对未收录站点返回 null", () => {
-    expect(lookupPricingOverride("https://never-heard-of-it.example.com")).toBeNull();
+    expect(lookupPricingOverride("https://never-heard-of-it.example.com", PRICING_OVERRIDES)).toBeNull();
+  });
+  it("不传覆盖表时覆盖表站点落规则/unknown，不再命中人工核实表", () => {
+    const empty: PricingOverrides = {};
+    expect(derivePricing({ url: "https://hongguoduanju.com" }, empty).value).toBe("unknown");
+    expect(derivePricing({ url: "https://hongguoduanju.com" }, empty).source).toBe("unknown");
+    expect(lookupPricingOverride("https://hongguoduanju.com", empty)).toBeNull();
   });
 });
 
 describe("derivePricing 强信号规则（收紧版）", () => {
-  const d = (description: string) => derivePricing({ url: "https://x.example.com", description }).value;
+  const d = (description: string) => derivePricing({ url: "https://x.example.com", description }, PRICING_OVERRIDES).value;
   it("明示开源 → open_source", () => {
     expect(d("一个开源的本地部署工具")).toBe("open_source");
   });
@@ -81,7 +98,7 @@ describe("导航 323 站全量推导（数据完整性基线）", () => {
     const unknownTitles: string[] = [];
     let determinate = 0;
     for (const s of sites) {
-      const r = derivePricing({ url: s.href, title: s.title, description: s.description, tags: s.tags });
+      const r = derivePricing({ url: s.href, title: s.title, description: s.description, tags: s.tags }, PRICING_OVERRIDES);
       if (r.value === "unknown") unknownTitles.push(s.title);
       else determinate++;
     }

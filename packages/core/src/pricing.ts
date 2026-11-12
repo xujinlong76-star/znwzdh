@@ -15,16 +15,13 @@
  * 写入侧一律 fill-if-absent：已有的 pricing（管理员手标、种子数据）永不被
  * 推导结果覆盖。覆盖表维护方式：新增站点先查官网定价页/仓库许可证，能核实
  * 才入表并写明 evidence；核实不了就不入表，自然落 unknown。
+ *
+ * 覆盖表注入：core 零 IO（core-zero-io），不读盘。人工核实覆盖表
+ * （pricing-overrides.json）由宿主（apps/api/src/facet-backfill.ts）在
+ * 进程启动时读一次后传入；加载失败时宿主响亮失败，绝不静默降级为空表
+ * （否则回填会把应命中覆盖表的站写成 unknown，而 fill-if-absent 会让
+ * 错误值永久粘住）。
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-
-// 数据文件用 readFileSync 读（与 seed.ts 读 seed-data.json 同一模式）：API 是
-// Node 直跑 TS 源码，裸 JSON import 需要 import attribute 且各运行时口径不一。
-const overridesJson = JSON.parse(
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pricing-overrides.json"), "utf8"),
-) as Record<string, PricingOverride>;
 
 export type PricingValue = "free" | "freemium" | "paid" | "open_source" | "unknown";
 
@@ -36,7 +33,8 @@ export interface PricingOverride {
   title?: string;
 }
 
-export const PRICING_OVERRIDES: Readonly<Record<string, PricingOverride>> = overridesJson;
+/** 人工核实覆盖表（URL 键 → 覆盖条目），由宿主注入，core 内不读盘。 */
+export type PricingOverrides = Readonly<Record<string, PricingOverride>>;
 
 /**
  * URL → 覆盖表键：小写 host（去掉 www. 前缀）+ 路径（去掉尾部斜杠），
@@ -54,10 +52,10 @@ export function pricingOverrideKey(rawUrl: string): string | null {
   }
 }
 
-export function lookupPricingOverride(rawUrl: string): PricingOverride | null {
+export function lookupPricingOverride(rawUrl: string, overrides: PricingOverrides): PricingOverride | null {
   const key = pricingOverrideKey(rawUrl);
   if (!key) return null;
-  return PRICING_OVERRIDES[key] ?? null;
+  return overrides[key] ?? null;
 }
 
 export interface PricingSignalInput {
@@ -102,8 +100,8 @@ const PRICING_RULES: Array<{ value: Exclude<PricingValue, "unknown">; pattern: R
   { value: "paid", pattern: /订阅制|付费订阅|付费购买|付费下载|仅付费|付费制/, note: "文本明示付费制" },
 ];
 
-export function derivePricing(input: PricingSignalInput): PricingDerivation {
-  const override = lookupPricingOverride(input.url);
+export function derivePricing(input: PricingSignalInput, overrides: PricingOverrides): PricingDerivation {
+  const override = lookupPricingOverride(input.url, overrides);
   if (override) return { value: override.pricing, source: "override", evidence: override.evidence };
   const blob = [input.title ?? "", input.description ?? "", ...(input.tags ?? [])].join(" ");
   for (const rule of PRICING_RULES) {

@@ -13,8 +13,33 @@
  *   「可在线访问的网址」，见覆盖表文件头与 backfill 脚本同一口径）；
  * - 本服务失败不该拖垮调用方主流程：调用点各自 try/catch 只记日志。
  */
-import { derivePricing, type PricingValue } from "@navhub/core";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { derivePricing, type PricingOverride, type PricingOverrides, type PricingValue } from "@navhub/core";
 import type { AppContext } from "./context.ts";
+
+/**
+ * 人工核实覆盖表：进程启动时读一次（core 零 IO，覆盖表由宿主注入）。
+ * 寻址走 @navhub/core 包入口所在目录（pricing-overrides.json 与 core
+ * 源码同目录），不依赖本文件所在位置——开发与生产都直跑 TS 源码，
+ * 但包入口解析比相对路径更不怕将来构建形态变化。
+ * 注意：不能 resolve "@navhub/core/package.json"，该包 exports 只开放
+ * "." 子路径。读不到/解析失败时响亮失败：绝不静默降级为空表，否则回填
+ * 会把应命中覆盖表的站写成 unknown，而 fill-if-absent 会让错误值永久粘住。
+ */
+function loadPricingOverrides(): PricingOverrides {
+  const coreRequire = createRequire(import.meta.url);
+  const coreEntry = coreRequire.resolve("@navhub/core");
+  const jsonPath = join(dirname(coreEntry), "pricing-overrides.json");
+  try {
+    return JSON.parse(readFileSync(jsonPath, "utf8")) as Record<string, PricingOverride>;
+  } catch (err) {
+    throw new Error(`pricing 覆盖表加载失败（${jsonPath}）：${(err as Error).message}；回填拒绝静默降级为空表`, { cause: err });
+  }
+}
+
+const PRICING_OVERRIDES = loadPricingOverrides();
 
 export interface FacetBackfillSite {
   id: string;
@@ -56,12 +81,15 @@ export async function backfillDerivedFacets(
     if ((facets.pricing?.length ?? 0) > 0) {
       report.alreadyLabeled += 1;
     } else {
-      const derived = derivePricing({
-        url: site.url,
-        title: site.title ?? undefined,
-        description: site.description ?? undefined,
-        tags: site.tags,
-      });
+      const derived = derivePricing(
+        {
+          url: site.url,
+          title: site.title ?? undefined,
+          description: site.description ?? undefined,
+          tags: site.tags,
+        },
+        PRICING_OVERRIDES,
+      );
       await ctx.repo.fillSiteFacetIfAbsent(site.id, "pricing", derived.value);
       report.filledPricing += 1;
       report.byValue[derived.value] = (report.byValue[derived.value] ?? 0) + 1;

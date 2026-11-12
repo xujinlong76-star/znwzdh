@@ -475,11 +475,12 @@ export const NavigationCard = memo(function NavigationCard({
                 </div>
               </div>
 
-              {/* 紧凑操作按钮 */}
-              <div className={cn(
-                "relative z-20 flex items-center gap-0.5 transition-opacity",
-                isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
-              )} onKeyDown={handleActionsKeyDown}>
+              {/* 紧凑操作按钮：收藏星常显（留存钩子），其余操作仍悬停/聚焦/触屏才显 */}
+              <div className="relative z-20 flex items-center gap-0.5" onKeyDown={handleActionsKeyDown}>
+                <span className={cn(
+                  "flex items-center gap-0.5 transition-opacity",
+                  isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
+                )}>
                 {renderDragControls('h-6 w-6 rounded-md')}
                 <Button
                   type="button"
@@ -573,6 +574,7 @@ export const NavigationCard = memo(function NavigationCard({
                 >
                   <Copy className="w-3 h-3" />
                 </Button>
+                </span>
                 <FavoriteButton
                   tabIndex={-1}
                   cardAction
@@ -731,11 +733,12 @@ export const NavigationCard = memo(function NavigationCard({
                 )}
               </div>
 
-              {/* 操作区：右上角悬浮药丸胶囊 */}
-              <div className={cn(
-                "absolute top-2 right-2 z-20 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs transition-all duration-150",
-                isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
-              )} onKeyDown={handleActionsKeyDown}>
+              {/* 操作区：右上角悬浮药丸胶囊；收藏星常显（留存钩子），其余操作仍悬停/聚焦/触屏才显 */}
+              <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5" onKeyDown={handleActionsKeyDown}>
+                <span className={cn(
+                  "flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs transition-all duration-150",
+                  isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
+                )}>
                 {renderDragControls('h-7 w-7 rounded-full')}
                 <Button
                   type="button"
@@ -829,9 +832,11 @@ export const NavigationCard = memo(function NavigationCard({
                 >
                   <Copy className="w-3.5 h-3.5" />
                 </Button>
+                </span>
                 <FavoriteButton
                   tabIndex={-1}
                   cardAction
+                  className="bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs"
                   site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
                 />
               </div>
@@ -997,11 +1002,12 @@ export const NavigationCard = memo(function NavigationCard({
               )}
             </div>
 
-            {/* 操作区：右上角悬浮药丸胶囊 */}
-            <div className={cn(
-              "absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs transition-all duration-150",
-              isEditingLayout ? "opacity-100 pointer-events-auto" : "opacity-0 sm:group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
-            )} onKeyDown={handleActionsKeyDown}>
+            {/* 操作区：右上角悬浮药丸胶囊；收藏星常显（留存钩子），其余操作仍悬停/聚焦/触屏才显 */}
+            <div className="absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5" onKeyDown={handleActionsKeyDown}>
+              <span className={cn(
+                "flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs transition-all duration-150",
+                isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
+              )}>
               {renderDragControls('h-6.5 w-6.5 rounded-full')}
               <Button
                 type="button"
@@ -1095,9 +1101,11 @@ export const NavigationCard = memo(function NavigationCard({
               >
                 <Copy className="w-3.5 h-3.5" />
               </Button>
+              </span>
               <FavoriteButton
                 tabIndex={-1}
                 cardAction
+                className="bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs"
                 site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
               />
             </div>

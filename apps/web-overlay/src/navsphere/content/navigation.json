@@ -4463,7 +4463,7 @@
               "id": "nav-e85ffe7e04f6",
               "title": "抖音短剧",
               "href": "https://www.douyin.com",
-              "description": "抖音站内短剧频道，爆款短剧首发多",
+              "description": "抖音站内短剧频道，爆款短剧首发多；短剧需在抖音 App 内观看",
               "icon": "https://www.douyin.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4475,7 +4475,7 @@
               "id": "nav-536bfabaa406",
               "title": "快手短剧",
               "href": "https://www.kuaishou.com",
-              "description": "快手站内短剧频道",
+              "description": "快手站内短剧频道；短剧需在快手 App 内观看",
               "icon": "https://www.kuaishou.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4486,7 +4486,7 @@
               "id": "nav-675c7a57840e",
               "title": "爱奇艺·短剧",
               "href": "https://www.iqiyi.com",
-              "description": "爱奇艺短剧专区，专业制作的高画质短剧，部分免费",
+              "description": "爱奇艺 App 内短剧专区，专业制作的高画质短剧，部分免费",
               "icon": "https://www.iqiyi.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4498,7 +4498,7 @@
               "id": "nav-8652182b18e7",
               "title": "腾讯视频·短剧",
               "href": "https://v.qq.com",
-              "description": "腾讯视频微短剧专区，前几集免费，会员解锁全集",
+              "description": "腾讯视频 App 内微短剧专区，前几集免费，会员解锁全集",
               "icon": "https://v.qq.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4510,7 +4510,7 @@
               "id": "nav-9d3e930967bf",
               "title": "优酷·短剧",
               "href": "https://www.youku.com",
-              "description": "优酷短剧专区，短剧库更新快，部分免费",
+              "description": "优酷 App 内短剧专区，短剧库更新快，部分免费",
               "icon": "https://www.youku.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4521,7 +4521,7 @@
               "id": "nav-193880f6c388",
               "title": "芒果TV·短剧",
               "href": "https://www.mgtv.com",
-              "description": "芒果TV短剧专区，青春甜宠短剧与综艺，免费 + VIP",
+              "description": "芒果TV App 内短剧专区，青春甜宠短剧与综艺，免费 + VIP",
               "icon": "https://www.mgtv.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4532,8 +4532,8 @@
             {
               "id": "nav-c50b8f31263b",
               "title": "咪咕视频·短剧",
-              "href": "https://www.miguvideo.com/",
-              "description": "中国移动旗下视频平台的短剧专区",
+              "href": "https://www.cmread.com/yuekan/drama/index.html",
+              "description": "咪咕悦看短剧大全，精选短剧会员免费观看",
               "icon": "https://www.miguvideo.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4546,7 +4546,7 @@
               "id": "nav-2a75026be228",
               "title": "央视频·短剧",
               "href": "https://m.yangshipin.cn/",
-              "description": "中央广播电视总台官方新媒体短剧板块",
+              "description": "中央广播电视总台官方新媒体短剧板块，短剧需在央视频 App 内观看",
               "icon": "https://m.yangshipin.cn/favicon.ico",
               "enabled": true,
               "tags": [

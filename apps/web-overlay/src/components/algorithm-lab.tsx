@@ -39,6 +39,7 @@ import { MeshPanel } from './algorithm-lab/mesh-panel'
  */
 export function AlgorithmLab() {
   const [activeTab, setActiveTab] = useState('linucb')
+  const scrollToSandbox = (tab: string) => { setActiveTab(tab); document.getElementById('algorithm-sandbox')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 
   return (
     <div className="container max-w-6xl mx-auto py-4 sm:py-8 px-3 sm:px-4 space-y-5 sm:space-y-8">
@@ -97,52 +98,52 @@ export function AlgorithmLab() {
           </div>
 
           {/* 12 大算法指标快速指示牌 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2 pt-2">
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2 pt-2" onClick={(e) => { const t = (e.target as HTMLElement).closest("[data-tab]"); if (t) scrollToSandbox(t.getAttribute("data-tab") || "linucb") }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { const t = (e.target as HTMLElement).closest("[data-tab]"); if (t) { e.preventDefault(); scrollToSandbox(t.getAttribute("data-tab") || "linucb") } } }}>
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="linucb" aria-label="打开多臂自适应沙箱">
               <div className="text-[11px] text-muted-foreground">多臂自适应</div>
               <div className="font-bold font-mono text-primary text-xs">LinUCB</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="hyperbolic" aria-label="打开双曲平替沙箱">
               <div className="text-[11px] text-muted-foreground">双曲平替</div>
               <div className="font-bold font-mono text-violet-500 text-xs">Poincaré</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="graph" aria-label="打开知识星图沙箱">
               <div className="text-[11px] text-muted-foreground">知识星图</div>
               <div className="font-bold font-mono text-indigo-500 text-xs">Dijkstra</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="visual" aria-label="打开视觉指纹沙箱">
               <div className="text-[11px] text-muted-foreground">视觉指纹</div>
               <div className="font-bold font-mono text-pink-500 text-xs">WCAG 2.1</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="webmcp" aria-label="打开端侧网格沙箱">
               <div className="text-[11px] text-muted-foreground">端侧网桥</div>
               <div className="font-bold font-mono text-emerald-500 text-xs">WebMCP</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="federated" aria-label="打开差分隐私沙箱">
               <div className="text-[11px] text-muted-foreground">差分隐私</div>
               <div className="font-bold font-mono text-blue-500 text-xs">LDP Lap</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="speculation" aria-label="打开推测渲染沙箱">
               <div className="text-[11px] text-muted-foreground">推测渲染</div>
               <div className="font-bold font-mono text-amber-500 text-xs">SpecRules</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="synthesizer" aria-label="打开工具合成沙箱">
               <div className="text-[11px] text-muted-foreground">工具合成</div>
               <div className="font-bold font-mono text-orange-500 text-xs">Synthesizer</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="mesh" aria-label="打开网格共识沙箱">
               <div className="text-[11px] text-muted-foreground">网格共识</div>
               <div className="font-bold font-mono text-teal-500 text-xs">P2P Mesh</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="health" aria-label="打开防假死链沙箱">
               <div className="text-[11px] text-muted-foreground">防假死链</div>
               <div className="font-bold font-mono text-emerald-600 text-xs">Entropy</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="intent" aria-label="打开推测执行沙箱">
               <div className="text-[11px] text-muted-foreground">推测执行</div>
               <div className="font-bold font-mono text-amber-500 text-xs">0-RTT</div>
             </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="vault" aria-label="打开密码金库沙箱">
               <div className="text-[11px] text-muted-foreground">密码金库</div>
               <div className="font-bold font-mono text-cyan-500 text-xs">AES-256</div>
             </div>
@@ -150,8 +151,9 @@ export function AlgorithmLab() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="flex items-center gap-1 overflow-x-auto no-scrollbar touch-pan-x sm:grid sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-12 w-full h-auto p-1.5 bg-muted/40 border border-border/60 rounded-xl backdrop-blur-md">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full scroll-mt-20" id="algorithm-sandbox">
+        <p className="sm:hidden text-center text-[11px] text-muted-foreground pb-1">左右滑动查看全部 12 个沙箱</p>
+      <TabsList className="sticky top-0 z-30 flex items-center gap-1 overflow-x-auto no-scrollbar touch-pan-x sm:grid sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-12 w-full h-auto p-1.5 bg-muted/40 border border-border/60 rounded-xl backdrop-blur-md">
           <TabsTrigger
             value="linucb"
             className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"

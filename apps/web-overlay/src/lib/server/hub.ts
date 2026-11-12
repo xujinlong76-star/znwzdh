@@ -8,6 +8,7 @@
  * 代理 `/api/auth/*`，`/api/hub/*` 走运行时 route 转发。服务端应当直接访问中枢。
  */
 import { HUB_CACHE_TAG } from '@/lib/server/hub-cache'
+import { hubIdentitySecret, identitySignatureHeaders } from '@/lib/identity-signature'
 
 const HUB_BASE = (
   process.env.NAVHUB_STORAGE_BASE_URL ??
@@ -109,5 +110,38 @@ export async function hubGetProbe<T>(
     return { status: 'ok', data: (await res.json()) as T }
   } catch {
     return { status: 'failed' }
+  }
+}
+
+/** 会话吊销核对（P0-2）：调中枢 sessions/check。true=已吊销，false=未吊销，null=核对不可用。 */
+export async function hubSessionRevoked(sid: string, identity: string, issuedAt?: number): Promise<boolean | null> {
+  const secret = hubIdentitySecret()
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "content-type": "application/json",
+    "x-navhub-user-id": identity,
+  }
+  if (secret) {
+    Object.assign(headers, await identitySignatureHeaders(secret, identity))
+  }
+  const token = process.env.NAVHUB_ADMIN_TOKEN || process.env.NAVHUB_BOOTSTRAP_TOKEN || process.env.NAVHUB_STORAGE_TOKEN
+  if (token) headers.authorization = "Bearer " + token
+  const payload: { sid: string; issuedAt?: number } = { sid }
+  if (typeof issuedAt === "number") payload.issuedAt = issuedAt
+  try {
+    const res = await fetch(HUB_BASE + "/api/me/sessions/check", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { ok?: boolean; revoked?: boolean }
+      if (data.ok) return data.revoked === true
+    }
+    return null
+  } catch {
+    return null
   }
 }

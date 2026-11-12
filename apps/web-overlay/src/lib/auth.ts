@@ -4,6 +4,8 @@ import GithubProvider from 'next-auth/providers/github'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import type { NextAuthConfig } from 'next-auth'
 import { authConfig, authSecret, isAdminAccessAllowed } from './auth.config'
+import { canonicalUserId } from './me-identity'
+import { hubSessionRevoked } from './server/hub'
 
 /** 时序安全的字符串比较（长度不等归一化到哑比较防短路） */
 function timingSafeEq(a: string, b: string): boolean {
@@ -295,6 +297,17 @@ const config = {
       // 会话治理（T8）：sid 是设备吊销的锚点。JWT 无状态，服务端只存 sid 的
       // sha256——用户在 /me/account 踢出某 sid 后，BFF 校验会让该设备 401。
       if (!token.sid) token.sid = globalThis.crypto.randomUUID()
+    // 登录时强制登记会话（P0-2）：立即调 sessions/check 建行，不等用户第一次调 /api/me/*。
+    if (user && typeof token.sid === 'string') {
+      const issuedAt = Date.now()
+      token.issuedAt = issuedAt
+      const identity = canonicalUserId({ id: user.id, provider: account?.provider })
+      if (identity) {
+        const revoked = await hubSessionRevoked(token.sid, identity, issuedAt).catch(() => null)
+        if (revoked === true) console.warn('[session-register] unexpected revoked at login')
+        else if (revoked === null) console.warn('[session-register] sessions/check unavailable')
+      }
+    }
       return token
     },
     async session({ session, token }) {
@@ -305,6 +318,9 @@ const config = {
         if (typeof token.sid === 'string') {
           ;(session as { sessionSid?: string }).sessionSid = token.sid
         }
+      if (typeof token.issuedAt === 'number') {
+        ;(session as { sessionIssuedAt?: number }).sessionIssuedAt = token.issuedAt
+      }
         if (typeof token.role === 'string') {
           ;(session.user as { role?: string }).role = token.role
         }
@@ -334,6 +350,15 @@ export async function verifyAdminSession() {
     return { ok: false as const, error: 'Forbidden', status: 403 }
   }
 
+  // 吊销检查（P0-2）：被踢出/改密的管理员 JWT 须 401；核对不可用时 fail-open。
+  const sessionSid = (session as { sessionSid?: string }).sessionSid
+  if (typeof sessionSid === 'string' && sessionSid) {
+    const identity = canonicalUserId(user)
+    const issuedAt = (session as { sessionIssuedAt?: number }).sessionIssuedAt
+    const revoked = identity ? await hubSessionRevoked(sessionSid, identity, issuedAt).catch(() => null) : null
+    if (revoked === true) return { ok: false as const, error: 'Unauthorized', status: 401 }
+    if (revoked === null && identity) console.warn('[admin-session] sessions/check unavailable, fail-open')
+  }
   const githubToken = getServerGithubToken(user.id) || process.env.GITHUB_PAT || ''
   return { ok: true as const, session, user, githubToken }
 }

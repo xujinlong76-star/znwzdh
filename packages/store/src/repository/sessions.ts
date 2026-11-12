@@ -5,7 +5,7 @@ import type { Repository } from "../repository.ts";
  * 「踢出设备」不可能实现。激活语义：
  *   - token = Web 侧 JWT sid 的 sha256（不落原始 sid，库里泄了也撞不回会话）；
  *   - 行由 BFF 在代理 /api/me/* 时惰性 upsert（last_seen 即活跃心跳），
- *     没有行 = 会话早于本功能或从未走过 BFF → 视为未吊销（fail-open）；
+ *  - 没有行 = 会话早于本功能或从未走过 BFF → 查 revoked_users（用户级整体吊销兜底，有记录即视为已吊销（签发于吊销点之后的会话除外））；
  *   - revoked_at 非空 = 已被用户踢出，BFF 下一次请求起 401。
  */
 export interface SessionDeviceRecord {
@@ -34,12 +34,20 @@ export async function upsertSessionActivity(
   );
 }
 
-export async function isSessionRevoked(repo: Repository, token: string): Promise<boolean> {
+export async function isSessionRevoked(repo: Repository, token: string, userId?: string, issuedAt?: number): Promise<boolean> {
   const row = (
     await repo.raw("SELECT revoked_at FROM sessions WHERE token = ? LIMIT 1", [token])
   )[0];
-  if (!row) return false;
-  return row.revoked_at != null;
+  if (row) return row.revoked_at != null;
+  // 无行：查 revoked_users（用户级整体吊销兜底）。
+  if (!userId) return false;
+  const revokedRow = (
+    await repo.raw("SELECT revoked_before FROM revoked_users WHERE user_id = ? LIMIT 1", [userId])
+  )[0];
+  if (!revokedRow) return false;
+  // 重置后新登录的会话签发于吊销点之后，不被旧标记误杀；issuedAt 缺失时按收敛版视为已吊销。
+  if (issuedAt == null) return true;
+  return issuedAt < Number(revokedRow.revoked_before);
 }
 
 export async function listSessionDevices(repo: Repository, userId: string): Promise<SessionDeviceRecord[]> {
@@ -65,4 +73,19 @@ export async function revokeSessionDevice(repo: Repository, userId: string, toke
     [Date.now(), token, userId],
   );
   return changes > 0;
+}
+
+/** 整体吊销（P0-2）：吊销全部已登记会话并写 revoked_users 兜底行，返回吊销数。 */
+export async function revokeAllSessions(repo: Repository, userId: string): Promise<number> {
+  const now = Date.now();
+  const changes = await repo.runCount(
+    "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+    [now, userId],
+  );
+  await repo.run(
+    "INSERT INTO revoked_users (user_id, revoked_before) VALUES (?, ?) " +
+      "ON CONFLICT (user_id) DO UPDATE SET revoked_before = excluded.revoked_before",
+    [userId, now],
+  );
+  return changes;
 }

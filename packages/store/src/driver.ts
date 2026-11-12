@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
   user_agent TEXT, revoked_at INTEGER, last_seen_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS revoked_users ( user_id TEXT PRIMARY KEY, revoked_before INTEGER NOT NULL );
 
 CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
@@ -832,6 +833,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at BIGINT NOT NULL, created_at BIGINT NOT NULL,
   user_agent TEXT, revoked_at BIGINT, last_seen_at BIGINT
 );
+CREATE TABLE IF NOT EXISTS revoked_users ( user_id TEXT PRIMARY KEY, revoked_before BIGINT NOT NULL );
 
 CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,

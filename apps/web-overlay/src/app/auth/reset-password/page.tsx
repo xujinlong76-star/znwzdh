@@ -97,7 +97,10 @@ function ResetPasswordInner() {
           {successMessage && (
             <div className="flex items-start gap-2.5 p-3 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs leading-snug animate-in fade-in">
               <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-              <div className="flex-1">{successMessage}</div>
+    <div className="flex-1">
+      <div>{successMessage}</div>
+      <div className="mt-1">其他设备已退出登录。</div>
+    </div>
             </div>
           )}
           {!token && !successMessage && (

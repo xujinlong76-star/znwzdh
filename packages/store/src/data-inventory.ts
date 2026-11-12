@@ -119,6 +119,13 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     note: "会话令牌哈希；不导出",
   },
   {
+    id: "revokedUsers",
+    table: "revoked_users",
+    ownerColumns: ["user_id"],
+    disposition: "delete",
+    note: "整体吊销标记：用户级吊销兜底；注销后删除。",
+  },
+  {
     id: "authTokens",
     table: "auth_tokens",
     ownerColumns: ["user_id"],

@@ -1170,9 +1170,9 @@ async savedPluginEmbeddings(filter?: {
     return sessionsRepo.upsertSessionActivity(this, input);
   }
 
-  /** 会话是否已被用户踢出；无行 = 旧会话/未路过 BFF → 未吊销（fail-open） */
-  async isSessionRevoked(token: string): Promise<boolean> {
-    return sessionsRepo.isSessionRevoked(this, token);
+/** 会话是否已被用户踢出；无行且有整体吊销记录即已吊销（revoked_users 兜底） */
+async isSessionRevoked(token: string, userId?: string, issuedAt?: number): Promise<boolean> {
+  return sessionsRepo.isSessionRevoked(this, token, userId, issuedAt);
   }
 
   /** 设备列表：未吊销且未过期的会话，按最近活跃排序 */
@@ -1184,6 +1184,11 @@ async savedPluginEmbeddings(filter?: {
   async revokeSessionDevice(userId: string, token: string): Promise<boolean> {
     return sessionsRepo.revokeSessionDevice(this, userId, token);
   }
+
+/** 整体吊销（P0-2）：吊销全部已登记会话并写 revoked_users 兜底行，返回吊销数。 */
+async revokeAllSessions(userId: string): Promise<number> {
+  return sessionsRepo.revokeAllSessions(this, userId);
+}
 
   /* --------------------------- 站内通知（T13） --------------------------- */
 

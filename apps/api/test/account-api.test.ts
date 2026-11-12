@@ -5,10 +5,11 @@
  * 而验证/重置令牌只出现在邮件正文里，必须捕获才能驱动后续流程。
  * 这同时验证了「令牌只经邮件传递、库里只存哈希」的链路。
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
@@ -183,6 +184,55 @@ describe("账号生命周期 API", () => {
 
     const oldLogin = await post("/api/account/login", { identifier: "erin@example.com", password: "OldPassw0rd!" });
     expect(oldLogin.statusCode).toBe(401);
+  });
+
+  it("重置密码：吊销该用户全部会话并返回 sessionsRevoked", async () => {
+    captured.length = 0;
+    await post("/api/account/register", {
+      username: "gail",
+      email: "gail@example.com",
+      password: "OldPassw0rd!",
+    });
+    // 先给该用户登记一个会话（canonical 身份 credentials:<uuid>）
+    const user = await ctx.repo.findUserByEmail("gail@example.com");
+    expect(user).not.toBeNull();
+    const canonical = "credentials:" + (user?.id ?? "");
+    const sid = "test-sid-acct-gail-0001";
+    const sidToken = createHash("sha256").update(sid).digest("hex");
+    await ctx.repo.upsertSessionActivity({ token: sidToken, userId: canonical, userAgent: "acct-test", expiresAt: Date.now() + 86_400_000 });
+    await post("/api/account/forgot-password", { email: "gail@example.com" });
+    const resetMsg = captured.find((m) => m.text.includes("reset-password"));
+    const resetToken = extractToken(resetMsg!, "reset-password");
+    const res = await post("/api/account/reset-password", { token: resetToken, password: "NewPassw0rd!" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().sessionsRevoked).toBe(1);
+    expect(await ctx.repo.isSessionRevoked(sidToken, canonical)).toBe(true);
+  });
+
+  it("重置密码：吊销失败不阻塞重置，但记失败审计", async () => {
+    captured.length = 0;
+    await post("/api/account/register", {
+      username: "hank",
+      email: "hank@example.com",
+      password: "OldPassw0rd!",
+    });
+    const user = await ctx.repo.findUserByEmail("hank@example.com");
+    expect(user).not.toBeNull();
+    const rawId = user?.id ?? "";
+    vi.spyOn(ctx.repo, "revokeAllSessions").mockRejectedValueOnce(new Error("revoke boom"));
+    await post("/api/account/forgot-password", { email: "hank@example.com" });
+    const resetMsg = captured.find((m) => m.text.includes("reset-password"));
+    const resetToken = extractToken(resetMsg!, "reset-password");
+    const res = await post("/api/account/reset-password", { token: resetToken, password: "NewPassw0rd!" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().sessionsRevoked).toBe(0);
+    const rows = await ctx.repo.raw(
+      "SELECT action FROM audit_logs WHERE actor = ? AND action = ?",
+      [rawId, "account.password_reset_sessions_revoke_failed"],
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    const login = await post("/api/account/login", { identifier: "hank@example.com", password: "NewPassw0rd!" });
+    expect(login.statusCode).toBe(200);
   });
 
   it("重置密码：令牌一次性", async () => {

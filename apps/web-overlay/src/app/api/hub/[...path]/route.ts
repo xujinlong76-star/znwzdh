@@ -3,6 +3,7 @@ import { revalidateTag } from 'next/cache'
 import { auth, verifyAdminSession } from '@/lib/auth'
 import { canonicalUserId } from '@/lib/me-identity'
 import { HUB_CACHE_TAG, shouldInvalidateAfter } from '@/lib/server/hub-cache'
+import { hubSessionRevoked } from '@/lib/server/hub'
 import {
   ANON_COOKIE,
   encodeAnonCookie,
@@ -167,6 +168,19 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     const session = await auth()
     const user = session?.user as { id?: string; provider?: string } | undefined
     sessionIdentity = canonicalUserId(user) ?? null
+    // 吊销检查（P0-2）：被踢出/改密的会话经 /api/hub/* 须 401；核对不可用时 fail-open。
+    const sessionSid = (session as { sessionSid?: string } | null)?.sessionSid
+    if (typeof sessionSid === 'string' && sessionSid && sessionIdentity) {
+      const issuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
+      const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => null)
+      if (revoked === true) {
+        return NextResponse.json(
+          { error: '会话已被吊销，请重新登录' },
+          { status: 401, headers: { 'cache-control': 'no-store' } },
+        )
+      }
+      if (revoked === null) console.warn('[hub-session] sessions/check unavailable, fail-open')
+    }
   } catch {
     // 会话读取失败按匿名处理：宁可按匿名域降级，也不放行会话覆盖
     sessionIdentity = null

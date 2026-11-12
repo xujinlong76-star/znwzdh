@@ -206,6 +206,18 @@ export const sessions = sqliteTable("sessions", {
 });
 
 /**
+ * 整体吊销标记（P0-2）：用户级吊销兜底。
+ *
+ * revokeAllSessions 时写一行 revoked_before = now；isSessionRevoked 对
+ * 无行会话（T8 前旧会话 / 从未走过 BFF 的会话）查到本记录即视为已吊销
+ * （收敛版：误杀极少数从未登记的合法旧会话，改密场景下可接受）。
+ */
+export const revokedUsers = sqliteTable("revoked_users", {
+  userId: text("user_id").primaryKey(),
+  revokedBefore: integer("revoked_before").notNull(),
+});
+
+/**
  * 认证令牌（邮箱验证 / 密码重置）。
  *
  * 单用途、可消费、带过期：注册/重置流程生成一次性令牌，邮件里带明文链接，

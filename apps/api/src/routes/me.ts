@@ -896,11 +896,15 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           sid: z.string().min(8).max(128),
           userAgent: z.string().max(300).nullable().optional(),
           expiresAt: z.number().int().positive().optional(),
+          issuedAt: z.number().int().positive().optional(),
         })
         .safeParse(req.body ?? {});
       if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
       const sidHash = createHash("sha256").update(body.data.sid).digest("hex");
+    // 先核对再登记：登记会建行，无行兜底须在建行前查。
+    const revoked = await ctx.repo.isSessionRevoked(sidHash, canonical, body.data.issuedAt);
+    if (revoked) return { ok: true, revoked: true };
       // 过期时间缺失时给 7 天兜底：老客户端不带 expiresAt 也不至于把行写成永不过期
       const expiresAt = body.data.expiresAt ?? Date.now() + 7 * 86_400_000;
       await ctx.repo.upsertSessionActivity({
@@ -909,7 +913,6 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         userAgent: body.data.userAgent ?? null,
         expiresAt,
       });
-      const revoked = await ctx.repo.isSessionRevoked(sidHash);
       return { ok: true, revoked };
     },
   );

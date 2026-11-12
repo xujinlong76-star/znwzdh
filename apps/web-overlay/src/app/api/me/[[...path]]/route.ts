@@ -26,6 +26,8 @@ const HUB_BASE = (
 ).replace(/\/+$/, '')
 
 const TIMEOUT_MS = 15_000
+/** 会话核对连续失败计数（P0-2）：读请求 fail-open 时仍要让连续失败可观测。 */
+let sessionCheckFailStreak = 0
 /** body 上限 ~1MB，防止代理被超大请求体耗尽进程内存 */
 const MAX_BODY_BYTES = 1024 * 1024
 
@@ -54,17 +56,19 @@ async function currentUser() {
     | undefined
   // 会话治理（T8）：sid 用于设备吊销核对与会话活跃登记（只留在服务端）
   const sessionSid = (session as { sessionSid?: string } | null)?.sessionSid
+  const sessionIssuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
   const expires = Date.parse(String(session?.expires ?? ''))
   return {
     user,
     identity: canonicalUserId(user),
     sessionSid: typeof sessionSid === 'string' ? sessionSid : undefined,
     sessionExpiresAt: Number.isFinite(expires) && expires > 0 ? expires : undefined,
+    sessionIssuedAt: typeof sessionIssuedAt === 'number' ? sessionIssuedAt : undefined,
   }
 }
 
 async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
-  const { user, identity, sessionSid, sessionExpiresAt } = await currentUser()
+  const { user, identity, sessionSid, sessionExpiresAt, sessionIssuedAt } = await currentUser()
   if (!user || !identity) {
     return NextResponse.json({ error: '未登录' }, { status: 401, headers: { 'cache-control': 'no-store' } })
   }
@@ -207,22 +211,27 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
 
   // 会话治理（T8）：登记活跃 + 核对吊销（一次往返）。
   // - revoked → 401：被踢出的设备从下一个请求起失去 /api/me/* 全部能力；
-  // - 核对失败（中枢抖动）fail-open：无法确认 ≠ 已吊销，可用性优先；
+  // - 核对失败：写请求 502（上游不可用），读请求 fail-open 但记数告警；
   // - 没有 sid（老会话 / 非会话身份）跳过。
   if (sessionSid) {
+    const isWrite = method !== 'GET' && method !== 'HEAD'
+    let checkFailed = false
     try {
       const checkRes = await fetch(HUB_BASE + '/api/me/sessions/check', {
         method: 'POST',
-        headers,
+        // 核对固定发 JSON：GET 无体时转发头缺 content-type
+        headers: { ...headers, 'content-type': 'application/json' },
         body: JSON.stringify({
           sid: sessionSid,
           userAgent: request.headers.get('user-agent') ?? null,
           ...(sessionExpiresAt ? { expiresAt: sessionExpiresAt } : {}),
+          ...(sessionIssuedAt ? { issuedAt: sessionIssuedAt } : {}),
         }),
         cache: 'no-store',
         signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, 5000)),
       })
       if (checkRes.ok) {
+        sessionCheckFailStreak = 0
         const verdict = (await checkRes.json()) as { revoked?: boolean }
         if (verdict.revoked) {
           return NextResponse.json(
@@ -230,10 +239,23 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
             { status: 401, headers: { 'cache-control': 'no-store' } },
           )
         }
+      } else {
+        checkFailed = true
+        sessionCheckFailStreak += 1
+        console.warn('[session-check] unavailable', checkRes.status, method, sessionCheckFailStreak)
       }
-    } catch {
-      // fail-open：核对通道故障不阻断主请求
+    } catch (error) {
+      checkFailed = true
+      sessionCheckFailStreak += 1
+      console.warn('[session-check] error', method, sessionCheckFailStreak, error)
     }
+    if (checkFailed && isWrite) {
+      return NextResponse.json(
+        { error: '会话核对服务暂时不可用，请稍后重试' },
+        { status: 502, headers: { 'cache-control': 'no-store' } },
+      )
+    }
+    // 读请求 fail-open：核对失败不阻断主请求，但失败已被计数
   }
 
   // 设备列表特判（T8）：hub 只认 sidHash，由 BFF 标记「当前设备」

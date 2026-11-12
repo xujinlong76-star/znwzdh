@@ -235,6 +235,40 @@ describe("/api/me/sessions（T8 会话治理）", () => {
     const list = await app.inject({ method: "GET", url: "/api/me/sessions" });
     expect(list.statusCode).toBe(401);
   });
+
+  it("被整体吊销的会话：check 先核对后登记，不建行", async () => {
+    await ctx.repo.revokeAllSessions(USER);
+    const sid = "test-sid-p02-unregistered-0001";
+    const check = await app.inject({
+      method: "POST",
+      url: "/api/me/sessions/check",
+      headers: { ...userHeaders(), "content-type": "application/json" },
+      payload: { sid },
+    });
+    expect(check.statusCode).toBe(200);
+    expect(check.json().revoked).toBe(true);
+    const list = await app.inject({ method: "GET", url: "/api/me/sessions", headers: userHeaders() });
+    const mine = list.json().devices.find((d: { token: string }) => d.token === sidHash(sid));
+    expect(mine).toBeUndefined();
+  });
+
+  it("无行 + 整体吊销记录 + issuedAt 在吊销点之后：放行并建行", async () => {
+    await ctx.repo.revokeAllSessions(USER);
+    const rows = await ctx.repo.raw("SELECT revoked_before FROM revoked_users WHERE user_id = ?", [USER]);
+    const point = Number(rows[0].revoked_before);
+    const sid = "test-sid-p02-newlogin-0002";
+    const check = await app.inject({
+      method: "POST",
+      url: "/api/me/sessions/check",
+      headers: { ...userHeaders(), "content-type": "application/json" },
+      payload: { sid, issuedAt: point + 1000 },
+    });
+    expect(check.statusCode).toBe(200);
+    expect(check.json().revoked).toBe(false);
+    const list = await app.inject({ method: "GET", url: "/api/me/sessions", headers: userHeaders() });
+    const mine = list.json().devices.find((d: { token: string }) => d.token === sidHash(sid));
+    expect(mine).toBeTruthy();
+  });
 });
 
 describe("/api/me/notifications（T13 站内通知）", () => {

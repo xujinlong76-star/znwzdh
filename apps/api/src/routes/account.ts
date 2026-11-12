@@ -362,18 +362,30 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "密码不符合要求" };
       }
-  // 密码重置后吊销该用户全部已登录会话：旧的 next-auth JWT（sid）即便未过期，
-  // BFF 也会在下一个 /api/me/* 请求上经 isSessionRevoked 拦下（401）。
-  const devices = await ctx.repo.listSessionDevices(String(row.user_id));
-  for (const device of devices) {
-    await ctx.repo.revokeSessionDevice(String(row.user_id), device.token);
-  }
+    // 密码重置后吊销该用户全部已登录会话：旧的 next-auth JWT (sid) 即便未过期，
+    // BFF 也会在下一个 /api/me/* 请求上经 isSessionRevoked 拦下 (401)。
+    // row.user_id 是 users 表原始 id——凭据用户为裸 UUID，而 sessions 表按 canonical
+    // 身份建行（凭据用户为 credentials:<uuid>）；须先规范化再吊销，否则凭据用户的
+    // 会话一行都吊销不到、旧 JWT 仍可在 30 天内继续用。
+    const rawUserId = String(row.user_id);
+    const canonicalUserId = rawUserId.includes(":") ? rawUserId : "credentials:" + rawUserId;
+    let sessionsRevoked = 0;
+    try {
+      sessionsRevoked = await ctx.repo.revokeAllSessions(canonicalUserId);
+    } catch {
+      // 吊销失败不阻塞密码重置（密码已改），但必须记审计以便排查。
+      await ctx.repo.audit({
+        actor: String(row.user_id),
+        actorKind: "user",
+        action: "account.password_reset_sessions_revoke_failed",
+      });
+    }
       await ctx.repo.audit({
         actor: String(row.user_id),
         actorKind: "user",
         action: "account.password_reset",
       });
-      return { ok: true, message: "密码已重置，请使用新密码登录" };
+    return { ok: true, message: "密码已重置，请使用新密码登录", sessionsRevoked };
     },
   );
 

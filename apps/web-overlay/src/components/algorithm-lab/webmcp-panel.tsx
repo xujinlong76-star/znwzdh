@@ -59,7 +59,7 @@ export function WebMcpPanel() {
                     为端侧 AI Agent、浏览器扩展及 Chrome Built-in AI 提供原生的 Model Context Protocol 协议交互入口，在浏览器内零网络开销执行本地工具。
                   </CardDescription>
                 </div>
-                <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 bg-emerald-500/5 text-xs font-mono">
+                <Badge variant="outline" className="text-[#047857] dark:text-[#34d399] border-emerald-500/30 bg-emerald-500/5 text-xs font-mono">
                   JSON-RPC 2.0
                 </Badge>
               </div>
@@ -127,7 +127,7 @@ export function WebMcpPanel() {
               {/* 实时响应结果 */}
               <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-2">
                 <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="text-emerald-500 flex items-center gap-1.5">
+                  <span className="text-[#047857] dark:text-[#34d399] flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     JSON-RPC 2.0 运行态响应结果：
                   </span>

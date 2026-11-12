@@ -72,7 +72,7 @@ export function HealthPanel() {
                     传统导航站仅探测 HTTP 状态码，易被“域名过期停放广告”与“SPA 单页软 404”欺骗。本算法实时计算文本信息熵并比对特征词频。
                   </CardDescription>
                 </div>
-                <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 bg-emerald-500/5 text-xs">
+                <Badge variant="outline" className="text-[#047857] dark:text-[#34d399] border-emerald-500/30 bg-emerald-500/5 text-xs">
                   熵值检测法 H(S)
                 </Badge>
               </div>

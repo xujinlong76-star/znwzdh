@@ -138,7 +138,7 @@ export function VaultPanel() {
                       <Unlock className="w-4 h-4 text-emerald-500" />
                       <span>第二步：输入密码解密还原</span>
                     </span>
-                    <Badge variant="outline" className="text-xs text-emerald-500 border-emerald-500/30 bg-emerald-500/5 px-2 py-0.5">
+                    <Badge variant="outline" className="text-xs text-[#047857] dark:text-[#34d399] border-emerald-500/30 bg-emerald-500/5 px-2 py-0.5">
                       认证标签校验
                     </Badge>
                   </div>

@@ -134,7 +134,21 @@ describe('LinUCB 面板必须用真引擎，不许手工线性加权', () => {
     expect(panel).not.toContain('DEFAULT_ARMS')
   })
 
-  it('core 镜像已登记 linucb（否则 apps/web 会 TS2307 解析失败）', () => {
+    it('A/B 对比展示第 5 维与本地复算，且标注本地模型不等同生产权重', () => {
+    const panel = overlayRead('src/components/algorithm-lab/linucb-panel.tsx')
+    expect(panel).toContain('digitRatio')
+    expect(panel).toContain('labTop3')
+    expect(panel).toContain('ResultRow')
+    expect(panel).toContain('面板本地模型')
+    expect(panel).toContain('不会写入生产 recordFeedback')
+    const labAb = overlayRead('src/lib/lab-ab.ts')
+    expect(labAb).toContain('LAB_STATIC_WEIGHTS')
+    expect(labAb).toContain('labTop3')
+    expect(labAb).toContain('1.4')
+    expect(labAb).toContain('labCoverageFactor')
+  })
+
+it('core 镜像已登记 linucb（否则 apps/web 会 TS2307 解析失败）', () => {
     // scripts/ 不在 overlay 里，且测试可能是 overlay/test 或镜像 apps/web/test 两种位置，
     // 所以向上逐级找仓库根（含 scripts/core-mirrors.json 的那一层）。
     let rootDir = HERE

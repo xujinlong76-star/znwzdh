@@ -153,7 +153,7 @@ function RelationBand({
   )
 }
 
-function ResultRow({
+export function ResultRow({
   hit,
   q,
   externalRel = 'nofollow noopener noreferrer',

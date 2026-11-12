@@ -5,7 +5,7 @@
  * 从 algorithm-lab.tsx 拆出（第五批 A1）：状态与逻辑原样搬运，行为由
  * algorithm-lab-structure.test.ts 与 e2e/algorithms.spec.ts 双守卫锁定。
  */
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/registry/new-york/ui/input'
@@ -33,6 +33,10 @@ import {
   type LinUCBModel,
   type RetrievalChannel,
 } from '@/lib/linucb'
+import { searchSites } from "@/lib/navhub-api"
+import { LAB_STATIC_WEIGHTS, labTop3, type LabScoredHit } from "@/lib/lab-ab"
+import { ResultRow } from "@/app/search/search-results"
+
 
 const LINUCB_STORAGE_KEY = 'navhub.linucb.model.v1'
 
@@ -79,6 +83,7 @@ export function LinucbPanel() {
       cjkRatio: Number(x[1].toFixed(2)),
       alphaRatio: Number(x[2].toFixed(2)),
       pinyinProb: Number(x[3].toFixed(2)),
+    digitRatio: Number(x[4].toFixed(2)),
     }
   }, [banditQuery])
 
@@ -90,6 +95,30 @@ export function LinucbPanel() {
     return out
     // tick 是刻意的重算触发器：引擎原地改模型，引用不变
   }, [model, banditQuery, tick])
+/** A/B 对比：一次检索的 contributions 在本地复算两套 Top 3 */;const [abLoading, setAbLoading] = useState(false);const [abError, setAbError] = useState<string | null>(null);const [abResult, setAbResult] = useState<{ staticTop: LabScoredHit[];
+dynamicTop: LabScoredHit[] } | null>(null);const [abChannels, setAbChannels] = useState<string[] | null>(null);const [abQuery, setAbQuery] = useState("");const abRowRefs = useRef(new Map<string, HTMLDivElement | null>());const abPrevTops = useRef(new Map<string, number>());/** 手写 FLIP：重排后把行从旧位置平移到新位置（无动画库依赖） */;useLayoutEffect(() => { if (!abResult) return;
+abRowRefs.current.forEach((el, key) => { if (!el) return;
+const top = el.getBoundingClientRect().top;
+const prev = abPrevTops.current.get(key);
+if (prev !== undefined && prev !== top) { const dy = prev - top;
+el.style.transition = "none";
+el.style.transform = "translateY(" + dy + "px)";
+void el.offsetHeight;
+el.style.transition = "transform 300ms ease";
+el.style.transform = "";
+} abPrevTops.current.set(key, top);
+});
+}, [abResult]);const runAbCompare = async () => { const q = banditQuery.trim();
+if (!q || abLoading) return;
+setAbLoading(true);
+setAbError(null);
+try { const res = await searchSites({ q, limit: 20 });
+setAbResult({ staticTop: labTop3(res.hits, LAB_STATIC_WEIGHTS), dynamicTop: labTop3(res.hits, predictedWeights) });
+setAbChannels(res.channelsUsed ?? []);
+setAbQuery(q);
+} catch { setAbError("检索失败，请稍后重试。");
+} finally { setAbLoading(false);
+} };
 
   /** 臂的点击次数（纯展示统计，与引擎状态分开维护） */
   const [armClicks, setArmClicks] = useState<Record<string, number>>({})
@@ -190,7 +219,8 @@ export function LinucbPanel() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">拼音似然 (pinyinProb):</span>
-                    <span className="font-bold text-primary font-mono">{contextFeatures.pinyinProb}</span>
+                    <span className="font-bold text-primary font-mono">{contextFeatures.pinyinProb}</span>              </div>
+      <div className="flex justify-between">                <span className="text-muted-foreground">数字占比（digitRatio）:</span>                <span className="font-bold text-primary font-mono">{contextFeatures.digitRatio}</span>
                   </div>
                 </div>
               </div>
@@ -237,7 +267,29 @@ export function LinucbPanel() {
                   ))}
                 </div>
               </div>
-            </CardContent>
+              {/* A/B 对比：静态 RRF vs 动态 LinUCB（本地复算） */}    <div className="space-y-3 pt-4 mt-4 border-t border-border/50">
+<div className="flex items-center justify-between gap-2 flex-wrap">
+<h4 className="font-semibold text-sm">A/B 对比：静态 RRF vs 动态 LinUCB</h4>
+<Button size="sm" variant="outline" onClick={runAbCompare} disabled={abLoading || !banditQuery.trim()}>          {abLoading ? "检索中…" : "用当前查询运行对比"}        </Button>
+</div>
+<p className="text-xs text-muted-foreground leading-relaxed">        一次检索返回的 contributions 在浏览器本地复算两套 Top 3。静态权重 exact 1.4 / fts 1.0 / pinyin 0.9 / semantic 1.15 / personal 0.3；分数 = 求和 权重/(60+名次) × 覆盖因子（1 + 0.35·log2(非 personal 通道数)）。动态侧用本面板 LinUCB 模型预测的通道权重复算同一公式。      </p>
+<p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">        动态侧是面板本地模型，不等于全站生产权重；本面板的点击强化（奖励恒 1、无名次、无负反馈）不会写入生产 recordFeedback。      </p>      {abError && <p className="text-xs text-destructive">{abError}</p>}      {abChannels && (        <p className="text-xs text-muted-foreground">          本次检索参与通道：{abChannels.length ? abChannels.join("、") : "无"}          {!abChannels.includes("semantic") && "（语义通道未参与：Lite 环境无向量配置）"}        </p>      )}      {abResult ? (        <div className="grid md:grid-cols-2 gap-4">
+<div>
+<h5 className="text-xs font-semibold mb-2">静态 RRF Top 3</h5>
+<div className="space-y-2">              {abResult.staticTop.map((s, i) => (                <div key={s.hit.siteId} ref={(el) => { abRowRefs.current.set("s:" + s.hit.siteId, el) }}>
+<p className="text-xs font-mono text-muted-foreground mb-1">#{i + 1} · 本地分数 {s.score.toFixed(4)}</p>
+<ResultRow hit={s.hit} q={abQuery} />
+</div>              ))}              {abResult.staticTop.length === 0 && <p className="text-xs text-muted-foreground">无结果</p>}            </div>
+</div>
+<div>
+<h5 className="text-xs font-semibold mb-2">动态 LinUCB Top 3</h5>
+<div className="space-y-2">              {abResult.dynamicTop.map((s, i) => (                <div key={s.hit.siteId} ref={(el) => { abRowRefs.current.set("d:" + s.hit.siteId, el) }}>
+<p className="text-xs font-mono text-muted-foreground mb-1">#{i + 1} · 本地分数 {s.score.toFixed(4)}</p>
+<ResultRow hit={s.hit} q={abQuery} />
+</div>              ))}              {abResult.dynamicTop.length === 0 && <p className="text-xs text-muted-foreground">无结果</p>}            </div>
+</div>
+</div>      ) : (        !abLoading && <p className="text-xs text-muted-foreground">点击运行对比后，这里并排显示两套 Top 3。</p>      )}    </div>
+</CardContent>
           </Card>
     </div>
   )

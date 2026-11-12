@@ -6,6 +6,12 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { searchHref } from '@/lib/search-page'
 
+export interface CategorySubcategoryOption {
+  id: string
+  title: string
+  count: number
+}
+
 export interface CategorySiteFilterBarProps {
   totalCount: number
   categoryName: string
@@ -18,6 +24,10 @@ export interface CategorySiteFilterBarProps {
   categorySlug?: string | null
   /** 该分类在服务端的总站点数（分页后仍有更多时为 sites.length + hasMore 的下限值） */
   totalAcrossPages?: number | null
+  /** 站点数未达独立索引页门槛的子分类，直接在页内提供切片筛选 */
+  subcategories?: CategorySubcategoryOption[]
+  /** 是否为短剧专区：空结果改导流至追剧/看剧场景而非技术视频库 */
+  isDrama?: boolean
 }
 
 export function CategorySiteFilterBar({
@@ -26,16 +36,20 @@ export function CategorySiteFilterBar({
   topTags = [],
   categorySlug = null,
   totalAcrossPages = null,
+  subcategories = [],
+  isDrama = false,
 }: CategorySiteFilterBarProps) {
   const [query, setQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string | null>(null)
   const [matchedCount, setMatchedCount] = useState(totalCount)
   const [, startTransition] = useTransition()
   const filterInputId = useId()
 
-  const applyFilter = (newQuery: string, newTag: string | null) => {
+  const applyFilter = (newQuery: string, newTag: string | null, newSubcategoryId: string | null) => {
     const q = newQuery.trim().toLowerCase()
     const tag = newTag?.trim().toLowerCase() || null
+    const subId = newSubcategoryId?.trim() || null
 
     startTransition(() => {
       const items = document.querySelectorAll<HTMLElement>('#category-sites-list > li[data-site-item]')
@@ -46,11 +60,13 @@ export function CategorySiteFilterBar({
         const desc = item.getAttribute('data-desc') || ''
         const url = item.getAttribute('data-url') || ''
         const tags = item.getAttribute('data-tags') || ''
+        const categoryId = item.getAttribute('data-category-id') || ''
 
         const matchQuery = !q || title.includes(q) || desc.includes(q) || url.includes(q)
         const matchTag = !tag || tags.includes(tag)
+        const matchSub = !subId || categoryId === subId
 
-        if (matchQuery && matchTag) {
+        if (matchQuery && matchTag && matchSub) {
           item.style.display = ''
           count++
         } else {
@@ -68,22 +84,29 @@ export function CategorySiteFilterBar({
 
   const handleQueryChange = (val: string) => {
     setQuery(val)
-    applyFilter(val, selectedTag)
+    applyFilter(val, selectedTag, selectedSubcategoryId)
   }
 
   const handleTagClick = (tag: string) => {
     const nextTag = selectedTag === tag ? null : tag
     setSelectedTag(nextTag)
-    applyFilter(query, nextTag)
+    applyFilter(query, nextTag, selectedSubcategoryId)
+  }
+
+  const handleSubcategoryClick = (subId: string | null) => {
+    const nextSub = selectedSubcategoryId === subId ? null : subId
+    setSelectedSubcategoryId(nextSub)
+    applyFilter(query, selectedTag, nextSub)
   }
 
   const handleReset = () => {
     setQuery('')
     setSelectedTag(null)
-    applyFilter('', null)
+    setSelectedSubcategoryId(null)
+    applyFilter('', null, null)
   }
 
-  const isFiltering = Boolean(query || selectedTag)
+  const isFiltering = Boolean(query || selectedTag || selectedSubcategoryId)
 
   return (
     <div className="space-y-3 pt-2 pb-1">
@@ -156,6 +179,59 @@ export function CategorySiteFilterBar({
         </div>
       ) : null}
 
+      {/* 根分类内子切片快选（不跳转到独立薄页，页内实时过滤） */}
+      {subcategories.length > 0 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-xs">
+          <span className="text-[11px] text-muted-foreground shrink-0">分区筛选:</span>
+          <button
+            type="button"
+            onClick={() => handleSubcategoryClick(null)}
+            className={cn(
+              'px-2.5 py-1 rounded-lg text-[11px] shrink-0 transition-colors cursor-pointer flex items-center gap-1 border',
+              selectedSubcategoryId === null
+                ? 'bg-primary text-primary-foreground border-primary font-medium shadow-2xs'
+                : 'bg-muted/40 text-muted-foreground hover:text-foreground border-border/60 hover:bg-muted',
+            )}
+          >
+            <span>全部</span>
+            <span
+              className={cn(
+                'text-[10px] font-mono',
+                selectedSubcategoryId === null ? 'text-primary-foreground/80' : 'text-muted-foreground/60',
+              )}
+            >
+              {totalCount}
+            </span>
+          </button>
+          {subcategories.map((sub) => {
+            const isSelected = selectedSubcategoryId === sub.id
+            return (
+              <button
+                key={sub.id}
+                type="button"
+                onClick={() => handleSubcategoryClick(sub.id)}
+                className={cn(
+                  'px-2.5 py-1 rounded-lg text-[11px] shrink-0 transition-colors cursor-pointer flex items-center gap-1 border',
+                  isSelected
+                    ? 'bg-primary text-primary-foreground border-primary font-medium shadow-2xs'
+                    : 'bg-muted/40 text-muted-foreground hover:text-foreground border-border/60 hover:bg-muted',
+                )}
+              >
+                <span>{sub.title}</span>
+                <span
+                  className={cn(
+                    'text-[10px] font-mono',
+                    isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground/60',
+                  )}
+                >
+                  {sub.count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* 热门标签快选 */}
       {topTags.length > 0 && (
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-xs">
@@ -203,14 +279,25 @@ export function CategorySiteFilterBar({
               <span>全站搜索「{query}」</span>
             </Link>
           )}
-          <Link
-            href={`/videos?q=${encodeURIComponent(query || categoryName)}`}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors shadow-2xs"
-          >
-            <MonitorPlay className="w-3.5 h-3.5" />
-            <span>在技术视频库搜索相关教程</span>
-            <ArrowRight className="w-3 h-3" />
-          </Link>
+          {isDrama ? (
+            <Link
+              href="/scenes/watch-drama"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors shadow-2xs"
+            >
+              <MonitorPlay className="w-3.5 h-3.5" />
+              <span>去追剧场景页找平台</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          ) : (
+            <Link
+              href={`/videos?q=${encodeURIComponent(query || categoryName)}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors shadow-2xs"
+            >
+              <MonitorPlay className="w-3.5 h-3.5" />
+              <span>在技术视频库搜索相关教程</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          )}
           <button
             type="button"
             onClick={handleReset}

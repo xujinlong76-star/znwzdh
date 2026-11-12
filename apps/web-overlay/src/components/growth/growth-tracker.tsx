@@ -119,7 +119,7 @@ export function GrowthTracker() {
       awardedRoutes.current.add(key)
       const slug = decodeURIComponent(categoryMatch[1]!)
       recordGrowthEvent('category_visit', { categoryId: slug })
-      if (slug === 'duanju') recordGrowthEvent('drama_visit')
+      if (slug === 'duanju' || slug === 'short-drama') recordGrowthEvent('drama_visit')
       return
     }
     if (pathname === '/search' && searchParams?.get('q')) {

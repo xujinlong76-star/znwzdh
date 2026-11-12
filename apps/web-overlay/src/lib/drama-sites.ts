@@ -19,6 +19,7 @@ export interface DramaSiteLike {
 
 export interface DramaCategoryLike {
   id?: string
+  slug?: string | null
   title?: string
   items?: DramaSiteLike[]
   subCategories?: Array<{ items?: DramaSiteLike[] }>
@@ -31,10 +32,28 @@ export interface DramaSite {
   description?: string
 }
 
+const DRAMA_CATEGORY_REFS = new Set([
+  'duanju',
+  'short-drama',
+  'short-drama-free',
+  'short-drama-platform',
+  'reg-short-drama',
+  'reg-short-drama-free',
+  'reg-short-drama-platform',
+])
+
+/** 判断 slug / id 是否属于短剧专区或其子分类 */
+export function isDramaCategoryRef(ref: string | null | undefined): boolean {
+  const norm = (ref ?? '').trim().toLowerCase()
+  return Boolean(norm && DRAMA_CATEGORY_REFS.has(norm))
+}
+
 /** 从 /api/home/navigation 的返回里找短剧分类并摊平其站点（去重、剔除已失效/已停用）。 */
 export function collectDramaSites(navigationItems: unknown): DramaSite[] {
   const cats = Array.isArray(navigationItems) ? (navigationItems as DramaCategoryLike[]) : []
-  const drama = cats.find((c) => c?.id === 'duanju' || c?.title === '短剧')
+  const drama = cats.find(
+    (c) => c?.id === 'duanju' || c?.id === 'reg-short-drama' || c?.slug === 'short-drama' || c?.title === '短剧',
+  )
   if (!drama) return []
   const flat: DramaSite[] = []
   const seen = new Set<string>()

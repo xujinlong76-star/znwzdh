@@ -154,7 +154,8 @@ describe("writeVideosData 分片挂钩", () => {
     );
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    await ctx?.close();
     rmSync(dir, { recursive: true, force: true });
   });
 

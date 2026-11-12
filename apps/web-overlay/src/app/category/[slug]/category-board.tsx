@@ -6,7 +6,10 @@ import { JsonLd } from '@/components/json-ld'
 import { SiteFavicon } from '@/components/site-favicon'
 import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
 import { CategorySiteFilterBar } from '@/components/category-site-filter-bar'
+import { DramaCategoryBannerLazy } from '@/components/drama-category-banner-lazy'
+import { WatchlistAddButtonLazy } from '@/components/watchlist-add-button-lazy'
 import { ExternalLink, MonitorPlay, ArrowRight } from 'lucide-react'
+import { isDramaCategoryRef } from '@/lib/drama-sites'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { readSiteSettings } from '@/lib/site-config-source'
 import { externalLinkRelAttr } from '@/lib/site-settings'
@@ -82,22 +85,28 @@ function categorySortRank(c: HubCategory): number {
 }
 
 /** ref 既可能是 slug，也可能是还没被 301 干净的 uuid（历史行甚至没有 slug） */
+function resolveCategoryAliasRef(ref: string): string {
+  return ref === 'duanju' ? 'short-drama' : ref
+}
+
 function matchCategory<T extends { id: string; slug?: string | null; enabled?: boolean }>(
   categories: T[] | null,
   ref: string,
 ): T | null {
   if (!categories) return null
+  const resolved = resolveCategoryAliasRef(ref)
   return (
-    categories.find((c) => c.slug === ref && c.enabled !== false) ??
-    categories.find((c) => c.id === ref && c.enabled !== false) ??
+    categories.find((c) => (c.slug === ref || c.slug === resolved) && c.enabled !== false) ??
+    categories.find((c) => (c.id === ref || c.id === resolved) && c.enabled !== false) ??
     null
   )
 }
 
 export async function loadCategoryPage(ref: string, page: number): Promise<CategoryPageData> {
+  const resolvedRef = resolveCategoryAliasRef(ref)
   const [categories, res, rawCounts] = await Promise.all([
     loadCategories(300),
-    loadCategorySites(ref, PAGE_SIZE, (page - 1) * PAGE_SIZE, 60),
+    loadCategorySites(resolvedRef, PAGE_SIZE, (page - 1) * PAGE_SIZE, 60),
     loadActiveCategoryCounts(60),
   ])
   // 门槛判定与展示计数都按子树聚合：原始计数按单个类目 GROUP BY，
@@ -187,6 +196,35 @@ export async function CategoryBoard({
   const topTags = [...tagCounts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-CN'))
     .slice(0, TAG_LINKS)
+
+  const isDramaZone = category
+    ? isDramaCategoryRef(category.id) || isDramaCategoryRef(category.slug) || isDramaCategoryRef(category.title)
+    : isDramaCategoryRef(urlKey)
+
+  const pageSiteCountsByCategory = new Map<string, number>()
+  for (const site of sites) {
+    if (site.categoryId) {
+      pageSiteCountsByCategory.set(site.categoryId, (pageSiteCountsByCategory.get(site.categoryId) ?? 0) + 1)
+    }
+  }
+  const inPageSubcategories =
+    isDramaZone && isRootPage && categories && category
+      ? categories
+          .filter((c) => c.enabled !== false && c.parentId === category.id && (pageSiteCountsByCategory.get(c.id) ?? 0) > 0)
+          .sort((a, b) => categorySortRank(a) - categorySortRank(b))
+          .map((c) => ({
+            id: c.id,
+            title: categoryDisplayName(c, categories),
+            count: pageSiteCountsByCategory.get(c.id) ?? 0,
+          }))
+      : []
+
+  const freeDramaCount =
+    inPageSubcategories.find((c) => c.id === 'reg-short-drama-free' || c.title.includes('畅看'))?.count ??
+    sites.filter((s) => s.tags?.includes('免费')).length
+  const platformDramaCount =
+    inPageSubcategories.find((c) => c.id === 'reg-short-drama-platform' || c.title.includes('平台'))?.count ??
+    Math.max(0, sites.length - freeDramaCount)
 
   // 只显示「已翻过 + 当前页」的页码：总页数只能从 hasMore 推出来，
   // 向前渲染未来页码会把用户/爬虫送到尚未确认存在的第 N 页（404）。
@@ -289,27 +327,35 @@ export async function CategoryBoard({
             )
           ) : null}
 
-          {/* 跨生态：精选技术视频推荐 */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs text-foreground">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
-                <MonitorPlay className="w-4 h-4" />
-              </span>
-              <div className="min-w-0">
-                <span className="font-semibold text-foreground block text-sm">想系统学习「{name}」？</span>
-                <span className="text-muted-foreground text-xs block truncate">
-                  本站技术视频库收录 6,000+ 高质量课程与实战，直达相关教学资源
+          {isDramaZone ? (
+            <DramaCategoryBannerLazy
+              totalSites={totalInCategory || sites.length}
+              freeCount={freeDramaCount}
+              platformCount={platformDramaCount}
+            />
+          ) : (
+            /* 跨生态：精选技术视频推荐 */
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs text-foreground">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                  <MonitorPlay className="w-4 h-4" />
                 </span>
+                <div className="min-w-0">
+                  <span className="font-semibold text-foreground block text-sm">想系统学习「{name}」？</span>
+                  <span className="text-muted-foreground text-xs block truncate">
+                    本站技术视频库收录 6,000+ 高质量课程与实战，直达相关教学资源
+                  </span>
+                </div>
               </div>
+              <Link
+                href={`/videos?q=${encodeURIComponent(name)}`}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors shrink-0 text-xs shadow-2xs"
+              >
+                <span>查看精选视频</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
-            <Link
-              href={`/videos?q=${encodeURIComponent(name)}`}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors shrink-0 text-xs shadow-2xs"
-            >
-              <span>查看精选视频</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
+          )}
 
           {/* 根分类专属：子分类快捷直达轨 */}
           {isRootPage && related.length > 0 && (
@@ -343,6 +389,8 @@ export async function CategoryBoard({
               topTags={topTags}
               categorySlug={category ? categoryUrlKey(category) : null}
               totalAcrossPages={typeof res?.total === 'number' ? res.total : null}
+              subcategories={inPageSubcategories}
+              isDrama={isDramaZone}
             />
           )}
 
@@ -351,12 +399,13 @@ export async function CategoryBoard({
               <li
                 key={site.id}
                 data-site-item=""
+                data-category-id={site.categoryId ?? ''}
                 data-title={site.title.toLowerCase()}
                 data-desc={(site.description || '').toLowerCase()}
                 data-url={(site.url || '').toLowerCase()}
                 data-tags={(site.tags || []).join(' ').toLowerCase()}
               >
-                <div className="group relative flex items-center justify-between rounded-xl border border-border/70 p-2.5 hover:bg-muted/40 transition-colors">
+                <div className="group relative flex items-center justify-between gap-2 rounded-xl border border-border/70 p-2.5 hover:bg-muted/40 transition-colors">
                   <Link
                     href={`/site/${encodeURIComponent(site.id)}`}
                     className="flex items-center gap-3 min-w-0 flex-1 py-0.5"
@@ -368,24 +417,44 @@ export async function CategoryBoard({
                       className="w-6 h-6 rounded-md object-contain shrink-0"
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                        {site.title}
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                          {site.title}
+                        </span>
+                        {isDramaZone && site.tags?.includes('免费') ? (
+                          <span className="shrink-0 px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10px] font-medium">
+                            免费看
+                          </span>
+                        ) : null}
                       </span>
                       {site.description ? (
                         <span className="block text-xs text-muted-foreground truncate">{site.description}</span>
                       ) : null}
                     </span>
                   </Link>
-                  <a
-                    href={safeHref(site.url)}
-                    target="_blank"
-                    rel={externalRel}
-                    title={`新窗口直达 ${site.title} 官网`}
-                    aria-label={`新窗口直达 ${site.title} 官网`}
-                    className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-colors shrink-0 ml-2 cursor-pointer"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {isDramaZone ? (
+                      <WatchlistAddButtonLazy
+                        platform={{
+                          siteId: site.id,
+                          title: site.title,
+                          href: safeHref(site.url),
+                          icon: site.iconKey ?? undefined,
+                        }}
+                        variant="light"
+                      />
+                    ) : null}
+                    <a
+                      href={safeHref(site.url)}
+                      target="_blank"
+                      rel={externalRel}
+                      title={`新窗口直达 ${site.title} 官网`}
+                      aria-label={`新窗口直达 ${site.title} 官网`}
+                      className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-colors shrink-0 cursor-pointer"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
                 </div>
               </li>
             ))}

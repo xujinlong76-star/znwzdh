@@ -30,9 +30,10 @@ async function loadCardData(ref: string) {
   ])
   if (!categories) return null
   const counts = descendantSiteCounts(categories, rawCounts)
+  const resolvedRef = ref === 'duanju' ? 'short-drama' : ref
   const category =
-    categories.find((c) => c.slug === ref && c.enabled !== false) ??
-    categories.find((c) => c.id === ref && c.enabled !== false) ??
+    categories.find((c) => (c.slug === ref || c.slug === resolvedRef) && c.enabled !== false) ??
+    categories.find((c) => (c.id === ref || c.id === resolvedRef) && c.enabled !== false) ??
     null
   if (!category) return null
   const key = categoryUrlKey(category)

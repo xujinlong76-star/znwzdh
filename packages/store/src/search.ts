@@ -1296,7 +1296,8 @@ export class SearchEngine {
     let target = byId[0];
     if (!target) {
       // /category/{slug} 的读路径要把 slug 直接透给检索，否则前端得先换成 id 多一跳
-      const bySlug = (await this.rawRows(`SELECT id, anchor FROM categories WHERE slug = ? LIMIT 1`, [norm.toLowerCase()])) as unknown as Array<{ id?: string; anchor?: string }>;
+      const slugNorm = norm.toLowerCase() === "duanju" ? "short-drama" : norm.toLowerCase();
+      const bySlug = (await this.rawRows(`SELECT id, anchor FROM categories WHERE slug = ? LIMIT 1`, [slugNorm])) as unknown as Array<{ id?: string; anchor?: string }>;
       target = bySlug[0];
     }
     if (!target) {

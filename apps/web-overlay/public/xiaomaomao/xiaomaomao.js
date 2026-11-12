@@ -879,7 +879,7 @@
   function pageTopic() {
     var p = '';
     try { p = window.location.pathname || ''; } catch (e) { /* 忽略 */ }
-    if (p.indexOf('/videos') === 0 || p.indexOf('/category/duanju') === 0) {
+    if (p.indexOf('/videos') === 0 || p.indexOf('/category/duanju') === 0 || p.indexOf('/category/short-drama') === 0) {
       return { greet: '追剧时间到！我是小猫猫，免费短剧我熟，点我帮你找', tip: '想找免费短剧，跟我说一声，我带你去红果、DramaWave' };
     }
     if (p.indexOf('/me') === 0) {

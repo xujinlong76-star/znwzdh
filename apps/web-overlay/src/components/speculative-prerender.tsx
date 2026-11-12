@@ -126,7 +126,7 @@ export function SpeculativePrerenderManager() {
       }
     }
 
-    // 2. 悬停微意图嗅探：卡片 touchstart / mouseenter 即刻赋予 0.85 置信度推测
+    // 2. 悬停微意图嗅探：卡片 touchstart / mouseenter 即刻赋予 0.82 置信度推测
     const handlePointerOver = (e: MouseEvent) => {
       const target = (e.target as HTMLElement)?.closest('a[href]') as HTMLAnchorElement | null
       if (!target || !target.href) return
@@ -135,7 +135,7 @@ export function SpeculativePrerenderManager() {
         updateSpeculationRules([
           {
             url: href,
-            confidence: 0.88,
+            confidence: 0.82,
             predictedArrivalMs: 120,
           },
         ])

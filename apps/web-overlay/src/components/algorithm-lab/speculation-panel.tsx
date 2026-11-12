@@ -27,7 +27,7 @@ export function SpeculationPanel() {
     { url: 'https://navhub.dev/tech/vue', confidence: 0.78, predictedArrivalMs: 240 },
     { url: 'https://navhub.dev/tech/svelte', confidence: 0.52, predictedArrivalMs: 380 },
     { url: 'https://navhub.dev/api/tokens/revoke', confidence: 0.95, predictedArrivalMs: 90 },
-    { url: 'https://navhub.dev/admin/dashboard', confidence: 0.88, predictedArrivalMs: 130 },
+    { url: 'https://navhub.dev/admin/dashboard', confidence: 0.82, predictedArrivalMs: 130 },
   ])
 
   const compiledSpecRules = useMemo(() => {

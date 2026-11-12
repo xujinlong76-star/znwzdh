@@ -16,18 +16,20 @@ import { encryptVault, decryptVault, type EncryptedVaultPayload, type VaultItem 
 
 export function VaultPanel() {
   /* --- 模块 5：零知识 E2EE 金库状态 --- */
-  const [vaultPassword, setVaultPassword] = useState('SecretDev123!')
+  const [vaultPassword, setVaultPassword] = useState('')
   const [vaultItems] = useState<VaultItem[]>([
     { id: '1', title: '内部 GitLab 敏捷看板', url: 'https://gitlab.corp.internal/board', isInternal: true },
     { id: '2', title: '生产数据库只读审计', url: 'https://10.0.8.50:9000/db', isInternal: true },
   ])
   const [encryptedPayload, setEncryptedPayload] = useState<EncryptedVaultPayload | null>(null)
-  const [decryptInputPassword, setDecryptInputPassword] = useState('SecretDev123!')
+  const [decryptInputPassword, setDecryptInputPassword] = useState('')
   const [decryptedItems, setDecryptedItems] = useState<VaultItem[] | null>(null)
   const [vaultError, setVaultError] = useState<string | null>(null)
   const [isEncrypting, setIsEncrypting] = useState(false)
 
   const handleEncryptVault = async () => {
+    if (vaultPassword.length < 6) { setVaultError('口令至少 6 位')
+      return }
     setIsEncrypting(true)
     setVaultError(null)
     try {
@@ -42,6 +44,8 @@ export function VaultPanel() {
   }
 
   const handleDecryptVault = async () => {
+    if (decryptInputPassword.length < 6) { setVaultError("口令至少 6 位")
+      return }
     if (!encryptedPayload) return
     setVaultError(null)
     try {
@@ -150,7 +154,7 @@ export function VaultPanel() {
                   <div className="space-y-1.5">
                     <label htmlFor="vault-decrypt-passphrase" className="text-xs font-semibold text-muted-foreground">输入解密密码：</label>
                     <Input id="vault-decrypt-passphrase"
-                      type="text"
+                      type="password"
                       value={decryptInputPassword}
                       onChange={(e) => setDecryptInputPassword(e.target.value)}
                       placeholder="输入正确或错误密码进行测试..."

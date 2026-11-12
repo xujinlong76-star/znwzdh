@@ -50,7 +50,7 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     return {
       ok: true,
       mode: ctx.config.mode,
-      capabilities: ctx.capabilities,
+      capabilities: { ...ctx.capabilities, semantic: Boolean(ctx.embedding && ctx.vectors && ctx.embedding.ready()) },
       db: { ok: dbOk },
       stats,
       navSnapshot,

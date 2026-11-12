@@ -231,62 +231,62 @@ export function AlgorithmLab() {
 
 
         {/* ================= 1. LinUCB 上下文多臂老虎机 ================= */}
-        <TabsContent value="linucb" className="mt-6">
+        <TabsContent value="linucb" forceMount className="mt-6">
           <LinucbPanel />
         </TabsContent>
 
         {/* ================= 2. 庞加莱双曲空间平替几何 ================= */}
-        <TabsContent value="hyperbolic" className="mt-6">
+        <TabsContent value="hyperbolic" forceMount className="mt-6">
           <HyperbolicPanel />
         </TabsContent>
 
         {/* ================= 3. 页面健康与防假 200 巡检 ================= */}
-        <TabsContent value="health" className="mt-6">
+        <TabsContent value="health" forceMount className="mt-6">
           <HealthPanel />
         </TabsContent>
 
         {/* ================= 4. 0-RTT 推测性意图执行 ================= */}
-        <TabsContent value="intent" className="mt-6">
+        <TabsContent value="intent" forceMount className="mt-6">
           <IntentPanel />
         </TabsContent>
 
         {/* ================= 5. 零知识 E2EE 加密金库 ================= */}
-        <TabsContent value="vault" className="mt-6">
+        <TabsContent value="vault" forceMount className="mt-6">
           <VaultPanel />
         </TabsContent>
 
         {/* ================= 6. 知识拓扑星图与多跳寻路 ================= */}
-        <TabsContent value="graph" className="mt-6">
+        <TabsContent value="graph" forceMount className="mt-6">
           <GraphPanel />
         </TabsContent>
 
         {/* ================= 7. 视觉指纹分析与色彩和谐度 ================= */}
-        <TabsContent value="visual" className="mt-6">
+        <TabsContent value="visual" forceMount className="mt-6">
           <VisualPanel />
         </TabsContent>
 
         {/* ================= 8. 端侧 WebMCP 运行态网桥 ================= */}
-        <TabsContent value="webmcp" className="mt-6">
+        <TabsContent value="webmcp" forceMount className="mt-6">
           <WebMcpPanel />
         </TabsContent>
 
         {/* ================= 9. 客户端联邦协同与差分隐私推荐 ================= */}
-        <TabsContent value="federated" className="mt-6">
+        <TabsContent value="federated" forceMount className="mt-6">
           <FederatedPanel />
         </TabsContent>
 
         {/* ================= 10. 自适应推测性预渲染（W3C Speculation Rules） ================= */}
-        <TabsContent value="speculation" className="mt-6">
+        <TabsContent value="speculation" forceMount className="mt-6">
           <SpeculationPanel />
         </TabsContent>
 
         {/* ================= 11. 动态 WebMCP 工具合成器与 SSRF 沙箱 ================= */}
-        <TabsContent value="synthesizer" className="mt-6">
+        <TabsContent value="synthesizer" forceMount className="mt-6">
           <SynthesizerPanel />
         </TabsContent>
 
         {/* ================= 12. P2P Mesh 去中心化状态向量共识 ================= */}
-        <TabsContent value="mesh" className="mt-6">
+        <TabsContent value="mesh" forceMount className="mt-6">
           <MeshPanel />
         </TabsContent>
       </Tabs>

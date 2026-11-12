@@ -1161,7 +1161,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-medium truncate">{item.title}</span>
-                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                            <span className="block text-xs text-muted-foreground truncate mt-0.5">
                               {item.description}
                             </span>
                           </span>
@@ -1307,7 +1307,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           </div>
                           {rel.note && (
-                            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                            <p className="text-xs text-muted-foreground truncate mt-0.5">
                               💡 {rel.note}
                             </p>
                           )}
@@ -1420,7 +1420,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           </span>
                           {p.description && (
-                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                            <span className="block text-xs text-muted-foreground truncate mt-0.5">
                               <Highlighted text={p.description} query={query} />
                             </span>
                           )}
@@ -1623,7 +1623,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           <Highlighted text={site.title} query={query} />
                         </span>
                         {site.description && (
-                          <span className="text-xs text-muted-foreground line-clamp-1">
+                          <span className="text-xs text-muted-foreground truncate">
                             <Highlighted text={site.description} query={query} />
                           </span>
                         )}

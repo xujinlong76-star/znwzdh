@@ -15,7 +15,7 @@
 |---|---|---|---|
 | 提交信息规范（Conventional Commits） | **`commit-msg` 钩子**（由 `scripts/install-git-hooks.mjs` 生成） | 原始 message 只有本地拿得到；CI 看到的是 PR 标题/压缩后信息，拦不住 | <1s |
 | 跳钩子三行声明 | **`commit-msg` 钩子**（同一入口） | 与上一条同源，一次解析 | <1s |
-| 覆盖率门禁 | **CI `coverage` 作业**（判定，2026-11-06 接线）；`pnpm coverage` 本地同口径 | 覆盖率必须基于全量测试；pre-commit 是暂存区子集，算覆盖率是假数字。阈值 lines≥84% / functions≥85%（= 2026-11-06 全量实测 85.68/86.35 留 1.5pct 余量），低于即红；收紧时同步改 ci.yml 里 check-coverage 的参数 | 见 §4 |
+| 覆盖率门禁 | **CI `coverage` 作业**（判定，2026-11-06 接线）；`pnpm coverage` 本地同口径 | 覆盖率必须基于全量测试；pre-commit 是暂存区子集，算覆盖率是假数字。阈值 lines≥83.68% / functions≥84.35%（= 2026-11-06 全量实测 85.68/86.35 减 2pp 容差），低于即红；收紧时只改 `coverage-thresholds.json`（独立 PR），ci.yml 里没有阈值参数 | 见 §4 |
 | PR 模板必填校验 | 阶段 1：只落模板（零 CI 改动）；阶段 2（可选）：`pr-hygiene` 作业读 `github.event.pull_request.body` | 先看两周遵守率再上硬门禁 | 0s / <1min |
 | 锁文件一致性 | 已有 `pnpm install --frozen-lockfile` | 无需新增 | — |
 | overlay 双镜像 / 扩展 / 上游 ref / 语法 / typecheck / 选测 | 已有 `pre-commit` | 已在跑，保持 | 30s–6min |

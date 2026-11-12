@@ -209,7 +209,7 @@ export const DEFUSED_GATES = [
     env: [{ id: "coverage-install", label: "pnpm install --frozen-lockfile" }],
     gates: [
       { id: "vitest-coverage", label: "全量测试（含覆盖率插桩）" },
-      { id: "coverage-threshold", label: "覆盖率阈值判定（lines≥84% / functions≥85%）" },
+      { id: "coverage-threshold", label: "覆盖率阈值判定（lines≥83.68% / functions≥84.35%）" },
     ],
   },
   {

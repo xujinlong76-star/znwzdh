@@ -323,7 +323,7 @@
    "job": "coverage",
    "blocks": true,
    "test": "apps/web/test/ci-gate.test.ts",
-   "why": "覆盖率门禁（2026-11-06 接线）：阈值 lines≥84% / functions≥85%（2026-11-06 全量实测 85.68/86.35 留 1.5pct 余量）；低于即红，收紧时同步改 ci.yml 里 check-coverage 的参数"
+   "why": "覆盖率门禁（2026-11-06 接线）：阈值 lines≥83.68% / functions≥84.35%（2026-11-06 全量实测 85.68/86.35 减 2pp 容差）；低于即红，收紧时只改 coverage-thresholds.json（独立 PR），ci.yml 里没有阈值参数"
   }
  ]
 }

@@ -46,7 +46,7 @@
 - 只统计 `apps/api/src/**` 与 `packages/*/src/**`；`apps/web` 是 vendored 上游底座，不纳入。
 - `all` 开启：**没被任何测试 import 的文件也以 0% 计入**——这正是「整文件零覆盖的写端点」的信号。
 - 产物：`coverage/coverage-summary.json`（脚本读取）与 `coverage-final.json`（逐行明细）。
-- 当前阶段：**W0 只出数，不判定**（`coverage-thresholds.json` 的 `stage: "W0"`）。
+- 当前阶段：**W1 钉住现状**（`coverage-thresholds.json` 的 `stage: "W1"`），CI 硬门禁已上线。
 
 历史实测（2026-10-23，仅供对照，以 W0 重新实测为准）：
 
@@ -65,10 +65,10 @@
 
 | 层 | 内容 | 初始值 | 语义 |
 |---|---|---|---|
-| A 全局 floor | lines / functions / branches / statements | W0 实测向下取整 1 个点 | ratchet，只升不降 |
-| B 分区域 floor | `apps/api`、`packages/store`、`packages/core`、`packages/ai`、`packages/mcp` 各自判定 | 各区域 W0 实测 | 防止高覆盖区域掩盖低覆盖区域 |
-| C 关键文件 floor | `packages/store/src/repository.ts`、`apps/api/src/server.ts`、`apps/api/src/auth.ts`、`apps/api/src/config.ts`、`packages/ai/src/ssrf.ts`、`apps/api/src/routes/*.ts` | 各文件 W0 实测（安全边界目标 90%+） | 数据/安全边界必须高 |
-| D 改动行覆盖 | patch 改动行 ≥70%；新增文件 ≥50%；新增文件 0% 直接 fail | 固定 | 防「存量不动、新增裸奔」 |
+| A 全局 floor | lines / functions / branches / statements | W0 实测 − 2pp（lines 83.68 / functions 84.35 / branches 69.68） | ratchet，只升不降 |
+| B 分区域 floor | `apps/api`、`packages/store`、`packages/core`、`packages/ai`、`packages/mcp` 各自判定 | 各区域 W0 实测 − 2pp | 防止高覆盖区域掩盖低覆盖区域 |
+| C 关键文件 floor | `packages/store/src/repository.ts`、`apps/api/src/server.ts`、`apps/api/src/auth.ts`、`apps/api/src/config.ts`、`packages/ai/src/ssrf.ts`、`apps/api/src/routes/*.ts` | 未逐文件实测（W1 只登记清单，`enforced: false`，不阻断；W3 起按 +3/+6/+9/+12 抬） | 数据/安全边界必须高 |
+| D 改动行覆盖 | （计划值，W3/W5 上线后生效）patch 改动行 ≥70%；新增文件 ≥50%；新增文件 0% 直接 fail | W3/W5 分别上线（当前未启用） | 防「存量不动、新增裸奔」 |
 
 **单一事实源 = 仓库根 `coverage-thresholds.json`**（纳入版本控制）。不使用 vitest 原生 `coverage.thresholds`：它只支持全局 + glob，覆盖不了 patch 覆盖与新增文件拦截，且两套阈值会打架。
 
@@ -118,7 +118,7 @@
 | `--per-area` / `--changed-files` / `--github-summary` / `--json` 增 `uncoveredLines` | P1 待做 | — |
 | `--list-zero` / PR 评论机器人 | P2 待做 | — |
 
-> 单一事实源 `coverage-thresholds.json` 的 `stage: W1` 表示「钉住现状、只降不升」；
+> 单一事实源 `coverage-thresholds.json` 的 `stage: W1` 表示「钉住现状、只升不降」；
 > `patch.enabled` / `requireCoveredNew.enabled` 当前为 `false`，与路线图 W3/W5 对齐，不是漏做。
 
 ### 3.6 CI 落点与失败呈现

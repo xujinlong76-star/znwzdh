@@ -1,5 +1,5 @@
 {
-  "_note": "覆盖率阈值单一事实源（docs/TESTING-STRATEGY.md §3.2）。由 2026-11-06 W0 全量实测生成，stage=W1 表示「钉住现状、只降不升」。每两周的收紧必须是独立 PR，禁止在功能 PR 里悄悄调低。",
+  "_note": "覆盖率阈值单一事实源（docs/TESTING-STRATEGY.md §3.2）。由 2026-11-06 W0 全量实测生成，stage=W1 表示「钉住现状、只升不降」。每两周的收紧必须是独立 PR，禁止在功能 PR 里悄悄调低。",
   "stage": "W1",
   "generatedAt": "2026-11-06T00:00:00+08:00",
   "baseline": {

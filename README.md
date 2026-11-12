@@ -240,7 +240,7 @@ docker compose --profile standard up -d
 
 ## 测试
 
-- Vitest：覆盖 `packages/**`、`apps/api`、`apps/web/test`、`scripts/**`；覆盖率门禁在 `coverage-thresholds.json`（2026-11-06 基线：641 文件 / 7,235 用例，总行覆盖 85.68%、分支 71.68%；`packages/mcp` 分支仅 58.96%）。
+- Vitest：覆盖 `packages/**`、`apps/api`、`apps/web/test`、`scripts/**`；覆盖率门禁在 `coverage-thresholds.json`（2026-11-06 基线：641 文件 / 7,235 用例，总行覆盖 85.68%、分支 71.68%；`packages/mcp` 分支 60.96%（W1 阈值 58.96%））。
 - Playwright：`e2e/` 24 个 spec、单 worker、独立 E2E 库，覆盖搜索、工作台、管理后台 token / 恢复 / 插件等。
 - 安全测试：`apps/api/test/security-readiness.test.ts` 22/22（生产拒绝不安全启动、CORS 默认值等）。
 

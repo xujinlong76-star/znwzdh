@@ -1812,6 +1812,19 @@
                 "云平台",
                 "全栈"
               ]
+            },
+            {
+              "id": "nav-43e27b209ff8",
+              "title": "Cloudflare Pages",
+              "href": "https://www.cloudflare.com/products/pages/",
+              "description": "Cloudflare 的静态站与全栈前端托管：Git 推送即部署，全球边缘网络分发，免费额度覆盖多数个人项目。",
+              "icon": "https://www.cloudflare.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "静态托管",
+                "边缘网络",
+                "部署"
+              ]
             }
           ]
         }

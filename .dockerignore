@@ -36,3 +36,9 @@ data/**
 **/*.db-shm
 *.sqlite
 **/*.sqlite
+
+# 前端覆盖层测试目录不进 Web 镜像：test/*.test.ts 相对引用
+# ../../../packages/* 源码做一致性校验，而生产镜像不含 packages/；
+# next build 会做类型检查（ignoreBuildErrors=false，S-6 有意保留），
+# test/ 进镜像会在 4 处报 TS2307。test/ 的类型由 CI web-typecheck 把关。
+apps/web-overlay/test

@@ -83,8 +83,9 @@ ENV NODE_ENV=production \
     NAVHUB_HOME_CARDS_PER_GROUP=4
 
 # ---- 镜像链的类型 / lint 判定去了哪里（显式声明，不是遗漏）----
-# 本镜像只跑一条 `pnpm build`，而 next.config.js 的 typescript.ignoreBuildErrors=true
-# 让 next build 的内置类型检查失效。全量判定在 CI 的 test-web 作业里：
+# 本镜像只跑一条 pnpm build；next.config.js 的 typescript.ignoreBuildErrors=false
+# 是 2026-11-09 S-6 有意恢复的类型门禁（若再引入类型错误应修类型而不是关开关），
+# 所以 next build 会在镜像内做类型检查。全量 typecheck 仍在 CI 的 test-web 作业里复核：
 #     pnpm --filter navsphere exec tsc --noEmit        （step id: web-typecheck）
 #     pnpm --filter navsphere exec eslint . --max-warnings 316
 # 在镜像层重跑这两条会引入两个新风险：tsc 要等 next build 生成 next-env.d.ts 与
@@ -92,6 +93,9 @@ ENV NODE_ENV=production \
 # 与仓库里那条 --max-warnings 316 不是同一套。所以这里选「显式信任 + 机器校验」：
 # 下面这行锚点由 scripts/check-ci-gate.mjs 第 8 项双向核对——Dockerfile 缺它、
 # 或它指向的步骤在 ci.yml 里消失 / 不再含 tsc --noEmit，都直接判红。
+# 注意：overlay 的 test/ 不进镜像（见 .dockerignore）——其中一致性校验测试相对
+# 引用 ../../../packages/* 源码，而生产镜像不含 packages/；test/ 进镜像会在 4 处
+# 报 TS2307 打断构建。test/ 的类型由 CI 的 web-typecheck（仓库内 tsc）把关。
 # NAVHUB-TYPE-TRUST: test-web/web-typecheck
 
 # 生产构建（不使用 standalone：避免 Windows/受限环境下创建符号链接失败）

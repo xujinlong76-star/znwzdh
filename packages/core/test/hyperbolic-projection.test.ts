@@ -91,4 +91,12 @@ describe("embedding 的双曲投影", () => {
     expect(route).not.toMatch(/slice\(0,\s*16\)/);
     expect(route).not.toMatch(/idx % 2 === 0 \? 0\.85 : 0\.9/);
   });
+  it("MCP 的 get_alternatives 也用全维投影，缺向量不编坐标", () => {
+    // 守卫只钉住 rank.ts 时，discovery.ts 的截断投影又回来了：这条钉的是 MCP 那份。
+    const handler = readFileSync(fileURLToPath(new URL("../../../packages/mcp/src/handlers/discovery.ts", import.meta.url)), "utf8");
+    expect(handler).toContain("projectEmbeddingToBall");
+    expect(handler).not.toContain("slice(0, 16)");
+    expect(handler).not.toContain("slice(0,16)");
+    expect(handler).not.toContain("idx % 2 === 0 ? 0.85 : 0.9");
+  });
 });

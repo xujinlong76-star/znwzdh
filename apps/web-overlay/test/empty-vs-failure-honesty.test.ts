@@ -102,8 +102,11 @@ describe('插件市场「加载更多」：失败不许改写总数', () => {
   const src = stripComments(read('src/components/plugin-market-board.tsx'))
 
   it('追加分页失败时保留原有 items 与 total', () => {
-    expect(src).toContain('if (!(append && failed))')
-    const guardAt = src.indexOf('if (!(append && failed))')
+    // 守卫现为组合条件：追加失败与静默失败都不许覆盖（静默分支见
+    // plugin-install-ux.test.ts「SSR 首帧没有身份」一节）；断言只钉
+    // append-failed 这一半，免得下次守卫再扩展时本测试又过期。
+    expect(src).toContain('if (!(append && failed)')
+    const guardAt = src.indexOf('if (!(append && failed)')
     const totalAt = src.indexOf('setTotal(res.total)', guardAt)
     expect(guardAt).toBeGreaterThan(-1)
     expect(totalAt).toBeGreaterThan(guardAt)

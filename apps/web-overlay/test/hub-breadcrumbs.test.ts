@@ -129,13 +129,18 @@ describe("枢纽面包屑与合集详情元数据", () => {
     expect(src).toContain("loadMarketPluginList(listQuery)");
   });
 
-  it("plugin-market-board.tsx 是客户端岛：种子状态 + 单次跳过重取", () => {
+  it("plugin-market-board.tsx 是客户端岛：种子状态 + 主列表单次跳过、精选区挂载同步", () => {
     const src = overlayFile("src/components/plugin-market-board.tsx");
     expect(src).toContain("'use client'");
     expect(src).toContain("initialItems");
     expect(src).toContain("initialFeatured");
-    // ref 单次消费：不能用粗守卫（会把筛选重取一起吃掉）
+    // 主列表 ref 单次消费：不能用粗守卫（会把筛选重取一起吃掉）
     expect(src).toContain("skipFirstLoad");
-    expect(src).toContain("skipFirstSide");
+    // 精选区没有 skipFirstSide：SSR 首帧没有浏览器身份，挂载后必须静默
+    // 同步一次补已装/星标态（跳过会让装过的插件一直显示「安装」），且等
+    // 地址栏筛选解析完（filtersReady）再取——定性见 plugin-install-ux.test.ts
+    //「SSR 首帧没有身份」一节；本文件此前断言 skipFirstSide 是过期断言。
+    expect(src).toContain("if (!filtersReady || hasFilter) return");
+    expect(src).not.toContain("skipFirstSide");
   });
 });

@@ -63,7 +63,6 @@ export function LinucbPanel() {
     for (const ch of CHANNELS) out[ch] = Number((w[ch] ?? 0).toFixed(2))
     return out
     // tick 是刻意的重算触发器：引擎原地改模型，引用不变
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, banditQuery, tick])
 
   /** 臂的点击次数（纯展示统计，与引擎状态分开维护） */

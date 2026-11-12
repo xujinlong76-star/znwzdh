@@ -7,8 +7,7 @@ import {
 } from '@/lib/video-spaced-repetition'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
-import { BookOpen, RotateCcw, Check, Sparkles, BrainCircuit } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Check, BrainCircuit } from 'lucide-react'
 
 interface VideoFlashcardDeckProps {
   open: boolean

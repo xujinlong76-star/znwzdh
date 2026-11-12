@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react'
 import {
-  CURATED_TRENDING_TOPICS,
   type TrendingHarvestResult,
 } from '@/lib/video-trending-harvester'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/registry/new-york/ui/dialog'
@@ -15,16 +14,12 @@ import {
   RefreshCw,
   Terminal,
   Layers,
-  ArrowRight,
   Eye,
-  Play,
   Radar,
   Filter,
   Check,
   Compass,
   Tag,
-  Clock,
-  Award
 } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 import { cn } from '@/lib/utils'

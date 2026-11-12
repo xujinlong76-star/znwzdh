@@ -9,7 +9,6 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   parseUniversalBookmarks,
   type ParsedUniversalItem,
@@ -17,14 +16,11 @@ import {
 } from '@/lib/favorites-export-import'
 import {
   Upload,
-  FileText,
   FileCode,
   Folder,
   CheckCircle2,
-  AlertCircle,
   Loader2,
   Sparkles,
-  X,
 } from 'lucide-react'
 
 export interface UniversalBookmarkModalProps {

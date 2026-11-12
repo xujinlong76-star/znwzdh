@@ -10,7 +10,6 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import {
-  Activity,
   Award,
   Brain,
   BrainCircuit,
@@ -19,7 +18,6 @@ import {
   ChevronDown,
   Clock,
   Code2,
-  Cpu,
   DownloadCloud,
   FileText,
   Flame,
@@ -39,8 +37,6 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
-  SlidersHorizontal,
-  Terminal,
   Timer,
   Users,
   Webhook,

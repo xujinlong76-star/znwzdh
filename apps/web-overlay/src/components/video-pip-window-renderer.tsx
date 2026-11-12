@@ -7,7 +7,7 @@ import {
 } from '@/lib/video-document-pip'
 import { buildVideoPipContent } from '@/lib/video-pip-content'
 import { Button } from '@/registry/new-york/ui/button'
-import { PictureInPicture, ExternalLink, Copy, Check } from 'lucide-react'
+import { PictureInPicture } from 'lucide-react'
 
 interface VideoPipWindowRendererProps {
   videoTitle: string

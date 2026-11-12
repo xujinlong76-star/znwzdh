@@ -10,7 +10,7 @@ import {
   type TechnicalTermDefinition,
 } from '@/lib/video-bilingual-transcriber'
 import { Popover, PopoverContent, PopoverTrigger } from '@/registry/new-york/ui/popover'
-import { Sparkles, Globe, BookOpen } from 'lucide-react'
+import { BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface VideoKaraokeSubtitlesProps {

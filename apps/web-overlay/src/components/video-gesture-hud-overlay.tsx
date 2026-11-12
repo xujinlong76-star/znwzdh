@@ -1,12 +1,11 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   type RecognizedGestureEvent,
-  AirGestureTracker,
 } from '@/lib/video-air-gesture-tracker'
 import { Button } from '@/registry/new-york/ui/button'
-import { Hand, Camera, Eye, Zap, VolumeX, Play, Pause, ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react'
+import { Hand, Camera, Eye, VolumeX, Play, Pause, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface VideoGestureHudOverlayProps {

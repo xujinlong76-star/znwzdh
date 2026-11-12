@@ -181,7 +181,6 @@ export function AiFinderPanel() {
     void run(target.query, target.id)
     document.getElementById('ai-finder')?.scrollIntoView({ block: 'start' })
     // run 每次渲染重建，这里只以「目标场景是否已就绪」为触发条件
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenes])
 
   return (

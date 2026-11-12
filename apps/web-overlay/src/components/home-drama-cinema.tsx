@@ -119,7 +119,6 @@ export function HomeDramaCinema() {
               className="group relative w-36 shrink-0 overflow-hidden rounded-2xl sm:w-44"
               title={`${p.title} · 去短剧专区`}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={p.data} alt={p.title} width={p.width} height={p.height} className="aspect-[440/784] w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
               <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2.5 pt-8 text-sm font-semibold">
                 {p.title}
@@ -190,7 +189,6 @@ export function HomeDramaCinema() {
             if (!link) return null
             return (
               <Link key={b.key} href={link.href} className="group relative overflow-hidden rounded-2xl" title={link.caption}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={b.data} alt={b.title} width={b.width} height={b.height} className="aspect-[1000/561] w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
                 <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-3 pb-2 pt-6 text-sm font-semibold">
                   {link.caption}

@@ -206,8 +206,8 @@ export function fitWeibullByMoments(lifetimesDays: number[]): WeibullParams {
 
   let lo = 0.2;
   let hi = 20;
-  let flo = f(lo);
-  let fhi = f(hi);
+  const flo = f(lo);
+  const fhi = f(hi);
   if (!Number.isFinite(flo) || !Number.isFinite(fhi) || flo * fhi > 0) {
     return { ...DEFAULT_WEIBULL };
   }

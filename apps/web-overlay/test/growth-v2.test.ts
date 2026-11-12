@@ -168,7 +168,7 @@ describe('同站硬化与收藏净增锁', () => {
   })
 
   it('收藏同一站：终身只给 1 次分，取消再加也是 0', () => {
-    let p = emptyProfile(at(11, 9))
+    const p = emptyProfile(at(11, 9))
     const first = awardEvent(p, 'favorite_add', { siteId: 'site-1' }, at(11, 9))
     expect(first.gained).toBe(30)
     const again = awardEvent(first.profile, 'favorite_add', { siteId: 'site-1' }, at(11, 9))

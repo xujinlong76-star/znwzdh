@@ -7,7 +7,7 @@ import {
 } from '@/lib/video-p2p-chunk-swarm'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
-import { Network, Zap, ShieldCheck, ArrowDownCircle, ArrowUpCircle, Radio } from 'lucide-react'
+import { Network, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface VideoP2PSwarmHudProps {

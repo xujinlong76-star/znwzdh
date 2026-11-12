@@ -18,7 +18,6 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import {
   Search,
-  Command,
   Sparkles,
   Terminal,
   ArrowRight,
@@ -51,7 +50,6 @@ import {
   BookOpen,
   Video,
   Flame,
-  Trophy,
   Star,
   Tag,
   PlusCircle,
@@ -89,7 +87,6 @@ import { getModifierKey } from '@/lib/platform'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
-import { applyThemeTokens } from '@/lib/plugins/theme-runtime'
 
 // 这些是 Spotlight 的「按需面板」，只在对应快捷键/指令被激活时才需要。
 // 静态 import 会把它们全部塞进全局首屏 chunk（Spotlight 挂在 Providers 上），

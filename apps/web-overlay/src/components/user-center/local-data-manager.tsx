@@ -18,11 +18,6 @@ import {
   Layers,
   History,
   Palette,
-  CheckCircle2,
-  AlertCircle,
-  FileJson,
-  Trash2,
-  RefreshCw,
   HardDriveDownload,
   Loader2,
 } from 'lucide-react'

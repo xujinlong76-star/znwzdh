@@ -8,7 +8,7 @@ import {
 } from '@/lib/video-audio-stem-separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
-import { Sliders, Volume2, VolumeX, Radio, Sparkles, Activity } from 'lucide-react'
+import { Sliders } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface VideoAudioStemMixerDialogProps {

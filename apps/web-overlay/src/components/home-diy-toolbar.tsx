@@ -15,7 +15,6 @@ import {
   Wand2,
   Undo2,
   Redo2,
-  LayoutGrid,
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'

@@ -117,7 +117,7 @@ describe('设为首页领取与加速', () => {
   })
 
   it('加速只乘领取之后赚到的经验（×1.5 向下取整）', () => {
-    let p = claimHomepageReward(emptyProfile(day('2026-11-10')), day('2026-11-10')).profile
+    const p = claimHomepageReward(emptyProfile(day('2026-11-10')), day('2026-11-10')).profile
     const r = awardEvent(p, 'search', {}, day('2026-11-10'))
     expect(r.gained).toBe(Math.floor((FEATURE_FIRST_EVER_XP + DAILY_FIRST_XP) * BOOST_MULTIPLIER))
     expect(BOOST_MULTIPLIER).toBe(1.5)

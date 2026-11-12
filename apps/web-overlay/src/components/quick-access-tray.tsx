@@ -1,15 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
-import { useFavorites, type LocalFavorite } from '@/hooks/useFavorites'
+import { useFavorites } from '@/hooks/useFavorites'
 import { SiteFavicon } from '@/components/site-favicon'
 import { safeHref } from '@/lib/safe-url'
 import { Button } from '@/registry/new-york/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { copyText } from '@/lib/clipboard'
-import { Star, Clock, Copy, ExternalLink, ChevronDown, ChevronUp, Sparkles, X } from 'lucide-react'
+import { Star, Clock, Copy, ChevronDown, ChevronUp, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface QuickAccessTrayProps {

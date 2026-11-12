@@ -2,14 +2,13 @@
 
 import React, { useState } from 'react'
 import {
-  type ClipExportOptions,
   validateClipInterval,
   renderVideoClipPackage,
 } from '@/lib/video-clip-exporter'
 import type { VideoTranscriptItem } from '@/types/navigation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
-import { Scissors, Download, Film, Sparkles, Check } from 'lucide-react'
+import { Scissors, Download } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 
 interface VideoClipMakerDialogProps {

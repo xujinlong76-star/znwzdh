@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { cn } from '@/lib/utils'
 import { safeWindowOpen } from '@/lib/safe-url'
-import { PlayCircle, Clock, Check, Download, Play, Eye, User, ExternalLink, Sparkles } from 'lucide-react'
+import { PlayCircle, Clock, Check, Download, Play, Eye, User, Sparkles } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { formatDuration } from '@/lib/video-format'
@@ -25,7 +24,6 @@ const VideoPlayerModal = dynamic(
 import { buildVideoEmbedUrlForSeo } from '@/lib/video-embed-url'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
 import Image from 'next/image'
-import Link from 'next/link'
 
 interface VideoCardProps {
     item: NavigationSubItem

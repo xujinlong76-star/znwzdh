@@ -71,7 +71,6 @@ export function VideoEmbedFacade({ embedUrl, title, poster, platformName = 'B �
     >
       {/* 封面图：装饰性，alt 留空避免与按钮的无障碍名重复 */}
       {poster ? (
-        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={poster}
           alt=""

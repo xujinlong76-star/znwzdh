@@ -1,9 +1,8 @@
 'use client'
 
 import React, { useId, useMemo, useState } from 'react'
-import { Activity, Clock, Flame, Zap } from 'lucide-react'
+import { Activity, Clock } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 
 export interface TrafficPoint {
   hour: string // "00:00", "01:00", ...

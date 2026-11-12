@@ -8,7 +8,7 @@ import {
 } from '@/lib/video-pomodoro-engine'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
-import { Timer, Play, Pause, RotateCcw, Sparkles, Volume2, ShieldCheck } from 'lucide-react'
+import { Timer, Play, Pause, RotateCcw, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface VideoPomodoroOverlayProps {

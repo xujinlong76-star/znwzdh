@@ -8,12 +8,8 @@ import { useToast } from "@/registry/new-york/hooks/use-toast"
 import { Input } from "@/registry/new-york/ui/input"
 import {
     Sparkles,
-    Search,
     Globe,
     CheckCircle2,
-    AlertCircle,
-    ExternalLink,
-    RefreshCw,
     Send,
     ChevronDown,
     ChevronUp,
@@ -21,7 +17,6 @@ import {
     Rss,
 } from 'lucide-react'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
-import type { VideoPlatformType } from '@/types/navigation'
 
 interface SeoIndexResponse {
     ok: boolean

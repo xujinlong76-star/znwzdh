@@ -18,6 +18,7 @@ const __dirname = path.dirname(__filename);
  * 清单来源：全量 lint 结果按「overlay 是否存在同名文件」二分实测。
  * ⚠️ 方括号目录必须转义：minimatch 里 [id] 是字符类（匹配 i/d 单字符），
  * 不转义的模式会静默失配——2026-11-06 实测踩过（首轮排除全部空转）。
+ * 2026-11-12 补 1 条（src/components/ui/json-editor.tsx）：同法二分实测为上游残留。
  */
 const VENDOR_ONLY_FILES = [
   "src/app/admin/data/page.tsx",
@@ -36,6 +37,7 @@ const VENDOR_ONLY_FILES = [
   "src/components/NavigationSidebar.tsx",
   "src/components/ThemeToggle.tsx",
   "src/components/ui/icon-picker.tsx",
+  "src/components/ui/json-editor.tsx",
   "src/components/ui/use-toast.ts",
   "src/registry/new-york/hooks/use-mobile.tsx",
   "src/registry/new-york/hooks/use-toast.ts",

@@ -9,13 +9,10 @@ import {
   Sparkles,
   ShieldCheck,
   CheckCircle2,
-  AlertTriangle,
-  PlayCircle,
   Terminal,
   Layers,
   Cpu,
   RefreshCw,
-  Search,
   Filter,
 } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'

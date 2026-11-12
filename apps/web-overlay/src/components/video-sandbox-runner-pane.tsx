@@ -7,12 +7,7 @@ import {
   Terminal,
   FileCode,
   FolderCode,
-  RotateCcw,
-  Sparkles,
-  CheckCircle2,
-  AlertCircle,
   Eye,
-  Code2,
   ShieldAlert,
 } from 'lucide-react'
 import {

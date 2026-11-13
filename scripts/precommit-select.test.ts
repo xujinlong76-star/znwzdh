@@ -64,6 +64,17 @@ function select(changed: string[], extraEnv: Record<string, string> = {}): strin
   return JSON.parse(line.slice("DRYRUN_FILES=".length)) as string[];
 }
 
+// 与 narrowTests 的 listTestFiles 同口径：递归数某目录下 *.test.ts
+// （含子目录），不是只数顶层。词根臂比例式的分母取回退全集时用。
+function countTestFiles(dir: string): number {
+  let n = 0;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) n += countTestFiles(join(dir, e.name));
+    else if (e.name.endsWith(".test.ts")) n += 1;
+  }
+  return n;
+}
+
 // mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
 // 跨模块 mock 与 process.env 改写，这里统一清掉。
 afterAll(() => {
@@ -133,7 +144,7 @@ describe("pre-commit 选测：改动 → 测试文件", { timeout: 120_000 }, ()
   });
 
   it("目录名当词根时的噪声：改选测器自己不再整棵跑，但内容相关的测试要收到", () => {
-    // scripts 这个词出现在 29/39 个测试文件的内容里（到处都是 scripts/ 路径），
+    // scripts 这个词出现在 54/65 个测试文件的内容里（到处都是 scripts/ 路径），
     // 它一混进内容层就「整族都提到」，把真正相关的 install 一起淹掉 → 退回整棵。
     // 内容层用同一条判别力规则后：既收窄了，又保住只有内容层才能找到的耦合
     // （precommit-select 就是用 execFileSync 跑生成物来断言的）。
@@ -152,15 +163,17 @@ describe("pre-commit 选测：改动 → 测试文件", { timeout: 120_000 }, ()
     // 其中 4 个是 install 子串带进来的噪声——内容里含 install 字串
     // （web-install / self-installer / pnpm install 等），与
     // install-git-hooks.mjs 本身无关；其余 7 个与图臂重合，是真消费者。
-    // 判据沿用同文件「收窄是量级上的收窄」的比例式：词根臂选中数须远小于
-    // 整棵（11×4=44 < 778），而不是写死 11 的快照——门禁扩展加真消费者
-    // 时不假红，词根泄漏回整棵时才红。
+    // 判据沿用同文件「收窄是量级上的收窄」的比例式，但分母必须是词根臂
+    // 自己的回退全集——scripts/ 递归总数（现 65，含 lib/），而不是全仓
+    // SCOPE=all 的 778：分母取 778 时，连「退回整棵 scripts」（65 个，
+    // 65×4=260 < 778）都放得过，界等于不存在。现值 11×4=44 < 65，
+    // 上限 16 个；门禁扩展加真消费者时不假红，词根泄漏回整棵时才红。
     const files = select(["scripts/install-git-hooks.mjs"], { NAVHUB_PRECOMMIT_NO_GRAPH: "1" });
-    const whole = select(["scripts/install-git-hooks.mjs"], { NAVHUB_PRECOMMIT_SCOPE: "all" });
+    const scriptsTotal = countTestFiles(join(ROOT, "scripts"));
     expect(files).toContain("scripts/precommit-select.test.ts");
     expect(files).toContain("scripts/check-hooks-fresh.test.ts");
     expect(files.length).toBeGreaterThan(0);
-    expect(files.length * 4).toBeLessThan(whole.length);
+    expect(files.length * 4).toBeLessThan(scriptsTotal);
   });
 
   it("改 src/jobs.ts：必须带上 backup-restore-job（复数归一回归）", () => {

@@ -6,8 +6,23 @@ import {
   daysUntil,
   examStatus,
   shanghaiMidnightMs,
+  urgencyTier,
   type ExamInfo,
+  type ExamUrgencyTier,
 } from '@/lib/exam-calendar'
+
+/**
+ * 紧迫度配色（大号天数 / 今天考试文案）：站内已有的 amber-600 / red-600
+ * 配方（深色档 amber-400 / red-400）；relaxed 保持原来的 text-foreground。
+ * 红 600 白底约 4.8:1、琥珀 600 用于 text-4xl 大号字（大字 3:1 即可）。
+ */
+const URGENCY_DAY_CLASS: Record<ExamUrgencyTier, string> = {
+  today: 'text-red-600 dark:text-red-400',
+  tomorrow: 'text-red-600 dark:text-red-400',
+  urgent: 'text-red-600 dark:text-red-400',
+  soon: 'text-amber-600 dark:text-amber-400',
+  relaxed: 'text-foreground',
+}
 
 /**
  * 考试倒计时客户端岛。
@@ -40,10 +55,12 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
   if (status === 'ended') {
     return <p className="text-lg font-semibold text-muted-foreground">已结束</p>
   }
+  // 未结束时紧迫度恒有档位（today/ongoing → today）；?? 只是类型兜底。
+  const tier = urgencyTier(exam, now) ?? 'relaxed'
   if (status === 'today' || status === 'ongoing') {
     const dayIndex = 1 - daysUntil(exam.startISO, now)
     return (
-      <p className="text-lg font-semibold text-foreground">
+      <p className={`text-lg font-semibold ${URGENCY_DAY_CLASS[tier]}`}>
         {status === 'today' ? '今天考试' : `进行中 · 第 ${dayIndex} 天`}
       </p>
     )
@@ -56,7 +73,9 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
       role="timer"
       aria-label={`${exam.shortName}倒计时 ${parts.days} 天 ${parts.hours} 小时 ${parts.minutes} 分钟`}
     >
-      <span className="font-mono text-4xl font-extrabold tabular-nums tracking-tight text-foreground">
+      <span
+        className={`font-mono text-4xl font-extrabold tabular-nums tracking-tight ${URGENCY_DAY_CLASS[tier]}`}
+      >
         {parts.days}
       </span>
       <span className="pb-1 text-sm text-muted-foreground">天</span>

@@ -259,3 +259,52 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
   upcoming: '未开始',
   estimated: '预计',
 }
+
+/**
+ * 倒计时紧迫度分档（纯派生：考试 + 时刻，不存状态、不写存储）。
+ * 档位互斥：ended → null（不参与任何档位）；today/ongoing → today；
+ * 距首日 1 天 → tomorrow；≤3 天 → urgent；≤7 天 → soon；其余 → relaxed。
+ * 多日考试以首日计紧迫度，进行中只显示「第 N 天」。
+ */
+export type ExamUrgencyTier = 'today' | 'tomorrow' | 'urgent' | 'soon' | 'relaxed'
+
+export function urgencyTier(
+  exam: Pick<ExamInfo, 'startISO' | 'endISO'>,
+  nowMs: number = Date.now(),
+): ExamUrgencyTier | null {
+  const status = examStatus(exam, nowMs)
+  if (status === 'ended') return null
+  if (status === 'today' || status === 'ongoing') return 'today'
+  const d = daysUntil(exam.startISO, nowMs)
+  if (d <= 1) return 'tomorrow'
+  if (d <= 3) return 'urgent'
+  if (d <= 7) return 'soon'
+  return 'relaxed'
+}
+
+/**
+ * 提醒档位：只在考前 7 / 3 / 1 天与考试当天命中，其余为 null。
+ * 同一考试同一天只命中一个档位，去重天然成立，无需存储去重表。
+ */
+export type ExamReminderTier = '7d' | '3d' | '1d' | 'today'
+
+export function reminderTier(
+  exam: Pick<ExamInfo, 'startISO' | 'endISO'>,
+  nowMs: number = Date.now(),
+): ExamReminderTier | null {
+  const status = examStatus(exam, nowMs)
+  if (status === 'ended') return null
+  if (status === 'today' || status === 'ongoing') return 'today'
+  const d = daysUntil(exam.startISO, nowMs)
+  if (d === 7) return '7d'
+  if (d === 3) return '3d'
+  if (d === 1) return '1d'
+  return null
+}
+
+export const EXAM_REMINDER_TIER_LABEL: Record<ExamReminderTier, string> = {
+  '7d': '考前 7 天',
+  '3d': '考前 3 天',
+  '1d': '明天考试',
+  today: '今天考试',
+}

@@ -4,18 +4,21 @@
  * 需求背景：Service Worker 让站点外壳离线可开，但「我常用的那几个站点」
  * 的数据必须在本地——否则断网时用户面对的是一个空壳。
  * 存储层（IndexedDB → localStorage → 内存）在 `lib/offline-recent.ts`，
- * 这里锁与 DOM 无关的合并语义（去重、置顶、容量截断），
+ * 这里锁与 DOM 无关的合并语义（去重、置顶、容量截断、计数），
  * 以及出箱那一条轨的淘汰方向与「全清」契约（用 localStorage 替身，不碰 IndexedDB）。
  */
 import { describe, expect, it, vi } from "vitest";
 
 import {
   CLICK_OUTBOX_LIMIT,
+  VISIT_COUNTS_KEY,
+  bumpVisitCount,
   clearOfflineVisits,
   mergeOutbox,
   mergeRecentVisit,
   readClickOutbox,
   readOfflineVisits,
+  topFrequentVisits,
   OFFLINE_RECENT_LIMIT,
   type ClickOutboxEntry,
   type RecentVisit,
@@ -71,6 +74,118 @@ describe("mergeRecentVisit", () => {
     const snapshot = JSON.stringify(list);
     mergeRecentVisit(list, visit("b", 2));
     expect(JSON.stringify(list)).toBe(snapshot);
+  });
+
+  it("再访同一站点：次数 +1，不产生重复项", () => {
+    // 旧数据无 count 按 1 起计：第一次再访记 2，第二次记 3
+    const list = [visit("a", 1), visit("b", 2)];
+    const once = mergeRecentVisit(list, visit("a", 9));
+    expect(once.find((v) => v.id === "a")?.count).toBe(2);
+    expect(once.filter((v) => v.id === "a")).toHaveLength(1);
+    expect(once.map((v) => v.id)).toEqual(["a", "b"]);
+    const twice = mergeRecentVisit(once, visit("a", 10));
+    expect(twice.find((v) => v.id === "a")?.count).toBe(3);
+  });
+
+  it("已有 count 的旧记录继续累加", () => {
+    const list = [visit("a", 1, { count: 5 }), visit("b", 2)];
+    const merged = mergeRecentVisit(list, visit("a", 9));
+    expect(merged.find((v) => v.id === "a")?.count).toBe(6);
+  });
+
+  it("新站点记 count=1", () => {
+    const merged = mergeRecentVisit([visit("a", 1)], visit("b", 2));
+    expect(merged.find((v) => v.id === "b")?.count).toBe(1);
+  });
+});
+
+/**
+ * 速览坞「最近常用」位的挑站语义：次数优先，不是时间优先。
+ *
+ * 昨天连点 10 次的站，不该输给刚才误点一次的站；次数相同才按最近访问排。
+ */
+describe("topFrequentVisits", () => {
+  it("按次数降序，次数相同按最近访问降序", () => {
+    const list = [
+      visit("a", 10, { count: 2 }),
+      visit("b", 1, { count: 9 }),
+      visit("c", 20, { count: 2 }),
+      visit("d", 5, { count: 1 }),
+    ];
+    expect(topFrequentVisits(list).map((v) => v.id)).toEqual(["b", "c", "a", "d"]);
+  });
+
+  it("缺 count 的旧数据按 1 计", () => {
+    const list = [visit("a", 1), visit("b", 2, { count: 2 })];
+    expect(topFrequentVisits(list).map((v) => v.id)).toEqual(["b", "a"]);
+  });
+
+  it("limit 生效且不改输入", () => {
+    const list = [
+      visit("a", 1, { count: 3 }),
+      visit("b", 2, { count: 2 }),
+      visit("c", 3, { count: 1 }),
+    ];
+    const snapshot = JSON.stringify(list);
+    expect(topFrequentVisits(list, 2).map((v) => v.id)).toEqual(["a", "b"]);
+    expect(JSON.stringify(list)).toBe(snapshot);
+    expect(topFrequentVisits(list, 0)).toEqual([]);
+  });
+});
+
+/** 调优频次键的写入口：用 localStorage 替身测，不碰 IndexedDB。 */
+function stubMapStorage(map = new Map<string, string>()) {
+  const store = {
+    get length() {
+      return map.size;
+    },
+    key: (i: number) => [...map.keys()][i] ?? null,
+    getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      map.set(k, v);
+    },
+    removeItem: (k: string) => {
+      map.delete(k);
+    },
+  };
+  vi.stubGlobal("localStorage", store);
+  return map;
+}
+
+describe("bumpVisitCount（调优频次键）", () => {
+  it("首次记 1，再点 +1，不同站点各自计数", () => {
+    const map = stubMapStorage();
+    try {
+      bumpVisitCount("a");
+      bumpVisitCount("a");
+      bumpVisitCount("b");
+      const stats = JSON.parse(map.get(VISIT_COUNTS_KEY)!);
+      expect(stats.a.count).toBe(2);
+      expect(stats.b.count).toBe(1);
+      expect(typeof stats.a.lastVisitedAt).toBe("number");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("损坏的旧 JSON 不抛错，从空起计", () => {
+    const map = stubMapStorage(new Map([[VISIT_COUNTS_KEY, "{not-json"]]));
+    try {
+      expect(() => bumpVisitCount("a")).not.toThrow();
+      expect(JSON.parse(map.get(VISIT_COUNTS_KEY)!).a.count).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("非对象旧值（数组）不抛错，从空起计", () => {
+    const map = stubMapStorage(new Map([[VISIT_COUNTS_KEY, "[]"]]));
+    try {
+      bumpVisitCount("a");
+      expect(JSON.parse(map.get(VISIT_COUNTS_KEY)!).a.count).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -131,6 +246,7 @@ describe("clearOfflineVisits 的端侧全清", () => {
     const map = new Map<string, string>([
       ["navhub:recent-offline:v1", JSON.stringify([visit("a", 1)])],
       ["navhub:click-outbox:v1", JSON.stringify([{ eventId: "e1", queuedAt: 1, body: { kind: "click" } }])],
+      [VISIT_COUNTS_KEY, JSON.stringify({ a: { count: 3, lastVisitedAt: 1 } })],
     ]);
     const store = {
       get length() {
@@ -150,6 +266,8 @@ describe("clearOfflineVisits 的端侧全清", () => {
       await clearOfflineVisits();
       expect(JSON.parse(map.get("navhub:recent-offline:v1")!)).toEqual([]);
       expect(JSON.parse(map.get("navhub:click-outbox:v1")!)).toEqual([]);
+      // 频次键随快照一起清：点了「忘记」之后，调优也不该还记得
+      expect(map.has(VISIT_COUNTS_KEY)).toBe(false);
       await expect(readClickOutbox()).resolves.toEqual([]);
       await expect(readOfflineVisits()).resolves.toEqual([]);
     } finally {

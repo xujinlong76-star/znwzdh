@@ -7,7 +7,7 @@ import { ModuleResizeHandles } from '@/components/modular/module-resize-handles'
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { type WorkspaceId } from '@/components/workspace-filter'
-import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
+import { readOfflineVisits, topFrequentVisits, type RecentVisit } from '@/lib/offline-recent'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
@@ -86,18 +86,16 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
       }
     }
 
-    // 2. 融入本机高频离线访问历史权重点亮（最多优先插入前 3 个常用）
+    // 2. 融入本机高频离线访问历史权重点亮（按累计点击次数取前 6 个常用）
+    // 注意：不是按时间取前 3——昨天连点 10 次的站，不该输给刚才误点一次的站
     if (recentVisits && recentVisits.length > 0) {
-      let recentCount = 0
-      for (const v of recentVisits) {
-        if (recentCount >= 3) break
+      for (const v of topFrequentVisits(recentVisits, 6)) {
         const match = allSites.find(
           (s) => (s?.id && s.id === v.id) || (s?.href && v.href && s.href === v.href)
         )
         if (match && !seenIds.has(match.id)) {
           pinned.push({ ...match, isRecent: true })
           seenIds.add(match.id)
-          recentCount++
         }
       }
     }
@@ -223,10 +221,10 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
               {site.isRecent && (
                 <span
                   className="relative z-10 shrink-0 text-[10px] text-emerald-700 dark:text-emerald-400 font-mono px-1 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20"
-                  title="本机高频最近访问"
+                  title="最近常用 · 仅记录在本机，可在数据管理中清除"
                 >
                   <Clock className="w-2.5 h-2.5 inline mr-0.5" />
-                  足迹
+                  最近常用
                 </span>
               )}
 

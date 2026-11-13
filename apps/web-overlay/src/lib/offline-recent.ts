@@ -9,10 +9,16 @@
  * 设计：
  *   - 存储 IndexedDB 优先（容量大、异步、不阻塞渲染）；
  *     不可用（隐私模式 / 旧浏览器）时降级 localStorage，再降级内存；
- *   - 容量 50 条，同 id 再次访问时移到最前并刷新时间；
- *   - **只存导航所需的最小字段**（id / 标题 / 链接 / 图标 / 时间），
+ *   - 容量 50 条，同 id 再次访问时移到最前、刷新时间并累计次数
+ *     （`count`，旧数据缺失时按 1 计）——「最近」之外还要有「频次」，
+ *     速览坞才能把真正每天点的站浮上来，而不是只看最后一次点开；
+ *   - 同次点击另写一份 `{ count, lastVisitedAt }` 到
+ *     `navhub_visit_counts_v1`，供 DIY「智能自适应调优」计分
+ *     （`computeSmartAutoTune` 读该键；此前全仓无写入，是死信号）；
+ *     清记录时该键随快照一起清，不留「删了还记得」的尾巴；
+ *   - **只存导航所需的最小字段**（id / 标题 / 链接 / 图标 / 时间 / 次数），
  *     不存查询词、不存用户内容——这份数据要能随时整表清掉且不心疼；
- *   - 纯逻辑 `mergeRecentVisit` 单独导出并单测，存储层只做读写。
+ *   - 纯逻辑 `mergeRecentVisit` / `topFrequentVisits` 单独导出并单测，存储层只做读写。
  */
 
 export interface RecentVisit {
@@ -21,12 +27,47 @@ export interface RecentVisit {
   href: string
   icon?: string | null
   visitedAt: number
+  /** 本机累计点击次数。旧数据缺失时按 1 计，不做迁移。 */
+  count?: number
 }
 
 export const OFFLINE_RECENT_LIMIT = 50
 const DB_NAME = 'navhub-offline'
 const STORE = 'recent-visits'
 const LS_KEY = 'navhub:recent-offline:v1'
+
+/**
+ * DIY「智能自适应调优」读的访问频次键（`computeSmartAutoTune` 的 visitStats）。
+ *
+ * 形状 `{ [siteId]: { count, lastVisitedAt } }`，与 `diy-presets.ts` 的
+ * `Record<string, { count: number; lastVisitedAt?: number }>` 对齐。
+ * 此前全仓只有 `use-home-diy.ts` 一处读、没有任何写入，调优里的频次分
+ * 恒为 0；现在由 `recordOfflineVisit` 每次点击同步累加（唯一写入口，
+ * 卡片 / 搜索 / spotlight 三路点击都走它）。
+ */
+export const VISIT_COUNTS_KEY = 'navhub_visit_counts_v1'
+
+/** 同步累加一次点击计数（永不抛错；存储不可用即跳过，不阻断主流程）。 */
+export function bumpVisitCount(siteId: string): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    let stats: Record<string, { count: number; lastVisitedAt?: number }> = {}
+    try {
+      const raw = localStorage.getItem(VISIT_COUNTS_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) stats = parsed
+      }
+    } catch {
+      stats = {}
+    }
+    const prev = stats[siteId]
+    stats[siteId] = { count: (prev?.count ?? 0) + 1, lastVisitedAt: Date.now() }
+    localStorage.setItem(VISIT_COUNTS_KEY, JSON.stringify(stats))
+  } catch {
+    // 计数写失败不阻断主流程：快照仍在，调优降级为空
+  }
+}
 /**
  * 点击证据出箱（run100）：与「最近访问」快照**分轨**。
  *
@@ -56,10 +97,30 @@ export interface ClickOutboxEntry {
   identity?: string
 }
 
-/** 纯函数：把一次访问并入列表（去重、置顶、截断） */
+/** 纯函数：把一次访问并入列表（去重、置顶、累计次数、截断） */
 export function mergeRecentVisit(list: RecentVisit[], visit: RecentVisit, limit = OFFLINE_RECENT_LIMIT): RecentVisit[] {
+  const existing = list.find((v) => v.id === visit.id)
+  // 旧数据无 count 字段时按 1 起计：首次记 1，之后每次 +1
+  const mergedVisit: RecentVisit = { ...visit, count: existing ? (existing.count ?? 1) + 1 : 1 }
   const rest = list.filter((v) => v.id !== visit.id)
-  return [visit, ...rest].slice(0, Math.max(1, limit))
+  return [mergedVisit, ...rest].slice(0, Math.max(1, limit))
+}
+
+/**
+ * 纯函数：按「常用」排序（次数降序，次数相同按最近访问降序），取前 limit 条。
+ *
+ * 速览坞用它挑「最近常用」位：只按时间取前 3 条会把「昨天连点 10 次的站」
+ * 排在「刚才误点一次的站」之后。缺 count 的旧数据按 1 计，不丢弃。
+ */
+export function topFrequentVisits(list: RecentVisit[], limit = 6): RecentVisit[] {
+  const cap = Math.max(0, limit)
+  return [...list]
+    .sort((a, b) => {
+      const countDiff = (b.count ?? 1) - (a.count ?? 1)
+      if (countDiff !== 0) return countDiff
+      return b.visitedAt - a.visitedAt
+    })
+    .slice(0, cap)
 }
 
 /* ------------------------------ 存储层 ------------------------------ */
@@ -115,6 +176,8 @@ function writeToLs(list: RecentVisit[]): boolean {
 /** 记录一次访问（fire-and-forget，永不 reject） */
 export function recordOfflineVisit(visit: Omit<RecentVisit, 'visitedAt'>): void {
   const entry: RecentVisit = { ...visit, visitedAt: Date.now() }
+  // 频次键与快照同次写：调优的计分终于能读到真实点击
+  bumpVisitCount(visit.id)
   void (async () => {
     const db = await openDb()
     if (db) {
@@ -184,6 +247,12 @@ export async function clearOfflineVisits(): Promise<void> {
   memoryOutbox = []
   writeToLs([])
   writeOutboxToLs([])
+  // 频次键随快照一起清：用户点了「忘记」之后，调优也不该还记得
+  try {
+    localStorage.removeItem(VISIT_COUNTS_KEY)
+  } catch {
+    // 存储不可用时无键可清
+  }
   const db = await openDb()
   if (!db) return
   await new Promise<void>((resolve) => {

@@ -2696,8 +2696,8 @@
             {
               "id": "nav-c183d6301851",
               "title": "Adobe XD",
-              "href": "https://adobe.com/products/xd.html",
-              "description": "界面设计与原型制作工具",
+              "href": "https://helpx.adobe.com/xd/desktop.html",
+              "description": "界面设计与原型制作工具（已停止新功能开发，仅维护模式）",
               "icon": "https://adobe.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -3180,6 +3180,18 @@
               "tags": [
                 "课程",
                 "进阶"
+              ]
+            },
+            {
+              "id": "nav-fa7d39d1fec0",
+              "title": "学习强国",
+              "href": "https://www.xuexi.cn/",
+              "description": "综合学习平台：时政理论、慕课课程与图书音视频",
+              "icon": "https://www.xuexi.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "学习",
+                "课程"
               ]
             }
           ]
@@ -4395,6 +4407,17 @@
                 "林业",
                 "草原",
                 "保护"
+              ]
+            },
+            {
+              "id": "nav-e37f051563b4",
+              "title": "12333 人社服务",
+              "href": "https://www.12333.gov.cn/",
+              "description": "人力资源社会保障部官方平台：社保查询、就业服务与人社业务办理",
+              "enabled": true,
+              "tags": [
+                "社保",
+                "政务"
               ]
             }
           ]

@@ -804,9 +804,9 @@
   "evidence": "付费设计软件（订阅/买断）",
   "title": "Sketch"
  },
- "adobe.com/products/xd.html": {
+ "helpx.adobe.com/xd/desktop.html": {
   "pricing": "paid",
-  "evidence": "Adobe Creative Cloud 订阅制",
+  "evidence": "维护模式：仅现有 Creative Cloud 订阅用户可用，不再对新用户销售（Adobe XD 帮助页注明 maintenance mode）",
   "title": "Adobe XD"
  },
  "miro.com": {

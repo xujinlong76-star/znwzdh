@@ -209,7 +209,7 @@ export function HomeDramaCinema() {
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={e.title}>{e.title}</span>
                 </span>
                 <span className="mt-2 flex items-center gap-2 text-xs text-zinc-400">
-                  <span className="truncate">{e.platformTitle}</span>
+                  <span className="min-w-0 flex-1 truncate" title={e.platformTitle}>{e.platformTitle}</span>
                   <span className="shrink-0">{e.episode > 0 ? `看到第 ${e.episode} 集` : '还没开始看'}</span>
                   <span className="ml-auto shrink-0 rounded-full bg-rose-500/15 px-2 py-0.5 text-[11px] font-medium text-rose-300">{continueBadge(e, now)}</span>
                 </span>

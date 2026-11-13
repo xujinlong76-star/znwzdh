@@ -259,6 +259,16 @@ describe('我的考试岛源码守卫', () => {
     expect(island).not.toContain("'kaoyan'")
   })
 
+  it('已结束场次的关注按钮禁用、复选框禁用，状态由 examStatus 派生', () => {
+    expect(island).toContain('examStatus(exam)')
+    expect(island).toContain("=== 'ended'")
+    expect(island).toContain('disabled={storageBlocked !== null || (ended && !followed)}')
+    expect(island).toContain("ended ? '已结束' : '关注这场考试'")
+    expect(island).toContain('disabled={ended}')
+    expect(island).toContain('已结束')
+    expect(island).toContain('本场考试已结束')
+  })
+
   it('岛接共享 hook，岛内无直接 localStorage 调用、不写死存储键', () => {
     expect(island).toContain('useMyExams')
     expect(island).toContain("from '@/hooks/useMyExams'")

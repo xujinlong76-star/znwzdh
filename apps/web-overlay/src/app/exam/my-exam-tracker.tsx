@@ -4,6 +4,7 @@ import { useMyExams } from '@/hooks/useMyExams'
 import {
   EXAM_NODE_STATUS_LABEL,
   examNodeStatus,
+  examStatus,
   type ExamInfo,
 } from '@/lib/exam-calendar'
 import {
@@ -35,6 +36,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   const { state, storageBlocked, toggleFollow, toggleNodeCheck } = useMyExams()
 
   const followed = state !== null && isFollowed(state, exam.id)
+  const ended = examStatus(exam) === 'ended'
   const done = state === null ? 0 : checkedCount(state, exam)
   const checkedLabels = state === null ? [] : (state.checked[exam.id] ?? [])
 
@@ -54,17 +56,19 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
         <p className="text-sm text-muted-foreground">
           {followed
             ? `我的考试 · 已完成 ${done} / ${exam.nodes.length}`
-            : '关注后可逐项勾选考前清单'}
+            : ended
+              ? '本场考试已结束'
+              : '关注后可逐项勾选考前清单'}
         </p>
         <button
           type="button"
           onClick={handleFollow}
-          disabled={storageBlocked !== null}
+          disabled={storageBlocked !== null || (ended && !followed)}
           aria-pressed={followed}
-          aria-label={followed ? `取消关注${exam.shortName}` : `关注${exam.shortName}`}
+          aria-label={followed ? `取消关注${exam.shortName}` : ended ? `${exam.shortName}已结束` : `关注${exam.shortName}`}
           className="inline-flex min-h-11 items-center rounded-full border border-sky-500/25 bg-sky-500/5 px-3 py-1 text-sm font-medium text-sky-700 dark:text-sky-400"
         >
-          {followed ? '已关注' : '关注这场考试'}
+          {followed ? '已关注' : ended ? '已结束' : '关注这场考试'}
         </button>
       </div>
       {storageBlocked ? (
@@ -84,6 +88,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                   checked={checked}
                   onChange={() => handleCheck(node.label)}
                   aria-label={`${node.label}已完成`}
+                  disabled={ended}
                   className="mt-0.5 h-5 w-5 shrink-0"
                 />
               ) : (

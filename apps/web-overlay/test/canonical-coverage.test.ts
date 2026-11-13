@@ -47,6 +47,7 @@ const SELF_CANONICAL = [
     file: "src/app/marketplace/page.tsx",
     snippet: "const canonical = `/marketplace${buildMarketplaceQuery(state)}`",
   },
+  { file: "src/app/exam/page.tsx", snippet: "canonical: '/exam'" },
 ];
 
 describe("收录型页面的 canonical", () => {

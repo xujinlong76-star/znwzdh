@@ -174,4 +174,8 @@ describe('sceneEntries', () => {
   it('静态清单含 /scenes 索引页', () => {
     expect(STATIC_PATHS).toContain('/scenes')
   })
+
+  it('静态清单含 /exam 考试日历页', () => {
+    expect(STATIC_PATHS).toContain('/exam')
+  })
 })

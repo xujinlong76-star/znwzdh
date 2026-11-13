@@ -69,6 +69,7 @@ export const STATIC_PATHS = [
   '/sites',
   '/videos',
   '/scenes',
+  '/exam',
 ] as const
 
 /** origin 归一：去掉末尾斜杠，避免拼出 `//` 这类重复斜杠 URL */

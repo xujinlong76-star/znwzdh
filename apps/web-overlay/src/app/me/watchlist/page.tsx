@@ -45,6 +45,7 @@ import {
   type WatchCadence,
   type WatchEntry,
 } from '@/lib/watchlist'
+import { buildWeekSchedule, formatWeekDay, mondayOfWeek } from '@/lib/watch-week'
 import {
   describeAnonymousWatchlistNote,
   describeWatchlistSyncBanner,
@@ -302,6 +303,12 @@ export default function WatchlistPage() {
   }, [])
 
   const parts = useMemo(() => partitionWatchlist(watchlist.entries, now), [watchlist.entries, now])
+  const schedule = useMemo(
+    () => buildWeekSchedule(watchlist.entries, mondayOfWeek(now), now),
+    [watchlist.entries, now],
+  )
+  const hasScheduled =
+    schedule.daily.length > 0 || schedule.days.some((day) => day.entries.length > 0)
   const bannerView = describeWatchlistSyncBanner(banner)
   const lastSync = readWatchlistSyncStatus()
 
@@ -392,6 +399,118 @@ export default function WatchlistPage() {
               重新同步
             </button>
           </p>
+        )}
+
+        {/* 本周追剧表：静态周视图，只排用户已标注的节奏，不推断平台是否更新。
+            清单为空时整段不渲染；只有未标注的剧时只显示「还没排进来」区，不画空表。 */}
+        {watchlist.entries.length > 0 && (
+          <section aria-label="本周追剧表" className="mt-6">
+            <h2 className="text-base font-bold">本周追剧表</h2>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              按你标注的节奏排的表，扫一眼就知道这周哪天看哪部。
+            </p>
+
+            {hasScheduled && (
+              <>
+                {schedule.daily.length > 0 && (
+                  <div className="mt-3 rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800">
+                    <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">每天更新</p>
+                    <ul className="mt-2 space-y-1.5">
+                      {schedule.daily.map((entry) => (
+                        <li key={entry.key} className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="min-w-0 flex-1 truncate font-medium">《{entry.title}》</span>
+                          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                            在{entry.platformTitle}看
+                          </span>
+                          <a
+                            href={safeHref(entry.playUrl)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                          >
+                            去看 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="mt-3 flex flex-col gap-2 md:grid md:grid-cols-7">
+                  {schedule.days.map((day) => (
+                    <div
+                      key={day.dateKey}
+                      className={`rounded-2xl border p-3 ${
+                        day.isToday
+                          ? 'border-rose-300 bg-rose-50 max-md:order-first dark:border-rose-900 dark:bg-rose-950/30'
+                          : 'border-zinc-200 dark:border-zinc-800'
+                      }`}
+                    >
+                      <p className="text-xs font-semibold">
+                        {formatWeekDay(day.date)}
+                        {day.isToday && (
+                          <span className="ml-1.5 rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-medium text-white">
+                            今天
+                          </span>
+                        )}
+                      </p>
+                      {day.entries.length === 0 ? (
+                        <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">没有安排</p>
+                      ) : (
+                        <ul className="mt-2 space-y-1.5">
+                          {day.entries.map((entry) => (
+                            <li key={entry.key} className="text-sm">
+                              <span className="block truncate font-medium">《{entry.title}》</span>
+                              <span className="mt-0.5 flex items-center justify-between gap-2">
+                                <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                                  {entry.platformTitle}
+                                </span>
+                                <a
+                                  href={safeHref(entry.playUrl)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                                >
+                                  去看 <ExternalLink className="h-3 w-3" aria-hidden />
+                                </a>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  平台临时改档时可能不准，以平台为准。提醒只在站内待看区，到点不会手机推送。
+                </p>
+              </>
+            )}
+
+            {schedule.unscheduled.length > 0 && (
+              <div className="mt-3">
+                <h3 className="text-sm font-bold">还没排进来（{schedule.unscheduled.length}）</h3>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  这几部没标注更新节奏，排不进来——去平台看排播，回来标一下。
+                </p>
+                <div className="mt-2 space-y-2">
+                  {schedule.unscheduled.map((entry) => (
+                    <div key={entry.key}>
+                      <a
+                        href={`#cadence-${entry.key}`}
+                        className="text-xs text-rose-600 underline underline-offset-2 hover:text-rose-500 dark:text-rose-400"
+                      >
+                        为《{entry.title}》标注更新节奏 ↓
+                      </a>
+                      <ul className="mt-1 space-y-2">
+                        <EntryRow key={entry.key} entry={entry} watchlist={watchlist} />
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
         )}
 
         {/* 待看区：只收「节奏已知 + 今天是更新日 + 今天还没看」的剧 */}

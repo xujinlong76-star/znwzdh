@@ -29,8 +29,8 @@ import {
   EXAM_PREP_SUB_ID,
   EXAM_REMINDERS,
   EXAM_NODE_STATUS_LABEL,
-  daysUntil,
   examNodeStatus,
+  nearestExam,
 } from '@/lib/exam-calendar'
 import { ExamCountdown } from './exam-countdown'
 import type { NavigationSubItem } from '@/types/navigation'
@@ -102,9 +102,7 @@ async function loadExamPrepSites(): Promise<NavigationSubItem[]> {
 export default async function ExamPage() {
   const prepSites = await loadExamPrepSites()
   const origin = configuredSiteOrigin()
-  const nearest = [...EXAMS]
-    .sort((a, b) => a.startISO.localeCompare(b.startISO))
-    .find((exam) => daysUntil(exam.startISO) >= 0)
+  const nearest = nearestExam()
 
   return (
     <Container as="main" id="main-content">

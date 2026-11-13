@@ -220,6 +220,20 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
   return 'active'
 }
 
+/** 最近一场：首日未过的考试里首日最早的；四场全过则返回 undefined（调用方整条不渲染） */
+export function nearestExam(nowMs: number = Date.now()): ExamInfo | undefined {
+  return [...EXAMS]
+    .sort((a, b) => a.startISO.localeCompare(b.startISO))
+    .find((exam) => daysUntil(exam.startISO, nowMs) >= 0)
+}
+
+/** 某场考试的「下一步」节点：按开始日排序，第一个未结束的节点；全过则 undefined */
+export function nextExamNode(exam: ExamInfo, nowMs: number = Date.now()): ExamNode | undefined {
+  return [...exam.nodes]
+    .sort((a, b) => a.startISO.localeCompare(b.startISO))
+    .find((node) => examNodeStatus(node, nowMs) !== 'done')
+}
+
 /** 倒计时拆分：天 / 时 / 分 / 秒（目标时刻已过则全 0） */
 export function countdownParts(targetMs: number, nowMs: number) {
   const diff = Math.max(0, targetMs - nowMs)

@@ -112,17 +112,10 @@ describe('首页考试条源码守卫', () => {
     expect(view).toContain('aria-label="考试季"')
   })
 
-  it('客户端视图：挂载后才读关注状态，只读不写，不硬编码考试与存储键', () => {
-    expect(view).toContain("from '@/lib/my-exams'")
-    expect(view).toContain('MY_EXAMS_STORAGE_KEY')
-    expect(view).toContain('nearestFollowedExam')
-    expect(view).toContain('nextTodoNode')
-    expect(view).toContain('parseMyExams')
-    expect(view).toContain('useEffect')
-    expect(view).toContain('| null>(null)')
-    expect(view.indexOf('localStorage.getItem')).toBeGreaterThan(view.indexOf('useEffect'))
-    expect(view.match(/localStorage\.getItem/g)?.length).toBe(1)
-    expect(view).not.toContain('localStorage.setItem')
+  it('客户端视图：接共享 hook 读关注状态，只读不写，不硬编码考试与存储键', () => {
+    expect(view).toContain("from '@/hooks/useMyExams'")
+    expect(view).toContain('useMyExams')
+    expect(view).not.toMatch(/localStorage\./)
     expect(view).not.toContain("'navhub.my-exams.v1'")
     expect(view).not.toContain('2026-11-29')
     expect(view).not.toContain('2026-12-12')

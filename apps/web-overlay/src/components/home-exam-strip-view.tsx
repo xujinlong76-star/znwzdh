@@ -1,26 +1,25 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, CalendarDays } from 'lucide-react'
 import { ExamCountdown } from '@/app/exam/exam-countdown'
+import { useMyExams } from '@/hooks/useMyExams'
 import { type ExamInfo, type ExamNode } from '@/lib/exam-calendar'
 import {
-  MY_EXAMS_STORAGE_KEY,
   nearestFollowedExam,
   nextTodoNode,
-  parseMyExams,
 } from '@/lib/my-exams'
 
 /**
  * 首页「考试季」运营条客户端视图（挂载后个性化）。
  *
  * 挂载前只渲染服务端直出的默认视图（全局最近场 + 下一步节点），与 SSR
- * 一字不差；挂载后读一次本机关注状态（navhub.my-exams.v1），若用户关注
- * 了未结束的考试，整条切到已关注场中首日最早的一场，徽章变「我的考试」，
- * 「下一步」变该场第一个未勾选且未结束的节点——打开首页就能对上自己的
- * 考前清单。无关注、关注场全部已结束、存储不可用时一律静默回退默认视图；
- * 只读不写；关注与勾选只保存在本机浏览器。
+ * 一字不差；挂载后由共享 hook 接管本机关注状态（与 /exam 四场卡片同一
+ * 份快照），若用户关注了未结束的考试，整条切到已关注场中首日最早的
+ * 一场，徽章变「我的考试」，「下一步」变该场第一个未勾选且未结束的
+ * 节点——打开首页就能对上自己的考前清单，/exam 页改关注后首页无需
+ * 刷新即更新。无关注、关注场全部已结束、存储不可用时一律静默回退
+ * 默认视图；只读不写；关注与勾选只保存在本机浏览器。
  */
 export function HomeExamStripView({
   exam: defaultExam,
@@ -29,23 +28,13 @@ export function HomeExamStripView({
   exam: ExamInfo
   nextNode: ExamNode | undefined
 }) {
-  const [personal, setPersonal] = useState<{
-    exam: ExamInfo
-    nextNode: ExamNode | undefined
-  } | null>(null)
+  const { state } = useMyExams()
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(MY_EXAMS_STORAGE_KEY)
-      if (!raw) return
-      const state = parseMyExams(JSON.parse(raw))
-      const preferred = nearestFollowedExam(state)
-      if (!preferred) return
-      setPersonal({ exam: preferred, nextNode: nextTodoNode(state, preferred) })
-    } catch {
-      // 存储被禁或数据损坏：静默回退默认视图，不拦首页渲染。
-    }
-  }, [])
+  const preferred = state === null ? undefined : nearestFollowedExam(state)
+  const personal =
+    preferred && state !== null
+      ? { exam: preferred, nextNode: nextTodoNode(state, preferred) }
+      : null
 
   const exam = personal?.exam ?? defaultExam
   const nextNode = personal ? personal.nextNode : defaultNextNode

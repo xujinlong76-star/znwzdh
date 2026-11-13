@@ -1,19 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useMyExams } from '@/hooks/useMyExams'
 import {
   EXAM_NODE_STATUS_LABEL,
   examNodeStatus,
   type ExamInfo,
 } from '@/lib/exam-calendar'
 import {
-  MY_EXAMS_STORAGE_KEY,
   checkedCount,
   isFollowed,
-  parseMyExams,
-  toggleFollow,
-  toggleNodeCheck,
-  type MyExamsState,
 } from '@/lib/my-exams'
 
 const NODE_DOT_CLASS: Record<string, string> = {
@@ -31,40 +26,26 @@ const NODE_DOT_CLASS: Record<string, string> = {
  * 时间轴 + 「关注」按钮），挂载后才读 localStorage——关注与勾选只存在
  * 本机，SSR 与水合结果不会打架；存储不可用（满了或被禁）时静默放弃，
  * 不阻塞用户看时间轴。
+ *
+ * 状态走共享 hook useMyExams：四场卡片与首页条带共用同一份模块级快照，
+ * 写操作读共享现态、不读本实例闭包里的旧快照——交错点关注/勾选不再
+ * 互相覆盖；存储读坏时 hook 拒写并把原因交回界面。
  */
 export function MyExamTracker({ exam }: { exam: ExamInfo }) {
-  const [state, setState] = useState<MyExamsState | null>(null)
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(MY_EXAMS_STORAGE_KEY)
-      setState(parseMyExams(raw === null ? null : JSON.parse(raw)))
-    } catch {
-      setState({ followed: [], checked: {} })
-    }
-  }, [])
+  const { state, storageBlocked, toggleFollow, toggleNodeCheck } = useMyExams()
 
   const followed = state !== null && isFollowed(state, exam.id)
   const done = state === null ? 0 : checkedCount(state, exam)
   const checkedLabels = state === null ? [] : (state.checked[exam.id] ?? [])
 
-  function persist(next: MyExamsState) {
-    setState(next)
-    try {
-      localStorage.setItem(MY_EXAMS_STORAGE_KEY, JSON.stringify(next))
-    } catch {
-      // 存储满或被禁就静默放弃，不阻塞使用
-    }
-  }
-
   function handleFollow() {
     if (state === null) return
-    persist(toggleFollow(state, exam.id))
+    toggleFollow(exam.id)
   }
 
   function handleCheck(nodeLabel: string) {
     if (state === null) return
-    persist(toggleNodeCheck(state, exam.id, nodeLabel))
+    toggleNodeCheck(exam.id, nodeLabel)
   }
 
   return (
@@ -78,6 +59,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
         <button
           type="button"
           onClick={handleFollow}
+          disabled={storageBlocked !== null}
           aria-pressed={followed}
           aria-label={followed ? `取消关注${exam.shortName}` : `关注${exam.shortName}`}
           className="inline-flex min-h-11 items-center rounded-full border border-sky-500/25 bg-sky-500/5 px-3 py-1 text-sm font-medium text-sky-700 dark:text-sky-400"
@@ -85,6 +67,11 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
           {followed ? '已关注' : '关注这场考试'}
         </button>
       </div>
+      {storageBlocked ? (
+        <p role="alert" className="mt-2 text-sm leading-relaxed text-amber-700 dark:text-amber-400">
+          {storageBlocked}
+        </p>
+      ) : null}
       <ol className="mt-3 space-y-2.5">
         {exam.nodes.map((node) => {
           const status = examNodeStatus(node)

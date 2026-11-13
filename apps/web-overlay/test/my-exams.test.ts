@@ -1,7 +1,9 @@
 /**
  * 「我的考试」关注 + 考前清单（/exam 第二轮）测试：
  *  - 纯规则层 my-exams.ts：解析收敛、关注开关、节点勾选、进度与下一步；
- *  - 源码守卫：岛只读事实源（不硬编码日期）、挂载后才读 localStorage、
+ *  - 共享 hook useMyExams.ts：挂载后才读 localStorage、读写各一处、
+ *    四场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
+ *  - 源码守卫：岛只读事实源（不硬编码日期）、岛内无直接存储调用、
  *    小字与徽章配方合规、按钮 44px、真 checkbox、可勾选只对已关注开放。
  */
 import { readFileSync } from 'node:fs'
@@ -249,17 +251,12 @@ describe('我的考试岛源码守卫', () => {
     expect(island).not.toContain("'kaoyan'")
   })
 
-  it('存储键只从 lib  import，不在岛里写死字面量', () => {
-    expect(island).toContain('MY_EXAMS_STORAGE_KEY')
+  it('岛接共享 hook，岛内无直接 localStorage 调用、不写死存储键', () => {
+    expect(island).toContain('useMyExams')
+    expect(island).toContain("from '@/hooks/useMyExams'")
+    expect(island).toContain('storageBlocked')
+    expect(island).not.toMatch(/localStorage\./)
     expect(island).not.toContain("'navhub.my-exams.v1'")
-  })
-
-  it('挂载后才读 localStorage（防 SSR/水合 mismatch），读写各一处', () => {
-    expect(island).toContain('useState<MyExamsState | null>(null)')
-    expect(island).toContain('useEffect')
-    expect(island.indexOf('localStorage.getItem')).toBeGreaterThan(island.indexOf('useEffect'))
-    expect(island.match(/localStorage\.getItem/g)?.length).toBe(1)
-    expect(island.match(/localStorage\.setItem/g)?.length).toBe(1)
   })
 
   it('用真 checkbox 勾选，带已完成 aria-label；关注按钮带 aria-pressed', () => {

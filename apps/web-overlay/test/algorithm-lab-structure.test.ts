@@ -87,7 +87,8 @@ describe("algorithm-lab 拆分守卫", () => {
 
   it("面板组件一一对应 12 个实验区", () => {
     if (!existsSync(PANEL_DIR)) return;
-    const files = readdirSync(PANEL_DIR).filter((f) => f.endsWith(".tsx"));
+  // trajectory-lab.tsx 是 speculation 实验区的沙箱子组件（与 SpeculationPanel 并列挂载），不是第 13 个实验区面板，不参与计数与导出守卫。
+  const files = readdirSync(PANEL_DIR).filter((f) => f.endsWith(".tsx") && f !== "trajectory-lab.tsx");
     expect(files.length).toBe(12);
     for (const f of files) {
       const body = readFileSync(resolve(PANEL_DIR, f), "utf8");

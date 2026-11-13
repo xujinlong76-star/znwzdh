@@ -5,19 +5,30 @@
  * 从 algorithm-lab.tsx 拆出（第五批 A1）：状态与逻辑原样搬运，行为由
  * algorithm-lab-structure.test.ts 与 e2e/algorithms.spec.ts 双守卫锁定。
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/registry/new-york/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Zap, Sparkles } from 'lucide-react'
 import { parseSpeculativeIntent } from '@/lib/speculative'
+import { median } from '@/lib/trajectory-hit'
 
 
 export function IntentPanel() {
   /* --- 模块 4：推测意图测试 --- */
   const [intentInput, setIntentInput] = useState('SGVsbG8gV29ybGQ=')
   const intentResult = useMemo(() => parseSpeculativeIntent(intentInput), [intentInput])
+  const parseLatenciesRef = useRef<number[]>([])
+  const [parseLatency, setParseLatency] = useState<{ medianMs: number; count: number } | null>(null)
+  useEffect(() => {
+    const started = performance.now()
+    parseSpeculativeIntent(intentInput)
+    const cost = performance.now() - started
+    const next = [...parseLatenciesRef.current, cost].slice(-20)
+    parseLatenciesRef.current = next
+    setParseLatency({ medianMs: median(next), count: next.length })
+  }, [intentInput])
 
   return (
     <div className="space-y-4">
@@ -36,7 +47,7 @@ export function IntentPanel() {
                   </CardDescription>
                 </div>
                 <Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/5 text-xs">
-                  延迟 &lt; 1ms
+                  {parseLatency ? '解析中位 ' + parseLatency.medianMs.toFixed(1) + 'ms（n=' + parseLatency.count + '）' : '解析中位 —'}
                 </Badge>
               </div>
             </CardHeader>

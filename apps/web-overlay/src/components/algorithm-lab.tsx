@@ -38,6 +38,7 @@ import { VisualPanel } from './algorithm-lab/visual-panel'
 import { WebMcpPanel } from './algorithm-lab/webmcp-panel'
 import { FederatedPanel } from './algorithm-lab/federated-panel'
 import { SpeculationPanel } from './algorithm-lab/speculation-panel'
+import TrajectoryLab from './algorithm-lab/trajectory-lab'
 import { SynthesizerPanel } from './algorithm-lab/synthesizer-panel'
 import { MeshPanel } from './algorithm-lab/mesh-panel'
 
@@ -296,6 +297,7 @@ const hud = useAlgorithmHud()
         {/* ================= 10. 自适应推测性预渲染（W3C Speculation Rules） ================= */}
         <TabsContent value="speculation" forceMount className="mt-6">
           <SpeculationPanel />
+        <TrajectoryLab />
         </TabsContent>
 
         {/* ================= 11. 动态 WebMCP 工具合成器与 SSRF 沙箱 ================= */}

@@ -5,7 +5,7 @@
  * 从 algorithm-lab.tsx 拆出（第五批 A1）：状态与逻辑原样搬运，行为由
  * algorithm-lab-structure.test.ts 与 e2e/algorithms.spec.ts 双守卫锁定。
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,26 +16,45 @@ import {
   generateFallbackLinkTags,
   type SpeculationCandidate
 } from '@/lib/speculative-prerender'
+import {
+  PRERENDER_CONFIDENCE_THRESHOLD,
+  SANDBOX_CANDIDATE_PATHS,
+  toAbsoluteCandidates,
+} from '@/lib/trajectory-hit'
 
 
 export function SpeculationPanel() {
   /* --- 模块 10：自适应推测性预渲染与 W3C 规则状态 --- */
-  const [specPrerenderThresh, setSpecPrerenderThresh] = useState<number>(0.82)
+  const [specPrerenderThresh, setSpecPrerenderThresh] = useState<number>(PRERENDER_CONFIDENCE_THRESHOLD)
   const [specPrefetchThresh, setSpecPrefetchThresh] = useState<number>(0.45)
   const [specCandidates] = useState<SpeculationCandidate[]>([
-    { url: 'https://navhub.dev/tech/react', confidence: 0.92, predictedArrivalMs: 110 },
-    { url: 'https://navhub.dev/tech/vue', confidence: 0.78, predictedArrivalMs: 240 },
-    { url: 'https://navhub.dev/tech/svelte', confidence: 0.52, predictedArrivalMs: 380 },
-    { url: 'https://navhub.dev/api/tokens/revoke', confidence: 0.95, predictedArrivalMs: 90 },
-    { url: 'https://navhub.dev/admin/dashboard', confidence: 0.82, predictedArrivalMs: 130 },
+    // 同源内部路由（路径形式；/logout、/admin 保留为安全拦截示例，永远进不了规则）。
+    ...SANDBOX_CANDIDATE_PATHS.map((candidate) => ({
+      url: candidate.path,
+      confidence: candidate.confidence,
+      predictedArrivalMs: candidate.predictedArrivalMs,
+    })),
   ])
 
+  // 挂载后才取 origin：相对路径进 isSafeForSpeculation 会被误判（/logout 这类
+  // 路径会被解析成 host），必须等同源绝对地址出来再编译。
+  const [specOrigin, setSpecOrigin] = useState('')
+  useEffect(() => {
+    setSpecOrigin(window.location.origin)
+  }, [])
+
+  const absoluteSpecCandidates = useMemo(
+    () => toAbsoluteCandidates(SANDBOX_CANDIDATE_PATHS, specOrigin),
+    [specOrigin]
+  )
+
   const compiledSpecRules = useMemo(() => {
-    return compileSpeculationRules(specCandidates, {
+    if (!specOrigin) return null
+    return compileSpeculationRules(absoluteSpecCandidates, {
       prerenderConfidenceThreshold: specPrerenderThresh,
       prefetchConfidenceThreshold: specPrefetchThresh,
     })
-  }, [specCandidates, specPrerenderThresh, specPrefetchThresh])
+  }, [absoluteSpecCandidates, specOrigin, specPrerenderThresh, specPrefetchThresh])
 
   const fallbackLinkTags = useMemo(() => {
     if (!compiledSpecRules) return []

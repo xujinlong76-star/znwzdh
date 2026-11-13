@@ -38,7 +38,7 @@ export function ElderModeToggle({ className }: { className?: string }) {
       size="icon"
       onClick={toggle}
       aria-pressed={on}
-      className={`h-8.5 w-8.5 rounded-lg transition-colors hover:bg-muted/60 ${
+      className={`h-11 w-11 rounded-lg transition-colors hover:bg-muted/60 ${
         on ? 'bg-primary/10 text-primary hover:text-primary' : 'text-muted-foreground hover:text-foreground'
       } ${className || ''}`}
       title={on ? ELDER_MODE_LABEL.on : `${ELDER_MODE_LABEL.off}：${ELDER_MODE_LABEL.hint}`}

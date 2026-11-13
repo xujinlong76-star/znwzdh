@@ -318,6 +318,83 @@ export interface ResolvedLlm {
   source: LlmSource;
 }
 
+/**
+ * resolveLlm 的 30s 进程内缓存（M18）。
+ *
+ * 每次调用要读两次库（系统配置 + 用户配置）再解密一次密钥；Copilot、画布、
+ * 插件生成、富化等热点路径每个请求都调 1~2 次，全是重复劳动。
+ * 缓存按身份分桶（无身份 = 系统级桶），TTL 30s：配置写路径
+ * （save/reset 系统级、save/delete 用户级）会立即失效对应 ctx 的全部桶，
+ * 所以管理端改配置后最长 30s 生效、通常立刻生效；TTL 只是兜底，不是「改完等 30 秒」。
+ *
+ * 缓存按 ctx 分桶（WeakMap）：测试里常有 `{ ...ctx, config: envConfig }` 这种
+ * 「同库不同配置」的派生 ctx，解析结果依赖 ctx.config（环境变量兜底层），
+ * 模块级单桶会在这里串味。生产只有一个 ctx，分桶没有额外成本。
+ *
+ * 缓存键里除了身份，还带一份环境层指纹（见 envLlmFingerprint）：
+ * 解析结果依赖 ctx.config.llm，但它不在任何写函数的失效路径上——
+ * 测试与嵌入式装配会直接改写 ctx.config.llm（如「拔掉 apiKey 模拟未配置模型」），
+ * 若键里没有它，改完 30s 内仍读到旧快照：审计会拿着已不存在的模型继续出分，
+ * 「未配置模型必须 pending_review」这类用例就是这么红的。指纹进键后，
+ * 这类改写天然打散缓存，无需调用方记得调 invalidateLlmCache。
+ * （库里那半仍靠写路径失效；直接 repo.setSystemState 绕过写函数的，
+ * 调用方必须在写后调 invalidateLlmCache(ctx)，见 llm-timeout-explicit.test.ts。）
+ *
+ * 返回的是缓存对象本身：调用方只读不改（callLlm / enrichLlmOf / 视图层都只读），
+ * 与 ctx.config 的共享方式一致。
+ */
+const LLM_CACHE_TTL_MS = 30_000;
+const resolveLlmCaches = new WeakMap<AppContext, Map<string, { at: number; value: ResolvedLlm }>>();
+
+/** 短哈希（FNV-1a 32 位）：只用于「值变没变」的指纹，不做安全用途。 */
+function shortHash(value: string | null | undefined): string {
+  if (value == null || value === "") return "-";
+  let h = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16);
+}
+
+/**
+ * 环境层指纹：resolveLlmUncached 读到的全部 ctx.config 侧输入。
+ *
+ * apiKey / secretsKey 只进哈希不进明文：缓存键是常驻内存的字符串，
+ * 不能让轮换掉的旧密钥躺在里面。其它字段都是非敏感的配置值，直接拼。
+ * NAVHUB_LLM_TIMEOUT_MS 也要进：timeoutMsExplicit 的判定读它。
+ */
+function envLlmFingerprint(config: AppConfig): string {
+  const llm = config.llm;
+  return [
+    llm.name,
+    llm.baseUrl,
+    llm.model,
+    shortHash(llm.apiKey),
+    String(llm.timeoutMs),
+    String(llm.temperature),
+    String(llm.maxTokens),
+    llm.jsonMode,
+    llm.allowPrivateNetwork ? "private" : "public",
+    llm.thinking ? "thinking" : "no-thinking",
+    shortHash(llm.secretsKey),
+    process.env.NAVHUB_LLM_TIMEOUT_MS ?? "",
+  ].join("|");
+}
+
+function resolveLlmCacheOf(ctx: AppContext): Map<string, { at: number; value: ResolvedLlm }> {
+  let cache = resolveLlmCaches.get(ctx);
+  if (!cache) {
+    cache = new Map();
+    resolveLlmCaches.set(ctx, cache);
+  }
+  return cache;
+}
+
+export function invalidateLlmCache(ctx: AppContext): void {
+  resolveLlmCaches.get(ctx)?.clear();
+}
+
 /** 解出可用的备用 provider（跳过停用项与无密钥项） */
 async function resolveFallbacks(ctx: AppContext, stored: StoredLlmProvider | null): Promise<LlmProvider[]> {
   if (!stored || !stored.enabled) return [];
@@ -341,6 +418,20 @@ async function resolveFallbacks(ctx: AppContext, stored: StoredLlmProvider | nul
  * - 备用池始终取系统级配置（个人配置失败时也能兜底）。
  */
 export async function resolveLlm(ctx: AppContext, identity?: string | null): Promise<ResolvedLlm> {
+  const cache = resolveLlmCacheOf(ctx);
+  // 键 = 身份 + 环境层指纹：ctx.config.llm 被直接改写时旧桶自然失效
+  // （见上面缓存注释；只按身份分桶会在「拔掉 apiKey」后继续返回旧模型）。
+  const cacheKey = (identity ?? "") + "\n" + envLlmFingerprint(ctx.config);
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.at < LLM_CACHE_TTL_MS) {
+    return cached.value;
+  }
+  const resolved = await resolveLlmUncached(ctx, identity);
+  cache.set(cacheKey, { at: Date.now(), value: resolved });
+  return resolved;
+}
+
+async function resolveLlmUncached(ctx: AppContext, identity?: string | null): Promise<ResolvedLlm> {
   const system = await readStoredSystem(ctx);
   const systemFallbacks = await resolveFallbacks(ctx, system);
 
@@ -671,6 +762,7 @@ export async function saveSystemLlmConfig(
   };
 
   await ctx.repo.setSystemState(SYSTEM_LLM_CONFIG_KEY, stored);
+  invalidateLlmCache(ctx);
   await ctx.repo.audit({
     actor,
     action: "llm.config.set",
@@ -691,7 +783,67 @@ export async function saveSystemLlmConfig(
 
 export async function resetSystemLlmConfig(ctx: AppContext, actor: string, ip?: string): Promise<LlmConfigView> {
   await ctx.repo.deleteSystemState(SYSTEM_LLM_CONFIG_KEY);
+  invalidateLlmCache(ctx);
   await ctx.repo.audit({ actor, action: "llm.config.reset", target: SYSTEM_LLM_CONFIG_KEY, ip });
+  await refreshLlmCapability(ctx);
+  return getSystemLlmConfigView(ctx);
+}
+
+/* ------------------------------------------------------------------ *
+ * 密钥轮换（M19）
+ * ------------------------------------------------------------------ */
+
+export interface RotateLlmKeyInput {
+  /** 新密钥明文（调用方显式提供；只进加密信封，不落日志、不回显） */
+  apiKey: string;
+  /** 备用池条目 id；省略 = 轮换主模型密钥 */
+  fallbackId?: string;
+}
+
+/**
+ * 轮换已存密钥：旧密文直接替换，不保留旧密钥。
+ *
+ * 只换密钥，不动 baseUrl / model / 超时等其它字段（轮换不是改配置）。
+ * 没有已存系统配置时拒绝：DB 里没有可轮换的密文，调用方应先走保存接口建配置。
+ * 轮换后立即失效 resolveLlm 缓存并刷新能力位，否则 30s 内仍用旧密钥建连。
+ */
+export async function rotateSystemLlmKey(
+  ctx: AppContext,
+  input: RotateLlmKeyInput,
+  actor: string,
+  ip?: string,
+): Promise<LlmConfigView> {
+  const apiKey = input.apiKey.trim();
+  if (!apiKey) {
+    throw new LlmError("config", "请提供新密钥");
+  }
+  const stored = await readStoredSystem(ctx);
+  if (!stored) {
+    throw new LlmError("config", "尚未保存系统模型配置，请先保存配置再轮换密钥");
+  }
+  const sealed = await sealKey(ctx, apiKey);
+  let target = "main";
+  if (input.fallbackId) {
+    const fb = stored.fallbacks.find((f) => f.id === input.fallbackId);
+    if (!fb) {
+      throw new LlmError("config", "备用模型不存在：" + input.fallbackId);
+    }
+    fb.apiKeyEnc = sealed;
+    target = "fallback:" + fb.id;
+  } else {
+    stored.apiKeyEnc = sealed;
+  }
+  stored.updatedAt = Date.now();
+  stored.updatedBy = actor;
+  await ctx.repo.setSystemState(SYSTEM_LLM_CONFIG_KEY, stored);
+  invalidateLlmCache(ctx);
+  await ctx.repo.audit({
+    actor,
+    action: "llm.config.key_rotated",
+    target: SYSTEM_LLM_CONFIG_KEY,
+    diff: { target, model: stored.model },
+    ip,
+  });
   await refreshLlmCapability(ctx);
   return getSystemLlmConfigView(ctx);
 }
@@ -834,6 +986,7 @@ export async function saveUserLlmConfig(
   }
 
   await ctx.repo.upsertUserLlmConfig(identity, stored as unknown as Record<string, unknown>);
+  invalidateLlmCache(ctx);
   await ctx.repo.audit({
     actor: identity,
     actorKind: "user",
@@ -847,6 +1000,7 @@ export async function saveUserLlmConfig(
 
 export async function deleteUserLlmConfig(ctx: AppContext, identity: string, ip?: string): Promise<UserLlmConfigView> {
   await ctx.repo.deleteUserLlmConfig(identity);
+  invalidateLlmCache(ctx);
   await ctx.repo.audit({
     actor: identity,
     actorKind: "user",

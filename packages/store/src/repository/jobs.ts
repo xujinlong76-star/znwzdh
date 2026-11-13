@@ -6,6 +6,11 @@ import type {
 import {
   rowToJob,
 } from "./dialect.ts";
+import {
+  buildKeysetPredicate,
+  parseKeysetCursor,
+  type KeysetKey,
+} from "../keyset.ts";
 
 /**
  * 上报长任务进度（异步恢复等）。
@@ -214,18 +219,46 @@ export async function heartbeatJob(repo: Repository, id: string): Promise<"runni
  * 也会把同一行在两页里各返回一次。id 作为第二键给出全序，翻页才真的无重复无遗漏。
  * 对应索引见 migrate.ts 的 jobs_created_idx / jobs_status_created_idx。
  */
-export async function listJobs(repo: Repository, status?: string, limit = 50, offset = 0): Promise<JobRecord[]> {
+/**
+ * 任务列表排序键（M12 keyset）：created_at DESC, id DESC——与 ORDER BY 逐项一致，
+ * id 第二键的理由见原注释（同毫秒批量入队）。
+ */
+export const JOB_KEYSET_KEYS: KeysetKey[] = [
+  { column: "created_at", direction: "DESC" },
+  { column: "id", direction: "DESC" },
+];
+
+/** 取一行的 keyset 键值：路由层据此给末行编 nextCursor。 */
+export function jobKeysetValues(job: JobRecord): [number, string] {
+  return [job.createdAt, job.id];
+}
+
+export async function listJobs(
+  repo: Repository,
+  status?: string,
+  limit = 50,
+  offset = 0,
+  options: { cursor?: string } = {},
+): Promise<JobRecord[]> {
   // `kind = 'kv'` 是 KV 存储借住在 jobs 表里的行，不是任务：管理端列表不该出现
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 50;
   const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+  // Keyset 游标（M12）：传了就走 WHERE (created_at,id) > (?,?)，不再 OFFSET；
+  // 无效游标抛 InvalidKeysetCursorError，由路由层映射成 400。
+  const keysetValues = parseKeysetCursor(options.cursor, JOB_KEYSET_KEYS.length);
+  const keyset = keysetValues ? buildKeysetPredicate(JOB_KEYSET_KEYS, keysetValues) : null;
+  const keysetSql = keyset ? ` AND ${keyset.sql}` : "";
+  const keysetParams = keyset ? keyset.params : [];
   const rows = status
     ? await repo.raw(
-        "SELECT * FROM jobs WHERE status = ? AND kind <> 'kv' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
-        [status, safeLimit, safeOffset],
+        "SELECT * FROM jobs WHERE status = ? AND kind <> 'kv'" + keysetSql +
+          ` ORDER BY created_at DESC, id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+        keyset ? [status, ...keysetParams, safeLimit] : [status, safeLimit, safeOffset],
       )
     : await repo.raw(
-        "SELECT * FROM jobs WHERE kind <> 'kv' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
-        [safeLimit, safeOffset],
+        "SELECT * FROM jobs WHERE kind <> 'kv'" + keysetSql +
+          ` ORDER BY created_at DESC, id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+        keyset ? [...keysetParams, safeLimit] : [safeLimit, safeOffset],
       );
   return rows.map(rowToJob);
 }

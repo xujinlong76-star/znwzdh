@@ -33,7 +33,7 @@ function itemHref(item: NavigationItem | NavigationSubItem): string | undefined 
   return 'href' in item && typeof item.href === 'string' ? item.href : undefined
 }
 
-export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: SearchBarProps) {
+export function SearchBar({ navigationData, onSearch, searchResults, searchQuery, siteConfig }: SearchBarProps) {
   const [isFocused, setIsFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -123,9 +123,30 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
         window.open(href, linkTarget, 'noopener,noreferrer')
       }
     }
-    onSearch('')
+    // 查询词要保留：新标签页打开后用户回来还能在原查询上继续挑下一条，
+    // 而不是被迫重打一遍（research #2）。面板只收起；清空仍由 × 按钮显式做。
     setIsFocused(false)
   }
+
+  /**
+   * 零结果救援（research #2）：按收录量取前 5 个一级分类，点一下就拿分类名
+   * 当查询词再搜一次——比干巴巴的「换个词」多一个真出口。分类名本身也是
+   * 站内检索的关键词（标题/简介里常见），通常能直接出结果。
+   */
+  const relatedCategories = useMemo(
+    () =>
+      navigationData.navigationItems
+        .map((cat) => ({
+          title: cat.title,
+          count:
+            (cat.items?.length ?? 0) +
+            (cat.subCategories ?? []).reduce((n, sub) => n + (sub.items?.length ?? 0), 0),
+        }))
+        .filter((c) => c.count > 0)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5),
+    [navigationData],
+  )
 
   const clearSearch = () => {
     onSearch('')
@@ -159,16 +180,18 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
               clearSearch()
             }
           }}
-          className="pl-10 pr-20 h-10 sm:h-11 rounded-xl border-border/80 shadow-xs focus:shadow-md bg-background/80 backdrop-blur-xs transition-all duration-200"
+          className="pl-10 pr-20 h-11 rounded-xl border-border/80 shadow-xs focus:shadow-md bg-background/80 backdrop-blur-xs transition-all duration-200"
         />
         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
           {searchQuery && (
+            // 清空 × 只有 24px：视觉保持小圆钮，::after 把点击区无形扩到 44px
+            // （输入框只有 44px 高，扩出去的部分正好贴合框边，不遮挡输入文字）
             <Button
               variant="ghost"
               size="sm"
               onClick={clearSearch}
               aria-label="清空搜索"
-              className="h-6 w-6 p-0 hover:bg-muted rounded-full"
+              className="relative h-6 w-6 p-0 hover:bg-muted rounded-full after:absolute after:-inset-2.5 after:content-['']"
             >
               <X className="h-3 w-3" />
             </Button>
@@ -189,7 +212,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                   safeWindowOpen(matchedShortcut.directUrl)
                   clearSearch()
                 }}
-                className="w-full text-left flex items-center justify-between p-2.5 rounded-lg bg-background hover:bg-muted/80 border border-primary/20 hover:border-primary/40 cursor-pointer shadow-xs transition-all group"
+                className="w-full min-h-11 text-left flex items-center justify-between p-2.5 rounded-lg bg-background hover:bg-muted/80 border border-primary/20 hover:border-primary/40 cursor-pointer shadow-xs transition-all group"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-primary text-primary-foreground">
@@ -213,18 +236,37 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
           <Command className="border-0 shadow-none">
             <CommandList className="max-h-[70vh] overflow-y-auto">
               {searchResults.length === 0 ? (
-                <div className="py-8 text-center">
+                <div className="py-8 text-center px-4">
                   <div className="text-muted-foreground text-sm">
                     未找到与 &ldquo;<span className="font-medium">{searchQuery}</span>&rdquo; 相关的导航
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
                     尝试使用不同的关键词搜索
                   </div>
+                  {/* 零结果救援：相关分类 chips——点一下拿分类名当查询词再搜一次，
+                      再不行才是清空回全部列表 */}
+                  {relatedCategories.length > 0 && (
+                    <div className="mt-4">
+                      <div className="text-xs text-muted-foreground mb-2">试试这些分类</div>
+                      <div className="flex flex-wrap justify-center gap-1.5">
+                        {relatedCategories.map((cat) => (
+                          <button
+                            key={cat.title}
+                            type="button"
+                            onClick={() => handleInputChange(cat.title)}
+                            className="inline-flex min-h-11 items-center justify-center px-3.5 py-2 text-xs rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                          >
+                            {cat.title}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {/* 空结果不能是死路：给一个明确的「回到完整列表」出口 */}
                   <Button
                     variant="outline"
                     size="sm"
-                    className="mt-3"
+                    className="mt-3 min-h-11"
                     onClick={clearSearch}
                   >
                     清空搜索，查看全部导航

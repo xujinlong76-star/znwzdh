@@ -428,10 +428,23 @@ export function useModularLayout() {
   }, [])
 
   // 13. 删除看板 (保证至少保留 1 个看板)
+  // 删前必须先确认（调用方 ModularCanvas 用 window.confirm，文案与
+  // search-palette 的 DIY 重置确认同口径）：删看板是整板数据丢失，
+  // 以前这里静默删除、没有历史、没有提示，误删只能手动重建。
+  // 删板前压一份历史快照：确认删除后仍可按 Ctrl/Cmd+Z 撤销恢复整板。
+  // 返回被删看板的信息供调用方报数（删了几个模块）；删不成（只剩 1 个
+  // 看板、或 id 不存在）返回 null，调用方据此不报假成功。
   const deleteBoard = useCallback(
-    (boardId: string) => {
+    (boardId: string): { id: string; name: string; widgetCount: number } | null => {
       const prev = boardsRef.current
-      if (prev.length <= 1) return
+      if (prev.length <= 1) return null
+      const deleted = prev.find((b) => b.id === boardId)
+      if (!deleted) return null
+      const newHistory = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), prev]
+      historyRef.current = newHistory
+      futureRef.current = []
+      setHistory(newHistory)
+      setFuture([])
       const nextBoards = prev.filter((b) => b.id !== boardId)
       boardsRef.current = nextBoards
       setBoards(nextBoards)
@@ -439,6 +452,7 @@ export function useModularLayout() {
       if (activeBoardId === boardId) {
         setActiveBoardId(nextBoards[0]?.id || 'default')
       }
+      return { id: deleted.id, name: deleted.name, widgetCount: deleted.widgets.length }
     },
     [activeBoardId]
   )

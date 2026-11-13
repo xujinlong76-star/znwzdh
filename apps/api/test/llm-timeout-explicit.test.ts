@@ -17,6 +17,7 @@ import {
   SYSTEM_LLM_CONFIG_KEY,
   enrichLlmOf,
   getSystemLlmConfigView,
+  invalidateLlmCache,
   resolveLlm,
   saveSystemLlmConfig,
 } from "../src/llm-config.ts";
@@ -55,6 +56,8 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await ctx.repo.deleteSystemState(SYSTEM_LLM_CONFIG_KEY);
+  // 直接删库绕过写函数：同步清掉 resolveLlm 的 30s 缓存，否则下一个用例读到删前的快照。
+  invalidateLlmCache(ctx);
 });
 
 afterAll(async () => {
@@ -134,6 +137,9 @@ describe("解析链：旧记录与环境变量", () => {
       updatedAt: 1,
       updatedBy: ACTOR,
     });
+    // 直接写库绕过了 saveSystemLlmConfig 的失效：手动清掉 resolveLlm 的 30s 缓存，
+    // 否则下面读到的是写前的快照。
+    invalidateLlmCache(ctx);
     const view = await getSystemLlmConfigView(ctx);
     expect(view.timeoutMsExplicit).toBe(false);
     expect(view.thinkingTimeoutMsEffective).toBe(60_000);
@@ -158,6 +164,8 @@ describe("解析链：旧记录与环境变量", () => {
       updatedAt: 2,
       updatedBy: ACTOR,
     });
+    // 同上：直接写库必须手动失效 resolveLlm 缓存。
+    invalidateLlmCache(ctx);
     const view = await getSystemLlmConfigView(ctx);
     expect(view.timeoutMsExplicit).toBe(true);
     expect(view.thinkingTimeoutMsEffective).toBe(30_000);

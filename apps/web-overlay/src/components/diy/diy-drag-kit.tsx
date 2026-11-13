@@ -19,9 +19,11 @@
  *   - 其余插件（Accessibility / AutoScroller / Cursor / Feedback /
  *     PreventSelection）走 defaultPreset，不在这里重复配。
  *
- * 读屏播报有两套：dnd-kit Accessibility 插件的英文默认播报，和这里
- * 的中文 live-region。两套并存可能重复播报——先保留中文（界面是中文），
- * 需 Ryan 真机验证后决定是否把插件默认播报关掉（见最终报告）。
+ * 读屏播报只有一套中文：dnd-kit Accessibility 插件的英文默认播报被
+ * plugins={(defaults) => withoutAccessibilityPlugin(defaults)} 排除掉
+ * 了（W2-8），中文 live-region 是唯一播报源。排除它也会去掉它注入的
+ * tabindex/role/aria-roledescription——拖拽手柄本身是原生 <button>，
+ * 带显式 aria-label + 指向中文说明的 aria-describedby，不丢信息。
  */
 'use client'
 
@@ -49,11 +51,14 @@ import {
   KEYBOARD_DRAG_INSTRUCTIONS,
   readDiyDragData,
   resolveCardDrop,
+  setDiyDragActive,
+  withoutAccessibilityPlugin,
   type DiyCardDragData,
   type DiyCategoryDropData,
   type DiyPaletteDragData,
   type DiyWidgetDragData,
 } from '@/lib/modular/diy-drag'
+import { flushPendingLayoutSyncMessages } from '@/lib/modular/use-home-diy-grid'
 import { DiyDragActiveContext, DiyDragHandleContext } from './diy-drag-context'
 
 /** readDiyDragData 的唯一来源是轻量层 diy-drag.ts，这里只 re-export 供旧调用方用 */
@@ -112,6 +117,9 @@ export function DiyDragProvider({
     lastOverTargetRef.current = null
     if (!source) return
     setIsDragging(true)
+    // 模块级标记与 isDragging 同步：跨标签通道回调在 React 渲染之外，
+    // 读这份标记决定远端改动是合并还是排队（见 diy-drag.ts）。
+    setDiyDragActive(true)
     const title = displayTitle(source)
     setAnnouncement(buildDragAnnouncement('start', { title }))
   }, [displayTitle])
@@ -134,7 +142,7 @@ export function DiyDragProvider({
     setAnnouncement(buildDragAnnouncement('over', { title, toLabel }))
   }, [displayTitle])
 
-  const handleDragEnd = useCallback(
+  const handleDragEndInner = useCallback(
     (event: DragEndEvent) => {
       const source = readDiyDragData(event.operation.source)
       const target = readDiyDragData(event.operation.target)
@@ -228,9 +236,37 @@ export function DiyDragProvider({
     ],
   )
 
+  /**
+   * 拖拽结束的收尾（W2-6）：本地落点提交（分类重排 / 卡片收录 / 重归类）
+   * 都在 inner 里同步完成，finally 再清拖拽标记、放出拖拽中排队的远端
+   * 改动——合并发生在最终本地状态之上，不会被拖拽提交盖掉；取消的拖拽
+   * 同样走这里（inner 里 early return 也会进 finally）。
+   */
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      try {
+        handleDragEndInner(event)
+      } finally {
+        setDiyDragActive(false)
+        flushPendingLayoutSyncMessages()
+      }
+    },
+    [handleDragEndInner],
+  )
+
+  // provider 卸载时拖拽不可能再继续：清标记、放出排队的远端改动，
+  // 避免标记卡在 true 让此后的跨标签合并永远排队。
+  useEffect(() => {
+    return () => {
+      setDiyDragActive(false)
+      flushPendingLayoutSyncMessages()
+    }
+  }, [])
+
   return (
     <DragDropProvider
       sensors={sensors}
+      plugins={(defaults) => withoutAccessibilityPlugin(defaults)}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}

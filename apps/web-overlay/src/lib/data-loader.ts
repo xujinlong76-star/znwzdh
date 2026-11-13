@@ -67,6 +67,11 @@ export function processNavigationSubItem(item: NavigationSubItemRaw): Navigation
         // 2026-10-21 放行 tags：navigation.json 的条目一直带着（导航站自己的
         // taxonomy），此前白名单裁掉它，首页 rich 卡片 #tag 芯片永远没数据。
         tags: item.tags,
+        // 透传巡检健康状态：此前白名单把它裁掉，速览弹窗的健康提示
+        // （site-peek-dialog.tsx）永远看不到 health；卡片上的死链徽标
+        // 已于 2026-11-12 移除，不再消费本字段（见 dead-link.ts 文件头）。
+        // 没有该字段时仍为 undefined，不影响其它渲染。
+        health: item.health,
         videoConfig
     }
 }

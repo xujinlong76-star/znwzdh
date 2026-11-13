@@ -109,11 +109,12 @@ export function HomeDIYTrigger() {
         >
           <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span className="flex-1">{storageWarning}</span>
+          {/* 16px 的 × 视觉不变，::after 把点击区无形扩到 44px（提示条不增高） */}
           <button
             type="button"
             onClick={dismissStorageWarning}
             aria-label="关闭提示"
-            className="shrink-0 rounded p-0.5 hover:bg-amber-500/20 transition-colors cursor-pointer"
+            className="relative shrink-0 rounded p-0.5 hover:bg-amber-500/20 transition-colors cursor-pointer after:absolute after:-inset-3.5 after:content-['']"
           >
             <X className="w-3 h-3" />
           </button>
@@ -134,7 +135,7 @@ export function HomeDIYTrigger() {
             variant="outline"
             size="sm"
             onClick={toggleEditingLayout}
-            className="h-7.5 px-2.5 rounded-full text-xs font-semibold gap-1.5 shadow-sm hover:shadow-md bg-background/85 dark:bg-card/85 backdrop-blur-md border border-border/80 text-foreground hover:text-primary transition-all duration-200 opacity-90 hover:opacity-100"
+            className="min-h-11 px-2.5 rounded-full text-xs font-semibold gap-1.5 shadow-sm hover:shadow-md bg-background/85 dark:bg-card/85 backdrop-blur-md border border-border/80 text-foreground hover:text-primary transition-all duration-200 opacity-90 hover:opacity-100"
             title="开启 DIY 排版与智能编排工坊 (快捷键: Ctrl/Cmd+E)"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-primary" />

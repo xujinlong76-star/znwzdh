@@ -271,7 +271,7 @@ export function SitePeekDialog({
                   variant="outline"
                   size="sm"
                   aria-pressed={isPinnedInCategory}
-                  className="gap-1.5 h-8.5 px-3 shadow-2xs font-medium text-xs border-border/70"
+                  className="gap-1.5 min-h-11 px-3 shadow-2xs font-medium text-xs border-border/70"
                   title={isPinnedInCategory ? '取消当前分类置顶' : '置顶到当前分类首位'}
                   onClick={() => onTogglePinInCategory(item.id)}
                 >
@@ -292,7 +292,7 @@ export function SitePeekDialog({
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5 h-8.5 px-3 shadow-2xs font-medium text-xs text-muted-foreground hover:text-foreground border-border/70"
+                className="gap-1.5 min-h-11 px-3 shadow-2xs font-medium text-xs text-muted-foreground hover:text-foreground border-border/70"
                 title="调取 Internet Archive Wayback 历史归档快照"
                 onClick={() => {
                   const snap = buildWaybackSnapshotUrl(item.href)
@@ -305,7 +305,7 @@ export function SitePeekDialog({
               <Button
                 variant="default"
                 size="sm"
-                className="gap-1.5 shrink-0 h-8.5 px-3.5 shadow-xs font-medium"
+                className="gap-1.5 shrink-0 min-h-11 px-3.5 shadow-xs font-medium"
                 onClick={() => {
                   const u = safeHref(item.href, '')
                   if (!u || !isSafeHttpUrl(u)) return
@@ -372,10 +372,10 @@ export function SitePeekDialog({
                             placeholder={act.placeholder || `快速执行 ${act.label}...`}
                             value={actionInputs[act.id] || ''}
                             onChange={(e) => setActionInputs({ ...actionInputs, [act.id]: e.target.value })}
-                            className="h-8.5 pl-8 text-xs bg-background border-border/70 focus-visible:ring-primary/40"
+                            className="h-11 pl-8 text-xs bg-background border-border/70 focus-visible:ring-primary/40"
                           />
                         </div>
-                        <Button type="submit" size="sm" variant="secondary" className="h-8.5 text-xs gap-1 px-3 border border-border/60">
+                        <Button type="submit" size="sm" variant="secondary" className="min-h-11 text-xs gap-1 px-3 border border-border/60">
                           {act.label}
                           <ArrowRight className="w-3 h-3" />
                         </Button>
@@ -384,7 +384,7 @@ export function SitePeekDialog({
                       <Button
                         size="sm"
                         variant="secondary"
-                        className="h-8.5 text-xs gap-1.5 border border-border/60"
+                        className="min-h-11 text-xs gap-1.5 border border-border/60"
                         onClick={() => handleActionSubmit(act)}
                       >
                         <span>{act.label}</span>
@@ -433,7 +433,7 @@ export function SitePeekDialog({
                     size="icon"
                     aria-label="访问该站点"
                     title={`在新标签页打开 ${rel.targetTitle}`}
-                    className="h-6.5 w-6.5 shrink-0 rounded-lg hover:bg-muted"
+                    className="h-11 w-11 shrink-0 rounded-lg hover:bg-muted"
                     onClick={() => {
                       if (!isSafeHttpUrl(rel.targetUrl)) return
                       window.open(rel.targetUrl, '_blank', 'noopener,noreferrer')
@@ -463,7 +463,7 @@ export function SitePeekDialog({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 px-2.5 text-xs gap-1.5 border-rose-500/40 bg-background/80 hover:bg-rose-500/15 text-rose-700 dark:text-rose-300 font-medium"
+                className="min-h-11 px-2.5 text-xs gap-1.5 border-rose-500/40 bg-background/80 hover:bg-rose-500/15 text-rose-700 dark:text-rose-300 font-medium"
                 onClick={() => {
                   const snap = buildWaybackSnapshotUrl(item.href)
                   if (snap) safeWindowOpen(snap)
@@ -492,7 +492,7 @@ export function SitePeekDialog({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10 cursor-pointer"
+                className="min-h-11 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10 cursor-pointer"
                 onClick={fetchRadar}
                 disabled={radarLoading}
               >
@@ -599,7 +599,7 @@ export function SitePeekDialog({
                             key={i}
                             variant="secondary"
                             size="sm"
-                            className="h-6 text-[11px] px-2 py-0 gap-1 font-medium hover:text-primary"
+                            className="min-h-11 text-[11px] px-2 py-0 gap-1 font-medium hover:text-primary"
                             onClick={() => safeWindowOpen(pl.url)}
                           >
                             <span>{pl.title}</span>
@@ -616,7 +616,7 @@ export function SitePeekDialog({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-[11px] px-2 gap-1 text-muted-foreground hover:text-primary"
+                      className="min-h-11 text-[11px] px-2 gap-1 text-muted-foreground hover:text-primary"
                       onClick={fetchVisual}
                       disabled={visualLoading}
                     >
@@ -647,7 +647,7 @@ export function SitePeekDialog({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-[11px] text-muted-foreground"
+                      className="min-h-11 text-[11px] text-muted-foreground"
                       onClick={() => safeWindowOpen(visualUrl)}
                     >
                       <ExternalLink className="w-3 h-3 mr-1" />
@@ -692,7 +692,7 @@ export function SitePeekDialog({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="h-7 w-7 rounded-lg shrink-0"
+                    className="h-11 w-11 rounded-lg shrink-0"
                     onClick={() => {
                       if (!isSafeHttpUrl(alt.site.url)) return
                       window.open(alt.site.url, '_blank', 'noopener,noreferrer')
@@ -717,7 +717,7 @@ export function SitePeekDialog({
             <Button
               variant="outline"
               size="sm"
-              className="h-7.5 text-xs border-border/70 hover:bg-muted"
+              className="min-h-11 text-xs border-border/70 hover:bg-muted"
               onClick={() => setShowIframe(!showIframe)}
             >
               {showIframe ? '关闭预览窗' : '呼出即时沙箱'}
@@ -778,7 +778,7 @@ export function SitePeekDialog({
             <Button
               variant="outline"
               size="sm"
-              className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60"
+              className="min-h-11 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60"
               title="复制网址链接"
               onClick={async () => {
                 const res = await copyText(item.href)
@@ -795,7 +795,7 @@ export function SitePeekDialog({
             <Button
               variant="outline"
               size="sm"
-              className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60"
+              className="min-h-11 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60"
               title="复制 Markdown 引用 [标题](链接)"
               onClick={async () => {
                 const md = `[${item.title}](${item.href})`
@@ -839,7 +839,7 @@ export function SitePeekDialog({
                 size="sm"
                 disabled={isPinging}
                 onClick={handleLivePing}
-                className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60"
+                className="min-h-11 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground shrink-0 border-border/60"
                 title="在本地浏览器测试当前对该站点的实际访问延迟"
               >
                 {isPinging ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
@@ -860,7 +860,7 @@ export function SitePeekDialog({
                 variant="outline"
                 size="sm"
                 onClick={handleReportBroken}
-                className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-destructive hover:border-destructive/40 shrink-0 border-border/60"
+                className="min-h-11 px-2 text-[11px] gap-1 text-muted-foreground hover:text-destructive hover:border-destructive/40 shrink-0 border-border/60"
                 title="向平台反馈该网站打不开、连接超时或死链"
               >
                 <AlertTriangle className="w-3 h-3" />

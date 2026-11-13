@@ -108,7 +108,7 @@ export function NavigationToolbar({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden xl:inline-flex"
+                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden xl:inline-flex"
               >
                 <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
                   <Flame className="h-4 w-4" />
@@ -121,7 +121,7 @@ export function NavigationToolbar({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                    className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
                     title="探索矩阵与导航工具箱"
                     aria-label="探索矩阵与导航工具箱"
                   >
@@ -195,19 +195,19 @@ export function NavigationToolbar({
                     全景与发现
                   </DropdownMenuLabel>
                   <DropdownMenuItem asChild>
-                    <Link href="/collections" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
+                    <Link href="/collections" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Layers className="h-4 w-4 text-violet-500 shrink-0" />
                       <span className="font-medium text-foreground">精选专题合集</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/tags" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
+                    <Link href="/tags" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Tags className="h-4 w-4 text-indigo-500 shrink-0" />
                       <span className="font-medium text-foreground">全景标签云</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/videos" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
+                    <Link href="/videos" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <MonitorPlay className="h-4 w-4 text-blue-500 shrink-0" />
                       <span className="font-medium text-foreground">视频教程导航</span>
                     </Link>
@@ -219,25 +219,25 @@ export function NavigationToolbar({
                     社区与工具
                   </DropdownMenuLabel>
                   <DropdownMenuItem asChild>
-                    <Link href="/import" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
+                    <Link href="/import" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Upload className="h-4 w-4 text-emerald-500 shrink-0" />
                       <span className="font-medium text-foreground">导入浏览器书签</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/marketplace" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
+                    <Link href="/marketplace" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Store className="h-4 w-4 text-rose-500 shrink-0" />
                       <span className="font-medium text-foreground">插件市场（社区共享）</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/submit" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
+                    <Link href="/submit" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Send className="h-4 w-4 text-amber-500 shrink-0" />
                       <span className="font-medium text-foreground">收录与提交网站</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/preferences" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
+                    <Link href="/preferences" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Sparkles className="h-4 w-4 text-violet-500 shrink-0" />
                       <span className="font-medium text-foreground">我的偏好（个性化画像）</span>
                     </Link>
@@ -247,7 +247,7 @@ export function NavigationToolbar({
                       href="https://github.com/tianyaxiang/NavSphere"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent"
+                      className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent"
                     >
                       <Github className="h-4 w-4 text-muted-foreground shrink-0" />
                       <span className="font-medium text-foreground">GitHub 开源仓库</span>
@@ -262,7 +262,7 @@ export function NavigationToolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden xl:inline-flex"
+                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden xl:inline-flex"
                 onClick={() => onOpenTools()}
                 title="打开内置微工具箱 (快捷键: T)"
                 aria-label="微工具箱"
@@ -273,7 +273,7 @@ export function NavigationToolbar({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden lg:inline-flex"
+                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden lg:inline-flex"
               >
                 <Link href="/me" title="用户中心" aria-label="用户中心">
                   <User className="h-4 w-4" />
@@ -284,7 +284,7 @@ export function NavigationToolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden xl:inline-flex"
+                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden xl:inline-flex"
                 onClick={() => onOpenShortcuts()}
                 title="快捷键全景指南 (快捷键: ?)"
                 aria-label="快捷键指南"
@@ -297,7 +297,7 @@ export function NavigationToolbar({
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "relative h-9 w-9 rounded-lg transition-colors",
+                  "relative h-11 w-11 rounded-lg transition-colors",
                   selectionMode
                     ? "text-primary bg-primary/10"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
@@ -343,7 +343,7 @@ export function NavigationToolbar({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden min-[1536px]:inline-flex"
+                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden min-[1536px]:inline-flex"
               >
                 <Link
                   href="https://github.com/tianyaxiang/NavSphere"
@@ -359,7 +359,7 @@ export function NavigationToolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg md:hidden text-muted-foreground hover:text-foreground"
+                className="h-11 w-11 rounded-lg md:hidden text-muted-foreground hover:text-foreground"
                 onClick={() => onToggleSidebar()}
                 title="打开菜单"
                 aria-label="打开菜单"

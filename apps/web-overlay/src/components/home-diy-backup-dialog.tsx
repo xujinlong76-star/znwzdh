@@ -20,6 +20,7 @@ import {
   CloudUpload,
   Copy,
   Download,
+  Link2,
   Lock,
   RefreshCw,
   ShieldAlert,
@@ -69,6 +70,7 @@ import type {
 } from '@/lib/modular/home-diy-io'
 import {
   resolveVaultPushPrecondition,
+  requestDiyShareShortLink,
   vaultPullOutcome,
   vaultPushRefusalCode,
   vaultPushRefusalNotice,
@@ -423,6 +425,48 @@ export function HomeDIYBackupDialog({
     })
   }
 
+  /**
+   * 短链分享（M6）：在完整 `#diy=` 链接之外再给一个短链选项。
+   *
+   * 今天的短链服务只认 `/marketplace/` 目标，首页分享一定拿不到短链
+   * （requestDiyShareShortLink 会返回 unsupported-target）：这时也不让
+   * 用户空手而归——完整链接一直可用，复制它，并如实说清为什么是长链接。
+   * 中枢放开首页目标的那天，同一段代码开始复制真短链，不用再改。
+   */
+  const handleShareShortLink = async () => {
+    const out = exportPresetToUrlHash()
+    if (!out.ok) {
+      toast({ title: '❌ 分享链接生成失败', description: out.reason, variant: 'destructive' })
+      return
+    }
+    const short = await requestDiyShareShortLink(out.url)
+    if (short.ok) {
+      const result = await copyText(short.url)
+      if (!result.ok) {
+        toast({ ...copyFailureToast(result), variant: 'destructive' })
+        return
+      }
+      toast({
+        title: '🔗 已复制短链！',
+        description: '好友打开短链即可预览，确认后应用您的专属排版与壁纸。',
+      })
+      return
+    }
+    // 短链拿不到也不让用户空手而归：完整链接一直可用，复制它并说清原因。
+    const result = await copyText(out.url)
+    if (!result.ok) {
+      toast({ ...copyFailureToast(result), variant: 'destructive' })
+      return
+    }
+    toast({
+      title: '🔗 已复制完整分享链接',
+      description:
+        short.reason === 'unsupported-target'
+          ? '短链服务目前只支持市场插件链接，首页分享暂不支持短链；已为你复制完整链接，打开效果与短链完全一样。'
+          : '短链生成失败，已为你复制完整分享链接，打开效果与短链完全一样。',
+    })
+  }
+
   const handleCopyConfig = async () => {
     const json = exportDIYConfig()
     const result = await copyText(json)
@@ -653,6 +697,10 @@ export function HomeDIYBackupDialog({
               <Button size="sm" onClick={handleShareUrlHash} className="w-full text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white shadow-xs">
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                 <span>复制免登专属分享链接 (URL-Hash)</span>
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleShareShortLink} className="w-full text-xs gap-1.5">
+                <Link2 className="w-3.5 h-3.5" />
+                <span>复制短链（短链不可用时自动改复制完整链接）</span>
               </Button>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">

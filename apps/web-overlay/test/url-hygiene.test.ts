@@ -341,6 +341,32 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
       "（服务端写入时另有 http(s) 白名单校验），href 为空时不渲染链接。",
     evidence: ["const href = safeHref(site.url, '')"],
   },
+  // ---- 我的收藏（P1 #8）：两处收藏行在渲染前一句已过 safeHref 闸 ----
+  {
+    file: "src/components/search-palette.tsx",
+    kind: "href",
+    expr: "href",
+    why:
+      "空面板「我的收藏」行的 href 是 `const href = safeHref(fav.href, '')` 的输出；" +
+      "不安全地址落到 ''，`if (!href) return null` 让整行不渲染，所以 href 位置不存在未过闸的外部数据。",
+    evidence: [
+      "const href = safeHref(fav.href, '')",
+      "我的收藏（P1 #8）：空查询时展示最近 8 条收藏，打字可在结果面板里筛选",
+    ],
+  },
+  {
+    file: "src/components/search-palette.tsx",
+    kind: "href",
+    expr: "href",
+    why:
+      "结果面板「我的收藏」行的 href 同样是 `const href = safeHref(fav.href, '')` 的输出；" +
+      "不安全地址落到 ''，`if (!href) return null` 让整行不渲染（且 matchPaletteFavorites 已在源头过滤），" +
+      "所以 href 位置不存在未过闸的外部数据。",
+    evidence: [
+      "const href = safeHref(fav.href, '')",
+      "我的收藏（P1 #8）：只出现用户自己的收藏，命中查询词的排在站点之前；已在站点结果里的不重复出现",
+    ],
+  },
   // ---- 本地写死的站内路径常量（功能图鉴与影院横幅，取值全是站内路径）----
   {
     file: "src/components/user-center/growth-panel.tsx",

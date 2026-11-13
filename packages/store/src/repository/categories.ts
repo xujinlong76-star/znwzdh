@@ -15,6 +15,7 @@ import {
   rowToCategory,
 } from "./dialect.ts";
 import { chunkList, inPredicate } from "../sql-in.ts";
+import { buildKeysetPredicate, encodeKeysetCursor, parseKeysetCursor, type KeysetKey } from "../keyset.ts";
 
 export async function listCategories(repo: Repository): Promise<Category[]> {
   const rows = await repo.raw("SELECT * FROM categories ORDER BY sort ASC, title ASC", []);
@@ -31,12 +32,27 @@ export async function listCategories(repo: Repository): Promise<Category[]> {
  * `parentId === null` → 只要根；字符串 → 只要该父的直接子级；
  * 两者都不传 → 全树（再配 `level` 可按「根 / 非根」粗筛）。
  */
+/**
+ * 排序键（M12 keyset）：与 ORDER BY（sort ASC, title ASC, id ASC）逐项一致。
+ * id 是新增的决胜键：此前同 sort 同 title 的并列行顺序由引擎自由决定，跨页
+ * 会抖动；补上后全序稳定，游标页边界才无重复无遗漏。
+ */
+const CATEGORY_KEYSET_KEYS: KeysetKey[] = [
+  { column: "sort", direction: "ASC" },
+  { column: "title", direction: "ASC" },
+  { column: "id", direction: "ASC" },
+];
+
 export async function listCategoriesPage(
   repo: Repository,
-  filter: { limit?: number; offset?: number; parentId?: string | null; level?: number } = {}
-): Promise<{ items: Category[]; total: number; limit: number; offset: number }> {
+  filter: { limit?: number; offset?: number; parentId?: string | null; level?: number; cursor?: string } = {}
+): Promise<{ items: Category[]; total: number; limit: number; offset: number; nextCursor: string | null }> {
   const limit = Math.min(Math.max(Math.trunc(filter.limit ?? 200), 1), 500);
   const offset = Math.max(Math.trunc(filter.offset ?? 0), 0);
+  // 传了 cursor 就走 keyset 谓词（WHERE (sort,title,id) > (?,?,?)），不再 OFFSET；
+  // 无效游标抛 InvalidKeysetCursorError，由路由层映射成 400。offset 此时被忽略。
+  const keysetValues = parseKeysetCursor(filter.cursor, CATEGORY_KEYSET_KEYS.length);
+  const keyset = keysetValues ? buildKeysetPredicate(CATEGORY_KEYSET_KEYS, keysetValues) : null;
   const where: string[] = [];
   const params: unknown[] = [];
   if (filter.parentId === null) where.push("parent_id IS NULL");
@@ -47,12 +63,31 @@ export async function listCategoriesPage(
   else if (filter.level === 2) where.push("parent_id IS NOT NULL");
   const whereSql = where.length ? " WHERE " + where.join(" AND ") : "";
 
+  // total 只看筛选条件，不含游标位置——否则翻到后面 total 会越数越小。
   const totalRows = await repo.raw(`SELECT COUNT(*) AS c FROM categories${whereSql}`, params);
+  // 不论 offset 还是游标，都多取一行判定 hasMore：有余行就给 nextCursor，
+  // 否则 null（已到末页）。offset 页也给游标——客户端可以从第 1 页（offset）
+  // 直接切到游标翻页，不用先算 offset。
+  const pageWhere = keyset ? whereSql + (where.length ? " AND " : " WHERE ") + keyset.sql : whereSql;
+  const pageParams = keyset ? [...params, ...keyset.params] : params;
   const rows = await repo.raw(
-    `SELECT * FROM categories${whereSql} ORDER BY sort ASC, title ASC LIMIT ? OFFSET ?`,
-    [...params, limit, offset],
+    `SELECT * FROM categories${pageWhere} ORDER BY sort ASC, title ASC, id ASC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    keyset ? [...pageParams, limit + 1] : [...pageParams, limit + 1, offset],
   );
-  return { items: rows.map(rowToCategory), total: Number(totalRows[0]?.c ?? 0), limit, offset };
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const items = page.map(rowToCategory);
+  const last = page[page.length - 1];
+  return {
+    items,
+    total: Number(totalRows[0]?.c ?? 0),
+    limit,
+    offset,
+    nextCursor:
+      hasMore && last
+        ? encodeKeysetCursor([Number(last.sort ?? 0), String(last.title ?? ""), String(last.id)])
+        : null,
+  };
 }
 
 /**

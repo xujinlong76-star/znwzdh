@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
+import { EmptyState } from '@/components/ui/empty-state'
 import { takeStagedWorkspacePreset } from '@/lib/plugins/preset-staging'
 import { formatLayoutReport, type NoticeTone } from '@/lib/modular/layout-report'
 import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
@@ -46,6 +47,7 @@ import {
   planOrderMoves,
   type GridItem,
 } from '@/lib/modular/grid-layout'
+import { DIY_EMPTY_COPY } from '@/lib/empty-states'
 
 export function ModularCanvas() {
   const {
@@ -329,6 +331,24 @@ export function ModularCanvas() {
     setIsExportPluginOpen(true)
   }
 
+  // 删除看板：先确认再删（window.confirm，文案与 search-palette 的 DIY
+  // 重置确认同口径）；deleteBoard 已把删前快照压进撤销栈，删完按
+  // Ctrl/Cmd+Z 可恢复整板，toast 必须把这条退路说出来。
+  const handleDeleteBoard = (boardId: string, boardName: string) => {
+    if (
+      !window.confirm(
+        `确定要删除看板「${boardName}」吗？其中的模块会一并删除，删除后按 Ctrl/Cmd+Z 可撤销恢复。`,
+      )
+    )
+      return
+    const deleted = deleteBoard(boardId)
+    if (!deleted) {
+      showNotice('删除失败：至少保留 1 个看板', 'warn')
+      return
+    }
+    showNotice(`已删除看板「${deleted.name}」（含 ${deleted.widgetCount} 个模块），按 Ctrl/Cmd+Z 可撤销恢复`)
+  }
+
   // 导入 JSON
   const handleImport = () => {
     const input = document.createElement('input')
@@ -343,6 +363,11 @@ export function ModularCanvas() {
         // 台账直接进措辞：剔掉了几个模块、几个看板被清空，都必须说得出数
         const notice = formatLayoutReport(importLayoutJson(text), '工作台配置')
         showNotice(notice.text, notice.tone, 5000)
+      }
+      // 只挂 onload 时读盘失败是静默的：点了导入、挑了文件，界面毫无反应，
+      // 用户只会以为按钮坏了（与 home-diy-backup-dialog 的同款修复同口径）。
+      reader.onerror = () => {
+        showNotice('读取文件失败：无法读取所选文件，请重试或检查文件是否损坏', 'warn', 5000)
       }
       reader.readAsText(file)
     }
@@ -380,7 +405,7 @@ export function ModularCanvas() {
             <div key={b.id} className="flex items-center group/tab shrink-0">
               <button
                 onClick={() => switchBoard(b.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                className={`min-h-11 px-3 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                   activeBoardId === b.id
                     ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                     : 'bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground'
@@ -392,8 +417,8 @@ export function ModularCanvas() {
               </button>
               {isEditing && boards.length > 1 && (
                 <button
-                  onClick={() => deleteBoard(b.id)}
-                  className="p-1 text-muted-foreground hover:text-red-500 transition-opacity ml-0.5 opacity-50 sm:opacity-0 sm:group-hover/tab:opacity-100"
+                  onClick={() => handleDeleteBoard(b.id, b.name)}
+                  className="p-1.5 min-h-11 min-w-11 flex items-center justify-center text-muted-foreground hover:text-red-500 transition-opacity ml-0.5 opacity-50 sm:opacity-0 sm:group-hover/tab:opacity-100 sm:group-focus-within/tab:opacity-100 focus-visible:opacity-100"
                   title="删除此看板"
                   aria-label={`删除看板：${b.name}`}
                 >
@@ -413,16 +438,16 @@ export function ModularCanvas() {
                   placeholder="看板名称..."
                   value={newBoardName}
                   onChange={(e) => setNewBoardName(e.target.value)}
-                  className="h-7 px-2 text-base sm:text-xs rounded-lg border border-border bg-background outline-none focus:ring-1 focus:ring-primary w-28"
+                  className="h-11 px-2 text-base sm:text-xs rounded-lg border border-border bg-background outline-none focus:ring-1 focus:ring-primary w-28"
                 />
-                <Button size="sm" type="submit" className="h-7 px-2 text-xs rounded-lg">
+                <Button size="sm" type="submit" className="min-h-11 px-2 text-xs rounded-lg">
                   确定
                 </Button>
                 <Button
                   size="sm"
                   type="button"
                   variant="ghost"
-                  className="h-7 px-2 text-xs rounded-lg"
+                  className="min-h-11 px-2 text-xs rounded-lg"
                   onClick={() => setIsCreatingBoard(false)}
                 >
                   取消
@@ -471,7 +496,9 @@ export function ModularCanvas() {
             <Palette className="w-3 h-3 text-muted-foreground ml-1 mr-0.5" />
             <button
               onClick={() => handleSelectBg('dots')}
-              className={`px-1.5 py-0.5 rounded-lg transition-colors ${
+              aria-pressed={canvasBg === 'dots'}
+              aria-label={canvasBg === 'dots' ? `当前画布背景：赛博点阵画布` : `切换画布背景为赛博点阵画布`}
+              className={`px-1.5 py-1 min-h-11 rounded-lg transition-colors ${
                 canvasBg === 'dots' ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
               }`}
               title="赛博点阵画布"
@@ -480,7 +507,9 @@ export function ModularCanvas() {
             </button>
             <button
               onClick={() => handleSelectBg('grid')}
-              className={`px-1.5 py-0.5 rounded-lg transition-colors ${
+              aria-pressed={canvasBg === 'grid'}
+              aria-label={canvasBg === 'grid' ? `当前画布背景：工程网格画布` : `切换画布背景为工程网格画布`}
+              className={`px-1.5 py-1 min-h-11 rounded-lg transition-colors ${
                 canvasBg === 'grid' ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
               }`}
               title="工程网格画布"
@@ -489,7 +518,9 @@ export function ModularCanvas() {
             </button>
             <button
               onClick={() => handleSelectBg('aurora')}
-              className={`px-1.5 py-0.5 rounded-lg transition-colors ${
+              aria-pressed={canvasBg === 'aurora'}
+              aria-label={canvasBg === 'aurora' ? `当前画布背景：极光微光画布` : `切换画布背景为极光微光画布`}
+              className={`px-1.5 py-1 min-h-11 rounded-lg transition-colors ${
                 canvasBg === 'aurora' ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
               }`}
               title="极光微光画布"
@@ -498,7 +529,9 @@ export function ModularCanvas() {
             </button>
             <button
               onClick={() => handleSelectBg('clean')}
-              className={`px-1.5 py-0.5 rounded-lg transition-colors ${
+              aria-pressed={canvasBg === 'clean'}
+              aria-label={canvasBg === 'clean' ? `当前画布背景：纯净底色` : `切换画布背景为纯净底色`}
+              className={`px-1.5 py-1 min-h-11 rounded-lg transition-colors ${
                 canvasBg === 'clean' ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
               }`}
               title="纯净底色"
@@ -514,7 +547,7 @@ export function ModularCanvas() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  className="h-11 w-11 p-0 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
                   onClick={handleUndo}
                   disabled={!canUndo}
                   title="撤销历史操作 (Ctrl+Z)"
@@ -525,7 +558,7 @@ export function ModularCanvas() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  className="h-11 w-11 p-0 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
                   onClick={handleRedo}
                   disabled={!canRedo}
                   title="重做撤销操作 (Ctrl+Y / Ctrl+Shift+Z)"
@@ -538,7 +571,7 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                className="min-h-11 px-2.5 text-xs rounded-xl gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
                 onClick={() => setIsLibraryOpen(true)}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -548,7 +581,7 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 px-2.5 text-xs rounded-xl gap-1.5"
+                className="min-h-11 px-2.5 text-xs rounded-xl gap-1.5"
                 onClick={() => setIsTemplateOpen(true)}
               >
                 <LayoutTemplate className="w-3.5 h-3.5" />
@@ -558,7 +591,7 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-purple-500/30 text-purple-700 dark:text-purple-400 hover:bg-purple-500/10 shadow-xs"
+                className="min-h-11 px-2.5 text-xs rounded-xl gap-1.5 border-purple-500/30 text-purple-700 dark:text-purple-400 hover:bg-purple-500/10 shadow-xs"
                 onClick={() => setIsAiGenOpen(true)}
                 title="一句话让 AI 智能规划专属工作台"
               >
@@ -569,7 +602,7 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+                className="min-h-11 px-2.5 text-xs rounded-xl gap-1.5 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
                 onClick={() => {
                   compactLayout()
                   // 只报「重排了几个模块」：单个模块时 compactLayout 是空操作，
@@ -585,9 +618,10 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 px-2 text-xs rounded-xl text-muted-foreground hover:text-foreground"
+                className="min-h-11 px-2 text-xs rounded-xl text-muted-foreground hover:text-foreground"
                 onClick={resetToDefault}
                 title="重置为默认模版"
+                aria-label="重置为默认模版"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </Button>
@@ -595,7 +629,7 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+                className="min-h-11 px-2.5 text-xs rounded-xl gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
                 onClick={handleExportAsPlugin}
                 title="导出为插件市场规范的工作台预设清单（.json）"
               >
@@ -606,9 +640,10 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 px-2 text-xs rounded-xl text-muted-foreground hover:text-foreground"
+                className="min-h-11 px-2 text-xs rounded-xl text-muted-foreground hover:text-foreground"
                 onClick={handleExport}
                 title="导出为 JSON 备份"
+                aria-label="导出为 JSON 备份"
               >
                 <Download className="w-3.5 h-3.5" />
               </Button>
@@ -616,9 +651,10 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 px-2 text-xs rounded-xl text-muted-foreground hover:text-foreground"
+                className="min-h-11 px-2 text-xs rounded-xl text-muted-foreground hover:text-foreground"
                 onClick={handleImport}
                 title="导入 JSON 配置文件"
+                aria-label="导入 JSON 配置文件"
               >
                 <Upload className="w-3.5 h-3.5" />
               </Button>
@@ -626,12 +662,12 @@ export function ModularCanvas() {
           )}
 
           {/* 内容排版密度矩阵切换 */}
-          <DensityToggle className="h-8 w-8" />
+          <DensityToggle />
 
           {/* 切换编辑模式主按钮 */}
           <Button
             size="sm"
-            className={`h-8 px-3.5 text-xs rounded-xl gap-1.5 font-medium shadow-xs transition-all ${
+            className={`min-h-11 px-3.5 text-xs rounded-xl gap-1.5 font-medium shadow-xs transition-all ${
               isEditing
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                 : 'bg-primary text-primary-foreground hover:opacity-90'
@@ -665,26 +701,32 @@ export function ModularCanvas() {
 
       {/* 12 栅格自适应主画布 */}
       {widgets.length === 0 ? (
-        <div className="p-12 rounded-2xl border-2 border-dashed border-border/80 text-center space-y-3 glass-surface">
-          <div className="w-12 h-12 rounded-2xl bg-muted/50 mx-auto flex items-center justify-center text-muted-foreground">
-            <Grid className="w-6 h-6" />
-          </div>
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold text-foreground">当前工作台为空</h3>
-            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              当前看板中没有小组件。可点击下方按钮添加常用功能模块，或直接套用预设模版。
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-2 pt-2">
-            <Button size="sm" onClick={() => setIsLibraryOpen(true)} className="gap-1.5 text-xs rounded-xl">
-              <Plus className="w-3.5 h-3.5" />
-              <span>选择并添加模块</span>
-            </Button>
-            <Button size="sm" variant="outline" onClick={resetToDefault} className="text-xs rounded-xl">
-              恢复默认模版
-            </Button>
-          </div>
-        </div>
+        <EmptyState
+          icon={LayoutTemplate}
+          title={DIY_EMPTY_COPY.title}
+          description={
+            <>
+              {DIY_EMPTY_COPY.why} {DIY_EMPTY_COPY.next}
+            </>
+          }
+          action={
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <Button size="sm" onClick={resetToDefault} className="gap-1.5 text-xs rounded-xl">
+                <LayoutTemplate className="w-3.5 h-3.5" />
+                <span>{DIY_EMPTY_COPY.actionLabel}</span>
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setIsLibraryOpen(true)} className="gap-1.5 text-xs rounded-xl">
+                <Plus className="w-3.5 h-3.5" />
+                <span>选择并添加模块</span>
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setIsTemplateOpen(true)} className="gap-1.5 text-xs rounded-xl">
+                <LayoutTemplate className="w-3.5 h-3.5" />
+                <span>套用预设模版</span>
+              </Button>
+            </div>
+          }
+          className="max-w-none"
+        />
       ) : (
         <div className={`p-2.5 sm:p-4 rounded-3xl border border-border/50 transition-all duration-300 ${
           canvasBg === 'dots'

@@ -108,13 +108,17 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 20)) : 20;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
+      // Keyset 游标（M12）：`?cursor=` 走 WHERE (updated_at,id) 谓词，不再 OFFSET；
+      // nextCursor 随页返回，无下一页时为 null。无效游标由全局错误处理器映射成
+      // 400 INVALID_CURSOR。
+      const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
       // myReview 属私有视图：统一走身份闸门 + identityOf 口径（64 字符），
       // 不再单独放宽到 120——写入侧（安装/星标/评价）一直按 identityOf 取值，
       // 这里读更长的串只会查不到自己的评价，或与签名校验的取值错位。
       const identity = pluginIdentity(ctx, req);
 
       const [reviewsResult, stats, myReview] = await Promise.all([
-        ctx.repo.listPluginReviews(plugin.id, { limit, offset }),
+        ctx.repo.listPluginReviews(plugin.id, { limit, offset, cursor }),
         ctx.repo.getPluginReviewStats(plugin.id),
         identity ? ctx.repo.getUserPluginReview(plugin.id, identity) : null,
       ]);
@@ -127,6 +131,7 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
         total: reviewsResult.total,
         limit,
         offset,
+        nextCursor: reviewsResult.nextCursor,
       };
     }
   );

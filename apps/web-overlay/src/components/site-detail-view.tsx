@@ -67,6 +67,7 @@ import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
 import { isBotBlockStatus, siteHealthBadge } from '@/lib/site-health'
+import { buildDeadLinkWaybackUrl } from '@/lib/dead-link'
 import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
 import { useSiteViewModel } from '@/components/site-view-context'
@@ -480,7 +481,10 @@ export function SiteDetailView({
         : (site.source ?? '').trim() || null
 
   const isDeadLink = site.status === 'broken' || (livePing && !livePing.reachable)
-  const waybackUrl = `https://web.archive.org/web/*/${encodeURI(site.url)}`
+  // 死链恢复的 Wayback 链接定向到「收录时刻」最近的快照（research #4）：
+  // 用户看到的是收录时样子的页面，而不是站下线/改版后的最新快照。
+  // 没有收录时间时回落到 `*`（最新快照）。
+  const waybackUrl = buildDeadLinkWaybackUrl(site.url, site.createdAt)
 
   return (
     <Container as="main" id="main-content">

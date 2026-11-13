@@ -1,10 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import { memo, useRef } from 'react'
+import { memo, useRef, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/registry/new-york/ui/card'
 import type { NavigationSubItem } from '@/types/navigation'
-import { SiteFavicon } from '@/components/site-favicon'
+import { SiteFavicon, extractFaviconMonogram, getDeterministicGradient } from '@/components/site-favicon'
+import { resolveSiteThumbnail, type SiteThumbnail } from '@/lib/site-thumbnails'
 import { FavoriteButton } from '@/components/favorite-button'
 import type { SiteConfig } from '@/types/site'
 import {
@@ -12,7 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Eye, EyeOff, Star, Zap, Pin, Clock, Info, Copy, ArrowUpToLine, GripVertical } from 'lucide-react'
+import { Eye, EyeOff, Star, Zap, Pin, Info, Copy, ArrowUpToLine, GripVertical } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { DiyCardMenu } from '@/components/diy/diy-card-menu'
 import { DIY_DRAG_INSTRUCTIONS_ID, type CardMoveDirection } from '@/lib/modular/diy-drag'
@@ -29,6 +30,67 @@ import { getIdentity } from '@/lib/identity'
 import { reportClick } from '@/lib/navhub-api'
 import { copyText } from '@/lib/clipboard'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
+
+/**
+ * 视觉缩略图（P1 #9：视觉卡片——缩略图一半）。
+ *
+ * 只渲染解析器已经确认的真实图片（品牌图标 / 自定义 icon / favicon 代理，
+ * 见 lib/site-thumbnails.ts），不编造、不接截图服务。盒子尺寸由调用方
+ * 固定（横幅 h-28 / 标准卡大图标 w-12 h-12），图片懒加载、加载失败时
+ * 回落为与图标管线同款的确定性渐变首字母徽标——盒子尺寸不变，所以
+ * 图片无论成功、失败还是还在加载，卡片都不会发生布局偏移。
+ * 图片本身是装饰性的（标题已是链接文本），aria-hidden，不进读屏。
+ */
+function CardThumbnailVisual({
+  thumbnail,
+  title,
+  boxClassName,
+  imgClassName,
+  monogramClassName,
+}: {
+  thumbnail: SiteThumbnail
+  title: string
+  boxClassName: string
+  imgClassName: string
+  monogramClassName: string
+}) {
+  const [imgFailed, setImgFailed] = useState(false)
+  const prevSrcRef = useRef(thumbnail.src)
+  // 与 SiteFavicon 同款的换源复位：同一位置复用给另一站点时，
+  // 旧图的失败态不能把新图也钉死成首字母徽标。
+  if (prevSrcRef.current !== thumbnail.src) {
+    prevSrcRef.current = thumbnail.src
+    if (imgFailed) setImgFailed(false)
+  }
+  const gradient = getDeterministicGradient(title || 'navhub')
+  const monogram = extractFaviconMonogram(title || '')
+  return (
+    <div
+      aria-hidden="true"
+      className={cn('relative flex items-center justify-center overflow-hidden select-none', boxClassName)}
+      style={{ background: gradient.cssGradient }}
+    >
+      {!imgFailed ? (
+        <img
+          src={thumbnail.src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          className={cn('relative z-10', imgClassName)}
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <span
+          className={cn('font-bold leading-none drop-shadow-xs', monogramClassName)}
+          style={{ color: gradient.textColor }}
+        >
+          {monogram}
+        </span>
+      )}
+    </div>
+  )
+}
 
 export interface NavigationCardProps {
   item: NavigationSubItem
@@ -88,6 +150,17 @@ export const NavigationCard = memo(function NavigationCard({
   const isEditingLayout = propIsEditingLayout ?? isDraggable
   const { effectiveCardElements, isFeatureHidden, removeFeature } = useFeatureMask()
   const isCapsuleCollapsed = !effectiveCardElements.showDescription && !effectiveCardElements.showTags
+
+  /**
+   * 死链徽标已从卡片移除（2026-11-12，research #4 收敛到详情页）：
+   * 卡片数据来自静态导航 JSON，从没有任何一条带巡检 health，首页也不取
+   * 中枢数据，`nav-<hex>` 的导航 id 与中枢站点的 id 之间又没有可验证的
+   * 对应关系——徽标在生产里永远画不出来，留着只是死 UI。死链恢复的唯一
+   * 活入口在详情页：site-detail-view 直接用中枢站点的 health + createdAt，
+   * 一键打开收录时刻的 Wayback 快照（见 lib 里的 Wayback 恢复工具）。
+   * 若将来有了卡片可用的巡检生产者，再把徽标与判定口径从
+   * git 历史里请回来，不要凭空猜一个 id 对应关系把它焊上去。
+   */
 
   /**
    * dnd-kit 拖拽手柄的 ref 回调（轻量 context，不 import dnd-kit）。
@@ -334,6 +407,13 @@ export const NavigationCard = memo(function NavigationCard({
   const hasSiteDetail = !item.id.startsWith('custom_site_')
   const siteDetailHref = `/site/${encodeURIComponent(item.id)}`
 
+  /**
+   * 视觉缩略图（P1 #9）：只取既有图标管线的真实图片（品牌图标 / 自定义
+   * icon / favicon 代理）；解析不到（非 http(s) 链接、显式默认图标）时
+   * 为 null，各形态回落到现有的图标渲染。
+   */
+  const thumbnail = resolveSiteThumbnail(item)
+
   /** 标题/详情与整卡同语义：多选时不导航，只切换选中 */
   const handleDetailClick = (e: React.MouseEvent) => {
     if (!selectable) return
@@ -366,7 +446,7 @@ export const NavigationCard = memo(function NavigationCard({
    * 结构纪律（与 tag-results-board 同一套）：**外链 <a>、标题内链、操作按钮
    * 三者是兄弟节点，任何 `<a>` 都不嵌套 `<a>`**。外链是空锚覆盖整卡，
    * 内容层整体 pointer-events-none，只有真正可点的元素（标题内链、
-   * 快照自愈、平替徽标、标签）单独 pointer-events-auto —— 否则描述与空白处
+   * 平替徽标、标签）单独 pointer-events-auto —— 否则描述与空白处
    * 的点击会被内容层吞掉，「点卡片开官网」的默认行为当场失效。
    */
   const detailAction = (sizeClass: string) =>
@@ -457,20 +537,6 @@ export const NavigationCard = memo(function NavigationCard({
                     <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded">
                       <Star className="w-2 h-2 text-amber-500 fill-amber-500" />
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
-                    </span>
-                  )}
-                  {item.health?.ok === false && (
-                    <span
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        onPeek?.(item)
-                      }}
-                      className="pointer-events-auto inline-flex items-center gap-0.5 text-[9px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
-                      title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
-                    >
-                      <Clock className="w-2.5 h-2.5 text-amber-500" />
-                      <span>快照自愈</span>
                     </span>
                   )}
                 </div>
@@ -634,8 +700,20 @@ export const NavigationCard = memo(function NavigationCard({
               </a>
 
               <div className="relative z-10 pointer-events-none flex flex-col flex-1">
+                {/* 视觉横幅（P1 #9）：有真实缩略图时才渲染，固定 h-28，不产生布局偏移；
+                    横幅已展示同一张图，下方标题行不再重复放小图标。 */}
+                {thumbnail && (
+                  <CardThumbnailVisual
+                    thumbnail={thumbnail}
+                    title={item.title}
+                    boxClassName="h-28 w-full shrink-0"
+                    imgClassName="h-14 w-14 object-contain drop-shadow-sm"
+                    monogramClassName="text-3xl"
+                  />
+                )}
                 <CardHeader className="p-4 sm:p-5 flex-1">
                   <div className="flex items-start gap-3.5">
+                    {!thumbnail && (
                     <div className="flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
                       <SiteFavicon
                         title={item.title}
@@ -645,6 +723,7 @@ export const NavigationCard = memo(function NavigationCard({
                         className="w-full h-full object-contain rounded-sm"
                       />
                     </div>
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 ">
                         <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
@@ -670,26 +749,12 @@ export const NavigationCard = memo(function NavigationCard({
                       )}
 
                       {/* 徽标与指标：自适应流动折叠，绝不挤压主标题 */}
-                      {effectiveCardElements.showPinnedBadge && (item.liveMetrics?.githubStars || item.health?.ok === false) && (
+                      {effectiveCardElements.showPinnedBadge && (item.liveMetrics?.githubStars) && (
                         <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
                           {item.liveMetrics?.githubStars && (
                             <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
                               <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                               {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
-                            </span>
-                          )}
-                          {item.health?.ok === false && (
-                            <span
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                onPeek?.(item)
-                              }}
-                              className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
-                              title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
-                            >
-                              <Clock className="w-2.5 h-2.5 text-amber-500" />
-                              <span>快照自愈</span>
                             </span>
                           )}
                         </div>
@@ -907,6 +972,18 @@ export const NavigationCard = memo(function NavigationCard({
             )}>
               {/* Header 层：图标与标题同行，释放左侧死区 */}
               <div className="flex items-center gap-2.5 min-w-0 pr-14">
+                {/* 视觉大图标（P1 #9）：有真实缩略图时把 28px 小图标换成 48px
+                    视觉 tile；无缩略图时保持现有渲染不变。盒子尺寸固定，
+                    图片懒加载、失败回落首字母徽标，不产生布局偏移。 */}
+                {thumbnail ? (
+                  <CardThumbnailVisual
+                    thumbnail={thumbnail}
+                    title={item.title}
+                    boxClassName="flex-shrink-0 w-12 h-12 rounded-xl shadow-xs transition-transform duration-200 group-hover/card:scale-105"
+                    imgClassName="h-9 w-9 object-contain"
+                    monogramClassName="text-lg"
+                  />
+                ) : (
                 <div className="flex-shrink-0 w-7 h-7 @[280px]:w-8 @[280px]:h-8 rounded-lg p-1 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
                   <SiteFavicon
                     title={item.title}
@@ -916,6 +993,7 @@ export const NavigationCard = memo(function NavigationCard({
                     className="w-full h-full object-contain rounded-xs"
                   />
                 </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                     {hasSiteDetail ? (
@@ -942,26 +1020,12 @@ export const NavigationCard = memo(function NavigationCard({
               )}
 
               {/* 徽标、指标与深链行：自适应折叠，绝不挤压主标题 */}
-              {effectiveCardElements.showPinnedBadge && (item.liveMetrics?.githubStars || item.health?.ok === false || topAlternative || (item.actions && item.actions.length > 0)) && (
+              {effectiveCardElements.showPinnedBadge && (item.liveMetrics?.githubStars || topAlternative || (item.actions && item.actions.length > 0)) && (
                 <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
                   {item.liveMetrics?.githubStars && (
                     <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
                       <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
-                    </span>
-                  )}
-                  {item.health?.ok === false && (
-                    <span
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        onPeek?.(item)
-                      }}
-                      className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
-                      title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
-                    >
-                      <Clock className="w-2.5 h-2.5 text-amber-500" />
-                      <span>快照自愈</span>
                     </span>
                   )}
                   {topAlternative && (

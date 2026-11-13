@@ -633,6 +633,31 @@ export function redoHomeDiy(): HomeDiyWriteResult | null {
 }
 
 /**
+ * 同一按键只撤销一步（W2-9）的认领制：Ctrl+Z 有三条 window keydown 监听——
+ * 画布撤销（modular-canvas，未编排态也挂着）、排版撤销（use-home-diy，
+ * 仅编排态）、回收站恢复（navigation-content）——不拦就会一次按键撤两步。
+ * 同一任务（task）里第一个认领者返回 true 并执行，其余返回 false；
+ * 认领在微任务末尾自动清零（同一按键的后续监听都在同一任务里跑完）。
+ * 注意：这里不拦 undoHomeDiy 本身——旧测试在同一 `it` 里同步连调两次
+ * undoHomeDiy()，拦它会把测试也拦了；认领只拦按键入口（use-home-diy
+ * 的 undo/redo 回调 + navigation-content 的恢复监听）。
+ */
+let homeDiyHistoryStepClaimed = false
+
+export function claimHomeDiyHistoryStep(): boolean {
+  if (homeDiyHistoryStepClaimed) return false
+  homeDiyHistoryStepClaimed = true
+  queueMicrotask(() => {
+    homeDiyHistoryStepClaimed = false
+  })
+  return true
+}
+
+export function didHomeDiyHistoryStepClaimThisTask(): boolean {
+  return homeDiyHistoryStepClaimed
+}
+
+/**
  * 接收其它标签页的改动：按插槽 LWW 合并，绝不整表覆盖。
  * 不压撤销历史（远端改动不是本标签页的操作），也用合并后的 clocks 落盘。
  */
@@ -853,21 +878,34 @@ function pickLegacyFields(parsed: Record<string, unknown>, from: 2 | 1): Partial
 }
 
 /**
- * v2 → v1 迁移：老键里的字段**合到当前 v3 配置上**，只写老键里真的带了的
+ * v2 + v1 迁移：两个老键里的字段**合到当前 v3 配置上**，只写老键里真的带了的
  * 字段，老键没带的字段保持当前值；迁移成功后删掉老键，只迁一次。
  *
  * 旧实现是拿 DEFAULT_CONFIG 重建整份再整表覆盖：v3 里已有的强调色 / 站内置顶 /
  * 站点归属 / 密度覆盖 / 速览坞 / 壁纸 / 模糊 / 不透明度 / 自适应排序全被打回
  * 默认，且老键永远留着、每次加载都重跑一遍把 v3 再盖一次。
+ *
+ * W2-4 两处修正：
+ *   1. 两个老键都读：V2 优先，V1 只补 V2 没带的字段。旧实现在第一个
+ *      找到的老键后直接 return，V2 存在时 V1 独有的字段就被静默丢掉。
+ *   2. 合并结果先过 validateAndCleanDIYConfig 再写盘：pickLegacyFields
+ *      只是「认字段」，数组/记录原样强转（as string[] / as CustomCategory[]，
+ *      无长度上限、无 isSafeIdKey、无白名单），脏值直接进 v3 键等于把
+ *      清洗器绕过去了；这里统一用清洗器的同口径收尾（id 白名单、上限截断、
+ *      自定义分类逐条验 href）。
  */
 export function migrateLegacyHomeDiyConfig(
   storage: HomeDiyStorage,
   current: HomeDIYConfig = DEFAULT_CONFIG,
 ): HomeDIYConfig | null {
-  for (const legacy of [
+  const legacyKeys = [
     { key: LEGACY_STORAGE_KEY_V2, from: 2 as const },
     { key: LEGACY_STORAGE_KEY_V1, from: 1 as const },
-  ]) {
+  ]
+  // V2 优先、V1 补位：只合「对方没带」的字段，V2 已带的字段 V1 不许覆盖。
+  let merged: Partial<HomeDIYConfig> | null = null
+  const readKeys: string[] = []
+  for (const legacy of legacyKeys) {
     let raw: string | null = null
     try {
       raw = storage.getItem(legacy.key)
@@ -885,32 +923,49 @@ export function migrateLegacyHomeDiyConfig(
       // 老键本身是坏的：不动它（用户数据留在原处），也不做迁移
       continue
     }
-    const migrated: HomeDIYConfig = {
-      ...current,
-      ...pickLegacyFields(parsed, legacy.from),
-      updatedAt: Date.now(),
+    readKeys.push(legacy.key)
+    const fields = pickLegacyFields(parsed, legacy.from)
+    if (!merged) {
+      merged = { ...fields }
+    } else {
+      for (const [k, v] of Object.entries(fields)) {
+        if (!(k in merged)) {
+          const target = merged as Record<string, unknown>
+          target[k] = v
+        }
+      }
     }
-    let wrote = true
-    try {
-      storage.setItem(STORAGE_KEY, JSON.stringify(migrated))
-    } catch (err) {
-      // 迁移结果写不进去：仍然返回它（内存里先按迁移后的配置用），
-      // 只是提醒用户刷新后会退回默认值；老键留着，下次加载再试一次。
-      wrote = false
-      commitSharedState({ storageWarning: trackStorageWarning('disk', describeHomeDiyStorageFailure(err)) })
-    }
-    if (wrote) {
-      // 只迁一次：v3 已落盘，老键使命完成。删不掉也不致命——合并是幂等的，
-      // 下次加载重跑一遍还是同一份结果。
+  }
+  if (!merged || readKeys.length === 0) return null
+  // 先清洗再写盘：脏 id / 超长数组 / 非法 href 在这里被截断或丢弃，
+  // 不再原样写进 v3 键；清洗不通过则不动 v3、不删老键，下次加载再试一次。
+  const check = validateAndCleanDIYConfig({ ...current, ...merged, updatedAt: Date.now() })
+  if (!check.valid || !check.config) return null
+  const migrated: HomeDIYConfig = {
+    ...check.config,
+    updatedAt: Date.now(),
+  }
+  let wrote = true
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(migrated))
+  } catch (err) {
+    // 迁移结果写不进去：仍然返回它（内存里先按迁移后的配置用），
+    // 只是提醒用户刷新后会退回默认值；老键留着，下次加载再试一次。
+    wrote = false
+    commitSharedState({ storageWarning: trackStorageWarning('disk', describeHomeDiyStorageFailure(err)) })
+  }
+  if (wrote) {
+    // 只迁一次：v3 已落盘，老键使命完成。删不掉也不致命——合并是幂等的，
+    // 下次加载重跑一遍还是同一份结果。
+    for (const key of readKeys) {
       try {
-        storage.removeItem?.(legacy.key)
+        storage.removeItem?.(key)
       } catch {
         // 删不掉就留着，下次重跑合并结果不变
       }
     }
-    return migrated
   }
-  return null
+  return migrated
 }
 
 /**
@@ -927,13 +982,15 @@ export async function applyHomeDiyShareHash(): Promise<{ applied: boolean; warni
   const decoded = decodeShareLinkPayload(hash)
   if (!decoded.ok) {
     console.warn('[diy] 分享 hash 解码失败，已忽略:', decoded.reason)
-    clearDiyShareHash()
+    // 失败不清除 hash：地址栏里的 hash 就是这份分享的唯一一份拷贝，
+    // 清掉等于连重试、复制、转发的机会一起丢了（UX 审计 P2）。成功挂起
+    // 待确认时才清（下面），确认/取消分享时也清——那两处是用户已处置。
     return { applied: false, warning: decoded.reason }
   }
   const parsed = await parseSharePayload(decoded.raw)
   if (!parsed.ok || !parsed.config) {
     console.warn('[diy] 分享 hash 校验失败，已忽略:', parsed.error)
-    clearDiyShareHash()
+    // 同上：失败不清 hash，链接留在地址栏，刷新页面即可重试。
     return { applied: false, warning: `分享链接未能应用：${parsed.error || '配置不合法'}，已沿用本地排版。` }
   }
   const imported: HomeDIYConfig = {

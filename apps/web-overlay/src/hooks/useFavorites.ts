@@ -45,6 +45,13 @@ export interface LocalFavorite {
   /** 云端收藏夹 id（匿名/离线时为空，登录后由云端元数据合并） */
   folderId?: string | null
   createdAt: number
+  /**
+   * 上次从「重温」入口打开的时间（本机私有，见 lib/resurface）。
+   * 只由 recordOpened 写：不置脏、不推云端——同步 ops 只带
+   * folderId/note/tags，打开时间不是收藏内容；云端合并（mergeCloudFavorites /
+   * applyFavoriteDelta）都从本地缓存 spread 保留它，同步不会把它洗掉。
+   */
+  lastOpenedAt?: number
 }
 
 /**
@@ -91,6 +98,12 @@ export interface FavoritesApi {
   remove: (siteId: string) => void
   /** 收藏管理：更新本地缓存的文件夹/备注（云端写入由调用方 best-effort 处理） */
   updateMeta: (siteId: string, patch: { folderId?: string | null; note?: string | null; tags?: string[] | null }) => boolean
+  /**
+   * 记一次「从重温入口打开」：只写本机 lastOpenedAt，不置脏、不调云端。
+   * 打开时间是本机行为记录，不是收藏内容——推上云端没有消费方，还会让
+   * 每次重温都产生一次无意义的同步 op。now 可注入（测试用确定时钟）。
+   */
+  recordOpened: (siteId: string, now?: number) => boolean
   /** 删除收藏夹后批量置空 folderId（一次持久化 + 一次脏标记，T16） */
   clearFolderForItems: (siteIds: string[]) => boolean
   /** 登录同步成功后用云端列表整体替换本地（云端是事实源，避免删除被本地缓存复活） */
@@ -252,6 +265,14 @@ export function useFavorites(): FavoritesApi {
     if (identity) void removeFavorite(identity, siteId)
   }, [persist])
 
+  const recordOpened = useCallback((siteId: string, now: number = Date.now()) => {
+    const current = sharedFavorites
+    if (!current.some((i) => i.siteId === siteId)) return false
+    // 只有「打开时间」变了：persist 写本机即可，刻意不 markDirty、不调云端
+    //（见接口注释）。写不进去（存储被拦）时返回 false，调用方不假装记下了。
+    return persist(current.map((i) => (i.siteId === siteId ? { ...i, lastOpenedAt: now } : i)))
+  }, [persist])
+
   const updateMeta = useCallback((siteId: string, patch: { folderId?: string | null; note?: string | null; tags?: string[] | null }) => {
     const current = sharedFavorites
     if (!current.some((i) => i.siteId === siteId)) return false
@@ -365,7 +386,7 @@ export function useFavorites(): FavoritesApi {
     }
   }, [persist, storageBlocked])
 
-  return { items, ready, storageBlocked, isFavorite, toggle, remove, updateMeta, clearFolderForItems, replaceAll, clear, resetLocal, exportJson, importJson }
+  return { items, ready, storageBlocked, isFavorite, toggle, remove, updateMeta, recordOpened, clearFolderForItems, replaceAll, clear, resetLocal, exportJson, importJson }
 }
 
 /** 同步游标：仅记录「一次成功同步之后」的版本，失败时绝不推进 */

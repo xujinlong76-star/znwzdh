@@ -53,6 +53,7 @@ describe('卡片标题站内详情内链', () => {
 
   it('外链覆盖层有可读名称，且禁止原生链接拖拽（不劫持 DIY 拖拽）', () => {
     expect(code).toContain('aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}')
-    expect(code.match(/draggable=\{false\}/g)?.length).toBe(3)
+    // 4 处：第 79 行 P1 #9 新增的缩略图 <img draggable={false}> + 原有 3 处外链覆盖层
+    expect(code.match(/draggable=\{false\}/g)?.length).toBe(4)
   })
 })

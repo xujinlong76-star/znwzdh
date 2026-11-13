@@ -121,7 +121,7 @@ export function AddSiteDialog({
                 size="sm"
                 type="button"
                 onClick={() => onPickSuggestion(suggestion.categoryId)}
-                className="h-6 px-2 text-[11px] text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 shrink-0 font-medium"
+                className="min-h-11 px-2 text-[11px] text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 shrink-0 font-medium"
               >
                 选入该类
               </Button>
@@ -130,11 +130,12 @@ export function AddSiteDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" size="sm" className="min-h-11" onClick={() => onOpenChange(false)}>
             取消
           </Button>
           <Button
             size="sm"
+            className="min-h-11"
             onClick={onSubmit}
             disabled={!title.trim() || !href.trim()}
           >

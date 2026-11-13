@@ -6,6 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { JobPayloadSchemas, JobPruneInput, RunJobInput, validateJobPayload } from "@navhub/core";
+import { encodeKeysetCursor, jobKeysetValues } from "@navhub/store";
 
 import type { AppContext } from "../context.ts";
 import { scopeSatisfies } from "../auth.ts";
@@ -35,6 +36,9 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       status: z.enum(["pending", "delivered", "deferred", "failed"]).optional(),
       limit: z.coerce.number().int().min(1).max(100).default(50),
       offset: z.coerce.number().int().min(0).max(100_000).default(0),
+      // Keyset 游标（M12）：传了就走 WHERE (created_at,id) 谓词，不再 OFFSET；
+      // nextCursor 随页返回，无下一页时为 null。
+      cursor: z.string().max(4096).optional(),
     }).safeParse(req.query ?? {});
     if (!parsed.success) return badRequest(reply, "投递状态筛选无效", parsed.error.issues);
     reply.header("cache-control", "private, no-store");
@@ -44,8 +48,11 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
 
   app.get("/api/admin/notifications", { config: { scope: "admin" } }, async (req, reply) => {
     const { limit, offset } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 50 });
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    // Keyset 游标（M12）：传了就走 WHERE (created_at,id) 谓词，不再 OFFSET。
+    const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
     const [page, unread] = await Promise.all([
-      ctx.repo.listNotificationsPage(ADMIN_NOTIFICATION_IDENTITY, limit, offset, false),
+      ctx.repo.listNotificationsPage(ADMIN_NOTIFICATION_IDENTITY, limit, offset, false, cursor),
       ctx.repo.countUnreadNotifications(ADMIN_NOTIFICATION_IDENTITY),
     ]);
     reply.header("cache-control", "private, no-store");
@@ -136,9 +143,21 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
   app.get("/api/jobs", { config: { scope: "read" } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
-    const rows = await ctx.repo.listJobs(q.status, limit + 1, offset);
+    // Keyset 游标（M12）：`?cursor=` 走 WHERE (created_at,id) 谓词，不再 OFFSET；
+    // nextCursor 随页返回，无下一页时为 null。无效游标由全局错误处理器映射成
+    // 400 INVALID_CURSOR。
+    const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
+    const rows = await ctx.repo.listJobs(q.status, limit + 1, offset, { cursor });
     const items = rows.slice(0, limit);
-    return { items, nextOffset: offset + items.length, hasMore: rows.length > limit };
+    const hasMore = rows.length > limit;
+    // 有余行就给 nextCursor（offset 页也给，客户端可以从第 1 页直接切到游标翻页）。
+    const last = hasMore ? items[items.length - 1] : undefined;
+    return {
+      items,
+      nextOffset: offset + items.length,
+      hasMore,
+      nextCursor: last ? encodeKeysetCursor(jobKeysetValues(last)) : null,
+    };
   });
 
   /**

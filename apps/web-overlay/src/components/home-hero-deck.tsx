@@ -167,7 +167,7 @@ export function HomeHeroDeck() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground gap-1"
+                  className="min-h-11 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground gap-1"
                   title="自定义首屏挂载组件"
                 >
                   <Settings2 className="w-3.5 h-3.5" />
@@ -224,7 +224,7 @@ export function HomeHeroDeck() {
                     variant="ghost"
                     size="sm"
                     onClick={handleResetToDefault}
-                    className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                    className="min-h-11 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
                   >
                     <RotateCcw className="w-3 h-3" />
                     <span>恢复默认</span>
@@ -234,14 +234,14 @@ export function HomeHeroDeck() {
                       variant="outline"
                       size="sm"
                       onClick={() => setIsConfigOpen(false)}
-                      className="h-8 px-3 text-xs rounded-xl"
+                      className="min-h-11 px-3 text-xs rounded-xl"
                     >
                       取消
                     </Button>
                     <Button
                       size="sm"
                       onClick={handleSaveConfig}
-                      className="h-8 px-3.5 text-xs rounded-xl font-medium"
+                      className="min-h-11 px-3.5 text-xs rounded-xl font-medium"
                     >
                       保存配置
                     </Button>
@@ -256,7 +256,7 @@ export function HomeHeroDeck() {
             variant="ghost"
             size="sm"
             onClick={toggleHeroDeckCollapsed}
-            className="h-7 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground gap-1"
+            className="min-h-11 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground gap-1"
             title={isHeroDeckCollapsed ? '展开首屏展板' : '收起首屏展板'}
           >
             {isHeroDeckCollapsed ? (

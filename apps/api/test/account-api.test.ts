@@ -161,6 +161,30 @@ describe("账号生命周期 API", () => {
     ).toBe(400);
   });
 
+  it("注册：单字符 TLD 不是真实邮箱", async () => {
+    const res = await post("/api/account/register", {
+      username: "tld",
+      email: "a@b.c",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("邮箱格式");
+  });
+
+  it("登录：同一标识连续失败 5 次后锁定，正确口令也回 429", async () => {
+    await post("/api/account/register", {
+      username: "locky",
+      email: "locky@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    for (let i = 0; i < 5; i++) {
+      const bad = await post("/api/account/login", { identifier: "locky@example.com", password: "wrong" });
+      expect(bad.statusCode).toBe(401);
+    }
+    const locked = await post("/api/account/login", { identifier: "locky@example.com", password: "S3cret-Passw0rd!" });
+    expect(locked.statusCode).toBe(429);
+  });
+
   it("登录：正确口令返回用户，错误口令 401", async () => {
     await post("/api/account/register", {
       username: "dave",

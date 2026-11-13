@@ -5,6 +5,11 @@ import type {
 import {
   rowToAuditLog,
 } from "./dialect.ts";
+import {
+  buildKeysetPredicate,
+  encodeKeysetCursor,
+  parseKeysetCursor,
+} from "../keyset.ts";
 
 /**
  * 幂等键的可接受形态：有界、只含字母数字与 `-`/`_`。
@@ -163,11 +168,19 @@ export async function listVisitsPage(
   identity: string,
   limit: number,
   offset: number,
-): Promise<{ items: VisitItem[]; hasMore: boolean }> {
+  cursor?: string,
+): Promise<{ items: VisitItem[]; hasMore: boolean; nextCursor: string | null }> {
   const capped = Math.min(Math.max(limit, 1), 50);
+  // Keyset 键（M12）：id DESC 单键——events.id 是自增主键，本身就是全序。
+  const keysetValues = parseKeysetCursor(cursor, 1);
+  const keyset = keysetValues
+    ? buildKeysetPredicate([{ column: "id", direction: "DESC" }], keysetValues)
+    : null;
   const rows = await repo.raw(
-    "SELECT id, site_id, created_at FROM events WHERE identity = ? AND kind = 'click' AND site_id IS NOT NULL ORDER BY id DESC LIMIT ? OFFSET ?",
-    [identity, capped + 1, Math.max(0, offset)],
+    "SELECT id, site_id, created_at FROM events WHERE identity = ? AND kind = 'click' AND site_id IS NOT NULL" +
+      (keyset ? ` AND ${keyset.sql}` : "") +
+      ` ORDER BY id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    keyset ? [identity, ...keyset.params, capped + 1] : [identity, capped + 1, Math.max(0, offset)],
   );
   const hasMore = rows.length > capped;
   const items = (hasMore ? rows.slice(0, capped) : rows).map((r) => ({
@@ -175,7 +188,9 @@ export async function listVisitsPage(
     siteId: String(r.site_id),
     at: Number(r.created_at ?? 0),
   }));
-  return { items, hasMore };
+  // 有余行就给 nextCursor（offset 页也给，客户端可以从第 1 页直接切到游标翻页）。
+  const last = hasMore ? items[items.length - 1] : undefined;
+  return { items, hasMore, nextCursor: last ? encodeKeysetCursor([last.id]) : null };
 }
 
 export async function countVisits(repo: Repository, identity: string): Promise<number> {
@@ -190,22 +205,34 @@ export async function listAuditLogs(repo: Repository, filter: {
     offset?: number;
     action?: string;
     actor?: string;
-  } = {}): Promise<{ items: AuditLogRecord[]; hasMore: boolean }> {
+    cursor?: string;
+  } = {}): Promise<{ items: AuditLogRecord[]; hasMore: boolean; nextCursor: string | null }> {
   const wheres: string[] = [];
   const params: unknown[] = [];
   if (filter.action) { wheres.push("action = ?"); params.push(filter.action); }
   if (filter.actor) { wheres.push("actor = ?"); params.push(filter.actor); }
+  // Keyset 键（M12）：id DESC 单键——audit_logs.id 是自增主键，本身就是全序。
+  const keysetValues = parseKeysetCursor(filter.cursor, 1);
+  const keyset = keysetValues
+    ? buildKeysetPredicate([{ column: "id", direction: "DESC" }], keysetValues)
+    : null;
+  if (keyset) {
+    wheres.push(keyset.sql);
+    params.push(...keyset.params);
+  }
   const where = wheres.length ? " WHERE " + wheres.join(" AND ") : "";
   const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
   const offset = Math.max(0, filter.offset ?? 0);
-  params.push(limit + 1, offset);
   const rows = await repo.raw(
-    `SELECT * FROM audit_logs${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
-    params,
+    `SELECT * FROM audit_logs${where} ORDER BY id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    keyset ? [...params, limit + 1] : [...params, limit + 1, offset],
   );
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
-  return { items: page.map(rowToAuditLog), hasMore };
+  const items = page.map(rowToAuditLog);
+  // 有余行就给 nextCursor（offset 页也给，客户端可以从第 1 页直接切到游标翻页）。
+  const last = hasMore ? items[items.length - 1] : undefined;
+  return { items, hasMore, nextCursor: last ? encodeKeysetCursor([last.id]) : null };
 }
 
 export async function listAuditActions(repo: Repository, limit = 50): Promise<string[]> {

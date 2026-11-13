@@ -27,6 +27,11 @@ import {
   slugify,
 } from "./dialect.ts";
 import { chunkList, inPredicate, SQL_IN_CHUNK } from "../sql-in.ts";
+import {
+  buildKeysetPredicate,
+  parseKeysetCursor,
+  type KeysetKey,
+} from "../keyset.ts";
 
 /**
  * 写入边界的 created_at 归一。
@@ -61,7 +66,29 @@ export function normalizeCreatedAt(value: unknown, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export async function listSites(repo: Repository, filter: { categoryId?: string; status?: SiteStatus; excludeStatuses?: SiteStatus[]; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
+/**
+ * 列表排序键（M12 keyset）：必须与 listSites 的 ORDER BY 逐项一致
+ * （sort ASC, weight DESC, trend_score DESC, id ASC），含 id 决胜键。
+ * weight 虽恒为 0（见下文注释）仍列入键表——游标必须复现 ORDER BY 的全序，
+ * 否则跨页会丢行；rank 侧的 fallback 排序同样按这四键归并。
+ */
+export const SITE_KEYSET_KEYS: KeysetKey[] = [
+  { column: "s.sort", direction: "ASC" },
+  { column: "s.weight", direction: "DESC" },
+  { column: "s.trend_score", direction: "DESC" },
+  { column: "s.id", direction: "ASC" },
+];
+
+/** 取一行的 keyset 键值：路由层据此给末行编 nextCursor（见 encodeKeysetCursor）。 */
+export function siteKeysetValues(site: Site): [number, number, number, string] {
+  return [site.sort, site.weight, site.trendScore ?? 0, site.id];
+}
+
+export async function listSites(repo: Repository, filter: { categoryId?: string; status?: SiteStatus; excludeStatuses?: SiteStatus[]; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]>; cursor?: string } = {}): Promise<Site[]> {
+  // Keyset 游标（M12）：传了 cursor 就走 WHERE (sort,weight,trend_score,id) > (?,...)
+  // 的谓词，不再用 OFFSET 扫过前面的页；offset 此时被忽略（两者混用语义不清）。
+  // 无效游标抛 InvalidKeysetCursorError，由路由层映射成 400。
+  const keysetValues = parseKeysetCursor(filter.cursor, SITE_KEYSET_KEYS.length);
   const where: string[] = ["s.deleted_at IS NULL"];
   const params: unknown[] = [];
   if (filter.categoryId) { where.push("s.category_id = ?"); params.push(filter.categoryId); }
@@ -103,11 +130,15 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
   //
   // 单语句路径的三个前提：没有分面过滤 / 集合谓词已吸收全部 id / id 少到装得下一片
   if (facetPred !== null || facetIds === null || facetIds.length <= SQL_IN_CHUNK) {
+    const keyset = keysetValues ? buildKeysetPredicate(SITE_KEYSET_KEYS, keysetValues) : null;
     const sqlText = SELECT_SITES_BASE_SQL +
-      " WHERE " + baseWhere +
+      " WHERE " + baseWhere + (keyset ? " AND " + keyset.sql : "") +
       " ORDER BY s.sort ASC, s.weight DESC, s.trend_score DESC, s.id ASC" +
-      " LIMIT ? OFFSET ?";
-    const rows = await repo.raw(sqlText, [...baseParams, limit, offset]);
+      (keyset ? " LIMIT ?" : " LIMIT ? OFFSET ?");
+    const rows = await repo.raw(
+      sqlText,
+      keyset ? [...baseParams, ...keyset.params, limit] : [...baseParams, limit, offset],
+    );
     return hydrateSites(repo, rows);
   }
 
@@ -117,7 +148,10 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
   // ORDER BY 归并分页，最后用内部已分片的 getSitesByIds 取整行。
   // 注意：这里不做 Promise.all——sqlite 是同步驱动，并发派发不产生并行；
   // 真正的提速来自上面的单语句路径（一次执行，无归并），本循环只是能力兜底。
-  const window = offset + limit;
+  // 回退路径带游标时：游标在归并后的有序数组里的位置事先未知，分片不能再按
+  // offset+limit 截断——上限放宽到候选总数（本路径只在老 SQLite 无 JSON1 时走，
+  // 候选集本身就是分片上限），再在 JS 里按 keyset 三元组定位起始下标切片。
+  const window = keysetValues ? facetIds.length : offset + limit;
   const ranked: Array<{ id: string; sort: number; trendScore: number }> = [];
   for (const part of chunkList(facetIds)) {
     const predicate = inPredicate("s.id", part);
@@ -134,7 +168,20 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
   // 与单语句路径同一套排序（含 id 决胜）：缺 id 决胜时跨片并列的页边界会抖动，
   // 同一份数据两次查询可能切出不同的页。
   ranked.sort((a, b) => a.sort - b.sort || b.trendScore - a.trendScore || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const pageIds = ranked.slice(offset, offset + limit).map((r) => r.id);
+  // 游标定位：ranked 已按 (sort ASC, trend_score DESC, id ASC) 排好序（weight
+  // 恒 0，本路径排序本来就不含它），找第一个严格大于游标三元组的下标。
+  let start = offset;
+  if (keysetValues) {
+    const [cursorSort, , cursorTrend, cursorId] = keysetValues as [number, number, number, string];
+    start = ranked.findIndex(
+      (r) =>
+        r.sort > cursorSort ||
+        (r.sort === cursorSort && r.trendScore < cursorTrend) ||
+        (r.sort === cursorSort && r.trendScore === cursorTrend && r.id > cursorId),
+    );
+    if (start === -1) return [];
+  }
+  const pageIds = ranked.slice(start, start + limit).map((r) => r.id);
   if (pageIds.length === 0) return [];
   const siteMap = await repo.getSitesByIds(pageIds);
   return pageIds

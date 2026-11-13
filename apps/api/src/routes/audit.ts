@@ -23,6 +23,10 @@ export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     async (req) => {
       const q = (req.query ?? {}) as Record<string, string>;
       const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
+      // Keyset 游标（M12）：`?cursor=` 走 WHERE id > (?) 谓词，不再 OFFSET；
+      // nextCursor 随页返回，无下一页时为 null。无效游标由全局错误处理器
+      // 映射成 400 INVALID_CURSOR。
+      const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
 
       const [page, actions] = await Promise.all([
         ctx.repo.listAuditLogs({
@@ -30,6 +34,7 @@ export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
           offset,
           action: q.action || undefined,
           actor: q.actor || undefined,
+          cursor,
         }),
         ctx.repo.listAuditActions(50),
       ]);
@@ -47,12 +52,15 @@ export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     async (req, reply) => {
       const q = (req.query ?? {}) as Record<string, string>;
       const { limit } = parsePagination(req.query, { defaultLimit: 1000, maxLimit: 5000 });
+      // 导出同样支持 keyset 游标（M12）：`?cursor=` 续取，不再靠 offset。
+      const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
 
       const data = await ctx.repo.listAuditLogs({
         limit,
         offset: 0,
         action: q.action || undefined,
         actor: q.actor || undefined,
+        cursor,
       });
 
       reply.header(
@@ -69,11 +77,17 @@ export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         hasMore: data.hasMore,
         truncated,
         nextOffset: truncated ? data.items.length : null,
+        nextCursor: data.nextCursor ?? null,
         count: data.items.length,
         limit,
         items: data.items,
         ...(truncated
-          ? { notice: `导出已截断（上限 ${limit} 条）：请用 /api/admin/audit?offset=${data.items.length} 续取，或缩小 action/actor 过滤条件` }
+          ? {
+              notice:
+                data.nextCursor != null
+                  ? `导出已截断（上限 ${limit} 条）：请用 /api/admin/audit/export?cursor=${data.nextCursor} 续取，或缩小 action/actor 过滤条件`
+                  : `导出已截断（上限 ${limit} 条）：请用 /api/admin/audit?offset=${data.items.length} 续取，或缩小 action/actor 过滤条件`,
+            }
           : {}),
       };
     }

@@ -26,6 +26,7 @@ import {
   type LocalFavorite,
 } from '@/hooks/useFavorites'
 import { useFavoritesFolderManager } from '@/hooks/use-favorites-folder-manager'
+import { SmartCollectionsPanel } from '@/components/smart-collections-panel'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders, serializeLocalFolders, type LocalFolder } from '@/lib/favorites-folders'
 import { buildFavoritesSearch, parseFavoritesFilters } from '@/lib/favorites-url'
@@ -36,16 +37,34 @@ import {
   vaultItemsToFavorites,
 } from '@/lib/favorites-vault'
 import { describeAnonymousFavoritesNote, describeSyncBanner, shouldOfferRetry, type SyncBannerInput } from '@/lib/favorites-sync-copy'
+import { FAVORITES_EMPTY_COPY } from '@/lib/empty-states'
 import {
   filterFavorites,
   describeFavoritesFilter,
   favoriteFilterEmptyMessage,
 } from '@/lib/favorites-filter'
+import {
+  MEANING_SEARCH_POOL_LIMIT,
+  describeMeaningReadyLine,
+  describeMeaningResults,
+  favoriteMeaningEmptyMessage,
+  nextSemanticSearchStatus,
+  rankSavesByMeaning,
+  saveMatchReasonLabel,
+  semanticSiteScores,
+  type RankedSave,
+  type SaveMatchReason,
+  type SaveSearchMode,
+  type SemanticSaveStatus,
+} from '@/lib/favorites-semantic-search'
+import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
+import { describeResurfaced, selectStaleFavorites, staleBadgeLabel } from '@/lib/resurface'
 import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/vault'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import {
   clearCloudFavorites,
   listFavorites,
+  searchSites,
   updateFavoriteMeta,
   type HubFavoriteFolder,
 } from '@/lib/navhub-api'
@@ -121,6 +140,17 @@ export default function FavoritesPage() {
   const [batchFolderTarget, setBatchFolderTarget] = useState<string>('')
   // 本页收藏的本地筛选（不联网）：收藏攒到几十个以后，「用眼睛扫网格」不是一种检索方式
   const [favoriteQuery, setFavoriteQuery] = useState('')
+  // 「按意思搜」：复用中枢语义通道（mode=semantic）与本地收藏求交，再叠
+  // 加本地全文匹配（备注/标签是中枢不知道的文本）。不传身份：这是本地
+  // 收藏的筛选，不该因为一次筛选就把查询写进服务端的搜索历史。
+  const [saveSearchMode, setSaveSearchMode] = useState<SaveSearchMode>('keyword')
+  const [meaningStatus, setMeaningStatus] = useState<SemanticSaveStatus>('idle')
+  const [meaningMatches, setMeaningMatches] = useState<RankedSave<LocalFavorite>[] | null>(null)
+  const [meaningRetryToken, setMeaningRetryToken] = useState(0)
+  // 已落定的语义状态（loading 不进这里）：状态机的输入必须是「上一次落定
+  // 的状态」，否则每次 loading 都会把「重试仍不可用」误判成首次准备中。
+  const meaningSettledRef = useRef<SemanticSaveStatus>('idle')
+  const meaningQuery = saveSearchMode === 'meaning' ? favoriteQuery.trim() : ''
   // 收藏管理（云端文件夹 / 备注）：只在登录身份下出现
   const [cloudIdentity, setCloudIdentity] = useState('')
   // 清空云端收藏是两步确认：第一次点击只把按钮变成「再次点击确认」
@@ -141,6 +171,26 @@ export default function FavoritesPage() {
   // 这里先排好序，再只渲染前若干条，其余按需加载。
   const [sortBy, setSortBy] = useState<'created' | 'title'>('created')
   const [visibleCount, setVisibleCount] = useState(60)
+  // 「好久没打开」的徽标与横幅：只用本机离线最近访问算旧（见 lib/resurface），
+  // 读不到时按收藏时间算，不阻断收藏列表本身。
+  const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
+  useEffect(() => {
+    let active = true
+    readOfflineVisits(50)
+      .then((rows) => {
+        if (active && Array.isArray(rows)) setRecentVisits(rows)
+      })
+      .catch(() => {
+        // 最近访问读不到时徽标只按收藏时间算，列表不受影响
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+  const staleById = useMemo(() => {
+    if (favorites.items.length === 0) return new Map<string, ReturnType<typeof selectStaleFavorites>[number]>()
+    return new Map(selectStaleFavorites(favorites.items, recentVisits, Date.now()).map((s) => [s.siteId, s]))
+  }, [favorites.items, recentVisits])
   /**
    * 筛选条件同步到地址栏。
    *
@@ -171,18 +221,83 @@ export default function FavoritesPage() {
     if (next !== current) window.history.replaceState(window.history.state, '', next)
   }, [filtersReady, favoriteQuery, activeFolder, sortBy])
 
+  /** 按意思搜的查询生效中（有查询词且已拿到排序结果） */
+  const meaningActive = saveSearchMode === 'meaning' && meaningQuery !== '' && meaningMatches !== null
+
+  /**
+   * 按意思搜：一次语义请求 + 本地全文匹配。
+   *
+   * 250ms 防抖 + AbortController：输入过程不刷请求，过期响应直接丢弃。
+   * 语义不可用（模型首次下载中 / 未配置 / 中枢不可达）时不静默降级：
+   * 状态机先报 preparing（「正在准备语义搜索」+ 重试），重试仍不可用
+   * 才报 unavailable；两种状态下本地全文匹配都已算好并如实标注来源。
+   */
+  useEffect(() => {
+    if (saveSearchMode !== 'meaning') {
+      setMeaningMatches(null)
+      setMeaningStatus('idle')
+      meaningSettledRef.current = 'idle'
+      return
+    }
+    if (meaningQuery === '' || !favorites.ready) {
+      setMeaningMatches(null)
+      return
+    }
+    const controller = new AbortController()
+    setMeaningStatus('loading')
+    const timer = setTimeout(() => {
+      void searchSites(
+        { q: meaningQuery, mode: 'semantic', limit: MEANING_SEARCH_POOL_LIMIT },
+        controller.signal,
+      )
+        .then((res) => {
+          if (controller.signal.aborted) return
+          const next = nextSemanticSearchStatus(meaningSettledRef.current, res.semanticAvailable === true)
+          meaningSettledRef.current = next
+          setMeaningStatus(next)
+          setMeaningMatches(rankSavesByMeaning(favorites.items, meaningQuery, semanticSiteScores(res.hits)))
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return
+          // searchSites 自身失败只剩 AbortError 会走到这里（其余失败已折成
+          // degraded 兜底值）：按语义不可用处理，本地全文兜底仍在。
+          const next = nextSemanticSearchStatus(meaningSettledRef.current, false)
+          meaningSettledRef.current = next
+          setMeaningStatus(next)
+          setMeaningMatches(rankSavesByMeaning(favorites.items, meaningQuery, new Map()))
+        })
+    }, 250)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [saveSearchMode, meaningQuery, favorites.ready, favorites.items, meaningRetryToken])
+
   /** 只过滤本页已加载的收藏；空关键词原样返回，不做无谓的重渲染 */
   const filteredFavorites = useMemo(
-    () => filterFavorites(favorites.items, favoriteQuery),
-    [favorites.items, favoriteQuery],
+    () =>
+      meaningActive && meaningMatches
+        ? meaningMatches.map((match) => match.item)
+        : filterFavorites(favorites.items, favoriteQuery),
+    [meaningActive, meaningMatches, favorites.items, favoriteQuery],
   )
+  /** 按意思搜时每条收藏的匹配来源（卡片上的「语义匹配 / 备注匹配…」标签用） */
+  const meaningReasonBySiteId = useMemo(() => {
+    const bySiteId = new Map<string, SaveMatchReason>()
+    if (meaningActive && meaningMatches) {
+      for (const match of meaningMatches) bySiteId.set(match.item.siteId, match.reason)
+    }
+    return bySiteId
+  }, [meaningActive, meaningMatches])
   const visibleFavorites = useMemo(() => {
     const byFolder =
       activeFolder === 'all' ? filteredFavorites : filteredFavorites.filter((f) => (f.folderId ?? '') === activeFolder)
     // 排序是纯本地操作（收藏已在内存里），不引入服务端分页——本地优先是收藏页的根基，
     // 为排序把数据源改成接口会破坏离线可用性。
     const sorted = [...byFolder]
-    if (sortBy === 'title') {
+    if (meaningActive) {
+      // 按意思搜的顺序就是语义相关度：再按时间/标题重排会把「最像的」埋掉。
+    } else if (sortBy === 'title') {
       sorted.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'))
     } else {
       // 「最近收藏」必须显式按时间戳排：数组现状依赖「toggle unshift + 云端 DESC」
@@ -190,14 +305,17 @@ export default function FavoritesPage() {
       sorted.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
     }
     return sorted
-  }, [filteredFavorites, activeFolder, sortBy])
+  }, [filteredFavorites, activeFolder, sortBy, meaningActive])
   /** 渐进渲染：只渲染前 visibleCount 条，避免上千个 DOM 同时进场 */
   const renderedFavorites = visibleFavorites.slice(0, visibleCount)
-  const filterSummary = describeFavoritesFilter(
-    filteredFavorites.length,
-    favorites.items.length,
-    favoriteQuery,
-  )
+  // 按意思搜进行中（loading）或尚未出结果时不显示关键词筛选的计数——
+  // 那是另一套匹配规则的数字，冒充按意思的结果会误导用户。
+  const filterSummary =
+    saveSearchMode === 'meaning' && meaningQuery !== ''
+      ? meaningMatches !== null && meaningStatus !== 'loading'
+        ? describeMeaningResults(meaningMatches, favorites.items.length)
+        : null
+      : describeFavoritesFilter(filteredFavorites.length, favorites.items.length, favoriteQuery)
 
   /** 夹计数一次性算好（O(条数)），替代渲染期每个夹 filter 一遍（O(条数×夹数)） */
   const folderCounts = useMemo(() => {
@@ -1001,6 +1119,19 @@ export default function FavoritesPage() {
           </p>
         )}
 
+        {/* 好久没打开：超过 90 天没有记录到的打开的收藏，给一条回访入口，
+            而不是让它们在列表里悄悄变旧（徽标在每张卡的日期旁）。 */}
+        {staleById.size > 0 && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400 flex flex-wrap items-center gap-2">
+            <span className="flex-1 min-w-0">
+              有 {staleById.size} 个收藏超过 90 天没打开了（按本机记录算），今天翻一个？
+            </span>
+            <Link href="/favorites/stale" className="font-medium underline underline-offset-2 hover:text-amber-800 dark:hover:text-amber-300">
+              去重温
+            </Link>
+          </div>
+        )}
+
         {/* E2EE 金库面板（P1 抽出为组件：导出 / 解密导入，无自有状态） */}
         {(showVaultExport || showVaultImport) && (
         <FavoritesVaultPanels
@@ -1197,15 +1328,52 @@ export default function FavoritesPage() {
           </div>
         )}
 
+        {/* 智能整理（P1 #6）：只给建议，用户点「采用」后才建夹、才移动——绝不自动应用 */}
+        {favorites.items.length > 0 && (
+          <SmartCollectionsPanel
+            items={favorites.items}
+            onCreateFolder={createFolderDirectly}
+            onMoveToFolder={assignFolder}
+          />
+        )}
+
         {/* 本地筛选条：只在确实有收藏时出现（没有收藏时不需要筛选控件） */}
         {favorites.ready && favorites.items.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 mb-4">
+            {/* 搜索方式切换：关键词是本地全文筛选；按意思搜复用中枢语义通道， */}
+            {/* 按「意思」而不是字面找回收藏（标题里没有查询词也能命中）。 */}
+            <div className="flex items-center rounded-lg border border-border/60 p-0.5" role="group" aria-label="收藏搜索方式">
+              <button
+                type="button"
+                aria-pressed={saveSearchMode === 'keyword'}
+                onClick={() => setSaveSearchMode('keyword')}
+                className={`h-8 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                  saveSearchMode === 'keyword' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                关键词
+              </button>
+              <button
+                type="button"
+                aria-pressed={saveSearchMode === 'meaning'}
+                onClick={() => setSaveSearchMode('meaning')}
+                className={`h-8 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                  saveSearchMode === 'meaning' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                按意思搜
+              </button>
+            </div>
             <div className="relative flex-1 min-w-[160px] sm:min-w-[13rem] max-w-sm">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 value={favoriteQuery}
                 onChange={(e) => setFavoriteQuery(e.target.value)}
-                placeholder="在收藏里筛选：标题 / 链接 / 描述"
+                placeholder={
+                  saveSearchMode === 'meaning'
+                    ? '按意思找收藏，比如：想学做菜、旅行攻略'
+                    : '在收藏里筛选：标题 / 链接 / 描述'
+                }
                 aria-label="筛选收藏"
                 className="pl-8 h-9 text-sm"
               />
@@ -1249,6 +1417,49 @@ export default function FavoritesPage() {
               <Layers className="w-3.5 h-3.5 mr-1" />
               {batchMode ? '退出批量' : '批量管理'}
             </Button>
+            {/* 按意思搜的状态条：语义通道的状态必须外显——静默降级成关键词 */}
+            {/* 会让用户以为拿到的是语义结果。准备中/暂不可用时本地全文匹配 */}
+            {/* 仍在下面，只是不再冒充语义结果。 */}
+            {saveSearchMode === 'meaning' && meaningQuery !== '' && (
+              <div className="w-full" role="status" aria-live="polite">
+                {meaningStatus === 'loading' && (
+                  <span className="text-xs text-muted-foreground">正在按意思找…</span>
+                )}
+                {meaningStatus === 'preparing' && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">
+                      正在准备语义搜索（首次使用需下载语义模型，请稍候）——已先按关键词 / 备注匹配。
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setMeaningRetryToken((n) => n + 1)}
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      重试语义搜索
+                    </Button>
+                  </div>
+                )}
+                {meaningStatus === 'unavailable' && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">语义检索暂不可用，已按关键词 / 备注匹配。</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setMeaningRetryToken((n) => n + 1)}
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      重试语义搜索
+                    </Button>
+                  </div>
+                )}
+                {meaningStatus === 'ready' && meaningMatches !== null && (
+                  <span className="text-xs text-muted-foreground">{describeMeaningReadyLine(meaningMatches)}</span>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1361,11 +1572,18 @@ export default function FavoritesPage() {
           <EmptyState
             icon={Shield}
             iconTone="success"
-            title="还没有收藏任何站点"
-            description="在主页站点卡片或搜索结果里点击星标即可一键收藏（本地离线存储，无需登录，可随时导出为 E2EE 加密金库）。"
+            title={FAVORITES_EMPTY_COPY.title}
+            description={
+              <>
+                {FAVORITES_EMPTY_COPY.why} {FAVORITES_EMPTY_COPY.next}
+                {FAVORITES_EMPTY_COPY.tip ? (
+                  <span className="mt-1 block">提示：{FAVORITES_EMPTY_COPY.tip}</span>
+                ) : null}
+              </>
+            }
             action={
               <Button asChild size="sm" variant="outline" className="text-xs">
-                <Link href="/">去主页探索发现</Link>
+                <Link href={FAVORITES_EMPTY_COPY.actionHref}>{FAVORITES_EMPTY_COPY.actionLabel}</Link>
               </Button>
             }
           />
@@ -1373,11 +1591,23 @@ export default function FavoritesPage() {
           <EmptyState
             icon={Search}
             iconTone="muted"
-            title={activeFolder === 'all' ? favoriteFilterEmptyMessage(favoriteQuery) : '这个收藏夹下还没有站点'}
-            description={
+            title={
               activeFolder === 'all'
-                ? <>收藏并没有丢：共 {favorites.items.length} 个都还在本机，只是当前关键词没匹配到。</>
-                : <>切换「全部」后可以把任意收藏移动到当前收藏夹。</>
+                ? saveSearchMode === 'meaning' && favoriteQuery.trim() !== ''
+                  ? favoriteMeaningEmptyMessage(favoriteQuery)
+                  : favoriteFilterEmptyMessage(favoriteQuery)
+                : '这个收藏夹下还没有站点'
+            }
+            description={
+              activeFolder === 'all' ? (
+                saveSearchMode === 'meaning' && favoriteQuery.trim() !== '' ? (
+                  <>收藏并没有丢：共 {favorites.items.length} 个都还在本机，只是当前意思没匹配到。换个说法试试，或切回关键词筛选。</>
+                ) : (
+                  <>收藏并没有丢：共 {favorites.items.length} 个都还在本机，只是当前关键词没匹配到。</>
+                )
+              ) : (
+                <>切换「全部」后可以把任意收藏移动到当前收藏夹。</>
+              )
             }
             action={
               <Button
@@ -1454,6 +1684,27 @@ export default function FavoritesPage() {
                       )}
                       <div className="text-xs text-muted-foreground font-mono mt-2">
                         {new Date(f.createdAt).toLocaleDateString('zh-CN')}
+                        {(() => {
+                          const stale = staleById.get(f.siteId)
+                          if (!stale) return null
+                          return (
+                            <span
+                              title={describeResurfaced(stale)}
+                              className="ml-2 inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 font-sans text-[11px] font-medium text-amber-700 dark:text-amber-400"
+                            >
+                              {staleBadgeLabel(stale.daysSinceOpen)}
+                            </span>
+                          )
+                        })()}
+                        {(() => {
+                          const reason = meaningReasonBySiteId.get(f.siteId)
+                          if (!reason) return null
+                          return (
+                            <span className="ml-2 inline-flex rounded-full bg-primary/10 px-2 py-0.5 font-sans text-[11px] font-medium text-primary">
+                              {saveMatchReasonLabel(reason)}
+                            </span>
+                          )
+                        })()}
                       </div>
                     </div>
                   </div>

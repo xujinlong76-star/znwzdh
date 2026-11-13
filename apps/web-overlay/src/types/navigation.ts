@@ -163,6 +163,16 @@ export interface NavigationSubItemRaw {
    * 站点标签（导航站自己的 taxonomy，与 hub 的 tags 同源）。
    */
   tags?: string[]
+  /**
+   * 服务端巡检的健康状态（与 NavigationSubItem.health 同形）。
+   * processNavigationSubItem 原样透传。注意：卡片上的死链徽标已于
+   * 2026-11-12 移除（静态导航 JSON 从不带该字段，首页也不取中枢数据，
+   * 徽标在生产里永远画不出来，见 dead-link.ts 文件头）——本字段目前
+   * 唯一的消费方是速览弹窗的健康提示（site-peek-dialog.tsx，经
+   * siteHealthBadge 渲染），卡片不读它。详情页的健康来自中枢站点
+   * 本身（HubSite.health），不走这里。
+   */
+  health?: NavigationSubItem['health']
 }
 
 export interface SiteAction {

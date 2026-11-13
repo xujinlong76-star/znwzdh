@@ -42,7 +42,9 @@ export function DramaCategoryBanner({
         if (!active || !payload?.posters) return
         setPosters(payload.posters.slice(0, 4))
       })
-      .catch(() => {})
+      .catch(() => {
+        // 海报是装饰性增强：drama-media.json 缺失或请求失败时横幅仍可正常导览，只是不展示海报
+      })
     return () => {
       active = false
     }

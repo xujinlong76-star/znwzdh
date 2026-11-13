@@ -248,7 +248,6 @@ function ModularItemImpl({
   return (
     <div
       ref={itemRef}
-      data-modular-item-index={index}
       className={`relative group @container rounded-2xl border transition-all duration-200 flex flex-col justify-between ${colSpanClass} ${minHeightStyle} ${
         isEditing
           ? 'cursor-grab active:cursor-grabbing border-primary/40 ring-1 ring-primary/20 hover:border-primary/80 bg-card/90 shadow-sm'
@@ -306,7 +305,7 @@ function ModularItemImpl({
                   type="button"
                   disabled={index === 0}
                   onClick={() => onShiftPosition(index, 'up')}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+                  className="p-1 min-h-6 min-w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
                   title="向前移动此模块"
                   aria-label={`向前移动小组件：${widget.customTitle || def.title}`}
                 >
@@ -316,7 +315,7 @@ function ModularItemImpl({
                   type="button"
                   disabled={index === totalWidgets - 1}
                   onClick={() => onShiftPosition(index, 'down')}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+                  className="p-1 min-h-6 min-w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
                   title="向后移动此模块"
                   aria-label={`向后移动小组件：${widget.customTitle || def.title}`}
                 >

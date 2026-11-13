@@ -54,7 +54,7 @@ export function FontSizeToggle({ className }: { className?: string }) {
         <Button
           variant="ghost"
           size="icon"
-          className={`h-8.5 w-8.5 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground ${className || ''}`}
+          className={`h-11 w-11 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground ${className || ''}`}
           title={`当前字号：${FONT_SIZE_LABEL[level]}（点击切换）`}
           aria-label={`字号切换：当前为${FONT_SIZE_LABEL[level]}`}
         >

@@ -1,6 +1,3 @@
-// @ts-nocheck
-// ↑ 2026-11-01 主理人最小干预（用户授权）：本文件为并行会话遗留 untracked 孤儿 WIP（99+ 处 TS 错钉死全仓 typecheck 门禁）。
-// 仅压制类型检查、零逻辑触碰、不进任何本方提交；对方会话回归完成后可自行移除本行。
 
 /**
  * 哈希计算意图：从输入文本计算 MD5 / SHA-1 / SHA-256 / SHA-512。
@@ -23,7 +20,7 @@ export function tryCalculateHash(input: string): SpeculativeIntentResult | null 
   let body = trimmed;
   const prefixMatch = trimmed.match(/^(md5|sha1|sha256|sha512):\s*/i);
   if (prefixMatch) {
-    hashType = prefixMatch[1].toLowerCase();
+    hashType = prefixMatch[1]!.toLowerCase();
     body = trimmed.slice(prefixMatch[0].length);
   } else {
     return null;
@@ -122,7 +119,7 @@ function md5Hex(msg: string): string {
       const temp = D;
       D = C;
       C = B;
-      B = B + rotl(A + F + K[round] + M[g], S[round]);
+      B = B + rotl(A + F + K[round]! + M[g]!, S[round]!);
       A = temp;
     }
 
@@ -158,8 +155,6 @@ function sha1Hex(msg: string): string {
 
   let h0 = 0x67452301, h1 = 0xefcdab89, h2 = 0x98badcfe, h3 = 0x10325476, h4 = 0xc3d2e1f0;
 
-  const k = [0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xca62c1d6];
-
   function rol(x: number, n: number): number { return (x << n) | (x >>> (32 - n)); }
 
   for (let i = 0; i < padded.length; i += 64) {
@@ -168,7 +163,7 @@ function sha1Hex(msg: string): string {
       w[j] = view.getUint32(i + j * 4, false);
     }
     for (let j = 16; j < 80; j++) {
-      w[j] = rol(w[j-3] ^ w[j-8] ^ w[j-14] ^ w[j-16], 1);
+      w[j] = rol(w[j-3]! ^ w[j-8]! ^ w[j-14]! ^ w[j-16]!, 1);
     }
 
     let a = h0, b = h1, c = h2, d = h3, e = h4;
@@ -179,7 +174,7 @@ function sha1Hex(msg: string): string {
       else if (j < 60) { f = (b & c) | (b & d) | (c & d); g = 0x8f1bbcdc; }
       else { f = b ^ c ^ d; g = 0xca62c1d6; }
 
-      const temp = (rol(a, 5) + f + e + g + w[j]) | 0;
+      const temp = (rol(a, 5) + f + e + g + w[j]!) | 0;
       e = d; d = c; c = rol(b, 30); b = a; a = temp;
     }
 
@@ -235,32 +230,32 @@ function sha256Hex(msg: string): string {
       w[j] = view.getUint32(i + j * 4, false);
     }
     for (let j = 16; j < 64; j++) {
-      const s0 = rotr(w[j-15], 7) ^ rotr(w[j-15], 18) ^ (w[j-15] >>> 3);
-      const s1 = rotr(w[j-2], 17) ^ rotr(w[j-2], 19) ^ (w[j-2] >>> 10);
-      w[j] = (w[j-16] + s0 + w[j-7] + s1) | 0;
+      const s0 = rotr(w[j-15]!, 7) ^ rotr(w[j-15]!, 18) ^ (w[j-15]! >>> 3);
+      const s1 = rotr(w[j-2]!, 17) ^ rotr(w[j-2]!, 19) ^ (w[j-2]! >>> 10);
+      w[j] = (w[j-16]! + s0 + w[j-7]! + s1) | 0;
     }
 
-    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    let a = H[0]!, b = H[1]!, c = H[2]!, d = H[3]!, e = H[4]!, f = H[5]!, g = H[6]!, h = H[7]!;
 
     for (let j = 0; j < 64; j++) {
       const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
       const ch = (e & f) ^ (~e & g);
-      const t1 = (h + S1 + ch + K[j] + w[j]) | 0;
+      const t1 = (h + S1 + ch + K[j]! + w[j]!) | 0;
       const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const t2 = (S0 + maj) | 0;
       h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
     }
 
-    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0;
-    H[3] = (H[3] + d) >>> 0; H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0;
-    H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+    H[0] = (H[0]! + a) >>> 0; H[1] = (H[1]! + b) >>> 0; H[2] = (H[2]! + c) >>> 0;
+    H[3] = (H[3]! + d) >>> 0; H[4] = (H[4]! + e) >>> 0; H[5] = (H[5]! + f) >>> 0;
+    H[6] = (H[6]! + g) >>> 0; H[7] = (H[7]! + h) >>> 0;
   }
 
   const result = new Uint8Array(32);
   const resultView = new DataView(result.buffer);
   for (let i = 0; i < 8; i++) {
-    resultView.setUint32(i * 4, H[i], false);
+    resultView.setUint32(i * 4, H[i]!, false);
   }
   return bytesToHex(result);
 }
@@ -318,31 +313,31 @@ function sha512Hex(msg: string): string {
       w[j] = view.getBigUint64(i + j * 8, false);
     }
     for (let j = 16; j < 80; j++) {
-      const s0 = rotr(w[j-15], 1n) ^ rotr(w[j-15], 8n) ^ (w[j-15] >> 7n);
-      const s1 = rotr(w[j-2], 19n) ^ rotr(w[j-2], 61n) ^ (w[j-2] >> 6n);
-      w[j] = (w[j-16] + s0 + w[j-7] + s1) & MASK64;
+      const s0 = rotr(w[j-15]!, 1n) ^ rotr(w[j-15]!, 8n) ^ (w[j-15]! >> 7n);
+      const s1 = rotr(w[j-2]!, 19n) ^ rotr(w[j-2]!, 61n) ^ (w[j-2]! >> 6n);
+      w[j] = (w[j-16]! + s0 + w[j-7]! + s1) & MASK64;
     }
 
-    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    let a = H[0]!, b = H[1]!, c = H[2]!, d = H[3]!, e = H[4]!, f = H[5]!, g = H[6]!, h = H[7]!;
 
     for (let j = 0; j < 80; j++) {
       const S1 = rotr(e, 14n) ^ rotr(e, 18n) ^ rotr(e, 41n);
       const ch = (e & f) ^ (~e & g);
-      const t1 = (h + S1 + ch + K[j] + w[j]) & MASK64;
+      const t1 = (h + S1 + ch + K[j]! + w[j]!) & MASK64;
       const S0 = rotr(a, 28n) ^ rotr(a, 34n) ^ rotr(a, 39n);
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const t2 = (S0 + maj) & MASK64;
       h = g; g = f; f = e; e = (d + t1) & MASK64; d = c; c = b; b = a; a = (t1 + t2) & MASK64;
     }
 
-    H[0] = (H[0] + a) & MASK64; H[1] = (H[1] + b) & MASK64; H[2] = (H[2] + c) & MASK64; H[3] = (H[3] + d) & MASK64;
-    H[4] = (H[4] + e) & MASK64; H[5] = (H[5] + f) & MASK64; H[6] = (H[6] + g) & MASK64; H[7] = (H[7] + h) & MASK64;
+    H[0] = (H[0]! + a) & MASK64; H[1] = (H[1]! + b) & MASK64; H[2] = (H[2]! + c) & MASK64; H[3] = (H[3]! + d) & MASK64;
+    H[4] = (H[4]! + e) & MASK64; H[5] = (H[5]! + f) & MASK64; H[6] = (H[6]! + g) & MASK64; H[7] = (H[7]! + h) & MASK64;
   }
 
   const result = new Uint8Array(64);
   const resultView = new DataView(result.buffer);
   for (let i = 0; i < 8; i++) {
-    resultView.setBigUint64(i * 8, H[i], false);
+    resultView.setBigUint64(i * 8, H[i]!, false);
   }
   return bytesToHex(result);
 }

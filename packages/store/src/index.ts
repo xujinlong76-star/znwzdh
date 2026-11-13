@@ -4,6 +4,7 @@ export * from "./migrate.ts";
 export * from "./migrations/schema-migrations.ts";
 export * from "./fts.ts";
 export * from "./sql-in.ts";
+export * from "./keyset.ts";
 export * from "./fts-pg.ts";
 export * from "./search.ts";
 export * from "./plugin-ops.ts";

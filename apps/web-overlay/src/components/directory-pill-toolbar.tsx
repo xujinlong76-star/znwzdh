@@ -126,7 +126,7 @@ export function DirectoryPillToolbar({
             data-dir-pill=""
             tabIndex={index === activeIndex ? 0 : -1}
             onFocus={() => setActiveIndex(index)}
-            className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 min-h-6 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+            className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 min-h-11 px-3 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
           >
             {link.title}
             <span className="font-mono text-[10px] opacity-70">

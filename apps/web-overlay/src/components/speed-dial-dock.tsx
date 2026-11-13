@@ -168,7 +168,7 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
               <button
                 type="button"
                 onClick={resetSize}
-                className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 cursor-pointer"
+                className="inline-flex min-h-11 items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 cursor-pointer"
                 title="恢复速览坞默认尺寸"
                 aria-label="恢复速览坞默认尺寸"
               >
@@ -199,7 +199,7 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
           {pinnedSites.map((site) => (
             <div
               key={site.id}
-              className="group/chip relative flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-border/70 hover:border-primary/50 bg-background/90 dark:bg-card/90 backdrop-blur-xs hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.5"
+              className="group/chip relative flex items-center gap-2 px-2.5 py-2.5 rounded-xl border border-border/70 hover:border-primary/50 bg-background/90 dark:bg-card/90 backdrop-blur-xs hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.5"
             >
               <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform group-hover/chip:scale-105">
                 <SiteFavicon
@@ -238,7 +238,7 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
                     e.stopPropagation()
                     unpinFromSpeedDial(site.id)
                   }}
-                  className="relative z-20 p-1 rounded-full text-muted-foreground hover:text-destructive-text hover:bg-destructive/15 transition-colors"
+                  className="relative z-20 flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:text-destructive-text hover:bg-destructive/15 transition-colors"
                   title="从速览坞移出"
                   aria-label={`从速览坞移出 ${site.title}`}
                 >

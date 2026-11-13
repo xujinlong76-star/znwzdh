@@ -25,9 +25,32 @@
 /** 读屏拖拽说明元素的 id（provider 渲染一份，卡片手柄 aria-describedby 指它） */
 export const DIY_DRAG_INSTRUCTIONS_ID = 'diy-drag-instructions'
 
+/**
+ * 一次 dnd-kit 拖拽是否正在进行（指针/键盘皆算）——模块级标记。
+ *
+ * 为什么不能只用 React 的 DiyDragActiveContext（diy-drag-context.tsx）：
+ * 跨标签合并的订阅回调（use-home-diy-grid 的共享 BroadcastChannel）跑在
+ * React 渲染之外，而且 useHomeDIY 的订阅实例里有挂在 provider 外面的
+ * （navigation-content 自己的那份）——context 在那里永远是 false，
+ * 拖拽中途的远端合并照样直接落盘。所以 provider 在拖拽起止时同步写这份
+ * 模块级标记，通道回调读它来决定「合还是排队」；React context 仍留给
+ * 需要重渲染的组件（卡片方向键漫游），两边由 DiyDragProvider 一起维护。
+ */
+let diyDragActive = false
+
+/** DiyDragProvider 在拖拽开始/结束时调用，与 isDragging 状态同步 */
+export function setDiyDragActive(active: boolean): void {
+  diyDragActive = active
+}
+
+/** 跨标签通道回调调用：拖拽中收到的远端改动要排队，不能直接合并 */
+export function isDiyDragActive(): boolean {
+  return diyDragActive
+}
+
 /** 键盘拖拽流程说明（Tab → Space 拿起 → 方向键移动 → Enter 放下 → Esc 取消） */
 export const KEYBOARD_DRAG_INSTRUCTIONS =
-  '拖拽排序：聚焦拖拽手柄后按空格键开始拖动，方向键移动，回车键放下，Esc 取消。也可以打开卡片右上角的更多操作菜单，用上移、下移、移到顶部、移到末尾完成同样的操作。'
+  '拖拽排序：聚焦拖拽手柄后按空格键开始拖动，方向键移动，回车键放下，Esc 取消。卡片拖到分类上是收录或重归类，不改变它在分类内的位置；要调整卡片在分类内的顺序，用卡片右上角的更多操作菜单（上移、下移、移到顶部、移到末尾）。'
 
 /** dnd-kit draggable 上挂的卡片载荷（与 provider / section 两边的 data 同形） */
 export interface DiyCardDragData {
@@ -105,9 +128,15 @@ export type ResolveCardDropResult =
  *
  * - 自定义分类：收录（已存在 → noop，不弹「已收录成功」的假成功）；
  * - 编辑态 + 跨分类：重归类；
- * - 其余（同分类内落下、非编辑态落到普通分类）一律 noop：
- *   同分类内卡片顺序由置顶/自适应排序决定，拖拽不改顺序，
- *   移动请用卡片 ⋯ 菜单。
+ * - 其余（同分类内落下、非编辑态落到普通分类）一律 noop。
+ *
+ * 刻意不做位置落点：卡片拖拽没有「插到第几个」——
+ *   - collect 是收录进该分类、插到站点列表最前面
+ *     （addSiteToCustomCategory 是 prepend）；
+ *   - reclassify 只换归属分类，在目标分类内的顺序不变（置顶列表与原序都不动）；
+ *   - 同分类内落下不改顺序，移动请用卡片 ⋯ 菜单（上移/下移/移到顶部/移到末尾）。
+ * 所以不要给卡片建「位置型」落点（before/after 指示条只属于分类重排，
+ * 见 resolveCategoryDropIndex）；界面文案也不许暗示拖动能排位置。
  */
 export function resolveCardDrop(input: ResolveCardDropInput): ResolveCardDropResult {
   const { source, target, isEditing, targetHasSite } = input
@@ -120,6 +149,38 @@ export function resolveCardDrop(input: ResolveCardDropInput): ResolveCardDropRes
     return { action: 'reclassify', reason: '跨分类重归类' }
   }
   return { action: 'noop', reason: '同分类内拖动不改变顺序，请用卡片菜单移动' }
+}
+
+export interface ResolveCategoryDropIndexInput {
+  /** 拖拽源在移动前列表里的序号 */
+  fromIndex: number
+  /** 落点目标在移动前列表里的序号 */
+  targetIndex: number
+  /**
+   * 指针在目标内的纵向位置：true = 下半区（插到目标之后），
+   * false = 上半区（插到目标之前）。不传 = 键盘拖拽（没有指针位置），
+   * 沿用旧语义：顺着移动方向落在目标的远端（下移→目标之后，上移→目标之前）。
+   */
+  afterTarget?: boolean
+}
+
+/**
+ * 分类拖拽的落点换算：返回「先移除源、再插入」的序号（即 reorderGridItems
+ * 要的 toIndex，也是 moveCategoryToIndex 的插入语义）。
+ *
+ * 旧实现直接拿移动前列表里的目标序号当插入序号：先移除再插入会让同一
+ * 个序号在上移时等于「目标之前」、下移时等于「目标之后」——同一个落点
+ * 两种结果（W2-7）。这里按指针在目标内的上下半区决定插哪边，两边对称：
+ * 上半区永远插到目标之前，下半区永远插到目标之后，与移动方向无关。
+ * 键盘拖拽没有指针位置：保持旧语义（顺移动方向落远端），键盘是按步
+ * 移动、落点即当前位置，旧语义与视觉一致。
+ */
+export function resolveCategoryDropIndex(input: ResolveCategoryDropIndexInput): number {
+  const { fromIndex, targetIndex, afterTarget } = input
+  if (afterTarget === undefined) return targetIndex
+  // 先移除源：目标在缩短后列表里的序号（源在目标上方时前移一位）
+  const targetInReduced = targetIndex > fromIndex ? targetIndex - 1 : targetIndex
+  return afterTarget ? targetInReduced + 1 : targetInReduced
 }
 
 export type CardMoveDirection = 'up' | 'down' | 'top' | 'bottom'
@@ -181,6 +242,26 @@ export function moveCardInDisplayedOrder(
 
 export type DragAnnouncementPhase = 'start' | 'over' | 'end' | 'cancel' | 'nochange'
 
+/**
+ * 从 dnd-kit 默认插件里去掉 Accessibility（W2-8）：它的英文播报与这里的
+ * 中文 live-region 是两套播报，读屏用户会先听到英文再听到中文。
+ * 决定：只留中文播报（界面是中文），插件的英文播报不要。
+ *
+ * 实现细节：不 import @dnd-kit/dom（它不是直接依赖，pnpm 下直接 import
+ * 会让构建失败），只按结构认插件——插件条目要么是构造器本身，要么是
+ * `{ plugin, options? }` 描述符；构造器的 `.name` 就是类名，Accessibility
+ * 是从 @dnd-kit/dom 导出的类，导出名在打包后仍叫 Accessibility。
+ * 其余插件（AutoScroller / Cursor / Feedback / PreventSelection）原样保留。
+ */
+export function withoutAccessibilityPlugin<T>(plugins: readonly T[]): T[] {
+  return plugins.filter((entry) => {
+    const ctor =
+      (entry as { plugin?: unknown } | null | undefined)?.plugin ?? (entry as unknown)
+    if (typeof ctor === 'function') return ctor.name !== 'Accessibility'
+    return true
+  })
+}
+
 export interface DragAnnouncementInput {
   title: string
   fromLabel?: string
@@ -192,10 +273,9 @@ export interface DragAnnouncementInput {
 /**
  * 拖拽 live-region 播报文案（aria-live="polite"）。
  *
- * dnd-kit 的 Accessibility 插件自带一套英文播报；这里另写一份中文，
- * 由 DiyDragProvider 的 live-region 发出——中文界面里读屏用户听到
- * 的应该是中文。两套并存时读屏可能重复播报一次英文一次中文，
- * 已在 provider 里说明，需真机验证后决定是否关掉插件默认播报。
+ * 这是唯一的播报：dnd-kit 的 Accessibility 插件自带一套英文播报，
+ * provider 用 withoutAccessibilityPlugin 把它排除掉了（见 W2-8），
+ * 中文界面里读屏用户只听到这一份中文。
  */
 export function buildDragAnnouncement(
   phase: DragAnnouncementPhase,
@@ -208,7 +288,9 @@ export function buildDragAnnouncement(
       : `开始拖动「${title}」。方向键移动，回车放下，Esc 取消。`
   }
   if (phase === 'over') {
-    return toLabel ? `「${title}」移到${toLabel}上方。` : `「${title}」正在移动。`
+    // 不说「上方」：卡片落到分类上是收录/重归类，不是放到分类上面；
+    // 分类重排的落点也是「移到该分类」，上下半区才决定前后（播报不报半区）。
+    return toLabel ? `「${title}」移到${toLabel}。` : `「${title}」正在移动。`
   }
   if (phase === 'end') {
     const at = positionLabel ?? toLabel

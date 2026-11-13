@@ -8,12 +8,14 @@
  */
 import { getIdentity } from '@/lib/identity'
 import {
+  createShortLinkForTarget,
   deleteCloudVault,
   fetchCloudVault,
   saveCloudVault,
   type VaultResultCode,
   type VaultTelemetryOutcome,
 } from '@/lib/navhub-api'
+import { diyShareUrlToShortlinkTarget } from '@/lib/diy-share-link'
 import { validateAndCleanDIYConfig } from '@/lib/modular/diy-presets'
 import { DIY_IMPORT_MAX_BYTES } from '@/lib/modular/diy-layout-schema'
 import { VAULT_REBUILD_VERSION_COPY } from '@/lib/modular/vault-copy'
@@ -76,6 +78,16 @@ function errorMessageOf(e: unknown, fallback: string): string {
   return fallback
 }
 
+/**
+ * 中枢客户端抛出的 hubError 带 status（见 lib/navhub-api.ts 的 hubError）；
+ * 其它错误（断网的 TypeError、超时、JSON 解析失败）没有——读不到就当未知失败。
+ */
+function hubErrorStatus(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return null
+  const status = (error as { status: unknown }).status
+  return typeof status === 'number' ? status : null
+}
+
 export function describeDiyRestoreReport(config: any, report: { dropped: number; notes: string[] }): string {
   const counts = summarizeDiyCounts(config)
   if (!report.notes.length) return `${counts}，未发现被丢弃的内容`
@@ -90,6 +102,69 @@ export function describeDiyRestoreReport(config: any, report: { dropped: number;
 
 export function exportDIYConfig(config: HomeDIYConfig): string {
   return JSON.stringify(config, null, 2)
+}
+
+/* ------------------------------------------------------------------ *
+ * DIY 分享短链（M6）：完整 `#diy=` 链接之外，再给一个短链选项
+ *
+ * 今天的实话（中枢两层把关，见 apps/api/src/routes/plugins/
+ * p5-shortlinks-and-taps.ts 与 packages/store/src/repository/plugins.ts
+ * 的 createShortLink）：`POST /api/shortlinks` 只认 `/marketplace/` 内、
+ * ≤500 字符的目标，首页 `#diy=` 目标一定被 400 拒掉——4KB 负载连长度
+ * 关都过不了，`/` 路径连前缀关都过不了。所以这条路今天**一定**走
+ * `unsupported-target` 回退：调用方复制完整链接，并如实告诉用户短链
+ * 暂不支持首页分享。绝不替用户编一个短链，也不在客户端复刻服务端的
+ * 目标策略（策略一变，复刻就是第二份会漂移的真相）。
+ *
+ * 中枢放开首页目标的那天（允许 `/` + `#diy=` 目标，或把负载存服务端、
+ * 短链只存 code），这里不用改：同一段调用开始返回真短链。
+ * ------------------------------------------------------------------ */
+
+/** 短链创建函数：默认是中枢客户端，测试注入假实现（不发真请求） */
+export type DiyShortLinkCreator = (target: string) => Promise<{
+  success: boolean
+  code: string
+  path: string
+  target: string
+}>
+
+export type DiyShortLinkResult =
+  | { ok: true; url: string }
+  | {
+      ok: false
+      /** 'invalid-share-url' = 传入的根本不是 #diy= 分享链接；'unsupported-target' = 中枢 400，目标口径不认；'request-failed' = 断网 / 5xx / 其它 */
+      reason: 'invalid-share-url' | 'unsupported-target' | 'request-failed'
+    }
+
+/**
+ * 给一条完整 `#diy=` 分享链接要短链：目标派生（纯函数）+ 中枢创建。
+ * 成功返回 `<origin>/s/<code>`；失败返回原因，调用方按原因回退完整链接。
+ */
+export async function requestDiyShareShortLink(
+  longUrl: string,
+  createShortLink: DiyShortLinkCreator = createShortLinkForTarget,
+): Promise<DiyShortLinkResult> {
+  const derived = diyShareUrlToShortlinkTarget(longUrl)
+  if (!derived.ok) return { ok: false, reason: 'invalid-share-url' }
+  let created: { success: boolean; code: string; path: string; target: string }
+  try {
+    created = await createShortLink(derived.target)
+  } catch (error: unknown) {
+    // 中枢 400 = 目标口径不认（今天的 #diy= 目标一定走到这里）：不是网络
+    // 问题，是服务能力边界，调用方据此回退完整链接并说清原因；其余失败
+    // （断网 / 5xx / 限流）一律是 request-failed，不猜。
+    return { ok: false, reason: hubErrorStatus(error) === 400 ? 'unsupported-target' : 'request-failed' }
+  }
+  if (!created || created.success !== true || typeof created.path !== 'string' || !created.path) {
+    return { ok: false, reason: 'request-failed' }
+  }
+  let origin: string
+  try {
+    origin = new URL(longUrl).origin
+  } catch {
+    return { ok: false, reason: 'invalid-share-url' }
+  }
+  return { ok: true, url: `${origin}${created.path}` }
 }
 
 /* ------------------------------------------------------------------ *

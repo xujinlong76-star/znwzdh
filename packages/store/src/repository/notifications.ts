@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Repository } from "../repository.ts";
+import { buildKeysetPredicate, encodeKeysetCursor, parseKeysetCursor, type KeysetKey } from "../keyset.ts";
 
 /**
  * 站内通知（T13）：轻量的用户消息。触发源克制（同步失败 / 备份超期），
@@ -46,6 +47,8 @@ export interface ListNotificationDeliveriesOptions {
   status?: NotificationDeliveryStatus;
   limit?: number;
   offset?: number;
+  /** Keyset 游标（M12）：传了就走 WHERE (created_at,id) > (?,?)，不再 OFFSET。 */
+  cursor?: string;
 }
 
 export interface RelayNotificationsResult {
@@ -135,6 +138,10 @@ export async function relayNotifications(
       const id = await repo.withTransaction(async () => {
         // SQLite 的事务层可能重试 BUSY；每次重新领取，不能沿用上次的 claimed。
         claimed = undefined;
+        // 本轮已处理过的行用 NOT IN 排除：id 是主键（永不为 NULL），seen
+        // 里是刚从库里领到的 id（同样永不为 NULL），P10 的 NULL 顾虑不成立。
+        // 不要改成 FROM (VALUES ...) 派生表的 NOT EXISTS：该写法在部分
+        // SQLite 上报 near "(": syntax error（见 llm-prices.ts 的同类修复）。
         const exclusion = seen.length ? ` AND id NOT IN (${seen.map(() => "?").join(",")})` : "";
         const row = (await repo.raw(
           "SELECT id, identity, kind, title, body, attempts, next_attempt_at, created_at FROM notification_outbox " +
@@ -192,6 +199,8 @@ export async function relayNotifications(
       try {
         const id = await repo.withTransaction(async () => {
           claimed = undefined;
+          // 同上：emailSeen 里是刚领到的主键 id，NOT IN 两侧都不可能为 NULL；
+          // 不要改成 FROM (VALUES ...) 派生表的 NOT EXISTS（见 llm-prices.ts）。
           const exclusion = emailSeen.length ? ` AND id NOT IN (${emailSeen.map(() => "?").join(",")})` : "";
           const row = (await repo.raw(
             "SELECT id, identity, title, body, attempts FROM notification_outbox " +
@@ -266,25 +275,41 @@ export async function relayNotifications(
   return result;
 }
 
+/** 通知列表排序键（M12 keyset）：created_at DESC, id DESC——与 ORDER BY 逐项一致。 */
+const NOTIFICATION_KEYSET_KEYS: KeysetKey[] = [
+  { column: "created_at", direction: "DESC" },
+  { column: "id", direction: "DESC" },
+];
+
 /** 仅供管理员调用；鉴权由调用层负责，仓储不读取外部发送器配置。 */
 export async function listNotificationDeliveries(
   repo: Repository,
   options: ListNotificationDeliveriesOptions = {},
-): Promise<{ items: NotificationDeliverySummary[]; hasMore: boolean }> {
+): Promise<{ items: NotificationDeliverySummary[]; hasMore: boolean; nextCursor: string | null }> {
   if (options.status !== undefined && !DELIVERY_STATUSES.includes(options.status)) {
     throw new Error("Unsupported notification delivery status");
   }
   const limit = deliveryLimit(options.limit);
   const offset = Number.isFinite(options.offset) ? Math.max(0, Math.trunc(options.offset!)) : 0;
+  const keysetValues = parseKeysetCursor(options.cursor, NOTIFICATION_KEYSET_KEYS.length);
+  const keyset = keysetValues ? buildKeysetPredicate(NOTIFICATION_KEYSET_KEYS, keysetValues) : null;
+  const where = options.status === undefined ? "" : " WHERE status = ?";
+  const keysetSql = keyset ? `${where ? " AND " : " WHERE "}${keyset.sql}` : "";
+  const statusParams = options.status === undefined ? [] : [options.status];
   const rows = await repo.raw(
     "SELECT id, identity, channel, kind, status, attempts, next_attempt_at, last_error, created_at, delivered_at " +
-      "FROM notification_outbox" + (options.status === undefined ? "" : " WHERE status = ?") +
-      " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
-    [...(options.status === undefined ? [] : [options.status]), limit + 1, offset],
+      "FROM notification_outbox" + where + keysetSql +
+      ` ORDER BY created_at DESC, id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    keyset ? [...statusParams, ...keyset.params, limit + 1] : [...statusParams, limit + 1, offset],
   );
+  // 多取一行判定 hasMore；有余行就给 nextCursor（offset 页也给，客户端可以
+  // 从第 1 页直接切到游标翻页）。
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const last = hasMore ? page[page.length - 1] : undefined;
   return {
-    hasMore: rows.length > limit,
-    items: rows.slice(0, limit).map((row) => ({
+    hasMore,
+    items: page.map((row) => ({
       id: String(row.id),
       identity: String(row.identity),
       channel: row.channel as NotificationChannel,
@@ -296,6 +321,9 @@ export async function listNotificationDeliveries(
       createdAt: Number(row.created_at),
       deliveredAt: row.delivered_at == null ? null : Number(row.delivered_at),
     })),
+    nextCursor: last
+      ? encodeKeysetCursor([Number(last.created_at ?? 0), String(last.id)])
+      : null,
   };
 }
 
@@ -340,14 +368,19 @@ export async function listNotificationsPage(
   limit: number,
   offset: number,
   unreadOnly: boolean,
-): Promise<{ items: NotificationRecord[]; hasMore: boolean }> {
+  cursor?: string,
+): Promise<{ items: NotificationRecord[]; hasMore: boolean; nextCursor: string | null }> {
   const capped = Math.min(Math.max(limit, 1), 50);
+  const keysetValues = parseKeysetCursor(cursor, NOTIFICATION_KEYSET_KEYS.length);
+  const keyset = keysetValues ? buildKeysetPredicate(NOTIFICATION_KEYSET_KEYS, keysetValues) : null;
   const where = unreadOnly ? " WHERE identity = ? AND read_at IS NULL" : " WHERE identity = ?";
+  const keysetSql = keyset ? ` AND ${keyset.sql}` : "";
+  const fetchLimit = capped + 1;
   const rows = await repo.raw(
     "SELECT id, identity, kind, title, body, read_at, created_at FROM notifications" +
-      where +
-      " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
-    [identity, capped + 1, Math.max(0, offset)],
+      where + keysetSql +
+      ` ORDER BY created_at DESC, id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    keyset ? [identity, ...keyset.params, fetchLimit] : [identity, fetchLimit, Math.max(0, offset)],
   );
   const hasMore = rows.length > capped;
   const items = (hasMore ? rows.slice(0, capped) : rows).map((r) => ({
@@ -359,7 +392,13 @@ export async function listNotificationsPage(
     readAt: r.read_at == null ? null : Number(r.read_at),
     createdAt: Number(r.created_at ?? 0),
   }));
-  return { items, hasMore };
+  // 有余行就给 nextCursor（offset 页也给，见 listNotificationDeliveries）。
+  const last = hasMore ? items[items.length - 1] : undefined;
+  return {
+    items,
+    hasMore,
+    nextCursor: last ? encodeKeysetCursor([last.createdAt, last.id]) : null,
+  };
 }
 
 export async function countUnreadNotifications(repo: Repository, identity: string): Promise<number> {

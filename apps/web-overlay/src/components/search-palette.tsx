@@ -19,7 +19,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList } from '@/registry/new-york/ui/command'
-import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink, PencilLine, Share2, Upload, RotateCcw, LayoutTemplate } from 'lucide-react'
+import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink, PencilLine, Share2, Upload, RotateCcw, LayoutTemplate, Sun, Moon, Accessibility, Plus, Wrench, Calculator, Braces, Binary, Link2, KeyRound, Timer, Terminal, Hash, Globe, Network, Palette, CalendarDays, Regex, Scale, Activity, Ruler, Fingerprint } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   searchSites,
@@ -33,6 +33,7 @@ import {
   type HubCollection,
 } from '@/lib/navhub-api'
 import { searchChannelStatus } from '@/lib/search-degrade'
+import { buildSearchSuggestions, matchSuggestionText } from '@/lib/search-suggestions'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
@@ -64,6 +65,24 @@ import {
   type DiyPaletteActionId,
   type DiyPaletteActionItem,
 } from '@/lib/modular/diy-palette-actions'
+import {
+  buildPaletteNavItems,
+  matchPaletteActions,
+  matchPaletteFavorites,
+  matchPaletteTools,
+  type PaletteActionEntry,
+  type PaletteActionId,
+  type PaletteFavoriteLike,
+  type PaletteToolEntry,
+} from '@/lib/palette-actions'
+import { useTheme } from 'next-themes'
+import {
+  ELDER_MODE_CHANGED_EVENT,
+  loadElderMode,
+  setElderMode,
+} from '@/lib/elder-mode'
+import { createCustomSiteId, normalizeCustomSiteHref } from '@/lib/modular/custom-site-input'
+import { suggestCategoryForSite } from '@/lib/modular/diy-presets'
 
 
 
@@ -87,6 +106,12 @@ const ActionIntentCard = dynamic(
 )
 import type { ActionIntentCardData } from '@/components/action-intent-card'
 import { AlgorithmHudBadge } from './algorithm-hud-badge'
+/** 添加自定义站点弹窗（P1 #8）：与 navigation-content 同款懒加载，Radix Dialog 不进首屏 */
+const AddSiteDialog = dynamic(
+  () => import('@/components/add-site-dialog').then((m) => m.AddSiteDialog),
+  { ssr: false }
+)
+import type { CategorySuggestion } from '@/components/add-site-dialog'
 
 export const OMNI_ENGINES: Record<string, { name: string; url: (q: string) => string }> = {
   g: { name: 'Google', url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
@@ -131,6 +156,36 @@ const DIY_ACTION_ICONS: Record<DiyPaletteActionId, typeof PencilLine> = {
   share: Share2,
   import: Upload,
   reset: RotateCcw,
+}
+
+/** 万能栏操作行图标（P1 #8）：主题图标随深浅变，单独处理，不进这张表 */
+const PALETTE_ACTION_ICONS: Record<Exclude<PaletteActionId, 'theme'>, typeof PencilLine> = {
+  elder: Accessibility,
+  'add-site': Plus,
+  density: LayoutTemplate,
+}
+
+/** 极速工具行图标（P1 #8）：装饰性图标，与抽屉各 tab 的图标同口径 */
+const PALETTE_TOOL_ICONS: Record<string, typeof PencilLine> = {
+  math: Calculator,
+  json: Braces,
+  base64: Binary,
+  uuid: Fingerprint,
+  timestamp: Clock,
+  'date-to-ts': CalendarDays,
+  color: Palette,
+  regex: Regex,
+  semver: Scale,
+  'http-status': Activity,
+  'hash-detect': Hash,
+  'hash-calc': Hash,
+  ip: Globe,
+  cidr: Network,
+  'byte-size': Ruler,
+  jwt: KeyRound,
+  cron: Timer,
+  curl: Terminal,
+  url: Link2,
 }
 
 /** 结果行文本高亮：命中片段上色，未命中原样（仅字面命中的词有高亮，拼音/语义召回本就无字面） */
@@ -189,15 +244,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   }, [isFocused, allCollections.length])
 
   const matchedCollections = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = query.trim()
     if (!q) return []
+    // 专题匹配与建议层共用容错匹配：一个字母打错（如 "githb"）不应让
+    // 专题分组整个消失——中枢 fuzzy 只兜底站点召回，本地分组要自己容错
     return allCollections
-      .filter(
-        (c) =>
-          c.title.toLowerCase().includes(q) ||
-          (c.description && c.description.toLowerCase().includes(q)) ||
-          c.slug.toLowerCase().includes(q),
-      )
+      .filter((c) => matchSuggestionText(q, `${c.title} ${c.description ?? ''} ${c.slug}`))
       .slice(0, 3)
   }, [allCollections, query])
   const [loading, setLoading] = useState(false)
@@ -261,9 +313,50 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     exportPresetToUrlHash,
     stageImportForConfirm,
     resetDIYConfig,
+    customCategories,
+    addSiteToCustomCategory,
   } = useHomeDIY()
   /** 卡片密度住在用户偏好里（不在 DIY 配置里）：预设应用时当回调传给 applyDIYPreset */
-  const { setDensity } = useDensity()
+  const { setDensity, cycleDensity, densityLabel } = useDensity()
+  /** 主题切换（P1 #8）：与 ModeToggle 同一个 next-themes，不另起状态 */
+  const { resolvedTheme, setTheme } = useTheme()
+  /**
+   * 长辈模式当前态（P1 #8）：读法与 ElderModeToggle 完全一致——首帧默认关，
+   * effect 里读 localStorage 并订阅 `navhub:elder-mode-changed`，工具栏上
+   * 的开关改了，这里的行标题立刻跟着变，不会出现两处说法打架。
+   */
+  const [elderOn, setElderOnState] = useState(false)
+  useEffect(() => {
+    setElderOnState(loadElderMode(window.localStorage))
+    const sync = () => setElderOnState(loadElderMode(window.localStorage))
+    window.addEventListener(ELDER_MODE_CHANGED_EVENT, sync)
+    return () => window.removeEventListener(ELDER_MODE_CHANGED_EVENT, sync)
+  }, [])
+  /**
+   * 添加自定义站点（P1 #8）：弹窗本体就是 AddSiteDialog，提交走
+   * useHomeDIY 的 addSiteToCustomCategory，与分类上「+ 添加网址」同一条路。
+   * 目标分类没有预设：建议只从专属分类里算（见 addSiteSuggestion），
+   * 建议一出现就自动作为目标——弹窗里推荐卡片本身就是可见的凭据，
+   * 不会悄悄写进用户没看见的分类；没有专属分类时提交会明说。
+   */
+  const [addSiteOpen, setAddSiteOpen] = useState(false)
+  const [addSiteTitle, setAddSiteTitle] = useState('')
+  const [addSiteHref, setAddSiteHref] = useState('')
+  const [addSiteDesc, setAddSiteDesc] = useState('')
+  const [addSiteTargetCatId, setAddSiteTargetCatId] = useState<string | null>(null)
+  const addSiteSuggestion: CategorySuggestion | null = useMemo(() => {
+    if (!addSiteOpen) return null
+    if (!addSiteTitle.trim() && !addSiteHref.trim()) return null
+    // 只从专属分类里推荐：内置分类没有 addSiteToCustomCategory 的写入口，
+    // 推荐过去提交会静默落空、toast 还谎称「已添加」。
+    return suggestCategoryForSite(
+      { title: addSiteTitle, href: addSiteHref, description: addSiteDesc },
+      customCategories,
+    )
+  }, [addSiteOpen, addSiteTitle, addSiteHref, addSiteDesc, customCategories])
+  useEffect(() => {
+    setAddSiteTargetCatId(addSiteSuggestion?.categoryId ?? null)
+  }, [addSiteSuggestion])
   /** DIY「导入」的文件选择框（与备份对话框同一条 stageImportForConfirm 路，不复制导入逻辑） */
   const diyImportInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -673,11 +766,172 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     }
   }, [stageImportForConfirm, toast])
 
+  /**
+   * 万能栏快捷操作（P1 #8）：四个操作全部复用已有 handler，只做分发与提示，
+   * 不复制执行逻辑。主题 / 长辈 / 密度点完即生效（面板收起 + toast 说清
+   * 结果）；添加站点打开录入弹窗（面板收起，弹窗接管焦点）。
+   */
+  const handlePaletteAction = useCallback((action: PaletteActionEntry) => {
+    setIsFocused(false)
+    if (action.id === 'theme') {
+      const nextDark = resolvedTheme !== 'dark'
+      setTheme(nextDark ? 'dark' : 'light')
+      toast({ title: nextDark ? '已切换到深色模式' : '已切换到浅色模式' })
+      return
+    }
+    if (action.id === 'elder') {
+      const next = setElderMode(!elderOn, window.localStorage)
+      setElderOnState(next)
+      toast({
+        title: next ? '长辈模式已开启' : '长辈模式已关闭',
+        description: next ? '已切换为特大字与宽松间距。' : '已恢复开启前的字号。',
+      })
+      return
+    }
+    if (action.id === 'density') {
+      cycleDensity()
+      toast({ title: '卡片密度已切换', description: '紧凑 / 舒适 / 宽松三档循环切换，立即生效。' })
+      return
+    }
+    setAddSiteTitle('')
+    setAddSiteHref('')
+    setAddSiteDesc('')
+    setAddSiteTargetCatId(null)
+    setAddSiteOpen(true)
+  }, [resolvedTheme, setTheme, elderOn, cycleDensity, toast])
+
+  /**
+   * 极速工具（P1 #8）：回车即把示例填回输入框，面板不关闭——已有的
+   * 0-RTT 卡片当场算出结果，用户直接改示例继续算。不打开抽屉：
+   * 抽屉的开关状态住在 navigation-content，面板够不着，硬派事件过去
+   * 没人接听就是假入口；填示例是同一引擎的真执行。
+   */
+  const handlePaletteTool = useCallback((tool: PaletteToolEntry) => {
+    setQuery(tool.sampleQuery)
+    inputRef.current?.focus()
+  }, [])
+
+  /** 收藏夹打开（P1 #8）：与「常用与最近常去」同款——安全闸 + 离线记录 + 上报 + 重温计时 */
+  const openFavorite = useCallback((fav: PaletteFavoriteLike) => {
+    // 回落 '' 而不是默认 '#'：'#' 恒真，`if (!href)` 守卫永远不触发，
+    // 不安全收藏点一下会往离线记录写一条 '#' 假访问、面板还照常关掉。
+    const href = safeHref(fav.href, '')
+    if (!href) return
+    recordOfflineVisit({ id: fav.siteId, title: fav.title, href, icon: fav.icon ?? null })
+    reportClick(fav.siteId, identity)
+    favorites.recordOpened(fav.siteId)
+    setIsFocused(false)
+  }, [favorites, identity])
+
+  /**
+   * 添加自定义站点提交（P1 #8）：与 navigation-content 的
+   * handleAddCustomSiteSubmit 同口径——伪协议拦截 + 协议补全在
+   * normalizeCustomSiteHref 里，写盘结果只有 added / duplicate / failed
+   * 三种说法，失败不关弹窗、不清输入。
+   */
+  const handleAddCustomSiteSubmit = useCallback(() => {
+    if (!addSiteTargetCatId) {
+      toast({
+        title: '请先选择一个专属分类',
+        description: '在下方推荐里点「选入该类」；还没有专属分类时，请先在首页新建一个分类。',
+      })
+      return
+    }
+    if (!addSiteTitle.trim() || !addSiteHref.trim()) return
+    const normalized = normalizeCustomSiteHref(addSiteHref)
+    if (!normalized.ok) {
+      toast({
+        title: normalized.reason === 'unsafe-protocol' ? '⚠️ 网址不安全' : '⚠️ 网址不合法',
+        description:
+          normalized.reason === 'unsafe-protocol'
+            ? '仅允许 http/https 或站内相对路径。'
+            : '请输入合法的 http(s) 网址。',
+      })
+      return
+    }
+    const outcome = addSiteToCustomCategory(addSiteTargetCatId, {
+      id: createCustomSiteId(),
+      title: addSiteTitle.trim(),
+      href: normalized.href,
+      description: addSiteDesc.trim() || undefined,
+    })
+    if (outcome === 'failed') {
+      toast({
+        title: '这一下没能保存',
+        description: '浏览器拒绝写入本地存储（可能是隐私模式或空间已满）。站点只在当前页面生效，刷新后会消失。',
+        variant: 'destructive',
+      })
+      return
+    }
+    if (outcome === 'duplicate') {
+      toast({ title: '站点已在分类里', description: `「${addSiteTitle.trim()}」没有重复添加。` })
+      setAddSiteOpen(false)
+      return
+    }
+    toast({
+      title: '✨ 自定义站点已添加',
+      description: `站点「${addSiteTitle.trim()}」已成功收录至该分类。`,
+    })
+    setAddSiteOpen(false)
+    setAddSiteTitle('')
+    setAddSiteHref('')
+    setAddSiteDesc('')
+  }, [addSiteTargetCatId, addSiteTitle, addSiteHref, addSiteDesc, addSiteToCustomCategory, toast])
+
   /** 有查询词时命中的 DIY 操作行（空查询面板直接展示全部操作，不走匹配） */
   const matchedDiyActions = useMemo(
     () => matchDiyPaletteActions(query, BUILTIN_DIY_PRESETS, { isEditingLayout }),
     [query, isEditingLayout],
   )
+
+  /** 万能栏三组（P1 #8）：操作 / 工具 / 收藏夹，与建议层同一套容错匹配 */
+  const paletteActionOpts = useMemo(
+    () => ({ isDark: resolvedTheme === 'dark', elderOn, densityLabel }),
+    [resolvedTheme, elderOn, densityLabel],
+  )
+  const matchedPaletteActions = useMemo(
+    () => matchPaletteActions(query, paletteActionOpts),
+    [query, paletteActionOpts],
+  )
+  const matchedPaletteTools = useMemo(() => matchPaletteTools(query), [query])
+  const matchedPaletteFavorites = useMemo(
+    () =>
+      matchPaletteFavorites(query, favorites.items, {
+        excludeSiteIds: new Set(hits.map((h) => h.siteId)),
+      }),
+    [query, favorites.items, hits],
+  )
+  /** 空查询面板直接展示的四操作（matchPaletteActions('') 即全部）与收藏 */
+  const emptyPanelActions = useMemo(
+    () => matchPaletteActions('', paletteActionOpts),
+    [paletteActionOpts],
+  )
+  const emptyPanelFavorites = useMemo(() => favorites.items.slice(0, 8), [favorites.items])
+
+  /**
+   * 分组建议（research #2）：打字时即时给出的快捷入口，排在结果分组之前。
+   * 历史 / 专题 / 相关搜索三组（站点 / 插件 / DIY 操作下方已有完整分组，
+   * 不复制）；由同一份防抖后的查询派生，不另起计时器、不发新请求——
+   * 历史与专题是面板打开时已取到的数据，相关搜索随当次检索响应一起回来。
+   * 总上限 8 条、每组至多 2 条，见 lib/search-suggestions。
+   */
+  const suggestionGroups = useMemo(
+    () =>
+      buildSearchSuggestions({
+        query,
+        history: recent,
+        collections: allCollections,
+        relatedSearches: suggestions,
+      }),
+    [query, recent, allCollections, suggestions],
+  )
+
+  /** 采纳一条建议：历史 / 相关搜索行把词填回输入框（面板不关闭，可继续改）；
+      专题行是 Link 直接进专题页，不走这里。 */
+  const applySuggestion = useCallback((value: string) => {
+    setQuery(value)
+    inputRef.current?.focus()
+  }, [])
 
   const openSite = useCallback((hit: HubSearchHit) => {
     const site = hit.site
@@ -702,7 +956,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     })
     if (linkTarget === '_self') window.location.href = url
     else window.open(url, linkTarget, 'noopener,noreferrer')
-    setQuery('')
+    // 查询词要保留：新标签页打开后用户回来还能在原查询上继续挑下一条，
+    // 而不是被迫重打一遍（research #2「丢查询就要重打」的痛点）。
+    // 面板只收起，查询与结果都留在原地；清空搜索仍由 × 按钮显式做。
     setIsFocused(false)
   }, [identity, linkTarget, query])
 
@@ -715,19 +971,26 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const pluginItems = pluginHits?.items ?? []
 
   /**
-   * 键盘可导航项：与渲染顺序严格一致（DIY 操作在前、插件在中、站点在后）。
+   * 键盘可导航项：与渲染顺序严格一致（建议在前、DIY 操作次之、收藏 /
+   * 操作 / 工具随后、插件在中、站点在后）。顺序的唯一来源是
+   * lib/palette-actions 的 buildPaletteNavItems，渲染与导航共用它，
+   * 改一边不改另一边索引就会错位。
    * 站点命中里 site 为空的脏数据不渲染，也不进导航列表——否则索引会错位。
+   * 建议行也在列表里：↑↓ 能走到建议上，回车采纳；但「没有高亮时回车」的
+   * 默认目标仍是第一条结果（见 onSearchKeyDown），不能被建议抢走。
    */
   const navItems = useMemo(() => {
-    if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' | 'diy' }>
-    const items: Array<{ id: string; kind: 'plugin' | 'site' | 'diy' }> = []
-    for (const d of matchedDiyActions) items.push({ id: `diy-${d.key}`, kind: 'diy' })
-    for (const p of pluginItems) items.push({ id: `plugin-${p.id}`, kind: 'plugin' })
-    for (const h of hits) {
-      if (h.site) items.push({ id: `site-${h.siteId}`, kind: 'site' })
-    }
-    return items
-  }, [showResults, matchedDiyActions, pluginItems, hits])
+    if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' | 'diy' | 'suggestion' | 'favorite' | 'action' | 'tool' }>
+    return buildPaletteNavItems({
+      suggestionIds: suggestionGroups.flatMap((g) => g.items.map((s) => `suggestion-${s.key}`)),
+      diyIds: matchedDiyActions.map((d) => `diy-${d.key}`),
+      favoriteIds: matchedPaletteFavorites.map((f) => `favorite-${f.siteId}`),
+      actionIds: matchedPaletteActions.map((a) => `action-${a.id}`),
+      toolIds: matchedPaletteTools.map((t) => `tool-${t.id}`),
+      pluginIds: pluginItems.map((p) => `plugin-${p.id}`),
+      siteIds: hits.filter((h) => h.site).map((h) => `site-${h.siteId}`),
+    })
+  }, [showResults, suggestionGroups, matchedDiyActions, matchedPaletteFavorites, matchedPaletteActions, matchedPaletteTools, pluginItems, hits])
 
   const navIndexById = useMemo(() => {
     const map = new Map<string, number>()
@@ -778,7 +1041,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         if (navItems.length === 0) return
         // 没有高亮项时回车 = 打开第一条结果。原实现在 activeIndex === -1（默认态）
         // 直接忽略，「输完词直接回车」这个最常见的动作等于完全没反应。
-        const target = activeIndex >= 0 ? activeIndex : 0
+        // 默认目标必须是第一条「结果」（DIY/收藏/操作/工具/插件/站点），而不是第一条建议：
+        // 建议是用来采纳改词的，直接回车的用户要的是打开，不是换词。
+        const firstResultIndex = navItems.findIndex((item) => item.kind !== 'suggestion')
+        const target = activeIndex >= 0 ? activeIndex : firstResultIndex >= 0 ? firstResultIndex : 0
         // 交给真实元素处理：站点行是 role=option 的 div（onClick 打开），插件行是 Link（路由跳转）
         const el = findOptionElement(target)
         if (el) {
@@ -827,6 +1093,22 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         onChange={handleDiyImportFile}
         className="hidden"
       />
+      {/* 添加自定义站点弹窗（P1 #8）：只在打开时挂载，Radix Dialog 不进首屏 */}
+      {addSiteOpen && (
+        <AddSiteDialog
+          open={addSiteOpen}
+          onOpenChange={(open) => { if (!open) setAddSiteOpen(false) }}
+          title={addSiteTitle}
+          href={addSiteHref}
+          desc={addSiteDesc}
+          onTitleChange={setAddSiteTitle}
+          onHrefChange={setAddSiteHref}
+          onDescChange={setAddSiteDesc}
+          suggestion={addSiteSuggestion}
+          onPickSuggestion={(categoryId) => setAddSiteTargetCatId(categoryId)}
+          onSubmit={handleAddCustomSiteSubmit}
+        />
+      )}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input aria-label={placeholder}
@@ -870,8 +1152,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             ? degraded && hits.length === 0
               ? // 读屏同样不能把「没问成功」说成「没有找到」
                 '检索服务暂时不可用，本次没有取回站点结果'
-              : hits.length > 0 || pluginItems.length > 0
-                ? `找到 ${hits.length + pluginItems.length} 条结果`
+              : hits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0
+                ? `找到 ${hits.length + pluginItems.length + matchedPaletteFavorites.length + matchedPaletteActions.length + matchedPaletteTools.length} 条结果`
                 : '没有找到匹配结果'
             : ''}
       </p>
@@ -935,6 +1217,74 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               ))}
             </div>
           </div>
+
+          {/* 快捷操作（P1 #8）：空查询时直接展示全部四项，点一下就执行（主题 / 长辈 / 密度即时生效，添加站点开弹窗） */}
+          <div className="p-2.5">
+            <div className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5 mb-2 px-1">
+              <Zap className="h-3 w-3 text-amber-500" />
+              <span>快捷操作</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {emptyPanelActions.map((action) => {
+                const Icon = action.id === 'theme' ? (resolvedTheme === 'dark' ? Sun : Moon) : PALETTE_ACTION_ICONS[action.id]
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => handlePaletteAction(action)}
+                    title={action.description}
+                    className="flex items-center gap-2 p-2 rounded-lg border border-border/50 bg-background/60 hover:bg-accent/50 hover:border-primary/30 transition-all text-xs font-medium text-left cursor-pointer"
+                  >
+                    <Icon className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                    <span className="flex-1 truncate">{action.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 我的收藏（P1 #8）：空查询时展示最近 8 条收藏，打字可在结果面板里筛选 */}
+          {emptyPanelFavorites.length > 0 && (
+            <div className="p-2.5 bg-muted/20">
+              <div className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between mb-2 px-1">
+                <span className="flex items-center gap-1.5">
+                  <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
+                  <span>我的收藏</span>
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground">打字可筛选</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {emptyPanelFavorites.map((fav) => {
+                  // 回落 '' 而不是默认 '#'：'#' 恒真，`if (!href)` 守卫永远不触发，
+                  // 不安全收藏会渲染成 href="#" 的死链接（见 openFavorite 同款注释）。
+                  const href = safeHref(fav.href, '')
+                  if (!href) return null
+                  return (
+                    <a
+                      key={fav.siteId}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => openFavorite(fav)}
+                      className="flex items-center gap-2 p-1.5 rounded-lg border border-border/50 bg-background/60 hover:bg-accent/50 hover:border-primary/30 transition-all text-xs group"
+                    >
+                      <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                        <SiteFavicon
+                          title={fav.title}
+                          url={href}
+                          icon={fav.icon}
+                          className="w-4 h-4 object-contain rounded"
+                        />
+                      </div>
+                      <span className="truncate font-medium text-foreground group-hover:text-primary transition-colors text-[11px]">
+                        {fav.title}
+                      </span>
+                    </a>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 常用与最近常去站点快捷直达 */}
           {recentVisits.length > 0 && (
@@ -1133,6 +1483,76 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     : '没有精确匹配，以下是放宽匹配后的结果。'}
                 </div>
               )}
+              {/* 分组建议（research #2）：打字时即时给出的快捷入口，排在结果分组之前。
+                  历史 / 专题 / 相关搜索三组，匹配词加粗（Highlighted），↑↓/Enter 可达：
+                  建议行与 DIY/插件/站点行共用同一条 navItems 扁平列表，DOM 顺序
+                  即导航顺序；回车采纳建议（历史/相关搜索填回输入框，专题直接进页）。 */}
+              {suggestionGroups.map((group) => (
+                <div key={group.kind} className="border-b border-border/60">
+                  <div className="px-3.5 py-2 flex items-center gap-1.5 bg-muted/30">
+                    {group.kind === 'history' ? (
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    ) : group.kind === 'collection' ? (
+                      <Layers className="h-3.5 w-3.5 text-violet-500" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    )}
+                    <span className="text-xs font-semibold text-muted-foreground">{group.title}</span>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {group.items.map((item) => {
+                      const idx = navIndexById.get(`suggestion-${item.key}`) ?? -1
+                      const selected = idx === activeIndex
+                      const rowClass = `w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer ${
+                        selected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                      }`
+                      const inner = (
+                        <>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium truncate">
+                              <Highlighted text={item.label} query={query} />
+                            </span>
+                            {item.description && (
+                              <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                                <Highlighted text={item.description} query={query} />
+                              </span>
+                            )}
+                          </span>
+                          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 opacity-60" />
+                        </>
+                      )
+                      return item.href ? (
+                        <Link
+                          key={item.key}
+                          href={safeHref(item.href)}
+                          onClick={() => setIsFocused(false)}
+                          role="option"
+                          id={`navhub-search-opt-${idx}`}
+                          data-nav-index={idx}
+                          data-nav-item="suggestion"
+                          aria-selected={selected}
+                          className={rowClass}
+                        >
+                          {inner}
+                        </Link>
+                      ) : (
+                        <div
+                          key={item.key}
+                          role="option"
+                          id={`navhub-search-opt-${idx}`}
+                          data-nav-index={idx}
+                          data-nav-item="suggestion"
+                          aria-selected={selected}
+                          onClick={() => applySuggestion(item.label)}
+                          className={rowClass}
+                        >
+                          {inner}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
               {/* DIY 排版操作（8c）：查询命中操作关键词时置顶展示，参与 ↑↓/Enter 键盘导航 */}
               {matchedDiyActions.length > 0 && (
                 <div className="border-b border-border/60">
@@ -1171,6 +1591,149 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                               {item.hint}
                             </kbd>
                           )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* 我的收藏（P1 #8）：只出现用户自己的收藏，命中查询词的排在站点之前；已在站点结果里的不重复出现 */}
+              {matchedPaletteFavorites.length > 0 && (
+                <div className="border-b border-border/60">
+                  <div className="px-3.5 py-2 flex items-center gap-1.5 bg-amber-500/5">
+                    <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">我的收藏</span>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {matchedPaletteFavorites.map((fav) => {
+                      const idx = navIndexById.get(`favorite-${fav.siteId}`) ?? -1
+                      // 回落 '' 而不是默认 '#'：'#' 恒真，`if (!href)` 守卫永远不触发，
+                      // 不安全收藏会占一个键盘导航位却打不开（死导航位）。源头
+                      // matchPaletteFavorites 已先过滤，这里是纵深防御。
+                      const href = safeHref(fav.href, '')
+                      if (!href) return null
+                      return (
+                        <a
+                          key={fav.siteId}
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          role="option"
+                          id={`navhub-search-opt-${idx}`}
+                          data-nav-index={idx}
+                          data-nav-item="favorite"
+                          aria-selected={idx === activeIndex}
+                          onClick={() => openFavorite(fav)}
+                          className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer ${
+                            idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                          }`}
+                        >
+                          <span className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center shrink-0">
+                            <SiteFavicon
+                              title={fav.title}
+                              url={href}
+                              icon={fav.icon}
+                              className="w-full h-full object-contain rounded-xs"
+                            />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium truncate">
+                              <Highlighted text={fav.title} query={query} />
+                            </span>
+                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                              {fav.description ?? fav.href}
+                            </span>
+                          </span>
+                          <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                        </a>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* 快捷操作（P1 #8）：查询命中操作关键词时展示，↑↓/Enter 可达，点一下就执行 */}
+              {matchedPaletteActions.length > 0 && (
+                <div className="border-b border-border/60">
+                  <div className="px-3.5 py-2 flex items-center gap-1.5 bg-amber-500/5">
+                    <Zap className="h-3.5 w-3.5 text-amber-500" />
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">快捷操作</span>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {matchedPaletteActions.map((action) => {
+                      const idx = navIndexById.get(`action-${action.id}`) ?? -1
+                      const Icon = action.id === 'theme' ? (resolvedTheme === 'dark' ? Sun : Moon) : PALETTE_ACTION_ICONS[action.id]
+                      return (
+                        <div
+                          key={action.id}
+                          role="option"
+                          id={`navhub-search-opt-${idx}`}
+                          data-nav-index={idx}
+                          data-nav-item="action"
+                          aria-selected={idx === activeIndex}
+                          onClick={() => handlePaletteAction(action)}
+                          className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer ${
+                            idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                          }`}
+                        >
+                          <span className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center shrink-0">
+                            <Icon className="h-4 w-4 text-amber-500" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium truncate">{action.label}</span>
+                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                              {action.description}
+                            </span>
+                          </span>
+                          {action.hint && (
+                            <kbd className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px] text-muted-foreground shrink-0">
+                              {action.hint}
+                            </kbd>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* 极速工具（P1 #8）：19 个零 RTT 工具，回车把示例填回输入框，0-RTT 卡片当场算出结果 */}
+              {matchedPaletteTools.length > 0 && (
+                <div className="border-b border-border/60">
+                  <div className="px-3.5 py-2 flex items-center gap-1.5 bg-emerald-500/5">
+                    <Wrench className="h-3.5 w-3.5 text-emerald-500" />
+                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">极速工具 · 0-RTT</span>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {matchedPaletteTools.map((tool) => {
+                      const idx = navIndexById.get(`tool-${tool.id}`) ?? -1
+                      const Icon = PALETTE_TOOL_ICONS[tool.id] ?? Wrench
+                      return (
+                        <div
+                          key={tool.id}
+                          role="option"
+                          id={`navhub-search-opt-${idx}`}
+                          data-nav-index={idx}
+                          data-nav-item="tool"
+                          aria-selected={idx === activeIndex}
+                          onClick={() => handlePaletteTool(tool)}
+                          className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer ${
+                            idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                          }`}
+                        >
+                          <span className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/15 flex items-center justify-center shrink-0">
+                            <Icon className="h-4 w-4 text-emerald-500" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium truncate">{tool.label}</span>
+                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                              {tool.description}
+                            </span>
+                          </span>
+                          <code
+                            className="max-w-[38%] truncate rounded border border-border/50 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground shrink-0"
+                            title={tool.sampleQuery}
+                          >
+                            {tool.sampleQuery}
+                          </code>
                         </div>
                       )
                     })}
@@ -1676,7 +2239,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 })
               )}
               {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}
-              {(hits.length > 0 || pluginItems.length > 0) && (
+              {(hits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0) && (
                 <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
                     <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑</kbd>

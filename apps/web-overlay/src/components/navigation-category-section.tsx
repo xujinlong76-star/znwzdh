@@ -45,8 +45,6 @@ export interface NavigationCategorySectionProps {
   selectionMode: boolean
   selectedIds: string[]
   siteData: SiteConfig
-  dragOverCustomCatId: string | null
-  setDragOverCustomCatId: (id: string | null) => void
   setAddSiteTargetCatId: (id: string | null) => void
   setPeekItem: (item: NavigationSubItem | null, categoryId?: string) => void
   /** 卡片键盘操作说明的 DOM id（页面级只渲染一份） */
@@ -69,7 +67,6 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   selectionMode,
   selectedIds,
   siteData,
-  dragOverCustomCatId,
   setAddSiteTargetCatId,
   setPeekItem,
   keyboardHintId,
@@ -80,6 +77,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   const {
     isEditingLayout,
     isAdaptiveRankingEnabled,
+    categoryOrder,
     pinnedCategoryIds,
     hiddenCategoryIds,
     unhideCategory,
@@ -240,11 +238,25 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     [category.items, bypassMaskTemporarily, isSiteHidden]
   )
   const subCats = useMemo(
-    () =>
-      ((category.subCategories || []) as Array<NavigationCategory & { items?: NavigationSubItem[] }>).filter(
+    () => {
+      const list = ((category.subCategories || []) as Array<NavigationCategory & { items?: NavigationSubItem[] }>).filter(
         (sub) => bypassMaskTemporarily || !isSubcategoryHidden(sub.id)
-      ),
-    [category.subCategories, bypassMaskTemporarily, isSubcategoryHidden]
+      )
+      // 子分类顺序读 flat categoryOrder（与顶级分类同一份列表）：只比同级
+      // 之间的相对位置，列表里没有的保持上游原序（stable sort + 0 兜底，
+      // 与 category-combine 顶级排序同一口径）。写侧是 ↑/↓ 与拖拽
+      //（moveCategory / reorderCategory），本来就往这份 flat 列表里写。
+      if (categoryOrder.length === 0) return list
+      return [...list].sort((a, b) => {
+        const aIdx = categoryOrder.indexOf(a.id)
+        const bIdx = categoryOrder.indexOf(b.id)
+        if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx
+        if (aIdx !== -1) return -1
+        if (bIdx !== -1) return 1
+        return 0
+      })
+    },
+    [category.subCategories, bypassMaskTemporarily, isSubcategoryHidden, categoryOrder]
   )
   /**
    * 卡片标签清洗用的分类名集合（运行时从当前分类树派生，不硬编码分类名）。
@@ -258,10 +270,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   const totalCount = countCategorySites(category)
   const categoryPinnedItemIds = pinnedSiteIdsByCategory[category.id] || []
   /**
-   * 排序结果必须缓存。
-   *
-   * 拖拽过程中 `setDragOverCustomCatId` 每次悬停变化都会让父组件重渲染，
-   * 这里若每帧重排整个分类（几十~上百条），主线程会被排序吃满，拖拽明显掉帧。
+   * 排序结果必须缓存：拖拽过程中落点高亮（isCategoryDropTarget）每次
+   * 悬停变化都会让本区块重渲染，这里若每帧重排整个分类（几十~上百条），
+   * 主线程会被排序吃满，拖拽明显掉帧。
    */
   const sortedDirectItems = useMemo(
     () =>
@@ -589,10 +600,13 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   if (isHidden) {
     if (!isEditingLayout) return null
     return (
+      // 已隐藏分类的编辑态占位行：不做半透明处理——行里有「恢复显示」活按钮，
+      // 半透明 + 活按钮是 WCAG 1.4.3（对比度）与 2.4.7 的双重问题；隐藏状态
+      // 已由虚线边框 + 柔和底色 +「(已隐藏)」标签 + EyeOff 图标表达够了。
       <div
         key={category.id}
         id={category.id}
-        className="col-span-12 my-1 flex items-center justify-between rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-2.5 backdrop-blur-xs transition-all opacity-70 hover:opacity-100"
+        className="col-span-12 my-1 flex items-center justify-between rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-2.5 backdrop-blur-xs transition-all"
       >
         <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
           <EyeOff className="w-4 h-4 text-amber-500" />
@@ -609,7 +623,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
               restoreFeature(`cat:${category.id}`)
               toast({ title: `已恢复显示分类: ${category.title}` })
             }}
-            className="h-7 px-2.5 text-xs rounded-lg gap-1 border-primary/40 text-primary hover:bg-primary/10"
+            className="min-h-11 px-2.5 text-xs rounded-lg gap-1 border-primary/40 text-primary hover:bg-primary/10"
           >
             <Eye className="w-3.5 h-3.5" />
             <span>恢复显示</span>
@@ -626,7 +640,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     isModuleCustomSized && !isPinned && !isEditingLayout && "p-3 sm:p-4 rounded-2xl border border-border/70 bg-card/35 backdrop-blur-xs shadow-2xs",
     isPinned && "p-3 sm:p-4 rounded-2xl bg-primary/3 border border-primary/20 depth-surface",
     isEditingLayout && "p-3 sm:p-4 rounded-2xl border-2 border-dashed border-primary/30 bg-muted/20",
-    (dragOverCustomCatId === category.id || isCategoryDropTarget) && "ring-2 ring-emerald-500 bg-emerald-500/10 rounded-2xl border-emerald-500/60"
+    isCategoryDropTarget && "ring-2 ring-emerald-500 bg-emerald-500/10 rounded-2xl border-emerald-500/60"
   )
 
   /**
@@ -638,7 +652,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    * 分类拖拽源同样已是 dnd-kit：category-in-situ-controls 里的手柄
    * 是 DiyCategoryDragGrip（useDraggable，dnd-kit chunk 加载后传入），
    * 落下后 navigation-content 的 handleCategoryDragEnd 调
-   * moveCategoryToIndex 重排。
+   * moveCategoryToIndex 重排。子分类的手柄也是它（只在同一父分类内
+   * 重排，落点是父级 section，见下面二级分类处与 handleCategoryDragEnd
+   * 的子分类分支）。
    */
   const sectionInner = (
     <>
@@ -668,11 +684,18 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                         }}
                       />
 
-                      {/* 卡片拖拽进专属分类的引导高亮条 */}
-                      {(dragOverCustomCatId === category.id || isCategoryDropTarget) && (
+                      {/* 卡片拖拽落点引导条：文案按目标类型区分——自定义分类是收录，
+                          内置分类是重归类（编辑态），别把重归类说成「收录至专属分类」。
+                          卡片拖拽不排位置（见 diy-drag.ts resolveCardDrop），这里只说
+                          收录/重归类，不说放第几个。 */}
+                      {isCategoryDropTarget && (
                         <div className="mb-3 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-500/15 border-2 border-dashed border-emerald-500 text-emerald-600 dark:text-emerald-400 font-semibold text-xs animate-in zoom-in-95 duration-150">
                           <Sparkles className="w-4 h-4 animate-bounce" />
-                          <span>松开鼠标，直接收录卡片至「{category.title}」专属分类</span>
+                          <span>
+                            {isCustom
+                              ? `松开鼠标，直接收录卡片至「${category.title}」专属分类`
+                              : `松开鼠标，将卡片重归类至「${category.title}」分类`}
+                          </span>
                         </div>
                       )}
 
@@ -684,7 +707,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                             <button
                               type="button"
                               onClick={() => toggleCollapseCategory(category.id)}
-                              className="p-1 -ml-1 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-muted/80 transition-all flex items-center justify-center cursor-pointer"
+                              className="min-h-11 min-w-11 p-1 -ml-1 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-muted/80 transition-all flex items-center justify-center cursor-pointer"
                               title={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
                               aria-label={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
                               aria-expanded={!isCollapsed}
@@ -725,7 +748,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                             <button
                               type="button"
                               onClick={handleCopyCategoryLink}
-                              className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted/80 transition-all cursor-pointer opacity-70 hover:opacity-100"
+                              className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted/80 transition-all cursor-pointer opacity-70 hover:opacity-100"
                               title={`复制「${category.title}」直达锚点链接`}
                               aria-label={`复制「${category.title}」分类直达链接`}
                             >
@@ -734,7 +757,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                             {/* 查看该领域技术生态图谱 */}
                             <Link
                               href={`/graph?category=${encodeURIComponent(category.id)}`}
-                              className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-all cursor-pointer opacity-70 hover:opacity-100"
+                              className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-all cursor-pointer opacity-70 hover:opacity-100"
                               title="查看该领域技术生态图谱"
                               aria-label={`查看「${category.title}」领域技术生态图谱`}
                             >
@@ -750,7 +773,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   resetModuleSize()
                                   toast({ title: `🔄 已恢复「${category.title}」默认全宽与自适应高度` })
                                 }}
-                                className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-medium hover:bg-primary/20 transition-all cursor-pointer"
+                                className="inline-flex min-h-11 items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-medium hover:bg-primary/20 transition-all cursor-pointer"
                                 title="点击重置该模块窗口为默认全宽与自适应高度"
                                 aria-label={`重置「${category.title}」模块窗口大小`}
                               >
@@ -765,7 +788,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               <button
                                 type="button"
                                 onClick={() => toggleCollapseCategory(category.id)}
-                                className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-medium hover:bg-sky-500/20 transition-all cursor-pointer"
+                                className="inline-flex min-h-11 items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-medium hover:bg-sky-500/20 transition-all cursor-pointer"
                                 title="点击展开该分类"
                               >
                                 <span>已收起 (点击展开)</span>
@@ -844,6 +867,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     className="w-24 sm:w-32 text-xs bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
                                     autoFocus
                                   />
+                                  {/* 16px 的 × 视觉不变，::after 把点击区无形扩到 44px */}
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -851,7 +875,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                       setSelectedTag(null)
                                       setIsFilterOpen(false)
                                     }}
-                                    className="p-0.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                                    className="relative p-0.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer after:absolute after:-inset-3.5 after:content-['']"
                                     title="关闭筛选"
                                   >
                                     <X className="w-3 h-3" />
@@ -861,7 +885,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 <button
                                   type="button"
                                   onClick={() => setIsFilterOpen(true)}
-                                  className="h-6 px-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors inline-flex items-center gap-1 text-xs cursor-pointer"
+                                  className="min-h-11 min-w-11 px-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors inline-flex items-center justify-center gap-1 text-xs cursor-pointer"
                                   title={`在「${category.title}」内极速筛选`}
                                   aria-label={`类目筛选：在「${category.title}」内极速筛选`}
                                 >
@@ -925,7 +949,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   tabIndex={selectedSubCatId === null ? 0 : -1}
                                   onClick={() => setSelectedSubCatId(null)}
                                   className={cn(
-                                    "px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                    "min-h-11 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
                                     selectedSubCatId === null
                                       ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
                                       : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
@@ -942,7 +966,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     tabIndex={selectedSubCatId === '__direct__' ? 0 : -1}
                                     onClick={() => setSelectedSubCatId(selectedSubCatId === '__direct__' ? null : '__direct__')}
                                     className={cn(
-                                      "px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                      "min-h-11 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
                                       selectedSubCatId === '__direct__'
                                         ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
                                         : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
@@ -964,7 +988,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                       tabIndex={isCurrent ? 0 : -1}
                                       onClick={() => setSelectedSubCatId(isCurrent ? null : sub.id)}
                                       className={cn(
-                                        "px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                        "min-h-11 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
                                         isCurrent
                                           ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
                                           : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
@@ -987,7 +1011,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="text-xs h-7"
+                                  className="text-xs min-h-11"
                                   onClick={() => {
                                     setFilterKeyword('')
                                     setSelectedTag(null)
@@ -1043,6 +1067,11 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 const hasSubCatRail = !isEditingLayout && subCats.length > 1
                                 const isSubExpanded = Boolean(expandedGroups[subCategory.id])
                                 const canExpandSub = !forceFull && Number.isFinite(limit) && sortedSubItems.length > limit
+                                // 同级列表（↑/↓ 与拖拽的锚点）：取全部可见同级，不是当前
+                                // 选中的 tab 过滤后的 subGroups——tab 选中时 subGroups 只有
+                                // 一组，拿它当同级会把 ↑/↓ 全禁掉。
+                                const siblingIds = sortedSubCategories.map((s) => s.subCategory.id)
+                                const subIndex = siblingIds.indexOf(subCategory.id)
                                 return (
                                   <div key={subCategory.id} id={subCategory.id} className="mt-8 space-y-3 first:mt-2">
                                     <div className="flex items-center justify-between pb-0.5 pt-1">
@@ -1078,13 +1107,24 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                               <EyeOff className="w-3 h-3" />
                                               <span>－ 移除子分类</span>
                                             </button>
+                                            {/* 子分类拖拽：手柄是 DiyCategoryDragGrip（与顶级同一组件），
+                                                落点是父级 section 的 DiyCategoryDropTarget——子分组
+                                                故意不注册自己的 droppable：落点一旦是 kind:'category'
+                                                的 droppable，卡片拖到子分组上也会命中它，
+                                                resolveCardDrop 会把它重归类到子分类 id，而
+                                                combineAndSortCategories 只认顶级分类 id 消费重映射，
+                                                卡片会直接从页面消失。拖拽落点由 navigation-content
+                                                的 handleCategoryDragEnd 按指针位置在同级里定位。 */}
                                             <CategoryInSituControls
                                               categoryId={subCategory.id}
                                               title={subCategory.title}
                                               isPinned={subPinnedItemIds.length > 0}
-                                              canMoveUp={true}
-                                              canMoveDown={true}
-                                              allCategoryIds={subGroups.map((s) => s.subCategory.id)}
+                                              isSubcategory
+                                              canMoveUp={subIndex > 0}
+                                              canMoveDown={subIndex >= 0 && subIndex < siblingIds.length - 1}
+                                              allCategoryIds={siblingIds}
+                                              dragEnabled
+                                              dragGrip={dragKit?.DiyCategoryDragGrip}
                                               onAddSite={() => setAddSiteTargetCatId(subCategory.id)}
                                             />
                                           </>

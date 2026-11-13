@@ -105,11 +105,11 @@ export function InstallPrompt() {
             <p className="text-sm font-semibold">把山羊胡装到桌面</p>
             <p className="mt-0.5 text-xs text-muted-foreground">像 App 一样打开，离线也能看最近访问。</p>
             <div className="mt-2.5 flex items-center gap-2">
-              <button onClick={install} className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">安装</button>
-              <button onClick={later} className="text-xs text-muted-foreground">稍后</button>
+              <button onClick={install} className="rounded-md bg-primary min-h-11 px-4 py-2 text-xs font-medium text-primary-foreground">安装</button>
+              <button onClick={later} className="inline-flex min-h-11 items-center px-2 text-xs text-muted-foreground">稍后</button>
             </div>
           </div>
-          <button onClick={later} aria-label="关闭安装提示" className="text-muted-foreground"><X className="h-4 w-4" /></button>
+          <button onClick={later} aria-label="关闭安装提示" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"><X className="h-4 w-4" /></button>
         </div>
       </div>
     </div>

@@ -101,7 +101,7 @@ function ModuleLibraryItem({
             <div
               ref={handleRef}
               title={`按住拖到画布上添加「${m.title}」`}
-              className="flex items-center justify-center h-6 w-4 rounded-md cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors touch-none"
+              className="flex items-center justify-center h-6 w-6 rounded-md cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors touch-none"
             >
               <GripVertical className="w-3.5 h-3.5" />
             </div>
@@ -189,8 +189,19 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
               placeholder="搜索模块名称或核心功能描述..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full text-xs pl-9 pr-4 py-2 rounded-xl border border-border/70 bg-background outline-none focus:border-primary/50"
+              className="w-full text-xs pl-9 pr-9 py-2 rounded-xl border border-border/70 bg-background outline-none focus:border-primary/50"
             />
+            {searchTerm !== '' && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                aria-label="清空搜索"
+                title="清空搜索"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 min-h-6 min-w-6 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer flex items-center justify-center"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-pan-x pb-1 text-xs">
@@ -198,7 +209,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
               <button
                 key={cat.id}
                 onClick={() => setSelectedCat(cat.id)}
-                className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-colors text-xs font-medium ${
+                className={`px-2.5 py-1 min-h-6 rounded-full whitespace-nowrap transition-colors text-xs font-medium ${
                   selectedCat === cat.id
                     ? 'bg-primary text-primary-foreground shadow-xs'
                     : 'bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground'
@@ -212,9 +223,38 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
 
         {/* 模块列表卡片流 */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
-          {modules.map((m) => (
-            <ModuleLibraryItem key={m.type} m={m} onAddModule={onAddModule} onClose={onClose} />
-          ))}
+          {modules.length === 0 ? (
+            <div className="col-span-full py-10 text-center space-y-2 border border-dashed border-border/60 rounded-xl bg-muted/15">
+              <div className="w-10 h-10 rounded-xl bg-muted/50 mx-auto flex items-center justify-center text-muted-foreground">
+                <Search className="w-5 h-5" />
+              </div>
+              <p className="text-xs font-semibold text-foreground">
+                {searchTerm.trim() !== ''
+                  ? `没有找到匹配「${searchTerm.trim()}」的模块`
+                  : '该分类下暂无模块'}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {searchTerm.trim() !== '' ? '换个关键词试试，或清空搜索查看全部模块。' : '换个分类看看，或清空搜索查看全部模块。'}
+              </p>
+              {(searchTerm.trim() !== '' || selectedCat !== 'all') && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-3 text-xs rounded-lg"
+                  onClick={() => {
+                    setSearchTerm('')
+                    setSelectedCat('all')
+                  }}
+                >
+                  清空搜索与分类筛选
+                </Button>
+              )}
+            </div>
+          ) : (
+            modules.map((m) => (
+              <ModuleLibraryItem key={m.type} m={m} onAddModule={onAddModule} onClose={onClose} />
+            ))
+          )}
         </div>
 
         {/* 底部信息提示 */}

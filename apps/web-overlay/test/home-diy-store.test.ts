@@ -35,9 +35,11 @@ import {
   STORAGE_KEY,
   applyRemoteHomeDiyConfig,
   backupHomeDiyShareConfig,
+  claimHomeDiyHistoryStep,
   classifyHomeDiyStorageFailure,
   commitHomeDiyConfig,
   describeHomeDiyStorageFailure,
+  didHomeDiyHistoryStepClaimThisTask,
   dismissHomeDiyStorageWarning,
   flushHomeDiyDiskWrites,
   getEffectiveSlotClocks,
@@ -58,8 +60,10 @@ import { readSlotClocks } from '@/lib/modular/layout-sync'
 
 import {
   publishSharedLayoutSync,
+  flushPendingLayoutSyncMessages,
   subscribeSharedLayoutSyncChannel,
 } from '@/lib/modular/use-home-diy-grid'
+import { isDiyDragActive, setDiyDragActive } from '@/lib/modular/diy-drag'
 
 /* ------------------------------------------------------------------ *
  * 假的浏览器环境（node 环境里没有 window / localStorage）
@@ -888,7 +892,9 @@ describe('工具栏细化修复：无障碍、焦点与编排态落盘警告', (
     expect(toolbar).toContain('aria-label="撤销"')
     expect(toolbar).toContain('aria-label="重做"')
     expect(toolbar).toContain('aria-label="排版蓝图 JSON 导入与导出"')
-    expect(toolbar).toContain('aria-label="恢复系统默认排版"')
+    // 一键重置同时恢复所有已删减功能（restoreAll），aria-label 必须把这点说出来，
+    // 不能只写「恢复系统默认排版」让人以为只动了排版。
+    expect(toolbar).toContain('aria-label="恢复系统默认排版，同时恢复所有已删减功能"')
   })
 
   it('撤销/重做标题按平台走：Mac 是 ⌘Z / ⌘⇧Z，Win/Linux 才是 Ctrl+Z / Ctrl+Y', () => {
@@ -1016,6 +1022,165 @@ describe('W2：跨 Tab 合并只在落盘成功后才通知', () => {
     expect(body).not.toContain('readSlotClocks(STORAGE_CLOCKS_KEY)')
     // 内存-only 的合并（ok 为 false）不许再走同一句「已同步」通知
     expect(body).not.toMatch(/if \(result\) \{\s*\n?\s*\/\/ 跨 Tab 合并必须让用户看见/)
+  })
+})
+
+describe('W2：跨 Tab 合并拖拽中排队，拖完再合', () => {
+  class FakeBroadcastChannel {
+    static instances: FakeBroadcastChannel[] = []
+    name: string
+    onmessage: ((ev: { data: unknown }) => void) | null = null
+    constructor(name: string) {
+      this.name = name
+      FakeBroadcastChannel.instances.push(this)
+    }
+    postMessage(_data: unknown) {}
+    close() {}
+    deliver(data: unknown) {
+      this.onmessage?.({ data })
+    }
+  }
+
+  function installFakeChannel() {
+    const g = globalThis as unknown as Record<string, unknown>
+    const prevBroadcastChannel = g.BroadcastChannel
+    g.BroadcastChannel = FakeBroadcastChannel
+    FakeBroadcastChannel.instances = []
+    return () => {
+      if (prevBroadcastChannel === undefined) delete g.BroadcastChannel
+      else g.BroadcastChannel = prevBroadcastChannel
+    }
+  }
+
+  it('拖拽中收到的远端改动不立即扇出，拖完 flush 后才到订阅者', () => {
+    const restore = installFakeChannel()
+    const offs: Array<() => void> = []
+    try {
+      const seenA: unknown[] = []
+      const seenB: unknown[] = []
+      offs.push(subscribeSharedLayoutSyncChannel((p) => seenA.push(p)))
+      offs.push(subscribeSharedLayoutSyncChannel((p) => seenB.push(p)))
+      expect(FakeBroadcastChannel.instances).toHaveLength(1)
+
+      setDiyDragActive(true)
+      expect(isDiyDragActive()).toBe(true)
+      FakeBroadcastChannel.instances[0]!.deliver({
+        clientId: 'other-tab',
+        config: { ...DEFAULT_CONFIG, viewMode: 'classic' },
+        clocks: { viewMode: 2 },
+      })
+      // 拖拽中：订阅者一个都没收到，改动在排队
+      expect(seenA).toHaveLength(0)
+      expect(seenB).toHaveLength(0)
+
+      // 拖拽结束：provider 调 flush，排队的改动一次性放出
+      setDiyDragActive(false)
+      flushPendingLayoutSyncMessages()
+      expect(seenA).toHaveLength(1)
+      expect(seenB).toHaveLength(1)
+      expect((seenA[0] as { config: { viewMode: string } }).config.viewMode).toBe('classic')
+    } finally {
+      offs.forEach((off) => off())
+      setDiyDragActive(false)
+      flushPendingLayoutSyncMessages()
+      restore()
+    }
+  })
+
+  it('拖拽中连收两份广播：只合最新一份，旧的被覆盖', () => {
+    const restore = installFakeChannel()
+    const offs: Array<() => void> = []
+    try {
+      const seen: unknown[] = []
+      offs.push(subscribeSharedLayoutSyncChannel((p) => seen.push(p)))
+      setDiyDragActive(true)
+      const ch = FakeBroadcastChannel.instances[0]!
+      ch.deliver({
+        clientId: 'other-tab',
+        config: { ...DEFAULT_CONFIG, viewMode: 'classic' },
+        clocks: { viewMode: 2 },
+      })
+      ch.deliver({
+        clientId: 'other-tab',
+        config: { ...DEFAULT_CONFIG, viewMode: 'workbench' },
+        clocks: { viewMode: 3 },
+      })
+      expect(seen).toHaveLength(0)
+      setDiyDragActive(false)
+      flushPendingLayoutSyncMessages()
+      expect(seen).toHaveLength(1)
+      expect((seen[0] as { config: { viewMode: string } }).config.viewMode).toBe('workbench')
+      // 再 flush 一次：排队已空，不重复投递
+      flushPendingLayoutSyncMessages()
+      expect(seen).toHaveLength(1)
+    } finally {
+      offs.forEach((off) => off())
+      setDiyDragActive(false)
+      flushPendingLayoutSyncMessages()
+      restore()
+    }
+  })
+
+  it('非拖拽时照常立即扇出；provider 在拖拽起止维护标记并 flush', () => {
+    const restore = installFakeChannel()
+    const offs: Array<() => void> = []
+    try {
+      const seen: unknown[] = []
+      offs.push(subscribeSharedLayoutSyncChannel((p) => seen.push(p)))
+      expect(isDiyDragActive()).toBe(false)
+      FakeBroadcastChannel.instances[0]!.deliver({
+        clientId: 'other-tab',
+        config: { ...DEFAULT_CONFIG, viewMode: 'classic' },
+        clocks: { viewMode: 2 },
+      })
+      expect(seen).toHaveLength(1)
+      // 空排队 flush 是空操作
+      flushPendingLayoutSyncMessages()
+      expect(seen).toHaveLength(1)
+    } finally {
+      offs.forEach((off) => off())
+      setDiyDragActive(false)
+      flushPendingLayoutSyncMessages()
+      restore()
+    }
+
+    // 接线守则：标记与 flush 必须挂在 provider 的拖拽起止上
+    const kit = readSrc('src/components/diy/diy-drag-kit.tsx')
+    expect(kit).toContain('setDiyDragActive(true)')
+    expect(kit).toContain('setDiyDragActive(false)')
+    expect(kit).toContain('flushPendingLayoutSyncMessages()')
+    expect(kit).toContain('flushPendingLayoutSyncMessages }')
+  })
+})
+
+describe('W2-9：同一按键只撤销一步（认领制）', () => {
+  it('同一任务里第一个认领成功，第二个失败；微任务后可再认领', async () => {
+    expect(didHomeDiyHistoryStepClaimThisTask()).toBe(false)
+    expect(claimHomeDiyHistoryStep()).toBe(true)
+    expect(didHomeDiyHistoryStepClaimThisTask()).toBe(true)
+    // 同一任务里的第二、第三个监听（画布/排版/回收站）都认领不到
+    expect(claimHomeDiyHistoryStep()).toBe(false)
+    expect(claimHomeDiyHistoryStep()).toBe(false)
+    // 微任务跑完后清零：下一次按键可以重新认领
+    await Promise.resolve()
+    expect(didHomeDiyHistoryStepClaimThisTask()).toBe(false)
+    expect(claimHomeDiyHistoryStep()).toBe(true)
+    await Promise.resolve()
+    expect(didHomeDiyHistoryStepClaimThisTask()).toBe(false)
+  })
+
+  it('接线守则：三条 Ctrl+Z 监听都认领/让路，不再各撤一步', () => {
+    const hook = readSrc('src/lib/modular/use-home-diy.ts')
+    // 排版撤销：先认领，认领失败直接返回；没得撤/重做时放行给回收站
+    expect(hook).toContain('claimHomeDiyHistoryStep()')
+    expect(hook).toContain('stopImmediatePropagation()')
+    expect(hook).toContain('if (!canUndo) return')
+    expect(hook).toContain('if (!canRedo) return')
+    expect(hook).toContain('canUndo, canRedo')
+    const content = readSrc('src/components/navigation-content.tsx')
+    // 回收站恢复：别人认领过就跳过；自己处理时也截断事件
+    expect(content).toContain('didHomeDiyHistoryStepClaimThisTask()')
+    expect(content).toContain('stopImmediatePropagation()')
   })
 })
 
@@ -1211,6 +1376,98 @@ describe('v2/v1 迁移：只迁一次，且只合老键里带的字段', () => {
     expect(merged?.viewMode).toBe('classic')
     expect(merged?.accentColor).toBe('violet')
     expect(merged?.cardOpacity).toBe(0.95)
+  })
+
+  it('V2 与 V1 同时存在：V1 只补 V2 没带的字段，冲突时 V2 优先', () => {
+    const storage: HomeDiyStorage = {
+      getItem: (k) => {
+        if (k === 'navhub_home_diy_config_v2')
+          return JSON.stringify({ viewMode: 'classic', accentColor: 'rose' })
+        if (k === 'navhub_home_diy_config_v1')
+          return JSON.stringify({
+            viewMode: 'workbench',
+            heroDeckCollapsed: true,
+            heroDeckWidgets: ['quick-search', 'clock-pomodoro'],
+          })
+        return null
+      },
+      setItem: () => {},
+      removeItem: () => {},
+    }
+    const current = { ...DEFAULT_CONFIG, accentColor: 'violet' as const }
+    const merged = migrateLegacyHomeDiyConfig(storage, current)
+    expect(merged).not.toBeNull()
+    // 冲突时 V2 优先：V1 的 workbench 不能盖掉 V2 的 classic
+    expect(merged?.viewMode).toBe('classic')
+    expect(merged?.accentColor).toBe('rose')
+    // V1 补位：V2 没带的展板字段从 V1 来（旧实现读到 V2 就 return，这两项静默丢了）
+    expect(merged?.heroDeckCollapsed).toBe(true)
+    expect(merged?.heroDeckWidgets).toEqual(['quick-search', 'clock-pomodoro'])
+  })
+
+  it('两个老键都读过后一起删除：下次加载不再重跑', () => {
+    const removed: string[] = []
+    const storage: HomeDiyStorage = {
+      getItem: (k) => {
+        if (k === 'navhub_home_diy_config_v2') return JSON.stringify({ viewMode: 'classic' })
+        if (k === 'navhub_home_diy_config_v1') return JSON.stringify({ heroDeckCollapsed: true })
+        return null
+      },
+      setItem: () => {},
+      removeItem: (k) => {
+        removed.push(k)
+      },
+    }
+    const merged = migrateLegacyHomeDiyConfig(storage, DEFAULT_CONFIG)
+    expect(merged?.viewMode).toBe('classic')
+    expect(merged?.heroDeckCollapsed).toBe(true)
+    expect(removed).toEqual(['navhub_home_diy_config_v2', 'navhub_home_diy_config_v1'])
+  })
+
+  it('合并结果先过清洗器再写盘：脏 id / 超长数组 / 非法 href 不进 v3', () => {
+    const removed: string[] = []
+    let written: string | null = null
+    const storage: HomeDiyStorage = {
+      getItem: (k) => {
+        if (k === 'navhub_home_diy_config_v2')
+          return JSON.stringify({
+            viewMode: 'classic',
+            heroDeckWidgets: [...Array.from({ length: 35 }, (_, i) => `widget-${i}`), 'bad id!', '__proto__'],
+            categoryOrder: ['cat-a', '__proto__', 'bad id', 'cat-b'],
+            customCategories: [
+              {
+                id: 'c1',
+                title: 't',
+                items: [
+                  { id: 'i1', title: '坏链接', href: 'javascript:alert(1)' },
+                  { id: 'i2', title: '好链接', href: 'https://example.com' },
+                ],
+              },
+            ],
+          })
+        return null
+      },
+      setItem: (_k, v) => {
+        written = v
+      },
+      removeItem: (k) => {
+        removed.push(k)
+      },
+    }
+    const merged = migrateLegacyHomeDiyConfig(storage, DEFAULT_CONFIG)
+    expect(merged).not.toBeNull()
+    // 35 个合法 id + 2 个脏 id：脏的先丢掉，剩下 35 个再截到 32 上限
+    expect(merged?.heroDeckWidgets).toHaveLength(32)
+    expect(merged?.heroDeckWidgets).not.toContain('bad id!')
+    expect(merged?.heroDeckWidgets).not.toContain('__proto__')
+    // 脏分类 id 丢掉，好分类留着
+    expect(merged?.categoryOrder).toEqual(['cat-a', 'cat-b'])
+    // javascript: 链接的站点丢掉，https 的留着
+    expect(merged?.customCategories?.[0]?.items.map((i) => i.id)).toEqual(['i2'])
+    // 写盘的是清洗后的那份，老键已删除
+    expect(written).not.toBeNull()
+    expect(JSON.parse(written ?? '').heroDeckWidgets).toHaveLength(32)
+    expect(removed).toEqual(['navhub_home_diy_config_v2'])
   })
 })
 

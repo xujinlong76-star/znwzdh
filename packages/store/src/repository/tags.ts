@@ -191,8 +191,11 @@ export async function mergeTags(repo: Repository, sourceId: string, targetId: st
     if (!targetRows.length) throw new Error("目标标签不存在");
     const sourceTag = sourceRows[0]!;
 
+    // 只迁移「目标标签尚未绑定的站点」：NOT EXISTS 反连接（P10），不用 NOT IN——
+    // 后者在子查询含 NULL 时整批失效；这里是同一张表的相关子查询，按审计里
+    // 孤儿清扫（migrate.ts cleanupOrphanPluginCategories）的写法。
     const rows = await repo.raw(
-      "SELECT site_id FROM site_tags WHERE tag_id = ? AND site_id NOT IN (SELECT site_id FROM site_tags WHERE tag_id = ?)",
+      "SELECT site_id FROM site_tags WHERE tag_id = ? AND NOT EXISTS (SELECT 1 FROM site_tags AS st2 WHERE st2.tag_id = ? AND st2.site_id = site_tags.site_id)",
       [sourceId, targetId],
     );
     for (const r of rows) {

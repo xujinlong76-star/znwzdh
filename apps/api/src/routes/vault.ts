@@ -33,8 +33,12 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
    * 可选前置条件：body.version 或 `If-Match: "<version>"`（也接受裸数字 / W/ 前缀）。
    * 带上时只有云端仍是这一版才写入，否则回 409 并把最新版本交回客户端。
    * 不带时保持旧行为（无条件覆盖），兼容已有扩展与旧客户端。
+   *
+   * 路由级限流 30 次/分钟（M24）：此前 PUT 没有任何限流——金库 payload
+   * 最大 512KB，一个客户端可以无限制地刷写（写放大 + 审计/版本膨胀）。
+   * 30/min 对正常多端同步绰绰有余（客户端只在内容变化时推送）。
    */
-  app.put("/api/vault/sync", async (req, reply) => {
+  app.put("/api/vault/sync", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
     const rawIdentity = requestIdentityOf(req as never);
     // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
     if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }

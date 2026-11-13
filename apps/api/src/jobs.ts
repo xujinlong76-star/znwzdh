@@ -2247,17 +2247,40 @@ export class JobRunner {
       const THIRTY_DAYS = 30 * 86_400_000;
       const SEVEN_DAYS = 7 * 86_400_000;
       let reminded = 0;
-      for (const row of owners) {
-        const identity = String(row.user_id);
-        const lastExport = (
-          await this.ctx.repo.raw(
-            "SELECT MAX(created_at) AS m FROM audit_logs WHERE action = 'user.export' AND target = ?",
-            [identity],
-          )
-        )[0];
-        const lastAt = Number(lastExport?.m ?? 0);
+      /**
+       * N+1 消除（P9）：旧实现每人两次查询（audit_logs MAX + hasRecentNotification），
+       * 500 人 = 1000 次往返。改成两次批量查询：
+       *  ① 每人最近一次导出时间：一次 GROUP BY；
+       *  ② 7 天内已提醒过的身份集合：notifications 与 outbox 各一次 IN 查询
+       *     （与 hasRecentNotification 同口径：outbox 里已 emit 未 relay 的也算提醒过）。
+       * 逐人循环只剩内存查表 + 需要时才写通知。
+       */
+      const identities = owners.map((row) => String(row.user_id));
+      const lastExportByIdentity = new Map<string, number>();
+      const recentlyReminded = new Set<string>();
+      if (identities.length > 0) {
+        const placeholders = identities.map(() => "?").join(",");
+        const lastExports = (await this.ctx.repo.raw(
+          `SELECT target, MAX(created_at) AS m FROM audit_logs WHERE action = 'user.export' AND target IN (${placeholders}) GROUP BY target`,
+          identities,
+        )) as unknown as Array<{ target: string; m: number | null }>;
+        for (const row of lastExports) {
+          lastExportByIdentity.set(String(row.target), Number(row.m ?? 0));
+        }
+        const cutoff = now3 - SEVEN_DAYS;
+        const remindedRows = (await this.ctx.repo.raw(
+          `SELECT identity FROM notifications WHERE kind = ? AND created_at >= ? AND identity IN (${placeholders}) ` +
+            `UNION SELECT identity FROM notification_outbox WHERE kind = ? AND created_at >= ? AND identity IN (${placeholders})`,
+          ["backup_due", cutoff, ...identities, "backup_due", cutoff, ...identities],
+        )) as unknown as Array<{ identity: string }>;
+        for (const row of remindedRows) {
+          recentlyReminded.add(String(row.identity));
+        }
+      }
+      for (const identity of identities) {
+        const lastAt = lastExportByIdentity.get(identity) ?? 0;
         if (lastAt > now3 - THIRTY_DAYS) continue;
-        if (await this.ctx.repo.hasRecentNotification(identity, "backup_due", SEVEN_DAYS)) continue;
+        if (recentlyReminded.has(identity)) continue;
         await this.ctx.repo.emitNotification({
           identity,
           idempotencyKey: `backup_due:${Math.floor(now3 / SEVEN_DAYS)}`,

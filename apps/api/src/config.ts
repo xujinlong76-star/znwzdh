@@ -392,6 +392,38 @@ export function assertSecurityConstraints(
     );
   }
 
+  // 2f. 向量维度必须与 embedding 模型匹配（M25）。
+  //
+  // dim 配错不会在启动时炸，而是在第一次编码后才由 embedding.ts 的
+  // `vec.length !== cfg.dim` 校验抛错——此时向量表可能已经混进一批错维度的行，
+  // 重建索引要全量重灌。已知模型的维度是模型本身的属性，不是可调参数：
+  // bge-small-zh-v1.5 = 512、bge-base-zh-v1.5 = 768、bge-large-zh-v1.5 / bge-m3 = 1024。
+  // 未知模型只做范围校验（正整数、≤4096），不替用户猜维度。
+  {
+    const modelKey = config.embedding.model.trim().toLowerCase().replace(/^xenova\//, "");
+    const KNOWN_EMBEDDING_DIMS: Record<string, number> = {
+      "bge-small-zh-v1.5": 512,
+      "bge-base-zh-v1.5": 768,
+      "bge-large-zh-v1.5": 1024,
+      "bge-m3": 1024,
+    };
+    const expectedDim = KNOWN_EMBEDDING_DIMS[modelKey];
+    if (expectedDim !== undefined && config.embedding.dim !== expectedDim) {
+      throw new Error(
+        `向量维度与模型不匹配：${config.embedding.model} 的维度是 ${expectedDim}，` +
+          `当前 NAVHUB_EMBEDDING_DIM=${config.embedding.dim}。维度是模型属性，请改回 ${expectedDim} 或换模型。`,
+      );
+    }
+    if (
+      expectedDim === undefined &&
+      (!Number.isInteger(config.embedding.dim) || config.embedding.dim < 1 || config.embedding.dim > 4096)
+    ) {
+      throw new Error(
+        `NAVHUB_EMBEDDING_DIM 必须是 1~4096 的整数，当前 ${config.embedding.dim}`,
+      );
+    }
+  }
+
   // 3b. 生产环境不允许把全部 LLM 额度一起关掉。
   //
   // 三档全 0 意味着「闸门形同不存在」，而生产站正是匿名流量能摸到系统 key 的

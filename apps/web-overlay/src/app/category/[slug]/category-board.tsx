@@ -24,10 +24,12 @@ import { categoryHref, categoryUrlKey } from '@/lib/seo/category-url'
 import { tagSlug } from '@/lib/seo/tag-slug'
 import type { HubSite } from '@/lib/navhub-api'
 import {
+  categoryAltLabels,
   categoryDisplayName,
   loadActiveCategoryCounts,
   loadCategories,
   loadCategorySites,
+  resolveRelatedCategories,
   type HubCategory,
 } from '@/lib/server/categories'
 
@@ -185,6 +187,15 @@ export async function CategoryBoard({
           .slice(0, isRootPage ? CHILD_LINKS : SIBLING_LINKS)
       : []
 
+  // P16：管理后台 curated 的跨树关联（`relatedCategories`，SKOS:related）
+  // 与同义别名（`altLabels`）：此前库里有列、后台能填，但分类页从没消费。
+  // 与上面层级推导的「子分类 / 同类分类」是两种信号，分开展示，不合并：
+  // 树结构说的是「从属」，这里说的是「相关」。解析口径见
+  // lib/server/categories.ts 的 resolveRelatedCategories（只链达标分类，
+  // 薄分类页本身 404，链过去是死链）。
+  const curatedRelated = resolveRelatedCategories(category, categories, counts)
+  const altLabels = categoryAltLabels(category)
+
   // 高频标签：只取本页站点里出现过的标签，链接到已有标签页
   const tagCounts = new Map<string, number>()
   for (const site of sites) {
@@ -265,6 +276,9 @@ export async function CategoryBoard({
                 : category?.description ??
                   `本页列出「${name}」分类下的 ${sites.length} 个站点，可进入详情查看简介、标签与同类推荐。`}
             </p>
+            {altLabels.length > 0 ? (
+              <p className="text-xs text-muted-foreground">别名：{altLabels.join('、')}</p>
+            ) : null}
             {hasSitesBeyondDeepestPage && !degraded ? (
               // 不说这句，用户翻到最后一页会以为「这个分类就只有这些站点」，
               // 而实际上后面还有——只是翻页机制到不了。给一条能走通的路。
@@ -506,6 +520,26 @@ export async function CategoryBoard({
               </h2>
               <div className="flex flex-wrap gap-2">
                 {related.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={categoryHref(item)}
+                    className="px-2.5 py-1 rounded-full border border-border/70 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                  >
+                    {categoryDisplayName(item, categories ?? [])}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* P16：管理后台 curated 的相关类目（SKOS:related 跨树关联）。
+              与上面层级推导的「子分类 / 同类分类」不同源，分开展示；
+              空（没填、被过滤完、中枢抖动）时整段不渲染，不留空标题。 */}
+          {curatedRelated.length > 0 ? (
+            <section className="pt-2 space-y-2">
+              <h2 className="text-sm font-semibold text-foreground">相关类目</h2>
+              <div className="flex flex-wrap gap-2">
+                {curatedRelated.map((item) => (
                   <Link
                     key={item.id}
                     href={categoryHref(item)}

@@ -109,7 +109,7 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
               type="button"
               onClick={() => setActiveTab('all')}
               className={cn(
-                "px-2 py-0.5 rounded-md transition-all text-[11px]",
+                "min-h-11 min-w-11 inline-flex items-center justify-center px-3 py-0.5 rounded-md transition-all text-[11px]",
                 activeTab === 'all'
                   ? "bg-background text-foreground font-medium shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
@@ -121,7 +121,7 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
               type="button"
               onClick={() => setActiveTab('favorites')}
               className={cn(
-                "px-2 py-0.5 rounded-md transition-all text-[11px] flex items-center gap-1",
+                "min-h-11 min-w-11 inline-flex items-center justify-center px-3 py-0.5 rounded-md transition-all text-[11px] gap-1",
                 activeTab === 'favorites'
                   ? "bg-background text-foreground font-medium shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
@@ -134,7 +134,7 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
               type="button"
               onClick={() => setActiveTab('recent')}
               className={cn(
-                "px-2 py-0.5 rounded-md transition-all text-[11px] flex items-center gap-1",
+                "min-h-11 min-w-11 inline-flex items-center justify-center px-3 py-0.5 rounded-md transition-all text-[11px] gap-1",
                 activeTab === 'recent'
                   ? "bg-background text-foreground font-medium shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
@@ -148,7 +148,7 @@ export function QuickAccessTray({ className }: QuickAccessTrayProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            className="h-11 w-11 text-muted-foreground hover:text-foreground"
             onClick={() => setIsOpen(v => !v)}
             aria-label={isOpen ? "折叠常用栏" : "展开常用栏"}
           >

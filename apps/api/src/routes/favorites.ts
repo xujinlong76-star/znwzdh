@@ -7,6 +7,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { FavoriteFolderNotOwnedError } from "@navhub/store";
 import {identityTrusted, parseIntParam, resolveCanonicalIdentity, requestIdentityOf, userDomainWriteAllowed } from "./shared.ts";
+import { sendError } from "../error-envelope.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -66,8 +67,8 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     { config: { rateLimit: { max: 240, timeWindow: "1 minute" } } },
     async (req, reply) => {
     const identity = requestIdentityOf(req as never);
-    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identity) return sendError(reply, 400, "BAD_REQUEST", "缺少 userId 或 anonId");
+    if (!identityTrusted(ctx, req as never)) return sendError(reply, 401, "UNAUTHORIZED", "需要 Bearer token");
     const canonical = await resolveCanonicalIdentity(ctx, identity);
     const query = (req.query ?? {}) as Record<string, unknown>;
     const folders = await ctx.repo.listFavoriteFolders(canonical);
@@ -85,12 +86,16 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
     const sortRaw = String(query.sort ?? "created");
     const sort = sortRaw === "title" ? "title" : "created";
+    // Keyset 分页（M12）：`?cursor=` 走 WHERE 键谓词，不再 OFFSET；nextCursor
+    // 随页返回，无下一页时为 null。offset 与 cursor 二选一，传了 cursor 就
+    // 忽略 offset。无效游标由全局错误处理器映射成 400 INVALID_CURSOR。
     const page = await ctx.repo.listFavoritesPage(canonical, {
       q: typeof query.q === "string" ? query.q : undefined,
       folderId: typeof query.folderId === "string" && query.folderId ? query.folderId : null,
       sort,
       limit: parseIntParam(query.limit, 50, 1, 200),
       offset: parseIntParam(query.offset, 0, 0, 1_000_000),
+      cursor: typeof query.cursor === "string" && query.cursor ? query.cursor : undefined,
     });
     const pageSiteMap = await ctx.repo.getSitesByIds(page.items.map((f) => f.siteId));
     return {
@@ -98,6 +103,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       folders,
       total: page.total,
       hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
       identity: canonical,
     };
   });

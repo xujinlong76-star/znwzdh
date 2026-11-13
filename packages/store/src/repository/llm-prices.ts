@@ -76,6 +76,12 @@ export async function replaceLlmModelPrices(
     return 0;
   }
 
+  // 存量清扫：删掉不在新清单里的模型。NOT IN 在这里是安全的，P10 的
+  // NULL 顾虑不成立：model 是主键（永不为 NULL），keep 清单是内存里刚洗过
+  // 的非空字符串（同样永不为 NULL），两侧都不可能出现 NULL。
+  // 不要改成 `FROM (VALUES ...) AS keep` 的 NOT EXISTS 派生表：该写法在
+  // W4 验证的 SQLite 上报 `near "(": syntax error`（即使字面量也一样），
+  // 会让 PUT /api/admin/ai/prices 直接 500、单价永远存不进去。
   const placeholders = models.map(() => "?").join(",");
   await repo.run(`DELETE FROM llm_model_prices WHERE model NOT IN (${placeholders})`, models);
 

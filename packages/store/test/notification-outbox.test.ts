@@ -355,7 +355,10 @@ describe("notification outbox / PG SQL structure (no live PG)", () => {
     expect(calls[recovery].params).toEqual([1, "pending", NOW + 60_000, "In-app notification delivery failed", "pg-row", 0, NOW]);
     const claims = calls.filter((call) => call.sql.startsWith("SELECT id, identity, kind"));
     expect(claims).toHaveLength(2);
-    expect(claims[1].sql).toContain("id NOT IN ($3)");
+    // 第二轮领取排除首轮已领的 pg-row：NOT IN（id 是主键、seen 是刚领到的
+    // id，两侧永不为 NULL；VALUES 派生表的 NOT EXISTS 在部分 SQLite 上
+    // 报 near "(": syntax error，见 llm-prices.ts 的同类修复）。
+    expect(claims[1].sql).toContain("AND id NOT IN ($3)");
     expect(claims[1].params[2]).toBe("pg-row");
   });
 

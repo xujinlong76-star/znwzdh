@@ -54,7 +54,7 @@ export function DensityToggle({ className }: { className?: string }) {
         <Button
           variant="ghost"
           size="icon"
-          className={`h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors ${className || ''}`}
+          className={`h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors ${className || ''}`}
           title={`当前内容密度：${densityLabel} (点击切换)`}
           aria-label={`内容密度切换：当前为${densityLabel}`}
         >

@@ -301,7 +301,10 @@ describe('导航效率增强与用户体验治理', () => {
     const src = loadSource('src/components/site-detail-view.tsx')
     expect(src).toContain('isDeadLink')
     expect(src).toContain('waybackUrl')
-    expect(src).toContain('web.archive.org/web/*/')
+    // 死链防御 #4：Wayback 链接定向到收录时刻最近的快照（buildDeadLinkWaybackUrl），
+    // 而不是写死的 `web/*/…` 最新快照；无收录时间时 helper 内部回落到 `*`。
+    expect(src).toContain('buildDeadLinkWaybackUrl(site.url, site.createdAt)')
+    expect(src).not.toContain('web.archive.org/web/*/')
     expect(src).toContain('查看历史快照')
     expect(src).toContain('查看平替方案')
     expect(src).toContain('alternatives-section')

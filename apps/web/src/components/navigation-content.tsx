@@ -12,6 +12,7 @@ import { NavigationCategorySection } from '@/components/navigation-category-sect
 import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
+import { didHomeDiyHistoryStepClaimThisTask } from '@/lib/modular/home-diy-storage'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
 import { readDiyDragData } from '@/lib/modular/diy-drag'
@@ -224,6 +225,34 @@ interface NavigationContentProps {
  */
 const EAGER_CATEGORY_COUNT = 2
 
+/**
+ * 子分类拖拽的落点换算（指针/键盘通用）：子分组没有自己的 droppable，
+ * 落点事件的目标是父级 section；按指针 y 在同级分组里定位。
+ * - 指针在某分组框内 → 该分组 + 半区（上半插前，下半插后）；
+ * - 指针在间隙/分组外 → 纵向最近的分组，半区按指针相对该分组中心算。
+ * 键盘拖拽的虚拟指针也在 operation.position.current 里（从手柄中心起，
+ * 方向键每次移 10px / Shift+方向键 50px），同样走这条路。
+ * 返回 null = 同级里没有任何已挂载的分组元素（父级折叠/未渲染）。
+ */
+function resolveSubDropTarget(
+  siblingIds: readonly string[],
+  pointerY: number,
+): { targetId: string; after: boolean } | null {
+  if (typeof document === 'undefined') return null
+  let best: { id: string; rect: DOMRect; distance: number } | null = null
+  for (const id of siblingIds) {
+    const el = document.getElementById(id)
+    if (!el) continue
+    const rect = el.getBoundingClientRect()
+    if (rect.height <= 0) continue
+    const distance =
+      pointerY < rect.top ? rect.top - pointerY : pointerY > rect.bottom ? pointerY - rect.bottom : 0
+    if (!best || distance < best.distance) best = { id, rect, distance }
+  }
+  if (!best) return null
+  return { targetId: best.id, after: pointerY >= best.rect.top + best.rect.height / 2 }
+}
+
 export function NavigationContent({
   navigationData,
   siteData,
@@ -285,6 +314,7 @@ export function NavigationContent({
     siteCategoryOverrides,
     pinnedSiteIdsByCategory,
     togglePinSiteInCategory,
+    reorderCategory,
     customWallpaperUrl,
     glassmorphismBlur,
     cardOpacity,
@@ -304,6 +334,7 @@ export function NavigationContent({
     removeFeature,
     undoLastRemove,
     restoreAll,
+    restoreFeature,
     setBypassMaskTemporarily,
   } = useFeatureMask()
 
@@ -320,9 +351,6 @@ export function NavigationContent({
     (key: FeatureKey) => homeControl.features[key] && !personalHidden.has(key),
     [homeControl, personalHidden],
   )
-
-  // 拖拽卡片收录状态 (悬停的目标自定义分类 ID)
-  const [dragOverCustomCatId, setDragOverCustomCatId] = useState<string | null>(null)
 
   // 1. 场景工作台动态过滤（纯函数见 lib/modular/workspace-matching.ts，判定有单测）
   const filteredNavigationItems = useMemo(
@@ -359,6 +387,18 @@ export function NavigationContent({
     [customAsCategories, filteredNavigationItems, effectiveHiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides],
   )
 
+  // 空态是否由「全部分类被隐藏」造成（W2-10）：渲染列表为空，且每个分类
+  // 都在两份隐藏账本（DIY / 掩码，掩码 id 带 cat: 前缀，先剥掉）里。
+  // 编辑态与临时绕过掩码时隐藏分类本来就显示，空态不可能是隐藏造成的，
+  // 直接排除——别在那时把「恢复隐藏分类」当成工作区筛选无结果的解法。
+  const allCategoriesHidden = useMemo(() => {
+    if (isEditingLayout || bypassMaskTemporarily) return false
+    if (sortedCategories.length !== 0 || allCategoryIds.length === 0) return false
+    const hidden = new Set<string>(hiddenCategoryIds)
+    for (const id of maskHiddenCategories) hidden.add(stripFeaturePrefix(id))
+    return allCategoryIds.every((id) => hidden.has(id))
+  }, [isEditingLayout, bypassMaskTemporarily, sortedCategories.length, allCategoryIds, hiddenCategoryIds, maskHiddenCategories])
+
   // dnd-kit 重型层：挂载后在后台 import（不阻塞首屏；与 section 里的
   // 后台 import 同一个 chunk，到达后 DiyGridDragBoundary 包上 provider）。
   // 失败也不影响 ⋯ 菜单（拖拽是增强，不是必需）。
@@ -378,20 +418,90 @@ export function NavigationContent({
     }
   }, [])
 
+  // 子分类 → 父分类查找表（子分类拖拽用）：同父校验与同级列表都从这里取。
+  // sortedCategories 里的 subCategories 含被隐藏的子分类——拖拽只认
+  // 已挂载的分组（指针定位时 getElementById 找不到未渲染的），多出来的
+  // id 只占 flat order 里的一个位置，不影响可见同级的相对顺序。
+  const subCategoryParents = useMemo(() => {
+    const map = new Map<string, { parentId: string; siblingIds: string[] }>()
+    for (const cat of sortedCategories) {
+      const subs = (cat.subCategories || []) as Array<{ id: string }>
+      if (subs.length === 0) continue
+      const siblingIds = subs.map((s) => s.id)
+      for (const sub of subs) {
+        map.set(sub.id, { parentId: cat.id, siblingIds })
+      }
+    }
+    return map
+  }, [sortedCategories])
+
   // 分类拖拽落点：provider 的 onDragEnd 先于内置卡片处理调用；只处理
   // category→category，卡片落点走内置逻辑。目标 id 不在列表里时不动
   // （moveCategoryToIndex 会把 -1 夹到 0 误插到顶部，所以这里先拦住）。
+  //
+  // 落点按指针在目标内的上下半区算（W2-7）：上半区插到目标之前，下半区
+  // 插到目标之后——旧实现直接拿目标序号当插入序号，先移除再插入让同一
+  // 个落点在上移时等于「之前」、下移时等于「之后」。指针位置取
+  // operation.position.current（dnd-kit 的指针客户端坐标）；键盘拖拽
+  // 没有指针（activator 是键盘事件），afterTarget 不传，沿用旧语义。
+  // 目标元素取 droppable 的 element，拿不到时按 id 查 section（两处
+  // 渲染都给了 id={category.id}）。
+  //
+  // 子分类拖拽（同父内重排）：源是子分类手柄（DiyCategoryDragGrip，
+  // data 与顶级同一格式），落点是父级 section 的 droppable——子分组
+  // 没有自己的 droppable（注册了会让卡片拖到子分组上也被重归类到子分
+  // 类 id，combineAndSortCategories 不消费它，卡片直接消失；见
+  // navigation-category-section 二级分类处的注释）。所以这里用指针
+  // 在同级分组里的位置定位目标子分组（resolveSubDropTarget）：键盘
+  // 拖拽的虚拟指针也在 operation.position.current 里，同样走这条路；
+  // 半区规则与顶级一致，键盘没有指针半区时按移动方向落远端。跨父 /
+  // 与顶级互拖一律忽略。
   const { moveCategoryToIndex } = useHomeDiyGrid(allCategoryIds)
   const handleCategoryDragEnd = useCallback(
     (event: DragEndEvent) => {
       const source = readDiyDragData(event.operation.source)
       const target = readDiyDragData(event.operation.target)
       if (event.canceled || source?.kind !== 'category' || target?.kind !== 'category') return
+      let afterTarget: boolean | undefined
+      const activator = event.operation.activatorEvent
+      const isPointerDrag = typeof PointerEvent !== 'undefined' && activator instanceof PointerEvent
+      const pointerY = event.operation.position?.current?.y
+      if (isPointerDrag) {
+        const targetEl =
+          event.operation.target?.element ??
+          (typeof document !== 'undefined' ? document.getElementById(target.categoryId) : null)
+        if (typeof pointerY === 'number' && targetEl) {
+          const rect = targetEl.getBoundingClientRect()
+          if (rect.height > 0) {
+            afterTarget = pointerY >= rect.top + rect.height / 2
+          }
+        }
+      }
+
+      // 子分类：只在同一父分类内重排；跨父、与顶级互拖一律不动。
+      const sourceSub = subCategoryParents.get(source.categoryId)
+      const targetSub = subCategoryParents.get(target.categoryId)
+      if (sourceSub || targetSub) {
+        if (!sourceSub || !targetSub || sourceSub.parentId !== targetSub.parentId) return
+        const siblingIds = sourceSub.siblingIds
+        const fromIndex = siblingIds.indexOf(source.categoryId)
+        if (fromIndex === -1 || typeof pointerY !== 'number') return
+        const resolved = resolveSubDropTarget(siblingIds, pointerY)
+        if (!resolved) return
+        if (resolved.targetId === source.categoryId) return
+        const targetIndex = siblingIds.indexOf(resolved.targetId)
+        if (targetIndex === -1) return
+        // 指针拖拽用半区；键盘拖拽按移动方向落远端（与顶级旧语义一致）。
+        const after = isPointerDrag ? resolved.after : fromIndex < targetIndex
+        reorderCategory(source.categoryId, resolved.targetId, after ? 'after' : 'before', siblingIds)
+        return
+      }
+
       const toIndex = allCategoryIds.indexOf(target.categoryId)
       if (toIndex === -1) return
-      moveCategoryToIndex(source.categoryId, toIndex)
+      moveCategoryToIndex(source.categoryId, toIndex, afterTarget)
     },
-    [allCategoryIds, moveCategoryToIndex],
+    [allCategoryIds, moveCategoryToIndex, reorderCategory, subCategoryParents],
   )
 
   // 双向同步传统分类隐藏列表与增量掩码回收站
@@ -411,6 +521,21 @@ export function NavigationContent({
       })
     }
   }, [undoLastRemove, unhideCategory, toast])
+
+  // 空态恢复（W2-10）：「所有分类都被隐藏」时只切工作区救不回来——
+  // 隐藏有两份账本（DIY hiddenCategoryIds + 掩码 hiddenCategories），
+  // 这里两份一起清，再切回全部工作区；不同步等 effect，显式清干净。
+  const handleRecoverHiddenCategories = useCallback(() => {
+    for (const id of maskHiddenCategories) {
+      restoreFeature(id)
+    }
+    unhideAllCategories()
+    setActiveWorkspace('all')
+    toast({
+      title: '已恢复全部隐藏分类',
+      description: '所有被隐藏的分类都已恢复显示。',
+    })
+  }, [maskHiddenCategories, restoreFeature, unhideAllCategories, setActiveWorkspace, toast])
 
   const handleOpenRecoveryCenter = useCallback(() => {
     setIsEditingLayout(true)
@@ -439,8 +564,12 @@ export function NavigationContent({
         return
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        // 同一按键只撤销一步（W2-9）：画布/排版的撤销监听先跑（子组件 effect
+        // 先注册），它们认领过这次按键就跳过，不再恢复回收站。
+        if (didHomeDiyHistoryStepClaimThisTask()) return
         if (trashBin.length > 0) {
           e.preventDefault()
+          e.stopImmediatePropagation()
           handleUndoPrune()
         }
         return
@@ -974,8 +1103,6 @@ export function NavigationContent({
                       selectionMode={selectionMode}
                       selectedIds={selectedIds}
                       siteData={siteData}
-                      dragOverCustomCatId={dragOverCustomCatId}
-                      setDragOverCustomCatId={setDragOverCustomCatId}
                       setAddSiteTargetCatId={setAddSiteTargetCatId}
                       setPeekItem={openPeek}
                       keyboardHintId="navhub-card-keyboard-hint"
@@ -1055,10 +1182,20 @@ export function NavigationContent({
 
                 {sortedCategories.length === 0 && (
                   <div className="col-span-12 text-center py-16 text-muted-foreground space-y-3">
-                    <p className="text-sm">当前所有分类已被隐藏或工作台下暂无匹配站点</p>
-                    <Button variant="outline" size="sm" onClick={() => setActiveWorkspace('all')}>
-                      查看全部站点
-                    </Button>
+                    <p className="text-sm">
+                      {allCategoriesHidden
+                        ? '当前所有分类已被隐藏'
+                        : '当前所有分类已被隐藏或工作台下暂无匹配站点'}
+                    </p>
+                    {allCategoriesHidden ? (
+                      <Button variant="outline" size="sm" onClick={handleRecoverHiddenCategories}>
+                        恢复全部隐藏分类
+                      </Button>
+                    ) : (
+                      <Button variant="outline" size="sm" onClick={() => setActiveWorkspace('all')}>
+                        查看全部站点
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>

@@ -42,7 +42,6 @@ import { resetAllModuleWindowSizes } from '@/lib/modular/module-resize-store'
 import { HomeDIYBackupDialog } from '@/components/home-diy-backup-dialog'
 import { HomeDiyShareConfirmDialog } from '@/components/diy/home-diy-share-confirm-dialog'
 import { HomeDIYOutlineDialog, type OutlineDialogTab } from '@/components/home-diy-outline-dialog'
-import { HomeDIYShareDialog } from '@/components/home-diy-share-dialog'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { useDensity } from '@/components/density-provider'
 import { isAppleDevice } from '@/lib/platform'
@@ -125,9 +124,6 @@ export function HomeDIYToolbar({
     toggleSpeedDial,
     speedDialPinnedIds,
     applySmartAutoTune,
-    pendingShare,
-    confirmPendingShare,
-    dismissPendingShare,
     storageWarning,
     dismissStorageWarning,
   } = useHomeDIY()
@@ -256,8 +252,20 @@ export function HomeDIYToolbar({
         activeEl &&
         (activeEl.tagName === 'INPUT' ||
           activeEl.tagName === 'TEXTAREA' ||
+          activeEl.tagName === 'SELECT' ||
           (activeEl as HTMLElement).isContentEditable)
       if (isInput) return
+
+      // 对话框 / 菜单打开时 Esc 归它们：Radix 对话框的 Esc 是「关闭对话框」，
+      // 下拉菜单的 Esc 是「收起菜单」；这里不拦，工具栏会顺手退出编排。
+      // 判定抄 keyboard-shortcuts-dialog.tsx（role=dialog / alertdialog，
+      // 排除 aria-hidden 的关闭态常驻节点），再加 role=menu（下拉菜单）。
+      const overlayOpen = typeof document !== 'undefined' && Boolean(
+        document.querySelector(
+          '[role="dialog"]:not([aria-hidden="true"]), [role="alertdialog"]:not([aria-hidden="true"]), [role="menu"]:not([aria-hidden="true"])',
+        ),
+      )
+      if (overlayOpen) return
 
       if (e.key === 'Escape' && isEditingLayout) {
         e.preventDefault()
@@ -379,9 +387,17 @@ export function HomeDIYToolbar({
             <span className="flex-1">{storageWarning}</span>
             <button
               type="button"
+              onClick={() => setIsBackupOpen(true)}
+              className="shrink-0 min-h-11 rounded-lg px-3 py-1 font-semibold text-amber-900 dark:text-amber-100 bg-amber-500/20 hover:bg-amber-500/30 transition-colors cursor-pointer"
+            >
+              导出备份
+            </button>
+            {/* 16px 的 × 视觉不变，::after 把点击区无形扩到 44px（提示条不增高） */}
+            <button
+              type="button"
               onClick={dismissStorageWarning}
               aria-label="关闭提示"
-              className="shrink-0 rounded p-0.5 hover:bg-amber-500/20 transition-colors cursor-pointer"
+              className="relative shrink-0 rounded p-0.5 hover:bg-amber-500/20 transition-colors cursor-pointer after:absolute after:-inset-3.5 after:content-['']"
             >
               <X className="w-3 h-3" />
             </button>
@@ -395,19 +411,22 @@ export function HomeDIYToolbar({
             'bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.5rem)] sm:bottom-4',
             'max-w-[92vw] w-max rounded-2xl',
             'bg-white/90 dark:bg-slate-900/90 backdrop-blur-md shadow-2xl border border-slate-200/80 dark:border-slate-800/80 px-3 py-2',
-            'flex items-center justify-between gap-2 overflow-x-auto no-scrollbar',
+            // 横向滚动只发生在左侧控制簇里：右侧撤销/备份/重置/完成簇在滚动区之外，
+            // 窄屏上「完成」也不会被横向滚出视野（原来整条工具栏一起 overflow-x-auto，
+            // 完成按钮在滚动区最右端，手机上默认看不见）。
+            'flex items-center justify-between gap-2',
             'animate-in fade-in slide-in-from-bottom-3 duration-200'
           )}
         >
           {/* 左侧控制簇：快捷预设、智能自适应调优、卡片形态、速览坞 */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
             {/* 快捷预设 */}
             <DropdownMenu onOpenChange={(open) => { if (!open) handlePresetHover(null) }}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 px-2.5 rounded-xl text-xs gap-1.5 border-border/70 hover:border-primary/50"
+                  className="min-h-11 px-2.5 rounded-xl text-xs gap-1.5 border-border/70 hover:border-primary/50"
                   title="快捷指令或悬停预览预设（悬停只预览，不改配置、不留撤销记录）"
                 >
                   <Wand2 className="w-3.5 h-3.5 text-amber-500" />
@@ -427,9 +446,9 @@ export function HomeDIYToolbar({
                       onChange={(e) => setAiPrompt(e.target.value)}
                       placeholder="如：5列紧凑胶囊、极光背景、只看AI与前端"
                       aria-label="快捷指令输入"
-                      className="h-7 text-xs rounded-lg"
+                      className="h-11 text-xs rounded-lg"
                     />
-                    <Button type="submit" size="sm" className="h-7 px-2 text-xs shrink-0 rounded-lg">
+                    <Button type="submit" size="sm" className="min-h-11 px-2 text-xs shrink-0 rounded-lg">
                       执行
                     </Button>
                   </form>
@@ -466,7 +485,7 @@ export function HomeDIYToolbar({
               variant="outline"
               size="sm"
               onClick={handleRunSmartAutoTune}
-              className="h-8 px-2.5 rounded-xl text-xs gap-1.5 border-violet-500/30 text-violet-700 dark:text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 font-medium"
+              className="min-h-11 px-2.5 rounded-xl text-xs gap-1.5 border-violet-500/30 text-violet-700 dark:text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 font-medium"
               title="根据本地访问频次与星标收藏，提取高频 Top 站点至速览坞，优化分类次序并折叠长尾分类"
             >
               <Sparkles className="w-3.5 h-3.5 text-violet-500 animate-pulse" />
@@ -476,7 +495,7 @@ export function HomeDIYToolbar({
             {/* 全局卡片形态切换 */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 px-2.5 rounded-xl text-xs gap-1 border-border/70">
+                <Button variant="outline" size="sm" className="min-h-11 px-2.5 rounded-xl text-xs gap-1 border-border/70">
                   <CreditCard className="w-3.5 h-3.5 text-blue-500" />
                   <span className="hidden sm:inline">形态:</span>
                   <span className="font-semibold">
@@ -488,16 +507,16 @@ export function HomeDIYToolbar({
               <DropdownMenuContent align="start" className="w-48 p-1.5">
                 <DropdownMenuLabel className="text-xs text-muted-foreground">全局卡片形态</DropdownMenuLabel>
                 <DropdownMenuSeparator className="my-1" />
-                <DropdownMenuItem onClick={() => setCardDisplayMode('standard')} className={cn('text-xs flex items-center justify-between cursor-pointer', cardDisplayMode === 'standard' && 'font-bold text-primary')}>
+                <DropdownMenuItem onClick={() => setCardDisplayMode('standard')} className={cn('min-h-11 text-xs flex items-center justify-between cursor-pointer', cardDisplayMode === 'standard' && 'font-bold text-primary')}>
                   <span>标准图文 (均衡两行)</span>{cardDisplayMode === 'standard' && <Check className="w-3.5 h-3.5" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCardDisplayMode('compact')} className={cn('text-xs flex items-center justify-between cursor-pointer', cardDisplayMode === 'compact' && 'font-bold text-primary')}>
+                <DropdownMenuItem onClick={() => setCardDisplayMode('compact')} className={cn('min-h-11 text-xs flex items-center justify-between cursor-pointer', cardDisplayMode === 'compact' && 'font-bold text-primary')}>
                   <span>紧凑条形 (单行简介)</span>{cardDisplayMode === 'compact' && <Check className="w-3.5 h-3.5" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCardDisplayMode('minimal')} className={cn('text-xs flex items-center justify-between cursor-pointer', (cardDisplayMode === 'minimal' || (cardDisplayMode as any) === 'mini-chip') && 'font-bold text-primary')}>
+                <DropdownMenuItem onClick={() => setCardDisplayMode('minimal')} className={cn('min-h-11 text-xs flex items-center justify-between cursor-pointer', (cardDisplayMode === 'minimal' || (cardDisplayMode as any) === 'mini-chip') && 'font-bold text-primary')}>
                   <span>⚡ 极速胶囊 (Mini Chip 零截断)</span>{(cardDisplayMode === 'minimal' || (cardDisplayMode as any) === 'mini-chip') && <Check className="w-3.5 h-3.5" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCardDisplayMode('rich')} className={cn('text-xs flex items-center justify-between cursor-pointer', cardDisplayMode === 'rich' && 'font-bold text-primary')}>
+                <DropdownMenuItem onClick={() => setCardDisplayMode('rich')} className={cn('min-h-11 text-xs flex items-center justify-between cursor-pointer', cardDisplayMode === 'rich' && 'font-bold text-primary')}>
                   <span>深度丰富 (大图文光晕)</span>{cardDisplayMode === 'rich' && <Check className="w-3.5 h-3.5" />}
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -508,7 +527,7 @@ export function HomeDIYToolbar({
               variant={speedDialEnabled ? 'default' : 'outline'}
               size="sm"
               onClick={toggleSpeedDial}
-              className={cn('h-8 px-2.5 rounded-xl text-xs gap-1 border-border/70 transition-all', speedDialEnabled ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-xs' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('min-h-11 px-2.5 rounded-xl text-xs gap-1 border-border/70 transition-all', speedDialEnabled ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-xs' : 'text-muted-foreground hover:text-foreground')}
               title="开启或关闭首屏常驻速览星标坞"
             >
               <Pin className={cn('w-3.5 h-3.5', speedDialEnabled ? 'fill-white' : 'text-amber-500')} />
@@ -522,7 +541,7 @@ export function HomeDIYToolbar({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 px-2 rounded-xl text-xs gap-1 border-border/70"
+                  className="min-h-11 px-2 rounded-xl text-xs gap-1 border-border/70"
                   title="美学背景、网格列数与强调色"
                 >
                   <Palette className="w-3.5 h-3.5 text-pink-500" />
@@ -537,7 +556,7 @@ export function HomeDIYToolbar({
                     variant={density === 'spacious' ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setDensity('spacious')}
-                    className="h-7 text-xs px-1"
+                    className="min-h-11 text-xs px-1"
                   >
                     宽松 (Spacious)
                   </Button>
@@ -546,7 +565,7 @@ export function HomeDIYToolbar({
                     variant={density === 'comfortable' ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setDensity('comfortable')}
-                    className="h-7 text-xs px-1"
+                    className="min-h-11 text-xs px-1"
                   >
                     标准 (Default)
                   </Button>
@@ -555,7 +574,7 @@ export function HomeDIYToolbar({
                     variant={density === 'dense' ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setDensity('dense')}
-                    className="h-7 text-xs px-1"
+                    className="min-h-11 text-xs px-1"
                   >
                     紧凑 (Dense)
                   </Button>
@@ -563,23 +582,23 @@ export function HomeDIYToolbar({
                 <DropdownMenuSeparator className="my-1.5" />
                 <DropdownMenuLabel className="text-xs text-muted-foreground px-1">画布背景</DropdownMenuLabel>
                 <div className="space-y-0.5 pt-1">
-                  <DropdownMenuItem onClick={() => setCanvasBackground('mesh')} className="text-xs flex items-center justify-between">
+                  <DropdownMenuItem onClick={() => setCanvasBackground('mesh')} className="min-h-11 text-xs flex items-center justify-between">
                     <span>微网格微妙 (Mesh)</span>
                     {canvasBackground === 'mesh' && <Check className="w-3.5 h-3.5 text-primary" />}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setCanvasBackground('dots')} className="text-xs flex items-center justify-between">
+                  <DropdownMenuItem onClick={() => setCanvasBackground('dots')} className="min-h-11 text-xs flex items-center justify-between">
                     <span>科技点阵 (Dots)</span>
                     {canvasBackground === 'dots' && <Check className="w-3.5 h-3.5 text-primary" />}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setCanvasBackground('grid')} className="text-xs flex items-center justify-between">
+                  <DropdownMenuItem onClick={() => setCanvasBackground('grid')} className="min-h-11 text-xs flex items-center justify-between">
                     <span>极客工程网格 (Grid)</span>
                     {canvasBackground === 'grid' && <Check className="w-3.5 h-3.5 text-primary" />}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setCanvasBackground('aurora')} className="text-xs flex items-center justify-between">
+                  <DropdownMenuItem onClick={() => setCanvasBackground('aurora')} className="min-h-11 text-xs flex items-center justify-between">
                     <span>柔和极光流光 (Aurora)</span>
                     {canvasBackground === 'aurora' && <Check className="w-3.5 h-3.5 text-primary" />}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setCanvasBackground('clean')} className="text-xs flex items-center justify-between">
+                  <DropdownMenuItem onClick={() => setCanvasBackground('clean')} className="min-h-11 text-xs flex items-center justify-between">
                     <span>纯净极简 (Clean)</span>
                     {canvasBackground === 'clean' && <Check className="w-3.5 h-3.5 text-primary" />}
                   </DropdownMenuItem>
@@ -612,8 +631,12 @@ export function HomeDIYToolbar({
                     <button
                       key={item.id}
                       onClick={() => setAccentColor(item.id)}
+                      aria-label={`强调色：${item.name}`}
+                      aria-pressed={accentColor === item.id}
                       className={cn(
-                        'w-5 h-5 rounded-full transition-transform hover:scale-110 flex items-center justify-center',
+                        // 色点视觉 36px，::after 再向外扩 4px 凑满 44px 点击区：
+                        // 相邻色点间距 8px，扩 4px 刚好接壤不重叠，点错色的风险为零。
+                        "relative h-9 w-9 rounded-full transition-transform hover:scale-110 flex items-center justify-center after:absolute after:-inset-1 after:content-['']",
                         item.class,
                         accentColor === item.id ? 'ring-2 ring-primary ring-offset-2 scale-105' : 'opacity-80'
                       )}
@@ -634,8 +657,9 @@ export function HomeDIYToolbar({
                 setManagerTab('outline')
                 setIsManagerOpen(true)
               }}
-              className="h-8 px-2 rounded-xl text-xs gap-1 border-border/70"
-              title="18大主分类全景大纲与功能矩阵管理器"
+              className="min-h-11 px-2 rounded-xl text-xs gap-1 border-border/70"
+              title="主分类全景大纲与功能矩阵管理器"
+              aria-label="大纲与功能矩阵管理器"
             >
               <Layers className="w-3.5 h-3.5 text-indigo-500" />
               <span className="hidden sm:inline">大纲/矩阵</span>
@@ -650,12 +674,13 @@ export function HomeDIYToolbar({
                 setIsManagerOpen(true)
               }}
               className={cn(
-                'h-8 px-2 rounded-xl text-xs gap-1',
+                'min-h-11 px-2 rounded-xl text-xs gap-1',
                 trashBin.length > 0 || totalPrunedCount > 0
                   ? 'border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
                   : 'border-border/70'
               )}
               title="打开时间轴回收站，一键恢复任意已删减模块或站点"
+              aria-label="回收站：恢复已删减模块或站点"
             >
               <Trash2 className="w-3.5 h-3.5 text-amber-500" />
               <span className="hidden sm:inline">回收站</span>
@@ -671,8 +696,9 @@ export function HomeDIYToolbar({
               variant="outline"
               size="sm"
               onClick={() => setIsAddCatOpen(true)}
-              className="h-8 px-2 rounded-xl text-xs gap-1 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+              className="min-h-11 px-2 rounded-xl text-xs gap-1 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
               title="新建专属分类"
+              aria-label="新建专属分类"
             >
               <FolderPlus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">新建</span>
@@ -729,8 +755,8 @@ export function HomeDIYToolbar({
               size="icon"
               onClick={handleReset}
               className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
-              title="🔄 恢复系统默认排版"
-              aria-label="恢复系统默认排版"
+              title="🔄 恢复系统默认排版，同时恢复所有已删减功能"
+              aria-label="恢复系统默认排版，同时恢复所有已删减功能"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </Button>
@@ -742,7 +768,7 @@ export function HomeDIYToolbar({
               variant="default"
               size="sm"
               onClick={handleFinishEditing}
-              className="h-8 px-3.5 rounded-xl text-xs font-bold gap-1 bg-primary text-primary-foreground shadow-sm hover:opacity-90"
+              className="min-h-11 px-3.5 rounded-xl text-xs font-bold gap-1 bg-primary text-primary-foreground shadow-sm hover:opacity-90"
               title="保存并退出编排模式 (快捷键: Esc)"
             >
               <Check className="w-3.5 h-3.5" />
@@ -798,11 +824,10 @@ export function HomeDIYToolbar({
         checkCloudVaultStatus={checkCloudVaultStatus}
         clearCloudVault={clearCloudVault}
       />
-    <HomeDIYShareDialog
-      pendingShare={pendingShare}
-      onConfirm={confirmPendingShare}
-      onDismiss={dismissPendingShare}
-    />
+      {/* 旧版 HomeDIYShareDialog 已下线：它与上面的 HomeDiyShareConfirmDialog
+          在同一个 pendingShare 上双开（两层 Radix 焦点陷阱、两份不同的差异列表，
+          旧那份还是水合前的 stale 快照）。确认对话框只剩上面这一个挂载点；
+          静息态的另一个挂载点在 HomeDIYTrigger。 */}
 
       {/* 新建专属分类对话框 */}
       <Dialog open={isAddCatOpen} onOpenChange={setIsAddCatOpen}>
@@ -834,10 +859,10 @@ export function HomeDIYToolbar({
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" size="sm" onClick={() => setIsAddCatOpen(false)}>
+            <Button variant="ghost" size="sm" className="min-h-11" onClick={() => setIsAddCatOpen(false)}>
               取消
             </Button>
-            <Button size="sm" onClick={handleCreateCategory} disabled={!newCatTitle.trim()}>
+            <Button size="sm" className="min-h-11" onClick={handleCreateCategory} disabled={!newCatTitle.trim()}>
               确认创建
             </Button>
           </DialogFooter>

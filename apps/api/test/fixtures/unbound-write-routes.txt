@@ -22,6 +22,7 @@ POST /api/copilot/chat | SSE 事件流（text/event-stream）：无单一 JSON �
 # —— AI 生成/探测：输出由模型或 provider 决定 ——
 PUT /api/admin/ai/config | 管理员 AI 配置回执是启用的 provider 组合快照，字段随 provider 适配层增减
 POST /api/admin/ai/config/reset | 重置回执回传当前生效的多 provider 配置快照（动态字段集）
+POST /api/admin/ai/config/rotate-key | 轮换密钥后回传当前生效的系统模型配置快照（与 PUT /api/admin/ai/config、POST /api/admin/ai/config/reset 同形，动态字段集）
 POST /api/admin/ai/config/test | provider 连通性探测结果含各 provider 私有元数据（模型列表/延迟/错误体）
 PUT /api/admin/ai/prices | 单价簿写入回执是逐模型价格列表，模型集由运营配置决定
 PUT /api/user/ai/config | 用户自带 provider 配置视图，字段集由 provider 能力矩阵决定

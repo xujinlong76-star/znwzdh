@@ -14,7 +14,7 @@ import { z } from "zod";
 import { getEnhancedSiteData, type SiteRelation } from "@navhub/core";
 import { guardedFetch, type FetchGuardOptions } from "./ssrf.ts";
 import { extractMetadata } from "./metadata.ts";
-import { AGNES_BASE_URL, AGNES_MODEL, LlmError, chatCompletion, type JsonMode } from "./llm.ts";
+import { AGNES_BASE_URL, AGNES_MODEL, LlmError, chatCompletion, type ChatOptions, type ChatResult, type JsonMode } from "./llm.ts";
 import { clampToDeadline } from "./deadline.ts";
 
 export interface LlmConfig {
@@ -216,8 +216,21 @@ export interface EnrichOptions {
    * 为什么用回调而不是让 enrich 依赖 store：本包保持「纯 AI 能力」，
    * 不引入持久化依赖；调用方（REST / jobs）自己决定记到哪张表。
    * 成功与失败都回调 —— 观测要能看见失败，而不是只统计成功。
+   *
+   * 与 llmCall 互斥：传了 llmCall 时本次调用的用量由 llmCall 的实现方
+   * （如 apps/api 的 callLlm）记录，onLlmCall 不再触发，避免同一调用记两行。
    */
   onLlmCall?: (info: EnrichLlmCallInfo) => void;
+  /**
+   * 模型调用的注入点（P6）。
+   *
+   * 默认直连本包的 chatCompletion；apps/api 的调用方可以注入统一网关
+   * callLlm（llm-usage.ts），从而让富化调用也吃到备用池轮换、用量记录、
+   * 思考记账与 RetryBudget 治理——此前 enrich 是唯一绕过网关的调用点，
+   * 用量只能靠调用方「记得传 onLlmCall」才有，漏传就静默丢失。
+   * 本包不能直接 import apps/api（依赖方向是 api → ai），所以用注入而不是直引。
+   */
+  llmCall?: (provider: LlmConfig, opts: ChatOptions) => Promise<ChatResult>;
   /**
    * 端到端绝对截止时间（Date.now() 基准的毫秒时间戳）。
    *
@@ -293,6 +306,7 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
         warnings,
         options.onLlmCall,
         options.deadlineAt,
+        options.llmCall,
       );
       if (payload) {
         // 类目白名单约束（S-8 第二道防线）：提示词注入最危险的落地面不是标题/描述
@@ -411,6 +425,11 @@ async function tryLlm(
   }) => void,
   /** 端到端绝对截止时间；每次尝试的超时被钳到剩余预算内（P2-4） */
   deadlineAt?: number,
+  /**
+   * 模型调用注入（见 EnrichOptions.llmCall）：传了就走注入的网关
+   * （如 apps/api 的 callLlm），不传则直连本包 chatCompletion。
+   */
+  llmCall?: (provider: LlmConfig, opts: ChatOptions) => Promise<ChatResult>,
 ): Promise<EnrichmentPayload | null> {
   const categoryHint = input.knownCategories?.length
     ? "请从以下现有分类中**逐字选一个**（不得自造）：" + input.knownCategories.join("、")
@@ -457,35 +476,47 @@ async function tryLlm(
       warnings.push("llm_deadline_exhausted");
       return null;
     }
+    // P6：默认仍是本包 chatCompletion；调用方注入 llmCall 时走统一网关
+    // callLlm（用量记录 + 备用池轮换 + RetryBudget），用量由网关记，
+    // onLlmCall 不再触发——两边都记会让同一调用在大盘上出现两次。
+    // try 外定义：catch 里的失败回调也要用同一口径。
+    const reportCall = llmCall ? undefined : onLlmCall;
+    // 本次调用的入参先拼好：默认分支与注入分支共用同一份，避免两处手写漂移。
+    const provider: LlmConfig = {
+      baseUrl: llm.baseUrl,
+      model: llm.model,
+      apiKey: llm.apiKey,
+      // 把本次超时钳到端到端剩余预算内（deadline.ts 的 clampToDeadline）
+      timeoutMs: clampToDeadline(llm.timeoutMs, deadlineAt),
+      timeoutMsExplicit: llm.timeoutMsExplicit,
+      jsonMode: llm.jsonMode,
+      allowPrivateNetwork: llm.allowPrivateNetwork,
+    };
+    const chatOpts: ChatOptions = {
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      temperature: attempt === 1 ? 0.2 : 0,
+      maxTokens: 1024,
+      json: true,
+      // 直连 chatCompletion 绕过了 llm-usage.ts 那个注入 thinking 的包装，不显式传就静默丢掉；
+      // 而用量回调记的却是 llm.thinking —— 后台显示 100% 思考调用，实际一个字段都没发。
+      thinking: llm.thinking,
+      deadlineAt,
+    };
     try {
-      // 统一网关：负责 SSRF 校验、鉴权头、超时、JSON 模式兼容与错误归一化
-      const result = await chatCompletion(
-        {
-          baseUrl: llm.baseUrl,
-          model: llm.model,
-          apiKey: llm.apiKey,
-          // 把本次超时钳到端到端剩余预算内（deadline.ts 的 clampToDeadline）
-          timeoutMs: clampToDeadline(llm.timeoutMs, deadlineAt),
-          timeoutMsExplicit: llm.timeoutMsExplicit,
-          jsonMode: llm.jsonMode,
-          allowPrivateNetwork: llm.allowPrivateNetwork,
-        },
-        {
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-          ],
-          temperature: attempt === 1 ? 0.2 : 0,
-          maxTokens: 1024,
-          json: true,
-          // 直连 chatCompletion 绕过了 llm-usage.ts 那个注入 thinking 的包装，不显式传就静默丢掉；
-          // 而用量回调记的却是 llm.thinking —— 后台显示 100% 思考调用，实际一个字段都没发。
-          thinking: llm.thinking,
-        },
-      );
+      // 统一网关：负责 SSRF 校验、鉴权头、超时、JSON 模式兼容与错误归一化。
+      // 默认分支必须保留字面量 chatCompletion( 调用，不能写成
+      // `(llmCall ?? chatCompletion)(…)` 的折叠形式：llm-gateway-guard
+      // 用字符串检查钉死「默认路径走网关」，折叠写法会让检查读不到调用点、
+      // 误报网关被绕过。注入分支仍走调用方给的 llmCall（统一网关 callLlm）。
+      const result = llmCall
+        ? await llmCall(provider, chatOpts)
+        : await chatCompletion(provider, chatOpts);
 
       // 用量回调：即使 schema 校验失败，这次调用也已经真实发生并计费
-      onLlmCall?.({
+      reportCall?.({
         ok: true,
         model: result.model,
         promptTokens: result.usage.promptTokens,
@@ -503,7 +534,7 @@ async function tryLlm(
       return parsed.data;
     } catch (err) {
       const errorCode = err instanceof LlmError ? err.code : "unknown";
-      onLlmCall?.({
+      reportCall?.({
         ok: false,
         model: llm.model,
         promptTokens: 0,

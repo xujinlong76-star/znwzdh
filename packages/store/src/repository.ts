@@ -84,6 +84,10 @@ export { TOKEN_TOUCH_THROTTLE_MS } from "./repository/tokens.ts";
 export { EXPORT_HISTORY_LIMIT, EXPORT_FAVORITES_LIMIT, EXPORT_SCHEMA_VERSION } from "./repository/user-data.ts";
 export { CUSTOM_SITES_MAX_PER_USER, type CustomSiteRecord } from "./repository/custom-sites.ts";
 export type { SessionDeviceRecord } from "./repository/sessions.ts";
+// Keyset 键值提取器（M12）：路由层据此给末行编 nextCursor。
+export { siteKeysetValues, SITE_KEYSET_KEYS } from "./repository/sites.ts";
+export { jobKeysetValues, JOB_KEYSET_KEYS } from "./repository/jobs.ts";
+export { videoItemKeysetValues, VIDEO_ITEM_KEYSET_KEYS } from "./repository/videos.ts";
 export type { NotificationRecord } from "./repository/notifications.ts";
 /**
  * 语句类型判定：写语句必须走写队列串行化，只读语句走零阻塞读路径。
@@ -277,7 +281,7 @@ export class Repository {
 
   /* ------------------------- 站点 ------------------------- */
 
-  async listSites(filter: { categoryId?: string; status?: SiteStatus; excludeStatuses?: SiteStatus[]; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
+  async listSites(filter: { categoryId?: string; status?: SiteStatus; excludeStatuses?: SiteStatus[]; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]>; cursor?: string } = {}): Promise<Site[]> {
     return sitesRepo.listSites(this, filter);
   }
 
@@ -493,8 +497,8 @@ export class Repository {
   }
 
   async listCategoriesPage(
-    filter: { limit?: number; offset?: number; parentId?: string | null; level?: number } = {}
-  ): Promise<{ items: Category[]; total: number; limit: number; offset: number }> {
+    filter: { limit?: number; offset?: number; parentId?: string | null; level?: number; cursor?: string } = {}
+  ): Promise<{ items: Category[]; total: number; limit: number; offset: number; nextCursor: string | null }> {
     return categoriesRepo.listCategoriesPage(this, filter);
   }
 
@@ -714,8 +718,9 @@ async savedPluginEmbeddings(filter?: {
     identity: string,
     limit: number,
     offset: number,
-  ): Promise<{ items: eventsRepo.VisitItem[]; hasMore: boolean }> {
-    return eventsRepo.listVisitsPage(this, identity, limit, offset);
+    cursor?: string,
+  ): Promise<{ items: eventsRepo.VisitItem[]; hasMore: boolean; nextCursor: string | null }> {
+    return eventsRepo.listVisitsPage(this, identity, limit, offset, cursor);
   }
 
   /** 该身份的访问历史总条数（T23） */
@@ -732,7 +737,8 @@ async savedPluginEmbeddings(filter?: {
     offset?: number;
     action?: string;
     actor?: string;
-  } = {}): Promise<{ items: AuditLogRecord[]; hasMore: boolean }> {
+    cursor?: string;
+  } = {}): Promise<{ items: AuditLogRecord[]; hasMore: boolean; nextCursor: string | null }> {
     return eventsRepo.listAuditLogs(this, filter);
   }
 
@@ -1209,7 +1215,7 @@ async revokeAllSessions(userId: string): Promise<number> {
   /** 仅供管理员调用；调用层负责鉴权。 */
   async listNotificationDeliveries(
     options: notificationsRepo.ListNotificationDeliveriesOptions = {},
-  ): Promise<{ items: notificationsRepo.NotificationDeliverySummary[]; hasMore: boolean }> {
+  ): Promise<{ items: notificationsRepo.NotificationDeliverySummary[]; hasMore: boolean; nextCursor: string | null }> {
     return notificationsRepo.listNotificationDeliveries(this, options);
   }
 
@@ -1223,8 +1229,9 @@ async revokeAllSessions(userId: string): Promise<number> {
     limit: number,
     offset: number,
     unreadOnly: boolean,
-  ): Promise<{ items: notificationsRepo.NotificationRecord[]; hasMore: boolean }> {
-    return notificationsRepo.listNotificationsPage(this, identity, limit, offset, unreadOnly);
+    cursor?: string,
+  ): Promise<{ items: notificationsRepo.NotificationRecord[]; hasMore: boolean; nextCursor: string | null }> {
+    return notificationsRepo.listNotificationsPage(this, identity, limit, offset, unreadOnly, cursor);
   }
 
   async countUnreadNotifications(identity: string): Promise<number> {
@@ -1607,8 +1614,8 @@ async revokeAllSessions(userId: string): Promise<number> {
     return jobsRepo.heartbeatJob(this, id);
   }
 
-  async listJobs(status?: string, limit = 50, offset = 0): Promise<JobRecord[]> {
-    return jobsRepo.listJobs(this, status, limit, offset);
+  async listJobs(status?: string, limit = 50, offset = 0, options: { cursor?: string } = {}): Promise<JobRecord[]> {
+    return jobsRepo.listJobs(this, status, limit, offset, options);
   }
 
   /** 按 kind 的待跑任务数（/metrics 的 jobs_pending） */
@@ -1693,7 +1700,7 @@ async revokeAllSessions(userId: string): Promise<number> {
     return taxonomyRepo.recordCategoryGap(this, input);
   }
 
-  async listTaxonomyProposals(filter: { status?: string; kind?: string; limit?: number; offset?: number } = {}): Promise<{ items: TaxonomyProposal[]; total: number }> {
+  async listTaxonomyProposals(filter: { status?: string; kind?: string; limit?: number; offset?: number; cursor?: string } = {}): Promise<{ items: TaxonomyProposal[]; total: number; nextCursor: string | null }> {
     return taxonomyRepo.listTaxonomyProposals(this, filter);
   }
 
@@ -1849,8 +1856,8 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   async listPluginReviews(
     pluginId: string,
-    options?: { limit?: number; offset?: number; includeHidden?: boolean },
-  ): Promise<{ items: pluginsRepo.PluginReviewRecord[]; total: number }> {
+    options?: { limit?: number; offset?: number; includeHidden?: boolean; cursor?: string },
+  ): Promise<{ items: pluginsRepo.PluginReviewRecord[]; total: number; nextCursor: string | null }> {
     return pluginsRepo.listPluginReviews(this, pluginId, options);
   }
 

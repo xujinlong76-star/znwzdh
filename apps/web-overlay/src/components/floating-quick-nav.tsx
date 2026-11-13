@@ -77,7 +77,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
       <button
         type="button"
         onClick={scrollToTop}
-        className="w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+        className="h-11 w-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
         title="回到顶部 (Top)"
         aria-label="回到顶部"
       >
@@ -89,7 +89,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
       <button
         type="button"
         onClick={openSpotlight}
-        className="w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+        className="h-11 w-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
         title="呼出超级搜索与指令控制台 (⌘K / /)"
         aria-label="呼出超级搜索控制台"
       >
@@ -102,7 +102,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
           <button
             type="button"
             onClick={onOpenTools}
-            className="w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+            className="h-11 w-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
             title="打开开发者极速微工具箱 (T)"
             aria-label="开发者极速微工具箱"
           >

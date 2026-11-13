@@ -8,6 +8,8 @@ import {
   KEYBOARD_DRAG_INSTRUCTIONS,
   moveCardInDisplayedOrder,
   resolveCardDrop,
+  resolveCategoryDropIndex,
+  withoutAccessibilityPlugin,
 } from '../src/lib/modular/diy-drag'
 
 const CARD = {
@@ -112,6 +114,78 @@ describe('moveCardInDisplayedOrder（⋯ 菜单移动）', () => {
     const res = moveCardInDisplayedOrder({ displayedIds: displayed, pinnedIds: pinned, siteId: 'd', direction: 'up' })
     // d 从序号 3 上移到 2，仍在置顶区外：置顶列表不变
     expect(res).toEqual({ pinnedIds: ['a', 'b'], toIndex: 2 })
+  })
+})
+
+describe('withoutAccessibilityPlugin（W2-8：只留中文播报）', () => {
+  // 构造器的 .name 就是类名；dnd-kit 默认插件是裸构造器或 { plugin, options? }
+  class Accessibility {}
+  class AutoScroller {}
+  class Cursor {}
+  class Feedback {}
+
+  it('去掉 Accessibility 构造器，保留其余插件', () => {
+    expect(withoutAccessibilityPlugin([Accessibility, AutoScroller, Cursor])).toEqual([
+      AutoScroller,
+      Cursor,
+    ])
+  })
+
+  it('去掉 { plugin: Accessibility } 描述符，保留带 options 的其余插件', () => {
+    const feedback = { plugin: Feedback, options: { foo: 1 } }
+    expect(withoutAccessibilityPlugin([{ plugin: Accessibility }, feedback])).toEqual([feedback])
+  })
+
+  it('不认识的条目原样保留（不误删）', () => {
+    expect(withoutAccessibilityPlugin([null, undefined, 42])).toEqual([null, undefined, 42])
+  })
+})
+
+describe('resolveCategoryDropIndex（分类拖拽落点换算，W2-7）', () => {
+  it('指针上半区：上移/下移都插到目标之前', () => {
+    // 下移：源在 1，目标在 3，上半区 → 插到目标之前 = 序号 2（旧实现给 3，落到目标之后）
+    expect(resolveCategoryDropIndex({ fromIndex: 1, targetIndex: 3, afterTarget: false })).toBe(2)
+    // 上移：源在 3，目标在 1，上半区 → 插到目标之前 = 序号 1
+    expect(resolveCategoryDropIndex({ fromIndex: 3, targetIndex: 1, afterTarget: false })).toBe(1)
+  })
+
+  it('指针下半区：上移/下移都插到目标之后', () => {
+    expect(resolveCategoryDropIndex({ fromIndex: 1, targetIndex: 3, afterTarget: true })).toBe(3)
+    // 上移：源在 3，目标在 1，下半区 → 插到目标之后 = 序号 2（旧实现给 1，落到目标之前）
+    expect(resolveCategoryDropIndex({ fromIndex: 3, targetIndex: 1, afterTarget: true })).toBe(2)
+  })
+
+  it('相邻目标：落点半区决定换位还是不动', () => {
+    // 源 1 目标 2：上半区 = 插回原位（不动），下半区 = 换到 2
+    expect(resolveCategoryDropIndex({ fromIndex: 1, targetIndex: 2, afterTarget: false })).toBe(1)
+    expect(resolveCategoryDropIndex({ fromIndex: 1, targetIndex: 2, afterTarget: true })).toBe(2)
+    // 源 2 目标 1：下半区 = 插回原位（不动），上半区 = 换到 1
+    expect(resolveCategoryDropIndex({ fromIndex: 2, targetIndex: 1, afterTarget: true })).toBe(2)
+    expect(resolveCategoryDropIndex({ fromIndex: 2, targetIndex: 1, afterTarget: false })).toBe(1)
+  })
+
+  it('键盘拖拽（无指针位置）：沿用旧语义——顺移动方向落远端', () => {
+    expect(resolveCategoryDropIndex({ fromIndex: 1, targetIndex: 3 })).toBe(3)
+    expect(resolveCategoryDropIndex({ fromIndex: 3, targetIndex: 1 })).toBe(1)
+  })
+
+  it('插到首尾不越界', () => {
+    expect(resolveCategoryDropIndex({ fromIndex: 4, targetIndex: 0, afterTarget: false })).toBe(0)
+    expect(resolveCategoryDropIndex({ fromIndex: 0, targetIndex: 4, afterTarget: true })).toBe(4)
+  })
+})
+
+describe('卡片拖拽不承诺位置（W2-7）', () => {
+  it('键盘说明不再说「菜单完成同样的操作」：拖拽是收录/重归类，位置只归菜单', () => {
+    expect(KEYBOARD_DRAG_INSTRUCTIONS).not.toContain('完成同样的操作')
+    expect(KEYBOARD_DRAG_INSTRUCTIONS).toContain('收录或重归类')
+    expect(KEYBOARD_DRAG_INSTRUCTIONS).toContain('不改变它在分类内的位置')
+    expect(KEYBOARD_DRAG_INSTRUCTIONS).toContain('更多操作菜单')
+  })
+
+  it('over 播报不再说「上方」：卡片是移到分类，不是放到分类上面', () => {
+    expect(buildDragAnnouncement('over', { title: '示例站', toLabel: '「目标」分类' })).not.toContain('上方')
+    expect(buildDragAnnouncement('over', { title: '示例站', toLabel: '「目标」分类' })).toContain('移到')
   })
 })
 

@@ -91,15 +91,24 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
   // 监听全局按键事件
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 避免在输入框中触发快捷键
+      // 正在打字时单字符快捷键一律让位。只看 e.target 不够：
+      //  - 下拉框（SELECT）里的 type-ahead 选词、role=textbox/combobox 的
+      //    自定义输入框，target 都不是 INPUT/TEXTAREA；
+      //  - e.target 与当前焦点偶尔不一致时，以 document.activeElement 为准。
+      // 再加 isComposing：中文输入法组字过程中字母键也会触发 keydown，
+      // 组字没结束就切视图/密度属于误触。
       const target = e.target as HTMLElement | null
-      const isInput = target && (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      )
-
-      if (isInput) return
+      const active = (typeof document !== 'undefined' ? document.activeElement : null) as HTMLElement | null
+      const isTypingTarget = (el: HTMLElement | null) =>
+        !!el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.tagName === 'SELECT' ||
+          el.isContentEditable ||
+          el.getAttribute('role') === 'textbox' ||
+          el.getAttribute('role') === 'combobox' ||
+          el.getAttribute('role') === 'searchbox')
+      if (e.isComposing || isTypingTarget(target) || isTypingTarget(active)) return
 
       // 模态打开期间只保留「?」呼出本身：此时用户正在对话框里操作，
       // 1/2/3 切视图、Ctrl/Cmd+E 开工坊、D 切密度、B 换背景这些全局键必须让位，

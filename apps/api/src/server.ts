@@ -27,6 +27,7 @@ import { INTERNAL_TOKEN_HEADER, isInternalTraffic } from "./internal-traffic.ts"
 import { buildOpenApiDoc, renderDocsHtml, type RouteEntry } from "./openapi.ts";
 import { installOutboundObserver, recordHttpMetric } from "./metrics.ts";
 import { invalidateSnapshotCache } from "./storage.ts";
+import { buildErrorEnvelope, isRetryableStatus } from "./error-envelope.ts";
 import {
   ANONYMOUS_IDENTITY,
   bearerOf,
@@ -305,35 +306,36 @@ export async function buildServer(ctx: AppContext) {
 
 
   // 全局错误兜底：统一错误信封，避免 Fastify 默认 HTML 泄漏栈。
-  // `error` 保持字符串（存量客户端直接读它做展示），新增的 code/message/requestId
-  // 是给新客户端与 OpenAPI 生成器做分支判断的；details 仅在框架给出校验明细时出现。
-  const ERROR_CODE_BY_STATUS: Record<number, string> = {
-    400: "BAD_REQUEST",
-    401: "UNAUTHORIZED",
-    403: "FORBIDDEN",
-    404: "NOT_FOUND",
-    409: "CONFLICT",
-    413: "PAYLOAD_TOO_LARGE",
-    422: "UNPROCESSABLE_ENTITY",
-    429: "RATE_LIMITED",
-    500: "INTERNAL_ERROR",
-  };
+  // 包络由 error-envelope.ts 统一构造（M13）：`error`/`code` 是同一份机器码，
+  // `message` 是人话；`details` 仅在框架给出校验明细时出现。`error` 此前是
+  // 人话——与 404 处理器的机器码不一致，M13 起统一为机器码，人话只放 message。
   app.setErrorHandler((err, req, reply) => {
     app.log.error(err);
-    const status = typeof (err as { statusCode?: unknown }).statusCode === "number"
-      ? (err as { statusCode: number }).statusCode : 500;
+    // Keyset 游标无效是客户端错误（M12）：仓储层抛 InvalidKeysetCursorError
+    // （按 name 判定，避免跨包 instanceof 不稳），这里映射成 400
+    // INVALID_CURSOR，不让它冒泡成 500。
+    const invalidCursor = (err as { name?: unknown }).name === "InvalidKeysetCursorError";
+    const status = invalidCursor
+      ? 400
+      : typeof (err as { statusCode?: unknown }).statusCode === "number"
+        ? (err as { statusCode: number }).statusCode
+        : 500;
     const safeStatus = status >= 400 && status < 600 ? status : 500;
     const rawCode = (err as { code?: unknown }).code;
     const message = safeStatus === 500 ? "内部错误" : (err as Error).message;
     const details = (err as { validation?: unknown }).validation;
-    reply.code(safeStatus).send({
-      error: message,
-      code: typeof rawCode === "string" && rawCode ? rawCode : ERROR_CODE_BY_STATUS[safeStatus] ?? "INTERNAL_ERROR",
+    reply.code(safeStatus).send(buildErrorEnvelope({
+      status: safeStatus,
+      code: invalidCursor
+        ? "INVALID_CURSOR"
+        : typeof rawCode === "string" && rawCode
+          ? rawCode
+          : undefined,
       message,
+      details,
       requestId: req.id,
-      ...(details === undefined ? {} : { details }),
-      retryable: safeStatus >= 500 || safeStatus === 429,
-    });
+      retryable: isRetryableStatus(safeStatus),
+    }));
   });
 
   /* ---------------------------- OpenAPI 路由收集 ---------------------------- */
@@ -748,11 +750,11 @@ export async function buildServer(ctx: AppContext) {
   // 统一 JSON 404：默认响应也是 JSON，但这里显式补上 error 码与 requestId，
   // 便于客户端/排障区分「路由不存在」与「业务 404」（例如 site not found）。
   app.setNotFoundHandler((req, reply) => {
-    reply.code(404).send({
-      error: "NOT_FOUND",
+    reply.code(404).send(buildErrorEnvelope({
+      status: 404,
       message: `路由不存在: ${req.method} ${req.url}`,
       requestId: (req as unknown as { requestId?: string }).requestId ?? req.id,
-    });
+    }));
   });
 
   // 路由表只读快照：授权测试据此派生「用户域私有读面」清单，

@@ -13,6 +13,7 @@ import {
   type TaxonomyProposalKind,
 } from "@navhub/core";
 import { rowToTaxonomyProposal, slugify } from "./dialect.ts";
+import { buildKeysetPredicate, encodeKeysetCursor, parseKeysetCursor, type KeysetKey } from "../keyset.ts";
 
 /**
  * 保存或更新治理提案（幂等：已采纳或已驳回的状态不被覆盖）
@@ -136,10 +137,21 @@ export async function recordCategoryGap(
 /**
  * 列出治理提案（支持按 status/kind 筛选与分页）
  */
+/**
+ * 治理提案排序键（M12 keyset）：confidence DESC, created_at DESC, id DESC。
+ * id 是新增的决胜键——此前同 confidence 同 created_at 的并列行顺序不稳定，
+ * 跨页会抖动；补上后全序稳定，游标页边界才无重复无遗漏。
+ */
+const TAXONOMY_PROPOSAL_KEYSET_KEYS: KeysetKey[] = [
+  { column: "confidence", direction: "DESC" },
+  { column: "created_at", direction: "DESC" },
+  { column: "id", direction: "DESC" },
+];
+
 export async function listTaxonomyProposals(
   repo: Repository,
-  filter: { status?: string; kind?: string; limit?: number; offset?: number } = {},
-): Promise<{ items: TaxonomyProposal[]; total: number }> {
+  filter: { status?: string; kind?: string; limit?: number; offset?: number; cursor?: string } = {},
+): Promise<{ items: TaxonomyProposal[]; total: number; nextCursor: string | null }> {
   const wheres: string[] = [];
   const params: unknown[] = [];
 
@@ -161,15 +173,32 @@ export async function listTaxonomyProposals(
 
   const limit = Math.min(200, Math.max(1, filter.limit ?? 50));
   const offset = Math.max(0, filter.offset ?? 0);
-
+  // Keyset 游标（M12）：传了就走 WHERE (confidence,created_at,id) > (?,?,?)，
+  // 不再 OFFSET；无效游标抛 InvalidKeysetCursorError，由路由层映射成 400。
+  const keysetValues = parseKeysetCursor(filter.cursor, TAXONOMY_PROPOSAL_KEYSET_KEYS.length);
+  const keyset = keysetValues ? buildKeysetPredicate(TAXONOMY_PROPOSAL_KEYSET_KEYS, keysetValues) : null;
+  const pageWhere = keyset
+    ? whereClause + (wheres.length > 0 ? " AND " : " WHERE ") + keyset.sql
+    : whereClause;
+  const pageParams = keyset ? [...params, ...keyset.params] : params;
+  // 不论 offset 还是游标，都多取一行判定 hasMore：有余行就给 nextCursor，
+  // 否则 null（已到末页）。offset 页也给游标——客户端可以从第 1 页（offset）
+  // 直接切到游标翻页，不用先算 offset。
   const rows = await repo.raw(
-    `SELECT * FROM taxonomy_proposals${whereClause} ORDER BY confidence DESC, created_at DESC LIMIT ? OFFSET ?`,
-    [...params, limit, offset],
+    `SELECT * FROM taxonomy_proposals${pageWhere} ORDER BY confidence DESC, created_at DESC, id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    keyset ? [...pageParams, limit + 1] : [...pageParams, limit + 1, offset],
   );
 
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const items = page.map(rowToTaxonomyProposal);
+  const last = hasMore ? items[items.length - 1] : undefined;
   return {
-    items: rows.map(rowToTaxonomyProposal),
+    items,
     total,
+    nextCursor: last
+      ? encodeKeysetCursor([last.confidence, last.createdAt, last.id])
+      : null,
   };
 }
 

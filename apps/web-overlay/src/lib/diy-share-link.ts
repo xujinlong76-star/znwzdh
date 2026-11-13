@@ -202,3 +202,45 @@ export function encodeVersionedShareLink(config: HomeDIYConfig, base: ShareLinkB
   const envelope: DiyShareEnvelope = buildVersionedSharePayload(config)
   return encodeShareLink(envelope, base)
 }
+
+/* ------------------------------------------------------------------ *
+ * 短链（M6）：`#diy=` 分享链接的短链目标派生（纯函数）
+ * ------------------------------------------------------------------ */
+
+/** `#diy=` 分享链接在短链服务里的目标形态：站内路径 + hash（不带 origin） */
+export type DiyShortlinkTargetOutcome = { ok: true; target: string } | { ok: false; reason: string }
+
+/**
+ * 把完整分享链接（`<origin><pathname>#diy=<base64>`）派生成短链目标
+ * （`<pathname>#diy=<base64>`）。
+ *
+ * 为什么只要路径 + hash：短链的 target 存的是站内路径，`/s/[code]` 跳转时
+ * 用 `new URL(target, request.url)` 拼回同源地址；origin 由跳转时的请求
+ * 自带，存进去反而会在多域名部署下指错地方。hash 必须原样保留——它就是
+ * 排版负载本身，丢了它短链指向的只是一个空首页。
+ *
+ * 失败只发生在「这根本不是一条 #diy= 分享链接」时（调用方传错了东西），
+ * 不对长度 / 目标前缀做判断：那是中枢的口径（`isInternalShortLinkTarget`，
+ * 今天只认 `/marketplace/` 内、≤500 字符），由 requestDiyShareShortLink
+ * 把中枢的 400 如实翻成 `unsupported-target`。客户端不在这里复刻服务
+ * 端策略——策略一变，客户端的复刻就是第二份会漂移的真相。
+ */
+export function diyShareUrlToShortlinkTarget(longUrl: string): DiyShortlinkTargetOutcome {
+  if (typeof longUrl !== 'string' || !longUrl) {
+    return { ok: false, reason: '分享链接为空，没法生成短链' }
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(longUrl)
+  } catch {
+    return { ok: false, reason: '分享链接不是合法地址，没法生成短链' }
+  }
+  if (!parsed.hash.startsWith('#diy=')) {
+    return { ok: false, reason: '这条链接里没有 #diy= 分享内容，没法生成短链' }
+  }
+  const target = `${parsed.pathname}${parsed.search}${parsed.hash}`
+  if (!target) {
+    return { ok: false, reason: '分享链接里没有 #diy= 分享内容，没法生成短链' }
+  }
+  return { ok: true, target }
+}

@@ -47,6 +47,8 @@ export function SpeculativeIntentCard({ result }: SpeculativeIntentCardProps) {
         return <FileCode className="w-4 h-4 text-amber-500" />
       case 'hash_detect':
         return <Hash className="w-4 h-4 text-violet-500" />
+      case 'hash_calc':
+        return <Hash className="w-4 h-4 text-violet-500" />
       default:
         return <Sparkles className="w-4 h-4 text-primary" />
     }

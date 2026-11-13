@@ -18,10 +18,13 @@ import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import {
   countVideoItems,
+  encodeKeysetCursor,
   getVideoItem,
   listVideoItems,
+  videoItemKeysetValues,
   type VideoItemRow,
 } from "@navhub/store";
+import { sendError } from "../error-envelope.ts";
 import { readVideosData } from "../storage.ts";
 import { flattenVideoCatalog, resolveVideoStoreMode } from "../video-catalog.ts";
 import { resolveLlm } from "../llm-config.ts";
@@ -38,6 +41,9 @@ const listQuerySchema = z.object({
   healthStatus: z.enum(["healthy", "outdated", "broken", "unverified"]).optional(),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  // Keyset 游标（M12）：只在 db 读路径生效，走 WHERE (category_id,sort,id)
+  // 谓词，不再 OFFSET；KV 文档回落路径仍用 offset 切片（内存数组，无扫表）。
+  cursor: z.string().max(4096).optional(),
   /** 1 = 不返回 videoConfig（章节树/字幕动辄几十 KB），列表页默认精简 */
   compact: z.enum(["0", "1"]).optional(),
 });
@@ -154,19 +160,20 @@ export const videoRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   app.get("/api/videos", { config: { scope: "read", cache: { maxAge: 30, etag: true } } }, async (req, reply) => {
     const parsed = listQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
-      reply.code(400);
-      return { error: "参数无效", detail: parsed.error.issues };
+      return sendError(reply, 400, "BAD_REQUEST", "参数无效", parsed.error.issues);
     }
 
     const { categoryId, platform, healthStatus } = parsed.data;
     const limit = parsed.data.limit ?? DEFAULT_LIMIT;
     const offset = parsed.data.offset ?? 0;
+    const cursor = parsed.data.cursor;
     const includeConfig = parsed.data.compact === "0";
     const filter = { categoryId, platform, healthStatus };
 
     let source: "db" | "kv" = "kv";
     let total = 0;
     let rows: VideoItemRow[] = [];
+    let nextCursor: string | null = null;
 
     /**
      * 只有在 `NAVHUB_VIDEO_STORE=db`（读路径已正式切到关系表）时才用表供数。
@@ -186,7 +193,18 @@ export const videoRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       if (dbTotal > 0) {
         source = "db";
         total = dbTotal;
-        rows = await listVideoItems(ctx.repo, { ...filter, limit, offset });
+        // 多取一行判定 hasMore：有余行就给 nextCursor（offset 页也给，客户端
+        // 可以从第 1 页直接切到游标翻页）。
+        const dbRows = await listVideoItems(ctx.repo, {
+          ...filter,
+          limit: limit + 1,
+          offset,
+          cursor,
+        });
+        const hasMore = dbRows.length > limit;
+        rows = hasMore ? dbRows.slice(0, limit) : dbRows;
+        const last = hasMore ? rows[rows.length - 1] : undefined;
+        nextCursor = last ? encodeKeysetCursor(videoItemKeysetValues(last)) : null;
       }
     }
 
@@ -205,6 +223,7 @@ export const videoRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       limit,
       offset,
       returned: rows.length,
+      nextCursor,
       items: rows.map((r) => toApiItem(r, includeConfig)),
     };
   });

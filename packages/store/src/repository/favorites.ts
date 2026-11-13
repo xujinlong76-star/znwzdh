@@ -1,4 +1,5 @@
 import type { Repository } from "../repository.ts";
+import { buildKeysetPredicate, encodeKeysetCursor, parseKeysetCursor, type KeysetKey } from "../keyset.ts";
 import { randomUUID } from "node:crypto";
 import type {
   FavoriteFolderRecord,
@@ -86,6 +87,8 @@ export interface FavoriteListQuery {
   sort?: "created" | "title";
   limit?: number;
   offset?: number;
+  /** Keyset 游标（M12）：传了就走 WHERE 键谓词，不再 OFFSET；与 offset 二选一，游标优先。 */
+  cursor?: string;
 }
 
 export interface FavoriteListPage {
@@ -93,6 +96,8 @@ export interface FavoriteListPage {
   /** 满足筛选条件的总条数（不受 limit 影响），供前端显示「x / y」与判断 hasMore */
   total: number;
   hasMore: boolean;
+  /** 游标页的下一页游标；offset 页或已到末页时为 null。 */
+  nextCursor: string | null;
 }
 
 /**
@@ -134,28 +139,56 @@ export async function listFavoritesPage(
   const whereSql = where.join(" AND ");
   // 排序表达式必须双方言通用：`COLLATE NOCASE` 是 SQLite 专有，PG 会直接报错。
   // LOWER() 在两边语义一致，中文排序仍按码点（与既有 sort 行为一致）。
-  const orderSql =
-    query.sort === "title"
-      ? "ORDER BY LOWER(COALESCE(s.title, '')) ASC, f.created_at DESC"
-      : "ORDER BY f.created_at DESC";
+  //
+  // Keyset 键（M12）：必须与 ORDER BY 逐项一致。两种排序都补了 `f.id DESC`
+  // 决胜键——此前 created 排序只有 created_at，同一毫秒的多条收藏跨页会抖动。
+  // title 排序的第一键是表达式 `LOWER(COALESCE(s.title, ''))`：SELECT 里把它
+  // 别名为 sort_title，游标值直接取这一列，不在 JS 里重算（避免大小写规则漂移）。
+  const titleSort = query.sort === "title";
+  const orderSql = titleSort
+    ? "ORDER BY LOWER(COALESCE(s.title, '')) ASC, f.created_at DESC, f.id DESC"
+    : "ORDER BY f.created_at DESC, f.id DESC";
+  const keys: KeysetKey[] = titleSort
+    ? [
+        { column: "LOWER(COALESCE(s.title, ''))", direction: "ASC" },
+        { column: "f.created_at", direction: "DESC" },
+        { column: "f.id", direction: "DESC" },
+      ]
+    : [
+        { column: "f.created_at", direction: "DESC" },
+        { column: "f.id", direction: "DESC" },
+      ];
+  const keysetValues = parseKeysetCursor(query.cursor, keys.length);
+  const keyset = keysetValues ? buildKeysetPredicate(keys, keysetValues) : null;
 
   const limit = Math.min(Math.max(Math.trunc(query.limit ?? 50), 1), 200);
   const offset = Math.max(Math.trunc(query.offset ?? 0), 0);
 
+  // 不论 offset 还是游标，都多取一行判定 hasMore：有余行就给 nextCursor，
+  // 否则 null（已到末页）。offset 页也给游标——客户端可以从第 1 页（offset）
+  // 直接切到游标翻页，不用先算 offset。
   const rows = await repo.raw(
-    `SELECT f.* FROM favorites f LEFT JOIN sites s ON s.id = f.site_id
-     WHERE ${whereSql} ${orderSql} LIMIT ? OFFSET ?`,
-    [...params, limit, offset],
+    `SELECT f.*, LOWER(COALESCE(s.title, '')) AS sort_title FROM favorites f LEFT JOIN sites s ON s.id = f.site_id
+     WHERE ${whereSql}${keyset ? ` AND ${keyset.sql}` : ""} ${orderSql} LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    keyset ? [...params, ...keyset.params, limit + 1] : [...params, limit + 1, offset],
   );
   const countRows = await repo.raw(
     `SELECT COUNT(*) AS c FROM favorites f LEFT JOIN sites s ON s.id = f.site_id WHERE ${whereSql}`,
     params,
   );
   const total = Number(countRows[0]?.c ?? 0);
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const last = hasMore ? pageRows[pageRows.length - 1] : undefined;
   return {
-    items: rows.map(rowToFavorite),
+    items: pageRows.map(rowToFavorite),
     total,
-    hasMore: offset + rows.length < total,
+    hasMore,
+    nextCursor: last
+      ? titleSort
+        ? encodeKeysetCursor([String(last.sort_title ?? ""), Number(last.created_at ?? 0), String(last.id)])
+        : encodeKeysetCursor([Number(last.created_at ?? 0), String(last.id)])
+      : null,
   };
 }
 

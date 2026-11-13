@@ -23,6 +23,8 @@ import { callLlm, createEnrichUsageCallback } from "../llm-usage.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import { selectEnrichmentFields } from "../enrich-fields.ts";
 import { safeJsonParse, badRequest, canSeeUnpublishedSites, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
+import { sendError } from "../error-envelope.ts";
+import { encodeKeysetCursor, siteKeysetValues } from "@navhub/store";
 import { isPubliclyVisibleSite } from "../storage.ts";
 import type { AppContext } from "../context.ts";
 
@@ -44,10 +46,15 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
 
   // 注意：保持返回数组（不包 {items,hasMore}）：前端多处按数组消费，改结构会破坏兼容。
   // 默认 limit 100、上限 1000 防全表扫；offset 分页支持。
+  // Keyset 分页（M12）：`?cursor=<上一页末行游标>` 走 WHERE (sort,weight,trend_score,id)
+  // 谓词，不再 OFFSET；下一页游标放 `X-Next-Cursor` 响应头（body 保持裸数组，
+  // 前端按数组消费的契约不动），无下一页时不发该头。offset 与 cursor 二选一，
+  // 传了 cursor 就忽略 offset。无效游标由全局错误处理器映射成 400 INVALID_CURSOR。
   app.get("/api/sites", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 1000);
     const offset = Math.max(0, Number(q.offset) || 0);
+    const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
     const facetFilter = clampFacets(q.facets);
     if (facetFilter.error) return badRequest(reply, "参数无效", facetFilter.error);
     const requestedStatus = parseStatusFilter(q.status);
@@ -62,15 +69,23 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     if (!maySeeUnpublished && requestedStatus && requestedStatus !== "active" && requestedStatus !== "broken") {
       return [];
     }
-    return ctx.repo.listSites({
+    // 游标页多取一行判定 hasMore；offset 页同样多取一行——第 1 页（无游标）
+    // 也要能给出 X-Next-Cursor，客户端才能直接切到游标翻页。
+    const sites = await ctx.repo.listSites({
       categoryId: typeof q.categoryId === "string" ? q.categoryId : undefined,
       status: requestedStatus,
       excludeStatuses: maySeeUnpublished ? undefined : ["pending", "archived"],
       source: typeof q.source === "string" ? q.source : undefined,
       facets: facetFilter.facets,
-      limit,
+      limit: limit + 1,
       offset,
+      cursor,
     });
+    const hasMore = sites.length > limit;
+    const page = hasMore ? sites.slice(0, limit) : sites;
+    const last = hasMore ? page[page.length - 1] : undefined;
+    if (last) reply.header("x-next-cursor", encodeKeysetCursor(siteKeysetValues(last)));
+    return page;
   });
 
   // 说明：URL 形态查询走本路由即可，前提是调用方对 URL 做 encodeURIComponent
@@ -79,7 +94,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   app.get("/api/sites/:id", { config: { scope: "public" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const site = await ctx.repo.getSite(id);
-    if (!site) { reply.code(404); return { error: "站点不存在" }; }
+    if (!site) return sendError(reply, 404, "NOT_FOUND", "站点不存在");
     /**
      * 数据面最小化（P1-2）：与列表侧同口径。pending/archived 是编辑工作面的
      * 中间态——列表把它们藏起来了，但此前凭 id 直接 GET 仍能读到详情，
@@ -87,8 +102,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
      * 返回空集」同一理由，不向无权方泄露存在性。
      */
     if (!isPubliclyVisibleSite(site) && !canSeeUnpublishedSites(ctx, req as never)) {
-      reply.code(404);
-      return { error: "站点不存在" };
+      return sendError(reply, 404, "NOT_FOUND", "站点不存在");
     }
     return site;
   });
@@ -101,7 +115,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const q = (req.query ?? {}) as Record<string, unknown>;
     const limit = Math.min(Math.max(Number(q.limit) || 6, 1), 24);
     const site = await ctx.repo.getSite(id);
-    if (!site) { reply.code(404); return { error: "站点不存在" }; }
+    if (!site) return sendError(reply, 404, "NOT_FOUND", "站点不存在");
     return ctx.repo.listSimilarSitesByTags(site.id, limit);
   });
 
@@ -117,7 +131,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const q = (req.query ?? {}) as Record<string, unknown>;
     const limit = Math.min(Math.max(Number(q.limit) || 30, 1), 90);
     const site = await ctx.repo.getSite(id);
-    if (!site) { reply.code(404); return { error: "站点不存在" }; }
+    if (!site) return sendError(reply, 404, "NOT_FOUND", "站点不存在");
     const recent = await ctx.repo.recentHealthChecks(site.id, limit);
     // recentHealthChecks 返回新→旧；sparkline 需要旧→新，直接反转
     return { checks: recent.reverse() };

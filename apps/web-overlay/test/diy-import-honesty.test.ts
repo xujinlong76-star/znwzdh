@@ -117,6 +117,19 @@ describe('DIY 清洗台账：白名单和上限吃掉多少就得报多少', () 
     expect(res.notes).toEqual([])
   })
 
+  it('首屏小组件超出 32 个：只留前 32 个并申报截断数（W2-5 直接测清洗器）', () => {
+    // 注意：这里只测 validateAndCleanDIYConfig 本身，不走 E2E——导入/分享
+    // 管线会先把 heroDeckWidgets 收敛到 ≤16 个已知小组件 id，33 个组件在
+    // 端到端路径上根本到不了清洗器；32 上限的唯一可达面就是清洗器直调。
+    const widgets = Array.from({ length: 33 }, (_, i) => `widget-${i}`)
+    const res = validateAndCleanDIYConfig(tinyConfig({ heroDeckWidgets: widgets }))
+    expect(res.valid).toBe(true)
+    expect(res.config.heroDeckWidgets).toHaveLength(32)
+    expect(res.config.heroDeckWidgets).toEqual(widgets.slice(0, 32))
+    expect(res.dropped).toBe(1)
+    expect(res.notes.join('\n')).toContain('首屏小组件：超出 32 个上限，截断 1 个')
+  })
+
   it('自定义分类超出 100 个：截断数量与实际保留条数对得上', () => {
     const many = Array.from({ length: 103 }, (_, i) => ({
       id: `cust-${i}`,
@@ -389,6 +402,24 @@ describe('分享链接接收侧：被吃掉的内容挂到横幅上', () => {
     expect(res.applied).toBe(false)
     expect(res.warning).toContain('分享链接未能应用')
     warn.mockRestore()
+  })
+
+  it('解码失败不清除 hash：链接还留在地址栏，刷新即可重试（UX 审计 P2）', async () => {
+    win.location.hash = '#diy=' + 'A'.repeat(4200)
+    const hashBefore = win.location.hash
+    const res = await applyHomeDiyShareHash()
+    expect(res.applied).toBe(false)
+    expect(res.warning).toContain('4KB')
+    expect(win.location.hash).toBe(hashBefore)
+  })
+
+  it('校验失败不清除 hash：链接还留在地址栏，刷新即可重试（UX 审计 P2）', async () => {
+    win.location.hash = '#diy=' + btoa(encodeURIComponent(JSON.stringify({ nothing: true })))
+    const hashBefore = win.location.hash
+    const res = await applyHomeDiyShareHash()
+    expect(res.applied).toBe(false)
+    expect(res.warning).toContain('分享链接未能应用')
+    expect(win.location.hash).toBe(hashBefore)
   })
 
   it('hydrate 把 warning 落到共享状态，工具栏横幅才可能显示出来', async () => {

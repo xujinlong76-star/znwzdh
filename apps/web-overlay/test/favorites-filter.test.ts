@@ -144,14 +144,20 @@ describe("源码守卫：筛选真的接在页面上，且两种「空」不混�
     expect(src).toContain('aria-label="筛选收藏"');
     expect(src).toContain("setFavoriteQuery('')");
     const inputAt = src.indexOf("value={favoriteQuery}");
-    const before = src.slice(Math.max(0, inputAt - 700), inputAt);
+    // 窗口 2000：门与输入之间隔着搜索方式切换组（关键词 / 按意思搜），
+    // 门到输入约 1556 字符；窗口仍只看输入之前的最近一段，不会误取别处。
+    const before = src.slice(Math.max(0, inputAt - 2000), inputAt);
     expect(before).toContain("favorites.items.length > 0 && (");
   });
 
   it("「收藏是空的」与「筛选没命中」必须是两个不同的分支和文案", () => {
     const src = overlaySource("src/app/favorites/page.tsx");
-    // 真正的空（E2E 未覆盖，保留文案守卫）：引导用户去收藏
-    expect(src).toContain("还没有收藏任何站点");
+    // 真正的空（E2E 未覆盖，保留文案守卫）：引导用户去收藏。
+    // 文案住在共享 copy（src/lib/empty-states.ts）里，页面只渲染它——守卫跟到
+    //  canonical 处断言，仍锁死同一句文案，不因重构而丢。
+    expect(src).toContain("FAVORITES_EMPTY_COPY.title");
+    const copy = overlaySource("src/lib/empty-states.ts");
+    expect(copy).toContain("还没有收藏任何站点");
     // 筛选/收藏夹未命中：必须走独立分支，而不是复用全量空态
     expect(src).toContain("visibleFavorites.length === 0 ? (");
     expect(src).toContain("favoriteFilterEmptyMessage(favoriteQuery)");

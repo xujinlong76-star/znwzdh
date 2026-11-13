@@ -17,6 +17,7 @@ import {
 } from "@navhub/core";
 import { slugify } from "./dialect.ts";
 import { containsLike } from "../sql-like.ts";
+import { buildKeysetPredicate, encodeKeysetCursor, parseKeysetCursor, type KeysetKey } from "../keyset.ts";
 import type {
   PluginActor,
   PluginFunnelDay,
@@ -1723,23 +1724,46 @@ export async function createPluginReview(
   return rowToPluginReview(row);
 }
 
+/**
+ * 插件评价排序键（M12 keyset）：updated_at DESC, id DESC——与 ORDER BY 逐项一致。
+ * id 是新增的决胜键：此前同 updated_at 的并列行顺序不稳定，跨页会抖动。
+ */
+const PLUGIN_REVIEW_KEYSET_KEYS: KeysetKey[] = [
+  { column: "updated_at", direction: "DESC" },
+  { column: "id", direction: "DESC" },
+];
+
 export async function listPluginReviews(
   repo: Repository,
   pluginId: string,
-  options: { limit?: number; offset?: number; includeHidden?: boolean } = {},
-): Promise<{ items: PluginReviewRecord[]; total: number }> {
+  options: { limit?: number; offset?: number; includeHidden?: boolean; cursor?: string } = {},
+): Promise<{ items: PluginReviewRecord[]; total: number; nextCursor: string | null }> {
   const where = options.includeHidden ? "plugin_id = ?" : "plugin_id = ? AND status = 'visible'";
   const countRow = (await repo.raw(`SELECT COUNT(*) AS cnt FROM plugin_reviews WHERE ${where}`, [pluginId]))[0];
   const total = Number(countRow?.cnt ?? 0);
   const limit = Math.min(100, Math.max(1, options.limit ?? 20));
   const offset = Math.max(0, options.offset ?? 0);
-
+  // Keyset 游标（M12）：传了就走 WHERE (updated_at,id) > (?,?)，不再 OFFSET；
+  // 无效游标抛 InvalidKeysetCursorError，由路由层映射成 400。
+  const keysetValues = parseKeysetCursor(options.cursor, PLUGIN_REVIEW_KEYSET_KEYS.length);
+  const keyset = keysetValues ? buildKeysetPredicate(PLUGIN_REVIEW_KEYSET_KEYS, keysetValues) : null;
+  // 不论 offset 还是游标，都多取一行判定 hasMore：有余行就给 nextCursor，
+  // 否则 null（已到末页）。offset 页也给游标——客户端可以从第 1 页（offset）
+  // 直接切到游标翻页，不用先算 offset。
   const rows = await repo.raw(
-    `SELECT * FROM plugin_reviews WHERE ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
-    [pluginId, limit, offset],
+    `SELECT * FROM plugin_reviews WHERE ${where}${keyset ? ` AND ${keyset.sql}` : ""} ORDER BY updated_at DESC, id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    keyset ? [pluginId, ...keyset.params, limit + 1] : [pluginId, limit + 1, offset],
   );
 
-  return { items: rows.map(rowToPluginReview), total };
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const items = page.map(rowToPluginReview);
+  const last = hasMore ? items[items.length - 1] : undefined;
+  return {
+    items,
+    total,
+    nextCursor: last ? encodeKeysetCursor([last.updatedAt, last.id]) : null,
+  };
 }
 
 export async function getPluginReviewStats(

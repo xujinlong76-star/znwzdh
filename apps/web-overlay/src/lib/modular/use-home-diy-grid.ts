@@ -42,7 +42,7 @@ import {
   reorderGridItems,
   type GridItem,
 } from './grid-layout'
-import { moveCardInDisplayedOrder, type CardMoveDirection } from './diy-drag'
+import { isDiyDragActive, moveCardInDisplayedOrder, resolveCategoryDropIndex, type CardMoveDirection } from './diy-drag'
 
 type LayoutSyncRemoteHandler = (payload: {
   config: HomeDIYConfig
@@ -73,18 +73,51 @@ interface SharedLayoutSyncChannel {
 
 let sharedLayoutSyncChannel: SharedLayoutSyncChannel | null = null
 
+/**
+ * 拖拽中排队的远端改动（W2-6）：拖拽中途直接合并会把正在拖的分类/卡片
+ * 顶走，拖拽结束的本地提交再按旧位置写回，等于把远端改动悄悄丢掉。
+ * 只留最新一份：每份广播都带全量 config + clocks，后到的覆盖前面的，
+ * 合最新一份与先合旧的再合新的结果一致。拖拽结束由 DiyDragProvider
+ * 调 flushPendingLayoutSyncMessages() 放出来（见 diy-drag-kit）。
+ */
+let pendingRemotePayload: { config: HomeDIYConfig; clocks: LayoutSlotClocks } | null = null
+
+/** 把一份远端改动扇出给所有订阅者（单个订阅者抛错不影响其它订阅者） */
+function deliverSharedLayoutSync(payload: { config: HomeDIYConfig; clocks: LayoutSlotClocks }): void {
+  const entry = sharedLayoutSyncChannel
+  if (!entry) return
+  for (const h of [...entry.handlers]) {
+    try {
+      h(payload)
+    } catch {
+      // 单个订阅者抛错不影响其它订阅者与主流程
+    }
+  }
+}
+
+/**
+ * 放出拖拽中排队的远端改动（没有排队时什么都不做）。由 DiyDragProvider
+ * 在拖拽结束时调用——此时本地的落点提交已完成，合并发生在最终本地
+ * 状态之上，不会再被拖拽提交盖掉。
+ */
+export function flushPendingLayoutSyncMessages(): void {
+  if (!pendingRemotePayload) return
+  const payload = pendingRemotePayload
+  pendingRemotePayload = null
+  deliverSharedLayoutSync(payload)
+}
+
 /** 订阅远端消息：返回取消订阅函数；最后一个订阅者离开时关闭底层通道。 */
 export function subscribeSharedLayoutSyncChannel(handler: LayoutSyncRemoteHandler): () => void {
   if (!sharedLayoutSyncChannel) {
     const handlers = new Set<LayoutSyncRemoteHandler>()
     const channel = createLayoutSyncChannel<HomeDIYConfig>((payload) => {
-      for (const h of [...handlers]) {
-        try {
-          h(payload)
-        } catch {
-          // 单个订阅者抛错不影响其它订阅者与主流程
-        }
+      if (isDiyDragActive()) {
+        // 拖拽中：先排队，不合并、不通知；拖完由 flush 一次性放出。
+        pendingRemotePayload = payload
+        return
       }
+      deliverSharedLayoutSync(payload)
     })
     sharedLayoutSyncChannel = { channel, handlers }
   }
@@ -134,8 +167,13 @@ export interface UseHomeDiyGridResult {
   ) => boolean
   /** 直接写回某分类的置顶列表（菜单之外的调用方用） */
   reorderPinnedSites: (categoryId: string, pinnedIds: string[]) => boolean
-  /** 按网格序号移动分类（grid 视图的拖拽落点换算后调它） */
-  moveCategoryToIndex: (categoryId: string, toIndex: number) => void
+  /**
+   * 按网格序号移动分类（grid 视图的拖拽落点换算后调它）。
+   * toIndex 是移动前列表里的目标序号；afterTarget 是指针在目标内的半区
+   * （true = 下半区→插到目标之后，false = 上半区→插到目标之前），
+   * 不传 = 键盘拖拽，沿用旧语义（顺移动方向落远端）。见 resolveCategoryDropIndex。
+   */
+  moveCategoryToIndex: (categoryId: string, toIndex: number, afterTarget?: boolean) => void
 }
 
 export function useHomeDiyGrid(allCategoryIds: string[]): UseHomeDiyGridResult {
@@ -194,21 +232,26 @@ export function useHomeDiyGrid(allCategoryIds: string[]): UseHomeDiyGridResult {
   )
 
   const moveCategoryToIndex = useCallback(
-    (categoryId: string, toIndex: number) => {
+    (categoryId: string, toIndex: number, afterTarget?: boolean) => {
       const order = gridToCategoryOrder(grid.layout, allCategoryIds)
       const fromIndex = order.indexOf(categoryId)
       const clamped = Math.min(Math.max(0, toIndex), order.length - 1)
-      if (fromIndex === -1 || fromIndex === clamped) return
-      const reordered = reorderGridItems(grid.layout, categoryId, clamped)
+      if (fromIndex === -1) return
+      // 插入序号按指针半区换算（W2-7）：旧实现直接拿目标序号当插入序号，
+      // 上移/下移同一落点两种结果；resolveCategoryDropIndex 把它算对称，
+      // 键盘拖拽（afterTarget 不传）保持旧语义。
+      const insertion = resolveCategoryDropIndex({ fromIndex, targetIndex: clamped, afterTarget })
+      if (fromIndex === insertion) return
+      const reordered = reorderGridItems(grid.layout, categoryId, insertion)
       const nextOrder = gridToCategoryOrder(reordered, allCategoryIds)
       // 锚点：最终顺序里紧挨着它的下一项（没有就取上一项、插到它后面）。
       // reorderCategory 只认「插到某项前/后」，用锚点翻译一次即等价。
-      const afterId = nextOrder[clamped + 1]
+      const afterId = nextOrder[insertion + 1]
       if (afterId) {
         reorderCategory(categoryId, afterId, 'before', allCategoryIds)
         return
       }
-      const beforeId = nextOrder[clamped - 1]
+      const beforeId = nextOrder[insertion - 1]
       if (beforeId) reorderCategory(categoryId, beforeId, 'after', allCategoryIds)
     },
     [grid.layout, allCategoryIds, reorderCategory],

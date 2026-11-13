@@ -25,6 +25,7 @@ import { encodeVersionedShareLink, type ShareLinkOutcome } from '@/lib/diy-share
 import {
   DEFAULT_CONFIG,
   applyRemoteHomeDiyConfig,
+  claimHomeDiyHistoryStep,
   commitHomeDiyConfig,
   confirmHomeDiyShare,
   dismissHomeDiyShare,
@@ -145,12 +146,25 @@ export function useHomeDIY() {
   }, [mounted, applyRemoteConfig])
 
   // 3.3 落盘是防抖的：关标签页前把挂起的写立即刷掉，否则最后 300ms 内的
-  // 改动会丢（内存里有、磁盘上没有）。
+  // 改动会丢（内存里有、磁盘上没有）。只听 beforeunload 不够：
+  //   - 移动端关标签 / 切后台时 beforeunload 不可靠甚至不触发；
+  //   - 崩溃时 beforeunload 根本不会跑。
+  // 因此同时听 visibilitychange（切后台瞬间刷盘：此时页面仍活着，
+  // 写盘成功率远高于卸载那一刻）与 pagehide（卸载兜底，移动端也触发）。
   useEffect(() => {
     if (!mounted) return
     const flush = () => flushHomeDiyDiskWrites()
+    const onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.hidden) flush()
+    }
     window.addEventListener('beforeunload', flush)
-    return () => window.removeEventListener('beforeunload', flush)
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [mounted])
 
   // 4. 视图模态切换
@@ -578,11 +592,15 @@ export function useHomeDIY() {
   const canRedo = history.future.length > 0
 
   const undo = useCallback(() => {
+    // 同一按键只撤销一步（W2-9）：先认领，认领失败说明别的监听（画布）
+    // 已处理了这次按键，直接返回，不再撤第二步。
+    if (!claimHomeDiyHistoryStep()) return
     const result = undoHomeDiy()
     if (result) publishToOtherTabs(result)
   }, [publishToOtherTabs])
 
   const redo = useCallback(() => {
+    if (!claimHomeDiyHistoryStep()) return
     const result = redoHomeDiy()
     if (result) publishToOtherTabs(result)
   }, [publishToOtherTabs])
@@ -606,20 +624,30 @@ export function useHomeDIY() {
 
       if (e.key.toLowerCase() === 'z') {
         if (e.shiftKey) {
+          // 没得重做就放行：让事件继续走到回收站监听（它只认无 Shift 的 Z，
+          // 这里放行也只是不拦浏览器默认行为，不会误恢复）。
+          if (!canRedo) return
           e.preventDefault()
+          e.stopImmediatePropagation()
           redo()
         } else {
+          // 没得撤销就放行：事件继续走到回收站监听，这次按键改为恢复
+          // 回收站（一次按键恰好只做一件事）。
+          if (!canUndo) return
           e.preventDefault()
+          e.stopImmediatePropagation()
           undo()
         }
       } else if (e.key.toLowerCase() === 'y' && !isMac) {
+        if (!canRedo) return
         e.preventDefault()
+        e.stopImmediatePropagation()
         redo()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isEditingLayout, undo, redo])
+  }, [isEditingLayout, undo, redo, canUndo, canRedo])
 
   // 31. 分类手风琴折叠展开操作
   const toggleCollapseCategory = useCallback((categoryId: string) => {

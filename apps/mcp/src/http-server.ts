@@ -27,7 +27,10 @@
  *  4. token 的 scope 决定可见/可调用的工具集合，且**每个请求**都重新校验 token，
  *     token 一旦失效，已建立的会话也随之失效。
  *  5. 会话空闲超时自动回收，避免内存泄漏；请求体上限 1MB。
+ *  6. 会话与并发流有上限（默认 100 会话 / 每会话 4 条流）：无上限时，一个
+ *     客户端可以建无限会话、每会话挂无限条 SSE 流，把内存与文件描述符耗尽。
  */
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -52,10 +55,24 @@ export interface McpHttpOptions {
   allowInsecure?: boolean;
   /** 会话空闲回收阈值（默认 30 分钟） */
   sessionIdleMs?: number;
+  /**
+   * 并存会话上限（默认 100）。达到上限时新的 initialize 回 429，
+   * 已有会话不受影响；上限是「防资源耗尽」不是「配额」，配到 0 = 禁用新会话。
+   */
+  maxSessions?: number;
+  /**
+   * 每会话并存的服务端 → 客户端 SSE 流上限（默认 4）。
+   * 一条流就是一个挂起的响应 + 文件描述符；单个会话挂几十条流通常是
+   * 客户端泄漏或恶意占用，超限的 GET /mcp 回 429。
+   */
+  maxStreamsPerSession?: number;
 }
 
 /** MCP 规范：请求体大小上限（与旧 REST 端点一致） */
 const MAX_BODY_BYTES = 1_000_000;
+/** 会话与并发流的默认上限（M23） */
+const DEFAULT_MAX_SESSIONS = 100;
+const DEFAULT_MAX_STREAMS_PER_SESSION = 4;
 
 interface McpSession {
   transport: StreamableHTTPServerTransport;
@@ -125,6 +142,8 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
   const scopes = opts.scopes ?? (["read", "write"] as McpScope[]);
   const actor = opts.actor ?? "mcp:http";
   const sessionIdleMs = opts.sessionIdleMs ?? 30 * 60 * 1000;
+  const maxSessions = opts.maxSessions ?? DEFAULT_MAX_SESSIONS;
+  const maxStreamsPerSession = opts.maxStreamsPerSession ?? DEFAULT_MAX_STREAMS_PER_SESSION;
 
   const handlers = createHandlers(opts.ctx) as Record<string, (a: unknown, t: ToolContext) => Promise<unknown>>;
   const sessions = new Map<string, McpSession>();
@@ -251,6 +270,10 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
           sessions.delete(sid!);
           return rpcError(403, "Session identity mismatch：该会话属于另一个 token / scope / owner");
         }
+        // M23：单会话并发流上限——一条流一个挂起响应，超限直接拒绝，不排队
+        if (session.activeStreams >= maxStreamsPerSession) {
+          return rpcError(429, "Too many concurrent streams for this session");
+        }
         session.lastSeen = Date.now();
         session.activeStreams++;
         res.once("close", () => {
@@ -297,6 +320,11 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
       // 无会话：规范要求第一条消息只能是 initialize
       if (!isInitialize(parsed.body)) {
         return rpcError(400, "Bad Request: No valid session ID provided");
+      }
+
+      // M23：并存会话上限——建会话前判，满了就拒绝，不挤掉已有会话
+      if (sessions.size >= maxSessions) {
+        return rpcError(429, "Too many sessions：服务端并存会话已达上限，请稍后重试");
       }
 
       const transport = new StreamableHTTPServerTransport({
@@ -386,6 +414,13 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
 export function mcpHttpOptionsFromEnv(ctx: AppContext): McpHttpOptions {
   const scopes = (process.env.NAVHUB_MCP_SCOPES ?? "read,write")
     .split(",").map((s) => s.trim()).filter(Boolean) as McpScope[];
+  // 非法/非正数回退默认：上限配错（0 除外，0 = 显式禁用新会话）不能把服务变成「谁都连不上还不报错」
+  const envInt = (key: string, fallback: number): number => {
+    const raw = process.env[key]?.trim();
+    if (raw === undefined || raw === "") return fallback;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 ? n : fallback;
+  };
   return {
     ctx,
     token: process.env.NAVHUB_MCP_TOKEN ?? "",
@@ -393,5 +428,7 @@ export function mcpHttpOptionsFromEnv(ctx: AppContext): McpHttpOptions {
     allowedOrigins: (process.env.NAVHUB_MCP_ALLOWED_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
     scopes,
     actor: process.env.NAVHUB_MCP_ACTOR ?? "mcp:http",
+    maxSessions: envInt("NAVHUB_MCP_MAX_SESSIONS", DEFAULT_MAX_SESSIONS),
+    maxStreamsPerSession: envInt("NAVHUB_MCP_MAX_STREAMS_PER_SESSION", DEFAULT_MAX_STREAMS_PER_SESSION),
   };
 }

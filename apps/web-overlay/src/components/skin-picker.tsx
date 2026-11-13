@@ -208,7 +208,7 @@ export function SkinPicker({ className }: { className?: string }) {
           variant="ghost"
           size="icon"
           disabled={applying !== null}
-          className={`h-8.5 w-8.5 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground ${className || ''}`}
+          className={`h-11 w-11 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground ${className || ''}`}
           title={`皮肤：当前为${active?.name ?? '系统默认'}${suspended ? '（深色模式下暂停，回到浅色自动恢复）' : ''}（点击切换）`}
           aria-label={`皮肤切换：当前为${active?.name ?? '系统默认'}`}
         >
@@ -255,7 +255,7 @@ export function SkinPicker({ className }: { className?: string }) {
               event.preventDefault()
               void load()
             }}
-            className="cursor-pointer text-xs text-primary"
+            className="cursor-pointer min-h-11 text-xs text-primary"
           >
             ↻ 重试加载皮肤列表
           </DropdownMenuItem>
@@ -322,7 +322,7 @@ export function SkinPicker({ className }: { className?: string }) {
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild className="cursor-pointer text-xs text-muted-foreground">
+        <DropdownMenuItem asChild className="cursor-pointer min-h-11 text-xs text-muted-foreground">
           <Link href="/marketplace?kind=theme">去插件市场查看全部皮肤 →</Link>
         </DropdownMenuItem>
       </DropdownMenuContent>

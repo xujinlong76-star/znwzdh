@@ -446,6 +446,12 @@ export interface SearchParams {
   tag?: string
   /** 站点状态过滤（可选）；分类/标签浏览页用 active，避免 broken/pending 占分页名额 */
   status?: 'active' | 'pending' | 'broken' | 'archived'
+  /**
+   * 检索模式（中枢 /api/search 的 mode 原样透传）。
+   * 'semantic' 只保留语义通道：召回与排序都只来自语义近邻——收藏页
+   * 「按意思搜」靠它把查询与收藏的站点做语义求交；不传时走默认 hybrid。
+   */
+  mode?: 'hybrid' | 'keyword' | 'semantic'
   /** 身份标识（匿名 anonId 或登录 userId），用于个性化与历史 */
   identity?: string
 }
@@ -457,6 +463,7 @@ export async function searchSites(params: SearchParams, signal?: AbortSignal): P
   if (params.categoryId) query.set('categoryId', params.categoryId)
   if (params.tag) query.set('tag', params.tag)
   if (params.status) query.set('status', params.status)
+  if (params.mode) query.set('mode', params.mode)
   // 兼容旧中枢：query 保留 anonId；新中枢优先读 X-Navhub-Anon-Id header（防日志泄漏）
   if (params.identity) query.set('anonId', params.identity)
   try {
@@ -2322,6 +2329,23 @@ export async function createPluginShortLink(
   options: { install?: boolean } = {},
 ): Promise<{ success: boolean; code: string; path: string; target: string }> {
   return sendJson('/api/shortlinks', 'POST', { slug, install: options.install === true })
+}
+
+/**
+ * 按目标路径创建分享短链（`POST /api/shortlinks` 的 `{ target }` 形态）。
+ *
+ * 与 createPluginShortLink 的唯一区别是目标由调用方直接给：DIY 分享要缩的
+ * 是首页 `#diy=` 链接（`<pathname>#diy=<base64>`），没有插件 slug 可传。
+ * 目标口径仍由中枢把关（路由 + 入库两层 `isInternalShortLinkTarget`）：
+ * 今天只认 `/marketplace/` 内、≤500 字符的目标，首页 `#diy=` 目标会被 400
+ * 拒掉——调用方（home-diy-io 的 requestDiyShareShortLink）必须把 400 翻成
+ * `unsupported-target` 并回退到完整链接，绝不能替用户编一个短链出来。
+ * 中枢放开首页目标的那天，这里的调用不用改，短链自动生效。
+ */
+export async function createShortLinkForTarget(
+  target: string,
+): Promise<{ success: boolean; code: string; path: string; target: string }> {
+  return sendJson('/api/shortlinks', 'POST', { target })
 }
 
 /** 插件漏斗埋点：浏览 / 安装点击 / 卸载点击 / 分享（fire-and-forget，不阻塞 UI） */

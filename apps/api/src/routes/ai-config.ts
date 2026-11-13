@@ -20,6 +20,7 @@ import {
   llmProviderReady,
   resetSystemLlmConfig,
   resolveLlm,
+  rotateSystemLlmKey,
   saveSystemLlmConfig,
   saveUserLlmConfig,
   testLlmProvider,
@@ -98,6 +99,36 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     const config = await resetSystemLlmConfig(ctx, req.auth.actor, req.ip);
     return { config };
   });
+
+  /**
+   * 轮换系统模型密钥（M19）：只换密钥，不动其它配置。
+   *
+   * 密钥泄露/交接后必须能换钥而不改模型与端点；此前只能整表重填（baseUrl 与
+   * model 都是必填），换钥顺带改了配置还容易把超时、思考开关等字段写回默认值。
+   * fallbackId 指定备用池条目时只轮换那一条的密钥。
+   */
+  app.post(
+    "/api/admin/ai/config/rotate-key",
+    { config: { scope: "admin", rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const body = z
+        .object({
+          apiKey: z.string().trim().min(1).max(512),
+          fallbackId: z.string().max(64).optional(),
+        })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        reply.code(400);
+        return { error: "参数无效", detail: body.error.issues };
+      }
+      try {
+        const config = await rotateSystemLlmKey(ctx, body.data, req.auth.actor, req.ip);
+        return { config };
+      } catch (err) {
+        return replyLlmError(reply, err);
+      }
+    },
+  );
 
   app.post(
     "/api/admin/ai/config/test",

@@ -17,6 +17,7 @@
  * 列只放可过滤/可排序的字段。
  */
 import type { Repository } from "../repository.ts";
+import { buildKeysetPredicate, parseKeysetCursor, type KeysetKey } from "../keyset.ts";
 
 export interface VideoCategoryInput {
   id: string;
@@ -296,13 +297,31 @@ export async function listVideoCategories(repo: Repository): Promise<VideoCatego
   return (res.rows as Array<Record<string, unknown>>).map(map)
 }
 
+/**
+ * 视频条目排序键（M12 keyset）：category_id ASC, sort ASC, id ASC——
+ * 与 ORDER BY 逐项一致，id 是决胜键。
+ */
+export const VIDEO_ITEM_KEYSET_KEYS: KeysetKey[] = [
+  { column: "category_id", direction: "ASC" },
+  { column: "sort", direction: "ASC" },
+  { column: "id", direction: "ASC" },
+];
+
+/** 取一行的 keyset 键值：路由层据此给末行编 nextCursor。 */
+export function videoItemKeysetValues(row: VideoItemRow): [string, number, string] {
+  return [row.categoryId, row.sort, row.id];
+}
+
 /** 按分类分页列出条目（只返回列字段 + payload，不做 join） */
 export async function listVideoItems(
   repo: Repository,
-  opts: { categoryId?: string; limit?: number; offset?: number; healthStatus?: string; platform?: string } = {},
+  opts: { categoryId?: string; limit?: number; offset?: number; healthStatus?: string; platform?: string; cursor?: string } = {},
 ): Promise<VideoItemRow[]> {
   const limit = Math.max(1, Math.min(opts.limit ?? 50, 500))
   const offset = Math.max(0, opts.offset ?? 0)
+  // Keyset 游标（M12）：传了就走 WHERE (category_id,sort,id) > (?,?,?)，不再 OFFSET；
+  // 无效游标抛 InvalidKeysetCursorError，由路由层映射成 400。
+  const keysetValues = parseKeysetCursor(opts.cursor, VIDEO_ITEM_KEYSET_KEYS.length)
 
   if (repo.db.dialect === "sqlite") {
     const where: string[] = []
@@ -310,11 +329,15 @@ export async function listVideoItems(
     if (opts.categoryId) { where.push("category_id = ?"); args.push(opts.categoryId) }
     if (opts.healthStatus) { where.push("health_status = ?"); args.push(opts.healthStatus) }
     if (opts.platform) { where.push("platform = ?"); args.push(opts.platform) }
+    const keyset = keysetValues ? buildKeysetPredicate(VIDEO_ITEM_KEYSET_KEYS, keysetValues) : null
+    if (keyset) { where.push(keyset.sql); args.push(...keyset.params) }
     const sql =
       "SELECT * FROM video_items" +
       (where.length ? " WHERE " + where.join(" AND ") : "") +
-      " ORDER BY category_id, sort, id LIMIT ? OFFSET ?"
-    const rows = repo.db.sqlite!.prepare(sql).all(...args, limit, offset) as RawVideoItemRow[]
+      ` ORDER BY category_id, sort, id LIMIT ?${keyset ? "" : " OFFSET ?"}`
+    const rows = repo.db.sqlite!
+      .prepare(sql)
+      .all(...args, limit, ...(keyset ? [] : [offset])) as RawVideoItemRow[]
     return rows.map(rowToVideoItem)
   }
 
@@ -323,12 +346,18 @@ export async function listVideoItems(
   if (opts.categoryId) { args.push(opts.categoryId); where.push(`category_id = $${args.length}`) }
   if (opts.healthStatus) { args.push(opts.healthStatus); where.push(`health_status = $${args.length}`) }
   if (opts.platform) { args.push(opts.platform); where.push(`platform = $${args.length}`) }
+  // PG 分支直接调 pg.query，占位符必须手写 $n：谓词从 args.length 起连续编号。
+  const keyset = keysetValues
+    ? buildKeysetPredicate(VIDEO_ITEM_KEYSET_KEYS, keysetValues, { placeholderStart: args.length })
+    : null
+  if (keyset) { where.push(keyset.sql); args.push(...keyset.params) }
   args.push(limit); const limitIdx = args.length
-  args.push(offset); const offsetIdx = args.length
+  let offsetIdx = -1
+  if (!keyset) { args.push(offset); offsetIdx = args.length }
   const sql =
     "SELECT * FROM video_items" +
     (where.length ? " WHERE " + where.join(" AND ") : "") +
-    ` ORDER BY category_id, sort, id LIMIT $${limitIdx} OFFSET $${offsetIdx}`
+    ` ORDER BY category_id, sort, id LIMIT $${limitIdx}${keyset ? "" : ` OFFSET $${offsetIdx}`}`
   const res = await repo.db.pg!.query(sql, args)
   return (res.rows as RawVideoItemRow[]).map(rowToVideoItem)
 }

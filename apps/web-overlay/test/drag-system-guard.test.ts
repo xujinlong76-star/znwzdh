@@ -252,3 +252,73 @@ describe('W4：拖拽 + 键盘 a11y 修复（源码守卫，node 环境无 jsdom
     expect(section).toContain('DiyCategoryDragGrip')
   })
 })
+
+describe('W2-11：已隐藏分类的占位行不半透明（活按钮在里面）', () => {
+  it('隐藏行不再有 opacity-70：恢复显示按钮必须全对比度可点', () => {
+    const section = read('src/components/navigation-category-section.tsx')
+    const hiddenRow = section.slice(section.indexOf('if (isHidden) {'))
+    // 锚点从 className 之后找「恢复显示」：行首注释里也提到了它，不能从头找
+    const classStart = hiddenRow.indexOf('className="')
+    const rowClass = hiddenRow.slice(0, hiddenRow.indexOf('恢复显示', classStart))
+    expect(rowClass).not.toContain('opacity-70')
+    expect(rowClass).not.toContain('hover:opacity-100')
+    // 隐藏状态仍有其它表达：虚线边框 + 柔和底色 +「(已隐藏)」标签 + EyeOff
+    expect(rowClass).toContain('border-dashed')
+    expect(rowClass).toContain('(已隐藏)')
+  })
+})
+
+describe('W2-10：全部分类被隐藏的空态能真正恢复', () => {
+  it('空态按「是否全被隐藏」分流：全隐藏时恢复两份账本，不只切工作区', () => {
+    const content = read('src/components/navigation-content.tsx')
+    expect(content).toContain('allCategoriesHidden')
+    expect(content).toContain('handleRecoverHiddenCategories')
+    expect(content).toContain('恢复全部隐藏分类')
+    // 恢复动作：掩码逐个恢复 + DIY 全部取消隐藏 + 切回全部工作区
+    expect(content).toContain('restoreFeature(id)')
+    expect(content).toContain('unhideAllCategories()')
+    expect(content).toContain("setActiveWorkspace('all')")
+    // 判定用两份账本合并（掩码 id 带前缀，先剥掉），不是只看 DIY 一份
+    expect(content).toContain('stripFeaturePrefix(id)')
+    // 非隐藏原因的空态仍保留原来的「查看全部站点」
+    expect(content).toContain('查看全部站点')
+  })
+})
+
+describe('W2-8：只留中文播报，排除插件英文播报', () => {
+  it('provider 用 withoutAccessibilityPlugin 过滤默认插件，且不 import @dnd-kit/dom', () => {
+    const kit = read('src/components/diy/diy-drag-kit.tsx')
+    expect(kit).toContain('plugins={(defaults) => withoutAccessibilityPlugin(defaults)}')
+    expect(kit).not.toContain("from '@dnd-kit/dom'")
+    // 中文 live-region 仍在：它是唯一播报源
+    expect(kit).toContain('aria-live="polite"')
+    expect(kit).toContain('buildDragAnnouncement')
+    // 旧注释「两套并存、等真机验证」已作废
+    expect(kit).not.toContain('两套并存可能重复播报')
+    expect(kit).not.toContain('需 Ryan 真机验证后决定是否把插件默认播报关掉')
+  })
+})
+
+describe('W2-7：分类落点按指针半区算，卡片拖拽不承诺位置', () => {
+  it('分类拖拽结束按指针上下半区换算插入序号（不是裸目标序号）', () => {
+    const content = read('src/components/navigation-content.tsx')
+    const handler = content.slice(content.indexOf('const handleCategoryDragEnd'))
+    expect(handler).toContain('activatorEvent')
+    expect(handler).toContain('instanceof PointerEvent')
+    expect(handler).toContain('position?.current?.y')
+    expect(handler).toContain('getBoundingClientRect()')
+    expect(handler).toContain('afterTarget')
+    expect(handler).toContain('moveCategoryToIndex(source.categoryId, toIndex, afterTarget)')
+    const grid = read('src/lib/modular/use-home-diy-grid.ts')
+    expect(grid).toContain('resolveCategoryDropIndex')
+    expect(grid).toContain('afterTarget?: boolean')
+  })
+
+  it('卡片落点引导条按目标类型说收录/重归类，不说位置', () => {
+    const section = read('src/components/navigation-category-section.tsx')
+    expect(section).toContain('将卡片重归类至')
+    expect(section).toContain('直接收录卡片至')
+    // 旧文案是无条件 JSX：所有目标都说「收录至专属分类」，内置分类也被说成收录
+    expect(section).not.toContain('「{category.title}」专属分类</span>')
+  })
+})

@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
  *
  * 锁四件事（风格照抄 a11y-contrast.test.ts 的「锁源码意图」）：
  *   1. 底栏标签/徽章字号不得回退到 8-10px（触控不可读）；
- *   2. 顶栏图标按钮触达尺寸 ≥36px（h-8/w-8 一律禁止）；
+ *   2. 顶栏图标按钮触达尺寸 ≥44px（h-9/h-8.5/h-8 一律禁止；P1 #10 于
+ *      2026-11-13 把 36px 标准升级为 44px，h-11 w-11）；
  *   3. 纯图标按钮必须有 aria-label（asChild 模式允许挂在内层 Link）；
  *   4. footer 装饰分隔符「·」必须 aria-hidden，且移动端表单字号 ≥16px
  *      规则（防 iOS 聚焦缩放）必须存在于 globals.css 的**非分层**区。
@@ -47,13 +48,15 @@ describe("底栏字号（mobile-nav）", () => {
 });
 
 describe("顶栏触达尺寸（navigation-toolbar）", () => {
-  it("icon 按钮不再使用 h-8/h-8.5（一律 h-9 = 36px）", () => {
+  it("icon 按钮不再使用 h-9/h-8.5/h-8（一律 h-11 = 44px，P1 #10 2026-11-13）", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
     expect(src, "仍有 h-8 w-8 触达不足").not.toContain("h-8 w-8");
-    expect(src, "仍有 h-8.5 w-8.5（34px < 36px）").not.toContain("h-8.5 w-8.5");
+    expect(src, "仍有 h-8.5 w-8.5（34px < 44px）").not.toContain("h-8.5 w-8.5");
     expect(src).not.toContain("sm:h-8.5 sm:w-8.5");
-    const h9 = src.split("h-9 w-9").length - 1;
-    expect(h9, "8 个 icon 按钮应全部是 h-9 w-9").toBe(8);
+    // P1 #10（2026-11-13）：36px 标准升级为 44px，h-9 w-9 亦属回退
+    expect(src, "仍有 h-9 w-9（36px < 44px）").not.toContain("h-9 w-9");
+    const h11 = src.split("h-11 w-11").length - 1;
+    expect(h11, "8 个 icon 按钮应全部是 h-11 w-11").toBe(8);
   });
 
   it("每个 size=\"icon\" 按钮块内都有 aria-label（asChild 挂内层 Link 也算）", () => {

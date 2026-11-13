@@ -12,7 +12,7 @@ import {
   searchMaxPage,
   searchPageWindow,
 } from '@/lib/search-page'
-import type { HubSearchHit, HubSearchResult } from '@/lib/navhub-api'
+import type { HubSearchHit, HubSearchResult, HubSite } from '@/lib/navhub-api'
 import { Fragment } from 'react'
 import { highlightParts } from '@/lib/highlight'
 import { SearchFacetBar, type FacetGroup } from '@/components/search-facet-bar'
@@ -39,6 +39,8 @@ interface SearchResultsProps {
   result: HubSearchResult | null
   failed: boolean
   unavailable: HubSearchHit[]
+  /** 零结果救援的「为你推荐」：今日热榜前 6（/search 页取数，失败为空数组） */
+  recommended?: HubSite[]
   /** 收录站点外链 rel（站点级设置，服务端透传）；缺省 nofollow */
   externalRel?: string
 }
@@ -248,12 +250,20 @@ function EmptyResults({
   tag,
   suggestions,
   popular,
+  inferredCategory,
+  recommended,
+  externalRel = 'nofollow noopener noreferrer',
 }: {
   q: string
   page: number
   tag: string | null
   suggestions: string[]
   popular: string[]
+  /** 中枢从查询里理解到的分类（如 @开发工具 / “开发工具”一词）；没有推断出来时不硬凑 */
+  inferredCategory?: string | null
+  /** 零结果救援的「为你推荐」：今日热榜站点；取数失败为空数组，整块不渲染 */
+  recommended: HubSite[]
+  externalRel?: string
 }) {
   return (
     <section className="space-y-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-6">
@@ -269,6 +279,22 @@ function EmptyResults({
       {/* A11：零结果不是死胡同——两个真出口放最前（AI 找站带词自动问、
           投稿收录带词预填），再往下才是换词/热门词/全网穿透这些次要出口 */}
       {q ? <ZeroResultActions query={q} /> : null}
+      {/* 相关分类：中枢从查询里理解到的分类（@算子或分类词）才给——没有推断
+          出来不硬凑分类；点进去是该分类的全部站点（不带原查询词，带原词
+          会把用户送回同一个零结果）。 */}
+      {inferredCategory ? (
+        <div className="space-y-1.5">
+          <p className="text-xs text-muted-foreground">相关分类</p>
+          <div className="flex flex-wrap gap-1.5">
+            <Link
+              href={searchHref({ category: inferredCategory })}
+              className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
+            >
+              浏览「{inferredCategory}」分类的全部站点
+            </Link>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {page > 1 ? (
           <Link href={searchHref({ q, tag })} className="text-xs text-primary hover:underline">
@@ -311,6 +337,31 @@ function EmptyResults({
               </Link>
             ))}
           </div>
+        </div>
+      ) : null}
+      {/* 为你推荐（research #2）：零结果页不能只剩「没有」——热榜站点是现成
+          的兜底内容，复用正常结果行的 ResultRow（命中即 HubSearchHit，
+          contributions 为空，不标任何通道）。取数失败时 recommended 为空，
+          整块不渲染，不谎称「没有推荐」。 */}
+      {recommended.length > 0 ? (
+        <div className="space-y-2 border-t border-border/60 pt-3">
+          <p className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            为你推荐：今日热榜站点
+          </p>
+          <ul className="space-y-2">
+            {recommended.map((site) => (
+              <ResultRow
+                key={site.id}
+                hit={{ siteId: site.id, score: 0, contributions: {}, site }}
+                q={q}
+                externalRel={externalRel}
+              />
+            ))}
+          </ul>
+          <Link href="/hot" className="inline-block text-xs text-primary hover:underline">
+            查看完整热榜 →
+          </Link>
         </div>
       ) : null}
       {q ? (
@@ -476,6 +527,7 @@ export function SearchResults({
   result,
   failed,
   unavailable,
+  recommended = [],
   externalRel = 'nofollow noopener noreferrer',
 }: SearchResultsProps) {
   const hits = result?.hits ?? []
@@ -714,6 +766,9 @@ export function SearchResults({
                   tag={tagApplied ? tag : null}
                   suggestions={suggestions}
                   popular={popular}
+                  inferredCategory={result?.inferredCategory ?? null}
+                  recommended={recommended}
+                  externalRel={externalRel}
                 />
               ) : null}
 

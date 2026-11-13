@@ -255,7 +255,7 @@ const MOUSE_ONLY_ALLOWLIST: MouseOnlyAllowlistEntry[] = [
       'title="速览与行动"',
     ],
     why:
-      "「快照自愈」徽标在卡片链接内部（<a> 里嵌 <button> 属于非法 HTML）；" +
+      "平替徽标在卡片链接内部（<a> 里嵌 <button> 属于非法 HTML）；" +
       "它的动作有键盘入口：主链接上的 Space→onPeek，→ 进入操作区后可达 " +
       "「速览与行动」按钮。2026-10-24 起卡片改为单一 Tab 入口（根节点不再 tabIndex=0），" +
       "证据随之从根节点迁移到主链接。",
@@ -311,7 +311,10 @@ describe("全仓扫描：能点的地方键盘也要能到", () => {
 
   it("扫描确实扫到了东西（正则写错导致空跑时要立刻发现）", () => {
     expect(sources.length).toBeGreaterThan(60);
-    expect(hits.length).toBeGreaterThan(5);
+    // 下限 5 是当前真实命中数：死链存档徽标随卡片徽标下线而移除后，全仓只剩
+    // 5 处纯鼠标点击（见白名单）。若命中数再掉，要么是扫描坏了，要么是又有
+    // 一处被改成了真按钮——两种情况都值得停下来看一眼再改这个数。
+    expect(hits.length).toBeGreaterThanOrEqual(5);
   });
 
   it("每一处都必须在白名单里说明「键盘怎么做同一件事」", () => {

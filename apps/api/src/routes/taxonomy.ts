@@ -20,8 +20,12 @@ export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     const status = query.status;
     const kind = query.kind;
     const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
+    // Keyset 游标（M12）：`?cursor=` 走 WHERE (confidence,created_at,id) 谓词，
+    // 不再 OFFSET；nextCursor 随页返回，无下一页时为 null。无效游标由全局
+    // 错误处理器映射成 400 INVALID_CURSOR。
+    const cursor = typeof query.cursor === "string" && query.cursor ? query.cursor : undefined;
 
-    return ctx.repo.listTaxonomyProposals({ status, kind, limit, offset });
+    return ctx.repo.listTaxonomyProposals({ status, kind, limit, offset, cursor });
   });
 
   /**

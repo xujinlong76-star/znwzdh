@@ -173,7 +173,7 @@ export function CategoryQuickJumpBar({
               type="button"
               onClick={onToggleAllCollapsed}
               className={cn(
-                "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 mr-1",
+                "shrink-0 inline-flex min-h-11 items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 mr-1",
                 isAllCollapsed
                   ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
                   : "bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/70"
@@ -192,7 +192,7 @@ export function CategoryQuickJumpBar({
               id="pill-quick-access"
               onClick={() => scrollToId('quick-access-tray')}
               className={cn(
-                "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150",
+                "shrink-0 inline-flex min-h-11 items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150",
                 activeId === 'quick-access-tray'
                   ? "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400 font-semibold"
                   : "bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/70"
@@ -215,7 +215,7 @@ export function CategoryQuickJumpBar({
                 // 桌面端（lg+，左侧栏在场）隐藏分类芯片：与侧栏逐项重复是四层导航冗余的第三层；
                 // 移动端没有侧栏，芯片仍是唯一的分类直达入口，保持原样。
                 className={cn(
-                  "shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs transition-all duration-150 border lg:hidden",
+                  "shrink-0 inline-flex min-h-11 items-center gap-1 px-2.5 py-1 rounded-full text-xs transition-all duration-150 border lg:hidden",
                   isActive
                     ? "bg-primary text-primary-foreground border-primary font-medium shadow-2xs scale-102"
                     : "bg-muted/40 border-border/40 text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted/70"
@@ -241,7 +241,7 @@ export function CategoryQuickJumpBar({
           {/* 直达技术视频 */}
           <Link
             href="/videos"
-            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 transition-all duration-150 ml-1"
+            className="shrink-0 inline-flex min-h-11 items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 transition-all duration-150 ml-1"
           >
             <MonitorPlay className="h-3 w-3" />
             <span>精选视频</span>

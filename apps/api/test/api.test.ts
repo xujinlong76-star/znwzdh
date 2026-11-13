@@ -1024,7 +1024,9 @@ describe("收藏夹", () => {
 
   it("缺少身份标识时明确报错而不是静默返回空", async () => {
     const res = await app.inject({ method: "GET", url: "/api/favorites" });
-    expect(res.json().error).toContain("userId");
+    // M13 统一错误包络：error 是机器码，文案在 message。
+    expect(res.json().error).toBe("BAD_REQUEST");
+    expect(res.json().message).toContain("userId");
   });
 
   it("收藏不存在的站点返回 404", async () => {

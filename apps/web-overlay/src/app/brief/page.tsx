@@ -6,6 +6,13 @@ import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { safeHref } from '@/lib/safe-url'
 import { pageShareMetadata } from '@/lib/seo/metadata'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Button } from '@/registry/new-york/ui/button'
+import {
+  hotlistAllEmptyCopy,
+  hotlistEmptyVariant,
+  hotlistSourceEmptyCopy,
+} from '@/lib/empty-states'
 import {
   formatClock,
   formatHotValue,
@@ -15,13 +22,15 @@ import {
   type HubHotlistSource,
 } from '@/lib/server/brief'
 import BriefWatch from './brief-watch'
+import BriefResurface from './brief-resurface'
+import DailyFocus from '@/components/daily-focus'
 
 /**
  * 每日简报页（/brief，服务端渲染）。
  *
  * 一页看完今天：小猫猫开场白（锚定真实条目生成、失败走模板）、在追剧
- * 今日提醒（客户端岛按登录身份补）、今日热榜精选、全网热榜（多源并列）、
- * 站内新收录。全部数据来自中枢的缓存管道（热榜每小时抓取、简报按天
+ * 今日提醒（客户端岛按登录身份补）、今日重温（客户端岛按本机收藏现算）、
+ * 今日热榜精选、全网热榜（多源并列）、站内新收录。全部数据来自中枢的缓存管道（热榜每小时抓取、简报按天
  * 组版落库），本页不现算、不现抓；中枢不可达时降级为说明壳并 noindex，
  * 不拿空榜单冒充内容。
  */
@@ -98,7 +107,18 @@ function SourceColumn({ source }: { source: HubHotlistSource }) {
           ))}
         </ol>
       ) : (
-        <p className="py-4 text-center text-xs text-muted-foreground">暂无条目</p>
+        <div className="py-4 text-center space-y-2">
+          <p className="text-xs text-muted-foreground">{hotlistSourceEmptyCopy(source).why}</p>
+          <a
+            href={safeHref(source.homeUrl)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            {hotlistSourceEmptyCopy(source).actionLabel}
+            <ExternalLink className="h-3 w-3" aria-hidden />
+          </a>
+        </div>
       )}
     </section>
   )
@@ -106,6 +126,10 @@ function SourceColumn({ source }: { source: HubHotlistSource }) {
 
 export default async function BriefPage() {
   const [brief, hotlist] = await Promise.all([loadBriefToday(), loadHotlist()])
+  // 全源皆空才是空态：中枢不可达（hotlist 为 null）是失败，走上面的降级壳；
+  // 任一源有条目也不是空态。只有全空时才用解释 + 去 /hot 的出口代替一排死盒子。
+  const hotlistVariant = hotlistEmptyVariant(hotlist)
+  const hotlistCopy = hotlistVariant ? hotlistAllEmptyCopy(hotlistVariant) : null
 
   return (
     <Container as="main" id="main-content">
@@ -116,6 +140,10 @@ export default async function BriefPage() {
             { label: '每日简报', path: '/brief' },
           ]}
         />
+
+        {/* 今日专注是简报的第一块内容：本机岛，挂载前不渲染、SSR 不带用户数据。
+            放在条件之外——哪怕中枢不可达、简报降级成说明壳，今天的专注也还在。 */}
+        <DailyFocus />
 
         {!brief && !hotlist ? (
           <section className="rounded-xl border bg-card p-6 text-center">
@@ -145,6 +173,8 @@ export default async function BriefPage() {
             ) : null}
 
             <BriefWatch />
+
+            <BriefResurface />
 
             {brief && brief.hotPicks.length > 0 ? (
               <section aria-label="今日热榜精选">
@@ -205,11 +235,29 @@ export default async function BriefPage() {
                 <p className="mb-3 text-xs text-muted-foreground">
                   每小时更新一次；只汇总各平台的标题与链接，点任意条目直达原平台。各源热度口径不同，只并列展示、不混算总榜。
                 </p>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {hotlist.sources.map((source) => (
-                    <SourceColumn key={source.id} source={source} />
-                  ))}
-                </div>
+                {hotlistCopy ? (
+                  <EmptyState
+                    icon={Flame}
+                    iconTone="warning"
+                    title={hotlistCopy.title}
+                    description={
+                      <>
+                        {hotlistCopy.why} {hotlistCopy.next}
+                      </>
+                    }
+                    action={
+                      <Button asChild size="sm" variant="outline" className="text-xs">
+                        <Link href={hotlistCopy.actionHref}>{hotlistCopy.actionLabel}</Link>
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {hotlist.sources.map((source) => (
+                      <SourceColumn key={source.id} source={source} />
+                    ))}
+                  </div>
+                )}
                 {hotlist.uncovered.length > 0 ? (
                   <div className="mt-4 rounded-xl border border-dashed p-4 text-xs leading-relaxed text-muted-foreground">
                     <p className="mb-1 font-medium text-foreground">暂未覆盖的平台</p>

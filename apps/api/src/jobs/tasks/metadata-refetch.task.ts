@@ -10,7 +10,7 @@ import { sanitizeIconUrl } from "@navhub/core";
 import type { AppContext } from "../../context.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../../llm-quota.ts";
 import { resolveLlm, enrichLlmOf } from "../../llm-config.ts";
-import { createEnrichUsageCallback } from "../../llm-usage.ts";
+import { callLlm } from "../../llm-usage.ts";
 import { indexSite } from "../../index-site.ts";
 
 export async function handleRefetchMetadata(
@@ -30,7 +30,30 @@ export async function handleRefetchMetadata(
     llm: resolved ? enrichLlmOf(resolved) : undefined,
     guard: ctx.config.fetch,
     heuristicOnly: !useLlm,
-    onLlmCall: resolved ? createEnrichUsageCallback(ctx, resolved.source, null, "job_enrich") : undefined,
+    /**
+     * P6：富化调用走统一网关 callLlm，不再直连 chatCompletion + onLlmCall 回调。
+     * 用量（scenario job_enrich）、备用池轮换、思考记账都由网关负责；
+     * onLlmCall 不再传——网关自己记用量，两边都记会让一次调用在大盘上出现两次。
+     * 备用池轮换仍由 enrichUrl 的外层循环驱动（每跳一次网关调用），这里
+     * fallbacks 传空，避免网关内部再轮换一次造成重复尝试。
+     */
+    llmCall: resolved
+      ? (provider, opts) =>
+          callLlm(
+            ctx,
+            { provider, fallbacks: [], source: resolved.source },
+            {
+              scenario: "job_enrich",
+              identity: null,
+              messages: opts.messages,
+              temperature: opts.temperature,
+              maxTokens: opts.maxTokens,
+              json: opts.json,
+              thinking: opts.thinking,
+              deadlineAt: opts.deadlineAt,
+            },
+          )
+      : undefined,
   }).finally(() => settleLlmQuota(ctx, hold));
 
   const stale = 30 * 86_400_000;

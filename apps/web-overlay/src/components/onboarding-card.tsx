@@ -108,7 +108,7 @@ export function OnboardingCard() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0 text-muted-foreground"
+          className="h-11 w-11 shrink-0 text-muted-foreground"
           onClick={dismiss}
           aria-label="关闭新手引导"
           title="关闭（不再显示）"
@@ -126,7 +126,7 @@ export function OnboardingCard() {
           <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
             支持 Chrome / Edge / Firefox 导出的 HTML、OneTab 文本与 Markdown。
           </p>
-          <Button asChild size="sm" variant="outline" className="mt-2 h-7 gap-1 text-xs">
+          <Button asChild size="sm" variant="outline" className="mt-2 min-h-11 gap-1 text-xs">
             <Link href="/import">
               去导入
               <ArrowRight className="h-3 w-3" />
@@ -146,7 +146,7 @@ export function OnboardingCard() {
           <Button
             size="sm"
             variant="outline"
-            className="mt-2 h-7 gap-1 text-xs"
+            className="mt-2 min-h-11 gap-1 text-xs"
             onClick={() => {
               // 不实现全局快捷键分发：直接聚焦搜索输入框，语义等价且更可靠
               const input = document.querySelector<HTMLInputElement>('input[data-search-input]')
@@ -166,7 +166,7 @@ export function OnboardingCard() {
           <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
             卡片上的星标加入收藏；下次从「我的收藏」一键打开。
           </p>
-          <Button asChild size="sm" variant="outline" className="mt-2 h-7 gap-1 text-xs">
+          <Button asChild size="sm" variant="outline" className="mt-2 min-h-11 gap-1 text-xs">
             <Link href="/favorites">
               看看收藏
               <ArrowRight className="h-3 w-3" />
@@ -176,7 +176,7 @@ export function OnboardingCard() {
       </ol>
 
       <div className="mt-3 flex justify-end">
-        <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={dismiss}>
+        <Button variant="ghost" size="sm" className="min-h-11 text-xs text-muted-foreground" onClick={dismiss}>
           我知道了，不再显示
         </Button>
       </div>

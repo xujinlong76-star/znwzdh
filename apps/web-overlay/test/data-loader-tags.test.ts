@@ -10,8 +10,10 @@
  *   2. 没有 tags 时保持 undefined，不硬造空数组（别处靠 `item.tags?.` 判空）；
  *   3. 其余字段行为不变（videoConfig 类型兜底等既有语义不被顺手破坏）。
  *
- * 注意：只放行 tags。relations / actions / liveMetrics / health 仍然裁掉——
- * 首页管线没有它们的增补来源，放了也是 undefined（预存状态，不在本批范围）。
+ * 注意：只放行 tags 与 health。relations / actions / liveMetrics 仍然裁掉——
+ * 首页管线没有它们的增补来源，放了也是 undefined。health 是死链防御 #4
+ * 放行的：卡片的死链徽标（dead-link.ts）据此判定，loader 再裁掉它徽标就
+ * 永远看不到巡检结果；没有该字段时保持 undefined，不影响其它渲染。
  */
 import { describe, expect, it } from "vitest";
 

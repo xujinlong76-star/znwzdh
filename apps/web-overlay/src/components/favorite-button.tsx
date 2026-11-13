@@ -32,7 +32,10 @@ export function FavoriteButton({ site, className, tabIndex, cardAction }: Favori
       className={
         (cardAction
           ? 'inline-flex items-center justify-center h-6.5 w-6.5 rounded-full transition-colors hover:bg-accent '
-          : 'inline-flex items-center justify-center rounded-md p-1.5 transition-colors hover:bg-muted ') +
+          : // 独立使用（搜索结果、热榜、详情页、速览对话框）：行高足够，直接给足 44px；
+            // 卡片内星标不动——卡片操作区是 26px 间距的密集按钮簇，44px 命中区会互相
+            // 覆盖邻钮（见 mobile-touch-targets.test.ts 的跟进项），需另做布局决策。
+            'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-1.5 transition-colors hover:bg-muted ') +
         (className ?? '')
       }
       onClick={(e) => {

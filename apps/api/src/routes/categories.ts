@@ -63,6 +63,10 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         .object({
           limit: z.coerce.number().optional(),
           offset: z.coerce.number().optional(),
+          // Keyset 游标（M12）：传了就走 WHERE (sort,title,id) 谓词，不再 OFFSET；
+          // nextCursor 随页返回，无下一页时为 null。无效游标由全局错误处理器
+          // 映射成 400 INVALID_CURSOR。
+          cursor: z.string().max(4096).optional(),
           level: z.coerce.number().optional(),
           parentId: z
             .string()

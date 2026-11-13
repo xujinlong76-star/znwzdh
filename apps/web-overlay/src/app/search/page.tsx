@@ -11,7 +11,10 @@ import { hubGet } from '@/lib/server/hub'
 import type { FacetGroup } from '@/components/search-facet-bar'
 import { readSiteSettings } from '@/lib/site-config-source'
 import { externalLinkRelAttr } from '@/lib/site-settings'
+import type { HubSite } from '@/lib/navhub-api'
 import { SearchResults } from './search-results'
+
+type RankHit = { site: HubSite }
 
 /**
  * 全站搜索结果页（可分享 / 可回退的 URL 状态）。
@@ -69,7 +72,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const facets = normalizeSearchFacets(sp)
   const hasFilter = q || tag || category || Object.keys(facets).length > 0
 
-  const [{ result, failed, unavailable }, facetGroups] = await Promise.all([
+  const [{ result, failed, unavailable }, facetGroups, trending] = await Promise.all([
     hasFilter
       ? loadSearchPage(q, page, tag, { category, facets })
       : Promise.resolve({ result: null, failed: false, unavailable: [] }),
@@ -79,7 +82,16 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       '/api/facets' + (category ? '?categoryId=' + encodeURIComponent(category) : ''),
       60,
     ),
+    // 零结果救援的「为你推荐」：与 /hot 页同一榜单（/api/rank/trending，60s 缓存）。
+    // 只在有筛选条件时取——空搜索页不渲染零结果区，取了也是浪费一次中枢往返；
+    // 取数失败（null）时推荐区整块不渲染，零结果页退回原有出口。
+    hasFilter
+      ? hubGet<{ hits: RankHit[] }>('/api/rank/trending?limit=6', 60)
+      : Promise.resolve(null),
   ])
+  const recommended = (trending?.hits ?? [])
+    .map((h) => h.site)
+    .filter((s): s is HubSite => Boolean(s))
   // 外链权重策略与首页卡片同源（站点级设置，缺省 nofollow）；readSiteSettings 有进程内缓存。
   const externalRel = externalLinkRelAttr((await readSiteSettings()).navigation.externalLinkRel)
 
@@ -94,6 +106,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       result={result}
       failed={failed}
       unavailable={unavailable}
+      recommended={recommended}
       externalRel={externalRel}
     />
   )

@@ -50,16 +50,16 @@ auditConfig:
 # 的约束随之解除，不再需要 overrides 钉版本。若未来再出现大版本分裂，
 # 在这里恢复 override 前先读 docs/UPGRADE-PROPOSAL-V3-2026-10-19.md 的实测记录。
 minimumReleaseAgeExclude:
-  - '@next/env@16.4.2'
-  - '@next/swc-darwin-arm64@16.4.2'
-  - '@next/swc-darwin-x64@16.4.2'
-  - '@next/swc-linux-arm64-gnu@16.4.2'
-  - '@next/swc-linux-arm64-musl@16.4.2'
-  - '@next/swc-linux-x64-gnu@16.4.2'
-  - '@next/swc-linux-x64-musl@16.4.2'
-  - '@next/swc-win32-arm64-msvc@16.4.2'
-  - '@next/swc-win32-x64-msvc@16.4.2'
-  - next@16.4.2
+  - '@next/env@16.4.5'
+  - '@next/swc-darwin-arm64@16.4.5'
+  - '@next/swc-darwin-x64@16.4.5'
+  - '@next/swc-linux-arm64-gnu@16.4.5'
+  - '@next/swc-linux-arm64-musl@16.4.5'
+  - '@next/swc-linux-x64-gnu@16.4.5'
+  - '@next/swc-linux-x64-musl@16.4.5'
+  - '@next/swc-win32-arm64-msvc@16.4.5'
+  - '@next/swc-win32-x64-msvc@16.4.5'
+  - next@16.4.5
 
 # ---------------------------------------------------------------------------
 # overrides 到期台账（review-by）
@@ -103,7 +103,7 @@ overrides:
   # body-parser <2.4.0 的高危 DoS（生产依赖）：express@5.3.0（经 MCP SDK）仍解析到
   # 2.3.0，而 ci.yml 的 `audit --prod --audit-level high` 因此变红。统一到修复版。
   body-parser: '>=2.4.0'
-  next: 16.4.2
+  next: 16.4.5
   tinypool: '>=2.1.2'
   postcss: '>=8.4.31'
   ws: '>=8.21.0'

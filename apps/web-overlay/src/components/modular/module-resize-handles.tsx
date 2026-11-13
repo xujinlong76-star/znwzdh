@@ -261,6 +261,177 @@ export function ModuleResizeHandles({
     [onReset]
   )
 
+  /**
+   * 键盘缩放（WCAG 2.2 2.5.7 / 2.1.1）：手柄现在是 role=slider 的可聚焦控件，
+   * 触屏照旧用指针拖拽，键盘用户用方向键按步长缩放、Enter 恢复默认尺寸。
+   * 会话语义与指针拖拽一致：第一次按键时 onBeginResize 压一份撤销快照，
+   * 过程中的每步只走 onResizeChange(next, false)（父级不记历史），失焦 /
+   * Enter / Esc 时以 isFinal=true 收尾——一次键盘缩放 = 一步撤销。
+   */
+  const kbdSessionRef = useRef(false)
+  const kbdDimsRef = useRef<{ colSpan: number; heightPx?: number; rowSpan?: number } | null>(null)
+
+  const beginKeyboardSession = useCallback(() => {
+    if (kbdSessionRef.current) return
+    kbdSessionRef.current = true
+    const measured = moduleRef.current?.getBoundingClientRect().height || 360
+    const seedHeight =
+      heightPx ??
+      Math.min(
+        maxHeightPx,
+        Math.max(minHeightPx, Math.round(measured > 760 ? 640 : measured)),
+      )
+    kbdDimsRef.current = {
+      colSpan: liveDims?.colSpan ?? colSpan,
+      heightPx: liveDims?.heightPx ?? (rowSpan !== undefined ? undefined : seedHeight),
+      rowSpan: liveDims?.rowSpan ?? rowSpan,
+    }
+    onBeginResize?.()
+  }, [colSpan, heightPx, liveDims, maxHeightPx, minHeightPx, moduleRef, onBeginResize, rowSpan])
+
+  const endKeyboardSession = useCallback(() => {
+    if (!kbdSessionRef.current) return
+    kbdSessionRef.current = false
+    const dims = kbdDimsRef.current
+    kbdDimsRef.current = null
+    // 父级收到 isFinal=true 时不重复应用（最后一步中间态已生效），
+    // 这里只是与指针抬手对称地收尾一次连续交互。
+    if (dims) {
+      onResizeChange(
+        {
+          colSpan: dims.colSpan,
+          ...(rowSpan !== undefined ? { rowSpan: dims.rowSpan } : { heightPx: dims.heightPx }),
+        },
+        true,
+      )
+    }
+  }, [onResizeChange, rowSpan])
+
+  const applyKeyboardDims = useCallback(
+    (next: { colSpan: number; heightPx?: number; rowSpan?: number }) => {
+      beginKeyboardSession()
+      const clamped: { colSpan: number; heightPx?: number; rowSpan?: number } = {
+        colSpan: clamp(next.colSpan, minColSpan, maxColSpan),
+        heightPx:
+          rowSpan !== undefined
+            ? undefined
+            : next.heightPx === undefined
+              ? undefined
+              : clamp(next.heightPx, minHeightPx, maxHeightPx),
+        rowSpan:
+          rowSpan !== undefined
+            ? clamp(next.rowSpan ?? 1, minRowSpan, maxRowSpan)
+            : undefined,
+      }
+      const cur = kbdDimsRef.current
+      if (
+        cur &&
+        cur.colSpan === clamped.colSpan &&
+        cur.heightPx === clamped.heightPx &&
+        cur.rowSpan === clamped.rowSpan
+      ) {
+        return
+      }
+      kbdDimsRef.current = clamped
+      setLiveDims(clamped)
+      onResizeChange(
+        {
+          colSpan: clamped.colSpan,
+          ...(rowSpan !== undefined ? { rowSpan: clamped.rowSpan } : { heightPx: clamped.heightPx }),
+        },
+        false,
+      )
+    },
+    [beginKeyboardSession, maxColSpan, maxHeightPx, maxRowSpan, minColSpan, minHeightPx, minRowSpan, onResizeChange, rowSpan],
+  )
+
+  const handleHandleKeyDown = useCallback(
+    (dir: ResizeDirection) => (e: React.KeyboardEvent) => {
+      const horizontal = dir.includes('e') || dir.includes('w')
+      const vertical = dir.includes('n') || dir.includes('s')
+      const signX = dir.includes('w') ? -1 : 1
+      const signY = dir.includes('n') ? -1 : 1
+      const cur = kbdDimsRef.current ?? liveDims ?? { colSpan, heightPx, rowSpan }
+      const useRowMode = rowSpan !== undefined
+      switch (e.key) {
+        case 'ArrowRight':
+          if (!horizontal) return
+          e.preventDefault()
+          applyKeyboardDims({ ...cur, colSpan: cur.colSpan + signX })
+          break
+        case 'ArrowLeft':
+          if (!horizontal) return
+          e.preventDefault()
+          applyKeyboardDims({ ...cur, colSpan: cur.colSpan - signX })
+          break
+        case 'ArrowDown':
+          if (!vertical) return
+          e.preventDefault()
+          applyKeyboardDims({
+            ...cur,
+            rowSpan: useRowMode ? (cur.rowSpan ?? 1) + signY : cur.rowSpan,
+            heightPx: useRowMode ? cur.heightPx : (cur.heightPx ?? 360) + 40 * signY,
+          })
+          break
+        case 'ArrowUp':
+          if (!vertical) return
+          e.preventDefault()
+          applyKeyboardDims({
+            ...cur,
+            rowSpan: useRowMode ? (cur.rowSpan ?? 1) - signY : cur.rowSpan,
+            heightPx: useRowMode ? cur.heightPx : (cur.heightPx ?? 360) - 40 * signY,
+          })
+          break
+        case 'Home':
+          e.preventDefault()
+          applyKeyboardDims({
+            ...cur,
+            colSpan: minColSpan,
+            rowSpan: useRowMode ? minRowSpan : cur.rowSpan,
+            heightPx: useRowMode ? cur.heightPx : minHeightPx,
+          })
+          break
+        case 'End':
+          e.preventDefault()
+          applyKeyboardDims({
+            ...cur,
+            colSpan: maxColSpan,
+            rowSpan: useRowMode ? maxRowSpan : cur.rowSpan,
+            heightPx: useRowMode ? cur.heightPx : maxHeightPx,
+          })
+          break
+        case 'Enter':
+          // 键盘版「双击恢复默认尺寸」：触屏没有双击，键盘也没有，
+          // Enter 就是两边的共同等价操作（title 与 aria-label 里写明）。
+          e.preventDefault()
+          endKeyboardSession()
+          onReset?.()
+          break
+        case 'Escape':
+          e.preventDefault()
+          endKeyboardSession()
+          break
+        default:
+          break
+      }
+    },
+    [
+      applyKeyboardDims,
+      colSpan,
+      endKeyboardSession,
+      heightPx,
+      liveDims,
+      maxColSpan,
+      maxHeightPx,
+      maxRowSpan,
+      minColSpan,
+      minHeightPx,
+      minRowSpan,
+      onReset,
+      rowSpan,
+    ],
+  )
+
   const displayCol = liveDims?.colSpan ?? colSpan
   const displayHeight = liveDims?.heightPx ?? heightPx
   const displayRow = liveDims?.rowSpan ?? rowSpan
@@ -305,16 +476,27 @@ export function ModuleResizeHandles({
         </div>
       )}
 
-      {/* 左边缘：左右拖拉调整宽度 (West) — 置于盒内 left-0 防止 contain:paint 裁剪 */}
+      {/* 左边缘：左右拖拉调整宽度 (West) — 置于盒内 left-0 防止 contain:paint 裁剪。
+          手柄是 role=slider 的可聚焦控件（不再 aria-hidden）：鼠标/触屏拖拽、
+          键盘 ←/→ 步进、Enter 恢复默认尺寸；命中区 24px 宽，里面细条只是视觉指示。 */}
       <div
-        aria-hidden="true"
         data-resize-handle="w"
+        tabIndex={0}
+        role="slider"
+        aria-label={`调整模块宽度，当前 ${displayCol}/12 列（方向键调整，Enter 恢复默认尺寸）`}
+        aria-orientation="horizontal"
+        aria-valuemin={minColSpan}
+        aria-valuemax={maxColSpan}
+        aria-valuenow={displayCol}
+        aria-valuetext={`${displayCol}/12 列`}
         onPointerDown={(e) => startResize('w', e)}
         onDoubleClick={handleDoubleClick}
+        onKeyDown={handleHandleKeyDown('w')}
+        onBlur={endKeyboardSession}
         style={{ touchAction: 'none' }}
-        title="左右拖拉左边框调整模块宽度（双击恢复默认尺寸）"
+        title="左右拖拉左边框调整模块宽度（双击恢复默认尺寸；键盘：聚焦后按 ←/→ 调整，Enter 恢复默认）"
         className={cn(
-          'group/handle-w absolute inset-y-2 left-0 w-3 z-30 cursor-ew-resize flex flex-col items-start justify-between py-8 pl-0.5 select-none transition-opacity',
+          'group/handle-w absolute inset-y-2 left-0 w-6 z-30 cursor-ew-resize flex flex-col items-start justify-between py-8 pl-0.5 select-none transition-opacity focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary',
           isEditing || activeDir === 'w'
             ? 'opacity-100'
             : 'opacity-0 group-hover:opacity-100 hover:opacity-100'
@@ -344,14 +526,23 @@ export function ModuleResizeHandles({
 
       {/* 右边缘：左右拖拉调整宽度 (East) — 置于盒内 right-0 防止 contain:paint 裁剪 */}
       <div
-        aria-hidden="true"
         data-resize-handle="e"
+        tabIndex={0}
+        role="slider"
+        aria-label={`调整模块宽度，当前 ${displayCol}/12 列（方向键调整，Enter 恢复默认尺寸）`}
+        aria-orientation="horizontal"
+        aria-valuemin={minColSpan}
+        aria-valuemax={maxColSpan}
+        aria-valuenow={displayCol}
+        aria-valuetext={`${displayCol}/12 列`}
         onPointerDown={(e) => startResize('e', e)}
         onDoubleClick={handleDoubleClick}
+        onKeyDown={handleHandleKeyDown('e')}
+        onBlur={endKeyboardSession}
         style={{ touchAction: 'none' }}
-        title="左右拖拉右边框调整模块宽度（双击恢复默认尺寸）"
+        title="左右拖拉右边框调整模块宽度（双击恢复默认尺寸；键盘：聚焦后按 ←/→ 调整，Enter 恢复默认）"
         className={cn(
-          'group/handle-e absolute inset-y-2 right-0 w-3 z-30 cursor-ew-resize flex flex-col items-end justify-between py-8 pr-0.5 select-none transition-opacity',
+          'group/handle-e absolute inset-y-2 right-0 w-6 z-30 cursor-ew-resize flex flex-col items-end justify-between py-8 pr-0.5 select-none transition-opacity focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary',
           isEditing || activeDir === 'e'
             ? 'opacity-100'
             : 'opacity-0 group-hover:opacity-100 hover:opacity-100'
@@ -381,14 +572,23 @@ export function ModuleResizeHandles({
 
       {/* 上边缘：上下拖拉调整高度 (North) — 置于盒内 top-0 */}
       <div
-        aria-hidden="true"
         data-resize-handle="n"
+        tabIndex={0}
+        role="slider"
+        aria-label={`调整模块高度，当前${displayRow !== undefined ? ` ${displayRow} 行` : displayHeight ? `上限 ${displayHeight}px` : '自适应高度'}（方向键调整，Enter 恢复默认尺寸）`}
+        aria-orientation="vertical"
+        aria-valuemin={displayRow !== undefined ? minRowSpan : minHeightPx}
+        aria-valuemax={displayRow !== undefined ? maxRowSpan : maxHeightPx}
+        aria-valuenow={displayRow ?? displayHeight}
+        aria-valuetext={displayRow !== undefined ? `高 ${displayRow} 行` : displayHeight ? `高度上限 ${displayHeight}px` : '自适应高度'}
         onPointerDown={(e) => startResize('n', e)}
         onDoubleClick={handleDoubleClick}
+        onKeyDown={handleHandleKeyDown('n')}
+        onBlur={endKeyboardSession}
         style={{ touchAction: 'none' }}
-        title="上下拖拉上边框调整模块高度（双击恢复默认尺寸）"
+        title="上下拖拉上边框调整模块高度（双击恢复默认尺寸；键盘：聚焦后按 ↑/↓ 调整，Enter 恢复默认）"
         className={cn(
-          'group/handle-n absolute inset-x-8 top-0 h-3 z-30 cursor-ns-resize flex items-start justify-center pt-0.5 select-none transition-opacity',
+          'group/handle-n absolute inset-x-8 top-0 h-6 z-30 cursor-ns-resize flex items-start justify-center pt-0.5 select-none transition-opacity focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary',
           isEditing || activeDir === 'n'
             ? 'opacity-100'
             : 'opacity-0 group-hover:opacity-100 hover:opacity-100'
@@ -408,14 +608,23 @@ export function ModuleResizeHandles({
 
       {/* 下边缘：上下拖拉调整高度 (South) — 置于盒内 bottom-0 */}
       <div
-        aria-hidden="true"
         data-resize-handle="s"
+        tabIndex={0}
+        role="slider"
+        aria-label={`调整模块高度，当前${displayRow !== undefined ? ` ${displayRow} 行` : displayHeight ? `上限 ${displayHeight}px` : '自适应高度'}（方向键调整，Enter 恢复默认尺寸）`}
+        aria-orientation="vertical"
+        aria-valuemin={displayRow !== undefined ? minRowSpan : minHeightPx}
+        aria-valuemax={displayRow !== undefined ? maxRowSpan : maxHeightPx}
+        aria-valuenow={displayRow ?? displayHeight}
+        aria-valuetext={displayRow !== undefined ? `高 ${displayRow} 行` : displayHeight ? `高度上限 ${displayHeight}px` : '自适应高度'}
         onPointerDown={(e) => startResize('s', e)}
         onDoubleClick={handleDoubleClick}
+        onKeyDown={handleHandleKeyDown('s')}
+        onBlur={endKeyboardSession}
         style={{ touchAction: 'none' }}
-        title="上下拖拉下边框调整模块窗口高度（双击恢复自适应高度）"
+        title="上下拖拉下边框调整模块窗口高度（双击恢复自适应高度；键盘：聚焦后按 ↑/↓ 调整，Enter 恢复默认）"
         className={cn(
-          'group/handle-s absolute inset-x-8 bottom-0 h-3.5 z-30 cursor-ns-resize flex items-end justify-center pb-0.5 select-none transition-opacity',
+          'group/handle-s absolute inset-x-8 bottom-0 h-6 z-30 cursor-ns-resize flex items-end justify-center pb-0.5 select-none transition-opacity focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary',
           isEditing || activeDir === 's'
             ? 'opacity-100'
             : 'opacity-0 group-hover:opacity-100 hover:opacity-100'
@@ -435,14 +644,23 @@ export function ModuleResizeHandles({
 
       {/* 左下角：双向自由缩放手柄 (South-West) */}
       <div
-        aria-hidden="true"
         data-resize-handle="sw"
+        tabIndex={0}
+        role="slider"
+        aria-label={`自由缩放模块，当前 ${displayCol} 列 × ${displayRow !== undefined ? `${displayRow} 行` : displayHeight ? `${displayHeight}px` : '自适应高度'}（方向键调整宽高，Enter 恢复默认尺寸）`}
+        aria-orientation="horizontal"
+        aria-valuemin={minColSpan}
+        aria-valuemax={maxColSpan}
+        aria-valuenow={displayCol}
+        aria-valuetext={`宽 ${displayCol}/12 列，高 ${displayRow !== undefined ? `${displayRow} 行` : displayHeight ? `${displayHeight}px` : '自适应'}`}
         onPointerDown={(e) => startResize('sw', e)}
         onDoubleClick={handleDoubleClick}
+        onKeyDown={handleHandleKeyDown('sw')}
+        onBlur={endKeyboardSession}
         style={{ touchAction: 'none' }}
-        title="按住左下角同时左右上下拖拉窗口大小（双击重置）"
+        title="按住左下角同时左右上下拖拉窗口大小（双击重置；键盘：聚焦后按方向键调整，Enter 恢复默认）"
         className={cn(
-          'group/handle-sw absolute bottom-0 left-0 w-4 h-4 z-35 cursor-nesw-resize flex items-end justify-start p-1 select-none transition-opacity',
+          'group/handle-sw absolute bottom-0 left-0 w-6 h-6 z-35 cursor-nesw-resize flex items-end justify-start p-1 select-none transition-opacity focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary',
           isEditing || activeDir === 'sw'
             ? 'opacity-100'
             : 'opacity-0 group-hover:opacity-100 hover:opacity-100'
@@ -460,14 +678,23 @@ export function ModuleResizeHandles({
 
       {/* 右下角：双向自由缩放手柄 (South-East) */}
       <div
-        aria-hidden="true"
         data-resize-handle="se"
+        tabIndex={0}
+        role="slider"
+        aria-label={`自由缩放模块，当前 ${displayCol} 列 × ${displayRow !== undefined ? `${displayRow} 行` : displayHeight ? `${displayHeight}px` : '自适应高度'}（方向键调整宽高，Enter 恢复默认尺寸）`}
+        aria-orientation="horizontal"
+        aria-valuemin={minColSpan}
+        aria-valuemax={maxColSpan}
+        aria-valuenow={displayCol}
+        aria-valuetext={`宽 ${displayCol}/12 列，高 ${displayRow !== undefined ? `${displayRow} 行` : displayHeight ? `${displayHeight}px` : '自适应'}`}
         onPointerDown={(e) => startResize('se', e)}
         onDoubleClick={handleDoubleClick}
+        onKeyDown={handleHandleKeyDown('se')}
+        onBlur={endKeyboardSession}
         style={{ touchAction: 'none' }}
-        title={`当前尺寸: ${displayCol} 列 × ${displayRow !== undefined ? `${displayRow} 行` : displayHeight ? `${displayHeight}px` : '自适应'}（按住右下角左右上下自由拖拉，双击重置）`}
+        title={`当前尺寸: ${displayCol} 列 × ${displayRow !== undefined ? `${displayRow} 行` : displayHeight ? `${displayHeight}px` : '自适应'}（按住右下角左右上下自由拖拉，双击重置；键盘：聚焦后按方向键调整，Enter 恢复默认）`}
         className={cn(
-          'group/handle-se absolute bottom-0 right-0 p-1.5 z-35 cursor-nwse-resize flex items-end justify-end text-muted-foreground hover:text-primary transition-all select-none',
+          'group/handle-se absolute bottom-0 right-0 p-1.5 w-6 h-6 z-35 cursor-nwse-resize flex items-end justify-end text-muted-foreground hover:text-primary transition-all select-none focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary',
           isEditing || activeDir === 'se'
             ? 'opacity-100'
             : 'opacity-0 group-hover:opacity-100 hover:opacity-100'

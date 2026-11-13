@@ -26,15 +26,24 @@ interface CategoryInSituControlsProps {
   canMoveDown: boolean
   allCategoryIds: string[]
   /**
-   * 是否启用拖拽手柄（仅顶级分类）：调用方在 dnd-kit chunk 已加载时传
-   * dragEnabled + dragGrip（DiyCategoryDragGrip，来自重型 diy-drag-kit，
-   * 调用方后台 import 到才传）。手柄组件本身调用 useDraggable，必须在
+   * 是否启用拖拽手柄：调用方在 dnd-kit chunk 已加载时传 dragEnabled +
+   * dragGrip（DiyCategoryDragGrip，来自重型 diy-drag-kit，调用方后台
+   * import 到才传）。手柄组件本身调用 useDraggable，必须在
    * DragDropProvider 内——所以用组件 prop 传进来，本文件绝不静态 import
-   * @dnd-kit/react（否则 133KB 进首页首屏）。子分类不传：跨分类拖子分类
-   * 没有定义好的语义，留 ↑/↓ 按钮。
+   * @dnd-kit/react（否则 133KB 进首页首屏）。子分类也传：只在同一父分
+   * 类内重排，跨父移动不允许（落点是父级 section，navigation-content
+   * 的 handleCategoryDragEnd 用指针位置在同级里定位；子分组故意不注
+   * 册自己的 droppable，见 navigation-category-section 的注释）。
    */
   dragEnabled?: boolean
   dragGrip?: ComponentType<{ categoryId: string; isCustom: boolean; title: string }>
+  /**
+   * 是否为子分类：子分类的 ↑/↓ 不能走 moveCategory——它只跟 flat
+   * order 里的相邻元素换位，相邻的可能是别的父分类的子分类或顶级
+   * 分类，换了等于没动还弹「已移动」的 toast。子分类走 reorderCategory，
+   * 以相邻同级为锚点在 flat order 里重排（与拖拽同一语义）。
+   */
+  isSubcategory?: boolean
   onAddSite?: () => void
 }
 
@@ -48,11 +57,13 @@ export function CategoryInSituControls({
   allCategoryIds,
   dragEnabled = false,
   dragGrip: DragGrip,
+  isSubcategory = false,
   onAddSite,
 }: CategoryInSituControlsProps) {
   const {
     togglePinCategory,
     moveCategory,
+    reorderCategory,
     toggleHideCategory,
     deleteCustomCategory,
     categoryDensityOverrides,
@@ -78,8 +89,15 @@ export function CategoryInSituControls({
   const handleMoveUp = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    moveCategory(categoryId, 'up', allCategoryIds)
     const from = allCategoryIds.indexOf(categoryId)
+    if (isSubcategory) {
+      // 同级锚点重排（见 isSubcategory 注释）：没有上一个同级就不动
+      const prevId = from > 0 ? allCategoryIds[from - 1] : undefined
+      if (!prevId) return
+      reorderCategory(categoryId, prevId, 'before', allCategoryIds)
+    } else {
+      moveCategory(categoryId, 'up', allCategoryIds)
+    }
     if (from > 0) {
       toast({ title: `已将分类「${title}」上移，现在是第 ${from} 个，共 ${allCategoryIds.length} 个` })
     }
@@ -88,8 +106,15 @@ export function CategoryInSituControls({
   const handleMoveDown = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    moveCategory(categoryId, 'down', allCategoryIds)
     const from = allCategoryIds.indexOf(categoryId)
+    if (isSubcategory) {
+      const nextId =
+        from >= 0 && from < allCategoryIds.length - 1 ? allCategoryIds[from + 1] : undefined
+      if (!nextId) return
+      reorderCategory(categoryId, nextId, 'after', allCategoryIds)
+    } else {
+      moveCategory(categoryId, 'down', allCategoryIds)
+    }
     if (from >= 0 && from < allCategoryIds.length - 1) {
       toast({ title: `已将分类「${title}」下移，现在是第 ${from + 2} 个，共 ${allCategoryIds.length} 个` })
     }
@@ -131,7 +156,7 @@ export function CategoryInSituControls({
           title={
             dragEnabled
               ? '拖拽手柄加载中，稍候即可拖拽；也可直接用 ↑/↓ 按钮移动'
-              : '子分类暂不支持拖拽，请用 ↑/↓ 按钮移动'
+              : '拖拽手柄未启用，可用 ↑/↓ 按钮移动'
           }
         >
           <GripVertical className="w-3.5 h-3.5" />
@@ -143,7 +168,7 @@ export function CategoryInSituControls({
         size="icon"
         onClick={handlePin}
         className={cn(
-          "h-6.5 w-6.5 rounded-full transition-colors",
+          "h-11 w-11 rounded-full transition-colors",
           isPinned
             ? "text-primary bg-primary/10 hover:bg-primary/20"
             : "text-muted-foreground hover:text-foreground"
@@ -159,7 +184,7 @@ export function CategoryInSituControls({
         size="icon"
         onClick={handleMoveUp}
         disabled={!canMoveUp}
-        className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-foreground disabled:opacity-30"
+        className="h-11 w-11 rounded-full text-muted-foreground hover:text-foreground disabled:opacity-30"
         title="向上移动分类"
         aria-label={`上移分类：${title}`}
       >
@@ -171,7 +196,7 @@ export function CategoryInSituControls({
         size="icon"
         onClick={handleMoveDown}
         disabled={!canMoveDown}
-        className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-foreground disabled:opacity-30"
+        className="h-11 w-11 rounded-full text-muted-foreground hover:text-foreground disabled:opacity-30"
         title="向下移动分类"
         aria-label={`下移分类：${title}`}
       >
@@ -182,7 +207,7 @@ export function CategoryInSituControls({
         variant="ghost"
         size="icon"
         onClick={handleHide}
-        className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
+        className="h-11 w-11 rounded-full text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
         title="隐藏该分类"
         aria-label={`隐藏分类：${title}`}
       >
@@ -196,7 +221,7 @@ export function CategoryInSituControls({
             variant="ghost"
             size="icon"
             className={cn(
-              "h-6.5 w-6.5 rounded-full transition-colors",
+              "h-11 w-11 rounded-full transition-colors",
               (currentDensity || isCustomSized) ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
             )}
             title={
@@ -352,7 +377,7 @@ export function CategoryInSituControls({
             e.stopPropagation()
             onAddSite()
           }}
-          className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10"
+          className="h-11 w-11 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10"
           title="添加站点到该分类"
           aria-label={`添加站点到分类：${title}`}
         >
@@ -365,7 +390,7 @@ export function CategoryInSituControls({
           variant="ghost"
           size="icon"
           onClick={handleDelete}
-          className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
+          className="h-11 w-11 rounded-full text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
           title="删除此自建专属分类"
           aria-label={`删除专属分类：${title}`}
         >

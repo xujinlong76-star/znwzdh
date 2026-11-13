@@ -205,7 +205,7 @@ export default function HotView({
           <div className="mt-2 flex justify-end">
             <Link
               href={`/site/${encodeURIComponent(site.id)}`}
-              className="text-xs text-primary hover:underline underline-offset-4"
+              className="inline-flex min-h-11 items-center text-xs text-primary hover:underline underline-offset-4"
             >
               站内详情
             </Link>
@@ -215,7 +215,7 @@ export default function HotView({
               href={safeHref(site.url)}
               target="_blank"
               rel={externalRel}
-              className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
               title="新窗口直达"
               aria-label={`访问 ${site.title}`}
             >
@@ -313,7 +313,7 @@ export default function HotView({
               </div>
             </div>
           </div>
-          <Button asChild size="sm" variant="outline" className="text-xs shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10">
+          <Button asChild size="sm" variant="outline" className="text-xs min-h-11 shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10">
             <Link href="/videos">
               <span>前往技术视频库</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
@@ -332,13 +332,15 @@ export default function HotView({
                 onChange={(e) => setFilterQuery(e.target.value)}
                 placeholder="在当前榜单中极速筛选站点（名称、简介、域名、标签）..."
                 aria-label="在当前榜单中筛选站点"
-                className="w-full text-xs bg-background/80 border border-border/60 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-lg pl-8 pr-8 py-1.5 outline-none transition-colors"
+                className="w-full min-h-11 text-xs bg-background/80 border border-border/60 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-lg pl-8 pr-8 py-1.5 outline-none transition-colors"
               />
+              {/* 清空筛选 ×：18px 的 × 视觉不变，::after 把点击区无形扩到 46px
+                  （筛选框 44px 高，上下各出 1px 可忽略） */}
               {filterQuery && (
                 <button
                   type="button"
                   onClick={() => setFilterQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer after:absolute after:-inset-3.5 after:content-['']"
                   title="清空筛选"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -390,18 +392,18 @@ export default function HotView({
         ) : (
           <Tabs value={tab} onValueChange={changeTab} className="space-y-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <TabsList className="p-1 rounded-xl bg-muted/40 border border-border/50">
-                <TabsTrigger value="trending" className="text-xs sm:text-sm gap-1.5 rounded-lg">
+              <TabsList className="h-[3.25rem] p-1 rounded-xl bg-muted/40 border border-border/50">
+                <TabsTrigger value="trending" className="min-h-11 text-xs sm:text-sm gap-1.5 rounded-lg">
                   <Flame className="w-3.5 h-3.5 text-amber-500" />
                   <span>访问量榜</span>
                 </TabsTrigger>
-                <TabsTrigger value="new" className="text-xs sm:text-sm gap-1.5 rounded-lg">
+                <TabsTrigger value="new" className="min-h-11 text-xs sm:text-sm gap-1.5 rounded-lg">
                   <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
                   <span>最新入库榜</span>
                 </TabsTrigger>
               </TabsList>
               <div className="flex items-center gap-1.5">
-                <DensityToggle className="h-8.5 w-8.5 border border-border/40" />
+                <DensityToggle className="border border-border/40" />
               </div>
             </div>
             <TabsContent value="trending" className="pt-2">
@@ -412,7 +414,7 @@ export default function HotView({
                   title={notice ? '本次未能取回榜单数据' : '暂无访问量数据'}
                   description="访问量统计尚未积累，当前不生成排名；可先浏览全部站点，或稍后再来看看。"
                   action={
-                    <Button asChild size="sm" variant="outline" className="text-xs">
+                    <Button asChild size="sm" variant="outline" className="text-xs min-h-11">
                       <Link href="/">去主页浏览全部站点</Link>
                     </Button>
                   }
@@ -428,7 +430,7 @@ export default function HotView({
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="text-xs"
+                      className="text-xs min-h-11"
                       onClick={() => setFilterQuery('')}
                     >
                       清空筛选条件
@@ -447,7 +449,7 @@ export default function HotView({
                   title={notice ? '本次未能取回新入库数据' : '暂无新入库数据'}
                   description="新入库站点会在收录完成后出现在这里；也可以先回主页或标签云逛逛。"
                   action={
-                    <Button asChild size="sm" variant="outline" className="text-xs">
+                    <Button asChild size="sm" variant="outline" className="text-xs min-h-11">
                       <Link href="/tags">浏览标签云</Link>
                     </Button>
                   }
@@ -463,7 +465,7 @@ export default function HotView({
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="text-xs"
+                      className="text-xs min-h-11"
                       onClick={() => setFilterQuery('')}
                     >
                       清空筛选条件

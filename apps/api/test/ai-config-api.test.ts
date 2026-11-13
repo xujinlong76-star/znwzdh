@@ -163,6 +163,38 @@ describe("系统级配置（管理端）", () => {
     expect(raw).toBeNull();
   });
 
+  it("轮换密钥：只换密钥不动其它配置，新密钥立即生效", async () => {
+    let res = await app.inject({
+      method: "PUT",
+      url: ADMIN,
+      payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", apiKey: SYSTEM_KEY },
+    });
+    expect(res.statusCode).toBe(200);
+    res = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai/config/rotate-key",
+      payload: { apiKey: "sk-rotated-new-key-0001" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.config.model).toBe("agnes-3.0-flash");
+    expect(body.config.apiKeyMasked).toBe("sk-****0001");
+    expect(JSON.stringify(body)).not.toContain("sk-rotated-new-key-0001");
+    // 轮换立即生效（resolveLlm 缓存已失效），不是等 30s 才换钥
+    expect((await resolveLlm(ctx)).provider.apiKey).toBe("sk-rotated-new-key-0001");
+    await app.inject({ method: "POST", url: "/api/admin/ai/config/reset" });
+  });
+
+  it("轮换密钥：没有已存系统配置时拒绝", async () => {
+    await app.inject({ method: "POST", url: "/api/admin/ai/config/reset" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai/config/rotate-key",
+      payload: { apiKey: "sk-rotated-new-key-0002" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("备用模型池：加密落库、密钥沿用、解析链输出、私网拒绝", async () => {
     // 1) 保存两个备用：A 带密钥，B 无密钥（不参与解析）
     let res = await app.inject({

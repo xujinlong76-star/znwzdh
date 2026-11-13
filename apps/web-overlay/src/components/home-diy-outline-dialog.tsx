@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Check,
   Undo2,
+  X,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -322,8 +323,19 @@ export function HomeDIYOutlineDialog({
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="搜索类目名称快速定位…"
                   aria-label="搜索类目名称快速定位"
-                  className="h-8 pl-8 text-xs rounded-lg bg-background/80"
+                  className="h-8 pl-8 pr-8 text-xs rounded-lg bg-background/80"
                 />
+                {searchQuery !== '' && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="清空搜索"
+                    title="清空搜索"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 min-h-6 min-w-6 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer flex items-center justify-center"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <Button

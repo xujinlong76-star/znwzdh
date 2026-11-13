@@ -32,6 +32,7 @@ import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION } f
 
 import type { AppContext } from "../context.ts";
 import { requestIdentityOf, identityTrusted, userDomainWriteAllowed, isSafeAvatarUrl } from "./shared.ts";
+import { sendError } from "../error-envelope.ts";
 import { verifyIdentityHeaders } from "../identity-signature.ts";
 import { invalidateProfileThrottle, refreshUserProfile } from "../profile-service.ts";
 import { recordUserCenterMetric } from "../user-center-metrics.ts";
@@ -842,20 +843,24 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     "/api/me/visits",
     { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      if (!identityTrusted(ctx, req as never)) return sendError(reply, 401, "UNAUTHORIZED", "身份未受信：需要 Bearer token 或有效的身份签名");
       const identity = requestIdentityOf(req as never);
-      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      if (!identity) return sendError(reply, 401, "UNAUTHORIZED", "缺少登录身份");
       const canonical = await ctx.repo.resolveIdentity(identity);
       const query = z
         .object({
           limit: z.coerce.number().int().min(1).max(50).optional(),
           offset: z.coerce.number().int().min(0).optional(),
+          // Keyset 游标（M12）：传了就走 WHERE id > (?) 谓词，不再 OFFSET。
+          cursor: z.string().max(4096).optional(),
         })
         .safeParse(req.query ?? {});
       const limit = query.success ? (query.data.limit ?? 20) : 20;
       const offset = query.success ? (query.data.offset ?? 0) : 0;
+      // 无效游标由全局错误处理器映射成 400 INVALID_CURSOR。
+      const cursor = query.success && typeof query.data.cursor === "string" && query.data.cursor ? query.data.cursor : undefined;
       const [page, total] = await Promise.all([
-        ctx.repo.listVisitsPage(canonical, limit, offset),
+        ctx.repo.listVisitsPage(canonical, limit, offset, cursor),
         ctx.repo.countVisits(canonical),
       ]);
       const siteMap = await ctx.repo.getSitesByIds([...new Set(page.items.map((v) => v.siteId))]);
@@ -864,6 +869,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         total,
         hasMore: page.hasMore,
         nextOffset: offset + page.items.length,
+        nextCursor: page.nextCursor ?? null,
         items: page.items.map((v) => {
           const site = siteMap.get(v.siteId) ?? null;
           return {
@@ -1023,22 +1029,26 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   /** 通知列表：默认含已读；?unread=1 只看未读。附带未读数供面板角标。 */
   app.get("/api/me/notifications", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req, reply) => {
-    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+    if (!identityTrusted(ctx, req as never)) return sendError(reply, 401, "UNAUTHORIZED", "身份未受信：需要 Bearer token 或有效的身份签名");
     const identity = requestIdentityOf(req as never);
-    if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+    if (!identity) return sendError(reply, 401, "UNAUTHORIZED", "缺少登录身份");
     const canonical = await ctx.repo.resolveIdentity(identity);
     const query = z
       .object({
         limit: z.coerce.number().int().min(1).max(50).optional(),
         offset: z.coerce.number().int().min(0).optional(),
         unread: z.coerce.boolean().optional(),
+        // Keyset 游标（M12）：传了就走 WHERE (created_at,id) 谓词，不再 OFFSET。
+        cursor: z.string().max(4096).optional(),
       })
       .safeParse(req.query ?? {});
     const limit = query.success ? (query.data.limit ?? 20) : 20;
     const offset = query.success ? (query.data.offset ?? 0) : 0;
     const unreadOnly = Boolean(query.success && query.data.unread);
+    // 无效游标由全局错误处理器映射成 400 INVALID_CURSOR。
+    const cursor = query.success && typeof query.data.cursor === "string" && query.data.cursor ? query.data.cursor : undefined;
     const [page, unread] = await Promise.all([
-      ctx.repo.listNotificationsPage(canonical, limit, offset, unreadOnly),
+      ctx.repo.listNotificationsPage(canonical, limit, offset, unreadOnly, cursor),
       ctx.repo.countUnreadNotifications(canonical),
     ]);
     return {
@@ -1046,6 +1056,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       unread,
       hasMore: page.hasMore,
       nextOffset: offset + page.items.length,
+      nextCursor: page.nextCursor ?? null,
       items: page.items,
     };
   });

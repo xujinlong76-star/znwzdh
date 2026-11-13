@@ -72,7 +72,7 @@ export function ViewModeToggle({ className }: { className?: string }) {
         <Button
           variant="ghost"
           size="sm"
-          className={`h-8.5 px-2 sm:px-2.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors gap-1.5 ${className || ''}`}
+          className={`min-h-11 px-2 sm:px-2.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors gap-1.5 ${className || ''}`}
           title={`当前首页排版形态：${getLabel()} (点击切换)`}
           aria-label={`首页视图形态：当前为${getLabel()}`}
         >

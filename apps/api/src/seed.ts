@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { hashSiteId } from "@navhub/store";
 import { siteEmbeddingText } from "@navhub/ai";
-import { comparePluginVersions, resolveSiteIcon, validateAndCleanPluginManifest, canonicalJsonStringify, ECOSYSTEM_MAP, ecosystemUrlKey, type SiteRelation } from "@navhub/core";
+import { comparePluginVersions, resolveSiteIcon, validateAndCleanPluginManifest, canonicalJsonStringify, canonicalizeUrl, ECOSYSTEM_MAP, ecosystemUrlKey, type SiteRelation } from "@navhub/core";
 import { loadConfig } from "./config.ts";
 import { createContext, type AppContext } from "./context.ts";
 import { backfillDerivedFacets, formatFacetBackfillReport } from "./facet-backfill.ts";
@@ -45,6 +45,33 @@ export function shouldImproveDescription(
   if (!before) return true;
   // source-truth-ok: 描述长度对比是「描述是否变好」的判定，与数据源选择无关
   return after.length > before.length + DESCRIPTION_IMPROVE_MARGIN;
+}
+
+/**
+ * 种子 URL 的域名归一化校验（M22）：返回可入库的规范 URL，不合法返回 null。
+ *
+ * 种子清单是人工维护的 JSON，坏域名（`https://a.b/c` 的单字符 TLD、
+ * `http://localhost:3000/x`、缺协议、拼错的协议）一旦写进 seed-data.json，
+ * 每次重启都会被重新导入：去重查不到（canonicalize 后的形态与库里不一致），
+ * 坏站越攒越多。校验只认「http(s) + 至少两段主机名 + ≥2 字符字母数字 TLD」；
+ * 通过的 URL 一律以 canonicalizeUrl 的形态入库（小写域名、去默认端口、
+ * 剥追踪参数、去冗余尾斜杠），与 findSiteByUrl 的比对口径一致。
+ */
+export function normalizeSeedUrl(rawUrl: string): string | null {
+  const canonical = canonicalizeUrl(rawUrl);
+  let hostname: string;
+  try {
+    const parsed = new URL(canonical);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    hostname = parsed.hostname;
+  } catch {
+    return null;
+  }
+  const labels = hostname.split(".");
+  const tld = labels[labels.length - 1] ?? "";
+  if (labels.length < 2) return null;
+  if (tld.length < 2 || !/^[a-z0-9-]+$/i.test(tld)) return null;
+  return canonical;
 }
 
 interface SeedShape {
@@ -181,6 +208,8 @@ export interface SeedResult {
    */
   improved: number;
   embedded: number;
+  /** 域名校验未通过、未入库的种子条目数（M22；只警告不抛错，不拖垮种子主流程） */
+  invalidDomains: number;
   siteConfigSeeded: boolean;
   /** 平替雷达（ECOSYSTEM_MAP）的落地账 */
   ecosystem: EcosystemSeedResult;
@@ -264,11 +293,20 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   let skipped = 0;
   let improved = 0;
   let embedded = 0;
+  let invalidDomains = 0;
   const leafIdBySlug = new Map<string, string>();
   const wantsEmbeddings = opts.withEmbeddings ?? true;
 
   for (const s of baselineNavigationCovered ? [] : raw.sites) {
-    const dup = await ctx.repo.findSiteByUrl(s.url);
+    // M22：域名先归一化校验再入库——坏域名不能靠「下次重启再导一遍」越攒越多。
+    // 入库用规范形态，与 findSiteByUrl 的比对口径一致（去重查得到）。
+    const normalizedUrl = normalizeSeedUrl(s.url);
+    if (!normalizedUrl) {
+      invalidDomains++;
+      console.warn(`[seed] 种子站点「${s.title}」的 URL 域名不合法，已跳过：${s.url}`);
+      continue;
+    }
+    const dup = await ctx.repo.findSiteByUrl(normalizedUrl);
     if (dup) {
       /**
        * 同一 URL 已在库：**择优保留**，不再无条件丢弃后到的那份。
@@ -306,9 +344,9 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
       leafIdBySlug.set(s.categorySlug, categoryId);
     }
     const site = await ctx.repo.createSite({
-      url: s.url, title: s.title, description: s.description,
+      url: normalizedUrl, title: s.title, description: s.description,
       categoryId, tags: s.tags ?? [], source: "seed",
-      iconKey: resolveSiteIcon(s.url, s.title, s.icon),
+      iconKey: resolveSiteIcon(normalizedUrl, s.title, s.icon),
       // 轴外移的落地面：授权/场景等不再建类目，改由分面承接（方案 P5）
       facets: s.facets,
     });
@@ -451,7 +489,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   }
 
   await ctx.close();
-  return { categories, registry, sites, collections, plugins, pluginsUpgraded, skipped, improved, embedded, siteConfigSeeded, ecosystem, baseline };
+  return { categories, registry, sites, collections, plugins, pluginsUpgraded, skipped, improved, embedded, invalidDomains, siteConfigSeeded, ecosystem, baseline };
 }
 
 /**

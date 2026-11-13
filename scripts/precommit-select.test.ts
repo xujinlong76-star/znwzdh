@@ -107,7 +107,9 @@ describe("pre-commit 选测：改动 → 测试文件", { timeout: 120_000 }, ()
     // 曾经的过度匹配：词根 check 命中 scripts 下 11/N 个测试文件名，「按名字收窄」
     // 于是选出 12 个——离整棵只差一点，收窄等于没做。判据是词根的**广度**，
     // 不是把 check 这类词手工加进黑名单（那样下一个动词会再踩一次）。
-    const files = select(["scripts/check-bundle-budget.mjs"]);
+    // 图优先时同前缀族经 import 边入选，词根广度走不到；强制走词根回退臂，
+    // 这条才真正钉住词根广度（≤3）。
+    const files = select(["scripts/check-bundle-budget.mjs"], { NAVHUB_PRECOMMIT_NO_GRAPH: "1" });
     expect(files).toContain("scripts/check-bundle-budget.test.ts");
     expect(files.some((f) => /typecheck|check-syntax|check-large-files|check-committed-refs/.test(f))).toBe(false);
     expect(files.length).toBeLessThanOrEqual(3);
@@ -123,7 +125,8 @@ describe("pre-commit 选测：改动 → 测试文件", { timeout: 120_000 }, ()
   it("专属词根没有对应测试时，退回同前缀族，而不是整棵（只准变准，不准变宽）", () => {
     // 若把层级写成「sharp 命中不了 → 整棵」，改一个 qq 无对应测试的 check-qq 脚本
     // 反而比修之前跑得更久。这条钉住「本次改动只会更准」这个不变量。
-    const narrowed = select(["scripts/check-qq-no-such-script.mjs"]);
+    // 图优先时本文件自身因字面量成图边入选，词根分层走不到；强制走词根回退臂。
+    const narrowed = select(["scripts/check-qq-no-such-script.mjs"], { NAVHUB_PRECOMMIT_NO_GRAPH: "1" });
     const whole = select(["scripts/check-qq-no-such-script.mjs"], { NAVHUB_PRECOMMIT_SCOPE: "all" });
     expect(narrowed.length).toBeGreaterThan(0);
     expect(narrowed.length).toBeLessThan(whole.length);
@@ -146,7 +149,9 @@ describe("pre-commit 选测：改动 → 测试文件", { timeout: 120_000 }, ()
   it("改 src/jobs.ts：必须带上 backup-restore-job（复数归一回归）", () => {
     // 曾经的 bug：单数形式要求 ≥4 字符，jobs → job 只有 3 字符被拒，
     // 于是「改任务执行器」却不跑「任务执行器最直接的测试」。
-    const files = select(["apps/api/src/jobs.ts"]);
+    // 图优先时 backup-restore-job 经 import 边入选，stemHit 走不到；
+    // 强制走词根回退臂，这条才真正钉住复数归一阈值（>=3）。
+    const files = select(["apps/api/src/jobs.ts"], { NAVHUB_PRECOMMIT_NO_GRAPH: "1" });
     expect(files).toContain("apps/api/test/backup-restore-job.test.ts");
     expect(files).toContain("apps/api/test/jobs.test.ts");
   });

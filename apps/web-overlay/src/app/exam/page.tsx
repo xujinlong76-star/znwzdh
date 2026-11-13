@@ -28,11 +28,10 @@ import {
   EXAM_PREP_CATEGORY_ID,
   EXAM_PREP_SUB_ID,
   EXAM_REMINDERS,
-  EXAM_NODE_STATUS_LABEL,
-  examNodeStatus,
   nearestExam,
 } from '@/lib/exam-calendar'
 import { ExamCountdown } from './exam-countdown'
+import { MyExamTracker } from './my-exam-tracker'
 import type { NavigationSubItem } from '@/types/navigation'
 
 /**
@@ -43,7 +42,8 @@ import type { NavigationSubItem } from '@/types/navigation'
  * 一处能同时看到倒计时与关键节点；三家大导航同期也没有像样的考试
  * 专题或倒计时（360 只有一个内容过期到 2024/2025 的财会考试日历）。
  * 第一轮只做最小静态页：倒计时卡 + 四场时间轴 + 撞期与双考提醒 +
- * 备考站点区；「我的考试」关注与考前清单待办是下一轮候选。
+ * 备考站点区；第二轮已落地「我的考试」关注 + 考前清单待办（本机
+ * localStorage 存放，不登录、不跨设备同步，见 src/lib/my-exams.ts）。
  *
  * 日期全部据官方公告核实（见 src/lib/exam-calendar.ts 文件头），
  * 备考站点区直接读站内「考试备考」分类，不硬编码链接。
@@ -63,14 +63,6 @@ const EXAM_ICONS: Record<string, LucideIcon> = {
   cet: Languages,
   shengkao: Landmark,
   kaoyan: GraduationCap,
-}
-
-const NODE_DOT_CLASS: Record<string, string> = {
-  done: 'bg-muted-foreground/40',
-  today: 'bg-emerald-500',
-  active: 'bg-emerald-500',
-  upcoming: 'bg-sky-500/60',
-  estimated: 'bg-amber-500/70',
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -179,6 +171,9 @@ export default async function ExamPage() {
           <h2 id="exam-countdown-heading" className="text-lg font-bold text-foreground">
             四场大考倒计时
           </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            关注考试后可逐项勾选考前清单；关注与勾选只保存在本机浏览器。
+          </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             {EXAMS.map((exam) => {
               const Icon = EXAM_ICONS[exam.id] ?? CalendarDays
@@ -202,26 +197,7 @@ export default async function ExamPage() {
                   <div className="mt-4">
                     <ExamCountdown exam={exam} />
                   </div>
-                  <ol className="mt-4 space-y-2.5 border-t border-border/60 pt-4">
-                    {exam.nodes.map((node) => {
-                      const status = examNodeStatus(node)
-                      return (
-                        <li key={node.label} className="flex items-start gap-2.5 text-sm">
-                          <span
-                            aria-hidden
-                            className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${NODE_DOT_CLASS[status]}`}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="font-medium text-foreground">{node.label}</span>
-                            <span className="text-muted-foreground"> · {node.detail}</span>
-                          </span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {EXAM_NODE_STATUS_LABEL[status]}
-                          </span>
-                        </li>
-                      )
-                    })}
-                  </ol>
+                  <MyExamTracker exam={exam} />
                   {exam.note ? (
                     <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{exam.note}</p>
                   ) : null}

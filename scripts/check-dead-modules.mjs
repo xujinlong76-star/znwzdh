@@ -36,6 +36,7 @@ let BASELINE = [
   "apps/web-overlay/src/app/admin/navigation/components/AddCategoryForm.tsx",
   "apps/web-overlay/src/app/admin/navigation/components/AddItemForm.tsx",
   "apps/web-overlay/src/components/quick-access-tray.tsx",
+  "apps/web-overlay/src/components/home-diy-share-dialog.tsx",
   "apps/web-overlay/src/components/speculative-prerender.tsx",
   "apps/web-overlay/src/components/ui/search-input.tsx",
   "apps/web-overlay/src/components/video-scrubber-preview.tsx",
@@ -108,6 +109,8 @@ let BASELINE_NOTES = {
     "keep（C 守卫测试）：同上 CONTROL_FILES 清单",
   "apps/web-overlay/src/components/quick-access-tray.tsx":
     "keep（B 字符串契约 + C 守卫测试）：category-quick-jump-bar.tsx 按 DOM id 'quick-access-tray' 关联；navigation-efficiency-enhancements.test.ts 读源码断言",
+  "apps/web-overlay/src/components/home-diy-share-dialog.tsx":
+    "delete（真死）：除基线外无任何引用（含字符串/测试/别名）；旧版 props 式分享确认框已下线（home-diy-toolbar.tsx:827 原文），现由 src/components/diy/home-diy-share-confirm-dialog.tsx（直接读 useHomeDIY，无 props）取代；删除时须同步 apps/web 镜像与 BASELINE 条目（2026-11-13 复核）",
   "apps/web-overlay/src/app/admin/videos/components/VideoIconUpload.tsx":
     "delete（真死）：除基线与文档索引外无任何引用（含字符串/测试/别名）",
   "apps/web-overlay/src/components/video-scrubber-preview.tsx":

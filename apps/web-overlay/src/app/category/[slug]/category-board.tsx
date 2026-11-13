@@ -396,17 +396,17 @@ export async function CategoryBoard({
             </div>
           )}
 
-          {/* 分类内即时筛选 */}
+          {/* 分类内即时筛选：totalAcrossPages 是子树聚合计数（与页头
+              「本分类共收录 X 个」同一口径）。之前这里传 res.total，但
+              /api/search 从不返回 total（core 的 SearchResult 注释明言
+              「叫 total 会误导，故用布尔」），恒为 null，FilterBar 里
+              「本分类共 X 个，跨页请用全局检索」分支是死代码。 */}
           {sites.length > 0 && (
             <CategorySiteFilterBar
               totalCount={sites.length}
               categoryName={name}
               topTags={topTags}
               categorySlug={category ? categoryUrlKey(category) : null}
-              // totalInCategory 是子树聚合计数（与页头「本分类共收录 X 个」同一口径）：
-              // 之前这里传 res.total，但 /api/search 从不返回 total（core 的
-              // SearchResult 注释明言「叫 total 会误导，故用布尔」），恒为 null，
-              // FilterBar 里「本分类共 X 个，跨页请用全局检索」分支是死代码。
               totalAcrossPages={totalInCategory}
               subcategories={inPageSubcategories}
               isDrama={isDramaZone}

@@ -3399,6 +3399,54 @@
               ]
             },
             {
+              "id": "nav-aa744c865a4c",
+              "title": "全国大学英语四、六级考试官网",
+              "href": "https://cet.neea.edu.cn/",
+              "description": "全国大学英语四六级考试官方网站：考试安排、报名通知与成绩查询入口",
+              "icon": "https://cet.neea.edu.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "四六级",
+                "考试"
+              ]
+            },
+            {
+              "id": "nav-1675e073090f",
+              "title": "四六级成绩查询",
+              "href": "https://cet.neea.edu.cn/cet",
+              "description": "全国大学英语四六级考试成绩查询：凭姓名与证件号码查询当次及历史成绩",
+              "icon": "https://cet.neea.edu.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "四六级",
+                "成绩查询"
+              ]
+            },
+            {
+              "id": "nav-e0fd05b63d6d",
+              "title": "中国教育考试网",
+              "href": "https://www.neea.edu.cn/",
+              "description": "教育部教育考试院官方网站：各类教育考试报名、成绩查询与证书服务入口",
+              "icon": "https://www.neea.edu.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "考试",
+                "官方"
+              ]
+            },
+            {
+              "id": "nav-310cb47c7ebb",
+              "title": "考研网上报名",
+              "href": "https://yz.chsi.com.cn/yzwb/",
+              "description": "全国硕士研究生招生考试网上报名：网报流程、准考证下载与初试安排",
+              "icon": "https://yz.chsi.com.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "考研",
+                "报名"
+              ]
+            },
+            {
               "id": "nav-8ec89effc595",
               "title": "粉笔",
               "href": "https://www.fenbi.com",
@@ -3648,7 +3696,6 @@
               "title": "极客公园",
               "href": "https://www.geekpark.net",
               "description": "关注前沿科技与互联网行业动态",
-              "icon": "https://www.geekpark.net/favicon.ico",
               "enabled": true,
               "tags": [
                 "科技",
@@ -3822,7 +3869,6 @@
               "title": "七猫中文网",
               "href": "https://www.qimao.com",
               "description": "免费小说平台，全本小说免费阅读，更新快",
-              "icon": "https://www.qimao.com/favicon.ico",
               "enabled": true,
               "tags": [
                 "小说",

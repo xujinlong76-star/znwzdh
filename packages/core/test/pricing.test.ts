@@ -3,7 +3,7 @@
  * 1. 人工核实覆盖表优先，键归一化（www./大小写/尾斜杠）不影响命中；
  * 2. 强信号规则收紧：裸「免费」不判 free、「免费试用」判 freemium 而非 free；
  * 3. 无证据一律 unknown，绝不猜；
- * 4. 数据完整性：线上导航 329 站逐站过推导，确定值/未标注集合与撰写时的
+ * 4. 数据完整性：线上导航 333 站逐站过推导，确定值/未标注集合与撰写时的
  *    核实结论一致（新增站点落 unknown 是预期——提醒后来者先核实再入表）。
  */
 import { describe, expect, it } from "vitest";
@@ -81,7 +81,7 @@ describe("derivePricing 强信号规则（收紧版）", () => {
   });
 });
 
-describe("导航 329 站全量推导（数据完整性基线）", () => {
+describe("导航 333 站全量推导（数据完整性基线）", () => {
   const navPath = fileURLToPath(new URL("../../../apps/web-overlay/src/navsphere/content/navigation.json", import.meta.url));
   const nav = JSON.parse(readFileSync(navPath, "utf8")) as {
     navigationItems: Array<{
@@ -90,11 +90,11 @@ describe("导航 329 站全量推导（数据完整性基线）", () => {
   };
   const sites = nav.navigationItems.flatMap((c) => c.subCategories.flatMap((s) => s.items));
 
-  it("共 329 站", () => {
-    expect(sites.length).toBe(329);
+  it("共 333 站", () => {
+    expect(sites.length).toBe(333);
   });
 
-  it("确定值 303 站、未标注恰为核实不了的 26 站", () => {
+  it("确定值 303 站、未标注恰为核实不了的 30 站", () => {
     const unknownTitles: string[] = [];
     let determinate = 0;
     for (const s of sites) {
@@ -111,6 +111,7 @@ describe("导航 329 站全量推导（数据完整性基线）", () => {
         "Murf AI", "WellSaid", "NaturalReader", "魔音工坊",
         "2027年国家公务员考试专题", "中央机关公开遴选和公开选调专题",
         "学习强国", "12333 人社服务",
+        "全国大学英语四、六级考试官网", "四六级成绩查询", "中国教育考试网", "考研网上报名",
       ].sort(),
     );
   });

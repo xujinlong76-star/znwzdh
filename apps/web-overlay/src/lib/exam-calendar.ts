@@ -229,11 +229,25 @@ export function nearestExam(nowMs: number = Date.now()): ExamInfo | undefined {
     .find((exam) => examStatus(exam, nowMs) !== 'ended')
 }
 
+/**
+ * 「下一步」挑选谓词：预计节点（estimated）在所属考试开考后不再算待办
+ * ——准考证下载开考后已无意义；其余节点按状态算。时间轴的
+ * examNodeStatus 不动（预计节点仍显示「预计」，不按日期翻 done）。
+ */
+export function isNodeActionable(
+  node: ExamNode,
+  exam: ExamInfo,
+  nowMs: number = Date.now(),
+): boolean {
+  if (node.estimated && daysUntil(exam.startISO, nowMs) <= 0) return false
+  return examNodeStatus(node, nowMs) !== 'done'
+}
+
 /** 某场考试的「下一步」节点：按开始日排序，第一个未结束的节点；全过则 undefined */
 export function nextExamNode(exam: ExamInfo, nowMs: number = Date.now()): ExamNode | undefined {
   return [...exam.nodes]
     .sort((a, b) => a.startISO.localeCompare(b.startISO))
-    .find((node) => examNodeStatus(node, nowMs) !== 'done')
+    .find((node) => isNodeActionable(node, exam, nowMs))
 }
 
 /** 倒计时拆分：天 / 时 / 分 / 秒（目标时刻已过则全 0） */

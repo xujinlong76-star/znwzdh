@@ -37,6 +37,8 @@ const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
 const NOV_25_0800_CST = Date.UTC(2026, 10, 25, 0, 0, 0)
 /** 2026-11-30 08:00 北京时间：国考已过 */
 const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
+/** 2026-12-19 08:00 北京时间：考研第一天，已开考 */
+const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研末日，仍算未结束 */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
 /** 2026-12-21 08:00 北京时间：四场全过 */
@@ -230,6 +232,12 @@ describe('nextTodoNode（下一步待办：未勾选且未结束）', () => {
   it('预计节点也算待办，不因 estimated 被跳过', () => {
     const state: MyExamsState = { followed: ['kaoyan'], checked: {} }
     expect(nextTodoNode(state, kaoyan, NOV_13_0800_CST)?.label).toBe('准考证下载')
+  })
+
+  it('考研开考后预计节点不再算待办：12-19 与 12-20 都是「初试」', () => {
+    const state: MyExamsState = { followed: ['kaoyan'], checked: {} }
+    expect(nextTodoNode(state, kaoyan, DEC_19_0800_CST)?.label).toBe('初试')
+    expect(nextTodoNode(state, kaoyan, DEC_20_0800_CST)?.label).toBe('初试')
   })
 })
 

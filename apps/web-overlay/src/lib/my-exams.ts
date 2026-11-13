@@ -12,8 +12,8 @@
 
 import {
   EXAMS,
-  examNodeStatus,
   examStatus,
+  isNodeActionable,
   type ExamInfo,
   type ExamNode,
 } from './exam-calendar'
@@ -134,7 +134,8 @@ export function nearestFollowedExam(
  *
  * 与 nextUncheckedNode 的区别：已结束但未勾的节点不再算待办（例如四六级
  * 口试已过、用户没勾，条带不应再把它当「下一步」）；预计节点（estimated）
- * 永不算 done，照常可作下一步。全部未结束节点都已勾选则返回 undefined，
+ * 开考前照常可作下一步，开考后不再算（见 isNodeActionable：准考证下载
+ * 开考后已无意义）。全部未结束节点都已勾选则返回 undefined，
  * 调用方直接不渲染「下一步」行，不编假待办。
  */
 export function nextTodoNode(
@@ -145,5 +146,5 @@ export function nextTodoNode(
   const done = new Set(state.checked[exam.id] ?? [])
   return [...exam.nodes]
     .sort((a, b) => a.startISO.localeCompare(b.startISO))
-    .find((n) => !done.has(n.label) && examNodeStatus(n, nowMs) !== 'done')
+    .find((n) => !done.has(n.label) && isNodeActionable(n, exam, nowMs))
 }

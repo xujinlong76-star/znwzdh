@@ -29,6 +29,8 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
 /** 2026-11-30 08:00 北京时间：国考已过，省考最近 */
 const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
+/** 2026-12-19 08:00 北京时间：考研第一天，已开考 */
+const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研第二天，仍在进行中 */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
 /** 2026-12-21 08:00 北京时间：四场全过 */
@@ -70,6 +72,12 @@ describe('nextExamNode（下一步节点）', () => {
   it('考研的预计节点（准考证下载）也算下一步，不因 estimated 被跳过', () => {
     const kaoyan = EXAMS.find((e) => e.id === 'kaoyan')!
     expect(nextExamNode(kaoyan, NOV_13_0800_CST)?.label).toBe('准考证下载')
+  })
+
+  it('考研开考后预计节点不再算下一步：12-19 与 12-20 都是「初试」', () => {
+    const kaoyan = EXAMS.find((e) => e.id === 'kaoyan')!
+    expect(nextExamNode(kaoyan, DEC_19_0800_CST)?.label).toBe('初试')
+    expect(nextExamNode(kaoyan, DEC_20_0800_CST)?.label).toBe('初试')
   })
 })
 

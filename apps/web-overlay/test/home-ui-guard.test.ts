@@ -55,10 +55,10 @@ describe('侧栏：空间所有者徽章不被裁切', () => {
   })
 })
 
-describe('悬浮工具栏：内容底部安全区', () => {
-  it('主内容容器留出 pb-28 sm:pb-36（≥ 7rem）', () => {
+  describe('主内容容器底部留白', () => {
+    it('主内容容器底部内边距收至 pb-8', () => {
     const src = overlaySource('src/components/navigation-content.tsx')
-    expect(src).toContain('pb-28 sm:pb-36')
+      expect(src).toContain('pb-8 flex-1')
   })
 
   it('悬浮工具栏只在滚动后显形，回顶遵循用户滚动偏好', () => {

@@ -10,7 +10,13 @@
  *    不跨设备同步；页面上写明这一点。云同步是后续工作，不在本轮承诺。
  */
 
-import { EXAMS, type ExamInfo, type ExamNode } from './exam-calendar'
+import {
+  EXAMS,
+  examNodeStatus,
+  examStatus,
+  type ExamInfo,
+  type ExamNode,
+} from './exam-calendar'
 
 /** 本地存储键。改键 = 老用户的关注与勾选凭空消失，不许改。 */
 export const MY_EXAMS_STORAGE_KEY = 'navhub.my-exams.v1'
@@ -103,4 +109,41 @@ export function nextUncheckedNode(state: MyExamsState, exam: ExamInfo): ExamNode
   return [...exam.nodes]
     .sort((a, b) => a.startISO.localeCompare(b.startISO))
     .find((n) => !done.has(n.label))
+}
+
+/**
+ * 已关注考试里首日最早且未结束的一场；没有符合的返回 undefined。
+ *
+ * 供首页考试季条带挂载后优先显示：关注了考研的用户打开首页应先看到考研，
+ * 而不是全局最近的国考。只在「未结束」的集合内重排——已结束的关注场
+ * 绝不顶上来（调用方回退全局最近场；四场全过时条带整条不渲染）。
+ * 结束与否按 endISO 判（examStatus）：考研 12-19–20 在 12-20 当天仍算有效。
+ */
+export function nearestFollowedExam(
+  state: MyExamsState,
+  nowMs: number = Date.now(),
+): ExamInfo | undefined {
+  const followed = new Set(state.followed)
+  return [...EXAMS]
+    .filter((exam) => followed.has(exam.id) && examStatus(exam, nowMs) !== 'ended')
+    .sort((a, b) => a.startISO.localeCompare(b.startISO))[0]
+}
+
+/**
+ * 某场考试的「下一步待办」：按开始日排序，第一个未勾选且未结束的节点。
+ *
+ * 与 nextUncheckedNode 的区别：已结束但未勾的节点不再算待办（例如四六级
+ * 口试已过、用户没勾，条带不应再把它当「下一步」）；预计节点（estimated）
+ * 永不算 done，照常可作下一步。全部未结束节点都已勾选则返回 undefined，
+ * 调用方直接不渲染「下一步」行，不编假待办。
+ */
+export function nextTodoNode(
+  state: MyExamsState,
+  exam: ExamInfo,
+  nowMs: number = Date.now(),
+): ExamNode | undefined {
+  const done = new Set(state.checked[exam.id] ?? [])
+  return [...exam.nodes]
+    .sort((a, b) => a.startISO.localeCompare(b.startISO))
+    .find((n) => !done.has(n.label) && examNodeStatus(n, nowMs) !== 'done')
 }

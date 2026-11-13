@@ -13,6 +13,8 @@ import {
   MY_EXAMS_STORAGE_KEY,
   checkedCount,
   isFollowed,
+  nearestFollowedExam,
+  nextTodoNode,
   nextUncheckedNode,
   parseMyExams,
   toggleFollow,
@@ -24,7 +26,19 @@ const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 
 const guokao = EXAMS.find((e) => e.id === 'guokao')!
+const cet = EXAMS.find((e) => e.id === 'cet')!
 const kaoyan = EXAMS.find((e) => e.id === 'kaoyan')!
+
+/** 2026-11-13 08:00 北京时间（UTC 午夜） */
+const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
+/** 2026-11-25 08:00 北京时间：四六级口试已过，笔试准考证未开 */
+const NOV_25_0800_CST = Date.UTC(2026, 10, 25, 0, 0, 0)
+/** 2026-11-30 08:00 北京时间：国考已过 */
+const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
+/** 2026-12-20 08:00 北京时间：考研末日，仍算未结束 */
+const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
+/** 2026-12-21 08:00 北京时间：四场全过 */
+const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('parseMyExams（不可信输入收敛）', () => {
   it('null / 非对象 / 空对象都收敛成空状态', () => {
@@ -134,6 +148,86 @@ describe('checkedCount / nextUncheckedNode', () => {
 describe('存储键', () => {
   it('键名固定为 navhub.my-exams.v1（改键会丢老用户数据）', () => {
     expect(MY_EXAMS_STORAGE_KEY).toBe('navhub.my-exams.v1')
+  })
+})
+
+describe('nearestFollowedExam（已关注优先，首页条带挂载后用）', () => {
+  it('无关注返回 undefined，调用方回退全局最近场', () => {
+    expect(nearestFollowedExam({ followed: [], checked: {} }, NOV_13_0800_CST)).toBeUndefined()
+  })
+
+  it('只关注一场未过期就返回它（哪怕它不是全局最近）', () => {
+    expect(
+      nearestFollowedExam({ followed: ['kaoyan'], checked: {} }, NOV_13_0800_CST)?.id,
+    ).toBe('kaoyan')
+  })
+
+  it('多场关注取首日最早且未结束的一场', () => {
+    const state: MyExamsState = { followed: ['kaoyan', 'guokao'], checked: {} }
+    expect(nearestFollowedExam(state, NOV_13_0800_CST)?.id).toBe('guokao')
+    // 国考已过后，关注场里最早的是四六级（12-12 在考研 12-19 之前）
+    const later: MyExamsState = { followed: ['kaoyan', 'cet'], checked: {} }
+    expect(nearestFollowedExam(later, NOV_30_0800_CST)?.id).toBe('cet')
+  })
+
+  it('已关注场已结束不顶上来，返回 undefined（调用方回退全局最近场）', () => {
+    expect(
+      nearestFollowedExam({ followed: ['guokao'], checked: {} }, NOV_30_0800_CST),
+    ).toBeUndefined()
+  })
+
+  it('多日考试末日仍算未结束（考研 12-20 当天仍优先）', () => {
+    expect(
+      nearestFollowedExam({ followed: ['kaoyan'], checked: {} }, DEC_20_0800_CST)?.id,
+    ).toBe('kaoyan')
+  })
+
+  it('四场全过、关注场全部已结束返回 undefined', () => {
+    const state: MyExamsState = { followed: ['guokao', 'cet', 'kaoyan'], checked: {} }
+    expect(nearestFollowedExam(state, DEC_21_0800_CST)).toBeUndefined()
+  })
+
+  it('未知 id 不匹配任何考试', () => {
+    expect(
+      nearestFollowedExam({ followed: ['economist'], checked: {} }, NOV_13_0800_CST),
+    ).toBeUndefined()
+  })
+})
+
+describe('nextTodoNode（下一步待办：未勾选且未结束）', () => {
+  it('未勾选时第一个节点就是待办', () => {
+    const state: MyExamsState = { followed: ['guokao'], checked: {} }
+    expect(nextTodoNode(state, guokao, NOV_13_0800_CST)?.label).toBe('准考证打印')
+  })
+
+  it('勾完一个跳到下一个未勾选节点', () => {
+    const state: MyExamsState = {
+      followed: ['guokao'],
+      checked: { guokao: ['准考证打印'] },
+    }
+    expect(nextTodoNode(state, guokao, NOV_13_0800_CST)?.label).toBe('专业科目笔试')
+  })
+
+  it('全部未结束节点都勾完返回 undefined（不编假下一步）', () => {
+    const state: MyExamsState = {
+      followed: ['guokao'],
+      checked: { guokao: ['准考证打印', '专业科目笔试', '公共科目笔试'] },
+    }
+    expect(nextTodoNode(state, guokao, NOV_13_0800_CST)).toBeUndefined()
+  })
+
+  it('已结束但未勾的节点不再算待办', () => {
+    // 11-30 时国考三节点已全部结束，哪怕一个没勾也不再是下一步
+    const state: MyExamsState = { followed: ['guokao'], checked: {} }
+    expect(nextTodoNode(state, guokao, NOV_30_0800_CST)).toBeUndefined()
+    // 11-25 时四六级：口试（11-21–22）与口试准考证（11-17）已过未勾，跳到 12-01 笔试准考证
+    const cetState: MyExamsState = { followed: ['cet'], checked: {} }
+    expect(nextTodoNode(cetState, cet, NOV_25_0800_CST)?.label).toBe('笔试准考证打印')
+  })
+
+  it('预计节点也算待办，不因 estimated 被跳过', () => {
+    const state: MyExamsState = { followed: ['kaoyan'], checked: {} }
+    expect(nextTodoNode(state, kaoyan, NOV_13_0800_CST)?.label).toBe('准考证下载')
   })
 })
 

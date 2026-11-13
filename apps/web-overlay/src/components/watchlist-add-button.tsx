@@ -148,15 +148,18 @@ export function WatchlistFields({
 
 export function WatchlistAddButton({
   platform,
+  defaultTitle,
   variant = 'light',
 }: {
   platform: WatchPlatformRef
+  /** 剧目卡预填的剧名：点了直接是这部剧，用户仍可改；不传就是空表单 */
+  defaultTitle?: string
   /** dark = 首页短剧影院的深色卡面；light = 普通页面 */
   variant?: 'dark' | 'light'
 }) {
   const watchlist = useWatchlist()
   const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(defaultTitle ?? '')
   const [fields, setFields] = useState<Omit<WatchDraft, 'title'>>({
     episode: 0,
     cadence: { kind: 'unknown' },

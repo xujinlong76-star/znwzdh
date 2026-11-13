@@ -172,7 +172,7 @@ export function HomeDramaCinema() {
           <Link href="/me/watchlist" className="inline-flex items-center gap-0.5 text-sm text-zinc-300 transition-colors hover:text-white">
             我的追剧 <ChevronRight className="h-4 w-4" aria-hidden />
           </Link>
-          <Link href="/category/duanju" className="inline-flex items-center gap-0.5 text-sm text-zinc-300 transition-colors hover:text-white">
+          <Link href="/drama" className="inline-flex items-center gap-0.5 text-sm text-zinc-300 transition-colors hover:text-white">
             进入短剧专区 <ChevronRight className="h-4 w-4" aria-hidden />
           </Link>
         <div className="flex items-center gap-1.5" role="group" aria-label="短剧海报翻页">

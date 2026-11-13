@@ -4606,7 +4606,7 @@
               "id": "nav-675c7a57840e",
               "title": "爱奇艺·短剧",
               "href": "https://www.iqiyi.com",
-              "description": "爱奇艺 App 内短剧专区，专业制作的高画质短剧，部分免费",
+              "description": "爱奇艺 App 内短剧专区，专业制作的高画质短剧，部分免费；短剧需在爱奇艺 App 内观看",
               "icon": "https://www.iqiyi.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4618,7 +4618,7 @@
               "id": "nav-8652182b18e7",
               "title": "腾讯视频·短剧",
               "href": "https://v.qq.com",
-              "description": "腾讯视频 App 内微短剧专区，前几集免费，会员解锁全集",
+              "description": "腾讯视频 App 内微短剧专区，前几集免费，会员解锁全集；短剧需在腾讯视频 App 内观看",
               "icon": "https://v.qq.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4630,7 +4630,7 @@
               "id": "nav-9d3e930967bf",
               "title": "优酷·短剧",
               "href": "https://www.youku.com",
-              "description": "优酷 App 内短剧专区，短剧库更新快，部分免费",
+              "description": "优酷 App 内短剧专区，短剧库更新快，部分免费；短剧需在优酷 App 内观看",
               "icon": "https://www.youku.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -4641,7 +4641,7 @@
               "id": "nav-193880f6c388",
               "title": "芒果TV·短剧",
               "href": "https://www.mgtv.com",
-              "description": "芒果TV App 内短剧专区，青春甜宠短剧与综艺，免费 + VIP",
+              "description": "芒果TV App 内短剧专区，青春甜宠短剧与综艺，免费 + VIP；短剧需在芒果TV App 内观看",
               "icon": "https://www.mgtv.com/favicon.ico",
               "enabled": true,
               "tags": [

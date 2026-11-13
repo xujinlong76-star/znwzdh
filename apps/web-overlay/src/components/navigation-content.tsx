@@ -55,6 +55,9 @@ const HomeDramaCinema = dynamic(
      * 个 CLS 窗口）。骨架与真实结构逐项对齐——Playwright 实测生产构建：
      * 标题行 28px、aside 371px、总高移动 936px / 桌面 619px，海报用同款
      * aspect-[440/784]，横幅用同款 aspect-[1000/561]。
+     * 2026-11-13 加「继续追」行：骨架同结构加一行占位（卡片 h-20 与真卡同高，
+     * 真卡 p-3 + h-8 行 + mt-2 + text-xs 行 = 80px），总高数字是加行前的，
+     * 待 Playwright 重测后更新——不要凭估算改写实测数。
      * 改 home-drama-cinema.tsx 的结构时必须同步改这里，否则骨架与真身不等高。
      */
     loading: () => (
@@ -64,6 +67,15 @@ const HomeDramaCinema = dynamic(
           <div className="hidden items-center gap-4 sm:flex">
             <div className="h-5 w-16 rounded-md bg-white/10 animate-pulse" />
             <div className="h-5 w-24 rounded-md bg-white/10 animate-pulse" />
+          </div>
+        </div>
+        <div className="px-4 pt-3 sm:px-6">
+          <div className="flex items-center gap-3 overflow-x-auto pb-1">
+            <div className="h-5 w-14 shrink-0 rounded bg-white/10 animate-pulse" />
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-20 w-56 shrink-0 rounded-2xl bg-white/10 animate-pulse" />
+            ))}
+            <div className="h-20 w-24 shrink-0 rounded-2xl bg-white/10 animate-pulse" />
           </div>
         </div>
         <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_300px]">

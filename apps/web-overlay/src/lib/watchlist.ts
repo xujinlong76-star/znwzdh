@@ -177,6 +177,24 @@ export function partitionWatchlist(entries: WatchEntry[], now: Date): WatchlistP
   return { due, check, active, finished }
 }
 
+/** 首页影院区「继续追」续看行每行最多露出的部数。 */
+export const CONTINUE_WATCHING_LIMIT = 4
+
+/**
+ * 首页「继续追」续看行取行口径（与分类页横幅、简报页同源，都走 partitionWatchlist，
+ * 不另立口径）：due（今日待看）优先、不足用 check（节奏未标注）补、再不足用
+ * active 补，凑满 limit；finished（已完结）不进——完结的剧不叫「继续追」。
+ * 空清单返回 []，调用方整行不渲染，不留占位。
+ */
+export function selectContinueWatching(
+  entries: WatchEntry[],
+  now: Date,
+  limit = CONTINUE_WATCHING_LIMIT,
+): WatchEntry[] {
+  const { due, check, active } = partitionWatchlist(entries, now)
+  return [...due, ...check, ...active].slice(0, Math.max(0, limit))
+}
+
 /**
  * 把一个不可信对象收敛成合法条目；形状不对就返回 null（丢弃，不猜）。
  * 本地存储与云端返回都过这一道——坏一条不能拖垮整份清单。

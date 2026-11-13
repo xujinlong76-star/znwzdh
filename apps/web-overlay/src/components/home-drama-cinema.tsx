@@ -16,16 +16,27 @@
  * fetch，完全不进首页 JS bundle（首页预算只剩约 30KB 余量）。fetch 失败
  * 时退化为渐变海报卡 + 文字链接，功能不假装、入口不丢。
  * 站点数据走既有的 /api/home/navigation（与生态图谱同款公开只读口）。
+ * 标题行下方另有一行「继续追」：读本机追剧清单（未登录也能用），把
+ * due→check→active 前 4 部以文字卡露出，空清单时整行不渲染；卡片点开
+ * 只是平台站首页（站内无单剧深链），文案不暗示能直达某集，取行口径在
+ * @/lib/watchlist 的 selectContinueWatching，与分类页横幅同源。
  * 推荐位口径（A10）：巡检确认失效（broken）的站不上海报墙与热播榜，
  * 收集逻辑在 @/lib/drama-sites；分类列表里它们仍保留并标失效。
  */
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Clapperboard, Flame } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clapperboard, Flame, Play } from 'lucide-react'
 import { collectDramaSites, countCategorySites, type DramaSite } from '@/lib/drama-sites'
 import { safeHref } from '@/lib/safe-url'
 import { WatchlistAddButton } from '@/components/watchlist-add-button'
+import { useWatchlist } from '@/hooks/useWatchlist'
+import {
+  cadenceLabel,
+  isReminderDue,
+  selectContinueWatching,
+  type WatchEntry,
+} from '@/lib/watchlist'
 
 interface MediaEntry {
   key: string
@@ -33,6 +44,13 @@ interface MediaEntry {
   width: number
   height: number
   data: string
+}
+
+/** 续看卡片角标：只断言清单里已有的事实，不冒充平台真的更新了。 */
+function continueBadge(entry: WatchEntry, now: Date): string {
+  if (isReminderDue(entry, now)) return '今日待看'
+  if (entry.cadence.kind === 'unknown') return '可查更新'
+  return cadenceLabel(entry.cadence)
 }
 
 const BANNER_LINKS: Record<string, { href: string; caption: string }> = {
@@ -48,6 +66,12 @@ export function HomeDramaCinema() {
   const [banners, setBanners] = useState<MediaEntry[]>([])
   const [dramaSites, setDramaSites] = useState<DramaSite[]>([])
   const [started, setStarted] = useState(false)
+  // 「继续追」续看行：读本机追剧清单，未登录也能用；ready 前与存储被禁时不渲染，
+  // 空清单时整行不出现——不在深色影院带里留「你还没追剧」的占位。
+  const { ready: watchlistReady, entries: watchlistEntries, storageBlocked } = useWatchlist()
+  const now = new Date()
+  const continueWatching =
+    watchlistReady && !storageBlocked ? selectContinueWatching(watchlistEntries, now) : []
   // 横幅站数：导航数据到手后才有数；null = 还没数出来，只显示分类名不编数字
   const [aiToolsCount, setAiToolsCount] = useState<number | null>(null)
   // 榜单状态：pending = 还没开始拉（首屏未进入视口），failed = 已拉取失败
@@ -161,6 +185,46 @@ export function HomeDramaCinema() {
         </div>
         </div>
       </div>
+
+      {continueWatching.length > 0 && (
+        <div className="px-4 pt-3 sm:px-6" aria-label="继续追">
+          <div className="flex items-center gap-3 overflow-x-auto pb-1">
+            <span className="flex shrink-0 items-center gap-1.5 text-sm font-semibold text-zinc-100">
+              <Play className="h-4 w-4 text-rose-400" aria-hidden />
+              继续追
+            </span>
+            {continueWatching.map((e) => (
+              <a
+                key={e.key}
+                href={safeHref(e.playUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-56 shrink-0 flex-col rounded-2xl border border-white/10 bg-white/5 p-3 transition-colors hover:bg-white/10"
+                title={`${e.title} · 在${e.platformTitle}站内打开`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-500/20 text-sm font-bold text-rose-300" aria-hidden>
+                    {e.platformTitle.slice(0, 1)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={e.title}>{e.title}</span>
+                </span>
+                <span className="mt-2 flex items-center gap-2 text-xs text-zinc-400">
+                  <span className="truncate">{e.platformTitle}</span>
+                  <span className="shrink-0">{e.episode > 0 ? `看到第 ${e.episode} 集` : '还没开始看'}</span>
+                  <span className="ml-auto shrink-0 rounded-full bg-rose-500/15 px-2 py-0.5 text-[11px] font-medium text-rose-300">{continueBadge(e, now)}</span>
+                </span>
+              </a>
+            ))}
+            <Link
+              href="/me/watchlist"
+              className="flex w-24 shrink-0 self-stretch flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/10 bg-white/5 text-sm text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              全部清单
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_300px]">
         <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-2" aria-label="短剧海报与平台">

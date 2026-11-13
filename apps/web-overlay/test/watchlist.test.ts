@@ -9,6 +9,7 @@ import {
   normalizeWatchCadence,
   partitionWatchlist,
   sanitizeWatchEntry,
+  selectContinueWatching,
   type HubWatchEntry,
   type WatchEntry,
 } from '../src/lib/watchlist'
@@ -267,5 +268,36 @@ describe('页面诚实文案守卫（源码级）', () => {
   it('播放链接必须过 safeHref，不许裸 href={entry.playUrl}', () => {
     expect(page).not.toContain('href={entry.playUrl}')
     expect(page).toContain('href={safeHref(entry.playUrl)}')
+  })
+})
+
+describe('selectContinueWatching（首页「继续追」取行口径）', () => {
+  it('due 优先、check 其次、active 补位，finished 永不进', () => {
+    const list = [
+      entry({ title: '已完结剧', cadence: { kind: 'finished' } }),
+      entry({ title: '在追剧', cadence: { kind: 'weekly', weekdays: [1] } }),
+      entry({ title: '待查剧' }),
+      entry({ title: '今日待看剧', cadence: { kind: 'daily' } }),
+    ]
+    expect(selectContinueWatching(list, WED).map((e) => e.title)).toEqual([
+      '今日待看剧',
+      '待查剧',
+      '在追剧',
+    ])
+  })
+
+  it('默认最多 4 部，limit 可改；空清单返回空数组', () => {
+    const six = Array.from({ length: 6 }, (_, i) =>
+      entry({ title: `在追剧${i}`, cadence: { kind: 'weekly', weekdays: [1] } }),
+    )
+    expect(selectContinueWatching(six, WED)).toHaveLength(4)
+    expect(selectContinueWatching(six, WED, 2)).toHaveLength(2)
+    expect(selectContinueWatching([], WED)).toEqual([])
+  })
+
+  it('提醒关掉的 unknown 剧不进 check、仍可经 active 补位', () => {
+    const only = [entry({ title: '提醒关掉的剧', remind: false })]
+    expect(partitionWatchlist(only, WED).check).toEqual([])
+    expect(selectContinueWatching(only, WED).map((e) => e.title)).toEqual(['提醒关掉的剧'])
   })
 })

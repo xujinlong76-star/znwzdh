@@ -52,9 +52,9 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function DramaPage() {
   const { sites, dramas } = await getDramaData();
   return (
-    <>
+    <main id="main-content">
       <DramaContentLazy sites={sites} dramas={dramas} />
       <ScrollToTop />
-    </>
+    </main>
   );
 }

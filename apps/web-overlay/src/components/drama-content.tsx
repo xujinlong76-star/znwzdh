@@ -53,7 +53,9 @@ export function DramaContent({
 }) {
   const appOnlyIds = new Set(sites.filter(isAppOnlySite).map((s) => s.id));
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-8">
+    // 注意：根节点是普通 div 不是 <main>——主内容地标在 page.tsx（<main id="main-content">），
+    // 这里再套一层 main 会造成嵌套地标。
+    <div className="mx-auto w-full max-w-7xl px-4 py-8">
       <header className="max-w-3xl">
         <h1 className="text-3xl font-bold">短剧专区</h1>
         <p className="mt-3 text-zinc-600">
@@ -174,6 +176,6 @@ export function DramaContent({
         追剧清单只记你自己填的集数与节奏；关闭弹窗不会丢数据。已关注的剧
         在“我的追剧”里管理，未登录时只保存在本机。
       </p>
-    </main>
+    </div>
   );
 }

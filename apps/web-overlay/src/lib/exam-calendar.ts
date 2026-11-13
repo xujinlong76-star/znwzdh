@@ -220,11 +220,13 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
   return 'active'
 }
 
-/** 最近一场：首日未过的考试里首日最早的；四场全过则返回 undefined（调用方整条不渲染） */
+/** 最近一场：未结束的考试里首日最早的；多日考试末日仍算未结束
+ *（考研 12-19–20：12-20 当天条带仍在，与 /exam 倒计时岛「进行中 ·
+ * 第 2 天」一致）；四场全结束则返回 undefined（调用方渲染空态条带） */
 export function nearestExam(nowMs: number = Date.now()): ExamInfo | undefined {
   return [...EXAMS]
     .sort((a, b) => a.startISO.localeCompare(b.startISO))
-    .find((exam) => daysUntil(exam.startISO, nowMs) >= 0)
+    .find((exam) => examStatus(exam, nowMs) !== 'ended')
 }
 
 /** 某场考试的「下一步」节点：按开始日排序，第一个未结束的节点；全过则 undefined */

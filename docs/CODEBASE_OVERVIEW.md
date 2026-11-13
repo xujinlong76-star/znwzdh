@@ -1,6 +1,6 @@
 # 山羊胡 4.0 代码库架构总览
 
-> 本文基于关键模块源码通读写成。⚠️ **规模数字已改为引用 machine-readable 的 [`metrics.json`](./metrics.json)**（由 `node scripts/gen-docs-metrics.mjs` 生成、`--check` 进 `pnpm verify` 防漂移，2026-11-06 落地）：实测源码约 **35 万行**（`apps/api/src` 185 文件/60,191 行、`apps/web-overlay/src` 800 文件/183,716 行、`scripts` 266 文件等）、**312 REST 路由声明 / 48 BFF 路由 / 72 页面 / 46 表声明 / 1060 测试文件**。
+> 本文基于关键模块源码通读写成。⚠️ **规模数字已改为引用 machine-readable 的 [`metrics.json`](./metrics.json)**（由 `node scripts/gen-docs-metrics.mjs` 生成、`--check` 进 `pnpm verify` 防漂移，2026-11-06 落地）：实测源码约 **35 万行**（`apps/api/src` 185 文件/60,191 行、`apps/web-overlay/src` 800 文件/183,716 行、`scripts` 266 文件等）、**313 REST 路由声明 / 48 BFF 路由 / 74 页面 / 47 表声明 / 1155 测试文件**。
 >
 > 旧版本此处写「778 个文件 / 155,150 行 / 117 端点 / 25 表」（2026-10-18 快照），与当前实物相差近一倍且长期无人核对——这正是引入 `metrics.json` 的原因。下方 §1 的历史表格保留作**当时快照**，不再作为当前事实；要看当前值请读 `metrics.json`。逐文件的职责/导出/依赖见 [`CODEBASE_FILE_INDEX.md`](./CODEBASE_FILE_INDEX.md)，也可用可搜索的单页版 [`codebase-index.html`](./codebase-index.html)。
 
@@ -69,7 +69,7 @@
                ▼                      ▼
 ┌──────────────┴──────────────────────┴──────────────────┐
 │ Fastify 中枢 :8787                                     │
-│ · 49 个路由插件 / 312 个 REST 路由声明 / OpenAPI         │
+│ · 49 个路由插件 / 313 个 REST 路由声明 / OpenAPI         │
 │ · AppContext 装配（能力可选、失败不致命）              │
 │ · JobRunner（9 类任务 / 6 条默认 cron）                │
 │ · 横切：CORS 限流 安全头 请求ID 指标 缓存 鉴权         │
@@ -283,7 +283,7 @@ JobRunner.tick()（定时）
 
 ### 5.2 `packages/store`：双方言 + 双索引
 
-**46 张表**（`schema.ts`，只用两库都支持的基础列类型）：
+**47 张表**（`schema.ts`，只用两库都支持的基础列类型）：
 
 `categories`、`sites`、`tags`、`tag_aliases`、`site_tags`、`site_facets`、`site_relations`、`collections`、`collection_items`、`users`、`sessions`、`auth_tokens`、`notifications`、`identity_aliases`、`identity_merges`、`api_tokens`、`events`、`health_checks`、`audit_logs`、`jobs`、`idempotency`、`embeddings`、`plugin_embeddings`、`site_radar`、`favorites`、`favorite_folders`、`user_profiles`、`search_history`、`user_vault_sync`、`user_workspace_blobs`、`system_states`、`user_llm_configs`、`user_settings`、`taxonomy_proposals`、`plugins`、`plugin_installs`、`plugin_stars`、`plugin_reports`、`plugin_versions`、`plugin_reviews`、`short_links`、`site_archives`、`llm_usage`、`llm_model_prices`、`llm_quota_reservations`、`data_version`
 
@@ -312,7 +312,7 @@ JobRunner.tick()（定时）
 | `enrich.ts` | LLM 结构化输出 + zod 校验 + 一次重试，失败降级 heuristic |
 | `with-timeout.ts` | Promise 超时，落地即清定时器 |
 
-### 5.4 `apps/api`：312 个端点 / 49 个路由插件
+### 5.4 `apps/api`：313 个端点 / 49 个路由插件
 
 按路由文件分组（`apps/api/src/routes/*.ts`，`routes/plugins/*` 五个市场子文件合并为一行；计数口径与 `docs/metrics.json` 的 `restRoutes` 同源：`app.<verb>(` 字面量注册数，2026-11-11 实测；另有 `/api/openapi.json`、`/api/docs` 由 `server.ts` 提供）：
 
@@ -367,7 +367,7 @@ JobRunner.tick()（定时）
 | `copilot.ts` | 1 | `/api/copilot/chat` |
 | `identity.ts` | 1 | `/api/users/sync` |
 | `plugin-overlap.ts` | 1 | `/api/plugins/:slug/overlap` |
-| **合计** | **312** | 另有 `/api/openapi.json`、`/api/docs` 由 `server.ts` 提供 |
+| **合计** | **313** | 另有 `/api/openapi.json`、`/api/docs` 由 `server.ts` 提供 |
 
 横切关注点全部在 `server.ts`（384 行）：`onRoute` 收集 OpenAPI、`onRequest` 做请求 ID + 分级鉴权、`onSend` 做安全头 + 路由级缓存/ETag、`onResponse` 记指标、`setErrorHandler` 兜底。
 
@@ -469,9 +469,9 @@ JobRunner.tick()（定时）
 
 | 文档说法 | 实际代码 | 位置 |
 | :--- | :--- | :--- |
-| 「62 条 REST 路由」 | **312 个端点**（49 个路由插件，见 `docs/metrics.json` 的 `restRoutes`） | `wiki.md` §2.2（`README.md` 无此说法） |
+| 「62 条 REST 路由」 | **313 个端点**（49 个路由插件，见 `docs/metrics.json` 的 `restRoutes`） | `wiki.md` §2.2（`README.md` 无此说法） |
 | MCP「15 个 / 17 个工具」 | **41 个**（28 read / 12 write / 1 admin） | `wiki.md` §7（`README.md` 无此说法） |
-| 「19 张核心表」 | **46 张** | `wiki.md` §5.2 |
+| 「19 张核心表」 | **47 张** | `wiki.md` §5.2 |
 | 「洛伦兹双曲超曲面 / 闵可夫斯基内积」 | **双模型并存，非术语不一致**：`core/src/hyperbolic.ts`（284 行）同时实现庞加莱球（`poincareDistance`、`mobiusAdd`、`expMap0`，供算法实验室面板经 `findTopAlternativesInHyperbolicSpace` 调用）与洛伦兹（`lorentzInnerProduct`、`lorentzDistance`，附双向换算 `poincareToLorentz`/`lorentzToPoincare`）；线上排序 `api/src/routes/rank.ts` 用洛伦兹距离重排并回 `manifold: "lorentz-hyperboloid"`。README §5 与 wiki §4.2 的洛伦兹说法属实（2026-11-11 核对，原行「仅庞加莱实现」为误判） | `README.md` §5、`wiki.md` §4.2 vs `core/src/hyperbolic.ts`、`api/src/routes/rank.ts` |
 | 「web 与 web-overlay 保持 100% 同步」 | **该说法现行文档已无出处**（`wiki.md` §3.1 现讲生成镜像机制，不再提 100% 同步；本表为唯一引用处）；机制是生成镜像而非人工同步：`apps/web` 由 `mirror:web` 从 overlay 生成，CI 先 vendor 再校验。2026-11-11 复测：`mirror:web` 后 `check:overlay` 通过，1153 个覆盖层文件一致；未重新生成的旧克隆会报漂移（本次实测 11 漂移 + 7 缺失，均为成长/视频线已推 main 的文件，须先 `mirror:web`）。扫描期间曾观测到的 74 漂移 + 25 缺失为历史记录 | `docs/CODEBASE_OVERVIEW.md` §10 P0、`wiki.md` §3.1 |
 | 「24 个路由插件」 | **49 个**（`server.ts` 的 register 调用） | `server.ts` 头注释 |

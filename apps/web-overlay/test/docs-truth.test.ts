@@ -97,31 +97,31 @@ describe("B13-2 前端版本：Next.js 16（package.json 16.4.2 / React 19.3.1�
   });
 });
 
-describe("B13-3 REST 路由数：312 声明 / 49 插件 / 46 表", () => {
+describe("B13-3 REST 路由数：313 声明 / 49 插件 / 47 表", () => {
   it("metrics.json 与静态计数一致", () => {
-    expect(METRICS.restRoutes).toBe(312);
-    expect(METRICS.tables).toBe(46);
+    expect(METRICS.restRoutes).toBe(313);
+    expect(METRICS.tables).toBe(47);
   });
 
   it("wiki 不再称 62 条路由", () => {
-    expect(WIKI).toContain("312 个 REST 路由声明");
+    expect(WIKI).toContain("313 个 REST 路由声明");
     expect(WIKI).not.toContain("62 条 REST");
     expect(WIKI).not.toContain("62 条路由");
   });
 
-  it("概览 §5.4 表合计 312，§9 对照表实际值已更新", () => {
-    expect(OVERVIEW).toContain("### 5.4 `apps/api`：312 个端点 / 49 个路由插件");
-    expect(OVERVIEW).toContain("| **合计** | **312** |");
+  it("概览 §5.4 表合计 313，§9 对照表实际值已更新", () => {
+    expect(OVERVIEW).toContain("### 5.4 `apps/api`：313 个端点 / 49 个路由插件");
+    expect(OVERVIEW).toContain("| **合计** | **313** |");
     expect(OVERVIEW).not.toContain("117 个端点");
-    expect(OVERVIEW).toContain("**312 个端点**（49 个路由插件");
+    expect(OVERVIEW).toContain("**313 个端点**（49 个路由插件");
     expect(OVERVIEW).toContain("**49 个**（`server.ts` 的 register 调用）");
-    expect(OVERVIEW).toContain("**46 张**");
+    expect(OVERVIEW).toContain("**47 张**");
     expect(OVERVIEW).not.toContain("25 张表");
   });
 
-  it("FILE_INDEX 与 server.ts 头注释称 49 个路由插件、46 张表", () => {
+  it("FILE_INDEX 与 server.ts 头注释称 49 个路由插件、47 张表", () => {
     expect(FILE_INDEX).toContain("注册 49 个路由插件");
-    expect(FILE_INDEX).toContain("共 46 张表");
+    expect(FILE_INDEX).toContain("共 47 张表");
     expect(FILE_INDEX).not.toContain("24 个路由插件");
     expect(FILE_INDEX).not.toContain("19 张核心表");
     expect(read("apps/api/src/server.ts")).toContain("49 个路由插件");

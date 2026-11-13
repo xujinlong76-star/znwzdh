@@ -35,7 +35,7 @@
 ┌──────────────▼───────────────────────────────────────────▼────────────┐
 │                         Fastify 5 API 服务中枢                        │
 │  ┌──────────────────────┐  ┌──────────────────┐  ┌─────────────────┐  │
-│  │ 312 个 REST 路由声明  │  │ 兼容存储接缝 API  │  │ JobRunner 队列  │  │
+│  │ 313 个 REST 路由声明  │  │ 兼容存储接缝 API  │  │ JobRunner 队列  │  │
 │  │ /api/sites, search.. │  │ /api/storage/*   │  │ 可用性/权重重算 │  │
 │  └──────────┬───────────┘  └────────┬─────────┘  └────────┬────────┘  │
 │             └─────────── AppContext (全局注入) ───────────┘           │
@@ -68,7 +68,7 @@
 * `STORAGE_ADAPTER=github`：兼容原版行为，数据直接提交到用户自己的私有 GitHub 仓库。
 
 ### 2.2 核心路由分布
-中枢共挂载 312 个 REST 路由声明（49 个路由插件，数字以 `docs/metrics.json` 为准），涵盖：
+中枢共挂载 313 个 REST 路由声明（49 个路由插件，数字以 `docs/metrics.json` 为准），涵盖：
 * **公开只读**：`GET /api/sites`（支持按 source 过滤）、`GET /api/categories`、`GET /api/tags`、`GET /api/collections`、`GET /api/search`。
 * **管理写操作**：`POST /api/sites`、`POST /api/sites/batch`（批量导入）、`POST /api/sites/auto`（URL 自动抓取富化）、`DELETE /api/sites/:id`。
 * **Token 治理**：`GET /api/tokens`、`POST /api/tokens`、`DELETE /api/tokens/:id`。
@@ -129,7 +129,7 @@
 * **Standard 模式**：基于 PostgreSQL 16+ + pgvector + tsvector + pg_trgm，支持 HNSW 索引加速与多实例高并发。
 
 ### 5.2 核心数据表结构
-涵盖 `sites`、`categories`、`tags`、`site_tags`、`collections`、`collection_items`、`api_tokens`、`audit_logs`、`jobs`、`health_checks` 等 46 张表，均具备事务一致性保障与 Drizzle 幂等迁移。
+涵盖 `sites`、`categories`、`tags`、`site_tags`、`collections`、`collection_items`、`api_tokens`、`audit_logs`、`jobs`、`health_checks` 等 47 张表，均具备事务一致性保障与 Drizzle 幂等迁移。
 
 ---
 

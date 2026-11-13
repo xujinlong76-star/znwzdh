@@ -88,6 +88,7 @@ export const STORAGE_CLOCKS_KEY = 'navhub_home_diy_clocks_v1'
 const DEFAULT_HERO_WIDGETS = [
   'quick-search',
   'clock-pomodoro',
+  'weather-clock',
   'favorites-dock',
   'quick-tools',
 ]

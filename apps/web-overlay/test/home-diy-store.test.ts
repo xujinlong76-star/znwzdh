@@ -671,7 +671,7 @@ describe('预设悬停预览：只改快照，不落盘、不进撤销栈', () =
     const real = getHomeDiySnapshot().config
     expect(real.viewMode).toBe('hybrid')
     expect(real.heroDeckCollapsed).toBe(false)
-    expect(real.heroDeckWidgets).toEqual(['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'])
+    expect(real.heroDeckWidgets).toEqual(['quick-search', 'clock-pomodoro', 'weather-clock', 'favorites-dock', 'quick-tools'])
   })
 
   it('拖拽式提交不碰预览字段：预览继续盖着快照，只有改到预览字段才清那一项', () => {

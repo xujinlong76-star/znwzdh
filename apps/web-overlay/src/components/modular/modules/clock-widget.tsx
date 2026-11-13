@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Play, Pause, RotateCcw, Clock as ClockIcon, Sparkles } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { formatLunarDate, formatLunarDateExact } from '@/lib/lunar-date'
 
 const POMO_PRESETS = [
   { label: '15分', seconds: 15 * 60, desc: '快速冲刺' },
@@ -12,6 +13,7 @@ const POMO_PRESETS = [
 
 export function ClockWidget({ config }: { config?: Record<string, any> }) {
   const [time, setTime] = useState<Date | null>(null)
+  const [lunarLabel, setLunarLabel] = useState('')
   const [isPomodoro, setIsPomodoro] = useState(false)
   const [totalSeconds, setTotalSeconds] = useState(25 * 60)
   const [pomodoroSeconds, setPomodoroSeconds] = useState(25 * 60)
@@ -47,6 +49,23 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
       endAtRef.current = null
     }
   }, [isRunning])
+
+  // 农历串：先用 Intl 同步直出（首屏不等待）；东八区再用
+  // lunar-javascript 异步校正一次——两源在 2026–2028 仅
+  // 2027-02-06~03-07 这 30 天不一致，平时结果相同、不闪变。
+  // lunar-javascript 用动态 import，不进首屏包。
+  useEffect(() => {
+    if (!time) return
+    setLunarLabel(formatLunarDate(time))
+    if (time.getTimezoneOffset() !== -480) return
+    let cancelled = false
+    formatLunarDateExact(time).then((exact) => {
+      if (!cancelled && exact) setLunarLabel(exact)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [time])
 
   if (!time) {
     return <div className="h-full flex items-center justify-center text-xs text-muted-foreground font-mono">加载时钟...</div>
@@ -100,6 +119,7 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
             </div>
             <div className="text-xs text-muted-foreground font-mono">
               {time.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              {lunarLabel ? ` · ${lunarLabel}` : ''}
             </div>
           </div>
         ) : (

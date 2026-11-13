@@ -22,6 +22,7 @@ const MINIMAL_PAYLOADS: Record<(typeof JOB_KINDS)[number], Record<string, unknow
   backup_restore: { stagingPath: "backups/restore-plan.json" },
   hotlist_refresh: {},
   daily_brief: {},
+  drama_update_check: {},
 };
 
 describe("任务 payload 契约", () => {

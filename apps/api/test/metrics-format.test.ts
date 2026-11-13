@@ -48,7 +48,7 @@ const ALLOWED_LABEL_VALUES: Record<string, Set<string>> = {
   result: new Set(["hit", "miss", "shared"]),
   // 版本号健康度（P1-1）：三态固定，缺序列等于状态未知
   state: new Set(["ok", "triggers_missing", "unreadable"]),
-  // 任务队列（P1-4）：kind 必须与 JOB_KINDS 逐字一致（14 个固定值），
+  // 任务队列（P1-4）：kind 必须与 JOB_KINDS 逐字一致（15 个固定值），
   // 任何新增 kind 都会在这里被拦下来——否则新任务的指标会静默缺席。
   kind: new Set([
     "health_check",
@@ -65,6 +65,7 @@ const ALLOWED_LABEL_VALUES: Record<string, Set<string>> = {
     "backup_restore",
     "hotlist_refresh",
     "daily_brief",
+    "drama_update_check",
   ]),
   // 出站请求（P2）：outcome 是 guardedFetch 的四种结局，reason 是 SSRF 拦截原因的
   // 有界枚举。这两组值由 @navhub/ai 传进来（不是本包的常量），正是「外部输入借道

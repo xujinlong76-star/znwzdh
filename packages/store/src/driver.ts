@@ -324,6 +324,17 @@ CREATE TABLE IF NOT EXISTS watch_entries (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS watch_entries_user_key_idx ON watch_entries(user_id, drama_key);
 CREATE INDEX IF NOT EXISTS watch_entries_user_idx ON watch_entries(user_id);
+CREATE TABLE IF NOT EXISTS drama_check_states (
+ user_id TEXT NOT NULL,
+ drama_key TEXT NOT NULL,
+ latest_episode INTEGER,
+ last_checked_at INTEGER NOT NULL,
+ last_error TEXT,
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL,
+ PRIMARY KEY (user_id, drama_key)
+);
+CREATE INDEX IF NOT EXISTS drama_check_states_drama_idx ON drama_check_states(drama_key);
 
 CREATE TABLE IF NOT EXISTS hotlist_entries (
   source TEXT NOT NULL,
@@ -969,6 +980,17 @@ CREATE TABLE IF NOT EXISTS watch_entries (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS watch_entries_user_key_idx ON watch_entries(user_id, drama_key);
 CREATE INDEX IF NOT EXISTS watch_entries_user_idx ON watch_entries(user_id);
+CREATE TABLE IF NOT EXISTS drama_check_states (
+ user_id TEXT NOT NULL,
+ drama_key TEXT NOT NULL,
+ latest_episode INTEGER,
+ last_checked_at INTEGER NOT NULL,
+ last_error TEXT,
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL,
+ PRIMARY KEY (user_id, drama_key)
+);
+CREATE INDEX IF NOT EXISTS drama_check_states_drama_idx ON drama_check_states(drama_key);
 
 CREATE TABLE IF NOT EXISTS hotlist_entries (
   source TEXT NOT NULL,

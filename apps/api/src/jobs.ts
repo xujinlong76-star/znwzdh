@@ -43,6 +43,7 @@ import {
   handleDataRetention,
   handleHotlistRefresh,
   handleDailyBrief,
+  handleDramaUpdateCheck,
 } from "./jobs/index.ts";
 
 export {
@@ -55,6 +56,7 @@ export {
   handleDataRetention,
   handleHotlistRefresh,
   handleDailyBrief,
+  handleDramaUpdateCheck,
 };
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
@@ -134,9 +136,9 @@ export interface PatrolSelection {
   depth: { unchecked: number; checked: number };
 }
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief" | "drama_update_check";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief", "drama_update_check"];
 
 /** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
 export interface DataRetentionPayload {
@@ -203,6 +205,8 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "hotlist_refresh", intervalMs: 3600_000 },
   // 每日简报：按天组版落库（热榜精选 + 新收录 + 小猫猫开场白）
   { kind: "daily_brief", intervalMs: 86_400_000 },
+  // 短剧新集检查：每天对可查榜单取一次最新集数，变大才通知关注者
+  { kind: "drama_update_check", intervalMs: 86_400_000 },
 ];
 
 /**
@@ -525,6 +529,7 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   backup_restore: { cron: "MANUAL", timeoutMs: 1_800_000, maxConcurrency: 1 },
   hotlist_refresh: { cron: "HOURLY", timeoutMs: 180_000, maxConcurrency: 1 },
   daily_brief: { cron: "DAILY5AM", timeoutMs: 300_000, maxConcurrency: 1 },
+  drama_update_check: { cron: "DAILY", timeoutMs: 300_000, maxConcurrency: 1 },
 };
 
 /**
@@ -783,6 +788,9 @@ export class JobRunner {
     });
     this.taskRegistry.register("daily_brief", async () => {
       await this.runDailyBrief();
+    });
+    this.taskRegistry.register("drama_update_check", async () => {
+      await this.runDramaUpdateCheck();
     });
     this.taskRegistry.register("backup_restore", async ({ payload, run }) => {
       // jobId 由 Runner 通过执行句柄注入而不是放在 payload 里：入队时还拿不到 id
@@ -1561,6 +1569,10 @@ export class JobRunner {
 
   private async runDailyBrief(): Promise<void> {
     return handleDailyBrief(this.ctx);
+  }
+
+  private async runDramaUpdateCheck(): Promise<void> {
+    return handleDramaUpdateCheck(this.ctx);
   }
 
   /**

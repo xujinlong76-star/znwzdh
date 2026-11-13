@@ -64,6 +64,13 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     note: "追剧清单条目（剧名/进度/节奏标注都是用户自记内容）；本期不进导出包（导出/导入另行排期），注销必须删净",
   },
   {
+    id: "dramaCheckStates",
+    table: "drama_check_states",
+    ownerColumns: ["user_id"],
+    disposition: "delete",
+    note: "短剧新集检查状态（服务端按关注剧目记的上次集数与检查时间）；注销必须删除",
+  },
+  {
     id: "searchHistory",
     table: "search_history",
     ownerColumns: ["user_id"],

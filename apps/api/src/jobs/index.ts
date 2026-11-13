@@ -9,3 +9,4 @@ export * from "./tasks/metadata-refetch.task.ts";
 export * from "./tasks/data-retention.task.ts";
 export * from "./tasks/hotlist-refresh.task.ts";
 export * from "./tasks/daily-brief.task.ts";
+export * from "./tasks/drama-check.task.ts";

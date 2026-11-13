@@ -61,6 +61,7 @@ import * as historyRepo from "./repository/history.ts";
 import * as sessionsRepo from "./repository/sessions.ts";
 import type { SessionDeviceRecord } from "./repository/sessions.ts";
 import * as notificationsRepo from "./repository/notifications.ts";
+import * as dramaCheckRepo from "./repository/drama-check.ts";
 import * as usersRepo from "./repository/users.ts";
 import * as authTokensRepo from "./repository/auth-tokens.ts";
 import * as tokensRepo from "./repository/tokens.ts";
@@ -999,6 +1000,25 @@ async savedPluginEmbeddings(filter?: {
 
   async clearWatchEntries(userId: string): Promise<number> {
     return watchlistRepo.clearWatchEntries(this, userId);
+  }
+
+  /* ------------------------------ 短剧新集检查状态 ------------------------------ */
+
+  async getDramaCheckState(userId: string, dramaKey: string) {
+    return dramaCheckRepo.getDramaCheckState(this, userId, dramaKey);
+  }
+
+  async upsertDramaCheckState(
+    userId: string,
+    dramaKey: string,
+    state: dramaCheckRepo.DramaCheckUpsert,
+    now?: number,
+  ): Promise<void> {
+    return dramaCheckRepo.upsertDramaCheckState(this, userId, dramaKey, state, now);
+  }
+
+  async listDramaFollowers(dramaKey: string): Promise<string[]> {
+    return dramaCheckRepo.listDramaFollowers(this, dramaKey);
   }
 
   /* ------------------------- 全网热榜缓存 / 每日简报 ------------------------- */

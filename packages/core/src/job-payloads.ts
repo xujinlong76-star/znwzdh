@@ -93,6 +93,7 @@ export const JobPayloadSchemas = {
   hotlist_refresh: z.object({}).strict(),
 
   daily_brief: z.object({}).strict(),
+  drama_update_check: z.object({}).strict(),
 } as const;
 
 export type JobPayloadKind = keyof typeof JobPayloadSchemas;

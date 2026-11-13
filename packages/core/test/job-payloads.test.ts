@@ -1,5 +1,5 @@
 /**
- * job-payloads.ts 覆盖：validateJobPayload 对全部 14 种任务的校验。
+ * job-payloads.ts 覆盖：validateJobPayload 对全部 15 种任务的校验。
  * （apps/api 的 job-payload-schema.test.ts 做的是「枚举与 jobs.ts 的
  *  奇偶校验」；此处补齐本文件自身的有效/无效/边界/严格模式断言。）
  */
@@ -7,11 +7,12 @@ import { describe, expect, it } from "vitest";
 import { JOB_PAYLOAD_KINDS, validateJobPayload } from "../src/job-payloads.ts";
 
 describe("validateJobPayload", () => {
-  it("JOB_PAYLOAD_KINDS 列出全部 14 种任务", () => {
+  it("JOB_PAYLOAD_KINDS 列出全部 15 种任务", () => {
     expect([...JOB_PAYLOAD_KINDS].sort()).toEqual([
       "backup_restore",
       "daily_brief",
       "data_retention",
+      "drama_update_check",
       "health_check",
       "hotlist_refresh",
       "plugin_governance",

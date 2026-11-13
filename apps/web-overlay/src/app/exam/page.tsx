@@ -55,6 +55,8 @@ const CANONICAL = '/exam'
 const INDEX_TITLE = '考试日历 - 国考、四六级、省考、考研倒计时'
 const DESCRIPTION =
   '2027 国考、四六级、省考、考研初试的倒计时与关键节点：准考证打印、笔试时间一次看全，附官方报名与备考入口。'
+const EMPTY_TITLE = '考试日历 - 国考、四六级、省考、考研'
+const EMPTY_DESCRIPTION = '本轮四场考试已结束，时间与关键节点备查；新日程以官方公告为准。'
 const NAVIGATION_PATH = 'src/navsphere/content/navigation.json'
 const SITE_PATH = 'src/navsphere/content/site.json'
 
@@ -66,12 +68,15 @@ const EXAM_ICONS: Record<string, LucideIcon> = {
 }
 
 export async function generateMetadata(): Promise<Metadata> {
+  const nearest = nearestExam()
+  const title = nearest ? INDEX_TITLE : EMPTY_TITLE
+  const description = nearest ? DESCRIPTION : EMPTY_DESCRIPTION
   return {
-    title: INDEX_TITLE,
-    description: DESCRIPTION,
+    title,
+    description,
     // 与 /graph 同款写法：canonical 写字面量，canonical-coverage 守卫直接锁字面量
     alternates: { canonical: '/exam' },
-    ...(await pageShareMetadata({ url: CANONICAL, title: INDEX_TITLE, description: DESCRIPTION })),
+    ...(await pageShareMetadata({ url: CANONICAL, title, description })),
   }
 }
 
@@ -150,7 +155,9 @@ export default async function ExamPage() {
               <span>考试日历</span>
             </h1>
             <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed max-w-2xl">
-              国考、四六级、省考、考研——四场大考的倒计时与关键节点，一个页面看全。
+              {nearest
+                ? '国考、四六级、省考、考研——四场大考的倒计时与关键节点，一个页面看全。'
+                : '国考、四六级、省考、考研——四场大考的时间与关键节点，一个页面看全。'}
             </p>
             <div className="mt-4 pt-3.5 border-t border-border/50 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-sky-500/25 bg-sky-500/5 text-xs text-sky-700 dark:text-sky-400">
@@ -160,7 +167,7 @@ export default async function ExamPage() {
                   : '本轮四场考试均已结束'}
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
-                倒计时实时更新 · 日期以官方公告为准
+                {nearest ? '倒计时实时更新 · 日期以官方公告为准' : '日期以官方公告为准'}
               </span>
             </div>
           </div>
@@ -169,7 +176,7 @@ export default async function ExamPage() {
         {/* 倒计时卡 + 时间轴 */}
         <section aria-labelledby="exam-countdown-heading">
           <h2 id="exam-countdown-heading" className="text-lg font-bold text-foreground">
-            四场大考倒计时
+            {nearest ? '四场大考倒计时' : '四场大考'}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             关注考试后可逐项勾选考前清单；关注与勾选只保存在本机浏览器。
@@ -208,30 +215,32 @@ export default async function ExamPage() {
         </section>
 
         {/* 撞期与双考提醒 */}
-        <section aria-labelledby="exam-reminders-heading">
-          <h2 id="exam-reminders-heading" className="text-lg font-bold text-foreground">
-            撞期与双考提醒
-          </h2>
-          <ul className="mt-4 space-y-3">
-            {EXAM_REMINDERS.map((reminder) => (
-              <li
-                key={reminder.title}
-                className="flex gap-3 rounded-2xl border border-border bg-card p-4"
-              >
-                <AlertTriangle
-                  className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
-                  aria-hidden
-                />
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{reminder.title}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    {reminder.body}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {nearest ? (
+          <section aria-labelledby="exam-reminders-heading">
+            <h2 id="exam-reminders-heading" className="text-lg font-bold text-foreground">
+              撞期与双考提醒
+            </h2>
+            <ul className="mt-4 space-y-3">
+              {EXAM_REMINDERS.map((reminder) => (
+                <li
+                  key={reminder.title}
+                  className="flex gap-3 rounded-2xl border border-border bg-card p-4"
+                >
+                  <AlertTriangle
+                    className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
+                    aria-hidden
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{reminder.title}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                      {reminder.body}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {/* 备考站点区 */}
         <section aria-labelledby="exam-prep-heading">
@@ -271,7 +280,7 @@ export default async function ExamPage() {
             <div className="mt-4 rounded-2xl border border-border bg-card p-5">
               <p className="text-base font-medium text-foreground">备考站点暂时加载不出来</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                站内数据服务暂时不可用，官方入口清单没能取到。倒计时与关键节点不受影响。
+                站内数据服务暂时不可用，官方入口清单没能取到。考试时间与关键节点不受影响。
               </p>
             </div>
           )}

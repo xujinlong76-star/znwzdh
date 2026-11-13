@@ -153,6 +153,7 @@ export function NavigationCard({
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="分类管理"
                     onClick={() => router.push(`/admin/navigation/${item.id}/categories`)}
                     className="h-8 w-8"
                   >
@@ -168,6 +169,7 @@ export function NavigationCard({
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="站点管理"
                     onClick={() => router.push(`/admin/navigation/${item.id}/items`)}
                     className="h-8 w-8"
                   >
@@ -184,6 +186,7 @@ export function NavigationCard({
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label="置顶"
                       onClick={onMoveToTop}
                       className="h-8 w-8"
                     >
@@ -201,6 +204,7 @@ export function NavigationCard({
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label="置底"
                       onClick={onMoveToBottom}
                       className="h-8 w-8"
                     >
@@ -217,6 +221,7 @@ export function NavigationCard({
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="编辑"
                     onClick={() => setIsEditDialogOpen(true)}
                     className="h-8 w-8"
                   >
@@ -232,6 +237,7 @@ export function NavigationCard({
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="删除"
                     onClick={() => setIsDeleteDialogOpen(true)}
                     className="h-8 w-8"
                   >

@@ -3206,9 +3206,9 @@
             {
               "id": "nav-541673d083aa",
               "title": "国家数字图书馆",
-              "href": "http://www.nlc.cn",
+              "href": "https://www.nlc.cn",
               "description": "中国国家图书馆数字资源入口",
-              "icon": "http://www.nlc.cn/favicon.ico",
+              "icon": "https://www.nlc.cn/template_resource/20186/img/favicon.ico",
               "enabled": true,
               "tags": [
                 "官方",

@@ -278,8 +278,8 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
    * 写回通道）；已有数据则整段跳过。基线结论决定下面 seed-data 站点循环
    * 还跑不跑：
    *  - imported / skipped_existing：部署带了内容文件且库已与之对齐——文件
-   *    就是事实源，84 站兜底循环必须跳过。否则每次重启都会把 26 个只在
-   *    seed-data 里有的站重新塞回库（总数涨到 324 与文件对不上），还会用
+   *    就是事实源，84 站兜底循环必须跳过。否则每次重启都会把 21 个只在
+   *    seed-data 里有的站重新塞回库（总数涨到 346 与文件对不上），还会用
    *    种子里的长描述覆盖运营在后台改过的短描述；
    *  - missing_file / failed / disabled：没有可用的基线（独立跑中枢包、
    *    导入出错、显式关闭），落回 84 站兜底，保证站点不至于空着。

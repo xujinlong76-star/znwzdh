@@ -443,7 +443,9 @@ export default function WatchlistPage() {
                       className={`rounded-2xl border p-3 ${
                         day.isToday
                           ? 'border-rose-300 bg-rose-50 max-md:order-first dark:border-rose-900 dark:bg-rose-950/30'
-                          : 'border-zinc-200 dark:border-zinc-800'
+                          : day.isPast
+                            ? 'border-zinc-200 opacity-60 dark:border-zinc-800'
+                            : 'border-zinc-200 dark:border-zinc-800'
                       }`}
                     >
                       <p className="text-xs font-semibold">
@@ -454,6 +456,11 @@ export default function WatchlistPage() {
                           </span>
                         )}
                       </p>
+                      {day.entries.length >= 3 && (
+                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                          {day.entries.length} 部撞车，先看想先看的
+                        </p>
+                      )}
                       {day.entries.length === 0 ? (
                         <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">没有安排</p>
                       ) : (
@@ -484,6 +491,11 @@ export default function WatchlistPage() {
                 <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
                   平台临时改档时可能不准，以平台为准。提醒只在站内待看区，到点不会手机推送。
                 </p>
+                {schedule.days[6].entries.length === 0 && (
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    周日这格空着，正好补之前漏掉的集。
+                  </p>
+                )}
               </>
             )}
 

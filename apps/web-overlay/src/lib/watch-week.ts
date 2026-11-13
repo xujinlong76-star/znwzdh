@@ -23,6 +23,9 @@ export interface WeekScheduleDay {
   weekday: number
   /** 是否今天（按调用方传入的 now 判定，默认此时） */
   isToday: boolean
+  /** 是否已过去（在今天之前；固定周一–周日表在周日打开时周一–周六都算过去）。
+      只做展示用：过去的格子置灰，里面的剧照常排位、不丢数据；今天不算过去。 */
+  isPast: boolean
   /** 落在这一天的剧：想先看（high）在前，其次按最近更新时间倒序 */
   entries: WatchEntry[]
 }
@@ -71,11 +74,14 @@ export function buildWeekSchedule(entries: WatchEntry[], weekStart: Date, now: D
 
   for (let i = 0; i < 7; i++) {
     const date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)
+    const dateKey = localDateKey(date.getTime())
     days.push({
       date,
-      dateKey: localDateKey(date.getTime()),
+      dateKey,
       weekday: date.getDay(),
-      isToday: localDateKey(date.getTime()) === todayKey,
+      isToday: dateKey === todayKey,
+      // YYYY-MM-DD 字典序即日期序；今天不算过去
+      isPast: dateKey < todayKey,
       entries: [],
     })
   }

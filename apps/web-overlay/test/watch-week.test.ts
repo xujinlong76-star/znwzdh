@@ -115,3 +115,32 @@ describe('buildWeekSchedule 排布规则', () => {
     expect(s.days.every((d) => d.entries.length === 0)).toBe(true)
   })
 })
+
+describe('buildWeekSchedule 过去日期置灰（周日边缘）', () => {
+  // 2026-11-22 是周日：固定周一–周日的表当天打开时，周一–周六都已过去
+  const SUNDAY = new Date(2026, 10, 22, 10, 0, 0)
+
+  it('周日打开：周一–周六都算过去，周日是今天不算过去', () => {
+    const s = buildWeekSchedule([], MON, SUNDAY)
+    expect(s.days.map((d) => d.isPast)).toEqual([true, true, true, true, true, true, false])
+    expect(s.days.map((d) => d.isToday)).toEqual([false, false, false, false, false, false, true])
+  })
+
+  it('周一打开：没有过去的格子', () => {
+    const s = buildWeekSchedule([], MON, MON)
+    expect(s.days.map((d) => d.isPast)).toEqual([false, false, false, false, false, false, false])
+    expect(s.days[0].isToday).toBe(true)
+  })
+
+  it('周三打开：周一、周二过去，周三之后不过去', () => {
+    const s = buildWeekSchedule([], MON, WED)
+    expect(s.days.map((d) => d.isPast)).toEqual([true, true, false, false, false, false, false])
+  })
+
+  it('过去的格子里的剧照常排位，只由页面置灰，不丢数据', () => {
+    const mondayShow = entry({ title: '周一剧', cadence: { kind: 'weekly', weekdays: [1] } })
+    const s = buildWeekSchedule([mondayShow], MON, SUNDAY)
+    expect(s.days[0].entries.map((e) => e.title)).toEqual(['周一剧'])
+    expect(s.days[0].isPast).toBe(true)
+  })
+})

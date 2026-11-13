@@ -64,7 +64,18 @@ describe("loadDramaFeatured", () => {
   it("随仓库发布的剧目文件能校验通过", () => {
     const { dramas, skipped } = loadDramaFeatured();
     expect(skipped).toBe(0);
-    expect(dramas.length).toBeLessThanOrEqual(12);
+    expect(dramas).toHaveLength(12);
+    const kinds = new Map<string, number>();
+    for (const d of dramas) kinds.set(d.check.kind, (kinds.get(d.check.kind) ?? 0) + 1);
+    expect(kinds.get("ranking")).toBe(3);
+    expect(kinds.get('none')).toBe(9);
+    const titles = dramas.map((d) => d.title);
+    expect(titles).toContain('悍妻当家，靠美食扶起一家软骨头');
+    expect(titles.some((t) => t.includes('念记老卤'))).toBe(false);
+    const hanqi = dramas.find((d) => d.title.includes('悍妻当家'));
+    expect(hanqi?.episodesKnown).toBe(177);
+    expect(hanqi?.totalEpisodes).toBe(177);
+    expect(hanqi?.platformSiteId).toBe('nav-557388e01d50');
     for (const drama of dramas) {
       expect(drama.url).toMatch(/^https:\/\//);
       if (drama.check.kind !== "none") {

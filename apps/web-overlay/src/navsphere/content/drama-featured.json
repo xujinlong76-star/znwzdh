@@ -1,5 +1,165 @@
 {
   "version": 1,
   "updatedAt": "2026-11-12",
-  "dramas": []
+  "dramas": [
+    {
+      "title": "十八岁太奶奶驾到，重整家族荣耀 第五部",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://zh.wikipedia.org/wiki/%E5%8D%81%E5%85%AB%E5%B2%81%E5%A4%AA%E5%A5%B6%E5%A5%B6%E9%A9%BE%E5%88%B0%E9%87%8D%E6%95%B4%E5%AE%B6%E6%97%8F%E8%8D%A3%E8%80%80",
+      "linkNote": "百科页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "百科页未列集数"
+      }
+    },
+    {
+      "title": "和离后我带女儿横扫魔域",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/manju/helihouwodainverhengsaomoyu.html",
+      "linkNote": "剧目页",
+      "episodesKnown": 1000,
+      "totalEpisodes": 1000,
+      "check": {
+        "kind": "none",
+        "reason": "已完结全 1000 集，无新集可等"
+      }
+    },
+    {
+      "title": "重生！丑小鸭逆袭成了万人迷 第五季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.duanjugongcheng.com/cn/bangdan/ju/chong-sheng-chou-xiao-ya-ni-xi-cheng-le-wan-ren-mi-di-wu-ji",
+      "linkNote": "榜单页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "榜单页为 JS 空壳，静态 HTML 无集数"
+      }
+    },
+    {
+      "title": "聚宝仙盆之杂灵根才是真BOSS 第十五季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.tahou.com/article/222010451290608645",
+      "linkNote": "榜单页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "榜单文章无集数"
+      }
+    },
+    {
+      "title": "退役归来，这个保镖不好惹",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.tahou.com/article/221836171434552325",
+      "linkNote": "榜单页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "榜单文章页无集数"
+      }
+    },
+    {
+      "title": "漂亮的恶意",
+      "platformSiteId": "nav-e85ffe7e04f6",
+      "platformTitle": "抖音短剧",
+      "url": "https://finance.sina.cn/2026-10-20/detail-inivvnpv5862925.d.html",
+      "linkNote": "报道页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "报道页无集数，且剧在抖音 App 内播出"
+      }
+    },
+    {
+      "title": "为白月光弃我，孟小姐离婚不回头",
+      "platformSiteId": "nav-536bfaba406",
+      "platformTitle": "快手短剧",
+      "url": "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/",
+      "linkNote": "榜单页",
+      "episodesKnown": 70,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "ranking",
+        "url": "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/",
+        "titleMatch": "为白月光弃我"
+      }
+    },
+    {
+      "title": "病弱千金往地一躺，全家慌了",
+      "platformSiteId": "nav-536bfaba406",
+      "platformTitle": "快手短剧",
+      "url": "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/",
+      "linkNote": "榜单页",
+      "episodesKnown": 65,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "ranking",
+        "url": "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/",
+        "titleMatch": "病弱千金"
+      }
+    },
+    {
+      "title": "考上清北，却交不起五千学费",
+      "platformSiteId": "nav-536bfaba406",
+      "platformTitle": "快手短剧",
+      "url": "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/",
+      "linkNote": "榜单页",
+      "episodesKnown": 57,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "ranking",
+        "url": "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/",
+        "titleMatch": "考上清北"
+      }
+    },
+    {
+      "title": "我隐藏身份，找到一个好儿媳",
+      "platformSiteId": "nav-536bfaba406",
+      "platformTitle": "快手短剧",
+      "url": "https://www.zongyimi.com/drama/rankings/heat/2026-11-09/",
+      "linkNote": "榜单页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "热力榜页未列集数"
+      }
+    },
+    {
+      "title": "悍妻当家，靠美食扶起一家软骨头",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.zongyimi.com/drama/rankings/native/2026-11-10/",
+      "linkNote": "榜单页",
+      "episodesKnown": 177,
+      "totalEpisodes": 177,
+      "check": {
+        "kind": "none",
+        "reason": "已完结全 177 集，无新集可等"
+      }
+    },
+    {
+      "title": "仿生迷踪",
+      "platformSiteId": "nav-8652182b18e7",
+      "platformTitle": "腾讯视频·短剧",
+      "url": "https://k.sina.cn/article_1893892941_70e2834d020024niw.html?from=society",
+      "linkNote": "报道页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "报道页仅有档期信息，无集数"
+      }
+    }
+  ]
 }

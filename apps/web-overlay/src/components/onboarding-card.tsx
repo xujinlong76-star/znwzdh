@@ -19,7 +19,7 @@
  * 按不到键，留着就是噪声。判据用指针类型而不是断点宽度——640px 以上的平板
  * 同样是触屏，按宽度筛会漏掉它们。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { BookmarkPlus, Command, Star, X, ArrowRight } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
@@ -27,35 +27,76 @@ import { getModifierKey } from '@/lib/platform'
 import { ONBOARDING_DISMISSED_VALUE, ONBOARDING_STORAGE_KEY } from '@/lib/onboarding'
 import { spotlightHotkeyHint, useSpotlightShortcutMode } from '@/lib/user-preferences'
 
-export function OnboardingCard() {
-  const [visible, setVisible] = useState(false)
-  const shortcutHint = spotlightHotkeyHint(useSpotlightShortcutMode(), getModifierKey())
+/**
+ * CLS 修复（Lighthouse Wave 1，2026-11-13）：旧版用 useState(false) + useEffect
+ * 读 localStorage——SSR 高度 0，水合后 473px 的引导卡插入、下推整页（CLS 0.132）。
+ *
+ * 改 useSyncExternalStore：server snapshot 返回 false（未关闭 → 可见），卡片直接进
+ * SSR 首帧；client 快照首绘即读 localStorage，首访用户不闪不动。已关闭的用户
+ * 服务端仍先渲染、客户端快照后收起（服务端不知道他关过，只能这样；收起是用户
+ * 已确认的状态变化，不是首帧抖动）。
+ *
+ * 订阅：本标签页 dismiss 后发自定义事件（storage 事件只跨标签触发）；跨标签页
+ * 走 storage 事件。getSnapshot 只读 localStorage、无副作用，返回值稳定。
+ */
+function subscribeOnboardingDismissed(onChange: () => void): () => void {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === ONBOARDING_STORAGE_KEY) onChange()
+  }
+  window.addEventListener('storage', onStorage)
+  window.addEventListener('navhub:onboarding-dismissed', onChange)
+  return () => {
+    window.removeEventListener('storage', onStorage)
+    window.removeEventListener('navhub:onboarding-dismissed', onChange)
+  }
+}
 
+function getOnboardingDismissedSnapshot(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDING_STORAGE_KEY) === ONBOARDING_DISMISSED_VALUE
+  } catch {
+    // 隐私模式下 localStorage 可能抛错：静默显示，不影响主流程
+    return false
+  }
+}
+
+export function OnboardingCard() {
+  const dismissed = useSyncExternalStore(
+    subscribeOnboardingDismissed,
+    getOnboardingDismissedSnapshot,
+    () => false,
+  )
+  // 修饰键（⌘/Ctrl）不能在渲染期读 navigator：服务端永远返回 'Ctrl'，
+  // iPhone 客户端首绘若是 '⌘'，与 SSR 文本不一致 → React #418 水合失败
+  // （键盘快捷键弹窗已用同一写法）。首绘固定 'Ctrl'，挂载后在 effect
+  // 里校正——kbd 文案在卡片内换字，不推挤其他内容。
+  const [modKey, setModKey] = useState<'⌘' | 'Ctrl'>('Ctrl')
   useEffect(() => {
-    // 必须等挂载后再读 localStorage：服务端渲染时没有它，
-    // 直接放进初始 state 会造成 hydration 不一致（服务端 true / 客户端 false）。
-    try {
-      if (localStorage.getItem(ONBOARDING_STORAGE_KEY) !== ONBOARDING_DISMISSED_VALUE) setVisible(true)
-    } catch {
-      // 隐私模式下 localStorage 可能抛错：静默不显示，不影响主流程
-    }
+    setModKey(getModifierKey())
   }, [])
+  const shortcutHint = spotlightHotkeyHint(useSpotlightShortcutMode(), modKey)
 
   const dismiss = () => {
-    setVisible(false)
     try {
       localStorage.setItem(ONBOARDING_STORAGE_KEY, ONBOARDING_DISMISSED_VALUE)
     } catch {
       // 存不进去也无妨：本次会话已隐藏
     }
+    try {
+      window.dispatchEvent(new Event('navhub:onboarding-dismissed'))
+    } catch {
+      // 忽略
+    }
   }
 
-  if (!visible) return null
+  if (dismissed) return null
 
   return (
     <section
       aria-label="新手引导"
-      className="mb-6 rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 sm:p-5 animate-in fade-in slide-in-from-top-1 duration-300"
+      // 等高 min-h：Playwright 实测生产构建卡片高 473px（390px 宽）/ 256px（1350px 宽）；
+      // 内容若因字体、快捷键提示晚到而先矮后高，min-h 托住外高、下面内容不跟着跳。
+      className="mb-6 min-h-[473px] rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 sm:min-h-[256px] sm:p-5 animate-in fade-in slide-in-from-top-1 duration-300"
     >
       <div className="flex items-start justify-between gap-3">
         <div>

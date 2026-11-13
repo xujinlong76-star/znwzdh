@@ -273,7 +273,7 @@ export function NavigationToolbar({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden lg:inline-flex"
               >
                 <Link href="/me" title="用户中心" aria-label="用户中心">
                   <User className="h-4 w-4" />

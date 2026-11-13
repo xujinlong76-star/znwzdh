@@ -25,16 +25,16 @@ export async function HomeBriefStrip() {
             今日简报 · {brief.date.slice(5)}
           </span>
           <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{brief.opening}</p>
-          <Link href="/brief" className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary hover:underline">
+          <Link href="/brief" className="inline-flex min-h-6 shrink-0 items-center gap-1 text-sm font-medium text-primary hover:underline">
             看完整简报 <ArrowRight className="h-4 w-4" aria-hidden />
           </Link>
         </div>
         {firsts.length > 0 ? (
-          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
             {firsts.map((pick) => {
               const hot = formatHotValue(pick.hotValue)
               return (
-                <li key={pick.source} className="inline-flex min-w-0 items-baseline gap-1.5">
+                <li key={pick.source} className="inline-flex min-h-6 min-w-0 items-center gap-1.5">
                   <span className="shrink-0 font-medium text-foreground/70">{pick.sourceName}</span>
                   <a
                     href={safeHref(pick.url)}

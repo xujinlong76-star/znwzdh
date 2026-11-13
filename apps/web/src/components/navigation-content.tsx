@@ -46,7 +46,57 @@ function DiyGridDragBoundary({
 // 沉浸影院带在首屏下方且自带懒挂载：动态导入，不占首页首屏包体积（预算紧）。
 const HomeDramaCinema = dynamic(
   () => import('@/components/home-drama-cinema').then((m) => m.HomeDramaCinema),
-  { ssr: false },
+  {
+    ssr: false,
+    /**
+     * 等高骨架（Lighthouse Wave 1 CLS 修复）：影院区 chunk 晚到时先占满真实高度，
+     * 落进再换真内容，整页不上下跳（旧版无 loading 占位，733px 级下推落在另一
+     * 个 CLS 窗口）。骨架与真实结构逐项对齐——Playwright 实测生产构建：
+     * 标题行 28px、aside 371px、总高移动 936px / 桌面 619px，海报用同款
+     * aspect-[440/784]，横幅用同款 aspect-[1000/561]。
+     * 改 home-drama-cinema.tsx 的结构时必须同步改这里，否则骨架与真身不等高。
+     */
+    loading: () => (
+      <section aria-hidden className="mt-8 overflow-hidden rounded-3xl bg-zinc-950 text-zinc-100 shadow-xl">
+        <div className="flex items-center justify-between px-4 pt-4 sm:px-6">
+          <div className="h-7 w-44 rounded-md bg-white/10 animate-pulse" />
+          <div className="hidden items-center gap-4 sm:flex">
+            <div className="h-5 w-16 rounded-md bg-white/10 animate-pulse" />
+            <div className="h-5 w-24 rounded-md bg-white/10 animate-pulse" />
+          </div>
+        </div>
+        <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_300px]">
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="aspect-[440/784] w-36 shrink-0 rounded-2xl bg-white/10 animate-pulse sm:w-44"
+              />
+            ))}
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="h-5 w-28 rounded bg-white/10 animate-pulse" />
+            <div className="mt-3 space-y-2">
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+                <div key={i} className="h-6 w-full rounded bg-white/10 animate-pulse" />
+              ))}
+            </div>
+            <div className="mt-3 border-t border-white/10 pt-2">
+              <div className="h-10 w-full rounded bg-white/10 animate-pulse" />
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 px-4 pb-4 sm:px-6 sm:pb-6 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="aspect-[1000/561] w-full rounded-2xl bg-white/10 animate-pulse"
+            />
+          ))}
+        </div>
+      </section>
+    ),
+  },
 )
 import { useOverlayBehavior } from '@/components/ui/overlay'
 import {

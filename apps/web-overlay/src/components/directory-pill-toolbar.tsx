@@ -101,13 +101,15 @@ export function DirectoryPillToolbar({
   if (visibleLinks.length === 0) return null
 
   return (
-    <ul
-      ref={rootRef}
+    <div
       role="toolbar"
       aria-label="站内分类目录（方向键切换，回车打开）"
       aria-orientation="horizontal"
-      tabIndex={0}
-      onKeyDown={onKeyDown}
+    >
+      <ul
+        ref={rootRef}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
       onFocus={(e) => {
         // 从外部 Tab 进来时，把焦点交给当前活动项，而不是停在容器上
         if (e.target === rootRef.current) {
@@ -133,6 +135,7 @@ export function DirectoryPillToolbar({
           </Link>
         </li>
       ))}
-    </ul>
+      </ul>
+    </div>
   )
 }

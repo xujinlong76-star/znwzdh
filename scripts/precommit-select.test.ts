@@ -146,6 +146,23 @@ describe("pre-commit 选测：改动 → 测试文件", { timeout: 120_000 }, ()
     expect(files.length).toBeLessThanOrEqual(10);
   });
 
+  it("目录名当词根时的噪声（词根臂）：不回整棵，内容相关测试仍在", () => {
+    // 图臂的 ≤10 只量图可达集（今天恰好 10 个，零余量）；词根回退臂
+    // （NAVHUB_PRECOMMIT_NO_GRAPH=1）今天实测 11 个，此前无任何断言。
+    // 其中 4 个是 install 子串带进来的噪声——内容里含 install 字串
+    // （web-install / self-installer / pnpm install 等），与
+    // install-git-hooks.mjs 本身无关；其余 7 个与图臂重合，是真消费者。
+    // 判据沿用同文件「收窄是量级上的收窄」的比例式：词根臂选中数须远小于
+    // 整棵（11×4=44 < 778），而不是写死 11 的快照——门禁扩展加真消费者
+    // 时不假红，词根泄漏回整棵时才红。
+    const files = select(["scripts/install-git-hooks.mjs"], { NAVHUB_PRECOMMIT_NO_GRAPH: "1" });
+    const whole = select(["scripts/install-git-hooks.mjs"], { NAVHUB_PRECOMMIT_SCOPE: "all" });
+    expect(files).toContain("scripts/precommit-select.test.ts");
+    expect(files).toContain("scripts/check-hooks-fresh.test.ts");
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.length * 4).toBeLessThan(whole.length);
+  });
+
   it("改 src/jobs.ts：必须带上 backup-restore-job（复数归一回归）", () => {
     // 曾经的 bug：单数形式要求 ≥4 字符，jobs → job 只有 3 字符被拒，
     // 于是「改任务执行器」却不跑「任务执行器最直接的测试」。

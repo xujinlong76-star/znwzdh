@@ -4,6 +4,7 @@ import { useState, useTransition, useId } from 'react'
 import { Search, X, MonitorPlay, ExternalLink, ArrowRight, Layers } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { matchesSiteTag } from '@/lib/category-tag-match'
 import { searchHref } from '@/lib/search-page'
 
 export interface CategorySubcategoryOption {
@@ -22,7 +23,7 @@ export interface CategorySiteFilterBarProps {
    * 当前已渲染的这一页（DOM 过滤），两者必须区分，不能假装本地过滤是全量的。
    */
   categorySlug?: string | null
-  /** 该分类在服务端的总站点数（分页后仍有更多时为 sites.length + hasMore 的下限值） */
+  /** 该分类在服务端的总站点数（子树聚合计数；取不到时退回本页条数，分支自动隐藏） */
   totalAcrossPages?: number | null
   /** 站点数未达独立索引页门槛的子分类，直接在页内提供切片筛选 */
   subcategories?: CategorySubcategoryOption[]
@@ -63,7 +64,9 @@ export function CategorySiteFilterBar({
         const categoryId = item.getAttribute('data-category-id') || ''
 
         const matchQuery = !q || title.includes(q) || desc.includes(q) || url.includes(q)
-        const matchTag = !tag || tags.includes(tag)
+        // 标签按整词精确匹配：子串匹配会让「Java」命中「JavaScript」、
+        // 「Go」命中「Google」，且与芯片上的精确计数对不上。
+        const matchTag = !tag || matchesSiteTag(tags, tag)
         const matchSub = !subId || categoryId === subId
 
         if (matchQuery && matchTag && matchSub) {

@@ -10,6 +10,7 @@ import { DramaCategoryBannerLazy } from '@/components/drama-category-banner-lazy
 import { WatchlistAddButtonLazy } from '@/components/watchlist-add-button-lazy'
 import { ExternalLink, MonitorPlay, ArrowRight } from 'lucide-react'
 import { isDramaCategoryRef } from '@/lib/drama-sites'
+import { TAG_ATTR_SEPARATOR } from '@/lib/category-tag-match'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { readSiteSettings } from '@/lib/site-config-source'
 import { externalLinkRelAttr } from '@/lib/site-settings'
@@ -68,7 +69,7 @@ const TAG_LINKS = 5
 export type CategoryPageData = {
   categories: HubCategory[] | null
   category: HubCategory | null
-  res: { hits: Array<{ site: HubSite | null }>; hasMore?: boolean; total?: number } | null
+  res: { hits: Array<{ site: HubSite | null }>; hasMore?: boolean } | null
   sites: HubSite[]
   /**
    * 子树聚合后的存活站点数。**可为 null**：`loadActiveCategoryCounts` 在中枢
@@ -402,7 +403,11 @@ export async function CategoryBoard({
               categoryName={name}
               topTags={topTags}
               categorySlug={category ? categoryUrlKey(category) : null}
-              totalAcrossPages={typeof res?.total === 'number' ? res.total : null}
+              // totalInCategory 是子树聚合计数（与页头「本分类共收录 X 个」同一口径）：
+              // 之前这里传 res.total，但 /api/search 从不返回 total（core 的
+              // SearchResult 注释明言「叫 total 会误导，故用布尔」），恒为 null，
+              // FilterBar 里「本分类共 X 个，跨页请用全局检索」分支是死代码。
+              totalAcrossPages={totalInCategory}
               subcategories={inPageSubcategories}
               isDrama={isDramaZone}
             />
@@ -417,7 +422,7 @@ export async function CategoryBoard({
                 data-title={site.title.toLowerCase()}
                 data-desc={(site.description || '').toLowerCase()}
                 data-url={(site.url || '').toLowerCase()}
-                data-tags={(site.tags || []).join(' ').toLowerCase()}
+                data-tags={(site.tags || []).join(TAG_ATTR_SEPARATOR).toLowerCase()}
               >
                 <div className="group relative flex items-center justify-between gap-2 rounded-xl border border-border/70 p-2.5 hover:bg-muted/40 transition-colors">
                   <Link

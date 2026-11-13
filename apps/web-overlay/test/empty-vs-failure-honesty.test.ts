@@ -84,6 +84,23 @@ describe('/sites 站点目录：失败 ≠ 截断 ≠ 空', () => {
   it('失败时不渲染分页器（半截数据算不出真实页数）', () => {
     expect(src).toContain('{!failed && totalPages > 1 ? (')
   })
+
+  it('筛选空态不断言空引号：无词或本页 0 站时不渲染「未匹配到」', () => {
+    // 空态标题是 `未匹配到「${filterQuery}」`：filterQuery 为 '' 时会渲染出
+    // 「未匹配到「」」，且与父级「暂无可展示的站点。」叠成双重空态；0 站有词
+    // 时「本页收录的 0 个站点中暂未包含该关键词」又把「本页本来就没站点」
+    // 说成「关键词没匹配上」。两种情况都只剩父级空行 / 失败横幅。
+    const grid = stripComments(read('src/components/sites-directory-filterable-grid.tsx'))
+    const emptyAt = grid.indexOf('未匹配到')
+    expect(emptyAt).toBeGreaterThan(-1)
+    const branchAt = grid.lastIndexOf('{filteredSites.length === 0', emptyAt)
+    expect(branchAt).toBeGreaterThan(-1)
+    const branch = grid.slice(branchAt, emptyAt)
+    expect(branch).toContain("filterQuery.trim() !== ''")
+    expect(branch).toContain('initialSites.length > 0')
+    // 旧写法是裸条件，两个守卫缺一不可。
+    expect(grid).not.toContain('{filteredSites.length === 0 ? (')
+  })
 })
 
 describe('标签结果页：一次最多 100 条要说出来', () => {
@@ -204,5 +221,22 @@ describe('分页深度与可达性同口径', () => {
       expect(categoryPageOffsetIsReachable(deepest, pageSize)).toBe(true)
       expect(categoryPageOffsetIsReachable(deepest + 1, pageSize)).toBe(false)
     }
+  })
+
+  it('/sites 翻页按钮显隐只认当前页：窗口边缘不藏按钮，且有首页', () => {
+    const src = stripComments(read('src/app/sites/sites-directory.tsx'))
+    // 首页与上一页只在第 1 页之后出现，下一页与末页只在末页之前出现。
+    expect(src.match(/\{\s*current > 1 \? \(/g)).toHaveLength(2)
+    expect(src.match(/\{\s*current < totalPages \? \(/g)).toHaveLength(2)
+    // 首页链接在上一页之前、指向第 1 页（面包屑的「首页」指向站首页，不算）。
+    const homeAt = src.indexOf('sitesPageHref(1)')
+    const prevAt = src.indexOf('上一页')
+    expect(homeAt).toBeGreaterThan(-1)
+    expect(prevAt).toBeGreaterThan(homeAt)
+    expect(src.slice(homeAt, prevAt)).toContain('首页')
+    // 旧写法按页码窗口边缘判断：第 2、3 页无上一页、倒数第 2、3 页无下一页与
+    // 末页，总页数 ≤5 时三个按钮全程不出现；窗口边缘只该决定显示哪几个数字。
+    expect(src).not.toContain('{from > 1 ? (')
+    expect(src).not.toContain('{to < totalPages ? (')
   })
 })

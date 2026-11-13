@@ -193,7 +193,20 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
               并不存在的页（或静默夹到别的页）；只有一页时也无需分页条。 */}
           {!failed && totalPages > 1 ? (
           <nav aria-label="站点目录分页" className="flex flex-wrap items-center gap-2 pt-2">
-            {from > 1 ? (
+            {/* 翻页按钮的显隐只认当前页，不认页码窗口边缘：窗口只决定「显示哪几个
+                数字」，当前页才决定「能不能翻」。旧写法按窗口边缘判断，第 2、3 页
+                的窗口左缘恒为 1、倒数第 2、3 页的窗口右缘恒为末页，上一页 / 下一页 /
+                末页会被全藏掉；总页数 ≤5 时窗口盖满，三个按钮全程不出现。
+                首页与末页成对出现（面包屑的「首页」指向站首页，不是第 1 页）。 */}
+            {current > 1 ? (
+              <Link
+                href={sitesPageHref(1)}
+                className="px-3 py-1.5 text-xs rounded-md border border-border/70 hover:bg-muted/50"
+              >
+                首页
+              </Link>
+            ) : null}
+            {current > 1 ? (
               <Link
                 href={sitesPageHref(current - 1)}
                 className="px-3 py-1.5 text-xs rounded-md border border-border/70 hover:bg-muted/50"
@@ -215,7 +228,7 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
                 {n}
               </Link>
             ))}
-            {to < totalPages ? (
+            {current < totalPages ? (
               <Link
                 href={sitesPageHref(current + 1)}
                 className="px-3 py-1.5 text-xs rounded-md border border-border/70 hover:bg-muted/50"
@@ -223,7 +236,7 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
                 下一页
               </Link>
             ) : null}
-            {to < totalPages ? (
+            {current < totalPages ? (
               <Link
                 href={sitesPageHref(totalPages)}
                 className="px-3 py-1.5 text-xs rounded-md border border-border/70 hover:bg-muted/50"

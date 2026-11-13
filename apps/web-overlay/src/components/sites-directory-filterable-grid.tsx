@@ -80,8 +80,12 @@ export function SitesDirectoryFilterableGrid({
         </div>
       </div>
 
-      {/* 站点网格或无匹配状态 */}
-      {filteredSites.length === 0 ? (
+      {/* 站点网格或无匹配状态：断言「没匹配上」必须同时满足两点——用户真的输了
+          关键词、本页真的有站点。否则无词空页会渲染出「未匹配到「」」空引号，
+          且 0 站有词时「本页收录的 0 个站点中暂未包含该关键词」会把「本页本来
+          就没站点」说成「关键词没匹配上」；两种情况都由父级「暂无可展示的站
+          点。」（或失败横幅）单独兜底，不在这里叠加第二个空态。 */}
+      {filteredSites.length === 0 && filterQuery.trim() !== '' && initialSites.length > 0 ? (
         <div className="py-12 px-4 rounded-xl border border-dashed border-border/80 bg-muted/20">
           <EmptyState
             icon={Search}

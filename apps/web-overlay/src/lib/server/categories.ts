@@ -45,7 +45,9 @@ interface CategoryCountPayload {
 export interface CategorySearchResult {
   hits: Array<{ site: HubSite | null }>
   hasMore?: boolean
-  total?: number
+  // 注意：不要在这里加 total?: number——/api/search 从不返回 total
+  // （core 的 SearchResult 注释明言「叫 total 会误导，故用布尔」）。
+  // 分类页的总数口径是 categoryPageTotal（子树聚合计数），见 category-board.tsx。
 }
 
 export function loadCategories(revalidate = 300): Promise<HubCategory[] | null> {

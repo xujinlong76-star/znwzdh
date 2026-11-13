@@ -1,7 +1,7 @@
 /**
  * 部署冷启动基线导入（DEV_BACKLOG A1）。
  *
- * 问题：仓库事实源是 web-overlay 内容文件里的 325 站导航与 6007 条视频，
+ * 问题：仓库事实源是 web-overlay 内容文件里的 327 站导航与 6007 条视频，
  * 但中枢的种子（seed-data.json）只有 84 站、视频为零；两份事实源数据此前
  * 只能靠人工 `PUT /api/storage` 整包写入。全新部署严格照清单走一遍，
  * 打开的会是一个「半空站」：前台有数、中枢空转，AI 找站与 /api/videos
@@ -115,7 +115,7 @@ export interface UrlSyncResult {
   checked: number;
   /** 本次改写 URL 的行数 */
   updated: number;
-  /** 改写明细（量小：文件 325 站，全列也不大） */
+  /** 改写明细（量小：文件 327 站，全列也不大） */
   repairs: UrlRepair[];
   error?: string;
 }

@@ -136,6 +136,7 @@ HEAD /api/collections/{slug}
 HEAD /api/comparisons
 HEAD /api/crdt/sync
 HEAD /api/docs
+HEAD /api/drama/calendar
 HEAD /api/export/backup.json
 HEAD /api/export/bookmarks.html
 HEAD /api/facets

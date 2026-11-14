@@ -88,6 +88,7 @@ import { aiFindRoutes } from "./routes/ai-find.ts";
 import { aiChatRoutes } from "./routes/ai-chat.ts";
 import { scenesRoutes } from "./routes/scenes.ts";
 import { hotlistRoutes } from "./routes/hotlist.ts";
+import { dramaCalendarRoutes } from "./routes/drama-calendar.ts";
 import { accountRoutes } from "./routes/account.ts";
 import { assetRoutes } from "./routes/assets.ts";
 
@@ -744,6 +745,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(aiChatRoutes, { ctx });
   await app.register(scenesRoutes, { ctx });
   await app.register(hotlistRoutes, { ctx });
+  await app.register(dramaCalendarRoutes, { ctx });
   await app.register(accountRoutes, { ctx });
   await app.register(assetRoutes, { ctx });
 

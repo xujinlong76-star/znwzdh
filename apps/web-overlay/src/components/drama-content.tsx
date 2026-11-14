@@ -7,6 +7,7 @@ import {
   type DramaFeatured,
 } from "@/lib/drama-featured";
 import { WatchlistAddButton } from "@/components/watchlist-add-button";
+import { DramaCalendarSection } from "@/components/drama-calendar-section";
 import { safeHref } from "@/lib/safe-url";
 
 /**
@@ -108,6 +109,8 @@ export function DramaContent({
           ))}
         </ul>
       </section>
+
+      <DramaCalendarSection />
 
       <section aria-label="热门剧" className="mt-10">
         <h2 className="text-xl font-semibold">热门剧</h2>

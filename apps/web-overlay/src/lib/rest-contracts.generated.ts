@@ -562,6 +562,65 @@ export interface BriefTodayResponse {
 }
 
 /**
+ * GET /api/drama/calendar
+ */
+export interface DramaCalendarResponse {
+  ok: true;
+  status: "ok" | "stale" | "empty";
+  fetchedAt: number | null;
+  sourceDateModified: string | null;
+  sourceName: string;
+  sourceUrl: string;
+  lastError: string | null;
+  days: ({
+    date: string;
+    label: string;
+    items: ({
+      title: string;
+      premiereDate: string;
+      reservations: number | null;
+      rawLabel: string;
+      [key: string]: unknown;
+    })[];
+    [key: string]: unknown;
+  })[];
+  monthPending: ({
+    month: number;
+    label: string;
+    overdue: boolean;
+    items: ({
+      title: string;
+      reservations: number | null;
+      rawLabel: string;
+      [key: string]: unknown;
+    })[];
+    [key: string]: unknown;
+  })[];
+  expired: ({
+    title: string;
+    premiereDate: string;
+    reservations: number | null;
+    rawLabel: string;
+    [key: string]: unknown;
+  })[];
+  recentlyDropped: ({
+    title: string;
+    lastLabel: string | null;
+    lastDate: string | null;
+    at: number;
+    [key: string]: unknown;
+  })[];
+  recentChanges: ({
+    title: string;
+    from: string | null;
+    to: string | null;
+    at: number;
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
  * GET /api/plugins
  */
 export interface PluginListResponse {
@@ -2496,6 +2555,7 @@ export interface RestContractRoutes {
   "GET /api/categories/{id}/impact": CategoryImpactResponse;
   "GET /api/collections": CollectionListResponse;
   "GET /api/collections/{slug}": CollectionDetailResponse;
+  "GET /api/drama/calendar": DramaCalendarResponse;
   "GET /api/facets": FacetsResponse;
   "GET /api/favorites": FavoritesListResponse;
   "GET /api/health": HealthResponse;

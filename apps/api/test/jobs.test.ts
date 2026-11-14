@@ -559,6 +559,13 @@ describe("个性化画像服务", () => {
     const tickRes = await runner.tick();
     expect(tickRes.processed).toBeGreaterThan(0);
 
+    // 排期表已超过单轮 maxPerTick（10 条）：首轮未必能跑完所有到期任务，
+    // 先排空残留，再断言水位已更新不会重复入队。
+    for (let i = 0; i < 3; i++) {
+      const res = await runner.tick();
+      if (res.processed === 0) break;
+    }
+
     // 再次 tick 时，由于 cron 水位已更新且未到间隔，不会重复入队大量任务
     const secondTick = await runner.tick();
     expect(secondTick.processed).toBe(0);

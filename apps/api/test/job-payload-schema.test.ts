@@ -23,6 +23,7 @@ const MINIMAL_PAYLOADS: Record<(typeof JOB_KINDS)[number], Record<string, unknow
   hotlist_refresh: {},
   daily_brief: {},
   drama_update_check: {},
+  drama_calendar_refresh: {},
 };
 
 describe("任务 payload 契约", () => {

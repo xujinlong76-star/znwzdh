@@ -408,6 +408,75 @@ export const BriefTodayResponse = z.looseObject({
     .nullable(),
 });
 
+/**
+ * GET /api/drama/calendar：短剧开播日历（快照只读）。
+ * status 如实区分 ok / stale（最近一次失败、下发上一日快照）/ empty（还没抓到过）；
+ * days 只含未来 14 天，monthPending 只含“仅精确到月”的条目，expired 是
+ * 预计日期已过、档期未兑现的条目（不静默删除）；全部日期都是平台方“预计”，
+ * 以官方为准——前端必须在顶部写明这一点。
+ */
+export const DramaCalendarResponse = z.looseObject({
+  ok: z.literal(true),
+  status: z.enum(["ok", "stale", "empty"]),
+  fetchedAt: z.number().nullable(),
+  sourceDateModified: z.string().nullable(),
+  sourceName: z.string(),
+  sourceUrl: z.string(),
+  lastError: z.string().nullable(),
+  days: z.array(
+    z.looseObject({
+      date: z.string(),
+      label: z.string(),
+      items: z.array(
+        z.looseObject({
+          title: z.string(),
+          premiereDate: z.string(),
+          reservations: z.number().nullable(),
+          rawLabel: z.string(),
+        }),
+      ),
+    }),
+  ),
+  monthPending: z.array(
+    z.looseObject({
+      month: z.number().int(),
+      label: z.string(),
+      overdue: z.boolean(),
+      items: z.array(
+        z.looseObject({
+          title: z.string(),
+          reservations: z.number().nullable(),
+          rawLabel: z.string(),
+        }),
+      ),
+    }),
+  ),
+  expired: z.array(
+    z.looseObject({
+      title: z.string(),
+      premiereDate: z.string(),
+      reservations: z.number().nullable(),
+      rawLabel: z.string(),
+    }),
+  ),
+  recentlyDropped: z.array(
+    z.looseObject({
+      title: z.string(),
+      lastLabel: z.string().nullable(),
+      lastDate: z.string().nullable(),
+      at: z.number(),
+    }),
+  ),
+  recentChanges: z.array(
+    z.looseObject({
+      title: z.string(),
+      from: z.string().nullable(),
+      to: z.string().nullable(),
+      at: z.number(),
+    }),
+  ),
+});
+
 /* ------------------------------------------------------------------ *
  * 场景包（A2 落地页只读接口，与 ai/find 共用 scene-resolve 展开）
  * ------------------------------------------------------------------ */
@@ -1870,6 +1939,8 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   // 全网热榜缓存与每日简报：/brief 页与首页简报模块的数据源
   "GET /api/hotlist": { schema: HotlistResponse, name: "HotlistResponse" },
   "GET /api/brief/today": { schema: BriefTodayResponse, name: "BriefTodayResponse" },
+  // 短剧开播日历：/drama 页“开播日历”区块的数据源（快照只读）
+  "GET /api/drama/calendar": { schema: DramaCalendarResponse, name: "DramaCalendarResponse" },
   "GET /api/plugins": { schema: PluginListResponse, name: "PluginListResponse" },
   "GET /api/plugins/installed": { schema: InstalledPluginsResponse, name: "InstalledPluginsResponse" },
   "GET /api/plugins/taps": { schema: PluginTapsResponse, name: "PluginTapsResponse" },

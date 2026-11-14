@@ -94,6 +94,7 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "POST", path: "/api/crdt/sync", scope: "public" },
   { method: "POST", path: "/api/design/harmony", scope: "public" },
   { method: "GET", path: "/api/docs", scope: "public" },
+  { method: "GET", path: "/api/drama/calendar", scope: "public" },
   { method: "POST", path: "/api/enrich", scope: "write" },
   { method: "POST", path: "/api/errors", scope: "public" },
   { method: "POST", path: "/api/events", scope: "public" },

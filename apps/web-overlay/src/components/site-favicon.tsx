@@ -116,7 +116,6 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'klingai.com': 'https://klingai.com/favicon.ico',
   'klingai.kuaishou.com': 'https://klingai.com/favicon.ico',
   'lumalabs.ai': 'https://lumalabs.ai/favicon.ico',
-  'sora.com': 'https://sora.com/favicon.ico',
   'vidu.studio': 'https://www.vidu.studio/favicon.ico',
   'hailuoai.com': 'https://hailuoai.com/favicon.ico',
   'chatgpt.com': '/assets/images/logos/chatgpt.webp',

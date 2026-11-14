@@ -989,19 +989,6 @@
               ]
             },
             {
-              "id": "nav-f6be66557402",
-              "title": "Sora",
-              "href": "https://sora.com",
-              "description": "OpenAI推出的高质量文生视频模型，具备电影级效果。",
-              "icon": "https://sora.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "文生视频",
-                "OpenAI",
-                "前沿技术"
-              ]
-            },
-            {
               "id": "nav-152aee459038",
               "title": "Viggle AI",
               "href": "https://viggle.ai",

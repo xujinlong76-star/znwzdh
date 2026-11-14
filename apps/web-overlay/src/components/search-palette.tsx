@@ -39,6 +39,12 @@ import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/o
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { openCopilot } from '@/lib/ai-entry'
+import {
+  SEARCH_AI_PLACEHOLDER,
+  readSearchAiMode,
+  resolveAiModeInput,
+  writeSearchAiMode,
+} from '@/lib/search-ai-mode'
 import { getIdentity } from '@/lib/identity'
 import { relaxedPricingNotice, searchHref } from '@/lib/search-page'
 import { useFavorites } from '@/hooks/useFavorites'
@@ -215,6 +221,21 @@ interface SearchPaletteProps {
 export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）' }: SearchPaletteProps) {
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
+  /**
+   * AI 模式：打开后回车不再打开第一条站内结果，而是把整句查询直接发给
+   * AI 找站（全局抽屉）。模式记在本地，下次打开搜索框还在；只影响回车
+   * 去向，不动站内检索本身（方向键照常挑结果）。
+   */
+  const [aiMode, setAiMode] = useState<boolean>(() => readSearchAiMode())
+  const effectivePlaceholder = aiMode ? SEARCH_AI_PLACEHOLDER : placeholder
+  const toggleAiMode = useCallback(() => {
+    setAiMode((prev) => {
+      const next = !prev
+      writeSearchAiMode(next)
+      return next
+    })
+    inputRef.current?.focus()
+  }, [])
   /**
    * 键盘高亮项索引。
    *
@@ -1020,6 +1041,16 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
   const onSearchKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter' && aiMode) {
+        // AI 模式：回车不打开站内结果，直接把整句查询发给 AI 找站。
+        // 空查询不发（抽屉打开却没问题，等于白点一下）。
+        const q = query.trim()
+        if (!q) return
+        e.preventDefault()
+        setIsFocused(false)
+        openCopilot({ query: q, source: 'programmatic' })
+        return
+      }
       if (!showResults) return
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         if (navItems.length === 0) return
@@ -1058,7 +1089,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         inputRef.current?.blur()
       }
     },
-    [showResults, navItems.length, activeIndex, findOptionElement],
+    [showResults, navItems.length, activeIndex, findOptionElement, aiMode, query],
   )
 
   const panel = planSearchPanel({
@@ -1111,7 +1142,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       )}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input aria-label={placeholder}
+        <Input aria-label={effectivePlaceholder}
           data-search-input
           ref={inputRef}
           role="combobox"
@@ -1122,14 +1153,35 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             activeIndex >= 0 && navItems.length > 0 ? `navhub-search-opt-${activeIndex}` : undefined
           }
           onKeyDown={onSearchKeyDown}
-          placeholder={placeholder}
+          placeholder={effectivePlaceholder}
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setIsFocused(true) }}
+          onChange={(e) => {
+            // 与 Spotlight 同一约定：行首 `?` / `ai ` 自动进 AI 模式并去掉前缀。
+            const resolved = resolveAiModeInput(e.target.value)
+            if (resolved.aiMode && !aiMode) {
+              setAiMode(true)
+              writeSearchAiMode(true)
+            }
+            setQuery(resolved.query)
+            setIsFocused(true)
+          }}
           onFocus={() => setIsFocused(true)}
-          className="pl-9 sm:pl-10 pr-36 sm:pr-44 md:pr-48 h-9.5 sm:h-10 rounded-xl border border-border-strong hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 shadow-xs text-base sm:text-sm transition-all"
+          className={`pl-9 sm:pl-10 pr-36 sm:pr-44 md:pr-48 h-9.5 sm:h-10 rounded-xl border hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:ring-2 shadow-xs text-base sm:text-sm transition-all ${aiMode ? 'border-violet-400/70 focus:border-violet-400/80 focus:ring-violet-400/30' : 'border-border-strong focus:border-primary/50 focus:ring-primary/20'}`}
         />
         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleAiMode}
+            aria-pressed={aiMode}
+            aria-label={aiMode ? '退出 AI 模式' : '切换到 AI 模式'}
+            title={aiMode ? 'AI 模式开：回车直接问 AI 找站' : 'AI 模式：回车直接问 AI 找站'}
+            className={`h-6 px-1.5 rounded-full text-[11px] font-semibold gap-0.5 ${aiMode ? 'bg-violet-500/15 text-violet-600 dark:text-violet-300 ring-1 ring-violet-400/60' : 'text-muted-foreground hover:bg-muted'}`}
+          >
+            <Sparkles className="h-3 w-3" />
+            AI
+          </Button>
           {query && (
             <Button variant="ghost" size="sm" onClick={() => { setQuery(''); inputRef.current?.focus() }} className="h-6 w-6 p-0 rounded-full hover:bg-muted" aria-label="清空搜索词" title="清空搜索词">
               <X className="h-3 w-3" />

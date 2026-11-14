@@ -174,6 +174,9 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/user/ai/config/test",
   "POST /api/user/ai/plugin/generate",
   "POST /api/users/sync",
+  // B站视频 AI 摘要：计算型（调模型生成摘要，不写业务表；额度预留与
+  // /api/videos/copilot 同款），匿名可调、20 次/分钟，见 video-bili-summary.ts。
+  "POST /api/videos/bili-summary",
   "POST /api/vitals",
   "POST /api/workspaces",
   "POST /api/workspaces/:id/members",

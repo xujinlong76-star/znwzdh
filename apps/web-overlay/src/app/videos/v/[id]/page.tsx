@@ -15,6 +15,7 @@ import {
 } from '@/lib/video-seo'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-multi-platform-harvester'
 import { VideoEmbedFacade } from '@/components/video-embed-facade'
+import { VideoAiSummary } from '@/components/video-ai-summary'
 import { chapterStartSec, type NavigationData, type NavigationSubItem } from '@/types/navigation'
 
 /**
@@ -363,6 +364,28 @@ export default async function VideoSeoDetailPage({
                 {item.description || vc.seoDescription || `${item.title} — 收录于「${categoryTitle}」专栏。`}
               </p>
             </section>
+
+            {/* 问 AI · 视频摘要：只给 B 站视频；章节/字幕是模板合成的
+                （synthetic=true）时绝不拿来当真实资料喂给摘要——那种大纲
+                是示例，不是视频原内容，见 types/navigation.ts 的 synthetic
+                说明与 video-metadata-policy.ts。 */}
+            {vc.type === 'bilibili' ? (
+              <VideoAiSummary
+                bvid={vc.bvid}
+                title={item.title}
+                description={item.description || vc.seoDescription}
+                chapters={
+                  vc.synthetic
+                    ? []
+                    : (vc.chapters || []).map((ch) => ({ title: ch.title, startSec: chapterStartSec(ch) }))
+                }
+                transcript={
+                  vc.synthetic
+                    ? []
+                    : (vc.transcript || []).map((line) => ({ startSec: line.startSec, text: line.text }))
+                }
+              />
+            ) : null}
 
             {/* 结构化章节时间轴（Google Key Moments 对应 HTML 锚点） */}
             {Array.isArray(vc.chapters) && vc.chapters.length > 0 ? (

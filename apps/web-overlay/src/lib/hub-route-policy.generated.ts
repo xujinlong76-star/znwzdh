@@ -317,6 +317,7 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "PUT", path: "/api/vault/sync", scope: "public" },
   { method: "GET", path: "/api/videos", scope: "read" },
   { method: "GET", path: "/api/videos/:id", scope: "read" },
+  { method: "POST", path: "/api/videos/bili-summary", scope: "public" },
   { method: "POST", path: "/api/videos/copilot", scope: "public" },
   { method: "POST", path: "/api/vitals", scope: "public" },
   { method: "POST", path: "/api/warmup", scope: "write" },

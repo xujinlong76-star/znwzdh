@@ -86,6 +86,7 @@ import { backupRoutes } from "./routes/backup.ts";
 import { copilotRoutes } from "./routes/copilot.ts";
 import { aiFindRoutes } from "./routes/ai-find.ts";
 import { aiChatRoutes } from "./routes/ai-chat.ts";
+import { videoBiliSummaryRoutes } from "./routes/video-bili-summary.ts";
 import { scenesRoutes } from "./routes/scenes.ts";
 import { hotlistRoutes } from "./routes/hotlist.ts";
 import { dramaCalendarRoutes } from "./routes/drama-calendar.ts";
@@ -743,6 +744,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(copilotRoutes, { ctx });
   await app.register(aiFindRoutes, { ctx });
   await app.register(aiChatRoutes, { ctx });
+  await app.register(videoBiliSummaryRoutes, { ctx });
   await app.register(scenesRoutes, { ctx });
   await app.register(hotlistRoutes, { ctx });
   await app.register(dramaCalendarRoutes, { ctx });

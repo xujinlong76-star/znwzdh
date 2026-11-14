@@ -752,13 +752,23 @@ describe("快捷搜索：默认引擎可达，脏配置要说明", () => {
     expect(code).toContain("hasOwnProperty");
   });
 
-  it("注册表暴露 defaultEngine，五个引擎都在候选里（含 MDN）", () => {
+  it("注册表暴露 defaultEngine，八个引擎都在候选里（含百度/搜狗/知乎）", () => {
     const entry = /'quick-search': \{([\s\S]*?)\n {2}\}/.exec(registry)?.[0] ?? "";
     expect(entry).toMatch(/key:\s*'defaultEngine'/);
-    for (const engine of ["google", "github", "npm", "bing", "mdn"]) {
+    for (const engine of ["google", "baidu", "bing", "sogou", "zhihu", "github", "npm", "mdn"]) {
       expect(entry).toContain(`'${engine}'`);
     }
-    expect(entry).toContain("临时切换");
+    // 2026-11-14 起点页签不再是“临时切换”：选择会记在本机，下次打开仍用它
+    expect(entry).toContain("仅存本机");
+    expect(entry).not.toContain("临时切换");
+  });
+
+  it("切换会记在本机，还能自加一个自定义引擎（模板须含 %s）", () => {
+    expect(code).toContain("QUICK_SEARCH_ENGINE_KEY");
+    expect(code).toContain("QUICK_SEARCH_CUSTOM_ENGINE_KEY");
+    expect(code).toContain("自定义引擎");
+    expect(code).toContain("%s");
+    expect(code).toContain("仅存本机");
   });
 });
 

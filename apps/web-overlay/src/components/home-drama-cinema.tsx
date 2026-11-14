@@ -43,7 +43,7 @@ import {
   type WatchEntry,
 } from '@/lib/watchlist'
 
-interface MediaEntry extends DramaPoster {}
+type MediaEntry = DramaPoster;
 
 /**
  * 服务端预取的影院初始数据（升级第 1 条：LCP）。

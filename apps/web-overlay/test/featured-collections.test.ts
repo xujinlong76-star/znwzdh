@@ -21,7 +21,7 @@ function seedSiteUrls(col: NonNullable<ReturnType<typeof seedCollection>>): stri
 
 describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合集）", () => {
   it("两个新合集都有策展文案且校验通过", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost", "beginner-web", "senior-services", "job-hunt-express", "academic-toolkit", "shopping-saver", "novel-film-tracking", "agentic-ai", "ai-coding", "frontend-starter"]);
+    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost", "beginner-web", "senior-services", "job-hunt-express", "academic-toolkit", "shopping-saver", "novel-film-tracking", "agentic-ai", "ai-coding", "frontend-starter", "design-toolkit", "open-source-alternatives", "editors-picks"]);
     for (const e of FEATURED_COLLECTION_EDITORIALS) {
       expect(validateFeaturedEditorial(e)).toEqual([]);
       expect(e.title.trim().length).toBeGreaterThan(0);
@@ -89,7 +89,7 @@ describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合�
 
 describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率办公 + 收藏/订阅/进度）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(16);
     const ai = getFeaturedEditorial("ai-video-toolkit");
     const office = getFeaturedEditorial("office-boost");
     expect(ai).toBeDefined();
@@ -166,7 +166,7 @@ describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率�
 
 describe("精选专题（第 3 笔：新手上网必备、长辈便民服务）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(16);
     const beginner = getFeaturedEditorial("beginner-web");
     const senior = getFeaturedEditorial("senior-services");
     expect(beginner).toBeDefined();
@@ -211,7 +211,7 @@ describe("精选专题（第 3 笔：新手上网必备、长辈便民服务）"
 
 describe("精选专题（第 4 笔：求职招聘直通车、学术科研工具箱）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(16);
     const job = getFeaturedEditorial("job-hunt-express");
     const academic = getFeaturedEditorial("academic-toolkit");
     expect(job).toBeDefined();
@@ -253,7 +253,7 @@ describe("精选专题（第 4 笔：求职招聘直通车、学术科研工具�
 
 describe("精选专题（第 5 笔：网购省钱指南、小说影视追更）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(16);
     const shopping = getFeaturedEditorial("shopping-saver");
     const novel = getFeaturedEditorial("novel-film-tracking");
     expect(shopping).toBeDefined();
@@ -305,7 +305,7 @@ describe("精选专题（第 5 笔：网购省钱指南、小说影视追更）"
 
 describe("精选专题（第 6 笔：改造 Agentic AI、AI 编程工具链、前端入门路线）", () => {
   it("三个改造合集的策展文案已就位：两幕、价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(16);
     const agent = getFeaturedEditorial("agentic-ai");
     const coding = getFeaturedEditorial("ai-coding");
     const fe = getFeaturedEditorial("frontend-starter");
@@ -367,5 +367,34 @@ describe("精选专题（第 6 笔：改造 Agentic AI、AI 编程工具链、�
     if (typeof devin === "string" || !devin) return;
     expect(devin.note ?? "").toContain("全自主");
     expect(devin.note ?? "").not.toContain("Codeium");
+  });
+});
+
+describe("第 7 笔：改造设计速查工具箱、开源替代、编辑精选", () => {
+  it("三个改造合集的策展文案完整，两幕分组覆盖全部站点", () => {
+    const design = getFeaturedEditorial("design-toolkit");
+    expect(design.title).toBe("设计速查工具箱");
+    expect(design.valueProposition).toBe("配色图标字体，一站备齐");
+    expect(design.curator).toBe("山羊胡网编辑部");
+    expect(design.issueNo).toBe(1);
+    expect(coverSiteUrls(design).length).toBe(6);
+    expect(coverSiteUrls(design)).toContain("https://www.photopea.com");
+    const oss = getFeaturedEditorial("open-source-alternatives");
+    expect(oss.title).toBe("开源替代");
+    expect(oss.valueProposition).toBe("开源平替，照样好用");
+    expect(coverSiteUrls(oss).length).toBe(6);
+    expect(coverSiteUrls(oss)).toContain("https://www.libreoffice.org");
+    const picks = getFeaturedEditorial("editors-picks");
+    expect(picks.title).toBe("编辑精选");
+    expect(picks.valueProposition).toBe("编辑亲选，每天必看");
+    expect(coverSiteUrls(picks).length).toBe(10);
+  });
+  it("编辑精选中 DeepSeek 对话页已换为同类可验证的 Kimi", () => {
+    const seed = seedCollection("editors-picks");
+    const urls = seedSiteUrls(seed);
+    expect(urls).not.toContain("https://chat.deepseek.com");
+    expect(urls).toContain("https://kimi.moonshot.cn");
+    expect(urls.length).toBe(10);
+    expect(seed.sites.every((s) => typeof s !== "string")).toBe(true);
   });
 });

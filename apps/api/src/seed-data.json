@@ -1682,6 +1682,28 @@
         "ES6"
       ],
       "icon": "https://es6.ruanyifeng.com/favicon.ico"
+    },
+    {
+      "url": "https://www.photopea.com",
+      "title": "Photopea",
+      "description": "免费在线图片编辑器，支持 PSD 与图层操作",
+      "categorySlug": "ui-assets",
+      "tags": [
+        "设计",
+        "修图"
+      ],
+      "icon": "https://www.photopea.com/favicon.ico"
+    },
+    {
+      "url": "https://www.libreoffice.org",
+      "title": "LibreOffice",
+      "description": "免费开源办公套件，文档、表格、演示全兼容",
+      "categorySlug": "office-suites",
+      "tags": [
+        "办公",
+        "开源"
+      ],
+      "icon": "https://www.libreoffice.org/favicon.ico"
     }
   ],
   "collections": [
@@ -1829,6 +1851,11 @@
           "site": "https://www.remove.bg",
           "note": "高精度一键 AI 自动抠图与背景擦除工具",
           "sort": 4
+        },
+        {
+          "site": "https://www.photopea.com",
+          "note": "免费在线修图神器，不用装 PS 也能改图",
+          "sort": 5
         }
       ]
     },
@@ -1862,6 +1889,11 @@
           "site": "https://ollama.com",
           "note": "私有化部署开源大模型平替云端闭源模型",
           "sort": 4
+        },
+        {
+          "site": "https://www.libreoffice.org",
+          "note": "免费开源办公套件，文档表格演示全兼容",
+          "sort": 5
         }
       ]
     },
@@ -1871,16 +1903,56 @@
       "kind": "topic",
       "description": "「最新/热门」类目退役后的时效轴落地页：跨领域人工挑选，配合 /hot 排序使用",
       "sites": [
-        "https://github.com/trending",
-        "https://chat.deepseek.com",
-        "https://figma.com",
-        "https://developer.mozilla.org",
-        "https://leetcode.cn",
-        "https://www.bilibili.com",
-        "https://www.12306.cn",
-        "https://www.amap.com",
-        "https://www.zhihu.com",
-        "https://arxiv.org"
+        {
+          "site": "https://github.com/trending",
+          "note": "今日最热的开源项目都在这里，每天刷一遍不亏",
+          "sort": 0
+        },
+        {
+          "site": "https://kimi.moonshot.cn",
+          "note": "月之暗面的 AI 助手，写东西、查资料都靠它",
+          "sort": 1
+        },
+        {
+          "site": "https://figma.com",
+          "note": "做设计绕不开的协同工具，团队都在用",
+          "sort": 2
+        },
+        {
+          "site": "https://developer.mozilla.org",
+          "note": "查 Web 文档的权威答案，MDN 永远的第一站",
+          "sort": 3
+        },
+        {
+          "site": "https://leetcode.cn",
+          "note": "刷算法题的中文主场，面试前必刷",
+          "sort": 4
+        },
+        {
+          "site": "https://www.bilibili.com",
+          "note": "从教程到纪录片，学习娱乐两不误",
+          "sort": 5
+        },
+        {
+          "site": "https://www.12306.cn",
+          "note": "买火车票只认官方，抢票出发前先看余票",
+          "sort": 6
+        },
+        {
+          "site": "https://www.amap.com",
+          "note": "出门导航查路况，高德地图是标配",
+          "sort": 7
+        },
+        {
+          "site": "https://www.zhihu.com",
+          "note": "有问题先上知乎，专业回答比广告靠谱",
+          "sort": 8
+        },
+        {
+          "site": "https://arxiv.org",
+          "note": "最新论文与预印本，科研人的每日必读",
+          "sort": 9
+        }
       ]
     },
     {

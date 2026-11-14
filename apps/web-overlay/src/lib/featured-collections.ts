@@ -258,6 +258,48 @@ export const FEATURED_COLLECTION_EDITORIALS: FeaturedCollectionEditorial[] = [
       { id: "act-2", title: "第二幕 · 再练技能", description: "再练技能：现代语法进阶、技能树查漏补缺，趋势榜找项目实战。", siteUrls: ["https://roadmap.sh", "https://github.com/trending", "https://es6.ruanyifeng.com"] },
     ],
   },
+  {
+    slug: "design-toolkit",
+    title: "设计速查工具箱",
+    valueProposition: "配色图标字体，一站备齐",
+    intro: "做设计最怕到处找工具：配色、图标、字体、抠图各一个网站。这一期把速查工具排成两幕，先做设计，再修图找字。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的设计速查工具；原有 5 站，按精选专题每合集不少于 6 站的收录标准补齐 Photopea（免费在线修图）；Figma 部分功能需账号登录。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("设计速查工具箱"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 做设计", description: "先做设计：协同设计、图标与配色。", siteUrls: ["https://figma.com", "https://iconify.design", "https://coolors.co"] },
+      { id: "act-2", title: "第二幕 · 字体与图片", description: "再修图找字：免费字体、抠图与在线修图。", siteUrls: ["https://fonts.google.com", "https://www.remove.bg", "https://www.photopea.com"] },
+    ],
+  },
+  {
+    slug: "open-source-alternatives",
+    title: "开源替代",
+    valueProposition: "开源平替，照样好用",
+    intro: "好东西不一定贵：白板、运行时、框架、数据库、模型、办公套件，都有开源平替。这一期把六个开源替代排成两幕，先开发提速，再办公创作。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的开源项目；原有 5 站，按精选专题每合集不少于 6 站的收录标准补齐 LibreOffice（开源办公套件）；开源项目以各项目官网与仓库为准。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("开源替代"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 开发提速", description: "先开发提速：运行时、框架与数据库。", siteUrls: ["https://bun.sh", "https://fastify.dev", "https://orm.drizzle.team"] },
+      { id: "act-2", title: "第二幕 · 办公与创作", description: "再办公创作：白板、本地模型与办公套件。", siteUrls: ["https://excalidraw.com", "https://ollama.com", "https://www.libreoffice.org"] },
+    ],
+  },
+  {
+    slug: "editors-picks",
+    title: "编辑精选",
+    valueProposition: "编辑亲选，每天必看",
+    intro: "这期没有主题，只有编辑的偏好：开发者的工具箱、生活里的刚需、值得读的东西。跨领域人工挑选，每天刷一遍。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期是跨领域人工挑选的时效抽屉：DeepSeek 对话页在盒子网络下无法返回 200（403/202 均为反爬校验页），已按诚实口径换为同类可验证的 Kimi；其余九站均已逐个核实。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("编辑精选"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 开发者的工具箱", description: "先看开发者的工具箱：热门开源、AI 对话、设计、文档与刷题。", siteUrls: ["https://github.com/trending", "https://kimi.moonshot.cn", "https://figma.com", "https://developer.mozilla.org", "https://leetcode.cn"] },
+      { id: "act-2", title: "第二幕 · 生活与知识", description: "再看生活与知识：视频、出行、问答与最新论文。", siteUrls: ["https://www.bilibili.com", "https://www.12306.cn", "https://www.amap.com", "https://www.zhihu.com", "https://arxiv.org"] },
+    ],
+  },
 ];
 
 export function getFeaturedEditorial(slug: string): FeaturedCollectionEditorial | undefined {

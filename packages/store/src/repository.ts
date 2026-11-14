@@ -1021,6 +1021,10 @@ async savedPluginEmbeddings(filter?: {
     return dramaCheckRepo.listDramaFollowers(this, dramaKey);
   }
 
+  async listDramaFollowersWithRemind(dramaKey: string): Promise<dramaCheckRepo.DramaFollowerWithRemind[]> {
+    return dramaCheckRepo.listDramaFollowersWithRemind(this, dramaKey);
+  }
+
   /* ------------------------- 全网热榜缓存 / 每日简报 ------------------------- */
 
   async replaceHotlistSource(

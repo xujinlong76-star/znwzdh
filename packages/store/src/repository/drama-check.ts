@@ -68,3 +68,26 @@ export async function listDramaFollowers(repo: Repository, dramaKey: string): Pr
  );
  return rows.map((row) => String(row.user_id));
 }
+
+export interface DramaFollowerWithRemind {
+ userId: string;
+ /** 该剧的更新提醒开关（watch_entries.remind，默认开；关掉的用户不收新集通知）。 */
+ remind: boolean;
+}
+
+/**
+ * 关注了某部剧的用户 id + 各自的提醒开关（去重，不含已删除条目）。
+ * 同一用户多条清单记录时以任一开着的为准（MAX(remind)），与服务端
+ * “默认开、只能关不能开”的口径一致；基线更新不对开关做区分，调用方
+ * 只在发通知前用 remind 过滤。
+ */
+export async function listDramaFollowersWithRemind(repo: Repository, dramaKey: string): Promise<DramaFollowerWithRemind[]> {
+ const rows = await repo.raw(
+ "SELECT user_id, MAX(remind) AS remind FROM watch_entries WHERE drama_key = ? AND deleted_at IS NULL GROUP BY user_id",
+ [dramaKey],
+ );
+ return rows.map((row) => ({
+ userId: String(row.user_id),
+ remind: Number(row.remind ?? 1) !== 0,
+ }));
+}

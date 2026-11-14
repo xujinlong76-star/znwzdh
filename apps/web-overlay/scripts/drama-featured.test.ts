@@ -69,8 +69,15 @@ describe("loadDramaFeatured", () => {
     for (const d of dramas) kinds.set(d.check.kind, (kinds.get(d.check.kind) ?? 0) + 1);
     // 2026-11-14：3 部快手剧已跌出榜单，冻结的榜单页只会报旧集数，
     // 检查全部停查（ranking 归零）；回归 guard 见 apps/api/test/drama-check.test.ts。
+    // 2026-11-15：其中 2 部改走综艺迷作品页（zongyimi-subject）恢复检查，
+    // 仍停查 10 部（含白月光第 2 批、考上清北资料停更暂缓）。
     expect(kinds.get("ranking") ?? 0).toBe(0);
-    expect(kinds.get('none')).toBe(12);
+    expect(kinds.get("zongyimi-subject") ?? 0).toBe(2);
+    expect(kinds.get('none')).toBe(10);
+    for (const d of dramas) {
+      if (d.check.kind !== "zongyimi-subject") continue;
+      expect(d.check.url).toMatch(/^https:\/\/www\.zongyimi\.com\/drama\/subject\/\d+\/$/);
+    }
     const titles = dramas.map((d) => d.title);
     expect(titles).toContain('悍妻当家，靠美食扶起一家软骨头');
     expect(titles.some((t) => t.includes('念记老卤'))).toBe(false);

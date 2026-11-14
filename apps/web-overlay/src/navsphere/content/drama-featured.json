@@ -102,8 +102,9 @@
       "episodesKnown": 65,
       "totalEpisodes": null,
       "check": {
-        "kind": "none",
-        "reason": "已跌出 2026-11-13 快手榜前 100；展示为综艺迷作品资料页，总集数 65 集为该页 2026-11-14 更新值"
+        "kind": "zongyimi-subject",
+        "url": "https://www.zongyimi.com/drama/subject/117244640035/",
+        "titleMatch": "病弱千金"
       }
     },
     {
@@ -128,8 +129,9 @@
       "episodesKnown": 80,
       "totalEpisodes": null,
       "check": {
-        "kind": "none",
-        "reason": "展示为综艺迷作品资料页，总集数 80 集为该页 2026-11-14 更新值"
+        "kind": "zongyimi-subject",
+        "url": "https://www.zongyimi.com/drama/subject/396695190416/",
+        "titleMatch": "我隐藏身份"
       }
     },
     {

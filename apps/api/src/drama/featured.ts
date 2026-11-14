@@ -10,7 +10,7 @@ import { existsSync, readFileSync} from "node:fs";
 import { dirname, join, resolve} from "node:path";
 import { fileURLToPath} from "node:url";
 
-export type DramaCheckKind = "migu-list" | "wikipedia" | "ranking" | "none";
+export type DramaCheckKind = "migu-list" | "wikipedia" | "ranking" | "zongyimi-subject" | "none";
 
 export interface DramaCheck {
  kind: DramaCheckKind;
@@ -48,6 +48,7 @@ const CHECK_KINDS: ReadonlySet<string> = new Set([
  "migu-list",
  "wikipedia",
  "ranking",
+ "zongyimi-subject",
  "none",
 ]);
 const LINK_NOTES: ReadonlySet<string> = new Set([

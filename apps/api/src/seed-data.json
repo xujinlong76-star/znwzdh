@@ -1396,6 +1396,127 @@
         "医疗"
       ],
       "icon": "https://www.guahao.com/favicon.ico"
+    },
+    {
+      "url": "https://www.zhipin.com",
+      "title": "BOSS直聘",
+      "description": "直接与招聘者沟通的求职平台，互联网岗位集中",
+      "categorySlug": "general-job-boards",
+      "tags": [
+        "求职",
+        "互联网"
+      ],
+      "icon": "https://www.zhipin.com/favicon.ico"
+    },
+    {
+      "url": "https://www.zhaopin.com",
+      "title": "智联招聘",
+      "description": "综合招聘平台，覆盖城市与行业广",
+      "categorySlug": "general-job-boards",
+      "tags": [
+        "求职",
+        "综合"
+      ],
+      "icon": "https://www.zhaopin.com/favicon.ico"
+    },
+    {
+      "url": "https://www.51job.com",
+      "title": "前程无忧",
+      "description": "综合招聘平台，岗位库大、更新快",
+      "categorySlug": "general-job-boards",
+      "tags": [
+        "求职",
+        "综合"
+      ],
+      "icon": "https://www.51job.com/favicon.ico"
+    },
+    {
+      "url": "https://www.lagou.com",
+      "title": "拉勾",
+      "description": "互联网垂直招聘平台，技术与产品岗位集中",
+      "categorySlug": "tech-hiring",
+      "tags": [
+        "求职",
+        "互联网"
+      ],
+      "icon": "https://www.lagou.com/favicon.ico"
+    },
+    {
+      "url": "https://www.liepin.com",
+      "title": "猎聘",
+      "description": "中高端人才招聘平台，猎头职位多",
+      "categorySlug": "executive-search",
+      "tags": [
+        "求职",
+        "猎头"
+      ],
+      "icon": "https://www.liepin.com/favicon.ico"
+    },
+    {
+      "url": "https://www.shixiseng.com",
+      "title": "实习僧",
+      "description": "实习与校招招聘平台，应届生找工作的入口",
+      "categorySlug": "campus-and-internship",
+      "tags": [
+        "实习",
+        "校招"
+      ],
+      "icon": "https://www.shixiseng.com/favicon.ico"
+    },
+    {
+      "url": "https://www.cnki.net",
+      "title": "中国知网",
+      "description": "中文学术文献数据库，期刊、学位论文与会议论文",
+      "categorySlug": "literature-search",
+      "tags": [
+        "文献",
+        "中文"
+      ],
+      "icon": "https://www.cnki.net/favicon.ico"
+    },
+    {
+      "url": "https://scholar.google.com",
+      "title": "Google Scholar",
+      "description": "学术搜索引擎，覆盖全球学术文献与引用",
+      "categorySlug": "literature-search",
+      "tags": [
+        "文献",
+        "检索"
+      ],
+      "icon": "https://scholar.google.com/favicon.ico"
+    },
+    {
+      "url": "https://www.semanticscholar.org",
+      "title": "Semantic Scholar",
+      "description": "AI 驱动的学术文献检索，免费开放",
+      "categorySlug": "literature-search",
+      "tags": [
+        "文献",
+        "AI"
+      ],
+      "icon": "https://www.semanticscholar.org/favicon.ico"
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov",
+      "title": "PubMed",
+      "description": "美国国家医学图书馆的生物医学文献检索",
+      "categorySlug": "literature-search",
+      "tags": [
+        "医学",
+        "文献"
+      ],
+      "icon": "https://pubmed.ncbi.nlm.nih.gov/favicon.ico"
+    },
+    {
+      "url": "https://www.zotero.org",
+      "title": "Zotero",
+      "description": "免费开源的文献管理工具，收集引用一键生成",
+      "categorySlug": "research-management",
+      "tags": [
+        "文献管理",
+        "工具"
+      ],
+      "icon": "https://www.zotero.org/favicon.ico"
     }
   ],
   "collections": [
@@ -1790,6 +1911,84 @@
         {
           "site": "https://www.guahao.com",
           "note": "挂号不用排大队，在家就能约上医生",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "slug": "job-hunt-express",
+      "title": "求职招聘直通车",
+      "description": "好工作，直通车：大站投简历，对症下药找对口",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://www.zhipin.com",
+          "note": "直接跟老板聊，投递反馈快，互联网岗位最多",
+          "sort": 0
+        },
+        {
+          "site": "https://www.zhaopin.com",
+          "note": "综合招聘老牌站，城市与行业覆盖最广",
+          "sort": 1
+        },
+        {
+          "site": "https://www.51job.com",
+          "note": "岗位库大、更新快，职能与销售岗尤其多",
+          "sort": 2
+        },
+        {
+          "site": "https://www.lagou.com",
+          "note": "互联网岗位垂直站，技术、产品、运营集中",
+          "sort": 3
+        },
+        {
+          "site": "https://www.liepin.com",
+          "note": "中高端岗位与猎头多，跳槽涨薪看这里",
+          "sort": 4
+        },
+        {
+          "site": "https://www.shixiseng.com",
+          "note": "实习与校招集中，应届生找第一份工作的入口",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "slug": "academic-toolkit",
+      "title": "学术科研工具箱",
+      "description": "查文献，做科研：检索、预印本与文献管理一次配齐",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://www.cnki.net",
+          "note": "中文论文最全的数据库，写毕业论文绕不开它",
+          "sort": 0
+        },
+        {
+          "site": "https://scholar.google.com",
+          "note": "英文文献检索首选，引用追踪最方便",
+          "sort": 1
+        },
+        {
+          "site": "https://www.semanticscholar.org",
+          "note": "AI 驱动的文献检索，相关论文一键展开",
+          "sort": 2
+        },
+        {
+          "site": "https://arxiv.org",
+          "note": "预印本第一站，计算机与物理最新成果都在这里",
+          "sort": 3
+        },
+        {
+          "site": "https://pubmed.ncbi.nlm.nih.gov",
+          "note": "医学与生命科学文献的权威检索入口",
+          "sort": 4
+        },
+        {
+          "site": "https://www.zotero.org",
+          "note": "免费开源的文献管理工具，写论文必备",
           "sort": 5
         }
       ]

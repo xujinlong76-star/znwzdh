@@ -160,6 +160,34 @@ export const FEATURED_COLLECTION_EDITORIALS: FeaturedCollectionEditorial[] = [
       { id: "act-2", title: "第二幕 · 生活有人帮", description: "吃饭、叫车、挂号都有人帮，子女也能远程代办。", siteUrls: ["https://www.meituan.com", "https://www.didiglobal.com", "https://www.guahao.com"] },
     ],
   },
+  {
+    slug: "job-hunt-express",
+    title: "求职招聘直通车",
+    valueProposition: "好工作，直通车",
+    intro: "找工作最怕大海捞针。这期把招聘平台排成两幕：先上大站广撒网，再按互联网、中高端、实习对症下药，面试不迷路。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的招聘平台；投递前先核对公司与岗位信息，凡是先交钱、先培训再上岗的，都是套路。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("求职招聘直通车"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 大站投简历", description: "先上大站广撒网：岗位多、更新快，是找工作的主阵地。", siteUrls: ["https://www.zhipin.com", "https://www.zhaopin.com", "https://www.51job.com"] },
+      { id: "act-2", title: "第二幕 · 对症下药", description: "互联网、中高端、实习各有去处，对口投递效率更高。", siteUrls: ["https://www.lagou.com", "https://www.liepin.com", "https://www.shixiseng.com"] },
+    ],
+  },
+  {
+    slug: "academic-toolkit",
+    title: "学术科研工具箱",
+    valueProposition: "查文献，做科研",
+    intro: "写论文最怕找不到文献、理不清引用。这期把检索、预印本与文献管理排成一条线：先查到论文，再追前沿、管好引用。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的学术平台；知网全文下载需机构权限或付费，引用请以原文为准；预印本未经同行评审，引用时请留心。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("学术科研工具箱"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 查文献找论文", description: "先查到论文：中英文文献库与 AI 检索，找文献不迷路。", siteUrls: ["https://www.cnki.net", "https://scholar.google.com", "https://www.semanticscholar.org"] },
+      { id: "act-2", title: "第二幕 · 追前沿管文献", description: "预印本追最新成果，PubMed 查医学文献，Zotero 把引用收好。", siteUrls: ["https://arxiv.org", "https://pubmed.ncbi.nlm.nih.gov", "https://www.zotero.org"] },
+    ],
+  },
 ];
 
 export function getFeaturedEditorial(slug: string): FeaturedCollectionEditorial | undefined {

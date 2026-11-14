@@ -21,7 +21,7 @@ function seedSiteUrls(col: NonNullable<ReturnType<typeof seedCollection>>): stri
 
 describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合集）", () => {
   it("两个新合集都有策展文案且校验通过", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost", "beginner-web", "senior-services"]);
+    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost", "beginner-web", "senior-services", "job-hunt-express", "academic-toolkit"]);
     for (const e of FEATURED_COLLECTION_EDITORIALS) {
       expect(validateFeaturedEditorial(e)).toEqual([]);
       expect(e.title.trim().length).toBeGreaterThan(0);
@@ -89,7 +89,7 @@ describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合�
 
 describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率办公 + 收藏/订阅/进度）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(6);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(8);
     const ai = getFeaturedEditorial("ai-video-toolkit");
     const office = getFeaturedEditorial("office-boost");
     expect(ai).toBeDefined();
@@ -166,7 +166,7 @@ describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率�
 
 describe("精选专题（第 3 笔：新手上网必备、长辈便民服务）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(6);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(8);
     const beginner = getFeaturedEditorial("beginner-web");
     const senior = getFeaturedEditorial("senior-services");
     expect(beginner).toBeDefined();
@@ -206,5 +206,47 @@ describe("精选专题（第 3 笔：新手上网必备、长辈便民服务）"
     if (!col) return;
     expect(seedSiteUrls(col)).toContain("https://weather.com.cn");
     expect(seedSiteUrls(col)).toContain("https://www.amap.com");
+  });
+});
+
+describe("精选专题（第 4 笔：求职招聘直通车、学术科研工具箱）", () => {
+  it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(8);
+    const job = getFeaturedEditorial("job-hunt-express");
+    const academic = getFeaturedEditorial("academic-toolkit");
+    expect(job).toBeDefined();
+    expect(academic).toBeDefined();
+    if (!job || !academic) return;
+    expect(job.title).toBe("求职招聘直通车");
+    expect(job.valueProposition).toBe("好工作，直通车");
+    expect(job.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(job.issueNo).toBe(1);
+    expect(job.acts.length).toBe(2);
+    expect(job.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(job.acts[0].title).toBe("第一幕 · 大站投简历");
+    expect(job.acts[1].title).toBe("第二幕 · 对症下药");
+    expect(validateFeaturedEditorial(job)).toEqual([]);
+    expect(academic.title).toBe("学术科研工具箱");
+    expect(academic.valueProposition).toBe("查文献，做科研");
+    expect(academic.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(academic.issueNo).toBe(1);
+    expect(academic.acts.length).toBe(2);
+    expect(academic.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(academic.acts[0].title).toBe("第一幕 · 查文献找论文");
+    expect(academic.acts[1].title).toBe("第二幕 · 追前沿管文献");
+    expect(validateFeaturedEditorial(academic)).toEqual([]);
+    expect(coverSiteUrls(job).length).toBe(6);
+    expect(coverSiteUrls(academic).length).toBe(6);
+  });
+
+  it("复用种子已有站点时地址与种子一致（arXiv 裸域名）", () => {
+    const academic = getFeaturedEditorial("academic-toolkit");
+    expect(academic).toBeDefined();
+    if (!academic) return;
+    expect(academic.acts.flatMap((a) => a.siteUrls)).toContain("https://arxiv.org");
+    const col = seedCollection("academic-toolkit");
+    expect(col).toBeDefined();
+    if (!col) return;
+    expect(seedSiteUrls(col)).toContain("https://arxiv.org");
   });
 });

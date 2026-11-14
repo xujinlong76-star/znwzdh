@@ -1297,6 +1297,105 @@
         "知识库"
       ],
       "icon": "https://www.yuque.com/favicon.ico"
+    },
+    {
+      "url": "https://www.baidu.com",
+      "title": "百度",
+      "description": "中文搜索的入口：查天气、查路线、查知识都从它开始",
+      "categorySlug": "ai-search-knowledge",
+      "tags": [
+        "搜索",
+        "搜索引擎"
+      ],
+      "icon": "https://www.baidu.com/favicon.ico"
+    },
+    {
+      "url": "https://weixin.qq.com",
+      "title": "微信",
+      "description": "聊天、朋友圈与支付都在一个 App 里，新手先装它",
+      "categorySlug": "instant-messaging",
+      "tags": [
+        "聊天",
+        "社交"
+      ],
+      "icon": "https://weixin.qq.com/favicon.ico"
+    },
+    {
+      "url": "https://fanyi.baidu.com",
+      "title": "百度翻译",
+      "description": "中英互译与拍照翻译，看不懂外文就拍它",
+      "categorySlug": "dictionaries-and-translators",
+      "tags": [
+        "翻译",
+        "词典"
+      ],
+      "icon": "https://fanyi.baidu.com/favicon.ico"
+    },
+    {
+      "url": "https://www.gjzwfw.gov.cn",
+      "title": "国家政务服务平台",
+      "description": "国务院政务服务入口：办事、查询、投诉一站办",
+      "categorySlug": "government-affairs",
+      "tags": [
+        "政务",
+        "办事"
+      ],
+      "icon": "https://www.gjzwfw.gov.cn/favicon.ico"
+    },
+    {
+      "url": "https://www.nhsa.gov.cn",
+      "title": "国家医保服务平台",
+      "description": "医保查询与报销的官方入口，参保缴费都能查",
+      "categorySlug": "healthcare",
+      "tags": [
+        "医保",
+        "医疗"
+      ],
+      "icon": "https://www.nhsa.gov.cn/favicon.ico"
+    },
+    {
+      "url": "https://www.alipay.com",
+      "title": "支付宝",
+      "description": "支付、缴费与生活服务都在一个 App 里",
+      "categorySlug": "payments-and-wallets",
+      "tags": [
+        "支付",
+        "生活"
+      ],
+      "icon": "https://www.alipay.com/favicon.ico"
+    },
+    {
+      "url": "https://www.meituan.com",
+      "title": "美团",
+      "description": "外卖、买菜与到店服务，吃饭生活一站解决",
+      "categorySlug": "grocery-and-delivery",
+      "tags": [
+        "外卖",
+        "生活"
+      ],
+      "icon": "https://www.meituan.com/favicon.ico"
+    },
+    {
+      "url": "https://www.didiglobal.com",
+      "title": "滴滴出行",
+      "description": "网约车与打车服务，出门一键叫车",
+      "categorySlug": "transit-and-mobility",
+      "tags": [
+        "打车",
+        "出行"
+      ],
+      "icon": "https://www.didiglobal.com/favicon.ico"
+    },
+    {
+      "url": "https://www.guahao.com",
+      "title": "微医",
+      "description": "网上挂号与在线问诊，在家就能约上医生",
+      "categorySlug": "healthcare",
+      "tags": [
+        "挂号",
+        "医疗"
+      ],
+      "icon": "https://www.guahao.com/favicon.ico"
     }
   ],
   "collections": [
@@ -1613,6 +1712,84 @@
         {
           "site": "https://www.yuque.com",
           "note": "团队知识库与文档沉淀，资料找得到、看得懂",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "slug": "beginner-web",
+      "title": "新手上网必备",
+      "description": "上网第一课：一看就会的六个基础站",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://www.baidu.com",
+          "note": "查什么都从它开始，新手上网的第一站",
+          "sort": 0
+        },
+        {
+          "site": "https://weixin.qq.com",
+          "note": "聊天、朋友圈、支付都在一个 App 里，新手先装它",
+          "sort": 1
+        },
+        {
+          "site": "https://www.amap.com",
+          "note": "出门查路线、看路况，迷路了就打开它",
+          "sort": 2
+        },
+        {
+          "site": "https://weather.com.cn",
+          "note": "出门先看天气，穿衣带伞心里有数",
+          "sort": 3
+        },
+        {
+          "site": "https://www.12306.cn",
+          "note": "买火车票只认它，别信来路不明的抢票链接",
+          "sort": 4
+        },
+        {
+          "site": "https://fanyi.baidu.com",
+          "note": "看不懂外文就拍它，翻译出来再慢慢读",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "slug": "senior-services",
+      "title": "长辈便民服务",
+      "description": "办事不用跑：政务医保缴费挂号都在手机上",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://www.gjzwfw.gov.cn",
+          "note": "办事不用跑窗口，身份证、社保、公积金都能在线查",
+          "sort": 0
+        },
+        {
+          "site": "https://www.nhsa.gov.cn",
+          "note": "查医保余额、报销进度，官方入口最放心",
+          "sort": 1
+        },
+        {
+          "site": "https://www.alipay.com",
+          "note": "交水电费、挂号、坐公交，一个 App 全能办",
+          "sort": 2
+        },
+        {
+          "site": "https://www.meituan.com",
+          "note": "吃饭买菜送到家，子女顺手帮着点也方便",
+          "sort": 3
+        },
+        {
+          "site": "https://www.didiglobal.com",
+          "note": "不会开车也能出门，一键叫车还有子女代叫",
+          "sort": 4
+        },
+        {
+          "site": "https://www.guahao.com",
+          "note": "挂号不用排大队，在家就能约上医生",
           "sort": 5
         }
       ]

@@ -132,6 +132,34 @@ export const FEATURED_COLLECTION_EDITORIALS: FeaturedCollectionEditorial[] = [
       { id: "act-2", title: "第二幕 · 文档表格", description: "再把资料收好：文档表格随开随改，沉淀的资料找得到。", siteUrls: ["https://docs.qq.com", "https://www.wps.cn", "https://www.yuque.com"] },
     ],
   },
+  {
+    slug: "beginner-web",
+    title: "新手上网必备",
+    valueProposition: "上网第一课，一看就会",
+    intro: "刚上网别慌，六个站够用：先学会查东西、发微信、找路，再学看天气、买票和翻译，一步步来。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收一看就会的基础站：先记百度和微信，办事再用 12306 和翻译；凡是让先交钱、先下载不明软件的，先停下来问问家里人。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("新手上网必备"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 先上网", description: "先学会查、聊、找路：搜索、微信、地图三件套。", siteUrls: ["https://www.baidu.com", "https://weixin.qq.com", "https://www.amap.com"] },
+      { id: "act-2", title: "第二幕 · 出门办事", description: "出门前看天气、买车票，看不懂外文就翻译。", siteUrls: ["https://weather.com.cn", "https://www.12306.cn", "https://fanyi.baidu.com"] },
+    ],
+  },
+  {
+    slug: "senior-services",
+    title: "长辈便民服务",
+    valueProposition: "办事不用跑，手机全办好",
+    intro: "给长辈挑的便民站：办事、医保、缴费在第一幕，吃饭、叫车、挂号在第二幕，大字大按钮，慢慢点不着急。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收官方与大平台入口：办事缴费认准 gov.cn 结尾的官网，医保报销以国家医保服务平台为准；凡是索要验证码、银行卡密码的，都是骗子，立刻挂断。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("长辈便民服务"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 办事不用跑", description: "政务、医保、缴费都在手机上，不用跑窗口排队。", siteUrls: ["https://www.gjzwfw.gov.cn", "https://www.nhsa.gov.cn", "https://www.alipay.com"] },
+      { id: "act-2", title: "第二幕 · 生活有人帮", description: "吃饭、叫车、挂号都有人帮，子女也能远程代办。", siteUrls: ["https://www.meituan.com", "https://www.didiglobal.com", "https://www.guahao.com"] },
+    ],
+  },
 ];
 
 export function getFeaturedEditorial(slug: string): FeaturedCollectionEditorial | undefined {

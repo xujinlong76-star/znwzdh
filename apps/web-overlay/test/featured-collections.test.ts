@@ -21,7 +21,7 @@ function seedSiteUrls(col: NonNullable<ReturnType<typeof seedCollection>>): stri
 
 describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合集）", () => {
   it("两个新合集都有策展文案且校验通过", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost"]);
+    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost", "beginner-web", "senior-services"]);
     for (const e of FEATURED_COLLECTION_EDITORIALS) {
       expect(validateFeaturedEditorial(e)).toEqual([]);
       expect(e.title.trim().length).toBeGreaterThan(0);
@@ -89,7 +89,7 @@ describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合�
 
 describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率办公 + 收藏/订阅/进度）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(4);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(6);
     const ai = getFeaturedEditorial("ai-video-toolkit");
     const office = getFeaturedEditorial("office-boost");
     expect(ai).toBeDefined();
@@ -161,5 +161,50 @@ describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率�
     expect(detail).toContain("role=\"progressbar\"");
     expect(detail).toContain("visitProgressLabel");
     expect(detail).toContain("已逛");
+  });
+});
+
+describe("精选专题（第 3 笔：新手上网必备、长辈便民服务）", () => {
+  it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(6);
+    const beginner = getFeaturedEditorial("beginner-web");
+    const senior = getFeaturedEditorial("senior-services");
+    expect(beginner).toBeDefined();
+    expect(senior).toBeDefined();
+    if (!beginner || !senior) return;
+    expect(beginner.title).toBe("新手上网必备");
+    expect(beginner.valueProposition).toBe("上网第一课，一看就会");
+    expect(beginner.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(beginner.issueNo).toBe(1);
+    expect(beginner.acts.length).toBe(2);
+    expect(beginner.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(beginner.acts[0].title).toBe("第一幕 · 先上网");
+    expect(beginner.acts[1].title).toBe("第二幕 · 出门办事");
+    expect(validateFeaturedEditorial(beginner)).toEqual([]);
+    expect(senior.title).toBe("长辈便民服务");
+    expect(senior.valueProposition).toBe("办事不用跑，手机全办好");
+    expect(senior.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(senior.issueNo).toBe(1);
+    expect(senior.acts.length).toBe(2);
+    expect(senior.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(senior.acts[0].title).toBe("第一幕 · 办事不用跑");
+    expect(senior.acts[1].title).toBe("第二幕 · 生活有人帮");
+    expect(validateFeaturedEditorial(senior)).toEqual([]);
+    expect(coverSiteUrls(beginner).length).toBe(6);
+    expect(coverSiteUrls(senior).length).toBe(6);
+  });
+
+  it("复用种子已有站点时地址与种子一致（中国天气网无 www 前缀）", () => {
+    const beginner = getFeaturedEditorial("beginner-web");
+    expect(beginner).toBeDefined();
+    if (!beginner) return;
+    expect(beginner.acts.flatMap((a) => a.siteUrls)).toContain("https://weather.com.cn");
+    expect(beginner.acts.flatMap((a) => a.siteUrls)).toContain("https://www.amap.com");
+    expect(beginner.acts.flatMap((a) => a.siteUrls)).toContain("https://www.12306.cn");
+    const col = seedCollection("beginner-web");
+    expect(col).toBeDefined();
+    if (!col) return;
+    expect(seedSiteUrls(col)).toContain("https://weather.com.cn");
+    expect(seedSiteUrls(col)).toContain("https://www.amap.com");
   });
 });

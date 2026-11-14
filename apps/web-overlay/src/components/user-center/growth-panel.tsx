@@ -13,10 +13,27 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Award, Bell, Cat, CheckCircle2, Circle, Crown, Fish, Flame, Moon, PawPrint, Snowflake, Sparkles, X, Zap } from 'lucide-react'
 import {
+  CATEGORY_NEW_XP,
+  DAILY_FIRST_XP,
+  DAILY_VISIT_XP,
+  EARNBACK_MIN_STREAK,
+  EARNBACK_WINDOW_MS,
+  FEATURE_FIRST_EVER_XP,
   FEATURE_META,
   GROWTH_UPDATED_EVENT,
+  HOMEPAGE_CLAIM_XP,
+  IDENTITY_TIER,
   IDLE_DAILY_CAP_MINUTES,
+  IDLE_XP_PER_MINUTE,
   LEVEL_TIER_LABEL,
+  MULTIPLIER_CAP,
+  PWA_CLAIM_XP,
+  REPEAT_LIMIT,
+  REPEAT_XP,
+  STREAK_BONUS_CAP,
+  STREAK_BONUS_STEP,
+  STREAK_BONUS_STEP_DAYS,
+  USAGE_DAILY_CAP,
   currentMultiplier,
   currentPureStreak,
   currentStreak,
@@ -232,6 +249,35 @@ export function GrowthPanel() {
             )
           })}
         </ul>
+        {/* 规则区默认折叠，不撑长面板首屏；数字一律引 growth.ts 常量，常量一改页面自动跟 */}
+        <details className="mt-3 rounded-xl border border-border/60 px-3 py-2" aria-label="成长规则">
+          <summary className="cursor-pointer text-sm font-medium">成长规则：经验怎么来，倍率怎么算</summary>
+          <div className="mt-2 space-y-2 text-sm text-muted-foreground">
+            <div>
+              <p className="font-medium text-foreground">经验来源</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                <li>功能首次使用 +{FEATURE_FIRST_EVER_XP}；每日首次 +{DAILY_FIRST_XP}；同一功能重复 +{REPEAT_XP}（每天第 2 次起、最多到第 {REPEAT_LIMIT} 次）</li>
+                <li>逛到新分类 +{CATEGORY_NEW_XP}；每日到访 +{DAILY_VISIT_XP}</li>
+                <li>挂机陪伴：页面开着且在前台时，每分钟 +{IDLE_XP_PER_MINUTE}，每日最多 {IDLE_DAILY_CAP_MINUTES} 分钟</li>
+                <li>设为首页 +{HOMEPAGE_CLAIM_XP}（一次性，不带倍率）；装为应用 +{PWA_CLAIM_XP}（一次性，并开启 ×{IDENTITY_TIER.homeOrPwa.toFixed(1)}）</li>
+              </ul>
+            </div>
+            <p>
+              倍率算法：身份档基础 ×{IDENTITY_TIER.base.toFixed(1)} / 登录 ×{IDENTITY_TIER.member.toFixed(1)} / 装为应用 ×{IDENTITY_TIER.homeOrPwa.toFixed(1)}（取高不叠）
+              + 连胜加成（每满 {STREAK_BONUS_STEP_DAYS} 天 +{STREAK_BONUS_STEP.toFixed(1)}，封顶 +{STREAK_BONUS_CAP.toFixed(1)}），
+              合计封顶 ×{MULTIPLIER_CAP.toFixed(1)}；倍率只放大使用类经验。
+            </p>
+            <p>
+              过渡口径：2026-11-15 前已领取设首页奖励的用户，×{IDENTITY_TIER.homeOrPwa.toFixed(1)} 档位保留不变，不收回；
+              之后新领取的设首页奖励不再开启倍率（设首页是自述领取，网页无法核实）。
+            </p>
+            <p>
+              使用类经验每日上限 {USAGE_DAILY_CAP}（任务类不计入）；成长日每天凌晨 4 点结算。
+              连胜保护：冻结卡自动垫付、每周可设一个休息日、Earn Back {EARNBACK_WINDOW_MS / 3600000} 小时抢救
+              （断签时连胜 ≥{EARNBACK_MIN_STREAK} 天才开）。成长档案只存在这台设备的浏览器里，不回传服务器。
+            </p>
+          </div>
+        </details>
         <p className="mt-3 text-xs text-muted-foreground">
           说明：成长档案只存在这台设备的浏览器里，不回传服务器，换设备或清浏览器数据不会同步、也找不回——重要的话就一直用这台设备逛。连胜每天凌晨 4 点结算前一天；哪天实在来不了，冻结卡会自动顶上，也可以去赛季区设一个每周休息日。
         </p>

@@ -7,10 +7,13 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  HOMEPAGE_CLAIM_XP,
+  PWA_CLAIM_XP,
   assignDailySlots,
   awardEvent,
   awardIdleMinute,
   claimHomepageReward,
+  claimPwaInstall,
   currentMultiplier,
   currentStreak,
   dailyTaskStatus,
@@ -119,10 +122,14 @@ describe('倍率与上限', () => {
     const base = emptyProfile(at(11, 9))
     expect(currentMultiplier(base, at(11, 9))).toBe(1.0)
     expect(currentMultiplier({ ...base, memberSeen: true }, at(11, 9))).toBeCloseTo(1.2)
-    // 30 天连胜 + 设首页：1.5 + 0.3 = 1.8
+    // 30 天连胜 + 装为应用：1.5 + 0.3 = 1.8（×1.5 只认 PWA 真实安装，2026-11-15 新规）
     const s30 = streakProfile(30, 11, 8)
-    s30.homepageClaimedAt = 'x'
+    s30.pwaInstalledAt = 'x'
     expect(currentMultiplier(s30, at(11, 9))).toBeCloseTo(1.8)
+    // 30 天连胜 + 只设首页：设首页不再开档，1.0 + 0.3 = 1.3
+    const s30c = streakProfile(30, 11, 8)
+    s30c.homepageClaimedAt = 'x'
+    expect(currentMultiplier(s30c, at(11, 9))).toBeCloseTo(1.3)
     // 30 天连胜 + 只有登录档也封顶逻辑：1.2 + 0.3 = 1.5
     const s30b = streakProfile(30, 11, 8)
     s30b.memberSeen = true
@@ -131,8 +138,8 @@ describe('倍率与上限', () => {
 
   it('使用类单日 300 封顶，任务类不计入', () => {
     let p = emptyProfile(at(11, 9))
-    // 用高倍率快速打满：设首页 ×1.5 后反复用不同功能刷使用类
-    p = claimHomepageReward(p, at(11, 9)).profile
+    // 用高倍率快速打满：装为应用 ×1.5 后反复用不同功能刷使用类（设首页不再开档）
+    p = claimPwaInstall(p, at(11, 9)).profile
     for (let round = 0; round < 40; round += 1) {
       for (const kind of ['search', 'ai_chat', 'scene_open', 'drama_visit'] as const) {
         p = awardEvent(p, kind, {}, at(11, 9)).profile
@@ -146,6 +153,38 @@ describe('倍率与上限', () => {
     const settled = settleProfile(p, at(11, 9)).profile
     expect(settled.days[key(11, 9)]!.taskXp).toBeGreaterThan(0)
     expect(settled.totalXp).toBeGreaterThan(before)
+  })
+})
+
+describe('设首页不再开 ×1.5（升级第 9 条，2026-11-15 新规）', () => {
+  it('(a) 只设首页：+100 到账，倍率仍 ×1.0，不置 boost', () => {
+    const { profile, gained } = claimHomepageReward(emptyProfile(at(11, 9)), at(11, 9))
+    expect(gained).toBe(HOMEPAGE_CLAIM_XP)
+    expect(profile.homepageClaimedAt).not.toBeNull()
+    expect(profile.boost).toBe(false)
+    expect(currentMultiplier(profile, at(11, 9))).toBe(1.0)
+  })
+
+  it('(b) 装为应用：+60 到账，档位 ×1.5', () => {
+    const { profile, gained } = claimPwaInstall(emptyProfile(at(11, 9)), at(11, 9))
+    expect(gained).toBe(PWA_CLAIM_XP)
+    expect(profile.pwaInstalledAt).not.toBeNull()
+    expect(profile.boost).toBe(true)
+    expect(currentMultiplier(profile, at(11, 9))).toBeCloseTo(1.5)
+  })
+
+  it('(c) 老档案（boost 已 true + 曾领设首页）：仍享 ×1.5，不收回', () => {
+    const p = emptyProfile(at(11, 9))
+    p.boost = true
+    p.homepageClaimedAt = '2026-10-01T00:00:00.000Z'
+    expect(currentMultiplier(p, at(11, 9))).toBeCloseTo(1.5)
+  })
+
+  it('设首页领取幂等：第二次领取 0 分入账', () => {
+    const first = claimHomepageReward(emptyProfile(at(11, 9)), at(11, 9))
+    const second = claimHomepageReward(first.profile, at(11, 9))
+    expect(second.gained).toBe(0)
+    expect(second.profile.boost).toBe(false)
   })
 })
 
@@ -426,7 +465,7 @@ describe('新手链与回归包', () => {
   })
 
   it('挂机封顶口径：原始分钟 30 封顶，与倍率无关', () => {
-    let p = claimHomepageReward(emptyProfile(at(11, 9)), at(11, 9)).profile // ×1.5
+    let p = claimHomepageReward(emptyProfile(at(11, 9)), at(11, 9)).profile // 设首页只 +100、不带倍率；挂机 30 分钟封顶与倍率无关
     for (let i = 0; i < 35; i += 1) p = awardIdleMinute(p, at(11, 9)).profile
     const day = p.days[key(11, 9)]!
     expect(day.idleMinutes).toBe(30)

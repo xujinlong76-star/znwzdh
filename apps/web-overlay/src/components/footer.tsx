@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useSiteViewModel } from '@/components/site-view-context'
+import { HOMEPAGE_CLAIM_XP } from '@/lib/growth'
 import type { SiteConfig } from '@/types/site'
 
 interface FooterProps {
@@ -29,7 +30,7 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/me" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">用户中心</Link>
           <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/me" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">设为首页领经验加速</Link>
+          <Link href="/me" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">设为首页领 +{HOMEPAGE_CLAIM_XP} 经验</Link>
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/favorites" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">我的收藏 (E2EE)</Link>
           <span className="text-border" aria-hidden="true">·</span>

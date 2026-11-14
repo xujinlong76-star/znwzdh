@@ -9,8 +9,10 @@
  * 每日首次 +10 / 重复 +2 至第 5 次封底 0 / 新分类 +15 / 挂机 +1 每分钟
  * 每日 30 分钟 / 每日到访 +5 / 设首页 +100）全部沿用；v2 新增——
  *  - brief_read 功能（图鉴扩到 10 种）；
- *  - 倍率体系：身份档（基础 ×1.0 / 登录 ×1.2 / 设首页或 PWA ×1.5，取高）
+ *  - 倍率体系：身份档（基础 ×1.0 / 登录 ×1.2 / 装为应用 ×1.5，取高）
  *    + 连胜加成（每满 7 天 +0.1，封顶 +0.3），总倍率封顶 ×2.0，只放大使用类；
+ *    设为首页只给 +100 一次性经验，不开倍率（自述领取无法核实；2026-11-15 前
+ *    已领取的老用户保留 ×1.5，不收回——见第 9 条过渡口径）；
  *  - 使用类日上限 300（任务类不计入，防熔断误伤真实重度用户）；
  *  - 04:00 切日（本地时区）：一个「成长日」= 04:00 → 次日 04:00；
  *  - 连胜三层保护：冻结卡自动垫付（补给按连续周期每满 7 个自然日 +1）、
@@ -22,8 +24,8 @@
  *    迁移后 Lv1–8 用户等级零变化；上线前已达 Lv8 者发绝版纪念章「初代传说」。
  *
  * 诚实口径（沿 v1）：数据只存浏览器 localStorage、不回传服务端，
- * 用户中心如实标注「本机成长档案」；设为首页是自述领取（网页无法检测）；
- * 宝箱只给加法、无付费入口、概率在成长页公示。
+ * 用户中心如实标注「本机成长档案」；设为首页是自述领取（网页无法检测），
+ * 只给一次性经验、不开倍率；宝箱只给加法、无付费入口、概率在成长页公示。
  */
 
 import {
@@ -91,7 +93,7 @@ export const IDLE_DAILY_CAP_MINUTES = 30
 export const DAILY_VISIT_XP = 5
 export const HOMEPAGE_CLAIM_XP = 100
 export const PWA_CLAIM_XP = 60
-/** v1 的单一加速倍率（= v2 的设首页/PWA 身份档，保留导出给旧测试与文案） */
+/** v1 的单一加速倍率（= v2 的装为应用身份档，保留导出给旧测试与文案） */
 export const BOOST_MULTIPLIER = 1.5
 export const MEMBER_MULTIPLIER = 1.2
 export const MULTIPLIER_CAP = 2.0
@@ -103,10 +105,14 @@ export const SEASON_TASK_XP = 60
 export const CHEST_FIXED_XP = 15
 /** 宝箱变量档出冻结卡的基础概率（缺卡时升至 0.30，连空 3 次后第 4 个必出） */
 export const CHEST_CARD_PROB = 0.18
-/** 身份档：基础 / 登录 / 设首页或装为应用（取高不叠，与连胜加成合计封顶 ×2.0） */
+/** 身份档：基础 / 登录 / 装为应用（取高不叠，与连胜加成合计封顶 ×2.0） */
 export const IDENTITY_TIER = { base: 1.0, member: MEMBER_MULTIPLIER, homeOrPwa: BOOST_MULTIPLIER } as const
-/** 连胜加成上限（每满 7 天 +0.1） */
+/** 连胜加成上限（每满 STREAK_BONUS_STEP_DAYS 天 +STREAK_BONUS_STEP） */
 export const STREAK_BONUS_CAP = 0.3
+/** 连胜加成步进：每满这么多天 +STREAK_BONUS_STEP */
+export const STREAK_BONUS_STEP_DAYS = 7
+/** 连胜加成步长 */
+export const STREAK_BONUS_STEP = 0.1
 /** 冻结卡库存上限：Lv8 前 2 张，Lv8 起 3 张 */
 export const FREEZE_CAP_LOW = 2
 export const FREEZE_CAP_HIGH = 3
@@ -313,7 +319,8 @@ export interface GrowthNotice {
 export interface GrowthProfile {
   v: 2
   totalXp: number
-  /** 「设为首页」领取后的加速档是否开启（= 身份档 ×1.5 的来源之一，兼容 v1 字段） */
+  /** 加速档是否开启（= 身份档 ×1.5 的来源；2026-11-15 起只由装为应用写入，
+   *  2026-11-15 前已领设首页奖励的老档案保留 true，不收回；兼容 v1 字段） */
   boost: boolean
   homepageClaimedAt: string | null
   pwaInstalledAt: string | null
@@ -868,16 +875,16 @@ export function currentPureStreak(profile: GrowthProfile, now: Date = new Date()
 
 /* ---------------- 倍率（v2 表 2.2） ---------------- */
 
-/** 身份档：基础 ×1.0 / 登录 ×1.2 / 设首页或装为应用 ×1.5（取高不叠；boost 为 v1 兼容来源） */
+/** 身份档：基础 ×1.0 / 登录 ×1.2 / 装为应用 ×1.5（取高不叠；boost 为 v1 兼容来源——2026-11-15 前已领设首页奖励的老档案保留，新领取不再经设首页开档） */
 export function identityMultiplier(profile: GrowthProfile): number {
-  if (profile.boost || profile.homepageClaimedAt || profile.pwaInstalledAt) return IDENTITY_TIER.homeOrPwa
+  if (profile.boost || profile.pwaInstalledAt) return IDENTITY_TIER.homeOrPwa
   if (profile.memberSeen) return IDENTITY_TIER.member
   return IDENTITY_TIER.base
 }
 
-/** 连胜加成：当前连胜（含今日已点亮）每满 7 天 +0.1，封顶 +0.3——与面板展示的连胜数同口径 */
+/** 连胜加成：当前连胜（含今日已点亮）每满 STREAK_BONUS_STEP_DAYS 天 +STREAK_BONUS_STEP，封顶 +STREAK_BONUS_CAP——与面板展示的连胜数同口径 */
 export function streakBonus(profile: GrowthProfile, now: Date = new Date()): number {
-  return Math.min(STREAK_BONUS_CAP, Math.floor(currentStreak(profile, now) / 7) * 0.1)
+  return Math.min(STREAK_BONUS_CAP, Math.floor(currentStreak(profile, now) / STREAK_BONUS_STEP_DAYS) * STREAK_BONUS_STEP)
 }
 
 export function currentMultiplier(profile: GrowthProfile, now: Date = new Date()): number {
@@ -1072,7 +1079,7 @@ export function recordDailyVisit(input: GrowthProfile, now: Date = new Date()): 
   return { profile, gained, isNewDay }
 }
 
-/** 设为首页：+100 一次性（不吃倍率），并开启 ×1.5 身份档 */
+/** 设为首页：+100 一次性（不吃倍率）；自述领取无法核实，不开 ×1.5 身份档（2026-11-15 新规；此前已领取的老用户保留档位，不收回） */
 export function claimHomepageReward(input: GrowthProfile, now: Date = new Date()): { profile: GrowthProfile; gained: number } {
   const profile = cloneProfile(input)
   if (profile.homepageClaimedAt) return { profile, gained: 0 }
@@ -1080,7 +1087,6 @@ export function claimHomepageReward(input: GrowthProfile, now: Date = new Date()
   const day = dayOf(profile, key)
   markActive(profile, key)
   profile.homepageClaimedAt = now.toISOString()
-  profile.boost = true
   addXp(profile, day, HOMEPAGE_CLAIM_XP, 'fixed')
   return { profile, gained: HOMEPAGE_CLAIM_XP }
 }
@@ -1093,7 +1099,7 @@ export function claimPwaInstall(input: GrowthProfile, now: Date = new Date()): {
   const day = dayOf(profile, key)
   markActive(profile, key)
   profile.pwaInstalledAt = now.toISOString()
-  profile.boost = true // 与设首页同为 ×1.5 身份档来源，兼容 v1 的 boost 语义
+  profile.boost = true // ×1.5 身份档的唯一新来源（设首页自述领取不再开档，2026-11-15 新规），兼容 v1 的 boost 语义
   addXp(profile, day, PWA_CLAIM_XP, 'fixed')
   return { profile, gained: PWA_CLAIM_XP }
 }

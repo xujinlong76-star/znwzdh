@@ -3,7 +3,7 @@
 /**
  * 首页顶部「设为首页」引导条：只在首页出现，可关闭，关掉后记进
  * localStorage 不再打扰（HOMEPAGE_BANNER_DISMISSED_KEY）。已领取过
- * 加速的用户也不再显示——目的达到就不烦人。点「怎么设置」原地
+ * 首页奖励的用户也不再显示——目的达到就不烦人。点「怎么设置」原地
  * 展开完整引导卡（HomepageGuideCard）。
  */
 
@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Home, X } from 'lucide-react'
-import { HOMEPAGE_BANNER_DISMISSED_KEY, loadGrowthProfile } from '@/lib/growth'
+import { HOMEPAGE_BANNER_DISMISSED_KEY, HOMEPAGE_CLAIM_XP, loadGrowthProfile } from '@/lib/growth'
 
 // 引导卡只在用户点「怎么设置」展开时才需要：动态导入，不占各页面首屏包体积
 // （本横幅挂在根 layout，未拆分前每个路由都要背 6 套浏览器步骤文案与图标）。
@@ -56,7 +56,7 @@ export function HomepageBanner() {
         <div className="flex items-center gap-3">
           <Home className="h-4 w-4 shrink-0 text-primary" aria-hidden />
           <p className="min-w-0 flex-1 text-sm">
-            常来的话，把本站设为浏览器首页吧——下次打开浏览器就能直接回来，还能领 100 经验、开启经验加速。
+            常来的话，把本站设为浏览器首页吧——下次打开浏览器就能直接回来，还能领 {HOMEPAGE_CLAIM_XP} 经验。
           </p>
           <button
             type="button"

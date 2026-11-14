@@ -299,6 +299,36 @@ export function urgencyTier(
 }
 
 /**
+ * 时钟卡倒计时行（纯派生）：最近一场未结束考试的一行文案 + 紧迫档位。
+ * 四场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
+ * 文案与 /exam 倒计时岛同口径：今天「今天国考」、进行中「考研进行中 ·
+ * 第 2 天」、明天「明天国考」、其余「距国考 N 天」；天数按北京时间
+ * 自然日（daysUntil），与考试条带数字一致。
+ */
+export interface ExamCountdownLine {
+  exam: ExamInfo
+  /** 距首日的北京时间自然日数：今天 0，明天 1，进行中为负 */
+  days: number
+  tier: ExamUrgencyTier
+  label: string
+}
+
+export function nearestExamCountdown(nowMs: number = Date.now()): ExamCountdownLine | undefined {
+  const exam = nearestExam(nowMs)
+  if (!exam) return undefined
+  const tier = urgencyTier(exam, nowMs)
+  if (!tier) return undefined
+  const status = examStatus(exam, nowMs)
+  const d = daysUntil(exam.startISO, nowMs)
+  let label: string
+  if (status === 'today') label = `今天${exam.shortName}`
+  else if (status === 'ongoing') label = `${exam.shortName}进行中 · 第 ${1 - d} 天`
+  else if (d === 1) label = `明天${exam.shortName}`
+  else label = `距${exam.shortName} ${d} 天`
+  return { exam, days: d, tier, label }
+}
+
+/**
  * 提醒档位：只在考前 7 / 3 / 1 天与考试当天命中，其余为 null。
  * 同一考试同一天只命中一个档位，去重天然成立，无需存储去重表。
  */

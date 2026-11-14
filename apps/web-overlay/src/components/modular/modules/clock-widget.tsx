@@ -1,15 +1,33 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { Play, Pause, RotateCcw, Clock as ClockIcon, Sparkles } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { formatLunarDate, formatLunarDateExact } from '@/lib/lunar-date'
+import {
+  nearestExamCountdown,
+  type ExamUrgencyTier,
+} from '@/lib/exam-calendar'
 
 const POMO_PRESETS = [
   { label: '15分', seconds: 15 * 60, desc: '快速冲刺' },
   { label: '25分', seconds: 25 * 60, desc: '标准番茄' },
   { label: '45分', seconds: 45 * 60, desc: '深度心流' },
 ]
+
+/**
+ * 时钟卡倒计时行配色：与首页考试条带徽章同档（≤7 天琥珀、≤3 天/明天/
+ * 今天红），relaxed 沿用 sky 配方；小字用 red-700 / amber-700 / sky-700
+ *（白底 ≥4.8:1），深色档 red-400 / amber-400 / sky-400。
+ */
+const COUNTDOWN_LINE_CLASS: Record<ExamUrgencyTier, string> = {
+  today: 'text-red-700 dark:text-red-400',
+  tomorrow: 'text-red-700 dark:text-red-400',
+  urgent: 'text-red-700 dark:text-red-400',
+  soon: 'text-amber-700 dark:text-amber-400',
+  relaxed: 'text-sky-700 dark:text-sky-400',
+}
 
 export function ClockWidget({ config }: { config?: Record<string, any> }) {
   const [time, setTime] = useState<Date | null>(null)
@@ -75,6 +93,11 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
   const minutes = String(time.getMinutes()).padStart(2, '0')
   const seconds = String(time.getSeconds()).padStart(2, '0')
 
+  // 时钟卡倒计时行：最近一场未结束考试的一行文案（纯派生，不写存储）。
+  // time 每秒 tick 一次，午夜边界自动翻到下一场；四场全结束返回
+  // undefined，该行隐藏。只在时钟模式显示，专注模式不打扰。
+  const countdown = nearestExamCountdown(time.getTime())
+
   const pomoMinutes = String(Math.floor(pomodoroSeconds / 60)).padStart(2, '0')
   const pomoSecs = String(pomodoroSeconds % 60).padStart(2, '0')
   const progressPercent = Math.min(100, Math.max(0, ((totalSeconds - pomodoroSeconds) / totalSeconds) * 100))
@@ -121,6 +144,14 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
               {time.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               {lunarLabel ? ` · ${lunarLabel}` : ''}
             </div>
+            {countdown && (
+              <Link
+                href="/exam"
+                className={`text-xs font-mono font-semibold hover:underline ${COUNTDOWN_LINE_CLASS[countdown.tier]}`}
+              >
+                {countdown.label} ›
+              </Link>
+            )}
           </div>
         ) : (
           <div className="w-full text-center space-y-2">

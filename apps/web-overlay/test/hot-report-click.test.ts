@@ -10,7 +10,7 @@ import { join } from 'node:path'
  * 三处都没有 onClick 上报。榜单的排序依据（visit_count / trend_score）
  * 正是它自己不采集的数据：首页/搜索点的点击能攒热度，榜单页点的不能。
  *
- * 现在三处共用 handleSiteClick，口径与 navigation-card.tsx:270 的
+ * 现在两处共用 handleSiteClick，口径与 navigation-card.tsx:270 的
  * handleLinkClick 一致：reportClick(site.id, getIdentity(), { position })，
  * position 取卡片在当前榜单里的名次（1 起，与左上角名次徽章一致）。
  * reportClick 是 fire-and-forget，失败静默落端侧出箱，永不阻塞跳转；
@@ -39,31 +39,21 @@ describe('/hot 点击上报接线', () => {
     expect(code).toContain("import { getIdentity } from '@/lib/identity'")
   })
 
-  it('三处点击共用一个 handleSiteClick，位置取榜单名次 i + 1', () => {
+  it('两处点击共用一个 handleSiteClick，位置取榜单名次 i + 1', () => {
     expect(code).toContain('const handleSiteClick = (site: HubSite, position: number) => {')
     expect(code).toContain('reportClick(site.id, getIdentity(), { position })')
-    // 三处调用点：标题外链、站内详情、直达按钮，各一次
-    expect(code.match(/handleSiteClick\(site, i \+ 1\)/g)?.length).toBe(3)
+    // 两处调用点：标题内链、直达按钮，各一次
+    expect(code.match(/handleSiteClick\(site, i \+ 1\)/g)?.length).toBe(2)
   })
 
-  it('卡片标题外链点击上报', () => {
+  it('卡片标题内链点击上报', () => {
     const tag = windowAround(
       code,
       'className="block min-w-0 flex-1"',
       200,
       0,
     )
-    expect(tag).toContain('href={safeHref(site.url)}')
-    expect(tag).toContain('onClick={() => handleSiteClick(site, i + 1)}')
-  })
-
-  it('站内详情内链点击上报', () => {
-    const tag = windowAround(
-      code,
-      'href={`/site/${encodeURIComponent(site.id)}`}',
-      0,
-      200,
-    )
+    expect(tag).toContain('href={`/site/${encodeURIComponent(site.id)}`}')
     expect(tag).toContain('onClick={() => handleSiteClick(site, i + 1)}')
   })
 
@@ -78,7 +68,7 @@ describe('/hot 点击上报接线', () => {
     expect(code.match(/reportClick\(/g)?.length).toBe(1)
   })
 
-  it('上报不阻塞跳转：handler 与三处 onClick 均无 preventDefault / stopPropagation', () => {
+  it('上报不阻塞跳转：handler 与两处 onClick 均无 preventDefault / stopPropagation', () => {
     const start = code.indexOf('const handleSiteClick')
     expect(start).toBeGreaterThan(-1)
     const body = code.slice(start, code.indexOf('}', code.indexOf('reportClick(site.id')) + 1)

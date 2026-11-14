@@ -154,7 +154,7 @@ export default function HotView({
   }
 
   /**
-   * 榜单页点击上报：卡片标题外链、直达按钮、站内详情三处共用同一口径，
+   * 榜单页点击上报：卡片标题内链、直达按钮两处共用同一口径，
    * 与 navigation-card.tsx 的 handleLinkClick 一致——reportClick 是
    * fire-and-forget，失败静默落端侧出箱，永不阻塞跳转。
    * position 取卡片在当前榜单里的名次（1 起），与左上角的名次徽章一致。
@@ -179,7 +179,8 @@ export default function HotView({
             <div className="shrink-0 pt-0.5">
               {getRankBadge(i)}
             </div>
-            <a href={safeHref(site.url)} target="_blank" rel={externalRel} onClick={() => handleSiteClick(site, i + 1)} className="block min-w-0 flex-1">
+            {/* 标题内链进详情页：与 SSG 的 /site/{id} 一起进首屏 HTML；站外直达只剩右上角图标按钮 */}
+            <Link href={`/site/${encodeURIComponent(site.id)}`} onClick={() => handleSiteClick(site, i + 1)} className="block min-w-0 flex-1">
               <div className="flex items-start gap-2.5">
                 <div className="shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                   <SiteFavicon
@@ -212,16 +213,6 @@ export default function HotView({
                   </div>
                 </div>
               </div>
-            </a>
-          </div>
-          {/* 站内详情内链：与 SSG 的 /site/{id} 一起进首屏 HTML */}
-          <div className="mt-2 flex justify-end">
-            <Link
-              href={`/site/${encodeURIComponent(site.id)}`}
-              onClick={() => handleSiteClick(site, i + 1)}
-              className="inline-flex min-h-11 items-center text-xs text-primary hover:underline underline-offset-4"
-            >
-              站内详情
             </Link>
           </div>
           <div className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-1">

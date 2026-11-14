@@ -289,7 +289,8 @@ describe('P1 #10 触控目标：热榜页', () => {
     expect(src).toContain('<DensityToggle className="border border-border/40" />')
     expect(src).not.toContain('h-8.5 w-8.5')
     expect(src).toContain('inline-flex min-h-11 min-w-11 items-center justify-center p-1.5 rounded-md')
-    expect(src).toContain('inline-flex min-h-11 items-center text-xs text-primary')
+    // UX #2：底部「站内详情」小字链已删（标题本身改为站内详情内链），
+    // 其 'inline-flex min-h-11 items-center text-xs text-primary' 断言随之移除，不再是触屏目标。
   })
 })
 

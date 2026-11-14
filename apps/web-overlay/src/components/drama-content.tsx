@@ -59,7 +59,7 @@ export function DramaContent({
     <div className="mx-auto w-full max-w-7xl px-4 py-8">
       <header className="max-w-3xl">
         <h1 className="text-3xl font-bold">短剧专区</h1>
-        <p className="mt-3 text-zinc-600">
+        <p className="mt-3 text-zinc-600 dark:text-zinc-400">
           12 个短剧平台入口与热门剧追剧清单。平台卡只带你到平台入口：标了
           “需在 App 内观看”的平台没有可直达的短剧频道页，点开是平台首页，
           需要在 App 内搜来看。
@@ -67,7 +67,7 @@ export function DramaContent({
         <p className="mt-3">
           <Link
             href="/me/watchlist"
-            className="inline-flex items-center rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+            className="inline-flex items-center rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
           >
             我的追剧
           </Link>
@@ -76,14 +76,14 @@ export function DramaContent({
 
       <section aria-label="短剧平台" className="mt-10">
         <h2 className="text-xl font-semibold">平台入口</h2>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
           点卡片去平台首页；标了“需在 App 内观看”的，剧不在网页播。
         </p>
         <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sites.map((site) => (
             <li
               key={site.id}
-              className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+              className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-4 shadow-sm"
             >
               <a
                 href={safeHref(site.href)}
@@ -94,13 +94,13 @@ export function DramaContent({
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="text-base font-semibold">{site.title}</span>
                   {isAppOnlySite(site) && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                       需在 App 内观看
                     </span>
                   )}
                 </span>
                 {site.description && (
-                  <span className="mt-2 block text-sm text-zinc-600">
+                  <span className="mt-2 block text-sm text-zinc-600 dark:text-zinc-400">
                     {site.description}
                   </span>
                 )}
@@ -114,11 +114,11 @@ export function DramaContent({
 
       <section aria-label="热门剧" className="mt-10">
         <h2 className="text-xl font-semibold">热门剧</h2>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
           榜单页、报道页、百科页链接不是正片，只作来源；集数只写核实过的。
         </p>
         {dramas.length === 0 ? (
-          <p className="mt-4 rounded-xl border border-dashed border-zinc-300 bg-white p-4 text-sm text-zinc-600">
+          <p className="mt-4 rounded-xl border border-dashed border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 p-4 text-sm text-zinc-600 dark:text-zinc-400">
             首批热门剧正在整理，稍后上新。先逛逛上面的平台入口，或去
             <Link href="/category/duanju" className="underline">
               短剧分类
@@ -130,23 +130,23 @@ export function DramaContent({
             {dramas.map((drama) => (
               <li
                 key={featuredDramaKey(drama)}
-                className="flex flex-col rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+                className="flex flex-col rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-4 shadow-sm"
               >
                 <h3 className="text-base font-semibold leading-snug">
                   {drama.title}
                 </h3>
-                <p className="mt-1 text-sm text-zinc-600">
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                   {drama.platformTitle} · {episodeText(drama)}
                 </p>
                 {drama.linkNote !== "剧目页" && (
-                  <p className="mt-2 text-xs text-zinc-500">
+                  <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
                     该链接是{drama.linkNote}，不是正片；剧在{drama.platformTitle}
                     播出。
                   </p>
                 )}
                 {appOnlyIds.has(drama.platformSiteId) && (
                   <p className="mt-2">
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                       需在 App 内观看
                     </span>
                   </p>
@@ -156,7 +156,7 @@ export function DramaContent({
                     href={safeHref(drama.url)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-zinc-700 underline hover:text-zinc-900"
+                    className="text-sm text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
                   >
                     查看来源 ({drama.linkNote})
                   </a>
@@ -175,7 +175,7 @@ export function DramaContent({
         )}
       </section>
 
-      <p className="mt-10 text-xs text-zinc-500">
+      <p className="mt-10 text-xs text-zinc-500 dark:text-zinc-400">
         追剧清单只记你自己填的集数与节奏；关闭弹窗不会丢数据。已关注的剧
         在“我的追剧”里管理，未登录时只保存在本机。
       </p>

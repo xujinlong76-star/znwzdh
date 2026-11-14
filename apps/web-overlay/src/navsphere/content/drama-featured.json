@@ -89,8 +89,9 @@
       "episodesKnown": 70,
       "totalEpisodes": null,
       "check": {
-        "kind": "none",
-        "reason": "已跌出 2026-11-13 快手榜前 100；展示为综艺迷作品资料页，总集数 70 集为该页 2026-11-13 更新值"
+        "kind": "zongyimi-subject",
+        "url": "https://www.zongyimi.com/drama/subject/438522362760/",
+        "titleMatch": "为白月光弃我"
       }
     },
     {

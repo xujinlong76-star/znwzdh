@@ -70,10 +70,11 @@ describe("loadDramaFeatured", () => {
     // 2026-11-14：3 部快手剧已跌出榜单，冻结的榜单页只会报旧集数，
     // 检查全部停查（ranking 归零）；回归 guard 见 apps/api/test/drama-check.test.ts。
     // 2026-11-15：其中 2 部改走综艺迷作品页（zongyimi-subject）恢复检查，
-    // 仍停查 10 部（含白月光第 2 批、考上清北资料停更暂缓）。
+    // 第 2 批白月光（作品页实抓：总集数 70 集、资料更新 2026-11-13）同法接入，
+    // 仍停查 9 部（含考上清北资料停更暂缓）。
     expect(kinds.get("ranking") ?? 0).toBe(0);
-    expect(kinds.get("zongyimi-subject") ?? 0).toBe(2);
-    expect(kinds.get('none')).toBe(10);
+    expect(kinds.get("zongyimi-subject") ?? 0).toBe(3);
+    expect(kinds.get('none')).toBe(9);
     for (const d of dramas) {
       if (d.check.kind !== "zongyimi-subject") continue;
       expect(d.check.url).toMatch(/^https:\/\/www\.zongyimi\.com\/drama\/subject\/\d+\/$/);

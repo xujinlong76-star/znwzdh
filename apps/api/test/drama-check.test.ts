@@ -282,27 +282,32 @@ describe("handleDramaUpdateCheck", () => {
  expect(meta?.loadSkipped).toBe(0);
 });
 
- it("zongyimi-subject：两部剧首轮各记基线 80/65、不通知，事件 checked=2 并记资料更新日期", async () => {
+ it("zongyimi-subject：三部剧首轮各记基线 80/65/70、不通知，事件 checked=3 并记资料更新日期", async () => {
  const user = "drama-test-subject-first";
  const d1 = subjectDrama("我隐藏身份，找到一个好儿媳", "396695190416", "我隐藏身份");
  const d2 = subjectDrama("病弱千金往地一躺，全家慌了", "117244640035", "病弱千金");
+ const d3 = subjectDrama("为白月光弃我，孟小姐离婚不回头", "438522362760", "为白月光弃我");
  await followDrama(user, d1);
  await followDrama(user, d2);
+ await followDrama(user, d3);
  const { impl} = fakeFetch(new Map([
  [d1.check.url!, { status: 200, body: subjectHtml(d1.title, 80)}],
  [d2.check.url!, { status: 200, body: subjectHtml(d2.title, 65)}],
+ [d3.check.url!, { status: 200, body: subjectHtml(d3.title, 70, "2026-11-13")}],
  ]));
- await handleDramaUpdateCheck(ctx, { fetchImpl: impl, dramas: [d1, d2], now: () => NOW});
+ await handleDramaUpdateCheck(ctx, { fetchImpl: impl, dramas: [d1, d2, d3], now: () => NOW});
  expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d1.platformSiteId, d1.title)))?.latestEpisode).toBe(80);
  expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d2.platformSiteId, d2.title)))?.latestEpisode).toBe(65);
+ expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d3.platformSiteId, d3.title)))?.latestEpisode).toBe(70);
  expect(await outboxFor(user)).toHaveLength(0);
  const meta = await latestCheckEvent();
- expect(meta?.checked).toBe(2);
+ expect(meta?.checked).toBe(3);
  expect(meta?.failed).toEqual([]);
  expect(meta?.guarded).toEqual([]);
  const updatedAt = meta?.sourceUpdatedAt as Record<string, string> | undefined;
  expect(updatedAt?.[dramaKeyFor(d1.platformSiteId, d1.title)]).toBe("2026-11-14");
  expect(updatedAt?.[dramaKeyFor(d2.platformSiteId, d2.title)]).toBe("2026-11-14");
+ expect(updatedAt?.[dramaKeyFor(d3.platformSiteId, d3.title)]).toBe("2026-11-13");
 });
 
  it("zongyimi-subject：解析不出集数时记 last_error、不通知", async () => {
@@ -385,16 +390,18 @@ describe("drama-featured.json 检查配置", () => {
 }
  // 2026-11-14 实测：3 部快手剧已跌出 2026-11-13 榜前 100，
  // 冻结的 2026-11-10 页仍解析出旧集数 70/65/57，检查已失效，须停查。
- // 2026-11-15：其中 2 部改走综艺迷作品页（zongyimi-subject）恢复检查，
- // 仍停查的只剩白月光（第 2 批）与考上清北（资料更新停在 2026-11-06，暂缓）。
- for (const title of ["为白月光弃我，孟小姐离婚不回头", "考上清北，却交不起五千学费"]) {
+ // 2026-11-15：其中 2 部改走综艺迷作品页（zongyimi-subject）恢复检查；
+ // 第 2 批白月光（作品页已实抓核实：总集数 70 集、资料更新 2026-11-13）同法接入，
+ // 仍停查的只剩考上清北（资料更新停在 2026-11-06，暂缓）。
+ for (const title of ["考上清北，却交不起五千学费"]) {
  const drama = loaded.dramas.find((d) => d.title === title);
  expect(drama?.check.kind).toBe("none");
- expect(drama?.check.reason).toContain("2026-11-13");
+ expect(drama?.check.reason).toContain("2026-11-06");
 }
  for (const [title, subjectId] of [
  ["病弱千金往地一躺，全家慌了", "117244640035"],
  ["我隐藏身份，找到一个好儿媳", "396695190416"],
+ ["为白月光弃我，孟小姐离婚不回头", "438522362760"],
  ] as const) {
  const drama = loaded.dramas.find((d) => d.title === title);
  expect(drama?.check.kind).toBe("zongyimi-subject");

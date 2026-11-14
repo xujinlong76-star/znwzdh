@@ -203,3 +203,54 @@ describe('落点守卫：三个面真的在用这份文案', () => {
     expect(lib).toContain('看实时热搜')
   })
 })
+
+/**
+ * EmptyState 组件渲染回归（/hot 构建失败根因）。
+ *
+ * lucide 图标是 forwardRef 对象（typeof === 'object'），旧逻辑只认
+ * typeof === 'function'，会把图标对象当成 ReactNode 原样渲染，
+ * 预渲染报「Objects are not valid as a React child」，
+ * /hot 在中枢不可达、两榜皆空时必然撞上，next build 整个失败。
+ * node 环境无 jsdom，用 react-dom/server 的 renderToStaticMarkup 真渲染。
+ */
+describe('EmptyState 组件渲染：lucide 组件传法', () => {
+  it('icon={Flame}（forwardRef 对象）渲染出 svg，不抛错', async () => {
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const { createElement } = await import('react')
+    const { Flame } = await import('lucide-react')
+    const { EmptyState } = await import('../src/components/ui/empty-state')
+    const html = renderToStaticMarkup(
+      createElement(EmptyState, {
+        icon: Flame,
+        iconTone: 'warning',
+        title: '暂无访问量数据',
+        description: '访问量统计尚未积累。',
+      }),
+    )
+    expect(html).toContain('<svg')
+    expect(html).toContain('暂无访问量数据')
+    expect(html).toContain('text-amber-600')
+  })
+
+  it('icon={<Flame …/>}（已渲染元素）仍按元素传法原样渲染', async () => {
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const { createElement } = await import('react')
+    const { Flame } = await import('lucide-react')
+    const { EmptyState } = await import('../src/components/ui/empty-state')
+    const html = renderToStaticMarkup(
+      createElement(EmptyState, {
+        icon: createElement(Flame, { className: 'w-6 h-6 custom-tone' }),
+        title: '暂无新入库数据',
+      }),
+    )
+    expect(html).toContain('<svg')
+    expect(html).toContain('custom-tone')
+    expect(html).toContain('暂无新入库数据')
+  })
+
+  it('源码守卫：组件判定必须认 forwardRef 对象，不能只判 typeof === function', () => {
+    const src = read('src/components/ui/empty-state.tsx')
+    expect(src).toContain('$$typeof')
+    expect(src).not.toContain("typeof Icon === 'function' ? (")
+  })
+})

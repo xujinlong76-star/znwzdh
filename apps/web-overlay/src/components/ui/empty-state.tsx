@@ -14,7 +14,7 @@
  * 样式全部走 token（`text-primary` / `bg-muted` / `border-border` …），
  * 不出现硬编码色值，暗色模式自动跟随。
  */
-import type { ComponentType, ReactNode } from 'react'
+import { isValidElement, type ComponentType, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 export interface EmptyStateProps {
@@ -45,6 +45,22 @@ const ICON_TONE: Record<NonNullable<EmptyStateProps['iconTone']>, string> = {
   warning: 'text-amber-600 dark:text-amber-400',
 }
 
+/**
+ * 是不是「可直接实例化的组件」。
+ *
+ * lucide 图标是 forwardRef 对象（typeof === 'object'，带 $$typeof/render），
+ * 不是函数——只判 typeof === 'function' 会把图标当成 ReactNode 原样渲染，
+ * 预渲染直接报「Objects are not valid as a React child」，
+ * /hot 在中枢不可达、两榜皆空时必然撞上（next build 失败根因）。
+ * nav-icon.tsx 的 isIconLike 同款判定。
+ */
+function isComponentType(
+  value: unknown,
+): value is ComponentType<{ className?: string; 'aria-hidden'?: boolean }> {
+  if (typeof value === 'function') return true
+  return typeof value === 'object' && value !== null && '$$typeof' in value
+}
+
 export function EmptyState({
   icon,
   title,
@@ -53,14 +69,16 @@ export function EmptyState({
   iconTone = 'primary',
   className,
 }: EmptyStateProps) {
-  // 组件传法由本组件套尺寸与主色；元素传法（服务端调用方）直接渲染，尺寸与主色已由调用方带好。
+  // 组件传法由本组件套尺寸与主色；元素传法（服务端调用方）直接渲染，尺寸与主色已由调用方带好；
+  // 其余节点（字符串等）原样渲染。
   const Icon = icon
-  const iconNode =
-    typeof Icon === 'function' ? (
-      <Icon className={cn('w-6 h-6', ICON_TONE[iconTone])} aria-hidden />
-    ) : (
-      Icon
-    )
+  const iconNode = isValidElement(Icon) ? (
+    Icon
+  ) : isComponentType(Icon) ? (
+    <Icon className={cn('w-6 h-6', ICON_TONE[iconTone])} aria-hidden />
+  ) : (
+    Icon
+  )
   return (
     <div
       className={cn(

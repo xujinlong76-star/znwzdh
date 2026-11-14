@@ -24,6 +24,8 @@ import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
 import type { DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { countCategorySites } from '@/lib/modular/category-counts'
+import { categoryHref } from '@/lib/seo/category-url'
+import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { useToast } from '@/components/ui/use-toast'
@@ -268,6 +270,16 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     [category.title, subCats]
   )
   const totalCount = countCategorySites(category)
+  /**
+   * 标题是否链到分类页（升级第 3 条）：
+   * - 自建分类只活在本机，中枢没有它的分类页，链过去必 404；
+   * - 聚合 < MIN_SITES_FOR_CATEGORY_INDEX 站的分类页本身 404（`[slug]/page.tsx`），
+   *   链过去也是死链。两种情况标题保持纯文本，只在标题旁留折叠按钮。
+   * 其余内置分类用 categoryHref：有 slug 走 slug，没有退回 id，分类页按
+   * `id ∪ slug` 匹配，都能接住。
+   */
+  const categoryContentId = `${category.id}-content`
+  const canVisitCategoryPage = !isCustom && totalCount >= MIN_SITES_FOR_CATEGORY_INDEX
   const categoryPinnedItemIds = pinnedSiteIdsByCategory[category.id] || []
   /**
    * 排序结果必须缓存：拖拽过程中落点高亮（isCategoryDropTarget）每次
@@ -711,6 +723,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               title={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
                               aria-label={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
                               aria-expanded={!isCollapsed}
+                              aria-controls={categoryContentId}
                             >
                               <ChevronDown className={cn("w-4 h-4 transition-transform duration-200", isCollapsed && "-rotate-90")} />
                             </button>
@@ -720,11 +733,19 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               isCustom ? "bg-emerald-500" : isPinned ? "bg-amber-500" : "bg-primary"
                             )} />
                             <h2
-                              className="text-base sm:text-xl font-bold tracking-tight text-foreground flex flex-wrap items-center gap-1.5 sm:gap-2 cursor-pointer select-none"
-                              onClick={() => toggleCollapseCategory(category.id)}
-                              title={isCollapsed ? "点击展开" : "点击折叠"}
+                              className="text-base sm:text-xl font-bold tracking-tight text-foreground flex flex-wrap items-center gap-1.5 sm:gap-2 select-none"
                             >
-                              <span>{category.title}</span>
+                              {canVisitCategoryPage ? (
+                                <Link
+                                  href={categoryHref(category)}
+                                  className="hover:text-primary hover:underline underline-offset-4 decoration-primary/40 transition-colors"
+                                  title={`查看「${category.title}」分类全部站点`}
+                                >
+                                  {category.title}
+                                </Link>
+                              ) : (
+                                <span>{category.title}</span>
+                              )}
                               {isPinned && (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-medium">
                                   <Pin className="w-2.5 h-2.5 fill-amber-500" />
@@ -916,6 +937,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                         {/* 未折叠时渲染分类下挂载的站点和二级分类 */}
                         {!isCollapsed && (
                           <div
+                            id={categoryContentId}
                             className={cn(
                               "space-y-4",
                               moduleHeightPx && "overflow-y-auto pr-1.5 custom-scrollbar"

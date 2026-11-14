@@ -118,7 +118,7 @@ export function WatchlistFields({
                 onClick={() => toggleDay(d.value)}
                 className={`h-8 w-8 rounded-full border text-xs transition-colors ${
                   weeklyDays.includes(d.value)
-                    ? 'border-rose-500 bg-rose-500 font-semibold text-white'
+                    ? 'border-rose-500 bg-rose-600 font-semibold text-white'
                     : 'border-zinc-300 text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300'
                 }`}
               >
@@ -127,7 +127,7 @@ export function WatchlistFields({
             ))}
           </div>
         )}
-        <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-400">
+        <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
           {cadenceKind === 'unknown'
             ? '没关系：清单只帮你记着这部剧，想看时从清单一键过去看看有没有更新。'
             : '到更新日我们会在追剧清单里提醒你 —— 节奏是你标注的，平台临时改档时提醒可能不准。'}
@@ -217,7 +217,7 @@ export function WatchlistAddButton({
       </button>
 
       {added && !open && (
-        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-500" role="status">
+        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400" role="status">
           <Check className="h-3.5 w-3.5" aria-hidden /> 已加入
           <Link href="/me/watchlist" className="underline underline-offset-2">
             追剧清单
@@ -247,7 +247,7 @@ export function WatchlistAddButton({
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="关闭"
-                className="rounded-full p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
+                className="rounded-full p-1 text-zinc-500 dark:text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
               >
                 <X className="h-5 w-5" aria-hidden />
               </button>
@@ -268,14 +268,14 @@ export function WatchlistAddButton({
                   className="mt-1 w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-rose-500 dark:border-zinc-700"
                 />
                 {existing && (
-                  <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400" role="status">
+                  <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400" role="status">
                     这部剧已经在你的追剧清单里（看到第 {existing.episode} 集 · {cadenceLabel(existing.cadence)}），再提交会更新它的标注。
                   </p>
                 )}
               </div>
               <WatchlistFields draft={fields} onChange={setFields} idPrefix={`watch-add-${platform.siteId}`} />
               {watchlist.storageBlocked && (
-                <p className="text-xs text-red-500" role="alert">
+                <p className="text-xs text-red-600 dark:text-red-400" role="alert">
                   {watchlist.storageBlocked}
                 </p>
               )}

@@ -73,7 +73,7 @@ function HotRow({ item }: { item: HubBriefHotPick }) {
       >
         <span className="w-5 shrink-0 text-right text-xs font-semibold text-muted-foreground">{item.rank}</span>
         <span className="min-w-0 flex-1 truncate text-sm">{item.title}</span>
-        {item.hotLabel ? <span className="shrink-0 text-[10px] text-orange-600 dark:text-orange-400">{item.hotLabel}</span> : null}
+        {item.hotLabel ? <span className="shrink-0 text-[10px] text-orange-700 dark:text-orange-400">{item.hotLabel}</span> : null}
         {hot ? <span className="shrink-0 text-xs text-muted-foreground">{hot}</span> : null}
       </a>
       <Link

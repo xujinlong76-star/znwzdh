@@ -21,7 +21,7 @@ function seedSiteUrls(col: NonNullable<ReturnType<typeof seedCollection>>): stri
 
 describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合集）", () => {
   it("两个新合集都有策展文案且校验通过", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost", "beginner-web", "senior-services", "job-hunt-express", "academic-toolkit", "shopping-saver", "novel-film-tracking"]);
+    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost", "beginner-web", "senior-services", "job-hunt-express", "academic-toolkit", "shopping-saver", "novel-film-tracking", "agentic-ai", "ai-coding", "frontend-starter"]);
     for (const e of FEATURED_COLLECTION_EDITORIALS) {
       expect(validateFeaturedEditorial(e)).toEqual([]);
       expect(e.title.trim().length).toBeGreaterThan(0);
@@ -89,7 +89,7 @@ describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合�
 
 describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率办公 + 收藏/订阅/进度）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(10);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
     const ai = getFeaturedEditorial("ai-video-toolkit");
     const office = getFeaturedEditorial("office-boost");
     expect(ai).toBeDefined();
@@ -166,7 +166,7 @@ describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率�
 
 describe("精选专题（第 3 笔：新手上网必备、长辈便民服务）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(10);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
     const beginner = getFeaturedEditorial("beginner-web");
     const senior = getFeaturedEditorial("senior-services");
     expect(beginner).toBeDefined();
@@ -211,7 +211,7 @@ describe("精选专题（第 3 笔：新手上网必备、长辈便民服务）"
 
 describe("精选专题（第 4 笔：求职招聘直通车、学术科研工具箱）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(10);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
     const job = getFeaturedEditorial("job-hunt-express");
     const academic = getFeaturedEditorial("academic-toolkit");
     expect(job).toBeDefined();
@@ -253,7 +253,7 @@ describe("精选专题（第 4 笔：求职招聘直通车、学术科研工具�
 
 describe("精选专题（第 5 笔：网购省钱指南、小说影视追更）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(10);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
     const shopping = getFeaturedEditorial("shopping-saver");
     const novel = getFeaturedEditorial("novel-film-tracking");
     expect(shopping).toBeDefined();
@@ -300,5 +300,72 @@ describe("精选专题（第 5 笔：网购省钱指南、小说影视追更）"
     expect(col2).toBeDefined();
     if (!col2) return;
     expect(seedSiteUrls(col2)).toContain("https://www.douban.com");
+  });
+});
+
+describe("精选专题（第 6 笔：改造 Agentic AI、AI 编程工具链、前端入门路线）", () => {
+  it("三个改造合集的策展文案已就位：两幕、价值主张在 20 字内", () => {
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(13);
+    const agent = getFeaturedEditorial("agentic-ai");
+    const coding = getFeaturedEditorial("ai-coding");
+    const fe = getFeaturedEditorial("frontend-starter");
+    expect(agent).toBeDefined();
+    expect(coding).toBeDefined();
+    expect(fe).toBeDefined();
+    if (!agent || !coding || !fe) return;
+    expect(agent.title).toBe("2026 前沿 Agentic AI 生产力矩阵");
+    expect(agent.valueProposition).toBe("让 Agent 替你干活");
+    expect(agent.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(agent.issueNo).toBe(1);
+    expect(agent.acts.length).toBe(2);
+    expect(agent.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(agent.acts[0].title).toBe("第一幕 · 写代码的 Agent");
+    expect(agent.acts[1].title).toBe("第二幕 · 跑模型的引擎");
+    expect(validateFeaturedEditorial(agent)).toEqual([]);
+    expect(coding.title).toBe("AI 编程工具链");
+    expect(coding.valueProposition).toBe("写代码，有 AI 搭手");
+    expect(coding.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(coding.issueNo).toBe(1);
+    expect(coding.acts.length).toBe(2);
+    expect(coding.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(coding.acts[0].title).toBe("第一幕 · 装进编辑器");
+    expect(coding.acts[1].title).toBe("第二幕 · 补全与对话");
+    expect(validateFeaturedEditorial(coding)).toEqual([]);
+    expect(fe.title).toBe("前端入门路线");
+    expect(fe.valueProposition).toBe("从零到独立做项目");
+    expect(fe.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(fe.issueNo).toBe(1);
+    expect(fe.acts.length).toBe(2);
+    expect(fe.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(fe.acts[0].title).toBe("第一幕 · 先打基础");
+    expect(fe.acts[1].title).toBe("第二幕 · 再练技能");
+    expect(validateFeaturedEditorial(fe)).toEqual([]);
+    expect(coverSiteUrls(agent).length).toBe(6);
+    expect(coverSiteUrls(coding).length).toBe(6);
+    expect(coverSiteUrls(fe).length).toBe(6);
+  });
+
+  it("AI 编程工具链已迁为带收录理由的字典形式，DeepSeek 对话页已换为 Kimi，Devin 收录理由已修正", () => {
+    const col = seedCollection("ai-coding");
+    expect(col).toBeDefined();
+    if (!col) return;
+    const notes = col.sites.map((s) => (typeof s === "string" ? "" : (s.note ?? "")));
+    expect(notes.length).toBe(6);
+    expect(notes.every((n) => n.trim().length > 0)).toBe(true);
+    expect(seedSiteUrls(col)).toContain("https://kimi.moonshot.cn");
+    expect(seedSiteUrls(col)).not.toContain("https://chat.deepseek.com");
+    const coding = getFeaturedEditorial("ai-coding");
+    expect(coding).toBeDefined();
+    if (!coding) return;
+    expect(coding.acts.flatMap((a) => a.siteUrls)).toContain("https://kimi.moonshot.cn");
+    expect(coding.acts.flatMap((a) => a.siteUrls)).not.toContain("https://chat.deepseek.com");
+    const ag = seedCollection("agentic-ai");
+    expect(ag).toBeDefined();
+    if (!ag) return;
+    const devin = ag.sites.find((s) => typeof s !== "string" && (s.site ?? s.url) === "https://devin.ai/desktop");
+    expect(devin).toBeDefined();
+    if (typeof devin === "string" || !devin) return;
+    expect(devin.note ?? "").toContain("全自主");
+    expect(devin.note ?? "").not.toContain("Codeium");
   });
 });

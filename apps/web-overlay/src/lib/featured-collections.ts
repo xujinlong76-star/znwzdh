@@ -216,6 +216,48 @@ export const FEATURED_COLLECTION_EDITORIALS: FeaturedCollectionEditorial[] = [
       { id: "act-2", title: "第二幕 · 追电影", description: "再追电影上映：先看评分挑片，再抢新片票。", siteUrls: ["https://www.douban.com", "https://www.mtime.com", "https://www.taopiaopiao.com"] },
     ],
   },
+  {
+    slug: "agentic-ai",
+    title: "2026 前沿 Agentic AI 生产力矩阵",
+    valueProposition: "让 Agent 替你干活",
+    intro: "2026 年的前沿玩法是让 Agent 自己干活：从写代码的编程 Agent，到本地跑模型、生产部署推理引擎，这一期把生产力矩阵排成两幕。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的 Agent 与推理工具；Devin 的收录理由已按实际产品修正（原先误写为 Codeium 的 Cascade IDE）。模型与 Agent 的能力更新很快，链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("2026 前沿 Agentic AI 生产力矩阵"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 写代码的 Agent", description: "先让 Agent 写代码：原生编辑器、自主工程师与开源 Agent。", siteUrls: ["https://cursor.com", "https://devin.ai/desktop", "https://github.com/cline/cline"] },
+      { id: "act-2", title: "第二幕 · 跑模型的引擎", description: "再让模型跑起来：本地部署、生产推理与多智能体编排。", siteUrls: ["https://ollama.com", "https://github.com/vllm-project/vllm", "https://github.com/langchain-ai/langgraph"] },
+    ],
+  },
+  {
+    slug: "ai-coding",
+    title: "AI 编程工具链",
+    valueProposition: "写代码，有 AI 搭手",
+    intro: "写代码不必从零手敲：补全、对话、重构都有 AI 搭手。这一期收六个能直接打开的入口，先装进编辑器，再让补全与对话接上。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的 AI 编程入口；原有 3 站，本期按精选专题的收录标准补齐到 6 站；DeepSeek 对话页在盒子网络下无法返回 200（403/202 均为反爬校验页），已按诚实口径换为同类可验证的 Kimi；Copilot 需 GitHub 账号登录使用。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("AI 编程工具链"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 装进编辑器", description: "先装进编辑器：官方助手、AI 原生编辑器与 AI 编程 IDE。", siteUrls: ["https://github.com/features/copilot", "https://cursor.com", "https://www.windsurf.com"] },
+      { id: "act-2", title: "第二幕 · 补全与对话", description: "再让补全与对话接上：老牌补全、国产助手与 AI 对话。", siteUrls: ["https://www.tabnine.com", "https://tongyi.aliyun.com/lingma", "https://kimi.moonshot.cn"] },
+    ],
+  },
+  {
+    slug: "frontend-starter",
+    title: "前端入门路线",
+    valueProposition: "从零到独立做项目",
+    intro: "零基础学前端，先走对路线：先夯实 Web 标准与语法，再对着技能树查漏补缺、跟着开源项目实战。这一期把入门六步排成两幕。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的前端入门资料；原有 4 站，本期按精选专题的收录标准补齐到 6 站；MDN 是中文文档，菜鸟教程适合快速过语法，JavaScript.info 适合由浅入深补语言细节，阮一峰的 ES6 入门适合学现代语法，roadmap.sh 适合查漏补缺，GitHub 趋势榜适合找项目练手。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("前端入门路线"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 先打基础", description: "先打基础：标准文档、语法速通与现代教程。", siteUrls: ["https://developer.mozilla.org/zh-CN", "https://www.runoob.com", "https://javascript.info"] },
+      { id: "act-2", title: "第二幕 · 再练技能", description: "再练技能：现代语法进阶、技能树查漏补缺，趋势榜找项目实战。", siteUrls: ["https://roadmap.sh", "https://github.com/trending", "https://es6.ruanyifeng.com"] },
+    ],
+  },
 ];
 
 export function getFeaturedEditorial(slug: string): FeaturedCollectionEditorial | undefined {

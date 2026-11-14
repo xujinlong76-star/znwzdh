@@ -1616,6 +1616,72 @@
         "购票"
       ],
       "icon": "https://www.taopiaopiao.com/favicon.ico"
+    },
+    {
+      "url": "https://kimi.moonshot.cn",
+      "title": "Kimi",
+      "description": "月之暗面推出的 AI 智能助手，擅长长文本处理与编程问答",
+      "categorySlug": "chat-assistants",
+      "tags": [
+        "AI",
+        "对话"
+      ],
+      "icon": "https://kimi.moonshot.cn/favicon.ico"
+    },
+    {
+      "url": "https://www.windsurf.com",
+      "title": "Windsurf",
+      "description": "Codeium 推出的 AI 原生编程 IDE，内置 Cascade 智能体",
+      "categorySlug": "ai-coding-assistant",
+      "tags": [
+        "AI",
+        "编程"
+      ],
+      "icon": "https://www.windsurf.com/favicon.ico"
+    },
+    {
+      "url": "https://www.tabnine.com",
+      "title": "Tabnine",
+      "description": "AI 代码补全工具，支持主流 IDE 与私有化部署",
+      "categorySlug": "ai-coding-assistant",
+      "tags": [
+        "AI",
+        "补全"
+      ],
+      "icon": "https://www.tabnine.com/favicon.ico"
+    },
+    {
+      "url": "https://tongyi.aliyun.com/lingma",
+      "title": "通义灵码",
+      "description": "阿里巴巴推出的 AI 编程助手，支持代码生成与问答",
+      "categorySlug": "ai-coding-assistant",
+      "tags": [
+        "AI",
+        "编程"
+      ],
+      "icon": "https://tongyi.aliyun.com/favicon.ico"
+    },
+    {
+      "url": "https://javascript.info",
+      "title": "JavaScript.info",
+      "description": "现代 JavaScript 教程，从基础到高级在线阅读",
+      "categorySlug": "programming-learning",
+      "tags": [
+        "前端",
+        "JavaScript"
+      ],
+      "icon": "https://javascript.info/favicon.ico"
+    },
+    {
+      "url": "https://es6.ruanyifeng.com",
+      "title": "ES6 入门教程",
+      "description": "阮一峰编写的 ECMAScript 6 入门教程，中文免费在线阅读",
+      "categorySlug": "programming-learning",
+      "tags": [
+        "前端",
+        "ES6"
+      ],
+      "icon": "https://es6.ruanyifeng.com/favicon.ico"
     }
   ],
   "collections": [
@@ -1632,7 +1698,7 @@
         },
         {
           "site": "https://devin.ai/desktop",
-          "note": "Codeium 打造的 Cascade 协同心流 IDE，支持主动感知与工具调用",
+          "note": "首个全自主 AI 软件工程师，端到端交付完整代码任务",
           "sort": 1
         },
         {
@@ -1663,9 +1729,36 @@
       "kind": "topic",
       "description": "从补全到重构，用 AI 提升编码效率",
       "sites": [
-        "https://github.com/features/copilot",
-        "https://cursor.com",
-        "https://chat.deepseek.com"
+        {
+          "site": "https://github.com/features/copilot",
+          "note": "GitHub 官方 AI 编程助手，补全、对话、重构都在编辑器里",
+          "sort": 0
+        },
+        {
+          "site": "https://cursor.com",
+          "note": "AI 原生代码编辑器，补全、重构、对话一次到位",
+          "sort": 1
+        },
+        {
+          "site": "https://kimi.moonshot.cn",
+          "note": "月之暗面的 AI 助手，写代码卡住时随时问它",
+          "sort": 2
+        },
+        {
+          "site": "https://www.windsurf.com",
+          "note": "Codeium 打造的 AI 编程 IDE，Cascade 智能体主动感知上下文",
+          "sort": 3
+        },
+        {
+          "site": "https://www.tabnine.com",
+          "note": "老牌 AI 代码补全工具，支持私有化部署，团队用得放心",
+          "sort": 4
+        },
+        {
+          "site": "https://tongyi.aliyun.com/lingma",
+          "note": "阿里推出的 AI 编程助手，中文提示理解更顺手",
+          "sort": 5
+        }
       ]
     },
     {
@@ -1693,6 +1786,16 @@
           "site": "https://github.com/trending",
           "note": "阶段 4：关注 GitHub 趋势榜最新开源项目实战演练",
           "sort": 3
+        },
+        {
+          "site": "https://javascript.info",
+          "note": "阶段 5：现代 JavaScript 教程，由浅入深补齐语言细节",
+          "sort": 4
+        },
+        {
+          "site": "https://es6.ruanyifeng.com",
+          "note": "阶段 6：阮一峰的 ES6 入门，中文免费学现代语法",
+          "sort": 5
         }
       ]
     },

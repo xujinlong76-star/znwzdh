@@ -98,7 +98,7 @@ export function HomeExamStripView({
             <CalendarDays className="h-3.5 w-3.5" aria-hidden />
             {personal ? '我的考试' : '考试季'} · {exam.shortName}
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 basis-full sm:basis-0">
             <p className="text-sm font-semibold text-foreground">
               {exam.name} · {exam.tagline} · {exam.examDateLabel}
             </p>

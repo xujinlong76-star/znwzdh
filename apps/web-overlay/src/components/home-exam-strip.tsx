@@ -33,7 +33,7 @@ function HomeExamStripEmptyState() {
             <CalendarDays className="h-3.5 w-3.5" aria-hidden />
             考试季
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 basis-full sm:basis-0">
             <p className="text-sm font-semibold text-foreground">2027 年考试日程陆续公布中</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               本轮考试已结束 · 新日程以官方公告为准

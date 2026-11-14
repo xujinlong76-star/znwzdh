@@ -85,6 +85,32 @@ describe("loadDramaFeatured", () => {
       }
     }
   });
+
+  it("每部剧的 platformSiteId 都在导航库里、平台名与站点名一致", () => {
+    // 回归守卫：曾有 4 部快手剧把 id 少写一个字母（nav-536bfaba406），
+    // 导致 App-only 徽标丢失、追剧清单去重分裂、新集检查收不到通知。
+    const siteTitles = new Map<string, string>();
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item);
+        return;
+      }
+      if (node && typeof node === "object") {
+        const rec = node as Record<string, unknown>;
+        if (typeof rec.id === "string" && typeof rec.title === "string") {
+          siteTitles.set(rec.id, rec.title);
+        }
+        for (const value of Object.values(rec)) walk(value);
+      }
+    };
+    walk(baselineNavigation.navigationItems);
+    const { dramas } = loadDramaFeatured();
+    expect(dramas.length).toBeGreaterThan(0);
+    for (const drama of dramas) {
+      expect(siteTitles.has(drama.platformSiteId)).toBe(true);
+      expect(siteTitles.get(drama.platformSiteId)).toBe(drama.platformTitle);
+    }
+  });
 });
 describe("drama page structure", () => {
   it("平台区收满 12 条，7 家 App-only 文案写了需在 App 内观看", () => {

@@ -286,6 +286,65 @@ describe("防虚假 200 面板必须用 core 引擎，不许手写熵 + 硬编�
     expect(mirror).toContain("blocked by cloudflare");
   });
 });
+describe("算法实验室 Tab 级动态加载（包体积）", () => {
+  // /algorithms 首屏 JS 曾超预算约 35KB：12 个面板静态 import、首屏一次性全打包全挂载。
+  // 本守卫锁住 Tab 级懒加载：壳里只留 next/dynamic + 裸 import() 加载器，不再静态
+  // import 任何面板；面板只在首次激活时渲染，访问过一次后常驻挂载（forceMount 保留），
+  // 来回切换不丢本地状态；hover/focus 预取 chunk，切换不卡顿；不设 ssr: false。
+  const shell = () => overlayRead("src/components/algorithm-lab.tsx");
+  const TABS = [
+    "linucb",
+    "hyperbolic",
+    "health",
+    "intent",
+    "vault",
+    "graph",
+    "visual",
+    "webmcp",
+    "federated",
+    "speculation",
+    "synthesizer",
+    "mesh",
+  ];
+
+  it("壳用 next/dynamic 加载 12 个面板，不再静态 import 面板", () => {
+    const src = shell();
+    expect(src).toContain("from 'next/dynamic'");
+    for (const tab of TABS) {
+      expect(src, `面板 ${tab} 应有裸 import() 加载器`).toContain(
+        `import('./algorithm-lab/${tab}-panel')`,
+      );
+    }
+    expect(src, "推测沙箱子组件也应懒加载").toContain(
+      "import('./algorithm-lab/trajectory-lab')",
+    );
+    // 静态 import 形式（from './algorithm-lab/...'）必须消失
+    expect(src).not.toContain("from './algorithm-lab/");
+    expect(src).not.toContain('from "./algorithm-lab/');
+    expect(src).not.toContain("import TrajectoryLab from");
+    // 服务端仍渲染激活 Tab 的真实内容（与 /drama 同一口径），不许 ssr: false
+    expect(src).not.toContain("ssr: false");
+  });
+
+  it("面板只在首次激活时渲染，访问过后常驻挂载", () => {
+    const src = shell();
+    expect(src).toContain("isLoaded(");
+    expect(src).toContain("forceMount");
+    expect(src).toContain("loadedTabsRef");
+  });
+
+  it("hover/focus 预取对应 Tab 的 chunk", () => {
+    const src = shell();
+    expect(src).toContain("PANEL_PRELOADERS");
+    expect(src).toContain("preloadTab");
+    for (const tab of TABS) {
+      expect(src, `Tab ${tab} 应有 hover/focus 预取`).toContain(
+        `preloadTab('${tab}')`,
+      );
+    }
+  });
+});
+
 describe("算法实验室 W1-2：LDP ε 滑块 + 分布对比 + 加噪排序", () => {
   const panel = () =>
     overlayRead("src/components/algorithm-lab/federated-panel.tsx");

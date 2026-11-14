@@ -6,7 +6,7 @@ import {
   featuredDramaKey,
   type DramaFeatured,
 } from "@/lib/drama-featured";
-import { WatchListAddButton } from "@/components/watchlist-add-button";
+import { WatchlistAddButton } from "@/components/watchlist-add-button";
 import { safeHref } from "@/lib/safe-url";
 
 /**
@@ -18,14 +18,14 @@ import { safeHref } from "@/lib/safe-url";
  *   需要在 App 内搜来看。
  * - 剧目卡：榜单 / 报道页 / 百科页链接明确标出来，不是正片；
  *   集数只写核实过的，没核实的写“集数未核实”，不编。
- * - 每部剧卡挂 WatchListAddButton（剧名预填），点“我的追剧”去管理。
+ * - 每部剧卡挂 WatchlistAddButton（剧名预填），点“我的追剧”去管理。
  */
 
 /** 导航文案里写了“需在……App 内观看”的平台，就是 App-only 平台。 */
 const APP_ONLY_RE = /需在.{0,10}App 内观看/;
 
 function isAppOnlySite(site: DramaSite): boolean {
-  return Boolean(site.description) && APP_ONLY_RE.test(site.description);
+  return Boolean(site.description) && APP_ONLY_RE.test(site.description ?? "");
 }
 
 function episodeText(drama: DramaFeatured): string {
@@ -157,7 +157,7 @@ export function DramaContent({
                   >
                     查看来源 ({drama.linkNote})
                   </a>
-                  <WatchListAddButton
+                  <WatchlistAddButton
                     platform={{
                       siteId: drama.platformSiteId,
                       title: drama.platformTitle,

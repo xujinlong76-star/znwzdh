@@ -1175,26 +1175,40 @@ export function SiteDetailView({
                   key={s.id}
                   className="group relative rounded-xl border border-border/70 glass-surface subtle-mesh p-3.5 transition-all hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 flex flex-col justify-between"
                 >
-                  <a href={safeHref(s.url)} target="_blank" rel={externalRel} className="flex items-center gap-3">
-                    <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
-                      <SiteFavicon
-                        title={s.title}
-                        url={s.url}
-                        icon={s.iconKey ?? undefined}
-                        className="w-full h-full object-contain rounded"
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs sm:text-sm font-semibold truncate group-hover:text-primary transition-colors">
-                        {s.title}
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/site/${encodeURIComponent(s.id)}`}
+                      className="flex min-w-0 flex-1 items-center gap-3 group"
+                    >
+                      <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
+                        <SiteFavicon
+                          title={s.title}
+                          url={s.url}
+                          icon={s.iconKey ?? undefined}
+                          className="w-full h-full object-contain rounded"
+                        />
                       </div>
-                      {s.description && (
-                        <div className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                          {s.description}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs sm:text-sm font-semibold truncate group-hover:text-primary transition-colors">
+                          {s.title}
                         </div>
-                      )}
-                    </div>
-                  </a>
+                        {s.description && (
+                          <div className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                            {s.description}
+                          </div>
+                        )}
+                      </div>
+                    </Link>
+                    <a
+                      href={safeHref(s.url)}
+                      target="_blank"
+                      rel={externalRel}
+                      aria-label={`访问 ${s.title} 官网`}
+                      className="text-muted-foreground hover:text-primary p-1 shrink-0"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
                 </div>
               ))}
             </div>

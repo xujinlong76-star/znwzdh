@@ -1166,7 +1166,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             setIsFocused(true)
           }}
           onFocus={() => setIsFocused(true)}
-          className={`pl-9 sm:pl-10 pr-36 sm:pr-44 md:pr-48 h-9.5 sm:h-10 rounded-xl border hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:ring-2 shadow-xs text-base sm:text-sm transition-all ${aiMode ? 'border-violet-400/70 focus:border-violet-400/80 focus:ring-violet-400/30' : 'border-border-strong focus:border-primary/50 focus:ring-primary/20'}`}
+          className={`pl-9 sm:pl-10 pr-26 sm:pr-44 md:pr-48 h-9.5 sm:h-10 rounded-xl border hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:ring-2 shadow-xs text-base sm:text-sm transition-all ${aiMode ? 'border-violet-400/70 focus:border-violet-400/80 focus:ring-violet-400/30' : 'border-border-strong focus:border-primary/50 focus:ring-primary/20'}`}
         />
         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}

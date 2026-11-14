@@ -162,20 +162,20 @@ export function HomeDramaCinema() {
 
   return (
     <section ref={rootRef} aria-label="短剧影院" className="mt-8 overflow-hidden rounded-3xl bg-zinc-950 text-zinc-100 shadow-xl">
-      <div className="flex items-center justify-between px-4 pt-4 sm:px-6">
-        <h2 className="flex items-center gap-2 text-lg font-bold">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 pt-4 sm:flex-nowrap sm:px-6">
+        <h2 className="flex min-w-0 shrink-0 items-center gap-2 text-lg font-bold">
           <Clapperboard className="h-5 w-5 text-rose-500" aria-hidden />
           短剧影院
           <span className="hidden text-xs font-normal text-zinc-400 sm:inline">免费短剧 + 各大平台，一站直达</span>
         </h2>
-        <div className="flex items-center gap-4">
-          <Link href="/me/watchlist" className="inline-flex items-center gap-0.5 text-sm text-zinc-300 transition-colors hover:text-white">
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-4">
+          <Link href="/me/watchlist" className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap text-sm text-zinc-300 transition-colors hover:text-white">
             我的追剧 <ChevronRight className="h-4 w-4" aria-hidden />
           </Link>
-          <Link href="/drama" className="inline-flex items-center gap-0.5 text-sm text-zinc-300 transition-colors hover:text-white">
+          <Link href="/drama" className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap text-sm text-zinc-300 transition-colors hover:text-white">
             进入短剧专区 <ChevronRight className="h-4 w-4" aria-hidden />
           </Link>
-        <div className="flex items-center gap-1.5" role="group" aria-label="短剧海报翻页">
+        <div className="flex shrink-0 items-center gap-1.5" role="group" aria-label="短剧海报翻页">
           <button type="button" onClick={() => pageScroll(-1)} disabled={!canPagePrev} aria-label="向左翻页" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-zinc-200 transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40">
             <ChevronLeft className="h-4 w-4" aria-hidden />
           </button>

@@ -67,7 +67,10 @@ export function VideoAiSummary({ bvid, title, description, chapters = [], transc
         // 目录简介缺失时刷新一次：走站内已有的 bili-parse 引擎取简介。
         const parsed = await fetch(`/api/videos/bili-parse?bvid=${encodeURIComponent(bvid)}`, {
           headers: { Accept: 'application/json' },
-        }).then((r) => r.json()).catch(() => null)
+        }).then((r) => r.json()).catch(() => {
+          // 简介刷新失败不阻塞摘要生成：沿用目录自带简介继续走主流程。
+          return null
+        })
         if (parsed?.ok && typeof parsed.desc === 'string' && parsed.desc.trim()) {
           liveDescription = parsed.desc.trim()
         }
@@ -83,7 +86,10 @@ export function VideoAiSummary({ bvid, title, description, chapters = [], transc
           transcript: transcript.slice(0, 150),
         }),
       })
-      const data = (await res.json().catch(() => null)) as SummaryResponse | null
+      const data = (await res.json().catch(() => {
+        // 响应体不是 JSON 时 data 为 null，下方统一走 error 态提示用户重试。
+        return null
+      })) as SummaryResponse | null
       if (!res.ok || !data || data.ok !== true) {
         setState({
           kind: 'error',

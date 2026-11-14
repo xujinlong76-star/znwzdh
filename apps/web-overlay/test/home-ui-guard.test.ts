@@ -28,8 +28,8 @@ function overlaySource(rel: string): string {
 describe('首页顶栏：搜索框与快捷键徽章', () => {
   const src = overlaySource('src/components/search-palette.tsx')
 
-  it('输入框右侧预留 ≥ 6.75rem（pr-36 = 9rem 起），占位符不会被徽章盖住', () => {
-    expect(src).toContain('pr-36 sm:pr-44 md:pr-48')
+  it('输入框右侧预留 ≥ 6.5rem（pr-26 起），占位符不被 AI 按钮/清空按钮盖住', () => {
+    expect(src).toContain('pr-26 sm:pr-44 md:pr-48')
     // 不许退回「只留 pr-2/pr-3」的老写法
     expect(src).not.toMatch(/\bpl-9[^"']*\bpr-[1-8]\b/)
   })

@@ -671,7 +671,9 @@ export async function writeNavigationData(
       .map((s) => s.id);
     if (removedSiteIds.length > 0) {
       await ctx.repo.softDeleteSites(removedSiteIds);
-      await ctx.vectors.remove(removedSiteIds).catch(() => undefined);
+      await ctx.vectors.remove(removedSiteIds).catch(() => {
+        // 尽力而为的附带操作：失败不影响主流程。
+      });
     }
     for (const c of existingCats) {
       // 同上：不可见的类目缺席 ≠ 删除
@@ -691,12 +693,16 @@ export async function writeNavigationData(
   // 主事务已提交：落实标签同步与向量回填。单站失败不回滚已提交的导航数据
   // （与上方 vectors.remove 的处理一致），下一次整包导入会再次比对补齐。
   for (const t of pendingTagSync) {
-    await ctx.repo.setSiteTags(t.id, t.tags).catch(() => undefined);
+    await ctx.repo.setSiteTags(t.id, t.tags).catch(() => {
+      // 尽力而为的附带操作：失败不影响主流程。
+    });
   }
   if (pendingReindexIds.size > 0) {
     const fresh = await ctx.repo.getSitesByIds([...pendingReindexIds]);
     const items = [...fresh.values()].map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
-    await indexSitesBatch(ctx, items).catch(() => undefined);
+    await indexSitesBatch(ctx, items).catch(() => {
+      // 尽力而为的附带操作：失败不影响主流程。
+    });
   }
   // A3 分面回填：快照不带 facets（见上方注释），新导入的站点 pricing 恒为空——
   // 在此对全库 heal 一遍：缺 pricing/platform 的按 core 推导补齐（人工核实
@@ -1092,7 +1098,10 @@ async function currentVideoBaseline(ctx: AppContext): Promise<number> {
     // 当前文档读不出来时继续走关系表：写入本来就会覆盖它，
     // 不能因为基线读取失败就把正常保存判死。
   }
-  return await countVideoItems(ctx.repo).catch(() => 0);
+  return await countVideoItems(ctx.repo).catch(() => {
+    // 可选读取：读不到按缺省值处理，调用方已处理空值。
+    return 0;
+  });
 }
 
 export async function writeVideosData(

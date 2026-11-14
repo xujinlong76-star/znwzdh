@@ -19,5 +19,7 @@ export async function handleHotlistRefresh(ctx: AppContext): Promise<void> {
         failed: summary.entries.filter((e) => !e.ok).map((e) => e.source),
       },
     })
-    .catch(() => undefined);
+    .catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
 }

@@ -90,7 +90,9 @@ async function postOnce(
       signal: controller.signal,
     });
     // 消费掉 body 再判断：不断开半开连接，且 2xx 才算送达
-    await res.arrayBuffer().catch(() => undefined);
+    await res.arrayBuffer().catch(() => {
+      // 尽力而为的附带操作：失败不影响主流程。
+    });
     return res.ok;
   } catch {
     return false;

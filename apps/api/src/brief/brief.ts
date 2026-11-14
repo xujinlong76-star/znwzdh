@@ -293,7 +293,10 @@ export async function generateDailyBrief(
   const caller = opts.openingCaller ?? makeLlmOpeningCaller(ctx);
   // 锚定校验在这里再兜一层：无论 caller 是生产模型还是注入实现，
   // 没提及当天真实条目的句子一律丢弃，不让任何路径绕过校验直接落库。
-  const rawOpening = await caller(payload).catch(() => null);
+  const rawOpening = await caller(payload).catch((err) => {
+    console.warn("[navhub-brief] 开场白生成失败，走模板开场白", err);
+    return null;
+  });
   const aiOpening = rawOpening ? anchoredOpening(rawOpening, payload) : null;
   const opening = aiOpening ?? templateOpening(payload);
   const record = {

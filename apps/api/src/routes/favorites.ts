@@ -135,7 +135,9 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     });
     if (!added) { reply.code(400); return { error: "收藏夹不存在" }; }
     const { favorite, existed } = added;
-    await ctx.repo.recordEvent("favorite", { siteId: body.data.siteId, meta: { identity: canonical } }).catch(() => undefined);
+    await ctx.repo.recordEvent("favorite", { siteId: body.data.siteId, meta: { identity: canonical } }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     reply.code(existed ? 200 : 201);
     return { favorite, existed };
   });
@@ -153,7 +155,9 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     const canonical = await resolveCanonicalIdentity(ctx, identity);
     const removed = await ctx.repo.removeFavorite(canonical, siteId);
     if (removed) {
-      await ctx.repo.recordEvent("unfavorite", { siteId, meta: { identity: canonical } }).catch(() => undefined);
+      await ctx.repo.recordEvent("unfavorite", { siteId, meta: { identity: canonical } }).catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
     }
     return { ok: true, removed };
   });

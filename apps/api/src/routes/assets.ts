@@ -49,8 +49,9 @@ function rememberIcon(hostHash: string, entry: CachedIcon): void {
 // 确保本地磁盘缓存目录存在
 try {
   mkdirSync(CACHE_DIR, { recursive: true });
-} catch {}
-// 显式降级（非静默）：目录创建失败只影响磁盘缓存，可忽略：内存缓存与远端抓取仍可用
+} catch {
+  // 显式降级（非静默）：目录创建失败只影响磁盘缓存，可忽略：内存缓存与远端抓取仍可用
+}
 
 const PRESET_GRADIENTS = [
   { from: "#6366f1", to: "#a855f7" },
@@ -272,8 +273,9 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
             writeFile(diskDataPath, iconBuffer),
             writeFile(diskMetaPath, JSON.stringify({ contentType, etag })),
           ]);
-        } catch {}
-        // 显式降级（非静默）：缓存落盘失败可忽略：图标可重新抓取，不该因此让请求失败
+        } catch {
+          // 显式降级（非静默）：缓存落盘失败可忽略：图标可重新抓取，不该因此让请求失败
+        }
 
         return reply
           .header("Content-Type", contentType)

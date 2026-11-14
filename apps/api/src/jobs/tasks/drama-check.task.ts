@@ -164,5 +164,7 @@ export async function handleDramaUpdateCheck(ctx: AppContext, deps: DramaCheckDe
 }
  await ctx.repo
 .recordEvent("drama_update_check", { meta: summary})
-.catch(() => undefined);
+.catch(() => {
+  // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+});
 }

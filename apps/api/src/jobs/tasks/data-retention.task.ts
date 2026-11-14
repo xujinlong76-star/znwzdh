@@ -164,7 +164,9 @@ export async function applyRetentionSideEffects(
           action: "user.search_history_expired",
           target: identity,
           diff: { retentionDays, deleted },
-        }).catch(() => undefined);
+        }).catch(() => {
+          // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+        });
       }
     }
     return { telemetry, userRetention: { usersAffected, rowsDeleted } };
@@ -195,7 +197,9 @@ export async function handleDataRetention(
     ? await applyRetentionSideEffects(ctx, payload)
     : await previewRetentionSideEffects(ctx, payload);
   Object.assign(summary, sideEffects);
-  await ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => undefined);
+  await ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => {
+    // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+  });
 }
 
 export async function previewDataRetention(

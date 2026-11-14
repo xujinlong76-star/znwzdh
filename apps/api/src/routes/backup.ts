@@ -633,7 +633,10 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       // 顺手清理过期残留：非终态任务还引用着的文件必须留住，否则那份任务重跑时
       // 读不到 staging，会以「可重试」的状态永久失败。
       const keep = await collectActiveStagingPaths(ctx);
-      await sweepStaleStaging(stagingDir, Date.now(), keep).catch(() => 0);
+      await sweepStaleStaging(stagingDir, Date.now(), keep).catch(() => {
+        // 尽力而为的附带操作：失败不影响主流程。
+        return 0;
+      });
       const stagingPath = join(stagingDir, `${randomUUID()}.json`);
       try {
         await mkdir(stagingDir, { recursive: true });
@@ -674,7 +677,9 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             skipped: plan.skipped,
           },
         })
-        .catch(() => undefined);
+        .catch(() => {
+          // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+        });
 
       const statusUrl = `/api/backup/restore/status/${jobId}`;
       /**

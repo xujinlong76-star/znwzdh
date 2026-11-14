@@ -50,5 +50,7 @@ export async function handleRecomputeRank(ctx: AppContext): Promise<void> {
     };
   });
   await ctx.repo.setTrendScores(scores);
-  await ctx.repo.recordEvent("recompute_rank", { meta: { sites: scores.length } }).catch(() => undefined);
+  await ctx.repo.recordEvent("recompute_rank", { meta: { sites: scores.length } }).catch(() => {
+    // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+  });
 }

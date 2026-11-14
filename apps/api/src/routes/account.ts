@@ -197,7 +197,9 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
             action: "account.register_conflict",
             target: email,
             diff: { reason: result.reason },
-          }).catch(() => undefined);
+          }).catch(() => {
+            // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+          });
         }
         const messages: Record<string, string> = {
           invalid_username: "用户名不合法",
@@ -488,7 +490,9 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
             target: identifier,
             diff: { failures },
           })
-          .catch(() => undefined);
+          .catch(() => {
+            // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+          });
         reply.code(401);
         return { error: "邮箱/用户名或密码错误" };
       }

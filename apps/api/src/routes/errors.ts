@@ -54,7 +54,9 @@ export const clientErrorRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       .recordEvent("client_error", {
         meta: { kind, fingerprint, path: path ?? null, digest: digest ?? null, count: entry.count },
       })
-      .catch(() => undefined);
+      .catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
 
     reply.code(204);
     return null;
@@ -67,7 +69,9 @@ export const clientErrorRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       actorKind: req.auth.kind,
       action: "client_errors.view",
       target: "client-errors",
-    }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     return { ...store.summary(20), retention: "process-memory" };
   });
 
@@ -80,7 +84,9 @@ export const clientErrorRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       actorKind: req.auth.kind,
       action: "client_errors.clear",
       target: "client-errors",
-    }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     return { ok: true };
   });
 };

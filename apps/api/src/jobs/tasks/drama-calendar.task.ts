@@ -93,12 +93,16 @@ export async function handleDramaCalendarRefresh(
     if (prev) {
       await ctx.repo
         .setSystemState(DRAMA_CALENDAR_SNAPSHOT_KEY, { ...prev, lastError: reason })
-        .catch(() => undefined);
+        .catch(() => {
+          // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+        });
     }
     summary = { ok: false, keptEntries: prev?.entries.length ?? 0, error: reason };
   }
   await ctx.repo
     .recordEvent("drama_calendar_refresh", { meta: summary })
-    .catch(() => undefined);
+    .catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
   return summary;
 }

@@ -903,10 +903,14 @@ export class JobRunner {
       if (typeof heartbeat.unref === "function") heartbeat.unref();
       try {
         if (this.enableCron) {
-          await this.checkRecurringSchedules().catch(() => undefined);
+          await this.checkRecurringSchedules().catch((err) => {
+            console.warn("[navhub-job] 排期检查失败，下一周期重试:", err);
+          });
         }
         if (typeof this.ctx.repo.reapStaleJobs === "function") {
-          await this.ctx.repo.reapStaleJobs().catch(() => undefined);
+          await this.ctx.repo.reapStaleJobs().catch((err) => {
+            console.warn("[navhub-job] 过期任务回收失败，下一周期重试:", err);
+          });
         }
         await this.relayNotificationsSafely();
         processed = await this.consumeJobs();
@@ -1175,7 +1179,9 @@ export class JobRunner {
                 // 真的收成 cancelled 需要行仍是 cancelling，被 reaper 改走时 CAS 自然不命中。
                 if (status !== "running") requestJobAbort(jobId, "cancelled");
               })
-              .catch(() => undefined);
+              .catch((err) => {
+                console.warn("[navhub-job] 任务心跳失败，锁可能已过期", { jobId, err });
+              });
           }, this.jobHeartbeatMs)
         : null;
     if (jobHeartbeat && typeof jobHeartbeat.unref === "function") jobHeartbeat.unref();
@@ -1244,7 +1250,9 @@ export class JobRunner {
      * `runWithBudget` 的观察是两回事，异常在 Runner 那条已经在处理，这里只是
      * 借结算时机做一次登记清理，不能再生成第二个未处理的 rejection。
      */
-    execution.finally(settleRun).catch(() => undefined);
+    execution.finally(settleRun).catch(() => {
+      // 失败已在主链路处理：这里只防第二个未处理 rejection。
+    });
     let executionCompleted = false;
     try {
       await runWithBudget(execution, budgetMs, kind);
@@ -1306,7 +1314,10 @@ export class JobRunner {
       if (timedOut) {
         jobStatsOf(kind).timeouts += 1;
         console.warn("[navhub-job] 预算到点，请求停止", { jobId, kind, durationMs, error: message });
-        const marked = await this.ctx.repo.markJobCancelling(jobId, message).catch(() => false);
+        const marked = await this.ctx.repo.markJobCancelling(jobId, message).catch(() => {
+          // 尽力而为的附带操作：失败不影响主流程。
+          return false;
+        });
         requestJobAbort(jobId, "budget");
         if (marked) {
           jobEventBus.emitJobUpdate({
@@ -1466,7 +1477,9 @@ export class JobRunner {
             title: kind === "backup_restore" ? "备份恢复任务失败" : `自动化任务失败：${kind}`,
             body: `任务 ${jobId} 超出单次执行预算，已确认停止且不会自动重试。请到任务管理查看详情并决定是否重试。`,
           })
-          .catch(() => undefined);
+          .catch(() => {
+            // 尽力而为的附带操作：失败不影响主流程。
+          });
         this.alert("任务 " + kind + " 超出单次执行预算，已确认停止（不会自动重试）", {
           kind,
           attempts,
@@ -1730,7 +1743,9 @@ export class JobRunner {
       .recordEvent("reindex", {
         meta: { sites: sites.length, vectors: payload.vectors !== false, staleEmbeddingsPurged: stalePurged },
       })
-      .catch(() => undefined);
+      .catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
   }
 
   /** 重建插件语义索引：分页拉全量已上架插件，批量向量化（失败只记 notes，不中断） */
@@ -1769,7 +1784,9 @@ export class JobRunner {
     }
     await this.ctx.repo
       .recordEvent("reindex", { meta: { plugins: total, stalePluginEmbeddingsPurged: stalePurged } })
-      .catch(() => undefined);
+      .catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
   }
 
   /** AI 自动自愈：对 broken/失效站点执行 Wayback 归档解析与同图谱健康替代推荐 */
@@ -1804,7 +1821,9 @@ export class JobRunner {
     await this.ctx.repo.recordEvent("site_healing", {
       siteId: site.id,
       meta: { action: report.recommendedAction, autoResolvable: report.autoResolvable },
-    }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
   }
 
   /**
@@ -1878,7 +1897,9 @@ export class JobRunner {
         });
       });
     }
-    await this.ctx.repo.recordEvent("purge_trash", { meta: { days, purged } }).catch(() => undefined);
+    await this.ctx.repo.recordEvent("purge_trash", { meta: { days, purged } }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
   }
 
   /**
@@ -1922,7 +1943,10 @@ export class JobRunner {
     // 只读 staging 目录内的文件：入队来源不止端点，payload 里的路径不可信。
     // 校验放在 try 外，越界路径要报自己的错，不能被当成「文件已被清理」。
     const stagingFile = assertRestoreStagingPath(stagingPath);
-    const stagingInfo = await stat(stagingFile).catch(() => null);
+    const stagingInfo = await stat(stagingFile).catch(() => {
+      // 可选读取：读不到按缺省值处理，调用方已处理空值。
+      return null;
+    });
     if (stagingInfo && stagingInfo.size > RESTORE_STAGING_MAX_BYTES) {
       throw new Error(
         `backup_restore staging 文件超过上限（${stagingInfo.size} > ${RESTORE_STAGING_MAX_BYTES} 字节），拒绝读取`,
@@ -2139,10 +2163,14 @@ export class JobRunner {
     // 成功才删 staging（失败保留供重跑/复盘）。
     // 删的是归一化后的 stagingFile（assertRestoreStagingPath），不是 payload
     // 原始路径——payload 可携带 ../ 变体，原样 unlink 会错删（P2-4）。
-    await unlink(stagingFile).catch(() => undefined);
+    await unlink(stagingFile).catch(() => {
+      // 尽力而为的附带操作：失败不影响主流程。
+    });
     await this.ctx.repo
       .recordEvent("backup_restore", { meta: { categories: categories.length, sites: sites.length } })
-      .catch(() => undefined);
+      .catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
   }
 
   /**
@@ -2329,8 +2357,12 @@ export class JobRunner {
       action: "user_data.audit",
       target: "global",
       diff: summary,
-    }).catch(() => undefined);
-    await this.ctx.repo.recordEvent("user_data_audit", { meta: summary }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
+    await this.ctx.repo.recordEvent("user_data_audit", { meta: summary }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     if (danglingFolderRefs > 0 || favoritesMissingSite > 0) {
       console.warn(`[jobs] user_data_audit: 孤儿夹引用 ${danglingFolderRefs}，站点缺失收藏 ${favoritesMissingSite}（只报不动）`);
     }
@@ -2359,7 +2391,9 @@ export class JobRunner {
       ? await applyRetentionSideEffects(this.ctx, payload)
       : await previewRetentionSideEffects(this.ctx, payload);
     Object.assign(summary, sideEffects);
-    await this.ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => undefined);
+    await this.ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
   }
 
   /**
@@ -2581,7 +2615,9 @@ async function applyRetentionSideEffects(
           action: "user.search_history_expired",
           target: identity,
           diff: { retentionDays, deleted },
-        }).catch(() => undefined);
+        }).catch(() => {
+          // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+        });
       }
     }
     return { telemetry, userRetention: { usersAffected, rowsDeleted } };

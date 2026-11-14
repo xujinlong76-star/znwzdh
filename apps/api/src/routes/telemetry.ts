@@ -111,7 +111,10 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     const identity = rawIdentity ? await resolveCanonicalIdentity(ctx, rawIdentity) : null;
     let telemetryEnabled = true;
     if (identity) {
-      const settings = await ctx.repo.getUserSettings(identity).catch(() => null);
+      const settings = await ctx.repo.getUserSettings(identity).catch(() => {
+        // 可选读取：读不到按缺省值处理，调用方已处理空值。
+        return null;
+      });
       if (settings && settings.telemetryEnabled === false) {
         telemetryEnabled = false;
       }
@@ -142,10 +145,14 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
         eventId: body.data.eventId,
         clientCreatedAt: body.data.clientCreatedAt,
       })
-      .catch(() => undefined);
+      .catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
     const replayed = inserted === false;
     if (!replayed && body.data.kind === "click" && body.data.siteId) {
-      await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);
+      await ctx.repo.bumpVisit(body.data.siteId).catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
     }
     // 在线强化学习闭环：若带有搜索词，实时反馈更新 Discounted-LinUCB 通道权重
     if (!replayed && body.data.query && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "dismiss")) {
@@ -187,7 +194,9 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       reply.code(400);
       return { error: "参数无效", detail: body.error.issues };
     }
-    await ctx.repo.recordEvent("vitals", { meta: body.data }).catch(() => undefined);
+    await ctx.repo.recordEvent("vitals", { meta: body.data }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     reply.code(204);
     return null;
   });

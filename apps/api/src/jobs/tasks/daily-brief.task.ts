@@ -22,11 +22,15 @@ export async function handleDailyBrief(
   ctx: AppContext,
   opts: { fetchImpl?: HotlistFetch } = {},
 ): Promise<void> {
-  await refreshHotlist(ctx, { fetchImpl: opts.fetchImpl }).catch(() => undefined);
+  await refreshHotlist(ctx, { fetchImpl: opts.fetchImpl }).catch((err) => {
+    console.warn("[navhub-job] 每日简报：热榜刷新失败，用现有缓存组版", err);
+  });
   const brief = await generateDailyBrief(ctx);
   await ctx.repo
     .recordEvent("daily_brief", {
       meta: { date: brief.date, openingMode: brief.openingMode, hotPicks: brief.payload.hotPicks.length },
     })
-    .catch(() => undefined);
+    .catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
 }

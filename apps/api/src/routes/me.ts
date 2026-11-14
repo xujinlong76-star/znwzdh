@@ -161,7 +161,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       action: "user.settings_update",
       target: canonical,
       diff: parsed.data,
-    }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     return { ok: true, settings };
   });
 
@@ -226,7 +228,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       action: "user.profile_update",
       target: canonical,
       diff: { username: outcome.user.username, emailChanged: parsed.data.email !== undefined },
-    }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
 
     return {
       ok: true,
@@ -321,7 +325,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       // 3. 校验个人设置与画像同步状态
       if (settings.personalizationEnabled) {
         invalidateProfileThrottle(canonical);
-        await refreshUserProfile(ctx, canonical).catch(() => false);
+        await refreshUserProfile(ctx, canonical).catch(() => {
+          // 尽力而为的附带操作：失败不影响主流程。
+          return false;
+        });
       }
       checks.push({
         id: "settings_and_profile",
@@ -339,7 +346,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         action: "user.diagnostics",
         target: canonical,
         diff: { repairedCount },
-      }).catch(() => undefined);
+      }).catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
 
       return {
         ok: true,
@@ -443,7 +452,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         folders: payload.favoriteFolders.length,
         searches: payload.searchHistory.items.length,
       },
-    }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     recordUserCenterMetric("dataSovereignty.exportJson");
     const stamp = new Date().toISOString().slice(0, 10);
     reply.header("content-type", "application/json; charset=utf-8");
@@ -724,7 +735,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           starsImported,
           reviewsImported,
         },
-      }).catch(() => undefined);
+      }).catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
 
       return {
         ok: true,
@@ -823,7 +836,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         action: "user.prune",
         target: canonical,
         diff: pruned,
-      }).catch(() => undefined);
+      }).catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
 
       return { ok: true, identity: canonical, pruned };
     },
@@ -972,7 +987,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       action: "user.token_create",
       target: record.id,
       diff: { name: record.name, scopes: record.scopes },
-    }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     return { ok: true, token: raw, record };
   });
 
@@ -1012,7 +1029,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       action: "user.token_revoke",
       target: id,
       diff: {},
-    }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     return { ok: true };
   });
 
@@ -1110,7 +1129,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       action: "user.session_revoke",
       target: canonical,
       diff: { session: id.slice(0, 12) },
-    }).catch(() => undefined);
+    }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     return { ok: true };
   });
 
@@ -1233,7 +1254,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           action: "user.sync_failed",
           target: canonical,
           diff: { ops: parsed.data.ops.length, error: String((err as Error)?.message ?? "unknown") },
-        }).catch(() => undefined);
+        }).catch(() => {
+          // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+        });
         // 站内通知（T13）：同步失败告知用户。中枢抖动会连续失败——60 分钟去重窗口内不重发
         try {
           const recent = await ctx.repo.hasRecentNotification(canonical, "sync_failed", 60 * 60_000);

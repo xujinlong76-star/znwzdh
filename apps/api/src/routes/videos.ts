@@ -189,7 +189,10 @@ export const videoRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     const preferDb = forced === "db" ? true : forced === "kv" ? false : resolveVideoStoreMode() === "db";
 
     if (preferDb) {
-      const dbTotal = await countVideoItems(ctx.repo, filter).catch(() => 0);
+      const dbTotal = await countVideoItems(ctx.repo, filter).catch(() => {
+        // 可选读取：读不到按缺省值处理，调用方已处理空值。
+        return 0;
+      });
       if (dbTotal > 0) {
         source = "db";
         total = dbTotal;
@@ -237,7 +240,10 @@ export const videoRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     }
 
     const id = params.data.id;
-    const row = await getVideoItem(ctx.repo, id).catch(() => null);
+    const row = await getVideoItem(ctx.repo, id).catch(() => {
+      // 可选读取：读不到按缺省值处理，调用方已处理空值。
+      return null;
+    });
     if (row) {
       reply.header("X-Video-Source", "db");
       return { source: "db", item: toApiItem(row, true) };

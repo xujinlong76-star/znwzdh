@@ -1537,8 +1537,9 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
             try {
               const obj = JSON.parse(raw)
               if (obj.overview) overviewText = String(obj.overview).trim()
-            } catch {}
-            // 显式降级（非静默）：LLM 可能返回非 JSON 文本：按「无 overview」处理，不是错误
+            } catch {
+              // 显式降级（非静默）：LLM 可能返回非 JSON 文本：按「无 overview」处理，不是错误
+            }
           }
         }
         if (!overviewText || overviewText.startsWith("{")) {

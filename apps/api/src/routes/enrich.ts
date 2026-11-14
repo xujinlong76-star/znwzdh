@@ -96,7 +96,9 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
     }).finally(() => settleLlmQuota(ctx, budget.hold));
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
-    await ctx.repo.recordEvent("enrich", { meta: { url: body.data.url, provenance: result.provenance } }).catch(() => undefined);
+    await ctx.repo.recordEvent("enrich", { meta: { url: body.data.url, provenance: result.provenance } }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     return budget.llmBlocked ? { ...result, aiSkipped: "quota" as const, quota: budget.quotaInfo } : result;
   });
 

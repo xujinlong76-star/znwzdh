@@ -183,7 +183,9 @@ export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
             target: body.data.path,
             diff: { code: err.code, ...err.verdict },
           })
-          .catch(() => undefined);
+          .catch(() => {
+            // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+          });
         reply.code(409);
         return {
           error: err.code,

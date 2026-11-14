@@ -728,7 +728,9 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
               fallback: validation.usedFallback,
             },
           })
-          .catch(() => undefined);
+          .catch(() => {
+            // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+          });
 
         return {
           success: true,

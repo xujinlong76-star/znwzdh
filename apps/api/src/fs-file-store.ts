@@ -23,7 +23,9 @@ export const fsFileStore: AtomicFileStore = {
     try {
       await rename(tmp, path);
     } catch (err) {
-      await unlink(tmp).catch(() => {});
+      await unlink(tmp).catch(() => {
+        // 尽力而为的附带操作：失败不影响主流程。
+      });
       throw err;
     }
   },

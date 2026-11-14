@@ -233,7 +233,9 @@ ${catSpec || "无指定分类树"}
       return created;
     });
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
-    await ctx.repo.recordEvent("submission", { siteId: site.id, categoryId: category.id }).catch(() => undefined);
+    await ctx.repo.recordEvent("submission", { siteId: site.id, categoryId: category.id }).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     reply.code(201);
     return { success: true, message: "投稿已提交，等待审核", siteId: site.id };
   });

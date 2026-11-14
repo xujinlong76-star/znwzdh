@@ -25,7 +25,10 @@ export const dramaCalendarRoutes: FastifyPluginAsync<{ ctx: AppContext }> = asyn
     async () => {
       const snapshot = await ctx.repo
         .getSystemState<DramaCalendarSnapshot>(DRAMA_CALENDAR_SNAPSHOT_KEY)
-        .catch(() => null);
+        .catch(() => {
+          // 可选读取：读不到按缺省值处理，调用方已处理空值。
+          return null;
+        });
       const view = buildDramaCalendarView(snapshot, Date.now());
       return { ok: true as const, ...view };
     },

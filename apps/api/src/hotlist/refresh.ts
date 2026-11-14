@@ -56,7 +56,9 @@ export async function refreshHotlistSource(
     return { source: def.id, ok: true, items: items.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.repo.markHotlistSourceFailed(def.id, message, now).catch(() => undefined);
+    await ctx.repo.markHotlistSourceFailed(def.id, message, now).catch(() => {
+      // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+    });
     return { source: def.id, ok: false, error: message };
   }
 }

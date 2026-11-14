@@ -123,7 +123,10 @@ export const linkHealthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
     const results = [];
     for (const siteId of uniqueIds) {
-      const site = await ctx.repo.getSite(siteId).catch(() => null);
+      const site = await ctx.repo.getSite(siteId).catch(() => {
+        // 可选读取：读不到按缺省值处理，调用方已处理空值。
+        return null;
+      });
       if (!site) {
         results.push({ siteId, ok: false, reason: "not_found" });
         continue;
@@ -137,7 +140,9 @@ export const linkHealthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
       .recordEvent("link_health_visibility", {
         meta: { visible, requested: uniqueIds.length, updated },
       })
-      .catch(() => undefined);
+      .catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
 
     return { ok: true, updated, results };
   });

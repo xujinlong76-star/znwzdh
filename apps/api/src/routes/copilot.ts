@@ -371,9 +371,15 @@ async function prepareCopilot(
   let telemetryEnabled = true;
   if (identity) {
     const [profile, folders, settings] = await Promise.all([
-      ctx.repo.getUserProfile(identity).catch(() => null),
+      ctx.repo.getUserProfile(identity).catch(() => {
+        // 可选读取：读不到按缺省值处理，调用方已处理空值。
+        return null;
+      }),
       ctx.repo.listFavoriteFolders(identity).catch(() => []),
-      ctx.repo.getUserSettings(identity).catch(() => null),
+      ctx.repo.getUserSettings(identity).catch(() => {
+        // 可选读取：读不到按缺省值处理，调用方已处理空值。
+        return null;
+      }),
     ]);
     telemetryEnabled = settings?.telemetryEnabled !== false;
     const parts: string[] = [];
@@ -431,7 +437,9 @@ async function prepareCopilot(
           ...(dims.stage ? { stage: dims.stage } : {}),
         },
       })
-      .catch(() => undefined);
+      .catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
   };
 
   const catNames = categories.map((c) => c.title).slice(0, 15).join("、");

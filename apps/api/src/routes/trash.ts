@@ -80,7 +80,9 @@ export const trashRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     if (!deleted) { reply.code(404); return { error: "回收站中不存在该站点" }; }
 
     await ctx.repo.purgeSite(id);
-    await ctx.vectors.remove([id]).catch(() => undefined);   // 永久删除才清向量
+    await ctx.vectors.remove([id]).catch(() => {
+      // 尽力而为的附带操作：失败不影响主流程。
+    });   // 永久删除才清向量
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.purge", target: id, diff: { url: deleted.url, title: deleted.title } });
     reply.code(204);
     return null;

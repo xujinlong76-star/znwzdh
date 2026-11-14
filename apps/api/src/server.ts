@@ -538,11 +538,15 @@ export async function buildServer(ctx: AppContext) {
                 target: openRecord.id,
                 diff: { path: req.url, required },
               })
-              .catch(() => undefined);
+              .catch(() => {
+                // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+              });
             reply.code(403).send({ error: PERSONAL_WRITE_DENIED_MESSAGE });
             return;
           }
-          void ctx.repo.touchApiToken(openRecord.id).catch(() => undefined);
+          void ctx.repo.touchApiToken(openRecord.id).catch(() => {
+            // 尽力而为的附带操作：失败不影响主流程。
+          });
         }
       }
       return;
@@ -582,7 +586,9 @@ export async function buildServer(ctx: AppContext) {
         action,
         target: target ?? undefined,
         diff: { detail, path: req.url, required },
-      }).catch(() => undefined);
+      }).catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
     };
 
     const token = bearerOf(req);
@@ -658,7 +664,9 @@ export async function buildServer(ctx: AppContext) {
       });
     }
 
-    void ctx.repo.touchApiToken(record.id).catch(() => undefined);
+    void ctx.repo.touchApiToken(record.id).catch(() => {
+      // 尽力而为的附带操作：失败不影响主流程。
+    });
   });
 
   /**

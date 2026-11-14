@@ -106,7 +106,9 @@ export const hotlistRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         if (!pending) {
           pending = getOrGenerateTodayBrief(ctx, { now });
           inflight.set(key, pending);
-          void pending.finally(() => inflight.delete(key)).catch(() => undefined);
+          void pending.finally(() => inflight.delete(key)).catch(() => {
+            // 失败已在主链路处理：这里只防第二个未处理 rejection。
+          });
         }
         brief = await pending;
       }
@@ -117,7 +119,10 @@ export const hotlistRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         const rawIdentity = requestIdentityOf(req as never);
         if (rawIdentity) {
           const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
-          watch = await watchSectionForUser(ctx, identity, now).catch(() => null);
+          watch = await watchSectionForUser(ctx, identity, now).catch(() => {
+            // 可选读取：读不到按缺省值处理，调用方已处理空值。
+            return null;
+          });
         }
       }
 

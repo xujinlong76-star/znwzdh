@@ -63,7 +63,9 @@ function msg(err: unknown): string {
 /** 语义未就绪时触发一次预热（不阻塞当前请求）；模型不可用则永久走关键词回退 */
 function kickWarmup(ctx: AppContext): void {
   try {
-    void Promise.resolve(ctx.embedding?.warmup?.()).catch(() => undefined);
+    void Promise.resolve(ctx.embedding?.warmup?.()).catch(() => {
+      // 尽力而为的附带操作：失败不影响主流程。
+    });
   } catch {
     // ignore
   }

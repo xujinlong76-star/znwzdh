@@ -5,7 +5,9 @@
  *  - 四场全结束时渲染静态空态条带（保留考试日历入口），不再整条消失；
  *    空态不挂倒计时岛、不挂客户端视图、不读存储、不含未公布日期；
  *  - 倒计时走 ExamCountdown 客户端岛，服务端 JSX 里不直出天数；
- *  - 条内唯一链接指向 /exam；小字不用 text-primary、不用 11px、
+ *  - 条内常驻链接唯一指向 /exam；准考证打印提醒期（11-22–11-29 15:00）
+ *    另有一条经核实的官方专题站外链（走 exam-calendar 常量，不在视图写
+ *    死 http 字面量、不写死考试 id 与日期）；小字不用 text-primary、不用 11px、
  *    不用锌灰低对比；徽章用 bg-sky-500/5 + text-sky-700 配方；
  *  - 挂载位置：首页简报条之后、连胜条之前（首屏顶部）。
  *  - 结构：服务端外壳（home-exam-strip.tsx）只挑全局最近场；
@@ -140,8 +142,15 @@ describe('首页考试条源码守卫', () => {
     expect(view).not.toMatch(/\{daysUntil\(/)
   })
 
-  it('客户端视图：条内唯一链接指向 /exam，无外链', () => {
+  it('客户端视图：常驻链接唯一指向 /exam；提醒外链只走 exam-calendar 常量', () => {
+    // 行为有意变化（2026-11-15 国考准考证打印提醒）：提醒期条带副行切到
+    // 提醒，内含一条经核实的官方专题站外链（http://bm.scs.gov.cn/kl2027，
+    // 2026-11-14 curl 核实 200，https 不可用）。链接事实源在 exam-calendar
+    // 常量里，视图只引提醒组件与门控函数，不写死 http 字面量、不写死
+    // 考试 id 与日期；常驻入口仍唯一指向 /exam。
     expect(view.match(/href="\/exam"/g)?.length).toBe(1)
+    expect(view).toContain('GuokaoAdmissionReminder')
+    expect(view).toContain('admissionReminderFor(exam, now)')
     expect(view).not.toContain('http')
   })
 

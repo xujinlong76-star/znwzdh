@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, CalendarDays } from 'lucide-react'
 import { ExamCountdown } from '@/app/exam/exam-countdown'
+import { GuokaoAdmissionReminder } from '@/components/guokao-admission-reminder'
 import { useMyExams } from '@/hooks/useMyExams'
 import {
   EXAM_REMINDER_TIER_LABEL,
+  admissionReminderFor,
   reminderTier,
   urgencyTier,
   type ExamInfo,
@@ -81,6 +83,10 @@ export function HomeExamStripView({
   // 提醒文案只对已关注考试显示（未关注只变色、不出文案，避免噪音）。
   const reminder: ExamReminderTier | null =
     personal && mounted ? reminderTier(exam, now) : null
+  // 国考准考证打印提醒期（11-22–11-29 15:00）：副行切到提醒，不再显示
+  // 「下一步」——提醒期国考的下一步本来就是准考证打印，不丢信息；
+  // 门控与文案都在 exam-calendar 里按事实源算，本文件不写死日期与考试 id。
+  const admission = mounted ? admissionReminderFor(exam, now) : null
 
   return (
     <section aria-label="考试季" className="mx-auto w-full max-w-[1600px] px-3 pt-3 sm:px-5">
@@ -96,7 +102,9 @@ export function HomeExamStripView({
             <p className="text-sm font-semibold text-foreground">
               {exam.name} · {exam.tagline} · {exam.examDateLabel}
             </p>
-            {nextNode ? (
+            {admission ? (
+              <GuokaoAdmissionReminder reminder={admission} variant="strip" />
+            ) : nextNode ? (
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {reminder ? (
                   <>

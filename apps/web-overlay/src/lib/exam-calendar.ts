@@ -354,3 +354,73 @@ export const EXAM_REMINDER_TIER_LABEL: Record<ExamReminderTier, string> = {
   '1d': '明天考试',
   today: '今天考试',
 }
+
+/**
+ * 国考准考证打印提醒（只针对 guokao，首页条带 + /exam 国考卡片）。
+ *
+ * 事实来源（2026-11-14 按官方公告逐项核实 + curl）：
+ *  - 打印窗口 11 月 23 日 0:00 至 11 月 29 日 15:00，逾期系统关闭、无法补打；
+ *  - 官方专题站 http://bm.scs.gov.cn/kl2027 经 curl 核实返回 200（JS 跳转页），
+ *    是站内提醒唯一可点击入口；https 版为空回复，链接必须写 http://；
+ *  - gwy.cpta.com.cn 根路径返回 405，不作站内可点击主入口。
+ *
+ * 门控（北京时间；15:00 截止用时刻算，不按自然日）：
+ *  - 11-22 预热（warmup，开放前一天）；
+ *  - 11-23–11-26 已开放（open）；
+ *  - 11-27–11-29 15:00 末班（last-call）；
+ *  - 11-22 之前与 11-29 15:00 之后一律不显示（null）。
+ * 文案取自已核实的提醒准备稿 A 版（条带短句 / 卡片全句）。
+ */
+export const GUOKAO_ADMISSION_URL = 'http://bm.scs.gov.cn/kl2027'
+
+export type GuokaoAdmissionPhase = 'warmup' | 'open' | 'last-call'
+
+export function guokaoAdmissionPhase(nowMs: number = Date.now()): GuokaoAdmissionPhase | null {
+  const warmupStart = shanghaiMidnightMs('2026-11-22')
+  const openStart = shanghaiMidnightMs('2026-11-23')
+  const lastCallStart = shanghaiMidnightMs('2026-11-27')
+  const deadline = shanghaiMidnightMs('2026-11-29') + 15 * 3600 * 1000
+  if (nowMs < warmupStart || nowMs >= deadline) return null
+  if (nowMs < openStart) return 'warmup'
+  if (nowMs < lastCallStart) return 'open'
+  return 'last-call'
+}
+
+export interface GuokaoAdmissionReminder {
+  phase: GuokaoAdmissionPhase
+  /** 条带一行文案（短句） */
+  stripLine: string
+  /** /exam 卡片文案（A 版全句） */
+  cardLine: string
+  url: string
+}
+
+const GUOKAO_ADMISSION_COPY: Record<GuokaoAdmissionPhase, { strip: string; card: string }> = {
+  warmup: {
+    strip: '国考准考证明天 0:00 开放打印，11 月 29 日 15:00 截止',
+    card: '2027 国考准考证明天（11 月 23 日）0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。',
+  },
+  open: {
+    strip: '国考准考证打印已开放，11 月 29 日 15:00 截止，逾期无法补打',
+    card: '2027 国考准考证打印已开放，11 月 29 日 15:00 截止，逾期系统关闭、无法补打——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。',
+  },
+  'last-call': {
+    strip: '末班提醒：国考准考证 11 月 29 日 15:00 截止，逾期无法补打',
+    card: '末班提醒：2027 国考准考证 11 月 29 日 15:00 截止，逾期系统关闭、无法补打——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。',
+  },
+}
+
+/**
+ * 某场考试的准考证打印提醒：只有国考在门控窗口内才返回内容，
+ * 其余考试与窗口外一律返回 null（调用方渲染 nothing，不出空壳）。
+ */
+export function admissionReminderFor(
+  exam: Pick<ExamInfo, 'id'>,
+  nowMs: number = Date.now(),
+): GuokaoAdmissionReminder | null {
+  if (exam.id !== 'guokao') return null
+  const phase = guokaoAdmissionPhase(nowMs)
+  if (!phase) return null
+  const copy = GUOKAO_ADMISSION_COPY[phase]
+  return { phase, stripLine: copy.strip, cardLine: copy.card, url: GUOKAO_ADMISSION_URL }
+}

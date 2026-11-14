@@ -4,7 +4,8 @@
  * 锁定四条纪律：
  *  1. 经验规则：生涯首次/每日首次给得多，反复刷递减并封顶为 0；
  *  2. 挂机每日封顶、跨天重置；连续访问天数按本地日期算；
- *  3. 「设为首页」领取一次性生效、重复领取拦住；加速只乘之后赚到的经验；
+ *  3. 「设为首页」领取一次性 +100、重复领取拦住，不再开 ×1.5 身份档
+ *      （2026-11-15 新规）；×1.5 唯一新来源是装为应用（PWA 真实安装）；
  *  4. localStorage 坏数据回空档案，等级/徽章全部由档案纯派生。
  */
 import { describe, expect, it } from 'vitest'
@@ -18,6 +19,8 @@ import {
   awardEvent,
   awardIdleMinute,
   claimHomepageReward,
+  claimPwaInstall,
+  currentMultiplier,
   currentStreak,
   deriveBadges,
   emptyProfile,
@@ -104,23 +107,28 @@ describe('挂机与连续访问', () => {
 })
 
 describe('设为首页领取与加速', () => {
-  it('领取一次性 +100 并开启加速，重复领取为 0', () => {
+  it('领取一次性 +100，不再开启加速，重复领取为 0（2026-11-15 新规）', () => {
     const p0 = emptyProfile(day('2026-11-10'))
     const r = claimHomepageReward(p0, day('2026-11-10'))
     expect(r.gained).toBe(HOMEPAGE_CLAIM_XP)
-    expect(r.profile.boost).toBe(true)
+    expect(r.profile.boost).toBe(false)
+    expect(r.profile.homepageClaimedAt).not.toBeNull()
     expect(r.profile.totalXp).toBe(HOMEPAGE_CLAIM_XP)
+    expect(currentMultiplier(r.profile, day('2026-11-10'))).toBe(1.0)
     const again = claimHomepageReward(r.profile, day('2026-11-10'))
     expect(again.gained).toBe(0)
     const badge = deriveBadges(r.profile, day('2026-11-10')).find((b) => b.id === 'homepage-guardian')
     expect(badge?.earned).toBe(true)
   })
 
-  it('加速只乘领取之后赚到的经验（×1.5 向下取整）', () => {
+  it('只设首页不带倍率：之后赚到的经验不乘 ×1.5；×1.5 唯一新来源是装为应用', () => {
     const p = claimHomepageReward(emptyProfile(day('2026-11-10')), day('2026-11-10')).profile
     const r = awardEvent(p, 'search', {}, day('2026-11-10'))
-    expect(r.gained).toBe(Math.floor((FEATURE_FIRST_EVER_XP + DAILY_FIRST_XP) * BOOST_MULTIPLIER))
+    expect(r.gained).toBe(FEATURE_FIRST_EVER_XP + DAILY_FIRST_XP)
     expect(BOOST_MULTIPLIER).toBe(1.5)
+    const pw = claimPwaInstall(emptyProfile(day('2026-11-10')), day('2026-11-10')).profile
+    expect(pw.boost).toBe(true)
+    expect(currentMultiplier(pw, day('2026-11-10'))).toBeCloseTo(1.5)
   })
 })
 

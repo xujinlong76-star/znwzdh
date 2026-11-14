@@ -9,7 +9,7 @@
  * node 环境：localStorage/window 用替身（与 click-evidence.test.ts 同款）；
  * 模块级共享态按 worker 持久（isolate:false），逐测动态 import 新模块隔离。
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -153,6 +153,16 @@ describe('loadMyExamsLocal（运行时）', () => {
 })
 
 describe('共享写操作（运行时，竞态回归）', () => {
+  // 写操作走纯函数层的 ended 守卫（默认 Date.now()）：冻结到 2026-11-13，
+  // 四场考试都未结束，否则 11-29 后 guokao 关注期望 true 的用例会变红。
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.UTC(2026, 10, 13, 0, 0, 0))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('挂载读入前写操作拒绝（null 哨兵：还没读过本机存储）', async () => {
     stubBrowser()
     const { toggleMyExamsFollow } = await freshHook()

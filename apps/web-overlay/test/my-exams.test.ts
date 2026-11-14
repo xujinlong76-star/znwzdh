@@ -81,16 +81,16 @@ describe('parseMyExams（不可信输入收敛）', () => {
 describe('toggleFollow', () => {
   it('关注与取消关注来回切换', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
-    const on = toggleFollow(empty, 'guokao')
+    const on = toggleFollow(empty, 'guokao', NOV_13_0800_CST)
     expect(on.followed).toEqual(['guokao'])
     expect(isFollowed(on, 'guokao')).toBe(true)
-    const off = toggleFollow(on, 'guokao')
+    const off = toggleFollow(on, 'guokao', NOV_13_0800_CST)
     expect(off.followed).toEqual([])
   })
 
   it('未知考试 id 是 no-op', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
-    expect(toggleFollow(empty, 'economist')).toBe(empty)
+    expect(toggleFollow(empty, 'economist', NOV_13_0800_CST)).toBe(empty)
   })
 
   it('取消关注保留勾选（再关注回来还在）', () => {
@@ -98,8 +98,27 @@ describe('toggleFollow', () => {
       followed: ['guokao'],
       checked: { guokao: ['准考证打印'] },
     }
-    const off = toggleFollow(state, 'guokao')
+    const off = toggleFollow(state, 'guokao', NOV_13_0800_CST)
     expect(off.checked).toEqual({ guokao: ['准考证打印'] })
+  })
+
+  it('已结束的考试不再接受新关注（纵深防御：岛层按钮已禁用，纯函数层也写不进）', () => {
+    const empty: MyExamsState = { followed: [], checked: {} }
+    // 国考 11-29 已过（11-30 时），考研四场全过（12-21 时）
+    expect(toggleFollow(empty, 'guokao', NOV_30_0800_CST)).toBe(empty)
+    expect(toggleFollow(empty, 'kaoyan', DEC_21_0800_CST)).toBe(empty)
+  })
+
+  it('已结束的考试仍可取消关注（保留清理出口，不删用户数据）', () => {
+    const state: MyExamsState = { followed: ['guokao'], checked: {} }
+    const off = toggleFollow(state, 'guokao', NOV_30_0800_CST)
+    expect(off.followed).toEqual([])
+  })
+
+  it('末日当天仍算未结束：考研 12-20 仍可关注', () => {
+    const empty: MyExamsState = { followed: [], checked: {} }
+    const on = toggleFollow(empty, 'kaoyan', DEC_20_0800_CST)
+    expect(on.followed).toEqual(['kaoyan'])
   })
 })
 
@@ -107,20 +126,32 @@ describe('toggleNodeCheck', () => {
   const followed: MyExamsState = { followed: ['guokao'], checked: {} }
 
   it('勾选与取消勾选来回切换，勾空后 key 消失', () => {
-    const on = toggleNodeCheck(followed, 'guokao', '准考证打印')
+    const on = toggleNodeCheck(followed, 'guokao', '准考证打印', NOV_13_0800_CST)
     expect(on.checked).toEqual({ guokao: ['准考证打印'] })
-    const off = toggleNodeCheck(on, 'guokao', '准考证打印')
+    const off = toggleNodeCheck(on, 'guokao', '准考证打印', NOV_13_0800_CST)
     expect(off.checked).toEqual({})
   })
 
   it('未关注的考试勾选是 no-op', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
-    expect(toggleNodeCheck(empty, 'guokao', '准考证打印')).toBe(empty)
+    expect(toggleNodeCheck(empty, 'guokao', '准考证打印', NOV_13_0800_CST)).toBe(empty)
   })
 
   it('未知考试与不属于该考试的节点是 no-op', () => {
-    expect(toggleNodeCheck(followed, 'economist', '笔试')).toBe(followed)
-    expect(toggleNodeCheck(followed, 'guokao', '不存在的节点')).toBe(followed)
+    expect(toggleNodeCheck(followed, 'economist', '笔试', NOV_13_0800_CST)).toBe(followed)
+    expect(toggleNodeCheck(followed, 'guokao', '不存在的节点', NOV_13_0800_CST)).toBe(followed)
+  })
+
+  it('已结束的考试勾选与取消勾选都是 no-op（考前清单只在考前有意义）', () => {
+    const ended: MyExamsState = { followed: ['guokao'], checked: {} }
+    expect(toggleNodeCheck(ended, 'guokao', '准考证打印', NOV_30_0800_CST)).toBe(ended)
+    const checkedEnded: MyExamsState = {
+      followed: ['guokao'],
+      checked: { guokao: ['准考证打印'] },
+    }
+    expect(toggleNodeCheck(checkedEnded, 'guokao', '准考证打印', NOV_30_0800_CST)).toBe(
+      checkedEnded,
+    )
   })
 })
 

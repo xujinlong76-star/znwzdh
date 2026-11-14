@@ -155,6 +155,9 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/search-history/batch-delete",
   "POST /api/shortlinks",
   "POST /api/sites/:id/archive",
+  // 站点纠错上报（升级第 10 条）：访客匿名举报信息错误/死链，只进复核队列不改数据，
+  // 共享实例写面——已同步登记进 PUBLIC_INSTANCE_WRITE_ROUTES。
+  "POST /api/sites/:id/reports",
   "POST /api/sites/cluster",
   "POST /api/speculation/rules",
   "POST /api/submissions",

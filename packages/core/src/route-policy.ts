@@ -71,6 +71,7 @@ export const PUBLIC_INSTANCE_WRITE_ROUTES: readonly { route: string; why: string
   { route: "POST /api/shortlinks", why: "分享短链由匿名访客创建；目标限站内 /marketplace/，30 次/小时" },
   { route: "POST /api/users/sync", why: "OAuth 登录同步 users 表；identityAllowed + 可选身份签名是本路由自己的闸门" },
   { route: "POST /api/sites/:id/archive", why: "按站点生成离线快照并落库；外部抓取走 guardedFetch（SSRF 守卫），20 次/分钟" },
+  { route: "POST /api/sites/:id/reports", why: "站点纠错上报：访客无需登录即可举报信息错误/死链；只写 site_reports 复核队列、不改站点数据，限流 10 次/小时/IP，管理员复核后手动修正" },
   { route: "POST /api/mcp", why: "开放模式执行进程级工具表（含写工具）；鉴权模式由 identityAllowed 先行 401，256KB / 60 次每分钟" },
 ];
 

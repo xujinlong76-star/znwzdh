@@ -21,7 +21,7 @@ function seedSiteUrls(col: NonNullable<ReturnType<typeof seedCollection>>): stri
 
 describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合集）", () => {
   it("两个新合集都有策展文案且校验通过", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost", "beginner-web", "senior-services", "job-hunt-express", "academic-toolkit"]);
+    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost", "beginner-web", "senior-services", "job-hunt-express", "academic-toolkit", "shopping-saver", "novel-film-tracking"]);
     for (const e of FEATURED_COLLECTION_EDITORIALS) {
       expect(validateFeaturedEditorial(e)).toEqual([]);
       expect(e.title.trim().length).toBeGreaterThan(0);
@@ -89,7 +89,7 @@ describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合�
 
 describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率办公 + 收藏/订阅/进度）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(8);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(10);
     const ai = getFeaturedEditorial("ai-video-toolkit");
     const office = getFeaturedEditorial("office-boost");
     expect(ai).toBeDefined();
@@ -166,7 +166,7 @@ describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率�
 
 describe("精选专题（第 3 笔：新手上网必备、长辈便民服务）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(8);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(10);
     const beginner = getFeaturedEditorial("beginner-web");
     const senior = getFeaturedEditorial("senior-services");
     expect(beginner).toBeDefined();
@@ -211,7 +211,7 @@ describe("精选专题（第 3 笔：新手上网必备、长辈便民服务）"
 
 describe("精选专题（第 4 笔：求职招聘直通车、学术科研工具箱）", () => {
   it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(8);
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(10);
     const job = getFeaturedEditorial("job-hunt-express");
     const academic = getFeaturedEditorial("academic-toolkit");
     expect(job).toBeDefined();
@@ -248,5 +248,57 @@ describe("精选专题（第 4 笔：求职招聘直通车、学术科研工具�
     expect(col).toBeDefined();
     if (!col) return;
     expect(seedSiteUrls(col)).toContain("https://arxiv.org");
+  });
+});
+
+describe("精选专题（第 5 笔：网购省钱指南、小说影视追更）", () => {
+  it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(10);
+    const shopping = getFeaturedEditorial("shopping-saver");
+    const novel = getFeaturedEditorial("novel-film-tracking");
+    expect(shopping).toBeDefined();
+    expect(novel).toBeDefined();
+    if (!shopping || !novel) return;
+    expect(shopping.title).toBe("网购省钱指南");
+    expect(shopping.valueProposition).toBe("先比价，再下单");
+    expect(shopping.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(shopping.issueNo).toBe(1);
+    expect(shopping.acts.length).toBe(2);
+    expect(shopping.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(shopping.acts[0].title).toBe("第一幕 · 大站买买买");
+    expect(shopping.acts[1].title).toBe("第二幕 · 先比价再下单");
+    expect(validateFeaturedEditorial(shopping)).toEqual([]);
+    expect(novel.title).toBe("小说影视追更");
+    expect(novel.valueProposition).toBe("小说电影，追更不愁");
+    expect(novel.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(novel.issueNo).toBe(1);
+    expect(novel.acts.length).toBe(2);
+    expect(novel.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(novel.acts[0].title).toBe("第一幕 · 追小说");
+    expect(novel.acts[1].title).toBe("第二幕 · 追电影");
+    expect(validateFeaturedEditorial(novel)).toEqual([]);
+    expect(coverSiteUrls(shopping).length).toBe(6);
+    expect(coverSiteUrls(novel).length).toBe(6);
+  });
+
+  it("复用种子已有站点时地址与种子一致（淘宝、京东、豆瓣）", () => {
+    const shopping = getFeaturedEditorial("shopping-saver");
+    expect(shopping).toBeDefined();
+    if (!shopping) return;
+    expect(shopping.acts.flatMap((a) => a.siteUrls)).toContain("https://www.taobao.com");
+    expect(shopping.acts.flatMap((a) => a.siteUrls)).toContain("https://www.jd.com");
+    const novel = getFeaturedEditorial("novel-film-tracking");
+    expect(novel).toBeDefined();
+    if (!novel) return;
+    expect(novel.acts.flatMap((a) => a.siteUrls)).toContain("https://www.douban.com");
+    const col1 = seedCollection("shopping-saver");
+    expect(col1).toBeDefined();
+    if (!col1) return;
+    expect(seedSiteUrls(col1)).toContain("https://www.taobao.com");
+    expect(seedSiteUrls(col1)).toContain("https://www.jd.com");
+    const col2 = seedCollection("novel-film-tracking");
+    expect(col2).toBeDefined();
+    if (!col2) return;
+    expect(seedSiteUrls(col2)).toContain("https://www.douban.com");
   });
 });

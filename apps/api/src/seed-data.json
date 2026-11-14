@@ -1517,6 +1517,105 @@
         "工具"
       ],
       "icon": "https://www.zotero.org/favicon.ico"
+    },
+    {
+      "url": "https://www.pinduoduo.com",
+      "title": "拼多多",
+      "description": "拼单购物平台，百亿补贴与团购优惠多",
+      "categorySlug": "ecommerce",
+      "tags": [
+        "购物",
+        "拼单"
+      ],
+      "icon": "https://www.pinduoduo.com/favicon.ico"
+    },
+    {
+      "url": "https://www.smzdm.com",
+      "title": "什么值得买",
+      "description": "消费决策平台，全网好价爆料与晒单",
+      "categorySlug": "deals-and-comparison",
+      "tags": [
+        "省钱",
+        "比价"
+      ],
+      "icon": "https://www.smzdm.com/favicon.ico"
+    },
+    {
+      "url": "https://www.manmanbuy.com",
+      "title": "慢慢买",
+      "description": "比价与历史价格查询工具，防高价下单",
+      "categorySlug": "deals-and-comparison",
+      "tags": [
+        "省钱",
+        "比价"
+      ],
+      "icon": "https://www.manmanbuy.com/favicon.ico"
+    },
+    {
+      "url": "https://www.fanli.com",
+      "title": "返利网",
+      "description": "购物返利平台，下单返现省一笔",
+      "categorySlug": "deals-and-comparison",
+      "tags": [
+        "省钱",
+        "返利"
+      ],
+      "icon": "https://www.fanli.com/favicon.ico"
+    },
+    {
+      "url": "https://www.jjwxc.net",
+      "title": "晋江文学城",
+      "description": "女性向网络文学平台，原创言情小说集中",
+      "categorySlug": "web-novels",
+      "tags": [
+        "小说",
+        "言情"
+      ],
+      "icon": "https://www.jjwxc.net/favicon.ico"
+    },
+    {
+      "url": "https://fanqie.com",
+      "title": "番茄小说",
+      "description": "免费网络小说阅读平台，热门连载更新快",
+      "categorySlug": "web-novels",
+      "tags": [
+        "小说",
+        "免费"
+      ],
+      "icon": "https://fanqie.com/favicon.ico"
+    },
+    {
+      "url": "https://www.zongheng.com",
+      "title": "纵横中文网",
+      "description": "网络文学平台，男频玄幻与都市小说多",
+      "categorySlug": "web-novels",
+      "tags": [
+        "小说",
+        "男频"
+      ],
+      "icon": "https://www.zongheng.com/favicon.ico"
+    },
+    {
+      "url": "https://www.mtime.com",
+      "title": "时光网",
+      "description": "电影资讯与评分平台，影讯、预告与资料库",
+      "categorySlug": "ratings-and-reviews",
+      "tags": [
+        "电影",
+        "资讯"
+      ],
+      "icon": "https://www.mtime.com/favicon.ico"
+    },
+    {
+      "url": "https://www.taopiaopiao.com",
+      "title": "淘票票",
+      "description": "电影票务平台，院线排片与购票",
+      "categorySlug": "cinema-ticketing",
+      "tags": [
+        "电影",
+        "购票"
+      ],
+      "icon": "https://www.taopiaopiao.com/favicon.ico"
     }
   ],
   "collections": [
@@ -1989,6 +2088,84 @@
         {
           "site": "https://www.zotero.org",
           "note": "免费开源的文献管理工具，写论文必备",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "slug": "shopping-saver",
+      "title": "网购省钱指南",
+      "description": "先比价，再下单：大站买买买，省钱工具把价格压到最低",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://www.taobao.com",
+          "note": "国民级购物平台，从日用到百货都能买到",
+          "sort": 0
+        },
+        {
+          "site": "https://www.jd.com",
+          "note": "自营物流快，家电数码买得放心",
+          "sort": 1
+        },
+        {
+          "site": "https://www.pinduoduo.com",
+          "note": "拼单更便宜，百亿补贴常有大额券",
+          "sort": 2
+        },
+        {
+          "site": "https://www.smzdm.com",
+          "note": "全网好价爆料站，薅羊毛先看这里",
+          "sort": 3
+        },
+        {
+          "site": "https://www.manmanbuy.com",
+          "note": "查历史价神器，先看价再决定买不买",
+          "sort": 4
+        },
+        {
+          "site": "https://www.fanli.com",
+          "note": "下单走返利链接，买完还能再拿回一笔",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "slug": "novel-film-tracking",
+      "title": "小说影视追更",
+      "description": "小说电影，追更不愁：好书追连载，好片看上映",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://www.jjwxc.net",
+          "note": "女频小说大本营，言情与原创网文最齐全",
+          "sort": 0
+        },
+        {
+          "site": "https://fanqie.com",
+          "note": "免费小说全，追更不花钱，热门榜单更新快",
+          "sort": 1
+        },
+        {
+          "site": "https://www.zongheng.com",
+          "note": "男频与玄幻老牌站，经典完结文多",
+          "sort": 2
+        },
+        {
+          "site": "https://www.douban.com",
+          "note": "先看评分再追剧，片单书单都靠它",
+          "sort": 3
+        },
+        {
+          "site": "https://www.mtime.com",
+          "note": "电影资料库与评分，新片资讯全",
+          "sort": 4
+        },
+        {
+          "site": "https://www.taopiaopiao.com",
+          "note": "新片上映与购票，追热门电影看这里",
           "sort": 5
         }
       ]

@@ -188,6 +188,34 @@ export const FEATURED_COLLECTION_EDITORIALS: FeaturedCollectionEditorial[] = [
       { id: "act-2", title: "第二幕 · 追前沿管文献", description: "预印本追最新成果，PubMed 查医学文献，Zotero 把引用收好。", siteUrls: ["https://arxiv.org", "https://pubmed.ncbi.nlm.nih.gov", "https://www.zotero.org"] },
     ],
   },
+  {
+    slug: "shopping-saver",
+    title: "网购省钱指南",
+    valueProposition: "先比价，再下单",
+    intro: "下单前多看一眼，往往能省下一顿饭。这期把购物分成两幕：先上大站挑东西，再用比价、返利工具把价格压到最低。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的购物与比价平台；价格与优惠随时会变，下单前请以商品页为准，返利到账以各平台规则为准，切勿轻信先付款后返现的私人交易。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("网购省钱指南"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 大站买买买", description: "先上大站挑东西：品类全、物流快，是网购的主阵地。", siteUrls: ["https://www.taobao.com", "https://www.jd.com", "https://www.pinduoduo.com"] },
+      { id: "act-2", title: "第二幕 · 先比价再下单", description: "爆料、历史价、返利三件套，把价格压到最低。", siteUrls: ["https://www.smzdm.com", "https://www.manmanbuy.com", "https://www.fanli.com"] },
+    ],
+  },
+  {
+    slug: "novel-film-tracking",
+    title: "小说影视追更",
+    valueProposition: "小说电影，追更不愁",
+    intro: "好书怕断更，好片怕错过。这期把追更分成两幕：先追小说连载，再追电影上映，书影两不误。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的小说与电影平台；小说连载更新以各站为准，电影票价与排片请以影院实际为准。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("小说影视追更"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 追小说", description: "先追小说连载：女频、免费、男频各有去处。", siteUrls: ["https://www.jjwxc.net", "https://fanqie.com", "https://www.zongheng.com"] },
+      { id: "act-2", title: "第二幕 · 追电影", description: "再追电影上映：先看评分挑片，再抢新片票。", siteUrls: ["https://www.douban.com", "https://www.mtime.com", "https://www.taopiaopiao.com"] },
+    ],
+  },
 ];
 
 export function getFeaturedEditorial(slug: string): FeaturedCollectionEditorial | undefined {

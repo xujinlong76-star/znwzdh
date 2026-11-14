@@ -3,7 +3,7 @@
  * 部署后把站点 URL 批量推送给 IndexNow（Bing / Yandex / Naver / Seznam 共用端点）。
  *
  * 用法：
- *   INDEXNOW_KEY=<8-128位字母数字> NAVHUB_SITE_URL=https://your.site node scripts/indexnow.mjs
+ *   NAVHUB_INDEXNOW_KEY=<8-128位字母数字> NAVHUB_SITE_URL=https://your.site node scripts/indexnow.mjs
  *   node scripts/indexnow.mjs --base=https://your.site --dry-run
  *   node scripts/indexnow.mjs --sitemap=https://your.site/sitemap.xml --skip-key-check
  *
@@ -36,14 +36,14 @@ function fail(message) {
 }
 
 const base = (valueOf("base") ?? process.env.NAVHUB_SITE_URL ?? "").trim().replace(/\/+$/, "");
-const key = (process.env.INDEXNOW_KEY ?? "").trim();
+const key = (process.env.NAVHUB_INDEXNOW_KEY || process.env.INDEXNOW_KEY || "").trim();
 const dryRun = flags.has("--dry-run");
 const skipKeyCheck = flags.has("--skip-key-check");
 
 if (!base) fail("缺少站点地址：用 --base=https://your.site 或设置 NAVHUB_SITE_URL");
 if (!/^https?:\/\/[^/?#\s]+$/i.test(base)) fail(`站点地址必须是纯 origin（当前：${base}）`);
 if (!/^[A-Za-z0-9-]{8,128}$/.test(key)) {
-  fail("INDEXNOW_KEY 必须是 8-128 位字母/数字/连字符（IndexNow 协议要求）");
+  fail("NAVHUB_INDEXNOW_KEY（或兼容别名 INDEXNOW_KEY）必须是 8-128 位字母/数字/连字符（IndexNow 协议要求）");
 }
 
 const baseUrl = new URL(base);

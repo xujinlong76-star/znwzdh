@@ -261,6 +261,18 @@ services:
       # 不设闸门的后果由全体真实用户承担——出口 IP 被目标站拉黑后全都解析失败。
       NAVHUB_BILI_PARSE_MAX_CONCURRENT: ${NAVHUB_BILI_PARSE_MAX_CONCURRENT:-8}
       NAVHUB_BILI_PARSE_MAX_PER_MIN: ${NAVHUB_BILI_PARSE_MAX_PER_MIN:-12}
+      # GitHub 登录 / 匿名投稿转 Issue / GA：以前 compose 完全没透传 → 容器里 GitHub
+      # 登录与投稿建 Issue 恒关。只透传不兜底：CLIENT_SECRET / PAT 是凭据，别写默认值。
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_OWNER: ${GITHUB_OWNER:-}
+      GITHUB_REPO: ${GITHUB_REPO:-}
+      GITHUB_BRANCH: ${GITHUB_BRANCH:-main}
+      GITHUB_PAT: ${GITHUB_PAT:-}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      NAVHUB_ADMIN_IDS: ${NAVHUB_ADMIN_IDS:-}
+      GA_ID: ${GA_ID:-}
 
   mcp:
     build:

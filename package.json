@@ -66,6 +66,7 @@
     "seo:audit": "node scripts/seo-audit.mjs",
     "seo:html-budget": "node scripts/html-budget.mjs",
     "seo:indexnow": "node scripts/indexnow.mjs",
+    "seo:indexnow-submit": "node scripts/indexnow-submit.mjs",
     "lint": "pnpm --filter navsphere lint",
     "//lint:backend": "后端静态检查（P1-8）：三条规则已是 error 级 + --max-warnings 0，`pnpm verify` 与 CI 的 lint:backend 步骤都阻断（那步的 continue-on-error 于 2026-11-01 撤掉）。阻塞作业里另有 apps/api/test/backend-lint-gate.test.ts 跑同一份配置并给逐条明细，这条配对由 scripts/check-ci-gate.mjs 第 5 项守住。",
     "lint:backend": "pnpm --filter @navhub/api --filter @navhub/store run lint",

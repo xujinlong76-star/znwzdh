@@ -66,6 +66,7 @@ import { identityRoutes } from "./routes/identity.ts";
 import { auditRoutes } from "./routes/audit.ts";
 import { statsRoutes } from "./routes/stats.ts";
 import { submissionRoutes } from "./routes/submissions.ts";
+import { siteReportRoutes } from "./routes/site-reports.ts";
 import { pluginRoutes } from "./routes/plugins.ts";
 import { pluginAuditRoutes } from "./routes/plugin-audit.ts";
 import { pluginOverlapRoutes } from "./routes/plugin-overlap.ts";
@@ -731,6 +732,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(auditRoutes, { ctx });
   await app.register(statsRoutes, { ctx });
   await app.register(submissionRoutes, { ctx });
+  await app.register(siteReportRoutes, { ctx });
   await app.register(pluginRoutes, { ctx });
   await app.register(pluginAuditRoutes, { ctx });
   await app.register(pluginOverlapRoutes, { ctx });

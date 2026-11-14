@@ -449,6 +449,21 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS auth_tokens_hash_idx ON auth_tokens(token_hash)",
     "CREATE TABLE IF NOT EXISTS submission_owners (site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, identity TEXT NOT NULL, created_at BIGINT NOT NULL)",
     "CREATE INDEX IF NOT EXISTS submission_owners_identity_idx ON submission_owners(identity)",
+    // 站点纠错上报（升级第 10 条）：匿名可报，不设登录门槛；上报只进复核队列，
+    // 绝不直接改数据。kinds 存 JSON 字符串（与 jobs.payload 同口径，TEXT 双库通用）；
+    // status 流转 open → in_progress → resolved / rejected，只走管理员 PATCH。
+    `CREATE TABLE IF NOT EXISTS site_reports (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      kinds TEXT NOT NULL,
+      detail TEXT NOT NULL,
+      contact TEXT,
+      source TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'rejected')),
+      created_at BIGINT NOT NULL
+    )`,
+    "CREATE INDEX IF NOT EXISTS site_reports_site_idx ON site_reports(site_id)",
+    "CREATE INDEX IF NOT EXISTS site_reports_status_created_idx ON site_reports(status, created_at DESC, id DESC)",
     "CREATE INDEX IF NOT EXISTS api_tokens_owner_idx ON api_tokens(owner_identity)",
     // 收藏域补索引：`WHERE site_id = ?`（站点详情/清理）与 `WHERE user_id=? AND folder_id=?`
     // （收藏夹视图）此前只能走 user_id 单列索引或全表扫。

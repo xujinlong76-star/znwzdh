@@ -20,6 +20,7 @@ import {
   Monitor,
   Database,
   Inbox,
+  Flag,
   History,
   Trash2,
   Menu,
@@ -116,6 +117,11 @@ const menuItems = [
     title: "投稿审核",
     href: "/admin/submissions",
     icon: Inbox
+  },
+  {
+    title: "站点纠错",
+    href: "/admin/site-reports",
+    icon: Flag
   },
   {
     title: "插件市场",

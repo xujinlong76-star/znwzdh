@@ -15,7 +15,7 @@
  * 4. 向量相似推荐：基于嵌入向量 KNN 的相关站点发现
  */
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { FavoriteButton } from '@/components/favorite-button'
@@ -43,6 +43,7 @@ import {
   X,
   MonitorPlay,
   FileText,
+  Flag,
   Loader2,
   RefreshCw,
   type LucideIcon,
@@ -72,6 +73,21 @@ import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
 import { useSiteViewModel } from '@/components/site-view-context'
 import { externalLinkRelAttr } from '@/lib/site-settings'
+import { useToast } from '@/components/ui/use-toast'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  reportSiteIssue,
+  SITE_REPORT_KINDS,
+  SITE_REPORT_KIND_LABELS,
+  type SiteReportKind,
+} from '@/lib/site-report'
 
 const RELATION_TYPE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
   alternative: {
@@ -222,6 +238,14 @@ export function SiteDetailView({
   const [notFound, setNotFound] = useState(false)
   const { copyFeedback, reportCopy } = useCopyFeedback()
   const { copyFeedback: mdCopyFeedback, reportCopy: reportMdCopy } = useCopyFeedback()
+  /** 纠错上报（升级第 10 条）：弹窗状态放顶层，三个 early return 之前声明 */
+  const { toast } = useToast()
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportKinds, setReportKinds] = useState<SiteReportKind[]>([])
+  const [reportDetail, setReportDetail] = useState('')
+  const [reportContact, setReportContact] = useState('')
+  const [reportSubmitting, setReportSubmitting] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
 
   const handleCopyMarkdown = async () => {
     if (!site?.url || !site?.title) return
@@ -486,6 +510,44 @@ export function SiteDetailView({
   // 没有收录时间时回落到 `*`（最新快照）。
   const waybackUrl = buildDeadLinkWaybackUrl(site.url, site.createdAt)
 
+  /** 纠错上报：打开弹窗时默认勾选（已确认死链的站默认勾「链接打不开」） */
+  const openReportDialog = () => {
+    setReportKinds(isDeadLink ? ['dead-link'] : [])
+    setReportDetail('')
+    setReportContact('')
+    setReportError(null)
+    setReportOpen(true)
+  }
+
+  const toggleReportKind = (kind: SiteReportKind) => {
+    setReportKinds((prev) =>
+      prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind],
+    )
+  }
+
+  /** 提交失败时弹窗不关、文字保留、原地给诚实报错；成功才 toast 并关闭 */
+  const submitReport = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!site || reportSubmitting) return
+    setReportSubmitting(true)
+    setReportError(null)
+    try {
+      await reportSiteIssue({
+        siteId: site.id,
+        kinds: reportKinds,
+        detail: reportDetail,
+        contact: reportContact || undefined,
+        source: 'site-detail',
+      })
+      setReportOpen(false)
+      toast({ title: '已收到，谢谢', description: '我们会人工复核后修正。' })
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : '提交失败，请稍后再试')
+    } finally {
+      setReportSubmitting(false)
+    }
+  }
+
   return (
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 max-w-4xl mx-auto space-y-8">
@@ -709,6 +771,18 @@ export function SiteDetailView({
                   description: site.description ?? undefined,
                 }}
               />
+              {/* 纠错上报（升级第 10 条）：站内按钮，不是外链；零门槛，匿名可报 */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={openReportDialog}
+                className="h-9 text-xs px-3 gap-1.5 font-medium cursor-pointer"
+                aria-label="报告本站信息有误"
+              >
+                <Flag className="w-3.5 h-3.5 text-muted-foreground" />
+                <span>信息有误</span>
+              </Button>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground/80 font-mono">
               {(site.visitCount ?? 0) > 0 && (
@@ -723,6 +797,89 @@ export function SiteDetailView({
             </div>
           </div>
         </div>
+
+        {/* 纠错上报弹窗（升级第 10 条）：种类复选 + 详情 + 联系方式（可选） */}
+        <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+          <DialogContent aria-label="报告本站问题">
+            <DialogHeader>
+              <DialogTitle>报告本站问题</DialogTitle>
+              <DialogDescription>
+                告诉我们哪里不对，我们人工复核后修正。上报只进复核队列，不会立刻改数据。
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={submitReport} className="space-y-4">
+              <fieldset>
+                <legend className="text-sm font-medium mb-2">问题类型（可多选）</legend>
+                <div className="flex flex-wrap gap-2">
+                  {SITE_REPORT_KINDS.map((kind) => (
+                    <label
+                      key={kind}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border/70 px-3 py-1.5 text-xs cursor-pointer hover:bg-accent"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={reportKinds.includes(kind)}
+                        onChange={() => toggleReportKind(kind)}
+                        className="accent-primary"
+                      />
+                      {SITE_REPORT_KIND_LABELS[kind]}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="space-y-1.5">
+                <label htmlFor="site-report-detail" className="text-sm font-medium">
+                  具体情况
+                </label>
+                <textarea
+                  id="site-report-detail"
+                  value={reportDetail}
+                  onChange={(e) => setReportDetail(e.target.value)}
+                  rows={4}
+                  maxLength={2000}
+                  placeholder="请具体说明哪里不对（5–2000 字），比如：链接点开是 404 / 描述里的功能早已下线…"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+                <p className="text-xs text-muted-foreground text-right">
+                  {reportDetail.trim().length}/2000 字
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="site-report-contact" className="text-sm font-medium">
+                  联系方式（可选）
+                </label>
+                <input
+                  id="site-report-contact"
+                  type="text"
+                  value={reportContact}
+                  onChange={(e) => setReportContact(e.target.value)}
+                  maxLength={200}
+                  placeholder="邮箱或其它联系方式，方便我们追问"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              {reportError && (
+                <p role="alert" className="text-sm text-destructive-text">
+                  {reportError}
+                </p>
+              )}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setReportOpen(false)}
+                  className="cursor-pointer"
+                >
+                  取消
+                </Button>
+                <Button type="submit" size="sm" disabled={reportSubmitting} className="cursor-pointer">
+                  {reportSubmitting ? '提交中…' : '提交上报'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         {/* 死链与失联自愈引导横幅 */}
         {isDeadLink && (

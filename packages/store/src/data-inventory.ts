@@ -276,6 +276,10 @@ export const USER_DATA_EXEMPT_TABLES: readonly string[] = [
   "hotlist_entries",
   "hotlist_sources",
   "daily_briefs",
+  // 站点纠错上报（升级第 10 条）：匿名公共反馈队列。source 是上报来源枚举
+  // （site-detail / search），不是用户身份；contact 是可选自由文本，不与账号
+  // 挂钩，注销无法按用户映射行；复核队列本身属于公共治理数据，不随注销删除。
+  "site_reports",
 ];
 
 /** 注销时走通用精确删除的表（custom/key-prefix/nullify 由 deleteUserData 单独处理） */

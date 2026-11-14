@@ -2,7 +2,7 @@
  * 种子插件：组合包（bundle）×6。
  *
  * 约束（见 docs/PLUGIN-MARKET-ENHANCEMENTS-2026-10-19.md 的 F4 受限范围）：
- *   - 单层引用，成员只允许 site-pack / search-pack / theme；
+ *   - 单层引用，成员只允许 search-pack / theme（2026-11-15 卸载 34 个 site-packs 后不再引用网址包）；
  *   - 成员必须已上架且 kind 与真实清单一致（apps/api/test/seed-plugins.test.ts 守门）；
  *   - 单个组合包最多 12 个成员。
  *
@@ -27,10 +27,6 @@ export const newsReaderBundle: SeedPluginDef = {
     tags: ["组合包", "资讯", "阅读", "起步"],
     payload: {
       items: [
-        { slug: "news-media-cn", kind: "site-pack" },
-        { slug: "finance-wealth", kind: "site-pack" },
-        { slug: "media-entertainment", kind: "site-pack" },
-        { slug: "gov-public-service", kind: "site-pack" },
         { slug: "cn-search-arsenal", kind: "search-pack" },
         { slug: "academic-search-arsenal", kind: "search-pack" },
         { slug: "paper-latte", kind: "theme" },
@@ -56,13 +52,6 @@ export const lifeEssentialsBundle: SeedPluginDef = {
     tags: ["组合包", "生活", "民生", "必备"],
     payload: {
       items: [
-        { slug: "shopping-ecommerce", kind: "site-pack" },
-        { slug: "health-wellness", kind: "site-pack" },
-        { slug: "travel-mobility", kind: "site-pack" },
-        { slug: "gov-public-service", kind: "site-pack" },
-        { slug: "edu-learning", kind: "site-pack" },
-        { slug: "media-entertainment", kind: "site-pack" },
-        { slug: "jobs-career", kind: "site-pack" },
         { slug: "cn-search-arsenal", kind: "search-pack" },
         { slug: "sunlit-amber", kind: "theme" },
         { slug: "paper-latte", kind: "theme" },
@@ -87,10 +76,6 @@ export const learnerBundle: SeedPluginDef = {
     tags: ["组合包", "学习", "学术", "成长"],
     payload: {
       items: [
-        { slug: "edu-learning", kind: "site-pack" },
-        { slug: "learn-growth-arsenal", kind: "site-pack" },
-        { slug: "software-utilities", kind: "site-pack" },
-        { slug: "seed-dev-efficiency", kind: "site-pack" },
         { slug: "academic-search-arsenal", kind: "search-pack" },
         { slug: "dev-search-arsenal", kind: "search-pack" },
         { slug: "paper-latte", kind: "theme" },
@@ -116,11 +101,6 @@ export const investorBundle: SeedPluginDef = {
     tags: ["组合包", "投资", "财经", "研究"],
     payload: {
       items: [
-        { slug: "finance-wealth", kind: "site-pack" },
-        { slug: "news-media-cn", kind: "site-pack" },
-        { slug: "jobs-career", kind: "site-pack" },
-        { slug: "gov-public-service", kind: "site-pack" },
-        { slug: "software-utilities", kind: "site-pack" },
         { slug: "academic-search-arsenal", kind: "search-pack" },
         { slug: "cn-search-arsenal", kind: "search-pack" },
         { slug: "nord-frost", kind: "theme" },
@@ -146,12 +126,6 @@ export const creatorBundle: SeedPluginDef = {
     tags: ["组合包", "创作者", "运营", "素材"],
     payload: {
       items: [
-        { slug: "media-entertainment", kind: "site-pack" },
-        { slug: "growth-marketing", kind: "site-pack" },
-        { slug: "seed-design-inspiration", kind: "site-pack" },
-        { slug: "creator-ops-arsenal", kind: "site-pack" },
-        { slug: "ai-tools-arsenal", kind: "site-pack" },
-        { slug: "front-end-arsenal", kind: "site-pack" },
         { slug: "cn-search-arsenal", kind: "search-pack" },
         { slug: "dev-search-arsenal", kind: "search-pack" },
         { slug: "gruvbox-retro", kind: "theme" },
@@ -177,10 +151,6 @@ export const gamerBundle: SeedPluginDef = {
     tags: ["组合包", "游戏", "电竞", "玩家"],
     payload: {
       items: [
-        { slug: "gaming-esports", kind: "site-pack" },
-        { slug: "media-entertainment", kind: "site-pack" },
-        { slug: "software-utilities", kind: "site-pack" },
-        { slug: "ai-tools-arsenal", kind: "site-pack" },
         { slug: "cn-search-arsenal", kind: "search-pack" },
         { slug: "dev-search-arsenal", kind: "search-pack" },
         { slug: "gruvbox-retro", kind: "theme" },

@@ -20,15 +20,10 @@ export const aiAgenticFutureBundle: SeedPluginDef = {
     tags: ["AI", "Agent", "MCP", "全家桶", "组合包", "前沿生态"],
     payload: {
       items: [
-        { slug: "ai-agentic-coding", kind: "site-pack" },
-        { slug: "mcp-ecosystem-arsenal", kind: "site-pack" },
-        { slug: "open-models-local-inference", kind: "site-pack" },
-        { slug: "ai-tools-arsenal", kind: "site-pack" },
         { slug: "ai-deep-search-pack", kind: "search-pack" },
         { slug: "code-and-package-search-pack", kind: "search-pack" },
         { slug: "catppuccin-mocha", kind: "theme" },
         { slug: "oled-pure-black", kind: "theme" },
-        { slug: "indie-hacker-global-saas", kind: "site-pack" },
       ],
     },
   },

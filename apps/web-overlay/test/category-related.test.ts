@@ -39,7 +39,7 @@ const CATEGORIES: HubCategory[] = [
 const COUNTS = new Map<string, number>([
   ['b', 30],
   ['c', 50],
-  ['d', 12],
+  ['d', 5],
   ['thin', 3],
   ['off', 99],
 ])
@@ -58,13 +58,13 @@ describe('resolveRelatedCategories：curated 顺序保留，只链达标分类',
     expect(out.filter((c) => c.id === 'b')).toHaveLength(1)
   })
 
-  it('薄分类（< 12 站）与已停用分类不链——链过去是 404 死链', () => {
+  it('薄分类（< 5 站）与已停用分类不链——链过去是 404 死链', () => {
     const out = resolveRelatedCategories(CATEGORIES[0], CATEGORIES, COUNTS)
     expect(out.map((c) => c.id)).not.toContain('thin')
     expect(out.map((c) => c.id)).not.toContain('off')
   })
 
-  it('恰好达标（12 站）能链', () => {
+  it('恰好达标（5 站）能链', () => {
     expect(COUNTS.get('d')).toBe(MIN_SITES_FOR_CATEGORY_INDEX)
     expect(resolveRelatedCategories(CATEGORIES[0], CATEGORIES, COUNTS).map((c) => c.id)).toContain('d')
   })

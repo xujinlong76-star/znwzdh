@@ -16,7 +16,8 @@
  */
 
 /** 分类页（含一级根页，站点数按后代聚合） */
-export const MIN_SITES_FOR_CATEGORY_INDEX = 12
+// 2026-11-15：卸载 34 个 site-packs 后种子只剩约 325 站精选站，门槛下调为 5/5（用户 2026-11-13 决定）；旧的 12/10 是按约 4765 站 pack 库定格的，见下文。
+export const MIN_SITES_FOR_CATEGORY_INDEX = 5
 
 /**
  * 标签页。
@@ -24,7 +25,7 @@ export const MIN_SITES_FOR_CATEGORY_INDEX = 12
  * 5 → 10 的依据见上：满量数据集下 5 会放出 961 个零描述薄页，10 收敛到 420。
  * 这个数是**可调参数**，不是硬约束——补完标签描述后可以再评估是否放宽。
  */
-export const MIN_SITES_FOR_TAG_INDEX = 10
+export const MIN_SITES_FOR_TAG_INDEX = 5
 
 /**
  * sitemap 站点分页大小。

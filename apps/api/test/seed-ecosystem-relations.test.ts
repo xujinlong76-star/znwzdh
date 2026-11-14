@@ -9,7 +9,7 @@
  *   · 反向关系推不出来（incoming 恒空，要 target_site_id 有值）；
  *   · 运营 PUT 一次手工编辑，兜底条件（表为空）就不成立了，那条站点的策划平替整批消失。
  * events 的零结果计量里 `chatgpt 平替` ×5 / `figma 平替` ×1 / `notion 平替` ×1 要的恰恰是这份数据
- * （2026-10-31 本机库）。
+ * （2026-10-31 本机实测；2026-11-15 卸载后 figma / notion 的平替边已删，chatgpt 剩 3 条边）。
  *
  * 钉住的八件事，逐条都对应一次真实翻车方式：
  *   1. 库里一个站点都没有时，策划边一条都不写，且**每个源站都被点名**（不许静默成功）；
@@ -103,7 +103,7 @@ describe("seedEcosystemRelations", () => {
     for (const rel of curated) {
       targets.set(ecosystemUrlKey(rel.targetUrl)!, (await addSite(rel.targetUrl, rel.targetTitle)).id);
     }
-    // 落库**之前**读路径就已经有 6 条了 —— 那是 rowToSite 现算的内存兜底（没有 id / targetSiteId）。
+  // 落库**之前**读路径就已经有 3 条了——那是 rowToSite 现算的内存兜底（没有 id / targetSiteId）。
     // 「运营编辑过就让路」的判据如果用它，每个策划源站都会被判成已编辑，种子一条也写不进。
     const before = (await ctx.repo.getDetailedSiteRelations(source.id)).outgoing;
     expect(before).toHaveLength(curated.length);
@@ -125,20 +125,21 @@ describe("seedEcosystemRelations", () => {
     }
   });
 
+// 2026-11-15：原用 notion.com，其 5 条平替边目标全在已删网址包里，已随 ecosystem.ts 删边；改用 vercel.com（剩 3 条边：coolify.io / zeabur.com / cloudflare pages）继续覆盖 www + 尾斜杠归一。
   it("库里是 www + 尾斜杠形态也算同一条产品，不报成站外目标", async () => {
-    const curated = ECOSYSTEM_MAP["notion.com"].relations ?? [];
-    const source = await addSite("https://www.notion.com/", "Notion");
+  const curated = ECOSYSTEM_MAP["vercel.com"].relations ?? [];
+  const source = await addSite("https://www.vercel.com/", "Vercel");
     const stored = new Map<string, string>();
     for (const rel of curated) {
       const key = ecosystemUrlKey(rel.targetUrl)!;
-      // 把 obsidian.md 存成带 www 和尾斜杠的形态，其余按策划原样
-      const url = key === "obsidian.md" ? "https://www.obsidian.md/" : rel.targetUrl;
+    // 把 zeabur.com 存成带 www 和尾斜杠的形态，其余按策原样
+    const url = key === "zeabur.com" ? "https://www.zeabur.com/" : rel.targetUrl;
       stored.set(key, (await addSite(url, rel.targetTitle)).id);
     }
 
     const res = await seedEcosystemRelations(ctx.repo, await siteRows());
-    expect(res.missingSources).not.toContain("notion.com");
-    expect(res.danglingTargets.filter((d) => d.startsWith("notion.com → "))).toEqual([]);
+  expect(res.missingSources).not.toContain("vercel.com");
+  expect(res.danglingTargets.filter((d) => d.startsWith("vercel.com →"))).toEqual([]);
 
     const outgoing = (await ctx.repo.getDetailedSiteRelations(source.id)).outgoing;
     expect(outgoing).toHaveLength(curated.length);
@@ -147,12 +148,13 @@ describe("seedEcosystemRelations", () => {
     }
   });
 
+// 2026-11-15：原用 figma.com，其 2 条平替边（penpot.app / pixso.cn）目标全在已删网址包里，已随 ecosystem.ts 删边；改用 unsplash.com（剩 2 条边：pexels.com / pixabay.com，[0] 入库、[1] 留库外，仍覆盖边落库但 targetSiteId 为 null 的行为）。
   it("目标站没收录：边照样落，但点名进 danglingTargets", async () => {
-    const key = "figma.com";
+  const key = "unsplash.com";
     const curated = ECOSYSTEM_MAP[key].relations ?? [];
     expect(curated.length).toBeGreaterThan(0);
 
-    const source = await addSite("https://www.figma.com/", "Figma");
+  const source = await addSite("https://www.unsplash.com/", "Unsplash");
     // 只收第一条平替，其余留在库外
     const inLibrary = await addSite(curated[0].targetUrl, curated[0].targetTitle);
 
@@ -255,27 +257,11 @@ describe("seedEcosystemRelations", () => {
    *   · 账上的目标已经不悬空（种子收下了 / 策划边删了）→ 也红：把账收紧。
    * 归属不是注释：断言该网址包的 payload 里真有这条 URL（归一后精确匹配）。
    * 2026-10-31 建账时 23 条悬空里 7 条哪儿都不在（npmmirror / Coolify / Zeabur / Cloudflare Pages /
-   * Pexels / Pixabay / Draw.io），已补进内置种子；剩下 16 条全部由下列网址包认领。
+   * Pexels / Pixabay / Draw.io），已补进内置种子；剩下 16 条已随 2026-11-15 卸载 34 个 site-packs 连同平替边一起删掉，账本清空；三条断言原样保留作守卫。
    */
-  const DANGLING_TARGET_PACKS: Record<string, string> = {
-    "continue.dev": "seed-dev-efficiency",
-    "kimi.com": "ai-tools-arsenal",
-    "gemini.google.com": "ai-tools-arsenal",
-    "chatglm.cn": "ai-tools-arsenal",
-    "gitlab.com": "seed-dev-efficiency",
-    "penpot.app": "seed-design-inspiration",
-    "pixso.cn": "seed-design-inspiration",
-    "squoosh.app": "front-end-arsenal",
-    "tldraw.com": "seed-design-inspiration",
-    "lucide.dev": "front-end-arsenal",
-    "appflowy.com": "homelab-selfhosted-pro",
-    "obsidian.md": "seed-dev-efficiency",
-    "affine.pro": "homelab-selfhosted-pro",
-    "logseq.com": "seed-dev-efficiency",
-    "b3log.org/siyuan": "seed-dev-efficiency",
-  };
+  const DANGLING_TARGET_PACKS: Record<string, string> = {};
 
-  it("冷启动剩下的悬空平替有主：每条钉到具体网址包，账只能缩不能长", () => {
+  it("冷启动不再有悬空平台替身：账本已随网址包卸载清空，三条记账守卫仍在", () => {
     const packs = new Map(
       allSeedPluginDefs
         .filter((def) => (def.manifest as { kind?: string } | null)?.kind === "site-pack")

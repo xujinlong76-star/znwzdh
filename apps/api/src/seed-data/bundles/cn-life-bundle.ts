@@ -22,12 +22,6 @@ export const cnLifeBundle: SeedPluginDef = {
     tags: ["中文", "生活", "学习", "组合包"],
     payload: {
       items: [
-        { slug: "cn-daily-navigation", kind: "site-pack" },
-        { slug: "learn-growth-arsenal", kind: "site-pack" },
-        { slug: "shopping-ecommerce", kind: "site-pack" },
-        { slug: "health-wellness", kind: "site-pack" },
-        { slug: "travel-mobility", kind: "site-pack" },
-        { slug: "gov-public-service", kind: "site-pack" },
         { slug: "dev-search-arsenal", kind: "search-pack" },
         { slug: "cn-search-arsenal", kind: "search-pack" },
         { slug: "sunlit-amber", kind: "theme" },

@@ -22,11 +22,6 @@ export const aiPowerBundle: SeedPluginDef = {
     tags: ["AI", "效率", "组合包"],
     payload: {
       items: [
-        { slug: "ai-tools-arsenal", kind: "site-pack" },
-        { slug: "front-end-arsenal", kind: "site-pack" },
-        { slug: "backend-cloud-arsenal", kind: "site-pack" },
-        { slug: "seed-dev-efficiency", kind: "site-pack" },
-        { slug: "software-utilities", kind: "site-pack" },
         { slug: "dev-search-arsenal", kind: "search-pack" },
         { slug: "academic-search-arsenal", kind: "search-pack" },
         { slug: "aurora-emerald", kind: "theme" },

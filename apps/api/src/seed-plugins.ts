@@ -2,7 +2,7 @@
  * 插件市场种子数据入口（纯聚合器，不含内容）。
  *
  * 2026-10-20 内容升级批次后，全部插件定义都拆到了 `apps/api/src/seed-data/**`：
- *   site-packs/    20 个专业网址包（每包 18~20 分类 / 200~320 个站点，大型导航站规模）
+ *   site-packs/    已删除（2026-11-15 卸载 34 个网址包；种子不再含网址包）。
  *   search-packs   3 个搜索引擎包（!前缀全局唯一，可同时安装）
  *   themes         7 套完整主题（20 项色板变量 + 圆角）
  *   presets        5 个工作台预设
@@ -27,7 +27,7 @@ export interface SeedPluginDef {
   manifest: unknown;
 }
 
-/** 全部种子插件（排序见 seed-data/index.ts：网址包 → 搜索包 → 主题 → 预设 → 组合包）。 */
+/** 全部种子插件（排序见 seed-data/index.ts：搜索包 → 主题 → 预设 → 组合包）。 */
 export function seedPluginDefs(): SeedPluginDef[] {
   return allSeedPluginDefs;
 }

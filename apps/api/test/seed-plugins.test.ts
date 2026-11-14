@@ -10,11 +10,10 @@
  * 覆盖：
  *   1. 全部种子清单必须通过 core 契约校验（含字节上限）；
  *   2. slug 唯一、版本号 x.y.z、许可证为免费许可；
- *   3. 网址包达到专业导航规模：分类与站点数量达标，站点必须带
- *      描述/合法分类（必须引用包内已声明分类）/标签，URL 归一后不重复；
- *   3b. 包内分类必须解析得到权威树（CATEGORY_REGISTRY）的叶子：包内自洽但树里
- *      查无此叶 = 装完全进未分类，表面成功、归类丢失；并对「包×叶子」总覆盖面
- *      定棘轮（近义标题塌到同一叶 = 覆盖面缩水）；
+ *   3. 网址包已卸载（2026-11-15）：注册表不再含 site-pack；原来按包内站点
+ *      人口算的两条棘轮（包×叶子覆盖面、类目索引门槛覆盖率）人口清零，只断言
+ *      人口为 0 与门槛值仍为 5；原来逐包的规模 / 完整性 / 去重 / 落叶子用例
+ *      随包退役，精选站的去重与完整性由 seed-content / seed-dedupe 测试守门；
  *   4. 搜索引擎包：每个引擎带 {q}、前缀合法唯一、icon 为短文本（非远程地址）；
  *   5. 主题：包含完整色板 token 与圆角，而非只改一两个变量；
  *   6. 工作台预设：组件类型必须存在于前端注册表，且 col/rowSpan 落在该组件的
@@ -42,36 +41,29 @@ import { seedPluginDefs } from "../src/seed-plugins.ts";
 /** 允许在种子数据里出现的免费许可证（用户要求：插件全部免费提供下载使用） */
 const FREE_LICENSES = new Set(["MIT", "Apache-2.0", "GPL-3.0", "BSD-3-Clause"]);
 
-/**
- * 商用级网址包的内容下限。
- *
- * minCategories / minSites / minSitesPerCategory 是「单个包」的体量口径。
- * minLeafCoveragePairs 是「全市场」的口径：29 个包声明的分类解析到的**不同叶子**
- * 去重后的总覆盖对数。2026-10-22 实测 302（最差包 18 条垂类标题只塌到 1 个叶子），
- * 定档 300 只是防止继续缩水；P2b 逐包把近义标题改成 registry 叶子标题后要抬到
- * 「包数 × minCategories」量级。
- */
-const PROFESSIONAL_SITE_PACK = { minCategories: 18, minSites: 190, minSitesPerCategory: 6, minLeafCoveragePairs: 300 }
+// 网址包已卸载（2026-11-15）：PROFESSIONAL_SITE_PACK 随 34 个 site-packs 退役。
+// 原来按包内站点人口算的棘轮（单个包 minCategories 18 / minSites 190 /
+// minSitesPerCategory 6、全市场包×叶子覆盖对 minLeafCoveragePairs 300）
+// 人口已不存在；卸载守卫见下面的「网址包已卸载」describe。
 /** 商用级搜索引擎包的下限 */
 const PROFESSIONAL_SEARCH_PACK = { minEngines: 36 }
 /** 商用级主题的 token 下限（色板变量可用集合共 19 色 + 圆角 = 20 项，取满才算完整皮肤） */
 const PROFESSIONAL_THEME = { minTokens: 20 }
 /** 商用级工作台预设的下限（看板数 / 每看板模块数） */
 const PROFESSIONAL_PRESET = { minBoards: 4, minWidgetsPerBoard: 5 }
-/** 商用级组合包的成员数下限（一站式起步包） */
-const PROFESSIONAL_BUNDLE = { minItems: 8 }
+/** 商用级组合包的成员数下限（一站式起步包；2026-11-15 卸载后组合包只剩 search-pack / theme 成员，最小包 3 个成员，棘轮定格 3） */
+const PROFESSIONAL_BUNDLE = { minItems: 3 }
 
 /**
- * 市场整体规模下限（2026-10-20 内容升级批次后定档）。
+ * 市场整体规模下限（2026-11-15 卸载后重定格）。
  *
- * 用户口径是「像大型网址导航站那样」：单个包达标还不够，市场本身要有足够宽度。
- * 数值按当前实测略降留余量（实测：网址包 20 个 / 站点 4057 / 插件 52 /
- * 主题 10 / 预设 7 / 组合包 12），作为棘轮——只允许往上加，往下掉即红灯。
+ * 2026-11-13 用户决定缩回精选站：34 个网址包卸载后市场不再按「大型导航站」
+ * 的宽度算。数值按当前实测略降留余量（实测：网址包 0 个 / 包内站点 0 /
+ * 插件 42 / 搜索包 5 / 主题 14 / 预设 8 / 组合包 15），作为棘轮——
+ * 只允许往上加，往下掉即红灯。
  */
 const MARKET_SCALE = {
-  minSitePacks: 20,
-  minTotalPlugins: 50,
-  minTotalSites: 3900,
+  minTotalPlugins: 40,
   minSearchPacks: 3,
   minThemes: 9,
   minPresets: 6,
@@ -160,95 +152,24 @@ describe("插件市场种子数据：契约校验与元数据", () => {
   })
 })
 
-describe("网址包：达到专业导航站点的内容规模与完整度", () => {
-  const packs = () => collectValidated().items.filter((i) => i.manifest.kind === "site-pack")
+describe("网址包已卸载：注册表不再含 site-pack（2026-11-15 uninstall-4839）", () => {
+  const packs = () =>
+    collectValidated().items.filter((i) => i.manifest.kind === "site-pack")
 
-  it("每个网址包的分类与站点数量达标，且没有「空壳分类」", () => {
-    for (const item of packs()) {
-      const payload = item.manifest.payload as SitePackPayload
-      const categories = payload.categories ?? []
-      expect(categories.length, `${item.slug} 分类数不足专业导航标准`).toBeGreaterThanOrEqual(PROFESSIONAL_SITE_PACK.minCategories)
-      expect(payload.sites.length, `${item.slug} 站点数不足专业导航标准`).toBeGreaterThanOrEqual(PROFESSIONAL_SITE_PACK.minSites)
-
-      // 分类不能只是「声明了却没内容」：每个分类都要有足够站点撑起来
-      const perCategory = new Map<string, number>()
-      for (const site of payload.sites) perCategory.set(site.category ?? "", (perCategory.get(site.category ?? "") ?? 0) + 1)
-      for (const category of categories) {
-        const count = perCategory.get(category.title) ?? 0
-        expect(
-          count,
-          `${item.slug} 分类「${category.title}」只有 ${count} 个站点，低于 ${PROFESSIONAL_SITE_PACK.minSitesPerCategory} 个`,
-        ).toBeGreaterThanOrEqual(PROFESSIONAL_SITE_PACK.minSitesPerCategory)
-      }
-    }
+  // 2026-11-15：34 个 site-packs（apps/api/src/seed-data/site-packs/）随卸载删除，
+  // allSeedPluginDefs 里不再有网址包。下面三条是卸载守卫：注册表必须保持“无网址包”，
+  // 否则就是有人把包加回来了。原来按包内站点人口算的两条棘轮（包×叶子覆盖面、
+  // 类目索引门槛覆盖率）人口已不存在，计算原样保留，只断言人口为 0 与门槛值仍为 5。
+  // 原来逐包断言的规模 / 完整性 / 去重 / 落在权威树上的用例（分类与站点数量达标、
+  // 描述与标签齐全、URL 归一后不重复、分类解析到叶子）随包退役——它们的人口没有了，
+  // 空跑只会静默通过；精选站的去重与完整性由 seed-content / seed-dedupe 测试守门。
+  it("注册表里没有 site-pack：34 个网址包已删干净", () => {
+    expect(packs()).toHaveLength(0)
   })
 
-  it("站点数据完整：必有描述、标签，分类必须引用包内已声明的分类", () => {
-    for (const item of packs()) {
-      const payload = item.manifest.payload as SitePackPayload
-      const declared = new Set((payload.categories ?? []).map((c) => c.title))
-      for (const site of payload.sites) {
-        expect(site.description?.trim().length ?? 0, `${item.slug} 站点「${site.title}」缺少描述`).toBeGreaterThan(0)
-        expect(site.tags?.length ?? 0, `${item.slug} 站点「${site.title}」缺少标签`).toBeGreaterThan(0)
-        expect(site.category, `${item.slug} 站点「${site.title}」缺少分类`).toBeTruthy()
-        expect(declared.has(site.category ?? ""), `${item.slug} 站点「${site.title}」引用了未声明的分类：${site.category}`).toBe(true)
-      }
-    }
-  })
-
-  it("站点 URL 归一后无重复（契约已去重，此处防止包内多Host重复录入）", () => {
-    for (const item of packs()) {
-      const payload = item.manifest.payload as SitePackPayload
-      const seen = new Set<string>()
-      for (const site of payload.sites) {
-        const key = normalizePluginUrlKey(site.url)
-        expect(seen.has(key), `${item.slug} 站点 URL 重复：${site.url}`).toBe(false)
-        seen.add(key)
-      }
-    }
-  })
-})
-
-describe("网址包：分类必须落在权威树上（方案 §2.6 / P2a-7）", () => {
-  const packs = () => collectValidated().items.filter((i) => i.manifest.kind === "site-pack")
-
-  it("每个声明分类都解析得到叶子，且 parentCategory 与权威树的根一致", () => {
-    for (const item of packs()) {
-      const payload = item.manifest.payload as SitePackPayload
-      for (const category of payload.categories ?? []) {
-        const leaf = resolveRegistryLeaf(category.title)
-        expect(leaf, `${item.slug} 的分类「${category.title}」不在权威树里：安装时会落未分类并产 category_gap 提案`).toBeTruthy()
-        if (!leaf?.parentSlug) continue
-        if (!category.parentCategory) continue
-        const parent = resolveRegistryEntry(category.parentCategory)
-        expect(parent?.slug, `${item.slug} 的 parentCategory「${category.parentCategory}」不是权威树的一级根`).toBeTruthy()
-        const rootTitle = parent?.slug ? REGISTRY_BY_SLUG.get(parent.slug)?.title : undefined
-        expect(
-          parent?.slug === leaf.parentSlug,
-          `${item.slug} 分类「${category.title}」声明挂在「${rootTitle ?? category.parentCategory}」下，权威树里它的父级是「${REGISTRY_BY_SLUG.get(leaf.parentSlug)?.title ?? leaf.parentSlug}」`,
-        ).toBe(true)
-      }
-    }
-  })
-
-  it("站点引用的分类解析得到叶子，而不只是「包内声明过」", () => {
-    // 包内自造名与权威树可以各自成立：声明与站点都自洽、但树里查无此叶，
-    // 装完照样全进未分类。这条把口径从「包内一致」抬到「树内一致」。
-    for (const item of packs()) {
-      const payload = item.manifest.payload as SitePackPayload
-      for (const site of payload.sites) {
-        expect(
-          resolveRegistryLeaf(site.category),
-          `${item.slug} 站点「${site.title}」的分类「${site.category}」解析不到权威树叶子`,
-        ).toBeTruthy()
-      }
-    }
-  })
-
-  it("全市场对「不同叶子」的覆盖面是棘轮：包内近义标题塌到同一叶等于覆盖面缩水", () => {
-    // 每个包都声明 18–20 个分类，但它们解析到的**不同叶子**可以少得多：
-    // 实测 auto-driving 的 18 条垂类标题只解析出 1 个叶子。近义重复在 P2b
-    // 逐包改写内容时收敛，这里按「包×叶子」去重后的总覆盖面定档，只许升不许降。
+  it("包×叶子覆盖面：人口随网址包清零", () => {
+    // 原棘轮：29 个包声明的分类解析到不同叶子的（包，叶子）对数，下限 300。
+    // 包删掉后对数自然为 0；计算留着——以后若有人加回包，这条立刻按旧口径算出新数。
     const pairs = new Set<string>()
     const perPack: string[] = []
     for (const item of packs()) {
@@ -256,22 +177,21 @@ describe("网址包：分类必须落在权威树上（方案 §2.6 / P2a-7）",
       const leaves = new Set(
         (payload.categories ?? []).map((c) => resolveRegistryLeaf(c.title)?.slug).filter((s): s is string => Boolean(s)),
       )
-      for (const slug of leaves) pairs.add(`${item.slug}::${slug}`)
-      perPack.push(`${item.slug}=${leaves.size}/${(payload.categories ?? []).length}`)
+      for (const slug of leaves) pairs.add(`${item.slug}:${slug}`)
+      perPack.push(`${item.slug}:${leaves.size}/${(payload.categories ?? []).length}`)
     }
     expect(
       pairs.size,
-      `不同「包×叶子」覆盖面只剩 ${pairs.size}（下限 ${PROFESSIONAL_SITE_PACK.minLeafCoveragePairs}），各包分布：${perPack.join(" ")}`,
-    ).toBeGreaterThanOrEqual(PROFESSIONAL_SITE_PACK.minLeafCoveragePairs)
+      `不同「包×叶子」覆盖面只剩 ${pairs.size}，各包分布：${perPack.join(" ")}`,
+    ).toBe(0)
+    expect(perPack).toEqual([])
   })
 
-  it("类目索引门槛的站点覆盖率是棘轮（方案 P4-2 定档依据）", () => {
-    // 门槛值决定「哪些叶子有分类 hub」，写错不报错，只会让成片站点失去分类入口
-    // （SEO 方案 V4 初稿就按包内 536 个标题估出「门槛 12 砍掉 59% 入口」，实际按叶子
-    // 算是 89.6%）。所以把覆盖率钉成断言，而不是留在一次性脚本里。
-    // 这里的 12 必须与 apps/web-overlay/src/lib/seo/thresholds.ts 的
+  it("类目索引门槛的站点覆盖率：门槛仍为 5，包内站点人口为 0", () => {
+    // 门槛值决定「哪些叶子有分类 hub」，写错不报错，只会让成片站点失去分类入口。
+    // 这里的 5 必须与 apps/web-overlay/src/lib/seo/thresholds.ts 的
     // MIN_SITES_FOR_CATEGORY_INDEX 同口径（跨包无法直接 import，改一边就要改另一边）。
-    const MIN_SITES_PER_LEAF = 12
+    const MIN_SITES_PER_LEAF = 5
     const perLeaf = new Map<string, number>()
     let total = 0
     for (const item of packs()) {
@@ -282,14 +202,11 @@ describe("网址包：分类必须落在权威树上（方案 §2.6 / P2a-7）",
         total++
       }
     }
-    expect(total, "站点总数为 0 说明分类全解析不到叶子，上面的用例应该先红").toBeGreaterThan(0)
-    const qualified = [...perLeaf.values()].filter((n) => n >= MIN_SITES_PER_LEAF)
-    const covered = qualified.reduce((sum, n) => sum + n, 0)
-    expect(
-      covered / total,
-      `门槛 ${MIN_SITES_PER_LEAF} 只接住 ${covered}/${total}（${((covered / total) * 100).toFixed(1)}%）站点；` +
-        `达标叶子 ${qualified.length}/${perLeaf.size}，中位数 ${[...perLeaf.values()].sort((a, b) => a - b)[Math.floor(perLeaf.size / 2)]}`,
-    ).toBeGreaterThanOrEqual(0.85)
+    // 包内站点人口已随卸载清零：覆盖率分母不存在，0.85 的棘轮不再适用；
+    // 精选站的分类入口由 web 侧 category-hub / seo-invariants 按同一门槛 5 守门。
+    expect(total).toBe(0)
+    expect(perLeaf.size).toBe(0)
+    expect(MIN_SITES_PER_LEAF).toBe(5)
   })
 })
 
@@ -390,18 +307,15 @@ describe("组合包：成员必须真实存在、已上架、类型一致", () =
   })
 })
 
-describe("市场规模：像大型导航站那样有足够宽度", () => {
-  it("网址包数量、插件总数、站点总数与各类型覆盖均达标", () => {
+describe("市场规模：卸载后精选种子的宽度", () => {
+  it("插件总数与各类型覆盖均达标，网址包与包内站点已清零", () => {
     const { items } = collectValidated()
     const byKind = (kind: string) => items.filter((i) => i.manifest.kind === kind)
-    const totalSites = byKind("site-pack").reduce(
-      (sum, i) => sum + (i.manifest.payload as SitePackPayload).sites.length,
-      0,
-    )
 
-    expect(byKind("site-pack").length, "网址包数量不足，市场宽度不够").toBeGreaterThanOrEqual(MARKET_SCALE.minSitePacks)
+    // 2026-11-15：34 个网址包卸载后注册表里不应再有 site-pack，包内站点总数为 0；
+    // 下面两条是卸载守卫，不是规模下限。
+    expect(byKind("site-pack").length, "网址包已于 2026-11-15 卸载，注册表不应再出现 site-pack").toBe(0)
     expect(items.length, "插件总数不足").toBeGreaterThanOrEqual(MARKET_SCALE.minTotalPlugins)
-    expect(totalSites, "全部网址包的站点总数不足大型导航站规模").toBeGreaterThanOrEqual(MARKET_SCALE.minTotalSites)
     expect(byKind("search-pack").length, "搜索引擎包数量不足").toBeGreaterThanOrEqual(MARKET_SCALE.minSearchPacks)
     expect(byKind("theme").length, "主题数量不足").toBeGreaterThanOrEqual(MARKET_SCALE.minThemes)
     expect(byKind("workspace-preset").length, "工作台预设数量不足").toBeGreaterThanOrEqual(MARKET_SCALE.minPresets)

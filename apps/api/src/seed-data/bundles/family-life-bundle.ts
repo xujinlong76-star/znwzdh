@@ -25,14 +25,6 @@ export const familyLifeBundle: SeedPluginDef = {
     tags: ["家庭", "亲子", "宠物", "生活", "组合包"],
     payload: {
       items: [
-        { slug: "pet-family-parenting", kind: "site-pack" },
-        { slug: "health-wellness", kind: "site-pack" },
-        { slug: "edu-learning", kind: "site-pack" },
-        { slug: "learn-growth-arsenal", kind: "site-pack" },
-        { slug: "shopping-ecommerce", kind: "site-pack" },
-        { slug: "cn-daily-navigation", kind: "site-pack" },
-        { slug: "travel-mobility", kind: "site-pack" },
-        { slug: "gov-public-service", kind: "site-pack" },
         { slug: "cn-search-arsenal", kind: "search-pack" },
         { slug: "sakura-mist", kind: "theme" },
         { slug: "sunlit-amber", kind: "theme" },

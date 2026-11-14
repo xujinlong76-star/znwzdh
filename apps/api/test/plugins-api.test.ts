@@ -912,8 +912,8 @@ describe("种子热同步的内容判等（键序不是变更）", () => {
   }
 
   it("库内清单键序被打乱后仍是 up_to_date（否则每次同步都把整批插件刷成待审）", async () => {
-    const target = seedPluginDefs().find((d) => d.manifest.kind === "site-pack");
-    expect(target, "种子目录里没有 site-pack，无法构造这条用例").toBeTruthy();
+  const target = seedPluginDefs().find((d) => d.manifest.kind === "bundle");
+  expect(target, "种子目录里没有 bundle，无法构造这条用例").toBeTruthy();
     const slug = target!.slug;
 
     // 自给自足：单独跑本用例（-t）时前面的同步用例会被跳过，库里还没有种子

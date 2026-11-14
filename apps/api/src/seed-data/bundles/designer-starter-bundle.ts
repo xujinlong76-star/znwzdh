@@ -22,11 +22,6 @@ export const designerStarterBundle: SeedPluginDef = {
     tags: ["设计", "起步包", "组合", "灵感"],
     payload: {
       items: [
-        { slug: "seed-design-inspiration", kind: "site-pack" },
-        { slug: "front-end-arsenal", kind: "site-pack" },
-        { slug: "creator-ops-arsenal", kind: "site-pack" },
-        { slug: "growth-marketing", kind: "site-pack" },
-        { slug: "media-entertainment", kind: "site-pack" },
         { slug: "dev-search-arsenal", kind: "search-pack" },
         { slug: "cn-search-arsenal", kind: "search-pack" },
         { slug: "sunlit-amber", kind: "theme" },

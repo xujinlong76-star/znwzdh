@@ -22,12 +22,6 @@ export const fullstackProBundle: SeedPluginDef = {
     tags: ["全栈", "组合包", "效率", "开发"],
     payload: {
       items: [
-        { slug: "front-end-arsenal", kind: "site-pack" },
-        { slug: "backend-cloud-arsenal", kind: "site-pack" },
-        { slug: "seed-dev-efficiency", kind: "site-pack" },
-        { slug: "seed-design-inspiration", kind: "site-pack" },
-        { slug: "ai-tools-arsenal", kind: "site-pack" },
-        { slug: "software-utilities", kind: "site-pack" },
         { slug: "dev-search-arsenal", kind: "search-pack" },
         { slug: "academic-search-arsenal", kind: "search-pack" },
         { slug: "dracula-dark", kind: "theme" },

@@ -2,11 +2,11 @@
  * 种子数据聚合入口：把 `seed-data/**` 下的插件定义汇总成一份清单。
  *
  * 目录约定（2026-10-20 内容升级批次定型）：
- *   site-packs/   34 个专业网址包，一包一文件（每包 18~21 分类 / 190~223 站点）
+ *   site-packs/  已删除（2026-11-15 卸载 34 个网址包，种子只剩精选站）。
  *   search-packs  3 个搜索引擎包（!前缀全局唯一，可同时安装不互相覆盖）
  *   themes        完整主题皮肤（20 项色板变量 + 圆角）
  *   presets       工作台预设（模块 type 必须在 WIDGET_REGISTRY 且跨度合法）
- *   bundles       组合包（单层引用 site-pack / search-pack / theme）
+ *   bundles       组合包（单层引用 search-pack / theme）
  *
  * 拆分理由：主文件 `seed-plugins.ts` 峰值 280KB / 1770 行，评审与并发编辑成本都过高；
  * 现在新增或加深内容只动对应那一个文件，本入口只在新增文件时补一行登记。
@@ -15,41 +15,6 @@
  */
 import type { SeedPluginDef } from "./types.ts";
 
-// ---- 网址包（site-pack）×34 ----
-import { frontEndArsenal } from "./site-packs/front-end-arsenal.ts";
-import { seedDesignInspiration } from "./site-packs/seed-design-inspiration.ts";
-import { seedDevEfficiency } from "./site-packs/seed-dev-efficiency.ts";
-import { cnDailyNavigation } from "./site-packs/cn-daily-navigation.ts";
-import { aiToolsArsenal } from "./site-packs/ai-tools-arsenal.ts";
-import { backendCloudArsenal } from "./site-packs/backend-cloud-arsenal.ts";
-import { learnGrowthArsenal } from "./site-packs/learn-growth-arsenal.ts";
-import { creatorOpsArsenal } from "./site-packs/creator-ops-arsenal.ts";
-import { newsMediaPack } from "./site-packs/news-media.ts";
-import { shoppingEcommercePack } from "./site-packs/shopping-ecommerce.ts";
-import { mediaEntertainmentPack } from "./site-packs/media-entertainment.ts";
-import { financeWealthPack } from "./site-packs/finance-wealth.ts";
-import { eduLearningPack } from "./site-packs/edu-learning.ts";
-import { healthWellnessPack } from "./site-packs/health-wellness.ts";
-import { travelMobilityPack } from "./site-packs/travel-mobility.ts";
-import { jobsCareerPack } from "./site-packs/jobs-career.ts";
-import { gamingEsportsPack } from "./site-packs/gaming-esports.ts";
-import { growthMarketingPack } from "./site-packs/growth-marketing.ts";
-import { softwareUtilitiesPack } from "./site-packs/software-utilities.ts";
-import { govPublicServicePack } from "./site-packs/gov-public-service.ts";
-import { officeCollaborationPack } from "./site-packs/office-collaboration.ts";
-import { scienceHumanitiesPack } from "./site-packs/science-humanities.ts";
-import { petFamilyParentingPack } from "./site-packs/pet-family-parenting.ts";
-import { legalCompliancePack } from "./site-packs/legal-compliance.ts";
-import { autoDrivingPack } from "./site-packs/auto-driving.ts";
-import { foodDrinkPack } from "./site-packs/food-drink.ts";
-import { sportsOutdoorPack } from "./site-packs/sports-outdoor.ts";
-import { agricultureRuralPack } from "./site-packs/agriculture-rural.ts";
-import { lifeCarePack } from "./site-packs/life-care.ts";
-import { aiAgenticCoding } from "./site-packs/ai-agentic-coding.ts";
-import { mcpEcosystemArsenal } from "./site-packs/mcp-ecosystem-arsenal.ts";
-import { openModelsLocalInference } from "./site-packs/open-models-local-inference.ts";
-import { homelabSelfhostedPro } from "./site-packs/homelab-selfhosted-pro.ts";
-import { indieHackerGlobalSaas } from "./site-packs/indie-hacker-global-saas.ts";
 
 // ---- 搜索引擎包（search-pack）----
 import { devSearchArsenal } from "./search-packs/dev-search-arsenal.ts";
@@ -95,43 +60,8 @@ import {
   newsReaderBundle,
 } from "./bundles.ts";
 
-/** 全部种子插件：顺序刻意保持「网址包 → 搜索包 → 主题 → 预设 → 组合包」，便于按 kind 归档阅读。 */
+/** 全部种子插件：顺序刻意保持「搜索包 → 主题 → 预设 → 组合包」，便于按 kind 归档阅读。 */
 export const allSeedPluginDefs: SeedPluginDef[] = [
-  // 网址包
-  frontEndArsenal,
-  seedDesignInspiration,
-  seedDevEfficiency,
-  cnDailyNavigation,
-  aiToolsArsenal,
-  backendCloudArsenal,
-  learnGrowthArsenal,
-  creatorOpsArsenal,
-  newsMediaPack,
-  shoppingEcommercePack,
-  mediaEntertainmentPack,
-  financeWealthPack,
-  eduLearningPack,
-  healthWellnessPack,
-  travelMobilityPack,
-  jobsCareerPack,
-  gamingEsportsPack,
-  growthMarketingPack,
-  softwareUtilitiesPack,
-  officeCollaborationPack,
-  scienceHumanitiesPack,
-  petFamilyParentingPack,
-  legalCompliancePack,
-  autoDrivingPack,
-  foodDrinkPack,
-  sportsOutdoorPack,
-  agricultureRuralPack,
-  lifeCarePack,
-  govPublicServicePack,
-  aiAgenticCoding,
-  mcpEcosystemArsenal,
-  openModelsLocalInference,
-  homelabSelfhostedPro,
-  indieHackerGlobalSaas,
   // 搜索引擎包
   devSearchArsenal,
   cnSearchArsenal,

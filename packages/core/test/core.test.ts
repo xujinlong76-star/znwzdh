@@ -211,23 +211,22 @@ describe("个性化与相关性的关系（关键安全性质）", () => {
 });
 
 describe("4.0 生态增强与平替雷达", () => {
-  it("能匹配 Figma 的开源平替与社区深链", async () => {
+  it("Figma 的平替边已随网址包卸载清空：工作区仍是 design，不再返回开源平替", async () => {
     const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
     const data = getEnhancedSiteData("https://www.figma.com");
     expect(data.workspaces).toContain("design");
-    expect(data.relations).toBeDefined();
-    const penpot = data.relations?.find((r) => r.targetTitle === "Penpot");
-    expect(penpot).toBeDefined();
-    expect(penpot?.isFreeOrOpenSource).toBe(true);
-    expect(data.actions?.length).toBeGreaterThan(0);
+    // 2026-11-15：Penpot / Pixso 的平替边已删（目标站只在已删网址包里）；关系为空数组。
+    expect(data.relations).toEqual([]);
+    expect(data.relations?.find((r) => r.targetTitle === "Penpot")).toBeUndefined();
   });
 
-  it("能匹配 Notion 的本地化双链平替 Obsidian 与 AppFlowy", async () => {
+  it("Notion 的平替边已随网址包卸载清空：工作区仍是 efficiency，不再返回本地化双链平台", async () => {
     const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
-    const data = getEnhancedSiteData("https://notion.com");
+    const data = getEnhancedSiteData("https://www.notion.com");
     expect(data.workspaces).toContain("efficiency");
-    const obsidian = data.relations?.find((r) => r.targetTitle === "Obsidian");
-    expect(obsidian).toBeDefined();
+    // 2026-11-15：Obsidian / AppFlowy / Affine / Logseq / 思源的平替边已删（目标站只在已删网址包里）；关系为空数组。
+    expect(data.relations).toEqual([]);
+    expect(data.relations?.find((r) => r.targetTitle === "Obsidian")).toBeUndefined();
   });
 
   it("能对未收录站点基于标题与语义智能推断场景工作台", async () => {
@@ -248,7 +247,8 @@ describe("4.0 生态增强与平替雷达", () => {
   it("优先匹配更具体的路径键（GitHub Copilot 而非 GitHub 平台）", async () => {
     const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
     const copilot = getEnhancedSiteData("https://github.com/features/copilot");
-    expect(copilot.relations?.map((r) => r.targetTitle)).toEqual(["Cursor", "Continue.dev"]);
+    // 2026-11-15：Continue.dev 的平替边已删（目标站只在已删网址包里），只剩 Cursor。
+    expect(copilot.relations?.map((r) => r.targetTitle)).toEqual(["Cursor"]);
     expect(copilot.relations?.some((r) => r.targetTitle === "GitLab")).toBe(false);
   });
 

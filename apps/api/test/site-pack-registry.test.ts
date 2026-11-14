@@ -1,5 +1,6 @@
 /**
  * 站点包内容必须能被权威树接住（P2a 覆盖率契约）。
+ * 2026-11-15：34 个 site-packs 已卸载——下面按包内人口算的断言只断言人口为 0，安装用例改为全装剩余种子。
  *
  * 为什么单独锁这一条：29 个包声明了 536 个类目标题，安装时若解析不出，
  * 站点会静默落进「未分类」——**安装仍然返回成功**，但归类全丢。
@@ -37,13 +38,14 @@ const packs = seedPluginDefs()
   .map((d) => d as unknown as PackShape)
   .filter((d) => d.manifest.kind === "site-pack");
 
-describe("站点包 → registry 解析", () => {
-  it("站点包数量达标（当前已扩容至 34 个，不得低于 29 个）", () => {
-    expect(packs.length).toBeGreaterThanOrEqual(29);
-    expect(packs.length).toBe(34);
+describe("站点包已卸载 → registry 解析守卫（2026-11-15 uninstall-4839）", () => {
+  // 2026-11-15：34 个 site-packs 已卸载，注册表里不应再有 site-pack；
+  // 下面三条按包内人口算的检查（分类落叶子、去重标题归宿）人口已清零，只断言人口为 0。
+  it("站点包数量为 0：34 个网址包已删干净", () => {
+    expect(packs).toHaveLength(0);
   });
 
-  it("每条站点引用的分类都能解析到叶子", () => {
+  it("包内站点人口为 0：引用分类的落叶子检查随包退役", () => {
     const bad: string[] = [];
     let refs = 0;
     for (const pack of packs) {
@@ -67,10 +69,11 @@ describe("站点包 → registry 解析", () => {
         }
       }
     }
+  expect(refs).toBe(0);
     expect(bad, `未解析 ${bad.length}/${refs}：\n${bad.slice(0, 30).join("\n")}`).toEqual([]);
   });
 
-  it("包声明的每个分类都是叶子，且 parentCategory 与 registry 的父级一致", () => {
+  it("包内声明分类人口为 0：落叶子与父级一致检查随包退役", () => {
     const bad: string[] = [];
     for (const pack of packs) {
       for (const category of pack.manifest.payload?.categories ?? []) {
@@ -88,10 +91,11 @@ describe("站点包 → registry 解析", () => {
         }
       }
     }
+  expect(packs.flatMap((p) => p.manifest.payload?.categories ?? [])).toHaveLength(0);
     expect(bad, bad.slice(0, 30).join("\n")).toEqual([]);
   });
 
-  it("536 个去重标题全部有归宿（覆盖率棘轮：只许 100%）", () => {
+  it("去重标题人口为 0：包内标题的归宿检查随包退役", () => {
     const titles = new Set<string>();
     for (const pack of packs) {
       for (const c of pack.manifest.payload?.categories ?? []) titles.add(c.title.trim());
@@ -102,8 +106,8 @@ describe("站点包 → registry 解析", () => {
     }
     const unresolved = [...titles].filter((t) => !resolveRegistryLeaf(t) && !(RETIRED_TAXONOMY_NAMES as Record<string, string>)[t]);
     expect(unresolved, `未映射：${unresolved.join("、")}`).toEqual([]);
-    // 实测口径：包内声明 538 条 / 去重 536 个标题（「数据库与存储」「办公套件与文档」各重复一次）
-    expect(titles.size).toBeGreaterThanOrEqual(536);
+    // 2026-11-15：包内标题人口已清零（原实测口径：包内声明 538 条 / 去重 536 个标题）。
+    expect(titles.size).toBe(0);
   });
 });
 
@@ -112,9 +116,9 @@ describe("站点包 → registry 解析", () => {
  *
  * 安装路径是「标题 → registry 叶子 → 库里那一行」，中间任何一环（播种缺行、
  * 同父重名、slug 被占）都可能把站点扔进未分类，而接口照样返回成功。
- * 这里跑全量 29 个包，把「装完还在树外」变成红灯——也是 P3 迁移 dry-run 的前置。
+ * 这里把剩余种子全装一遍，把「装完还在树外」变成红灯；原来按包内站点人口算的棘轮（站点总数 ≥3900、registry 根 18 个）随包退役。
  */
-describe("站点包真装一遍（落库口径）", () => {
+describe("种子余量真装一遍（落地口径）", () => {
   let dir: string;
   let ctx: AppContext;
 
@@ -149,14 +153,14 @@ describe("站点包真装一遍（落库口径）", () => {
     }
   });
 
-  it("29 个包装完后：零缺口、零 plugin:* 类目、站点全在叶子下", async () => {
+  it("种子余量全装完：零缺口、零 plugin:* 类目、零孤儿站点", async () => {
     const gaps: string[] = [];
     const mismatches: string[] = [];
-    for (const pack of packs) {
-      const result = await ctx.repo.installPlugin(pack.slug, "user-pack-install");
-      if (result.applied.categoryGaps?.length) gaps.push(...result.applied.categoryGaps.map((t) => `${pack.slug} · ${t}`));
+  for (const def of seedPluginDefs()) {
+      const result = await ctx.repo.installPlugin(def.slug, "user-pack-install");
+      if (result.applied.categoryGaps?.length) gaps.push(...result.applied.categoryGaps.map((t) => `${def.slug} · ${t}`));
       if (result.applied.categoryParentMismatches?.length) {
-        mismatches.push(...result.applied.categoryParentMismatches.map((t) => `${pack.slug} · ${t}`));
+        mismatches.push(...result.applied.categoryParentMismatches.map((t) => `${def.slug} · ${t}`));
       }
     }
     expect(mismatches, mismatches.slice(0, 20).join("\n")).toEqual([]);
@@ -170,15 +174,13 @@ describe("站点包真装一遍（落库口径）", () => {
       "SELECT COUNT(*) AS cnt FROM sites s JOIN categories c ON c.id = s.category_id WHERE s.source LIKE 'plugin:%' AND c.parent_id IS NULL",
     );
     expect(Number(onRoot[0].cnt)).toBe(0);
-    // 棘轮与 seed-plugins.test.ts 的 MARKET_SCALE.minTotalSites 同档（跨包 URL 去重会扣掉一部分）
-    const total = await ctx.repo.raw("SELECT COUNT(*) AS cnt FROM sites WHERE source LIKE 'plugin:%'");
-    expect(Number(total[0].cnt)).toBeGreaterThanOrEqual(3900);
+  // 2026-11-15：包内站点人口已清零——剩余种子（search-pack / theme / preset / bundle）不装站点，plugin:* 站点总数为 0。
+  const total = await ctx.repo.raw("SELECT COUNT(*) AS cnt FROM sites WHERE source LIKE 'plugin:%'");
+  expect(Number(total[0].cnt)).toBe(0);
     const orphan = await ctx.repo.raw(
       "SELECT COUNT(*) AS cnt FROM sites s WHERE s.source LIKE 'plugin:%' AND (s.category_id IS NULL OR NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = s.category_id))",
     );
     expect(Number(orphan[0].cnt)).toBe(0);
-    // 权威树是安装时按需播种出来的：18 个根必须整整齐齐在库里，而不是散落成 plugin 来源
-    const seededRoots = await ctx.repo.raw("SELECT COUNT(*) AS cnt FROM categories WHERE source = 'registry' AND parent_id IS NULL");
-    expect(Number(seededRoots[0].cnt)).toBe(18);
+  // 2026-11-15：registry 根 18 个的棘轮随包退役——根是在装包时按需播种的，无包可装便不再播种。
   }, 300_000);
 });

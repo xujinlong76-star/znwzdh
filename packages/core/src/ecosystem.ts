@@ -1,5 +1,6 @@
 /**
  * NavHub 4.0 生态增强库：为高频工具提供深链微动作、平替雷达（AlternativeTo）与工作台映射。
+ * 2026-11-15：随 34 个 site-packs 卸载删掉 16 条平替边（目标站只在已删网址包里，冷启动种子解析不到）；figma/notion/tinypng/iconify 的 relations 暂空。
  */
 import type { SiteAction, SiteRelation, SiteLiveMetrics } from "./types.ts";
 
@@ -20,7 +21,6 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { id: "forum", label: "社区", urlTemplate: "https://forum.cursor.com", icon: "message" },
     ],
     relations: [
-      { targetTitle: "Continue.dev", targetUrl: "https://continue.dev", relationType: "alternative", isFreeOrOpenSource: true, note: "开源本地模型代码助手" },
       { targetTitle: "GitHub Copilot", targetUrl: "https://github.com/features/copilot", relationType: "alternative", isFreeOrOpenSource: false, note: "微软官方 AI 编程插件" },
     ],
     liveMetrics: { openSource: false },
@@ -29,16 +29,12 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
     workspaces: ["dev", "ai"],
     relations: [
       { targetTitle: "Cursor", targetUrl: "https://cursor.com", relationType: "alternative", isFreeOrOpenSource: false, note: "深度集成的 AI 原生 IDE" },
-      { targetTitle: "Continue.dev", targetUrl: "https://continue.dev", relationType: "alternative", isFreeOrOpenSource: true, note: "开源 VSCode / JetBrains 扩展" },
     ],
   },
   "chatgpt.com": {
     relations: [
       { targetTitle: "Claude", targetUrl: "https://claude.ai", relationType: "alternative", isFreeOrOpenSource: false, note: "长文本与代码见长的对话助手" },
       { targetTitle: "DeepSeek", targetUrl: "https://chat.deepseek.com", relationType: "alternative", isFreeOrOpenSource: true, note: "开源权重、网页端免费" },
-      { targetTitle: "Kimi", targetUrl: "https://www.kimi.com", relationType: "alternative", isFreeOrOpenSource: true, note: "超长上下文与中文检索问答" },
-      { targetTitle: "Google Gemini", targetUrl: "https://gemini.google.com", relationType: "alternative", isFreeOrOpenSource: false, note: "Google 多模态助手" },
-      { targetTitle: "智谱清言", targetUrl: "https://chatglm.cn", relationType: "alternative", isFreeOrOpenSource: true, note: "GLM 系国产对话模型" },
       { targetTitle: "Ollama", targetUrl: "https://ollama.com", relationType: "alternative", isFreeOrOpenSource: true, note: "本地私有化跑开源模型" },
     ],
   },
@@ -86,7 +82,6 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
     relations: [
       // 库里收的是 gitlab.com（GitLab 应用首页），写成 about.gitlab.com（营销站）
       // 会永远对不上，面板上这条平替永远点不进站内。
-      { targetTitle: "GitLab", targetUrl: "https://gitlab.com", relationType: "alternative", isFreeOrOpenSource: true, note: "支持私有化部署的代码托管平台" },
       { targetTitle: "Gitee", targetUrl: "https://gitee.com", relationType: "alternative", isFreeOrOpenSource: false, note: "国内快速访问的代码托管" },
     ],
   },
@@ -137,8 +132,6 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { id: "community", label: "探索社区素材", urlTemplate: "https://www.figma.com/community", icon: "palette" },
     ],
     relations: [
-      { targetTitle: "Penpot", targetUrl: "https://penpot.app", relationType: "alternative", isFreeOrOpenSource: true, note: "开源 Web 原生设计与协作平替" },
-      { targetTitle: "Pixso", targetUrl: "https://pixso.cn", relationType: "alternative", isFreeOrOpenSource: false, note: "国产专业级高保真协同工具" },
     ],
   },
   "unsplash.com": {
@@ -159,7 +152,6 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { id: "compress", label: "在线压缩", urlTemplate: "https://tinypng.com", icon: "minimize" },
     ],
     relations: [
-      { targetTitle: "Squoosh", targetUrl: "https://squoosh.app", relationType: "alternative", isFreeOrOpenSource: true, note: "Google 开源端侧无损图片压缩神器" },
     ],
   },
   "excalidraw.com": {
@@ -168,7 +160,6 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { id: "draw", label: "新建手绘白板", urlTemplate: "https://excalidraw.com", icon: "pen" },
     ],
     relations: [
-      { targetTitle: "tldraw", targetUrl: "https://www.tldraw.com", relationType: "alternative", isFreeOrOpenSource: true, note: "轻量易用的开源协同画板" },
       { targetTitle: "Draw.io", targetUrl: "https://app.diagrams.net", relationType: "alternative", isFreeOrOpenSource: true, note: "专业架构与流程图利器" },
     ],
     liveMetrics: { openSource: true, license: "MIT" },
@@ -179,7 +170,6 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { id: "search-icon", label: "搜索矢量图标", urlTemplate: "https://icon-sets.iconify.design/?query={q}", placeholder: "搜索图标关键词" },
     ],
     relations: [
-      { targetTitle: "Lucide Icons", targetUrl: "https://lucide.dev", relationType: "ecosystem", isFreeOrOpenSource: true, note: "精美现代的无依赖矢量图标库" },
     ],
   },
 
@@ -189,13 +179,8 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
   "notion.com": {
     workspaces: ["efficiency", "content"],
     relations: [
-      { targetTitle: "AppFlowy", targetUrl: "https://appflowy.com/", relationType: "alternative", isFreeOrOpenSource: true, note: "Notion 开源私有化看板与知识库" },
-      { targetTitle: "Obsidian", targetUrl: "https://obsidian.md", relationType: "alternative", isFreeOrOpenSource: true, note: "本地 Markdown 离线双链知识库" },
-      { targetTitle: "AFFiNE", targetUrl: "https://affine.pro", relationType: "alternative", isFreeOrOpenSource: true, note: "下一代开源全能画布与协同工作区" },
       // 这两条是「点了能进站内详情页」的补集：AppFlowy / AFFiNE 库里还没收，
       // 而 events 里 `notion 平替` 恰恰要的是一次能比出多个候选的平替雷达。
-      { targetTitle: "Logseq", targetUrl: "https://logseq.com", relationType: "alternative", isFreeOrOpenSource: true, note: "开源大纲笔记，本地优先双链" },
-      { targetTitle: "思源笔记", targetUrl: "https://b3log.org/siyuan", relationType: "alternative", isFreeOrOpenSource: true, note: "开源块级编辑器，可完全离线" },
     ],
   },
 };

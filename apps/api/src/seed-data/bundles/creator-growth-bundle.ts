@@ -22,12 +22,6 @@ export const creatorGrowthBundle: SeedPluginDef = {
     tags: ["创作者", "运营", "增长", "组合包"],
     payload: {
       items: [
-        { slug: "creator-ops-arsenal", kind: "site-pack" },
-        { slug: "ai-tools-arsenal", kind: "site-pack" },
-        { slug: "front-end-arsenal", kind: "site-pack" },
-        { slug: "growth-marketing", kind: "site-pack" },
-        { slug: "seed-design-inspiration", kind: "site-pack" },
-        { slug: "media-entertainment", kind: "site-pack" },
         { slug: "cn-search-arsenal", kind: "search-pack" },
         { slug: "sunlit-amber", kind: "theme" },
         { slug: "paper-latte", kind: "theme" },

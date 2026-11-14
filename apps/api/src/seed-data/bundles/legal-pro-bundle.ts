@@ -25,13 +25,6 @@ export const legalProBundle: SeedPluginDef = {
     tags: ["法律", "合规", "法务", "专业", "组合包"],
     payload: {
       items: [
-        { slug: "legal-compliance", kind: "site-pack" },
-        { slug: "finance-wealth", kind: "site-pack" },
-        { slug: "office-collaboration", kind: "site-pack" },
-        { slug: "gov-public-service", kind: "site-pack" },
-        { slug: "jobs-career", kind: "site-pack" },
-        { slug: "software-utilities", kind: "site-pack" },
-        { slug: "news-media-cn", kind: "site-pack" },
         { slug: "academic-search-arsenal", kind: "search-pack" },
         { slug: "dev-search-arsenal", kind: "search-pack" },
         { slug: "nord-frost", kind: "theme" },

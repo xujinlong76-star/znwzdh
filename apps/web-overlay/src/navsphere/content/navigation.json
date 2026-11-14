@@ -1959,6 +1959,18 @@
                 "协作"
               ]
             },
+      {
+        "id": "nav-94404995d9c7",
+        "title": "GitHub Trending",
+        "href": "https://github.com/trending",
+        "description": "GitHub 热门趋势开源项目",
+        "icon": "https://github.com/favicon.ico",
+        "enabled": true,
+        "tags": [
+          "开源",
+          "趋势"
+        ]
+      },
             {
               "id": "nav-c8edc7dd0b67",
               "title": "GitLab",

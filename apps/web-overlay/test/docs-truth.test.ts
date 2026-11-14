@@ -138,13 +138,14 @@ describe("B13-4 扩展 README：在线检索，不承诺离线向量", () => {
   });
 });
 
-describe("B13-5 网址包：34 个（18~21 分类 / 190~223 站点）", () => {
-  it("seed 注释称 34，不再称 20", () => {
+describe("B13-5 网址包已卸载：种子只剩精选站", () => {
+  it("seed 注释称网址包已删除，不再称 34 个专业网址包", () => {
     const seedIndex = read("apps/api/src/seed-data/index.ts");
-    expect(seedIndex).toContain("34 个专业网址包");
-    expect(seedIndex).toContain("×34");
-    expect(seedIndex).not.toContain("20 个专业网址包");
-    expect(seedIndex).not.toContain("×20");
+    expect(seedIndex).toContain("site-packs/");
+    expect(seedIndex).toContain("已删除");
+    expect(seedIndex).toContain("卸载 34 个网址包");
+    expect(seedIndex).not.toContain("34 个专业网址包");
+    expect(seedIndex).not.toContain("×34");
   });
 });
 

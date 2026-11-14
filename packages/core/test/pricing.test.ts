@@ -7,6 +7,7 @@
  *    核实结论一致（新增站点落 unknown 是预期——提醒后来者先核实再入表）。
  *    2026-11-15 T5 元宝收录：元宝搜索已核实并入 pricing-overrides（free），确定值 303→304、未标注仍 30。
  *    2026-11-15 卸载合集：GitHub Trending 已在 pricing-overrides（free），确定值 304→305、未标注仍 30。
+ *    2026-11-15 升级第 8 条：30 站未标注逐站核实入表（音频 11 + 写作/其它 10 + 考试政务 8；free 9、freemium 21），确定值 305→335、未标注 30→0。
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -96,7 +97,7 @@ describe("导航 335 站全量推导（数据完整性基线）", () => {
     expect(sites.length).toBe(335);
   });
 
-  it("确定值 305 站、未标注恰为核实不了的 30 站", () => {
+  it("确定值 335 站、未标注为 0（30 站已于 2026-11-15 逐站核实入表）", () => {
     const unknownTitles: string[] = [];
     let determinate = 0;
     for (const s of sites) {
@@ -104,17 +105,7 @@ describe("导航 335 站全量推导（数据完整性基线）", () => {
       if (r.value === "unknown") unknownTitles.push(s.title);
       else determinate++;
     }
-    expect(determinate).toBe(305);
-    expect(unknownTitles.sort()).toEqual(
-      [
-        "Java", "OpenAI", "Genmo", "有戏AI",
-        "Jasper", "Copy.ai", "Writesonic", "Grammarly", "秘塔写作猫", "Sudowrite", "Wordtune",
-        "Udio", "Soundraw", "AIVA", "Boomy", "Mubert", "Beatoven.ai", "Loudly",
-        "Murf AI", "WellSaid", "NaturalReader", "魔音工坊",
-        "2027年国家公务员考试专题", "中央机关公开遴选和公开选调专题",
-        "学习强国", "12333 人社服务",
-        "全国大学英语四、六级考试官网", "四六级成绩查询", "中国教育考试网", "考研网上报名",
-      ].sort(),
-    );
+    expect(determinate).toBe(335);
+    expect(unknownTitles).toEqual([]);
   });
 });

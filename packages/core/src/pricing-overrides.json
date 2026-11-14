@@ -1558,5 +1558,155 @@
   "pricing": "free",
   "evidence": "支付宝官网 alipay.com 定位为个人电子支付与生活服务平台，个人用户注册与支付/转账/缴费免费使用（商家服务另计费）",
   "title": "支付宝"
+ },
+ "udio.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层（每日 10 积分，每月 100 积分）与 Standard/Pro 付费档",
+  "title": "Udio"
+ },
+ "soundraw.io": {
+  "pricing": "freemium",
+  "evidence": "官网设免费账号（可生成预览，无下载）与 Creator/Artist 付费档",
+  "title": "Soundraw"
+ },
+ "aiva.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费档（每月 3 次下载）与 Standard/Pro 付费档",
+  "title": "AIVA"
+ },
+ "boomy.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费档（25 首保存，无下载、无商用）与 Creator/Pro 付费档",
+  "title": "Boomy"
+ },
+ "mubert.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费 Ambassador 档（每月 25 首、5 次下载）与 Creator/Pro/Business 付费档",
+  "title": "Mubert"
+ },
+ "beatoven.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费试用（有限生成次数）与 Creator/Visionary 付费档",
+  "title": "Beatoven.ai"
+ },
+ "loudly.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费档（每日 1 次下载，非商用）与 Personal/Pro 付费档",
+  "title": "Loudly"
+ },
+ "murf.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费档（10 分钟试用生成，无下载、无商用）与 Creator/Business 付费档",
+  "title": "Murf AI"
+ },
+ "wellsaid.io": {
+  "pricing": "freemium",
+  "evidence": "官网设免费试用（每月 3 分钟下载，无商用）与 Starter/Pro 付费档",
+  "title": "WellSaid"
+ },
+ "naturalreaders.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费档（免费语音无限收听）与 Plus/Pro 付费档",
+  "title": "NaturalReader"
+ },
+ "moyin.com": {
+  "pricing": "freemium",
+  "evidence": "提供免费试用额度，会员单月 ¥60、一年 ¥348（新用户首月 ¥38）",
+  "title": "魔音工坊"
+ },
+ "jasper.ai": {
+  "pricing": "freemium",
+  "evidence": "无永久免费档，仅 7 天免费试用 Pro，付费档 Pro $69/月起",
+  "title": "Jasper"
+ },
+ "copy.ai": {
+  "pricing": "freemium",
+  "evidence": "官网定价页无免费档，仅 Try for free 入口，自助档 Chat $29/月起（2026-10 直读定价页）",
+  "title": "Copy.ai"
+ },
+ "writesonic.com": {
+  "pricing": "freemium",
+  "evidence": "无永久免费档，仅 7 天免费试用，付费档 $99/月起",
+  "title": "Writesonic"
+ },
+ "grammarly.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费档（拼写语法校对、每月 100 次 AI 提示）与 Pro 付费档 $12/月起",
+  "title": "Grammarly"
+ },
+ "xiezuocat.com": {
+  "pricing": "freemium",
+  "evidence": "免费版每天约 10000 字额度，会员 ¥48/月起",
+  "title": "秘塔写作猫"
+ },
+ "sudowrite.com": {
+  "pricing": "freemium",
+  "evidence": "无永久免费档，仅一次性免费试用（约 10000 积分），付费档 $10/月起",
+  "title": "Sudowrite"
+ },
+ "wordtune.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费 Basic 档（每天 10 次改写）与 Advanced/Unlimited 付费档",
+  "title": "Wordtune"
+ },
+ "genmo.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费档（250 一次性积分）与 Lite/Standard 付费档",
+  "title": "Genmo"
+ },
+ "youxi.fullpeace.net": {
+  "pricing": "freemium",
+  "evidence": "工具库核对官网：免费档与付费档并存（DramaSo 2026-07）",
+  "title": "有戏AI"
+ },
+ "openai.com": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与 Go/Plus/Pro 付费档",
+  "title": "OpenAI"
+ },
+ "java.com": {
+  "pricing": "free",
+  "evidence": "Oracle JDK 21+ 免许可费供所有用户免费使用，OpenJDK 开源免费（GPLv2+CPE）",
+  "title": "Java"
+ },
+ "bm.scs.gov.cn/kl2027": {
+  "pricing": "free",
+  "evidence": "国家公务员局官方专题站，公告/报名/准考证/成绩查询免费开放",
+  "title": "2027年国家公务员考试专题"
+ },
+ "subb.scs.gov.cn/lx2027": {
+  "pricing": "free",
+  "evidence": "国家公务员局官方专题站，公告/报名/成绩查询免费开放",
+  "title": "中央机关公开遴选和公开选调专题"
+ },
+ "xuexi.cn": {
+  "pricing": "free",
+  "evidence": "中央宣传部主管学习平台，图文音视频学习资源免费开放",
+  "title": "学习强国"
+ },
+ "12333.gov.cn": {
+  "pricing": "free",
+  "evidence": "人社部官方公共服务平台，社保/就业查询与业务办理免费，信息服务费免收",
+  "title": "12333 人社服务"
+ },
+ "cet.neea.edu.cn": {
+  "pricing": "free",
+  "evidence": "中国教育考试网官方四六级站，成绩查询与电子成绩报告单免费下载",
+  "title": "全国大学英语四、六级考试官网"
+ },
+ "cet.neea.edu.cn/cet": {
+  "pricing": "free",
+  "evidence": "中国教育考试网官方成绩查询入口，免费查询下载电子成绩报告单",
+  "title": "四六级成绩查询"
+ },
+ "neea.edu.cn": {
+  "pricing": "free",
+  "evidence": "教育部教育考试院官网，各类考试报名/成绩/证书查询服务免费开放",
+  "title": "中国教育考试网"
+ },
+ "yz.chsi.com.cn/yzwb": {
+  "pricing": "free",
+  "evidence": "教育部主办研招官方平台，网报/准考证下载免费开放",
+  "title": "考研网上报名"
  }
 }

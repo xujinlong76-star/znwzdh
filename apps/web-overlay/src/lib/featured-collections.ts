@@ -1,0 +1,115 @@
+// 精选专题（合集）编辑层：A 壳结构 + B 里的编辑内容。
+// 数据只覆盖“策展文案”（价值主张、导语、署名、期号、幕分组、编辑手记、纠错入口），
+// 合集本身与站点仍由 API / 种子数据（seed-data.json）提供，本模块不伪造站点链接。
+// 封面走站点 favicon 拼贴（复用 SiteFavicon），不调任何图片生成 API。
+
+export interface FeaturedAct {
+  id: string;
+  title: string;
+  description: string;
+  siteUrls: string[];
+}
+
+export interface FeaturedCollectionEditorial {
+  slug: string;
+  title: string;
+  valueProposition: string;
+  intro: string;
+  curator: string;
+  issueNo: number;
+  editorNote: string;
+  correctionHref: string;
+  acts: FeaturedAct[];
+}
+export function normalizeSiteUrl(url: string): string {
+  return url.trim().replace(/\/$/, "");
+}
+
+export function correctionIssueUrl(title: string): string {
+  return "https://github.com/xujinlong76-star/znwzdh/issues/new?title=" + encodeURIComponent("【纠错】" + title);
+}
+
+export function validateFeaturedEditorial(e: FeaturedCollectionEditorial): string[] {
+  const errors: string[] = [];
+  const valueLength = [...e.valueProposition].length;
+  if (valueLength === 0 || valueLength > 20) errors.push(e.slug + ": 价值主张必须为 1 至 20 字");
+  if (!e.intro.trim()) errors.push(e.slug + ": 导语不能为空");
+  if (!e.curator.trim()) errors.push(e.slug + ": 策展署名不能为空");
+  if (e.issueNo < 1) errors.push(e.slug + ": 期号必须从第 1 期开始");
+  if (!e.editorNote.trim()) errors.push(e.slug + ": 编辑手记不能为空");
+  if (!e.correctionHref.startsWith("https://github.com/xujinlong76-star/znwzdh/issues/new")) errors.push(e.slug + ": 纠错入口必须指向本仓库的问题页");
+  if (e.acts.length === 0) errors.push(e.slug + ": 至少要有一幕");
+  const seen = new Set<string>();
+  for (const act of e.acts) {
+    if (act.siteUrls.length === 0) errors.push(e.slug + ": " + act.title + " 不能没有站点");
+    for (const url of act.siteUrls) {
+      if (!url.startsWith("https://")) errors.push(e.slug + ": 站点链接必须是 https：" + url);
+      const key = normalizeSiteUrl(url);
+      if (seen.has(key)) errors.push(e.slug + ": 站点重复收录：" + url);
+      seen.add(key);
+    }
+  }
+  return errors;
+}
+export function actIndexForSiteUrl(e: FeaturedCollectionEditorial, url: string): number {
+  const key = normalizeSiteUrl(url);
+  return e.acts.findIndex((act) => act.siteUrls.some((u) => normalizeSiteUrl(u) === key));
+}
+
+export function coverSiteUrls(e: FeaturedCollectionEditorial): string[] {
+  return e.acts.flatMap((act) => act.siteUrls);
+}
+
+export function orderUrlsByAct<T extends { url: string }>(e: FeaturedCollectionEditorial, sites: T[]): T[] {
+  const order = new Map<string, number>();
+  e.acts.forEach((act, actIndex) => {
+    act.siteUrls.forEach((url, index) => order.set(normalizeSiteUrl(url), actIndex * 100 + index));
+  });
+  return [...sites].sort((a, b) => {
+    const ra = order.get(normalizeSiteUrl(a.url));
+    const rb = order.get(normalizeSiteUrl(b.url));
+    return (ra ?? 100000) - (rb ?? 100000);
+  });
+}
+
+export function issueLabel(e: FeaturedCollectionEditorial): string {
+  return "第 " + e.issueNo + " 期";
+}
+export const FEATURED_COLLECTION_EDITORIALS: FeaturedCollectionEditorial[] = [
+  {
+    slug: "drama-guide",
+    title: "短剧追剧指南",
+    valueProposition: "正版追更，一集不落",
+    intro: "短剧更新快、平台多、坑也多。这期合集只收正版能看的平台：先上大站追更，再看解说测评避雷，追剧不迷路。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开、正版可看的平台；短剧付费前先看免费集数，充值前确认集数与价格。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("短剧追剧指南"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 大站追更", description: "先上大站：正版片库全、更新稳，是追剧的主阵地。", siteUrls: ["https://www.bilibili.com", "https://www.iqiyi.com", "https://v.qq.com", "https://www.youku.com"] },
+      { id: "act-2", title: "第二幕 · 换个口味", description: "芒果的独家剧集与抖音的竖屏短剧，换个口味继续追。", siteUrls: ["https://www.mgtv.com", "https://www.douyin.com"] },
+    ],
+  },
+  {
+    slug: "exam-sprint",
+    title: "考公考研冲刺",
+    valueProposition: "报名不跑偏，备考有章法",
+    intro: "考公考研最怕信息错、报名晚。这期把官方报名入口和靠谱备考平台排成一条线：先确认报名，再跟课程刷题。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "报名入口以官方为准：研招网报名时间每年变动，缴费前务必核对公告；培训机构课程与价格以官网为准，试听后再决定。",
+    correctionHref: correctionIssueUrl("考公考研冲刺"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 官方报名入口", description: "报名、查分、查学历，先走官方入口，信息最准。", siteUrls: ["https://yz.chsi.com.cn", "https://www.chsi.com.cn", "https://www.mohrss.gov.cn"] },
+      { id: "act-2", title: "第二幕 · 备考课程与刷题", description: "跟课、刷题、学公开课，备考按节奏走。", siteUrls: ["https://www.huatu.com", "https://www.fenbi.com", "https://www.icourse163.org"] },
+    ],
+  },
+];
+
+export function getFeaturedEditorial(slug: string): FeaturedCollectionEditorial | undefined {
+  return FEATURED_COLLECTION_EDITORIALS.find((e) => e.slug === slug);
+}
+
+export function relatedFeaturedEditorials(slug: string): FeaturedCollectionEditorial[] {
+  return FEATURED_COLLECTION_EDITORIALS.filter((e) => e.slug !== slug);
+}

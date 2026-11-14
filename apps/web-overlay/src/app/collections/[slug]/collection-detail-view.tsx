@@ -10,6 +10,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { safeHref } from '@/lib/safe-url'
+import { coverSiteUrls, getFeaturedEditorial, issueLabel, normalizeSiteUrl, orderUrlsByAct, relatedFeaturedEditorials } from '@/lib/featured-collections';
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { fetchCollectionDetail, type HubCollection, type HubCollectionDetailSite } from '@/lib/navhub-api'
@@ -85,6 +86,10 @@ export default function CollectionDetailView({
       return titleMatch || descMatch || noteMatch || urlMatch
     })
   }, [sites, siteFilterQuery])
+  const editorial = useMemo(() => getFeaturedEditorial(slug), [slug]);
+  const orderedSites = useMemo(() => (editorial ? orderUrlsByAct(editorial, filteredSites) : filteredSites), [editorial, filteredSites]);
+  const relatedEditorials = useMemo(() => (editorial ? relatedFeaturedEditorials(editorial.slug) : []), [editorial]);
+
   /**
    * 区分「专题确实下架」（404）与「中枢挂了」（5xx / 网络失败）。
    * 以前两者都渲染成「专题不存在或已下架」，一次机房抖动就让用户以为专题没了。
@@ -394,6 +399,63 @@ ${items}
             </div>
 
             {/* 站内搜索：专题只覆盖其中一部分站点，给出「直接搜全部」的出口 */}
+
+      {editorial ? (
+        <section aria-label="精选专题头图" className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-violet-500/10 via-transparent to-sky-500/10 p-4 sm:p-6">
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="flex -space-x-2" aria-label="合集封面：收录站点图标拼贴">
+              {coverSiteUrls(editorial).slice(0, 6).map((url) => (
+                <SiteFavicon key={url} title={url} url={url} className="size-10 rounded-lg border border-border/60 bg-surface shadow-xs" />
+              ))}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold tracking-widest text-violet-600 dark:text-violet-300">精选专题 · {issueLabel(editorial)}</p>
+              <p className="mt-1 text-lg font-bold">{editorial.valueProposition}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{editorial.intro}</p>
+              <p className="mt-2 text-xs text-muted-foreground">策展：{editorial.curator}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+      {editorial ? (
+        <nav aria-label="专题目录" className="sticky top-0 z-10 mt-4 rounded-full border border-border/60 bg-surface/90 px-4 py-2 backdrop-blur">
+          <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            {editorial.acts.map((act) => (
+              <li key={act.id}>
+                <a href={"#" + act.id} className="text-primary hover:underline">{act.title}</a>
+              </li>
+            ))}
+            <li><a href="#editor-note" className="text-primary hover:underline">编辑手记</a></li>
+            <li><a href="#related-collections" className="text-primary hover:underline">相关合集</a></li>
+            <li><a href="#correction" className="text-primary hover:underline">纠错</a></li>
+          </ul>
+        </nav>
+      ) : null}
+      {editorial ? (
+        <section aria-label="按幕分组" className="mt-4 space-y-4">
+          {editorial.acts.map((act) => (
+            <div key={act.id} id={act.id} className="scroll-mt-20 rounded-2xl border border-border/70 bg-surface p-4">
+              <h2 className="text-base font-bold">{act.title}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{act.description}</p>
+              <ul className="mt-3 space-y-2">
+                {act.siteUrls.map((url) => {
+                  const site = orderedSites.find((s) => normalizeSiteUrl(s.url) === normalizeSiteUrl(url));
+                  if (!site) return null;
+                  return (
+                    <li key={site.id} className="flex items-start gap-2 text-sm">
+                      <SiteFavicon title={site.title} url={site.url} icon={site.iconKey} className="size-5 shrink-0 rounded" />
+                      <span className="min-w-0">
+                        <Link href={"/site/" + encodeURIComponent(site.id)} className="font-medium text-primary hover:underline">{site.title}</Link>
+                        {site.collectionNote ? <span className="text-muted-foreground">：{site.collectionNote}</span> : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </section>
+      ) : null}
             <SearchPalette placeholder="不限于本专题：搜索全部站点（中文 / 拼音 / 语义）" />
 
             {/* 跨生态技术视频联动横幅 */}
@@ -502,7 +564,7 @@ ${items}
                 </div>
 
                 <div className="relative pl-6 sm:pl-8 space-y-6 before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-indigo-500/30">
-                  {filteredSites.map((site, index) => {
+                  {orderedSites.map((site, index) => {
                     const isCompleted = completedSiteIds.has(site.id)
                     return (
                       <div key={site.id} className="relative group">
@@ -628,7 +690,7 @@ ${items}
                 className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 transition-all duration-200"
                 style={{ gap: 'var(--density-grid-gap, 1rem)' }}
               >
-                {filteredSites.map((site) => (
+                {orderedSites.map((site) => (
                   <div
                     key={site.id}
                     className="relative group rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 backdrop-blur-xs transition-all duration-200 hover:-translate-y-0.5 p-[var(--density-card-padding,0.875rem)] flex flex-col justify-between shadow-2xs"
@@ -700,6 +762,41 @@ ${items}
           </>
         )}
       </div>
+
+      {editorial && collection ? (
+        <section aria-label="编辑手记与相关合集" className="mt-8 space-y-4">
+          <div id="editor-note" className="scroll-mt-20 rounded-2xl border border-border/70 bg-surface p-4">
+            <h2 className="text-base font-bold">编辑手记</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{editorial.editorNote}</p>
+            <p className="mt-2 text-xs text-muted-foreground">策展：{editorial.curator} · {issueLabel(editorial)}</p>
+          </div>
+          {relatedEditorials.length > 0 ? (
+            <div id="related-collections" className="scroll-mt-20 rounded-2xl border border-border/70 bg-surface p-4">
+              <h2 className="text-base font-bold">相关合集</h2>
+              <ul className="mt-3 space-y-2">
+                {relatedEditorials.map((rel) => (
+                  <li key={rel.slug} className="flex items-start gap-2 text-sm">
+                    <div className="flex -space-x-1.5" aria-label="合集封面：收录站点图标拼贴">
+                      {coverSiteUrls(rel).slice(0, 4).map((url) => (
+                        <SiteFavicon key={url} title={url} url={url} className="size-6 rounded-md border border-border/60 bg-surface" />
+                      ))}
+                    </div>
+                    <span className="min-w-0">
+                      <Link href={"/collections/" + rel.slug} className="font-medium text-primary hover:underline">{rel.title}</Link>
+                      <span className="text-muted-foreground">：{rel.valueProposition} · {issueLabel(rel)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div id="correction" className="scroll-mt-20 rounded-2xl border border-border/70 bg-surface p-4">
+            <h2 className="text-base font-bold">纠错</h2>
+            <p className="mt-1 text-sm text-muted-foreground">发现链接失效、信息有误或收录不当？欢迎提交纠错，编辑部会核实后更新。</p>
+            <a href={editorial.correctionHref} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-medium text-primary hover:underline">提交纠错</a>
+          </div>
+        </section>
+      ) : null}
     </>
   )
 }

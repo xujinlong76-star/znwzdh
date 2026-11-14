@@ -21,6 +21,8 @@ import { fetchCollections, type HubCollection } from '@/lib/navhub-api'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { ArrowLeft, Layers, Compass, MapPin, Route, ArrowUpRight, Search } from 'lucide-react'
+import { SiteFavicon } from '@/components/site-favicon';
+import { FEATURED_COLLECTION_EDITORIALS, coverSiteUrls, issueLabel } from '@/lib/featured-collections';
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
@@ -86,6 +88,15 @@ export function CollectionBoard({
       return true
     })
   }, [cols, activeKind, searchQuery])
+  const featured = useMemo(() => {
+    return FEATURED_COLLECTION_EDITORIALS.map((editorial) => {
+      const collection = cols.find((c) => c.slug === editorial.slug);
+      return collection ? { editorial, collection } : null;
+    }).filter((x): x is { editorial: (typeof FEATURED_COLLECTION_EDITORIALS)[number]; collection: HubCollection } => x !== null);
+  }, [cols]);
+  const hero = featured[0] ?? null;
+  const showFeatured = !loading && activeKind === "all" && searchQuery.trim() === "";
+
 
   return (
     <>
@@ -198,7 +209,44 @@ export function CollectionBoard({
         </div>
       )}
 
-      {loading ? (
+      
+      {showFeatured && hero ? (
+        <section aria-label="今日首映" className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-violet-500/10 via-transparent to-sky-500/10 p-4 sm:p-6">
+          <p className="text-xs font-semibold tracking-widest text-violet-600 dark:text-violet-300">今日首映 · {issueLabel(hero.editorial)}</p>
+          <div className="mt-3 flex flex-wrap items-start gap-4">
+            <div className="flex -space-x-2" aria-label="合集封面：收录站点图标拼贴">
+              {coverSiteUrls(hero.editorial).slice(0, 6).map((url) => (
+                <SiteFavicon key={url} title={url} url={url} className="size-9 rounded-lg border border-border/60 bg-surface shadow-xs" />
+              ))}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-xl font-bold sm:text-2xl">{hero.collection.title}</h2>
+              <p className="mt-1 text-sm font-medium text-primary">{hero.editorial.valueProposition}</p>
+              <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{hero.editorial.intro}</p>
+              <p className="mt-2 text-xs text-muted-foreground">策展：{hero.editorial.curator} · {hero.collection.siteCount ?? coverSiteUrls(hero.editorial).length} 个站点</p>
+            </div>
+            <Link href={"/collections/" + hero.collection.slug} className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">进入专题</Link>
+          </div>
+        </section>
+      ) : null}
+      {showFeatured && featured.length > 1 ? (
+        <section aria-label="精选海报行" className="mt-4">
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {featured.map(({ editorial, collection }) => (
+              <Link key={collection.slug} href={"/collections/" + collection.slug} className="group w-56 shrink-0 rounded-2xl border border-border/70 bg-surface p-3 shadow-xs transition hover:-translate-y-0.5">
+                <div className="flex -space-x-1.5" aria-label="合集封面：收录站点图标拼贴">
+                  {coverSiteUrls(editorial).slice(0, 4).map((url) => (
+                    <SiteFavicon key={url} title={url} url={url} className="size-7 rounded-md border border-border/60 bg-surface" />
+                  ))}
+                </div>
+                <p className="mt-2 text-sm font-semibold">{collection.title}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{editorial.valueProposition} · {issueLabel(editorial)}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+{loading ? (
         <div aria-busy="true" aria-live="polite" aria-label="正在加载精选专题" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <span className="sr-only">正在加载精选专题…</span>
           {Array.from({ length: 6 }).map((_, i) => (

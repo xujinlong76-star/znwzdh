@@ -1044,6 +1044,138 @@
           "open_source"
         ]
       }
+    },
+    {
+      "url": "https://www.iqiyi.com",
+      "title": "爱奇艺",
+      "description": "综合视频平台，短剧、剧集与综艺片库齐全",
+      "categorySlug": "short-drama-platform",
+      "tags": [
+        "短剧",
+        "视频",
+        "追剧"
+      ],
+      "icon": "https://www.iqiyi.com/favicon.ico"
+    },
+    {
+      "url": "https://v.qq.com",
+      "title": "腾讯视频",
+      "description": "腾讯旗下综合视频平台，独播剧集与短剧更新快",
+      "categorySlug": "short-drama-platform",
+      "tags": [
+        "短剧",
+        "视频",
+        "追剧"
+      ],
+      "icon": "https://v.qq.com/favicon.ico"
+    },
+    {
+      "url": "https://www.youku.com",
+      "title": "优酷",
+      "description": "阿里旗下视频平台，短剧与悬疑剧集见长",
+      "categorySlug": "short-drama-platform",
+      "tags": [
+        "短剧",
+        "视频",
+        "追剧"
+      ],
+      "icon": "https://www.youku.com/favicon.ico"
+    },
+    {
+      "url": "https://www.mgtv.com",
+      "title": "芒果TV",
+      "description": "湖南卫视旗下视频平台，独家剧集与综艺多",
+      "categorySlug": "short-drama-platform",
+      "tags": [
+        "短剧",
+        "视频",
+        "追剧"
+      ],
+      "icon": "https://www.mgtv.com/favicon.ico"
+    },
+    {
+      "url": "https://www.douyin.com",
+      "title": "抖音",
+      "description": "短视频平台，短剧频道与达人解说集中",
+      "categorySlug": "short-drama-platform",
+      "tags": [
+        "短剧",
+        "短视频",
+        "解说"
+      ],
+      "icon": "https://www.douyin.com/favicon.ico"
+    },
+    {
+      "url": "https://yz.chsi.com.cn",
+      "title": "中国研究生招生信息网",
+      "description": "考研报名、网上确认、查分与调剂的官方入口",
+      "categorySlug": "exam-prep",
+      "tags": [
+        "考研",
+        "报名",
+        "官方"
+      ],
+      "icon": "https://yz.chsi.com.cn/favicon.ico"
+    },
+    {
+      "url": "https://www.chsi.com.cn",
+      "title": "学信网",
+      "description": "学历查询、学籍查询与考研报名的官方平台",
+      "categorySlug": "exam-prep",
+      "tags": [
+        "考研",
+        "学历",
+        "官方"
+      ],
+      "icon": "https://www.chsi.com.cn/favicon.ico"
+    },
+    {
+      "url": "https://www.mohrss.gov.cn",
+      "title": "人力资源和社会保障部",
+      "description": "发布公务员、事业单位招考与就业政策的官方网站",
+      "categorySlug": "civil-service-exams",
+      "tags": [
+        "考公",
+        "政策",
+        "官方"
+      ],
+      "icon": "https://www.mohrss.gov.cn/favicon.ico"
+    },
+    {
+      "url": "https://www.huatu.com",
+      "title": "华图教育",
+      "description": "公务员与事业单位考试培训，课程与题库齐全",
+      "categorySlug": "exam-prep",
+      "tags": [
+        "考公",
+        "培训",
+        "刷题"
+      ],
+      "icon": "https://www.huatu.com/favicon.ico"
+    },
+    {
+      "url": "https://www.fenbi.com",
+      "title": "粉笔",
+      "description": "公考与考研刷题、模考与课程平台",
+      "categorySlug": "exam-prep",
+      "tags": [
+        "考公",
+        "考研",
+        "刷题"
+      ],
+      "icon": "https://www.fenbi.com/favicon.ico"
+    },
+    {
+      "url": "https://www.icourse163.org",
+      "title": "中国大学MOOC",
+      "description": "高校公开课平台，免费课程补基础",
+      "categorySlug": "exam-prep",
+      "tags": [
+        "考研",
+        "课程",
+        "免费"
+      ],
+      "icon": "https://www.icourse163.org/favicon.ico"
     }
   ],
   "collections": [
@@ -1206,6 +1338,84 @@
         "https://www.amap.com",
         "https://www.zhihu.com",
         "https://arxiv.org"
+      ]
+    },
+    {
+      "slug": "drama-guide",
+      "title": "短剧追剧指南",
+      "description": "一口气追完不迷路：正版平台追更、解说测评与防坑提醒都在这里",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://www.bilibili.com",
+          "note": "B站追剧区与短剧UP主解说集中，热门短剧合集更新快",
+          "sort": 0
+        },
+        {
+          "site": "https://www.iqiyi.com",
+          "note": "爱奇艺短剧频道片库全，正版更新稳，适合长期追更",
+          "sort": 1
+        },
+        {
+          "site": "https://v.qq.com",
+          "note": "腾讯视频短剧与独播剧集多，会员追更不断档",
+          "sort": 2
+        },
+        {
+          "site": "https://www.youku.com",
+          "note": "优酷短剧与悬疑剧集见长，适合换口味追剧",
+          "sort": 3
+        },
+        {
+          "site": "https://www.mgtv.com",
+          "note": "芒果TV独家剧集与综艺多，短剧更新有固定节奏",
+          "sort": 4
+        },
+        {
+          "site": "https://www.douyin.com",
+          "note": "抖音短剧频道竖屏追剧快，达人解说帮你先避雷",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "slug": "exam-sprint",
+      "title": "考公考研冲刺",
+      "description": "报名不跑偏，备考有章法：官方入口打头，课程刷题随后",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://yz.chsi.com.cn",
+          "note": "研招网是考研报名、查分与调剂的唯一官方入口",
+          "sort": 0
+        },
+        {
+          "site": "https://www.chsi.com.cn",
+          "note": "学信网查学历、查学籍，报名前先确认资格",
+          "sort": 1
+        },
+        {
+          "site": "https://www.mohrss.gov.cn",
+          "note": "人社部官网发布公务员与事业单位招考政策，最权威",
+          "sort": 2
+        },
+        {
+          "site": "https://www.huatu.com",
+          "note": "华图教育课程与题库齐全，公考备考的老牌选择",
+          "sort": 3
+        },
+        {
+          "site": "https://www.fenbi.com",
+          "note": "粉笔刷题与模考方便，碎片时间也能练",
+          "sort": 4
+        },
+        {
+          "site": "https://www.icourse163.org",
+          "note": "中国大学MOOC公开课免费，补基础课的好地方",
+          "sort": 5
+        }
       ]
     }
   ]

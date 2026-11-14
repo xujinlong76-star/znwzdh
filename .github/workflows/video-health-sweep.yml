@@ -1,0 +1,198 @@
+name: video-health-sweep
+
+# 为什么需要这个文件：
+#   `apps/web-overlay/src/app/api/cron/video-health-sweep` 一直存在，但仓库里**没有任何
+#   调度器在调它**（无 workflow 引用）。视频库 6007 条里只有 7 条有验证时间戳，
+#   B 站下架的视频会一直挂在库里，用户点开才发现是死链。
+#
+# 前置 secrets（在仓库 Settings → Secrets 配置）：
+#   NAVHUB_SITE_URL  站点根地址，例如 https://www.shanyanghu.com（不带尾斜杠）
+#   CRON_SECRET      与服务端 CRON_SECRET 一致；未配置时服务端会 fail-closed 返回 503
+#
+# 时间选周日 03:17（UTC）：抄 video-harvest.yml 的错峰写法（整点最拥堵），跑在
+# 深夜低峰，避开人工编辑视频库的高峰时段。
+#
+# 首轮策略（升级第 4 条）：
+#   调度默认 dryRun=true，只出报告不写库。人工看过至少一轮报告、确认死链判定
+#   可信后，把下面的 SCHEDULED_DRY_RUN 改为 'false' 再跑真实写回；autoPrune
+#   （自动删确认失效的条目）在人工复核过至少一轮真实报告之前不得开。
+#   站点尚未上线时调度调不通（shanyanghu.com 还没跑本站应用）；接线先合，
+#   首轮真实扫查等上线后。上线前可手动 dispatch 对本地/预发布实例验证通路。
+#
+# 已知局限（循环只能重试，不能覆盖全库）：
+#   清扫器每次取文档顺序前 limit 条（未按 lastVerifiedAt 排序），循环重试只能
+#   让瞬时失败（限流/超时）的条目在重试中被确认，不能扫到 500 条以后的条目。
+#   全库覆盖需要清扫器按「最久未验证优先」取条目，那是另立项的改动，本文件
+#   不动清扫器、不动路由。
+
+on:
+  schedule:
+    - cron: '17 3 * * 0'      # 每周一次，周日 03:17（UTC）
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: '只演练不写库（默认 true；人工复核过报告后可设 false 跑真实写回）'
+        type: boolean
+        default: true
+      limit:
+        description: '每轮最多探测条数（上限 500）'
+        type: string
+        default: '500'
+      autoPrune:
+        description: '自动删除确认失效的条目（默认 false；人工复核过至少一轮真实报告后才可开）'
+        type: boolean
+        default: false
+
+# 与 ci.yml / video-harvest.yml 的权限收敛标准对齐：定时任务只需触发 HTTP 端点，
+# 不需要任何仓库令牌权限
+permissions:
+  contents: none
+
+concurrency:
+  group: video-health-sweep
+  cancel-in-progress: false
+
+env:
+  # 循环上限：响应里 unverifiedCount > 0 时重试，最多 15 轮，防止死循环
+  MAX_ROUNDS: '15'
+  # 调度默认只出报告不写库；人工复核过至少一轮报告后改为 'false'
+  SCHEDULED_DRY_RUN: 'true'
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    # 单轮 500 条、6 并发、最长单条 3.5s 探活，最坏约 5 分钟；15 轮重试封顶
+    # 留足余量，别把 timeout 设得太小
+    timeout-minutes: 120
+    steps:
+      - name: Validate secrets
+        env:
+          SITE: ${{ secrets.NAVHUB_SITE_URL }}
+          CRON: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SITE:-}" ]; then
+            echo "::error::缺少 secrets.NAVHUB_SITE_URL"
+            exit 1
+          fi
+          if [ -z "${CRON:-}" ]; then
+            echo "::error::缺少 secrets.CRON_SECRET（服务端未配置时会返回 503）"
+            exit 1
+          fi
+
+      - name: Run health sweep (loop until unverified == 0)
+        id: sweep
+        env:
+          SITE: ${{ secrets.NAVHUB_SITE_URL }}
+          CRON: ${{ secrets.CRON_SECRET }}
+          DRY_RUN_INPUT: ${{ inputs.dryRun }}
+          LIMIT_INPUT: ${{ inputs.limit }}
+          AUTO_PRUNE_INPUT: ${{ inputs.autoPrune }}
+        run: |
+          set -euo pipefail
+          BASE="${SITE%/}"
+          # dispatch 输入优先；定时触发时 inputs 为空，按调度默认值走
+          DRY_RUN="${DRY_RUN_INPUT:-$SCHEDULED_DRY_RUN}"
+          LIMIT="${LIMIT_INPUT:-500}"
+          AUTO_PRUNE="${AUTO_PRUNE_INPUT:-false}"
+          # limit 只认 1–500 的整数，其它值回落到 500（路由同样会 clamp）
+          case "$LIMIT" in
+            ''|*[!0-9]*) LIMIT=500 ;;
+          esac
+          if [ "$LIMIT" -lt 1 ] || [ "$LIMIT" -gt 500 ]; then LIMIT=500; fi
+
+          QUERY="limit=$LIMIT&dryRun=$DRY_RUN"
+          if [ "$AUTO_PRUNE" = "true" ]; then QUERY="$QUERY&autoPrune=true"; fi
+          URL="$BASE/api/cron/video-health-sweep?$QUERY"
+          echo "dryRun=$DRY_RUN limit=$LIMIT autoPrune=$AUTO_PRUNE"
+
+          ROUND=0
+          UNVERIFIED=1
+          while [ "$UNVERIFIED" -gt 0 ] && [ "$ROUND" -lt "$MAX_ROUNDS" ]; do
+            ROUND=$((ROUND + 1))
+
+            # -f：4xx/5xx 直接失败（否则 CDN 的错误页会被当成成功）
+            # 单轮最坏约 5 分钟，--max-time 给 10 分钟
+            code=$(curl -sS -o /tmp/sweep.json -w '%{http_code}' \
+              -X POST "$URL" \
+              -H "Authorization: Bearer $CRON" \
+              -H 'Content-Type: application/json' \
+              --max-time 600 || echo '000')
+
+            echo "Round $ROUND: HTTP $code"
+            cat /tmp/sweep.json || true
+
+            if [ "$code" != "200" ]; then
+              echo "::error::巡检端点返回 HTTP $code（第 $ROUND 轮）"
+              exit 1
+            fi
+            cp /tmp/sweep.json "/tmp/sweep-round-$ROUND.json"
+
+            UNVERIFIED=$(node -e '
+              const fs = require("fs");
+              let r;
+              try { r = JSON.parse(fs.readFileSync("/tmp/sweep.json", "utf8")); } catch { console.log(0); process.exit(0); }
+              if (r.success !== true) { console.log(0); process.exit(0); }
+              console.log(r.report?.unverifiedCount ?? 0);
+            ')
+            echo "Round $ROUND: unverified=$UNVERIFIED"
+          done
+          echo "rounds=$ROUND" >> "$GITHUB_OUTPUT"
+          echo "remaining_unverified=$UNVERIFIED" >> "$GITHUB_OUTPUT"
+
+          if [ "$UNVERIFIED" -gt 0 ]; then
+            # 未确认 ≠ 死链（超时/限流判 unverified，不进删除候选），不判失败，
+            # 只告警：下次调度再试
+            echo "::warning::$MAX_ROUNDS 轮后仍有 $UNVERIFIED 条未确认（限流/超时），下次调度再试"
+          fi
+
+      - name: Write job summary
+        env:
+          DRY_RUN_INPUT: ${{ inputs.dryRun }}
+          ROUNDS: ${{ steps.sweep.outputs.rounds }}
+          REMAINING: ${{ steps.sweep.outputs.remaining_unverified }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const glob = require("fs").readdirSync("/tmp").filter((f) => /^sweep-round-\d+\.json$/.test(f)).sort((a, b) => parseInt(a.match(/\d+/)[0], 10) - parseInt(b.match(/\d+/)[0], 10));
+            const dryRun = process.env.DRY_RUN_INPUT || process.env.SCHEDULED_DRY_RUN || "true";
+            const lines = ["### 视频库死链巡检结果", ""];
+            lines.push(`- 模式：${dryRun === "true" ? "演练（dryRun，未写库）" : "真实写回"}`);
+            lines.push(`- 轮数：${process.env.ROUNDS || glob.length}（循环上限 ${process.env.MAX_ROUNDS || 15}）`);
+            lines.push("");
+            lines.push("| 轮次 | 探测 | 健康 | 死链 | 未确认 | 已删 | 已写回 |");
+            lines.push("| --- | --- | --- | --- | --- | --- | --- |");
+            const broken = new Map();
+            let lastPersisted = false;
+            let lastApplied = 0;
+            for (const f of glob) {
+              let r;
+              try { r = JSON.parse(fs.readFileSync(`/tmp/${f}`, "utf8")); } catch { continue; }
+              const rep = r.report || {};
+              const round = parseInt(f.match(/\d+/)[0], 10);
+              lines.push(`| ${round} | ${rep.totalScanned ?? 0} | ${rep.healthyCount ?? 0} | ${rep.brokenCount ?? 0} | ${rep.unverifiedCount ?? 0} | ${rep.prunedCount ?? 0} | ${r.persisted ? "是" : "否"} ${r.applied ?? 0} |`);
+              for (const b of rep.brokenItems || []) {
+                if (!broken.has(b.id)) broken.set(b.id, b);
+              }
+              lastPersisted = !!r.persisted;
+              lastApplied = r.applied ?? 0;
+            }
+            if (broken.size) {
+              lines.push("", `#### 确认死链（${broken.size} 条，去重后）`, "", "| 标题 | 原因 |", "| --- | --- |");
+              for (const b of [...broken.values()].slice(0, 30)) {
+                lines.push(`| ${String(b.title ?? b.id).replace(/\|/g, "\\|")} | ${String(b.reason ?? "").replace(/\|/g, "\\|")} |`);
+              }
+              if (broken.size > 30) lines.push("", `（仅列前 30 条，共 ${broken.size} 条）`);
+            } else {
+              lines.push("", "本轮未确认死链。");
+            }
+            if ((process.env.REMAINING || "0") !== "0") {
+              lines.push("", `⚠️ ${process.env.MAX_ROUNDS || 15} 轮后仍有 ${process.env.REMAINING} 条未确认（限流/超时造成，未确认不进删除候选），下次调度再试。`);
+            }
+            if (dryRun === "true") {
+              lines.push("", "本次为演练，未写库。人工复核报告、确认死链判定可信后，再把 SCHEDULED_DRY_RUN 改为 false 跑真实写回。");
+            } else if (lastPersisted) {
+              lines.push("", `已写回 ${lastApplied} 条健康字段。`);
+            }
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+          '

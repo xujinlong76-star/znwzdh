@@ -104,6 +104,34 @@ export const FEATURED_COLLECTION_EDITORIALS: FeaturedCollectionEditorial[] = [
       { id: "act-2", title: "第二幕 · 备考课程与刷题", description: "跟课、刷题、学公开课，备考按节奏走。", siteUrls: ["https://www.huatu.com", "https://www.fenbi.com", "https://www.icourse163.org"] },
     ],
   },
+  {
+    slug: "ai-video-toolkit",
+    title: "AI 视频创作工具箱",
+    valueProposition: "一句话，出成片",
+    intro: "AI 视频工具多，新手容易挑花眼。这期只收能直接用的生成平台：先文生视频出片，再图生视频玩运镜，创作不迷路。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开、可以免费体验的 AI 视频平台；生成效果因提示词与模型版本而异，正式商用前请确认各平台的版权与使用条款。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("AI 视频创作工具箱"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 文生视频先上手", description: "先把想法变成画面：输入一句话就能出片，是上手最快的路。", siteUrls: ["https://runwayml.com", "https://pika.art", "https://klingai.com"] },
+      { id: "act-2", title: "第二幕 · 图生视频玩运镜", description: "有了图片再动起来：运镜与质感拉满，成片更有电影感。", siteUrls: ["https://www.lumalabs.ai", "https://jimeng.jianying.com", "https://hailuoai.com"] },
+    ],
+  },
+  {
+    slug: "office-boost",
+    title: "打工人效率办公",
+    valueProposition: "开工不加班，事事有着落",
+    intro: "上班的工具越少越好。这期只收打开就能干活的办公平台：先把协作沟通理顺，再把文档表格收好，下班不拖堂。",
+    curator: "山羊胡网编辑部",
+    issueNo: 1,
+    editorNote: "本期只收能直接打开的办公平台；企业版功能与价格以各官网为准，选型前建议先试免费版。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
+    correctionHref: correctionIssueUrl("打工人效率办公"),
+    acts: [
+      { id: "act-1", title: "第一幕 · 协作沟通", description: "先把人和事连起来：文档、会议、日程与审批在一个地方。", siteUrls: ["https://www.feishu.cn", "https://www.dingtalk.com", "https://www.notion.com"] },
+      { id: "act-2", title: "第二幕 · 文档表格", description: "再把资料收好：文档表格随开随改，沉淀的资料找得到。", siteUrls: ["https://docs.qq.com", "https://www.wps.cn", "https://www.yuque.com"] },
+    ],
+  },
 ];
 
 export function getFeaturedEditorial(slug: string): FeaturedCollectionEditorial | undefined {

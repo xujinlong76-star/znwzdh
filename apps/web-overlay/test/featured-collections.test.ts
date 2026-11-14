@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FEATURED_COLLECTION_EDITORIALS, coverSiteUrls, getFeaturedEditorial, issueLabel, normalizeSiteUrl, orderUrlsByAct, validateFeaturedEditorial } from "../src/lib/featured-collections";
+import { FAVORITE_COLLECTIONS_KEY, SUBSCRIBED_COLLECTIONS_KEY, markVisited, parseSlugList, toggleSlug, visitProgressLabel, visitedCollectionKey, visitedProgress } from "../src/lib/featured-collection-activity";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const seed = JSON.parse(readFileSync(resolve(HERE, "..", "..", "api", "src", "seed-data.json"), "utf-8")) as {
@@ -20,7 +21,7 @@ function seedSiteUrls(col: NonNullable<ReturnType<typeof seedCollection>>): stri
 
 describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合集）", () => {
   it("两个新合集都有策展文案且校验通过", () => {
-    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint"]);
+    expect(FEATURED_COLLECTION_EDITORIALS.map((e) => e.slug)).toEqual(["drama-guide", "exam-sprint", "ai-video-toolkit", "office-boost"]);
     for (const e of FEATURED_COLLECTION_EDITORIALS) {
       expect(validateFeaturedEditorial(e)).toEqual([]);
       expect(e.title.trim().length).toBeGreaterThan(0);
@@ -83,5 +84,82 @@ describe("精选专题编辑层（第 1 笔：列表页 A 壳 + 前 2 个新合�
     expect(detail).toContain('id="correction"');
     expect(detail).toContain("orderedSites");
     expect(detail).toContain("getFeaturedEditorial");
+  });
+});
+
+describe("精选专题（第 2 笔：AI 视频创作工具箱、打工人效率办公 + 收藏/订阅/进度）", () => {
+  it("两个新合集的策展文案已就位：两幕各 3 站，价值主张在 20 字内", () => {
+    expect(FEATURED_COLLECTION_EDITORIALS.length).toBe(4);
+    const ai = getFeaturedEditorial("ai-video-toolkit");
+    const office = getFeaturedEditorial("office-boost");
+    expect(ai).toBeDefined();
+    expect(office).toBeDefined();
+    if (!ai || !office) return;
+    expect(ai.title).toBe("AI 视频创作工具箱");
+    expect(ai.valueProposition).toBe("一句话，出成片");
+    expect(ai.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(ai.issueNo).toBe(1);
+    expect(ai.acts.length).toBe(2);
+    expect(ai.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(ai.acts[0].title).toBe("第一幕 · 文生视频先上手");
+    expect(ai.acts[1].title).toBe("第二幕 · 图生视频玩运镜");
+    expect(validateFeaturedEditorial(ai)).toEqual([]);
+    expect(office.title).toBe("打工人效率办公");
+    expect(office.valueProposition).toBe("开工不加班，事事有着落");
+    expect(office.valueProposition.length).toBeLessThanOrEqual(20);
+    expect(office.issueNo).toBe(1);
+    expect(office.acts.length).toBe(2);
+    expect(office.acts.map((a) => a.siteUrls.length)).toEqual([3, 3]);
+    expect(office.acts[0].title).toBe("第一幕 · 协作沟通");
+    expect(office.acts[1].title).toBe("第二幕 · 文档表格");
+    expect(validateFeaturedEditorial(office)).toEqual([]);
+    expect(coverSiteUrls(ai).length).toBe(6);
+    expect(coverSiteUrls(office).length).toBe(6);
+  });
+
+  it("互动纯逻辑：收藏/订阅的 slug 列表切换与解析", () => {
+    expect(parseSlugList(null)).toEqual([]);
+    expect(parseSlugList("")).toEqual([]);
+    expect(parseSlugList("not json")).toEqual([]);
+    expect(parseSlugList("[]")).toEqual([]);
+    expect(parseSlugList("[\"ai-video-toolkit\", \"office-boost\"]")).toEqual(["ai-video-toolkit", "office-boost"]);
+    expect(parseSlugList("[1, \"a\", null]")).toEqual(["a"]);
+    expect(toggleSlug([], "ai-video-toolkit")).toEqual(["ai-video-toolkit"]);
+    expect(toggleSlug(["ai-video-toolkit"], "ai-video-toolkit")).toEqual([]);
+    expect(toggleSlug(["a"], "b")).toEqual(["a", "b"]);
+    expect(visitedCollectionKey("ai-video-toolkit")).toBe("navhub_collection_visited:ai-video-toolkit");
+    expect(FAVORITE_COLLECTIONS_KEY).toBe("navhub_favorite_collections");
+    expect(SUBSCRIBED_COLLECTIONS_KEY).toBe("navhub_subscribed_collections");
+  });
+
+  it("互动纯逻辑：逛站进度计算与已逛标记", () => {
+    expect(visitedProgress(0, 6)).toEqual({ visited: 0, total: 6, percent: 0, done: false });
+    expect(visitedProgress(3, 6)).toEqual({ visited: 3, total: 6, percent: 50, done: false });
+    expect(visitedProgress(6, 6)).toEqual({ visited: 6, total: 6, percent: 100, done: true });
+    expect(visitedProgress(0, 0)).toEqual({ visited: 0, total: 0, percent: 0, done: false });
+    expect(visitedProgress(9, 6)).toEqual({ visited: 6, total: 6, percent: 100, done: true });
+    expect(visitedProgress(-2, 6)).toEqual({ visited: 0, total: 6, percent: 0, done: false });
+    expect(visitProgressLabel({ visited: 2, total: 6, percent: 33, done: false })).toBe("已逛 2/6 站");
+    expect(markVisited([], "site-a")).toEqual(["site-a"]);
+    expect(markVisited(["site-a"], "site-a")).toEqual(["site-a"]);
+    expect(markVisited(["site-a"], "site-b")).toEqual(["site-a", "site-b"]);
+  });
+
+  it("详情页已接入收藏合集、订阅更新与逛站进度", () => {
+    const detail = readFileSync(resolve(HERE, "..", "src", "app", "collections", "[slug]", "collection-detail-view.tsx"), "utf-8");
+    expect(detail).toContain("featured-collection-activity");
+    expect(detail).toContain("收藏合集");
+    expect(detail).toContain("订阅更新");
+    expect(detail).toContain("逛站进度");
+    expect(detail).toContain("FAVORITE_COLLECTIONS_KEY");
+    expect(detail).toContain("SUBSCRIBED_COLLECTIONS_KEY");
+    expect(detail).toContain("visitedCollectionKey");
+    expect(detail).toContain("toggleCollectionFavorite");
+    expect(detail).toContain("toggleSubscribe");
+    expect(detail).toContain("markSiteVisited");
+    expect(detail).toContain("onClick={() => markSiteVisited(site.id)}");
+    expect(detail).toContain("role=\"progressbar\"");
+    expect(detail).toContain("visitProgressLabel");
+    expect(detail).toContain("已逛");
   });
 });

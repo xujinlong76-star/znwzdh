@@ -11,6 +11,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { safeHref } from '@/lib/safe-url'
 import { coverSiteUrls, getFeaturedEditorial, issueLabel, normalizeSiteUrl, orderUrlsByAct, relatedFeaturedEditorials } from '@/lib/featured-collections';
+import { FAVORITE_COLLECTIONS_KEY, SUBSCRIBED_COLLECTIONS_KEY, markVisited, parseSlugList, toggleSlug, visitProgressLabel, visitedCollectionKey, visitedProgress } from '@/lib/featured-collection-activity';
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { fetchCollectionDetail, type HubCollection, type HubCollectionDetailSite } from '@/lib/navhub-api'
@@ -89,6 +90,73 @@ export default function CollectionDetailView({
   const editorial = useMemo(() => getFeaturedEditorial(slug), [slug]);
   const orderedSites = useMemo(() => (editorial ? orderUrlsByAct(editorial, filteredSites) : filteredSites), [editorial, filteredSites]);
   const relatedEditorials = useMemo(() => (editorial ? relatedFeaturedEditorials(editorial.slug) : []), [editorial]);
+
+// 精选专题互动：收藏整部合集、订阅更新、逛站进度（仅本合集，本地存储）
+const [favoriteSlugs, setFavoriteSlugs] = useState<string[]>(() => {
+  if (typeof window === "undefined") return [];
+  try {
+    return parseSlugList(localStorage.getItem(FAVORITE_COLLECTIONS_KEY));
+  } catch {
+    return [];
+  }
+});
+const [subscribedSlugs, setSubscribedSlugs] = useState<string[]>(() => {
+  if (typeof window === "undefined") return [];
+  try {
+    return parseSlugList(localStorage.getItem(SUBSCRIBED_COLLECTIONS_KEY));
+  } catch {
+    return [];
+  }
+});
+const [visitedSiteIds, setVisitedSiteIds] = useState<string[]>(() => {
+  if (typeof window === "undefined") return [];
+  try {
+    return parseSlugList(localStorage.getItem(visitedCollectionKey(slug)));
+  } catch {
+    return [];
+  }
+});
+const isCollectionFavorite = editorial ? favoriteSlugs.includes(editorial.slug) : false;
+const isSubscribed = editorial ? subscribedSlugs.includes(editorial.slug) : false;
+const visitProgress = visitedProgress(visitedSiteIds.length, editorial ? orderedSites.length : 0);
+
+const toggleCollectionFavorite = () => {
+  if (!editorial) return;
+  const target = editorial.slug;
+  setFavoriteSlugs((prev) => {
+    const next = toggleSlug(prev, target);
+    try {
+      localStorage.setItem(FAVORITE_COLLECTIONS_KEY, JSON.stringify(next));
+    } catch {
+      // 本地存储不可用时静默
+    }
+    return next;
+  });
+};
+const toggleSubscribe = () => {
+  if (!editorial) return;
+  const target = editorial.slug;
+  setSubscribedSlugs((prev) => {
+    const next = toggleSlug(prev, target);
+    try {
+      localStorage.setItem(SUBSCRIBED_COLLECTIONS_KEY, JSON.stringify(next));
+    } catch {
+      // 本地存储不可用时静默
+    }
+    return next;
+  });
+};
+const markSiteVisited = (siteId: string) => {
+  setVisitedSiteIds((prev) => {
+    const next = markVisited(prev, siteId);
+    try {
+      localStorage.setItem(visitedCollectionKey(slug), JSON.stringify(next));
+    } catch {
+      // 本地存储不可用时静默
+    }
+    return next;
+  });
+};
 
   /**
    * 区分「专题确实下架」（404）与「中枢挂了」（5xx / 网络失败）。
@@ -413,6 +481,35 @@ ${items}
               <p className="mt-1 text-lg font-bold">{editorial.valueProposition}</p>
               <p className="mt-1 text-sm text-muted-foreground">{editorial.intro}</p>
               <p className="mt-2 text-xs text-muted-foreground">策展：{editorial.curator}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleCollectionFavorite}
+            aria-label="收藏合集"
+            aria-pressed={isCollectionFavorite}
+            title="收藏整部合集"
+            className="rounded-full border border-border/60 bg-surface px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            {isCollectionFavorite ? "★ 已收藏合集" : "☆ 收藏合集"}
+          </button>
+          <button
+            type="button"
+            onClick={toggleSubscribe}
+            aria-label="订阅更新"
+            aria-pressed={isSubscribed}
+            title="合集有新站点加入时提醒"
+            className="rounded-full border border-border/60 bg-surface px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            {isSubscribed ? "✓ 已订阅更新" : "订阅更新"}
+          </button>
+          <div className="flex min-w-40 flex-1 items-center gap-2">
+            <span className="shrink-0 text-xs text-muted-foreground">{visitProgressLabel(visitProgress)}</span>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={visitProgress.percent} aria-valuemin={0} aria-valuemax={100} aria-label="逛站进度">
+              <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${visitProgress.percent}%` }} />
+            </div>
+            <span className="shrink-0 text-xs text-muted-foreground">{visitProgress.percent}%</span>
+          </div>
+        </div>
             </div>
           </div>
         </section>
@@ -445,7 +542,7 @@ ${items}
                     <li key={site.id} className="flex items-start gap-2 text-sm">
                       <SiteFavicon title={site.title} url={site.url} icon={site.iconKey} className="size-5 shrink-0 rounded" />
                       <span className="min-w-0">
-                        <Link href={"/site/" + encodeURIComponent(site.id)} className="font-medium text-primary hover:underline">{site.title}</Link>
+                        <Link href={"/site/" + encodeURIComponent(site.id)} onClick={() => markSiteVisited(site.id)} className="font-medium text-primary hover:underline">{site.title}</Link>{visitedSiteIds.includes(site.id) ? <span className="ml-1 text-xs text-emerald-600">✓ 已逛</span> : null}
                         {site.collectionNote ? <span className="text-muted-foreground">：{site.collectionNote}</span> : null}
                       </span>
                     </li>

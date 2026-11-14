@@ -1176,6 +1176,127 @@
         "免费"
       ],
       "icon": "https://www.icourse163.org/favicon.ico"
+    },
+    {
+      "url": "https://runwayml.com",
+      "title": "Runway",
+      "description": "AI 视频生成的标杆产品，文生视频与图生视频都在线",
+      "categorySlug": "ai-drama-creation",
+      "tags": [
+        "AI视频",
+        "文生视频"
+      ],
+      "icon": "https://runwayml.com/favicon.ico"
+    },
+    {
+      "url": "https://pika.art",
+      "title": "Pika",
+      "description": "一句话生成短视频，社交短片与创意转场的好帮手",
+      "categorySlug": "ai-drama-creation",
+      "tags": [
+        "AI视频",
+        "短视频"
+      ],
+      "icon": "https://pika.art/favicon.ico"
+    },
+    {
+      "url": "https://www.lumalabs.ai",
+      "title": "Luma AI",
+      "description": "Dream Machine 图生视频与运镜控制出色，电影感镜头一键生成",
+      "categorySlug": "ai-drama-creation",
+      "tags": [
+        "AI视频",
+        "图生视频"
+      ],
+      "icon": "https://www.lumalabs.ai/favicon.ico"
+    },
+    {
+      "url": "https://jimeng.jianying.com",
+      "title": "即梦AI",
+      "description": "字节出品：AI 视频、图片生成与智能画布一站式创作",
+      "categorySlug": "ai-drama-creation",
+      "tags": [
+        "AI视频",
+        "国产"
+      ],
+      "icon": "https://jimeng.jianying.com/favicon.ico"
+    },
+    {
+      "url": "https://klingai.com",
+      "title": "可灵AI",
+      "description": "快手出品的视频生成平台，人物动作与画面质感自然",
+      "categorySlug": "ai-drama-creation",
+      "tags": [
+        "AI视频",
+        "国产"
+      ],
+      "icon": "https://klingai.com/favicon.ico"
+    },
+    {
+      "url": "https://hailuoai.com",
+      "title": "海螺AI",
+      "description": "MiniMax 出品：视频、音乐、画图都在一个创作工作台",
+      "categorySlug": "ai-drama-creation",
+      "tags": [
+        "AI视频",
+        "国产"
+      ],
+      "icon": "https://hailuoai.com/favicon.ico"
+    },
+    {
+      "url": "https://www.feishu.cn",
+      "title": "飞书",
+      "description": "文档、会议、日程与审批打通的国产协作平台",
+      "categorySlug": "collaborative-docs",
+      "tags": [
+        "协作",
+        "文档"
+      ],
+      "icon": "https://www.feishu.cn/favicon.ico"
+    },
+    {
+      "url": "https://www.dingtalk.com",
+      "title": "钉钉",
+      "description": "考勤、审批、会议与企业通讯一体化的办公入口",
+      "categorySlug": "instant-messaging",
+      "tags": [
+        "协作",
+        "考勤"
+      ],
+      "icon": "https://www.dingtalk.com/favicon.ico"
+    },
+    {
+      "url": "https://docs.qq.com",
+      "title": "腾讯文档",
+      "description": "在线文档表格幻灯片，微信 QQ 里随开随改",
+      "categorySlug": "online-docs",
+      "tags": [
+        "文档",
+        "表格"
+      ],
+      "icon": "https://docs.qq.com/favicon.ico"
+    },
+    {
+      "url": "https://www.wps.cn",
+      "title": "WPS",
+      "description": "文字表格演示三件套，兼容 Office 的国产办公套件",
+      "categorySlug": "office-suites",
+      "tags": [
+        "文档",
+        "办公套件"
+      ],
+      "icon": "https://www.wps.cn/favicon.ico"
+    },
+    {
+      "url": "https://www.yuque.com",
+      "title": "语雀",
+      "description": "团队知识库与协作文档，资料沉淀找得到、用得上",
+      "categorySlug": "notes-and-pkb",
+      "tags": [
+        "文档",
+        "知识库"
+      ],
+      "icon": "https://www.yuque.com/favicon.ico"
     }
   ],
   "collections": [
@@ -1414,6 +1535,84 @@
         {
           "site": "https://www.icourse163.org",
           "note": "中国大学MOOC公开课免费，补基础课的好地方",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "slug": "ai-video-toolkit",
+      "title": "AI 视频创作工具箱",
+      "description": "一句话出成片：能直接用的 AI 视频生成平台都在这里",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://runwayml.com",
+          "note": "AI 视频生成的开创者，Gen-4 模型画质与可控性都在线",
+          "sort": 0
+        },
+        {
+          "site": "https://pika.art",
+          "note": "一句话出片，社交短片与创意转场最顺手",
+          "sort": 1
+        },
+        {
+          "site": "https://klingai.com",
+          "note": "国产视频生成热门之选，人物动作与中式审美自然",
+          "sort": 2
+        },
+        {
+          "site": "https://www.lumalabs.ai",
+          "note": "图生视频与运镜控制出色，电影感镜头一键生成",
+          "sort": 3
+        },
+        {
+          "site": "https://jimeng.jianying.com",
+          "note": "中文提示词友好，视频、图片、画布一站式创作",
+          "sort": 4
+        },
+        {
+          "site": "https://hailuoai.com",
+          "note": "视频音乐画图三合一，创作工作台一次到位",
+          "sort": 5
+        }
+      ]
+    },
+    {
+      "slug": "office-boost",
+      "title": "打工人效率办公",
+      "description": "开工不加班：协作沟通与文档表格一次配齐",
+      "icon": null,
+      "kind": "topic",
+      "sites": [
+        {
+          "site": "https://www.feishu.cn",
+          "note": "文档会议日程审批打通，协作不用东拼西凑",
+          "sort": 0
+        },
+        {
+          "site": "https://www.dingtalk.com",
+          "note": "考勤审批会议一体化，打卡办公的入口",
+          "sort": 1
+        },
+        {
+          "site": "https://www.notion.com",
+          "note": "笔记、文档与任务合一，个人与团队工作台都够用",
+          "sort": 2
+        },
+        {
+          "site": "https://docs.qq.com",
+          "note": "随开随改不用装软件，微信 QQ 里直接协作",
+          "sort": 3
+        },
+        {
+          "site": "https://www.wps.cn",
+          "note": "三件套兼容 Office，免费版日常办公足够",
+          "sort": 4
+        },
+        {
+          "site": "https://www.yuque.com",
+          "note": "团队知识库与文档沉淀，资料找得到、看得懂",
           "sort": 5
         }
       ]

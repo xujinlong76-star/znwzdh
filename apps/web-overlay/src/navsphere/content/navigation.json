@@ -144,6 +144,27 @@
           ]
         },
         {
+          "id": "reg-ai-search-knowledge",
+          "title": "AI 搜索知识",
+          "description": "用 AI 直接回答问题的搜索入口",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-9d5b5b2b1cec",
+              "title": "元宝搜索",
+              "href": "https://so.qq.com",
+              "description": "腾讯旗下新一代 AI 搜索：用 AI 直接给答案并标注出处，广告与答案明确区分",
+              "icon": "https://so.qq.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI 搜索",
+                "搜索"
+              ]
+            }
+          ]
+        },
+        {
           "id": "reg-ai-coding-assistant",
           "title": "AI 编程助手",
           "description": "代码补全、AI IDE 与编程代理",

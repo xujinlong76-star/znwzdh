@@ -1224,6 +1224,11 @@
   "evidence": "问答社区免费使用",
   "title": "知乎"
  },
+ "so.qq.com": {
+  "pricing": "free",
+  "evidence": "AI 搜索免费使用",
+  "title": "元宝搜索"
+ },
  "soulapp.cn": {
   "pricing": "freemium",
   "evidence": "社交免费 + 会员付费档",

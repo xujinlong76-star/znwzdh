@@ -261,6 +261,19 @@ export function AiFinderPanel() {
         ) : null}
       </div>
 
+      {/* T5 元宝收录：AI 搜索入口直达 —— 不想问 AI 找站、只想直接搜的用户一键直达元宝搜索 */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="py-1.5 text-sm text-muted-foreground">AI 搜索入口：</span>
+        <a
+          href="https://so.qq.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-10 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-3.5 text-sm font-medium text-primary transition-colors hover:border-primary"
+        >
+          元宝搜索 →
+        </a>
+      </div>
+
       {error ? (
         <p role="alert" className="mt-3 rounded-lg bg-destructive/15 px-3 py-2 text-sm text-destructive-text">
           {error}

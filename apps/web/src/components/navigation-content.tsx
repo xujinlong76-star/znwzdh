@@ -12,6 +12,7 @@ import { NavigationToolbar } from '@/components/navigation-toolbar'
 import { NavigationCategorySection } from '@/components/navigation-category-section'
 import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
+import { HomeRecentVisits } from '@/components/home-recent-visits'
 import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
 import { didHomeDiyHistoryStepClaimThisTask } from '@/lib/modular/home-diy-storage'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
@@ -1128,6 +1129,10 @@ export function NavigationContent({
                   </div>
                 )
               )}
+
+              {/* 最近访问行（升级第 5 条）：hero 与第一个分类区之间；组件挂载后
+                  才读本机快照，SSR 首帧不渲染，空清单时整行不存在。 */}
+              <HomeRecentVisits />
 
               <DiyGridDragBoundary kit={dragKit} onDragEnd={handleCategoryDragEnd}>
               <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">

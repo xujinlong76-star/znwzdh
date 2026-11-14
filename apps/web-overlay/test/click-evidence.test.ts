@@ -364,6 +364,38 @@ describe("点击出箱（离线补报）", () => {
   });
 });
 
+describe("匿名遥测开关（reportClick live 投递去标识）", () => {
+  it("关掉开关后点击仍上报计数，但不再带稳定身份头", async () => {
+    // 真实缺陷（走查 2026-11-14 22:22 假功能复核 ①缺口 A）：匿名用户关掉
+    // 「匿名行为遥测上报」后，live 投递照样带 anon 身份落库——开关只对出箱
+    // 落盘与漏斗信号生效，是 11-13 搜索历史开关问题的同类复发。
+    stubBrowserEnv({ telemetryEnabled: false });
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => okResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    reportClick("site-1", "anon-123", { query: "ai 编程", channel: "fts", position: 2 });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/hub/events");
+    expect((init.headers as Record<string, string>)["X-Navhub-Anon-Id"]).toBeUndefined();
+    // 事件本身仍送达：开关文案只承诺「不再关联个人身份标识」，不承诺「不再记录」；
+    // 服务端收到无主事件仍记 visit_count（与登录态去标识门同口径）。
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({ kind: "click", siteId: "site-1", query: "ai 编程" });
+  });
+
+  it("开关开启时身份头照常带上（行为不变）", async () => {
+    stubBrowserEnv({ telemetryEnabled: true });
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => okResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    reportClick("site-1", "anon-123");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect((fetchMock.mock.calls[0]![1].headers as Record<string, string>)["X-Navhub-Anon-Id"]).toBe("anon-123");
+  });
+});
+
 describe("投递漏斗信号（click_delivery）", () => {
   it("没送出去并入队后补一条 failed/enqueued：分辨「没人点」与「点了没送到」", async () => {
     const store = stubBrowserEnv();

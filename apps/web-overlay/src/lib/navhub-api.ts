@@ -683,15 +683,22 @@ export function reportClick(siteId: string, identity?: string, context?: ClickRe
   const eventId = context?.eventId?.trim() || newClickEventId()
   const clientCreatedAt = context?.clientCreatedAt ?? Date.now()
   const body = buildClickEventBody(siteId, { ...context, eventId, clientCreatedAt })
+  // 匿名遥测开关（「匿名行为遥测上报」）关掉后，点击事件仍可送达计数，
+  // 但不再带稳定身份：服务端对登录态已有同口径的去标识门（telemetry.ts
+  // 查服务端 user_settings 行，无身份即记为无主事件、visit_count 照涨），
+  // 这里补的是匿名态本机开关到不了服务端的那半边——否则开关只对出箱
+  // 落盘与漏斗信号生效，live 投递照样带 anon 身份落库（与 11-13 搜索
+  // 历史开关同类问题的复发）。开关开启或未设置时行为完全不变。
+  const effectiveIdentity = readLocalUserSettings().telemetryEnabled ? identity : undefined
   ensureOutboxDrainTriggers()
   void (async () => {
-    const delivered = await deliverClickEvent(body, identity)
+    const delivered = await deliverClickEvent(body, effectiveIdentity)
     if (delivered) return
     // 只在「确实没送达」时落盘，且落盘前先问同意开关：
     // 关掉遥测还往 IndexedDB 写带查询词的流水，等于把「已关闭」变成只对服务端生效的谎。
     if (typeof window === 'undefined') return
     if (!readLocalUserSettings().telemetryEnabled) return
-    await enqueueClickReport({ eventId, body, queuedAt: clientCreatedAt, identity }).catch(() => {
+    await enqueueClickReport({ eventId, body, queuedAt: clientCreatedAt, identity: effectiveIdentity }).catch(() => {
       // 出箱落盘失败不算事件丢失：内存态上报已尽力送达，落盘只是离线补送的机会
     })
     reportClickDelivery('failed', 'enqueued')

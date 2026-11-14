@@ -43,6 +43,6 @@ test.describe('核心旅程 4：前台多维探索与高频核心页面冒烟测
   test('算法实验室 (/algorithms)：装载 12 大前沿算法实验室与交互式推演台', async ({ page }) => {
     await page.goto('/algorithms');
     await expect(page.getByText('前沿自适应算法与认知引擎全景测试台', { exact: true })).toBeVisible();
-    await expect(page.getByText('12 大前沿认知与自治计算引擎全就绪')).toBeVisible();
+    await expect(page.getByText('12 大前沿认知与自治计算引擎 · 实验室演示')).toBeVisible();
   });
 });

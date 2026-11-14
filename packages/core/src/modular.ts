@@ -217,7 +217,7 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
   'quick-search': {
     type: 'quick-search',
     title: '多引擎聚合快捷搜索',
-    description: '聚合 Google、GitHub、npm、MDN 与 Bing，支持一键回车直达检索。',
+    description: '聚合 Google、百度、必应、搜狗、知乎、GitHub、npm 与 MDN，支持一键回车直达检索；卡内切换的引擎会记在本机，下次打开仍用它，还可自加一个自定义引擎。',
     category: 'tools',
     icon: 'Search',
     defaultColSpan: 6,
@@ -235,9 +235,12 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
         defaultValue: 'google',
         options: [
           { label: 'Google 搜索', value: 'google' },
+          { label: '百度搜索', value: 'baidu' },
+          { label: 'Bing 必应搜索', value: 'bing' },
+          { label: '搜狗搜索', value: 'sogou' },
+          { label: '知乎搜索', value: 'zhihu' },
           { label: 'GitHub 代码仓库', value: 'github' },
           { label: 'npm 包检索', value: 'npm' },
-          { label: 'Bing 必应搜索', value: 'bing' },
           { label: 'MDN 文档检索', value: 'mdn' },
         ],
       },

@@ -18,8 +18,15 @@ import type { ComponentType, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 export interface EmptyStateProps {
-  /** 语义图标（lucide 组件，调用方按语境选） */
-  icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
+  /**
+   * 语义图标：两种传法。
+   *   - 客户端调用方：传 lucide 组件（如 Flame），由本组件统一套尺寸与主色；
+   *   - 服务端调用方：必须传已渲染好的图标元素（如 <Flame className="…" />），
+   *     不能把组件函数直接传给客户端组件——RSC 边界无法序列化函数，
+   *     预渲染会报「Functions cannot be passed directly to Client Components」
+   *     （/brief 曾因此让 isr-build 整步失败）。元素传法时尺寸与主色由调用方自带。
+   */
+  icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }> | ReactNode
   /** 标题：短句，说明「这里本该有什么」 */
   title: string
   /** 解释：为什么空、数据在哪（可选但强烈建议给） */
@@ -39,13 +46,21 @@ const ICON_TONE: Record<NonNullable<EmptyStateProps['iconTone']>, string> = {
 }
 
 export function EmptyState({
-  icon: Icon,
+  icon,
   title,
   description,
   action,
   iconTone = 'primary',
   className,
 }: EmptyStateProps) {
+  // 组件传法由本组件套尺寸与主色；元素传法（服务端调用方）直接渲染，尺寸与主色已由调用方带好。
+  const Icon = icon
+  const iconNode =
+    typeof Icon === 'function' ? (
+      <Icon className={cn('w-6 h-6', ICON_TONE[iconTone])} aria-hidden />
+    ) : (
+      Icon
+    )
   return (
     <div
       className={cn(
@@ -54,7 +69,7 @@ export function EmptyState({
       )}
     >
       <div className="w-12 h-12 rounded-xl bg-muted/60 flex items-center justify-center mx-auto border border-border/40">
-        <Icon className={cn('w-6 h-6', ICON_TONE[iconTone])} aria-hidden />
+        {iconNode}
       </div>
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       {description ? (

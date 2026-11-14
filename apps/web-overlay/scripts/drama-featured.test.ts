@@ -128,7 +128,7 @@ describe("drama page structure", () => {
     expect(button).toContain("defaultTitle");
     expect(button).toContain("useState(defaultTitle ?? '')");
     const content = read("../src/components/drama-content.tsx");
-    expect(content).toContain("WatchListAddButton");
+    expect(content).toContain("WatchlistAddButton");
     expect(content).toContain("defaultTitle={drama.title}");
     expect(content).toContain("featuredDramaKey");
   });

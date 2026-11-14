@@ -237,7 +237,9 @@ export default async function BriefPage() {
                 </p>
                 {hotlistCopy ? (
                   <EmptyState
-                    icon={Flame}
+                    // 服务端页：图标传已渲染的元素，不把 Flame 组件函数传过 RSC 边界
+                    //（尺寸与主色按 warning 档自带，与 EmptyState 的 iconTone="warning" 同值）。
+                    icon={<Flame className="h-6 w-6 text-amber-600 dark:text-amber-400" aria-hidden />}
                     iconTone="warning"
                     title={hotlistCopy.title}
                     description={

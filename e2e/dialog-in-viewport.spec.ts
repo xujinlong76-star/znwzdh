@@ -52,9 +52,11 @@ test.describe('核心旅程 6：对话框出现在视口内且可交互', () => 
     await page.getByRole('button', { name: '确认创建' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
-    // 创建结果落到界面上了（导航区多出一个可编排的分类）
+    // 创建结果落到界面上了（导航区多出一个可编排的分类）。
+    // 注意：拖拽手柄的 title 带分类名（diy-drag-kit：按住拖拽调整「<分类名>」…），
+    // 不是旧的通用文案「…此分类…」，断言要按新建分类的实际名字写。
     await expect
-      .poll(() => page.getByTitle('按住拖拽调整此分类在页面上的排列位置').count())
+      .poll(() => page.getByTitle('按住拖拽调整「E2E 对话框可用性」在页面上的排列位置').count())
       .toBeGreaterThan(0);
   });
 

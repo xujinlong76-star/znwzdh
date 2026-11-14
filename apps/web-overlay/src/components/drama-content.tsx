@@ -25,7 +25,7 @@ import { safeHref } from "@/lib/safe-url";
 const APP_ONLY_RE = /需在.{0,10}App 内观看/;
 
 function isAppOnlySite(site: DramaSite): boolean {
-  return Boolean(site.description) && APP_ONLY_RE.test(site.description ?? "");
+  return site.description !== undefined && APP_ONLY_RE.test(site.description);
 }
 
 function episodeText(drama: DramaFeatured): string {

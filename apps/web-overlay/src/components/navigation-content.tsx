@@ -290,16 +290,34 @@ export function NavigationContent({
    */
   const [peek, setPeek] = useState<{ item: NavigationSubItem; categoryId?: string } | null>(null)
   /** 打开速览前的焦点：关闭弹窗后必须还回去，否则键盘用户被丢回页面顶部 */
-  const peekReturnFocusRef = useRef<HTMLElement | null>(null)
+  const peekReturnFocusRef = useRef<{ el: HTMLElement | null; siteId: string | null }>({
+    el: null,
+    siteId: null,
+  })
   const openPeek = useCallback((item: NavigationSubItem | null, categoryId?: string) => {
-    peekReturnFocusRef.current = document.activeElement as HTMLElement | null
+    const active = document.activeElement as HTMLElement | null
+    // 只存节点不够：速览打开会让卡片列表重渲染、主链接 DOM 节点被替换，
+    // 关闭时旧节点已不在文档里（document.contains 为 false），焦点就丢到 body。
+    // 因此同时记下站点 id，归还时按 id 重新找当前节点。
+    peekReturnFocusRef.current = { el: active, siteId: item?.id ?? null }
     setPeek(item ? { item, categoryId } : null)
   }, [])
   const restorePeekFocus = useCallback(() => {
-    const el = peekReturnFocusRef.current
-    peekReturnFocusRef.current = null
+    const { el, siteId } = peekReturnFocusRef.current
+    peekReturnFocusRef.current = { el: null, siteId: null }
     // 弹窗卸载是异步的，焦点归还要等一帧，否则会被 Radix 的卸载流程覆盖
-    if (el && document.contains(el)) requestAnimationFrame(() => el.focus())
+    requestAnimationFrame(() => {
+      if (el && document.contains(el)) {
+        el.focus()
+        return
+      }
+      if (siteId) {
+        const link = document.querySelector(
+          `[data-navhub-site-id="${CSS.escape(siteId)}"] a[data-prefetch-target]`,
+        ) as HTMLElement | null
+        link?.focus()
+      }
+    })
   }, [])
 
   // 添加自定义网址到专属分类状态

@@ -195,7 +195,7 @@ export function QuickSearchWidget({ config }: { config?: Record<string, unknown>
               <button
                 type="button"
                 onClick={deleteCustom}
-                className="ml-auto px-2 py-1 rounded-lg text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 cursor-pointer"
+                className="ml-auto px-2 py-1 rounded-lg text-xs text-red-700 dark:text-red-400 hover:bg-red-500/10 cursor-pointer"
               >
                 删除自定义引擎
               </button>

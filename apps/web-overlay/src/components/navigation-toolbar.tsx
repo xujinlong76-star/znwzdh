@@ -36,6 +36,9 @@ import {
   ListChecks,
   Sparkles,
   User,
+  Clapperboard,
+  Newspaper,
+  GraduationCap,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import type { SiteConfig } from '@/types/site'
@@ -185,6 +188,39 @@ export function NavigationToolbar({
                       <div className="flex flex-col">
                         <span className="font-medium text-foreground">模块化工作台</span>
                         <span className="text-xs text-muted-foreground">自由拖拽与小组件排版</span>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator className="my-1" />
+
+                  <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
+                    每日回访
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem asChild>
+                    <Link href="/drama" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
+                      <Clapperboard className="h-4 w-4 text-rose-500 shrink-0" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">短剧专区</span>
+                        <span className="text-xs text-muted-foreground">热门短剧与追剧清单</span>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/brief" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
+                      <Newspaper className="h-4 w-4 text-sky-500 shrink-0" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">每日简报</span>
+                        <span className="text-xs text-muted-foreground">全网热点一页读完</span>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/exam" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
+                      <GraduationCap className="h-4 w-4 text-violet-500 shrink-0" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">考试日历</span>
+                        <span className="text-xs text-muted-foreground">国考倒计时与备考提醒</span>
                       </div>
                     </Link>
                   </DropdownMenuItem>

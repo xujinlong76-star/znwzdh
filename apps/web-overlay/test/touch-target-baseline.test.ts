@@ -40,7 +40,7 @@ describe("底栏字号（mobile-nav）", () => {
     expect(src).toContain("text-[11px]");
   });
 
-  it("标签行收紧 leading 并禁止换行，防 4 项 flex-1 纵向溢出", () => {
+  it("标签行收紧 leading 并禁止换行，防 5 项 flex-1 纵向溢出", () => {
     const src = overlayFile("src/components/mobile-nav.tsx");
     expect(src).toContain("leading-[14px]");
     expect(src).toContain("whitespace-nowrap");

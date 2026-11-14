@@ -4,7 +4,9 @@
  * M6 移动端底部导航。
  *
  * 背景：窄屏下「我的 / 收藏」等用户中心入口只剩页脚文字链，用户要点好几屏
- * 才够得着。这里给全站补一条常驻底栏，四个入口：首页 / 分类 / 收藏 / 我的。
+ * 才够得着。这里给全站补一条常驻底栏，五个入口：首页 / 分类 / 短剧 / 收藏 / 我的。
+ * 短剧是 2026-11-14 第 52 轮补进的第五项：短剧观众是移动端回访主力，
+ * 此前 /drama 只在首页影院区与页脚有入口，手机用户从其他页到不了。
  *
  * 与 Footer 的契约（改前必读）：
  *   components/footer.tsx 的 `pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8`
@@ -21,7 +23,7 @@
  */
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Heart, Home, LayoutGrid, User } from 'lucide-react'
+import { Heart, Home, LayoutGrid, User, Clapperboard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
@@ -31,6 +33,9 @@ const ITEMS = [
   { href: '/', label: '首页', Icon: Home },
   // 分类总览的真实路由是 /category（app/category/page.tsx），不是 /categories
   { href: '/category', label: '分类', Icon: LayoutGrid },
+  // 短剧专区是真实路由 app/drama/page.tsx；/hot 不进底栏（mobile-touch-targets
+  // 锁死：底栏不放热榜，热榜走顶栏罗盘下拉与页脚）
+  { href: '/drama', label: '短剧', Icon: Clapperboard },
   { href: '/favorites', label: '收藏', Icon: Heart },
   { href: '/me', label: '我的', Icon: User },
 ] as const
@@ -66,7 +71,7 @@ export default function MobileNav() {
                 aria-label={href === '/me' && unread > 0 ? `${label}，${unread} 条未读通知` : label}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  // 触控可读性基线（F3）：标签 12px（原 10px 触控不可读）；leading 收紧防 4 项 flex-1 纵向溢出
+                  // 触控可读性基线（F3）：标签 12px（原 10px 触控不可读）；leading 收紧防 5 项 flex-1 纵向溢出
                   'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[12px] leading-[14px] font-medium transition-colors',
                   active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
                 )}

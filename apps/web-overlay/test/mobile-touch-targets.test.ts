@@ -42,13 +42,14 @@ const count = (src: string, sub: string) => src.split(sub).length - 1
 describe('P1 #10 评审结论：底部导航已存在，不重建', () => {
   const NAV = 'src/components/mobile-nav.tsx'
 
-  it('四入口齐全（首页/分类/收藏/我的），且是真实路由', () => {
+  it('五入口齐全（首页/分类/短剧/收藏/我的），且是真实路由', () => {
     const src = read(NAV)
-    for (const href of ["href: '/'", "href: '/category'", "href: '/favorites'", "href: '/me'"]) {
+    for (const href of ["href: '/'", "href: '/category'", "href: '/drama'", "href: '/favorites'", "href: '/me'"]) {
       expect(src, `缺少入口 ${href}`).toContain(href)
     }
-    // 研究提议的 首页/搜索/热榜/我的 是另一套组合；现有四项都是真实可用
-    // 的目的地，换项只是折腾，不改。
+    // 研究提议的 首页/搜索/热榜/我的 是另一套组合；现有五项都是真实可用
+    // 的目的地，换项只是折腾，不改。短剧是 2026-11-14 第 52 轮补进的第五项，
+    // 底栏仍不放 /hot（热榜走顶栏罗盘下拉与页脚）。
     expect(src).not.toContain("href: '/hot'")
     expect(src).not.toContain("href: '/search'")
   })

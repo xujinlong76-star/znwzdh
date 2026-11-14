@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
  * 背景：窄屏下用户中心入口只剩页脚文字链，不可达。mobile-nav.tsx 补了一条
  * 常驻底栏，footer 的 `pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8`
  * 就是为它预留的坑。这里锁死四件事，防止后续改动把这条契约拆掉：
- *   1. 组件是客户端组件且默认导出，四个入口路径齐全；
+ *   1. 组件是客户端组件且默认导出，五个入口路径齐全；
  *   2. 高亮与可访问性接线（usePathname / aria-current / aria-label）；
  *   3. 根布局真的挂了它（只建组件不挂载 = 没做）；
  *   4. 断点与 footer 预留对齐：组件不得自带会让 5.5rem 空隙失效的负 margin，
@@ -44,9 +44,9 @@ describe('mobile-nav 组件本体', () => {
     expect(src).toContain('export default function MobileNav')
   })
 
-  it('四个入口路径齐全（/ /category /favorites /me）', () => {
+  it('五个入口路径齐全（/ /category /drama /favorites /me）', () => {
     const src = read(COMPONENT)
-    for (const href of ["href: '/'", "href: '/category'", "href: '/favorites'", "href: '/me'"]) {
+    for (const href of ["href: '/'", "href: '/category'", "href: '/drama'", "href: '/favorites'", "href: '/me'"]) {
       expect(src, `缺少入口 ${href}`).toContain(href)
     }
     // 分类入口必须指向真实存在的路由：/categories 全站不存在（会 404），
@@ -54,7 +54,7 @@ describe('mobile-nav 组件本体', () => {
     // 但不允许任何入口指向它。
     expect(src).not.toContain("href: '/categories'")
     expect(existsSync(join(ROOT, 'src/app/category/page.tsx'))).toBe(true)
-    for (const route of ['src/app/favorites/page.tsx', 'src/app/me/page.tsx']) {
+    for (const route of ['src/app/drama/page.tsx', 'src/app/favorites/page.tsx', 'src/app/me/page.tsx']) {
       expect(existsSync(join(ROOT, route)), `${route} 应存在`).toBe(true)
     }
   })

@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import type { DragEndEvent } from '@dnd-kit/react'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
+import type { CinemaInitialData } from '@/components/home-drama-cinema'
 import { Sidebar } from '@/components/sidebar'
 import { NavigationToolbar } from '@/components/navigation-toolbar'
 import { NavigationCategorySection } from '@/components/navigation-category-section'
@@ -45,10 +46,13 @@ function DiyGridDragBoundary({
 }
 
 // 沉浸影院带在首屏下方且自带懒挂载：动态导入，不占首页首屏包体积（预算紧）。
+// 升级第 1 条（LCP）：原来这里是 ssr: false，首张海报要等客户端 chunk + IO +
+// JSON 三道关才出现，LCP 约 10 秒。去掉 ssr: false（默认即 SSR），配合
+// page.tsx 传下的 cinemaInitial，首张海报直接进 SSR HTML；dynamic 的代码
+// 分割照常保留，骨架 loading 留给客户端路由切换时占位。
 const HomeDramaCinema = dynamic(
   () => import('@/components/home-drama-cinema').then((m) => m.HomeDramaCinema),
   {
-    ssr: false,
     /**
      * 等高骨架（Lighthouse Wave 1 CLS 修复）：影院区 chunk 晚到时先占满真实高度，
      * 落进再换真内容，整页不上下跳（旧版无 loading 占位，733px 级下推落在另一
@@ -225,6 +229,12 @@ interface NavigationContentProps {
    * 由服务端按 NAVHUB_HOME_INITIAL_SSR_CATEGORIES 注入；<=0 表示不限制。
    */
   initialCategoryLimit?: number
+  /**
+   * 影院区首屏初始数据（升级第 1 条：LCP）——服务端在 page.tsx 算好：首张海报
+   * （drama-media.json 的 posters[0]）+ 短剧榜单 + AI 工具站数 + 导航状态。
+   * 缺席时影院组件走老路（客户端 IO 触发后自行 fetch），不强制依赖服务端。
+   */
+  cinemaInitial?: CinemaInitialData
 }
 
 /**
@@ -271,6 +281,7 @@ export function NavigationContent({
   directoryLinks = [],
   cardsPerGroup = 0,
   initialCategoryLimit = 0,
+  cinemaInitial,
 }: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -994,7 +1005,7 @@ export function NavigationContent({
               }
               if (sectionKey === 'dramaCinema') {
                 /* 沉浸影院（设计稿 E 落地）：短剧海报横滑 + 热播榜 + 分类横幅，懒挂载取数 */
-                return <HomeDramaCinema key={sectionKey} />
+                return <HomeDramaCinema key={sectionKey} initial={cinemaInitial} />
               }
               /* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */
               if (isModuleHidden('mod:onboarding-card')) return null

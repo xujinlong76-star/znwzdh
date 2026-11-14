@@ -32,6 +32,19 @@ export interface DramaSite {
   description?: string
 }
 
+/**
+ * 影院海报 / 分类横幅的素材形状（public/drama-media.json 一条记录；升级第 1 条）。
+ * 服务端（lib/server/cinema-media.ts）与影院组件（home-drama-cinema.tsx）共用
+ * 同一形状：首张海报是 data URI，服务端只把 posters[0] 当 prop 传下去。
+ */
+export interface DramaPoster {
+  key: string
+  title: string
+  width: number
+  height: number
+  data: string
+}
+
 const DRAMA_CATEGORY_REFS = new Set([
   'duanju',
   'short-drama',

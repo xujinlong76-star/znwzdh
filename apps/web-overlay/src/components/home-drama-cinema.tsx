@@ -15,7 +15,12 @@
  * 压成 WebP 后共 162KB、以 base64 放进一个静态 JSON，组件懒挂载时才
  * fetch，完全不进首页 JS bundle（首页预算只剩约 30KB 余量）。fetch 失败
  * 时退化为渐变海报卡 + 文字链接，功能不假装、入口不丢。
- * 站点数据走既有的 /api/home/navigation（与生态图谱同款公开只读口）。
+ *   升级第 1 条（LCP）例外：首张海报由服务端在 page.tsx 读 JSON 后当 prop
+ * 传下来，直接进 SSR HTML（只这一张，约 40KB，不把整份 JSON 塞进 RSC
+ * payload）；其余海报/横幅仍走客户端 fetch。服务端读不到时退化为老路。
+ * 站点数据：首页走服务端算好的 initial（page.tsx 用同一份导航数据算出），
+ * 不再请求 /api/home/navigation；initial 缺席的老路仍保留该请求
+ *（与生态图谱同款公开只读口）。
  * 标题行下方另有一行「继续追」：读本机追剧清单（未登录也能用），把
  * due→check→active 前 4 部以文字卡露出，空清单时整行不渲染；卡片点开
  * 只是平台站首页（站内无单剧深链），文案不暗示能直达某集，取行口径在
@@ -27,7 +32,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Clapperboard, Flame, Play } from 'lucide-react'
-import { collectDramaSites, countCategorySites, type DramaSite } from '@/lib/drama-sites'
+import { collectDramaSites, countCategorySites, type DramaPoster, type DramaSite } from '@/lib/drama-sites'
 import { safeHref } from '@/lib/safe-url'
 import { WatchlistAddButton } from '@/components/watchlist-add-button'
 import { useWatchlist } from '@/hooks/useWatchlist'
@@ -38,12 +43,23 @@ import {
   type WatchEntry,
 } from '@/lib/watchlist'
 
-interface MediaEntry {
-  key: string
-  title: string
-  width: number
-  height: number
-  data: string
+interface MediaEntry extends DramaPoster {}
+
+/**
+ * 服务端预取的影院初始数据（升级第 1 条：LCP）。
+ *
+ * 首页 page.tsx 在服务端算好传下来：poster 是 drama-media.json 的首张海报
+ * （data URI，约 40KB，只传这一张）；dramaSites / aiToolsCount 是同一份
+ * 导航数据算出来的，本来就要经 RSC 下发，不新增载荷；navStatus 是服务端
+ * 对导航数据的判定——'failed' 只在导航数据本身拿不到时出现。
+ * initial 缺席 = 老路：客户端 IO 触发后自行 fetch（页面其它入口复用本组件
+ * 时仍可用，不强制依赖服务端传参）。
+ */
+export interface CinemaInitialData {
+  poster: DramaPoster | null
+  dramaSites: DramaSite[]
+  aiToolsCount: number | null
+  navStatus: 'done' | 'failed'
 }
 
 /** 续看卡片角标：只断言清单里已有的事实，不冒充平台真的更新了。 */
@@ -60,12 +76,18 @@ const BANNER_LINKS: Record<string, { href: string; caption: string }> = {
   'banner-productivity': { href: '/category/office-productivity', caption: '效率办公' },
 }
 
-export function HomeDramaCinema() {
+export function HomeDramaCinema({ initial }: { initial?: CinemaInitialData }) {
   const rootRef = useRef<HTMLElement | null>(null)
-  const [posters, setPosters] = useState<MediaEntry[]>([])
+  // 服务端已给初始数据时直接进首屏 HTML：首张海报在 SSR 里就有，不用等客户端
+  // chunk + IO + JSON 三道关；榜单与横幅站数同样来自服务端算好的同一份导航数据。
+  const [posters, setPosters] = useState<MediaEntry[]>(initial?.poster ? [initial.poster] : [])
   const [banners, setBanners] = useState<MediaEntry[]>([])
-  const [dramaSites, setDramaSites] = useState<DramaSite[]>([])
+  const [dramaSites, setDramaSites] = useState<DramaSite[]>(initial?.dramaSites ?? [])
   const [started, setStarted] = useState(false)
+  // 服务端是否已给了导航数据：给了就不再请求 /api/home/navigation（同一份数据，
+  // 再拉一次只是多一次往返）。用 ref 固定首渲染的值——服务端 props 不会在
+  // 挂载后翻转，effect 不应因父级重渲染的新对象身份反复触发。
+  const hasServerNav = useRef(initial !== undefined).current
   // 「继续追」续看行：读本机追剧清单，未登录也能用；ready 前与存储被禁时不渲染，
   // 空清单时整行不出现——不在深色影院带里留「你还没追剧」的占位。
   const { ready: watchlistReady, entries: watchlistEntries, storageBlocked } = useWatchlist()
@@ -73,9 +95,12 @@ export function HomeDramaCinema() {
   const continueWatching =
     watchlistReady && !storageBlocked ? selectContinueWatching(watchlistEntries, now) : []
   // 横幅站数：导航数据到手后才有数；null = 还没数出来，只显示分类名不编数字
-  const [aiToolsCount, setAiToolsCount] = useState<number | null>(null)
-  // 榜单状态：pending = 还没开始拉（首屏未进入视口），failed = 已拉取失败
-  const [navStatus, setNavStatus] = useState<'pending' | 'loading' | 'done' | 'failed'>('pending')
+  const [aiToolsCount, setAiToolsCount] = useState<number | null>(initial?.aiToolsCount ?? null)
+  // 榜单状态：pending = 还没开始拉（首屏未进入视口），failed = 已拉取失败；
+  // 服务端给了初始数据时直接用服务端的判定，不再从 pending 走一遍。
+  const [navStatus, setNavStatus] = useState<'pending' | 'loading' | 'done' | 'failed'>(
+    initial ? initial.navStatus : 'pending',
+  )
 
   useEffect(() => {
     const el = rootRef.current
@@ -96,6 +121,9 @@ export function HomeDramaCinema() {
   useEffect(() => {
     if (!started) return
     let cancelled = false
+    // 海报 JSON 不管有没有服务端初始海报都要拉一次：它还带横幅与剩余海报。
+    // 有初始海报时 JSON 里的 posters[0] 与初始值是同一内容，替换不闪烁；
+    // 服务端读文件失败（poster 为 null）时这里照常补上海报，退化为老路。
     fetch('/drama-media.json')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -106,6 +134,13 @@ export function HomeDramaCinema() {
       .catch(() => {
         // 海报/横幅是装饰素材：拉不到就保持空数组，影院区的平台直达入口照常渲染，故吞掉
       })
+    // 导航数据：服务端已给的不再拉（见 hasServerNav）；没给的走老路——
+    // 这里才请求 /api/home/navigation（与生态图谱同款公开只读口）。
+    if (hasServerNav) {
+      return () => {
+        cancelled = true
+      }
+    }
     setNavStatus('loading')
     fetch('/api/home/navigation')
       .then((r) => (r.ok ? r.json() : null))
@@ -129,7 +164,7 @@ export function HomeDramaCinema() {
     return () => {
       cancelled = true
     }
-  }, [started])
+  }, [started, hasServerNav])
 
   const chart = dramaSites.slice(0, 8)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -291,9 +326,12 @@ export function HomeDramaCinema() {
             </ol>
           ) : (
             <p className="mt-3 text-sm text-zinc-400">
-              {navStatus === 'failed'
-                ? '榜单暂时拉不到，可以直接进短剧专区逛。'
-                : '榜单加载中…也可以直接进短剧专区逛。'}
+              {navStatus === 'pending' || navStatus === 'loading'
+                ? '榜单加载中…也可以直接进短剧专区逛。'
+                // done 但 0 站也是「已拿到但无数据」、failed 是拉取失败：两种都已
+                // 经不是「正在加载」，再写「加载中」会让用户一直等一个不会来的榜单，
+                // 改说实话（升级第 1 条顺带修；无既有测试断言旧文案）。
+                : '榜单暂时拉不到，可以直接进短剧专区逛。'}
             </p>
           )}
           <p className="mt-3 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-zinc-400">

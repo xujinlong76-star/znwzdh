@@ -5,6 +5,9 @@ import { HomeExamStrip } from "@/components/home-exam-strip";
 import { StreakBar } from "@/components/growth/streak-bar";
 import { Metadata } from "next/types";
 import { getProcessedData } from "@/lib/data-loader";
+import { collectDramaSites, countCategorySites } from "@/lib/drama-sites";
+import { getFirstDramaPoster } from "@/lib/server/cinema-media";
+import type { CinemaInitialData } from "@/components/home-drama-cinema";
 import { getFileContent } from "@/lib/github";
 import { configuredSiteOrigin } from "@/lib/seo/origin";
 import { webSiteLd, organizationLd } from "@/lib/seo/json-ld";
@@ -293,7 +296,24 @@ export default async function HomePage() {
   const seo = await getHomeSeo();
   // 导航数据与目录带互不依赖：串行 await 等于在白送一个中枢往返的 TTFB，
   // 而首页是爬虫面第一入口（getData 内部已并行，loadDirectoryLinks 内部也已并行）。
-  const [{ navigationData, siteData }, directoryLinks] = await Promise.all([getData(), loadDirectoryLinks()]);
+  // 影院首张海报的读取同样独立，并进同一批（升级第 1 条：LCP）。
+  const [{ navigationData, siteData }, directoryLinks, cinemaPoster] = await Promise.all([
+    getData(),
+    loadDirectoryLinks(),
+    getFirstDramaPoster(),
+  ]);
+  // 影院区首屏初始数据（升级第 1 条）：服务端用同一份导航数据算好榜单与横幅
+  // 站数，随 RSC 一起下发，影院组件就不再请求 /api/home/navigation；首张海报
+  // （读不到时为 null，组件自动退化为客户端 fetch 兜底）直接进 SSR HTML。
+  const navigationItems = navigationData?.navigationItems;
+  const cinemaInitial: CinemaInitialData = {
+    poster: cinemaPoster,
+    dramaSites: Array.isArray(navigationItems) ? collectDramaSites(navigationItems) : [],
+    aiToolsCount: Array.isArray(navigationItems)
+      ? countCategorySites(navigationItems, "reg-ai-tools", "AI 工具")
+      : null,
+    navStatus: Array.isArray(navigationItems) ? "done" : "failed",
+  };
 
   return (
     <>
@@ -306,6 +326,7 @@ export default async function HomePage() {
         directoryLinks={directoryLinks}
         cardsPerGroup={homeCardsPerGroup()}
         initialCategoryLimit={homeInitialSsrCategories()}
+        cinemaInitial={cinemaInitial}
       />
       {origin ? (
         <>

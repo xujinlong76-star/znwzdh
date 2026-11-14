@@ -14,7 +14,8 @@ import { useEffect, useState, useMemo } from 'react'
 import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
-import { fetchNewSites, fetchTrending, type HubSite } from '@/lib/navhub-api'
+import { fetchNewSites, fetchTrending, reportClick, type HubSite } from '@/lib/navhub-api'
+import { getIdentity } from '@/lib/identity'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
@@ -152,6 +153,18 @@ export default function HotView({
     )
   }
 
+  /**
+   * 榜单页点击上报：卡片标题外链、直达按钮、站内详情三处共用同一口径，
+   * 与 navigation-card.tsx 的 handleLinkClick 一致——reportClick 是
+   * fire-and-forget，失败静默落端侧出箱，永不阻塞跳转。
+   * position 取卡片在当前榜单里的名次（1 起），与左上角的名次徽章一致。
+   * 详情页挂载时不另外上报（site-detail-view.tsx 无 reportClick），
+   * 这里是 /hot → 详情的唯一一次上报，不会重复计数。
+   */
+  const handleSiteClick = (site: HubSite, position: number) => {
+    reportClick(site.id, getIdentity(), { position })
+  }
+
   const renderList = (sites: HubSite[]) => (
     <div
       className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! transition-all duration-200"
@@ -166,7 +179,7 @@ export default function HotView({
             <div className="shrink-0 pt-0.5">
               {getRankBadge(i)}
             </div>
-            <a href={safeHref(site.url)} target="_blank" rel={externalRel} className="block min-w-0 flex-1">
+            <a href={safeHref(site.url)} target="_blank" rel={externalRel} onClick={() => handleSiteClick(site, i + 1)} className="block min-w-0 flex-1">
               <div className="flex items-start gap-2.5">
                 <div className="shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                   <SiteFavicon
@@ -205,6 +218,7 @@ export default function HotView({
           <div className="mt-2 flex justify-end">
             <Link
               href={`/site/${encodeURIComponent(site.id)}`}
+              onClick={() => handleSiteClick(site, i + 1)}
               className="inline-flex min-h-11 items-center text-xs text-primary hover:underline underline-offset-4"
             >
               站内详情
@@ -215,6 +229,7 @@ export default function HotView({
               href={safeHref(site.url)}
               target="_blank"
               rel={externalRel}
+              onClick={() => handleSiteClick(site, i + 1)}
               className="inline-flex min-h-11 min-w-11 items-center justify-center p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
               title="新窗口直达"
               aria-label={`访问 ${site.title}`}

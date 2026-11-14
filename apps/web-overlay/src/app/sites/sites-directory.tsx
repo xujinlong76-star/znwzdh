@@ -187,7 +187,14 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
             </Link>
           </div>
 
-          <SitesDirectoryFilterableGrid initialSites={items} current={current} totalPages={totalPages} totalSites={all.length} />
+          <SitesDirectoryFilterableGrid
+            initialSites={items}
+            searchableSites={all}
+            totalPages={totalPages}
+            totalSites={all.length}
+            truncated={truncated}
+            failed={failed}
+          />
 
           {/* 取数失败时 totalPages 是按半截集合算出来的，页码链接会把用户送到
               并不存在的页（或静默夹到别的页）；只有一页时也无需分页条。 */}

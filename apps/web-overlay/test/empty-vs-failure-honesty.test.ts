@@ -85,19 +85,25 @@ describe('/sites 站点目录：失败 ≠ 截断 ≠ 空', () => {
     expect(src).toContain('{!failed && totalPages > 1 ? (')
   })
 
-  it('筛选空态不断言空引号：无词或本页 0 站时不渲染「未匹配到」', () => {
+  it('筛选空态不断言空引号：无词或取回 0 站时不渲染「未匹配到」', () => {
     // 空态标题是 `未匹配到「${filterQuery}」`：filterQuery 为 '' 时会渲染出
     // 「未匹配到「」」，且与父级「暂无可展示的站点。」叠成双重空态；0 站有词
-    // 时「本页收录的 0 个站点中暂未包含该关键词」又把「本页本来就没站点」
-    // 说成「关键词没匹配上」。两种情况都只剩父级空行 / 失败横幅。
+    // 时「收录的 0 个站点中暂未包含该关键词」又把「本来就没站点」说成
+    // 「关键词没匹配上」。两种情况都只剩父级空行 / 失败横幅。
+    // 改写原因（升级第 2 条）：被筛的集合从当前页（initialSites）换成已取回
+    // 的全部站点（searchableSites），空态标题也从「当前第 X 页」改为全站口
+    // 径；但上面两条守卫的意图不变——无词不渲染、取回 0 站不渲染。
     const grid = stripComments(read('src/components/sites-directory-filterable-grid.tsx'))
     const emptyAt = grid.indexOf('未匹配到')
     expect(emptyAt).toBeGreaterThan(-1)
-    const branchAt = grid.lastIndexOf('{filteredSites.length === 0', emptyAt)
+    const branchAt = grid.lastIndexOf('{visibleSites.length === 0', emptyAt)
     expect(branchAt).toBeGreaterThan(-1)
     const branch = grid.slice(branchAt, emptyAt)
-    expect(branch).toContain("filterQuery.trim() !== ''")
-    expect(branch).toContain('initialSites.length > 0')
+    // 有词才渲染：isFiltering 的定义就是 filterQuery.trim() !== ''。
+    expect(branch).toContain('isFiltering')
+    expect(grid).toContain("filterQuery.trim() !== ''")
+    // 取回的集合真的有站才渲染空态（0 站时只剩父级空行 / 失败横幅）。
+    expect(branch).toContain('searchableSites.length > 0')
     // 旧写法是裸条件，两个守卫缺一不可。
     expect(grid).not.toContain('{filteredSites.length === 0 ? (')
   })

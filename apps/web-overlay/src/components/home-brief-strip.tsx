@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, Flame } from 'lucide-react'
+import { ArrowRight, Flame, Search } from 'lucide-react'
 import { safeHref } from '@/lib/safe-url'
 import { formatHotValue, loadBriefToday } from '@/lib/server/brief'
 
@@ -44,6 +44,16 @@ export async function HomeBriefStrip() {
                   >
                     {pick.title}
                   </a>
+                  {/* 站内搜是标题旁的独立小按钮（更小一号、shrink-0，不挤占标题截断），
+                      同页跳 /search，不开新标签；标题本身仍是直达原平台的外链。 */}
+                  <Link
+                    href={`/search?q=${encodeURIComponent(pick.title)}`}
+                    aria-label={`站内搜「${pick.title}」`}
+                    title={`站内搜「${pick.title}」`}
+                    className="inline-flex shrink-0 items-center rounded-md p-0.5 text-muted-foreground hover:text-primary"
+                  >
+                    <Search className="h-3 w-3" aria-hidden />
+                  </Link>
                   {hot ? <span className="shrink-0">{hot}</span> : null}
                 </li>
               )

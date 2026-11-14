@@ -5,6 +5,7 @@
  *    中枢无数据时 metadata 走 noindex（不给搜索引擎空壳页）；
  *  - 首页简报条取不到简报时整条消失（返回 null），不许放占位假数据；
  *  - 在追提醒只走客户端岛带身份取数，SSR 壳里不出现任何用户数据。
+ *  - 热榜每行都有站内搜入口（/search?q= 全标题编码、同页跳转），标题外链仍是主链路。
  * 真 SSR 直出由端到端实测（临时实例 + 真实缓存）覆盖。
  */
 import { readFileSync } from 'node:fs'
@@ -67,6 +68,54 @@ describe('简报页源码守卫', () => {
   it('新收录区分「今日新增」与「最近收录」，不许把旧站冒充今日', () => {
     expect(page).toContain("newSitesScope === 'today'")
     expect(page).toContain('最近收录')
+  })
+})
+
+describe('热榜站内搜入口（升级第 7 条）', () => {
+  const page = read('src/app/brief/page.tsx')
+  const strip = read('src/components/home-brief-strip.tsx')
+  // HotRow 函数体：从定义处起到下一个顶层函数为止，断言只针对这一行。
+  const hotRow = page.slice(page.indexOf('function HotRow'), page.indexOf('function SourceColumn'))
+
+  it('HotRow 每行都有站内搜入口：q 用全标题编码，不截断', () => {
+    expect(page).toContain("import { ArrowRight, ExternalLink, Flame, Newspaper, Search, Sparkles } from 'lucide-react'")
+    expect(hotRow).toContain('href={`/search?q=${encodeURIComponent(item.title)}`}')
+    expect(hotRow).toContain('aria-label={`站内搜「${item.title}」`}')
+    // q 拼的是 item.title 本身，不是对截断后的副本编码
+    expect(hotRow).not.toMatch(/encodeURIComponent\(item\.title\.(slice|substring|split)/)
+  })
+
+  it('站内搜是独立的 Next Link（同页跳转），不嵌进标题外链、不抢点击区', () => {
+    expect(hotRow).toMatch(/<Link[^>]*href=\{`\/search\?q=/)
+    // HotRow 里唯一的 target="_blank" 是标题直达原平台的那个 <a>；
+    // 站内搜 Link 上没有任何 target 属性（Next Link 默认同页跳转）。
+    expect(hotRow.match(/target="_blank"/g)?.length ?? 0).toBe(1)
+    // 搜按钮出现在标题 </a> 之后，与标题链接并列，不嵌套
+    //（不用“站内搜”三个字定位：函数头的注释里就有它；用 <Link> 本身定位）
+    expect(hotRow.indexOf('</a>')).toBeGreaterThan(-1)
+    expect(hotRow.indexOf('<Link')).toBeGreaterThan(hotRow.indexOf('</a>'))
+    expect(hotRow.indexOf('aria-label={`站内搜')).toBeGreaterThan(hotRow.indexOf('</a>'))
+    // 标题仍是外链主链路
+    expect(hotRow).toContain('safeHref(item.url)')
+  })
+
+  it('首页简报条同款：更小一号、shrink-0，不挤占标题截断', () => {
+    expect(strip).toContain("import { ArrowRight, Flame, Search } from 'lucide-react'")
+    expect(strip).toContain('href={`/search?q=${encodeURIComponent(pick.title)}`}')
+    expect(strip).toContain('aria-label={`站内搜「${pick.title}」`}')
+    expect(strip).toMatch(/<Link[^>]*href=\{`\/search\?q=/)
+    expect(strip).toContain('className="h-3 w-3"')
+    expect(strip).toContain('shrink-0')
+    // 标题仍是直达原平台的外链，搜按钮的 <Link> 在标题 </a> 之后
+    expect(strip).toContain('safeHref(pick.url)')
+    const titleClose = strip.indexOf('</a>')
+    expect(titleClose).toBeGreaterThan(-1)
+    expect(strip.indexOf('<Link', titleClose)).toBeGreaterThan(titleClose)
+  })
+
+  it('q 编码行为：特殊字符与斜杠都编进 q，标题全量可搜', () => {
+    const href = `/search?q=${encodeURIComponent('AI 工具 & 活动/测试')}`
+    expect(href).toBe('/search?q=AI%20%E5%B7%A5%E5%85%B7%20%26%20%E6%B4%BB%E5%8A%A8%2F%E6%B5%8B%E8%AF%95')
   })
 })
 

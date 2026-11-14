@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { ArrowRight, ExternalLink, Flame, Newspaper, Sparkles } from 'lucide-react'
+import { ArrowRight, ExternalLink, Flame, Newspaper, Search, Sparkles } from 'lucide-react'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
@@ -62,18 +62,28 @@ export async function generateMetadata(): Promise<Metadata> {
 function HotRow({ item }: { item: HubBriefHotPick }) {
   const hot = formatHotValue(item.hotValue)
   return (
-    <li>
+    // 标题外链与站内搜是两个并列的独立链接：站内搜绝不嵌进标题 <a> 里，
+    // 标题仍是直达原平台的主链路，搜按钮只做站内跳转（同页，不开新标签）。
+    <li className="flex items-center gap-1">
       <a
         href={safeHref(item.url)}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-baseline gap-2 rounded-md px-1 py-1 hover:bg-accent transition-colors"
+        className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md px-1 py-1 hover:bg-accent transition-colors"
       >
         <span className="w-5 shrink-0 text-right text-xs font-semibold text-muted-foreground">{item.rank}</span>
         <span className="min-w-0 flex-1 truncate text-sm">{item.title}</span>
         {item.hotLabel ? <span className="shrink-0 text-[10px] text-orange-600 dark:text-orange-400">{item.hotLabel}</span> : null}
         {hot ? <span className="shrink-0 text-xs text-muted-foreground">{hot}</span> : null}
       </a>
+      <Link
+        href={`/search?q=${encodeURIComponent(item.title)}`}
+        aria-label={`站内搜「${item.title}」`}
+        title={`站内搜「${item.title}」`}
+        className="inline-flex shrink-0 items-center rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-primary"
+      >
+        <Search className="h-3.5 w-3.5" aria-hidden />
+      </Link>
     </li>
   )
 }

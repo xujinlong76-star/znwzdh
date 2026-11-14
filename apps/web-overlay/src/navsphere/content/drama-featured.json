@@ -89,9 +89,8 @@
       "episodesKnown": 70,
       "totalEpisodes": null,
       "check": {
-        "kind": "ranking",
-        "url": "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/",
-        "titleMatch": "为白月光弃我"
+        "kind": "none",
+        "reason": "已跌出 2026-11-13 快手榜前 100，冻结的 2026-11-10 榜单页仍在报旧集数，无法再查"
       }
     },
     {
@@ -103,9 +102,8 @@
       "episodesKnown": 65,
       "totalEpisodes": null,
       "check": {
-        "kind": "ranking",
-        "url": "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/",
-        "titleMatch": "病弱千金"
+        "kind": "none",
+        "reason": "已跌出 2026-11-13 快手榜前 100，冻结的 2026-11-10 榜单页仍在报旧集数，无法再查"
       }
     },
     {
@@ -117,9 +115,8 @@
       "episodesKnown": 57,
       "totalEpisodes": null,
       "check": {
-        "kind": "ranking",
-        "url": "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/",
-        "titleMatch": "考上清北"
+        "kind": "none",
+        "reason": "已跌出 2026-11-13 快手榜前 100，冻结的 2026-11-10 榜单页仍在报旧集数，无法再查"
       }
     },
     {

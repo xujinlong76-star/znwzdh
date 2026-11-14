@@ -7,12 +7,15 @@ import { afterAll, beforeAll, describe, expect, it} from "vitest";
 import { randomUUID} from "node:crypto";
 import { mkdtempSync, rmSync} from "node:fs";
 import { tmpdir} from "node:os";
-import { join} from "node:path";
+import { dirname, join} from "node:path";
+import { fileURLToPath} from "node:url";
 import { loadConfig} from "../src/config.ts";
 import { createContext, type AppContext} from "../src/context.ts";
 import { handleDramaUpdateCheck} from "../src/jobs/tasks/drama-check.task.ts";
-import { dramaKeyFor, type DramaFeatured} from "../src/drama/featured.ts";
+import { dramaKeyFor, loadDramaFeaturedForCheck, type DramaFeatured} from "../src/drama/featured.ts";
 import { parseRankingEpisode} from "../src/drama/ranking.ts";
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 const NOW = 1792000000000;
 const KUAISHOU = "nav-536bfaba406";
@@ -229,5 +232,25 @@ describe("handleDramaUpdateCheck", () => {
  expect(meta?.updated).toBe(0);
  expect(meta?.notified).toBe(0);
  expect(meta?.loadSkipped).toBe(0);
+});
+});
+
+describe("drama-featured.json 检查配置", () => {
+ it("ranking 检查不许用写死日期的榜单页 URL（日期一冻结就报旧集数）", () => {
+ const loaded = loadDramaFeaturedForCheck({ repoRoot: REPO_ROOT});
+ expect(loaded.error).toBeUndefined();
+ expect(loaded.dramas.length).toBeGreaterThan(0);
+ for (const drama of loaded.dramas) {
+ if (drama.check.kind !== "ranking") continue;
+ expect(drama.check.url).toBeDefined();
+ expect(drama.check.url).not.toMatch(/\/20\d\d-\d\d-\d\d\//);
+}
+ // 2026-11-14 实测：3 部快手剧已跌出 2026-11-13 榜前 100，
+ // 冻结的 2026-11-10 页仍解析出旧集数 70/65/57，检查已失效，须停查。
+ for (const title of ["为白月光弃我，孟小姐离婚不回头", "病弱千金往地一躺，全家慌了", "考上清北，却交不起五千学费"]) {
+ const drama = loaded.dramas.find((d) => d.title === title);
+ expect(drama?.check.kind).toBe("none");
+ expect(drama?.check.reason).toContain("2026-11-13");
+}
 });
 });

@@ -67,8 +67,10 @@ describe("loadDramaFeatured", () => {
     expect(dramas).toHaveLength(12);
     const kinds = new Map<string, number>();
     for (const d of dramas) kinds.set(d.check.kind, (kinds.get(d.check.kind) ?? 0) + 1);
-    expect(kinds.get("ranking")).toBe(3);
-    expect(kinds.get('none')).toBe(9);
+    // 2026-11-14：3 部快手剧已跌出榜单，冻结的榜单页只会报旧集数，
+    // 检查全部停查（ranking 归零）；回归 guard 见 apps/api/test/drama-check.test.ts。
+    expect(kinds.get("ranking") ?? 0).toBe(0);
+    expect(kinds.get('none')).toBe(12);
     const titles = dramas.map((d) => d.title);
     expect(titles).toContain('悍妻当家，靠美食扶起一家软骨头');
     expect(titles.some((t) => t.includes('念记老卤'))).toBe(false);

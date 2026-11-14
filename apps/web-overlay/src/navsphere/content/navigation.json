@@ -3958,6 +3958,18 @@
               ]
             },
             {
+              "id": "nav-2ad61b208d04",
+              "title": "天猫",
+              "href": "https://www.tmall.com",
+              "description": "品牌官方旗舰店为主的 B2C 平台，正品保障",
+              "icon": "https://tmall.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "电商",
+                "购物"
+              ]
+            },
+            {
               "id": "nav-211fca1bfa4d",
               "title": "拼多多",
               "href": "https://www.pinduoduo.com",

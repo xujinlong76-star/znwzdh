@@ -21,6 +21,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const NOW = 1792000000000;
 const KUAISHOU = "nav-536bfaba406";
 const HONGUO = "nav-557388e01d50";
+const DOUYIN = "nav-e85ffe7e04f6";
 const RANK_URL = "https://www.zongyimi.com/drama/rankings/kuaishou/2026-11-10/";
 
 /** 夹具榜单页：标题在 JSON-LD 出现 1 次（1500 字符内无集数）、表格行出现 2 次（带集数）。 */
@@ -34,12 +35,12 @@ function subjectHtml(title: string, ep: number, updatedAt = "2026-11-14"): strin
  return `<html><head><title>${title} - 综艺迷</title></head><body><h1>${title}</h1><dl class="facts"><div><dt>总集数</dt><dd>${ep} 集</dd></div><div><dt>总时长</dt><dd>6010 秒</dd></div><div><dt>首次投放</dt><dd>2026-11-08</dd></div><div><dt>资料更新</dt><dd>${updatedAt}</dd></div></dl></body></html>`;
 }
 
-function subjectDrama(title: string, subjectId: string, titleMatch: string): DramaFeatured {
+function subjectDrama(title: string, subjectId: string, titleMatch: string, platformSiteId = KUAISHOU, platformTitle = "快手短剧"): DramaFeatured {
  const url = `https://www.zongyimi.com/drama/subject/${subjectId}/`;
  return {
  title,
- platformSiteId: KUAISHOU,
- platformTitle: "快手短剧",
+ platformSiteId,
+ platformTitle,
  url,
  linkNote: "剧目页",
  episodesKnown: null,
@@ -140,6 +141,16 @@ describe("parseZongyimiSubject", () => {
  "<dl><div><dt>总集数</dt><dd>80 集</dd></div>" +
  "<div><dt>总集数</dt><dd>81 集</dd></div></dl>";
  expect(parseZongyimiSubject(html, "我隐藏身份").episode).toBeNull();
+});
+
+ it("总集数为“待补充”时不建基线、返回 null（资料更新日期仍记录）", () => {
+ // 2026-11-15 实测：太奶奶 S5 作品页总集数就是“待补充”，非数字值绝不能
+ // 解析成 0/NaN 后建出错误基线；该剧因此不接检查，待数值补上再复查。
+ const html =
+ "<dl class=\"facts\"><div><dt>总集数</dt><dd>待补充</dd></div>" +
+ "<div><dt>总时长</dt><dd>待补充</dd></div>" +
+ "<div><dt>资料更新</dt><dd>2026-11-02</dd></div></dl>";
+ expect(parseZongyimiSubject(html, "太奶奶")).toEqual({ episode: null, sourceUpdatedAt: "2026-11-02"});
 });
 
  it("空页面返回 null，资料更新日期仍可单独提取", () => {
@@ -282,32 +293,49 @@ describe("handleDramaUpdateCheck", () => {
  expect(meta?.loadSkipped).toBe(0);
 });
 
- it("zongyimi-subject：三部剧首轮各记基线 80/65/70、不通知，事件 checked=3 并记资料更新日期", async () => {
+ it("zongyimi-subject：六部剧首轮各记基线 80/65/70/260/300/32、不通知，事件 checked=6 并记资料更新日期", async () => {
  const user = "drama-test-subject-first";
  const d1 = subjectDrama("我隐藏身份，找到一个好儿媳", "396695190416", "我隐藏身份");
  const d2 = subjectDrama("病弱千金往地一躺，全家慌了", "117244640035", "病弱千金");
  const d3 = subjectDrama("为白月光弃我，孟小姐离婚不回头", "438522362760", "为白月光弃我");
+ // 第 2 批后 3 部（2026-11-15 实抓核实）：丑小鸭 S5 260 集（资料更新 2026-11-07）、
+ // 聚宝仙盆 S15 300 集（2026-11-05）、漂亮的恶意 32 集（2026-11-13）。
+ const d4 = subjectDrama("重生！丑小鸭逆袭成了万人迷 第五季", "253252418421", "丑小鸭", HONGUO, "红果短剧");
+ const d5 = subjectDrama("聚宝仙盆之杂灵根才是真BOSS 第十五季", "173694925686", "聚宝仙盆", HONGUO, "红果短剧");
+ const d6 = subjectDrama("漂亮的恶意", "282268810232", "漂亮的恶意", DOUYIN, "抖音短剧");
  await followDrama(user, d1);
  await followDrama(user, d2);
  await followDrama(user, d3);
+ await followDrama(user, d4);
+ await followDrama(user, d5);
+ await followDrama(user, d6);
  const { impl} = fakeFetch(new Map([
  [d1.check.url!, { status: 200, body: subjectHtml(d1.title, 80)}],
  [d2.check.url!, { status: 200, body: subjectHtml(d2.title, 65)}],
  [d3.check.url!, { status: 200, body: subjectHtml(d3.title, 70, "2026-11-13")}],
+ [d4.check.url!, { status: 200, body: subjectHtml(d4.title, 260, "2026-11-07")}],
+ [d5.check.url!, { status: 200, body: subjectHtml(d5.title, 300, "2026-11-05")}],
+ [d6.check.url!, { status: 200, body: subjectHtml(d6.title, 32, "2026-11-13")}],
  ]));
- await handleDramaUpdateCheck(ctx, { fetchImpl: impl, dramas: [d1, d2, d3], now: () => NOW});
+ await handleDramaUpdateCheck(ctx, { fetchImpl: impl, dramas: [d1, d2, d3, d4, d5, d6], now: () => NOW});
  expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d1.platformSiteId, d1.title)))?.latestEpisode).toBe(80);
  expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d2.platformSiteId, d2.title)))?.latestEpisode).toBe(65);
  expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d3.platformSiteId, d3.title)))?.latestEpisode).toBe(70);
+ expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d4.platformSiteId, d4.title)))?.latestEpisode).toBe(260);
+ expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d5.platformSiteId, d5.title)))?.latestEpisode).toBe(300);
+ expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d6.platformSiteId, d6.title)))?.latestEpisode).toBe(32);
  expect(await outboxFor(user)).toHaveLength(0);
  const meta = await latestCheckEvent();
- expect(meta?.checked).toBe(3);
+ expect(meta?.checked).toBe(6);
  expect(meta?.failed).toEqual([]);
  expect(meta?.guarded).toEqual([]);
  const updatedAt = meta?.sourceUpdatedAt as Record<string, string> | undefined;
  expect(updatedAt?.[dramaKeyFor(d1.platformSiteId, d1.title)]).toBe("2026-11-14");
  expect(updatedAt?.[dramaKeyFor(d2.platformSiteId, d2.title)]).toBe("2026-11-14");
  expect(updatedAt?.[dramaKeyFor(d3.platformSiteId, d3.title)]).toBe("2026-11-13");
+ expect(updatedAt?.[dramaKeyFor(d4.platformSiteId, d4.title)]).toBe("2026-11-07");
+ expect(updatedAt?.[dramaKeyFor(d5.platformSiteId, d5.title)]).toBe("2026-11-05");
+ expect(updatedAt?.[dramaKeyFor(d6.platformSiteId, d6.title)]).toBe("2026-11-13");
 });
 
  it("zongyimi-subject：解析不出集数时记 last_error、不通知", async () => {
@@ -392,6 +420,8 @@ describe("drama-featured.json 检查配置", () => {
  // 冻结的 2026-11-10 页仍解析出旧集数 70/65/57，检查已失效，须停查。
  // 2026-11-15：其中 2 部改走综艺迷作品页（zongyimi-subject）恢复检查；
  // 第 2 批白月光（作品页已实抓核实：总集数 70 集、资料更新 2026-11-13）同法接入，
+ // 第 2 批后 3 部（丑小鸭 S5 260 集 / 聚宝仙盆 S15 300 集 / 漂亮的恶意 32 集，
+ // 作品页实抓核实）同法接入；12 部精选剧可查 6 部，仍停查 6 部。
  // 仍停查的只剩考上清北（资料更新停在 2026-11-06，暂缓）。
  for (const title of ["考上清北，却交不起五千学费"]) {
  const drama = loaded.dramas.find((d) => d.title === title);
@@ -402,6 +432,9 @@ describe("drama-featured.json 检查配置", () => {
  ["病弱千金往地一躺，全家慌了", "117244640035"],
  ["我隐藏身份，找到一个好儿媳", "396695190416"],
  ["为白月光弃我，孟小姐离婚不回头", "438522362760"],
+ ["重生！丑小鸭逆袭成了万人迷 第五季", "253252418421"],
+ ["聚宝仙盆之杂灵根才是真BOSS 第十五季", "173694925686"],
+ ["漂亮的恶意", "282268810232"],
  ] as const) {
  const drama = loaded.dramas.find((d) => d.title === title);
  expect(drama?.check.kind).toBe("zongyimi-subject");

@@ -37,8 +37,9 @@
       "episodesKnown": null,
       "totalEpisodes": null,
       "check": {
-        "kind": "none",
-        "reason": "榜单页为 JS 空壳，静态 HTML 无集数"
+        "kind": "zongyimi-subject",
+        "url": "https://www.zongyimi.com/drama/subject/253252418421/",
+        "titleMatch": "丑小鸭"
       }
     },
     {
@@ -50,8 +51,9 @@
       "episodesKnown": null,
       "totalEpisodes": null,
       "check": {
-        "kind": "none",
-        "reason": "榜单文章无集数"
+        "kind": "zongyimi-subject",
+        "url": "https://www.zongyimi.com/drama/subject/173694925686/",
+        "titleMatch": "聚宝仙盆"
       }
     },
     {
@@ -76,8 +78,9 @@
       "episodesKnown": null,
       "totalEpisodes": null,
       "check": {
-        "kind": "none",
-        "reason": "报道页无集数，且剧在抖音 App 内播出"
+        "kind": "zongyimi-subject",
+        "url": "https://www.zongyimi.com/drama/subject/282268810232/",
+        "titleMatch": "漂亮的恶意"
       }
     },
     {

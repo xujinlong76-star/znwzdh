@@ -373,24 +373,30 @@ describe("精选专题（第 6 笔：改造 Agentic AI、AI 编程工具链、�
 describe("第 7 笔：改造设计速查工具箱、开源替代、编辑精选", () => {
   it("三个改造合集的策展文案完整，两幕分组覆盖全部站点", () => {
     const design = getFeaturedEditorial("design-toolkit");
+    expect(design).toBeDefined();
+    const oss = getFeaturedEditorial("open-source-alternatives");
+    expect(oss).toBeDefined();
+    const picks = getFeaturedEditorial("editors-picks");
+    expect(picks).toBeDefined();
+    if (!design || !oss || !picks) return;
     expect(design.title).toBe("设计速查工具箱");
     expect(design.valueProposition).toBe("配色图标字体，一站备齐");
     expect(design.curator).toBe("山羊胡网编辑部");
     expect(design.issueNo).toBe(1);
     expect(coverSiteUrls(design).length).toBe(6);
     expect(coverSiteUrls(design)).toContain("https://www.photopea.com");
-    const oss = getFeaturedEditorial("open-source-alternatives");
     expect(oss.title).toBe("开源替代");
     expect(oss.valueProposition).toBe("开源平替，照样好用");
     expect(coverSiteUrls(oss).length).toBe(6);
     expect(coverSiteUrls(oss)).toContain("https://www.libreoffice.org");
-    const picks = getFeaturedEditorial("editors-picks");
     expect(picks.title).toBe("编辑精选");
     expect(picks.valueProposition).toBe("编辑亲选，每天必看");
     expect(coverSiteUrls(picks).length).toBe(10);
   });
   it("编辑精选中 DeepSeek 对话页已换为同类可验证的 Kimi", () => {
     const seed = seedCollection("editors-picks");
+    expect(seed).toBeDefined();
+    if (!seed) return;
     const urls = seedSiteUrls(seed);
     expect(urls).not.toContain("https://chat.deepseek.com");
     expect(urls).toContain("https://kimi.moonshot.cn");

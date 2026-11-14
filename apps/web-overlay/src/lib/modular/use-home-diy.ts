@@ -49,18 +49,13 @@ import {
   type HomeDiyWriteResult,
   type HomeViewMode,
 } from './home-diy-storage'
-import {
-  asShareFields,
-  checkCloudVaultStatus as checkCloudVaultStatusPure,
-  clearCloudVault as clearCloudVaultPure,
-  exportDIYConfig as exportDIYConfigPure,
-  exportEncryptedDIYConfig as exportEncryptedDIYConfigPure,
-  importDIYConfig as importDIYConfigPure,
-  importEncryptedDIYConfig as importEncryptedDIYConfigPure,
-  prepareHomeDiyImport,
-  syncFromCloudVault as syncFromCloudVaultPure,
-  syncToCloudVault as syncToCloudVaultPure,
-} from './home-diy-io'
+/**
+ * home-diy-io（导入/导出/加密/云金库，约 16–21KB）只在用户触发备份/导入/
+ * 导出/同步时按需加载：首屏不渲染这些能力，静态 import 会把整块塞进 `/`
+ * 初始 chunk。调用点一律 `await import()`，动态 import 失败时由调用方
+ * toast 告知（不吞错、不假成功），见 bundle-next-cut-plan-2026-11-15-0622.md Step 1。
+ */
+const loadHomeDiyIo = () => import('./home-diy-io')
 import { notifyLayoutSyncMerge } from './layout-sync-events'
 import {
   publishSharedLayoutSync,
@@ -489,12 +484,18 @@ export function useHomeDIY() {
   }, [persistConfig])
 
   // 22-27. 导入/导出与云端金库：纯逻辑在同目录 home-diy-io.ts，这里只做状态接线。
-  const exportDIYConfig = useCallback(() => exportDIYConfigPure(config), [config])
+  // home-diy-io 是按需加载的（见文件顶部的 loadHomeDiyIo）：9 个函数全部是
+  // async，调用方已在 await；exportDIYConfig 是唯一由同步改异步的（原实现
+  // 返回 string，现返回 Promise<string>，调用方见 home-diy-backup-dialog）。
+  const exportDIYConfig = useCallback(async () => {
+    const io = await loadHomeDiyIo()
+    return io.exportDIYConfig(config)
+  }, [config])
 
-  const importDIYConfig = useCallback(
-    (jsonString: string) => importDIYConfigPure(jsonString, persistConfig),
-    [persistConfig],
-  )
+  const importDIYConfig = useCallback(async (jsonString: string) => {
+    const io = await loadHomeDiyIo()
+    return io.importDIYConfig(jsonString, persistConfig)
+  }, [persistConfig])
 
   /**
    * 导入第一步（挂起待确认）：先验证 + 生成 diff 预览，把结果挂到
@@ -504,7 +505,8 @@ export function useHomeDIY() {
    */
   const stageImportForConfirm = useCallback(
     async (jsonString: string): Promise<{ ok: boolean; message: string }> => {
-      const prepared = await prepareHomeDiyImport(jsonString, config)
+      const io = await loadHomeDiyIo()
+      const prepared = await io.prepareHomeDiyImport(jsonString, config)
       if (!prepared.ok) {
         return { ok: false, message: prepared.message }
       }
@@ -514,7 +516,7 @@ export function useHomeDIY() {
         imported: prepared.pending.imported,
         diff: prepared.pending.diff,
         warning: prepared.pending.warning,
-        carriedFields: [...asShareFields(prepared.pending.carriedFields)],
+        carriedFields: [...io.asShareFields(prepared.pending.carriedFields)],
         source: 'import',
       })
       return { ok: true, message: '' }
@@ -527,29 +529,37 @@ export function useHomeDIY() {
     persistConfig(() => ({ ...DEFAULT_CONFIG, updatedAt: Date.now() }))
   }, [persistConfig])
 
-  const exportEncryptedDIYConfig = useCallback(
-    (passphrase: string) => exportEncryptedDIYConfigPure(config, passphrase),
-    [config],
-  )
+  const exportEncryptedDIYConfig = useCallback(async (passphrase: string) => {
+    const io = await loadHomeDiyIo()
+    return io.exportEncryptedDIYConfig(config, passphrase)
+  }, [config])
 
   const importEncryptedDIYConfig = useCallback(
-    (encryptedJsonStr: string, passphrase: string) =>
-      importEncryptedDIYConfigPure(encryptedJsonStr, passphrase, persistConfig),
+    async (encryptedJsonStr: string, passphrase: string) => {
+      const io = await loadHomeDiyIo()
+      return io.importEncryptedDIYConfig(encryptedJsonStr, passphrase, persistConfig)
+    },
     [persistConfig],
   )
 
-  const syncToCloudVault = useCallback(
-    (passphrase: string, expectedVersion: number) => syncToCloudVaultPure(config, passphrase, expectedVersion),
-    [config],
-  )
+  const syncToCloudVault = useCallback(async (passphrase: string, expectedVersion: number) => {
+    const io = await loadHomeDiyIo()
+    return io.syncToCloudVault(config, passphrase, expectedVersion)
+  }, [config])
 
-  const syncFromCloudVault = useCallback(
-    (passphrase: string) => syncFromCloudVaultPure(passphrase, persistConfig),
-    [persistConfig],
-  )
+  const syncFromCloudVault = useCallback(async (passphrase: string) => {
+    const io = await loadHomeDiyIo()
+    return io.syncFromCloudVault(passphrase, persistConfig)
+  }, [persistConfig])
 
-  const checkCloudVaultStatus = useCallback(() => checkCloudVaultStatusPure(), [])
-  const clearCloudVault = useCallback(() => clearCloudVaultPure(), [])
+  const checkCloudVaultStatus = useCallback(async () => {
+    const io = await loadHomeDiyIo()
+    return io.checkCloudVaultStatus()
+  }, [])
+  const clearCloudVault = useCallback(async () => {
+    const io = await loadHomeDiyIo()
+    return io.clearCloudVault()
+  }, [])
 
   const setIsEditingLayout = useCallback((next: boolean) => {
     setHomeDiyEditingLayout(next)

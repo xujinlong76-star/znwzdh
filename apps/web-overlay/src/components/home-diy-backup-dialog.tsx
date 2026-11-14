@@ -85,7 +85,8 @@ export interface HomeDIYBackupDialogProps {
   onOpenChange: (open: boolean) => void
   /* ---- 由 useHomeDIY 注入（组件不持有 DIY 状态） ---- */
   exportPresetToUrlHash: () => ShareLinkOutcome
-  exportDIYConfig: () => string
+  /** 异步：首次调用时按需加载 home-diy-io chunk，失败时调用方 toast 告知 */
+  exportDIYConfig: () => Promise<string>
   importDIYConfig: (json: string) => Promise<HomeDiyImportResult>
   /**
    * 导入改走分享确认管线（P0-5）：有这条时，明文导入先 prepare + 挂起
@@ -468,7 +469,14 @@ export function HomeDIYBackupDialog({
   }
 
   const handleCopyConfig = async () => {
-    const json = exportDIYConfig()
+    let json: string
+    try {
+      json = await exportDIYConfig()
+    } catch (e: unknown) {
+      // 加载失败必须说出来：chunk 拉不到就不是「已复制」，不能假成功
+      toast({ title: '加载失败，请重试', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+      return
+    }
     const result = await copyText(json)
     if (!result.ok) {
       toast({ ...copyFailureToast(result), variant: 'destructive' })
@@ -481,8 +489,15 @@ export function HomeDIYBackupDialog({
   }
 
   // 下载配置为 .json 文件
-  const handleDownloadConfig = () => {
-    const json = exportDIYConfig()
+  const handleDownloadConfig = async () => {
+    let json: string
+    try {
+      json = await exportDIYConfig()
+    } catch (e: unknown) {
+      // 加载失败必须说出来：chunk 拉不到就不是「已下载」，不能假成功
+      toast({ title: '加载失败，请重试', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+      return
+    }
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

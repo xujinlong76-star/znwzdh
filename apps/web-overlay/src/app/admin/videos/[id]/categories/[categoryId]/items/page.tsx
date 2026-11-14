@@ -534,7 +534,7 @@ export default function SubCategoryVideoItemsPage() {
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                                        className="h-8 w-8 text-destructive-text hover:bg-destructive/10"
                                         onClick={() => setDeletingItem({ index: originalIndex, item })}
                                         title="删除视频"
                                     >

@@ -560,7 +560,7 @@ export function SiteDetailView({
                             livePing.quality === 'unreachable' && 'bg-rose-500',
                           )}
                         />
-                        <span className={livePing.reachable ? 'text-foreground font-medium' : 'text-destructive font-medium'}>
+                        <span className={livePing.reachable ? 'text-foreground font-medium' : 'text-destructive-text font-medium'}>
                           本机实测: {livePing.label}
                         </span>
                         <RefreshCw className="w-2.5 h-2.5 ml-0.5 opacity-60 hover:opacity-100" />
@@ -602,13 +602,13 @@ export function SiteDetailView({
                   }
                   className={cn(
                     'text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted transition-colors',
-                    copyFeedback.state === 'failed' && 'text-destructive hover:text-destructive',
+                    copyFeedback.state === 'failed' && 'text-destructive-text hover:text-destructive-text',
                   )}
                 >
                   {copyFeedback.state === 'copied' ? (
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
                   ) : copyFeedback.state === 'failed' ? (
-                    <X className="w-3.5 h-3.5 text-destructive" />
+                    <X className="w-3.5 h-3.5 text-destructive-text" />
                   ) : (
                     <Copy className="w-3.5 h-3.5" />
                   )}

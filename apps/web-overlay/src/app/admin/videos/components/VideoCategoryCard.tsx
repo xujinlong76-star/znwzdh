@@ -342,7 +342,7 @@ export function VideoCategoryCard({
                                 aria-label="删除分类"
                                 title="删除分类"
                                 onClick={() => setIsDeleteDialogOpen(true)}
-                                className="h-8.5 w-8.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                className="h-8.5 w-8.5 text-destructive-text hover:text-destructive-text hover:bg-destructive/10"
                             >
                                 <Trash className="h-4 w-4" />
                             </Button>

@@ -537,7 +537,7 @@ export function LocalDataManager() {
                 type="button"
                 onClick={handleClearVisits}
                 aria-label="清空离线足迹"
-                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                className="text-[10px] text-muted-foreground hover:text-destructive-text transition-colors cursor-pointer"
                 title="清空离线足迹缓存"
               >
                 清空
@@ -585,7 +585,7 @@ export function LocalDataManager() {
                 type="button"
                 onClick={handleClearVideoCache}
                 aria-label="清空离线视频缓存"
-                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                className="text-[10px] text-muted-foreground hover:text-destructive-text transition-colors cursor-pointer"
                 title="清空离线视频缓存，释放本机空间"
               >
                 清空
@@ -667,7 +667,7 @@ export function LocalDataManager() {
                   size="sm"
                   onClick={() => handleDeleteSnapshot(snap.id)}
                   aria-label={`删除版本 ${snap.name}`}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive cursor-pointer"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive-text cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>

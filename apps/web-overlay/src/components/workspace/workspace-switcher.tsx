@@ -464,7 +464,7 @@ export function WorkspaceSwitcher() {
                               type="button"
                               aria-label={`移除成员 ${m.username}`}
                               onClick={() => void handleRemoveMember(m.userId)}
-                              className="text-muted-foreground hover:text-destructive p-1 transition-colors"
+                              className="text-muted-foreground hover:text-destructive-text p-1 transition-colors"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>

@@ -860,7 +860,7 @@ export function SitePeekDialog({
                 variant="outline"
                 size="sm"
                 onClick={handleReportBroken}
-                className="min-h-11 px-2 text-[11px] gap-1 text-muted-foreground hover:text-destructive hover:border-destructive/40 shrink-0 border-border/60"
+                className="min-h-11 px-2 text-[11px] gap-1 text-muted-foreground hover:text-destructive-text hover:border-destructive/40 shrink-0 border-border/60"
                 title="向平台反馈该网站打不开、连接超时或死链"
               >
                 <AlertTriangle className="w-3 h-3" />

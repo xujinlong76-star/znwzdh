@@ -719,7 +719,7 @@ export default function VideoItemsPage() {
                                     size="icon"
                                     onClick={() => setDeletingItem(item)}
                                     title="删除视频"
-                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    className="h-8 w-8 text-destructive-text hover:text-destructive-text"
                                 >
                                     <Icons.trash className="h-4 w-4" />
                                 </Button>

@@ -187,7 +187,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
         {copyError && (
           <div
             role="status"
-            className="mt-1 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+            className="mt-1 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text"
           >
             复制失败：{copyError}
           </div>

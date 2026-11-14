@@ -592,7 +592,7 @@ export default function AdminJobsPage() {
           </div>
 
           {retentionError && (
-            <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text">
               操作失败：{retentionError}
             </div>
           )}
@@ -728,7 +728,7 @@ export default function AdminJobsPage() {
         {degradeNotice && jobs.length > 0 && (
           <div
             role="status"
-            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive-text"
           >
             <span>本次刷新失败，下面是上一次成功获取的任务列表。{degradeNotice.message}</span>
             <Button variant="outline" size="sm" className="h-7 shrink-0 text-xs" onClick={() => void load()}>
@@ -745,7 +745,7 @@ export default function AdminJobsPage() {
         ) : filteredJobs.length === 0 && degradeNotice ? (
           <div
             role="status"
-            className="rounded-md border border-destructive/30 bg-destructive/5 p-8 text-center text-sm text-destructive space-y-3"
+            className="rounded-md border border-destructive/30 bg-destructive/5 p-8 text-center text-sm text-destructive-text space-y-3"
           >
             <p>没能取到任务列表。{degradeNotice.message}</p>
             <Button variant="outline" size="sm" onClick={() => void load()}>

@@ -95,7 +95,7 @@ function VerifyEmailInner() {
           )}
           {phase === 'error' && (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <AlertCircle className="w-8 h-8 text-destructive" />
+              <AlertCircle className="w-8 h-8 text-destructive-text" />
               <p className="text-sm font-medium text-foreground">{message}</p>
               <Link
                 href="/auth/signin"

@@ -56,7 +56,7 @@ import { QuickActions } from '@/components/user-center/dashboard/quick-actions'
 import { SyncHealthCard } from '@/components/user-center/dashboard/sync-health-card'
 import { PersonalizationCard } from '@/components/user-center/dashboard/personalization-card'
 import { RecentActivity, type ActivityItem } from '@/components/user-center/dashboard/recent-activity'
-import { GrowthPanel } from '@/components/user-center/growth-panel'
+import { GrowthPanelLazy } from '@/components/user-center/growth-panel-lazy'
 import { EntryGroups } from '@/components/user-center/dashboard/entry-groups'
 import { ArrowRight, CheckCircle2, RefreshCw, Settings2, User } from 'lucide-react'
 
@@ -490,7 +490,7 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
             onPatch={applySettingsPatch}
             busy={settingsBusy}
           />
-          <GrowthPanel />
+          <GrowthPanelLazy />
           <EntryGroups
             favoritesCount={favorites.items.length}
             settings={localPrefs}
@@ -520,7 +520,7 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
           />
           <StatsGrid counts={overview.counts} />
           <QuickActions />
-          <GrowthPanel />
+          <GrowthPanelLazy />
 
           <div className="grid gap-4 lg:grid-cols-12">
             <div className="lg:col-span-7">

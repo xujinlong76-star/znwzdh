@@ -229,7 +229,7 @@ describe('EmptyState 组件渲染：lucide 组件传法', () => {
     )
     expect(html).toContain('<svg')
     expect(html).toContain('暂无访问量数据')
-    expect(html).toContain('text-amber-600')
+    expect(html).toContain('text-amber-700')
   })
 
   it('icon={<Flame …/>}（已渲染元素）仍按元素传法原样渲染', async () => {

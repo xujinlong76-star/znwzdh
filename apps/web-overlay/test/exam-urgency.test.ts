@@ -196,7 +196,7 @@ describe('源码守卫：按档位上色、提醒只对已关注显示', () => {
     const countdown = read('src/app/exam/exam-countdown.tsx')
     expect(countdown).toContain('urgencyTier(')
     expect(countdown).toContain('text-red-600')
-    expect(countdown).toContain('text-amber-600')
+    expect(countdown).toContain('text-amber-700')
     expect(countdown).not.toContain('tracking-tight text-foreground')
   })
 

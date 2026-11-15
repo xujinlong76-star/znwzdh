@@ -129,9 +129,13 @@ export function QuarantineZone() {
         return
       }
       toast({
-        title: result.imported > 0 ? `已并回 ${result.imported} 条收藏` : '这份隔离数据里没有可并回的收藏',
+        title:
+          result.imported + result.updated > 0
+            ? `已并回 ${result.imported + result.updated} 条收藏`
+            : '这份隔离数据里没有可并回的收藏',
         description:
           '按站点去重合并，现有收藏不会因此被删除；' +
+          (result.alreadyExisted > 0 ? `${result.alreadyExisted} 条已在收藏中，已跳过；` : '') +
           (result.skippedInvalid > 0 ? `另有 ${result.skippedInvalid} 条缺少站点标识或链接，未能并回；` : '') +
           '副本仍保留在隔离区，确认无误后可手动删除。',
       })

@@ -66,6 +66,24 @@ import * as usersRepo from "./repository/users.ts";
 import * as authTokensRepo from "./repository/auth-tokens.ts";
 import * as tokensRepo from "./repository/tokens.ts";
 import * as collectionsRepo from "./repository/collections.ts";
+import * as publicPagesRepo from "./repository/public-pages.ts";
+export type { PublicPage, PublicPageStatus } from "./repository/public-pages.ts";
+import * as compareSnapshotsRepo from "./repository/compare-snapshots.ts";
+export type { ComparisonSnapshot } from "./repository/compare-snapshots.ts";
+import * as compareSnapshotSharesRepo from "./repository/compare-snapshot-shares.ts";
+export type {
+  ComparisonSnapshotShare,
+  ComparisonSnapshotShareStatus,
+  PublishedComparisonItem,
+} from "./repository/compare-snapshot-shares.ts";
+import * as sitePricesRepo from "./repository/site-prices.ts";
+export type {
+  SitePriceCurrency,
+  SitePricePeriod,
+  SitePriceRecord,
+  SitePriceSourceType,
+  UpsertSitePriceInput,
+} from "./repository/site-prices.ts";
 import * as analyticsRepo from "./repository/analytics.ts";
 import * as jobsRepo from "./repository/jobs.ts";
 import * as systemRepo from "./repository/system.ts";
@@ -77,13 +95,37 @@ import * as ioRepo from "./repository/io.ts";
 import * as identityRepo from "./repository/identity.ts";
 import * as settingsRepo from "./repository/settings.ts";
 import * as customSitesRepo from "./repository/custom-sites.ts";
+import * as wantedSearchesRepo from "./repository/wanted-searches.ts";
 import * as userDataRepo from "./repository/user-data.ts";
+import * as safetyRepo from "./repository/safety.ts";
 export * from "./repository/records.ts";
 export { bindSqlite, normalizeTokenScopes, slugify, toPgSql } from "./repository/dialect.ts";
 export { TOKEN_TOUCH_THROTTLE_MS } from "./repository/tokens.ts";
 // 导入侧的条数上限要跟导出侧对齐，否则合法备份会被自己的上限拒掉
 export { EXPORT_HISTORY_LIMIT, EXPORT_FAVORITES_LIMIT, EXPORT_SCHEMA_VERSION } from "./repository/user-data.ts";
+export {
+  EXPORT_FRESH_DAYS,
+  EXPORT_STALE_DAYS,
+  SYNC_FAILURE_CRITICAL_MS,
+  SYNC_SUCCESS_WINDOW_MS,
+  classifyExportFreshness,
+  classifySyncState,
+  mapSyncErrorCode,
+  parseAuditDiff,
+  worstStatus,
+  type DataSafety,
+  type SafetyCheck,
+  type SafetyStatus,
+  type SyncDomain,
+  type SyncErrorCode,
+  type SyncState,
+} from "./repository/safety.ts";
 export { CUSTOM_SITES_MAX_PER_USER, type CustomSiteRecord } from "./repository/custom-sites.ts";
+export {
+  WANTED_SEARCHES_MAX_OPEN_PER_USER,
+  WANTED_QUERY_MAX_LENGTH,
+  type WantedSearchRecord,
+} from "./repository/wanted-searches.ts";
 export type { SessionDeviceRecord } from "./repository/sessions.ts";
 // Keyset 键值提取器（M12）：路由层据此给末行编 nextCursor。
 export { siteKeysetValues, SITE_KEYSET_KEYS } from "./repository/sites.ts";
@@ -962,6 +1004,34 @@ async savedPluginEmbeddings(filter?: {
     return favoritesRepo.clearFavorites(this, userId);
   }
 
+  /** 收藏回收站：读某用户的墓碑列表（deleted_at 倒序，limit 默认 200） */
+  async listTrashedFavorites(userId: string, limit = 200): Promise<FavoriteRecord[]> {
+    return favoritesRepo.listTrashedFavorites(this, userId, limit);
+  }
+
+  /** 收藏回收站：读单条墓碑（恢复/彻底删除先确认它确实在回收站里） */
+  async getTrashedFavorite(userId: string, siteId: string): Promise<FavoriteRecord | null> {
+    return favoritesRepo.getTrashedFavorite(this, userId, siteId);
+  }
+
+  /** 收藏回收站：物理删除单条墓碑（"彻底删除"，无快照可回） */
+  async purgeFavorite(userId: string, siteId: string): Promise<boolean> {
+    return favoritesRepo.purgeFavorite(this, userId, siteId);
+  }
+
+  /** 收藏回收站：物理清空某用户的全部墓碑 */
+  async clearTrashedFavorites(userId: string): Promise<number> {
+    return favoritesRepo.clearTrashedFavorites(this, userId);
+  }
+
+  /**
+   * 收藏回收站：物理清理过期墓碑。D6：v1 不接进 purge_trash 定时任务，
+   * 也不在前端/路由里提供自动清理入口——需 Ryan 明确点头才能启用。
+   */
+  async purgeExpiredDeletedFavorites(olderThanMs: number): Promise<{ purged: number }> {
+    return favoritesRepo.purgeExpiredDeletedFavorites(this, olderThanMs);
+  }
+
   /** 增量拉取收藏（含墓碑）+ 水位 */
   /** 轻量水位查询（B3 多端一致性轮询） */
   async getFavoritesVersion(userId: string): Promise<number> {
@@ -1412,9 +1482,64 @@ async revokeAllSessions(userId: string): Promise<number> {
     return customSitesRepo.deleteAllCustomSites(this, userId);
   }
 
+  /* ------------------------- 待找（零结果出口） ------------------------- */
+
+  async listWantedSearches(identity: string): Promise<wantedSearchesRepo.WantedSearchRecord[]> {
+    return wantedSearchesRepo.listWantedSearches(this, identity);
+  }
+
+  async createWantedSearch(input: {
+    identity: string;
+    query: string;
+    correctedQuery?: string | null;
+  }): Promise<{ item: wantedSearchesRepo.WantedSearchRecord; duplicate: boolean } | null> {
+    return wantedSearchesRepo.createWantedSearch(this, input);
+  }
+
+  async deleteWantedSearch(identity: string, id: string): Promise<boolean> {
+    return wantedSearchesRepo.deleteWantedSearch(this, identity, id);
+  }
+
+  /** 投稿审核通过后匹配待找并通知（v1 只钩审核通过，不钩导入/种子/管理员建站） */
+  async matchWantedSearches(site: { id: string; title: string; url: string }): Promise<wantedSearchesRepo.WantedSearchRecord[]> {
+    return wantedSearchesRepo.matchWantedSearches(this, site);
+  }
+
   /** 导出用户全部数据（密钥字段已脱敏，金库只带版本元信息） */
   async exportUserData(identity: string): Promise<userDataRepo.UserDataExport> {
     return userDataRepo.exportUserData(this, identity);
+  }
+
+  /** 数据安全可见（第 15 项）：导出/同步/金库状态一次聚合 */
+  async getUserSafetyStatus(identity: string): Promise<safetyRepo.DataSafety> {
+    return safetyRepo.getUserSafetyStatus(this, identity);
+  }
+
+  /** 同步成功/失败水位（只记时间戳与错误码，不记内容） */
+  async getUserSyncState(identity: string, domain: safetyRepo.SyncDomain): Promise<safetyRepo.SyncState> {
+    return safetyRepo.getUserSyncState(this, identity, domain);
+  }
+
+  async recordSyncSuccess(identity: string, domain: safetyRepo.SyncDomain): Promise<void> {
+    return safetyRepo.recordSyncSuccess(this, identity, domain);
+  }
+
+  async recordSyncFailure(
+    identity: string,
+    domain: safetyRepo.SyncDomain,
+    errorCode: safetyRepo.SyncErrorCode,
+  ): Promise<void> {
+    return safetyRepo.recordSyncFailure(this, identity, domain, errorCode);
+  }
+
+  /** 未读同步失败通知数（notifications 表，kind='sync_failed'） */
+  async countUnreadSyncFailures(identity: string): Promise<number> {
+    return safetyRepo.countUnreadSyncFailures(this, identity);
+  }
+
+  /** 24h 内 user.sync_failed 审计条数 */
+  async countRecentSyncFailures(identity: string, sinceMs: number): Promise<number> {
+    return safetyRepo.countRecentSyncFailures(this, identity, sinceMs);
   }
 
   /** 注销：单事务级联删除该身份的全部用户数据 */
@@ -1565,6 +1690,152 @@ async revokeAllSessions(userId: string): Promise<number> {
     return collectionsRepo.listSiteCollections(this, siteId, onlyEnabled);
   }
 
+  /* ------------------------- 公开导航页 ------------------------- */
+
+  /** 公开导航页（Batch 3 第 6 项）：live 引用一个收藏文件夹的发布关系。 */
+  async createPublicPage(input: {
+    slug: string;
+    ownerIdentity: string;
+    title: string;
+    description?: string | null;
+    folderId?: string | null;
+  }): Promise<publicPagesRepo.PublicPage> {
+    return publicPagesRepo.createPublicPage(this, input);
+  }
+
+  async getPublicPageBySlug(slug: string): Promise<publicPagesRepo.PublicPage | null> {
+    return publicPagesRepo.getPublicPageBySlug(this, slug);
+  }
+
+  async getPublishedPublicPageBySlug(slug: string): Promise<publicPagesRepo.PublicPage | null> {
+    return publicPagesRepo.getPublishedPublicPageBySlug(this, slug);
+  }
+
+  async listPublicPagesByOwner(ownerIdentity: string): Promise<publicPagesRepo.PublicPage[]> {
+    return publicPagesRepo.listPublicPagesByOwner(this, ownerIdentity);
+  }
+
+  async setPublicPageStatus(
+    id: string,
+    status: publicPagesRepo.PublicPageStatus,
+  ): Promise<publicPagesRepo.PublicPage | null> {
+    return publicPagesRepo.setPublicPageStatus(this, id, status);
+  }
+
+  async deletePublicPage(id: string): Promise<boolean> {
+    return publicPagesRepo.deletePublicPage(this, id);
+  }
+
+  /* ------------------------- 对照快照 ------------------------- */
+
+  /**
+   * 对照快照（Batch 4 Phase 2 P2-3）：冻结的对照表，只增不改。
+   * 读路径一律按 owner 过滤；跨 owner 读不到（路由层再验一次 owner）。
+   */
+  async createComparisonSnapshot(input: {
+    ownerIdentity: string;
+    siteIds: string[];
+    items: compareSnapshotsRepo.ComparisonSnapshot["items"];
+  }): Promise<compareSnapshotsRepo.ComparisonSnapshot> {
+    return compareSnapshotsRepo.createComparisonSnapshot(this, input);
+  }
+
+  async getComparisonSnapshotById(id: string): Promise<compareSnapshotsRepo.ComparisonSnapshot | null> {
+    return compareSnapshotsRepo.getComparisonSnapshotById(this, id);
+  }
+
+  async listComparisonSnapshotsByOwner(
+    ownerIdentity: string,
+  ): Promise<compareSnapshotsRepo.ComparisonSnapshot[]> {
+    return compareSnapshotsRepo.listComparisonSnapshotsByOwner(this, ownerIdentity);
+  }
+
+  /* ------------------------- 对照分享 ------------------------- */
+
+  /**
+   * 对照分享（Batch 4 Phase 2 P2-4）：快照的冻结公开副本，只 serving
+   * published_json。读路径一律按 owner 过滤（公开读除外，走
+   * getPublishedComparisonSnapshotShareBySlug）；跨 owner 读不到
+   * （路由层再验一次 owner）。
+   */
+  async createComparisonSnapshotShare(input: {
+    snapshotId: string;
+    ownerIdentity: string;
+    slug: string;
+    publishedFields: string[];
+    publishedJson: compareSnapshotSharesRepo.PublishedComparisonItem[];
+  }): Promise<compareSnapshotSharesRepo.ComparisonSnapshotShare> {
+    return compareSnapshotSharesRepo.createComparisonSnapshotShare(this, input);
+  }
+
+  async getComparisonSnapshotShareBySlug(
+    slug: string,
+  ): Promise<compareSnapshotSharesRepo.ComparisonSnapshotShare | null> {
+    return compareSnapshotSharesRepo.getComparisonSnapshotShareBySlug(this, slug);
+  }
+
+  async getPublishedComparisonSnapshotShareBySlug(
+    slug: string,
+  ): Promise<compareSnapshotSharesRepo.ComparisonSnapshotShare | null> {
+    return compareSnapshotSharesRepo.getPublishedComparisonSnapshotShareBySlug(this, slug);
+  }
+
+  async getComparisonSnapshotShareBySnapshotId(
+    snapshotId: string,
+  ): Promise<compareSnapshotSharesRepo.ComparisonSnapshotShare | null> {
+    return compareSnapshotSharesRepo.getComparisonSnapshotShareBySnapshotId(this, snapshotId);
+  }
+
+  async setComparisonSnapshotShareStatus(
+    id: string,
+    status: compareSnapshotSharesRepo.ComparisonSnapshotShareStatus,
+    republished?: {
+      publishedFields: string[];
+      publishedJson: compareSnapshotSharesRepo.PublishedComparisonItem[];
+    },
+  ): Promise<compareSnapshotSharesRepo.ComparisonSnapshotShare | null> {
+    return compareSnapshotSharesRepo.setComparisonSnapshotShareStatus(this, id, status, republished);
+  }
+
+  async deleteComparisonSnapshotShare(id: string): Promise<boolean> {
+    return compareSnapshotSharesRepo.deleteComparisonSnapshotShare(this, id);
+  }
+
+  /* ------------------------- 对照价格数值 ------------------------- */
+
+  /**
+   * 对照价格数值（Batch 4 Phase 2 P2-2）：每用户每站只留最新一条，
+   * upsert 覆盖写；读路径一律按 owner 过滤。
+   */
+  async upsertSitePrice(
+    input: sitePricesRepo.UpsertSitePriceInput,
+  ): Promise<sitePricesRepo.SitePriceRecord> {
+    return sitePricesRepo.upsertSitePrice(this, input);
+  }
+
+  async getSitePrice(
+    ownerIdentity: string,
+    siteId: string,
+  ): Promise<sitePricesRepo.SitePriceRecord | null> {
+    return sitePricesRepo.getSitePrice(this, ownerIdentity, siteId);
+  }
+
+  async getSitePricesBySiteIds(
+    ownerIdentity: string,
+    siteIds: string[],
+  ): Promise<Map<string, sitePricesRepo.SitePriceRecord>> {
+    return sitePricesRepo.getSitePricesBySiteIds(this, ownerIdentity, siteIds);
+  }
+
+  async listSitePricesByOwner(
+    ownerIdentity: string,
+  ): Promise<sitePricesRepo.SitePriceRecord[]> {
+    return sitePricesRepo.listSitePricesByOwner(this, ownerIdentity);
+  }
+
+  async deleteSitePrice(ownerIdentity: string, siteId: string): Promise<boolean> {
+    return sitePricesRepo.deleteSitePrice(this, ownerIdentity, siteId);
+  }
 
   /* ------------------------- 榜单与分析 ------------------------- */
 

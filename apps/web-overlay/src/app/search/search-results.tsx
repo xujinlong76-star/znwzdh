@@ -18,6 +18,7 @@ import { highlightParts } from '@/lib/highlight'
 import { SearchFacetBar, type FacetGroup } from '@/components/search-facet-bar'
 import { ZeroResultActions } from '@/components/search/zero-result-actions'
 import { AlgorithmHudBadge } from '@/components/algorithm-hud-badge'
+import { WantedActions } from '@/components/search/wanted-actions'
 
 /**
  * /search 的视图（纯服务端组件）。
@@ -253,6 +254,8 @@ function EmptyResults({
   inferredCategory,
   recommended,
   externalRel = 'nofollow noopener noreferrer',
+  correction = null,
+  hideGenericRecommendations = false,
 }: {
   q: string
   page: number
@@ -264,6 +267,13 @@ function EmptyResults({
   /** 零结果救援的「为你推荐」：今日热榜站点；取数失败为空数组，整块不渲染 */
   recommended: HubSite[]
   externalRel?: string
+  /** 自动纠正（有值时两出口的「新建收藏」优先用纠正后的词做标题） */
+  correction?: { original: string; corrected: string } | null
+  /**
+   * 纠正后仍零结果：隐藏「换个词试试 / 大家在搜 / 为你推荐」三块泛推荐，
+   * 只留 AI 找站 / 投稿收录 / 存为待找 / 新建收藏四个明确出口（协调人决定 1）。
+   */
+  hideGenericRecommendations?: boolean
 }) {
   return (
     <section className="space-y-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-6">
@@ -279,6 +289,8 @@ function EmptyResults({
       {/* A11：零结果不是死胡同——两个真出口放最前（AI 找站带词自动问、
           投稿收录带词预填），再往下才是换词/热门词/全网穿透这些次要出口 */}
       {q ? <ZeroResultActions query={q} /> : null}
+      {/* 容错纠错两出口：存为待找 / 新建收藏（客户端岛） */}
+      {q ? <WantedActions query={q} correctedQuery={correction?.corrected ?? null} /> : null}
       {/* 相关分类：中枢从查询里理解到的分类（@算子或分类词）才给——没有推断
           出来不硬凑分类；点进去是该分类的全部站点（不带原查询词，带原词
           会把用户送回同一个零结果）。 */}
@@ -307,7 +319,7 @@ function EmptyResults({
           </Link>
         ) : null}
       </div>
-      {q && !tag && suggestions.length > 0 ? (
+      {q && !tag && !hideGenericRecommendations && suggestions.length > 0 ? (
         <div className="space-y-1.5">
           <p className="text-xs text-muted-foreground">换个词试试</p>
           <div className="flex flex-wrap gap-1.5">
@@ -323,7 +335,7 @@ function EmptyResults({
           </div>
         </div>
       ) : null}
-      {popular.length > 0 ? (
+      {!hideGenericRecommendations && popular.length > 0 ? (
         <div className="space-y-1.5">
           <p className="text-xs text-muted-foreground">大家在搜</p>
           <div className="flex flex-wrap gap-1.5">
@@ -343,7 +355,7 @@ function EmptyResults({
           的兜底内容，复用正常结果行的 ResultRow（命中即 HubSearchHit，
           contributions 为空，不标任何通道）。取数失败时 recommended 为空，
           整块不渲染，不谎称「没有推荐」。 */}
-      {recommended.length > 0 ? (
+      {!hideGenericRecommendations && recommended.length > 0 ? (
         <div className="space-y-2 border-t border-border/60 pt-3">
           <p className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
             <Sparkles className="h-3.5 w-3.5 text-primary" />
@@ -537,6 +549,11 @@ export function SearchResults({
   const suggestions = result?.suggestions ?? []
   const popular = result?.popular ?? []
   const didYouMean = result?.didYouMean
+  const correction = result?.correction ?? null
+  // 纠正后仍零结果：只给两个明确出口（存为待找 / 新建收藏），不再叠
+  // 「换个词试试 / 大家在搜 / 为你推荐」这类泛推荐（协调人决定 1）。
+  // 未纠正的零结果态保持现有 P0 兜底不变。
+  const correctedZero = Boolean(correction) && hits.length === 0
   const excluded = result?.excludedTerms ?? []
   const semanticsOff = result !== null && result.semanticAvailable === false
   // 语义 KNN 对任何输入都会返回最近邻，乱码查询也会"有结果"。
@@ -735,7 +752,27 @@ export function SearchResults({
                 <p className="text-[11px] text-muted-foreground">已排除关键词：{excluded.join('、')}。</p>
               ) : null}
 
-              {!failed && didYouMean ? (
+              {!failed && correction ? (
+                <div
+                  role="status"
+                  className="inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-foreground"
+                >
+                  <span>已替你纠正为：</span>
+                  <Link
+                    href={searchHref({ q: correction.corrected, tag: tagApplied ? tag : null })}
+                    className="font-bold text-primary underline hover:text-primary/80"
+                  >
+                    {correction.corrected}
+                  </Link>
+                  <span>不是这个？</span>
+                  <Link
+                    href={searchHref({ q: correction.original, tag: tagApplied ? tag : null, nocorrect: true })}
+                    className="font-medium text-primary underline underline-offset-2 hover:no-underline"
+                  >
+                    搜原来的「{correction.original}」
+                  </Link>
+                </div>
+              ) : !failed && didYouMean ? (
                 <div className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-foreground">
                   <span>您是不是想搜：</span>
                   <Link href={searchHref({ q: didYouMean, tag: tagApplied ? tag : null })} className="font-bold text-primary underline hover:text-primary/80">
@@ -769,6 +806,8 @@ export function SearchResults({
                   inferredCategory={result?.inferredCategory ?? null}
                   recommended={recommended}
                   externalRel={externalRel}
+                  correction={correction}
+                  hideGenericRecommendations={correctedZero}
                 />
               ) : null}
 

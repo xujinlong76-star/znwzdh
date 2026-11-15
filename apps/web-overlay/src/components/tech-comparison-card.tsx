@@ -3,11 +3,69 @@
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
-import { Scale, Check, Trophy, Sparkles } from 'lucide-react'
-import type { TechComparisonMatrix } from '@/lib/comparison'
+import { Scale, Check, Trophy, Sparkles, ShieldCheck } from 'lucide-react'
+import type { ComparisonProvenance, TechComparisonMatrix } from '@/lib/comparison'
 
 interface TechComparisonCardProps {
   matrix: TechComparisonMatrix
+}
+
+/**
+ * P2-5 三态标注 UI：来源徽标 + 文案双通道区分，绝不只靠颜色。
+ *   measured        「已核实」（绿框 + 对勾）
+ *   model_generated 「模型生成」+「仅供参考」（琥珀框 + 星标 + 文案）
+ *   unverified      「未验证」（虚线框）
+ * 缺标注按模型生成处理：来源不明的格子绝不标成“已核实”。
+ */
+function ProvenanceTag({ provenance, withNote = false }: { provenance?: ComparisonProvenance; withNote?: boolean }) {
+  const p = provenance ?? 'model_generated'
+  if (p === 'measured') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded border border-emerald-400/40 bg-emerald-500/10 px-1.5 py-px text-[11px] leading-4 text-emerald-700 dark:text-emerald-400">
+        <ShieldCheck className="w-3 h-3" />
+        已核实
+      </span>
+    )
+  }
+  if (p === 'unverified') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded border border-dashed px-1.5 py-px text-[11px] leading-4 text-muted-foreground">
+        未验证
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-0.5 rounded border border-amber-400/40 bg-amber-500/10 px-1.5 py-px text-[11px] leading-4 text-amber-700 dark:text-amber-400">
+        <Sparkles className="w-3 h-3" />
+        模型生成
+      </span>
+      {withNote && <span className="text-[11px] text-amber-700 dark:text-amber-400">仅供参考</span>}
+    </span>
+  )
+}
+
+/** 维度格：值 + 来源徽标；未验证的格只显“未验证”，不渲染原值。 */
+function DimensionValue({ value, provenance, winner }: { value: string; provenance?: ComparisonProvenance; winner: boolean }) {
+  const p = provenance ?? 'model_generated'
+  if (p === 'unverified' || !value.trim() || value === '未验证') {
+    return (
+      <span className="flex flex-col items-start gap-1">
+        <ProvenanceTag provenance="unverified" />
+      </span>
+    )
+  }
+  return (
+    <span className={winner ? 'font-semibold text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}>
+      <span className="flex items-center gap-1 flex-wrap">
+        {winner && <Trophy className="w-3 h-3 text-amber-500 inline flex-shrink-0" />}
+        <span>{value}</span>
+      </span>
+      <span className="mt-1 block">
+        <ProvenanceTag provenance={p} withNote />
+      </span>
+    </span>
+  )
 }
 
 export function TechComparisonCard({ matrix }: TechComparisonCardProps) {
@@ -48,11 +106,22 @@ export function TechComparisonCard({ matrix }: TechComparisonCardProps) {
         <div className="p-2.5 rounded-lg border bg-background/80 space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="font-bold text-foreground">{matrix.itemA.name}</span>
-            <Badge variant="secondary" className="text-xs">{matrix.itemA.license}</Badge>
+            <span className="flex items-center gap-1">
+              <Badge variant="secondary" className="text-xs">{matrix.itemA.license}</Badge>
+              <ProvenanceTag provenance={matrix.itemA.provenance?.license} />
+            </span>
           </div>
-          <p className="text-xs text-muted-foreground line-clamp-1">{matrix.itemA.category}</p>
+          <p className="text-xs text-muted-foreground line-clamp-1">
+            <span className="flex items-center gap-1">
+              <span>{matrix.itemA.category}</span>
+              <ProvenanceTag provenance={matrix.itemA.provenance?.category} />
+            </span>
+          </p>
           <div className="space-y-1 pt-1">
-            <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold block">核心优势：</span>
+            <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+              核心优势：
+              <ProvenanceTag provenance={matrix.itemA.provenance?.primaryPros} withNote />
+            </span>
             {matrix.itemA.primaryPros.slice(0, 2).map((pro, i) => (
               <div key={i} className="text-xs text-muted-foreground flex items-start gap-1">
                 <Check className="w-3 h-3 text-emerald-500 flex-shrink-0 mt-0.5" />
@@ -66,11 +135,22 @@ export function TechComparisonCard({ matrix }: TechComparisonCardProps) {
         <div className="p-2.5 rounded-lg border bg-background/80 space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="font-bold text-foreground">{matrix.itemB.name}</span>
-            <Badge variant="secondary" className="text-xs">{matrix.itemB.license}</Badge>
+            <span className="flex items-center gap-1">
+              <Badge variant="secondary" className="text-xs">{matrix.itemB.license}</Badge>
+              <ProvenanceTag provenance={matrix.itemB.provenance?.license} />
+            </span>
           </div>
-          <p className="text-xs text-muted-foreground line-clamp-1">{matrix.itemB.category}</p>
+          <p className="text-xs text-muted-foreground line-clamp-1">
+            <span className="flex items-center gap-1">
+              <span>{matrix.itemB.category}</span>
+              <ProvenanceTag provenance={matrix.itemB.provenance?.category} />
+            </span>
+          </p>
           <div className="space-y-1 pt-1">
-            <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold block">核心优势：</span>
+            <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+              核心优势：
+              <ProvenanceTag provenance={matrix.itemB.provenance?.primaryPros} withNote />
+            </span>
             {matrix.itemB.primaryPros.slice(0, 2).map((pro, i) => (
               <div key={i} className="text-xs text-muted-foreground flex items-start gap-1">
                 <Check className="w-3 h-3 text-emerald-500 flex-shrink-0 mt-0.5" />
@@ -91,16 +171,10 @@ export function TechComparisonCard({ matrix }: TechComparisonCardProps) {
           </div>
           <div className="divide-y divide-border/60">
             {matrix.dimensions.map((dim, idx) => (
-              <div key={idx} className="grid grid-cols-3 p-2 text-xs items-center gap-2">
+              <div key={idx} className="grid grid-cols-3 p-2 text-xs items-start gap-2">
                 <span className="font-medium text-foreground">{dim.dimName}</span>
-                <span className={dim.winner === 'A' ? 'font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1' : 'text-muted-foreground'}>
-                  {dim.winner === 'A' && <Trophy className="w-3 h-3 text-amber-500 inline flex-shrink-0" />}
-                  {dim.valueA}
-                </span>
-                <span className={dim.winner === 'B' ? 'font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1' : 'text-muted-foreground'}>
-                  {dim.winner === 'B' && <Trophy className="w-3 h-3 text-amber-500 inline flex-shrink-0" />}
-                  {dim.valueB}
-                </span>
+                <DimensionValue value={dim.valueA} provenance={dim.provenanceA} winner={dim.winner === 'A'} />
+                <DimensionValue value={dim.valueB} provenance={dim.provenanceB} winner={dim.winner === 'B'} />
               </div>
             ))}
           </div>
@@ -112,7 +186,8 @@ export function TechComparisonCard({ matrix }: TechComparisonCardProps) {
         <Sparkles className="w-4 h-4 text-violet-600 dark:text-violet-400 flex-shrink-0 mt-0.5" />
         <div className="text-xs text-foreground leading-relaxed">
           <span className="font-bold text-violet-700 dark:text-violet-300 mr-1">选型建议：</span>
-          {matrix.verdict}
+          <ProvenanceTag provenance={matrix.verdictProvenance} withNote />
+          <span className="ml-1">{matrix.verdict}</span>
         </div>
       </div>
     </div>

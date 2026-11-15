@@ -87,6 +87,19 @@ export function parseJsxProps(attrText) {
       i++;
       continue;
     }
+    // 跳过 // 行注释与 /* */ 块注释（深度 0、引号外）：JSX 标签内允许写注释，
+    // 注释里的词不是属性名。真实反例（2026-11-14）：brief/page.tsx 的
+    // <EmptyState> 调用点注释里提到 Flame / RSC / warning / EmptyState，
+    // 曾被误报为 4 个未声明 prop。
+    if (depth === 0 && ch === "/" && attrText[i + 1] === "/") {
+      while (i < attrText.length && attrText[i] !== "\n") i++;
+      continue;
+    }
+    if (depth === 0 && ch === "/" && attrText[i + 1] === "*") {
+      const end = attrText.indexOf("*/", i + 2);
+      i = end === -1 ? attrText.length : end + 2;
+      continue;
+    }
     if (ch === "{") {
       depth++;
       i++;

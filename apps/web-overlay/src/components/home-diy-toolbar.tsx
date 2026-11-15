@@ -20,14 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/registry/new-york/ui/dialog'
+import { HomeDIYCreateCategoryDialog } from '@/components/home-diy-create-category-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,15 +39,28 @@ import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { useDensity } from '@/components/density-provider'
 import { isAppleDevice } from '@/lib/platform'
 import { BUILTIN_DIY_PRESETS, clampCardOpacity, evaluateLayoutErgonomics, parseDiyShortcut, type DIYPreset } from '@/lib/modular/diy-presets'
+import { useTheme } from 'next-themes'
 import { useToast } from '@/components/ui/use-toast'
 import { describeCorruptFavorites } from '@/lib/favorites-storage'
 import { cn } from '@/lib/utils'
+import { captureCurrentSceneState } from '@/components/scene-switcher'
+import {
+  broadcastUserScenesChanged,
+  browserUserSceneStorage,
+  createUserScene,
+  defaultSceneName,
+  loadUserScenes,
+  saveUserScenes,
+  type UserSceneWorkspaceFilter,
+} from '@/lib/modular/user-scenes'
 
 interface HomeDIYToolbarProps {
   allCategoryIds: string[]
   categoryTitleMap: Record<string, string>
   categories?: any[]
   raised?: boolean
+  /** 当前首页工作区筛选（navigation-content 的 activeWorkspace 原样透传） */
+  activeWorkspace?: UserSceneWorkspaceFilter
 }
 
 const ACCENT_COLORS: { id: AccentColor; name: string; class: string }[] = [
@@ -70,6 +76,7 @@ export function HomeDIYToolbar({
   categoryTitleMap,
   categories = [],
   raised = false,
+  activeWorkspace,
 }: HomeDIYToolbarProps) {
   const {
     isEditingLayout,
@@ -178,6 +185,35 @@ export function HomeDIYToolbar({
     })
     setNewCatTitle('')
     setIsAddCatOpen(false)
+  }
+
+  const { theme: currentMode } = useTheme()
+
+  /** 一键存为场景：把当前置顶 + 皮肤 + DIY 布局存成新场景，带上当前工作区筛选（与下拉入口、管理对话框同一路） */
+  const handleSaveAsScene = () => {
+    const storage = browserUserSceneStorage()
+    if (!storage) {
+      toast({ title: '存为场景失败', description: '浏览器不允许读写本地存储。', variant: 'destructive' })
+      return
+    }
+    const doc = loadUserScenes(storage).doc
+    const created = createUserScene(doc, {
+      name: defaultSceneName(doc),
+      state: captureCurrentSceneState(activeWorkspace ?? null, currentMode),
+    })
+    if (!created.ok || !created.doc || !created.scene) {
+      toast({ title: '存为场景失败', description: created.reason ?? '请稍后再试。', variant: 'destructive' })
+      return
+    }
+    if (!saveUserScenes(storage, created.doc)) {
+      toast({ title: '存为场景失败', description: '本地存储写入失败，场景没有保存下来。', variant: 'destructive' })
+      return
+    }
+    broadcastUserScenesChanged()
+    toast({
+      title: `已存为场景「${created.scene.name}」`,
+      description: `置顶 ${created.scene.pinnedSiteIds.length} 个站点 · 皮肤「${created.scene.theme.skinName ?? '系统默认'}」· 当前布局已存入场景。布局改了场景不跟变，用「用当前状态更新此场景」同步。`,
+    })
   }
 
   const handleReset = () => {
@@ -747,6 +783,18 @@ export function HomeDIYToolbar({
               <Redo2 className="w-3.5 h-3.5" />
             </Button>
 
+            {/* 一键存为场景：当前置顶 + 皮肤 + 布局存成新场景 */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleSaveAsScene}
+              className="h-11 w-11 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+              title="一键存为场景：把当前置顶、皮肤与布局存成我的场景"
+              aria-label="一键存为场景"
+            >
+              <Layers className="w-3.5 h-3.5" />
+            </Button>
+
             {/* 蓝图 JSON 管理 */}
             <Button
               variant="ghost"
@@ -840,44 +888,13 @@ export function HomeDIYToolbar({
           静息态的另一个挂载点在 HomeDIYTrigger。 */}
 
       {/* 新建专属分类对话框 */}
-      <Dialog open={isAddCatOpen} onOpenChange={setIsAddCatOpen}>
-        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md p-4 sm:p-6">
-          <DialogHeader className="pr-8 sm:pr-6">
-            <DialogTitle className="flex items-center gap-2">
-              <FolderPlus className="w-5 h-5 text-emerald-500" />
-              <span>创建首页专属私人分类</span>
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              为您的日常工作或高频需求创建专属分类板块。创建后呈现在首页，支持自由置顶与添加站点。
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-3 space-y-3">
-            <div>
-              <label htmlFor="diy-new-category-title" className="text-xs font-medium text-foreground block mb-1.5">
-                分类名称
-              </label>
-              <Input
-                id="diy-new-category-title"
-                placeholder="例如：极客日常 / 深度学习速查 / 监控大盘"
-                value={newCatTitle}
-                onChange={(e) => setNewCatTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
-                autoFocus
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" size="sm" className="min-h-11" onClick={() => setIsAddCatOpen(false)}>
-              取消
-            </Button>
-            <Button size="sm" className="min-h-11" onClick={handleCreateCategory} disabled={!newCatTitle.trim()}>
-              确认创建
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <HomeDIYCreateCategoryDialog
+        open={isAddCatOpen}
+        onOpenChange={setIsAddCatOpen}
+        title={newCatTitle}
+        onTitleChange={setNewCatTitle}
+        onCreate={handleCreateCategory}
+      />
     </>
   )
 }

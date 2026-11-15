@@ -47,10 +47,11 @@ export function BookmarkImportButton({ favorites }: { favorites: FavoritesApi })
           toast({ title: '书签导入失败', description: result.error ?? '本机存储暂不可写', variant: 'destructive' })
           return
         }
-        const skipped = items.length - result.imported
+        const skipped = result.alreadyExisted
         toast({
           title: `已把 ${result.imported} 条书签加入本机收藏`,
           description:
+            (result.updated > 0 ? `${result.updated} 条已存在，已按导入内容更新；` : '') +
             (skipped > 0 ? `${skipped} 条与现有收藏重复，自动跳过；` : '') +
             (truncated ? `文件过大只处理了前 ${items.length} 条；` : '') +
             '登录后这些收藏会随同步进入云端。',

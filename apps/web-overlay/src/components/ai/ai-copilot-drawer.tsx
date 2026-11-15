@@ -36,7 +36,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { hubSend } from '@/lib/navhub-api'
-import { recordGrowthEvent } from '@/lib/growth'
+import { recordGrowthEvent } from '@/lib/growth-lazy'
 import { streamCopilotChat, type CopilotCitation, type CopilotReplyBody } from '@/lib/copilot-stream'
 import { describeDegrade } from '@/lib/degrade'
 import {

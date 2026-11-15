@@ -27,11 +27,15 @@ import {
   reportClick,
   fetchSearchHistory,
   fetchCollections,
+  createCustomSite,
   type HubSearchHit,
+  type HubSearchResult,
   type HubSiteRelation,
   type HubPluginSearchResponse,
   type HubCollection,
 } from '@/lib/navhub-api'
+import { queryToTitleAndUrl } from '@/lib/submit-prefill'
+import { saveWantedSearch } from '@/lib/wanted-searches'
 import { searchChannelStatus } from '@/lib/search-degrade'
 import { buildSearchSuggestions, matchSuggestionText } from '@/lib/search-suggestions'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
@@ -71,16 +75,25 @@ import {
   type DiyPaletteActionId,
   type DiyPaletteActionItem,
 } from '@/lib/modular/diy-palette-actions'
+import { matchScenePaletteActions } from '@/lib/modular/scene-palette-actions'
+import { performSceneSwitch, useUserScenes } from '@/components/scene-switcher'
 import {
   buildPaletteNavItems,
   matchPaletteActions,
   matchPaletteFavorites,
+  matchPaletteQuicklinks,
   matchPaletteTools,
   type PaletteActionEntry,
   type PaletteActionId,
   type PaletteFavoriteLike,
+  type PaletteQuicklinkItem,
   type PaletteToolEntry,
 } from '@/lib/palette-actions'
+import {
+  matchQuicklinkCommand,
+  quicklinkFromFavorite,
+  type QuicklinkEntry,
+} from '@/lib/quicklinks'
 import { useTheme } from 'next-themes'
 import {
   ELDER_MODE_CHANGED_EVENT,
@@ -306,6 +319,19 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   }, [])
   /** 零结果编辑距离拼写建议 */
   const [didYouMean, setDidYouMean] = useState<string | undefined>(undefined)
+  /** 自动查询纠正（有值时替掉 didYouMean 块，两者二选一） */
+  const [correction, setCorrection] = useState<HubSearchResult['correction'] | undefined>(undefined)
+  /**
+   * 「不是这个？搜原来的」回退：记下要以 nocorrect 重查的原查询词。
+   * 只在等于当前查询时生效——用户改词后自动失效，不会把 nocorrect
+   * 误带到新查询上。
+   */
+  const [nocorrectQuery, setNocorrectQuery] = useState<string | null>(null)
+  /** 存为待找 / 新建收藏的操作回执（渲染在面板动作区下方） */
+  const [wantedNote, setWantedNote] = useState<string | null>(null)
+  /** 新建收藏预填弹窗（复用 AddSiteDialog，提交走 /api/me/custom-sites） */
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createForm, setCreateForm] = useState({ title: '', href: '', note: '' })
   /** 同义词/标签别名扩展 */
   const [queryExpansion, setQueryExpansion] = useState<string[]>([])
   /** 重试计数：增长即重新发起同一查询（降级时的出口） */
@@ -340,7 +366,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   /** 卡片密度住在用户偏好里（不在 DIY 配置里）：预设应用时当回调传给 applyDIYPreset */
   const { setDensity, cycleDensity, densityLabel } = useDensity()
   /** 主题切换（P1 #8）：与 ModeToggle 同一个 next-themes，不另起状态 */
-  const { resolvedTheme, setTheme } = useTheme()
+  const { theme, resolvedTheme, setTheme } = useTheme()
   /**
    * 长辈模式当前态（P1 #8）：读法与 ElderModeToggle 完全一致——首帧默认关，
    * effect 里读 localStorage 并订阅 `navhub:elder-mode-changed`，工具栏上
@@ -565,6 +591,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setInferredCategory(undefined)
     setExcludedTerms([])
     setDidYouMean(undefined)
+    setCorrection(undefined)
     setQueryExpansion([])
     setFallbackHint(undefined)
     setRelaxedFacets(undefined)
@@ -610,7 +637,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setPluginFailed(true)
           setPluginSemanticFallback(false)
         })
-      void searchSites({ q, limit: 12, categoryId, identity }, controller.signal)
+      void searchSites({ q, limit: 12, categoryId, identity, nocorrect: nocorrectQuery !== null && nocorrectQuery === q }, controller.signal)
         .then((res) => {
           if (controller.signal.aborted || activeQueryRef.current !== q) return
           setHits(res.hits)
@@ -625,6 +652,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setInferredCategory(res.inferredCategory)
           setExcludedTerms(res.excludedTerms ?? [])
           setDidYouMean(res.didYouMean)
+          setCorrection(res.correction)
           setQueryExpansion(res.queryExpansion ?? [])
           setFallbackHint(res.fallback)
           setRelaxedFacets(res.relaxedFacets)
@@ -640,7 +668,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, categoryId, identity, retryToken])
+  }, [query, categoryId, identity, retryToken, nocorrectQuery])
 
   /** 加载下一页并追加（同一查询的延续——服务端因此不重复记事件） */
   const loadMore = useCallback(() => {
@@ -692,8 +720,65 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       openCopilot({ query: q, source: 'programmatic' })
       return
     }
+    if (action.kind === 'save-wanted') {
+      // 容错纠错出口一：存为待找（登录态调 API，匿名走本地存储）
+      const q = query.trim()
+      if (!q) return
+      void saveWantedSearch(q, correction?.corrected ?? null).then((res) => {
+        if (res.duplicate) setWantedNote('已在待找里了')
+        else if (res.mode === 'local') setWantedNote('已存在本地待找，登录后才能在收录时通知你')
+        else setWantedNote('已存为待找，收录时会在站内通知你')
+      }).catch(() => setWantedNote('这次没能存下来，稍后再试'))
+      return
+    }
+    if (action.kind === 'save-favorite') {
+      // 容错纠错出口二：新建收藏——打开 AddSiteDialog 预填弹窗
+      // （与 DIY 的 addSiteOpen 是两套状态：这里提交走 /api/me/custom-sites，
+      //  不是本地 DIY 板，绝不能复用 handleAddCustomSiteSubmit）。
+      const q = query.trim()
+      if (!q) return
+      const prefill = queryToTitleAndUrl(correction?.corrected ?? q)
+      setCreateForm({
+        title: prefill.title,
+        href: prefill.url ?? '',
+        note: correction?.corrected && correction.corrected !== q ? `原搜索词：${q}` : '',
+      })
+      setWantedNote(null)
+      setCreateOpen(true)
+      return
+    }
     // browse-* / submit-site 由 <Link> 渲染，走客户端路由，不发生整页刷新
-  }, [query])
+  }, [query, correction])
+
+  /** 新建收藏弹窗提交：登录态存「我的站点」并联动收藏夹；401 匿名走本地收藏直存 */
+  const handleCreateFavoriteSubmit = useCallback(async () => {
+    // 存储读不出来时写入会被拒绝（为了不覆盖原数据）：必须先检查并说出来，
+    // 与本文件收藏行入口、favorite-button 同款写法。
+    if (favorites.storageBlocked) {
+      toast({ title: '这一下没能保存', description: favorites.storageBlocked, variant: 'destructive' })
+      return
+    }
+    const title = createForm.title.trim()
+    const href = createForm.href.trim()
+    if (!title || !href) return
+    try {
+      const item = await createCustomSite({ title, url: href, note: createForm.note.trim() || null })
+      await favorites.toggle({ siteId: item.id, title: item.title, href: item.url })
+      setCreateOpen(false)
+      setWantedNote('已存入我的站点，并放进收藏夹')
+    } catch (err) {
+      if ((err as { status?: number })?.status === 401) {
+        let hash = 5381
+        const seed = `${title}\n${href}`
+        for (let i = 0; i < seed.length; i += 1) hash = ((hash << 5) + hash + seed.charCodeAt(i)) >>> 0
+        await favorites.toggle({ siteId: `custom:${hash.toString(16)}`, title, href })
+        setCreateOpen(false)
+        setWantedNote('已存进本地收藏（未登录，仅保存在当前设备）')
+      } else {
+        setWantedNote(err instanceof Error ? err.message : '保存失败，稍后再试')
+      }
+    }
+  }, [createForm, favorites, toast])
 
   // 打开方式听用户中心的开关，站点配置只当默认值
   const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)
@@ -845,6 +930,32 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   }, [favorites, identity])
 
   /**
+   * 快捷链接打开：与收藏打开同口径（离线记录 + 点击上报 + 重温计时），
+   * 上报带上搜索参数 `{query: arg}`。url 为 null（参数超 500 字符 /
+   * 模板已不安全）时 toast、不开页，不静默走正常搜索。
+   */
+  const openQuicklink = useCallback((item: PaletteQuicklinkItem) => {
+    if (!item.url) {
+      toast({
+        title: '快捷链接打不开',
+        description: '参数超过 500 字符或模板不安全，已拦截。',
+        variant: 'destructive',
+      })
+      return
+    }
+    recordOfflineVisit({
+      id: item.entry.siteId,
+      title: item.entry.title,
+      href: item.entry.href,
+      icon: item.entry.icon ?? null,
+    })
+    reportClick(item.entry.siteId, identity, { query: item.arg })
+    favorites.recordOpened(item.entry.siteId)
+    safeWindowOpen(item.url)
+    setIsFocused(false)
+  }, [favorites, identity, toast])
+
+  /**
    * 添加自定义站点提交（P1 #8）：与 navigation-content 的
    * handleAddCustomSiteSubmit 同口径——伪协议拦截 + 协议补全在
    * normalizeCustomSiteHref 里，写盘结果只有 added / duplicate / failed
@@ -905,6 +1016,27 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     [query, isEditingLayout],
   )
 
+  /** 我的场景：搜「场景/工作/学习」列出场景，回车切换（与工具栏下拉同一条执行） */
+  const { doc: sceneDoc, save: saveSceneDoc } = useUserScenes()
+  const matchedSceneActions = useMemo(
+    () => matchScenePaletteActions(query, sceneDoc.scenes, sceneDoc.activeSceneId),
+    [query, sceneDoc],
+  )
+  const handleSceneAction = useCallback(
+    async (sceneId: string) => {
+      const scene = sceneDoc.scenes.find((s) => s.id === sceneId)
+      if (!scene) return
+      setIsFocused(false)
+      await performSceneSwitch(scene, sceneDoc, {
+        theme: theme ?? undefined,
+        setTheme,
+        save: saveSceneDoc,
+        toast,
+      })
+    },
+    [sceneDoc, saveSceneDoc, theme, setTheme, toast],
+  )
+
   /** 万能栏三组（P1 #8）：操作 / 工具 / 收藏夹，与建议层同一套容错匹配 */
   const paletteActionOpts = useMemo(
     () => ({ isDark: resolvedTheme === 'dark', elderOn, densityLabel }),
@@ -915,12 +1047,38 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     [query, paletteActionOpts],
   )
   const matchedPaletteTools = useMemo(() => matchPaletteTools(query), [query])
+  /**
+   * 参数化快捷链接：收藏上挂了模板的条目即 quicklink（模板非法的不进）。
+   * 命令命中时同一 siteId 不再出现在收藏分组里（去重走 excludeSiteIds）。
+   */
+  const quicklinkEntries = useMemo(
+    () =>
+      favorites.items
+        .map((fav) => quicklinkFromFavorite(fav))
+        .filter((e): e is QuicklinkEntry => e !== null),
+    [favorites.items],
+  )
+  const quicklinkBySiteId = useMemo(
+    () => new Map(quicklinkEntries.map((e) => [e.siteId, e])),
+    [quicklinkEntries],
+  )
+  const quicklinkMatch = useMemo(
+    () => matchQuicklinkCommand(query, quicklinkEntries),
+    [query, quicklinkEntries],
+  )
+  const matchedPaletteQuicklinks = useMemo(
+    () => matchPaletteQuicklinks(query, quicklinkEntries),
+    [query, quicklinkEntries],
+  )
   const matchedPaletteFavorites = useMemo(
     () =>
       matchPaletteFavorites(query, favorites.items, {
-        excludeSiteIds: new Set(hits.map((h) => h.siteId)),
+        excludeSiteIds: new Set([
+          ...hits.map((h) => h.siteId),
+          ...(quicklinkMatch ? [quicklinkMatch.entry.siteId] : []),
+        ]),
       }),
-    [query, favorites.items, hits],
+    [query, favorites.items, hits, quicklinkMatch],
   )
   /** 空查询面板直接展示的四操作（matchPaletteActions('') 即全部）与收藏 */
   const emptyPanelActions = useMemo(
@@ -1001,17 +1159,19 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
    * 默认目标仍是第一条结果（见 onSearchKeyDown），不能被建议抢走。
    */
   const navItems = useMemo(() => {
-    if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' | 'diy' | 'suggestion' | 'favorite' | 'action' | 'tool' }>
+    if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' | 'diy' | 'suggestion' | 'favorite' | 'action' | 'tool' | 'quicklink' }>
     return buildPaletteNavItems({
       suggestionIds: suggestionGroups.flatMap((g) => g.items.map((s) => `suggestion-${s.key}`)),
+      quicklinkIds: matchedPaletteQuicklinks.map((q) => q.key),
       diyIds: matchedDiyActions.map((d) => `diy-${d.key}`),
+      sceneIds: matchedSceneActions.map((s) => `scene-${s.key}`),
       favoriteIds: matchedPaletteFavorites.map((f) => `favorite-${f.siteId}`),
       actionIds: matchedPaletteActions.map((a) => `action-${a.id}`),
       toolIds: matchedPaletteTools.map((t) => `tool-${t.id}`),
       pluginIds: pluginItems.map((p) => `plugin-${p.id}`),
       siteIds: hits.filter((h) => h.site).map((h) => `site-${h.siteId}`),
     })
-  }, [showResults, suggestionGroups, matchedDiyActions, matchedPaletteFavorites, matchedPaletteActions, matchedPaletteTools, pluginItems, hits])
+  }, [showResults, suggestionGroups, matchedPaletteQuicklinks, matchedDiyActions, matchedSceneActions, matchedPaletteFavorites, matchedPaletteActions, matchedPaletteTools, pluginItems, hits])
 
   const navIndexById = useMemo(() => {
     const map = new Map<string, number>()
@@ -1062,6 +1222,27 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         return
       }
       if (e.key === 'Enter') {
+        // 优先级：quicklink 精确匹配 > OMNI_ENGINES 硬编码引擎 > 导航第一条结果。
+        // 前缀命中但代入失败（参数超 500 字符 / 模板已不安全）时 toast、
+        // 不开页，也不落到 OMNI 或导航首条——否则超长参数会悄悄走另一条路。
+        if (quicklinkMatch) {
+          e.preventDefault()
+          if (quicklinkMatch.url) {
+            openQuicklink({
+              key: `quicklink-${quicklinkMatch.entry.siteId}`,
+              entry: quicklinkMatch.entry,
+              arg: quicklinkMatch.arg,
+              url: quicklinkMatch.url,
+            })
+          } else {
+            toast({
+              title: '快捷链接打不开',
+              description: '参数超过 500 字符或模板不安全，已拦截。',
+              variant: 'destructive',
+            })
+          }
+          return
+        }
         const omni = parseOmniCommand(query)
         if (omni) {
           e.preventDefault()
@@ -1089,7 +1270,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         inputRef.current?.blur()
       }
     },
-    [showResults, navItems.length, activeIndex, findOptionElement, aiMode, query],
+    [showResults, navItems.length, activeIndex, findOptionElement, aiMode, query, quicklinkMatch, openQuicklink, toast],
   )
 
   const panel = planSearchPanel({
@@ -1138,6 +1319,25 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           suggestion={addSiteSuggestion}
           onPickSuggestion={(categoryId) => setAddSiteTargetCatId(categoryId)}
           onSubmit={handleAddCustomSiteSubmit}
+        />
+      )}
+      {/* 新建收藏预填弹窗（容错纠错出口二）：与 DIY 的 addSiteOpen 是两套状态，
+          提交走 /api/me/custom-sites + 收藏联动，不是本地 DIY 板 */}
+      {createOpen && (
+        <AddSiteDialog
+          open={createOpen}
+          onOpenChange={(open) => { if (!open) setCreateOpen(false) }}
+          title={createForm.title}
+          href={createForm.href}
+          desc={createForm.note}
+          onTitleChange={(v) => setCreateForm((f) => ({ ...f, title: v }))}
+          onHrefChange={(v) => setCreateForm((f) => ({ ...f, href: v }))}
+          onDescChange={(v) => setCreateForm((f) => ({ ...f, note: v }))}
+          suggestion={null}
+          onPickSuggestion={() => {}}
+          onSubmit={handleCreateFavoriteSubmit}
+          dialogTitle="新建收藏"
+          dialogDescription="保存到「我的站点」（登录后跨设备同步）。网址必填：请粘贴真实网址，不会按关键词猜一个地址。"
         />
       )}
       <div className="relative">
@@ -1331,10 +1531,30 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       <span className="truncate font-medium text-foreground group-hover:text-primary transition-colors text-[11px]">
                         {fav.title}
                       </span>
+                      {(() => {
+                        const ql = quicklinkBySiteId.get(fav.siteId)
+                        if (!ql) return null
+                        return (
+                          <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 font-mono text-[10px] font-bold text-primary">
+                            !{ql.quickPrefix}
+                          </span>
+                        )
+                      })()}
                     </a>
                   )
                 })}
               </div>
+              {(() => {
+                const chips = emptyPanelFavorites
+                  .map((fav) => quicklinkBySiteId.get(fav.siteId))
+                  .filter((e): e is QuicklinkEntry => e !== null)
+                if (chips.length === 0) return null
+                return (
+                  <p className="mt-2 px-1 text-[11px] text-muted-foreground">
+                    输入 {chips.map((c) => `!${c.quickPrefix}`).join(' / ')} &lt;关键词&gt; 直达搜索
+                  </p>
+                )
+              })()}
             </div>
           )}
 
@@ -1483,7 +1703,38 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
       {showResults && (
         <div id="navhub-search-results-panel" ref={resultsPanelRef} className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
-          {omniCommand && (
+          {/* 快捷链接横幅：精确匹配时置顶（复用 search-bar 的 matchedShortcut 横幅样式），鼠标可点，回车直达；命中时 OMNI 横幅让位 */}
+          {quicklinkMatch?.url && (
+            <div className="px-3.5 py-2.5 bg-primary/10 border-b border-primary/20 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  openQuicklink({
+                    key: `quicklink-${quicklinkMatch.entry.siteId}`,
+                    entry: quicklinkMatch.entry,
+                    arg: quicklinkMatch.arg,
+                    url: quicklinkMatch.url!,
+                  })
+                }
+                className="flex items-center gap-2 text-xs font-medium text-primary min-w-0 text-left cursor-pointer"
+              >
+                <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-mono text-[10px] font-bold shrink-0">
+                  !{quicklinkMatch.entry.quickPrefix}
+                </span>
+                <span className="truncate">
+                  在 <strong className="font-semibold">{quicklinkMatch.entry.title}</strong> 搜索：
+                  <strong className="font-semibold underline underline-offset-2">
+                    {quicklinkMatch.arg ? `"${quicklinkMatch.arg}"` : '(全部)'}
+                  </strong>
+                </span>
+              </button>
+              <span className="inline-flex items-center gap-1 text-[11px] text-primary shrink-0 font-medium">
+                <span>回车直达</span>
+                <ExternalLink className="w-3 h-3" />
+              </span>
+            </div>
+          )}
+          {!quicklinkMatch && omniCommand && (
             <div className="px-3.5 py-2.5 bg-primary/10 border-b border-primary/20 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs font-medium text-primary min-w-0">
                 <span className="px-1.5 py-0.5 rounded bg-primary/20 font-mono text-[10px] uppercase font-bold shrink-0">
@@ -1605,6 +1856,47 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   </div>
                 </div>
               ))}
+              {/* 快捷链接（命令命中）：建议之后、DIY 之前，↑↓/Enter 可达；命中时同一收藏不重复出现在收藏分组 */}
+              {matchedPaletteQuicklinks.length > 0 && (
+                <div className="border-b border-border/60">
+                  <div className="px-3.5 py-2 flex items-center gap-1.5 bg-primary/5">
+                    <Zap className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-xs font-semibold text-primary">快捷链接</span>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {matchedPaletteQuicklinks.map((item) => {
+                      const idx = navIndexById.get(item.key) ?? -1
+                      return (
+                        <div
+                          key={item.key}
+                          role="option"
+                          id={`navhub-search-opt-${idx}`}
+                          data-nav-index={idx}
+                          data-nav-item="quicklink"
+                          aria-selected={idx === activeIndex}
+                          onClick={() => openQuicklink(item)}
+                          className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer ${
+                            idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                          }`}
+                        >
+                          <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-mono text-[10px] font-bold shrink-0">
+                            !{item.entry.quickPrefix}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium truncate">
+                              在 {item.entry.title} 搜索：{item.arg ? `"${item.arg}"` : '(全部)'}
+                            </span>
+                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                              {item.entry.href}
+                            </span>
+                          </span>
+                          <span className="text-xs text-muted-foreground shrink-0">回车直达</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               {/* DIY 排版操作（8c）：查询命中操作关键词时置顶展示，参与 ↑↓/Enter 键盘导航 */}
               {matchedDiyActions.length > 0 && (
                 <div className="border-b border-border/60">
@@ -1643,6 +1935,47 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                               {item.hint}
                             </kbd>
                           )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* 我的场景（⌘K）：查询命中场景名或「场景」时展示，参与 ↑↓/Enter 键盘导航 */}
+              {matchedSceneActions.length > 0 && (
+                <div className="border-b border-border/60">
+                  <div className="px-3.5 py-2 flex items-center gap-1.5 bg-teal-500/5">
+                    <Layers className="h-3.5 w-3.5 text-teal-500" />
+                    <span className="text-xs font-semibold text-teal-700 dark:text-teal-400">我的场景</span>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {matchedSceneActions.map((item) => {
+                      const idx = navIndexById.get(`scene-${item.key}`) ?? -1
+                      return (
+                        <div
+                          key={item.key}
+                          role="option"
+                          id={`navhub-search-opt-${idx}`}
+                          data-nav-index={idx}
+                          data-nav-item="scene"
+                          aria-selected={idx === activeIndex}
+                          onClick={() => void handleSceneAction(item.sceneId)}
+                          className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer ${
+                            idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                          }`}
+                        >
+                          <span className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/15 flex items-center justify-center shrink-0">
+                            <Layers className="h-4 w-4 text-teal-500" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium truncate">
+                              {item.title}
+                              {item.isActive ? ' · 当前' : ''}
+                            </span>
+                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                              {item.description}
+                            </span>
+                          </span>
                         </div>
                       )
                     })}
@@ -2077,7 +2410,32 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 <div className="py-6 px-3 text-center">
                   <div className="text-muted-foreground text-sm">{panel.title}</div>
                   <div className="text-xs text-muted-foreground mt-1">{panel.hint}</div>
-                  {didYouMean && (
+                  {correction ? (
+                    <div
+                      role="status"
+                      className="mt-3 inline-flex flex-wrap items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-foreground"
+                    >
+                      <span>已替你纠正为：</span>
+                      <button
+                        type="button"
+                        className="font-bold underline text-primary hover:text-primary/80 cursor-pointer"
+                        onClick={() => setQuery(correction.corrected)}
+                      >
+                        {correction.corrected}
+                      </button>
+                      <span>不是这个？</span>
+                      <button
+                        type="button"
+                        className="font-medium underline underline-offset-2 text-primary hover:no-underline cursor-pointer"
+                        onClick={() => {
+                          setNocorrectQuery(correction.original)
+                          setRetryToken((n) => n + 1)
+                        }}
+                      >
+                        搜原来的「{correction.original}」
+                      </button>
+                    </div>
+                  ) : didYouMean ? (
                     <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-foreground">
                       <span>💡 您是不是想搜：</span>
                       <button
@@ -2089,8 +2447,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       </button>
                       <span>？</span>
                     </div>
-                  )}
-                  {suggestions.length > 0 && (
+                  ) : null}
+                  {/* 纠正后隐藏通用建议 chips（协调人决定 1：纠正后仍零结果
+                      只留明确出口，不叠泛推荐）；未纠正时照常显示 */}
+                  {!correction && suggestions.length > 0 && (
                     <div className="mt-4">
                       <div className="text-xs text-muted-foreground mb-2">试试这些搜索</div>
                       <div className="flex flex-wrap justify-center gap-1.5">
@@ -2106,7 +2466,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       </div>
                     </div>
                   )}
-                  {popular.length > 0 && (
+                  {!correction && popular.length > 0 && (
                     <div className="mt-4">
                       <div className="text-xs text-muted-foreground mb-2">热门搜索</div>
                       <div className="flex flex-wrap justify-center gap-1.5">
@@ -2158,6 +2518,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       )}
                     </div>
                   )}
+                  {wantedNote ? (
+                    <div className="mt-3 text-[11px] text-muted-foreground">{wantedNote}</div>
+                  ) : null}
                   {query.trim() && (
                     <div className="mt-4 pt-3 border-t border-border/40 flex flex-col items-center gap-2">
                       <div className="text-[11px] text-muted-foreground flex items-center gap-1">

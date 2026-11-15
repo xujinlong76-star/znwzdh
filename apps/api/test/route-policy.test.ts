@@ -80,26 +80,48 @@ const decisionFor = (route: RouteEntry) =>
  *   - 根本不该匿名可写？       → 把 scope 提成 write/admin。
  */
 const ANON_WRITE_SNAPSHOT: readonly string[] = [
+  // 对照表分享（Batch 4 Phase 2 P2-4）：只改调用者自己的分享——处理器内
+  // requireAskIdentity（匿名 401）+ owner 校验（跨 owner 404）；公开级只表示
+  // 「登录前可见入口」，与 /pub 同口径（2026-11-15 复核登记）。
+  "DELETE /api/compare/shares/:slug",
   "DELETE /api/crdt/sync",
   "DELETE /api/favorites",
   "DELETE /api/favorites/:siteId",
   "DELETE /api/favorites/folders/:id",
   "DELETE /api/me",
+  "DELETE /api/me/favorites/trash",
+  "DELETE /api/me/favorites/trash/:siteId",
   "DELETE /api/me/sessions/:id",
   "DELETE /api/me/tokens/:id",
+  // 待找（第 1 批）：同为用户域写面（处理器内签名身份 + favorites 域闸），公开级
+  // 只表示「登录前可见入口」，真正的闸在处理器，匿名请求 401（见 wanted-searches.test.ts「匿名 401」）。
+  "DELETE /api/me/wanted/:id",
   "DELETE /api/plugins/:slug/install",
   "DELETE /api/plugins/:slug/star",
   "DELETE /api/profile",
   "DELETE /api/profile/signals/:kind",
+  // 公开导航页（Batch 3 第 6 项）：写的是调用者自己的发布关系（owner 身份 +
+  // favorites 域闸），公开级只表示「登录前可见入口」，真正的闸在处理器，
+  // 匿名请求 401；跨 owner 一律 404（见 public-pages-api.test.ts）。
+  "DELETE /api/public-pages/:slug",
   "DELETE /api/search-history",
   "DELETE /api/search-history/:id",
+  // 站点价格（Batch 4 Phase 2 P2-2）：只删调用者自己的价格记录——处理器内
+  // requireAskIdentity + 本人收藏校验（匿名 401、非本人收藏 404），见
+  // routes/site-prices.ts loadOwnSite（2026-11-15 复核登记）。
+  "DELETE /api/sites/:id/price",
   "DELETE /api/user/ai/config",
   "DELETE /api/vault/sync",
   "DELETE /api/workspaces/:id/members/:userId",
+  // 对照表分享（Batch 4 Phase 2 P2-4）：上下线只改调用者自己的分享，
+  // 与上 DELETE 处同口径（匿名 401、跨 owner 404）。
+  "PATCH /api/compare/shares/:slug",
   "PATCH /api/favorites/:siteId",
   "PATCH /api/favorites/folders/:id",
   "PATCH /api/me/profile",
   "PATCH /api/me/settings",
+  // 公开导航页（Batch 3 第 6 项）：上下线只改调用者自己的发布关系（见上 DELETE 处注释）。
+  "PATCH /api/public-pages/:slug",
   "POST /api/account/forgot-password",
   "POST /api/account/login",
   "POST /api/account/register",
@@ -108,6 +130,15 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/account/verify-email",
   "POST /api/ai/chat",
   "POST /api/ai/find",
+  // 问问我的收藏（#13）：与 ai/chat 同级的计算型用户域路由——只读调用者自己的
+  // 收藏做检索 + 模型问答，服务端不存问答内容；scope public 只表示「登录前可见
+  // 入口」，匿名请求在处理器内 401（requireAskIdentity），与 ai/chat 同级。
+  "POST /api/ask",
+  // 对照快照与分享发布（Batch 4 Phase 2 P2-3/P2-4）：只写调用者自己的快照
+  // 与分享——处理器内 requireAskIdentity（匿名 401）；快照只收本人收藏的
+  // 站点，发布只认本人快照（跨 owner 404）。公开级只表示「登录前可见入口」。
+  "POST /api/compare/snapshots",
+  "POST /api/compare/snapshots/:id/publish",
   "POST /api/copilot/chat",
   "POST /api/crdt/sync",
   "POST /api/design/harmony",
@@ -118,6 +149,10 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/mcp",
   "POST /api/me/diagnostics",
   "POST /api/me/favorites/sync",
+  // 收藏回收站：写的是调用者自己的墓碑，处理器有 identityTrusted 签名校验
+  // 与 userDomainWriteAllowed 域闸（favorites 档），与收藏同步同级。
+  "POST /api/me/favorites/trash/:siteId/restore",
+  "POST /api/me/favorites/trash/restore-batch",
   "POST /api/me/import",
   "POST /api/me/merge",
   "POST /api/me/notifications/:id/read",
@@ -125,6 +160,7 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/me/prune",
   "POST /api/me/sessions/check",
   "POST /api/me/tokens",
+  "POST /api/me/wanted",
   // 追剧清单同步：写的是调用者自己的数据，处理器有 identityTrusted 签名校验
   // 与 userDomainWriteAllowed 域闸（favorites 档令牌不可写，走 write 域），与收藏同步同级。
   "POST /api/me/watchlist/sync",
@@ -150,6 +186,8 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/plugins/diff",
   "POST /api/plugins/pre-audit",
   "POST /api/plugins/validate",
+  // 公开导航页（Batch 3 第 6 项）：发布只写调用者自己的发布关系（见上 DELETE 处注释）。
+  "POST /api/public-pages",
   "POST /api/rank/federated",
   "POST /api/search",
   // 页内筛选查询记历史：只写调用者自己的搜索历史，处理器有 identityTrusted
@@ -158,9 +196,16 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/search-history/batch-delete",
   "POST /api/shortlinks",
   "POST /api/sites/:id/archive",
+  // 站点价格与刷新验证（Batch 4 Phase 2 P2-2/P2-1）：只对本人收藏的站点生效——
+  // 处理器内 requireAskIdentity + 本人收藏校验（匿名 401、非本人收藏 404）；
+  // 价格记录按 ownerIdentity 写调用者自己的行；scrape 只回候选不写库；
+  // verify 只把实测探活结论（ok/dead）写进健康字段，不写假值、不标 broken。
+  "POST /api/sites/:id/price",
+  "POST /api/sites/:id/price/scrape",
   // 站点纠错上报（升级第 10 条）：访客匿名举报信息错误/死链，只进复核队列不改数据，
   // 共享实例写面——已同步登记进 PUBLIC_INSTANCE_WRITE_ROUTES。
   "POST /api/sites/:id/reports",
+  "POST /api/sites/:id/verify",
   "POST /api/sites/cluster",
   "POST /api/speculation/rules",
   "POST /api/submissions",

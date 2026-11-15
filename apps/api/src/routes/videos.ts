@@ -29,7 +29,7 @@ import { readVideosData } from "../storage.ts";
 import { flattenVideoCatalog, resolveVideoStoreMode } from "../video-catalog.ts";
 import { resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
-import { safeJsonParse } from "./shared.ts";
+import { safeJsonParse, markCursorPaginationDeprecated } from "./shared.ts";
 
 /** 单页上限：与 repository 内部上限一致，避免调用方传 10000 把响应撑爆 */
 const MAX_LIMIT = 200;
@@ -43,6 +43,7 @@ const listQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
   // Keyset 游标（M12）：只在 db 读路径生效，走 WHERE (category_id,sort,id)
   // 谓词，不再 OFFSET；KV 文档回落路径仍用 offset 切片（内存数组，无扫表）。
+  // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
   cursor: z.string().max(4096).optional(),
   /** 1 = 不返回 videoConfig（章节树/字幕动辄几十 KB），列表页默认精简 */
   compact: z.enum(["0", "1"]).optional(),
@@ -167,6 +168,7 @@ export const videoRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     const limit = parsed.data.limit ?? DEFAULT_LIMIT;
     const offset = parsed.data.offset ?? 0;
     const cursor = parsed.data.cursor;
+    if (cursor) markCursorPaginationDeprecated(reply);
     const includeConfig = parsed.data.compact === "0";
     const filter = { categoryId, platform, healthStatus };
 

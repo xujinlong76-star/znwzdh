@@ -9,14 +9,16 @@ import type { SiteConfig } from '@/types/site'
 import type { CinemaInitialData } from '@/components/home-drama-cinema'
 import { Sidebar } from '@/components/sidebar'
 import { NavigationToolbar } from '@/components/navigation-toolbar'
+import { HalfScreenDock } from '@/components/half-screen-dock'
 import { NavigationCategorySection } from '@/components/navigation-category-section'
 import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { HomeRecentVisits } from '@/components/home-recent-visits'
 import { HomeFrequentVisits } from '@/components/home-frequent-visits'
 import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
-import { didHomeDiyHistoryStepClaimThisTask } from '@/lib/modular/home-diy-storage'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { buildSceneSiteIndex, registerSceneSiteIndex } from '@/lib/modular/scene-apply'
+import { SCENE_WORKSPACE_CHANGE_EVENT } from '@/lib/modular/scene-apply-live'
 import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
 import { readDiyDragData } from '@/lib/modular/diy-drag'
 import {
@@ -204,9 +206,25 @@ import {
   customCategoriesToNavigation,
 } from '@/lib/modular/category-combine'
 import { useSiteSelection } from '@/lib/modular/use-site-selection'
+import { useExternalLinkTarget, useUserPreference } from '@/lib/user-preferences'
+import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
+import { buildDialMap } from '@/lib/number-dial'
+import { batchExportSitesToMarkdown } from '@/lib/batch-operations'
+import { copyText } from '@/lib/clipboard'
+import { computeSpeedDialSites } from '@/lib/speed-dial-order'
+import { useNumberDial } from '@/hooks/use-number-dial'
+import { useBatchKeyboard } from '@/hooks/use-batch-keyboard'
 import { createCustomSiteId, normalizeCustomSiteHref } from '@/lib/modular/custom-site-input'
 import { useToast } from '@/components/ui/use-toast'
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
+import { pushGlobalUndo } from '@/lib/undo-stack'
+import {
+  buildHomeBatchAddUndoEntry,
+  buildHomeBatchPinUndoEntry,
+  buildHomeBatchRemoveUndoEntry,
+} from '@/lib/home-batch-undo'
+import { buildBatchPinToast } from '@/lib/batch-pin-toast'
+import type { LocalFavorite } from '@/hooks/useFavorites'
 
 interface DirectoryLink {
   id: string
@@ -353,7 +371,8 @@ export function NavigationContent({
     setCollapsedCategoryIds,
     customCategories,
     addSiteToCustomCategory,
-    removeSiteFromCustomCategory,
+    addSitesToCustomCategory,
+    removeSitesFromCustomCategories,
     siteCategoryOverrides,
     pinnedSiteIdsByCategory,
     togglePinSiteInCategory,
@@ -365,6 +384,8 @@ export function NavigationContent({
     setIsEditingLayout,
     unhideCategory,
     unhideAllCategories,
+    speedDialPinnedIds,
+    quickDialSlots,
   } = useHomeDIY()
 
   const {
@@ -589,38 +610,10 @@ export function NavigationContent({
     }, 80)
   }, [setIsEditingLayout])
 
-  // 全局 Ctrl/Cmd+Z 撤销监听（删减进回收站后可撤销）。
-  // 注意：这里曾经还有一个 Ctrl/Cmd+E 安全阀（右下角 DIY 按钮被隐藏时兜底呼出
-  // 排版与恢复中心），因与快捷键帮助对话框的同一绑定重复触发、一次按键开关两次
-  // 等于没按，已删除；Ctrl/Cmd+E 的唯一入口是 keyboard-shortcuts-dialog.tsx。
-  // 单字符 E 已按 WCAG 2.1.4 废止：裸按 E 会与读屏软件冲突。
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      ) {
-        return
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
-        // 同一按键只撤销一步（W2-9）：画布/排版的撤销监听先跑（子组件 effect
-        // 先注册），它们认领过这次按键就跳过，不再恢复回收站。
-        if (didHomeDiyHistoryStepClaimThisTask()) return
-        if (trashBin.length > 0) {
-          e.preventDefault()
-          e.stopImmediatePropagation()
-          handleUndoPrune()
-        }
-        return
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [trashBin.length, handleUndoPrune])
+  // 全局 Ctrl/Cmd+Z 撤销监听：已收敛到 hooks/use-global-undo（Providers 里
+  // 只挂一次）。这里不再挂 window keydown——旧监听与画布/排版的监听各
+  // 自判定"输入框"，一次按键会撤两步。handleUndoPrune 留给回收站按钮用，
+  // 分发时全局 hook 直接调 undoLastFeatureRemove + 分类双写。
 
   const handleWorkspaceChange = useCallback((nextWorkspace: WorkspaceId) => {
     setActiveWorkspace(nextWorkspace)
@@ -634,6 +627,25 @@ export function NavigationContent({
       setCollapsedCategoryIds(toCollapse)
     }
   }, [expandAllCategories, setCollapsedCategoryIds, navigationData.navigationItems])
+
+  // 我的场景接线：① 把全站站点→分类索引登记到场景注册表（置顶派生用，
+  //    用未经过滤的原始分类建，置顶站点所在分类被隐藏/折叠也要能解析）；
+  //    ② 监听场景切换派发的 workspace 事件，走上面同一条 handleWorkspaceChange。
+  useEffect(() => {
+    registerSceneSiteIndex(
+      buildSceneSiteIndex(navigationData.navigationItems, customCategories),
+    )
+  }, [navigationData.navigationItems, customCategories])
+  useEffect(() => {
+    const onSceneWorkspace = (event: Event) => {
+      const filter = (event as CustomEvent<{ filter?: string }>).detail?.filter
+      if (filter === 'all' || filter === 'dev' || filter === 'design' || filter === 'ai' || filter === 'efficiency') {
+        handleWorkspaceChange(filter)
+      }
+    }
+    window.addEventListener(SCENE_WORKSPACE_CHANGE_EVENT, onSceneWorkspace)
+    return () => window.removeEventListener(SCENE_WORKSPACE_CHANGE_EVENT, onSceneWorkspace)
+  }, [handleWorkspaceChange])
 
   /**
    * 首屏分类分批渲染（首页 HTML 预算哨兵与 CWV 首屏加速）。
@@ -668,10 +680,10 @@ export function NavigationContent({
 
   /* ------------------------- 多选批量操作 -------------------------
    *
-   * 组件 `batch-operation-dock.tsx` 与 `lib/batch-operations.ts`（批量导出 /
-   * 复制成 Markdown / 置顶 / 移动 / 删除）早就写好了，但**从未被挂载**：
-   * 没有任何选中状态，也没有任何入口，用户「一次处理多个站点」的需求没有出口。
-   * 这里补上入口：工具栏的「多选」开关 + 卡片选中态 + 底部操作坞。
+   * 批量操作坞（`components/batch-operation-dock.tsx`）与批量引擎
+   * （`lib/batch-operations.ts`：批量导出 / 复制成 Markdown / 置顶 /
+   * 移动 / 删除）已挂载：入口是工具栏的「多选」开关（快捷键 M，
+   * 见 hooks/use-batch-keyboard.ts）+ 卡片选中态 + 底部操作坞。
    *
    * 选中态本身（可见站点收集 / 剪枝 / 切换 / 全选）已抽到
    * `lib/modular/use-site-selection.ts`，组件只消费返回值。
@@ -686,6 +698,274 @@ export function NavigationContent({
     toggleSelectOne,
     selectAllVisible,
   } = useSiteSelection(sortedCategories, collapsedCategoryIds)
+
+  /* ------------------------- 首屏数字直达 -------------------------
+   *
+   * 映射源 = 速览坞 Top 9（computeSpeedDialSites，与坞同一份纯函数、
+   * 同一份输入：visibleSites + speedDialPinnedIds + 最近访问 + 工作区）。
+   * 映射由这里一个 useMemo 算出，经 props 透传给分类区 → 卡片（角标）与
+   * 坞（角标），同时给 useNumberDial 用——禁止任何一方自己重算顺序。
+   * visibleSites 跳过折叠分类，dialSites / siteIndex / siteTitleById 都源自它：
+   * 某钉选站所在分类被折叠时，该站不在数字直达映射里，裸数字与
+   * Ctrl+Shift+数字都静默无操作；角标在卡片不可见时自然不显示。
+   *
+   * 水合安全：映射依赖 localStorage（钉选、最近访问），SSR 与首帧一律
+   * 不传 dialDigit（mounted 前传 undefined），角标只在挂载后出现；
+   * 数字键监听同样只在 mounted 后才启用。
+   */
+  const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
+  useEffect(() => {
+    let active = true
+    readOfflineVisits(20)
+      .then((rows) => {
+        if (active && Array.isArray(rows)) setRecentVisits(rows)
+      })
+      .catch(() => {
+        // 降级容错：离线最近访问读取失败时映射退回「钉选 + 工作区 + 全站顺序」
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const dialSites = useMemo(
+    () =>
+      computeSpeedDialSites({
+        allSites: visibleSites,
+        speedDialPinnedIds,
+        recentVisits,
+        activeWorkspace,
+      }),
+    [visibleSites, speedDialPinnedIds, recentVisits, activeWorkspace],
+  )
+  const dialMap = useMemo(() => buildDialMap(dialSites), [dialSites])
+  /** 全站索引：自定义快拨位解析（id → 站点）与卡片菜单的被顶掉站名都读它 */
+  const siteIndex = useMemo(
+    () => new Map(visibleSites.map((s) => [s.id, s] as const)),
+    [visibleSites],
+  )
+  const siteTitleById = useMemo(
+    () => new Map(visibleSites.map((s) => [s.id, s.title] as const)),
+    [visibleSites],
+  )
+  const linkTarget = useExternalLinkTarget(siteData?.navigation?.linkTarget)
+  const numberDialEnabled = useUserPreference('numberDialEnabled')
+  useNumberDial({
+    enabled: mounted && numberDialEnabled,
+    dialSites,
+    quickDialSlots,
+    siteIndex,
+    linkTarget,
+    selectionMode,
+    editingLayout: isEditingLayout,
+  })
+
+  /* ------------------------- 批量键盘（M / P / E / F / Esc 等） -------------------------
+   *
+   * 判定全在 lib/batch-keyboard.ts 的纯函数里，这里只接线已有的批量能力。
+   * E / Shift+E 的导出复用坞里同一份逻辑（batch-operation-dock.tsx 的
+   * handleCopyMarkdown / handleDownloadMarkdown），坞不暴露回调，这里镜像一份，
+   * 文案与文件名与坞保持一致；P 的固定回调抽成具名函数，坞与键盘共用同一份。
+   * 首页 Delete/Backspace 在多选态走批量移除（11b 已补撤销，见 lib/batch-keyboard.ts
+   * 文件头）：纯函数返回 batch-remove，卡片级 handleKeyDown 不拦冒泡，
+   * window 层 useBatchKeyboard 经 onBatchRemove 分发到这里。
+   * 三个批量处理器都是单提交（批量版 API 一次 persistConfig），处理器里
+   * 不得再出现逐站提交的循环；每批至多推一条全局撤销条目。
+   */
+  const handleBatchPinToWorkbench = () => {
+    // pinSiteToWorkbench 是单站 API（每调一次返回本站的收据）；
+    // 批量固定把各站收据聚合成一份 BatchPinReceipt，整批只推一条撤销条目
+    // （设计 §2.1：每批独立一条），逆操作只删本次新建的收藏条目，dock 留下。
+    const addedSiteIds: string[] = []
+    const addedItems: LocalFavorite[] = []
+    let createdDockWidgetId: string | null = null
+    // newlyPinned 只计本次新建的站；alreadyPinned 计 ok 但未新加的站
+    // （pinSiteToWorkbench 对已固定过的站也返回 ok，见 workbench-bridge）。
+    // toast 必须按这两数如实报，不能把 ok 数当新增数。
+    let newlyPinned = 0
+    let alreadyPinned = 0
+    for (const site of selectedSites) {
+      if (!isSafeSiteHref(site.href)) continue
+      const res = pinSiteToWorkbench({
+        siteId: site.id,
+        title: site.title,
+        href: site.href,
+        icon: site.icon,
+        description: site.description,
+      })
+      if (!res.ok) continue
+      if (res.receipt) {
+        if (res.receipt.addedSiteIds.length > 0) {
+          newlyPinned++
+          addedSiteIds.push(...res.receipt.addedSiteIds)
+          addedItems.push(...res.receipt.addedItems)
+        } else {
+          alreadyPinned++
+        }
+        if (createdDockWidgetId === null) createdDockWidgetId = res.receipt.createdDockWidgetId
+      }
+    }
+    if (addedSiteIds.length > 0) {
+      const entry = buildHomeBatchPinUndoEntry({
+        addedSiteIds,
+        addedItems,
+        createdDockWidgetId,
+        // pinnedCount 是 ok 的站数（收据约定，见 BatchPinReceipt）：
+        // 新建 + 已在 = 本批 ok 总数。
+        pinnedCount: newlyPinned + alreadyPinned,
+      })
+      if (entry) pushGlobalUndo(entry)
+    }
+    toast(buildBatchPinToast(newlyPinned, alreadyPinned))
+  }
+
+  const handleBatchAddToCustomCategory = (categoryId: string) => {
+    const usable = selectedSites.filter((site) => isSafeSiteHref(site.href))
+    if (usable.length === 0) {
+      toast({ title: '⚠️ 没有可收录的站点', description: '选中的站点网址不合法。' })
+      return
+    }
+    const receipt = addSitesToCustomCategory(
+      categoryId,
+      usable.map((site) => ({
+        title: site.title,
+        href: site.href,
+        description: site.description,
+      })),
+    )
+    // 写盘失败时收据的 addedCount 已清零（failedCount 计命中数），
+    // builder 同样返回 null：天然不推撤销条目，不再加别的判断。
+    if (receipt.addedCount > 0) {
+      const entry = buildHomeBatchAddUndoEntry(receipt)
+      if (entry) pushGlobalUndo(entry)
+    }
+    // 批量路径同样不能只说好话：失败与重复要如实计数
+    if (receipt.failedCount > 0) {
+      toast({
+        title: `只收录了 ${receipt.addedCount} 个`,
+        description: `${receipt.failedCount} 个没能写入本地存储（隐私模式或空间已满），刷新后会丢失；${receipt.duplicateCount} 个已在分类中。`,
+        variant: 'destructive',
+      })
+    } else if (receipt.duplicateCount > 0) {
+      toast({
+        title: `已收录 ${receipt.addedCount} 个站点`,
+        description: `另有 ${receipt.duplicateCount} 个已在所选分类中，未重复添加。`,
+      })
+    } else {
+      toast({
+        title: '✨ 已收录 ' + receipt.addedCount + ' 个站点',
+        description: '已批量加入所选专属分类。',
+      })
+    }
+    clearSelection()
+  }
+
+  const handleBatchRemoveFromCustomCategories = () => {
+    // 只处理「自定义分类里的卡片」：这些是用户自建的本地条目，删了能重建；
+    // 内置站点库的条目不在这个作用域里（那是回收站/管理端的职责）。
+    const receipt = removeSitesFromCustomCategories(selectedSites.map((site) => site.id))
+    if (receipt.removedCount > 0) {
+      const entry = buildHomeBatchRemoveUndoEntry(receipt)
+      if (entry) pushGlobalUndo(entry)
+    }
+    if (receipt.failedCount > 0) {
+      toast({
+        title: `只移除了 ${receipt.removedCount} 个站点`,
+        description: `${receipt.failedCount} 个没能写入本地存储（隐私模式或空间已满），刷新后会丢失。`,
+        variant: 'destructive',
+      })
+    } else {
+      toast(
+        receipt.removedCount > 0
+          ? { title: '🗑️ 已移除 ' + receipt.removedCount + ' 个站点', description: '仅从你的专属分类中移除，站点库本身不受影响。' }
+          : { title: '⚠️ 没有可移除的站点', description: '所选站点都不在自定义分类里。' },
+      )
+    }
+    // 删掉的站已不在分类里，选中态随之清空（与收录后清空同款）；
+    // 否则坞还挂着一批已不存在的选中，第二次 Delete 只会空转报错。
+    clearSelection()
+  }
+
+  const handleBatchCopyMarkdown = async () => {
+    const count = selectedSites.length
+    if (count === 0) {
+      toast({ title: '请先选中站点', description: '按 E 之前，先用 Tab + 空格选中至少一张卡片。' })
+      return
+    }
+    try {
+      const md = batchExportSitesToMarkdown(selectedSites, {
+        categoryTitle: `山羊胡批量导读书签 (${count}项)`,
+      })
+      const result = await copyText(md)
+      if (!result.ok) throw new Error(result.reason)
+      toast({
+        title: '📋 Markdown 已复制',
+        description: `已成功将 ${count} 个站点的 Markdown 清单写入系统剪贴板。`,
+      })
+    } catch {
+      toast({
+        title: '复制失败',
+        description: '请检查浏览器剪贴板写入权限。',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const handleBatchDownloadMarkdown = () => {
+    const count = selectedSites.length
+    if (count === 0) {
+      toast({ title: '请先选中站点', description: '按 Shift+E 之前，先用 Tab + 空格选中至少一张卡片。' })
+      return
+    }
+    const md = batchExportSitesToMarkdown(selectedSites, {
+      categoryTitle: `山羊胡批量导读书签 (${count}项)`,
+    })
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `navhub-export-${new Date().toISOString().slice(0, 10)}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast({
+      title: '📥 Markdown 文件已下载',
+      description: `已保存 ${count} 个站点到本地文件。`,
+    })
+  }
+
+  const focusBatchMoveTarget = () => {
+    if (selectedSites.length === 0) {
+      toast({ title: '请先选中站点', description: '按 F 之前，先用 Tab + 空格选中至少一张卡片。' })
+      return
+    }
+    const el = document.querySelector<HTMLElement>('[data-batch-move-target]')
+    if (el) {
+      el.focus()
+      return
+    }
+    toast({ title: '没有可收录的分类', description: '先在 DIY 里新建一个专属分类，再用 F 聚焦收录。' })
+  }
+
+  useBatchKeyboard({
+    surface: 'home',
+    inBatchMode: selectionMode,
+    hasSelection: selectedIds.length > 0,
+    editingLayout: isEditingLayout,
+    enabled: mounted,
+    callbacks: {
+      onToggleMode: toggleSelectMode,
+      onClearSelection: clearSelection,
+      // exit-mode 只在模式内发出，此时 toggle 即退出并清空选中。
+      onExitMode: toggleSelectMode,
+      onToggleFocused: toggleSelectOne,
+      onSelectAllVisible: selectAllVisible,
+      onPin: handleBatchPinToWorkbench,
+      onBatchRemove: handleBatchRemoveFromCustomCategories,
+      onExportMarkdown: handleBatchCopyMarkdown,
+      onDownloadMarkdown: handleBatchDownloadMarkdown,
+      onFocusMoveTarget: focusBatchMoveTarget,
+    },
+  })
 
   // 4. 画布背景类名
   const canvasBgClass = useMemo(() => {
@@ -833,7 +1113,7 @@ export function NavigationContent({
         {/* 卡片键盘模型说明：所有卡片通过 aria-describedby 指向这一条 */}
         {!isFeatureHidden('feat:keyboard-hint') && (
           <p id="navhub-card-keyboard-hint" data-feature-id="feat:keyboard-hint" className="sr-only">
-            站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区，左右方向键切换，Esc 返回卡片。
+            站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区，左右方向键切换，Esc 返回卡片。按数字键 1 到 9 直接打开速览坞对应站点；Shift+数字在新标签页打开；Ctrl+Shift+数字打开自定义快拨位。
           </p>
         )}
 
@@ -849,6 +1129,18 @@ export function NavigationContent({
           visibleSiteCount={visibleSites.length}
           onToggleSelectMode={toggleSelectMode}
           onSelectAllVisible={selectAllVisible}
+        />
+
+        {/* 半屏下沉栏（Batch 3 第 12 项）：挂在这里而非工具栏内——工具栏没有
+            isEditingLayout 这个 prop，编辑态隐藏无法在该文件内直接实现；
+            本文件已同时持有 isEditingLayout、selectionMode、selectedIds
+            与 setIsToolsOpen，少一次 prop 透传。仅首页挂载，其它路由零变化。 */}
+        <HalfScreenDock
+          activeWorkspace={activeWorkspace}
+          onOpenTools={() => setIsToolsOpen(true)}
+          isEditingLayout={isEditingLayout}
+          selectionMode={selectionMode}
+          selectedIds={selectedIds}
         />
 
         {/* 吸顶分类快捷直达导航轨 */}
@@ -1096,11 +1388,11 @@ export function NavigationContent({
                               removeFeature({
                                 id: 'mod:speed-dial',
                                 level: 'L1_MODULE',
-                                title: '⚡ 极速直达坞 Top 10',
+                                title: '⚡ 高频极速直达坞 Top 9',
                                 parentTitle: 'L1 全局功能组件',
                               })
                               toast({
-                                title: '已移除「⚡ 极速直达坞 Top 10」',
+                                title: '已移除「⚡ 高频极速直达坞 Top 9」',
                                 description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
                               })
                             }}
@@ -1115,6 +1407,7 @@ export function NavigationContent({
                         allSites={visibleSites}
                         activeWorkspace={activeWorkspace}
                         onPeek={openPeek}
+                        dialDigitById={mounted ? dialMap.digitById : undefined}
                       />
                     </div>
                   )}
@@ -1126,6 +1419,7 @@ export function NavigationContent({
                       allSites={visibleSites}
                       activeWorkspace={activeWorkspace}
                       onPeek={openPeek}
+                      dialDigitById={mounted ? dialMap.digitById : undefined}
                     />
                   </div>
                 )
@@ -1159,6 +1453,8 @@ export function NavigationContent({
                       keyboardHintId="navhub-card-keyboard-hint"
                       toggleSelectOne={toggleSelectOne}
                       cardsPerGroup={cardsPerGroup}
+                      dialDigitById={mounted ? dialMap.digitById : undefined}
+                      siteTitleById={siteTitleById}
                     />
                   )
                   /**
@@ -1330,6 +1626,7 @@ export function NavigationContent({
             categoryTitleMap={categoryTitleMap}
             categories={sortedCategories}
             raised={selectionMode}
+            activeWorkspace={activeWorkspace}
           />
         )}
 
@@ -1410,84 +1707,9 @@ export function NavigationContent({
             onClearSelection={clearSelection}
             onSelectAll={selectAllVisible}
             totalCount={visibleSites.length}
-            onBatchAddToCustomCategory={(categoryId) => {
-              const usable = selectedSites.filter((site) => isSafeSiteHref(site.href))
-              if (usable.length === 0) {
-                toast({ title: '⚠️ 没有可收录的站点', description: '选中的站点网址不合法。' })
-                return
-              }
-              let added = 0
-              let duplicate = 0
-              let failed = 0
-              for (const site of usable) {
-                const outcome = addSiteToCustomCategory(categoryId, {
-                  id: createCustomSiteId(),
-                  title: site.title,
-                  href: site.href,
-                  description: site.description,
-                })
-                if (outcome === 'added') added++
-                else if (outcome === 'duplicate') duplicate++
-                else failed++
-              }
-              // 批量路径同样不能只说好话：失败与重复要如实计数
-              if (failed > 0) {
-                toast({
-                  title: `只收录了 ${added} 个`,
-                  description: `${failed} 个没能写入本地存储（隐私模式或空间已满），刷新后会丢失；${duplicate} 个已在分类中。`,
-                  variant: 'destructive',
-                })
-              } else if (duplicate > 0) {
-                toast({
-                  title: `已收录 ${added} 个站点`,
-                  description: duplicate > 0 ? `另有 ${duplicate} 个已在所选分类中，未重复添加。` : undefined,
-                })
-              } else {
-                toast({
-                  title: '✨ 已收录 ' + added + ' 个站点',
-                  description: '已批量加入所选专属分类。',
-                })
-              }
-              clearSelection()
-            }}
-            onBatchPinToWorkbench={() => {
-              let pinned = 0
-              for (const site of selectedSites) {
-                if (!isSafeSiteHref(site.href)) continue
-                const res = pinSiteToWorkbench({
-                  siteId: site.id,
-                  title: site.title,
-                  href: site.href,
-                  icon: site.icon,
-                  description: site.description,
-                })
-                if (res.ok) pinned++
-              }
-              toast(
-                pinned > 0
-                  ? { title: '📌 已固定 ' + pinned + ' 个站点', description: '已加入收藏与工作台启动坞。' }
-                  : { title: '⚠️ 固定失败', description: '浏览器本地存储不可用，或网址不合法。' },
-              )
-            }}
-            onBatchDeleteFromCustomCategories={() => {
-              // 只处理「自定义分类里的卡片」：这些是用户自建的本地条目，删了能重建；
-              // 内置站点库的条目不在这个作用域里（那是回收站/管理端的职责）。
-              let removed = 0
-              for (const cat of customCategories) {
-                const hit = selectedSites.filter((site) =>
-                  (cat.items || []).some((item) => item.id === site.id),
-                )
-                for (const site of hit) {
-                  removeSiteFromCustomCategory(cat.id, site.id)
-                  removed++
-                }
-              }
-              toast(
-                removed > 0
-                  ? { title: '🗑️ 已移除 ' + removed + ' 个站点', description: '仅从你的专属分类中移除，站点库本身不受影响。' }
-                  : { title: '⚠️ 没有可移除的站点', description: '所选站点都不在自定义分类里。' },
-              )
-            }}
+            onBatchAddToCustomCategory={handleBatchAddToCustomCategory}
+            onBatchPinToWorkbench={handleBatchPinToWorkbench}
+            onBatchDeleteFromCustomCategories={handleBatchRemoveFromCustomCategories}
           />
         )}
 

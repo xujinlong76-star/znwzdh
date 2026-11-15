@@ -53,6 +53,19 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       .optional(),
     userId: z.string().max(64).optional(),
     anonId: z.string().max(64).optional(),
+    /**
+     * 不自动纠正（nocorrect=1）：前端「不是这个？搜原来的」回退用。
+     * 关闭后零结果只走 didYouMean 建议，不自动重跑纠正后的查询；
+     * 参数本身进 query 串，天然与纠正后的请求分缓存键，不污染缓存。
+     *
+     * 显式解析：只有 "1" / "true"（POST body 里也可传布尔 true）才 disable；
+     * 其余值一律视为不 disable——z.coerce.boolean() 会把 "0"/"false"
+     * 也算成 true（Boolean("0") === true），nocorrect=0 反而关了纠正。
+     */
+    nocorrect: z
+      .union([z.boolean(), z.string()])
+      .optional()
+      .transform((v) => v === true || v === "1" || v === "true"),
     personalize: z.object({
       topCategories: z.array(z.string()).max(50).optional(),
       topTags: z.array(z.string()).max(100).optional(),
@@ -164,12 +177,13 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
     }
 
-    const { status, ...searchInput } = input;
+    const { status, nocorrect, ...searchInput } = input;
     const result = await ctx.search.search({
       ...searchInput,
       statuses: status ? [status] : undefined,
       facets,
       personalize,
+      ...(nocorrect ? { disableCorrection: true } : {}),
     });
     const timings = result.channelTimings;
     if (timings) {

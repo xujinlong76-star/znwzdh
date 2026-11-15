@@ -22,7 +22,7 @@ import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { callLlm, createEnrichUsageCallback } from "../llm-usage.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import { selectEnrichmentFields } from "../enrich-fields.ts";
-import { safeJsonParse, badRequest, canSeeUnpublishedSites, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
+import { safeJsonParse, badRequest, canSeeUnpublishedSites, clampFacets, markCursorPaginationDeprecated, requestIdentityOf, identityTrusted } from "./shared.ts";
 import { sendError } from "../error-envelope.ts";
 import { encodeKeysetCursor, siteKeysetValues } from "@navhub/store";
 import { isPubliclyVisibleSite } from "../storage.ts";
@@ -50,11 +50,13 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   // 谓词，不再 OFFSET；下一页游标放 `X-Next-Cursor` 响应头（body 保持裸数组，
   // 前端按数组消费的契约不动），无下一页时不发该头。offset 与 cursor 二选一，
   // 传了 cursor 就忽略 offset。无效游标由全局错误处理器映射成 400 INVALID_CURSOR。
+  // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
   app.get("/api/sites", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 1000);
     const offset = Math.max(0, Number(q.offset) || 0);
     const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
+    if (cursor) markCursorPaginationDeprecated(reply);
     const facetFilter = clampFacets(q.facets);
     if (facetFilter.error) return badRequest(reply, "参数无效", facetFilter.error);
     const requestedStatus = parseStatusFilter(q.status);

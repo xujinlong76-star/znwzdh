@@ -1,10 +1,9 @@
 'use client'
 
 import React, { useMemo, useRef, useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { Zap, X, RotateCcw, Clock } from 'lucide-react'
 import { SiteFavicon } from '@/components/site-favicon'
-import dynamic from 'next/dynamic'
-
 /**
  * 模块缩放手柄（Bundle 瘦身第三刀 a）：见 navigation-category-section.tsx
  * 同款注释——dynamic + `isEditingLayout &&` 门，首屏不渲染不拉 chunk。
@@ -22,11 +21,20 @@ import { readOfflineVisits, topFrequentVisits, type RecentVisit } from '@/lib/of
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
+import { computeSpeedDialSites } from '@/lib/speed-dial-order'
+import { NumberDialBadge } from '@/components/number-dial-badge'
 
 interface SpeedDialDockProps {
   allSites: any[]
   activeWorkspace?: WorkspaceId
   onPeek?: (item: any) => void
+  /**
+   * 数字直达映射（站点 id → 数字键 1~9），由 navigation-content 的
+   * buildDialMap 算出并透传：坞角标与卡片角标、键盘打开目标读同一份映射，
+   * 禁止坞按自己的列表下标重算。无映射时不渲染角标（坞的最近访问与
+   * navigation-content 是两次独立异步读取，顺序短暂分叉时下标回退会标错数字）。
+   */
+  dialDigitById?: ReadonlyMap<string, number>
 }
 
 const DOCK_COL_CLASS_MAP: Record<number, string> = {
@@ -41,16 +49,8 @@ const DOCK_COL_CLASS_MAP: Record<number, string> = {
   12: 'col-span-12',
 }
 
-const WORKSPACE_KEYWORDS: Record<WorkspaceId, string[]> = {
-  dev: ['next', 'vite', 'react', 'vue', 'github', 'docker', 'redis', 'npm', 'postgres', 'tailwind'],
-  design: ['figma', 'dribbble', 'behance', 'iconfont', 'unsplash', 'canva', 'mobbin', 'mastergo', 'freepik', 'ui faces'],
-  ai: ['gemini', 'chatgpt', 'claude', 'kimi', 'cursor', 'copilot', 'midjourney', '智谱', '豆包', '通义'],
-  efficiency: ['notion', '飞书', '语雀', 'wps', 'google 文档', '小宇宙', 'obsidian', 'processon', 'snipaste', 'umi-ocr'],
-  all: ['gemini', 'kimi', '豆包', 'cursor', 'next', 'vite', 'figma', 'github', 'notion', 'v0'],
-}
-
-export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDockProps) {
-  const { speedDialEnabled, speedDialPinnedIds, unpinFromSpeedDial, isEditingLayout } = useHomeDIY()
+export function SpeedDialDock({ allSites, activeWorkspace = 'all', dialDigitById }: SpeedDialDockProps) {
+  const { mounted, speedDialEnabled, speedDialPinnedIds, unpinFromSpeedDial, isEditingLayout } = useHomeDIY()
   const linkTarget = useExternalLinkTarget('_blank')
   const dockRef = useRef<HTMLDivElement | null>(null)
   const { colSpan, heightPx, isCustomSized, setSize, resetSize } = useModuleWindowSize(
@@ -76,63 +76,16 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
     }
   }, [])
 
-  const pinnedSites = useMemo(() => {
-    if (!allSites || allSites.length === 0) return []
-    const siteMap = new Map<string, any>()
-    for (const s of allSites) {
-      if (s && s.id) siteMap.set(s.id, s)
-    }
-
-    const pinned: Array<any & { isRecent?: boolean }> = []
-    const seenIds = new Set<string>()
-
-    // 1. 优先展示用户在 DIY 中明确锁定的站点
-    if (speedDialPinnedIds && speedDialPinnedIds.length > 0) {
-      for (const id of speedDialPinnedIds) {
-        const found = siteMap.get(id)
-        if (found && !seenIds.has(found.id)) {
-          pinned.push(found)
-          seenIds.add(found.id)
-        }
-      }
-    }
-
-    // 2. 融入本机高频离线访问历史权重点亮（按累计点击次数取前 6 个常用）
-    // 注意：不是按时间取前 3——昨天连点 10 次的站，不该输给刚才误点一次的站
-    if (recentVisits && recentVisits.length > 0) {
-      for (const v of topFrequentVisits(recentVisits, 6)) {
-        const match = allSites.find(
-          (s) => (s?.id && s.id === v.id) || (s?.href && v.href && s.href === v.href)
-        )
-        if (match && !seenIds.has(match.id)) {
-          pinned.push({ ...match, isRecent: true })
-          seenIds.add(match.id)
-        }
-      }
-    }
-
-    // 3. 与工作区联动匹配 Top 10 核心工具
-    const keywords = WORKSPACE_KEYWORDS[activeWorkspace] || WORKSPACE_KEYWORDS.all
-    for (const kw of keywords) {
-      if (pinned.length >= 10) break
-      const match = allSites.find((s) => s?.title?.toLowerCase().includes(kw))
-      if (match && !seenIds.has(match.id)) {
-        pinned.push(match)
-        seenIds.add(match.id)
-      }
-    }
-
-    // 4. 若数量仍未凑齐 10 个，以高质量兜底站点补足
-    for (const s of allSites) {
-      if (pinned.length >= 10) break
-      if (!seenIds.has(s.id)) {
-        pinned.push(s)
-        seenIds.add(s.id)
-      }
-    }
-
-    return pinned.slice(0, 10)
-  }, [allSites, speedDialPinnedIds, recentVisits, activeWorkspace])
+  const pinnedSites = useMemo(
+    () =>
+      computeSpeedDialSites({
+        allSites,
+        speedDialPinnedIds,
+        recentVisits,
+        activeWorkspace,
+      }),
+    [allSites, speedDialPinnedIds, recentVisits, activeWorkspace],
+  )
 
   if (!speedDialEnabled && !isEditingLayout) return null
 
@@ -212,7 +165,7 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
               key={site.id}
               className="group/chip relative flex items-center gap-2 px-2.5 py-2.5 rounded-xl border border-border/70 hover:border-primary/50 bg-background/90 dark:bg-card/90 backdrop-blur-xs hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.5"
             >
-              <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform group-hover/chip:scale-105">
+              <div className="relative flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform group-hover/chip:scale-105">
                 <SiteFavicon
                   title={site.title}
                   url={site.href}
@@ -220,6 +173,18 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
                   useDefaultIcon={site.useDefaultIcon}
                   className="w-full h-full object-contain rounded-xs"
                 />
+                {/*
+                  数字直达角标：只在挂载后出现（SSR 与首帧无角标，避免水合分叉；
+                  映射依赖 localStorage 的钉选与最近访问，服务端算不出同一份顺序）。
+                  数字只取 navigation-content 透传的映射，无映射不渲染角标，
+                  不用本列表下标回退（两份最近访问读取时序分叉时会标错数字）。
+                */}
+                {mounted && dialDigitById?.get(site.id) !== undefined && (
+                  <NumberDialBadge
+                    digit={dialDigitById.get(site.id)}
+                    className="-bottom-1 -right-1"
+                  />
+                )}
               </div>
               <a
                 href={safeHref(site.href)}

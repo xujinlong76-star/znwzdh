@@ -74,13 +74,14 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 28 个只读工具与 13 个写工具", () => {
+  it("包含 32 个只读工具与 13 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
       "analyze_color_harmony",
       "analyze_stack_compatibility",
       "cluster_sites",
+      "compare_sites",
       "compare_technologies",
       "compile_speculation_rules",
       "evaluate_developer_intent",
@@ -97,12 +98,15 @@ describe("工具清单", () => {
       "get_trending",
       "list_categories",
       "list_collections",
+      "list_facets",
+      "list_favorite_folders",
       "list_favorites",
       "list_jobs",
       "list_plugins",
       "list_search_history",
       "list_tags",
       "resolve_wayback",
+      "search_favorites",
       "search_plugins",
       "search_sites",
       "synthesize_agent_tool",

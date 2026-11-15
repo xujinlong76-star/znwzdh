@@ -22,10 +22,11 @@ import { AnonymousHint } from '@/components/user-center/anonymous-hint'
 import { SessionDevicesPanel } from '@/components/user-center/session-devices-panel'
 import { ApiTokensPanel } from '@/components/user-center/api-tokens-panel'
 import {
+  buildLocalSnapshotCheck,
   runClientStorageDiagnostics,
   type DiagnosticCheckItem,
 } from '@/lib/user-settings'
-import { Activity, CheckCircle2, Edit3, KeyRound, Loader2, ShieldCheck, User, XCircle } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle2, CircleDashed, Edit3, KeyRound, Loader2, ShieldCheck, User, XCircle } from 'lucide-react'
 
 export function AccountView() {
   const { toast } = useToast()
@@ -92,7 +93,9 @@ export function AccountView() {
     setDiagRunning(true)
     try {
       const clientReport = runClientStorageDiagnostics()
-      const combined: DiagnosticCheckItem[] = [...clientReport.checks]
+      // 第 15 项 local_snapshot：本机快照 JSON.parse 探针（不读内容），与云端
+      // 检查并列展示，服务端不管这一项。
+      const combined: DiagnosticCheckItem[] = [...clientReport.checks, buildLocalSnapshotCheck()]
       let totalRepaired = clientReport.repairedCount
 
       const res = await fetch('/api/me/diagnostics', {
@@ -311,8 +314,12 @@ export function AccountView() {
                   {diagChecks.map((check) => (
                     <li key={check.id} className="flex items-start justify-between gap-3 px-3 py-2 text-xs">
                       <span className="flex min-w-0 items-start gap-2">
-                        {check.status === 'failed' ? (
+                        {check.status === 'failed' || check.status === 'critical' ? (
                           <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive-text" aria-hidden />
+                        ) : check.status === 'warning' ? (
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+                        ) : check.status === 'unknown' ? (
+                          <CircleDashed className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
                         ) : (
                           <CheckCircle2
                             className={

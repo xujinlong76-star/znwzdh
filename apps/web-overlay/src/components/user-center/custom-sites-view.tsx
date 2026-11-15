@@ -14,7 +14,7 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { safeHref } from '@/lib/safe-url'
-import { recordCustomSiteAddedAction } from '@/lib/growth'
+import { recordCustomSiteAddedAction } from '@/lib/growth-lazy'
 
 interface CustomSite {
   id: string

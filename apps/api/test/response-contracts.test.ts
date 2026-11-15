@@ -23,6 +23,7 @@ import {
   CollectionItemMutationResponse,
   CollectionListResponse,
   CollectionPayload,
+  CompareResponse,
   ErrorResponse,
   FavoriteCreateResponse,
   FavoriteFolderPayload,
@@ -35,7 +36,15 @@ import {
   InstalledPluginsResponse,
   LinkHealthOverviewResponse,
   LinkHealthVisibilityResponse,
+  MeFavoriteTrashClearResponse,
+  MeFavoriteTrashListResponse,
+  MeFavoriteTrashPurgeResponse,
+  MeFavoriteTrashRestoreBatchResponse,
+  MeFavoriteTrashRestoreResponse,
   MeOverviewResponse,
+  MeWantedSearchDeleteResponse,
+  MeWantedSearchItemResponse,
+  MeWantedSearchesListResponse,
   OkResponse,
   PluginInstallResponse,
   PluginListResponse,
@@ -663,6 +672,31 @@ describe("真实响应满足契约", () => {
     expect(body.settings.defaultSearchEngine).toBe("internal");
     expect(body.settings.historyRetentionDays).toBe(180);
   });
+
+  it("GET /api/compare：两站对照行满足 CompareResponse 契约", async () => {
+    // 独立身份：收藏两站只为验对照形状，不碰 ME_IDENTITY 的 counts.favorites 断言
+    const compareHeaders = { "x-navhub-user-id": "contract-compare-user" };
+    const sites = (await app.inject({ method: "GET", url: "/api/sites" })).json();
+    expect(sites.length).toBeGreaterThanOrEqual(2);
+    const [a, b] = sites;
+    for (const site of [a, b]) {
+      const fav = await app.inject({ method: "POST", url: "/api/favorites", headers: compareHeaders, payload: { siteId: site.id } });
+      expect(fav.statusCode).toBe(201);
+    }
+    const res = await app.inject({ method: "GET", url: `/api/compare?siteIds=${a.id},${b.id}`, headers: compareHeaders });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(CompareResponse, body, "GET /api/compare");
+    // 顺序与请求一致，六维齐全：每格都有 value/source/verified/verifiedAt
+    expect(body.items.map((i: { siteId: string }) => i.siteId)).toEqual([a.id, b.id]);
+    for (const item of body.items) {
+      for (const key of ["pricing", "platform", "form", "maintenance", "note", "migration"] as const) {
+        expect(item[key].source).toBeTruthy();
+        expect(typeof item[key].verified).toBe("boolean");
+        expect("verifiedAt" in item[key]).toBe(true);
+      }
+    }
+  });
 });
 
 describe("契约不是空转（负控：手工漂移必须被拒）", () => {
@@ -932,6 +966,106 @@ describe("写路由真实响应满足契约（状态码 + 形状）", () => {
     const clearedBody = cleared.json();
     expectRoutedContract("DELETE /api/favorites", FavoriteRemovalResponse, clearedBody);
     expect(clearedBody.removed).toBe(1);
+  });
+
+  it("收藏回收站全链路：读墓碑 → 单条恢复 → 批量恢复 → 彻底删除 → 清空（第 1 批第 4 项）", async () => {
+    expect(writeSiteId, "前序用例没建出站点").toBeTruthy();
+    // 上一条用例结尾的 DELETE /api/favorites 已把 writeSiteId 写进墓碑
+
+    const list = await app.inject({ method: "GET", url: "/api/me/favorites/trash", headers: WRITE_HEADERS });
+    expect(list.statusCode).toBe(200);
+    const listBody = list.json();
+    expectRoutedContract("GET /api/me/favorites/trash", MeFavoriteTrashListResponse, listBody);
+    expect(listBody.total).toBeGreaterThanOrEqual(1);
+    expect(listBody.items.some((i: { siteId: string }) => i.siteId === writeSiteId)).toBe(true);
+
+    const restored = await app.inject({
+      method: "POST",
+      url: "/api/me/favorites/trash/" + encodeURIComponent(writeSiteId) + "/restore",
+      headers: WRITE_HEADERS,
+      payload: {},
+    });
+    expect(restored.statusCode).toBe(200);
+    const restoredBody = restored.json();
+    expectRoutedContract("POST /api/me/favorites/trash/{siteId}/restore", MeFavoriteTrashRestoreResponse, restoredBody);
+    expect(restoredBody.folderLost).toBe(false);
+
+    // 再删一次 → 批量恢复
+    const removedAgain = await app.inject({ method: "DELETE", url: "/api/favorites/" + encodeURIComponent(writeSiteId), headers: WRITE_HEADERS });
+    expect(removedAgain.statusCode).toBe(200);
+    const batch = await app.inject({
+      method: "POST",
+      url: "/api/me/favorites/trash/restore-batch",
+      headers: WRITE_HEADERS,
+      payload: { siteIds: [writeSiteId, "never-trashed"] },
+    });
+    expect(batch.statusCode).toBe(200);
+    const batchBody = batch.json();
+    expectRoutedContract("POST /api/me/favorites/trash/restore-batch", MeFavoriteTrashRestoreBatchResponse, batchBody);
+    expect(batchBody.restored).toEqual([writeSiteId]);
+    expect(batchBody.failed).toHaveLength(1);
+    expect(batchBody.failed[0].siteId).toBe("never-trashed");
+
+    // 再删一次 → 单条彻底删除
+    const removedThird = await app.inject({ method: "DELETE", url: "/api/favorites/" + encodeURIComponent(writeSiteId), headers: WRITE_HEADERS });
+    expect(removedThird.statusCode).toBe(200);
+    const purged = await app.inject({ method: "DELETE", url: "/api/me/favorites/trash/" + encodeURIComponent(writeSiteId), headers: WRITE_HEADERS });
+    expect(purged.statusCode).toBe(200);
+    const purgedBody = purged.json();
+    expectRoutedContract("DELETE /api/me/favorites/trash/{siteId}", MeFavoriteTrashPurgeResponse, purgedBody);
+    expect(purgedBody.purged).toBe(true);
+
+    // 再造一条墓碑 → 清空回收站（confirm 位是强制的）
+    await app.inject({ method: "POST", url: "/api/favorites", headers: WRITE_HEADERS, payload: { siteId: writeSiteId } });
+    await app.inject({ method: "DELETE", url: "/api/favorites", headers: WRITE_HEADERS });
+    const cleared = await app.inject({ method: "DELETE", url: "/api/me/favorites/trash", headers: WRITE_HEADERS, payload: { confirm: true } });
+    expect(cleared.statusCode).toBe(200);
+    const clearedBody = cleared.json();
+    expectRoutedContract("DELETE /api/me/favorites/trash", MeFavoriteTrashClearResponse, clearedBody);
+    expect(clearedBody.purged).toBeGreaterThanOrEqual(1);
+  });
+
+  it("待找全链路：新建（201）/ 去重（200 + duplicate）/ 列表 / 删除（第 1 批）", async () => {
+    // 开放模式：自报头即受信身份，与本组其它写路由同一口径（WRITE_HEADERS）。
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/me/wanted",
+      headers: WRITE_HEADERS,
+      payload: { query: "契约待找词" },
+    });
+    expect(created.statusCode).toBe(201);
+    const createdBody = created.json();
+    expectRoutedContract("POST /api/me/wanted", MeWantedSearchItemResponse, createdBody);
+    expect(createdBody.item.query).toBe("契约待找词");
+    expect(createdBody.item.id).toBeTruthy();
+
+    const dup = await app.inject({
+      method: "POST",
+      url: "/api/me/wanted",
+      headers: WRITE_HEADERS,
+      payload: { query: "契约待找词" },
+    });
+    expect(dup.statusCode).toBe(200);
+    const dupBody = dup.json();
+    expectRoutedContract("POST /api/me/wanted", MeWantedSearchItemResponse, dupBody);
+    expect(dupBody.duplicate).toBe(true);
+    expect(dupBody.item.id).toBe(createdBody.item.id);
+
+    const list = await app.inject({ method: "GET", url: "/api/me/wanted", headers: WRITE_HEADERS });
+    expect(list.statusCode).toBe(200);
+    const listBody = list.json();
+    expectRoutedContract("GET /api/me/wanted", MeWantedSearchesListResponse, listBody);
+    expect(listBody.items.some((i: { id: string }) => i.id === createdBody.item.id)).toBe(true);
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/api/me/wanted/" + encodeURIComponent(createdBody.item.id),
+      headers: WRITE_HEADERS,
+    });
+    expect(deleted.statusCode).toBe(200);
+    const deletedBody = deleted.json();
+    expectRoutedContract("DELETE /api/me/wanted/{id}", MeWantedSearchDeleteResponse, deletedBody);
+    expect(deletedBody.removed).toBe(true);
   });
 
   it("精选专题全链路：建改删 + 条目增改删 + 公开详情", async () => {

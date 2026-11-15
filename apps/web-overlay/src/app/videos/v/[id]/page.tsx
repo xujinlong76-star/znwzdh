@@ -14,6 +14,7 @@ import {
   generateVideoObjectSchema,
 } from '@/lib/video-seo'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-multi-platform-harvester'
+import { getRelatedVideos } from '@/lib/video-recommendation'
 import { VideoEmbedFacade } from '@/components/video-embed-facade'
 import { VideoAiSummary } from '@/components/video-ai-summary'
 import { chapterStartSec, type NavigationData, type NavigationSubItem } from '@/types/navigation'
@@ -55,9 +56,8 @@ function matchInCategory(cat: NavigationData["navigationItems"][number], safeId:
   for (const candidate of cat.items || []) {
     if (matchesVideoIdentifier(candidate, safeId)) {
       const enriched = enrichVideoItemSeo(candidate, cat.title)
-      const related = catItems
-        .filter((it) => it.id !== candidate.id && it.enabled !== false)
-        .slice(0, 6)
+      const relatedPool = catItems.filter((it) => it.id !== candidate.id && it.enabled !== false)
+      const related = getRelatedVideos(candidate, relatedPool, 6)
         .map((it) => enrichVideoItemSeo(it, cat.title))
       return {
         item: enriched,
@@ -72,9 +72,8 @@ function matchInCategory(cat: NavigationData["navigationItems"][number], safeId:
     for (const candidate of sub.items || []) {
       if (matchesVideoIdentifier(candidate, safeId)) {
         const enriched = enrichVideoItemSeo(candidate, `${cat.title} ${sub.title}`)
-        const related = catItems
-          .filter((it) => it.id !== candidate.id && it.enabled !== false)
-          .slice(0, 6)
+        const relatedPool = catItems.filter((it) => it.id !== candidate.id && it.enabled !== false)
+        const related = getRelatedVideos(candidate, relatedPool, 6)
           .map((it) => enrichVideoItemSeo(it, cat.title))
         return {
           item: enriched,
@@ -138,7 +137,9 @@ function matchesVideoIdentifier(item: NavigationSubItem, target: string): boolea
 }
 
 function formatDurationHuman(seconds?: number): string {
-  if (!seconds || seconds <= 0) return '10:00'
+  // 无时长数据不编造：缺失/非法/负数显示「未知」，0 是合法的章节起点。
+  if (seconds === undefined || seconds === null || Number.isNaN(seconds) || seconds < 0) return '未知'
+  if (seconds === 0) return '00:00'
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   const s = Math.floor(seconds % 60)
@@ -247,7 +248,7 @@ export default async function VideoSeoDetailPage({
           </Link>
           <span>/</span>
           <Link
-            href={`/videos?category=${encodeURIComponent(categoryId)}`}
+            href={`/videos?c=${encodeURIComponent(categoryId)}`}
             className="hover:text-amber-400 transition-colors"
           >
             {categoryTitle}
@@ -456,7 +457,7 @@ export default async function VideoSeoDetailPage({
                 同分类相关视频推荐（{categoryTitle}）
               </h2>
               <Link
-                href={`/videos?category=${encodeURIComponent(categoryId)}`}
+                href={`/videos?c=${encodeURIComponent(categoryId)}`}
                 className="text-xs text-amber-400 hover:underline"
               >
                 查看全部 {categoryTitle} 视频 →

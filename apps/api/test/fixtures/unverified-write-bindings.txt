@@ -103,3 +103,13 @@ POST /api/me/custom-sites | 需签名身份前置状态；由 apps/api/test/me-c
 PATCH /api/me/custom-sites/{id} | 同上：me-custom-sites.test.ts 覆盖改名与跨用户 404
 DELETE /api/me/custom-sites/{id} | 同上：me-custom-sites.test.ts 覆盖删除与删后清单
 POST /api/me/custom-sites/reorder | 同上：me-custom-sites.test.ts 覆盖全集重排与非全集 400
+
+# —— 对照快照/分享与站点价格/验证（Batch 4 Phase 2）：响应形状由各自路由用例覆盖 ——
+POST /api/compare/snapshots | 对照快照新建；由 compare-snapshots.test.ts 覆盖响应形状（快照视图 + 201），本文件建快照会改变快照列表
+POST /api/compare/snapshots/{id}/publish | 对照分享发布；由 compare-share-api.test.ts 覆盖响应形状（share + url + 201），发布会产生公开分享行
+PATCH /api/compare/shares/{slug} | 对照分享上下线；由 compare-share-api.test.ts 覆盖响应形状（shareView）
+DELETE /api/compare/shares/{slug} | 对照分享删除；由 compare-share-api.test.ts 覆盖，删除会改变分享行
+POST /api/sites/{id}/price | 价格写入；由 price-api.test.ts 覆盖响应形状（priceView），写库会改变站点价格状态
+DELETE /api/sites/{id}/price | 价格删除；由 price-api.test.ts 覆盖响应形状（{ deleted } 幂等）
+POST /api/sites/{id}/price/scrape | 定价页抓取；由 price-api.test.ts 覆盖响应形状（候选 + confirmToken），契约测试禁止出站抓取
+POST /api/sites/{id}/verify | 刷新验证；由 verify-api.test.ts 覆盖响应形状（202 pending / 200 置灰 + 轮询 done），会发起外部探活

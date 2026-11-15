@@ -72,6 +72,8 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
           "DELETE_CUSTOM_CATEGORY",
           "UPSERT_CUSTOM_SITE",
           "DELETE_CUSTOM_SITE",
+          "UPSERT_VIDEO_PROGRESS",
+          "DELETE_VIDEO_PROGRESS",
         ]),
         entityId: z.string().min(1).max(200),
         payload: z.unknown(),
@@ -93,6 +95,7 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       pinnedSiteIdsByCategory: {},
       // 自定义分类是数组（带 items 的树），不是 map——写成 {} 会让 typecheck 直接失败
       customCategories: [],
+      videoProgress: {},
     };
 
     const maxRetries = 3;

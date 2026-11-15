@@ -99,6 +99,27 @@ export interface UserDataExport {
    * 自定义站点全部消失，注销后这些日志仍留在服务端（删除权未履行）。
    */
   crdt: { exists: boolean; payload: string | null; updatedAt: number };
+  /** 对照快照（Batch 4 Phase 2 P2-3）：冻结的对照表，导出即快照原文 */
+  comparisonSnapshots: Array<{
+    id: string;
+    siteIds: string[];
+    items: unknown;
+    createdAt: number;
+  }>;
+  /** 对照价格数值（Batch 4 Phase 2 P2-2）：用户手工填写或官方页抓取的价格记录 */
+  sitePrices: Array<{
+    id: string;
+    siteId: string;
+    amountMinor: number;
+    currency: string;
+    period: string;
+    freeTierLimit: string | null;
+    sourceType: string;
+    sourceUrl: string | null;
+    verifiedAt: number;
+    createdAt: number;
+    updatedAt: number;
+  }>;
 }
 
 function safeLlmConfig(config: UserLlmConfigRecord | null): ExportedLlmConfig | null {
@@ -118,7 +139,7 @@ function safeLlmConfig(config: UserLlmConfigRecord | null): ExportedLlmConfig | 
 }
 
 export async function exportUserData(repo: Repository, identity: string): Promise<UserDataExport> {
-  const [user, favorites, folders, history, profile, settings, llm, installs, vault, crdtVault] = await Promise.all([
+  const [user, favorites, folders, history, profile, settings, llm, installs, vault, crdtVault, snapshots, prices] = await Promise.all([
     repo.getUser(identity),
     repo.listFavorites(identity),
     repo.listFavoriteFolders(identity),
@@ -130,6 +151,8 @@ export async function exportUserData(repo: Repository, identity: string): Promis
     repo.getUserVault(identity),
     // 编辑日志是该身份的独立 vault 行（`crdt:<id>`），不属于默认 vault
     repo.getUserVault("crdt:" + identity),
+    repo.listComparisonSnapshotsByOwner(identity),
+    repo.listSitePricesByOwner(identity),
   ]);
   // 星标 / 评价 / 工作区 / 事件聚合：原先导出缺这四类，用户拿到的「全部数据」名不副实
   const [starRows, reviewRows, workspaceRows, eventRows] = await Promise.all([
@@ -207,6 +230,25 @@ export async function exportUserData(repo: Repository, identity: string): Promis
     crdt: crdtVault
       ? { exists: true, payload: crdtVault.payload, updatedAt: crdtVault.updatedAt }
       : { exists: false, payload: null, updatedAt: 0 },
+    comparisonSnapshots: snapshots.map((s) => ({
+      id: s.id,
+      siteIds: [...s.siteIds],
+      items: s.items,
+      createdAt: s.createdAt,
+    })),
+    sitePrices: prices.map((p) => ({
+      id: p.id,
+      siteId: p.siteId,
+      amountMinor: p.amountMinor,
+      currency: p.currency,
+      period: p.period,
+      freeTierLimit: p.freeTierLimit,
+      sourceType: p.sourceType,
+      sourceUrl: p.sourceUrl,
+      verifiedAt: p.verifiedAt,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    })),
   };
 }
 
@@ -225,6 +267,12 @@ export interface UserDataDeletionCounts {
   pluginInstalls: number;
   pluginStars: number;
   pluginReviews: number;
+  /** 对照快照（Batch 4 Phase 2 P2-3）：通用删除循环按 owner_identity 精确删除 */
+  comparisonSnapshots: number;
+  /** 对照分享（Batch 4 Phase 2 P2-4）：通用删除循环按 owner_identity 精确删除 */
+  comparisonSnapshotShares: number;
+  /** 对照价格数值（Batch 4 Phase 2 P2-2）：通用删除循环按 owner_identity 精确删除 */
+  sitePrices: number;
   sessions: number;
   /** 已匿名化的用量行数（UPDATE ... SET identity = NULL） */
   llmUsage: number;
@@ -273,6 +321,9 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
       pluginInstalls: await count("SELECT COUNT(*) AS c FROM plugin_installs WHERE identity = ?", [identity]),
       pluginStars: await count("SELECT COUNT(*) AS c FROM plugin_stars WHERE identity = ?", [identity]),
       pluginReviews: await count("SELECT COUNT(*) AS c FROM plugin_reviews WHERE identity = ?", [identity]),
+      comparisonSnapshots: await count("SELECT COUNT(*) AS c FROM comparison_snapshots WHERE owner_identity = ?", [identity]),
+      comparisonSnapshotShares: await count("SELECT COUNT(*) AS c FROM comparison_snapshot_shares WHERE owner_identity = ?", [identity]),
+      sitePrices: await count("SELECT COUNT(*) AS c FROM site_prices WHERE owner_identity = ?", [identity]),
       sessions: await count("SELECT COUNT(*) AS c FROM sessions WHERE user_id = ?", [identity]),
       llmUsage: await count("SELECT COUNT(*) AS c FROM llm_usage WHERE identity = ?", [identity]),
       workspaces:

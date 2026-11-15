@@ -29,16 +29,14 @@ import {
 } from '@/registry/new-york/ui/dropdown-menu'
 import {
   fetchInstalledPlugins,
-  fetchPluginDetail,
   fetchPlugins,
-  installPlugin,
   type HubPluginItem,
 } from '@/lib/navhub-api'
+import { ensureThemeAvailable } from '@/lib/plugins/theme-ensure'
 import {
   getActiveTheme,
   isThemeSuspended,
   resetTheme,
-  setActiveTheme,
   type ActiveThemeConfig,
 } from '@/lib/plugins/theme-runtime'
 import { isThemeIconUrl } from '@/lib/theme-icon'
@@ -162,25 +160,21 @@ export function SkinPicker({ className }: { className?: string }) {
     }
     setApplying(slug)
     try {
-      if (!installed.has(slug)) {
-        await installPlugin(slug)
-        setInstalled((prev: Set<string>) => new Set(prev).add(slug))
-      }
-      const detail = await fetchPluginDetail(slug)
-      const payload = detail?.plugin?.manifest?.payload
-      if (!payload) {
-        setError('无法启用皮肤：未能加载清单配置')
-        notifyFailureIfMenuClosed('无法启用皮肤：未能加载清单配置')
+      // 安装 + 拉取 + 应用走 lib/plugins/theme-ensure 的可复用路径
+      // （场景切换的主题预检用同一条路）；行为与此前内联实现一致。
+      const target = themes.find((t: HubPluginItem) => t.slug === slug)
+      const ensured = await ensureThemeAvailable(slug, {
+        installedSlugs: installed,
+        knownName: target?.name,
+      })
+      if (!ensured.ok || !ensured.theme) {
+        const message = ensured.reason ?? '无法启用皮肤：未能加载清单配置'
+        setError(message)
+        notifyFailureIfMenuClosed(message)
         return
       }
-      const target = themes.find((t: HubPluginItem) => t.slug === slug)
-      const name = target?.name ?? detail.plugin.name
-      setActiveTheme({
-        slug,
-        name,
-        tokens: payload.tokens,
-        accent: payload.accent,
-      })
+      setInstalled((prev: Set<string>) => new Set(prev).add(slug))
+      const name = ensured.theme.name
       syncActive()
       toast({ title: '皮肤已应用', description: `已启用「${name}」。` })
       setOpen(false)

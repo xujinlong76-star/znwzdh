@@ -195,7 +195,7 @@ export async function POST(request: Request) {
       code: 0,
       success: true,
       data: {
-        message: 'Webhook 处理成功，已通过规则初筛（关键词 / 时长 / 互动加权）',
+        message: 'Webhook 处理成功，已通过 AI 审核与入库严标准守卫',
         course: {
           id: processRes.subItem.id,
           title: processRes.subItem.title,

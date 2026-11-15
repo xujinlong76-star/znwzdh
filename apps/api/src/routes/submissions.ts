@@ -351,6 +351,12 @@ ${catSpec || "无指定分类树"}
     if (!reviewed) { reply.code(404); return { success: false, message: "投稿不存在" }; }
     if (body.data.action === "approve") {
       await indexSite(ctx, reviewed.id, reviewed.title, reviewed.description ?? null, reviewed.url);
+      // 待找匹配通知（搜索容错纠错 · 出口一，v1 只钩投稿审核通过）：
+      // 命中则站内通知一次（幂等键 + 状态机，一条待找只通知一次）。
+      // 通知失败不影响审核结果本身（审核已提交，匹配是附加动作）。
+      await ctx.repo
+        .matchWantedSearches({ id: reviewed.id, title: reviewed.title, url: reviewed.url })
+        .catch(() => { /* 待找匹配通知是附加动作：审核已提交，匹配失败不影响审核结果 */ });
     }
     return {
       success: true,

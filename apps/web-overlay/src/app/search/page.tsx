@@ -70,11 +70,14 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const tag = normalizeSearchTag(sp.tag)
   const category = normalizeSearchCategory(sp.category)
   const facets = normalizeSearchFacets(sp)
+  // nocorrect=1：纠正横幅「不是这个？搜原来的」回退——原样透传给中枢，
+  // 关掉自动纠正，只走 didYouMean 建议。
+  const nocorrect = sp.nocorrect === '1' || (Array.isArray(sp.nocorrect) && sp.nocorrect[0] === '1')
   const hasFilter = q || tag || category || Object.keys(facets).length > 0
 
   const [{ result, failed, unavailable }, facetGroups, trending] = await Promise.all([
     hasFilter
-      ? loadSearchPage(q, page, tag, { category, facets })
+      ? loadSearchPage(q, page, tag, { category, facets, nocorrect })
       : Promise.resolve({ result: null, failed: false, unavailable: [] }),
     // 分面分布按当前作用域统计：分类内只统计该分类，避免给出「点了一定空」的选项。
     // 取数失败返回 null → 整块不渲染，不阻塞结果。

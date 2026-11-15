@@ -47,6 +47,7 @@ import { DensityToggle } from '@/components/density-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
 import { ElderModeToggle } from '@/components/elder-mode-toggle'
 import { SkinPicker } from '@/components/skin-picker'
+import { SceneSwitcher } from '@/components/scene-switcher'
 import { ViewModeToggle } from '@/components/view-mode-toggle'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
 import { cn } from '@/lib/utils'
@@ -340,7 +341,7 @@ export function NavigationToolbar({
                 )}
                 onClick={onToggleSelectMode}
                 aria-pressed={selectionMode}
-                title={selectionMode ? '退出多选模式' : '多选模式：批量导出 / 复制 / 置顶'}
+                title={selectionMode ? '退出多选模式（快捷键 M）' : '多选模式：批量导出 / 复制 / 置顶（快捷键 M）'}
                 aria-label="多选模式"
               >
                 <CheckSquare className="h-4 w-4" />
@@ -372,6 +373,8 @@ export function NavigationToolbar({
               <div className="inline-flex"><FontSizeToggle /></div>
               {/* 长辈模式与皮肤选择：与字号、明暗切换同排，都是「一眼能换」的外观入口 */}
               <div className="inline-flex"><ElderModeToggle /></div>
+              {/* 我的场景：与皮肤/明暗同一排，工具栏不折叠它（移动端同样可达） */}
+              <div className="inline-flex"><SceneSwitcher activeWorkspace={activeWorkspace} /></div>
               <div className="inline-flex"><SkinPicker /></div>
               <ModeToggle />
               <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />

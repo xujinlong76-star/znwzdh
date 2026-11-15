@@ -23,6 +23,7 @@ import {
   badRequest,
   created,
   forbidden,
+  markCursorPaginationDeprecated,
   notFound,
   parsePagination,
   setupSseStream,
@@ -38,9 +39,11 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       offset: z.coerce.number().int().min(0).max(100_000).default(0),
       // Keyset 游标（M12）：传了就走 WHERE (created_at,id) 谓词，不再 OFFSET；
       // nextCursor 随页返回，无下一页时为 null。
+      // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
       cursor: z.string().max(4096).optional(),
     }).safeParse(req.query ?? {});
     if (!parsed.success) return badRequest(reply, "投递状态筛选无效", parsed.error.issues);
+    if (parsed.data.cursor) markCursorPaginationDeprecated(reply);
     reply.header("cache-control", "private, no-store");
     const result = await ctx.repo.listNotificationDeliveries(parsed.data);
     return { ...result, nextOffset: parsed.data.offset + result.items.length };
@@ -50,7 +53,9 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     const { limit, offset } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 50 });
     const q = (req.query ?? {}) as Record<string, unknown>;
     // Keyset 游标（M12）：传了就走 WHERE (created_at,id) 谓词，不再 OFFSET。
+    // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
     const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
+    if (cursor) markCursorPaginationDeprecated(reply);
     const [page, unread] = await Promise.all([
       ctx.repo.listNotificationsPage(ADMIN_NOTIFICATION_IDENTITY, limit, offset, false, cursor),
       ctx.repo.countUnreadNotifications(ADMIN_NOTIFICATION_IDENTITY),
@@ -140,13 +145,15 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
    * 满页」时客户端还要再请求一次空页。排序带 id 第二键，保证同毫秒批量入队时
    * 翻页无重复、无遗漏。
    */
-  app.get("/api/jobs", { config: { scope: "read" } }, async (req) => {
+  app.get("/api/jobs", { config: { scope: "read" } }, async (req, reply) => {
     const q = (req.query ?? {}) as Record<string, string>;
     const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
     // Keyset 游标（M12）：`?cursor=` 走 WHERE (created_at,id) 谓词，不再 OFFSET；
     // nextCursor 随页返回，无下一页时为 null。无效游标由全局错误处理器映射成
     // 400 INVALID_CURSOR。
+    // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
     const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
+    if (cursor) markCursorPaginationDeprecated(reply);
     const rows = await ctx.repo.listJobs(q.status, limit + 1, offset, { cursor });
     const items = rows.slice(0, limit);
     const hasMore = rows.length > limit;

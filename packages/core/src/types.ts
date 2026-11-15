@@ -338,6 +338,11 @@ export interface SearchQuery {
   disableSemantic?: boolean;
   /** 关闭个性化通道 */
   disablePersonal?: boolean;
+  /**
+   * 关闭自动查询纠正（前端「不是这个？搜原来的」回退用；nocorrect=1）。
+   * 关闭后零结果只走 didYouMean 建议，不自动重跑纠正后的查询。
+   */
+  disableCorrection?: boolean;
   /** 个性化：用户近来偏好 */
   personalize?: PersonalizationSignals;
   /** 排除的关键词（负向关键词，排除包含任一词的站点） */
@@ -409,6 +414,16 @@ export interface SearchResult {
   excludedTerms?: string[];
   /** 零结果时的编辑距离拼写纠错建议 ("您是不是想搜...") */
   didYouMean?: string;
+  /**
+   * 自动查询纠正（零结果 / 纯语义时才可能出现）。
+   * 服务端已用 corrected 重跑过一次检索并返回纠正后的 hits；original 是用户原词。
+   * 有 correction 时前端不再渲染 didYouMean（两者二选一），并给「搜原来的」回退。
+   */
+  correction?: {
+    original: string;
+    corrected: string;
+    reason: "alias" | "pinyin-typo" | "spelling" | "chinese-typo";
+  };
   /** 触发同义词/标签别名/SKOS 扩展词 */
   queryExpansion?: string[];
 }

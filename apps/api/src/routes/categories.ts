@@ -14,7 +14,7 @@ import {
   CategoryUpdateInput,
 } from "@navhub/core";
 import type { AppContext } from "../context.ts";
-import { badRequest, created, notFound } from "./shared.ts";
+import { badRequest, created, markCursorPaginationDeprecated, notFound } from "./shared.ts";
 
 /**
  * 写入层守卫报错的统一出口。
@@ -66,6 +66,7 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           // Keyset 游标（M12）：传了就走 WHERE (sort,title,id) 谓词，不再 OFFSET；
           // nextCursor 随页返回，无下一页时为 null。无效游标由全局错误处理器
           // 映射成 400 INVALID_CURSOR。
+          // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
           cursor: z.string().max(4096).optional(),
           level: z.coerce.number().optional(),
           parentId: z
@@ -77,6 +78,7 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       if (!query.success) {
         return badRequest(reply, "参数无效", query.error.issues);
       }
+      if (query.data.cursor) markCursorPaginationDeprecated(reply);
       return ctx.repo.listCategoriesPage(query.data);
     }
   );

@@ -3,82 +3,871 @@
   "_ratchet": "2026-10-21: /admin/navigation 实测 907,493 B（拖拽列表与会话卡片整体懒加载）；按 +5% 将预算从 1,073,152 B 下调到 953,344 B，防止首屏收益回退。同日第二轮：管理端表单（react-hook-form + zod，约 145 KB 共享 chunk）改为按需加载后，/admin/site = 872,093 B、/admin/navigation/[id]/items = 1,020,099 B、/admin/navigation/[id]/categories = 1,008,102 B、/admin/navigation/[id]/categories/[categoryId]/items = 1,021,026 B，四条预算同步按 +5% 下调。同日第三轮：拖拽库（@hello-pangea/dnd，约 92 KB）经别名代理改为懒加载后，三条 /admin/navigation/[id]/* 实测 926,369 B / 914,372 B / 927,296 B，预算再按 +5% 下调。 2026-10-22 第四批：用户中心三页此前落 default（1,270,784 B），补专属棘轮——/me 实测 857,700 B、/me/data 849,527 B、/me/history 838,270 B（.next-verify 实测），按 +5% 分别设为 901,120 / 892,928 / 880,640 B，之后只降不升。",
   "default": 1270784,
   "routes": {
-    "/admin/navigation": 950272,
-    "/admin/navigation/[id]/categories/[categoryId]/items": 973824,
-    "/admin/navigation/[id]/items": 972800,
-    "/admin/navigation/[id]/categories": 960512,
-    "/": 1228800,
-    "/admin/videos": 1169408,
-    "/admin/videos/[id]/categories": 1167360,
-    "/admin/site": 916480,
-    "/admin/resources": 1113088,
-    "/marketplace/[slug]": 1090560,
+    "/admin/navigation": 999424,
+    "/admin/navigation/[id]/categories/[categoryId]/items": 1024000,
+    "/admin/navigation/[id]/items": 1022976,
+    "/admin/navigation/[id]/categories": 1009664,
+    "/": 1394688,
+    "/admin/videos": 1271808,
+    "/admin/videos/[id]/categories": 1236992,
+    "/compare": 1157120,
+    "/admin/site": 964608,
+    "/admin/resources": 1182720,
+    "/marketplace/[slug]": 1180672,
     "/videos": 1059840,
-    "/admin/sitelist": 1036288,
-    "/algorithms": 996352,
-    "/admin/videos/[id]/items": 993280,
-    "/admin/ai": 991232,
-    "/admin": 987136,
-    "/admin/plugins": 983040,
-    "/hot": 973824,
-    "/admin/tokens": 973824,
-    "/admin/jobs": 969728,
-    "/admin/data": 966656,
-    "/admin/videos/[id]/categories/[categoryId]/items": 966656,
-    "/favorites": 965632,
-    "/me": 901120,
-    "/me/data": 893802,
-    "/me/history": 880640,
-    "/admin/stats": 961536,
-    "/admin/categories": 961536,
-    "/admin/taxonomy": 961536,
-    "/admin/collections": 959488,
-    "/admin/tags": 958464,
-    "/admin/navigation/[id]": 956416,
-    "/admin/facets": 955392,
-    "/admin/audit": 954368,
-    "/admin/submissions": 951296,
-    "/admin/trash": 951296,
-    "/marketplace": 949248,
-    "/collections/[slug]": 935936,
-    "/tags/[slug]": 934912,
-    "/admin/resources/download": 933888,
-    "/admin/navigation/[id]/subcategory/[subId]": 931840,
-    "/site/[id]": 927744,
-    "/marketplace/publish": 921600,
-    "/auth/signin": 920576,
-    "/submit": 920576,
-    "/preferences": 912384,
-    "/marketplace/author/[key]": 911360,
+    "/admin/sitelist": 1105920,
+    "/algorithms": 1160192,
+    "/admin/videos/[id]/items": 1049600,
+    "/admin/ai": 1053696,
+    "/admin": 1045504,
+    "/admin/plugins": 1062912,
+    "/hot": 1047552,
+    "/admin/tokens": 1025024,
+    "/admin/jobs": 1038336,
+    "/admin/data": 1025024,
+    "/admin/videos/[id]/categories/[categoryId]/items": 1044480,
+    "/favorites": 1133568,
+    "/me": 1032192,
+    "/me/data": 941056,
+    "/me/history": 1013760,
+    "/admin/stats": 1015808,
+    "/admin/categories": 1013760,
+    "/admin/taxonomy": 1021952,
+    "/admin/collections": 1015808,
+    "/admin/tags": 1009664,
+    "/admin/navigation/[id]": 1021952,
+    "/admin/facets": 1015808,
+    "/admin/audit": 1003520,
+    "/admin/submissions": 1016832,
+    "/admin/trash": 1001472,
+    "/marketplace": 1011712,
+    "/collections/[slug]": 1043456,
+    "/tags/[slug]": 999424,
+    "/admin/resources/download": 997376,
+    "/admin/navigation/[id]/subcategory/[subId]": 996352,
+    "/site/[id]": 1094656,
+    "/marketplace/publish": 1001472,
+    "/auth/signin": 971776,
+    "/submit": 1015808,
+    "/preferences": 1012736,
+    "/marketplace/author/[key]": 993280,
     "/marketplace/installed": 905216,
     "/videos/player": 902144,
-    "/marketplace/mine": 900096,
-    "/tags": 897024,
-    "/collections": 894976,
-    "/marketplace/import": 893952,
-    "/graph": 890880,
-    "/import": 883712,
-    "/custom": 869376,
-    "/auth/error": 868352,
-    "/_not-found": 867328,
+    "/marketplace/mine": 979968,
+    "/tags": 978944,
+    "/collections": 1009664,
+    "/marketplace/import": 970752,
+    "/graph": 937984,
+    "/import": 1063936,
+    "/custom": 960512,
+    "/auth/error": 914432,
+    "/_not-found": 913408,
     "/_global-error": 487424,
-    "/marketplace/[slug]/preview": 1018880,
-    "/category/[slug]": 934912,
-    "/category/[slug]/p/[n]": 934912,
-    "/admin/plugin-health": 914432,
-    "/admin/data/restore": 849920,
-    "/me/account": 821248,
-    "/me/workspaces": 816128,
-    "/me/settings": 807936,
-    "/me/plugins": 802816,
-    "/me/vault": 801792,
-    "/me/notifications": 772096,
-    "/offline": 769024,
-    "/sites": 764928,
-    "/sites/p/[n]": 764928,
-    "/category": 757760
+    "/marketplace/[slug]/preview": 1140736,
+    "/category/[slug]": 991232,
+    "/category/[slug]/p/[n]": 991232,
+    "/admin/plugin-health": 972800,
+    "/admin/data/restore": 964608,
+    "/me/account": 1002496,
+    "/me/workspaces": 908288,
+    "/me/settings": 885760,
+    "/me/plugins": 983040,
+    "/me/vault": 982016,
+    "/me/notifications": 975872,
+    "/offline": 912384,
+    "/sites": 978944,
+    "/sites/p/[n]": 978944,
+    "/category": 969728,
+    "/admin/data/link-health": 977920,
+    "/me/watchlist": 1011712,
+    "/me/annotations": 994304,
+    "/brief": 995328,
+    "/pack": 920576,
+    "/favorites/stale": 987136,
+    "/auth/signup": 911360,
+    "/exam": 988160,
+    "/auth/reset-password": 908288,
+    "/search": 980992,
+    "/auth/forgot-password": 907264,
+    "/favorites/trash": 978944,
+    "/me/wanted": 977920,
+    "/pub/[slug]": 976896,
+    "/me/sites": 973824,
+    "/favorites/shelved": 972800,
+    "/ask": 900096,
+    "/pub/compare/[slug]": 960512,
+    "/scenes": 959488,
+    "/scenes/[id]": 959488,
+    "/drama": 882688,
+    "/videos/v/[id]": 927744,
+    "/auth/verify-email": 879616,
+    "/admin/site-reports": 1003520
   },
   "_raise_log": [
+    {
+      "at": "2026-11-15T18:26:02.670Z",
+      "sha": "7598441",
+      "source": "local",
+      "distDir": ".next",
+      "bundler": "turbopack",
+      "builtAt": "2026-11-15T18:25:18.955Z",
+      "reason": "Ryan 2026-11-16 选 A 扩展：合流 8cad053/095344e 后共享 chunk 移位——/auth/signin 实测 924687 B，超预算 4111 B；/videos/v/[id] 实测 882879 B，超预算 191 B；/auth/error 实测 870024 B，超预算 1672 B；/_not-found 实测 869328 B，超预算 2000 B。同口径 +5% 棘轮上调。",
+      "changes": [
+        {
+          "route": "/auth/signin",
+          "from": 920576,
+          "to": 971776,
+          "measured": 924687
+        },
+        {
+          "route": "/videos/v/[id]",
+          "from": 882688,
+          "to": 927744,
+          "measured": 882879
+        },
+        {
+          "route": "/auth/error",
+          "from": 868352,
+          "to": 914432,
+          "measured": 870024
+        },
+        {
+          "route": "/_not-found",
+          "from": 867328,
+          "to": 913408,
+          "measured": 869328
+        }
+      ]
+    },
+    {
+      "at": "2026-11-15T18:12:25.753Z",
+      "sha": "dd81f65",
+      "source": "local",
+      "distDir": ".next",
+      "bundler": "turbopack",
+      "builtAt": "2026-11-15T18:10:27.390Z",
+      "reason": "合流后共享 chunk 增长（Ryan 2026-11-16 选 A；重 rebase 到 095344e 后实测 975,395 B，超预算 8,739 B）",
+      "changes": [
+        {
+          "route": "/admin/data",
+          "from": 966656,
+          "to": 1025024,
+          "measured": 975395
+        }
+      ]
+    },
+    {
+      "at": "2026-11-15T15:59:05.733Z",
+      "sha": "4b1c95d",
+      "source": "local",
+      "distDir": ".next",
+      "bundler": "turbopack",
+      "builtAt": "2026-11-15T15:57:19.796Z",
+      "reason": "Ryan 2026-11-15 批准重定基线",
+      "changes": [
+        {
+          "route": "/admin/videos/[id]/categories",
+          "from": 1167360,
+          "to": 1236992,
+          "measured": 1178081
+        },
+        {
+          "route": "/admin/resources",
+          "from": 1113088,
+          "to": 1182720,
+          "measured": 1125428
+        },
+        {
+          "route": "/marketplace/[slug]",
+          "from": 1090560,
+          "to": 1180672,
+          "measured": 1124324
+        },
+        {
+          "route": "/favorites",
+          "from": 1061888,
+          "to": 1133568,
+          "measured": 1079517
+        },
+        {
+          "route": "/admin/sitelist",
+          "from": 1036288,
+          "to": 1105920,
+          "measured": 1053253
+        },
+        {
+          "route": "/site/[id]",
+          "from": 995328,
+          "to": 1094656,
+          "measured": 1042355
+        },
+        {
+          "route": "/import",
+          "from": 991232,
+          "to": 1063936,
+          "measured": 1012558
+        },
+        {
+          "route": "/hot",
+          "from": 973824,
+          "to": 1047552,
+          "measured": 996753
+        },
+        {
+          "route": "/collections/[slug]",
+          "from": 935936,
+          "to": 1043456,
+          "measured": 993096
+        },
+        {
+          "route": "/admin/jobs",
+          "from": 969728,
+          "to": 1038336,
+          "measured": 988646
+        },
+        {
+          "route": "/admin/tokens",
+          "from": 973824,
+          "to": 1025024,
+          "measured": 975796
+        },
+        {
+          "route": "/admin/navigation/[id]",
+          "from": 956416,
+          "to": 1021952,
+          "measured": 972667
+        },
+        {
+          "route": "/admin/taxonomy",
+          "from": 961536,
+          "to": 1021952,
+          "measured": 972430
+        },
+        {
+          "route": "/admin/submissions",
+          "from": 951296,
+          "to": 1016832,
+          "measured": 967659
+        },
+        {
+          "route": "/admin/collections",
+          "from": 959488,
+          "to": 1015808,
+          "measured": 967130
+        },
+        {
+          "route": "/admin/facets",
+          "from": 955392,
+          "to": 1015808,
+          "measured": 966922
+        },
+        {
+          "route": "/admin/stats",
+          "from": 961536,
+          "to": 1015808,
+          "measured": 966672
+        },
+        {
+          "route": "/submit",
+          "from": 920576,
+          "to": 1015808,
+          "measured": 966660
+        },
+        {
+          "route": "/admin/categories",
+          "from": 961536,
+          "to": 1013760,
+          "measured": 965199
+        },
+        {
+          "route": "/me/history",
+          "from": 939008,
+          "to": 1013760,
+          "measured": 964513
+        },
+        {
+          "route": "/preferences",
+          "from": 912384,
+          "to": 1012736,
+          "measured": 964482
+        },
+        {
+          "route": "/marketplace",
+          "from": 949248,
+          "to": 1011712,
+          "measured": 963094
+        },
+        {
+          "route": "/me/watchlist",
+          "from": 939008,
+          "to": 1011712,
+          "measured": 963004
+        },
+        {
+          "route": "/collections",
+          "from": 894976,
+          "to": 1009664,
+          "measured": 961156
+        },
+        {
+          "route": "/admin/tags",
+          "from": 958464,
+          "to": 1009664,
+          "measured": 960648
+        },
+        {
+          "route": "/admin/audit",
+          "from": 954368,
+          "to": 1003520,
+          "measured": 955705
+        },
+        {
+          "route": "/me/account",
+          "from": 930816,
+          "to": 1002496,
+          "measured": 954743
+        },
+        {
+          "route": "/marketplace/publish",
+          "from": 921600,
+          "to": 1001472,
+          "measured": 953436
+        },
+        {
+          "route": "/admin/trash",
+          "from": 951296,
+          "to": 1001472,
+          "measured": 953237
+        },
+        {
+          "route": "/tags/[slug]",
+          "from": 934912,
+          "to": 999424,
+          "measured": 951591
+        },
+        {
+          "route": "/admin/resources/download",
+          "from": 933888,
+          "to": 997376,
+          "measured": 949818
+        },
+        {
+          "route": "/admin/navigation/[id]/subcategory/[subId]",
+          "from": 931840,
+          "to": 996352,
+          "measured": 948142
+        },
+        {
+          "route": "/brief",
+          "from": 921600,
+          "to": 995328,
+          "measured": 946969
+        },
+        {
+          "route": "/me/annotations",
+          "from": 921600,
+          "to": 994304,
+          "measured": 946256
+        },
+        {
+          "route": "/marketplace/author/[key]",
+          "from": 911360,
+          "to": 993280,
+          "measured": 945724
+        },
+        {
+          "route": "/category/[slug]",
+          "from": 934912,
+          "to": 991232,
+          "measured": 943185
+        },
+        {
+          "route": "/category/[slug]/p/[n]",
+          "from": 934912,
+          "to": 991232,
+          "measured": 943185
+        },
+        {
+          "route": "/exam",
+          "from": 910336,
+          "to": 988160,
+          "measured": 940668
+        },
+        {
+          "route": "/favorites/stale",
+          "from": 915456,
+          "to": 987136,
+          "measured": 940115
+        },
+        {
+          "route": "/me/plugins",
+          "from": 910336,
+          "to": 983040,
+          "measured": 935917
+        },
+        {
+          "route": "/me/vault",
+          "from": 909312,
+          "to": 982016,
+          "measured": 934862
+        },
+        {
+          "route": "/search",
+          "from": 908288,
+          "to": 980992,
+          "measured": 933494
+        },
+        {
+          "route": "/marketplace/mine",
+          "from": 900096,
+          "to": 979968,
+          "measured": 933231
+        },
+        {
+          "route": "/tags",
+          "from": 897024,
+          "to": 978944,
+          "measured": 932185
+        },
+        {
+          "route": "/sites",
+          "from": 905216,
+          "to": 978944,
+          "measured": 932124
+        },
+        {
+          "route": "/sites/p/[n]",
+          "from": 905216,
+          "to": 978944,
+          "measured": 932124
+        },
+        {
+          "route": "/favorites/trash",
+          "from": 906240,
+          "to": 978944,
+          "measured": 931733
+        },
+        {
+          "route": "/me/wanted",
+          "from": 905216,
+          "to": 977920,
+          "measured": 930560
+        },
+        {
+          "route": "/pub/[slug]",
+          "from": 904192,
+          "to": 976896,
+          "measured": 929416
+        },
+        {
+          "route": "/me/notifications",
+          "from": 903168,
+          "to": 975872,
+          "measured": 929183
+        },
+        {
+          "route": "/me/sites",
+          "from": 902144,
+          "to": 973824,
+          "measured": 927272
+        },
+        {
+          "route": "/favorites/shelved",
+          "from": 900096,
+          "to": 972800,
+          "measured": 926201
+        },
+        {
+          "route": "/marketplace/import",
+          "from": 893952,
+          "to": 970752,
+          "measured": 924382
+        },
+        {
+          "route": "/category",
+          "from": 898048,
+          "to": 969728,
+          "measured": 923443
+        },
+        {
+          "route": "/pub/compare/[slug]",
+          "from": 887808,
+          "to": 960512,
+          "measured": 914454
+        },
+        {
+          "route": "/custom",
+          "from": 869376,
+          "to": 960512,
+          "measured": 914410
+        },
+        {
+          "route": "/scenes",
+          "from": 886784,
+          "to": 959488,
+          "measured": 913405
+        },
+        {
+          "route": "/scenes/[id]",
+          "from": 886784,
+          "to": 959488,
+          "measured": 913405
+        },
+        {
+          "route": "/graph",
+          "from": 890880,
+          "to": 937984,
+          "measured": 893285
+        },
+        {
+          "route": "/admin/site-reports",
+          "from": 1270784,
+          "to": 1003520,
+          "measured": 955138
+        }
+      ]
+    },
+    {
+      "at": "2026-11-14T16:17:01.511Z",
+      "sha": "078ca2e",
+      "source": "local",
+      "distDir": ".next",
+      "bundler": "turbopack",
+      "builtAt": "2026-11-14T16:15:08.379Z",
+      "reason": "先瘦身后重定基线（Ryan 2026-11-14 批准）：Step 1 切断 providers→use-global-undo→registry 链路、Step 2 注册表懒加载、Step 3 growth 门面、Step 4/5 动态化；/ 实测 1327358 B → 新基线 1394688 B（实测×1.05）；32 条上调 + 23 条补专属预算",
+      "changes": [
+        {
+          "route": "/",
+          "from": 1228800,
+          "to": 1394688,
+          "measured": 1327358
+        },
+        {
+          "route": "/admin/videos",
+          "from": 1169408,
+          "to": 1271808,
+          "measured": 1210355
+        },
+        {
+          "route": "/algorithms",
+          "from": 996352,
+          "to": 1160192,
+          "measured": 1104097
+        },
+        {
+          "route": "/marketplace/[slug]/preview",
+          "from": 1018880,
+          "to": 1140736,
+          "measured": 1086188
+        },
+        {
+          "route": "/admin/plugins",
+          "from": 983040,
+          "to": 1062912,
+          "measured": 1011490
+        },
+        {
+          "route": "/favorites",
+          "from": 965632,
+          "to": 1061888,
+          "measured": 1010350
+        },
+        {
+          "route": "/admin/ai",
+          "from": 991232,
+          "to": 1053696,
+          "measured": 1002808
+        },
+        {
+          "route": "/admin/videos/[id]/items",
+          "from": 993280,
+          "to": 1049600,
+          "measured": 998874
+        },
+        {
+          "route": "/admin",
+          "from": 987136,
+          "to": 1045504,
+          "measured": 995550
+        },
+        {
+          "route": "/admin/videos/[id]/categories/[categoryId]/items",
+          "from": 966656,
+          "to": 1044480,
+          "measured": 994138
+        },
+        {
+          "route": "/me",
+          "from": 901120,
+          "to": 1032192,
+          "measured": 982495
+        },
+        {
+          "route": "/admin/navigation/[id]/categories/[categoryId]/items",
+          "from": 973824,
+          "to": 1024000,
+          "measured": 974410
+        },
+        {
+          "route": "/admin/navigation/[id]/items",
+          "from": 972800,
+          "to": 1022976,
+          "measured": 973483
+        },
+        {
+          "route": "/admin/navigation/[id]/categories",
+          "from": 960512,
+          "to": 1009664,
+          "measured": 960937
+        },
+        {
+          "route": "/admin/navigation",
+          "from": 950272,
+          "to": 999424,
+          "measured": 951642
+        },
+        {
+          "route": "/site/[id]",
+          "from": 927744,
+          "to": 995328,
+          "measured": 947340
+        },
+        {
+          "route": "/import",
+          "from": 883712,
+          "to": 991232,
+          "measured": 943355
+        },
+        {
+          "route": "/admin/plugin-health",
+          "from": 914432,
+          "to": 972800,
+          "measured": 925662
+        },
+        {
+          "route": "/admin/site",
+          "from": 916480,
+          "to": 964608,
+          "measured": 918335
+        },
+        {
+          "route": "/admin/data/restore",
+          "from": 849920,
+          "to": 964608,
+          "measured": 917921
+        },
+        {
+          "route": "/me/data",
+          "from": 893802,
+          "to": 941056,
+          "measured": 895447
+        },
+        {
+          "route": "/me/history",
+          "from": 880640,
+          "to": 939008,
+          "measured": 894006
+        },
+        {
+          "route": "/me/account",
+          "from": 821248,
+          "to": 930816,
+          "measured": 885562
+        },
+        {
+          "route": "/offline",
+          "from": 769024,
+          "to": 912384,
+          "measured": 868624
+        },
+        {
+          "route": "/me/plugins",
+          "from": 802816,
+          "to": 910336,
+          "measured": 866736
+        },
+        {
+          "route": "/me/vault",
+          "from": 801792,
+          "to": 909312,
+          "measured": 865681
+        },
+        {
+          "route": "/me/workspaces",
+          "from": 816128,
+          "to": 908288,
+          "measured": 864142
+        },
+        {
+          "route": "/sites",
+          "from": 764928,
+          "to": 905216,
+          "measured": 862070
+        },
+        {
+          "route": "/sites/p/[n]",
+          "from": 764928,
+          "to": 905216,
+          "measured": 862070
+        },
+        {
+          "route": "/me/notifications",
+          "from": 772096,
+          "to": 903168,
+          "measured": 860002
+        },
+        {
+          "route": "/category",
+          "from": 757760,
+          "to": 898048,
+          "measured": 854493
+        },
+        {
+          "route": "/me/settings",
+          "from": 807936,
+          "to": 885760,
+          "measured": 843565
+        },
+        {
+          "route": "/admin/data/link-health",
+          "from": 1270784,
+          "to": 977920,
+          "measured": 931015
+        },
+        {
+          "route": "/me/watchlist",
+          "from": 1270784,
+          "to": 939008,
+          "measured": 893960
+        },
+        {
+          "route": "/me/annotations",
+          "from": 1270784,
+          "to": 921600,
+          "measured": 877306
+        },
+        {
+          "route": "/brief",
+          "from": 1270784,
+          "to": 921600,
+          "measured": 877059
+        },
+        {
+          "route": "/pack",
+          "from": 1270784,
+          "to": 920576,
+          "measured": 876344
+        },
+        {
+          "route": "/favorites/stale",
+          "from": 1270784,
+          "to": 915456,
+          "measured": 870978
+        },
+        {
+          "route": "/auth/signup",
+          "from": 1270784,
+          "to": 911360,
+          "measured": 867227
+        },
+        {
+          "route": "/exam",
+          "from": 1270784,
+          "to": 910336,
+          "measured": 866738
+        },
+        {
+          "route": "/auth/reset-password",
+          "from": 1270784,
+          "to": 908288,
+          "measured": 864580
+        },
+        {
+          "route": "/search",
+          "from": 1270784,
+          "to": 908288,
+          "measured": 864327
+        },
+        {
+          "route": "/auth/forgot-password",
+          "from": 1270784,
+          "to": 907264,
+          "measured": 863145
+        },
+        {
+          "route": "/favorites/trash",
+          "from": 1270784,
+          "to": 906240,
+          "measured": 862783
+        },
+        {
+          "route": "/me/wanted",
+          "from": 1270784,
+          "to": 905216,
+          "measured": 861379
+        },
+        {
+          "route": "/pub/[slug]",
+          "from": 1270784,
+          "to": 904192,
+          "measured": 860279
+        },
+        {
+          "route": "/me/sites",
+          "from": 1270784,
+          "to": 902144,
+          "measured": 858309
+        },
+        {
+          "route": "/favorites/shelved",
+          "from": 1270784,
+          "to": 900096,
+          "measured": 857022
+        },
+        {
+          "route": "/ask",
+          "from": 1270784,
+          "to": 900096,
+          "measured": 856991
+        },
+        {
+          "route": "/pub/compare/[slug]",
+          "from": 1270784,
+          "to": 887808,
+          "measured": 845275
+        },
+        {
+          "route": "/scenes",
+          "from": 1270784,
+          "to": 886784,
+          "measured": 844224
+        },
+        {
+          "route": "/scenes/[id]",
+          "from": 1270784,
+          "to": 886784,
+          "measured": 844224
+        },
+        {
+          "route": "/drama",
+          "from": 1270784,
+          "to": 882688,
+          "measured": 840367
+        },
+        {
+          "route": "/videos/v/[id]",
+          "from": 1270784,
+          "to": 882688,
+          "measured": 840092
+        },
+        {
+          "route": "/auth/verify-email",
+          "from": 1270784,
+          "to": 879616,
+          "measured": 837454
+        }
+      ]
+    },
     {
       "at": "2026-11-10T13:10:00.000Z",
       "source": "owner-decision",

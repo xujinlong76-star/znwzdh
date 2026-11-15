@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
-import { WIDGET_REGISTRY } from '@/lib/modular/registry'
+import React, { useState, useRef, Suspense } from 'react'
+import { WIDGET_REGISTRY, WIDGET_COMPONENTS } from '@/lib/modular/registry'
 import { ModuleErrorBoundary } from '@/components/modular/module-error-boundary'
 import { ModuleResizeHandles } from '@/components/modular/module-resize-handles'
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
@@ -68,7 +68,8 @@ function HeroDeckWidgetItem({
   )
 
   if (!def) return null
-  const WidgetComponent = def.component
+  const LazyWidget = WIDGET_COMPONENTS[type]
+  if (!LazyWidget) return null
   const colClass = HERO_COL_CLASS_MAP[colSpan] || 'col-span-12 sm:col-span-6 lg:col-span-3'
 
   return (
@@ -91,7 +92,13 @@ function HeroDeckWidgetItem({
       />
       <div className="flex-1 w-full min-h-0 overflow-hidden rounded-2xl flex flex-col justify-between">
         <ModuleErrorBoundary title={def.title}>
-          <WidgetComponent config={{}} />
+          <Suspense
+            fallback={
+              <div className="w-full min-h-[160px] animate-pulse bg-muted/40" aria-hidden="true" />
+            }
+          >
+            <LazyWidget config={{}} />
+          </Suspense>
         </ModuleErrorBoundary>
       </div>
     </div>

@@ -253,10 +253,11 @@ async function main() {
         const pubDate = item.pubdate ? new Date(item.pubdate * 1000).toISOString() : new Date().toISOString()
 
         // 质量评分（0-99）：根据播放量、互动量与时长加权
+        // 2026-11-13 去垫高：旧 Math.max(65, …)+10 是全库 4134 条扎堆 65 的直接来源；0 播放互动分是 0，不送 20 分。
         const viewScore = Math.min(40, Math.floor(Math.log10(Math.max(1, play)) * 8))
-        const interactScore = play > 0 ? Math.min(40, Math.floor((like / play) * 400)) : 20
+        const interactScore = play > 0 ? Math.min(40, Math.floor((like / play) * 400)) : 0
         const durationScore = Math.min(20, Math.floor((durationSec / 1800) * 20))
-        const qualityScore = Math.min(99, Math.max(65, viewScore + interactScore + durationScore + 10))
+        const qualityScore = Math.min(99, viewScore + interactScore + durationScore)
 
         const videoItem = {
           id: `v_${bvid}_${categoryItems.length}`,

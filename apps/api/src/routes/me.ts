@@ -7,6 +7,7 @@
  *
  * 端点：
  *  - GET    /api/me                      概览（身份、计数、画像/金库/AI 配置存在性、别名、设置）
+ *  - GET    /api/me/safety               数据安全状态聚合（导出新鲜度 / 同步水位 / 金库，Phase 1）
  *  - GET    /api/me/settings             获取个人设置
  *  - PATCH  /api/me/settings             更新个人设置（含个性化、搜索引擎、打开方式、卡片密度、0-RTT、快捷键、遥测与历史保留期）
  *  - PATCH  /api/me/profile              更新个人显示资料（昵称 username / 头像 avatar）
@@ -28,10 +29,10 @@ import { createHash } from "node:crypto";
 import { generateToken, hashToken, tokenPrefixOf } from "../auth.ts";
 
 import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
-import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION } from "@navhub/store";
+import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION, mapSyncErrorCode } from "@navhub/store";
 
 import type { AppContext } from "../context.ts";
-import { requestIdentityOf, identityTrusted, userDomainWriteAllowed, isSafeAvatarUrl } from "./shared.ts";
+import { requestIdentityOf, identityTrusted, markCursorPaginationDeprecated, userDomainWriteAllowed, isSafeAvatarUrl } from "./shared.ts";
 import { sendError } from "../error-envelope.ts";
 import { verifyIdentityHeaders } from "../identity-signature.ts";
 import { invalidateProfileThrottle, refreshUserProfile } from "../profile-service.ts";
@@ -65,6 +66,8 @@ const settingsPatchSchema = z
     spotlightShortcut: z.enum(["mod+k", "slash", "both"]).optional(),
     searchHistoryEnabled: z.boolean().optional(),
     telemetryEnabled: z.boolean().optional(),
+    // 数字直达总开关：按 1~9 打开速览坞站点、Ctrl+Shift+数字打开自定义快拨位（默认开）
+    numberDialEnabled: z.boolean().optional(),
     historyRetentionDays: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(365)]).optional(),
     // 账号级主题偏好：null = 显式清除（回退全站默认/系统）
     themePreference: z.enum(["light", "dark", "system"]).nullable().optional(),
@@ -132,6 +135,32 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     ]);
     return { ok: true, ...overview, settings };
   });
+
+  /**
+   * 数据安全状态聚合（第 15 项，Phase 1）。
+   *
+   * 一次聚合导出审计 + 同步水位 + 金库/CRDT + 未读同步失败；服务端算好
+   * overall 与 checks，客户端只展示。状态每次现算：cache-control no-store，
+   * 不许缓存出旧的新鲜度。限流照 /api/me（120/分钟）。
+   * 全站冷备只返回 unknown 占位（not-instrumented）且不参与 overall 计算，
+   * 见 packages/store/src/repository/safety.ts 的注释。
+   */
+  app.get(
+    "/api/me/safety",
+    { config: { scope: "public", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = requestIdentityOf(req as never);
+      if (!identity) {
+        reply.code(401);
+        return { error: "缺少登录身份" };
+      }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+      reply.header("cache-control", "private, no-store");
+      const safety = await ctx.repo.getUserSafetyStatus(canonical);
+      return { ok: true, ...safety };
+    },
+  );
 
   /* ------------------------- 设置 ------------------------- */
 
@@ -256,7 +285,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       const checks: Array<{
         id: string;
         label: string;
-        status: "ok" | "repaired";
+        // 前 3 项是“检查并修复”，状态是 ok/repaired；后 3 项（第 15 项）是只读
+        // 安全检查，不修复、不删数，状态用 ok/warning/critical/unknown 四态。
+        status: "ok" | "repaired" | "warning" | "critical" | "unknown";
         detail: string;
       }> = [];
       let repairedCount = 0;
@@ -338,6 +369,14 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           ? "偏好配置校验通过，已同步触发个性化画像实时重算"
           : "偏好配置校验通过（当前已关闭个性化画像重排）",
       });
+
+      // 4-6. 数据安全只读检查（第 15 项）：复用 /api/me/safety 的同一聚合，
+      //    只读、不修复、不删数、不计入 repairedCount。local_snapshot 是纯前端
+      //    探针（JSON.parse，不读内容），不在服务端检查里。
+      const safety = await ctx.repo.getUserSafetyStatus(canonical);
+      for (const check of safety.checks) {
+        checks.push({ ...check });
+      }
 
       await ctx.repo.audit({
         ip: req.ip,
@@ -451,6 +490,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         favorites: payload.favorites.length,
         folders: payload.favoriteFolders.length,
         searches: payload.searchHistory.items.length,
+        // 第 15 项：记下这次导出是否被截断，下次打开页面才能知道“上次导出全不全”。
+        // 只影响未来导出，历史导出保持 unknown（审计里没有这个字段）。
+        truncated: { favorites: payload.favoritesTruncated, history: payload.searchHistory.truncated },
       },
     }).catch(() => {
       // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
@@ -867,6 +909,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           limit: z.coerce.number().int().min(1).max(50).optional(),
           offset: z.coerce.number().int().min(0).optional(),
           // Keyset 游标（M12）：传了就走 WHERE id > (?) 谓词，不再 OFFSET。
+          // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
           cursor: z.string().max(4096).optional(),
         })
         .safeParse(req.query ?? {});
@@ -874,6 +917,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       const offset = query.success ? (query.data.offset ?? 0) : 0;
       // 无效游标由全局错误处理器映射成 400 INVALID_CURSOR。
       const cursor = query.success && typeof query.data.cursor === "string" && query.data.cursor ? query.data.cursor : undefined;
+      if (cursor) markCursorPaginationDeprecated(reply);
       const [page, total] = await Promise.all([
         ctx.repo.listVisitsPage(canonical, limit, offset, cursor),
         ctx.repo.countVisits(canonical),
@@ -1058,6 +1102,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         offset: z.coerce.number().int().min(0).optional(),
         unread: z.coerce.boolean().optional(),
         // Keyset 游标（M12）：传了就走 WHERE (created_at,id) 谓词，不再 OFFSET。
+        // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
         cursor: z.string().max(4096).optional(),
       })
       .safeParse(req.query ?? {});
@@ -1066,6 +1111,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     const unreadOnly = Boolean(query.success && query.data.unread);
     // 无效游标由全局错误处理器映射成 400 INVALID_CURSOR。
     const cursor = query.success && typeof query.data.cursor === "string" && query.data.cursor ? query.data.cursor : undefined;
+    if (cursor) markCursorPaginationDeprecated(reply);
     const [page, unread] = await Promise.all([
       ctx.repo.listNotificationsPage(canonical, limit, offset, unreadOnly, cursor),
       ctx.repo.countUnreadNotifications(canonical),
@@ -1253,10 +1299,13 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           actorKind: "user",
           action: "user.sync_failed",
           target: canonical,
-          diff: { ops: parsed.data.ops.length, error: String((err as Error)?.message ?? "unknown") },
+          diff: { domain: "favorites", ops: parsed.data.ops.length, error: String((err as Error)?.message ?? "unknown") },
         }).catch(() => {
           // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
         });
+        // 同步水位（第 15 项）：只记时间戳与有限枚举错误码，不记内容；
+        // 原始 error 文本只留在审计里，绝不展示给用户。
+        await ctx.repo.recordSyncFailure(canonical, "favorites", mapSyncErrorCode(err)).catch(() => { /* 同步水位是尽力而为：原始错误随后即 throw，记水位失败不掩盖原错 */ });
         // 站内通知（T13）：同步失败告知用户。中枢抖动会连续失败——60 分钟去重窗口内不重发
         try {
           const recent = await ctx.repo.hasRecentNotification(canonical, "sync_failed", 60 * 60_000);
@@ -1273,6 +1322,8 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         throw err;
       }
       recordUserCenterMetric("favoritesSync.success");
+      // 同步水位（第 15 项）：成功时间落库，/api/me/safety 才能诚实地说“同步正常”。
+      await ctx.repo.recordSyncSuccess(canonical, "favorites").catch(() => { /* 同步成功水位是尽力而为：同步已成功，记水位失败不改写响应 */ });
       return {
         ok: true,
         applied: applied.applied,
@@ -1352,8 +1403,39 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         }
         return next;
       });
-      const applied = await ctx.repo.applyWatchOps(canonical, ops);
-      const slice = await ctx.repo.listWatchSince(canonical, parsed.data.since ?? 0);
+      // 追剧同步此前没有任何 catch/审计/通知：失败只剩 HTTP 500，客户端重试、
+      // 用户无感知（第 15 项补齐，与收藏同步同口径：审计 + 60 分钟去重通知 + 水位）。
+      let applied: Awaited<ReturnType<typeof ctx.repo.applyWatchOps>>;
+      let slice: Awaited<ReturnType<typeof ctx.repo.listWatchSince>>;
+      try {
+        applied = await ctx.repo.applyWatchOps(canonical, ops);
+        slice = await ctx.repo.listWatchSince(canonical, parsed.data.since ?? 0);
+      } catch (err) {
+        await ctx.repo.audit({
+          ip: req.ip,
+          actor: canonical,
+          actorKind: "user",
+          action: "user.sync_failed",
+          target: canonical,
+          diff: { domain: "watchlist", ops: parsed.data.ops.length, error: String((err as Error)?.message ?? "unknown") },
+        }).catch(() => { /* 审计/遥测类写库是尽力而为：失败不阻断主操作，原始错误随后即 throw */ });
+        await ctx.repo.recordSyncFailure(canonical, "watchlist", mapSyncErrorCode(err)).catch(() => { /* 同步水位是尽力而为：原始错误随后即 throw，记水位失败不掩盖原错 */ });
+        try {
+          const recent = await ctx.repo.hasRecentNotification(canonical, "sync_failed", 60 * 60_000);
+          if (!recent) {
+            await ctx.repo.emitNotification({
+              identity: canonical,
+              idempotencyKey: `sync_failed:watchlist:${Math.floor(Date.now() / (60 * 60_000))}`,
+              kind: "sync_failed",
+              title: "追剧同步失败",
+              body: "本机追剧清单暂时没能同步到云端（网络或服务波动）。你的追剧记录仍安全保存在本机，稍后会自动重试。",
+            });
+          }
+        } catch { /* 通知是增强信息，不改变失败语义 */ }
+        throw err;
+      }
+      // 同步水位（第 15 项）：成功时间落库。
+      await ctx.repo.recordSyncSuccess(canonical, "watchlist").catch(() => { /* 同步成功水位是尽力而为：同步已成功，记水位失败不改写响应 */ });
       return {
         ok: true,
         applied: applied.applied,
@@ -1417,7 +1499,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         actorKind: "user",
         action: "user.export",
         target: canonical,
-        diff: { format: "netscape", favorites: favorites.length },
+        // 书签导出没有条数上限（全量收藏都进文件），截断恒为 false；
+        // 若将来加了上限，触顶时应记 true（以实际代码为准）。
+        diff: { format: "netscape", favorites: favorites.length, truncated: false },
       }).catch(() => undefined);
 
       recordUserCenterMetric("dataSovereignty.exportBookmarks");

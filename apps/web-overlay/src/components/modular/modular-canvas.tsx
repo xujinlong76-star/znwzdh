@@ -163,28 +163,10 @@ export function ModularCanvas() {
     showNotice('已重做操作')
   }, [canRedo, redo, showNotice])
 
-  // 快捷键支持：Ctrl+Z (撤销) 与 Ctrl+Y / Ctrl+Shift+Z (重做)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return
-
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        if (e.shiftKey) {
-          e.preventDefault()
-          handleRedo()
-        } else {
-          e.preventDefault()
-          handleUndo()
-        }
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        e.preventDefault()
-        handleRedo()
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleUndo, handleRedo])
+  // 快捷键支持：已收敛到 hooks/use-global-undo（Providers 里只挂一次）。
+  // 这里不再挂 window keydown——旧监听只认 INPUT/TEXTAREA，漏 SELECT /
+  // contentEditable，在那些框里按 Ctrl+Z 会误触画布撤销；且三处监听
+  // 各自为政，一次按键会撤两步。handleUndo/handleRedo 留给按钮用。
 
   /**
    * RGL 网格布局提交（DRAG-2）：拖拽/缩放结束时一次写盘。
@@ -331,16 +313,9 @@ export function ModularCanvas() {
     setIsExportPluginOpen(true)
   }
 
-  // 删除看板：先确认再删（window.confirm，文案与 search-palette 的 DIY
-  // 重置确认同口径）；deleteBoard 已把删前快照压进撤销栈，删完按
-  // Ctrl/Cmd+Z 可恢复整板，toast 必须把这条退路说出来。
-  const handleDeleteBoard = (boardId: string, boardName: string) => {
-    if (
-      !window.confirm(
-        `确定要删除看板「${boardName}」吗？其中的模块会一并删除，删除后按 Ctrl/Cmd+Z 可撤销恢复。`,
-      )
-    )
-      return
+  // 删除看板：不确认——deleteBoard 已把删前快照压进撤销栈，删完按
+  // Ctrl/Cmd+Z 可恢复整板，确认是重复设防；撤销条会把这条退路说出来。
+  const handleDeleteBoard = (boardId: string) => {
     const deleted = deleteBoard(boardId)
     if (!deleted) {
       showNotice('删除失败：至少保留 1 个看板', 'warn')
@@ -417,7 +392,7 @@ export function ModularCanvas() {
               </button>
               {isEditing && boards.length > 1 && (
                 <button
-                  onClick={() => handleDeleteBoard(b.id, b.name)}
+                  onClick={() => handleDeleteBoard(b.id)}
                   className="p-1.5 min-h-11 min-w-11 flex items-center justify-center text-muted-foreground hover:text-red-500 transition-opacity ml-0.5 opacity-50 sm:opacity-0 sm:group-hover/tab:opacity-100 sm:group-focus-within/tab:opacity-100 focus-visible:opacity-100"
                   title="删除此看板"
                   aria-label={`删除看板：${b.name}`}

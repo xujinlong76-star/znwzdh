@@ -240,7 +240,8 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   // 维护体积护栏时务必保持「上限只有一处判定」。
 
   // 上游必须有上限：卡死的中枢不能把前端请求无限期挂住（SSE 在拿到响应头后解除，见下）
-  const timeoutMs = upstreamTimeoutMs(undefined, cleanPath)
+  // method 一并传入：只有 POST /api/ask 走 120 秒，GET /api/ask/status 走默认 30 秒。
+  const timeoutMs = upstreamTimeoutMs(undefined, cleanPath, method)
   const deadline = createDeadline(timeoutMs)
   /**
    * 客户端断开也要能掐断上游。`createDeadline` 只认自己的定时器，且 hub-proxy.ts

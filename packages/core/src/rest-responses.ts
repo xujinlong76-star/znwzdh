@@ -197,6 +197,13 @@ export const SearchResponse = z.looseObject({
   inferredCategory: z.string().optional(),
   excludedTerms: z.array(z.string()).optional(),
   didYouMean: z.string().optional(),
+  correction: z
+    .object({
+      original: z.string(),
+      corrected: z.string(),
+      reason: z.enum(["alias", "pinyin-typo", "spelling", "chinese-typo"]),
+    })
+    .optional(),
   queryExpansion: z.array(z.string()).optional(),
   // 零结果时才会出现的附加信息
   suggestions: z.array(z.string()).optional(),
@@ -759,6 +766,7 @@ const MeSettingsPayload = z.looseObject({
   spotlightShortcut: z.enum(["mod+k", "slash", "both"]),
   searchHistoryEnabled: z.boolean(),
   telemetryEnabled: z.boolean(),
+  numberDialEnabled: z.boolean(),
   historyRetentionDays: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(365)]),
 });
 
@@ -858,11 +866,84 @@ export const MeDiagnosticsResponse = z.looseObject({
     z.looseObject({
       id: z.string(),
       label: z.string(),
-      status: z.enum(["ok", "repaired"]),
+      // 前 3 项是“检查并修复”（ok/repaired）；第 15 项新增的 3 项只读
+      // 安全检查不修复、不删数，状态用 ok/warning/critical/unknown 四态。
+      status: z.enum(["ok", "repaired", "warning", "critical", "unknown"]),
       detail: z.string(),
     }),
   ),
   checkedAt: z.number(),
+});
+
+const SafetyStatus = z.enum(["ok", "warning", "critical", "unknown"]);
+
+/**
+ * GET /api/me/safety（第 15 项，Phase 1）：数据安全状态一次聚合。
+ * lastExport.at 为 null = 近一年内无导出记录（audit_logs 只保留 365 天，
+ * 不能断言从未导出过）；truncated 为 null = 历史导出未记录截断（是否完整未知）；
+ * serverBackup 恒为 unknown/not-instrumented（全站冷备无任何数据库记录与 API），
+ * 且不参与 overall 计算。
+ */
+export const MeSafetyResponse = z.looseObject({
+  ok: z.literal(true),
+  checkedAt: z.number(),
+  overall: SafetyStatus,
+  lastExport: z
+    .object({
+      at: z.number().nullable(),
+      format: z.enum(["json", "netscape"]).nullable(),
+      counts: z
+        .object({ favorites: z.number().int(), folders: z.number().int(), searches: z.number().int() })
+        .nullable(),
+      truncated: z.boolean().nullable(),
+      sizeBytes: z.number().nullable(),
+    })
+    .nullable(),
+  lastImport: z
+    .object({
+      at: z.number().nullable(),
+      imported: z.object({
+        folders: z.number().int(),
+        favorites: z.number().int(),
+        searches: z.number().int(),
+      }),
+      skipped: z.number().int(),
+    })
+    .nullable(),
+  sync: z.object({
+    favorites: z.object({
+      lastSuccessAt: z.number().nullable(),
+      lastFailureAt: z.number().nullable(),
+      lastErrorCode: z.enum(["timeout", "network", "server_5xx", "validation_4xx", "unknown"]).nullable(),
+    }),
+    watchlist: z.object({
+      lastSuccessAt: z.number().nullable(),
+      lastFailureAt: z.number().nullable(),
+      lastErrorCode: z.enum(["timeout", "network", "server_5xx", "validation_4xx", "unknown"]).nullable(),
+    }),
+    vault: z.object({
+      exists: z.boolean(),
+      version: z.number().nullable(),
+      updatedAt: z.number().nullable(),
+    }),
+    crdt: z.object({ exists: z.boolean(), updatedAt: z.number().nullable() }),
+    unreadSyncFailures: z.number().int(),
+  }),
+  localCounts: z.object({
+    favorites: z.number().int(),
+    folders: z.number().int(),
+    searches: z.number().int(),
+    recentEvents: z.number().int(),
+  }),
+  serverBackup: z.object({ status: z.literal("unknown"), reason: z.literal("not-instrumented") }),
+  checks: z.array(
+    z.looseObject({
+      id: z.string(),
+      label: z.string(),
+      status: SafetyStatus,
+      detail: z.string(),
+    }),
+  ),
 });
 
 /** POST /api/me/prune：按域回传实际清理行数（未选中的域不出现） */
@@ -915,6 +996,48 @@ export const MeFavoritesSyncResponse = z.looseObject({
 });
 
 /**
+ * GET /api/me/favorites/trash：回收站列表。items 是墓碑行 + site join，
+ * 条目形状由收藏仓储演进；folderName 由路由拼装（夹子可能已删，缺失为 null）。
+ */
+export const MeFavoriteTrashListResponse = z.looseObject({
+  ok: z.literal(true),
+  items: z.array(z.unknown()),
+  total: z.number().int(),
+});
+
+/** POST /api/me/favorites/trash/{siteId}/restore：复活单条墓碑 */
+export const MeFavoriteTrashRestoreResponse = z.looseObject({
+  ok: z.literal(true),
+  favorite: z.unknown(),
+  /** 原收藏夹已不存在时 true：收藏已恢复到未分组 */
+  folderLost: z.boolean(),
+});
+
+/** POST /api/me/favorites/trash/restore-batch：逐条恢复，返回成功数与失败清单 */
+export const MeFavoriteTrashRestoreBatchResponse = z.looseObject({
+  ok: z.literal(true),
+  restored: z.array(z.string()),
+  failed: z.array(
+    z.looseObject({
+      siteId: z.string(),
+      error: z.string(),
+    }),
+  ),
+});
+
+/** DELETE /api/me/favorites/trash/{siteId}：物理删除单条墓碑 */
+export const MeFavoriteTrashPurgeResponse = z.looseObject({
+  ok: z.literal(true),
+  purged: z.boolean(),
+});
+
+/** DELETE /api/me/favorites/trash：物理清空回收站（body 必须带 confirm: true） */
+export const MeFavoriteTrashClearResponse = z.looseObject({
+  ok: z.literal(true),
+  purged: z.number().int(),
+});
+
+/**
  * POST /api/me/watchlist/sync：与收藏同步同一信封口径（applied/version）；
  * entries 的条目形状由追剧仓储演进，集成方以同步回执的 entries 为准。
  */
@@ -961,6 +1084,37 @@ export const MeCustomSitesReorderResponse = z.looseObject({
 
 /** DELETE /api/me/custom-sites/{id} */
 export const MeCustomSiteDeleteResponse = z.looseObject({
+  ok: z.literal(true),
+  removed: z.boolean(),
+});
+
+/** 待找单条（/api/me/wanted） */
+export const WantedSearchItem = z.looseObject({
+  id: z.string(),
+  identity: z.string(),
+  query: z.string(),
+  correctedQuery: z.string().nullable(),
+  status: z.enum(["open", "notified"]),
+  notifiedSiteId: z.string().nullable(),
+  notifiedAt: z.number().nullable(),
+  createdAt: z.number(),
+});
+
+/** GET /api/me/wanted */
+export const MeWantedSearchesListResponse = z.looseObject({
+  ok: z.literal(true),
+  items: z.array(WantedSearchItem),
+});
+
+/** POST /api/me/wanted（201；去重时 200 + duplicate: true） */
+export const MeWantedSearchItemResponse = z.looseObject({
+  ok: z.literal(true),
+  item: WantedSearchItem,
+  duplicate: z.literal(true).optional(),
+});
+
+/** DELETE /api/me/wanted/{id} */
+export const MeWantedSearchDeleteResponse = z.looseObject({
   ok: z.literal(true),
   removed: z.boolean(),
 });
@@ -1125,6 +1279,263 @@ export const FavoriteCreateResponse = z.looseObject({
   favorite: FavoritePayload,
   // true = 这条收藏早已存在（重复收藏是幂等操作，不是错误）
   existed: z.boolean(),
+});
+
+/**
+ * 问问我的收藏前置状态（GET /api/ask/status）：收藏条数、够不够 5 条开问、
+ * 模型是否就绪、3 条取自真实收藏标题的动态示例。只读，不占额度。
+ */
+export const AskStatusResponse = z.looseObject({
+  favoritesCount: z.number().int(),
+  canAsk: z.boolean(),
+  llmReady: z.boolean(),
+  samples: z.array(z.string()),
+});
+
+/**
+ * 跨站对照（GET /api/compare）：2–4 个已收藏站点的七维对照行。
+ * 每格 `{ value, source, verified, verifiedAt }`：value 为单值或 label 数组，
+ * 缺失时为 null 且 verified 为 false；maintenance 格另带 lastCheckedAt
+ *（与 verifiedAt 相同，单独列出供调用方直接取用）；price 格另带 stale
+ *（90–180 天“可能过期”）与 sourceUrl（官方定价页 URL）。
+ */
+export const ComparisonCellPayload = z.looseObject({
+  value: z.union([z.string(), z.array(z.string())]).nullable(),
+  source: z.string(),
+  verified: z.boolean(),
+  verifiedAt: z.number().nullable(),
+  lastCheckedAt: z.number().nullable().optional(),
+  /** 仅 price 格：90–180 天未核实的“可能过期”标记。 */
+  stale: z.boolean().optional(),
+  /** 仅 price 格：官方定价页 URL（有它前端才启用“从官方定价页抓取”）。 */
+  sourceUrl: z.string().nullable().optional(),
+  /** 仅 price 格：编辑表单回填用的原始记录字段。 */
+  amountMinor: z.number().optional(),
+  currency: z.string().optional(),
+  period: z.string().optional(),
+  freeTierLimit: z.string().nullable().optional(),
+});
+
+export const CompareItemPayload = z.looseObject({
+  siteId: z.string(),
+  title: z.string(),
+  url: z.string(),
+  pricing: ComparisonCellPayload,
+  platform: ComparisonCellPayload,
+  form: ComparisonCellPayload,
+  maintenance: ComparisonCellPayload,
+  note: ComparisonCellPayload,
+  migration: ComparisonCellPayload,
+  /**
+   * 价格数值格（Batch 4 Phase 2 P2-2）。CompareResponse 是 looseObject，
+   * 旧快照/旧返回里没有 price 格也能通过校验；这里以 optional 记下
+   * 第七格的形状，不收紧历史数据。
+   */
+  price: ComparisonCellPayload.optional(),
+});
+
+export const CompareResponse = z.looseObject({
+  ok: z.literal(true),
+  items: z.array(CompareItemPayload),
+});
+
+/**
+ * 对照快照（POST /api/compare/snapshots，Batch 4 Phase 2 P2-3）：
+ * 快照对外形态，不含 owner_identity。items 与 GET /api/compare 共用
+ * CompareItemPayload——快照存的就是服务端现算的同一对照行；P2-2 之前
+ * 的旧快照可能没有 price 格，price 在 CompareItemPayload 里已是 optional。
+ */
+export const ComparisonSnapshotPayload = z.looseObject({
+  id: z.string(),
+  siteIds: z.array(z.string()),
+  items: z.array(CompareItemPayload),
+  createdAt: z.number(),
+});
+
+export const ComparisonSnapshotCreateResponse = z.looseObject({
+  ok: z.literal(true),
+  snapshot: ComparisonSnapshotPayload,
+});
+
+/**
+ * 对照分享（POST /api/compare/snapshots/:id/publish、PATCH/DELETE
+ * /api/compare/shares/:slug，Batch 4 Phase 2 P2-4）：shareView 的对外
+ * 形态，不含 owner_identity；发布回执在 share 上多一个公开链接 url。
+ */
+export const ComparisonSharePayload = z.looseObject({
+  slug: z.string(),
+  fields: z.array(z.string()),
+  status: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const ComparisonSharePublishResponse = z.looseObject({
+  ok: z.literal(true),
+  share: ComparisonSharePayload.extend({ url: z.string() }),
+});
+
+export const ComparisonShareUpdateResponse = z.looseObject({
+  ok: z.literal(true),
+  share: ComparisonSharePayload,
+});
+
+/**
+ * 站点价格（POST/DELETE /api/sites/:id/price、POST /api/sites/:id/price/scrape，
+ * Batch 4 Phase 2 P2-2）：priceView 的对外形态。currency/period 在 core 里
+ * 与 SitePriceEntry 同口径记 string（枚举的 canonical 清单在
+ * apps/api/src/routes/site-prices.ts 的 PRICE_CURRENCIES/PRICE_PERIODS，
+ * 后端 400 拦截非法值）。
+ */
+export const SitePricePayload = z.looseObject({
+  id: z.string(),
+  siteId: z.string(),
+  amountMinor: z.number(),
+  currency: z.string(),
+  period: z.string(),
+  freeTierLimit: z.string().nullable(),
+  sourceType: z.enum(["manual", "official_scrape"]),
+  sourceUrl: z.string().nullable(),
+  verifiedAt: z.number(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const SitePriceUpsertResponse = z.looseObject({
+  ok: z.literal(true),
+  price: SitePricePayload,
+});
+
+/** DELETE /api/sites/:id/price 回执：幂等，无记录也回 200 { deleted: false }。 */
+export const SitePriceDeleteResponse = z.looseObject({
+  ok: z.literal(true),
+  deleted: z.boolean(),
+});
+
+/** 抓取返回的一条价格候选（PriceScrapeCandidate 的契约形态）。 */
+export const PriceScrapeCandidatePayload = z.looseObject({
+  text: z.string(),
+  amount: z.number().nullable(),
+  amountMinor: z.number().nullable(),
+  currency: z.string().nullable(),
+  period: z.string().nullable(),
+  confirmToken: z.string().nullable(),
+});
+
+export const PriceScrapeResponse = z.looseObject({
+  ok: z.literal(true),
+  siteId: z.string(),
+  sourceUrl: z.string().nullable(),
+  robots_disallowed: z.boolean(),
+  candidates: z.array(PriceScrapeCandidatePayload),
+  message: z.string(),
+});
+
+/**
+ * 刷新验证（POST /api/sites/:id/verify，Batch 4 Phase 2 P2-1）：
+ * 202 已受理后台验证 / 200 robots 置灰，两者同形。
+ */
+export const SiteVerifyResponse = z.looseObject({
+  ok: z.literal(true),
+  siteId: z.string(),
+  status: z.enum(["pending", "robots_disallowed"]),
+  robots_disallowed: z.boolean(),
+  message: z.string(),
+  lastCheckedAt: z.number().nullable(),
+});
+
+/** 对照快照列表（GET /api/compare/snapshots，Batch 4 Phase 2 P2-3）。 */
+export const ComparisonSnapshotListResponse = z.looseObject({
+  ok: z.literal(true),
+  snapshots: z.array(ComparisonSnapshotPayload),
+});
+
+/** 两快照逐格 diff（GET /api/compare/snapshots/{id}/diff，P2-3）。 */
+export const SnapshotDiffChangePayload = z.looseObject({
+  siteId: z.string(),
+  title: z.string(),
+  dimension: z.enum(["pricing", "price", "platform", "form", "maintenance", "note", "migration"]),
+  kind: z.enum(["value_changed", "became_verified", "verification_added"]),
+  oldValue: z.string().nullable(),
+  newValue: z.string().nullable(),
+  oldVerified: z.boolean(),
+  newVerified: z.boolean(),
+});
+
+export const ComparisonSnapshotDiffResponse = z.looseObject({
+  ok: z.literal(true),
+  diff: z.looseObject({
+    base: z.object({ id: z.string(), createdAt: z.number() }),
+    against: z.object({ id: z.string(), createdAt: z.number() }),
+    changes: z.array(SnapshotDiffChangePayload),
+  }),
+});
+
+/**
+ * 公开分享的对照格（projectCell 的投影形态，P2-4）：只有白名单字段
+ *（pricing/platform/form/maintenance/price），note/migration 永不进结果；
+ * 价格原始字段（amountMinor/currency/period/freeTierLimit/sourceUrl）一律
+ * 不复制；stale 只在 price 格 90–180 天为 true 时保留。
+ */
+export const PublishedComparisonCellPayload = z.looseObject({
+  value: z.union([z.string(), z.array(z.string())]).nullable(),
+  source: z.string(),
+  verified: z.boolean(),
+  verifiedAt: z.number().nullable(),
+  stale: z.boolean().optional(),
+});
+
+export const PublishedComparisonItemPayload = z.looseObject({
+  siteId: z.string(),
+  title: z.string(),
+  url: z.string(),
+  pricing: PublishedComparisonCellPayload.optional(),
+  platform: PublishedComparisonCellPayload.optional(),
+  form: PublishedComparisonCellPayload.optional(),
+  maintenance: PublishedComparisonCellPayload.optional(),
+  price: PublishedComparisonCellPayload.optional(),
+});
+
+export const PublishedComparisonSnapshotPayload = z.looseObject({
+  id: z.string(),
+  siteIds: z.array(z.string()),
+  items: z.array(PublishedComparisonItemPayload),
+  createdAt: z.number(),
+});
+
+/** 公开读分享（GET /api/compare/shares/:slug，P2-4）：share 只有 slug/fields/createdAt，永不含 owner。 */
+export const ComparisonShareReadResponse = z.looseObject({
+  ok: z.literal(true),
+  share: z.looseObject({
+    slug: z.string(),
+    fields: z.array(z.string()),
+    createdAt: z.number(),
+  }),
+  snapshot: PublishedComparisonSnapshotPayload,
+});
+
+/** 探活结论（GET /api/sites/:id/verify 的 outcome，P2-1）：SiteProbeResult 的契约形态。 */
+export const SiteProbeOutcomePayload = z.looseObject({
+  kind: z.enum(["ok", "blocked", "parked", "dead", "unverified", "server-error"]),
+  status: z.number().optional(),
+  latencyMs: z.number(),
+  redirectTo: z.string().nullable().optional(),
+  reason: z.string(),
+  robotsDisallowed: z.boolean().optional(),
+  fromCache: z.boolean().optional(),
+  checkedAt: z.number().optional(),
+});
+
+/** 轮询刷新验证状态（GET /api/sites/:id/verify，P2-1）。 */
+export const SiteVerifyStatusResponse = z.looseObject({
+  ok: z.literal(true),
+  siteId: z.string(),
+  status: z.enum(["idle", "pending", "done", "robots_disallowed"]),
+  outcome: SiteProbeOutcomePayload.nullable(),
+  robots_disallowed: z.boolean(),
+  finishedAt: z.number().nullable(),
+  lastCheckedAt: z.number().nullable(),
+  previousLastCheckedAt: z.number().nullable(),
 });
 
 export const FavoriteUpdateResponse = z.looseObject({
@@ -2009,7 +2420,54 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/sites/{id}": { schema: SitePayload, name: "SitePayload" },
   "GET /api/search-history": { schema: SearchHistoryPageResponse, name: "SearchHistoryPageResponse" },
   "GET /api/me": { schema: MeOverviewResponse, name: "MeOverviewResponse" },
+  "GET /api/me/safety": { schema: MeSafetyResponse, name: "MeSafetyResponse" },
   "GET /api/favorites": { schema: FavoritesListResponse, name: "FavoritesListResponse" },
+  // 问问我的收藏前置状态：POST /api/ask 是 SSE 流式（见未绑定清单），只绑这个只读端点
+  "GET /api/ask/status": { schema: AskStatusResponse, name: "AskStatusResponse" },
+  // 跨站对照：2–4 个已收藏站点的六维对照（Batch 4 Phase 1）
+  "GET /api/compare": { schema: CompareResponse, name: "CompareResponse" },
+  // 对照快照与分享（Batch 4 Phase 2 P2-3/P2-4）：新建 201，上下线/删除 200
+  "POST /api/compare/snapshots": {
+    schema: ComparisonSnapshotCreateResponse,
+    name: "ComparisonSnapshotCreateResponse",
+    status: "201",
+  },
+  "POST /api/compare/snapshots/{id}/publish": {
+    schema: ComparisonSharePublishResponse,
+    name: "ComparisonSharePublishResponse",
+    status: "201",
+  },
+  "PATCH /api/compare/shares/{slug}": {
+    schema: ComparisonShareUpdateResponse,
+    name: "ComparisonShareUpdateResponse",
+  },
+  "DELETE /api/compare/shares/{slug}": { schema: OkResponse, name: "OkResponse" },
+  // 站点价格与刷新验证（Batch 4 Phase 2 P2-2/P2-1）：verify 的 202 与 200 同形
+  "POST /api/sites/{id}/price": { schema: SitePriceUpsertResponse, name: "SitePriceUpsertResponse" },
+  "DELETE /api/sites/{id}/price": { schema: SitePriceDeleteResponse, name: "SitePriceDeleteResponse" },
+  "POST /api/sites/{id}/price/scrape": { schema: PriceScrapeResponse, name: "PriceScrapeResponse" },
+  "POST /api/sites/{id}/verify": {
+    schema: SiteVerifyResponse,
+    name: "SiteVerifyResponse",
+    status: ["200", "202"],
+  },
+  // 对照快照/分享的读端（Batch 4 Phase 2 P2-3/P2-4）与验证轮询（P2-1）
+  "GET /api/compare/snapshots": {
+    schema: ComparisonSnapshotListResponse,
+    name: "ComparisonSnapshotListResponse",
+  },
+  "GET /api/compare/snapshots/{id}/diff": {
+    schema: ComparisonSnapshotDiffResponse,
+    name: "ComparisonSnapshotDiffResponse",
+  },
+  "GET /api/compare/shares/{slug}": {
+    schema: ComparisonShareReadResponse,
+    name: "ComparisonShareReadResponse",
+  },
+  "GET /api/sites/{id}/verify": {
+    schema: SiteVerifyStatusResponse,
+    name: "SiteVerifyStatusResponse",
+  },
   "GET /api/collections": { schema: CollectionListResponse, name: "CollectionListResponse" },
   "GET /api/collections/{slug}": { schema: CollectionDetailResponse, name: "CollectionDetailResponse" },
   // 通知中心：用户面与管理端共用分页壳（管理端多一个收件人维度，形状一致）
@@ -2158,12 +2616,30 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "DELETE /api/me": { schema: MeDeleteResponse, name: "MeDeleteResponse" },
   "POST /api/me/merge": { schema: MeMergeResponse, name: "MeMergeResponse" },
   "POST /api/me/favorites/sync": { schema: MeFavoritesSyncResponse, name: "MeFavoritesSyncResponse" },
+  /* 收藏回收站：墓碑即回收站（恢复 = add 复活，彻底删除 = 物理删行） */
+  "GET /api/me/favorites/trash": { schema: MeFavoriteTrashListResponse, name: "MeFavoriteTrashListResponse" },
+  "POST /api/me/favorites/trash/{siteId}/restore": {
+    schema: MeFavoriteTrashRestoreResponse,
+    name: "MeFavoriteTrashRestoreResponse",
+  },
+  "POST /api/me/favorites/trash/restore-batch": {
+    schema: MeFavoriteTrashRestoreBatchResponse,
+    name: "MeFavoriteTrashRestoreBatchResponse",
+  },
+  "DELETE /api/me/favorites/trash/{siteId}": {
+    schema: MeFavoriteTrashPurgeResponse,
+    name: "MeFavoriteTrashPurgeResponse",
+  },
+  "DELETE /api/me/favorites/trash": { schema: MeFavoriteTrashClearResponse, name: "MeFavoriteTrashClearResponse" },
   "POST /api/me/watchlist/sync": { schema: MeWatchlistSyncResponse, name: "MeWatchlistSyncResponse" },
   "GET /api/me/custom-sites": { schema: MeCustomSitesListResponse, name: "MeCustomSitesListResponse" },
   "POST /api/me/custom-sites": { schema: MeCustomSiteItemResponse, name: "MeCustomSiteItemResponse" },
   "PATCH /api/me/custom-sites/{id}": { schema: MeCustomSiteItemResponse, name: "MeCustomSiteItemResponse" },
   "DELETE /api/me/custom-sites/{id}": { schema: MeCustomSiteDeleteResponse, name: "MeCustomSiteDeleteResponse" },
   "POST /api/me/custom-sites/reorder": { schema: MeCustomSitesReorderResponse, name: "MeCustomSitesReorderResponse" },
+  "GET /api/me/wanted": { schema: MeWantedSearchesListResponse, name: "MeWantedSearchesListResponse" },
+  "POST /api/me/wanted": { schema: MeWantedSearchItemResponse, name: "MeWantedSearchItemResponse" },
+  "DELETE /api/me/wanted/{id}": { schema: MeWantedSearchDeleteResponse, name: "MeWantedSearchDeleteResponse" },
   "POST /api/me/import": { schema: MeImportResponse, name: "MeImportResponse" },
   "DELETE /api/profile": { schema: ProfileResetResponse, name: "ProfileResetResponse" },
   "DELETE /api/profile/signals/{kind}": {

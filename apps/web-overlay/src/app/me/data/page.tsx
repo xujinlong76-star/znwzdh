@@ -54,6 +54,7 @@ const LocalDataManager = dynamic(
 // 页脚在折叠线以下：动态导入（与 /videos 的 Footer 处理一致）。
 const Footer = dynamic(() => import('@/components/footer').then((m) => m.Footer), { ssr: false })
 import { SectionState } from '@/components/user-center/section-state'
+import { DataSafetyCard } from '@/components/user-center/data-safety-card'
 import {
   AlertTriangle,
   Bookmark,
@@ -117,7 +118,7 @@ interface DataOverviewSummary {
     pluginStars: number
     recentEvents: number
   }
-  vault: { exists: boolean; version: number | null }
+  vault: { exists: boolean; version: number | null; updatedAt: number | null }
   llmConfig: { exists: boolean }
 }
 
@@ -436,11 +437,15 @@ export default function MeDataPage() {
       })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(data.error || '删除失败')
-      // 云端已清空：本机收藏缓存一并清掉，避免下次同步又把旧数据推回云端
-      favorites.clear()
-  for (const key of Object.keys(window.localStorage)) {
-    if (key.startsWith('navhub.growth.')) window.localStorage.removeItem(key)
-  }
+      // 云端已清空：本机收藏缓存一并清掉，避免下次同步又把旧数据推回云端。
+      // pushUndo: false——账号删除本身不进撤销（云端已清空，撤销无意义）。
+      // 注意：这里只清收藏本体（navhub.favorites.v1），绝不碰回收站键
+      // navhub.favorites.trash.v1——清账号是另一回事，回收站里的 30 天
+      // 快照留给用户自己在回收站页处理，不由账号删除顺手抹掉。
+      favorites.clear({ pushUndo: false })
+      for (const key of Object.keys(window.localStorage)) {
+        if (key.startsWith('navhub.growth.')) window.localStorage.removeItem(key)
+      }
       setState('deleted')
       toast({ title: '云端数据已删除', description: '登录账号已一并删除，邮箱与密码不再可用；重新注册是全新的空账号。' })
   // 先删后登出：云端账号已删除，再退出本地会话、回到匿名态。
@@ -483,6 +488,9 @@ export default function MeDataPage() {
             description="匿名数据只保存在本机浏览器；登录后可导出、导入恢复与按域清理云端数据，也能把本机匿名数据合并到账号。"
             callbackUrl="/me/data"
           />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            本机快照入口在下方；登录后可看云端导出与同步状态。本机数据只在这台设备上有，清缓存即丢，不是云端备份。
+          </p>
           <LocalDataManager />
         </div>
       )}
@@ -511,6 +519,9 @@ export default function MeDataPage() {
               {error}
             </section>
           )}
+
+          {/* 数据安全（第 15 项）：页头之后、清点之前；登录态才展示云端状态 */}
+          <DataSafetyCard onExport={handleExport} exporting={exporting} />
 
           {/* 云端数据资产全景清点 */}
           {summary && (
@@ -548,7 +559,7 @@ export default function MeDataPage() {
             </section>
           )}
 
-          <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
+          <section id="export-section" className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <h2 className="flex items-center gap-2 text-sm font-semibold">
                 <Download className="h-4 w-4 shrink-0 text-primary" aria-hidden />

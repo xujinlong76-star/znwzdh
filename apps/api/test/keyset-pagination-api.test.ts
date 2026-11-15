@@ -6,6 +6,8 @@
  *    （sites 是裸数组，下一页游标放 `X-Next-Cursor` 响应头）；
  *   - 非法游标 → 400 `{ ok: false, error: "INVALID_CURSOR", code, message }`；
  *   - 错误包络统一形：`{ ok: false, error: <CODE>, code: <CODE>, message, requestId? }`。
+ *   - 游标分页废弃标注（C 组第 7 簇）：请求带 `?cursor=` 时响应带 RFC 8594
+ *    `Deprecation: true` 头，不带游标的请求不带该头；行为本身不变。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -208,6 +210,46 @@ describe("GET /api/admin/audit keyset", () => {
       cursor = body.nextCursor;
     }
     expect(out.map((a) => a.id)).toEqual(full.items.map((a) => a.id));
+  });
+});
+
+describe("游标分页废弃标注（C 组第 7 簇：只加标注，不删）", () => {
+  it("带 ?cursor= 的请求回 Deprecation: true，不带的不回（JSON 体端点）", async () => {
+    // 各端点第一页必须给出 nextCursor（limit 取小于种子数的值）。
+    const cases: Array<{ url: string }> = [
+      { url: "/api/categories/page?limit=1" },
+      { url: "/api/favorites?anonId=cursor-anon&limit=2" },
+      { url: "/api/jobs?limit=2" },
+      { url: "/api/taxonomy/proposals?limit=2" },
+      { url: "/api/admin/audit?limit=2" },
+    ];
+    for (const { url } of cases) {
+      const first = await app.inject({ method: "GET", url });
+      expect(first.statusCode).toBe(200);
+      expect(first.headers["deprecation"]).toBeUndefined();
+      const body = first.json() as { nextCursor: string | null };
+      expect(body.nextCursor).toBeTruthy();
+      const second = await app.inject({
+        method: "GET",
+        url: `${url}&cursor=${encodeURIComponent(body.nextCursor as string)}`,
+      });
+      expect(second.statusCode).toBe(200);
+      expect(second.headers["deprecation"]).toBe("true");
+    }
+  });
+
+  it("GET /api/sites：带游标回 Deprecation: true，不带的不回", async () => {
+    const first = await app.inject({ method: "GET", url: "/api/sites?limit=2" });
+    expect(first.statusCode).toBe(200);
+    expect(first.headers["deprecation"]).toBeUndefined();
+    const next = first.headers["x-next-cursor"];
+    expect(typeof next).toBe("string");
+    const second = await app.inject({
+      method: "GET",
+      url: `/api/sites?limit=2&cursor=${encodeURIComponent(next as string)}`,
+    });
+    expect(second.statusCode).toBe(200);
+    expect(second.headers["deprecation"]).toBe("true");
   });
 });
 

@@ -523,6 +523,16 @@
     '#xiaomaomao .xm-look-act svg{width:16px;height:16px;vertical-align:-3px;margin-right:5px}' +
     '#xiaomaomao .xm-look-act:active{transform:scale(.97)}' +
     '@media (max-width:640px){#xiaomaomao{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(68px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-dock{gap:5px;padding:5px;bottom:calc(100% + 8px)}#xiaomaomao .xm-dock .xm-btn{width:34px;height:34px}#xiaomaomao .xm-dock .xm-btn svg{width:19px;height:19px}#xiaomaomao .xm-bubble{max-width:min(248px,calc(100vw - 130px));font-size:12.5px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(104px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(508px,62vh)}#xiaomaomao .xm-game{height:min(436px,58vh)}}' +
+    /* 半屏下沉栏避让（Batch 3 第 12 项 BLOCK 修复）：640–1024px 首页底部有 56px 高的常驻栏
+       （HalfScreenDock，z-40），猫默认 bottom:18px 会整只盖住栏右侧、.xm-lean 拦截指针，
+       栏的关闭 × 完全点不到。媒体规则只抬未拖动过的默认位置：拖动后行内 left/top +
+       right/bottom:auto 会覆盖样式表的 bottom（top 与 bottom 同时设置时 top 优先），
+       拖过的猫以用户自选位置为准，这里不用 !important 去压用户的位置；
+       60 秒闲置贴边只写 transform（横向），抬高后仍成立；面板/游戏/坞都相对猫根节点
+       定位（bottom:0 / bottom:100%+10px），随猫一起抬高、仍在视口内。
+       区间与栏的显隐区间 [640,1024) 逐字对齐（max-width:1023px）；放在 ≤640 规则之后，
+       640px 整点处以本规则为准（≤640 规则会把 bottom 写回 68px）。 */
+    '@media (min-width:640px) and (max-width:1023px){#xiaomaomao{bottom:calc(4.5rem + 18px + env(safe-area-inset-bottom,0px))}}' +
     '@media (prefers-reduced-motion: reduce){#xiaomaomao *,#xiaomaomao{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important}}';
   var style = document.createElement('style');
   style.textContent = css;

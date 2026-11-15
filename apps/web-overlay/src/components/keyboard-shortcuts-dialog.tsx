@@ -14,6 +14,7 @@ import { canonicalDensityLabel, useDensity } from '@/components/density-provider
 import { useToast } from '@/components/ui/use-toast'
 import { getModifierKey } from '@/lib/platform'
 import { spotlightHotkeyHint, useSpotlightShortcutMode } from '@/lib/user-preferences'
+import { isAnyDialogOpen, isEventTargetTyping } from '@/lib/keyboard-guards'
 
 interface KeyboardShortcutsDialogProps {
   open?: boolean
@@ -32,18 +33,34 @@ function buildShortcutGroups(spotlightKey: string) {
   {
     title: '视窗与排版',
     shortcuts: [
-      { key: '1', desc: '切换为极客混合流 (Hybrid)' },
-      { key: '2', desc: '切换为经典全景流 (Classic)' },
-      { key: '3', desc: '切换为沉浸工作台 (Workbench)' },
+      { key: 'Alt+1', desc: '切换为极客混合流 (Hybrid)' },
+      { key: 'Alt+2', desc: '切换为经典全景流 (Classic)' },
+      { key: 'Alt+3', desc: '切换为沉浸工作台 (Workbench)' },
       { key: 'Ctrl/Cmd+E', desc: '开关首页 DIY 可视化排版工坊' },
       { key: 'D', desc: '循环切换内容密度 (紧凑 / 舒适 / 宽松)' },
       { key: 'B', desc: '循环切换画布背景 (微网格 / 科技点 / 极客网 / 极光 / 纯净)' },
     ],
   },
   {
+    title: '批量整理（仅多选模式）',
+    shortcuts: [
+      { key: 'M', desc: '进入 / 退出多选模式' },
+      { key: 'Space / Enter', desc: '聚焦卡片时切换选中（不再速览 / 导航）' },
+      { key: 'Ctrl/Cmd+A', desc: '全选当前可见站点' },
+      { key: 'Esc', desc: '先清空选中，再退出多选模式' },
+      { key: 'P', desc: '批量固定到工作台' },
+      { key: 'E / Shift+E', desc: '复制 Markdown / 下载 .md' },
+      { key: 'F', desc: '聚焦坞里的「收录至分类」' },
+      { key: 'Delete', desc: '移除选中' },
+    ],
+  },
+  {
     title: '检索与导航',
     shortcuts: [
       { key: spotlightKey, desc: '极速呼出超级搜索与指令控制台 (Spotlight)' },
+      { key: '1–9', desc: '直接打开速览坞对应站点（数字直达）' },
+      { key: 'Shift+1–9', desc: '在新标签页打开速览坞对应站点' },
+      { key: 'Ctrl+Shift+1–0', desc: '打开自定义快拨位站点（卡片 ⋯ 菜单里绑定）' },
       { key: '→ / ←', desc: '在卡片内部进入与切换操作按钮 (WAI-ARIA)' },
       { key: 'Space', desc: '聚焦卡片时触发沙箱速览与微动作 (Peek)' },
       { key: 'T', desc: '打开开发者微工具箱 (Base64/JSON/UUID)' },
@@ -91,36 +108,16 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
   // 监听全局按键事件
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 正在打字时单字符快捷键一律让位。只看 e.target 不够：
-      //  - 下拉框（SELECT）里的 type-ahead 选词、role=textbox/combobox 的
-      //    自定义输入框，target 都不是 INPUT/TEXTAREA；
-      //  - e.target 与当前焦点偶尔不一致时，以 document.activeElement 为准。
-      // 再加 isComposing：中文输入法组字过程中字母键也会触发 keydown，
-      // 组字没结束就切视图/密度属于误触。
-      const target = e.target as HTMLElement | null
-      const active = (typeof document !== 'undefined' ? document.activeElement : null) as HTMLElement | null
-      const isTypingTarget = (el: HTMLElement | null) =>
-        !!el &&
-        (el.tagName === 'INPUT' ||
-          el.tagName === 'TEXTAREA' ||
-          el.tagName === 'SELECT' ||
-          el.isContentEditable ||
-          el.getAttribute('role') === 'textbox' ||
-          el.getAttribute('role') === 'combobox' ||
-          el.getAttribute('role') === 'searchbox')
-      if (e.isComposing || isTypingTarget(target) || isTypingTarget(active)) return
+      // 正在打字时单字符快捷键一律让位（强判定见 lib/keyboard-guards.ts，
+      // 与数字直达共用同一份：输入框内数字正常打字、中文组字中不误触）。
+      if (e.isComposing || isEventTargetTyping(e)) return
 
       // 模态打开期间只保留「?」呼出本身：此时用户正在对话框里操作，
-      // 1/2/3 切视图、Ctrl/Cmd+E 开工坊、D 切密度、B 换背景这些全局键必须让位，
+      // Alt+1/2/3 切视图、Ctrl/Cmd+E 开工坊、D 切密度、B 换背景这些全局键必须让位，
       // 否则在速览窗里按个 e 就把首页排版改了，属于按键劫持。
       // 判定用 role=dialog（Radix 与我们自己的浮层都会带），不用组件状态：
       // 快捷键是全局的，得能感知别的组件打开的浮层。
-      const inDialog = typeof document !== 'undefined' && Boolean(
-        // 排除 aria-hidden：常驻 DOM 的抽屉关闭态也带 role=dialog，
-        // 不排除会让全局快捷键在移动端永久失效
-        document.querySelector('[role="dialog"]:not([aria-hidden="true"]), [role="alertdialog"]:not([aria-hidden="true"])'),
-      )
-      if (inDialog && e.key !== '?') return
+      if (isAnyDialogOpen() && e.key !== '?') return
 
       // 按 ? 或 Shift + / 呼出快捷键帮助
       if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
@@ -129,19 +126,23 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
         return
       }
 
-      // 按 1 / 2 / 3 切换视图
-      if (e.key === '1') {
-        e.preventDefault()
-        setViewMode('hybrid')
-        toast({ title: '已切换为极客混合流 (Hybrid)' })
-      } else if (e.key === '2') {
-        e.preventDefault()
-        setViewMode('classic')
-        toast({ title: '已切换为经典全景流 (Classic)' })
-      } else if (e.key === '3') {
-        e.preventDefault()
-        setViewMode('workbench')
-        toast({ title: '已切换为沉浸工作台 (Workbench)' })
+      // 按 Alt + 1 / 2 / 3 切换视图。裸 1/2/3 已让给数字直达（开站），
+      // 这里只认 Alt 修饰；解析用 e.code 不用 e.key——Alt+1 在 macOS 上
+      // 的 e.key 是 '¡'，按 key 永远匹配不上。
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        if (e.code === 'Digit1') {
+          e.preventDefault()
+          setViewMode('hybrid')
+          toast({ title: '已切换为极客混合流 (Hybrid)' })
+        } else if (e.code === 'Digit2') {
+          e.preventDefault()
+          setViewMode('classic')
+          toast({ title: '已切换为经典全景流 (Classic)' })
+        } else if (e.code === 'Digit3') {
+          e.preventDefault()
+          setViewMode('workbench')
+          toast({ title: '已切换为沉浸工作台 (Workbench)' })
+        }
       }
 
       // 按 Ctrl/Cmd+E 开关 DIY 编排工坊（WCAG 2.1.4：单字符快捷键会与

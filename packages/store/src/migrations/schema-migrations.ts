@@ -17,6 +17,8 @@ import {
   migrateEventIdentity,
   migrateCategorySlugs,
   migrateWorkspaceBlobs,
+  migrateWantedSearches,
+  migrateUserSyncState,
   cleanTaxonomyAndDuplicates,
   normalizeSiteCreatedAt,
 } from "../migrate.ts";
@@ -225,6 +227,24 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await normalizeSiteCreatedAt(db);
     },
     checksum: "v1_normalize_site_created_at",
+  },
+  {
+    // 2026-11-13：待找（wanted_searches）建表 + (identity, query) 唯一索引。
+    version: "20261113_wanted_searches",
+    name: "待找（零结果存为待找）建表",
+    up: async (db: Db) => {
+      await migrateWantedSearches(db);
+    },
+    checksum: "v1_wanted_searches",
+  },
+  {
+    // 2026-11-13：数据安全可见补完（第 15 项）——同步成功/失败水位表 user_sync_state。
+    version: "20261113_user_sync_state",
+    name: "同步成功/失败水位表 user_sync_state 建表",
+    up: async (db: Db) => {
+      await migrateUserSyncState(db);
+    },
+    checksum: "v1_user_sync_state",
   },
 ];
 

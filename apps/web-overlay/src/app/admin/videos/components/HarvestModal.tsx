@@ -24,7 +24,6 @@ const HARVEST_PLATFORMS: Array<{ id: VideoPlatformType; label: string; color: st
   { id: 'youtube', label: 'YouTube', color: '#FF0000' },
   { id: 'dailymotion', label: 'Dailymotion', color: '#0066DC' },
   { id: 'ted', label: 'TED Talks', color: '#E62B1E' },
-  { id: 'peertube', label: 'PeerTube', color: '#F1680D' },
 ]
 
 const CATEGORIES_OPTIONS = [
@@ -65,7 +64,6 @@ export function HarvestModal({
     'youtube',
     'dailymotion',
     'ted',
-    'peertube',
   ])
   const [report, setReport] = useState<VideoHarvestReport | null>(null)
   const [mode, setMode] = useState<'idle' | 'previewed' | 'applied'>('idle')

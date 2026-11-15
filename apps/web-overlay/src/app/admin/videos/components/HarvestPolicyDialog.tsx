@@ -17,7 +17,6 @@ import type { VideoHarvestPolicy, VideoPlatformType } from '@/types/navigation'
 const HARVEST_PLATFORM_OPTIONS: Array<{ id: VideoPlatformType; label: string }> = [
   { id: 'bilibili', label: '哔哩哔哩 (WBI)' },
   { id: 'dailymotion', label: 'Dailymotion' },
-  { id: 'peertube', label: 'PeerTube (全球联邦)' },
   { id: 'youtube', label: 'YouTube' },
   { id: 'ted', label: 'TED Talks' },
   { id: 'vimeo', label: 'Vimeo' },
@@ -40,16 +39,13 @@ export function HarvestPolicyDialog({
 }: HarvestPolicyDialogProps) {
   const [enabled, setEnabled] = useState(policy?.enabled ?? true)
   const [keywords, setKeywords] = useState((policy?.keywords || []).join(', '))
-  const [syncSiteHotTrends, setSyncSiteHotTrends] = useState(policy?.syncSiteHotTrends ?? true)
   const [selectedPlatforms, setSelectedPlatforms] = useState<VideoPlatformType[]>(
     policy?.platforms && policy.platforms.length > 0
       ? policy.platforms
-      : ['bilibili', 'dailymotion', 'peertube']
+      : ['bilibili', 'dailymotion']
   )
   const [maxItems, setMaxItems] = useState(policy?.maxItems ?? 12)
-  const [minQualityScore, setMinQualityScore] = useState(policy?.minQualityScore ?? 60)
   const [minDurationSec, setMinDurationSec] = useState(policy?.minDurationSec ?? 180)
-  const [freshnessHalfLifeDays, setFreshnessHalfLifeDays] = useState(policy?.freshnessHalfLifeDays ?? 90)
   const [autoReplaceOutdated, setAutoReplaceOutdated] = useState(policy?.autoReplaceOutdated ?? true)
   const [saving, setSaving] = useState(false)
 
@@ -74,12 +70,9 @@ export function HarvestPolicyDialog({
       const updatedPolicy: VideoHarvestPolicy = {
         enabled,
         keywords: parsedKeywords,
-        syncSiteHotTrends,
         platforms: selectedPlatforms.length > 0 ? selectedPlatforms : ['bilibili'],
         maxItems: Number(maxItems) || 12,
-        minQualityScore: Number(minQualityScore) || 60,
         minDurationSec: Number(minDurationSec) || 180,
-        freshnessHalfLifeDays: Number(freshnessHalfLifeDays) || 90,
         autoReplaceOutdated,
       }
 
@@ -98,7 +91,9 @@ export function HarvestPolicyDialog({
             <span>「{categoryTitle}」自动采集与轮换策略</span>
           </DialogTitle>
           <DialogDescription>
-            配置该分类的自动热点采集关键词、质量门槛与保鲜淘汰机制
+            配置该分类的自动热点采集关键词与保鲜淘汰机制。入库门槛是写死的严标准
+            （播放 5 万，或 1 万播放 + 100 点赞，或 5000 播放 + 200 点赞 + 50 弹幕，
+            置顶 / 人工 / 精选除外），这里改不了。
           </DialogDescription>
         </DialogHeader>
 
@@ -131,19 +126,6 @@ export function HarvestPolicyDialog({
             <p className="text-xs text-muted-foreground">
               用于搜索匹配高赞视频，建议设置 3-6 个精准核心词。
             </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="policy-hot-sync"
-              checked={syncSiteHotTrends}
-              onChange={(e) => setSyncSiteHotTrends(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-            />
-            <Label htmlFor="policy-hot-sync" className="text-xs cursor-pointer">
-              自动融合本站热门站点与精选专题热词 (推荐)
-            </Label>
           </div>
 
           <div className="space-y-1.5 pt-1">
@@ -182,20 +164,6 @@ export function HarvestPolicyDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="policy-min-score" className="text-xs font-medium">最低准入质量分 (0-100)</Label>
-              <Input
-                id="policy-min-score"
-                type="number"
-                min={30}
-                max={95}
-                value={minQualityScore}
-                onChange={(e) => setMinQualityScore(Number(e.target.value))}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
               <Label htmlFor="policy-min-duration" className="text-xs font-medium">最短时长过滤 (秒)</Label>
               <Input
                 id="policy-min-duration"
@@ -206,18 +174,6 @@ export function HarvestPolicyDialog({
                 onChange={(e) => setMinDurationSec(Number(e.target.value))}
               />
               <p className="text-[11px] text-muted-foreground">180秒 = 3分钟，过滤纯碎片短视频</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="policy-halflife" className="text-xs font-medium">保鲜半衰期 (天)</Label>
-              <Input
-                id="policy-halflife"
-                type="number"
-                min={15}
-                max={365}
-                value={freshnessHalfLifeDays}
-                onChange={(e) => setFreshnessHalfLifeDays(Number(e.target.value))}
-              />
-              <p className="text-[11px] text-muted-foreground">AI资讯建议45天，基础架构建议90-120天</p>
             </div>
           </div>
 

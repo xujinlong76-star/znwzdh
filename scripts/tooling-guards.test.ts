@@ -176,6 +176,20 @@ describe("组件契约：props 解析", () => {
     expect(parseJsxProps(" {...props} extra={1}")).toBeNull();
   });
 
+  it("跳过标签内 // 与 /* */ 注释里的词（2026-11-14 brief/page 误报 4 个未声明 prop）", () => {
+    const attrs = [
+      "",
+      "  // 服务端页：图标传已渲染的元素，不把 Flame 组件函数传过 RSC 边界",
+      "  //（尺寸与主色按 warning 档自带，与 EmptyState 的 iconTone=\"warning\" 同值）。",
+      "  /* 块注释 Flame 同样不是属性 */",
+      "  icon={<Flame className=\"h-6 w-6\" aria-hidden />}",
+      "  iconTone=\"warning\"",
+      "  title={copy.title}",
+    ].join("\n");
+    const passed = parseJsxProps(attrs);
+    expect([...(passed ?? [])].sort()).toEqual(["icon", "iconTone", "title"]);
+  });
+
   it("扫描标签时跳过 `=>` 里的 `>`（否则属性被截断）", () => {
     const text = "<Foo onCancel={() => setOpen(false)} count={2} />";
     const [hit] = scanJsxAttributes(text, "Foo");

@@ -165,6 +165,78 @@ CREATE TABLE IF NOT EXISTS collections (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS collections_slug_idx ON collections(slug);
 
+/**
+ * 公开导航页（Batch 3 第 6 项）。
+ *
+ * 用户把一个收藏文件夹发布成的公开只读页。live 引用：只存「哪个文件夹」，
+ * 不存条目快照——读时按 owner + folder_id 现算收藏，发布后收藏增删自动跟随
+ * （与 /pack 快照的区分点）。status='unpublished' 即下线，读端按不存在处理。
+ * owner_identity 存 canonical 身份；公开读绝不返回它。
+ */
+CREATE TABLE IF NOT EXISTS public_pages (
+  id TEXT PRIMARY KEY, slug TEXT NOT NULL, owner_identity TEXT NOT NULL,
+  title TEXT NOT NULL, description TEXT, folder_id TEXT,
+  status TEXT NOT NULL DEFAULT 'published',
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS public_pages_slug_idx ON public_pages(slug);
+CREATE INDEX IF NOT EXISTS public_pages_owner_idx ON public_pages(owner_identity);
+
+/**
+ * 对照快照（Batch 4 Phase 2 P2-3）：冻结的对照表，只 INSERT 不 UPDATE。
+ * site_ids / snapshot_json 存 JSON 字符串；owner_identity 存 canonical 身份，
+ * 注销随删（data-inventory.ts 登记 disposition=delete）。
+ */
+CREATE TABLE IF NOT EXISTS comparison_snapshots (
+  id TEXT PRIMARY KEY, owner_identity TEXT NOT NULL,
+  site_ids TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS comparison_snapshots_owner_idx ON comparison_snapshots(owner_identity, created_at);
+
+/**
+ * 对照分享（Batch 4 Phase 2 P2-4）：P2-3 快照的冻结公开副本。
+ * 发布时把白名单字段的格子复制进 published_json（只含展示字段），公开读
+ * 只 serving 这份副本；snapshot_id UNIQUE（每快照最多一个有效分享行，
+ * 下线后重发删旧行建新行，旧 slug 永不复活）；注销随删（data-inventory.ts
+ * 登记 disposition=delete，不进导出包）。
+ */
+CREATE TABLE IF NOT EXISTS comparison_snapshot_shares (
+  id TEXT PRIMARY KEY,
+  snapshot_id TEXT NOT NULL UNIQUE,
+  owner_identity TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  published_fields TEXT NOT NULL,
+  published_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS snapshot_shares_slug_idx ON comparison_snapshot_shares(slug);
+CREATE INDEX IF NOT EXISTS snapshot_shares_owner_idx ON comparison_snapshot_shares(owner_identity);
+
+/**
+ * 对照价格数值（Batch 4 Phase 2 P2-2）：每用户每站只留最新一条
+ * （UNIQUE (owner_identity, site_id)，upsert 覆盖写；价格历史由快照承担）。
+ * 金额存最小货币单位整数，杜绝浮点；verified_at 一律服务端写入。
+ */
+CREATE TABLE IF NOT EXISTS site_prices (
+  id TEXT PRIMARY KEY,
+  owner_identity TEXT NOT NULL,
+  site_id TEXT NOT NULL,
+  amount_minor INTEGER NOT NULL,
+  currency TEXT NOT NULL,
+  period TEXT NOT NULL,
+  free_tier_limit TEXT,
+  source_type TEXT NOT NULL,
+  source_url TEXT,
+  verified_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE (owner_identity, site_id)
+);
+CREATE INDEX IF NOT EXISTS site_prices_owner_site_idx ON site_prices(owner_identity, site_id);
+
 CREATE TABLE IF NOT EXISTS collection_items (
   collection_id TEXT NOT NULL, site_id TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0, note TEXT
 );
@@ -302,6 +374,29 @@ CREATE TABLE IF NOT EXISTS user_custom_sites (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS user_custom_sites_user_idx ON user_custom_sites(user_id, sort_order, created_at);
+
+CREATE TABLE IF NOT EXISTS wanted_searches (
+  id TEXT PRIMARY KEY,
+  identity TEXT NOT NULL,
+  query TEXT NOT NULL,
+  corrected_query TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  notified_site_id TEXT,
+  notified_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS wanted_searches_identity_query_idx ON wanted_searches(identity, query);
+CREATE INDEX IF NOT EXISTS wanted_searches_identity_status_idx ON wanted_searches(identity, status, created_at);
+
+CREATE TABLE IF NOT EXISTS user_sync_state (
+  identity TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  last_success_at INTEGER,
+  last_failure_at INTEGER,
+  last_error_code TEXT,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (identity, domain)
+);
 
 CREATE TABLE IF NOT EXISTS watch_entries (
   id TEXT PRIMARY KEY,
@@ -828,6 +923,57 @@ CREATE TABLE IF NOT EXISTS collections (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS collections_slug_idx ON collections(slug);
 
+/** 公开导航页（Batch 3 第 6 项）：PG 侧与 SQLite 侧同形，见 SQLite 块注释。 */
+CREATE TABLE IF NOT EXISTS public_pages (
+  id TEXT PRIMARY KEY, slug TEXT NOT NULL, owner_identity TEXT NOT NULL,
+  title TEXT NOT NULL, description TEXT, folder_id TEXT,
+  status TEXT NOT NULL DEFAULT 'published',
+  created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS public_pages_slug_idx ON public_pages(slug);
+CREATE INDEX IF NOT EXISTS public_pages_owner_idx ON public_pages(owner_identity);
+
+/** 对照快照（Batch 4 Phase 2 P2-3）：PG 侧与 SQLite 侧同形，见 SQLite 块注释。 */
+CREATE TABLE IF NOT EXISTS comparison_snapshots (
+  id TEXT PRIMARY KEY, owner_identity TEXT NOT NULL,
+  site_ids TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS comparison_snapshots_owner_idx ON comparison_snapshots(owner_identity, created_at);
+
+/** 对照分享（Batch 4 Phase 2 P2-4）：PG 侧与 SQLite 侧同形，见 SQLite 块注释。 */
+CREATE TABLE IF NOT EXISTS comparison_snapshot_shares (
+  id TEXT PRIMARY KEY,
+  snapshot_id TEXT NOT NULL UNIQUE,
+  owner_identity TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  published_fields TEXT NOT NULL,
+  published_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS snapshot_shares_slug_idx ON comparison_snapshot_shares(slug);
+CREATE INDEX IF NOT EXISTS snapshot_shares_owner_idx ON comparison_snapshot_shares(owner_identity);
+
+/** 对照价格数值（Batch 4 Phase 2 P2-2）：PG 侧与 SQLite 侧同形，见 SQLite 块注释。 */
+CREATE TABLE IF NOT EXISTS site_prices (
+  id TEXT PRIMARY KEY,
+  owner_identity TEXT NOT NULL,
+  site_id TEXT NOT NULL,
+  amount_minor BIGINT NOT NULL,
+  currency TEXT NOT NULL,
+  period TEXT NOT NULL,
+  free_tier_limit TEXT,
+  source_type TEXT NOT NULL,
+  source_url TEXT,
+  verified_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE (owner_identity, site_id)
+);
+CREATE INDEX IF NOT EXISTS site_prices_owner_site_idx ON site_prices(owner_identity, site_id);
+
 CREATE TABLE IF NOT EXISTS collection_items (
   collection_id TEXT NOT NULL, site_id TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0, note TEXT
 );
@@ -959,6 +1105,29 @@ CREATE TABLE IF NOT EXISTS user_custom_sites (
   updated_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS user_custom_sites_user_idx ON user_custom_sites(user_id, sort_order, created_at);
+
+CREATE TABLE IF NOT EXISTS wanted_searches (
+  id TEXT PRIMARY KEY,
+  identity TEXT NOT NULL,
+  query TEXT NOT NULL,
+  corrected_query TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  notified_site_id TEXT,
+  notified_at BIGINT,
+  created_at BIGINT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS wanted_searches_identity_query_idx ON wanted_searches(identity, query);
+CREATE INDEX IF NOT EXISTS wanted_searches_identity_status_idx ON wanted_searches(identity, status, created_at);
+
+CREATE TABLE IF NOT EXISTS user_sync_state (
+  identity TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  last_success_at BIGINT,
+  last_failure_at BIGINT,
+  last_error_code TEXT,
+  updated_at BIGINT NOT NULL,
+  PRIMARY KEY (identity, domain)
+);
 
 CREATE TABLE IF NOT EXISTS watch_entries (
   id TEXT PRIMARY KEY,

@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useRef, useEffect, useLayoutEffect, useId } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, useId, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import type { WidgetInstance } from '@/types/modular'
-import { WIDGET_REGISTRY } from '@/lib/modular/registry'
+import { WIDGET_REGISTRY, WIDGET_COMPONENTS } from '@/lib/modular/registry'
 import { ModuleErrorBoundary } from './module-error-boundary'
 import dynamic from 'next/dynamic'
 
@@ -192,7 +192,7 @@ function ModularItemImpl({
     currentRowRef.current = widget.rowSpan || def?.defaultRowSpan || 1
   }, [widget.colSpan, widget.rowSpan, def?.defaultColSpan, def?.defaultRowSpan])
 
-  if (!def) {
+  if (!def || !WIDGET_COMPONENTS[widget.type]) {
     // 模块类型已不存在（多见于导入的旧版 JSON / 注册表改名）。
     // 不能直接 return null：卡片会变成没有删除入口的"僵尸占位"，
     // 用户没有任何办法把它从看板里清掉。这里渲染降级占位卡，
@@ -226,7 +226,7 @@ function ModularItemImpl({
       </div>
     )
   }
-  const Component = def.component
+  const LazyWidget = WIDGET_COMPONENTS[widget.type]
 
   // 映射跨度到实际高度与网格类名
   const colSpan = widget.colSpan || def.defaultColSpan
@@ -448,7 +448,16 @@ function ModularItemImpl({
           isEditing={isEditing}
           onRemove={() => onRemove(widget.id)}
         >
-          <Component config={widget.config} />
+          <Suspense
+            fallback={
+              <div
+                className={`w-full ${minHeightStyle} animate-pulse bg-muted/40`}
+                aria-hidden="true"
+              />
+            }
+          >
+            <LazyWidget config={widget.config} />
+          </Suspense>
         </ModuleErrorBoundary>
       </div>
     </div>

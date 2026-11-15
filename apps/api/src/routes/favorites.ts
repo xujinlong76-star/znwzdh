@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { FavoriteFolderNotOwnedError } from "@navhub/store";
-import {identityTrusted, parseIntParam, resolveCanonicalIdentity, requestIdentityOf, userDomainWriteAllowed } from "./shared.ts";
+import {identityTrusted, markCursorPaginationDeprecated, parseIntParam, resolveCanonicalIdentity, requestIdentityOf, userDomainWriteAllowed } from "./shared.ts";
 import { sendError } from "../error-envelope.ts";
 
 import type { AppContext } from "../context.ts";
@@ -89,13 +89,16 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     // Keyset 分页（M12）：`?cursor=` 走 WHERE 键谓词，不再 OFFSET；nextCursor
     // 随页返回，无下一页时为 null。offset 与 cursor 二选一，传了 cursor 就
     // 忽略 offset。无效游标由全局错误处理器映射成 400 INVALID_CURSOR。
+    // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
+    const cursor = typeof query.cursor === "string" && query.cursor ? query.cursor : undefined;
+    if (cursor) markCursorPaginationDeprecated(reply);
     const page = await ctx.repo.listFavoritesPage(canonical, {
       q: typeof query.q === "string" ? query.q : undefined,
       folderId: typeof query.folderId === "string" && query.folderId ? query.folderId : null,
       sort,
       limit: parseIntParam(query.limit, 50, 1, 200),
       offset: parseIntParam(query.offset, 0, 0, 1_000_000),
-      cursor: typeof query.cursor === "string" && query.cursor ? query.cursor : undefined,
+      cursor,
     });
     const pageSiteMap = await ctx.repo.getSitesByIds(page.items.map((f) => f.siteId));
     return {
@@ -260,4 +263,169 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     return { ok: true, folder: result.folder };
   });
 
+  /* --------------------- 收藏回收站（墓碑即回收站） --------------------- */
+
+  /**
+   * 回收站 = favorites.deleted_at 墓碑，不新增表。
+   * 恢复 = addFavorite 复活分支（清墓碑并覆盖字段）；彻底删除 = 物理 DELETE 行。
+   * scope 显式声明 public：用户域写面，真正的闸是处理器里的 identityTrusted
+   * + userDomainWriteAllowed（读令牌 403、未登录 401），与 /api/favorites 同口径。
+   * 30 天物理清理 v1 不做（D6）：purgeExpiredDeletedFavorites 已写好并测好，
+   * 但不接进 purge_trash 定时任务，也不在此提供自动清理入口。
+   */
+  app.get(
+    "/api/me/favorites/trash",
+    { config: { scope: "public", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const identity = requestIdentityOf(req as never);
+      if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+      const canonical = await resolveCanonicalIdentity(ctx, identity);
+      const query = (req.query ?? {}) as Record<string, unknown>;
+      const limit = parseIntParam(query.limit, 200, 1, 500);
+      const trashed = await ctx.repo.listTrashedFavorites(canonical, limit);
+      const [siteMap, folders] = await Promise.all([
+        ctx.repo.getSitesByIds(trashed.map((f) => f.siteId)),
+        ctx.repo.listFavoriteFolders(canonical),
+      ]);
+      const folderNames = new Map(folders.map((f) => [f.id, f.name]));
+      return {
+        ok: true,
+        items: trashed.map((f) => ({
+          ...f,
+          site: siteMap.get(f.siteId) ?? null,
+          folderName: f.folderId ? folderNames.get(f.folderId) ?? null : null,
+        })),
+        total: trashed.length,
+      };
+    },
+  );
+
+  /** 复活单条墓碑：站点已被硬删时 404 并在文案里说明，不谎报成功 */
+  app.post(
+    "/api/me/favorites/trash/:siteId/restore",
+    { config: { scope: "public", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const { siteId } = req.params as { siteId: string };
+      const identity = requestIdentityOf(req as never);
+      if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+      if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+      const canonical = await resolveCanonicalIdentity(ctx, identity);
+      const trashed = await ctx.repo.getTrashedFavorite(canonical, siteId);
+      if (!trashed) { reply.code(404); return { error: "回收站里没有这条收藏" }; }
+      const site = await ctx.repo.getSite(siteId);
+      if (!site) { reply.code(404); return { error: "原站点已不存在，无法恢复" }; }
+      const restored = await restoreTrashedFavorite(ctx, canonical, trashed);
+      if (!restored) { reply.code(404); return { error: "原站点已不存在，无法恢复" }; }
+      await ctx.repo.recordEvent("favorite", { siteId, meta: { identity: canonical } }).catch(() => { /* 审计事件是尽力而为：恢复已成功，事件写失败不改变响应 */ });
+      return { ok: true, favorite: restored.favorite, folderLost: restored.folderLost };
+    },
+  );
+
+  /**
+   * 批量恢复：逐条独立生效，返回成功数与失败清单（部分失败不整批回滚——
+   * 调用方要知道"哪几条回来了、哪几条为什么没回来"，而不是只拿到一个 500）。
+   */
+  app.post(
+    "/api/me/favorites/trash/restore-batch",
+    { config: { scope: "public", rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const identity = requestIdentityOf(req as never);
+      if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+      if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+      const canonical = await resolveCanonicalIdentity(ctx, identity);
+      const body = z.object({ siteIds: z.array(z.string().min(1)).min(1).max(200) }).safeParse(req.body ?? {});
+      if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+      const restored: string[] = [];
+      const failed: Array<{ siteId: string; error: string }> = [];
+      for (const siteId of body.data.siteIds) {
+        const trashed = await ctx.repo.getTrashedFavorite(canonical, siteId);
+        if (!trashed) {
+          failed.push({ siteId, error: "回收站里没有这条收藏" });
+          continue;
+        }
+        const site = await ctx.repo.getSite(siteId);
+        if (!site) {
+          failed.push({ siteId, error: "原站点已不存在，无法恢复" });
+          continue;
+        }
+        const result = await restoreTrashedFavorite(ctx, canonical, trashed);
+        if (!result) {
+          failed.push({ siteId, error: "原站点已不存在，无法恢复" });
+          continue;
+        }
+        restored.push(siteId);
+      }
+      return { ok: true, restored, failed };
+    },
+  );
+
+  /** 物理删除单条墓碑（"彻底删除"，无快照可回，调用方必须二次确认） */
+  app.delete(
+    "/api/me/favorites/trash/:siteId",
+    { config: { scope: "public", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const { siteId } = req.params as { siteId: string };
+      const identity = requestIdentityOf(req as never);
+      if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+      if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+      const canonical = await resolveCanonicalIdentity(ctx, identity);
+      const purged = await ctx.repo.purgeFavorite(canonical, siteId);
+      if (!purged) { reply.code(404); return { error: "回收站里没有这条收藏" }; }
+      return { ok: true, purged: true };
+    },
+  );
+
+  /** 物理清空回收站：必须带 confirm: true（沿用 purge_trash 的确认口径） */
+  app.delete(
+    "/api/me/favorites/trash",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const identity = requestIdentityOf(req as never);
+      if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+      if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+      const canonical = await resolveCanonicalIdentity(ctx, identity);
+      const body = z.object({ confirm: z.literal(true) }).safeParse(req.body ?? {});
+      if (!body.success) { reply.code(400); return { error: "清空回收站需要确认（confirm: true）" }; }
+      const purged = await ctx.repo.clearTrashedFavorites(canonical);
+      return { ok: true, purged };
+    },
+  );
+
 };
+
+/**
+ * 复活一条墓碑：addFavorite 的复活分支（清 deleted_at 并覆盖字段）。
+ * 原收藏夹已不存在（被删夹）时降级成 null（未分组），调用方据此在文案里
+ * 说明"原收藏夹已不存在，已恢复到未分组"——与批量同步的外夹口径一致。
+ */
+async function restoreTrashedFavorite(
+  ctx: AppContext,
+  userId: string,
+  trashed: { siteId: string; folderId: string | null; note: string | null; tags: string[] | null },
+): Promise<{ favorite: unknown; folderLost: boolean } | null> {
+  try {
+    const added = await ctx.repo.addFavorite({
+      userId,
+      siteId: trashed.siteId,
+      folderId: trashed.folderId,
+      note: trashed.note,
+      tags: trashed.tags,
+    });
+    return { favorite: added.favorite, folderLost: false };
+  } catch (err) {
+    if (!(err instanceof FavoriteFolderNotOwnedError)) throw err;
+    const added = await ctx.repo.addFavorite({
+      userId,
+      siteId: trashed.siteId,
+      folderId: null,
+      note: trashed.note,
+      tags: trashed.tags,
+    });
+    return { favorite: added.favorite, folderLost: true };
+  }
+}

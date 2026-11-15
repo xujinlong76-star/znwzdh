@@ -33,6 +33,7 @@ import {
   Zap,
   LayoutGrid,
   Bot,
+  MessageCircleQuestion,
   Settings,
   ShieldCheck,
   Palette,
@@ -76,11 +77,13 @@ import {
   fetchSearchHistory,
   healSiteWayback,
   type HubSearchHit,
+  type HubSearchResult,
   type HubPluginSearchResponse,
 } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { openCopilot } from '@/lib/ai-entry'
 import { submitPrefillHref } from '@/lib/submit-prefill'
+import { WantedActions } from '@/components/search/wanted-actions'
 import { searchChannelStatus } from '@/lib/search-degrade'
 import { searchHref } from '@/lib/search-page'
 import { getModifierKey } from '@/lib/platform'
@@ -88,6 +91,12 @@ import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { AlgorithmHudBadge } from '../algorithm-hud-badge'
+import { useFavorites } from '@/hooks/useFavorites'
+import {
+  matchQuicklinkCommand,
+  quicklinkFromFavorite,
+  type QuicklinkEntry,
+} from '@/lib/quicklinks'
 
 // 这些是 Spotlight 的「按需面板」，只在对应快捷键/指令被激活时才需要。
 // 静态 import 会把它们全部塞进全局首屏 chunk（Spotlight 挂在 Providers 上），
@@ -144,6 +153,10 @@ export function SpotlightModal({
   const [loading, setLoading] = useState(false)
   const [hits, setHits] = useState<HubSearchHit[]>([])
   const [didYouMean, setDidYouMean] = useState<string | null>(null)
+  /** 自动查询纠正（有值时替掉 didYouMean 块，两者二选一） */
+  const [correction, setCorrection] = useState<HubSearchResult['correction'] | null>(null)
+  /** 「不是这个？搜原来的」回退：记下要以 nocorrect 重查的原查询词 */
+  const [nocorrectQuery, setNocorrectQuery] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [pluginHits, setPluginHits] = useState<HubPluginSearchResponse | null>(null)
   const [videoHits, setVideoHits] = useState<NavigationSubItem[]>([])
@@ -179,6 +192,7 @@ export function SpotlightModal({
   const listRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const identity = useMemo(() => getIdentity(), [])
+  const favorites = useFavorites()
 
   /**
    * 浮层行为走公共原语：Esc、点遮罩、锁背景滚动、焦点圈养与还原、role=dialog。
@@ -302,6 +316,27 @@ export function SpotlightModal({
   const cleanCmdHead = cleanCmd.split(' ')[0]
   const isGeekToolActive = isCommandMode && GEEK_TOOL_PREFIXES.includes(cleanCmdHead)
 
+  /**
+   * 参数化快捷链接：收藏上挂了模板的条目即 quicklink（模板非法的不进）。
+   * 只在默认检索模式接线：指令（`>`）/ AI（`?`）模式的查询不会命中
+   * 前缀正则，算出来也是 null，这里再卡一次模式，双重保险。
+   * 命中时 quicklink 行占导航位 0（仅代入成功时进列表），站点 / 视频 /
+   * 插件行整体后移一位（见 quicklinkOffset 与 handleSelectCurrent）。
+   */
+  const quicklinkEntries = useMemo(
+    () =>
+      favorites.items
+        .map((fav) => quicklinkFromFavorite(fav))
+        .filter((e): e is QuicklinkEntry => e !== null),
+    [favorites.items],
+  )
+  const quicklinkMatch = useMemo(
+    () => matchQuicklinkCommand(query, quicklinkEntries),
+    [query, quicklinkEntries],
+  )
+  const quicklinkActive = !isCommandMode && !isAiMode && quicklinkMatch !== null
+  const quicklinkOffset = quicklinkActive && quicklinkMatch?.url ? 1 : 0
+
   // 4. 指令模式内置动作列表
   const systemCommands: CommandAction[] = useMemo(() => [
     {
@@ -405,6 +440,17 @@ export function SpotlightModal({
       handler: () => {
         setOpen(false)
         openCopilot({ source: 'spotlight' })
+      },
+    },
+    {
+      id: 'cmd-ask',
+      title: '问问我的收藏',
+      description: '在自己的收藏里带引用问答，找不到就老实说不知道',
+      icon: MessageCircleQuestion,
+      category: 'AI 交互',
+      handler: () => {
+        setOpen(false)
+        router.push('/ask')
       },
     },
     {
@@ -668,6 +714,7 @@ export function SpotlightModal({
       setVideoHits([])
       setTotalVideoCount(0)
       setDidYouMean(null)
+      setCorrection(null)
       setSuggestions([])
       setSitesUnavailable(false)
       setSemanticUnavailable(false)
@@ -686,7 +733,7 @@ export function SpotlightModal({
       let siteSearchFailed = false
       let pluginSearchFailed = false
       Promise.all([
-        searchSites({ q: trimmed, limit: 8, identity }, ac.signal).catch(() => {
+        searchSites({ q: trimmed, limit: 8, identity, nocorrect: nocorrectQuery !== null && nocorrectQuery === trimmed }, ac.signal).catch(() => {
           // 站点召回失败必须留痕：以前直接当成「这一路没有结果」，
           // 于是检索服务挂掉时用户看到的是「未找到相关站点」——谎报。
           siteSearchFailed = true
@@ -709,6 +756,7 @@ export function SpotlightModal({
         if (!ac.signal.aborted) {
           setHits(sitesRes?.hits ?? [])
           setDidYouMean(sitesRes?.didYouMean ?? null)
+          setCorrection(sitesRes?.correction ?? null)
           setSuggestions(sitesRes?.suggestions ?? [])
           setPluginHits(pluginsRes)
           const vList = (videosRes?.videos || []) as NavigationSubItem[]
@@ -735,12 +783,13 @@ export function SpotlightModal({
       clearTimeout(timer)
       ac.abort()
     }
-  }, [query, isCommandMode, isAiMode, identity, searchNonce])
+  }, [query, isCommandMode, isAiMode, identity, searchNonce, nocorrectQuery])
 
   // 快捷采纳拼写纠错或推荐词
   const handleApplySuggestion = useCallback((newQuery: string) => {
     setQuery(newQuery)
     setDidYouMean(null)
+    setCorrection(null)
     setSuggestions([])
     inputRef.current?.focus()
   }, [])
@@ -788,6 +837,28 @@ export function SpotlightModal({
   }, [])
 
   // 8. 选中条目并执行回车
+  /**
+   * 快捷链接打开：与收藏打开同口径（离线记录 + 点击上报 + 重温计时），
+   * 上报带上搜索参数 `{query: arg}`。url 为 null 时 toast、不开页。
+   */
+  const openQuicklink = useCallback(() => {
+    if (!quicklinkMatch?.url) {
+      toast.error('快捷链接打不开', { description: '参数超过 500 字符或模板不安全，已拦截。' })
+      return
+    }
+    const entry = quicklinkMatch.entry
+    recordOfflineVisit({
+      id: entry.siteId,
+      title: entry.title,
+      href: entry.href,
+      icon: entry.icon ?? null,
+    })
+    reportClick(entry.siteId, identity, { query: quicklinkMatch.arg })
+    favorites.recordOpened(entry.siteId)
+    safeWindowOpen(quicklinkMatch.url)
+    setOpen(false)
+  }, [quicklinkMatch, favorites, identity])
+
   const handleSelectCurrent = useCallback(() => {
     if (isCommandMode) {
       const cmd = filteredCommands[selectedIndex]
@@ -803,38 +874,52 @@ export function SpotlightModal({
       return
     }
 
-    // 默认检索：站点优先，视频次之，插件再次之
+    // 快捷链接：命令命中时占导航位 0，回车优先于站点；代入失败（参数超
+    // 500 字符 / 模板已不安全）时 toast、不开页，也不落到站点首条。
+    if (quicklinkActive) {
+      if (!quicklinkMatch?.url) {
+        toast.error('快捷链接打不开', { description: '参数超过 500 字符或模板不安全，已拦截。' })
+        return
+      }
+      if (selectedIndex === 0) {
+        openQuicklink()
+        return
+      }
+    }
+
+    // 默认检索：站点优先，视频次之，插件再次之（quicklink 行占位时整体后移一位）
+    const index = selectedIndex - quicklinkOffset
     const totalSiteHits = hits.length
     const totalVideoHits = videoHits.length
-    if (selectedIndex < totalSiteHits) {
-      const hit = hits[selectedIndex]
+    if (index < totalSiteHits) {
+      const hit = hits[index]
       if (hit?.site?.url) {
         openSite(hit.site, hit)
         setOpen(false)
       }
-    } else if (selectedIndex < totalSiteHits + totalVideoHits) {
-      const videoIndex = selectedIndex - totalSiteHits
+    } else if (index < totalSiteHits + totalVideoHits) {
+      const videoIndex = index - totalSiteHits
       const video = videoHits[videoIndex]
       if (video?.href) {
         setOpen(false)
         safeWindowOpen(video.href)
       }
     } else {
-      const pluginIndex = selectedIndex - totalSiteHits - totalVideoHits
+      const pluginIndex = index - totalSiteHits - totalVideoHits
       const plugin = pluginHits?.items[pluginIndex]
       if (plugin?.slug) {
         setOpen(false)
         router.push(`/marketplace/${encodeURIComponent(plugin.slug)}`)
       }
     }
-  }, [isCommandMode, isAiMode, filteredCommands, selectedIndex, cleanAiPrompt, hits, videoHits, pluginHits, router, openSite])
+  }, [isCommandMode, isAiMode, filteredCommands, selectedIndex, cleanAiPrompt, hits, videoHits, pluginHits, router, openSite, quicklinkActive, quicklinkMatch, quicklinkOffset, openQuicklink])
 
   // 9. 键盘导航 (上下箭头 / 回车)
   const totalItemCount = useMemo(() => {
     if (isCommandMode) return filteredCommands.length
     if (isAiMode) return 1
-    return hits.length + videoHits.length + (pluginHits?.items.length ?? 0)
-  }, [isCommandMode, isAiMode, filteredCommands.length, hits.length, videoHits.length, pluginHits?.items.length])
+    return quicklinkOffset + hits.length + videoHits.length + (pluginHits?.items.length ?? 0)
+  }, [isCommandMode, isAiMode, filteredCommands.length, hits.length, videoHits.length, pluginHits?.items.length, quicklinkOffset])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -858,14 +943,16 @@ export function SpotlightModal({
   const activeOptionId = totalItemCount > 0 ? optionIdOf(selectedIndex) : undefined
   // 极客微工具面板里没有可选行（selectedIndex 走的是指令列表），此时不能声称控制着某个列表
   const hasListbox = totalItemCount > 0 && !(isCommandMode && isGeekToolActive)
-  /** 当前选中行落在哪个列表：指令 / 站点 / 视频 / 插件 */
+  /** 当前选中行落在哪个列表：快捷链接 / 指令 / 站点 / 视频 / 插件 */
   const listboxId = isCommandMode
     ? 'spotlight-cmd-listbox'
-    : selectedIndex < hits.length
-      ? 'spotlight-site-listbox'
-      : selectedIndex < hits.length + videoHits.length
-        ? 'spotlight-video-listbox'
-        : 'spotlight-plugin-listbox'
+    : selectedIndex < quicklinkOffset
+      ? 'spotlight-quicklink-listbox'
+      : selectedIndex < quicklinkOffset + hits.length
+        ? 'spotlight-site-listbox'
+        : selectedIndex < quicklinkOffset + hits.length + videoHits.length
+          ? 'spotlight-video-listbox'
+          : 'spotlight-plugin-listbox'
 
   return (
     <>
@@ -1045,6 +1132,39 @@ export function SpotlightModal({
           {/* C. 默认混合检索模式 */}
           {!isCommandMode && !isAiMode && (
             <>
+              {/* 快捷链接：命令命中时置顶一行（mono 前缀 chip + 在哪搜 + 回车直达），占导航位 0 */}
+              {quicklinkActive && quicklinkMatch?.url && (
+                <div role="listbox" id="spotlight-quicklink-listbox" aria-label="快捷链接" className="space-y-1">
+                  <div
+                    onClick={() => openQuicklink()}
+                    id={optionIdOf(0)}
+                    role="option"
+                    aria-selected={selectedIndex === 0}
+                    className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-colors ${
+                      selectedIndex === 0 ? 'bg-primary/10 text-primary' : 'hover:bg-muted/40 text-foreground'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-primary text-primary-foreground shrink-0">
+                        !{quicklinkMatch.entry.quickPrefix}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-semibold truncate group-hover:text-primary transition-colors">
+                          在 {quicklinkMatch.entry.title} 搜索：{quicklinkMatch.arg ? `"${quicklinkMatch.arg}"` : '(全部)'}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate leading-relaxed">
+                          {quicklinkMatch.entry.href}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className="text-[11px] text-muted-foreground">回车直达</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {loading && (
                 <div className="py-8 flex items-center justify-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -1233,8 +1353,46 @@ export function SpotlightModal({
                 </div>
               )}
 
-              {/* 智能拼写纠错 / 意图猜测建议 */}
-              {didYouMean && query.trim().toLowerCase() !== didYouMean.toLowerCase() && (
+              {/* 智能拼写纠错 / 意图猜测建议：有自动纠正时只显示纠正横幅 */}
+              {correction ? (
+                <div
+                  role="status"
+                  className="mx-3 my-2 px-3 py-2 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-1.5 text-foreground flex-wrap">
+                    <span className="text-primary font-medium flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>已替你纠正为：</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="font-bold underline text-primary hover:text-primary/80 cursor-pointer text-left"
+                      onClick={() => handleApplySuggestion(correction.corrected)}
+                    >
+                      {correction.corrected}
+                    </button>
+                    <span>不是这个？</span>
+                    <button
+                      type="button"
+                      className="font-medium underline underline-offset-2 text-primary hover:no-underline cursor-pointer text-left"
+                      onClick={() => {
+                        setNocorrectQuery(correction.original)
+                        setSearchNonce((n) => n + 1)
+                      }}
+                    >
+                      搜原来的「{correction.original}」
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCorrection(null)}
+                    aria-label="关闭纠正提示"
+                    className="text-muted-foreground hover:text-foreground p-1 rounded-md cursor-pointer ml-2"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : didYouMean && query.trim().toLowerCase() !== didYouMean.toLowerCase() ? (
                 <div className="mx-3 my-2 px-3 py-2 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-1.5 text-foreground flex-wrap">
                     <span className="text-primary font-medium flex items-center gap-1">
@@ -1259,7 +1417,7 @@ export function SpotlightModal({
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
-              )}
+              ) : null}
 
               {/* 站点检索结果列表 (RRF 混合召回) */}
               {hits.length > 0 && (
@@ -1285,7 +1443,7 @@ export function SpotlightModal({
                   </div>
 
                   {hits.map((hit, idx) => {
-                    const isSelected = idx === selectedIndex
+                    const isSelected = idx + quicklinkOffset === selectedIndex
                     const site = hit.site
                     if (!site) return null
                     const isBroken = site.status === 'broken' || (site.health && !site.health.ok)
@@ -1298,7 +1456,7 @@ export function SpotlightModal({
                           openSite(site, hit)
                           setOpen(false)
                         }}
-                        id={optionIdOf(idx)}
+                        id={optionIdOf(idx + quicklinkOffset)}
                         role="option"
                         aria-selected={isSelected}
                         className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-colors ${
@@ -1422,7 +1580,7 @@ export function SpotlightModal({
                   </div>
 
                   {videoHits.map((video, idx) => {
-                    const itemIndex = hits.length + idx
+                    const itemIndex = quicklinkOffset + hits.length + idx
                     const isSelected = itemIndex === selectedIndex
                     const platform = video.videoConfig?.type || 'bilibili'
                     const author = video.videoConfig?.author
@@ -1511,7 +1669,7 @@ export function SpotlightModal({
                   </div>
 
                   {pluginHits.items.map((plugin, idx) => {
-                    const itemIndex = hits.length + videoHits.length + idx
+                    const itemIndex = quicklinkOffset + hits.length + videoHits.length + idx
                     const isSelected = itemIndex === selectedIndex
                     return (
                       <div
@@ -1589,7 +1747,34 @@ export function SpotlightModal({
                       <div className="text-xs text-muted-foreground">
                         未找到与 “<span className="text-foreground font-medium">{query}</span>” 相关的站点或插件
                       </div>
-                      {didYouMean && (
+                      {correction ? (
+                        <div className="pt-1">
+                          <div
+                            role="status"
+                            className="inline-flex flex-wrap items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-foreground"
+                          >
+                            <span>已替你纠正为：</span>
+                            <button
+                              type="button"
+                              className="font-bold underline text-primary hover:text-primary/80 cursor-pointer"
+                              onClick={() => handleApplySuggestion(correction.corrected)}
+                            >
+                              {correction.corrected}
+                            </button>
+                            <span>不是这个？</span>
+                            <button
+                              type="button"
+                              className="font-medium underline underline-offset-2 text-primary hover:no-underline cursor-pointer"
+                              onClick={() => {
+                                setNocorrectQuery(correction.original)
+                                setSearchNonce((n) => n + 1)
+                              }}
+                            >
+                              搜原来的「{correction.original}」
+                            </button>
+                          </div>
+                        </div>
+                      ) : didYouMean ? (
                         <div className="pt-1">
                           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-foreground">
                             <span className="text-primary font-medium flex items-center gap-1">
@@ -1606,8 +1791,10 @@ export function SpotlightModal({
                             <span>？</span>
                           </div>
                         </div>
-                      )}
-                      {suggestions.length > 0 && (
+                      ) : null}
+                      {/* 纠正后隐藏通用建议 chips（协调人决定 1：纠正后仍零结果
+                          只留明确出口，不叠泛推荐）；未纠正时照常显示 */}
+                      {!correction && suggestions.length > 0 && (
                         <div className="pt-1 max-w-md mx-auto">
                           <div className="text-[11px] text-muted-foreground mb-1.5">相关搜索推荐：</div>
                           <div className="flex flex-wrap justify-center gap-1.5">
@@ -1646,6 +1833,12 @@ export function SpotlightModal({
                         >
                           投稿收录这个站
                         </Link>
+                      </div>
+                      {/* 容错纠错两出口：存为待找 / 新建收藏（与 /search 页、
+                          首页搜索面板同一对出口；新建收藏优先用纠正后的词
+                          做标题）。放在 AI 找站 / 投稿收录之后、提示之前 */}
+                      <div className="pt-1 max-w-md mx-auto text-left">
+                        <WantedActions query={query} correctedQuery={correction?.corrected ?? null} />
                       </div>
                       <div className="text-[11px] text-muted-foreground">
                         提示：输入 <span className="font-mono text-primary">&gt;</span> 可执行系统控制指令，或输入 <span className="font-mono text-primary">?</span> 呼出 AI 助手

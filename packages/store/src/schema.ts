@@ -177,6 +177,96 @@ export const collectionItems = sqliteTable("collection_items", {
   note: text("note"),
 }, (t) => [index("collection_items_col_idx").on(t.collectionId)]);
 
+/**
+ * 公开导航页（Batch 3 第 6 项）：用户把一个收藏文件夹发布成的公开只读页。
+ * live 引用，不存条目快照；status='unpublished' 即下线。
+ */
+export const publicPages = sqliteTable("public_pages", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull(),
+  ownerIdentity: text("owner_identity").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  folderId: text("folder_id"),
+  status: text("status").notNull().default("published"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+}, (t) => [
+  uniqueIndex("public_pages_slug_idx").on(t.slug),
+  index("public_pages_owner_idx").on(t.ownerIdentity),
+]);
+
+/**
+ * 对照快照（Batch 4 Phase 2 P2-3）：用户点击“保存快照”那一刻冻结的对照表。
+ *
+ * 不可变：只 INSERT、不 UPDATE——没有任何接口改写已存行，变化只通过
+ * “新快照 vs 旧快照”的逐格 diff 呈现。site_ids 与 snapshot_json 存 JSON
+ * 字符串（站点 id 数组 / SiteComparisonItem[] 全表），读时原样解析。
+ * owner_identity 存 canonical 身份；注销随删（见 data-inventory.ts）。
+ */
+export const comparisonSnapshots = sqliteTable("comparison_snapshots", {
+  id: text("id").primaryKey(),
+  ownerIdentity: text("owner_identity").notNull(),
+  siteIds: text("site_ids").notNull(),
+  snapshotJson: text("snapshot_json").notNull(),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("comparison_snapshots_owner_idx").on(t.ownerIdentity, t.createdAt),
+]);
+
+/**
+ * 对照分享（Batch 4 Phase 2 P2-4）：P2-3 快照的冻结公开副本。
+ *
+ * 分享的对象是快照的冻结副本，不是实时对照接口、不是 /pub 的 live 文件夹
+ * 引用：发布时把白名单字段的格子复制进 published_json，公开读只 serving
+ * 这份副本。published_fields 存 JSON 数组（白名单子集）；published_json
+ * 存冻结的公开副本（只含白名单格子的展示字段，见 compare-share.ts 的
+ * buildPublishedItems）；note / migration 永不可公开，不进白名单。
+ * snapshot_id UNIQUE：每快照最多一个有效分享行；下线后重发删旧行建新行，
+ * 旧 slug 永不复活。owner_identity 存 canonical 身份；注销随删
+ * （见 data-inventory.ts），不进导出包（派生公开态，不是用户原创内容）。
+ */
+export const comparisonSnapshotShares = sqliteTable("comparison_snapshot_shares", {
+  id: text("id").primaryKey(),
+  snapshotId: text("snapshot_id").notNull(),
+  ownerIdentity: text("owner_identity").notNull(),
+  slug: text("slug").notNull(),
+  publishedFields: text("published_fields").notNull(),
+  publishedJson: text("published_json").notNull(),
+  status: text("status").notNull().default("published"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+}, (t) => [
+  uniqueIndex("snapshot_shares_snapshot_idx").on(t.snapshotId),
+  uniqueIndex("snapshot_shares_slug_idx").on(t.slug),
+  index("snapshot_shares_owner_idx").on(t.ownerIdentity),
+]);
+
+/**
+ * 对照价格数值（Batch 4 Phase 2 P2-2）：每用户每站只留最新一条
+ * （UNIQUE (owner_identity, site_id)，upsert 覆盖写；价格历史由快照承担）。
+ * 金额存最小货币单位整数（分/美分），杜绝浮点；verified_at 一律服务端写入，
+ * 不接受客户端传入。owner_identity 存 canonical 身份；注销随删
+ * （见 data-inventory.ts），导出进 sitePrices 字段。
+ */
+export const sitePrices = sqliteTable("site_prices", {
+  id: text("id").primaryKey(),
+  ownerIdentity: text("owner_identity").notNull(),
+  siteId: text("site_id").notNull(),
+  amountMinor: integer("amount_minor").notNull(),
+  currency: text("currency").notNull(),
+  period: text("period").notNull(),
+  freeTierLimit: text("free_tier_limit"),
+  sourceType: text("source_type").notNull(),
+  sourceUrl: text("source_url"),
+  verifiedAt: integer("verified_at").notNull(),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+}, (t) => [
+  uniqueIndex("site_prices_owner_site_uidx").on(t.ownerIdentity, t.siteId),
+  index("site_prices_owner_site_idx").on(t.ownerIdentity, t.siteId),
+]);
+
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   username: text("username").notNull(),
@@ -250,6 +340,26 @@ export const notifications = sqliteTable("notifications", {
   readAt: integer("read_at"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [index("notifications_identity_created_idx").on(t.identity, t.createdAt)]);
+
+/**
+ * 待找（搜索容错纠错 · 出口一）：零结果时用户把查询存下来，投稿审核通过
+ * （新站变 active）时匹配命中则站内通知一次。匿名用户不进这张表
+ * （前端 localStorage 只存查询串）。
+ * 唯一约束 (identity, query)：重复存返回已有行，不建两行。
+ */
+export const wantedSearches = sqliteTable("wanted_searches", {
+  id: text("id").primaryKey(),
+  identity: text("identity").notNull(),
+  query: text("query").notNull(),
+  correctedQuery: text("corrected_query"),
+  status: text("status").notNull().default("open"),
+  notifiedSiteId: text("notified_site_id"),
+  notifiedAt: integer("notified_at"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [
+  uniqueIndex("wanted_searches_identity_query_idx").on(t.identity, t.query),
+  index("wanted_searches_identity_status_idx").on(t.identity, t.status, t.createdAt),
+]);
 
 /** 匿名身份 -> 登录身份的别名；合并后旧 anonId 仍能解析到 canonical id */
 export const identityAliases = sqliteTable("identity_aliases", {
@@ -400,6 +510,12 @@ export const favorites = sqliteTable("favorites", {
   tags: text("tags"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
+  /**
+   * 软删墓碑（与 migrate.ts:113 的 alter 表对齐；drizzle 定义此前漏了它，
+   * SQL 侧可用、类型侧不可见）。非空 = 已删除，回收站即墓碑列表；
+   * 恢复 = add 复活（清 deleted_at），彻底删除 = 物理 DELETE 行。
+   */
+  deletedAt: integer("deleted_at"),
 }, (t) => [
   uniqueIndex("favorites_user_site_idx").on(t.userId, t.siteId),
   index("favorites_user_idx").on(t.userId),
@@ -457,6 +573,27 @@ export const userVaultSync = sqliteTable("user_vault_sync", {
   version: integer("version").notNull().default(1),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 });
+
+/**
+ * 同步成功/失败水位（第 15 项：数据安全可见补完）。
+ *
+ * 失败此前只有审计 + 通知，成功只有进程内计数（重启清零），所以服务端
+ * 无法诚实地说「同步正常」——只能说「最近没失败过」。这张表只记时间戳
+ * 与有限枚举错误码，绝不记用户内容（ops / 标题 / 异常原文都不落库）。
+ * 主键 (identity, domain)，domain 取 favorites | watchlist。
+ */
+export const userSyncState = sqliteTable(
+  "user_sync_state",
+  {
+    identity: text("identity").notNull(),
+    domain: text("domain").notNull(),
+    lastSuccessAt: integer("last_success_at"),
+    lastFailureAt: integer("last_failure_at"),
+    lastErrorCode: text("last_error_code"),
+    updatedAt: integer("updated_at").notNull().$defaultFn(now),
+  },
+  (t) => [primaryKey({ columns: [t.identity, t.domain] })],
+);
 
 /**
  * 工作区明文存储（独立于 E2EE 金库，见 repository/workspace-blobs.ts）。
@@ -767,12 +904,13 @@ export const dataVersion = sqliteTable("data_version", {
 
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
-  users, sessions, authTokens, notifications, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings, siteRadar,
-  favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, userWorkspaceBlobs, systemStates, taxonomyProposals,
+  users, sessions, authTokens, notifications, wantedSearches, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings, siteRadar,
+  favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, userSyncState, userWorkspaceBlobs, systemStates, taxonomyProposals,
   plugins, pluginInstalls, pluginStars, pluginReports, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
   llmModelPrices, llmQuotaReservations, dataVersion,
   // 用户域补齐（N11）：此前这四张表没有进入导出，drizzle 工具链拿不到它们，
   // 「schema 是单一事实源」名不副实——迁移脚本与 DDL 各写一份，drift 无从校验。
   identityAliases, identityMerges, userLlmConfigs, userSettings,
+  comparisonSnapshots, sitePrices, comparisonSnapshotShares,
 };
 

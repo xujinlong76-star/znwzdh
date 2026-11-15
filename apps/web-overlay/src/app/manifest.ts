@@ -35,6 +35,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
       { name: '热度榜', url: '/hot' },
       { name: '标签云', url: '/tags' },
       { name: '我的收藏', url: '/favorites' },
+      // Batch 3 第 8 项 P2：断网时可从桌面快捷方式直达本机快照页。
+      { name: '离线阅读', url: '/offline' },
     ],
   }
 }

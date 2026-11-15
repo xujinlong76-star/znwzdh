@@ -314,6 +314,37 @@ export async function migrateWorkspaceBlobs(db: {
  *    **dedupeUserEmails 在前**（见 driver.ts 的 openDb 序列），否则存量重复会让
  *    建索引失败并被逐语句 try/catch 静默跳过。
  */
+/**
+ * 待找表（搜索容错纠错 · 出口一）：版本化迁移的执行体。
+ * 与 migrateSiteIndexes 语句表里的同款 DDL 等价（新库由 driver.ts 建、
+ * 旧库由语句表补，这里是台账可审计的版本化入口，三处幂等）。
+ */
+export async function migrateWantedSearches(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  const stmts = [
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS wanted_searches (id TEXT PRIMARY KEY, identity TEXT NOT NULL, query TEXT NOT NULL, corrected_query TEXT, status TEXT NOT NULL DEFAULT 'open', notified_site_id TEXT, notified_at BIGINT, created_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS wanted_searches (id TEXT PRIMARY KEY, identity TEXT NOT NULL, query TEXT NOT NULL, corrected_query TEXT, status TEXT NOT NULL DEFAULT 'open', notified_site_id TEXT, notified_at INTEGER, created_at INTEGER NOT NULL)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS wanted_searches_identity_query_idx ON wanted_searches(identity, query)",
+    "CREATE INDEX IF NOT EXISTS wanted_searches_identity_status_idx ON wanted_searches(identity, status, created_at)",
+  ];
+  for (const sql of stmts) await execSql(db, sql);
+}
+
+/**
+ * 同步水位表（第 15 项：数据安全可见补完）。
+ * 与 migrateWantedSearches 同款三处幂等：新库由 driver.ts 建、
+ * 旧库由语句表补，这里是台账可审计的版本化入口。
+ * 只记时间戳与有限枚举错误码，不记用户内容。
+ */
+export async function migrateUserSyncState(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  const stmts = [
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS user_sync_state (identity TEXT NOT NULL, domain TEXT NOT NULL, last_success_at BIGINT, last_failure_at BIGINT, last_error_code TEXT, updated_at BIGINT NOT NULL, PRIMARY KEY (identity, domain))"
+      : "CREATE TABLE IF NOT EXISTS user_sync_state (identity TEXT NOT NULL, domain TEXT NOT NULL, last_success_at INTEGER, last_failure_at INTEGER, last_error_code TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (identity, domain))",
+  ];
+  for (const sql of stmts) await execSql(db, sql);
+}
+
 export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   await ensureMigrationFailures(db);
   /**
@@ -404,6 +435,16 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
       ? "CREATE TABLE IF NOT EXISTS user_custom_sites (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, note TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
       : "CREATE TABLE IF NOT EXISTS user_custom_sites (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, note TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS user_custom_sites_user_idx ON user_custom_sites(user_id, sort_order, created_at)",
+    // 待找（搜索容错纠错 · 出口一）：旧库补齐，新库由 driver.ts DDL 建
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS wanted_searches (id TEXT PRIMARY KEY, identity TEXT NOT NULL, query TEXT NOT NULL, corrected_query TEXT, status TEXT NOT NULL DEFAULT 'open', notified_site_id TEXT, notified_at BIGINT, created_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS wanted_searches (id TEXT PRIMARY KEY, identity TEXT NOT NULL, query TEXT NOT NULL, corrected_query TEXT, status TEXT NOT NULL DEFAULT 'open', notified_site_id TEXT, notified_at INTEGER, created_at INTEGER NOT NULL)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS wanted_searches_identity_query_idx ON wanted_searches(identity, query)",
+    "CREATE INDEX IF NOT EXISTS wanted_searches_identity_status_idx ON wanted_searches(identity, status, created_at)",
+    // 同步水位（第 15 项）：旧库补齐，新库由 driver.ts DDL 建
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS user_sync_state (identity TEXT NOT NULL, domain TEXT NOT NULL, last_success_at BIGINT, last_failure_at BIGINT, last_error_code TEXT, updated_at BIGINT NOT NULL, PRIMARY KEY (identity, domain))"
+      : "CREATE TABLE IF NOT EXISTS user_sync_state (identity TEXT NOT NULL, domain TEXT NOT NULL, last_success_at INTEGER, last_failure_at INTEGER, last_error_code TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (identity, domain))",
     // 类目 slug 全局唯一（URL 是 /category/{slug}，不带父级路径）。
     // 部分索引：NULL 不进索引，所以回填窗口里多行 NULL 不冲突。
     // 标题的「每父唯一」索引在 P3 收敛重名后登记（两条部分索引分别覆盖子树与根层：

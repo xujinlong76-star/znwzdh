@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
@@ -29,20 +30,53 @@ import { useFavoritesFolderManager } from '@/hooks/use-favorites-folder-manager'
 import { SmartCollectionsPanel } from '@/components/smart-collections-panel'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders, serializeLocalFolders, type LocalFolder } from '@/lib/favorites-folders'
-import { buildFavoritesSearch, parseFavoritesFilters } from '@/lib/favorites-url'
+import { buildFavoritesSearch, parseFavoritesFilters, type FavoritesSort } from '@/lib/favorites-url'
 import {
   favoritesToVaultItems,
   formatVaultRestoreNotice,
   vaultExportFilename,
   vaultItemsToFavorites,
 } from '@/lib/favorites-vault'
+import {
+  findQuicklinkPrefixConflict,
+  normalizeQuicklinkPrefix,
+  quicklinkFromFavorite,
+  validateQuicklink,
+  type QuicklinkEntry,
+} from '@/lib/quicklinks'
 import { describeAnonymousFavoritesNote, describeSyncBanner, shouldOfferRetry, type SyncBannerInput } from '@/lib/favorites-sync-copy'
 import { FAVORITES_EMPTY_COPY } from '@/lib/empty-states'
 import {
   filterFavorites,
+  filterByTriage,
+  sortFavorites,
   describeFavoritesFilter,
   favoriteFilterEmptyMessage,
 } from '@/lib/favorites-filter'
+import {
+  describeTriage,
+  resolveTriageStatus,
+  selectInboxDueSoon,
+  triageBadgeLabel,
+  triageMsLeft,
+} from '@/lib/favorites-triage'
+import { readShelvedFavorites } from '@/lib/favorites-shelved'
+import {
+  HIBERNATION_RENDER_LIMIT,
+  HIBERNATION_UPDATED_EVENT,
+  describeHibernation,
+  hibernationBadgeLabel,
+  hibernationReason,
+  hibernationSectionTitle,
+  manualHibernatedSet,
+  partitionFavorites,
+  readManualHibernated,
+  type ManualHibernatedItem,
+} from '@/lib/favorites-hibernation'
+import { useTriageSettings } from '@/hooks/useTriageSettings'
+import { useHibernationSettings } from '@/hooks/useHibernationSettings'
+import { TriageInboxRow } from '@/components/triage-inbox-row'
+import { HibernationRow } from '@/components/hibernation-row'
 import {
   MEANING_SEARCH_POOL_LIMIT,
   describeMeaningReadyLine,
@@ -58,7 +92,7 @@ import {
   type SemanticSaveStatus,
 } from '@/lib/favorites-semantic-search'
 import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
-import { describeResurfaced, selectStaleFavorites, staleBadgeLabel } from '@/lib/resurface'
+import { describeResurfaced, daysSinceOpen, latestVisitsById, selectStaleFavorites, staleBadgeLabel } from '@/lib/resurface'
 import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/vault'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import {
@@ -70,7 +104,7 @@ import {
 import {
   Shield, KeyRound, CheckCircle2, AlertTriangle, EyeOff,
   RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn, ChevronUp, ChevronDown, Tag,
-  Download, FileUp, CheckSquare, Square, Layers,
+  Download, FileUp, CheckSquare, Square, Layers, Zap, Inbox, Link2, Moon, Sun,
 } from 'lucide-react'
 import {
   exportFavoritesToHtml,
@@ -78,6 +112,17 @@ import {
   triggerFileDownload,
   type ParsedUniversalItem,
 } from '@/lib/favorites-export-import'
+import { LINK_PACK_MAX_ITEMS } from '@/lib/link-pack'
+import { useBatchKeyboard } from '@/hooks/use-batch-keyboard'
+import { resolveBatchKeyboardAction } from '@/lib/batch-keyboard'
+import {
+  isAnyDialogOpen,
+  isAnyMenuOpen,
+  isDragHandleFocused,
+  isEventTargetTyping,
+} from '@/lib/keyboard-guards'
+import { pruneSelected } from '@/lib/selection'
+import { buildCompareHref } from '@/lib/compare'
 import dynamic from 'next/dynamic'
 
 // 两个面板都只在用户点开时才需要：金库导入/导出、插件包导出向导。
@@ -92,6 +137,16 @@ const ExportPluginModal = dynamic(
 )
 const UniversalBookmarkModal = dynamic(
   () => import('@/components/user-center/universal-bookmark-modal').then((m) => m.UniversalBookmarkModal),
+  { ssr: false },
+)
+// 链接包对话框只在用户点「打包成链接包」时才需要：同款动态引入，不进 /favorites 首屏 chunk。
+const LinkPackDialog = dynamic(
+  () => import('@/components/link-pack-dialog').then((m) => m.LinkPackDialog),
+  { ssr: false },
+)
+// 公开导航页管理区只在登录态有实际作用：同样动态引入，不进首屏 chunk。
+const PublicPageManager = dynamic(
+  () => import('@/components/public-page-manager').then((m) => m.default),
   { ssr: false },
 )
 
@@ -121,6 +176,7 @@ function writeLocalFolders(folders: LocalFolder[]): void {
 }
 
 export default function FavoritesPage() {
+  const router = useRouter()
   const favorites = useFavorites()
   // 身份就绪（N1）：不再在挂载时读一次 localStorage，登录/合并/退出都会自动重取
   const identityReady = useIdentityReady()
@@ -134,6 +190,7 @@ export default function FavoritesPage() {
   const [importText, setImportText] = useState('')
   const [showImport, setShowImport] = useState(false)
   const [showUniversalImport, setShowUniversalImport] = useState(false)
+  const [showLinkPack, setShowLinkPack] = useState(false)
   const [batchMode, setBatchMode] = useState(false)
   const [selectedSiteIds, setSelectedSiteIds] = useState<Set<string>>(new Set())
   const [batchFolderTarget, setBatchFolderTarget] = useState<string>('')
@@ -165,11 +222,51 @@ export default function FavoritesPage() {
   // 标签编辑器（T22）：逗号分隔输入，保存时归一（≤8 个、各 ≤24 字符）
   const [tagEditor, setTagEditor] = useState<string | null>(null)
   const [tagDraft, setTagDraft] = useState('')
+  // 快捷链接编辑器：前缀 + 搜索模板（{q} 占位），复用备注/标签编辑器模式
+  // （state + 保存走 favorites.updateMeta）。v1 必须先收藏再挂模板。
+  const [quicklinkEditor, setQuicklinkEditor] = useState<string | null>(null)
+  const [quickPrefixDraft, setQuickPrefixDraft] = useState('')
+  const [quickTemplateDraft, setQuickTemplateDraft] = useState('')
+  const [quicklinkError, setQuicklinkError] = useState<string | null>(null)
   const [manageBusy, setManageBusy] = useState(false)
   // 排序与渐进渲染（N8）：收藏上千条时「一屏渲染全部」会让首屏明显变慢，
   // 这里先排好序，再只渲染前若干条，其余按需加载。
-  const [sortBy, setSortBy] = useState<'created' | 'title'>('created')
+  const [sortBy, setSortBy] = useState<FavoritesSort>('created')
   const [visibleCount, setVisibleCount] = useState(60)
+  // 待读分流：状态筛选（与收藏夹筛选正交，可叠加）；默认视图不变，永久库仍是默认落点
+  const [triageFilter, setTriageFilter] = useState<'all' | 'inbox' | 'read' | 'permanent'>('all')
+  const triageSettings = useTriageSettings()
+  const [shelvedCount, setShelvedCount] = useState<number>(() =>
+    typeof window === 'undefined' ? 0 : readShelvedFavorites().length,
+  )
+  const [triageBannerDismissed, setTriageBannerDismissed] = useState(false)
+  useEffect(() => {
+    const refresh = () => setShelvedCount(readShelvedFavorites().length)
+    refresh()
+    window.addEventListener('navhub_shelved_updated', refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener('navhub_shelved_updated', refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [])
+  // 冬眠收藏：手动冬眠集合（本机键）+ 冬眠区折叠态；订阅手动集合变更事件刷新。
+  // 偏好（开关 / 阈值）走 useHibernationSettings 的 live 快照，与待读分流同款纪律。
+  const hibernationSettings = useHibernationSettings()
+  const [manualHibernated, setManualHibernated] = useState<ManualHibernatedItem[]>(() =>
+    typeof window === 'undefined' ? [] : readManualHibernated(),
+  )
+  const [hibernationOpen, setHibernationOpen] = useState(false)
+  useEffect(() => {
+    const refresh = () => setManualHibernated(readManualHibernated())
+    refresh()
+    window.addEventListener(HIBERNATION_UPDATED_EVENT, refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener(HIBERNATION_UPDATED_EVENT, refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [])
   // 「好久没打开」的徽标与横幅：只用本机离线最近访问算旧（见 lib/resurface），
   // 读不到时按收藏时间算，不阻断收藏列表本身。
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
@@ -190,6 +287,36 @@ export default function FavoritesPage() {
     if (favorites.items.length === 0) return new Map<string, ReturnType<typeof selectStaleFavorites>[number]>()
     return new Map(selectStaleFavorites(favorites.items, recentVisits, Date.now()).map((s) => [s.siteId, s]))
   }, [favorites.items, recentVisits])
+  /**
+   * 冬眠徽标快查（所有视图共用，不只分区态）：有关键词 / 夹 / 状态筛选时分区
+   * 不生效，但冬眠条目仍挂「冬眠中」徽标，用户才知道它为什么平时沉在底下。
+   * 原因 / 天数 / 说明一次算好，卡片渲染期不再重算。
+   */
+  const hibernatingById = useMemo(() => {
+    const map = new Map<string, { reason: 'manual' | 'auto'; days: number; description: string }>()
+    if (favorites.items.length === 0) return map
+    const now = Date.now()
+    const visitsById = latestVisitsById(recentVisits)
+    const manual = manualHibernatedSet(manualHibernated)
+    for (const f of favorites.items) {
+      const reason = hibernationReason(f, visitsById, hibernationSettings, manual, now)
+      if (!reason) continue
+      map.set(f.siteId, {
+        reason,
+        days: daysSinceOpen(f, visitsById, now),
+        description: describeHibernation(f, visitsById, hibernationSettings, manual, now),
+      })
+    }
+    return map
+  }, [favorites.items, recentVisits, hibernationSettings, manualHibernated])
+  /** 已挂模板的收藏（前缀冲突检查与卡片徽标共用；模板非法的进不来） */
+  const quicklinkEntries = useMemo(
+    () =>
+      favorites.items
+        .map((f) => quicklinkFromFavorite(f))
+        .filter((e): e is QuicklinkEntry => e !== null),
+    [favorites.items],
+  )
   /**
    * 筛选条件同步到地址栏。
    *
@@ -291,22 +418,52 @@ export default function FavoritesPage() {
   const visibleFavorites = useMemo(() => {
     const byFolder =
       activeFolder === 'all' ? filteredFavorites : filteredFavorites.filter((f) => (f.folderId ?? '') === activeFolder)
+    // 待读状态与 folderId 正交：夹筛选之后再叠加状态过滤
+    const byTriage = filterByTriage(byFolder, triageFilter)
     // 排序是纯本地操作（收藏已在内存里），不引入服务端分页——本地优先是收藏页的根基，
     // 为排序把数据源改成接口会破坏离线可用性。
-    const sorted = [...byFolder]
     if (meaningActive) {
       // 按意思搜的顺序就是语义相关度：再按时间/标题重排会把「最像的」埋掉。
-    } else if (sortBy === 'title') {
-      sorted.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'))
-    } else {
-      // 「最近收藏」必须显式按时间戳排：数组现状依赖「toggle unshift + 云端 DESC」
-      // 的隐式约定，明文导入 / 金库恢复后顺序不再可信。
-      sorted.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      // 仍返回一份拷贝：与旧代码一致，下游不依赖入参数组引用。
+      return [...byTriage]
     }
-    return sorted
-  }, [filteredFavorites, activeFolder, sortBy, meaningActive])
+    return sortFavorites(byTriage, sortBy)
+  }, [filteredFavorites, activeFolder, sortBy, meaningActive, triageFilter])
+  /**
+   * 冬眠分区：只在默认浏览态（全部、无搜索、无夹筛选、无待读筛选、非按意思搜）
+   * 生效——有筛选时分区不生效，搜到的冬眠条目直接显示在正常位置（只挂徽标），
+   * 避免「搜到了却藏在折叠区里找不到」。开关关了同样不分区。
+   * 分区只改浏览顺序：冬眠条目仍在 visibleFavorites 的数据源里，没删没移出。
+   */
+  const hibernationActive =
+    hibernationSettings.enabled &&
+    activeFolder === 'all' &&
+    triageFilter === 'all' &&
+    favoriteQuery.trim() === '' &&
+    !meaningActive
+  const hibernationPartition = useMemo(() => {
+    if (!hibernationActive) return null
+    return partitionFavorites(visibleFavorites, recentVisits, hibernationSettings, manualHibernated, Date.now())
+  }, [hibernationActive, visibleFavorites, recentVisits, hibernationSettings, manualHibernated])
+  /** 分区时的清醒列表（分页与「加载更多」都按它算）；不分区时就是全部可见收藏 */
+  const awakeFavorites = hibernationPartition ? hibernationPartition.awake : visibleFavorites
+  /** 冬眠区条目（默认折叠）；展开后最多渲染 HIBERNATION_RENDER_LIMIT 条 */
+  const hibernatingFavorites = hibernationPartition ? hibernationPartition.hibernating : []
+  const renderedHibernating = hibernatingFavorites.slice(0, HIBERNATION_RENDER_LIMIT)
   /** 渐进渲染：只渲染前 visibleCount 条，避免上千个 DOM 同时进场 */
-  const renderedFavorites = visibleFavorites.slice(0, visibleCount)
+  const renderedFavorites = awakeFavorites.slice(0, visibleCount)
+
+  /** 选中剪枝：筛选 / 切文件夹 / 冬眠分区变化后，丢掉已经不可见的选中项
+   *（否则计数虚高，批量操作会动到用户看不到的收藏）。Ctrl+A 只选清醒 +
+   * 已渲染（renderedFavorites），冬眠条目不在内——口径与 handleSelectAll 一致。 */
+  useEffect(() => {
+    const visibleIds = renderedFavorites.map((f) => f.siteId)
+    setSelectedSiteIds((prev) => {
+      if (prev.size === 0) return prev
+      const kept = pruneSelected([...prev], visibleIds)
+      return kept.length === prev.size ? prev : new Set(kept)
+    })
+  }, [renderedFavorites])
   // 按意思搜进行中（loading）或尚未出结果时不显示关键词筛选的计数——
   // 那是另一套匹配规则的数字，冒充按意思的结果会误导用户。
   const filterSummary =
@@ -325,6 +482,22 @@ export default function FavoritesPage() {
     }
     return counts
   }, [favorites.items])
+
+  /** 待读分流计数：待读箱 / 已读 / 永久库 / 24 小时内快到期（与夹计数正交） */
+  const triageCounts = useMemo(() => {
+    const now = Date.now()
+    let inbox = 0
+    let read = 0
+    let permanent = 0
+    for (const f of favorites.items) {
+      const status = resolveTriageStatus(f, now)
+      if (status === 'inbox') inbox += 1
+      else if (status === 'read') read += 1
+      else permanent += 1
+    }
+    const dueSoon = selectInboxDueSoon(favorites.items, triageSettings, now, favorites.items.length).length
+    return { inbox, read, permanent, dueSoon }
+  }, [favorites.items, triageSettings])
 
   // 零知识 E2EE 金库状态
   const [showVaultExport, setShowVaultExport] = useState(false)
@@ -460,6 +633,10 @@ export default function FavoritesPage() {
   /**
    * 清空云端收藏（N3 接线）：两步确认，成功后连本地缓存一起清掉。
    * 只清云端不清本地会留下「本地还有、云端没了」的分裂状态，下次同步又会推回去。
+   * D7：两步确认保留，但确认后同样进撤销条 + 回收站——清空前把夹子列表
+   * 快照下来，撤销时连夹子一起恢复回来。夹子快照走 prepareClearRestore
+   * 登记（与 clear() 之间没有 await），clear() 本身保持无参调用——
+   * identity-ready 守卫把这条接线钉死为 `favorites.clear()`。
    */
   const clearCloud = useCallback(async () => {
     if (!cloudIdentity || manageBusy) return
@@ -476,15 +653,22 @@ export default function FavoritesPage() {
       setSyncStatus('error')
       return
     }
+    const restoreFolders = (restored: HubFavoriteFolder[]) => setFolders(restored)
+    favorites.prepareClearRestore(folders, restoreFolders)
     favorites.clear()
     setFolders([])
     setActiveFolder('all')
     setSyncNote('云端收藏已清空，本机缓存也已清除')
     setSyncStatus('success')
-  }, [cloudIdentity, confirmClearCloud, favorites, manageBusy])
+  }, [cloudIdentity, confirmClearCloud, favorites, folders, manageBusy])
 
   const assignFolder = useCallback(async (siteId: string, folderId: string | null) => {
-    favorites.updateMeta(siteId, { folderId })
+    const targetFolder = visibleFolders.find((f) => f.id === folderId)
+    const targetName = targetFolder ? targetFolder.name : '未分组'
+    favorites.updateMeta(siteId, { folderId }, {
+      undoLabel: `已将 1 条收藏移至「${targetName}」`,
+      undoDetail: targetName,
+    })
     if (!cloudIdentity) return
     setManageBusy(true)
     const ok = await updateFavoriteMeta(cloudIdentity, siteId, { folderId })
@@ -529,6 +713,30 @@ export default function FavoritesPage() {
       setSyncStatus('error')
     }
   }, [cloudIdentity, favorites, tagDraft])
+
+  /**
+   * 保存快捷链接：创建时全量校验（validateQuicklink），不过就地报错、
+   * 不写盘。v1 本地 only：不推云端（FavoriteSyncOp 与服务端 zod 没有
+   * 这两个字段），也不发 updateFavoriteMeta——云端没有消费方。
+   * 前缀冲突只警告不拦截：触发时用户 quicklink 优先于内置引擎。
+   */
+  const saveQuicklink = useCallback((siteId: string) => {
+    const checked = validateQuicklink({ prefix: quickPrefixDraft, templateUrl: quickTemplateDraft })
+    if (!checked.ok) {
+      setQuicklinkError(checked.message)
+      return
+    }
+    favorites.updateMeta(siteId, { quickPrefix: checked.prefix, templateUrl: checked.templateUrl })
+    setQuicklinkEditor(null)
+    setQuicklinkError(null)
+  }, [favorites, quickPrefixDraft, quickTemplateDraft])
+
+  /** 清除快捷链接：两个字段一起清（null = 清除），只动本机 */
+  const clearQuicklink = useCallback((siteId: string) => {
+    favorites.updateMeta(siteId, { quickPrefix: null, templateUrl: null })
+    setQuicklinkEditor(null)
+    setQuicklinkError(null)
+  }, [favorites])
 
   const handleExportPlain = () => {
     const blob = new Blob([favorites.exportJson()], { type: 'application/json' })
@@ -583,37 +791,51 @@ export default function FavoritesPage() {
     }
   }
 
-  // 批量移动到收藏夹
+  // 批量删除/移动后焦点落点（设计 §3.3 / §7 风险 8）：被删卡片卸载后焦点会
+  // 回落 body，键盘用户迷路。批量栏本身不随删除卸载，落到它的第一个按钮
+  // （全选当前）是确定落点；栏在两处处理器之后仍挂载，同步 focus 即可。
+  const batchBarRef = useRef<HTMLDivElement>(null)
+  const focusBatchBar = () => {
+    batchBarRef.current?.querySelector('button')?.focus()
+  }
+
+  // 批量移动到收藏夹（移夹进撤销栈：逐条 updateMeta 推条目，8 秒内
+  // 同 kind 合并成一条"已将 N 条收藏移至「X」"，一次撤销全回原夹）
   const handleBatchMoveFolder = async () => {
     if (selectedSiteIds.size === 0) return
     const target = batchFolderTarget || null
     setManageBusy(true)
     let errCount = 0
+    const targetFolder = visibleFolders.find((f) => f.id === target)
+    const targetName = targetFolder ? targetFolder.name : '未分组'
     for (const siteId of selectedSiteIds) {
-      favorites.updateMeta(siteId, { folderId: target })
+      favorites.updateMeta(siteId, { folderId: target }, {
+        undoLabel: `已将 1 条收藏移至「${targetName}」`,
+        undoDetail: targetName,
+      })
       if (cloudIdentity) {
         const ok = await updateFavoriteMeta(cloudIdentity, siteId, { folderId: target })
         if (!ok) errCount++
       }
     }
     setManageBusy(false)
-    const targetFolder = visibleFolders.find((f) => f.id === target)
-    const targetName = targetFolder ? targetFolder.name : '未分组'
     setSyncNote(`已将 ${selectedSiteIds.size} 项移至「${targetName}」` + (errCount > 0 ? ` (云端有 ${errCount} 项待同步)` : ''))
     setSyncStatus(errCount > 0 ? 'info' : 'success')
     setSelectedSiteIds(new Set())
+    focusBatchBar()
   }
 
-  // 批量删除
+  // 批量删除：不确认——逐条 favorites.remove() 各推一条撤销（8 秒内同 kind
+  // 合并成一条），撤销条 + 回收站兜底；确认框是重复设防。
   const handleBatchDelete = async () => {
     if (selectedSiteIds.size === 0) return
-    if (!window.confirm(`确定要移除选中的 ${selectedSiteIds.size} 个收藏吗？`)) return
     for (const siteId of selectedSiteIds) {
       favorites.remove(siteId)
     }
     setSyncNote(`已批量移除 ${selectedSiteIds.size} 个收藏`)
     setSyncStatus('success')
     setSelectedSiteIds(new Set())
+    focusBatchBar()
   }
 
   // 批量导出选中项为 Markdown
@@ -637,6 +859,110 @@ export default function FavoritesPage() {
     setSyncNote(`已将选中的 ${selected.length} 个书签导出为 HTML`)
     setSyncStatus('success')
   }
+
+  /**
+   * 卡片级键盘处理（批量模式）：Space/Enter 切换该卡选中，Delete/Backspace
+   * 批量删除选中项。判定走 lib/batch-keyboard.ts 的纯函数，与 window 层同源；
+   * <a> 的 Enter 原生激活拦不住，window 冒泡 preventDefault 来不及，必须卡片级拦截。
+   * 焦点在左上角 checkbox 按钮上时不走这里——按钮的 Space/Enter 原生激活已切换
+   * 选中，window 层再切换一次会来回跳（见 use-batch-keyboard.ts 的分流注释）。
+   */
+  const handleFavoriteCardKeyDown = (e: React.KeyboardEvent, siteId: string) => {
+    // 只接 Space/Enter/Delete/Backspace 四个卡片级键：Esc 不归卡片管，
+    // 归 window 层 useBatchKeyboard 的两段式（带 undo-bar 优先级）。
+    // 曾踩过的坑：不对键设闸、所有键都走纯函数时，Esc 在卡片级命中
+    // clear-selection 后被默认分支 stopPropagation 吞掉、却没执行，
+    // window 层永远收不到 Esc——选中清不掉、撤销条也关不掉。
+    if (
+      e.key !== ' ' &&
+      e.code !== 'Space' &&
+      e.key !== 'Enter' &&
+      e.key !== 'Delete' &&
+      e.key !== 'Backspace'
+    ) {
+      return
+    }
+    const action = resolveBatchKeyboardAction(
+      {
+        key: e.key,
+        code: e.code,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        isComposing: e.nativeEvent.isComposing,
+      },
+      {
+        composing: e.nativeEvent.isComposing ?? false,
+        typing: isEventTargetTyping(e.nativeEvent),
+        dialogOpen: isAnyDialogOpen(),
+        menuOpen: isAnyMenuOpen(),
+        editingLayout: false,
+        dragHandleFocused: isDragHandleFocused(),
+      },
+      { surface: 'favorites', inBatchMode: batchMode, hasSelection: selectedSiteIds.size > 0, focusedSiteId: siteId },
+    )
+    if (!action) return
+    if (action.kind === 'toggle-focused') {
+      e.preventDefault()
+      e.stopPropagation()
+      handleToggleSelect(siteId)
+      return
+    }
+    if (action.kind === 'batch-remove') {
+      e.preventDefault()
+      e.stopPropagation()
+      void handleBatchDelete()
+      return
+    }
+    if (action.kind === 'ignore') {
+      // 收藏页没有 ignore 动作（只有首页 Delete 才吞）；防御性吞掉，不落回原生导航/滚动。
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    // 其他动作不处理、不吞键。
+  }
+
+  const focusBatchMoveTarget = () => {
+    if (selectedSiteIds.size === 0) {
+      setSyncNote('请先选中收藏，再按 F 聚焦移夹')
+      setSyncStatus('info')
+      return
+    }
+    document
+      .querySelector<HTMLElement>('select[aria-label="选择批量移动目标文件夹"]')
+      ?.focus()
+  }
+
+  // 批量键盘（M / Ctrl+A / E / Shift+E / F / L / Del / Esc）：判定全在
+  // lib/batch-keyboard.ts，执行只接线上面已有的批量处理器。
+  // 挂载点注：不能放在 batchMode 状态旁边——回调引用的处理器定义在上面，
+  // 放 state 旁会撞 const 的 TDZ；hook 内部用 ref 读最新回调，放这里等价。
+  useBatchKeyboard({
+    surface: 'favorites',
+    inBatchMode: batchMode,
+    hasSelection: selectedSiteIds.size > 0,
+    editingLayout: false,
+    callbacks: {
+      // 与「批量管理」按钮同款：切换模式时清空选中。
+      onToggleMode: () => {
+        setBatchMode((prev) => !prev)
+        setSelectedSiteIds(new Set())
+      },
+      onClearSelection: () => setSelectedSiteIds(new Set()),
+      onExitMode: () => {
+        setBatchMode(false)
+        setSelectedSiteIds(new Set())
+      },
+      onToggleFocused: handleToggleSelect,
+      onSelectAllVisible: handleSelectAll,
+      onExportMarkdown: handleBatchExportMarkdown,
+      onExportHtml: handleBatchExportHtml,
+      onFocusMoveTarget: focusBatchMoveTarget,
+      onLinkPack: () => setShowLinkPack(true),
+      onBatchRemove: () => void handleBatchDelete(),
+    },
+  })
 
   // 通用多格式导入执行
   const handleImportUniversalItems = async (
@@ -689,7 +1015,21 @@ export default function FavoritesPage() {
         version: 1,
         items: toImport,
       })
-      favorites.importJson(payload)
+      const result = favorites.importJson(payload)
+      // importJson 报的是实际新增数（已存在的不再算进“成功添加”）
+      setSyncNote(
+        `导入完成：实际新增 ${result.imported} 条书签` +
+          (result.updated > 0 ? `，更新 ${result.updated} 条已存书签` : '') +
+          (result.alreadyExisted > 0 ? `，${result.alreadyExisted} 条已存在已跳过` : '') +
+          (foldersCreated > 0 ? `，新建 ${foldersCreated} 个分类夹` : '') +
+          (skipped > 0 ? `，跳过 ${skipped} 条重复项` : ''),
+      )
+      setSyncStatus('success')
+      return {
+        imported: result.imported,
+        skipped: skipped + result.alreadyExisted,
+        foldersCreated,
+      }
     }
 
     setSyncNote(`导入完成：成功添加 ${toImport.length} 条书签` + (foldersCreated > 0 ? `，新建 ${foldersCreated} 个分类夹` : '') + (skipped > 0 ? `，跳过 ${skipped} 条重复项` : ''))
@@ -713,6 +1053,14 @@ export default function FavoritesPage() {
             : `没有可导入的书签：${result.skippedInvalid} 条都缺少站点标识或链接`,
         )
         setSyncStatus(result.imported > 0 ? 'info' : 'error')
+      } else if (result.alreadyExisted > 0 || result.updated > 0) {
+        // 实际新增数才是 imported：已存在的不再冒充新增
+        setSyncNote(
+          `已导入 ${result.imported} 条书签` +
+            (result.updated > 0 ? `，更新 ${result.updated} 条已存书签` : '') +
+            (result.alreadyExisted > 0 ? `，${result.alreadyExisted} 条已存在，已跳过` : ''),
+        )
+        setSyncStatus('success')
       } else {
         setSyncNote('已导入 ' + result.imported + ' 条书签')
         setSyncStatus('success')
@@ -806,11 +1154,14 @@ export default function FavoritesPage() {
 
       const importResult = favorites.importJson(JSON.stringify({ version: 1, items: localItems }))
       if (importResult.ok) {
-        // 报「实际并入」而不是「解密到多少」：转换阶段出局的残行必须点名
+        // 报「实际并入」而不是「解密到多少」：转换阶段出局的残行必须点名；
+        // 实际并入 = 新增 + 更新（与 local-data-manager 同口径），已存在
+        // 的条目单独点名，不算进“格式不完整”
         const notice = formatVaultRestoreNotice({
           decryptedCount: decryptedItems.length,
           convertibleCount: localItems.length,
-          restoredCount: importResult.imported,
+          restoredCount: importResult.imported + importResult.updated,
+          alreadyExisted: importResult.alreadyExisted,
         })
         setSyncNote(notice.text)
         setSyncStatus(notice.tone)
@@ -941,6 +1292,15 @@ export default function FavoritesPage() {
                   Markdown
                 </Button>
                 <Button
+                  asChild
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground min-h-11 rounded-lg hover:bg-accent"
+                  title="查看在收藏标题 / 简介上划过的线与批注，可搜索、可导出"
+                >
+                  <Link href="/me/annotations">我的批注</Link>
+                </Button>
+                <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleExportPlain}
@@ -974,6 +1334,9 @@ export default function FavoritesPage() {
                   <Package className="w-3.5 h-3.5" /> 导出为插件
                 </Button>
               </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                JSON 是唯一保真格式：快捷链接模板只随 JSON 导出 / 导入，HTML 与 Markdown 导出不含模板。
+              </p>
               </div>
             </div>
 
@@ -982,6 +1345,16 @@ export default function FavoritesPage() {
                 <Shield className="w-3 h-3" />
                 本地收藏 {favorites.ready ? favorites.items.length : '—'} 条
               </span>
+              {/* 回收站角标：非空时显示入口（删除的收藏在这里保留 30 天） */}
+              {favorites.trashCount > 0 && (
+                <Link
+                  href="/favorites/trash"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  🗑 回收站 ({favorites.trashCount})
+                </Link>
+              )}
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
                 <KeyRound className="w-3 h-3 text-border" />
                 AES-256-GCM 认证加密
@@ -1030,6 +1403,18 @@ export default function FavoritesPage() {
                 重试同步
               </Button>
             )}
+          </div>
+        )}
+
+        {/* 回收站写失败（配额满等）：删除仍执行了，但快照没留住——必须说出来，
+            否则用户以为"删了还能从回收站找回"，实际只能靠云端墓碑。 */}
+        {favorites.trashError && (
+          <div
+            role="alert"
+            className="mb-6 p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400 flex flex-wrap items-center gap-2"
+          >
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span className="flex-1 min-w-0">{favorites.trashError}</span>
           </div>
         )}
 
@@ -1087,6 +1472,10 @@ export default function FavoritesPage() {
           </div>
         )}
 
+        {/* 常驻播报区：role=status 容器必须一直挂载、只换文本——条件渲染会让
+            部分读屏器漏报「区域与内容同时出现」的更新；视觉提示框另见下，只负责样式 */}
+        <div role="status" aria-live="polite" className="sr-only">{syncNote ?? ''}</div>
+
         {syncNote && (
           <div
             className={`mb-6 p-3 rounded-lg border text-xs flex items-center gap-2 ${
@@ -1127,6 +1516,95 @@ export default function FavoritesPage() {
             </span>
             <Link href="/favorites/stale" className="font-medium underline underline-offset-2 hover:text-amber-800 dark:hover:text-amber-300">
               去重温
+            </Link>
+          </div>
+        )}
+
+        {/* 待读分流：结算写已移出区失败时，过期项还留在原处——原因必须说出来 */}
+        {favorites.triageSettleError && (
+          <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-700 dark:text-rose-300">
+            {favorites.triageSettleError}
+          </div>
+        )}
+
+        {/* 待读分流：本次打开结算移出的条数，一次可见提示，绝不静默 */}
+        {favorites.settledExpiredCount > 0 && !triageBannerDismissed && (
+          <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-700 dark:text-sky-400 flex flex-wrap items-center gap-2">
+            <span className="flex-1 min-w-0">
+              {favorites.settledExpiredCount} 条待读过期，已移到「已移出」，可找回。
+            </span>
+            <Link href="/favorites/shelved" className="font-medium underline underline-offset-2 hover:text-sky-800 dark:hover:text-sky-300">
+              去已移出看看
+            </Link>
+            <button
+              type="button"
+              onClick={() => setTriageBannerDismissed(true)}
+              className="font-medium underline underline-offset-2"
+            >
+              知道了
+            </button>
+          </div>
+        )}
+
+        {/* 待读箱：顶部显著入口 + 数量角标。默认视图不变——永久库仍是默认落点，
+            待读箱是叠加在上面的状态筛选，不劫持老用户首页。 */}
+        {triageSettings.enabled && (triageCounts.inbox > 0 || triageCounts.read > 0 || shelvedCount > 0) && (
+          <section aria-label="待读箱" className="rounded-xl border border-border/70 bg-card/50 p-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Inbox className="h-3.5 w-3.5" />
+                待读箱
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {triageCounts.inbox} 条待读 · {triageCounts.dueSoon} 条快到期
+                {triageCounts.read > 0 ? ` · ${triageCounts.read} 条已读待定` : ''}
+              </span>
+              <span className="ml-auto" />
+              <Link href="/favorites/shelved" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                已移出 {shelvedCount > 0 ? `(${shelvedCount})` : ''}
+              </Link>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {(
+                [
+                  ['all', `全部 ${favorites.items.length}`],
+                  ['inbox', `待读箱 ${triageCounts.inbox}`],
+                  ['read', `已读 ${triageCounts.read}`],
+                  ['permanent', `永久库 ${triageCounts.permanent}`],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTriageFilter(key)}
+                  aria-pressed={triageFilter === key}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                    triageFilter === key
+                      ? 'border-primary/40 bg-primary/10 text-primary'
+                      : 'border-border/60 bg-background/60 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="text-[11px] text-muted-foreground">
+                新收藏先在待读箱放 {triageSettings.inboxHours} 小时，没打开就移到「已移出」（可找回）；点开一次就算读过（按本机记录算）。
+              </span>
+            </div>
+          </section>
+        )}
+
+        {/* 待读分流关着时上面整节隐藏，但已移出区里的收藏还在等找回：
+            开关关只冻住待读箱，不该把唯一的找回入口也藏起来。 */}
+        {!triageSettings.enabled && shelvedCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-card/50 px-3 py-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Inbox className="h-3.5 w-3.5" />
+              待读分流已关闭
+            </span>
+            <span className="ml-auto" />
+            <Link href="/favorites/shelved" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+              已移出 ({shelvedCount})
             </Link>
           </div>
         )}
@@ -1336,6 +1814,14 @@ export default function FavoritesPage() {
           />
         )}
 
+        {/* 公开导航页（Batch 3 第 6 项）：把一个收藏夹发布成 /pub/ 只读页；未登录时区内置灰说明 */}
+        <PublicPageManager
+          cloudIdentity={cloudIdentity}
+          folders={visibleFolders}
+          activeFolder={activeFolder}
+          activeFolderCount={activeFolder === 'all' ? favorites.items.length : (folderCounts.get(activeFolder) ?? 0)}
+        />
+
         {/* 本地筛选条：只在确实有收藏时出现（没有收藏时不需要筛选控件） */}
         {favorites.ready && favorites.items.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -1395,11 +1881,14 @@ export default function FavoritesPage() {
             )}
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value === 'title' ? 'title' : 'created')}
+              onChange={(e) =>
+                setSortBy(e.target.value === 'title' ? 'title' : e.target.value === 'recent' ? 'recent' : 'created')
+              }
               aria-label="收藏排序"
               className="h-9 rounded-md border border-border/60 bg-background px-2 text-xs text-muted-foreground"
             >
               <option value="created">最近收藏</option>
+              <option value="recent">最近打开</option>
               <option value="title">按标题</option>
             </select>
             <Button
@@ -1412,6 +1901,7 @@ export default function FavoritesPage() {
                 setBatchMode(!batchMode)
                 setSelectedSiteIds(new Set())
               }}
+              title="批量管理（快捷键 M）"
             >
               <Layers className="w-3.5 h-3.5 mr-1" />
               {batchMode ? '退出批量' : '批量管理'}
@@ -1464,13 +1954,14 @@ export default function FavoritesPage() {
 
         {/* 批量操作工具栏 */}
         {batchMode && favorites.items.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-primary/30 bg-primary/5 mb-4 shadow-2xs">
+          <div ref={batchBarRef} className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-primary/30 bg-primary/5 mb-4 shadow-2xs">
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-8 px-2 text-xs font-medium"
                 onClick={handleSelectAll}
+                title="全选当前已渲染的收藏（快捷键 Ctrl+A）"
               >
                 {selectedSiteIds.size === renderedFavorites.length && renderedFavorites.length > 0 ? (
                   <CheckSquare className="w-4 h-4 mr-1.5 text-primary" />
@@ -1490,6 +1981,17 @@ export default function FavoritesPage() {
               <select
                 value={batchFolderTarget}
                 onChange={(e) => setBatchFolderTarget(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter 在 select 上原生是「打开下拉」而非确认移动：批量键盘约定
+                  // Enter=确认移动（F 聚焦后 ↑↓ 选目标、Enter 确认，全程不用鼠标）。
+                  // 取舍：下拉已打开时 Enter 本应是「选定高亮项」，这里也会触发确认
+                  // 移动——键盘流（F → ↑↓ → Enter）从不打开下拉，不受影响；鼠标点开
+                  // 下拉的用户请点「确认移动」按钮。
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void handleBatchMoveFolder()
+                  }
+                }}
                 disabled={selectedSiteIds.size === 0 || manageBusy}
                 aria-label="选择批量移动目标文件夹"
                 className="h-8 rounded-lg border border-border/70 bg-background px-2 text-xs text-foreground"
@@ -1507,6 +2009,7 @@ export default function FavoritesPage() {
                 className="h-8 text-xs"
                 disabled={selectedSiteIds.size === 0 || manageBusy}
                 onClick={() => void handleBatchMoveFolder()}
+                title="确认移动（在移夹下拉框中按 Enter，快捷键 F 聚焦下拉框）"
               >
                 确认移动
               </Button>
@@ -1516,6 +2019,7 @@ export default function FavoritesPage() {
                 className="h-8 text-xs"
                 disabled={selectedSiteIds.size === 0}
                 onClick={handleBatchExportMarkdown}
+                title="导出 MD（快捷键 E）"
               >
                 导出 MD
               </Button>
@@ -1523,23 +2027,73 @@ export default function FavoritesPage() {
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
+                disabled={selectedSiteIds.size < 2 || selectedSiteIds.size > 4}
+                onClick={() => router.push(buildCompareHref([...selectedSiteIds]))}
+                title={
+                  selectedSiteIds.size < 2
+                    ? `横向对比需要选 2–4 个收藏（当前已选 ${selectedSiteIds.size} 个）`
+                    : selectedSiteIds.size > 4
+                      ? `横向对比一次最多 4 个收藏（当前已选 ${selectedSiteIds.size} 个）`
+                      : '并排对照选中的 2–4 个收藏'
+                }
+              >
+                横向对比
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
                 disabled={selectedSiteIds.size === 0}
                 onClick={handleBatchExportHtml}
+                title="导出 HTML（快捷键 Shift+E）"
               >
                 导出 HTML
               </Button>
               <Button
                 size="sm"
                 variant="outline"
+                className="h-8 min-h-11 text-xs"
+                disabled={selectedSiteIds.size === 0}
+                title={
+                  selectedSiteIds.size === 0
+                    ? '请先选中至少 1 个收藏，再打包成链接包'
+                    : selectedSiteIds.size > LINK_PACK_MAX_ITEMS
+                      ? `已选 ${selectedSiteIds.size} 个，一次最多打包 ${LINK_PACK_MAX_ITEMS} 个，打开后可分包`
+                      : '把选中的收藏打包成一页清单链接分享（快捷键 L）'
+                }
+                onClick={() => setShowLinkPack(true)}
+              >
+                <Link2 className="w-3.5 h-3.5 mr-1" />
+                打包成链接包
+              </Button>
+              {selectedSiteIds.size === 0 && (
+                <span className="text-xs text-muted-foreground">选中收藏后可打包成链接包</span>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
                 className="h-8 text-xs border-destructive/40 text-destructive-text hover:bg-destructive/15"
                 disabled={selectedSiteIds.size === 0}
                 onClick={() => void handleBatchDelete()}
+                title="批量删除选中项（快捷键 Delete，可按 Ctrl+Z 撤销）"
               >
                 <Trash2 className="w-3.5 h-3.5 mr-1" />
                 批量删除
               </Button>
             </div>
           </div>
+        )}
+
+        {/* 批量键盘常驻提示：收藏页没有快捷键指南对话框，见设计 §3.5 */}
+        {batchMode && favorites.items.length > 0 && (
+          <p className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span><kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-xs">M</kbd> 退出</span>
+            <span><kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-xs">Space</kbd> 选</span>
+            <span><kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-xs">Ctrl+A</kbd> 全选</span>
+            <span><kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-xs">E</kbd> 导出</span>
+            <span><kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-xs">F</kbd> 移夹</span>
+            <span><kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-xs">Del</kbd> 删除</span>
+          </p>
         )}
 
         {!favorites.ready ? (
@@ -1591,11 +2145,17 @@ export default function FavoritesPage() {
             icon={Search}
             iconTone="muted"
             title={
-              activeFolder === 'all'
-                ? saveSearchMode === 'meaning' && favoriteQuery.trim() !== ''
-                  ? favoriteMeaningEmptyMessage(favoriteQuery)
-                  : favoriteFilterEmptyMessage(favoriteQuery)
-                : '这个收藏夹下还没有站点'
+              triageFilter === 'inbox'
+                ? '待读箱里没有待读的收藏'
+                : triageFilter === 'read'
+                  ? '没有已读待定的收藏'
+                  : triageFilter === 'permanent'
+                    ? '没有永久收藏'
+                    : activeFolder === 'all'
+                      ? saveSearchMode === 'meaning' && favoriteQuery.trim() !== ''
+                        ? favoriteMeaningEmptyMessage(favoriteQuery)
+                        : favoriteFilterEmptyMessage(favoriteQuery)
+                      : '这个收藏夹下还没有站点'
             }
             description={
               activeFolder === 'all' ? (
@@ -1616,17 +2176,52 @@ export default function FavoritesPage() {
                 onClick={() => {
                   setFavoriteQuery('')
                   if (activeFolder !== 'all') setActiveFolder('all')
+                  if (triageFilter !== 'all') setTriageFilter('all')
                 }}
               >
                 查看全部收藏
               </Button>
             }
           />
+        ) : triageFilter === 'inbox' || triageFilter === 'read' ? (
+          <ul className="space-y-2">
+            {renderedFavorites.map((f) => (
+              <TriageInboxRow
+                key={f.siteId}
+                item={f}
+                settings={triageSettings}
+                now={Date.now()}
+                onReopen={(siteId) => favorites.recordOpened(siteId)}
+                onRenew={(siteId) => {
+                  if (favorites.renewInbox(siteId)) {
+                    setSyncNote(`已续期「${f.title}」，重新获得完整待读时间`)
+                    setSyncStatus('info')
+                  }
+                }}
+                onPromote={(siteId) => {
+                  if (favorites.promoteFavorite(siteId)) {
+                    setSyncNote(`「${f.title}」已留进永久库，不再倒计时`)
+                    setSyncStatus('success')
+                  }
+                }}
+                onShelve={(siteId) => {
+                  if (favorites.shelveFavorite(siteId)) {
+                    setSyncNote(`已把「${f.title}」移到「已移出」，可在收藏页找回`)
+                    setSyncStatus('info')
+                  } else {
+                    setSyncNote(`移出失败：「${f.title}」还在原处（本机存储写不进去）`)
+                    setSyncStatus('error')
+                  }
+                }}
+              />
+            ))}
+          </ul>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! gap-3.5 sm:gap-4">
             {renderedFavorites.map((f) => (
               <div
                 key={f.siteId}
+                data-favorite-site-id={f.siteId}
                 
                 className={cn(
                   'group relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-3.5 flex flex-col justify-between',
@@ -1662,7 +2257,26 @@ export default function FavoritesPage() {
                           e.preventDefault()
                           handleToggleSelect(f.siteId)
                         }
-                      : undefined
+                      : () => {
+                          // 主列表点卡也要记一次打开：此前只有 ⌘K / 重温 / 久未打开
+                          // 入口记 lastOpenedAt，直接点卡打开不记，「最近打开」排序
+                          // 与「好久没打开」提示都只能按残缺的本机记录算。写本机即可，
+                          // 同步写是 localStorage，导航前已落盘；批量模式下点选不是
+                          // 打开，不记。失败返回 false 也不拦导航（recordOpened 语义）。
+                          favorites.recordOpened(f.siteId)
+                        }
+                  }
+                  onAuxClick={
+                    batchMode
+                      ? undefined
+                      : (e) => {
+                          // 中键点击（auxclick，不触发 click）同样是打开：只记中键
+                          // （button === 1），右键菜单不记。
+                          if (e.button === 1) favorites.recordOpened(f.siteId)
+                        }
+                  }
+                  onKeyDown={
+                    batchMode ? (e) => handleFavoriteCardKeyDown(e, f.siteId) : undefined
                   }
                   target="_blank"
                   rel="noopener noreferrer"
@@ -1696,11 +2310,48 @@ export default function FavoritesPage() {
                           )
                         })()}
                         {(() => {
+                          const hb = hibernatingById.get(f.siteId)
+                          if (!hb) return null
+                          return (
+                            <span
+                              title={hb.description}
+                              className="ml-2 inline-flex rounded-full bg-slate-500/10 px-2 py-0.5 font-sans text-[11px] font-medium text-slate-700 dark:text-slate-400"
+                            >
+                              {hibernationBadgeLabel(hb.reason, hb.days)}
+                            </span>
+                          )
+                        })()}
+                        {(() => {
+                          const status = resolveTriageStatus(f)
+                          if (status === 'permanent') return null
+                          const msLeft = triageMsLeft(f, triageSettings)
+                          return (
+                            <span
+                              title={describeTriage(f, triageSettings)}
+                              className="ml-2 inline-flex rounded-full bg-sky-500/10 px-2 py-0.5 font-sans text-[11px] font-medium text-sky-700 dark:text-sky-400"
+                            >
+                              {status === 'inbox' ? '待读' : '已读'} · {triageBadgeLabel(msLeft)}
+                            </span>
+                          )
+                        })()}
+                        {(() => {
                           const reason = meaningReasonBySiteId.get(f.siteId)
                           if (!reason) return null
                           return (
                             <span className="ml-2 inline-flex rounded-full bg-primary/10 px-2 py-0.5 font-sans text-[11px] font-medium text-primary">
                               {saveMatchReasonLabel(reason)}
+                            </span>
+                          )
+                        })()}
+                        {(() => {
+                          const ql = quicklinkFromFavorite(f)
+                          if (!ql) return null
+                          return (
+                            <span
+                              title={`快捷链接：输入 !${ql.quickPrefix} <关键词> 直达搜索`}
+                              className="ml-2 inline-flex rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-medium text-primary"
+                            >
+                              !{ql.quickPrefix}
                             </span>
                           )
                         })()}
@@ -1805,6 +2456,125 @@ export default function FavoritesPage() {
                         ))}
                       </span>
                     )}
+                    {quicklinkEditor === f.siteId ? (
+                      <span className="flex min-w-0 basis-full flex-col gap-1">
+                        <span className="flex min-w-0 flex-1 items-center gap-1">
+                          <Input
+                            value={quickPrefixDraft}
+                            onChange={(e) => setQuickPrefixDraft(e.target.value)}
+                            placeholder="前缀，如 gh"
+                            aria-label="快捷链接前缀"
+                            maxLength={16}
+                            className="h-7 w-24 shrink-0 text-[11px] font-mono"
+                            autoFocus
+                          />
+                          <Input
+                            value={quickTemplateDraft}
+                            onChange={(e) => setQuickTemplateDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveQuicklink(f.siteId)
+                              if (e.key === 'Escape') setQuicklinkEditor(null)
+                            }}
+                            placeholder="模板，如 https://github.com/search?q={q}"
+                            aria-label="快捷链接模板"
+                            className="h-7 min-w-0 flex-1 text-[11px]"
+                          />
+                          <Button size="sm" variant="ghost" className="h-7 px-1" aria-label="保存快捷链接" onClick={() => saveQuicklink(f.siteId)}>
+                            <Check className="h-3.5 w-3.5" />
+                          </Button>
+                          {(f.quickPrefix || f.templateUrl) && (
+                            <Button size="sm" variant="ghost" className="h-7 px-1.5 text-[11px] text-muted-foreground" onClick={() => clearQuicklink(f.siteId)}>
+                              清除
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" className="h-7 px-1.5 text-[11px] text-muted-foreground" onClick={() => setQuicklinkEditor(null)}>
+                            取消
+                          </Button>
+                        </span>
+                        {quicklinkError && (
+                          <span className="text-[11px] text-destructive-text">{quicklinkError}</span>
+                        )}
+                        {(() => {
+                          const conflict = normalizeQuicklinkPrefix(quickPrefixDraft)
+                            ? findQuicklinkPrefixConflict(quickPrefixDraft, quicklinkEntries, f.siteId)
+                            : null
+                          if (!conflict) return null
+                          return (
+                            <span className="text-[11px] text-amber-700 dark:text-amber-400">
+                              {conflict === 'builtin'
+                                ? '这个前缀与内置引擎相同，保存后你的快捷链接优先触发。'
+                                : '已有另一条收藏用这个前缀，保存后先匹配到的那条优先触发。'}
+                            </span>
+                          )
+                        })()}
+                        <span className="text-[11px] text-muted-foreground">
+                          模板里恰好一个 {'{q}'}；之后输入 !前缀 &lt;关键词&gt; 直达搜索。本机有效，不会同步到云端。
+                        </span>
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-1.5 text-[11px] text-muted-foreground"
+                        onClick={() => {
+                          setQuicklinkEditor(f.siteId)
+                          setQuickPrefixDraft(f.quickPrefix ?? '')
+                          setQuickTemplateDraft(f.templateUrl ?? '')
+                          setQuicklinkError(null)
+                        }}
+                      >
+                        <Zap className="mr-1 h-3 w-3" />
+                        {f.quickPrefix ? '改快捷链接' : '快捷链接'}
+                      </Button>
+                    )}
+                    {(() => {
+                      // 冬眠按钮：只在永久库上出现（待读箱 / 已读有自己的到期流转）；
+                      // 已冬眠的显示「唤醒」，点一次就回到正常列表（同时记一次打开）。
+                      const hb = hibernatingById.get(f.siteId)
+                      if (hb) {
+                        return (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-1.5 text-[11px] text-muted-foreground"
+                            title="唤醒：回到正常列表（同时记一次打开）"
+                            onClick={() => {
+                              if (favorites.wakeFavorite(f.siteId)) {
+                                setSyncNote(`已唤醒「${f.title}」，回到正常列表`)
+                                setSyncStatus('success')
+                              } else {
+                                setSyncNote(`唤醒失败：「${f.title}」还在冬眠（本机存储写不进去）`)
+                                setSyncStatus('error')
+                              }
+                            }}
+                          >
+                            <Sun className="mr-1 h-3 w-3" />
+                            唤醒
+                          </Button>
+                        )
+                      }
+                      if (resolveTriageStatus(f) !== 'permanent') return null
+                      return (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-1.5 text-[11px] text-muted-foreground"
+                          title="冬眠：沉到页面底部的冬眠区，不删除，随时能唤醒"
+                          onClick={() => {
+                            if (favorites.hibernateFavorite(f.siteId)) {
+                              setSyncNote(`已把「${f.title}」冬眠，沉到页面底部，随时能唤醒`)
+                              setSyncStatus('info')
+                            } else {
+                              setSyncNote(`冬眠失败：「${f.title}」还在原处（本机存储写不进去）`)
+                              setSyncStatus('error')
+                            }
+                          }}
+                        >
+                          <Moon className="mr-1 h-3 w-3" />
+                          冬眠
+                        </Button>
+                      )
+                    })()}
                 </div>
                 <div className="absolute top-2 right-2">
                   <FavoriteButton site={f} />
@@ -1814,11 +2584,75 @@ export default function FavoritesPage() {
           </div>
         )}
 
+        {/* 冬眠收藏：只在默认浏览态分区。条目没有删、没有移出，只是沉到这里；点标题打开一次就能唤醒。 */}
+        {hibernatingFavorites.length > 0 && (
+          <section className="mt-6 rounded-xl border border-border/70 bg-muted/30 p-4" aria-label="冬眠收藏">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Moon className="h-4 w-4 text-slate-500" aria-hidden />
+                {hibernationSectionTitle(hibernatingFavorites.length)}
+              </h2>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={() => setHibernationOpen((v) => !v)}
+                aria-expanded={hibernationOpen}
+              >
+                {hibernationOpen ? '收起' : `展开看看 (${hibernatingFavorites.length})`}
+                {hibernationOpen ? <ChevronUp className="ml-1 h-3.5 w-3.5" /> : <ChevronDown className="ml-1 h-3.5 w-3.5" />}
+              </Button>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              超过 {hibernationSettings.thresholdDays} 天本机没记录到打开的收藏沉在这里，没有删掉，也能用搜索找到；
+              点开一次就能唤醒，回到正常列表。
+            </p>
+            {renderedFavorites.length === 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">清醒的收藏暂时没有了，都在下面的冬眠区。</p>
+            )}
+            {hibernationOpen && (
+              <>
+                <ul className="mt-3 space-y-2">
+                  {renderedHibernating.map((f) => {
+                    const hb = hibernatingById.get(f.siteId)
+                    if (!hb) return null
+                    const wake = () => {
+                      if (favorites.wakeFavorite(f.siteId)) {
+                        setSyncNote(`已唤醒「${f.title}」，回到正常列表`)
+                        setSyncStatus('success')
+                      } else {
+                        setSyncNote(`唤醒失败：「${f.title}」还在冬眠（本机存储写不进去）`)
+                        setSyncStatus('error')
+                      }
+                    }
+                    return (
+                      <HibernationRow
+                        key={f.siteId}
+                        item={f}
+                        reason={hb.reason}
+                        daysSinceOpen={hb.days}
+                        description={hb.description}
+                        onReopen={() => wake()}
+                        onWake={() => wake()}
+                      />
+                    )
+                  })}
+                </ul>
+                {hibernatingFavorites.length > HIBERNATION_RENDER_LIMIT && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    仅显示前 {HIBERNATION_RENDER_LIMIT} 条，其余用搜索找（搜索不受冬眠分区影响）。
+                  </p>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
         {/* 渐进渲染的续载：未展示的条目仍在本地，只是不占用首屏 */}
-        {visibleFavorites.length > renderedFavorites.length && (
+        {awakeFavorites.length > renderedFavorites.length && (
           <div className="mt-4 flex flex-col items-center gap-2">
             <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
-              已显示 {renderedFavorites.length} / {visibleFavorites.length}
+              已显示 {renderedFavorites.length} / {awakeFavorites.length}
             </p>
             <Button variant="outline" size="sm" className="text-xs" onClick={() => setVisibleCount((n) => n + 60)}>
               加载更多收藏
@@ -1867,6 +2701,22 @@ export default function FavoritesPage() {
             onOpenChange={setShowUniversalImport}
             existingHrefs={new Set(favorites.items.map((f) => f.href))}
             onImportItems={handleImportUniversalItems}
+          />
+        )}
+
+        {/* 链接包（快照版）生成对话框：多选收藏 → 一页清单分享链接 */}
+        {showLinkPack && (
+          <LinkPackDialog
+            open={showLinkPack}
+            items={favorites.items
+              .filter((f) => selectedSiteIds.has(f.siteId))
+              .map((f) => ({
+                siteId: f.siteId,
+                title: f.title,
+                href: f.href,
+                purpose: f.description ?? f.note ?? undefined,
+              }))}
+            onClose={() => setShowLinkPack(false)}
           />
         )}
       </div>

@@ -25,6 +25,7 @@ import { safeDecodeParam,
   requestIdentityOf,
   isAdminScope,
   identityTrusted,
+  markCursorPaginationDeprecated,
   notFound,
   unauthorized,
 } from "../shared.ts";
@@ -111,7 +112,9 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       // Keyset 游标（M12）：`?cursor=` 走 WHERE (updated_at,id) 谓词，不再 OFFSET；
       // nextCursor 随页返回，无下一页时为 null。无效游标由全局错误处理器映射成
       // 400 INVALID_CURSOR。
+      // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
       const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
+      if (cursor) markCursorPaginationDeprecated(reply);
       // myReview 属私有视图：统一走身份闸门 + identityOf 口径（64 字符），
       // 不再单独放宽到 120——写入侧（安装/星标/评价）一直按 identityOf 取值，
       // 这里读更长的串只会查不到自己的评价，或与签名校验的取值错位。

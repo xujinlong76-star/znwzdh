@@ -58,6 +58,7 @@ describe("reduceOperationsToState", () => {
       categoryOrder: [],
       pinnedSiteIdsByCategory: {},
       customCategories: [],
+      videoProgress: {},
     });
     const init = { pinnedCategoryIds: ["c1"], categoryOrder: ["c1"], pinnedSiteIdsByCategory: {}, customCategories: [] };
     const s2 = reduceOperationsToState([], init);

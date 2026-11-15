@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { ArrowRight, ExternalLink, Flame, Newspaper, Search, Sparkles } from 'lucide-react'
+import { ArrowRight, ExternalLink, Flame, MessageCircleQuestion, Newspaper, Search, Sparkles } from 'lucide-react'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
@@ -25,6 +25,7 @@ import { formatHotlistSubline } from '@/lib/relative-time'
 import BriefWatch from './brief-watch'
 import BriefResurface from './brief-resurface'
 import HotlistFreshness from './hotlist-freshness'
+import BriefTriage from './brief-triage'
 import DailyFocus from '@/components/daily-focus'
 
 /**
@@ -164,6 +165,23 @@ export default async function BriefPage() {
             放在条件之外——哪怕中枢不可达、简报降级成说明壳，今天的专注也还在。 */}
         <DailyFocus />
 
+        {/* 问问我的收藏：只是一张跳转卡片，不在简报页内嵌问答；点进去到 /ask 再问。 */}
+        <section
+          aria-label="问问我的收藏"
+          className="rounded-xl border bg-card p-4"
+        >
+          <Link href="/ask" className="flex items-center gap-3">
+            <MessageCircleQuestion className="h-5 w-5 shrink-0 text-primary" aria-hidden />
+            <span className="flex-1">
+              <span className="block text-sm font-semibold">问问我的收藏</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                在自己的收藏里带引用问答：每条结论都链到原收藏条目，找不到就老实说不知道。
+              </span>
+            </span>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          </Link>
+        </section>
+
         {!brief && !hotlist ? (
           <section className="rounded-xl border bg-card p-6 text-center">
             <Newspaper className="mx-auto mb-3 h-8 w-8 text-muted-foreground" aria-hidden />
@@ -194,6 +212,8 @@ export default async function BriefPage() {
             <BriefWatch />
 
             <BriefResurface />
+
+            <BriefTriage />
 
             {brief && brief.hotPicks.length > 0 ? (
               <section aria-label="今日热榜精选">

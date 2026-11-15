@@ -36,22 +36,25 @@ let BASELINE = [
   "apps/web-overlay/src/app/admin/navigation/components/AddCategoryForm.tsx",
   "apps/web-overlay/src/app/admin/navigation/components/AddItemForm.tsx",
   "apps/web-overlay/src/components/quick-access-tray.tsx",
-  "apps/web-overlay/src/components/home-diy-share-dialog.tsx",
-  "apps/web-overlay/src/components/speculative-prerender.tsx",
   "apps/web-overlay/src/components/ui/search-input.tsx",
-  "apps/web-overlay/src/components/video-scrubber-preview.tsx",
-  "apps/web-overlay/src/components/video-heatmap-timeline.tsx",
-  "apps/web-overlay/src/components/video-shader-filter.tsx",
-  "apps/web-overlay/src/components/video-spectrogram-canvas.tsx",
-  "apps/web-overlay/src/components/video-neural-audio-controls.tsx",
-  "apps/web-overlay/src/components/video-danmaku-mesh-monitor.tsx",
-  "apps/web-overlay/src/components/video-audio-stem-mixer-dialog.tsx",
-  "apps/web-overlay/src/components/video-p2p-swarm-hud.tsx",
-  "apps/web-overlay/src/components/video-terminal-player.tsx",
   "apps/web-overlay/src/lib/lazy-dnd.tsx",
   "apps/web-overlay/src/lib/session.ts",
   "apps/web-overlay/src/lib/p2p-stream-loader.ts",
-  "apps/web-overlay/src/lib/video-cache-manager.ts",
+  "apps/web-overlay/src/lib/video-audio-stem-separator.ts",
+  "apps/web-overlay/src/lib/video-breakpoint-debugger.ts",
+  "apps/web-overlay/src/lib/video-live-test-runner.ts",
+  "apps/web-overlay/src/lib/video-wasm-runtime.ts",
+  "apps/web-overlay/src/lib/video-code-sandbox-runtime.ts",
+  "apps/web-overlay/src/lib/video-p2p-danmaku-mesh.ts",
+  "apps/web-overlay/src/lib/video-neural-denoiser.ts",
+  "apps/web-overlay/src/lib/video-p2p-chunk-swarm.ts",
+  "apps/web-overlay/src/lib/video-spectrum-visualizer.ts",
+  "apps/web-overlay/src/lib/video-webgpu-sharpener.ts",
+  "apps/web-overlay/src/lib/video-terminal-recorder.ts",
+  "apps/web-overlay/src/lib/video-filmstrip-generator.ts",
+  "apps/web-overlay/src/lib/video-scrubber-filmstrip.ts",
+  "apps/web-overlay/src/lib/video-rescore.ts",
+  "apps/web-overlay/src/lib/video-doc-read.ts",
   "apps/web-overlay/src/registry/new-york/ui/chart.tsx",
   "apps/web-overlay/src/registry/new-york/ui/input-otp.tsx",
   "apps/web-overlay/src/registry/new-york/ui/toggle.tsx",
@@ -76,12 +79,13 @@ let BASELINE = [
  *   - lazy-dnd.tsx          属于 A：`"@hello-pangea/dnd": "./src/lib/lazy-dnd.tsx"` 别名目标
  *   - chart.tsx             属于 D：为修 CI tsc 存量错误刻意纳入 overlay 的 vendored 覆盖
  *   - session.ts            属于 D：为上游 vendored 文件保留的空模块（header 已注明）
- *   - speculative-prerender.tsx 属于 C：prerender-cleanup-guard.test.ts 读源码断言
+ *   - speculative-prerender.tsx 曾属于 C（prerender-cleanup-guard.test.ts 读源码断言），
+ *     但组件与守卫测试已于 2026-11-13 随 B 组一并删除，基线条目同步移除。
  *   - quick-access-tray.tsx 属于 B+C：quick-jump-bar 用 DOM id 关联 + 效率测试读源码
  *   - search-input.tsx      属于 C：a11y-token-contrast.test.ts 的 CONTROL_FILES 读源码
  *   - input-otp.tsx         属于 C：同上 CONTROL_FILES
  * 可安全删除（仅需同步镜像与基线）：
- *   - VideoIconUpload.tsx / video-scrubber-preview.tsx / components/notification-badge.tsx
+ *   - VideoIconUpload.tsx / components/notification-badge.tsx
  *     （最后一个注意与**活跃**的 lib/notification-badge.ts 区分：前者是组件、后者是工具）
  */
 let BASELINE_NOTES = {
@@ -99,10 +103,36 @@ let BASELINE_NOTES = {
     "keep（D 上游占位）：上游 src/lib/session.ts 依赖已移除的 iron-session，本文件是覆盖用的空模块，删了 tsc 会 Cannot find module",
   "apps/web-overlay/src/lib/p2p-stream-loader.ts":
     "keep（C 守卫测试 + 功能待接线）：test/video-super-evolution.test.ts 直接 import 并断言 getP2PStreamCoordinator 的行为；模块是 P2P 流加载协调器，播放器尚未接线（src 内无业务 import）；删除会先让测试变红，勿当普通死代码删除（2026-11-12 复核）",
-  "apps/web-overlay/src/lib/video-cache-manager.ts":
-    "keep（C 守卫测试 + 功能待接线）：test/video-evolution-v3.test.ts 直接 import 并断言 calculatePrefetchQueue / isStorageAvailable，test/video-remediation.test.ts 直接 import 并断言 selectEvicted / MAX_CACHED_VIDEOS；模块是视频缓存与预取队列工具，播放器尚未调用 calculatePrefetchQueue；删除会先让测试变红（2026-11-12 复核）",
-  "apps/web-overlay/src/components/speculative-prerender.tsx":
-    "keep（C 守卫测试）：test/prerender-cleanup-guard.test.ts 按源码路径读取断言；注意业务引用的是同名的 lib/speculative-prerender.ts",
+  "apps/web-overlay/src/lib/video-audio-stem-separator.ts":
+    "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import；其唯一 src 引用者 video-audio-stem-mixer-dialog.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-breakpoint-debugger.ts":
+    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-debugger-stepper-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-live-test-runner.ts":
+    "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import，test/opaque-code-sandbox-guard.test.ts 直接 import runLiveCodeTest 并断言 D/E 行为；其唯一 src 引用者 video-live-test-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-wasm-runtime.ts":
+    "keep（C 守卫测试）：test/video-evolution-v4.test.ts 直接 import；其唯一 src 引用者 video-wasm-terminal-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-code-sandbox-runtime.ts":
+    "keep（C 守卫测试）：test/video-evolution-v10.test.ts 直接 import VirtualFileSystem/SandboxRuntime，test/opaque-code-sandbox-guard.test.ts 直接 import 并按源码路径读取断言；其唯一 src 引用者 video-sandbox-runner-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-p2p-danmaku-mesh.ts":
+    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-danmaku-mesh-monitor.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-neural-denoiser.ts":
+    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-neural-audio-controls.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-p2p-chunk-swarm.ts":
+    "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import；其唯一 src 引用者 video-p2p-swarm-hud.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-spectrum-visualizer.ts":
+    "keep（C 守卫测试）：test/video-evolution-v6.test.ts 直接 import；其唯一 src 引用者 video-spectrogram-canvas.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-webgpu-sharpener.ts":
+    "keep（C 守卫测试）：test/video-evolution-v4.test.ts 直接 import；其唯一 src 引用者 video-shader-filter.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-terminal-recorder.ts":
+    "keep（C 守卫测试）：test/video-evolution-v3.test.ts 直接 import；其唯一 src 引用者 video-terminal-player.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-filmstrip-generator.ts":
+    "keep（C 守卫测试）：test/video-evolution-v6.test.ts 直接 import，test/chapter-start-sec.test.ts 的 ALLOWLIST 引用；其 src 引用者 video-scrubber-preview.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-scrubber-filmstrip.ts":
+    "keep（C 守卫测试）：test/video-evolution-v3.test.ts 直接 import；其唯一 src 引用者 video-scrubber-preview.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+  "apps/web-overlay/src/lib/video-rescore.ts":
+    "keep（C 守卫测试 + 脚本入口）：test/video-rescore.test.ts 直接 import（7 用例）；scripts/video-rescore-backfill.mjs 用 esbuild 把它打包当全量重算回填入口；门禁只扫 src 内 import，看不见 scripts 引用，删除会先让测试与回填脚本变红（2026-11-14 复核）",
+  "apps/web-overlay/src/lib/video-doc-read.ts":
+    "keep（C 守卫测试）：test/video-doc-read.test.ts 直接 import readDocResilient 并断言新鲜优先/失败降级/错误原文；模块是内容文档可降级读取层（2ac0ccb 随 modular 不可变基线引入），src 内暂无业务 import；删除会先让测试变红，勿当普通死代码删除（2026-11-15 复核）",
   "apps/web-overlay/src/components/ui/search-input.tsx":
     "keep（C 守卫测试）：a11y-token-contrast.test.ts 的 CONTROL_FILES 用 readFileSync 读取并断言 border-border-strong",
   "apps/web-overlay/src/registry/new-york/ui/input-otp.tsx":
@@ -113,26 +143,8 @@ let BASELINE_NOTES = {
     "delete（真死）：除基线外无任何引用（含字符串/测试/别名）；旧版 props 式分享确认框已下线（home-diy-toolbar.tsx:827 原文），现由 src/components/diy/home-diy-share-confirm-dialog.tsx（直接读 useHomeDIY，无 props）取代；删除时须同步 apps/web 镜像与 BASELINE 条目（2026-11-13 复核）",
   "apps/web-overlay/src/app/admin/videos/components/VideoIconUpload.tsx":
     "delete（真死）：除基线与文档索引外无任何引用（含字符串/测试/别名）",
-  "apps/web-overlay/src/components/video-scrubber-preview.tsx":
-    "delete（真死）：除基线外无引用；视频播放器未接入（接入前勿删，见 2026-11-08 外部改动）",
   "apps/web-overlay/src/components/notification-badge.tsx":
     "delete（真死）：组件级死代码；勿与活跃的 lib/notification-badge.ts（unreadBadgeText）混淆",
-  "apps/web-overlay/src/components/video-heatmap-timeline.tsx":
-    "keep（入口已下线，2026-11-11 播放器审计第二批）：章节热力图无全站观众回放数据源，曲线为本地合成；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
-  "apps/web-overlay/src/components/video-shader-filter.tsx":
-    "keep（入口已下线，2026-11-11 播放器审计第二批）：CAS 锐化对 iframe 嵌入视频无任何渲染消费者，调参零效果；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
-  "apps/web-overlay/src/components/video-spectrogram-canvas.tsx":
-    "keep（入口已下线，2026-11-11 播放器审计第二批）：频谱为正弦+噪声合成，与实际播放音频无关；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
-  "apps/web-overlay/src/components/video-neural-audio-controls.tsx":
-    "keep（入口已下线，2026-11-11 播放器审计第二批）：神经降噪控制器从未接进任何 AudioContext 音频链路；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
-  "apps/web-overlay/src/components/video-danmaku-mesh-monitor.tsx":
-    "keep（入口已下线，2026-11-11 播放器审计第二批）：P2P 弹幕网格无传输层，节点/延迟均为本地虚构；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
-  "apps/web-overlay/src/components/video-audio-stem-mixer-dialog.tsx":
-    "keep（入口已下线，2026-11-11 播放器审计第二批）：分轨混音从未有音频喂入，推子不影响声音；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
-  "apps/web-overlay/src/components/video-p2p-swarm-hud.tsx":
-    "keep（入口已下线，2026-11-11 播放器审计第二批）：P2P 分片加速无 RTCPeerConnection，分片只是内存记账；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
-  "apps/web-overlay/src/components/video-terminal-player.tsx":
-    "keep（入口已下线，2026-11-11 播放器审计第二批）：终端回放是按章节合成的录像，并非视频的真实终端记录；播放器已按『无数据不给入口』移除入口，组件保留待接入真实数据后恢复，勿当普通死代码删除（其 lib 依赖仍由本组件引用）",
 };
 
 // ---------- 形状校验（退出码 2） ----------

@@ -12,7 +12,7 @@ import {
 } from '@/registry/new-york/ui/dropdown-menu'
 import { canonicalDensityLabel, useDensity, type ContentDensity } from './density-provider'
 
-export function DensityToggle({ className }: { className?: string }) {
+export function DensityToggle({ className, menuSide = 'bottom' }: { className?: string; menuSide?: 'top' | 'bottom' }) {
   const { density, setDensity, densityLabel } = useDensity()
 
   // 行标题用规范表原文（与设置页下拉逐字一致），百分比并入描述行
@@ -61,7 +61,7 @@ export function DensityToggle({ className }: { className?: string }) {
           {currentIcon()}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56 p-1.5 shadow-xl bg-popover/95 backdrop-blur-md border border-border/80">
+      <DropdownMenuContent align="end" side={menuSide} className="w-56 p-1.5 shadow-xl bg-popover/95 backdrop-blur-md border border-border/80">
         <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
           内容排版密度矩阵
         </DropdownMenuLabel>

@@ -32,6 +32,7 @@ POST /api/user/ai/chat | 用户自带 provider 的聊天响应：含流式/非�
 POST /api/ai/find | AI 找站：响应含模型生成的理由文本与 mode/degraded 分支的可选字段（quota/scene/steps），形状随降级路径变化，已由 ai-find.test.ts 逐分支覆盖
 POST /api/ai/chat | 小猫猫对话：回复正文与推荐理由由模型生成，降级时切换本地口径字段，已由 ai-chat.test.ts 逐分支覆盖
 POST /api/videos/bili-summary | B站视频 AI 摘要：摘要正文由模型生成，mode/degraded 分支切换可选字段（summary/fallback/note），形状随降级路径变化，已由 video-bili-summary.test.ts 逐分支覆盖
+POST /api/ask | 问问我的收藏：SSE 事件流（text/event-stream）：无单一 JSON 响应体，终稿 answer 的引用校验与降级分支已由 ask-api.test.ts / ask-citations.test.ts 逐分支覆盖；只读前置状态 GET /api/ask/status 已绑定 AskStatusResponse
 POST /api/user/ai/canvas/generate | AI 画布生成：结构化内容由模型按提示生成
 POST /api/user/ai/plugin/generate | AI 插件生成：清单与文件由模型输出
 POST /api/tools/synthesize | 工具合成：结果由模型与检索上下文动态生成
@@ -90,3 +91,8 @@ POST /api/sites/batch-classify | 批量分类建议：逐站点的模型/规则�
 POST /api/submissions/prefill | 投稿预填：根据 URL 抓取与模型抽取的字段建议（随目标页面变化）
 POST /api/videos/copilot | 视频 copilot 建议：逐条候选与理由（随模型输出变化）
 POST /api/recipes/scaffold | 配方脚手架：按配方层级生成 .env 模板与粘合代码建议（随模型输出变化）
+
+# ---- 公开导航页（Batch 3 第 6 项，2026-11-13 新增，待补 schema）----
+POST /api/public-pages | 创建回执是固定形状 {page, url}（201），Batch 3 第 6 项收尾时未及在 core 登记 PublicPage 响应 schema，纯拖欠，补 schema + RESPONSE_SCHEMA_BINDINGS 后删除本行
+PATCH /api/public-pages/{slug} | 改状态回执是固定形状 {page}，同上，纯拖欠，待补 schema 后删除本行
+DELETE /api/public-pages/{slug} | 删除回执是固定形状 {ok: true}，同上，纯拖欠，待补 schema 后删除本行

@@ -30,6 +30,14 @@ import { getIdentity } from '@/lib/identity'
 import { reportClick } from '@/lib/navhub-api'
 import { copyText } from '@/lib/clipboard'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
+import { NumberDialBadge } from '@/components/number-dial-badge'
+import { resolveBatchKeyboardAction } from '@/lib/batch-keyboard'
+import {
+  isAnyDialogOpen,
+  isAnyMenuOpen,
+  isDragHandleFocused,
+  isEventTargetTyping,
+} from '@/lib/keyboard-guards'
 
 /**
  * 视觉缩略图（P1 #9：视觉卡片——缩略图一半）。
@@ -122,6 +130,16 @@ export interface NavigationCardProps {
   cardIndex?: number
   /** 当前显示列表的总卡数 */
   cardTotal?: number
+  /**
+   * 数字直达坞映射位（1~9）：由 navigation-content 的 buildDialMap 算出并透传，
+   * 挂载前为 undefined（SSR 与首帧不渲染角标）。有值时卡片图标右下角画角标，
+   * 主锚点的 aria-keyshortcuts 追加该数字。
+   */
+  dialDigit?: number
+  /** 该站绑定的自定义快拨位（'1'~'0'，Ctrl+Shift+数字）：只进 aria-keyshortcuts，不画角标 */
+  quickDialDigit?: string
+  /** 全站标题索引：卡片 ⋯ 菜单绑定快拨位时，报出被顶掉站点的站名 */
+  siteTitleById?: ReadonlyMap<string, string>
 }
 
 export const NavigationCard = memo(function NavigationCard({
@@ -144,6 +162,9 @@ export const NavigationCard = memo(function NavigationCard({
   onMoveCard,
   cardIndex = 0,
   cardTotal = 1,
+  dialDigit,
+  quickDialDigit,
+  siteTitleById,
 }: NavigationCardProps) {
   const linkTarget = useExternalLinkTarget(propLinkTarget)
   const { toast } = useToast()
@@ -189,6 +210,18 @@ export const NavigationCard = memo(function NavigationCard({
   }
 
   /**
+   * 主锚点的键盘快捷键说明（读屏播报）：基础是 Space 速览 + → 进操作区；
+   * 有数字直达位时追加该数字，有自定义快拨位时追加 Ctrl+Shift+数字。
+   * 角标本体是 aria-hidden 的装饰，快捷键信息只走这一处。
+   */
+  const dialKeyshortcuts = [
+    'Space',
+    'ArrowRight',
+    ...(dialDigit ? [String(dialDigit)] : []),
+    ...(quickDialDigit ? [`Ctrl+Shift+${quickDialDigit}`] : []),
+  ].join(' ')
+
+  /**
    * 拖拽手柄 + ⋯ 菜单：三处卡片形态共用。
    *
    * 手柄是 dnd-kit 的 handle（touch-action:none，激活阈值走
@@ -224,6 +257,8 @@ export const NavigationCard = memo(function NavigationCard({
           onCopy={() => void handleCopyLink()}
           onDelete={() => handlePruneSite()}
           sizeClass={sizeClass}
+          siteId={item.id}
+          siteTitleById={siteTitleById}
         />
       )}
     </>
@@ -311,6 +346,51 @@ export const NavigationCard = memo(function NavigationCard({
   const linkRef = useRef<HTMLAnchorElement>(null)
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLAnchorElement>) => {
+    // 多选模式：Space/Enter 切换选中（不再 Peek/导航），Delete/Backspace
+    // 走批量移除（11b，带撤销）：判定走 lib/batch-keyboard.ts 的纯函数，与
+    // window 层 useBatchKeyboard 同源，卡片级只处理 toggle-focused，其余
+    // kind 不拦冒泡、由 window 层执行；单卡隐藏 handlePruneSite 只在
+    // 非多选态走（下面的分支不在本 if 块内）。
+    // <a> 的 Enter 原生激活拦不住，window 冒泡 preventDefault 来不及，必须卡片级拦截。
+    // 拖拽进行中一律让位给 dnd-kit；守卫放行（弹窗/菜单打开等）时也不落回旧逻辑，
+    // 多选态下 Space/Enter 永不 Peek、永不导航；Delete/Backspace 走批量移除，
+    // 不走单卡隐藏 handlePruneSite。
+    if (
+      selectable &&
+      (e.key === ' ' || e.code === 'Space' || e.key === 'Enter' || e.key === 'Delete' || e.key === 'Backspace')
+    ) {
+      if (keyboardDragActive) return
+      const action = resolveBatchKeyboardAction(
+        {
+          key: e.key,
+          code: e.code,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+          isComposing: e.nativeEvent.isComposing,
+        },
+        {
+          composing: e.nativeEvent.isComposing ?? false,
+          typing: isEventTargetTyping(e.nativeEvent),
+          dialogOpen: isAnyDialogOpen(),
+          menuOpen: isAnyMenuOpen(),
+          editingLayout: isEditingLayout,
+          dragHandleFocused: isDragHandleFocused(),
+        },
+        { surface: 'home', inBatchMode: true, focusedSiteId: item.id },
+      )
+      if (action?.kind === 'toggle-focused') {
+        e.preventDefault()
+        e.stopPropagation()
+        onToggleSelect?.(item.id)
+        return
+      }
+      // 11b：Delete/Backspace 在多选态已是批量移除（带撤销），不再是 ignore。
+      // 非 toggle-focused 的 kind 一律直接 return，不拦冒泡，window 层
+      // use-batch-keyboard 接到 batch-remove 后执行真正的批量移除。
+      return
+    }
     if (e.key === ' ' || e.code === 'Space') {
       e.preventDefault()
       onPeek?.(item)
@@ -495,9 +575,9 @@ export const NavigationCard = memo(function NavigationCard({
                 onClick={handleLinkClick}
                 ref={linkRef}
                 onKeyDown={handleKeyDown}
-                aria-keyshortcuts="Space ArrowRight"
+                aria-keyshortcuts={dialKeyshortcuts}
                 aria-describedby={keyboardHintId}
-                aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}
+                aria-label={selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`}
                 draggable={false}
                 className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
               >
@@ -505,7 +585,7 @@ export const NavigationCard = memo(function NavigationCard({
               </a>
 
               <div className="relative z-10 pointer-events-none flex items-center gap-2 min-w-0 flex-1">
-                <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover/card:scale-105">
+                <div className="relative flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover/card:scale-105">
                   <SiteFavicon
                     title={item.title}
                     url={item.href}
@@ -513,6 +593,7 @@ export const NavigationCard = memo(function NavigationCard({
                     useDefaultIcon={item.useDefaultIcon}
                     className="w-full h-full object-contain rounded-xs"
                   />
+                  <NumberDialBadge digit={dialDigit} className="-bottom-1 -right-1" />
                 </div>
                 <div className="min-w-0 flex-1 flex items-center gap-1.5">
                   {hasSiteDetail ? (
@@ -690,9 +771,9 @@ export const NavigationCard = memo(function NavigationCard({
                 onClick={handleLinkClick}
                 ref={linkRef}
                 onKeyDown={handleKeyDown}
-                aria-keyshortcuts="Space ArrowRight"
+                aria-keyshortcuts={dialKeyshortcuts}
                 aria-describedby={keyboardHintId}
-                aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}
+                aria-label={selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`}
                 draggable={false}
                 className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
               >
@@ -703,18 +784,21 @@ export const NavigationCard = memo(function NavigationCard({
                 {/* 视觉横幅（P1 #9）：有真实缩略图时才渲染，固定 h-28，不产生布局偏移；
                     横幅已展示同一张图，下方标题行不再重复放小图标。 */}
                 {thumbnail && (
-                  <CardThumbnailVisual
-                    thumbnail={thumbnail}
-                    title={item.title}
-                    boxClassName="h-28 w-full shrink-0"
-                    imgClassName="h-14 w-14 object-contain drop-shadow-sm"
-                    monogramClassName="text-3xl"
-                  />
+                  <div className="relative shrink-0">
+                    <CardThumbnailVisual
+                      thumbnail={thumbnail}
+                      title={item.title}
+                      boxClassName="h-28 w-full shrink-0"
+                      imgClassName="h-14 w-14 object-contain drop-shadow-sm"
+                      monogramClassName="text-3xl"
+                    />
+                    <NumberDialBadge digit={dialDigit} className="bottom-1 right-1" />
+                  </div>
                 )}
                 <CardHeader className="p-4 sm:p-5 flex-1">
                   <div className="flex items-start gap-3.5">
                     {!thumbnail && (
-                    <div className="flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
+                    <div className="relative flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
                       <SiteFavicon
                         title={item.title}
                         url={item.href}
@@ -722,6 +806,7 @@ export const NavigationCard = memo(function NavigationCard({
                         useDefaultIcon={item.useDefaultIcon}
                         className="w-full h-full object-contain rounded-sm"
                       />
+                      <NumberDialBadge digit={dialDigit} className="-bottom-1 -right-1" />
                     </div>
                     )}
                     <div className="min-w-0 flex-1">
@@ -947,9 +1032,9 @@ export const NavigationCard = memo(function NavigationCard({
               onClick={handleLinkClick}
               ref={linkRef}
               onKeyDown={handleKeyDown}
-              aria-keyshortcuts="Space ArrowRight"
+              aria-keyshortcuts={dialKeyshortcuts}
               aria-describedby={keyboardHintId}
-              aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}
+              aria-label={selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`}
               draggable={false}
               className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
             >
@@ -976,15 +1061,18 @@ export const NavigationCard = memo(function NavigationCard({
                     视觉 tile；无缩略图时保持现有渲染不变。盒子尺寸固定，
                     图片懒加载、失败回落首字母徽标，不产生布局偏移。 */}
                 {thumbnail ? (
-                  <CardThumbnailVisual
-                    thumbnail={thumbnail}
-                    title={item.title}
-                    boxClassName="flex-shrink-0 w-12 h-12 rounded-xl shadow-xs transition-transform duration-200 group-hover/card:scale-105"
-                    imgClassName="h-9 w-9 object-contain"
-                    monogramClassName="text-lg"
-                  />
+                  <div className="relative flex-shrink-0">
+                    <CardThumbnailVisual
+                      thumbnail={thumbnail}
+                      title={item.title}
+                      boxClassName="flex-shrink-0 w-12 h-12 rounded-xl shadow-xs transition-transform duration-200 group-hover/card:scale-105"
+                      imgClassName="h-9 w-9 object-contain"
+                      monogramClassName="text-lg"
+                    />
+                    <NumberDialBadge digit={dialDigit} className="-bottom-1 -right-1" />
+                  </div>
                 ) : (
-                <div className="flex-shrink-0 w-7 h-7 @[280px]:w-8 @[280px]:h-8 rounded-lg p-1 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
+                <div className="relative flex-shrink-0 w-7 h-7 @[280px]:w-8 @[280px]:h-8 rounded-lg p-1 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
                   <SiteFavicon
                     title={item.title}
                     url={item.href}
@@ -992,6 +1080,7 @@ export const NavigationCard = memo(function NavigationCard({
                     useDefaultIcon={item.useDefaultIcon}
                     className="w-full h-full object-contain rounded-xs"
                   />
+                  <NumberDialBadge digit={dialDigit} className="-bottom-1 -right-1" />
                 </div>
                 )}
                 <div className="min-w-0 flex-1">

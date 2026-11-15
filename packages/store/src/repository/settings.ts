@@ -12,6 +12,7 @@
  *  - spotlightShortcut：全局唤醒搜索框快捷键偏好（mod+k / slash / both）
  *  - searchHistoryEnabled：是否自动记录云端搜索历史
  *  - telemetryEnabled：是否允许记录行为事件用于统计与体验优化
+ *  - numberDialEnabled：是否启用数字直达（按 1~9 打开速览坞站点、Ctrl+Shift+数字打开自定义快拨位）
  *  - historyRetentionDays：历史与行为数据自动保留天数（30 / 90 / 180 / 365）
  *
  * 缺省即「开启 + 默认体验」——旧用户没有这行记录或旧表尚未迁移 preferences_json 列时也不需要迁移回填即可安全读取。
@@ -34,6 +35,7 @@ export interface ExtendedUserPreferences {
   spotlightShortcut: SpotlightShortcutMode;
   searchHistoryEnabled: boolean;
   telemetryEnabled: boolean;
+  numberDialEnabled: boolean;
   historyRetentionDays: HistoryRetentionDays;
   /** 账号级主题偏好（跨设备）：null = 未设置过 */
   themePreference: ThemePreference;
@@ -59,6 +61,7 @@ export const DEFAULT_EXTENDED_PREFERENCES: ExtendedUserPreferences = {
   spotlightShortcut: "both",
   searchHistoryEnabled: true,
   telemetryEnabled: true,
+  numberDialEnabled: true,
   historyRetentionDays: 180,
   themePreference: null,
   hiddenHomeModules: [],
@@ -114,6 +117,10 @@ export function parseExtendedPreferences(raw: unknown): ExtendedUserPreferences 
       typeof parsed.telemetryEnabled === "boolean"
         ? parsed.telemetryEnabled
         : DEFAULT_EXTENDED_PREFERENCES.telemetryEnabled,
+    numberDialEnabled:
+      typeof parsed.numberDialEnabled === "boolean"
+        ? parsed.numberDialEnabled
+        : DEFAULT_EXTENDED_PREFERENCES.numberDialEnabled,
     historyRetentionDays: VALID_RETENTION_DAYS.has(retention)
       ? retention
       : DEFAULT_EXTENDED_PREFERENCES.historyRetentionDays,
@@ -200,6 +207,7 @@ export async function updateUserSettings(
     spotlightShortcut: patch.spotlightShortcut ?? current.spotlightShortcut,
     searchHistoryEnabled: patch.searchHistoryEnabled ?? current.searchHistoryEnabled,
     telemetryEnabled: patch.telemetryEnabled ?? current.telemetryEnabled,
+    numberDialEnabled: patch.numberDialEnabled ?? current.numberDialEnabled,
     historyRetentionDays: patch.historyRetentionDays ?? current.historyRetentionDays,
     // themePreference 允许显式写 null（清除偏好），故用 !== undefined 区分「没动」与「清掉」
     themePreference: patch.themePreference !== undefined ? patch.themePreference : current.themePreference,

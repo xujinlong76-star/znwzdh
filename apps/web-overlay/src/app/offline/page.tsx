@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowLeft, CloudOff, WifiOff } from "lucide-react"
-import { OfflineRecentList } from "@/components/offline-recent-list"
+import { OfflineContent } from "@/components/offline-content"
 
 export const metadata: Metadata = {
   title: "离线阅读",
@@ -54,7 +54,7 @@ export default function OfflinePage() {
         </div>
       </div>
 
-      <OfflineRecentList />
+      <OfflineContent />
     </main>
   )
 }

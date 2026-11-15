@@ -76,7 +76,7 @@ export default function BriefResurface() {
         </Link>
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
-        这些收藏超过 90 天没有从这里打开过——按本机记录算，直接点卡片打开的不计入。今天翻一个？
+        这些收藏超过 90 天没有在本机打开过——按本机记录算，另一台设备上打开的不计入。今天翻一个？
       </p>
       {notice ? <p className="mb-3 rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">{notice}</p> : null}
       <ul className="space-y-2">

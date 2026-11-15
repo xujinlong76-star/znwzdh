@@ -139,6 +139,16 @@ export function SyncHealthCard({
           next={{ href: '/me/settings', label: '改任一开关即写入' }}
         />
       </ul>
+      {/* 第 15 项：只加一行链接，不加状态值——首页不重复数据页的安全区 */}
+      <p className="mt-2">
+        <Link
+          href={safeHref('/me/data', '/')}
+          className="inline-flex min-h-6 items-center gap-1 rounded-sm text-[11px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          备份状态 → 数据与隐私
+          <ArrowRight className="h-3 w-3 shrink-0" aria-hidden />
+        </Link>
+      </p>
       <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
         <CircleDashed className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
         以上状态来自云端最近一次写入；断网时可能滞后，不代表数据丢失。

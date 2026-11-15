@@ -12,29 +12,20 @@
  *    本组件监听后落账（挂件本身不写成长档案）；
  *  - 捕获 PWA 的 beforeinstallprompt，供「设为首页」引导组件使用。
  * 本组件不渲染任何可见 UI。
- *
- * 包体积：lib/growth.ts（约 32KB）只在 effect 里用，静态 import 会经根
- * layout 进全部路由首屏（/sites 曾因此超预算）。这里只留动态 import
- * 入口（单例 promise，chunk 只拉一次），首屏 chunk 不再含 growth.ts；
- * 记录类 effect 晚一个 chunk 启动（后台附带行为，内部有去重/幂等，
- * 首 200ms 内的事件可能漏记一次；chunk 拉取失败如离线首访时本次记账
- * 静默跳过，不报错、不阻断页面）。
  */
 
 import { useEffect, useRef } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
+import {
+  AI_CHAT_USED_EVENT,
+  claimPwaInstallAction,
+  markMemberSeenAction,
+  recordDailyVisitOnce,
+  recordGrowthEvent,
+  recordIdleMinute,
+  recordPageVisitAction,
+} from '@/lib/growth-lazy'
 import { probeClientSession } from '@/lib/client-session'
-
-type GrowthModule = typeof import('@/lib/growth')
-
-let growthPromise: Promise<GrowthModule> | null = null
-/** 成长模块按需加载：import 结果由模块缓存 + 单例 promise 保证只加载一次。 */
-const loadGrowth = () => (growthPromise ??= import('@/lib/growth'))
-
-/** 记账类调用统一走这里：chunk 拉取失败时静默跳过，不抛未处理 rejection。 */
-function recordGrowth(fn: (g: GrowthModule) => void): void {
-  loadGrowth().then(fn).catch(() => { /* chunk 拉取失败时静默跳过本次记账，不抛未处理 rejection */ })
-}
 
 /** 站点 key 规范化（同站同日硬化与百站寻宝的去重口径）：去 query/hash 与尾斜杠 */
 function siteKeyOf(href: string): string {
@@ -58,18 +49,13 @@ export function GrowthTracker() {
   const awardedRoutes = useRef<Set<string>>(new Set())
 
   useEffect(() => {
+    recordDailyVisitOnce()
     // 身份档：探测登录态同步进成长档案（×1.2 档）；探测失败不猜、不改
     let cancelled = false
-    loadGrowth()
-      .then((g) => {
-        if (cancelled) return
-        g.recordDailyVisitOnce()
-        void probeClientSession().then((probe) => {
-          if (cancelled) return
-          if (probe.kind === 'ok') g.markMemberSeenAction(!!probe.session.user?.id)
-        })
-      })
-      .catch(() => { /* chunk 拉取失败时跳过本次到访记账，不报错 */ })
+    void probeClientSession().then((probe) => {
+      if (cancelled) return
+      if (probe.kind === 'ok') markMemberSeenAction(!!probe.session.user?.id)
+    })
     return () => {
       cancelled = true
     }
@@ -77,7 +63,7 @@ export function GrowthTracker() {
 
   // PWA 真实安装（appinstalled 事件）→ +60 一次性奖励 + ×1.5 身份档
   useEffect(() => {
-    const onInstalled = () => recordGrowth((g) => g.claimPwaInstallAction())
+    const onInstalled = () => claimPwaInstallAction()
     window.addEventListener('appinstalled', onInstalled)
     return () => window.removeEventListener('appinstalled', onInstalled)
   }, [])
@@ -89,7 +75,7 @@ export function GrowthTracker() {
       visibleSeconds += 1
       if (visibleSeconds >= 60) {
         visibleSeconds -= 60
-        recordGrowth((g) => g.recordIdleMinute())
+        recordIdleMinute()
       }
     }, 1000)
     return () => window.clearInterval(timer)
@@ -100,8 +86,7 @@ export function GrowthTracker() {
       const target = e.target as HTMLElement | null
       const anchor = target?.closest?.('a[href^="http"]') as HTMLAnchorElement | null
       if (anchor && !anchor.href.startsWith(window.location.origin)) {
-        const siteKey = siteKeyOf(anchor.href)
-        recordGrowth((g) => g.recordGrowthEvent('site_open', { siteKey }))
+        recordGrowthEvent('site_open', { siteKey: siteKeyOf(anchor.href) })
       }
     }
     document.addEventListener('click', onClick)
@@ -109,24 +94,10 @@ export function GrowthTracker() {
   }, [])
 
   // 小猫猫挂件聊天桥（A12）：挂件只发事件，落账仍走统一规则
-  // 事件名本身活在 growth.ts 里：监听须等 chunk 加载后注册，cleanup 用
-  // 存下的事件名 + handler 解绑。
   useEffect(() => {
-    let cancelled = false
-    let eventName: string | undefined
-    let onWidgetChat: (() => void) | undefined
-    loadGrowth()
-      .then((g) => {
-        if (cancelled) return
-        eventName = g.AI_CHAT_USED_EVENT
-        onWidgetChat = () => recordGrowth((gg) => gg.recordGrowthEvent('ai_chat'))
-        window.addEventListener(eventName, onWidgetChat)
-      })
-      .catch(() => { /* chunk 拉取失败时不注册聊天监听，本次会话的 ai_chat 记账跳过 */ })
-    return () => {
-      cancelled = true
-      if (onWidgetChat && eventName) window.removeEventListener(eventName, onWidgetChat)
-    }
+    const onWidgetChat = () => recordGrowthEvent('ai_chat')
+    window.addEventListener(AI_CHAT_USED_EVENT, onWidgetChat)
+    return () => window.removeEventListener(AI_CHAT_USED_EVENT, onWidgetChat)
   }, [])
 
   useEffect(() => {
@@ -147,26 +118,23 @@ export function GrowthTracker() {
     if (categoryMatch) {
       awardedRoutes.current.add(key)
       const slug = decodeURIComponent(categoryMatch[1]!)
-      recordGrowth((g) => {
-        g.recordGrowthEvent('category_visit', { categoryId: slug })
-        if (slug === 'duanju' || slug === 'short-drama') g.recordGrowthEvent('drama_visit')
-      })
+      recordGrowthEvent('category_visit', { categoryId: slug })
+      if (slug === 'duanju' || slug === 'short-drama') recordGrowthEvent('drama_visit')
       return
     }
     if (pathname === '/search' && searchParams?.get('q')) {
       awardedRoutes.current.add(key)
-      const term = searchParams.get('q') ?? undefined
-      recordGrowth((g) => g.recordGrowthEvent('search', { term }))
+      recordGrowthEvent('search', { term: searchParams.get('q') ?? undefined })
       return
     }
     if (pathname === '/brief') {
       awardedRoutes.current.add(key)
-      recordGrowth((g) => g.recordGrowthEvent('brief_read'))
+      recordGrowthEvent('brief_read')
       return
     }
     if (pathname === '/hot') {
       awardedRoutes.current.add(key)
-      recordGrowth((g) => g.recordPageVisitAction('hot'))
+      recordPageVisitAction('hot')
     }
   }, [pathname, searchParams])
 

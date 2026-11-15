@@ -351,8 +351,19 @@ describe("SQLite 集成：FTS5 + sqlite-vec + 混合检索", () => {
     };
     const slowEngine = new SearchEngine({ db, fts, vectors, embed: slowEmbed });
     // 无精确命中 → planner 不 early-exit，三通道全跑
-    const r = await slowEngine.search({ q: "zzzznomatch", limit: 5 });
-    const t = r.channelTimings!;
+    // min-of-3：慢版与基线各跑 3 次、每通道取最小值再算差值。单样本差值在并行
+    // 负载下仍会随机假红（某次 exactMs 被事件循环调度尖峰抬到 54ms、基线 1ms，
+    // 差值 53ms > 30ms）；调度尖峰只抬高单次样本，最小值把它滤掉，而旧实现
+    // 的系统性膨胀（整批 await 同值记给三通道，每次都 ≈40ms）三次样本的最小
+    // 值仍 ≈40ms，照样被抓——防线不弱化。阈值保持 30ms 不变。
+    const slowRuns = [];
+    const baseRuns = [];
+    const baseEngine = new SearchEngine({ db, fts, vectors, embed: async () => rnd(99) });
+    for (let i = 0; i < 3; i++) {
+      slowRuns.push((await slowEngine.search({ q: "zzzznomatch", limit: 5 })).channelTimings!);
+      baseRuns.push((await baseEngine.search({ q: "zzzznomatch", limit: 5 })).channelTimings!);
+    }
+    const t = slowRuns[0]!;
     expect(t.skippedSemantic).toBe(false);
     expect(t.semanticMs).toBeGreaterThanOrEqual(30);
 
@@ -367,12 +378,12 @@ describe("SQLite 集成：FTS5 + sqlite-vec + 混合检索", () => {
      * 差值判据与机器速度无关：自身慢，基线与慢版一起慢，差值仍接近 0；
      * 而旧实现（把整批 await 同值记给三通道）会让差值 ≈ 40ms，照样被抓。
      */
-    const baseEngine = new SearchEngine({ db, fts, vectors, embed: async () => rnd(99) });
-    const base = (await baseEngine.search({ q: "zzzznomatch", limit: 5 })).channelTimings!;
+    const minMs = (runs: Array<NonNullable<typeof t>>, key: "ftsMs" | "pinyinMs" | "exactMs") =>
+      Math.min(...runs.map((run) => run[key]));
     for (const [name, slowMs, baseMs] of [
-      ["fts", t.ftsMs, base.ftsMs],
-      ["pinyin", t.pinyinMs, base.pinyinMs],
-      ["exact", t.exactMs, base.exactMs],
+      ["fts", minMs(slowRuns, "ftsMs"), minMs(baseRuns, "ftsMs")],
+      ["pinyin", minMs(slowRuns, "pinyinMs"), minMs(baseRuns, "pinyinMs")],
+      ["exact", minMs(slowRuns, "exactMs"), minMs(baseRuns, "exactMs")],
     ] as Array<[string, number, number]>) {
       expect(
         slowMs - baseMs,

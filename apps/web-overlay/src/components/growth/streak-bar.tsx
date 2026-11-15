@@ -19,7 +19,7 @@ import {
   loadGrowthProfile,
   seasonCalendar,
   type GrowthProfile,
-} from '@/lib/growth'
+} from '@/lib/growth-lazy'
 import { FONT_SIZE_STORAGE_KEY, parseFontSizeLevel } from '@/lib/font-size'
 
 const DISMISS_KEY = 'navhub.growth.streakBarDismissedSeason.v1'

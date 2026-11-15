@@ -14,9 +14,12 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Copy, EyeOff, MoreHorizontal } from 'lucide-react'
+import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, ChevronRight, Copy, EyeOff, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CardMoveDirection } from '@/lib/modular/diy-drag'
+import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { useToast } from '@/components/ui/use-toast'
+import { QUICK_DIAL_DIGITS, type QuickDialDigit } from '@/lib/number-dial'
 
 export interface DiyCardMenuProps {
   title: string
@@ -29,6 +32,10 @@ export interface DiyCardMenuProps {
   onDelete: () => void
   /** 触发按钮的尺寸（三种卡片形态各不相同） */
   sizeClass?: string
+  /** 本卡站点 id：传了才渲染「绑定到快拨位」组（编辑态卡片菜单才有） */
+  siteId?: string
+  /** 全站标题索引：绑定覆盖时报出被顶掉站点的站名 */
+  siteTitleById?: ReadonlyMap<string, string>
 }
 
 interface MenuEntry {
@@ -48,6 +55,8 @@ export function DiyCardMenu({
   onCopy,
   onDelete,
   sizeClass = 'h-6.5 w-6.5 rounded-full',
+  siteId,
+  siteTitleById,
 }: DiyCardMenuProps) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
@@ -55,6 +64,31 @@ export function DiyCardMenu({
   const menuRef = useRef<HTMLDivElement | null>(null)
   const menuId = useId()
   const openedRef = useRef(false)
+  // 数字直达自定义快拨位（Ctrl+Shift+数字）：只在编辑态渲染本组；
+  // 绑定走 useHomeDIY 的 setQuickDialSlot，与 pinToSpeedDial 同款落盘模式。
+  const { quickDialSlots, setQuickDialSlot } = useHomeDIY()
+  const { toast } = useToast()
+  const [quickDialOpen, setQuickDialOpen] = useState(false)
+
+  const handleBindQuickDial = (digit: QuickDialDigit) => {
+    if (!siteId) return
+    const current = quickDialSlots?.[digit]
+    if (current === siteId) {
+      // 再点一次已绑本卡的位 = 取消绑定
+      setQuickDialSlot(digit, null)
+      toast({ title: `已取消「${title}」的 Ctrl+Shift+${digit} 快拨绑定` })
+    } else {
+      // 该位已有别的站：直接覆盖，并报出被顶掉的站名（标题查不到时报 id，不编造）
+      const displacedTitle = current ? (siteTitleById?.get(current) ?? current) : null
+      setQuickDialSlot(digit, siteId)
+      toast({
+        title: `已绑定到 Ctrl+Shift+${digit}：${title}`,
+        description: displacedTitle ? `原绑定的「${displacedTitle}」已被顶掉。` : undefined,
+      })
+    }
+    setQuickDialOpen(false)
+    setOpen(false)
+  }
 
   const entries: MenuEntry[] = [
     {
@@ -110,7 +144,8 @@ export function DiyCardMenu({
       setPos(null)
       return
     }
-    const MENU_H = 260
+    // 快拨位子组展开后菜单约高一倍，预留高度跟着变，否则底部会被视口裁掉
+    const MENU_H = quickDialOpen ? 520 : 260
     const MENU_W = 176
     const place = () => {
       const btn = triggerRef.current
@@ -128,11 +163,12 @@ export function DiyCardMenu({
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open ])
+  }, [open, quickDialOpen])
 
   // 打开后把焦点交给第一项；关闭时还给触发按钮
   useEffect(() => {
     if (!open) {
+      setQuickDialOpen(false)
       if (openedRef.current) {
         openedRef.current = false
         triggerRef.current?.focus()
@@ -214,7 +250,7 @@ export function DiyCardMenu({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={`更多操作：${title}`}
-        title="更多操作：移动、复制、隐藏"
+        title="更多操作：移动、复制、隐藏、绑定到快拨位"
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -257,6 +293,52 @@ export function DiyCardMenu({
                 <span>{entry.label}</span>
               </button>
             ))}
+            {siteId && (
+              <>
+                <div className="my-1 border-t border-border/50" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={quickDialOpen}
+                  onClick={() => setQuickDialOpen((prev) => !prev)}
+                  className="text-left text-xs px-2 py-1.5 rounded-md transition-colors flex items-center gap-2 text-foreground hover:bg-muted"
+                >
+                  <span className="font-mono font-bold">Ctrl+Shift</span>
+                  <span className="flex-1">绑定到快拨位</span>
+                  <ChevronRight
+                    className={cn('w-3.5 h-3.5 transition-transform', quickDialOpen && 'rotate-90')}
+                  />
+                </button>
+                {quickDialOpen &&
+                  QUICK_DIAL_DIGITS.map((digit) => {
+                    const boundHere = quickDialSlots?.[digit] === siteId
+                    return (
+                      <button
+                        key={digit}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleBindQuickDial(digit)}
+                        className="text-left text-xs pl-8 pr-2 py-1.5 rounded-md transition-colors flex items-center gap-2 text-foreground hover:bg-muted"
+                      >
+                        <span className="font-mono font-bold">Ctrl+Shift+{digit}</span>
+                        {boundHere ? (
+                          <span className="ml-auto inline-flex items-center gap-0.5 text-primary">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>已绑本站</span>
+                          </span>
+                        ) : quickDialSlots?.[digit] ? (
+                          <span className="ml-auto truncate text-muted-foreground">
+                            已绑：{siteTitleById?.get(quickDialSlots[digit]!) ?? quickDialSlots[digit]}
+                          </span>
+                        ) : (
+                          <span className="ml-auto text-muted-foreground">空位</span>
+                        )}
+                      </button>
+                    )
+                  })}
+              </>
+            )}
           </div>,
           document.body,
         )}

@@ -5,11 +5,19 @@ import Link from "next/link"
 import { History, Trash2 } from "lucide-react"
 import { SiteFavicon } from "@/components/site-favicon"
 import { clearOfflineVisits, readOfflineVisits, type RecentVisit } from "@/lib/offline-recent"
+import { matchesOfflineTitle } from "@/lib/offline-shell"
 import { safeHref } from "@/lib/safe-url"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 
-export function OfflineRecentList() {
+/**
+ * 最近访问（本机快照）。
+ *
+ * `query` 由 /offline 页的标题过滤框传入：只过滤本机标题，不调
+ * /api/search。查询非空且无匹配时不谎报「还没有离线记录」，而是
+ * 明说没有匹配该标题的本机内容。
+ */
+export function OfflineRecentList({ query = "" }: { query?: string }) {
   const [visits, setVisits] = useState<RecentVisit[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -29,6 +37,9 @@ export function OfflineRecentList() {
     await clearOfflineVisits()
     setVisits([])
   }
+
+  const filtered = visits.filter((v) => matchesOfflineTitle(v.title, query))
+  const filtering = query.trim() !== ""
 
   if (loading) {
     return (
@@ -68,17 +79,29 @@ export function OfflineRecentList() {
     )
   }
 
+  if (filtering && filtered.length === 0) {
+    return (
+      <div className="mt-6">
+        <p className="text-xs text-muted-foreground">
+          没有标题包含「{query.trim()}」的本机内容——过滤只搜本机快照，不联网搜索。
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="mt-6">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">共 {visits.length} 条 · 只保存在本机</p>
+        <p className="text-xs text-muted-foreground">
+          {filtering ? `共 ${filtered.length} 条匹配 · 只保存在本机` : `共 ${visits.length} 条 · 只保存在本机`}
+        </p>
         <button onClick={clear} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <Trash2 className="h-3.5 w-3.5" />
           清空
         </button>
       </div>
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-        {visits.map((v) => (
+        {filtered.map((v) => (
           <li key={v.id}>
             <a href={safeHref(v.href)} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-border/70 glass-surface p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-muted/60 p-1">

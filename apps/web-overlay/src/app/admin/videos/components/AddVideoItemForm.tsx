@@ -123,8 +123,10 @@ export function AddVideoItemForm({
         publishedAt: publishedAt || undefined,
         harvestedAt: defaultValues?.videoConfig?.harvestedAt || Date.now(),
         lastVerifiedAt: Date.now(),
-        qualityScore: defaultValues?.videoConfig?.qualityScore || 85,
-        freshnessScore: defaultValues?.videoConfig?.freshnessScore || 85,
+        // 新建时没有分数就不写分数（undefined），不按 85 分编造；
+        // 注意旧 `|| 85` 还会把一次真实的 0 分在编辑时抬回 85。
+        qualityScore: defaultValues?.videoConfig?.qualityScore,
+        freshnessScore: defaultValues?.videoConfig?.freshnessScore,
         sourceType: defaultValues?.videoConfig?.sourceType || 'manual',
         pinned,
         healthStatus: defaultValues?.videoConfig?.healthStatus || 'healthy',

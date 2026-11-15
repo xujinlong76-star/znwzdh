@@ -90,7 +90,8 @@ export function VideoTelemetryDashboard({
     const urgList: Array<{ item: NavigationSubItem; category: NavigationItem; score: number }> = []
 
     list.forEach(({ item, category }) => {
-      const sc = item.videoConfig?.freshnessScore ?? 75
+      // 缺分就是 0 分（2026-11-13 去垫高：旧 ?? 75 把无分视频算进「良好」档）。
+      const sc = item.videoConfig?.freshnessScore ?? 0
       if (sc >= 90) exc++
       else if (sc >= 70) gd++
       else if (sc >= 50) wrn++

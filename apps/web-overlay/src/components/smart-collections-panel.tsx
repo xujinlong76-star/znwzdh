@@ -39,6 +39,7 @@ import {
   suggestSmartCollections,
   type SuggestedCollection,
 } from '@/lib/smart-collections'
+import { resolveTriageStatus } from '@/lib/favorites-triage'
 import type { LocalFavorite } from '@/hooks/useFavorites'
 
 /** 探测并发数：语义请求是轻量 GET，4 路并行够快又不至于刷爆中枢 */
@@ -85,16 +86,21 @@ export function SmartCollectionsPanel({ items, onCreateFolder, onMoveToFolder }:
   // 卸载时取消进行中的探测：过期响应不写回已卸载的面板
   useEffect(() => () => abortRef.current?.abort(), [])
 
-  /** 未分组的候选：按收藏时间倒序取最近 30 个（探测请求数封顶） */
+  /**
+   * 未分组的候选：按收藏时间倒序取最近 30 个（探测请求数封顶）。
+   * 智能合集是「值得留」的集合，待读箱是「还没决定」的集合——
+   * v1 只看永久库里的未分组收藏，待读箱 / 已读不进候选。
+   */
   const candidates = useMemo(
     () =>
       items
-        .filter((item) => !item.folderId)
+        .filter((item) => !item.folderId && resolveTriageStatus(item) === 'permanent')
         .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
         .slice(0, SMART_COLLECTIONS_PROBE_LIMIT),
     [items],
   )
-  const capped = items.filter((item) => !item.folderId).length > SMART_COLLECTIONS_PROBE_LIMIT
+  const capped = items.filter((item) => !item.folderId && resolveTriageStatus(item) === 'permanent').length > SMART_COLLECTIONS_PROBE_LIMIT
+  const hasUndecided = items.some((item) => resolveTriageStatus(item) !== 'permanent')
   const visibleGroups = useMemo(
     () => filterDismissedSuggestions(groups, dismissedIds),
     [groups, dismissedIds],
@@ -220,7 +226,11 @@ export function SmartCollectionsPanel({ items, onCreateFolder, onMoveToFolder }:
       </div>
 
       {phase === 'idle' && candidates.length === 0 && (
-        <p className="text-xs text-muted-foreground">全部收藏都已有分组，暂时没有可整理的内容。</p>
+        <p className="text-xs text-muted-foreground">
+          {hasUndecided
+            ? '待读箱里的收藏还没决定去留，智能整理只看永久库里的未分组收藏。'
+            : '全部收藏都已有分组，暂时没有可整理的内容。'}
+        </p>
       )}
       {phase === 'idle' && candidates.length > 0 && candidates.length < SMART_COLLECTIONS_MIN_CANDIDATES && (
         <p className="text-xs text-muted-foreground">{describeTooFewForSmartCollections(candidates.length)}</p>

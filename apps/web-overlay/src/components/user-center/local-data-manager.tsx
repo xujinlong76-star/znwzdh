@@ -19,6 +19,7 @@ import {
   History,
   Palette,
   HardDriveDownload,
+  CloudOff,
   Loader2,
   RotateCcw,
   Save,
@@ -35,8 +36,14 @@ import {
   readOfflineVisits,
   clearOfflineVisits,
   recordOfflineVisit,
+  OFFLINE_RECENT_LIMIT,
   type RecentVisit,
 } from '@/lib/offline-recent'
+import {
+  clearOfflineShellData,
+  countShellCacheEntries,
+  type ClearOfflineShellStepResult,
+} from '@/lib/offline-shell'
 import {
   getOfflineCacheStats,
   clearOfflineCache,
@@ -239,6 +246,76 @@ export function LocalDataManager() {
     }
   }, [refreshVideoStats, toast])
 
+  /**
+   * 离线壳（Batch 3 第 8 项 P0 · B3）：Service Worker 缓存的 SHELL 条目数。
+   * 读不出（CacheStorage 不可用）时显示「—」，不是 0 条。
+   */
+  const [shellEntries, setShellEntries] = useState<number | null>(null)
+  const [loadingShellEntries, setLoadingShellEntries] = useState(true)
+  const [clearingOfflineShell, setClearingOfflineShell] = useState(false)
+
+  const refreshShellEntries = useCallback(async () => {
+    setLoadingShellEntries(true)
+    try {
+      setShellEntries(await countShellCacheEntries())
+    } catch {
+      setShellEntries(null)
+    } finally {
+      setLoadingShellEntries(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshShellEntries()
+  }, [refreshShellEntries])
+
+  /**
+   * 一键清空离线数据：顺序固定为
+   *   clearOfflineCache() → clearOfflineVisits() → caches.delete('navhub-v6')
+   *   → 重新注册 Service Worker（见 lib/offline-shell.ts 的 clearOfflineShellData）。
+   * 失败语义：任一步失败都不谎报成功——toast 按失败步骤如实说，
+   * 成功的步骤照常刷新计数。
+   */
+  const handleClearOfflineShell = useCallback(async () => {
+    if (
+      !window.confirm(
+        '确定要清空全部离线数据吗？将清除稍后再看元数据、最近访问足迹与离线壳缓存，之后 Service Worker 会重新注册并重建离线壳。',
+      )
+    ) {
+      return
+    }
+    setClearingOfflineShell(true)
+    try {
+      const result = await clearOfflineShellData()
+      await refreshVisits()
+      await refreshVideoStats()
+      await refreshShellEntries()
+      if (result.ok) {
+        toast({
+          title: '已清空离线数据',
+          description: '稍后再看元数据、最近访问与离线壳缓存均已清除，Service Worker 已重新注册。',
+        })
+      } else {
+        const failedSteps: Array<[string, ClearOfflineShellStepResult]> = [
+          ['稍后再看元数据', result.videoCache],
+          ['最近访问', result.visits],
+          ['离线壳缓存', result.shellCache],
+          ['Service Worker 重新注册', result.reregistered],
+        ]
+        const failed = failedSteps
+          .filter(([, step]) => !step.ok)
+          .map(([name, step]) => `${name}${step.error ? `（${step.error}）` : ''}`)
+        toast({
+          title: '离线数据未完全清空',
+          description: `以下步骤失败：${failed.join('；')}。其余部分已清除，可重试。`,
+          variant: 'destructive',
+        })
+      }
+    } finally {
+      setClearingOfflineShell(false)
+    }
+  }, [refreshVisits, refreshVideoStats, refreshShellEntries, toast])
+
   // 计算自定义分类与网址数量
   const customCategories = diyConfig.customCategories || []
   const customSitesCount = customCategories.reduce(
@@ -317,7 +394,8 @@ export function LocalDataManager() {
       if (Array.isArray(data.favorites) && data.favorites.length > 0) {
         const favRes = importFavoritesJson(JSON.stringify(data.favorites))
         if (favRes.ok) {
-          restoredFavorites = favRes.imported
+          // 实际并回数 = 新增 + 更新；已在收藏里的不重复算
+          restoredFavorites = favRes.imported + favRes.updated
         }
       }
 
@@ -577,7 +655,7 @@ export function LocalDataManager() {
               {loadingVideoStats
                 ? '正在核对…'
                 : videoStats && videoStats.count > 0
-                  ? `离线可看 · ${videoStats.storageType}`
+                  ? `元数据已存本机 · ${videoStats.storageType}`
                   : '暂无离线视频'}
             </p>
             {(videoStats?.count ?? 0) > 0 && (
@@ -591,6 +669,34 @@ export function LocalDataManager() {
                 清空
               </button>
             )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border/70 bg-card p-3.5 space-y-1.5 shadow-2xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">离线壳</span>
+            <CloudOff className="w-4 h-4 text-sky-500" />
+          </div>
+          <div className="text-xl font-extrabold text-foreground font-mono">
+            {loadingShellEntries ? '—' : (shellEntries ?? '—')}
+            <span className="text-xs font-normal text-muted-foreground ml-1">条缓存</span>
+          </div>
+          <div className="flex items-center justify-between gap-1 pt-0.5">
+            <p className="text-[11px] text-muted-foreground truncate">
+              {loadingShellEntries
+                ? '正在核对…'
+                : `最近访问 ${recentVisits.length}/${OFFLINE_RECENT_LIMIT} 条 · 稍后再看 ${videoStats?.count ?? 0} 条`}
+            </p>
+            <button
+              type="button"
+              onClick={handleClearOfflineShell}
+              disabled={clearingOfflineShell}
+              aria-label="清空离线数据"
+              className="text-[10px] text-muted-foreground hover:text-destructive-text transition-colors cursor-pointer disabled:opacity-50"
+              title="清空稍后再看元数据、最近访问与离线壳缓存，并重新注册 Service Worker"
+            >
+              {clearingOfflineShell ? '清空中…' : '清空离线数据'}
+            </button>
           </div>
         </div>
       </div>

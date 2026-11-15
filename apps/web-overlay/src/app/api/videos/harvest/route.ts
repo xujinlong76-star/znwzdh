@@ -59,7 +59,8 @@ export async function GET() {
       }
 
       for (const item of items) {
-        const sc = item.videoConfig?.freshnessScore ?? 75
+        // 缺分就是 0 分（2026-11-13 去垫高：旧 ?? 75 把无分视频算成「良好」，抬高平均分）。
+        const sc = item.videoConfig?.freshnessScore ?? 0
         totalScore += sc
         scoreCount++
         if (sc < 50) {
@@ -75,7 +76,7 @@ export async function GET() {
         subCategoriesCount: (cat.subCategories || []).length,
         harvestPolicy: cat.harvestPolicy,
         averageScore: items.length > 0
-          ? Math.round(items.reduce((sum, it) => sum + (it.videoConfig?.freshnessScore ?? 75), 0) / items.length)
+          ? Math.round(items.reduce((sum, it) => sum + (it.videoConfig?.freshnessScore ?? 0), 0) / items.length)
           : 100
       }
     })

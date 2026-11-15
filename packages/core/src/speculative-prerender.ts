@@ -1,6 +1,13 @@
 /**
  * 自适应上下文推测性预渲染引擎 (Speculative Pre-rendering Engine)
  *
+ * 去留裁决（Batch 3 第 8 项 P2）：保留本库，但仅演示用、生产不用。
+ * 唯一调用方是算法实验室演示页（components/algorithm-lab/speculation-panel.tsx）；
+ * 生产代码（预取 Provider、卡片、播放器页）不得调用本库——守卫见
+ * test/batch3-8-p2.test.ts「speculative-prerender 去留：只留实验室演示」。
+ * 彻底删除会动演示页（algorithm-lab-structure.test.ts 与 e2e 双守卫锁定），
+ * 故选保留 + 文件头注明 + 守卫钉死，而非删除。
+ *
  * 核心设计目标：
  * 连接 Kalman 轨迹意图预测与浏览器原生 W3C Speculation Rules API。
  * 当用户鼠标轨迹或键盘焦点以高确定性（置信度 ≥ 0.82 且预计抵达时间 < 180ms）

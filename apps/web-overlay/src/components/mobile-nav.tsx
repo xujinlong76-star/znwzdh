@@ -9,13 +9,15 @@
  * 此前 /drama 只在首页影院区与页脚有入口，手机用户从其他页到不了。
  *
  * 与 Footer 的契约（改前必读）：
- *   components/footer.tsx 的 `pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8`
- *   就是为这条底栏预留的 5.5rem 空位——本组件**不要**再加会让那块空隙失效的
+ *   components/footer.tsx 的三段底垫就是为底栏预留的空位——
+ *   <640 留 5.5rem（本栏），640–1024 留 4.5rem（HalfScreenDock），≥1024 只留 pb-8。
+ *   本组件**不要**再加会让那块空隙失效的
  *   负 margin（如 -mb-*），自身占地就是 h-14 + 安全区，footer 的预留即为其让位。
  *
  * 可见断点取 sm:hidden 而不是桌面布局的 md：footer 的 5.5rem 预留下方只到 sm，
- * 若底栏跟侧栏/汉堡菜单一样宽到 md，640–768px 区间它会压住 footer 的 pb-8
- * 内容区。想把覆盖面对齐到 md，需先把 footer 改成 md:pb-8，超出本次授权。
+ * 若底栏跟侧栏/汉堡菜单一样宽到 md，640–768px 区间它会压住 footer 的内容区
+ * （该区间 footer 只留给 HalfScreenDock 的 4.5rem）。想把覆盖面对齐到 md，
+ * 需先把 footer 改成 md:pb-8，超出本次授权。
  *
  * 避让 /videos：该路由不渲染 Footer（没有预留坑），/videos/player 更自带
  * 一条 fixed bottom-0 的移动端播放列表面板（components/video-player-page.tsx），

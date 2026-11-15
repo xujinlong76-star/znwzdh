@@ -17,29 +17,42 @@ if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.
   })
   // 本地开发直接放行，不做任何 fetch 拦截
 } else {
-  const CACHE = 'navhub-v5'
+  const CACHE = 'navhub-v6'
   const SHELL = [
     '/',
     '/offline',
     '/favorites',
     '/me',
     '/algorithms',
+    '/videos',
+    '/scenes',
+    '/hot',
+    '/tags',
     '/icons/icon-192.png',
     '/icons/icon-512.png',
     '/manifest.webmanifest'
   ]
 
-  // 预缓存离线页引用的构建产物：SHELL 只抓 HTML 不会带 _next/static，
-  // 首次离线打开 /offline 时会白屏，因此在安装阶段顺手把脚本/样式收进缓存。
+  // 预缓存各离线壳页面引用的构建产物：SHELL 只抓 HTML 不会带 _next/static，
+  // 首次离线打开时会白屏，因此在安装阶段顺手把脚本/样式收进缓存。
+  // 循环解析 SHELL 里每个 HTML 页面（图标与 manifest 不是 HTML，不解析），
+  // 单页失败（离线安装 / 某页 404）只跳过该页，不阻断其余页面。
   async function precacheOfflineAssets(cache) {
-    const res = await fetch('/offline', { cache: 'no-store' })
-    if (!res.ok) return
-    const html = await res.text()
-    const urls = new Set()
-    const re = /(?:src|href)="(\/_next\/static\/[^"]+)"/g
-    let match
-    while ((match = re.exec(html))) urls.add(match[1])
-    await Promise.allSettled([...urls].map((url) => cache.add(url)))
+    const pages = SHELL.filter((entry) => !/\/[^/]*\.[^/]+$/.test(entry))
+    await Promise.allSettled(pages.map(async (page) => {
+      try {
+        const res = await fetch(page, { cache: 'no-store' })
+        if (!res.ok) return
+        const html = await res.text()
+        const urls = new Set()
+        const re = /(?:src|href)="(\/_next\/static\/[^"]+)"/g
+        let match
+        while ((match = re.exec(html))) urls.add(match[1])
+        await Promise.allSettled([...urls].map((url) => cache.add(url)))
+      } catch {
+        // 单页预缓存失败：跳过该页，其余页面照常
+      }
+    }))
   }
 
   self.addEventListener('install', (event) => {
@@ -73,7 +86,7 @@ if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.
       return
     }
 
-    // 2. 导航请求（页面切换）：network-first + 离线回退首页
+    // 2. 导航请求（页面切换）：network-first + 离线回退 /offline
     if (req.mode === 'navigate') {
       event.respondWith(
         fetch(req)
@@ -85,7 +98,16 @@ if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.
             }
             return res
           })
-          .catch(() => caches.match(req).then((hit) => hit || caches.match('/')))
+          .catch(() => caches.match(req).then((hit) => {
+            if (hit) return hit
+            return caches.match('/offline').then((offline) => {
+              if (!offline) return offline
+              // 已在 /offline 本身：直接返回缓存响应，避免 ?from 自循环
+              if (url.pathname === '/offline') return offline
+              // 未缓存的站内路由：带上原路径去 /offline，只做展示，不自动跳转
+              return Response.redirect(`/offline?from=${encodeURIComponent(url.pathname + url.search)}`, 302)
+            })
+          }))
       )
       return
     }

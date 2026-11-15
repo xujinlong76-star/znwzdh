@@ -7,6 +7,7 @@ import { DensityProvider } from '@/components/density-provider'
 import { SiteContext, type SiteViewModel } from '@/components/site-view-context'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { initThemeRuntime } from '@/lib/plugins/theme-runtime'
+import { useGlobalUndo } from '@/hooks/use-global-undo'
 import { GlobalAiGateway } from '@/components/ai/global-ai-gateway'
 import { GlobalSpotlightGateway } from '@/components/search/global-spotlight-gateway'
 import { FloatingQuickNav } from '@/components/floating-quick-nav'
@@ -32,6 +33,8 @@ export function Providers({
   children: React.ReactNode
   site: SiteViewModel
 }) {
+  // 全局 Ctrl/Cmd+Z：全站只挂一次（收敛了排版/画布/回收站三处监听）
+  useGlobalUndo()
   useEffect(() => {
     // 插件市场主题：客户端首屏恢复上次安装的 theme 插件（无活跃主题时为空操作）
     initThemeRuntime()

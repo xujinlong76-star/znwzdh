@@ -47,6 +47,9 @@ export function AddSiteDialog({
   suggestion,
   onPickSuggestion,
   onSubmit,
+  /** 复用方覆盖标题/说明（默认是首页「添加网址到专属分类」文案） */
+  dialogTitle,
+  dialogDescription,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -59,6 +62,8 @@ export function AddSiteDialog({
   suggestion: CategorySuggestion | null
   onPickSuggestion: (categoryId: string) => void
   onSubmit: () => void
+  dialogTitle?: string
+  dialogDescription?: string
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -66,10 +71,10 @@ export function AddSiteDialog({
         <DialogHeader className="pr-8 sm:pr-6">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Plus className="w-5 h-5 text-emerald-500" />
-            <span>添加网址到专属分类</span>
+            <span>{dialogTitle ?? '添加网址到专属分类'}</span>
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            录入您想要收录的自定义网站，仅保存在当前设备的私人看板中。
+            {dialogDescription ?? '录入您想要收录的自定义网站，仅保存在当前设备的私人看板中。'}
           </DialogDescription>
         </DialogHeader>
 

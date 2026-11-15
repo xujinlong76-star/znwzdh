@@ -56,7 +56,7 @@ async function handleCronTrigger(request: Request) {
     // 指标接上历史累计（进程重启后 run 计数从 0 重新开始的问题）
     await hydrateVideoMetrics()
 
-    // 1. 策略型定向采集与保鲜轮换 (Bilibili / Dailymotion / PeerTube / TED / YouTube)
+    // 1. 策略型定向采集与保鲜轮换 (Bilibili / Dailymotion / TED / YouTube)
     if (mode === 'hybrid' || mode === 'policy') {
       policyReport = await runPolicyHarvest({
         scope: 'cron',

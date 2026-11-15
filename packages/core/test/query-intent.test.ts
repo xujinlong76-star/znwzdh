@@ -119,3 +119,9 @@ describe("Query Intent: findDidYouMeanSuggestion 零结果纠错推荐", () => {
     expect(findDidYouMeanSuggestion("completelyunrelated", dictionary)).toBeNull();
   });
 });
+
+describe("findDidYouMeanSuggestion：词典含拼音键时能建议出拼音形态", () => {
+  it("zhihhu 对拼音键 zhihu 距离 1，给出拼音形态建议（调用方再映射回标题）", () => {
+    expect(findDidYouMeanSuggestion("zhihhu", ["知乎", "zhihu", "zh", "哔哩哔哩", "bilibili"])).toBe("zhihu");
+  });
+});

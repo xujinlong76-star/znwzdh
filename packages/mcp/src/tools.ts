@@ -92,6 +92,8 @@ import {
   GetAlternativesInput,
   ResolveWaybackInput,
   ListFavoritesInput,
+  SearchFavoritesInput,
+  ListFavoriteFoldersInput,
   ListSearchHistoryInput,
   GetProfileSummaryInput,
 } from "@navhub/core";
@@ -99,6 +101,8 @@ import {
 export {
   MAX_BATCH_ITEMS,
   ListFavoritesInput,
+  SearchFavoritesInput,
+  ListFavoriteFoldersInput,
   ListSearchHistoryInput,
   GetProfileSummaryInput,
   SearchSitesInput,

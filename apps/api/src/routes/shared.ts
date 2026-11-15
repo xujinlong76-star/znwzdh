@@ -128,6 +128,22 @@ export function parsePagination(
 }
 
 /**
+ * 游标分页废弃标注（C 组第 7 簇：只加标注，不删）。
+ *
+ * `?cursor=` keyset 游标分页已废弃：仍可正常使用、不改变任何行为，
+ * 新调用方请用 `limit` / `offset` 翻页。标注分两层——
+ *   1. 代码面：各路由 `cursor` 参数上的 `@deprecated` JSDoc；
+ *   2. 调用方面：请求实际带了 `?cursor=` 时，响应带 RFC 8594
+ *      `Deprecation: true` 头（只在用了游标时发，不用游标的请求
+ *      不受影响；`nextCursor` / `X-Next-Cursor` 的发出本身不触发）。
+ *
+ * @deprecated 游标分页已废弃，仍可用；新调用方请用 limit/offset。
+ */
+export function markCursorPaginationDeprecated(reply: FastifyReply): void {
+  reply.header("Deprecation", "true");
+}
+
+/**
  * 安全解析单个整数参数（有限性 + 取整 + 上下限钳位）。
  *
  * 专治 `Math.min(Number(x) || d, max)` 这一族写法的两个漏网之鱼：

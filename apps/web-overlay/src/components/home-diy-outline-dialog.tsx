@@ -954,6 +954,9 @@ export function HomeDIYOutlineDialog({
                           <span className="font-semibold text-foreground truncate">{item.title}</span>
                           <span className="text-[10px] font-mono text-muted-foreground">
                             · 删除于 {formatRelativeDeletedTime(item.deletedAt)}
+                            {/* feature-mask trashBin 本身无过期（D8）：显示"无到期"，
+                                不要默默给 DIY 回收站加过期——收藏回收站的 30 天不适用这里 */}
+                            {' · 还剩：无到期'}
                           </span>
                         </div>
                         {item.parentTitle && (

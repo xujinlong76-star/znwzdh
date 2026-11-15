@@ -259,6 +259,26 @@ export const ListFavoritesInput = z.object({
   offset: z.number().int().min(0).default(0),
 });
 
+/**
+ * 在本人收藏内检索（MCP `search_favorites`）。
+ *
+ * 只读用户域工具：调用方必须是带 owner_identity 的个人令牌。
+ * 检索口径与 POST /api/ask 的问答检索（apps/api/src/ask-retrieval.ts）同款：
+ * 收藏子集内词法 + 语义两路召回、词法优先、阈值 0.4/0.55、词法 0 命中时纠错一次；
+ * 实现在 packages/mcp 内薄写一份（见 handlers/favorites-retrieval.ts），
+ * 不反向依赖 apps/api、不带任何 LLM 问答。
+ */
+export const SearchFavoritesInput = z.object({
+  query: z.string().max(MAX_SEARCH_QUERY_LENGTH).describe("检索关键词（必填，可命中标题/描述/收藏备注/标签/网址）；空白查询返回空结果，不报错"),
+  folder: z.string().min(1).optional().describe("只搜某个收藏夹（folderId，可从 list_favorite_folders 取）"),
+  tag: z.string().min(1).optional().describe("只搜带某个标签的收藏"),
+  limit: z.number().int().min(1).max(50).default(10).describe("返回条数上限"),
+  offset: z.number().int().min(0).default(0).describe("分页偏移"),
+});
+
+/** 列出本人收藏夹（MCP `list_favorite_folders`）：无入参，范围恒为令牌归属人。 */
+export const ListFavoriteFoldersInput = z.object({});
+
 export const ListSearchHistoryInput = z.object({
   limit: z.number().int().min(1).max(200).default(20),
   offset: z.number().int().min(0).default(0),
@@ -292,6 +312,15 @@ export const GetArchitectureRecipeInput = z.object({
 
 export const CompareTechnologiesInput = z.object({
   query: z.string().describe("技术选型对比查询（如 'react vs vue', 'cursor vs vscode', 'pnpm vs bun', 'ollama vs vllm'）"),
+});
+
+/**
+ * 跨站对照输入（Batch 4 Phase 1）：只收数组，不做 transform。
+ * 查询串形态（`?siteIds=a,b,c`）由 REST 路由侧先逗号切分再喂 schema；
+ * MCP 侧直接传数组。数量 2–4 个，重复先去重再校验。
+ */
+export const CompareSitesInput = z.object({
+  siteIds: z.array(z.string().min(1)).min(2).max(4),
 });
 
 export const HealBrokenSiteInput = z.object({
@@ -342,6 +371,8 @@ export const SyncCrdtOperationsInput = z.object({
       "DELETE_CUSTOM_CATEGORY",
       "UPSERT_CUSTOM_SITE",
       "DELETE_CUSTOM_SITE",
+      "UPSERT_VIDEO_PROGRESS",
+      "DELETE_VIDEO_PROGRESS",
     ]),
     entityId: z.string(),
     payload: z.unknown(),
@@ -452,10 +483,14 @@ export const MCP_INPUT_SCHEMAS: Record<string, ZodSchemaLike> = {
   list_collections: ListCollectionsInput,
   get_collection: GetCollectionInput,
   list_favorites: ListFavoritesInput,
+  search_favorites: SearchFavoritesInput,
+  list_favorite_folders: ListFavoriteFoldersInput,
+  list_facets: ListFacetsInput,
   list_search_history: ListSearchHistoryInput,
   get_profile_summary: GetProfileSummaryInput,
   get_architecture_recipe: GetArchitectureRecipeInput,
   compare_technologies: CompareTechnologiesInput,
+  compare_sites: CompareSitesInput,
   heal_broken_site: HealBrokenSiteInput,
   find_tech_path: FindTechPathInput,
   analyze_stack_compatibility: AnalyzeStackCompatibilityInput,
@@ -724,6 +759,7 @@ export const REST_SCHEMA_BINDINGS: Record<string, { schema: ZodSchemaLike; in: "
   "POST /api/graph/compatibility": { schema: AnalyzeStackCompatibilityInput, in: "body" },
   "POST /api/sites/cluster": { schema: ClusterSitesInput, in: "body" },
   "POST /api/comparisons": { schema: CompareTechnologiesInput, in: "body" },
+  "GET /api/compare": { schema: CompareSitesInput, in: "query" },
   "POST /api/recipes": { schema: GetArchitectureRecipeInput, in: "body" },
   "POST /api/tools/synthesize": { schema: SynthesizeAgentToolInput, in: "body" },
   "POST /api/p2p/signal": { schema: ExchangeP2pMeshInput, in: "body" },
@@ -838,6 +874,11 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     scope: "read", inputSchema: ListTagsInput, mutating: false,
   },
   {
+    name: "list_facets",
+    description: "列出受控分面定义与取值分布（pricing / platform 等），可按类目或标签限定统计范围。适合在检索前了解有哪些可筛的分面维度。",
+    scope: "read", inputSchema: ListFacetsInput, mutating: false,
+  },
+  {
     name: "refresh_site",
     description: "刷新单个站点的元数据（标题/描述/图标）：入队 refetch_metadata 任务，由 Runner 异步执行。可选 LLM 富化。",
     scope: "write", inputSchema: RefreshSiteInput, mutating: true,
@@ -856,6 +897,16 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     name: "list_favorites",
     description: "列出**令牌归属用户自己的**收藏站点（支持按收藏夹过滤与分页）。用户域只读工具：只有带 owner_identity 的个人令牌可用，实例级令牌会被拒绝。",
     scope: "read", inputSchema: ListFavoritesInput, mutating: false,
+  },
+  {
+    name: "search_favorites",
+    description: "在**令牌归属用户自己的**收藏内检索（标题/描述/收藏备注/标签/网址），词法 + 语义两路召回，与 POST /api/ask 的问答检索同口径，但只返回候选、不做 LLM 问答。用户域只读工具：只有带 owner_identity 的个人令牌可用，实例级令牌会被拒绝。",
+    scope: "read", inputSchema: SearchFavoritesInput, mutating: false,
+  },
+  {
+    name: "list_favorite_folders",
+    description: "列出**令牌归属用户自己的**收藏夹（id / 名称 / 条数）及未分夹条数；是 list_favorites / search_favorites 按夹过滤的前置。用户域只读工具：只有带 owner_identity 的个人令牌可用，实例级令牌会被拒绝。",
+    scope: "read", inputSchema: ListFavoriteFoldersInput, mutating: false,
   },
   {
     name: "list_search_history",
@@ -886,6 +937,11 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     name: "compare_technologies",
     description: "结构化技术选型对比矩阵 (Side-by-Side Comparison Matrix)，原地对比两项技术的优缺点、权衡点、多维参数与选型裁决。",
     scope: "read", inputSchema: CompareTechnologiesInput, mutating: false,
+  },
+  {
+    name: "compare_sites",
+    description: "横向对照**令牌归属用户自己的**收藏里的 2–4 个站点：计费方式 / 价格（数值） / 支持平台 / 形态 / 是否还在维护 / 我的备注 / 迁移成本，逐维并排对照，每格带来源与核实时间，未验证标“未验证”，不排名、不打分。仅返回令牌归属人自己的收藏与备注；任一站点不在本人收藏里则整单失败。用户域只读工具：只有带 owner_identity 的个人令牌可用，实例级令牌会被拒绝。",
+    scope: "read", inputSchema: CompareSitesInput, mutating: false,
   },
   {
     name: "heal_broken_site",

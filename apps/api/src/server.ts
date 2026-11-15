@@ -3,7 +3,7 @@
  *
  * 业务路由已按域拆分至 ./routes/*.ts（升级改造方案 P1-3：原 2600+ 行单体按域拆为
  * 24 个路由插件 + shared/metrics，行为逐字节一致，OpenAPI 由 onRoute hook 同源收集，
- * 插件 register 顺序即原 server.ts 路由顺序；后陆续增至 49 个路由插件，截至 2026-11-11）。
+ * 插件 register 顺序即原 server.ts 路由顺序；后陆续增至 57 个路由插件，截至 2026-11-14）。
  * 本文件只保留：
  *   - Fastify 实例与横切插件装配（cors / rate-limit）
  *   - 指标采集 hook（数据与文本渲染在 ./metrics.ts）
@@ -54,7 +54,9 @@ import { collectionRoutes } from "./routes/collections.ts";
 import { recipeRoutes } from "./routes/recipes.ts";
 import { visualRoutes } from "./routes/visual.ts";
 import { favoriteRoutes } from "./routes/favorites.ts";
+import { publicPageRoutes } from "./routes/public-pages.ts";
 import { customSiteRoutes } from "./routes/custom-sites.ts";
+import { wantedSearchRoutes } from "./routes/wanted-searches.ts";
 import { rankRoutes } from "./routes/rank.ts";
 import { agentRoutes } from "./routes/agents.ts";
 import { historyRoutes } from "./routes/history.ts";
@@ -88,6 +90,12 @@ import { copilotRoutes } from "./routes/copilot.ts";
 import { aiFindRoutes } from "./routes/ai-find.ts";
 import { aiChatRoutes } from "./routes/ai-chat.ts";
 import { videoBiliSummaryRoutes } from "./routes/video-bili-summary.ts";
+import { askRoutes } from "./routes/ask.ts";
+import { compareRoutes } from "./routes/compare.ts";
+import { sitePriceRoutes } from "./routes/site-prices.ts";
+import { verifyRoutes } from "./routes/verify.ts";
+import { compareSnapshotsRoutes } from "./routes/compare-snapshots.ts";
+import { compareShareRoutes } from "./routes/compare-share.ts";
 import { scenesRoutes } from "./routes/scenes.ts";
 import { hotlistRoutes } from "./routes/hotlist.ts";
 import { dramaCalendarRoutes } from "./routes/drama-calendar.ts";
@@ -720,7 +728,9 @@ export async function buildServer(ctx: AppContext) {
   await app.register(recipeRoutes, { ctx });
   await app.register(visualRoutes, { ctx });
   await app.register(favoriteRoutes, { ctx });
+  await app.register(publicPageRoutes, { ctx });
   await app.register(customSiteRoutes, { ctx });
+  await app.register(wantedSearchRoutes, { ctx });
   await app.register(rankRoutes, { ctx });
   await app.register(agentRoutes, { ctx });
   await app.register(historyRoutes, { ctx });
@@ -755,6 +765,12 @@ export async function buildServer(ctx: AppContext) {
   await app.register(aiFindRoutes, { ctx });
   await app.register(aiChatRoutes, { ctx });
   await app.register(videoBiliSummaryRoutes, { ctx });
+  await app.register(askRoutes, { ctx });
+  await app.register(compareRoutes, { ctx });
+  await app.register(sitePriceRoutes, { ctx });
+  await app.register(verifyRoutes, { ctx });
+  await app.register(compareSnapshotsRoutes, { ctx });
+  await app.register(compareShareRoutes, { ctx });
   await app.register(scenesRoutes, { ctx });
   await app.register(hotlistRoutes, { ctx });
   await app.register(dramaCalendarRoutes, { ctx });

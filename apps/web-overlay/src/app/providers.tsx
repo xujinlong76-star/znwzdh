@@ -7,7 +7,7 @@ import { SessionProvider } from 'next-auth/react'
 import { Toaster } from '@/components/ui/toaster'
 import { LayoutSyncAnnouncer } from '@/components/diy/layout-sync-announcer'
 import { PredictivePrefetchProvider } from '@/components/predictive-prefetch-provider'
-import { OfflineBanner } from '@/components/offline-banner'
+import { OfflineBanner } from '@/components/shell-background'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {

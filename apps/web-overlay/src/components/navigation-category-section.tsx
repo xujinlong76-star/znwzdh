@@ -8,10 +8,9 @@
  */
 import { useMemo, useState, useCallback, useEffect, useRef, memo } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { NavigationCard } from '@/components/navigation-card'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
-import dynamic from 'next/dynamic'
-
 /**
  * 模块缩放手柄（Bundle 瘦身第三刀 a）：手柄本体约 20KB 代码，只在排版编辑态
  * 才渲染（非编辑态返回 null），平时不进 `/` 初始 chunk。`next/dynamic`
@@ -70,6 +69,14 @@ export interface NavigationCategorySectionProps {
    * <=0 或未传 = 不限制（恢复全量 SSR 的旧行为）。
    */
   cardsPerGroup?: number
+  /**
+   * 数字直达映射（站点 id → 数字键 1~9），由 navigation-content 的
+   * buildDialMap 算出并透传：卡片角标只读它，不自己重算顺序。
+   * 挂载前为 undefined（SSR 与首帧不渲染角标，避免水合分叉）。
+   */
+  dialDigitById?: ReadonlyMap<string, number>
+  /** 全站标题索引（id → 标题）：卡片 ⋯ 菜单绑定快拨位时，报出被顶掉站点的站名 */
+  siteTitleById?: ReadonlyMap<string, string>
 }
 
 export const NavigationCategorySection = memo(function NavigationCategorySection({
@@ -87,6 +94,8 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   keyboardHintId,
   toggleSelectOne,
   cardsPerGroup = 0,
+  dialDigitById,
+  siteTitleById,
 }: NavigationCategorySectionProps) {
   const { toast } = useToast()
   const {
@@ -104,7 +113,17 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     speedDialPinnedIds,
     pinToSpeedDial,
     unpinFromSpeedDial,
+    quickDialSlots,
   } = useHomeDIY()
+
+  /** 自定义快拨位反查（站点 id → Ctrl+Shift+数字）：卡片 aria-keyshortcuts 用 */
+  const quickDigitBySiteId = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const [digit, siteId] of Object.entries(quickDialSlots || {})) {
+      if (typeof siteId === 'string' && siteId && !map.has(siteId)) map.set(siteId, digit)
+    }
+    return map
+  }, [quickDialSlots])
 
   /**
    * 网格 hook：卡片 ⋯ 菜单的移动走这里（置顶列表重排，不改其它文件）。
@@ -599,6 +618,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
         }}
         cardIndex={opts.index}
         cardTotal={opts.displayedIds.length}
+        dialDigit={dialDigitById?.get(item.id)}
+        quickDialDigit={quickDigitBySiteId.get(item.id)}
+        siteTitleById={siteTitleById}
       />
     )
     if (!isEditingLayout || !dragKit) return node

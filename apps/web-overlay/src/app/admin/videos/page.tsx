@@ -7,6 +7,7 @@ import { AddVideoCategoryForm } from "./components/AddVideoCategoryForm"
 import { HarvestModal } from "./components/HarvestModal"
 import { ReplacementHistoryDialog } from "./components/ReplacementHistoryDialog"
 import { VideoTelemetryDashboard } from "./components/VideoTelemetryDashboard"
+import { HealthSweepPanel } from "./components/HealthSweepPanel"
 import { VideoSeoGovernancePanel } from "./components/VideoSeoGovernancePanel"
 import { Input } from "@/registry/new-york/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/registry/new-york/ui/dialog"
@@ -82,11 +83,8 @@ export default function VideosAdminPage() {
                 harvestPolicy: {
                     enabled: true,
                     keywords: [values.title],
-                    syncSiteHotTrends: true,
                     maxItems: 12,
-                    minQualityScore: 60,
                     minDurationSec: 180,
-                    freshnessHalfLifeDays: 90,
                     autoReplaceOutdated: true
                 }
             }
@@ -207,6 +205,9 @@ export default function VideosAdminPage() {
                     mutateOverview()
                 }}
             />
+
+            {/* 视频健康巡检：定时调度状态 + 全库覆盖进度 + 手动触发 */}
+            <HealthSweepPanel />
 
             {/* 搜索引擎收录 (SEO) 与多平台分布治理看板 */}
             <VideoSeoGovernancePanel

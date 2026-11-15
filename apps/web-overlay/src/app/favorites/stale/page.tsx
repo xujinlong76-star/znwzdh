@@ -7,9 +7,9 @@
  * 全部超过 90 天没有记录到的打开的收藏，按最久没打开排前面，每条都能
  * 一键重开 / 归档 / 删除；归档过的列在下面，可恢复。
  *
- * 口径（与 lib/resurface 一致）：「没打开」= 本机没记录到打开。直接点卡片
- * 打开不会被记下来，所以这里可能比你实际打开的要多——文案按这个口径写，
- * 不把任何一条说成「你肯定没看过」。
+ * 口径（与 lib/resurface 一致）：「没打开」= 本机没记录到打开。另一台设备
+ * 或另一个浏览器里打开的，本机看不到，所以这里可能比你实际打开的要多——
+ * 文案按这个口径写，不把任何一条说成「你肯定没看过」。
  * 归档只保存在本机；删除是真删（走收藏 remove 的同一条路，云端也会删）。
  */
 
@@ -76,13 +76,15 @@ export default function StaleFavoritesPage() {
     }
     setArchived(next)
     favorites.remove(item.siteId)
-    setNotice(`已归档「${item.title}」，下面可以恢复`)
+    setNotice(`已归档「${item.title}」，可在回收站恢复`)
   }
 
+  // 删除不确认：favorites.remove() 已推撤销条 + 写回收站快照，
+  // 8 秒内可撤销，30 天内可在回收站恢复（旧文案说删了就回不来是错的，
+  // 服务端只是墓碑，已改掉）。
   const handleDelete = (item: ResurfacedFavorite) => {
-    if (!window.confirm(`确定要删除收藏「${item.title}」吗？删除后无法恢复。`)) return
     favorites.remove(item.siteId)
-    setNotice(`已删除「${item.title}」`)
+    setNotice(`已删除「${item.title}」，8 秒内可撤销，也可在回收站恢复`)
   }
 
   const handleRestore = (item: ArchivedFavoriteItem) => {
@@ -104,7 +106,7 @@ export default function StaleFavoritesPage() {
         ],
       }),
     )
-    if (!result.ok || result.imported === 0) {
+    if (!result.ok || (result.imported === 0 && result.updated === 0 && result.alreadyExisted === 0)) {
       setNotice(`恢复失败：${result.error ?? '这条收藏没能重新加入'}`)
       return
     }
@@ -129,8 +131,8 @@ export default function StaleFavoritesPage() {
             好久没打开
           </h1>
           <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            超过 90 天没有从这里打开过的收藏，按最久没打开的排在前面。只按本机记录算——
-            直接点卡片打开的不计入，所以这里可能比你实际打开的要多。点标题就能重开，
+            超过 90 天没有在本机打开过的收藏，按最久没打开的排在前面。只按本机记录算——
+            另一台设备上打开的不计入，所以这里可能比你实际打开的要多。点开就能重开，
             不想要的归档（可恢复）或删除。
           </p>
         </div>

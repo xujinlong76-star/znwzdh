@@ -157,6 +157,7 @@ export function BatchOperationDock({
                 <Button
                   variant="outline"
                   size="sm"
+                  data-batch-move-target
                   className="h-8 px-2.5 text-xs font-medium border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 shadow-2xs"
                 >
                   <FolderPlus className="w-3.5 h-3.5 sm:mr-1.5" />
@@ -237,7 +238,7 @@ export function BatchOperationDock({
               size="sm"
               onClick={onBatchDeleteFromCustomCategories}
               className="h-8 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-500/10"
-              title="从自建分类中移除所选项"
+              title="从自建分类中移除所选项（Delete）"
             >
               <Trash2 className="w-3.5 h-3.5 sm:mr-1.5" />
               <span className="hidden sm:inline">移除</span>

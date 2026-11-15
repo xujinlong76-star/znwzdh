@@ -24,7 +24,7 @@ import { llmProviderReady, type ResolvedLlm } from "./llm-config.ts";
 import { resolveLlmPrice } from "./llm-prices.ts";
 
 export interface CallLlmOptions {
-  scenario: "copilot" | "ai_chat" | "canvas" | "health_audit" | "config_test" | "enrich" | string;
+  scenario: "copilot" | "ai_chat" | "canvas" | "health_audit" | "config_test" | "enrich" | "ask_collection" | string;
   identity?: string | null;
   messages: ChatMessage[];
   temperature?: number;

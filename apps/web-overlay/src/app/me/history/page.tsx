@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { copyText } from '@/lib/clipboard'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import { HandoffCardWithCloud } from '@/components/handoff-card-with-cloud'
 import { SectionState } from '@/components/user-center/section-state'
 import { fetchVisitsPage, clearProfileSignals, type HubVisitItem } from '@/lib/navhub-api'
 import { safeHref } from '@/lib/safe-url'
@@ -326,6 +327,9 @@ export default function SearchHistoryPage() {
           ) : null
         }
       />
+
+      {/* 跨设备接力卡（与首页同一组件复用；已在该页，不展示「还有 N 条」回链） */}
+      <HandoffCardWithCloud showMoreLink={false} />
 
       {/* 双 tab（T23）：搜索历史 / 访问历史。访问历史来自服务端 click 流水，
           与搜索历史一样都是「用户自己的行为数据」。 */}

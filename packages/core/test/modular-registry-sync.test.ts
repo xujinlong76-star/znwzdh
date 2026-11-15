@@ -133,9 +133,20 @@ describe('core 模块目录 ↔ 前端卡片注册表同源', () => {
     expect(drift).toEqual([])
   })
 
-  it('每个类型都有卡可渲染：注册表条目必须挂 component', () => {
-    for (const [type, entry] of entries) {
-      expect(entry, type).toMatch(/component:\s*[A-Z]\w*Widget/)
+  it('每个类型都有卡可渲染：懒加载表里必须有对应组件', () => {
+    // 组件不再静态挂在注册表条目上（首屏瘦身 Step 2），改走 WIDGET_COMPONENTS
+    // 懒加载表；每个类型仍必须有一条 lazy(...)，否则卡片渲染不出来。
+    const start = registrySource.indexOf('export const WIDGET_COMPONENTS')
+    const table =
+      start === -1 ? '' : registrySource.slice(start, registrySource.indexOf('\n}\n', start) + 3)
+    expect(table.length, 'WIDGET_COMPONENTS 表缺失').toBeGreaterThan(0)
+    for (const type of entries.keys()) {
+      expect(table, type).toMatch(
+        new RegExp(
+          `^ {2}'${type}': React\\.lazy\\(\\(\\) => import\\('@/components/modular/modules/[a-z0-9-]+'\\)\\.then\\(\\(m\\) => \\(\\{ default: m\\.[A-Z]\\w*Widget \\}\\)\\)\\)`,
+          'm',
+        ),
+      )
     }
   })
 })

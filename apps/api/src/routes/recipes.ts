@@ -8,11 +8,18 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   analyzeStackCompatibility,
+  assignComparisonProvenance,
   autoClusterSites,
+  buildDynamicComparisonPrompt,
+  buildStructuredComparisonContext,
+  buildStructuredMatrix,
   computeGraphCentrality,
+  DYNAMIC_COMPARISON_DIMENSIONS,
   findMatchingArchitectureRecipe,
   findShortestTechPath,
   generateDeterministicSvg,
+  getFacetOptionLabel,
+  isComparisonMatrixFullyAnnotated,
   parseTechComparisonQuery,
   PRESET_RECIPES,
   PRESET_TECH_GRAPH,
@@ -92,6 +99,60 @@ function sanitizeRecipeLayers(
   }
   if (layers.length === 0) return null;
   return { ...parsed, layers };
+}
+
+/**
+ * 把模型给出的动态对比矩阵规整成可标注的形状（Batch 4 Phase 2 P2-5）：
+ *  - 维度白名单：只留 DYNAMIC_COMPARISON_DIMENSIONS 里的三维，模型新增的
+ *    维度直接丢弃（“不许新增对照维度”是服务端规则，不只是 prompt 里的希望）；
+ *  - winner 只留 A / B / TIE，其他值直接省略（依据不足时取 TIE 是模型的
+ *    事，服务端只保证不合法的值不下发）；
+ *  - 缺失字段补空值（空值在标注时落 unverified），不拿别的值顶替；
+ *  - 模型自带的任何 provenance / aiGenerated 字段一律不复制：标注权在
+ *    服务端（assignComparisonProvenance 从头重算），这里只建全新对象。
+ * 维度过滤后一条不剩 → null（调用方按无结果处理）。
+ */
+function normalizeModelComparisonMatrix(
+  parsed: TechComparisonMatrix,
+  rawA: string,
+  rawB: string,
+): TechComparisonMatrix | null {
+  const spec = (input: TechComparisonMatrix["itemA"] | undefined, fallbackName: string) => ({
+    name: typeof input?.name === "string" && input.name.trim() ? input.name : fallbackName,
+    category: typeof input?.category === "string" ? input.category : "",
+    license: typeof input?.license === "string" ? input.license : "",
+    primaryPros: Array.isArray(input?.primaryPros)
+      ? input.primaryPros.filter((s): s is string => typeof s === "string")
+      : [],
+    tradeoffs: Array.isArray(input?.tradeoffs)
+      ? input.tradeoffs.filter((s): s is string => typeof s === "string")
+      : [],
+    bestFor: typeof input?.bestFor === "string" ? input.bestFor : "",
+  });
+  const allowed = new Set<string>(DYNAMIC_COMPARISON_DIMENSIONS);
+  const dimensions: TechComparisonMatrix["dimensions"] = [];
+  for (const d of parsed.dimensions ?? []) {
+    if (!d || !allowed.has(d.dimName)) continue;
+    const dim: TechComparisonMatrix["dimensions"][number] = {
+      dimName: d.dimName,
+      valueA: typeof d.valueA === "string" ? d.valueA : "",
+      valueB: typeof d.valueB === "string" ? d.valueB : "",
+    };
+    if (d.winner === "A" || d.winner === "B" || d.winner === "TIE") dim.winner = d.winner;
+    dimensions.push(dim);
+  }
+  if (dimensions.length === 0) return null;
+  return {
+    id: typeof parsed.id === "string" && parsed.id ? parsed.id : `${rawA}__vs__${rawB}`,
+    title:
+      typeof parsed.title === "string" && parsed.title
+        ? parsed.title
+        : `${rawA} vs ${rawB} 深度选型对比`,
+    itemA: spec(parsed.itemA, rawA),
+    itemB: spec(parsed.itemB, rawB),
+    dimensions,
+    verdict: typeof parsed.verdict === "string" ? parsed.verdict : "",
+  };
 }
 
 export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -270,11 +331,6 @@ ${candidateContext}
     // 双向共用一条：[a,b] 排序后拼 key，"A vs B" 与 "B vs A" 命中同一份矩阵
     const pairKey = [rawA.toLowerCase(), rawB.toLowerCase()].sort().join("__vs__");
 
-    const llm = await resolveLlm(ctx);
-    if (!llm.provider.apiKey) {
-      return { ok: false, matrix: null };
-    }
-
     try {
       const [resA, resB] = await Promise.all([
         ctx.search.search({ q: rawA, limit: 2, statuses: ["active"] }),
@@ -286,12 +342,6 @@ ${candidateContext}
         idA ? ctx.repo.getSite(idA) : Promise.resolve(null),
         idB ? ctx.repo.getSite(idB) : Promise.resolve(null),
       ]);
-      const infoA = hitA
-        ? `${hitA.title} (${hitA.url}): ${hitA.description || ""}`
-        : rawA;
-      const infoB = hitB
-        ? `${hitB.title} (${hitB.url}): ${hitB.description || ""}`
-        : rawB;
 
       // 两侧都不在站内收录里时，矩阵只能靠模型记忆现编定价与优劣——不生成，
       // 如实回「站内未收录，无法对比」；至少一侧有真实条目才允许展开。
@@ -299,49 +349,49 @@ ${candidateContext}
         return { ok: false, matrix: null };
       }
 
-      // 判据必须带上两侧的参考条目：矩阵里的品类/定价/优劣都是从这两条站点记录展开的。
-      // 只按工具名缓存，站点被富化改写、或检索开始命中另一个同名工具之后，
-      // 旧矩阵会继续供着已经不成立的对比。排序后取指纹，保住 A/B 对称性。
+      // P2-5 第 1 步：结构化取数（公开站数据，不取用户备注/标签/价格数值——
+      // 本路由是 public scope）。prompt 只喂这块结构化事实，title/url/
+      // description 降为补充上下文。
+      const context = buildStructuredComparisonContext(hitA, hitB, { facetLabel: getFacetOptionLabel });
+      const infoA = hitA
+        ? `${hitA.title} (${hitA.url}): ${hitA.description || ""}`
+        : rawA;
+      const infoB = hitB
+        ? `${hitB.title} (${hitB.url}): ${hitB.description || ""}`
+        : rawB;
+
+      const llm = await resolveLlm(ctx);
+      // P2-5 第 3 步：无 Key 不再回空，改为回结构化对照表本身（不调模型，
+      // 不读 LLM 缓存——结构化表是纯函数，现场算即可）。
+      if (!llm.provider.apiKey) {
+        // 分类标题由路由查库传入（core 不查库）：有标题显示标题，查无标题
+        // 的分类在结构化表里标“未验证”，不显示原始 categoryId。
+        const categories = await ctx.repo.listCategories();
+        const categoryTitle = new Map(categories.map((c) => [c.id, c.title]));
+        const structured = buildStructuredMatrix(hitA, hitB, rawA, rawB, {
+          facetLabel: getFacetOptionLabel,
+          categoryLabel: (id) => categoryTitle.get(id) ?? null,
+        });
+        structured.id = pairKey;
+        return { ok: true, matrix: structured, aiGenerated: false };
+      }
+
+      // 缓存判据是指纹输入：完整结构化上下文串（分面改了、健康巡检更新了，
+      // 旧矩阵必须失效）。指纹本身已排序，保住 A/B 对称性。
       const cacheKey = `${pairKey}::${createHash("sha256")
-        .update([infoA, infoB].sort().join("\u0000"))
+        .update(context.fingerprint)
         .digest("hex")
         .slice(0, 32)}`;
       const cached = dynamicComparisonCache.get(cacheKey);
       if (cached) {
-        return { ok: true, matrix: cached, aiGenerated: true, cached: true };
+        // 只缓存标注完整的矩阵：读缓存时任一字段缺 provenance 视为 miss。
+        if (isComparisonMatrixFullyAnnotated(cached)) {
+          return { ok: true, matrix: cached, aiGenerated: cached.aiGenerated ?? true, cached: true };
+        }
+        dynamicComparisonCache.delete(cacheKey);
       }
 
-      const prompt = `你是工具选型评测专家。请针对「${rawA}」与「${rawB}」进行精炼并排对比：
-- A参考: ${infoA}
-- B参考: ${infoB}
-
-请严格返回以下 JSON 结构（文字简明扼要）：
-{
-  "id": "ai-cmp-slug",
-  "title": "${rawA} vs ${rawB} 深度选型对比",
-  "itemA": {
-    "name": "${rawA}",
-    "category": "所属品类",
-    "license": "免费/订阅模式",
-    "primaryPros": ["优势1", "优势2"],
-    "tradeoffs": ["局限1"],
-    "bestFor": "最适合人群与场景（25字内）"
-  },
-  "itemB": {
-    "name": "${rawB}",
-    "category": "所属品类",
-    "license": "免费/订阅模式",
-    "primaryPros": ["优势1", "优势2"],
-    "tradeoffs": ["局限1"],
-    "bestFor": "最适合人群与场景（25字内）"
-  },
-  "dimensions": [
-    { "dimName": "核心能力", "valueA": "A表现（15字内）", "valueB": "B表现（15字内）", "winner": "A" },
-    { "dimName": "免费与性价比", "valueA": "A定价（15字内）", "valueB": "B定价（15字内）", "winner": "B" },
-    { "dimName": "上手与生态", "valueA": "A体验（15字内）", "valueB": "B体验（15字内）", "winner": "TIE" }
-  ],
-  "verdict": "终极选型建议：何时选 ${rawA}，何时选 ${rawB}（45字内）"
-}`;
+      const prompt = buildDynamicComparisonPrompt(rawA, rawB, context, infoA, infoB);
 
       const res = await callLlm(ctx, llm, {
         scenario: "dynamic_comparison",
@@ -365,13 +415,25 @@ ${candidateContext}
       }
 
       if (parsed && parsed.itemA && parsed.itemB && Array.isArray(parsed.dimensions)) {
-        parsed.id = parsed.id || pairKey;
+        // P2-5 第 2 步：模型输出先规整（白名单维度 + 合法 winner），再由服务端
+        // 定夺三态标注（模型自标的 provenance 一律忽略）；标注不完整直接丢弃，
+        // 不返回、不缓存。
+        const normalized = normalizeModelComparisonMatrix(parsed, rawA, rawB);
+        if (!normalized) {
+          return { ok: false, matrix: null };
+        }
+        const annotated = assignComparisonProvenance(normalized, context);
+        if (!isComparisonMatrixFullyAnnotated(annotated)) {
+          return { ok: false, matrix: null };
+        }
+        annotated.id = pairKey;
+        annotated.aiGenerated = true;
         if (dynamicComparisonCache.size >= 100) {
           const oldest = dynamicComparisonCache.keys().next().value;
           if (oldest) dynamicComparisonCache.delete(oldest);
         }
-        dynamicComparisonCache.set(cacheKey, parsed);
-        return { ok: true, matrix: parsed, aiGenerated: true };
+        dynamicComparisonCache.set(cacheKey, annotated);
+        return { ok: true, matrix: annotated, aiGenerated: true };
       }
     } catch (err) {
       req.log.warn({ err: String(err), q }, "动态 AI 竞品对比合成降级");

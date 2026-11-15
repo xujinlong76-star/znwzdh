@@ -17,6 +17,7 @@
 
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Container } from '@/components/ui/container'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Footer } from '@/components/footer'
@@ -26,6 +27,8 @@ import {
   ExternalLink,
   Copy,
   Check,
+  CheckSquare,
+  Square,
   Sparkles,
   Activity,
   AlertTriangle,
@@ -52,6 +55,7 @@ import { probeSiteLatency, type PingResult } from '@/lib/site-ping'
 import {
   fetchSite,
   fetchSimilar,
+  fetchSimilarByTags,
   fetchSiteRelations,
   fetchSiteCollections,
   fetchSiteHealthHistory,
@@ -61,6 +65,8 @@ import {
   type HubCollection,
   type HealthCheckPoint,
 } from '@/lib/navhub-api'
+import { useFavorites } from '@/hooks/useFavorites'
+import { buildCompareHref, mergeCompareCandidates, toggleComparePick } from '@/lib/compare'
 import { EmptyState } from '@/components/ui/empty-state'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { copyText } from '@/lib/clipboard'
@@ -72,6 +78,7 @@ import { buildDeadLinkWaybackUrl } from '@/lib/dead-link'
 import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
 import { useSiteViewModel } from '@/components/site-view-context'
+import { SaveAnnotationPanel } from '@/components/save-annotation-panel'
 import { externalLinkRelAttr } from '@/lib/site-settings'
 import { useToast } from '@/components/ui/use-toast'
 import {
@@ -224,8 +231,15 @@ export function SiteDetailView({
   breadcrumb?: ReactNode
 }) {
   const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
+  const router = useRouter()
+  const favorites = useFavorites()
   const [site, setSite] = useState<HubSite | null>(initialSite)
   const [similar, setSimilar] = useState<HubSite[]>([])
+  /** 共享标签相似（对照候选；与服务端相关区同源，不用 KNN 版 fetchSimilar） */
+  const [similarByTags, setSimilarByTags] = useState<HubSite[]>([])
+  /** 对照 pick-state：除本站外再选的候选 id（本站已占 1 席，对照上限 4 个，故最多再选 3 个） */
+  const [comparePicked, setComparePicked] = useState<string[]>([])
+  const [comparePickNote, setComparePickNote] = useState<string | null>(null)
   const [relations, setRelations] = useState<HubSiteRelation[]>([])
   const [collections, setCollections] = useState<Array<HubCollection & { collectionNote: string | null }>>([])
   /** 关系网络降级：中枢不可用时 relations 静默为空，需与「确实没有关系」区分 */
@@ -335,6 +349,20 @@ export function SiteDetailView({
       if (!cancelled) setNotice(describeDegrade(error, '相似推荐'))
     }).then((s) => {
       if (!cancelled) setSimilar(s)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [id, site, reloadToken])
+
+  // 加载共享标签相似站点（对照候选；服务端 /similar，与服务端相关区同源，不用 KNN 版）
+  useEffect(() => {
+    if (!id || !site) return
+    let cancelled = false
+    void fetchSimilarByTags(id, 6, (error) => {
+      if (!cancelled) setNotice(describeDegrade(error, '相似推荐'))
+    }).then((s) => {
+      if (!cancelled) setSimilarByTags(s)
     })
     return () => {
       cancelled = true
@@ -480,6 +508,64 @@ export function SiteDetailView({
   )
   const upstreamAndOthers = relations.filter((r) =>
     ['upstream', 'mirror', 'related'].includes(r.relationType),
+  )
+
+  /** 对照上限 4 个：本站已占 1 席，候选最多再选 3 个（见 lib/compare.ts toggleComparePick） */
+  const MAX_COMPARE_PICKS = 3
+  /** 相关区候选：服务端相关区 ∪ 共享标签 /similar，按序去重、排除本站 */
+  const relatedCandidates = mergeCompareCandidates(id, initialRelated, similarByTags)
+
+  const handleToggleComparePick = (candidateId: string) => {
+    const result = toggleComparePick(comparePicked, candidateId, MAX_COMPARE_PICKS)
+    setComparePicked(result.picked)
+    setComparePickNote(result.blocked ? result.message : null)
+  }
+
+  const handleGoCompare = () => {
+    if (comparePicked.length === 0) return
+    router.push(buildCompareHref([id, ...comparePicked]))
+  }
+
+  const scrollToRelated = () => {
+    document.getElementById('related-sites-heading')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  /**
+   * N7：相关区（滚动目标）实际存在的条件，与下方相关区渲染条件同源
+   * （relatedCandidates.length > 0 || (category && canLinkCategory)）。
+   * 档案里的「可横向对比」按钮只在它为真时出现——目标缺失时不再静默无操作。
+   */
+  const hasRelatedSection = relatedCandidates.length > 0 || Boolean(category && canLinkCategory)
+
+  /**
+   * N5：pick 栏（已选 N/4 / 去对比 / 超限提示）抽成共享渲染函数。
+   * 相关区、平替区、死链兜底平替区三处共用同一份，避免平替区选完要穿过
+   * 生态、专题、相关区 4 个区块才能找到出口。
+   */
+  const renderComparePickBar = () => (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+      <span className="text-muted-foreground">本站已加入对比，再选 1–3 个同类站点（共 2–4 个）</span>
+      <span className="font-semibold text-primary">已选 {comparePicked.length + 1}/4</span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 text-xs"
+        disabled={comparePicked.length === 0}
+        onClick={handleGoCompare}
+        title={
+          comparePicked.length === 0
+            ? '先勾选 1–3 个同类站点，再去对比'
+            : '并排对照本站与选中的同类站点'
+        }
+      >
+        去对比
+      </Button>
+      {comparePickNote && (
+        <span role="alert" className="text-destructive-text">
+          {comparePickNote}
+        </span>
+      )}
+    </div>
   )
 
   const hasFacets = site.facets && Object.keys(site.facets).length > 0
@@ -881,6 +967,14 @@ export function SiteDetailView({
           </DialogContent>
         </Dialog>
 
+        {/* 划线批注：只对本地已有的标题 / 简介划线，不抓站外正文。 */}
+        <SaveAnnotationPanel
+          siteId={site.id}
+          siteTitle={site.title}
+          siteUrl={site.url}
+          description={site.description ?? undefined}
+        />
+
         {/* 死链与失联自愈引导横幅 */}
         {isDeadLink && (
           <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
@@ -991,7 +1085,29 @@ export function SiteDetailView({
           */}
           <p className="text-xs leading-relaxed text-muted-foreground">
             {site.title} 位于「{category?.title ?? '未分类'}」分类
-            {categoryCount > 1 ? `，该分类下另有 ${categoryCount - 1} 个同类条目可横向对比` : ''}
+            {categoryCount > 1 ? (
+              <>，该分类下另有 {categoryCount - 1} 个同类条目</>
+            ) : hasRelatedSection ? (
+              <>，下方有同类站点</>
+            ) : (
+              ''
+            )}
+            {/*
+              N7：按钮只在相关区（滚动目标）实际存在时出现，条件与相关区渲染
+              条件同源（hasRelatedSection），不再只看 categoryCount > 1。
+              档案句只陈述「同类条目」的分类成员数，不再暗示这 N 个全部可比——
+              只有已收藏的候选才能勾选（见按钮 title 与各卡片的 pick-state）。
+            */}
+            {hasRelatedSection && (
+              <button
+                type="button"
+                onClick={scrollToRelated}
+                className="text-primary hover:underline"
+                title="去相关站点区勾选已收藏的同类站点，横向对比"
+              >
+                可横向对比
+              </button>
+            )}
             {archivedForDays !== null ? `；本条自 ${createdDay} 收录，已维护 ${archivedForDays} 天` : ''}
             {checkedDay
               ? `。最近一次可达性巡检于 ${checkedDay} 完成${site.health?.httpStatus ? `，返回 HTTP ${site.health.httpStatus}` : ''}`
@@ -1019,11 +1135,19 @@ export function SiteDetailView({
               <span className="text-xs text-muted-foreground font-mono">{alternatives.length} 个平替方案</span>
             </div>
 
+            {/* N5：平替区顶部也挂一份 pick 栏，选完就地可见出口，不必穿过 4 个区块去相关区找 */}
+            {renderComparePickBar()}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {alternatives.map((alt) => (
                 <div
                   key={alt.id}
-                  className="rounded-xl border border-border/70 bg-card p-4 hover:border-amber-500/40 transition-all shadow-2xs space-y-2.5"
+                  className={cn(
+                    'rounded-xl border border-border/70 bg-card p-4 hover:border-amber-500/40 transition-all shadow-2xs space-y-2.5',
+                    alt.targetSiteId &&
+                      comparePicked.includes(alt.targetSiteId) &&
+                      'border-primary ring-1 ring-primary/40 bg-primary/5',
+                  )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -1031,6 +1155,15 @@ export function SiteDetailView({
                         {alt.targetSiteId ? (
                           <Link
                             href={`/site/${alt.targetSiteId}`}
+                            onClick={
+                              favorites.isFavorite(alt.targetSiteId)
+                                ? (e) => {
+                                    // 收藏夹批量模式同款：点卡片 = 切换选中，外链拦截
+                                    e.preventDefault()
+                                    handleToggleComparePick(alt.targetSiteId as string)
+                                  }
+                                : undefined
+                            }
                             className="font-semibold text-sm hover:text-primary hover:underline truncate"
                           >
                             {alt.targetTitle}
@@ -1057,11 +1190,40 @@ export function SiteDetailView({
                       </a>
                     </div>
 
-                    <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
-                      <a href={safeHref(alt.targetUrl)} target="_blank" rel={externalRel}>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {alt.targetSiteId ? (
+                        favorites.isFavorite(alt.targetSiteId) ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleToggleComparePick(alt.targetSiteId as string)
+                            }}
+                            aria-pressed={comparePicked.includes(alt.targetSiteId)}
+                            aria-label={`加入对比：${alt.targetTitle}`}
+                            title={
+                              comparePicked.includes(alt.targetSiteId)
+                                ? '已加入对比，点击取消'
+                                : '加入对比'
+                            }
+                            className="p-1 rounded-md bg-background/90 border border-border/80 shadow-xs hover:border-primary transition-colors cursor-pointer"
+                          >
+                            {comparePicked.includes(alt.targetSiteId) ? (
+                              <CheckSquare className="w-4 h-4 text-primary" />
+                            ) : (
+                              <Square className="w-4 h-4 text-muted-foreground" />
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground">收藏后可加入对比</span>
+                        )
+                      ) : null}
+                      <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
+                        <a href={safeHref(alt.targetUrl)} target="_blank" rel={externalRel}>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </Button>
+                    </div>
                   </div>
 
                   {alt.note && (
@@ -1086,15 +1248,32 @@ export function SiteDetailView({
               </h2>
               <span className="text-xs text-muted-foreground font-mono">{alternativesFallback.length} 个</span>
             </div>
+            {/* N5：兜底平替区与主平替区保持一致——顶部挂 pick 栏，卡片也有 pick-state */}
+            {renderComparePickBar()}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {alternativesFallback.map((alt) => (
                 <div
                   key={alt.id}
-                  className="rounded-xl border border-border/70 bg-card p-4 hover:border-amber-500/40 transition-all shadow-2xs space-y-2.5"
+                  className={cn(
+                    'rounded-xl border border-border/70 bg-card p-4 hover:border-amber-500/40 transition-all shadow-2xs space-y-2.5',
+                    comparePicked.includes(alt.id) && 'border-primary ring-1 ring-primary/40 bg-primary/5',
+                  )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <Link href={`/site/${alt.id}`} className="font-semibold text-sm hover:text-primary hover:underline truncate block">
+                      <Link
+                        href={`/site/${alt.id}`}
+                        onClick={
+                          favorites.isFavorite(alt.id)
+                            ? (e) => {
+                                // 收藏夹批量模式同款：点卡片 = 切换选中，外链拦截
+                                e.preventDefault()
+                                handleToggleComparePick(alt.id)
+                              }
+                            : undefined
+                        }
+                        className="font-semibold text-sm hover:text-primary hover:underline truncate block"
+                      >
                         {alt.title}
                       </Link>
                       <a
@@ -1106,11 +1285,38 @@ export function SiteDetailView({
                         {alt.url}
                       </a>
                     </div>
-                    <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
-                      <a href={safeHref(alt.url)} target="_blank" rel={externalRel}>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {favorites.isFavorite(alt.id) ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleToggleComparePick(alt.id)
+                          }}
+                          aria-pressed={comparePicked.includes(alt.id)}
+                          aria-label={`加入对比：${alt.title}`}
+                          title={
+                            comparePicked.includes(alt.id)
+                              ? '已加入对比，点击取消'
+                              : '加入对比'
+                          }
+                          className="p-1 rounded-md bg-background/90 border border-border/80 shadow-xs hover:border-primary transition-colors cursor-pointer"
+                        >
+                          {comparePicked.includes(alt.id) ? (
+                            <CheckSquare className="w-4 h-4 text-primary" />
+                          ) : (
+                            <Square className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">收藏后可加入对比</span>
+                      )}
+                      <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
+                        <a href={safeHref(alt.url)} target="_blank" rel={externalRel}>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1221,7 +1427,7 @@ export function SiteDetailView({
             与客户端 KNN 外链推荐分开——前者补内链图，后者做发现。
             分类只有自己 1 条时退回父分类子树或全站清单，避免整块消失后
             详情页一条可爬的 /site 内链都不剩。 */}
-        {(initialRelated.length > 0 || (category && canLinkCategory)) && (
+        {(relatedCandidates.length > 0 || (category && canLinkCategory)) && (
           <section aria-labelledby="related-sites-heading" className="space-y-3.5">
             <div className="flex items-center justify-between gap-2">
               <h2
@@ -1231,20 +1437,40 @@ export function SiteDetailView({
                 <LayoutGrid className="w-4 h-4 text-sky-500" />
                 <span>{relatedScope === 'similar' ? '相似站点推荐' : relatedScope === 'parent' ? '同类目站点' : relatedScope === 'more' ? '更多站点' : '同分类站点'}</span>
               </h2>
-              {relatedLabel && (
-                <span className="text-xs text-muted-foreground font-mono truncate">{relatedLabel}</span>
-              )}
+              <div className="flex items-center gap-2">
+                {relatedCandidates.length > initialRelated.length && (
+                  <span className="text-xs text-muted-foreground shrink-0">含共享标签相似</span>
+                )}
+                {relatedLabel && (
+                  <span className="text-xs text-muted-foreground font-mono truncate">{relatedLabel}</span>
+                )}
+              </div>
             </div>
-            {initialRelated.length > 0 && (
+            {/* N5：pick 栏与平替区、兜底平替区共用 renderComparePickBar，同一份 */}
+            {relatedCandidates.length > 0 && renderComparePickBar()}
+            {relatedCandidates.length > 0 && (
               <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-                {initialRelated.map((s) => (
+                {relatedCandidates.map((s) => (
                   <li
                     key={s.id}
-                    className="rounded-xl border border-border/70 bg-card p-3.5 hover:border-sky-500/40 transition-all shadow-2xs"
+                    className={cn(
+                      'rounded-xl border border-border/70 bg-card p-3.5 hover:border-sky-500/40 transition-all shadow-2xs',
+                      favorites.isFavorite(s.id) && 'cursor-pointer select-none',
+                      comparePicked.includes(s.id) && 'border-primary ring-1 ring-primary/40 bg-primary/5',
+                    )}
                   >
                     <div className="flex items-center gap-2">
                       <Link
                         href={`/site/${encodeURIComponent(s.id)}`}
+                        onClick={
+                          favorites.isFavorite(s.id)
+                            ? (e) => {
+                                // 收藏夹批量模式同款：点卡片 = 切换选中，外链拦截
+                                e.preventDefault()
+                                handleToggleComparePick(s.id)
+                              }
+                            : undefined
+                        }
                         className="flex min-w-0 flex-1 items-center gap-3 group"
                       >
                         <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
@@ -1266,6 +1492,29 @@ export function SiteDetailView({
                           )}
                         </div>
                       </Link>
+                      {favorites.isFavorite(s.id) ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleToggleComparePick(s.id)
+                          }}
+                          aria-pressed={comparePicked.includes(s.id)}
+                          aria-label={`加入对比：${s.title}`}
+                          title={
+                            comparePicked.includes(s.id) ? '已加入对比，点击取消' : '加入对比'
+                          }
+                          className="p-1 rounded-md bg-background/90 border border-border/80 shadow-xs hover:border-primary transition-colors cursor-pointer shrink-0"
+                        >
+                          {comparePicked.includes(s.id) ? (
+                            <CheckSquare className="w-4 h-4 text-primary" />
+                          ) : (
+                            <Square className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground shrink-0">收藏后可加入对比</span>
+                      )}
                       <a
                         href={safeHref(s.url)}
                         target="_blank"

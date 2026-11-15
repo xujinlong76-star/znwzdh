@@ -18,6 +18,10 @@ import {
   type SearchHit,
   type SearchQuery,
   type SearchResult,
+  buildCorrectionKeys,
+  resolveQueryCorrection,
+  resolveSiteAlias,
+  resolveSiteAliasesPerToken,
   findDidYouMeanSuggestion,
   parseFacetedQuery,
 } from "@navhub/core";
@@ -638,7 +642,7 @@ export class SearchEngine {
     // KNN 对任何输入都有输出，乱码查询的最近邻相似度也能到 0.5 上下（bge 的各向异性），
     // 基础闸门 0.4 拦不住——这里再卡一刀，宁可零结果交给 didYouMean 纠错，也不假装配对。
     // 有词法命中时不开：弱语义只是低权重补充，RRF 已有权重兜底，不该整刀剔除。
-    const lexicalHits = candidates.filter((c) => c.channel !== "semantic" && c.channel !== "personal");
+    let lexicalHits = candidates.filter((c) => c.channel !== "semantic" && c.channel !== "personal");
     if (
       lexicalHits.length === 0 &&
       this.semanticMinSimilarity > 0 &&
@@ -654,8 +658,6 @@ export class SearchEngine {
     // 拼写建议 (Did You Mean)：零结果，或**只有语义近邻、没有任何关键词命中**时计算。
     // 语义 KNN 对任何输入都返回最近邻，若只在零候选时算，带向量库的生产环境里
     // 这个功能永远不可达——拼错的词只会得到一批「最像的」站点，没有任何纠错提示。
-    const semanticOnly = candidates.length > 0 && lexicalHits.length === 0;
-    let didYouMean: string | undefined;
     /**
      * 纠错建议的最短查询长度：**拉丁按 3、中文按 2**。
      *
@@ -663,14 +665,125 @@ export class SearchEngine {
      * 但汉字信息密度高，2 字已是完整词（小说/简历/面试/字体/翻译/代理…）——实测这批
      * 2 字查询在真实查询里占比很大，卡 3 等于让它们**永远拿不到纠错**，只剩一批
      * 「语义上最像」的站点，用户看到的是答非所问且无从纠正。中文下限降到 2。
+     * 自动纠正沿用同一分档（见下面的纠正步骤）。
      */
     const suggestMinLen = /[\u4e00-\u9fa5]/.test(effectiveQuery) ? 2 : 3;
-    if ((candidates.length === 0 || semanticOnly) && effectiveQuery.length >= suggestMinLen) {
+    let semanticOnly = candidates.length > 0 && lexicalHits.length === 0;
+    /**
+     * 纠错建议的触发条件必须按**原查询**的状态快照：纠正重跑后 candidates 会
+     * 被纠正后的结果替换（semanticOnly 也随之翻转），若事后再拿重跑后的
+     * 状态判断，零结果/纯语义下触发的纠正会反手把 didYouMean 的触发条件
+     * 抹掉——纠正与建议永远互斥，search-intelligence 的两条用例就是这么红的。
+     * 快照只读触发条件，不改变纠正本身的跑法与重跑后的结果集。
+     */
+    const suggestionNeeded = candidates.length === 0 || semanticOnly;
+
+    // 自动查询纠正（搜索容错纠错 · 第 5 项）：只在「本来就零结果 / 纯语义」
+    // 时跑，原查询有词法命中绝不改写；纠正只跑一次，不递归纠正第二次。
+    // 词典取数扩展为 title/pinyin_full/pinyin_initials/url（+ 标签名）：
+    // 拼音打错（zhihhu）只能对拼音键算距离，旧词典只有标题原文时永远纠不到。
+    // pinyin_full 是标题+描述整串连写（无分隔符），做键时退回整串——
+    // 标题部分的拼音由 pinyin_initials（写入期只取标题）兜底。
+    // 已知继承缺口：LIMIT 5000 是 pre-existing 截断，库超 5000 站时部分站
+    // 永远纠不到；v1 接受并记录，修复（内存缓存词典 + 写时失效）列为后续项。
+    let correction: SearchResult["correction"];
+    let correctionSiteRows: Array<{
+      id?: string;
+      title?: string;
+      url?: string;
+      pinyinfull?: string;
+      pinyininitials?: string;
+    }> | null = null;
+    // 别名（gh/bili 这类 2 字母简称）绕过最小长度门：core 内别名本就先于
+    // 长度护栏判定，store 层若先卡长度，别名路径永远不可达。
+    const aliasHit = resolveSiteAlias(effectiveQuery) ?? resolveSiteAliasesPerToken(effectiveQuery);
+    if ((candidates.length === 0 || semanticOnly) && !q.disableCorrection && (effectiveQuery.length >= suggestMinLen || aliasHit)) {
       try {
-        const siteRows = (await this.rawRows(
-          `SELECT title FROM sites WHERE deleted_at IS NULL AND enabled = ${this.enabled} LIMIT 5000`,
+        const rows = (await this.rawRows(
+          `SELECT id, title, url, pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials FROM sites WHERE deleted_at IS NULL AND enabled = ${this.enabled} LIMIT 5000`,
           []
-        )) as unknown as Array<{ title?: string }>;
+        )) as unknown as Array<{
+          id?: string;
+          title?: string;
+          url?: string;
+          pinyinfull?: string;
+          pinyininitials?: string;
+        }>;
+        correctionSiteRows = rows;
+        const keys = rows.map((r) => ({
+          siteId: r.id,
+          title: r.title || "",
+          keys: buildCorrectionKeys({
+            title: r.title || "",
+            url: r.url || "",
+            pinyinFull: r.pinyinfull || "",
+            pinyinInitials: r.pinyininitials || "",
+          }),
+        }));
+        const resolved = resolveQueryCorrection(effectiveQuery, keys);
+        if (resolved) {
+          correction = { original: raw, corrected: resolved.corrected, reason: resolved.reason };
+          // 用纠正后查询再跑一次（复用本次 filterCache；fallback 按第二次结果重算）
+          const correctedExpanded = await this.expandQueryTerms(resolved.corrected);
+          const second = await this.runChannels(resolved.corrected, effectiveOpt, false, correctedExpanded, filterCache, recall);
+          let secondCandidates = keepModeChannels(second.candidates);
+          let secondTimings = second.timings;
+          let secondFallback: SearchResult["fallback"];
+          if (secondCandidates.length === 0 && hasFilter) {
+            const widened = await this.runChannels(
+              resolved.corrected,
+              { ...effectiveOpt, categoryId: undefined, tag: undefined, tags: undefined, facets: undefined },
+              false,
+              correctedExpanded,
+              filterCache,
+              recall,
+            );
+            const kept = keepModeChannels(widened.candidates);
+            if (kept.length > 0) {
+              secondCandidates = kept;
+              secondTimings = widened.timings;
+              secondFallback = "filter";
+              if (effectiveOpt.facets && Object.keys(effectiveOpt.facets).length > 0) {
+                relaxedFacets = effectiveOpt.facets;
+              }
+            }
+          }
+          if (secondCandidates.length === 0) {
+            const widened = await this.runChannels(resolved.corrected, effectiveOpt, true, correctedExpanded, filterCache, recall);
+            const kept = keepModeChannels(widened.candidates);
+            if (kept.length > 0) {
+              secondCandidates = kept;
+              secondTimings = widened.timings;
+              secondFallback = "fuzzy";
+            }
+          }
+          if (secondCandidates.length > 0) {
+            candidates = secondCandidates;
+            timings = secondTimings;
+            fallback = secondFallback;
+            lexicalHits = candidates.filter((c) => c.channel !== "semantic" && c.channel !== "personal");
+            semanticOnly = candidates.length > 0 && lexicalHits.length === 0;
+          }
+          // 纠正后仍零结果：correction 仍在、hits 为空、不递归（见 search-correction.test.ts）。
+        }
+      } catch {
+        // 容错降级：纠正失败不影响原结果
+      }
+    }
+
+    let didYouMean: string | undefined;
+    // 与 correction 共存：前端渲染层二选一（有 correction 时只渲染纠正横幅，
+    // 见 spotlight-modal），但 store 层两个字段都保留——didYouMean 是对原查询
+    // 的建议，correction 是已执行的改写；触发条件看纠正前的快照 suggestionNeeded，
+    // 不看纠正重跑后的 candidates/semanticOnly（见上）。
+    if (suggestionNeeded && effectiveQuery.length >= suggestMinLen) {
+      try {
+        const siteRows =
+          correctionSiteRows ??
+          ((await this.rawRows(
+            `SELECT title FROM sites WHERE deleted_at IS NULL AND enabled = ${this.enabled} LIMIT 5000`,
+            []
+          )) as unknown as Array<{ title?: string }>);
         const tagRows = (await this.rawRows(
           `SELECT name FROM tags LIMIT 5000`,
           []
@@ -679,8 +792,21 @@ export class SearchEngine {
           ...siteRows.map((r) => r.title || ""),
           ...tagRows.map((r) => r.name || ""),
         ]);
-        const suggestion = findDidYouMeanSuggestion(effectiveQuery, dict, 2);
-        if (suggestion) didYouMean = suggestion;
+        // 拼音键 → 标题映射：建议算在拼音键上时（如 zhihhu→zhihu），
+        // 前端要看到标题「知乎」而不是拼音串；拼音键本身也要进词典。
+        const pinyinDisplay = new Map<string, string>();
+        if (correctionSiteRows) {
+          for (const r of correctionSiteRows) {
+            const title = (r.title || "").trim();
+            if (!title) continue;
+            for (const k of [r.pinyinfull, r.pinyininitials]) {
+              const norm = (k || "").trim().toLowerCase();
+              if (norm && norm !== title.toLowerCase()) pinyinDisplay.set(norm, title);
+            }
+          }
+        }
+        const suggestion = findDidYouMeanSuggestion(effectiveQuery, [...dict, ...pinyinDisplay.keys()], 2);
+        if (suggestion) didYouMean = pinyinDisplay.get(suggestion.toLowerCase()) ?? suggestion;
       } catch {
         // 容错降级
       }
@@ -717,6 +843,7 @@ export class SearchEngine {
         : {}),
       ...(effectiveExcluded.length > 0 ? { excludedTerms: effectiveExcluded } : {}),
       ...(didYouMean ? { didYouMean } : {}),
+      ...(correction ? { correction } : {}),
       ...(expandedTerms.length > 1 ? { queryExpansion: expandedTerms } : {}),
     };
   }

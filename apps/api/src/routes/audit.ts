@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import type { AppContext } from "../context.ts";
-import { parsePagination } from "./shared.ts";
+import { markCursorPaginationDeprecated, parsePagination } from "./shared.ts";
 
 export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -20,13 +20,15 @@ export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   app.get(
     "/api/admin/audit",
     { config: { scope: "admin", cache: { maxAge: 0 } } },
-    async (req) => {
+    async (req, reply) => {
       const q = (req.query ?? {}) as Record<string, string>;
       const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
       // Keyset 游标（M12）：`?cursor=` 走 WHERE id > (?) 谓词，不再 OFFSET；
       // nextCursor 随页返回，无下一页时为 null。无效游标由全局错误处理器
       // 映射成 400 INVALID_CURSOR。
+      // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
       const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
+      if (cursor) markCursorPaginationDeprecated(reply);
 
       const [page, actions] = await Promise.all([
         ctx.repo.listAuditLogs({
@@ -53,7 +55,9 @@ export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       const q = (req.query ?? {}) as Record<string, string>;
       const { limit } = parsePagination(req.query, { defaultLimit: 1000, maxLimit: 5000 });
       // 导出同样支持 keyset 游标（M12）：`?cursor=` 续取，不再靠 offset。
+      // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
       const cursor = typeof q.cursor === "string" && q.cursor ? q.cursor : undefined;
+      if (cursor) markCursorPaginationDeprecated(reply);
 
       const data = await ctx.repo.listAuditLogs({
         limit,

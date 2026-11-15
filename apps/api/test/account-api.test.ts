@@ -185,6 +185,20 @@ describe("账号生命周期 API", () => {
     expect(locked.statusCode).toBe(429);
   });
 
+  it("注册：单字符 TLD 不是真实邮箱", async () => {
+    const res = await post("/api/account/register", {
+      username: "tld",
+      email: "a@b.c",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("邮箱格式");
+  });
+
+  // 注：锁定用例只保留一份。登录失败计数是进程内共享状态（见 routes/account.ts
+  // loginFailures），同一标识的第二份相同用例会在第一次错误登录时就拿到 429，
+  // 永远跑不绿——不是生产行为错了，是用例被粘贴重复了（2026-11-15 删重复）。
+
   it("登录：正确口令返回用户，错误口令 401", async () => {
     await post("/api/account/register", {
       username: "dave",

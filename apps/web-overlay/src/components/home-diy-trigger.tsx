@@ -122,9 +122,14 @@ export function HomeDIYTrigger() {
       )}
 
       {!isEditingLayout && (
+        // 底距三段表（与 footer / UndoBar / OfflineBanner 同款，不用 sm:）：
+        // <640 抬到 MobileNav 之上；640–1024 抬到半屏下沉栏（56px）之上——此前
+        // 旧的 sm: 底距（14px）让 pill 整只压在栏上，700px 时盖住栏内热度榜；
+        // ≥1024 无底栏，回到 14px。sm: 底距类不能留：它在 640–1024 全段
+        // 生效，会与中段规则争层叠顺序。
         <div
           className={cn(
-            "fixed z-40 left-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:left-auto sm:right-4 sm:bottom-3.5 transition-all duration-200",
+            "fixed z-40 left-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] sm:left-auto sm:right-4 min-[640px]:max-[1024px]:bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:bottom-3.5 transition-all duration-200",
             isScrollingDown ? "opacity-0 translate-y-3 pointer-events-none" : "opacity-90 hover:opacity-100 translate-y-0 pointer-events-auto"
           )}
           onMouseEnter={warmToolbarChunk}

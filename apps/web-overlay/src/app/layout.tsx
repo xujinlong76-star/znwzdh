@@ -4,15 +4,20 @@ import "@/styles/reduced-motion.css"
 import "@/styles/skip-link.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
+import { UndoBar } from "@/components/undo-bar"
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Providers } from '@/components/providers'
-import { PwaRegister } from '@/components/pwa-register'
-import { InstallPrompt } from '@/components/install-prompt'
-import { WebVitalsReporter } from '@/components/web-vitals-reporter'
-import { OfflineBanner } from '@/components/offline-banner'
+// 首屏瘦身 Step 5：六件后台能力件改走客户端挂载壳（ssr:false 动态加载），
+// JSX 与挂载位置不动；普通 dynamic 在 Server Component 里不挪字节（已实测）。
+import {
+  InstallPrompt,
+  OfflineBanner,
+  PwaRegister,
+  SessionSync,
+  UserPrefsSync,
+  WebVitalsReporter,
+} from '@/components/shell-background'
 import MobileNav from '@/components/mobile-nav'
-import { SessionSync } from '@/components/user-center/session-sync'
-import { UserPrefsSync } from '@/components/user-center/user-prefs-sync'
 import { Suspense } from 'react'
 import { GrowthTracker } from '@/components/growth/growth-tracker'
 // 横幅改走客户端动态边界（第 75 轮第二小刀）：根 layout 是 Server
@@ -275,7 +280,9 @@ export default async function RootLayout({
           {/* 网络状态提示：全站可见。离线时告诉用户「是你的网络断了，不是站点没数据」 */}
           <OfflineBanner />
           <Toaster />
-          {/* 小猫猫 AI 助手挂件 v7：右下角悬浮小猫（public/xiaomaomao/xiaomaomao.js，头像真图多姿势 + 聊天找站 + 摸猫/喂鱼/接星星/成长联动/语音输入；v6：深色整套图自动切换 + 庆祝视频钩子（media 文件就位即生效）+ 拖动补强（触摸/真尺寸钳制）+ 闲时贴边半藏 + 用户自改形象（图库/上传，本机保存）；v7：平时零遮挡——控件收进猫上方悬浮坞、悬停/轻点才唤出、闲置 3 秒自动收起，全套 UI 图标换手工 SVG） */}
+          {/* 全局撤销条（8 秒内存撤销的唯一出口，不复用 toast：见 components/undo-bar.tsx） */}
+          <UndoBar />
+          {/* 小猫猫 AI 助手挂件 v7：右下角悬浮小猫（public/xiaomaomao/xiaomaomao.js，头像真图多姿势 + 聊天找站 + 摸猫/喂鱼/接星星/成长联动/语音输入；v6：深色整套图自动切换 + 庆祝视频钩子（media 文件就位即生效）+ 拖动补强（触摸/真尺寸钳制）+ 闲时贴边半藏 + 用户自改形象（图库/上传，本机保存）；v7：猫自身控件平时零遮挡——控件收进猫上方悬浮坞、悬停/轻点才唤出、闲置 3 秒自动收起，全套 UI 图标换手工 SVG；640–1024px 区间猫默认抬到半屏下沉栏之上（见 xiaomaomao.js 内媒体规则，栏高 56px + 呼吸位），拖动过的猫以用户自选位置为准、可能再盖住底栏） */}
           {settings.features.xiaomaomao ? (
             <Script src="/xiaomaomao/xiaomaomao.js" strategy="lazyOnload" />
           ) : null}

@@ -13,7 +13,7 @@ import {
   scenePage,
   type SceneUsage,
 } from '@/lib/scene-usage'
-import { recordGrowthEvent } from '@/lib/growth'
+import { recordGrowthEvent } from '@/lib/growth-lazy'
 import { safeHref } from '@/lib/safe-url'
 
 /**

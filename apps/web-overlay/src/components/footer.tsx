@@ -23,7 +23,7 @@ export function Footer({ siteInfo }: FooterProps) {
   const icp = site?.icp
 
   return (
-    <footer className="border-t border-border/40 pt-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8 bg-muted/10 mt-auto">
+    <footer className="border-t border-border/40 pt-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] min-[640px]:max-[1024px]:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8 bg-muted/10 mt-auto">
       <div className="container flex flex-col items-center justify-between gap-4 md:flex-row px-4">
         <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <Link href="/" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">主页</Link>

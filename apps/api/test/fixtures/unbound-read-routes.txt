@@ -67,6 +67,9 @@ GET /api/plugins/{slug}/url-health
 GET /api/plugins/{slug}/url-health/history
 GET /api/plugins/{slug}/versions
 GET /api/plugins/{slug}/versions/{version}
+# 公开导航页（Batch 3 第 6 项）：读响应尚未登记 PublicPage 契约，待补 schema + RESPONSE_SCHEMA_BINDINGS 后从基线删除
+GET /api/public-pages
+GET /api/public-pages/{slug}
 GET /api/profile
 GET /api/rank/alternatives/{siteId}
 GET /api/rank/similar/{siteId}
@@ -120,6 +123,7 @@ HEAD /api/admin/plugins/seed-status
 HEAD /api/admin/site-reports
 HEAD /api/admin/stats/trends
 HEAD /api/admin/user-center/metrics
+HEAD /api/ask/status
 HEAD /api/assets/icon
 HEAD /api/backup/restore/status/{jobId}
 HEAD /api/brief/today
@@ -134,6 +138,10 @@ HEAD /api/categories/{id}/related
 HEAD /api/collections
 HEAD /api/collections/by-id/{id}
 HEAD /api/collections/{slug}
+HEAD /api/compare
+HEAD /api/compare/shares/{slug}
+HEAD /api/compare/snapshots
+HEAD /api/compare/snapshots/{id}/diff
 HEAD /api/comparisons
 HEAD /api/crdt/sync
 HEAD /api/docs
@@ -159,14 +167,18 @@ HEAD /api/me/activity
 HEAD /api/me/custom-sites
 HEAD /api/me/export
 HEAD /api/me/export/bookmarks.html
+HEAD /api/me/favorites/trash
 HEAD /api/me/llm-usage
 HEAD /api/me/notifications
 HEAD /api/me/notifications/unread-count
 HEAD /api/me/plugins
+HEAD /api/me/safety
 HEAD /api/me/sessions
 HEAD /api/me/settings
 HEAD /api/me/tokens
 HEAD /api/me/visits
+# GET /api/me/wanted 已绑定 MeWantedSearchesListResponse；HEAD 由 Fastify 自动生成，仍无契约
+HEAD /api/me/wanted
 HEAD /api/metrics
 HEAD /api/openapi.json
 HEAD /api/plugins
@@ -193,6 +205,9 @@ HEAD /api/plugins/{slug}/url-health/history
 HEAD /api/plugins/{slug}/versions
 HEAD /api/plugins/{slug}/versions/{version}
 HEAD /api/profile
+# 公开导航页（Batch 3 第 6 项）：HEAD 由 Fastify 自动生成，与 GET 同因未登记契约
+HEAD /api/public-pages
+HEAD /api/public-pages/{slug}
 HEAD /api/rank/alternatives/{siteId}
 HEAD /api/rank/new
 HEAD /api/rank/similar/{siteId}
@@ -215,6 +230,7 @@ HEAD /api/sites/{id}/facets
 HEAD /api/sites/{id}/graph
 HEAD /api/sites/{id}/relations
 HEAD /api/sites/{id}/similar
+HEAD /api/sites/{id}/verify
 HEAD /api/sites/{id}/wayback
 HEAD /api/stats
 HEAD /api/storage

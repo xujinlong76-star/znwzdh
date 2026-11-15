@@ -518,6 +518,73 @@ export async function clearFavorites(repo: Repository, userId: string): Promise<
   );
 }
 
+/* ------------------------- 收藏回收站（墓碑即回收站） ------------------------- */
+
+/**
+ * 读某用户的墓碑列表（回收站视图）：deleted_at 倒序，limit 默认 200。
+ * 不新增表——favorites.deleted_at 就是云端回收站。
+ */
+export async function listTrashedFavorites(
+  repo: Repository,
+  userId: string,
+  limit = 200,
+): Promise<FavoriteRecord[]> {
+  const rows = await repo.raw(
+    "SELECT * FROM favorites WHERE user_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ?",
+    [userId, Math.max(1, Math.min(500, Math.trunc(limit) || 200))],
+  );
+  return rows.map(rowToFavorite);
+}
+
+/** 读单条墓碑（恢复/彻底删除先确认它确实在回收站里） */
+export async function getTrashedFavorite(
+  repo: Repository,
+  userId: string,
+  siteId: string,
+): Promise<FavoriteRecord | null> {
+  const row = (await repo.raw(
+    "SELECT * FROM favorites WHERE user_id = ? AND site_id = ? AND deleted_at IS NOT NULL LIMIT 1",
+    [userId, siteId],
+  ))[0];
+  return row ? rowToFavorite(row) : null;
+}
+
+/** 物理删除单条墓碑（回收站里的"彻底删除"，无快照可回，调用方必须二次确认） */
+export async function purgeFavorite(repo: Repository, userId: string, siteId: string): Promise<boolean> {
+  const changes = await repo.runCount(
+    "DELETE FROM favorites WHERE user_id = ? AND site_id = ? AND deleted_at IS NOT NULL",
+    [userId, siteId],
+  );
+  return changes > 0;
+}
+
+/** 物理清空某用户的全部墓碑（回收站"清空"） */
+export async function clearTrashedFavorites(repo: Repository, userId: string): Promise<number> {
+  return repo.runCount(
+    "DELETE FROM favorites WHERE user_id = ? AND deleted_at IS NOT NULL",
+    [userId],
+  );
+}
+
+/**
+ * 物理清理过期墓碑（30 天）。
+ *
+ * D6：方法写好并测好，但 v1 不接进 purge_trash 定时任务，也不在前端/
+ * 路由里提供自动清理入口——这是新产生的数据丢失，必须 Ryan 明确点头
+ * 才能启用。调用方（将来的定时任务）按 olderThanMs 传 30 天。
+ */
+export async function purgeExpiredDeletedFavorites(
+  repo: Repository,
+  olderThanMs: number,
+): Promise<{ purged: number }> {
+  const threshold = Date.now() - olderThanMs;
+  const purged = await repo.runCount(
+    "DELETE FROM favorites WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+    [threshold],
+  );
+  return { purged };
+}
+
 export type FavoriteFolderUpdateResult =
   | { ok: true; folder: FavoriteFolderRecord }
   | { ok: false; reason: "not_found" };

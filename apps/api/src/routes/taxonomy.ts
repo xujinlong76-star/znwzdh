@@ -7,7 +7,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { TaxonomyApplyInput, TaxonomyAuditInput, TaxonomyBatchInput } from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { computeTagLongTailStats } from "@navhub/store";
-import { badRequest, parsePagination } from "./shared.ts";
+import { badRequest, markCursorPaginationDeprecated, parsePagination } from "./shared.ts";
 
 export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -15,7 +15,7 @@ export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   /**
    * 查询治理提案列表
    */
-  app.get("/api/taxonomy/proposals", { config: { scope: "read" } }, async (req) => {
+  app.get("/api/taxonomy/proposals", { config: { scope: "read" } }, async (req, reply) => {
     const query = req.query as Record<string, string | undefined>;
     const status = query.status;
     const kind = query.kind;
@@ -23,7 +23,9 @@ export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     // Keyset 游标（M12）：`?cursor=` 走 WHERE (confidence,created_at,id) 谓词，
     // 不再 OFFSET；nextCursor 随页返回，无下一页时为 null。无效游标由全局
     // 错误处理器映射成 400 INVALID_CURSOR。
+    // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
     const cursor = typeof query.cursor === "string" && query.cursor ? query.cursor : undefined;
+    if (cursor) markCursorPaginationDeprecated(reply);
 
     return ctx.repo.listTaxonomyProposals({ status, kind, limit, offset, cursor });
   });

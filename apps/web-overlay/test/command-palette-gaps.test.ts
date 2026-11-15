@@ -33,7 +33,7 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
 const SUFFIX = '（按 / 快速搜索）'
 
-/** 5 处显式 placeholder 挂载点：文案各异，但都必须带“按 /”后缀。 */
+/** 6 处显式 placeholder 挂载点：文案各异，但都必须带“按 /”后缀。 */
 const EXPLICIT_PLACEHOLDER_PAGES = [
   'src/components/navigation-toolbar.tsx',
   'src/app/category/[slug]/category-board.tsx',

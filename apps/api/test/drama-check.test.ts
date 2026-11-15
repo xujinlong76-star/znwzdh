@@ -443,4 +443,16 @@ describe("drama-featured.json 检查配置", () => {
  expect(drama?.check.url).not.toMatch(/\/20\d\d-\d\d-\d\d\//);
 }
 });
+
+ it("魔神人生 S2：三方证实总集数 586，episodesKnown 锁 586、totalEpisodes 仍 null、check 仍 none", () => {
+ const loaded = loadDramaFeaturedForCheck({ repoRoot: REPO_ROOT});
+ expect(loaded.error).toBeUndefined();
+ const drama = loaded.dramas.find((d) => d.title === "魔神人生：弃子问天 第二季");
+ expect(drama).toBeDefined();
+ // 2026-11-15 三方证实：红果快照列至 586、Ignite Drama 标 586 集、366.me 写明共 586 集。
+ // 综艺迷暂无本季作品页，未接入自动检查，故 totalEpisodes 仍留 null、check 仍为 none。
+ expect(drama?.episodesKnown).toBe(586);
+ expect(drama?.totalEpisodes).toBeNull();
+ expect(drama?.check.kind).toBe("none");
+});
 });

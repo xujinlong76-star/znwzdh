@@ -26,10 +26,20 @@ export interface ExamInfo {
   shortName: string
   tagline: string
   examDateLabel: string
-  /** 考试首日（YYYY-MM-DD） */
+  /** 考试首日（YYYY-MM-DD）：公共科目首日 */
   startISO: string
   /** 考试末日（YYYY-MM-DD） */
   endISO: string
+  /**
+   * 考生视角的首考日（YYYY-MM-DD）：有专业科目加试的考试早于公共科目
+   * 首日（国考 11-28 专业科目先考，公共科目 11-29）；缺省等于 startISO。
+   * 倒计时、紧迫度与提醒档位都按首考日算，避免加试考生被「明天考试」误导。
+   */
+  firstExamDayISO?: string
+  /** 首考日当天的时钟卡文案（缺省为「今天${shortName}」） */
+  firstDayLabel?: string
+  /** 首考日前一天的时钟卡文案（缺省为「明天${shortName}」） */
+  eveLabel?: string
   nodes: ExamNode[]
   note?: string
 }
@@ -39,10 +49,15 @@ export const EXAMS: ExamInfo[] = [
     id: 'guokao',
     name: '2027 年国家公务员考试',
     shortName: '国考',
-    tagline: '公共科目笔试',
-    examDateLabel: '11 月 29 日',
+    tagline: '专业科目 11 月 28 日 · 公共科目 11 月 29 日',
+    examDateLabel: '11 月 28–29 日',
     startISO: '2026-11-29',
     endISO: '2026-11-29',
+    // 首考日 11-28：部分岗位专业科目 14:00–16:00 先考（国家公务员局
+    // 2027 年度招考公告；2026-11-16 多源复核一致）。倒计时按首考日说事。
+    firstExamDayISO: '2026-11-28',
+    firstDayLabel: '今天国考 · 专业科目 14:00 开考',
+    eveLabel: '明天国考（专业科目先考 11 月 28 日）',
     nodes: [
       {
         label: '准考证打印',
@@ -196,11 +211,21 @@ export function daysUntil(targetISO: string, nowMs: number = Date.now()): number
 
 export type ExamStatus = 'upcoming' | 'today' | 'ongoing' | 'ended'
 
+/**
+ * 考生视角的首考日：有加试的考试早于公共科目首日（国考 11-28），
+ * 缺省等于 startISO。倒计时、紧迫度、提醒档位与倒计时岛都以它为锚。
+ */
+export function firstExamDay(
+  exam: Pick<ExamInfo, 'startISO' | 'firstExamDayISO'>,
+): string {
+  return exam.firstExamDayISO ?? exam.startISO
+}
+
 export function examStatus(
-  exam: Pick<ExamInfo, 'startISO' | 'endISO'>,
+  exam: Pick<ExamInfo, 'startISO' | 'endISO' | 'firstExamDayISO'>,
   nowMs: number = Date.now(),
 ): ExamStatus {
-  const toStart = daysUntil(exam.startISO, nowMs)
+  const toStart = daysUntil(firstExamDay(exam), nowMs)
   const toEnd = daysUntil(exam.endISO, nowMs)
   if (toEnd < 0) return 'ended'
   if (toStart > 0) return 'upcoming'
@@ -279,19 +304,19 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
 /**
  * 倒计时紧迫度分档（纯派生：考试 + 时刻，不存状态、不写存储）。
  * 档位互斥：ended → null（不参与任何档位）；today/ongoing → today；
- * 距首日 1 天 → tomorrow；≤3 天 → urgent；≤7 天 → soon；其余 → relaxed。
- * 多日考试以首日计紧迫度，进行中只显示「第 N 天」。
+ * 距首考日 1 天 → tomorrow；≤3 天 → urgent；≤7 天 → soon；其余 → relaxed。
+ * 多日考试以首考日计紧迫度，进行中只显示「第 N 天」。
  */
 export type ExamUrgencyTier = 'today' | 'tomorrow' | 'urgent' | 'soon' | 'relaxed'
 
 export function urgencyTier(
-  exam: Pick<ExamInfo, 'startISO' | 'endISO'>,
+  exam: Pick<ExamInfo, 'startISO' | 'endISO' | 'firstExamDayISO'>,
   nowMs: number = Date.now(),
 ): ExamUrgencyTier | null {
   const status = examStatus(exam, nowMs)
   if (status === 'ended') return null
   if (status === 'today' || status === 'ongoing') return 'today'
-  const d = daysUntil(exam.startISO, nowMs)
+  const d = daysUntil(firstExamDay(exam), nowMs)
   if (d <= 1) return 'tomorrow'
   if (d <= 3) return 'urgent'
   if (d <= 7) return 'soon'
@@ -301,13 +326,15 @@ export function urgencyTier(
 /**
  * 时钟卡倒计时行（纯派生）：最近一场未结束考试的一行文案 + 紧迫档位。
  * 四场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
- * 文案与 /exam 倒计时岛同口径：今天「今天国考」、进行中「考研进行中 ·
- * 第 2 天」、明天「明天国考」、其余「距国考 N 天」；天数按北京时间
- * 自然日（daysUntil），与考试条带数字一致。
+ * 文案与 /exam 倒计时岛同口径：首考日当天「今天国考 · 专业科目 14:00
+ * 开考」（国考首考日 11-28 设了 firstDayLabel）、进行中「考研进行中 ·
+ * 第 2 天」、首考日前一天「明天国考（专业科目先考 11 月 28 日）」
+ *（设了 eveLabel）、其余「距国考 N 天」；天数按北京时间自然日
+ *（daysUntil 首考日），与考试条带数字一致。
  */
 export interface ExamCountdownLine {
   exam: ExamInfo
-  /** 距首日的北京时间自然日数：今天 0，明天 1，进行中为负 */
+  /** 距首考日的北京时间自然日数：今天 0，明天 1，进行中为负 */
   days: number
   tier: ExamUrgencyTier
   label: string
@@ -319,11 +346,12 @@ export function nearestExamCountdown(nowMs: number = Date.now()): ExamCountdownL
   const tier = urgencyTier(exam, nowMs)
   if (!tier) return undefined
   const status = examStatus(exam, nowMs)
-  const d = daysUntil(exam.startISO, nowMs)
+  const d = daysUntil(firstExamDay(exam), nowMs)
   let label: string
-  if (status === 'today') label = `今天${exam.shortName}`
-  else if (status === 'ongoing') label = `${exam.shortName}进行中 · 第 ${1 - d} 天`
-  else if (d === 1) label = `明天${exam.shortName}`
+  if (status === 'today') {
+    label = d === 0 && exam.firstDayLabel ? exam.firstDayLabel : `今天${exam.shortName}`
+  } else if (status === 'ongoing') label = `${exam.shortName}进行中 · 第 ${1 - d} 天`
+  else if (d === 1) label = exam.eveLabel ?? `明天${exam.shortName}`
   else label = `距${exam.shortName} ${d} 天`
   return { exam, days: d, tier, label }
 }
@@ -335,13 +363,13 @@ export function nearestExamCountdown(nowMs: number = Date.now()): ExamCountdownL
 export type ExamReminderTier = '7d' | '3d' | '1d' | 'today'
 
 export function reminderTier(
-  exam: Pick<ExamInfo, 'startISO' | 'endISO'>,
+  exam: Pick<ExamInfo, 'startISO' | 'endISO' | 'firstExamDayISO'>,
   nowMs: number = Date.now(),
 ): ExamReminderTier | null {
   const status = examStatus(exam, nowMs)
   if (status === 'ended') return null
   if (status === 'today' || status === 'ongoing') return 'today'
-  const d = daysUntil(exam.startISO, nowMs)
+  const d = daysUntil(firstExamDay(exam), nowMs)
   if (d === 7) return '7d'
   if (d === 3) return '3d'
   if (d === 1) return '1d'
@@ -405,15 +433,15 @@ const GUOKAO_ADMISSION_COPY: Record<
 > = {
   warmup: {
     strip: '国考准考证明天 0:00 开放打印，11 月 29 日 15:00 截止',
-    card: '2027 国考准考证明天（11 月 23 日）0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。',
+    card: '2027 国考准考证明天（11 月 23 日）0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 28–29 日：专业科目 11 月 28 日 14:00–16:00（部分职位），公共科目 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。',
   },
   open: {
     strip: '国考准考证打印已开放，11 月 29 日 15:00 截止，逾期无法补打',
-    card: '2027 国考准考证打印已开放，11 月 29 日 15:00 截止，逾期系统关闭、无法补打——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。',
+    card: '2027 国考准考证打印已开放，11 月 29 日 15:00 截止，逾期系统关闭、无法补打——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 28–29 日：专业科目 11 月 28 日 14:00–16:00（部分职位），公共科目 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。',
   },
   'last-call': {
     strip: '末班提醒：国考准考证 11 月 29 日 15:00 截止，逾期无法补打；今年新规：开考 15 分钟后不得入场，行测最晚 8:45、申论 13:45',
-    card: '末班提醒：2027 国考准考证 11 月 29 日 15:00 截止，逾期系统关闭、无法补打——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。',
+    card: '末班提醒：2027 国考准考证 11 月 29 日 15:00 截止，逾期系统关闭、无法补打——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 28–29 日：专业科目 11 月 28 日 14:00–16:00（部分职位），公共科目 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。',
   },
 }
 
@@ -431,7 +459,7 @@ export function admissionReminderFor(
   if (phase === 'countdown') {
     const days = daysUntil('2026-11-23', nowMs)
     const strip = `国考准考证距打印开启 ${days} 天，11 月 23 日 0:00 开放打印，11 月 29 日 15:00 截止`
-    const card = `2027 国考准考证距打印开启 ${days} 天，11 月 23 日 0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。`
+    const card = `2027 国考准考证距打印开启 ${days} 天，11 月 23 日 0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 28–29 日：专业科目 11 月 28 日 14:00–16:00（部分职位），公共科目 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。`
     return { phase, stripLine: strip, cardLine: card, url: GUOKAO_ADMISSION_URL }
   }
   const copy = GUOKAO_ADMISSION_COPY[phase]

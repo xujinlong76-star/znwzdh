@@ -114,6 +114,9 @@ describe('admissionReminderFor（只对国考）', () => {
       expect(r.cardLine).toContain('多打两份备用')
       expect(r.cardLine).toContain('行测 9:00–11:00')
       expect(r.cardLine).toContain('申论 14:00–17:00')
+      // 口径：卡片主句按最早首考日说事，不只讲公共科目 11-29
+      expect(r.cardLine).toContain('笔试 11 月 28–29 日')
+      expect(r.cardLine).toContain('专业科目 11 月 28 日 14:00–16:00')
     }
   })
 

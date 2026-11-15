@@ -5,6 +5,7 @@ import {
   countdownParts,
   daysUntil,
   examStatus,
+  firstExamDay,
   shanghaiMidnightMs,
   urgencyTier,
   type ExamInfo,
@@ -58,7 +59,7 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
   // 未结束时紧迫度恒有档位（today/ongoing → today）；?? 只是类型兜底。
   const tier = urgencyTier(exam, now) ?? 'relaxed'
   if (status === 'today' || status === 'ongoing') {
-    const dayIndex = 1 - daysUntil(exam.startISO, now)
+    const dayIndex = 1 - daysUntil(firstExamDay(exam), now)
     return (
       <p className={`text-lg font-semibold ${URGENCY_DAY_CLASS[tier]}`}>
         {status === 'today' ? '今天考试' : `进行中 · 第 ${dayIndex} 天`}
@@ -66,7 +67,8 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
     )
   }
 
-  const parts = countdownParts(shanghaiMidnightMs(exam.startISO), now)
+  // 倒计时锚首考日（国考 11-28 专业科目先考），与时钟卡同口径。
+  const parts = countdownParts(shanghaiMidnightMs(firstExamDay(exam)), now)
   return (
     <div
       className="flex items-end gap-3"

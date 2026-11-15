@@ -23,6 +23,7 @@ import {
   daysUntil,
   examNodeStatus,
   examStatus,
+  firstExamDay,
 } from '../src/lib/exam-calendar'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -55,6 +56,13 @@ describe('examStatus', () => {
     expect(examStatus(guokao, NOV_13_0800_CST)).toBe('upcoming')
     expect(examStatus(guokao, Date.UTC(2026, 10, 29, 2, 0))).toBe('today')
     expect(examStatus(guokao, Date.UTC(2026, 10, 30, 0, 0))).toBe('ended')
+  })
+
+  it('国考首考日 11-28 已是 today（专业科目先考），不是 upcoming', () => {
+    const guokao = EXAMS.find((e) => e.id === 'guokao')!
+    expect(firstExamDay(guokao)).toBe('2026-11-28')
+    expect(examStatus(guokao, Date.UTC(2026, 10, 28, 0, 0))).toBe('today')
+    expect(examStatus(guokao, Date.UTC(2026, 10, 27, 0, 0))).toBe('upcoming')
   })
 
   it('多日考试中间天为 ongoing', () => {

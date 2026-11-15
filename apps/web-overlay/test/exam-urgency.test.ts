@@ -25,23 +25,27 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const guokao = EXAMS.find((e) => e.id === 'guokao')!
 const kaoyan = EXAMS.find((e) => e.id === 'kaoyan')!
 
-/** 2026-11-13 08:00 北京时间（UTC 午夜）：距国考 16 天 */
+/** 2026-11-13 08:00 北京时间（UTC 午夜）：距国考首考日 15 天 */
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
-/** 2026-11-14 08:00 北京时间：距国考 15 天（本轮验收日） */
+/** 2026-11-14 08:00 北京时间：距国考首考日 14 天（本轮验收日） */
 const NOV_14_0800_CST = Date.UTC(2026, 10, 14, 0, 0, 0)
-/** 2026-11-21 08:00 北京时间：距国考 8 天 */
+/** 2026-11-20 08:00 北京时间：距国考首考日 8 天 */
+const NOV_20_0800_CST = Date.UTC(2026, 10, 20, 0, 0, 0)
+/** 2026-11-21 08:00 北京时间：距国考首考日 7 天 */
 const NOV_21_0800_CST = Date.UTC(2026, 10, 21, 0, 0, 0)
-/** 2026-11-22 08:00 北京时间：距国考 7 天 */
+/** 2026-11-22 08:00 北京时间：距国考首考日 6 天 */
 const NOV_22_0800_CST = Date.UTC(2026, 10, 22, 0, 0, 0)
-/** 2026-11-25 08:00 北京时间：距国考 4 天 */
+/** 2026-11-24 08:00 北京时间：距国考首考日 4 天 */
+const NOV_24_0800_CST = Date.UTC(2026, 10, 24, 0, 0, 0)
+/** 2026-11-25 08:00 北京时间：距国考首考日 3 天 */
 const NOV_25_0800_CST = Date.UTC(2026, 10, 25, 0, 0, 0)
-/** 2026-11-26 08:00 北京时间：距国考 3 天 */
+/** 2026-11-26 08:00 北京时间：距国考首考日 2 天 */
 const NOV_26_0800_CST = Date.UTC(2026, 10, 26, 0, 0, 0)
-/** 2026-11-27 08:00 北京时间：距国考 2 天 */
+/** 2026-11-27 08:00 北京时间：距国考首考日 1 天 */
 const NOV_27_0800_CST = Date.UTC(2026, 10, 27, 0, 0, 0)
-/** 2026-11-28 08:00 北京时间：距国考 1 天 */
+/** 2026-11-28 08:00 北京时间：国考首考日（专业科目 14:00 开考） */
 const NOV_28_0800_CST = Date.UTC(2026, 10, 28, 0, 0, 0)
-/** 2026-11-29 08:00 北京时间：国考当天 */
+/** 2026-11-29 08:00 北京时间：国考公共科目日 */
 const NOV_29_0800_CST = Date.UTC(2026, 10, 29, 0, 0, 0)
 /** 2026-11-30 08:00 北京时间：国考已过 */
 const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
@@ -53,23 +57,24 @@ const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('urgencyTier（倒计时紧迫度分档）', () => {
-  it('8 天以上 relaxed：16 天与 8 天无差别', () => {
+  it('8 天以上 relaxed：15 天与 8 天无差别', () => {
     expect(urgencyTier(guokao, NOV_13_0800_CST)).toBe('relaxed')
-    expect(urgencyTier(guokao, NOV_21_0800_CST)).toBe('relaxed')
+    expect(urgencyTier(guokao, NOV_20_0800_CST)).toBe('relaxed')
   })
 
   it('7 天与 4 天 soon（琥珀档）', () => {
-    expect(urgencyTier(guokao, NOV_22_0800_CST)).toBe('soon')
-    expect(urgencyTier(guokao, NOV_25_0800_CST)).toBe('soon')
+    expect(urgencyTier(guokao, NOV_21_0800_CST)).toBe('soon')
+    expect(urgencyTier(guokao, NOV_24_0800_CST)).toBe('soon')
   })
 
   it('3 天与 2 天 urgent（红档）', () => {
+    expect(urgencyTier(guokao, NOV_25_0800_CST)).toBe('urgent')
     expect(urgencyTier(guokao, NOV_26_0800_CST)).toBe('urgent')
-    expect(urgencyTier(guokao, NOV_27_0800_CST)).toBe('urgent')
   })
 
-  it('1 天 tomorrow、考试当天 today', () => {
-    expect(urgencyTier(guokao, NOV_28_0800_CST)).toBe('tomorrow')
+  it('首考日前 1 天 tomorrow、首考日与公共科目日都是 today', () => {
+    expect(urgencyTier(guokao, NOV_27_0800_CST)).toBe('tomorrow')
+    expect(urgencyTier(guokao, NOV_28_0800_CST)).toBe('today')
     expect(urgencyTier(guokao, NOV_29_0800_CST)).toBe('today')
   })
 
@@ -83,11 +88,11 @@ describe('urgencyTier（倒计时紧迫度分档）', () => {
     expect(urgencyTier(kaoyan, DEC_21_0800_CST)).toBeNull()
   })
 
-  it('午夜边界：23:59 还是明天、00:00 已是今天', () => {
-    // 2026-11-28 23:30 北京时间（UTC 15:30）→ 距国考 1 天
-    expect(urgencyTier(guokao, Date.UTC(2026, 10, 28, 15, 30))).toBe('tomorrow')
-    // 2026-11-29 00:00 北京时间（UTC 16:00）→ 国考当天
-    expect(urgencyTier(guokao, Date.UTC(2026, 10, 28, 16, 0))).toBe('today')
+  it('午夜边界：首考日前一天 23:59 还是明天、00:00 已是首考日', () => {
+    // 2026-11-27 23:30 北京时间（UTC 15:30）→ 距国考首考日 1 天
+    expect(urgencyTier(guokao, Date.UTC(2026, 10, 27, 15, 30))).toBe('tomorrow')
+    // 2026-11-28 00:00 北京时间（UTC 16:00）→ 国考首考日当天
+    expect(urgencyTier(guokao, Date.UTC(2026, 10, 27, 16, 0))).toBe('today')
   })
 
   it('跨年与闰年：只按首日计天，不做特殊处理', () => {
@@ -104,17 +109,18 @@ describe('urgencyTier（倒计时紧迫度分档）', () => {
 })
 
 describe('reminderTier（7/3/1 天提醒档位）', () => {
-  it('只在考前 7 / 3 / 1 天与当天命中', () => {
-    expect(reminderTier(guokao, NOV_22_0800_CST)).toBe('7d')
-    expect(reminderTier(guokao, NOV_26_0800_CST)).toBe('3d')
-    expect(reminderTier(guokao, NOV_28_0800_CST)).toBe('1d')
+  it('只在考前 7 / 3 / 1 天与考试当天命中（天数按首考日 11-28 算）', () => {
+    expect(reminderTier(guokao, NOV_21_0800_CST)).toBe('7d')
+    expect(reminderTier(guokao, NOV_25_0800_CST)).toBe('3d')
+    expect(reminderTier(guokao, NOV_27_0800_CST)).toBe('1d')
+    expect(reminderTier(guokao, NOV_28_0800_CST)).toBe('today')
     expect(reminderTier(guokao, NOV_29_0800_CST)).toBe('today')
   })
 
   it('非档位日不命中：8 天、4 天、2 天均为 null', () => {
-    expect(reminderTier(guokao, NOV_21_0800_CST)).toBeNull()
-    expect(reminderTier(guokao, NOV_25_0800_CST)).toBeNull()
-    expect(reminderTier(guokao, NOV_27_0800_CST)).toBeNull()
+    expect(reminderTier(guokao, NOV_20_0800_CST)).toBeNull()
+    expect(reminderTier(guokao, NOV_24_0800_CST)).toBeNull()
+    expect(reminderTier(guokao, NOV_26_0800_CST)).toBeNull()
   })
 
   it('多日考试进行中命中 today，已结束不命中', () => {
@@ -133,32 +139,44 @@ describe('reminderTier（7/3/1 天提醒档位）', () => {
 })
 
 describe('nearestExamCountdown（时钟卡倒计时行）', () => {
-  it('11-13 距国考 16 天、11-14 距国考 15 天：relaxed 档，文案与天数与考试条带一致', () => {
-    const a = nearestExamCountdown(NOV_13_0800_CST)!
-    expect(a.exam.id).toBe('guokao')
-    expect(a.days).toBe(16)
-    expect(a.tier).toBe('relaxed')
-    expect(a.label).toBe('距国考 16 天')
-    const b = nearestExamCountdown(NOV_14_0800_CST)!
-    expect(b.exam.id).toBe('guokao')
-    expect(b.days).toBe(15)
-    expect(b.tier).toBe('relaxed')
-    expect(b.label).toBe('距国考 15 天')
+  it('国考数据按首考日说事：examDateLabel 两日、tagline 提专业科目、首考日 11-28', () => {
+    expect(guokao.examDateLabel).toBe('11 月 28–29 日')
+    expect(guokao.tagline).toContain('专业科目 11 月 28 日')
+    expect(guokao.tagline).toContain('公共科目 11 月 29 日')
+    expect(guokao.firstExamDayISO).toBe('2026-11-28')
   })
 
-  it('档位与文案随临近变化：7 天 soon、明天 tomorrow、国考当天 today', () => {
+  it('11-13 距国考首考日 15 天、11-14 距 14 天：relaxed 档，文案与天数与考试条带一致', () => {
+    const a = nearestExamCountdown(NOV_13_0800_CST)!
+    expect(a.exam.id).toBe('guokao')
+    expect(a.days).toBe(15)
+    expect(a.tier).toBe('relaxed')
+    expect(a.label).toBe('距国考 15 天')
+    const b = nearestExamCountdown(NOV_14_0800_CST)!
+    expect(b.exam.id).toBe('guokao')
+    expect(b.days).toBe(14)
+    expect(b.tier).toBe('relaxed')
+    expect(b.label).toBe('距国考 14 天')
+  })
+
+  it('档位与文案随临近变化：6 天 soon、首考日前一天 tomorrow、首考日与公共科目日 today', () => {
     expect(nearestExamCountdown(NOV_22_0800_CST)).toMatchObject({
-      days: 7,
+      days: 6,
       tier: 'soon',
-      label: '距国考 7 天',
+      label: '距国考 6 天',
     })
-    expect(nearestExamCountdown(NOV_28_0800_CST)).toMatchObject({
+    expect(nearestExamCountdown(NOV_27_0800_CST)).toMatchObject({
       days: 1,
       tier: 'tomorrow',
-      label: '明天国考',
+      label: '明天国考（专业科目先考 11 月 28 日）',
+    })
+    expect(nearestExamCountdown(NOV_28_0800_CST)).toMatchObject({
+      days: 0,
+      tier: 'today',
+      label: '今天国考 · 专业科目 14:00 开考',
     })
     expect(nearestExamCountdown(NOV_29_0800_CST)).toMatchObject({
-      days: 0,
+      days: -1,
       tier: 'today',
       label: '今天国考',
     })

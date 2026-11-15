@@ -29,16 +29,15 @@ import {
   extendGlobalUndoExpiry,
   globalUndoDepth,
   peekGlobalUndo,
+  popGlobalUndo,
   pruneGlobalUndo,
   subscribeGlobalUndo,
   UNDO_SUBLABEL,
   type UndoEntry,
 } from '@/lib/undo-stack'
-import { useFavorites } from '@/hooks/useFavorites'
 import { isAnyDialogOpen } from '@/lib/keyboard-guards'
 
 export function UndoBar() {
-  const favorites = useFavorites()
   const [top, setTop] = useState<UndoEntry | null>(() => peekGlobalUndo())
   const [depth, setDepth] = useState<number>(() => globalUndoDepth())
   const [remainingMs, setRemainingMs] = useState<number>(UNDO_WINDOW_MS)
@@ -181,18 +180,35 @@ export function UndoBar() {
     return () => clearTimeout(timer)
   }, [notice])
 
+  // 与 useFavorites().undoLast()（hooks/useFavorites.ts:1172-1180）逐行等价：
+  // 取栈顶并执行其 undo()；空栈 / 抛错时返回 { ok: false, message }。
+  // undoLast 不读任何 hook 本地状态，只依赖 undo-stack 单例——UndoBar 直接
+  // 走 undo-stack 即可，不必为这一个调用把整条 useFavorites 链
+  //（82,203B 源码 + import-workbench / quicklinks / favorites-triage 等闭包）
+  // 拉进根 layout 的静态 import。Providers 的 useGlobalUndo 实例仍常驻订阅，
+  // 共享收藏状态的读写/同步行为不受影响。
   const handleUndo = useCallback(async () => {
     if (!top || busy) return
     setBusy(true)
     try {
-      const result = await favorites.undoLast()
+      const entry = popGlobalUndo()
+      if (!entry) {
+        setNotice('没有可撤销的操作')
+        return
+      }
+      let result: { ok: boolean; message?: string }
+      try {
+        result = await entry.undo()
+      } catch (err) {
+        result = { ok: false, message: err instanceof Error ? err.message : '撤销失败' }
+      }
       if (!result.ok) {
         setNotice(result.message ?? '撤销失败，可在回收站里恢复')
       }
     } finally {
       setBusy(false)
     }
-  }, [top, busy, favorites])
+  }, [top, busy])
 
   const pause = useCallback(() => {
     hoverPausedRef.current = true

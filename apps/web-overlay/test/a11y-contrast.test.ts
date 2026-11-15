@@ -270,7 +270,9 @@ describe('无障碍 #11/#14 对比度打包修复', () => {
     expect(ux9Contrast('#ffffff', '#b45309')).toBeGreaterThanOrEqual(4.5)
     expect(ux9Contrast('#ffffff', '#92400e')).toBeGreaterThanOrEqual(4.5)
     const syncLines = watchlistPage.split('\n')
-    const syncIdx = syncLines.findIndex((l) => l.includes('上次同步'))
+    // 锚定 JSX 行「上次同步：{」：文件里另有两处含「上次同步」的注释行（:272、:289），
+    // 用裸串 findIndex 会先命中注释、取到其上一行 syncingRef.current = false 而断言失败。
+    const syncIdx = syncLines.findIndex((l) => l.includes('上次同步：{'))
     expect(syncIdx).toBeGreaterThan(0)
     expect(syncLines[syncIdx - 1]).toContain('text-zinc-500 dark:text-zinc-400')
     const empty = syncLines.find((l) => l.includes('没有安排'))

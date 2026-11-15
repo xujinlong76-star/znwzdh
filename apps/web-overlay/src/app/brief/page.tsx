@@ -21,8 +21,10 @@ import {
   type HubBriefHotPick,
   type HubHotlistSource,
 } from '@/lib/server/brief'
+import { formatHotlistSubline } from '@/lib/relative-time'
 import BriefWatch from './brief-watch'
 import BriefResurface from './brief-resurface'
+import HotlistFreshness from './hotlist-freshness'
 import DailyFocus from '@/components/daily-focus'
 
 /**
@@ -90,6 +92,9 @@ function HotRow({ item }: { item: HubBriefHotPick }) {
 
 function SourceColumn({ source }: { source: HubHotlistSource }) {
   const clock = formatClock(source.fetchedAt)
+  // 副行文案是本站抓取时刻的相对时间（非平台更新时间）；首帧由 SSR 算出，
+  // 客户端小岛每 60 秒按同一 fetchedAt 重算，不发请求。
+  const subline = formatHotlistSubline(source.status, source.fetchedAt)
   return (
     <section aria-label={source.name} className="rounded-xl border bg-card p-4">
       <header className="mb-2 flex items-baseline justify-between gap-2">
@@ -103,13 +108,12 @@ function SourceColumn({ source }: { source: HubHotlistSource }) {
           完整榜单 <ExternalLink className="h-3 w-3" aria-hidden />
         </a>
       </header>
-      <p className="mb-2 text-[11px] text-muted-foreground">
-        {source.status === 'empty' || !clock
-          ? '暂无数据（等待首次抓取）'
-          : source.status === 'stale'
-            ? `抓取暂时失败，下面是 ${clock} 的缓存`
-            : `更新于 ${clock}`}
-      </p>
+      <HotlistFreshness
+        status={source.status}
+        fetchedAt={source.fetchedAt}
+        clock={clock}
+        ssrText={subline}
+      />
       {source.items.length > 0 ? (
         <ol className="space-y-0.5">
           {source.items.slice(0, 30).map((item) => (

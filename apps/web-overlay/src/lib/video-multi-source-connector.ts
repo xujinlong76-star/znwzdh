@@ -7,6 +7,7 @@
 
 import {
   evaluateVideoWithAIModel,
+  generateAISanitizedMetadata,
   type AIEvaluationResult,
 } from '@/lib/video-autonomous-ai-harvester'
 import {
@@ -28,6 +29,7 @@ import {
  */
 const webhookReplayGuard = createReplayGuard(WEBHOOK_TIMESTAMP_TOLERANCE_SEC * 2 * 1000)
 import { calculateFreshnessScore } from '@/lib/video-scoring'
+import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
 import { enrichVideoItemSeo } from '@/lib/video-seo'
 import { detectVideoPlatform } from '@/lib/video-multi-platform-harvester'
 import type { NavigationItem, NavigationSubItem, VideoPlatformType, VideoStats } from '@/types/navigation'
@@ -161,6 +163,15 @@ export class MultiSourceConnector {
       }
     }
 
+    const meta = generateAISanitizedMetadata(
+      title,
+      description,
+      durationSec || 1200,
+      evalResult.conceptTags
+    )
+    // 合成元数据默认关闭：模板章节/字幕不得冒充视频原文（见 video-metadata-policy.ts）
+    const synthetic = syntheticMetadataEnabled()
+
     /**
      * 平台由来源决定，不再一律当 B 站。
      *
@@ -177,9 +188,9 @@ export class MultiSourceConnector {
 
     const subItem: NavigationSubItem = enrichVideoItemSeo({
       id: `wh_${platform}_${id}_${Date.now()}`,
-      title,
+      title: meta.cleanTitle,
       href: url,
-      description: description ?? '',
+      description: synthetic ? meta.overview : (description ?? ''),
       // 不写封面：webhook 载荷里没有封面字段，此前统一塞同一张 Unsplash 图，
       // 等于给所有外部内容伪造配图。留空后前端走平台占位。
       enabled: true,
@@ -208,6 +219,8 @@ export class MultiSourceConnector {
         ...(payload.data.stats ? { stats: payload.data.stats } : {}),
         sourceType: 'webhook',
         healthStatus: 'healthy',
+        // 合成元数据默认不写：模板章节/字幕会被误认为视频原文
+        ...(synthetic ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true } : {}),
       },
     })
 
@@ -251,6 +264,15 @@ export class MultiSourceConnector {
       }
     }
 
+    const meta = generateAISanitizedMetadata(
+      title,
+      description,
+      durationSec || 1200,
+      evalResult.conceptTags
+    )
+    // 合成元数据默认关闭：模板章节/字幕不得冒充视频原文（见 video-metadata-policy.ts）
+    const synthetic = syntheticMetadataEnabled()
+
     const detected = detectVideoPlatform(url)
     const platform: VideoPlatformType = id.startsWith('BV')
       ? 'bilibili'
@@ -260,9 +282,9 @@ export class MultiSourceConnector {
 
     const subItem: NavigationSubItem = enrichVideoItemSeo({
       id: `wh_${platform}_${id}_${Date.now()}`,
-      title,
+      title: meta.cleanTitle,
       href: url,
-      description: description ?? '',
+      description: synthetic ? meta.overview : (description ?? ''),
       enabled: true,
       videoConfig: {
         type: platform,
@@ -288,6 +310,8 @@ export class MultiSourceConnector {
         ...(payload.data.stats ? { stats: payload.data.stats } : {}),
         sourceType: 'webhook',
         healthStatus: 'healthy',
+        // 合成元数据默认不写：模板章节/字幕会被误认为视频原文
+        ...(synthetic ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true } : {}),
       },
     })
 

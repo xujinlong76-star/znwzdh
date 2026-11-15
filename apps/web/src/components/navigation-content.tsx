@@ -13,6 +13,7 @@ import { NavigationCategorySection } from '@/components/navigation-category-sect
 import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { HomeRecentVisits } from '@/components/home-recent-visits'
+import { HomeFrequentVisits } from '@/components/home-frequent-visits'
 import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
 import { didHomeDiyHistoryStepClaimThisTask } from '@/lib/modular/home-diy-storage'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
@@ -1133,6 +1134,10 @@ export function NavigationContent({
               {/* 最近访问行（升级第 5 条）：hero 与第一个分类区之间；组件挂载后
                   才读本机快照，SSR 首帧不渲染，空清单时整行不存在。 */}
               <HomeRecentVisits />
+
+              {/* 我的常用行（纯频次展示）：最近访问行之后、分类网格之前；
+                  与最近访问行同一模式：挂载后读本机快照，空清单整行不渲染。 */}
+              <HomeFrequentVisits />
 
               <DiyGridDragBoundary kit={dragKit} onDragEnd={handleCategoryDragEnd}>
               <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">

@@ -138,6 +138,53 @@ describe('UX #9 追剧弹窗与简报页小字对比度', () => {
 })
 
 /**
+ * 首页考试条带 + exam-countdown 数值对比度（2026-11-15 1422 轮）。
+ *
+ * 根因：条带背景是横向渐变 `from-sky-500/10 via-card to-card`，左端底色为
+ * sky-500 10% 叠白底 ≈ #e7f6fd；<sm 时倒计时岛换行贴左沿、落在 tint 区，
+ * red-600 只有 4.40–4.41:1（< 4.5）；soon 档徽章 amber-700 压
+ * bg-amber-500/5 + tint 只有 4.40–4.45:1（全断点）。修法是渐变起点
+ * from-sky-500/10 → from-card（两处：条带视图 + 空态外壳），倒计时与
+ * 徽章回到实色卡片上；exam-countdown token 与 exam-urgency.test.ts:198
+ * 断言不动。数值口径与 UX #9 相同（Tailwind 色板 hex 现场算）。
+ */
+describe('首页考试条带渐变底 + exam-countdown 数值对比度', () => {
+  const strip = overlayFile('src/components/home-exam-strip-view.tsx')
+  const stripEmpty = overlayFile('src/components/home-exam-strip.tsx')
+  const countdown = overlayFile('src/app/exam/exam-countdown.tsx')
+
+  it('条带渐变起点已是实色卡片：倒计时/徽章不再落在 sky tint 上', () => {
+    for (const src of [strip, stripEmpty]) {
+      expect(src).toContain('from-card via-card to-card')
+      expect(src).not.toContain('from-sky-500/10')
+    }
+  })
+
+  it('倒计时岛：浅色 red-600 / 深色 red-400 压实色卡片，≥4.5:1', () => {
+    const days = countdown.split('\n').find((l) => l.includes("today: 'text-red-600"))
+    expect(days).toBeTruthy()
+    expect(countdown).toContain("today: 'text-red-600 dark:text-red-400'")
+    expect(countdown).toContain("soon: 'text-amber-700 dark:text-amber-400'")
+    expect(ux9Contrast('#dc2626', '#ffffff')).toBeGreaterThanOrEqual(4.5) // 实测 4.83
+    expect(ux9Contrast('#f87171', '#09090b')).toBeGreaterThanOrEqual(4.5) // 实测 7.19
+    // soon 档：浅色 amber-700 白底 5.02、深色 amber-400 深卡 11.92
+    expect(ux9Contrast('#b45309', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#fbbf24', '#09090b')).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('soon 档徽章与 7d 提醒前缀：amber-700 压徽章底 + 实色卡片，≥4.5:1', () => {
+    const badge = strip.split('\n').find((l) => l.includes("soon: 'border-amber-500/25"))
+    expect(badge).toBeTruthy()
+    expect(badge).toContain('text-amber-700 dark:text-amber-400')
+    expect(strip).toContain("'7d': 'text-amber-700 dark:text-amber-400'")
+    // 徽章底 = amber-500 5% 叠白卡 #fefaf2（向下取整的保守值；叠 tint 时只有 4.40–4.45:1）
+    expect(ux9Contrast('#b45309', '#fefaf2')).toBeGreaterThanOrEqual(4.5) // 实测 4.82
+    // 深色徽章底 = amber-500 5% 叠深卡 #15100b
+    expect(ux9Contrast('#fbbf24', '#15100b')).toBeGreaterThanOrEqual(4.5) // 实测 11.32
+  })
+})
+
+/**
  * 无障碍 #11/#14（2026-11-15）：热榜/合集/市场/追剧清单/星图弹窗低对比度打包修。
  *
  * 大头由扫荡 16ac463d 落地（216 处 amber/emerald -600→-700、追剧清单与星图

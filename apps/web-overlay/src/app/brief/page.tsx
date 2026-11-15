@@ -101,7 +101,7 @@ function SourceColumn({ source }: { source: HubHotlistSource }) {
   // 客户端小岛每 60 秒按同一 fetchedAt 重算，不发请求。
   const subline = formatHotlistSubline(source.status, source.fetchedAt)
   return (
-    <section aria-label={source.name} className="rounded-xl border bg-card p-4">
+    <section aria-label={source.name} className="min-w-0 rounded-xl border bg-card p-4">
       <header className="mb-2 flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold">{source.name}</h3>
         <a
@@ -206,7 +206,7 @@ export default async function BriefPage() {
                     const first = picks[0]
                     if (!first) return null
                     return (
-                      <div key={sourceId} className="rounded-xl border bg-card p-4">
+                      <div key={sourceId} className="min-w-0 rounded-xl border bg-card p-4">
                         <h3 className="mb-2 text-sm font-semibold">{first.sourceName}</h3>
                         <ol className="space-y-0.5">
                           {picks.map((pick) => (

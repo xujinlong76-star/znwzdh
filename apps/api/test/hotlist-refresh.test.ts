@@ -101,6 +101,19 @@ describe("知乎刷新层（官方接口 + fail-closed）", () => {
       expect(item.url).not.toContain("utm_");
     }
     expect(stored.map((i) => i.rank)).toEqual(stored.map((_, idx) => idx + 1));
+    // P0-1 步骤 A：摘要入库——与 fixture 的 Summary 逐条一致，空 Summary 落 null
+    const fixture = JSON.parse(fixtureBody("zhihu.json")) as {
+      Data: { Items: Array<{ Title: string; Summary: string }> };
+    };
+    const summaryByTitle = new Map(fixture.Data.Items.map((s) => [s.Title, s.Summary]));
+    for (const item of stored) {
+      const src = summaryByTitle.get(item.title);
+      expect(src).toBeDefined();
+      expect(item.summary).toBe(src === "" ? null : src);
+    }
+    // fixture 里恰 2 条 Summary 为空串（见 hotlist-sources.test.ts 同款断言）
+    expect(stored.filter((i) => i.summary === null)).toHaveLength(2);
+    expect(stored.filter((i) => i.summary !== null)).toHaveLength(28);
   });
 
   it("/api/hotlist 下发知乎 30 条且无数值热度，uncovered 只剩快手", async () => {

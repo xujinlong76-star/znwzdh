@@ -104,7 +104,8 @@ test.describe('视频链路冒烟', () => {
     await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => {});
 
     // 点卡片直接进路由版播放器（/videos/player?id=…）：弹窗版已删除
-    // （video-card.tsx:117；video-player-modal.tsx 全仓 0 个 import 方）。
+    // （video-card.tsx:117；video-player-modal.tsx 文件已不存在，全仓 0 处引用，
+    // 仅守卫测试 video-player-url-params.test.ts 以字符串断言其不存在）。
     // 旧断言链「弹窗内标题 + 详情/演播室入口」随旧流程作废，改为断言工作台本身：
     // 详情入口（控制栏「SEO 收录页」→ /videos/v/:id）与演播室控件
     // （B站换源档位、返回视频中心）都在工作台内。注意：/videos/player?id=… 自身

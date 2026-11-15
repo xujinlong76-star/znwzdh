@@ -13,8 +13,8 @@ import { test, expect, type Page } from '@playwright/test';
  * 显隐符合 [640,1024)；猫的拖动、60 秒贴边、面板展开三处无回归。
  *
  * 猫底距现行值（xiaomaomao.js，与四边界期望逐字对齐；2026-11-16 修正，
- * 旧值 639→12px / 1024→18px 是挂件整体抬高前的过期期望）：≤640px 为 68px
- *（@media max-width:640px）；640–1023px 为 calc(4.5rem+18px)=90px；
+ * 旧值 639→12px / 1024→18px 是挂件整体抬高前的过期期望）：<640px 为 68px
+ *（@media max-width:640px；640px 整点以 640–1023px 规则为准）；
  * ≥1024px 为桌面默认 96px。改挂件 CSS 时须同步改本文件期望值。
  *
  * 注意：elementFromPoint 返回的是最上层元素——按钮中心是 lucide <svg>，

@@ -2,8 +2,8 @@
  * 全网热榜源注册表 + 逐源解析器。
  *
  * William 拍板口径（2026-11-11）：全量聚合——能聚的平台都聚上；个别明确
- * 禁抓的源用其公开接口或官方榜单页尽量补齐；只存标题 + 链接 + 热度值，
- * 不搬运正文。逐源登记「方式与依据」，拿不到的源如实登记未覆盖及原因，
+ * 禁抓的源用其公开接口或官方榜单页尽量补齐；只存标题 + 链接 + 热度值
+ * + 来源侧摘要原文（现阶段仅知乎官方接口返回 Summary），不搬运正文。逐源登记「方式与依据」，拿不到的源如实登记未覆盖及原因，
  * 绝不用造假数据充数。
  *
  * 每个 covered 源的解析器都有真实响应 fixture 守着
@@ -19,9 +19,10 @@ export interface HotlistItem {
   hotValue: number | null;
   hotLabel: string | null;
   /**
-   * 知乎官方接口返回的配图与摘要：解析器原样返回（与样例逐字核对），
-   * 入库时丢弃——热榜只存标题 + 链接 + 热度，不存正文、不存图片
-   * （仓储层六列口径，见 packages/store/src/repository/hotlist.ts 头注）。
+   * 知乎官方接口返回的配图与摘要：解析器原样返回（与样例逐字核对）；
+   * 摘要（summary）入库保存到 hotlist_entries.summary（P0-1 步骤 A），
+   * 配图仍丢弃——热榜只存标题 + 链接 + 热度 + 来源侧摘要，不存正文、不存图片
+   * （见 packages/store/src/repository/hotlist.ts 头注）。
    */
   thumbnailUrl?: string | null;
   summary?: string | null;

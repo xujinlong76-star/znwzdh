@@ -209,7 +209,7 @@ export interface WatchEntryRecord {
   deletedAt?: number | null;
 }
 
-/** 全网热榜缓存条目（只存标题+链接+热度，不搬运正文） */
+/** 全网热榜缓存条目（只存标题+链接+热度+来源侧摘要原文，不搬运正文、不存图片） */
 export interface HotlistEntryRecord {
   source: string;
   rank: number;
@@ -219,6 +219,8 @@ export interface HotlistEntryRecord {
   hotValue: number | null;
   /** 源站给的热度标签原文（如「沸」「热」），没有则为 null */
   hotLabel: string | null;
+  /** 来源侧给的摘要原文（现阶段只有知乎官方接口返回 Summary）；没有则为 null */
+  summary?: string | null;
   fetchedAt: number;
 }
 

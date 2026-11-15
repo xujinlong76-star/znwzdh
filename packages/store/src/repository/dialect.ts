@@ -289,6 +289,7 @@ export function rowToHotlistEntry(row: Record<string, any>): HotlistEntryRecord 
     url: String(row.url),
     hotValue: row.hot_value == null ? null : Number(row.hot_value),
     hotLabel: row.hot_label ?? null,
+    summary: row.summary ?? null,
     fetchedAt: Number(row.fetched_at ?? 0),
   };
 }

@@ -10,8 +10,9 @@ import { rowToDailyBrief, rowToHotlistEntry, rowToHotlistSource } from "./dialec
  * 全网热榜缓存 + 每日简报的仓储层。
  *
  * 口径：
- * - 热榜只存标题 + 链接 + 热度值（各源口径不同，只并列展示、绝不跨源混算），
- *   不存正文、不存图片；每源整表替换（一次抓取 = 一份完整榜单），
+ * - 热榜只存标题 + 链接 + 热度值（各源口径不同，只并列展示、绝不跨源混算）
+ *   + 来源侧摘要原文（现阶段仅知乎官方接口返回 Summary，属来源字段、
+ *   不是爬来的正文），不存正文、不存图片；每源整表替换（一次抓取 = 一份完整榜单），
  *   抓取失败时**不动**已有条目，只把源状态标 failed —— 前端据此展示
  *   「上次成功缓存 + 已过期」而不是拿空榜冒充实时。
  * - 简报按天一行（date 主键），生成即落库，读时直接取缓存，
@@ -29,9 +30,9 @@ export async function replaceHotlistSource(
     await repo.run("DELETE FROM hotlist_entries WHERE source = ?", [source]);
     for (const item of items) {
       await repo.run(
-        `INSERT INTO hotlist_entries (source, rank, title, url, hot_value, hot_label, fetched_at)
-         VALUES (?,?,?,?,?,?,?)`,
-        [source, item.rank, item.title, item.url, item.hotValue, item.hotLabel, fetchedAt],
+        `INSERT INTO hotlist_entries (source, rank, title, url, hot_value, hot_label, summary, fetched_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [source, item.rank, item.title, item.url, item.hotValue, item.hotLabel, item.summary ?? null, fetchedAt],
       );
     }
     await repo.run(

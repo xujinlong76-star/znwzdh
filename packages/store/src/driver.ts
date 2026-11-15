@@ -343,6 +343,7 @@ CREATE TABLE IF NOT EXISTS hotlist_entries (
   url TEXT NOT NULL,
   hot_value INTEGER,
   hot_label TEXT,
+  summary TEXT,
   fetched_at INTEGER NOT NULL,
   PRIMARY KEY (source, rank)
 );
@@ -999,6 +1000,7 @@ CREATE TABLE IF NOT EXISTS hotlist_entries (
   url TEXT NOT NULL,
   hot_value BIGINT,
   hot_label TEXT,
+  summary TEXT,
   fetched_at BIGINT NOT NULL,
   PRIMARY KEY (source, rank)
 );

@@ -119,6 +119,9 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "llm_usage", column: "prompt_price_per_1k", sqlite: "REAL", pg: "DOUBLE PRECISION" },
   { table: "llm_usage", column: "completion_price_per_1k", sqlite: "REAL", pg: "DOUBLE PRECISION" },
   { table: "llm_usage", column: "price_source", sqlite: "TEXT", pg: "TEXT" },
+  // 热榜摘要（P0-1 步骤 A）：只存来源侧官方接口给的摘要原文（现阶段仅知乎
+  // 返回 Summary）；其余五源不产摘要、旧行无摘要，一律 NULL，不回填。
+  { table: "hotlist_entries", column: "summary", sqlite: "TEXT", pg: "TEXT" },
 ];
 
 /**

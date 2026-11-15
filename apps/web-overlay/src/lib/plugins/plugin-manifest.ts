@@ -79,6 +79,7 @@ export const THEME_COLOR_VARS = [
   '--popover-foreground',
   '--primary',
   '--primary-foreground',
+  '--link',
   '--secondary',
   '--secondary-foreground',
   '--muted',
@@ -266,6 +267,29 @@ export function hslTripleToHex(triple: string): string | null {
   }
   const hex = (v: number) => toByte(v).toString(16).padStart(2, '0').toUpperCase()
   return `#${hex(r)}${hex(g)}${hex(b)}`
+}
+
+/** HEX（#RRGGBB）→ WCAG 相对亮度（0~1）。非法输入返回 null，绝不编造色值。 */
+function hexToLuminance(hex: string): number | null {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex.trim())
+  const digits = m?.[1]
+  if (!digits) return null
+  const lin = (byte: number): number => {
+    const v = byte / 255
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+  }
+  const r = lin(parseInt(digits.slice(0, 2), 16))
+  const g = lin(parseInt(digits.slice(2, 4), 16))
+  const b = lin(parseInt(digits.slice(4, 6), 16))
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/** 两 HEX 色的 WCAG 对比度（1~21）。任一非法返回 null。 */
+function hexContrastRatio(a: string, b: string): number | null {
+  const la = hexToLuminance(a)
+  const lb = hexToLuminance(b)
+  if (la === null || lb === null) return null
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
 }
 
 /**
@@ -737,6 +761,23 @@ function validateThemePayload(payload: Record<string, unknown>, errors: string[]
           }
           tokens[key] = v
           entries++
+        }
+        // --link（链接文字）须对主题生效背景 ≥ 4.5:1（WCAG AA 正文）：
+        // 主题 tokens 只在浅色下内联注入，故缺 --background 时按默认浅底白算。
+        // 不达标时丢弃该 token（链接文字回落 CSS 默认 --link），并在日志留痕——
+        // 不静默放行，也不因此驳回整个主题（链接仍有合规默认值可用）。
+        // 若 --link 是唯一 token 且被丢弃，entries 归零，下方「至少需要其一」会正常报错。
+        if (tokens['--link']) {
+          const linkHex = hslTripleToHex(tokens['--link'])
+          const bgHex = hslTripleToHex(tokens['--background'] ?? '0 0% 100%')
+          const ratio = linkHex && bgHex ? hexContrastRatio(linkHex, bgHex) : null
+          if (ratio !== null && ratio < 4.5) {
+            console.warn(
+              `[plugin-manifest] 主题 --link ${tokens['--link']} 对背景对比度仅 ${ratio.toFixed(2)}:1（< 4.5:1），已丢弃该 token，链接文字回落 CSS 默认值`,
+            )
+            delete tokens['--link']
+            entries--
+          }
         }
         if (Object.keys(tokens).length > 0) out.tokens = tokens
       }

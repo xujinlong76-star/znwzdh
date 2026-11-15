@@ -191,7 +191,7 @@ export default function HotView({
                   />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors truncate pr-8">
+                  <div className="text-sm font-semibold tracking-tight text-foreground group-hover:text-link transition-colors truncate pr-8">
                     {site.title}
                   </div>
                   {site.description && (

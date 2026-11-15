@@ -561,5 +561,116 @@ describe("构建产物 CSS 含 border-strong 相关类（@source 剪枝守卫）
     // 附带锁：ring 与危险文字 token 都编进了产物
     expect(out).toContain("--color-ring");
     expect(out).toContain("destructive-text");
+    // 附带锁（UX #8 方案 B）：链接文字 token 与 text-link 类都编进了产物
+    expect(out).toContain("--color-link");
+    expect(
+      out,
+      "产物里没有 .text-link —— 链接文字 token 未生效。" +
+        "典型原因：@theme 缺 --color-link，或没有源码使用 text-link 类（剪枝）。",
+    ).toMatch(/\.text-link\b/);
   }, 60_000);
+});
+
+// ============================================================
+// 9. 链接文字 token（--link，UX #8 方案 B，2026-11-15）
+//    --primary 作按钮底与作链接文字是两个方向的对比度：7 皮肤 × 浅深
+//    14 格里 8 格不过 AA（amber 浅仅 2.14:1）。链接文字改走 --link，
+//    每皮肤每模式单独取值（已达标格沿用 --primary 原值，只调 L 保色相），
+//    目标 ≥5.0:1（硬门禁仍为 4.5:1）。深色档在 .dark[data-accent] 块里，
+//    因上方 [data-accent] 块不分浅深。
+// ============================================================
+const LINK_ACCENTS = ["default", "violet", "emerald", "amber", "rose", "ocean", "sky", "system-blue", "latte"] as const;
+
+function darkAccentVars(name: string): Map<string, string> {
+  return parseVars(
+    blockBody(css, new RegExp(`\\.dark\\[data-accent="${name}"\\][^{]*\\{`), `dark accent=${name}`),
+  );
+}
+
+describe("链接文字 token（--link 对 --background）", () => {
+  function linkOf(accent: (typeof LINK_ACCENTS)[number], mode: "浅" | "深"): { raw: string; bg: [number, number, number] } {
+    const base = mode === "浅" ? rootVars : darkVars;
+    if (accent === "default") {
+      return { raw: base.get("link")!, bg: hslToRgb(...hslOf(base, "background")) };
+    }
+    const over_ = mode === "浅" ? accentVars(accent) : darkAccentVars(accent);
+    const raw = over_.get("link") ?? base.get("link")!;
+    return { raw, bg: hslToRgb(...hslOf(base, "background")) };
+  }
+
+  for (const accent of LINK_ACCENTS) {
+    for (const mode of ["浅", "深"] as const) {
+      it(`${mode}色 · ${accent}：--link 对背景 ≥4.5:1（硬门禁）`, () => {
+        const { raw, bg } = linkOf(accent, mode);
+        const fg = hslToRgb(...parseHslRaw("link", raw));
+        const r = contrast(fg, bg);
+        expect(
+          r,
+          `${mode}色 accent=${accent} --link ${hex(fg)} vs --background ${hex(bg)} = ${r.toFixed(2)}:1`,
+        ).toBeGreaterThanOrEqual(4.5);
+      });
+      it(`${mode}色 · ${accent}：--link 对背景 ≥5.0:1（方案目标，防取整漂移）`, () => {
+        const { raw, bg } = linkOf(accent, mode);
+        const fg = hslToRgb(...parseHslRaw("link", raw));
+        const r = contrast(fg, bg);
+        expect(
+          r,
+          `${mode}色 accent=${accent} --link ${hex(fg)} = ${r.toFixed(2)}:1，未达方案目标 5.0:1。` +
+            `可放宽到硬门禁 4.5:1，但须在方案文档里说明理由，不得无声漂移。`,
+        ).toBeGreaterThanOrEqual(5);
+      });
+    }
+  }
+
+  it(":root / .dark / 7 个 accent 块（浅深）都定义了 --link", () => {
+    expect(rootVars.has("link")).toBe(true);
+    expect(darkVars.has("link")).toBe(true);
+    for (const accent of LINK_ACCENTS) {
+      if (accent === "default") continue;
+      expect(accentVars(accent).has("link"), `浅色 accent=${accent} 缺 --link`).toBe(true);
+      expect(darkAccentVars(accent).has("link"), `深色 accent=${accent} 缺 --link`).toBe(true);
+    }
+  });
+
+  it("@theme 映射了 --color-link（类名 text-link 的来源）", () => {
+    expect(css).toContain("--color-link: hsl(var(--link));");
+  });
+
+  it("主题白名单 THEME_COLOR_VARS 含 '--link'（插件主题可覆盖它）", () => {
+    const manifest = readFileSync(overlayPath("src/lib/plugins/plugin-manifest.ts"), "utf8");
+    const m = /THEME_COLOR_VARS = \[([\s\S]*?)\] as const/.exec(manifest);
+    expect(m, "plugin-manifest.ts 里找不到 THEME_COLOR_VARS").toBeTruthy();
+    expect(m![1]).toContain("'--link'");
+  });
+});
+
+// ============================================================
+// 10. 迁移面硬锁（第一批）：brief / hot 的链接文字不得再用 text-primary。
+//     不在锁内（方案残留，另立项）：徽章 bg-primary/10 + text-primary
+//     （如 hot-view 204 行）与装饰图标（如 brief 174 行 Sparkles），
+//     故此处只锁已迁的链接用法，不做全文件通配断言。
+//     drama 页当前本就没有 text-primary 链接（用 zinc 色系），锁住不回潮。
+// ============================================================
+describe("迁移面硬锁（第一批：brief / hot 链接文字走 text-link）", () => {
+  it("brief/page.tsx：已迁的 5 处链接用法不再用 text-primary", () => {
+    const src = readFileSync(overlayPath("src/app/brief/page.tsx"), "utf8");
+    expect(src, "站内搜图标按钮 hover 态须走 text-link").not.toContain("hover:text-primary");
+    expect(src, "链接文字须走 text-link").not.toContain("text-primary hover:underline");
+    expect(src).toContain("text-xs text-link hover:underline");
+    expect(src).toContain('className="text-link hover:underline"');
+    expect(src).toContain("hover:text-link");
+  });
+
+  it("hot-view.tsx：卡片标题 hover 态走 text-link（站内详情链）", () => {
+    const src = readFileSync(overlayPath("src/app/hot/hot-view.tsx"), "utf8");
+    expect(src).toContain("group-hover:text-link");
+    expect(src, "卡片标题 hover 态不得残留 group-hover:text-primary").not.toContain("group-hover:text-primary");
+  });
+
+  it("drama 页：无 text-primary（当前本就干净，锁住不回潮）", () => {
+    for (const rel of ["src/components/drama-content.tsx", "src/components/home-drama-cinema.tsx"]) {
+      const src = readFileSync(overlayPath(rel), "utf8");
+      expect(src, `${rel} 不得引入 text-primary`).not.toContain("text-primary");
+    }
+  });
 });

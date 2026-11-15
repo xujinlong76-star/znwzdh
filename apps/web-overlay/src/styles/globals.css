@@ -64,6 +64,9 @@
 
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
+  /* 链接文字专用色（与作按钮底色的 --primary 分离，照抄 --destructive-text 的
+     注释写法）；类名 text-link。各皮肤浅深值见下方 data-accent 块与 .dark[data-accent] 块。 */
+  --color-link: hsl(var(--link));
 
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
@@ -250,6 +253,10 @@
     --popover-foreground: 240 10% 3.9%;
     --primary: 240 5.9% 10%;
     --primary-foreground: 0 0% 98%;
+    /* 链接文字专用色（与作按钮底色的 --primary 分离）：
+       --primary 作文字在 7 皮肤 × 浅深 14 格里有 8 格不过 AA（amber 浅仅 2.14:1），
+       链接文字一律走 text-link。默认皮肤两模式沿用 --primary 原值（17.72/19.05:1）。 */
+    --link: 240 5.9% 10%;
     --secondary: 240 4.8% 95.9%;
     --secondary-foreground: 240 5.9% 10%;
     --muted: 240 4.8% 95.9%;
@@ -327,6 +334,7 @@
     --popover-foreground: 0 0% 98%;
     --primary: 0 0% 98%;
     --primary-foreground: 240 5.9% 10%;
+    --link: 0 0% 98%; /* 与 --primary 同值，默认深色已达标（19.05:1） */
     --secondary: 240 3.7% 15.9%;
     --secondary-foreground: 0 0% 98%;
     --muted: 240 3.7% 15.9%;
@@ -603,6 +611,7 @@
     --primary: 262 83% 58%;
     --primary-foreground: 210 40% 98%;
     --ring: 262 83% 58%;
+    --link: 262 83% 58%; /* 与 --primary 同值，浅色已达标（5.67:1） */
   }
 
   :root[data-accent="emerald"], [data-accent="emerald"] {
@@ -611,6 +620,7 @@
     --primary: 158 84% 26%;
     --primary-foreground: 210 40% 98%;
     --ring: 158 84% 26%;
+    --link: 158 84% 26%; /* 与 --primary 同值，浅色已达标（5.36:1） */
   }
 
   :root[data-accent="amber"], [data-accent="amber"] {
@@ -619,6 +629,8 @@
     /* 焦点环单独加深：38 92% 40% 对白 3.29:1、对深底 6.05:1（旧 50% 对白仅 2.14:1）。
        --primary/前景对不动（8.29:1 本就合格）。 */
     --ring: 38 92% 40%;
+    /* 链接文字浅色档：--primary 作文字仅 2.14:1，L 50→31 提至 5.13:1。 */
+    --link: 38 92% 31%;
   }
 
   :root[data-accent="rose"], [data-accent="rose"] {
@@ -626,12 +638,14 @@
     --primary: 346 84% 42%;
     --primary-foreground: 210 40% 98%;
     --ring: 346 84% 42%;
+    --link: 346 84% 42%; /* 与 --primary 同值，浅色已达标（5.97:1） */
   }
 
   :root[data-accent="ocean"], [data-accent="ocean"] {
     --primary: 205 85% 45%;
     --primary-foreground: 210 40% 98%;
     --ring: 205 85% 45%;
+    --link: 205 85% 39%; /* 浅色 --primary 作文字仅 4.02:1，L 45→39 提至 5.12:1 */
   }
 
   :root[data-accent="sky"], [data-accent="sky"],
@@ -639,12 +653,46 @@
     --primary: 212 95% 48%;
     --primary-foreground: 210 40% 98%;
     --ring: 212 95% 48%;
+    --link: 212 95% 44%; /* 浅色 --primary 作文字仅 4.48:1，L 48→44 提至 5.18:1 */
   }
 
   :root[data-accent="latte"], [data-accent="latte"] {
     --primary: 28 80% 46%;
     --primary-foreground: 210 40% 98%;
     --ring: 28 80% 46%;
+    --link: 28 80% 37%; /* 浅色 --primary 作文字仅 3.46:1，L 46→37 提至 5.06:1 */
+  }
+
+  /* 链接文字深色档：上方 [data-accent] 块不分浅深，--link 的深色值须另起
+     .dark[data-accent] 块。位置必须在上方 accent 块之后（两者特异度相同 (0,2,0)，
+     后者胜出）；data-accent 与 .dark 同挂 documentElement，同一元素可同时命中。
+     数值（2026-11-15 UX #8 方案 B，独立复算）：背景面 14/14 ≥ 5.0:1，最低 5.02（rose 深）。 */
+  .dark[data-accent="violet"] {
+    --link: 262 83% 67%; /* 深色 --primary 作文字仅 3.51:1，L 58→67 提至 5.18:1 */
+  }
+
+  .dark[data-accent="emerald"] {
+    --link: 158 84% 32%; /* 深色 --primary 作文字仅 3.71:1，L 26→32 提至 5.28:1 */
+  }
+
+  .dark[data-accent="amber"] {
+    --link: 38 92% 50%; /* 与 --primary 同值，深色已达标（9.31:1） */
+  }
+
+  .dark[data-accent="rose"] {
+    --link: 346 84% 57%; /* 深色 --primary 作文字仅 3.34:1，L 42→57 提至 5.02:1 */
+  }
+
+  .dark[data-accent="ocean"] {
+    --link: 205 85% 46%; /* 深色 --primary 4.95:1 虽过线但余量薄，L 45→46 提至 5.15:1 */
+  }
+
+  .dark[data-accent="sky"], .dark[data-accent="system-blue"] {
+    --link: 212 95% 52%; /* 深色 --primary 作文字仅 4.44:1，L 48→52 提至 5.04:1 */
+  }
+
+  .dark[data-accent="latte"] {
+    --link: 28 80% 46%; /* 与 --primary 同值，深色已达标（5.75:1） */
   }
 }
 @layer utilities {

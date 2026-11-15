@@ -80,7 +80,7 @@ function HotRow({ item }: { item: HubBriefHotPick }) {
         href={`/search?q=${encodeURIComponent(item.title)}`}
         aria-label={`站内搜「${item.title}」`}
         title={`站内搜「${item.title}」`}
-        className="inline-flex shrink-0 items-center rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-primary"
+        className="inline-flex shrink-0 items-center rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-link"
       >
         <Search className="h-3.5 w-3.5" aria-hidden />
       </Link>
@@ -123,7 +123,7 @@ function SourceColumn({ source }: { source: HubHotlistSource }) {
             href={safeHref(source.homeUrl)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-link hover:underline"
           >
             {hotlistSourceEmptyCopy(source).actionLabel}
             <ExternalLink className="h-3 w-3" aria-hidden />
@@ -161,7 +161,7 @@ export default async function BriefPage() {
             <h1 className="mb-2 text-lg font-semibold">每日简报暂时不可用</h1>
             <p className="mx-auto max-w-md text-sm text-muted-foreground">
               简报服务未启动或网络不可达，今天的热榜与新收录暂时取不到。稍后再来，或先去
-              <Link href="/hot" className="text-primary hover:underline">站内热度榜</Link>
+              <Link href="/hot" className="text-link hover:underline">站内热度榜</Link>
               看看。
             </p>
           </section>
@@ -224,7 +224,7 @@ export default async function BriefPage() {
                 <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {brief.newSites.map((site) => (
                     <li key={site.id} className="rounded-xl border bg-card p-4">
-                      <Link href={`/site/${encodeURIComponent(site.id)}`} className="text-sm font-medium hover:text-primary">
+                      <Link href={`/site/${encodeURIComponent(site.id)}`} className="text-sm font-medium hover:text-link">
                         {site.title}
                       </Link>
                       {site.description ? (
@@ -277,7 +277,7 @@ export default async function BriefPage() {
                       {hotlist.uncovered.map((u) => (
                         <li key={u.id}>
                           {u.name}：{u.reason}（可先去
-                          <a href={safeHref(u.homeUrl)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                          <a href={safeHref(u.homeUrl)} target="_blank" rel="noopener noreferrer" className="text-link hover:underline">
                             官方热榜页
                           </a>
                           看）

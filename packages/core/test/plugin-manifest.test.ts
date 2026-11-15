@@ -294,6 +294,50 @@ describe('插件清单校验：主题负载', () => {
   it('空主题（既无 accent 又无 tokens）拒绝', () => {
     expectFail({ ...validTheme, payload: {} }, '至少需要 accent 或 tokens')
   })
+
+  // UX #8 方案 B：主题自带 --link 须对主题生效背景 ≥ 4.5:1（WCAG AA 正文），
+  // 不达标时丢弃该 token（链接回落 CSS 默认值）并在日志留痕，不驳回整个主题。
+  it('--link 达标时保留（262 83% 58% 对白 5.67:1）', () => {
+    const res = expectOk({
+      ...validTheme,
+      payload: { tokens: { '--primary': '262 83% 58%', '--link': '262 83% 58%' } },
+    })
+    const payload = res.manifest.payload as { tokens?: Record<string, string> }
+    expect(payload.tokens?.['--link']).toBe('262 83% 58%')
+  })
+
+  it('--link 不达标时被丢弃、其余 token 保留（38 92% 50% 对白仅 2.14:1）', () => {
+    const res = expectOk({
+      ...validTheme,
+      payload: { tokens: { '--primary': '262 83% 58%', '--link': '38 92% 50%' } },
+    })
+    const payload = res.manifest.payload as { tokens?: Record<string, string> }
+    expect(payload.tokens?.['--link']).toBeUndefined()
+    expect(payload.tokens?.['--primary']).toBe('262 83% 58%')
+  })
+
+  it('--link 是唯一 token 且不达标时，主题因无有效内容被拒', () => {
+    expectFail(
+      { ...validTheme, payload: { tokens: { '--link': '38 92% 50%' } } },
+      '至少需要 accent 或 tokens',
+    )
+  })
+
+  it('--link 按主题自带 --background 算（深底下 262 83% 58% 仅 3.51:1 应被丢弃）', () => {
+    const res = expectOk({
+      ...validTheme,
+      payload: { tokens: { '--background': '240 10% 3.9%', '--link': '262 83% 58%' } },
+    })
+    const payload = res.manifest.payload as { tokens?: Record<string, string> }
+    expect(payload.tokens?.['--link']).toBeUndefined()
+    expect(payload.tokens?.['--background']).toBe('240 10% 3.9%')
+    const ok = expectOk({
+      ...validTheme,
+      payload: { tokens: { '--background': '240 10% 3.9%', '--link': '262 83% 67%' } },
+    })
+    const okPayload = ok.manifest.payload as { tokens?: Record<string, string> }
+    expect(okPayload.tokens?.['--link']).toBe('262 83% 67%')
+  })
 })
 
 describe('摘要、版本比较与文本解析', () => {

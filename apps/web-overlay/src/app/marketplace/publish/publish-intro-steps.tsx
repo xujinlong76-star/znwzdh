@@ -81,7 +81,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
                       : 'border-border/70 hover:border-border hover:bg-muted/40'
                   )}
                 >
-                  <div className="flex items-center gap-2 text-sky-600 dark:text-sky-400 font-semibold text-xs">
+                  <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-semibold text-xs">
                     <Globe className="w-4 h-4" />
                     <span>网址包 (site-pack)</span>
                   </div>

@@ -261,7 +261,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-sm text-foreground truncate">站点健康自治巡检与无感自愈中枢</span>
-                <Badge variant="outline" className="text-[10px] font-normal text-rose-600 border-rose-500/30 shrink-0">
+                <Badge variant="outline" className="text-[10px] font-normal text-rose-700 dark:text-rose-400 border-rose-500/30 shrink-0">
                   Autonomous Health
                 </Badge>
               </div>
@@ -308,7 +308,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
             </div>
             <div className="p-2.5 rounded-lg border border-border/50 bg-background/50">
               <div className="text-[10px] text-muted-foreground">异常/死链待治愈</div>
-              <div className="text-base font-semibold text-rose-600 dark:text-rose-400 mt-0.5">
+              <div className="text-base font-semibold text-rose-700 dark:text-rose-400 mt-0.5">
                 {summary.brokenCount} 个
               </div>
             </div>

@@ -43,7 +43,7 @@ export default function OfflinePage() {
             最近在山羊胡打开过的站点会保存在本机。断网时这里仍可查看。
           </p>
           <div className="mt-4 pt-3.5 border-t border-border/50 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-sky-500/25 bg-sky-500/5 text-xs text-sky-600 dark:text-sky-400">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-sky-500/25 bg-sky-500/5 text-xs text-sky-700 dark:text-sky-400">
               <CloudOff className="w-3 h-3" />
               本机快照
             </span>

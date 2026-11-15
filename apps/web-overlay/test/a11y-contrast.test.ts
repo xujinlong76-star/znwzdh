@@ -272,3 +272,139 @@ describe('无障碍 #11/#14 对比度打包修复', () => {
     expect(ux9Contrast('#b45309', '#ffffff')).toBeGreaterThanOrEqual(4.5)
   })
 })
+
+/**
+ * rose/sky 残留 32 处（2026-11-15 1122 轮）：0922 轮盘点第一档「正文小字必修」。
+ *
+ * 盘点见 ~/workspace/goals/efficiency-goal/hidden_files/rose-sky-remainder-2026-11-15-1022.md：
+ * rose 正文 16（R3/R12/R13/R14/R18/R19/R20/R24/R25/R26/R27/R28/R30/R31/R32/R33）、
+ * sky 正文 13（S4–S16 除 S17）、bg-rose-600 hover 态白字 3（B2/B3/B6）。
+ * 修法与 0922 轮同款：-600→-700 配 dark:-400（R13/R14/R18/R28/R30/S14/S15 原无 dark: 变体，
+ *  hover 态补 dark:hover:-400）；B2/B3/B6 的 hover:bg-rose-500（白字 3.67）→hover:bg-rose-700（6.29）。
+ * 第二档 23 处有意保留（管理后台小字、大字、纯图标、B1/B4 默认态口径分歧），
+ * 故本锁只断言必修 32 处落点 + 残留 -600 行恰为第二档，不做全仓 -600 禁绝。
+ * B5（watchlist-add-button 周几选中态）由 UX #9 另锁，不动。
+ */
+describe('rose/sky 残留 32 处：正文小字 -600→-700 配 dark:-400', () => {
+  const watchlistPage = overlayFile('src/app/me/watchlist/page.tsx')
+  const watchlistBtn = overlayFile('src/components/watchlist-add-button.tsx')
+  const importPage = overlayFile('src/app/marketplace/import/page.tsx')
+  const minePage = overlayFile('src/app/marketplace/mine/page.tsx')
+  const auditModal = overlayFile('src/components/ai/site-health-audit-modal.tsx')
+  const widget = overlayFile('src/components/modular/modules/declarative-widget.tsx')
+  const categorySection = overlayFile('src/components/navigation-category-section.tsx')
+  const healthPanel = overlayFile('src/components/plugins/plugin-url-health-panel.tsx')
+  const studioHealth = overlayFile('src/components/plugins/studio-health-panel.tsx')
+  const studioJson = overlayFile('src/components/plugins/studio-json-panel.tsx')
+  const spotlight = overlayFile('src/components/search/spotlight-modal.tsx')
+  const detailPanels = overlayFile('src/app/marketplace/[slug]/detail-tab-panels.tsx')
+  const publishSteps = overlayFile('src/app/marketplace/publish/publish-intro-steps.tsx')
+  const offlinePage = overlayFile('src/app/offline/page.tsx')
+  const importer = overlayFile('src/components/bookmark-importer.tsx')
+  const pluginCard = overlayFile('src/components/plugins/plugin-card.tsx')
+  const installModal = overlayFile('src/components/plugins/plugin-install-modal.tsx')
+
+  it('市场导入失败提示与已驳回徽章：R12/R13/R14，浅色 -700 配 dark:-400', () => {
+    const alert = importPage.split('\n').find((l) => l.includes('role="alert"'))
+    expect(alert).toContain('text-rose-700 dark:text-rose-400')
+    expect(importPage).not.toContain('text-rose-600')
+    expect(minePage).toContain("className: 'text-rose-700 dark:text-rose-400 border-rose-500/30 bg-rose-500/5'")
+    expect(minePage).toContain('className="border-rose-500/30 text-rose-700 dark:text-rose-400"')
+    expect(minePage).not.toContain('text-rose-600')
+  })
+
+  it('巡检弹窗徽章与异常数：R18/R19/R20，浅色 -700 配 dark:-400', () => {
+    expect(auditModal).toContain('text-[10px] font-normal text-rose-700 dark:text-rose-400 border-rose-500/30 shrink-0')
+    expect(auditModal).toContain('text-base font-semibold text-rose-700 dark:text-rose-400 mt-0.5')
+    expect(auditModal).not.toContain('text-rose-600')
+    expect(widget).toContain("? 'text-rose-700 dark:text-rose-400'")
+    expect(widget).not.toContain('text-rose-600')
+  })
+
+  it('分类区移除按钮与收起提示：R24/S8，浅色 -700 配 dark:-400', () => {
+    expect(categorySection).toContain('text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10')
+    expect(categorySection).toContain('bg-sky-500/10 text-sky-700 dark:text-sky-400 border border-sky-500/20')
+    expect(categorySection).not.toContain('text-rose-600')
+    expect(categorySection).not.toContain('text-sky-600')
+  })
+
+  it('插件巡检面板：R25/S13/S14/S15/S16；残留 sky-600 恰为 S17 大字', () => {
+    expect(healthPanel).toContain("degrading: { label: '近期恶化', className: 'text-rose-700 dark:text-rose-400' }")
+    expect(healthPanel).not.toContain('text-rose-600')
+    expect(healthPanel).toContain('<span className="text-sky-700 dark:text-sky-400" title="站点存活')
+    expect(healthPanel).toContain("'hover:bg-muted text-sky-700 dark:text-sky-400'")
+    expect(healthPanel).toContain('text-[10px] text-sky-700 dark:text-sky-400 border-sky-500/30')
+    expect(healthPanel).toContain('text-[11px] font-medium text-sky-700 dark:text-sky-400 flex items-center gap-1')
+    // S17 text-xl font-bold 大数字（20px 加粗 = WCAG 大字，4.10≥3）是第二档有意保留
+    const skyLeft = healthPanel.split('\n').filter((l) => l.includes('text-sky-600'))
+    expect(skyLeft).toHaveLength(1)
+    expect(skyLeft[0]).toContain('text-xl font-bold')
+  })
+
+  it('工作台失败行与增减数：R26/R27/R28，浅色 -700 配 dark:-400', () => {
+    expect(studioHealth).toContain("'bg-rose-500/5 border-rose-500/20 text-rose-700 dark:text-rose-400'")
+    expect(studioHealth).not.toContain('text-rose-600')
+    expect(studioJson).toContain('font-mono font-bold text-rose-700 dark:text-rose-400')
+    expect(studioJson).toContain('<span className="text-rose-700 dark:text-rose-400 font-mono text-[11px] font-medium">')
+    expect(studioJson).not.toContain('text-rose-600')
+  })
+
+  it('搜索弹窗徽章与百度外链：R30/R31/R32；残留 rose-600 恰为 R29 纯图标', () => {
+    expect(spotlight).toContain('text-[10px] bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20')
+    expect(spotlight).toContain('text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400')
+    expect(spotlight).toContain('px-2 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-700 dark:text-rose-400')
+    // R29 Store 图标 tile（w-8 h-8 纯图标，4.12≥3）是第二档有意保留
+    const roseLeft = spotlight.split('\n').filter((l) => l.includes('text-rose-600'))
+    expect(roseLeft).toHaveLength(1)
+    expect(roseLeft[0]).toContain('w-8 h-8')
+  })
+
+  it('市场详情链接/发布引导/离线徽章/导入器/插件卡片/安装弹窗：S4–S12', () => {
+    expect(detailPanels).toContain('text-[11px] text-sky-700 dark:text-sky-400 hover:underline truncate block')
+    expect(detailPanels).not.toContain('text-sky-600')
+    expect(publishSteps).toContain('flex items-center gap-2 text-sky-700 dark:text-sky-400 font-semibold text-xs')
+    expect(publishSteps).not.toContain('text-sky-600')
+    expect(offlinePage).toContain('bg-sky-500/5 text-xs text-sky-700 dark:text-sky-400')
+    expect(offlinePage).not.toContain('text-sky-600')
+    expect(importer).toContain("className: 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/25'")
+    expect(importer).not.toContain('text-sky-600')
+    expect(pluginCard).toContain("plugin.kind === 'site-pack' && 'text-sky-700 dark:text-sky-400 bg-sky-500/5'")
+    expect(pluginCard).toContain("plugin.kind === 'search-pack' && 'text-sky-700 dark:text-sky-400 bg-sky-500/5'")
+    expect(pluginCard).not.toContain('text-sky-600')
+    expect(installModal).toContain('flex items-center gap-2 text-sky-700 dark:text-sky-400 font-medium text-xs')
+    expect(installModal).toContain('cursor-pointer text-sky-700 dark:text-sky-400 font-medium select-none hover:underline')
+    expect(installModal).not.toContain('text-sky-600')
+  })
+
+  it('追剧清单 hover 提醒与加入按钮：R3/R33/B2/B3/B6；残留 rose-600 恰为 R1/R2 纯图标', () => {
+    const remind = watchlistPage.split('\n').find((l) => l.includes('hover:border-rose-400') && l.includes('text-xs'))
+    expect(remind).toBeTruthy()
+    expect(remind).toContain('hover:text-rose-700 dark:hover:text-rose-400')
+    expect(remind).not.toContain('hover:text-rose-600')
+    const btnRemind = watchlistBtn.split('\n').find((l) => l.includes('hover:border-rose-400'))
+    expect(btnRemind).toBeTruthy()
+    expect(btnRemind).toContain('hover:text-rose-700 dark:hover:text-rose-400')
+    expect(btnRemind).not.toContain('hover:text-rose-600')
+    expect(watchlistPage).toContain('inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-rose-700')
+    expect(watchlistPage).toContain('rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50')
+    expect(watchlistBtn).toContain('rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50')
+    // B2/B3/B6 的 hover:bg-rose-500（白字 3.67）已无残留；/15、/20 透明度变体不受此限
+    for (const src of [watchlistPage, watchlistBtn]) {
+      expect(src).not.toContain('hover:bg-rose-500"')
+      expect(src).not.toContain('hover:bg-rose-500 ')
+    }
+    expect(watchlistBtn).not.toContain('text-rose-600')
+    // R1/R2 ±集纯图标按钮（h-7 w-7）是第二档有意保留
+    const roseLeft = watchlistPage.split('\n').filter((l) => l.includes('text-rose-600'))
+    expect(roseLeft).toHaveLength(2)
+    for (const line of roseLeft) expect(line).toContain('h-7 w-7')
+  })
+
+  it('修后数值：rose-700/sky-700 浅色 ≥4.5:1，白字压 rose-700 ≥4.5:1，深色 -400 ≥4.5:1', () => {
+    expect(ux9Contrast('#be123c', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#0369a1', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#ffffff', '#be123c')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#fb7185', '#09090b')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#38bdf8', '#09090b')).toBeGreaterThanOrEqual(4.5)
+  })
+})

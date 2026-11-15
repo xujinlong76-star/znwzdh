@@ -100,7 +100,7 @@ const MODE_META: Array<{ key: ImportMode; label: string; hint: string; icon: typ
 
 const STATUS_META: Record<StagingStatus, { label: string; className: string }> = {
   ready: { label: '可投稿', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/25' },
-  duplicate: { label: '公共库已收录', className: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25' },
+  duplicate: { label: '公共库已收录', className: 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/25' },
   private: { label: '隐私内网已拦截', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25' },
 }
 

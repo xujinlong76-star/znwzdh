@@ -305,7 +305,7 @@ const CANDIDATE_GRADE_META: Record<string, { label: string; className: string }>
 /** 趋势文案：明确区分「真的在变」与「点数不够，判不了」 */
 const TREND_META: Record<string, { label: string; className: string }> = {
   improving: { label: '近期改善', className: 'text-emerald-700 dark:text-emerald-400' },
-  degrading: { label: '近期恶化', className: 'text-rose-600 dark:text-rose-400' },
+  degrading: { label: '近期恶化', className: 'text-rose-700 dark:text-rose-400' },
   stable: { label: '基本稳定', className: 'text-muted-foreground' },
   insufficient: { label: '点数不足', className: 'text-muted-foreground' },
 }
@@ -776,7 +776,7 @@ const PackRowItem = memo(function PackRowItem({
               <span>抽样 {snap.sampled ?? '--'} 条</span>
               <span className="text-emerald-700 dark:text-emerald-400 font-medium">真健康 {snap.okCount ?? 0}</span>
               {(snap.blockedCount ?? 0) > 0 && (
-                <span className="text-sky-600 dark:text-sky-400" title="站点存活，只是 WAF 拒绝了爬虫，已计入可达">
+                <span className="text-sky-700 dark:text-sky-400" title="站点存活，只是 WAF 拒绝了爬虫，已计入可达">
                   WAF放行 {snap.blockedCount}
                 </span>
               )}
@@ -933,7 +933,7 @@ const PackRowItem = memo(function PackRowItem({
                   type="button"
                   onClick={() => onSetTab(pack.slug, 'blocked')}
                   className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                    activeTab === 'blocked' ? 'bg-sky-500 text-white shadow-sm' : 'hover:bg-muted text-sky-600'
+                    activeTab === 'blocked' ? 'bg-sky-500 text-white shadow-sm' : 'hover:bg-muted text-sky-700 dark:text-sky-400'
                   }`}
                 >
                   WAF放行 ({snap.blockedCount})
@@ -1153,7 +1153,7 @@ const PackRowItem = memo(function PackRowItem({
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <LatencyBadge ms={item.latencyMs} />
-                      <Badge variant="outline" className="text-[10px] text-sky-600 border-sky-500/30">
+                      <Badge variant="outline" className="text-[10px] text-sky-700 dark:text-sky-400 border-sky-500/30">
                         {item.status ? `HTTP ${item.status}` : '被拦截'}
                       </Badge>
                     </div>
@@ -2625,7 +2625,7 @@ export function PluginUrlHealthPanel() {
             </div>
           </div>
           <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-2.5 shadow-sm border-t-2 border-t-sky-400 transition-all hover:shadow">
-            <div className="text-[11px] font-medium text-sky-600 dark:text-sky-400 flex items-center gap-1">
+            <div className="text-[11px] font-medium text-sky-700 dark:text-sky-400 flex items-center gap-1">
               <Globe className="h-3 w-3" /> WAF 拦截放行
             </div>
             <div className="mt-1 flex items-baseline gap-1">

@@ -209,7 +209,7 @@ export function WatchlistAddButton({
         className={
           variant === 'dark'
             ? 'inline-flex shrink-0 items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-zinc-100 transition-colors hover:bg-white/20 disabled:opacity-50'
-            : 'inline-flex shrink-0 items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-1 text-[11px] font-medium text-zinc-600 transition-colors hover:border-rose-400 hover:text-rose-600 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300'
+            : 'inline-flex shrink-0 items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-1 text-[11px] font-medium text-zinc-600 transition-colors hover:border-rose-400 hover:text-rose-700 dark:hover:text-rose-400 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300'
         }
       >
         <Clapperboard className="h-3.5 w-3.5" aria-hidden />
@@ -291,7 +291,7 @@ export function WatchlistAddButton({
                   type="button"
                   onClick={submit}
                   disabled={!title.trim() || Boolean(watchlist.storageBlocked)}
-                  className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-500 disabled:opacity-50"
+                  className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
                 >
                   {existing ? '更新标注' : '加入追剧清单'}
                 </button>

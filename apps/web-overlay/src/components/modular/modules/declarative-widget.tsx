@@ -201,7 +201,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
                       kpi.trend === 'up'
                         ? 'text-emerald-700 dark:text-emerald-400'
                         : kpi.trend === 'down'
-                          ? 'text-rose-600 dark:text-rose-400'
+                          ? 'text-rose-700 dark:text-rose-400'
                           : 'text-muted-foreground'
                     }`}
                   >

@@ -227,7 +227,7 @@ export default function MarketplaceImportPage() {
           </div>
 
           {error && (
-            <p role="alert" className="text-xs text-rose-600 dark:text-rose-400 leading-relaxed">
+            <p role="alert" className="text-xs text-rose-700 dark:text-rose-400 leading-relaxed">
               导入失败：{error}
             </p>
           )}

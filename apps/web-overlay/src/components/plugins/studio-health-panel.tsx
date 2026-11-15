@@ -162,7 +162,7 @@ export function StudioHealthPanel(props: StudioHealthPanelProps) {
                             'px-3 py-1.5 rounded-lg border text-xs flex items-center justify-between font-mono',
                             r.ok
                               ? 'bg-emerald-500/5 border-emerald-500/20 text-foreground'
-                              : 'bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-400'
+                              : 'bg-rose-500/5 border-rose-500/20 text-rose-700 dark:text-rose-400'
                           )}
                         >
                           <span className="truncate max-w-[400px]">{r.url}</span>

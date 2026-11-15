@@ -1538,7 +1538,7 @@ export function SpotlightModal({
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
-                          <Badge variant="outline" className="text-[10px] bg-rose-500/10 text-rose-600 border-rose-500/20">
+                          <Badge variant="outline" className="text-[10px] bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20">
                             {plugin.kind}
                           </Badge>
                           <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
@@ -1682,7 +1682,7 @@ export function SpotlightModal({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setOpen(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors inline-flex items-center gap-1"
+                          className="text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors inline-flex items-center gap-1"
                         >
                           <span className="font-semibold">百度</span>
                         </a>
@@ -1743,7 +1743,7 @@ export function SpotlightModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setOpen(false)}
-                      className="px-2 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors font-medium"
+                      className="px-2 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors font-medium"
                     >
                       百度
                     </a>

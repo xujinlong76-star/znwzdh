@@ -316,7 +316,7 @@ export function PluginInstallModal({
             <>
               {plugin.kind === 'site-pack' && (
                 <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-sky-600 dark:text-sky-400 font-medium text-xs">
+                  <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-medium text-xs">
                     <Globe className="w-4 h-4" />
                     <span>增量站点与分类导入</span>
                   </div>
@@ -343,7 +343,7 @@ export function PluginInstallModal({
                     const currentSelected = selectedUrls ?? new Set(rawSites.map((s) => s.url))
                     return (
                       <details className="pt-1 text-xs">
-                        <summary className="cursor-pointer text-sky-600 dark:text-sky-400 font-medium select-none hover:underline">
+                        <summary className="cursor-pointer text-sky-700 dark:text-sky-400 font-medium select-none hover:underline">
                           自定义站点勾选（已选 {currentSelected.size} / {rawSites.length}）
                         </summary>
                         <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-border/60 bg-background/60 p-2 space-y-1">

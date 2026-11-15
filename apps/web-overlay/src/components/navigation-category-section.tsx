@@ -824,7 +824,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               <button
                                 type="button"
                                 onClick={() => toggleCollapseCategory(category.id)}
-                                className="inline-flex min-h-11 items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-medium hover:bg-sky-500/20 transition-all cursor-pointer"
+                                className="inline-flex min-h-11 items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-700 dark:text-sky-400 border border-sky-500/20 font-medium hover:bg-sky-500/20 transition-all cursor-pointer"
                                 title="点击展开该分类"
                               >
                                 <span>已收起 (点击展开)</span>
@@ -1138,7 +1138,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                                   description: '已移入时间轴回收站，按 Ctrl/Cmd+Z 可立即撤销。',
                                                 })
                                               }}
-                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
                                               title={`隐藏「${subCategory.title}」子分类（可随时在回收站还原）`}
                                             >
                                               <EyeOff className="w-3 h-3" />

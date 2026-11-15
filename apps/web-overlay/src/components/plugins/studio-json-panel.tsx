@@ -138,7 +138,7 @@ export function StudioJsonPanel(props: StudioJsonPanelProps) {
                           {manifestDiff!.removedSites.length > 0 && (
                             <div className="p-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs">
                               <span className="text-[10px] text-muted-foreground block">移除站点实体</span>
-                              <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                              <span className="font-mono font-bold text-rose-700 dark:text-rose-400">
                                 -{manifestDiff!.removedSites.length} 个
                               </span>
                             </div>
@@ -204,7 +204,7 @@ export function StudioJsonPanel(props: StudioJsonPanelProps) {
                                   {site.url}
                                 </div>
                               </div>
-                              <span className="text-rose-600 font-mono text-[11px] font-medium">-1 site</span>
+                              <span className="text-rose-700 dark:text-rose-400 font-mono text-[11px] font-medium">-1 site</span>
                             </div>
                           ))}
 

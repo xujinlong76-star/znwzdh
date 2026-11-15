@@ -99,7 +99,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                           href={safeHref(site.url)}
                           target="_blank"
                           rel="noreferrer noopener"
-                          className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline truncate block"
+                          className="text-[11px] text-sky-700 dark:text-sky-400 hover:underline truncate block"
                         >
                           {site.url}
                         </a>

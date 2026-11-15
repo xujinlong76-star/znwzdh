@@ -1,7 +1,7 @@
 'use client'
 
 import { signIn } from 'next-auth/react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -23,7 +23,6 @@ import { normalizeCallbackUrl } from '@/lib/safe-callback'
 
 function SignInContent() {
   const searchParams = useSearchParams()
-  const router = useRouter()
   const callbackUrl = normalizeCallbackUrl(
     searchParams?.get('callbackUrl'),
     typeof window === 'undefined' ? 'http://localhost' : window.location.origin,

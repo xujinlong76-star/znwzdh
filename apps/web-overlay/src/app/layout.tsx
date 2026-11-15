@@ -2,7 +2,6 @@ import "@/styles/globals.css"
 // 必须排在 globals.css 之后：同优先级下按加载顺序取胜，这样减弱动态效果的规则才能覆盖动效定义
 import "@/styles/reduced-motion.css"
 import "@/styles/skip-link.css"
-import { cn } from "@/lib/utils"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { ThemeToggle } from '@/components/theme-toggle'

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { getFileContent, readStorageFresh } from '@/lib/github'
+import { getFileContent } from '@/lib/github'
 import {
     decodeVideoCursor,
     encodeVideoCursor,
@@ -9,7 +9,6 @@ import {
 } from '@/lib/video-pagination'
 import { mutateVideoLibrary } from '@/lib/video-library-store'
 import { isVideoShrinkBlock } from '@/lib/video-write-guard'
-import { withSignedVideoIcons } from '@/lib/media-proxy'
 import type { NavigationItem, NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'

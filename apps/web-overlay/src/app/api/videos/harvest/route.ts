@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { getFileContentWithStatus } from '@/lib/github'
 import { videoMetricsSnapshot } from '@/lib/video-harvest-metrics'
-import { hydrateVideoMetrics } from '@/lib/video-metrics-store'
-import { readDocResilient } from '@/lib/video-doc-read'
 import {
   runPolicyHarvest,
   clampPositiveInt,

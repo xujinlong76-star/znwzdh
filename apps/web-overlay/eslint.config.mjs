@@ -37,6 +37,7 @@ const VENDOR_ONLY_FILES = [
   "src/components/NavigationSidebar.tsx",
   "src/components/ThemeToggle.tsx",
   "src/components/ui/icon-picker.tsx",
+  "src/app/components/ui/icon-picker.tsx",
   "src/components/ui/json-editor.tsx",
   "src/components/ui/use-toast.ts",
   "src/registry/new-york/hooks/use-mobile.tsx",

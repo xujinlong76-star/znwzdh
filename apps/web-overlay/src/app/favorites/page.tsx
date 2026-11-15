@@ -63,7 +63,6 @@ import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/va
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import {
   clearCloudFavorites,
-  listFavorites,
   searchSites,
   updateFavoriteMeta,
   type HubFavoriteFolder,
@@ -451,7 +450,7 @@ export default function FavoritesPage() {
       setSyncStatus(status)
     },
   })
-  const { newFolderName, setNewFolderName, folderBusy, editingFolder, setEditingFolder, editingName, setEditingName, refreshFolders, addFolder, createFolderDirectly, saveFolderName, removeFolder, moveFolder, migrateLocalFolders } = folderManager
+  const { newFolderName, setNewFolderName, folderBusy, editingFolder, setEditingFolder, editingName, setEditingName, addFolder, createFolderDirectly, saveFolderName, removeFolder, moveFolder, migrateLocalFolders } = folderManager
 
   const visibleFolders = useMemo<Array<{ id: string; name: string }>>(
     () => (cloudIdentity ? folders : localFolders),

@@ -7,6 +7,7 @@
  * `export * from './home-diy-storage'` 保持既有导入路径可用。
  */
 import { decodeShareLinkPayload, parseSharePayload } from '@/lib/diy-share-link'
+import { dispatchDiyEditingLayout } from '@/lib/diy-editing-event'
 import {
   clampCardOpacity,
   createLayoutHistory,
@@ -679,6 +680,9 @@ export function applyRemoteHomeDiyConfig(payload: {
 export function setHomeDiyEditingLayout(next: boolean): void {
   if (sharedState.isEditingLayout === next) return
   commitSharedState({ isEditingLayout: next })
+  // 悬浮快捷导航（FloatingQuickNav）只读这一个布尔值：它不再 import
+  // use-home-diy（会把整棵 DIY 子树拉进 layout 共享 chunk），改听事件桥。
+  dispatchDiyEditingLayout(next)
 }
 
 export function dismissHomeDiyStorageWarning(): void {

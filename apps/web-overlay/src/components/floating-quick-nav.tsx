@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { ArrowUp, Search, Wrench } from 'lucide-react'
 import { preferredScrollBehavior } from '@/lib/motion'
-import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { subscribeDiyEditingLayout } from '@/lib/diy-editing-event'
 import { cn } from '@/lib/utils'
 
 interface FloatingQuickNavProps {
@@ -21,7 +21,12 @@ export function FloatingQuickNav({ onOpenTools, className, global = false, thres
   const [isScrollingDown, setIsScrollingDown] = useState(false)
   const lastScrollYRef = useRef(0)
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const { isEditingLayout } = useHomeDIY()
+  // 只读 DIY 编排态一个布尔值：不 import use-home-diy——那会把 10 文件约
+  // 217KB 的 DIY 静态子树拉进根布局共享 chunk（/me 等 9 路超包预算），改听
+  // 事件桥（lib/diy-editing-event，零依赖）。初始 false 是正确的：编排态
+  // 初始恒 false，唯一写入入口翻转时必广播，事件到达后即同步。
+  const [isEditingLayout, setIsEditingLayout] = useState(false)
+  useEffect(() => subscribeDiyEditingLayout(setIsEditingLayout), [])
   const pathname = usePathname() ?? '/'
 
   const checkScroll = useCallback(() => {

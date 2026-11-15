@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import { cn } from '@/lib/utils'
 import { preferredScrollBehavior } from '@/lib/motion'
 import { Button } from '@/registry/new-york/ui/button'
@@ -13,7 +14,51 @@ import { ChevronDown, ChevronRight, Compass, Bell, X } from 'lucide-react'
 import { NavIcon } from '@/components/nav-icon'
 import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
 import { WorkspaceSwitcher } from '@/components/workspace/workspace-switcher'
-import { CrdtSyncStatusPill } from '@/components/crdt/crdt-sync-status-pill'
+/**
+ * CRDT 同步状态小药丸（Bundle 瘦身续刀：CRDT 引擎按需加载）。
+ *
+ * 小药丸整棵子树（pill 本体 + useCrdtRoaming hook + lib/crdt-sync +
+ * lib/crdt-presence，约 19.5KB 代码）只在挂载后经 effect 启动同步引擎，
+ * 首屏只需要一个“连接中”态的按钮。`next/dynamic({ ssr: false })` 让
+ * 整棵子树离开 `/` 初始 chunk；占位按钮与小药丸 'syncing' 态像素一致
+ * （同款式 + 12px 纯 CSS 转圈，不引新图标），chunk 到达后无缝替换、零 CLS。
+ * 占位按钮在 chunk 到达前点击无响应（窗口本机 <100ms、慢速网约 300–600ms），
+ * 与手柄第三刀 a 接受的“进入编辑态才加载”同一取舍。
+ *
+ * 与 0622 方案书 §4.1 的差别（已实测纠正）：方案书只让引擎（sync +
+ * presence）走 effect 内 await import、小药丸留静态——那样只能省
+ * 5.7–7.3KB（hook 经 pill 静态 import 仍在初始 chunk 里），盖不住
+ * 7KB 缺口；本刀把整棵子树（含 hook 与 pill 本体）一次 dynamic，
+ * 预期省 10.7–13.6KB。引擎唯一的另一静态 import 方是算法实验室的
+ * mesh-panel（algorithm-lab.tsx:104），它本身已在 dynamic 边界之后、
+ * 只活在 /algorithms 路由，不影响本刀。
+ */
+const CrdtSyncStatusPill = dynamic(
+  () =>
+    import('@/components/crdt/crdt-sync-status-pill').then(
+      (m) => m.CrdtSyncStatusPill,
+    ),
+  { ssr: false, loading: () => <CrdtSyncStatusPillPlaceholder /> },
+)
+
+/** 小药丸 chunk 到达前的静态占位：与 'syncing' 态同款式、同尺寸、无新依赖。 */
+function CrdtSyncStatusPillPlaceholder() {
+  return (
+    <button
+      type="button"
+      aria-label="多端协同中… - 查看多端协同状态"
+      className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 dark:bg-emerald-500/15 px-2.5 py-1 text-xs text-emerald-800 dark:text-emerald-300 font-medium transition-all hover:bg-emerald-500/20 shadow-2xs"
+    >
+      <span
+        aria-hidden
+        className="h-3 w-3 animate-spin rounded-full border-2 border-emerald-600/30 border-t-emerald-600 dark:border-t-emerald-400"
+      />
+      <span className="text-[11px] shrink-0 whitespace-nowrap font-semibold text-emerald-800 dark:text-emerald-300 inline">
+        多端协同中…
+      </span>
+    </button>
+  )
+}
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
 import { unreadBadgeText } from '@/lib/notification-badge'

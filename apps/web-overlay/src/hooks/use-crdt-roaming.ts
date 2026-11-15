@@ -10,7 +10,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   CrdtStore,
   createCRDTOperation,
-  mergeOperationLogs,
   reduceOperationsToState,
   type CRDTOperation,
   type CRDTOpType,
@@ -25,7 +24,10 @@ export type CrdtSyncStatus = 'synced' | 'syncing' | 'offline' | 'error'
 const BROADCAST_CHANNEL_NAME = 'navhub-crdt-sync-channel'
 
 export function useCrdtRoaming() {
-  const [status, setStatus] = useState<CrdtSyncStatus>('synced')
+  // 初始态必须是 'syncing' 而不是 'synced'：小药丸整棵子树已是 dynamic，
+  // 挂载时引擎尚未完成首次云端合流；初始 'synced' 会在 chunk 到达后的
+  // 一瞬间谎报“已同步”，随后又被 syncWithServer 翻回 'syncing'。
+  const [status, setStatus] = useState<CrdtSyncStatus>('syncing')
   const [peerCount, setPeerCount] = useState(1)
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
   const [reducedState, setReducedState] = useState<CRDTReducedState>({

@@ -92,6 +92,17 @@ test.describe('视频链路冒烟', () => {
     const cardButton = page.getByRole('button', { name: /MCP 实战第一课/ }).first();
     await expect(cardButton).toBeVisible({ timeout: 30_000 });
 
+    // 水合等待（进化第 81 轮 I 线，G 线冷启动闪红的根因加固）：
+    // 卡片按钮由 SSR 直出可见，但点按处理函数在异步 chunk 里——
+    // VideoContentLazy（next/dynamic）→ VideoContent → VideoCard
+    // （video-card.tsx:120 router.push）。冷编译首跑 chunk 下载 + 水合
+    // 尚未完成时点按静默丢失：G 线首跑 30s 内 URL 仍停在 /videos，
+    // 暖缓存重跑 3/3 全绿。先等 networkidle（宽预算、失败不致命）让
+    // 异步 chunk 下完，缩小窗口；但 networkidle 证明不了水合已接管
+    // （card-keyboard.spec.ts 前例：与网络无关的重渲染它挡不住），
+    // 所以下面再按仓库既有惯例补一次“短窗探测 + 二次点击兜底”。
+    await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => {});
+
     // 点卡片直接进路由版播放器（/videos/player?id=…）：弹窗版已删除
     // （video-card.tsx:117；video-player-modal.tsx 全仓 0 个 import 方）。
     // 旧断言链「弹窗内标题 + 详情/演播室入口」随旧流程作废，改为断言工作台本身：
@@ -99,7 +110,21 @@ test.describe('视频链路冒烟', () => {
     // （B站换源档位、返回视频中心）都在工作台内。注意：/videos/player?id=… 自身
     // 的链接不在工作台内出现——已在工作台里，无需再断言一次“演播室入口”，
     // 落到本页 URL + 工作台控件即等价覆盖。
-    await cardButton.click();
+    //
+    // 短窗探测 + 二次点击兜底（复用 e2e/helpers.ts enterAdminArea 与
+    // plugin-market.spec.ts clickInstallAndAwaitToast 的既有模式）：
+    // 首击若撞上水合未接管会静默丢失——15s 内没离开 /videos 且卡片仍
+    // 可见就补点一次；最终 URL 断言（30s）与工作台断言不动，
+    // 不放宽断言、不加重试。
+    let navigated = false;
+    for (let attempt = 0; attempt < 2 && !navigated; attempt++) {
+      await cardButton.click();
+      navigated = await page
+        .waitForURL(/\/videos\/player\?id=e2e-video-1/, { timeout: 15_000, waitUntil: 'commit' })
+        .then(() => true)
+        .catch(() => false);
+      if (!navigated && !(await cardButton.isVisible().catch(() => false))) break;
+    }
     await expect(page).toHaveURL(/\/videos\/player\?id=e2e-video-1/, { timeout: 30_000 });
     await expect(page.getByText('MCP 实战第一课', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('a[href="/videos/v/e2e-video-1"]')).toBeVisible({ timeout: 30_000 });

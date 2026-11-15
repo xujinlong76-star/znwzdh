@@ -255,6 +255,12 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          {/* 首页顶部「设为首页」引导条：必须在 {children} 之前渲染。
+              原先挂在 ThemeProvider 末尾，落在文档底部、页脚之后，用户
+              基本看不到（2026-11-15 第 72 轮核实）。组件自身只在 `/`
+              且未关闭、未领取时渲染，非首页恒为 null，放这里不影响
+              其他路由；它不依赖 Providers 上下文，移动无依赖风险。 */}
+          <HomepageBanner />
           <Providers site={siteView}>
             {children}
           </Providers>
@@ -269,13 +275,13 @@ export default async function RootLayout({
           {settings.features.xiaomaomao ? (
             <Script src="/xiaomaomao/xiaomaomao.js" strategy="lazyOnload" />
           ) : null}
-          {/* 成长档案感知层（挂机/路由/点击计数，无可见 UI）与首页「设为首页」引导条。
+          {/* 成长档案感知层（挂机/路由/点击计数，无可见 UI）。
               GrowthTracker 用了 useSearchParams，必须包 Suspense，否则静态生成
-              /404 时报 missing-suspense-with-csr-bailout（2026-11-10 构建实测）。 */}
+              /404 时报 missing-suspense-with-csr-bailout（2026-11-10 构建实测）。
+              首页「设为首页」引导条已移到 {children} 之前（见上），不在此处。 */}
           <Suspense fallback={null}>
             <GrowthTracker />
           </Suspense>
-          <HomepageBanner />
         </ThemeProvider>
       </body>
     </html>

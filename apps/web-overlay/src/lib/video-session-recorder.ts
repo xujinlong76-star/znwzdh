@@ -13,7 +13,7 @@ export interface SessionTimelineEvent {
   type: SessionEventType
   videoSec: number
   wallTimestamp: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 export interface CognitiveEngagementReport {
@@ -36,7 +36,7 @@ export class SessionActivityRecorder {
     this.videoId = videoId
   }
 
-  recordEvent(type: SessionEventType, videoSec: number, metadata?: Record<string, any>): void {
+  recordEvent(type: SessionEventType, videoSec: number, metadata?: Record<string, unknown>): void {
     const event: SessionTimelineEvent = {
       id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type,

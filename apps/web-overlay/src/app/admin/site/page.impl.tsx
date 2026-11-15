@@ -1020,7 +1020,7 @@ export default function SiteSettings() {
                       {asset.width && asset.height ? ` · ${asset.width}×${asset.height}` : ""}
                       {` · 更新于 ${new Date(asset.updatedAt).toLocaleString("zh-CN")}`}
                     </div>
-                    <div className={persisted.length || references.length ? "text-xs text-emerald-600" : "text-xs text-amber-600"}>
+                    <div className={persisted.length || references.length ? "text-xs text-emerald-700 dark:text-emerald-400" : "text-xs text-amber-700 dark:text-amber-400"}>
                       {persisted.length > 0 && <div>已保存配置引用：{persisted.join("、")}</div>}
                       {references.length > 0 && <div>当前表单引用：{references.join("、")}</div>}
                       {persisted.length === 0 && references.length === 0 && "未发现品牌设置引用；删除时服务端会再次核验"}

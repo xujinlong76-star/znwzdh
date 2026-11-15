@@ -438,7 +438,7 @@ export default function VideoItemsPage() {
                         size="sm"
                         disabled={isHarvesting}
                         onClick={handleRunCategoryHarvest}
-                        className="gap-1.5 text-xs h-9 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                        className="gap-1.5 text-xs h-9 text-amber-700 dark:text-amber-400 border-amber-500/30"
                     >
                         {isHarvesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                         <span>{isHarvesting ? '采集中...' : '分类自动采集'}</span>
@@ -627,7 +627,7 @@ export default function VideoItemsPage() {
                                             </Badge>
                                         )}
                                         {item.videoConfig?.pinned ? (
-                                            <Badge variant="outline" className="text-[11px] h-4.5 px-1.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30">
+                                            <Badge variant="outline" className="text-[11px] h-4.5 px-1.5 bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30">
                                                 📌 锁定防置换
                                             </Badge>
                                         ) : (
@@ -640,9 +640,9 @@ export default function VideoItemsPage() {
                                                 variant="outline"
                                                 className={`text-[11px] h-4.5 px-1.5 ${
                                                     item.videoConfig.freshnessScore >= 75
-                                                        ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                                                        ? 'text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
                                                         : item.videoConfig.freshnessScore >= 50
-                                                        ? 'text-amber-600 dark:text-amber-400 border-amber-500/30'
+                                                        ? 'text-amber-700 dark:text-amber-400 border-amber-500/30'
                                                         : 'text-red-500 border-red-500/30'
                                                 }`}
                                             >
@@ -650,7 +650,7 @@ export default function VideoItemsPage() {
                                             </Badge>
                                         )}
                                         {item.videoConfig?.sourceType === 'auto_trend' && (
-                                            <Badge variant="outline" className="text-[11px] h-4.5 px-1.5 text-amber-600 border-amber-500/30">
+                                            <Badge variant="outline" className="text-[11px] h-4.5 px-1.5 text-amber-700 dark:text-amber-400 border-amber-500/30">
                                                 🔥 热点
                                             </Badge>
                                         )}
@@ -701,7 +701,7 @@ export default function VideoItemsPage() {
                                     size="icon"
                                     onClick={() => toggleItemPin(item)}
                                     title={item.videoConfig?.pinned ? "已锁定（点击解锁自动轮换）" : "未锁定（点击锁定防止被淘汰）"}
-                                    className={`h-8 w-8 ${item.videoConfig?.pinned ? 'text-amber-500 hover:text-amber-600 bg-amber-500/10' : 'text-muted-foreground'}`}
+                                    className={`h-8 w-8 ${item.videoConfig?.pinned ? 'text-amber-500 hover:text-amber-700 dark:hover:text-amber-400 bg-amber-500/10' : 'text-muted-foreground'}`}
                                 >
                                     {item.videoConfig?.pinned ? <Pin className="h-4 w-4 fill-current" /> : <PinOff className="h-4 w-4" />}
                                 </Button>

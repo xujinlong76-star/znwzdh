@@ -65,7 +65,7 @@ export function CrdtSyncStatusPill() {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
             </span>
           ) : status === 'syncing' ? (
-            <Loader2 className="h-3 w-3 animate-spin text-emerald-600 dark:text-emerald-400" />
+            <Loader2 className="h-3 w-3 animate-spin text-emerald-700 dark:text-emerald-400" />
           ) : (
             <span className="h-2 w-2 rounded-full bg-amber-500" />
           )}
@@ -95,7 +95,7 @@ export function CrdtSyncStatusPill() {
                     已完全收敛 (Converged)
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="bg-amber-500/10 text-amber-700 border-amber-500/20 text-[11px]">
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 text-[11px]">
                     <Wifi className="mr-1 h-3 w-3" />
                     本地优先运行中
                   </Badge>

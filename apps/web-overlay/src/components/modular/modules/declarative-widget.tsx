@@ -199,7 +199,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
                   <div
                     className={`flex items-center gap-0.5 text-[10px] font-medium ${
                       kpi.trend === 'up'
-                        ? 'text-emerald-600 dark:text-emerald-400'
+                        ? 'text-emerald-700 dark:text-emerald-400'
                         : kpi.trend === 'down'
                           ? 'text-rose-600 dark:text-rose-400'
                           : 'text-muted-foreground'

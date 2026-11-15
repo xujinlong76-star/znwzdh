@@ -70,13 +70,13 @@ const KIND_META: Record<TaxonomyProposal['kind'], { label: string; icon: LucideI
   categorization_mismatch: {
     label: '站点归类迁移',
     icon: FolderTree,
-    color: 'text-amber-600 dark:text-amber-400',
+    color: 'text-amber-700 dark:text-amber-400',
     bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800',
   },
   zero_result_gap: {
     label: '零结果需求缺口',
     icon: Search,
-    color: 'text-emerald-600 dark:text-emerald-400',
+    color: 'text-emerald-700 dark:text-emerald-400',
     bg: 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800',
   },
   facet_gap: {
@@ -717,7 +717,7 @@ export default function AdminTaxonomyPage() {
                         {rootsError && roots.length === 0 ? (
                           // 下拉框空着 ≠ 没有类目：不说明，管理员只会以为类目被删了，
                           // 或者反复点「采纳」却等按钮变亮
-                          <p className="flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                          <p className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-400">
                             <span>{rootsError}</span>
                             <button
                               type="button"

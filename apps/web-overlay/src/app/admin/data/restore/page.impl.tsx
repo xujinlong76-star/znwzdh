@@ -513,7 +513,7 @@ export default function RestoreBackupPage() {
       </header>
 
       <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3" role="alert">
-        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" aria-hidden />
+        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
         <div className="space-y-1 text-sm">
           <p className="font-medium text-amber-700 dark:text-amber-500">这是整库写操作</p>
           <p className="text-muted-foreground">

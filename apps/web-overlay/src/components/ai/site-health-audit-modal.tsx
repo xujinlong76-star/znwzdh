@@ -292,7 +292,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
           <div className="grid grid-cols-2 min-[480px]:grid-cols-4 gap-2 px-4 sm:px-5 py-3 border-b border-border/40 bg-muted/10 text-xs">
             <div className="p-2.5 rounded-lg border border-border/50 bg-background/50">
               <div className="text-[10px] text-muted-foreground">全站健康度评分</div>
-              <div className="text-base font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+              <div className="text-base font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
                 {summary.healthScore}%
               </div>
             </div>
@@ -302,7 +302,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
             </div>
             <div className="p-2.5 rounded-lg border border-border/50 bg-background/50">
               <div className="text-[10px] text-muted-foreground">在线正常站点</div>
-              <div className="text-base font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">
+              <div className="text-base font-semibold text-emerald-700 dark:text-emerald-400 mt-0.5">
                 {summary.activeCount} 个
               </div>
             </div>
@@ -375,7 +375,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
                             className="h-7 text-xs gap-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-200 border border-amber-500/30 flex-1 sm:flex-initial"
                             onClick={() => handleApplyWayback(issue)}
                           >
-                            <History className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                            <History className="w-3 h-3 text-amber-700 dark:text-amber-400" />
                             <span>采纳快照</span>
                           </Button>
                         )}

@@ -492,7 +492,7 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
             <span>JSON 校验与结构美化</span>
           </div>
           {raw && !error && (
-            <Badge variant="secondary" className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400">
+            <Badge variant="secondary" className="text-[10px] font-normal text-emerald-700 dark:text-emerald-400">
               <CheckCircle2 className="w-3 h-3 mr-1" />JSON 有效
             </Badge>
           )}

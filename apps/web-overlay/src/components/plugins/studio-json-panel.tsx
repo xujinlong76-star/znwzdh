@@ -130,7 +130,7 @@ export function StudioJsonPanel(props: StudioJsonPanelProps) {
                           {manifestDiff!.addedSites.length > 0 && (
                             <div className="p-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-xs">
                               <span className="text-[10px] text-muted-foreground block">新增站点实体</span>
-                              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
                                 +{manifestDiff!.addedSites.length} 个
                               </span>
                             </div>
@@ -146,7 +146,7 @@ export function StudioJsonPanel(props: StudioJsonPanelProps) {
                           {manifestDiff!.addedEngines.length > 0 && (
                             <div className="p-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-xs">
                               <span className="text-[10px] text-muted-foreground block">新增搜索引擎</span>
-                              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
                                 +{manifestDiff!.addedEngines.length} 个
                               </span>
                             </div>
@@ -184,7 +184,7 @@ export function StudioJsonPanel(props: StudioJsonPanelProps) {
                                   {site.url}
                                 </div>
                               </div>
-                              <span className="text-emerald-600 font-mono text-[11px] font-medium">+1 site</span>
+                              <span className="text-emerald-700 dark:text-emerald-400 font-mono text-[11px] font-medium">+1 site</span>
                             </div>
                           ))}
 

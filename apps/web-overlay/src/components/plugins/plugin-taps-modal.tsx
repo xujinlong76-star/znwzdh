@@ -219,7 +219,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
         {unauthorized && (
           <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs space-y-2 text-amber-900 dark:text-amber-200">
             <div className="flex items-center gap-2 font-semibold">
-              <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <ShieldCheck className="w-4 h-4 text-amber-700 dark:text-amber-400" />
               <span>需要管理员权限</span>
             </div>
             <p className="leading-relaxed text-muted-foreground text-[11px]">

@@ -806,7 +806,7 @@ export function HomeDIYBackupDialog({
                       ? 'text-[10px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium'
                       : cloudVaultKnownAbsent || cloudVaultMeta === null
                         ? 'text-muted-foreground'
-                        : 'text-amber-600 dark:text-amber-400',
+                        : 'text-amber-700 dark:text-amber-400',
                   )}
                 >
                   {cloudBadgeLabel}
@@ -965,7 +965,7 @@ export function HomeDIYBackupDialog({
               {vaultPushRefusal ? (
                 <div role="alert" className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-2.5 space-y-2">
                   <div className="flex items-start gap-1.5">
-                    <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
                     <p className="text-[11px] leading-relaxed text-foreground min-w-0">
                       {vaultPushRefusalNotice(vaultPushRefusal).description}
                     </p>

@@ -235,7 +235,7 @@ export function LlmDailyCostChart({
       </div>
 
       {truncated && (
-        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+        <p className="text-[11px] text-amber-700 dark:text-amber-400">
           ⚠ 调用明细超出读取上限，已从最旧一端截断：日柱与分位数只反映最近一批样本，
           与上方窗口合计对不上是截断所致，不是数据丢失。
         </p>

@@ -65,7 +65,7 @@ export function DashboardStatusDonut({
             <Zap className="h-4 w-4 text-primary" />
             HTTP 状态分布与架构引擎
           </CardTitle>
-          <Badge variant="outline" className="font-mono text-xs text-emerald-600 border-emerald-500/30">
+          <Badge variant="outline" className="font-mono text-xs text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
             SLA: {slaRate}%
           </Badge>
         </div>
@@ -176,7 +176,7 @@ export function DashboardStatusDonut({
                 <Database className="w-3 h-3" />
                 <span>全文检索</span>
               </div>
-              <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+              <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5">
                 FTS5 (CJK)
               </Badge>
             </div>
@@ -191,7 +191,7 @@ export function DashboardStatusDonut({
                 variant="outline"
                 className={`text-[10px] ${
                   capabilities?.semantic
-                    ? 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5'
+                    ? 'border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5'
                     : 'border-muted-foreground/30 text-muted-foreground'
                 }`}
               >
@@ -209,8 +209,8 @@ export function DashboardStatusDonut({
                 variant="outline"
                 className={`text-[10px] ${
                   capabilities?.llm
-                    ? 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5'
-                    : 'border-amber-500/40 text-amber-600 dark:text-amber-400'
+                    ? 'border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5'
+                    : 'border-amber-500/40 text-amber-700 dark:text-amber-400'
                 }`}
               >
                 {capabilities?.llm ? '网关就绪' : '备用池接入'}

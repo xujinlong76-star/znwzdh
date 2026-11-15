@@ -17,10 +17,10 @@ export function reachabilityTone(rate: number | null | undefined): {
   const safe = Math.min(1, Math.max(0, rate))
   const pct = Math.round(safe * 100)
   if (safe >= 0.95) {
-    return { label: `${pct}% 可达`, className: 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5' }
+    return { label: `${pct}% 可达`, className: 'text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5' }
   }
   if (safe >= 0.8) {
-    return { label: `${pct}% 可达`, className: 'text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/5' }
+    return { label: `${pct}% 可达`, className: 'text-amber-700 dark:text-amber-400 border-amber-500/30 bg-amber-500/5' }
   }
   return { label: `${pct}% 可达`, className: 'text-destructive-text border-destructive/30 bg-destructive/5' }
 }

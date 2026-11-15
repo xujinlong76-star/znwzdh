@@ -100,7 +100,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
                       : 'border-border/70 hover:border-border hover:bg-muted/40'
                   )}
                 >
-                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold text-xs">
+                  <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-semibold text-xs">
                     <LayoutGrid className="w-4 h-4" />
                     <span>工作台预设 (workspace-preset)</span>
                   </div>
@@ -138,7 +138,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
                       : 'border-border/70 hover:border-border hover:bg-muted/40'
                   )}
                 >
-                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-semibold text-xs">
+                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-semibold text-xs">
                     <Search className="w-4 h-4" />
                     <span>搜索引擎包 (search-pack)</span>
                   </div>
@@ -336,7 +336,7 @@ export function PublishIntroSteps(props: PublishIntroStepsProps) {
                   </p>
                 )}
                 {bundleSelection.dropped > 0 && (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400">
                     手写 JSON 中有 {bundleSelection.dropped} 条非法 / 重复 / 超限成员未被选择器识别（提交前预检同样会拦截）。
                   </p>
                 )}

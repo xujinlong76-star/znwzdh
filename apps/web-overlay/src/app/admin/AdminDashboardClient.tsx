@@ -224,9 +224,9 @@ const CHANNEL_STYLES: Record<string, { label: string; barClass: string; badgeCla
 
 /** 遥测徽标配色：只有真的在更新才是绿色，解析失败/离线一律不是 */
 const TELEMETRY_BADGE: Record<TelemetryState, string> = {
-  live: 'border-emerald-500/40 text-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20',
-  connecting: 'border-amber-500/40 text-amber-600 bg-amber-50/50 dark:bg-amber-950/20',
-  stale: 'border-amber-500/40 text-amber-600 bg-amber-50/50 dark:bg-amber-950/20',
+  live: 'border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20',
+  connecting: 'border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20',
+  stale: 'border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20',
   offline: 'border-red-500/40 text-red-600 bg-red-50/50 dark:bg-red-950/20',
 }
 
@@ -582,7 +582,7 @@ export function AdminDashboardClient() {
               aria-label="导出巡检快照"
               title="导出当前运维指标与全链路健康度快照 JSON"
             >
-              <Download className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <Download className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
               <span>导出快照</span>
             </Button>
             <div className="w-[1px] h-4 bg-border/80 mx-0.5 hidden sm:block" />
@@ -638,7 +638,7 @@ export function AdminDashboardClient() {
             <span>当前 QPS</span>
             <Zap className="w-3.5 h-3.5 text-emerald-500" />
           </div>
-          <div className="text-base font-bold font-mono tracking-tight mt-1.5 text-emerald-600 dark:text-emerald-400">
+          <div className="text-base font-bold font-mono tracking-tight mt-1.5 text-emerald-700 dark:text-emerald-400">
             {runtime ? runtime.qps : 0} <span className="text-xs font-normal text-muted-foreground font-sans">r/s</span>
           </div>
         </div>
@@ -718,12 +718,12 @@ export function AdminDashboardClient() {
               />
             </div>
             <div className="text-xs text-muted-foreground mt-2.5 pt-2 border-t border-border/40 flex items-center gap-2 flex-wrap font-mono">
-              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 {bigNum(overview?.activeSites)} 正常
               </span>
               <span>·</span>
-              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+              <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                 {bigNum(overview?.brokenSites)} 异常
               </span>
@@ -754,7 +754,7 @@ export function AdminDashboardClient() {
                 className={`text-2xl font-bold font-mono tracking-tight ${
                   metrics24h?.healthRate !== null && metrics24h?.healthRate !== undefined && metrics24h.healthRate < 95
                     ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-emerald-700 dark:text-emerald-400'
                 }`}
               >
                 {metrics24h?.healthRate !== null && metrics24h?.healthRate !== undefined
@@ -799,7 +799,7 @@ export function AdminDashboardClient() {
               />
             </div>
             <div className="text-xs text-muted-foreground mt-2.5 pt-2 border-t border-border/40 flex items-center gap-2 font-mono">
-              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 2xx 成功: {runtime?.statusCodes?.s2xx ?? 0}
               </span>
@@ -876,12 +876,12 @@ export function AdminDashboardClient() {
               />
             </div>
             <div className="text-xs text-muted-foreground mt-2.5 pt-2 border-t border-border/40 flex items-center gap-2 font-mono">
-              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 Token: {security?.tokenStats.active ?? 0}/{security?.tokenStats.total ?? 0} 有效
               </span>
               <span>·</span>
-              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+              <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                 拦截: {security?.totalAuthFailures24h ?? metrics24h?.authFailures ?? 0} 次
               </span>
@@ -1208,12 +1208,12 @@ export function AdminDashboardClient() {
             {/* 零结果补录线索 */}
             <div className="pt-3 border-t border-border/60">
               <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
                   <Sparkles className="w-3.5 h-3.5" />
                   零结果补录线索 (用户搜但库内缺失)
                 </span>
                 {searchAi?.zeroResultQueries && searchAi.zeroResultQueries.length > 0 && (
-                  <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-600 font-mono">
+                  <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-700 dark:text-amber-400 font-mono">
                     {searchAi.zeroResultQueries.length} 条线索
                   </Badge>
                 )}
@@ -1274,7 +1274,7 @@ export function AdminDashboardClient() {
             <div className="grid grid-cols-3 gap-2 text-center text-xs">
               <div className="p-2.5 rounded-lg bg-card/80 border border-border/60 shadow-xs">
                 <div className="text-muted-foreground text-[11px]">有效 Token</div>
-                <div className="text-base font-bold font-mono mt-0.5 text-emerald-600 dark:text-emerald-400">
+                <div className="text-base font-bold font-mono mt-0.5 text-emerald-700 dark:text-emerald-400">
                   {security?.tokenStats.active ?? 0}
                 </div>
               </div>
@@ -1286,7 +1286,7 @@ export function AdminDashboardClient() {
               </div>
               <div className="p-2.5 rounded-lg bg-card/80 border border-border/60 shadow-xs">
                 <div className="text-muted-foreground text-[11px]">24h 拦截未授权</div>
-                <div className="text-base font-bold font-mono mt-0.5 text-amber-600 dark:text-amber-400">
+                <div className="text-base font-bold font-mono mt-0.5 text-amber-700 dark:text-amber-400">
                   {security?.totalAuthFailures24h ?? 0}
                 </div>
               </div>
@@ -1309,8 +1309,8 @@ export function AdminDashboardClient() {
                       : isJob
                       ? 'border-blue-500/40 text-blue-600 bg-blue-50/50 dark:bg-blue-950/20'
                       : isDb
-                      ? 'border-amber-500/40 text-amber-600 bg-amber-50/50 dark:bg-amber-950/20'
-                      : 'border-emerald-500/40 text-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20'
+                      ? 'border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20'
+                      : 'border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
 
                     return (
                       <div
@@ -1395,7 +1395,7 @@ export function AdminDashboardClient() {
               </div>
             </>
           ) : clientErrors?.loadFailed ? (
-            <div className="text-xs text-amber-600 dark:text-amber-400 py-2 text-center">
+            <div className="text-xs text-amber-700 dark:text-amber-400 py-2 text-center">
               前端错误聚合这次没有取回（中枢不可用，或该版本还没有这个端点）——这里不能读成「没有崩溃被捕获」。
             </div>
           ) : (

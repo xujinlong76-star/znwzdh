@@ -130,7 +130,7 @@ export default function HotView({
     const rank = index + 1
     if (rank === 1) {
       return (
-        <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 flex items-center justify-center text-xs font-bold font-mono shadow-xs">
+        <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/40 flex items-center justify-center text-xs font-bold font-mono shadow-xs">
           🥇
         </span>
       )
@@ -286,11 +286,11 @@ export default function HotView({
             </div>
 
             <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-amber-500/25 bg-amber-500/5 text-xs text-amber-600 dark:text-amber-400">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-amber-500/25 bg-amber-500/5 text-xs text-amber-700 dark:text-amber-400">
                 <Flame className="w-3 h-3" />
                 热度榜 {loading ? '—' : trending.length} 条
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-600 dark:text-emerald-400">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-700 dark:text-emerald-400">
                 <Sparkles className="w-3 h-3" />
                 新品 {loading ? '—' : fresh.length} 条
               </span>

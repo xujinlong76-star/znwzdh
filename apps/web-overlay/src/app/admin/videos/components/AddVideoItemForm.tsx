@@ -152,7 +152,7 @@ export function AddVideoItemForm({
     <form onSubmit={handleSubmit} className="space-y-4 py-2">
       {/* 智能粘贴解析器 */}
       <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 space-y-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
           <Sparkles className="h-3.5 w-3.5" />
           <span>一键智能解析（粘贴链接自动补全）</span>
         </div>

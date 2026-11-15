@@ -154,7 +154,7 @@ export function PublishPayloadStep(props: PublishPayloadStepProps) {
                     <div key={i} className="flex items-center justify-between text-[11px] font-mono gap-2">
                       <span className="truncate max-w-[320px]">{r.url}</span>
                       {r.ok ? (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
+                        <span className="text-emerald-700 dark:text-emerald-400 font-bold shrink-0">
                           ✓ {r.status}
                         </span>
                       ) : (

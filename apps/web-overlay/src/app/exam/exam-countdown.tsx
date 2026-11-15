@@ -20,7 +20,7 @@ const URGENCY_DAY_CLASS: Record<ExamUrgencyTier, string> = {
   today: 'text-red-600 dark:text-red-400',
   tomorrow: 'text-red-600 dark:text-red-400',
   urgent: 'text-red-600 dark:text-red-400',
-  soon: 'text-amber-600 dark:text-amber-400',
+  soon: 'text-amber-700 dark:text-amber-400',
   relaxed: 'text-foreground',
 }
 

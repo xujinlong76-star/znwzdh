@@ -269,13 +269,13 @@ export function HarvestModal({
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">符合新增</div>
-                  <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                  <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
                     +{report.totalAddedCount}
                   </div>
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">淘汰替换</div>
-                  <div className="text-lg font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                  <div className="text-lg font-bold text-amber-700 dark:text-amber-400 mt-0.5">
                     ~{report.totalReplacedCount}
                   </div>
                 </div>
@@ -333,7 +333,7 @@ export function HarvestModal({
                             )}
                           </div>
                         </div>
-                        <Badge variant="outline" className="text-[11px] shrink-0 text-emerald-600 dark:text-emerald-400 font-mono">
+                        <Badge variant="outline" className="text-[11px] shrink-0 text-emerald-700 dark:text-emerald-400 font-mono">
                           评分: {item.item.videoConfig?.freshnessScore || 80}
                         </Badge>
                       </div>
@@ -350,7 +350,7 @@ export function HarvestModal({
                       <div key={idx} className="p-2.5 rounded-lg border bg-card text-xs space-y-1">
                         <div className="flex items-center justify-between text-[11px]">
                           <span className="font-medium text-muted-foreground">[{rec.categoryTitle}]</span>
-                          <span className="text-amber-600 dark:text-amber-400 font-mono">分差提升: +{rec.scoreDiff}</span>
+                          <span className="text-amber-700 dark:text-amber-400 font-mono">分差提升: +{rec.scoreDiff}</span>
                         </div>
                         <div className="flex items-center gap-2 text-muted-foreground">
                           <span className="line-through truncate flex-1">{rec.oldItem.title}</span>

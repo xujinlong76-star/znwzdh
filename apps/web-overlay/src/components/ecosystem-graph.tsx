@@ -500,7 +500,7 @@ export function EcosystemGraph() {
                 {dataSource === 'live' && liveCount > 0 && (
                   <Badge
                     variant="outline"
-                    className="text-xs font-mono text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                    className="text-xs font-mono text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
                     title={
                       liveCount < liveTotal
                         ? `图中节点 = ${liveCount} 个站内真实站点（均匀抽样，非全量 ${liveTotal} 站）；连线为按共享标签推导的关系，不是人工录入的生态关系`
@@ -515,7 +515,7 @@ export function EcosystemGraph() {
                 {dataSource === 'sample' && (
                   <Badge
                     variant="outline"
-                    className="text-xs font-mono text-amber-600 dark:text-amber-400 border-amber-500/40"
+                    className="text-xs font-mono text-amber-700 dark:text-amber-400 border-amber-500/40"
                     title="未能读取站点库，当前展示的是内置示例节点集，不代表真实收录情况"
                   >
                     示例数据（未接入站点库）

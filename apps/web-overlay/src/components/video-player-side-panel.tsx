@@ -236,7 +236,7 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                                             <Sparkles className="w-3.5 h-3.5 text-primary" />
                                             <span>{aiSummary.source === 'ai-gemini' ? 'AI 核心摘要' : '本地启发式摘要'}</span>
                                             {aiSummary.source !== 'ai-gemini' && (
-                                                <span className="rounded-full border border-amber-500/40 px-1.5 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                                                <span className="rounded-full border border-amber-500/40 px-1.5 py-px text-[10px] font-medium text-amber-700 dark:text-amber-400">
                                                     非 AI 生成 · 按标题与简介推测，非原片内容
                                                 </span>
                                             )}

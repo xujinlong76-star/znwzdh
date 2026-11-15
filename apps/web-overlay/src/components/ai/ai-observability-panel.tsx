@@ -225,7 +225,7 @@ export function AiObservabilityPanel() {
             {data && typeof data.thinkingCalls === 'number' && data.thinkingCalls > 0 && (
               <>
                 <span className="text-muted-foreground">·</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                <span className="text-emerald-700 dark:text-emerald-400 font-medium">
                   🧠 思考调用: {data.thinkingCalls}
                 </span>
               </>
@@ -453,7 +453,7 @@ export function AiObservabilityPanel() {
                     : `${(copilot.citationValidityRate * 100).toFixed(1)}%`}
               </span>
               {copilot.unverifiedLinks !== undefined && copilot.unverifiedLinks > 0 && (
-                <span className="text-amber-600 dark:text-amber-400">
+                <span className="text-amber-700 dark:text-amber-400">
                   无法核验链接 {copilot.unverifiedLinks.toLocaleString()} 条
                 </span>
               )}

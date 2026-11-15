@@ -351,9 +351,9 @@ export default function AdminTokensPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: '凭据总数', value: stats.total, tone: 'text-foreground' },
-            { label: '生效中', value: stats.active, tone: 'text-emerald-600 dark:text-emerald-400' },
+            { label: '生效中', value: stats.active, tone: 'text-emerald-700 dark:text-emerald-400' },
             { label: '已吊销', value: stats.revoked, tone: 'text-red-600 dark:text-red-400' },
-            { label: '已过期', value: stats.expired, tone: 'text-amber-600 dark:text-amber-400' },
+            { label: '已过期', value: stats.expired, tone: 'text-amber-700 dark:text-amber-400' },
           ].map((s) => (
             <div key={s.label} className="rounded-xl border border-border/70 bg-card/50 px-3 py-2.5">
               <div className="text-[11px] text-muted-foreground">{s.label}</div>
@@ -422,9 +422,9 @@ export default function AdminTokensPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
                       {t.expiresAt === null ? (
-                        <span className="text-amber-600 dark:text-amber-400">长期有效</span>
+                        <span className="text-amber-700 dark:text-amber-400">长期有效</span>
                       ) : (
-                        <span className={state === 'expired' || state === 'expiring' ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}>
+                        <span className={state === 'expired' || state === 'expiring' ? 'text-amber-700 dark:text-amber-400 font-semibold' : ''}>
                           {new Date(t.expiresAt).toLocaleDateString('zh-CN')}
                           {state !== 'expired' && d !== null && <span className="ml-1 opacity-70">（{d} 天）</span>}
                         </span>
@@ -448,7 +448,7 @@ export default function AdminTokensPage() {
                         </Button>
                         <Button
                           size="sm" variant="ghost" title="吊销（停用但保留记录）"
-                          className="h-7 text-xs text-amber-700 hover:text-amber-700 hover:bg-amber-500/10 rounded-lg gap-1"
+                          className="h-7 text-xs text-amber-700 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-amber-500/10 rounded-lg gap-1"
                           disabled={disabled || state === 'revoked'}
                           onClick={() => handleRevoke(t)}
                         >
@@ -645,7 +645,7 @@ export default function AdminTokensPage() {
       <Dialog open={plainResult !== null} onOpenChange={(open) => { if (!open) setPlainResult(null) }}>
         <DialogContent className="w-[calc(100%-2rem)] max-w-md max-h-[85dvh] overflow-y-auto p-4 sm:p-6 rounded-2xl glass-surface depth-modal space-y-4">
           <DialogHeader className="pr-8 sm:pr-6">
-            <DialogTitle className="text-base font-bold flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+            <DialogTitle className="text-base font-bold flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
               <ShieldCheck className="w-5 h-5" />
               <span>Token 明文（仅此一次）</span>
             </DialogTitle>

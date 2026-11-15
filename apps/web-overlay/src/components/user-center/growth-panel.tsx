@@ -130,7 +130,7 @@ export function GrowthPanel() {
               今日 <span className="font-semibold text-primary">+{todayXp(profile)}</span> 经验
             </p>
             {profile.earnBack ? (
-              <p className="mt-0.5 font-medium text-amber-600">
+              <p className="mt-0.5 font-medium text-amber-700 dark:text-amber-400">
                 连胜抢救中：{profile.earnBack.brokenStreak} 天的连胜还剩约 {earnbackHoursLeft} 小时接回
               </p>
             ) : (

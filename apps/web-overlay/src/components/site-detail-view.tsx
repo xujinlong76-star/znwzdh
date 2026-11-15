@@ -586,8 +586,8 @@ export function SiteDetailView({
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs border ${
                         healthBadge.tone === 'ok'
-                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                          : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
+                          : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
                       }`}
                       title="服务端最新巡检结果"
                     >
@@ -885,7 +885,7 @@ export function SiteDetailView({
         {isDeadLink && (
           <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
             <div className="flex items-center gap-2.5 min-w-0">
-              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0" />
               <span>当前站点巡检或本机测速不可达，建议调取历史网页快照，或查阅下方的对标平替与生态方案。</span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -979,7 +979,7 @@ export function SiteDetailView({
             )}
           </dl>
           {botBlocked ? (
-            <p className="text-xs leading-relaxed text-amber-600 dark:text-amber-400">
+            <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
               最近一次巡检返回 HTTP {site.health?.httpStatus}：这通常表示对方站点拒绝了自动访问（反爬、登录墙或按 IP 限流），
               不代表站点无法打开。点「立即直达」通常仍可正常访问，巡检恢复后本条会自动更新。
             </p>
@@ -1041,7 +1041,7 @@ export function SiteDetailView({
                           </span>
                         )}
                         {alt.isFreeOrOpenSource && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
                             <ShieldCheck className="w-2.5 h-2.5" />
                             开源/免费
                           </span>

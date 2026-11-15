@@ -320,7 +320,7 @@ export function EnrichmentReviewPanel() {
                     )}
                     <FieldValue row={row} />
                     {row.note && (
-                      <div className="text-[11px] text-amber-600 dark:text-amber-400">{row.note}</div>
+                      <div className="text-[11px] text-amber-700 dark:text-amber-400">{row.note}</div>
                     )}
                     {row.key !== 'title' && <div className="text-[11px] text-muted-foreground">{meta.hint}</div>}
                     {row.key === 'title' && titleOverride.trim() && (

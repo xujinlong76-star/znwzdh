@@ -16,9 +16,9 @@ export function PluginDiffView({ diff }: { diff?: PluginUpgradeDiff | null }) {
     )
   }
 
-  const toneAdded = 'text-emerald-600 dark:text-emerald-400'
+  const toneAdded = 'text-emerald-700 dark:text-emerald-400'
   const toneRemoved = 'text-destructive-text'
-  const toneChanged = 'text-amber-600 dark:text-amber-400'
+  const toneChanged = 'text-amber-700 dark:text-amber-400'
 
   const groups: Array<{ key: string; label: string; tone: string; items: string[] }> = []
   const push = (key: string, label: string, tone: string, items: string[]) => {

@@ -175,7 +175,7 @@ export function QuarantineZone() {
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Archive className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+          <Archive className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
           本机隔离区
         </h2>
         <span className="text-[11px] text-muted-foreground">{copies.length} 份原文副本 · 仅存于这台设备</span>

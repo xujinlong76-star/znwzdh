@@ -216,7 +216,7 @@ function EntryRow({
           onClick={() => watchlist.remove(entry.key)}
           aria-label={`把《${entry.title}》移出追剧清单`}
           title="移出追剧清单"
-          className="inline-flex items-center justify-center rounded-full border border-zinc-300 p-1.5 text-zinc-400 transition-colors hover:border-red-400 hover:text-red-500 dark:border-zinc-700"
+          className="inline-flex items-center justify-center rounded-full border border-zinc-300 p-1.5 text-zinc-500 transition-colors hover:border-red-400 hover:text-red-500 dark:border-zinc-700 dark:text-zinc-400"
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden />
         </button>
@@ -393,7 +393,7 @@ export default function WatchlistPage() {
           </div>
         )}
         {!isAnonymous && bannerView.tone === 'hidden' && lastSync?.ok && (
-          <p className="mt-3 text-xs text-zinc-400">
+          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
             上次同步：{new Date(lastSync.at).toLocaleString()}
             <button type="button" onClick={() => void runSync()} className="ml-2 underline underline-offset-2">
               重新同步
@@ -462,7 +462,7 @@ export default function WatchlistPage() {
                         </p>
                       )}
                       {day.entries.length === 0 ? (
-                        <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">没有安排</p>
+                        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">没有安排</p>
                       ) : (
                         <ul className="mt-2 space-y-1.5">
                           {day.entries.map((entry) => (
@@ -550,7 +550,7 @@ export default function WatchlistPage() {
                   <button
                     type="button"
                     onClick={() => watchlist.dismissToday(entry.key)}
-                    className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-3 py-1.5 text-xs text-zinc-600 transition-colors hover:border-emerald-400 hover:text-emerald-600 dark:border-zinc-700 dark:text-zinc-300"
+                    className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-3 py-1.5 text-xs text-zinc-600 transition-colors hover:border-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-400 dark:border-zinc-700 dark:text-zinc-300"
                   >
                     <Check className="h-3.5 w-3.5" aria-hidden /> 今天已看
                   </button>

@@ -305,7 +305,7 @@ export function UniversalBookmarkModal({
                   type="checkbox"
                   checked={createFolders}
                   onChange={(e) => setCreateFolders(e.target.checked)}
-                  className="rounded border-border text-emerald-700 focus:ring-emerald-500"
+                  className="rounded border-border text-emerald-700 dark:text-emerald-400 focus:ring-emerald-500"
                 />
                 <span className="text-foreground">自动同步创建对应的收藏夹/分类并归类</span>
               </label>
@@ -314,7 +314,7 @@ export function UniversalBookmarkModal({
                   type="checkbox"
                   checked={skipDuplicates}
                   onChange={(e) => setSkipDuplicates(e.target.checked)}
-                  className="rounded border-border text-emerald-700 focus:ring-emerald-500"
+                  className="rounded border-border text-emerald-700 dark:text-emerald-400 focus:ring-emerald-500"
                 />
                 <span className="text-foreground">跳过已存在的相同网址（避免重复）</span>
               </label>

@@ -233,7 +233,7 @@ export default async function ExamPage() {
                   className="flex gap-3 rounded-2xl border border-border bg-card p-4"
                 >
                   <AlertTriangle
-                    className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
+                    className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400"
                     aria-hidden
                   />
                   <div>

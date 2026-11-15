@@ -927,7 +927,7 @@ export function SpotlightModal({
 
           <div className="flex items-center gap-1.5 shrink-0">
             {isCommandMode && (
-              <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
+              <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30">
                 指令模式
               </Badge>
             )}
@@ -1352,7 +1352,7 @@ export function SpotlightModal({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-7 text-[11px] gap-1 px-2 border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                              className="h-7 text-[11px] gap-1 px-2 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
                               title="调取 Wayback Machine 历史快照自愈修复此站点"
                               disabled={healingId === site.id}
                               onClick={(e) => handleWaybackHeal(site.id, site.url, e)}
@@ -1554,7 +1554,7 @@ export function SpotlightModal({
                 <div className="py-12 text-center space-y-2">
                   {sitesUnavailable ? (
                     <>
-                      <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1.5">
+                      <div className="text-xs text-amber-700 dark:text-amber-400 flex items-center justify-center gap-1.5">
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
                         <span>站点检索请求失败，暂时无法确认有没有匹配结果</span>
                       </div>
@@ -1570,7 +1570,7 @@ export function SpotlightModal({
                     </>
                   ) : pluginUnavailable ? (
                     <>
-                      <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1.5">
+                      <div className="text-xs text-amber-700 dark:text-amber-400 flex items-center justify-center gap-1.5">
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
                         <span>站点没有匹配；插件检索通道本次不可用，无法确认插件市场有没有相关结果</span>
                       </div>
@@ -1702,13 +1702,13 @@ export function SpotlightModal({
               )}
               {/* 站点通道挂了但插件有结果：说清「下面不完整」，不要让用户以为整站就这些 */}
               {!loading && sitesUnavailable && hits.length === 0 && !!pluginHits && pluginHits.items.length > 0 && (
-                <div className="px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400">
+                <div className="px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
                   站点检索通道暂时不可用，以下只有插件结果。
                 </div>
               )}
               {/* 插件通道挂了但站点有结果：不能让「插件市场没有匹配」冒充事实 */}
               {!loading && pluginUnavailable && hits.length > 0 && (
-                <div className="px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400 border-t border-border/40">
+                <div className="px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400 border-t border-border/40">
                   插件检索通道暂时不可用，以下只有站点结果。
                 </div>
               )}

@@ -166,8 +166,8 @@ export function AccountCard({
               >
                 {copied ? (
                   <>
-                    <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                    <span className="text-emerald-600 dark:text-emerald-400">已复制</span>
+                    <Check className="h-3 w-3 text-emerald-700 dark:text-emerald-400" />
+                    <span className="text-emerald-700 dark:text-emerald-400">已复制</span>
                   </>
                 ) : (
                   <>
@@ -185,7 +185,7 @@ export function AccountCard({
                 本地离线占用：{storageText ?? '检测中...'}
               </span>
               <span className="text-border" aria-hidden>·</span>
-              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
                 <ShieldCheck className="h-3 w-3" />
                 E2EE 端到端密钥受设备环境隔离
               </span>

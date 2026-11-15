@@ -47,8 +47,8 @@ const STATUS_META: Record<
   string,
   { label: string; className: string; icon: typeof Clock3 }
 > = {
-  pending: { label: '待审核', className: 'text-amber-600 border-amber-500/30 bg-amber-500/5', icon: Clock3 },
-  published: { label: '已上架', className: 'text-emerald-600 border-emerald-500/30 bg-emerald-500/5', icon: CheckCircle2 },
+  pending: { label: '待审核', className: 'text-amber-700 dark:text-amber-400 border-amber-500/30 bg-amber-500/5', icon: Clock3 },
+  published: { label: '已上架', className: 'text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5', icon: CheckCircle2 },
   rejected: { label: '已驳回', className: 'text-rose-600 border-rose-500/30 bg-rose-500/5', icon: XCircle },
   delisted: { label: '已下架', className: 'text-zinc-600 border-zinc-500/30 bg-zinc-500/5', icon: ShieldAlert },
   quarantined: { label: '安全隔离', className: 'text-destructive-text border-destructive/30 bg-destructive/5', icon: ShieldAlert },
@@ -132,8 +132,8 @@ export default function MyPluginsPage() {
             修改清单后需重新提交审核。
           </p>
           <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
-            <Badge variant="outline" className="border-amber-500/30 text-amber-600">待审核 {counts.pending}</Badge>
-            <Badge variant="outline" className="border-emerald-500/30 text-emerald-600">已上架 {counts.published}</Badge>
+            <Badge variant="outline" className="border-amber-500/30 text-amber-700 dark:text-amber-400">待审核 {counts.pending}</Badge>
+            <Badge variant="outline" className="border-emerald-500/30 text-emerald-700 dark:text-emerald-400">已上架 {counts.published}</Badge>
             <Badge variant="outline" className="border-rose-500/30 text-rose-600">已驳回 {counts.rejected}</Badge>
             {counts.other > 0 && <Badge variant="outline">其他 {counts.other}</Badge>}
             <span className="text-muted-foreground ml-auto">共 {total} 个</span>
@@ -224,7 +224,7 @@ export default function MyPluginsPage() {
                       </Badge>
                       <span className="text-[11px] font-mono text-muted-foreground">v{plugin.version}</span>
                       {plugin.featured && (
-                        <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600">精选</Badge>
+                        <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-700 dark:text-amber-400">精选</Badge>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-2">{plugin.description || '暂无描述'}</p>

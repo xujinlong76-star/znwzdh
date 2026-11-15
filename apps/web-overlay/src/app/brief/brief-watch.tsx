@@ -61,7 +61,7 @@ export default function BriefWatch() {
   return (
     <section aria-label="在追的剧今日提醒" className="rounded-xl border border-amber-300/60 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/30">
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-        <BellRing className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden /> 在追的剧 · 今日提醒
+        <BellRing className="h-4 w-4 text-amber-700 dark:text-amber-400" aria-hidden /> 在追的剧 · 今日提醒
       </h2>
       {watch.due.length > 0 ? (
         <ul className="space-y-1.5">

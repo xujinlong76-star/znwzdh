@@ -139,7 +139,7 @@ function FunnelPanel({ funnel }: { funnel: HubPluginFunnel }) {
   const cells = [
     { key: 'views', label: '详情页浏览', value: funnel.totals.views, icon: Eye, tone: 'text-sky-600 dark:text-sky-400' },
     { key: 'clicks', label: '安装点击', value: funnel.totals.installClicks, icon: MousePointerClick, tone: 'text-violet-600 dark:text-violet-400' },
-    { key: 'installs', label: '安装成功', value: funnel.totals.installs, icon: Download, tone: 'text-emerald-600 dark:text-emerald-400' },
+    { key: 'installs', label: '安装成功', value: funnel.totals.installs, icon: Download, tone: 'text-emerald-700 dark:text-emerald-400' },
     { key: 'uninstalls', label: '卸载点击', value: funnel.totals.uninstalls, icon: RotateCcw, tone: 'text-muted-foreground' },
   ]
   return (
@@ -553,7 +553,7 @@ export default function AdminPluginsPage() {
               type="button"
               disabled={syncingSeed}
               onClick={handleSyncOfficialCatalog}
-              className="inline-flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 hover:text-amber-700 transition-colors px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30"
+              className="inline-flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-400 transition-colors px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30"
               title="一键将代码库最新官方插件库同步至本站（增量无损）"
             >
               {syncingSeed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
@@ -583,7 +583,7 @@ export default function AdminPluginsPage() {
         {/* 官方资源库状态与热同步面板 */}
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
           <div className="flex items-start gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">
+            <div className="p-2 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400 shrink-0">
               <Sparkles className="w-4 h-4" />
             </div>
             <div className="space-y-0.5">
@@ -716,7 +716,7 @@ export default function AdminPluginsPage() {
               </div>
 
               <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-1">
-                <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center justify-between">
+                <div className="text-xs text-amber-700 dark:text-amber-400 flex items-center justify-between">
                   <span>社区星标与合规</span>
                   <span className="text-[11px] font-mono font-medium">
                     ⭐ {telemetry.totalStars}
@@ -811,7 +811,7 @@ export default function AdminPluginsPage() {
                       </span>
                     )}
                     {item.reportCount > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 border border-amber-500/30">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30">
                         <Flag className="w-3 h-3" />
                         <span>举报 {item.reportCount}</span>
                       </span>
@@ -933,7 +933,7 @@ export default function AdminPluginsPage() {
                       type="button"
                       onClick={() => handleApprove(item)}
                       disabled={actionLoading}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-500/10 rounded-lg border border-emerald-500/30 transition-colors"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-lg border border-emerald-500/30 transition-colors"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>{item.status === 'quarantined' ? '审核解封并上架' : '重新上架'}</span>
@@ -1080,7 +1080,7 @@ export default function AdminPluginsPage() {
                       className={cn(
                         'px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors',
                         review.status === 'hidden'
-                          ? 'border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10'
+                          ? 'border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10'
                           : 'border-destructive/30 text-destructive-text hover:bg-destructive/15',
                       )}
                     >

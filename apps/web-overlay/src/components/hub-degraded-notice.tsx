@@ -37,7 +37,7 @@ export function HubDegradedNotice({
         {subject ? `${subject}：` : ''}
         {notice.message}
         {incompleteHint && (
-          <span className="text-amber-600/80 dark:text-amber-400/80">（下方内容可能不完整）</span>
+          <span className="text-amber-700/80 dark:text-amber-400/80">（下方内容可能不完整）</span>
         )}
       </span>
       {notice.retryable && onRetry && (

@@ -84,7 +84,7 @@ export function SpeculativeTerminalWidget() {
         <div className="bg-muted/40 p-2.5 rounded-lg border border-border/50 flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground font-mono shrink-0">结果:</span>
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-xs sm:text-sm font-mono font-bold text-amber-600 dark:text-amber-400 truncate">
+            <span className="text-xs sm:text-sm font-mono font-bold text-amber-700 dark:text-amber-400 truncate">
               {output || '0'}
             </span>
             <button

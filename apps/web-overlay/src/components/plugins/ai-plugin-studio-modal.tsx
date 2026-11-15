@@ -555,7 +555,7 @@ export function AiPluginStudioModal({
                 <div className="text-[11px] font-medium text-muted-foreground flex items-center justify-between">
                   <span>多轮对话历史 ({history.length} 轮)</span>
                   {reasoningContent && (
-                    <details className="text-[10px] text-emerald-600 dark:text-emerald-400 cursor-pointer">
+                    <details className="text-[10px] text-emerald-700 dark:text-emerald-400 cursor-pointer">
                       <summary>查看 Agnes 深度思考链</summary>
                       <div className="p-2 mt-1 rounded bg-muted/60 border border-border text-foreground/80 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
                         {reasoningContent}
@@ -790,7 +790,7 @@ export function AiPluginStudioModal({
               <div className="p-4 mx-4 mb-3 rounded-2xl border border-emerald-500/40 bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-primary/10 shadow-sm space-y-2.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                    <div className="h-8 w-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
                       <ShieldCheck className="h-4 w-4" />
                     </div>
                     <div>

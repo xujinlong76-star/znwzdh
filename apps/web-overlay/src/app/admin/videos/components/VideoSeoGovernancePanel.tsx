@@ -199,14 +199,14 @@ export function VideoSeoGovernancePanel({ onRefresh }: { onRefresh?: () => void 
 
                 <div className="p-3 rounded-lg bg-muted/40 border border-border/60 space-y-1">
                     <span className="text-muted-foreground">Key Moments 章节覆盖</span>
-                    <div className="text-lg font-bold text-amber-600 dark:text-amber-400">
+                    <div className="text-lg font-bold text-amber-700 dark:text-amber-400">
                         {audit.withKeyMomentsChapters} 部
                     </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-muted/40 border border-border/60 space-y-1">
                     <span className="text-muted-foreground">HTTPS 规范缩略图</span>
-                    <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                    <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400">
                         {audit.withHttpsThumbnail} 部
                     </div>
                 </div>

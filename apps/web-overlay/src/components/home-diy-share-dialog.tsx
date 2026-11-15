@@ -39,7 +39,7 @@ export function HomeDIYShareDialog({ pendingShare, onConfirm, onDismiss }: HomeD
         ) : (
           <p className='text-sm'>这份分享与你的当前排版完全一致，无需改动。</p>
         )}
-        {warning === null ? null : <p className='text-sm text-amber-600'>{warning}</p>}
+        {warning === null ? null : <p className='text-sm text-amber-700 dark:text-amber-400'>{warning}</p>}
         <AlertDialogFooter>
           <AlertDialogCancel onClick={onDismiss}>保留我的排版</AlertDialogCancel>
           <AlertDialogAction onClick={onConfirm}>应用分享排版</AlertDialogAction>

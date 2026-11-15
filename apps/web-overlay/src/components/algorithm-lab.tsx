@@ -252,7 +252,7 @@ const hud = useAlgorithmHud()
             </div>
             <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="health" aria-label="打开防假死链沙箱">
               <div className="text-[11px] text-muted-foreground">防假死链</div>
-              <div className="font-bold font-mono text-emerald-600 text-xs">Entropy</div>
+              <div className="font-bold font-mono text-emerald-700 dark:text-emerald-400 text-xs">Entropy</div>
             </div>
             <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="intent" aria-label="打开推测执行沙箱">
               <div className="text-[11px] text-muted-foreground">推测执行</div>

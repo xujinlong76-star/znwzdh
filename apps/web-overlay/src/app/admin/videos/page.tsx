@@ -135,7 +135,7 @@ export default function VideosAdminPage() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                            <div className="p-1.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                            <div className="p-1.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400">
                                 <MonitorPlay className="h-5 w-5" />
                             </div>
                             <h1 className="text-base sm:text-lg font-bold tracking-tight">
@@ -177,13 +177,13 @@ export default function VideosAdminPage() {
                     </div>
                     <div className="space-y-0.5">
                         <span className="text-muted-foreground">已开启自动采集</span>
-                        <div className="text-base font-semibold text-amber-600 dark:text-amber-400">
+                        <div className="text-base font-semibold text-amber-700 dark:text-amber-400">
                             {overview?.autoHarvestCategories ?? 0} / {items.length} 个分类
                         </div>
                     </div>
                     <div className="space-y-0.5">
                         <span className="text-muted-foreground">平均内容保鲜度</span>
-                        <div className="text-base font-semibold text-emerald-600 dark:text-emerald-400">
+                        <div className="text-base font-semibold text-emerald-700 dark:text-emerald-400">
                             {overview?.averageFreshness ?? 100} 分
                         </div>
                     </div>

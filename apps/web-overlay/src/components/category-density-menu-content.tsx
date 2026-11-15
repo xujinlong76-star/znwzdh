@@ -105,7 +105,7 @@ export default function CategoryDensityMenuContent({
       {isCustomSized && (
         <DropdownMenuItem
           onClick={onResetSize}
-          className="text-xs text-amber-600 dark:text-amber-400 font-medium cursor-pointer justify-center mb-1"
+          className="text-xs text-amber-700 dark:text-amber-400 font-medium cursor-pointer justify-center mb-1"
         >
           🔄 重置此模块窗口尺寸
         </DropdownMenuItem>

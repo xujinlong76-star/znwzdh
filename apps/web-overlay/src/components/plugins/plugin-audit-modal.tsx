@@ -30,7 +30,7 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
       >
         <DialogHeader className="space-y-1 pb-2 border-b border-border/50">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
@@ -60,7 +60,7 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
             </div>
             <Badge
               variant="outline"
-              className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-700 border-emerald-500/30 self-start sm:self-auto"
+              className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 self-start sm:self-auto"
             >
               安全等级：优良 (Verified)
             </Badge>
@@ -69,25 +69,25 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="p-2 rounded-lg bg-card border border-border/50">
               <div className="text-[10px] text-muted-foreground">静态安全沙箱</div>
-              <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+              <div className="font-bold text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">
                 100% 声明式隔离
               </div>
             </div>
             <div className="p-2 rounded-lg bg-card border border-border/50">
               <div className="text-[10px] text-muted-foreground">协议安全合规</div>
-              <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+              <div className="font-bold text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">
                 全量 HTTPS 认证
               </div>
             </div>
             <div className="p-2 rounded-lg bg-card border border-border/50">
               <div className="text-[10px] text-muted-foreground">AI 伦理反欺诈</div>
-              <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+              <div className="font-bold text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">
                 零注入 · 零违禁词
               </div>
             </div>
             <div className="p-2 rounded-lg bg-card border border-border/50">
               <div className="text-[10px] text-muted-foreground">语义相关性</div>
-              <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+              <div className="font-bold text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">
                 主题与内容对齐
               </div>
             </div>

@@ -366,7 +366,7 @@ export function DashboardTrafficChart({
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] pt-0.5">
                 <span className="text-muted-foreground">请求总量:</span>
-                <span className="font-mono font-semibold text-right text-emerald-600 dark:text-emerald-400">
+                <span className="font-mono font-semibold text-right text-emerald-700 dark:text-emerald-400">
                   {activePoint.requests} 次
                 </span>
 
@@ -374,7 +374,7 @@ export function DashboardTrafficChart({
                 <span className="font-mono font-semibold text-right">{activePoint.qps} r/s</span>
 
                 <span className="text-muted-foreground">P95 延迟:</span>
-                <span className="font-mono font-semibold text-right text-amber-600 dark:text-amber-400">
+                <span className="font-mono font-semibold text-right text-amber-700 dark:text-amber-400">
                   {activePoint.p95Ms} ms
                 </span>
 

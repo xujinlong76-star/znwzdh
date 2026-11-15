@@ -322,7 +322,7 @@ export default function AdminAiPage() {
           onClick={() => setActiveTab('prices')}
           className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
             activeTab === 'prices'
-              ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 font-semibold'
+              ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
@@ -335,7 +335,7 @@ export default function AdminAiPage() {
           onClick={() => setActiveTab('enrich')}
           className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
             activeTab === 'enrich'
-              ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 font-semibold'
+              ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400 font-semibold'
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >

@@ -87,7 +87,7 @@ export function IntentPanel() {
                 <div className="p-4 sm:p-5 rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent space-y-3.5 shadow-2xs">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="p-1 rounded-md bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                      <div className="p-1 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-400">
                         <Sparkles className="w-4 h-4" />
                       </div>
                       <span className="text-sm font-bold">{intentResult.title}</span>

@@ -251,7 +251,7 @@ export function DetailModals(props: DetailModalsProps) {
           <DialogContent className="max-w-md p-5 glass-surface border-border/80 shadow-2xl rounded-2xl">
             <DialogHeader className="space-y-1 pb-2 border-b border-border/50">
               <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700">
+                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
@@ -302,8 +302,8 @@ export function DetailModals(props: DetailModalsProps) {
                     className={cn(
                       'text-xs font-semibold px-2.5 py-1',
                       auditReport.level === 'safe'
-                        ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/30'
-                        : 'bg-amber-500/10 text-amber-700 border-amber-500/30'
+                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
+                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
                     )}
                   >
                     {auditReport.level === 'safe' ? '安全等级：优良 (Safe)' : '安全等级：关注 (Notice)'}

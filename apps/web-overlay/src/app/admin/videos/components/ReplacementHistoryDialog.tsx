@@ -183,7 +183,7 @@ export function ReplacementHistoryDialog({
                         <ArrowRight className="h-3 w-3" />
                         新引入优质视频
                       </span>
-                      <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                      <span className="text-emerald-700 dark:text-emerald-400 font-medium">
                         评分: {record.newItem.videoConfig?.freshnessScore ?? '未知'} (+{record.scoreDiff})
                       </span>
                     </div>

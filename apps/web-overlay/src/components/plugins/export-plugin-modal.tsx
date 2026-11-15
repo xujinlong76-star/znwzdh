@@ -333,7 +333,7 @@ export function ExportPluginModal({
                 </ul>
               </div>
             ) : (
-              <div className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+              <div className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>清单符合山羊胡纯声明式 JSON 架构，校验 100% 通过</span>
               </div>

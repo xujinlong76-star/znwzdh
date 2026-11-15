@@ -290,7 +290,7 @@ export function HomeDIYOutlineDialog({
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span>全景功能矩阵开关</span>
               {totalPrunedCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-600 dark:text-amber-300">
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-700 dark:text-amber-300">
                   已裁剪 {totalPrunedCount}
                 </span>
               )}

@@ -255,7 +255,7 @@ export function VaultPanel() {
 
               {encryptedPayload && (
                 <div className="p-3.5 rounded-lg border border-border/50 bg-muted/40 space-y-2.5 text-xs font-mono">
-                  <div className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                  <div className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1">
                     <Check className="w-3.5 h-3.5" /> 密封封包已生成 (AES-GCM)：
                   </div>
                   <div className="flex items-center justify-between gap-2">

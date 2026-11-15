@@ -235,7 +235,7 @@ export function VideoAutoHarvestDialog({
                   className={cn(
                     'flex flex-col items-center justify-center p-2 rounded-lg text-center transition-all',
                     isCurrent && 'bg-primary/10 border border-primary/30 text-primary animate-pulse',
-                    isPast && !isCurrent && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                    isPast && !isCurrent && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
                     !isCurrent && !isPast && 'opacity-50 text-muted-foreground'
                   )}
                 >
@@ -370,7 +370,7 @@ export function VideoAutoHarvestDialog({
           {/* 采集成果卡片展示 */}
           {result && (
             <div className="space-y-2.5 p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5">
-              <div className="flex items-center justify-between font-semibold text-emerald-600 dark:text-emerald-400">
+              <div className="flex items-center justify-between font-semibold text-emerald-700 dark:text-emerald-400">
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4" />
                   <span>
@@ -390,7 +390,7 @@ export function VideoAutoHarvestDialog({
                 </div>
                 <div>
                   <div className="text-muted-foreground text-[10px]">{dryRun ? '预计新增' : '通过入库'}</div>
-                  <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">+{result.harvestedCount} 门</div>
+                  <div className="font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">+{result.harvestedCount} 门</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground text-[10px]">技术方向</div>

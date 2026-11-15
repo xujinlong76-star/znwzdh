@@ -462,7 +462,7 @@ export default function AdminStatsPage() {
         {/* 零结果搜索（补录线索） */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2 text-amber-600 dark:text-amber-500">
+            <CardTitle className="text-base flex items-center gap-2 text-amber-700 dark:text-amber-500">
               <Sparkles className="h-4 w-4" />
               零结果搜索（补录线索）
             </CardTitle>
@@ -528,7 +528,7 @@ export default function AdminStatsPage() {
                             : idx === 1
                             ? 'text-slate-400'
                             : idx === 2
-                            ? 'text-amber-700'
+                            ? 'text-amber-700 dark:text-amber-400'
                             : 'text-muted-foreground'
                         }`}
                       >

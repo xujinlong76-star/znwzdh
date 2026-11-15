@@ -210,7 +210,7 @@ export function VideoTelemetryDashboard({
             {/* 分箱 1: 卓越时效 */}
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   卓越新鲜 (90~100分) · 新收录 / 热门精选
                 </span>
@@ -248,7 +248,7 @@ export function VideoTelemetryDashboard({
             {/* 分箱 3: 临界衰减 */}
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-medium">
+                <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-medium">
                   <Clock className="w-3.5 h-3.5" />
                   临界衰减 (50~69分) · 接近半衰期阈值
                 </span>

@@ -203,7 +203,7 @@ export function VideoCategoryCard({
                             <span>共 {totalVideoCount} 部视频</span>
                         </Badge>
                         {policy?.enabled ? (
-                            <Badge variant="outline" className="text-[11px] h-5 px-2 border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/5">
+                            <Badge variant="outline" className="text-[11px] h-5 px-2 border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-500/5">
                                 🔥 自动采集
                             </Badge>
                         ) : (
@@ -304,7 +304,7 @@ export function VideoCategoryCard({
                                 aria-label="采集策略设置"
                                 title="采集策略设置"
                                 onClick={() => setIsPolicyDialogOpen(true)}
-                                className="h-8.5 w-8.5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                                className="h-8.5 w-8.5 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
                             >
                                 <Sparkles className="h-4 w-4" />
                             </Button>

@@ -674,3 +674,157 @@ describe("迁移面硬锁（第一批：brief / hot 链接文字走 text-link）
     }
   });
 });
+
+// ============================================================
+// 11. 浅色可读性扫荡（升级 #11，2026-11-15）：正文不得用 text-amber-600 /
+//     text-emerald-600。实测白底：amber-600 3.19:1、emerald-600 3.77:1，
+//     均不足 AA 4.5:1；-700 档为 5.02:1 / 5.48:1。例外只有大字展示
+//     （≥24px，或 ≥18.66px 加粗，即 text-xl/2xl/3xl… + font-bold 系，
+//     3:1 档即可）：7 处大字统计数字保留 -600，其余 216 处已升 -700。
+//     另：-700 在深色底仅 3.96:1 / 3.63:1，故每个 -700 须在同一 class 串
+//     里带 dark: 伴生（-300/-400/-500 均 ≥4.5:1），缺伴生即红。
+//     （扫荡实测 223 处 / 89 文件，与简报 223 处一致；无 dark: 变体的
+//     -600 为 0 处——深色 -600 本就达标（6.24/5.28:1），守卫仍把 dark:
+//     链排除在外，防将来有人把 dark:text-*-600 改成 -700。瞬时值一律
+//     以测试同款 sRGB 公式为准，见文件头部的 luminance/contrast。）
+// ============================================================
+const AMBER_EMERALD_600 = /\btext-(amber|emerald)-600\b/g;
+
+/** token 前的变体链（如 dark: / hover: / dark:hover:），空串表示无变体 */
+function variantChainBefore(seg: string, start: number): string {
+  let i = start;
+  while (i > 0 && /[a-zA-Z0-9:-]/.test(seg[i - 1])) i--;
+  return seg.slice(i, start);
+}
+
+function isLargeDisplay(seg: string): boolean {
+  const big = /\btext-(xl|2xl|3xl|4xl|5xl)\b/.test(seg);
+  const bold = /\bfont-(bold|semibold|black|extrabold)\b/.test(seg);
+  return big && bold;
+}
+
+/** 把一行拆成 class 片段：行内单/双引号串 + 反引号顶层文本（${...} 抹掉）。
+    逐行扫而不用整文件匹配——整文件反引号字面量在 V8 下会被回溯拖慢
+    （本机实测一次全树扫描可超数分钟），逐行与整文件等价：当前树上
+    7 处大字保留项与 0 违规在两种扫法下结果一致（见 /tmp/a11y-sweep-guard-check.py）。
+    注意：跨行 class 串的大字尺寸须与颜色同行，否则会被误报。 */
+function classPiecesOfLine(line: string): string[] {
+  const pieces: string[] = [];
+  for (const m of line.matchAll(/(['"])(?:\\.|(?!\1).)*?\1/g)) pieces.push(m[0]);
+  if (line.includes("`")) {
+    pieces.push(line.split("`", 2)[1].replace(/\$\{[^}]*\}/g, " "));
+  }
+  return pieces;
+}
+
+function amberEmerald600Violations(): string[] {
+  const bad: string[] = [];
+  for (const file of walkSources(OVERLAY_SRC)) {
+    const rel = relative(OVERLAY_SRC, file).replaceAll("\\", "/");
+    const src = readFileSync(file, "utf8");
+    for (const line of src.split("\n")) {
+      for (const piece of classPiecesOfLine(line)) {
+        for (const tok of piece.matchAll(AMBER_EMERALD_600)) {
+          if (variantChainBefore(piece, tok.index!).startsWith("dark:")) continue;
+          if (isLargeDisplay(piece)) continue; // 大字展示例外（3:1 档）
+          bad.push(`${rel}：${piece.trim().slice(0, 120)}`);
+          break; // 每串只报一次
+        }
+      }
+    }
+  }
+  return [...new Set(bad)];
+}
+
+function missingDarkCompanions(): string[] {
+  const bad: string[] = [];
+  const TOK700 = /(hover:)?text-(amber|emerald)-700\b/g;
+  for (const file of walkSources(OVERLAY_SRC)) {
+    const rel = relative(OVERLAY_SRC, file).replaceAll("\\", "/");
+    const src = readFileSync(file, "utf8");
+    for (const line of src.split("\n")) {
+      for (const piece of classPiecesOfLine(line)) {
+        for (const tok of piece.matchAll(TOK700)) {
+          const hover = tok[1] ?? "";
+          const fam = tok[2];
+          const want = `dark:${hover}text-${fam}-`;
+          const ok =
+            piece.includes(`${want}300`) || piece.includes(`${want}400`) || piece.includes(`${want}500`);
+          if (!ok) bad.push(`${rel}：${piece.trim().slice(0, 120)}`);
+        }
+      }
+    }
+  }
+  return [...new Set(bad)];
+}
+
+describe("浅色可读性扫荡 #11（amber/emerald 正文 -600 → -700）", () => {
+  it("正文 class 里不再有 text-amber-600 / text-emerald-600（大字展示例外）", () => {
+    const bad = amberEmerald600Violations();
+    expect(
+      bad,
+      `以下正文 class 仍用 -600（白底 3.19/3.77:1，不足 AA 4.5:1）：\n` +
+        bad.map((f) => "  - " + f).join("\n") +
+        `\n改为 -700（5.02/5.48:1）。例外只认大字展示（同一串里 text-xl/2xl/3xl… + font-bold 系）；dark: 变体不在此禁令内。`,
+    ).toEqual([]);
+  });
+
+  it("7 处大字展示保留 -600（text-xl/2xl/3xl + font-bold，3:1 档）", () => {
+    const src700 = countMatches(readFileSync(overlayPath("src/app/admin/jobs/page.tsx"), "utf8"), AMBER_EMERALD_600);
+    expect(src700.length, "jobs 统计数字两处大字应保留 -600").toBe(2);
+    const all = amberEmerald600Violations();
+    expect(all.length, "除 7 处大字外不得再有 -600（守卫已把大字例外排除在外）").toBe(0);
+  });
+
+  it("每个 text-amber-700 / emerald-700 都带 dark: 伴生（深色 -700 仅 3.96/3.63:1）", () => {
+    const bad = missingDarkCompanions();
+    expect(
+      bad,
+      `以下 -700 缺 dark: 伴生（深色底会跌到 3.96/3.63:1）：\n` +
+        bad.map((f) => "  - " + f).join("\n") +
+        `\n在同一 class 串里补 dark:text-{amber,emerald}-{300,400,500}（或 dark:hover:）。`,
+    ).toEqual([]);
+  });
+});
+
+// ============================================================
+// 12. 浅色可读性扫荡（升级 #14，2026-11-15）：追剧清单 / 星图弹窗的
+//     text-zinc-400 正文（白底 2.56:1）升 zinc-500（4.83:1）。
+//     清单页 3 处已修（删除按钮、同步备注、“没有安排”），星图弹窗
+//     文本用法 4 处已修（路径起止、站点 A/B 标签、空态提示）+ 搜索/清空
+//     2 个图标顺手统一。星图弹窗只剩 3 处纯图标 zinc-400（关闭按钮、
+//     箭头分隔、ArrowRight），图标 3:1 档可留，本测试只锁文本用法。
+// ============================================================
+describe("浅色可读性扫荡 #14（追剧清单 / 星图弹窗 zinc-400 正文 → zinc-500）", () => {
+  function lightZinc400Lines(src: string): string[] {
+    return src
+      .split("\n")
+      .map((l, i) => ({ line: l, n: i + 1 }))
+      .filter(({ line }) => {
+        for (const m of line.matchAll(/\btext-zinc-400\b/g)) {
+          if (!variantChainBefore(line, m.index!).startsWith("dark:")) return true;
+        }
+        return false;
+      })
+      .map(({ line, n }) => `${n}: ${line.trim().slice(0, 140)}`);
+  }
+
+  it("追剧清单页不再有浅色 text-zinc-400（3 处已修：删钮、同步备注、“没有安排”）", () => {
+    const src = readFileSync(overlayPath("src/app/me/watchlist/page.tsx"), "utf8");
+    const bad = lightZinc400Lines(src);
+    expect(bad, `追剧清单页仍有浅色 text-zinc-400（白底 2.56:1）：\n${bad.join("\n")}\n改为 text-zinc-500（4.83:1）并按邻行补 dark:text-zinc-400。`).toEqual([]);
+  });
+
+  it("星图弹窗：text-zinc-400 不得出现在带文本字号的行（只剩 3 处纯图标）", () => {
+    const src = readFileSync(overlayPath("src/components/graph/knowledge-star-map-modal.tsx"), "utf8");
+    const bad = lightZinc400Lines(src).filter((l) => /text-(xs|sm|base|\[1[01]px\])/.test(l));
+    expect(
+      bad,
+      `星图弹窗仍有文本字号行的浅色 text-zinc-400：\n${bad.join("\n")}\n改为 text-zinc-500（并按邻行补 dark:text-zinc-400）。纯图标行（关闭按钮/箭头分隔/ArrowRight）不在此限。`,
+    ).toEqual([]);
+    expect(
+      lightZinc400Lines(src).length,
+      "星图弹窗浅色 text-zinc-400 应恰为 3 处纯图标用法（关闭按钮、箭头分隔、ArrowRight）；多出来说明有新文本用法未修。",
+    ).toBe(3);
+  });
+});

@@ -186,7 +186,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
       </div>
 
       {resolved.unknown && (
-        <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-relaxed shrink-0">
+        <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed shrink-0">
           配置的城市「{resolved.requested}」不在内置城市表中，已改用{city.name}。可用值：
           {Object.keys(WEATHER_CITIES).join(' / ')}。
         </p>
@@ -295,7 +295,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
 
       <div className="text-[10px] text-muted-foreground font-mono space-y-0.5 shrink-0">
         {payload?.stale ? (
-          <p className="text-amber-600 dark:text-amber-400">
+          <p className="text-amber-700 dark:text-amber-400">
             本次刷新未成功，以下是 {ageLabel(payload.staleAt ?? payload.fetchedAt)}的历史观测。
           </p>
         ) : (

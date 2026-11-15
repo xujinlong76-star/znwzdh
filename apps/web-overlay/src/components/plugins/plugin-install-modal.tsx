@@ -326,7 +326,7 @@ export function PluginInstallModal({
                     {/* 跨包重复预览：装第二个包时最需要的一句话，避免「以为装了两百个，实际只多三个」 */}
                     {overlap && overlap.existing > 0 ? (
                       <li>
-                        其中 <strong className="text-amber-600 dark:text-amber-400">{overlap.existing}</strong> 个已在您的库中
+                        其中 <strong className="text-amber-700 dark:text-amber-400">{overlap.existing}</strong> 个已在您的库中
                         （跨包重复），将自动跳过；<strong className="text-foreground">预计实际新增 {overlap.fresh}</strong> 个
                       </li>
                     ) : overlap ? (
@@ -399,7 +399,7 @@ export function PluginInstallModal({
 
               {plugin.kind === 'workspace-preset' && (
                 <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-medium text-xs">
+                  <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-medium text-xs">
                     <LayoutGrid className="w-4 h-4" />
                     <span>工作台看板预设</span>
                   </div>
@@ -454,7 +454,7 @@ export function PluginInstallModal({
 
               {plugin.kind === 'bundle' && (
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium text-xs">
+                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium text-xs">
                     <Boxes className="w-4 h-4" />
                     <span>
                       组合包：一次登记 {summary?.bundleItemCount ?? plugin.bundleItems?.length ?? 0} 个成员插件
@@ -543,7 +543,7 @@ export function PluginInstallModal({
             <div className="grid grid-cols-2 gap-2 pt-0.5 text-[11px]">
               <div className="p-2 rounded-lg bg-background/60 border border-border/40 space-y-0.5">
                 <span className="text-muted-foreground block text-[10px]">代码执行权限</span>
-                <span className="font-medium text-emerald-600 dark:text-emerald-400">零脚本 · 零任意执行</span>
+                <span className="font-medium text-emerald-700 dark:text-emerald-400">零脚本 · 零任意执行</span>
               </div>
               <div className="p-2 rounded-lg bg-background/60 border border-border/40 space-y-0.5">
                 <span className="text-muted-foreground block text-[10px]">数据写入作用域</span>

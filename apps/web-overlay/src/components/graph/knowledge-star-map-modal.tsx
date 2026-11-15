@@ -419,7 +419,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
               {/* 控制搜索与过滤栏 */}
               <div className="absolute top-3 sm:top-4 left-3 sm:left-4 z-10 flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800 shadow-lg max-w-[calc(100%-1.5rem)]">
                 <div className="relative w-32 min-[380px]:w-44 sm:w-64">
-                  <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-zinc-400" />
+                  <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-zinc-500" />
                   <Input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -431,7 +431,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                     <button
                       onClick={() => setSearchQuery('')}
                       aria-label="清空搜索"
-                      className="absolute right-2 top-2 sm:top-2.5 text-zinc-400 hover:text-zinc-600"
+                      className="absolute right-2 top-2 sm:top-2.5 text-zinc-500 hover:text-zinc-600"
                     >
                       <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
@@ -759,11 +759,11 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                     {pathResult.found ? (
                       <div className="space-y-6">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
                             <CheckCircle2 className="w-4 h-4" />
                             已找到最短演进协同路径（距离权重: {pathResult.distance} · 共 {pathResult.steps.length} 跳）
                           </span>
-                          <span className="text-xs font-mono text-zinc-400">
+                          <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
                             {pathResult.from || (pathResult as any).startId} ➔ {pathResult.to || (pathResult as any).targetId}
                           </span>
                         </div>
@@ -861,7 +861,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                       </div>
                       <div>·</div>
                       <div>
-                        识别潜在雷同对: <span className="font-semibold font-mono text-amber-600 dark:text-amber-400">{dedupReport.duplicatePairs.length}</span>
+                        识别潜在雷同对: <span className="font-semibold font-mono text-amber-700 dark:text-amber-400">{dedupReport.duplicatePairs.length}</span>
                       </div>
                       <div>·</div>
                       <div>
@@ -925,12 +925,12 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40">
                                 <div className="space-y-1">
-                                  <div className="text-[10px] uppercase font-mono text-zinc-400">站点 A</div>
+                                  <div className="text-[10px] uppercase font-mono text-zinc-500 dark:text-zinc-400">站点 A</div>
                                   <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate">{titleA}</div>
                                   <div className="text-[11px] font-mono text-zinc-500 truncate">{urlA}</div>
                                 </div>
                                 <div className="space-y-1">
-                                  <div className="text-[10px] uppercase font-mono text-zinc-400">站点 B</div>
+                                  <div className="text-[10px] uppercase font-mono text-zinc-500 dark:text-zinc-400">站点 B</div>
                                   <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate">{titleB}</div>
                                   <div className="text-[11px] font-mono text-zinc-500 truncate">{urlB}</div>
                                 </div>
@@ -966,7 +966,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                     )}
                   </div>
                 ) : (
-                  <div className="p-12 text-center text-zinc-400">
+                  <div className="p-12 text-center text-zinc-500 dark:text-zinc-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-500" />
                     正在扫描分析全站拓扑与冗余特征...
                   </div>

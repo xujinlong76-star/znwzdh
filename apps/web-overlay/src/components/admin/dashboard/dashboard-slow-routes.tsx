@@ -60,7 +60,7 @@ export function DashboardSlowRoutes({ routes }: DashboardSlowRoutesProps) {
             r.avgLatencyMs >= 150
               ? 'text-rose-600 dark:text-rose-400 font-bold'
               : r.avgLatencyMs >= 80
-              ? 'text-amber-600 dark:text-amber-400 font-semibold'
+              ? 'text-amber-700 dark:text-amber-400 font-semibold'
               : 'text-foreground font-medium'
 
           return (

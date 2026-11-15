@@ -154,7 +154,7 @@ export function RssFeedWidget({ config }: RssFeedWidgetProps) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2 p-4 text-center">
         <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-          <Settings2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          <Settings2 className="w-4 h-4 text-amber-700 dark:text-amber-400" />
         </div>
         <p className="text-xs font-medium text-foreground">尚未配置订阅地址</p>
         <p className="text-[11px] text-muted-foreground leading-relaxed max-w-[240px]">
@@ -228,7 +228,7 @@ export function RssFeedWidget({ config }: RssFeedWidgetProps) {
           const meta = (
             <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground min-w-0">
               {item.author && (
-                <span className="font-semibold text-amber-600 dark:text-amber-400 truncate max-w-[110px]">{item.author}</span>
+                <span className="font-semibold text-amber-700 dark:text-amber-400 truncate max-w-[110px]">{item.author}</span>
               )}
               <span className="flex items-center gap-0.5 shrink-0">
                 <Clock className="w-2.5 h-2.5" />
@@ -284,7 +284,7 @@ export function RssFeedWidget({ config }: RssFeedWidgetProps) {
       </div>
 
       {isStale && (
-        <p className="text-[10px] text-amber-600 dark:text-amber-400 leading-snug">
+        <p className="text-[10px] text-amber-700 dark:text-amber-400 leading-snug">
           以上是上一次成功抓取的内容，不是实时状态（{state.kind === 'error' ? state.message : ''}）。
         </p>
       )}

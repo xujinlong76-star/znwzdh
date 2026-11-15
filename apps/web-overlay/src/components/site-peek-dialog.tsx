@@ -563,7 +563,7 @@ export function SitePeekDialog({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {radar.pros && radar.pros.length > 0 && (
                   <div className="space-y-1 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
-                    <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                       <Check className="w-3 h-3" />
                       核心亮点
                     </span>

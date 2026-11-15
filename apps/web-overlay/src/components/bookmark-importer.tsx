@@ -99,7 +99,7 @@ const MODE_META: Array<{ key: ImportMode; label: string; hint: string; icon: typ
 ]
 
 const STATUS_META: Record<StagingStatus, { label: string; className: string }> = {
-  ready: { label: '可投稿', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25' },
+  ready: { label: '可投稿', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/25' },
   duplicate: { label: '公共库已收录', className: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25' },
   private: { label: '隐私内网已拦截', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25' },
 }
@@ -560,7 +560,7 @@ export function BookmarkImporter({
               一次解析 HTML 书签、Markdown、OneTab 与 JSON，纯前端完成隐私脱敏、公共库去重与启发式归类，再决定哪些进私有收藏、哪些贡献公共导航库。
             </p>
             <div className="inline-flex flex-wrap items-center gap-2 pt-0.5" aria-label="能力标签">
-              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium">
+              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-medium">
                 <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />纯前端本地解析
               </span>
               <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-medium">启发式自动归类</span>
@@ -712,7 +712,7 @@ export function BookmarkImporter({
             <div className={`p-4 rounded-xl text-xs space-y-2 ${
               importResult.failed + importResult.unconfirmed + importResult.reviewFailed > 0 || importResult.privateError
                 ? 'bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300'
-                : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400'
             }`} role="status">
               <div className="flex items-center gap-2 font-bold text-sm">
                 {importResult.failed + importResult.unconfirmed > 0 ? <AlertCircle className="w-4 h-4" aria-hidden="true" /> : <CheckCircle className="w-4 h-4" aria-hidden="true" />}
@@ -756,7 +756,7 @@ export function BookmarkImporter({
                     <span className="font-semibold text-foreground">解析出 {items.length} 个书签</span>
                     <Badge variant="secondary" className="font-mono bg-muted/80 px-2 py-0.5 rounded-full">个人收藏 {counts.privateSelected}</Badge>
                     <Badge variant="secondary" className="font-mono bg-muted/80 px-2 py-0.5 rounded-full">公共投稿 {counts.publicSelected}</Badge>
-                    {aiClassifiedCount > 0 && <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">✨ AI 补全 {aiClassifiedCount} 条</Badge>}
+                    {aiClassifiedCount > 0 && <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">✨ AI 补全 {aiClassifiedCount} 条</Badge>}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
                     格式 {parseMeta?.format ?? '—'} · 公共库索引 {indexReady ? publicSiteCount : '不可用'} 站 · 识别文件夹 {parseMeta?.folders ?? 0} 个 · 批内重复丢弃 {parseMeta?.duplicates ?? 0} 条

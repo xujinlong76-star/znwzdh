@@ -227,7 +227,7 @@ export function QuickSearchWidget({ config }: { config?: Record<string, unknown>
       {/* 底部信息 */}
       <div className="pt-1 text-xs text-muted-foreground text-center font-mono space-y-0.5">
         {unknownEngine && (
-          <p className="text-amber-600 dark:text-amber-400 leading-relaxed">
+          <p className="text-amber-700 dark:text-amber-400 leading-relaxed">
             配置的默认引擎「{requested}」不存在，已选中 Google。可用值：
             {Object.keys(BUILTIN_SEARCH_ENGINES).join(' / ')}。
           </p>

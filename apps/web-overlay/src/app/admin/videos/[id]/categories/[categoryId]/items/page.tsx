@@ -453,7 +453,7 @@ export default function SubCategoryVideoItemsPage() {
                                                 </Badge>
                                             ) : null}
                                             {vc?.indexable ? (
-                                                <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5">
+                                                <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5">
                                                     ✓ SEO 可索引
                                                 </Badge>
                                             ) : (
@@ -472,7 +472,7 @@ export default function SubCategoryVideoItemsPage() {
                                                 <span>质量分: <strong className="text-foreground">{vc.qualityScore}</strong></span>
                                             ) : null}
                                             {vc?.freshnessScore ? (
-                                                <span>保鲜度: <strong className="text-emerald-600 dark:text-emerald-400">{vc.freshnessScore}</strong></span>
+                                                <span>保鲜度: <strong className="text-emerald-700 dark:text-emerald-400">{vc.freshnessScore}</strong></span>
                                             ) : null}
                                             {vc?.seoSlug && (
                                                 <span className="font-mono text-[10px] opacity-75 truncate max-w-xs">

@@ -498,7 +498,7 @@ export default function AdminJobsPage() {
           onClick={() => setStatusFilter('pending')}
         >
           <CardHeader className="p-4 pb-1">
-            <CardTitle className="text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center justify-between">
+            <CardTitle className="text-xs text-amber-700 dark:text-amber-400 font-medium flex items-center justify-between">
               排队等待
               <Clock className="w-3.5 h-3.5 text-amber-500" />
             </CardTitle>
@@ -513,7 +513,7 @@ export default function AdminJobsPage() {
           onClick={() => setStatusFilter('done')}
         >
           <CardHeader className="p-4 pb-1">
-            <CardTitle className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center justify-between">
+            <CardTitle className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center justify-between">
               执行完成
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
             </CardTitle>
@@ -622,7 +622,7 @@ export default function AdminJobsPage() {
                 </div>
               </div>
               {retentionPreview.truncated?.some(Boolean) && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">本轮达到处理上限，仅覆盖部分过期数据；执行后需继续预演下一轮。</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400">本轮达到处理上限，仅覆盖部分过期数据；执行后需继续预演下一轮。</p>
               )}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t pt-3">
                 <p className="text-xs text-muted-foreground">以上是预演快照。配置变更后须重新预演，执行结果以队列终态为准。</p>

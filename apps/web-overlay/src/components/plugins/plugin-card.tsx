@@ -401,21 +401,21 @@ export function PluginCard({
               className={cn(
                 'text-[11px] font-medium px-2 py-0.5 border-border/60',
                 plugin.kind === 'site-pack' && 'text-sky-600 dark:text-sky-400 bg-sky-500/5',
-                plugin.kind === 'workspace-preset' && 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/5',
+                plugin.kind === 'workspace-preset' && 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/5',
                 plugin.kind === 'theme' && 'text-violet-600 dark:text-violet-400 bg-violet-500/5',
                 plugin.kind === 'search-pack' && 'text-sky-600 dark:text-sky-400 bg-sky-500/5',
-                plugin.kind === 'bundle' && 'text-amber-600 dark:text-amber-400 bg-amber-500/5'
+                plugin.kind === 'bundle' && 'text-amber-700 dark:text-amber-400 bg-amber-500/5'
               )}
             >
               {pluginKindLabel(plugin.kind)}
             </Badge>
             {plugin.featured && (
-              <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-500/10 border-amber-500/30">
+              <Badge variant="outline" className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/30">
                 精选
               </Badge>
             )}
             {plugin.source === 'import' && (
-              <Badge variant="outline" className="text-[10px] text-amber-600 bg-amber-500/5 border-amber-500/20">
+              <Badge variant="outline" className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-500/5 border-amber-500/20">
                 本地导入
               </Badge>
             )}
@@ -547,7 +547,7 @@ export function PluginCard({
             className={cn(
               'inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap transition-all shadow-2xs',
               needsUpdate
-                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/25'
+                ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/25'
                 : installed
                   ? 'group/btn bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-destructive/15 hover:text-destructive-text hover:border-destructive/30'
                   : 'bg-primary text-primary-foreground hover:opacity-90 active:scale-95'

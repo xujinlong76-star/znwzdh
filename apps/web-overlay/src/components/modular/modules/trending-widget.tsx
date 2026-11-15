@@ -192,11 +192,11 @@ export function TrendingWidget() {
                   <span
                     className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                       index === 0
-                        ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                        ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400'
                         : index === 1
                         ? 'bg-slate-400/20 text-slate-500'
                         : index === 2
-                        ? 'bg-amber-700/20 text-amber-700'
+                        ? 'bg-amber-700/20 text-amber-700 dark:text-amber-400'
                         : 'text-muted-foreground'
                     }`}
                   >
@@ -242,7 +242,7 @@ export function TrendingWidget() {
           <span>暂无榜单数据</span>
         )}
         {notice && (
-          <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+          <span className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400">
             <span className="truncate">{notice.message}</span>
             {notice.retryable && (
               <button

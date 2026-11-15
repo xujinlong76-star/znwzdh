@@ -69,13 +69,13 @@ export function ActionIntentCard({ data }: ActionIntentCardProps) {
       {/* 头部摘要 */}
       <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2.5">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-md bg-amber-500/20 text-amber-600 dark:text-amber-400">
+          <div className="p-1.5 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-400">
             <Zap className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-bold text-foreground">{data.actionSummary}</span>
-              <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-500/30 font-medium">
+              <Badge variant="outline" className="text-xs text-amber-700 dark:text-amber-400 border-amber-500/30 font-medium">
                 AI 极速操作法
               </Badge>
             </div>

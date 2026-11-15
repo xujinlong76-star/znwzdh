@@ -437,7 +437,7 @@ export default function PluginDetailView({
           <button
             type="button"
             onClick={() => setReportModalOpen(true)}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-amber-600 transition-colors px-2 py-1"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-amber-700 dark:hover:text-amber-400 transition-colors px-2 py-1"
           >
             <Flag className="w-3.5 h-3.5" />
             <span>举报违规</span>
@@ -464,7 +464,7 @@ export default function PluginDetailView({
         {/* 待审核状态提示（作者/管理员视角可见） */}
         {plugin.status === 'pending' && (
           <div className="p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200 flex items-start gap-3">
-            <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+            <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
             <div className="text-xs sm:text-sm">
               <h4 className="font-bold flex items-center gap-2">
                 <span>⏳ 该插件当前处于【待审核】状态</span>
@@ -489,10 +489,10 @@ export default function PluginDetailView({
                   className={cn(
                     'text-xs font-medium px-2.5 py-0.5 border-border/60',
                     plugin.kind === 'site-pack' && 'text-sky-600 dark:text-sky-400 bg-sky-500/5',
-                    plugin.kind === 'workspace-preset' && 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/5',
+                    plugin.kind === 'workspace-preset' && 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/5',
                     plugin.kind === 'theme' && 'text-violet-600 dark:text-violet-400 bg-violet-500/5',
-                    plugin.kind === 'search-pack' && 'text-amber-600 dark:text-amber-400 bg-amber-500/5',
-                    plugin.kind === 'bundle' && 'text-amber-600 dark:text-amber-400 bg-amber-500/5'
+                    plugin.kind === 'search-pack' && 'text-amber-700 dark:text-amber-400 bg-amber-500/5',
+                    plugin.kind === 'bundle' && 'text-amber-700 dark:text-amber-400 bg-amber-500/5'
                   )}
                 >
                   {pluginKindLabel(plugin.kind)}

@@ -332,12 +332,12 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                                 </span>
                             ))}
                             {videoConfig?.difficulty === 'advanced' && (
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 font-medium">
                                     进阶
                                 </span>
                             )}
                             {videoConfig?.difficulty === 'beginner' && (
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-medium">
                                     入门
                                 </span>
                             )}

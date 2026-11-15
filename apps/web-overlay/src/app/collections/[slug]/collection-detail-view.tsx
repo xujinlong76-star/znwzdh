@@ -347,7 +347,7 @@ ${items}
                 {copiedLinks ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
-                    <span className="hidden sm:inline text-emerald-600 dark:text-emerald-400">已复制</span>
+                    <span className="hidden sm:inline text-emerald-700 dark:text-emerald-400">已复制</span>
                   </>
                 ) : (
                   <>
@@ -372,7 +372,7 @@ ${items}
                   size="sm"
                   disabled={batchFavoriting}
                   onClick={handleBatchFavorite}
-                  className="h-7 px-2.5 text-xs inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+                  className="h-7 px-2.5 text-xs inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
                   title="一键将该合集所有站点加入我的收藏"
                 >
                   <Star className="w-3.5 h-3.5 fill-amber-500/20 text-amber-500" />
@@ -547,7 +547,7 @@ ${items}
                     <li key={site.id} className="flex items-start gap-2 text-sm">
                       <SiteFavicon title={site.title} url={site.url} icon={site.iconKey} className="size-5 shrink-0 rounded" />
                       <span className="min-w-0">
-                        <Link href={"/site/" + encodeURIComponent(site.id)} onClick={() => markSiteVisited(site.id)} className="font-medium text-primary hover:underline">{site.title}</Link>{visitedSiteIds.includes(site.id) ? <span className="ml-1 text-xs text-emerald-600">✓ 已逛</span> : null}
+                        <Link href={"/site/" + encodeURIComponent(site.id)} onClick={() => markSiteVisited(site.id)} className="font-medium text-primary hover:underline">{site.title}</Link>{visitedSiteIds.includes(site.id) ? <span className="ml-1 text-xs text-emerald-700 dark:text-emerald-400">✓ 已逛</span> : null}
                         {site.collectionNote ? <span className="text-muted-foreground">：{site.collectionNote}</span> : null}
                       </span>
                     </li>
@@ -706,7 +706,7 @@ ${items}
                                   <span className={cn(
                                     "text-xs font-mono font-semibold px-1.5 py-0.5 rounded",
                                     isCompleted
-                                      ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
+                                      ? "text-emerald-700 dark:text-emerald-400 bg-emerald-500/10"
                                       : "text-indigo-500 bg-indigo-500/10"
                                   )}>
                                     阶段 {index + 1}
@@ -720,7 +720,7 @@ ${items}
                                     {site.title}
                                   </a>
                                   {isCompleted && (
-                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded font-medium">
+                                    <span className="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded font-medium">
                                       已掌握
                                     </span>
                                   )}
@@ -750,7 +750,7 @@ ${items}
                                 onClick={() => toggleSiteProgress(site.id)}
                                 className={cn(
                                   "h-7 px-2 text-xs",
-                                  isCompleted ? "text-emerald-600 hover:text-emerald-700" : "text-muted-foreground hover:text-foreground"
+                                  isCompleted ? "text-emerald-700 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-400" : "text-muted-foreground hover:text-foreground"
                                 )}
                               >
                                 {isCompleted ? '已掌握' : '标记已学'}

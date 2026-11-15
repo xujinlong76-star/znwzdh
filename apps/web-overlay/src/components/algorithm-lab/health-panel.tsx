@@ -130,7 +130,7 @@ export function HealthPanel() {
                         <Badge key={m} variant="destructive" className="text-xs px-2 py-0.5">{m}</Badge>
                       ))
                     ) : (
-                      <span className="text-xs text-emerald-600 dark:text-emerald-400 font-mono">未检出广告/抢注模式</span>
+                      <span className="text-xs text-emerald-700 dark:text-emerald-400 font-mono">未检出广告/抢注模式</span>
                     )}
                   </div>
                 </div>

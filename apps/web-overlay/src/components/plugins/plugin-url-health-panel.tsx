@@ -294,17 +294,17 @@ const AUTO_APPLY_REASON_LABELS: Record<string, string> = {
 
 /** 候选档位的中文名与配色 */
 const CANDIDATE_GRADE_META: Record<string, { label: string; className: string }> = {
-  verified: { label: '实测可达', className: 'text-emerald-700 border-emerald-500/40 bg-emerald-500/10' },
+  verified: { label: '实测可达', className: 'text-emerald-700 dark:text-emerald-400 border-emerald-500/40 bg-emerald-500/10' },
   blocked: { label: '拒绝爬虫·未验证', className: 'text-sky-700 border-sky-500/40 bg-sky-500/10' },
   // 超时/连接中断只说明「这次没测到」，不能写成「不可达」——那是把没测准说成确认下线
   unverified: { label: '未能验证', className: 'text-slate-700 border-slate-400/40 bg-slate-500/10' },
-  suspicious: { label: '疑似停放', className: 'text-amber-700 border-amber-500/40 bg-amber-500/10' },
+  suspicious: { label: '疑似停放', className: 'text-amber-700 dark:text-amber-400 border-amber-500/40 bg-amber-500/10' },
   dead: { label: '不可达', className: 'text-rose-700 border-rose-500/40 bg-rose-500/10' },
 }
 
 /** 趋势文案：明确区分「真的在变」与「点数不够，判不了」 */
 const TREND_META: Record<string, { label: string; className: string }> = {
-  improving: { label: '近期改善', className: 'text-emerald-600 dark:text-emerald-400' },
+  improving: { label: '近期改善', className: 'text-emerald-700 dark:text-emerald-400' },
   degrading: { label: '近期恶化', className: 'text-rose-600 dark:text-rose-400' },
   stable: { label: '基本稳定', className: 'text-muted-foreground' },
   insufficient: { label: '点数不足', className: 'text-muted-foreground' },
@@ -424,9 +424,9 @@ function PackHealthBar({
 /** 延迟时间色标徽章 */
 function LatencyBadge({ ms }: { ms?: number }) {
   if (ms === undefined || ms === null) return null
-  let color = 'text-emerald-700 bg-emerald-500/10 border-emerald-500/20'
+  let color = 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
   if (ms > 1500) color = 'text-rose-700 bg-rose-500/10 border-rose-500/20'
-  else if (ms > 600) color = 'text-amber-700 bg-amber-500/10 border-amber-500/20'
+  else if (ms > 600) color = 'text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/20'
   return (
     <span className={`text-[10px] font-mono px-1 py-0.2 rounded border shrink-0 ${color}`} title={`探测耗时: ${ms}ms`}>
       {ms}ms
@@ -564,7 +564,7 @@ const PackRowItem = memo(function PackRowItem({
                 </span>
               )}
               {suspiciousCount > 0 && (
-                <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-0.5">
+                <span className="text-amber-700 dark:text-amber-400 font-medium flex items-center gap-0.5">
                   <AlertTriangle className="h-3 w-3" /> {suspiciousCount} 疑似停放
                 </span>
               )}
@@ -774,14 +774,14 @@ const PackRowItem = memo(function PackRowItem({
             <div className="flex flex-wrap items-center gap-3 text-muted-foreground border-b pb-2.5">
               <span>声明 {snap.declared ?? '--'} 条</span>
               <span>抽样 {snap.sampled ?? '--'} 条</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-medium">真健康 {snap.okCount ?? 0}</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-medium">真健康 {snap.okCount ?? 0}</span>
               {(snap.blockedCount ?? 0) > 0 && (
                 <span className="text-sky-600 dark:text-sky-400" title="站点存活，只是 WAF 拒绝了爬虫，已计入可达">
                   WAF放行 {snap.blockedCount}
                 </span>
               )}
               {(snap.suspiciousCount ?? 0) > 0 && (
-                <span className="text-amber-600 dark:text-amber-400 font-medium">
+                <span className="text-amber-700 dark:text-amber-400 font-medium">
                   疑似停放/软404 {snap.suspiciousCount}
                 </span>
               )}
@@ -922,7 +922,7 @@ const PackRowItem = memo(function PackRowItem({
                   type="button"
                   onClick={() => onSetTab(pack.slug, 'suspicious')}
                   className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                    activeTab === 'suspicious' ? 'bg-amber-500 text-white shadow-sm' : 'hover:bg-muted text-amber-600'
+                    activeTab === 'suspicious' ? 'bg-amber-500 text-white shadow-sm' : 'hover:bg-muted text-amber-700 dark:text-amber-400'
                   }`}
                 >
                   仅看停放 ({suspiciousCount})
@@ -991,7 +991,7 @@ const PackRowItem = memo(function PackRowItem({
             (!auditResult.suspiciousItems || auditResult.suspiciousItems.length === 0) &&
             (activeTab === 'issues' || activeTab === 'broken' || activeTab === 'suspicious') && (
               <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-4 text-center space-y-1">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600 mx-auto" />
+                <CheckCircle2 className="h-5 w-5 text-emerald-700 dark:text-emerald-400 mx-auto" />
                 <div className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">
                   未发现失效死链或疑似停放站点
                 </div>
@@ -1034,7 +1034,7 @@ const PackRowItem = memo(function PackRowItem({
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <LatencyBadge ms={item.latencyMs} />
-                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-500/40">
+                          <Badge variant="outline" className="text-[10px] text-amber-700 dark:text-amber-400 border-amber-500/40">
                             HTTP {item.status ?? 200}
                           </Badge>
                           <Button
@@ -1272,7 +1272,7 @@ const PackRowItem = memo(function PackRowItem({
                           (aiHeal.autoApplied.applied === false ? (
                             <Badge
                               variant="outline"
-                              className="text-[10px] text-amber-700 border-amber-500/40 bg-amber-500/10"
+                              className="text-[10px] text-amber-700 dark:text-amber-400 border-amber-500/40 bg-amber-500/10"
                               title={aiHeal.autoApplied.detail}
                             >
                               未应用：{AUTO_APPLY_REASON_LABELS[aiHeal.autoApplied.reason ?? ''] ?? '未说明'}
@@ -1280,13 +1280,13 @@ const PackRowItem = memo(function PackRowItem({
                           ) : (
                             <Badge
                               variant="outline"
-                              className="text-[10px] text-emerald-700 border-emerald-500/40 bg-emerald-500/10"
+                              className="text-[10px] text-emerald-700 dark:text-emerald-400 border-emerald-500/40 bg-emerald-500/10"
                             >
                               已自动平替 {aiHeal.autoApplied.replacedCount} 条 · 清理 {aiHeal.autoApplied.removedCount} 条
                             </Badge>
                           ))}
                         {aiHeal.aiDegraded && (
-                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-500/40">
+                          <Badge variant="outline" className="text-[10px] text-amber-700 dark:text-amber-400 border-amber-500/40">
                             {aiHeal.aiDegraded === 'quota' ? '垂类权威标杆兜底' : aiHeal.aiDegraded === 'unconfigured' ? '垂类标杆引擎' : '智能兜底模式'}
                           </Badge>
                         )}
@@ -1344,7 +1344,7 @@ const PackRowItem = memo(function PackRowItem({
                                   {diag.evidence?.source === 'client-claimed' && (
                                     <Badge
                                       variant="outline"
-                                      className="text-[10px] shrink-0 text-amber-600 border-amber-500/40"
+                                      className="text-[10px] shrink-0 text-amber-700 dark:text-amber-400 border-amber-500/40"
                                       title="该 URL 由调用方提供，本轮没有实测证据；诊断原因是「未验证」，不是实测结论"
                                     >
                                       结论未实测
@@ -1435,7 +1435,7 @@ const PackRowItem = memo(function PackRowItem({
                                                 {rep.latencyMs ? ` · ${rep.latencyMs}ms` : ''}
                                               </Badge>
                                             ) : rep.verified === false ? (
-                                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
                                                 待复测
                                               </span>
                                             ) : null}
@@ -1472,7 +1472,7 @@ const PackRowItem = memo(function PackRowItem({
                                               size="sm"
                                               variant="ghost"
                                               disabled
-                                              className="h-7 text-xs text-emerald-600 dark:text-emerald-400 font-medium cursor-default"
+                                              className="h-7 text-xs text-emerald-700 dark:text-emerald-400 font-medium cursor-default"
                                             >
                                               <Check className="h-3 w-3 mr-1" />
                                               已采纳
@@ -2614,7 +2614,7 @@ export function PluginUrlHealthPanel() {
             </div>
           </div>
           <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2.5 shadow-sm border-t-2 border-t-emerald-500 transition-all hover:shadow">
-            <div className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+            <div className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
               <CheckCircle2 className="h-3 w-3" /> 真健康站点
             </div>
             <div className="mt-1 flex items-baseline gap-1">
@@ -2636,7 +2636,7 @@ export function PluginUrlHealthPanel() {
             </div>
           </div>
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 shadow-sm border-t-2 border-t-amber-400 transition-all hover:shadow">
-            <div className="text-[11px] font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <div className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" /> 疑似停放/软404
             </div>
             <div className="mt-1 flex items-baseline gap-1">
@@ -2661,7 +2661,7 @@ export function PluginUrlHealthPanel() {
         {batchCompleteNotice && (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs flex items-center justify-between text-emerald-800 dark:text-emerald-200 animate-in fade-in">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
               <span>{batchCompleteNotice}</span>
             </div>
             <div className="flex items-center gap-2">

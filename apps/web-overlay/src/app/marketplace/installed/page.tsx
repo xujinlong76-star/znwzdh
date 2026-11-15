@@ -242,7 +242,7 @@ export default function InstalledPluginsPage() {
                 管理当前设备与账号已安装的所有扩展。支持多套主题一键切换、快捷前缀直达语法速查、待更新插件平滑升级与彻底清理。
               </p>
               {updateCount > 0 && (
-                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
+                <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-2">
                   有 {updateCount} 个插件可升级，已置顶显示。
                 </p>
               )}
@@ -457,7 +457,7 @@ export default function InstalledPluginsPage() {
                           <span className="text-[11px] text-muted-foreground">
                             已安装 v{item.installedVersion}
                             {itemHasUpdate && (
-                              <span className="ml-1.5 text-amber-600 dark:text-amber-400 font-medium">
+                              <span className="ml-1.5 text-amber-700 dark:text-amber-400 font-medium">
                                 · 最新 v{item.version}
                               </span>
                             )}

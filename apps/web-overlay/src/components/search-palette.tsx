@@ -1798,7 +1798,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 </div>
               )}
               {actionIntentLoading && !actionIntentData && (
-                <div className="px-3 py-2 border-b bg-amber-500/5 flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+                <div className="px-3 py-2 border-b bg-amber-500/5 flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   <span>正在分析实操意图并匹配王牌工具与 3 步解决方案...</span>
                 </div>

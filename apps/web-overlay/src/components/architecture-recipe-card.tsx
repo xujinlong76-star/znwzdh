@@ -568,7 +568,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
                           👉 {step.action}
                         </p>
                         {step.pitfallWarning && (
-                          <p className="pl-5 text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                          <p className="pl-5 text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 flex-shrink-0" />
                             <span>避坑: {step.pitfallWarning}</span>
                           </p>

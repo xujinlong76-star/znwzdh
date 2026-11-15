@@ -275,7 +275,7 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
       </div>
 
       {catalog.configuredMissing && (
-        <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-relaxed shrink-0">
+        <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed shrink-0">
           配置的类目「{configuredRef}」不在中枢类目表中，已改用其他类目。请填 slug、id 或唯一标题。
         </p>
       )}

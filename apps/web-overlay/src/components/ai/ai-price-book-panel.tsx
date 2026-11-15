@@ -231,7 +231,7 @@ export function AiPriceBookPanel() {
           重新加载
         </Button>
         {savedAt !== null && !dirty && (
-          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+          <span className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
             <CheckCircle2 className="h-3.5 w-3.5" />
             已保存 {new Date(savedAt).toLocaleTimeString('zh-CN', { hour12: false })}
           </span>

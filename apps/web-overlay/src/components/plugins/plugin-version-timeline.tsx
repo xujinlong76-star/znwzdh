@@ -185,7 +185,7 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
                       <ShieldCheck className="h-3 w-3 text-emerald-500" />
                       {v.checksum.slice(0, 10)}...
                       {copiedHash === v.checksum ? (
-                        <Check className="h-2.5 w-2.5 text-emerald-600" />
+                        <Check className="h-2.5 w-2.5 text-emerald-700 dark:text-emerald-400" />
                       ) : (
                         <Copy className="h-2.5 w-2.5" />
                       )}

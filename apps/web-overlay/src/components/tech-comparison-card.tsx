@@ -52,7 +52,7 @@ export function TechComparisonCard({ matrix }: TechComparisonCardProps) {
           </div>
           <p className="text-xs text-muted-foreground line-clamp-1">{matrix.itemA.category}</p>
           <div className="space-y-1 pt-1">
-            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold block">核心优势：</span>
+            <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold block">核心优势：</span>
             {matrix.itemA.primaryPros.slice(0, 2).map((pro, i) => (
               <div key={i} className="text-xs text-muted-foreground flex items-start gap-1">
                 <Check className="w-3 h-3 text-emerald-500 flex-shrink-0 mt-0.5" />
@@ -70,7 +70,7 @@ export function TechComparisonCard({ matrix }: TechComparisonCardProps) {
           </div>
           <p className="text-xs text-muted-foreground line-clamp-1">{matrix.itemB.category}</p>
           <div className="space-y-1 pt-1">
-            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold block">核心优势：</span>
+            <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold block">核心优势：</span>
             {matrix.itemB.primaryPros.slice(0, 2).map((pro, i) => (
               <div key={i} className="text-xs text-muted-foreground flex items-start gap-1">
                 <Check className="w-3 h-3 text-emerald-500 flex-shrink-0 mt-0.5" />
@@ -93,11 +93,11 @@ export function TechComparisonCard({ matrix }: TechComparisonCardProps) {
             {matrix.dimensions.map((dim, idx) => (
               <div key={idx} className="grid grid-cols-3 p-2 text-xs items-center gap-2">
                 <span className="font-medium text-foreground">{dim.dimName}</span>
-                <span className={dim.winner === 'A' ? 'font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1' : 'text-muted-foreground'}>
+                <span className={dim.winner === 'A' ? 'font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1' : 'text-muted-foreground'}>
                   {dim.winner === 'A' && <Trophy className="w-3 h-3 text-amber-500 inline flex-shrink-0" />}
                   {dim.valueA}
                 </span>
-                <span className={dim.winner === 'B' ? 'font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1' : 'text-muted-foreground'}>
+                <span className={dim.winner === 'B' ? 'font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1' : 'text-muted-foreground'}>
                   {dim.winner === 'B' && <Trophy className="w-3 h-3 text-amber-500 inline flex-shrink-0" />}
                   {dim.valueB}
                 </span>

@@ -2,9 +2,28 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { chapterStartSec, type NavigationSubItem, type VideoChapter, type VideoMirrorSource } from '@/types/navigation'
-import { resolveAvailableMirrors, selectBestMirror, recordMirrorFailover } from '@/lib/video-failover'
-import { savePlaybackPosition, getResumePosition } from '@/lib/video-playback-storage'
-import { getVideoAISummary } from '@/lib/video-ai-summary'
+import { toast } from 'sonner'
+
+/**
+ * 视频播放器重库（Bundle 瘦身第三刀 b）：failover、playback-storage、
+ * ai-summary 3 个 lib（registry 经 failover 间接进入）合计约 19KB 代码，
+ * 只在开播/切镜像/写播放头时才需要，平时不进 `/` 初始 chunk。
+ * context 壳仍静态挂载于 providers，4 lib 改 `await import()` 按需加载；
+ * import 结果由浏览器模块缓存 + 下面的单例 promise 保证只加载一次。
+ * registry 不在 context 里单独改：它随 failover 一起走 `await import()`。
+ */
+type FailoverModule = typeof import('@/lib/video-failover')
+type PlaybackStorageModule = typeof import('@/lib/video-playback-storage')
+type AiSummaryModule = typeof import('@/lib/video-ai-summary')
+
+let failoverPromise: Promise<FailoverModule> | null = null
+let playbackStoragePromise: Promise<PlaybackStorageModule> | null = null
+let aiSummaryPromise: Promise<AiSummaryModule> | null = null
+
+const loadVideoFailover = () => (failoverPromise ??= import('@/lib/video-failover'))
+const loadPlaybackStorage = () =>
+  (playbackStoragePromise ??= import('@/lib/video-playback-storage'))
+const loadVideoAiSummary = () => (aiSummaryPromise ??= import('@/lib/video-ai-summary'))
 
 interface VideoPlayerContextType {
   activeVideo: NavigationSubItem | null
@@ -59,42 +78,64 @@ export function VideoPlayerProvider({ children }: { children: React.ReactNode })
   const pipWindowRef = useRef<any>(null)
 
   // Open video
+  // 异步分段：先同步 setActiveVideo（播放器 UI 立即出现），再 await import()
+  // 补镜像/断点/摘要（首次开播多一次约 10–13KB 的 chunk 拉取，本机 <100ms，
+  // 慢速网 300–600ms；迷你播放器先用平台/bvid 兜底渲染，镜像就绪后切到
+  // 最优镜像）。对外签名仍是同步 void，唯一调用方（点击处理函数）零适配。
   const openVideo = useCallback((item: NavigationSubItem, startSec?: number) => {
     setActiveVideo(item)
     setIsPlaying(true)
 
-    // Resolve mirrors
-    if (item.videoConfig) {
-      const mirrors = resolveAvailableMirrors(item.videoConfig)
-      setAvailableMirrors(mirrors)
-      const best = selectBestMirror(mirrors)
-      setActiveMirror(best)
+    const config = item.videoConfig
+    if (!config) return
 
-      // Initial playhead: parameter > saved position > 0
-      const initialPos = typeof startSec === 'number'
-        ? startSec
-        : getResumePosition(item.id) || 0
-      setPlayheadSecState(initialPos)
-
-      // Load or extract chapters
-      if (item.videoConfig.chapters && item.videoConfig.chapters.length > 0) {
-        setChapters(item.videoConfig.chapters)
-      } else {
-        // Fetch or heuristic extract
-        getVideoAISummary({
-          videoId: item.id,
-          title: item.title,
-          description: item.description,
-          durationSec: item.videoConfig.durationSec || 600,
-        }).then(res => {
-          if (res?.chapters && res.chapters.length > 0) {
-            setChapters(res.chapters)
-          }
-        }).catch(() => {
-          // ignore
-        })
-      }
+    // 已配好的章节直接同步进 state，不等重库加载。
+    if (config.chapters && config.chapters.length > 0) {
+      setChapters(config.chapters)
     }
+
+    void (async () => {
+      try {
+        const [failover, storage] = await Promise.all([
+          loadVideoFailover(),
+          loadPlaybackStorage(),
+        ])
+        // Resolve mirrors
+        const mirrors = failover.resolveAvailableMirrors(config)
+        setAvailableMirrors(mirrors)
+        setActiveMirror(failover.selectBestMirror(mirrors))
+
+        // Initial playhead: parameter > saved position > 0
+        const initialPos =
+          typeof startSec === 'number' ? startSec : storage.getResumePosition(item.id) || 0
+        setPlayheadSecState(initialPos)
+
+        // Fetch or heuristic extract（无现成章节时才走 AI 摘要，fire-and-forget，
+        // 摘要失败静默——它只是章节提取，不影响播放；不进外层 catch，不弹 toast）
+        if (!config.chapters || config.chapters.length === 0) {
+          void loadVideoAiSummary()
+            .then((summary) =>
+              summary.getVideoAISummary({
+                videoId: item.id,
+                title: item.title,
+                description: item.description,
+                durationSec: config.durationSec || 600,
+              }),
+            )
+            .then((res) => {
+              if (res?.chapters && res.chapters.length > 0) {
+                setChapters(res.chapters)
+              }
+            })
+            .catch(() => {
+              // ignore
+            })
+        }
+      } catch {
+        // 镜像/断点解析失败：播放器已出现（兜底平台/bvid 渲染），toast 告知重试。
+        toast.error('视频资源加载失败，请重试')
+      }
+    })()
   }, [])
 
   // Close player completely
@@ -126,39 +167,55 @@ export function VideoPlayerProvider({ children }: { children: React.ReactNode })
   }, [])
 
   // Update playhead
+  // 断点保存按需加载（fire-and-forget：import 结果由模块缓存保证只加载一次；
+  // 保存失败静默——它只是断点记录，不影响播放）。
   const setPlayheadSec = useCallback((sec: number) => {
     setPlayheadSecState(sec)
     if (activeVideo && activeVideo.videoConfig) {
-      savePlaybackPosition({
+      const payload = {
         videoId: activeVideo.id,
         title: activeVideo.title,
         author: activeVideo.videoConfig.author,
         cover: activeVideo.icon,
         // 播放历史只为 bilibili/youtube/other 建模；VideoConfig.type 现含 12 个平台，
         // 其余平台（含 custom）没有对应的历史条目类型，统一落到 'other'
-        platform:
+        // （payload 先抽成 const 再传参，须显式收窄为联合类型，否则会被拓宽成 string）
+        platform: (
           activeVideo.videoConfig.type === 'bilibili' || activeVideo.videoConfig.type === 'youtube'
             ? activeVideo.videoConfig.type
-            : 'other',
+            : 'other'
+        ) as 'bilibili' | 'youtube' | 'other',
         timestampSec: sec,
         durationSec: activeVideo.videoConfig.durationSec || 600,
-      })
+      }
+      void loadPlaybackStorage()
+        .then((storage) => storage.savePlaybackPosition(payload))
+        .catch(() => {
+          // ignore: 断点保存失败不影响播放
+        })
     }
   }, [activeVideo])
 
   // 当前章节由播放头推导（见 activeChapterId 的 useMemo），无需在这里同步
 
   // Switch mirror manually or failover
+  // 切换记录按需加载（fire-and-forget，不等记录完成就切镜像；记录失败静默）。
   const switchMirror = useCallback((sourceId: string) => {
     const target = availableMirrors.find(m => m.id === sourceId)
     if (target && activeVideo) {
       if (activeMirror) {
-        recordMirrorFailover(
-          activeVideo.id,
-          activeMirror.id,
-          target.id,
-          'User manual switch or auto failover'
-        )
+        void loadVideoFailover()
+          .then((failover) =>
+            failover.recordMirrorFailover(
+              activeVideo.id,
+              activeMirror.id,
+              target.id,
+              'User manual switch or auto failover'
+            )
+          )
+          .catch(() => {
+            // ignore: 切换记录失败不影响切换
+          })
       }
       setActiveMirror(target)
     }

@@ -15,7 +15,6 @@ import {
   exportToGistPayload,
 } from '@/lib/video-workspace-bundler'
 import {
-  translateTechnicalText,
   buildBilingualTranscripts,
   formatToWebVTT,
   formatToSRT,
@@ -24,9 +23,6 @@ import {
   isDocumentPipSupported,
   createDocumentPipController,
 } from '@/lib/video-document-pip'
-import {
-  SessionActivityRecorder,
-} from '@/lib/video-session-recorder'
 
 describe('Proposal [1]: WebCodecs Accelerated Filmstrip & Hover Scrubber Preview', () => {
   it('renders SVG data URLs for timeline preview thumbnails', () => {
@@ -124,21 +120,18 @@ describe('Proposal [3]: Course Project Workspace Bundler & Git Gist Exporter', (
 })
 
 describe('Proposal [4]: Multilingual Subtitle Translator & WebVTT/SRT Serializer', () => {
-  it('translates technical domain terminology deterministically', () => {
-    const translated = translateTechnicalText('这里配置 Kubernetes 和 Idempotency 机制', 'en')
-    expect(translated).toContain('Kubernetes')
-    expect(translated).toContain('Idempotency')
-  })
-
-  it('constructs synchronized bilingual subtitle lines', () => {
+  it('constructs synchronized bilingual subtitle lines from real translations only', () => {
     const items = [
-      { id: 't1', startSec: 0, endSec: 10, text: '微服务架构导读' },
+      { id: 't1', startSec: 0, endSec: 10, text: '微服务架构导读', translation: 'Microservices architecture intro' },
       { id: 't2', startSec: 10, endSec: 25, text: '高并发设计实践' },
+      { id: 't3', startSec: 25, endSec: 40, text: '容器编排基础', translation: 'Container orchestration basics' },
     ]
-    const bilingual = buildBilingualTranscripts(items, 'en')
+    const bilingual = buildBilingualTranscripts(items)
+    // 没有真实译文的行不被“翻译”出来（此前是 6 词词典 + [EN] 前缀假装翻译）
     expect(bilingual).toHaveLength(2)
     expect(bilingual[0].originalText).toBe('微服务架构导读')
-    expect(bilingual[0].translatedText).toBeDefined()
+    expect(bilingual[0].translatedText).toBe('Microservices architecture intro')
+    expect(bilingual[1].id).toBe('t3')
   })
 
   it('formats transcript items into standard WebVTT and SRT formats', () => {
@@ -168,22 +161,3 @@ describe('Proposal [5]: Chrome Document Picture-in-Picture Controller', () => {
   })
 })
 
-describe('Proposal [6]: Learning Session Time-Travel DVR & Cognitive Telemetry', () => {
-  it('records chronological user micro-actions and evaluates cognitive friction', () => {
-    const recorder = new SessionActivityRecorder('test-video-dvr')
-    recorder.recordEvent('play', 0)
-    recorder.recordEvent('seek', 60)
-    recorder.recordEvent('seek', 20) // Rewound 40s (High cognitive challenge)
-    recorder.recordEvent('take_note', 20)
-    recorder.recordEvent('sandbox_run', 20)
-    recorder.recordEvent('pause', 30)
-
-    expect(recorder.getEvents()).toHaveLength(6)
-
-    const report = recorder.generateEngagementReport()
-    expect(report.totalEvents).toBe(6)
-    expect(report.frictionScore).toBeGreaterThan(10)
-    expect(report.handsOnScore).toBeGreaterThan(20)
-    expect(report.rewindHotspotsSec).toContain(20)
-  })
-})

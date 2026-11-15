@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, defaultExclude } from "vitest/config";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { computeWorkerBudget } from "./scripts/worker-budget.ts";
@@ -53,6 +53,14 @@ export default defineConfig({
       // 本地脚手架也用纯 .mjs 测试（如 scripts/test/*.test.mjs，无需 TS 编译）：
       "scripts/**/*.test.mjs",
     ],
+    // 实网弱断言测试 video-live-harvest-check.test.ts 默认不进套件：它直接打
+    // Dailymotion/TED/YouTube 真网，断言只有「有结果或有失败」，
+    // 在默认套件里既慢又不稳定。手动触发：
+    //   RUN_LIVE_HARVEST=1 pnpm vitest run apps/web/test/video-live-harvest-check.test.ts
+    exclude:
+      process.env.RUN_LIVE_HARVEST === "1"
+        ? defaultExclude
+        : [...defaultExclude, "apps/web/test/video-live-harvest-check.test.ts"],
     environment: "node",
     testTimeout: 30_000,
     hookTimeout: 60_000,

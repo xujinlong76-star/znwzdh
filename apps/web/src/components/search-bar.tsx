@@ -10,7 +10,18 @@ import { SiteFavicon, isRemoteRawFavicon } from '@/components/site-favicon'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
-import { matchSearchShortcut } from '@/lib/plugins/search-pack-runtime'
+import { matchSearchShortcut, getAllSearchEngines } from '@/lib/plugins/search-pack-runtime'
+import {
+  matchQuicklinkCommand,
+  quicklinkFromFavorite,
+  toSearchEngines,
+  type QuicklinkEntry,
+} from '@/lib/quicklinks'
+import { useFavorites } from '@/hooks/useFavorites'
+import { useToast } from '@/components/ui/use-toast'
+import { getIdentity } from '@/lib/identity'
+import { recordOfflineVisit } from '@/lib/offline-recent'
+import { reportClick } from '@/lib/navhub-api'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
 
 interface SearchBarProps {
@@ -39,6 +50,9 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
   const inputRef = useRef<HTMLInputElement>(null)
   // 站点配置只是默认值：用户中心的「新标签页打开站点」开关决定最终打开方式
   const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)
+  const favorites = useFavorites()
+  const { toast } = useToast()
+  const identity = useMemo(() => getIdentity(), [])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -69,9 +83,6 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
     if (!channels || channels.length === 0) return null
     return (
       <div className="flex items-center gap-1 flex-shrink-0">
-        {channels.includes('semantic') && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 font-medium leading-none border border-purple-500/20">语义</span>
-        )}
         {channels.includes('pinyin') && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 font-medium leading-none border border-blue-500/20">拼音</span>
         )}
@@ -155,7 +166,86 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
   }
 
   const showResults = isFocused && searchQuery.trim().length > 0
-  const matchedShortcut = useMemo(() => matchSearchShortcut(searchQuery), [searchQuery])
+  /**
+   * 参数化快捷链接：用户自建的 search-pack 引擎排在内置引擎之前
+   *（toSearchEngines：同前缀覆盖内置），`!gh x` 走 matchSearchShortcut
+   * 的合并列表；裸 `gh x`（matchSearchShortcut 不认）走
+   * matchQuicklinkCommand——两条路都命中时以前者为准，优先级
+   * quicklink > OMNI 硬编码引擎 > 导航首条。
+   */
+  const quicklinkEntries = useMemo(
+    () =>
+      favorites.items
+        .map((fav) => quicklinkFromFavorite(fav))
+        .filter((e): e is QuicklinkEntry => e !== null),
+    [favorites.items],
+  )
+  const mergedEngines = useMemo(
+    () => toSearchEngines(quicklinkEntries, getAllSearchEngines()),
+    [quicklinkEntries],
+  )
+  const matchedShortcut = useMemo(
+    () => matchSearchShortcut(searchQuery, mergedEngines),
+    [searchQuery, mergedEngines],
+  )
+  const quicklinkMatch = useMemo(
+    () => matchQuicklinkCommand(searchQuery, quicklinkEntries),
+    [searchQuery, quicklinkEntries],
+  )
+  /**
+   * 横幅与回车的唯一口径：quicklink 命中时用它，否则用合并引擎的命中。
+   * 前缀命中但代入失败（quicklinkMatch 非空、url 为 null）时 displayShortcut
+   * 必须为 null，绝不能回落到 matchedShortcut——合并引擎列表里的同一条
+   * 模板会被 matchSearchShortcut 无上限代入，是绕过 500 字符上限的第二入口。
+   */
+  const quicklinkBanner =
+    quicklinkMatch?.url != null
+      ? {
+          prefix: `!${quicklinkMatch.entry.quickPrefix}`,
+          engineName: quicklinkMatch.entry.title,
+          keyword: quicklinkMatch.arg,
+          directUrl: quicklinkMatch.url,
+          entry: quicklinkMatch.entry,
+          arg: quicklinkMatch.arg,
+        }
+      : null
+  const displayShortcut =
+    quicklinkMatch != null
+      ? quicklinkBanner
+      : matchedShortcut.matched && matchedShortcut.engine && matchedShortcut.directUrl
+        ? {
+            prefix: matchedShortcut.prefix ?? '',
+            engineName: matchedShortcut.engine.name,
+            keyword: matchedShortcut.keyword ?? '',
+            directUrl: matchedShortcut.directUrl,
+          }
+        : null
+  /** 前缀命中但代入失败（参数超 500 字符 / 模板已不安全）：拦截态 */
+  const quicklinkBlocked = quicklinkMatch != null && quicklinkMatch.url == null
+  /** 拦截态的唯一出口：toast、不开页、不 clearSearch、不落回正常搜索 */
+  const toastQuicklinkBlocked = () => {
+    toast({
+      title: '快捷链接打不开',
+      description: '参数超过 500 字符或模板不安全，已拦截。',
+      variant: 'destructive',
+    })
+  }
+
+  const openQuicklink = () => {
+    if (!quicklinkBanner) return false
+    // 打开后记账与收藏打开同口径：离线记录 + 点击上报（带参数）+ 重温计时
+    recordOfflineVisit({
+      id: quicklinkBanner.entry.siteId,
+      title: quicklinkBanner.entry.title,
+      href: quicklinkBanner.entry.href,
+      icon: quicklinkBanner.entry.icon ?? null,
+    })
+    reportClick(quicklinkBanner.entry.siteId, identity, { query: quicklinkBanner.arg })
+    favorites.recordOpened(quicklinkBanner.entry.siteId)
+    safeWindowOpen(quicklinkBanner.directUrl)
+    clearSearch()
+    return true
+  }
 
   return (
     <div ref={searchRef} className="relative w-full max-w-lg mx-auto">
@@ -174,10 +264,22 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={() => setIsFocused(true)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && matchedShortcut.matched && matchedShortcut.directUrl) {
+            if (e.key === 'Enter' && quicklinkBlocked) {
               e.preventDefault()
-              safeWindowOpen(matchedShortcut.directUrl)
-              clearSearch()
+              toastQuicklinkBlocked()
+              return
+            }
+            if (e.key === 'Enter' && displayShortcut?.directUrl) {
+              e.preventDefault()
+              if (quicklinkBanner) openQuicklink()
+              else {
+                // 非 quicklink 分支：displayShortcut 就是 matchedShortcut 的直通
+                // （构造时 directUrl 原样取自 matchedShortcut.directUrl），
+                // 这里直接用 matchedShortcut 的口径经安全闸打开；500 字符拦截门
+                // 在上方 quicklinkBlocked 分支已先行，不会落到这里。
+                safeWindowOpen(matchedShortcut.directUrl)
+                clearSearch()
+              }
             }
           }}
           className="pl-10 pr-20 h-11 rounded-xl border-border/80 shadow-xs focus:shadow-md bg-background/80 backdrop-blur-xs transition-all duration-200"
@@ -204,26 +306,35 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
 
       {showResults && (
         <div id="navhub-search-bar-results" className="absolute top-full left-0 right-0 mt-2 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden">
-          {matchedShortcut.matched && matchedShortcut.engine && matchedShortcut.directUrl && (
+          {displayShortcut && (
             <div className="p-2 border-b border-border/70 bg-primary/5">
               <button
                 type="button"
                 onClick={() => {
-                  safeWindowOpen(matchedShortcut.directUrl)
-                  clearSearch()
+                  if (quicklinkBlocked) {
+                    toastQuicklinkBlocked()
+                    return
+                  }
+                  if (quicklinkBanner) openQuicklink()
+                  else {
+                    // 同回车分支：非 quicklink 时 displayShortcut 即 matchedShortcut，
+                    // 直接用 matchedShortcut 的口径经安全闸打开；拦截门在上方已先行。
+                    safeWindowOpen(matchedShortcut.directUrl)
+                    clearSearch()
+                  }
                 }}
                 className="w-full min-h-11 text-left flex items-center justify-between p-2.5 rounded-lg bg-background hover:bg-muted/80 border border-primary/20 hover:border-primary/40 cursor-pointer shadow-xs transition-all group"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-primary text-primary-foreground">
-                    {matchedShortcut.prefix}
+                    {displayShortcut.prefix}
                   </span>
                   <div className="text-xs sm:text-sm text-foreground truncate">
                     <span>在 </span>
-                    <strong className="text-primary">{matchedShortcut.engine.name}</strong>
+                    <strong className="text-primary">{displayShortcut.engineName}</strong>
                     <span> 搜索：</span>
                     <span className="font-semibold text-primary underline decoration-primary/40">
-                      {matchedShortcut.keyword ? `"${matchedShortcut.keyword}"` : '(全部)'}
+                      {displayShortcut.keyword ? `"${displayShortcut.keyword}"` : '(全部)'}
                     </span>
                   </div>
                 </div>

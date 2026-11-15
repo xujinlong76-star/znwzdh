@@ -11,12 +11,13 @@
  *   1. 播放器和逐字字幕必须走 dynamic()：两者都是条件挂载，异步 chunk 才真挪走字节；
  *   2. 无条件用到的常量来自零依赖模块，常量不许再把播放器拖回来；
  *   3. 六块面板的加载策略逐块钉住（本条 2026-11-11 按现状重写：原断言「六块全部
- *      静态 import」在后续瘦身轮次把其中四块改成 dynamic 后已与实现脱节、长期红，
+ *      静态 import」在后续瘦身轮次把其中几块改成 dynamic 后已与实现脱节、长期红，
  *      继续断言不存在的形态只会训练大家无视门禁）：
  *      - video-network-sentinel 保持静态 import（哨兵需随播放器同帧就位）；
- *      - voice-indicator / telestrator-canvas / pip-window-renderer /
- *        gesture-hud-overlay 保持 dynamic（均为覆盖层/HUD，靠 props 内部开关显隐，
+ *      - voice-indicator / telestrator-canvas / pip-window-renderer
+ *        保持 dynamic（均为覆盖层/HUD，靠 props 内部开关显隐，
  *        异步 chunk 不影响首帧关键路径，预算实测亦在限内）——两种方向都不许偷偷翻转；
+ *        手势 HUD（gesture-hud-overlay）已于 2026-11-13 随 B 组删除下线，不再断言；
  *      - video-heatmap-timeline 已整体下线（2026-11-11 审计第二批：无真实观看热度
  *        数据管线，「无数据不给入口」），不得以任何形式 import 回播放器页；
  *   4. 播放器渲染点外层容器保留 aspect-video 定尺寸，异步挂载不引入 CLS。
@@ -48,12 +49,11 @@ const DEFERRED = [
 /** 保持静态 import 的一块（哨兵需随播放器同帧就位） */
 const STATIC_PANELS = ["video-network-sentinel"];
 
-/** 保持 dynamic 的四块覆盖层/HUD（靠 props 内部开关显隐，异步 chunk 不伤首帧） */
+/** 保持 dynamic 的三块覆盖层/HUD（靠 props 内部开关显隐，异步 chunk 不伤首帧；手势 HUD 已随 B 组删除下线） */
 const DYNAMIC_PANELS = [
   { name: "VideoVoiceIndicator", module: "@/components/video-voice-indicator" },
   { name: "VideoTelestratorCanvas", module: "@/components/video-telestrator-canvas" },
   { name: "VideoPipWindowRenderer", module: "@/components/video-pip-window-renderer" },
-  { name: "VideoGestureHudOverlay", module: "@/components/video-gesture-hud-overlay" },
 ];
 
 describe("/videos/player 首屏：条件挂载的播放器移出 first-load", () => {
@@ -102,7 +102,7 @@ describe("/videos/player 首屏：条件挂载的播放器移出 first-load", ()
     }
   });
 
-  it("四块覆盖层/HUD 保持 dynamic + 具名导出 .then + ssr:false（不许改回静态钉进首屏）", () => {
+  it("三块覆盖层/HUD 保持 dynamic + 具名导出 .then + ssr:false（不许改回静态钉进首屏）", () => {
     const src = overlaySource(PAGE);
     for (const { name, module } of DYNAMIC_PANELS) {
       const decl = new RegExp(

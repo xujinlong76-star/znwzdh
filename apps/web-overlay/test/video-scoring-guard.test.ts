@@ -82,11 +82,21 @@ describe('保鲜分：未知发布时间不能被当成「刚发布」', () => {
     expect(plain).toBeLessThan(50)
     expect(withOldYear).toBeLessThanOrEqual(plain)
   })
+
+  it('保鲜分没有 5 分底线：0 分或极旧视频就是 0 分', () => {
+    // 旧 Math.max(5, …) 让 0 分/极旧视频白拿 5 分保鲜分。
+    const twoYearsAgo = new Date(Date.now() - 730 * 24 * 3600 * 1000).toISOString()
+    expect(calculateFreshnessScore(twoYearsAgo, 0, 90)).toBe(0)
+    expect(calculateFreshnessScore(undefined, 0, 90)).toBe(0)
+    expect(calculateFreshnessScore(twoYearsAgo, 3, 90)).toBe(0)
+  })
 })
 
 describe('质量分与时长解析', () => {
-  it('没有统计数据时返回中性分，不因缺失而虚高', () => {
-    expect(calculateQualityScore(undefined)).toBe(70)
+  it('没有统计数据时返回 0 分，不编造「中性分」', () => {
+    // 旧实现返回 70：无数据视频凭空拿到中等成绩单，还会直接越过 60 分入库门禁。
+    expect(calculateQualityScore(undefined)).toBe(0)
+    expect(calculateQualityScore({ views: 0, likes: 0, danmaku: 0 })).toBe(0)
   })
 
   it('解析 B 站两种时长格式', () => {

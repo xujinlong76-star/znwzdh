@@ -111,7 +111,7 @@
 │   ├── core/            # 纯算法零 IO：检索融合、LinUCB、拼音、CJK、双曲、0-RTT、CRDT、金库
 │   ├── store/           # 存储层：Drizzle 类型/校验 + 手写幂等 DDL，SQLite/PG 双驱动，约 50 张业务表
 │   ├── ai/              # AI 能力：ONNX embedding、SSRF 防护、LLM、富化抓取、邮件
-│   └── mcp/             # MCP Server：41 个工具
+│   └── mcp/             # MCP Server：44 个工具
 ├── extensions/
 │   ├── chrome-extension/# Chrome 扩展（MV3）：omnibox 搜索、一键收录
 │   └── raycast-extension/# Raycast 扩展：全局模糊检索、Markdown 链接复制
@@ -122,7 +122,7 @@
 
 依赖方向：`core`（底层）← `store` / `ai` ← `api` ← `mcp`；前端不 import `@navhub/*`，走 `STORAGE_ADAPTER=http` + `/api/hub/*` BFF 代理。`apps/web` 本地只有 13 个文件快照，**不能直接构建运行**，必须先 `pnpm vendor:web` 拉上游底座，再 `pnpm mirror:web` 覆盖 overlay。
 
-后端（`apps/api`，Fastify 5）：49 个路由插件按域拆分，REST 路由约 300 条（不同口径统计会漂移，以 `docs/CODEBASE_OVERVIEW.md` 为准）；鉴权 scope 分级 `public / read / favorites / write / admin`；API token 为 `nh_` + 24 字节随机，库内只存 SHA-256；14 种定时任务（健康巡检、权重重算、热榜刷新、每日简报、站点自愈、备份等），单实例锁（lite 用幂等表，standard 用 PG advisory lock）。
+后端（`apps/api`，Fastify 5）：57 个路由插件按域拆分，REST 路由 342 条（以 `docs/CODEBASE_OVERVIEW.md` 为准）；鉴权 scope 分级 `public / read / favorites / write / admin`；API token 为 `nh_` + 24 字节随机，库内只存 SHA-256；14 种定时任务（健康巡检、权重重算、热榜刷新、每日简报、站点自愈、备份等），单实例锁（lite 用幂等表，standard 用 PG advisory lock）。
 
 ## 技术栈
 
@@ -231,7 +231,7 @@ docker compose -f docker-compose.yml -f docker-compose.standard.yml --profile st
 
 ## MCP 与扩展
 
-- **MCP Server**：工具清单单一来源 `packages/core/src/mcp-schemas.ts`，共 **41 个**（28 read / 12 write / 1 admin，如 `search_sites`、`get_site`、`list_categories`、`create_site`、`batch_import`、`install_plugin`、`run_job`）。权限 `read | write | admin`，写操作入 `audit_logs`、支持幂等键、批量导入默认 `dryRun`。
+- **MCP Server**：工具清单单一来源 `packages/core/src/mcp-schemas.ts`，共 **45 个**（32 read / 12 write / 1 admin，如 `search_sites`、`get_site`、`list_categories`、`create_site`、`batch_import`、`install_plugin`、`run_job`）。权限 `read | write | admin`，写操作入 `audit_logs`、支持幂等键、批量导入默认 `dryRun`。
   - stdio：`apps/mcp/src/stdio.ts`（默认仅 `read`）
   - Streamable HTTP：`apps/mcp/src/http-server.ts`（默认 `127.0.0.1:8790`，端点 `/mcp`、健康检查 `/health`），每请求重校验 Bearer token、会话绑定 token 指纹 / scope / owner、Origin 白名单
   - 供 Claude Desktop、Cursor 等 Agent 直接调度。

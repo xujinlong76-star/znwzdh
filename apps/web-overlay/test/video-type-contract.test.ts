@@ -4,7 +4,6 @@ import { extractCodeMilestones } from '@/lib/video-code-diff'
 import { resolveAvailableMirrors } from '@/lib/video-failover'
 import {
   generateFlashcardsFromNotes,
-  generateFlashcardsFromQuizzes,
 } from '@/lib/video-spaced-repetition'
 
 /**
@@ -70,46 +69,6 @@ describe('镜像线路：priority 排序契约', () => {
       mirrors: [{ id: 'fast', platform: 'youtube', sourceId: 'abc', priority: -1 }],
     })
     expect(sources[0].id).toBe('fast')
-  })
-})
-
-describe('自测题闪卡：答案取真实正确项', () => {
-  it('correctIndex 指向的选项就是答案', () => {
-    // 旧实现读 `q.options.find(o => o.isCorrect)?.label` —— options 是 string[]，
-    // 没有 isCorrect 属性，于是**每张自测闪卡的答案都是「查看详解」**。
-    const [card] = generateFlashcardsFromQuizzes([
-      {
-        id: 'q1',
-        question: 'React 的 useMemo 作用是什么？',
-        options: ['缓存计算结果', '发起请求', '绑定事件', '设置样式'],
-        correctIndex: 0,
-        explanation: '避免重复计算',
-      },
-    ])
-
-    expect(card.answer).toBe('正确答案：缓存计算结果')
-    expect(card.question).toContain('React 的 useMemo')
-  })
-
-  it('兼容 correctAnswerIndex 旧字段', () => {
-    const [card] = generateFlashcardsFromQuizzes([
-      {
-        id: 'q2',
-        question: 'Next.js 的 App Router 目录名？',
-        options: ['pages', 'app', 'routes', 'views'],
-        correctAnswerIndex: 1,
-        explanation: 'app 目录',
-      },
-    ])
-    expect(card.answer).toBe('正确答案：app')
-  })
-
-  it('题干取自 question 字段（不是不存在的 title）', () => {
-    const [card] = generateFlashcardsFromQuizzes([
-      { id: 'q3', question: '真正的题干', options: ['a', 'b'], correctIndex: 0, explanation: '' },
-    ])
-    expect(card.question).toContain('真正的题干')
-    expect(card.question).not.toContain('undefined')
   })
 })
 

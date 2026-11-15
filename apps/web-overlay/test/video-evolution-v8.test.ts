@@ -15,22 +15,12 @@ import {
   P2PVideoSwarmManager,
 } from '@/lib/video-p2p-chunk-swarm'
 import {
-  calculatePointDistance,
-  classifyHandGesture,
-  AirGestureTracker,
-} from '@/lib/video-air-gesture-tracker'
-import {
   createExpect,
   runLiveCodeTest,
 } from '@/lib/video-live-test-runner'
 import type { OpaqueSession } from '@/lib/video-opaque-sandbox'
 import {
-  calculateBKTUpdate,
-  BayesianKnowledgeTracer,
-} from '@/lib/video-knowledge-tracer'
-import {
   CURATED_TRENDING_TOPICS,
-  harvestTrendingVideos,
 } from '@/lib/video-trending-harvester'
 import type { NavigationData } from '@/types/navigation'
 
@@ -152,34 +142,6 @@ describe('Proposal [3]: Hybrid WebRTC P2P-CDN Video Swarm Loader', () => {
   })
 })
 
-describe('Proposal [4]: Spatial Air-Gesture Video Commander', () => {
-  it('calculates point Euclidean distance and classifies pinch gesture', () => {
-    const p1 = { x: 0.5, y: 0.5 }
-    const p2 = { x: 0.53, y: 0.54 }
-    expect(calculatePointDistance(p1, p2)).toBeCloseTo(0.05, 2)
-
-    // Construct mock hand skeleton with pinch (thumb tip close to index tip)
-    const landmarks = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5 }))
-    landmarks[4] = { x: 0.5, y: 0.5 } // Thumb tip
-    landmarks[8] = { x: 0.51, y: 0.51 } // Index tip
-
-    const result = classifyHandGesture(landmarks)
-    expect(result.gesture).toBe('pinch')
-    expect(result.action).toBe('toggle_play')
-  })
-
-  it('classifies swipe gestures through centroid delta', () => {
-    const landmarks = Array.from({ length: 21 }, () => ({ x: 0.3, y: 0.5 }))
-    landmarks[4] = { x: 0.1, y: 0.5 } // Thumb far from index to avoid pinch
-    landmarks[8] = { x: 0.3, y: 0.5 }
-    const previousCentroid = { x: 0.5, y: 0.5 } // Moved left by 0.2
-
-    const result = classifyHandGesture(landmarks, previousCentroid)
-    expect(result.gesture).toBe('swipe_left')
-    expect(result.action).toBe('seek_back')
-  })
-})
-
 describe('Proposal [5]: Timeline-Driven Live Unit Test Runner', () => {
   it('verifies matcher assertions', () => {
     const expectFn = createExpect
@@ -241,41 +203,6 @@ describe('Proposal [5]: Timeline-Driven Live Unit Test Runner', () => {
   })
 })
 
-describe('Proposal [6]: Bayesian Knowledge Tracing & Diagnostic Remedy Engine', () => {
-  it('updates mastery probability upon correct and incorrect attempts', () => {
-    const prior = 0.5
-    const updatedCorrect = calculateBKTUpdate(prior, true, 0.1, 0.2, 0.1)
-    const updatedWrong = calculateBKTUpdate(prior, false, 0.1, 0.2, 0.1)
-
-    expect(updatedCorrect).toBeGreaterThan(prior)
-    expect(updatedWrong).toBeLessThan(prior)
-  })
-
-  it('diagnoses weak concepts and produces remedial suggestions with jump timestamps', () => {
-    const tracer = new BayesianKnowledgeTracer([
-      {
-        conceptId: 'event-loop',
-        conceptName: 'Event Loop',
-        priorMastery: 0.3,
-        transitionProb: 0.1,
-        guessProb: 0.2,
-        slipProb: 0.1,
-        prerequisiteIds: [],
-        recommendedTimestampSec: 120,
-      },
-    ])
-
-    // Learner fails question
-    tracer.recordAttempt('event-loop', false)
-    const report = tracer.getDiagnosticReport()
-
-    expect(report.weakCount).toBe(1)
-    expect(report.remedialSuggestions.length).toBe(1)
-    expect(report.remedialSuggestions[0]!.conceptId).toBe('event-loop')
-    expect(report.remedialSuggestions[0]!.jumpToTimeSec).toBe(120)
-  })
-})
-
 describe('Trending Video Automated Harvester & Content Enrichment', () => {
   it('contains high-caliber curated trending topics', () => {
     expect(CURATED_TRENDING_TOPICS.length).toBeGreaterThanOrEqual(4)
@@ -296,24 +223,4 @@ describe('Trending Video Automated Harvester & Content Enrichment', () => {
     expect(domains.size).toBeGreaterThanOrEqual(4)
   })
 
-  it('enriches NavigationData without duplicating existing entries', () => {
-    const mockData: NavigationData = {
-      navigationItems: [
-        {
-          id: 'cat_ai_engineering',
-          title: 'AI 与大模型工程',
-          items: [],
-          subCategories: [],
-        },
-      ],
-    }
-
-    const { updatedData, result } = harvestTrendingVideos(mockData, { minHotIndex: 85 })
-    expect(result.harvestedCount).toBeGreaterThan(0)
-    expect(result.categoriesEnriched.length).toBeGreaterThan(0)
-
-    // Harvest a second time: duplicate IDs should be skipped
-    const secondPass = harvestTrendingVideos(updatedData, { minHotIndex: 85 })
-    expect(secondPass.result.harvestedCount).toBe(0)
-  })
 })

@@ -13,7 +13,7 @@
 | 4 | [04-core.md](./04-core.md) | `packages/core` 领域层：数据模型、CJK 分词、拼音、RRF 融合、排序与画像、扩展算法 | 检索/算法 |
 | 5 | [05-store.md](./05-store.md) | `packages/store` 存储层：46 张表 schema、双驱动、Repository、四通道检索引擎、向量与全文实现 | 后端开发 |
 | 6 | [06-ai.md](./06-ai.md) | `packages/ai` 能力层：本地 embedding、SSRF 防护、LLM 富化与多模型轮换池 | 后端/安全 |
-| 7 | [07-mcp.md](./07-mcp.md) | MCP Server（`packages/mcp` 库 + `apps/mcp` 入口）：15 个工具、读写权限、幂等/审计/HTTP 鉴权 | Agent 集成 |
+| 7 | [07-mcp.md](./07-mcp.md) | MCP Server（`packages/mcp` 库 + `apps/mcp` 入口）：44 个工具、读写权限、幂等/审计/HTTP 鉴权、只读个人令牌接入 | Agent 集成 |
 | 8 | [08-extensions-scripts-docker.md](./08-extensions-scripts-docker.md) | 浏览器/Raycast 扩展、scripts 工具集、Docker 多 profile 部署、一键推仓脚本 | 运维/集成 |
 | 9 | [09-run-and-test.md](./09-run-and-test.md) | 运行方式：本地开发、Docker、环境变量全表、测试套件、环境坑与排障 | 所有人 |
 | 10 | [10-bento-diy-and-advanced-algorithms.md](./10-bento-diy-and-advanced-algorithms.md) | **Bento-Flow 智能工作台与前沿算法升级**：跨分类拖拽重排、免登 URL-Hash 分享、Discounted-LinUCB、洛伦兹超曲面、0-RTT AST、卡尔曼滤波与元素审查 | 架构/全栈/算法 |

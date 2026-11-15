@@ -454,10 +454,16 @@ describe('F：假数据治理与路由状态码语义（源码守卫）', () => 
   it('cron 采集入口接入指标落盘；巡检报告落中枢 KV', () => {
     const cron = stripComments(src('app/api/cron/video-harvest/route.ts'))
     expect(cron).toMatch(/hydrateVideoMetrics\s*\(/)
+    // 巡检执行层在 2026-11-13 从路由抽到 lib/video-health-sweep-service.ts，
+    // 报告落盘的断言跟实现一起搬家；路由本身仍不得出现 commitFile
+    // （历史整包覆盖事故的守卫），且必须委托给服务层。
+    const service = stripComments(src('lib/video-health-sweep-service.ts'))
+    expect(service).toMatch(/persistSweepReport\s*\(/)
+    expect(service).toMatch(/scheduleVideoMetricsPersist\s*\(/)
+    expect(service).toMatch(/hydrateVideoMetrics\s*\(/)
+    expect(service).not.toMatch(/\bcommitFile\s*\(/)
     const sweep = stripComments(src('app/api/cron/video-health-sweep/route.ts'))
-    expect(sweep).toMatch(/persistSweepReport\s*\(/)
-    expect(sweep).toMatch(/scheduleVideoMetricsPersist\s*\(/)
-    // 巡检路由本身不得出现 commitFile（历史整包覆盖事故的守卫）
+    expect(sweep).toMatch(/runHealthSweepPage\s*\(/)
     expect(sweep).not.toMatch(/\bcommitFile\s*\(/)
   })
 

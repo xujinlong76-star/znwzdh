@@ -101,14 +101,21 @@ describe('video-harvester 核心工具函数单测', () => {
   })
 
   describe('多平台采集通道与平台能力注册表', () => {
-    it('DEFAULT_HARVEST_PLATFORMS 默认包含 B站、YouTube、Dailymotion、TED、PeerTube', () => {
+    it('DEFAULT_HARVEST_PLATFORMS 默认包含 B站、YouTube、Dailymotion、TED（PeerTube 2026-11-14 已删通道）', () => {
       expect(DEFAULT_HARVEST_PLATFORMS).toEqual([
         'bilibili',
         'youtube',
         'dailymotion',
         'ted',
-        'peertube',
       ])
+    })
+
+    it('PeerTube 仅保留 URL 解析与嵌入：注册表仍在，但 supportsKeywordHarvest 为 false', () => {
+      expect(VIDEO_PLATFORM_REGISTRY.peertube).toBeDefined()
+      expect(VIDEO_PLATFORM_REGISTRY.peertube.supportsUrlResolve).toBe(true)
+      expect(VIDEO_PLATFORM_REGISTRY.peertube.supportsIframeEmbed).toBe(true)
+      expect(VIDEO_PLATFORM_REGISTRY.peertube.supportsKeywordHarvest).toBe(false)
+      expect(DEFAULT_HARVEST_PLATFORMS).not.toContain('peertube')
     })
 
     it('VIDEO_PLATFORM_REGISTRY 覆盖所有支持平台并提供名称与徽标色', () => {

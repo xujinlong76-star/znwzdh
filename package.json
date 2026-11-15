@@ -25,6 +25,7 @@
     "typecheck:video": "node scripts/typecheck-video-scope.mjs",
     "video:catalog": "node apps/api/src/video-catalog-main.ts",
     "video:catalog:check": "node apps/api/src/video-catalog-main.ts --check",
+    "video:rescore": "node scripts/video-rescore-backfill.mjs",
     "site:heal": "node scripts/self-healing-agent.mjs",
     "site:heal:check": "node scripts/self-healing-agent.mjs --dry-run",
     "db:clean": "node scripts/clean-taxonomy-and-duplicates.mjs",

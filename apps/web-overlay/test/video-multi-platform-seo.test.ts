@@ -19,40 +19,27 @@ import {
 import type { NavigationSubItem } from '../src/types/navigation'
 
 describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => {
-  describe('1. 12+ 国内外视频平台 URL 识别 (detectVideoPlatform)', () => {
-    it('支持识别国内主流平台 (Bilibili / 抖音 / 快手 / 西瓜 / 小红书 / 腾讯 / 优酷)', () => {
+  describe('1. 国内外视频平台 URL 识别 (detectVideoPlatform)', () => {
+    it('支持识别国内主流平台 (Bilibili)', () => {
       expect(detectVideoPlatform('https://www.bilibili.com/video/BV1xx411c7mD')).toMatchObject({
         platform: 'bilibili',
         bvid: 'BV1xx411c7mD',
       })
-      expect(detectVideoPlatform('https://www.douyin.com/video/7321098765432109876')).toMatchObject({
-        platform: 'douyin',
-        externalId: '7321098765432109876',
-      })
-      expect(detectVideoPlatform('https://www.kuaishou.com/short-video/3x8a9b2c3d4e5f6')).toMatchObject({
-        platform: 'kuaishou',
-        externalId: '3x8a9b2c3d4e5f6',
-      })
-      expect(detectVideoPlatform('https://www.ixigua.com/7291234567890123456')).toMatchObject({
-        platform: 'xigua',
-        externalId: '7291234567890123456',
-      })
-      expect(
-        detectVideoPlatform('https://www.xiaohongshu.com/explore/65a1b2c3000000001e02f3a4')
-      ).toMatchObject({
-        platform: 'xiaohongshu',
-        externalId: '65a1b2c3000000001e02f3a4',
-      })
-      expect(detectVideoPlatform('https://v.qq.com/x/page/u3245abcdef.html')).toMatchObject({
-        platform: 'tencent',
-        externalId: 'u3245abcdef',
-      })
-      expect(
-        detectVideoPlatform('https://v.youku.com/v_show/id_XNTk4NzY1NDMyMA==.html')
-      ).toMatchObject({
-        platform: 'youku',
-        externalId: 'XNTk4NzY1NDMyMA==',
-      })
+    })
+
+    it('已下线的 6 个平台 (抖音 / 快手 / 西瓜 / 小红书 / 腾讯 / 优酷) 不再冒充专属平台，走 custom 兜底', () => {
+      // 2026-11-13 B 组 #27：这 6 个平台从未进入采集分支，识别器与嵌入支持一并删除；
+      // 它们的链接不再被识别为专属平台，而是按任意网页走 custom 兜底。
+      for (const url of [
+        'https://www.douyin.com/video/7321098765432109876',
+        'https://www.kuaishou.com/short-video/3x8a9b2c3d4e5f6',
+        'https://www.ixigua.com/7291234567890123456',
+        'https://www.xiaohongshu.com/explore/65a1b2c3000000001e02f3a4',
+        'https://v.qq.com/x/page/u3245abcdef.html',
+        'https://v.youku.com/v_show/id_XNTk4NzY1NDMyMA==.html',
+      ]) {
+        expect(detectVideoPlatform(url)?.platform).toBe('custom')
+      }
     })
 
     it('支持识别国际与开源联邦平台 (YouTube / Vimeo / TED / Dailymotion / PeerTube / Custom)', () => {
@@ -84,8 +71,9 @@ describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => 
       })
     })
 
-    it('注册表包含完整的 13 个平台能力声明', () => {
-      expect(Object.keys(VIDEO_PLATFORM_REGISTRY)).toHaveLength(13)
+    it('注册表包含完整的 7 个平台能力声明', () => {
+      // 2026-11-13 B 组 #27：抖音 / 快手 / 西瓜 / 小红书 / 腾讯 / 优酷 6 个平台下线，13 → 7
+      expect(Object.keys(VIDEO_PLATFORM_REGISTRY)).toHaveLength(7)
     })
   })
 
@@ -160,7 +148,18 @@ describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => 
       expect(resolved.videoConfig.indexable).toBe(true)
     })
 
-    it('harvestMultiPlatformVideosForKeyword 支持从 Dailymotion 与 PeerTube 采集并注入 SEO 元数据', async () => {
+    it('直连失败的兜底不编造分数：qualityScore / freshnessScore 均为 0', async () => {
+      // 旧兜底硬编码 78/78：一次都没抓到数据的视频直接越过入库门禁。
+      const mockFetch = vi.fn().mockRejectedValue(new Error('network down'))
+      const resolved = await resolveMultiPlatformVideoUrl(
+        'https://www.dailymotion.com/video/x8abcde',
+        mockFetch as unknown as typeof fetch
+      )
+      expect(resolved.videoConfig.qualityScore).toBe(0)
+      expect(resolved.videoConfig.freshnessScore).toBe(0)
+    })
+
+    it('harvestMultiPlatformVideosForKeyword 支持从 Dailymotion 采集并注入 SEO 元数据', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes('api.dailymotion.com')) {
           return {
@@ -181,42 +180,22 @@ describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => 
             }),
           }
         }
-        return {
-          ok: true,
-          json: async () => ({
-            data: [
-              {
-                shortUUID: 'kkGMgK9ZtnKfYAgnEtQxbv',
-                name: 'Linux Kernel eBPF Tracing Deep Dive',
-                description: 'Complete walkthrough of eBPF verifier, kprobes and ringbuf.',
-                duration: 2400,
-                views: 19500,
-                likes: 1200,
-                publishedAt: '2026-01-20T10:00:00Z',
-                url: 'https://framatube.org/w/kkGMgK9ZtnKfYAgnEtQxbv',
-                account: { displayName: 'KernelRecipes', host: 'framatube.org' },
-              },
-            ],
-          }),
-        }
+        return { ok: false, json: async () => ({}) }
       })
 
       const items = await harvestMultiPlatformVideosForKeyword(
         'Rust eBPF',
         {
-          platforms: ['dailymotion', 'peertube'],
+          platforms: ['dailymotion'],
           minDurationSec: 180,
-          minQualityScore: 60,
           limitPerKeyword: 2,
         },
         mockFetch as unknown as typeof fetch
       )
 
-      expect(items).toHaveLength(2)
+      expect(items).toHaveLength(1)
       expect(items[0].videoConfig?.type).toBe('dailymotion')
       expect(items[0].videoConfig?.seoSlug).toContain('dailymotion-x9k8j7')
-      expect(items[1].videoConfig?.type).toBe('peertube')
-      expect(items[1].videoConfig?.seoSlug).toContain('peertube-kkgmgk9ztnkfyagnetqxbv')
     })
   })
 
@@ -291,14 +270,11 @@ describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => 
     })
 
     it('buildVideoEmbedUrlForSeo 与 auditVideoSeoReadiness 准确评估多平台视频', () => {
-      expect(
-        buildVideoEmbedUrlForSeo({ type: 'douyin', videoId: '7321098765432109876' })
-      ).toContain('open.douyin.com/player/video')
+      // 已下线平台不再有专属嵌入地址：裸配置无 href 可回退，返回空串而非编造播放器地址
+      expect(buildVideoEmbedUrlForSeo({ type: 'douyin', videoId: '7321098765432109876' } as never)).toBe('')
+      expect(buildVideoEmbedUrlForSeo({ type: 'tencent', videoId: 'u3245abcdef' } as never)).toBe('')
       expect(buildVideoEmbedUrlForSeo({ type: 'vimeo', videoId: '76979871' })).toContain(
         'player.vimeo.com/video/76979871'
-      )
-      expect(buildVideoEmbedUrlForSeo({ type: 'tencent', videoId: 'u3245abcdef' })).toContain(
-        'v.qq.com/txp/iframe/player.html?vid=u3245abcdef'
       )
 
       const audit = auditVideoSeoReadiness([sampleItem])

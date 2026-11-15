@@ -408,7 +408,7 @@ const WIDGET_TYPE_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/
 const HSL_TRIPLE_PATTERN = /^(\d{1,3}(?:\.\d+)?)\s+(\d{1,3}(?:\.\d+)?)%\s+(\d{1,3}(?:\.\d+)?)%$/
 const RADIUS_PATTERN = /^(\d(?:\.\d{1,2})?)rem$/
 const FORBIDDEN_CONFIG_KEYS = ['__proto__', 'constructor', 'prototype']
-const INVISIBLE_OR_BIDI_PATTERN = /[\u00AD\u200B\u200C\u202A-\u202E\u2060\u2066-\u2069\uFEFF\uE000-\uF8FF]|(?<!\p{Extended_Pictographic})\u200D|\u200D(?!\p{Extended_Pictographic})/u
+export const INVISIBLE_OR_BIDI_PATTERN = /[\u00AD\u200B\u200C\u202A-\u202E\u2060\u2066-\u2069\uFEFF\uE000-\uF8FF]|(?<!\p{Extended_Pictographic})\u200D|\u200D(?!\p{Extended_Pictographic})/u
 
 function isAbsoluteHttpUrl(value: string): boolean {
   try {

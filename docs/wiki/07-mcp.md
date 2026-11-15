@@ -8,7 +8,7 @@
 
 | 文件 | 行数 | 职责 |
 | --- | --- | --- |
-| [tools.ts](../../packages/mcp/src/tools.ts) | ~230 | **15 个工具定义** + zod 输入 schema + 权限模型（`requireScope` / `MAX_BATCH_ITEMS`） |
+| [tools.ts](../../packages/mcp/src/tools.ts) | ~230 | **45 个工具定义** + zod 输入 schema + 权限模型（`requireScope` / `MAX_BATCH_ITEMS`） |
 | [handlers.ts](../../packages/mcp/src/handlers.ts) | ~360 | **工具实现**（`createHandlers(ctx)`）：权限校验 → 幂等去重 → 审计落库 |
 | [mcp-server.ts](../../packages/mcp/src/mcp-server.ts) | ~75 | **Server 工厂**：`createMcpServer(ctx, toolCtx)`——`ListToolsRequestSchema` / `CallToolRequestSchema` 装配，stdio 与 HTTP 共用 |
 | [stdio.ts](../../apps/mcp/src/stdio.ts) | ~45 | **stdio 传输**：`createMcpServer` + `StdioServerTransport` |
@@ -71,8 +71,15 @@ export const MAX_BATCH_ITEMS = 100;   // 批量写入硬上限
 | `refresh_site` | **write** | ✓ | `idOrUrl`、`llm`(默认 false) | **入队** `refetch_metadata`，异步执行（不立即返回新元数据） |
 | `run_job` | **admin** | ✓ | `kind`(7选1)、`payload` | 入队后台任务；需 admin——会触发全站扫描 |
 | `list_jobs` | read | ✗ | `status`(5 选 1)、`limit`(1-100, 默认20) | 任务队列（最近在前）。补上「`run_job` 只负责入队、Agent 却查不到执行结果」的口子 |
+| `list_favorites` | read | ✗ | `folder`、`limit`(1-200, 默认50)、`offset` | **本人**收藏（JOIN 站点标题/网址/描述）；仅带 `owner_identity` 的个人令牌可用 |
+| `compare_sites` | read | ✗ | `siteIds`(2–3 个，必) | **本人**收藏里的 2–3 站横向对照（计费/平台/形态/维护/备注/迁移，每格带来源与核实时间）；任一站不在本人收藏里则整单失败；仅个人令牌可用 |
+| `search_favorites` | read | ✗ | `query`(必)、`folder`、`tag`、`limit`(1-50, 默认10)、`offset` | **本人**收藏内检索（词法 + 语义两路召回，与 `/api/ask` 同口径，只返回候选、不做 LLM 问答）；仅个人令牌可用 |
+| `list_favorite_folders` | read | ✗ | — | **本人**收藏夹（id / 名称 / 条数）+ 未分夹条数；`list_favorites` / `search_favorites` 按夹过滤的前置 |
+| `list_search_history` | read | ✗ | `limit`(1-200, 默认20)、`offset` | **本人**最近搜索记录；仅个人令牌可用 |
+| `get_profile_summary` | read | ✗ | — | **本人**画像摘要；仅个人令牌可用 |
+| `list_facets` | read | ✗ | `categoryId`、`tag` | 受控分面定义与取值分布；检索前了解可筛维度 |
 
-> **全部 35 个工具：只读 24 / 写 11（其中 run_job 为 admin 专属）**（由 `scope` + `mutating` 字段划分；上表只列核心 17 个，算法 / 发现 / 开发者类工具见 wiki 10）。测试 `工具清单 > 包含 24 个只读工具与 11 个写工具` 锁死只读名单。
+> **全部 45 个工具：只读 32 / 写 12 / admin 1（其中 run_job 为 admin 专属）**（由 `scope` + `mutating` 字段划分；下表只列核心 17 个 + 用户域/目录域 6 个，算法 / 发现 / 开发者类工具见 wiki 10）。测试 `工具清单 > 包含 32 个只读工具与 13 个写工具` 锁死只读名单；`packages/mcp/test/read-only-tools-list.test.ts` 锁死「read token 的 tools/list 只返回 32 个只读工具」。
 
 `ToolDefinition` 还带 `mutating: boolean`——**用于让宿主（MCP 客户端）决定是否需要人工确认**。
 
@@ -140,7 +147,7 @@ async function withIdempotency(key: string | undefined, compute: () => Promise<u
 
 ### 5.1 stdio（[stdio.ts](../../apps/mcp/src/stdio.ts)）
 
-**本地客户端直接拉起，没有网络攻击面**，权限由启动它的用户决定——因此 **scope 默认 `read,write`**（仍可用环境变量收紧）。
+**本地客户端直接拉起，没有网络攻击面**，权限由启动它的用户决定——但默认仍然只给只读：**scope 默认 `read`**（2026-11-06 深扫 P2-12：客户端配置文件可能来自第三方粘贴，不等于用户本人显式授权写操作；需要 `create_site` / `update_site` 等写工具时由运维显式设置 `NAVHUB_MCP_SCOPES=read,write`）。
 
 ```json
 {
@@ -151,7 +158,7 @@ async function withIdempotency(key: string | undefined, compute: () => Promise<u
       "env": {
         "NAVHUB_MODE": "lite",
         "NAVHUB_SQLITE_PATH": "./data/navhub.db",
-        "NAVHUB_MCP_SCOPES": "read,write"
+        "NAVHUB_MCP_SCOPES": "read"
       }
     }
   }
@@ -161,7 +168,7 @@ async function withIdempotency(key: string | undefined, compute: () => Promise<u
 | 机制 | 实现 |
 | --- | --- |
 | 身份 | `NAVHUB_MCP_ACTOR`（默认 `mcp:stdio`） |
-| scope | `NAVHUB_MCP_SCOPES`（默认 `read,write`） |
+| scope | `NAVHUB_MCP_SCOPES`（stdio 默认 `read`；见 §9：HTTP / compose 默认 `read,write`，两处默认并不一致） |
 | 工具发现 | `ListToolsRequestSchema` → `TOOL_DEFS`，**按当前 scope 过滤**（read 明明看不到写工具，也不必列出必然 403 的 admin 工具），**写工具的 description 追加「（写操作，会修改数据）」** |
 | 入参描述 | `zodToJsonSchema(schema, { $refStrategy: "none" })`——全仓 zod 固定 v3，v3 无内置 `toJSONSchema`，故用社区实现 `zod-to-json-schema`；**转换失败退回宽松描述** `{type:"object", additionalProperties:true}`，保证工具仍可被发现与调用 |
 | 错误 | 捕获后返回 `isError: true` + `调用失败：<message>` |
@@ -175,7 +182,7 @@ async function withIdempotency(key: string | undefined, compute: () => Promise<u
 | 1 | **默认只监听 `127.0.0.1`** | `NAVHUB_MCP_HTTP_HOST` 默认 `127.0.0.1`，要对外必须显式改 |
 | 2 | **必须提供 Bearer token** | `NAVHUB_MCP_TOKEN`；缺省且未设 insecure → **拒绝启动，`process.exit(2)`** |
 | 3 | **校验 `Origin`** | 只有显式配置在 `NAVHUB_MCP_ALLOWED_ORIGINS` 里的来源才接受浏览器请求——**防 DNS rebinding / CSRF** |
-| 4 | token 的 scope 决定可调用的工具集合 | `NAVHUB_MCP_SCOPES`（默认 `read,write`） |
+| 4 | token 的 scope 决定可调用的工具集合 | `NAVHUB_MCP_SCOPES`（HTTP 入口默认 `read,write`；stdio 默认 `read`，见 §9） |
 
 ```ts
 function secureEqual(a, b) {  // timingSafeEqual（防时序攻击）
@@ -248,7 +255,7 @@ compose 里的服务 `mcp`（[docker/docker-compose.yml](../../docker/docker-com
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `NAVHUB_MCP_SCOPES` | `read,write` | 逗号分隔 scope（stdio 与 HTTP 共用） |
+| `NAVHUB_MCP_SCOPES` | stdio: `read`；HTTP / compose: `read,write`（见 §9） | 逗号分隔 scope（stdio 与 HTTP 共用变量名、默认不同） |
 | `NAVHUB_MCP_ACTOR` | `mcp:stdio` / `mcp:http` | 审计 actor 标识 |
 | `NAVHUB_MCP_HTTP_HOST` | `127.0.0.1` | HTTP 监听地址 |
 | `NAVHUB_MCP_HTTP_PORT` | `8790` | HTTP 端口 |
@@ -257,3 +264,111 @@ compose 里的服务 `mcp`（[docker/docker-compose.yml](../../docker/docker-com
 | `NAVHUB_MCP_ALLOWED_ORIGINS` | `""` | Origin 白名单（逗号分隔） |
 
 其余（`NAVHUB_MODE` / `NAVHUB_SQLITE_PATH` / `NAVHUB_LLM_*` / `NAVHUB_EMBEDDING_*`）由 `@navhub/api` 的 `loadConfig()` 消费，见 [09-run-and-test.md](./09-run-and-test.md)。
+
+## 9. 只读接入：个人令牌与客户端配置（Batch 3 第 4 项）
+
+### 9.1 默认 scope 在各入口并不一致（已按代码实锤）
+
+| 入口 | 默认 `NAVHUB_MCP_SCOPES` | 代码位置 |
+| --- | --- | --- |
+| stdio（本地客户端拉起） | `read` | `apps/mcp/src/stdio.ts`（`?? "read"`） |
+| HTTP（`apps/mcp/src/http.ts`） | `read,write` | `apps/mcp/src/http-server.ts` 的 `mcpHttpOptionsFromEnv`（`?? "read,write"`） |
+| Docker compose（`mcp` 服务） | `read,write` | `docker/docker-compose.yml`（`${NAVHUB_MCP_SCOPES:-read,write}`） |
+
+**不要按「默认」推断另一入口的行为**：同一个环境变量名在 stdio 与 HTTP 下的默认值不同。只读接入一律显式写 `NAVHUB_MCP_SCOPES=read`（下面三份配置都已写死），不要依赖默认。
+
+### 9.2 只读个人令牌：签发流程
+
+用户域工具（`list_favorites` / `search_favorites` / `list_favorite_folders` / `list_search_history` / `get_profile_summary` / `compare_sites`）只认**带 `owner_identity` 的个人令牌**：数据范围 = 令牌归属人，调用方传什么身份都不算；实例级令牌（`ownerIdentity` 为 null）一律被拒。
+
+签发（用户本人操作，不经过管理员）：
+
+1. 登录后打开 **`/me/account`** 页的「API 令牌」面板（`ApiTokensPanel`）；
+2. 填名称，权限档位选 **只读**（默认就是只读），创建；
+3. 明文（`nh_…`）只在创建响应里出现一次，立即复制保存——库里只存 sha256，丢了只能吊销重建。
+
+对应接口：`POST /api/me/tokens`（`{ name, permission: "read" }`，登录身份受信才放行，匿名身份 403；每人最多 10 条未吊销令牌）。落库形态：`api_tokens.scopes = "read"`，`owner_identity = 登录身份的规范化 identity`。
+
+> ⚠️ **不要去 `/admin/tokens` 签发**：那是管理员的实例级凭据（`POST /api/tokens`，不带 `owner_identity`），能管站点但**读不到任何个人数据**——拿它调 `search_favorites` 会直接被「要求用户级个人令牌」拒绝。反过来，个人令牌即使带 `write` 也写不了实例级站点（`evaluateInstanceWrite` 拦截），两类凭据的边界是单向的。
+
+**只读个人令牌下 `tools/list` 应为 32 个只读工具**（28 个现有只读 + 本批新增的 `search_favorites` / `list_favorite_folders` / `list_facets` / `compare_sites`）；13 个写/admin 工具全部不可见，`CallTool` 调它们会被权限拒绝。由 `packages/mcp/test/read-only-tools-list.test.ts` 锁死。
+
+### 9.3 可复制配置
+
+**Claude Desktop（stdio，只读）**——`claude_desktop_config.json`：
+
+```json
+{
+  "mcpServers": {
+    "navhub": {
+      "command": "node",
+      "args": ["--experimental-strip-types", "apps/mcp/src/stdio.ts"],
+      "env": {
+        "NAVHUB_MODE": "lite",
+        "NAVHUB_SQLITE_PATH": "./data/navhub.db",
+        "NAVHUB_MCP_SCOPES": "read"
+      }
+    }
+  }
+}
+```
+
+**Cursor（`mcp.json`，只读）**：
+
+```json
+{
+  "mcpServers": {
+    "navhub": {
+      "command": "node",
+      "args": ["--experimental-strip-types", "apps/mcp/src/stdio.ts"],
+      "env": {
+        "NAVHUB_MODE": "lite",
+        "NAVHUB_SQLITE_PATH": "./data/navhub.db",
+        "NAVHUB_MCP_SCOPES": "read"
+      }
+    }
+  }
+}
+```
+
+> stdio 模式没有网络鉴权：能拉起进程的人就是调用者。只读是底线——不要在 stdio 配置里写 `read,write`，除非你明确要让这个客户端改库。
+
+**HTTP（`mcp-remote` + 只读个人令牌）**——服务端须以 `NAVHUB_MCP_SCOPES=read` 启动（不要依赖 HTTP 默认的 `read,write`），客户端：
+
+```json
+{
+  "mcpServers": {
+    "navhub": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://127.0.0.1:8790/mcp",
+        "--header",
+        "Authorization: Bearer nh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ]
+    }
+  }
+}
+```
+
+其中 `nh_…` 是 §9.2 签发的只读个人令牌明文（不是静态 `NAVHUB_MCP_TOKEN`，也不是 `/admin/tokens` 的实例级令牌）。HTTP 层按表内 token 的 `scopes` / `owner_identity` 建会话：同一个只读个人令牌在 HTTP 下同样只能看到 32 个只读工具、只能读自己的收藏。
+
+### 9.4 本批新增工具的使用示例
+
+```jsonc
+// 1. 先看自己有哪些夹子
+{ "name": "list_favorite_folders", "arguments": {} }
+// → { "folders": [{ "id": "…", "name": "工作", "count": 12 }], "unfiledCount": 3 }
+
+// 2. 在收藏里搜（备注/标签都算检索文本，不用先复制到对话里）
+{ "name": "search_favorites", "arguments": { "query": "做 PPT 找配色", "limit": 5 } }
+// → { "results": [{ "siteId": "…", "title": "设计灵感库", "url": "…",
+//      "note": "做 PPT 找配色", "tags": ["设计"],
+//      "matchScore": 8.5, "matchedBy": { "lexical": 1 } }],
+//     "correction": null, "semanticAvailable": false }
+
+// 3. 列收藏（现在带站点标题/网址/描述）
+{ "name": "list_favorites", "arguments": { "folder": "…", "limit": 20 } }
+```
+
+`search_favorites` 的返回字段：`siteId` / `title` / `url` / `description` / `note` / `tags` / `folderId` / `createdAt` + `matchScore`（词法分或语义相似度，6 位小数）/ `matchedBy`（每路召回的名次）/ `correction`（仅词法 0 命中且纠出替代问法时出现）/ `semanticAvailable`（模型缺失/编码失败时为 false，只剩词法）。空白查询返回空结果不报错；超长查询（>256 字）被契约拒绝。语义路阈值与 `/api/ask` 同口径（有词法命中 0.4、纯语义 0.55），但**不做 LLM 问答**——想让模型基于收藏回答，仍走网页端的 `/api/ask`。

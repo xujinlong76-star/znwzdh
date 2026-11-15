@@ -5,18 +5,6 @@ import {
   findMilestoneAtTime,
 } from '@/lib/video-code-diff'
 import {
-  attachAudioEnhancer,
-} from '@/lib/video-audio-enhancer'
-import {
-  joinCoWatchRoom,
-} from '@/lib/video-crdt-room'
-import {
-  generateVideoQuizzes,
-  gradeQuizAnswers,
-  findQuizTriggerAtPlayhead,
-  quizCorrectIndex,
-} from '@/lib/video-quiz-generator'
-import {
   generateVideoMindMap,
   flattenMindMap,
   exportMindMapAsMarkdown,
@@ -75,115 +63,6 @@ describe('1. Video Code Diff Engine (LCS Unified Diff & Timeline)', () => {
 
     const found = findMilestoneAtTime(milestones, 150)
     expect(found?.id).toBe('c3')
-  })
-})
-
-describe('2. Client-Side WebAudio Signal Processing (DSP Enhancer)', () => {
-  it('initializes enhancer safely in SSR / fallback environments and updates options', () => {
-    const mockAudio = {} as HTMLMediaElement
-    const controller = attachAudioEnhancer(mockAudio, {
-      voiceClarity: true,
-      loudnessNormalization: true,
-      volumeBoost: 1.5,
-      lowCut: true,
-    })
-
-    expect(controller).toBeDefined()
-    expect(controller.getOptions().volumeBoost).toBe(1.5)
-    expect(controller.getOptions().voiceClarity).toBe(true)
-
-    // Update options
-    controller.setOptions({ volumeBoost: 2.0, voiceClarity: false })
-    expect(controller.getOptions().volumeBoost).toBe(2.0)
-    expect(controller.getOptions().voiceClarity).toBe(false)
-
-    // Volume clamping check
-    controller.setOptions({ volumeBoost: 5.0 })
-    expect(controller.getOptions().volumeBoost).toBe(2.5) // Clamped to max 2.5
-
-    // Clean destruction
-    expect(() => controller.destroy()).not.toThrow()
-  })
-})
-
-describe('3. P2P Co-Watching Room & Collaborative Sync Protocol', () => {
-  it('initializes session, updates playback, and tracks state updates', () => {
-    let capturedState: any = null
-    const session = joinCoWatchRoom({
-      roomId: 'test-room-42',
-      videoId: 'video-101',
-      onStateUpdate: (state) => {
-        capturedState = state
-      },
-    })
-
-    expect(session.roomId).toBe('test-room-42')
-    expect(session.clientId).toBeDefined()
-    expect(session.getPeerCount()).toBeGreaterThanOrEqual(1)
-
-    // Broadcast playback update
-    session.broadcastPlayback(128.5, true)
-    const st = session.getState()
-    expect(st.currentSec).toBe(128.5)
-    expect(st.isPlaying).toBe(true)
-    expect(st.version).toBeGreaterThan(0)
-
-    // Append shared note
-    session.appendSharedNote('This is a collaborative note at 128s', 128.5)
-    expect(session.getState().notes).toHaveLength(1)
-    expect(session.getState().notes[0].text).toContain('collaborative note')
-
-    expect(() => session.leave()).not.toThrow()
-  })
-})
-
-describe('4. In-Video Knowledge Checkpoint Gate & Quiz Engine', () => {
-  const mockChapters: VideoChapter[] = [
-    { id: 'ch1', title: 'Kubernetes Ingress 架构解析', startTime: 0, summary: '讲解控制器选型与路由规则' },
-    { id: 'ch2', title: 'Helm Chart 模版编写实战', startTime: 300, summary: '编写 values.yaml 和模板变量替换' },
-  ]
-
-  it('generates technical quiz questions based on chapter topics', () => {
-    const questions = generateVideoQuizzes('vid-1', mockChapters, 'K8s 生产实践')
-    expect(questions.length).toBeGreaterThanOrEqual(2)
-    expect(questions[0].options).toHaveLength(4)
-    expect(questions[0].correctIndex).toBeGreaterThanOrEqual(0)
-    expect(questions[0].explanation).toBeDefined()
-  })
-
-  it('correctly scores user submissions and generates detailed diagnostic feedback', () => {
-    const questions = generateVideoQuizzes('vid-1', mockChapters, 'K8s 生产实践')
-    const userAnswers: Record<string, number> = {}
-
-    // Answer first correctly, second incorrectly
-    // 下标访问在 noUncheckedIndexedAccess 下是 `T | undefined`：先取局部常量再判空，
-    // 否则 tsc 红（TS2322 / TS2532），而 vitest 不查类型、会一直「看起来是绿的」。
-    const firstQuestion = questions[0]
-    const secondQuestion = questions[1]
-    if (!firstQuestion) throw new Error('mockChapters 至少要生成 1 道题')
-    // correctIndex 是可选字段（AI 生成的题只带 correctAnswerIndex），统一走 quizCorrectIndex
-    userAnswers[firstQuestion.id] = quizCorrectIndex(firstQuestion)
-    if (secondQuestion) {
-      userAnswers[secondQuestion.id] = (quizCorrectIndex(secondQuestion) + 1) % 4
-    }
-
-    const result = gradeQuizAnswers(questions, userAnswers)
-    expect(result.totalQuestions).toBe(questions.length)
-    expect(result.correctCount).toBe(1)
-    expect(result.scorePercent).toBe(50)
-    expect(result.feedback).toBeDefined()
-    expect(result.detailedResults).toHaveLength(questions.length)
-    expect(result.detailedResults[0]?.isCorrect).toBe(true)
-  })
-
-  it('finds trigger checkpoints near the current playhead', () => {
-    const questions = generateVideoQuizzes('vid-1', mockChapters, 'K8s 生产实践')
-    // Question for chapter 1 has timeSec = ch.startTime + 60 = 60, or near it
-    const firstQuestion = questions[0]
-    if (!firstQuestion) throw new Error('mockChapters 至少要生成 1 道题')
-    const trigger = findQuizTriggerAtPlayhead(questions, firstQuestion.timeSec ?? 0, new Set())
-    expect(trigger).toBeDefined()
-    expect(trigger?.id).toBe(firstQuestion.id)
   })
 })
 

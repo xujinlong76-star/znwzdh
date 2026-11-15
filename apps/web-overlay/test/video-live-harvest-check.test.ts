@@ -23,14 +23,13 @@ afterAll(() => {
 })
 
 describe('实机触发采集功能并验证自动化采集管线', () => {
-  it('1. 验证多平台公开通道实时检索能力 (Dailymotion / PeerTube / TED / YouTube)', async () => {
+  it('1. 验证多平台公开通道实时检索能力 (Dailymotion / TED / YouTube)', async () => {
     const failures: Array<{ keyword: string; reason: string }> = []
     const results = await harvestMultiPlatformVideosForKeyword(
       'Kubernetes Docker',
       {
-        platforms: ['dailymotion', 'peertube', 'ted', 'youtube'],
+        platforms: ['dailymotion', 'ted', 'youtube'],
         minDurationSec: 120,
-        minQualityScore: 50,
         limitPerKeyword: 2,
         failures,
       }

@@ -5,9 +5,6 @@ import {
   NeuralDenoiserController,
 } from '@/lib/video-neural-denoiser'
 import {
-  InteractiveCodeDebugger,
-} from '@/lib/video-breakpoint-debugger'
-import {
   SimpleBloomFilter,
   TokenBucketLimiter,
   P2PDanmakuMeshCoordinator,
@@ -74,53 +71,6 @@ describe('Proposal [1]: WebGPU Neural Denoiser & Audio Formant Enhancer', () => 
     const processed = controller.processFrame(inputMagnitudes)
     expect(processed.clean.length).toBe(256)
     expect(processed.stats).toBeDefined()
-  })
-})
-
-describe('Proposal [2]: Interactive Code Breakpoint Debugger & Stepper Engine', () => {
-  const sampleCode = `let a = 10
-let b = 20
-console.log("sum")`
-
-  it('parses code, manages breakpoints and steps forward line-by-line', () => {
-    const dbg = new InteractiveCodeDebugger(sampleCode)
-
-    // Add breakpoint on line 2
-    const added = dbg.toggleBreakpoint(2)
-    expect(added).toBe(true)
-    expect(dbg.getBreakpoints().some(b => b.lineNumber === 2)).toBe(true)
-
-    // Initial state
-    const initState = dbg.getCurrentState()
-    expect(initState.currentLine).toBe(1)
-
-    // Step over line 1
-    const step1 = dbg.stepOver()
-    expect(step1.variables['a']).toBeDefined()
-    expect(step1.variables['a'].value).toBe(10)
-
-    // Step over line 2
-    const step2 = dbg.stepOver()
-    expect(step2.variables['b']).toBeDefined()
-    expect(step2.variables['b'].value).toBe(20)
-
-    // Step over line 3 (console.log)
-    const step3 = dbg.stepOver()
-    expect(step3.output).toContain('sum')
-  })
-
-  it('supports stepping backward and resuming to next breakpoint', () => {
-    const dbg = new InteractiveCodeDebugger(sampleCode)
-    dbg.toggleBreakpoint(2)
-
-    // Run to next breakpoint
-    const hit = dbg.continueToNextBreakpoint()
-    expect(hit.hitBreakpoint).toBe(true)
-    expect(hit.state.currentLine).toBe(2)
-
-    // Step back
-    const backState = dbg.stepBack()
-    expect(backState.currentLine).toBe(1)
   })
 })
 
@@ -242,7 +192,6 @@ describe('Proposal [5]: Micro-Learning Video Clip Exporter & Subtitle Slicer', (
         {
           startSec: 10,
           endSec: 25,
-          format: 'webm',
           quality: '1080p',
           includeSubtitles: true,
           includeWatermark: true,

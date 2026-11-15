@@ -8,7 +8,6 @@ vi.mock('@/lib/github', () => ({
 
 import {
   sweepVideoHealth,
-  getLatestSweepReport,
   type ProbeResult,
 } from '@/lib/video-deadlink-sweeper'
 import {

@@ -4,7 +4,7 @@
   "generatedAt": "2026-11-06",
   "generator": "scripts/gen-docs-index.mjs",
   "counts": {
-    "docsMdDisk": 96,
+    "docsMdDisk": 97,
     "docsMdGitTracked": 87,
     "docsMdUntrackedAdr": 4,
     "deliverablesTopLevelDirs": 15,
@@ -215,6 +215,12 @@
       "path": "SEO-TEMPLATE-COPY-AUDIT-2026-10-21.md",
       "tracked": true,
       "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "SILENT-CATCH-API-2026-11-15.md",
+      "tracked": false,
+      "source": "disk-extra",
       "status": "historical"
     },
     {

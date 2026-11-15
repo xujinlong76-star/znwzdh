@@ -83,14 +83,14 @@ export function HomeExamStripView({
   // 提醒文案只对已关注考试显示（未关注只变色、不出文案，避免噪音）。
   const reminder: ExamReminderTier | null =
     personal && mounted ? reminderTier(exam, now) : null
-  // 国考准考证打印提醒期（11-22–11-29 15:00）：副行切到提醒，不再显示
+  // 国考准考证打印提醒期（11-15–11-29 15:00）：副行切到提醒，不再显示
   // 「下一步」——提醒期国考的下一步本来就是准考证打印，不丢信息；
   // 门控与文案都在 exam-calendar 里按事实源算，本文件不写死日期与考试 id。
   const admission = mounted ? admissionReminderFor(exam, now) : null
 
   return (
     <section aria-label="考试季" className="mx-auto w-full max-w-[1600px] px-3 pt-3 sm:px-5">
-      <div className="rounded-2xl border bg-gradient-to-r from-sky-500/10 via-card to-card px-4 py-3 sm:px-5">
+      <div className="rounded-2xl border bg-gradient-to-r from-card via-card to-card px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <span
             className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${STRIP_BADGE_CLASS[tier]}`}

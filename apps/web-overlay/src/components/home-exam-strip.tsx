@@ -27,7 +27,7 @@ export function HomeExamStrip() {
 function HomeExamStripEmptyState() {
   return (
     <section aria-label="考试季" className="mx-auto w-full max-w-[1600px] px-3 pt-3 sm:px-5">
-      <div className="rounded-2xl border bg-gradient-to-r from-sky-500/10 via-card to-card px-4 py-3 sm:px-5">
+      <div className="rounded-2xl border bg-gradient-to-r from-card via-card to-card px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/25 bg-sky-500/5 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-400">
             <CalendarDays className="h-3.5 w-3.5" aria-hidden />

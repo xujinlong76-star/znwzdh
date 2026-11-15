@@ -49,16 +49,16 @@ export function formatHotlistSubline(
   now: number = Date.now(),
 ): string {
   const fresh = formatFreshness(fetchedAt, now)
-  if (status === 'empty') return '暂无数据（等待首次抓取）'
+  if (status === 'empty') return '暂无数据（等待本站首次抓取）'
   if (status === 'stale') {
-    if (fresh === null) return '抓取暂时失败，下面是时间未知的缓存'
+    if (fresh === null) return '本站抓取暂时失败，下面是时间未知的缓存'
     const ageMs = Math.max(0, now - (fetchedAt ?? 0))
     if (ageMs >= STALE_ESCALATION_MS) {
       const hours = Math.floor(ageMs / 3600_000)
-      return `抓取已失败 ${hours} 小时，下面是旧缓存`
+      return `本站抓取已失败 ${hours} 小时，下面是旧缓存`
     }
-    return `抓取暂时失败，下面是 ${fresh} 的缓存`
+    return `本站抓取暂时失败，下面是 ${fresh} 的缓存`
   }
-  if (fresh === null) return '暂无数据（等待首次抓取）'
-  return `${fresh}更新`
+  if (fresh === null) return '暂无数据（等待本站首次抓取）'
+  return `本站 ${fresh}更新`
 }

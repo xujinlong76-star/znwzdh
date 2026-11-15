@@ -87,48 +87,48 @@ describe('formatFreshness 时区无关性', () => {
 })
 
 describe('formatHotlistSubline 副行文案', () => {
-  it("ok → `${fresh}更新`", () => {
-    expect(formatHotlistSubline('ok', NOW - 30 * MIN, NOW)).toBe('30 分钟前更新')
-    expect(formatHotlistSubline('ok', NOW - 10 * SEC, NOW)).toBe('刚刚更新')
+  it("ok → `本站 ${fresh}更新`", () => {
+    expect(formatHotlistSubline('ok', NOW - 30 * MIN, NOW)).toBe('本站 30 分钟前更新')
+    expect(formatHotlistSubline('ok', NOW - 10 * SEC, NOW)).toBe('本站 刚刚更新')
   })
   it('stale（≤2 小时）→普通句式', () => {
     expect(formatHotlistSubline('stale', NOW - 30 * MIN, NOW)).toBe(
-      '抓取暂时失败，下面是 30 分钟前 的缓存',
+      '本站抓取暂时失败，下面是 30 分钟前 的缓存',
     )
     expect(formatHotlistSubline('stale', NOW - (1 * HOUR + 59 * MIN), NOW)).toBe(
-      '抓取暂时失败，下面是 1 小时前 的缓存',
+      '本站抓取暂时失败，下面是 1 小时前 的缓存',
     )
   })
   it('stale 升级：2 小时整按升级算（>=），2 小时 1 分、3 小时同样升级', () => {
     expect(STALE_ESCALATION_MS).toBe(2 * HOUR)
     expect(formatHotlistSubline('stale', NOW - 2 * HOUR, NOW)).toBe(
-      '抓取已失败 2 小时，下面是旧缓存',
+      '本站抓取已失败 2 小时，下面是旧缓存',
     )
     expect(formatHotlistSubline('stale', NOW - (2 * HOUR + MIN), NOW)).toBe(
-      '抓取已失败 2 小时，下面是旧缓存',
+      '本站抓取已失败 2 小时，下面是旧缓存',
     )
     expect(formatHotlistSubline('stale', NOW - 3 * HOUR, NOW)).toBe(
-      '抓取已失败 3 小时，下面是旧缓存',
+      '本站抓取已失败 3 小时，下面是旧缓存',
     )
   })
   it('fallback：empty/ok 无时间一律暂无数据，不编造时间', () => {
-    expect(formatHotlistSubline('empty', null, NOW)).toBe('暂无数据（等待首次抓取）')
-    expect(formatHotlistSubline('ok', null, NOW)).toBe('暂无数据（等待首次抓取）')
+    expect(formatHotlistSubline('empty', null, NOW)).toBe('暂无数据（等待本站首次抓取）')
+    expect(formatHotlistSubline('ok', null, NOW)).toBe('暂无数据（等待本站首次抓取）')
   })
   it('stale 无时间→时间未知的缓存（stale 态下方有缓存条目，不说暂无数据）', () => {
-    expect(formatHotlistSubline('stale', null, NOW)).toBe('抓取暂时失败，下面是时间未知的缓存')
-    expect(formatHotlistSubline('stale', 0, NOW)).toBe('抓取暂时失败，下面是时间未知的缓存')
+    expect(formatHotlistSubline('stale', null, NOW)).toBe('本站抓取暂时失败，下面是时间未知的缓存')
+    expect(formatHotlistSubline('stale', 0, NOW)).toBe('本站抓取暂时失败，下面是时间未知的缓存')
     expect(formatHotlistSubline('stale', Number.NaN, NOW)).toBe(
-      '抓取暂时失败，下面是时间未知的缓存',
+      '本站抓取暂时失败，下面是时间未知的缓存',
     )
-    expect(formatHotlistSubline('stale', -1, NOW)).toBe('抓取暂时失败，下面是时间未知的缓存')
+    expect(formatHotlistSubline('stale', -1, NOW)).toBe('本站抓取暂时失败，下面是时间未知的缓存')
     expect(formatHotlistSubline('stale', undefined, NOW)).toBe(
-      '抓取暂时失败，下面是时间未知的缓存',
+      '本站抓取暂时失败，下面是时间未知的缓存',
     )
   })
   it('路由边缘组合：items 为空但 lastOkAt 非空时仍按 status 为 empty，不显示时间', () => {
     expect(formatHotlistSubline('empty', NOW - 30 * MIN, NOW)).toBe(
-      '暂无数据（等待首次抓取）',
+      '暂无数据（等待本站首次抓取）',
     )
   })
 })
@@ -144,13 +144,13 @@ describe('HotlistFreshness 小岛：hydration 首帧一致 + 60 秒 tick', () =>
       }),
     )
     expect(html).toContain('刚刚更新')
-    expect(html).not.toContain('30 分钟前更新')
+    expect(html).not.toContain('本站 30 分钟前更新')
     expect(html).toContain('更新于 11:30')
   })
   it('tick 后文案随 now 推进 1 分钟（纯函数在不同 now 下断言）', () => {
     const at = NOW - 30 * MIN
-    expect(formatHotlistSubline('ok', at, NOW)).toBe('30 分钟前更新')
-    expect(formatHotlistSubline('ok', at, NOW + 60 * SEC)).toBe('31 分钟前更新')
+    expect(formatHotlistSubline('ok', at, NOW)).toBe('本站 30 分钟前更新')
+    expect(formatHotlistSubline('ok', at, NOW + 60 * SEC)).toBe('本站 31 分钟前更新')
   })
   it('源码守卫：小岛确有 60 秒 interval 且首帧 state 取 ssrText', () => {
     const src = read('src/app/brief/hotlist-freshness.tsx')

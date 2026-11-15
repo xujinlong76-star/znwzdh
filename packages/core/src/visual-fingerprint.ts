@@ -167,7 +167,7 @@ export function analyzeVisualFingerprint(
   // 风格情绪检测
   let detectedMood: VisualMood = 'minimalist';
   const hasNeonCyan = hsls.some((h) => h.h >= 170 && h.h <= 200 && h.s >= 70);
-  const hasNeonMagenta = hsls.some((h) => (h.h >= 290 || h.h <= 340) && h.s >= 70);
+  const hasNeonMagenta = hsls.some((h) => h.h >= 290 && h.h <= 340 && h.s >= 70);
   const hasGreenMatrix = hsls.some((h) => h.h >= 100 && h.h <= 160 && h.s >= 60);
   const hasOceanBlue = hsls.some((h) => h.h >= 180 && h.h <= 240);
   const hasWarmTone = hsls.some((h) => h.h >= 15 && h.h <= 55);

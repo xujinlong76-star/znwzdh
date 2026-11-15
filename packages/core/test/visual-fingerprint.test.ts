@@ -81,6 +81,9 @@ describe("analyzeVisualFingerprint", () => {
     expect(analyzeVisualFingerprint(["#006400"]).detectedMood).toBe("matrix");
     // 高饱和海洋蓝
     expect(analyzeVisualFingerprint(["#0066ff"]).detectedMood).toBe("ocean");
+    // 面板「蔚蓝深海」三色：青 + 深蓝，品红区间 290–340 内无色——曾因
+    // (h >= 290 || h <= 340) 恒真被误判为 cyberpunk，回归锁为 ocean
+    expect(analyzeVisualFingerprint(["#0ea5e9", "#06b6d4", "#1e3a8a"]).detectedMood).toBe("ocean");
     // 高饱和暖橙
     expect(analyzeVisualFingerprint(["#ff8800"]).detectedMood).toBe("warm");
     // 高饱和红：不属于前四类，饱和度 ≥75 → vibrant

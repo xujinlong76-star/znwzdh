@@ -113,7 +113,7 @@ export function HealthPanel() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-3 pt-2 border-t border-border/40">
-                    正常技术站 H &ge; 3.5；空白/停放页 H &lt; 2.0
+                    低熵信号：H &lt; 2.0 且正文 &gt; 100 字；停放页主要靠特征词命中判定
                   </p>
                 </div>
 

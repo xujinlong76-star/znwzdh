@@ -47,6 +47,7 @@ import { useDensity } from '@/components/density-provider'
 import { isAppleDevice } from '@/lib/platform'
 import { BUILTIN_DIY_PRESETS, clampCardOpacity, evaluateLayoutErgonomics, parseDiyShortcut, type DIYPreset } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
+import { describeCorruptFavorites } from '@/lib/favorites-storage'
 import { cn } from '@/lib/utils'
 
 interface HomeDIYToolbarProps {
@@ -364,6 +365,15 @@ export function HomeDIYToolbar({
     // 分类按访问热度全量重排（不限于技术类目）。toast 必须按这个结果说，
     // 不许编数字、密度功效或类目定向。
     const result = applySmartAutoTune(allSites, categories)
+    if (result === null) {
+      // 收藏数据读不出来：调优未执行、未落盘。不能弹「调优已生效」，
+      // 那会是假成功；如实告知用户原数据还在、可先备份再重置。
+      toast({
+        title: '收藏数据读不出来，调优未执行',
+        description: describeCorruptFavorites(),
+      })
+      return
+    }
     const counts = result.appliedCounts
     toast({
       title: '✨ 智能调优已生效',

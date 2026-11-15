@@ -17,6 +17,7 @@ import {
   togglePinnedSiteInCategory,
   type DIYPreset,
 } from '@/lib/modular/diy-presets'
+import { FAVORITES_STORAGE_KEY, parseFavorites } from '@/lib/favorites-storage'
 import {
   readSlotClocks,
   type LayoutSlotClocks,
@@ -65,6 +66,48 @@ import {
 // 保持既有导入路径可用：所有从 '@/lib/modular/use-home-diy' 导入
 // DEFAULT_CONFIG / STORAGE_KEY / 存储函数 / 类型的调用方无需改动。
 export * from './home-diy-storage'
+
+export interface FavoriteIdsReadResult {
+  ids: string[]
+  /** 存储里有原始数据但读不出来（坏 JSON / 结构不是数组） */
+  corrupt: boolean
+}
+
+/** 收藏条目 → 站点 id：字符串本身，或 `{ siteId | id }` 对象（与旧解析形状一致）。 */
+function favoriteItemToId(item: unknown): string | null {
+  if (typeof item === 'string') return item.length > 0 ? item : null
+  if (item && typeof item === 'object') {
+    const record = item as { siteId?: unknown; id?: unknown }
+    const id = record.siteId ?? record.id
+    return typeof id === 'string' && id.length > 0 ? id : null
+  }
+  return null
+}
+
+/**
+ * 读调优用的星标收藏 id 列表。
+ *
+ * 真键是 `navhub.favorites.v1`（`lib/favorites-storage.ts`，注释明示不可改键名）；
+ * 此前这里读的是另一个全仓无写入的死键，收藏信号恒为空，
+ * 调优 toast 却称「按星标调优」——假承诺（2026-11-15 第 72 轮摸底实锤）。
+ *
+ * 解析走 `parseFavorites` 的 corrupt 语义：坏数据时 `corrupt: true` 且不返回
+ * 任何 id，调用方必须把它当异常处理，绝不能把「读不出来」伪装成「没有收藏」
+ * 再拿空列表去调优覆盖布局（与 `hooks/useFavorites.ts` 同一条损坏纪律）。
+ */
+export function readFavoriteIdsForAutoTune(): FavoriteIdsReadResult {
+  if (typeof window === 'undefined') return { ids: [], corrupt: false }
+  const raw = localStorage.getItem(FAVORITES_STORAGE_KEY)
+  const { items, corrupt } = parseFavorites<unknown>(raw)
+  if (corrupt) return { ids: [], corrupt: true }
+  const ids: string[] = []
+  for (const item of items) {
+    const id = favoriteItemToId(item)
+    if (id !== null) ids.push(id)
+  }
+  return { ids, corrupt: false }
+}
+
 
 export function useHomeDIY() {
   const { config, history, isEditingLayout, storageWarning, pendingShare } = useSyncExternalStore(
@@ -333,19 +376,20 @@ export function useHomeDIY() {
       // 理由：解析本地访问计数失败时静默降级为空，不阻断主流程
     }
 
+    // 星标收藏：读真键 navhub.favorites.v1（此前读的是全仓无写入的死键，
+    // 收藏信号恒为空）。坏数据时 parseFavorites 报 corrupt：拒绝用「无收藏」
+    // 的结果覆盖布局，返回 null 让调用方如实告知用户（见 favorites-storage.ts
+    // 的损坏纪律）；localStorage 抛错（隐私模式等）同样按读不出来处理。
     let favoriteIds: string[] = []
     try {
       if (typeof window !== 'undefined') {
-        const rawFavs = localStorage.getItem('navhub_favorite_sites_v1')
-        if (rawFavs) {
-          const parsed = JSON.parse(rawFavs)
-          favoriteIds = Array.isArray(parsed)
-            ? parsed.map((item: any) => (typeof item === 'string' ? item : item?.siteId || item?.id)).filter(Boolean)
-            : []
-        }
+        const read = readFavoriteIdsForAutoTune()
+        if (read.corrupt) return null
+        favoriteIds = read.ids
       }
     } catch {
-      // 理由：解析本地收藏站点失败时静默降级为空，不阻断主流程
+      // 理由：本地存储不可用时按「收藏读不出来」处理，不拿空收藏去调优
+      return null
     }
 
     const result = computeSmartAutoTune(sites, categories, visitStats, favoriteIds)

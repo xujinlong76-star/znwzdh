@@ -12,6 +12,11 @@ import { test, expect, type Page } from '@playwright/test';
  * 目标必须是其自身（不是 .xm-lean、不是 DIY pill）；639/640/1023/1024 四边界
  * 显隐符合 [640,1024)；猫的拖动、60 秒贴边、面板展开三处无回归。
  *
+ * 猫底距现行值（xiaomaomao.js，与四边界期望逐字对齐；2026-11-16 修正，
+ * 旧值 639→12px / 1024→18px 是挂件整体抬高前的过期期望）：≤640px 为 68px
+ *（@media max-width:640px）；640–1023px 为 calc(4.5rem+18px)=90px；
+ * ≥1024px 为桌面默认 96px。改挂件 CSS 时须同步改本文件期望值。
+ *
  * 注意：elementFromPoint 返回的是最上层元素——按钮中心是 lucide <svg>，
  * 所以断言用 target.contains(hit)，而不是 hit === target。
  */
@@ -87,10 +92,10 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
 
   test('四边界：639/640/1023/1024 栏显隐符合 [640,1024)，猫底距同步切换', async ({ page }) => {
     const cases: Array<{ width: number; dockVisible: boolean; catBottom: string }> = [
-      { width: 639, dockVisible: false, catBottom: '12px' },
+      { width: 639, dockVisible: false, catBottom: '68px' },
       { width: 640, dockVisible: true, catBottom: '90px' },
       { width: 1023, dockVisible: true, catBottom: '90px' },
-      { width: 1024, dockVisible: false, catBottom: '18px' },
+      { width: 1024, dockVisible: false, catBottom: '96px' },
     ];
     for (const { width, dockVisible, catBottom } of cases) {
       await gotoHome(page, width);
@@ -130,6 +135,10 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
     // 刷新后位置还在（localStorage navhub.xiaomaomao.v1 持久化）
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator(CAT)).toBeAttached({ timeout: 60_000 });
+    // 入场动画 xmPop（.32s，根节点 scale+translateY）落定后再量几何：
+    // 否则量到动画中途的 boundingBox，x/y 会差零点几 px 而误报
+    //（2026-11-16 实测：两次失败分别差 0.52px / 1.14px，均刚过 0.5px 阈值）
+    await page.waitForTimeout(500);
     const after = await page.locator(CAT).boundingBox();
     expect(after!.x).toBeCloseTo(dragged!.x, 0);
     expect(after!.y).toBeCloseTo(dragged!.y, 0);

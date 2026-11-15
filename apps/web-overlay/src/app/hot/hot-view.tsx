@@ -8,6 +8,11 @@
  * 首屏数据由服务端 page 下发（站点卡片的 `/site/{id}` 内链必须进 SSR
  * HTML）；本岛只负责降级提示与重试。首帧已有数据时跳过挂载期请求，
  * 避免把 SSR 内容闪成骨架屏。
+ *
+ * 名次标记已移除（2026-11-15）：此前每张卡片左上角有名次徽章
+ * （🥇🥈🥉 + 数字序号），但访问量统计尚未积累、榜单不反映真实热度，
+ * 奖牌暗示的排名没有数据支撑；真实热度数字达到展示标准之前，
+ * 不展示任何排名或热度标记。条目顺序与链接保持不变。
  */
 
 import { useEffect, useState, useMemo } from 'react'
@@ -126,41 +131,12 @@ export default function HotView({
     }
   }, [reloadToken])
 
-  const getRankBadge = (index: number) => {
-    const rank = index + 1
-    if (rank === 1) {
-      return (
-        <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/40 flex items-center justify-center text-xs font-bold font-mono shadow-xs">
-          🥇
-        </span>
-      )
-    }
-    if (rank === 2) {
-      return (
-        <span className="w-6 h-6 rounded-full bg-slate-400/20 text-slate-600 dark:text-slate-300 border border-slate-400/40 flex items-center justify-center text-xs font-bold font-mono shadow-xs">
-          🥈
-        </span>
-      )
-    }
-    if (rank === 3) {
-      return (
-        <span className="w-6 h-6 rounded-full bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-500/40 flex items-center justify-center text-xs font-bold font-mono shadow-xs">
-          🥉
-        </span>
-      )
-    }
-    return (
-      <span className="w-6 h-6 rounded-full bg-muted/60 text-muted-foreground border border-border/40 flex items-center justify-center text-xs font-mono font-medium">
-        {rank}
-      </span>
-    )
-  }
-
   /**
    * 榜单页点击上报：卡片标题内链、直达按钮两处共用同一口径，
    * 与 navigation-card.tsx 的 handleLinkClick 一致——reportClick 是
    * fire-and-forget，失败静默落端侧出箱，永不阻塞跳转。
-   * position 取卡片在当前榜单里的名次（1 起），与左上角的名次徽章一致。
+   * position 取卡片在当前榜单里的位置（1 起），仅用于点击上报，
+   * 不在页面上展示名次（名次徽章已移除）。
    * 详情页挂载时不另外上报（site-detail-view.tsx 无 reportClick），
    * 这里是 /hot → 详情的唯一一次上报，不会重复计数。
    */
@@ -179,9 +155,6 @@ export default function HotView({
           className="relative group @container rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-[var(--density-card-padding,0.875rem)] flex flex-col justify-between shadow-2xs"
         >
           <div className="flex items-start gap-3">
-            <div className="shrink-0 pt-0.5">
-              {getRankBadge(i)}
-            </div>
             {/* 标题内链进详情页：与 SSG 的 /site/{id} 一起进首屏 HTML；站外直达只剩右上角图标按钮 */}
             <Link href={`/site/${encodeURIComponent(site.id)}`} onClick={() => handleSiteClick(site, i + 1)} className="block min-w-0 flex-1">
               <div className="flex items-start gap-2.5">
@@ -383,7 +356,6 @@ export default function HotView({
                   className="rounded-xl border border-border/70 bg-card/50 p-[var(--density-card-padding,0.875rem)] space-y-3 animate-pulse"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="h-6 w-6 rounded-full bg-muted shrink-0" />
                     <div className="h-10 w-10 rounded-lg bg-muted shrink-0" />
                     <div className="flex-1 space-y-2">
                       <div className="h-3.5 w-2/3 rounded bg-muted" />

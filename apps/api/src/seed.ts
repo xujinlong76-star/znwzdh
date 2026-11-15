@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { hashSiteId } from "@navhub/store";
+import { hashSiteId, type Repository } from "@navhub/store";
 import { siteEmbeddingText } from "@navhub/ai";
 import { comparePluginVersions, resolveSiteIcon, validateAndCleanPluginManifest, canonicalJsonStringify, canonicalizeUrl, ECOSYSTEM_MAP, ecosystemUrlKey, type SiteRelation } from "@navhub/core";
 import { loadConfig } from "./config.ts";
@@ -124,7 +124,8 @@ async function readStoredSiteConfig(ctx: { db: { dialect: string; sqlite?: unkno
  * 两条克制：
  * 1. **表里已有出边的源站让路**（判据查 site_relations 的真实行数，不能用 getDetailedSiteRelations
  *    ——它的兜底会把 ECOSYSTEM_MAP 自己算出来，于是每个策划源站都被当成「运营编辑过」，一条都写不进）。
- *    PUT 是手工编辑通道，种子不能把人工编辑的边覆盖回去（与合集那段 listCollectionSites().length === 0 同形）。
+ *    PUT 是手工编辑通道，种子不能把人工编辑的边覆盖回去（与合集同步的
+ *    三段式同形：只补缺站、永不覆盖人工备注）。
  * 2. **目标站不在库里也照样落边**。target_site_id 为空只是「点不进站内详情页」，
  *    面板仍然看得到这条平替与其 URL；与其悄悄丢掉，不如数出来（danglingTargets）——缺的是收录，不是数据。
  */
@@ -217,6 +218,130 @@ export interface SeedResult {
   baseline: BaselineImportResult;
 }
 
+/** 种子合集的一条输入（与 SeedShape.collections 的条目同形） */
+export interface SeedCollectionInput {
+  slug: string;
+  title: string;
+  kind: string;
+  description: string;
+  sites: Array<string | { site: string; note?: string; sort?: number }>;
+}
+
+export interface SeedCollectionsResult {
+  /** 本次新建的合集数（与 SeedResult.collections 同义） */
+  created: number;
+  /** 已存在且标题/描述/排序被纠回种子值的合集数 */
+  updated: number;
+  /** 已存在合集里本次补进的站位数 */
+  itemsAdded: number;
+}
+
+/** 只需要这几个方法；用临时库单测时不必造完整仓储（与 seedEcosystemRelations 同形） */
+type CollectionSyncRepo = Pick<
+  Repository,
+  "getCollectionBySlug" | "listCollectionItemsDetail" | "findSiteByUrl" | "addCollectionItem" | "updateCollection" | "upsertCollection"
+>;
+
+/**
+ * 种子合集同步（第 15 条：种子重跑更新已存在合集，消灭种子与数据库漂移）。
+ *
+ * 旧行为（61fbf7ff）：已有合集只在站数为 0 时补站，其余一律 `continue`——
+ * 标题、描述、排序永不更新，种子改了要真正生效只能手动删库重导。
+ *
+ * 三段式（升级第 15 条设计）：
+ *   (a) 标题/描述/排序与种子不一致 → 更新。这三个字段是仓库拥有的编辑文案，
+ *       种子赢；kind/icon/enabled 不碰——那些可能是运营在后台改过的。
+ *   (b) 种子里有、库里没有的站 → addCollectionItem 补进去，保留种子里的
+ *       note/sort。种子条目没写 sort 时用它在种子列表里的序号（与全新导入
+ *       时 upsertCollection 的 itemSort++ 口径一致）。
+ *   (c) 永不删站、永不覆盖 note：只对库里没有的站调 addCollectionItem，已在
+ *       库里的行一律不动——运营后加的站、人工改过的备注都在其中；删站与改
+ *       备注只能走管理端显式操作。成员判定走 collection_items 原始行
+ *       （listCollectionItemsDetail），不走 listCollectionSites——后者只含
+ *       启用且未删除的站，禁用的运营站会被误判为“缺站”，再调
+ *       addCollectionItem 就会把它的 note 覆盖掉。
+ *
+ * 新合集的 sort 改用它在种子列表里的序号（旧实现用“本次新建计数器”，
+ * 部分已存在时新合集会拿到与已有合集冲突的 sort；全新导入时两者相同）。
+ *
+ * 站位解析用 findSiteByUrl（不是 getSite）：种子引用与库里行的 URL 拼写
+ * 可能只差一个尾斜杠或 www（实测：种子写 `https://weixin.qq.com`、
+ * `https://www.alipay.com`，导航文件里是带尾斜杠的同一地址），
+ * getSite 是精确匹配、会把这种行静默丢掉；findSiteByUrl 按
+ * canonicalizeUrl 规范化后比对 7 种变体，与站点循环的去重口径一致。
+ */
+export async function syncSeedCollections(
+  repo: CollectionSyncRepo,
+  collections: SeedCollectionInput[],
+): Promise<SeedCollectionsResult> {
+  let created = 0;
+  let updated = 0;
+  let itemsAdded = 0;
+  for (const [idx, col] of collections.entries()) {
+    try {
+      const existing = await repo.getCollectionBySlug(col.slug);
+      if (existing) {
+        const nextDescription = col.description ?? null;
+        if (
+          existing.title !== col.title ||
+          (existing.description ?? "") !== (col.description ?? "") ||
+          existing.sort !== idx
+        ) {
+          await repo.updateCollection(existing.id, {
+            title: col.title,
+            description: nextDescription,
+            sort: idx,
+          });
+          updated++;
+        }
+        const present = new Set(
+          (await repo.listCollectionItemsDetail(existing.id)).map((item) => item.siteId),
+        );
+        let itemSort = 0;
+        for (const s of col.sites ?? []) {
+          const siteRef = typeof s === "string" ? s : s.site;
+          const note = typeof s === "object" && s.note ? s.note : undefined;
+          const sort = typeof s === "object" && typeof s.sort === "number" ? s.sort : itemSort;
+          itemSort++;
+          const site = await repo.findSiteByUrl(siteRef);
+          if (!site || present.has(site.id)) continue;
+          await repo.addCollectionItem(existing.id, site.id, note, sort);
+          present.add(site.id);
+          itemsAdded++;
+        }
+        continue;
+      }
+      // 新合集：先把种子站位解析成站内 id 再交给 upsertCollection。
+      // 直接传 URL 的话，upsertCollection 内部用 getSite（精确匹配）解析，
+      // 与库里行只差尾斜杠/www 的站位会被静默丢掉（同见上文）；
+      // 找不到的站位直接丢掉（与旧行为一致）。
+      const resolvedSites: Array<{ site: string; note?: string; sort?: number }> = [];
+      let itemSort = 0;
+      for (const s of col.sites ?? []) {
+        const siteRef = typeof s === "string" ? s : s.site;
+        const note = typeof s === "object" && s.note ? s.note : undefined;
+        const sort =
+          typeof s === "object" && typeof s.sort === "number" ? s.sort : itemSort;
+        itemSort++;
+        const site = await repo.findSiteByUrl(siteRef);
+        if (site) resolvedSites.push({ site: site.id, note, sort });
+      }
+      await repo.upsertCollection({
+        slug: col.slug,
+        title: col.title,
+        description: col.description,
+        kind: (col.kind as any) ?? "topic",
+        sites: resolvedSites,
+        sort: idx,
+      });
+      created++;
+    } catch (err) {
+      console.warn("专题导入跳过: " + col.slug, err);
+    }
+  }
+  return { created, updated, itemsAdded };
+}
+
 export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<SeedResult> {
   const here = dirname(fileURLToPath(import.meta.url));
   const raw = JSON.parse(readFileSync(join(here, "seed-data.json"), "utf8")) as SeedShape;
@@ -278,12 +403,15 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
    * 写回通道）；已有数据则整段跳过。基线结论决定下面 seed-data 站点循环
    * 还跑不跑：
    *  - imported / skipped_existing：部署带了内容文件且库已与之对齐——文件
-   *    就是事实源，84 站兜底循环必须跳过。否则每次重启都会把 21 个只在
-   *    seed-data 里有的站重新塞回库（总数涨到 346 与文件对不上），还会用
+   *    就是事实源，143 站兜底循环必须跳过。否则每次重启都会把 49 个只在
+   *    seed-data 里有的站重新塞回库（总数涨到 384 与文件对不上），还会用
    *    种子里的长描述覆盖运营在后台改过的短描述；
    *  - missing_file / failed / disabled：没有可用的基线（独立跑中枢包、
-   *    导入出错、显式关闭），落回 84 站兜底，保证站点不至于空着。
+   *    导入出错、显式关闭），落回 143 站兜底，保证站点不至于空着。
    * 基线失败本身不抛错（结论在 baseline 里、日志里有 error）。
+   * （数字口径 2026-11-15 重算：seed-data.json 143 站，导航文件 335 站，
+   *  按 canonicalizeUrl 比对后 seed-data 独有 49 站，335 + 49 = 384；
+   *  旧文案的 84/21/346 是导航 325 站时代的数。）
    */
   const baseline = await runBaselineImport(ctx);
   const baselineNavigationCovered =
@@ -364,38 +492,8 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
     }
   }
 
-  let collections = 0;
-  for (const col of raw.collections ?? []) {
-    try {
-      const existing = await ctx.repo.getCollectionBySlug(col.slug);
-      if (existing) {
-        const currentSites = await ctx.repo.listCollectionSites(col.slug);
-        if (currentSites.length === 0 && col.sites && col.sites.length > 0) {
-          for (const s of col.sites) {
-            const siteRef = typeof s === "string" ? s : s.site;
-            const note = typeof s === "object" && s.note ? s.note : undefined;
-            const sort = typeof s === "object" && typeof s.sort === "number" ? s.sort : undefined;
-            const site = await ctx.repo.getSite(siteRef);
-            if (site) {
-              await ctx.repo.addCollectionItem(existing.id, site.id, note, sort);
-            }
-          }
-        }
-        continue;
-      }
-      await ctx.repo.upsertCollection({
-        slug: col.slug,
-        title: col.title,
-        description: col.description,
-        kind: (col.kind as any) ?? "topic",
-        sites: col.sites,
-        sort: collections,
-      });
-      collections++;
-    } catch (err) {
-      console.warn("专题导入跳过: " + col.slug, err);
-    }
-  }
+  const collectionSync = await syncSeedCollections(ctx.repo, raw.collections ?? []);
+  const collections = collectionSync.created;
 
   let plugins = 0;
   let pluginsUpgraded = 0;

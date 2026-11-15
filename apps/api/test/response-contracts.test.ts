@@ -54,6 +54,9 @@ import {
   SearchResponse,
   SiteListResponse,
   SitePayload,
+  SiteReportCreateResponse,
+  SiteReportReviewResponse,
+  SiteReportsListResponse,
   TAG_CORE_FIELDS,
   TagListResponse,
 } from "@navhub/core";
@@ -401,6 +404,45 @@ describe("真实响应满足契约", () => {
     const res = await app.inject({ method: "POST", url: "/api/search", payload: { q: "Cursor" } });
     expect(res.statusCode).toBe(200);
     expectRoutedContract("POST /api/search", SearchResponse, res.json());
+  });
+
+  it("站点纠错上报→复核列表→流转：三条路由的真实响应都满足契约（升级第 10 条）", async () => {
+    const sites = (await app.inject({ method: "GET", url: "/api/sites" })).json() as Array<{ id: string; title: string }>;
+    const site = sites.find((s) => s.title === "Cursor");
+    if (!site) throw new Error("seed site Cursor missing");
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/sites/${site.id}/reports`,
+      payload: { kinds: ["dead-link"], detail: "点开首页是 404，换了浏览器也一样。", source: "site-detail" },
+    });
+    expect(created.statusCode).toBe(201);
+    expectRoutedContract("POST /api/sites/{id}/reports", SiteReportCreateResponse, created.json());
+    const reportId = (created.json() as { id: string }).id;
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/admin/site-reports",
+      headers: { authorization: "Bearer " + ADMIN_TOKEN },
+    });
+    expect(list.statusCode).toBe(200);
+    const listBody = list.json() as { items: Array<{ id: string; siteId: string; status: string }>; total: number };
+    expect(listBody.total).toBe(1);
+    const item = listBody.items[0];
+    if (!item) throw new Error("created report missing from admin list");
+    expect(item.id).toBe(reportId);
+    expect(item.siteId).toBe(site.id);
+    expect(item.status).toBe("open");
+    expectRoutedContract("GET /api/admin/site-reports", SiteReportsListResponse, list.json());
+
+    const reviewed = await app.inject({
+      method: "PATCH",
+      url: `/api/admin/site-reports/${reportId}`,
+      headers: { authorization: "Bearer " + ADMIN_TOKEN },
+      payload: { status: "in_progress" },
+    });
+    expect(reviewed.statusCode).toBe(200);
+    expectRoutedContract("PATCH /api/admin/site-reports/{id}", SiteReportReviewResponse, reviewed.json());
+    expect((reviewed.json() as { status: string }).status).toBe("in_progress");
   });
 
   it("GET /api/categories", async () => {

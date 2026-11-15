@@ -69,12 +69,16 @@ export async function reportSiteIssue(input: SiteReportInput): Promise<SiteRepor
       source: input.source,
     }),
   })
-  let data: { ok?: boolean; id?: string; success?: boolean; message?: string } | null = null
+  // 注意：不要把 res.json() 直接赋给 `let data: ... | null` 再用 `data?.ok` 判——
+  // TS 的 try/catch 控制流收窄会把 data 算成 never（三处 TS2339 由此来，与响应
+  // 契约是否绑定无关）。先 parse 到 unknown，再一次 cast 成 const。
+  let parsed: unknown = null
   try {
-    data = (await res.json()) as typeof data
+    parsed = await res.json()
   } catch {
-    data = null
+    parsed = null
   }
+  const data = parsed as { ok?: boolean; id?: string; success?: boolean; message?: string } | null
   if (res.status === 429) {
     throw new Error('提交太频繁，请稍后再试')
   }

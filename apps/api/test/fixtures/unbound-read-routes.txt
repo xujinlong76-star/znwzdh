@@ -117,6 +117,7 @@ HEAD /api/admin/plugins/funnel
 HEAD /api/admin/plugins/governance
 HEAD /api/admin/plugins/metrics
 HEAD /api/admin/plugins/seed-status
+HEAD /api/admin/site-reports
 HEAD /api/admin/stats/trends
 HEAD /api/admin/user-center/metrics
 HEAD /api/assets/icon

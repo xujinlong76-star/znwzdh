@@ -1855,6 +1855,60 @@ export const ShortlinkCreateResponse = z.object({
 });
 
 /* ------------------------------------------------------------------ *
+ * 站点纠错上报与复核（升级第 10 条，apps/api/src/routes/site-reports.ts）
+ * ------------------------------------------------------------------ */
+
+/** 上报问题类型（与路由 SITE_REPORT_KINDS 同值；toReport 解析后只剩合法值） */
+export const SiteReportKind = z.enum([
+  "wrong-description",
+  "dead-link",
+  "wrong-category",
+  "wrong-pricing",
+  "other",
+]);
+
+export const SiteReportSource = z.enum(["site-detail", "search"]);
+
+export const SiteReportStatus = z.enum(["open", "in_progress", "resolved", "rejected"]);
+
+/** POST /api/sites/{id}/reports：成功只返回 { ok, id }（路由注释冻结契约，201） */
+export const SiteReportCreateResponse = z.object({
+  ok: z.literal(true),
+  id: z.string(),
+});
+
+/** 复核列表单条（路由 toReport 的原样形状；站点已清理时标题/链接为 null） */
+export const SiteReportItemResponse = z.object({
+  id: z.string(),
+  siteId: z.string(),
+  siteTitle: z.string().nullable(),
+  siteUrl: z.string().nullable(),
+  kinds: z.array(SiteReportKind),
+  kindLabels: z.array(z.string()),
+  detail: z.string(),
+  contact: z.string().nullable(),
+  source: SiteReportSource,
+  status: SiteReportStatus,
+  createdAt: z.number(),
+});
+
+/** GET /api/admin/site-reports：复核列表（success 信封） */
+export const SiteReportsListResponse = z.object({
+  success: z.literal(true),
+  items: z.array(SiteReportItemResponse),
+  total: z.number().int(),
+  limit: z.number().int(),
+  offset: z.number().int(),
+});
+
+/** PATCH /api/admin/site-reports/{id}：流转回执（只改状态） */
+export const SiteReportReviewResponse = z.object({
+  success: z.literal(true),
+  id: z.string(),
+  status: SiteReportStatus,
+});
+
+/* ------------------------------------------------------------------ *
  * 绑定表
  * ------------------------------------------------------------------ */
 
@@ -2049,6 +2103,10 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   /* 审核与通知 */
   "POST /api/submissions": { schema: SubmissionCreateResponse, name: "SubmissionCreateResponse", status: "201" },
   "PATCH /api/submissions/{number}": { schema: SubmissionReviewResponse, name: "SubmissionReviewResponse" },
+  /* 站点纠错上报与复核（升级第 10 条） */
+  "POST /api/sites/{id}/reports": { schema: SiteReportCreateResponse, name: "SiteReportCreateResponse", status: "201" },
+  "GET /api/admin/site-reports": { schema: SiteReportsListResponse, name: "SiteReportsListResponse" },
+  "PATCH /api/admin/site-reports/{id}": { schema: SiteReportReviewResponse, name: "SiteReportReviewResponse" },
   "POST /api/admin/notifications/read-all": {
     schema: NotificationReadAllResponse,
     name: "NotificationReadAllResponse",

@@ -1915,6 +1915,46 @@ export interface SubmissionReviewResponse {
 }
 
 /**
+ * POST /api/sites/{id}/reports
+ */
+export interface SiteReportCreateResponse {
+  ok: true;
+  id: string;
+}
+
+/**
+ * GET /api/admin/site-reports
+ */
+export interface SiteReportsListResponse {
+  success: true;
+  items: ({
+    id: string;
+    siteId: string;
+    siteTitle: string | null;
+    siteUrl: string | null;
+    kinds: ("wrong-description" | "dead-link" | "wrong-category" | "wrong-pricing" | "other")[];
+    kindLabels: string[];
+    detail: string;
+    contact: string | null;
+    source: "site-detail" | "search";
+    status: "open" | "in_progress" | "resolved" | "rejected";
+    createdAt: number;
+  })[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * PATCH /api/admin/site-reports/{id}
+ */
+export interface SiteReportReviewResponse {
+  success: true;
+  id: string;
+  status: "open" | "in_progress" | "resolved" | "rejected";
+}
+
+/**
  * POST /api/admin/notifications/read-all
  * POST /api/me/notifications/read-all
  * POST /api/me/notifications/{id}/read
@@ -2546,6 +2586,7 @@ export interface RestContractRoutes {
   "GET /api/admin/maintenance/status": MaintenanceStatusResponse;
   "GET /api/admin/notifications": NotificationListResponse;
   "GET /api/admin/notifications/deliveries": NotificationDeliveryListResponse;
+  "GET /api/admin/site-reports": SiteReportsListResponse;
   "GET /api/brief/today": BriefTodayResponse;
   "GET /api/categories": CategoryListResponse;
   "GET /api/categories/by-slug/{slug}": CategoryPayload;
@@ -2586,6 +2627,7 @@ export interface RestContractRoutes {
   "GET /api/tokens": ApiTokenListResponse;
   "GET /api/videos": VideoListResponse;
   "GET /api/videos/{id}": VideoDetailResponse;
+  "PATCH /api/admin/site-reports/{id}": SiteReportReviewResponse;
   "PATCH /api/categories/{id}": CategoryPayload;
   "PATCH /api/collections/{id}": CollectionPayload;
   "PATCH /api/collections/{id}/items/{siteId}": CollectionItemMutationResponse;
@@ -2646,6 +2688,7 @@ export interface RestContractRoutes {
   "POST /api/sites": SitePayload;
   "POST /api/sites/batch": SiteBatchResponse;
   "POST /api/sites/bulk": SiteBulkResponse;
+  "POST /api/sites/{id}/reports": SiteReportCreateResponse;
   "POST /api/speculation/rules": SpeculationRulesResponse;
   "POST /api/submissions": SubmissionCreateResponse;
   "POST /api/tags/merge": TagMutationResponse;

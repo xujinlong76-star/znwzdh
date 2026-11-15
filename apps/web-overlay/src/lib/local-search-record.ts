@@ -21,7 +21,7 @@
  */
 import { useEffect, useRef } from 'react'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
-import { recordLocalSearchHistory } from '@/lib/navhub-api'
+import { recordLocalSearchHistory } from '@/lib/search-history-record'
 
 /** 停手多久后记一次：太短会把逐字输入记成多条，太长会漏掉输完即走的查询。 */
 export const LOCAL_SEARCH_RECORD_DEBOUNCE_MS = 800

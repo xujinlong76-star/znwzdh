@@ -1266,43 +1266,14 @@ export async function batchCleanZeroResultSearchHistory(
 }
 
 /**
- * 页内即时筛选的查询记录。
+ * 页内即时筛选的查询记录已移至 lib/search-history-record.ts。
  *
- * 分类/热榜/标签/目录/合集页的筛选框是本机过滤、从不走 /api/search——
- * 不经这里记一次，用户在里面搜的词就永远进不了搜索历史。调用方传「当时
- * 实际展示的命中数」（本页筛选后的匹配数），服务端只记历史、不跑检索、
- * 不写 search 事件；同一查询 5 分钟内重复只刷新（服务端去重）。
- *
- * fire-and-forget：失败（云端不可用、开关关了）只返回 false，不抛错、
- * 不弹提示——记录历史是附带行为，不能打断用户正在做的筛选。
+ * /sites 首屏经 lib/local-search-record.ts 只需要这一条记录入口；留在
+ * navhub-api.ts 里会把 134KB 的中枢客户端整个值 import 进首屏 chunk
+ *（CI /sites 与 /sites/p/[n] 各超预算 57KB）。这里只留 re-export 兼容
+ * 旧调用方，函数本体与语义见新模块（原样平移，一字未改）。
  */
-export async function recordLocalSearchHistory(
-  identity: string,
-  query: string,
-  resultCount: number,
-  onDegraded?: DegradedHandler,
-): Promise<boolean> {
-  const q = query.trim()
-  if (!q || !identity) return false
-  return degrade(
-    false,
-    async () => {
-      const res = await sendJson(
-        '/api/search-history',
-        'POST',
-        {
-          q,
-          resultCount: Math.max(0, Math.trunc(resultCount)),
-          searchHistoryEnabled: readLocalUserSettings().searchHistoryEnabled,
-        },
-        undefined,
-        anonHeaders(identity),
-      ) as { ok?: boolean; recorded?: boolean }
-      return res?.ok === true && res?.recorded === true
-    },
-    onDegraded,
-  )
-}
+export { recordLocalSearchHistory } from './search-history-record'
 
 /* --------------------------- 访问历史（T23） --------------------------- */
 

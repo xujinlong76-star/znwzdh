@@ -12,7 +12,6 @@ import type {
   VideoTranscriptItem,
   VideoStats,
 } from '@/types/navigation'
-import type { VideoQuizQuestion } from '@/lib/video-quiz-generator'
 import { CURATED_TRENDING_TOPICS, type TrendingTechTopic } from '@/lib/video-trending-harvester'
 import { calculateFreshnessScore } from '@/lib/video-scoring'
 import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
@@ -40,6 +39,26 @@ export interface AIEvaluationResult {
   conceptTags: string[]
   detectedClickbait: boolean
   pedagogicalValue: string
+}
+
+/**
+ * 测验题。原定义在已删的 video-quiz-generator.ts（模板出题 dialog 与生成器已删，
+ * 其测试断言文件不存在）；生成函数恢复时类型随之迁入本文件，字段逐字不变。
+ * correctIndex / correctAnswerIndex 两套字段并存且均为可选：生成侧写 correctAnswerIndex，
+ * 读取方须两字段都认，不得只读其一。
+ */
+export interface VideoQuizQuestion {
+  id: string
+  /** 旧上游结构的题目时间点（与 timestamp 同义） */
+  timeSec?: number
+  /** AI 生成结构的时间点（与 timeSec 同义） */
+  timestamp?: number
+  question: string
+  options: string[]
+  correctIndex?: number
+  correctAnswerIndex?: number
+  explanation: string
+  chapterTitle?: string
 }
 
 export interface AISanitizedCourse {

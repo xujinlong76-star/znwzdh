@@ -88,6 +88,29 @@ describe('admissionReminderFor（只对国考）', () => {
     }
   })
 
+  it('三档 card 均含 15 分钟入场规则：新规、去年 30 分钟、最晚入场、不得退场', () => {
+    for (const t of [NOV_22_0000_CST, NOV_23_0000_CST, NOV_27_0000_CST]) {
+      const r = admissionReminderFor(guokao, t)!
+      expect(r.cardLine).toContain('开考 15 分钟后不得入场')
+      expect(r.cardLine).toContain('去年为 30 分钟')
+      expect(r.cardLine).toContain('行测最晚 8:45')
+      expect(r.cardLine).toContain('申论、专业科目最晚 13:45')
+      expect(r.cardLine).toContain('不得提前退场')
+      expect(r.cardLine).toContain('国家公务员局 2027 年度招考公告')
+    }
+  })
+
+  it('仅末班档 strip 含入场规则短句，预热/开放档 strip 不含（规则只在考前 3 天上首页条带）', () => {
+    const warmup = admissionReminderFor(guokao, NOV_22_0000_CST)!
+    expect(warmup.stripLine).not.toContain('15 分钟后不得入场')
+    const open = admissionReminderFor(guokao, NOV_23_0000_CST)!
+    expect(open.stripLine).not.toContain('15 分钟后不得入场')
+    const last = admissionReminderFor(guokao, NOV_27_0000_CST)!
+    expect(last.stripLine).toContain('开考 15 分钟后不得入场')
+    expect(last.stripLine).toContain('行测最晚 8:45')
+    expect(last.stripLine).toContain('申论 13:45')
+  })
+
   it('官方链接是 http://bm.scs.gov.cn/kl2027，不许写成 https', () => {
     expect(GUOKAO_ADMISSION_URL).toBe('http://bm.scs.gov.cn/kl2027')
     const r = admissionReminderFor(guokao, NOV_23_0000_CST)!

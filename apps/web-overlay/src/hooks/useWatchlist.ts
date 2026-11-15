@@ -140,10 +140,24 @@ function getWatchlistSnapshot(): WatchlistSnapshot {
   return watchlistSnapshot
 }
 
+/** 服务端快照恒为空：水合渲染必须用它，绝不能读已翻转的模块快照。
+ * 布局（mobile-nav）比页面先水合，它的 effect/定时器可能在页面水合前就把
+ * 模块快照翻上来；若水合渲染读到翻转后的快照，会与服务端 HTML 对不上 →
+ * Hydration failed。getServerSnapshot 与 getSnapshot 分开后，水合渲染恒用
+ * 空快照（与服务端一致），水合完成 React 再按 getSnapshot 重渲染一次。 */
+const EMPTY_SNAPSHOT: WatchlistSnapshot = { items: [], blocked: null }
+
+function getWatchlistServerSnapshot(): WatchlistSnapshot {
+  return EMPTY_SNAPSHOT
+}
+
 export function useWatchlist(): WatchlistApi {
-  const snap = useSyncExternalStore(subscribeWatchlist, getWatchlistSnapshot, getWatchlistSnapshot)
+  const snap = useSyncExternalStore(subscribeWatchlist, getWatchlistSnapshot, getWatchlistServerSnapshot)
   const { items, blocked: storageBlocked } = snap
-  const [ready, setReady] = useState(() => watchlistInitialized)
+  // 首渲 ready 恒为 false：布局先水合时 watchlistInitialized 可能已被翻成 true，
+  // 若直接用它作初值，空态分支会在水合渲染里凭空出现。水合完成后才允许为 true
+  //（SPA 内再次挂载时水合早已完成，可直接为 true，不必等一轮定时器）。
+  const [ready, setReady] = useState(() => watchlistInitialized && watchlistHydrated)
 
   useEffect(() => {
     let cancelled = false

@@ -303,6 +303,23 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
 
     const currentIndex = allVideos.findIndex(v => v.id === selectedVideo?.id)
 
+    /**
+     * F-02：播放器内换片同步 URL 的 ?id=（replaceState，不产生多余历史记录），
+     * 刷新 / 分享 / 后退回到当前这部，而不是第一部。全部换片入口都走这里，
+     * 不再直接 setSelectedVideo。id 不变时不写 URL（保留 ?t= 直达秒数）；
+     * 换片时删掉旧视频的 ?t=，避免刷新后把旧时间戳套到新视频上。
+     */
+    const handleSelectVideo = useCallback((video: NavigationSubItem | null) => {
+        setSelectedVideo(video)
+        if (!video || typeof window === 'undefined') return
+        const params = new URLSearchParams(window.location.search)
+        if (params.get('id') === video.id) return
+        params.set('id', video.id)
+        params.delete('t')
+        const query = params.toString()
+        window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
+    }, [])
+
     // 注意：这里不再保留 currentTimeSec 的 ref 镜像。语音相对跳转的基数
     // 只在 dispatch 层用注入的 currentTimeSec（可控路由才有真实进度）；
     // iframe 路由没有可读播放头，相对跳转在 dispatch 层直接拒绝，不再
@@ -345,15 +362,15 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
 
     const handleNextVideo = useCallback(() => {
         if (currentIndex >= 0 && currentIndex < allVideos.length - 1) {
-            setSelectedVideo(allVideos[currentIndex + 1])
+            handleSelectVideo(allVideos[currentIndex + 1])
         }
-    }, [currentIndex, allVideos])
+    }, [currentIndex, allVideos, handleSelectVideo])
 
     const handlePrevVideo = useCallback(() => {
         if (currentIndex > 0) {
-            setSelectedVideo(allVideos[currentIndex - 1])
+            handleSelectVideo(allVideos[currentIndex - 1])
         }
-    }, [currentIndex, allVideos])
+    }, [currentIndex, allVideos, handleSelectVideo])
 
     const router = useRouter()
 
@@ -688,7 +705,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 if (target) {
                     const t = Number(params.get('t'))
                     pendingSeekSecRef.current = Number.isFinite(t) && t > 0 ? Math.floor(t) : null
-                    setSelectedVideo(target)
+                    handleSelectVideo(target)
                     for (const category of navigationData.navigationItems || []) {
                         if (category.items?.some(it => it.id === target.id)) {
                             setExpandedCategories(new Set([category.id]))
@@ -710,7 +727,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             if (category.items && category.items.length > 0) {
                 const firstVideoItem = category.items.find(item => item.videoConfig)
                 if (firstVideoItem) {
-                    setSelectedVideo(firstVideoItem)
+                    handleSelectVideo(firstVideoItem)
                     setExpandedCategories(new Set([category.id]))
                     return
                 }
@@ -720,7 +737,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                     if (sub.items && sub.items.length > 0) {
                         const firstVideoItem = sub.items.find(item => item.videoConfig)
                         if (firstVideoItem) {
-                            setSelectedVideo(firstVideoItem)
+                            handleSelectVideo(firstVideoItem)
                             setExpandedCategories(new Set([category.id]))
                             setExpandedSubCategories(new Set([sub.id]))
                             return
@@ -729,7 +746,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 }
             }
         }
-    }, [navigationData, selectedVideo, allVideos])
+    }, [navigationData, selectedVideo, allVideos, handleSelectVideo])
 
     // 多源镜像切换与 AI 章节/摘要加载
     useEffect(() => {
@@ -786,6 +803,25 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             resolved.source === 'imported' ? resolved.cues.length : (getCaptionEntry(selectedVideo.id)?.cues.length ?? 0),
         )
     }, [selectedVideo])
+
+    // F-01 补全：mp4 直链 <video> 没有 chapterSeekSec 消费方（B站走 seekSec、
+    // YouTube 走 &start= 重载），断点续播与章节跳转在 mp4 上会点下无反应。
+    // chapterSeekSec 置位时直接置 mp4VideoRef.currentTime；元数据未就绪时
+    // 等一次 loadedmetadata 再跳。B站/YouTube 路由下 mp4VideoRef 为空，直接返回。
+    useEffect(() => {
+        if (chapterSeekSec === null || chapterSeekSec <= 0) return
+        const el = mp4VideoRef.current
+        if (!el) return
+        if (el.readyState >= 1) {
+            el.currentTime = chapterSeekSec
+            return
+        }
+        const onLoadedMetadata = () => {
+            el.currentTime = chapterSeekSec
+        }
+        el.addEventListener('loadedmetadata', onLoadedMetadata, { once: true })
+        return () => el.removeEventListener('loadedmetadata', onLoadedMetadata)
+    }, [chapterSeekSec])
 
     useEffect(() => {
         const handlePlaylistUpdate = () => {
@@ -1148,7 +1184,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             size="icon"
                             title="观看历史"
                             onClick={() => setActiveTab(prev => prev === 'history' ? 'playlist' : 'history')}
-                            className={activeTab === 'history' ? 'bg-accent text-accent-foreground' : ''}
+                            className={activeTab === 'history' ? 'bg-accent text-accent-foreground max-md:hidden' : 'max-md:hidden'}
                         >
                             <History className="w-4 h-4 text-muted-foreground" />
                         </Button>
@@ -1220,6 +1256,19 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                     <span>检测到您上次观看至 <strong>{resumePrompt.formatted}</strong>，已为您记录续播位置。</span>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    <Button
+                                        size="sm"
+                                        className="h-6 text-xs px-2"
+                                        onClick={() => {
+                                            // F-01：断点续播横幅的主动作——按既有章节跳转机制置
+                                            // chapterSeekSec（B站走 seekSec、YouTube 走 &start=、
+                                            // mp4 走下方 mp4VideoRef effect），再收起横幅。
+                                            setChapterSeekSec(resumePrompt.timestamp)
+                                            dismissResumePrompt()
+                                        }}
+                                    >
+                                        从 {resumePrompt.formatted} 继续播放
+                                    </Button>
                                     <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={dismissResumePrompt}>
                                         我知道了
                                     </Button>
@@ -1411,7 +1460,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                             {relatedVideos.map(rel => (
                                                 <button
                                                     key={`rel-${rel.id}`}
-                                                    onClick={() => setSelectedVideo(rel)}
+                                                    onClick={() => handleSelectVideo(rel)}
                                                     className="text-left p-2.5 rounded-lg border border-border/50 bg-card hover:bg-accent/40 transition-all space-y-1.5 group"
                                                 >
                                                     <p className="text-xs font-medium line-clamp-2 group-hover:text-primary transition-colors">
@@ -1440,7 +1489,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                         <VideoPlaylistTree
                             navigationItems={navigationData.navigationItems}
                             selectedVideo={selectedVideo}
-                            onSelectVideo={setSelectedVideo}
+                            onSelectVideo={handleSelectVideo}
                             expandedCategories={expandedCategories}
                             onToggleCategory={toggleCategory}
                             expandedSubCategories={expandedSubCategories}
@@ -1449,7 +1498,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                     }
                     allVideos={allVideos}
                     selectedVideo={selectedVideo}
-                    setSelectedVideo={setSelectedVideo}
+                    setSelectedVideo={handleSelectVideo}
                     chapters={chapters}
                     aiSummary={aiSummary}
                     isLoadingAI={isLoadingAI}
@@ -1484,7 +1533,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                         <VideoPlaylistTree
                             navigationItems={navigationData.navigationItems}
                             selectedVideo={selectedVideo}
-                            onSelectVideo={setSelectedVideo}
+                            onSelectVideo={handleSelectVideo}
                             expandedCategories={expandedCategories}
                             onToggleCategory={toggleCategory}
                             expandedSubCategories={expandedSubCategories}
@@ -1586,7 +1635,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 navigationData={navigationData}
                 onJumpToTarget={({ bvid, seekSec }) => {
                     const found = allVideos.find(v => v.videoConfig?.bvid === bvid || v.id === bvid)
-                    if (found) setSelectedVideo(found)
+                    if (found) handleSelectVideo(found)
                     setChapterSeekSec(seekSec)
                 }}
                 cards={flashcards}

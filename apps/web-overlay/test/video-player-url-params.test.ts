@@ -34,6 +34,8 @@ const PAGE = "src/components/video-player-page.tsx";
 const CARD = "src/components/video-card.tsx";
 const CONTENT = "src/components/video-content.tsx";
 const POSTER = "src/components/video-share-poster-dialog.tsx";
+const CONTROL_BAR = "src/components/video-player-control-bar.tsx";
+const SIDE_PANEL = "src/components/video-player-side-panel.tsx";
 
 describe("/videos/player ?id=&t= 直达链路", () => {
   it("路由页从 window.location.search 读 id 与 t", () => {
@@ -53,7 +55,9 @@ describe("/videos/player ?id=&t= 直达链路", () => {
 
   it("id 对不上任何视频时落回首条（分享链接不断页），t 只在初次选片生效一次", () => {
     const src = overlaySource(PAGE);
-    expect(src).toContain("setSelectedVideo(firstVideoItem)");
+    // 2026-11-16 第 82 轮 F-02：初次选片回落改走 handleSelectVideo（内含
+    // setSelectedVideo + replaceState 同步 ?id=），旧断言按新行为改写，不断言删除。
+    expect(src).toContain("handleSelectVideo(firstVideoItem)");
     // 消费后清零：换片时 selectedVideo 副作用不再把旧 t 带过去
     expect(src).toContain("pendingSeekSecRef.current = null");
   });
@@ -82,5 +86,72 @@ describe("/videos/player ?id=&t= 直达链路", () => {
 
   it("弹窗版文件已删除", () => {
     expect(overlayExists("src/components/video-player-modal.tsx")).toBe(false);
+  });
+});
+
+/**
+ * 第 82 轮 E 线：F-01/F-02/F-03 三高严重度 UX 小修守卫。
+ *
+ * F-01：断点续播横幅只有“我知道了”关闭动作，resumePrompt.timestamp 从未
+ *   被用于跳转。横幅必须有“从 x:xx 继续播放”主按钮，点后按既有章节跳转机制
+ *   置 chapterSeekSec（B站走 seekSec、YouTube 走 &start=、mp4 走 currentTime）。
+ * F-02：播放器内换片只 setSelectedVideo 不写 URL，刷新/分享回到第一部。
+ *   全部换片入口必须走 handleSelectVideo，用 replaceState 同步 ?id=（不产生
+ *   多余历史记录），换片时删掉旧视频的 ?t=。
+ * F-03：移动端侧栏整个不渲染，但控制条 tab 按钮与顶栏历史按钮照常显示、
+ *   点下无反应。只切侧栏 tab 的入口在移动端必须隐藏（max-md:hidden）。
+ */
+describe("视频页 UX 三高严重度小修（F-01/F-02/F-03）", () => {
+  it("F-01：断点续播横幅有“继续播放”主按钮，点后按断点时间跳转并收起横幅", () => {
+    const src = overlaySource(PAGE);
+    expect(src).toContain("从 {resumePrompt.formatted} 继续播放");
+    expect(src).toContain("setChapterSeekSec(resumePrompt.timestamp)");
+    expect(src).toContain("dismissResumePrompt()");
+  });
+
+  it("F-01：mp4 直链也有 chapterSeekSec 消费方（currentTime / loadedmetadata）", () => {
+    const src = overlaySource(PAGE);
+    expect(src).toContain("mp4VideoRef.current");
+    expect(src).toContain("el.currentTime = chapterSeekSec");
+    expect(src).toContain("loadedmetadata");
+  });
+
+  it("F-02：换片经 handleSelectVideo 用 replaceState 同步 ?id=，换片删旧 ?t=", () => {
+    const src = overlaySource(PAGE);
+    expect(src).toContain("handleSelectVideo");
+    expect(src).toContain("window.history.replaceState");
+    expect(src).toContain("params.set('id', video.id)");
+    expect(src).toContain("params.delete('t')");
+  });
+
+  it("F-02：上下部 / 相关推荐 / 播放列表 / AI 跳转 / 初次选片全部走 handleSelectVideo，不再直调 setSelectedVideo", () => {
+    const src = overlaySource(PAGE);
+    expect(src).toContain("handleSelectVideo(allVideos[currentIndex + 1])");
+    expect(src).toContain("handleSelectVideo(allVideos[currentIndex - 1])");
+    expect(src).toContain("handleSelectVideo(rel)");
+    expect(src).toContain("onSelectVideo={handleSelectVideo}");
+    expect(src).toContain("setSelectedVideo={handleSelectVideo}");
+    expect(src).toContain("handleSelectVideo(target)");
+    expect(src).toContain("handleSelectVideo(firstVideoItem)");
+    expect(src).not.toContain("setSelectedVideo(allVideos[currentIndex");
+    expect(src).not.toContain("onClick={() => setSelectedVideo(rel)}");
+    expect(src).not.toContain("onSelectVideo={setSelectedVideo}");
+    expect(src).not.toContain("setSelectedVideo={setSelectedVideo}");
+  });
+
+  it("F-03：控制条三个只切侧栏 tab 的按钮在移动端隐藏", () => {
+    const src = overlaySource(CONTROL_BAR);
+    // AI 章节 / 代码演进 / 知识脑图三处 onTabChange 入口各带一个 max-md:hidden
+    expect(src.match(/max-md:hidden/g)?.length).toBe(3);
+    expect(src).toContain("onTabChange('chapters')");
+    expect(src).toContain("onTabChange('diff')");
+    expect(src).toContain("onTabChange('mindmap')");
+  });
+
+  it("F-03：顶栏“观看历史”按钮在移动端隐藏，桌面端侧栏本身仍只在 md+ 渲染", () => {
+    const page = overlaySource(PAGE);
+    expect(page).toContain("max-md:hidden");
+    const panel = overlaySource(SIDE_PANEL);
+    expect(panel).toContain("hidden md:block");
   });
 });

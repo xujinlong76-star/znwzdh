@@ -225,11 +225,11 @@ export function VideoPlayerControlBar({
           <span>{inWatchLater ? '已在稍后再看' : '稍后再看'}</span>
         </Button>
 
-        {/* 章节大纲快捷入口 */}
+        {/* 章节大纲快捷入口：只切桌面端侧栏 tab，移动端侧栏不渲染，隐藏避免点下无反应（F-03） */}
         <Button
           variant={activeTab === 'chapters' ? 'secondary' : 'ghost'}
           size="sm"
-          className="h-8 gap-1.5 text-xs"
+          className="h-8 gap-1.5 text-xs max-md:hidden"
           onClick={() => onTabChange('chapters')}
         >
           <ListCollapse className="w-3.5 h-3.5 text-primary" />
@@ -276,12 +276,12 @@ export function VideoPlayerControlBar({
           <span>记笔记</span>
         </Button>
 
-        {/* 代码演进 */}
+        {/* 代码演进：只切桌面端侧栏 tab，移动端侧栏不渲染，隐藏避免点下无反应（F-03） */}
         {codeMilestonesCount > 0 && (
           <Button
             variant={activeTab === 'diff' ? 'secondary' : 'outline'}
             size="sm"
-            className="h-8 gap-1.5 text-xs"
+            className="h-8 gap-1.5 text-xs max-md:hidden"
             onClick={() => onTabChange('diff')}
             title="代码演进与前后对比"
           >
@@ -290,12 +290,12 @@ export function VideoPlayerControlBar({
           </Button>
         )}
 
-        {/* 知识脑图：仅在脑图有真实章节数据时出现 */}
+        {/* 知识脑图：仅在脑图有真实章节数据时出现；只切桌面端侧栏 tab，移动端隐藏（F-03） */}
         {mindmapAvailable && (
           <Button
             variant={activeTab === 'mindmap' ? 'secondary' : 'outline'}
             size="sm"
-            className="h-8 gap-1.5 text-xs"
+            className="h-8 gap-1.5 text-xs max-md:hidden"
             onClick={() => onTabChange('mindmap')}
             title="AI 知识图谱与脑图"
           >

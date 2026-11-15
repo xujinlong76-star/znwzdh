@@ -27,7 +27,9 @@ import { Heart, Home, LayoutGrid, User, Clapperboard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
+import { useWatchlist } from '@/hooks/useWatchlist'
 import { unreadBadgeText } from '@/lib/notification-badge'
+import { partitionWatchlist } from '@/lib/watchlist'
 
 const ITEMS = [
   { href: '/', label: '首页', Icon: Home },
@@ -52,6 +54,16 @@ export default function MobileNav() {
   const identityState = useIdentityReady()
   const unread = useUnreadNotifications(identityState)
   const unreadText = unreadBadgeText(unread)
+  // 追剧清单今日待看：与分类横幅、简报、首页影院同口径
+  //（partitionWatchlist(...).due.length），不另立口径。
+  // ready=false / 存储被禁时不算数——未就绪不等于「没有待看」，不渲染、不占位。
+  const watchlist = useWatchlist()
+  const watchlistParts =
+    watchlist.ready && !watchlist.storageBlocked
+      ? partitionWatchlist(watchlist.entries, new Date())
+      : null
+  const dueCount = watchlistParts?.due.length ?? 0
+  const dueText = unreadBadgeText(dueCount)
   // /videos 与 /videos/player：无 footer 预留位，且播放器路由自带 fixed bottom-0 面板
   if (pathname.startsWith('/videos')) return null
 
@@ -64,11 +76,19 @@ export default function MobileNav() {
         {ITEMS.map(({ href, label, Icon }) => {
           const active = isActive(href, pathname)
           const showBadge = href === '/me' && unreadText !== null
+          // 短剧 Tab 待看角标：与「我的」未读徽章同一条件模式（就绪且有数才挂）
+          const showDramaBadge = href === '/drama' && dueText !== null
           return (
             <li key={href} className="flex-1">
               <Link
                 href={href}
-                aria-label={href === '/me' && unread > 0 ? `${label}，${unread} 条未读通知` : label}
+                aria-label={
+                  href === '/me' && unread > 0
+                    ? `${label}，${unread} 条未读通知`
+                    : href === '/drama' && dueCount > 0
+                      ? `${label}，今日待看 ${dueCount} 部`
+                      : label
+                }
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   // 触控可读性基线（F3）：标签 12px（原 10px 触控不可读）；leading 收紧防 5 项 flex-1 纵向溢出
@@ -85,6 +105,15 @@ export default function MobileNav() {
                       className="absolute -right-2 -top-1.5 min-w-[16px] rounded-full bg-primary px-1 text-center text-[11px] font-semibold leading-[16px] text-primary-foreground tabular-nums"
                     >
                       {unreadText}
+                    </span>
+                  )}
+                  {showDramaBadge && (
+                    <span
+                      aria-hidden
+                      // 与「我的」未读徽章同一套尺寸与 9+ 封顶（unreadBadgeText），不另立样式
+                      className="absolute -right-2 -top-1.5 min-w-[16px] rounded-full bg-primary px-1 text-center text-[11px] font-semibold leading-[16px] text-primary-foreground tabular-nums"
+                    >
+                      {dueText}
                     </span>
                   )}
                 </span>

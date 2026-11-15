@@ -8,7 +8,9 @@ import {
 } from "@/lib/drama-featured";
 import { WatchlistAddButton } from "@/components/watchlist-add-button";
 import { DramaCalendarSection } from "@/components/drama-calendar-section";
+import { useWatchlist } from "@/hooks/useWatchlist";
 import { safeHref } from "@/lib/safe-url";
+import { partitionWatchlist } from "@/lib/watchlist";
 
 /**
  * 短剧专区内容岛：平台区 + 剧目区。
@@ -53,6 +55,12 @@ export function DramaContent({
   dramas: DramaFeatured[];
 }) {
   const appOnlyIds = new Set(sites.filter(isAppOnlySite).map((s) => s.id));
+  // 今日待看：与分类横幅、简报、首页影院同口径（partitionWatchlist(...).due.length）。
+  // ready=false / 存储被禁时按无待看处理——药丸文案与现状一致，不渲染假信号。
+  const { ready, entries, storageBlocked } = useWatchlist();
+  const parts =
+    ready && !storageBlocked ? partitionWatchlist(entries, new Date()) : null;
+  const dueCount = parts?.due.length ?? 0;
   return (
     // 注意：根节点是普通 div 不是 <main>——主内容地标在 page.tsx（<main id="main-content">），
     // 这里再套一层 main 会造成嵌套地标。
@@ -69,7 +77,7 @@ export function DramaContent({
             href="/me/watchlist"
             className="inline-flex items-center rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
           >
-            我的追剧
+            {dueCount > 0 ? `今日待看 ${dueCount} 部 · 去追剧清单` : "我的追剧"}
           </Link>
         </p>
       </header>

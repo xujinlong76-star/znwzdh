@@ -2629,7 +2629,7 @@ export function PluginUrlHealthPanel() {
               <Globe className="h-3 w-3" /> WAF 拦截放行
             </div>
             <div className="mt-1 flex items-baseline gap-1">
-              <span className="text-xl font-bold tracking-tight text-sky-600 dark:text-sky-400">
+              <span className="text-xl font-bold tracking-tight text-sky-700 dark:text-sky-400">
                 {globalMetrics.totalBlocked}
               </span>
               <span className="text-xs text-muted-foreground">条</span>

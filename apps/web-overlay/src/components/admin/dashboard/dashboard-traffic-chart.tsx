@@ -379,7 +379,7 @@ export function DashboardTrafficChart({
                 </span>
 
                 <span className="text-muted-foreground">5xx 异常:</span>
-                <span className={`font-mono font-semibold text-right ${activePoint.error5xx > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-muted-foreground'}`}>
+                <span className={`font-mono font-semibold text-right ${activePoint.error5xx > 0 ? 'text-rose-700 dark:text-rose-400' : 'text-muted-foreground'}`}>
                   {activePoint.error5xx} 次
                 </span>
               </div>

@@ -528,13 +528,13 @@ export default function AdminJobsPage() {
           onClick={() => setStatusFilter('failed')}
         >
           <CardHeader className="p-4 pb-1">
-            <CardTitle className="text-xs text-rose-600 dark:text-rose-400 font-medium flex items-center justify-between">
+            <CardTitle className="text-xs text-rose-700 dark:text-rose-400 font-medium flex items-center justify-between">
               失败 / 告警
               <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-1">
-            <div className="text-2xl font-bold text-rose-600 dark:text-rose-400">{stats.failed}</div>
+            <div className="text-2xl font-bold text-rose-700 dark:text-rose-400">{stats.failed}</div>
           </CardContent>
         </Card>
       </div>
@@ -810,7 +810,7 @@ export default function AdminJobsPage() {
                       <td className="px-4 py-3 text-xs max-w-[140px] sm:max-w-[320px]">
                         {j.error ? (
                           <div
-                            className="text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 p-1.5 rounded border border-rose-200 dark:border-rose-900 truncate"
+                            className="text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 p-1.5 rounded border border-rose-200 dark:border-rose-900 truncate"
                             title={j.error}
                           >
                             {j.error}
@@ -827,7 +827,7 @@ export default function AdminJobsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                            className="h-7 px-2 text-xs text-rose-700 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-400 dark:hover:bg-rose-950/40"
                             disabled={actingJobId === j.id}
                             onClick={() => void handleCancel(j.id)}
                           >

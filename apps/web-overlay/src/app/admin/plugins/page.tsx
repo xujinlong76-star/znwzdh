@@ -137,7 +137,7 @@ function FunnelPanel({ funnel }: { funnel: HubPluginFunnel }) {
   const last7 = funnel.series.slice(-7)
   const peakViews = Math.max(1, ...last7.map((d) => d.views))
   const cells = [
-    { key: 'views', label: '详情页浏览', value: funnel.totals.views, icon: Eye, tone: 'text-sky-600 dark:text-sky-400' },
+    { key: 'views', label: '详情页浏览', value: funnel.totals.views, icon: Eye, tone: 'text-sky-700 dark:text-sky-400' },
     { key: 'clicks', label: '安装点击', value: funnel.totals.installClicks, icon: MousePointerClick, tone: 'text-violet-600 dark:text-violet-400' },
     { key: 'installs', label: '安装成功', value: funnel.totals.installs, icon: Download, tone: 'text-emerald-700 dark:text-emerald-400' },
     { key: 'uninstalls', label: '卸载点击', value: funnel.totals.uninstalls, icon: RotateCcw, tone: 'text-muted-foreground' },
@@ -176,7 +176,7 @@ function FunnelPanel({ funnel }: { funnel: HubPluginFunnel }) {
                 <span className="h-2 rounded-full bg-sky-500/40" style={{ width: `${Math.round((day.views / peakViews) * 40) + 2}%` }} aria-hidden />
                 <span className="tabular-nums">浏览 {day.views}</span>
                 <span className="tabular-nums">安装 {day.installs}</span>
-                {day.reports > 0 && <span className="tabular-nums text-rose-600 dark:text-rose-400">举报 {day.reports}</span>}
+                {day.reports > 0 && <span className="tabular-nums text-rose-700 dark:text-rose-400">举报 {day.reports}</span>}
               </div>
             ))}
           </div>
@@ -680,7 +680,7 @@ export default function AdminPluginsPage() {
               </div>
 
               <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 space-y-1">
-                <div className="text-xs text-sky-600 dark:text-sky-400 flex items-center justify-between">
+                <div className="text-xs text-sky-700 dark:text-sky-400 flex items-center justify-between">
                   <span>累计安装总量</span>
                   <span className="text-[11px] px-1.5 py-0.2 rounded-md bg-sky-500/10 font-mono font-medium">
                     {telemetry.activeInstalls} 活跃

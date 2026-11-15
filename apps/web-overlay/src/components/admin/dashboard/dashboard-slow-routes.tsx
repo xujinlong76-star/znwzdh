@@ -58,7 +58,7 @@ export function DashboardSlowRoutes({ routes }: DashboardSlowRoutesProps) {
           // 延迟评级色标：>150ms 警告红，>80ms 观察橙，<=80ms 稳健黄绿
           const latencyTextClass =
             r.avgLatencyMs >= 150
-              ? 'text-rose-600 dark:text-rose-400 font-bold'
+              ? 'text-rose-700 dark:text-rose-400 font-bold'
               : r.avgLatencyMs >= 80
               ? 'text-amber-700 dark:text-amber-400 font-semibold'
               : 'text-foreground font-medium'

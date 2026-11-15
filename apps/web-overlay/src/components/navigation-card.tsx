@@ -557,7 +557,7 @@ export const NavigationCard = memo(function NavigationCard({
                   className={cn(
                     "h-6 w-6 rounded-md transition-colors",
                     isEditingLayout
-                      ? "text-rose-500 hover:text-rose-600 hover:bg-rose-500/15"
+                      ? "text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"
                       : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
                   )}
                   title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"
@@ -814,7 +814,7 @@ export const NavigationCard = memo(function NavigationCard({
                   className={cn(
                     "h-7 w-7 rounded-full transition-colors",
                     isEditingLayout
-                      ? "text-rose-500 hover:text-rose-600 hover:bg-rose-500/15"
+                      ? "text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"
                       : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
                   )}
                   title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"
@@ -1082,7 +1082,7 @@ export const NavigationCard = memo(function NavigationCard({
                 className={cn(
                   "h-6.5 w-6.5 rounded-full transition-colors",
                   isEditingLayout
-                    ? "text-rose-500 hover:text-rose-600 hover:bg-rose-500/15"
+                    ? "text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"
                     : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
                 )}
                 title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"

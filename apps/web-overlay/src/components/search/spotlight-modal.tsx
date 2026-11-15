@@ -1528,7 +1528,7 @@ export function SpotlightModal({
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
+                          <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400 flex items-center justify-center shrink-0">
                             <Store className="w-4 h-4" />
                           </div>
                           <div className="min-w-0">

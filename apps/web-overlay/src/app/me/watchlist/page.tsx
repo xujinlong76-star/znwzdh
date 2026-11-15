@@ -71,7 +71,7 @@ function EpisodeStepper({ entry, onSet }: { entry: WatchEntry; onSet: (episode: 
         aria-label="少一集"
         onClick={() => onSet(entry.episode - 1)}
         disabled={entry.episode <= 0}
-        className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-600 transition-colors hover:border-rose-400 hover:text-rose-600 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300"
+        className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-600 transition-colors hover:border-rose-400 hover:text-rose-700 dark:hover:text-rose-400 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300"
       >
         <Minus className="h-3.5 w-3.5" aria-hidden />
       </button>
@@ -93,7 +93,7 @@ function EpisodeStepper({ entry, onSet }: { entry: WatchEntry; onSet: (episode: 
         type="button"
         aria-label="多一集"
         onClick={() => onSet(entry.episode + 1)}
-        className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-600 transition-colors hover:border-rose-400 hover:text-rose-600 dark:border-zinc-700 dark:text-zinc-300"
+        className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-600 transition-colors hover:border-rose-400 hover:text-rose-700 dark:hover:text-rose-400 dark:border-zinc-700 dark:text-zinc-300"
       >
         <Plus className="h-3.5 w-3.5" aria-hidden />
       </button>

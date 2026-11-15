@@ -328,9 +328,12 @@ describe('无障碍 #11/#14 对比度打包修复', () => {
  * sky 正文 13（S4–S16 除 S17）、bg-rose-600 hover 态白字 3（B2/B3/B6）。
  * 修法与 0922 轮同款：-600→-700 配 dark:-400（R13/R14/R18/R28/R30/S14/S15 原无 dark: 变体，
  *  hover 态补 dark:hover:-400）；B2/B3/B6 的 hover:bg-rose-500（白字 3.67）→hover:bg-rose-700（6.29）。
- * 第二档 23 处有意保留（管理后台小字、大字、纯图标、B1/B4 默认态口径分歧），
- * 故本锁只断言必修 32 处落点 + 残留 -600 行恰为第二档，不做全仓 -600 禁绝。
- * B5（watchlist-add-button 周几选中态）由 UX #9 另锁，不动。
+ * 第二档 23 处原有意保留；2026-11-15 第二档轮次修掉其中 21 处（管理后台小字 11、
+ * 纯图标 7、大字 3），-600→-700 配 dark:-400（R1/R2/R9/R21–R23/R29 原无 dark: 伴生，
+ * 本轮补 dark:/dark:hover:-400；深色 hover rose-600 实测仅 4.24:1，补后 7.39）。
+ * 残留 text-rose-600/text-sky-600 为 0；仅 bg-rose-600 默认态 6 行（B1–B6）有意保留：
+ * B5 由 UX #9 另锁，B1/B4 默认态口径分歧未定，B2/B3/B6 默认态与第一档 hover 修复一致。
+ * 下方三处残留断言已按新行为改写（原因见各注释），未删除。
  */
 describe('rose/sky 残留 32 处：正文小字 -600→-700 配 dark:-400', () => {
   const watchlistPage = overlayFile('src/app/me/watchlist/page.tsx')
@@ -375,17 +378,16 @@ describe('rose/sky 残留 32 处：正文小字 -600→-700 配 dark:-400', () =
     expect(categorySection).not.toContain('text-sky-600')
   })
 
-  it('插件巡检面板：R25/S13/S14/S15/S16；残留 sky-600 恰为 S17 大字', () => {
+  it('插件巡检面板：R25/S13/S14/S15/S16；第二档 S17 大字亦已 -700（残留 sky-600 为 0）', () => {
     expect(healthPanel).toContain("degrading: { label: '近期恶化', className: 'text-rose-700 dark:text-rose-400' }")
     expect(healthPanel).not.toContain('text-rose-600')
     expect(healthPanel).toContain('<span className="text-sky-700 dark:text-sky-400" title="站点存活')
     expect(healthPanel).toContain("'hover:bg-muted text-sky-700 dark:text-sky-400'")
     expect(healthPanel).toContain('text-[10px] text-sky-700 dark:text-sky-400 border-sky-500/30')
     expect(healthPanel).toContain('text-[11px] font-medium text-sky-700 dark:text-sky-400 flex items-center gap-1')
-    // S17 text-xl font-bold 大数字（20px 加粗 = WCAG 大字，4.10≥3）是第二档有意保留
-    const skyLeft = healthPanel.split('\n').filter((l) => l.includes('text-sky-600'))
-    expect(skyLeft).toHaveLength(1)
-    expect(skyLeft[0]).toContain('text-xl font-bold')
+    // 第二档轮次改写：S17 text-xl font-bold 大数字亦 -700（4.10→5.93，大字 3:1 档），残留 sky-600 为 0
+    expect(healthPanel).toContain('text-xl font-bold tracking-tight text-sky-700 dark:text-sky-400')
+    expect(healthPanel).not.toContain('text-sky-600')
   })
 
   it('工作台失败行与增减数：R26/R27/R28，浅色 -700 配 dark:-400', () => {
@@ -396,14 +398,13 @@ describe('rose/sky 残留 32 处：正文小字 -600→-700 配 dark:-400', () =
     expect(studioJson).not.toContain('text-rose-600')
   })
 
-  it('搜索弹窗徽章与百度外链：R30/R31/R32；残留 rose-600 恰为 R29 纯图标', () => {
+  it('搜索弹窗徽章与百度外链：R30/R31/R32；第二档 R29 纯图标亦已 -700（残留 rose-600 为 0）', () => {
     expect(spotlight).toContain('text-[10px] bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20')
     expect(spotlight).toContain('text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400')
     expect(spotlight).toContain('px-2 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-700 dark:text-rose-400')
-    // R29 Store 图标 tile（w-8 h-8 纯图标，4.12≥3）是第二档有意保留
-    const roseLeft = spotlight.split('\n').filter((l) => l.includes('text-rose-600'))
-    expect(roseLeft).toHaveLength(1)
-    expect(roseLeft[0]).toContain('w-8 h-8')
+    // 第二档轮次改写：R29 Store 图标 tile（w-8 h-8）亦 -700（4.12→5.52，图标 3:1 档），残留 rose-600 为 0
+    expect(spotlight).toContain('bg-rose-500/10 text-rose-700 dark:text-rose-400 flex items-center justify-center shrink-0')
+    expect(spotlight).not.toContain('text-rose-600')
   })
 
   it('市场详情链接/发布引导/离线徽章/导入器/插件卡片/安装弹窗：S4–S12', () => {
@@ -423,7 +424,7 @@ describe('rose/sky 残留 32 处：正文小字 -600→-700 配 dark:-400', () =
     expect(installModal).not.toContain('text-sky-600')
   })
 
-  it('追剧清单 hover 提醒与加入按钮：R3/R33/B2/B3/B6；残留 rose-600 恰为 R1/R2 纯图标', () => {
+  it('追剧清单 hover 提醒与加入按钮：R3/R33/B2/B3/B6；第二档 R1/R2 纯图标亦已 -700（残留 rose-600 为 0）', () => {
     const remind = watchlistPage.split('\n').find((l) => l.includes('hover:border-rose-400') && l.includes('text-xs'))
     expect(remind).toBeTruthy()
     expect(remind).toContain('hover:text-rose-700 dark:hover:text-rose-400')
@@ -441,10 +442,11 @@ describe('rose/sky 残留 32 处：正文小字 -600→-700 配 dark:-400', () =
       expect(src).not.toContain('hover:bg-rose-500 ')
     }
     expect(watchlistBtn).not.toContain('text-rose-600')
-    // R1/R2 ±集纯图标按钮（h-7 w-7）是第二档有意保留
-    const roseLeft = watchlistPage.split('\n').filter((l) => l.includes('text-rose-600'))
-    expect(roseLeft).toHaveLength(2)
-    for (const line of roseLeft) expect(line).toContain('h-7 w-7')
+    // 第二档轮次改写：R1/R2 ±集纯图标按钮（h-7 w-7）亦 -700，补 dark:hover:-400；残留 rose-600 为 0
+    const iconBtns = watchlistPage.split('\n').filter((l) => l.includes('h-7 w-7') && l.includes('hover:text-rose-700'))
+    expect(iconBtns).toHaveLength(2)
+    for (const line of iconBtns) expect(line).toContain('dark:hover:text-rose-400')
+    expect(watchlistPage).not.toContain('text-rose-600')
   })
 
   it('修后数值：rose-700/sky-700 浅色 ≥4.5:1，白字压 rose-700 ≥4.5:1，深色 -400 ≥4.5:1', () => {
@@ -453,5 +455,87 @@ describe('rose/sky 残留 32 处：正文小字 -600→-700 配 dark:-400', () =
     expect(ux9Contrast('#ffffff', '#be123c')).toBeGreaterThanOrEqual(4.5)
     expect(ux9Contrast('#fb7185', '#09090b')).toBeGreaterThanOrEqual(4.5)
     expect(ux9Contrast('#38bdf8', '#09090b')).toBeGreaterThanOrEqual(4.5)
+  })
+})
+
+/**
+ * rose/sky 第二档 21 处（2026-11-15）：0922 轮盘点第二档「大字或图标可缓 + 管理后台小字」。
+ *
+ * 盘点见 ~/workspace/goals/efficiency-goal/hidden_files/rose-sky-remainder-2026-11-15-1022.md：
+ * 管理后台小字 11（R5/R6/R8/R9/R10/R11/R15/R16/R17/S2/S3）、纯图标 7
+ * （R1/R2/R21/R22/R23/R29/S1）、大字 3（R4/R7/S17）。
+ * 修法与第一档同款：-600→-700 配 dark:-400；原无 dark: 伴生的 R1/R2/R9/R21–R23/R29
+ * 补 dark:/dark:hover:-400（深色 hover rose-600 实测仅 4.24:1，补 dark:hover:-400 后 7.39）。
+ * 大字与纯图标修前已达所在档位（大字 4.70/4.10≥3、图标 3.67–4.12≥3），本次一并 -700
+ * 是为统一 token、并防将来在同一按钮上加文字时立刻跌破；修后数值见末 it。
+ * 未动：B1/B4（bg-rose-600 默认态口径分歧，等主聊定口径）、B5（UX #9 另锁）、
+ * B2/B3/B6 默认态 bg-rose-600（第一档已修 hover 态）、星图 zinc-400×3（§12 锁死）、
+ * navigation-card 非编辑态 hover:text-rose-500（纯图标，3.67≥3，盘点未列入）。
+ * 修后源码 text-rose-600/text-sky-600 残留为 0。
+ */
+describe('rose/sky 第二档 21 处：管理后台/纯图标/大字 -600→-700 配 dark:-400', () => {
+  const dashboard = overlayFile('src/app/admin/AdminDashboardClient.tsx')
+  const jobsPage = overlayFile('src/app/admin/jobs/page.tsx')
+  const pluginsPage = overlayFile('src/app/admin/plugins/page.tsx')
+  const taxonomyPage = overlayFile('src/app/admin/taxonomy/page.tsx')
+  const slowRoutes = overlayFile('src/components/admin/dashboard/dashboard-slow-routes.tsx')
+  const trafficChart = overlayFile('src/components/admin/dashboard/dashboard-traffic-chart.tsx')
+  const deliveryPanel = overlayFile('src/components/admin/notification-delivery-panel.tsx')
+  const navCard = overlayFile('src/components/navigation-card.tsx')
+  const watchlistPage2 = overlayFile('src/app/me/watchlist/page.tsx')
+  const spotlight2 = overlayFile('src/components/search/spotlight-modal.tsx')
+  const healthPanel2 = overlayFile('src/components/plugins/plugin-url-health-panel.tsx')
+
+  it('管理后台小字 11 处：R5/R6/R8/R9/R10/R11/R15/R16/R17/S2/S3，浅色 -700 配 dark:-400', () => {
+    expect(dashboard).toContain('inline-flex items-center gap-1 text-rose-700 dark:text-rose-400 font-medium')
+    expect(dashboard).not.toContain('text-rose-600')
+    expect(jobsPage).toContain('text-xs text-rose-700 dark:text-rose-400 font-medium')
+    expect(jobsPage).toContain('text-rose-700 dark:text-rose-400 bg-rose-50')
+    expect(jobsPage).toContain('text-xs text-rose-700 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-400')
+    expect(jobsPage).not.toContain('text-rose-600')
+    expect(pluginsPage).toContain("tabular-nums text-rose-700 dark:text-rose-400")
+    expect(pluginsPage).toContain('text-xs text-sky-700 dark:text-sky-400')
+    expect(pluginsPage).not.toContain('text-rose-600')
+    expect(pluginsPage).not.toContain('text-sky-600')
+    expect(taxonomyPage).toContain("color: 'text-sky-700 dark:text-sky-400'")
+    expect(taxonomyPage).toContain("color: 'text-rose-700 dark:text-rose-400'")
+    expect(taxonomyPage).not.toContain('text-rose-600')
+    expect(taxonomyPage).not.toContain('text-sky-600')
+    expect(slowRoutes).toContain("'text-rose-700 dark:text-rose-400 font-bold'")
+    expect(slowRoutes).not.toContain('text-rose-600')
+    expect(trafficChart).toContain("'text-rose-700 dark:text-rose-400'")
+    expect(trafficChart).not.toContain('text-rose-600')
+    expect(deliveryPanel).toContain('text-[11px] text-rose-700 dark:text-rose-400')
+    expect(deliveryPanel).not.toContain('text-rose-600')
+  })
+
+  it('纯图标 7 处：R1/R2/R21/R22/R23/R29/S1，-700 配 dark:-400（图标 3:1 档）', () => {
+    const iconBtns = watchlistPage2.split('\n').filter((l) => l.includes('h-7 w-7') && l.includes('hover:text-rose-700'))
+    expect(iconBtns).toHaveLength(2)
+    expect(navCard).toContain('"text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"')
+    expect(navCard.split('\n').filter((l) => l.includes('text-rose-700 hover:text-rose-700'))).toHaveLength(3)
+    expect(navCard).not.toContain('text-rose-600')
+    expect(spotlight2).toContain('bg-rose-500/10 text-rose-700 dark:text-rose-400 flex items-center justify-center shrink-0')
+    expect(pluginsPage).toContain("tone: 'text-sky-700 dark:text-sky-400'")
+  })
+
+  it('大字 3 处：R4/R7/S17，-700 配 dark:-400（大字 3:1 档）', () => {
+    expect(dashboard).toContain("? 'text-rose-700 dark:text-rose-400'")
+    expect(jobsPage).toContain('text-2xl font-bold text-rose-700 dark:text-rose-400')
+    expect(healthPanel2).toContain('text-xl font-bold tracking-tight text-sky-700 dark:text-sky-400')
+    expect(healthPanel2).not.toContain('text-sky-600')
+  })
+
+  it('修后数值：-700 浅色 ≥4.5:1（含 -50 底与 /10 底），深色 -400 ≥4.5:1', () => {
+    expect(ux9Contrast('#be123c', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#0369a1', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#be123c', '#fff1f2')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#0369a1', '#f0f9ff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#be123c', '#feecef')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#0369a1', '#e7f6fd')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#be123c', '#fde2e7')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#fb7185', '#09090b')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#38bdf8', '#09090b')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#fb7185', '#240711')).toBeGreaterThanOrEqual(4.5)
   })
 })

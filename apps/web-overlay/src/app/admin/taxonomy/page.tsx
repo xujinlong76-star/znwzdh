@@ -88,13 +88,13 @@ const KIND_META: Record<TaxonomyProposal['kind'], { label: string; icon: LucideI
   category_gap: {
     label: '类目缺口',
     icon: FolderTree,
-    color: 'text-sky-600 dark:text-sky-400',
+    color: 'text-sky-700 dark:text-sky-400',
     bg: 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800',
   },
   leaf_too_small: {
     label: '叶子过小',
     icon: Layers,
-    color: 'text-rose-600 dark:text-rose-400',
+    color: 'text-rose-700 dark:text-rose-400',
     bg: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800',
   },
   duplicate_title: {

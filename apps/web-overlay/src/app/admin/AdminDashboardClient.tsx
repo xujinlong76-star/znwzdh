@@ -753,7 +753,7 @@ export function AdminDashboardClient() {
               <div
                 className={`text-2xl font-bold font-mono tracking-tight ${
                   metrics24h?.healthRate !== null && metrics24h?.healthRate !== undefined && metrics24h.healthRate < 95
-                    ? 'text-rose-600 dark:text-rose-400'
+                    ? 'text-rose-700 dark:text-rose-400'
                     : 'text-emerald-700 dark:text-emerald-400'
                 }`}
               >
@@ -804,7 +804,7 @@ export function AdminDashboardClient() {
                 2xx 成功: {runtime?.statusCodes?.s2xx ?? 0}
               </span>
               <span>·</span>
-              <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400 font-medium">
+              <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-400 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                 错误率: {runtime?.statusCodes?.errorRate ?? 0}%
               </span>

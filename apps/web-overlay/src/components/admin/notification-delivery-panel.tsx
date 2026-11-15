@@ -374,7 +374,7 @@ export function NotificationDeliveryPanel() {
                         <span className="break-all">收件人 {d.identity}</span>
                       </div>
                       {d.lastError && (
-                        <p className="break-words text-[11px] text-rose-600 dark:text-rose-400">最近错误：{d.lastError}</p>
+                        <p className="break-words text-[11px] text-rose-700 dark:text-rose-400">最近错误：{d.lastError}</p>
                       )}
                       {d.status === 'deferred' && (
                         <p className="text-[11px] text-muted-foreground">未配置该渠道发送器：消息留在队列中，未发送，也不是失败重试。</p>

@@ -25,6 +25,13 @@ export interface AudioEnhancerController {
 }
 
 /**
+ * Safari 旧版只暴露带 webkit 前缀的 AudioContext 构造器，用精确结构类型描述该回退。
+ */
+type WindowWithWebkitAudioContext = Window & {
+  webkitAudioContext?: typeof AudioContext
+}
+
+/**
  * Attaches a WebAudio DSP pipeline to an HTML5 media element (audio/video).
  */
 export function attachAudioEnhancer(
@@ -63,7 +70,7 @@ export function attachAudioEnhancer(
   // Gracefully handle SSR / unsupported environments
   if (
     typeof window === 'undefined' ||
-    !(window.AudioContext || (window as any).webkitAudioContext)
+    !(window.AudioContext || (window as WindowWithWebkitAudioContext).webkitAudioContext)
   ) {
     return {
       setVolumeBoost: (v) => { applyOptions({ volumeBoost: v }) },
@@ -78,7 +85,7 @@ export function attachAudioEnhancer(
   }
 
   try {
-    const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext
+    const AudioCtxClass = window.AudioContext || (window as WindowWithWebkitAudioContext).webkitAudioContext
     const ctx = new AudioCtxClass()
 
     const source = ctx.createMediaElementSource(mediaElement)

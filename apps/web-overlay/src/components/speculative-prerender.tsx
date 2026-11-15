@@ -18,6 +18,14 @@ export interface SpeculationCandidate {
   predictedArrivalMs: number
 }
 
+/**
+ * 旧版 TS lib 的 HTMLScriptElementConstructor 缺 supports 静态方法，
+ * 用精确结构类型描述该探测点（不改运行时行为）。
+ */
+type HTMLScriptElementConstructorWithSupports = typeof HTMLScriptElement & {
+  supports?: (feature: string) => boolean
+}
+
 const DEFAULT_UNSAFE_PATTERNS = [
   /\/logout/i,
   /\/signout/i,
@@ -80,8 +88,8 @@ export function SpeculativePrerenderManager() {
 
     const supportsSpeculationRules =
       typeof HTMLScriptElement !== 'undefined' &&
-      typeof (HTMLScriptElement as any).supports === 'function' &&
-      (HTMLScriptElement as any).supports('speculationrules')
+      typeof (HTMLScriptElement as HTMLScriptElementConstructorWithSupports).supports === 'function' &&
+      (HTMLScriptElement as HTMLScriptElementConstructorWithSupports).supports('speculationrules')
 
     const activeUrls = new Set<string>()
 

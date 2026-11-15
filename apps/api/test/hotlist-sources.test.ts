@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterAll, vi } from "vitest";
 import { HOTLIST_SOURCES, hotlistSourceById } from "../src/hotlist/sources.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -26,6 +26,12 @@ function parseOf(id: string) {
   if (!def?.parse) throw new Error(`源 ${id} 缺解析器`);
   return def.parse;
 }
+
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
 
 describe("热榜源注册表", () => {
   it("七个主流源全部登记，六个可采集、一个如实登记未覆盖", () => {

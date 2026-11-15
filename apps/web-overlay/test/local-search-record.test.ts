@@ -11,8 +11,9 @@ import { fileURLToPath } from 'node:url'
  * /api/search 记历史，两边用的不是同一条记录。
  *
  * 本测试钉住三件事：
- * 1. 记录入口：useLocalSearchRecorder（停手 800ms 记一次）+ navhub-api 的
- *    recordLocalSearchHistory（POST /api/search-history，只记历史不跑检索）；
+ * 1. 记录入口：useLocalSearchRecorder（停手 800ms 记一次）+ 轻量模块
+ *    search-history-record 的 recordLocalSearchHistory（POST
+ *    /api/search-history，只记历史不跑检索）；
  * 2. 五处页内筛选框都接上同一条记录，计数取当时实际展示的匹配数；
  * 3. 点击历史条目能重搜：历史页条目链到 /search?q=<编码后的查询词>。
  *
@@ -32,7 +33,7 @@ function overlayFile(rel: string): string {
 }
 
 const HOOK = 'src/lib/local-search-record.ts'
-const API = 'src/lib/navhub-api.ts'
+const API = 'src/lib/search-history-record.ts'
 const HISTORY_PAGE = 'src/app/me/history/page.tsx'
 
 /** 五处页内筛选框：文件 → 调用时传的计数字段（当时实际展示的匹配数） */

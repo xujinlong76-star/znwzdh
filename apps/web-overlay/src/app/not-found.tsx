@@ -91,7 +91,7 @@ export default function NotFound() {
 
         {/* 说了「可以尝试搜索」，就必须真的能搜 */}
         <div className="pt-1">
-          <SearchPalette placeholder="没找到？直接搜导航…（中文 / 拼音 / 语义）" />
+          <SearchPalette placeholder="没找到？直接搜导航…（中文 / 拼音 / 语义）（按 / 快速搜索）" />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">

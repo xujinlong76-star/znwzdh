@@ -558,7 +558,7 @@ ${items}
           ))}
         </section>
       ) : null}
-            <SearchPalette placeholder="不限于本专题：搜索全部站点（中文 / 拼音 / 语义）" />
+            <SearchPalette placeholder="不限于本专题：搜索全部站点（中文 / 拼音 / 语义）（按 / 快速搜索）" />
 
             {/* 跨生态技术视频联动横幅 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/5 text-xs text-foreground">

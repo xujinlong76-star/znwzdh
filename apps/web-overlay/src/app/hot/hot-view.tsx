@@ -303,7 +303,7 @@ export default function HotView({
         </div>
 
         {/* 站内搜索：此前只有首页有搜索入口（⌘K 也只绑在首页），到了榜单页就只能一路点下去 */}
-        <SearchPalette placeholder="没找到想要的？直接搜索全部站点（中文 / 拼音 / 语义）" />
+        <SearchPalette placeholder="没找到想要的？直接搜索全部站点（中文 / 拼音 / 语义）（按 / 快速搜索）" />
 
         {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
 

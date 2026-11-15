@@ -147,7 +147,7 @@ export function TagResultsBoard({
       </div>
 
       {/* 站内搜索：标签页只能看这一类站点，想找别的就得回首页 —— 这里直接给出口 */}
-      <SearchPalette placeholder="不限于本标签：搜索全部站点（中文 / 拼音 / 语义）" />
+      <SearchPalette placeholder="不限于本标签：搜索全部站点（中文 / 拼音 / 语义）（按 / 快速搜索）" />
 
       {/* 跨生态技术视频联动横幅 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs text-foreground">

@@ -218,7 +218,7 @@ interface SearchPaletteProps {
   placeholder?: string
 }
 
-export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）' }: SearchPaletteProps) {
+export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）（按 / 快速搜索）' }: SearchPaletteProps) {
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   /**

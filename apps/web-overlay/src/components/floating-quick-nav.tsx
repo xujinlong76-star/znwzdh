@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { usePathname } from 'next/navigation'
 import { ArrowUp, Search, Wrench } from 'lucide-react'
 import { preferredScrollBehavior } from '@/lib/motion'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
@@ -9,19 +10,24 @@ import { cn } from '@/lib/utils'
 interface FloatingQuickNavProps {
   onOpenTools?: () => void
   className?: string
+  /** 全局版：挂在 providers，与首页实例互补；首页（'/'）与 /videos* 下不渲染 */
+  global?: boolean
+  /** 滚动显现阈值（px）：首页实例 300，全局版 100（深链内页首屏本无搜索入口） */
+  threshold?: number
 }
 
-export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavProps) {
+export function FloatingQuickNav({ onOpenTools, className, global = false, threshold = 300 }: FloatingQuickNavProps) {
   const [visible, setVisible] = useState(false)
   const [isScrollingDown, setIsScrollingDown] = useState(false)
   const lastScrollYRef = useRef(0)
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { isEditingLayout } = useHomeDIY()
+  const pathname = usePathname() ?? '/'
 
   const checkScroll = useCallback(() => {
     if (typeof window === 'undefined') return
     const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
-    setVisible(scrollY > 300)
+    setVisible(scrollY > threshold)
 
     const prevY = lastScrollYRef.current
     if (scrollY > prevY + 12 && scrollY > 200) {
@@ -38,7 +44,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
     scrollTimerRef.current = setTimeout(() => {
       setIsScrollingDown(false)
     }, 250)
-  }, [])
+  }, [threshold])
 
   useEffect(() => {
     checkScroll()
@@ -50,6 +56,10 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
       if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current)
     }
   }, [checkScroll])
+
+  // 全局版只补首页之外的缺口：首页已有带微工具键的实例（navigation-content 挂载），
+  // /videos 路由自带 fixed bottom-0 播放器面板（MobileNav 同款避让），都不重复挂。
+  if (global && (pathname === '/' || pathname.startsWith('/videos'))) return null
 
   const scrollToTop = () => {
     if (typeof window === 'undefined') return
@@ -92,6 +102,7 @@ export function FloatingQuickNav({ onOpenTools, className }: FloatingQuickNavPro
         className="h-11 w-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
         title="呼出超级搜索与指令控制台 (⌘K / /)"
         aria-label="呼出超级搜索控制台"
+        aria-keyshortcuts="/"
       >
         <Search className="w-3.5 h-3.5" />
       </button>

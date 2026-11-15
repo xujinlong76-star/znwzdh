@@ -9,6 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { initThemeRuntime } from '@/lib/plugins/theme-runtime'
 import { GlobalAiGateway } from '@/components/ai/global-ai-gateway'
 import { GlobalSpotlightGateway } from '@/components/search/global-spotlight-gateway'
+import { FloatingQuickNav } from '@/components/floating-quick-nav'
 import { FluidGlassCanvas } from '@/components/theme/fluid-glass-canvas'
 import { VideoPlayerProvider } from '@/contexts/VideoPlayerContext'
 import { VideoMiniPlayerSlot } from '@/components/video-mini-player-slot'
@@ -61,6 +62,9 @@ export function Providers({
             <GlobalAiGateway />
             {/* Spotlight 超级搜索与控制台（全局 Cmd+K 呼出；首次呼出才加载实现） */}
             <GlobalSpotlightGateway siteLinkTarget={site.linkTarget} />
+            {/* 全局悬浮搜索键：深链直达内页也有常驻搜索入口（不传 onOpenTools，
+                微工具键不渲染；首页用自带微工具键的实例，/videos 下不渲染） */}
+            <FloatingQuickNav global threshold={100} />
             {/* 插件市场（components/plugins/** 与市场/后台页）使用 sonner 通知通道 */}
             <SonnerToaster richColors position="top-center" />
           </DensityProvider>

@@ -103,7 +103,7 @@ export function NavigationToolbar({
           <div className="flex min-h-14 flex-wrap items-center justify-between gap-1.5 sm:gap-3 md:h-14 md:flex-nowrap">
             <div className="flex-1 min-w-0 max-w-sm sm:max-w-md focus-within:max-w-2xl transition-all duration-300 ease-out">
               {/* 山羊胡混合检索引擎 */}
-              <SearchPalette siteConfig={siteConfig} placeholder="搜索站点、标签或拼音…" />
+              <SearchPalette siteConfig={siteConfig} placeholder="搜索站点、标签或拼音…（按 / 快速搜索）" />
             </div>
             <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 basis-full max-w-none md:basis-auto overflow-hidden">
               {/* 发现与热度 */}

@@ -14,7 +14,7 @@ import { renderToString } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, afterAll, vi } from 'vitest'
 import {
   STALE_ESCALATION_MS,
   formatFreshness,
@@ -36,6 +36,12 @@ afterEach(() => {
   if (origTz === undefined) delete process.env.TZ
   else process.env.TZ = origTz
 })
+
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
 
 describe('formatFreshness 档位边界（固定 now）', () => {
   it('0 秒→刚刚、59 秒→刚刚', () => {

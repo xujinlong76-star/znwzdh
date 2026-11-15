@@ -5,7 +5,17 @@ import { createPortal } from 'react-dom'
 import type { WidgetInstance } from '@/types/modular'
 import { WIDGET_REGISTRY } from '@/lib/modular/registry'
 import { ModuleErrorBoundary } from './module-error-boundary'
-import { ModuleResizeHandles } from './module-resize-handles'
+import dynamic from 'next/dynamic'
+
+/**
+ * 模块缩放手柄（Bundle 瘦身第三刀 a）：见 navigation-category-section.tsx
+ * 同款注释——dynamic + `isEditing &&` 门，工作台异步 chunk 不再常含手柄。
+ * module-resize-store.ts 零改动。
+ */
+const ModuleResizeHandles = dynamic(
+  () => import('./module-resize-handles').then((m) => m.ModuleResizeHandles),
+  { ssr: false, loading: () => null },
+)
 import { 
   Trash2, 
   MoveHorizontal,
@@ -255,33 +265,35 @@ function ModularItemImpl({
       }`}
     >
       {/* 四向边框与双下角自由拖拉调整模块窗口大小手柄 */}
-      <ModuleResizeHandles
-        moduleRef={itemRef}
-        colSpan={colSpan}
-        minColSpan={def.minColSpan ?? 3}
-        maxColSpan={def.maxColSpan ?? 12}
-        rowSpan={rowSpan}
-        minRowSpan={def.minRowSpan ?? 1}
-        maxRowSpan={Math.max(def.maxRowSpan ?? 4, 6)}
-        rowUnitPx={115}
-        isEditing={isEditing}
-        onBeginResize={onBeginInteraction}
-        onResizingStateChange={(resizing) => {
-          isResizingRef.current = resizing
-        }}
-        onResizeChange={(next, isFinal) => {
-          const targetCol = next.colSpan ?? colSpan
-          const targetRow = next.rowSpan ?? rowSpan
-          if (!isFinal && (targetCol !== currentColRef.current || targetRow !== currentRowRef.current)) {
-            currentColRef.current = targetCol
-            currentRowRef.current = targetRow
-            onResize(widget.id, targetCol, targetRow, false)
-          }
-        }}
-        onReset={() => {
-          onResize(widget.id, def.defaultColSpan, def.defaultRowSpan, true)
-        }}
-      />
+      {isEditing && (
+        <ModuleResizeHandles
+          moduleRef={itemRef}
+          colSpan={colSpan}
+          minColSpan={def.minColSpan ?? 3}
+          maxColSpan={def.maxColSpan ?? 12}
+          rowSpan={rowSpan}
+          minRowSpan={def.minRowSpan ?? 1}
+          maxRowSpan={Math.max(def.maxRowSpan ?? 4, 6)}
+          rowUnitPx={115}
+          isEditing={isEditing}
+          onBeginResize={onBeginInteraction}
+          onResizingStateChange={(resizing) => {
+            isResizingRef.current = resizing
+          }}
+          onResizeChange={(next, isFinal) => {
+            const targetCol = next.colSpan ?? colSpan
+            const targetRow = next.rowSpan ?? rowSpan
+            if (!isFinal && (targetCol !== currentColRef.current || targetRow !== currentRowRef.current)) {
+              currentColRef.current = targetCol
+              currentRowRef.current = targetRow
+              onResize(widget.id, targetCol, targetRow, false)
+            }
+          }}
+          onReset={() => {
+            onResize(widget.id, def.defaultColSpan, def.defaultRowSpan, true)
+          }}
+        />
+      )}
 
       {/* 顶部标题栏 / 编辑手柄 */}
       {isEditing && (

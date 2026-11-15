@@ -3,7 +3,18 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react'
 import { Zap, X, RotateCcw, Clock } from 'lucide-react'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ModuleResizeHandles } from '@/components/modular/module-resize-handles'
+import dynamic from 'next/dynamic'
+
+/**
+ * 模块缩放手柄（Bundle 瘦身第三刀 a）：见 navigation-category-section.tsx
+ * 同款注释——dynamic + `isEditingLayout &&` 门，首屏不渲染不拉 chunk。
+ * module-resize-store.ts 零改动。
+ */
+const ModuleResizeHandles = dynamic(
+  () =>
+    import('@/components/modular/module-resize-handles').then((m) => m.ModuleResizeHandles),
+  { ssr: false, loading: () => null },
+)
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { type WorkspaceId } from '@/components/workspace-filter'
@@ -138,18 +149,20 @@ export function SpeedDialDock({ allSites, activeWorkspace = 'all' }: SpeedDialDo
           dockColClass
         )}
       >
-        <ModuleResizeHandles
-          moduleRef={dockRef}
-          colSpan={colSpan}
-          minColSpan={4}
-          maxColSpan={12}
-          heightPx={heightPx}
-          minHeightPx={120}
-          maxHeightPx={480}
-          isEditing={isEditingLayout}
-          onResizeChange={(next) => setSize(next)}
-          onReset={resetSize}
-        />
+        {isEditingLayout && (
+          <ModuleResizeHandles
+            moduleRef={dockRef}
+            colSpan={colSpan}
+            minColSpan={4}
+            maxColSpan={12}
+            heightPx={heightPx}
+            minHeightPx={120}
+            maxHeightPx={480}
+            isEditing={isEditingLayout}
+            onResizeChange={(next) => setSize(next)}
+            onReset={resetSize}
+          />
+        )}
 
         <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-border/40">
           <div className="flex items-center gap-2 flex-wrap">

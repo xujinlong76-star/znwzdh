@@ -10,7 +10,20 @@ import { useMemo, useState, useCallback, useEffect, useRef, memo } from 'react'
 import Link from 'next/link'
 import { NavigationCard } from '@/components/navigation-card'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
-import { ModuleResizeHandles } from '@/components/modular/module-resize-handles'
+import dynamic from 'next/dynamic'
+
+/**
+ * 模块缩放手柄（Bundle 瘦身第三刀 a）：手柄本体约 20KB 代码，只在排版编辑态
+ * 才渲染（非编辑态返回 null），平时不进 `/` 初始 chunk。`next/dynamic`
+ * + `isEditingLayout &&` 门保证首屏既不渲染也不拉 chunk；进入编辑态
+ * 才首次加载（约 12KB，本机 <100ms，慢速 4G 约 300–600ms）。
+ * module-resize-store.ts 零改动：尺寸状态仍由父组件静态 import 使用。
+ */
+const ModuleResizeHandles = dynamic(
+  () =>
+    import('@/components/modular/module-resize-handles').then((m) => m.ModuleResizeHandles),
+  { ssr: false, loading: () => null },
+)
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
 import { ChevronDown, Pin, Plus, Sparkles, Search, X, Link2, Network, Eye, EyeOff, RotateCcw } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
@@ -671,30 +684,32 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   const sectionInner = (
     <>
                       {/* 四向边框与双下角自由拖拉调整模块窗口大小手柄 */}
-                      <ModuleResizeHandles
-                        moduleRef={sectionRef}
-                        colSpan={moduleColSpan}
-                        minColSpan={4}
-                        maxColSpan={12}
-                        heightPx={moduleHeightPx}
-                        minHeightPx={220}
-                        maxHeightPx={1200}
-                        isEditing={isEditingLayout}
-                        onResizingStateChange={(resizing) => {
-                          isResizingModuleRef.current = resizing
-                          setIsResizingSelf(resizing)
-                        }}
-                        onResizeChange={(next, isCommit) => {
-                          setModuleSize(next, isCommit ?? false)
-                        }}
-                        onReset={() => {
-                          resetModuleSize()
-                          toast({
-                            title: `🔄 已重置「${category.title}」窗口大小`,
-                            description: '模块已恢复默认全宽（12 列）与自适应高度。',
-                          })
-                        }}
-                      />
+                      {isEditingLayout && (
+                        <ModuleResizeHandles
+                          moduleRef={sectionRef}
+                          colSpan={moduleColSpan}
+                          minColSpan={4}
+                          maxColSpan={12}
+                          heightPx={moduleHeightPx}
+                          minHeightPx={220}
+                          maxHeightPx={1200}
+                          isEditing={isEditingLayout}
+                          onResizingStateChange={(resizing) => {
+                            isResizingModuleRef.current = resizing
+                            setIsResizingSelf(resizing)
+                          }}
+                          onResizeChange={(next, isCommit) => {
+                            setModuleSize(next, isCommit ?? false)
+                          }}
+                          onReset={() => {
+                            resetModuleSize()
+                            toast({
+                              title: `🔄 已重置「${category.title}」窗口大小`,
+                              description: '模块已恢复默认全宽（12 列）与自适应高度。',
+                            })
+                          }}
+                        />
+                      )}
 
                       {/* 卡片拖拽落点引导条：文案按目标类型区分——自定义分类是收录，
                           内置分类是重归类（编辑态），别把重归类说成「收录至专属分类」。

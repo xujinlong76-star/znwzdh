@@ -50,7 +50,7 @@ export function HomepageBanner() {
         if (g.loadGrowthProfile().homepageClaimedAt) return
         setVisible(true)
       })
-      .catch(() => {})
+      .catch(() => { /* chunk 拉取失败时横幅保持隐藏，不报错 */ })
     return () => {
       cancelled = true
     }

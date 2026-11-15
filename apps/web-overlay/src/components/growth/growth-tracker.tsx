@@ -33,7 +33,7 @@ const loadGrowth = () => (growthPromise ??= import('@/lib/growth'))
 
 /** 记账类调用统一走这里：chunk 拉取失败时静默跳过，不抛未处理 rejection。 */
 function recordGrowth(fn: (g: GrowthModule) => void): void {
-  loadGrowth().then(fn).catch(() => {})
+  loadGrowth().then(fn).catch(() => { /* chunk 拉取失败时静默跳过本次记账，不抛未处理 rejection */ })
 }
 
 /** 站点 key 规范化（同站同日硬化与百站寻宝的去重口径）：去 query/hash 与尾斜杠 */
@@ -69,7 +69,7 @@ export function GrowthTracker() {
           if (probe.kind === 'ok') g.markMemberSeenAction(!!probe.session.user?.id)
         })
       })
-      .catch(() => {})
+      .catch(() => { /* chunk 拉取失败时跳过本次到访记账，不报错 */ })
     return () => {
       cancelled = true
     }
@@ -122,7 +122,7 @@ export function GrowthTracker() {
         onWidgetChat = () => recordGrowth((gg) => gg.recordGrowthEvent('ai_chat'))
         window.addEventListener(eventName, onWidgetChat)
       })
-      .catch(() => {})
+      .catch(() => { /* chunk 拉取失败时不注册聊天监听，本次会话的 ai_chat 记账跳过 */ })
     return () => {
       cancelled = true
       if (onWidgetChat && eventName) window.removeEventListener(eventName, onWidgetChat)

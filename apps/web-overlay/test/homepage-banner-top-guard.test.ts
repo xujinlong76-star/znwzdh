@@ -30,7 +30,12 @@ const BANNER_TAG = '<HomepageBanner />'
 describe('首页「设为首页」引导条在顶部（layout 位置守卫）', () => {
   it('layout 里横幅有且仅有一处渲染点', () => {
     const src = read(LAYOUT)
-    expect(src).toContain("import { HomepageBanner } from '@/components/growth/homepage-banner'")
+    // 注意（第 75 轮改写原因）：横幅改走客户端动态边界，layout 的 import
+    // 目标从 '@/components/growth/homepage-banner' 换成
+    // '@/components/growth/homepage-banner-lazy'；渲染点 <HomepageBanner />
+    // 与位置断言不变，锁死点仍是“一处渲染点”。
+    expect(src).toContain("import { HomepageBanner } from '@/components/growth/homepage-banner-lazy'")
+    expect(src).not.toContain("from '@/components/growth/homepage-banner'")
     const hits = src.split(BANNER_TAG).length - 1
     expect(hits).toBe(1)
   })

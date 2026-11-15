@@ -11,12 +11,17 @@ import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Home, X } from 'lucide-react'
-import { HOMEPAGE_BANNER_DISMISSED_KEY, HOMEPAGE_CLAIM_XP } from '@/lib/growth'
+import { HOMEPAGE_BANNER_DISMISSED_KEY, HOMEPAGE_CLAIM_XP } from '@/lib/growth-constants'
 
 // HOMEPAGE_CLAIM_XP 是渲染文案里的数字、HOMEPAGE_BANNER_DISMISSED_KEY
-// 是读偏好的 key：渲染同步需要，保留静态 import（常量只留约 1.6KB）。
+// 是读偏好的 key：渲染同步需要，保留静态 import，但来源改成零依赖的
+// @/lib/growth-constants——第 75 轮切断经 @/lib/growth 的静态边，
+// 不再把 growth.ts（约 32KB）拉进首屏。
+// 注意（第 75 轮改写原因）：旧注释称“常量只留约 1.6KB”，该数是 esbuild
+// 探针值，已被 CI 实测证伪（第 72 轮拆函数 import 后 /sites 反增 3KB），
+// 断言已删除，不得再以探针值论证首屏留存量。
 // loadGrowthProfile 只在 effect 里用，改动态导入，不把 growth.ts
-//（约 32KB）拉进首屏；横幅因此晚一个 chunk 出现。
+// 拉进首屏；横幅因此晚一个 chunk 出现。
 
 // 引导卡只在用户点「怎么设置」展开时才需要：动态导入，不占各页面首屏包体积
 // （本横幅挂在根 layout，未拆分前每个路由都要背 6 套浏览器步骤文案与图标）。

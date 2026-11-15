@@ -15,7 +15,11 @@ import { SessionSync } from '@/components/user-center/session-sync'
 import { UserPrefsSync } from '@/components/user-center/user-prefs-sync'
 import { Suspense } from 'react'
 import { GrowthTracker } from '@/components/growth/growth-tracker'
-import { HomepageBanner } from '@/components/growth/homepage-banner'
+// 横幅改走客户端动态边界（第 75 轮第二小刀）：根 layout 是 Server
+// Component，next/dynamic 不能直接写在这里（不切 chunk；ssr: false
+// 更是构建错误），故 import 指向 'use client' 包装 homepage-banner-lazy；
+// 渲染点与位置不变，见 homepage-banner-top-guard。
+import { HomepageBanner } from '@/components/growth/homepage-banner-lazy'
 import { DENSITY_PREPAINT_SCRIPT } from '@/lib/density-bootstrap'
 import { FONT_SIZE_PREPAINT_SCRIPT } from '@/lib/font-size'
 import { ELDER_MODE_PREPAINT_SCRIPT } from '@/lib/elder-mode'

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useSiteViewModel } from '@/components/site-view-context'
-import { HOMEPAGE_CLAIM_XP } from '@/lib/growth'
+import { HOMEPAGE_CLAIM_XP } from '@/lib/growth-constants'
 import type { SiteConfig } from '@/types/site'
 
 interface FooterProps {

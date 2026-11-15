@@ -43,6 +43,12 @@ import {
   type SeasonEventTaskDef,
 } from './growth-season'
 import { trackGrowthEvent } from './growth-analytics'
+// 首屏常量已移出到零依赖的 growth-constants.ts（第 75 轮）：growth.ts
+// 内部仍用 HOMEPAGE_CLAIM_XP（claimHomepageReward），并 re-export 两名
+// 保兼容，旧调用点零改动。
+import { HOMEPAGE_CLAIM_XP } from './growth-constants'
+export { HOMEPAGE_BANNER_DISMISSED_KEY } from './growth-constants'
+export { HOMEPAGE_CLAIM_XP }
 
 export const GROWTH_STORAGE_KEY = 'navhub.growth.v1'
 export const GROWTH_BACKUP_KEY = 'navhub.growth.v1.backup'
@@ -55,7 +61,6 @@ export const GROWTH_UPDATED_EVENT = 'navhub:growth-updated'
  * 站内 GrowthTracker 监听后走 recordGrowthEvent('ai_chat') 统一落账。
  */
 export const AI_CHAT_USED_EVENT = 'navhub:ai-chat-used'
-export const HOMEPAGE_BANNER_DISMISSED_KEY = 'navhub.growth.homepageBannerDismissed.v1'
 
 export type GrowthFeature =
   | 'ai_find'
@@ -91,7 +96,6 @@ export const CATEGORY_NEW_XP = 15
 export const IDLE_XP_PER_MINUTE = 1
 export const IDLE_DAILY_CAP_MINUTES = 30
 export const DAILY_VISIT_XP = 5
-export const HOMEPAGE_CLAIM_XP = 100
 export const PWA_CLAIM_XP = 60
 /** v1 的单一加速倍率（= v2 的装为应用身份档，保留导出给旧测试与文案） */
 export const BOOST_MULTIPLIER = 1.5

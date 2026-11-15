@@ -11,13 +11,25 @@
 //  - growth-tracker 不得静态 import lib/growth（只许 effect 内动态 import）。
 //  - homepage-banner 不得静态 import loadGrowthProfile（只许 effect 内
 //    动态 import）；渲染用的两个常量（HOMEPAGE_CLAIM_XP、
-//    HOMEPAGE_BANNER_DISMISSED_KEY）保留静态 import（常量只留约 1.6KB）。
+//    HOMEPAGE_BANNER_DISMISSED_KEY）改从零依赖的 @/lib/growth-constants
+//    静态 import，不再经 @/lib/growth。
+//    注意（第 75 轮改写原因）：旧断言称常量“只留约 1.6KB”，该数是 esbuild
+//    探针值，已被 CI 实测证伪（第 72 轮拆函数 import 后 /sites 反增 3KB，
+//    唯一剩下的静态边就是这两个常量 import）；常量定义已移出 growth.ts，
+//    新行为是新模块静态 import + growth.ts re-export 保兼容，守卫强度不变。
 //  - tracker 的 7 个 growth 引用（6 函数 + AI_CHAT_USED_EVENT 事件名）
 //    一个不能少：事件名活在 growth.ts 里，监听须等 chunk 加载后注册。
 //  - banner 的 effect 必须有 cancelled 守卫：pathname 从 `/` 切走后，
 //    pending 的 promise 回来时不得再 setVisible(true)。
 //  - footer 不动：只 import HOMEPAGE_CLAIM_XP 常量，不得 import growth 函数。
-//  - growth.ts 本身不动：函数与常量仍从它导出，调用点原样。
+//    注意（第 75 轮改写原因）：常量来源改成 @/lib/growth-constants，
+//    footer 的 import 目标随之改指新模块；“只 import 常量、不 import 函数”
+//    的锁死点不变。
+//  - growth.ts 本身只剩 re-export：两个首屏常量改由它从 ./growth-constants
+//    re-export，函数与调用点原样。
+//    注意（第 75 轮改写原因）：旧断言要求两个常量定义仍在 growth.ts 内，
+//    新行为是定义搬进 growth-constants.ts、growth.ts 只留 re-export；
+//    7 个函数仍为 `export function` 的锁死点不变。
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -87,11 +99,15 @@ describe('成长模块按需加载（Bundle 瘦身续刀）', () => {
     expect(src).toContain('loadGrowthProfile()')
   })
 
-  it('homepage-banner 渲染用的两个常量保留静态 import', () => {
+  it('homepage-banner 渲染用的两个常量改从 growth-constants 静态 import，不再碰 growth.ts', () => {
     const src = read(BANNER)
+    // 注意（第 75 轮改写原因）：旧断言要求精确匹配 `from '@/lib/growth'`；
+    // 常量定义已移出 growth.ts，新行为是改指零依赖的 growth-constants，
+    // 且 banner 内不得出现任何静态 `from '@/lib/growth'`。
     expect(src).toMatch(
-      /import\s*\{\s*HOMEPAGE_BANNER_DISMISSED_KEY,\s*HOMEPAGE_CLAIM_XP\s*\}\s*from\s*['"]@\/lib\/growth['"]/,
+      /import\s*\{\s*HOMEPAGE_BANNER_DISMISSED_KEY,\s*HOMEPAGE_CLAIM_XP\s*\}\s*from\s*['"]@\/lib\/growth-constants['"]/,
     )
+    expect(src).not.toMatch(STATIC_GROWTH_IMPORT)
     expect(src).toContain('{HOMEPAGE_CLAIM_XP}')
     expect(src).toContain('HOMEPAGE_BANNER_DISMISSED_KEY')
   })
@@ -109,12 +125,16 @@ describe('成长模块按需加载（Bundle 瘦身续刀）', () => {
 
   it('footer 不动：只 import HOMEPAGE_CLAIM_XP 常量，不 import growth 函数', () => {
     const src = read(FOOTER)
-    expect(src).toContain("import { HOMEPAGE_CLAIM_XP } from '@/lib/growth'")
+    // 注意（第 75 轮改写原因）：旧断言要求精确字符串 `from '@/lib/growth'`；
+    // 常量定义已移出 growth.ts，新行为是改指零依赖的 growth-constants，
+    // 且 footer 内不得出现任何静态 `from '@/lib/growth'`。
+    expect(src).toContain("import { HOMEPAGE_CLAIM_XP } from '@/lib/growth-constants'")
+    expect(src).not.toMatch(STATIC_GROWTH_IMPORT)
     expect(src).not.toContain('loadGrowthProfile')
     expect(src).not.toContain('recordGrowthEvent')
   })
 
-  it('growth.ts 本身不动：函数与常量仍从它导出', () => {
+  it('growth.ts 只 re-export 两个首屏常量，函数仍从它导出', () => {
     const src = read(GROWTH)
     for (const name of [
       'recordDailyVisitOnce',
@@ -127,12 +147,15 @@ describe('成长模块按需加载（Bundle 瘦身续刀）', () => {
     ]) {
       expect(src).toContain(`export function ${name}`)
     }
-    for (const name of [
-      'HOMEPAGE_CLAIM_XP',
-      'HOMEPAGE_BANNER_DISMISSED_KEY',
-      'AI_CHAT_USED_EVENT',
-    ]) {
-      expect(src).toContain(`export const ${name} =`)
-    }
+    // 注意（第 75 轮改写原因）：旧断言要求两个常量仍以 `export const … =`
+    // 定义在 growth.ts 内；新行为是定义搬进 growth-constants.ts，
+    // growth.ts 只留 re-export——断言按新行为改写：两名必须仍能从 growth.ts
+    // 导出（旧调用点零改动），定义本身不得再留在 growth.ts 内。
+    expect(src).toContain("from './growth-constants'")
+    expect(src).toContain('export { HOMEPAGE_BANNER_DISMISSED_KEY }')
+    expect(src).toContain('export { HOMEPAGE_CLAIM_XP }')
+    expect(src).not.toContain('export const HOMEPAGE_CLAIM_XP =')
+    expect(src).not.toContain('export const HOMEPAGE_BANNER_DISMISSED_KEY =')
+    expect(src).toContain('export const AI_CHAT_USED_EVENT =')
   })
 })

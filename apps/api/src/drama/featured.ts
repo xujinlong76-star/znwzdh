@@ -2,7 +2,7 @@
  * 短剧精选数据（drama-featured.json）的服务端读取。
  *
  * 校验规则与前端 apps/web-overlay/src/lib/drama-featured.ts 保持一致：
- * 坏行跳过并计数、上限 12 部。剧名归一化与 drama_key 必须与前端
+ * 坏行跳过并计数、上限 16 部。剧名归一化与 drama_key 必须与前端
  * lib/watchlist.ts 的 dramaKeyFor 完全一致，否则检查器算出的键
  * 对不上用户关注的键——改算法时两边要一起改。
  */
@@ -32,7 +32,7 @@ export interface DramaFeatured {
  check: DramaCheck;
 }
 
-export const DRAMA_FEATURED_MAX = 12;
+export const DRAMA_FEATURED_MAX = 16;
 
 /** 与前端 lib/watchlist.ts 的 normalizeDramaTitle 保持一致（不要改算法）。 */
 export function normalizeDramaTitle(title: string): string {

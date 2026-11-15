@@ -4,7 +4,7 @@
  * 这份文件只描述“专区首屏展示哪几部剧、每部剧的来源链接是什么、能不能查新集”——
  * 它不是追剧清单（追剧清单是 watch_entries，由用户自己加），也不是视频库。
  * 校验口径（parseDramaFeatured）：只收字段齐全的行，坏行跳过并计数；
- * 面板不为一行坏数据整个掉。首屏最多展示 12 部。
+ * 面板不为一行坏数据整个掉。首屏最多展示 16 部。
  *
  * 诚实口径在类型上：linkNote 必须如实标注链接是剧目页、榜单页、报道页
  * 还是百科页；榜单页 / 报道页 / 百科页不是正片，卡片不许写成“点开即看”。
@@ -44,7 +44,7 @@ export interface DramaFeaturedFile {
   dramas: DramaFeatured[];
 }
 
-export const DRAMA_FEATURED_MAX = 12;
+export const DRAMA_FEATURED_MAX = 16;
 
 const CHECK_KINDS: ReadonlySet<string> = new Set([
   "migu-list",
@@ -140,7 +140,7 @@ export interface ParsedDramaFeatured {
 }
 
 /**
- * 校验整份剧目文件：坏行跳过并计数；首屏只取前 12 部有效剧目。
+ * 校验整份剧目文件：坏行跳过并计数；首屏只取前 16 部有效剧目。
  * 顶层不是对象、没有 dramas 数组时返回空列表（页面照常渲染平台区）。
  */
 export function parseDramaFeatured(raw: unknown): ParsedDramaFeatured {

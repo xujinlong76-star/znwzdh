@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-14",
+  "updatedAt": "2026-11-15",
   "dramas": [
     {
       "title": "十八岁太奶奶驾到，重整家族荣耀 第五部",
@@ -162,6 +162,58 @@
       "check": {
         "kind": "none",
         "reason": "报道页仅有档期信息，无集数"
+      }
+    },
+    {
+      "title": "万妖图录传 第十四季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://hongguoduanju.com/detail?series_id=7702763145030290457",
+      "linkNote": "剧目页",
+      "episodesKnown": 202,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "综艺迷暂无本季作品页"
+      }
+    },
+    {
+      "title": "魔神人生：弃子问天 第二季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://hongguoduanju.com/detail?series_id=7703101760809749528",
+      "linkNote": "剧目页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "综艺迷暂无本季作品页"
+      }
+    },
+    {
+      "title": "满院亲戚全是上古大妖 第七季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://hongguoduanju.com/detail?series_id=7705413803088825369",
+      "linkNote": "剧目页",
+      "episodesKnown": 188,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "综艺迷暂无本季作品页"
+      }
+    },
+    {
+      "title": "装穷提亲，娶到全家嫌弃的她",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://hongguoduanju.com/detail?series_id=7701328280862854168",
+      "linkNote": "剧目页",
+      "episodesKnown": 80,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "综艺迷暂无本季作品页"
       }
     }
   ]

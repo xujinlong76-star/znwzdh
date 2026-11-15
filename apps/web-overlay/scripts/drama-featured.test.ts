@@ -42,12 +42,12 @@ describe("parseDramaFeatured", () => {
     expect(skipped).toBe(7);
   });
 
-  it("首屏最多 12 部，顶层损坏时返回空列表", () => {
-    const many = Array.from({ length: 13 }, (_, i) => ({
+  it("首屏最多 16 部，顶层损坏时返回空列表", () => {
+    const many = Array.from({ length: 17 }, (_, i) => ({
       ...goodEntry,
       title: `示例剧 ${i + 1}`,
     }));
-    expect(parseDramaFeatured({ dramas: many }).dramas).toHaveLength(12);
+    expect(parseDramaFeatured({ dramas: many }).dramas).toHaveLength(16);
     expect(parseDramaFeatured(null)).toEqual({ dramas: [], skipped: 0 });
     expect(parseDramaFeatured({})).toEqual({ dramas: [], skipped: 0 });
   });
@@ -64,7 +64,7 @@ describe("loadDramaFeatured", () => {
   it("随仓库发布的剧目文件能校验通过", () => {
     const { dramas, skipped } = loadDramaFeatured();
     expect(skipped).toBe(0);
-    expect(dramas).toHaveLength(12);
+    expect(dramas).toHaveLength(16);
     const kinds = new Map<string, number>();
     for (const d of dramas) kinds.set(d.check.kind, (kinds.get(d.check.kind) ?? 0) + 1);
     // 2026-11-14：3 部快手剧已跌出榜单，冻结的榜单页只会报旧集数，
@@ -72,10 +72,10 @@ describe("loadDramaFeatured", () => {
     // 2026-11-15：其中 2 部改走综艺迷作品页（zongyimi-subject）恢复检查，
     // 第 2 批白月光（作品页实抓：总集数 70 集、资料更新 2026-11-13）同法接入，
     // 第 2 批后 3 部（丑小鸭 S5 260 集 / 聚宝仙盆 S15 300 集 / 漂亮的恶意 32 集）同法接入，
-    // 12 部精选剧可查 6 部，仍停查 6 部（含考上清北资料停更暂缓）。
+    // 16 部精选剧可查 6 部，仍停查 10 部（含考上清北资料停更暂缓，另 4 部新剧综艺迷暂无本季作品页）。
     expect(kinds.get("ranking") ?? 0).toBe(0);
     expect(kinds.get("zongyimi-subject") ?? 0).toBe(6);
-    expect(kinds.get('none')).toBe(6);
+    expect(kinds.get('none')).toBe(10);
     for (const d of dramas) {
       if (d.check.kind !== "zongyimi-subject") continue;
       expect(d.check.url).toMatch(/^https:\/\/www\.zongyimi\.com\/drama\/subject\/\d+\/$/);

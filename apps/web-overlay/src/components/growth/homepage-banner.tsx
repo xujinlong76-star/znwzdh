@@ -11,7 +11,12 @@ import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Home, X } from 'lucide-react'
-import { HOMEPAGE_BANNER_DISMISSED_KEY, HOMEPAGE_CLAIM_XP, loadGrowthProfile } from '@/lib/growth'
+import { HOMEPAGE_BANNER_DISMISSED_KEY, HOMEPAGE_CLAIM_XP } from '@/lib/growth'
+
+// HOMEPAGE_CLAIM_XP 是渲染文案里的数字、HOMEPAGE_BANNER_DISMISSED_KEY
+// 是读偏好的 key：渲染同步需要，保留静态 import（常量只留约 1.6KB）。
+// loadGrowthProfile 只在 effect 里用，改动态导入，不把 growth.ts
+//（约 32KB）拉进首屏；横幅因此晚一个 chunk 出现。
 
 // 引导卡只在用户点「怎么设置」展开时才需要：动态导入，不占各页面首屏包体积
 // （本横幅挂在根 layout，未拆分前每个路由都要背 6 套浏览器步骤文案与图标）。
@@ -35,8 +40,20 @@ export function HomepageBanner() {
     } catch {
       /* 读不到偏好就按未关闭处理 */
     }
-    if (loadGrowthProfile().homepageClaimedAt) return
-    setVisible(true)
+    // loadGrowthProfile 只在 effect 里用：动态导入，不把 growth.ts 拉进首屏。
+    // cancelled 守卫：pathname 从 `/` 切走后，pending 的 promise 回来时
+    // 不得再 setVisible(true)；chunk 拉取失败时横幅保持隐藏，不报错。
+    let cancelled = false
+    void import('@/lib/growth')
+      .then((g) => {
+        if (cancelled) return
+        if (g.loadGrowthProfile().homepageClaimedAt) return
+        setVisible(true)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [pathname])
 
   if (!visible) return null

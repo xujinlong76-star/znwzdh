@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
  * 为什么先补这里：apps/web-overlay/src/lib 下 70+ 个 video-* 模块此前只有
  * 单元测试与 typecheck-video 类型门禁，没有任何「跑起来之后」的验证。
  * 本 spec 覆盖三条最小主干：
- *   1. /videos 列表页：壳 + 种子数据的卡片真实渲染；
+ *   1. /videos 列表页：壳 + 种子数据的卡片真实渲染，点卡片进路由版播放器；
  *   2. /videos/v/:id 详情落地页：h1 + 官方内嵌播放 iframe（SEO 页的播放面板）；
  *   3. /videos/player?id= 播放工作台：面板骨架 + 快捷键指南 + 返回导航。
  *
@@ -80,7 +80,7 @@ test.beforeAll(async ({ playwright }) => {
 });
 
 test.describe('视频链路冒烟', () => {
-  test('/videos 列表页：壳与种子卡片真实渲染，卡片弹窗带详情/演播室入口', async ({ page }) => {
+  test('/videos 列表页：壳与种子卡片真实渲染，点卡片进路由版播放工作台', async ({ page }) => {
     await page.goto('/videos', { waitUntil: 'domcontentloaded' });
     // 冷编译预热：宽预算等 load，失败不致命（可能已编译过）
     await page.waitForLoadState('load', { timeout: 120_000 }).catch(() => {});
@@ -92,12 +92,19 @@ test.describe('视频链路冒烟', () => {
     const cardButton = page.getByRole('button', { name: /MCP 实战第一课/ }).first();
     await expect(cardButton).toBeVisible({ timeout: 30_000 });
 
-    // 列表卡片的入口在预览弹窗里（点击卡片 → VideoPlayerModal）：详情 + 演播室
+    // 点卡片直接进路由版播放器（/videos/player?id=…）：弹窗版已删除
+    // （video-card.tsx:117；video-player-modal.tsx 全仓 0 个 import 方）。
+    // 旧断言链「弹窗内标题 + 详情/演播室入口」随旧流程作废，改为断言工作台本身：
+    // 详情入口（控制栏「SEO 收录页」→ /videos/v/:id）与演播室控件
+    // （B站换源档位、返回视频中心）都在工作台内。注意：/videos/player?id=… 自身
+    // 的链接不在工作台内出现——已在工作台里，无需再断言一次“演播室入口”，
+    // 落到本页 URL + 工作台控件即等价覆盖。
     await cardButton.click();
-    const dialog = page.locator('[role="dialog"]');
-    await expect(dialog.getByText('MCP 实战第一课').first()).toBeVisible({ timeout: 15_000 });
-    await expect(dialog.locator('a[href="/videos/v/e2e-video-1"]')).toBeVisible();
-    await expect(dialog.locator('a[href="/videos/player?id=e2e-video-1"]')).toBeVisible();
+    await expect(page).toHaveURL(/\/videos\/player\?id=e2e-video-1/, { timeout: 30_000 });
+    await expect(page.getByText('MCP 实战第一课', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('a[href="/videos/v/e2e-video-1"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: /B站换源:/ })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('link', { name: '返回视频中心' })).toBeVisible({ timeout: 30_000 });
   });
 
   test('/videos/v/:id 详情落地页：h1 与点击后加载的官方内嵌播放 iframe', async ({ page }) => {

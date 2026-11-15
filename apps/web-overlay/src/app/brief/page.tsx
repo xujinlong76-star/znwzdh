@@ -66,6 +66,9 @@ function HotRow({ item }: { item: HubBriefHotPick }) {
   return (
     // 标题外链与站内搜是两个并列的独立链接：站内搜绝不嵌进标题 <a> 里，
     // 标题仍是直达原平台的主链路，搜按钮只做站内跳转（同页，不开新标签）。
+    // 搜按钮可点目标 44×44（min-h-11 min-w-11，WCAG 2.5.5）：图标仍 14px，
+    // 外框达标并带可见「站内搜」文字；行高随之 28px → 44px（+16px/行），
+    // 换手机端不再误点跳外站。
     // 不展示 item.rank：各源热度口径不同、部分源（如知乎）无数值热度，
     // 序号会暗示并不存在的统一排名；只并列展示标题与链接。
     <li className="flex items-center gap-1">
@@ -83,9 +86,10 @@ function HotRow({ item }: { item: HubBriefHotPick }) {
         href={`/search?q=${encodeURIComponent(item.title)}`}
         aria-label={`站内搜「${item.title}」`}
         title={`站内搜「${item.title}」`}
-        className="inline-flex shrink-0 items-center rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-link"
+        className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-link"
       >
         <Search className="h-3.5 w-3.5" aria-hidden />
+        <span>站内搜</span>
       </Link>
     </li>
   )

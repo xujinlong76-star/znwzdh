@@ -38,7 +38,7 @@ import DailyFocus from '@/components/daily-focus'
 export const revalidate = 300
 
 const TITLE = '每日简报 - 今天值得看的，都在这一页'
-const DESCRIPTION = '小猫猫每日简报：全网热榜精选（微博/百度/头条/抖音/B站）、站内新收录与在追短剧提醒，一页看完今天值得看的。'
+const DESCRIPTION = '小猫猫每日简报：全网热榜精选（微博/百度/头条/抖音/B站/知乎）、站内新收录与在追短剧提醒，一页看完今天值得看的。'
 const FALLBACK_DESCRIPTION = '每天一份的站内简报：全网热榜、站内新收录与在追短剧提醒汇总成一页。'
 
 export async function generateMetadata(): Promise<Metadata> {

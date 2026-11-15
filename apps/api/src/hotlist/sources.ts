@@ -18,6 +18,13 @@ export interface HotlistItem {
   url: string;
   hotValue: number | null;
   hotLabel: string | null;
+  /**
+   * 知乎官方接口返回的配图与摘要：解析器原样返回（与样例逐字核对），
+   * 入库时丢弃——热榜只存标题 + 链接 + 热度，不存正文、不存图片
+   * （仓储层六列口径，见 packages/store/src/repository/hotlist.ts 头注）。
+   */
+  thumbnailUrl?: string | null;
+  summary?: string | null;
 }
 
 export interface HotlistSourceDef {
@@ -31,7 +38,8 @@ export interface HotlistSourceDef {
   /** covered=false 时必填：为什么没覆盖（实测结论，不许写「暂无」） */
   uncoveredReason?: string;
   endpoint?: string;
-  headers?: Record<string, string>;
+  /** 静态头，或每次请求时现算的头（知乎需要每请求的秒级时间戳 + Bearer 密钥） */
+  headers?: Record<string, string> | (() => Record<string, string>);
   parse?: (json: unknown) => HotlistItem[];
 }
 
@@ -175,62 +183,51 @@ function parseBilibili(json: unknown): HotlistItem[] {
 
 /* -------------------------------- 知乎 ---------------------------------
  *
- * 2026-11-11 的旧结论（v3 接口 api/v3/feed/topstory/hot-lists/total 实测
- * 401）只针对那条需登录的路径；2026-11-12 复核发现热榜页自身的移动端
- * feed 接口 api.zhihu.com/topstory/hot-list 免登录返回 200（本机浏览器
- * 实测，当日榜首「网传腾讯裁员 15-20%」等条目逐字对上），改用这条。
- * 只取 target.title / target.id（拼站内问题链接）/ detail_text 热度，
- * 响应里的 excerpt 摘要、正文一律不存、不搬运。 */
-
-function parseZhihuHeat(detailText: unknown): number | null {
-  if (typeof detailText !== "string") return null;
-  const yi = detailText.match(/([\d.]+)\s*亿/);
-  if (yi) {
-    const n = Number(yi[1]);
-    return Number.isFinite(n) && n > 0 ? Math.trunc(n * 100000000) : null;
-  }
-  const wan = detailText.match(/([\d.]+)\s*万/);
-  if (wan) {
-    const n = Number(wan[1]);
-    return Number.isFinite(n) && n > 0 ? Math.trunc(n * 10000) : null;
-  }
-  const plain = detailText.match(/([\d.]+)/);
-  if (!plain) return null;
-  return toHotValue(plain[1]);
-}
-
-const ZHIHU_LABEL: Record<string, string> = { boiling: "沸", hot: "热", new: "新" };
+ * 知乎数据开放平台官方 API（developer.zhihu.com/api/v1/content/hot_list，
+ * Bearer Access Secret + X-Request-Timestamp 秒级时间戳），2026-11-12
+ * 实测 200、30 条；2026-11-15 接线时复测仍为 200、30 条。响应每项只有
+ * Title/Url/ThumbnailUrl/Summary 四字段，无数值热度——hotValue 如实留
+ * null（与百度 wise 档一致），绝不编造。Url 带
+ * utm_medium=openapi_platform&utm_source=<平台分配标识> 追踪参数，
+ * 入库前去掉，只留干净问题链接。旧取数口径（移动端 feed 接口
+ * api.zhihu.com/topstory/hot-list）已废弃：未走官方开放平台，无密钥、
+ * 无额度保障，随时可能被限流，2026-11-15 起不再使用。 */
 
 function parseZhihu(json: unknown): HotlistItem[] {
-  const data = asArray(asRecord(json).data);
+  const root = asRecord(json);
+  if (root.Code !== 0) {
+    throw new Error(`知乎接口返回 Code=${String(root.Code)}（${cleanTitle(root.Message)}）`);
+  }
+  const data = asRecord(root.Data);
+  const items = asArray(data.Items);
   return finish(
-    data.map((raw) => {
+    items.map((raw) => {
       const r = asRecord(raw);
-      const target = asRecord(r.target);
-      // 问题 id 超过 2^53（JSON.parse 后尾数会被舍入），不能走数值 id；
-      // 源站给的 target.url 是字符串，末尾的数字 id 精确无损，从这里取。
-      // 只有 /questions/<id> 里的 id 才精确：url 里没有它时，数值 id 若超过
-      // Number.MAX_SAFE_INTEGER 必然已被舍入（例如 2104132164308530649 会
-      // 变成 2104132164308530700），String(target.id) 会拼出错误问题的链接，
-      // 宁可丢弃该条（url 留空，finish 会过滤），也不链到错的问题。
-      // 字符串 id 未经过数值舍入、数字 id 在安全整数内时，才可直接用。
-      const urlId = typeof target.url === "string" ? target.url.match(/\/questions\/(\d+)/)?.[1] ?? "" : "";
-      let id = urlId;
-      if (!id) {
-        if (typeof target.id === "string" && target.id.trim() !== "") id = target.id.trim();
-        else if (typeof target.id === "number" && Number.isSafeInteger(target.id)) id = String(target.id);
-      }
-      // 标题里常带换行/多空格（源站原样返回），折成单空格再展示
-      const title = cleanTitle(target.title).replace(/\s+/g, " ");
-      const labelRaw = r.card_label === undefined || r.card_label === null ? null : asRecord(r.card_label).type;
       return {
-        title,
-        url: id ? `https://www.zhihu.com/question/${encodeURIComponent(id)}` : "",
-        hotValue: parseZhihuHeat(r.detail_text),
-        hotLabel: typeof labelRaw === "string" ? (ZHIHU_LABEL[labelRaw] ?? null) : null,
+        title: cleanTitle(r.Title),
+        url: cleanZhihuUrl(r.Url),
+        // 官方接口不返回数值热度（2026-11-12 实测：每项只有 Title/Url/ThumbnailUrl/Summary），如实留 null，不编造
+        hotValue: null,
+        hotLabel: null,
+        thumbnailUrl: cleanTitle(r.ThumbnailUrl) || null,
+        summary: cleanTitle(r.Summary) || null,
       };
     }),
   );
+}
+
+/** 只保留知乎问题页干净链接：去 utm 追踪参数，非法域名/路径直接丢弃该条 */
+function cleanZhihuUrl(v: unknown): string {
+  const raw = cleanTitle(v);
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    if (u.hostname !== "www.zhihu.com" || !u.pathname.startsWith("/question/")) return "";
+    u.search = "";
+    return u.toString();
+  } catch {
+    return "";
+  }
 }
 
 /* ------------------------------ 源注册表 -------------------------------- */
@@ -291,10 +288,20 @@ export const HOTLIST_SOURCES: readonly HotlistSourceDef[] = [
     name: "知乎热榜",
     homeUrl: "https://www.zhihu.com/hot",
     basis:
-      "知乎热榜页移动端 feed 接口 api.zhihu.com/topstory/hot-list，2026-11-12 实测免登录返回 200（此前 2026-11-11 测的 v3 接口 api/v3/feed/topstory/hot-lists/total 返回 401，那条需登录，不用它）；只存标题 + 链接 + 热度，不存 excerpt/正文",
+      "知乎数据开放平台官方 API developer.zhihu.com/api/v1/content/hot_list（Bearer Access Secret + X-Request-Timestamp 秒级时间戳），2026-11-12 实测 200、30 条；响应无数值热度，hotValue 留 null（与百度 wise 档一致）；免费额度口径不一（官网 5000/天、第三方 1000/天、开源实测热榜 100/天），按保守 100 次/天估算，每小时 1 次 = 24 次/天；超额后 10 元/千次——熔断，绝不自动转付费",
     covered: true,
-    endpoint: "https://api.zhihu.com/topstory/hot-list",
-    headers: { Referer: "https://www.zhihu.com/", "User-Agent": BROWSER_UA },
+    endpoint: "https://developer.zhihu.com/api/v1/content/hot_list?Limit=30",
+    headers: () => {
+      const secret = (process.env.NAVHUB_ZHIHU_ACCESS_SECRET ?? "").trim();
+      if (!secret) {
+        throw new Error("知乎热榜未配置 Access Secret（环境变量 NAVHUB_ZHIHU_ACCESS_SECRET 缺失）");
+      }
+      return {
+        Authorization: `Bearer ${secret}`,
+        "X-Request-Timestamp": String(Math.floor(Date.now() / 1000)),
+        "Content-Type": "application/json",
+      };
+    },
     parse: parseZhihu,
   },
   {

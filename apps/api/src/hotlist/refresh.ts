@@ -43,7 +43,10 @@ export async function refreshHotlistSource(
 ): Promise<HotlistRefreshEntry> {
   try {
     if (!def.endpoint || !def.parse) throw new Error("源未配置采集端点");
-    const res = await fetchImpl(def.endpoint, def.headers ?? {});
+    // headers 可能是工厂函数（知乎：每次请求现算 Bearer + 秒级时间戳）；缺密钥时
+    // 工厂抛错，落入本函数已有的 try/catch → 记 failed、保留旧缓存，不发匿名请求。
+    const headers = typeof def.headers === "function" ? def.headers() : (def.headers ?? {});
+    const res = await fetchImpl(def.endpoint, headers);
     if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
     let json: unknown;
     try {

@@ -1,12 +1,14 @@
 /**
  * 热榜逐源解析器测试：fixture 是 2026-11-11 在本机对各源公开接口的
  * 真实响应录制（只裁剪条数、对象未改），不是编造的假数据。
+ * 知乎 fixture 是 2026-11-12 对官方开放平台 hot_list 接口的真实响应
+ * 全文原样（30 条，见方案 ~/workspace/research/zhihu-wiring-plan.md）。
  * 守的约束：
  *  1. 每个 covered 源都能从真实响应的形状里解出标题+链接+热度；
  *  2. 已知真实条目逐字对得上（源改版/字段漂移会在这里变红）；
  *  3. 形状坏掉时解析器抛错（刷新链路据此标 failed、保留旧缓存），
  *     绝不静默产出空榜或错榜；
- *  4. 未覆盖源（知乎/快手）必须登记实测原因，不许悄悄缺席。
+ *  4. 未覆盖源（快手）必须登记实测原因，不许悄悄缺席。
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -26,7 +28,7 @@ function parseOf(id: string) {
 }
 
 describe("热榜源注册表", () => {
-  it("七个主流源全部登记，五个可采集、两个如实登记未覆盖", () => {
+  it("七个主流源全部登记，六个可采集、一个如实登记未覆盖", () => {
     expect(HOTLIST_SOURCES.map((s) => s.id)).toEqual([
       "weibo",
       "baidu",
@@ -45,7 +47,9 @@ describe("热榜源注册表", () => {
       }
     }
     expect(hotlistSourceById("zhihu")?.covered).toBe(true);
-    expect(hotlistSourceById("zhihu")?.endpoint).toBeTruthy();
+    expect(hotlistSourceById("zhihu")?.endpoint).toBe(
+      "https://developer.zhihu.com/api/v1/content/hot_list?Limit=30",
+    );
     expect(hotlistSourceById("zhihu")?.parse).toBeTypeOf("function");
     expect(hotlistSourceById("kuaishou")?.uncoveredReason).toContain("无官方公开");
   });
@@ -104,89 +108,87 @@ describe("逐源解析器（真实录制响应）", () => {
   });
 });
 
-describe("知乎：亿级热度与超大问题 id", () => {
-  function zhihuPayload(
-    entries: Array<{ id?: unknown; url?: string; title: string; detail_text: string }>,
-  ): unknown {
-    return {
-      data: entries.map((e) => ({
-        target: { id: e.id, url: e.url, title: e.title },
-        detail_text: e.detail_text,
-        card_label: null,
-      })),
+describe("知乎：官方开放平台 Data.Items", () => {
+  it("官方开放平台 Data.Items 解出标题与干净链接，热度留 null，配图与摘要与样例一致", () => {
+    const raw = fixture("zhihu.json") as {
+      Code: number;
+      Message: string;
+      Data: {
+        Total: number;
+        Items: Array<{ Title: string; Url: string; ThumbnailUrl: string; Summary: string }>;
+      };
     };
+    const items = parseOf("zhihu")(raw);
+    expect(items.length).toBe(30);
+    expect(items[0]?.title).toBe(
+      "高三生在拼豆店干坐1小时，留下5元钱、道歉纸条和父母电话，为什么能引发热议？给孩子教育留下怎样的启发？",
+    );
+    expect(items[0]?.url).toBe("https://www.zhihu.com/question/2103852272970987363");
+    expect(items[0]?.url).not.toContain("utm_");
+    // 30 条逐项与官方返回一致：标题/链接/配图/简介四字段，热度留空
+    items.forEach((item, idx) => {
+      const src = raw.Data.Items[idx]!;
+      expect(item.title).toBe(src.Title);
+      expect(item.thumbnailUrl).toBe(src.ThumbnailUrl);
+      // 样例里 2 条 Summary 为空串，解析后记 null；其余逐字一致
+      expect(item.summary).toBe(src.Summary === "" ? null : src.Summary);
+      expect(item.hotValue).toBeNull();
+      expect(item.hotLabel).toBeNull();
+      expect(item.url).toMatch(/^https:\/\/www\.zhihu\.com\/question\/\d+$/);
+      expect(item.url).not.toContain("utm_");
+      expect(item.thumbnailUrl).toMatch(/^https:\/\/pic\d\.zhimg\.com\//);
+    });
+    expect(items.map((i) => i.rank)).toEqual(items.map((_, idx) => idx + 1));
+  });
+
+  it("形状坏掉时抛错而不是产出空榜", () => {
+    expect(() => parseOf("zhihu")({ Code: 1001, Message: "额度不足", Data: {} })).toThrow();
+    expect(() => parseOf("zhihu")({ Code: 0, Message: "success", Data: {} })).toThrow();
+    expect(() => parseOf("zhihu")({ Code: 0, Message: "success", Data: { Total: 30, Items: [] } })).toThrow();
+    expect(() =>
+      parseOf("zhihu")({ Code: 0, Message: "success", Data: { Total: 1, Items: [{ Title: "", Url: "" }] } }),
+    ).toThrow();
+    // 非知乎问题链接直接丢弃，0 条有效即抛错
+    expect(() =>
+      parseOf("zhihu")({
+        Code: 0,
+        Message: "success",
+        Data: { Total: 1, Items: [{ Title: "有标题", Url: "https://example.com/x" }] },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("知乎动态请求头与缺密钥", () => {
+  function zhihuHeaders(): Record<string, string> {
+    const def = hotlistSourceById("zhihu")!;
+    if (typeof def.headers !== "function") throw new Error("知乎 headers 必须是工厂函数");
+    return def.headers();
   }
 
-  it("亿级热度按 1 亿 = 100,000,000 换算，万与纯数字不受影响", () => {
-    const items = parseOf("zhihu")(
-      zhihuPayload([
-        { id: 101, url: "https://api.zhihu.com/questions/101", title: "1.2亿热度", detail_text: "1.2亿热度" },
-        { id: 102, url: "https://api.zhihu.com/questions/102", title: "2亿热度", detail_text: "2亿热度" },
-        // 真实 detail_text 是 "3695\n万热度" 这种数字换行再跟单位的写法，亿也一样
-        { id: 103, url: "https://api.zhihu.com/questions/103", title: "换行亿", detail_text: "1.2\n亿热度" },
-        { id: 104, url: "https://api.zhihu.com/questions/104", title: "纯数字", detail_text: "12345热度" },
-        { id: 105, url: "https://api.zhihu.com/questions/105", title: "万级回归", detail_text: "1.5万热度" },
-      ]),
-    );
-    expect(items.map((i) => i.hotValue)).toEqual([120000000, 200000000, 120000000, 12345, 15000]);
-    expect(items.map((i) => i.url)).toEqual([
-      "https://www.zhihu.com/question/101",
-      "https://www.zhihu.com/question/102",
-      "https://www.zhihu.com/question/103",
-      "https://www.zhihu.com/question/104",
-      "https://www.zhihu.com/question/105",
-    ]);
-    expect(items.map((i) => i.rank)).toEqual([1, 2, 3, 4, 5]);
+  it("动态头：Bearer + 秒级时间戳，每次调用现算", () => {
+    const prev = process.env.NAVHUB_ZHIHU_ACCESS_SECRET;
+    try {
+      // 密钥用假值，现设现撤，绝不用真实 Secret
+      process.env.NAVHUB_ZHIHU_ACCESS_SECRET = "test-secret-for-unit-test";
+      const headers = zhihuHeaders();
+      expect(headers.Authorization).toBe("Bearer test-secret-for-unit-test");
+      expect(headers["X-Request-Timestamp"]).toMatch(/^\d{10}$/);
+      expect(headers["Content-Type"]).toBe("application/json");
+    } finally {
+      if (prev === undefined) delete process.env.NAVHUB_ZHIHU_ACCESS_SECRET;
+      else process.env.NAVHUB_ZHIHU_ACCESS_SECRET = prev;
+    }
   });
 
-  it("真实录制 fixture：超大 id 从 url 精确恢复，万级热度换算正确", () => {
-    const items = parseOf("zhihu")(fixture("zhihu.json"));
-    expect(items.length).toBe(5);
-    expect(items[0]?.title).toContain("网传腾讯裁员");
-    expect(items[0]?.hotValue).toBe(36950000);
-    expect(items[0]?.url).toBe("https://www.zhihu.com/question/2104132164308530649");
-    expect(items[1]?.url).toBe("https://www.zhihu.com/question/2103852272970987363");
-    // 任何一条都不许出现 JSON.parse 舍入后的错 id
-    for (const item of items) expect(item.url).not.toContain("2104132164308530700");
-  });
-
-  it("超大数值 id 但 url 含 /questions/<id> 时从 url 精确恢复，绝不用舍入值", () => {
-    // 字面量 2104132164308530649 在 JS 里解析时就已被舍入（与 JSON.parse 一致），
-    // 先把这个前提钉住：下面断言的恢复只能来自 url 字符串，不可能来自数值 id。
-    expect(String(2104132164308530649)).toBe("2104132164308530700");
-    const items = parseOf("zhihu")(
-      zhihuPayload([
-        {
-          id: 2104132164308530649,
-          url: "https://api.zhihu.com/questions/2104132164308530649",
-          title: "超大 id 从 url 恢复",
-          detail_text: "3695万热度",
-        },
-      ]),
-    );
-    expect(items).toHaveLength(1);
-    expect(items[0]?.url).toBe("https://www.zhihu.com/question/2104132164308530649");
-    expect(items[0]?.url).not.toContain("2104132164308530700");
-  });
-
-  it("超大数值 id 且 url 里没有 /questions/<id> 时丢弃该条，绝不链到错问题", () => {
-    const items = parseOf("zhihu")(
-      zhihuPayload([
-        { id: 101, url: "https://api.zhihu.com/questions/101", title: "正常条目", detail_text: "100热度" },
-        // 无 url：数值 id 已舍入，无处恢复精确 id
-        { id: 2104132164308530649, title: "超大 id 无 url", detail_text: "3695万热度" },
-        // url 里没有 /questions/<id>：同样无处恢复
-        {
-          id: 2104132164308530649,
-          url: "https://www.zhihu.com/answer/999",
-          title: "超大 id 的 url 不是问题链接",
-          detail_text: "3695万热度",
-        },
-      ]),
-    );
-    expect(items).toHaveLength(1);
-    expect(items[0]?.title).toBe("正常条目");
-    expect(items[0]?.url).toBe("https://www.zhihu.com/question/101");
-    for (const item of items) expect(item.url).not.toContain("2104132164308530700");
+  it("缺密钥时工厂抛错（fail-closed，不发匿名请求）", () => {
+    const prev = process.env.NAVHUB_ZHIHU_ACCESS_SECRET;
+    try {
+      delete process.env.NAVHUB_ZHIHU_ACCESS_SECRET;
+      expect(() => zhihuHeaders()).toThrow(/NAVHUB_ZHIHU_ACCESS_SECRET/);
+    } finally {
+      if (prev === undefined) delete process.env.NAVHUB_ZHIHU_ACCESS_SECRET;
+      else process.env.NAVHUB_ZHIHU_ACCESS_SECRET = prev;
+    }
   });
 });

@@ -215,6 +215,32 @@
         "kind": "none",
         "reason": "综艺迷暂无本季作品页"
       }
+    },
+    {
+      "title": "和离后我带女儿横扫魔域 第二季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://hongguoduanju.com/detail?series_id=7704261228037671998",
+      "linkNote": "剧目页",
+      "episodesKnown": 521,
+      "totalEpisodes": 521,
+      "check": {
+        "kind": "none",
+        "reason": "已完结全 521 集，无新集可等"
+      }
+    },
+    {
+      "title": "满院亲戚全是上古大妖 第六季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.duanjugongcheng.com/cn/bangdan/ju/man-yuan-qin-qi-quan-shi-shang-gu-da-yao-di-liu-ji",
+      "linkNote": "榜单页",
+      "episodesKnown": 272,
+      "totalEpisodes": 272,
+      "check": {
+        "kind": "none",
+        "reason": "已完结全 272 集，无新集可等；红果直链未找回，暂用榜单页"
+      }
     }
   ]
 }

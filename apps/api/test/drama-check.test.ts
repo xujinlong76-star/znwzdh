@@ -421,9 +421,10 @@ describe("drama-featured.json 检查配置", () => {
  // 2026-11-15：其中 2 部改走综艺迷作品页（zongyimi-subject）恢复检查；
  // 第 2 批白月光（作品页已实抓核实：总集数 70 集、资料更新 2026-11-13）同法接入，
  // 第 2 批后 3 部（丑小鸭 S5 260 集 / 聚宝仙盆 S15 300 集 / 漂亮的恶意 32 集，
- // 作品页实抓核实）同法接入；16 部精选剧可查 6 部，仍停查 10 部。
- // 仍停查的 10 部：考上清北（资料更新停在 2026-11-06，暂缓）+ 本批 4 部新剧
- //（综艺迷暂无本季作品页）+ 太奶奶/和离/退役/悍妻/仿生迷踪 5 部固有停查。
+ // 作品页实抓核实）同法接入；18 部精选剧可查 6 部，仍停查 12 部。
+ // 仍停查的 12 部：考上清北（资料更新停在 2026-11-06，暂缓）+ 本批 4 部新剧
+ //（综艺迷暂无本季作品页）+ 太奶奶/和离/退役/悍妻/仿生迷踪 5 部固有停查 + 本轮新增 2 部
+ //（和离 S2、满院 S6，已完结无新集可等）。
  for (const title of ["考上清北，却交不起五千学费"]) {
  const drama = loaded.dramas.find((d) => d.title === title);
  expect(drama?.check.kind).toBe("none");
@@ -454,5 +455,28 @@ describe("drama-featured.json 检查配置", () => {
  expect(drama?.episodesKnown).toBe(586);
  expect(drama?.totalEpisodes).toBeNull();
  expect(drama?.check.kind).toBe("none");
+});
+
+ it("和离 S2 与满院 S6 补录：精选 18 部，两部新剧集数与链接锁定", () => {
+ const loaded = loadDramaFeaturedForCheck({ repoRoot: REPO_ROOT});
+ expect(loaded.error).toBeUndefined();
+ expect(loaded.dramas.length).toBe(18);
+ const heli = loaded.dramas.find((d) => d.title === "和离后我带女儿横扫魔域 第二季");
+ expect(heli).toBeDefined();
+ // 2026-11-15 三方证实：tahou 原文“足足 521 集”、YouTube“Complete 521 Episodes”、Ignite Drama 标 521 集；红果直链 curl 200。
+ expect(heli?.episodesKnown).toBe(521);
+ expect(heli?.totalEpisodes).toBe(521);
+ expect(heli?.url).toBe("https://hongguoduanju.com/detail?series_id=7704261228037671998");
+ expect(heli?.linkNote).toBe("剧目页");
+ expect(heli?.check.kind).toBe("none");
+ const manyuan = loaded.dramas.find((d) => d.title === "满院亲戚全是上古大妖 第六季");
+ expect(manyuan).toBeDefined();
+ // 2026-11-15 三方证实：aozhi“272 集”、366.me“共 272 集”、短剧工程榜单页上线 2026-10-30；红果直链未找回，暂用榜单页，reason 须写明。
+ expect(manyuan?.episodesKnown).toBe(272);
+ expect(manyuan?.totalEpisodes).toBe(272);
+ expect(manyuan?.url).toBe("https://www.duanjugongcheng.com/cn/bangdan/ju/man-yuan-qin-qi-quan-shi-shang-gu-da-yao-di-liu-ji");
+ expect(manyuan?.linkNote).toBe("榜单页");
+ expect(manyuan?.check.kind).toBe("none");
+ expect(manyuan?.check.reason).toContain("红果直链未找回");
 });
 });

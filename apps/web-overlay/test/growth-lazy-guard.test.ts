@@ -70,7 +70,12 @@ describe('成长模块按需加载（Bundle 瘦身续刀）', () => {
     const src = read(TRACKER)
     expect(src).toContain('return null')
     // chunk 拉取失败（如离线首访）时静默跳过本次记账，不抛未处理 rejection。
-    expect(src).toContain('.catch(() => {})')
+    // 注意（第 73 轮改写原因）：旧断言 `.catch(() => {})` 是裸空 catch，与
+    // silent-catch 守卫的「0 处吞掉失败却没写理由」规则直接互斥，两测试不可
+    // 能同时通过。新行为是 catch 块内必须带理由注释，断言按新行为改写：
+    // 仍要求静默吞掉失败（块内无语句），但必须写明为什么可以吞；守卫强度不变。
+    expect(src).toContain('.catch(() => { /*')
+    expect(src).not.toContain('.catch(() => {})')
   })
 
   it('homepage-banner 不静态引入 loadGrowthProfile，只走 effect 内动态 import', () => {

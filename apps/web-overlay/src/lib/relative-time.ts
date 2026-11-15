@@ -39,7 +39,9 @@ export type HotlistSourceStatus = 'ok' | 'stale' | 'empty'
  * 先判 status 再用时间：路由在 items 为空但 lastOkAt 非空时仍返回非空
  * fetchedAt、status 为 'empty'（routes/hotlist.ts:55-56 的边缘组合），
  * 此时一律不显示时间。无 fetchedAt 时不编造时间（不回退 Date.now()，
- * 不拿 last_attempt_at 冒充成功抓取时刻）。
+ * 不拿 last_attempt_at 冒充成功抓取时刻）。stale + 无 fetchedAt 时不说
+ * 「暂无数据」（stale 态按路由定义 items.length > 0，下方有缓存条目），
+ * 改说「时间未知的缓存」（研究报告 hotlist-freshness-2026-11-15-1422.md §4.2）。
  */
 export function formatHotlistSubline(
   status: HotlistSourceStatus,
@@ -47,8 +49,9 @@ export function formatHotlistSubline(
   now: number = Date.now(),
 ): string {
   const fresh = formatFreshness(fetchedAt, now)
-  if (status === 'empty' || fresh === null) return '暂无数据（等待首次抓取）'
+  if (status === 'empty') return '暂无数据（等待首次抓取）'
   if (status === 'stale') {
+    if (fresh === null) return '抓取暂时失败，下面是时间未知的缓存'
     const ageMs = Math.max(0, now - (fetchedAt ?? 0))
     if (ageMs >= STALE_ESCALATION_MS) {
       const hours = Math.floor(ageMs / 3600_000)
@@ -56,5 +59,6 @@ export function formatHotlistSubline(
     }
     return `抓取暂时失败，下面是 ${fresh} 的缓存`
   }
+  if (fresh === null) return '暂无数据（等待首次抓取）'
   return `${fresh}更新`
 }

@@ -105,10 +105,20 @@ describe('formatHotlistSubline 副行文案', () => {
       '抓取已失败 3 小时，下面是旧缓存',
     )
   })
-  it('fallback：empty/无时间一律暂无数据，不编造时间', () => {
+  it('fallback：empty/ok 无时间一律暂无数据，不编造时间', () => {
     expect(formatHotlistSubline('empty', null, NOW)).toBe('暂无数据（等待首次抓取）')
     expect(formatHotlistSubline('ok', null, NOW)).toBe('暂无数据（等待首次抓取）')
-    expect(formatHotlistSubline('stale', null, NOW)).toBe('暂无数据（等待首次抓取）')
+  })
+  it('stale 无时间→时间未知的缓存（stale 态下方有缓存条目，不说暂无数据）', () => {
+    expect(formatHotlistSubline('stale', null, NOW)).toBe('抓取暂时失败，下面是时间未知的缓存')
+    expect(formatHotlistSubline('stale', 0, NOW)).toBe('抓取暂时失败，下面是时间未知的缓存')
+    expect(formatHotlistSubline('stale', Number.NaN, NOW)).toBe(
+      '抓取暂时失败，下面是时间未知的缓存',
+    )
+    expect(formatHotlistSubline('stale', -1, NOW)).toBe('抓取暂时失败，下面是时间未知的缓存')
+    expect(formatHotlistSubline('stale', undefined, NOW)).toBe(
+      '抓取暂时失败，下面是时间未知的缓存',
+    )
   })
   it('路由边缘组合：items 为空但 lastOkAt 非空时仍按 status 为 empty，不显示时间', () => {
     expect(formatHotlistSubline('empty', NOW - 30 * MIN, NOW)).toBe(

@@ -112,6 +112,14 @@ let sharedEntries: WatchEntry[] = []
 let sharedBlocked: string | null = null
 let watchlistSnapshot: WatchlistSnapshot = { items: sharedEntries, blocked: sharedBlocked }
 let watchlistInitialized = false
+/* 水合完成标志：localStorage 快照只在水合完成后才生效。
+ * 首渲必须与服务端完全一致（ready=false、entries=[]）。`useEffect` 在选择性
+ * 水合中途就会执行，若直接在这里把快照翻上来，`useSyncExternalStore` 会触发
+ * 同步重渲染，撞上尚未水合的节点 → Hydration failed（见 evolution-round
+ * 2026-11-16-0128-b-hydration）。翻转只能发生在水合结束后的普通重渲染里，
+ * 故用 setTimeout 0 推迟到下一个宏任务；`storage` 等外部刷新在标志位立起前
+ * 同样不许翻快照。 */
+let watchlistHydrated = false
 const watchlistListeners = new Set<() => void>()
 
 function applyLocalEntries(next: { items: WatchEntry[]; blocked: string | null }) {
@@ -138,15 +146,28 @@ export function useWatchlist(): WatchlistApi {
   const [ready, setReady] = useState(() => watchlistInitialized)
 
   useEffect(() => {
-    if (!watchlistInitialized) {
-      watchlistInitialized = true
+    let cancelled = false
+    // 水合完成后再读 localStorage：effect 本身在水合中途就会执行，直接翻快照
+    // 会触发同步重渲染并撞上未水合节点（Hydration failed）。setTimeout 0 把
+    // 翻转推迟到水合结束后的普通重渲染里；卸载后取消，避免幽灵写入。
+    const timer = window.setTimeout(() => {
+      if (cancelled) return
+      if (!watchlistInitialized) {
+        watchlistInitialized = true
+        applyLocalEntries(loadLocal())
+      }
+      watchlistHydrated = true
+      setReady(true)
+    }, 0)
+    const refresh = () => {
+      if (!watchlistHydrated) return
       applyLocalEntries(loadLocal())
     }
-    setReady(true)
-    const refresh = () => applyLocalEntries(loadLocal())
     window.addEventListener('navhub_workbench_updated', refresh)
     window.addEventListener('storage', refresh)
     return () => {
+      cancelled = true
+      window.clearTimeout(timer)
       window.removeEventListener('navhub_workbench_updated', refresh)
       window.removeEventListener('storage', refresh)
     }

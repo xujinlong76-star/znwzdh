@@ -35,6 +35,7 @@ import {
   syncWatchlistToCloud,
   useWatchlist,
   type WatchlistCloudSyncResult,
+  type WatchlistSyncStatus,
 } from '@/hooks/useWatchlist'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { collectDramaSites, type DramaSite } from '@/lib/drama-sites'
@@ -227,10 +228,16 @@ function EntryRow({
 
 /* ------------------------------ 页面 ------------------------------ */
 
+/** 水合前的固定时刻：服务端与首渲共用同一值；此时 entries 为空，不渲染任何
+ * 日期派生内容，故取值不影响输出。`now` 真值只在水合完成后才设置（见下），
+ * 避免服务端与客户端恰好跨过午夜零点时周表翻天。 */
+const FALLBACK_NOW = new Date(0)
+
 export default function WatchlistPage() {
   const watchlist = useWatchlist()
   const identityReady = useIdentityReady()
   const [banner, setBanner] = useState<WatchSyncBannerInput | null>(null)
+  const [lastSync, setLastSync] = useState<WatchlistSyncStatus | null>(null)
   const [platforms, setPlatforms] = useState<DramaSite[]>([])
   const [addPlatformId, setAddPlatformId] = useState('')
   const [addTitle, setAddTitle] = useState('')
@@ -239,7 +246,7 @@ export default function WatchlistPage() {
     cadence: { kind: 'unknown' },
     priority: 'normal',
   })
-  const [now, setNow] = useState(() => new Date())
+  const [now, setNow] = useState<Date | null>(null)
   const syncingRef = useRef(false)
   const syncedForRef = useRef<string | null>(null)
 
@@ -262,6 +269,8 @@ export default function WatchlistPage() {
       )
     } finally {
       syncingRef.current = false
+      // 同步写回的 localStorage 状态要同步进 state，否则「上次同步」行不刷新
+      setLastSync(readWatchlistSyncStatus())
     }
     // replaceAll 身份随 hook 快照变化，纳入依赖会重复触发同步；同步只由下方 effect 用 ref 守卫触发一次
   }, [])
@@ -275,6 +284,15 @@ export default function WatchlistPage() {
     syncedForRef.current = identity
     void runSync()
   }, [watchlist.ready, identityReady.ready, identityReady.identity, runSync])
+
+  // 水合完成后才取本地同步状态与当前时刻：首渲必须与服务端一致。
+  // 渲染期直接读 localStorage 会在水合中途凭空多出一行「上次同步」，
+  // 与服务端 HTML 对不上 → Hydration failed；`now` 同理只在水合后取真值。
+  useEffect(() => {
+    if (!watchlist.ready) return
+    setNow((prev) => prev ?? new Date())
+    setLastSync(readWatchlistSyncStatus())
+  }, [watchlist.ready])
 
   // 平台选项与首页影院同源（/api/home/navigation 的短剧分类，broken 已剔除）
   useEffect(() => {
@@ -302,15 +320,15 @@ export default function WatchlistPage() {
     return () => clearInterval(t)
   }, [])
 
-  const parts = useMemo(() => partitionWatchlist(watchlist.entries, now), [watchlist.entries, now])
+  const effectiveNow = now ?? FALLBACK_NOW
+  const parts = useMemo(() => partitionWatchlist(watchlist.entries, effectiveNow), [watchlist.entries, effectiveNow])
   const schedule = useMemo(
-    () => buildWeekSchedule(watchlist.entries, mondayOfWeek(now), now),
-    [watchlist.entries, now],
+    () => buildWeekSchedule(watchlist.entries, mondayOfWeek(effectiveNow), effectiveNow),
+    [watchlist.entries, effectiveNow],
   )
   const hasScheduled =
     schedule.daily.length > 0 || schedule.days.some((day) => day.entries.length > 0)
   const bannerView = describeWatchlistSyncBanner(banner)
-  const lastSync = readWatchlistSyncStatus()
 
   const submitAdd = () => {
     const platform = platforms.find((p) => p.id === addPlatformId)

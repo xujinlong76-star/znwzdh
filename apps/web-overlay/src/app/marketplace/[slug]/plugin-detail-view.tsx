@@ -488,7 +488,7 @@ export default function PluginDetailView({
                   variant="outline"
                   className={cn(
                     'text-xs font-medium px-2.5 py-0.5 border-border/60',
-                    plugin.kind === 'site-pack' && 'text-sky-600 dark:text-sky-400 bg-sky-500/5',
+                    plugin.kind === 'site-pack' && 'text-sky-700 dark:text-sky-400 bg-sky-500/5',
                     plugin.kind === 'workspace-preset' && 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/5',
                     plugin.kind === 'theme' && 'text-violet-600 dark:text-violet-400 bg-violet-500/5',
                     plugin.kind === 'search-pack' && 'text-amber-700 dark:text-amber-400 bg-amber-500/5',

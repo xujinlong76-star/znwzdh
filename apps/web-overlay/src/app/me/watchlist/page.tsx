@@ -364,7 +364,7 @@ export default function WatchlistPage() {
             <p className="min-w-0 flex-1">{describeAnonymousWatchlistNote()}</p>
             <a
               href="/auth/signin?callbackUrl=/me/watchlist"
-              className="shrink-0 rounded-full bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-500"
+              className="shrink-0 rounded-full bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-800"
             >
               登录同步追剧清单
             </a>
@@ -510,7 +510,7 @@ export default function WatchlistPage() {
                     <div key={entry.key}>
                       <a
                         href={`#cadence-${entry.key}`}
-                        className="text-xs text-rose-600 underline underline-offset-2 hover:text-rose-500 dark:text-rose-400"
+                        className="text-xs text-rose-700 underline underline-offset-2 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-400"
                       >
                         为《{entry.title}》标注更新节奏 ↓
                       </a>
@@ -532,7 +532,7 @@ export default function WatchlistPage() {
               <Sparkles className="h-5 w-5" aria-hidden />
               今天该看新一集了（{parts.due.length}）
             </h2>
-            <p className="mt-1 text-xs text-rose-600/80 dark:text-rose-300/70">
+            <p className="mt-1 text-xs text-rose-700 dark:text-rose-300/70">
               按你标注的更新节奏，今天是这几部的更新日。平台临时改档时可能不准，以平台为准。
             </p>
             <ul className="mt-3 space-y-2">

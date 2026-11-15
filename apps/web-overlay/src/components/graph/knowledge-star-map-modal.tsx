@@ -419,7 +419,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
               {/* 控制搜索与过滤栏 */}
               <div className="absolute top-3 sm:top-4 left-3 sm:left-4 z-10 flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800 shadow-lg max-w-[calc(100%-1.5rem)]">
                 <div className="relative w-32 min-[380px]:w-44 sm:w-64">
-                  <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-zinc-500" />
+                  <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-zinc-500 dark:text-zinc-400" />
                   <Input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -431,7 +431,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                     <button
                       onClick={() => setSearchQuery('')}
                       aria-label="清空搜索"
-                      className="absolute right-2 top-2 sm:top-2.5 text-zinc-500 hover:text-zinc-600"
+                      className="absolute right-2 top-2 sm:top-2.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
                     >
                       <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
@@ -865,7 +865,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                       </div>
                       <div>·</div>
                       <div>
-                        高置信度重复: <span className="font-semibold font-mono text-rose-600 dark:text-rose-400">{dedupReport.highConfidenceCount ?? dedupReport.duplicatePairs.filter((p) => p.similarity >= 0.85).length}</span>
+                        高置信度重复: <span className="font-semibold font-mono text-rose-700 dark:text-rose-400">{dedupReport.highConfidenceCount ?? dedupReport.duplicatePairs.filter((p) => p.similarity >= 0.85).length}</span>
                       </div>
                     </div>
 

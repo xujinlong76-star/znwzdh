@@ -198,7 +198,7 @@ export default function HotView({
                     {site.title}
                   </div>
                   {site.description && (
-                    <div className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1">
+                    <div className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1">
                       {site.description}
                     </div>
                   )}
@@ -310,7 +310,7 @@ export default function HotView({
         {/* 热门技术视频推荐横幅 */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/5 text-xs text-foreground">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
               <Video className="w-4 h-4" />
             </div>
             <div className="min-w-0">
@@ -322,7 +322,7 @@ export default function HotView({
               </div>
             </div>
           </div>
-          <Button asChild size="sm" variant="outline" className="text-xs min-h-11 shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10">
+          <Button asChild size="sm" variant="outline" className="text-xs min-h-11 shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-700 dark:text-blue-400 hover:bg-blue-500/10">
             <Link href="/videos">
               <span>前往技术视频库</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />

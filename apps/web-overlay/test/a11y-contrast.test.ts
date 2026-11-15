@@ -136,3 +136,139 @@ describe('UX #9 追剧弹窗与简报页小字对比度', () => {
     expect(ux9Contrast('#a1a1aa', '#18181b')).toBeGreaterThanOrEqual(3)
   })
 })
+
+/**
+ * 无障碍 #11/#14（2026-11-15）：热榜/合集/市场/追剧清单/星图弹窗低对比度打包修。
+ *
+ * 大头由扫荡 16ac463d 落地（216 处 amber/emerald -600→-700、追剧清单与星图
+ * zinc-400 正文修正，另有 §11/§12 守卫）；本轮补齐扫荡漏掉的三类：
+ * ① 追剧清单登录按钮是 bg-amber-600 白字（3.19:1，扫荡只扫了 text-*），
+ * ② 视频横幅 blue-600 仍命中徽章门禁 §7（bg-blue-500/10 + text-blue-600），
+ * ③ 豁免清退前置项（hot-view/collection-detail-view 的 muted /90、
+ * reset-password 的 bg-destructive/10→/15），随后清退 WIP_HOT_EXEMPT。
+ * ④ 扫荡漏掉的同色系：星图 rose-600（边界值：oklch 口径 4.48、hex 口径 4.70；
+ * 按仓库页脚既有判定——页脚已锁 rose-700——修掉）、追剧清单 rose-600/80
+ * （3.75）、市场 sky-600（4.10），同配方 -700 修掉。
+ * 星图弹窗剩余 3 处纯图标 zinc-400（关闭按钮、箭头分隔、ArrowRight）是扫荡
+ * 有意保留并由 §12 锁死恰 3 处的，本轮不碰。
+ * 修法与扫荡一致：-600→-700 配 dark:-400、zinc-400→zinc-500 配 dark:zinc-400，
+ * 裸换会把深色拖下水。数值口径与 UX #9 相同（Tailwind 默认色板 hex 现场算）。
+ */
+describe('无障碍 #11/#14 对比度打包修复', () => {
+  const hot = overlayFile('src/app/hot/hot-view.tsx')
+  const collection = overlayFile('src/app/collections/[slug]/collection-detail-view.tsx')
+  const watchlistPage = overlayFile('src/app/me/watchlist/page.tsx')
+  const starMap = overlayFile('src/components/graph/knowledge-star-map-modal.tsx')
+  const resetPassword = overlayFile('src/app/auth/reset-password/page.tsx')
+
+  it('热榜 chips：浅色 -700 / 深色 -400，≥4.5:1', () => {
+    const amber = hot.split('\n').find((l) => l.includes('border-amber-500/25'))
+    const emerald = hot.split('\n').find((l) => l.includes('border-emerald-500/25'))
+    expect(amber).toContain('text-amber-700 dark:text-amber-400')
+    expect(amber).not.toContain('text-amber-600')
+    expect(emerald).toContain('text-emerald-700 dark:text-emerald-400')
+    expect(emerald).not.toContain('text-emerald-600')
+    expect(ux9Contrast('#b45309', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#047857', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#fbbf24', '#09090b')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#34d399', '#09090b')).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('合集详情：已复制/全部收藏/已逛/阶段徽章/已掌握，浅色 -700 配 dark:-400', () => {
+    const copied = collection.split('\n').find((l) => l.includes('>已复制<'))
+    expect(copied).toContain('text-emerald-700 dark:text-emerald-400')
+    const batch = collection.split('\n').find((l) => l.includes('border-amber-500/30'))
+    expect(batch).toContain('text-amber-700 dark:text-amber-400')
+    const visited = collection.split('\n').find((l) => l.includes('✓ 已逛'))
+    expect(visited).toContain('text-emerald-700 dark:text-emerald-400')
+    const badges = collection.split('\n').filter((l) => l.includes('bg-emerald-500/10'))
+    expect(badges.length).toBeGreaterThanOrEqual(2)
+    for (const line of badges) {
+      expect(line).toContain('text-emerald-700 dark:text-emerald-400')
+      expect(line).not.toContain('text-emerald-600')
+    }
+  })
+
+  it('视频横幅：blue-600→blue-700 配 dark:blue-400，不再命中徽章门禁 §7', () => {
+    const hotIcon = hot.split('\n').find((l) => l.includes('bg-blue-500/10 text-blue-'))
+    expect(hotIcon).toContain('text-blue-700 dark:text-blue-400')
+    expect(hotIcon).not.toContain('text-blue-600')
+    const hotBtn = hot.split('\n').find((l) => l.includes('border-blue-500/30'))
+    expect(hotBtn).toContain('text-blue-700 dark:text-blue-400')
+    const collIcon = collection.split('\n').find((l) => l.includes('bg-blue-500/10 text-blue-'))
+    expect(collIcon).toContain('text-blue-700 dark:text-blue-400')
+    const collBtn = collection.split('\n').find((l) => l.includes('border-blue-500/30'))
+    expect(collBtn).toContain('text-blue-700 dark:text-blue-400')
+    expect(ux9Contrast('#1d4ed8', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#60a5fa', '#09090b')).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('追剧清单删除按钮：浅色 zinc-500 / 深色 zinc-400，按图标 3:1 计', () => {
+    const line = watchlistPage.split('\n').find((l) => l.includes('hover:border-red-400'))
+    expect(line).toBeTruthy()
+    // 扫荡把 dark:text-zinc-400 排到了串尾，不与 text-zinc-500 相邻，分开断言
+    expect(line).toContain('text-zinc-500')
+    expect(line).toContain('dark:text-zinc-400')
+    expect(line).not.toMatch(/p-1.5 text-zinc-400"/)
+    expect(ux9Contrast('#71717a', '#ffffff')).toBeGreaterThanOrEqual(3)
+    expect(ux9Contrast('#a1a1aa', '#09090b')).toBeGreaterThanOrEqual(3)
+  })
+
+  it('追剧清单登录按钮：白字压 amber-700（悬停 amber-800），双模式同解 ≥4.5:1', () => {
+    const line = watchlistPage.split('\n').find((l) => l.includes('hover:bg-amber-800'))
+    expect(line).toBeTruthy()
+    expect(line).toContain('bg-amber-700')
+    expect(line).not.toContain('bg-amber-600')
+    expect(line).not.toContain('hover:bg-amber-500')
+    expect(ux9Contrast('#ffffff', '#b45309')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#ffffff', '#92400e')).toBeGreaterThanOrEqual(4.5)
+    const syncLines = watchlistPage.split('\n')
+    const syncIdx = syncLines.findIndex((l) => l.includes('上次同步'))
+    expect(syncIdx).toBeGreaterThan(0)
+    expect(syncLines[syncIdx - 1]).toContain('text-zinc-500 dark:text-zinc-400')
+    const empty = syncLines.find((l) => l.includes('没有安排'))
+    expect(empty).toContain('text-zinc-500 dark:text-zinc-400')
+    expect(empty).not.toContain('dark:text-zinc-500')
+  })
+
+  it('星图弹窗：去重统计 -700 配 dark:-400，zinc-400 小字统一 zinc-500 配 dark:zinc-400', () => {
+    const dup = starMap.split('\n').find((l) => l.includes('识别潜在雷同对'))
+    expect(dup).toContain('text-amber-700 dark:text-amber-400')
+    const conf = starMap.split('\n').find((l) => l.includes('高置信度重复'))
+    expect(conf).toContain('text-rose-700 dark:text-rose-400')
+    expect(conf).not.toContain('text-rose-600')
+    expect(ux9Contrast('#be123c', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#fb7185', '#09090b')).toBeGreaterThanOrEqual(4.5)
+    const searchIcon = starMap.split('\n').find((l) => l.includes('<Search className='))
+    expect(searchIcon).toContain('text-zinc-500 dark:text-zinc-400')
+  })
+
+  it('追剧清单 rose 提醒：标注链接与更新日说明浅色 -700，≥4.5:1', () => {
+    // :513 标注链接 rose-600 是边界值（oklch 4.48 / hex 4.70）、悬停 rose-500 仅 3.67 不达标；:535 rose-600/80 仅 3.75
+    expect(watchlistPage).toContain('text-xs text-rose-700 underline underline-offset-2 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-400')
+    expect(watchlistPage).toContain('text-xs text-rose-700 dark:text-rose-300/70')
+    expect(watchlistPage).not.toContain('text-rose-600/80')
+    expect(ux9Contrast('#be123c', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('市场品类徽章：sky-600→sky-700 配 dark:sky-400，≥4.5:1', () => {
+    // site-pack 徽章 sky-600 白底 4.10:1 不达标（扫荡只覆盖了 amber/emerald）
+    const plugin = overlayFile('src/app/marketplace/[slug]/plugin-detail-view.tsx')
+    expect(plugin).toContain('text-sky-700 dark:text-sky-400 bg-sky-500/5')
+    expect(plugin).not.toContain('text-sky-600')
+    expect(ux9Contrast('#0369a1', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#38bdf8', '#09090b')).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('重置密码缺 token 提示条：浅色 amber-700 / 深色 amber-400，≥4.5:1', () => {
+    const lines = resetPassword.split('\n')
+    const idx = lines.findIndex((l) => l.includes('缺少重置令牌'))
+    expect(idx).toBeGreaterThan(0)
+    // 文案在内层 div，类名在往上找的 bg-amber-500/10 外层提示条上
+    const classLine = [...lines.slice(0, idx)].reverse().find((l) => l.includes('bg-amber-500/10'))
+    expect(classLine).toBeTruthy()
+    expect(classLine).toContain('text-amber-700 dark:text-amber-400')
+    expect(classLine).not.toContain('text-amber-600')
+    expect(ux9Contrast('#b45309', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+  })
+})

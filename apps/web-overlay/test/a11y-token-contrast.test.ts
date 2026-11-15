@@ -137,7 +137,7 @@ const WIP_HOT_EXEMPT: string[] = [
   "app/search/page.tsx", // WIP 热区待释放
   "app/auth/layout.tsx", // WIP 热区待释放
   "app/auth/forgot-password/page.tsx", // WIP 热区待释放
-  "app/auth/reset-password/page.tsx", // WIP 热区待释放
+  // 2026-11-15 无障碍 #11/#14 扫荡 16ac463d 后清退：reset-password/page.tsx（本轮补 bg-destructive/10→/15）已无冷区违例，由门禁全量接管。
   "app/auth/signup/page.tsx", // WIP 热区待释放
   "app/auth/verify-email/page.tsx", // WIP 热区待释放
   // —— 并行会话 WIP 快照（2026-11-02，git 脏文件里的违例文件）——
@@ -151,8 +151,7 @@ const WIP_HOT_EXEMPT: string[] = [
   "app/admin/videos/components/VideoCategoryCard.tsx", // WIP 热区待释放
   "app/admin/videos/page.tsx", // WIP 热区待释放
   "app/category/[slug]/category-board.tsx", // WIP 热区待释放
-  "app/collections/[slug]/collection-detail-view.tsx", // WIP 热区待释放
-  "app/hot/hot-view.tsx", // WIP 热区待释放
+  // 2026-11-15 无障碍 #11/#14 扫荡 16ac463d 后清退：collection-detail-view.tsx 与 hot-view.tsx（本轮补 blue-600→blue-700、muted /90 清理）已无冷区违例，由门禁全量接管。
   "components/ai/llm-daily-cost-chart.tsx", // WIP 热区待释放
   "components/bookmark-importer.tsx", // WIP 热区待释放
   "components/category-index-filterable-list.tsx", // WIP 热区待释放

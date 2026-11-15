@@ -51,6 +51,7 @@ import {
   SEARCH_HIT_CORE_FIELDS,
   SITE_CORE_FIELDS,
   SearchHistoryPageResponse,
+  SearchHistoryRecordResponse,
   SearchResponse,
   SiteListResponse,
   SitePayload,
@@ -788,6 +789,29 @@ describe("写路由真实响应满足契约（状态码 + 形状）", () => {
     const updated = patched.json();
     expectRoutedContract("PATCH /api/sites/{id}", SitePayload, updated);
     expect(updated.title).toBe("写契约站点（改）");
+  });
+
+  it("POST /api/search-history：只记历史、不跑检索", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/search-history",
+      headers: WRITE_HEADERS,
+      payload: { q: "契约探针", resultCount: 3 },
+    });
+    expect(res.statusCode).toBe(200);
+    expectRoutedContract("POST /api/search-history", SearchHistoryRecordResponse, res.json());
+    // 同一查询 5 分钟内去重：再记一次只刷新，不新增行。
+    const again = await app.inject({
+      method: "POST",
+      url: "/api/search-history",
+      headers: WRITE_HEADERS,
+      payload: { q: "契约探针", resultCount: 7 },
+    });
+    expect(again.json()).toEqual({ ok: true, recorded: true });
+    const list = (await app.inject({ method: "GET", url: "/api/search-history", headers: WRITE_HEADERS })).json();
+    const rows = list.items.filter((i: { query: string }) => i.query === "契约探针");
+    expect(rows.length).toBe(1);
+    expect(rows[0].resultCount).toBe(7);
   });
 
   it("插件安装（POST）与卸载（DELETE 别名 / POST）以及星标", async () => {

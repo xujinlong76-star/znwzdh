@@ -15,6 +15,7 @@ import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { fetchNewSites, fetchTrending, reportClick, type HubSite } from '@/lib/navhub-api'
+import { useLocalSearchRecorder } from '@/lib/local-search-record'
 import { getIdentity } from '@/lib/identity'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
@@ -81,6 +82,8 @@ export default function HotView({
       return titleMatch || descMatch || urlMatch || tagMatch
     })
   }, [fresh, filterQuery])
+  // 本机榜单筛选的查询也要进搜索历史（计数取当前 tab 的匹配数）
+  useLocalSearchRecorder(filterQuery, tab === 'trending' ? filteredTrending.length : filteredFresh.length)
   useEffect(() => {
     const syncFromUrl = () => {
       const t = new URLSearchParams(window.location.search).get('tab')

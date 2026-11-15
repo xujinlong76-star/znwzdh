@@ -2440,6 +2440,15 @@ export interface ProfileSignalClearResponse {
 }
 
 /**
+ * POST /api/search-history
+ */
+export interface SearchHistoryRecordResponse {
+  ok: true;
+  recorded: boolean;
+  [key: string]: unknown;
+}
+
+/**
  * POST /api/search-history/batch-delete
  */
 export interface SearchHistoryBatchDeleteResponse {
@@ -2683,6 +2692,7 @@ export interface RestContractRoutes {
   "POST /api/plugins/{slug}/star": PluginStarResponse;
   "POST /api/plugins/{slug}/uninstall": PluginUninstallResponse;
   "POST /api/search": SearchResponse;
+  "POST /api/search-history": SearchHistoryRecordResponse;
   "POST /api/search-history/batch-delete": SearchHistoryBatchDeleteResponse;
   "POST /api/shortlinks": ShortlinkCreateResponse;
   "POST /api/sites": SitePayload;

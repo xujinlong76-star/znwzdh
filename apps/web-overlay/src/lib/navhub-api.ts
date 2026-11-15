@@ -1265,6 +1265,45 @@ export async function batchCleanZeroResultSearchHistory(
   )
 }
 
+/**
+ * 页内即时筛选的查询记录。
+ *
+ * 分类/热榜/标签/目录/合集页的筛选框是本机过滤、从不走 /api/search——
+ * 不经这里记一次，用户在里面搜的词就永远进不了搜索历史。调用方传「当时
+ * 实际展示的命中数」（本页筛选后的匹配数），服务端只记历史、不跑检索、
+ * 不写 search 事件；同一查询 5 分钟内重复只刷新（服务端去重）。
+ *
+ * fire-and-forget：失败（云端不可用、开关关了）只返回 false，不抛错、
+ * 不弹提示——记录历史是附带行为，不能打断用户正在做的筛选。
+ */
+export async function recordLocalSearchHistory(
+  identity: string,
+  query: string,
+  resultCount: number,
+  onDegraded?: DegradedHandler,
+): Promise<boolean> {
+  const q = query.trim()
+  if (!q || !identity) return false
+  return degrade(
+    false,
+    async () => {
+      const res = await sendJson(
+        '/api/search-history',
+        'POST',
+        {
+          q,
+          resultCount: Math.max(0, Math.trunc(resultCount)),
+          searchHistoryEnabled: readLocalUserSettings().searchHistoryEnabled,
+        },
+        undefined,
+        anonHeaders(identity),
+      ) as { ok?: boolean; recorded?: boolean }
+      return res?.ok === true && res?.recorded === true
+    },
+    onDegraded,
+  )
+}
+
 /* --------------------------- 访问历史（T23） --------------------------- */
 
 export interface HubVisitItem {

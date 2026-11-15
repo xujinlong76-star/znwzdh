@@ -1119,6 +1119,38 @@ describe("用户身份同步与搜索历史", () => {
     const clear = await app.inject({ method: "DELETE", url: "/api/search-history?anonId=t-anon" });
     expect(clear.json().ok).toBe(true);
   });
+
+  it("POST /api/search-history 只记历史不跑检索：页内筛选查询可记、去重、带真实结果数", async () => {
+    const post = await app.inject({
+      method: "POST",
+      url: "/api/search-history?anonId=t-local",
+      payload: { q: "考研", resultCount: 3 },
+    });
+    expect(post.statusCode).toBe(200);
+    expect(post.json()).toEqual({ ok: true, recorded: true });
+    // 同一查询 5 分钟内再记一次：不新增行，只刷新结果数
+    await app.inject({
+      method: "POST",
+      url: "/api/search-history?anonId=t-local",
+      payload: { q: "考研", resultCount: 7 },
+    });
+    const list = (await app.inject({ method: "GET", url: "/api/search-history?anonId=t-local" })).json();
+    expect(list.items.length).toBe(1);
+    expect(list.items[0].query).toBe("考研");
+    expect(list.items[0].resultCount).toBe(7);
+    // 校验：空查询 400，无身份 400
+    expect((await app.inject({ method: "POST", url: "/api/search-history?anonId=t-local", payload: { q: "  " } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: "/api/search-history", payload: { q: "考研" } })).statusCode).toBe(400);
+    // 本机开关关了就不记（只返回 recorded:false，不报错）
+    const off = await app.inject({
+      method: "POST",
+      url: "/api/search-history?anonId=t-local",
+      payload: { q: "微信", resultCount: 2, searchHistoryEnabled: false },
+    });
+    expect(off.json()).toEqual({ ok: true, recorded: false });
+    const after = (await app.inject({ method: "GET", url: "/api/search-history?anonId=t-local" })).json();
+    expect(after.items.some((i: { query: string }) => i.query === "微信")).toBe(false);
+  });
 });
 
 describe("D1 缺陷回归：快照全量对齐不得误删其它通道创建的站点", () => {

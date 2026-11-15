@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { matchesSiteTag } from '@/lib/category-tag-match'
 import { searchHref } from '@/lib/search-page'
+import { useLocalSearchRecorder } from '@/lib/local-search-record'
 
 export interface CategorySubcategoryOption {
   id: string
@@ -46,6 +47,8 @@ export function CategorySiteFilterBar({
   const [matchedCount, setMatchedCount] = useState(totalCount)
   const [, startTransition] = useTransition()
   const filterInputId = useId()
+  // 页内即时筛选的查询也要进搜索历史（停手 800ms 记一次，计数取当前匹配数）
+  useLocalSearchRecorder(query, matchedCount)
 
   const applyFilter = (newQuery: string, newTag: string | null, newSubcategoryId: string | null) => {
     const q = newQuery.trim().toLowerCase()

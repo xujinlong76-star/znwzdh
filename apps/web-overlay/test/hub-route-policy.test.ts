@@ -62,6 +62,7 @@ describe('hub-route-policy：以枢纽 scope 声明为准', () => {
       ['POST', 'favorites'],
       ['DELETE', 'favorites/sample'],
       ['DELETE', 'search-history'],
+      ['POST', 'search-history'],
       ['POST', 'submissions'],
       ['POST', 'events'],
     ]

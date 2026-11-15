@@ -152,6 +152,9 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/plugins/validate",
   "POST /api/rank/federated",
   "POST /api/search",
+  // 页内筛选查询记历史：只写调用者自己的搜索历史，处理器有 identityTrusted
+  // 签名校验与 userDomainWriteAllowed 域闸；public 只表示匿名入口，与 /api/search 同级。
+  "POST /api/search-history",
   "POST /api/search-history/batch-delete",
   "POST /api/shortlinks",
   "POST /api/sites/:id/archive",

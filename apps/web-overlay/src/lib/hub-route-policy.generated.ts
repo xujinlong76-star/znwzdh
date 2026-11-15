@@ -237,6 +237,7 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "POST", path: "/api/search", scope: "public" },
   { method: "DELETE", path: "/api/search-history", scope: "public" },
   { method: "GET", path: "/api/search-history", scope: "public" },
+  { method: "POST", path: "/api/search-history", scope: "public" },
   { method: "DELETE", path: "/api/search-history/:id", scope: "public" },
   { method: "POST", path: "/api/search-history/batch-delete", scope: "public" },
   { method: "GET", path: "/api/search/linucb", scope: "admin" },

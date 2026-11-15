@@ -15,6 +15,7 @@ import { FAVORITE_COLLECTIONS_KEY, SUBSCRIBED_COLLECTIONS_KEY, markVisited, pars
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { fetchCollectionDetail, type HubCollection, type HubCollectionDetailSite } from '@/lib/navhub-api'
+import { useLocalSearchRecorder } from '@/lib/local-search-record'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
@@ -87,6 +88,10 @@ export default function CollectionDetailView({
       return titleMatch || descMatch || noteMatch || urlMatch
     })
   }, [sites, siteFilterQuery])
+
+  // 合集内即时筛选的查询也要进搜索历史（计数取当前匹配数）
+  useLocalSearchRecorder(siteFilterQuery, filteredSites.length)
+
   const editorial = useMemo(() => getFeaturedEditorial(slug), [slug]);
   const orderedSites = useMemo(() => (editorial ? orderUrlsByAct(editorial, filteredSites) : filteredSites), [editorial, filteredSites]);
   const relatedEditorials = useMemo(() => (editorial ? relatedFeaturedEditorials(editorial.slug) : []), [editorial]);

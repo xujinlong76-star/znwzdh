@@ -3,14 +3,18 @@
  *
  * 三类断言，方向各不相同：
  *
- *  A. 重复请求 / 条件请求（If-None-Match）**必须仍然各计一次搜索**。
- *     响应缓存钩子挂在 onSend（apps/api/src/server.ts:319-344），而 onSend 是处理器
- *     跑完之后的最后一站 ⇒ 即使回 304 也只是不发 body，事件与历史照常写。
+ *  A. 重复请求 / 条件请求（If-None-Match）：**事件必须仍然各计一次搜索**，
+ *     历史则对同一查询 5 分钟内去重。响应缓存钩子挂在 onSend
+ *     （apps/api/src/server.ts:319-344），而 onSend 是处理器跑完之后的最后一站
+ *     ⇒ 即使回 304 也只是不发 body，事件照常写；事件 +1 的断言就是这枚钉子，
+ *     将来若有人把埋点挪到缓存短路之后（preHandler 级整响应缓存），这条会变红。
+ *     历史不新增行不是缓存吞掉：同一查询 5 分钟内只刷新（recordSearch 去重窗口，
+ *     浮层重查与 /search 页重复提交曾让同一查询一分钟记两条），新查询仍正常记
+ *     一行（对照断言），证明历史写入本身也没被短路。
  *     run49 收尾时把「304 命中即少计、热榜分母偏低」当成新 gap 记进账本；本用例即那笔取证，
  *     结论是该 gap 不成立并已回写证伪 —— 而且当前实现根本走不到 304：响应嵌了
  *     tookMs / channelTimings，同一查询两次字节不同（探针实测 lenA=2032 / lenB=2032 而 etag 不同），
  *     etag 永不命中。
- *     它同时是防回归的钉子：将来若有人把埋点挪到缓存短路之后（preHandler 级整响应缓存），这条会变红。
  *
  *  B. HEAD **不该算一次搜索**。
  *     Fastify 的 exposeHeadRoutes 默认开启（server.ts:127），HEAD 复用 GET 处理器 ⇒
@@ -99,7 +103,7 @@ afterAll(async () => {
 });
 
 describe("GET /api/search 的条件请求与 HEAD 探活", () => {
-  it("A. 重复请求与带 If-None-Match 的请求各计一次：缓存钩子在处理器之后，不吞埋点", async () => {
+  it("A. 重复请求与带 If-None-Match 的请求：事件各计一次，历史同查询 5 分钟内去重", async () => {
     const q = "条件请求探针词";
     const url = searchUrl(q);
     const first = await app.inject({ method: "GET", url, headers: signed() });
@@ -116,7 +120,13 @@ describe("GET /api/search 的条件请求与 HEAD 探活", () => {
     expect([200, 304]).toContain(again.statusCode);
 
     expect(await countEvents("search")).toBe(eventsBefore + 1);
-    expect(await countHistory(q)).toBe(historyBefore + 1);
+    // 同一查询 5 分钟内去重：重复请求不新增历史行，只刷新；事件仍各计一次。
+    expect(await countHistory(q)).toBe(historyBefore);
+    // 对照：换一个新查询仍正常记一行，证明历史写入本身没被缓存短路吞掉。
+    const fresh = "条件请求探针词·新查询";
+    const freshRes = await app.inject({ method: "GET", url: searchUrl(fresh), headers: signed() });
+    expect(freshRes.statusCode).toBe(200);
+    expect(await countHistory(fresh)).toBe(1);
   });
 
   it("B. HEAD 探活不算搜索：不写 events.search、不写个人搜索历史", async () => {

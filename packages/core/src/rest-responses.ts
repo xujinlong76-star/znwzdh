@@ -1013,6 +1013,12 @@ export const SearchHistoryBatchDeleteResponse = z.looseObject({
   removed: z.number().int(),
 });
 
+/** POST /api/search-history：只记历史、不跑检索；recorded=false 表示开关关了没记 */
+export const SearchHistoryRecordResponse = z.looseObject({
+  ok: z.literal(true),
+  recorded: z.boolean(),
+});
+
 /** POST /api/users/sync：OAuth upsert 后回传的账号行（不含任何令牌） */
 export const OauthUserSyncResponse = z.looseObject({
   id: z.string(),
@@ -2166,6 +2172,7 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   },
   "DELETE /api/search-history/{id}": { schema: OkResponse, name: "OkResponse" },
   "DELETE /api/search-history": { schema: OkResponse, name: "OkResponse" },
+  "POST /api/search-history": { schema: SearchHistoryRecordResponse, name: "SearchHistoryRecordResponse" },
   "POST /api/search-history/batch-delete": {
     schema: SearchHistoryBatchDeleteResponse,
     name: "SearchHistoryBatchDeleteResponse",

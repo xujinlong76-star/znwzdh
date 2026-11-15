@@ -8,6 +8,7 @@ import { SqliteFtsStore } from "../src/fts.ts";
 import { SearchEngine } from "../src/search.ts";
 import { openDb, type Db } from "../src/driver.ts";
 import { Repository } from "../src/repository.ts";
+import { SEARCH_HISTORY_DEDUPE_WINDOW_MS } from "../src/repository/history.ts";
 
 /* ------------------------------------------------------------------ *
  * 向量存储：两种实现必须行为一致
@@ -936,6 +937,35 @@ describe("SQLite 集成：导航增强能力", () => {
     expect(items[1]!.query).toBe("天气"); // trim 过
     await repo.clearSearchHistory("u1");
     expect((await repo.listSearchHistory("u1")).length).toBe(0);
+  });
+
+  it("同一查询短时间内去重：窗口内重复只刷新、不新增行", async () => {
+    await repo.recordSearch("u-dedupe", "AI", 12);
+    await repo.recordSearch("u-dedupe", "AI", 592);
+    await repo.recordSearch("u-dedupe", "ai", 592); // 大小写不同仍是同一查询
+    const items = await repo.listSearchHistory("u-dedupe", 10);
+    expect(items.length).toBe(1);
+    expect(items[0]!.query).toBe("AI"); // 首写为准，不改写用户原词
+    expect(items[0]!.resultCount).toBe(592); // 结果数取最新一次
+    // 不同查询不受影响
+    await repo.recordSearch("u-dedupe", "考研", 40);
+    expect((await repo.listSearchHistory("u-dedupe", 10)).length).toBe(2);
+  });
+
+  it("同一查询超出窗口后照常新记一行", async () => {
+    // 直接写一行窗口外的旧记录（经过 recordSearch 写不出来：它会被去重）
+    const old = Date.now() - SEARCH_HISTORY_DEDUPE_WINDOW_MS - 1000;
+    await repo.run("INSERT INTO search_history (user_id, query, result_count, created_at) VALUES (?,?,?,?)", [
+      "u-window",
+      "微信",
+      5,
+      old,
+    ]);
+    await repo.recordSearch("u-window", "微信", 9);
+    const items = await repo.listSearchHistory("u-window", 10);
+    expect(items.length).toBe(2);
+    expect(items[0]!.resultCount).toBe(9);
+    expect(items[1]!.resultCount).toBe(5);
   });
 
   it("查询词长度全链路同源：256 字可入库，257 字显式拒绝且不落行", async () => {

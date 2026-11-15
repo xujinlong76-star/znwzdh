@@ -1,6 +1,19 @@
 import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
 import type { Repository } from "../repository.ts";
 
+/**
+ * 同一查询短时间内去重窗口。
+ *
+ * 浮层每 200ms 防抖重查、/search 页与浮层对同一查询各发一次——同一查询
+ * 一分钟内能记两条一模一样的行（走查实测「AI 一分钟两条」）。窗口内重复
+ * 只刷新时间与结果数、不新增行；窗口外（用户隔一阵子又搜同一词）照常新
+ * 记一行，那是另一次搜索意图，不是重复。
+ *
+ * 归一化只做 trim + 小写：与导入恢复的去重（me.ts）同一口径；中文不受
+ * 大小写影响，英文 "AI" 与 "ai" 视为同一查询。
+ */
+export const SEARCH_HISTORY_DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+
 export async function recordSearch(repo: Repository, userId: string, query: string, resultCount: number): Promise<void> {
   const q = query.trim();
   if (!q) return;
@@ -9,10 +22,26 @@ export async function recordSearch(repo: Repository, userId: string, query: stri
   if (q.length > MAX_SEARCH_QUERY_LENGTH) {
     throw new Error(`搜索历史查询词超长：${q.length} > ${MAX_SEARCH_QUERY_LENGTH}（调用方应在入口处限制）`);
   }
+  const now = Date.now();
+  // 窗口内已有一条同查询：原地刷新（时间与结果数都取最新一次的值），
+  // 不新增行。lower() 比较在 SQLite 与 PG 下都可用，调用方无需关心方言。
+  const latest = await repo.raw(
+    "SELECT id, created_at AS createdat FROM search_history WHERE user_id = ? AND lower(query) = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+    [userId, q.toLowerCase()],
+  );
+  const prev = latest[0];
+  if (prev && now - Number(prev.createdat ?? 0) < SEARCH_HISTORY_DEDUPE_WINDOW_MS) {
+    await repo.run("UPDATE search_history SET created_at = ?, result_count = ? WHERE id = ?", [
+      now,
+      resultCount,
+      Number(prev.id),
+    ]);
+    return;
+  }
   // id 自增：同毫秒的多条记录也能按插入顺序稳定排序
   await repo.run(
     "INSERT INTO search_history (user_id, query, result_count, created_at) VALUES (?,?,?,?)",
-    [userId, q, resultCount, Date.now()],
+    [userId, q, resultCount, now],
   );
 }
 

@@ -22,6 +22,7 @@ import { FavoriteButton } from '@/components/favorite-button'
 import { Button } from '@/components/ui/button'
 import { Tag, Hash, LayoutGrid, MonitorPlay, ArrowRight, Search, X } from 'lucide-react'
 import { searchSites, type HubSite } from '@/lib/navhub-api'
+import { useLocalSearchRecorder } from '@/lib/local-search-record'
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
@@ -66,6 +67,9 @@ export function TagResultsBoard({
       return title.includes(q) || desc.includes(q) || url.includes(q) || tags.includes(q)
     })
   }, [sites, filterQuery])
+
+  // 标签内即时筛选的查询也要进搜索历史（计数取当前匹配数）
+  useLocalSearchRecorder(filterQuery, filteredSites.length)
 
   const reload = () => setReloadToken((n) => n + 1)
 

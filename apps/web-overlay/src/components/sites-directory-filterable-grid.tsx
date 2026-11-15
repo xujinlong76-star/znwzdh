@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import type { HubSite } from '@/lib/navhub-api'
+import { useLocalSearchRecorder } from '@/lib/local-search-record'
 import { safeHref } from '@/lib/safe-url'
 
 /** 筛选结果最多平铺展示多少条（其余只报总数，不分页） */
@@ -67,6 +68,9 @@ export function SitesDirectoryFilterableGrid({
   const visibleSites = isFiltering
     ? (matches ?? []).slice(0, SEARCH_RESULT_LIMIT)
     : initialSites
+
+  // 目录页即时筛选的查询也要进搜索历史（计数取当前匹配数，不计 60 条平铺截断）
+  useLocalSearchRecorder(filterQuery, (matches ?? []).length)
 
   const scopeWord = fetchedOnly ? '已取回' : '全站'
 

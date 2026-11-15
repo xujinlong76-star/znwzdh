@@ -1,73 +1,33 @@
 import type { VideoTranscriptItem } from '@/types/navigation'
 
-export type SubtitleLanguage = 'zh' | 'en' | 'ja' | 'es'
-
 export interface BilingualTranscriptLine {
   id: string
   startSec: number
   endSec: number
   originalText: string
   translatedText: string
-  language: SubtitleLanguage
   highlightWords?: string[]
 }
 
-const TECHNICAL_GLOSSARY: Record<string, Record<SubtitleLanguage, string>> = {
-  kubernetes: { zh: 'Kubernetes (K8s 容器编排)', en: 'Kubernetes', ja: 'クーバネティス', es: 'Kubernetes' },
-  idempotency: { zh: '幂等性', en: 'Idempotency', ja: '冪等性', es: 'Idempotencia' },
-  microservices: { zh: '微服务架构', en: 'Microservices', ja: 'マイクロサービス', es: 'Microservicios' },
-  concurrency: { zh: '高并发', en: 'Concurrency', ja: '並行性', es: 'Concurrencia' },
-  docker: { zh: 'Docker 容器', en: 'Docker Container', ja: 'Dockerコンテナ', es: 'Contenedor Docker' },
-  grpc: { zh: 'gRPC 高性能 RPC', en: 'gRPC', ja: 'gRPC', es: 'gRPC' },
-}
-
 /**
- * Translates a single text string using deterministic rule matching and glossary replacement.
- */
-export function translateTechnicalText(text: string, targetLang: SubtitleLanguage): string {
-  if (targetLang === 'zh') return text
-
-  // Basic phrase replacement for tech terms
-  let translated = text
-  for (const [key, map] of Object.entries(TECHNICAL_GLOSSARY)) {
-    const reg = new RegExp(key, 'gi')
-    if (reg.test(translated)) {
-      translated = translated.replace(reg, map[targetLang])
-    }
-  }
-
-  // Language prefix simulation
-  if (targetLang === 'en') {
-    return `[EN] ${translated.replace(/技术|架构|实战/g, 'Tech Lab')}`
-  }
-  if (targetLang === 'ja') {
-    return `[JA] ${translated.replace(/技术|架构/g, 'アーキテクチャ')}`
-  }
-  if (targetLang === 'es') {
-    return `[ES] ${translated.replace(/技术|架构/g, 'Arquitectura')}`
-  }
-
-  return translated
-}
-
-/**
- * Converts transcript items into bilingual lines with synchronized translation.
+ * Builds bilingual lines from transcript items that already carry a real
+ * translation (e.g. pasted/uploaded subtitles with a `translation` field).
+ * There is no machine translation here: the previous implementation faked it
+ * with a 6-word glossary plus [EN]/[JA]/[ES] prefixes, so lines without a
+ * real translation are dropped instead of being "translated" by decoration.
  */
 export function buildBilingualTranscripts(
-  transcripts: VideoTranscriptItem[],
-  targetLang: SubtitleLanguage = 'en'
+  transcripts: VideoTranscriptItem[]
 ): BilingualTranscriptLine[] {
-  return transcripts.map((t) => {
-    const translatedText = t.translation || translateTechnicalText(t.text, targetLang)
-    return {
+  return transcripts
+    .filter((t) => typeof t.translation === 'string' && t.translation.trim().length > 0)
+    .map((t) => ({
       id: t.id,
       startSec: t.startSec,
       endSec: t.endSec,
       originalText: t.text,
-      translatedText,
-      language: targetLang,
-    }
-  })
+      translatedText: t.translation as string,
+    }))
 }
 
 /**

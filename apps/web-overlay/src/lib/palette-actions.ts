@@ -37,6 +37,11 @@
 import { matchSuggestionText } from './search-suggestions'
 import { safeHref } from './safe-url'
 import { parseSpeculativeIntent, type SpeculativeIntentType } from './speculative'
+import {
+  matchQuicklinkCommand,
+  type QuicklinkCommandMatch,
+  type QuicklinkEntry,
+} from './quicklinks'
 
 /* ------------------------------ 快捷操作 ------------------------------ */
 
@@ -357,11 +362,43 @@ export function matchPaletteFavorites(
   return out
 }
 
+/* ------------------------------ 快捷链接 ------------------------------ */
+
+/** ⌘K 面板里的快捷链接行：命令命中且代入成功时恰好一条 */
+export interface PaletteQuicklinkItem {
+  /** 导航列表里的稳定 key（`quicklink-${siteId}`），渲染与键盘导航共用 */
+  key: string
+  entry: QuicklinkEntry
+  /** trim 后的参数（`!gh` 无参时为空串，走落地页） */
+  arg: string
+  /** 代入后的打开地址（一定非空：代入失败的行不进面板） */
+  url: string
+}
+
+/**
+ * 快捷链接匹配：命令命中（`!gh x` / `gh x` / `!gh`）且代入成功时返回一条，
+ * 其余返回 []。模板非法的收藏不进 quicklink 行：入口处
+ * `quicklinkFromFavorite` 已用 `validateQuicklink` 校验过一次，打开时
+ * `matchQuicklinkCommand` 里的 `resolveQuicklinkUrl` 再验一次（占位符
+ * 恰好一个 / 不在 origin 里 / 参数 ≤500 字符 / 代入后是安全 http(s)
+ * URL）——两道门各司其职，非法模板永远不占导航位。
+ */
+export function matchPaletteQuicklinks(
+  query: string,
+  entries: readonly QuicklinkEntry[],
+): PaletteQuicklinkItem[] {
+  const hit: QuicklinkCommandMatch | null = matchQuicklinkCommand(query, entries)
+  if (!hit || !hit.url) return []
+  return [{ key: `quicklink-${hit.entry.siteId}`, entry: hit.entry, arg: hit.arg, url: hit.url }]
+}
+
 /* --------------------------- 键盘导航顺序 ---------------------------- */
 
 export type PaletteNavKind =
   | 'suggestion'
+  | 'quicklink'
   | 'diy'
+  | 'scene'
   | 'favorite'
   | 'action'
   | 'tool'
@@ -376,7 +413,11 @@ export interface PaletteNavEntry {
 
 export interface PaletteNavGroups {
   suggestionIds: string[]
+  /** 快捷链接行（可选：没有命令命中时不传，顺序不变） */
+  quicklinkIds?: string[]
   diyIds: string[]
+  /** 我的场景行（可选：场景查询命中时才传，排在 DIY 之后、收藏之前） */
+  sceneIds?: string[]
   favoriteIds: string[]
   actionIds: string[]
   toolIds: string[]
@@ -386,13 +427,16 @@ export interface PaletteNavGroups {
 
 /**
  * 键盘可导航项的唯一顺序来源（组件渲染顺序必须与这里一致，否则
- * ↑↓ 会跳到另一行）。新三组插在 DIY 之后、插件之前：DIY 仍置顶，
- * 自己的收藏 / 操作 / 工具排在插件与站点之前。
+ * ↑↓ 会跳到另一行）。快捷链接排在建议之后、DIY 之前：命令命中时
+ * 它是回车的第一目标（优先级：quicklink > OMNI 硬编码引擎 > 导航首条），
+ * 其余分组顺序一字不动。
  */
 export function buildPaletteNavItems(groups: PaletteNavGroups): PaletteNavEntry[] {
   const entries: PaletteNavEntry[] = []
   for (const id of groups.suggestionIds) entries.push({ id, kind: 'suggestion' })
+  for (const id of groups.quicklinkIds ?? []) entries.push({ id, kind: 'quicklink' })
   for (const id of groups.diyIds) entries.push({ id, kind: 'diy' })
+  for (const id of groups.sceneIds ?? []) entries.push({ id, kind: 'scene' })
   for (const id of groups.favoriteIds) entries.push({ id, kind: 'favorite' })
   for (const id of groups.actionIds) entries.push({ id, kind: 'action' })
   for (const id of groups.toolIds) entries.push({ id, kind: 'tool' })

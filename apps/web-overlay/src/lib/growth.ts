@@ -43,24 +43,52 @@ import {
   type SeasonEventTaskDef,
 } from './growth-season'
 import { trackGrowthEvent } from './growth-analytics'
-// 首屏常量已移出到零依赖的 growth-constants.ts（第 75 轮）：growth.ts
-// 内部仍用 HOMEPAGE_CLAIM_XP（claimHomepageReward），并 re-export 两名
-// 保兼容，旧调用点零改动。
-import { HOMEPAGE_CLAIM_XP } from './growth-constants'
-export { HOMEPAGE_BANNER_DISMISSED_KEY } from './growth-constants'
-export { HOMEPAGE_CLAIM_XP }
 
-export const GROWTH_STORAGE_KEY = 'navhub.growth.v1'
-export const GROWTH_BACKUP_KEY = 'navhub.growth.v1.backup'
-/** 给挂件的只读摘要（等级/连胜/今日任务点），引擎落盘时顺手写，挂件不复刻任务逻辑 */
-export const GROWTH_SUMMARY_KEY = 'navhub.growth.summary.v1'
-export const GROWTH_UPDATED_EVENT = 'navhub:growth-updated'
-/**
- * 小猫猫挂件的聊天事件桥（A12）：挂件是独立脚本、按设计只读成长档案，
- * 它在用户发出一条聊天消息时只 dispatch 这个事件、不写任何成长数据；
- * 站内 GrowthTracker 监听后走 recordGrowthEvent('ai_chat') 统一落账。
- */
-export const AI_CHAT_USED_EVENT = 'navhub:ai-chat-used'
+// 首屏瘦身 Step 3：常量与纯函数已移入 ./growth-lazy（门面），这里 import 后
+// re-export，既有 import('@/lib/growth') 的调用方一律不用改；emptySeason
+// 只在引擎内部用，只 import 不 re-export。
+import {
+  AI_CHAT_USED_EVENT,
+  GROWTH_BACKUP_KEY,
+  GROWTH_STORAGE_KEY,
+  GROWTH_SUMMARY_KEY,
+  GROWTH_UPDATED_EVENT,
+  HOMEPAGE_BANNER_DISMISSED_KEY,
+  HOMEPAGE_CLAIM_XP,
+  currentPureStreak,
+  currentStreak,
+  dayStateOf,
+  emptyProfile,
+  emptySeason,
+  growthDayKey,
+  keyAddDays,
+  keyDiffDays,
+  keyWeekday,
+  mondayKeyOf,
+  seasonCalendar,
+  todayKey,
+} from './growth-lazy'
+
+export {
+  AI_CHAT_USED_EVENT,
+  GROWTH_BACKUP_KEY,
+  GROWTH_STORAGE_KEY,
+  GROWTH_SUMMARY_KEY,
+  GROWTH_UPDATED_EVENT,
+  HOMEPAGE_BANNER_DISMISSED_KEY,
+  HOMEPAGE_CLAIM_XP,
+  currentPureStreak,
+  currentStreak,
+  dayStateOf,
+  emptyProfile,
+  growthDayKey,
+  keyAddDays,
+  keyDiffDays,
+  keyWeekday,
+  mondayKeyOf,
+  seasonCalendar,
+  todayKey,
+}
 
 export type GrowthFeature =
   | 'ai_find'
@@ -177,57 +205,6 @@ export const LEVELS: LevelDef[] = [
   { level: 15, title: '银河放牧猫', xp: 13000 },
   { level: 16, title: '导航守护神猫', xp: 16000 },
 ]
-
-/* ---------------- 日期口径（04:00 切日） ---------------- */
-
-/** 本地时区的 YYYY-MM-DD（00:00 口径，仅保留给旧调用方与日期工具） */
-export function todayKey(d: Date = new Date()): string {
-  const m = `${d.getMonth() + 1}`.padStart(2, '0')
-  const day = `${d.getDate()}`.padStart(2, '0')
-  return `${d.getFullYear()}-${m}-${day}`
-}
-
-/**
- * 成长日 key：本地时区 04:00 切日——04:00 前的时刻归前一个成长日。
- * 短剧人群活跃高峰在 23:00–02:00，00:00 切日会把同一次晚间使用劈成两天。
- */
-export function growthDayKey(d: Date = new Date()): string {
-  // 按本地时钟的小时数判断（不用毫秒平移）：夏令时换季日也不会漂移
-  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate() - (d.getHours() < 4 ? 1 : 0))
-  return todayKey(local)
-}
-
-const DAY_MS = 24 * 60 * 60 * 1000
-
-/** key → UTC 毫秒（只做日期算术，与时区无关的纯日历计算） */
-function keyToMs(key: string): number {
-  const [y, m, dd] = key.split('-').map((x) => Number(x))
-  return Date.UTC(y ?? 1970, (m ?? 1) - 1, dd ?? 1)
-}
-
-export function keyAddDays(key: string, n: number): string {
-  const d = new Date(keyToMs(key) + n * DAY_MS)
-  const m = `${d.getUTCMonth() + 1}`.padStart(2, '0')
-  const day = `${d.getUTCDate()}`.padStart(2, '0')
-  return `${d.getUTCFullYear()}-${m}-${day}`
-}
-
-/** b - a 的天数（a、b 均为日期 key） */
-export function keyDiffDays(a: string, b: string): number {
-  return Math.round((keyToMs(b) - keyToMs(a)) / DAY_MS)
-}
-
-/** 日期 key 的星期（0=周日 … 6=周六），纯日历计算 */
-export function keyWeekday(key: string): number {
-  return new Date(keyToMs(key)).getUTCDay()
-}
-
-/** 所在周的周一 key（每周任务按周一换周） */
-export function mondayKeyOf(key: string): string {
-  const wd = keyWeekday(key)
-  const delta = wd === 0 ? -6 : 1 - wd
-  return keyAddDays(key, delta)
-}
 
 /* ---------------- 档案结构（v2） ---------------- */
 
@@ -405,66 +382,6 @@ function emptyDay(): GrowthDay {
   }
 }
 
-function emptySeason(index: number): SeasonState {
-  return {
-    index,
-    sp: 0,
-    tasksGranted: [],
-    levelGranted: 0,
-    milestonesGranted: [],
-    roamingGranted: 0,
-    eventGranted: [],
-    midMilestonesGranted: [],
-    contributionApproved: 0,
-  }
-}
-
-export function emptyProfile(now: Date = new Date()): GrowthProfile {
-  return {
-    v: 2,
-    totalXp: 0,
-    boost: false,
-    homepageClaimedAt: null,
-    pwaInstalledAt: null,
-    memberSeen: false,
-    createdAt: now.toISOString(),
-    days: {},
-    features: {},
-    categories: [],
-    scenes: [],
-    activeDates: [],
-    dramaDates: [],
-    idleTotalMinutes: 0,
-    dayStates: {},
-    streakChain: null,
-    streakSettledThrough: null,
-    freezeCards: 0,
-    freezeGiftLevel3: false,
-    restWeekday: null,
-    restChangedKey: null,
-    earnBack: null,
-    earnBackUses: [],
-    longestStreak: 0,
-    pureLongestStreak: 0,
-    rewardedFavIds: [],
-    sitesOpened: [],
-    weeks: {},
-    season: emptySeason(seasonCalendar(now).index),
-    seasonHistory: [],
-    returnPack: null,
-    lastReturnPackKey: null,
-    pioneerLegend: false,
-    legacyBadgeIds: [],
-    catalogBonusGranted: false,
-    milestoneDays: [],
-    chestNoCardStreak: 0,
-    rookiePanelSeen: false,
-    lastSeenLevel: 1,
-    pendingNotices: [],
-    lastActiveKey: null,
-  }
-}
-
 /* ---------------- 赛季历法 ---------------- */
 
 export interface SeasonCalendar {
@@ -473,14 +390,6 @@ export interface SeasonCalendar {
   dayOfSeason: number
   startKey: string
   endKey: string
-}
-
-export function seasonCalendar(now: Date = new Date()): SeasonCalendar {
-  const today = growthDayKey(now)
-  const diff = keyDiffDays(SEASON_EPOCH_KEY, today)
-  const index = Math.max(0, Math.floor(diff / SEASON_LENGTH_DAYS))
-  const startKey = keyAddDays(SEASON_EPOCH_KEY, index * SEASON_LENGTH_DAYS)
-  return { index, dayOfSeason: diff - index * SEASON_LENGTH_DAYS + 1, startKey, endKey: keyAddDays(startKey, SEASON_LENGTH_DAYS - 1) }
 }
 
 export function seasonLevelOf(sp: number): number {
@@ -834,48 +743,6 @@ export function levelProgress(totalXp: number): LevelProgress {
 }
 
 /* ---------------- 连胜（按日状态派生） ---------------- */
-
-export function dayStateOf(profile: GrowthProfile, key: string): DayState | undefined {
-  return profile.dayStates[key] ?? (profile.activeDates.includes(key) ? 'lit' : undefined)
-}
-
-/** 当前连胜：从今天（未点亮则从昨天）往回数 present 日；休息日透明跳过 */
-export function currentStreak(profile: GrowthProfile, now: Date = new Date()): number {
-  const today = growthDayKey(now)
-  let cursor = today
-  if (!dayStateOf(profile, cursor)) cursor = keyAddDays(cursor, -1)
-  let streak = 0
-  let guard = 0
-  while (guard < 4000) {
-    const s = dayStateOf(profile, cursor)
-    if (s === 'lit' || s === 'frozen' || s === 'rescued') streak += 1
-    else if (s === 'rest') {
-      /* 透明：不计不算断 */
-    } else break
-    cursor = keyAddDays(cursor, -1)
-    guard += 1
-  }
-  return streak
-}
-
-/** 真连胜（无垫付无抢救的连续点亮段，当前值） */
-export function currentPureStreak(profile: GrowthProfile, now: Date = new Date()): number {
-  const today = growthDayKey(now)
-  let cursor = today
-  if (!dayStateOf(profile, cursor)) cursor = keyAddDays(cursor, -1)
-  let streak = 0
-  let guard = 0
-  while (guard < 4000) {
-    const s = dayStateOf(profile, cursor)
-    if (s === 'lit') streak += 1
-    else if (s === 'rest') {
-      /* 透明 */
-    } else break
-    cursor = keyAddDays(cursor, -1)
-    guard += 1
-  }
-  return streak
-}
 
 /* ---------------- 倍率（v2 表 2.2） ---------------- */
 

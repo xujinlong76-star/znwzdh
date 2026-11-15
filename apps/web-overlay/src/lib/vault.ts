@@ -23,6 +23,10 @@ export interface VaultItem {
   category?: string;
   isInternal?: boolean;
   createdAt?: number;
+  /** 参数化快捷链接（v1 本地 only）：归一后的前缀（小写、不含 `!`） */
+  quickPrefix?: string;
+  /** 参数化快捷链接模板：含恰好一个 `{q}` 的绝对 http(s) URL */
+  templateUrl?: string;
 }
 
 export interface EncryptedVaultPayload {

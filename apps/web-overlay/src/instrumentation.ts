@@ -11,10 +11,21 @@
  * 由 origin.ts 在生产环境负责。构建阶段（NEXT_PHASE=phase-production-build）
  * 跳过：Docker 构建期刻意不注入该变量（运行时才给），构建日志不该刷假警报。
  */
+import { startVideoHealthScheduler } from './lib/video-health-scheduler'
+
 export function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
   if (process.env.NODE_ENV !== 'production') return
   if (process.env.NEXT_PHASE === 'phase-production-build') return
+
+  // 视频健康巡检定时调度（默认每 6 小时一轮，按页扫完全库，断点续扫；
+  // 环境变量见 lib/video-health-scheduler.ts；VIDEO_HEALTH_SWEEP_ENABLED=false 关闭）。
+  // 放在 SEO 自检之后：调度只依赖进程内定时器，与域名配置无关。
+  try {
+    startVideoHealthScheduler()
+  } catch (error) {
+    console.error('[VideoHealthScheduler] 启动失败（巡检不会自动运行，手动入口仍可用）:', error)
+  }
 
   const raw = process.env.NAVHUB_SITE_URL?.trim()
   if (!raw) {

@@ -30,7 +30,6 @@ export function VideoClipMakerDialog({
 }: VideoClipMakerDialogProps) {
   const [startSec, setStartSec] = useState<number>(() => Math.max(0, currentSec - 10))
   const [endSec, setEndSec] = useState<number>(() => Math.min(durationSec, currentSec + 20))
-  const [format, setFormat] = useState<'webm' | 'gif'>('webm')
   const [includeSubs, setIncludeSubs] = useState<boolean>(true)
   const [isExporting, setIsExporting] = useState<boolean>(false)
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
@@ -44,7 +43,6 @@ export function VideoClipMakerDialog({
       const pkg = await renderVideoClipPackage(videoTitle, transcripts, {
         startSec,
         endSec,
-        format,
         includeSubtitles: includeSubs,
         includeWatermark: true,
         quality: '720p',
@@ -73,7 +71,7 @@ export function VideoClipMakerDialog({
 
         <div className="space-y-4 pt-2 text-xs">
           <p className="text-muted-foreground leading-relaxed">
-            选取关键实战精华片段（15s–60s），合成内置字幕与高清排版，导出为便于在技术群组、Slack 或社交平台分享的动画切片。
+            选取关键实战精华片段（15s–60s），导出一份剪辑清单（JSON）：含起止时间与字幕片段，可用于在剪辑软件里复现这段切片。浏览器内暂不支持直接生成视频文件。
           </p>
 
           {/* Time range selection */}
@@ -123,36 +121,17 @@ export function VideoClipMakerDialog({
           </div>
 
           {/* Options */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="p-2.5 rounded-lg border bg-card space-y-1.5">
-              <div className="text-[10px] font-medium text-foreground">输出格式</div>
-              <div className="flex gap-1">
-                {(['webm', 'gif'] as const).map((fmt) => (
-                  <Button
-                    key={fmt}
-                    size="sm"
-                    variant={format === fmt ? 'default' : 'outline'}
-                    className="flex-1 h-7 text-xs uppercase"
-                    onClick={() => setFormat(fmt)}
-                  >
-                    {fmt}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-lg border bg-card flex flex-col justify-between">
-              <div className="text-[10px] font-medium text-foreground">压制画面字幕</div>
-              <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={includeSubs}
-                  onChange={(e) => setIncludeSubs(e.target.checked)}
-                  className="rounded border-border text-primary w-3.5 h-3.5"
-                />
-                合成同步逐字字幕
-              </label>
-            </div>
+          <div className="p-2.5 rounded-lg border bg-card flex flex-col justify-between">
+            <div className="text-[10px] font-medium text-foreground">包含字幕</div>
+            <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={includeSubs}
+                onChange={(e) => setIncludeSubs(e.target.checked)}
+                className="rounded border-border text-primary w-3.5 h-3.5"
+              />
+              清单中包含同步逐字字幕片段
+            </label>
           </div>
 
           <div className="flex justify-end gap-2 pt-1">

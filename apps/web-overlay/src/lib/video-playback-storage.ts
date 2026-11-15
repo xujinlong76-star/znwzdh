@@ -17,6 +17,19 @@ export interface PlaybackHistoryItem {
 const STORAGE_KEY = 'navhub:video:playback-history:v1'
 const MAX_HISTORY_ITEMS = 30
 
+/** savePlaybackPosition 的输入；lastWatchedAt 供跨设备合入时保留云端原值（D2）。 */
+export interface SavePlaybackPositionInput {
+  videoId: string
+  title: string
+  author?: string
+  cover?: string
+  platform: 'bilibili' | 'youtube' | 'other'
+  timestampSec: number
+  durationSec: number
+  /** 缺省为写入时刻；跨设备合入时传云端 updatedAt，避免合入后又被首次上传重复发回。 */
+  lastWatchedAt?: number
+}
+
 const memoryFallback = new Map<string, string>()
 
 function getStorage(): { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } {
@@ -44,15 +57,7 @@ export function getPlaybackHistory(): PlaybackHistoryItem[] {
   }
 }
 
-export function savePlaybackPosition(item: {
-  videoId: string
-  title: string
-  author?: string
-  cover?: string
-  platform: 'bilibili' | 'youtube' | 'other'
-  timestampSec: number
-  durationSec: number
-}): void {
+export function savePlaybackPosition(item: SavePlaybackPositionInput): void {
   const storage = getStorage()
   if (!storage) return
   try {
@@ -70,7 +75,10 @@ export function savePlaybackPosition(item: {
       platform: item.platform,
       timestampSec: Math.floor(current),
       durationSec: Math.floor(duration),
-      lastWatchedAt: now,
+      lastWatchedAt:
+        typeof item.lastWatchedAt === 'number' && Number.isFinite(item.lastWatchedAt)
+          ? item.lastWatchedAt
+          : now,
       progressPercent
     }
 

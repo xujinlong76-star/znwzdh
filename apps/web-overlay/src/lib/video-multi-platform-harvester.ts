@@ -2,8 +2,12 @@
  * Multi-Platform Video Harvester & Universal Metadata Resolver
  *
  * 深度支持国内外 12+ 主流视频平台的单链智能采集与主题关键词多源并发采集：
- * - 国内平台：哔哩哔哩 (bilibili)、抖音 (douyin)、快手 (kuaishou)、西瓜视频 (xigua)、小红书 (xiaohongshu)、腾讯视频 (tencent)、优酷 (youku)
- * - 国际与开源平台：YouTube (youtube)、Vimeo (vimeo)、TED Talks (ted)、Dailymotion (dailymotion)、PeerTube 联邦视频 (peertube)、自定义直链/网页 (custom)
+ * - 国内平台：哔哩哔哩 (bilibili)
+ * - 国际与开源平台：YouTube (youtube)、Vimeo (vimeo)、TED Talks (ted)、Dailymotion (dailymotion)、自定义直链/网页 (custom)
+ *   （PeerTube 已于 2026-11-14 从关键词采集通道移除：SepiaSearch 端点从第一天就调错，
+ *   且其播放量天花板 654 远低于入库门槛 5000，修好也 0 入库；仅保留 URL 粘贴解析与播放）
+ * 注：抖音 / 快手 / 西瓜 / 小红书 / 腾讯 / 优酷已于 2026-11-13 从视频平台类型中移除——
+ * 它们从未进入采集分支（无关键词采集、无元数据 API），识别器与嵌入支持随之删除。
  *
  * 同时内置 OpenGraph + Schema.org VideoObject JSON-LD 网页结构化嗅探器与自动 SEO 富化管线，
  * 确保采集入库的每一条视频都具备搜索引擎友好的标题、摘要、关键词、语义化 Slug 与可索引元数据。
@@ -16,6 +20,10 @@ import type {
   VideoStats,
 } from '@/types/navigation'
 import { calculateQualityScore, calculateFreshnessScore, parseDurationToSeconds } from './video-scoring'
+import {
+  harvestGuardRejectReason,
+  isHarvestEligibleForItem,
+} from './video-harvest-guard'
 import { enrichVideoItemSeo } from './video-seo'
 import { guardedFetch, isProbablySafeUrl } from './ssrf-guard'
 
@@ -116,82 +124,7 @@ export const PLATFORM_URL_RULES: PlatformUrlRule[] = [
       canonicalUrl: `https://www.dailymotion.com/video/${match[1]!}`,
     }),
   },
-  // 6a. 抖音（站内 video/note 页）
-  {
-    platform: 'douyin',
-    patterns: [/(?:douyin\.com\/(?:video|note)\/|iesdouyin\.com\/share\/video\/)(\d{15,22})/i],
-    build: (match) => ({
-      platform: 'douyin',
-      externalId: match[1]!,
-      canonicalUrl: `https://www.douyin.com/video/${match[1]!}`,
-    }),
-  },
-  // 6b. 抖音（v.douyin.com 短链，无数字 ID，原样保留）
-  {
-    platform: 'douyin',
-    patterns: [/v\.douyin\.com\/([a-zA-Z0-9_-]+)/i],
-    build: (match, url) => ({
-      platform: 'douyin',
-      externalId: match[1] || 'dy',
-      canonicalUrl: url,
-    }),
-  },
-  // 7. 快手
-  {
-    platform: 'kuaishou',
-    patterns: [/(?:kuaishou\.com\/(?:short-video|photo)\/|v\.kuaishou\.com\/)([a-zA-Z0-9_-]{6,24})/i],
-    build: (match, url) => ({
-      platform: 'kuaishou',
-      externalId: match[1]!,
-      canonicalUrl: url.startsWith('http') ? url : `https://www.kuaishou.com/short-video/${match[1]!}`,
-    }),
-  },
-  // 8. 西瓜视频
-  {
-    platform: 'xigua',
-    patterns: [/ixigua\.com\/(?:i)?(\d{15,22})/i],
-    build: (match) => ({
-      platform: 'xigua',
-      externalId: match[1]!,
-      canonicalUrl: `https://www.ixigua.com/${match[1]!}`,
-    }),
-  },
-  // 9. 小红书（探索页给规范域名，xhslink 短链原样保留）
-  {
-    platform: 'xiaohongshu',
-    patterns: [/(?:xiaohongshu\.com\/(?:explore|discovery\/item)\/|xhslink\.com\/)([a-zA-Z0-9_-]{6,28})/i],
-    build: (match, url) => ({
-      platform: 'xiaohongshu',
-      externalId: match[1]!,
-      canonicalUrl: url.includes('xiaohongshu.com')
-        ? `https://www.xiaohongshu.com/explore/${match[1]!}`
-        : url,
-    }),
-  },
-  // 10. 腾讯视频（cover / page 两种路径，同构 build）
-  {
-    platform: 'tencent',
-    patterns: [
-      /v\.qq\.com\/x\/cover\/[^\/]+\/([a-zA-Z0-9]+)\.html/i,
-      /v\.qq\.com\/x\/page\/([a-zA-Z0-9]+)\.html/i,
-    ],
-    build: (match) => ({
-      platform: 'tencent',
-      externalId: match[1]!,
-      canonicalUrl: `https://v.qq.com/x/page/${match[1]!}.html`,
-    }),
-  },
-  // 11. 优酷
-  {
-    platform: 'youku',
-    patterns: [/youku\.com\/v_show\/id_([a-zA-Z0-9=_]+)\.html/i],
-    build: (match) => ({
-      platform: 'youku',
-      externalId: match[1]!,
-      canonicalUrl: `https://v.youku.com/v_show/id_${match[1]!}.html`,
-    }),
-  },
-  // 12. PeerTube（通用联邦实例：任意 http(s) URL 进 build 后按 pathname 判定，
+  // 6. PeerTube（通用联邦实例：任意 http(s) URL 进 build 后按 pathname 判定，
   // 非 PeerTube 路径返回 null 继续走 custom 兜底）
   {
     platform: 'peertube',
@@ -503,7 +436,7 @@ export async function resolveMultiPlatformVideoUrl(
         const d = await res.json()
         if (d && d.title) {
           const stats: VideoStats = { views: Number(d.views_total) || 0 }
-          const durationSec = Number(d.duration) || 300
+          const durationSec: number | undefined = Number(d.duration) || undefined
           const pubDate = d.created_time
             ? new Date(Number(d.created_time) * 1000).toISOString()
             : undefined
@@ -547,8 +480,10 @@ export async function resolveMultiPlatformVideoUrl(
       if (res.ok) {
         const d = await res.json()
         if (d && d.title) {
-          const durationSec = Number(d.duration) || 300
+          const durationSec: number | undefined = Number(d.duration) || undefined
           const pubDate = d.upload_date ? new Date(d.upload_date).toISOString() : undefined
+          // oEmbed 不返回播放/互动数据：只按真实时长计分（时长也未知就是 0），不编 86 分。
+          const qualityScore = calculateQualityScore(undefined, durationSec)
           return attachResolvedSeoMetadata({
             title: String(d.title).trim(),
             href: canonicalUrl,
@@ -563,8 +498,8 @@ export async function resolveMultiPlatformVideoUrl(
               ...(pubDate ? { publishedAt: pubDate } : {}),
               harvestedAt: Date.now(),
               lastVerifiedAt: Date.now(),
-              qualityScore: 86,
-              freshnessScore: calculateFreshnessScore(pubDate, 86, 90, d.title),
+              qualityScore,
+              freshnessScore: calculateFreshnessScore(pubDate, qualityScore, 90, d.title),
               sourceType: 'manual',
               pinned: true,
               healthStatus: 'healthy',
@@ -595,11 +530,13 @@ export async function resolveMultiPlatformVideoUrl(
               videoId: externalId,
               author: d.author_name || 'TED Speaker',
               authorUrl: d.author_url || 'https://www.ted.com',
-              durationSec: Number(d.duration) || 900,
+              // TED oEmbed 不返回时长与任何统计：不猜 900 秒、不编 90 分。
+              // 无数据就是 0 分（qualityScore/freshnessScore 都由公式算出，不写死）。
+              durationSec: Number(d.duration) || undefined,
               harvestedAt: Date.now(),
               lastVerifiedAt: Date.now(),
-              qualityScore: 90,
-              freshnessScore: 88,
+              qualityScore: calculateQualityScore(undefined),
+              freshnessScore: calculateFreshnessScore(undefined, 0, 90, d.title),
               sourceType: 'manual',
               pinned: true,
               healthStatus: 'healthy',
@@ -626,7 +563,7 @@ export async function resolveMultiPlatformVideoUrl(
             views: Number(d.views) || 0,
             likes: Number(d.likes) || 0,
           }
-          const durationSec = Number(d.duration) || 600
+          const durationSec: number | undefined = Number(d.duration) || undefined
           const pubDate = d.publishedAt ? new Date(d.publishedAt).toISOString() : undefined
           const thumbPath = d.previewPath || d.thumbnailPath
           const coverUrl = thumbPath
@@ -686,8 +623,9 @@ export async function resolveMultiPlatformVideoUrl(
             authorUrl: data.author_url || '',
             harvestedAt: Date.now(),
             lastVerifiedAt: Date.now(),
-            qualityScore: 85,
-            freshnessScore: 85,
+            // oEmbed 不返回播放/互动/时长数据：无数据就是 0 分，不编 85 分。
+            qualityScore: calculateQualityScore(undefined),
+            freshnessScore: calculateFreshnessScore(undefined, 0, 90, data.title),
             sourceType: 'manual',
             pinned: true,
             healthStatus: 'healthy',
@@ -752,8 +690,8 @@ export async function resolveMultiPlatformVideoUrl(
             extracted.views || extracted.likes
               ? { views: extracted.views || 0, likes: extracted.likes || 0 }
               : undefined
-          const durationSec = extracted.durationSec || 300
-          const qualityScore = stats ? calculateQualityScore(stats, durationSec) : 82
+          const durationSec: number | undefined = extracted.durationSec || undefined
+          const qualityScore = calculateQualityScore(stats, durationSec)
           const freshnessScore = calculateFreshnessScore(
             extracted.publishedAt,
             qualityScore,
@@ -791,7 +729,10 @@ export async function resolveMultiPlatformVideoUrl(
     // 网页直连超时或反爬拦截时，走结构化平台兜底
   }
 
-  // 7. 兜底返回（保证任何合法的多平台视频 URL 都能入库并生成规范化 SEO 数据）
+  // 7. 兜底返回（保证任何合法的多平台视频 URL 都能解析并生成规范化 SEO 数据）。
+  // 分数不编造：直连失败时没有任何真实统计，qualityScore / freshnessScore
+  // 只能是 0 —— 旧硬编码 78/78 等于给「一次都没抓到数据」的视频发高分成绩单，
+  // 还会直接越过 60/65 分入库门禁（4134 条扎堆 65 的同类问题）。
   return attachResolvedSeoMetadata({
     title: `${platformMeta.shortName}视频 (${externalId})`,
     href: canonicalUrl,
@@ -803,8 +744,8 @@ export async function resolveMultiPlatformVideoUrl(
       durationSec: 300,
       harvestedAt: Date.now(),
       lastVerifiedAt: Date.now(),
-      qualityScore: 78,
-      freshnessScore: 78,
+      qualityScore: 0,
+      freshnessScore: 0,
       sourceType: 'manual',
       pinned: true,
       healthStatus: 'healthy',
@@ -815,14 +756,19 @@ export async function resolveMultiPlatformVideoUrl(
 export interface MultiPlatformHarvestOptions {
   platforms: VideoPlatformType[]
   minDurationSec?: number
-  minQualityScore?: number
+  /**
+   * 注意：`minQualityScore` 已于 2026-11-13 删除——它是死字段（本函数从未读它，
+   * 注释里就写着「仅兼容」），且它 gate 的 qualityScore 不可信。
+   * 入库门槛改由 `video-harvest-guard.ts` 的严标准判定（真实播放/点赞/弹幕），
+   * 在本函数汇聚点统一执行，不要再把阈值往 options 里加。
+   */
   limitPerKeyword?: number
   deadlineMs?: number
   failures?: Array<{ keyword: string; reason: string }>
 }
 
 /**
- * 针对非 B 站平台执行主题关键词公开 API 采集（Dailymotion / PeerTube SepiaSearch / TED / YouTube Piped）
+ * 针对非 B 站平台执行主题关键词公开 API 采集（Dailymotion / TED / YouTube Piped）
  */
 export async function harvestMultiPlatformVideosForKeyword(
   keyword: string,
@@ -832,7 +778,6 @@ export async function harvestMultiPlatformVideosForKeyword(
   const {
     platforms,
     minDurationSec = 180,
-    minQualityScore = 60,
     limitPerKeyword = 3,
     failures,
   } = options
@@ -849,7 +794,7 @@ export async function harvestMultiPlatformVideosForKeyword(
     tasks.push(
       harvestDailymotionChannel(
         kw,
-        { minDurationSec, minQualityScore, limitPerKeyword, failures },
+        { minDurationSec, limitPerKeyword, failures },
         fetchImpl
       )
     )
@@ -859,7 +804,7 @@ export async function harvestMultiPlatformVideosForKeyword(
     tasks.push(
       harvestTedChannel(
         kw,
-        { minDurationSec, minQualityScore, limitPerKeyword, failures },
+        { minDurationSec, limitPerKeyword, failures },
         fetchImpl
       )
     )
@@ -869,17 +814,7 @@ export async function harvestMultiPlatformVideosForKeyword(
     tasks.push(
       harvestYouTubeChannel(
         kw,
-        { minDurationSec, minQualityScore, limitPerKeyword, failures },
-        fetchImpl
-      )
-    )
-  }
-
-  if (platforms.includes('peertube')) {
-    tasks.push(
-      harvestPeerTubeChannel(
-        kw,
-        { minDurationSec, minQualityScore, limitPerKeyword, failures },
+        { minDurationSec, limitPerKeyword, failures },
         fetchImpl
       )
     )
@@ -892,6 +827,19 @@ export async function harvestMultiPlatformVideosForKeyword(
         const key = `${item.videoConfig?.type}:${item.videoConfig?.videoId || item.id}`
         if (!seenKeys.has(key)) {
           seenKeys.add(key)
+          // 入库严标准守卫：各平台分支只负责「把真实数据拿回来」，放不放行
+          // 在这里统一判——真实播放/点赞/弹幕不达标（或全是零，如 YouTube
+          // Data API 搜索分支拿不到播放量）直接拒收，原因写进 failures。
+          // 人工粘贴 URL 解析（resolveMultiPlatformVideoUrl）不走这里，
+          // 它是 sourceType manual + pinned，由守卫的豁免规则覆盖。
+          const verdict = isHarvestEligibleForItem(item)
+          if (!verdict.eligible) {
+            failures?.push({
+              keyword: kw,
+              reason: `「${item.title}」${harvestGuardRejectReason(verdict)}`,
+            })
+            continue
+          }
           results.push(item)
         }
       }
@@ -924,13 +872,12 @@ async function harvestDailymotionChannel(
   kw: string,
   options: {
     minDurationSec: number
-    minQualityScore: number
     limitPerKeyword: number
     failures?: Array<{ keyword: string; reason: string }>
   },
   fetchImpl: typeof fetch
 ): Promise<NavigationSubItem[]> {
-  const { minDurationSec, minQualityScore, limitPerKeyword, failures } = options
+  const { minDurationSec, limitPerKeyword, failures } = options
   const results: NavigationSubItem[] = []
   try {
     const dmUrl = `https://api.dailymotion.com/videos?search=${encodeURIComponent(
@@ -959,10 +906,7 @@ async function harvestDailymotionChannel(
       const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
 
       const stats: VideoStats = { views: Number(item.views_total) || 0 }
-      const qualityScore = Math.max(
-        minQualityScore,
-        calculateQualityScore(stats, durationSec || 300, item.created_time)
-      )
+      const qualityScore = calculateQualityScore(stats, durationSec || undefined, item.created_time)
       const pubDate = item.created_time
         ? new Date(Number(item.created_time) * 1000).toISOString()
         : undefined
@@ -980,7 +924,7 @@ async function harvestDailymotionChannel(
           videoId,
           author: item['owner.screenname'] || 'Dailymotion Creator',
           authorUrl: item['owner.url'] || undefined,
-          durationSec: durationSec || 300,
+          durationSec: durationSec || undefined,
           ...(pubDate ? { publishedAt: pubDate } : {}),
           harvestedAt: Date.now(),
           lastVerifiedAt: Date.now(),
@@ -1008,13 +952,12 @@ async function harvestTedChannel(
   kw: string,
   options: {
     minDurationSec: number
-    minQualityScore: number
     limitPerKeyword: number
     failures?: Array<{ keyword: string; reason: string }>
   },
   fetchImpl: typeof fetch
 ): Promise<NavigationSubItem[]> {
-  const { minDurationSec, minQualityScore, limitPerKeyword, failures } = options
+  const { minDurationSec, limitPerKeyword, failures } = options
   const results: NavigationSubItem[] = []
   try {
     let talks: any[] = []
@@ -1074,13 +1017,13 @@ async function harvestTedChannel(
       const cleanTitle = String(item.title || item.name || '').trim()
       if (!cleanTitle) continue
 
-      const durationSec = Number(item.duration) || 900
-      if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+      const durationSec: number | undefined = Number(item.duration) || undefined
+      if (minDurationSec && durationSec !== undefined && durationSec > 0 && durationSec < minDurationSec) continue
 
       const stats: VideoStats = {
-        views: Number(item.viewedCount || item.view_count || item.views) || 60000,
+        views: Number(item.viewedCount || item.view_count || item.views) || 0,
       }
-      const qualityScore = Math.max(minQualityScore, calculateQualityScore(stats, durationSec))
+      const qualityScore = calculateQualityScore(stats, durationSec)
       const rawPub = item.publishedAt || item.published_at
       const pubDate = rawPub ? new Date(rawPub).toISOString() : undefined
       const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
@@ -1128,13 +1071,12 @@ async function harvestYouTubeChannel(
   kw: string,
   options: {
     minDurationSec: number
-    minQualityScore: number
     limitPerKeyword: number
     failures?: Array<{ keyword: string; reason: string }>
   },
   fetchImpl: typeof fetch
 ): Promise<NavigationSubItem[]> {
-  const { minDurationSec, minQualityScore, limitPerKeyword, failures } = options
+  const { minDurationSec, limitPerKeyword, failures } = options
   const results: NavigationSubItem[] = []
 
   // 1. 若配置了 YOUTUBE_API_KEY，首选官方 YouTube Data API v3
@@ -1155,8 +1097,8 @@ async function harvestYouTubeChannel(
           const title = (snippet.title || '').trim()
           if (!title) continue
           const desc = (snippet.description || '').trim()
-          const stats: VideoStats = { views: 50000 }
-          const qualityScore = Math.max(minQualityScore, calculateQualityScore(stats, 600))
+          const stats: VideoStats = { views: 0 }
+          const qualityScore = calculateQualityScore(stats)
           const pubDate = snippet.publishedAt ? new Date(snippet.publishedAt).toISOString() : undefined
           const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, title)
 
@@ -1234,8 +1176,8 @@ async function harvestYouTubeChannel(
               if (!cleanTitle) continue
 
               const durationText = vr.lengthText?.simpleText
-              const durationSec = durationText ? parseDurationToSeconds(durationText) : 600
-              if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+              const durationSec: number | undefined = durationText ? parseDurationToSeconds(durationText) : undefined
+              if (minDurationSec && durationSec !== undefined && durationSec > 0 && durationSec < minDurationSec) continue
 
               const cleanDesc = (
                 vr.detailedMetadataSnippets?.[0]?.snippetText?.runs
@@ -1247,7 +1189,7 @@ async function harvestYouTubeChannel(
 
               const views = parseViewsCount(vr.viewCountText?.simpleText)
               const stats: VideoStats = { views }
-              const qualityScore = Math.max(minQualityScore, calculateQualityScore(stats, durationSec))
+              const qualityScore = calculateQualityScore(stats, durationSec)
               const freshnessScore = calculateFreshnessScore(undefined, qualityScore, 90, cleanTitle)
 
               const author = vr.ownerText?.runs?.[0]?.text || 'YouTube Creator'
@@ -1314,10 +1256,10 @@ async function harvestYouTubeChannel(
         if (!videoId || videoId.length !== 11) continue
         const cleanTitle = String(item.title || '').trim()
         if (!cleanTitle) continue
-        const durationSec = Number(item.lengthSeconds || item.duration) || 600
-        if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+        const durationSec: number | undefined = Number(item.lengthSeconds || item.duration) || undefined
+        if (minDurationSec && durationSec !== undefined && durationSec > 0 && durationSec < minDurationSec) continue
         const stats: VideoStats = { views: Number(item.viewCount || item.views) || 0 }
-        const qualityScore = Math.max(minQualityScore, calculateQualityScore(stats, durationSec))
+        const qualityScore = calculateQualityScore(stats, durationSec)
         const freshnessScore = calculateFreshnessScore(undefined, qualityScore, 90, cleanTitle)
 
         results.push(
@@ -1362,93 +1304,5 @@ async function harvestYouTubeChannel(
     })
   }
 
-  return results
-}
-
-async function harvestPeerTubeChannel(
-  kw: string,
-  options: {
-    minDurationSec: number
-    minQualityScore: number
-    limitPerKeyword: number
-    failures?: Array<{ keyword: string; reason: string }>
-  },
-  fetchImpl: typeof fetch
-): Promise<NavigationSubItem[]> {
-  const { minDurationSec, minQualityScore, limitPerKeyword, failures } = options
-  const results: NavigationSubItem[] = []
-  try {
-    const ptUrl = `https://sepiasearch.org/api/v1/videos?search=${encodeURIComponent(
-      kw
-    )}&count=${Math.max(limitPerKeyword * 2, 6)}&sort=-match&nsfw=false`
-    const res = await fetchImpl(ptUrl, { signal: AbortSignal.timeout(5000) })
-    if (!res.ok) {
-      failures?.push({ keyword: kw, reason: `PeerTube SepiaSearch 返回 HTTP ${res.status}` })
-      return results
-    }
-    const json = await res.json()
-    const data = Array.isArray(json?.data) ? json.data : []
-    for (const item of data) {
-      if (results.length >= limitPerKeyword) break
-      const videoId = String(item?.shortUUID || item?.uuid || '').trim()
-      if (!videoId) continue
-
-      const durationSec = Number(item.duration) || 0
-      if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
-
-      const cleanTitle = String(item.name || '').trim()
-      if (!cleanTitle) continue
-      const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
-
-      const stats: VideoStats = {
-        views: Number(item.views) || 0,
-        likes: Number(item.likes) || 0,
-      }
-      const qualityScore = Math.max(
-        minQualityScore,
-        calculateQualityScore(stats, durationSec || 300)
-      )
-      const pubDate = item.publishedAt ? new Date(item.publishedAt).toISOString() : undefined
-      const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
-
-      const host = item.account?.host || item.channel?.host || 'framatube.org'
-      const href = item.url || `https://${host}/w/${videoId}`
-      const coverUrl =
-        item.thumbnailUrl ||
-        (item.thumbnailPath ? `https://${host}${item.thumbnailPath}` : undefined)
-
-      const rawSubItem: NavigationSubItem = {
-        id: `harvest_pt_${videoId}_${Date.now()}`,
-        title: cleanTitle,
-        href,
-        description: cleanDesc,
-        icon: coverUrl,
-        enabled: true,
-        videoConfig: {
-          type: 'peertube',
-          videoId,
-          author: item.account?.displayName || item.channel?.displayName || 'PeerTube Creator',
-          authorUrl: item.account?.url || item.channel?.url || `https://${host}`,
-          durationSec: durationSec || 300,
-          ...(pubDate ? { publishedAt: pubDate } : {}),
-          harvestedAt: Date.now(),
-          lastVerifiedAt: Date.now(),
-          qualityScore,
-          freshnessScore,
-          sourceType: 'auto_trend',
-          trendKeyword: kw,
-          pinned: false,
-          healthStatus: 'healthy',
-          stats,
-        },
-      }
-      results.push(enrichVideoItemSeo(rawSubItem))
-    }
-  } catch (err) {
-    failures?.push({
-      keyword: kw,
-      reason: `PeerTube 采集异常: ${err instanceof Error ? err.message : '网络错误'}`,
-    })
-  }
   return results
 }

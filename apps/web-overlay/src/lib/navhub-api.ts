@@ -167,6 +167,7 @@ export interface HubSearchResult
     | 'inferredCategory'
     | 'excludedTerms'
     | 'didYouMean'
+    | 'correction'
     | 'queryExpansion'
   > {
   hits: HubSearchHit[]
@@ -452,6 +453,11 @@ export interface SearchParams {
    * 「按意思搜」靠它把查询与收藏的站点做语义求交；不传时走默认 hybrid。
    */
   mode?: 'hybrid' | 'keyword' | 'semantic'
+  /**
+   * 不自动纠正（nocorrect=1）：前端「不是这个？搜原来的」回退用。
+   * 关闭后零结果只走 didYouMean 建议，不自动重跑纠正后的查询。
+   */
+  nocorrect?: boolean
   /** 身份标识（匿名 anonId 或登录 userId），用于个性化与历史 */
   identity?: string
 }
@@ -464,6 +470,7 @@ export async function searchSites(params: SearchParams, signal?: AbortSignal): P
   if (params.tag) query.set('tag', params.tag)
   if (params.status) query.set('status', params.status)
   if (params.mode) query.set('mode', params.mode)
+  if (params.nocorrect) query.set('nocorrect', '1')
   // 兼容旧中枢：query 保留 anonId；新中枢优先读 X-Navhub-Anon-Id header（防日志泄漏）
   if (params.identity) query.set('anonId', params.identity)
   try {
@@ -919,6 +926,28 @@ export async function fetchSimilar(siteId: string, limit = 6, onDegraded?: Degra
   )
 }
 
+/**
+ * 共享标签相似站点（Batch 4 第 3 项：对照候选复用服务端 GET /api/sites/:id/similar，
+ * 不用 KNN 版 fetchSimilar）。服务端与详情页相关区（relatedScope='similar'）同源
+ * （listSimilarSitesByTags：共享标签数倒序），返回 Site 数组。
+ */
+export async function fetchSimilarByTags(
+  siteId: string,
+  limit = 6,
+  onDegraded?: DegradedHandler,
+): Promise<HubSite[]> {
+  return degrade(
+    [],
+    async () => {
+      const sites = await getJson<HubSite[]>(
+        '/api/sites/' + encodeURIComponent(siteId) + '/similar?limit=' + limit,
+      )
+      return Array.isArray(sites) ? sites.filter((s) => s && s.id !== siteId) : []
+    },
+    onDegraded,
+  )
+}
+
 /* ------------------------------ 收藏夹 ------------------------------ */
 
 /**
@@ -1093,6 +1122,78 @@ export async function removeFavorite(identity: string, siteId: string, onDegrade
   )
 }
 
+/* ------------------------------ 待找与自定义站点 ------------------------------ */
+
+/**
+ * 待找（搜索容错纠错 · 出口一）：走 Next BFF `/api/me/wanted`
+ *（会话派生身份 → 中枢按账号存储，与「我的站点」同口径）。
+ * 未登录时 BFF 回 401 —— 调用方据此落到 localStorage 只存查询串，
+ * 并明示「登录后才能在收录时通知你」。
+ */
+export interface WantedSearchItem {
+  id: string
+  identity: string
+  query: string
+  correctedQuery: string | null
+  status: 'open' | 'notified'
+  notifiedSiteId: string | null
+  notifiedAt: number | null
+  createdAt: number
+}
+
+async function bffJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    cache: 'no-store',
+  })
+  if (res.status === 401) throw hubError(401, '未登录')
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string }
+  if (!res.ok) throw hubError(res.status, (data as { error?: string }).error || '请求失败')
+  return data
+}
+
+export async function saveWanted(query: string, correctedQuery?: string | null): Promise<{ item: WantedSearchItem; duplicate?: boolean }> {
+  return bffJson<{ item: WantedSearchItem; duplicate?: boolean }>('/api/me/wanted', {
+    method: 'POST',
+    body: JSON.stringify({ query, ...(correctedQuery ? { correctedQuery } : {}) }),
+  })
+}
+
+export async function listWanted(): Promise<WantedSearchItem[]> {
+  const data = await bffJson<{ items: WantedSearchItem[] }>('/api/me/wanted')
+  return data.items ?? []
+}
+
+export async function deleteWanted(id: string): Promise<boolean> {
+  const data = await bffJson<{ ok: boolean; removed: boolean }>(`/api/me/wanted/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  return data.removed
+}
+
+/**
+ * 新建收藏的落点二（搜索容错纠错 · 出口二）：POST /api/me/custom-sites
+ *（登录态，BFF 会话派生身份）。title ≤80、url 必须 http(s)，与服务端
+ * custom-sites 校验同口径；失败时把服务端 message 透出。
+ */
+export interface CustomSiteItem {
+  id: string
+  userId: string
+  title: string
+  url: string
+  note: string | null
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}
+
+export async function createCustomSite(input: { title: string; url: string; note?: string | null }): Promise<CustomSiteItem> {
+  const data = await bffJson<{ item: CustomSiteItem }>('/api/me/custom-sites', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return data.item
+}
+
 /** 收藏管理：移动到文件夹 / 改备注（folderId=null 表示移出文件夹） */
 export async function updateFavoriteMeta(
   identity: string,
@@ -1176,6 +1277,144 @@ export async function deleteFavoriteFolder(identity: string, folderId: string, o
     },
     onDegraded,
   )
+}
+
+/* ------------------------------ 收藏回收站 ------------------------------ */
+
+/**
+ * 云端回收站（favorites.deleted_at 墓碑）客户端。
+ *
+ * 与收藏同步同路：走 BFF `/api/me/favorites/trash*`（会话派生身份），
+ * 匿名用户只有本地回收站（lib/favorites-trash），不调这里。
+ * 恢复类调用不用 degrade 兜底：调用方要区分「原站点已不存在」
+ * （404，可据实标注）与「网络失败」（可重试），吞成 null 会把两种
+ * 失败说成同一种。
+ */
+export interface HubFavoriteTrashItem {
+  siteId: string
+  folderId: string | null
+  note: string | null
+  tags: string[] | null
+  createdAt: number
+  updatedAt: number
+  deletedAt: number | null
+  site: HubSite | null
+  folderName: string | null
+}
+
+export interface HubFavoriteTrashList {
+  items: HubFavoriteTrashItem[]
+  total: number
+}
+
+/** 读云端回收站（墓碑列表，deleted_at 倒序，limit 默认 200） */
+export async function listFavoriteTrash(
+  limit = 200,
+  onDegraded?: DegradedHandler,
+): Promise<HubFavoriteTrashList | null> {
+  return degrade<HubFavoriteTrashList | null>(null, async () => {
+    const res = await fetch('/api/me/favorites/trash?limit=' + limit, {
+      signal: readSignal(undefined),
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      const detail = await hubServerMessage(res)
+      throw hubError(res.status, detail.message, detail.payload)
+    }
+    const text = await res.text()
+    return (text ? JSON.parse(text) : { items: [], total: 0 }) as HubFavoriteTrashList
+  }, onDegraded)
+}
+
+export type RestoreFavoriteTrashResult =
+  | { ok: true; folderLost: boolean }
+  | { ok: false; message: string; siteGone: boolean }
+
+/** 复活单条墓碑（= add 复活分支；原站点已硬删时 ok=false + siteGone） */
+export async function restoreFavoriteTrash(siteId: string): Promise<RestoreFavoriteTrashResult> {
+  try {
+    const res = await fetch('/api/me/favorites/trash/' + encodeURIComponent(siteId) + '/restore', {
+      method: 'POST',
+      signal: readSignal(undefined),
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) {
+      const detail = await hubServerMessage(res)
+      const message = detail.message || '恢复失败'
+      return { ok: false, message, siteGone: res.status === 404 && message.includes('原站点') }
+    }
+    const data = (await res.json().catch(() => ({}))) as { folderLost?: boolean }
+    return { ok: true, folderLost: data.folderLost === true }
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : '恢复失败', siteGone: false }
+  }
+}
+
+export interface RestoreFavoriteTrashBatchResult {
+  restored: string[]
+  failed: Array<{ siteId: string; error: string }>
+}
+
+/** 批量复活：逐条独立生效，返回成功数与失败清单；传输失败返回 null */
+export async function restoreFavoriteTrashBatch(
+  siteIds: string[],
+  onDegraded?: DegradedHandler,
+): Promise<RestoreFavoriteTrashBatchResult | null> {
+  return degrade<RestoreFavoriteTrashBatchResult | null>(null, async () => {
+    const res = await fetch('/api/me/favorites/trash/restore-batch', {
+      method: 'POST',
+      signal: readSignal(undefined),
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ siteIds }),
+    })
+    if (!res.ok) {
+      const detail = await hubServerMessage(res)
+      throw hubError(res.status, detail.message, detail.payload)
+    }
+    const text = await res.text()
+    return (text ? JSON.parse(text) : { restored: [], failed: [] }) as RestoreFavoriteTrashBatchResult
+  }, onDegraded)
+}
+
+/** 物理删除单条墓碑（"彻底删除"，无快照可回，调用方必须二次确认） */
+export async function purgeFavoriteTrash(siteId: string, onDegraded?: DegradedHandler): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      const res = await fetch('/api/me/favorites/trash/' + encodeURIComponent(siteId), {
+        method: 'DELETE',
+        signal: readSignal(undefined),
+        headers: { Accept: 'application/json' },
+      })
+      if (!res.ok) {
+        const detail = await hubServerMessage(res)
+        throw hubError(res.status, detail.message, detail.payload)
+      }
+      return true
+    },
+    onDegraded,
+  )
+}
+
+/** 物理清空回收站（body 必须带 confirm: true；失败返回 null） */
+export async function clearFavoriteTrash(
+  onDegraded?: DegradedHandler,
+): Promise<{ purged: number } | null> {
+  return degrade<{ purged: number } | null>(null, async () => {
+    const res = await fetch('/api/me/favorites/trash', {
+      method: 'DELETE',
+      signal: readSignal(undefined),
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    })
+    if (!res.ok) {
+      const detail = await hubServerMessage(res)
+      throw hubError(res.status, detail.message, detail.payload)
+    }
+    const text = await res.text()
+    return (text ? JSON.parse(text) : { purged: 0 }) as { purged: number }
+  }, onDegraded)
 }
 
 /* ------------------------------ 搜索历史 ------------------------------ */

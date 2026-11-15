@@ -1,16 +1,11 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { VideoCard } from '@/components/video-card'
 import dynamic from 'next/dynamic'
-
-// 页面级单例播放弹窗：点开视频才加载，不占 /videos 首屏包体积。
-const VideoPlayerModal = dynamic(
-  () => import('@/components/video-player-modal').then(m => m.VideoPlayerModal),
-  { ssr: false }
-)
 
 const VideoAutoHarvestDialog = dynamic(
   () => import('@/components/video-auto-harvest-dialog').then(m => m.VideoAutoHarvestDialog),
@@ -25,13 +20,22 @@ const Footer = dynamic(
   () => import('@/components/footer').then(m => m.Footer),
   { ssr: false }
 )
-import { MonitorPlay, Menu, Home, Sparkles, Clock, Layers, ChevronRight, ChevronDown, ChevronUp, Zap, Search, X, Video, ArrowUpDown } from 'lucide-react'
+import { MonitorPlay, Menu, Home, Sparkles, Clock, Layers, ChevronRight, ChevronDown, ChevronUp, Search, X, Video, ArrowUpDown, Captions } from 'lucide-react'
 import { NavIcon } from '@/components/nav-icon'
 import { Button } from "@/registry/new-york/ui/button"
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useOverlayBehavior } from '@/components/ui/overlay'
 import { buildVideoSearchIndex, searchVideoIndex } from '@/lib/video-search-index'
+import {
+  CAPTION_STORE_EVENT,
+  collectBuiltinCaptionEntries,
+  formatCaptionTimestamp,
+  highlightCaptionSegments,
+  loadCaptionEntries,
+  mergeCaptionEntries,
+  searchCaptionEntries,
+} from '@/lib/video-caption-store'
 import { getPersonalizedRecommendations } from '@/lib/video-recommendation'
 import { getWatchLaterList, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 
@@ -55,6 +59,7 @@ const SORT_OPTIONS: Array<{ id: 'default' | 'views' | 'latest' | 'duration_desc'
 ]
 
 export function VideoContent({ navigationData: initialData, siteData }: VideoContentProps) {
+    const router = useRouter()
     const [navigationData, setNavigationData] = useState<NavigationData>(initialData)
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
     // 抽屉的公共行为：Esc 关、点遮罩关、锁背景滚动、焦点圈养与还原、role=dialog
@@ -64,7 +69,14 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
       // 抽屉常驻 DOM，读屏需要一个稳定名称来说明「这是频道导航」
       ariaLabel: '频道导航抽屉',
     })
-    const [playingVideo, setPlayingVideo] = useState<NavigationSubItem | null>(null)
+    /** 字幕库变化（导入/删除）时刷新字幕搜索结果。 */
+    const [captionStoreVersion, setCaptionStoreVersion] = useState(0)
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const handleCaptionStoreChange = () => setCaptionStoreVersion(v => v + 1)
+        window.addEventListener(CAPTION_STORE_EVENT, handleCaptionStoreChange)
+        return () => window.removeEventListener(CAPTION_STORE_EVENT, handleCaptionStoreChange)
+    }, [])
     const [showHarvestDialog, setShowHarvestDialog] = useState(false)
 
     const handleHarvestCompleted = async () => {
@@ -184,6 +196,35 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
             return acc + direct + subs
         }, 0)
     }, [hasQuery, searchResults])
+
+    // 字幕命中：只搜「有字幕」的视频（自带字幕 + 用户已导入字幕），无字幕的
+    // 视频永远不会出现在这里。命中按视频分组，点行打开播放器并跳到该时间点。
+    const videoById = useMemo(() => {
+        const map = new Map<string, NavigationSubItem>()
+        for (const category of navigationData.navigationItems || []) {
+            for (const item of category.items || []) map.set(item.id, item)
+            for (const sub of category.subCategories || []) {
+                for (const item of sub.items || []) map.set(item.id, item)
+            }
+        }
+        return map
+    }, [navigationData])
+
+    const captionSearchGroups = useMemo(() => {
+        const query = searchQuery.trim()
+        if (!query) return []
+        const entries = mergeCaptionEntries(
+            collectBuiltinCaptionEntries(navigationData.navigationItems || []),
+            loadCaptionEntries(),
+        )
+        return searchCaptionEntries(entries, query)
+    }, [navigationData, searchQuery, captionStoreVersion])
+
+    const handlePlayCaptionHit = (videoId: string, startSec: number) => {
+        // 字幕命中行直达路由版播放器：?id= 选片、?t= 从命中秒数起播（弹窗版已删除）。
+        if (!videoById.get(videoId)) return
+        router.push(`/videos/player?id=${encodeURIComponent(videoId)}&t=${Math.max(0, Math.floor(startSec))}`)
+    }
 
     const handleSearch = (query: string) => {
         setSearchQuery(query)
@@ -716,10 +757,6 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                         <MonitorPlay className="w-3.5 h-3.5" />
                                         视频中心 · 专业技术视频沉淀
                                     </span>
-                                    <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40">
-                                        <Zap className="w-3 h-3 text-amber-500" />
-                                        实时级联检索
-                                    </span>
                                 </div>
                                 <div>
                                     <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-3 text-foreground">
@@ -1048,7 +1085,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                         style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                                     >
                                                         {displayedItems.map((item) => (
-                                                            <VideoCard key={`search-${item.id}`} item={item as NavigationSubItem} siteConfig={siteData} onPlay={setPlayingVideo} />
+                                                            <VideoCard key={`search-${item.id}`} item={item as NavigationSubItem} siteConfig={siteData} />
                                                         ))}
                                                     </div>
                                                     {items.length > 15 && (
@@ -1078,6 +1115,48 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                         })}
                                     </div>
                                 )}
+
+                                {/* 字幕命中：只在有字幕的视频里搜到才出现；无字幕的视频不在此列 */}
+                                {captionSearchGroups.length > 0 && (
+                                    <div className="space-y-3 pt-4 border-t border-primary/20">
+                                        <div className="flex items-center gap-2">
+                                            <Captions className="w-4 h-4 text-primary" />
+                                            <h3 className="text-sm font-bold tracking-tight">字幕命中</h3>
+                                            <span className="text-xs text-muted-foreground">
+                                                在 {captionSearchGroups.length} 个有字幕的视频里找到 “{searchQuery}”，点一行跳到对应时间点播放
+                                            </span>
+                                        </div>
+                                        <div className="space-y-3">
+                                            {captionSearchGroups.map((group) => (
+                                                <div key={`cap-${group.videoId}`} className="rounded-xl border border-border/60 bg-background/60 p-3 space-y-2">
+                                                    <p className="text-xs font-semibold truncate" title={group.title}>
+                                                        {group.title}
+                                                        {group.platform ? <span className="ml-2 font-normal text-muted-foreground">{group.platform}</span> : null}
+                                                    </p>
+                                                    <div className="space-y-1">
+                                                        {group.hits.map((hit) => (
+                                                            <button
+                                                                key={`${group.videoId}-${hit.cue.id}`}
+                                                                type="button"
+                                                                onClick={() => handlePlayCaptionHit(group.videoId, hit.cue.startSec)}
+                                                                className="w-full min-h-11 text-left flex items-start gap-2.5 px-2.5 py-2 rounded-lg hover:bg-accent/40 border border-transparent hover:border-border/40 transition-all text-xs"
+                                                            >
+                                                                <span className="font-mono font-semibold text-primary shrink-0 pt-0.5">
+                                                                    {formatCaptionTimestamp(hit.cue.startSec)}
+                                                                </span>
+                                                                <span className="leading-relaxed text-foreground">
+                                                                    {highlightCaptionSegments(hit.field === 'translation' && hit.cue.translation ? hit.cue.translation : hit.cue.text, searchQuery).map((seg, idx) => (
+                                                                        seg.hit ? <mark key={idx} className="bg-yellow-200 dark:bg-yellow-800 rounded-sm px-0">{seg.text}</mark> : <span key={idx}>{seg.text}</span>
+                                                                    ))}
+                                                                </span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </section>
                         )}
 
@@ -1099,7 +1178,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                         style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                     >
                                         {watchLaterList.map((item) => (
-                                            <VideoCard key={`wl-${item.id}`} item={item} siteConfig={siteData} onPlay={setPlayingVideo} />
+                                            <VideoCard key={`wl-${item.id}`} item={item} siteConfig={siteData} />
                                         ))}
                                     </div>
                                 </div>
@@ -1124,7 +1203,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                         style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                     >
                                         {recommendedVideos.map((item) => (
-                                            <VideoCard key={`rec-${item.id}`} item={item} siteConfig={siteData} onPlay={setPlayingVideo} />
+                                            <VideoCard key={`rec-${item.id}`} item={item} siteConfig={siteData} />
                                         ))}
                                     </div>
                                 </div>
@@ -1293,7 +1372,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                         style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                                     >
                                                         {category.items.slice(0, INITIAL_VISIBLE_PER_SUBCAT).map((item) => (
-                                                            <VideoCard key={item.id} item={item} siteConfig={siteData} priority={eagerItemIds.has(item.id)} onPlay={setPlayingVideo} />
+                                                            <VideoCard key={item.id} item={item} siteConfig={siteData} priority={eagerItemIds.has(item.id)} />
                                                         ))}
                                                     </div>
                                                 </div>
@@ -1340,7 +1419,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                             style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                                         >
                                                             {displayedItems.map((item) => (
-                                                                <VideoCard key={item.id} item={item} siteConfig={siteData} priority={eagerItemIds.has(item.id)} onPlay={setPlayingVideo} />
+                                                                <VideoCard key={item.id} item={item} siteConfig={siteData} priority={eagerItemIds.has(item.id)} />
                                                             ))}
                                                         </div>
                                                         {hasMore && (
@@ -1404,7 +1483,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                         style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                                     >
                                                         {displayedCatItems.map((item) => (
-                                                            <VideoCard key={item.id} item={item} siteConfig={siteData} priority={eagerItemIds.has(item.id)} onPlay={setPlayingVideo} />
+                                                            <VideoCard key={item.id} item={item} siteConfig={siteData} priority={eagerItemIds.has(item.id)} />
                                                         ))}
                                                     </div>
                                                     {hasMore && (
@@ -1479,18 +1558,6 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                     open={showHarvestDialog}
                     onOpenChange={setShowHarvestDialog}
                     onHarvestCompleted={handleHarvestCompleted}
-                />
-            )}
-
-            {/* 页面单例视频播放弹窗：避免在 360+ 网格内直接重排 */}
-            {playingVideo && (
-                <VideoPlayerModal
-                    item={playingVideo}
-                    siteConfig={siteData}
-                    open={!!playingVideo}
-                    onOpenChange={(open) => {
-                        if (!open) setPlayingVideo(null)
-                    }}
                 />
             )}
 

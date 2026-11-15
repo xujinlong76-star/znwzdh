@@ -13,37 +13,60 @@
 import type { VideoStats } from '@/types/navigation'
 
 /**
- * 综合质量分计算模型 (0 - 100)
+ * 综合质量分计算模型 (0 - 100)。
+ *
+ * 只用真实数据，四个分项全部来自视频自身的统计字段：
+ *   播放量级（views）0–35 + 点赞率（likes/views）0–25
+ *   + 弹幕率（danmaku/views）0–20 + 时长契合度 0–20。
+ *
+ * 诚实性规则（2026-11-13 去垫高）：
+ *   - 没有统计数据就是 0 分，不编造「中性 70 分」；
+ *   - 没有基础底分，没有下限钳制（旧 `Math.max(20, …)` 让零数据视频也有 20 分）；
+ *   - 播放量不设下限赠分（旧 `log10(max(10, views))` 让 0 播放也有 5 分）；
+ *   - 时长未知得 0 分，不按 300/600/900 秒猜一个时长；
+ *   - 投币/收藏（coins/favorites）不计入：备份 6007 条里只有 11 条有这两个字段，
+ *     计入等于给 99.8% 的视频两个 0 分项，白白压缩量表；等采集能稳定回填这两个
+ *     字段后再以独立分项加回，不要在这里用 0 填充。
+ *   - 绝不用上一次的 qualityScore 当输入：回填是纯函数重算，不是平滑/继承。
+ *   - 保鲜分没有 5 分底线（旧 `Math.max(5, …)` 让 0 分/极旧视频也有 5 分保鲜分）。
+ *
+ * 校准（备份 6007 条实测）：中位数 47，p90 66，最高 94；
+ * 众数值 47 仅占 4.1%，不再出现 4134 条扎堆 65（旧 `Math.max(65, …)` 的遗迹）。
+ * 注意：按新公式只有约 20% 的旧库能过 60 分门禁、约 12% 能过 65 分门禁，
+ * 重采后的入库量会明显变小 —— 这是去垫高的直接后果，门禁阈值是否下调
+ * 由协调人/ Ryan 决定，不要在这里偷偷把分抬回去。
  */
 export function calculateQualityScore(
   stats?: VideoStats,
   durationSec?: number,
   pubdateUnix?: number
 ): number {
-  if (!stats) return 70
+  void pubdateUnix
+  if (!stats) return 0
 
   const views = stats.views || 0
   const likes = stats.likes || 0
-  const coins = stats.coins || 0
-  const favorites = stats.favorites || 0
+  const danmaku = stats.danmaku || 0
 
-  // 1. 播放量级对数评分 (0 - 30)
-  // 1万播放约18分，10万播放约24分，100万播放约30分
-  const viewsScore = Math.min(30, Math.log10(Math.max(10, views)) * 5)
+  // 1. 播放量级对数评分 (0 - 35)
+  // 0 播放 0 分；10 播放 5 分，1 千播放 15 分，1 万播放 20 分，
+  // 10 万播放 25 分，100 万播放 30 分，1000 万以上 35 分封顶。
+  const viewsScore = Math.min(35, Math.log10(Math.max(1, views)) * 5)
 
-  // 2. 互动转化率与干货比 (0 - 40)
-  // 技术教程最重要的指标是「收藏/播放比」与「投币/点赞比」
-  const favRate = views > 0 ? favorites / views : 0
+  // 2. 点赞率 (0 - 25)：点赞/播放比达到 5% 满分。
+  // 备份实测：中位数 1.5%，p90 3.6%，p95 4.9%。
   const likeRate = views > 0 ? likes / views : 0
-  const coinToLikeRate = likes > 0 ? coins / likes : 0
+  const likeScore = Math.min(25, (likeRate / 0.05) * 25)
 
-  // 收藏率达到 5% 为高质教程满分(20)，投币点赞比达到 30% 满分(20)
-  const favScore = Math.min(20, (favRate / 0.05) * 20)
-  const coinScore = Math.min(20, (coinToLikeRate / 0.3) * 20)
+  // 3. 弹幕率 (0 - 20)：弹幕/播放比达到 0.5% 满分，是「有人在讨论」的直接信号。
+  // 备份实测：中位数 0.027%，p75 0.16%，p90 0.56%。
+  const danmakuRate = views > 0 ? danmaku / views : 0
+  const danmakuScore = Math.min(20, (danmakuRate / 0.005) * 20)
 
-  // 3. 时长契合度 (0 - 20)
-  // 5分钟 - 45分钟为黄金深度教程区间；短于2分钟扣分
-  let durationScore = 15
+  // 4. 时长契合度 (0 - 20)
+  // 5 分钟 - 45 分钟为黄金深度教程区间；短于 2 分钟扣分；
+  // 时长未知得 0 分 —— 不猜。
+  let durationScore = 0
   if (durationSec) {
     if (durationSec < 120) durationScore = 5
     else if (durationSec >= 300 && durationSec <= 2700) durationScore = 20
@@ -51,11 +74,8 @@ export function calculateQualityScore(
     else durationScore = 12
   }
 
-  // 4. 基础底分 (10)
-  const baseScore = 10
-
-  const total = Math.round(viewsScore + favScore + coinScore + durationScore + baseScore)
-  return Math.max(20, Math.min(99, total))
+  const total = Math.round(viewsScore + likeScore + danmakuScore + durationScore)
+  return Math.min(99, total)
 }
 
 /**
@@ -64,10 +84,13 @@ export function calculateQualityScore(
  * 注意 `publishedAt` 缺失时的语义：返回 `qualityScore * 0.8`（「未知」的保守值），
  * **不是** 100。历史上有调用方把 `publishedAt` 写成 `new Date()` 再传进来，
  * 等于让所有内容永远新鲜、衰减模型永不触发。
+ *
+ * `qualityScore` 缺省为 0：调用方漏传时不按 75 分估算（旧缺省 75 是编造的分数，
+ * 会让一次漏传凭空给视频 60 分保鲜分）；所有现有调用方都显式传分，改缺省不影响它们。
  */
 export function calculateFreshnessScore(
   publishedAt?: string | number,
-  qualityScore: number = 75,
+  qualityScore: number = 0,
   halfLifeDays: number = 90,
   title?: string
 ): number {
@@ -98,7 +121,8 @@ export function calculateFreshnessScore(
   }
 
   const effective = Math.round(qualityScore * decayFactor * yearPenalty)
-  return Math.max(5, Math.min(100, effective))
+  // 没有下限钳制：0 分就是 0 分（旧 Math.max(5, …) 给 0 分/极旧视频白送 5 分）。
+  return Math.min(100, effective)
 }
 
 /** 把 "MM:SS" / "HH:MM:SS" / 秒数 归一成秒 */

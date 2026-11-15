@@ -8,7 +8,7 @@
  * 合并策略：按 siteId 取并集，createdAt 新者胜。
  */
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   addFavorite,
   listFavorites,
@@ -21,8 +21,10 @@ import {
   type HubFavoritesSyncPayload,
 } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
-import { recordGrowthEvent } from '@/lib/growth'
+import { recordGrowthEvent } from '@/lib/growth-lazy'
 import { mergeCloudFavorites } from '@/lib/favorites-merge'
+import { fingerprintUrl } from '@/lib/import-workbench'
+import { normalizeQuicklinkPrefix, validateQuicklink } from '@/lib/quicklinks'
 import { getIdentity } from '@/lib/identity'
 import {
   FAVORITES_STORAGE_KEY,
@@ -30,6 +32,54 @@ import {
   describeCorruptFavorites,
   parseFavorites,
 } from '@/lib/favorites-storage'
+import {
+  enterInbox,
+  markTriageRead,
+  promoteToPermanent,
+  readTriageSettings,
+  renewInbox,
+  resolveTriageStatus,
+  settleTriage,
+  type TriageSettings,
+} from '@/lib/favorites-triage'
+import {
+  readShelvedFavorites,
+  shelveItems,
+  unshelveItems,
+  writeShelvedFavorites,
+} from '@/lib/favorites-shelved'
+import {
+  addManualHibernated,
+  readManualHibernated,
+  removeManualHibernated,
+  writeManualHibernated,
+} from '@/lib/favorites-hibernation'
+/**
+ * 全局撤销（第 1 层：8 秒内存撤销）+ 回收站（第 2 层：30 天持久快照）。
+ * 删除与写回收站同一次 persist 语义内完成：先改 navhub.favorites.v1，
+ * persist 成功后再把快照推进回收站键——persist 失败时回收站里不留
+ * 「没删成」的快照；写回收站失败时删除仍执行，但 trashError
+ * 会把失败报出来（该条只能靠云端墓碑恢复，文案需诚实）。
+ */
+import {
+  UNDO_WINDOW_MS,
+  clearGlobalUndo,
+  newUndoBatchId,
+  newUndoId,
+  popGlobalUndo,
+  pushGlobalUndo,
+  type UndoEntry,
+} from '@/lib/undo-stack'
+import {
+  addToTrash,
+  insertRestoredFavorites,
+  pruneExpiredTrash,
+  readTrash,
+  removeFromTrash,
+  writeTrash,
+  type TrashedFavorite,
+  type TrashSource,
+} from '@/lib/favorites-trash'
 
 const KEY = FAVORITES_STORAGE_KEY
 
@@ -52,6 +102,25 @@ export interface LocalFavorite {
    * applyFavoriteDelta）都从本地缓存 spread 保留它，同步不会把它洗掉。
    */
   lastOpenedAt?: number
+  /**
+   * 参数化快捷链接（Quicklink，v1 本地 only）：
+   * quickPrefix 是归一后的前缀（小写、不含 `!`，如 gh），templateUrl 是
+   * 含恰好一个 `{q}` 的绝对 http(s) URL。href 保持站点本身地址，
+   * 不要把模板塞进 href。判定：templateUrl 存在当且仅当是 quicklink。
+   * 云端同步不带这两个字段（FavoriteSyncOp 与服务端 zod 只有
+   * siteId/folderId/note/tags），换设备会丢模板——已定，Phase 2 再做。
+   */
+  quickPrefix?: string
+  templateUrl?: string
+  /**
+   * 待读分流（v1 本地 only，不进同步 ops、不进云端）：
+   * triageStatus 缺失 = permanent（祖父规则：老收藏没有分流字段，
+   * 绝不能把存量收藏扫进 24 小时箱）；triageAt 是进入当前状态的毫秒时间戳，
+   * 缺失时回退 createdAt。云端合并（mergeCloudFavorites / applyFavoriteDelta）
+   * 都从本地缓存 spread 保留它，同步不会把它洗掉；云端新条目没有它 → permanent。
+   */
+  triageStatus?: 'inbox' | 'read' | 'permanent'
+  triageAt?: number
 }
 
 /**
@@ -76,12 +145,39 @@ function loadLocal(): { items: LocalFavorite[]; blocked: string | null } {
   return { items, blocked: corrupt ? describeCorruptFavorites() : null }
 }
 
-function saveLocal(items: LocalFavorite[]): void {
+function saveLocal(items: LocalFavorite[]): boolean {
   try {
     window.localStorage.setItem(KEY, JSON.stringify(items))
+    return true
   } catch {
-    // 存储满 / 隐私模式：内存态仍然有效，刷新丢失
+    // 存储满 / 隐私模式：内存态仍然有效，刷新丢失。
+    // 返回 false 让调用方按「写盘失败」处理——绝不能让调用方以为已落盘，
+    // 否则本机与云端会静默分叉（见 settleFavoritesOnLoad）。
+    return false
   }
+}
+
+export interface UpdateMetaOpts {
+  /** false = 不推撤销条（登录迁移重映射、删夹恢复等内部调用） */
+  pushUndo?: boolean
+  /** 撤销时刻（毫秒）：同步 add op 的 at 用它而不是 createdAt，否则 LWW
+   *  会被墓碑的 updated_at 挡掉，撤销在云端活不过来 */
+  restoreAt?: number
+  /** 移夹撤销条的主文案（调用方知道目标夹名时传，如 "已将 1 条收藏移至「X」"） */
+  undoLabel?: string
+  /** 移夹撤销条合并用的目标夹名（批量移夹合并后重算文案用） */
+  undoDetail?: string
+}
+
+export interface ClearOpts {
+  /** false = 不推撤销条（账号删除：云端已清空，撤销无意义）。
+   *  同时也不写回收站快照——账号删除只清收藏本体，绝不碰回收站键
+   *  navhub.favorites.trash.v1；trash 键本身绝不被清掉，旧快照保留。 */
+  pushUndo?: boolean
+  /** 清空时一并被清掉的夹子快照（clearCloud 还 setFolders([]) 时传） */
+  folders?: Array<{ id: string; name: string; sort: number; createdAt: number }>
+  /** 撤销清空时把夹子恢复回去（调用方提供 setFolders/setLocalFolders 闭包） */
+  restoreFolders?: (folders: Array<{ id: string; name: string; sort: number; createdAt: number }>) => void
 }
 
 export interface FavoritesApi {
@@ -96,19 +192,94 @@ export interface FavoritesApi {
   isFavorite: (siteId: string) => boolean
   toggle: (site: Omit<LocalFavorite, 'createdAt'>) => Promise<boolean>
   remove: (siteId: string) => void
+  /**
+   * 撤销最近一次可撤销操作（栈顶，8 秒窗口内）。
+   * 无条目 / 已过期时 ok=false；条消失 = 撤销失效（D1），后备是回收站 30 天。
+   */
+  undoLast: () => Promise<{ ok: boolean; message?: string }>
+  /** 回收站里的条目（本机，订阅 navhub_trash_updated 刷新） */
+  trashItems: TrashedFavorite[]
+  /** 回收站条数（收藏页角标用） */
+  trashCount: number
+  /** 最近一次写回收站失败的原因（配额满等）；有值时页面必须显示出来 */
+  trashError: string | null
+  /**
+   * 从回收站恢复：按原位插回（已有同站时跳过），置脏并记恢复时刻供同步
+   * LWW 用。返回实际恢复 / 跳过的 siteId（写不进去时 restored 为空）。
+   */
+  restoreFavorites: (
+    items: Array<LocalFavorite & { index?: number }>,
+  ) => { restored: string[]; skipped: string[] }
   /** 收藏管理：更新本地缓存的文件夹/备注（云端写入由调用方 best-effort 处理） */
-  updateMeta: (siteId: string, patch: { folderId?: string | null; note?: string | null; tags?: string[] | null }) => boolean
+  updateMeta: (siteId: string, patch: { folderId?: string | null; note?: string | null; tags?: string[] | null; quickPrefix?: string | null; templateUrl?: string | null }, opts?: UpdateMetaOpts) => boolean
   /**
    * 记一次「从重温入口打开」：只写本机 lastOpenedAt，不置脏、不调云端。
    * 打开时间是本机行为记录，不是收藏内容——推上云端没有消费方，还会让
    * 每次重温都产生一次无意义的同步 op。now 可注入（测试用确定时钟）。
+   * 待读分流：inbox 条目同时完成 inbox → read 跃迁（triageAt = now）；
+   * read 再打开不动（不续 30 天），permanent 打开不变。
    */
   recordOpened: (siteId: string, now?: number) => boolean
+  /** 待读分流：把一条收藏晋升到永久库（inbox/read → permanent，不可逆向自动降级） */
+  promoteFavorite: (siteId: string, now?: number) => boolean
+  /** 待读分流：待读箱内一键续期（triageAt = now，重新获得完整窗口，仍在 inbox） */
+  renewInbox: (siteId: string, now?: number) => boolean
+  /** 待读分流：手动移出（仅 inbox/read 进已移出区；写已移出区失败时不移出） */
+  shelveFavorite: (siteId: string, now?: number) => boolean
+  /**
+   * 待读分流：从已移出区恢复一条收藏。destination 默认 permanent；
+   * 选 inbox 时重新打上待读戳（分流开关关着时回落到 permanent）。
+   */
+  restoreShelved: (
+    siteId: string,
+    destination?: 'inbox' | 'permanent',
+    now?: number,
+  ) => { ok: boolean; error?: string }
+  /** 待读分流：从已移出区逐条真删除（调用方先二次确认） */
+  deleteShelved: (siteId: string) => boolean
+  /** 待读分流：清空已移出区（调用方先二次确认，文案写明不可恢复） */
+  clearShelved: () => boolean
+  /**
+   * 冬眠收藏：手动冬眠一条永久收藏（只写本机手动集合，不移出、不删除、
+   * 不置脏、不推云端）。待读箱 / 已读不参与——它们有自己的到期流转。
+   * 写不进去返回 false，收藏留在原处。
+   */
+  hibernateFavorite: (siteId: string, now?: number) => boolean
+  /**
+   * 冬眠收藏：唤醒一条收藏（移出手动集合 + 记一次打开，天数归零，
+   * 自动冬眠的同样靠打开唤醒）。写不进去返回 false，不留半截状态。
+   */
+  wakeFavorite: (siteId: string, now?: number) => boolean
+  /**
+   * 本次打开时结算移出的条数（>0 时页面要给用户一次可见提示，绝不静默）。
+   * 后续写入不重置它——横幅由页面自己的「知道了」状态关掉。
+   */
+  settledExpiredCount: number
+  /** 结算时写已移出区失败的原因（有值时收藏留在原处，页面要把原因显示出来） */
+  triageSettleError: string | null
   /** 删除收藏夹后批量置空 folderId（一次持久化 + 一次脏标记，T16） */
   clearFolderForItems: (siteIds: string[]) => boolean
   /** 登录同步成功后用云端列表整体替换本地（云端是事实源，避免删除被本地缓存复活） */
   replaceAll: (items: LocalFavorite[]) => boolean
-  clear: () => void
+  /**
+   * 清空全部收藏：进撤销条 + 回收站（D7：清空保留两步按钮确认，但确认后
+   * 同样进撤销条 + 回收站）。账号删除时传 { pushUndo: false }（云端已
+   * 清空，撤销无意义）；回收站快照照写，trash 键本身绝不被清掉。
+   */
+  clear: (opts?: ClearOpts) => void
+  /**
+   * 为下一次 clear() 登记「撤销时连夹子一起恢复」的快照。
+   *
+   * 为什么要拆成两次调用：清空云端入口的接线被 identity-ready 守卫钉死为
+   * 无参 `favorites.clear()`（见 app/favorites/page.tsx 的 clearCloud），
+   * 夹子快照不能再走 clear 的 opts 参数；改由本方法在 clear() 之前同步
+   * 登记，clear() 消费一次后即失效（与 opts 混用时 opts 优先）。
+   * 登记与 clear() 之间不许 await：否则别的 clear 可能先把它消费掉。
+   */
+  prepareClearRestore: (
+    folders: NonNullable<ClearOpts['folders']>,
+    restoreFolders: NonNullable<ClearOpts['restoreFolders']>,
+  ) => void
   /**
    * 用户显式重置：先把读不出来的原数据备份到隔离键，再写空列表。
    * 返回值说明备份到底成没成 —— 调用方要照着它措辞，不能一律说「已备份」
@@ -117,31 +288,540 @@ export interface FavoritesApi {
   resetLocal: () => { backedUp: boolean }
   exportJson: () => string
   /**
-   * `skippedInvalid`：被过滤掉的格式不完整条目数（缺 siteId/href）。
-   * 调用方必须把它报出来——否则「已导入 N 条」会把静默丢弃说成完整成功。
+   * `imported` 是本次实际新增数（第 2 批第 11 项诚实性修复：旧语义把
+   * “通过校验的条数”都算成新增，已存在 100 条再导同一文件也会报
+   * “已导入 100 条”）；`updated` 是指纹已存在、字段不同而被更新的
+   * 已存条目数；`alreadyExisted` 是已存在且内容一致被跳过的条数；
+   * `addedSiteIds` 是本次新增的 siteId，供导入撤销（favorite.import-batch）用。
+   * 合并键是指纹（fingerprintUrl，SSOT），siteId 生成本身不动。
    */
-  importJson: (json: string) => { ok: boolean; imported: number; skippedInvalid: number; error?: string }
+  importJson: (json: string) => {
+    ok: boolean
+    imported: number
+    updated: number
+    alreadyExisted: number
+    addedSiteIds: string[]
+    skippedInvalid: number
+    error?: string
+  }
 }
 
 /* ---------------------------- 模块级共享状态 ---------------------------- */
 
-type FavoritesSnapshot = { items: LocalFavorite[]; blocked: string | null }
+type FavoritesSnapshot = {
+  items: LocalFavorite[]
+  blocked: string | null
+  settledExpiredCount: number
+  triageSettleError: string | null
+  /** 最近一次写回收站失败的原因；null = 最近一次写回收站成功（或未写过） */
+  trashError: string | null
+}
 
 let sharedFavorites: LocalFavorite[] = []
 let sharedBlocked: string | null = null
-let favoritesSnapshot: FavoritesSnapshot = { items: sharedFavorites, blocked: sharedBlocked }
+let favoritesSnapshot: FavoritesSnapshot = {
+  items: sharedFavorites,
+  blocked: sharedBlocked,
+  settledExpiredCount: 0,
+  triageSettleError: null,
+  trashError: null,
+}
 let favoritesInitialized = false
 const favoritesListeners = new Set<() => void>()
 
 /**
  * 唯一写入口：更新模块状态并同步通知所有订阅实例。
  * snapshot 必须换新引用，useSyncExternalStore 才会判定为变更。
+ * settledExpiredCount / triageSettleError 不传时沿用旧值——日常写入
+ * （toggle / recordOpened …）不该把「本次打开结算移出了 N 条」的横幅悄悄清掉。
  */
-function applyLocalFavorites(next: { items: LocalFavorite[]; blocked: string | null }) {
+function applyLocalFavorites(next: {
+  items: LocalFavorite[]
+  blocked: string | null
+  settledExpiredCount?: number
+  triageSettleError?: string | null
+  trashError?: string | null
+}) {
   sharedFavorites = next.items
   sharedBlocked = next.blocked
-  favoritesSnapshot = { items: next.items, blocked: next.blocked }
+  favoritesSnapshot = {
+    items: next.items,
+    blocked: next.blocked,
+    settledExpiredCount: next.settledExpiredCount ?? favoritesSnapshot.settledExpiredCount,
+    triageSettleError: next.triageSettleError ?? favoritesSnapshot.triageSettleError,
+    trashError: next.trashError ?? favoritesSnapshot.trashError,
+  }
   for (const listener of favoritesListeners) listener()
+}
+
+/** 写回收站失败时把原因记进快照（页面必须显示出来，不能静默） */
+function reportTrashError(message: string | null): void {
+  applyLocalFavorites({ items: sharedFavorites, blocked: sharedBlocked, trashError: message })
+}
+
+/**
+ * 恢复时刻覆盖（撤销的 at 专用）。
+ *
+ * 为什么需要：同步 add op 的 at 默认取 f.createdAt；撤销恢复的条目在云端
+ * 是一块 updated_at=删除时刻的墓碑，createdAt 一定比它旧，LWW 会把这次
+ * add 直接跳过——撤销在云端活不过来，下次拉取又把本地恢复删掉。
+ * 所以撤销恢复时把 at 记成撤销时刻（Date.now()），同步时优先用它；
+ * 一次成功同步后清掉（已获云端确认，不再需要覆盖）。
+ * 落 localStorage：刷新后同步仍要靠它，内存态不够。
+ */
+const RESTORE_AT_KEY = 'navhub.favorites.restore-at.v1'
+
+export function readRestoreAtOverrides(): Record<string, number> {
+  try {
+    if (typeof window === 'undefined') return {}
+    const raw = window.localStorage.getItem(RESTORE_AT_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const out: Record<string, number> = {}
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v) && v > 0) out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function writeRestoreAtOverrides(next: Record<string, number>): void {
+  try {
+    if (typeof window === 'undefined') return
+    if (Object.keys(next).length === 0) window.localStorage.removeItem(RESTORE_AT_KEY)
+    else window.localStorage.setItem(RESTORE_AT_KEY, JSON.stringify(next))
+  } catch {
+    // 写不进去只影响「撤销后同步的 LWW 胜负」，本次会话内存态仍可用——
+    // 内存态没有第二份，所以这里不留内存后备：失败即按无覆盖处理，
+    // 调用方（同步）不会因此谎报成功。
+  }
+}
+
+function setRestoreAt(siteIds: string[], at: number): void {
+  if (siteIds.length === 0) return
+  const next = readRestoreAtOverrides()
+  for (const id of siteIds) next[id] = at
+  writeRestoreAtOverrides(next)
+}
+
+function clearRestoreAt(siteIds: string[]): void {
+  if (siteIds.length === 0) return
+  const next = readRestoreAtOverrides()
+  let changed = false
+  for (const id of siteIds) {
+    if (id in next) {
+      delete next[id]
+      changed = true
+    }
+  }
+  if (changed) writeRestoreAtOverrides(next)
+}
+
+/** 仅供测试隔离（生产代码不要调用） */
+export function __resetRestoreAtForTests(): void {
+  try {
+    if (typeof window !== 'undefined') window.localStorage.removeItem(RESTORE_AT_KEY)
+  } catch {
+    // 忽略
+  }
+}
+
+/**
+ * 模块级持久化（hook 的 persist 与撤销闭包共用同一份）：
+ * storageBlocked 时拒绝一切写入（含撤销写入），绝不覆盖原数据。
+ */
+function persistLocalFavorites(next: LocalFavorite[]): boolean {
+  if (sharedBlocked) return false
+  applyLocalFavorites({ items: next, blocked: sharedBlocked })
+  return saveLocal(next)
+}
+
+/**
+ * 删除前快照进回收站（写回收站先剪枝；失败只报 trashError，不拦删除）。
+ * 返回 false = 写回收站失败（删除本身仍继续，调用方不得因此回滚）。
+ */
+function snapshotToTrash(
+  removed: Array<{ item: LocalFavorite; index: number }>,
+  source: TrashSource,
+  batchId: string,
+  now: number,
+): boolean {
+  if (removed.length === 0) return true
+  const current = pruneExpiredTrash(readTrash(), now)
+  const next = addToTrash(
+    current,
+    removed.map((r) => ({ ...r.item, index: r.index, source })),
+    batchId,
+    now,
+    source,
+  )
+  if (!writeTrash(next)) {
+    reportTrashError('回收站写不进去（本机存储写不进去），这次删除只能靠云端墓碑恢复')
+    return false
+  }
+  reportTrashError(null)
+  return true
+}
+
+/** 把一批 siteId 从回收站里清掉（恢复成功后调用；失败不影响恢复本身） */
+function dropFromTrash(siteIds: string[]): void {
+  if (siteIds.length === 0) return
+  const state = readTrash()
+  let next = state
+  for (const id of siteIds) {
+    next = removeFromTrash(next, id).state
+  }
+  if (next !== state) writeTrash(next)
+}
+
+export type RemovedFavoriteSnapshot = { item: LocalFavorite; index: number }
+
+/** 仅供测试：直接设定模块级共享收藏（不走 React hook、不写盘） */
+export function __setSharedFavoritesForTests(items: LocalFavorite[], blocked: string | null = null): void {
+  applyLocalFavorites({ items, blocked, trashError: null })
+}
+
+/** 仅供测试：读模块级共享收藏 */
+export function __getSharedFavoritesForTests(): LocalFavorite[] {
+  return sharedFavorites
+}
+
+/** 仅供测试隔离：清空共享收藏 + 脏标记 + 恢复时刻覆盖 + 全局撤销栈 */
+export function __resetFavoritesForTests(): void {
+  sharedFavorites = []
+  sharedBlocked = null
+  favoritesSnapshot = { items: [], blocked: null, settledExpiredCount: 0, triageSettleError: null, trashError: null }
+  memoryDirty = null
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(DIRTY_KEY)
+      window.localStorage.removeItem(RESTORE_AT_KEY)
+    }
+  } catch {
+    // 忽略
+  }
+  clearGlobalUndo()
+}
+
+/**
+ * 删除的本地核心（remove / toggle 取消分支 / clear 共用）：
+ * 先改 navhub.favorites.v1，persist 成功后再把快照推进回收站键。
+ * persist 失败返回 null（调用方按「没删成」处理，不推云端、不推撤销条），
+ * 且回收站里不留「没删成」的快照；写回收站失败仍按现有设计报 trashError
+ * 不拦删除（该条只能靠云端墓碑恢复）。
+ * opts.expectedCreatedAt（11b CAS）：只删 createdAt 与期望一致的条目；
+ * 不一致的跳过（不删、不进 trash），计入返回值 skippedSiteIds。
+ * 无 opts 时与原来完全一致。
+ * 11b：persist 成功后内部 markDirty（实际删掉的 siteId 集）——脏标记
+ * 不能只靠 hook 的 remove / toggle 在外层补：pin 撤销（lib/home-batch-undo
+ * 的闭包）与导入撤销（bookmark-importer 的 undoRun）都直接调本函数，
+ * 调不到模块私有的 markDirty；若 pin 与撤销之间已发生过一次云端同步，
+ * 外层不补、内部不置脏，撤销的 remove op 就不会再派生、云端残留该收藏。
+ * 内部置脏对已有调用方无害：markDirty 是 Set 并集、幂等（重复调同一批
+ * id 不产生新 op）；hook 的 remove / toggle 在外层再调一次只是重复并集。
+ * 同步/恢复流程不调本函数（syncFavoritesToCloud、restoreRemovedFavorites、
+ * replaceAll 都不经过这里），不存在回声或脏标记污染；persist 失败返回
+ * null 之前不置脏（本地没变，绝不能推 remove 把云端收藏误删）。
+ * CAS 跳过的条目不置脏（只对 removedIds 置脏）。
+ */
+export function snapshotAndRemoveLocal(
+  siteIds: string[],
+  source: TrashSource,
+  opts?: { expectedCreatedAt?: ReadonlyMap<string, number> },
+): { removed: RemovedFavoriteSnapshot[]; batchId: string; skippedSiteIds: string[] } | null {
+  const now = Date.now()
+  const batchId = newUndoBatchId()
+  const ids = new Set(siteIds)
+  const expected = opts?.expectedCreatedAt
+  const removed: RemovedFavoriteSnapshot[] = []
+  const skippedSiteIds: string[] = []
+  sharedFavorites.forEach((item, index) => {
+    if (!ids.has(item.siteId)) return
+    // CAS：期望 createdAt 与现条目不一致 = 8 秒内该站已被删后重建，
+    // 删旧条目的撤销不能误删新条目，跳过（不删、不进 trash）。
+    if (expected?.has(item.siteId) && expected.get(item.siteId) !== item.createdAt) {
+      skippedSiteIds.push(item.siteId)
+      return
+    }
+    removed.push({ item, index })
+  })
+  const removedIds = new Set(removed.map((r) => r.item.siteId))
+  const next = sharedFavorites.filter((i) => !removedIds.has(i.siteId))
+  if (!persistLocalFavorites(next)) return null
+  // 11b：内部置脏（见本函数头注释）——只对实际删掉的 id 置脏，CAS 跳过的
+  // 不置脏；外层调用方再调一次 markDirty 是幂等重复并集，无害。
+  markDirty([...removedIds])
+  snapshotToTrash(removed, source, batchId, now)
+  return { removed, batchId, skippedSiteIds }
+}
+
+/**
+ * 批量新增的本地核心（pin 改走 store 的写入口，11b）：
+ * 按 siteId 对 sharedFavorites 做 dedup——已存在 → skipped，不写；
+ * 传入列表内重复的 siteId 同样只留第一次出现（先出现者胜）。
+ * 再按 URL 指纹（fingerprintUrl，SSOT，与导入路径同口径）做第二层 dedup：
+ * 同一站点经不同 URL 写法到达（如带 www / 带 utm 参数 / 尾斜杠 /
+ * http 与 https）指纹相同，只留第一次出现，其余进 skippedSiteIds。
+ * 指纹为空（非 http(s) 或非法 href，fingerprintUrl 返回 ''）时绝不按指纹去重，
+ * 只按 siteId dedup——空指纹之间不能互相撞上。
+ * 新条目整块前插（保持传入顺序在前，与旧逐站 unshift 的“后 pin 者在前”
+ * 不同：批量 pin 的展示顺序应与选中顺序一致）。
+ * 成功后 markDirty(addedIds)，下次同步自动推 add op；无新增时不写盘、
+ * 直接返回空 added（no-op 不应因存储不可用而失败）；persist 失败返回 null。
+ */
+export function addFavoritesLocal(
+  items: LocalFavorite[],
+): { added: LocalFavorite[]; skippedSiteIds: string[] } | null {
+  const existing = new Set(sharedFavorites.map((i) => i.siteId))
+  const existingFingerprints = new Set(
+    sharedFavorites.map((i) => fingerprintUrl(i.href)).filter((fp) => fp !== ''),
+  )
+  const added: LocalFavorite[] = []
+  const skippedSiteIds: string[] = []
+  for (const item of items) {
+    if (existing.has(item.siteId)) {
+      skippedSiteIds.push(item.siteId)
+      continue
+    }
+    const fp = fingerprintUrl(item.href)
+    if (fp !== '' && existingFingerprints.has(fp)) {
+      skippedSiteIds.push(item.siteId)
+      continue
+    }
+    existing.add(item.siteId)
+    if (fp !== '') existingFingerprints.add(fp)
+    added.push(item)
+  }
+  if (added.length === 0) return { added, skippedSiteIds }
+  const next = [...added, ...sharedFavorites]
+  if (!persistLocalFavorites(next)) return null
+  markDirty(added.map((i) => i.siteId))
+  return { added, skippedSiteIds }
+}
+
+/**
+ * 清空的本地核心（模块级：hook 的 clear 与测试共用同一份）：
+ * 顺序与 snapshotAndRemoveLocal 同款——先 persist([]) 清本体，成功后
+ * 再写回收站快照；persist 失败返回 null（调用方按「没清成」处理，
+ * 不推撤销条），回收站里不留「没清成」的快照。
+ * opts.pushUndo === false（账号删除）时绝不写回收站键：只清本体 +
+ * 置脏，回收站里的旧快照原样保留（清账号是另一回事）。
+ * 返回的 now 是快照与撤销条共用的时刻（createdAt/expiresAt 用它）。
+ */
+export function clearFavoritesLocal(
+  opts?: Pick<ClearOpts, 'pushUndo'>,
+): { removed: RemovedFavoriteSnapshot[]; batchId: string; now: number } | null {
+  const current = sharedFavorites
+  const siteIds = current.map((i) => i.siteId)
+  const removed: RemovedFavoriteSnapshot[] = current.map((item, index) => ({ item, index }))
+  const batchId = newUndoBatchId()
+  const now = Date.now()
+  // persist 成功才置脏：写不进说明本地没变，此时推 remove 会把云端收藏误删
+  if (!persistLocalFavorites([])) return null
+  markDirty(siteIds)
+  if (opts?.pushUndo !== false) snapshotToTrash(removed, 'clear', batchId, now)
+  return { removed, batchId, now }
+}
+
+/**
+ * 把一批已删收藏按原位插回（撤销 / 回收站恢复共用）。
+ * at 一律取撤销时刻 Date.now()，不能用原 createdAt（见 RESTORE_AT_KEY 注释）。
+ */
+export function restoreRemovedFavorites(
+  removed: RemovedFavoriteSnapshot[],
+  source: 'undo' | 'trash',
+): { ok: boolean; message?: string } {
+  if (sharedBlocked) return { ok: false, message: '本机存储不可用，恢复未完成' }
+  const next = insertRestoredFavorites(sharedFavorites, removed)
+  if (!persistLocalFavorites(next)) return { ok: false, message: '本机存储写不进去，恢复未完成' }
+  const ids = removed.map((r) => r.item.siteId)
+  markDirty(ids)
+  setRestoreAt(ids, Date.now())
+  if (source === 'undo') dropFromTrash(ids)
+  return { ok: true }
+}
+
+/** 构造一条删除撤销条目（单条 / 批量共用；0 条返回 null） */
+export function buildRemoveUndoEntry(
+  removed: RemovedFavoriteSnapshot[],
+  batchId: string,
+): UndoEntry | null {
+  if (removed.length === 0) return null
+  const now = Date.now()
+  const kind = removed.length === 1 ? 'favorite.remove' : 'favorite.remove-batch'
+  const label =
+    removed.length === 1
+      ? `已删除「${removed[0]!.item.title}」`
+      : `已删除 ${removed.length} 条收藏`
+  return {
+    id: newUndoId(),
+    batchId,
+    kind,
+    label,
+    createdAt: now,
+    expiresAt: now + UNDO_WINDOW_MS,
+    count: removed.length,
+    trashRef: { batchId, count: removed.length },
+    undo: async () => restoreRemovedFavorites(removed, 'undo'),
+  }
+}
+
+/**
+ * 更新一条收藏的 meta（模块级：hook 的 updateMeta 与撤销闭包共用同一份，
+ * 不捕获 hook 闭包——撤销闭包可能在若干次渲染后才执行，hook 的 persist
+ * 会过期，模块级的 persistLocalFavorites 读的是实时 sharedBlocked）。
+ *
+ * folderId 变化时推一条 move-folder 撤销（D3：改名进栈、备注/标签不进栈；
+ * quicklink 同样不进栈）。opts.pushUndo=false 供内部调用（登录迁移重
+ * 映射、删夹恢复）——那些不是用户的"移动"动作，推了反而污染撤销栈。
+ */
+export function applyMetaUpdate(
+  siteId: string,
+  patch: { folderId?: string | null; note?: string | null; tags?: string[] | null; quickPrefix?: string | null; templateUrl?: string | null },
+  opts?: UpdateMetaOpts,
+): boolean {
+  const current = sharedFavorites
+  const target = current.find((i) => i.siteId === siteId)
+  if (!target) return false
+  const fromFolderId = target.folderId ?? null
+  const folderChanged = patch.folderId !== undefined && patch.folderId !== fromFolderId
+  const next = current.map((i) => {
+    if (i.siteId !== siteId) return i
+    const merged: LocalFavorite = { ...i }
+    if (patch.folderId !== undefined) merged.folderId = patch.folderId
+    // note 允许显式传 null（清空备注），落盘统一成 undefined 保持旧数据形状；
+    // ≤200 字是云端契约，超长在写入端就截断（输入框另有 maxLength 双保险）
+    if (patch.note !== undefined) {
+      const note = patch.note ?? undefined
+      merged.note = note && note.length > 200 ? note.slice(0, 200) : note
+    }
+    // 标签（T22）：null = 清除；数组做与云端同口径的归一（≤8 个、各 ≤24 字符、去重）
+    if (patch.tags !== undefined) {
+      const tags = patch.tags ?? undefined
+      if (!tags || tags.length === 0) {
+        merged.tags = undefined
+      } else {
+        const seen = new Set<string>()
+        for (const raw of tags) {
+          if (typeof raw !== 'string') continue
+          const tag = raw.trim().slice(0, 24)
+          if (!tag) continue
+          seen.add(tag)
+          if (seen.size >= 8) break
+        }
+        merged.tags = seen.size > 0 ? [...seen] : undefined
+      }
+    }
+    // 快捷链接（v1 本地 only，不推云端）：null = 清除；前缀写入即归一
+    // （trim → 去首个 `!` → 小写），与 validateQuicklink 同口径。
+    // 模板合法性不在这里拦：录入 UI（/favorites）与 importJson 在写入前
+    // 已校验，quicklinkFromFavorite 在读取时还会再验一次。
+    if (patch.quickPrefix !== undefined) {
+      const normalized = patch.quickPrefix == null ? '' : normalizeQuicklinkPrefix(patch.quickPrefix)
+      merged.quickPrefix = normalized || undefined
+    }
+    if (patch.templateUrl !== undefined) {
+      const template = patch.templateUrl == null ? '' : patch.templateUrl.trim()
+      merged.templateUrl = template || undefined
+    }
+    return merged
+  })
+  const ok = persistLocalFavorites(next)
+  // 文件夹 / 备注也是待推变更：页面会 best-effort 直连云端，失败时批量同步是兜底通道
+  if (!ok) return false
+  markDirty([siteId])
+  // 撤销恢复的条目在云端是"刚被改过的行"：同步 add op 的 at 必须用撤销
+  // 时刻，否则 LWW 会把这次恢复当旧事件跳过。
+  if (opts?.restoreAt !== undefined) setRestoreAt([siteId], opts.restoreAt)
+  if (folderChanged && opts?.pushUndo !== false) {
+    const now = Date.now()
+    pushGlobalUndo({
+      id: newUndoId(),
+      batchId: newUndoBatchId(),
+      kind: 'favorite.move-folder',
+      label: opts?.undoLabel ?? '已移动 1 条收藏',
+      detail: opts?.undoDetail,
+      createdAt: now,
+      expiresAt: now + UNDO_WINDOW_MS,
+      count: 1,
+      undo: async () => {
+        const restored = applyMetaUpdate(siteId, { folderId: fromFolderId }, { pushUndo: false, restoreAt: Date.now() })
+        return restored
+          ? { ok: true }
+          : { ok: false, message: '这条收藏找不到了，移夹撤销未完成' }
+      },
+    })
+  }
+  return true
+}
+
+/** 已移出区有变化时通知订阅它的页面（收藏页角标、已移出视图）刷新计数 */
+function dispatchShelvedUpdated(): void {
+  try {
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('navhub_shelved_updated'))
+  } catch {
+    // 事件派发失败不阻断移出本身：页面下次挂载时会重读
+  }
+}
+
+/**
+ * 到期结算的编排（打开时跑一次，不靠后台任务；SSR 不跑——只在客户端 effect 里调用）：
+ * settleTriage 分区 → expired 逐条 shelveItems 进已移出区并写盘 →
+ * 每条走现有 remove 的墓碑路（置脏 + 云端 remove）→ survivors 一次 persist。
+ * 写已移出区失败时整批不移出：收藏留在原处，并把原因交回（页面要显示出来）。
+ * survivors 写盘失败时同样整批不移出：已移出区已写、云端 remove 尚未发出，
+ * 此时若返回 survivors，本机仍留过期项——与已移出区写失败同口径。
+ * 用户不开站就不过期——接受的语义，文案不承诺「准时」。
+ */
+function settleFavoritesOnLoad(
+  items: LocalFavorite[],
+  blocked: string | null,
+  now: number = Date.now(),
+  settings: TriageSettings = readTriageSettings(),
+): { items: LocalFavorite[]; expiredCount: number; error: string | null } {
+  // 存储读不出来时绝不能拿空列表/部分列表去覆盖：结算的前提是「读到了全量」
+  if (blocked) return { items, expiredCount: 0, error: null }
+  const { items: survivors, expired } = settleTriage(items, settings, now)
+  if (expired.length === 0) return { items, expiredCount: 0, error: null }
+  let shelved = readShelvedFavorites()
+  for (const item of expired) {
+    const originStatus = resolveTriageStatus(item, now)
+    shelved = shelveItems(
+      shelved,
+      item,
+      now,
+      originStatus === 'read' ? 'read' : 'inbox',
+      item.triageAt,
+    )
+  }
+  if (!writeShelvedFavorites(shelved)) {
+    return {
+      items,
+      expiredCount: 0,
+      error: '已移出区写不进去，过期待读还留在原处（本机存储写不进去，稍后再试）',
+    }
+  }
+  // survivors 一次 persist（不走逐条 remove：那会把同一份列表序列化 N 次）。
+  // 写盘失败时整批不移出：返回原列表 + 原因，跳过 markDirty / 云端 remove——
+  // 否则已移出区已写、云端已删，本机却仍留过期项，三端分叉。
+  if (!saveLocal(survivors)) {
+    return {
+      items,
+      expiredCount: 0,
+      error: '本机收藏写不进去，过期待读还留在原处（本机存储写不进去，稍后再试）',
+    }
+  }
+  // 到期是「移走」不是静默删除：云端也要删（墓碑路），否则换设备登录会把它复活
+  markDirty(expired.map((i) => i.siteId))
+  const identity = getIdentity()
+  if (identity) {
+    for (const item of expired) void removeFavorite(identity, item.siteId)
+  }
+  dispatchShelvedUpdated()
+  return { items: survivors, expiredCount: expired.length, error: null }
 }
 
 function subscribeFavorites(listener: () => void): () => void {
@@ -167,19 +847,45 @@ export function useFavorites(): FavoritesApi {
   const snap = useSyncExternalStore(subscribeFavorites, getFavoritesSnapshot, getFavoritesSnapshot)
   const { items, blocked: storageBlocked } = snap
   const [ready, setReady] = useState(() => favoritesInitialized)
+  /** 回收站版本号：navhub_trash_updated / storage 事件来时刷新 trashItems */
+  const [trashVersion, setTrashVersion] = useState(0)
+  const trashItems = useMemo(() => readTrash().items, [trashVersion])
+  const trashCount = trashItems.length
 
   useEffect(() => {
     if (!favoritesInitialized) {
       favoritesInitialized = true
-      applyLocalFavorites(loadLocal())
+      // 初始化读盘后跑一次到期结算（打开时结算，不靠后台任务；SSR 不跑）：
+      // 过期项分区进已移出区、survivors 原样返回，一次 persist。
+      // 所有消费方共用同一份已结算的模块状态。
+      const loaded = loadLocal()
+      const settled = settleFavoritesOnLoad(loaded.items, loaded.blocked)
+      applyLocalFavorites({
+        items: settled.items,
+        blocked: loaded.blocked,
+        settledExpiredCount: settled.expiredCount,
+        triageSettleError: settled.error,
+      })
+      // 回收站启动剪枝一次（写回即删，不弹确认；只剪本地视图，
+      // 云端墓碑的物理清理 v1 不做，D6）。
+      const trash = readTrash()
+      const pruned = pruneExpiredTrash(trash)
+      if (pruned.items.length !== trash.items.length || pruned.folders.length !== trash.folders.length) {
+        writeTrash(pruned)
+      }
     }
     setReady(true)
     const refresh = () => applyLocalFavorites(loadLocal())
+    const refreshTrash = () => setTrashVersion((v) => v + 1)
     window.addEventListener('navhub_workbench_updated', refresh)
     window.addEventListener('storage', refresh)
+    window.addEventListener('storage', refreshTrash)
+    window.addEventListener('navhub_trash_updated', refreshTrash)
     return () => {
       window.removeEventListener('navhub_workbench_updated', refresh)
       window.removeEventListener('storage', refresh)
+      window.removeEventListener('storage', refreshTrash)
+      window.removeEventListener('navhub_trash_updated', refreshTrash)
     }
   }, [])
 
@@ -188,8 +894,9 @@ export function useFavorites(): FavoritesApi {
       // 读不出来就不写：宁可这次改动不生效，也不能覆盖掉用户原有的收藏
       if (storageBlocked) return false
       applyLocalFavorites({ items: next, blocked: storageBlocked })
-      saveLocal(next)
-      return true
+      // 写盘失败也要如实返回 false：调用方据此决定是否置脏 / 调云端，
+      // 否则本机没落盘却推了云端变更，两端分叉。
+      return saveLocal(next)
     },
     [storageBlocked],
   )
@@ -235,14 +942,30 @@ export function useFavorites(): FavoritesApi {
     // 读共享状态（同步更新，包含本帧内已发生的写入），避免快速双击时两次都读到旧状态
     const current = sharedFavorites
     const existed = current.some((i) => i.siteId === site.siteId)
-    const next = existed
-      ? current.filter((i) => i.siteId !== site.siteId)
-      : [{ ...site, createdAt: Date.now() }, ...current]
+    const now = Date.now()
+    // 待读分流：分流开关开着时新收进待读箱（inbox 戳 + triageAt = now）；
+    // 关掉时新收藏直接进 permanent；老收藏不受影响（祖父规则）。
+    const fresh: LocalFavorite = readTriageSettings().enabled
+      ? enterInbox({ ...site, createdAt: now }, now)
+      : { ...site, createdAt: now }
+    if (existed) {
+      // 取消收藏 = 删除：先快照进回收站、再改本地、再推撤销条（与 remove 同路）
+      const removed = snapshotAndRemoveLocal([site.siteId], 'single')
+      // 写不进去就返回未改变的状态：调用方据此提示，界面不会出现「点了但没变化」
+      if (!removed) return existed
+      const entry = buildRemoveUndoEntry(removed.removed, removed.batchId)
+      if (entry) pushGlobalUndo(entry)
+      markDirty([site.siteId])
+      const identity = getIdentity()
+      if (identity) await removeFavorite(identity, site.siteId)
+      return !existed
+    }
+    const next = [fresh, ...current]
     // 写不进去就返回未改变的状态：调用方据此提示，界面不会出现「点了但没变化」
     if (!persist(next)) return existed
 
     // 真的新增收藏时记一次成长经验（取消收藏不记）；siteId 进收藏净增锁，同站终身只给 1 次
-    if (!existed) recordGrowthEvent('favorite_add', { siteId: site.siteId })
+    recordGrowthEvent('favorite_add', { siteId: site.siteId })
 
     // 新增与取消都是待推变更：新增在本地列表里（同步推 add），
     // 取消后已不在本地列表（同步推 remove）——同一条置脏路径覆盖两种 op
@@ -251,65 +974,210 @@ export function useFavorites(): FavoritesApi {
     // 异步尝试同步到云端（失败不影响本地态——离线优先）
     const identity = getIdentity()
     if (identity) {
-      if (existed) await removeFavorite(identity, site.siteId)
-      else await addFavorite(identity, site.siteId)
+      await addFavorite(identity, site.siteId)
     }
     return !existed
   }, [persist])
 
   const remove = useCallback((siteId: string) => {
-    if (!persist(sharedFavorites.filter((i) => i.siteId !== siteId))) return
+    // 删除：先快照进回收站、再改本地、再推撤销条；写不进去整步不执行
+    const removed = snapshotAndRemoveLocal([siteId], 'single')
+    if (!removed) return
+    const entry = buildRemoveUndoEntry(removed.removed, removed.batchId)
+    if (entry) pushGlobalUndo(entry)
     // 本地已删：siteId 留在脏集合里、已不在本地列表，同步时生成 remove op 让云端也删
     markDirty([siteId])
     const identity = getIdentity()
     if (identity) void removeFavorite(identity, siteId)
-  }, [persist])
+  }, [])
 
   const recordOpened = useCallback((siteId: string, now: number = Date.now()) => {
     const current = sharedFavorites
     if (!current.some((i) => i.siteId === siteId)) return false
     // 只有「打开时间」变了：persist 写本机即可，刻意不 markDirty、不调云端
     //（见接口注释）。写不进去（存储被拦）时返回 false，调用方不假装记下了。
-    return persist(current.map((i) => (i.siteId === siteId ? { ...i, lastOpenedAt: now } : i)))
+    // 待读分流：inbox 条目同时 inbox → read（markTriageRead）；read 再打开不动，
+    // permanent 打开不变。调用点包括 /favorites 主列表卡片点击（2026-11-15 起）：
+    // 在待读筛选视图下点一张 inbox 卡会使其立即变为 read、从当前视图消失——
+    // 有意的语义（打开 = 读过），见 lib/favorites-triage。
+    return persist(
+      current.map((i) => (i.siteId === siteId ? { ...markTriageRead(i, now), lastOpenedAt: now } : i)),
+    )
   }, [persist])
 
-  const updateMeta = useCallback((siteId: string, patch: { folderId?: string | null; note?: string | null; tags?: string[] | null }) => {
+  /** 待读分流：晋升到永久库（本机私有字段变化，不置脏、不推云端） */
+  const promoteFavorite = useCallback((siteId: string, now: number = Date.now()) => {
+    const current = sharedFavorites
+    const target = current.find((i) => i.siteId === siteId)
+    if (!target || resolveTriageStatus(target, now) === 'permanent') return false
+    return persist(current.map((i) => (i.siteId === siteId ? promoteToPermanent(i) : i)))
+  }, [persist])
+
+  /** 待读分流：待读箱内一键续期（本机私有字段变化，不置脏、不推云端） */
+  const renewInboxItem = useCallback((siteId: string, now: number = Date.now()) => {
+    const current = sharedFavorites
+    const target = current.find((i) => i.siteId === siteId)
+    if (!target || resolveTriageStatus(target, now) !== 'inbox') return false
+    return persist(current.map((i) => (i.siteId === siteId ? renewInbox(i, now) : i)))
+  }, [persist])
+
+  /**
+   * 待读分流：手动移出（仅 inbox/read）。编排与到期结算同款：
+   * 先写已移出区，写不进去就不移出；再从活跃列表移除并走 remove 墓碑路。
+   * persist 写不进去时把刚写入的已移出记录撤回，避免两边不一致。
+   */
+  const shelveFavorite = useCallback((siteId: string, now: number = Date.now()) => {
+    const current = sharedFavorites
+    const target = current.find((i) => i.siteId === siteId)
+    if (!target) return false
+    const status = resolveTriageStatus(target, now)
+    if (status !== 'inbox' && status !== 'read') return false
+    const nextShelved = shelveItems(readShelvedFavorites(), target, now, status, target.triageAt)
+    if (!writeShelvedFavorites(nextShelved)) return false
+    if (!persist(current.filter((i) => i.siteId !== siteId))) {
+      writeShelvedFavorites(readShelvedFavorites().filter((i) => i.siteId !== siteId))
+      return false
+    }
+    markDirty([siteId])
+    const identity = getIdentity()
+    if (identity) void removeFavorite(identity, siteId)
+    dispatchShelvedUpdated()
+    return true
+  }, [persist])
+
+  /**
+   * 待读分流：从已移出区恢复。先把记录从已移出区取出并写盘，
+   * 再把收藏原文放回活跃列表（恢复默认进永久库；选 inbox 时重新打待读戳，
+   * 分流开关关着时回落到 permanent）。放回写不进去时把记录写回已移出区。
+   */
+  const restoreShelved = useCallback((
+    siteId: string,
+    destination: 'inbox' | 'permanent' = 'permanent',
+    now: number = Date.now(),
+  ): { ok: boolean; error?: string } => {
+    const { items: remaining, restored } = unshelveItems(readShelvedFavorites(), siteId)
+    if (!restored) return { ok: false, error: '这条已移出记录找不到了' }
+    if (!writeShelvedFavorites(remaining)) {
+      return { ok: false, error: '已移出区写不进去，恢复未完成' }
+    }
+    const base: LocalFavorite = {
+      siteId: restored.siteId,
+      title: restored.title,
+      href: restored.href,
+      icon: restored.icon,
+      description: restored.description,
+      note: restored.note,
+      tags: restored.tags,
+      folderId: restored.folderId,
+      createdAt: restored.createdAt,
+      quickPrefix: restored.quickPrefix,
+      templateUrl: restored.templateUrl,
+    }
+    const entry =
+      destination === 'inbox' && readTriageSettings().enabled ? enterInbox(base, now) : base
+    const current = sharedFavorites
+    const next = current.some((i) => i.siteId === siteId)
+      ? current.map((i) => (i.siteId === siteId ? entry : i))
+      : [entry, ...current]
+    if (!persist(next)) {
+      // 放回失败：把记录写回已移出区，收藏没有丢
+      writeShelvedFavorites(shelveItems(remaining, restored, now, restored.originStatus, restored.originTriageAt))
+      return { ok: false, error: '收藏写不进去，恢复未完成（本机存储写不进去）' }
+    }
+    markDirty([siteId])
+    dispatchShelvedUpdated()
+    return { ok: true }
+  }, [persist])
+
+  /** 待读分流：从已移出区逐条真删除（调用方先二次确认） */
+  const deleteShelved = useCallback((siteId: string) => {
+    const current = readShelvedFavorites()
+    if (!current.some((i) => i.siteId === siteId)) return false
+    const ok = writeShelvedFavorites(current.filter((i) => i.siteId !== siteId))
+    if (ok) dispatchShelvedUpdated()
+    return ok
+  }, [])
+
+  /** 待读分流：清空已移出区（调用方先二次确认，文案写明不可恢复） */
+  const clearShelved = useCallback(() => {
+    const ok = writeShelvedFavorites([])
+    if (ok) dispatchShelvedUpdated()
+    return ok
+  }, [])
+
+  /**
+   * 冬眠收藏：手动冬眠一条永久收藏。只写本机手动集合（lib/favorites-hibernation），
+   * 不碰收藏本体、不置脏、不推云端——冬眠是状态，不是删除也不是移出。
+   * 待读箱 / 已读不参与（有自己的到期流转）；写不进去返回 false。
+   */
+  const hibernateFavorite = useCallback((siteId: string, now: number = Date.now()) => {
+    const current = sharedFavorites
+    const target = current.find((i) => i.siteId === siteId)
+    if (!target) return false
+    if (resolveTriageStatus(target, now) !== 'permanent') return false
+    return writeManualHibernated(addManualHibernated(readManualHibernated(), siteId, now))
+  }, [])
+
+  /**
+   * 冬眠收藏：唤醒一条收藏。先移出手动集合，再记一次打开（recordOpened，
+   * 天数归零——自动冬眠的同样靠这一次打开脱离冬眠）。打开写不进去时把
+   * 手动冬眠写回去，避免「集合里没了、打开又没记上」的半截状态。
+   */
+  const wakeFavorite = useCallback((siteId: string, now: number = Date.now()) => {
     const current = sharedFavorites
     if (!current.some((i) => i.siteId === siteId)) return false
-    const next = current.map((i) => {
-      if (i.siteId !== siteId) return i
-      const merged: LocalFavorite = { ...i }
-      if (patch.folderId !== undefined) merged.folderId = patch.folderId
-      // note 允许显式传 null（清空备注），落盘统一成 undefined 保持旧数据形状；
-      // ≤200 字是云端契约，超长在写入端就截断（输入框另有 maxLength 双保险）
-      if (patch.note !== undefined) {
-        const note = patch.note ?? undefined
-        merged.note = note && note.length > 200 ? note.slice(0, 200) : note
-      }
-      // 标签（T22）：null = 清除；数组做与云端同口径的归一（≤8 个、各 ≤24 字符、去重）
-      if (patch.tags !== undefined) {
-        const tags = patch.tags ?? undefined
-        if (!tags || tags.length === 0) {
-          merged.tags = undefined
-        } else {
-          const seen = new Set<string>()
-          for (const raw of tags) {
-            if (typeof raw !== 'string') continue
-            const tag = raw.trim().slice(0, 24)
-            if (!tag) continue
-            seen.add(tag)
-            if (seen.size >= 8) break
-          }
-          merged.tags = seen.size > 0 ? [...seen] : undefined
-        }
-      }
-      return merged
-    })
-    const ok = persist(next)
-    // 文件夹 / 备注也是待推变更：页面会 best-effort 直连云端，失败时批量同步是兜底通道
-    if (ok) markDirty([siteId])
-    return ok
+    const { items: remaining, removed } = removeManualHibernated(readManualHibernated(), siteId)
+    if (removed && !writeManualHibernated(remaining)) return false
+    if (!recordOpened(siteId, now)) {
+      if (removed) writeManualHibernated(addManualHibernated(remaining, siteId, now))
+      return false
+    }
+    return true
+  }, [recordOpened])
+
+  /**
+   * 更新一条收藏的 meta（实现在模块级 applyMetaUpdate：撤销闭包共用，
+   * 不捕获 hook 闭包）。folderId 变化推 move-folder 撤销；备注/标签/
+   * quicklink 不进栈（D3）。opts.pushUndo=false 供内部调用。
+   */
+  const updateMeta = useCallback((siteId: string, patch: { folderId?: string | null; note?: string | null; tags?: string[] | null; quickPrefix?: string | null; templateUrl?: string | null }, opts?: UpdateMetaOpts) => {
+    return applyMetaUpdate(siteId, patch, opts)
+  }, [])
+
+  /**
+   * 从回收站恢复：按原位插回（index 是删除前下标；已有同站时跳过），
+   * 置脏并记恢复时刻供同步 LWW 用。写不进去时 restored 为空。
+   */
+  const restoreFavorites = useCallback((items: Array<LocalFavorite & { index?: number }>) => {
+    if (items.length === 0) return { restored: [] as string[], skipped: [] as string[] }
+    const current = sharedFavorites
+    const restored = items.filter((i) => !current.some((c) => c.siteId === i.siteId))
+    const next = insertRestoredFavorites(
+      current,
+      items.map((item, k) => ({ item, index: item.index ?? current.length + k })),
+    )
+    if (!persist(next)) {
+      return { restored: [] as string[], skipped: items.map((i) => i.siteId) }
+    }
+    const ids = restored.map((i) => i.siteId)
+    markDirty(ids)
+    setRestoreAt(ids, Date.now())
+    return {
+      restored: ids,
+      skipped: items.filter((i) => !ids.includes(i.siteId)).map((i) => i.siteId),
+    }
   }, [persist])
+
+  /** 撤销最近一次可撤销操作（栈顶，8 秒窗口内；过期/无条目时 ok=false） */
+  const undoLast = useCallback(async (): Promise<{ ok: boolean; message?: string }> => {
+    const entry = popGlobalUndo()
+    if (!entry) return { ok: false, message: '没有可撤销的操作' }
+    try {
+      return await entry.undo()
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : '撤销失败' }
+    }
+  }, [])
 
   /**
    * 删除收藏夹后批量置空 folderId（T16）：一次 persist + 一次脏标记，
@@ -333,25 +1201,87 @@ export function useFavorites(): FavoritesApi {
     return ok
   }, [persist])
 
-  const clear = useCallback(() => {
+  /** 下一次 clear() 时随撤销恢复的夹子快照（prepareClearRestore 登记，clear 消费一次）。 */
+  const pendingClearFolderRestoreRef = useRef<{
+    folders: NonNullable<ClearOpts['folders']>
+    restoreFolders: NonNullable<ClearOpts['restoreFolders']>
+  } | null>(null)
+  const prepareClearRestore = useCallback(
+    (
+      folders: NonNullable<ClearOpts['folders']>,
+      restoreFolders: NonNullable<ClearOpts['restoreFolders']>,
+    ) => {
+      pendingClearFolderRestoreRef.current = { folders, restoreFolders }
+    },
+    [],
+  )
+
+  const clear = useCallback((opts?: ClearOpts) => {
     // 与 replaceAll 的区别：clear 是「收藏被清空」，云端也必须删掉。
     // 把当前所有 siteId 置脏——它们随即不在本地列表，同步时走 remove ops
-    // （与 toggle 取消收藏同一条路径）。先取到列表再 persist，否则读到的是空数组。
-    const siteIds = sharedFavorites.map((i) => i.siteId)
-    // persist 成功才置脏：写不进说明本地没变，此时推 remove 会把云端收藏误删
-    if (persist([])) markDirty(siteIds)
-  }, [persist])
+    // （与 toggle 取消收藏同一条路径）。本地清空（persist + 置脏 + 回收站
+    // 快照）走模块级 clearFavoritesLocal：pushUndo:false（账号删除）时
+    // 绝不写回收站键；persist 失败时回收站里不留「没清成」的快照。
+    // trash 键本身绝不被清掉：账号删除清的是收藏本体，清账号是另一回事。
+    // 夹子快照：opts 优先，否则取 prepareClearRestore 登记的一次性快照。
+    const pendingFolderRestore = pendingClearFolderRestoreRef.current
+    pendingClearFolderRestoreRef.current = null
+    const result = clearFavoritesLocal(opts)
+    if (!result) return
+    const { removed, batchId, now } = result
+    if (opts?.pushUndo === false || removed.length === 0) return
+    const foldersSnapshot = opts?.folders ?? pendingFolderRestore?.folders
+    const restoreFolders = opts?.restoreFolders ?? pendingFolderRestore?.restoreFolders
+    pushGlobalUndo({
+      id: newUndoId(),
+      batchId,
+      kind: 'favorite.remove-batch',
+      label: `已清空全部收藏（${removed.length} 条）`,
+      createdAt: now,
+      expiresAt: now + UNDO_WINDOW_MS,
+      count: removed.length,
+      trashRef: { batchId, count: removed.length },
+      undo: async () => {
+        const restoreResult = restoreRemovedFavorites(removed, 'undo')
+        if (!restoreResult.ok) return restoreResult
+        if (foldersSnapshot && restoreFolders) restoreFolders(foldersSnapshot)
+        return { ok: true }
+      },
+    })
+  }, [])
 
-  const exportJson = useCallback(() => JSON.stringify({ version: 1, items: sharedFavorites }, null, 2), [])
+  /**
+   * 导出 v1 不带分流字段（已定）：triageStatus / triageAt 是本机流转状态，
+   * 导出文件是旧存量——导入时一律进 permanent，带出去没有意义。
+   */
+  const exportJson = useCallback(() => {
+    const items = sharedFavorites.map((f) => {
+      const copy = { ...f }
+      delete copy.triageStatus
+      delete copy.triageAt
+      return copy
+    })
+    return JSON.stringify({ version: 1, items }, null, 2)
+  }, [])
 
   const importJson = useCallback((json: string) => {
     // 存储读不出来时导入同样是写入：先拦住，并把原因作为错误返回（页面会显示）
-    if (storageBlocked) return { ok: false, imported: 0, skippedInvalid: 0, error: storageBlocked }
+    if (storageBlocked) return { ok: false, imported: 0, updated: 0, alreadyExisted: 0, addedSiteIds: [], skippedInvalid: 0, error: storageBlocked }
     try {
       const parsed = JSON.parse(json)
       const incoming: LocalFavorite[] = Array.isArray(parsed) ? parsed : parsed?.items
-      if (!Array.isArray(incoming)) return { ok: false, imported: 0, skippedInvalid: 0, error: '格式不正确' }
-      const accepted = incoming.filter((i) => i && typeof i.siteId === 'string' && typeof i.href === 'string')
+      if (!Array.isArray(incoming)) return { ok: false, imported: 0, updated: 0, alreadyExisted: 0, addedSiteIds: [], skippedInvalid: 0, error: '格式不正确' }
+      const accepted = incoming.filter((i) => {
+        if (!i || typeof i.siteId !== 'string' || typeof i.href !== 'string') return false
+        // 模板非法整条计入 skippedInvalid：带 templateUrl 就必须配有效前缀
+        // 且模板本身过 validateQuicklink（缺 {q} / javascript: / 域名里有
+        // {q} / 超长 / 含控制字符都算非法），而不是悄悄丢掉模板留一条
+        // 「看起来导入成功」的收藏。无模板的条目不受影响。
+        const templateUrl = typeof i.templateUrl === 'string' ? i.templateUrl.trim() : ''
+        if (!templateUrl) return true
+        if (typeof i.quickPrefix !== 'string') return false
+        return validateQuicklink({ prefix: i.quickPrefix, templateUrl }).ok
+      })
       const skippedInvalid = incoming.length - accepted.length
       const valid = accepted
         // note 契约 ≤200 字（云端与服务端 zod 同口径）：导入文件可能带更长的
@@ -361,7 +1291,16 @@ export function useFavorites(): FavoritesApi {
         // 标签（T22）：导入文件可能带超限标签，落库前归一（≤8 个、各 ≤24 字符）
         .map((i): LocalFavorite => {
           const note = typeof i.note === 'string' && i.note.length > 200 ? i.note.slice(0, 200) : i.note
-          if (!Array.isArray(i.tags) || i.tags.length === 0) return { ...i, note, tags: undefined }
+          // 快捷链接：无模板时孤零零的前缀没有意义，直接去掉；
+          // 有模板时前缀归一（与 updateMeta 同口径），模板原样保留
+          //（合法性已在 accepted 过滤器里验过）。
+          const templateUrl = typeof i.templateUrl === 'string' ? i.templateUrl.trim() : ''
+          const quickPrefix = templateUrl ? normalizeQuicklinkPrefix(i.quickPrefix ?? '') : ''
+          const quicklinkFields = {
+            quickPrefix: quickPrefix || undefined,
+            templateUrl: templateUrl || undefined,
+          }
+          if (!Array.isArray(i.tags) || i.tags.length === 0) return { ...i, note, tags: undefined, ...quicklinkFields, triageStatus: undefined, triageAt: undefined }
           const seen = new Set<string>()
           for (const raw of i.tags) {
             if (typeof raw !== 'string') continue
@@ -370,23 +1309,109 @@ export function useFavorites(): FavoritesApi {
             seen.add(tag)
             if (seen.size >= 8) break
           }
-          return { ...i, note, tags: seen.size > 0 ? [...seen] : undefined }
+          // 导入的条目是旧存量，一律进 permanent：文件里带的分流字段
+          // （哪怕是别的设备导出的）也不能把一条旧收藏塞进 24 小时箱。
+          return { ...i, note, tags: seen.size > 0 ? [...seen] : undefined, ...quicklinkFields, triageStatus: undefined, triageAt: undefined }
         })
-      const merged = [...valid]
-      for (const ex of sharedFavorites) {
-        if (!merged.some((i) => i.siteId === ex.siteId)) merged.push(ex)
+      // 合并键是指纹（SSOT）：同一站带 utm / www / http 与不带判同一条，
+      // 绝不按 siteId（原始 href 的 djb2）重复入库。siteId 生成本身不动。
+      // 同指纹已存在时：字段一致算 alreadyExisted；标题/标签/文件夹等
+      // 不同算 updated（原地更新已存条目，保留其 siteId/createdAt）。
+      const merged: LocalFavorite[] = [...sharedFavorites]
+      const byFingerprint = new Map<string, number>()
+      const bySiteId = new Map<string, number>()
+      sharedFavorites.forEach((ex, index) => {
+        const fp = fingerprintUrl(ex.href)
+        if (fp && !byFingerprint.has(fp)) byFingerprint.set(fp, index)
+        if (!bySiteId.has(ex.siteId)) bySiteId.set(ex.siteId, index)
+      })
+      let imported = 0
+      let updated = 0
+      let alreadyExisted = 0
+      // 指纹算不出来的条目（非 http(s)）也计入 skippedInvalid，但不改上面的 const
+      let extraSkippedInvalid = 0
+      const addedSiteIds: string[] = []
+      const sameFields = (a: LocalFavorite, b: LocalFavorite) =>
+        a.title === b.title &&
+        fingerprintUrl(a.href) === fingerprintUrl(b.href) &&
+        (a.description ?? '') === (b.description ?? '') &&
+        (a.note ?? '') === (b.note ?? '') &&
+        (a.folderId ?? null) === (b.folderId ?? null) &&
+        (a.tags ?? []).join('\u0001') === (b.tags ?? []).join('\u0001') &&
+        (a.quickPrefix ?? '') === (b.quickPrefix ?? '') &&
+        (a.templateUrl ?? '') === (b.templateUrl ?? '')
+      for (const item of valid) {
+        const fp = fingerprintUrl(item.href)
+        if (!fp) {
+          extraSkippedInvalid++
+          continue
+        }
+        const at = byFingerprint.get(fp) ?? bySiteId.get(item.siteId)
+        if (at !== undefined) {
+          const existing = merged[at]!
+          if (sameFields(existing, item)) {
+            alreadyExisted++
+          } else {
+            merged[at] = { ...existing, ...item, siteId: existing.siteId, createdAt: existing.createdAt }
+            updated++
+          }
+          continue
+        }
+        merged.push(item)
+        byFingerprint.set(fp, merged.length - 1)
+        bySiteId.set(item.siteId, merged.length - 1)
+        imported++
+        addedSiteIds.push(item.siteId)
       }
-      persist(merged)
+      // persist 失败（quota / 存储不可用）必须如实返回 ok:false：
+      // 未落盘的 chunk 绝不能被汇总报成成功；且失败时不置脏——没存进
+      // 去的条目没有待推变更，置脏只会让同步去推一批本地没有的收藏。
+      // （persist 内部先更新内存态再写盘：返回 false 时调用方按“没写成”
+      // 处理，不把这批计入成功，内存态与磁盘的不一致由下次读盘纠正。）
+      if (!persist(merged)) {
+        return { ok: false, imported: 0, updated: 0, alreadyExisted: 0, addedSiteIds: [], skippedInvalid: skippedInvalid + extraSkippedInvalid, error: '本地存储不可用' }
+      }
       // 导入进来的条目都是待推变更：云端多半没有它们（换设备导入的场景），
       // 或本地这份是更新版——不进脏集合的话同步永远不会推
       markDirty(valid.map((i) => i.siteId))
-      return { ok: true, imported: valid.length, skippedInvalid }
+      return { ok: true, imported, updated, alreadyExisted, addedSiteIds, skippedInvalid: skippedInvalid + extraSkippedInvalid }
     } catch (err) {
-      return { ok: false, imported: 0, skippedInvalid: 0, error: err instanceof Error ? err.message : '解析失败' }
+      return { ok: false, imported: 0, updated: 0, alreadyExisted: 0, addedSiteIds: [], skippedInvalid: 0, error: err instanceof Error ? err.message : '解析失败' }
     }
   }, [persist, storageBlocked])
 
-  return { items, ready, storageBlocked, isFavorite, toggle, remove, updateMeta, recordOpened, clearFolderForItems, replaceAll, clear, resetLocal, exportJson, importJson }
+  return {
+    items,
+    ready,
+    storageBlocked,
+    isFavorite,
+    toggle,
+    remove,
+    undoLast,
+    trashItems,
+    trashCount,
+    trashError: snap.trashError,
+    restoreFavorites,
+    updateMeta,
+    recordOpened,
+    promoteFavorite,
+    renewInbox: renewInboxItem,
+    shelveFavorite,
+    restoreShelved,
+    deleteShelved,
+    clearShelved,
+    hibernateFavorite,
+    wakeFavorite,
+    settledExpiredCount: snap.settledExpiredCount,
+    triageSettleError: snap.triageSettleError,
+    clearFolderForItems,
+    replaceAll,
+    clear,
+    prepareClearRestore,
+    resetLocal,
+    exportJson,
+    importJson,
+  }
 }
 
 /** 同步游标：仅记录「一次成功同步之后」的版本，失败时绝不推进 */
@@ -697,6 +1722,9 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
      *   2. 脏集合里已不在本地列表的 siteId → remove（本地删掉的条目要推删除）。
      */
     const dirty = readDirty()
+    // 撤销恢复的条目：add op 的 at 必须用撤销时刻而不是 createdAt，
+    // 否则 LWW 会被云端墓碑的 updated_at 挡掉，撤销在云端活不过来。
+    const restoreAt = readRestoreAtOverrides()
     const ops: FavoriteSyncOp[] = []
     for (const f of local) {
       if (!dirty.has(f.siteId)) continue
@@ -706,7 +1734,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
         folderId: f.folderId ?? null,
         note: f.note && f.note.length > 200 ? f.note.slice(0, 200) : f.note ?? null,
         tags: f.tags ?? null,
-        at: f.createdAt,
+        at: restoreAt[f.siteId] ?? f.createdAt,
       })
     }
     for (const siteId of dirty) {
@@ -779,6 +1807,8 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     // 全部请求成功：本次脏条目已获云端确认，清空标记。
     // 失败路径（上面几处 return）故意不清——下次重试仍会推这些条目。
     clearDirty()
+    // 撤销时刻覆盖也随之清掉：已获云端确认，不再需要覆盖
+    clearRestoreAt(ops.map((o) => o.siteId))
     writeSyncStatus({
       at: Date.now(),
       ok: true,

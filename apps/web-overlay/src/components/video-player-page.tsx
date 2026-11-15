@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { safeHref } from '@/lib/safe-url'
 import { jsonLdScript } from '@/lib/seo/json-ld'
 import { buildVideoEmbedUrlForSeo } from '@/lib/video-seo'
@@ -32,23 +33,44 @@ import {
   Camera,
   MessageSquare,
   Send,
-  Volume2,
-  Users,
-  Eye,
-  Trophy,
 } from 'lucide-react'
 import { Button } from "@/registry/new-york/ui/button"
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import { formatDuration } from '@/lib/video-format'
+import {
+  NEXT_VIDEO_PROGRESS_HIGH,
+  buildNextVideoCandidates,
+  getSharedRoutePrefetchSession,
+  isRoutePrefetchNetworkAllowed,
+  progressRatio,
+  tryClaimRoutePrefetch,
+  type PrefetchConnectionLike,
+} from '@/lib/route-prefetch'
 import { useVideoPlayerState } from '@/hooks/useVideoPlayerState'
+import { useHandoffCloudSync } from '@/hooks/use-handoff-cloud-sync'
+import { getResumePosition, savePlaybackPosition } from '@/lib/video-playback-storage'
+import {
+  createPlaybackSaveThrottle,
+  markPlaybackSaved,
+  seedPlaybackSaveThrottle,
+  shouldSavePlaybackPosition,
+  type PlaybackSaveThrottle,
+} from '@/lib/video-playback-throttle'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { resolveAvailableMirrors, selectBestMirror, recordMirrorFailover } from '@/lib/video-failover'
 import { getVideoAISummary, type VideoAISummary } from '@/lib/video-ai-summary'
 import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 import { getRelatedVideos } from '@/lib/video-recommendation'
 import { useVideoPlayer } from '@/contexts/VideoPlayerContext'
-import { parseWebVTT, searchTranscript, exportTranscriptAsMarkdown } from '@/lib/video-transcript-sync'
+import { searchTranscript, exportTranscriptAsMarkdown } from '@/lib/video-transcript-sync'
+import {
+  deleteCaptionEntry,
+  getCaptionEntry,
+  resolveVideoCaptions,
+  saveCaptionEntry,
+  type CaptionSource,
+} from '@/lib/video-caption-store'
 import { saveStudyNote, listStudyNotes, exportNotesAsMarkdown, type VideoStudyNote } from '@/lib/video-frame-clipper'
 import { getStoredDanmaku, saveDanmakuItem } from '@/lib/video-danmaku-engine'
 // 语音指示器是辅助可视化：动态导入，不占播放器首屏包体积（预算紧）。
@@ -57,23 +79,21 @@ import { VideoNetworkSentinel } from '@/components/video-network-sentinel'
 // 涂鸦层与 PiP 渲染层只在对应模式开启时才用到：动态导入，不占播放器首屏包体积。
 const VideoTelestratorCanvas = dynamic(() => import('@/components/video-telestrator-canvas').then(m => m.VideoTelestratorCanvas), { ssr: false })
 const VideoPipWindowRenderer = dynamic(() => import('@/components/video-pip-window-renderer').then(m => m.VideoPipWindowRenderer), { ssr: false })
-// 手势 HUD 只在手势模式下显示：动态导入补足播放器页最后一点预算缺口。
-const VideoGestureHudOverlay = dynamic(() => import('@/components/video-gesture-hud-overlay').then(m => m.VideoGestureHudOverlay), { ssr: false })
-import { SessionActivityRecorder } from '@/lib/video-session-recorder'
-import { type SilenceDetectorConfig, type SilenceDetectorState } from '@/lib/video-silence-detector'
-// 只留类型（编译期擦除）：generateSvgFilterMarkup 在本页从未被调用，而它会
-// 把 @/lib/video-a11y-sight-guard 整个模块钉进本页首屏图。该模块仍被
-// video-a11y-settings-dialog（dynamic 组件）引用，故不会变成零引用死模块。
-import { type A11ySightGuardSettings } from '@/lib/video-a11y-sight-guard'
 import { extractCodeMilestones, type CodeMilestone } from '@/lib/video-code-diff'
-import { type AudioEnhancerOptions } from '@/lib/video-audio-enhancer'
-import { joinCoWatchRoom, type CoWatchSession, type CoWatchState } from '@/lib/video-crdt-room'
-import { generateVideoQuizzes, type VideoQuizQuestion } from '@/lib/video-quiz-generator'
 import { generateVideoMindMap, type MindMapNode } from '@/lib/video-mindmap-generator'
 import { generateVideoObjectSchema } from '@/lib/video-seo'
 import { createQoETracker, type QoEMetrics } from '@/lib/video-qoe-telemetry'
-import { generateFlashcardsFromNotes, generateFlashcardsFromQuizzes, type FlashcardItem } from '@/lib/video-spaced-repetition'
+import { generateFlashcardsFromNotes, type FlashcardItem } from '@/lib/video-spaced-repetition'
 import { type VoiceCommandIntent } from '@/lib/video-voice-commander'
+import {
+  dispatchVoiceCommand,
+  type PlayerCommandResult,
+  type VideoVoiceExecutor,
+  type VoiceCommandResult,
+  type VoicePlatformKind,
+} from '@/lib/video-voice-dispatch'
+import { isDocumentPipSupported } from '@/lib/video-document-pip'
+import type { VideoBilibiliHdPlayerHandle as BiliPlayerHandle } from '@/components/video-bilibili-hd-player'
 import { copyText } from '@/lib/clipboard'
 import { VideoPlayerSidePanel, type VideoPlayerTab } from '@/components/video-player-side-panel'
 import { VideoPlayerControlBar } from '@/components/video-player-control-bar'
@@ -85,28 +105,18 @@ import { VideoPlaylistTree } from '@/components/video-playlist-tree'
  * ssr:false 对纯客户端面板无副作用；首帧它们本来就是「关闭/未激活」。
  */
 const VideoCodeSandbox = dynamic(() => import('@/components/video-code-sandbox').then(m => m.VideoCodeSandbox), { ssr: false })
-const VideoQuizDialog = dynamic(() => import('@/components/video-quiz-dialog').then(m => m.VideoQuizDialog), { ssr: false })
 const VideoSharePosterDialog = dynamic(() => import('@/components/video-share-poster-dialog').then(m => m.VideoSharePosterDialog), { ssr: false })
-const VideoFlashcardDeck = dynamic(() => import('@/components/video-flashcard-deck').then(m => m.VideoFlashcardDeck), { ssr: false })
-const VideoCertificateDialog = dynamic(() => import('@/components/video-certificate-dialog').then(m => m.VideoCertificateDialog), { ssr: false })
+const VideoAiLearningDialog = dynamic(() => import('@/components/video-ai-learning-dialog').then(m => m.VideoAiLearningDialog), { ssr: false })
 const VideoOfflineManager = dynamic(() => import('@/components/video-offline-manager').then(m => m.VideoOfflineManager), { ssr: false })
-const VideoSmartSpeedDialog = dynamic(() => import('@/components/video-smart-speed-controls').then(m => m.VideoSmartSpeedDialog), { ssr: false })
-const VideoFrameOcrDialog = dynamic(() => import('@/components/video-frame-ocr-overlay').then(m => m.VideoFrameOcrDialog), { ssr: false })
-const VideoA11ySettingsDialog = dynamic(() => import('@/components/video-a11y-settings-dialog').then(m => m.VideoA11ySettingsDialog), { ssr: false })
-const VideoSkillTreeDialog = dynamic(() => import('@/components/video-skill-tree-dialog').then(m => m.VideoSkillTreeDialog), { ssr: false })
 const VideoWorkspaceExportDialog = dynamic(() => import('@/components/video-workspace-export-dialog').then(m => m.VideoWorkspaceExportDialog), { ssr: false })
 const VideoBilingualSubtitlesDialog = dynamic(() => import('@/components/video-bilingual-subtitles-dialog').then(m => m.VideoBilingualSubtitlesDialog), { ssr: false })
-const VideoSessionReplayDialog = dynamic(() => import('@/components/video-session-replay-dialog').then(m => m.VideoSessionReplayDialog), { ssr: false })
 const VideoClipMakerDialog = dynamic(() => import('@/components/video-clip-maker-dialog').then(m => m.VideoClipMakerDialog), { ssr: false })
 const VideoPomodoroDialog = dynamic(() => import('@/components/video-pomodoro-overlay').then(m => m.VideoPomodoroDialog), { ssr: false })
-const VideoAdaptiveRemedyDialog = dynamic(() => import('@/components/video-adaptive-remedy-dialog').then(m => m.VideoAdaptiveRemedyDialog), { ssr: false })
 const VideoAutoHarvestDialog = dynamic(() => import('@/components/video-auto-harvest-dialog').then(m => m.VideoAutoHarvestDialog), { ssr: false })
-const VideoAutonomousHarvestConsole = dynamic(() => import('@/components/video-autonomous-harvest-console').then(m => m.VideoAutonomousHarvestConsole), { ssr: false })
 const VideoMultisourceWebhookDialog = dynamic(() => import('@/components/video-multisource-webhook-dialog').then(m => m.VideoMultisourceWebhookDialog), { ssr: false })
-const VideoOcrCodeExtractorDialog = dynamic(() => import('@/components/video-ocr-code-extractor-dialog').then(m => m.VideoOcrCodeExtractorDialog), { ssr: false })
 const VideoBilingualTtsDialog = dynamic(() => import('@/components/video-bilingual-tts-dialog').then(m => m.VideoBilingualTtsDialog), { ssr: false })
-const VideoConceptGraphDialog = dynamic(() => import('@/components/video-concept-graph-dialog').then(m => m.VideoConceptGraphDialog), { ssr: false })
-const VideoCrdtStudyRoomDialog = dynamic(() => import('@/components/video-crdt-study-room-dialog').then(m => m.VideoCrdtStudyRoomDialog), { ssr: false })
+// 字幕导入只在用户点「导入字幕」时才挂载，不占播放器首屏包体积。
+const VideoCaptionImportDialog = dynamic(() => import('@/components/video-caption-import-dialog').then(m => m.VideoCaptionImportDialog), { ssr: false })
 // 播放器只在 bilibili 分支挂载、字幕只在有转写稿时挂载：这两块移出首屏图
 const VideoBilibiliHdPlayer = dynamic(() => import('@/components/video-bilibili-hd-player').then(m => m.VideoBilibiliHdPlayer), { ssr: false })
 const VideoKaraokeSubtitles = dynamic(() => import('@/components/video-karaoke-subtitles').then(m => m.VideoKaraokeSubtitles), { ssr: false })
@@ -114,6 +124,26 @@ const VideoKaraokeSubtitles = dynamic(() => import('@/components/video-karaoke-s
 interface VideoPlayerPageProps {
     navigationData: NavigationData
     siteData: SiteConfig
+}
+
+/**
+ * 断点续播写路径的当前视频快照（Batch 3 第 9 项 A 组）。
+ * hasPlayhead 只有收到过真实播放头时才为 true（Bilibili 直连 / mp4 原生
+ * <video>）；YouTube 与通用 iframe 取不到播放头，恒为 false，flush 直接
+ * 跳过——只记「打开过 + 打开时间」（open 写入负责），不断点秒数。
+ */
+interface PlaybackSnapshot {
+    video: NavigationSubItem
+    sec: number
+    durationSec: number
+    platform: 'bilibili' | 'youtube' | 'other'
+    hasPlayhead: boolean
+}
+
+/** 播放历史只为 bilibili/youtube/other 建模，其余平台（含 custom）统一落到 'other'。 */
+function resolvePlaybackPlatform(video: NavigationSubItem): 'bilibili' | 'youtube' | 'other' {
+    const type = video.videoConfig?.type
+    return type === 'bilibili' || type === 'youtube' ? type : 'other'
 }
 
 export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
@@ -130,64 +160,36 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     const [inWatchLater, setInWatchLater] = useState(false)
     const [currentTimeSec, setCurrentTimeSec] = useState<number>(0)
     const [chapterSeekSec, setChapterSeekSec] = useState<number | null>(null)
+    /** 分享海报 / 章节直达链路带进来的 ?t= 跳转秒数：初次选片时一次性交给 chapterSeekSec，之后清零 */
+    const pendingSeekSecRef = useRef<number | null>(null)
     const [biliEngine, setBiliEngine] = useState<string>('auto')
+    /** B站播放器当前通道（direct / proxy 原生 <video> 可控；iframe 官方内嵌不可控）。
+     *  由播放器 onStageChange 上报，语音可控性判断用。 */
+    const [biliStage, setBiliStage] = useState<'direct' | 'proxy' | 'iframe'>('direct')
+    /** 语音命令总线：B站直连播放器与 mp4 直链 <video> 的命令柄。 */
+    const biliPlayerRef = useRef<BiliPlayerHandle | null>(null)
+    const mp4VideoRef = useRef<HTMLVideoElement | null>(null)
     const [showPosterDialog, setShowPosterDialog] = useState<boolean>(false)
 
-    // 艾宾浩斯复习抽认卡与结业证书
-    const [showFlashcardsDialog, setShowFlashcardsDialog] = useState<boolean>(false)
-    const [showCertDialog, setShowCertDialog] = useState<boolean>(false)
+    // AI 学习中心（AI伴学 / 概念图谱 / 抽认卡三件套合为一个入口）
+    const [showAiLearningDialog, setShowAiLearningDialog] = useState<boolean>(false)
 
-    // 进阶扩展：涂鸦画板、离线缓存、智能加速、画面 OCR、无障碍视力守护、技能树
+    // 进阶扩展：涂鸦画板、离线缓存
     const [showTelestrator, setShowTelestrator] = useState<boolean>(false)
     const [showOfflineDialog, setShowOfflineDialog] = useState<boolean>(false)
-    const [showSmartSpeedDialog, setShowSmartSpeedDialog] = useState<boolean>(false)
-    const [smartSpeedConfig, setSmartSpeedConfig] = useState<SilenceDetectorConfig>({
-        enabled: false,
-        silenceThresholdDb: -42,
-        minSilenceDurationMs: 400,
-        baseRate: 1.0,
-        skipRate: 2.5,
-        smoothingFactor: 0.25,
-    })
-    const [smartSpeedState, setSmartSpeedState] = useState<SilenceDetectorState>({
-        currentLoudnessDb: -100,
-        isSilent: false,
-        currentDynamicRate: 1.0,
-        silenceDurationMs: 0,
-        totalTimeSavedSec: 0,
-    })
-    const [showOcrDialog, setShowOcrDialog] = useState<boolean>(false)
-    const [showA11yDialog, setShowA11yDialog] = useState<boolean>(false)
-    const [a11ySettings, setA11ySettings] = useState<A11ySightGuardSettings>({
-        colorMode: 'normal',
-        fontSizeScale: 1.0,
-        dyslexicFont: false,
-        screenReaderAnnouncements: true,
-        keyboardFocusOutline: true,
-    })
-    const [showSkillTreeDialog, setShowSkillTreeDialog] = useState<boolean>(false)
 
     // 扩展前沿：工程包导出、双语字幕、会话时空漫游
     const [showWorkspaceExportDialog, setShowWorkspaceExportDialog] = useState<boolean>(false)
     const [showBilingualSubtitlesDialog, setShowBilingualSubtitlesDialog] = useState<boolean>(false)
-    const [showSessionReplayDialog, setShowSessionReplayDialog] = useState<boolean>(false)
-    const sessionRecorderRef = useRef<SessionActivityRecorder>(new SessionActivityRecorder('init'))
 
     // 微知识点切片、深度专注番茄钟
     const [showClipMakerDialog, setShowClipMakerDialog] = useState<boolean>(false)
     const [showPomodoroDialog, setShowPomodoroDialog] = useState<boolean>(false)
 
-    // 演进模块：空间手势、自适应弱项诊断、全网热点自动采集
-    const [gestureControlEnabled, setGestureControlEnabled] = useState<boolean>(false)
-    const [showRemedyDialog, setShowRemedyDialog] = useState<boolean>(false)
+    // 演进模块：全网热点自动采集
     const [showAutoHarvestDialog, setShowAutoHarvestDialog] = useState<boolean>(false)
-    const [showAutonomousHarvestConsole, setShowAutonomousHarvestConsole] = useState<boolean>(false)
     const [showWebhookDialog, setShowWebhookDialog] = useState<boolean>(false)
-    const [showWasmOcrDialog, setShowWasmOcrDialog] = useState<boolean>(false)
     const [showBilingualTtsDialog, setShowBilingualTtsDialog] = useState<boolean>(false)
-    const [showConceptGraphDialog, setShowConceptGraphDialog] = useState<boolean>(false)
-    const [showStudyRoomDialog, setShowStudyRoomDialog] = useState<boolean>(false)
-    const [sandboxInitialCode, setSandboxInitialCode] = useState<string>('')
 
     // QoE 传输质量遥测
     const [qoeMetrics, setQoEMetrics] = useState<QoEMetrics>(() => {
@@ -249,31 +251,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         })
     }, [selectedVideo, chapters])
 
-    // 3. 互动测验与通关门禁
-    const [showQuizDialog, setShowQuizDialog] = useState<boolean>(false)
-    const quizQuestions = useMemo<VideoQuizQuestion[]>(() => {
-        // 只对自带真实章节的视频出题：题目按章节标题套模板生成，章节本身
-        // 若是启发式编的，题目必然与视频内容无关（审计 #106）。
-        if (!selectedVideo || !hasRealChapters) return []
-        return generateVideoQuizzes(selectedVideo.id, chapters, selectedVideo.title)
-    }, [selectedVideo, chapters, hasRealChapters])
-
-    // 4. WebAudio 信号处理实验室
-    const [showAudioDialog, setShowAudioDialog] = useState<boolean>(false)
-    const [audioOptions, setAudioOptions] = useState<AudioEnhancerOptions>({
-        voiceClarity: false,
-        loudnessNormalization: false,
-        volumeBoost: 1.0,
-        noiseSuppression: false,
-        lowCut: false,
-    })
-
-    // 5. CRDT 协同共赏房间
-    const [showCoWatchDialog, setShowCoWatchDialog] = useState<boolean>(false)
-    const [coWatchRoomId, setCoWatchRoomId] = useState<string>('')
-    const [coWatchSession, setCoWatchSession] = useState<CoWatchSession | null>(null)
-    const [coWatchState, setCoWatchState] = useState<CoWatchState | null>(null)
-
     // 6. Schema.org VideoObject JSON-LD
     const videoSchema = useMemo(() => {
         if (!selectedVideo) return null
@@ -295,11 +272,14 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     const [danmakuList, setDanmakuList] = useState<VideoDanmakuItem[]>([])
     const [newDanmakuText, setNewDanmakuText] = useState<string>('')
     const [isPitfallDanmaku, setIsPitfallDanmaku] = useState<boolean>(false)
-    const [isDanmakuOpen, setIsDanmakuOpen] = useState<boolean>(true)
 
     // 逐字稿音视频字幕
     const [transcriptList, setTranscriptList] = useState<VideoTranscriptItem[]>([])
     const [transcriptSearchQuery, setTranscriptSearchQuery] = useState<string>('')
+    // 字幕来源与导入状态（字幕可搜）：imported 优先于视频自带字幕。
+    const [captionSource, setCaptionSource] = useState<CaptionSource>('none')
+    const [importedCaptionCount, setImportedCaptionCount] = useState<number>(0)
+    const [showCaptionImport, setShowCaptionImport] = useState<boolean>(false)
 
     const { openVideo: openGlobalVideo, minimizeToFloat, requestDocumentPiP } = useVideoPlayer()
 
@@ -323,6 +303,46 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
 
     const currentIndex = allVideos.findIndex(v => v.id === selectedVideo?.id)
 
+    // 注意：这里不再保留 currentTimeSec 的 ref 镜像。语音相对跳转的基数
+    // 只在 dispatch 层用注入的 currentTimeSec（可控路由才有真实进度）；
+    // iframe 路由没有可读播放头，相对跳转在 dispatch 层直接拒绝，不再
+    // 经 ref 走「重载跳转」回退——旧回退用的正是会残留上一条视频的过期值。
+
+    /**
+     * 当前视频的播放路由（平台 / 源 id / 内嵌地址 / 是否 mp4 直链）。
+     * 原先散在 renderVideoPlayer 各分支里重复算；语音执行器与渲染共用同一份，
+     * 避免两处口径漂移（纯函数，可放心提到组件层）。
+     */
+    const videoRoute = useMemo(() => {
+        if (!selectedVideo?.videoConfig) return null
+        const platform = activeMirror?.platform || selectedVideo.videoConfig.type
+        const sourceId = activeMirror?.sourceId || selectedVideo.videoConfig.bvid || selectedVideo.videoConfig.videoId || ''
+        const embedUrl =
+            buildVideoEmbedUrlForSeo({
+                ...selectedVideo.videoConfig,
+                type: platform,
+                videoId: sourceId,
+            }) || (platform === 'custom' ? safeHref(sourceId || selectedVideo.href) : undefined)
+        const isMp4Direct = !!embedUrl && /\.(mp4|webm|ogg)(\?.*)?$/i.test(embedUrl)
+        return { platform, sourceId, embedUrl, isMp4Direct }
+    }, [selectedVideo, activeMirror])
+
+    /** 语音可控性：只有 B站直连/代理与 mp4 直链能被页面 JS 直接控制；B站官方
+     *  内嵌、YouTube、通用 iframe 跨域无控制通道。label 进不支持回执文案。 */
+    const voicePlatform = useMemo((): { kind: VoicePlatformKind; label: string } => {
+        if (!videoRoute) return { kind: 'iframe', label: '外站播放页' }
+        if (videoRoute.platform === 'youtube') return { kind: 'iframe', label: 'YouTube' }
+        if (videoRoute.platform === 'bilibili') {
+            if (biliStage === 'iframe') return { kind: 'iframe', label: '官方内嵌播放器' }
+            return {
+                kind: 'controllable',
+                label: biliStage === 'proxy' ? 'B站代理播放' : 'B站高清直连',
+            }
+        }
+        if (videoRoute.isMp4Direct) return { kind: 'controllable', label: '直链视频' }
+        return { kind: 'iframe', label: '内嵌播放器' }
+    }, [videoRoute, biliStage])
+
     const handleNextVideo = useCallback(() => {
         if (currentIndex >= 0 && currentIndex < allVideos.length - 1) {
             setSelectedVideo(allVideos[currentIndex + 1])
@@ -335,7 +355,36 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         }
     }, [currentIndex, allVideos])
 
+    const router = useRouter()
+
+    /**
+     * A1 视频下一集预取——本文件是唯一允许发「下一集预取」的地方，
+     * 不许在 video-card.tsx 里另起一套。
+     * 进度 >75% 时预取下一集（high）+ 再下一集（low、最多 1 条）的 RSC；
+     * 进度 <75% 且无悬停时不预取。只预取路由与元数据（元数据已在 allVideos
+     * 里，不另发请求），不预取 iframe、不预取视频流。
+     * 会话 ≤5 条预算与 Provider 共用同一共享会话（getSharedRoutePrefetchSession）。
+     */
+    useEffect(() => {
+        if (!selectedVideo || currentIndex < 0 || currentIndex >= allVideos.length - 1) return
+        const ratio = progressRatio(currentTimeSec, selectedVideo.videoConfig?.durationSec)
+        if (!(ratio > NEXT_VIDEO_PROGRESS_HIGH)) return
+        if (typeof navigator !== 'undefined') {
+            const connection = (navigator as Navigator & { connection?: PrefetchConnectionLike }).connection
+            if (!isRoutePrefetchNetworkAllowed(connection, navigator.onLine)) return
+        }
+        const session = getSharedRoutePrefetchSession()
+        for (const candidate of buildNextVideoCandidates(allVideos, currentIndex, ratio)) {
+            if (tryClaimRoutePrefetch(session, candidate.href)) {
+                router.prefetch(candidate.href)
+            }
+        }
+    }, [selectedVideo, currentIndex, currentTimeSec, allVideos, router])
+
     const {
+        // isPlaying 由语音播放/暂停命令经 setIsPlaying 同步（此前是死状态：初始
+        // true 且无任何消费方）。读侧仍无消费方，只写不读，故只取 setter。
+        setIsPlaying,
         resumePrompt,
         dismissResumePrompt,
         historyList,
@@ -348,87 +397,339 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         onPrevVideo: handlePrevVideo
     })
 
-    // 艾宾浩斯复习抽认卡集
-    const flashcards = useMemo<FlashcardItem[]>(() => {
-        const fromNotes = generateFlashcardsFromNotes(notesList)
-        const fromQuiz = generateFlashcardsFromQuizzes(quizQuestions)
-        return [...fromNotes, ...fromQuiz]
-    }, [notesList, quizQuestions])
+    // ---- 断点续播写路径（Batch 3 第 9 项 A 组）----
+    // 旧状：onTimeUpdate 只更新本地 currentTimeSec，全程不写表；唯一写入点是
+    // useVideoPlayerState 打开时 effect，写的是打开那一刻的旧断点。修法：
+    // Bilibili 直连与 mp4 两路共用 handlePlaybackTimeUpdate；「何时写」的判定
+    // 在 lib/video-playback-throttle.ts（纯函数）；pause / pagehide /
+    // visibilitychange(hidden) / 切集 / 关闭时 flushPlaybackPosition 立即写一次。
+    // 节流状态以打开时已存断点为基线播种（getResumePosition），15s / 5s 从
+    // 该基线算起。仍写同一张本地表，键与结构、95% 看完与 >10s 提示口径全不变。
+    //
+    // D 组云端接线：每次本机写入的同时（同一节流判定、同一快照），经
+    // useHandoffCloudSync 把同一份位置以 UPSERT_VIDEO_PROGRESS 发往云端。
+    // 只在已登录时派发（hook 内部把关）；匿名时本机照写、云端不发。
+    // dispatch 经 ref 调用：flush / handlePlaybackTimeUpdate 是空依赖的
+    // useCallback，identity 变化不能让它们重建（重建会触发切集 effect
+    // 的 cleanup 误 flush）。ref 在每次渲染后同步为最新派发函数。
+    const handoffCloud = useHandoffCloudSync()
+    const cloudDispatchRef = useRef(handoffCloud.dispatchVideoProgress)
+    useEffect(() => {
+        cloudDispatchRef.current = handoffCloud.dispatchVideoProgress
+    }, [handoffCloud.dispatchVideoProgress])
 
-    // 语音自然语言指令调度器
-    const handleVoiceCommand = useCallback((cmd: VoiceCommandIntent) => {
-        switch (cmd.action) {
-            case 'play':
-                break
-            case 'pause':
-                break
-            case 'seek_relative':
-                if (cmd.value !== undefined) {
-                    setChapterSeekSec(prev => Math.max(0, (prev || 0) + (cmd.value || 0)))
-                }
-                break
-            case 'seek_absolute':
-                if (cmd.value !== undefined) {
-                    setChapterSeekSec(cmd.value)
-                }
-                break
-            case 'speed':
-                break
-            case 'mute':
-                break
-            case 'unmute':
-                break
-            case 'toggle_danmaku':
-                setIsDanmakuOpen(prev => !prev)
-                break
-            case 'open_tab':
-                if (cmd.targetTab) {
-                    setActiveTab(cmd.targetTab as any)
-                }
-                break
-            case 'search_transcript':
-                if (cmd.searchQuery) {
-                    setActiveTab('transcript')
-                    setTranscriptSearchQuery(cmd.searchQuery)
-                }
-                break
-            case 'next_video':
-                handleNextVideo()
-                break
-            case 'prev_video':
-                handlePrevVideo()
-                break
-        }
-    }, [handleNextVideo, handlePrevVideo, setTranscriptSearchQuery])
+    const playbackSnapshotRef = useRef<PlaybackSnapshot | null>(null)
+    const playbackThrottleRef = useRef<PlaybackSaveThrottle>(createPlaybackSaveThrottle())
 
-    // 默认选择第一个视频
+    const flushPlaybackPosition = useCallback(() => {
+        const snapshot = playbackSnapshotRef.current
+        // 无真实播放头（YouTube / 通用 iframe）：不写秒数；打开记录已由
+        // useVideoPlayerState 的 open 写入负责（只记打开过 + 打开时间）。
+        if (!snapshot || !snapshot.hasPlayhead) return
+        const nowMs = Date.now()
+        if (!shouldSavePlaybackPosition(playbackThrottleRef.current, snapshot.sec, nowMs, { force: true })) return
+        savePlaybackPosition({
+            videoId: snapshot.video.id,
+            title: snapshot.video.title,
+            author: snapshot.video.videoConfig?.author,
+            cover: snapshot.video.icon,
+            platform: snapshot.platform,
+            timestampSec: snapshot.sec,
+            durationSec: snapshot.durationSec,
+        })
+        playbackThrottleRef.current = markPlaybackSaved(playbackThrottleRef.current, snapshot.sec, nowMs)
+        // D1：与本机写入同一快照、同一时间戳发往云端（已登录才派发）。
+        cloudDispatchRef.current({
+            videoId: snapshot.video.id,
+            title: snapshot.video.title,
+            author: snapshot.video.videoConfig?.author,
+            cover: snapshot.video.icon,
+            platform: snapshot.platform,
+            timestampSec: snapshot.sec,
+            durationSec: snapshot.durationSec,
+            updatedAt: nowMs,
+        })
+    }, [])
+
+    /** Bilibili 直连与 mp4 两路共用的 onTimeUpdate 入口：只此一处做节流写。 */
+    const handlePlaybackTimeUpdate = useCallback((video: NavigationSubItem, currentSec: number, durationSec: number) => {
+        const sec = Math.floor(currentSec)
+        setCurrentTimeSec(sec)
+        const snapshot = playbackSnapshotRef.current
+        if (!snapshot || snapshot.video.id !== video.id) return
+        const duration = Number.isFinite(durationSec) && durationSec > 0
+            ? Math.floor(durationSec)
+            : (video.videoConfig?.durationSec || 600)
+        snapshot.sec = sec
+        snapshot.durationSec = duration
+        snapshot.hasPlayhead = true
+        const nowMs = Date.now()
+        if (!shouldSavePlaybackPosition(playbackThrottleRef.current, sec, nowMs)) return
+        savePlaybackPosition({
+            videoId: video.id,
+            title: video.title,
+            author: video.videoConfig?.author,
+            cover: video.icon,
+            platform: snapshot.platform,
+            timestampSec: sec,
+            durationSec: duration,
+        })
+        playbackThrottleRef.current = markPlaybackSaved(playbackThrottleRef.current, sec, nowMs)
+        // D1：与本机写入同一快照、同一时间戳发往云端（已登录才派发）。
+        cloudDispatchRef.current({
+            videoId: video.id,
+            title: video.title,
+            author: video.videoConfig?.author,
+            cover: video.icon,
+            platform: snapshot.platform,
+            timestampSec: sec,
+            durationSec: duration,
+            updatedAt: nowMs,
+        })
+    }, [])
+
+    // 切集 / 关闭时写一次：cleanup 在 selectedVideo 变化或卸载时先跑，此时
+    // snapshot 仍指向旧视频；body 再把 snapshot / 节流基线重置为新视频。
     useEffect(() => {
         if (!selectedVideo) {
-            for (const category of navigationData.navigationItems) {
-                if (category.items && category.items.length > 0) {
-                    const firstVideoItem = category.items.find(item => item.videoConfig)
-                    if (firstVideoItem) {
-                        setSelectedVideo(firstVideoItem)
-                        setExpandedCategories(new Set([category.id]))
-                        return
+            playbackSnapshotRef.current = null
+            playbackThrottleRef.current = createPlaybackSaveThrottle()
+            return
+        }
+        const resumeSec = getResumePosition(selectedVideo.id)
+        playbackSnapshotRef.current = {
+            video: selectedVideo,
+            sec: resumeSec,
+            durationSec: selectedVideo.videoConfig?.durationSec || 600,
+            platform: resolvePlaybackPlatform(selectedVideo),
+            hasPlayhead: false,
+        }
+        playbackThrottleRef.current = seedPlaybackSaveThrottle(resumeSec, Date.now())
+        return () => {
+            flushPlaybackPosition()
+        }
+    }, [selectedVideo, flushPlaybackPosition])
+
+    // 离开页面 / 切到后台时立即写一次（React 卸载 cleanup 在 pagehide 时不跑）。
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const handlePageHide = () => { flushPlaybackPosition() }
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') flushPlaybackPosition()
+        }
+        window.addEventListener('pagehide', handlePageHide)
+        document.addEventListener('visibilitychange', handleVisibilityChange)
+        return () => {
+            window.removeEventListener('pagehide', handlePageHide)
+            document.removeEventListener('visibilitychange', handleVisibilityChange)
+        }
+    }, [flushPlaybackPosition])
+
+    // 艾宾浩斯复习抽认卡集（只从用户真实笔记派生；模板自测题已删，不再混入）
+    const flashcards = useMemo<FlashcardItem[]>(() => {
+        return generateFlashcardsFromNotes(notesList)
+    }, [notesList])
+
+    // 语音指令执行器（Batch 3 第 10 项）：把意图落到真实播放器上。
+    // 可控路由（B站直连/代理、mp4 直链）走命令总线；iframe 路由的播放类命令
+    // 在执行器层即返回 iframe-no-control，跳转则走 chapterSeekSec / &start=
+    // 重载路径（B站官方内嵌、YouTube），通用内嵌 iframe 不消费 chapterSeekSec，
+    // 跳转也拒绝。执行器自身也设防：biliStage 上报前的窗口期内总线同样会拒绝。
+    const voiceExecutor = useMemo<VideoVoiceExecutor>(() => {
+        const kind = voicePlatform.kind
+        const isBili = videoRoute?.platform === 'bilibili'
+        const noMedia: PlayerCommandResult = { ok: false, reason: 'no-media' }
+        const noControl: PlayerCommandResult = { ok: false, reason: 'iframe-no-control' }
+        const directVideo = (): HTMLVideoElement | null => {
+            if (kind === 'iframe') return null
+            if (isBili) return null // B站走播放器命令柄，不直接碰元素
+            return mp4VideoRef.current
+        }
+        return {
+            play: async () => {
+                if (kind === 'iframe') return noControl
+                if (isBili) return biliPlayerRef.current?.play() ?? noMedia
+                const el = directVideo()
+                if (!el) return noMedia
+                try {
+                    await el.play()
+                    return { ok: true }
+                } catch {
+                    return { ok: false, reason: 'play-blocked' }
+                }
+            },
+            pause: () => {
+                if (kind === 'iframe') return noControl
+                if (isBili) return biliPlayerRef.current?.pause() ?? noMedia
+                const el = directVideo()
+                if (!el) return noMedia
+                el.pause()
+                return { ok: true }
+            },
+            seekTo: (sec: number) => {
+                const target = Math.max(0, sec)
+                if (kind === 'controllable') {
+                    if (isBili) return biliPlayerRef.current?.seekTo(target) ?? noMedia
+                    const el = directVideo()
+                    if (!el) return noMedia
+                    try {
+                        el.currentTime = target
+                        return { ok: true }
+                    } catch {
+                        return noMedia
                     }
                 }
-                if (category.subCategories) {
-                    for (const sub of category.subCategories) {
-                        if (sub.items && sub.items.length > 0) {
-                            const firstVideoItem = sub.items.find(item => item.videoConfig)
-                            if (firstVideoItem) {
-                                setSelectedVideo(firstVideoItem)
+                // iframe 路由：只有 B站官方内嵌与 YouTube 消费 chapterSeekSec
+                //（B站 iframe 的 key 含 seekSec、YouTube 拼 &start=）；通用内嵌不消费，
+                // 置位也无效果，故明确拒绝而不是静默丢弃。
+                if (videoRoute?.platform === 'youtube' || isBili) {
+                    setChapterSeekSec(target)
+                    return { ok: true, reloadsPlayer: true }
+                }
+                return noControl
+            },
+            setRate: (rate: number) => {
+                if (kind === 'iframe') return noControl
+                if (isBili) return biliPlayerRef.current?.setRate(rate) ?? noMedia
+                const el = directVideo()
+                if (!el) return noMedia
+                el.playbackRate = Math.min(2, Math.max(0.5, rate))
+                return { ok: true }
+            },
+            setVolume: (volume01: number) => {
+                if (kind === 'iframe') return noControl
+                if (isBili) return biliPlayerRef.current?.setVolume(volume01) ?? noMedia
+                const el = directVideo()
+                if (!el) return noMedia
+                el.volume = Math.min(1, Math.max(0, volume01))
+                return { ok: true }
+            },
+            getVolume: () => {
+                if (isBili) return biliPlayerRef.current?.getVolume() ?? 1
+                return mp4VideoRef.current?.volume ?? 1
+            },
+            adjustVolume: (delta01: number) => {
+                if (kind === 'iframe') return noControl
+                const next = Math.min(1, Math.max(0, (isBili
+                    ? biliPlayerRef.current?.getVolume() ?? 1
+                    : mp4VideoRef.current?.volume ?? 1) + delta01))
+                if (isBili) return biliPlayerRef.current?.setVolume(next) ?? noMedia
+                const el = directVideo()
+                if (!el) return noMedia
+                el.volume = next
+                return { ok: true }
+            },
+            setMuted: (muted: boolean) => {
+                if (kind === 'iframe') return noControl
+                if (isBili) return biliPlayerRef.current?.setMuted(muted) ?? noMedia
+                const el = directVideo()
+                if (!el) return noMedia
+                el.muted = muted
+                return { ok: true }
+            },
+            openTab: (tab) => setActiveTab(tab),
+            searchTranscript: (query: string) => {
+                setActiveTab('transcript')
+                setTranscriptSearchQuery(query)
+            },
+            nextVideo: () => handleNextVideo(),
+            prevVideo: () => handlePrevVideo(),
+            requestPip: async () => {
+                if (!selectedVideo) return false
+                // 先开画中画，成功了再把视频挂到全局播放器；失败时不留任何
+                // 全局副作用，回执「打开失败」与实际状态一致。注意：
+                // requestDocumentPiP 自身在失败/不支持时还会兜底打开悬浮
+                // 迷你播放器（与迷你播放器自己的画中画按钮同一行为），那是
+                // 上下文的有意兜底，不归这里管。
+                const opened = await requestDocumentPiP()
+                if (!opened) return false
+                openGlobalVideo(selectedVideo)
+                return true
+            },
+        }
+    }, [voicePlatform.kind, videoRoute?.platform, selectedVideo, openGlobalVideo, requestDocumentPiP, handleNextVideo, handlePrevVideo])
+
+    // 语音自然语言指令调度器：抽到 lib/video-voice-dispatch.ts 的纯函数，
+    // 这里只组装执行器与上下文（真实进度、真实章节、数据门禁、平台种类）。
+    // 返回三态回执给指示器渲染，不再统一 toast「识别指令：X」。
+    const handleVoiceCommand = useCallback(async (cmd: VoiceCommandIntent): Promise<VoiceCommandResult> => {
+        const result = await dispatchVoiceCommand(cmd, voiceExecutor, {
+            currentTimeSec,
+            hasRealChapters,
+            // 章节跳转查真实章节（videoConfig.chapters）；页面 chapters 状态是
+            // AI 摘要启发式章节，不能拿它当课程目录。
+            chapters: selectedVideo?.videoConfig?.chapters ?? [],
+            // 脑图 tab 的实际门禁是 mindmapRoot.children.length > 0（设计文档说的
+            // hasMindmap 并不存在；无真实章节时 mindmapRoot 本就是空的）。
+            mindmapAvailable: mindmapRoot.children.length > 0,
+            transcriptAvailable: transcriptList.length > 0,
+            isDocumentPipSupported: isDocumentPipSupported(),
+            platformKind: voicePlatform.kind,
+            platformLabel: voicePlatform.label,
+        })
+        // 播放状态同步：此前 useVideoPlayerState 的 isPlaying 是死状态（初始
+        // true、无任何写入方）；只在语音播放/暂停真实执行成功时写。
+        if (result.status === 'executed' && (cmd.action === 'play' || cmd.action === 'pause')) {
+            setIsPlaying(cmd.action === 'play')
+        }
+        return result
+    }, [voiceExecutor, currentTimeSec, hasRealChapters, selectedVideo, mindmapRoot, transcriptList, voicePlatform, setIsPlaying])
+
+    // 默认选片：分享海报 / 章节直达链路带 ?id=&t= 时优先按 id 选片、按 t 跳转；
+    // 无参数或 id 对不上库里任何视频时，落回第一个视频（旧行为）。
+    // 此前路由页从不读参数，海报生成的 /videos/player?id=…&t=… 点开永远播第一条。
+    useEffect(() => {
+        if (selectedVideo) return
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search)
+            const requestedId = params.get('id')
+            if (requestedId) {
+                const target = allVideos.find(v => v.id === requestedId)
+                if (target) {
+                    const t = Number(params.get('t'))
+                    pendingSeekSecRef.current = Number.isFinite(t) && t > 0 ? Math.floor(t) : null
+                    setSelectedVideo(target)
+                    for (const category of navigationData.navigationItems || []) {
+                        if (category.items?.some(it => it.id === target.id)) {
+                            setExpandedCategories(new Set([category.id]))
+                            return
+                        }
+                        for (const sub of category.subCategories || []) {
+                            if (sub.items?.some(it => it.id === target.id)) {
                                 setExpandedCategories(new Set([category.id]))
                                 setExpandedSubCategories(new Set([sub.id]))
                                 return
                             }
                         }
                     }
+                    return
                 }
             }
         }
-    }, [navigationData, selectedVideo])
+        for (const category of navigationData.navigationItems) {
+            if (category.items && category.items.length > 0) {
+                const firstVideoItem = category.items.find(item => item.videoConfig)
+                if (firstVideoItem) {
+                    setSelectedVideo(firstVideoItem)
+                    setExpandedCategories(new Set([category.id]))
+                    return
+                }
+            }
+            if (category.subCategories) {
+                for (const sub of category.subCategories) {
+                    if (sub.items && sub.items.length > 0) {
+                        const firstVideoItem = sub.items.find(item => item.videoConfig)
+                        if (firstVideoItem) {
+                            setSelectedVideo(firstVideoItem)
+                            setExpandedCategories(new Set([category.id]))
+                            setExpandedSubCategories(new Set([sub.id]))
+                            return
+                        }
+                    }
+                }
+            }
+        }
+    }, [navigationData, selectedVideo, allVideos])
 
     // 多源镜像切换与 AI 章节/摘要加载
     useEffect(() => {
@@ -440,10 +741,9 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         setAvailableMirrors(mirrors)
         const best = selectBestMirror(mirrors)
         setActiveMirror(best)
-        setChapterSeekSec(null)
-
-        sessionRecorderRef.current = new SessionActivityRecorder(selectedVideo.id)
-        sessionRecorderRef.current.recordEvent('play', 0)
+        // ?t= 带进来的跳转秒数只在初次选片时生效一次；之后清零，换片/章节内跳转仍走 chapterSeekSec 自己的置位
+        setChapterSeekSec(pendingSeekSecRef.current)
+        pendingSeekSecRef.current = null
 
         if (selectedVideo.videoConfig.chapters && selectedVideo.videoConfig.chapters.length > 0) {
             setChapters(selectedVideo.videoConfig.chapters)
@@ -474,20 +774,17 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             ...storedDanmaku,
         ])
 
-        if (selectedVideo.videoConfig.transcript && selectedVideo.videoConfig.transcript.length > 0) {
-            setTranscriptList(selectedVideo.videoConfig.transcript)
-        } else {
-            const parsed = parseWebVTT(selectedVideo.description || '')
-            if (parsed.length > 0) {
-                setTranscriptList(parsed)
-            } else {
-                // 无字幕就如实无字幕（2026-11-10 审计）：旧实现写死 3 句通用
-                // 文案冒充字幕，下游双语/卡拉OK/切片都在消费这份假字幕。
-                // 全站仅 11/6007 个视频自带真字幕，其余宁可空着并由 UI
-                // 呈现「暂无字幕」，也不编造台词。
-                setTranscriptList([])
-            }
-        }
+        // 字幕：用户导入 > 视频自带 > 描述里的 VTT；都没有就如实无字幕
+        // （2026-11-10 审计）：旧实现写死 3 句通用文案冒充字幕，下游双语/
+        // 卡拉OK/切片都在消费这份假字幕。全站仅 11/6007 个视频自带真字幕，
+        // 其余宁可空着并由 UI 呈现「暂无字幕」，也不编造台词。用户可在字幕
+        // 栏导入 SRT / WebVTT 补字幕，导入后即刻可搜、可跳转。
+        const resolved = resolveVideoCaptions(selectedVideo, getCaptionEntry(selectedVideo.id))
+        setTranscriptList(resolved.cues)
+        setCaptionSource(resolved.source)
+        setImportedCaptionCount(
+            resolved.source === 'imported' ? resolved.cues.length : (getCaptionEntry(selectedVideo.id)?.cues.length ?? 0),
+        )
     }, [selectedVideo])
 
     useEffect(() => {
@@ -622,39 +919,26 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         URL.revokeObjectURL(url)
     }
 
-    const handleJoinCoWatch = (targetRoomId: string) => {
-        if (!selectedVideo || !targetRoomId.trim()) return
-        if (coWatchSession) {
-            coWatchSession.leave()
-        }
-        const session = joinCoWatchRoom({
-            roomId: targetRoomId.trim(),
-            videoId: selectedVideo.id,
-            onStateUpdate: (state) => {
-                setCoWatchState(state)
-            },
-            onNoteUpdate: () => {
-                setNotesList(listStudyNotes(selectedVideo.id))
-            }
-        })
-        setCoWatchSession(session)
+    /** 字幕导入成功：存入本地字幕库并立即让本视频可搜、可跳转。 */
+    const handleImportCaptions = (cues: VideoTranscriptItem[], format: 'srt' | 'vtt') => {
+        if (!selectedVideo) return
+        const saved = saveCaptionEntry(selectedVideo, cues, format)
+        if (!saved.ok) return
+        setTranscriptList(saved.entry?.cues ?? cues)
+        setCaptionSource('imported')
+        setImportedCaptionCount(saved.entry?.cues.length ?? cues.length)
+        setActiveTab('transcript')
     }
 
-    const handleLeaveCoWatch = () => {
-        if (coWatchSession) {
-            coWatchSession.leave()
-            setCoWatchSession(null)
-            setCoWatchState(null)
-        }
+    /** 删除已导入字幕：回落到视频自带字幕（若有），否则恢复「无字幕」。 */
+    const handleDeleteImportedCaptions = () => {
+        if (!selectedVideo) return
+        deleteCaptionEntry(selectedVideo.id)
+        const resolved = resolveVideoCaptions(selectedVideo, null)
+        setTranscriptList(resolved.cues)
+        setCaptionSource(resolved.source)
+        setImportedCaptionCount(0)
     }
-
-    useEffect(() => {
-        return () => {
-            if (coWatchSession) {
-                coWatchSession.leave()
-            }
-        }
-    }, [coWatchSession])
 
     const toggleCategory = (categoryId: string) => {
         setExpandedCategories(prev => {
@@ -681,7 +965,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     }
 
     const renderVideoPlayer = () => {
-        if (!selectedVideo?.videoConfig) {
+        if (!selectedVideo?.videoConfig || !videoRoute) {
             return (
                 <div className="w-full aspect-video bg-zinc-900 rounded-xl flex items-center justify-center">
                     <div className="text-center text-muted-foreground">
@@ -692,8 +976,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             )
         }
 
-        const platform = activeMirror?.platform || selectedVideo.videoConfig.type
-        const sourceId = activeMirror?.sourceId || selectedVideo.videoConfig.bvid || selectedVideo.videoConfig.videoId || ''
+        const { platform, sourceId, embedUrl, isMp4Direct } = videoRoute
 
         if (platform === 'bilibili') {
             const isAid = /^\d+$/.test(sourceId)
@@ -704,6 +987,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl relative">
                     <VideoBilibiliHdPlayer
                         key={`${selectedVideo.id}-${activeMirror?.id || 'primary'}`}
+                        ref={biliPlayerRef}
                         bvid={resolvedBvid}
                         aid={resolvedAid}
                         cid={selectedVideo.videoConfig.cid}
@@ -714,9 +998,11 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                         seekSec={chapterSeekSec}
                         preferredEngine={biliEngine}
                         onEngineChange={(eng) => setBiliEngine(eng)}
-                        onTimeUpdateSec={(curSec) => {
-                            setCurrentTimeSec(Math.floor(curSec))
+                        onStageChange={setBiliStage}
+                        onTimeUpdateSec={(curSec, durationSec) => {
+                            if (selectedVideo) handlePlaybackTimeUpdate(selectedVideo, curSec, durationSec)
                         }}
+                        onPauseSec={() => flushPlaybackPosition()}
                         className="w-full h-full"
                     />
                 </div>
@@ -743,25 +1029,22 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             )
         }
 
-        const embedUrl =
-            buildVideoEmbedUrlForSeo({
-                ...selectedVideo.videoConfig,
-                type: platform,
-                videoId: sourceId,
-            }) || (platform === 'custom' ? safeHref(sourceId || selectedVideo.href) : undefined)
-
-        if (embedUrl && /\.(mp4|webm|ogg)(\?.*)?$/i.test(embedUrl)) {
+        if (embedUrl && isMp4Direct) {
             return (
                 <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl relative">
                     <video
                         key={`${selectedVideo.id}-${activeMirror?.id || 'direct'}`}
+                        ref={mp4VideoRef}
                         src={embedUrl}
                         poster={selectedVideo.icon}
                         controls
                         autoPlay
                         playsInline
                         className="w-full h-full object-contain"
-                        onTimeUpdate={(e) => setCurrentTimeSec(Math.floor(e.currentTarget.currentTime))}
+                        onTimeUpdate={(e) => {
+                            if (selectedVideo) handlePlaybackTimeUpdate(selectedVideo, e.currentTarget.currentTime, e.currentTarget.duration)
+                        }}
+                        onPause={() => flushPlaybackPosition()}
                     />
                 </div>
             )
@@ -839,26 +1122,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             onFailoverTrigger={handleAutoFailover}
                         />
 
-                        {/* 协同共赏房间 */}
-                        <Button
-                            variant={coWatchSession ? "secondary" : "ghost"}
-                            size="icon"
-                            title={coWatchSession ? `协同共赏室 (${coWatchSession.getPeerCount()}人在线)` : "协同共赏房间"}
-                            onClick={() => setShowCoWatchDialog(true)}
-                        >
-                            <Users className={cn("w-4 h-4", coWatchSession ? "text-emerald-500" : "text-muted-foreground")} />
-                        </Button>
-
-                        {/* WebAudio 信号处理 */}
-                        <Button
-                            variant={audioOptions.voiceClarity || audioOptions.volumeBoost > 1 ? "secondary" : "ghost"}
-                            size="icon"
-                            title="WebAudio 音频实验室 (人声清晰/响度平滑/音量增强)"
-                            onClick={() => setShowAudioDialog(true)}
-                        >
-                            <Volume2 className={cn("w-4 h-4", (audioOptions.voiceClarity || audioOptions.volumeBoost > 1) ? "text-primary" : "text-muted-foreground")} />
-                        </Button>
-
                         <Button
                             variant="ghost"
                             size="icon"
@@ -900,22 +1163,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             </Link>
                         </Button>
                         <VideoVoiceIndicator onCommand={handleVoiceCommand} />
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            title="技能图谱与打卡热力图"
-                            onClick={() => setShowSkillTreeDialog(true)}
-                        >
-                            <Trophy className="w-4 h-4 text-amber-500" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            title="无障碍视力守护与滤镜 (a11y)"
-                            onClick={() => setShowA11yDialog(true)}
-                        >
-                            <Eye className="w-4 h-4 text-primary" />
-                        </Button>
                         <ModeToggle />
                     </div>
                 </div>
@@ -994,15 +1241,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             />
                         </div>
 
-                        {/* 端侧空间手势控制状态 */}
-                        <VideoGestureHudOverlay
-                            enabled={gestureControlEnabled}
-                            onToggle={() => setGestureControlEnabled(prev => !prev)}
-                            onAction={(act) => {
-                                if (act === 'seek_back') setChapterSeekSec(prev => Math.max(0, (prev || 0) - 10))
-                                if (act === 'seek_forward') setChapterSeekSec(prev => (prev || 0) + 10)
-                            }}
-                        />
 
                         {/* 双语卡拉OK逐字字幕与术语释义 */}
                         {transcriptList.length > 0 && (
@@ -1031,13 +1269,10 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             selectedVideo={selectedVideo}
                             chaptersCount={chapters.length}
                             codeMilestonesCount={codeMilestones.length}
-                            quizCount={quizQuestions.length}
-                            flashcardsCount={flashcards.length}
                             showSandbox={showSandbox}
                             onToggleSandbox={() => setShowSandbox(prev => !prev)}
                             showTelestrator={showTelestrator}
                             onToggleTelestrator={() => setShowTelestrator(prev => !prev)}
-                            smartSpeedEnabled={smartSpeedConfig.enabled}
                             mindmapAvailable={mindmapRoot.children.length > 0}
                             pipRenderer={(
                                 <VideoPipWindowRenderer
@@ -1049,31 +1284,22 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             openers={{
                                 note: () => setShowNoteDialog(true),
                                 poster: () => setShowPosterDialog(true),
-                                // 无数据不给入口（2026-11-11 审计第二批）：抽认卡只在真有
-                                // 卡片（用户笔记 / 真章节测验派生）时出现；证书与概念图谱
-                                // 只对自带真实章节的视频出现；双语类只在有真实字幕稿时
-                                // 出现。频谱 / 神经降噪 / P2P 网格 / 分轨 / P2P 蜂群五个
+                                // 无数据不给入口（2026-11-11 审计第二批）：双语类只在
+                                // 有真实字幕稿时出现。AI 学习三件套（AI伴学 / 概念图谱 /
+                                // 抽认卡）合为 aiLearning 一个入口：概念图谱的「仅真实
+                                // 章节」gating 与抽认卡的卡片计数挪进中心弹窗内。
+                                // 频谱 / 神经降噪 / P2P 网格 / 分轨 / P2P 蜂群五个
                                 // 入口整体下线——背后没有真实数据管线，组件保留在仓内
                                 // （见 scripts/check-dead-modules.mjs 基线登记）。
-                                ...(flashcards.length > 0 ? { flashcards: () => setShowFlashcardsDialog(true) } : {}),
-                                ...(hasRealChapters ? { certificate: () => setShowCertDialog(true) } : {}),
-                                ocr: () => setShowOcrDialog(true),
-                                smartSpeed: () => setShowSmartSpeedDialog(true),
+                                aiLearning: () => setShowAiLearningDialog(true),
                                 offline: () => setShowOfflineDialog(true),
                                 ...(transcriptList.length > 0 ? { bilingualSubtitles: () => setShowBilingualSubtitlesDialog(true) } : {}),
                                 workspaceExport: () => setShowWorkspaceExportDialog(true),
-                                sessionReplay: () => setShowSessionReplayDialog(true),
                                 clipMaker: () => setShowClipMakerDialog(true),
                                 pomodoro: () => setShowPomodoroDialog(true),
-                                remedy: () => setShowRemedyDialog(true),
-                                autoHarvest: () => setShowAutoHarvestDialog(true),
-                                autonomousHarvest: () => setShowAutonomousHarvestConsole(true),
+                                harvest: () => setShowAutoHarvestDialog(true),
                                 webhook: () => setShowWebhookDialog(true),
-                                wasmOcr: () => setShowWasmOcrDialog(true),
                                 ...(transcriptList.length > 0 ? { bilingualTts: () => setShowBilingualTtsDialog(true) } : {}),
-                                ...(hasRealChapters ? { conceptGraph: () => setShowConceptGraphDialog(true) } : {}),
-                                studyRoom: () => setShowStudyRoomDialog(true),
-                                quiz: () => setShowQuizDialog(true),
                             }}
                         />
 
@@ -1235,13 +1461,15 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                     setChapterSeekSec={setChapterSeekSec}
                     mindmapRoot={mindmapRoot}
                     codeMilestones={codeMilestones}
-                    sandboxInitialCode={sandboxInitialCode}
                     danmakuList={danmakuList}
                     transcriptList={transcriptList}
                     filteredTranscript={filteredTranscript}
                     transcriptSearchQuery={transcriptSearchQuery}
                     setTranscriptSearchQuery={setTranscriptSearchQuery}
                     handleExportTranscript={handleExportTranscript}
+                    captionSource={captionSource}
+                    importedCaptionCount={importedCaptionCount}
+                    onOpenCaptionImport={() => setShowCaptionImport(true)}
                     notesList={notesList}
                     handleExportNotes={handleExportNotes}
                     setShowNoteDialog={setShowNoteDialog}
@@ -1292,6 +1520,15 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                             <span className="text-muted-foreground">切换下一部视频</span>
                             <kbd className="px-2 py-0.5 rounded bg-muted font-mono font-bold">]</kbd>
                         </div>
+                        <div className="pt-2">
+                            <div className="text-[11px] font-semibold text-foreground pb-1">语音指令（点麦克风后说）</div>
+                            {['暂停', '快进 30 秒', '两倍速', '下一集', '静音'].map(cmd => (
+                                <div key={cmd} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0">
+                                    <span className="text-muted-foreground">「{cmd}」</span>
+                                    <kbd className="px-2 py-0.5 rounded bg-muted font-mono text-[11px]">{cmd}</kbd>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog>
@@ -1328,189 +1565,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 </DialogContent>
             </Dialog>
 
-            {/* 课后测验弹窗 */}
-            <VideoQuizDialog
-                open={showQuizDialog}
-                onOpenChange={setShowQuizDialog}
-                questions={quizQuestions}
-                videoTitle={selectedVideo?.title || '技术自测'}
-            />
-
-            {/* 音频增强实验室弹窗 */}
-            <Dialog open={showAudioDialog} onOpenChange={setShowAudioDialog}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-base">
-                            <Volume2 className="w-5 h-5 text-primary" />
-                            <span>WebAudio 音频处理实验室</span>
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-2 text-xs">
-                        <p className="text-muted-foreground text-xs leading-relaxed">
-                            基于浏览器原生 AudioContext + BiquadFilterNode + DynamicsCompressorNode 实现客户端无损实时数字信号处理 (DSP)。
-                        </p>
-                        <div className="space-y-3 border p-3 rounded-lg bg-card">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="font-medium text-foreground">人声频段清晰度增强</div>
-                                    <div className="text-[11px] text-muted-foreground">提升 2.5kHz 语音共振峰，突出讲解人声</div>
-                                </div>
-                                <input aria-label="人声清晰度增强"
-                                    type="checkbox"
-                                    checked={audioOptions.voiceClarity}
-                                    onChange={(e) => setAudioOptions(prev => ({ ...prev, voiceClarity: e.target.checked }))}
-                                    className="rounded border-border text-primary focus:ring-0 w-4 h-4 cursor-pointer"
-                                />
-                            </div>
-
-                            <div className="flex items-center justify-between border-t border-border/40 pt-2">
-                                <div>
-                                    <div className="font-medium text-foreground">动态响度平滑 (AGC)</div>
-                                    <div className="text-[11px] text-muted-foreground">多频段压缩，防爆音并平衡忽大忽小的音量</div>
-                                </div>
-                                <input aria-label="响度标准化"
-                                    type="checkbox"
-                                    checked={audioOptions.loudnessNormalization}
-                                    onChange={(e) => setAudioOptions(prev => ({ ...prev, loudnessNormalization: e.target.checked }))}
-                                    className="rounded border-border text-primary focus:ring-0 w-4 h-4 cursor-pointer"
-                                />
-                            </div>
-
-                            <div className="flex items-center justify-between border-t border-border/40 pt-2">
-                                <div>
-                                    <div className="font-medium text-foreground">低频环境降噪 (Highpass)</div>
-                                    <div className="text-[11px] text-muted-foreground">衰减 80Hz 以下电流嗡嗡声与风噪底噪</div>
-                                </div>
-                                <input aria-label="低切滤波"
-                                    type="checkbox"
-                                    checked={audioOptions.lowCut}
-                                    onChange={(e) => setAudioOptions(prev => ({ ...prev, lowCut: e.target.checked }))}
-                                    className="rounded border-border text-primary focus:ring-0 w-4 h-4 cursor-pointer"
-                                />
-                            </div>
-
-                            <div className="border-t border-border/40 pt-2">
-                                <div className="flex items-center justify-between mb-1.5">
-                                    <span className="font-medium text-foreground">音量极限放大倍率</span>
-                                    <span className="font-mono text-primary font-bold">{(audioOptions.volumeBoost * 100).toFixed(0)}%</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    {[1.0, 1.25, 1.5, 2.0].map((rate) => (
-                                        <button
-                                            key={rate}
-                                            onClick={() => setAudioOptions(prev => ({ ...prev, volumeBoost: rate }))}
-                                            className={cn(
-                                                "flex-1 py-1 rounded text-xs border font-mono transition-all",
-                                                audioOptions.volumeBoost === rate
-                                                    ? "bg-primary text-primary-foreground border-primary"
-                                                    : "bg-muted hover:bg-accent"
-                                            )}
-                                        >
-                                            {rate}x
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex justify-end">
-                            <Button size="sm" onClick={() => setShowAudioDialog(false)}>
-                                确定
-                            </Button>
-                        </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            {/* 协同共赏房间弹窗 */}
-            <Dialog open={showCoWatchDialog} onOpenChange={setShowCoWatchDialog}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-base">
-                            <Users className="w-5 h-5 text-primary" />
-                            <span>P2P 协同共赏房间</span>
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-2 text-xs">
-                        <p className="text-muted-foreground text-xs leading-relaxed">
-                            基于 CRDT 逻辑时钟与跨标签页/设备通道实现毫秒级播放进度对齐与协同学习。
-                        </p>
-
-                        {coWatchSession ? (
-                            <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <span className="font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                        房间已连接: {coWatchSession.roomId}
-                                    </span>
-                                    <span className="text-[11px] font-mono text-muted-foreground">
-                                        在线节点: {coWatchSession.getPeerCount()}
-                                    </span>
-                                </div>
-                                <div className="text-[11px] text-muted-foreground font-mono space-y-1">
-                                    <div>本地客户端: {coWatchSession.clientId}</div>
-                                    <div>时钟版本号: {coWatchSession.getState().version}</div>
-                                    {coWatchState && <div>当前同步进度: {formatDuration(coWatchState.currentSec)}</div>}
-                                </div>
-                                <div className="flex gap-2">
-                                    <Button
-                                        size="sm"
-                                        className="flex-1 text-xs"
-                                        onClick={() => {
-                                            if (coWatchSession) {
-                                                coWatchSession.broadcastPlayback(chapterSeekSec || 0, true)
-                                            }
-                                        }}
-                                    >
-                                        向房间广播我当前进度
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="text-xs text-red-500 hover:text-red-600"
-                                        onClick={handleLeaveCoWatch}
-                                    >
-                                        离开房间
-                                    </Button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                <div className="space-y-1.5">
-                                    <label className="text-[11px] font-medium text-foreground">输入或创建房间号</label>
-                                    <div className="flex gap-2">
-                                        <input aria-label="一起看房间号"
-                                            type="text"
-                                            value={coWatchRoomId}
-                                            onChange={e => setCoWatchRoomId(e.target.value)}
-                                            placeholder={`例如: devops-${selectedVideo?.id || 'live'}`}
-                                            className="flex-1 px-3 py-1.5 text-xs rounded-md bg-muted border border-border/50 focus:outline-none"
-                                        />
-                                        <Button
-                                            size="sm"
-                                            onClick={() => handleJoinCoWatch(coWatchRoomId || `room-${selectedVideo?.id || 'main'}`)}
-                                        >
-                                            加入共看
-                                        </Button>
-                                    </div>
-                                </div>
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    className="w-full text-xs"
-                                    onClick={() => {
-                                        const defaultId = `study-${selectedVideo?.id || 'demo'}`
-                                        setCoWatchRoomId(defaultId)
-                                        handleJoinCoWatch(defaultId)
-                                    }}
-                                >
-                                    快速创建并加入本教程自习室
-                                </Button>
-                            </div>
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
-
             {/* 动态时间戳分享海报弹窗 */}
             {selectedVideo && (
                 <VideoSharePosterDialog
@@ -1523,21 +1577,21 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 />
             )}
 
-            {/* 艾宾浩斯智能抽认卡复习弹窗 */}
-            <VideoFlashcardDeck
-                open={showFlashcardsDialog}
-                onOpenChange={setShowFlashcardsDialog}
+            {/* AI 学习中心：AI伴学 / 概念图谱 / 抽认卡三件套合为一个入口 */}
+            <VideoAiLearningDialog
+                open={showAiLearningDialog}
+                onOpenChange={setShowAiLearningDialog}
+                transcripts={transcriptList}
+                onSeek={(sec) => setChapterSeekSec(sec)}
+                navigationData={navigationData}
+                onJumpToTarget={({ bvid, seekSec }) => {
+                    const found = allVideos.find(v => v.videoConfig?.bvid === bvid || v.id === bvid)
+                    if (found) setSelectedVideo(found)
+                    setChapterSeekSec(seekSec)
+                }}
                 cards={flashcards}
                 videoTitle={selectedVideo?.title || '技术知识点'}
-            />
-
-            {/* 结业微证书颁发弹窗 */}
-            <VideoCertificateDialog
-                open={showCertDialog}
-                onOpenChange={setShowCertDialog}
-                videoTitle={selectedVideo?.title || '全栈高级工程进阶'}
-                notesCount={notesList.length}
-                quizScorePercent={88}
+                conceptAvailable={hasRealChapters}
             />
 
             {/* 离线缓存管理弹窗 */}
@@ -1546,38 +1600,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 onOpenChange={setShowOfflineDialog}
                 currentVideoId={selectedVideo?.id}
                 currentVideoTitle={selectedVideo?.title}
-            />
-
-            {/* 智能静音跳跃配置弹窗 */}
-            <VideoSmartSpeedDialog
-                open={showSmartSpeedDialog}
-                onOpenChange={setShowSmartSpeedDialog}
-                config={smartSpeedConfig}
-                state={smartSpeedState}
-                onConfigChange={(newCfg) => setSmartSpeedConfig(prev => ({ ...prev, ...newCfg }))}
-            />
-
-            {/* 画面 OCR 代码提取弹窗 */}
-            <VideoFrameOcrDialog
-                open={showOcrDialog}
-                onOpenChange={setShowOcrDialog}
-                onSendToSandbox={() => {
-                    setActiveTab('wasm')
-                }}
-            />
-
-            {/* 无障碍视力守护配置弹窗 */}
-            <VideoA11ySettingsDialog
-                open={showA11yDialog}
-                onOpenChange={setShowA11yDialog}
-                settings={a11ySettings}
-                onSettingsChange={setA11ySettings}
-            />
-
-            {/* 全周期技能树与连续打卡热力图弹窗 */}
-            <VideoSkillTreeDialog
-                open={showSkillTreeDialog}
-                onOpenChange={setShowSkillTreeDialog}
             />
 
             {/* Git 工程与 Gist 导出弹窗 */}
@@ -1598,14 +1620,6 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 videoTitle={selectedVideo?.title}
             />
 
-            {/* 学习会话时空漫游复盘弹窗 */}
-            <VideoSessionReplayDialog
-                open={showSessionReplayDialog}
-                onOpenChange={setShowSessionReplayDialog}
-                recorder={sessionRecorderRef.current}
-                onSeekToHotspot={(sec) => setChapterSeekSec(sec)}
-            />
-
             {/* 视频微知识点一键切片生成器弹窗 */}
             <VideoClipMakerDialog
                 open={showClipMakerDialog}
@@ -1622,23 +1636,10 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 onOpenChange={setShowPomodoroDialog}
             />
 
-            {/* 贝叶斯自适应弱项诊断与补救弹窗 */}
-            <VideoAdaptiveRemedyDialog
-                open={showRemedyDialog}
-                onOpenChange={setShowRemedyDialog}
-                onSeekToTimestamp={(sec) => setChapterSeekSec(sec)}
-            />
-
-            {/* 全网热点视频自动采集与内容丰富弹窗 */}
+            {/* 视频采集中心：手动采集与 AI 自主巡航合为一个入口（弹窗内两个 tab） */}
             <VideoAutoHarvestDialog
                 open={showAutoHarvestDialog}
                 onOpenChange={setShowAutoHarvestDialog}
-            />
-
-            {/* AI 全程自主视频采集与知识重构控制台 */}
-            <VideoAutonomousHarvestConsole
-                open={showAutonomousHarvestConsole}
-                onOpenChange={setShowAutonomousHarvestConsole}
             />
 
             {/* 多源数据采集与 Webhook 自动化分发控制台 */}
@@ -1647,41 +1648,24 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 onOpenChange={setShowWebhookDialog}
             />
 
-            {/* Wasm 视频画面代码智能抽帧与 OCR 提取弹窗 */}
-            <VideoOcrCodeExtractorDialog
-                open={showWasmOcrDialog}
-                onOpenChange={setShowWasmOcrDialog}
-                onSendToSandbox={(code) => {
-                    setSandboxInitialCode(code)
-                    setActiveTab('sandbox')
-                }}
-            />
-
-            {/* AI 多语言双语同传与即时语音重译 (TTS) 弹窗 */}
+            {/* TTS 朗读弹窗（只朗读原文，不翻译） */}
             <VideoBilingualTtsDialog
                 open={showBilingualTtsDialog}
                 onOpenChange={setShowBilingualTtsDialog}
                 transcripts={selectedVideo?.videoConfig?.transcript}
             />
 
-            {/* 交互式技术概念图谱与 Dijkstra 最优学习路径穿梭机 */}
-            <VideoConceptGraphDialog
-                open={showConceptGraphDialog}
-                onOpenChange={setShowConceptGraphDialog}
-                navigationData={navigationData}
-                onJumpToTarget={({ bvid, seekSec }) => {
-                    const found = allVideos.find(v => v.videoConfig?.bvid === bvid || v.id === bvid)
-                    if (found) setSelectedVideo(found)
-                    setChapterSeekSec(seekSec)
-                }}
-            />
-
-            {/* WebRTC / CRDT 伴学自习室与音画协同白板 */}
-            <VideoCrdtStudyRoomDialog
-                open={showStudyRoomDialog}
-                onOpenChange={setShowStudyRoomDialog}
-                currentVideoTitle={selectedVideo?.title}
-            />
+            {/* 字幕导入：粘贴 / 上传 SRT / WebVTT，导入后本视频的字幕可搜、可跳转 */}
+            {selectedVideo && (
+                <VideoCaptionImportDialog
+                    open={showCaptionImport}
+                    onOpenChange={setShowCaptionImport}
+                    videoTitle={selectedVideo.title}
+                    importedCueCount={importedCaptionCount}
+                    onImport={handleImportCaptions}
+                    onDeleteImported={handleDeleteImportedCaptions}
+                />
+            )}
         </div>
     )
 }

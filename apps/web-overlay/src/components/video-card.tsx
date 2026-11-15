@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
 import { safeWindowOpen } from '@/lib/safe-url'
-import { PlayCircle, Clock, Check, Download, Play, Eye, User, Sparkles } from 'lucide-react'
+import { PlayCircle, Clock, Check, Download, Play, Eye, User } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { formatDuration } from '@/lib/video-format'
@@ -16,11 +17,6 @@ const VideoBilibiliHdPlayer = dynamic(
   () => import('@/components/video-bilibili-hd-player').then((m) => m.VideoBilibiliHdPlayer),
   { ssr: false },
 )
-// 播放弹窗同样只在点开后出现（已拆到 video-player-modal.tsx）：动态导入。
-const VideoPlayerModal = dynamic(
-  () => import('@/components/video-player-modal').then((m) => m.VideoPlayerModal),
-  { ssr: false },
-)
 import { buildVideoEmbedUrlForSeo } from '@/lib/video-embed-url'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
 import Image from 'next/image'
@@ -30,12 +26,10 @@ interface VideoCardProps {
     siteConfig?: SiteConfig
     /** 首屏第一张封面：预加载以压低 LCP，其余卡片保持懒加载 */
     priority?: boolean
-    /** 顶层弹窗播放回调：由页面级单例弹窗接管，杜绝在 360+ 网格卡片内挂载 Portal 导致 3 秒重排 */
-    onPlay?: (item: NavigationSubItem) => void
 }
 
-export const VideoCard = React.memo(function VideoCard({ item, siteConfig, priority = false, onPlay }: VideoCardProps) {
-    const [isOpen, setIsOpen] = useState(false)
+export const VideoCard = React.memo(function VideoCard({ item, priority = false }: VideoCardProps) {
+    const router = useRouter()
     const [imageLoaded, setImageLoaded] = useState(false)
     const [imageError, setImageError] = useState(false)
     const [isUsingProxy, setIsUsingProxy] = useState(false)
@@ -119,15 +113,11 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
     // 不再依赖鼠标点击 —— 视频卡片此前是一个纯 <div onClick>，没有任何可聚焦元素，
     // 键盘与读屏用户根本没法打开视频。
     const handleCardClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-        // 点击时立即解除卡片按钮的 DOM 焦点，避免弹窗唤起后被标记 aria-hidden 的父容器内保留焦点，
-        // 从而彻底杜绝 WAI-ARIA 规范冲突与 Chrome 750ms 强制重排
         e.currentTarget.blur()
-        if (onPlay && videoConfig) {
-            onPlay(item)
-            return
-        }
+        // 点卡片直接进路由版播放器（/videos/player?id=…）：弹窗版已删除，
+        // 路由页会按 ?id= 选片，分享海报链路与之共用同一入口。
         if (videoConfig) {
-            setIsOpen(true)
+            router.push(`/videos/player?id=${encodeURIComponent(item.id)}`)
         } else if (item.href) {
             safeWindowOpen(item.href)
         }
@@ -187,12 +177,6 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                 {videoConfig?.sourceType === 'auto_trend' && (
                     <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/95 text-amber-950 dark:text-amber-100 rounded-md shadow-xs backdrop-blur-md">
                         🔥 热门
-                    </span>
-                )}
-                {videoConfig?.qualityScore && videoConfig.qualityScore >= 90 && (
-                    <span className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold bg-violet-600/90 text-white rounded-md shadow-xs backdrop-blur-md">
-                        <Sparkles className="w-2.5 h-2.5" />
-                        精选
                     </span>
                 )}
             </div>
@@ -374,16 +358,6 @@ export const VideoCard = React.memo(function VideoCard({ item, siteConfig, prior
                     </button>
                 </div>
             </div>
-
-            {/* 降级弹窗：当卡片未接入页面单例时保留自封闭播放能力 */}
-            {isOpen && videoConfig && !onPlay && (
-                <VideoPlayerModal
-                    item={item}
-                    siteConfig={siteConfig}
-                    open={isOpen}
-                    onOpenChange={setIsOpen}
-                />
-            )}
         </>
     )
 })

@@ -133,13 +133,13 @@ export function VideoMultisourceWebhookDialog({
                 type="text"
                 readOnly
                 value={webhookEndpoint}
-                className="flex-1 h-8 px-2.5 rounded-md bg-background border border-border font-mono text-[11px] text-muted-foreground select-all focus:outline-none"
+                className="flex-1 h-11 px-2.5 rounded-md bg-background border border-border font-mono text-[11px] text-muted-foreground select-all focus:outline-none"
               />
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleCopyEndpoint}
-                className="h-8 px-3 text-xs gap-1.5 shrink-0"
+                className="min-h-11 px-3 text-xs gap-1.5 shrink-0"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copied ? '已复制' : '复制'}</span>
@@ -177,7 +177,7 @@ export function VideoMultisourceWebhookDialog({
                 size="sm"
                 onClick={handleSendTestWebhook}
                 disabled={isDispatching}
-                className="h-7 px-2.5 text-[11px] gap-1.5 font-medium"
+                className="min-h-11 px-2.5 text-[11px] gap-1.5 font-medium"
               >
                 <Send className="w-3 h-3" />
                 <span>{isDispatching ? '发送中...' : '发送测试 Webhook'}</span>

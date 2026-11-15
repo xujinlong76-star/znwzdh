@@ -1,7 +1,12 @@
 import type { NavigationData, NavigationSubItem, VideoPlatformType, VideoReplacementRecord } from '@/types/navigation'
 import { videoLog } from './video-log'
 import { recordSweepRun } from '@/lib/video-harvest-metrics'
-import { getBrowserStorage } from '@/lib/browser-storage'
+import {
+  decodeHealthCursor,
+  flattenVideoItems,
+  pageVideoItems,
+  type HealthSweepCoverage,
+} from '@/lib/video-health-cursor'
 
 export const PRUNE_AFTER_CONSECUTIVE_FAILURES = 2
 
@@ -37,9 +42,16 @@ export interface SweepReport {
   brokenItems: Array<{ id: string; title: string; reason: string }>
   replacementRecords: VideoReplacementRecord[]
   updatedData?: NavigationData
+  /**
+   * 本页在本轮全库巡检里的位置（游标分页新增）。
+   * `totalScanned` 仍是本页探测数；想看“全库扫了多少 / 还剩多少”读这里。
+   * 空库时 total 为 0、scanned 为 0、done 为 true——一轮合法的空巡检。
+   */
+  coverage?: HealthSweepCoverage
+  /** 扫完全库时为 null；否则原样传回下一页（`cursor` 参数）可断点续扫 */
+  nextCursor?: string | null
 }
 
-const SWEEP_STORAGE_KEY = 'devops_video_sweep_report_v1'
 
 /**
  * Checks single video embed/metadata status.
@@ -160,7 +172,7 @@ export async function probeVideoAvailability(
       }
     } else {
       /**
-       * 其余平台（vimeo / ted / dailymotion / peertube / douyin / custom…）没有
+       * 其余平台（vimeo / ted / dailymotion / peertube / custom）没有
        * 统一的元数据 API，此前直接返回 healthy —— 巡检对它们完全空转，死链永远
        * 绿灯。现在对条目的落地页做真实 HTTP 探测，口径与 B 站/YouTube 一致：
        * 404/410 = dead；2xx/3xx = healthy；403/429/5xx 与超时/网络错误 =
@@ -269,26 +281,42 @@ export async function sweepVideoHealth(
     autoPrune?: boolean
     /** 同时在飞的探测数（默认 6）。串行 30 条 × 3.5s 最坏 105s，必然撞函数超时。 */
     concurrency?: number
+    /**
+     * 断点续扫游标（`pageVideoItems` / 上一页报告的 `nextCursor` 原样传回）。
+     * 非法游标按新开一轮处理，不报错。
+     */
+    cursor?: string | null
+    /**
+     * 每页探测条数。默认 = 全库（不传 = 一次扫完全部可探测条目，6007 条的库
+     * 请由调用方按页循环，不要一次全量调——见 `video-health-sweep-service`）。
+     * 与 `maxItemsToCheck` 二选一：`pageSize` 优先，`maxItemsToCheck` 是旧名，
+     * 保留只为兼容已有调用。
+     */
+    pageSize?: number
   }
-): Promise<{ report: SweepReport; updatedData: NavigationData }> {
-  const maxItems = options?.maxItemsToCheck || 50
+): Promise<{ report: SweepReport; updatedData: NavigationData; nextCursor: string | null; coverage: HealthSweepCoverage }> {
   const timeoutMs = options?.timeoutMs || 4000
   // 默认不删：删除是不可逆操作，必须显式开启（并有回滚记录）
   const autoPrune = options?.autoPrune ?? false
   const concurrency = Math.max(1, Math.min(options?.concurrency ?? 6, 10))
   const prober = options?.prober || ((item) => probeVideoAvailability(item, timeoutMs))
 
-  const allItems: NavigationSubItem[] = []
-  for (const cat of navigationData.navigationItems) {
-    if (cat.items) allItems.push(...cat.items)
-    if (cat.subCategories) {
-      for (const sub of cat.subCategories) {
-        if (sub.items) allItems.push(...sub.items)
-      }
-    }
-  }
-
-  const videoItems = allItems.filter(i => Boolean(i.videoConfig)).slice(0, maxItems)
+  /**
+   * 游标分页，全库覆盖。
+   *
+   * 旧实现是 `allItems.filter(...).slice(0, maxItems)`：默认 50、路由默认 30、
+   * 上限 500——6007 条的库永远只扫前几十条，后面的死链永不被发现。
+   * 现在按游标切页：不传 pageSize/maxItemsToCheck 时一页就是全库（小库与
+   * 已有测试的行为不变）；传了页大小就只探本页，返回 nextCursor 供下一页
+   * 续扫，coverage 说明本轮扫到哪了。
+   */
+  const allVideoItems = flattenVideoItems(navigationData)
+  const explicitPageSize = options?.pageSize ?? options?.maxItemsToCheck
+  const { page: videoItems, nextCursor, coverage } = pageVideoItems(
+    allVideoItems,
+    decodeHealthCursor(options?.cursor),
+    explicitPageSize ?? Number.POSITIVE_INFINITY,
+  )
 
   let healthyCount = 0
   let brokenCount = 0
@@ -366,6 +394,10 @@ export async function sweepVideoHealth(
     unverified: unverifiedCount,
     pruneCandidates: brokenIds.size,
     threshold: PRUNE_AFTER_CONSECUTIVE_FAILURES,
+    runId: coverage.runId,
+    total: coverage.total,
+    scanned: coverage.scanned,
+    done: coverage.done,
   })
 
   if (autoPrune && brokenIds.size > 0) {
@@ -412,15 +444,8 @@ export async function sweepVideoHealth(
     brokenItems,
     replacementRecords,
     updatedData: updatedNavData,
-  }
-
-  try {
-    const storage = getBrowserStorage()
-    if (storage) {
-      storage.setItem(SWEEP_STORAGE_KEY, JSON.stringify(report))
-    }
-  } catch {
-    // Ignore storage quota
+    coverage,
+    nextCursor,
   }
 
   recordSweepRun({
@@ -431,19 +456,5 @@ export async function sweepVideoHealth(
     pruned: prunedCount,
   })
 
-  return { report, updatedData: updatedNavData }
-}
-
-/**
- * Retrieves the latest video health sweep report.
- */
-export function getLatestSweepReport(): SweepReport | null {
-  try {
-    const storage = getBrowserStorage()
-    if (!storage) return null
-    const raw = storage.getItem(SWEEP_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
+  return { report, updatedData: updatedNavData, nextCursor, coverage }
 }

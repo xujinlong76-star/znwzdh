@@ -6,7 +6,13 @@
  * 2. Markdown (.md)：结构化分级 Markdown，适配 Obsidian, Notion, GitHub
  * 3. OneTab / 纯文本链接 (.txt)：URL | 标题
  * 4. 纯净 JSON (.json)：NavSphere 规范格式
+ *
+ * 快捷链接模板只随 JSON 透传：JSON 是唯一保真格式，HTML / Markdown
+ * 导出不写模板字段（导入时也不会从它们读出模板）。
  */
+
+import { validateQuicklink } from './quicklinks'
+import { fingerprintUrl } from './import-workbench'
 
 export interface ExportFolder {
   id: string
@@ -23,6 +29,10 @@ export interface ExportFavoriteItem {
   tags?: string[]
   folderId?: string | null
   createdAt?: number
+  /** 快捷链接前缀（归一后小写、不含 `!`）；JSON 导出/导入透传，HTML/Markdown 不写 */
+  quickPrefix?: string
+  /** 快捷链接模板（含恰好一个 `{q}`）；JSON 透传，HTML/Markdown 不写 */
+  templateUrl?: string
 }
 
 export interface ParsedUniversalItem {
@@ -35,6 +45,8 @@ export interface ParsedUniversalItem {
   tags?: string[]
   folderName?: string
   createdAt?: number
+  quickPrefix?: string
+  templateUrl?: string
 }
 
 export interface ParseResult {
@@ -42,8 +54,24 @@ export interface ParseResult {
   format: 'html' | 'markdown' | 'onetab' | 'json' | 'unknown'
   items: ParsedUniversalItem[]
   detectedFolders: string[]
+  /**
+   * 解析跳过的无效条数（无法归一化 / 非 http(s) / 模板非法）。
+   * 批内重复不计在这里——被丢的重复条目进 `droppedDuplicates`，
+   * 两处数字互不重叠（“批内重复丢弃 N 条”与“解析跳过 N 条”不再双算同一条）。
+   */
   skippedCount: number
+  /**
+   * 解析层按指纹丢掉的批内重复条目（标题/文件夹原样保留）。
+   * 它们不进 `items`，但去重报告要拿它们判 `intra-file-dup`：
+   * 单文件内同一链接出现两次时，报告里可见、可逐条改判，而不是只剩
+   * 一个“解析跳过 N 条”数字。
+   */
+  droppedDuplicates?: ParsedUniversalItem[]
   error?: string
+  /** 达到 limit 被截断时为 true（与 limit 对齐的 5000 条上限） */
+  truncated?: boolean
+  /** 候选链接的真实命中总数（超限文案用）；拿不到时不填，不许编数字 */
+  totalMatched?: number
 }
 
 function escapeHtml(str: string): string {
@@ -250,18 +278,57 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
         const items: ParsedUniversalItem[] = []
         const folders = new Set<string>()
         let skipped = 0
-        const seenUrls = new Set<string>()
+        // 批内去重键 = fingerprintUrl（SSOT）：sanitize 结果仍保留 hash/
+        // 尾斜杠/www 差异，比对会漏判；这里只 import，不另写归一化
+        const seenFingerprints = new Set<string>()
+        const totalMatched = rawList.length
+        let consumed = 0
+        // 批内重复不计 skipped：被丢的条目原样留给去重报告判 intra-file-dup
+        const droppedDuplicates: ParsedUniversalItem[] = []
 
         for (const r of rawList) {
+          consumed++
           const href = sanitizeBookmarkUrl(r.href || r.url || '')
-          if (!href || seenUrls.has(href)) {
+          const fp = fingerprintUrl(href)
+          const title = String(r.title || r.name || href).trim()
+          const folderName = r.folderName || r.category || undefined
+          if (!href || !fp) {
             skipped++
             continue
           }
-          seenUrls.add(href)
-          const title = String(r.title || r.name || href).trim()
-          const folderName = r.folderName || r.category || undefined
+          if (seenFingerprints.has(fp)) {
+            droppedDuplicates.push({
+              siteId: r.siteId || generateBookmarkId(href),
+              title: title.slice(0, 200),
+              href,
+              description: r.description ? String(r.description).slice(0, 300) : undefined,
+              note: r.note ? String(r.note).slice(0, 200) : undefined,
+              tags: Array.isArray(r.tags) ? r.tags.map(String).slice(0, 8) : undefined,
+              folderName,
+              createdAt: typeof r.createdAt === 'number' ? r.createdAt : Date.now(),
+            })
+            continue
+          }
           if (folderName) folders.add(folderName)
+          // 快捷链接只随 JSON 透传：模板非法整条计入 skipped（与
+          // useFavorites.importJson 同口径），不静默丢模板；
+          // 模板绝不走 sanitizeBookmarkUrl——它是搜索模板不是站点地址，
+          // sanitize 会把 `{q}` 当脏参数处理。
+          const templateUrl = typeof r.templateUrl === 'string' ? r.templateUrl.trim() : ''
+          let quickPrefix: string | undefined
+          if (templateUrl) {
+            const checked = validateQuicklink({
+              prefix: typeof r.quickPrefix === 'string' ? r.quickPrefix : '',
+              templateUrl,
+            })
+            if (!checked.ok) {
+              skipped++
+              continue
+            }
+            quickPrefix = checked.prefix
+          }
+          // 模板非法不占去重槽位：上一条非法模板不能把后来的同链接有效条目挤成“重复”
+          seenFingerprints.add(fp)
 
           items.push({
             siteId: r.siteId || generateBookmarkId(href),
@@ -272,6 +339,8 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
             tags: Array.isArray(r.tags) ? r.tags.map(String).slice(0, 8) : undefined,
             folderName,
             createdAt: typeof r.createdAt === 'number' ? r.createdAt : Date.now(),
+            quickPrefix,
+            templateUrl: templateUrl || undefined,
           })
           if (items.length >= limit) break
         }
@@ -282,6 +351,9 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
           items,
           detectedFolders: Array.from(folders),
           skippedCount: skipped,
+          droppedDuplicates,
+          truncated: consumed < rawList.length,
+          totalMatched,
         }
       }
     } catch {
@@ -293,8 +365,12 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
   if (/<a\s+[^>]*href=/i.test(trimmed) || /<!DOCTYPE\s+NETSCAPE/i.test(trimmed)) {
     const items: ParsedUniversalItem[] = []
     const folders = new Set<string>()
-    const seenUrls = new Set<string>()
+    const seenFingerprints = new Set<string>()
     let skipped = 0
+    // 批内重复不计 skipped：被丢的条目原样留给去重报告判 intra-file-dup
+    const droppedDuplicates: ParsedUniversalItem[] = []
+    // 真实命中总数先数出来：超限文案必须用真数，拿不到就写“可能还有更多”
+    const totalMatched = [...trimmed.matchAll(/<a\s+[^>]*href="[^"]+"[^>]*>/gi)].length
 
     // 分行处理，跟踪当前层级的文件夹 <H3>
     let currentFolder: string | undefined = undefined
@@ -316,12 +392,7 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
       for (const m of aMatches) {
         const rawHref = m[2]
         const href = sanitizeBookmarkUrl(rawHref)
-        if (!href || seenUrls.has(href)) {
-          skipped++
-          continue
-        }
-        seenUrls.add(href)
-
+        const fp = fingerprintUrl(href)
         const rawTitle = m[4].replace(/<[^>]+>/g, '').trim()
         const title = rawTitle || href
 
@@ -329,6 +400,23 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
         const attrs = (m[1] + ' ' + m[3])
         const tagsMatch = attrs.match(/TAGS="([^"]+)"/i)
         const tags = tagsMatch ? tagsMatch[1].split(',').map((t) => t.trim()).filter(Boolean) : undefined
+
+        if (!href || !fp) {
+          skipped++
+          continue
+        }
+        if (seenFingerprints.has(fp)) {
+          droppedDuplicates.push({
+            siteId: generateBookmarkId(href),
+            title: title.slice(0, 200),
+            href,
+            folderName: currentFolder,
+            tags,
+            createdAt: Date.now(),
+          })
+          continue
+        }
+        seenFingerprints.add(fp)
 
         items.push({
           siteId: generateBookmarkId(href),
@@ -351,6 +439,9 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
         items,
         detectedFolders: Array.from(folders),
         skippedCount: skipped,
+        droppedDuplicates,
+        truncated: items.length >= limit && totalMatched > items.length + skipped + droppedDuplicates.length,
+        totalMatched,
       }
     }
   }
@@ -359,9 +450,12 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
   if (/\[.*?\]\(https?:\/\/.*?\)/i.test(trimmed) || /^#+\s+/m.test(trimmed)) {
     const items: ParsedUniversalItem[] = []
     const folders = new Set<string>()
-    const seenUrls = new Set<string>()
+    const seenFingerprints = new Set<string>()
     let currentFolder: string | undefined = undefined
     let skipped = 0
+    // 批内重复不计 skipped：被丢的条目原样留给去重报告判 intra-file-dup
+    const droppedDuplicates: ParsedUniversalItem[] = []
+    const totalMatched = [...trimmed.matchAll(/\[[^\]]+\]\(https?:\/\/[^\s)]+\)/gi)].length
 
     const lines = trimmed.split(/\r?\n/)
     for (const line of lines) {
@@ -380,13 +474,25 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
       if (linkMatch) {
         const rawHref = linkMatch[2]
         const href = sanitizeBookmarkUrl(rawHref)
-        if (!href || seenUrls.has(href)) {
+        const fp = fingerprintUrl(href)
+        const title = linkMatch[1].trim()
+        const desc = linkMatch[3] ? linkMatch[3].trim() : undefined
+        if (!href || !fp) {
           skipped++
           continue
         }
-        seenUrls.add(href)
-        const title = linkMatch[1].trim()
-        const desc = linkMatch[3] ? linkMatch[3].trim() : undefined
+        if (seenFingerprints.has(fp)) {
+          droppedDuplicates.push({
+            siteId: generateBookmarkId(href),
+            title: title.slice(0, 200),
+            href,
+            description: desc,
+            folderName: currentFolder,
+            createdAt: Date.now(),
+          })
+          continue
+        }
+        seenFingerprints.add(fp)
 
         items.push({
           siteId: generateBookmarkId(href),
@@ -408,14 +514,20 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
         items,
         detectedFolders: Array.from(folders),
         skippedCount: skipped,
+        droppedDuplicates,
+        truncated: items.length >= limit && totalMatched > items.length + skipped + droppedDuplicates.length,
+        totalMatched,
       }
     }
   }
 
   // 4. 尝试 OneTab / 纯文本行格式 (每行: URL | Title 或 URL Title 或单独 URL)
   const items: ParsedUniversalItem[] = []
-  const seenUrls = new Set<string>()
+  const seenFingerprints = new Set<string>()
   let skipped = 0
+  // 批内重复不计 skipped：被丢的条目原样留给去重报告判 intra-file-dup
+  const droppedDuplicates: ParsedUniversalItem[] = []
+  const totalMatched = [...trimmed.matchAll(/https?:\/\/[^\s|]+/gi)].length
   const lines = trimmed.split(/\r?\n/)
 
   for (const line of lines) {
@@ -439,9 +551,23 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
       }
 
       const clean = sanitizeBookmarkUrl(href)
-      if (clean && !seenUrls.has(clean)) {
-        seenUrls.add(clean)
+      const fp = fingerprintUrl(clean)
+      if (clean && fp && !seenFingerprints.has(fp)) {
+        seenFingerprints.add(fp)
         items.push({
+          siteId: generateBookmarkId(clean),
+          title: (title || clean).slice(0, 200),
+          href: clean,
+          createdAt: Date.now(),
+        })
+        if (items.length >= limit) break
+        continue
+      }
+      if (!clean || !fp) skipped++
+      else {
+        // 格式 A 的重复条：记入 droppedDuplicates 后直接下一行——不能再
+        // 掉进格式 B，否则同一条会在 skipped 里再被数一次
+        droppedDuplicates.push({
           siteId: generateBookmarkId(clean),
           title: (title || clean).slice(0, 200),
           href: clean,
@@ -455,10 +581,20 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
     const urlMatch = lineTrim.match(/(https?:\/\/[^\s]+)/i)
     if (urlMatch) {
       const clean = sanitizeBookmarkUrl(urlMatch[1])
-      if (clean && !seenUrls.has(clean)) {
-        seenUrls.add(clean)
+      const fp = fingerprintUrl(clean)
+      if (clean && fp && !seenFingerprints.has(fp)) {
+        seenFingerprints.add(fp)
         const rest = lineTrim.replace(urlMatch[1], '').trim()
         items.push({
+          siteId: generateBookmarkId(clean),
+          title: (rest || clean).slice(0, 200),
+          href: clean,
+          createdAt: Date.now(),
+        })
+        if (items.length >= limit) break
+      } else if (clean && fp) {
+        const rest = lineTrim.replace(urlMatch[1], '').trim()
+        droppedDuplicates.push({
           siteId: generateBookmarkId(clean),
           title: (rest || clean).slice(0, 200),
           href: clean,
@@ -477,6 +613,9 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
       items,
       detectedFolders: [],
       skippedCount: skipped,
+      droppedDuplicates,
+      truncated: items.length >= limit && totalMatched > items.length + skipped + droppedDuplicates.length,
+      totalMatched,
     }
   }
 

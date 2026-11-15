@@ -54,7 +54,8 @@ export interface VideoSearchFilterOptions {
   minDurationSec?: number
   maxDurationSec?: number
   categoryId?: string
-  sortBy?: 'relevance' | 'freshness' | 'quality' | 'views' | 'duration'
+  // 注意：曾有 sortBy（relevance/freshness/quality/views/duration）选项，但
+  // 没有任何生产调用方传它；它只是死选项，现已删除，统一按 BM25 相关分排序。
 }
 
 // 常见技术简称同义词典
@@ -241,7 +242,7 @@ export function searchVideoIndex(
       })
     })
 
-    return sortResults(list, options.sortBy || 'relevance')
+    return [...list].sort((a, b) => b.score - a.score)
   }
 
   // 2. BM25 检索评分 (k1 = 1.2, b = 0.75)
@@ -313,7 +314,7 @@ export function searchVideoIndex(
     })
   })
 
-  return sortResults(results, options.sortBy || 'relevance')
+  return [...results].sort((a, b) => b.score - a.score)
 }
 
 function passesFilter(doc: VideoIndexDocument, options: VideoSearchFilterOptions): boolean {
@@ -332,23 +333,3 @@ function passesFilter(doc: VideoIndexDocument, options: VideoSearchFilterOptions
   return true
 }
 
-function sortResults(
-  results: VideoSearchResult[],
-  sortBy: 'relevance' | 'freshness' | 'quality' | 'views' | 'duration'
-): VideoSearchResult[] {
-  return [...results].sort((a, b) => {
-    switch (sortBy) {
-      case 'freshness':
-        return b.freshnessScore - a.freshnessScore
-      case 'quality':
-        return b.qualityScore - a.qualityScore
-      case 'duration':
-        return (b.item.videoConfig?.durationSec || 0) - (a.item.videoConfig?.durationSec || 0)
-      case 'views':
-        return (b.item.videoConfig?.stats?.views || 0) - (a.item.videoConfig?.stats?.views || 0)
-      case 'relevance':
-      default:
-        return b.score - a.score
-    }
-  })
-}

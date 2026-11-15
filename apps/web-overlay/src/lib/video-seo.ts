@@ -22,12 +22,6 @@ export interface VideoSeoAuditReport {
 const PLATFORM_DISPLAY_NAMES: Record<string, string> = {
   bilibili: '哔哩哔哩 (Bilibili)',
   youtube: 'YouTube',
-  douyin: '抖音 (Douyin)',
-  kuaishou: '快手 (Kuaishou)',
-  xigua: '西瓜视频 (Xigua)',
-  xiaohongshu: '小红书 (RED)',
-  tencent: '腾讯视频',
-  youku: '优酷视频',
   vimeo: 'Vimeo',
   ted: 'TED Talks',
   dailymotion: 'Dailymotion',
@@ -597,7 +591,7 @@ export function auditVideoSeoReadiness(items: NavigationSubItem[]): VideoSeoAudi
     recommendations.push('可为高赞核心教程补充章节时间轴（Chapters），以触发搜索引擎 Key Moments 视频进度直达卡片。')
   }
   if (Object.keys(platformBreakdown).length <= 2) {
-    recommendations.push('当前视频来源平台较单一，可开启多平台采集（YouTube / Dailymotion / PeerTube / TED / Vimeo / 抖音 / 西瓜）丰富生态覆盖。')
+    recommendations.push('当前视频来源平台较单一，可开启多平台采集（YouTube / Dailymotion / TED / Vimeo / 抖音 / 西瓜）丰富生态覆盖。')
   }
   if (recommendations.length === 0) {
     recommendations.push('全库视频 SEO 结构化数据（VideoObject + Sitemap + MRSS）均已处于最佳就绪状态。')

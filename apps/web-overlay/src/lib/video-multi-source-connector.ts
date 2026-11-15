@@ -7,10 +7,12 @@
 
 import {
   evaluateVideoWithAIModel,
-  generateAISanitizedMetadata,
   type AIEvaluationResult,
-  type AISanitizedCourse,
 } from '@/lib/video-autonomous-ai-harvester'
+import {
+  checkHarvestEligibility,
+  harvestGuardRejectReason,
+} from '@/lib/video-harvest-guard'
 import {
   verifyHmacSha256,
   verifyHmacSha256WithTimestamp,
@@ -26,27 +28,10 @@ import {
  */
 const webhookReplayGuard = createReplayGuard(WEBHOOK_TIMESTAMP_TOLERANCE_SEC * 2 * 1000)
 import { calculateFreshnessScore } from '@/lib/video-scoring'
-import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
 import { enrichVideoItemSeo } from '@/lib/video-seo'
 import { detectVideoPlatform } from '@/lib/video-multi-platform-harvester'
-import type { NavigationItem, NavigationSubItem, VideoPlatformType } from '@/types/navigation'
+import type { NavigationItem, NavigationSubItem, VideoPlatformType, VideoStats } from '@/types/navigation'
 
-export interface RawExternalCandidate {
-  source: VideoPlatformType | 'github_trending' | 'webhook'
-  externalId: string
-  title: string
-  description?: string
-  author: string
-  durationSec: number
-  originUrl: string
-  domain: string
-  stats?: {
-    views?: number
-    likes?: number
-    coins?: number
-    favorites?: number
-  }
-}
 
 export interface WebhookPayload {
   event: 'video_published' | 'trending_alert' | 'manual_dispatch'
@@ -61,22 +46,15 @@ export interface WebhookPayload {
     url: string
     domain?: string
     tags?: string[]
+    /**
+     * 发送方提供的真实互动数据（播放/点赞/弹幕/投币/收藏）。
+     * 可选，但缺了就等于零数据：入库严标准守卫会直接拒收，不给默认值。
+     * 发送方想走这条路入库，必须在载荷里带真实数字；编造数字与伪造无异。
+     */
+    stats?: VideoStats
   }
 }
 
-export interface MultiSourceIngestReport {
-  timestamp: number
-  processedCount: number
-  acceptedCount: number
-  rejectedCount: number
-  items: Array<{
-    title: string
-    source: string
-    approved: boolean
-    score: number
-    reason?: string
-  }>
-}
 
 /**
  * Validates HMAC SHA-256 for incoming webhooks.
@@ -87,111 +65,6 @@ export interface MultiSourceIngestReport {
  */
 export function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
   return verifyHmacSha256(payload, signature, secret)
-}
-
-/**
- * Parses raw Bilibili Search / View API responses into standardized candidate objects.
- */
-export function parseBilibiliApiResponse(json: Record<string, any>): RawExternalCandidate[] {
-  const result: RawExternalCandidate[] = []
-  const list = json?.data?.result || json?.data?.list || json?.data?.vlist || []
-
-  for (const item of list) {
-    const bvid = item.bvid || (item.aid ? `av${item.aid}` : '')
-    if (!bvid) continue
-
-    const durationStr = item.duration || '0'
-    let durationSec = 0
-    if (typeof durationStr === 'number') {
-      durationSec = durationStr
-    } else if (typeof durationStr === 'string' && durationStr.includes(':')) {
-      const parts = durationStr.split(':').map(p => parseInt(p, 10))
-      if (parts.length === 2) durationSec = parts[0] * 60 + parts[1]
-      else if (parts.length === 3) durationSec = parts[0] * 3600 + parts[1] * 60 + parts[2]
-    } else {
-      durationSec = parseInt(durationStr, 10) || 600
-    }
-
-    result.push({
-      source: 'bilibili',
-      externalId: bvid,
-      title: (item.title || '').replace(/<[^>]*>/g, '').trim(),
-      description: item.description || item.desc || '',
-      author: item.author || item.owner?.name || '未知UP主',
-      durationSec,
-      originUrl: `https://www.bilibili.com/video/${bvid}`,
-      domain: 'cat_ai_engineering',
-      stats: {
-        views: item.play || item.stat?.view || 0,
-        likes: item.favorites || item.stat?.like || 0,
-        coins: item.coins || item.stat?.coin || 0,
-        favorites: item.favorites || item.stat?.favorite || 0,
-      },
-    })
-  }
-  return result
-}
-
-/**
- * Parses YouTube XML / RSS Atom feeds into standardized candidate objects.
- *
- * 假数据治理（升级方案 3.5）：此前无论 RSS 里有什么，一律硬编码
- * `durationSec: 1200`、`views: 50000`、`likes: 3500` —— 编造的互动数据会进
- * 质量分模型，让「无法判断」的内容伪装成「表现中等偏好」。现在只消费 feed
- * 里真实存在的字段：RSS 偶尔带 `<media:statistics views>`，有就采，没有就
- * 不写 stats；时长 RSS 不提供，如实置 0（未知），由评估逻辑按未知处理。
- */
-export function parseYouTubeRssFeed(xmlText: string): RawExternalCandidate[] {
-  const candidates: RawExternalCandidate[] = []
-  const entryRegex = /<entry>([\s\S]*?)<\/entry>/g
-  let match: RegExpExecArray | null
-
-  while ((match = entryRegex.exec(xmlText)) !== null) {
-    const entryBlock = match[1]
-    const idMatch = /<yt:videoId>(.*?)<\/yt:videoId>/.exec(entryBlock)
-    const titleMatch = /<title>(.*?)<\/title>/.exec(entryBlock)
-    const authorMatch = /<name>(.*?)<\/name>/.exec(entryBlock)
-    const descMatch = /<media:description>([\s\S]*?)<\/media:description>/.exec(entryBlock)
-    const viewsMatch = /<media:statistics[^>]*views="(\d+)"[^>]*>/.exec(entryBlock)
-      ?? /<media:statistics[^>]*views="(\d+)"/.exec(entryBlock)
-
-    if (idMatch && titleMatch) {
-      const views = viewsMatch ? Number.parseInt(viewsMatch[1], 10) : undefined
-      candidates.push({
-        source: 'youtube',
-        externalId: idMatch[1].trim(),
-        title: titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim(),
-        description: descMatch ? descMatch[1].trim() : '',
-        author: authorMatch ? authorMatch[1].trim() : 'YouTube Creator',
-        durationSec: 0, // RSS 不提供时长：未知就是未知，不编造默认值
-        originUrl: `https://www.youtube.com/watch?v=${idMatch[1].trim()}`,
-        domain: 'cat_fullstack_architecture',
-        ...(views !== undefined && Number.isFinite(views) ? { stats: { views } } : {}),
-      })
-    }
-  }
-  return candidates
-}
-
-/**
- * Parses GitHub Trending repository feeds and translates them into technical video candidates.
- *
- * 假数据治理（升级方案 3.5）：GitHub Trending 给的是**仓库**，不是视频——
- * 此前却套上「架构剖析与开源实战指南」的课程标题模板，并用 `stars × 10`
- * 编造播放量。现在标题/描述如实转写仓库信息，不写任何编造的 stats 与时长；
- * 内容是否值得入库交由评估与人工判断。
- */
-export function parseGitHubTrendingFeed(repos: Array<{ name: string; description: string; language: string; stars: number }>): RawExternalCandidate[] {
-  return repos.map(r => ({
-    source: 'github_trending',
-    externalId: `gh_${r.name.replace(/[^a-zA-Z0-9_]/g, '_')}`,
-    title: `${r.name}（${r.language || '开源'}·GitHub 热门仓库）`,
-    description: r.description || `GitHub Trending 上的 ${r.language || ''} 开源项目。`.trim(),
-    author: 'GitHub 创作者',
-    durationSec: 0, // 仓库没有时长：未知就是未知，不编造默认值
-    originUrl: `https://github.com/${r.name}`,
-    domain: 'cat_tools_indie',
-  }))
 }
 
 /**
@@ -276,14 +149,17 @@ export class MultiSourceConnector {
       }
     }
 
-    const meta = generateAISanitizedMetadata(
-      title,
-      description,
-      durationSec || 1200,
-      evalResult.conceptTags
-    )
-    // 合成元数据默认关闭：模板章节/字幕不得冒充视频原文（见 video-metadata-policy.ts）
-    const synthetic = syntheticMetadataEnabled()
+    // 入库严标准守卫（2026-11-13）：webhook 载荷不带 stats 就是零数据，直接拒收。
+    // 此前这里只过 AI 审核就放行，等于任何外部推送都能无数据入库；人工豁免不适用
+    // （sourceType 是 'webhook'，不是 'manual'），想入库就带真实互动数据。
+    const guardVerdict = checkHarvestEligibility({ stats: payload.data.stats })
+    if (!guardVerdict.eligible) {
+      return {
+        ok: false,
+        message: harvestGuardRejectReason(guardVerdict),
+        evaluation: evalResult,
+      }
+    }
 
     /**
      * 平台由来源决定，不再一律当 B 站。
@@ -301,9 +177,9 @@ export class MultiSourceConnector {
 
     const subItem: NavigationSubItem = enrichVideoItemSeo({
       id: `wh_${platform}_${id}_${Date.now()}`,
-      title: meta.cleanTitle,
+      title,
       href: url,
-      description: synthetic ? meta.overview : (description ?? ''),
+      description: description ?? '',
       // 不写封面：webhook 载荷里没有封面字段，此前统一塞同一张 Unsplash 图，
       // 等于给所有外部内容伪造配图。留空后前端走平台占位。
       enabled: true,
@@ -328,16 +204,16 @@ export class MultiSourceConnector {
           90,
           title
         ),
+        // 守卫已验过的真实互动数据随条目入库（有 stats 才写，零数据到不了这里）。
+        ...(payload.data.stats ? { stats: payload.data.stats } : {}),
         sourceType: 'webhook',
         healthStatus: 'healthy',
-        // 合成元数据默认不写：模板章节/字幕会被误认为视频原文
-        ...(synthetic ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true } : {}),
       },
     })
 
     return {
       ok: true,
-      message: 'Webhook 处理成功，已通过规则初筛（关键词 / 时长 / 互动加权）',
+      message: 'Webhook 处理成功，已通过 AI 审核与入库严标准守卫',
       subItem,
       evaluation: evalResult,
     }
@@ -365,14 +241,15 @@ export class MultiSourceConnector {
       }
     }
 
-    const meta = generateAISanitizedMetadata(
-      title,
-      description,
-      durationSec || 1200,
-      evalResult.conceptTags
-    )
-    // 合成元数据默认关闭：模板章节/字幕不得冒充视频原文（见 video-metadata-policy.ts）
-    const synthetic = syntheticMetadataEnabled()
+    // 与 processWebhook 同一条入库严标准守卫：管理员测试通道同样写库，零数据一样拒收。
+    const guardVerdict = checkHarvestEligibility({ stats: payload.data.stats })
+    if (!guardVerdict.eligible) {
+      return {
+        ok: false,
+        message: harvestGuardRejectReason(guardVerdict),
+        evaluation: evalResult,
+      }
+    }
 
     const detected = detectVideoPlatform(url)
     const platform: VideoPlatformType = id.startsWith('BV')
@@ -383,9 +260,9 @@ export class MultiSourceConnector {
 
     const subItem: NavigationSubItem = enrichVideoItemSeo({
       id: `wh_${platform}_${id}_${Date.now()}`,
-      title: meta.cleanTitle,
+      title,
       href: url,
-      description: synthetic ? meta.overview : (description ?? ''),
+      description: description ?? '',
       enabled: true,
       videoConfig: {
         type: platform,
@@ -407,62 +284,18 @@ export class MultiSourceConnector {
           90,
           title
         ),
+        // 守卫已验过的真实互动数据随条目入库（有 stats 才写，零数据到不了这里）。
+        ...(payload.data.stats ? { stats: payload.data.stats } : {}),
         sourceType: 'webhook',
         healthStatus: 'healthy',
-        // 合成元数据默认不写：模板章节/字幕会被误认为视频原文
-        ...(synthetic ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true } : {}),
       },
     })
 
     return {
       ok: true,
-      message: '管理员测试 Webhook 处理成功：AI 审核与元数据清洗均已通过',
+      message: '管理员测试 Webhook 处理成功：AI 审核、元数据清洗与入库严标准守卫均已通过',
       subItem,
       evaluation: evalResult,
     }
-  }
-
-  /**
-   * Ingests a list of raw candidates from any source and aggregates the evaluation results.
-   */
-  ingestCandidates(candidates: RawExternalCandidate[]): MultiSourceIngestReport {
-    const report: MultiSourceIngestReport = {
-      timestamp: Date.now(),
-      processedCount: candidates.length,
-      acceptedCount: 0,
-      rejectedCount: 0,
-      items: [],
-    }
-
-    for (const c of candidates) {
-      const evalRes = evaluateVideoWithAIModel({
-        title: c.title,
-        description: c.description,
-        author: c.author,
-        durationSec: c.durationSec,
-        stats: c.stats,
-      })
-
-      if (evalRes.isApproved) {
-        report.acceptedCount++
-        report.items.push({
-          title: c.title,
-          source: c.source,
-          approved: true,
-          score: evalRes.aiQualityScore,
-        })
-      } else {
-        report.rejectedCount++
-        report.items.push({
-          title: c.title,
-          source: c.source,
-          approved: false,
-          score: evalRes.aiQualityScore,
-          reason: evalRes.rejectReason,
-        })
-      }
-    }
-
-    return report
   }
 }

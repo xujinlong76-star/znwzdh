@@ -14,6 +14,8 @@
  *   - 命中范围：标题 / 链接 / 描述 / 备注 / 标签，均不区分大小写（中文直接子串匹配）；
  *   - 空关键词 = 不过滤，并且**原样返回入参数组**（引用不变，避免无谓重渲染）。
  */
+import { resolveTriageStatus, type TriageStatus, type TriageStatusLike } from './favorites-triage'
+import type { FavoritesSort } from './favorites-url'
 export interface FilterableFavorite {
   title: string
   href: string
@@ -22,6 +24,8 @@ export interface FilterableFavorite {
   note?: string
   /** 标签（T22）同入检索范围 */
   tags?: string[]
+  /** 快捷链接前缀：同入检索范围，搜 `gh` / `!gh` 能找回挂了模板的收藏 */
+  quickPrefix?: string
 }
 
 /** 把用户输入拆成检索词：去空白、转小写、去重、丢掉空串 */
@@ -37,7 +41,7 @@ export function parseFavoriteQuery(query: string): string[] {
 export function matchesFavoriteQuery(item: FilterableFavorite, query: string): boolean {
   const terms = parseFavoriteQuery(query)
   if (terms.length === 0) return true
-  const haystack = [item.title, item.href, item.description ?? '', item.note ?? '', (item.tags ?? []).join(' ')]
+  const haystack = [item.title, item.href, item.description ?? '', item.note ?? '', (item.tags ?? []).join(' '), item.quickPrefix ? `!${item.quickPrefix}` : '']
     .join(' ')
     .toLowerCase()
   return terms.every((term) => haystack.includes(term))
@@ -69,4 +73,61 @@ export function describeFavoritesFilter(shown: number, total: number, query: str
 export function favoriteFilterEmptyMessage(query: string): string {
   const trimmed = String(query ?? '').trim()
   return trimmed ? `没有收藏匹配「${trimmed}」` : '没有收藏匹配当前条件'
+}
+
+/**
+ * 按待读状态过滤（与 folderId / tags 正交，可与关键词筛选叠加）。
+ * 'all' 原样返回入参数组（引用不变）；其余按 resolveTriageStatus 判定——
+ * 缺字段的老收藏算 permanent，绝不会被扫进待读箱。
+ * 已移出区的条目根本不在入参里（它们住在另一个键），所以搜不到。
+ */
+export function filterByTriage<T extends TriageStatusLike>(
+  items: T[],
+  status: TriageStatus | 'all',
+  now: number = Date.now(),
+): T[] {
+  if (status === 'all') return items
+  const filtered = items.filter((item) => resolveTriageStatus(item, now) === status)
+  return filtered.length === items.length ? items : filtered
+}
+
+/**
+ * 收藏排序（纯函数，返回新数组，不改入参）。
+ *
+ * 排序口径与页面旧的内联比较器逐字一致，只是把「最近打开」补进来：
+ *  - 'created'：最近收藏在前（createdAt 倒序）。必须显式按时间戳排：
+ *    数组现状依赖「toggle unshift + 云端 DESC」的隐式约定，明文导入 /
+ *    金库恢复后顺序不再可信；
+ *  - 'title'：按标题中文排序；
+ *  - 'recent'：最近打开在前（lastOpenedAt 倒序）。没打开过的（缺字段 / 0）
+ *    一律沉底，之间按 createdAt 倒序——老收藏没有打开记录是数据现实，
+ *    不能把它们排在刚打开过的上面，也不能用 createdAt 冒充打开时间。
+ * 未知排序值回退 'created'（与 URL 解析的非法回退同口径）。
+ *
+ * 为什么 lastOpenedAt 现在才够用：此前只有 ⌘K / 重温 / 久未打开入口点开
+ * 才记 lastOpenedAt，主列表点卡不记（见 resurface.ts 的数据现实注释），
+ * 「最近打开」排出来是残缺的。页面现已在主列表卡片点击时同步记一次，
+ * 排序与记录同一轮次落地，缺口才算补上。
+ */
+export interface SortableFavorite {
+  title: string
+  createdAt: number
+  /** 本机上次打开时间戳（毫秒）；缺字段 = 从未记录到打开 */
+  lastOpenedAt?: number
+}
+
+/** 排序口径复用 URL 层的 FavoritesSort，不另起一套并集（否则两处易漂移）。 */
+export function sortFavorites<T extends SortableFavorite>(items: T[], sort: FavoritesSort): T[] {
+  const sorted = [...items]
+  if (sort === 'title') {
+    sorted.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'))
+  } else if (sort === 'recent') {
+    sorted.sort(
+      (a, b) => (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0) || (b.createdAt || 0) - (a.createdAt || 0),
+    )
+  } else {
+    // 'created' 与未知值：最近收藏在前
+    sorted.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+  }
+  return sorted
 }

@@ -1,26 +1,10 @@
-import { RssFeedWidget } from '@/components/modular/modules/rss-feed-widget'
-import { LiveApiWidget } from '@/components/modular/modules/live-api-widget'
 import React from 'react'
 import type { ModularWidgetDefinition, ModularPresetTemplate, WidgetInstance } from '@/types/modular'
-import { ClockWidget } from '@/components/modular/modules/clock-widget'
-import { QuickToolsWidget } from '@/components/modular/modules/quick-tools-widget'
-import { TrendingWidget } from '@/components/modular/modules/trending-widget'
-import { HyperbolicRadarWidget } from '@/components/modular/modules/hyperbolic-radar-widget'
-import { NotesWidget } from '@/components/modular/modules/notes-widget'
-import { SpeculativeTerminalWidget } from '@/components/modular/modules/speculative-terminal-widget'
-import { MetricsWidget } from '@/components/modular/modules/metrics-widget'
-import { FavoritesDockWidget } from '@/components/modular/modules/favorites-dock-widget'
-import { CustomCategoryWidget } from '@/components/modular/modules/custom-category-widget'
-import { QuickSearchWidget } from '@/components/modular/modules/quick-search-widget'
-import { GithubHeatmapWidget } from '@/components/modular/modules/github-heatmap-widget'
-import { WeatherWidget } from '@/components/modular/modules/weather-widget'
-import { IframeWidget } from '@/components/modular/modules/iframe-widget'
-import { DeclarativeWidget } from '@/components/modular/modules/declarative-widget'
 
 /**
  * 所有可用独立模块的注册表清单
  */
-export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { component: React.ComponentType<any> }> = {
+export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition> = {
   'clock-pomodoro': {
     type: 'clock-pomodoro',
     title: '数字时钟与番茄专注',
@@ -34,7 +18,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 2,
     badge: '极简时钟',
-    component: ClockWidget,
   },
   'quick-tools': {
     type: 'quick-tools',
@@ -49,7 +32,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 2,
     badge: '0-RTT 本地',
-    component: QuickToolsWidget,
   },
   'trending-radar': {
     type: 'trending-radar',
@@ -65,7 +47,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 3,
     badge: '站内实测',
-    component: TrendingWidget,
   },
   'hyperbolic-radar': {
     type: 'hyperbolic-radar',
@@ -96,7 +77,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
         defaultValue: 4,
       },
     ],
-    component: HyperbolicRadarWidget,
   },
   'speculative-terminal': {
     type: 'speculative-terminal',
@@ -111,7 +91,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 2,
     badge: '推测计算',
-    component: SpeculativeTerminalWidget,
   },
   'markdown-notes': {
     type: 'markdown-notes',
@@ -126,7 +105,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 3,
     badge: '本地优先',
-    component: NotesWidget,
   },
   'system-metrics': {
     type: 'system-metrics',
@@ -141,7 +119,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 2,
     badge: '中枢指标',
-    component: MetricsWidget,
   },
   'favorites-dock': {
     type: 'favorites-dock',
@@ -156,7 +133,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 2,
     badge: 'E2EE 同步',
-    component: FavoritesDockWidget,
   },
   'custom-category': {
     type: 'custom-category',
@@ -187,7 +163,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
         defaultValue: 6,
       },
     ],
-    component: CustomCategoryWidget,
   },
   'quick-search': {
     type: 'quick-search',
@@ -221,7 +196,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
         ],
       },
     ],
-    component: QuickSearchWidget,
   },
   'github-heatmap': {
     type: 'github-heatmap',
@@ -257,7 +231,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
         ],
       },
     ],
-    component: GithubHeatmapWidget,
   },
   'weather-clock': {
     type: 'weather-clock',
@@ -303,7 +276,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
         ],
       },
     ],
-    component: WeatherWidget,
   },
   'iframe-embed': {
     type: 'iframe-embed',
@@ -335,7 +307,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
         description: '视频/白板类站点需要全屏时保持开启；纯预览可以关掉。',
       },
     ],
-    component: IframeWidget,
   },
   'live-api': {
     type: 'live-api',
@@ -385,7 +356,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
         defaultValue: 30,
       },
     ],
-    component: LiveApiWidget,
   },
   'rss-feed': {
     type: 'rss-feed',
@@ -423,7 +393,6 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
         defaultValue: 8,
       },
     ],
-    component: RssFeedWidget,
   },
   'declarative-widget': {
     type: 'declarative-widget',
@@ -438,8 +407,33 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 3,
     badge: '0-Eval 沙箱',
-    component: DeclarativeWidget,
   },
+}
+
+
+/**
+ * 16 个 widget 组件的懒加载表：与 WIDGET_REGISTRY 元数据一一对应，
+ * 但只在真正渲染某类型时才下载对应 chunk。元数据（标题/配置/跨度）
+ * 仍走 WIDGET_REGISTRY 静态取，组件库列表、预设安装等不触发下载。
+ * 注意：各 widget 模块均为命名导出、无默认导出，lazy 需 .then 映射 default。
+ */
+export const WIDGET_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentType<any>>> = {
+  'clock-pomodoro': React.lazy(() => import('@/components/modular/modules/clock-widget').then((m) => ({ default: m.ClockWidget }))),
+  'quick-tools': React.lazy(() => import('@/components/modular/modules/quick-tools-widget').then((m) => ({ default: m.QuickToolsWidget }))),
+  'trending-radar': React.lazy(() => import('@/components/modular/modules/trending-widget').then((m) => ({ default: m.TrendingWidget }))),
+  'hyperbolic-radar': React.lazy(() => import('@/components/modular/modules/hyperbolic-radar-widget').then((m) => ({ default: m.HyperbolicRadarWidget }))),
+  'speculative-terminal': React.lazy(() => import('@/components/modular/modules/speculative-terminal-widget').then((m) => ({ default: m.SpeculativeTerminalWidget }))),
+  'markdown-notes': React.lazy(() => import('@/components/modular/modules/notes-widget').then((m) => ({ default: m.NotesWidget }))),
+  'system-metrics': React.lazy(() => import('@/components/modular/modules/metrics-widget').then((m) => ({ default: m.MetricsWidget }))),
+  'favorites-dock': React.lazy(() => import('@/components/modular/modules/favorites-dock-widget').then((m) => ({ default: m.FavoritesDockWidget }))),
+  'custom-category': React.lazy(() => import('@/components/modular/modules/custom-category-widget').then((m) => ({ default: m.CustomCategoryWidget }))),
+  'quick-search': React.lazy(() => import('@/components/modular/modules/quick-search-widget').then((m) => ({ default: m.QuickSearchWidget }))),
+  'github-heatmap': React.lazy(() => import('@/components/modular/modules/github-heatmap-widget').then((m) => ({ default: m.GithubHeatmapWidget }))),
+  'weather-clock': React.lazy(() => import('@/components/modular/modules/weather-widget').then((m) => ({ default: m.WeatherWidget }))),
+  'iframe-embed': React.lazy(() => import('@/components/modular/modules/iframe-widget').then((m) => ({ default: m.IframeWidget }))),
+  'live-api': React.lazy(() => import('@/components/modular/modules/live-api-widget').then((m) => ({ default: m.LiveApiWidget }))),
+  'rss-feed': React.lazy(() => import('@/components/modular/modules/rss-feed-widget').then((m) => ({ default: m.RssFeedWidget }))),
+  'declarative-widget': React.lazy(() => import('@/components/modular/modules/declarative-widget').then((m) => ({ default: m.DeclarativeWidget }))),
 }
 
 /**

@@ -20,7 +20,7 @@ interface ViewModeItem {
   icon: React.ReactNode
 }
 
-export function ViewModeToggle({ className }: { className?: string }) {
+export function ViewModeToggle({ className, menuSide = 'bottom' }: { className?: string; menuSide?: 'top' | 'bottom' }) {
   const { viewMode, setViewMode } = useHomeDIY()
 
   const items: ViewModeItem[] = [
@@ -80,7 +80,7 @@ export function ViewModeToggle({ className }: { className?: string }) {
           <span className="hidden xl:inline font-medium">{getLabel()}</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60 p-1.5 shadow-xl bg-popover/95 backdrop-blur-md border border-border/80">
+      <DropdownMenuContent align="end" side={menuSide} className="w-60 p-1.5 shadow-xl bg-popover/95 backdrop-blur-md border border-border/80">
         <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
           首页视窗形态模式
         </DropdownMenuLabel>

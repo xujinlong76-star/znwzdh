@@ -64,6 +64,8 @@ export const DEFAULT_AI_UPSTREAM_TIMEOUT_MS = 120_000
  * 用户以为失败而重试（恢复幂等，但会白等一次）。
  */
 const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich', 'backup', 'recipes', 'comparisons', 'intent'])
+// 注意：`ask` 不在这里——问答 POST（SSE）与状态 GET 共用首段，按首段匹配会把
+// 快接口 /api/ask/status 也划入 120 秒；见 isLongRunningPath 内的单列处理。
 const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix', 'check-urls', 'ai-heal'])
 /**
  * 站点详情里的 AI 动作（末段，中间夹着 id）：
@@ -73,9 +75,16 @@ const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix'
  */
 const LONG_RUNNING_SITE_ACTIONS = new Set(['radar', 'visual', 'batch-classify'])
 
-export function isLongRunningPath(path: string[] | string): boolean {
+export function isLongRunningPath(path: string[] | string, method?: string): boolean {
   const segments = (Array.isArray(path) ? path : path.split('/')).filter(Boolean)
   if (segments.length === 0) return false
+  // 问问我的收藏：只有 POST /api/ask（SSE 问答，打大模型）走 120 秒；
+  // GET /api/ask/status 是快接口（只读收藏条数 + 模型就绪），走默认 30 秒。
+  // 没传 method 时按路径收窄：仅裸 /api/ask 算长耗时，带第二段的一律不算。
+  if (segments[0] === 'ask') {
+    if (segments.length !== 1) return false
+    return method === undefined || method.toUpperCase() === 'POST'
+  }
   if (LONG_RUNNING_ROOTS.has(segments[0])) return true
   if (segments[0] === 'sites' && segments[1] === 'auto') return true
   if (segments[0] === 'submissions' && segments[1] === 'prefill') return true
@@ -96,11 +105,12 @@ export function isLongRunningPath(path: string[] | string): boolean {
 export function upstreamTimeoutMs(
   raw: string | undefined = process.env.NAVHUB_HUB_TIMEOUT_MS,
   path?: string[] | string,
+  method?: string,
 ): number {
   const n = Number(raw)
   if (Number.isFinite(n) && n > 0) return n
 
-  if (path !== undefined && isLongRunningPath(path)) {
+  if (path !== undefined && isLongRunningPath(path, method)) {
     const aiTimeout = Number(process.env.NAVHUB_AI_TIMEOUT_MS)
     return Number.isFinite(aiTimeout) && aiTimeout > 0 ? aiTimeout : DEFAULT_AI_UPSTREAM_TIMEOUT_MS
   }

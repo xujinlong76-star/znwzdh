@@ -35,6 +35,15 @@ export interface LocalFavoriteLike {
   tags?: string[]
   folderId?: string | null
   createdAt: number
+  /** 快捷链接（v1 本地 only）：运行时 spread 已保留，云端合并只做展示字段补齐，不洗掉它 */
+  quickPrefix?: string
+  templateUrl?: string
+  /**
+   * 待读分流（v1 本地 only，不进同步 ops、不进云端）：运行时 spread 已保留，
+   * 云端合并只做展示字段补齐，不洗掉它；云端新条目没有这两个字段 → permanent。
+   */
+  triageStatus?: 'inbox' | 'read' | 'permanent'
+  triageAt?: number
 }
 
 export function mergeCloudFavorites<T extends LocalFavoriteLike>(

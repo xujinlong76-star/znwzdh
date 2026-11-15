@@ -7,8 +7,9 @@
  *     （data-management.test.ts 每次跑测试都会重数一遍，漂移即红）。
  *     2026-11-15 T5 元宝收录：新增「AI 搜索」二级与元宝搜索一站，基线 333→334、二级 47→48。
  *     2026-11-15 卸载合集：补 github.com/trending 一站，基线 334→335。
- *   - 视频 6007：实测自 `apps/web-overlay/src/navsphere/content/videos.json`
- *    （带 bvid / durationSec+title 的条目数，测试每次重数，漂移即红）。
+ *   - 视频 2265：实测自 `apps/web-overlay/src/navsphere/content/videos.json`
+ *    （导航分类 items + 子分类 items 的条目数，与 storage.ts
+ *     countVideoDocItems 同口径，测试每次重数，漂移即红）。
  *     该文件即 `kv:videos` 的灌入源。
  *
  * 判定只回答「灌了没有」，不回答「够不够用」：
@@ -19,7 +20,7 @@
  */
 
 export const BASELINE_SITES = 335
-export const BASELINE_VIDEOS = 6007
+export const BASELINE_VIDEOS = 2265
 
 export type SeedStatus = 'seeded' | 'below-baseline' | 'empty'
 

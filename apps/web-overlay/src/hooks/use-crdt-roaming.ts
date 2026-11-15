@@ -23,7 +23,16 @@ export type CrdtSyncStatus = 'synced' | 'syncing' | 'offline' | 'error'
 
 const BROADCAST_CHANNEL_NAME = 'navhub-crdt-sync-channel'
 
-export function useCrdtRoaming() {
+export interface UseCrdtRoamingOptions {
+  /**
+   * false 时不拉取云端、不派发操作（本地 Store 与跨标签页通道仍建，
+   * 但不产生任何网络请求）。默认 true：不传参的调用方行为与之前完全一致。
+   * 接力接线（D 组）只在已登录时启用，未登录不请求云端。
+   */
+  enabled?: boolean
+}
+
+export function useCrdtRoaming({ enabled = true }: UseCrdtRoamingOptions = {}) {
   // 初始态必须是 'syncing' 而不是 'synced'：小药丸整棵子树已是 dynamic，
   // 挂载时引擎尚未完成首次云端合流；初始 'synced' 会在 chunk 到达后的
   // 一瞬间谎报“已同步”，随后又被 syncWithServer 翻回 'syncing'。
@@ -35,6 +44,7 @@ export function useCrdtRoaming() {
     categoryOrder: [],
     pinnedSiteIdsByCategory: {},
     customCategories: [],
+    videoProgress: {},
   })
 
   const clientIdRef = useRef<string>('')
@@ -152,12 +162,14 @@ export function useCrdtRoaming() {
   }, [])
 
   useEffect(() => {
+    if (!enabled) return
     void syncWithServer()
-  }, [syncWithServer])
+  }, [syncWithServer, enabled])
 
-  // 提交并广播原子操作
+  // 提交并广播原子操作（未启用时直接丢弃：未登录不产生任何云端写入）
   const dispatchOp = useCallback(
     async <T = any>(type: CRDTOpType, entityId: string, payload: T) => {
+      if (!enabled) return
       const cid = clientIdRef.current || 'client_anon'
       const op = createCRDTOperation(type, entityId, payload, cid)
 
@@ -192,7 +204,7 @@ export function useCrdtRoaming() {
         setStatus('offline')
       }
     },
-    []
+    [enabled]
   )
 
   return {

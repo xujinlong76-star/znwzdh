@@ -19,6 +19,32 @@ export type CRDTOpType =
   | 'DELETE_CUSTOM_CATEGORY'
   | 'UPSERT_CUSTOM_SITE'
   | 'DELETE_CUSTOM_SITE'
+  | 'UPSERT_VIDEO_PROGRESS'
+  | 'DELETE_VIDEO_PROGRESS'
+
+/** 视频断点接力（Batch 3 第 9 项，方案 A）：平台只取三值，未知平台归 'other'。 */
+export type VideoPlatform = 'bilibili' | 'youtube' | 'other'
+
+export interface VideoProgress {
+  videoId: string
+  title: string
+  author?: string
+  cover?: string
+  platform: VideoPlatform
+  timestampSec: number
+  durationSec: number
+  progressPercent: number
+  /** LWW 键：同视频取 updatedAt 更晚者。 */
+  updatedAt: number
+  /** 复用 sessionStorage 的 navhub_crdt_client_id，不新建 id。 */
+  deviceId: string
+  /** 可选：无可靠设备名时不编造，缺了就别写，卡上只写相对时间。 */
+  deviceLabel?: string
+}
+
+export const VIDEO_PROGRESS_FUTURE_SKEW_MS = 5 * 60 * 1000
+
+const VIDEO_PLATFORMS: ReadonlySet<string> = new Set(['bilibili', 'youtube', 'other'])
 
 export interface CRDTOperation<T = any> {
   id: string
@@ -48,6 +74,8 @@ export interface CRDTReducedState {
   categoryOrder: string[]
   pinnedSiteIdsByCategory: Record<string, string[]>
   customCategories: CRDTCustomCategory[]
+  /** 跨设备接力：每视频只留最新一条断点（LWW 以 payload.updatedAt 为准）。 */
+  videoProgress: Record<string, VideoProgress>
 }
 
 /**
@@ -117,7 +145,8 @@ export function mergeOperationLogs(
  */
 export function reduceOperationsToState(
   operations: CRDTOperation[],
-  initialState?: Partial<CRDTReducedState>
+  initialState?: Partial<CRDTReducedState>,
+  now: number = Date.now()
 ): CRDTReducedState {
   const state: CRDTReducedState = {
     pinnedCategoryIds: [...(initialState?.pinnedCategoryIds || [])],
@@ -127,6 +156,9 @@ export function reduceOperationsToState(
       ...c,
       items: [...c.items],
     })),
+    videoProgress: Object.fromEntries(
+      Object.entries(initialState?.videoProgress || {}).map(([k, v]) => [k, { ...v }])
+    ),
   }
 
   // 记录每个实体的最新写入时间，用于精确 LWW 冲突解决
@@ -141,8 +173,87 @@ export function reduceOperationsToState(
     return false
   }
 
+  // 视频断点用 payload.updatedAt 做 LWW（与排版类 op 的 op.timestamp 分开记，
+  // 否则压缩后 op.timestamp 被抬到 maxTs 会让旧断点误胜）。
+  // 初始态已有的断点先 seeding，避免旧 op 覆盖更新的初始态。
+  const videoLww = new Map<string, number>()
+  for (const [videoId, progress] of Object.entries(state.videoProgress)) {
+    if (Number.isFinite(progress.updatedAt)) videoLww.set(videoId, progress.updatedAt)
+  }
+  // 未来时间戳脏数据（updatedAt > now + 5min）丢弃：沿用 resurface.ts
+  // 「晚于 now 的时间戳一律忽略」口径。返回 true 表示该 op 可参与 LWW。
+  const videoOpWins = (videoId: string, updatedAt: number): boolean => {
+    if (!Number.isFinite(updatedAt) || updatedAt > now + VIDEO_PROGRESS_FUTURE_SKEW_MS) {
+      return false
+    }
+    const prev = videoLww.get(videoId)
+    if (prev !== undefined && updatedAt < prev) return false
+    videoLww.set(videoId, updatedAt)
+    return true
+  }
+  // payload.updatedAt 缺失/非法时退回 op.timestamp（压缩前的老 op 与手写 op 仍能参与 LWW）。
+  const videoUpdatedAtOf = (op: CRDTOperation): number => {
+    const raw = (op.payload as { updatedAt?: unknown } | null | undefined)?.updatedAt
+    return typeof raw === 'number' && Number.isFinite(raw) ? raw : op.timestamp
+  }
+
   for (const op of operations) {
     switch (op.type) {
+      case 'UPSERT_VIDEO_PROGRESS': {
+        const videoId = op.entityId
+        if (!videoId) break
+        const p = (op.payload || {}) as Partial<VideoProgress>
+        // 先校验 payload 再占 LWW 水位：无效 op 不得挡住随后有效的 op。
+        if (
+          typeof p.title !== 'string' ||
+          p.title.length === 0 ||
+          typeof p.timestampSec !== 'number' ||
+          !Number.isFinite(p.timestampSec) ||
+          p.timestampSec < 0 ||
+          typeof p.durationSec !== 'number' ||
+          !Number.isFinite(p.durationSec) ||
+          p.durationSec < 0 ||
+          typeof p.progressPercent !== 'number' ||
+          !Number.isFinite(p.progressPercent)
+        ) {
+          break
+        }
+        const updatedAt = videoUpdatedAtOf(op)
+        if (!videoOpWins(videoId, updatedAt)) break
+        // 注意：看完（progressPercent >= 95%）不发删除、记录照常保留，
+        // 只是接力卡上不显示——规约层不过滤，由卡片 UI 决定。
+        const progress: VideoProgress = {
+          videoId,
+          title: p.title,
+          platform: VIDEO_PLATFORMS.has(p.platform as string)
+            ? (p.platform as VideoPlatform)
+            : 'other',
+          timestampSec: p.timestampSec,
+          durationSec: p.durationSec,
+          progressPercent: Math.min(100, Math.max(0, p.progressPercent)),
+          updatedAt,
+          deviceId:
+            typeof p.deviceId === 'string' && p.deviceId.length > 0 ? p.deviceId : op.clientId,
+        }
+        if (typeof p.author === 'string' && p.author.length > 0) progress.author = p.author
+        if (typeof p.cover === 'string' && p.cover.length > 0) progress.cover = p.cover
+        if (typeof p.deviceLabel === 'string' && p.deviceLabel.length > 0) {
+          progress.deviceLabel = p.deviceLabel
+        }
+        state.videoProgress[videoId] = progress
+        break
+      }
+
+      case 'DELETE_VIDEO_PROGRESS': {
+        const videoId = op.entityId
+        if (!videoId) break
+        // 只有比现有断点更新的删除才生效，旧删除不能复活已删的断点，
+        // 也不能删掉比它更新的断点。
+        if (!videoOpWins(videoId, videoUpdatedAtOf(op))) break
+        delete state.videoProgress[videoId]
+        break
+      }
+
       case 'SET_CATEGORY_PIN': {
         const key = `cat_pin_${op.entityId}`
         if (isMoreRecent(key, op)) {
@@ -352,6 +463,23 @@ export function compactOperationLog(
         )
       )
     }
+  }
+
+  // 5. 视频断点：每视频只留最新一条。
+  // 关键：payload.updatedAt 保留原始值、只把 op.timestamp 抬到 maxTs。
+  // 若把 updatedAt 也抬到 maxTs，压缩体会误胜另一设备上 updatedAt 介于
+  // 原值与 maxTs 之间的真实新断点；若丢掉 maxTs，压缩后的 op 与未压缩
+  // 副本合流时旧 op 可能「复活」成最新。两者缺一不可。
+  for (const [videoId, progress] of Object.entries(reduced.videoProgress)) {
+    compacted.push(
+      createCRDTOperation(
+        'UPSERT_VIDEO_PROGRESS',
+        videoId,
+        { ...progress },
+        clientId,
+        timestamp
+      )
+    )
   }
 
   return compacted

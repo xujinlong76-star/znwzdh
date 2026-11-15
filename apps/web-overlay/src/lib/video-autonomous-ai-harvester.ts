@@ -8,15 +8,16 @@ import type {
   NavigationData,
   NavigationItem,
   NavigationSubItem,
-  VideoChapter,
-  VideoTranscriptItem,
   VideoStats,
 } from '@/types/navigation'
-import type { VideoQuizQuestion } from '@/lib/video-quiz-generator'
 import { CURATED_TRENDING_TOPICS, type TrendingTechTopic } from '@/lib/video-trending-harvester'
 import { calculateFreshnessScore } from '@/lib/video-scoring'
-import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
 import { videoExternalKey } from '@/lib/video-identity'
+import {
+  HARVEST_GUARD_REJECT_PREFIX,
+  checkHarvestEligibility,
+  isHarvestEligibleForItem,
+} from '@/lib/video-harvest-guard'
 import { enrichVideoItemSeo, submitUrlsToIndexNow } from '@/lib/video-seo'
 import { harvestMultiPlatformVideosForKeyword } from '@/lib/video-multi-platform-harvester'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
@@ -37,15 +38,6 @@ export interface AIEvaluationResult {
   pedagogicalValue: string
 }
 
-export interface AISanitizedCourse {
-  cleanTitle: string
-  cleanDescription: string
-  overview: string
-  chapters: VideoChapter[]
-  transcripts: VideoTranscriptItem[]
-  quizzes: VideoQuizQuestion[]
-  prerequisites: string[]
-}
 
 export interface AutonomousHarvestLogEntry {
   timestamp: number
@@ -169,15 +161,17 @@ export function evaluateVideoWithAIModel(rawVideo: {
     }
   }
 
-  // 4. Calculate AI pedagogical score based on stats and depth
-  const views = stats.views || 10000
-  const likes = stats.likes || 500
-  const coins = stats.coins || 200
-  const favorites = stats.favorites || 1000
+  // 4. Calculate AI pedagogical score based on stats and depth.
+  // 无互动数据就是 0，不编造默认值：此前缺 stats 时按 10000 播放 / 500 点赞 /
+  // 200 投币 / 1000 收藏估算，等于给「零数据」视频发了一张中等成绩单。
+  const views = stats.views || 0
+  const likes = stats.likes || 0
+  const coins = stats.coins || 0
+  const favorites = stats.favorites || 0
 
   // High coin/like ratio indicates high practical educational takeaway (干货比)
-  const coinToLikeRatio = likes > 0 ? coins / likes : 0.2
-  const favToViewRatio = views > 0 ? favorites / views : 0.05
+  const coinToLikeRatio = likes > 0 ? coins / likes : 0
+  const favToViewRatio = views > 0 ? favorites / views : 0
 
   let baseScore = 75
   if (matchedTags.length >= 3) baseScore += 10
@@ -188,7 +182,9 @@ export function evaluateVideoWithAIModel(rawVideo: {
   // 反而比正常标题得分更高 —— 实测 95 分 > 93 分，评分方向是反的。
   if (hasClickbait) baseScore -= 15
 
-  const finalScore = Math.max(10, Math.min(99, Math.round(baseScore)))
+  // 没有下限钳制：旧 Math.max(10, …) 在本函数里从未生效（baseScore 最低 60，
+  // 75 起评 − 15 标题党惩罚），只是挂在评分末尾的一处垫高写法，去掉。
+  const finalScore = Math.min(99, Math.round(baseScore))
 
   let depth: AIEvaluationResult['techDepth'] = 'intermediate'
   if (/架构|底层|内核|eBPF|无锁|微服务|分布式/i.test(fullText)) {
@@ -207,121 +203,6 @@ export function evaluateVideoWithAIModel(rawVideo: {
     conceptTags: matchedTags.slice(0, 5),
     detectedClickbait: hasClickbait,
     pedagogicalValue: finalScore >= 90 ? '极高（企业生产级必读）' : finalScore >= 80 ? '高（深度实战教程）' : '良好',
-  }
-}
-
-/**
- * AI Model content synthesis function: cleans title, structures chapters,
- * extracts transcripts and generates self-assessment quiz questions.
- */
-export function generateAISanitizedMetadata(
-  rawTitle: string,
-  rawDesc: string = '',
-  durationSec: number = 1800,
-  conceptTags: string[] = ['架构']
-): AISanitizedCourse {
-  // 1. Sanitize title: strip brackets and sensational marketing words
-  let cleanTitle = rawTitle
-    .replace(/【[^】]*】/g, '')
-    .replace(/\[[^\]]*\]/g, '')
-    .replace(/震惊|必看|绝了|逆天|全网最强/g, '')
-    .replace(/[!！?？]+/g, '')
-    .trim()
-
-  if (cleanTitle.length < 5) cleanTitle = rawTitle.slice(0, 30)
-
-  // 2. Synthesize AI Overview
-  const tagList = conceptTags.join('、')
-  const overview = `由 AI 大模型深度提炼：本课程围绕 ${tagList} 展开，系统解构核心架构设计与工程化演进路径，提供完备的代码里程碑与实操避坑指引。`
-
-  // 3. Synthesize 4 structured chapters aligned with total duration
-  const chDuration = Math.floor(durationSec / 4)
-  const chapters: VideoChapter[] = [
-    {
-      id: 'ai-ch-1',
-      title: `${conceptTags[0] || '核心技术'}：背景与架构原理深潜`,
-      startTime: 0,
-      duration: chDuration,
-      summary: '梳理底层技术演进脉络与关键设计决策。',
-      codeSnippet: `// 阶段 1: 核心初始化\nconsole.log("Initializing ${conceptTags[0] || 'System'} Runtime...");`,
-      codeLanguage: 'typescript',
-    },
-    {
-      id: 'ai-ch-2',
-      title: '生产级核心功能搭建与状态模型',
-      startTime: chDuration,
-      duration: chDuration,
-      summary: '手把手编码实现高内聚低耦合的核心模块。',
-      codeSnippet: `// 阶段 2: 状态机分层模型\nexport function setupPipeline() {\n  return { status: "active", latencyMs: 12 };\n}`,
-      codeLanguage: 'typescript',
-    },
-    {
-      id: 'ai-ch-3',
-      title: '性能调优、边界异常保护与高可用压测',
-      startTime: chDuration * 2,
-      duration: chDuration,
-      summary: '深入并发瓶颈、内存分配与零拷贝优化。',
-      codeSnippet: `// 阶段 3: 并发与异常处理\nif (ratio > 0.95) {\n  triggerFailover();\n}`,
-      codeLanguage: 'typescript',
-    },
-    {
-      id: 'ai-ch-4',
-      title: '生产环境发布交付与 CI/CD 自动化',
-      startTime: chDuration * 3,
-      duration: durationSec - (chDuration * 3),
-      summary: '完成容器化打包、自动化流水线部署与指标监控。',
-      codeSnippet: `// 阶段 4: 监控告警闭环\nemitTelemetryMetric("health_status", 100);`,
-      codeLanguage: 'typescript',
-    },
-  ]
-
-  // 4. Synthesize AI transcripts
-  const transcripts: VideoTranscriptItem[] = [
-    { id: 'ai-t-1', startSec: 0, endSec: 30, text: `大家好，欢迎学习由 AI 知识引擎收录的 ${cleanTitle} 实战课。` },
-    { id: 'ai-t-2', startSec: chDuration, endSec: chDuration + 40, text: `下面我们进入第二阶段，重点实现 ${tagList} 的工程化落地。` },
-    { id: 'ai-t-3', startSec: chDuration * 2, endSec: chDuration * 2 + 40, text: '高并发场景下的性能瓶颈调优至关重要，需要严格防范雪崩。' },
-    { id: 'ai-t-4', startSec: chDuration * 3, endSec: chDuration * 3 + 30, text: '最后我们结合自动化 CI/CD 流水线完成整体上线。' },
-  ]
-
-  // 5. Synthesize 3 automated checkpoint quiz questions
-  const quizzes: VideoQuizQuestion[] = [
-    {
-      id: 'ai-q-1',
-      timestamp: Math.floor(chDuration * 0.8),
-      question: `在 ${conceptTags[0] || '系统'} 的生产实践中，核心设计原则是什么？`,
-      options: ['高内聚低耦合与分层解耦', '所有逻辑写在单一文件', '忽略异常错误处理', '硬编码所有配置参数'],
-      correctIndex: 0,
-      correctAnswerIndex: 0,
-      explanation: '软件工程的核心目标是可维护性与模块解耦，高内聚低耦合是生产架构的基石。',
-    },
-    {
-      id: 'ai-q-2',
-      timestamp: Math.floor(chDuration * 2.2),
-      question: '当系统遭遇突发高并发流量时，以下哪种措施最能保障服务存活？',
-      options: ['直接关闭服务器', '令牌桶限流与优雅降级熔断', '无限增加线程数量', '忽略超时等待'],
-      correctIndex: 1,
-      correctAnswerIndex: 1,
-      explanation: '令牌桶限流与熔断降级能够防止雪崩效应，保护后端核心服务不被打垮。',
-    },
-    {
-      id: 'ai-q-3',
-      timestamp: Math.floor(chDuration * 3.5),
-      question: '关于现代化 CI/CD 自动化发布，以下哪项属于最佳实践？',
-      options: ['人工通过 FTP 传文件覆盖生产', '流水线包含自动化静态分析、单元测试与渐进灰度', '跳过所有测试直接推主干', '关闭所有生产日志监控'],
-      correctIndex: 1,
-      correctAnswerIndex: 1,
-      explanation: '现代 DevOps 强调自动化门禁卡点与渐进式灰度发布，确保零事故交付。',
-    },
-  ]
-
-  return {
-    cleanTitle,
-    cleanDescription: rawDesc.slice(0, 200) || overview,
-    overview,
-    chapters,
-    transcripts,
-    quizzes,
-    prerequisites: conceptTags.map(t => `${t} 基础与开发规范`),
   }
 }
 
@@ -407,6 +288,18 @@ export class AutonomousAIHarvesterController {
 
       this.addLog('ai_thought', `AI 正在扫描候选视频: "${topic.recommendedTitle}" (来自领域: ${topic.domain})`)
 
+      // 入库严标准守卫：精选选题池（CURATED_TRENDING_TOPICS）是人工精选清单，
+      // 按严标准走「精选」豁免放行——豁免是显式的（matchedRule: curated），
+      // 不是「没数据就默认通过」。清单里的 BV 号本身是真实稿件；
+      // 若后续要对精选也验真实播放量，应在这里先调 B 站接口取 stats 再判，
+      // 而不是把豁免悄悄扩大到其它来源。
+      const curatedVerdict = checkHarvestEligibility({ isCurated: true })
+      if (!curatedVerdict.eligible) {
+        rejected++
+        this.addLog('rejected', `守卫拒绝入库: "${topic.recommendedTitle}"`)
+        continue
+      }
+
       // 1. Run AI Evaluation
       const evalResult = evaluateVideoWithAIModel({
         title: topic.recommendedTitle,
@@ -434,20 +327,10 @@ export class AutonomousAIHarvesterController {
         continue
       }
 
-      // 2. Run AI Metadata Synthesis
-      const synthetic = syntheticMetadataEnabled()
-      const meta = generateAISanitizedMetadata(
-        topic.recommendedTitle,
-        `系统化讲解 ${topic.keyword}。`,
-        topic.durationSec,
-        evalResult.conceptTags
-      )
-
+      // 2. 不再合成元数据：模板章节/字幕/测验不是视频原文，不入库。
       this.addLog(
         'ai_thought',
-        synthetic
-          ? `已为 "${meta.cleanTitle}" 生成 ${meta.chapters.length} 个示例章节、${meta.transcripts.length} 条示例字幕与 ${meta.quizzes.length} 道课后测验（synthetic=true，UI 需标注）`
-          : `已跳过 "${meta.cleanTitle}" 的合成章节/字幕（NAVHUB_VIDEO_SYNTHETIC_METADATA 未开启）`,
+        `已跳过 "${topic.recommendedTitle}" 的合成章节/字幕（模板内容不是原文，不入库）`,
       )
 
       let targetCat = updatedCategories.find((c) => c.id === topic.domain)
@@ -488,9 +371,9 @@ export class AutonomousAIHarvesterController {
       const subItemId = `ai_auto_${topic.bvidFallback}_${Date.now()}`
       const rawSubItem: NavigationSubItem = {
         id: subItemId,
-        title: meta.cleanTitle,
+        title: topic.recommendedTitle,
         href: `https://www.bilibili.com/video/${topic.bvidFallback}`,
-        description: synthetic ? meta.overview : '',
+        description: '',
         enabled: true,
         videoConfig: {
           type: 'bilibili',
@@ -511,9 +394,6 @@ export class AutonomousAIHarvesterController {
           trendKeyword: topic.keyword,
           pinned: false,
           healthStatus: 'healthy',
-          ...(synthetic
-            ? { chapters: meta.chapters, transcript: meta.transcripts, synthetic: true }
-            : {}),
         },
       }
 
@@ -562,7 +442,7 @@ export class AutonomousAIHarvesterController {
 
       categoriesEnriched.add(targetCat.title)
       newCourses.push({
-        title: meta.cleanTitle,
+        title: topic.recommendedTitle,
         categoryTitle: targetCat.title,
         subCategoryTitle: routedSubTitle,
         author: topic.author,
@@ -573,9 +453,9 @@ export class AutonomousAIHarvesterController {
       })
     }
 
-    // 阶段 2：多平台动态检索与 AI 智能富化扩展（支持 YouTube / Dailymotion / PeerTube / TED）
+    // 阶段 2：多平台动态检索与 AI 智能富化扩展（支持 YouTube / Dailymotion / TED）
     if (options.includeMultiPlatform !== false && newCourses.length < maxAdditions) {
-      this.addLog('info', '正在执行多平台动态扩展采集 (YouTube / Dailymotion / PeerTube / TED)...')
+      this.addLog('info', '正在执行多平台动态扩展采集 (YouTube / Dailymotion / TED)...')
 
       for (const cat of updatedCategories) {
         if (options.forceCategory && cat.id !== options.forceCategory) continue
@@ -587,7 +467,7 @@ export class AutonomousAIHarvesterController {
           : [cat.title]
         const platforms = policy?.platforms?.length
           ? policy.platforms.filter((p) => p !== 'bilibili')
-          : (['dailymotion', 'peertube', 'ted', 'youtube'] as any)
+          : (['dailymotion', 'ted', 'youtube'] as any)
 
         for (const kw of kwList) {
           if (newCourses.length >= maxAdditions) break
@@ -596,22 +476,45 @@ export class AutonomousAIHarvesterController {
               'ai_thought',
               `AI 正在多平台检索前沿实战视频: "${kw}" (覆盖平台: ${platforms.join(', ')})`
             )
+            const stageFailures: Array<{ keyword: string; reason: string }> = []
             const multiCandidates = await harvestMultiPlatformVideosForKeyword(
               kw,
               {
                 platforms,
                 minDurationSec: policy?.minDurationSec || 180,
-                minQualityScore: policy?.minQualityScore || 60,
                 limitPerKeyword: options.limitPerKeyword || 2,
+                failures: stageFailures,
               },
               fetchFn
             )
+            // 汇聚点守卫已拦下的候选不会出现在这里；把它们的拒收记进
+            // 本周期报告（rejected 计数 + 日志），否则报告会谎称「没扫到」。
+            for (const f of stageFailures) {
+              if (f.reason.includes(HARVEST_GUARD_REJECT_PREFIX)) {
+                scanned++
+                rejected++
+                this.addLog('rejected', `守卫拒绝入库: ${f.reason}`)
+              }
+            }
 
             for (const cand of multiCandidates) {
               if (newCourses.length >= maxAdditions) break
               scanned++
               const candKey = videoExternalKey(cand.videoConfig)
               if (!candKey || existingIds.has(candKey)) continue
+
+              // 入库前复核：汇聚点已按严标准过滤，这里是第二道关——
+              // 候选的 stats / pinned / sourceType 任一不满足即拒收，
+              // 不许只凭 AI 评分入库（零数据视频的 AI 分也能过 70）。
+              const guardVerdict = isHarvestEligibleForItem(cand)
+              if (!guardVerdict.eligible) {
+                rejected++
+                this.addLog(
+                  'rejected',
+                  `守卫拒绝入库: "${cand.title}" - 原因: ${guardVerdict.rejectReason}`,
+                )
+                continue
+              }
 
               // 模糊相似度去重：防跨平台同质化教程
               const existingCatTitles = [

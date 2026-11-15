@@ -8,6 +8,8 @@
  * 所以产物是 { title, href }，由调用方转成本地收藏条目。
  */
 
+import { fingerprintUrl } from './import-workbench'
+
 export interface ParsedBookmark {
   title: string
   href: string
@@ -28,18 +30,25 @@ function stripTags(text: string): string {
   return text.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim()
 }
 
-export function parseNetscapeBookmarks(html: string, limit = 10000): { items: ParsedBookmark[]; truncated: boolean } {
+/** 单次上限与 parseUniversalBookmarks 对齐（总协调人决策 1：5000） */
+export function parseNetscapeBookmarks(html: string, limit = 5000): { items: ParsedBookmark[]; truncated: boolean; totalMatched: number } {
   const items: ParsedBookmark[] = []
+  // 批内去重键 = fingerprintUrl（SSOT）：原始 href 字符串会把
+  // `?utm_source=x` 与无参同一站判成两条；这里只 import，不另写归一化
   const seen = new Set<string>()
   let truncated = false
+  // totalMatched 只计 http(s) 锚点：javascript:/data: 锚点本来就不会进
+  // 收藏，把它们算进“命中总数”会让超限文案虚报条数
+  const totalMatched = [...html.matchAll(/<a\s+[^>]*href="https?:\/\/[^"]+"[^>]*>/gi)].length
   let match: RegExpExecArray | null
   ANCHOR_RE.lastIndex = 0
   while ((match = ANCHOR_RE.exec(html)) !== null) {
     const href = match[1]!.trim()
     // javascript:/data: 等非网页锚点没有收藏价值；只收 http(s)
     if (!/^https?:\/\//i.test(href)) continue
-    if (seen.has(href)) continue
-    seen.add(href)
+    const fp = fingerprintUrl(href)
+    if (!fp || seen.has(fp)) continue
+    seen.add(fp)
     const title = stripTags(match[2] ?? '') || href
     if (items.length >= limit) {
       truncated = true
@@ -47,5 +56,5 @@ export function parseNetscapeBookmarks(html: string, limit = 10000): { items: Pa
     }
     items.push({ title: title.slice(0, 200), href })
   }
-  return { items, truncated }
+  return { items, truncated, totalMatched }
 }

@@ -5,6 +5,11 @@ import {
   isVersionConflict as isWriteVersionConflict,
 } from './video-write-guard'
 import { videoExternalKey } from '@/lib/video-identity'
+import {
+  harvestGuardRejectReason,
+  isHarvestEligibleForItem,
+  checkHarvestEligibility,
+} from './video-harvest-guard'
 import { recordHarvestRun } from '@/lib/video-harvest-metrics'
 import { BILI_HEADERS, getWbiMixinKey, signWbiQuery } from '@/lib/bilibili-wbi'
 import type {
@@ -152,7 +157,8 @@ export async function resolveVideoUrl(rawUrl: string): Promise<ResolvedVideoInfo
         const pubDate = xz.stat?.ctime
           ? new Date(xz.stat.ctime * 1000).toISOString()
           : new Date().toISOString()
-        const qualityScore = calculateQualityScore(stats, 300, xz.stat?.ctime)
+        // 星之阁解析不返回时长：传 undefined 得 0 分时长项，不按 300 秒猜。
+        const qualityScore = calculateQualityScore(stats, undefined, xz.stat?.ctime)
         const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, xz.title)
         const resolvedBvid = xz.bvid || bvid
 
@@ -185,22 +191,10 @@ export async function resolveVideoUrl(rawUrl: string): Promise<ResolvedVideoInfo
       console.warn('[video-harvester] Xingzhige b_parse fallback also failed:', xzErr)
     }
 
-    // 基础兜底解析
-    return attachResolvedSeoMetadata({
-      title: `哔哩哔哩视频 ${bvid || aid}`,
-      href: url,
-      description: '',
-      videoConfig: {
-        type: 'bilibili',
-        bvid: bvid || undefined,
-        aid: aid || undefined,
-        p: 1,
-        harvestedAt: Date.now(),
-        sourceType: 'manual',
-        pinned: true,
-        healthStatus: 'healthy'
-      }
-    })
+    // 官方 view 接口与星之阁兜底都失败：直接拒绝，不返回无 stats、无分数的占位条目。
+    // 占位条目带 pinned: true 会绕过入库守卫（置顶豁免），把脏数据写进库；调用方
+    // （/api/videos/resolve）已有 try/catch，会如实返回 500「解析视频信息失败」。
+    throw new Error('视频解析失败：B 站官方接口与星之阁兜底均不可用')
   }
 
   // 2. 多平台通用智能解析（支持 YouTube、抖音、快手、西瓜、小红书、腾讯、优酷、Vimeo、TED、Dailymotion、PeerTube、自定义源）
@@ -227,7 +221,6 @@ export const DEFAULT_HARVEST_PLATFORMS: VideoPlatformType[] = [
   'youtube',
   'dailymotion',
   'ted',
-  'peertube',
 ]
 
 export async function harvestVideosForTopic(
@@ -235,7 +228,6 @@ export async function harvestVideosForTopic(
   options: {
     platforms?: VideoPlatformType[]
     minDurationSec?: number
-    minQualityScore?: number
     limitPerKeyword?: number
     /** 本次采集的总时间预算（毫秒） */
     totalBudgetMs?: number
@@ -248,7 +240,6 @@ export async function harvestVideosForTopic(
   const {
     platforms = DEFAULT_HARVEST_PLATFORMS,
     minDurationSec = 180,
-    minQualityScore = 60,
     limitPerKeyword = 3,
     totalBudgetMs = 25_000,
     concurrency = 3,
@@ -270,7 +261,7 @@ export async function harvestVideosForTopic(
   if (platforms.includes('bilibili') && !mixinKey) {
     failures?.push({
       keyword: '(全局)',
-      reason: '未能取得 B 站 wbi 签名密钥（/x/web-interface/nav 不可达或结构变化），本次搜索降级为无签名请求，多半会被风控挡下',
+      reason: '未能取得 B 站 wbi 签名密钥（/x/web-interface/nav 不可达或结构变化），本次跳过 B 站搜索，不发无签名请求',
     })
   }
 
@@ -282,13 +273,12 @@ export async function harvestVideosForTopic(
       return
     }
 
-    // 多平台扩展通道（Dailymotion / PeerTube SepiaSearch / TED Talks / YouTube）
+    // 多平台扩展通道（Dailymotion / TED Talks / YouTube）
     const nonBiliPlatforms = platforms.filter((p) => p !== 'bilibili')
     if (nonBiliPlatforms.length > 0) {
       const multiItems = await harvestMultiPlatformVideosForKeyword(kw, {
         platforms: nonBiliPlatforms,
         minDurationSec,
-        minQualityScore,
         limitPerKeyword,
         failures,
       })
@@ -301,21 +291,20 @@ export async function harvestVideosForTopic(
       }
     }
 
-    if (!platforms.includes('bilibili')) return
+    // 拿不到 mixinKey 时不发无签名请求：无签名请求必被风控挡（-352/-412），
+    // 发了也拿不到结果，只会浪费预算并把「接口挂了」伪装成「没有好稿件」。
+    if (!platforms.includes('bilibili') || !mixinKey) return
 
     try {
-      // 请求 B 站综合排序搜索接口（必须带 wbi 签名，否则风控返回 -352/-412 或空结果）
+      // 请求 B 站综合排序搜索接口（必须带 wbi 签名，否则风控返回 -352/-412 或空结果）。
+      // 能走到这里 mixinKey 一定存在（上面已短路）；无签名分支已删除，不许再悄悄降级。
       const baseParams = {
         search_type: 'video',
         keyword: kw,
         order: 'totalrank',
         duration: 0,
       }
-      const query = mixinKey
-        ? signWbiQuery(baseParams, mixinKey, Math.floor(Date.now() / 1000)).query
-        : new URLSearchParams(
-            Object.entries(baseParams).map(([k, v]) => [k, String(v)]),
-          ).toString()
+      const query = signWbiQuery(baseParams, mixinKey, Math.floor(Date.now() / 1000)).query
       const searchUrl = `https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`
 
       const res = await fetch(searchUrl, {
@@ -362,8 +351,19 @@ export async function harvestVideosForTopic(
           favorites: item.favorites || 0
         }
 
+        // 入库严标准守卫：只认平台返回的真实播放/点赞/弹幕，不达标直接拒收。
+        // 此前这里拿 qualityScore 比 minQualityScore（60 分）放行——而
+        // qualityScore 不可信（库里 4134 条正好都是 65 分），等于没有门槛。
+        const guardVerdict = checkHarvestEligibility({ stats })
+        if (!guardVerdict.eligible) {
+          failures?.push({
+            keyword: kw,
+            reason: `「${cleanTitle}」${harvestGuardRejectReason(guardVerdict)}`,
+          })
+          continue
+        }
+
         const qualityScore = calculateQualityScore(stats, durationSec, item.pubdate)
-        if (qualityScore < minQualityScore) continue
 
         // 没有 pubdate 就**不写** publishedAt：原来兜底成 now 会把老视频标成今天发布
         const pubDate = item.pubdate ? new Date(item.pubdate * 1000).toISOString() : undefined
@@ -405,7 +405,7 @@ export async function harvestVideosForTopic(
       }
 
       if (taken === 0) {
-        failures?.push({ keyword: kw, reason: '接口有响应，但没有满足时长/质量阈值的稿件' })
+        failures?.push({ keyword: kw, reason: '接口有响应，但没有满足时长/严标准（真实播放/点赞/弹幕）的稿件' })
       }
     } catch (err) {
       failures?.push({
@@ -607,9 +607,7 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
       enabled: false,
       keywords: [],
       maxItems: 12,
-      minQualityScore: 60,
       minDurationSec: 180,
-      freshnessHalfLifeDays: 90,
       autoReplaceOutdated: true
     }
 
@@ -617,13 +615,16 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
     const subCategories = cat.subCategories || []
     const allCategoryItems = [...currentItems, ...subCategories.flatMap(s => s.items || [])]
 
-    // 重新计算并刷新分类内所有项目的保鲜分（含 directItems 和 subCategories）
+    // 重新计算并刷新分类内所有项目的保鲜分（含 directItems 和 subCategories）。
+    // 半衰期统一用 90 天：新入库条目在各采集分支里本来就写死 90，策略里的
+    // freshnessHalfLifeDays 已删（死字段），这里跟新条目取同一值。
     for (const item of currentItems) {
       if (item.videoConfig) {
         item.videoConfig.freshnessScore = calculateFreshnessScore(
           item.videoConfig.publishedAt,
-          item.videoConfig.qualityScore || 75,
-          policy.freshnessHalfLifeDays || 90,
+          // 缺失/0 分就是 0 分，不按 75 分估算（旧 `|| 75` 会把 0 分视频抬成 60 分保鲜分）
+          item.videoConfig.qualityScore ?? 0,
+          90,
           item.title
         )
       }
@@ -633,8 +634,8 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
         if (item.videoConfig) {
           item.videoConfig.freshnessScore = calculateFreshnessScore(
             item.videoConfig.publishedAt,
-            item.videoConfig.qualityScore || 75,
-            policy.freshnessHalfLifeDays || 90,
+            item.videoConfig.qualityScore ?? 0,
+            90,
             item.title
           )
         }
@@ -642,7 +643,8 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
     }
 
     const avgFreshness = allCategoryItems.length > 0
-      ? Math.round(allCategoryItems.reduce((acc, it) => acc + (it.videoConfig?.freshnessScore || 70), 0) / allCategoryItems.length)
+      // 缺失保鲜分按 0 计，不按 70 估算（旧 `|| 70` 凭空抬高均值）
+      ? Math.round(allCategoryItems.reduce((acc, it) => acc + (it.videoConfig?.freshnessScore ?? 0), 0) / allCategoryItems.length)
       : 100
 
     const summary = {
@@ -678,7 +680,6 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
     const harvestedCandidates = await harvestVideosForTopic(queryKeywords, {
       platforms: targetPlatforms,
       minDurationSec: policy.minDurationSec || 180,
-      minQualityScore: policy.minQualityScore || 60,
       limitPerKeyword: limitPerKeyword || 2,
       // 失败原因汇总进报告，不再只打 console.warn
       failures: degradedKeywords,
@@ -700,6 +701,18 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
     ].map(it => it.title).filter(Boolean)
 
     for (const candidate of uniqueCandidates) {
+      // 入库前最后一道关：逐条按严标准判定（真实播放/点赞/弹幕），不达标拒绝入库。
+      // 上游采集点已有同规则过滤，这里是防「某条新采集路径漏了守卫」的兜底，
+      // 同一规则、同一函数，不会分叉。
+      const admissionVerdict = isHarvestEligibleForItem(candidate)
+      if (!admissionVerdict.eligible) {
+        degradedKeywords.push({
+          keyword: candidate.title,
+          reason: harvestGuardRejectReason(admissionVerdict),
+        })
+        continue
+      }
+
       // 模糊相似度去重：防同质化教程过度堆积
       const fuzzy = isFuzzyDuplicateVideo(candidate.title, existingCategoryTitles)
       if (fuzzy.isDuplicate) {
@@ -719,8 +732,10 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
         candidate.videoConfig.difficulty = difficulty
       }
 
-      const maxItems = Math.max(policy.maxItems || 600, allCategoryItems.length + 50)
-      const candidateScore = candidate.videoConfig?.freshnessScore || 80
+      // 上限就是策略上限：旧 Math.max(…, 当前条数 + 50) 恒大于当前条数，
+      // 「分类已满走替换」分支永远不可达，库只会膨胀。
+      const maxItems = policy.maxItems || 600
+      const candidateScore = candidate.videoConfig?.freshnessScore ?? 0
       const candidateKey = videoExternalKey(candidate.videoConfig)
 
       // 1. 若分类未满，直接增加（根据技术语义精准分流至对应子分类）
@@ -785,15 +800,16 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
         if (replaceableList.length === 0) continue
 
         replaceableList.sort((a, b) => {
-          const scoreA = a.item.videoConfig?.freshnessScore ?? 60
-          const scoreB = b.item.videoConfig?.freshnessScore ?? 60
+          // 无保鲜分按 0 计，不按 60 估算：没证据新鲜的条目就是最该换的。
+          const scoreA = a.item.videoConfig?.freshnessScore ?? 0
+          const scoreB = b.item.videoConfig?.freshnessScore ?? 0
           return scoreA - scoreB
         })
 
         const worst = replaceableList[0]
         if (!worst) continue
 
-        const worstScore = worst.item.videoConfig?.freshnessScore ?? 60
+        const worstScore = worst.item.videoConfig?.freshnessScore ?? 0
 
         // 替换门槛：新视频分数必须明显高于旧视频（防抖门槛 +12分）或者旧视频已严重过时（< 45分）
         if (candidateScore >= worstScore + 12 || worstScore < 45) {
@@ -801,6 +817,11 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
 
           // 执行平滑替换
           worst.container[worst.index] = candidate
+          // 旧条目已出库，它的 key 必须同步移出集合：否则集合只增不减，
+          // 写盘前的缩水守卫会拿「初始条数 + 新增 + 替换数」当基线误报——
+          // 只要有 1 次替换就必触发（实测 6065 -> 6056 的假缩减，写盘被拦）。
+          const oldKey = videoExternalKey(worst.item.videoConfig)
+          if (oldKey) existingExternalIds.delete(oldKey)
           if (candidateKey) existingExternalIds.add(candidateKey)
 
           const rec: VideoReplacementRecord = {

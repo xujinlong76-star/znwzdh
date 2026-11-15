@@ -1,5 +1,11 @@
 'use client'
 
+/**
+ * 代码学习二件套之其二：代码演进单步调试器（C 组六合二保留）。
+ * 按章节里程碑上一步/下一步单步走查 before → after diff，可跳回视频对应秒数。
+ * 六个代码学习件合并后只剩两个：本调试器与 video-code-sandbox（演练沙箱）。
+ * lib（video-code-diff 等）一律保留。
+ */
 import React, { useState } from 'react'
 import {
   GitCommit,

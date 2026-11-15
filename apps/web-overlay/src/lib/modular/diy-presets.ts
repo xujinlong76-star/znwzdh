@@ -717,6 +717,14 @@ function isSafeIdKey(k: string): boolean {
 }
 
 /**
+ * 数字直达自定义快拨位的合法键：'1'..'9' 与 '0'。
+ * 与 lib/number-dial.ts 的 QUICK_DIAL_DIGITS 同口径——这里不 import 它，
+ * diy-presets 是底层纯算法模块，不反向依赖引用了 navhub-api 的 number-dial；
+ * 两边漂移由 quick-dial-slots.test.ts 的「十位全保留」断言拦住。
+ */
+const QUICK_DIAL_DIGIT_SET: ReadonlySet<string> = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'])
+
+/**
  * 清洗台账：白名单与上限本来就会吃掉内容，重点是「吃掉多少、为什么」必须能被调用方说出来。
  * 以前的实现只返回 {valid, config}，导入方于是只能写「已全量还原」——这是假话。
  */
@@ -864,6 +872,24 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
     ledger.claim(1, '自定义壁纸：地址不在 http/https/相对路径/data:image 白名单，已忽略')
   }
 
+  // 数字直达自定义快拨位：键只能是 '1'..'9'/'0'（与 lib/number-dial.ts 的
+  // QUICK_DIAL_DIGITS 同口径），值只能是合法站点 id；非法键/非字符串值丢弃，
+  // 同一站点占多个位是允许的（不校验、不警告），失效 id 保留（解析时按空位处理）。
+  const quickDialSlots = (() => {
+    if (typeof raw.quickDialSlots !== 'object' || raw.quickDialSlots === null || Array.isArray(raw.quickDialSlots)) return {}
+    const out: Record<string, string> = {}
+    let dropped = 0
+    for (const [k, v] of Object.entries(raw.quickDialSlots as Record<string, unknown>)) {
+      if (!QUICK_DIAL_DIGIT_SET.has(k) || typeof v !== 'string' || !isSafeIdKey(v)) {
+        dropped += 1
+        continue
+      }
+      out[k] = v
+    }
+    ledger.claim(dropped, `数字快拨：${dropped} 个绑定非法，已丢弃`)
+    return out
+  })()
+
   const customCategories = Array.isArray(raw.customCategories)
     ? (() => {
         const list = raw.customCategories as any[]
@@ -925,6 +951,7 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
     categoryDensityOverrides,
     speedDialEnabled: Boolean(raw.speedDialEnabled),
     speedDialPinnedIds: cleanIdList(raw.speedDialPinnedIds, ledger, '速览星标'),
+    quickDialSlots,
     // 跨分类重映射：键值均为内部 id，白名单外直接丢弃（防原型污染与非法注入）
     siteCategoryOverrides: cleanOverrides((raw as any).siteCategoryOverrides, ledger),
     // 自定义壁纸：仅 http/https、/ 开头相对路径、data:image/(png|jpeg|webp);base64,，否则置空不渲染

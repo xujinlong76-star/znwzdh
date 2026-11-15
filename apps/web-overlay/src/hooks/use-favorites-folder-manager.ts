@@ -19,6 +19,18 @@ import {
   type HubFavoriteFolder,
 } from '@/lib/navhub-api'
 import { addLocalFolder, removeLocalFolder, renameLocalFolder, type LocalFolder } from '@/lib/favorites-folders'
+import {
+  UNDO_WINDOW_MS,
+  newUndoBatchId,
+  newUndoId,
+  pushGlobalUndo,
+} from '@/lib/undo-stack'
+import {
+  addFolderToTrash,
+  readTrash,
+  removeFolderFromTrash,
+  writeTrash,
+} from '@/lib/favorites-trash'
 import type { FavoritesApi } from '@/hooks/useFavorites'
 
 export interface FavoritesFolderManager {
@@ -121,47 +133,139 @@ export function useFavoritesFolderManager(opts: {
     const name = editingName.trim()
     setEditingFolder(null)
     if (!name) return
+    await renameFolderDirect(folderId, name)
+  }, [editingName])
+
+  /**
+   * 改名直达（saveFolderName 与撤销闭包共用）：改名进撤销栈（D3），
+   * 撤销时反向调它（pushUndo=false），不再推新条目。
+   */
+  const renameFolderDirect = useCallback(async (folderId: string, name: string, pushUndo = true): Promise<boolean> => {
+    const currentList = cloudIdentity ? folders : localFolders
+    const prev = currentList.find((f) => f.id === folderId)
+    const fromName = prev?.name ?? ''
+    if (!name || name === fromName) return false
 
     if (!cloudIdentity) {
-      setLocalFolders((prev) => renameLocalFolder(prev, folderId, name))
-      return
+      setLocalFolders((prevList) => renameLocalFolder(prevList, folderId, name))
+    } else {
+      const ok = await updateFavoriteFolder(cloudIdentity, folderId, { name })
+      if (!ok) {
+        report('重命名收藏夹失败：云端暂不可用', 'error')
+        return false
+      }
+      setFolders((prevList) => prevList.map((f) => (f.id === folderId ? { ...f, name } : f)))
     }
-
-    const ok = await updateFavoriteFolder(cloudIdentity, folderId, { name })
-    if (!ok) {
-      report('重命名收藏夹失败：云端暂不可用', 'error')
-      return
-    }
-    setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name } : f)))
-  }, [cloudIdentity, editingName, setFolders, setLocalFolders, report])
+    if (!pushUndo) return true
+    // 改名进栈（D3）：撤销 = 改回原名
+    const now = Date.now()
+    pushGlobalUndo({
+      id: newUndoId(),
+      batchId: newUndoBatchId(),
+      kind: 'folder.rename',
+      label: `已将收藏夹重命名为「${name}」`,
+      createdAt: now,
+      expiresAt: now + UNDO_WINDOW_MS,
+      undo: async () => {
+        const restored = await renameFolderDirect(folderId, fromName, false)
+        return restored
+          ? { ok: true }
+          : { ok: false, message: '收藏夹找不到了，重命名撤销未完成' }
+      },
+    })
+    return true
+  }, [cloudIdentity, folders, localFolders, setFolders, setLocalFolders, report])
 
   const removeFolder = useCallback(async (folderId: string) => {
+    // 删夹前快照：夹子 + 夹内成员 siteId 列表（恢复要把成员 folderId 指回去）。
+    // 云端 POST /folders 生成新 id，无法保留原 id → 恢复后成员重映射到新 id；
+    // 本地夹直接按原 id 恢复（D4）。
+    const currentList = cloudIdentity ? folders : localFolders
+    const folder = currentList.find((f) => f.id === folderId)
+    if (!folder) return
+    const now = Date.now()
+    const batchId = newUndoBatchId()
+    const folderSnapshot = {
+      id: folder.id,
+      name: folder.name,
+      sort: folder.sort ?? 0,
+      createdAt: folder.createdAt ?? now,
+    }
+    const memberSiteIds = favorites.items
+      .filter((f) => f.folderId === folderId)
+      .map((f) => f.siteId)
+
     // 本地夹子：只移除分组本身，条目保留（与云端语义一致）
     if (!cloudIdentity) {
-      setLocalFolders((prev) => removeLocalFolder(prev, folderId).folders)
-      favorites.clearFolderForItems(favorites.items.filter((f) => f.folderId === folderId).map((f) => f.siteId))
+      setLocalFolders((prev) => removeLocalFolder(prev, folderId, favorites.items).folders)
+      favorites.clearFolderForItems(memberSiteIds)
       if (activeFolder === folderId) setActiveFolder('all')
-      return
+    } else {
+      const ok = await deleteFavoriteFolder(cloudIdentity, folderId)
+      if (!ok) {
+        report('删除收藏夹失败：云端暂不可用', 'error')
+        return
+      }
+      // 云端删夹事务已把夹内收藏 folder_id 置空：本地一次批量对齐即可，
+      // 逐条 updateMeta 是 N 次全量序列化 + N 条冗余 PATCH 脏标记（T16 修复）
+      favorites.clearFolderForItems(memberSiteIds)
+      setFolders((prev) => prev.filter((f) => f.id !== folderId))
+      if (activeFolder === folderId) setActiveFolder('all')
     }
 
-    const ok = await deleteFavoriteFolder(cloudIdentity, folderId)
-    if (!ok) {
-      report('删除收藏夹失败：云端暂不可用', 'error')
-      return
+    // 删夹快照进回收站（夹 + 成员列表）；写不进去只报出来，不拦删除本身
+    const trashed = addFolderToTrash(readTrash(), { ...folderSnapshot, memberSiteIds }, batchId, now)
+    if (!writeTrash(trashed)) {
+      report('回收站写不进去，删掉的收藏夹只能靠重新创建恢复', 'error')
     }
-    // 云端删夹事务已把夹内收藏 folder_id 置空：本地一次批量对齐即可，
-    // 逐条 updateMeta 是 N 次全量序列化 + N 条冗余 PATCH 脏标记（T16 修复）
-    favorites.clearFolderForItems(favorites.items.filter((f) => f.folderId === folderId).map((f) => f.siteId))
-    setFolders((prev) => prev.filter((f) => f.id !== folderId))
-    if (activeFolder === folderId) setActiveFolder('all')
-  }, [activeFolder, cloudIdentity, favorites, setActiveFolder, setFolders, setLocalFolders, report])
+
+    // 删夹进栈：撤销 = 恢复夹子 + 成员 folderId 指回去（云端是新 id）
+    pushGlobalUndo({
+      id: newUndoId(),
+      batchId,
+      kind: 'folder.delete',
+      label: `已删除收藏夹「${folder.name}」（${memberSiteIds.length} 条收藏已移至未分组）`,
+      createdAt: now,
+      expiresAt: now + UNDO_WINDOW_MS,
+      trashRef: { batchId, count: memberSiteIds.length },
+      undo: async () => {
+        const at = Date.now()
+        if (!cloudIdentity) {
+          setLocalFolders((prev) =>
+            prev.some((f) => f.id === folderSnapshot.id) ? prev : [...prev, folderSnapshot],
+          )
+          for (const siteId of memberSiteIds) {
+            favorites.updateMeta(siteId, { folderId: folderSnapshot.id }, { pushUndo: false, restoreAt: at })
+          }
+        } else {
+          const created = await createFavoriteFolder(cloudIdentity, folderSnapshot.name)
+          if (!created) {
+            return { ok: false, message: '云端暂不可用，收藏夹恢复未完成' }
+          }
+          setFolders((prev) =>
+            prev.some((f) => f.id === created.id) ? prev : [...prev, created],
+          )
+          for (const siteId of memberSiteIds) {
+            favorites.updateMeta(siteId, { folderId: created.id }, { pushUndo: false, restoreAt: at })
+          }
+        }
+        const state = removeFolderFromTrash(readTrash(), folderSnapshot.id).state
+        writeTrash(state)
+        return { ok: true }
+      },
+    })
+  }, [activeFolder, cloudIdentity, favorites, folders, localFolders, setActiveFolder, setFolders, setLocalFolders, report])
 
   /**
    * 收藏夹上移/下移（T16）：服务端 PATCH 的 sort 字段早已建成、前端从未接线。
    * 以当前位置为准整体重排（sort = 新下标），云端只 PATCH 位置真正变化的两项。
+   * 移夹进栈：撤销 = 反向移一步（pushUndo=false 时不推新条目）。
    */
   const moveFolder = useCallback(
-    async (folderId: string, dir: -1 | 1) => {
+    async (folderId: string, dir: -1 | 1, opts?: { pushUndo?: boolean }) => {
+      const currentList = cloudIdentity ? folders : localFolders
+      const folder = currentList.find((f) => f.id === folderId)
+      if (!folder) return
       if (!cloudIdentity) {
         const reordered = [...localFolders]
         const index = reordered.findIndex((f) => f.id === folderId)
@@ -171,27 +275,42 @@ export function useFavoritesFolderManager(opts: {
         reordered[index] = reordered[target]!
         reordered[target] = tmp
         setLocalFolders(reordered.map((f, i) => ({ ...f, sort: i + 1 })))
-        return
+      } else {
+        const list = [...folders]
+        const index = list.findIndex((f) => f.id === folderId)
+        const target = index + dir
+        if (index < 0 || target < 0 || target >= list.length) return
+        const tmp = list[index]!
+        list[index] = list[target]!
+        list[target] = tmp
+        const renumbered = list.map((f, i) => ({ ...f, sort: i + 1 }))
+        // 先本地生效（乐观），再持久化位置真正变化的两项（用重排后的新 sort）；失败时刷新回云端事实源
+        setFolders(renumbered)
+        const changed = [renumbered[index]!, renumbered[target]!]
+        const results = await Promise.all(
+          changed.map((f) => updateFavoriteFolder(cloudIdentity, f.id, { sort: f.sort ?? 0 })),
+        )
+        if (results.some((ok) => !ok)) {
+          report('收藏夹排序保存失败：云端暂不可用，稍后同步会还原', 'error')
+          await refreshFolders()
+          return
+        }
       }
-
-      const list = [...folders]
-      const index = list.findIndex((f) => f.id === folderId)
-      const target = index + dir
-      if (index < 0 || target < 0 || target >= list.length) return
-      const tmp = list[index]!
-      list[index] = list[target]!
-      list[target] = tmp
-      const renumbered = list.map((f, i) => ({ ...f, sort: i + 1 }))
-      // 先本地生效（乐观），再持久化位置真正变化的两项（用重排后的新 sort）；失败时刷新回云端事实源
-      setFolders(renumbered)
-      const changed = [renumbered[index]!, renumbered[target]!]
-      const results = await Promise.all(
-        changed.map((f) => updateFavoriteFolder(cloudIdentity, f.id, { sort: f.sort ?? 0 })),
-      )
-      if (results.some((ok) => !ok)) {
-        report('收藏夹排序保存失败：云端暂不可用，稍后同步会还原', 'error')
-        await refreshFolders()
-      }
+      if (opts?.pushUndo === false) return
+      const now = Date.now()
+      const opposite = (dir * -1) as -1 | 1
+      pushGlobalUndo({
+        id: newUndoId(),
+        batchId: newUndoBatchId(),
+        kind: 'folder.move',
+        label: `已移动收藏夹「${folder.name}」`,
+        createdAt: now,
+        expiresAt: now + UNDO_WINDOW_MS,
+        undo: async () => {
+          await moveFolder(folderId, opposite, { pushUndo: false })
+          return { ok: true }
+        },
+      })
     },
     [cloudIdentity, folders, localFolders, refreshFolders, setFolders, setLocalFolders, report],
   )
@@ -220,7 +339,8 @@ export function useFavoritesFolderManager(opts: {
       for (const item of nextItems) {
         const mapped = item.folderId ? mapping.get(item.folderId) : undefined
         if (mapped && mapped !== item.folderId) {
-          favorites.updateMeta(item.siteId, { folderId: mapped })
+          // 迁移重映射不是用户的"移动"动作：不推撤销条
+          favorites.updateMeta(item.siteId, { folderId: mapped }, { pushUndo: false })
           remapped += 1
         }
       }

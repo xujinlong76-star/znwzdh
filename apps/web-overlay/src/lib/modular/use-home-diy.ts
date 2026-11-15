@@ -23,6 +23,7 @@ import {
   type LayoutSlotClocks,
 } from '@/lib/modular/layout-sync'
 import { encodeVersionedShareLink, type ShareLinkOutcome } from '@/lib/diy-share-link'
+import { createCustomSiteId } from '@/lib/modular/custom-site-input'
 import {
   DEFAULT_CONFIG,
   applyRemoteHomeDiyConfig,
@@ -36,6 +37,7 @@ import {
   getHomeDiySnapshot,
   hydrateHomeDiy,
   redoHomeDiy,
+  resolveDiyDataAccent,
   setHomeDiyEditingLayout,
   stageHomeDiyPendingShare,
   STORAGE_CLOCKS_KEY,
@@ -58,6 +60,8 @@ import {
  */
 const loadHomeDiyIo = () => import('./home-diy-io')
 import { notifyLayoutSyncMerge } from './layout-sync-events'
+import { getActiveTheme } from '@/lib/plugins/theme-runtime'
+import type { QuickDialDigit } from '@/lib/number-dial'
 import {
   publishSharedLayoutSync,
   subscribeSharedLayoutSyncChannel,
@@ -108,7 +112,36 @@ export function readFavoriteIdsForAutoTune(): FavoriteIdsReadResult {
   return { ids, corrupt: false }
 }
 
+// 20a 批量收录 / 批量移除的收据（11b）：只活内存，随撤销闭包走，不序列化。
+// 放 hook 外、函数旁导出——export 只能出现在模块顶层。
+/** 批量收录：逆操作 = 按 id 从目标分类删掉这些条目 */
+export interface BatchAddReceipt {
+  categoryId: string
+  categoryTitle: string
+  /** 本次新建的 id（函数内 createCustomSiteId() 的返回值）；写盘失败时为空 */
+  added: Array<{ id: string; href: string; title: string }>
+  addedCount: number
+  duplicateCount: number
+  failedCount: number
+}
 
+/** 批量移除：逆操作 = 按原位插回（带原 index，与 insertRestoredFavorites 同款语义） */
+export interface BatchRemoveReceipt {
+  removed: Array<{
+    categoryId: string
+    item: CustomCategoryItem // 被删条目的完整快照
+    index: number // 在原分类 items 里的下标（过滤前）
+  }>
+  removedCount: number
+  /**
+   * 写盘失败时命中的条数（与 add 侧的 failedCount 对称；11b 补）。
+   * 写盘失败时 removed / removedCount 清零、改计 failedCount：调用方按失败
+   * toast、不推撤销（§2.3“写盘失败不推”）。注意这只覆盖同步可知的失败
+   * （拿不到 localStorage 时 result.ok 立即为 false）；防抖落盘在 300ms 后
+   * 才真正 setItem，配额满之类以 storageWarning 为准，与 add 侧同口径。
+   */
+  failedCount: number
+}
 export function useHomeDIY() {
   const { config, history, isEditingLayout, storageWarning, pendingShare } = useSyncExternalStore(
     subscribeHomeDiy,
@@ -126,14 +159,25 @@ export function useHomeDIY() {
   }, [])
 
   // 2. 动态同步强调色到文档根元素属性
+  // 皮肤 accent 优先（resolveDiyDataAccent）：当前有带 accent 的插件皮肤
+  // 时，data-accent 归 theme-runtime 所有，这里不写——否则场景切换后
+  // DIY 提交触发本 effect，会把皮肤 accent 盖回 DIY 旧值（守卫测试覆盖）。
+  // 主题变化时也要重算：resetTheme() 会移除 data-accent，皮肤切换/试用
+  // 结束同样改 data-accent；只等 accentColor 变化的话，reset 后要到下次
+  // 配置变更 DIY 强调色才恢复。监听 navhub_theme_changed（theme-runtime
+  // 派发的同页事件，setActiveTheme/resetTheme/试用都派发），回调里用同一
+  // 裁决重写回 data-accent；服务端渲染路径不跑（typeof window 守卫）。
   useEffect(() => {
-    if (typeof document !== 'undefined') {
-      if (config.accentColor && config.accentColor !== 'default') {
-        document.documentElement.setAttribute('data-accent', config.accentColor)
-      } else {
-        document.documentElement.removeAttribute('data-accent')
-      }
+    if (typeof document === 'undefined') return
+    const applyAccent = () => {
+      const accent = resolveDiyDataAccent(config.accentColor, getActiveTheme()?.accent)
+      if (accent) document.documentElement.setAttribute('data-accent', accent)
+      else document.documentElement.removeAttribute('data-accent')
     }
+    applyAccent()
+    if (typeof window === 'undefined') return undefined
+    window.addEventListener('navhub_theme_changed', applyAccent)
+    return () => window.removeEventListener('navhub_theme_changed', applyAccent)
   }, [config.accentColor])
 
   // 3. 持久化 + 跨标签广播（撤销历史已挪进共享状态，见本文件顶部说明）
@@ -364,6 +408,21 @@ export function useHomeDIY() {
     }))
   }, [persistConfig])
 
+  // 15.3 数字直达自定义快拨位（Ctrl+Shift+数字）：null = 清除该位。
+  // 与 pinToSpeedDial 同款 persistConfig 模式：updatedAt + 同一份跨标签广播。
+  // 允许同一站点占多个位（不校验）；失效 id 保留原值，解析时按空位处理。
+  const setQuickDialSlot = useCallback((digit: QuickDialDigit, siteId: string | null) => {
+    persistConfig((prev) => {
+      const current = { ...(prev.quickDialSlots || {}) }
+      if (siteId === null) {
+        delete current[digit]
+      } else {
+        current[digit] = siteId
+      }
+      return { ...prev, quickDialSlots: current, updatedAt: Date.now() }
+    })
+  }, [persistConfig])
+
   // 15.4 智能自适应一键调优
   const applySmartAutoTune = useCallback((sites: any[], categories: any[]) => {
     let visitStats: Record<string, { count: number }> = {}
@@ -501,6 +560,118 @@ export function useHomeDIY() {
       return { ...prev, customCategories: nextCats, updatedAt: Date.now() }
     })
   }, [persistConfig])
+
+  // 20a. 批量收录 / 批量移除（11b）：一次 persistConfig 完成整批，只压一条
+  // DIY 历史。收据只活内存，随撤销闭包走，不序列化；调用方（navigation-content）
+  // 按 addedCount / duplicateCount / failedCount 与 removedCount 决定 toast
+  // 与是否推全局撤销条目（0 生效不推，见设计 §2.3）。
+  // 收据类型在模块顶层导出（export 只能出现在顶层），见 useHomeDIY 上方。
+  /**
+   * 把一批站点收录进自建分类（一次提交）。
+   *
+   *  - 逐站判定 duplicate：沿用单站版谓词 `i.id === site.id || i.href === site.href`
+   *    （id 在函数内现生成，不可能撞上已有条目，实际起作用的是 href 比对；
+   *    同批内后出现的同 href 站也会被已收录的前一个挡住）；
+   *  - 新站逐个插到分类最前面，与原来逐站调单站版循环的最终顺序一致；
+   *  - 全 duplicate / 空输入 / 目标分类不存在时 updater 返回 prev 同一引用：
+   *    不写盘、不压历史（也不无条件拼 updatedAt，否则全 duplicate 也会压
+   *    一条空历史——这是本次顺手修掉的旧坑，见设计 §2.3）；
+   *  - 写盘失败（result.ok 为 false，本地存储不可用）时已收录的站只在内存里：
+   *    added / addedCount 清零，改计 failedCount，调用方按失败 toast、不推撤销。
+   */
+  const addSitesToCustomCategory = useCallback(
+    (
+      categoryId: string,
+      sites: Array<{ title: string; href: string; description?: string }>,
+    ): BatchAddReceipt => {
+      const added: BatchAddReceipt['added'] = []
+      let duplicateCount = 0
+      let categoryTitle = ''
+      const result = persistConfig((prev) => {
+        const target = prev.customCategories.find((cat) => cat.id === categoryId)
+        if (!target) return prev
+        categoryTitle = target.title
+        const nextItems = [...target.items]
+        for (const site of sites) {
+          const id = createCustomSiteId()
+          if (nextItems.some((i) => i.id === id || i.href === site.href)) {
+            duplicateCount += 1
+            continue
+          }
+          nextItems.unshift({
+            id,
+            title: site.title,
+            href: site.href,
+            description: site.description,
+          })
+          added.push({ id, href: site.href, title: site.title })
+        }
+        if (added.length === 0) return prev
+        return {
+          ...prev,
+          customCategories: prev.customCategories.map((cat) =>
+            cat.id === categoryId ? { ...cat, items: nextItems } : cat,
+          ),
+          updatedAt: Date.now(),
+        }
+      })
+      if (!result.ok) {
+        return {
+          categoryId,
+          categoryTitle,
+          added: [],
+          addedCount: 0,
+          duplicateCount,
+          failedCount: added.length,
+        }
+      }
+      return {
+        categoryId,
+        categoryTitle,
+        added,
+        addedCount: added.length,
+        duplicateCount,
+        failedCount: 0,
+      }
+    },
+    [persistConfig],
+  )
+
+  /**
+   * 把一批站点从全部自建分类里移除（一次提交，扫全部分类）。
+   * 命中时记录 { categoryId, item, index }，index 是过滤前下标；无命中返回 prev
+   * 同一引用（不写盘、不压历史）。写盘失败时 removed / removedCount 清零、
+   * 改计 failedCount（与 add 侧对称），调用方按失败 toast、不推撤销。
+   */
+  const removeSitesFromCustomCategories = useCallback(
+    (siteIds: string[]): BatchRemoveReceipt => {
+      const removed: BatchRemoveReceipt['removed'] = []
+      const idSet = new Set(siteIds)
+      const result = persistConfig((prev) => {
+        let hit = false
+        const nextCats = prev.customCategories.map((cat) => {
+          const kept: CustomCategoryItem[] = []
+          cat.items.forEach((item, index) => {
+            if (idSet.has(item.id)) {
+              removed.push({ categoryId: cat.id, item, index })
+              hit = true
+            } else {
+              kept.push(item)
+            }
+          })
+          // 本分类无命中：保持原引用；有命中才换 items
+          return kept.length === cat.items.length ? cat : { ...cat, items: kept }
+        })
+        if (!hit) return prev
+        return { ...prev, customCategories: nextCats, updatedAt: Date.now() }
+      })
+      if (!result.ok) {
+        return { removed: [], removedCount: 0, failedCount: removed.length }
+      }
+      return { removed, removedCount: removed.length, failedCount: 0 }
+    },
+    [persistConfig],
+  )
 
   // 21. 一键应用预设情境模版
   const applyDIYPreset = useCallback((presetId: string, setDensityCallback?: (density: string) => void) => {
@@ -659,49 +830,10 @@ export function useHomeDIY() {
     if (result) publishToOtherTabs(result)
   }, [publishToOtherTabs])
 
-  // 30. 全局快捷键监听 (编排模式下支持 Ctrl+Z / Cmd+Z 撤销, Ctrl+Shift+Z / Cmd+Shift+Z / Ctrl+Y 重做)
-  useEffect(() => {
-    if (!isEditingLayout) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-      const metaOrCtrl = isMac ? e.metaKey : e.ctrlKey
-      if (!metaOrCtrl) return
-
-      // 避免在输入框/文本域中拦截原生撤销
-      const activeEl = document.activeElement
-      const isInput =
-        activeEl &&
-        (activeEl.tagName === 'INPUT' ||
-          activeEl.tagName === 'TEXTAREA' ||
-          (activeEl as HTMLElement).isContentEditable)
-      if (isInput) return
-
-      if (e.key.toLowerCase() === 'z') {
-        if (e.shiftKey) {
-          // 没得重做就放行：让事件继续走到回收站监听（它只认无 Shift 的 Z，
-          // 这里放行也只是不拦浏览器默认行为，不会误恢复）。
-          if (!canRedo) return
-          e.preventDefault()
-          e.stopImmediatePropagation()
-          redo()
-        } else {
-          // 没得撤销就放行：事件继续走到回收站监听，这次按键改为恢复
-          // 回收站（一次按键恰好只做一件事）。
-          if (!canUndo) return
-          e.preventDefault()
-          e.stopImmediatePropagation()
-          undo()
-        }
-      } else if (e.key.toLowerCase() === 'y' && !isMac) {
-        if (!canRedo) return
-        e.preventDefault()
-        e.stopImmediatePropagation()
-        redo()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isEditingLayout, undo, redo, canUndo, canRedo])
+  // 30. 全局快捷键监听：已收敛到 hooks/use-global-undo（Providers 里只挂
+  // 一次）。这里不再挂 window keydown——三处监听（排版/画布/回收站）
+  // 各自判定"输入框"的口径不一致，一次按键会撤两步。undo/redo 回调留给
+  // 工具栏按钮用，分发时全局 hook 直接调 undoHomeDiy/redoHomeDiy。
 
   // 31. 分类手风琴折叠展开操作
   const toggleCollapseCategory = useCallback((categoryId: string) => {
@@ -835,6 +967,8 @@ export function useHomeDIY() {
     categoryDensityOverrides: config.categoryDensityOverrides || {},
     speedDialEnabled: Boolean(config.speedDialEnabled),
     speedDialPinnedIds: config.speedDialPinnedIds || [],
+    quickDialSlots: config.quickDialSlots || {},
+    setQuickDialSlot,
     customCategories: config.customCategories,
     isEditingLayout,
     setIsEditingLayout,
@@ -881,6 +1015,8 @@ export function useHomeDIY() {
     deleteCustomCategory,
     addSiteToCustomCategory,
     removeSiteFromCustomCategory,
+    addSitesToCustomCategory,
+    removeSitesFromCustomCategories,
     isAdaptiveRankingEnabled: Boolean(config.enableAdaptiveRanking),
     toggleAdaptiveRanking,
     applyDIYPreset,

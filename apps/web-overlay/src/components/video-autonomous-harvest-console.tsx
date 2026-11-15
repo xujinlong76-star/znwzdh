@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   Bot,
@@ -23,17 +22,19 @@ import type {
   AutonomousHarvestCycleReport,
 } from '@/lib/video-autonomous-ai-harvester'
 
-interface VideoAutonomousHarvestConsoleProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+/**
+ * AI 自主巡航面板：video-auto-harvest-dialog（视频采集中心）里「AI自主巡航」tab
+ * 的内容。只合 UI：后端仍走 /api/videos/ai-autonomous-harvest，与手动采集
+ * 的 /api/videos/harvest 各自独立。原先的独立 Dialog 已随入口合并删除，
+ * 弹窗外壳与关闭按钮由父级采集中心统一提供。
+ */
+interface VideoAutonomousHarvestPanelProps {
   onCycleFinished?: () => void
 }
 
-export function VideoAutonomousHarvestConsole({
-  open,
-  onOpenChange,
+export function VideoAutonomousHarvestPanel({
   onCycleFinished,
-}: VideoAutonomousHarvestConsoleProps) {
+}: VideoAutonomousHarvestPanelProps) {
   const [isRunning, setIsRunning] = useState<boolean>(false)
   const [dryRun, setDryRun] = useState<boolean>(false)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
@@ -48,9 +49,8 @@ export function VideoAutonomousHarvestConsole({
   } | null>(null)
   const [isLoadingStats, setIsLoadingStats] = useState<boolean>(false)
 
-  // Fetch initial stats when modal opens
+  // 面板挂载（切到「AI自主巡航」tab）时拉一次统计；卸载即丢弃，不再常驻轮询
   useEffect(() => {
-    if (!open) return
     setIsLoadingStats(true)
     ensureAdminSession()
       .then(() => fetch('/api/videos/ai-autonomous-harvest'))
@@ -68,7 +68,7 @@ export function VideoAutonomousHarvestConsole({
       })
       .catch(err => console.error('Failed to load harvest stats:', err))
       .finally(() => setIsLoadingStats(false))
-  }, [open])
+  }, [])
 
   const handleStartAutonomousCycle = async () => {
     setIsRunning(true)
@@ -127,33 +127,30 @@ export function VideoAutonomousHarvestConsole({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-6 overflow-hidden">
-        <DialogHeader className="shrink-0 pb-3 border-b border-border/50">
-          <DialogTitle className="flex items-center justify-between text-base font-bold">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                <BrainCircuit className="w-5 h-5 animate-pulse" />
-              </div>
-              <div>
-                <span>AI 全自主视频采集与知识重构控制台</span>
-                <p className="text-[11px] font-normal text-muted-foreground mt-0.5">
-                  全流程无人值守巡航 · AI 大模型深度审核 · 自动提取章节字幕测验
-                </p>
+    <div className="space-y-4 text-xs">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+              <BrainCircuit className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <span className="text-base font-bold">AI 全自主视频采集与知识重构控制台</span>
+              <p className="text-[11px] font-normal text-muted-foreground mt-0.5">
+                全流程无人值守巡航 · AI 大模型深度审核 · 自动提取章节字幕
+              </p>
+            </div>
+          </div>
+          {stats && (
+            <div className="flex items-center gap-3 text-xs font-mono">
+              <div className="text-right">
+                <div className="text-foreground font-semibold">{stats.totalVideos} 部视频</div>
+                <div className="text-muted-foreground text-[10px]">AI均分 {stats.avgAiScore}</div>
               </div>
             </div>
-            {stats && (
-              <div className="flex items-center gap-3 text-xs font-mono">
-                <div className="text-right">
-                  <div className="text-foreground font-semibold">{stats.totalVideos} 部视频</div>
-                  <div className="text-muted-foreground text-[10px]">AI均分 {stats.avgAiScore}</div>
-                </div>
-              </div>
-            )}
-          </DialogTitle>
-        </DialogHeader>
+          )}
+        </div>
 
-        <div className="flex-1 overflow-y-auto space-y-4 pt-3 pr-1 text-xs">
+        <div className="space-y-4 pr-1">
           {/* Controls Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-lg border border-border/60 bg-muted/20">
             <div className="space-y-1">
@@ -164,7 +161,7 @@ export function VideoAutonomousHarvestConsole({
               <select id="harvest-category-filter"
                 value={selectedCategory}
                 onChange={e => setSelectedCategory(e.target.value)}
-                className="w-full h-8 px-2 rounded-md bg-background border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full h-11 px-2 rounded-md bg-background border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 <option value="all">全领域自动拓展</option>
                 <option value="cat_ai_engineering">AI 与大模型工程</option>
@@ -219,7 +216,7 @@ export function VideoAutonomousHarvestConsole({
               <Button
                 onClick={handleStartAutonomousCycle}
                 disabled={isRunning}
-                className="w-full h-8 text-xs font-semibold gap-2 shadow-sm"
+                className="w-full min-h-11 text-xs font-semibold gap-2 shadow-sm"
               >
                 {isRunning ? (
                   <>
@@ -352,16 +349,10 @@ export function VideoAutonomousHarvestConsole({
           )}
         </div>
 
-        <div className="shrink-0 pt-3 border-t border-border/50 flex items-center justify-between text-muted-foreground text-[11px]">
-          <div className="flex items-center gap-1.5">
-            <Cpu className="w-3.5 h-3.5" />
-            <span>自适应知识图谱 + 深度学习大模型自动流水线</span>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="h-7 text-xs">
-            关闭控制台
-          </Button>
+        <div className="pt-3 border-t border-border/50 flex items-center gap-1.5 text-muted-foreground text-[11px]">
+          <Cpu className="w-3.5 h-3.5" />
+          <span>自适应知识图谱 + 深度学习大模型自动流水线</span>
         </div>
-      </DialogContent>
-    </Dialog>
+    </div>
   )
 }

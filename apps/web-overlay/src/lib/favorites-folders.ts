@@ -115,14 +115,24 @@ export function renameLocalFolder(folders: LocalFolder[], id: string, name: stri
 }
 
 /**
- * 删除收藏夹：返回新列表 + 受影响的收藏数。
+ * 删除收藏夹：返回新列表 + 受影响的收藏数与 siteId 列表。
  * 与云端语义一致——文件夹下的收藏**不删**，只是失去分组（folderId 置空）。
+ * affectedSiteIds 供撤销用：删夹恢复要把成员 folderId 指回去，之前这里
+ * 只返回 affected: 0 占位，撤销拿不到真列表。
  */
 export function removeLocalFolder(
   folders: LocalFolder[],
   id: string,
-): { folders: LocalFolder[]; affected: number } {
-  return { folders: folders.filter((f) => f.id !== id), affected: 0 }
+  items?: Array<{ siteId: string; folderId?: string | null }>,
+): { folders: LocalFolder[]; affected: number; affectedSiteIds: string[] } {
+  const affectedSiteIds = items
+    ? items.filter((i) => i.folderId === id).map((i) => i.siteId)
+    : []
+  return {
+    folders: folders.filter((f) => f.id !== id),
+    affected: affectedSiteIds.length,
+    affectedSiteIds,
+  }
 }
 
 /** 每个收藏夹下的条目数（用于文件夹胶囊上的计数） */

@@ -29,6 +29,10 @@ export type SearchPanelActionKind =
   | 'ai-find'
   /** 零结果出口：跳投稿页，查询词按 submit-prefill 规则预填（带 href，走 <Link>） */
   | 'submit-site'
+  /** 零结果出口：存为待找（登录态调 API，匿名走本地存储，走按钮动作） */
+  | 'save-wanted'
+  /** 零结果出口：新建收藏（打开 AddSiteDialog 预填弹窗，走按钮动作） */
+  | 'save-favorite'
 
 export interface SearchPanelAction {
   kind: SearchPanelActionKind
@@ -115,12 +119,15 @@ export function planSearchPanel(input: SearchPanelInput): SearchPanelPlan {
     label: '投稿收录这个站',
     href: submitPrefillHref(trimmed),
   }
+  // 容错纠错两出口：排在 ai-find/submit-site 之后、浏览类之前。
+  const saveWanted: SearchPanelAction = { kind: 'save-wanted', label: '存为待找' }
+  const saveFavorite: SearchPanelAction = { kind: 'save-favorite', label: '新建收藏' }
   return {
     mode: 'no-results',
     title: `未找到与 “${trimmed}” 相关的导航`,
     hint: hasWidgetResult
       ? '上方卡片是根据这句话即时生成的；导航检索没有匹配，可以换更短的关键词。'
       : '试试拼音首字母（如 zgtqw）或描述你的需求',
-    actions: [aiFind, submitSite, CLEAR, ...(external ? [external] : []), BROWSE_TAGS, BROWSE_HOT],
+    actions: [aiFind, submitSite, saveWanted, saveFavorite, CLEAR, ...(external ? [external] : []), BROWSE_TAGS, BROWSE_HOT],
   }
 }

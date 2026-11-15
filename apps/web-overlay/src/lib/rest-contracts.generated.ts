@@ -161,6 +161,11 @@ export interface SearchResponse {
   inferredCategory?: string;
   excludedTerms?: string[];
   didYouMean?: string;
+  correction?: {
+    original: string;
+    corrected: string;
+    reason: "alias" | "pinyin-typo" | "spelling" | "chinese-typo";
+  };
   queryExpansion?: string[];
   suggestions?: string[];
   popular?: string[];
@@ -856,9 +861,79 @@ export interface MeOverviewResponse {
     spotlightShortcut: "mod+k" | "slash" | "both";
     searchHistoryEnabled: boolean;
     telemetryEnabled: boolean;
+    numberDialEnabled: boolean;
     historyRetentionDays: 30 | 90 | 180 | 365;
     [key: string]: unknown;
   };
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/me/safety
+ */
+export interface MeSafetyResponse {
+  ok: true;
+  checkedAt: number;
+  overall: "ok" | "warning" | "critical" | "unknown";
+  lastExport: {
+    at: number | null;
+    format: "json" | "netscape" | null;
+    counts: {
+      favorites: number;
+      folders: number;
+      searches: number;
+    } | null;
+    truncated: boolean | null;
+    sizeBytes: number | null;
+  } | null;
+  lastImport: {
+    at: number | null;
+    imported: {
+      folders: number;
+      favorites: number;
+      searches: number;
+    };
+    skipped: number;
+  } | null;
+  sync: {
+    favorites: {
+      lastSuccessAt: number | null;
+      lastFailureAt: number | null;
+      lastErrorCode: "timeout" | "network" | "server_5xx" | "validation_4xx" | "unknown" | null;
+    };
+    watchlist: {
+      lastSuccessAt: number | null;
+      lastFailureAt: number | null;
+      lastErrorCode: "timeout" | "network" | "server_5xx" | "validation_4xx" | "unknown" | null;
+    };
+    vault: {
+      exists: boolean;
+      version: number | null;
+      updatedAt: number | null;
+    };
+    crdt: {
+      exists: boolean;
+      updatedAt: number | null;
+    };
+    unreadSyncFailures: number;
+  };
+  localCounts: {
+    favorites: number;
+    folders: number;
+    searches: number;
+    recentEvents: number;
+  };
+  serverBackup: {
+    status: "unknown";
+    reason: "not-instrumented";
+  };
+  checks: ({
+    id: string;
+    label: string;
+    status: "ok" | "warning" | "critical" | "unknown";
+    detail: string;
+    [key: string]: unknown;
+  })[];
   [key: string]: unknown;
 }
 
@@ -924,6 +999,601 @@ export interface FavoritesListResponse {
   total?: number;
   hasMore?: boolean;
   identity?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/ask/status
+ */
+export interface AskStatusResponse {
+  favoritesCount: number;
+  canAsk: boolean;
+  llmReady: boolean;
+  samples: string[];
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/compare
+ */
+export interface CompareResponse {
+  ok: true;
+  items: ({
+    siteId: string;
+    title: string;
+    url: string;
+    pricing: {
+      value: string | string[] | null;
+      source: string;
+      verified: boolean;
+      verifiedAt: number | null;
+      lastCheckedAt?: number | null;
+      stale?: boolean;
+      sourceUrl?: string | null;
+      amountMinor?: number;
+      currency?: string;
+      period?: string;
+      freeTierLimit?: string | null;
+      [key: string]: unknown;
+    };
+    platform: {
+      value: string | string[] | null;
+      source: string;
+      verified: boolean;
+      verifiedAt: number | null;
+      lastCheckedAt?: number | null;
+      stale?: boolean;
+      sourceUrl?: string | null;
+      amountMinor?: number;
+      currency?: string;
+      period?: string;
+      freeTierLimit?: string | null;
+      [key: string]: unknown;
+    };
+    form: {
+      value: string | string[] | null;
+      source: string;
+      verified: boolean;
+      verifiedAt: number | null;
+      lastCheckedAt?: number | null;
+      stale?: boolean;
+      sourceUrl?: string | null;
+      amountMinor?: number;
+      currency?: string;
+      period?: string;
+      freeTierLimit?: string | null;
+      [key: string]: unknown;
+    };
+    maintenance: {
+      value: string | string[] | null;
+      source: string;
+      verified: boolean;
+      verifiedAt: number | null;
+      lastCheckedAt?: number | null;
+      stale?: boolean;
+      sourceUrl?: string | null;
+      amountMinor?: number;
+      currency?: string;
+      period?: string;
+      freeTierLimit?: string | null;
+      [key: string]: unknown;
+    };
+    note: {
+      value: string | string[] | null;
+      source: string;
+      verified: boolean;
+      verifiedAt: number | null;
+      lastCheckedAt?: number | null;
+      stale?: boolean;
+      sourceUrl?: string | null;
+      amountMinor?: number;
+      currency?: string;
+      period?: string;
+      freeTierLimit?: string | null;
+      [key: string]: unknown;
+    };
+    migration: {
+      value: string | string[] | null;
+      source: string;
+      verified: boolean;
+      verifiedAt: number | null;
+      lastCheckedAt?: number | null;
+      stale?: boolean;
+      sourceUrl?: string | null;
+      amountMinor?: number;
+      currency?: string;
+      period?: string;
+      freeTierLimit?: string | null;
+      [key: string]: unknown;
+    };
+    price?: {
+      value: string | string[] | null;
+      source: string;
+      verified: boolean;
+      verifiedAt: number | null;
+      lastCheckedAt?: number | null;
+      stale?: boolean;
+      sourceUrl?: string | null;
+      amountMinor?: number;
+      currency?: string;
+      period?: string;
+      freeTierLimit?: string | null;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/compare/snapshots
+ */
+export interface ComparisonSnapshotCreateResponse {
+  ok: true;
+  snapshot: {
+    id: string;
+    siteIds: string[];
+    items: ({
+      siteId: string;
+      title: string;
+      url: string;
+      pricing: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      platform: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      form: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      maintenance: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      note: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      migration: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      price?: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      [key: string]: unknown;
+    })[];
+    createdAt: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/compare/snapshots/{id}/publish
+ */
+export interface ComparisonSharePublishResponse {
+  ok: true;
+  share: {
+    slug: string;
+    fields: string[];
+    status: string;
+    createdAt: number;
+    updatedAt: number;
+    url: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * PATCH /api/compare/shares/{slug}
+ */
+export interface ComparisonShareUpdateResponse {
+  ok: true;
+  share: {
+    slug: string;
+    fields: string[];
+    status: string;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/compare/shares/{slug}
+ * DELETE /api/favorites/folders/{id}
+ * PATCH /api/tags/{id}
+ * DELETE /api/tags/{id}/aliases/{alias}
+ * DELETE /api/admin/client-errors
+ * DELETE /api/me/tokens/{id}
+ * DELETE /api/me/sessions/{id}
+ * DELETE /api/search-history/{id}
+ * DELETE /api/search-history
+ * POST /api/events
+ */
+export interface OkResponse {
+  ok: true;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/sites/{id}/price
+ */
+export interface SitePriceUpsertResponse {
+  ok: true;
+  price: {
+    id: string;
+    siteId: string;
+    amountMinor: number;
+    currency: string;
+    period: string;
+    freeTierLimit: string | null;
+    sourceType: "manual" | "official_scrape";
+    sourceUrl: string | null;
+    verifiedAt: number;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/sites/{id}/price
+ */
+export interface SitePriceDeleteResponse {
+  ok: true;
+  deleted: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/sites/{id}/price/scrape
+ */
+export interface PriceScrapeResponse {
+  ok: true;
+  siteId: string;
+  sourceUrl: string | null;
+  robots_disallowed: boolean;
+  candidates: ({
+    text: string;
+    amount: number | null;
+    amountMinor: number | null;
+    currency: string | null;
+    period: string | null;
+    confirmToken: string | null;
+    [key: string]: unknown;
+  })[];
+  message: string;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/sites/{id}/verify
+ */
+export interface SiteVerifyResponse {
+  ok: true;
+  siteId: string;
+  status: "pending" | "robots_disallowed";
+  robots_disallowed: boolean;
+  message: string;
+  lastCheckedAt: number | null;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/compare/snapshots
+ */
+export interface ComparisonSnapshotListResponse {
+  ok: true;
+  snapshots: ({
+    id: string;
+    siteIds: string[];
+    items: ({
+      siteId: string;
+      title: string;
+      url: string;
+      pricing: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      platform: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      form: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      maintenance: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      note: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      migration: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      price?: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        lastCheckedAt?: number | null;
+        stale?: boolean;
+        sourceUrl?: string | null;
+        amountMinor?: number;
+        currency?: string;
+        period?: string;
+        freeTierLimit?: string | null;
+        [key: string]: unknown;
+      };
+      [key: string]: unknown;
+    })[];
+    createdAt: number;
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/compare/snapshots/{id}/diff
+ */
+export interface ComparisonSnapshotDiffResponse {
+  ok: true;
+  diff: {
+    base: {
+      id: string;
+      createdAt: number;
+    };
+    against: {
+      id: string;
+      createdAt: number;
+    };
+    changes: ({
+      siteId: string;
+      title: string;
+      dimension: "pricing" | "price" | "platform" | "form" | "maintenance" | "note" | "migration";
+      kind: "value_changed" | "became_verified" | "verification_added";
+      oldValue: string | null;
+      newValue: string | null;
+      oldVerified: boolean;
+      newVerified: boolean;
+      [key: string]: unknown;
+    })[];
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/compare/shares/{slug}
+ */
+export interface ComparisonShareReadResponse {
+  ok: true;
+  share: {
+    slug: string;
+    fields: string[];
+    createdAt: number;
+    [key: string]: unknown;
+  };
+  snapshot: {
+    id: string;
+    siteIds: string[];
+    items: ({
+      siteId: string;
+      title: string;
+      url: string;
+      pricing?: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        stale?: boolean;
+        [key: string]: unknown;
+      };
+      platform?: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        stale?: boolean;
+        [key: string]: unknown;
+      };
+      form?: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        stale?: boolean;
+        [key: string]: unknown;
+      };
+      maintenance?: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        stale?: boolean;
+        [key: string]: unknown;
+      };
+      price?: {
+        value: string | string[] | null;
+        source: string;
+        verified: boolean;
+        verifiedAt: number | null;
+        stale?: boolean;
+        [key: string]: unknown;
+      };
+      [key: string]: unknown;
+    })[];
+    createdAt: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/sites/{id}/verify
+ */
+export interface SiteVerifyStatusResponse {
+  ok: true;
+  siteId: string;
+  status: "idle" | "pending" | "done" | "robots_disallowed";
+  outcome: {
+    kind: "ok" | "blocked" | "parked" | "dead" | "unverified" | "server-error";
+    status?: number;
+    latencyMs: number;
+    redirectTo?: string | null;
+    reason: string;
+    robotsDisallowed?: boolean;
+    fromCache?: boolean;
+    checkedAt?: number;
+    [key: string]: unknown;
+  } | null;
+  robots_disallowed: boolean;
+  finishedAt: number | null;
+  lastCheckedAt: number | null;
+  previousLastCheckedAt: number | null;
   [key: string]: unknown;
 }
 
@@ -1566,22 +2236,6 @@ export interface FavoriteFolderUpdateResponse {
 }
 
 /**
- * DELETE /api/favorites/folders/{id}
- * PATCH /api/tags/{id}
- * DELETE /api/tags/{id}/aliases/{alias}
- * DELETE /api/admin/client-errors
- * DELETE /api/me/tokens/{id}
- * DELETE /api/me/sessions/{id}
- * DELETE /api/search-history/{id}
- * DELETE /api/search-history
- * POST /api/events
- */
-export interface OkResponse {
-  ok: true;
-  [key: string]: unknown;
-}
-
-/**
  * POST /api/collections
  * PATCH /api/collections/{id}
  */
@@ -2183,6 +2837,7 @@ export interface MeSettingsResponse {
     spotlightShortcut: "mod+k" | "slash" | "both";
     searchHistoryEnabled: boolean;
     telemetryEnabled: boolean;
+    numberDialEnabled: boolean;
     historyRetentionDays: 30 | 90 | 180 | 365;
     [key: string]: unknown;
   };
@@ -2246,7 +2901,7 @@ export interface MeDiagnosticsResponse {
   checks: ({
     id: string;
     label: string;
-    status: "ok" | "repaired";
+    status: "ok" | "repaired" | "warning" | "critical" | "unknown";
     detail: string;
     [key: string]: unknown;
   })[];
@@ -2306,6 +2961,58 @@ export interface MeFavoritesSyncResponse {
   items: unknown[];
   folders: unknown[];
   truncatedNotes: number;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/me/favorites/trash
+ */
+export interface MeFavoriteTrashListResponse {
+  ok: true;
+  items: unknown[];
+  total: number;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/me/favorites/trash/{siteId}/restore
+ */
+export interface MeFavoriteTrashRestoreResponse {
+  ok: true;
+  favorite: unknown;
+  folderLost: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/me/favorites/trash/restore-batch
+ */
+export interface MeFavoriteTrashRestoreBatchResponse {
+  ok: true;
+  restored: string[];
+  failed: {
+    siteId: string;
+    error: string;
+    [key: string]: unknown;
+  }[];
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/me/favorites/trash/{siteId}
+ */
+export interface MeFavoriteTrashPurgeResponse {
+  ok: true;
+  purged: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/me/favorites/trash
+ */
+export interface MeFavoriteTrashClearResponse {
+  ok: true;
+  purged: number;
   [key: string]: unknown;
 }
 
@@ -2385,6 +3092,54 @@ export interface MeCustomSitesReorderResponse {
     updatedAt: number;
     [key: string]: unknown;
   })[];
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/me/wanted
+ */
+export interface MeWantedSearchesListResponse {
+  ok: true;
+  items: ({
+    id: string;
+    identity: string;
+    query: string;
+    correctedQuery: string | null;
+    status: "open" | "notified";
+    notifiedSiteId: string | null;
+    notifiedAt: number | null;
+    createdAt: number;
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/me/wanted
+ */
+export interface MeWantedSearchItemResponse {
+  ok: true;
+  item: {
+    id: string;
+    identity: string;
+    query: string;
+    correctedQuery: string | null;
+    status: "open" | "notified";
+    notifiedSiteId: string | null;
+    notifiedAt: number | null;
+    createdAt: number;
+    [key: string]: unknown;
+  };
+  duplicate?: true;
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/me/wanted/{id}
+ */
+export interface MeWantedSearchDeleteResponse {
+  ok: true;
+  removed: boolean;
   [key: string]: unknown;
 }
 
@@ -2570,13 +3325,17 @@ export interface RestContractRoutes {
   "DELETE /api/categories/{id}": undefined;
   "DELETE /api/collections/{id}": CollectionDeleteResponse;
   "DELETE /api/collections/{id}/items/{siteId}": CollectionItemMutationResponse;
+  "DELETE /api/compare/shares/{slug}": OkResponse;
   "DELETE /api/favorites": FavoriteRemovalResponse;
   "DELETE /api/favorites/folders/{id}": OkResponse;
   "DELETE /api/favorites/{siteId}": FavoriteSiteRemovalResponse;
   "DELETE /api/me": MeDeleteResponse;
   "DELETE /api/me/custom-sites/{id}": MeCustomSiteDeleteResponse;
+  "DELETE /api/me/favorites/trash": MeFavoriteTrashClearResponse;
+  "DELETE /api/me/favorites/trash/{siteId}": MeFavoriteTrashPurgeResponse;
   "DELETE /api/me/sessions/{id}": OkResponse;
   "DELETE /api/me/tokens/{id}": OkResponse;
+  "DELETE /api/me/wanted/{id}": MeWantedSearchDeleteResponse;
   "DELETE /api/plugins/{slug}/install": PluginUninstallResponse;
   "DELETE /api/plugins/{slug}/star": PluginStarResponse;
   "DELETE /api/profile": ProfileResetResponse;
@@ -2584,6 +3343,7 @@ export interface RestContractRoutes {
   "DELETE /api/search-history": OkResponse;
   "DELETE /api/search-history/{id}": OkResponse;
   "DELETE /api/sites/{id}": undefined;
+  "DELETE /api/sites/{id}/price": SitePriceDeleteResponse;
   "DELETE /api/storage": StorageDeleteResponse;
   "DELETE /api/tags/{id}": TagMutationResponse;
   "DELETE /api/tags/{id}/aliases/{alias}": OkResponse;
@@ -2596,6 +3356,7 @@ export interface RestContractRoutes {
   "GET /api/admin/notifications": NotificationListResponse;
   "GET /api/admin/notifications/deliveries": NotificationDeliveryListResponse;
   "GET /api/admin/site-reports": SiteReportsListResponse;
+  "GET /api/ask/status": AskStatusResponse;
   "GET /api/brief/today": BriefTodayResponse;
   "GET /api/categories": CategoryListResponse;
   "GET /api/categories/by-slug/{slug}": CategoryPayload;
@@ -2605,6 +3366,10 @@ export interface RestContractRoutes {
   "GET /api/categories/{id}/impact": CategoryImpactResponse;
   "GET /api/collections": CollectionListResponse;
   "GET /api/collections/{slug}": CollectionDetailResponse;
+  "GET /api/compare": CompareResponse;
+  "GET /api/compare/shares/{slug}": ComparisonShareReadResponse;
+  "GET /api/compare/snapshots": ComparisonSnapshotListResponse;
+  "GET /api/compare/snapshots/{id}/diff": ComparisonSnapshotDiffResponse;
   "GET /api/drama/calendar": DramaCalendarResponse;
   "GET /api/facets": FacetsResponse;
   "GET /api/favorites": FavoritesListResponse;
@@ -2612,8 +3377,11 @@ export interface RestContractRoutes {
   "GET /api/hotlist": HotlistResponse;
   "GET /api/me": MeOverviewResponse;
   "GET /api/me/custom-sites": MeCustomSitesListResponse;
+  "GET /api/me/favorites/trash": MeFavoriteTrashListResponse;
   "GET /api/me/notifications": NotificationListResponse;
   "GET /api/me/notifications/unread-count": NotificationUnreadCountResponse;
+  "GET /api/me/safety": MeSafetyResponse;
+  "GET /api/me/wanted": MeWantedSearchesListResponse;
   "GET /api/plugins": PluginListResponse;
   "GET /api/plugins/installed": InstalledPluginsResponse;
   "GET /api/plugins/taps": PluginTapsResponse;
@@ -2629,6 +3397,7 @@ export interface RestContractRoutes {
   "GET /api/sites/{id}": SitePayload;
   "GET /api/sites/{id}/facets": SiteFacetsResponse;
   "GET /api/sites/{id}/similar": SiteListResponse;
+  "GET /api/sites/{id}/verify": SiteVerifyStatusResponse;
   "GET /api/storage/list": StorageAssetListResponse;
   "GET /api/tags": TagListResponse;
   "GET /api/tags/resolve": ResolveTagResponse;
@@ -2640,6 +3409,7 @@ export interface RestContractRoutes {
   "PATCH /api/categories/{id}": CategoryPayload;
   "PATCH /api/collections/{id}": CollectionPayload;
   "PATCH /api/collections/{id}/items/{siteId}": CollectionItemMutationResponse;
+  "PATCH /api/compare/shares/{slug}": ComparisonShareUpdateResponse;
   "PATCH /api/favorites/folders/{id}": FavoriteFolderUpdateResponse;
   "PATCH /api/favorites/{siteId}": FavoriteUpdateResponse;
   "PATCH /api/me/custom-sites/{id}": MeCustomSiteItemResponse;
@@ -2668,6 +3438,8 @@ export interface RestContractRoutes {
   "POST /api/categories/{id}/move": CategoryPayload;
   "POST /api/collections": CollectionPayload;
   "POST /api/collections/{id}/items": CollectionItemMutationResponse;
+  "POST /api/compare/snapshots": ComparisonSnapshotCreateResponse;
+  "POST /api/compare/snapshots/{id}/publish": ComparisonSharePublishResponse;
   "POST /api/errors": undefined;
   "POST /api/events": OkResponse;
   "POST /api/favorites": FavoriteCreateResponse;
@@ -2680,6 +3452,8 @@ export interface RestContractRoutes {
   "POST /api/me/custom-sites/reorder": MeCustomSitesReorderResponse;
   "POST /api/me/diagnostics": MeDiagnosticsResponse;
   "POST /api/me/favorites/sync": MeFavoritesSyncResponse;
+  "POST /api/me/favorites/trash/restore-batch": MeFavoriteTrashRestoreBatchResponse;
+  "POST /api/me/favorites/trash/{siteId}/restore": MeFavoriteTrashRestoreResponse;
   "POST /api/me/import": MeImportResponse;
   "POST /api/me/merge": MeMergeResponse;
   "POST /api/me/notifications/read-all": NotificationReadAllResponse;
@@ -2687,6 +3461,7 @@ export interface RestContractRoutes {
   "POST /api/me/prune": MePruneResponse;
   "POST /api/me/sessions/check": MeSessionCheckResponse;
   "POST /api/me/tokens": MeTokenCreateResponse;
+  "POST /api/me/wanted": MeWantedSearchItemResponse;
   "POST /api/me/watchlist/sync": MeWatchlistSyncResponse;
   "POST /api/plugins/{slug}/install": PluginInstallResponse;
   "POST /api/plugins/{slug}/star": PluginStarResponse;
@@ -2698,7 +3473,10 @@ export interface RestContractRoutes {
   "POST /api/sites": SitePayload;
   "POST /api/sites/batch": SiteBatchResponse;
   "POST /api/sites/bulk": SiteBulkResponse;
+  "POST /api/sites/{id}/price": SitePriceUpsertResponse;
+  "POST /api/sites/{id}/price/scrape": PriceScrapeResponse;
   "POST /api/sites/{id}/reports": SiteReportCreateResponse;
+  "POST /api/sites/{id}/verify": SiteVerifyResponse;
   "POST /api/speculation/rules": SpeculationRulesResponse;
   "POST /api/submissions": SubmissionCreateResponse;
   "POST /api/tags/merge": TagMutationResponse;

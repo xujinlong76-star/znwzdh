@@ -106,20 +106,3 @@ export async function releaseHarvestLease(owner: string): Promise<void> {
     // 释放失败无碍：TTL 到期后自然失效
   }
 }
-
-/** 续租：持有者本人且未过期才允许 */
-export async function renewHarvestLease(owner: string, ttlMs: number): Promise<boolean> {
-  try {
-    const [current, version] = await Promise.all([
-      readLease(),
-      getStorageVersion(LOCK_PATH),
-    ])
-    if (version === null) return true
-    const now = Date.now()
-    if (!current || current.owner !== owner || current.expiresAt <= now) return false
-    await writeLease({ version: 1, owner, expiresAt: now + ttlMs, savedAt: now }, version)
-    return true
-  } catch {
-    return false
-  }
-}

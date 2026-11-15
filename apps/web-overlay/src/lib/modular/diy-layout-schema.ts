@@ -228,6 +228,7 @@ export const DIY_LAYOUT_FIELD_NAMES = [
   'categoryDensityOverrides',
   'speedDialEnabled',
   'speedDialPinnedIds',
+  'quickDialSlots',
   'customWallpaperUrl',
   'glassmorphismBlur',
   'cardOpacity',

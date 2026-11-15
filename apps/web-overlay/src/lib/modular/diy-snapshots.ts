@@ -20,6 +20,10 @@ import { STORAGE_KEY, type HomeDIYConfig } from './home-diy-storage'
 export const DIY_SNAPSHOTS_KEY = 'navhub_home_diy_snapshots_v1'
 export const DIY_SNAPSHOT_MAX_COUNT = 20
 export const DIY_SNAPSHOT_SHARE_BACKUP_PREFIX = `${STORAGE_KEY}.share-backup.`
+/** 场景切换前自动备份的名称前缀：以它识别自动备份，与手动版本分开记账 */
+export const DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_PREFIX = '切换前自动备份'
+/** 自动备份只保留最新这么多份；手动版本永远不因此被删 */
+export const DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_KEEP = 2
 
 export type DiySnapshotSource = 'manual' | 'share-backup'
 
@@ -201,7 +205,19 @@ export function saveDiySnapshot(
     config: cloned,
     source: 'manual',
   }
-  const list = [entry, ...readManualList(storage)].slice(0, DIY_SNAPSHOT_MAX_COUNT)
+  let list = [entry, ...readManualList(storage)]
+  // 切换前自动备份单独记账：每次切换都写一份，放任不管约 20 次切换就
+  // 会挤掉全部手动版本；只保留最新 2 份旧自动备份，非自动备份一个不动。
+  // doc 里的 lastSwitchBackup 是另一份备份，不受这里影响。
+  if (entry.name.startsWith(DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_PREFIX)) {
+    let keptAuto = 0
+    list = list.filter((e) => {
+      if (!e.name.startsWith(DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_PREFIX)) return true
+      keptAuto += 1
+      return keptAuto <= DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_KEEP
+    })
+  }
+  list = list.slice(0, DIY_SNAPSHOT_MAX_COUNT)
   return writeManualList(storage, list) ? entry : null
 }
 

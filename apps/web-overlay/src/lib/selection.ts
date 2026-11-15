@@ -1,11 +1,10 @@
 /**
  * 卡片多选（批量操作）的选中状态：纯函数，可单测。
  *
- * 为什么需要它：`components/batch-operation-dock.tsx`（底部批量操作坞）与
- * `lib/batch-operations.ts`（批量导出 / 置顶 / 移动 / 删除）**写好很久了但从未被挂载**
- * —— 全仓没有任何地方渲染这个坞，也没有任何选中状态，于是它是一段死代码，
- * 而用户对「一次处理多个站点」的需求（导出到 OneTab / 复制成 Markdown / 批量置顶）
- * 一直没有入口。
+ * 消费方：`components/batch-operation-dock.tsx`（底部批量操作坞）与
+ * `lib/batch-operations.ts`（批量导出 / 置顶 / 移动 / 删除），经
+ * `lib/modular/use-site-selection.ts` 挂在首页（工具栏「多选」开关 +
+ * 卡片选中态 + 操作坞，见 components/navigation-content.tsx）。
  *
  * 这里只负责「选中的集合怎么变」，与 React / DOM 无关：
  *   - 纯切换语义（相同 id 再点一次即取消，绝不产生重复）

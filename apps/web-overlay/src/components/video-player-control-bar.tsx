@@ -10,9 +10,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import {
-  Award,
   Brain,
-  BrainCircuit,
   Camera,
   Check,
   ChevronDown,
@@ -24,23 +22,17 @@ import {
   FolderArchive,
   FolderTree,
   GitCompare,
-  HelpCircle,
   Languages,
   Layers,
   ListCollapse,
-  Network,
   PenTool,
-  RotateCw,
-  ScanText,
   Scissors,
   Share2,
   Shuffle,
   SkipBack,
   SkipForward,
   Timer,
-  Users,
   Webhook,
-  Zap,
 } from 'lucide-react'
 import { Button } from "@/registry/new-york/ui/button"
 import { cn } from '@/lib/utils'
@@ -59,29 +51,21 @@ export interface VideoPlayerToolOpeners {
   note: () => void
   poster: () => void
   /** 以下入口由父组件按「无数据不给入口」决定是否传入（2026-11-11 审计第二批）：
-   *  flashcards 仅在真有卡片时；certificate / conceptGraph 仅对自带真实章节
-   *  的视频；bilingual* 仅在有真实字幕稿时。未传入即不渲染按钮。
+   *  bilingual* 仅在有真实字幕稿时。未传入即不渲染按钮。
    *  频谱 / 神经降噪 / P2P 网格 / 分轨 / P2P 蜂群五个入口已整体下线（无真实
-   *  数据管线），不再保留 opener 位。 */
-  flashcards?: () => void
-  certificate?: () => void
-  ocr: () => void
-  smartSpeed: () => void
+   *  数据管线），不再保留 opener 位。
+   *  AI 学习三件套（AI伴学 / 概念图谱 / 抽认卡）已合并为 aiLearning 一个
+   *  入口：概念图谱的「仅真实章节」 gating 与抽认卡的卡片计数挪进中心弹窗内。 */
+  aiLearning: () => void
   offline: () => void
   bilingualSubtitles?: () => void
   workspaceExport: () => void
-  sessionReplay: () => void
   clipMaker: () => void
   pomodoro: () => void
-  remedy: () => void
-  autoHarvest: () => void
-  autonomousHarvest: () => void
+  /** 视频采集中心唯一入口（手动采集与 AI 自主巡航是同一弹窗里的两个 tab） */
+  harvest: () => void
   webhook: () => void
-  wasmOcr: () => void
   bilingualTts?: () => void
-  conceptGraph?: () => void
-  studyRoom: () => void
-  quiz: () => void
 }
 
 interface VideoPlayerControlBarProps {
@@ -101,13 +85,10 @@ interface VideoPlayerControlBarProps {
   selectedVideo: NavigationSubItem | null
   chaptersCount: number
   codeMilestonesCount: number
-  quizCount: number
-  flashcardsCount: number
   showSandbox: boolean
   onToggleSandbox: () => void
   showTelestrator: boolean
   onToggleTelestrator: () => void
-  smartSpeedEnabled: boolean
   /** 脑图是否有真实数据（父组件按真实章节派生）：无则不渲染知识脑图入口 */
   mindmapAvailable?: boolean
   /** 桌面伴学窗按钮渲染在控制条同一行（该组件静态 import 由首屏体积守卫锁定） */
@@ -132,13 +113,10 @@ export function VideoPlayerControlBar({
   selectedVideo,
   chaptersCount,
   codeMilestonesCount,
-  quizCount,
-  flashcardsCount,
   showSandbox,
   onToggleSandbox,
   showTelestrator,
   onToggleTelestrator,
-  smartSpeedEnabled,
   mindmapAvailable,
   pipRenderer,
   openers,
@@ -326,20 +304,6 @@ export function VideoPlayerControlBar({
           </Button>
         )}
 
-        {/* 课后测验 */}
-        {quizCount > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={openers.quiz}
-            title="章节通关与课后自测"
-          >
-            <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
-            <span>自测 ({quizCount}题)</span>
-          </Button>
-        )}
-
         {/* 分享海报 */}
         <Button
           variant="outline"
@@ -352,33 +316,17 @@ export function VideoPlayerControlBar({
           <span>分享海报</span>
         </Button>
 
-        {/* 艾宾浩斯抽认卡 */}
-        {openers.flashcards && (
-  <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={openers.flashcards}
-            title="艾宾浩斯遗忘曲线抽认卡与复习日程"
-          >
-            <Brain className="w-3.5 h-3.5 text-indigo-500" />
-            <span>抽认卡 ({flashcardsCount})</span>
-          </Button>
-        )}
-
-        {/* 结业微证书 */}
-        {openers.certificate && (
-  <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={openers.certificate}
-            title="全套课程通关与可验证结业微证书"
-          >
-            <Award className="w-3.5 h-3.5 text-yellow-500" />
-            <span>结业证书</span>
-          </Button>
-        )}
+        {/* AI 学习中心：AI伴学 / 概念图谱 / 抽认卡三件套合为一个入口（弹窗内三个 tab） */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5 text-xs border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
+          onClick={openers.aiLearning}
+          title="AI 学习中心：AI伴学检索、概念图谱穿梭与抽认卡复习"
+        >
+          <Brain className="w-3.5 h-3.5 text-indigo-500" />
+          <span>AI 学习</span>
+        </Button>
 
         {/* 屏幕涂鸦白板 */}
         <Button
@@ -392,40 +340,16 @@ export function VideoPlayerControlBar({
           <span>{showTelestrator ? '收起涂鸦' : '屏幕涂鸦'}</span>
         </Button>
 
-        {/* 画面代码提取 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.ocr}
-          title="端侧提取当前画面中的代码与终端命令"
-        >
-          <ScanText className="w-3.5 h-3.5 text-emerald-400" />
-          <span>画面提取</span>
-        </Button>
-
-        {/* 智能静音加速 */}
-        <Button
-          variant={smartSpeedEnabled ? 'secondary' : 'outline'}
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.smartSpeed}
-          title="自适应静音跳跃与倍速调节"
-        >
-          <Zap className={cn("w-3.5 h-3.5", smartSpeedEnabled ? "text-amber-500 fill-amber-500" : "text-amber-500")} />
-          <span>智能加速</span>
-        </Button>
-
         {/* 离线下载缓存 */}
         <Button
           variant="outline"
           size="sm"
           className="h-8 gap-1.5 text-xs"
           onClick={openers.offline}
-          title="PWA 本地加密缓存与断网播放"
+          title="保存到稍后再看（仅保存视频元数据，不下载视频文件）"
         >
           <DownloadCloud className="w-3.5 h-3.5 text-blue-400" />
-          <span>离线缓存</span>
+          <span>稍后再看</span>
         </Button>
 
         {/* 桌面画中画伴学悬浮窗 */}
@@ -457,25 +381,13 @@ export function VideoPlayerControlBar({
           <span>工程导出</span>
         </Button>
 
-        {/* 时空漫游复盘 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.sessionReplay}
-          title="学习会话时空漫游与认知负荷复盘"
-        >
-          <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
-          <span>会话复盘</span>
-        </Button>
-
                 {/* 视频微知识点一键切片 */}
         <Button
           variant="outline"
           size="sm"
           className="h-8 gap-1.5 text-xs"
           onClick={openers.clipMaker}
-          title="精细微知识点切片与 WebM/GIF 动图导出"
+          title="精细微知识点切片与剪辑清单（JSON）导出"
         >
           <Scissors className="w-3.5 h-3.5 text-amber-400" />
           <span>微切片</span>
@@ -493,40 +405,16 @@ export function VideoPlayerControlBar({
           <span>专注番茄</span>
         </Button>
 
-                                {/* 贝叶斯自适应弱项诊断 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={openers.remedy}
-          title="贝叶斯自适应知识追踪与薄弱点诊断"
-        >
-          <Brain className="w-3.5 h-3.5 text-purple-400" />
-          <span>弱项诊断</span>
-        </Button>
-
-        {/* 全网热点自动采集 */}
+        {/* 视频采集中心：手动采集与 AI 自主巡航合为一个入口（弹窗内两个 tab） */}
         <Button
           variant="outline"
           size="sm"
           className="h-8 gap-1.5 text-xs border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
-          onClick={openers.autoHarvest}
-          title="一键启动全网多源开发者技术热点视频采集"
+          onClick={openers.harvest}
+          title="视频采集中心：手动热点采集与 AI 自主巡航"
         >
           <Flame className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-          <span>热点采集</span>
-        </Button>
-
-        {/* AI 全程自主采集控制台 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
-          onClick={openers.autonomousHarvest}
-          title="启动 AI 全程无人值守视频采集与大模型审核流水线"
-        >
-          <BrainCircuit className="w-3.5 h-3.5 text-indigo-400" />
-          <span>AI自主采集</span>
+          <span>视频采集</span>
         </Button>
 
         {/* 多源 Webhook 调度 */}
@@ -541,19 +429,7 @@ export function VideoPlayerControlBar({
           <span>Webhook</span>
         </Button>
 
-        {/* 智能抽帧 OCR */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
-          onClick={openers.wasmOcr}
-          title="Wasm 视频画面代码智能抽帧与 OCR 提取"
-        >
-          <ScanText className="w-3.5 h-3.5 text-indigo-400" />
-          <span>智能抽帧</span>
-        </Button>
-
-        {/* 双语同传与 TTS */}
+        {/* TTS 朗读 */}
         {openers.bilingualTts && (
   <Button
             variant="outline"
@@ -567,31 +443,6 @@ export function VideoPlayerControlBar({
           </Button>
         )}
 
-        {/* 概念图谱 */}
-        {openers.conceptGraph && (
-  <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-            onClick={openers.conceptGraph}
-            title="交互式全站概念拓扑图谱与 Dijkstra 最短学习路径"
-          >
-            <Network className="w-3.5 h-3.5 text-emerald-400" />
-            <span>概念图谱</span>
-          </Button>
-        )}
-
-        {/* 伴学自习室 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs border-pink-500/40 text-pink-400 hover:bg-pink-500/10"
-          onClick={openers.studyRoom}
-          title="WebRTC / CRDT 伴学自习室与多人协同白板"
-        >
-          <Users className="w-3.5 h-3.5 text-pink-400" />
-          <span>伴学自习室</span>
-        </Button>
       </div>
       <span className="text-xs text-muted-foreground font-mono">
         {currentIndex >= 0 ? `${currentIndex + 1} / ${totalVideos}` : ''}

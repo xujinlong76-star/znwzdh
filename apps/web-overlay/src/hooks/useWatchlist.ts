@@ -19,7 +19,7 @@ import {
   type WatchSyncOp,
 } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
-import { recordGrowthEvent } from '@/lib/growth'
+import { recordGrowthEvent } from '@/lib/growth-lazy'
 import { getIdentity } from '@/lib/identity'
 import {
   corruptKeyFor,

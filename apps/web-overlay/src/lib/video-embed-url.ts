@@ -9,8 +9,14 @@ import type { NavigationSubItem, VideoConfig } from '@/types/navigation'
 /**
  * 根据视频平台配置构建标准播放器嵌入地址（支持 12+ 主流国内外视频平台）。
  * 同时支持传入 NavigationSubItem 或 VideoConfig。
+ *
+ * @param startSec 可选：从该秒数开始播放。YouTube 用 `start`、Bilibili 用 `t`、
+ * Vimeo 用 `#t=Ns`；不支持起始时间的平台会忽略该参数，从头播放。
  */
-export function buildVideoEmbedUrlForSeo(itemOrConfig: NavigationSubItem | VideoConfig): string {
+export function buildVideoEmbedUrlForSeo(
+  itemOrConfig: NavigationSubItem | VideoConfig,
+  startSec?: number,
+): string {
   const isSubItem = 'videoConfig' in itemOrConfig || 'href' in itemOrConfig
   const config: VideoConfig | undefined = isSubItem
     ? (itemOrConfig as NavigationSubItem).videoConfig
@@ -21,31 +27,27 @@ export function buildVideoEmbedUrlForSeo(itemOrConfig: NavigationSubItem | Video
   const platform = config.type || 'custom'
   const vid = config.bvid || config.videoId || ''
 
+  const start = typeof startSec === 'number' && Number.isFinite(startSec) && startSec > 0
+    ? Math.floor(startSec)
+    : 0
+
   switch (platform) {
     case 'bilibili':
       if (config.bvid || vid.startsWith('BV')) {
-        return `https://player.bilibili.com/player.html?bvid=${config.bvid || vid}&high_quality=1&autoplay=0`
+        return `https://player.bilibili.com/player.html?bvid=${config.bvid || vid}&high_quality=1&autoplay=0${start > 0 ? `&t=${start}` : ''}`
       }
       if (config.aid) {
-        return `https://player.bilibili.com/player.html?aid=${config.aid}&high_quality=1&autoplay=0`
+        return `https://player.bilibili.com/player.html?aid=${config.aid}&high_quality=1&autoplay=0${start > 0 ? `&t=${start}` : ''}`
       }
-      return `https://player.bilibili.com/player.html?bvid=${vid}`
+      return `https://player.bilibili.com/player.html?bvid=${vid}${start > 0 ? `&t=${start}` : ''}`
     case 'youtube':
-      return vid ? `https://www.youtube.com/embed/${vid}` : fallbackHref
+      return vid ? `https://www.youtube.com/embed/${vid}${start > 0 ? `?start=${start}` : ''}` : fallbackHref
     case 'vimeo':
-      return vid ? `https://player.vimeo.com/video/${vid}` : fallbackHref
+      return vid ? `https://player.vimeo.com/video/${vid}${start > 0 ? `#t=${start}s` : ''}` : fallbackHref
     case 'dailymotion':
       return vid ? `https://www.dailymotion.com/embed/video/${vid}` : fallbackHref
     case 'ted':
       return vid ? `https://embed.ted.com/talks/${vid}` : fallbackHref
-    case 'douyin':
-      return vid ? `https://open.douyin.com/player/video?vid=${vid}&autoplay=0` : fallbackHref
-    case 'xigua':
-      return vid ? `https://www.ixigua.com/iframe/${vid}?autoplay=0` : fallbackHref
-    case 'tencent':
-      return vid ? `https://v.qq.com/txp/iframe/player.html?vid=${vid}` : fallbackHref
-    case 'youku':
-      return vid ? `https://player.youku.com/embed/${vid}` : fallbackHref
     case 'peertube':
       if (fallbackHref && fallbackHref.includes('/videos/watch/')) {
         return fallbackHref.replace('/videos/watch/', '/videos/embed/')

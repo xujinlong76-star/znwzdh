@@ -1,8 +1,10 @@
 'use client'
 
 /**
- * 视频播放页右侧多标签面板（列表 / 章节 / 课件 / 脑图 / 演进 / 调试器 / TDD / 沙盒 /
- * 终端 / WASM / 疑惑雷达 / 逐字稿 / AI 伴学 / 笔记 / 历史）。
+ * 视频播放页右侧多标签面板（列表 / 章节 / 课件 / 脑图 / 演进 /
+ * 疑惑雷达 / 逐字稿 / 笔记 / 历史）。
+ * AI 伴学 tab 已并入 AI 学习中心（video-ai-learning-dialog 的「AI伴学」
+ * tab），不再是侧栏的独立入口。
  *
  * 2026-11-09 A-2 第一步：从 video-player-page.tsx 原样搬出，纯搬家不改行为；
  * 状态仍由父组件持有，这里只做展示与回调上抛。
@@ -13,7 +15,8 @@ import { Button } from "@/registry/new-york/ui/button"
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import { formatDuration } from '@/lib/video-format'
-import { Camera, Check, Copy, Download, Play, Sparkles } from 'lucide-react'
+import { Camera, Check, Copy, Download, Play, Sparkles, Captions, Upload } from 'lucide-react'
+import { highlightCaptionSegments, type CaptionSource } from '@/lib/video-caption-store'
 import {
   chapterStartSec,
   type NavigationSubItem,
@@ -30,16 +33,11 @@ import { useVideoPlayerState } from '@/hooks/useVideoPlayerState'
 const VideoSlideDeckViewer = dynamic(() => import('@/components/video-slide-deck-viewer').then(m => m.VideoSlideDeckViewer), { ssr: false })
 const VideoMindmapView = dynamic(() => import('@/components/video-mindmap-view').then(m => m.VideoMindmapView), { ssr: false })
 const VideoCodeDiffViewer = dynamic(() => import('@/components/video-code-diff-viewer').then(m => m.VideoCodeDiffViewer), { ssr: false })
-const VideoDebuggerStepperPane = dynamic(() => import('@/components/video-debugger-stepper-pane').then(m => m.VideoDebuggerStepperPane), { ssr: false })
-const VideoLiveTestPane = dynamic(() => import('@/components/video-live-test-pane').then(m => m.VideoLiveTestPane), { ssr: false })
-const VideoSandboxRunnerPane = dynamic(() => import('@/components/video-sandbox-runner-pane').then(m => m.VideoSandboxRunnerPane), { ssr: false })
-const VideoWasmTerminalPane = dynamic(() => import('@/components/video-wasm-terminal-pane').then(m => m.VideoWasmTerminalPane), { ssr: false })
 const VideoConfusionRadar = dynamic(() => import('@/components/video-confusion-radar').then(m => m.VideoConfusionRadar), { ssr: false })
-const VideoAssistantCopilot = dynamic(() => import('@/components/video-assistant-copilot').then(m => m.VideoAssistantCopilot), { ssr: false })
 
 export type VideoPlayerTab =
-  | 'playlist' | 'chapters' | 'slides' | 'mindmap' | 'diff' | 'debugger' | 'testrunner'
-  | 'sandbox' | 'wasm' | 'radar' | 'transcript' | 'copilot' | 'notes' | 'history'
+  | 'playlist' | 'chapters' | 'slides' | 'mindmap' | 'diff'
+  | 'radar' | 'transcript' | 'notes' | 'history'
 
 interface VideoPlayerSidePanelProps {
   activeTab: VideoPlayerTab
@@ -60,13 +58,16 @@ interface VideoPlayerSidePanelProps {
   setChapterSeekSec: (sec: number) => void
   mindmapRoot: MindMapNode
   codeMilestones: CodeMilestone[]
-  sandboxInitialCode: string
   danmakuList: VideoDanmakuItem[]
   transcriptList: VideoTranscriptItem[]
   filteredTranscript: VideoTranscriptItem[]
   transcriptSearchQuery: string
   setTranscriptSearchQuery: (query: string) => void
   handleExportTranscript: () => void
+  /** 字幕来源：imported（用户导入）/ builtin（视频自带）/ description / none（无字幕）。 */
+  captionSource: CaptionSource
+  importedCaptionCount: number
+  onOpenCaptionImport: () => void
   notesList: VideoStudyNote[]
   handleExportNotes: () => void
   setShowNoteDialog: (open: boolean) => void
@@ -78,8 +79,9 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
     activeTab, setActiveTab, playlist, allVideos, selectedVideo,
     setSelectedVideo, chapters, aiSummary, isLoadingAI, handleSeekToChapter, handleCopyCode,
     handleOpenSandbox, copiedCodeId, chapterSeekSec, setChapterSeekSec, mindmapRoot,
-    codeMilestones, sandboxInitialCode, danmakuList, transcriptList, filteredTranscript,
-    transcriptSearchQuery, setTranscriptSearchQuery, handleExportTranscript, notesList,
+    codeMilestones, danmakuList, transcriptList, filteredTranscript,
+    transcriptSearchQuery, setTranscriptSearchQuery, handleExportTranscript, captionSource,
+    importedCaptionCount, onOpenCaptionImport, notesList,
     handleExportNotes, setShowNoteDialog, historyList,
   } = props
 
@@ -141,42 +143,6 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                             <button
                                 className={cn(
                                     "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
-                                    activeTab === 'debugger' ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
-                                )}
-                                onClick={() => setActiveTab('debugger')}
-                            >
-                                调试器
-                            </button>
-                            <button
-                                className={cn(
-                                    "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
-                                    activeTab === 'testrunner' ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
-                                )}
-                                onClick={() => setActiveTab('testrunner')}
-                            >
-                                TDD测试
-                            </button>
-                            <button
-                                className={cn(
-                                    "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
-                                    activeTab === 'sandbox' ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
-                                )}
-                                onClick={() => setActiveTab('sandbox')}
-                            >
-                                联调沙盒
-                            </button>
-                            <button
-                                className={cn(
-                                    "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
-                                    activeTab === 'wasm' ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
-                                )}
-                                onClick={() => setActiveTab('wasm')}
-                            >
-                                沙箱
-                            </button>
-                            <button
-                                className={cn(
-                                    "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
                                     activeTab === 'radar' ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
                                 )}
                                 onClick={() => setActiveTab('radar')}
@@ -191,15 +157,6 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                                 onClick={() => setActiveTab('transcript')}
                             >
                                 逐字稿
-                            </button>
-                            <button
-                                className={cn(
-                                    "flex-1 py-1 px-1.5 rounded-md font-medium transition-all text-center whitespace-nowrap",
-                                    activeTab === 'copilot' ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
-                                )}
-                                onClick={() => setActiveTab('copilot')}
-                            >
-                                AI 伴学
                             </button>
                             <button
                                 className={cn(
@@ -337,39 +294,9 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                             </div>
                         )}
 
-                        {activeTab === 'debugger' && (
-                            <div className="p-3">
-                                <VideoDebuggerStepperPane
-                                    initialCode={codeMilestones[0]?.afterCode || '// 交互式断点调试器\nfunction calculateProgress(time, total) {\n  let ratio = time / total;\n  if (ratio > 1) ratio = 1;\n  return Math.round(ratio * 100);\n}\nlet currentProgress = calculateProgress(120, 600);\nconsole.log("Current progress:", currentProgress);'}
-                                />
-                            </div>
-                        )}
 
-                        {activeTab === 'testrunner' && (
-                            <div className="p-3">
-                                <VideoLiveTestPane
-                                    chapterTitle={selectedVideo?.title}
-                                />
-                            </div>
-                        )}
 
-                        {activeTab === 'sandbox' && (
-                            <div className="p-3 h-[520px]">
-                                <VideoSandboxRunnerPane initialCode={sandboxInitialCode} />
-                            </div>
-                        )}
 
-                        {activeTab === 'wasm' && (
-                            <div className="p-3">
-                                <VideoWasmTerminalPane
-                                    initialLanguage="bash"
-                                    initialCode={`# 在此极速执行命令行或脚本
-echo "WebAssembly Linux/POSIX runtime ready!"
-uname -a
-ls -la /workspace`}
-                                />
-                            </div>
-                        )}
 
                         {activeTab === 'radar' && (
                             <div className="p-3">
@@ -383,6 +310,21 @@ ls -la /workspace`}
                         {activeTab === 'transcript' && (
                             <div className="p-3 space-y-3">
                                 <div className="flex items-center justify-between gap-2">
+                                    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" role="status">
+                                        <Captions className="w-3.5 h-3.5" />
+                                        {transcriptList.length > 0
+                                            ? captionSource === 'imported'
+                                                ? `已导入字幕 · ${importedCaptionCount} 条可搜`
+                                                : captionSource === 'builtin'
+                                                    ? `自带字幕 · ${transcriptList.length} 条可搜`
+                                                    : `字幕 · ${transcriptList.length} 条可搜`
+                                            : '无字幕，不可搜'}
+                                    </span>
+                                    <Button size="sm" variant="outline" className="min-h-11 text-xs px-2 gap-1" onClick={onOpenCaptionImport}>
+                                        <Upload className="w-3 h-3" /> 导入字幕
+                                    </Button>
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
                                     <input aria-label="搜索字幕"
                                         type="text"
                                         value={transcriptSearchQuery}
@@ -390,25 +332,40 @@ ls -la /workspace`}
                                         placeholder="搜索字幕与关键词..."
                                         className="flex-1 px-2.5 py-1 text-xs rounded-md bg-card border border-border/50 focus:outline-none"
                                     />
-                                    <Button size="sm" variant="outline" className="h-7 text-xs px-2 gap-1" onClick={handleExportTranscript}>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs px-2 gap-1" onClick={handleExportTranscript} disabled={transcriptList.length === 0}>
                                         <Download className="w-3 h-3" /> 导出
                                     </Button>
                                 </div>
                                 <div className="space-y-1.5">
-                                    {filteredTranscript.length === 0 ? (
+                                    {transcriptList.length === 0 ? (
+                                        <div className="text-center py-10 px-2 space-y-2">
+                                            <p className="text-xs font-medium">无字幕，不可搜</p>
+                                            <p className="text-xs text-muted-foreground leading-relaxed">
+                                                这条视频没有自带字幕，也没有导入过字幕，所以搜不到里面说过的话。
+                                                不会为它自动生成字幕或做语音转写。
+                                            </p>
+                                            <Button size="sm" variant="outline" className="min-h-11 text-xs" onClick={onOpenCaptionImport}>
+                                                <Upload className="w-3.5 h-3.5 mr-1" /> 粘贴或上传 SRT / WebVTT 字幕
+                                            </Button>
+                                        </div>
+                                    ) : filteredTranscript.length === 0 ? (
                                         <p className="text-xs text-muted-foreground text-center py-10">未找到匹配字幕</p>
                                     ) : (
                                         filteredTranscript.map((t) => (
                                             <button
                                                 key={t.id}
                                                 onClick={() => handleSeekToChapter({ startTime: t.startSec, id: t.id, title: t.text })}
-                                                className="w-full text-left p-2 rounded-lg hover:bg-accent/40 border border-transparent hover:border-border/40 transition-all text-xs space-y-0.5 group"
+                                                className="w-full text-left p-2 rounded-lg hover:bg-accent/40 border border-transparent hover:border-border/40 transition-all text-xs space-y-0.5 group min-h-11"
                                             >
                                                 <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
                                                     <span>{formatDuration(t.startSec)}</span>
                                                 </div>
                                                 <p className="text-foreground group-hover:text-primary transition-colors leading-relaxed">
-                                                    {t.text}
+                                                    {transcriptSearchQuery.trim()
+                                                        ? highlightCaptionSegments(t.text, transcriptSearchQuery).map((seg, idx) => (
+                                                            seg.hit ? <mark key={idx} className="bg-yellow-200 dark:bg-yellow-800 rounded-sm px-0">{seg.text}</mark> : <span key={idx}>{seg.text}</span>
+                                                        ))
+                                                        : t.text}
                                                 </p>
                                                 {t.translation && (
                                                     <p className="text-muted-foreground text-[11px] leading-relaxed">
@@ -419,15 +376,6 @@ ls -la /workspace`}
                                         ))
                                     )}
                                 </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'copilot' && (
-                            <div className="p-3">
-                                <VideoAssistantCopilot
-                                    transcripts={transcriptList}
-                                    onSeek={(sec) => setChapterSeekSec(sec)}
-                                />
                             </div>
                         )}
 

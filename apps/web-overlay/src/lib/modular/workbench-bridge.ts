@@ -3,8 +3,8 @@
 import type { WidgetInstance } from '@/types/modular'
 import { STORAGE_KEY } from './layout-storage'
 import type { Board } from './use-modular-layout'
-
-const FAVORITES_STORAGE_KEY = 'navhub.favorites.v1'
+import { FAVORITES_STORAGE_KEY } from '@/lib/favorites-storage'
+import { addFavoritesLocal, type LocalFavorite } from '@/hooks/useFavorites'
 
 export interface PinSitePayload {
   siteId: string
@@ -15,7 +15,19 @@ export interface PinSitePayload {
 }
 
 /**
- * 检查站点是否已固定/收藏到工作台
+ * 批量固定收据（11b）：只活内存，随撤销闭包走，不序列化。
+ * addedSiteIds 只含本次新建的 siteId；pinnedCount 是 ok 的站数
+ * （与 addedSiteIds 未必相等：已固定过的站 ok 但不新加）。
+ */
+export interface BatchPinReceipt {
+  addedSiteIds: string[]
+  addedItems: LocalFavorite[]
+  createdDockWidgetId: string | null
+  pinnedCount: number
+}
+
+/**
+ * 检查站点是否已固定/收藏到工作台（只读，不写）
  */
 export function isSitePinnedToWorkbench(siteId: string): boolean {
   if (typeof window === 'undefined') return false
@@ -48,45 +60,33 @@ function createFavoritesDockInstance(): WidgetInstance {
 }
 
 /**
- * 将主页站点一键固定到模块化工作台快捷启动坞
+ * 将主页站点一键固定到模块化工作台快捷启动坞。
+ * 收藏写走 store（addFavoritesLocal 内部做 dedup 并返回 added/skipped），
+ * bridge 不再直写 navhub.favorites.v1；dock 补位逻辑原样保留。
  */
-export function pinSiteToWorkbench(site: PinSitePayload): { ok: boolean; message: string; addedToFavorites: boolean } {
+export function pinSiteToWorkbench(site: PinSitePayload): { ok: boolean; message: string; receipt: BatchPinReceipt | null } {
   if (typeof window === 'undefined') {
-    return { ok: false, message: '浏览器环境不可用', addedToFavorites: false }
+    return { ok: false, message: '浏览器环境不可用', receipt: null }
   }
 
   try {
-    // 1. 同步加入到 favorites 存储
-    let favoritesList: any[] = []
-    let favoritesReadable = true
-    const favRaw = localStorage.getItem(FAVORITES_STORAGE_KEY)
-    if (favRaw) {
-      try {
-        const parsed = JSON.parse(favRaw)
-        if (Array.isArray(parsed)) favoritesList = parsed
-        else favoritesReadable = false
-      } catch (err) {
-        // 读不出来**绝不**当作「空收藏」继续写：下面那个 unshift 会把「只有这一条」的
-        // 列表整个存回去，用户原有的收藏就被无声清空了。宁可这次不写，也不能覆盖掉。
-        favoritesReadable = false
-        console.warn('本地收藏读取失败，为免覆盖既有数据已跳过本次收藏写入', err)
-      }
-    }
-
-    const alreadyInFav = favoritesReadable && favoritesList.some((item) => item.siteId === site.siteId)
-    if (favoritesReadable && !alreadyInFav) {
-      favoritesList.unshift({
+    // 1. 收藏写走 store：dedup 在 addFavoritesLocal 内部完成。
+    //    存储不可用（sharedBlocked）或写盘失败时返回 null——这次不写收藏，
+    //    但下面的 dock 补位照旧（与旧行为一致：dock 是共享基础设施，
+    //    一次 pin 创建后服务的是全部收藏，不只这次 pin 的站）。
+    const written = addFavoritesLocal([
+      {
         siteId: site.siteId,
         title: site.title,
         href: site.href,
         icon: site.icon,
         description: site.description,
         createdAt: Date.now(),
-      })
-      localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoritesList))
-    }
+      },
+    ])
 
     // 2. 检查多看板配置，确保活跃看板挂载了「星标启动坞」
+    let createdDockWidgetId: string | null = null
     const boardRaw = localStorage.getItem(STORAGE_KEY)
     if (boardRaw) {
       try {
@@ -100,6 +100,7 @@ export function pinSiteToWorkbench(site: PinSitePayload): { ok: boolean; message
             if (!hasDock) {
               // 自动补充一个启动坞模块到第一行
               const newDockWidget = createFavoritesDockInstance()
+              createdDockWidgetId = newDockWidget.id
               workspace.boards[activeBoardIndex].widgets = [newDockWidget, ...(board.widgets || [])]
               localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace))
             }
@@ -117,15 +118,25 @@ export function pinSiteToWorkbench(site: PinSitePayload): { ok: boolean; message
     // 对所有 `e.key === STORAGE_KEY` 判定都是死代码，还会误导其他 storage 监听者。
     window.dispatchEvent(new Event('navhub_workbench_updated'))
 
+    if (written === null) {
+      return { ok: false, message: '本机存储写不进去，固定未完成', receipt: null }
+    }
+    const added = written.added
     return {
       ok: true,
-      message: favoritesReadable
-        ? `已将「${site.title}」固定到模块化工作台快捷启动坞`
-        : `已将「${site.title}」固定到启动坞；本地收藏数据无法读取，为避免覆盖已跳过收藏`,
-      addedToFavorites: favoritesReadable && !alreadyInFav,
+      message:
+        added.length > 0
+          ? `已将「${site.title}」固定到模块化工作台快捷启动坞`
+          : `「${site.title}」已在工作台快捷启动坞中`,
+      receipt: {
+        addedSiteIds: added.map((i) => i.siteId),
+        addedItems: added,
+        createdDockWidgetId,
+        pinnedCount: 1,
+      },
     }
   } catch (error) {
     console.error('固定站点到工作台失败', error)
-    return { ok: false, message: '固定站点失败，请检查浏览器存储权限', addedToFavorites: false }
+    return { ok: false, message: '固定站点失败，请检查浏览器存储权限', receipt: null }
   }
 }

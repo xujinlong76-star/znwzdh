@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import {
   type TrendingHarvestResult,
 } from '@/lib/video-trending-harvester'
@@ -32,7 +33,6 @@ const HARVEST_PLATFORMS: Array<{ id: VideoPlatformType; label: string; color: st
   { id: 'youtube', label: 'YouTube', color: '#FF0000' },
   { id: 'dailymotion', label: 'Dailymotion', color: '#0066DC' },
   { id: 'ted', label: 'TED Talks', color: '#E62B1E' },
-  { id: 'peertube', label: 'PeerTube', color: '#F1680D' },
 ]
 
 const CATEGORIES_OPTIONS = [
@@ -58,6 +58,17 @@ interface VideoAutoHarvestDialogProps {
   defaultCategoryId?: string
 }
 
+/**
+ * 视频采集中心（两个采集入口合并后的唯一入口）：
+ * 「手动采集」tab 是本文件原有的热点采集流程（/api/videos/harvest），
+ * 「AI自主巡航」tab 嵌 video-autonomous-harvest-console 的面板
+ * （/api/videos/ai-autonomous-harvest）。只合 UI，不合后端。
+ */
+const VideoAutonomousHarvestPanel = dynamic(
+  () => import('@/components/video-autonomous-harvest-console').then(m => m.VideoAutonomousHarvestPanel),
+  { ssr: false },
+)
+
 export function VideoAutoHarvestDialog({
   open,
   onOpenChange,
@@ -71,7 +82,6 @@ export function VideoAutoHarvestDialog({
     'youtube',
     'dailymotion',
     'ted',
-    'peertube',
   ])
   const [dryRun, setDryRun] = useState<boolean>(false)
   const [isHarvesting, setIsHarvesting] = useState<boolean>(false)
@@ -80,6 +90,8 @@ export function VideoAutoHarvestDialog({
   const [result, setResult] = useState<TrendingHarvestResult | null>(null)
   const [reportDetails, setReportDetails] = useState<any>(null)
   const [activeFilter, setActiveFilter] = useState<'all' | 'high_quality' | 'beginner' | 'advanced'>('all')
+  /** 采集中心唯一入口内的两个 tab：手动采集 / AI 自主巡航（后端各走各的接口） */
+  const [tab, setTab] = useState<'manual' | 'autonomous'>('manual')
 
   const togglePlatform = (p: VideoPlatformType) => {
     if (isHarvesting) return
@@ -210,13 +222,45 @@ export function VideoAutoHarvestDialog({
         <DialogHeader className="space-y-1.5 pb-2 border-b">
           <DialogTitle className="flex items-center gap-2 text-base font-bold">
             <Flame className="w-5 h-5 text-amber-500 fill-amber-500" />
-            <span>智能技术视频采集与语义分流引擎</span>
+            <span>视频采集中心</span>
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            自动探测 B站/YouTube 前沿技术视频，通过 36 个技术细分方向语义路由器精准归类，杜绝目录混杂。
+            手动采集：自动探测 B站/YouTube 前沿技术视频，通过 36 个技术细分方向语义路由器精准归类；AI自主巡航：大模型无人值守发现与审核高质量视频。
           </DialogDescription>
         </DialogHeader>
 
+        <div role="tablist" aria-label="采集方式" className="flex gap-1 pt-2 shrink-0">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'manual'}
+            onClick={() => setTab('manual')}
+            className={cn(
+              'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+              tab === 'manual'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-background border-border text-muted-foreground hover:text-foreground'
+            )}
+          >
+            手动采集
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'autonomous'}
+            onClick={() => setTab('autonomous')}
+            className={cn(
+              'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+              tab === 'autonomous'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-background border-border text-muted-foreground hover:text-foreground'
+            )}
+          >
+            AI自主巡航
+          </button>
+        </div>
+
+        {tab === 'manual' && (
         <div className="flex-1 overflow-y-auto space-y-3.5 py-2 text-xs">
           {/* 流水线阶段状态指示器 */}
           <div className="grid grid-cols-4 gap-1.5 p-2 rounded-xl border bg-muted/30">
@@ -485,9 +529,16 @@ export function VideoAutoHarvestDialog({
             </div>
           )}
         </div>
+        )}
+        {tab === 'autonomous' && (
+          <div className="flex-1 overflow-y-auto py-2 pr-1">
+            <VideoAutonomousHarvestPanel onCycleFinished={onHarvestCompleted} />
+          </div>
+        )}
 
+        {tab === 'manual' && (
         <div className="flex items-center justify-between pt-3 border-t">
-          <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button size="sm" variant="ghost" className="min-h-11" onClick={() => onOpenChange(false)}>
             关闭
           </Button>
 
@@ -495,7 +546,7 @@ export function VideoAutoHarvestDialog({
             {dryRun && result && result.harvestedCount > 0 ? (
               <Button
                 size="sm"
-                className="gap-1.5 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                className="min-h-11 gap-1.5 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
                 onClick={() => handleStartHarvest(false)}
                 disabled={isHarvesting}
               >
@@ -509,14 +560,14 @@ export function VideoAutoHarvestDialog({
                   variant="outline"
                   disabled={isHarvesting}
                   onClick={() => handleStartHarvest(true)}
-                  className="gap-1.5 text-xs"
+                  className="min-h-11 gap-1.5 text-xs"
                 >
                   <Eye className="w-3.5 h-3.5" />
                   <span>演练预览 (Dry Run)</span>
                 </Button>
                 <Button
                   size="sm"
-                  className="gap-1.5 font-semibold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs"
+                  className="min-h-11 gap-1.5 font-semibold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs"
                   onClick={() => handleStartHarvest(false)}
                   disabled={isHarvesting}
                 >
@@ -527,6 +578,7 @@ export function VideoAutoHarvestDialog({
             )}
           </div>
         </div>
+        )}
       </DialogContent>
     </Dialog>
   )

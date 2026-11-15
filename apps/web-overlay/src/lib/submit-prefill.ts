@@ -57,6 +57,33 @@ export function submitPrefillHref(query: string): string {
 }
 
 /**
+ * 新建收藏预填（搜索容错纠错 · 出口二）：查询词 → {title, url?}。
+ *
+ * - 网址/域名形（DOMAIN_LIKE + https?://）：title = 域名或原串，
+ *   url = 补全 https:// 后的地址；
+ * - 其余查询：title = 原查询（截断到 80——custom-sites 的 title 上限，
+ *   比 submit-prefill 的 120 更严，取严的），url 留空让用户粘贴，
+ *   **绝不编造 URL**（没网址的收藏存不下来是设计：弹窗里 URL 必填）。
+ */
+export const CUSTOM_SITE_TITLE_MAX = 80
+
+export function queryToTitleAndUrl(query: string): { title: string; url?: string } {
+  const q = query.trim()
+  if (!q) return { title: '' }
+  const url = normalizeUrl(q)
+  if (url) {
+    let title = q
+    try {
+      title = new URL(url).hostname.replace(/^www\./, '')
+    } catch {
+      // 非法 url 不会走到这里（normalizeUrl 已校验），防御性保留原串
+    }
+    return { title: title.slice(0, CUSTOM_SITE_TITLE_MAX), url }
+  }
+  return { title: q.slice(0, CUSTOM_SITE_TITLE_MAX) }
+}
+
+/**
  * /submit 页解析 searchParams（Next 16 下为 Promise，调用方先 await）。
  * 只认 `title` / `url` 两个参数；非法值直接丢弃、不进表单，绝不把
  * `javascript:` 之类的脏串当成网址预填（表单提交时另有服务端校验）。

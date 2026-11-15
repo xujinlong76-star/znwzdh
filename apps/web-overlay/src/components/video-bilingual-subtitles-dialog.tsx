@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react'
 import {
-  type SubtitleLanguage,
   buildBilingualTranscripts,
   formatToWebVTT,
   formatToSRT,
@@ -26,11 +25,9 @@ export function VideoBilingualSubtitlesDialog({
   transcripts,
   videoTitle = '技术实战视频',
 }: VideoBilingualSubtitlesDialogProps) {
-  const [targetLang, setTargetLang] = useState<SubtitleLanguage>('en')
-
   const bilingualLines = useMemo(() => {
-    return buildBilingualTranscripts(transcripts, targetLang)
-  }, [transcripts, targetLang])
+    return buildBilingualTranscripts(transcripts)
+  }, [transcripts])
 
   const handleDownloadVTT = () => {
     const content = formatToWebVTT(transcripts)
@@ -66,29 +63,13 @@ export function VideoBilingualSubtitlesDialog({
 
         <div className="space-y-4 pt-2 text-xs">
           <p className="text-muted-foreground leading-relaxed">
-            内置专业级技术专有名词术语词库（K8s、幂等性、微服务、gRPC），提供双行实时对齐与工业级 WebVTT/SRT 文件导出。
+            仅展示字幕自带的真实译文行（无机器翻译）；可按时间对齐查看，并导出标准 WebVTT/SRT 文件。
           </p>
-
-          {/* Language Selector */}
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-foreground">目标翻译语种：</span>
-            {(['en', 'ja', 'es', 'zh'] as SubtitleLanguage[]).map((lang) => (
-              <Button
-                key={lang}
-                size="sm"
-                variant={targetLang === lang ? 'default' : 'outline'}
-                className="h-7 text-xs uppercase"
-                onClick={() => setTargetLang(lang)}
-              >
-                {lang === 'en' ? '英语 (English)' : lang === 'ja' ? '日语 (日本語)' : lang === 'es' ? '西班牙语 (Español)' : '中文原文'}
-              </Button>
-            ))}
-          </div>
 
           {/* Bilingual Preview ScrollArea */}
           <div className="border rounded-lg p-2.5 max-h-56 overflow-y-auto space-y-2 bg-card">
             {bilingualLines.length === 0 ? (
-              <p className="text-center py-8 text-muted-foreground">暂无字幕逐字稿</p>
+              <p className="text-center py-8 text-muted-foreground">暂无带译文的字幕行（仅展示字幕自带的真实翻译，不做机器翻译）</p>
             ) : (
               bilingualLines.map((line) => (
                 <div key={line.id} className="p-2 rounded bg-muted/40 space-y-1 text-xs">
@@ -105,7 +86,7 @@ export function VideoBilingualSubtitlesDialog({
           {/* Export Buttons */}
           <div className="flex items-center justify-between pt-1">
             <span className="text-[11px] text-muted-foreground">
-              共计 {bilingualLines.length} 条双语同步对齐轨道
+              共计 {bilingualLines.length} 条带真实译文的对齐行
             </span>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleDownloadSRT}>

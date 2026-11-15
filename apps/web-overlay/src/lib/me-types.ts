@@ -5,8 +5,13 @@
  * account 页、use-me-overview、服务端取数模块反向 import——页面 ↔ 组件形成
  * 环式耦合。类型属于域，不属于任何一个页面，下沉到这里。
  */
-import type { MeOverviewResponse } from '@/lib/rest-contracts.generated'
+import type { MeOverviewResponse, MeSafetyResponse } from '@/lib/rest-contracts.generated'
 import type { UserSettingsModel } from '@/lib/user-settings'
+
+/** 数据安全聚合（第 15 项）：与 GET /api/me/safety 契约同源（生成物）。 */
+export type DataSafety = MeSafetyResponse
+export type SafetyStatus = MeSafetyResponse['overall']
+export type SafetyCheck = MeSafetyResponse['checks'][number]
 
 /**
  * 概览主体的字段集合与 `/api/me` 契约同源（生成物）。

@@ -83,6 +83,7 @@ export const LayoutSchema = z.object({
     .optional(),
   speedDialEnabled: z.boolean().optional(),
   speedDialPinnedIds: idListSchema,
+  quickDialSlots: z.record(z.string(), z.string().max(128)).optional(),
   customWallpaperUrl: z.string().max(8192).optional(),
   glassmorphismBlur: z.number().optional(),
   cardOpacity: z.number().optional(),

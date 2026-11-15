@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import {
   Sparkles,
   RefreshCw,
@@ -21,6 +21,23 @@ import { cn } from '@/lib/utils'
 import { buildBilibiliEmbedUrl, ensureHttpsUrl } from '@/lib/video-bilibili-hd-url'
 import type { BilibiliHdParseResult } from '@/lib/video-bilibili-hd-parser'
 import { BILI_ENGINE_OPTIONS } from '@/lib/bili-engine-options'
+import type { PlayerCommandResult } from '@/lib/video-voice-dispatch'
+
+/**
+ * 语音指令用的最小命令式 API（Batch 3 第 10 项）。
+ * 只暴露播放控制，不暴露 video 元素本身。直连 / 代理阶段返回真实执行；
+ * 官方内嵌 iframe 阶段没有可命令的 <video>，返回 iframe-no-control，
+ * 调用方必须按「不支持」回执，不许假装执行。
+ */
+export interface VideoBilibiliHdPlayerHandle {
+  play: () => Promise<PlayerCommandResult>
+  pause: () => PlayerCommandResult
+  seekTo: (sec: number) => PlayerCommandResult
+  setRate: (rate: number) => PlayerCommandResult
+  setVolume: (volume01: number) => PlayerCommandResult
+  getVolume: () => number
+  setMuted: (muted: boolean) => PlayerCommandResult
+}
 
 const BILI_ACCESS_KEY_STORAGE = 'navhub_bili_access_key'
 const BILI_PLAY_MODE_STORAGE = 'navhub_bili_prefer_mode'
@@ -56,15 +73,20 @@ export interface VideoBilibiliHdPlayerProps {
   className?: string
   /** 播放进度回调（原生 <video> 可将真实播放秒数同步给外层字幕/章节轴） */
   onTimeUpdateSec?: (currentTimeSec: number, durationSec: number) => void
+  /** 暂停回调（原生 <video> 的当前秒数，供外层断点续播立即写一次；iframe 阶段无此事件） */
+  onPauseSec?: (currentTimeSec: number) => void
   /** 外部指定的解析引擎偏好 */
   preferredEngine?: string
   /** 当解析源变更时的回调 */
   onEngineChange?: (engineId: string, engineName: string) => void
+  /** 播放通道变更（direct / proxy / iframe）时通知父组件：父组件据此判断
+   *  语音指令是否可控（iframe 阶段只能走 chapterSeekSec 重载跳转）。 */
+  onStageChange?: (stage: DeliveryStage) => void
 }
 
 type DeliveryStage = 'direct' | 'proxy' | 'iframe'
 
-export function VideoBilibiliHdPlayer({
+export const VideoBilibiliHdPlayer = forwardRef<VideoBilibiliHdPlayerHandle, VideoBilibiliHdPlayerProps>(function VideoBilibiliHdPlayer({
   bvid,
   aid,
   cid,
@@ -76,9 +98,11 @@ export function VideoBilibiliHdPlayer({
   compact = false,
   className,
   onTimeUpdateSec,
+  onPauseSec,
   preferredEngine,
   onEngineChange,
-}: VideoBilibiliHdPlayerProps) {
+  onStageChange,
+}: VideoBilibiliHdPlayerProps, ref) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const pendingSeekRef = useRef<number | null>(seekSec && seekSec > 0 ? seekSec : null)
 
@@ -377,6 +401,64 @@ export function VideoBilibiliHdPlayer({
     BILI_ENGINE_OPTIONS.find(o => o.id === activeEngineSource) ||
     BILI_ENGINE_OPTIONS.find(o => o.id === selectedEngine) ||
     BILI_ENGINE_OPTIONS[0]
+
+  // 播放通道变化时上报父组件（语音可控性判断用）；只在 stage 真变时触发。
+  useEffect(() => {
+    onStageChange?.(effectiveStage)
+  }, [effectiveStage, onStageChange])
+
+  // 语音指令命令总线：只在原生 <video> 阶段可控；iframe 阶段无可命令元素。
+  useImperativeHandle(ref, () => {
+    const noVideo = (): PlayerCommandResult =>
+      ({ ok: false, reason: effectiveStage === 'iframe' ? 'iframe-no-control' : 'no-media' })
+    return {
+      play: async () => {
+        const el = videoRef.current
+        if (!el) return noVideo()
+        try {
+          await el.play()
+          return { ok: true }
+        } catch {
+          return { ok: false, reason: 'play-blocked' }
+        }
+      },
+      pause: () => {
+        const el = videoRef.current
+        if (!el) return noVideo()
+        el.pause()
+        return { ok: true }
+      },
+      seekTo: (sec: number) => {
+        const el = videoRef.current
+        if (!el) return noVideo()
+        try {
+          el.currentTime = Math.max(0, sec)
+          return { ok: true }
+        } catch {
+          return { ok: false, reason: 'no-media' }
+        }
+      },
+      setRate: (rate: number) => {
+        const el = videoRef.current
+        if (!el) return noVideo()
+        el.playbackRate = Math.min(2, Math.max(0.5, rate))
+        return { ok: true }
+      },
+      setVolume: (volume01: number) => {
+        const el = videoRef.current
+        if (!el) return noVideo()
+        el.volume = Math.min(1, Math.max(0, volume01))
+        return { ok: true }
+      },
+      getVolume: () => videoRef.current?.volume ?? 1,
+      setMuted: (muted: boolean) => {
+        const el = videoRef.current
+        if (!el) return noVideo()
+        el.muted = muted
+        return { ok: true }
+      },
+    }
+  }, [ref, effectiveStage])
 
   const engineBadgeText =
     effectiveStage === 'iframe'
@@ -751,6 +833,11 @@ export function VideoBilibiliHdPlayer({
               onTimeUpdateSec(el.currentTime || 0, el.duration || 0)
             }
           }}
+          onPause={e => {
+            if (onPauseSec) {
+              onPauseSec(e.currentTarget.currentTime || 0)
+            }
+          }}
           onError={handleVideoError}
           className="w-full h-full object-contain bg-black"
         >
@@ -772,4 +859,4 @@ export function VideoBilibiliHdPlayer({
       )}
     </div>
   )
-}
+})

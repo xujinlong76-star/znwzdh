@@ -1,5 +1,11 @@
 'use client'
 
+/**
+ * 代码学习二件套之其一：演练沙箱（C 组六合二保留）。
+ * 六个代码学习件（debugger-stepper / sandbox-runner / wasm-terminal /
+ * live-test 四个 pane 已随 B 组删除）合并后只剩两个：本沙箱（运行 + 控制台/
+ * DOM 预览）与 video-code-diff-viewer（代码演进单步调试器）。lib 一律保留。
+ */
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Play,

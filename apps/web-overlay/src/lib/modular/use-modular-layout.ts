@@ -6,6 +6,7 @@ import { WIDGET_REGISTRY, PRESET_TEMPLATES, createWidgetInstance } from './regis
 import { sanitizeWidgetInstances } from './sanitize'
 import { backupCorruptPayload } from './workspace-storage'
 import { STORAGE_KEY } from './layout-storage'
+import { registerCanvasUndoHandler } from './canvas-undo-registry'
 import type { Board, LayoutImportReport, PresetInstallInput } from './layout-import-plan'
 import { planLayoutImport, planPresetInstall } from './layout-import-plan'
 
@@ -257,6 +258,19 @@ export function useModularLayout() {
     setFuture(newFuture)
     setBoards(nextState)
   }, [])
+
+  // 把当前画布的撤销能力登记给全局 Ctrl+Z 分发（hooks/use-global-undo）；
+  // 画布卸载时清掉。同一时间只有一个画布实例。
+  // 注意：必须放在 redo 定义之后——deps 数组在渲染期求值，提前引用会撞 TDZ。
+  useEffect(() => {
+    registerCanvasUndoHandler({
+      canUndo: history.length > 0,
+      canRedo: future.length > 0,
+      undo,
+      redo,
+    })
+    return () => registerCanvasUndoHandler(null)
+  }, [history.length, future.length, undo, redo])
 
   // 3. 添加模块
   const addWidget = useCallback(

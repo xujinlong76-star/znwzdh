@@ -121,6 +121,11 @@ export function searchHref(
     category?: string | null
     /** 正交分面筛选（键 → 值数组） */
     facets?: Record<string, string[] | undefined>
+    /**
+     * 不自动纠正（nocorrect=1）：前端「不是这个？搜原来的」回退用。
+     * 只在纠正横幅的回退链接上带，平时不带（带上会关掉自动纠正）。
+     */
+    nocorrect?: boolean
   } = {},
 ): string {
   const q = normalizeSearchQuery(input.q)
@@ -133,6 +138,7 @@ export function searchHref(
   if (category) params.set('category', category)
   appendFacetParams(params, input.facets)
   if (page > 1) params.set('page', String(page))
+  if (input.nocorrect) params.set('nocorrect', '1')
   const qs = params.toString()
   return qs ? `/search?${qs}` : '/search'
 }
@@ -152,6 +158,8 @@ export function searchApiPath(
     status?: 'active' | 'broken'
     category?: string | null
     facets?: Record<string, string[] | undefined>
+    /** 不自动纠正（nocorrect=1）：「搜原来的」回退透传给中枢 */
+    nocorrect?: boolean
   } = {},
 ): string {
   const params = new URLSearchParams({
@@ -160,6 +168,7 @@ export function searchApiPath(
     limit: String(SEARCH_PAGE_SIZE),
     offset: String((normalizeSearchPage(String(page)) - 1) * SEARCH_PAGE_SIZE),
   })
+  if (opts.nocorrect) params.set('nocorrect', '1')
   const normalizedTag = normalizeSearchTag(tag ?? undefined)
   if (normalizedTag) params.set('tag', normalizedTag)
   const category = normalizeSearchCategory(opts.category ?? undefined)

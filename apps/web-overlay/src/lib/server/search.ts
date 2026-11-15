@@ -37,10 +37,10 @@ export async function loadSearchPage(
   q: string,
   page: number,
   tag?: string | null,
-  opts: { category?: string | null; facets?: Record<string, string[]> } = {},
+  opts: { category?: string | null; facets?: Record<string, string[]>; nocorrect?: boolean } = {},
 ): Promise<SearchPageData> {
   const result = await hubGet<HubSearchResult>(
-    searchApiPath(q, page, tag, { category: opts.category, facets: opts.facets }),
+    searchApiPath(q, page, tag, { category: opts.category, facets: opts.facets, nocorrect: opts.nocorrect }),
   )
   const failed = result === null
   let unavailable: HubSearchHit[] = []

@@ -16,9 +16,6 @@ import {
   HardDrive,
   Trash2,
   CheckCircle2,
-  RefreshCw,
-  Play,
-  ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -27,7 +24,6 @@ interface VideoOfflineManagerProps {
   onOpenChange: (open: boolean) => void
   currentVideoId?: string
   currentVideoTitle?: string
-  onPlayOffline?: (videoId: string) => void
 }
 
 export function VideoOfflineManager({
@@ -35,12 +31,10 @@ export function VideoOfflineManager({
   onOpenChange,
   currentVideoId,
   currentVideoTitle,
-  onPlayOffline,
 }: VideoOfflineManagerProps) {
   const [packages, setPackages] = useState<VideoOfflinePackage[]>([])
   const [quota, setQuota] = useState<StorageQuotaInfo>({ usageBytes: 0, quotaBytes: 1, percentUsed: 0 })
-  const [isDownloading, setIsDownloading] = useState<boolean>(false)
-  const [downloadProgress, setDownloadProgress] = useState<number>(0)
+  const [isSaving, setIsSaving] = useState<boolean>(false)
 
   const reload = async () => {
     const q = await getStorageQuotaEstimate()
@@ -55,32 +49,26 @@ export function VideoOfflineManager({
     }
   }, [open])
 
-  const handleStartDownload = async () => {
-    if (!currentVideoId || isDownloading) return
-    setIsDownloading(true)
-    setDownloadProgress(10)
-
-    // Simulate multi-chunk download & encryption pipeline
-    for (let p = 20; p <= 100; p += 20) {
-      await new Promise(r => setTimeout(r, 200))
-      setDownloadProgress(p)
-    }
-
+  // 只保存元数据（标题/时间戳），不下载视频字节：浏览器端没有真实的
+  // 视频下载管线，此前这里用 20%→100% 的模拟进度 + 写死的 45MB 假装
+  // 下载完成并打上加密徽章。保存后仅用于「稍后再看」列表。
+  const handleSaveForLater = async () => {
+    if (!currentVideoId || isSaving) return
+    setIsSaving(true)
     const newPkg: VideoOfflinePackage = {
       videoId: currentVideoId,
-      title: currentVideoTitle || '离线缓存视频',
-      totalBytes: 45 * 1024 * 1024,
-      cachedBytes: 45 * 1024 * 1024,
-      totalChunks: 10,
-      cachedChunks: 10,
+      title: currentVideoTitle || '稍后再看视频',
+      totalBytes: 0,
+      cachedBytes: 0,
+      totalChunks: 0,
+      cachedChunks: 0,
       downloadedAt: Date.now(),
-      isComplete: true,
-      encrypted: true,
+      isComplete: false,
+      encrypted: false,
     }
 
     await saveVideoPackageMetadata(newPkg)
-    setIsDownloading(false)
-    setDownloadProgress(0)
+    setIsSaving(false)
     reload()
   }
 
@@ -94,7 +82,7 @@ export function VideoOfflineManager({
     return `${mb.toFixed(1)} MB`
   }
 
-  const isCurrentDownloaded = packages.some(p => p.videoId === currentVideoId)
+  const isCurrentSaved = packages.some(p => p.videoId === currentVideoId)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -102,7 +90,7 @@ export function VideoOfflineManager({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <DownloadCloud className="w-5 h-5 text-primary" />
-            <span>离线离网缓存与下载管理</span>
+            <span>稍后再看</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -133,49 +121,23 @@ export function VideoOfflineManager({
                 <span className="font-medium text-foreground truncate max-w-[220px]">
                   {currentVideoTitle || '当前视频'}
                 </span>
-                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                  AES-256 GCM 加密
-                </span>
               </div>
 
-              {isDownloading ? (
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-[10px] font-mono">
-                    <span className="flex items-center gap-1 text-primary">
-                      <RefreshCw className="w-3 h-3 animate-spin" /> 下载与分片加密中...
-                    </span>
-                    <span>{downloadProgress}%</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-primary/20 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary transition-all duration-200"
-                      style={{ width: `${downloadProgress}%` }}
-                    />
-                  </div>
-                </div>
-              ) : isCurrentDownloaded ? (
+              {isCurrentSaved ? (
                 <div className="flex items-center justify-between pt-1">
                   <span className="text-emerald-500 font-medium flex items-center gap-1 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> 已离线就绪 (45 MB)
+                    <CheckCircle2 className="w-3.5 h-3.5" /> 已保存到稍后再看
                   </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs gap-1"
-                    onClick={() => onPlayOffline && onPlayOffline(currentVideoId)}
-                  >
-                    <Play className="w-3 h-3" /> 离线播放
-                  </Button>
                 </div>
               ) : (
                 <Button
                   size="sm"
                   className="w-full h-8 text-xs gap-1.5"
-                  onClick={handleStartDownload}
+                  disabled={isSaving}
+                  onClick={handleSaveForLater}
                 >
                   <DownloadCloud className="w-3.5 h-3.5" />
-                  下载本视频至本地 (~45 MB)
+                  保存到稍后再看
                 </Button>
               )}
             </div>
@@ -183,10 +145,10 @@ export function VideoOfflineManager({
 
           {/* Downloaded Packages List */}
           <div className="space-y-2">
-            <div className="text-[11px] font-semibold text-muted-foreground">已下载视频列表 ({packages.length})</div>
+            <div className="text-[11px] font-semibold text-muted-foreground">稍后再看列表 ({packages.length})</div>
             {packages.length === 0 ? (
               <p className="text-center py-6 text-muted-foreground text-xs">
-                暂无离线视频。下载后即使处于断网或飞行模式亦可流畅播放。
+                暂无保存的视频。保存后可在这里快速找回（仅保存元数据，不下载视频）。
               </p>
             ) : (
               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
@@ -200,7 +162,7 @@ export function VideoOfflineManager({
                         {pkg.title}
                       </div>
                       <div className="text-[10px] text-muted-foreground font-mono">
-                        {formatSize(pkg.cachedBytes)} · {new Date(pkg.downloadedAt).toLocaleDateString()}
+                        已保存 · {new Date(pkg.downloadedAt).toLocaleDateString()}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">

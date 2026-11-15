@@ -64,7 +64,7 @@ async function releaseHarvestLeases(handle: LeaseHandle): Promise<void> {
 }
 
 /**
- * 策略型采集与保鲜轮换（Bilibili / Dailymotion / PeerTube / TED / YouTube）。
+ * 策略型采集与保鲜轮换（Bilibili / Dailymotion / TED / YouTube）。
  *
  * 同步路由、异步任务与 cron 统一走这里，保证「互斥 + 指标 + 租约」行为一致。
  */

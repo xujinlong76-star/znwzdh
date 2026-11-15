@@ -11,7 +11,7 @@
  *  - folder 只接受非空字符串，`all` 视为默认。
  */
 
-export type FavoritesSort = 'created' | 'title';
+export type FavoritesSort = 'created' | 'title' | 'recent';
 
 export interface FavoritesFilters {
   q: string;
@@ -35,7 +35,7 @@ export function parseFavoritesFilters(search: string): FavoritesFilters {
   return {
     q: rawQ.slice(0, MAX_Q),
     folder: rawFolder && rawFolder !== 'all' ? rawFolder.slice(0, 128) : 'all',
-    sort: rawSort === 'title' ? 'title' : 'created',
+    sort: rawSort === 'title' ? 'title' : rawSort === 'recent' ? 'recent' : 'created',
   };
 }
 
@@ -45,6 +45,7 @@ export function buildFavoritesSearch(filters: FavoritesFilters): string {
   if (q) params.set('q', q);
   if (filters.folder && filters.folder !== 'all') params.set('folder', filters.folder);
   if (filters.sort === 'title') params.set('sort', 'title');
+  if (filters.sort === 'recent') params.set('sort', 'recent');
   const s = params.toString();
   return s ? `?${s}` : '';
 }

@@ -32,6 +32,8 @@ export interface UserSettingsModel {
   searchHistoryEnabled: boolean
   telemetryEnabled: boolean
   historyRetentionDays: HistoryRetentionDays
+  /** 数字直达总开关：按 1~9 打开速览坞站点、Ctrl+Shift+数字打开自定义快拨位（默认开） */
+  numberDialEnabled: boolean
   /** 账号级主题偏好（跨设备，登录后由 UserPrefsSync 应用到 next-themes） */
   themePreference: ThemePreference
   /** 账号级首页隐藏模块键名（与全站 features 同名；个人优先于全站默认） */
@@ -45,8 +47,78 @@ export type UserSettingsPatch = Partial<UserSettingsModel>
 export interface DiagnosticCheckItem {
   id: string
   label: string
-  status: 'ok' | 'repaired' | 'failed'
+  // 前 3 项服务端检查是“检查并修复”（ok/repaired/failed）；第 15 项新增的
+  // 只读安全检查不修复、不删数，状态用 ok/warning/critical/unknown 四态。
+  status: 'ok' | 'repaired' | 'failed' | 'warning' | 'critical' | 'unknown'
   detail: string
+}
+
+/**
+ * 本机快照可解析探针（第 15 项，diagnostics 第 4 项 local_snapshot）。
+ * 纯前端 JSON.parse 探针：只验证“能不能解析”，不读内容、不展示内容。
+ * 键名来源：DIY 配置见 lib/modular/home-diy-storage.ts（STORAGE_KEY），
+ * 收藏/分组见 lib/favorites-storage.ts 与 lib/favorites-folders.ts，
+ * 偏好见本文件 USER_SETTINGS_STORAGE_KEY。
+ */
+export function buildLocalSnapshotCheck(store?: ByteStore): DiagnosticCheckItem {
+  const keys = [
+    'navhub_home_diy_config_v3',
+    'navhub.favorites.v1',
+    'navhub.favorites.folders.v1',
+    'navhub_user_settings',
+  ]
+  if (typeof window === 'undefined' && !store) {
+    return {
+      id: 'local_snapshot',
+      label: '本机快照可解析',
+      status: 'unknown',
+      detail: '不在浏览器里，无法检查本机快照。',
+    }
+  }
+  const kv = store ?? window.localStorage
+  let present = 0
+  let corrupt = 0
+  try {
+    for (const key of keys) {
+      const raw = kv.getItem(key)
+      if (raw == null) continue
+      present += 1
+      try {
+        JSON.parse(raw)
+      } catch {
+        corrupt += 1
+      }
+    }
+  } catch {
+    return {
+      id: 'local_snapshot',
+      label: '本机快照可解析',
+      status: 'unknown',
+      detail: '浏览器不允许读取本地存储，本次没有检查本机快照，也没有改动任何数据。',
+    }
+  }
+  if (present === 0) {
+    return {
+      id: 'local_snapshot',
+      label: '本机快照可解析',
+      status: 'unknown',
+      detail: '本机没有快照记录（收藏、排版与偏好都还没有落到这台设备上）。',
+    }
+  }
+  if (corrupt > 0) {
+    return {
+      id: 'local_snapshot',
+      label: '本机快照可解析',
+      status: 'warning',
+      detail: `本机 ${present} 项快照里有 ${corrupt} 项解析失败——损坏的只是本机副本，云端数据不受影响。`,
+    }
+  }
+  return {
+    id: 'local_snapshot',
+    label: '本机快照可解析',
+    status: 'ok',
+    detail: `本机 ${present} 项快照均可解析。注意：本机快照只在这台设备上有，清缓存即丢，不是云端备份。`,
+  }
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettingsModel = {
@@ -60,6 +132,7 @@ export const DEFAULT_USER_SETTINGS: UserSettingsModel = {
   spotlightShortcut: 'both',
   searchHistoryEnabled: true,
   telemetryEnabled: true,
+  numberDialEnabled: true,
   historyRetentionDays: 180,
   themePreference: null,
   hiddenHomeModules: [],
@@ -176,6 +249,10 @@ export function normalizeUserSettings(raw?: unknown): UserSettingsModel {
       typeof s.telemetryEnabled === 'boolean'
         ? s.telemetryEnabled
         : DEFAULT_USER_SETTINGS.telemetryEnabled,
+    numberDialEnabled:
+      typeof s.numberDialEnabled === 'boolean'
+        ? s.numberDialEnabled
+        : DEFAULT_USER_SETTINGS.numberDialEnabled,
     historyRetentionDays,
     themePreference:
       s.themePreference === 'light' || s.themePreference === 'dark' || s.themePreference === 'system'

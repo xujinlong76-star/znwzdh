@@ -25,12 +25,25 @@ import {
   type UserSettingsModel,
   type UserSettingsPatch,
 } from '@/lib/user-settings'
+import { useTriageSettings, writeTriageSettings } from '@/hooks/useTriageSettings'
+import { useHibernationSettings, writeHibernationSettings } from '@/hooks/useHibernationSettings'
+import {
+  TRIAGE_INBOX_HOUR_OPTIONS,
+  TRIAGE_READ_DAY_OPTIONS,
+  type TriageInboxHours,
+  type TriageReadDays,
+} from '@/lib/favorites-triage'
+import {
+  HIBERNATION_THRESHOLD_DAY_OPTIONS,
+  type HibernationThresholdDays,
+} from '@/lib/favorites-hibernation'
 import type { FeatureKey } from '@/lib/site-settings'
-import { Settings2, Zap, ChevronDown, Command } from 'lucide-react'
-import { useCallback, useEffect, useState, type ComponentProps } from 'react'
+import { Settings2, Zap, ChevronDown, Command, Inbox, Moon } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import {
   fetchInstalledPlugins,
   fetchPluginDetail,
+  fetchSite,
   type HubPluginInstalledItem,
 } from '@/lib/navhub-api'
 import {
@@ -40,6 +53,8 @@ import {
   setActiveTheme,
   type ActiveThemeConfig,
 } from '@/lib/plugins/theme-runtime'
+import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { QUICK_DIAL_DIGITS, type QuickDialDigit } from '@/lib/number-dial'
 import {
   FONT_SIZE_LABEL,
   FONT_SIZE_PX,
@@ -48,6 +63,11 @@ import {
   loadFontSizeLevel,
   type FontSizeLevel,
 } from '@/lib/font-size'
+import {
+  HALF_SCREEN_DOCK_CHANGED_EVENT,
+  loadHalfScreenDockOn,
+  setHalfScreenDockOn,
+} from '@/lib/half-screen-dock'
 
 const FONT_SIZE_LEVELS: FontSizeLevel[] = ['standard', 'large', 'xlarge']
 
@@ -90,6 +110,47 @@ function FontSizeField({ idPrefix }: { idPrefix: string }) {
       </SettingsSelect>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         与首页右上角的字号按钮是同一份设置，改一处两处同步；只存这台设备。
+      </p>
+    </div>
+  )
+}
+
+/**
+ * 半屏下沉栏（本机设置）：与字号同款纪律，只动本机 localStorage
+ *（lib/half-screen-dock.ts 的 navhub.halfScreenDock.v1），不走服务端
+ * 用户设置——不接密度设置用的 SettingsSelect + 云端 onChange。
+ * 放在密度设置同区：两者是同一类「首页排版偏好」。
+ */
+function HalfScreenDockField({ idPrefix }: { idPrefix: string }) {
+  const [on, setOn] = useState(true)
+  useEffect(() => {
+    setOn(loadHalfScreenDockOn(window.localStorage))
+    const refresh = () => setOn(loadHalfScreenDockOn(window.localStorage))
+    window.addEventListener(HALF_SCREEN_DOCK_CHANGED_EVENT, refresh)
+    return () => window.removeEventListener(HALF_SCREEN_DOCK_CHANGED_EVENT, refresh)
+  }, [])
+  const toggle = () => {
+    const next = !on
+    setHalfScreenDockOn(next, window.localStorage)
+    setOn(next)
+  }
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={`${idPrefix}-half-screen-dock`} className="block text-xs font-medium text-foreground">
+        半屏下沉栏
+      </label>
+      <Button
+        id={`${idPrefix}-half-screen-dock`}
+        size="sm"
+        variant={on ? 'outline' : 'default'}
+        className="h-7 text-[11px]"
+        onClick={toggle}
+        aria-pressed={on}
+      >
+        {on ? '已开启' : '已关闭'}
+      </Button>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        视口 640–1024px 时，首页底部出现一条常驻操作栏，放回半屏下工具栏里丢失的场景、密度、视图、工具箱与热度榜入口；只存这台设备。
       </p>
     </div>
   )
@@ -337,6 +398,315 @@ function ToggleRow({
   )
 }
 
+/**
+ * 待读分流（本机设置）：与字号 / 主题同款纪律，只动本机 localStorage，
+ * 不走服务端用户设置——服务端 settingsPatchSchema 不认识这三个键，
+ * PATCH 会被剥掉，若放进模型，云端回读还会把本机值冲回默认
+ * （见 lib/favorites-triage 文件头）。
+ * 所以这一节不经过面板的 onChange（云端保存路径），而是直写分流偏好键；
+ * 值来自 useTriageSettings 的 live 快照，改完界面立刻同步。
+ */
+function TriageSettingsSection({ busy, idPrefix }: { busy: boolean; idPrefix: string }) {
+  const triage = useTriageSettings()
+  return (
+    <div className="mt-4 rounded-xl border border-border/70 bg-background/50 p-4">
+      <h3 className="flex items-center gap-2 text-xs font-semibold">
+        <Inbox className="h-4 w-4 text-sky-500" aria-hidden />
+        待读分流
+      </h3>
+      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+        新收藏先放进待读箱，规定时间里没打开就移到「已移出」（可找回，不会直接删掉）。
+        只存这台设备，不会上传到云端；改窗口后，已有待读条目的到期时间跟着变。
+        上面的「恢复默认偏好」只恢复云端偏好，不重置这里的分流设置。
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ToggleRow
+          title="待读分流"
+          hint={
+            triage.enabled
+              ? '新收藏先进待读箱，到期未读再移出'
+              : '已关闭：新收藏直接进永久库，已有的待读箱冻结、不再结算'
+          }
+          enabled={triage.enabled}
+          busy={busy}
+          onToggle={() => writeTriageSettings({ enabled: !triage.enabled })}
+        />
+        <div className="space-y-1.5">
+          <label htmlFor={`${idPrefix}-triage-inbox-hours`} className="block text-xs font-medium text-foreground">
+            待读箱保留时长
+          </label>
+          <SettingsSelect
+            id={`${idPrefix}-triage-inbox-hours`}
+            label="待读箱保留时长"
+            value={triage.inboxHours}
+            disabled={busy || !triage.enabled}
+            onChange={(e) =>
+              writeTriageSettings({ inboxHours: Number(e.target.value) as TriageInboxHours })
+            }
+          >
+            {TRIAGE_INBOX_HOUR_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </SettingsSelect>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            超过这个时间没打开，就移到「已移出」。
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor={`${idPrefix}-triage-read-days`} className="block text-xs font-medium text-foreground">
+            已读保留天数
+          </label>
+          <SettingsSelect
+            id={`${idPrefix}-triage-read-days`}
+            label="已读保留天数"
+            value={triage.readDays}
+            disabled={busy || !triage.enabled}
+            onChange={(e) =>
+              writeTriageSettings({ readDays: Number(e.target.value) as TriageReadDays })
+            }
+          >
+            {TRIAGE_READ_DAY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </SettingsSelect>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            打开后进「已读」，超过这个天数没晋升，同样移到「已移出」。
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 冬眠收藏（本机设置）：与 TriageSettingsSection 同款纪律，只动本机 localStorage，
+ * 不走服务端用户设置——服务端 settingsPatchSchema 不认识这两个键，
+ * PATCH 会被剥掉，若放进模型，云端回读还会把本机值冲回默认。
+ * 所以这一节不经过面板的 onChange（云端保存路径），而是直写冬眠偏好键；
+ * 值来自 useHibernationSettings 的 live 快照，改完界面立刻同步。
+ *
+ * 冬眠不是删除：超过阈值本机没记录到打开的永久收藏，只沉到收藏页底部
+ * 的折叠区，搜索 / 合集 / 公开页照常能找到；点标题打开一次就能唤醒。
+ */
+function HibernationSettingsSection({ busy, idPrefix }: { busy: boolean; idPrefix: string }) {
+  const hibernation = useHibernationSettings()
+  return (
+    <div className="mt-4 rounded-xl border border-border/70 bg-background/50 p-4">
+      <h3 className="flex items-center gap-2 text-xs font-semibold">
+        <Moon className="h-4 w-4 text-slate-500" aria-hidden />
+        冬眠收藏
+      </h3>
+      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+        长期没打开的收藏自动沉到收藏页底部的折叠区，不删除、不移出，随时能唤醒。
+        只存这台设备，不会上传到云端；改阈值后，已有收藏的冬眠状态跟着变。
+        上面的「恢复默认偏好」只恢复云端偏好，不重置这里的冬眠设置。
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ToggleRow
+          title="冬眠收藏"
+          hint={
+            hibernation.enabled
+              ? '超过阈值没打开的收藏沉到底部折叠区'
+              : '已关闭：全部收藏按原来顺序显示，冬眠区不出现'
+          }
+          enabled={hibernation.enabled}
+          busy={busy}
+          onToggle={() => writeHibernationSettings({ enabled: !hibernation.enabled })}
+        />
+        <div className="space-y-1.5">
+          <label htmlFor={`${idPrefix}-hibernation-threshold-days`} className="block text-xs font-medium text-foreground">
+            冬眠阈值
+          </label>
+          <SettingsSelect
+            id={`${idPrefix}-hibernation-threshold-days`}
+            label="冬眠阈值"
+            value={hibernation.thresholdDays}
+            disabled={busy || !hibernation.enabled}
+            onChange={(e) =>
+              writeHibernationSettings({ thresholdDays: Number(e.target.value) as HibernationThresholdDays })
+            }
+          >
+            {HIBERNATION_THRESHOLD_DAY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </SettingsSelect>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            超过这个天数本机没记录到打开，就沉到冬眠区（待读箱 / 已读不参与）。
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 数字快拨（本机 DIY 配置 + 云端总开关并存，见 TriageSettingsSection 的同款纪律）：
+ *
+ *   - 总开关 numberDialEnabled 走面板的 value/onChange 云端设置流（默认开）；
+ *   - 十个快拨位（Ctrl+Shift+1~0 → 站点 id）存在 DIY 配置 quickDialSlots，
+ *     直接调 useHomeDIY() 的 setQuickDialSlot，不走 onChange。
+ *   - 绑定入口在首页卡片 ⋯ 菜单（编辑态），这里是总览：每行显示已绑站点标题，
+ *     附「清除」；标题查不到时分三种情况说清楚，不编造：
+ *       · 自建分类里的站点：DIY 配置自带标题，本机直接认；
+ *       · 中枢确认无此站点（404）：「站点已失效」，供用户改绑或清除；
+ *       · 中枢不可用（5xx/断网）：显示 id +「标题未知」，不谎称已失效。
+ *   - 失效绑定保留原值不静默删除（用户数据不丢），由这里改绑或清除。
+ *   - 自建分类里的站点若所在分类已折叠：行内提示「所在分类已折叠，展开后恢复」
+ *     （折叠分类不在数字直达映射里，Ctrl+Shift+数字暂时打不开；中枢分类
+ *     的站点归属现有数据判断不了，不提示）。
+ */
+function QuickDialSettingsSection({
+  value,
+  busy,
+  onChange,
+}: {
+  value: UserSettingsModel
+  busy: boolean
+  onChange: (patch: UserSettingsPatch, successTitle?: string) => void
+}) {
+  const { config, quickDialSlots, setQuickDialSlot, collapsedCategoryIds } = useHomeDIY()
+
+  // 本机标题源：自建分类里的站点（DIY 配置自带标题，不用发请求）
+  const localTitles = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const cat of config.customCategories || []) {
+      for (const item of cat.items || []) {
+        if (item?.id && item.title) map.set(item.id, item.title)
+      }
+    }
+    return map
+  }, [config.customCategories])
+
+  // 折叠分类里的绑定（只对自建分类可判断）：该站不在数字直达映射里，
+  // Ctrl+Shift+数字暂时打不开，行内提示；中枢分类的站点归属现有数据
+  // 判断不了，不提示。
+  const foldedCustomSiteIds = useMemo(() => {
+    const collapsed = new Set(collapsedCategoryIds || [])
+    const out = new Set<string>()
+    for (const cat of config.customCategories || []) {
+      if (!cat?.id || !collapsed.has(cat.id)) continue
+      for (const item of cat.items || []) {
+        if (item?.id) out.add(item.id)
+      }
+    }
+    return out
+  }, [config.customCategories, collapsedCategoryIds])
+
+  // 中枢标题：null = 中枢确认无此站点（已失效）；缺席 + 在 unreachable 里 = 中枢不可用
+  const [remoteTitles, setRemoteTitles] = useState<Record<string, string | null>>({})
+  const [unreachable, setUnreachable] = useState<ReadonlySet<string>>(new Set())
+  const fetchedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const ids = QUICK_DIAL_DIGITS.map((d) => quickDialSlots?.[d]).filter(
+      (id): id is string => typeof id === 'string' && !!id && !localTitles.has(id) && !fetchedRef.current.has(id),
+    )
+    if (ids.length === 0) return
+    for (const id of ids) fetchedRef.current.add(id)
+    let cancelled = false
+    void (async () => {
+      for (const id of ids) {
+        let degraded = false
+        const site = await fetchSite(id, () => {
+          degraded = true
+        })
+        if (cancelled) return
+        if (site?.title) {
+          setRemoteTitles((prev) => ({ ...prev, [id]: site.title }))
+        } else if (degraded) {
+          setUnreachable((prev) => new Set([...prev, id]))
+        } else {
+          setRemoteTitles((prev) => ({ ...prev, [id]: null }))
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [quickDialSlots, localTitles])
+
+  return (
+    <div className="mt-4 rounded-xl border border-border/70 bg-background/50 p-4">
+      <h3 className="flex items-center gap-2 text-xs font-semibold">
+        <Command className="h-4 w-4 text-primary" aria-hidden />
+        数字快拨
+      </h3>
+      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+        按 1–9 直接打开速览坞对应站点，Shift+数字在新标签页打开；Ctrl+Shift+1–0 打开下面绑定的站点。
+        绑定在首页卡片 ⋯ 菜单（编辑态）里设置，这里只做总览与清除；快拨位只存这台设备，不会上传到云端。
+      </p>
+      <div className="mt-3">
+        <ToggleRow
+          title="数字直达"
+          hint="关闭后数字键不再打开站点（视图切换 Alt+1–3 不受影响）"
+          enabled={value.numberDialEnabled}
+          busy={busy}
+          onToggle={() =>
+            onChange(
+              { numberDialEnabled: !value.numberDialEnabled },
+              value.numberDialEnabled ? '数字直达已关闭' : '数字直达已开启',
+            )
+          }
+        />
+      </div>
+      <ul className="mt-3 space-y-1.5 text-xs">
+        {QUICK_DIAL_DIGITS.map((digit: QuickDialDigit) => {
+          const boundId = quickDialSlots?.[digit]
+          const title = boundId
+            ? (localTitles.get(boundId) ??
+              (boundId in remoteTitles ? remoteTitles[boundId] : undefined))
+            : undefined
+          return (
+            <li
+              key={digit}
+              className="flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-card/40 px-2.5 py-1.5"
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px] shrink-0">
+                  Ctrl+Shift+{digit}
+                </kbd>
+                {!boundId ? (
+                  <span className="text-muted-foreground">未绑定</span>
+                ) : title ? (
+                  <span className="truncate text-foreground">{title}</span>
+                ) : boundId in remoteTitles ? (
+                  <span className="truncate text-destructive-text">站点已失效</span>
+                ) : unreachable.has(boundId) ? (
+                  <span className="truncate text-muted-foreground" title={boundId}>
+                    {boundId}（标题未知，中枢暂不可用）
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">加载中…</span>
+                )}
+                {boundId && foldedCustomSiteIds.has(boundId) && (
+                  <span className="shrink-0 text-[11px] text-amber-700 dark:text-amber-400">
+                    所在分类已折叠，展开后恢复
+                  </span>
+                )}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 shrink-0 px-2 text-[11px] text-muted-foreground hover:text-destructive-text"
+                disabled={busy || !boundId}
+                onClick={() => setQuickDialSlot(digit, null)}
+              >
+                清除
+              </Button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaults }: SettingsPanelProps) {
   return (
     <section
@@ -406,6 +776,8 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
             与首页右上角的密度切换按钮是同一份设置，改一处两处同步。
           </p>
         </div>
+
+        <HalfScreenDockField idPrefix={idPrefix} />
 
         <FontSizeField idPrefix={idPrefix} />
 
@@ -558,6 +930,12 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
         />
       </div>
 
+      {/* 待读分流：本机设置（见 TriageSettingsSection 注释），不走 onChange 的云端路径 */}
+      <TriageSettingsSection busy={busy} idPrefix={idPrefix} />
+
+      {/* 冬眠收藏：本机设置（与 TriageSettingsSection 同款纪律），不走 onChange 的云端路径 */}
+      <HibernationSettingsSection busy={busy} idPrefix={idPrefix} />
+
       {/* 本机显示类入口：只存这台设备，与服务端偏好分开 */}
       <div className="mt-4">
         <OnboardingReplayField />
@@ -590,7 +968,7 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
               </li>
               <li className="flex items-center justify-between">
                 <span>进入工作台 DIY 排版</span>
-                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">E</kbd>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Ctrl/Cmd+E</kbd>
               </li>
               <li className="flex items-center justify-between">
                 <span>回到页面顶部</span>
@@ -634,8 +1012,29 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
               </li>
             </ul>
           </div>
+
+          <div className="rounded-lg border border-border/50 bg-card/40 p-2.5 space-y-1.5 sm:col-span-2 lg:col-span-1">
+            <span className="text-[11px] font-medium text-foreground">数字快拨</span>
+            <ul className="space-y-1 text-[11px] text-muted-foreground">
+              <li className="flex items-center justify-between">
+                <span>直接打开速览坞对应站点</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">1–9</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>在新标签页打开速览坞站点</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Shift+1–9</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>打开自定义快拨位站点</span>
+                <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Ctrl+Shift+1–0</kbd>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
+
+      {/* 数字快拨总览：总开关走云端设置流，十个绑定走本机 DIY 配置（见组件头注释） */}
+      <QuickDialSettingsSection value={value} busy={busy} onChange={onChange} />
     </section>
   )
 }

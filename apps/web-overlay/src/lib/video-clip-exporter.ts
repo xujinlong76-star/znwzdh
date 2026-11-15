@@ -5,7 +5,6 @@ export interface ClipExportOptions {
   endSec: number
   includeSubtitles: boolean
   includeWatermark: boolean
-  format: 'webm' | 'gif' | 'mp4'
   quality: '720p' | '1080p'
 }
 
@@ -55,14 +54,16 @@ export function extractClipSubtitles(
 }
 
 /**
- * Composites and exports the clip into a downloadable WebM / binary package.
+ * Exports the clip as a JSON manifest (not a video file): the browser has no
+ * pipeline to render video frames into WebM/GIF, so there is no video format
+ * option to choose. See the honesty note inside renderVideoClipPackage.
  */
 export async function renderVideoClipPackage(
   videoTitle: string,
   transcripts: VideoTranscriptItem[],
   options: ClipExportOptions
 ): Promise<RenderedClipPackage> {
-  const { startSec, endSec, format } = options
+  const { startSec, endSec } = options
   const durationSec = endSec - startSec
   const matchingSubs = extractClipSubtitles(transcripts, startSec, endSec)
 
@@ -81,7 +82,6 @@ export async function renderVideoClipPackage(
     startSec,
     endSec,
     durationSec,
-    requestedFormat: format,
     subtitles: matchingSubs,
     exportedAt: new Date().toISOString(),
   })

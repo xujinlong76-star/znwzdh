@@ -1,20 +1,24 @@
 /**
  * 「今日重温」——把被遗忘的收藏带回来。
  *
- * 数据现实（2026-11-12 审阅结论，写死在这里免得后人误读）：
+ * 数据现实（2026-11-12 审阅结论，2026-11-15 扩展主列表卡片点击也记打开，
+ * 写死在这里免得后人误读）：
  *
  *   - 收藏本体（LocalFavorite）只有 `createdAt`（收藏时间），没有「上次打开」；
- *     「打开」信号来自两处本机记录：① `lastOpenedAt`（本轮新增：从重温入口
- *     打开收藏时由 useFavorites.recordOpened 写下，纯本机、不进云端同步）；
+ *     「打开」信号来自两处本机记录：① `lastOpenedAt`（由 useFavorites.recordOpened
+ *     写下，纯本机、不进云端同步；调用点：/favorites 主列表卡片、⌘K / 搜索、
+ *     重温 / 久未打开入口、/brief）；
  *     ② 离线最近访问（lib/offline-recent，最多 50 条，且只在 ⌘K 里记过）。
  *   - 所以「没打开」永远是「本机没记录到打开」，不是「用户真的没打开」——
- *     直接点卡片打开是不会被记下来的。文案必须按这个口径写（见 describeStale），
- *     绝不能把一条收藏说成「你 200 天没看过它」。
+ *     另一台设备或另一个浏览器里打开的，本机是看不到的。文案必须按这个口径写
+ *     （见 describeStale），绝不能把一条收藏说成「你 200 天没看过它」。
  *   - /brief 是服务端渲染的中枢缓存页，看不到本机收藏：重温只能是客户端岛
  *     （BriefWatch 的同款做法），绝不能把用户收藏塞进 SSR。
  *
  * 本文件只放纯函数：`now` 一律由调用方传入（可测、不依赖真实时钟）。
  */
+
+import { resolveTriageStatus } from './favorites-triage'
 
 /** 超过这么多天没有「记录到的打开」，就进入「好久没打开」。 */
 export const STALE_THRESHOLD_DAYS = 90
@@ -40,6 +44,13 @@ export interface ResurfaceFavoriteLike {
   createdAt: number
   /** 从重温入口打开时写下的本机时间戳（没有 = 从未从重温入口打开过） */
   lastOpenedAt?: number
+  /**
+   * 待读分流状态（lib/favorites-triage）：重温只看 permanent——
+   * 待读箱 / 已读里的收藏还没决定去留，不进「好久没打开」。
+   * 缺字段 = permanent（祖父规则），与分流本身的判定一致。
+   */
+  triageStatus?: string
+  triageAt?: number
 }
 
 export interface ResurfaceVisitLike {
@@ -155,6 +166,11 @@ export function selectStaleFavorites(
   const bySite = new Map<string, ResurfacedFavorite>()
   for (const fav of favorites) {
     if (!fav || typeof fav.siteId !== 'string' || fav.siteId === '') continue
+    // 重温只看 permanent：待读箱 / 已读里的收藏还没决定去留，
+    // 即使 90 天没打开也不进重温（它们有自己的到期流转）。
+    // 用 resolveTriageStatus 而不用原始字段：triageAt 在未来（时钟回拨 /
+    // 脏数据）时祖父规则算 permanent，必须参与重温。
+    if (resolveTriageStatus(fav, now) !== 'permanent') continue
     const item = toResurfaced(fav, visitsById, now)
     if (item.daysSinceOpen <= thresholdDays) continue
     const prev = bySite.get(fav.siteId)

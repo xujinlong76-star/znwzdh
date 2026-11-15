@@ -8,6 +8,7 @@
  */
 import { decodeShareLinkPayload, parseSharePayload } from '@/lib/diy-share-link'
 import { dispatchDiyEditingLayout } from '@/lib/diy-editing-event'
+import type { QuickDialDigit } from '@/lib/number-dial'
 import {
   clampCardOpacity,
   createLayoutHistory,
@@ -70,6 +71,8 @@ export interface HomeDIYConfig {
   // 首屏常驻速览星标坞 (Pinned Speed Dial Dock)
   speedDialEnabled?: boolean
   speedDialPinnedIds?: string[]
+  // 数字直达自定义快拨位：Ctrl+Shift+数字 → 站点 id（缺键 = 空位；失效 id 保留原值、解析时按空位处理）
+  quickDialSlots?: Partial<Record<QuickDialDigit, string>>
   customWallpaperUrl?: string
   glassmorphismBlur?: number
   cardOpacity?: number
@@ -113,10 +116,26 @@ export const DEFAULT_CONFIG: HomeDIYConfig = {
   categoryDensityOverrides: {},
   speedDialEnabled: true,
   speedDialPinnedIds: [],
+  quickDialSlots: {},
   customWallpaperUrl: '',
   glassmorphismBlur: 12,
   cardOpacity: 0.9,
   updatedAt: Date.now(),
+}
+
+/**
+ * `data-accent` 的归属裁决（纯函数，供 use-home-diy 的 effect 与测试共用）：
+ * 皮肤 accent 优先——当前有带 accent 的插件皮肤时，data-accent 写皮肤
+ * accent，DIY 的 effect 不写自己的旧值；无皮肤时 DIY accentColor
+ * 生效（'default' = 不挂属性）。场景切换后 DIY 提交触发 effect 也
+ * 不会把皮肤 accent 盖回 DIY 旧值。
+ */
+export function resolveDiyDataAccent(
+  accentColor: AccentColor,
+  skinAccent: string | null | undefined,
+): string | null {
+  if (skinAccent) return skinAccent
+  return accentColor && accentColor !== 'default' ? accentColor : null
 }
 
 /* ------------------------------------------------------------------ *
@@ -314,6 +333,23 @@ export function resetHomeDiySharedState(): void {
   sharedHydrated = false
   rebuildSnapshot()
   for (const listener of sharedListeners) listener()
+}
+
+/**
+ * 仅供测试：复位 + 可选「搭状态」（11b 的 builder 测试用）。
+ * 命名仿照 useFavorites.ts 的 __resetFavoritesForTests；生产代码不要调用。
+ * 复位本身复用 resetHomeDiySharedState；seed 口是多出来的部分：builder 测试
+ * 不用先走一次 commitHomeDiyConfig 压历史，就能直接拿到带分类的起点配置
+ * （seed 只写共享状态，不落盘、不压历史）。
+ */
+export function __resetHomeDiyForTests(seed?: HomeDIYConfig): void {
+  resetHomeDiySharedState()
+  if (seed) {
+    commitSharedState({
+      config: seed,
+      history: createLayoutHistory(seed),
+    })
+  }
 }
 
 /**
@@ -566,10 +602,12 @@ function writeHomeDiyState(
  * 同字段 500ms 内的连续编辑合并成一条撤销记录（滑杆每 tick 一次提交、
  * 预设悬停之类也不会把撤销栈刷爆）；不同字段或超出时间窗则正常压栈。
  * 合并窗口内又拖回起点时整段合并直接撤销（不留一条「撤销了个寂寞」的记录）。
+ * forceNewHistoryEntry：强制独立成条，绕开 500ms 合并窗口——批量操作的
+ * 逆操作闭包用它提交，避免逆操作被并进上一条导致 DIY redo 失效（11b）。
  */
 export function commitHomeDiyConfig(
   updater: (prev: HomeDIYConfig) => HomeDIYConfig,
-  options: { pushHistory?: boolean } = {},
+  options: { pushHistory?: boolean; forceNewHistoryEntry?: boolean } = {},
 ): HomeDiyWriteResult {
   const prev = sharedState.config
   const next = updater(prev)
@@ -584,6 +622,7 @@ export function commitHomeDiyConfig(
     const now = Date.now()
     const keys = changedTopLevelKeys(prev, next)
     if (
+      !options.forceNewHistoryEntry &&
       coalesceBase !== null &&
       coalesceKeys !== null &&
       now - coalesceAt <= HOME_DIY_UNDO_COALESCE_WINDOW_MS &&
@@ -1092,6 +1131,13 @@ export function computeHomeDiyShareDiff(
   }
   if (includes('speedDialEnabled') && current.speedDialEnabled !== imported.speedDialEnabled) {
     diff.push('速览星标坞将' + (imported.speedDialEnabled ? '开启' : '关闭'))
+  }
+  if (includes('quickDialSlots')) {
+    const curSlots = current.quickDialSlots ?? {}
+    const impSlots = imported.quickDialSlots ?? {}
+    const keys = new Set([...Object.keys(curSlots), ...Object.keys(impSlots)])
+    const chg = [...keys].filter((k) => curSlots[k as keyof typeof curSlots] !== impSlots[k as keyof typeof impSlots])
+    if (chg.length > 0) diff.push('数字快拨：' + chg.length + ' 个快拨位会变')
   }
   if (includes('enableAdaptiveRanking') && current.enableAdaptiveRanking !== imported.enableAdaptiveRanking) {
     diff.push('自适应排序将' + (imported.enableAdaptiveRanking ? '开启' : '关闭'))

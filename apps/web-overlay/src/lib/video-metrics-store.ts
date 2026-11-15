@@ -14,6 +14,65 @@ import { videoMetricsSnapshot, type VideoHarvestRuntimeMetrics } from '@/lib/vid
 
 const METRICS_PATH = 'data/video-harvest-metrics.json'
 const SWEEP_REPORT_PATH = 'data/video-health-sweep-latest.json'
+const HEALTH_SWEEP_CHECKPOINT_PATH = 'data/video-health-sweep-checkpoint.json'
+
+/**
+ * 健康巡检断点检查点（一轮全库巡检扫到哪了）。
+ *
+ * 为什么必须落盘而不是只放内存：巡检是按页循环的长活，进程重启 / 函数被掐断
+ * 后内存里的游标就没了，下一轮只能从头再扫——6007 条的库永远扫不完。
+ * 检查点每页写一次：`done: false` + `cursor` = 下一轮从断点续扫；
+ * `done: true` = 本轮已扫完全库；空库时 `total: 0, done: true`，是合法的空巡检。
+ *
+ * 与报告摘要一样走中枢 KV：本模块是唯一被允许出现 `commitFile` 的巡检侧模块
+ * （巡检路由被源码守卫禁止直接写文件，见 video-api-guards.test.ts）。
+ */
+export interface HealthSweepCheckpoint {
+  version: 1
+  /** 本轮巡检编号（与游标里的 runId 一致） */
+  runId: string
+  /** 下一页的游标；扫完时为 null */
+  cursor: string | null
+  /** 本轮累计已扫条数 */
+  scanned: number
+  /** 本轮开始时全库可探测条目总数（空库为 0） */
+  total: number
+  startedAt: number
+  updatedAt: number
+  /** 本轮是否已扫完全库 */
+  done: boolean
+  /** 本轮累计 healthy / dead / unverified / pruned（仅供管理端展示） */
+  lastHealthy?: number
+  lastDead?: number
+  lastUnverified?: number
+  lastPruned?: number
+}
+
+export async function persistHealthSweepCheckpoint(checkpoint: HealthSweepCheckpoint): Promise<void> {
+  try {
+    await commitFile(
+      HEALTH_SWEEP_CHECKPOINT_PATH,
+      JSON.stringify({ ...checkpoint, version: 1 }, null, 2),
+      'chore(video): health sweep checkpoint',
+    )
+  } catch {
+    // 检查点写失败不中断巡检：最坏是下次从头再扫，不丢内容
+  }
+}
+
+export async function readHealthSweepCheckpoint(): Promise<HealthSweepCheckpoint | null> {
+  try {
+    const raw = await readStorageFresh<HealthSweepCheckpoint>(HEALTH_SWEEP_CHECKPOINT_PATH)
+    if (!raw || typeof raw !== 'object' || raw.version !== 1) return null
+    if (typeof raw.runId !== 'string' || raw.runId.length === 0) return null
+    if (typeof raw.scanned !== 'number' || typeof raw.total !== 'number') return null
+    if (raw.cursor !== null && typeof raw.cursor !== 'string') return null
+    if (typeof raw.done !== 'boolean') return null
+    return raw
+  } catch {
+    return null
+  }
+}
 
 /**
  * 服务端巡检报告的持久化。

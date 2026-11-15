@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeFavoritesFilter,
   favoriteFilterEmptyMessage,
+  filterByTriage,
   filterFavorites,
   matchesFavoriteQuery,
   parseFavoriteQuery,
@@ -70,6 +71,14 @@ describe("matchesFavoriteQuery：命中范围与大小写", () => {
     // 「github」在标题，「代码托管」在描述
     expect(matchesFavoriteQuery(GITHUB, "github 代码")).toBe(true);
     expect(matchesFavoriteQuery(GITHUB, "github vue")).toBe(false);
+  });
+
+  it("快捷链接前缀进索引：搜 gh / !gh 能找回挂了模板的收藏", () => {
+    const withQuicklink = { ...GITHUB, quickPrefix: "gh" };
+    expect(matchesFavoriteQuery(withQuicklink, "gh")).toBe(true);
+    expect(matchesFavoriteQuery(withQuicklink, "!gh")).toBe(true);
+    expect(matchesFavoriteQuery(withQuicklink, "githb")).toBe(false);
+    expect(matchesFavoriteQuery(GITHUB, "!gh")).toBe(false);
   });
 
   it("空关键词视为全命中（不能把整页收藏藏起来）", () => {
@@ -126,8 +135,11 @@ describe("源码守卫：筛选真的接在页面上，且两种「空」不混�
     // visibleCount 渐进渲染（renderedFavorites）——但绝不能直接用全量 items
     expect(grid).toContain("renderedFavorites.map(");
     expect(grid).not.toContain("favorites.items.map(");
-    // 渐进渲染必须是可见集合的切片，不能绕开筛选/收藏夹过滤
-    expect(src).toContain("visibleFavorites.slice(0, visibleCount)");
+    // 渐进渲染必须是可见集合的切片，不能绕开筛选/收藏夹过滤；
+    // 冬眠分区后切片对象是 awakeFavorites——partitionFavorites(visibleFavorites)
+    // 的清醒半区，冬眠半区另在折叠区渲染，同样不绕开筛选。
+    expect(src).toContain("partitionFavorites(visibleFavorites, recentVisits, hibernationSettings, manualHibernated");
+    expect(src).toContain("awakeFavorites.slice(0, visibleCount)");
     const filteredAt = src.indexOf("const filteredFavorites = useMemo(");
     expect(filteredAt).toBeGreaterThan(-1);
     expect(src.slice(filteredAt, filteredAt + 300)).toContain("filterFavorites(favorites.items, favoriteQuery)");
@@ -161,5 +173,37 @@ describe("源码守卫：筛选真的接在页面上，且两种「空」不混�
     // 筛选/收藏夹未命中：必须走独立分支，而不是复用全量空态
     expect(src).toContain("visibleFavorites.length === 0 ? (");
     expect(src).toContain("favoriteFilterEmptyMessage(favoriteQuery)");
+  });
+});
+
+describe("filterByTriage：待读状态与关键词筛选叠加", () => {
+  const NOW = Date.now();
+  const items = [
+    { title: "GitHub", href: "https://github.com", createdAt: NOW - 1000, triageStatus: "inbox", triageAt: NOW - 1000 },
+    { title: "GitHub 指南", href: "https://docs.github.com", createdAt: NOW - 2000, triageStatus: "read", triageAt: NOW - 2000 },
+    { title: "React 文档", href: "https://react.dev", createdAt: NOW - 3000 },
+    { title: "旧收藏", href: "https://example.com/old", createdAt: NOW - 4000, triageStatus: "bogus", triageAt: NOW - 4000 },
+  ];
+
+  it("按状态过滤：inbox / read / permanent 各归各", () => {
+    expect(filterByTriage(items, "inbox", NOW).map((i) => i.title)).toEqual(["GitHub"]);
+    expect(filterByTriage(items, "read", NOW).map((i) => i.title)).toEqual(["GitHub 指南"]);
+    // 缺字段与非法值都算 permanent（祖父规则）
+    expect(filterByTriage(items, "permanent", NOW).map((i) => i.title)).toEqual(["React 文档", "旧收藏"]);
+  });
+
+  it("'all' 原样返回入参数组（引用不变）", () => {
+    expect(filterByTriage(items, "all", NOW)).toBe(items);
+  });
+
+  it("与关键词筛选叠加：搜到 inbox 条目，搜不到已移出条目", () => {
+    // 关键词先筛出两个 GitHub，再叠状态筛出待读箱里的那一个
+    const keyword = filterFavorites(items, "GitHub");
+    expect(keyword.map((i) => i.title)).toEqual(["GitHub", "GitHub 指南"]);
+    expect(filterByTriage(keyword, "inbox", NOW).map((i) => i.title)).toEqual(["GitHub"]);
+    // 已移出区的条目住在另一个键里，根本不在搜索池的入参里，所以搜不到
+    const shelved = { title: "已移出", href: "https://example.com/shelved", createdAt: NOW };
+    expect(filterFavorites(items, "已移出")).toEqual([]);
+    expect(items).not.toContain(shelved);
   });
 });

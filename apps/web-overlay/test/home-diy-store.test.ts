@@ -1169,18 +1169,29 @@ describe('W2-9：同一按键只撤销一步（认领制）', () => {
     expect(didHomeDiyHistoryStepClaimThisTask()).toBe(false)
   })
 
-  it('接线守则：三条 Ctrl+Z 监听都认领/让路，不再各撤一步', () => {
-    const hook = readSrc('src/lib/modular/use-home-diy.ts')
-    // 排版撤销：先认领，认领失败直接返回；没得撤/重做时放行给回收站
-    expect(hook).toContain('claimHomeDiyHistoryStep()')
-    expect(hook).toContain('stopImmediatePropagation()')
-    expect(hook).toContain('if (!canUndo) return')
-    expect(hook).toContain('if (!canRedo) return')
-    expect(hook).toContain('canUndo, canRedo')
-    const content = readSrc('src/components/navigation-content.tsx')
-    // 回收站恢复：别人认领过就跳过；自己处理时也截断事件
-    expect(content).toContain('didHomeDiyHistoryStepClaimThisTask()')
-    expect(content).toContain('stopImmediatePropagation()')
+  it('接线守则：Ctrl+Z 监听收敛为一处分发，不再三处各撤一步（第 1 批第 4 项）', () => {
+    // 旧三处监听（use-home-diy 仅编排态、modular-canvas、navigation-content）
+    // 已删除，只留 hooks/use-global-undo.ts 一处真源；DIY/画布/回收站的
+    // 按钮仍调各自 undo，只监听收敛。认领制本身还在新 hook 里。
+    for (const rel of [
+      'src/lib/modular/use-home-diy.ts',
+      'src/components/modular/modular-canvas.tsx',
+      'src/components/navigation-content.tsx',
+    ]) {
+      const src = readSrc(rel)
+      expect(src, rel + ' 仍挂着 window keydown').not.toContain("window.addEventListener('keydown'")
+      expect(src, rel + ' 仍挂着 window keydown').not.toContain('window.addEventListener("keydown"')
+    }
+    const globalUndo = readSrc('src/hooks/use-global-undo.ts')
+    // 新 hook 里仍是认领制：先认领，认领失败直接返回；没得撤/重做时放行
+    expect(globalUndo).toContain('claimHomeDiyHistoryStep()')
+    expect(globalUndo).toContain('didHomeDiyHistoryStepClaimThisTask()')
+    expect(globalUndo).toContain('stopImmediatePropagation()')
+    // 决策在纯函数 decideGlobalUndoKey 里：DIY/画布的可撤可重做由调用方
+    // 按编排态换算成 diyCanUndo/diyCanRedo 再传入
+    expect(globalUndo).toContain('decideGlobalUndoKey')
+    expect(globalUndo).toContain('diyCanUndo')
+    expect(globalUndo).toContain('diyCanRedo')
   })
 })
 

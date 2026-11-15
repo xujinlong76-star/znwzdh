@@ -104,9 +104,12 @@ describe('服务端：用户域写守卫按域放行', () => {
     expect(shared).toContain('return domain === "favorites" && scopes.includes("favorites")')
   })
 
-  it('favorites.ts 七处写入口都声明 favorites 域', () => {
+  it('favorites.ts 十一处写入口都声明 favorites 域', () => {
+    // 7 处旧入口 + 第 1 批第 4 项新增的 4 处回收站写入口（单条恢复、批量恢复、
+    // 单条彻底删除、清空回收站），逐一核对过：11 处全都声明 "favorites" 域，
+    // 没有一处漏写域、也没有一处写成别的域。
     const sites = favorites.match(/userDomainWriteAllowed\(req as never, "favorites"\)/g) ?? []
-    expect(sites.length).toBe(7)
+    expect(sites.length).toBe(11)
     expect(favorites).not.toContain('userDomainWriteAllowed(req as never)')
   })
 

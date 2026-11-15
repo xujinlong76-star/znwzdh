@@ -1,4 +1,4 @@
-export type VideoPlatformType = 'bilibili' | 'youtube' | 'douyin' | 'kuaishou' | 'xigua' | 'xiaohongshu' | 'tencent' | 'youku' | 'vimeo' | 'ted' | 'dailymotion' | 'peertube' | 'custom'
+export type VideoPlatformType = 'bilibili' | 'youtube' | 'vimeo' | 'ted' | 'dailymotion' | 'peertube' | 'custom'
 // Raw types for JSON data (before validation)
 export interface VideoStats {
   views?: number
@@ -8,16 +8,27 @@ export interface VideoStats {
   danmaku?: number
 }
 
+/**
+ * 分类采集策略：只保留「真实生效」的字段。
+ *
+ * 入库门槛不由这里配：严标准写死在 `lib/video-harvest-guard.ts`
+ *（播放 5 万 / 1 万+100 赞 / 5000+200 赞+50 弹幕 / 置顶人工精选），
+ * 策略文件改数字也绕不过守卫。
+ *
+ * 删掉的两个死字段（2026-11-13）：
+ *   - `minQualityScore`：多平台路径根本不读它（MultiPlatformHarvestOptions 里
+ *     注明「仅兼容」），B 站路径拿它去比 qualityScore——而 qualityScore
+ *     不可信（库里 4134 条正好都是 65 分）。已由守卫的真实数据判定取代。
+ *   - `freshnessHalfLifeDays`：新入库条目的保鲜分在各采集分支里全部写死 90，
+ *     策略值只影响「刷新既有条目」这一处；删掉后统一用 90，与新条目一致，
+ *     默认策略（90 天）下的行为不变。
+ */
 export interface VideoHarvestPolicy {
   enabled: boolean
   keywords: string[]
-  syncSiteHotTrends?: boolean
   platforms?: VideoPlatformType[]
   maxItems?: number
-  minQualityScore?: number
   minDurationSec?: number
-  maxDurationSec?: number
-  freshnessHalfLifeDays?: number
   autoReplaceOutdated?: boolean
 }
 

@@ -16,10 +16,12 @@ import {
   buildPaletteNavItems,
   matchPaletteActions,
   matchPaletteFavorites,
+  matchPaletteQuicklinks,
   matchPaletteTools,
   toolSampleParses,
   type PaletteFavoriteLike,
 } from '@/lib/palette-actions'
+import { quicklinkFromFavorite, type QuicklinkEntry } from '@/lib/quicklinks'
 import { parseSpeculativeIntent } from '@/lib/speculative'
 
 const OPTS = { isDark: false, elderOn: false, densityLabel: '舒适' }
@@ -214,6 +216,64 @@ describe('matchPaletteFavorites', () => {
   })
 })
 
+describe('matchPaletteQuicklinks', () => {
+  const GH_ENTRY: QuicklinkEntry = {
+    siteId: 'gh',
+    title: 'GitHub',
+    href: 'https://github.com',
+    quickPrefix: 'gh',
+    templateUrl: 'https://github.com/search?q={q}',
+  }
+
+  it('!gh react 与 gh react 各命中一条，key 与 url 稳定', () => {
+    for (const q of ['!gh react', 'gh react']) {
+      const items = matchPaletteQuicklinks(q, [GH_ENTRY])
+      expect(items).toHaveLength(1)
+      expect(items[0]).toEqual({
+        key: 'quicklink-gh',
+        entry: GH_ENTRY,
+        arg: 'react',
+        url: 'https://github.com/search?q=react',
+      })
+    }
+  })
+
+  it('!gh 无参命中落地页；裸 gh / 未知前缀 / 拼错前缀不命中', () => {
+    expect(matchPaletteQuicklinks('!gh', [GH_ENTRY])[0]?.url).toBe('https://github.com/search?q=')
+    expect(matchPaletteQuicklinks('gh', [GH_ENTRY])).toEqual([])
+    expect(matchPaletteQuicklinks('!unknown x', [GH_ENTRY])).toEqual([])
+    expect(matchPaletteQuicklinks('githb react', [GH_ENTRY])).toEqual([])
+  })
+
+  it('模板非法（javascript: 模板）的收藏不进 quicklink 行', () => {
+    const evil = quicklinkFromFavorite({
+      siteId: 'evil',
+      title: 'GitHub 镜像',
+      href: 'https://evil.example',
+      quickPrefix: 'gh',
+      templateUrl: 'javascript:alert({q})',
+    })
+    expect(evil).toBeNull()
+    // 即使调用方直接传了非法 entry，代入失败也不进面板
+    const raw: QuicklinkEntry = {
+      siteId: 'evil',
+      title: 'GitHub 镜像',
+      href: 'https://evil.example',
+      quickPrefix: 'ev',
+      templateUrl: 'javascript:alert({q})',
+    }
+    expect(matchPaletteQuicklinks('!ev x', [raw])).toEqual([])
+  })
+
+  it('命令命中时同一 siteId 不再出现在收藏分组里（去重走 excludeSiteIds）', () => {
+    const hit = matchPaletteQuicklinks('!gh react', [GH_ENTRY])
+    expect(hit).toHaveLength(1)
+    const excluded = new Set([hit[0]!.entry.siteId])
+    expect(matchPaletteFavorites('github', FAVORITES, { excludeSiteIds: excluded })).toEqual([])
+    expect(matchPaletteFavorites('github', FAVORITES).map((f) => f.siteId)).toEqual(['gh'])
+  })
+})
+
 describe('buildPaletteNavItems', () => {
   it('键盘顺序：建议 → DIY → 收藏 → 操作 → 工具 → 插件 → 站点', () => {
     const items = buildPaletteNavItems({
@@ -243,6 +303,33 @@ describe('buildPaletteNavItems', () => {
       'plugin-1',
       'site-2',
     ])
+  })
+
+  it('快捷链接排在建议之后、DIY 之前（命令命中时它是回车第一目标）', () => {
+    const items = buildPaletteNavItems({
+      suggestionIds: ['suggestion-history:react'],
+      quicklinkIds: ['quicklink-gh'],
+      diyIds: ['diy-edit'],
+      favoriteIds: ['favorite-gh'],
+      actionIds: ['action-theme'],
+      toolIds: ['tool-json'],
+      pluginIds: ['plugin-1'],
+      siteIds: ['site-2'],
+    })
+    expect(items.map((i) => i.kind)).toEqual([
+      'suggestion',
+      'quicklink',
+      'diy',
+      'favorite',
+      'action',
+      'tool',
+      'plugin',
+      'site',
+    ])
+    expect(items.find((i) => i.kind !== 'suggestion')).toEqual({
+      id: 'quicklink-gh',
+      kind: 'quicklink',
+    })
   })
 
   it('无高亮回车默认打开第一条非建议结果：有收藏时是收藏，没有时顺延到操作 / 工具', () => {

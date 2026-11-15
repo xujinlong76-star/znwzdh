@@ -156,5 +156,145 @@ https://turbopack.org/`
       expect(id1).toBe(id2)
       expect(id1).not.toBe(id3)
     })
+
+    it('JSON 透传快捷链接字段：合法模板原样保留', () => {
+      const json = JSON.stringify({
+        version: 1,
+        items: [
+          {
+            siteId: 'site-github',
+            title: 'GitHub',
+            href: 'https://github.com',
+            quickPrefix: '!GH',
+            templateUrl: 'https://github.com/search?q={q}',
+          },
+        ],
+      })
+      const result = parseUniversalBookmarks(json)
+      expect(result.ok).toBe(true)
+      expect(result.format).toBe('json')
+      expect(result.items[0]).toMatchObject({
+        siteId: 'site-github',
+        quickPrefix: 'gh',
+        templateUrl: 'https://github.com/search?q={q}',
+      })
+      expect(result.skippedCount).toBe(0)
+    })
+
+    it('JSON 里模板非法整条计入 skipped：javascript: / 缺 {q} 都不静默丢模板', () => {
+      const json = JSON.stringify({
+        version: 1,
+        items: [
+          { siteId: 'bad-js', title: '坏模板', href: 'https://js.example.com', quickPrefix: 'gh', templateUrl: 'javascript:alert({q})' },
+          { siteId: 'bad-noq', title: '缺占位符', href: 'https://noq.example.com', quickPrefix: 'gh', templateUrl: 'https://github.com/search' },
+          { siteId: 'good', title: '好模板', href: 'https://good.example.com', quickPrefix: 'gh', templateUrl: 'https://github.com/search?q={q}' },
+        ],
+      })
+      const result = parseUniversalBookmarks(json)
+      expect(result.ok).toBe(true)
+      expect(result.items.map((i) => i.siteId)).toEqual(['good'])
+      expect(result.skippedCount).toBe(2)
+    })
+
+    it('HTML / Markdown 导出不写模板字段（JSON 是唯一保真格式）', () => {
+      const withQuicklink = [
+        {
+          siteId: 'site-github',
+          title: 'GitHub',
+          href: 'https://github.com',
+          quickPrefix: 'gh',
+          templateUrl: 'https://github.com/search?q={q}',
+        },
+      ]
+      expect(exportFavoritesToHtml(withQuicklink)).not.toContain('{q}')
+      expect(exportFavoritesToHtml(withQuicklink)).not.toContain('templateUrl')
+      expect(exportFavoritesToMarkdown(withQuicklink)).not.toContain('{q}')
+      expect(exportFavoritesToMarkdown(withQuicklink)).not.toContain('templateUrl')
+    })
+
+    it('B-3：单文件内同一链接出现两次——被丢的重复条进 droppedDuplicates，不再只剩一个数字', () => {
+      const html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<DL><p>
+  <DT><H3>工作</H3>
+  <DL><p>
+    <DT><A HREF="https://dup.example.com/">第一条标题</A>
+    <DT><A HREF="https://dup.example.com/">第二条标题</A>
+    <DT><A HREF="https://other.example.com/">别的站</A>
+  </DL><p>
+</DL><p>`
+      const result = parseUniversalBookmarks(html)
+      expect(result.ok).toBe(true)
+      expect(result.items).toHaveLength(2)
+      expect(result.droppedDuplicates).toHaveLength(1)
+      expect(result.droppedDuplicates![0]).toMatchObject({
+        href: 'https://dup.example.com/',
+        title: '第二条标题',
+        folderName: '工作',
+      })
+      // 重复条不再计入 skipped：两处数字互不重叠，不双算
+      expect(result.skippedCount).toBe(0)
+    })
+
+    it('B-3：Markdown / 纯文本的重复条同样进 droppedDuplicates', () => {
+      const md = `# 书签
+## 阅读
+- [站 A](https://dup.example.com/)
+- [站 A 换个标题](https://dup.example.com/)
+- [站 B](https://b.example.com/)
+`
+      const mdResult = parseUniversalBookmarks(md)
+      expect(mdResult.items).toHaveLength(2)
+      expect(mdResult.droppedDuplicates).toHaveLength(1)
+      expect(mdResult.droppedDuplicates![0]!.title).toBe('站 A 换个标题')
+      expect(mdResult.skippedCount).toBe(0)
+
+      // 纯文本格式 A（URL | 标题）重复：记入 droppedDuplicates，不进 skipped
+      const textA = `https://dup.example.com/ | 第一标题
+https://dup.example.com/ | 第二标题
+https://b.example.com/ | 站 B`
+      const textResult = parseUniversalBookmarks(textA)
+      expect(textResult.items).toHaveLength(2)
+      expect(textResult.droppedDuplicates).toHaveLength(1)
+      expect(textResult.droppedDuplicates![0]!.title).toBe('第二标题')
+      expect(textResult.skippedCount).toBe(0)
+
+      // 纯文本格式 B（裸 URL）重复：同样进 droppedDuplicates
+      const textB = `https://dup.example.com/ 第一标题
+https://dup.example.com/ 第二标题`
+      const textBResult = parseUniversalBookmarks(textB)
+      expect(textBResult.items).toHaveLength(1)
+      expect(textBResult.droppedDuplicates).toHaveLength(1)
+      expect(textBResult.skippedCount).toBe(0)
+    })
+
+    it('B-3：JSON 分支重复条进 droppedDuplicates，标题/文件夹原样保留', () => {
+      const json = JSON.stringify({
+        version: 1,
+        items: [
+          { siteId: 'a1', title: '第一条', href: 'https://dup.example.com/', folderName: '工作' },
+          { siteId: 'a2', title: '第二条', href: 'https://dup.example.com/', folderName: '阅读' },
+          { siteId: 'b1', title: '站 B', href: 'https://b.example.com/' },
+        ],
+      })
+      const result = parseUniversalBookmarks(json)
+      expect(result.items).toHaveLength(2)
+      expect(result.droppedDuplicates).toHaveLength(1)
+      expect(result.droppedDuplicates![0]).toMatchObject({ title: '第二条', folderName: '阅读' })
+      expect(result.skippedCount).toBe(0)
+    })
+
+    it('非阻塞 #5：JSON 模板非法不占去重槽位——非法条后的同链接有效条目仍能进来', () => {
+      const json = JSON.stringify({
+        version: 1,
+        items: [
+          { siteId: 'bad', title: '坏模板', href: 'https://same.example.com/', quickPrefix: 'gh', templateUrl: 'javascript:alert({q})' },
+          { siteId: 'good', title: '好条目', href: 'https://same.example.com/' },
+        ],
+      })
+      const result = parseUniversalBookmarks(json)
+      expect(result.items.map((i) => i.siteId)).toEqual(['good'])
+      expect(result.skippedCount).toBe(1)
+      expect(result.droppedDuplicates ?? []).toHaveLength(0)
+    })
   })
 })

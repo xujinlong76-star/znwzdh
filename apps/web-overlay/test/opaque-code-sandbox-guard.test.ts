@@ -150,10 +150,12 @@ describe('A：全仓一个求值点都不许有', () => {
   })
 
   it('课后用例是数据不是闭包（闭包跨不过沙盒边界）', () => {
-    const pane = read('src/components/video-live-test-pane.tsx')
-    expect(pane, '用例又变回 testFn 闭包了').not.toMatch(/testFn\s*:/)
-    for (const needle of ['exportName:', 'assertion:', 'type LiveTestCaseSpec']) {
-      expect(pane, `面板缺少数据化用例的 ${needle}`).toContain(needle)
+    // 课后用例面板（video-live-test-pane.tsx）已随 B 组删除下线；数据化用例
+    // 的契约现在由 video-live-test-runner.ts（保留的库）直接承载。
+    const runner = read('src/lib/video-live-test-runner.ts')
+    expect(runner, '用例又变回 testFn 闭包了').not.toMatch(/testFn\s*:/)
+    for (const needle of ['exportName:', 'assertion:', 'export interface LiveTestCaseSpec']) {
+      expect(runner, `运行器缺少数据化用例的 ${needle}`).toContain(needle)
     }
   })
 
@@ -232,7 +234,6 @@ describe('B：执行容器必须是不透明源', () => {
     for (const file of [
       HARNESS_FILE,
       'src/components/video-code-sandbox.tsx',
-      'src/components/video-sandbox-runner-pane.tsx',
     ]) {
       expect(authored, `${file} 不再自造文档内容了？判据范围要跟着改`).toContain(file)
     }
@@ -525,6 +526,5 @@ describe('F：判据本身有效', () => {
     const authored = SOURCES.filter((f) => authorsDocument(read(f)))
     expect(authored).toContain(HARNESS_FILE)
     expect(authored).toContain('src/components/video-code-sandbox.tsx')
-    expect(authored).toContain('src/components/video-sandbox-runner-pane.tsx')
   })
 })

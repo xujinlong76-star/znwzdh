@@ -45,6 +45,15 @@ describe('mergeCloudFavorites', () => {
     expect(merged[0]?.icon).toBe('https://icon/a.png')
   })
 
+  it('快捷链接字段（quickPrefix/templateUrl）随本地缓存保留，不被云端合并洗掉', () => {
+    const merged = mergeCloudFavorites(
+      [local({ siteId: 'a', quickPrefix: 'gh', templateUrl: 'https://github.com/search?q={q}' })],
+      [remote({ siteId: 'a' })],
+    )
+    expect(merged[0]?.quickPrefix).toBe('gh')
+    expect(merged[0]?.templateUrl).toBe('https://github.com/search?q={q}')
+  })
+
   it('备注与文件夹严格采用云端值：云端 null 表示已清空，不回退本地', () => {
     const merged = mergeCloudFavorites(
       [local({ siteId: 'a', note: '旧备注', folderId: 'folder-old' })],

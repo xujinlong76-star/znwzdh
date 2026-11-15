@@ -61,8 +61,14 @@ describe('本地收藏夹（P2）', () => {
   it('建 / 改 / 删三条路径都有本地分支', () => {
     const page = favoritesPageWithManager()
     expect(page).toMatch(/addLocalFolder\(localFolders/)
-    expect(page).toMatch(/renameLocalFolder\(prev, folderId, name\)/)
-    expect(page).toMatch(/removeLocalFolder\(prev, folderId\)/)
+    // 回调参数叫 prevList：外层 renameFolderDirect 已有同名 prev（find 出的
+    // 旧夹），避免遮蔽才改名——行为仍是"本地改名走 renameLocalFolder"
+    expect(page).toMatch(/renameLocalFolder\((prev|prevList), folderId, name\)/)
+    // 删夹要传第三个参数（当前收藏列表）才能算出受影响的 siteId 列表，
+    // 撤销恢复成员 folderId 时用它（第 1 批第 4 项：removeLocalFolder 补
+    // affectedSiteIds，之前只返回 affected: 0 占位）
+    expect(page).toMatch(/removeLocalFolder\(prev, folderId(, favorites\.items)?\)/)
+    expect(page).toContain('removeLocalFolder(prev, folderId, favorites.items).folders')
   })
 
   it('登录同步成功后把本地夹子按名称合并上云', () => {
@@ -72,7 +78,9 @@ describe('本地收藏夹（P2）', () => {
     // 必须在同步成功且拿到云端夹子之后才迁移
     expect(page).toMatch(/result\.ok && result\.cloudFolders && result\.nextItems/)
     // 重映射走 updateMeta（逐条置脏）；用 replaceAll 会清掉待推送的收藏变更
-    expect(page).toMatch(/favorites\.updateMeta\(item\.siteId, \{ folderId: mapped \}\)/)
+    // 迁移重映射不是用户移动，不推撤销条（第 1 批第 4 项：pushUndo: false）
+    expect(page).toMatch(/favorites\.updateMeta\(item\.siteId, \{ folderId: mapped \}(, \{ pushUndo: false \})?\)/)
+    expect(page).toContain('favorites.updateMeta(item.siteId, { folderId: mapped }, { pushUndo: false })')
   })
 
   it('匿名态不再谎称"需要登录才能建收藏夹"', () => {

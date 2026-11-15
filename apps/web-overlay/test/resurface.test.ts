@@ -255,14 +255,26 @@ describe('接线守卫', () => {
     expect(island).not.toContain('localStorage.getItem')
   })
 
-  it('/favorites/stale 是完整分拣台：重开记打开、归档可恢复、删除二次确认', () => {
+  it('/favorites/stale 是完整分拣台：重开记打开、归档可恢复、删除不确认（可撤销 + 可在回收站恢复）', () => {
     const stale = read('src/app/favorites/stale/page.tsx')
     expect(stale).toContain('selectStaleFavorites')
     expect(stale).toContain('recordOpened')
     expect(stale).toContain('已归档')
     expect(stale).toContain('恢复')
-    expect(stale).toContain('window.confirm')
+    // 软删除不确认：favorites.remove() 已推撤销条 + 写回收站快照，
+    // 8 秒内可撤销，30 天内可在回收站恢复——只对 handleDelete 的软删除
+    // 路径断言不含确认；不可恢复的彻底删除仍在 shelved / trash 页确认。
+    const softDelete = stale.slice(stale.indexOf('handleDelete'), stale.indexOf('handleRestore'))
+    expect(softDelete).not.toContain('window.confirm')
+    expect(softDelete).toContain('8 秒内可撤销')
+    expect(softDelete).toContain('回收站恢复')
     expect(stale).toContain("href=\"/favorites\"")
+    const shelved = read('src/app/favorites/shelved/page.tsx')
+    expect(shelved).toContain('window.confirm')
+    expect(shelved).toContain('删除后无法恢复')
+    const trash = read('src/app/favorites/trash/page.tsx')
+    expect(trash).toContain('window.confirm')
+    expect(trash).toContain('彻底删除后无法恢复')
   })
 
   it('恢复的 importJson 负载带备注 / 标签 / 收藏夹：归档过的收藏恢复后不丢装饰', () => {
@@ -300,5 +312,32 @@ describe('接线守卫', () => {
       expect(read(rel)).not.toContain(': any')
     }
     expect(read('src/lib/resurface.ts')).not.toContain('Date.now()')
+  })
+})
+
+describe('待读分流不进重温：selectStaleFavorites 只看 permanent', () => {
+  it('待读箱条目即使 100 天没打开也不进重温', () => {
+    const inbox = { ...fav('inbox-old', 100), triageStatus: 'inbox', triageAt: NOW - 100 * DAY_MS }
+    const read = { ...fav('read-old', 100), triageStatus: 'read', triageAt: NOW - 100 * DAY_MS }
+    const permanent = fav('perm-old', 100)
+    const picked = selectStaleFavorites([inbox, read, permanent], [], NOW)
+    expect(picked.map((i) => i.siteId)).toEqual(['perm-old'])
+  })
+
+  it('每日重温同样只推 permanent', () => {
+    const inbox = { ...fav('inbox-old', 100), triageStatus: 'inbox', triageAt: NOW - 100 * DAY_MS }
+    const permanent = fav('perm-old', 100)
+    expect(selectDailyResurface([inbox, permanent], [], NOW).map((i) => i.siteId)).toEqual(['perm-old'])
+  })
+
+  it('triageAt 在未来的 inbox 按祖父规则算 permanent，参与重温', () => {
+    const futureInbox = { ...fav('future-inbox', 100), triageStatus: 'inbox', triageAt: NOW + DAY_MS }
+    expect(selectStaleFavorites([futureInbox], [], NOW).map((i) => i.siteId)).toEqual(['future-inbox'])
+  })
+
+  it('缺字段的老收藏仍按 permanent 参与重温（祖父规则）', () => {
+    const legacy = fav('legacy-old', 100)
+    expect(legacy.triageStatus).toBeUndefined()
+    expect(selectStaleFavorites([legacy], [], NOW).map((i) => i.siteId)).toEqual(['legacy-old'])
   })
 })

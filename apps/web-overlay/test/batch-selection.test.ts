@@ -189,19 +189,24 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
    * 于是这个按钮在真实页面上**永远不出现**，`batchDeleteSitesFromCustomCategories`
    * 这个已实现并有单测的引擎成了孤岛。
    *
-   * 守卫两件事：回调必须被传入，且必须真的调用 hook 的移除能力（不能只传个空函数）。
+   * 2026-11-14 11b：已接线为具名 `handleBatchRemoveFromCustomCategories`，
+   * 调批量版 `removeSitesFromCustomCategories`（单提交）并经
+   * `buildHomeBatchRemoveUndoEntry` 推全局撤销条目。
+   *
+   * 守卫两件事：回调必须被传入，且必须真的调用 hook 的批量移除能力（不能只传个空函数）。
    */
   it("批量「从自建分类移除」已接线（回归：按钮因缺回调永远不渲染）", () => {
     const src = overlaySource("src/components/navigation-content.tsx");
     const dock = overlaySource("src/components/batch-operation-dock.tsx");
     // 1) 按钮确实是条件渲染 —— 说明「不传回调 = 按钮消失」这个机制是真的
     expect(dock).toContain("{onBatchDeleteFromCustomCategories && (");
-    // 2) 调用点必须传这个回调
-    expect(src).toContain("onBatchDeleteFromCustomCategories={() => {");
-    // 3) 回调体内必须真的调用移除 API（而非空实现糊过去）
-    expect(src).toContain("removeSiteFromCustomCategory(");
-    // 4) 移除能力来自 useHomeDIY，且在解构里取到了
-    expect(src).toContain("removeSiteFromCustomCategory,");
+    // 2) 调用点必须传这个回调（11b 起为具名处理器，不再是内联箭头）
+    expect(src).toContain("onBatchDeleteFromCustomCategories={handleBatchRemoveFromCustomCategories}");
+    // 3) 回调体内必须真的调用批量移除 API（而非空实现糊过去），且推撤销条目
+    expect(src).toContain("removeSitesFromCustomCategories(");
+    expect(src).toContain("buildHomeBatchRemoveUndoEntry(receipt)");
+    // 4) 批量移除能力来自 useHomeDIY，且在解构里取到了
+    expect(src).toContain("removeSitesFromCustomCategories,");
   });
 
   it("工具栏有多选开关与全选，并把状态传给卡片", () => {

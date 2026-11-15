@@ -67,9 +67,13 @@ describe('P1 #10 评审结论：底部导航已存在，不重建', () => {
     expect(src).toContain('unreadBadgeText')
   })
 
-  it('footer 仍为底栏预留 5.5rem + 安全区', () => {
+  it('footer 仍为底栏预留 5.5rem + 安全区（三段表：640–1024 改留 4.5rem 给半屏下沉栏）', () => {
     const src = read('src/components/footer.tsx')
-    expect(src).toContain('pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8')
+    expect(src).toContain('pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]')
+    expect(src).toContain(
+      'min-[640px]:max-[1024px]:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]',
+    )
+    expect(src).toContain('lg:pb-8')
   })
 })
 

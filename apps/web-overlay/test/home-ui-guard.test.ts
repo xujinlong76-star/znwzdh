@@ -73,7 +73,8 @@ describe('站点卡片：单外链 + 整卡热区', () => {
 
   it('整卡热区是一个带无障碍名称的外链，不产生 a:empty', () => {
     expect(src).toContain('absolute inset-0 z-0')
-    expect(src).toContain('aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}')
+    // 多选态 label 带「按空格切换选中」（580b963 键盘批量整理有意加的读屏提示）
+    expect(src).toContain('aria-label={selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`}')
     // 空锚点会被 a:empty 守卫抓住：外链里必须有 sr-only 文本
     expect(src).toContain('<span className="sr-only">{`访问 ${item.title}`}</span>')
   })

@@ -259,9 +259,14 @@ describe('零结果出口：站外直达只在用户选了外部引擎时出现'
   it('没传引擎（其它调用点）时：真零结果先给两个站内真出口，站外动作绝不出现', () => {
     // A11（刻意改动，search-panel.ts 注释有据）：真零结果把「AI 找站 / 投稿收录」
     // 两个站内真出口排最前——它们走站内中枢，不依赖外部引擎开关。
+    // 第 5 项新增的两个站内真出口（存为待找 / 新建收藏）排在其后、浏览类之前：
+    // 它们同样是站内动作，不带 external 标记，与「站外动作绝不出现」的本意不冲突。
+    // 期望顺序须与 search-panel.ts 的 plan 构造顺序一致。
     expect(planSearchPanel(panelBase).actions.map((a) => a.kind)).toEqual([
       'ai-find',
       'submit-site',
+      'save-wanted',
+      'save-favorite',
       'clear',
       'browse-tags',
       'browse-hot',

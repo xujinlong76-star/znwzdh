@@ -182,3 +182,41 @@ describe("零结果救援：/videos 搜索框", () => {
     expect(src).toContain("清空搜索，查看全部导航");
   });
 });
+
+describe("纠正后零结果态：只给明确出口，不叠泛推荐（协调人决定 1）", () => {
+  const results = overlaySource("src/app/search/search-results.tsx");
+
+  it("EmptyResults 挂两出口岛（存为待找 / 新建收藏）", () => {
+    expect(results).toContain("<WantedActions query={q} correctedQuery={correction?.corrected ?? null} />");
+    expect(results).toContain("hideGenericRecommendations={correctedZero}");
+  });
+
+  it("纠正后零结果隐藏「换个词试试 / 大家在搜 / 为你推荐」三块", () => {
+    expect(results).toContain("!hideGenericRecommendations && suggestions.length > 0");
+    expect(results).toContain("!hideGenericRecommendations && popular.length > 0");
+    expect(results).toContain("!hideGenericRecommendations && recommended.length > 0");
+  });
+
+  it("未纠正的零结果态保持现有 P0 行为：三块仍在（只在纠正态隐藏）", () => {
+    // 隐藏是条件式的：hideGenericRecommendations=false 时三块照常渲染
+    expect(results).toContain("hideGenericRecommendations = false");
+    expect(results).toContain("const correctedZero = Boolean(correction) && hits.length === 0");
+  });
+
+  it("AI 找站与投稿收录是真出口，纠正态也保留", () => {
+    expect(results).toContain("<ZeroResultActions query={q} />");
+  });
+
+  it("spotlight 零结果区同样挂两出口岛（N7：存为待找 / 新建收藏）", () => {
+    const spotlight = overlaySource("src/components/search/spotlight-modal.tsx");
+    expect(spotlight).toContain("<WantedActions query={query} correctedQuery={correction?.corrected ?? null} />");
+  });
+
+  it("spotlight / palette 有 correction 时隐藏建议 chips（N7）", () => {
+    const spotlight = overlaySource("src/components/search/spotlight-modal.tsx");
+    expect(spotlight).toContain("!correction && suggestions.length > 0");
+    const palette = overlaySource("src/components/search-palette.tsx");
+    expect(palette).toContain("!correction && suggestions.length > 0");
+    expect(palette).toContain("!correction && popular.length > 0");
+  });
+});

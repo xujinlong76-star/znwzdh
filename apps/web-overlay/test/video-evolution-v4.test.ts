@@ -16,18 +16,12 @@ import {
 import {
   calculateNextSM2Schedule,
   generateFlashcardsFromNotes,
-  generateFlashcardsFromQuizzes,
   filterDueFlashcards,
 } from '@/lib/video-spaced-repetition'
 import {
   analyzeDanmakuSentiment,
   clusterConfusionHotspots,
 } from '@/lib/video-danmaku-sentiment'
-import {
-  evaluateBadges,
-  issueVerifiableCertificate,
-  renderCertificateSvg,
-} from '@/lib/video-credential-issuer'
 
 describe('Proposal [1]: WebGPU/WebGL CAS Super-Resolution Shader', () => {
   it('computes 3x3 CAS convolution kernel with valid energy conservation', () => {
@@ -95,8 +89,36 @@ describe('Proposal [2]: Voice Commander & Semantic Audio Intent Dispatch', () =>
     expect(parseVoiceCommandIntent('1.5倍速')?.value).toBe(1.5)
     expect(parseVoiceCommandIntent('关闭弹幕')?.action).toBe('toggle_danmaku')
     expect(parseVoiceCommandIntent('打开知识脑图')?.targetTab).toBe('mindmap')
-    expect(parseVoiceCommandIntent('切换到终端')?.targetTab).toBe('terminal')
     expect(parseVoiceCommandIntent('下一集')?.action).toBe('next_video')
+  })
+
+  it('parses volume, mute, and unmute intents', () => {
+    const volume = parseVoiceCommandIntent('音量 50%')
+    expect(volume?.action).toBe('volume_change')
+    expect(volume?.value).toBe(50)
+
+    expect(parseVoiceCommandIntent('静音')?.action).toBe('mute')
+    // 「取消静音」含「静音」，unmute 必须先判，不能落到 mute。
+    expect(parseVoiceCommandIntent('取消静音')?.action).toBe('unmute')
+
+    const louder = parseVoiceCommandIntent('大声点')
+    expect(louder?.action).toBe('volume_change')
+    expect(louder?.deltaVolume).toBe(0.1)
+
+    const quieter = parseVoiceCommandIntent('小声点')
+    expect(quieter?.action).toBe('volume_change')
+    expect(quieter?.deltaVolume).toBe(-0.1)
+  })
+
+  it('parses out-of-range chapter targets without swallowing them', () => {
+    const cmd = parseVoiceCommandIntent('跳到第 99 章')
+    expect(cmd?.action).toBe('seek_chapter')
+    // 越界在执行层拒绝，不在解析层吞掉。
+    expect(cmd?.targetChapter).toBe(99)
+  })
+
+  it('returns unknown for unrecognized input', () => {
+    expect(parseVoiceCommandIntent('今天天气怎么样')?.action).toBe('unknown')
   })
 
   it('manages listener state and simulated input dispatching', () => {
@@ -241,37 +263,3 @@ describe('Proposal [5]: Danmaku Sentiment & Confusion Stumbling Block Radar', ()
   })
 })
 
-describe('Proposal [6]: Verifiable Completion Certificate & Badge Issuer', () => {
-  it('evaluates earned badges accurately according to learning telemetry', () => {
-    const badges = evaluateBadges({
-      watchedVideosCount: 5,
-      totalNotesCount: 4,
-      passedQuizCount: 2,
-      runSandboxCount: 3,
-      watchDurationSec: 4000,
-    })
-
-    const earned = badges.filter(b => b.earned)
-    expect(earned.length).toBeGreaterThanOrEqual(3)
-    expect(earned.some(b => b.id === 'badge-quiz-master')).toBe(true)
-  })
-
-  it('issues cryptographically tamper-evident certificates with SVG vector output', () => {
-    const cert = issueVerifiableCertificate({
-      studentName: 'Geek Developer',
-      courseTitle: 'Fullstack Modern Web & Streaming System Architecture',
-      quizScore: 95,
-      notesCount: 12,
-      watchDurationSec: 7200,
-    })
-
-    expect(cert.certificateId).toMatch(/^CERT-/)
-    expect(cert.verificationHash).toHaveLength(64)
-
-    const svg = renderCertificateSvg(cert)
-    expect(svg).toContain('<svg')
-    expect(svg).toContain('Geek Developer')
-    expect(svg).toContain(cert.certificateId)
-    expect(svg).toContain('antigravity')
-  })
-})

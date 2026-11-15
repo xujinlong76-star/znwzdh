@@ -35,6 +35,12 @@ describe("收藏筛选 URL 往返", () => {
     expect(parsed).toEqual(filters);
   });
 
+  it("sort=recent 能往返", () => {
+    const filters = { q: "", folder: "all", sort: "recent" as const };
+    expect(parseFavoritesFilters(buildFavoritesSearch(filters))).toEqual(filters);
+    expect(buildFavoritesSearch(filters)).toBe("?sort=recent");
+  });
+
   it("超长关键词截断到 100，空白关键词不落参数", () => {
     expect(parseFavoritesFilters("?q=" + "a".repeat(150)).q).toHaveLength(100);
     expect(buildFavoritesSearch({ q: "   ", folder: "all", sort: "created" })).toBe("");

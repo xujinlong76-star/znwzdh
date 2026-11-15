@@ -52,6 +52,14 @@ describe("upstreamTimeoutMs", () => {
   it("长耗时端点按路径段精确命中，不放子串", () => {
     expect(isLongRunningPath(["copilot", "chat"])).toBe(true);
     expect(isLongRunningPath("copilot/chat")).toBe(true);
+    // 问问我的收藏：只有 POST /api/ask（SSE 问答）走 120 秒 LLM 预算，留在默认 30 秒里会被代理 504 掐断；
+    // GET /api/ask/status 是快接口，走默认 30 秒
+    expect(isLongRunningPath(["ask"])).toBe(true);
+    expect(isLongRunningPath(["ask"], "POST")).toBe(true);
+    expect(isLongRunningPath(["ask"], "GET")).toBe(false);
+    expect(isLongRunningPath(["ask", "status"])).toBe(false);
+    expect(isLongRunningPath(["ask", "status"], "GET")).toBe(false);
+    expect(isLongRunningPath(["ask", "status"], "POST")).toBe(false);
     expect(isLongRunningPath(["plugins", "web-mcp", "ai-audit"])).toBe(true);
     expect(isLongRunningPath(["plugins", "pre-audit"])).toBe(true);
     expect(isLongRunningPath(["plugins", "check-urls"])).toBe(true);
@@ -90,6 +98,11 @@ describe("upstreamTimeoutMs", () => {
     expect(upstreamTimeoutMs(undefined, ["copilot", "chat"])).toBe(DEFAULT_AI_UPSTREAM_TIMEOUT_MS);
     expect(upstreamTimeoutMs(undefined, ["sites", "x", "radar"])).toBe(DEFAULT_AI_UPSTREAM_TIMEOUT_MS);
     expect(upstreamTimeoutMs(undefined, ["sites", "detail"])).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
+    // 问答 POST 走 120 秒，状态接口 GET 走默认 30 秒（不传 method 时只按路径收窄）
+    expect(upstreamTimeoutMs(undefined, ["ask"], "POST")).toBe(DEFAULT_AI_UPSTREAM_TIMEOUT_MS);
+    expect(upstreamTimeoutMs(undefined, ["ask"])).toBe(DEFAULT_AI_UPSTREAM_TIMEOUT_MS);
+    expect(upstreamTimeoutMs(undefined, ["ask", "status"], "GET")).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
+    expect(upstreamTimeoutMs(undefined, ["ask", "status"])).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
     // 显式配置仍然优先
     expect(upstreamTimeoutMs("8000", ["copilot", "chat"])).toBe(8000);
   });

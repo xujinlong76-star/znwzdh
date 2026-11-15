@@ -139,12 +139,17 @@ describe('书签导入的条数台账', () => {
 describe('智能导入工作台的架构不变量', () => {
   it('彻底移除「前往我的收藏导入」的跨页中断式按钮，仅保留轻量辅助链接', () => {
     expect(SRC).not.toContain('前往「我的收藏」导入')
-    expect(SRC.match(/href="\/favorites"/g) ?? []).toHaveLength(1)
+    // 第 2 批第 11 项：汇总页新增一个合法的 /favorites 链接「查看导入结果」
+    //（总协调人决策 9，v1 只跳页不高亮），与顶部辅助链接共 2 处
+    expect(SRC.match(/href="\/favorites"/g) ?? []).toHaveLength(2)
     expect(SRC).toContain('查看我的收藏夹')
+    expect(SRC).toContain('查看导入结果')
   })
 
   it('一次解析支持 4 种文件 + 粘贴，隐藏 file input 用 sr-only 且关联 label', () => {
-    expect(SRC).toContain('accept=".html,.htm,.md,.json,.txt"')
+    // 第 3 批第 1 项：社交来源放行 .csv / .js（X 归档 .js、Reddit/GitHub 的 .csv），
+    // 浏览器书签分支仍只认原来的 4 种格式
+    expect(SRC).toContain("accept={sourceKind === 'social' ? '.html,.htm,.md,.json,.txt,.csv,.js' : '.html,.htm,.md,.json,.txt'}")
     expect(SRC).toContain('className="sr-only peer"')
     expect(SRC).toContain('htmlFor="bookmark-file-input"')
     expect(SRC).toContain('aria-labelledby="dropzone-title"')
@@ -153,14 +158,17 @@ describe('智能导入工作台的架构不变量', () => {
   })
 
   it('隐私链接的公共投稿勾选框被硬锁，且服务端回退也只允许未锁定条目', () => {
-    // 锁定条件 = 隐私/已收录（publicLocked）或「仅个人收藏夹」模式
-    expect(SRC).toContain("disabled={b.publicLocked || mode === 'private'}")
-    expect(SRC).toContain('items.filter((b) => b.toPublic && !b.publicLocked)')
+    // 锁定条件 = 隐私/已收录（publicLocked）或「仅个人收藏夹」模式；
+    // 第 2 批第 11 项：Step 2 只读预览时勾选框也禁用（step === 2 在前）
+    expect(SRC).toContain("disabled={step === 2 || b.publicLocked || mode === 'private'}")
+    // 执行清单来自冻结的 DedupReport：公共投稿只含未锁定条目
+    expect(SRC).toContain('freezeExecutionPlan(dedupReport)')
     expect(PIPELINE).toContain('publicLocked = status !== \'ready\'')
   })
 
   it('三种模式是硬约束，不是花架子：私有模式锁投稿、公共模式锁私有', () => {
-    expect(SRC).toContain("disabled={mode === 'public'}")
+    // 第 2 批第 11 项：Step 2 只读预览时勾选框也禁用（step === 2 在前）
+    expect(SRC).toContain("disabled={step === 2 || mode === 'public'}")
     expect(SRC).toContain("applyMode(prev, next)")
     expect(PIPELINE).toContain('export function applyMode')
     // 模式切换后即刻重算勾选，避免「切到仅公共库但私有还全选着」

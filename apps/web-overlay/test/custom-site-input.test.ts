@@ -114,10 +114,13 @@ describe("源码守卫：录入路径真的用上了纯函数", () => {
     // DIY：卡片渲染收敛到 navigation-category-section.tsx 的 renderSiteCard，
     // 一级/二级卡片的拖拽收录收敛到 diy-drag-kit.tsx 的 resolveCardDrop
     // 'collect' 分支（f8119af 前两处拖拽收录在 navigation-category-section.tsx，
-    // 合并后只剩一处）；手工录入与批量收录仍在 navigation-content.tsx。
+    // 合并后只剩一处）；手工录入在 navigation-content.tsx，
+    // 批量收录在 11b（5bedc9d）移入 use-home-diy.ts 的 addSitesToCustomCategory
+    //（一次 persistConfig 内逐站生成 id，不再由组件逐站调单站版循环）。
     const section = overlaySource("src/components/navigation-category-section.tsx");
     const dragKit = overlaySource("src/components/diy/diy-drag-kit.tsx");
-    expect(countOccurrences(src + section + dragKit, "createCustomSiteId()")).toBeGreaterThanOrEqual(3);
-    expect(src + section + dragKit).not.toContain("custom_site_${Date.now()}");
+    const homeDiy = overlaySource("src/lib/modular/use-home-diy.ts");
+    expect(countOccurrences(src + section + dragKit + homeDiy, "createCustomSiteId()")).toBeGreaterThanOrEqual(3);
+    expect(src + section + dragKit + homeDiy).not.toContain("custom_site_${Date.now()}");
   });
 });

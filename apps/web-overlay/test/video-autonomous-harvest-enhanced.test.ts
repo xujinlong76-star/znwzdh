@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   evaluateVideoWithAIModel,
-  generateAISanitizedMetadata,
   AutonomousAIHarvesterController,
 } from '../src/lib/video-autonomous-ai-harvester'
 import {
@@ -179,7 +178,9 @@ describe('Autonomous Multi-Platform Video Harvester & Intelligent SEO Engine', (
                     uploaderName: 'Web Mastery',
                     duration: 1800,
                     uploaded: Date.now() - 86400000,
-                    views: 45000,
+                    // 严标准守卫：镜像通道只返回播放量（无点赞/弹幕），须 ≥ 50000
+                    // 才放行；此前 45000 在新标准下会被拒收。
+                    views: 60000,
                     thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
                   },
                 ],
@@ -232,7 +233,6 @@ describe('Autonomous Multi-Platform Video Harvester & Intelligent SEO Engine', (
               keywords: ['Agent 开发'],
               platforms: ['ted'],
               maxItems: 10,
-              minQualityScore: 70,
               minDurationSec: 180,
             },
           },

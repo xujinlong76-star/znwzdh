@@ -664,7 +664,10 @@ describe('收录站点：写盘失败不能报成功', () => {
     const src = read('src/components/navigation-content.tsx')
     expect(src).toContain("if (outcome === 'failed')")
     expect(src).toContain('这一下没能保存')
-    expect(src).toContain('let failed = 0')
+    // 批量收录 11b（5bedc9d）后不再逐站循环计数（旧 `let failed = 0` 已删）：
+    // 一次 addSitesToCustomCategory 返回收据，写盘失败时按收据如实报数
+    expect(src).toContain('if (receipt.failedCount > 0)')
+    expect(src).toContain('只收录了')
   })
 
   it('拖拽收录同样区分失败与重复', () => {

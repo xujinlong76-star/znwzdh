@@ -35,23 +35,25 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 
 describe("A12 事件桥接点", () => {
   it("growth.ts 定义统一事件名常量", () => {
-    expect(read("src/lib/growth.ts")).toContain(
+    // 首屏瘦身 Step 3 起常量住在 growth-lazy.ts（门面，单一来源），
+    // growth.ts 只 re-export；值与“只定义一次”仍由本测试钉住。
+    expect(read("src/lib/growth-lazy.ts")).toContain(
       "export const AI_CHAT_USED_EVENT = 'navhub:ai-chat-used'",
     );
+    expect(read("src/lib/growth.ts")).toContain("AI_CHAT_USED_EVENT,");
   });
 
   it("GrowthTracker 监听该事件并按 ai_chat 落账", () => {
     const tracker = read("src/components/growth/growth-tracker.tsx");
     expect(tracker).toContain("AI_CHAT_USED_EVENT");
-    // 2026-11-15 成长模块懒加载（/sites 包体积续刀）：AI_CHAT_USED_EVENT
-    // 活在 growth.ts 里，tracker 不再静态 import，监听须等 chunk 加载后
-    // 注册——事件名先存进 eventName 再 add/remove，落账行为不变（仍是
-    // 同一常量值，卸载时仍摘监听）。
-    expect(tracker).toContain("eventName = g.AI_CHAT_USED_EVENT");
-    expect(tracker).toContain("addEventListener(eventName, onWidgetChat)");
+    // 2026-11-15 成长模块懒加载合流：走本地 growth-lazy 门面版——
+    // AI_CHAT_USED_EVENT 从门面静态 import，监听同步注册、同步摘除，
+    // 不等 chunk 加载（门面内部才动态 import 引擎；远程 5ccb063 的
+    // eventName 中转写法只属于 effect 内动态 import 方案，已废弃）。
+    expect(tracker).toContain("addEventListener(AI_CHAT_USED_EVENT, onWidgetChat)");
     expect(tracker).toContain("recordGrowthEvent('ai_chat')");
     // 卸载时要摘监听，不能只挂不摘
-    expect(tracker).toContain("removeEventListener(eventName, onWidgetChat)");
+    expect(tracker).toContain("removeEventListener(AI_CHAT_USED_EVENT, onWidgetChat)");
   });
 
   it("挂件在 sendChat 里 dispatch 同名事件（且只在有效发送时）", () => {

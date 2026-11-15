@@ -48,37 +48,38 @@ function mcpToolDefs(): Array<{ name: string; scope: string }> {
   return entries;
 }
 
-describe("B13-1 MCP 工具数：代码 41（28 read / 12 write / 1 admin）", () => {
-  it("MCP_TOOL_DEFS 共 41 个工具", () => {
-    expect(mcpToolDefs()).toHaveLength(41);
+describe("B13-1 MCP 工具数：代码 45（32 read / 12 write / 1 admin）", () => {
+  it("MCP_TOOL_DEFS 共 45 个工具", () => {
+    expect(mcpToolDefs()).toHaveLength(45);
   });
 
-  it("scope 分布 28 read / 12 write / 1 admin", () => {
+  it("scope 分布 32 read / 12 write / 1 admin", () => {
     const defs = mcpToolDefs();
     const count = (scope: string) => defs.filter((d) => d.scope === scope).length;
-    expect(count("read")).toBe(28);
+    expect(count("read")).toBe(32);
     expect(count("write")).toBe(12);
     expect(count("admin")).toBe(1);
   });
 
-  it("wiki 与概览称 41，不再称 15/17/35/32", () => {
-    expect(WIKI).toContain("41 个 MCP 标准工具");
-    expect(WIKI).toContain("41 个标准工具（28 read / 12 write / 1 admin）");
+  it("wiki 与概览称 45，不再称 15/17/35/32", () => {
+    expect(WIKI).toContain("45 个 MCP 标准工具");
+    expect(WIKI).toContain("45 个标准工具（32 read / 12 write / 1 admin）");
     expect(WIKI).not.toContain("15 个 MCP");
     expect(WIKI).not.toContain("17 个标准工具");
-    expect(OVERVIEW).toContain("41 个工具");
-    expect(OVERVIEW).toContain("28 个 read、12 个 write、1 个 admin");
+    expect(OVERVIEW).toContain("45 个工具");
+    expect(OVERVIEW).toContain("32 个 read、12 个 write、1 个 admin");
     expect(OVERVIEW).not.toContain("35 个工具");
     expect(OVERVIEW).not.toContain("32 个 MCP 工具");
-    expect(OVERVIEW).toContain("**41 个**（28 read / 12 write / 1 admin）");
+    expect(OVERVIEW).toContain("**45 个**（32 read / 12 write / 1 admin）");
   });
 
-  it("概览 §5.5 域表列全 41 个工具名（含此前漏掉的 6 个）", () => {
+  it("概览 §5.5 域表列全 45 个工具名（含此前漏掉的 6 个）", () => {
     for (const name of [
       "get_collection",
       "list_favorites",
       "list_search_history",
       "get_profile_summary",
+      "compare_sites",
       "star_plugin",
       "update_plugin",
     ]) {
@@ -97,34 +98,34 @@ describe("B13-2 前端版本：Next.js 16（package.json 16.4.2 / React 19.3.1�
   });
 });
 
-describe("B13-3 REST 路由数：313 声明 / 49 插件 / 47 表", () => {
+describe("B13-3 REST 路由数：348 声明 / 57 插件 / 53 表", () => {
   it("metrics.json 与静态计数一致", () => {
-    expect(METRICS.restRoutes).toBe(313);
-    expect(METRICS.tables).toBe(47);
+    expect(METRICS.restRoutes).toBe(348);
+    expect(METRICS.tables).toBe(53);
   });
 
   it("wiki 不再称 62 条路由", () => {
-    expect(WIKI).toContain("313 个 REST 路由声明");
+    expect(WIKI).toContain("348 个 REST 路由声明");
     expect(WIKI).not.toContain("62 条 REST");
     expect(WIKI).not.toContain("62 条路由");
   });
 
-  it("概览 §5.4 表合计 313，§9 对照表实际值已更新", () => {
-    expect(OVERVIEW).toContain("### 5.4 `apps/api`：313 个端点 / 49 个路由插件");
-    expect(OVERVIEW).toContain("| **合计** | **313** |");
+  it("概览 §5.4 表合计 348，§9 对照表实际值已更新", () => {
+    expect(OVERVIEW).toContain("### 5.4 `apps/api`：348 个端点 / 57 个路由插件");
+    expect(OVERVIEW).toContain("| **合计** | **348** |");
     expect(OVERVIEW).not.toContain("117 个端点");
-    expect(OVERVIEW).toContain("**313 个端点**（49 个路由插件");
-    expect(OVERVIEW).toContain("**49 个**（`server.ts` 的 register 调用）");
-    expect(OVERVIEW).toContain("**47 张**");
+    expect(OVERVIEW).toContain("**348 个端点**（57 个路由插件");
+    expect(OVERVIEW).toContain("**57 个**（`server.ts` 的 register 调用）");
+    expect(OVERVIEW).toContain("**53 张**");
     expect(OVERVIEW).not.toContain("25 张表");
   });
 
-  it("FILE_INDEX 与 server.ts 头注释称 49 个路由插件、47 张表", () => {
-    expect(FILE_INDEX).toContain("注册 49 个路由插件");
-    expect(FILE_INDEX).toContain("共 47 张表");
+  it("FILE_INDEX 与 server.ts 头注释称 57 个路由插件、53 张表", () => {
+    expect(FILE_INDEX).toContain("注册 57 个路由插件");
+    expect(FILE_INDEX).toContain("共 53 张表");
     expect(FILE_INDEX).not.toContain("24 个路由插件");
     expect(FILE_INDEX).not.toContain("19 张核心表");
-    expect(read("apps/api/src/server.ts")).toContain("49 个路由插件");
+    expect(read("apps/api/src/server.ts")).toContain("57 个路由插件");
   });
 });
 

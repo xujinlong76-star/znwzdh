@@ -158,3 +158,34 @@ describe("接线守则：读不出来就拒绝写入，并且要让用户知道"
     }
   });
 });
+
+describe('待读分流字段随 LocalFavorite 序列化往返不丢失', () => {
+  it('triageStatus / triageAt 写进 navhub.favorites.v1 后原样读回', () => {
+    const stored = JSON.stringify([
+      {
+        siteId: 'a',
+        title: '站点 a',
+        href: 'https://example.com/a',
+        createdAt: 1000,
+        triageStatus: 'inbox',
+        triageAt: 900,
+      },
+      { siteId: 'b', title: '站点 b', href: 'https://example.com/b', createdAt: 2000 },
+    ])
+    const { items, corrupt } = parseFavorites<{
+      siteId: string
+      triageStatus?: string
+      triageAt?: number
+    }>(stored)
+    expect(corrupt).toBe(false)
+    expect(items[0]?.triageStatus).toBe('inbox')
+    expect(items[0]?.triageAt).toBe(900)
+    // 缺字段的老收藏读回后仍是缺字段（祖父规则靠「缺失」本身实现）
+    expect(items[1]?.triageStatus).toBeUndefined()
+    expect(items[1]?.triageAt).toBeUndefined()
+  })
+
+  it('存储键仍是 navhub.favorites.v1（绝不能改）', () => {
+    expect(FAVORITES_STORAGE_KEY).toBe('navhub.favorites.v1')
+  })
+});

@@ -159,16 +159,25 @@ describe('Staging：一次解析、双库分流', () => {
       '<DT><A HREF="https://nebula-notes.app/">Nebula Notes</A>',
       '<DT><A HREF="http://192.168.1.10/">NAS</A>',
       // 解析器只按字面 URL 去重；www / 追踪参数这类「语义重复」留给指纹层处理
+      // ↑ 旧注释：第 2 批第 11 项已把解析层批内去重键换成 fingerprintUrl，
+      // www + utm 变体在解析层即被去重（见下 assertion 的 skippedCount）
       '<DT><A HREF="https://www.nebula-notes.app/?utm_source=dup">Nebula Notes 重复</A>',
     ].join('\n'),
   )
 
   it('解析出 4 条并同时产出三种状态', () => {
     expect(parsed.ok).toBe(true)
+    // 第 2 批第 11 项：解析层批内去重键已换成 fingerprintUrl，www + utm
+    // 变体在解析层就被判为语义重复，不再留给指纹层；
+    // B-3 修复：重复条不再计入 skippedCount，改入 droppedDuplicates
+    // （供去重报告判 intra-file-dup），skipped 只计无效条
+    expect(parsed.items).toHaveLength(3)
+    expect(parsed.skippedCount).toBe(0)
+    expect(parsed.droppedDuplicates).toHaveLength(1)
+    expect(parsed.droppedDuplicates![0]!.title).toBe('Nebula Notes 重复')
     const result = buildStagingItems(parsed.items, publicIndex, CATEGORIES)
-    // 4 条解析结果里 www + utm 变体被指纹层判为语义重复，落到 3 条 staging
     expect(result.items).toHaveLength(3)
-    expect(result.skippedDuplicates).toBe(1)
+    expect(result.skippedDuplicates).toBe(0)
     expect(result.dedupeUnavailable).toBe(false)
     const statuses = result.items.map((i) => i.status)
     expect(statuses).toContain('ready')

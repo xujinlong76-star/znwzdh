@@ -23,7 +23,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { syncFavoritesToCloud } from "../src/hooks/useFavorites";
+import { syncFavoritesToCloud, applyFavoriteDelta } from "../src/hooks/useFavorites";
+import { mergeCloudFavorites } from "../src/lib/favorites-merge";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -624,6 +625,26 @@ describe("源码守卫：这套契约不许被改回去", () => {
     expect(hook).toContain("clearDirty()");
   });
 
+  it("importJson：模板非法整条计入 skippedInvalid，合法模板归一后落盘", () => {
+    const hook = overlaySource("src/hooks/useFavorites.ts");
+    expect(hook).toContain("validateQuicklink({ prefix: i.quickPrefix, templateUrl })");
+    expect(hook).toContain("quickPrefix: quickPrefix || undefined");
+    expect(hook).toContain("templateUrl: templateUrl || undefined");
+    // 守卫仍在：skippedInvalid = 导入总数 - 接受数（模板非法已在 accepted 过滤器里出局）
+    expect(hook).toContain("const skippedInvalid = incoming.length - accepted.length");
+    // 第 2 批第 11 项：imported 必须是实际新增数，不许再拿 valid.length 冒充
+    expect(hook).toContain("return { ok: true, imported, updated, alreadyExisted, addedSiteIds, skippedInvalid: skippedInvalid + extraSkippedInvalid }");
+    expect(hook).not.toContain("imported: valid.length");
+  });
+
+  it("updateMeta 支持 quickPrefix/templateUrl（null = 清除），前缀写入即归一", () => {
+    const hook = overlaySource("src/hooks/useFavorites.ts");
+    expect(hook).toContain("quickPrefix?: string | null; templateUrl?: string | null");
+    expect(hook).toContain("normalizeQuicklinkPrefix(patch.quickPrefix)");
+    expect(hook).toContain("merged.quickPrefix = normalized || undefined");
+    expect(hook).toContain("merged.templateUrl = template || undefined");
+  });
+
   it("navhub-api 暴露批量同步且失败交回调用方", () => {
     const src = overlaySource("src/lib/navhub-api.ts");
     expect(src).toContain("export async function syncFavoritesBatch(");
@@ -633,5 +654,75 @@ describe("源码守卫：这套契约不许被改回去", () => {
     expect(src).toContain(
       "export async function removeFavorite(identity: string, siteId: string, onDegraded?: DegradedHandler)",
     );
+  });
+});
+
+describe("待读分流：云端合并保留本机分流字段", () => {
+  const local = [
+    {
+      siteId: "a",
+      title: "站点 a",
+      href: "https://example.com/a",
+      createdAt: 1000,
+      triageStatus: "inbox" as const,
+      triageAt: 900,
+    },
+    {
+      siteId: "b",
+      title: "站点 b",
+      href: "https://example.com/b",
+      createdAt: 2000,
+    },
+  ];
+  const cloud = [
+    {
+      siteId: "a",
+      folderId: null,
+      note: null,
+      tags: null,
+      createdAt: 1000,
+      site: { title: "站点 a", url: "https://example.com/a" },
+    },
+    {
+      siteId: "c",
+      folderId: null,
+      note: null,
+      tags: null,
+      createdAt: 3000,
+      site: { title: "站点 c", url: "https://example.com/c" },
+    },
+  ];
+
+  it("mergeCloudFavorites：存量条目的分流字段靠 spread 保留；云端新条目默认 permanent", () => {
+    const merged = mergeCloudFavorites(local, cloud);
+    const kept = merged.find((i) => i.siteId === "a");
+    expect(kept?.triageStatus).toBe("inbox");
+    expect(kept?.triageAt).toBe(900);
+    // 云端新条目没有分流字段 → resolveTriageStatus 视为 permanent
+    const fresh = merged.find((i) => i.siteId === "c");
+    expect(fresh?.triageStatus).toBeUndefined();
+  });
+
+  it("applyFavoriteDelta：增量更新同样保留本机分流字段；墓碑删除整条带走", () => {
+    const updated = applyFavoriteDelta(local, [
+      {
+        id: "fav-a",
+        siteId: "a",
+        folderId: null,
+        note: "新备注",
+        createdAt: 1000,
+        // site 为 null 时展示字段取本地缓存：增量更新不能把标题/链接洗掉
+        site: null,
+      },
+    ]);
+    const kept = updated.find((i) => i.siteId === "a");
+    expect(kept?.note).toBe("新备注");
+    expect(kept?.triageStatus).toBe("inbox");
+    expect(kept?.triageAt).toBe(900);
+
+    const tombstoned = applyFavoriteDelta(local, [
+      { id: "fav-a", siteId: "a", folderId: null, note: null, createdAt: 1000, deletedAt: 5000, site: null },
+    ]);
+    expect(tombstoned.some((i) => i.siteId === "a")).toBe(false);
   });
 });

@@ -58,7 +58,16 @@ describe("站点卡片：单一 Tab 入口 + 方向键操作区", () => {
   });
 
   it("主链接声明快捷键与操作说明（读屏用户能发现方向键入口）", () => {
-    expect(card).toContain('aria-keyshortcuts="Space ArrowRight"');
+    // dialKeyshortcuts 是动态构造（navigation-card.tsx:210）：基础 Space + ArrowRight，
+    // 有坞直达位追加数字，有自定义快拨位追加 Ctrl+Shift+数字；三处渲染点共用它，
+    // 字面量 aria-keyshortcuts="Space ArrowRight" 已不存在，断言跟随构造。
+    expect(card).toContain("const dialKeyshortcuts = [");
+    expect(card).toContain("'Space'");
+    expect(card).toContain("'ArrowRight'");
+    expect(card).toContain("...(dialDigit ? [String(dialDigit)] : [])");
+    expect(card).toContain("...(quickDialDigit ? [`Ctrl+Shift+${quickDialDigit}`] : [])");
+    expect(card).toContain("].join(' ')");
+    expect((card.match(/aria-keyshortcuts=\{dialKeyshortcuts\}/g) ?? []).length).toBe(3);
     expect(card).toContain("aria-describedby={keyboardHintId}");
   });
 

@@ -85,8 +85,13 @@ describe("文案不许编造能力（回归守卫）", () => {
 describe("源码守卫：真的挂上了，且监听器与定时器都收干净", () => {
   it("根布局渲染了 OfflineBanner（回归：写好了却从未挂载）", () => {
     const src = overlaySource("src/app/layout.tsx");
-    expect(src).toContain("import { OfflineBanner } from '@/components/offline-banner'");
+    // 首屏瘦身 Step 5 起走客户端挂载壳（ssr:false 动态加载），挂载点不变
+    expect(src).toContain("OfflineBanner,");
+    expect(src).toContain("from '@/components/shell-background'");
     expect(src).toContain("<OfflineBanner />");
+    expect(overlaySource("src/components/shell-background.tsx")).toContain(
+      "import('@/components/offline-banner')",
+    );
   });
 
   it("组件监听 online / offline 并成对移除，且用 ref 清掉重连提示的定时器", () => {
@@ -112,10 +117,17 @@ describe("源码守卫：真的挂上了，且监听器与定时器都收干净"
 });
 
 describe("源码守卫：移动端不能压住底部导航", () => {
-  it("提示条在移动端抬到 h-14 底栏之上（否则 z-60 会拦截底栏点击）", () => {
+  it("三段底距：<640 抬到 MobileNav 之上，640–1024 抬到半屏下沉栏之上，≥1024 贴底", () => {
     const src = overlaySource("src/components/offline-banner.tsx");
+    // <640：MobileNav h-14，抬 4.5rem（56px 栏 + 16px 呼吸）
     expect(src).toContain("bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))]");
-    // 桌面端仍贴底，不需要让出底栏空间
-    expect(src).toContain("sm:bottom-[calc(1rem+env(safe-area-inset-bottom,0px))]");
+    // 640–1024：HalfScreenDock h-14，同样抬 4.5rem；旧 sm: 切换点会让它在
+    // 半屏区间掉回 1rem 与下沉栏重叠，故三段表必须逐字锁定
+    expect(src).toContain(
+      "min-[640px]:max-[1024px]:bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))]",
+    );
+    // ≥1024：无底栏，贴底 1rem
+    expect(src).toContain("lg:bottom-[calc(1rem+env(safe-area-inset-bottom,0px))]");
+    expect(src).not.toContain("sm:bottom-");
   });
 });

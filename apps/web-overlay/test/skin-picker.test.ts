@@ -121,8 +121,12 @@ describe("皮肤应用中状态：点选后菜单不关，正在应用…可见"
   it("成功应用后关菜单（choose 成功分支调 setOpen(false)）", () => {
     const picker = read("src/components/skin-picker.tsx");
     const chooseBody = braceBlock(picker, "const choose = async (slug: string)");
-    expect(chooseBody).toContain("setActiveTheme({");
+    // 安装 + 拉取 + 应用已抽到 lib/plugins/theme-ensure 的 ensureThemeAvailable
+    // （场景切换复用同一条路）：choose 只调它，成功后才关菜单；真正的
+    // setActiveTheme 在 theme-ensure 的 ensureThemeAvailable 里。
+    expect(chooseBody).toContain("await ensureThemeAvailable(slug");
     expect(chooseBody).toContain("setOpen(false)");
+    expect(read("src/lib/plugins/theme-ensure.ts")).toContain("deps.setActiveTheme ?? setActiveTheme");
   });
 });
 
@@ -130,8 +134,12 @@ describe("皮肤应用失败：报错可见，不留卡死的 applying", () => {
   it("installPlugin / fetchPluginDetail 抛错时 setError 且 finally 清 applying", () => {
     const picker = read("src/components/skin-picker.tsx");
     const chooseBody = braceBlock(picker, "const choose = async (slug: string)");
-    expect(chooseBody).toContain("await installPlugin(slug)");
-    expect(chooseBody).toContain("await fetchPluginDetail(slug)");
+    // 安装 + 拉取已抽到 theme-ensure 的 prepareTheme：choose 只调
+    // ensureThemeAvailable，失败 reason 由它带回；网络调用顺序在那边钉住。
+    expect(chooseBody).toContain("await ensureThemeAvailable(slug");
+    const ensure = read("src/lib/plugins/theme-ensure.ts");
+    expect(ensure).toContain("await doInstall(slug)");
+    expect(ensure).toContain("await doFetch(slug)");
     // 失败文案先拼进 message 再 setError（拼完还要在菜单关掉时 toast 补发，
     // 见 notifyFailureIfMenuClosed）；模板本身不变
     expect(chooseBody).toContain("const message = `皮肤应用失败：${err instanceof Error ? err.message : String(err)}`");
@@ -146,7 +154,12 @@ describe("皮肤应用失败：报错可见，不留卡死的 applying", () => {
   it("清单取不到 payload 也报错、同样走 finally 清 applying", () => {
     const picker = read("src/components/skin-picker.tsx");
     const chooseBody = braceBlock(picker, "const choose = async (slug: string)");
-    expect(chooseBody).toContain("setError('无法启用皮肤：未能加载清单配置')");
+    // payload 缺失的报错文案在 theme-ensure 里；choose 用 ensured.reason 接住
+    expect(read("src/lib/plugins/theme-ensure.ts")).toContain(
+      "无法启用皮肤：未能加载清单配置",
+    );
+    expect(chooseBody).toContain("ensured.reason");
+    expect(chooseBody).toContain("setError(message)");
     expect(chooseBody).toContain("finally");
   });
 
@@ -194,28 +207,33 @@ describe("isThemeIconUrl 边界：带查询串、svg data URI、危险协议", (
 });
 
 describe("皮肤 choose() 的分支顺序与开关守卫（源码守卫，见文件头）", () => {
-  it("先亮「正在应用…」再走网络：setApplying 在 installPlugin 之前", () => {
+  it("先亮「正在应用…」再走网络：setApplying 在 ensureThemeAvailable 之前", () => {
     const picker = read("src/components/skin-picker.tsx");
     const chooseBody = braceBlock(picker, "const choose = async (slug: string)");
     const applyingAt = chooseBody.indexOf("setApplying(slug)");
-    const installAt = chooseBody.indexOf("await installPlugin(slug)");
+    const ensureAt = chooseBody.indexOf("await ensureThemeAvailable(slug");
     expect(applyingAt).toBeGreaterThan(-1);
-    expect(installAt).toBeGreaterThan(-1);
-    expect(applyingAt).toBeLessThan(installAt);
+    expect(ensureAt).toBeGreaterThan(-1);
+    expect(applyingAt).toBeLessThan(ensureAt);
   });
 
   it("未安装先安装、再取详情：installPlugin 在 fetchPluginDetail 之前", () => {
-    const picker = read("src/components/skin-picker.tsx");
-    const chooseBody = braceBlock(picker, "const choose = async (slug: string)");
-    expect(chooseBody.indexOf("await installPlugin(slug)")).toBeLessThan(
-      chooseBody.indexOf("await fetchPluginDetail(slug)"),
+    // 顺序守卫随抽函数搬到 theme-ensure 的 prepareTheme（doInstall/doFetch
+    // 即 installPlugin/fetchPluginDetail 的注入点）。不用 braceBlock：
+    // prepareTheme 的参数默认值 `{}` 会让花括号匹配提前截断。
+    const ensure = read("src/lib/plugins/theme-ensure.ts");
+    expect(ensure.indexOf("await doInstall(slug)")).toBeLessThan(
+      ensure.indexOf("await doFetch(slug)"),
     );
+    expect(ensure.indexOf("await doInstall(slug)")).toBeGreaterThan(-1);
   });
 
   it("没拿到清单不激活：payload 为空先报错返回，setActiveTheme 在 payload 检查之后", () => {
-    const picker = read("src/components/skin-picker.tsx");
-    const chooseBody = braceBlock(picker, "const choose = async (slug: string)");
-    expect(chooseBody.indexOf("if (!payload)")).toBeLessThan(chooseBody.indexOf("setActiveTheme({"));
+    // 同上：payload 守卫在 theme-ensure 的 prepareTheme 里，apply
+    // （即 setActiveTheme）在其后的 ensureThemeAvailable 里。
+    const ensure = read("src/lib/plugins/theme-ensure.ts");
+    expect(ensure.indexOf("if (!payload)")).toBeLessThan(ensure.indexOf("apply({"));
+    expect(ensure.indexOf("apply({")).toBeGreaterThan(-1);
   });
 
   it("「系统默认」分支立即生效：resetTheme + 同步状态 + 马上关菜单", () => {

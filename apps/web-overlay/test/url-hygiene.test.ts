@@ -243,6 +243,36 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
     evidence: ["const url = safeHref(site.url, '')", "if (!url || !isSafeHttpUrl(url)) return"],
   },
   {
+    file: "src/lib/number-dial.ts",
+    kind: "location",
+    expr: "url",
+    why:
+      "数字直达 _self 分支复用函数顶部已过 safeHref 的 url（脏地址在 " +
+      "safeHref 一步就落到 '' 并 return false）；同页跳转没有 safeWindowOpen " +
+      "那样的新窗口闸可用，safeWindowOpen 只开 _blank，改用它会改变「本页打开」的行为。",
+    evidence: ["const url = safeHref(site.href, '')", "window.location.href = url"],
+  },
+  {
+    file: "src/components/search/wanted-actions.tsx",
+    kind: "href",
+    expr: "form.href",
+    why:
+      "AddSiteDialog 的 href 不是导航出口，是「新建收藏」弹窗里网址输入框的受控值 " +
+      "（value={href}）；提交时走 createCustomSite，服务端有 http(s) 白名单校验。渲染期 " +
+      "过 safeHref 会打断逐字输入（还没输完的 'h'/'ht' 不是合法 URL，会被清成空串），所以此处不过闸。",
+    evidence: ["<AddSiteDialog", "onHrefChange={(v) => setForm((f) => ({ ...f, href: v }))}"],
+  },
+  {
+    file: "src/components/search-palette.tsx",
+    kind: "href",
+    expr: "createForm.href",
+    why:
+      "同 wanted-actions：AddSiteDialog 的 href 是「新建收藏」弹窗网址输入框的受控值， " +
+      "不是导航出口；提交时走 createCustomSite，服务端有 http(s) 白名单校验。渲染期过 safeHref " +
+      "会打断逐字输入，所以此处不过闸。",
+    evidence: ["<AddSiteDialog", "onHrefChange={(v) => setCreateForm((f) => ({ ...f, href: v }))}"],
+  },
+  {
     file: "src/components/search/spotlight-modal.tsx",
     kind: "location",
     expr: "url",
@@ -366,6 +396,15 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
       "const href = safeHref(fav.href, '')",
       "我的收藏（P1 #8）：只出现用户自己的收藏，命中查询词的排在站点之前；已在站点结果里的不重复出现",
     ],
+  },
+  {
+    file: "src/app/pub/[slug]/page.tsx",
+    kind: "href",
+    expr: "href",
+    why:
+      "公开导航页的站点行 href 是 `const href = safeHref(item.url)` 的输出；不安全地址落到 '#' 不导航，" +
+      "且条目已在中枢读端按 active 过滤（broken/停用/已删不进公开页），所以 href 位置不存在未过闸的外部数据。",
+    evidence: ["const href = safeHref(item.url)"],
   },
   // ---- 本地写死的站内路径常量（功能图鉴与影院横幅，取值全是站内路径）----
   {

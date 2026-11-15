@@ -1,20 +1,10 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   verifyWebhookSignature,
-  parseBilibiliApiResponse,
-  parseYouTubeRssFeed,
-  parseGitHubTrendingFeed,
   MultiSourceConnector,
 } from '../src/lib/video-multi-source-connector'
 import { signHmacSha256 } from '../src/lib/webhook-signature'
 import {
-  computeFrameMse,
-  detectEditorEnvironment,
-  extractCodeTextFromImageData,
-  CodeExtractorController,
-} from '../src/lib/video-wasm-ocr-extractor'
-import {
-  translateTechnicalText,
   generateBilingualCues,
   getActiveBilingualCue,
   SyntheticTTSController,
@@ -28,16 +18,7 @@ import {
   SandboxRuntime,
 } from '../src/lib/video-code-sandbox-runtime'
 import type { OpaqueSession } from '../src/lib/video-opaque-sandbox'
-import {
-  StudyRoomCRDTState,
-} from '../src/lib/video-study-room-crdt'
 import type { NavigationData } from '../src/types/navigation'
-
-// mock 卫生守卫要求的兜底：上面用例已用 try/finally 清理，但 isolate:false 下
-// 用例被超时中断时 finally 不一定跑得掉，afterAll 是第二道保险。
-afterAll(() => {
-  delete process.env.NAVHUB_VIDEO_SYNTHETIC_METADATA
-})
 
 describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
   describe('Proposal [1]: Multi-Source Connector & Webhook Ingestion', () => {
@@ -59,50 +40,10 @@ describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
       expect(verifyWebhookSignature(payload + ' ', validSig, secret)).toBe(false)
     })
 
-    it('parses Bilibili API view responses into normalized candidates', () => {
-      const mockBili = {
-        data: {
-          result: [
-            {
-              bvid: 'BV1abc123',
-              title: '<em class="keyword">DeepSeek</em> 企业私有微调实战',
-              description: '详细讲解 LLM 与分布式微调。',
-              author: '架构导师',
-              duration: '32:15',
-              stat: { view: 150000, like: 12000, coin: 8000, favorite: 20000 },
-            },
-          ],
-        },
-      }
-
-      const candidates = parseBilibiliApiResponse(mockBili)
-      expect(candidates).toHaveLength(1)
-      expect(candidates[0].externalId).toBe('BV1abc123')
-      expect(candidates[0].title).toBe('DeepSeek 企业私有微调实战')
-      expect(candidates[0].durationSec).toBe(32 * 60 + 15)
-      expect(candidates[0].stats?.coins).toBe(8000)
-    })
-
-    it('parses YouTube RSS feeds with XML entry tags', () => {
-      const mockXml = `<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015">
-  <entry>
-    <yt:videoId>yt_video_001</yt:videoId>
-    <title>React 19 Server Actions Architecture</title>
-    <name>Kent Master</name>
-    <media:description>In-depth React 19 deep dive.</media:description>
-  </entry>
-</feed>`
-
-      const candidates = parseYouTubeRssFeed(mockXml)
-      expect(candidates).toHaveLength(1)
-      expect(candidates[0].externalId).toBe('yt_video_001')
-      expect(candidates[0].title).toBe('React 19 Server Actions Architecture')
-      expect(candidates[0].author).toBe('Kent Master')
-    })
-
     it('processes webhook through MultiSourceConnector and evaluates quality', () => {
       const connector = new MultiSourceConnector('my_secret')
+      // 零数据载荷现在被入库严标准守卫拒收（2026-11-13）：AI 审核过了也不够，
+      // webhook 不是人工/置顶/精选，没有真实互动数据就不许入库、不给默认值。
       const payload = {
         event: 'video_published' as const,
         timestamp: Date.now(),
@@ -120,97 +61,42 @@ describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
 
       // 签名现在是必填项（老实现 `if (signature && !verify(...))` 允许不带签名直接过）
       const rawBody = JSON.stringify(payload)
-      const res = connector.processWebhook(payload, signHmacSha256(rawBody, 'my_secret'), rawBody)
+      const noStats = connector.processWebhook(payload, signHmacSha256(rawBody, 'my_secret'), rawBody)
+      expect(noStats.ok).toBe(false)
+      expect(noStats.message).toContain('守卫拒收')
+      expect(noStats.message).toContain('无真实互动数据')
+      expect(noStats.subItem).toBeUndefined()
+
+      // 带真实互动数据（6 万播放）才放行，且 stats 随条目入库
+      const withStats = {
+        ...payload,
+        data: { ...payload.data, stats: { views: 60000, likes: 1200, danmaku: 300 } },
+      }
+      const withStatsRaw = JSON.stringify(withStats)
+      const res = connector.processWebhook(withStats, signHmacSha256(withStatsRaw, 'my_secret'), withStatsRaw)
       expect(res.ok).toBe(true)
       expect(res.subItem).toBeDefined()
+      expect(res.subItem?.videoConfig?.stats).toEqual({ views: 60000, likes: 1200, danmaku: 300 })
       expect(res.subItem?.videoConfig?.qualityScore).toBeGreaterThanOrEqual(70)
       // 合成章节默认关闭：模板内容不得冒充视频原文
       expect(res.subItem?.videoConfig?.chapters).toBeUndefined()
       expect(res.subItem?.videoConfig?.synthetic).toBeUndefined()
-
-      // 显式开启后才生成，且必须打 synthetic 标记供 UI 标注
-      process.env.NAVHUB_VIDEO_SYNTHETIC_METADATA = '1'
-      try {
-        const withSynthetic = connector.processWebhook(payload, signHmacSha256(rawBody, 'my_secret'), rawBody)
-        expect(withSynthetic.subItem?.videoConfig?.chapters?.length).toBe(4)
-        expect(withSynthetic.subItem?.videoConfig?.synthetic).toBe(true)
-      } finally {
-        delete process.env.NAVHUB_VIDEO_SYNTHETIC_METADATA
-      }
     })
   })
 
-  describe('Proposal [2]: Wasm/Canvas Video Frame Capture & Visual Code OCR', () => {
-    it('computes MSE difference between two frames to detect scene transitions', () => {
-      const imgA = {
-        width: 10,
-        height: 10,
-        data: new Uint8ClampedArray(10 * 10 * 4).fill(20),
-      } as ImageData
-
-      const imgB = {
-        width: 10,
-        height: 10,
-        data: new Uint8ClampedArray(10 * 10 * 4).fill(220),
-      } as ImageData
-
-      const diff = computeFrameMse(imgA, imgB)
-      expect(diff.mse).toBeGreaterThan(120)
-      expect(diff.isKeyframeTransition).toBe(true)
-    })
-
-    it('detects dark vs light IDE editor environments accurately', () => {
-      const darkImg = {
-        width: 20,
-        height: 20,
-        data: new Uint8ClampedArray(20 * 20 * 4).fill(25),
-      } as ImageData
-
-      const env = detectEditorEnvironment(darkImg)
-      expect(env.isCodeEditor).toBe(true)
-      expect(env.theme).toBe('dark')
-    })
-
-    it('extracts structured monospace code lines, indentation, and detected language', () => {
-      const mockImg = {
-        width: 100,
-        height: 100,
-        data: new Uint8ClampedArray(100 * 100 * 4).fill(30),
-      } as ImageData
-
-      const codeSample = `import { useState } from 'react'\n\nexport function Counter() {\n  const [count, setCount] = useState(0)\n  return count\n}`
-      const result = extractCodeTextFromImageData(mockImg, codeSample)
-
-      expect(result.detectedLanguage).toBe('typescript')
-      expect(result.lines).toHaveLength(6)
-      expect(result.lines[3].indentationSpaces).toBe(2)
-      expect(result.confidenceScore).toBeGreaterThan(80)
-    })
-  })
-
-  describe('Proposal [3]: AI Bilingual Subtitles & Synthetic Voiceover TTS', () => {
-    it('translates hardcore computer science terminology into English, Japanese, and German', () => {
-      const zhText = '欢迎来到思维链与分布式推理实战指南'
-      const en = translateTechnicalText(zhText, 'en')
-      const ja = translateTechnicalText(zhText, 'ja')
-      const de = translateTechnicalText(zhText, 'de')
-
-      expect(en).toContain('Chain-of-Thought (CoT)')
-      expect(en).toContain('Distributed Inference')
-      expect(ja).toContain('思考の連鎖')
-      expect(de).toContain('Verteilte Inferenz')
-    })
-
-    it('generates synchronized bilingual cues and tracks active cue by playhead time', () => {
+    describe('Proposal [3]: Subtitle Cues & Synthetic Voiceover TTS', () => {
+    it('does not fake-translate: cues carry only the original text', () => {
       const transcripts = [
         { id: 't1', startSec: 0, endSec: 15, text: '架构设计是分布式系统的核心。' },
         { id: 't2', startSec: 15, endSec: 35, text: '我们需要通过零拷贝减少内存开销。' },
       ]
 
-      const cues = generateBilingualCues(transcripts, 'en')
+      const cues = generateBilingualCues(transcripts)
       expect(cues).toHaveLength(2)
-      expect(cues[0].secondaryText).toContain('Architecture')
-      expect(cues[1].secondaryText).toContain('Zero-Copy')
+      // 词典假翻译已删：双轨都只放原文，不冒充译文。
+      expect(cues[0].secondaryText).toBe('架构设计是分布式系统的核心。')
+      expect(cues[1].secondaryText).toBe('我们需要通过零拷贝减少内存开销。')
+      expect(cues[0].secondaryText).toBe(cues[0].primaryText)
 
       const activeCue = getActiveBilingualCue(cues, 20)
       expect(activeCue?.id).toBe('t2')
@@ -228,12 +114,44 @@ describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
         primaryText: '欢迎学习高并发架构',
         secondaryText: 'Welcome to High Concurrency Architecture',
       }
+      // 无 speechSynthesis 时不得谎报成功、不得置 isSpeaking（旧断言 success:true
+      // 是假成功：speakCue 无条件返回 true，从未真正出声）。
       const res = tts.speakCue(cue, false)
-      expect(res.success).toBe(true)
-      expect(tts.getSpeakingStatus().isSpeaking).toBe(true)
-
-      tts.stop()
+      expect(res.success).toBe(false)
       expect(tts.getSpeakingStatus().isSpeaking).toBe(false)
+
+      // 有 speechSynthesis 时才真正出声：桩一个最小实现走正向路径。
+      const speakMock = vi.fn()
+      const cancelMock = vi.fn()
+      class FakeUtterance {
+        text: string
+        rate = 1
+        pitch = 1
+        volume = 1
+        onend: (() => void) | null = null
+        constructor(text: string) {
+          this.text = text
+        }
+      }
+      const prevWindow = (globalThis as any).window
+      const prevUtterance = (globalThis as any).SpeechSynthesisUtterance
+      ;(globalThis as any).window = { speechSynthesis: { speak: speakMock, cancel: cancelMock } }
+      ;(globalThis as any).SpeechSynthesisUtterance = FakeUtterance
+      try {
+        const res2 = tts.speakCue(cue, false)
+        expect(res2.success).toBe(true)
+        expect(tts.getSpeakingStatus().isSpeaking).toBe(true)
+        expect(cancelMock).toHaveBeenCalled()
+        expect(speakMock).toHaveBeenCalledTimes(1)
+
+        tts.stop()
+        expect(tts.getSpeakingStatus().isSpeaking).toBe(false)
+      } finally {
+        if (prevWindow === undefined) delete (globalThis as any).window
+        else (globalThis as any).window = prevWindow
+        if (prevUtterance === undefined) delete (globalThis as any).SpeechSynthesisUtterance
+        else (globalThis as any).SpeechSynthesisUtterance = prevUtterance
+      }
     })
   })
 
@@ -347,41 +265,4 @@ describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
     })
   })
 
-  describe('Proposal [6]: WebRTC / CRDT Collaborative Study Room', () => {
-    it('maintains synchronized playback state with sequence order', () => {
-      const room = new StudyRoomCRDTState('room_math', 'peer_alice', true)
-      const updated = room.updatePlayback({ currentTimeSec: 120, isPlaying: true })
-
-      expect(updated.currentTimeSec).toBe(120)
-      expect(updated.sequence).toBe(1)
-      expect(updated.isPlaying).toBe(true)
-      expect(room.getCompensatedPlaybackTime()).toBeGreaterThanOrEqual(120)
-    })
-
-    it('records collaborative whiteboard strokes and resolves state snapshots', () => {
-      const room = new StudyRoomCRDTState('room_cs', 'peer_bob')
-      const stroke = {
-        id: 's_001',
-        authorId: 'peer_bob',
-        color: '#38bdf8',
-        width: 3,
-        points: [{ x: 10, y: 10 }, { x: 20, y: 20 }],
-        createdAt: Date.now(),
-      }
-
-      room.addStroke(stroke)
-      expect(room.getStrokes()).toHaveLength(1)
-      expect(room.getStrokes()[0].id).toBe('s_001')
-
-      // Snapshot serialization
-      const json = room.serializeSnapshot()
-      expect(json).toContain('peer_bob')
-      expect(json).toContain('s_001')
-
-      const room2 = new StudyRoomCRDTState('room_cs', 'peer_charlie')
-      room2.mergeRemoteSnapshot(json)
-      expect(room2.getStrokes()).toHaveLength(1)
-      expect(room2.getStrokes()[0].authorId).toBe('peer_bob')
-    })
-  })
 })

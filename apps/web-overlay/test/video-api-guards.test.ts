@@ -67,10 +67,18 @@ describe('Cron 端点：fail-closed 且不接受 ?secret=', () => {
   it('health-sweep 走统一写入入口，不再整包覆盖', () => {
     // 历史实现直接 commitFile 整包覆盖：巡检跑几十秒，期间采集写入的新条目会被抹掉。
     // 现在必须走 mutateVideoLibrary（带 ifVersion + 冲突重放），且只回写健康字段。
-    const code = stripComments(src('app/api/cron/video-health-sweep/route.ts'))
-    expect(code).not.toMatch(/\bcommitFile\s*\(/)
-    expect(code).toMatch(/mutateVideoLibrary\s*(?:<[^>]*>)?\s*\(/)
-    expect(code).toMatch(/applyPatches\s*\(/)
+    // 执行层在 2026-11-13 从路由抽到 lib/video-health-sweep-service.ts（三入口共用），
+    // 断言跟实现一起搬家，意图不变；路由只剩鉴权 + 参数解析 + 委托。
+    const service = stripComments(src('lib/video-health-sweep-service.ts'))
+    expect(service).toMatch(/mutateVideoLibrary\s*(?:<[^>]*>)?\s*\(/)
+    expect(service).toMatch(/applyPatches\s*\(/)
+    expect(service).toMatch(/persistSweepReport\s*\(/)
+    expect(service).toMatch(/scheduleVideoMetricsPersist\s*\(/)
+    expect(service).not.toMatch(/\bcommitFile\s*\(/)
+    const route = stripComments(src('app/api/cron/video-health-sweep/route.ts'))
+    expect(route).toMatch(/runHealthSweepPage\s*\(/)
+    expect(route).toMatch(/runHealthSweepToCompletion\s*\(/)
+    expect(route).not.toMatch(/\bcommitFile\s*\(/)
   })
 })
 

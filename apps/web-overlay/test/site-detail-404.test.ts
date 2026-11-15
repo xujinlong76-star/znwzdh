@@ -141,7 +141,10 @@ describe("站点详情页内链闭环（F2）", () => {
 
   it("岛内把同分类站点渲染成站内 /site 链接，分类入口按 canLinkCategory 门控", () => {
     const src = overlayFile("src/components/site-detail-view.tsx");
-    expect(src).toContain("initialRelated.length > 0");
+    // 相关区候选 = 服务端 initialRelated ∪ 客户端共享标签 /similar（Batch 4 第 3 项）：
+    // initialRelated 非空时 relatedCandidates 必然非空，渲染条件等价，只是多了同标签候选。
+    expect(src).toContain("relatedCandidates.length > 0");
+    expect(src).toContain("mergeCompareCandidates(id, initialRelated, similarByTags)");
     expect(src).toContain("href={`/site/${encodeURIComponent(s.id)}`}");
     expect(src).toContain("category && canLinkCategory");
     expect(src).toContain("href={`/category/${encodeURIComponent(category.slug)}`}");

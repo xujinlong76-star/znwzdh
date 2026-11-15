@@ -26,7 +26,7 @@
  *     逐文件写明理由，冻结不许再增。
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -135,6 +135,14 @@ const STATE_EXEMPT: Record<string, { loading?: string; error?: string }> = {
   "collections/[slug]": {
     loading:
       "软 404 回归锁 collection-detail.test.ts（合集索引与详情两条都不得有骨架屏边界，根因原文「骨架屏边界会先流式刷 200，notFound 就改不了状态码」）：不接 loading，保住 /collections/:slug 不存在时的 404 状态码",
+  },
+  "pub/[slug]": {
+    loading:
+      "公开导航页与合集详情同一条软 404 纪律：generateMetadata 里对不存在/已下线的公开页抛 notFound()，骨架屏边界会先流式刷 200，notFound 就改不了状态码——不接 loading，保住 /pub/:slug 下线时的 404 状态码",
+  },
+  "pub/compare/[slug]": {
+    loading:
+      "分享的对照表公开页与 /pub 同一条软 404 纪律：generateMetadata 里对不存在/已下线的分享抛 notFound()，骨架屏边界会先流式刷 200，notFound 就改不了状态码——不接 loading，保住 /pub/compare/:slug 下线时的 404 状态码",
   },
   "site/[id]": {
     loading:

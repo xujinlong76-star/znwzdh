@@ -8,6 +8,8 @@ import {
   DIY_SNAPSHOTS_KEY,
   DIY_SNAPSHOT_MAX_COUNT,
   DIY_SNAPSHOT_SHARE_BACKUP_PREFIX,
+  DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_KEEP,
+  DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_PREFIX,
   deleteDiySnapshot,
   getDiySnapshot,
   listDiySnapshots,
@@ -124,6 +126,31 @@ describe('diy-snapshots', () => {
   it('手动快照列表损坏时返回空列表，不抛错', () => {
     const storage = makeStorage({ [DIY_SNAPSHOTS_KEY]: '{broken' })
     expect(listDiySnapshots(storage)).toEqual([])
+  })
+
+  it('切换前自动备份单独记账：连续 5 次切换后自动备份 ≤2 份，手动版本 1 份仍在', () => {
+    const storage = makeStorage()
+    const manual = saveDiySnapshot(storage, VALID_CONFIG, '手动版本')!
+    for (let i = 0; i < 5; i++) {
+      saveDiySnapshot(storage, VALID_CONFIG, DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_PREFIX)
+    }
+    const list = listDiySnapshots(storage)
+    const auto = list.filter((s) => s.name.startsWith(DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_PREFIX))
+    expect(auto.length).toBeLessThanOrEqual(DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_KEEP)
+    expect(auto).toHaveLength(DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_KEEP)
+    expect(list.some((s) => s.id === manual.id)).toBe(true)
+    expect(list).toHaveLength(DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_KEEP + 1)
+  })
+
+  it('手动保存不触发自动备份清理：自动备份已有 2 份时再存手动版本，自动备份不动', () => {
+    const storage = makeStorage()
+    for (let i = 0; i < 2; i++) {
+      saveDiySnapshot(storage, VALID_CONFIG, DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_PREFIX)
+    }
+    saveDiySnapshot(storage, VALID_CONFIG, '手动版本')
+    const list = listDiySnapshots(storage)
+    expect(list.filter((s) => s.name.startsWith(DIY_SNAPSHOT_SWITCH_AUTO_BACKUP_PREFIX))).toHaveLength(2)
+    expect(list).toHaveLength(3)
   })
 
   it('STORAGE_KEY 前缀与 home-diy-storage 的分享备份键一致', () => {

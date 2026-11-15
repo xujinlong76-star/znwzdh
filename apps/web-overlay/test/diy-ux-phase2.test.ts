@@ -51,12 +51,19 @@ describe("工具栏 Esc 与快捷键归属", () => {
   });
 
   it("全局单字符快捷键不在输入/下拉/自定义输入框/组字时触发", () => {
+    // 守卫已抽到 src/lib/keyboard-guards.ts（isTypingTarget / isEventTargetTyping），
+    // 对话框只调用它：旧断言的 tagName === 'SELECT' / getAttribute('role') 写法
+    // 已随抽取改写，断言跟随新位置与新写法。
+    const guards = overlayFile("src/lib/keyboard-guards.ts");
+    expect(guards).toContain("tag === 'SELECT'");
+    expect(guards).toContain("role === 'textbox'");
+    expect(guards).toContain("role === 'combobox'");
+    expect(guards).toContain("role === 'searchbox'");
+    expect(guards).toContain("document.activeElement");
     const src = overlayFile("src/components/keyboard-shortcuts-dialog.tsx");
-    expect(src).toContain("tagName === 'SELECT'");
-    expect(src).toContain("getAttribute('role') === 'textbox'");
-    expect(src).toContain("getAttribute('role') === 'combobox'");
+    expect(src).toContain("from '@/lib/keyboard-guards'");
+    expect(src).toContain("isEventTargetTyping(e)");
     expect(src).toContain("e.isComposing");
-    expect(src).toContain("document.activeElement");
   });
 });
 
@@ -109,10 +116,12 @@ describe("看板删除：确认 + 历史 + 提示", () => {
     expect(src).toContain("return { id: deleted.id, name: deleted.name, widgetCount:");
   });
 
-  it("画布删看板先确认、删完报撤销退路，按钮 44px 且键盘聚焦可见（P1 #10 2026-11-13 升级）", () => {
+  it("画布删看板不确认、删完报撤销退路，按钮 44px 且键盘聚焦可见（第 1 批第 4 项：确认改执行 + 撤销）", () => {
     const src = overlayFile("src/components/modular/modular-canvas.tsx");
     expect(src).toContain("handleDeleteBoard");
-    expect(src).toContain("window.confirm(");
+    // 删板已有整板快照撤销（deleteBoard 删前压栈），确认是重复设防——
+    // 第 1 批第 4 项去掉确认，改为执行 + Ctrl/Cmd+Z 退路
+    expect(src).not.toContain("window.confirm(");
     expect(src).toContain("按 Ctrl/Cmd+Z 可撤销恢复");
     // P1 #10：24px（min-h-6 min-w-6）升级为 44px（min-h-11 min-w-11）
     expect(src).toContain("min-h-11 min-w-11");

@@ -78,7 +78,7 @@ describe('热榜站内搜入口（升级第 7 条）', () => {
   const hotRow = page.slice(page.indexOf('function HotRow'), page.indexOf('function SourceColumn'))
 
   it('HotRow 每行都有站内搜入口：q 用全标题编码，不截断', () => {
-    expect(page).toContain("import { ArrowRight, ExternalLink, Flame, Newspaper, Search, Sparkles } from 'lucide-react'")
+    expect(page).toContain("import { ArrowRight, ExternalLink, Flame, MessageCircleQuestion, Newspaper, Search, Sparkles } from 'lucide-react'")
     expect(hotRow).toContain('href={`/search?q=${encodeURIComponent(item.title)}`}')
     expect(hotRow).toContain('aria-label={`站内搜「${item.title}」`}')
     // q 拼的是 item.title 本身，不是对截断后的副本编码
@@ -136,5 +136,36 @@ describe('首页简报条守卫', () => {
     const home = read('src/app/page.tsx')
     expect(home.indexOf('<HomeBriefStrip />')).toBeGreaterThan(-1)
     expect(home.indexOf('<HomeBriefStrip />')).toBeLessThan(home.indexOf('<NavigationContent'))
+  })
+})
+
+describe('待读岛守卫', () => {
+  it('/brief 在今日重温之后挂待读岛，SSR 壳本身不带用户数据', () => {
+    const page = read('src/app/brief/page.tsx')
+    expect(page).toContain('<BriefResurface />')
+    expect(page).toContain('<BriefTriage />')
+    expect(page.indexOf('<BriefTriage />')).toBeGreaterThan(page.indexOf('<BriefResurface />'))
+    const island = read('src/app/brief/brief-triage.tsx')
+    expect(island).toContain("'use client'")
+    // 无内容时安静消失，不拿空盒子占版面：箱空、或箱里无 24h 内到期都消失
+    expect(island).toContain('if (!favorites.ready || !settings.enabled || inboxCount === 0 || picks.length === 0) return null')
+    // 岛只读本机收藏与分流偏好，不读服务端简报数据
+    expect(island).not.toContain('@/lib/server/brief')
+    // 文案方向写清：快过期的新收 vs 好久没翻的旧藏
+    expect(island).toContain('快过期的新收')
+    expect(island).toContain('好久没翻的旧藏')
+  })
+
+  it('待读行共用组件：标题即重开链接，续期/值得留/移出带无障碍标签', () => {
+    const row = read('src/components/triage-inbox-row.tsx')
+    expect(row).toContain('onReopen(item.siteId)')
+    expect(row).toContain('aria-label={`续期')
+    expect(row).toContain('aria-label={`把')
+    expect(row).toContain('aria-label={`移出')
+    expect(row).toContain('safeHref(item.href)')
+    expect(row).toContain('min-h-11')
+    // 快到期（剩余 ≤ 24h）徽标标红，与普通待读行视觉区分
+    expect(row).toContain('msLeft <= DAY_MS')
+    expect(row).toContain('bg-rose-500/10')
   })
 })

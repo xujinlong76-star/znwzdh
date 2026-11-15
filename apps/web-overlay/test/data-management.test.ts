@@ -4,11 +4,11 @@
  * 锁住三件事：
  *   1. 灌入判定是纯函数、可枚举：0 = 空、(0, 基线) = 低于基线、≥ 基线 = 已灌入。
  *   2. 基线数字不是拍脑袋的：每次跑测试都重数一遍仓库事实源——
- *      navigation.json（335 站 / 48 二级 / 14 一级）与 videos.json（6007 条）。
+ *      navigation.json（335 站 / 48 二级 / 14 一级）与 videos.json（2265 条）。
  *      仓库扩容时这里会先红，提醒人同步改基线，而不是页面悄悄拿旧数比较。
  *      2026-11-15 T5 元宝收录：新增「AI 搜索」二级与元宝搜索一站。
  *      2026-11-15 卸载合集：补 github.com/trending 一站，基线 334→335。
- *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 327/6007 的
+ *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 335/2265 的
  *      字面量（基线只能来自 lib 常量），两个计数端点与三个管理入口必须在位，
  *      冷备导出必须走带 token 的 hubGet（普通 <a href> 带不上 admin token）。
  */
@@ -57,7 +57,7 @@ function countWhere(node: unknown, pred: (obj: Record<string, unknown>) => boole
 const PAGE = overlaySource('src/app/admin/data/page.tsx')
 
 /**
- * 剥掉注释后的源码：页头注释里为了解释基线出处会真的写出 322/6007，
+ * 剥掉注释后的源码：页头注释里为了解释基线出处会真的写出 322/2265，
  * 「页面不许出现字面量」的断言必须对它用，否则自己把自己判红
  * （restore-page-guard 同款教训，见 TESTING-CONVENTIONS 第 4 条）。
  */
@@ -82,7 +82,7 @@ describe('灌入判定 seedStatus', () => {
   it('达到与超过基线都是已灌入（管理员自己加站不报假警）', () => {
     expect(seedStatus(298, 298)).toBe('seeded')
     expect(seedStatus(500, 298)).toBe('seeded')
-    expect(seedStatus(6007, 6007)).toBe('seeded')
+    expect(seedStatus(2265, 2265)).toBe('seeded')
   })
 })
 
@@ -102,14 +102,25 @@ describe('基线数字钉住仓库事实源', () => {
     expect(BASELINE_SITES).toBe(335)
   })
 
-  it('视频基线 = videos.json 实测 6007 条', () => {
-    const videos = overlayJson('src/navsphere/content/videos.json')
-    const items = countWhere(
-      videos,
-      (o) => typeof o.bvid === 'string' || (typeof o.durationSec === 'number' && typeof o.title === 'string'),
+  it('视频基线 = videos.json 实测 2265 条', () => {
+    const videos = overlayJson('src/navsphere/content/videos.json') as {
+      navigationItems: Array<{
+        items?: unknown[]
+        subCategories?: Array<{ items?: unknown[] }>
+      }>
+    }
+    // 与生产口径 storage.ts countVideoDocItems 一致：导航分类 items +
+    // 子分类 items。旧的 countWhere（bvid / durationSec+title）会漏数
+    // YouTube 条目（无 bvid），又会误数 replacementHistory 里的历史记录。
+    const items = videos.navigationItems.reduce(
+      (sum, c) =>
+        sum +
+        (c.items?.length || 0) +
+        (c.subCategories || []).reduce((s, sub) => s + (sub.items?.length || 0), 0),
+      0,
     )
-    expect(items).toBe(6007)
-    expect(BASELINE_VIDEOS).toBe(6007)
+    expect(items).toBe(2265)
+    expect(BASELINE_VIDEOS).toBe(2265)
   })
 })
 
@@ -123,10 +134,10 @@ describe('数据管理页：结构与端点契约', () => {
   it('两个计数都走 live 端点（总览 + 视频），不是写死数', () => {
     expect(PAGE).toContain("hubGet<DashboardOverview>('/api/admin/dashboard/overview')")
     expect(PAGE).toContain("hubGet<VideosSummary>('/api/videos?limit=1')")
-    // 基线只能来自 lib 常量：页面代码里出现 327/6007 字面量就是在展示假数
+    // 基线只能来自 lib 常量：页面代码里出现 335/2265 字面量就是在展示假数
     // （注释不算：页头注释要写明出处，见 CODE_ONLY 的说明）
-    expect(CODE_ONLY).not.toContain('327')
-    expect(CODE_ONLY).not.toContain('6007')
+    expect(CODE_ONLY).not.toContain('335')
+    expect(CODE_ONLY).not.toContain('2265')
     expect(PAGE).toContain('BASELINE_SITES')
     expect(PAGE).toContain('BASELINE_VIDEOS')
     expect(PAGE).toContain('seedStatus(')
@@ -171,7 +182,7 @@ describe('基线导入标记解析 parseBaselineMarker', () => {
     version: 1,
     at: '2026-11-11T02:00:00.000Z',
     navigation: { status: 'imported', count: 298, fileCount: 298, categories: 60 },
-    videos: { status: 'skipped_existing', count: 6007, fileCount: 6007 },
+    videos: { status: 'skipped_existing', count: 2265, fileCount: 2265 },
   }
 
   it('标记本体（中枢当前实际返回）解析为 present，字段逐项对齐 baseline.ts 口径', () => {
@@ -184,7 +195,7 @@ describe('基线导入标记解析 parseBaselineMarker', () => {
     expect(parsed.marker.navigation.count).toBe(298)
     expect(parsed.marker.navigation.categories).toBe(60)
     expect(parsed.marker.videos.status).toBe('skipped_existing')
-    expect(parsed.marker.videos.fileCount).toBe(6007)
+    expect(parsed.marker.videos.fileCount).toBe(2265)
     expect(parsed.marker.videos.categories).toBeNull()
   })
 

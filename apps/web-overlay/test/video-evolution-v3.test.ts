@@ -19,10 +19,6 @@ import {
   getTerminalStateAtTime,
 } from '@/lib/video-terminal-recorder'
 import {
-  isStorageAvailable,
-  calculatePrefetchQueue,
-} from '@/lib/video-cache-manager'
-import {
   createQoETracker,
 } from '@/lib/video-qoe-telemetry'
 import { GET as getOgVideo } from '@/app/api/og/video/route'
@@ -168,39 +164,6 @@ describe('3. Asciinema CLI Session Replay & ANSI Tokenizer', () => {
     expect(synthetic.header.title).toBe('Helm Deploy')
     expect(synthetic.events.length).toBeGreaterThan(5)
     expect(synthetic.events.some(e => e.data.includes('devops@cluster'))).toBe(true)
-  })
-})
-
-describe('4. Offline-First Video Cache & Speculative Prefetch Scheduler', () => {
-  it('checks storage availability safely', () => {
-    const available = isStorageAvailable()
-    expect(typeof available).toBe('boolean')
-  })
-
-  it('computes prefetch queue with high priority when playback is near completion', () => {
-    const mockVideos: NavigationSubItem[] = [
-      { id: 'v1', title: 'Part 1', href: '/v1', enabled: true },
-      { id: 'v2', title: 'Part 2', href: '/v2', enabled: true },
-      { id: 'v3', title: 'Part 3', href: '/v3', enabled: true },
-    ]
-
-    // At 30% progress, next video is normal priority
-    const queueAt30 = calculatePrefetchQueue({
-      currentVideoId: 'v1',
-      allVideos: mockVideos,
-      watchProgressPercent: 30,
-    })
-    expect(queueAt30).toHaveLength(2)
-    expect(queueAt30[0].videoId).toBe('v2')
-    expect(queueAt30[0].priority).toBe('normal')
-
-    // At 85% progress, next video escalates to high priority
-    const queueAt85 = calculatePrefetchQueue({
-      currentVideoId: 'v1',
-      allVideos: mockVideos,
-      watchProgressPercent: 85,
-    })
-    expect(queueAt85[0].priority).toBe('high')
   })
 })
 

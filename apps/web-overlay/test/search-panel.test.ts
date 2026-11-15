@@ -66,10 +66,13 @@ describe("planSearchPanel：真零结果也必须有出口", () => {
   it("标题带上查询词，并给出清空/浏览出口（不依赖服务端 suggestions）", () => {
     expect(plan.mode).toBe("no-results");
     expect(plan.title).toBe("未找到与 “react vue” 相关的导航");
-    // A11：两个真出口排最前（AI 找站、投稿收录），清空/浏览是次要出口
+    // A11：两个真出口排最前（AI 找站、投稿收录），容错两出口（存为待找、
+    // 新建收藏）排在其后、清空/浏览之前
     expect(plan.actions.map((a) => a.kind)).toEqual([
       "ai-find",
       "submit-site",
+      "save-wanted",
+      "save-favorite",
       "clear",
       "browse-tags",
       "browse-hot",

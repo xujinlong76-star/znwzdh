@@ -52,7 +52,9 @@ describe('卡片标题站内详情内链', () => {
   })
 
   it('外链覆盖层有可读名称，且禁止原生链接拖拽（不劫持 DIY 拖拽）', () => {
-    expect(code).toContain('aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}')
+    // 多选态 label 带「按空格切换选中」（580b963 键盘批量整理有意加的读屏提示：
+    // 多选态 Space/Enter 只切换选中、永不 Peek/导航，见 navigation-card handleKeyDown）
+    expect(code).toContain('aria-label={selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`}')
     // 4 处：第 79 行 P1 #9 新增的缩略图 <img draggable={false}> + 原有 3 处外链覆盖层
     expect(code.match(/draggable=\{false\}/g)?.length).toBe(4)
   })

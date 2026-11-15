@@ -7,13 +7,14 @@ import { describe, expect, it } from 'vitest'
  * M6 移动端底部导航的静态守卫。
  *
  * 背景：窄屏下用户中心入口只剩页脚文字链，不可达。mobile-nav.tsx 补了一条
- * 常驻底栏，footer 的 `pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8`
- * 就是为它预留的坑。这里锁死四件事，防止后续改动把这条契约拆掉：
+ * 常驻底栏，footer 的三段底垫就是为底栏预留的坑：
+ *   <640 留 5.5rem（本栏），640–1024 留 4.5rem（HalfScreenDock），≥1024 只留 pb-8。
+ * 这里锁死四件事，防止后续改动把这条契约拆掉：
  *   1. 组件是客户端组件且默认导出，五个入口路径齐全；
  *   2. 高亮与可访问性接线（usePathname / aria-current / aria-label）；
  *   3. 根布局真的挂了它（只建组件不挂载 = 没做）；
  *   4. 断点与 footer 预留对齐：组件不得自带会让 5.5rem 空隙失效的负 margin，
- *      且可见断点必须与 footer 的 sm 切换一致（sm 以上 footer 只留 pb-8）。
+ *      且可见断点必须与 footer 的 <640 段一致（640 以上无 MobileNav 预留）。
  */
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -99,10 +100,15 @@ describe('根布局挂载', () => {
 })
 
 describe('与 footer 预留的契约', () => {
-  it('footer 仍保留 5.5rem 预留且 sm 以上收回（pb-8）', () => {
+  it('footer 三段底垫：<640 留 5.5rem（MobileNav），640–1024 留 4.5rem（HalfScreenDock），≥1024 只留 pb-8', () => {
     const footer = read(FOOTER)
     expect(footer).toContain('pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]')
-    expect(footer).toContain('sm:pb-8')
+    expect(footer).toContain(
+      'min-[640px]:max-[1024px]:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]',
+    )
+    expect(footer).toContain('lg:pb-8')
+    // 旧 sm:pb-8 会在 640–1024 区间把预留收回成 32px，下沉栏（56px）会压住页脚链接
+    expect(footer).not.toContain('sm:pb-8')
   });
 
   it('组件不得自带会让 footer 空隙失效的负 margin', () => {
@@ -113,9 +119,10 @@ describe('与 footer 预留的契约', () => {
     expect(src).not.toContain('marginBottom')
   });
 
-  it('可见断点与 footer 的 sm 切换一致（sm 以上无预留，底栏也不出现）', () => {
+  it('可见断点与 footer 的 <640 段一致（640 以上无 MobileNav 预留，底栏也不出现）', () => {
     const src = read(COMPONENT)
-    // footer 只在 sm 以下留 5.5rem；底栏若宽到 md 会压住 640–768px 的 footer 内容
+    // footer 只在 <640 留 5.5rem；底栏若宽到 md 会压住 640–768px 的 footer 内容
+    // （该区间 footer 只留给 HalfScreenDock 的 4.5rem，MobileNav 不能再占位）
     expect(src).toContain('sm:hidden')
     expect(src).not.toContain('md:hidden')
   });

@@ -366,21 +366,24 @@ export const EXAM_REMINDER_TIER_LABEL: Record<ExamReminderTier, string> = {
  *  - gwy.cpta.com.cn 根路径返回 405，不作站内可点击主入口。
  *
  * 门控（北京时间；15:00 截止用时刻算，不按自然日）：
+ *  - 11-15–11-21 倒计时（countdown，距打印开启 X 天）；
  *  - 11-22 预热（warmup，开放前一天）；
  *  - 11-23–11-26 已开放（open）；
  *  - 11-27–11-29 15:00 末班（last-call）；
- *  - 11-22 之前与 11-29 15:00 之后一律不显示（null）。
+ *  - 11-15 之前与 11-29 15:00 之后一律不显示（null）。
  * 文案取自已核实的提醒准备稿 A 版（条带短句 / 卡片全句）。
  */
 export const GUOKAO_ADMISSION_URL = 'http://bm.scs.gov.cn/kl2027'
 
-export type GuokaoAdmissionPhase = 'warmup' | 'open' | 'last-call'
+export type GuokaoAdmissionPhase = 'countdown' | 'warmup' | 'open' | 'last-call'
 
 export function guokaoAdmissionPhase(nowMs: number = Date.now()): GuokaoAdmissionPhase | null {
+  const countdownStart = shanghaiMidnightMs('2026-11-15')
   const warmupStart = shanghaiMidnightMs('2026-11-22')
   const openStart = shanghaiMidnightMs('2026-11-23')
   const lastCallStart = shanghaiMidnightMs('2026-11-27')
   const deadline = shanghaiMidnightMs('2026-11-29') + 15 * 3600 * 1000
+  if (nowMs >= countdownStart && nowMs < warmupStart) return 'countdown'
   if (nowMs < warmupStart || nowMs >= deadline) return null
   if (nowMs < openStart) return 'warmup'
   if (nowMs < lastCallStart) return 'open'
@@ -396,7 +399,10 @@ export interface GuokaoAdmissionReminder {
   url: string
 }
 
-const GUOKAO_ADMISSION_COPY: Record<GuokaoAdmissionPhase, { strip: string; card: string }> = {
+const GUOKAO_ADMISSION_COPY: Record<
+  Exclude<GuokaoAdmissionPhase, 'countdown'>,
+  { strip: string; card: string }
+> = {
   warmup: {
     strip: '国考准考证明天 0:00 开放打印，11 月 29 日 15:00 截止',
     card: '2027 国考准考证明天（11 月 23 日）0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。',
@@ -422,6 +428,12 @@ export function admissionReminderFor(
   if (exam.id !== 'guokao') return null
   const phase = guokaoAdmissionPhase(nowMs)
   if (!phase) return null
+  if (phase === 'countdown') {
+    const days = daysUntil('2026-11-23', nowMs)
+    const strip = `国考准考证距打印开启 ${days} 天，11 月 23 日 0:00 开放打印，11 月 29 日 15:00 截止`
+    const card = `2027 国考准考证距打印开启 ${days} 天，11 月 23 日 0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站打印，多打两份备用。笔试 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。`
+    return { phase, stripLine: strip, cardLine: card, url: GUOKAO_ADMISSION_URL }
+  }
   const copy = GUOKAO_ADMISSION_COPY[phase]
   return { phase, stripLine: copy.strip, cardLine: copy.card, url: GUOKAO_ADMISSION_URL }
 }

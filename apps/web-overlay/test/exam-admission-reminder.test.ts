@@ -1,7 +1,7 @@
 /**
  * 国考准考证打印提醒红线测试：
- *  - 门控只按北京时间翻：11-22 预热、11-23–11-26 已开放、11-27–11-29 15:00
- *    末班，11-22 之前与 11-29 15:00 之后一律不显示；
+ *  - 门控只按北京时间翻：11-15–11-21 倒计时、11-22 预热、11-23–11-26 已开放、
+ *    11-27–11-29 15:00 末班，11-15 之前与 11-29 15:00 之后一律不显示；
  *  - 只有国考有提醒，其余三场任何时刻都返回 null（不打扰非考生）；
  *  - 文案全部取自已核实的提醒准备稿 A 版：窗口、报名序号、多打两份备用、
  *    笔试时间一个不少；官方链接是 http://bm.scs.gov.cn/kl2027（2026-11-14
@@ -23,6 +23,12 @@ import {
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 
+/** 北京时间 2026-11-14 12:00（UTC 11-14 04:00）：倒计时开始前一天 */
+const NOV_14_NOON_CST = Date.UTC(2026, 10, 14, 4, 0, 0)
+/** 北京时间 2026-11-15 00:00（UTC 11-14 16:00）：倒计时开始 */
+const NOV_15_0000_CST = Date.UTC(2026, 10, 14, 16, 0, 0)
+/** 北京时间 2026-11-15 12:00（UTC 11-15 04:00）：距打印开启 8 天 */
+const NOV_15_NOON_CST = Date.UTC(2026, 10, 15, 4, 0, 0)
 /** 北京时间 2026-11-21 12:00（UTC 11-21 04:00）：预热前一天 */
 const NOV_21_NOON_CST = Date.UTC(2026, 10, 21, 4, 0, 0)
 /** 北京时间 2026-11-22 00:00（UTC 11-21 16:00）：预热开始 */
@@ -43,14 +49,19 @@ const NOV_29_1500_CST = Date.UTC(2026, 10, 29, 7, 0, 0)
 const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
 
 describe('guokaoAdmissionPhase（北京时间门控）', () => {
-  it('11-22 预热、11-23–11-26 已开放、11-27–11-29 15:00 末班，之外不显示', () => {
-    expect(guokaoAdmissionPhase(NOV_21_NOON_CST)).toBeNull()
+  it('11-15–11-21 倒计时、11-22 预热、11-23–11-26 已开放、11-27–11-29 15:00 末班，之外不显示', () => {
+    expect(guokaoAdmissionPhase(NOV_21_NOON_CST)).toBe('countdown')
     expect(guokaoAdmissionPhase(NOV_22_0000_CST)).toBe('warmup')
     expect(guokaoAdmissionPhase(NOV_22_LATE_CST)).toBe('warmup')
     expect(guokaoAdmissionPhase(NOV_23_0000_CST)).toBe('open')
     expect(guokaoAdmissionPhase(NOV_26_LATE_CST)).toBe('open')
     expect(guokaoAdmissionPhase(NOV_27_0000_CST)).toBe('last-call')
     expect(guokaoAdmissionPhase(NOV_29_1459_CST)).toBe('last-call')
+  })
+
+  it('11-15 之前仍不显示：11-14 中午为 null，11-15 0 点整进入倒计时', () => {
+    expect(guokaoAdmissionPhase(NOV_14_NOON_CST)).toBeNull()
+    expect(guokaoAdmissionPhase(NOV_15_0000_CST)).toBe('countdown')
   })
 
   it('11-29 15:00 整点下线，之前一分钟仍在末班', () => {
@@ -76,6 +87,24 @@ describe('admissionReminderFor（只对国考）', () => {
     expect(last.cardLine).toContain('无法补打')
   })
 
+  it('倒计时档文案：11-15 距打印开启 8 天、11-21 距打印开启 2 天，card 含已核实要素', () => {
+    const early = admissionReminderFor(guokao, NOV_15_NOON_CST)!
+    expect(early.phase).toBe('countdown')
+    expect(early.stripLine).toContain('距打印开启 8 天')
+    expect(early.stripLine).toContain('11 月 23 日 0:00 开放打印')
+    expect(early.cardLine).toContain('距打印开启 8 天')
+    expect(early.cardLine).toContain('11 月 29 日 15:00 截止')
+    expect(early.cardLine).toContain('报名序号')
+    expect(early.cardLine).toContain('多打两份备用')
+    expect(early.cardLine).toContain('行测 9:00–11:00')
+    expect(early.cardLine).toContain('不得提前退场（考场规则）')
+    expect(early.url).toBe('http://bm.scs.gov.cn/kl2027')
+    const late = admissionReminderFor(guokao, NOV_21_NOON_CST)!
+    expect(late.phase).toBe('countdown')
+    expect(late.stripLine).toContain('距打印开启 2 天')
+    expect(late.cardLine).toContain('距打印开启 2 天')
+  })
+
   it('三档文案都含已核实的要素：截止、报名序号、多打两份、笔试时间', () => {
     for (const t of [NOV_22_0000_CST, NOV_23_0000_CST, NOV_27_0000_CST]) {
       const r = admissionReminderFor(guokao, t)!
@@ -96,6 +125,7 @@ describe('admissionReminderFor（只对国考）', () => {
       expect(r.cardLine).toContain('行测最晚 8:45')
       expect(r.cardLine).toContain('申论、专业科目最晚 13:45')
       expect(r.cardLine).toContain('不得提前退场')
+      expect(r.cardLine).toContain('不得提前退场（考场规则）')
       expect(r.cardLine).toContain('国家公务员局 2027 年度招考公告')
     }
   })
@@ -125,8 +155,8 @@ describe('admissionReminderFor（只对国考）', () => {
     }
   })
 
-  it('国考在窗口外也没有提醒（11-15 与 11-29 15:00 后）', () => {
-    expect(admissionReminderFor(guokao, Date.UTC(2026, 10, 15, 0, 0, 0))).toBeNull()
+  it('国考在窗口外也没有提醒（11-14 与 11-29 15:00 后）', () => {
+    expect(admissionReminderFor(guokao, Date.UTC(2026, 10, 14, 0, 0, 0))).toBeNull()
     expect(admissionReminderFor(guokao, NOV_29_1500_CST)).toBeNull()
   })
 })

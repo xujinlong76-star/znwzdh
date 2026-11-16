@@ -19,7 +19,8 @@
  * 允许的「吞掉失败」分四类（登记在下面的 ALLOW_LIST，注释原文写在
  * catch 块里，改 wording 要同步改这里——守卫会查登记是否还在）：
  *   - 审计/遥测写库（recordEvent / audit / bumpVisit / touchApiToken）：
- *     不阻断主操作，写失败即丢弃（与 enrich.ts 的 recordEvent 容错语义一致）。
+ *     不阻断主操作；写失败须留一条失败日志（新语义，见 AUDIT_LOG_REASON；
+ *     旧登记 AUDIT_REASON 仍沿用丢弃语义）。
  *   - 尽力而为的附带操作（unlink 临时文件、向量清理、标签同步、向量回填、
  *     预热、过期清理）：失败不影响主流程，下次运行会再试或由整包导入补齐。
  *   - 可选读取（stat / getSite / getUserSettings / getSystemState /

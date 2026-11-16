@@ -722,7 +722,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                             >
                                 <Link
                                     href="/videos/player"
-                                    aria-label="Player Mode"
+                                    aria-label="播放器模式"
                                 >
                                     <MonitorPlay className="h-5 w-5" />
                                 </Link>

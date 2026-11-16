@@ -38,6 +38,7 @@ const CONTROL_BAR = "src/components/video-player-control-bar.tsx";
 const SIDE_PANEL = "src/components/video-player-side-panel.tsx";
 const OFFLINE_MANAGER = "src/components/video-offline-manager.tsx";
 const CLIENT_AUTO_AUTH = "src/lib/client-auto-auth.ts";
+const VIDEOS_PAGE = "src/app/videos/page.tsx";
 
 describe("/videos/player ?id=&t= 直达链路", () => {
   it("路由页从 window.location.search 读 id 与 t", () => {
@@ -272,5 +273,31 @@ describe("F-09：非管理员隐藏采集按钮（第 84 轮 D 线）", () => {
     // 对话框本身不动：管理员点开仍能采，服务端仍 401/403 拒非管理员
     expect(src).toContain("VideoAutoHarvestDialog");
     expect(src).toContain("setShowHarvestDialog(true)");
+  });
+});
+
+/**
+ * 第 84 轮 D 线：视频页 UX 合并单 F-15/F-16（文案两行）。
+ *
+ * F-15：/videos 元描述仍写“站内弹窗播放”，弹窗版播放器在第 80 轮已删除，
+ * 现行是路由版 /videos/player；两处 description（generateMetadata 与
+ * pageShareMetadata）与注释一并改成“站内播放页播放”。
+ * F-16：顶栏播放器模式链接的 aria-label 是英文 “Player Mode”，与全站
+ * 中文不一致（title 早就是“播放器模式”），改成中文。
+ */
+describe("F-15/F-16：文案两行（第 84 轮 D 线）", () => {
+  it("F-15：/videos 元描述不再提弹窗播放，改成路由版播放器", () => {
+    const src = overlaySource(VIDEOS_PAGE);
+    expect(src).not.toContain("弹窗播放");
+    expect(src).toContain("支持站内播放页播放或直达原站观看");
+    // 两处 description（generateMetadata 与 pageShareMetadata）都改了
+    expect(src.match(/支持站内播放页播放或直达原站观看/g)?.length).toBe(2);
+  });
+
+  it("F-16：播放器模式链接的 aria-label 改成中文，与 title 一致", () => {
+    const src = overlaySource(CONTENT);
+    expect(src).not.toContain('aria-label="Player Mode"');
+    expect(src).toContain('aria-label="播放器模式"');
+    expect(src).toContain('title="播放器模式"');
   });
 });

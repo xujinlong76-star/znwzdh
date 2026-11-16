@@ -192,6 +192,29 @@ describe('hibernationReason / badge / describe', () => {
     )
     expect(describeHibernation(fresh, EMPTY_MAP, ENABLED, NO_MANUAL_SET, NOW)).toBe('')
   })
+
+  it('文案按登录态分流：登录用户用跨设备口径，匿名用户保留本机口径（2026-11-16，第 90 轮）', () => {
+    const old = fav({ siteId: 'old' })
+    // 从未打开过：登录去掉「本机」限定（本机 + 云端都没记录到）
+    expect(describeHibernation(old, EMPTY_MAP, ENABLED, NO_MANUAL_SET, NOW, true)).toBe(
+      '收藏 200 天了，没记录到打开',
+    )
+    expect(describeHibernation(old, EMPTY_MAP, ENABLED, NO_MANUAL_SET, NOW, false)).toBe(
+      '收藏 200 天了，本机没记录到打开',
+    )
+    const opened = fav({ siteId: 'opened', createdAt: NOW - 300 * DAY_MS, lastOpenedAt: NOW - 200 * DAY_MS })
+    expect(describeHibernation(opened, EMPTY_MAP, ENABLED, NO_MANUAL_SET, NOW, true)).toBe(
+      '上次打开是 200 天前，已冬眠',
+    )
+    expect(describeHibernation(opened, EMPTY_MAP, ENABLED, NO_MANUAL_SET, NOW, false)).toBe(
+      '上次打开是 200 天前（按本机记录算），已冬眠',
+    )
+    // 手动冬眠与登录态无关，两种口径同一句话
+    const fresh = fav({ siteId: 'fresh', createdAt: NOW })
+    expect(describeHibernation(fresh, EMPTY_MAP, ENABLED, new Set(['fresh']), NOW, true)).toBe(
+      '你手动把它冬眠了，打开一次就能唤醒',
+    )
+  })
 })
 
 describe('partitionFavorites', () => {

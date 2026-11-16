@@ -30,6 +30,8 @@ import {
   unarchiveItems,
   type ArchivedFavoriteItem,
 } from '../src/lib/favorites-archive'
+import { mergeVisits, toResurfaceVisits } from '../src/lib/resurface-visits'
+import type { HubVisitItem } from '../src/lib/navhub-api'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
@@ -140,6 +142,21 @@ describe('徽标与文案：诚实口径', () => {
     const text = describeStale(fav('a', 100), latestVisitsById([]), NOW)
     expect(text).toBe('收藏 100 天了，还没从这里重温过')
     expect(text).not.toContain('没看')
+  })
+
+  it('文案按登录态分流：登录用户用跨设备口径，匿名用户保留本机口径', () => {
+    // 从未打开过：登录去掉「从这里」的限定（本机 + 云端都没记录到）；
+    // 匿名保留「从这里」（另一台设备上打开的本机看不到）。
+    expect(describeStale(fav('a', 100), latestVisitsById([]), NOW, true)).toBe('收藏 100 天了，还没重温过')
+    expect(describeStale(fav('a', 100), latestVisitsById([]), NOW, false)).toBe(
+      '收藏 100 天了，还没从这里重温过',
+    )
+    // 打开过：两种口径同一句话（「上次打开」本身已是合并后的记录）。
+    expect(describeStale(fav('a', 200, 120), latestVisitsById([]), NOW, true)).toBe('上次打开是 120 天前')
+    const [never] = selectStaleFavorites([fav('b', 200)], [], NOW)
+    expect(describeResurfaced(never, true)).toBe('收藏 200 天了，还没重温过')
+    expect(describeResurfaced(never, false)).toBe('收藏 200 天了，还没从这里重温过')
+    expect(describeResurfaced(never)).toBe('收藏 200 天了，还没从这里重温过')
   })
 
   it('打开过：说「上次打开是 N 天前」', () => {
@@ -339,5 +356,56 @@ describe('待读分流不进重温：selectStaleFavorites 只看 permanent', () 
     const legacy = fav('legacy-old', 100)
     expect(legacy.triageStatus).toBeUndefined()
     expect(selectStaleFavorites([legacy], [], NOW).map((i) => i.siteId)).toEqual(['legacy-old'])
+  })
+})
+
+describe('本机 + 云端 visits 合并（2026-11-16，第 90 轮）', () => {
+  /** 云端一条访问：{ siteId, at }（GET /api/me/visits 的形状） */
+  function cloud(siteId: string, daysAgo: number): HubVisitItem {
+    return {
+      id: 1,
+      siteId,
+      at: NOW - daysAgo * DAY_MS,
+      site: { id: siteId, title: `站点 ${siteId}`, url: `https://example.com/${siteId}`, description: null },
+    }
+  }
+
+  it('云端较新胜出：另一台设备上 10 天前打开过，本机 100 天前打开过，不再算旧', () => {
+    const local = [{ id: 'a', visitedAt: NOW - 100 * DAY_MS }]
+    const merged = mergeVisits(local, [cloud('a', 10)])
+    // 下游取最新一次：云端 10 天前胜出
+    expect(latestVisitsById(merged).get('a')).toBe(NOW - 10 * DAY_MS)
+    // 只喂本机时会误判为旧（100 天 > 90 天）；合并后不再是旧收藏
+    expect(selectStaleFavorites([fav('a', 200)], local, NOW).map((i) => i.siteId)).toEqual(['a'])
+    expect(selectStaleFavorites([fav('a', 200)], merged, NOW)).toEqual([])
+    expect(selectDailyResurface([fav('a', 200)], merged, NOW)).toEqual([])
+  })
+
+  it('本机较新胜出：云端 100 天前、本机 10 天前，取本机', () => {
+    const local = [{ id: 'a', visitedAt: NOW - 10 * DAY_MS }]
+    const merged = mergeVisits(local, [cloud('a', 100)])
+    expect(latestVisitsById(merged).get('a')).toBe(NOW - 10 * DAY_MS)
+    expect(selectStaleFavorites([fav('a', 200)], merged, NOW)).toEqual([])
+  })
+
+  it('云端取不到（null）时回落本机-only：绝不把 null 当空数组', () => {
+    const local = [{ id: 'a', visitedAt: NOW - 100 * DAY_MS }]
+    // null 必须原样保留本机记录——若当成空数组拼进去，「取不到」会被算成
+    // 「没打开过」，误判比接线前更严重（本机 100 天前的记录也会被丢掉）。
+    const merged = mergeVisits(local, null)
+    expect(merged).toEqual(local)
+    expect(selectStaleFavorites([fav('a', 200)], merged, NOW).map((i) => i.siteId)).toEqual(['a'])
+    // 云端确实没有记录（空数组）时同样只剩本机记录，判定与 null 一致
+    expect(mergeVisits(local, [])).toEqual(local)
+    // 两路都空：只按收藏时间算旧
+    expect(mergeVisits([], null)).toEqual([])
+  })
+
+  it('云端形状映射：{siteId, at} → {id, visitedAt}，不丢字段、不改时间', () => {
+    expect(toResurfaceVisits([cloud('a', 5), cloud('b', 20)])).toEqual([
+      { id: 'a', visitedAt: NOW - 5 * DAY_MS },
+      { id: 'b', visitedAt: NOW - 20 * DAY_MS },
+    ])
+    expect(toResurfaceVisits([])).toEqual([])
   })
 })

@@ -51,7 +51,7 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
       }
 
       const rows = await ctx.repo.raw(
-        `SELECT p.*, i.installed_at, i.version AS installed_version
+        `SELECT p.*, i.installed_at, i.version AS installed_version, i.disabled_at
          FROM plugin_installs i
          JOIN plugins p ON p.id = i.plugin_id
          WHERE i.identity = ? AND i.removed_at IS NULL
@@ -70,10 +70,39 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
         installedVersion: String(r.installed_version),
         installedAt: Number(r.installed_at),
         source: String(r.source),
+        // 禁用开关（D 批）：禁用不删数据、不降版本，只停运行效果
+        disabled: r.disabled_at != null,
+        disabledAt: r.disabled_at == null ? null : Number(r.disabled_at),
       }));
 
       return { items, total: items.length };
     }
+  );
+
+  /**
+   * 单插件安装趋势（D 批）：GET /api/plugins/:slug/trend?days=30
+   * 按天聚合 plugin_install_success 真实事件；零安装的日子补 0。
+   * 未上架插件走 denyNonPublishedPlugin（与详情页同口径，不泄露待审/下架包的安装史）。
+   */
+  app.get(
+    "/api/plugins/:slug/trend",
+    { config: { scope: "public" } },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+      const blocked = denyNonPublishedPlugin(ctx, req, reply, plugin);
+      if (blocked) return blocked;
+      const q = (req.query ?? {}) as Record<string, string | undefined>;
+      const days = q.days == null ? 30 : Number(q.days);
+      try {
+        const trend = await ctx.repo.getPluginInstallTrend(slug, Number.isFinite(days) ? days : 30);
+        return { ok: true, ...trend };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return badRequest(reply, message);
+      }
+    },
   );
 
   /**

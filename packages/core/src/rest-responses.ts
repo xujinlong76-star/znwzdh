@@ -742,6 +742,9 @@ const InstalledPluginPayload = z.looseObject({
   installedVersion: z.string(),
   installedAt: z.number(),
   source: z.string(),
+  /** 禁用开关（D 批）：true = 已禁用（运行效果已停，数据与版本不动）；disabledAt 为禁用时刻毫秒时间戳 */
+  disabled: z.boolean(),
+  disabledAt: z.number().nullable(),
 });
 
 export const InstalledPluginsResponse = z.object({
@@ -1710,6 +1713,93 @@ export const PluginStarResponse = z.looseObject({
   starCount: z.number().int(),
 });
 
+/**
+ * 禁用/启用已安装插件回执（D 批）：扁平契约，disabled 由安装记录的
+ * disabledAt 派生；changed=false 是幂等语义（已经是目标状态，不是错误）。
+ * disable 与 enable 共用同一形状。
+ */
+export const PluginDisableResponse = z.looseObject({
+  success: z.literal(true),
+  slug: z.string(),
+  version: z.string(),
+  disabled: z.boolean(),
+  disabledAt: z.number().nullable(),
+  changed: z.boolean(),
+});
+
+/** 作者档案（D 批）：与 store 的 PluginAuthorProfile 同形 */
+export const PluginAuthorProfilePayload = z.looseObject({
+  ownerKey: z.string(),
+  displayName: z.string().nullable(),
+  bio: z.string().nullable(),
+  avatar: z.string().nullable(),
+  links: z.looseObject({
+    homepage: z.string().optional(),
+    github: z.string().optional(),
+    x: z.string().optional(),
+  }),
+  donateUrl: z.string().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const PluginAuthorProfileResponse = z.looseObject({
+  ok: z.literal(true),
+  profile: PluginAuthorProfilePayload,
+});
+
+/**
+ * 真实回滚回执（B-1）：安装回执 + 回滚三元组（从哪个版本回滚到哪个版本、
+ * 移除了多少新版独有站点）。路由返回 { success: true, ...store 回滚结果 }。
+ */
+export const PluginRollbackResponse = PluginInstallResponse.extend({
+  rolledBackFrom: z.string(),
+  rolledBackTo: z.string(),
+  sitesRemoved: z.number().int(),
+});
+
+/** 评价记录（B-3 删除回执里的快照）：与 store 的 PluginReviewRecord 同形 */
+export const PluginReviewPayload = z.looseObject({
+  id: z.string(),
+  pluginId: z.string(),
+  identity: z.string(),
+  rating: z.number(),
+  title: z.string().nullable(),
+  content: z.string().nullable(),
+  installedVersion: z.string(),
+  status: z.string(),
+  reportCount: z.number().int(),
+  moderationNote: z.string().nullable(),
+  moderatedAt: z.number().nullable(),
+  moderatedBy: z.string().nullable(),
+  authorReply: z.string().nullable().optional(),
+  authorRepliedAt: z.number().nullable().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+/** 单插件安装趋势（D 批）：GET /api/plugins/{slug}/trend?days=30 */
+export const PluginInstallTrendResponse = z.looseObject({
+  ok: z.literal(true),
+  pluginId: z.string(),
+  slug: z.string(),
+  days: z.number().int(),
+  total: z.number().int(),
+  series: z.array(
+    z.looseObject({
+      date: z.string(),
+      installs: z.number().int(),
+    }),
+  ),
+});
+
+/** 评价删除回执（B-3）：硬删除，review 是删除前的快照 */
+export const PluginReviewDeleteResponse = z.looseObject({
+  success: z.literal(true),
+  deleted: z.literal(true),
+  review: PluginReviewPayload,
+});
+
 /** PATCH /api/plugins/{slug}/featured：精选位变更后回传公开插件卡片 */
 export const PluginFeaturedResponse = z.looseObject({
   ok: z.literal(true),
@@ -2419,6 +2509,8 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/drama/calendar": { schema: DramaCalendarResponse, name: "DramaCalendarResponse" },
   "GET /api/plugins": { schema: PluginListResponse, name: "PluginListResponse" },
   "GET /api/plugins/installed": { schema: InstalledPluginsResponse, name: "InstalledPluginsResponse" },
+  // 单插件安装趋势（D 批）：真实安装记录按天聚合
+  "GET /api/plugins/{slug}/trend": { schema: PluginInstallTrendResponse, name: "PluginInstallTrendResponse" },
   "GET /api/plugins/taps": { schema: PluginTapsResponse, name: "PluginTapsResponse" },
   "GET /api/plugins/taps/public": { schema: PublicPluginTapsResponse, name: "PublicPluginTapsResponse" },
   // 单站详情与列表共用同一份站点形状（路由直接返回站点对象，没有外壳）
@@ -2508,6 +2600,15 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "POST /api/plugins/{slug}/uninstall": { schema: PluginUninstallResponse, name: "PluginUninstallResponse" },
   "DELETE /api/plugins/{slug}/install": { schema: PluginUninstallResponse, name: "PluginUninstallResponse" },
   "POST /api/plugins/{slug}/star": { schema: PluginStarResponse, name: "PluginStarResponse" },
+  // 禁用/启用（D 批）：与 install/uninstall 同口径的用户域写面，扁平回执
+  "POST /api/plugins/{slug}/disable": { schema: PluginDisableResponse, name: "PluginDisableResponse" },
+  "POST /api/plugins/{slug}/enable": { schema: PluginDisableResponse, name: "PluginDisableResponse" },
+  // 真实回滚（B-1）：安装回执 + 回滚三元组
+  "POST /api/plugins/{slug}/rollback": { schema: PluginRollbackResponse, name: "PluginRollbackResponse" },
+  // 作者档案写入（D 批）：{ ok: true, profile }
+  "POST /api/plugins/author/profile": { schema: PluginAuthorProfileResponse, name: "PluginAuthorProfileResponse" },
+  // 管理员删评价（B-3）：硬删除，review 是删除前的快照
+  "DELETE /api/plugins/{slug}/reviews/{id}": { schema: PluginReviewDeleteResponse, name: "PluginReviewDeleteResponse" },
   "POST /api/favorites": { schema: FavoriteCreateResponse, name: "FavoriteCreateResponse", status: ["200", "201"] },
   "PATCH /api/favorites/{siteId}": { schema: FavoriteUpdateResponse, name: "FavoriteUpdateResponse" },
   "DELETE /api/favorites/{siteId}": { schema: FavoriteSiteRemovalResponse, name: "FavoriteSiteRemovalResponse" },

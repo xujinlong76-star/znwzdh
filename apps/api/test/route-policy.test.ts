@@ -176,6 +176,11 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/p2p/signal",
   "POST /api/plugins",
   "POST /api/plugins/:slug/ai-audit",
+  // 禁用/启用（D 批）：与 install/rollback 同口径的用户域写面——只改调用者
+  // 自己的安装记录（identityTrusted + extractPluginIdentity 是处理器的闸）；
+  // 禁用不删数据、不降版本，只停运行效果。
+  "POST /api/plugins/:slug/disable",
+  "POST /api/plugins/:slug/enable",
   "POST /api/plugins/:slug/install",
   "POST /api/plugins/:slug/report",
   "POST /api/plugins/:slug/reviews",
@@ -189,6 +194,10 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/plugins/:slug/uninstall",
   "POST /api/plugins/:slug/versions",
   "POST /api/plugins/auto-fix",
+  // 作者档案写入（D 批）：用户域写面——ownerKey 由调用方身份派生，写不了别人
+  // 的档案（identityTrusted + requestIdentityOf 是处理器的闸）；公开级只表示
+  // 「登录前可见入口」，匿名请求 401。
+  "POST /api/plugins/author/profile",
   "POST /api/plugins/check-urls",
   "POST /api/plugins/diff",
   "POST /api/plugins/pre-audit",

@@ -2064,6 +2064,14 @@ async revokeAllSessions(userId: string): Promise<number> {
     return pluginsRepo.getAuthorPluginStats(this, ownerKey);
   }
 
+  async getPluginAuthorProfile(ownerKey: string): Promise<pluginsRepo.PluginAuthorProfile | null> {
+    return pluginsRepo.getPluginAuthorProfile(this, ownerKey);
+  }
+
+  async upsertPluginAuthorProfile(identity: string, input: pluginsRepo.PluginAuthorProfileInput): Promise<pluginsRepo.PluginAuthorProfile> {
+    return pluginsRepo.upsertPluginAuthorProfile(this, identity, input);
+  }
+
   async updatePlugin(slug: string, manifest: pluginsRepo.PluginManifest, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
     return pluginsRepo.updatePlugin(this, slug, manifest, actor);
   }
@@ -2089,6 +2097,11 @@ async revokeAllSessions(userId: string): Promise<number> {
     return pluginsRepo.installPlugin(this, slug, identity, actor, options);
   }
 
+  /** 安装时冲突检测（D 批）：返回需用户确认才继续的冲突清单，无冲突返回空数组 */
+  async detectInstallConflicts(slug: string, identity: string, options?: { version?: string }): Promise<pluginsRepo.PluginInstallConflict[]> {
+    return pluginsRepo.detectInstallConflicts(this, slug, identity, options);
+  }
+
   /** 真实回滚到历史版本（B-1）：先移除新版独有站点再按目标清单安装，安装记录版本与实际内容一致 */
   async rollbackPlugin(slug: string, identity: string, targetVersion: string, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRollbackResult> {
     return pluginsRepo.rollbackPlugin(this, slug, identity, targetVersion, actor);
@@ -2104,6 +2117,16 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   async uninstallPlugin(slug: string, identity: string, options: { removeSites?: boolean } = {}, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginUninstallResult> {
     return pluginsRepo.uninstallPlugin(this, slug, identity, options, actor);
+  }
+
+  /** 禁用已安装插件（D 批）：只停运行效果，不删数据、不降版本；幂等 */
+  async disablePluginInstall(slug: string, identity: string, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginDisableResult> {
+    return pluginsRepo.disablePluginInstall(this, slug, identity, actor);
+  }
+
+  /** 启用已禁用的插件（D 批）：与 disable 对称；幂等 */
+  async enablePluginInstall(slug: string, identity: string, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginDisableResult> {
+    return pluginsRepo.enablePluginInstall(this, slug, identity, actor);
   }
 
   async getPluginInstall(pluginId: string, identity: string): Promise<pluginsRepo.PluginInstallRecord | null> {
@@ -2211,6 +2234,11 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   async getPluginFunnel(days = 30): Promise<pluginsRepo.PluginFunnelMetrics> {
     return pluginsRepo.getPluginFunnel(this, days);
+  }
+
+  /** 单插件安装趋势（D 批）：按天聚合 plugin_install_success 真实事件 */
+  async getPluginInstallTrend(slug: string, days = 30): Promise<pluginsRepo.PluginInstallTrend> {
+    return pluginsRepo.getPluginInstallTrend(this, slug, days);
   }
 
   async getPluginGovernanceAlerts(): Promise<pluginsRepo.PluginGovernanceAlert[]> {

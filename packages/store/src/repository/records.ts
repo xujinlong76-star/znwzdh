@@ -440,7 +440,7 @@ export interface PluginRecord {
   publishedAt: number | null;
 }
 
-/** 安装记录（复合主键 plugin_id + identity；removed_at 非空 = 已卸载） */
+/** 安装记录（复合主键 plugin_id + identity；removed_at 非空 = 已卸载；disabled_at 非空 = 已禁用） */
 export interface PluginInstallRecord {
   pluginId: string;
   identity: string;
@@ -448,6 +448,61 @@ export interface PluginInstallRecord {
   meta: unknown;
   installedAt: number;
   removedAt: number | null;
+  /** 禁用时刻（毫秒时间戳）；null = 启用中。禁用只停插件的运行效果（主题/搜索引擎），不删数据、不降版本 */
+  disabledAt: number | null;
+}
+
+/** 安装时冲突（安装前检测到、需用户确认才继续） */
+export interface PluginInstallConflict {
+  /** 冲突类型：search-prefix（同 !前缀被两个包注册）/ site-url（两包收了同一站点）/ bundle-member（组合包成员级冲突，预留） */
+  type: "search-prefix" | "site-url" | "bundle-member";
+  /** warn = 装了会顶掉/重复别人的东西；info = 仅提示、无实际损害 */
+  severity: "warn" | "info";
+  /** 一句话说明，可直接展示给用户 */
+  message: string;
+  /** 冲突对方的插件 slug（多个时取第一个，其余进 detail） */
+  otherSlug: string;
+  otherName: string;
+  detail?: Record<string, unknown>;
+}
+
+/** 单插件安装趋势（按天聚合的真实安装成功事件） */
+export interface PluginInstallTrendDay {
+  date: string;
+  installs: number;
+}
+
+export interface PluginInstallTrend {
+  pluginId: string;
+  slug: string;
+  days: number;
+  /** 窗口内真实安装成功总数（重复安装同一身份不重复计） */
+  total: number;
+  /** 按天序列（零安装的日子补 0，不跳过、不编造） */
+  series: PluginInstallTrendDay[];
+}
+
+/** 作者档案（owner_key 主键；作者本人维护，公开读） */
+export interface PluginAuthorProfile {
+  ownerKey: string;
+  displayName: string | null;
+  bio: string | null;
+  /** 头像只允许 emoji 或短文本（与 manifest icon 同口径，禁止远程图片地址） */
+  avatar: string | null;
+  /** 作者链接：homepage / github / x 三个可选字段，各为 http(s) 绝对地址 */
+  links: { homepage?: string; github?: string; x?: string };
+  /** 作者捐赠链接（可选）：http(s) 绝对地址；未填不显示 */
+  donateUrl: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PluginAuthorProfileInput {
+  displayName?: string | null;
+  bio?: string | null;
+  avatar?: string | null;
+  links?: { homepage?: string | null; github?: string | null; x?: string | null };
+  donateUrl?: string | null;
 }
 
 /** 审计用调用者标识（来自 req.auth；identityOf 仅展示、不可信） */

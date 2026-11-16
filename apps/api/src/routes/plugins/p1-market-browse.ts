@@ -20,6 +20,7 @@ import { safeDecodeParam,
   badRequest,
   identityTrusted,
   notFound,
+  requestIdentityOf,
   unauthorized,
 } from "../shared.ts";
 import {
@@ -27,6 +28,7 @@ import {
   pluginIdentity,
   publicPlugin,
   } from "../plugin-presentation.ts";
+import { pluginOwnerKey } from "@navhub/store";
 import type { AppContext } from "../../context.ts";
 
 export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -185,15 +187,23 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
       // stats 改走服务端聚合：修前对 listPluginsByOwnerKey(key, { limit: 100 })
       // 的 items 求和，作者插件 >100 时安装/星标恒偏小（total 本身正确）。
-      const [res, stats] = await Promise.all([
+      const [res, stats, profile] = await Promise.all([
         ctx.repo.listPluginsByOwnerKey(key, { limit, offset }),
         ctx.repo.getAuthorPluginStats(key),
+        ctx.repo.getPluginAuthorProfile(key),
       ]);
       if (res.total === 0) return notFound(reply, "作者不存在或暂无已上架插件");
+      // isOwner：调用方身份的哈希与作者 key 一致时，前端展示「编辑我的档案」入口
+      // （身份即权限边界；档案写入同样以调用方身份派生 ownerKey）。
+      // 注意：key 是身份的哈希，不是原始 identity，直接比对恒为 false。
+      const callerIdentity = requestIdentityOf(req as never);
       return {
         ownerKey: key,
         author: stats.author ?? "匿名作者",
         authorKind: stats.authorKind ?? null,
+        // 作者档案（D 批）：未填过为 null，前端只渲染真实填过的内容
+        profile,
+        isOwner: callerIdentity != null && pluginOwnerKey(callerIdentity) === key,
         stats: {
           plugins: stats.plugins,
           installs: stats.installs,

@@ -200,6 +200,7 @@ HEAD /api/plugins/{slug}/health
 HEAD /api/plugins/{slug}/overlap
 HEAD /api/plugins/{slug}/reviews
 HEAD /api/plugins/{slug}/similar
+HEAD /api/plugins/{slug}/trend
 HEAD /api/plugins/{slug}/url-health
 HEAD /api/plugins/{slug}/url-health/history
 HEAD /api/plugins/{slug}/versions

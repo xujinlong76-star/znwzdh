@@ -14,6 +14,15 @@
 
 export const PLUGIN_MANIFEST_VERSION = 1
 
+/**
+ * 当前 NavHub 应用版本（与仓库根 package.json 的 version 同值）。
+ *
+ * 插件 compat.minAppVersion 就拿它做比对：声明要求高于此值时安装被拒。
+ * 改版本时两处一起改；plugin-round2-batch-d 测试断言它与 package.json
+ * 的 version 相等，防漂移。
+ */
+export const NAVHUB_APP_VERSION = "0.1.0"
+
 export type PluginKind = 'site-pack' | 'workspace-preset' | 'theme' | 'search-pack' | 'bundle'
 export const PLUGIN_KINDS: readonly PluginKind[] = ['site-pack', 'workspace-preset', 'theme', 'search-pack', 'bundle']
 
@@ -60,6 +69,10 @@ export const PLUGIN_LIMITS = {
   maxEnginePrefix: 16,
   maxBundleItems: 12,
   maxBundleSlug: 80,
+  /** 详情页画廊最多放 6 张截图（多了加载慢、也看不过来） */
+  maxScreenshots: 6,
+  /** 捐赠链接与 homepage 同级：短链，300 字符封顶 */
+  maxDonateUrl: 300,
 } as const
 
 export type ThemeAccent = 'violet' | 'emerald' | 'amber' | 'rose' | 'ocean' | 'sky' | 'system-blue' | 'latte'
@@ -170,6 +183,16 @@ export interface BundlePayload {
   items: BundleItem[]
 }
 
+/**
+ * 兼容性声明：插件要求的最低 NavHub 版本（x.y.z）。
+ *
+ * 只声明最低版本——本站目前只有 web 一个运行面，写 platforms 会是只有
+ * 一个取值的假字段，故不设 platforms（等真有多端再加）。
+ */
+export interface PluginCompat {
+  minAppVersion?: string
+}
+
 export interface PluginManifest {
   manifestVersion: typeof PLUGIN_MANIFEST_VERSION
   kind: PluginKind
@@ -182,6 +205,12 @@ export interface PluginManifest {
   version: string
   tags?: string[]
   forkedFrom?: string
+  /** 兼容性声明（可选）：要求高于当前应用版本时安装被拒 */
+  compat?: PluginCompat
+  /** 作者捐赠链接（可选）：http(s) 绝对地址；未填不显示、不造假链接 */
+  donateUrl?: string
+  /** 详情页画廊截图（可选）：http(s) 绝对地址，最多 6 张；无图不显示 */
+  screenshots?: string[]
   payload: SitePackPayload | WorkspacePresetPayload | ThemePayload | SearchPackPayload | BundlePayload
 }
 
@@ -943,6 +972,45 @@ export function validateAndCleanPluginManifest(input: unknown): PluginManifestVa
   const license = readString(raw.license, PLUGIN_LIMITS.maxLicense, 'license', errors)
   const tags = readStringList(raw.tags, 'tags', errors, PLUGIN_LIMITS.maxTags, PLUGIN_LIMITS.maxTagChars)
   const forkedFrom = readString(raw.forkedFrom, 80, 'forkedFrom', errors)
+  // 兼容性声明：只认 minAppVersion（x.y.z）；格式不对直接报错，不静默丢弃
+  let compat: PluginCompat | undefined
+  if (raw.compat !== undefined && raw.compat !== null) {
+    if (typeof raw.compat !== 'object' || Array.isArray(raw.compat)) {
+      errors.push('compat 必须是对象')
+    } else {
+      const compatRecord = raw.compat as Record<string, unknown>
+      const minAppVersion = readString(compatRecord.minAppVersion, 20, 'compat.minAppVersion', errors)
+      if (minAppVersion && !VERSION_PATTERN.test(minAppVersion)) {
+        errors.push('compat.minAppVersion 必须是 x.y.z 格式（如 0.1.0）')
+      } else if (minAppVersion) {
+        compat = { minAppVersion }
+      }
+    }
+  }
+  // 捐赠链接：http(s) 绝对地址，超长报错（与 homepage 同口径，不截断）
+  const donateUrl =
+    raw.donateUrl === undefined || raw.donateUrl === null
+      ? undefined
+      : readHttpUrl(raw.donateUrl, 'donateUrl', errors)
+  if (donateUrl && donateUrl.length > PLUGIN_LIMITS.maxDonateUrl) {
+    errors.push(`donateUrl 超过 ${PLUGIN_LIMITS.maxDonateUrl} 字符上限`)
+  }
+  // 截图：最多 6 张 http(s) 绝对地址；非法地址报错、不进清单
+  const screenshots = readStringList(
+    raw.screenshots,
+    'screenshots',
+    errors,
+    PLUGIN_LIMITS.maxScreenshots,
+    PLUGIN_LIMITS.maxUrlLength,
+  )
+  if (screenshots) {
+    for (const shot of screenshots) {
+      if (!isAbsoluteHttpUrl(shot)) {
+        errors.push('screenshots 必须是 http/https 绝对地址')
+        break
+      }
+    }
+  }
 
   if (raw.payload === null || typeof raw.payload !== 'object' || Array.isArray(raw.payload)) {
     errors.push('payload 必须是对象')
@@ -979,6 +1047,9 @@ export function validateAndCleanPluginManifest(input: unknown): PluginManifestVa
   if (license) manifest.license = license
   if (tags) manifest.tags = tags
   if (forkedFrom) manifest.forkedFrom = forkedFrom
+  if (compat) manifest.compat = compat
+  if (donateUrl) manifest.donateUrl = donateUrl
+  if (screenshots) manifest.screenshots = screenshots
 
   return { ok: true, manifest, warnings }
 }
@@ -1082,6 +1153,23 @@ export function comparePluginVersions(a: string, b: string): number {
     if (diff !== 0) return diff > 0 ? 1 : -1
   }
   return 0
+}
+
+/**
+ * 兼容性判定：插件声明的最低版本高于当前应用版本时不兼容。
+ * 返回可直接展示给用户的不兼容原因；兼容返回 null。
+ * 服务端安装与前端安装按钮共用同一判定，不许两边各写一套。
+ */
+export function checkPluginCompat(
+  manifest: PluginManifest,
+  appVersion: string = NAVHUB_APP_VERSION,
+): string | null {
+  const required = manifest.compat?.minAppVersion
+  if (!required) return null
+  if (comparePluginVersions(required, appVersion) > 0) {
+    return `该插件需要 NavHub ${required} 或更高版本（当前 ${appVersion}），暂无法安装`
+  }
+  return null
 }
 
 /* ------------------------------------------------------------------ *

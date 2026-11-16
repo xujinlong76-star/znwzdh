@@ -399,9 +399,24 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       }
 
             const q = (req.query ?? {}) as Record<string, string | undefined>;
-      const body = (req.body ?? {}) as { version?: string; selectedSites?: string[] };
+      const body = (req.body ?? {}) as {
+        version?: string;
+        selectedSites?: string[];
+        acknowledgeConflicts?: boolean;
+      };
       const targetVersion = q.version?.trim() || (typeof body.version === "string" ? body.version.trim() : undefined);
       const selectedSites = Array.isArray(body.selectedSites) ? body.selectedSites.map(String) : undefined;
+
+      // 安装时冲突检测（D 批）：有冲突且用户未确认时 409 返回冲突清单，不安装、
+      // 不静默覆盖；用户确认（acknowledgeConflicts）后才继续安装。
+      if (body.acknowledgeConflicts !== true) {
+        const conflicts = await ctx.repo.detectInstallConflicts(slug, identity, {
+          version: targetVersion,
+        });
+        if (conflicts.length > 0) {
+          return conflict(reply, "安装存在冲突，请确认后继续", { conflicts });
+        }
+      }
 
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
       try {
@@ -568,6 +583,61 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
     uninstallHandler,
   );
 
+  /**
+   * 禁用 / 启用已安装插件（D 批）
+   * 禁用只停运行效果（版本与数据不动，卸载同机制由客户端同步停用），
+   * 不必卸载；启用恢复。作用在「自己的安装记录」上，身份即权限边界。
+   * store 层幂等：重复禁用/启用返回 disabled 状态与 changed=false。
+   */
+  const disableEnableHandler = (enable: boolean) => async (req: any, reply: any) => {
+    const { slug } = req.params as { slug: string };
+    if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    const identity = extractPluginIdentity(req);
+    if (!identity) {
+      return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
+    }
+    const plugin = await ctx.repo.getPluginBySlug(slug);
+    if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+    const callerAuth = req.auth;
+    try {
+      const result = enable
+        ? await ctx.repo.enablePluginInstall(slug, identity, {
+            actor: callerAuth?.actor || identity,
+            actorKind: callerAuth?.kind || "identity",
+            ip: req.ip,
+          })
+        : await ctx.repo.disablePluginInstall(slug, identity, {
+            actor: callerAuth?.actor || identity,
+            actorKind: callerAuth?.kind || "identity",
+            ip: req.ip,
+          });
+      // 扁平契约（store 层返回 { plugin, install, changed }，路由只吐客户端
+      // 需要的字段）：disabled 由安装记录的 disabledAt 派生，不另设状态位。
+      return {
+        success: true,
+        slug: result.plugin.slug,
+        version: result.plugin.version,
+        disabled: result.install.disabledAt !== null,
+        disabledAt: result.install.disabledAt,
+        changed: result.changed,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return badRequest(reply, message);
+    }
+  };
+
+  app.post(
+    "/api/plugins/:slug/disable",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    disableEnableHandler(false),
+  );
+  app.post(
+    "/api/plugins/:slug/enable",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    disableEnableHandler(true),
+  );
+
   /* ------------------------------------------------------------------ *
    * 社区互动：星标与举报
    * ------------------------------------------------------------------ */
@@ -614,6 +684,45 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
         return badRequest(reply, message);
       }
     }
+  );
+
+  /**
+   * 作者档案写入（D 批）：POST /api/plugins/author/profile
+   * ownerKey 由调用方身份派生（requestIdentityOf），写不了别人的档案。
+   * 校验在 store 层与 manifest 同口径（头像 emoji/短文本、链接 http(s) 绝对地址、
+   * 超长报错不截断）；空字符串按「未填」清掉旧值。
+   * 用户域写面（不进 PUBLIC_INSTANCE_WRITE_ROUTES），但登记进
+   * ANON_WRITE_SNAPSHOT（route-policy.test.ts）并附理由注释。
+   */
+  app.post(
+    "/api/plugins/author/profile",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer <redacted>");
+      const identity = requestIdentityOf(req as never);
+      if (!identity) return badRequest(reply, "缺少用户身份标识");
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      try {
+        const profile = await ctx.repo.upsertPluginAuthorProfile(identity, {
+          displayName: typeof body.displayName === "string" ? body.displayName : null,
+          bio: typeof body.bio === "string" ? body.bio : null,
+          avatar: typeof body.avatar === "string" ? body.avatar : null,
+          links:
+            body.links && typeof body.links === "object"
+              ? {
+                  homepage: typeof (body.links as Record<string, unknown>).homepage === "string" ? String((body.links as Record<string, unknown>).homepage) : undefined,
+                  github: typeof (body.links as Record<string, unknown>).github === "string" ? String((body.links as Record<string, unknown>).github) : undefined,
+                  x: typeof (body.links as Record<string, unknown>).x === "string" ? String((body.links as Record<string, unknown>).x) : undefined,
+                }
+              : undefined,
+          donateUrl: typeof body.donateUrl === "string" ? body.donateUrl : null,
+        });
+        return { ok: true, profile };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return badRequest(reply, message);
+      }
+    },
   );
 
 };

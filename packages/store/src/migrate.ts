@@ -113,6 +113,8 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "plugin_reviews", column: "moderated_by", sqlite: "TEXT", pg: "TEXT" },
   { table: "plugin_reviews", column: "author_reply", sqlite: "TEXT", pg: "TEXT" },
   { table: "plugin_reviews", column: "author_replied_at", sqlite: "INTEGER", pg: "BIGINT" },
+  // 禁用开关（D 批）：安装记录禁用时刻；NULL = 启用中（旧库启动时补列）
+  { table: "plugin_installs", column: "disabled_at", sqlite: "INTEGER", pg: "BIGINT" },
   // 收藏同步换代（M1）：软删墓碑。硬删会让「删除」事件在增量同步里
   // 无处表达——客户端按 updated_at 拉增量时看不见任何痕迹，于是删除永不传播。
   { table: "favorites", column: "deleted_at", sqlite: "INTEGER", pg: "BIGINT" },
@@ -559,8 +561,8 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS plugins_owner_key_idx ON plugins(owner_key)",
     "CREATE INDEX IF NOT EXISTS plugins_featured_idx ON plugins(featured)",
     db.dialect === "pg"
-      ? "CREATE TABLE IF NOT EXISTS plugin_installs (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, version TEXT NOT NULL, meta TEXT, installed_at BIGINT NOT NULL, removed_at BIGINT, PRIMARY KEY (plugin_id, identity))"
-      : "CREATE TABLE IF NOT EXISTS plugin_installs (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, version TEXT NOT NULL, meta TEXT, installed_at INTEGER NOT NULL, removed_at INTEGER, PRIMARY KEY (plugin_id, identity))",
+      ? "CREATE TABLE IF NOT EXISTS plugin_installs (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, version TEXT NOT NULL, meta TEXT, installed_at BIGINT NOT NULL, removed_at BIGINT, disabled_at BIGINT, PRIMARY KEY (plugin_id, identity))"
+      : "CREATE TABLE IF NOT EXISTS plugin_installs (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, version TEXT NOT NULL, meta TEXT, installed_at INTEGER NOT NULL, removed_at INTEGER, disabled_at INTEGER, PRIMARY KEY (plugin_id, identity))",
     "CREATE INDEX IF NOT EXISTS plugin_installs_plugin_idx ON plugin_installs(plugin_id)",
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS plugin_stars (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, created_at BIGINT NOT NULL, PRIMARY KEY (plugin_id, identity))"
@@ -582,6 +584,10 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
       : "CREATE TABLE IF NOT EXISTS plugin_reviews (id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, identity TEXT NOT NULL, rating INTEGER NOT NULL, title TEXT, content TEXT, installed_version TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'visible', report_count INTEGER NOT NULL DEFAULT 0, moderation_note TEXT, moderated_at INTEGER, moderated_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(plugin_id, identity))",
     "CREATE INDEX IF NOT EXISTS plugin_reviews_plugin_idx ON plugin_reviews(plugin_id)",
     "CREATE INDEX IF NOT EXISTS plugin_reviews_status_idx ON plugin_reviews(status)",
+    // 作者档案（D 批）：owner_key 主键；作者本人维护，注销时随账号删除（见 data-inventory 登记）
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS plugin_author_profiles (owner_key TEXT PRIMARY KEY, display_name TEXT, bio TEXT, avatar TEXT, links TEXT NOT NULL DEFAULT '{}', donate_url TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS plugin_author_profiles (owner_key TEXT PRIMARY KEY, display_name TEXT, bio TEXT, avatar TEXT, links TEXT NOT NULL DEFAULT '{}', donate_url TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     // LLM 用量明细（2026-10-19）：观测面板的唯一真实数据源。
     // 为什么不塞进 events：events 承载 click/favorite/vitals/client_error 等语义事件，
     // AI 调用是高频 + 固定列的结构化数据，混在一起既膨胀又难聚合；

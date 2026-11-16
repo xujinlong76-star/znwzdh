@@ -58,6 +58,11 @@ POST /api/me/notifications/read-all | 需要该身份存在未读通知，在 me
 POST /api/me/notifications/{id}/read | 需要具体通知 id 前置，在 me 通知用例覆盖
 DELETE /api/plugins/{slug}/star | 取消星标需要先星标；本文件已覆盖 POST 星标，DELETE 由插件用例覆盖
 PATCH /api/plugins/{slug}/featured | 精选位写入会改市场排序，在插件治理路由用例覆盖
+POST /api/plugins/{slug}/disable | 禁用需要先安装插件；在 plugin-round2-batch-d.test.ts「禁用开关」用例走真实 HTTP 断言返回体
+POST /api/plugins/{slug}/enable | 启用需要先禁用；在 plugin-round2-batch-d.test.ts「禁用开关」用例走真实 HTTP 断言返回体
+POST /api/plugins/{slug}/rollback | 回滚需要 v1→v2 两版前置；在 plugin-round2-batch-b.test.ts 回滚用例走真实 HTTP 断言 rolledBackTo/sitesRemoved
+POST /api/plugins/author/profile | 档案写入需要作者身份前置；在 plugin-round2-batch-d.test.ts「作者档案」用例走真实 HTTP 断言返回体
+DELETE /api/plugins/{slug}/reviews/{id} | 删评价需要先建评价；在 plugin-round2-batch-b.test.ts B-3 与 plugin-round2-batch-d.test.ts B-3 用例走真实 HTTP 断言删除结果
 POST /api/shortlinks | 需要已上架插件 slug 前置，在 shortlinks 路由用例覆盖
 DELETE /api/admin/client-errors | 清空进程内错误聚合，在 client-errors 用例覆盖
 POST /api/users/sync | OAuth upsert 会写 users 表并影响身份解析，在 auth.test 的 users/sync 用例覆盖

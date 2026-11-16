@@ -10,6 +10,7 @@ export * from "./search.ts";
 export * from "./plugin-ops.ts";
 export * from "./vector/index.ts";
 export * from "./repository.ts";
+export { pluginOwnerKey } from "./repository/plugins.ts";
 export * from "./repository/videos.ts";
 export { computeTagLongTailStats, type TagLongTailStats } from "./repository/taxonomy-governance.ts";
 

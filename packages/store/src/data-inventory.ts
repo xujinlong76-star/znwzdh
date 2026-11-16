@@ -247,6 +247,14 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     note: "删除前要扣减 plugins.star_count",
   },
   {
+    id: "pluginAuthorProfile",
+    table: "plugin_author_profiles",
+    ownerColumns: ["owner_key"],
+    disposition: "delete",
+    exportField: "pluginAuthorProfile",
+    note: "作者档案（D 批）：作者本人维护的公开资料；注销时随账号删除，作者页随之回到只有作品列表的状态",
+  },
+  {
     id: "vault",
     table: "user_vault_sync",
     ownerColumns: ["user_id"],

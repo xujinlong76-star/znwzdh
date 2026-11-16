@@ -2,6 +2,7 @@ import type { Repository } from "../repository.ts";
 import { randomUUID, createHash } from "node:crypto";
 import {
   canonicalizeUrl,
+  checkPluginCompat,
   comparePluginVersions,
   isInternalShortLinkTarget,
   PLUGIN_LIMITS,
@@ -13,17 +14,23 @@ import {
   type PluginManifest,
   type PluginStatus,
   type PluginSummary,
+  type SearchPackPayload,
   type SitePackPayload,
 } from "@navhub/core";
+import { emitNotification } from "./notifications.ts";
 import { slugify } from "./dialect.ts";
 import { containsLike } from "../sql-like.ts";
 import { buildKeysetPredicate, encodeKeysetCursor, parseKeysetCursor, type KeysetKey } from "../keyset.ts";
 import type {
   PluginActor,
+  PluginAuthorProfile,
+  PluginAuthorProfileInput,
   PluginFunnelDay,
   PluginFunnelMetrics,
   PluginGovernanceAlert,
+  PluginInstallConflict,
   PluginInstallRecord,
+  PluginInstallTrend,
   PluginRecord,
   PluginReviewAdminItem,
   PluginReviewRecord,
@@ -35,10 +42,14 @@ import type {
 // 门面（repository.ts）通过 `pluginsRepo.` 命名空间引用插件域类型，保持域自包含
 export type {
   PluginActor,
+  PluginAuthorProfile,
+  PluginAuthorProfileInput,
   PluginFunnelDay,
   PluginFunnelMetrics,
   PluginGovernanceAlert,
+  PluginInstallConflict,
   PluginInstallRecord,
+  PluginInstallTrend,
   PluginRecord,
   PluginReviewAdminItem,
   PluginReviewRecord,
@@ -612,6 +623,99 @@ export async function getAuthorPluginStats(
   };
 }
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return (u.protocol === "http:" || u.protocol === "https:") && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+}
+
+function rowToAuthorProfile(row: Record<string, any>): PluginAuthorProfile {
+  const links = parseJson<Record<string, unknown>>(row.links, {});
+  return {
+    ownerKey: String(row.owner_key),
+    displayName: row.display_name == null ? null : String(row.display_name),
+    bio: row.bio == null ? null : String(row.bio),
+    avatar: row.avatar == null ? null : String(row.avatar),
+    links: {
+      ...(typeof links.homepage === "string" ? { homepage: links.homepage } : {}),
+      ...(typeof links.github === "string" ? { github: links.github } : {}),
+      ...(typeof links.x === "string" ? { x: links.x } : {}),
+    },
+    donateUrl: row.donate_url == null ? null : String(row.donate_url),
+    createdAt: Number(row.created_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+  };
+}
+
+/** 读作者档案（未填过返回 null；作者页只渲染真实填过的内容） */
+export async function getPluginAuthorProfile(
+  repo: Repository,
+  ownerKey: string,
+): Promise<PluginAuthorProfile | null> {
+  const rows = await repo.raw("SELECT * FROM plugin_author_profiles WHERE owner_key = ? LIMIT 1", [ownerKey]);
+  const row = rows[0];
+  return row ? rowToAuthorProfile(row) : null;
+}
+
+/**
+ * 写作者档案（作者本人维护；调用方 identity → ownerKey，写不了别人的）。
+ *
+ * 校验与 manifest 同口径：头像只认 emoji/短文本（禁远程图片地址）、
+ * 链接与捐赠一律 http(s) 绝对地址、超长报错不截断。空字符串按「未填」处理
+ * （清掉旧值）；全空也保留该行（作者页按「未填档案」处理，不造假档案）。
+ */
+export async function upsertPluginAuthorProfile(
+  repo: Repository,
+  identity: string,
+  input: PluginAuthorProfileInput,
+): Promise<PluginAuthorProfile> {
+  // 存的 owner_key 是身份的不可逆哈希（pluginOwnerKey，与 plugins.owner_key
+  // 同口径），不是原始 identity：作者页 URL 里的 key 就是这个哈希，
+  // 读档案（getPluginAuthorProfile）与插件归属才能对上号。
+  const key = pluginOwnerKey(identity.trim());
+  if (!identity.trim()) throw new Error("作者 key 不能为空");
+  const clean = (v: string | null | undefined): string | null => {
+    const t = typeof v === "string" ? v.trim() : "";
+    return t ? t : null;
+  };
+  const displayName = clean(input.displayName);
+  if (displayName && displayName.length > 60) throw new Error("作者名称超过 60 字符上限");
+  const bio = clean(input.bio);
+  if (bio && bio.length > 500) throw new Error("作者简介超过 500 字符上限");
+  const avatar = clean(input.avatar);
+  if (avatar && avatar.length > 8) throw new Error("头像只能是 emoji 或短文本（8 字符以内）");
+  if (avatar && avatar.includes("://")) throw new Error("头像只能是 emoji 或短文本（禁止远程图片地址）");
+  const linkOf = (v: string | null | undefined, label: string): string | undefined => {
+    const t = clean(v);
+    if (!t) return undefined;
+    if (t.length > 300) throw new Error(`${label}超过 300 字符上限`);
+    if (!isHttpUrl(t)) throw new Error(`${label}必须是 http/https 绝对地址`);
+    return t;
+  };
+  const homepage = linkOf(input.links?.homepage, "主页链接");
+  const github = linkOf(input.links?.github, "GitHub 链接");
+  const x = linkOf(input.links?.x, "X 链接");
+  const donateUrl = linkOf(input.donateUrl, "捐赠链接");
+  const links: Record<string, string> = {};
+  if (homepage) links.homepage = homepage;
+  if (github) links.github = github;
+  if (x) links.x = x;
+  const now = Date.now();
+  await repo.run(
+    "INSERT INTO plugin_author_profiles (owner_key, display_name, bio, avatar, links, donate_url, created_at, updated_at) " +
+      "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(owner_key) DO UPDATE SET " +
+      "display_name = excluded.display_name, bio = excluded.bio, avatar = excluded.avatar, " +
+      "links = excluded.links, donate_url = excluded.donate_url, updated_at = excluded.updated_at",
+    [key, displayName, bio, avatar, JSON.stringify(links), donateUrl, now, now],
+  );
+  const saved = await getPluginAuthorProfile(repo, key);
+  if (!saved) throw new Error("保存作者档案后无法读回");
+  return saved;
+}
+
 export interface OwnerPluginStats {
   total: number;
   pending: number;
@@ -827,6 +931,51 @@ export async function setPluginFeatured(
   return updated;
 }
 
+/**
+ * 更新主动提醒（R5-1）：新版本上架后，给仍装着旧版的用户各发一条站内通知。
+ *
+ * 触发点只在 reviewPlugin 的 approve 使版本号实际递增时（shadow release）；
+ * 首次上架（无已装用户）与版本号不变的重上架不触发。幂等键
+ * `plugin-update:<pluginId>:<version>` 保证同一版本只提醒一次；
+ * 单条通知失败只记日志、不阻断审核（提醒是次生效应，审核本身不能因此失败）。
+ * 通知进 outbox 后由 JobRunner 的 relayNotifications 投进站内信箱
+ * （/me/notifications），与 C-4 的审核通知同一条投递链路。
+ */
+export async function notifyPluginUpdateAvailable(
+  repo: Repository,
+  plugin: PluginRecord,
+  previousVersion: string,
+): Promise<{ notified: number }> {
+  const newVersion = plugin.version;
+  if (comparePluginVersions(newVersion, previousVersion) <= 0) return { notified: 0 };
+  const rows = await repo.raw(
+    "SELECT identity, version FROM plugin_installs WHERE plugin_id = ? AND removed_at IS NULL",
+    [plugin.id],
+  );
+  let notified = 0;
+  for (const row of rows) {
+    const identity = String(row.identity ?? "");
+    const installedVersion = String(row.version ?? "");
+    if (!identity) continue;
+    if (comparePluginVersions(installedVersion, newVersion) >= 0) continue;
+    try {
+      await emitNotification(repo, {
+        identity,
+        idempotencyKey: `plugin-update:${plugin.id}:${newVersion}`,
+        kind: "plugin_update_available",
+        title: `「${plugin.name}」有新版本 v${newVersion}`,
+        body: `你安装的 v${installedVersion} 已有新版本 v${newVersion}，前往已安装页一键升级。`,
+        link: "/marketplace/installed",
+        channels: ["inapp"],
+      });
+      notified++;
+    } catch (err) {
+      console.error("[plugins] 更新提醒发送失败（不阻断审核）:", err);
+    }
+  }
+  return { notified };
+}
+
 /** 审核动作：approve（pending|delisted|quarantined|rejected → published）/ reject / delist
  * rejected 允许重新审核上架（C-1）：管理员误驳回后点「重新上架」不应永远失败，
  * 否则只能等作者重投；与 pending/delisted/quarantined 同一条上架路径。 */
@@ -923,6 +1072,11 @@ export async function reviewPlugin(
     diff: { from: existing.status, to: updated.status, note },
     ip: actor?.ip,
   });
+  // R5-1 更新主动提醒：版本号实际递增的上架，给仍装旧版的用户发通知
+  // （首次上架/版本号不变时 notify 内直接返回 0，不发）。
+  if (action === "approve") {
+    await notifyPluginUpdateAvailable(repo, updated, existing.version);
+  }
   return updated;
 }
 
@@ -989,6 +1143,7 @@ function parseInstallRow(row: Record<string, any>): PluginInstallRecord {
     meta: parseJson<unknown>(row.meta, null),
     installedAt: Number(row.installed_at ?? 0),
     removedAt: row.removed_at == null ? null : Number(row.removed_at),
+    disabledAt: row.disabled_at == null ? null : Number(row.disabled_at),
   };
 }
 
@@ -1059,6 +1214,102 @@ export interface PluginInstallOptions {
   selectedSites?: string[];
 }
 
+/**
+ * 安装时冲突检测（D 批）。
+ *
+ * 只覆盖服务端能真实判定的两类：
+ * - search-pack：目标包的 !前缀已被另一已装包注册——安装会顶掉对方的引擎
+ *   （registerSearchPackEngines 是「同前缀新包胜出」语义，旧包的引擎会被移除）；
+ *   已禁用的包不算冲突（它的引擎已在客户端注销，不会被顶掉）。
+ * - site-pack：目标包与另一已装包收录了同一站点——重复安装不会重复计数，
+ *   但用户应知道内容是重复的；禁用不移除站点，故禁用的包仍算冲突方。
+ * theme / workspace-preset 不在检测范围：主题激活是客户端显式动作，
+ * 预设的看板追加/覆盖由用户在应用时当面选择，服务端无可判定的冲突面。
+ * bundle：逐成员递归检测（成员自身不与自己冲突）。
+ */
+export async function detectInstallConflicts(
+  repo: Repository,
+  slug: string,
+  identity: string,
+  options?: { version?: string },
+): Promise<PluginInstallConflict[]> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) throw new Error(`插件不存在：${slug}`);
+  if (plugin.status !== "published") {
+    throw new Error(`插件状态为 ${plugin.status}，只有已上架（published）插件可以安装`);
+  }
+  let targetManifest = plugin.manifest;
+  if (options?.version && options.version !== plugin.version) {
+    const vSnapshot = await getPluginVersion(repo, plugin.id, options.version);
+    if (!vSnapshot) throw new Error(`找不到版本 ${options.version} 的历史快照`);
+    targetManifest = vSnapshot.manifest;
+  }
+  const installed = await listPluginInstallsByIdentity(repo, identity);
+  const conflicts: PluginInstallConflict[] = [];
+
+  if (targetManifest.kind === "bundle") {
+    const members = await resolveBundleMembers(repo, { ...plugin, manifest: targetManifest });
+    for (const member of members) {
+      if (member.status !== "published") continue;
+      const memberConflicts = await detectInstallConflicts(repo, member.slug, identity);
+      conflicts.push(...memberConflicts);
+    }
+    return conflicts;
+  }
+
+  if (targetManifest.kind === "search-pack") {
+    const engines = (targetManifest.payload as SearchPackPayload).engines ?? [];
+    for (const item of installed) {
+      if (item.plugin.slug === slug) continue;
+      if (item.plugin.kind !== "search-pack") continue;
+      // 已禁用的包：引擎已在客户端注销，装新包顶不掉任何东西，不算冲突
+      if (item.install.disabledAt !== null) continue;
+      const otherEngines = (item.plugin.manifest.payload as SearchPackPayload).engines ?? [];
+      for (const other of otherEngines) {
+        for (const engine of engines) {
+          if (engine.prefix.toLowerCase() !== other.prefix.toLowerCase()) continue;
+          const sameUrl = engine.searchUrl === other.searchUrl;
+          conflicts.push({
+            type: "search-prefix",
+            severity: "warn",
+            message: sameUrl
+              ? `「${engine.prefix}」已被已安装的「${item.plugin.name}」注册为同一检索地址，安装后该前缀仍指向同一地址`
+              : `「${engine.prefix}」已被已安装的「${item.plugin.name}」注册，安装后该前缀将改指本插件的检索地址`,
+            otherSlug: item.plugin.slug,
+            otherName: item.plugin.name,
+            detail: { prefix: engine.prefix, sameUrl, otherSearchUrl: other.searchUrl },
+          });
+        }
+      }
+    }
+    return conflicts;
+  }
+
+  if (targetManifest.kind === "site-pack") {
+    const targetUrls = new Set(
+      ((targetManifest.payload as SitePackPayload).sites ?? []).map((s) => siteUrlKey(s.url)),
+    );
+    for (const item of installed) {
+      if (item.plugin.slug === slug) continue;
+      if (item.plugin.kind !== "site-pack") continue;
+      const otherUrls = ((item.plugin.manifest.payload as SitePackPayload).sites ?? []).map((s) => s.url);
+      const overlap = otherUrls.filter((u) => targetUrls.has(siteUrlKey(u)));
+      if (overlap.length === 0) continue;
+      conflicts.push({
+        type: "site-url",
+        severity: "warn",
+        message: `与已安装的「${item.plugin.name}」收录了 ${overlap.length} 个相同站点，重复安装不会重复计数`,
+        otherSlug: item.plugin.slug,
+        otherName: item.plugin.name,
+        detail: { overlapCount: overlap.length, sampleUrls: overlap.slice(0, 3) },
+      });
+    }
+    return conflicts;
+  }
+
+  return conflicts;
+}
+
 export async function installPlugin(
   repo: Repository,
   slug: string,
@@ -1081,6 +1332,10 @@ export async function installPlugin(
     targetManifest = vSnapshot.manifest;
     targetVersion = vSnapshot.version;
   }
+  // 兼容性声明（D 批）：要求高于当前应用版本时拒绝安装，不静默装坏。
+  // 放在 installPlugin 里，组合包成员递归安装与回滚也同走这道闸。
+  const compatError = checkPluginCompat(targetManifest);
+  if (compatError) throw new Error(compatError);
   const who = identity.trim().slice(0, 120) || "anonymous";
   const applied: PluginInstallApplied = { sitesAdded: 0, sitesSkipped: 0, categoriesCreated: 0, createdSiteIds: [] };
 
@@ -1490,6 +1745,95 @@ export async function uninstallPlugin(
   const refreshed = await getPluginBySlug(repo, slug);
   if (!refreshed) throw new Error("卸载后无法读回插件状态");
   return { removed: true, removedSites, removedCategories, plugin: refreshed };
+}
+
+export interface PluginDisableResult {
+  plugin: PluginRecord;
+  install: PluginInstallRecord;
+  /** true = 本次调用改了状态；false = 已经是目标状态（幂等） */
+  changed: boolean;
+}
+
+/**
+ * 禁用已安装插件（D 批）。
+ *
+ * 语义（按类型如实区分，已安装页文案与之一致）：
+ * - 全部类型：安装记录打 disabled_at 标记，版本与数据不动；再启用一键恢复，
+ *   不必重新安装；
+ * - theme / search-pack：运行效果由客户端在禁用/启用时同步停用/恢复
+ *   （主题回落默认、搜索引擎注销注册），服务端只记状态；
+ * - site-pack / workspace-preset / bundle：已导入的站点/看板保留原处
+ *   （它们已是公共收录或用户数据，单用户禁用不能替别人删数据），
+ *   禁用只停后续效果、不丢数据。
+ * 未安装 / 已卸载时抛错；已禁用时幂等成功（changed=false）。
+ */
+export async function disablePluginInstall(
+  repo: Repository,
+  slug: string,
+  identity: string,
+  actor?: PluginActor,
+): Promise<PluginDisableResult> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) throw new Error(`插件不存在：${slug}`);
+  const who = identity.trim().slice(0, 120) || "anonymous";
+  const install = await getPluginInstall(repo, plugin.id, who);
+  if (!install || install.removedAt !== null) {
+    throw new Error("尚未安装该插件，禁用前请先安装");
+  }
+  if (install.disabledAt !== null) {
+    return { plugin, install, changed: false };
+  }
+  const now = Date.now();
+  await repo.run("UPDATE plugin_installs SET disabled_at = ? WHERE plugin_id = ? AND identity = ?", [
+    now,
+    plugin.id,
+    who,
+  ]);
+  await repo.audit({
+    actor: actor?.actor ?? who,
+    actorKind: actor?.actorKind ?? "identity",
+    action: "plugin.disable",
+    target: slug,
+    diff: { version: install.version },
+    ip: actor?.ip,
+  });
+  const updated = await getPluginInstall(repo, plugin.id, who);
+  if (!updated) throw new Error("禁用后无法读回安装记录");
+  return { plugin, install: updated, changed: true };
+}
+
+/** 启用已禁用的插件（与 disablePluginInstall 对称；未禁用时幂等成功）。 */
+export async function enablePluginInstall(
+  repo: Repository,
+  slug: string,
+  identity: string,
+  actor?: PluginActor,
+): Promise<PluginDisableResult> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) throw new Error(`插件不存在：${slug}`);
+  const who = identity.trim().slice(0, 120) || "anonymous";
+  const install = await getPluginInstall(repo, plugin.id, who);
+  if (!install || install.removedAt !== null) {
+    throw new Error("尚未安装该插件，启用前请先安装");
+  }
+  if (install.disabledAt === null) {
+    return { plugin, install, changed: false };
+  }
+  await repo.run("UPDATE plugin_installs SET disabled_at = NULL WHERE plugin_id = ? AND identity = ?", [
+    plugin.id,
+    who,
+  ]);
+  await repo.audit({
+    actor: actor?.actor ?? who,
+    actorKind: actor?.actorKind ?? "identity",
+    action: "plugin.enable",
+    target: slug,
+    diff: { version: install.version },
+    ip: actor?.ip,
+  });
+  const updated = await getPluginInstall(repo, plugin.id, who);
+  if (!updated) throw new Error("启用后无法读回安装记录");
+  return { plugin, install: updated, changed: true };
 }
 
 /* ------------------------------------------------------------------ *
@@ -2301,6 +2645,53 @@ export async function getPluginFunnel(repo: Repository, days = 30): Promise<Plug
       installCount: Number(row.install_count ?? 0),
     })),
   };
+}
+
+/**
+ * 单插件安装趋势（D 批）：按天聚合 plugin_install_success 事件（真实安装记录）。
+ *
+ * 事件 meta 里有 slug（安装路由写 meta: { slug, kind, version }），
+ * LIKE 预筛 + 应用层精确认（与事件幂等预筛同路子：预筛可能多命中，
+ * 精确认只认 meta.slug 全等，slug 来自服务端查库、不是用户输入）。
+ * 零安装的日子补 0，不跳过、不编造。事件保留 90 天
+ * （data_retention telemetryDays），30 天窗口恒在保留期内。
+ */
+export async function getPluginInstallTrend(
+  repo: Repository,
+  slug: string,
+  days = 30,
+): Promise<PluginInstallTrend> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) throw new Error(`插件不存在：${slug}`);
+  const span = Math.min(90, Math.max(1, Math.trunc(days)));
+  const since = Date.now() - span * 24 * 60 * 60 * 1000;
+  const dayExpr =
+    repo.db.dialect === "pg"
+      ? "to_char(to_timestamp(created_at / 1000.0) AT TIME ZONE 'UTC', 'YYYY-MM-DD')"
+      : "date(created_at / 1000, 'unixepoch')";
+  const rows = await repo.raw(
+    `SELECT ${dayExpr} AS d, meta FROM events
+       WHERE kind = 'plugin_install_success' AND meta LIKE ? AND created_at >= ?`,
+    [`%"slug":"${plugin.slug}"%`, since],
+  );
+  const byDate = new Map<string, number>();
+  let total = 0;
+  for (const row of rows) {
+    const meta = parseJson<Record<string, unknown>>(row.meta, {});
+    if (meta.slug !== plugin.slug) continue;
+    const d = String(row.d ?? "");
+    if (!d) continue;
+    byDate.set(d, (byDate.get(d) ?? 0) + 1);
+    total++;
+  }
+  const series: { date: string; installs: number }[] = [];
+  const today = new Date();
+  for (let i = span - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
+    const key = d.toISOString().slice(0, 10);
+    series.push({ date: key, installs: byDate.get(key) ?? 0 });
+  }
+  return { pluginId: plugin.id, slug: plugin.slug, days: span, total, series };
 }
 
 /** 治理告警：待审超 SLA / 插件被举报 / 评价被举报；只读，不自动改变状态 */

@@ -587,6 +587,7 @@ CREATE TABLE IF NOT EXISTS plugin_installs (
   meta TEXT,
   installed_at INTEGER NOT NULL,
   removed_at INTEGER,
+  disabled_at INTEGER,
   PRIMARY KEY (plugin_id, identity)
 );
 CREATE INDEX IF NOT EXISTS plugin_installs_plugin_idx ON plugin_installs(plugin_id);
@@ -652,6 +653,17 @@ CREATE TABLE IF NOT EXISTS plugin_reviews (
 );
 CREATE INDEX IF NOT EXISTS plugin_reviews_plugin_idx ON plugin_reviews(plugin_id);
 CREATE INDEX IF NOT EXISTS plugin_reviews_status_idx ON plugin_reviews(status);
+
+CREATE TABLE IF NOT EXISTS plugin_author_profiles (
+  owner_key TEXT PRIMARY KEY,
+  display_name TEXT,
+  bio TEXT,
+  avatar TEXT,
+  links TEXT NOT NULL DEFAULT '{}',
+  donate_url TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS short_links (
   code TEXT PRIMARY KEY,
@@ -1328,6 +1340,7 @@ CREATE TABLE IF NOT EXISTS plugin_installs (
   meta TEXT,
   installed_at BIGINT NOT NULL,
   removed_at BIGINT,
+  disabled_at BIGINT,
   PRIMARY KEY (plugin_id, identity)
 );
 CREATE INDEX IF NOT EXISTS plugin_installs_plugin_idx ON plugin_installs(plugin_id);
@@ -1393,6 +1406,17 @@ CREATE TABLE IF NOT EXISTS plugin_reviews (
 );
 CREATE INDEX IF NOT EXISTS plugin_reviews_plugin_idx ON plugin_reviews(plugin_id);
 CREATE INDEX IF NOT EXISTS plugin_reviews_status_idx ON plugin_reviews(status);
+
+CREATE TABLE IF NOT EXISTS plugin_author_profiles (
+  owner_key TEXT PRIMARY KEY,
+  display_name TEXT,
+  bio TEXT,
+  avatar TEXT,
+  links TEXT NOT NULL DEFAULT '{}',
+  donate_url TEXT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS short_links (
   code TEXT PRIMARY KEY,

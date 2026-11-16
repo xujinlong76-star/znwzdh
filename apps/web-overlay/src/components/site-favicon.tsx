@@ -93,6 +93,22 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 放 public/brand-icons/ 而不是 public/assets/images/logos/：后者被
   // scripts/lib/overlay-drift.mjs 的 EXCLUDE_PREFIX 整目录排除（那是上游底座资产），
   // 放进去的文件永远不会被镜像同步到 apps/web/public。
+  // 2026-11-16（进化第 94 轮第一批）：61 站图标缺失清单里的高可见站点。
+  // 本地 Simple Icons 资产优先（零运行时依赖）；无 Simple Icons 的站用
+  // 站方自有 favicon 或官方应用图标本地化文件（public/brand-icons/），
+  // 每个远程地址与本地文件均经 curl 逐个验证（200 + image MIME + >32B）。
+  'dify.ai': '/brand-icons/dify.svg',
+  'ant.design': '/brand-icons/antdesign.svg',
+  'kubernetes.io': '/brand-icons/kubernetes.svg',
+  'spring.io': '/brand-icons/springboot.svg',
+  'notion.com': 'https://www.notion.so/images/favicon.ico',
+  'radix-ui.com': 'https://github.com/radix-ui.png?size=64',
+  'boardmix.cn': '/brand-icons/boardmix.jpg',
+  'docs.qq.com': '/brand-icons/tencent-docs.jpg',
+  'kdocs.cn': '/brand-icons/kdocs.jpg',
+  'sspai.com': 'https://sspai.com/apple-touch-icon.png',
+  'pinduoduo.com': 'https://www.pinduoduo.com/favicon.png',
+  'hongguoduanju.com': '/brand-icons/hongguo.jpg',
   'vuejs.org': '/brand-icons/vue.svg',
   'npmjs.com': '/brand-icons/npm.svg',
   'vite.dev': '/brand-icons/vite.svg',
@@ -101,7 +117,9 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'hunyuan.tencent.com': 'https://hunyuan.tencent.com/favicon.ico',
   'tongyi.aliyun.com': 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
   'wan2.aliyun.com': 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
-  'zhiwen.xfyun.cn': 'https://zhiwen.xfyun.cn/favicon.ico',
+  // 2026-11-16：旧值 https://zhiwen.xfyun.cn/favicon.ico 经 curl 验证 404，
+  // 改用同站验证过的 favicon.png（200 image/png 14725B）。
+  'zhiwen.xfyun.cn': 'https://zhiwen.xfyun.cn/favicon.png',
   'cursor.com': 'https://www.cursor.com/favicon.ico',
   'bolt.new': 'https://bolt.new/favicon.ico',
   'v0.dev': '/assets/images/logos/vercel.webp',
@@ -115,7 +133,10 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'chat.deepseek.com': 'https://chat.deepseek.com/favicon.ico',
   'klingai.com': 'https://klingai.com/favicon.ico',
   'klingai.kuaishou.com': 'https://klingai.com/favicon.ico',
-  'lumalabs.ai': 'https://lumalabs.ai/favicon.ico',
+  // 2026-11-16：旧值 https://lumalabs.ai/favicon.ico 经 curl 验证 404，
+  // 改用 Luma 官方备用域名 luma.ai 的同名 favicon（200 image/x-icon 15086B，
+  // 内容为 Luma 四角星品牌标）。
+  'lumalabs.ai': 'https://luma.ai/favicon.ico',
   'vidu.studio': 'https://www.vidu.studio/favicon.ico',
   'hailuoai.com': 'https://hailuoai.com/favicon.ico',
   'chatgpt.com': '/assets/images/logos/chatgpt.webp',
@@ -274,7 +295,7 @@ export function resolveSiteIcon(
     const lowerTitle = (title || '').toLowerCase()
     if (lowerTitle.includes('混元')) return 'https://hunyuan.tencent.com/favicon.ico'
     if (lowerTitle.includes('万相') || lowerTitle.includes('wan2')) return 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'
-    if (lowerTitle.includes('智文')) return 'https://zhiwen.xfyun.cn/favicon.ico'
+    if (lowerTitle.includes('智文')) return 'https://zhiwen.xfyun.cn/favicon.png'
     if (lowerTitle.includes('roo code')) return 'https://github.com/RooVetGit.png?size=64'
     if (lowerTitle.includes('kimi')) return 'https://kimi.moonshot.cn/pwa-192.png'
     if (lowerTitle.includes('豆包')) return 'https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/favicon/new-doubao/128x128.png'

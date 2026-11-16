@@ -370,6 +370,86 @@ describe("插件市场 API 全链路", () => {
     expect(detailRes.json().plugin.reviewStats?.reviewCount).toBe(1);
   });
 
+  it("评价提交写面门禁：下架/待审插件拒绝新评价（404），已上架不受影响（A-1b 复现）", async () => {
+    // 下架：import 上架 → 安装 → delist；下架前已安装的用户再 POST 应 404 且不落库
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("A-1b 下架评价包", [{ url: "https://a1b-delisted.example.com", title: "D" }]),
+    });
+    expect(imported.statusCode).toBe(201);
+    const delistedSlug = imported.json().slug as string;
+    await app.inject({
+      method: "POST",
+      url: `/api/plugins/${delistedSlug}/install`,
+      payload: { identity: "a1b-delisted-reviewer" },
+    });
+    const delist = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(delistedSlug)}/review`,
+      payload: { action: "delist", note: "A-1b 复现下架" },
+    });
+    expect(delist.statusCode).toBe(200);
+    const delistedRes = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${delistedSlug}/reviews`,
+      payload: { rating: 5, identity: "a1b-delisted-reviewer", content: "下架前装过也不应接受" },
+    });
+    expect(delistedRes.statusCode).toBe(404);
+    const delistedPlugin = (await ctx.repo.getPluginBySlug(delistedSlug))!;
+    expect(await ctx.repo.getUserPluginReview(delistedPlugin.id, "a1b-delisted-reviewer")).toBeNull();
+
+    // 待审：import 上架 → 安装 → 提交新版回 pending；已安装用户再 POST 应 404
+    const importedPending = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("A-1b 待审评价包", [{ url: "https://a1b-pending.example.com", title: "P" }]),
+    });
+    expect(importedPending.statusCode).toBe(201);
+    const pendingSlug = importedPending.json().slug as string;
+    await app.inject({
+      method: "POST",
+      url: `/api/plugins/${pendingSlug}/install`,
+      payload: { identity: "a1b-pending-reviewer" },
+    });
+    const pendingManifest = validateAndCleanPluginManifest({
+      ...sitePack("A-1b 待审评价包", [{ url: "https://a1b-pending.example.com", title: "P" }]),
+      version: "1.1.0",
+    });
+    if (!pendingManifest.ok) throw new Error("待审复现清单不合法：" + pendingManifest.errors.join("; "));
+    await ctx.repo.updatePlugin(pendingSlug, pendingManifest.manifest);
+    expect((await ctx.repo.getPluginBySlug(pendingSlug))?.status).toBe("pending");
+    const pendingRes = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${pendingSlug}/reviews`,
+      payload: { rating: 5, identity: "a1b-pending-reviewer", content: "待审不应接受" },
+    });
+    expect(pendingRes.statusCode).toBe(404);
+    const pendingPlugin = (await ctx.repo.getPluginBySlug(pendingSlug))!;
+    expect(await ctx.repo.getUserPluginReview(pendingPlugin.id, "a1b-pending-reviewer")).toBeNull();
+
+    // 对照：已上架插件正常提交 201
+    const okImported = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("A-1b 上架评价包", [{ url: "https://a1b-published.example.com", title: "OK" }]),
+    });
+    expect(okImported.statusCode).toBe(201);
+    const okSlug = okImported.json().slug as string;
+    await app.inject({
+      method: "POST",
+      url: `/api/plugins/${okSlug}/install`,
+      payload: { identity: "a1b-published-reviewer" },
+    });
+    const okRes = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${okSlug}/reviews`,
+      payload: { rating: 5, identity: "a1b-published-reviewer", title: "好用", content: "上架插件正常提交" },
+    });
+    expect(okRes.statusCode).toBe(201);
+    expect(okRes.json().review.rating).toBe(5);
+  });
+
   it("动态 SVG 徽章服务：正确渲染版本、安装量及 404 徽章", async () => {
     const slug = await publishedSlug("评价测试包");
 

@@ -546,6 +546,26 @@ export default function AdminPluginsPage() {
     }
   }
 
+  // 人工隔离（R4-4：举报取消静默自动下架后，隔离只能由管理员人工决定；
+  // 仓库层 quarantinePlugin 此前无任何路由或管理入口，quarantined 状态不可达）
+  const handleQuarantine = async (plugin: HubPluginItem) => {
+    if (!confirm(`确定要隔离插件「${plugin.name}」吗？隔离后普通访客无法安装，须管理员审核解封才能恢复上架。`)) {
+      return
+    }
+    setActionLoading(true)
+    try {
+      await reviewPlugin(plugin.slug, 'quarantine', '累计举报，管理员人工隔离')
+      toast.success(`已隔离「${plugin.name}」`)
+      void loadList()
+    } catch (err) {
+      toast.error('隔离失败', {
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   // 提交驳回
   const handleConfirmReject = async () => {
     if (!rejectPluginItem) return
@@ -971,6 +991,17 @@ export default function AdminPluginsPage() {
                       className="px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 rounded-lg border border-amber-500/30 transition-colors"
                     >
                       下架
+                    </button>
+                  )}
+
+                  {item.status === 'published' && (
+                    <button
+                      type="button"
+                      onClick={() => handleQuarantine(item)}
+                      disabled={actionLoading}
+                      className="px-3 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/15 rounded-lg border border-destructive/30 transition-colors"
+                    >
+                      隔离
                     </button>
                   )}
 

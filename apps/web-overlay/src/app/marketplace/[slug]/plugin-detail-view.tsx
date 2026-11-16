@@ -447,14 +447,14 @@ export default function PluginDetailView({
         {/* 降级提示 */}
         {notice && <HubDegradedNotice notice={notice} onRetry={loadDetail} />}
 
-        {/* 自动隔离熔断警告 */}
+        {/* 隔离体检警告（R4-4：隔离只由管理员人工决定，不再是系统自动熔断） */}
         {plugin.status === 'quarantined' && (
           <div className="p-4 rounded-2xl border border-destructive/40 bg-destructive/15 text-destructive-text flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="text-xs sm:text-sm">
-              <h4 className="font-bold">⚠️ 该插件已被系统自动隔离体检 (Quarantined)</h4>
+              <h4 className="font-bold">⚠️ 该插件已被隔离体检 (Quarantined)</h4>
               <p className="text-xs mt-1 text-destructive-text leading-relaxed">
-                因累计收到多次社区用户违规举报，系统已自动触发安全熔断机制，暂停普通访客一键安装。
+                因累计收到多次社区用户违规举报，管理员已将该插件隔离，暂停普通访客一键安装。
                 山羊胡管理员审核确认安全后将恢复上架。
               </p>
             </div>

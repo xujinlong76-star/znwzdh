@@ -136,6 +136,12 @@ describe("插件注册表：发布 / slug / 列表", () => {
     const miss = await repo.listPlugins({ q: "不存在的内容-xyz" });
     expect(miss.total).toBe(0);
 
+    // q 也匹配 slug：管理台治理预警「在队列中定位」按 slug 搜索，旧口径
+    // 只匹配名称/简介，定位后列表恒为空（E2E 本地实测复现）。
+    const bySlug = await repo.listPlugins({ q: "theme-violet" });
+    expect(bySlug.total).toBe(1);
+    expect(bySlug.items[0]?.slug).toBe("theme-violet");
+
     const paged = await repo.listPlugins({ limit: 1, offset: 1 });
     expect(paged.items.length).toBe(1);
   });

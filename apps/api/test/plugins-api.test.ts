@@ -120,6 +120,42 @@ describe("插件市场 API 全链路", () => {
     expect(publicList.json().items.some((p: { slug: string }) => p.slug === item.slug)).toBe(true);
   });
 
+  it("审核：quarantine 仅已上架插件可隔离；隔离后公开不可见，approve 可解封", async () => {
+    // R4-4：举报取消静默自动下架后，隔离是管理员人工处置的唯一入口；
+    // 路由此前未暴露 quarantine，仓库层 quarantinePlugin 无人调用。
+    const slug = await publishedSlug("集成测试包");
+
+    const quarantined = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/review`,
+      payload: { action: "quarantine", note: "测试隔离" },
+    });
+    expect(quarantined.statusCode).toBe(200);
+    expect(quarantined.json().plugin.status).toBe("quarantined");
+    expect(quarantined.json().action).toBe("quarantine");
+
+    // 已隔离插件再次隔离 → 400（只有已上架插件可以隔离）
+    const again = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/review`,
+      payload: { action: "quarantine" },
+    });
+    expect(again.statusCode).toBe(400);
+
+    // 隔离后公开列表不可见
+    const publicList = await app.inject({ method: "GET", url: "/api/plugins?q=集成测试包" });
+    expect(publicList.json().items.some((p: { slug: string }) => p.slug === slug)).toBe(false);
+
+    // 管理员审核解封并上架（恢复 published，供后续用例继续使用该包）
+    const approved = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/review`,
+      payload: { action: "approve", note: "测试解封" },
+    });
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json().plugin.status).toBe("published");
+  });
+
   it("安装：建站点、幂等计数、installed 列表与详情交互态", async () => {
     const slug = await publishedSlug("集成测试包");
     const res = await app.inject({ method: "POST", url: `/api/plugins/${encodeURIComponent(slug)}/install?anonId=anon-test-1` });

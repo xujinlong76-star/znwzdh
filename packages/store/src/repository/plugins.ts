@@ -465,9 +465,11 @@ export async function listPlugins(
     params.push(filter.kind);
   }
   if (filter.q) {
-    wheres.push("(p.name LIKE ? ESCAPE '!' OR p.description LIKE ? ESCAPE '!')");
+    // q 匹配名称 / 简介 / slug：管理台「在队列中定位」按 alert.slug 搜索，
+    // 旧口径只匹配名称与简介，slug 永远搜不到，定位按钮点后列表恒为空。
+    wheres.push("(p.name LIKE ? ESCAPE '!' OR p.description LIKE ? ESCAPE '!' OR p.slug LIKE ? ESCAPE '!')");
     const like = containsLike(filter.q);
-    params.push(like, like);
+    params.push(like, like, like);
   }
   if (filter.featured !== undefined) {
     const truthy = repo.db.dialect === "pg" ? "TRUE" : "1";

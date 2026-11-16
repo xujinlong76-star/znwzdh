@@ -2274,7 +2274,7 @@ export async function updatePlugin(
 
 export async function reviewPlugin(
   slug: string,
-  action: 'approve' | 'reject' | 'delist',
+  action: 'approve' | 'reject' | 'delist' | 'quarantine',
   note?: string,
 ): Promise<{ success: boolean; plugin: HubPluginItem; action: string }> {
   return sendJson(`/api/plugins/${encodeURIComponent(slug)}/review`, 'POST', { action, note })

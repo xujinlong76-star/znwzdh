@@ -125,7 +125,7 @@ export function ReviewForm({
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
           placeholder="例如：界面优雅，收录的开发者资源非常齐全！"
-          maxLength={100}
+          maxLength={200}
           className="text-xs h-9 bg-background"
         />
       </div>
@@ -141,7 +141,7 @@ export function ReviewForm({
           onChange={(e) => onContentChange(e.target.value)}
           placeholder="分享您的真实使用场景，帮助其他开发者选择此插件..."
           rows={3}
-          maxLength={1000}
+          maxLength={4000}
           className="text-xs bg-background resize-none"
         />
       </div>

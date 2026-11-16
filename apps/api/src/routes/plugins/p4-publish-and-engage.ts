@@ -253,8 +253,14 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
    * ------------------------------------------------------------------ */
 
   /**
-   * 审核插件：approve（上架）、reject（驳回）、delist（下架）
+   * 审核插件：approve（上架）、reject（驳回）、delist（下架）、quarantine（隔离）
    * 重复 approve 返回 409
+   *
+   * R4-4（2026-11-16）：举报取消静默自动下架后，隔离只能由管理员人工决定。
+   * 仓库层 quarantinePlugin 早已存在，但此前没有任何路由或管理入口调用它，
+   * quarantined 状态实际不可达（「已隔离」标签与「审核解封并上架」按钮是死入口）。
+   * 本路由把 quarantine 接到现有的审核通道上：published → quarantined，写
+   * plugin.quarantine 审计、通知作者、摘掉语义索引，与 delist 同口径。
    *
    * 设计决策：审核态变更**刻意不写入 `events`**。events 是用户行为时间序列
    * （画像、活跃度、行为分析都从它聚合），管理员的上架/驳回属于管理动作，
@@ -265,13 +271,13 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
     const { slug } = req.params as { slug: string };
     const body = z
       .object({
-        action: z.enum(["approve", "reject", "delist"]),
+        action: z.enum(["approve", "reject", "delist", "quarantine"]),
         note: z.string().max(500).nullable().optional(),
       })
       .safeParse(req.body ?? {});
 
     if (!body.success) {
-      return badRequest(reply, "请指定合法的审核操作（approve / reject / delist）");
+      return badRequest(reply, "请指定合法的审核操作（approve / reject / delist / quarantine）");
     }
 
     const callerAuth = req.auth;
@@ -287,18 +293,32 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
         if (body.data.action === "approve" && existing.status === "published" && !existing.pendingVersion) {
           return { status: "duplicate" as const };
         }
-        const reviewed = await ctx.repo.reviewPlugin(slug, body.data.action, body.data.note ?? null, {
-          actor: callerAuth?.actor || "admin",
-          actorKind: callerAuth?.kind || "admin",
-          ip: req.ip,
-        });
+        if (body.data.action === "quarantine" && existing.status !== "published") {
+          return {
+            status: "invalid" as const,
+            message: `插件当前状态为 ${existing.status}，只有已上架插件可以隔离`,
+          };
+        }
+        // quarantine 走仓库层 quarantinePlugin（与 reviewPlugin 分开：隔离是人工
+        // 处置，不经过 approve/reject/delist 的状态机分支）。
+        const reviewed = body.data.action === "quarantine"
+          ? await ctx.repo.quarantinePlugin(slug, body.data.note ?? "管理员人工隔离", {
+              actor: callerAuth?.actor || "admin",
+              actorKind: callerAuth?.kind || "admin",
+              ip: req.ip,
+            })
+          : await ctx.repo.reviewPlugin(slug, body.data.action, body.data.note ?? null, {
+              actor: callerAuth?.actor || "admin",
+              actorKind: callerAuth?.kind || "admin",
+              ip: req.ip,
+            });
         // Shadow release 审核可保持 published；待审版本的消费同样是一次转换。
         const changed = existing.status !== reviewed.status || existing.version !== reviewed.version ||
           existing.pendingVersion !== reviewed.pendingVersion;
         const owner = existing.ownerIdentity ? await ctx.repo.resolveIdentity(existing.ownerIdentity) : null;
         if (changed && owner && owner !== ADMIN_NOTIFICATION_IDENTITY) {
-          const kind = { approve: "plugin_approved", reject: "plugin_rejected", delist: "plugin_delisted" }[body.data.action];
-          const title = { approve: "插件审核已通过", reject: "插件审核未通过", delist: "插件已下架" }[body.data.action];
+          const kind = { approve: "plugin_approved", reject: "plugin_rejected", delist: "plugin_delisted", quarantine: "plugin_quarantined" }[body.data.action];
+          const title = { approve: "插件审核已通过", reject: "插件审核未通过", delist: "插件已下架", quarantine: "插件已被隔离" }[body.data.action];
           await ctx.repo.emitNotification({
             identity: owner,
             idempotencyKey: `plugin:${reviewed.id}:review:${existing.pendingVersion ?? existing.version}:${transitionId}`,
@@ -311,8 +331,9 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       });
       if (result.status === "missing") return notFound(reply, `插件不存在: ${slug}`);
       if (result.status === "duplicate") return conflict(reply, "该插件已处于上架状态，请勿重复通过");
+      if (result.status === "invalid") return badRequest(reply, result.message);
       const reviewed = result.plugin;
-      // 上架 -> 建/重建语义索引；驳回/下架 -> 摘掉向量（检索仍以 published 为准）
+      // 上架 -> 建/重建语义索引；驳回/下架/隔离 -> 摘掉向量（检索仍以 published 为准）
       if (body.data.action === "approve") {
         await indexPluginsBatch(ctx, [indexItemFromManifest(reviewed.slug, reviewed.manifest)]);
       } else {

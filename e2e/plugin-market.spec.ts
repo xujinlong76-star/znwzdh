@@ -445,7 +445,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(exportDialog).not.toBeVisible();
   });
 
-  test('进化增强全链路：已安装管家中心 -> 搜索引擎包快捷直达 -> 详情页 SVG 徽章 -> 自动熔断隔离与管理员审核解封', async ({ page, request, context }) => {
+  test('进化增强全链路：已安装管家中心 -> 搜索引擎包快捷直达 -> 详情页 SVG 徽章 -> 举报进治理预警与管理员手动隔离解封', async ({ page, request, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
 
     const stamp = Date.now().toString(36);
@@ -531,7 +531,8 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(page.getByText(searchPackName)).toBeVisible();
     await expect(page.getByText(`!test${stamp}`)).toBeVisible();
 
-    // 5. 社区高危举报触发自动熔断隔离 (quarantined)
+    // 5. 社区举报只计数、不再自动熔断隔离（R4-4：3 次举报只进治理告警，
+    // 隔离改由管理员在管理端人工决定；自动隔离横幅永不出现）
     // 连续发起 3 次独立匿名举报。举报接口限流为 5 次/小时/IP，
     // 若三次都从 localhost 发出，测试重试时会累计 3+3>5 被 429；
     // 这里用 TEST-NET-3 模拟三个独立来源 IP（E2E 已显式开启 TRUST_PROXY）。
@@ -544,32 +545,68 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
       expect(rep.status()).toBe(200);
     }
 
-    // 刷新详情页：验证自动熔断隔离横幅出现
+    // 3 次举报后插件仍为 published：详情接口状态不变、详情页无隔离横幅、
+    // 安装状态不受举报影响（仍显示已安装）
+    const detailAfterReports = await request.get(`/api/hub/plugins/${slug}`);
+    expect(detailAfterReports.ok(), `详情接口失败 ${detailAfterReports.status()}`).toBeTruthy();
+    expect((await detailAfterReports.json()).plugin.status).toBe('published');
     await page.goto(`/marketplace/${slug}`);
-    await expect(page.getByText('该插件已被系统自动隔离体检 (Quarantined)')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('该插件已被隔离体检 (Quarantined)')).not.toBeVisible();
+    await expect(page.getByRole('button', { name: /已安装/ })).toBeVisible();
 
-    // 6. 管理后台解封恢复上架
+    // 6. 管理后台：治理预警可见 → 管理员手动隔离 → 审核解封恢复上架
     await gotoAdmin(page, '/admin/plugins');
-    // 切换到「已隔离」标签
+    // 治理预警面板出现该插件的「插件被举报」预警（累计 3 次）
+    const governance = page.locator('section[aria-label="插件治理预警"]');
+    await expect(governance).toBeVisible({ timeout: 15_000 });
+    const alertRow = governance.locator('li', { hasText: searchPackName });
+    await expect(alertRow).toBeVisible({ timeout: 15_000 });
+    await expect(alertRow.getByText('插件被举报 3 次')).toBeVisible();
+
+    // 点「在队列中定位」跳到该插件卡片：确认举报计数已落库
+    await alertRow.getByRole('button', { name: '在队列中定位' }).click();
+    const pluginCard = page.locator('div.rounded-2xl', { hasText: searchPackName });
+    await expect(pluginCard).toBeVisible({ timeout: 15_000 });
+    await expect(pluginCard.getByText('举报 3')).toBeVisible();
+
+    // 管理员手动隔离（R4-4：quarantine 是人工处置入口）。confirm 对话框须先
+    // 接管：Playwright 默认自动拒绝 confirm，点了等于没点；点击可能落在 React
+    // 挂载前（水合窗口较宽）——卡片未消失即补击一次再等一轮。
+    page.once('dialog', (dialog) => dialog.accept());
+    await pluginCard.getByRole('button', { name: '隔离', exact: true }).click();
+    await expect(pluginCard).not.toBeVisible({ timeout: 15_000 }).catch(async () => {
+      if (await pluginCard.isVisible().catch(() => false)) {
+        page.once('dialog', (dialog) => dialog.accept());
+        await pluginCard.getByRole('button', { name: '隔离', exact: true }).click();
+        await expect(pluginCard).not.toBeVisible({ timeout: 15_000 });
+      }
+    });
+
+    // 隔离后详情页出现隔离横幅（隔离只由人工触发，文案不再写「系统自动」）
+    await page.goto(`/marketplace/${slug}`);
+    await expect(page.getByText('该插件已被隔离体检 (Quarantined)')).toBeVisible({ timeout: 15_000 });
+
+    // 回到管理台「已隔离」标签，审核解封并上架
+    await gotoAdmin(page, '/admin/plugins');
     const quarantinedTab = page.getByRole('button', { name: /已隔离/ });
     await expect(quarantinedTab).toBeVisible({ timeout: 15_000 });
     await quarantinedTab.click();
 
     // 找到该插件卡片并点击解封上架。点击可能落在 React 挂载前（页面挂载时
     // 有四路并行取数，水合窗口较宽）——15s 未见即补击一次再等一轮。
-    const pluginCard = page.locator('div.rounded-2xl', { hasText: searchPackName });
-    await expect(pluginCard).toBeVisible({ timeout: 15_000 }).catch(async () => {
+    const quarantinedCard = page.locator('div.rounded-2xl', { hasText: searchPackName });
+    await expect(quarantinedCard).toBeVisible({ timeout: 15_000 }).catch(async () => {
       await quarantinedTab.click();
-      await expect(pluginCard).toBeVisible({ timeout: 15_000 });
+      await expect(quarantinedCard).toBeVisible({ timeout: 15_000 });
     });
-    await expect(pluginCard.getByText('已隔离熔断')).toBeVisible();
-    await pluginCard.getByRole('button', { name: '审核解封并上架' }).click();
+    await expect(quarantinedCard.getByText('已隔离熔断')).toBeVisible();
+    await quarantinedCard.getByRole('button', { name: '审核解封并上架' }).click();
     // 瞬态 toast 同前：改等持久效果——解封后插件离开「已隔离」列表
-    await expect(pluginCard).not.toBeVisible({ timeout: 30_000 });
+    await expect(quarantinedCard).not.toBeVisible({ timeout: 30_000 });
 
     // 回到详情页：隔离横幅已消失，恢复为正常状态
     await page.goto(`/marketplace/${slug}`);
-    await expect(page.getByText('该插件已被系统自动隔离体检 (Quarantined)')).not.toBeVisible();
+    await expect(page.getByText('该插件已被隔离体检 (Quarantined)')).not.toBeVisible();
   });
 
   test('发布向导：组合包成员选择器拼装成员并实时回写 payload JSON', async ({ page, request }) => {

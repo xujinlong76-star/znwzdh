@@ -55,7 +55,7 @@ describe("A-4b：公开作者页必须能翻到第 101 个插件之后", () => {
   it("列表区有「加载更多」入口，显示已显示/共计", () => {
     const src = read("src/app/marketplace/author/[key]/author-plugins-view.tsx");
     expect(src).toContain("加载更多");
-    expect(src).toContain("data.items.length} / ${data.total}");
+    expect(src).toContain("data.items.length}/{data.total}");
   });
 
   it("fetchAuthorPlugins 本就会拼 offset（页面要用的 API 能力已就绪）", async () => {
@@ -85,7 +85,7 @@ describe("A-4b：作者中心列表必须能翻到第 101 个插件之后", () =
   it("列表区有「加载更多」入口，显示已显示/共计", () => {
     const src = read("src/app/marketplace/mine/page.tsx");
     expect(src).toContain("加载更多");
-    expect(src).toContain("items.length} / ${total}");
+    expect(src).toContain("items.length}/{total}");
   });
 
   it("fetchMyPlugins 本就会拼 offset（页面要用的 API 能力已就绪）", async () => {

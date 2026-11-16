@@ -116,7 +116,7 @@ describe('考试清单只含已核实的四场', () => {
     expect(EXAMS.map((e) => e.startISO)).not.toContain('2026-11-08')
   })
 
-  it('省考文案不写「联考」：六省均为单独招考', () => {
+  it('省考文案不写「联考」：七省均为单独招考', () => {
     // 守的是面向用户的文案（考试名/节点/备注/提醒），不是模块注释里的说明句
     const userFacing = [
       ...EXAMS.flatMap((e) => [e.name, e.tagline, e.examDateLabel, e.note ?? '']),
@@ -126,14 +126,25 @@ describe('考试清单只含已核实的四场', () => {
     expect(EXAMS.find((e) => e.id === 'shengkao')?.note).toContain('单独招考')
   })
 
-  it('省考 note 写全六省报名截止日，不只点浙江一名（2026-11-17 R-2）', () => {
-    // 六省报名均已截止（D 线 2026-11-17 核实）；旧文案只写浙江截止，
-    // 用户可能误以为其余五省报名还开着，故六省日期一个不能少
+  it('省考 note 写全七省报名截止日，不只点浙江一名（2026-11-17 R-2/R-3）', () => {
+    // 七省报名均已截止（D 线 2026-11-17 核实六省；山东经 C 线同日核实补入，
+    // 口径由六省升级为七省，断言随之升级——“写全”的意图不变，只是清单多了一省）；
+    // 旧文案只写浙江截止，用户可能误以为其余省份报名还开着，故七省日期一个不能少
     const note = EXAMS.find((e) => e.id === 'shengkao')?.note ?? ''
-    expect(note).toContain('六省报名均已截止')
-    for (const part of ['四川 11 月 4 日', '广东 11 月 6 日', '上海 11 月 7 日', '江苏/天津 11 月 9 日', '浙江 11 月 11 日']) {
+    expect(note).toContain('七省均为单独招考')
+    expect(note).toContain('报名均已截止')
+    for (const part of ['山东 11 月 6–9 日', '四川 11 月 4 日', '广东 11 月 6 日', '上海 11 月 7 日', '江苏/天津 11 月 9 日', '浙江 11 月 11 日']) {
       expect(note).toContain(part)
     }
+  })
+
+  it('省考公共科目节点列出七省，含山东（2026-11-17 R-3）', () => {
+    // 山东 12-06 公共科目笔试与六省同日、单独招考（C 线核实：山东省公务员局
+    // 2027 年度公告 2026-11-04 发布，多源转载一致）；节点 detail 须与 note 的七省口径一致
+    const shengkao = EXAMS.find((e) => e.id === 'shengkao')!
+    const pub = shengkao.nodes.find((n) => n.label === '公共科目笔试')!
+    expect(pub.detail).toContain('山东')
+    expect(pub.detail).toBe('12 月 6 日：四川、江苏、广东、上海、天津、浙江、山东')
   })
 })
 

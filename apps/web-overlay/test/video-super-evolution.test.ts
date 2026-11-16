@@ -251,6 +251,75 @@ kind: Deployment
 
 describe('Proposal [2]: Canvas Danmaku Engine & Pitfall Warnings', () => {
   it('adds and sorts danmaku items and tracks pitfalls', () => {
+    // 构造时乱序输入：d1(10s) 在 d2(5s) 之前，引擎须按 timeSec 升序排列。
+    // 排序的唯一可观测出口是 renderFrame 的绘制顺序：items 按内部顺序逐项
+    // 绘制，fillText 的调用顺序即内部顺序。renderFrame(10.5, …) 时两项都在
+    // 可视窗口内（(800+300)/140 ≈ 7.86s），且 10s 项已进入画面（x=730<800）。
+    const engine = new DanmakuEngine([
+      { id: 'd1', timeSec: 10, text: '讲得很清晰！' },
+      { id: 'd2', timeSec: 5, text: '注意这里的坑点！', isPitfallWarning: true },
+    ])
+
+    const makeMockCtx = () => ({
+      clearRect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      measureText: vi.fn().mockReturnValue({ width: 80 }),
+      fillText: vi.fn(),
+      strokeText: vi.fn(),
+      beginPath: vi.fn(),
+      roundRect: vi.fn(),
+      fill: vi.fn(),
+      font: '',
+      textBaseline: '',
+      globalAlpha: 1,
+      shadowColor: '',
+      shadowBlur: 0,
+      lineWidth: 1,
+      strokeStyle: '',
+      fillStyle: '',
+    }) as unknown as CanvasRenderingContext2D
+    const fillTexts = (ctx: CanvasRenderingContext2D) =>
+      vi.mocked(ctx.fillText).mock.calls.map(([text]) => text)
+
+    // 构造排序：5s 的坑点项先于 10s 的普通项绘制
+    const ctx1 = makeMockCtx()
+    engine.renderFrame(10.5, ctx1, 800, 450)
+    expect(fillTexts(ctx1)).toEqual(['⚠️ 注意这里的坑点！', '讲得很清晰！'])
+    // 坑点项可观测：只有坑点项画高亮 pill（roundRect），文本带 ⚠️ 前缀；
+    // 普通项走描边路径（strokeText）
+    expect(ctx1.roundRect).toHaveBeenCalledTimes(1)
+    expect(ctx1.strokeText).toHaveBeenCalledTimes(1)
+    expect(ctx1.strokeText).toHaveBeenCalledWith(
+      '讲得很清晰！',
+      expect.any(Number),
+      expect.any(Number),
+    )
+
+    // addItem 插入一个更早的项（7s）后顺序仍升序
+    engine.addItem({ id: 'd3', timeSec: 7, text: '中间补充说明' })
+    const ctx2 = makeMockCtx()
+    engine.renderFrame(10.5, ctx2, 800, 450)
+    expect(fillTexts(ctx2)).toEqual([
+      '⚠️ 注意这里的坑点！',
+      '中间补充说明',
+      '讲得很清晰！',
+    ])
+
+    // setItems 乱序重设后顺序仍升序
+    engine.setItems([
+      { id: 'd1', timeSec: 10, text: '讲得很清晰！' },
+      { id: 'd3', timeSec: 7, text: '中间补充说明' },
+      { id: 'd2', timeSec: 5, text: '注意这里的坑点！', isPitfallWarning: true },
+    ])
+    const ctx3 = makeMockCtx()
+    engine.renderFrame(10.5, ctx3, 800, 450)
+    expect(fillTexts(ctx3)).toEqual([
+      '⚠️ 注意这里的坑点！',
+      '中间补充说明',
+      '讲得很清晰！',
+    ])
+
     // Saved in persistent storage
     const created = saveDanmakuItem('vid-1', {
       timeSec: 25,

@@ -191,18 +191,26 @@ describe("纠正词典扫描性能", () => {
     });
     // Warm-up（不计时）：第一次调用要走冷 JIT（boundedLevenshtein/建桶循环
     // 的编译）+ 首轮 GC。
-    // 计量取 5 次的最小墙钟（performance.now()，毫秒以下精度）：
+    // 计量取 15 次的最小墙钟（performance.now()，毫秒以下精度）：
     // 单样本墙钟在并行 worker 负载下量的是调度等待而不是算法——13 文件并行
     // 时单样本曾测到 57ms / 290ms，而同一调用单独跑热身后只有 2–3ms；
     // process.cpuUsage 同样不干净（计入 V8 后台线程，同一调用在 vitest 内
     // 测到 5–32ms 抖动）。最小值滤掉调度与后台线程噪声，量到的才是剪枝后
-    // DP 本身的成本。但最小值只能滤噪声、不能补灵敏度：只删剪枝时最小值
+    // DP 本身的成本。15 次而非 5 次的原因：CI #957 上 5 个样本全部落在
+    // 一次持续调度 burst 里，最小值仍有 10.14ms、超 10ms 预算 0.14ms；
+    // 本地重放（全量 store 套件并行 + 5 个探针并发）复现到最小值 15.39ms。
+    // 样本数 ×3 后全部样本都被 burst 污染的概率大幅下降；阈值保持 10ms
+    // 不动——放宽到 15ms 仍会抖（本地复现 15.39ms），放宽到 25ms 则失去
+    // 灵敏度（去剪枝实测 24–25ms/样本，会漏过回归）。真实回归下 15 个
+    // 样本的最小值仍在 24ms 量级，墙钟照样抓到；但最小值只能滤噪声、不能
+    // 补灵敏度：只删剪枝时最小值不升反降，所以墙钟之外另有确定性预算
+    // （stats.dpCalls）守剪枝，dpCalls 仍是主防线，墙钟只是辅助。
     // 不升反降，所以墙钟之外另有确定性预算（stats.dpCalls）守剪枝。
     const stats: CorrectionStats = { dpCalls: 0 };
     resolveQueryCorrection("zhihhu", keys, { stats });
     let took = Number.POSITIVE_INFINITY;
     let res: ReturnType<typeof resolveQueryCorrection> | null = null;
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 15; i += 1) {
       const t0 = performance.now();
       res = resolveQueryCorrection("zhihhu", keys, { stats });
       took = Math.min(took, performance.now() - t0);

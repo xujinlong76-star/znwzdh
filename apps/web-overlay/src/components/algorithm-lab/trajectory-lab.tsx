@@ -15,7 +15,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Zap } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { calculateMotionVector, isHeadingTowardsRect, KalmanFilter2D } from '@/lib/prefetch';
 import {

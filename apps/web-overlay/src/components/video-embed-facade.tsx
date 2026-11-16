@@ -34,7 +34,7 @@
  * 那条路径本就不依赖 B 站 iframe 埋点。这里只处理「静态收录页的默认预览」。
  */
 import { useState } from 'react'
-import { Play, ExternalLink } from 'lucide-react'
+import { Play} from 'lucide-react'
 
 export interface VideoEmbedFacadeProps {
   /** 已通过 safeSrc 白名单校验的内嵌地址 */

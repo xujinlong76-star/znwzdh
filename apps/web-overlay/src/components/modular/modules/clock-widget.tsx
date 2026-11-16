@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { Play, Pause, RotateCcw, Clock as ClockIcon, Sparkles } from 'lucide-react'
+import { Play, Pause, RotateCcw, Clock as ClockIcon} from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { formatLunarDate, formatLunarDateExact } from '@/lib/lunar-date'
 import {

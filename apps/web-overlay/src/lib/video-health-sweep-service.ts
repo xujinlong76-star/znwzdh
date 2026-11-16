@@ -13,7 +13,7 @@
  * - 本模块不直接出现 `commitFile`：报告与检查点的落盘在 `video-metrics-store`。
  */
 import { sweepVideoHealth, type ProbeResult, type SweepReport } from '@/lib/video-deadlink-sweeper'
-import { decodeHealthCursor, type HealthSweepCoverage } from '@/lib/video-health-cursor'
+import { type HealthSweepCoverage} from '@/lib/video-health-cursor'
 import {
   hydrateVideoMetrics,
   persistHealthSweepCheckpoint,

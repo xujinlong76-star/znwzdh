@@ -35,10 +35,8 @@ import {
   RefreshCw,
   Globe,
   CheckCircle2,
-  AlertCircle,
   ExternalLink,
   ShieldCheck,
-  Layers,
   Loader2,
   Sparkles,
 } from 'lucide-react'

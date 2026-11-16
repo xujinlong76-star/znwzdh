@@ -6,7 +6,7 @@ import {
   detectSlideTransitions,
 } from '@/lib/video-slide-detector'
 import { Button } from '@/registry/new-york/ui/button'
-import { Presentation, Download, ExternalLink, Sparkles, Clock } from 'lucide-react'
+import { Presentation, Download, Clock} from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 import { chapterStartSec, type VideoChapter } from '@/types/navigation'
 

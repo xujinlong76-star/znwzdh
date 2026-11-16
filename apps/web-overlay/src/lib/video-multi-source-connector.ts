@@ -32,7 +32,7 @@ import { calculateFreshnessScore } from '@/lib/video-scoring'
 import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
 import { enrichVideoItemSeo } from '@/lib/video-seo'
 import { detectVideoPlatform } from '@/lib/video-multi-platform-harvester'
-import type { NavigationItem, NavigationSubItem, VideoPlatformType, VideoStats } from '@/types/navigation'
+import type { NavigationSubItem, VideoPlatformType, VideoStats} from '@/types/navigation'
 
 
 export interface WebhookPayload {

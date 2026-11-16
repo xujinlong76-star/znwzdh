@@ -21,7 +21,7 @@
  * 这里只吃字符串与 unknown，因此台账能直接用真实数据跑断言。
  */
 
-import { corruptKeyFor, parseFavorites } from '@/lib/favorites-storage'
+import { parseFavorites} from '@/lib/favorites-storage'
 
 /** 单次投送携带的收藏条数上限：按最坏 1024 字符网址估算，整包约 2MB 量级 */
 export const MAX_TRANSFER_BOOKMARKS = 2000

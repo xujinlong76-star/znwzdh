@@ -34,7 +34,6 @@ import {
   ArrowUpCircle,
   ExternalLink,
   Layers,
-  Sparkles,
   Share2,
   Loader2,
   ShieldCheck,

@@ -30,7 +30,6 @@ const TECH_NODES: TechNode[] = [
 
 import {
   findTopAlternativesInHyperbolicSpace,
-  poincareDistance,
   type HyperbolicNode,
 } from '@/lib/hyperbolic'
 

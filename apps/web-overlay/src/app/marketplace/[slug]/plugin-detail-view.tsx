@@ -24,7 +24,7 @@ import {
   type HubPluginItem,
   type HubPluginAuditReport
 } from '@/lib/navhub-api'
-import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX, comparePluginVersions } from '@/lib/plugins/plugin-manifest'
+import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX} from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import type { DetailTab } from './detail-shared'
 

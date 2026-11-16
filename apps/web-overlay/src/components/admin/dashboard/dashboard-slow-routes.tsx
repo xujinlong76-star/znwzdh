@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { AlertTriangle, Check, Copy, Gauge } from 'lucide-react'
+import { Check, Copy, Gauge} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { copyText } from '@/lib/clipboard'

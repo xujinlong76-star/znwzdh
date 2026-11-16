@@ -11,7 +11,6 @@ import { describe, expect, it } from "vitest";
 import type { NavigationData, NavigationItem, NavigationSubItem } from "@/types/navigation";
 import { isVersionConflict } from "@/lib/video-write-guard";
 import { decodeVideoCursor, encodeVideoCursor, pageCategoryByCursor } from "@/lib/video-pagination";
-import { PRUNE_AFTER_CONSECUTIVE_FAILURES, sweepVideoHealth } from "@/lib/video-deadlink-sweeper";
 
 /** ProbeResult 必填字段比「只给 state」多，用工厂补齐，避免断言被类型噪声淹没 */
 function probe(state: "healthy" | "dead" | "unverified", reason = "test") {

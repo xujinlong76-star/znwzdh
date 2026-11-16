@@ -14,13 +14,12 @@ import { recordHarvestRun } from '@/lib/video-harvest-metrics'
 import { BILI_HEADERS, getWbiMixinKey, signWbiQuery } from '@/lib/bilibili-wbi'
 import type {
   NavigationData,
-  NavigationItem,
   NavigationSubItem,
   VideoConfig,
   VideoHarvestPolicy,
   VideoPlatformType,
   VideoReplacementRecord,
-  VideoStats
+  VideoStats,
 } from '@/types/navigation'
 
 import { calculateQualityScore, calculateFreshnessScore, parseDurationToSeconds } from './video-scoring'

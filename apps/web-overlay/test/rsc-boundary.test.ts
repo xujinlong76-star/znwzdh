@@ -14,7 +14,7 @@
  *  - 入口取 `src/app/**` 下没有客户端指令的文件（页面 / 布局 / 路由处理器）。
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, extname, relative, resolve } from 'node:path';
+import { dirname, relative, resolve} from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from "vitest";
 

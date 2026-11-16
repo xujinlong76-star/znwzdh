@@ -16,9 +16,7 @@ import {
   AlertCircle,
   TrendingUp,
   TrendingDown,
-  Activity,
   CheckCircle2,
-  ExternalLink,
   ShieldCheck,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'

@@ -6,11 +6,9 @@ import {
 } from '@/lib/video-slide-detector'
 import {
   separateHarmonicPercussive,
-  calculateDecibelsFromMagnitudes,
   AudioStemMixerController,
 } from '@/lib/video-audio-stem-separator'
 import {
-  createBitfield,
   selectRarestChunk,
   P2PVideoSwarmManager,
 } from '@/lib/video-p2p-chunk-swarm'
@@ -22,7 +20,6 @@ import type { OpaqueSession } from '@/lib/video-opaque-sandbox'
 import {
   CURATED_TRENDING_TOPICS,
 } from '@/lib/video-trending-harvester'
-import type { NavigationData } from '@/types/navigation'
 
 describe('Proposal [1]: Presentation Slide Deck & Chapter Boundary Detector', () => {
   it('computes 64-bit difference hash and evaluates hamming distance', () => {

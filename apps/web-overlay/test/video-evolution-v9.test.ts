@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import {
-  evaluateVideoWithAIModel,
   AutonomousAIHarvesterController,
 } from '../src/lib/video-autonomous-ai-harvester'
 import type { NavigationData } from '../src/types/navigation'

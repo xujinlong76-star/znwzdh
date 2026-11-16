@@ -5,7 +5,6 @@ import "@/styles/skip-link.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { UndoBar } from "@/components/undo-bar"
-import { ThemeToggle } from '@/components/theme-toggle'
 import { Providers } from '@/components/providers'
 // 首屏瘦身 Step 5：六件后台能力件改走客户端挂载壳（ssr:false 动态加载），
 // JSX 与挂载位置不动；普通 dynamic 在 Server Component 里不挪字节（已实测）。

@@ -16,7 +16,6 @@ import {
 } from '@/lib/p2p-stream-loader'
 import {
   parseWebVTT,
-  parseSRT,
   findActiveTranscriptItem,
   searchTranscript,
   exportTranscriptAsMarkdown,

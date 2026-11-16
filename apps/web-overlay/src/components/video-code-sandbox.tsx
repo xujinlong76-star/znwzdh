@@ -9,12 +9,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Play,
-  RotateCcw,
   Copy,
   Check,
   Code2,
-  Terminal,
-  ExternalLink,
   X,
   Maximize2,
   Minimize2,

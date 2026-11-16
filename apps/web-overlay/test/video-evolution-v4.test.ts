@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   computeCasKernel,
   applySharpenFilter,
-  createSoftwareSharpenFilter,
   CAS_WEBGPU_SHADER_CODE,
 } from '@/lib/video-webgpu-sharpener'
 import {

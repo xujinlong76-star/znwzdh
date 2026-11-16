@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/registry/new-york/ui/dialog'
-import { Command, Keyboard, Sparkles } from 'lucide-react'
+import { Keyboard, Sparkles} from 'lucide-react'
 import { useHomeDIY, type CanvasBackground } from '@/lib/modular/use-home-diy'
 import { canonicalDensityLabel, useDensity } from '@/components/density-provider'
 import { useToast } from '@/components/ui/use-toast'

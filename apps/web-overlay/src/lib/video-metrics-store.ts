@@ -9,7 +9,7 @@
  * 写是防抖 + last-writer-wins：多副本同时写互相覆盖，观测值允许近似；
  * 读用 `readStorageFresh` 绕过缓存，合并语义见 `mergeVideoMetrics`（max）。
  */
-import { commitFile, getStorageVersion, readStorageFresh } from '@/lib/github'
+import { commitFile, readStorageFresh} from '@/lib/github'
 import { videoMetricsSnapshot, type VideoHarvestRuntimeMetrics } from '@/lib/video-harvest-metrics'
 
 const METRICS_PATH = 'data/video-harvest-metrics.json'

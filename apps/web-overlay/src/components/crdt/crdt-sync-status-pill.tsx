@@ -9,13 +9,11 @@
 import { useState } from 'react'
 import {
   CheckCircle2,
-  Clock,
   Layers,
   Loader2,
   RefreshCw,
   Share2,
   Wifi,
-  WifiOff,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

@@ -14,7 +14,6 @@ import {
   Clock,
   Copy,
   Check,
-  FileCode,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {

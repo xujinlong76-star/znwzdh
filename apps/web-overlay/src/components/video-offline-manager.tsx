@@ -17,7 +17,6 @@ import {
   Trash2,
   CheckCircle2,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 interface VideoOfflineManagerProps {
   open: boolean

@@ -35,7 +35,6 @@ import {
   Webhook,
 } from 'lucide-react'
 import { Button } from "@/registry/new-york/ui/button"
-import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,

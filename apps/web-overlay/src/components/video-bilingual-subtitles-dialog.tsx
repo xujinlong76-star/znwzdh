@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useMemo} from 'react'
 import {
   buildBilingualTranscripts,
   formatToWebVTT,
@@ -9,7 +9,7 @@ import {
 import type { VideoTranscriptItem } from '@/types/navigation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
-import { Languages, Download, Check, Sparkles } from 'lucide-react'
+import { Languages, Download} from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 
 interface VideoBilingualSubtitlesDialogProps {

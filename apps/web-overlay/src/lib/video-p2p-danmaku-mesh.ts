@@ -1,4 +1,3 @@
-import type { VideoDanmakuItem } from '@/types/navigation'
 
 export interface GossipDanmakuMessage {
   id: string

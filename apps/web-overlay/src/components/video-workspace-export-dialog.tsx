@@ -14,8 +14,6 @@ import {
   Download,
   Copy,
   Check,
-  ExternalLink,
-  Layers,
 } from 'lucide-react'
 import { copyText } from '@/lib/clipboard'
 

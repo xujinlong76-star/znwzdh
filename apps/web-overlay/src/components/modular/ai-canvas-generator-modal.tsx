@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, Sparkles, Wand2, Loader2, Check, ArrowRight, Layers, LayoutGrid, Info } from 'lucide-react'
+import { X, Sparkles, Wand2, Loader2, Check, Layers, Info} from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { useOverlayBehavior } from '@/components/ui/overlay'
 import { generateAiCanvas, type HubAiCanvasGenerateResult } from '@/lib/navhub-api'

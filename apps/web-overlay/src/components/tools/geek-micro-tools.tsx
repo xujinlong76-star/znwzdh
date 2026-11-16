@@ -14,7 +14,6 @@ import {
   RotateCcw,
   AlertCircle,
   CheckCircle2,
-  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useId } from 'react'
-import { Search, X, MonitorPlay, ExternalLink, ArrowRight, Layers } from 'lucide-react'
+import { Search, X, MonitorPlay, ArrowRight, Layers} from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { matchesSiteTag } from '@/lib/category-tag-match'

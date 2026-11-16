@@ -9,7 +9,6 @@ import {
   ChevronRight,
   ChevronDown,
   Download,
-  Share2,
   Sparkles,
   Play,
   Layers,

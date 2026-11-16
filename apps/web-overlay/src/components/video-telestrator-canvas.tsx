@@ -13,7 +13,6 @@ import {
   PenTool,
   Highlighter,
   ArrowUpRight,
-  Square,
   Undo2,
   Redo2,
   Trash2,

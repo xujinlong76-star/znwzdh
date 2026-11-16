@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  scoreVideoItem,
   getRelatedVideos,
-  buildUserProfile,
 } from '@/lib/video-recommendation'
 import {
   savePlaybackPosition,

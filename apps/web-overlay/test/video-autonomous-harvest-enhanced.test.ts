@@ -5,7 +5,6 @@ import {
 } from '../src/lib/video-autonomous-ai-harvester'
 import {
   submitUrlsToIndexNow,
-  enrichVideoItemSeo,
 } from '../src/lib/video-seo'
 import {
   harvestMultiPlatformVideosForKeyword,

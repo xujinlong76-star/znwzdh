@@ -10,7 +10,6 @@ import {
   Sparkles,
   ArrowRight,
   CheckCircle2,
-  ExternalLink,
   ShieldAlert,
   Loader2,
   X,

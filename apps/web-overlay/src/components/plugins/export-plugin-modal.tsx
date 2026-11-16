@@ -29,7 +29,6 @@ import {
   Send,
   CheckCircle2,
   AlertCircle,
-  FileCode,
   Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Activity, ShieldCheck, Cpu, HardDrive, Database, Sparkles } from 'lucide-react'
+import { Activity, ShieldCheck, Cpu, Database, Sparkles} from 'lucide-react'
 import { describeHealth, type HealthTone, type HubHealthLike } from '@/lib/hub-health'
 
 interface HealthStats extends HubHealthLike {

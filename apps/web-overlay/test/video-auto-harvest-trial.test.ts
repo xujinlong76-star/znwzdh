@@ -10,7 +10,6 @@ vi.mock('@/lib/github', () => ({
 
 import {
   AutonomousAIHarvesterController,
-  evaluateVideoWithAIModel,
 } from '../src/lib/video-autonomous-ai-harvester'
 import {
   generateVideoSitemapXml,

@@ -67,10 +67,14 @@ import {
 
 const PAGE_SIZE = 24
 
+// 专题胶囊的 q 必须在种子数据上命中 > 0（listPlugins 按名称 / 简介 / slug 子串匹配；
+// 命中数为 0 的胶囊点开即空列表，是死入口）。守卫见 apps/api/test/seed-plugins.test.ts
+// 「专题胶囊」describe；改 q 前先实测命中数。2026-11-17 B 批复核：q '武器库' 实测 0 命中
+// （只剩 2026-11-15 已卸载网址包「前端武器库」的名字残留），改为 '极客'（实测 13 命中）。
 const TOPIC_COLLECTIONS = [
   { id: 'all', title: '全部插件', icon: '🌐' },
   { id: 'trending', title: '🔥 飙升榜', sort: 'trending' },
-  { id: 'geek', title: '🚀 极客全栈装备', q: '武器库' },
+  { id: 'geek', title: '🚀 极客全栈装备', q: '极客' },
   { id: 'search', title: '🔍 快捷直达引擎', kind: 'search-pack' },
   { id: 'devops', title: '📊 生产力工作台', kind: 'workspace-preset' },
   { id: 'theme', title: '🎨 赛博与暗黑美学', kind: 'theme' },

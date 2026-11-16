@@ -578,69 +578,6 @@ describe("星标 / 举报 / 安装状态", () => {
     expect(refreshedStats.avgRating).toBe(3.5);
   });
 
-  it("未上架插件不接受新评价：下架/待审插件即使已安装也拒绝提交（A-1b 复现）", async () => {
-    // 下架：上架时安装并留下一条评价 → 下架后新提交与更新旧评价都应被拒，旧评价原样保留
-    const delisted = await repo.createPlugin({
-      manifest: manifestOf({
-        manifestVersion: 1,
-        kind: "site-pack",
-        name: "下架评价包",
-        version: "1.0.0",
-        payload: { sites: [{ url: "https://delisted-rev.com", title: "D" }] },
-      }),
-      status: "published",
-    });
-    await repo.installPlugin(delisted.slug, "delisted-reviewer");
-    await repo.createPluginReview(delisted.slug, "delisted-reviewer", { rating: 5, content: "上架时留的评价" });
-    await repo.reviewPlugin(delisted.slug, "delist", "测试下架", { actor: "admin" });
-    expect((await repo.getPluginBySlug(delisted.slug))?.status).toBe("delisted");
-    await expect(
-      repo.createPluginReview(delisted.slug, "delisted-reviewer", { rating: 1, content: "下架后改评" }),
-    ).rejects.toThrow("未上架");
-    expect((await repo.getUserPluginReview(delisted.id, "delisted-reviewer"))?.rating).toBe(5);
-
-    // 待审：上架安装 → 提交新版回 pending，安装记录保留但评价入口关闭
-    const pending = await repo.createPlugin({
-      manifest: manifestOf({
-        manifestVersion: 1,
-        kind: "site-pack",
-        name: "待审评价包",
-        version: "1.0.0",
-        payload: { sites: [{ url: "https://pending-rev.com", title: "P" }] },
-      }),
-      status: "published",
-    });
-    await repo.installPlugin(pending.slug, "pending-reviewer");
-    await repo.updatePlugin(
-      pending.slug,
-      manifestOf({
-        manifestVersion: 1,
-        kind: "site-pack",
-        name: "待审评价包",
-        version: "1.1.0",
-        payload: { sites: [{ url: "https://pending-rev.com", title: "P" }] },
-      }),
-    );
-    expect((await repo.getPluginBySlug(pending.slug))?.status).toBe("pending");
-    await expect(
-      repo.createPluginReview(pending.slug, "pending-reviewer", { rating: 5, content: "待审也不接受" }),
-    ).rejects.toThrow("未上架");
-
-    // 对照：已上架插件提交不受影响
-    const published = await repo.createPlugin({
-      manifest: manifestOf({
-        manifestVersion: 1,
-        kind: "site-pack",
-        name: "上架评价包",
-        version: "1.0.0",
-        payload: { sites: [{ url: "https://published-rev.com", title: "OK" }] },
-      }),
-      status: "published",
-    });
-    await repo.installPlugin(published.slug, "published-reviewer");
-    const ok = await repo.createPluginReview(published.slug, "published-reviewer", { rating: 5, content: "好" });
-    expect(ok.rating).toBe(5);
-  });
 
   it("支持 search-pack 安装记录 enginesAdded，并支持 3 次举报自动熔断隔离及审核解封", async () => {
     const sp = await repo.createPlugin({
@@ -725,6 +662,73 @@ describe("星标 / 举报 / 安装状态", () => {
     const p2Idx = list.items.findIndex((item) => item.slug === p2.slug);
     const p1Idx = list.items.findIndex((item) => item.slug === p1.slug);
     expect(p2Idx).toBeLessThan(p1Idx);
+  });
+
+  // 注意：本用例必须放在 trending 排序用例之后——两者共享同一库，trending 取
+  // top 10，本用例的 3 个带安装插件会把 0 安装的「普通插件」挤出前 10；
+  // 基底 35 测全绿、加本用例后仅 trending 红、单跑 trending 绿，已证实是顺序污染而非实现回归。
+  it("未上架插件不接受新评价：下架/待审插件即使已安装也拒绝提交（A-1b 复现）", async () => {
+    // 下架：上架时安装并留下一条评价 → 下架后新提交与更新旧评价都应被拒，旧评价原样保留
+    const delisted = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "下架评价包",
+        version: "1.0.0",
+        payload: { sites: [{ url: "https://delisted-rev.com", title: "D" }] },
+      }),
+      status: "published",
+    });
+    await repo.installPlugin(delisted.slug, "delisted-reviewer");
+    await repo.createPluginReview(delisted.slug, "delisted-reviewer", { rating: 5, content: "上架时留的评价" });
+    await repo.reviewPlugin(delisted.slug, "delist", "测试下架", { actor: "admin" });
+    expect((await repo.getPluginBySlug(delisted.slug))?.status).toBe("delisted");
+    await expect(
+      repo.createPluginReview(delisted.slug, "delisted-reviewer", { rating: 1, content: "下架后改评" }),
+    ).rejects.toThrow("未上架");
+    expect((await repo.getUserPluginReview(delisted.id, "delisted-reviewer"))?.rating).toBe(5);
+
+    // 待审：上架安装 → 提交新版回 pending，安装记录保留但评价入口关闭
+    const pending = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "待审评价包",
+        version: "1.0.0",
+        payload: { sites: [{ url: "https://pending-rev.com", title: "P" }] },
+      }),
+      status: "published",
+    });
+    await repo.installPlugin(pending.slug, "pending-reviewer");
+    await repo.updatePlugin(
+      pending.slug,
+      manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "待审评价包",
+        version: "1.1.0",
+        payload: { sites: [{ url: "https://pending-rev.com", title: "P" }] },
+      }),
+    );
+    expect((await repo.getPluginBySlug(pending.slug))?.status).toBe("pending");
+    await expect(
+      repo.createPluginReview(pending.slug, "pending-reviewer", { rating: 5, content: "待审也不接受" }),
+    ).rejects.toThrow("未上架");
+
+    // 对照：已上架插件提交不受影响
+    const published = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "上架评价包",
+        version: "1.0.0",
+        payload: { sites: [{ url: "https://published-rev.com", title: "OK" }] },
+      }),
+      status: "published",
+    });
+    await repo.installPlugin(published.slug, "published-reviewer");
+    const ok = await repo.createPluginReview(published.slug, "published-reviewer", { rating: 5, content: "好" });
+    expect(ok.rating).toBe(5);
   });
 });
 

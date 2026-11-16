@@ -132,6 +132,57 @@ describe('smoothStrokePoints tension parameter (evo/tension-1422)', () => {
       expect(smoothed[smoothed.length - 1]).toEqual({ x: 150, y: 90 })
     }
   })
+
+  // B2 rework (cardinal spline): tension now scales only the tangent terms,
+  // so tension 0 must degenerate to straight-line interpolation instead of
+  // collapsing toward the origin as the literal-replacement form did.
+  it('tension 0 stays inside the input bounding box on straight segments', () => {
+    const smoothed = smoothStrokePoints(raw, 0)
+    // Input bounding box is x [10, 150], y [10, 90] — the origin (0, 0) is
+    // outside it, so a collapse to the origin would fail this assertion.
+    const eps = 1e-9
+    for (const p of smoothed) {
+      expect(p.x).toBeGreaterThanOrEqual(10 - eps)
+      expect(p.x).toBeLessThanOrEqual(150 + eps)
+      expect(p.y).toBeGreaterThanOrEqual(10 - eps)
+      expect(p.y).toBeLessThanOrEqual(90 + eps)
+    }
+    // Stronger: with zero tangents every subdivision point lies exactly on
+    // its P1 -> P2 segment (Hermite h00 * P1 + h01 * P2 is a convex
+    // combination). Output layout per segment: 3 subdivisions + endpoint.
+    const distToSegment = (p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => {
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const len2 = dx * dx + dy * dy
+      const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0
+      return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+    for (let i = 0; i < raw.length - 1; i++) {
+      for (let k = 0; k < 3; k++) {
+        expect(distToSegment(smoothed[1 + i * 4 + k], raw[i], raw[i + 1])).toBeLessThan(1e-9)
+      }
+    }
+  })
+
+  it('tension 0 / 0.5 / 1 produce three distinct, sane curves', () => {
+    const at0 = smoothStrokePoints(raw, 0)
+    const at05 = smoothStrokePoints(raw, 0.5)
+    const at1 = smoothStrokePoints(raw, 1)
+    expect(at0).not.toEqual(at05)
+    expect(at05).not.toEqual(at1)
+    expect(at0).not.toEqual(at1)
+    // tension 1 is the strongest tangent but must stay a finite, reasonable
+    // curve: within the input bounding box expanded by its diagonal.
+    const diag = Math.hypot(150 - 10, 90 - 10)
+    for (const p of at1) {
+      expect(Number.isFinite(p.x)).toBe(true)
+      expect(Number.isFinite(p.y)).toBe(true)
+      expect(p.x).toBeGreaterThanOrEqual(10 - diag)
+      expect(p.x).toBeLessThanOrEqual(150 + diag)
+      expect(p.y).toBeGreaterThanOrEqual(10 - diag)
+      expect(p.y).toBeLessThanOrEqual(90 + diag)
+    }
+  })
 })
 
 describe('Proposal [2]: Offline PWA Storage & AES-GCM Encrypted Cache', () => {

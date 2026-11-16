@@ -27,13 +27,19 @@ export interface TelestratorAnnotation {
 
 /**
  * Computes Catmull-Rom spline control points to render smooth Bezier curves from raw pointer input.
+ *
+ * `tension` is a true cardinal-spline tension: it scales only the tangent
+ * terms, tau * (P2 - P0) and tau * (P3 - P1), while the interpolation terms
+ * are untouched. At the default 0.5 this is the standard Catmull-Rom spline;
+ * at 0 the tangents vanish and each segment degenerates to the straight line
+ * P1 -> P2; at 1 the tangents are at full strength.
  */
 export function smoothStrokePoints(points: Point2D[], tension: number = 0.5): Point2D[] {
   if (points.length <= 2) return [...points]
 
-  // Tension scales the Catmull-Rom factor; 0.5 is the standard value and
-  // the default, so calls without tension reproduce the previous output
-  // exactly. Clamp to [0, 1] and fall back to 0.5 for non-finite input.
+  // Tension scales only the cardinal-spline tangents; 0.5 is the standard
+  // Catmull-Rom value and the default. Clamp to [0, 1] and fall back to 0.5
+  // for non-finite input.
   const tau = Number.isFinite(tension) ? Math.min(1, Math.max(0, tension)) : 0.5
 
   const smoothed: Point2D[] = [points[0]]
@@ -48,21 +54,40 @@ export function smoothStrokePoints(points: Point2D[], tension: number = 0.5): Po
       const t2 = t * t
       const t3 = t2 * t
 
-      const x =
-        tau *
+      // Cardinal spline in Hermite form:
+      //   P(t) = h00 * P1 + h10 * tau * (P2 - P0) + h01 * P2 + h11 * tau * (P3 - P1)
+      //   h00 = 2t^3 - 3t^2 + 1, h10 = t^3 - 2t^2 + t,
+      //   h01 = -2t^3 + 3t^2,    h11 = t^3 - t^2
+      // At tau = 0.5 the Hermite form expands coefficient-wise to exactly
+      // the classic Catmull-Rom polynomial used as the base term below
+      // (e.g. the P0 coefficient -tau*t + 2*tau*t^2 - tau*t^3 becomes
+      // 0.5 * (-t + 2t^2 - t^3); likewise for P1/P2/P3), so the base term
+      // alone reproduces the previous implementation bit for bit. The
+      // correction term is linear in (tau - 0.5): exactly zero at the
+      // default, and it carries only the tangent difference for other
+      // tensions — the interpolation terms never move. This decomposed form
+      // (instead of evaluating the Hermite form directly) is what keeps the
+      // default output bit-identical to the pre-fix implementation.
+      const baseX =
+        0.5 *
         ((2 * p1.x) +
           (-p0.x + p2.x) * t +
           (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
           (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3)
 
-      const y =
-        tau *
+      const baseY =
+        0.5 *
         ((2 * p1.y) +
           (-p0.y + p2.y) * t +
           (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
           (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
 
-      smoothed.push({ x, y })
+      const h10 = t3 - 2 * t2 + t
+      const h11 = t3 - t2
+      const corrX = (tau - 0.5) * (h10 * (p2.x - p0.x) + h11 * (p3.x - p1.x))
+      const corrY = (tau - 0.5) * (h10 * (p2.y - p0.y) + h11 * (p3.y - p1.y))
+
+      smoothed.push({ x: baseX + corrX, y: baseY + corrY })
     }
     smoothed.push(p2)
   }

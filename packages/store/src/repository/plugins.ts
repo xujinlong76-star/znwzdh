@@ -1009,7 +1009,9 @@ export async function installPlugin(
 
   if (targetManifest.kind === "site-pack") {
     const payload = targetManifest.payload as SitePackPayload;
-    const sitesToInstall = Array.isArray(options?.selectedSites) && options!.selectedSites!.length > 0
+    // A-2：selectedSites 一旦传了数组（含空数组）就按它过滤；只有省略
+    // （undefined）才表示全量。空数组曾被当成「不过滤」，全不选反装全部。
+    const sitesToInstall = Array.isArray(options?.selectedSites)
       ? payload.sites.filter((s) => options!.selectedSites!.includes(s.url))
       : payload.sites;
     await repo.withTransaction(async () => {

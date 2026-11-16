@@ -55,6 +55,27 @@ export function PluginInstallModal({
   const [elapsedMs, setElapsedMs] = useState(0)
   const [selectedUrls, setSelectedUrls] = useState<Set<string> | null>(null)
   /**
+   * 换插件 / 重新打开时清空旧勾选（A-2）：旧包 URL 与新包无交集时残留选择
+   * 会让新包复选框几乎全灭、用户不察觉点安装即 0 站点“成功”。
+   * null = 未自定义过，默认全选。
+   */
+  const pluginSlug = plugin?.slug
+  useEffect(() => {
+    setSelectedUrls(null)
+  }, [pluginSlug, open])
+  /**
+   * 网址包 0 选拦截（A-2）：selectedUrls 为 null 表示未自定义（默认全选），
+   * 非 null 空集才是用户「全不选」。空集时确认按钮禁用、handleConfirm 拦截，
+   * 绝不再把 `{ selectedSites: [] }` 发出去。
+   */
+  const emptySiteSelection =
+    plugin?.kind === 'site-pack' &&
+    mode !== 'uninstall' &&
+    Array.isArray(plugin.manifest?.payload?.sites) &&
+    plugin.manifest.payload.sites.length > 0 &&
+    selectedUrls !== null &&
+    selectedUrls.size === 0
+  /**
    * 安装前重复预览（P0-2）：这一包里有多少条已经在本地库里了。
    *
    * 结果与「它属于哪个 slug」一起存：slug 变了旧结果自然失效，
@@ -150,6 +171,12 @@ export function PluginInstallModal({
   }
 
   const handleConfirm = async () => {
+    if (emptySiteSelection) {
+      toast.error('请至少选择一个站点', {
+        description: "当前未勾选任何站点，全不选不会安装任何内容。",
+      })
+      return
+    }
     setLoading(true)
     const startedAt = Date.now()
     setElapsedMs(0)
@@ -210,6 +237,24 @@ export function PluginInstallModal({
          * 此前这个数字只写进审计日志，用户完全看不到。
          */
         const applied = res?.applied ?? {}
+        /**
+         * 诚实 toast（A-2）：网址包显式勾选后 0 新增 0 跳过，说明所选 URL 与
+         * 当前插件无交集（残留选择/包内容已变），不是「装好了」——报错、不关弹窗、
+         * 让用户重新勾选；不走 onSuccess，避免列表刷新掩盖这次空安装。
+         * （0 选已在确认前拦截；这里兜住的是非空错选。）
+         */
+        const explicitSelectionMatchedNothing =
+          plugin.kind === 'site-pack' &&
+          !res.alreadyInstalled &&
+          selectedUrls !== null &&
+          (applied.sitesAdded ?? 0) === 0 &&
+          (applied.sitesSkipped ?? 0) === 0
+        if (explicitSelectionMatchedNothing) {
+          toast.error('未安装任何站点', {
+            description: "所选站点与当前插件不匹配，请重新勾选后再安装。",
+          })
+          return
+        }
         const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1)
         const sitePackDescription =
           plugin.kind === 'site-pack' && !res.alreadyInstalled
@@ -607,7 +652,7 @@ export function PluginInstallModal({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={loading || (mode !== 'uninstall' && bundleBlocked)}
+            disabled={loading || emptySiteSelection || (mode !== 'uninstall' && bundleBlocked)}
             className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               mode === 'uninstall'
                 ? 'bg-destructive text-destructive-foreground hover:opacity-90'

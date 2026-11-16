@@ -46,7 +46,7 @@ describe("A-2：安装弹窗选集", () => {
   it("0 选拦截：确认按钮禁用，且 handleConfirm 未发请求就弹错", () => {
     // 空集判定：null = 未自定义（默认全选），非 null 空集才是用户「全不选」
     expect(src).toContain("selectedUrls.size === 0");
-    expect(src).toContain('toast.error("请至少选择一个站点"');
+    expect(src).toContain("toast.error('请至少选择一个站点'");
     expect(src).toMatch(/disabled=\{loading \|\| emptySiteSelection/);
   });
 
@@ -57,7 +57,7 @@ describe("A-2：安装弹窗选集", () => {
       src.indexOf("explicitSelectionMatchedNothing"),
       src.indexOf("toast.success("),
     );
-    expect(branch).toContain('toast.error("未安装任何站点"');
+    expect(branch).toContain("toast.error('未安装任何站点'");
     expect(branch).toContain("return");
   });
 });

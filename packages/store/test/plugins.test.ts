@@ -3,7 +3,7 @@
  * 用例对应真实风险：重复安装重复计数、重复 URL 入库、卸载误删用户数据、
  * slug 冲突、状态机被绕过。去掉实现里的守卫，必有断言变红。
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1130,5 +1130,55 @@ describe("E4/E3 漏斗、治理与 F2 短链", () => {
       ]);
       expect(await repo.resolveShortLink(code), target).toBeNull();
     }
+  });
+});
+
+describe("更新提醒容错：提醒查询抛错不阻断审核", () => {
+  it("approve 新版本时提醒 SELECT 抛错，审核仍成功、状态已提交、无提醒发出", async () => {
+    // 提醒是次生效应：notify 的初始 SELECT 在 try 之外时曾让审核 500（状态已提交、
+    // 调用却抛错）；reviewPlugin 调用点包 try/catch 后，查询失败只记日志。
+    const plugin = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("提醒查询容错", [{ url: "https://n2.example.com", title: "N2" }])),
+    });
+    await repo.reviewPlugin(plugin.slug, "approve", "内容合规", { actor: "admin" });
+    await repo.installPlugin(plugin.slug, "visitor-notify-2");
+    const v2 = manifestOf({
+      manifestVersion: 1,
+      kind: "site-pack",
+      name: "提醒查询容错",
+      description: "测试用网址包",
+      icon: "🧪",
+      version: "1.1.0",
+      tags: ["测试"],
+      payload: { categories: [{ title: "AI 编程助手" }], sites: [{ url: "https://n2.example.com", title: "N2" }] },
+    });
+    await repo.submitPluginVersion(plugin.slug, v2, "小修", { actor: "admin" });
+
+    const origRaw = repo.raw.bind(repo);
+    const spy = vi.spyOn(repo, "raw").mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("FROM plugin_installs WHERE plugin_id = ? AND removed_at IS NULL")) {
+        throw new Error("模拟提醒查询失败");
+      }
+      return origRaw(sql, params);
+    });
+    try {
+      const approved = await repo.reviewPlugin(plugin.slug, "approve", "新版本合规", {
+        actor: "admin",
+      });
+      expect(approved.status).toBe("published");
+      expect(approved.version).toBe("1.1.0");
+    } finally {
+      spy.mockRestore();
+    }
+    // 状态确实已提交（不是靠吞错假装成功）
+    const after = await repo.raw("SELECT status, version FROM plugins WHERE slug = ?", [plugin.slug]);
+    expect(after[0].status).toBe("published");
+    expect(after[0].version).toBe("1.1.0");
+    // 提醒未发出（查询在发通知前就失败）
+    const outbox = await repo.raw(
+      "SELECT id FROM notification_outbox WHERE kind = 'plugin_update_available'",
+      [],
+    );
+    expect(outbox.length).toBe(0);
   });
 });

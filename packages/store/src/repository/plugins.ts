@@ -1074,8 +1074,13 @@ export async function reviewPlugin(
   });
   // R5-1 更新主动提醒：版本号实际递增的上架，给仍装旧版的用户发通知
   // （首次上架/版本号不变时 notify 内直接返回 0，不发）。
+  // 提醒是次生效应：初始 SELECT 抛错也不得让审核 500（状态已提交），只记日志。
   if (action === "approve") {
-    await notifyPluginUpdateAvailable(repo, updated, existing.version);
+    try {
+      await notifyPluginUpdateAvailable(repo, updated, existing.version);
+    } catch (err) {
+      console.error("[plugins] 更新提醒发送失败（不阻断审核）:", err);
+    }
   }
   return updated;
 }

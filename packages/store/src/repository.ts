@@ -1864,6 +1864,10 @@ async revokeAllSessions(userId: string): Promise<number> {
     return analyticsRepo.zeroResultQueries(this, days, limit);
   }
 
+  async lastRecomputeRankAt(): Promise<number | null> {
+    return analyticsRepo.lastRecomputeRankAt(this);
+  }
+
   async hotSites(limit = 20): Promise<Site[]> {
     return analyticsRepo.hotSites(this, limit);
   }

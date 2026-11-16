@@ -147,6 +147,22 @@ export async function zeroResultQueries(repo: Repository, days = 30, limit = 20)
   return rows.map((r) => ({ query: String(r.query), count: Number(r.cnt ?? 0), lastAt: Number(r.lastat ?? 0) }));
 }
 
+/**
+ * 上次热度重算时刻（epoch 毫秒）：读 `recompute_rank` 事件流的 MAX(created_at)。
+ *
+ * 重算任务每小时写一行（rank-recompute.task.ts），无事件行时返回 null——
+ * 不编造时间。注意别混用另一时钟 `hotlist_refresh`（外部平台热榜拉取）。
+ * 数据保留只聚合 180 天前的整天明细（rollup.ts DEFAULT_ROLLUP_TARGETS，
+ * 默认 dry-run），最新一行永远在 1 小时内，不受清理影响。
+ */
+export async function lastRecomputeRankAt(repo: Repository): Promise<number | null> {
+  const rows = await repo.raw(
+    "SELECT MAX(created_at) AS t FROM events WHERE kind = 'recompute_rank'",
+  );
+  const t = rows[0]?.t;
+  return t == null ? null : Number(t);
+}
+
 export async function hotSites(repo: Repository, limit = 20): Promise<Site[]> {
   const rows = await repo.raw(
     repo.selectSitesSql() +

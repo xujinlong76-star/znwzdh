@@ -38,6 +38,7 @@ import {
 } from '@/lib/video-caption-store'
 import { getPersonalizedRecommendations } from '@/lib/video-recommendation'
 import { getWatchLaterList, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
+import { hasAdminAccess } from '@/lib/client-auto-auth'
 
 interface VideoContentProps {
     navigationData: NavigationData
@@ -78,6 +79,21 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
         return () => window.removeEventListener(CAPTION_STORE_EVENT, handleCaptionStoreChange)
     }, [])
     const [showHarvestDialog, setShowHarvestDialog] = useState(false)
+    // F-09：采集是管理员功能，按钮只向管理员展示。默认 false（fail-closed，
+    // 访客从来看不到）；挂载后用服务端唯一口径探一次（GET /api/videos/harvest，
+    // 含 GitHub 白名单管理员——只读 session 的 ensureAdminSession 认不出他们）。
+    // 不走服务端传 prop：本页是 ISR（revalidate=60），page 里调 auth() 会把
+    // 整页逼成动态，毁掉首屏缓存；客户端探针只多一次请求，非管理员走 401 快路径。
+    const [isAdmin, setIsAdmin] = useState(false)
+    useEffect(() => {
+        let cancelled = false
+        hasAdminAccess().then((ok) => {
+            if (!cancelled) setIsAdmin(ok)
+        })
+        return () => {
+            cancelled = true
+        }
+    }, [])
 
     const handleHarvestCompleted = async () => {
         try {
@@ -783,6 +799,9 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                         <span className="font-mono">{videoStats.videos}</span>
                                         <span>门精选视频</span>
                                     </div>
+                                    {/* F-09：采集是管理员功能，非管理员不渲染入口（免得点后才报错）；
+                                        服务端 /api/videos/harvest 仍是 401/403 兜底，隐藏只是体验层 */}
+                                    {isAdmin && (
                                     <div className="sm:ml-auto flex items-center gap-2">
                                         <button
                                             type="button"
@@ -795,6 +814,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                             <span className="rounded-full border border-amber-500/40 px-1.5 py-px text-[10px] font-medium">管理员</span>
                                         </button>
                                     </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

@@ -37,6 +37,7 @@ const POSTER = "src/components/video-share-poster-dialog.tsx";
 const CONTROL_BAR = "src/components/video-player-control-bar.tsx";
 const SIDE_PANEL = "src/components/video-player-side-panel.tsx";
 const OFFLINE_MANAGER = "src/components/video-offline-manager.tsx";
+const CLIENT_AUTO_AUTH = "src/lib/client-auto-auth.ts";
 
 describe("/videos/player ?id=&t= 直达链路", () => {
   it("路由页从 window.location.search 读 id 与 t", () => {
@@ -237,5 +238,39 @@ describe("F-06：离线入口改名“离线缓存”（第 84 轮 D 线）", ()
     expect(src).toContain("保存到离线缓存");
     expect(src).toContain("离线缓存列表");
     expect(src).not.toContain("稍后再看");
+  });
+});
+
+/**
+ * 第 84 轮 D 线：视频页 UX 合并单 F-09（非管理员隐藏采集按钮）。
+ *
+ * 根因：页头“采集最新技术视频”是管理员功能，却对所有访客可见，普通用户
+ * 点后才抛“采集是管理员功能……普通访客无法发起采集”。修法：按钮只在
+ * 管理员会话下渲染，默认隐藏（fail-closed）；判定走服务端唯一口径——
+ * 探 GET /api/videos/harvest（先跑 verifyAdminSession，含 GitHub 白名单），
+ * 不用只读 session 的 ensureAdminSession（它认不出白名单管理员）。
+ * 不走服务端传 prop：本页是 ISR（revalidate=60），page 里调 auth() 会把
+ * 整页逼成动态。服务端 401/403 兜底仍在，隐藏只是体验层。
+ */
+describe("F-09：非管理员隐藏采集按钮（第 84 轮 D 线）", () => {
+  it("探针走服务端唯一口径：GET /api/videos/harvest，失败按非管理员处理", () => {
+    const src = overlaySource(CLIENT_AUTO_AUTH);
+    expect(src).toContain("export async function hasAdminAccess()");
+    expect(src).toContain("fetch('/api/videos/harvest'");
+    expect(src).toContain("return res.ok");
+  });
+
+  it("采集按钮只在 isAdmin 下渲染，默认隐藏；对话框与服务端兜底仍在", () => {
+    const src = overlaySource(CONTENT);
+    expect(src).toContain("hasAdminAccess");
+    expect(src).toContain("const [isAdmin, setIsAdmin] = useState(false)");
+    // 守卫在按钮之前：按钮文本只出现在 isAdmin 分支内
+    const guard = src.indexOf("{isAdmin && (");
+    const button = src.indexOf("采集最新技术视频");
+    expect(guard).toBeGreaterThan(-1);
+    expect(button).toBeGreaterThan(guard);
+    // 对话框本身不动：管理员点开仍能采，服务端仍 401/403 拒非管理员
+    expect(src).toContain("VideoAutoHarvestDialog");
+    expect(src).toContain("setShowHarvestDialog(true)");
   });
 });

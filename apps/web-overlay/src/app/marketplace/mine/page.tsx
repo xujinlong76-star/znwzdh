@@ -61,21 +61,41 @@ export default function MyPluginsPage() {
   // 服务端全量聚合（/mine 的 stats）：取不到时（降级回落）才按当页 items 求和
   const [stats, setStats] = useState<HubMyPluginStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [studioPlugin, setStudioPlugin] = useState<HubPluginItem | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setNotice(null)
+  // A-4b：作者插件 >100 时列表不再截断在前 100 条。首屏 offset=0 替换，
+  // 「加载更多」按已显示条数取下一页追加；与插件市场列表
+  // （plugin-market-board.tsx）同款形态。追加页失败时 res 是降级兜底
+  // （items 空、total 0），不能拿它覆盖现有状态：否则已加载的 100 条
+  // 会被清空、按钮随之消失，后面的页再也到不了；total 追加时只涨不跌。
+  // 计数优先用服务端全量聚合 stats（A-4 已接进本 load，见下 setStats），
+  // 取不到 stats 时才按已加载 items 求和，随加载更多逐步收敛到全量。
+  const load = useCallback(async (offset = 0, append = false) => {
+    if (append) setLoadingMore(true)
+    else {
+      setLoading(true)
+      setNotice(null)
+    }
+    let failed = false
     const res = await fetchMyPlugins(
-      { identity, limit: 100 },
-      (error) => setNotice(describeDegrade(error, '作者中心')),
+      { identity, limit: 100, offset },
+      (error) => {
+        failed = true
+        setNotice(describeDegrade(error, '作者中心'))
+      },
     )
-    setItems(res.items)
-    setTotal(res.total)
-    setStats(res.stats ?? null)
-    setLoading(false)
+    // 两边合一（A-4b 追加失败保护 + A-4 服务端 stats）：追加失败时不覆盖已有
+    // items/total/stats；追加成功时 stats 以服务端全量聚合为准（与分页无关）。
+    if (!(append && failed)) {
+      setItems((prev) => (append ? [...prev, ...res.items] : res.items))
+      setTotal((prev) => (append ? Math.max(prev, res.total) : res.total))
+      setStats(res.stats ?? null)
+    }
+    if (append) setLoadingMore(false)
+    else setLoading(false)
   }, [identity])
 
   useEffect(() => {
@@ -285,6 +305,20 @@ export default function MyPluginsPage() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {items.length < total && (
+          <div className="text-center">
+            <Button
+              variant="outline"
+              disabled={loadingMore}
+              onClick={() => void load(items.length, true)}
+              className="gap-1.5"
+            >
+              {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+              加载更多（{items.length}/{total}）
+            </Button>
           </div>
         )}
       </div>

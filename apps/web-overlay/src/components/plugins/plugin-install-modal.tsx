@@ -63,7 +63,6 @@ export function PluginInstallModal({
   const pluginSlug = plugin?.slug
   useEffect(() => {
     setSelectedUrls(null)
-    setConflicts(null)
   }, [pluginSlug, open])
   /**
    * 安装冲突（D 批）：服务端 409 返回的冲突清单。非空时弹窗内展示清单，
@@ -71,6 +70,10 @@ export function PluginInstallModal({
    * 绝不静默覆盖。
    */
   const [conflicts, setConflicts] = useState<PluginInstallConflict[] | null>(null)
+  /** 换插件 / 重新打开时清掉上一次的冲突清单，避免旧冲突误展示在新插件上。 */
+  useEffect(() => {
+    setConflicts(null)
+  }, [pluginSlug, open])
   /**
    * 网址包 0 选拦截（A-2）：selectedUrls 为 null 表示未自定义（默认全选），
    * 非 null 空集才是用户「全不选」。空集时确认按钮禁用、handleConfirm 拦截，

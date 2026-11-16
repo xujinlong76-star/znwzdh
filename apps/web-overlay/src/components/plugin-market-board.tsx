@@ -5,7 +5,7 @@
  *
  * 为什么拆（Batch E，2026-10-21）：插件卡片的 `/marketplace/{slug}` 内链
  * 必须进 **SSR HTML**。改版前整页是客户端组件、useEffect 取数，link-graph
- * 实测 64 个插件详情页 100% 孤岛。现在服务端 page 取数经 props 下发，
+ * 实测当时 64 个插件详情页 100% 孤岛。现在服务端 page 取数经 props 下发，
  * 首帧渲染即 SSR（与 tags / collections 家族同构）。
  *
  * 三种插件形态（全部为声明式 JSON，经 @navhub/core 契约校验，零任意代码执行）：

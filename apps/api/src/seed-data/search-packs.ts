@@ -4,8 +4,9 @@
  * 与既有的 `dev-search-arsenal`（开发者检索）互补，这两个包面向
  * 「中文日常检索」与「学术研究检索」两条独立链路。
  *
- * 注意：前缀（!xx）在主搜索框里是全局命名空间，必须与既有包不冲突——
- * 本文件所有前缀均与 seed-plugins.ts 中 dev-search-arsenal 的 40 个前缀错开。
+ * 注意：前缀（!xx）在主搜索框里是全局命名空间，同一前缀只许指向同一检索 URL——
+ * 本文件与 dev-search-arsenal 同服务（哔哩哔哩、知乎）共用同一规范前缀（!bili、!zh），
+ * 其余前缀均与 dev-search-arsenal 的 40 个前缀错开。
  */
 import type { SeedPluginDef } from "./types.ts";
 
@@ -17,7 +18,7 @@ export const cnSearchArsenal: SeedPluginDef = {
     kind: "search-pack",
     name: "中文生活搜索引擎包",
     description:
-      "39 个中文高频检索源一次装齐：用 !xhs、!weibo、!db、!tb、!jd、!dianping、!meituan、!dy、!bl、!damai、!lagou 等前缀直达社交、电商、点评、票务演出、招聘求职、视频与出行平台，覆盖从查口碑、比价、找攻略到订票、求职、查企业的日常检索链路，与开发者检索包前缀完全错开、可同时安装。",
+      "37 个中文高频检索源一次装齐：用 !xhs、!weibo、!db、!tb、!jd、!dianping、!dy、!bili、!damai、!lagou 等前缀直达社交、电商、点评、票务演出、招聘求职、视频与出行平台，覆盖从查口碑、比价、找攻略到订票、求职、查企业的日常检索链路，与开发者检索包同服务共用同一规范前缀、可同时安装。",
     icon: "🧭",
     author: "山羊胡官方",
     license: "MIT",
@@ -34,11 +35,10 @@ export const cnSearchArsenal: SeedPluginDef = {
         { name: "拼多多", prefix: "!pdd", searchUrl: "https://mobile.yangkeduo.com/search_result.html?search_key={q}", icon: "🍀", description: "低价拼团与百亿补贴商品检索" },
         { name: "什么值得买", prefix: "!smzdm", searchUrl: "https://search.smzdm.com/?c=home&s={q}", icon: "💰", description: "消费决策社区，优惠券、历史低价与选购攻略" },
         { name: "大众点评", prefix: "!dianping", searchUrl: "https://www.dianping.com/search/keyword/1/0_{q}", icon: "🍜", description: "本地生活口碑与商户评价检索，找店先看评分" },
-        { name: "美团", prefix: "!meituan", searchUrl: "https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}", icon: "🛵", description: "外卖与本地服务检索" },
         { name: "抖音", prefix: "!dy", searchUrl: "https://www.douyin.com/search/{q}", icon: "🎵", description: "短视频与直播内容检索，教程与实测视频密集" },
         { name: "快手", prefix: "!ks", searchUrl: "https://www.kuaishou.com/search/video?searchKey={q}", icon: "📹", description: "短视频社区内容检索，生活与技能类内容丰富" },
-        { name: "哔哩哔哩", prefix: "!bl", searchUrl: "https://search.bilibili.com/all?keyword={q}", icon: "📺", description: "技术、学习与评测类视频检索，长尾教程最全" },
-        { name: "知乎", prefix: "!zhihu", searchUrl: "https://www.zhihu.com/search?type=content&q={q}", icon: "💡", description: "问答与专栏内容检索，适合查经验与方法论" },
+        { name: "哔哩哔哩", prefix: "!bili", searchUrl: "https://search.bilibili.com/all?keyword={q}", icon: "📺", description: "技术、学习与评测类视频检索，长尾教程最全" },
+        { name: "知乎", prefix: "!zh", searchUrl: "https://www.zhihu.com/search?type=content&q={q}", icon: "💡", description: "问答与专栏内容检索，适合查经验与方法论" },
         { name: "百度贴吧", prefix: "!tieba", searchUrl: "https://tieba.baidu.com/f/search/res?qw={q}", icon: "🧩", description: "兴趣社区帖子检索，冷门问题的民间答案" },
         { name: "爱奇艺", prefix: "!iqiyi", searchUrl: "https://so.iqiyi.com/so/q_{q}", icon: "🎥", description: "剧集、综艺与电影资源检索与在线播放" },
         { name: "腾讯视频", prefix: "!vqq", searchUrl: "https://v.qq.com/x/search/?q={q}", icon: "▶️", description: "长视频与自制综艺检索" },
@@ -49,7 +49,6 @@ export const cnSearchArsenal: SeedPluginDef = {
         { name: "喜马拉雅", prefix: "!ximalaya", searchUrl: "https://www.ximalaya.com/search/{q}", icon: "🎙️", description: "播客、有声书与音频课程检索" },
         { name: "微信文章", prefix: "!wx", searchUrl: "https://weixin.sogou.com/weixin?type=2&query={q}", icon: "💬", description: "微信公众号文章检索，行业深度内容宝库" },
         { name: "高德地图", prefix: "!amap", searchUrl: "https://www.amap.com/search?query={q}", icon: "🗺️", description: "地点、商户与路线检索，出行前查位置" },
-        { name: "携程", prefix: "!ctrip", searchUrl: "https://you.ctrip.com/searchsite/all?keyword={q}", icon: "🧳", description: "旅行攻略与目的地内容检索" },
         { name: "BOSS直聘", prefix: "!zhipin", searchUrl: "https://www.zhipin.com/web/geek/job?query={q}", icon: "💼", description: "招聘职位与公司信息检索，找工作前先查岗位行情" },
         { name: "大麦网", prefix: "!damai", searchUrl: "https://search.damai.cn/search.htm?keyword={q}", icon: "🎫", description: "演唱会、话剧与展会票务检索，订票前查场次与票价" },
         { name: "猫眼电影", prefix: "!maoyan", searchUrl: "https://www.maoyan.com/searchbox?keyword={q}", icon: "🎟️", description: "电影、演出与影院排片检索，查评分与购票" },

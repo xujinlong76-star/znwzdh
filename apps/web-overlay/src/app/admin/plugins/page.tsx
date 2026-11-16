@@ -662,7 +662,11 @@ export default function AdminPluginsPage() {
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                代码库内置收录 {seedStatus?.totalCatalog ?? 64} 个官方精选插件（当前已就绪 {seedStatus?.upToDateCount ?? 0} 个）。
+                {seedStatus ? (
+                  <>代码库内置收录 {seedStatus.totalCatalog} 个官方精选插件（当前已就绪 {seedStatus.upToDateCount} 个）。</>
+                ) : (
+                  <>代码库内置收录官方精选插件（资源库状态未取到）。</>
+                )}
                 一键无损同步将自动导入新增包并升级已有包，绝不破坏用户的自建站点与配置。
               </p>
             </div>

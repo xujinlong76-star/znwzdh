@@ -7,7 +7,7 @@ export const codeSearchPack: SeedPluginDef = {
     "manifestVersion": 1,
     "kind": "search-pack",
     "name": "全栈代码生态与依赖仓库搜索引擎包",
-    "description": "38 个全栈代码与依赖仓库检索源一次装齐：在主搜索框用 !grep、!sgcode、!ghcode、!smithery、!jsr、!crates、!cve、!snyk 等前缀一键直达全球代码语义搜索、MCP 工具市场、官方依赖库与安全漏洞数据库。",
+    "description": "38 个全栈代码与依赖仓库检索源一次装齐：在主搜索框用 !grep、!sourcegraph、!ghcode、!smithery、!jsr、!crates、!nvdcve、!snykvuln 等前缀一键直达全球代码语义搜索、MCP 工具市场、官方依赖库与安全漏洞数据库。",
     "icon": "📦",
     "author": "山羊胡官方",
     "license": "MIT",
@@ -25,7 +25,7 @@ export const codeSearchPack: SeedPluginDef = {
       "engines": [
         {
           "name": "grep.app 正则代码",
-          "prefix": "!codegrep",
+          "prefix": "!grep",
           "searchUrl": "https://grep.app/search?q={q}",
           "icon": "🧵",
           "description": "跨数十万 GitHub 仓库进行秒级极速正则代码检索"
@@ -95,21 +95,21 @@ export const codeSearchPack: SeedPluginDef = {
         },
         {
           "name": "npm 官方仓库",
-          "prefix": "!npmpkg",
+          "prefix": "!npm",
           "searchUrl": "https://www.npmjs.com/search?q={q}",
           "icon": "📦",
           "description": "全球 JavaScript / TypeScript 核心包与版本依赖检索"
         },
         {
           "name": "npm trends 下载对比",
-          "prefix": "!npmtrend",
+          "prefix": "!trend",
           "searchUrl": "https://npmtrends.com/?q={q}",
           "icon": "📈",
           "description": "多库横向比对下载量走势与技术选型参考"
         },
         {
           "name": "Bundlephobia 体积",
-          "prefix": "!bundlephobia",
+          "prefix": "!bp",
           "searchUrl": "https://bundlephobia.com/package/{q}",
           "icon": "📏",
           "description": "前端依赖包打包后真实体积与 Gzip 开销测试"
@@ -123,42 +123,42 @@ export const codeSearchPack: SeedPluginDef = {
         },
         {
           "name": "docs.rs 文档",
-          "prefix": "!docsrs",
+          "prefix": "!rs",
           "searchUrl": "https://docs.rs/releases/search?query={q}",
           "icon": "📖",
           "description": "Rust 生态所有已发布 crate 自动化 API 文档"
         },
         {
           "name": "PyPI Python 包",
-          "prefix": "!pypipkg",
+          "prefix": "!pypi",
           "searchUrl": "https://pypi.org/search/?q={q}",
           "icon": "🐍",
           "description": "Python 官方软件包分发与安装包索引"
         },
         {
           "name": "pkg.go.dev",
-          "prefix": "!pkggo",
+          "prefix": "!go",
           "searchUrl": "https://pkg.go.dev/search?q={q}",
           "icon": "🐹",
           "description": "Go 语言官方模块、函数文档与许可证检索"
         },
         {
           "name": "Maven Central",
-          "prefix": "!mavencentral",
+          "prefix": "!mvn",
           "searchUrl": "https://central.sonatype.com/search?q={q}",
           "icon": "☕",
           "description": "Java / Kotlin 生态中央构件依赖仓库检索"
         },
         {
           "name": "NuGet .NET 仓库",
-          "prefix": "!nugetpkg",
+          "prefix": "!nuget",
           "searchUrl": "https://www.nuget.org/packages?q={q}",
           "icon": "🟪",
           "description": ".NET / C# 官方类库与构建工具包仓库"
         },
         {
           "name": "Docker Hub 镜像",
-          "prefix": "!dockerhub",
+          "prefix": "!docker",
           "searchUrl": "https://hub.docker.com/search?q={q}",
           "icon": "🐳",
           "description": "容器镜像、官方基础镜像与架构版本检索"
@@ -172,7 +172,7 @@ export const codeSearchPack: SeedPluginDef = {
         },
         {
           "name": "Terraform Registry",
-          "prefix": "!tfregistry",
+          "prefix": "!tf",
           "searchUrl": "https://registry.terraform.io/search/providers?q={q}",
           "icon": "🏗️",
           "description": "云原生基础设施 Provider 与 Module 模块仓库"
@@ -228,7 +228,7 @@ export const codeSearchPack: SeedPluginDef = {
         },
         {
           "name": "OSV 开放安全漏洞",
-          "prefix": "!osvvuln",
+          "prefix": "!osv",
           "searchUrl": "https://osv.dev/list?q={q}",
           "icon": "🌐",
           "description": "Google 主导的开源分布式精准依赖版本漏洞数据库"
@@ -277,7 +277,7 @@ export const codeSearchPack: SeedPluginDef = {
         },
         {
           "name": "MDN API 参考文档",
-          "prefix": "!mdnapi",
+          "prefix": "!mdn",
           "searchUrl": "https://developer.mozilla.org/zh-CN/search?q={q}",
           "icon": "📘",
           "description": "Web 标准 HTML/CSS/JS API 权威文档检索"

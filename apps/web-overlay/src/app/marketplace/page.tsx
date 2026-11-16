@@ -20,7 +20,7 @@ import { pageShareMetadata } from '@/lib/seo/metadata'
  *
  * 为什么服务端化（Batch E，2026-10-21）：插件卡片的 `/marketplace/{slug}`
  * 内链必须进 **SSR HTML**。改版前整页是客户端组件、useEffect 取数，
- * link-graph 实测 64 个插件详情页 100% 孤岛。现在服务端取数经 props
+ * link-graph 实测当时 64 个插件详情页 100% 孤岛。现在服务端取数经 props
  * 下发给 PluginMarketBoard 岛，首帧渲染即 SSR。
  *
  * 筛选口径与客户端同源：`parseMarketplaceFilters` 是纯函数，深链
@@ -145,8 +145,8 @@ export default async function MarketplacePage({
   if (kind) listQuery.set('kind', kind)
   if (q) listQuery.set('q', q)
   listQuery.set('sort', sort)
-  // 全量种子（当前市场 64 个插件）：分页式「加载更多」是客户端追加，
-  // 第二页起的插件卡片没有 SSR 入链（link-graph 实测 40/64 孤岛）。
+  // 全量种子：分页式「加载更多」是客户端追加，
+  // 第二页起的插件卡片没有 SSR 入链（Batch E 实测 40/64 孤岛，见页头注释）。
   // API 单页上限 100，必须按 offset 取到 total；「加载更多」按钮在
   // items.length === total 时自然隐藏。筛选交互后仍走 24/页的分页 UX。
   listQuery.set('limit', String(MARKET_LIST_PAGE_SIZE))

@@ -66,15 +66,15 @@ export const aiDeepSearchPack: SeedPluginDef = {
         },
         {
           "name": "Semantic Scholar",
-          "prefix": "!semanticscholar",
+          "prefix": "!s2",
           "searchUrl": "https://www.semanticscholar.org/search?q={q}",
           "icon": "🧠",
           "description": "艾伦人工智能研究院学术语义引用网络检索"
         },
         {
           "name": "OpenAlex",
-          "prefix": "!oalex",
-          "searchUrl": "https://openalex.org/works?page=1&filter=default.search%3A{q}",
+          "prefix": "!openalex",
+          "searchUrl": "https://openalex.org/works?search={q}",
           "icon": "🌐",
           "description": "全球最大完全开放获取学术文献与知识图谱搜索"
         },
@@ -116,7 +116,7 @@ export const aiDeepSearchPack: SeedPluginDef = {
         {
           "name": "通义千问",
           "prefix": "!qwen",
-          "searchUrl": "https://tongyi.aliyun.com/qianwen/?q={q}",
+          "searchUrl": "https://www.qianwen.com/qianwen/?q={q}",
           "icon": "🏮",
           "description": "阿里巴巴通用多模态大语言模型官方入口问答"
         },

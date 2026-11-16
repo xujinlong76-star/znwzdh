@@ -327,16 +327,70 @@ describe("市场规模：卸载后精选种子的宽度", () => {
     expect(byKind("bundle").length, "组合包数量不足").toBeGreaterThanOrEqual(MARKET_SCALE.minBundles)
   })
 
-  it("搜索引擎包的 !前缀全局唯一（多个包可同时安装且不互相覆盖）", () => {
+  // 2026-11-17 C 批改写（原断言「!前缀全局唯一」）：同一服务跨包统一为同一规范前缀
+  // 后，同一前缀会出现在两个包里——但指向同一检索 URL，运行时解析结果完全相同，
+  // 不构成「互相覆盖」（registerSearchPackEngines 同前缀让位时解析目标不变）。
+  // 守卫收紧为真正的不变量：同一前缀只许指向同一检索 URL；不同服务共用一前缀
+  // 仍为失败（直达会命中歧义）。断言未删，只按新行为改写；具体 17 组规范映射由
+  // 下一条「同一服务跨包共用同一规范前缀」测试逐组锁定。
+  it("同一 !前缀只许指向同一检索 URL（同服务跨包共用规范前缀）", () => {
     const { items } = collectValidated()
-    const seen = new Map<string, string>()
+    const urlByPrefix = new Map<string, string>()
+    const ownerByPrefix = new Map<string, string>()
     for (const item of items.filter((i) => i.manifest.kind === "search-pack")) {
       const payload = item.manifest.payload as SearchPackPayload
       for (const engine of payload.engines ?? []) {
         const key = engine.prefix.toLowerCase()
-        const owner = seen.get(key)
-        expect(owner, `前缀 ${engine.prefix} 重复：${owner} 与 ${item.slug}`).toBeUndefined()
-        seen.set(key, item.slug)
+        const prevUrl = urlByPrefix.get(key)
+        if (prevUrl === undefined) {
+          urlByPrefix.set(key, engine.searchUrl)
+          ownerByPrefix.set(key, item.slug)
+        } else {
+          expect(
+            engine.searchUrl,
+            `前缀 ${engine.prefix} 指向多个不同检索 URL：${ownerByPrefix.get(key)} 与 ${item.slug}`,
+          ).toBe(prevUrl)
+        }
+      }
+    }
+  })
+
+  it("同一服务跨包共用同一规范前缀（2026-11-17 C 批）", () => {
+    // 16 个 URL 完全相同的跨包重复服务 + OpenAlex（同名、URL 已统一为 ?search=）：
+    // 每组恰好两处引擎，必须用同一规范前缀、同一检索 URL。规范前缀取最老包的
+    // 前缀（dev-search-arsenal v2.1.0 > 中文/学术 v1.1.0 > 代码/AI v1.0.0）。
+    const CANONICAL_GROUPS = [
+      { service: "bundlephobia", prefix: "!bp", url: "https://bundlephobia.com/package/{q}" },
+      { service: "Maven Central", prefix: "!mvn", url: "https://central.sonatype.com/search?q={q}" },
+      { service: "MDN Web Docs", prefix: "!mdn", url: "https://developer.mozilla.org/zh-CN/search?q={q}" },
+      { service: "docs.rs", prefix: "!rs", url: "https://docs.rs/releases/search?query={q}" },
+      { service: "grep.app", prefix: "!grep", url: "https://grep.app/search?q={q}" },
+      { service: "Docker Hub", prefix: "!docker", url: "https://hub.docker.com/search?q={q}" },
+      { service: "npm trends", prefix: "!trend", url: "https://npmtrends.com/?q={q}" },
+      { service: "OSV", prefix: "!osv", url: "https://osv.dev/list?q={q}" },
+      { service: "pkg.go.dev", prefix: "!go", url: "https://pkg.go.dev/search?q={q}" },
+      { service: "PyPI", prefix: "!pypi", url: "https://pypi.org/search/?q={q}" },
+      { service: "Terraform Registry", prefix: "!tf", url: "https://registry.terraform.io/search/providers?q={q}" },
+      { service: "哔哩哔哩", prefix: "!bili", url: "https://search.bilibili.com/all?keyword={q}" },
+      { service: "npm", prefix: "!npm", url: "https://www.npmjs.com/search?q={q}" },
+      { service: "NuGet", prefix: "!nuget", url: "https://www.nuget.org/packages?q={q}" },
+      { service: "Semantic Scholar", prefix: "!s2", url: "https://www.semanticscholar.org/search?q={q}" },
+      { service: "知乎", prefix: "!zh", url: "https://www.zhihu.com/search?type=content&q={q}" },
+      { service: "OpenAlex", prefix: "!openalex", url: "https://openalex.org/works?search={q}" },
+    ] as const
+    const { items } = collectValidated()
+    const engines: Array<{ slug: string; prefix: string; url: string }> = []
+    for (const item of items.filter((i) => i.manifest.kind === "search-pack")) {
+      const payload = item.manifest.payload as SearchPackPayload
+      for (const engine of payload.engines ?? []) {
+        engines.push({ slug: item.slug, prefix: engine.prefix, url: engine.searchUrl })
+      }
+    }
+    for (const group of CANONICAL_GROUPS) {
+      const holders = engines.filter((e) => e.url === group.url)
+      expect(holders.length, `${group.service} 应恰好两处收录同一 URL`).toBe(2)
+      for (const holder of holders) {
+        expect(holder.prefix, `${group.service} 在 ${holder.slug} 前缀未统一为 ${group.prefix}`).toBe(group.prefix)
       }
     }
   })
@@ -432,7 +486,7 @@ describe("组合包描述与实际成员一致（2026-11-16 Q-1～Q-15）", () =
 })
 
 describe("搜索引擎收录 URL：死链不得回流（2026-11-16 Q-16～Q-19）", () => {
-  // 2026-11-16 逐个实测结论（curl + 目标站自身证据）：
+  // 2026-11-16 逐个实测结论（curl + 目标站自身证据），2026-11-17 C 批按真机验证更新：
   // - crates.io !crates：旧 URL https://crates.io/search?q={q} 经复核有效，不替换。
   //   站方 OpenSearch（https://crates.io/opensearch.xml，200）声明的模板就是
   //   https://crates.io/search?q={searchTerms}；curl 默认 Accept: */* 时站方回 404，
@@ -440,23 +494,32 @@ describe("搜索引擎收录 URL：死链不得回流（2026-11-16 Q-16～Q-19�
   // - Smithery !smithery：旧 https://smithery.ai/search?q={q} 两次 curl 404 且
   //   浏览器取回亦 404（/search 路由已随 2026-10-31 关停托管服务一并下线）；
   //   新路径 https://smithery.ai/servers?q={q}：curl -L 200，且站方自身 JS
-  //   以 URLSearchParams 读 q 入参过滤目录、输入时写回 q，属真实检索深链。
+  //   以 URLSearchParams 读 q 入参过滤目录、输入时写回 q，属真实检索深链；
+  //   2026-11-17 真机验证已证实生效（215 个服务器过滤为 91 个真实结果），保持不动。
   // - 美团 !meituan：旧 https://www.meituan.com/s/{q} 两次 curl 404 且重定向到
-  //   /error/404；新路径 https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}：
-  //   curl -L 200（55KB 美团外卖搜索页应用壳，与美团 98,799 字节 404 页不同）。
-  //   keyword 参数未在静态壳里直接观测到（客户端渲染），属残留不确定性，见报告。
-  // - 携程 !ctrip：旧 https://you.ctrip.com/searchsite/all?keyword={q} 未找到可用替代。
-  //   /searchsite/all、/searchsite/、/search/ 三路经浏览器取回均为上游 404
-  //   （取回器可正常打开 you.ctrip.com/ 与 www.ctrip.com/，故为路径级失效），
-  //   站内首页亦无 searchsite 链接；curl 一律被 verify.ctrip.com 验证码墙拦截。
-  //   按任务要求如实登记未达标、不编 URL，旧 URL 暂留、引擎不下掉。
+  //   /error/404；新路径 https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}
+  //   2026-11-17 真机验证为强制登录页（搜索页壳短暂出现后自动跳登录页，白页、无任何
+  //   商家/菜品），未登录用不了；桌面端 https://www.meituan.com/s/{q} 两次 curl 404。
+  //   未找到可 curl 核实的免登录替代地址，按任务要求只删不换：引擎已下掉，两 URL 均进
+  //   RETIRED 清单防回流。
+  // - 携程 !ctrip：旧 https://you.ctrip.com/searchsite/all?keyword={q} 经 2026-11-17
+  //   真机验证两次加载（含刷新）均为携程 404 错误页、无任何搜索结果，结论已死；
+  //   /searchsite/ 经 curl 亦被 verify.ctrip.com 验证码墙拦截。未找到可核实的替代地址，
+  //   按任务要求只删不换：引擎已下掉，旧 URL 进 RETIRED 清单防回流。
+  // - 通义千问 !qwen：旧 https://tongyi.aliyun.com/qianwen/?q={q} 已迁移至 qianwen.com，
+  //   跳转链不收敛；新址 https://www.qianwen.com/qianwen/?q={q}：curl 200（39KB，
+  //   标题「千问-阿里 AI 助手」），2026-11-17 真机验证已证实生效（q 被接受并自动发出，
+  //   AI 回复了）。旧址进 RETIRED 清单防回流。
   const RETIRED_SEARCH_URLS = [
     "https://smithery.ai/search?q={q}",
     "https://www.meituan.com/s/{q}",
+    "https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}",
+    "https://you.ctrip.com/searchsite/all?keyword={q}",
+    "https://tongyi.aliyun.com/qianwen/?q={q}",
   ]
   const REPLACEMENT_SEARCH_URLS = [
     "https://smithery.ai/servers?q={q}",
-    "https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}",
+    "https://www.qianwen.com/qianwen/?q={q}",
   ]
 
   it("已证实失效的旧检索 URL 不再出现", () => {

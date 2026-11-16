@@ -38,7 +38,7 @@ type RankHit = { site: HubSite }
 /** 两个榜单共用一次服务端取数；失败各自降级为空数组 */
 async function loadHot() {
   const [trendingRes, freshRes] = await Promise.all([
-    hubGet<{ hits: RankHit[] }>('/api/rank/trending?limit=30', 60),
+    hubGet<{ hits: RankHit[]; recomputedAt?: number | null }>('/api/rank/trending?limit=30', 60),
     hubGet<{ hits: RankHit[] }>('/api/rank/new?limit=30', 60),
   ])
   const pick = (res: { hits: RankHit[] } | null): HubSite[] =>
@@ -46,12 +46,14 @@ async function loadHot() {
   return {
     trending: pick(trendingRes),
     fresh: pick(freshRes),
+    // 上次热度重算时刻：无事件行时 null，前端不显示、不编造
+    recomputedAt: trendingRes?.recomputedAt ?? null,
     degraded: trendingRes === null || freshRes === null,
   }
 }
 
 export default async function HotPage() {
-  const { trending, fresh, degraded } = await loadHot()
+  const { trending, fresh, recomputedAt, degraded } = await loadHot()
   return (
     <Container as="main" id="main-content">
       <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
@@ -61,7 +63,7 @@ export default async function HotPage() {
             { label: '今日热榜', path: '/hot' },
           ]}
         />
-        <HotView initialTrending={trending} initialFresh={fresh} degraded={degraded} />
+        <HotView initialTrending={trending} initialFresh={fresh} recomputedAt={recomputedAt} degraded={degraded} />
       </div>
       <Footer />
     </Container>

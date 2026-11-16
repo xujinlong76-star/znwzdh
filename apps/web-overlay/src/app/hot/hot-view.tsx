@@ -19,14 +19,15 @@ import { useEffect, useState, useMemo } from 'react'
 import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
-import { fetchNewSites, fetchTrending, reportClick, type HubSite } from '@/lib/navhub-api'
+import { fetchNewSites, fetchTrendingMeta, reportClick, type HubSite } from '@/lib/navhub-api'
+import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-relative-time'
 import { useLocalSearchRecorder } from '@/lib/local-search-record'
 import { getIdentity } from '@/lib/identity'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink, Search, X, Video, ArrowRight } from 'lucide-react'
+import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink, Search, X, Video, ArrowRight, Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
@@ -38,15 +39,19 @@ import { externalLinkRelAttr } from '@/lib/site-settings'
 export default function HotView({
   initialTrending = [],
   initialFresh = [],
+  recomputedAt: initialRecomputedAt = null,
   degraded = false,
 }: {
   initialTrending?: HubSite[]
   initialFresh?: HubSite[]
+  /** 上次热度重算时刻（epoch 毫秒）；null = 尚无重算记录，不显示、不编造 */
+  recomputedAt?: number | null
   degraded?: boolean
 }) {
   const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
   const [trending, setTrending] = useState<HubSite[]>(initialTrending)
   const [fresh, setFresh] = useState<HubSite[]>(initialFresh)
+  const [recomputedAt, setRecomputedAt] = useState<number | null>(initialRecomputedAt ?? null)
   const [loading, setLoading] = useState(false)
   /**
    * 中枢不可用时，「暂无热度数据」和「中枢挂了」看起来一模一样。
@@ -120,9 +125,10 @@ export default function HotView({
     const onDegraded = (error: unknown) => {
       if (!cancelled) setNotice(describeDegrade(error, '榜单数据'))
     }
-    void Promise.all([fetchTrending(30, onDegraded), fetchNewSites(30, onDegraded)]).then(([t, f]) => {
+    void Promise.all([fetchTrendingMeta(30, onDegraded), fetchNewSites(30, onDegraded)]).then(([t, f]) => {
       if (cancelled) return
-      setTrending(t)
+      setTrending(t.sites)
+      setRecomputedAt(t.recomputedAt)
       setFresh(f)
       setLoading(false)
     })
@@ -263,6 +269,16 @@ export default function HotView({
                 <Flame className="w-3 h-3" />
                 热度榜 {loading ? '—' : trending.length} 条
               </span>
+              {/* 热度重算时间戳：只在热度 tab 显示；无重算记录（null）时不显示、不编造 */}
+              {tab === 'trending' && recomputedAt != null && (
+                <span
+                  title={`热度重算于 ${formatAbsoluteTime(recomputedAt)}`}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground"
+                >
+                  <Clock className="w-3 h-3" />
+                  热度分{formatRelativeTime(recomputedAt)}重算
+                </span>
+              )}
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-700 dark:text-emerald-400">
                 <Sparkles className="w-3 h-3" />
                 新品 {loading ? '—' : fresh.length} 条

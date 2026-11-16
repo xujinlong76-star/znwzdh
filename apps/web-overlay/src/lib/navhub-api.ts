@@ -833,6 +833,27 @@ export async function fetchTrending(limit = 20, onDegraded?: DegradedHandler): P
   )
 }
 
+/** 热度榜 + 上次重算时刻。返回形状与 fetchTrending 的 HubSite[] 不同，调用方按需取用。 */
+export interface TrendingMeta {
+  sites: HubSite[]
+  /** 上次热度重算时刻（epoch 毫秒）；无事件行时 null，不编造 */
+  recomputedAt: number | null
+}
+
+export async function fetchTrendingMeta(limit = 20, onDegraded?: DegradedHandler): Promise<TrendingMeta> {
+  return degrade(
+    { sites: [], recomputedAt: null },
+    async () => {
+      const data = await getJson<RankTrendingResponse>('/api/rank/trending?limit=' + limit)
+      return {
+        sites: data.hits.map((h) => h.site).filter(Boolean),
+        recomputedAt: data.recomputedAt ?? null,
+      }
+    },
+    onDegraded,
+  )
+}
+
 export async function fetchNewSites(limit = 20, onDegraded?: DegradedHandler): Promise<HubSite[]> {
   return degrade(
     [],

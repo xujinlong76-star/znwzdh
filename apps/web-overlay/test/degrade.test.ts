@@ -25,6 +25,7 @@ import {
   fetchSite,
   fetchTags,
   fetchTrending,
+  fetchTrendingMeta,
 } from "../src/lib/navhub-api";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -174,6 +175,34 @@ describe("navhub-api：失败事实要交回调用方，404 除外", () => {
     const trendSeen: unknown[] = [];
     expect(await fetchTrending(30, (err) => trendSeen.push(err))).toEqual([]);
     expect(errorStatus(trendSeen[0])).toBe(504);
+  });
+
+  it("fetchTrendingMeta：成功时返回站点数组与 recomputedAt", async () => {
+    const at = Date.now() - 3 * 60_000;
+    stubFetch(200, JSON.stringify({ hits: [{ site: { id: "a", title: "A" } }], recomputedAt: at }));
+    const meta = await fetchTrendingMeta(30);
+    expect(meta.sites).toEqual([{ id: "a", title: "A" }]);
+    expect(meta.recomputedAt).toBe(at);
+  });
+
+  it("fetchTrendingMeta：无重算记录时 recomputedAt 为 null（不编造）", async () => {
+    stubFetch(200, JSON.stringify({ hits: [], recomputedAt: null }));
+    await expect(fetchTrendingMeta(30)).resolves.toEqual({ sites: [], recomputedAt: null });
+  });
+
+  it("fetchTrendingMeta：失败时降级为空数组 + null，且回调失败原因", async () => {
+    stubFetch(504);
+    const seen: unknown[] = [];
+    await expect(fetchTrendingMeta(30, (err) => seen.push(err))).resolves.toEqual({
+      sites: [],
+      recomputedAt: null,
+    });
+    expect(errorStatus(seen[0])).toBe(504);
+  });
+
+  it("fetchTrending 返回形状不变：仍是 HubSite[]，不带 recomputedAt", async () => {
+    stubFetch(200, JSON.stringify({ hits: [{ site: { id: "a", title: "A" } }], recomputedAt: 123 }));
+    await expect(fetchTrending(30)).resolves.toEqual([{ id: "a", title: "A" }]);
   });
 
   it("不传回调时行为与改造前完全一致（静默降级，绝不抛错）", async () => {

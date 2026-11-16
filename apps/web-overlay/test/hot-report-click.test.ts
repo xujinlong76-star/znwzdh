@@ -35,7 +35,7 @@ function windowAround(haystack: string, needle: string, before: number, after: n
 
 describe('/hot 点击上报接线', () => {
   it('引入 reportClick 与 getIdentity，口径与导航卡片一致', () => {
-    expect(code).toContain("import { fetchNewSites, fetchTrending, reportClick, type HubSite } from '@/lib/navhub-api'")
+    expect(code).toContain("import { fetchNewSites, fetchTrendingMeta, reportClick, type HubSite } from '@/lib/navhub-api'")
     expect(code).toContain("import { getIdentity } from '@/lib/identity'")
   })
 

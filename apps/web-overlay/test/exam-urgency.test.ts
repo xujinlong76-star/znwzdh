@@ -12,8 +12,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  EXAM_REMINDERS,
   EXAM_REMINDER_TIER_LABEL,
   EXAMS,
+  activeExamReminders,
   nearestExamCountdown,
   reminderTier,
   urgencyTier,
@@ -49,6 +51,10 @@ const NOV_28_0800_CST = Date.UTC(2026, 10, 28, 0, 0, 0)
 const NOV_29_0800_CST = Date.UTC(2026, 10, 29, 0, 0, 0)
 /** 2026-11-30 08:00 北京时间：国考已过 */
 const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
+/** 2026-12-06 08:00 北京时间：省考公共科目日（撞期提醒有效期最后一天） */
+const DEC_06_0800_CST = Date.UTC(2026, 11, 6, 0, 0, 0)
+/** 2026-12-07 08:00 北京时间：省考已过，省考两条撞期提醒应下线 */
+const DEC_07_0800_CST = Date.UTC(2026, 11, 7, 0, 0, 0)
 /** 2026-12-19 08:00 北京时间：考研首日 */
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研末日（进行中） */
@@ -243,5 +249,45 @@ describe('源码守卫：按档位上色、提醒只对已关注显示', () => {
     // 不写死考试日期：日期只从 exam-calendar 事实源来
     expect(widget).not.toContain('2026-11-29')
     expect(widget).not.toContain('2026-12-19')
+  })
+})
+
+describe('activeExamReminders（撞期提醒过期哨兵，2026-11-17 R-1）', () => {
+  it('每条提醒都有明确过期日：省考两条到 12-06，考研衔接到 12-19', () => {
+    expect(EXAM_REMINDERS.map((r) => r.validUntilISO)).toEqual([
+      '2026-12-06',
+      '2026-12-06',
+      '2026-12-19',
+    ])
+  })
+
+  it('11-17 三条全在：撞期未到，不过期', () => {
+    expect(activeExamReminders(NOV_14_0800_CST).map((r) => r.title)).toEqual(
+      EXAM_REMINDERS.map((r) => r.title),
+    )
+  })
+
+  it('12-06 当天三条仍在：有效期含当日', () => {
+    expect(activeExamReminders(DEC_06_0800_CST)).toHaveLength(3)
+  })
+
+  it('12-07 省考两条下线，只剩考研衔接一条', () => {
+    const titles = activeExamReminders(DEC_07_0800_CST).map((r) => r.title)
+    expect(titles).toEqual(['四六级之后一周就是考研'])
+  })
+
+  it('12-19 当天考研衔接仍在，12-20 三条全下线', () => {
+    expect(activeExamReminders(DEC_19_0800_CST).map((r) => r.title)).toEqual([
+      '四六级之后一周就是考研',
+    ])
+    expect(activeExamReminders(DEC_20_0800_CST)).toEqual([])
+  })
+
+  it('/exam 页只读派生结果 activeExamReminders，不直接渲染 EXAM_REMINDERS 原数组', () => {
+    const page = read('src/app/exam/page.tsx')
+    expect(page).toContain('activeExamReminders(')
+    expect(page).not.toContain('EXAM_REMINDERS.map')
+    // 三条全过期时整区隐藏，不留空壳
+    expect(page).toContain('reminders.length > 0')
   })
 })

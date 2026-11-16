@@ -27,7 +27,7 @@ import {
   EXAM_DATA_NOTE,
   EXAM_PREP_CATEGORY_ID,
   EXAM_PREP_SUB_ID,
-  EXAM_REMINDERS,
+  activeExamReminders,
   nearestExam,
 } from '@/lib/exam-calendar'
 import { ExamCountdown } from './exam-countdown'
@@ -101,6 +101,9 @@ export default async function ExamPage() {
   const prepSites = await loadExamPrepSites()
   const origin = configuredSiteOrigin()
   const nearest = nearestExam()
+  // 撞期提醒只读数据层派生（activeExamReminders，过期自动隐藏）：
+  // 12-07 起省考两条下线、12-20 起三条全下线，不读 EXAM_REMINDERS 原数组。
+  const reminders = activeExamReminders()
 
   return (
     <Container as="main" id="main-content">
@@ -220,14 +223,14 @@ export default async function ExamPage() {
           </div>
         </section>
 
-        {/* 撞期与双考提醒 */}
-        {nearest ? (
+        {/* 撞期与双考提醒：三条全过期时整区隐藏，不留空壳 */}
+        {nearest && reminders.length > 0 ? (
           <section aria-labelledby="exam-reminders-heading">
             <h2 id="exam-reminders-heading" className="text-lg font-bold text-foreground">
               撞期与双考提醒
             </h2>
             <ul className="mt-4 space-y-3">
-              {EXAM_REMINDERS.map((reminder) => (
+              {reminders.map((reminder) => (
                 <li
                   key={reminder.title}
                   className="flex gap-3 rounded-2xl border border-border bg-card p-4"

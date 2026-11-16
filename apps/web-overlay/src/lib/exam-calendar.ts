@@ -167,21 +167,45 @@ export const EXAMS: ExamInfo[] = [
 /**
  * 撞期与双考提醒。日期均已核实：中小学教师资格面试 12-05–06
  *（准考证 11-30–12-06，报名 11-06–09 已截止）。
+ *
+ * 过期哨兵（2026-11-17 R-1）：每条带 validUntilISO（北京时间自然日，
+ * 含当日有效），所涉日期一过即过期；activeExamReminders() 在数据层
+ * 单点过滤，所有消费点（/exam 页、首页条带等）只读派生结果，不直接
+ * 读 EXAM_REMINDERS 原数组，避免提醒在撞期过后仍展示到 12-20。
  */
-export const EXAM_REMINDERS = [
+export interface ExamReminder {
+  title: string
+  body: string
+  /** 提醒有效期至该日（含当日）：省考撞期到 12-06，考研衔接到 12-19 */
+  validUntilISO: string
+}
+
+export const EXAM_REMINDERS: ExamReminder[] = [
   {
     title: '12 月 5–6 日撞期：省考与教资面试',
     body: '2027 省考公共科目（12 月 6 日）与中小学教师资格面试（12 月 5–6 日）是同一个周末，同时报考请先对一下两场的具体考场与时间，必要时提前取舍。',
+    validUntilISO: '2026-12-06',
   },
   {
     title: '国考之后一周就是省考',
     body: '11 月 29 日国考公共科目考完，12 月 6 日多省省考公共科目接着来，两场题型相近，适合以考代练、衔接复习。',
+    validUntilISO: '2026-12-06',
   },
   {
     title: '四六级之后一周就是考研',
     body: '12 月 12 日四六级笔试后，12 月 19–20 日就是 2027 考研初试，英语听力与阅读的备考可以直接衔接。',
+    validUntilISO: '2026-12-19',
   },
 ]
+
+/**
+ * 未过期的撞期提醒：validUntilISO 当天仍展示，次日 0 点（北京时间）
+ * 起隐藏。提醒区只随 nearest 消失（12-20 才下线）兜不住过期提醒，
+ * 故消费点一律读这里，不读 EXAM_REMINDERS 原数组。
+ */
+export function activeExamReminders(nowMs: number = Date.now()): ExamReminder[] {
+  return EXAM_REMINDERS.filter((r) => daysUntil(r.validUntilISO, nowMs) >= 0)
+}
 
 /** 备考站点区：读站内「学习成长 / 考试备考」分类，不硬编码链接 */
 export const EXAM_PREP_CATEGORY_ID = 'reg-learning-growth'

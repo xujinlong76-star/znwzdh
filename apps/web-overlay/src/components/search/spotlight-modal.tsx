@@ -1945,6 +1945,27 @@ export function SpotlightModal({
                   </div>
                 </div>
               )}
+              {/* 站外出口：默认搜索引擎是用户显式选的外部引擎时，一键跳出去搜当前词。
+                  externalSearchUrl 在 internal / 空查询时返回 null，所以这一行只在
+                  「有查询词且配了外部引擎」时出现；零结果时同样出现（聚合块只在有结果时出现）。 */}
+              {externalSearchHref && externalSearchName && (
+                <div className="pt-2.5 pb-1 px-2 border-t border-border/40 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <ExternalLink className="h-3 w-3 text-primary shrink-0" />
+                    <span>站内没有想要的？去站外搜「{query.trim()}」：</span>
+                  </div>
+                  <a
+                    href={safeHref(externalSearchHref)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setOpen(false)}
+                    aria-label={`在 ${externalSearchName} 中搜索「${query.trim()}」`}
+                    className="px-2 py-1 rounded text-[11px] bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 transition-colors font-medium"
+                  >
+                    在 {externalSearchName} 中搜索
+                  </a>
+                </div>
+              )}
             </>
           )}
         </div>

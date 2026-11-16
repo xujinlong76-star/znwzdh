@@ -40,6 +40,7 @@ export default function AuthorPluginsView({
   const identity = useMemo(() => getIdentity(), [])
   const [data, setData] = useState<HubPluginAuthorResponse | null>(initialData)
   const [loading, setLoading] = useState(!initialData)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [installTarget, setInstallTarget] = useState<HubPluginItem | null>(null)
@@ -53,17 +54,32 @@ export default function AuthorPluginsView({
     [],
   )
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setNotice(null)
+  // A-4b：作者插件 >100 时列表不再截断在前 100 条。首屏 offset=0 替换，
+  // 「加载更多」按已显示条数取下一页追加；与插件市场列表
+  // （plugin-market-board.tsx）同款形态。追加页失败时 res 是降级兜底
+  // null，不能拿它覆盖现有状态：否则已加载的 100 条会被清空、按钮随之
+  // 消失，后面的页再也到不了。total 追加时只涨不跌（同 A-3 管理端守卫）。
+  const load = useCallback(async (offset = 0, append = false) => {
+    if (append) setLoadingMore(true)
+    else {
+      setLoading(true)
+      setNotice(null)
+    }
     const res = await fetchAuthorPlugins(
       ownerKey,
-      { limit: 100 },
+      { limit: 100, offset },
       (error) => setNotice(describeDegrade(error, '作者页')),
     )
     // 已由服务端验证过的作者页在刷新失败时保留首屏数据，只显示降级提示
-    if (res) setData(res)
-    setLoading(false)
+    if (res) {
+      setData((prev) =>
+        append && prev
+          ? { ...res, items: [...prev.items, ...res.items], total: Math.max(prev.total, res.total) }
+          : res,
+      )
+    }
+    if (append) setLoadingMore(false)
+    else setLoading(false)
   }, [ownerKey])
 
   useEffect(() => {
@@ -168,6 +184,20 @@ export default function AuthorPluginsView({
                     onOpenInstallModal={handleOpenInstallModal}
                   />
                 ))}
+              </div>
+            )}
+
+            {data.items.length < data.total && (
+              <div className="text-center">
+                <Button
+                  variant="outline"
+                  disabled={loadingMore}
+                  onClick={() => void load(data.items.length, true)}
+                  className="gap-1.5"
+                >
+                  {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+                  加载更多（{data.items.length}/{data.total}）
+                </Button>
               </div>
             )}
           </>

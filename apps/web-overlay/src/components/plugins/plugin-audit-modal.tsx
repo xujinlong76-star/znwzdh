@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,8 +10,15 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { ExternalLink, ShieldCheck } from 'lucide-react'
-import type { HubPluginItem } from '@/lib/navhub-api'
+import { CheckCircle2, CircleAlert, ExternalLink, MinusCircle, ShieldCheck } from 'lucide-react'
+import { fetchPluginAudit, type HubPluginAuditReport, type HubPluginItem } from '@/lib/navhub-api'
+import {
+  auditReviewSkippedLabel,
+  buildAuditView,
+  buildAuditViewFromSummary,
+  type AuditLevelTone,
+  type AuditReportView,
+} from '@/lib/plugins/audit-report-view'
 import { pluginDetailHref } from '@/lib/plugins/detail-href'
 
 export interface PluginAuditModalProps {
@@ -19,8 +27,66 @@ export interface PluginAuditModalProps {
   plugin: HubPluginItem
 }
 
+const TONE_BADGE_CLASS: Record<AuditLevelTone, string> = {
+  good: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+  ok: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30',
+  warn: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30',
+  bad: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30',
+}
+
+const TONE_TEXT_CLASS: Record<AuditLevelTone, string> = {
+  good: 'text-emerald-600 dark:text-emerald-400',
+  ok: 'text-sky-600 dark:text-sky-400',
+  warn: 'text-amber-600 dark:text-amber-400',
+  bad: 'text-red-600 dark:text-red-400',
+}
+
+const TONE_ICON_CLASS: Record<AuditLevelTone, string> = {
+  good: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  ok: 'bg-sky-500/10 text-sky-700 dark:text-sky-300',
+  warn: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  bad: 'bg-red-500/10 text-red-700 dark:text-red-400',
+}
+
 export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModalProps) {
+  const [report, setReport] = useState<HubPluginAuditReport | null>(null)
+  const [reportState, setReportState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+
+  // 打开时拉取完整审计报告（checks / dimensionScores / level 都在里面）；
+  // 报告是异步增强信息，拉不到也不阻断弹窗，只降级到摘要视图。
+  useEffect(() => {
+    if (!open || !plugin.aiAudit) return
+    let cancelled = false
+    setReport(null)
+    setReportState('loading')
+    fetchPluginAudit(plugin.slug)
+      .then((res) => {
+        if (cancelled) return
+        if (res?.ok && res.report) {
+          setReport(res.report)
+          setReportState('ready')
+        } else {
+          setReportState('error')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setReportState('error')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, plugin.slug, plugin.aiAudit])
+
+  // 注意：hooks 之后再判断——卡片只在有 aiAudit 时才开弹窗，无摘要则无报告可看。
   if (!plugin.aiAudit) return null
+
+  // 完整报告优先；拉不到就用摘要分数 + 等级，维度一律“未测量”，
+  // 绝不拿写死的四项全绿结论补位（F-3）。
+  const view: AuditReportView = report
+    ? buildAuditView(report)
+    : buildAuditViewFromSummary(plugin.aiAudit.score, plugin.aiAudit.level, plugin.aiAudit.auditedAt)
+  const risky = view.levelTone === 'warn' || view.levelTone === 'bad'
+  const skippedNote = auditReviewSkippedLabel(view.reviewSkipped)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -30,13 +96,15 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
       >
         <DialogHeader className="space-y-1 pb-2 border-b border-border/50">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+            <div className={`p-2 rounded-xl ${TONE_ICON_CLASS[view.levelTone]}`}>
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
               <DialogTitle className="text-base font-bold">AI 智能严审认证报告</DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
-                插件「{plugin.name}」已通过山羊胡全自动代码沙盒与合规性审查
+                {risky
+                  ? `插件「${plugin.name}」的审计报告存在风险项，安装前请仔细甄别`
+                  : `插件「${plugin.name}」已通过山羊胡全自动代码沙盒与合规性审查`}
               </DialogDescription>
             </div>
           </div>
@@ -49,52 +117,91 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
                 <span>综合质量与安全评分</span>
                 <Badge
                   variant="outline"
-                  className="text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-bold"
+                  className={`text-[10px] font-bold ${TONE_BADGE_CLASS[view.levelTone]}`}
                 >
-                  {plugin.aiAudit.level.toUpperCase()} 级准入
+                  {view.level.toUpperCase()} 级准入
                 </Badge>
               </div>
-              <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
-                {plugin.aiAudit.score} <span className="text-xs font-normal text-muted-foreground">/ 100 分</span>
+              <div className={`text-2xl font-black mt-0.5 font-mono ${TONE_TEXT_CLASS[view.levelTone]}`}>
+                {view.score} <span className="text-xs font-normal text-muted-foreground">/ 100 分</span>
               </div>
             </div>
             <Badge
               variant="outline"
-              className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 self-start sm:self-auto"
+              className={`text-xs font-semibold px-2.5 py-1 self-start sm:self-auto ${TONE_BADGE_CLASS[view.levelTone]}`}
             >
-              安全等级：优良 (Verified)
+              安全等级：{view.levelLabel}
             </Badge>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="p-2 rounded-lg bg-card border border-border/50">
-              <div className="text-[10px] text-muted-foreground">静态安全沙箱</div>
-              <div className="font-bold text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">
-                100% 声明式隔离
+            {view.dimensions.map((dim) => (
+              <div key={dim.key} className="p-2 rounded-lg bg-card border border-border/50">
+                <div className="text-[10px] text-muted-foreground">{dim.label}</div>
+                <div className="font-bold font-mono mt-0.5">
+                  {reportState === 'loading'
+                    ? '读取中…'
+                    : dim.score === null
+                      ? '未测量'
+                      : `${dim.score} 分`}
+                </div>
               </div>
-            </div>
-            <div className="p-2 rounded-lg bg-card border border-border/50">
-              <div className="text-[10px] text-muted-foreground">协议安全合规</div>
-              <div className="font-bold text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">
-                全量 HTTPS 认证
-              </div>
-            </div>
-            <div className="p-2 rounded-lg bg-card border border-border/50">
-              <div className="text-[10px] text-muted-foreground">AI 伦理反欺诈</div>
-              <div className="font-bold text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">
-                零注入 · 零违禁词
-              </div>
-            </div>
-            <div className="p-2 rounded-lg bg-card border border-border/50">
-              <div className="text-[10px] text-muted-foreground">语义相关性</div>
-              <div className="font-bold text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">
-                主题与内容对齐
-              </div>
-            </div>
+            ))}
           </div>
 
+          {!view.hasFullReport && reportState === 'error' && (
+            <p className="text-[11px] text-muted-foreground">
+              分维报告暂时取不到：以上维度按“未测量”显示，分数与等级取自审计摘要。
+            </p>
+          )}
+
+          {view.aiRationale && (
+            <p className="text-[11px] leading-relaxed text-muted-foreground rounded-lg bg-muted/40 border border-border/50 p-2">
+              {view.aiRationale}
+            </p>
+          )}
+          {!view.aiRationale && skippedNote && (
+            <p className="text-[11px] leading-relaxed text-muted-foreground rounded-lg bg-muted/40 border border-border/50 p-2">
+              {skippedNote}
+            </p>
+          )}
+
+          {reportState === 'ready' && view.checks.length > 0 && (
+            <ul className="space-y-1.5">
+              {view.checks.map((check) => (
+                <li
+                  key={check.name}
+                  className="flex items-start gap-2 rounded-lg bg-card border border-border/50 p-2 text-xs"
+                >
+                  {check.skipped ? (
+                    <MinusCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground" />
+                  ) : check.passed ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+                  ) : (
+                    <CircleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-medium flex flex-wrap items-center gap-1.5">
+                      <span>{check.name}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {check.skipped ? '未运行' : check.passed ? '通过' : '未通过'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{check.detail}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {reportState === 'loading' && (
+            <p className="text-[11px] text-muted-foreground">正在读取检查项…</p>
+          )}
+          {reportState === 'error' && (
+            <p className="text-[11px] text-muted-foreground">检查项暂时取不到。</p>
+          )}
+
           <div className="text-[11px] text-muted-foreground flex flex-wrap gap-1 items-center justify-between pt-1 font-mono">
-            <span>认证时间：{new Date(plugin.aiAudit.auditedAt).toLocaleString()}</span>
+            <span>认证时间：{new Date(view.auditedAt).toLocaleString()}</span>
             <span>契约版本：v1.0</span>
           </div>
 

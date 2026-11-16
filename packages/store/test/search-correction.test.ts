@@ -205,7 +205,6 @@ describe("纠正词典扫描性能", () => {
     // 样本的最小值仍在 24ms 量级，墙钟照样抓到；但最小值只能滤噪声、不能
     // 补灵敏度：只删剪枝时最小值不升反降，所以墙钟之外另有确定性预算
     // （stats.dpCalls）守剪枝，dpCalls 仍是主防线，墙钟只是辅助。
-    // 不升反降，所以墙钟之外另有确定性预算（stats.dpCalls）守剪枝。
     const stats: CorrectionStats = { dpCalls: 0 };
     resolveQueryCorrection("zhihhu", keys, { stats });
     let took = Number.POSITIVE_INFINITY;

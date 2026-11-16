@@ -17,6 +17,7 @@ import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
 import { PluginReportModal } from '@/components/plugins/plugin-report-modal'
 import { AuditDimensionTile } from '@/components/plugins/audit-dimension-tile'
 import type { HubPluginItem, HubPluginAuditReport } from '@/lib/navhub-api'
+import { auditLevelToneClasses } from '@/lib/plugins/audit-report-view'
 import { formatLayoutReport } from '@/lib/modular/layout-report'
 import { AiPluginStudioModal } from '@/components/plugins/ai-plugin-studio-modal'
 
@@ -67,6 +68,8 @@ export function DetailModals(props: DetailModalsProps) {
   // 徽章弹窗的两枚复制反馈（与壳里 shareCopy/rawCopy 同一模式）
   const mdCopy = useCopyFeedback()
   const svgCopy = useCopyFeedback()
+  // R2A-6：审计弹窗的图标容器/分数/等级徽章按真实风险等级渲染（共享映射）
+  const auditTone = auditReport ? auditLevelToneClasses(auditReport.level) : null
   return (
     <>
         {/* 安装 / 卸载确认弹窗 */}
@@ -251,8 +254,8 @@ export function DetailModals(props: DetailModalsProps) {
           <DialogContent className="max-w-md p-5 glass-surface border-border/80 shadow-2xl rounded-2xl">
             <DialogHeader className="space-y-1 pb-2 border-b border-border/50">
               <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
-                  <ShieldCheck className="w-5 h-5" />
+                <div className={cn('p-2 rounded-xl', auditTone?.chip)}>
+                  <ShieldCheck className={cn('w-5 h-5', auditTone?.icon)} />
                 </div>
                 <div>
                   <DialogTitle className="text-base font-bold">全自动代码沙盒安全体检报告</DialogTitle>
@@ -285,7 +288,7 @@ export function DetailModals(props: DetailModalsProps) {
                         </Badge>
                       )}
                     </div>
-                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+                    <div className={cn('text-2xl font-black mt-0.5 font-mono', auditTone?.score)}>
                       {auditReport.score} <span className="text-xs font-normal text-muted-foreground">/ 100 分</span>
                     </div>
                     {/* 分数口径必须说：没跑模型审理时这个分数只覆盖静态清单（+探活），不是「全维度体检」 */}
@@ -299,14 +302,10 @@ export function DetailModals(props: DetailModalsProps) {
                   </div>
                   <Badge
                     variant="outline"
-                    className={cn(
-                      'text-xs font-semibold px-2.5 py-1',
-                      auditReport.level === 'safe'
-                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
-                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
-                    )}
+                    // R2A-6：等级徽章四档真实映射（共享映射），旧两档把 high_risk 也写成「关注 (Notice)」
+                    className={cn('text-xs font-semibold px-2.5 py-1', auditTone?.chip)}
                   >
-                    {auditReport.level === 'safe' ? '安全等级：优良 (Safe)' : '安全等级：关注 (Notice)'}
+                    安全等级：{auditTone?.label} ({auditReport.level})
                   </Badge>
                 </div>
 

@@ -31,6 +31,7 @@ import {
 } from '@/lib/navhub-api'
 import { AuditDimensionTile } from './audit-dimension-tile'
 import { type PluginKind, type PluginManifest } from '@/lib/plugins/plugin-manifest'
+import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import {
   Sparkles,
   Send,
@@ -835,11 +836,13 @@ export function AiPluginStudioModal({
                       size="sm"
                       onClick={() => {
                         onOpenChange(false)
-                        router.push(`/marketplace/${encodeURIComponent(publishedPlugin.slug)}`)
+                        // C-5：待审插件按真实状态分流（pluginDetailHref：published 走公开页，
+                        // 其余走 /preview），绝不把待审插件推向公开 404 页
+                        router.push(pluginDetailHref(publishedPlugin.slug, publishedPlugin.status))
                       }}
                       className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
                     >
-                      <span>在市场中查看</span>
+                      <span>{publishedPlugin.status === 'published' ? '在市场中查看' : '在市场中预览'}</span>
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -944,7 +947,16 @@ export function AiPluginStudioModal({
                       ) : publishedPlugin ? (
                         <>
                           <Check className="h-3.5 w-3.5" />
-                          <span>AI 严审通过 · 已上架市场</span>
+                          {/* C-6：按钮文案按真实状态写——待审/驳回不再谎称「已上架」 */}
+                          <span>
+                            {publishedPlugin.status === 'published'
+                              ? 'AI 严审通过 · 已上架市场'
+                              : publishedPlugin.status === 'pending'
+                              ? '已提交，待审核'
+                              : publishedPlugin.status === 'rejected'
+                              ? '审核未通过，可修改后重新提交'
+                              : '已提交'}
+                          </span>
                         </>
                       ) : (
                         <>

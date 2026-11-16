@@ -261,6 +261,12 @@ export default function MyPluginsPage() {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-2">{plugin.description || '暂无描述'}</p>
+                    {/* C-2：已上架插件挂着未审的新版投稿时，在作者中心行内可见（/api/plugins/mine 已是 ownerView） */}
+                    {plugin.status === 'published' && plugin.pendingVersion && (
+                      <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                        待审新版本 v{plugin.pendingVersion}，审核中
+                      </p>
+                    )}
                     {plugin.status === 'pending' && plugin.pendingChangelog && (
                       <p className="text-[11px] text-amber-700 dark:text-amber-400">
                         待审变更：{plugin.pendingChangelog}

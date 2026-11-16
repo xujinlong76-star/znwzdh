@@ -57,6 +57,7 @@ import {
   Radio,
   ShieldCheck,
   Check,
+  Clock,
   AlertTriangle,
   Loader2,
   RefreshCw,
@@ -271,6 +272,10 @@ export default function AdminPluginsPage() {
   const [reviewsLoading, setReviewsLoading] = useState(false)
   const [rankDrafts, setRankDrafts] = useState<Record<string, number>>({})
   const [pendingCount, setPendingCount] = useState<number>(0)
+  // C-2：待审新版本（shadow pending）计数与筛选。已上架插件的新版投稿不进待审队列，
+  // 旧管理端看不到；独立筛选 + 行内徽章让它可见。
+  const [pendingVersionCount, setPendingVersionCount] = useState<number>(0)
+  const [pendingVersionOnly, setPendingVersionOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   // 「没拉到」与「拉到但队列空」是两件事：合并渲染会让管理员以为待审清单被清空了
@@ -349,7 +354,9 @@ export default function AdminPluginsPage() {
       const [res, telem, funnelRes, governanceRes, sStatus] = await Promise.all([
         fetchAdminPlugins(
           {
-            status: activeStatus,
+            // C-2：待审新版本筛选只对已上架插件有意义（新版投稿挂在已上架插件上）
+            status: pendingVersionOnly ? 'published' : activeStatus,
+            hasPendingVersion: pendingVersionOnly || undefined,
             q: search.trim() || undefined,
             limit: 100,
             offset,
@@ -382,6 +389,9 @@ export default function AdminPluginsPage() {
       if (res.pending !== undefined) {
         setPendingCount(res.pending)
       }
+      if (res.pendingVersionCount !== undefined) {
+        setPendingVersionCount(res.pendingVersionCount)
+      }
     } catch {
       // 主列表请求失败：首屏置空但记下 failed，EmptyState 不能说「所有插件已处理完毕」；
       // 追加失败保留已加载列表（顶部降级提示已由 onDegraded 写出），按钮可重试
@@ -393,7 +403,7 @@ export default function AdminPluginsPage() {
       setLoading(false)
       setListLoadingMore(false)
     }
-  }, [activeStatus, search])
+  }, [activeStatus, search, pendingVersionOnly])
 
   useEffect(() => {
     void loadList()
@@ -702,12 +712,15 @@ export default function AdminPluginsPage() {
           {/* 状态 Tab 切换栏 */}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60">
             {STATUS_TABS.map((tab) => {
-              const isActive = activeStatus === tab.key
+              const isActive = activeStatus === tab.key && !pendingVersionOnly
               return (
                 <button
                   key={tab.key}
                   type="button"
-                  onClick={() => setActiveStatus(tab.key)}
+                  onClick={() => {
+                    setPendingVersionOnly(false)
+                    setActiveStatus(tab.key)
+                  }}
                   className={cn(
                     'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all',
                     isActive
@@ -724,6 +737,27 @@ export default function AdminPluginsPage() {
                 </button>
               )
             })}
+            {/* C-2：待审新版本筛选——已上架插件的新版投稿（shadow pending），不进待审队列 */}
+            <button
+              type="button"
+              onClick={() => {
+                setPendingVersionOnly((prev) => !prev)
+                setActiveStatus('published')
+              }}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all',
+                pendingVersionOnly
+                  ? 'bg-primary text-primary-foreground shadow-2xs'
+                  : 'bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted border border-border/40'
+              )}
+            >
+              <span>待审新版本</span>
+              {pendingVersionCount > 0 && (
+                <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500 text-white font-bold">
+                  {pendingVersionCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -874,6 +908,13 @@ export default function AdminPluginsPage() {
                     <span className="text-xs font-mono text-muted-foreground">
                       v{item.version}
                     </span>
+                    {/* C-2：行内待审新版本徽章——已上架插件挂着未审的新版投稿时可见 */}
+                    {item.pendingVersion && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                        <Clock className="w-3 h-3" />
+                        <span>待审新版本 v{item.pendingVersion}</span>
+                      </span>
+                    )}
                     {item.status === 'quarantined' && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-destructive/15 text-destructive-text border border-destructive/30">
                         <AlertTriangle className="w-3 h-3" />

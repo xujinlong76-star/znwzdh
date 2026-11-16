@@ -121,13 +121,22 @@ export default function AuthorPluginsView({
             正在加载作者主页…
           </div>
         ) : !data ? (
-          <div className="py-20 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
-            <UserRound className="w-8 h-8 mx-auto text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">作者不存在，或暂时没有已上架插件</p>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/marketplace">去市场逛逛</Link>
-            </Button>
-          </div>
+          notice ? (
+            <div className="py-10 space-y-4 max-w-2xl mx-auto">
+              <HubDegradedNotice notice={notice} onRetry={() => setReloadToken((t) => t + 1)} />
+              <p className="text-xs text-muted-foreground text-center leading-relaxed">
+                未能加载作者主页，可能是网络或中枢服务问题；重试后仍失败请稍后再来。
+              </p>
+            </div>
+          ) : (
+            <div className="py-20 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
+              <UserRound className="w-8 h-8 mx-auto text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">作者不存在，或暂时没有已上架插件</p>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/marketplace">去市场逛逛</Link>
+              </Button>
+            </div>
+          )
         ) : (
           <>
             <div className="rounded-2xl border border-border/70 glass-surface market-hero p-6 sm:p-7 space-y-4">

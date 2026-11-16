@@ -12,6 +12,7 @@ import {
   trackPluginEvent,
 } from '@/lib/navhub-api'
 import { pluginKindLabel, resolvePluginDescription } from '@/lib/plugins/plugin-manifest'
+import { auditLevelToneClasses } from '@/lib/plugins/audit-report-view'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { cardTitle } from '@/lib/plugins/display-title'
 import { Badge } from '@/components/ui/badge'
@@ -62,6 +63,8 @@ export function PluginCard({
   const [installing, setInstalling] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [auditModalOpen, setAuditModalOpen] = useState(false)
+  // R2A-6：徽章颜色与文案按真实风险等级渲染（共享映射），只算一次
+  const aiAuditTone = plugin.aiAudit ? auditLevelToneClasses(plugin.aiAudit.level) : null
 
   // D1 更新链路：本地升级成功后不等父级刷新即切换为「已安装」
   const [upgradedTo, setUpgradedTo] = useState<string | null>(null)
@@ -430,11 +433,17 @@ export function PluginCard({
               >
                 <Badge
                   variant="outline"
-                  className="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 inline-flex items-center gap-1 font-mono transition-colors"
+                  // R2A-6：徽章颜色与文案按真实风险等级渲染（共享映射），高风险不再顶着翠绿写「AI 严审 · 42 分」
+                  className={cn(
+                    'text-[10px] border inline-flex items-center gap-1 font-mono transition-colors',
+                    aiAuditTone?.chip,
+                  )}
                   title="点击查看 AI 智能四维审查认证详情报告"
                 >
-                  <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                  <span>AI 严审 · {plugin.aiAudit.score}分</span>
+                  <ShieldCheck className={cn('w-3 h-3', aiAuditTone?.icon)} />
+                  <span>
+                    {aiAuditTone?.label} · {plugin.aiAudit.score}分
+                  </span>
                 </Badge>
               </button>
             )}

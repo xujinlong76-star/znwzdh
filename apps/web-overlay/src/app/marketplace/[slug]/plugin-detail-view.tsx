@@ -25,6 +25,7 @@ import {
   type HubPluginAuditReport
 } from '@/lib/navhub-api'
 import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX } from '@/lib/plugins/plugin-manifest'
+import { auditLevelToneClasses } from '@/lib/plugins/audit-report-view'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import type { DetailTab } from './detail-shared'
 
@@ -395,6 +396,30 @@ export default function PluginDetailView({
   }
 
   if (!plugin) {
+    // 加载失败 ≠ 不存在：fetchPluginDetail 只在 404 时不触发 onDegraded，
+    // notice 非空说明是网络/中枢故障——必须渲染失败态（带重试），
+    // 绝不能把故障说成「插件未上架或不存在」。
+    if (notice) {
+      return (
+        <Container as="main" id="main-content">
+          <div className="py-10 space-y-6 max-w-2xl mx-auto">
+            <HubDegradedNotice notice={notice} onRetry={() => void loadDetail()} />
+            <p className="text-xs text-muted-foreground text-center leading-relaxed">
+              未能加载插件详情，可能是网络或中枢服务问题；重试后仍失败请稍后再来。
+            </p>
+            <div className="pt-2 text-center">
+              <Link
+                href="/marketplace"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl bg-primary text-primary-foreground hover:opacity-90 transition-all"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>返回插件市场</span>
+              </Link>
+            </div>
+          </div>
+        </Container>
+      )
+    }
     return (
       <Container as="main" id="main-content">
         <div className="py-16 text-center space-y-4 max-w-md mx-auto">
@@ -576,15 +601,13 @@ export default function PluginDetailView({
                     onClick={() => setAuditModalOpen(true)}
                     className={cn(
                       'inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full border transition-colors cursor-pointer',
-                      auditReport.level === 'safe'
-                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                        : auditReport.level === 'low_risk'
-                        ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20 hover:bg-blue-500/20'
-                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+                      // R2A-6：按钮与图标颜色按真实风险等级渲染（共享映射），
+                      // 旧三档三元（safe 绿 / low_risk 蓝 / 其余黄）把高风险也染成黄色、图标恒绿
+                      auditLevelToneClasses(auditReport.level).chip,
                     )}
                     title="点击查看全自动代码沙盒安全审计报告"
                   >
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                    <ShieldCheck className={cn('w-3.5 h-3.5', auditLevelToneClasses(auditReport.level).icon)} />
                     <span className="font-semibold">{auditReport.score}分安全评级</span>
                     {auditReport.verifiedAuthor && (
                       <span className="hidden sm:inline font-medium">· 认证作者</span>
@@ -1010,6 +1033,7 @@ export default function PluginDetailView({
           payload={payload}
           rawCopy={rawCopy}
           handleCopyRaw={handleCopyRaw}
+          onChanged={() => void loadDetail()}
         />
         </div>
 

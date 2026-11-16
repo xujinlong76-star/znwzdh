@@ -22,6 +22,8 @@ import {
   fetchPluginDetail,
   type HubPluginInstalledItem,
 } from '@/lib/navhub-api'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
+import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { getIdentity } from '@/lib/identity'
 import {
   getActiveTheme,
@@ -65,12 +67,18 @@ export default function InstalledPluginsPage() {
   const [upgradingSlug, setUpgradingSlug] = useState<string | null>(null)
   const [uninstallingSlug, setUninstallingSlug] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  // 加载失败 ≠ 没装插件：fetchInstalledPlugins 失败时回落空列表，旧代码只有
+  // try/finally、无 catch、无 onDegraded，故障会被渲染成「你尚未安装任何插件」。
+  const [notice, setNotice] = useState<DegradeNotice | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
+    setNotice(null)
     try {
       const identity = getIdentity()
-      const res = await fetchInstalledPlugins(identity)
+      const res = await fetchInstalledPlugins(identity, (err) =>
+        setNotice(describeDegrade(err, '已安装插件')),
+      )
       setItems(res.items)
       setActiveThemeState(getActiveTheme())
       setThemeSuspended(isThemeSuspended())
@@ -271,6 +279,11 @@ export default function InstalledPluginsPage() {
           </div>
         )}
 
+        {/* 刷新失败但本地已有列表时：保留旧列表，只在顶部给失败提示（带重试） */}
+        {notice && items.length > 0 && (
+          <HubDegradedNotice notice={notice} onRetry={() => void loadData()} />
+        )}
+
         {/* 主题快速切换中心（仅当安装了主题插件时展示） */}
         {themeItems.length > 0 && (
           <div className="p-5 rounded-2xl border border-border/70 bg-card/60 backdrop-blur-xs space-y-4 shadow-xs">
@@ -412,6 +425,13 @@ export default function InstalledPluginsPage() {
           <div className="py-16 text-center text-sm text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-3" />
             正在加载已安装插件清单…
+          </div>
+        ) : notice && items.length === 0 ? (
+          <div className="py-10 space-y-4 max-w-2xl mx-auto">
+            <HubDegradedNotice notice={notice} onRetry={() => void loadData()} />
+            <p className="text-xs text-muted-foreground text-center leading-relaxed">
+              未能加载已安装插件，可能是网络或中枢服务问题；重试后仍失败请稍后再来。
+            </p>
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">

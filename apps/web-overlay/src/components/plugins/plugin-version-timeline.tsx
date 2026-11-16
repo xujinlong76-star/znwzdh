@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import {
   installPlugin,
+  rollbackPlugin,
+  fetchPluginDetail,
   fetchPluginVersions,
   fetchPluginVersionDetail,
   type HubPluginVersionItem,
@@ -11,6 +13,11 @@ import {
 } from '@/lib/navhub-api'
 import { copyText } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
+import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { getActiveTheme, setActiveTheme } from '@/lib/plugins/theme-runtime'
+import { registerSearchPackEngines } from '@/lib/plugins/search-pack-runtime'
+import { comparePluginVersions, type PluginManifest } from '@/lib/plugins/plugin-manifest'
 import { History, GitCommit, ShieldCheck, ChevronRight, FileCode, Check, Copy, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -30,9 +37,13 @@ const PluginDiffView = dynamic(
 interface PluginVersionTimelineProps {
   slug: string
   currentVersion: string
+  /** 已安装版本（详情页传入）：用于区分「重装/回滚/安装」与标注已装版本 */
+  installedVersion?: string | null
+  /** 回滚/安装成功后刷新详情（B-1：已装版本与升级提示随之更新） */
+  onChanged?: () => void
 }
 
-export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTimelineProps) {
+export function PluginVersionTimeline({ slug, currentVersion, installedVersion, onChanged }: PluginVersionTimelineProps) {
   const [versions, setVersions] = useState<HubPluginVersionItem[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null)
@@ -40,13 +51,71 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [copiedHash, setCopiedHash] = useState<string | null>(null)
   const [installingVersion, setInstallingVersion] = useState<string | null>(null)
+  // 加载失败 ≠ 首发版本：旧 catch 静默吞错，失败时照常渲染「当前为首发版本」。
+  const [notice, setNotice] = useState<DegradeNotice | null>(null)
+
+  /**
+   * 按目标版清单重应用客户端运行时（与安装弹窗同款口径，B-1）：
+   * 主题只在它正是当前激活主题时重应用（不替用户换主题）；搜索包重注册
+   * 即替换旧版引擎；组合包逐成员重注册搜索包引擎（尽力而为）。
+   */
+  const reapplyVersionManifest = async (targetVersion: string) => {
+    try {
+      const detail = await fetchPluginVersionDetail(slug, targetVersion)
+      // 版本详情的 manifest 在接口类型里是 any（基线）；按 PluginManifest 接，
+      // 再用 kind + payload 字段收窄（payload 是联合类型，in 运算符可收窄）。
+      const manifest = detail?.manifest as PluginManifest | null
+      if (!manifest) return
+      const payload = manifest.payload
+      if (manifest.kind === 'theme' && payload && typeof payload === 'object' && 'tokens' in payload) {
+        if (getActiveTheme()?.slug === slug) {
+          setActiveTheme({
+            slug,
+            name: manifest.name ?? slug,
+            tokens: payload.tokens,
+            accent: payload.accent,
+          })
+        }
+      } else if (manifest.kind === 'search-pack' && payload && typeof payload === 'object' && 'engines' in payload) {
+        registerSearchPackEngines(slug, payload.engines)
+      } else if (manifest.kind === 'bundle' && payload && typeof payload === 'object' && 'items' in payload) {
+        const members = payload.items
+        await Promise.allSettled(
+          members
+            .filter((m) => m?.kind === 'search-pack' && m?.slug)
+            .map(async (m) => {
+              const d = await fetchPluginDetail(m.slug)
+              const engines = d?.plugin?.manifest?.payload?.engines
+              if (engines) registerSearchPackEngines(m.slug, engines)
+            }),
+        )
+      }
+    } catch {
+      // 重应用失败不推翻回滚结果：服务端已回滚，客户端运行时下次进已安装页可再同步
+    }
+  }
 
   const handleInstallVersion = async (targetVersion: string) => {
     setInstallingVersion(targetVersion)
     try {
-      const res = await installPlugin(slug, undefined, { version: targetVersion })
-      if (res.success) {
-        toast.success(`已成功生效/回滚至版本 v${targetVersion}`)
+      // 目标低于已装版本 = 回滚：走真实回滚接口（服务端先删新版独有站再装旧版清单），
+      // 旧代码只调 install(version) 是假回滚——只新增不删除、版本号还写成旧版。
+      const isRollback =
+        !!installedVersion && comparePluginVersions(targetVersion, installedVersion) < 0
+      if (isRollback) {
+        const res = await rollbackPlugin(slug, targetVersion)
+        if (res.success) {
+          await reapplyVersionManifest(targetVersion)
+          toast.success(`已回滚到 v${targetVersion}${res.sitesRemoved > 0 ? `，移除了 ${res.sitesRemoved} 个新版独有站点` : ''}`)
+          onChanged?.()
+        }
+      } else {
+        const res = await installPlugin(slug, undefined, { version: targetVersion })
+        if (res.success) {
+          await reapplyVersionManifest(targetVersion)
+          toast.success(`已成功生效/回滚至版本 v${targetVersion}`)
+          onChanged?.()
+        }
       }
     } catch (err: any) {
       toast.error(err?.message || `安装版本 v${targetVersion} 失败`)
@@ -55,26 +124,24 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
     }
   }
 
-  useEffect(() => {
-    let unmounted = false
-    const load = async () => {
-      setLoading(true)
-      try {
-        const res = await fetchPluginVersions(slug)
-        if (!unmounted) {
-          setVersions(res.versions)
-        }
-      } catch {
-        // 优雅降级
-      } finally {
-        if (!unmounted) setLoading(false)
-      }
-    }
-    load()
-    return () => {
-      unmounted = true
+  const loadVersions = useCallback(async () => {
+    setLoading(true)
+    setNotice(null)
+    try {
+      const res = await fetchPluginVersions(slug, (err) =>
+        setNotice(describeDegrade(err, '版本历史')),
+      )
+      setVersions(res.versions)
+    } catch {
+      // 失败事实已由 onDegraded 写入 notice，渲染层据此显示失败态
+    } finally {
+      setLoading(false)
     }
   }, [slug])
+
+  useEffect(() => {
+    void loadVersions()
+  }, [loadVersions])
 
   const handleInspect = async (ver: string) => {
     if (selectedVersion === ver && versionDetail) {
@@ -115,6 +182,17 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
   }
 
   if (versions.length === 0) {
+    // 加载失败 ≠ 首发版本：notice 非空时渲染失败态（带重试）
+    if (notice) {
+      return (
+        <div className="space-y-3">
+          <HubDegradedNotice notice={notice} onRetry={() => void loadVersions()} />
+          <p className="text-xs text-muted-foreground text-center leading-relaxed">
+            未能加载版本历史，可能是网络或中枢服务问题；重试后仍失败请稍后再来。
+          </p>
+        </div>
+      )
+    }
     return (
       <div className="rounded-2xl border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground bg-card/30">
         <History className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
@@ -170,6 +248,11 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
                     {isCurrent && (
                       <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
                         当前最新上架
+                      </span>
+                    )}
+                    {installedVersion === v.version && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                        已安装
                       </span>
                     )}
                   </div>
@@ -232,9 +315,11 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
                       <RotateCcw className="h-3 w-3 mr-1" />
                       {installingVersion === v.version
                         ? '处理中...'
-                        : isCurrent
+                        : installedVersion === v.version
                         ? '重装此版本'
-                        : '安装/回滚此版本'}
+                        : installedVersion && comparePluginVersions(v.version, installedVersion) < 0
+                        ? '回滚到此版本'
+                        : '安装此版本'}
                     </Button>
                   </div>
                   <span className="text-[10px] text-muted-foreground font-mono">

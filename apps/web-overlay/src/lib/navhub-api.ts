@@ -1939,6 +1939,8 @@ export interface HubPluginItem {
   forkedFromSlug?: string | null
   remixCount?: number
   pendingVersion?: string | null
+  /** 待审新版完整清单（仅作者/管理员视图返回，公开接口已剥离，C-2） */
+  pendingManifest?: PluginManifest
   aiAudit?: {
     score: number
     level: string
@@ -1969,6 +1971,8 @@ export interface HubPluginsResponse {
   items: HubPluginItem[]
   total: number
   pending?: number
+  /** 仅管理端返回：已上架插件里挂了待审新版本的有多少（C-2） */
+  pendingVersionCount?: number
   limit: number
   offset: number
   /** 仅 /mine 返回：全量聚合；缺失时调用方回落到当页求和 */
@@ -2005,7 +2009,7 @@ export async function fetchPlugins(
 }
 
 export async function fetchAdminPlugins(
-  params: { status?: string; kind?: string; q?: string; sort?: string; limit?: number; offset?: number } = {},
+  params: { status?: string; kind?: string; q?: string; sort?: string; limit?: number; offset?: number; hasPendingVersion?: boolean } = {},
   onDegraded?: DegradedHandler,
 ): Promise<HubPluginsResponse> {
   const sp = new URLSearchParams()
@@ -2013,6 +2017,7 @@ export async function fetchAdminPlugins(
   if (params.kind) sp.set('kind', params.kind)
   if (params.q) sp.set('q', params.q)
   if (params.sort) sp.set('sort', params.sort)
+  if (params.hasPendingVersion) sp.set('hasPendingVersion', 'true')
   if (params.limit) sp.set('limit', String(params.limit))
   if (params.offset) sp.set('offset', String(params.offset))
   const qs = sp.toString()
@@ -2029,16 +2034,18 @@ export async function fetchInstalledPlugins(
   onDegraded?: DegradedHandler,
 ): Promise<InstalledPluginsResponse> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  return degrade<InstalledPluginsResponse>(
-    { items: [], total: 0 },
-    () =>
-      getJson<InstalledPluginsResponse>(
-        `/api/plugins/installed`,
-        undefined,
-        effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
-      ),
-    onDegraded,
-  )
+  // 404 不触发 onDegraded（与 fetchPluginDetail 同口径）：真不存在与加载失败是两回事，
+  // 后者必须由调用方渲染失败态、绝不能渲染成「你尚未安装任何插件」。
+  try {
+    return await getJson<InstalledPluginsResponse>(
+      `/api/plugins/installed`,
+      undefined,
+      effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+    )
+  } catch (error) {
+    if (!isNotFound(error)) notifyDegraded(onDegraded, error)
+    return { items: [], total: 0 }
+  }
 }
 
 export async function fetchPluginDetail(
@@ -2185,11 +2192,14 @@ export async function fetchAuthorPlugins(
   if (params.limit) sp.set('limit', String(params.limit))
   if (params.offset) sp.set('offset', String(params.offset))
   const qs = sp.toString() ? `?${sp.toString()}` : ''
-  return degrade<HubPluginAuthorResponse | null>(
-    null,
-    () => getJson<HubPluginAuthorResponse>(`/api/plugins/author/${encodeURIComponent(ownerKey)}${qs}`),
-    onDegraded,
-  )
+  // 404 不触发 onDegraded（与 fetchPluginDetail 同口径）：作者 key 查无此人是
+  // 真不存在，调用方仍显示「作者不存在」；其它失败才渲染失败态（带重试）。
+  try {
+    return await getJson<HubPluginAuthorResponse>(`/api/plugins/author/${encodeURIComponent(ownerKey)}${qs}`)
+  } catch (error) {
+    if (!isNotFound(error)) notifyDegraded(onDegraded, error)
+    return null
+  }
 }
 
 /** 作者自助提交新版本（支持 autoAudit 自动严审即时上架） */
@@ -2299,6 +2309,29 @@ export async function installPlugin(
   )
 }
 
+/**
+ * 真实回滚到历史版本（B-1）：服务端先移除新版独有站点再按目标清单安装，
+ * 安装记录版本与实际内容一致；返回体含 rolledBackFrom/To 与 sitesRemoved。
+ * 旧时间轴只调 install(version) 是假回滚——只新增不删除、版本号还撒谎。
+ */
+export async function rollbackPlugin(
+  slug: string,
+  version: string,
+  identity?: string,
+): Promise<PluginInstallResponse & { rolledBackFrom: string; rolledBackTo: string; sitesRemoved: number }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  trackPluginEvent('plugin_rollback_click', slug, effectiveIdentity)
+  const qs = new URLSearchParams()
+  qs.set('version', version)
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/rollback?${qs.toString()}`,
+    'POST',
+    {},
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
 export async function uninstallPlugin(
   slug: string,
   identity?: string,
@@ -2388,11 +2421,13 @@ export async function fetchPluginVersions(
   slug: string,
   onDegraded?: DegradedHandler,
 ): Promise<{ slug: string; versions: HubPluginVersionItem[] }> {
-  return degrade<{ slug: string; versions: HubPluginVersionItem[] }>(
-    { slug, versions: [] },
-    () => getJson(`/api/plugins/${encodeURIComponent(slug)}/versions`),
-    onDegraded,
-  )
+  // 404 不触发 onDegraded：插件真不存在时时间轴仍显示空态；其它失败才渲染失败态。
+  try {
+    return await getJson(`/api/plugins/${encodeURIComponent(slug)}/versions`)
+  } catch (error) {
+    if (!isNotFound(error)) notifyDegraded(onDegraded, error)
+    return { slug, versions: [] }
+  }
 }
 
 /** 查询特定历史版本的清单快照与对比 */
@@ -2426,6 +2461,8 @@ export interface HubPluginReviewItem {
   /** 作者官方回复（仅插件作者可写；服务端按作者身份校验） */
   authorReply?: string | null
   authorRepliedAt?: number | null
+  /** 评价作者当前是否仍处于活跃安装状态（B-3）：false = 发表时已验证安装，现已卸载 */
+  installedNow?: boolean
   createdAt: number
   updatedAt: number
 }
@@ -2456,19 +2493,22 @@ export async function fetchPluginReviews(
   if (params.offset) sp.set('offset', String(params.offset))
   if (effectiveIdentity) sp.set('identity', effectiveIdentity)
   const qs = sp.toString() ? `?${sp.toString()}` : ''
-  return degrade<HubPluginReviewsResponse>(
-    {
-      slug,
-      stats: { avgRating: 0, reviewCount: 0, ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } },
-      myReview: null,
-      items: [],
-      total: 0,
-      limit: params.limit ?? 20,
-      offset: params.offset ?? 0,
-    },
-    () => getJson(`/api/plugins/${encodeURIComponent(slug)}/reviews${qs}`),
-    onDegraded,
-  )
+  // 404 不触发 onDegraded：插件真不存在时评价区仍显示空态；其它失败才渲染失败态。
+  const fallback: HubPluginReviewsResponse = {
+    slug,
+    stats: { avgRating: 0, reviewCount: 0, ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } },
+    myReview: null,
+    items: [],
+    total: 0,
+    limit: params.limit ?? 20,
+    offset: params.offset ?? 0,
+  }
+  try {
+    return await getJson(`/api/plugins/${encodeURIComponent(slug)}/reviews${qs}`)
+  } catch (error) {
+    if (!isNotFound(error)) notifyDegraded(onDegraded, error)
+    return fallback
+  }
 }
 
 /** 提交或修改评价（需活跃安装） */
@@ -2490,15 +2530,35 @@ export async function submitPluginReview(
 /** 举报评价（进入治理队列，不自动隐藏） */
 /** 作者官方回复评价 */
 export async function replyPluginReview(
+  slug: string,
   reviewId: string,
   reply: string,
   identity?: string,
 ): Promise<{ ok: boolean; review: HubPluginReviewItem }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  // B-2：旧客户端调的是 /api/plugins/reviews/:id/reply，服务端根本没有这条路由
+  // （真实路由是 /api/plugins/:slug/reviews/:id/reply），作者回复永远 404。
+  // 改为按 slug 调真实路由。
   return sendJson<{ ok: boolean; review: HubPluginReviewItem }>(
-    `/api/plugins/reviews/${encodeURIComponent(reviewId)}/reply`,
+    `/api/plugins/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(reviewId)}/reply`,
     'POST',
     { reply },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/** 删除自己的评价（B-3）：本人或管理员可删；服务端按身份 + actorKind 判定 */
+export async function deletePluginReview(
+  slug: string,
+  reviewId: string,
+  identity?: string,
+): Promise<{ success: boolean; deleted: boolean; review: HubPluginReviewItem }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(reviewId)}`,
+    'DELETE',
+    {},
     undefined,
     effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
@@ -2635,7 +2695,7 @@ export async function createShortLinkForTarget(
 
 /** 插件漏斗埋点：浏览 / 安装点击 / 卸载点击 / 分享（fire-and-forget，不阻塞 UI） */
 export function trackPluginEvent(
-  kind: 'plugin_view' | 'plugin_install_click' | 'plugin_uninstall_click' | 'plugin_share',
+  kind: 'plugin_view' | 'plugin_install_click' | 'plugin_uninstall_click' | 'plugin_rollback_click' | 'plugin_share',
   slug: string,
   identity?: string,
 ): void {

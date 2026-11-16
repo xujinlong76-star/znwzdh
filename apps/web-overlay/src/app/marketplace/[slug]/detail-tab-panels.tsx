@@ -44,6 +44,8 @@ export interface DetailTabPanelsProps {
   payload: any
   rawCopy: ReturnType<typeof useCopyFeedback>
   handleCopyRaw: () => void
+  /** 回滚/安装后刷新详情（B-1：时间轴回滚成功后重取详情，刷新已装版本与升级提示） */
+  onChanged?: () => void
 }
 
 export function DetailTabPanels(props: DetailTabPanelsProps) {
@@ -55,6 +57,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
     payload,
     rawCopy,
     handleCopyRaw,
+    onChanged,
   } = props
   const [testSearchQuery, setTestSearchQuery] = useState('山羊胡')
   return (
@@ -590,7 +593,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
           {/* 选项卡 4：版本演进时间轴 */}
           {activeTab === 'history' && (
             <div role="tabpanel" id="plugin-tabpanel-history" aria-labelledby="plugin-tab-history">
-              <PluginVersionTimeline slug={plugin.slug} currentVersion={plugin.version} />
+              <PluginVersionTimeline slug={plugin.slug} currentVersion={plugin.version} installedVersion={plugin.installedVersion} onChanged={onChanged} />
             </div>
           )}
 
@@ -601,6 +604,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
               slug={plugin.slug}
               isInstalled={Boolean(plugin.installed)}
               installedVersion={plugin.installedVersion}
+              isOwner={Boolean(plugin.isOwner)}
               initialReviews={
                 plugin.reviewStats
                   ? {

@@ -409,10 +409,20 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
       // 安装时冲突检测（D 批）：有冲突且用户未确认时 409 返回冲突清单，不安装、
       // 不静默覆盖；用户确认（acknowledgeConflicts）后才继续安装。
+      // 检测本身也会抛错：组合包成员失效时 resolveBundleMembers 抛
+      // 「组合包暂不可安装」、请求了不存在的历史版本时抛「找不到版本……」——
+      // 这些都是客户端可理解的拒绝原因，应返回 400 而不是漏到 Fastify
+      // 默认处理变 500（F4 组合包测试：成员下架后新用户安装应 400）。
       if (body.acknowledgeConflicts !== true) {
-        const conflicts = await ctx.repo.detectInstallConflicts(slug, identity, {
-          version: targetVersion,
-        });
+        let conflicts;
+        try {
+          conflicts = await ctx.repo.detectInstallConflicts(slug, identity, {
+            version: targetVersion,
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return badRequest(reply, message);
+        }
         if (conflicts.length > 0) {
           return conflict(reply, "安装存在冲突，请确认后继续", { conflicts });
         }

@@ -65,8 +65,10 @@ import { SiteFavicon } from '@/components/site-favicon'
 import {
   useExternalLinkTarget,
   useSpotlightShortcutMode,
+  useUserPreference,
   spotlightHotkeyMatches,
 } from '@/lib/user-preferences'
+import { externalSearchEngineName, externalSearchUrl } from '@/lib/user-settings'
 import { toast } from 'sonner'
 import {
   searchSites,
@@ -171,6 +173,7 @@ export function SpotlightModal({
   const [archiveReaderOpen, setArchiveReaderOpen] = useState(false)
   const [modKey, setModKey] = useState<string>('⌘')
   const shortcutMode = useSpotlightShortcutMode()
+  const searchEngine = useUserPreference('defaultSearchEngine')
   /** 站点召回通道是否失败（区别于「真的没有结果」） */
   const [sitesUnavailable, setSitesUnavailable] = useState(false)
   /** 站点语义未就绪：当前召回是关键词 / 拼音 / 全文混合 */
@@ -236,6 +239,10 @@ export function SpotlightModal({
     },
     [identity, linkTarget, query],
   )
+
+  /** 站外出口：只有用户在「默认搜索引擎」里显式选了外部引擎才出现 */
+  const externalSearchHref = externalSearchUrl(searchEngine, query)
+  const externalSearchName = externalSearchEngineName(searchEngine)
 
   // 1. 全局快捷键监听（呼出键听用户中心的「搜索快捷键」偏好）与自定义事件唤起
   useEffect(() => {

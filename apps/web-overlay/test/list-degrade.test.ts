@@ -53,7 +53,9 @@ describe("/hot：榜单取不回来时要说出来", () => {
 
   it("把降级原因接回页面（两个榜单都要挂回调）", () => {
     expect(hot).toContain("describeDegrade(error, '榜单数据')");
-    expect(hot).toContain("fetchTrending(30, onDegraded)");
+    // 91 轮（082984e7）起客户端重试改走 fetchTrendingMeta：重取时要同步更新
+    // 「上次热度重算时间」，onDegraded 回调仍挂在同一个调用上，降级意图不变。
+    expect(hot).toContain("fetchTrendingMeta(30, onDegraded)");
     expect(hot).toContain("fetchNewSites(30, onDegraded)");
     expect(hot).not.toMatch(/fetchTrending\(30\)/);
   });

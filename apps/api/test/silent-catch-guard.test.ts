@@ -188,6 +188,7 @@ function sourceFiles(dir: string): string[] {
  * 只写注释不登记，或只登记不写注释，都算没过。
  */
 export const AUDIT_REASON = "审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。";
+export const AUDIT_LOG_REASON = "审计/遥测类写库是尽力而为：失败不阻断主操作，但必须留一条失败日志。";
 export const BEST_EFFORT_REASON = "尽力而为的附带操作：失败不影响主流程。";
 export const LOOKUP_REASON = "可选读取：读不到按缺省值处理，调用方已处理空值。";
 export const DEDUP_REASON = "失败已在主链路处理：这里只防第二个未处理 rejection。";
@@ -208,7 +209,7 @@ export const ALLOW_LIST: AllowListEntry[] = [
   { file: "jobs/tasks/health-check.task.ts", reason: AUDIT_REASON },
   { file: "jobs/tasks/hotlist-refresh.task.ts", reason: AUDIT_REASON },
   { file: "jobs/tasks/metadata-refetch.task.ts", reason: AUDIT_REASON },
-  { file: "jobs/tasks/rank-recompute.task.ts", reason: AUDIT_REASON },
+  { file: "jobs/tasks/rank-recompute.task.ts", reason: AUDIT_LOG_REASON },
   { file: "jobs.ts", reason: AUDIT_REASON },
   { file: "jobs.ts", reason: BEST_EFFORT_REASON },
   { file: "jobs.ts", reason: LOOKUP_REASON },

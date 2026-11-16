@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { SectionState } from '@/components/user-center/section-state'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
+import { safeHref } from '@/lib/safe-url'
 import { Bell, CheckCheck, ExternalLink } from 'lucide-react'
 
 interface NotificationItem {
@@ -207,7 +208,7 @@ export default function NotificationsPage() {
                 {/* C-4：审核通知带插件链接，点开直达详情/预览页，不再只剩一行人话 */}
                 {n.link && (
                   <Link
-                    href={n.link}
+                    href={safeHref(n.link)}
                     onClick={(e) => e.stopPropagation()}
                     className="ml-4 -mt-1 mb-3 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
                   >

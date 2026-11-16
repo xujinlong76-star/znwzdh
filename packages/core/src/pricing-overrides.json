@@ -19,6 +19,11 @@
   "evidence": "官网设免费层与会员付费档",
   "title": "Kimi"
  },
+ "kimi.moonshot.cn": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与会员付费档",
+  "title": "Kimi 搜索"
+ },
  "qianwen.aliyun.com": {
   "pricing": "freemium",
   "evidence": "官网设免费层与付费档",
@@ -1228,6 +1233,26 @@
   "pricing": "free",
   "evidence": "AI 搜索免费使用",
   "title": "元宝搜索"
+ },
+ "metaso.cn": {
+  "pricing": "free",
+  "evidence": "AI 搜索免费使用",
+  "title": "秘塔搜索"
+ },
+ "perplexity.ai": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与 Pro 付费档",
+  "title": "Perplexity"
+ },
+ "tiangong.cn": {
+  "pricing": "freemium",
+  "evidence": "官网设免费层与会员付费档",
+  "title": "天工AI搜索"
+ },
+ "hellomiku.com": {
+  "pricing": "freemium",
+  "evidence": "工具目录标免费增值，基础搜索免费使用",
+  "title": "Miku 搜索"
  },
  "soulapp.cn": {
   "pricing": "freemium",

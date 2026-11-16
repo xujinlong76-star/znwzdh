@@ -161,6 +161,66 @@
                 "AI 搜索",
                 "搜索"
               ]
+            },
+            {
+              "id": "nav-045f8a557d74",
+              "title": "Kimi 搜索",
+              "href": "https://kimi.moonshot.cn/",
+              "description": "月之暗面旗下 Kimi 的 AI 搜索：用 AI 直接给答案并标注出处",
+              "icon": "https://kimi.moonshot.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI 搜索",
+                "搜索"
+              ]
+            },
+            {
+              "id": "nav-4a30fe52e2b4",
+              "title": "秘塔搜索",
+              "href": "https://metaso.cn/",
+              "description": "秘塔 AI 搜索：直接给出结构化答案并标注信源出处",
+              "icon": "https://metaso.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI 搜索",
+                "搜索"
+              ]
+            },
+            {
+              "id": "nav-a55e0bb23d0b",
+              "title": "Perplexity",
+              "href": "https://www.perplexity.ai/",
+              "description": "海外主流 AI 搜索引擎：用 AI 直接回答问题并附来源链接",
+              "icon": "https://www.perplexity.ai/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI 搜索",
+                "搜索"
+              ]
+            },
+            {
+              "id": "nav-cea4a7424e2c",
+              "title": "天工AI搜索",
+              "href": "https://www.tiangong.cn/",
+              "description": "昆仑万维旗下天工 AI 的搜索入口：用 AI 直接回答问题并附参考来源",
+              "icon": "https://www.tiangong.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI 搜索",
+                "搜索"
+              ]
+            },
+            {
+              "id": "nav-e416751abb6c",
+              "title": "Miku 搜索",
+              "href": "https://hellomiku.com/",
+              "description": "AI 驱动的知识探索工具：深度搜索、全网链接聚合，可生成智能报告",
+              "icon": "https://hellomiku.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI 搜索",
+                "搜索"
+              ]
             }
           ]
         },

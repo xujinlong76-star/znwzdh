@@ -28,8 +28,13 @@ export interface TelestratorAnnotation {
 /**
  * Computes Catmull-Rom spline control points to render smooth Bezier curves from raw pointer input.
  */
-export function smoothStrokePoints(points: Point2D[], _tension: number = 0.5): Point2D[] {
+export function smoothStrokePoints(points: Point2D[], tension: number = 0.5): Point2D[] {
   if (points.length <= 2) return [...points]
+
+  // Tension scales the Catmull-Rom factor; 0.5 is the standard value and
+  // the default, so calls without tension reproduce the previous output
+  // exactly. Clamp to [0, 1] and fall back to 0.5 for non-finite input.
+  const tau = Number.isFinite(tension) ? Math.min(1, Math.max(0, tension)) : 0.5
 
   const smoothed: Point2D[] = [points[0]]
   for (let i = 0; i < points.length - 1; i++) {
@@ -44,14 +49,14 @@ export function smoothStrokePoints(points: Point2D[], _tension: number = 0.5): P
       const t3 = t2 * t
 
       const x =
-        0.5 *
+        tau *
         ((2 * p1.x) +
           (-p0.x + p2.x) * t +
           (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
           (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3)
 
       const y =
-        0.5 *
+        tau *
         ((2 * p1.y) +
           (-p0.y + p2.y) * t +
           (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +

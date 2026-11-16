@@ -51,6 +51,7 @@ import { probeMetricsPrometheus, probeMetricsSummary, recordProbeResults } from 
 import { getAuditQueue, runAuditWorker } from "../audit-queue-service.ts";
 import { OutboundBudget } from "../outbound-budget.ts";
 import { safeDecodeParam, badRequest, notFound, identityTrusted, requestIdentityOf } from "./shared.ts";
+import { denyNonPublishedPlugin, isPluginVisibleToCaller } from "./plugin-presentation.ts";
 
 /** 单次体检抽样上限（防滥用：一次打几百条外部请求会伤人也伤己） */
 const MAX_SAMPLE = 100
@@ -510,6 +511,10 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const slug = safeDecodeParam((req.params as { slug: string }).slug)
       const plugin = await ctx.repo.getPluginBySlug(slug)
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
+      // 状态门禁（A-1 口径，R4-2）：非 published 仅作者/管理员可体检，
+      // 下架/待审包的失效 URL 清单不得对外亮出。放在 kind 检查之前。
+      const deniedAudit = denyNonPublishedPlugin(ctx, req, reply, plugin)
+      if (deniedAudit) return deniedAudit
       if (plugin.manifest.kind !== "site-pack") {
         return badRequest(reply, "只有网址包（site-pack）的清单里才有 URL 可体检")
       }
@@ -624,17 +629,25 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         seen.set(slug, row)
       }
 
-      const items = slugs.map((slug) => {
-        const row = seen.get(slug)
-        if (!row) return { slug, state: deriveHealthPanelState(null), auditedAt: null }
-        let diff: Record<string, unknown> = {}
-        try {
-          diff = (typeof row.diff === "string" ? JSON.parse(row.diff) : row.diff) as Record<string, unknown> || {}
-        } catch {
-          diff = {}
-        }
-        return { slug, state: deriveHealthPanelState(diff as never), auditedAt: row.created_at ?? null }
-      })
+      // 状态门禁（A-1 口径，R4-5）：逐 slug 查插件，不可见的按“从未体检过”的
+      // 无记录形态返回（与从未体检的 slug 同形，不泄漏存在性），而不是 404。
+      const items = await Promise.all(
+        slugs.map(async (slug) => {
+          const plugin = await ctx.repo.getPluginBySlug(slug)
+          if (!plugin || !isPluginVisibleToCaller(ctx, request, plugin)) {
+            return { slug, state: deriveHealthPanelState(null), auditedAt: null }
+          }
+          const row = seen.get(slug)
+          if (!row) return { slug, state: deriveHealthPanelState(null), auditedAt: null }
+          let diff: Record<string, unknown> = {}
+          try {
+            diff = (typeof row.diff === "string" ? JSON.parse(row.diff) : row.diff) as Record<string, unknown> || {}
+          } catch {
+            diff = {}
+          }
+          return { slug, state: deriveHealthPanelState(diff as never), auditedAt: row.created_at ?? null }
+        }),
+      )
       // 批量版同样支持条件请求：ETag 由「各 slug 的 auditedAt + state.kind」拼成摘要，
       // 任一包结论变化即失效。扩展轮询 50 个包时，命中 304 可省掉整份响应。
       const etag = 'W/"' + createHash('sha1').update(items.map((i) => i.slug + ':' + (i.auditedAt ?? 0) + ':' + i.state.kind).join('|')).digest('hex').slice(0, 16) + '"'
@@ -655,6 +668,12 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const params = request.params as { slug?: string }
       const slug = params.slug ? safeDecodeParam(params.slug) : ""
       if (!slug) return reply.code(400).send({ ok: false, error: "bad_request", message: "缺少 slug" })
+      // 状态门禁（A-1 口径，R4-5）：此前只读 audit_logs、不查插件，下架/待审包
+      // 的体检结论直接对外亮出。先查插件：不存在 404，不可见 404。
+      const plugin = await ctx.repo.getPluginBySlug(slug)
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
+      const deniedHealth = denyNonPublishedPlugin(ctx, request, reply, plugin)
+      if (deniedHealth) return deniedHealth
       const rows = await ctx.repo.raw(
         `SELECT created_at, diff FROM audit_logs
          WHERE action = 'audit.plugin_url_audit' AND target = ?
@@ -827,7 +846,7 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
   app.get(
     "/api/plugins/url-health/summary",
     { config: { scope: "read", rateLimit: { max: 120, timeWindow: "1 minute" } } },
-    async () => {
+    async (request) => {
       const rows = await ctx.repo.raw(
         `SELECT target, created_at, diff FROM audit_logs
          WHERE action = 'audit.plugin_url_audit'
@@ -891,6 +910,15 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         }
       }
 
+      // 状态门禁（A-1 口径，R4-5）：过滤掉调用方不可见的非 published slug。
+      // 缺失与从未体检无法区分，故过滤不泄漏存在性。
+      for (const slug of Object.keys(summaries)) {
+        const plugin = await ctx.repo.getPluginBySlug(slug)
+        if (!plugin || !isPluginVisibleToCaller(ctx, request, plugin)) {
+          delete summaries[slug]
+        }
+      }
+
       return { ok: true, summaries }
     },
   )
@@ -905,6 +933,10 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const slug = safeDecodeParam((req.params as { slug: string }).slug)
       const plugin = await ctx.repo.getPluginBySlug(slug)
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
+      // 状态门禁（A-1 口径，R4-5）：非 published 仅作者/管理员可见，
+      // 下架/待审包的体检计数不得对外亮出。放在读 audit_logs 之前。
+      const deniedUrlHealth = denyNonPublishedPlugin(ctx, req, reply, plugin)
+      if (deniedUrlHealth) return deniedUrlHealth
 
       const rows = await ctx.repo.raw(
         "SELECT created_at, diff FROM audit_logs WHERE action = ? AND target = ? ORDER BY id DESC LIMIT 1",
@@ -972,6 +1004,11 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const slug = safeDecodeParam((req.params as { slug: string }).slug)
       const plugin = await ctx.repo.getPluginBySlug(slug)
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
+      // 状态门禁（A-1 口径，R4-3）：非 published 仅作者/管理员可用，
+      // 否则传一批候选 URL 即可逐条判定归属、带回标题/分类，还烧 LLM 额度。
+      // 放在 kind 检查之前；空输入的提前返回（不调 LLM）在门禁之后。
+      const deniedHeal = denyNonPublishedPlugin(ctx, req, reply, plugin)
+      if (deniedHeal) return deniedHeal
       if (plugin.manifest.kind !== "site-pack") {
         return badRequest(reply, "只有网址包（site-pack）才支持坏链自愈诊断")
       }
@@ -1779,6 +1816,10 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const slug = safeDecodeParam((req.params as { slug: string }).slug)
       const plugin = await ctx.repo.getPluginBySlug(slug)
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
+      // 状态门禁（A-1 口径，R4-5）：非 published 仅作者/管理员可见，
+      // 下架/待审包的体检趋势不得对外亮出。放在读 audit_logs 之前。
+      const deniedHistory = denyNonPublishedPlugin(ctx, req, reply, plugin)
+      if (deniedHistory) return deniedHistory
 
       const query = (req.query ?? {}) as { limit?: unknown }
       const limit = clampInt(query.limit, 20, 2, 100)
@@ -1860,6 +1901,10 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const slug = safeDecodeParam((req.params as { slug: string }).slug)
       const plugin = await ctx.repo.getPluginBySlug(slug)
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
+      // 状态门禁（A-1 口径，R4-5）：packUrls.has(targetUrl) 是单 URL 归属预言机，
+      // 非 published 仅作者/管理员可用。放在 kind 检查与成员检查之前。
+      const deniedDiagnose = denyNonPublishedPlugin(ctx, req, reply, plugin)
+      if (deniedDiagnose) return deniedDiagnose
       if (plugin.manifest.kind !== "site-pack") {
         return badRequest(reply, "只有网址包（site-pack）才有可诊断的站点")
       }

@@ -2351,7 +2351,7 @@ export async function reportPlugin(
   slug: string,
   reason: string,
   identity?: string,
-): Promise<{ success: boolean; reportCount: number }> {
+): Promise<{ success: boolean; reportCount: number; deduplicated?: boolean; message?: string }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/report`,
@@ -2509,7 +2509,7 @@ export async function reportPluginReview(
   reviewId: string,
   reason: string,
   identity?: string,
-): Promise<{ ok: boolean; reportCount: number }> {
+): Promise<{ ok: boolean; reportCount: number; deduplicated?: boolean }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(reviewId)}/report`,

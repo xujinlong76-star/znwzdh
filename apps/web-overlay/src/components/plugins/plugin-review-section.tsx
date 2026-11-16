@@ -166,8 +166,9 @@ export function PluginReviewSection({
     }
     setReportSubmitting(true)
     try {
-      await reportPluginReview(slug, reviewId, reason)
-      toast.success('举报已提交', { description: '管理员会结合举报计数人工复核，不会自动隐藏评价' })
+      const res = await reportPluginReview(slug, reviewId, reason)
+      // 重复举报计数不变：如实提示“已举报过”，不再谎称每次都提交。
+      toast.success(res.deduplicated ? '您已举报过该评价' : '举报已提交', { description: '管理员会结合举报计数人工复核，不会自动隐藏评价' })
       setReportingId(null)
       setReportReason('')
     } catch (err: any) {

@@ -608,6 +608,16 @@ CREATE TABLE IF NOT EXISTS plugin_reports (
 );
 CREATE INDEX IF NOT EXISTS plugin_reports_plugin_idx ON plugin_reports(plugin_id);
 
+CREATE TABLE IF NOT EXISTS plugin_review_reports (
+  review_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  ip TEXT,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (review_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_review_reports_review_idx ON plugin_review_reports(review_id);
+
 CREATE TABLE IF NOT EXISTS plugin_versions (
   id TEXT PRIMARY KEY,
   plugin_id TEXT NOT NULL,
@@ -1338,6 +1348,16 @@ CREATE TABLE IF NOT EXISTS plugin_reports (
   PRIMARY KEY (plugin_id, identity)
 );
 CREATE INDEX IF NOT EXISTS plugin_reports_plugin_idx ON plugin_reports(plugin_id);
+
+CREATE TABLE IF NOT EXISTS plugin_review_reports (
+  review_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  ip TEXT,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (review_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_review_reports_review_idx ON plugin_review_reports(review_id);
 
 CREATE TABLE IF NOT EXISTS plugin_versions (
   id TEXT PRIMARY KEY,

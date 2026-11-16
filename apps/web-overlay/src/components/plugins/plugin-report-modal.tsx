@@ -48,8 +48,9 @@ export function PluginReportModal({
 
     setLoading(true)
     try {
-      await reportPlugin(slug, trimmed, identity)
-      toast.success('感谢反馈，举报已成功提交至管理员审核队列')
+      const res = await reportPlugin(slug, trimmed, identity)
+      // 重复举报计数不变：如实提示“已举报过”，不再谎称每次都受理。
+      toast.success(res.deduplicated ? '您已举报过该插件' : '感谢反馈，举报已成功提交至管理员审核队列')
       setReason('')
       onOpenChange(false)
     } catch (err) {

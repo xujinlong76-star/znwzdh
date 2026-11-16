@@ -579,7 +579,10 @@ describe("星标 / 举报 / 安装状态", () => {
   });
 
 
-  it("支持 search-pack 安装记录 enginesAdded，并支持 3 次举报自动熔断隔离及审核解封", async () => {
+  // R4-4（2026-11-17 A 批）：举报不再触发自动熔断隔离——开放模式下身份是调用方
+  // 自称的，三人（或一人三身份）即可让任意已上架插件消失，且隔离后治理告警
+  // 不再命中它。3 次举报只计数 + 进治理告警，隔离改由管理员手动执行。
+  it("支持 search-pack 安装记录 enginesAdded，3 次举报只计数不自动隔离，管理员可手动隔离及审核解封", async () => {
     const sp = await repo.createPlugin({
       manifest: manifestOf({
         manifestVersion: 1,
@@ -610,15 +613,26 @@ describe("星标 / 举报 / 安装状态", () => {
     expect(rep2.reportCount).toBe(2);
     expect(rep2.quarantined).toBe(false);
 
-    // 3. 举报第 3 次，自动熔断隔离为 quarantined
+    // 3. 举报第 3 次，只计数、不自动隔离：状态仍为 published（R4-4 改写）。
     const rep3 = await repo.reportPlugin(sp.slug, { reason: "恶意诱导", identity: "user-3" });
     expect(rep3.reportCount).toBe(3);
-    expect(rep3.quarantined).toBe(true);
-    expect(rep3.status).toBe("quarantined");
+    expect(rep3.quarantined).toBe(false);
+    expect(rep3.status).toBe("published");
+
+    const stillPublished = await repo.getPluginBySlug(sp.slug);
+    expect(stillPublished?.status).toBe("published");
+    expect(stillPublished?.reviewNote ?? "").not.toContain("自动熔断隔离");
+
+    // 3b. 管理员人工隔离：状态改 quarantined，备注写明人工处置。
+    const manuallyQuarantined = await repo.quarantinePlugin(sp.slug, "经人工核查确认恶意诱导", {
+      actor: "admin",
+      actorKind: "admin",
+    });
+    expect(manuallyQuarantined.status).toBe("quarantined");
+    expect(manuallyQuarantined.reviewNote).toContain("人工隔离处置");
 
     const quarantinedPlugin = await repo.getPluginBySlug(sp.slug);
     expect(quarantinedPlugin?.status).toBe("quarantined");
-    expect(quarantinedPlugin?.reviewNote).toContain("自动熔断隔离");
 
     // 4. 遥测统计包含 quarantinedCount 和 searchPack
     const telemetry = await repo.getPluginTelemetry();

@@ -92,9 +92,12 @@ export const pluginRoutesPart5: FastifyPluginAsync<{ ctx: AppContext }> = async 
             // 索引清理失败不阻断
           }
         }
+        // R4-4/R4-8：重复举报计数不变，文案如实区分“已受理”与“已举报过”，
+        // 不再谎报成功。quarantined 恒为 false（取消静默自动下架），
+        // 上面分支保留作兼容，不再触发。
         return {
           success: true,
-          message: "举报已受理",
+          message: result.deduplicated ? "您已举报过该插件" : "举报已受理",
           ...result,
         };
       } catch (err) {

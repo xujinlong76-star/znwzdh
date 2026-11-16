@@ -1396,6 +1396,22 @@ export async function isPluginStarredBySlug(
   return Boolean(row);
 }
 
+/**
+ * 举报身份解析（插件举报与评价举报共用）。
+ * 字面量 "anonymous" 视作无身份：路由层用它作占位时，actor.ip 仍应作为回退，
+ * 否则所有无头匿名举报共享同一身份、互相去重丢弃，却又回“已受理”。
+ * 优先级：显式身份 → actor（非 anonymous 者）→ 调用方 IP → "anonymous"。
+ */
+function resolveReporterIdentity(identity: string | undefined, actor?: PluginActor): string {
+  const direct = (identity ?? "").trim();
+  if (direct && direct !== "anonymous") return direct.slice(0, 120);
+  const actorName = (actor?.actor ?? "").trim();
+  if (actorName && actorName !== "anonymous") return actorName.slice(0, 120);
+  const ip = (actor?.ip ?? "").trim();
+  if (ip) return `ip:${ip}`.slice(0, 120);
+  return "anonymous";
+}
+
 export async function starPlugin(
   repo: Repository,
   slug: string,
@@ -1403,6 +1419,12 @@ export async function starPlugin(
 ): Promise<{ starred: boolean; starCount: number }> {
   const plugin = await getPluginBySlug(repo, slug);
   if (!plugin) throw new Error(`插件不存在：${slug}`);
+  // R4-6：只有已上架插件可被星标。待审/下架包 star 直接 400（路由映射），
+  // 不写星标。unstar 刻意不加此门禁：已星标用户应能取消对下架包的星标，
+  // 那是清理路径，不是新的认可。
+  if (plugin.status !== "published") {
+    throw new Error(`插件未上架或不存在：${slug}`);
+  }
   const who = identity.trim().slice(0, 120) || "anonymous";
   // 幂等插入 + 相对自增放在同一事务：并发的重复点赞不会把计数推高，
   // 也不会用读到的旧值覆盖别的写入者刚加上的 star。
@@ -1445,58 +1467,43 @@ export async function reportPlugin(
   slug: string,
   input: { reason: string; identity?: string },
   actor?: PluginActor,
-): Promise<{ reportCount: number; status: PluginStatus; quarantined: boolean }> {
+): Promise<{ reportCount: number; status: PluginStatus; quarantined: boolean; deduplicated: boolean }> {
   const plugin = await getPluginBySlug(repo, slug);
   if (!plugin) throw new Error(`插件不存在：${slug}`);
   const reason = input.reason.trim().slice(0, 500) || "（未填写理由）";
-  const identity = (input.identity || actor?.actor || actor?.ip || "anonymous").trim().slice(0, 120);
+  const identity = resolveReporterIdentity(input.identity, actor);
   const ip = actor?.ip ?? null;
   const now = Date.now();
 
-  let isNewReport = true;
-  try {
-    const existing = await repo.raw(
-      "SELECT 1 FROM plugin_reports WHERE plugin_id = ? AND identity = ? LIMIT 1",
-      [plugin.id, identity],
-    );
-    if (existing.length > 0) {
-      isNewReport = false;
-    } else {
-      await repo.run(
-        "INSERT INTO plugin_reports (plugin_id, identity, ip, reason, created_at) VALUES (?, ?, ?, ?, ?)",
-        [plugin.id, identity, ip, reason, now],
-      );
-    }
-  } catch {
-    // 降级保护：表异常时不阻断计数
-  }
-
+  // R4-8：原子去重。INSERT ... ON CONFLICT DO NOTHING + runCount 判是否新增，
+  // 替代“先 SELECT 再 INSERT + catch {} 吞错”：并发同身份举报只会有一方真正
+  // 写入，另一方 inserted=0；真实表异常不再被吞，会正常上抛。
+  // R4-4：取消静默自动下架。举报只计数 + 进治理告警，不再直接改 status；
+  // 隔离改由管理员在管理端决定（quarantinePlugin）。quarantined 字段保留
+  // 作调用方兼容，恒为 false。
+  let isNewReport = false;
   let reportCount = plugin.reportCount;
-  if (isNewReport) {
-    reportCount = plugin.reportCount + 1;
-  }
-  const shouldQuarantine = isNewReport && reportCount >= 3 && plugin.status === "published";
-  const nextStatus: PluginStatus = shouldQuarantine ? "quarantined" : plugin.status;
-
-  if (shouldQuarantine) {
-    await repo.run(
-      "UPDATE plugins SET report_count = ?, status = ?, review_note = ?, updated_at = ? WHERE id = ?",
-      [reportCount, nextStatus, `自动熔断隔离：累计举报达到 ${reportCount} 次（最近理由：${reason}）`, now, plugin.id],
+  await repo.withTransaction(async () => {
+    const inserted = await repo.runCount(
+      "INSERT INTO plugin_reports (plugin_id, identity, ip, reason, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (plugin_id, identity) DO NOTHING",
+      [plugin.id, identity, ip, reason, now],
     );
-    await repo.audit({
-      actor: "system.quarantine",
-      actorKind: "system",
-      action: "plugin.auto_quarantine",
-      target: slug,
-      diff: { from: plugin.status, to: nextStatus, reportCount, reason },
-    });
-  } else if (isNewReport) {
-    await repo.run("UPDATE plugins SET report_count = ?, updated_at = ? WHERE id = ?", [reportCount, now, plugin.id]);
+    if (inserted > 0) {
+      isNewReport = true;
+      await repo.run("UPDATE plugins SET report_count = report_count + 1, updated_at = ? WHERE id = ?", [
+        now,
+        plugin.id,
+      ]);
+    }
+  });
+  if (isNewReport) {
+    const rows = await repo.raw("SELECT report_count FROM plugins WHERE id = ?", [plugin.id]);
+    reportCount = Number(rows[0]?.report_count ?? plugin.reportCount + 1);
   }
 
   await repo.recordEvent("plugin_report", {
     identity: input.identity,
-    meta: { slug, reason, reportCount, deduplicated: !isNewReport, quarantined: shouldQuarantine },
+    meta: { slug, reason, reportCount, deduplicated: !isNewReport, quarantined: false },
   });
 
   await repo.audit({
@@ -1504,11 +1511,11 @@ export async function reportPlugin(
     actorKind: actor?.actorKind ?? "identity",
     action: "plugin.report",
     target: slug,
-    diff: { reason, reportCount, isNewReport, quarantined: shouldQuarantine },
+    diff: { reason, reportCount, isNewReport, quarantined: false },
     ip: actor?.ip,
   });
 
-  return { reportCount, status: nextStatus, quarantined: shouldQuarantine };
+  return { reportCount, status: plugin.status, quarantined: false, deduplicated: !isNewReport };
 }
 
 /** 管理员/治理系统人工执行隔离处置 */
@@ -1807,9 +1814,18 @@ export async function createPluginReview(
   const rating = Math.min(5, Math.max(1, Math.round(Number(input.rating))));
   if (isNaN(rating)) throw new Error("评分必须为 1 到 5 之间的整数");
 
+  // R4-10：与路由校验同口径（标题 ≤200 字、正文 ≤4000 字），超长时明确报错
+  // 而不是静默截断。路由先校验，存储层再守一道（覆盖 /api/me/import 的
+  // 评价重放等非路由写入口——超长评价落入 reviewsSkippedInvalid 计数）。
   const now = Date.now();
-  const title = input.title ? input.title.trim().slice(0, 100) : null;
-  const content = input.content ? input.content.trim().slice(0, 1000) : null;
+  const title = input.title ? input.title.trim() : null;
+  const content = input.content ? input.content.trim() : null;
+  if (title !== null && title.length > 200) {
+    throw new Error("评价标题不能超过 200 字");
+  }
+  if (content !== null && content.length > 4000) {
+    throw new Error("评价正文不能超过 4000 字");
+  }
   const installedVersion = install.version;
 
   const existing = (await repo.raw(
@@ -2005,28 +2021,45 @@ export async function reportPluginReview(
   reason: string,
   reporterIdentity: string | null,
   actor?: PluginActor,
-): Promise<PluginReviewRecord> {
+): Promise<PluginReviewRecord & { deduplicated: boolean }> {
   const row = (await repo.raw(
     "SELECT r.*, p.slug AS plugin_slug FROM plugin_reviews r JOIN plugins p ON p.id = r.plugin_id WHERE r.id = ? AND p.slug = ? LIMIT 1",
     [reviewId, slug],
   ))[0];
   if (!row) throw new Error("评价不存在");
-  await repo.run("UPDATE plugin_reviews SET report_count = report_count + 1 WHERE id = ?", [reviewId]);
+  // R4-7：按 (review_id, identity) 去重。INSERT ... ON CONFLICT DO NOTHING +
+  // runCount 判是否新增：同一身份重复举报同一评价，report_count 不再 +1。
+  // 身份解析与插件举报共用 resolveReporterIdentity（字面量 "anonymous" 视作
+  // 无身份，actor.ip 作回退）。
+  const identity = resolveReporterIdentity(reporterIdentity ?? undefined, actor);
+  const ip = actor?.ip ?? null;
+  const now = Date.now();
+  let isNewReport = false;
+  await repo.withTransaction(async () => {
+    const inserted = await repo.runCount(
+      "INSERT INTO plugin_review_reports (review_id, identity, ip, reason, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (review_id, identity) DO NOTHING",
+      [reviewId, identity, ip, reason.slice(0, 500), now],
+    );
+    if (inserted > 0) {
+      isNewReport = true;
+      await repo.run("UPDATE plugin_reviews SET report_count = report_count + 1 WHERE id = ?", [reviewId]);
+    }
+  });
   await repo.recordEvent("plugin_review_report", {
     identity: reporterIdentity ?? undefined,
-    meta: { slug: row.plugin_slug, reviewId, reason: reason.slice(0, 200) },
+    meta: { slug: row.plugin_slug, reviewId, reason: reason.slice(0, 200), deduplicated: !isNewReport },
   });
   await repo.audit({
     actor: actor?.actor ?? reporterIdentity ?? "anonymous",
     actorKind: actor?.actorKind ?? "identity",
     action: "plugin.review.report",
     target: `${row.plugin_slug}:${reviewId}`,
-    diff: { reason: reason.slice(0, 200) },
+    diff: { reason: reason.slice(0, 200), isNewReport },
     ip: actor?.ip,
   });
   const updated = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? LIMIT 1", [reviewId]))[0];
   if (!updated) throw new Error("举报后无法读回评价");
-  return rowToPluginReview(updated);
+  return { ...rowToPluginReview(updated), deduplicated: !isNewReport };
 }
 
 /* ------------------------------------------------------------------ *
@@ -2101,8 +2134,11 @@ export async function getPluginGovernanceAlerts(repo: Repository): Promise<Plugi
     "SELECT slug, name, status, created_at FROM plugins WHERE status = 'pending' AND created_at < ? ORDER BY created_at ASC LIMIT 30",
     [slaCutoff],
   );
+  // R4-4：举报只计数、不再静默自动下架后，告警必须覆盖已被隔离的插件——
+  // 否则一次隔离动作（无论人工还是历史自动）会让它从告警里消失、下架动作本身
+  // 不可见。status 覆盖 published 与 quarantined，quarantined 的 detail 追加标注。
   const reported = await repo.raw(
-    "SELECT slug, name, status, report_count, updated_at FROM plugins WHERE report_count >= 3 AND status = 'published' ORDER BY report_count DESC LIMIT 20",
+    "SELECT slug, name, status, report_count, updated_at FROM plugins WHERE report_count >= 3 AND status IN ('published', 'quarantined') ORDER BY report_count DESC LIMIT 20",
   );
   const reviewReported = await repo.raw(
     `SELECT r.id, r.report_count, r.created_at, p.slug, p.name, p.status
@@ -2124,12 +2160,13 @@ export async function getPluginGovernanceAlerts(repo: Repository): Promise<Plugi
     });
   }
   for (const row of reported) {
+    const quarantined = String(row.status) === "quarantined";
     alerts.push({
       kind: "reported",
       slug: String(row.slug),
       name: String(row.name),
       status: String(row.status),
-      detail: `插件被举报 ${Number(row.report_count ?? 0)} 次`,
+      detail: `插件被举报 ${Number(row.report_count ?? 0)} 次${quarantined ? "（已隔离）" : ""}`,
       value: Number(row.report_count ?? 0),
       createdAt: Number(row.updated_at ?? 0),
     });

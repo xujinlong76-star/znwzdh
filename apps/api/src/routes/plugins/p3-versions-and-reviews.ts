@@ -206,14 +206,26 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
         return badRequest(reply, "评分必须为 1 到 5 之间的整数");
       }
 
+      // R4-10：与存储层同口径（标题 ≤200 字、正文 ≤4000 字），超长时明确报错
+      // 而不是静默截断。放在 createPluginReview 之前：超长提交直接 400，
+      // 评价不落地、不污染“我的评价”。
+      const title = typeof body.title === "string" ? body.title.trim() : null;
+      const content = typeof body.content === "string" ? body.content.trim() : null;
+      if (title !== null && title.length > 200) {
+        return badRequest(reply, "评价标题不能超过 200 字");
+      }
+      if (content !== null && content.length > 4000) {
+        return badRequest(reply, "评价正文不能超过 4000 字");
+      }
+
       try {
         const review = await ctx.repo.createPluginReview(
           slug,
           identity,
           {
             rating,
-            title: typeof body.title === "string" ? body.title.slice(0, 200) : null,
-            content: typeof body.content === "string" ? body.content.slice(0, 4000) : null,
+            title,
+            content,
           },
           {
             actor: identity,
@@ -260,7 +272,9 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
           actorKind: "identity",
           ip: req.ip,
         });
-        return { ok: true, reportCount: review.reportCount };
+        // R4-7：重复举报计数不变，返回体带 deduplicated，供前端如实提示
+        // “您已举报过该评价”，不再谎称每次都受理。
+        return { ok: true, reportCount: review.reportCount, deduplicated: review.deduplicated };
       } catch (err) {
         return notFound(reply, err instanceof Error ? err.message : "评价不存在");
       }

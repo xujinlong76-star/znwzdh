@@ -311,6 +311,9 @@ export const USER_DATA_EXEMPT_TABLES: readonly string[] = [
   "plugins",
   "plugin_versions",
   "plugin_reports",
+  // 评价举报去重记录（R4-7）：与 plugin_reports 同为治理数据（举报人身份 +
+  // 理由是治理审计的一部分），不随账号注销删除，故与之同列豁免。
+  "plugin_review_reports",
   "plugin_events",
   "short_links",
   "schema_migrations",

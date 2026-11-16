@@ -26,6 +26,7 @@ import { safeDecodeParam,
   unauthorized,
 } from "../shared.ts";
 import {
+  denyNonPublishedPlugin,
   pluginIdentity,
   publicPlugin,
   renderBadgeSvg,
@@ -356,7 +357,15 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
       if (body.slug && !body.baseManifest) {
         const p = await ctx.repo.getPluginBySlug(body.slug);
-        if (p) base = p.manifest;
+        // 状态门禁（A-1 口径，R4-1）：slug 解析出的插件作基准时，非 published
+        // 仅作者/管理员可见；不存在的 slug 保持原有 400 行为（base 为空）。
+        // 只用调用方自带 baseManifest/targetManifest、不带 slug 的比对是用户
+        // 自己的数据，不走门禁。
+        if (p) {
+          const denied = denyNonPublishedPlugin(ctx, req, reply, p);
+          if (denied) return denied;
+          base = p.manifest;
+        }
       } else if (body.baseManifest) {
         const vBase = validateAndCleanPluginManifest(body.baseManifest);
         if (!vBase.ok) {

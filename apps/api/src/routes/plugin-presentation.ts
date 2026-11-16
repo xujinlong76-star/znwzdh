@@ -4,7 +4,8 @@
  * 从 routes/plugins.ts 抽出的纯函数：徽章 SVG 渲染、身份提取、公共序列化。
  * 它们不依赖 Fastify 实例，抽离后可单测、也让路由文件只保留「端点编排」。
  */
-import { requestIdentityOf, identityTrusted } from "./shared.ts";
+import type { FastifyReply } from "fastify";
+import { isAdminScope, notFound, requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export function escapeXml(unsafe: string): string {
@@ -110,6 +111,38 @@ export function extractPluginIdentity(req: PluginIdentityRequest): string | null
 export function pluginIdentity(ctx: AppContext, req: PluginIdentityRequest): string | null {
   if (!identityTrusted(ctx, req as never)) return null;
   return extractPluginIdentity(req);
+}
+
+/**
+ * 状态门禁（A-1 口径，A 批复用）：非 published 插件仅作者/管理员可见，
+ * 普通访客直接 404。调用方在 getPluginBySlug 之后、读任何插件内容之前调用；
+ * 返回 null 表示可见、继续处理，返回 notFound 结果时调用方直接 return 它
+ * （响应体与旧的逐处写法完全一致）。
+ */
+export function denyNonPublishedPlugin(
+  ctx: AppContext,
+  req: PluginIdentityRequest,
+  reply: FastifyReply,
+  plugin: { status: string; ownerIdentity?: string | null; slug: string },
+): { error: string } | null {
+  if (isPluginVisibleToCaller(ctx, req, plugin)) return null;
+  return notFound(reply, `插件未上架或不存在: ${plugin.slug}`);
+}
+
+/**
+ * 同上口径的布尔版，供批量端点逐 slug 过滤用：不可见的 slug 按“从未体检过”
+ * 的形态返回，而不是 404（批量接口不对单个 slug 报错，且 404 会泄漏存在性）。
+ */
+export function isPluginVisibleToCaller(
+  ctx: AppContext,
+  req: PluginIdentityRequest,
+  plugin: { status: string; ownerIdentity?: string | null },
+): boolean {
+  if (plugin.status === "published") return true;
+  const identity = pluginIdentity(ctx, req);
+  if (identity && plugin.ownerIdentity && identity === plugin.ownerIdentity) return true;
+  if (isAdminScope(ctx, req as never)) return true;
+  return false;
 }
 
 /**

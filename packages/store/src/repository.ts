@@ -2118,7 +2118,7 @@ async revokeAllSessions(userId: string): Promise<number> {
     return pluginsRepo.unstarPlugin(this, slug, identity);
   }
 
-  async reportPlugin(slug: string, input: { reason: string; identity?: string }, actor?: pluginsRepo.PluginActor): Promise<{ reportCount: number; status: pluginsRepo.PluginStatus; quarantined: boolean }> {
+  async reportPlugin(slug: string, input: { reason: string; identity?: string }, actor?: pluginsRepo.PluginActor): Promise<{ reportCount: number; status: pluginsRepo.PluginStatus; quarantined: boolean; deduplicated: boolean }> {
     return pluginsRepo.reportPlugin(this, slug, input, actor);
   }
 
@@ -2186,7 +2186,7 @@ async revokeAllSessions(userId: string): Promise<number> {
     return pluginsRepo.moderatePluginReview(this, reviewId, action, note, actor);
   }
 
-  async reportPluginReview(slug: string, reviewId: string, reason: string, reporterIdentity: string | null, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginReviewRecord> {
+  async reportPluginReview(slug: string, reviewId: string, reason: string, reporterIdentity: string | null, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginReviewRecord & { deduplicated: boolean }> {
     return pluginsRepo.reportPluginReview(this, slug, reviewId, reason, reporterIdentity, actor);
   }
 

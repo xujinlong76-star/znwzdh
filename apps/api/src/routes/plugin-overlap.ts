@@ -18,6 +18,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { canonicalizeUrl, type SitePackPayload } from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { safeDecodeParam, badRequest, notFound } from "./shared.ts";
+import { denyNonPublishedPlugin } from "./plugin-presentation.ts";
 
 /**
  * 单条 SQL 的最大占位符数。
@@ -107,6 +108,11 @@ export const pluginOverlapRoutes: FastifyPluginAsync<{ ctx: AppContext }> = asyn
       const slug = safeDecodeParam((req.params as { slug: string }).slug);
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+      // 状态门禁（A-1 口径，R4-5）：declared/existing 计数 + 已在库 URL 样例
+      // 会泄漏下架/待审包的清单内容，非 published 仅作者/管理员可见。
+      // 放在 kind 检查之前。
+      const denied = denyNonPublishedPlugin(ctx, req, reply, plugin);
+      if (denied) return denied;
       if (plugin.manifest.kind !== "site-pack") {
         return badRequest(reply, "只有网址包（site-pack）才有站点重复预览");
       }

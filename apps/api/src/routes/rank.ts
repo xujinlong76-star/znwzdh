@@ -32,6 +32,8 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         // 可解释的热度分量：前端 tooltip 展示「为什么排在这儿」
         trend: { visits: s.visitCount ?? 0, trendScore: s.trendScore ?? 0, lastVisitedAt: s.lastVisitedAt ?? null },
       })),
+      // 上次热度重算时刻（epoch 毫秒）：无事件行时 null，不编造
+      recomputedAt: await ctx.repo.lastRecomputeRankAt(),
     };
   });
 

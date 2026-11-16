@@ -377,6 +377,7 @@ export interface RankTrendingResponse {
       lastVisitedAt: number | null;
     };
   })[];
+  recomputedAt: number | null;
   [key: string]: unknown;
 }
 

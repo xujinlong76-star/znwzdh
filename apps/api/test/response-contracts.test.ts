@@ -518,6 +518,27 @@ describe("真实响应满足契约", () => {
     expect(body.hits[0].site.id).toBeTruthy();
   });
 
+  it("GET /api/rank/trending：无重算事件时 recomputedAt 为 null（不编造时间）", async () => {
+    ctx.db.sqlite!.prepare("DELETE FROM events WHERE kind = 'recompute_rank'").run();
+    const res = await app.inject({ method: "GET", url: "/api/rank/trending?limit=5" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(RankTrendingResponse, body, "GET /api/rank/trending");
+    expect(body.recomputedAt).toBeNull();
+  });
+
+  it("GET /api/rank/trending：有重算事件时 recomputedAt 为事件时刻", async () => {
+    const before = Date.now();
+    await ctx.repo.recordEvent("recompute_rank", { meta: { sites: SITES.length } });
+    const res = await app.inject({ method: "GET", url: "/api/rank/trending?limit=5" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(RankTrendingResponse, body, "GET /api/rank/trending");
+    expect(typeof body.recomputedAt).toBe("number");
+    expect(body.recomputedAt).toBeGreaterThanOrEqual(before);
+    expect(body.recomputedAt).toBeLessThanOrEqual(Date.now());
+  });
+
   it("GET /api/rank/new", async () => {
     const res = await app.inject({ method: "GET", url: "/api/rank/new?limit=5" });
     expect(res.statusCode).toBe(200);

@@ -321,6 +321,11 @@ export const RankTrendingResponse = z.looseObject({
       }),
     }),
   ),
+  /**
+   * 上次热度重算时刻（epoch 毫秒）：读 `recompute_rank` 事件流的
+   * MAX(created_at)。无事件行时为 null，不编造时间。
+   */
+  recomputedAt: z.number().nullable(),
 });
 
 /** GET /api/rank/new：只带站点，没有热度分量 */

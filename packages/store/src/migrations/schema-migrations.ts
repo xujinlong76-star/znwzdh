@@ -64,7 +64,27 @@ export async function initSchemaMigrationsTable(db: Db): Promise<void> {
   `;
 
   if (db.dialect === "pg" && db.pg) {
-    await db.pg.query(ddlPg);
+    try {
+      await db.pg.query(ddlPg);
+    } catch (err) {
+      // 并发冷启动：多个 vitest worker（pg-dialect / rollup-pg /
+      // llm-quota-reservation-pg）同时对全新库跑 openDb 时，都会走到这里。
+      // CREATE TABLE IF NOT EXISTS 的存在检查与建表不是原子的：输的一方报
+      // duplicate key violates unique constraint "pg_type_typname_nsp_index"
+      //（23505，复合类型行撞键），偶发还会漏出 relation already exists（42P07）
+      // 或 type "..." already exists（42710）——同一竞态的三种报错面孔。
+      // 表已存在即说明另一路已建好，直接放行；否则原样抛出，不掩盖真错误。
+      // 复现实测（2026-11-16，本地 PG 16.2 + pg_trgm + pgvector）：
+      // 修前 5 路并发建表 10/10 轮撞键（每轮 1–4 路失败）；修后 20/20 轮、
+      // 100/100 路全部成功。中间态只覆 23505/42P07 时 36 轮漏网 2 次，
+      // 均为 42710，补上后归零。
+      const code = (err as { code?: string } | null)?.code;
+      if (code !== "23505" && code !== "42P07" && code !== "42710") throw err;
+      const exists = await db.pg.query(
+        "SELECT to_regclass('public._schema_migrations') AS t",
+      );
+      if (!exists.rows[0]?.t) throw err;
+    }
   } else if (db.sqlite) {
     db.sqlite.exec(ddlSqlite);
   }

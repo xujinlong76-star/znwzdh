@@ -127,6 +127,51 @@ try {
   );
   process.exit(1);
 }
+
+/**
+ * 冷启动 DDL/迁移预建（2026-11-16，pg-dialect.e2e.test.ts:557 新增红定性后补）。
+ *
+ * 根因：三个 e2e 文件由 vitest 三个 fork worker 并行跑，全新库上各自的
+ * createContext → openDb 会同时执行整串 DDL_PG（60 条 CREATE TABLE IF NOT
+ * EXISTS）与 runVersionedMigrations 的 CREATE TABLE _schema_migrations。
+ * CREATE TABLE IF NOT EXISTS 的存在检查与建表不是原子的——输的一方报
+ * `duplicate key value violates unique constraint "pg_type_typname_nsp_index"`
+ *（偶发还表现为 42P07 / 42710），createContext 抛错、pg-dialect 红在 557 行
+ * 的连接断言上。本地复现实测：12 路并发跑 DDL_PG，5/5 轮 11/12 路撞键；
+ * 5 路并发建 _schema_migrations，10/10 轮撞键。80 轮 diff 未动 PG 相关文件，
+ * 与该轮改动无关，是潜伏的冷启动竞态，时序一到就红。
+ *
+ * 修法（与上方 pg_trgm 预装同款思路）：spawn vitest 之前先由单独一路 openDb
+ * 把 DDL_PG + 版本化迁移全跑一遍；worker 启动时表/扩展/台账已存在，
+ * IF NOT EXISTS 全是 no-op，不再竞态。失败直接退出 1，不留给套件去报看不懂的错。
+ */
+async function ensureColdStartSchema(connectionString) {
+  const { openDb } = await import("../packages/store/src/driver.ts");
+  const db = await openDb({ dialect: "pg", databaseUrl: connectionString });
+  try {
+    const check = await db.pg.query(
+      "SELECT to_regclass('public._schema_migrations') AS t",
+    );
+    if (!check.rows[0]?.t) {
+      throw new Error("预建后 _schema_migrations 仍不存在（DDL/迁移未生效）");
+    }
+  } finally {
+    await db.close();
+  }
+  console.log("[pg-suite] 冷启动 DDL/迁移已预建（worker 启动时不再并发建表）");
+}
+try {
+  await ensureColdStartSchema(url);
+} catch (err) {
+  console.error(
+    "[pg-suite] ❌ 冷启动预建失败：" + (err instanceof Error ? err.message : String(err)),
+  );
+  console.error(
+    "   否则三个 worker 会在全新库上并发建表，撞 pg_type_typname_nsp_index，" +
+      "createContext 抛错、pg-dialect 红在连接断言上。",
+  );
+  process.exit(1);
+}
 if (provisionOnly) process.exit(0);
 
 const res = spawnSync(

@@ -18,7 +18,12 @@
  *   5. 主题：包含完整色板 token 与圆角，而非只改一两个变量；
  *   6. 工作台预设：组件类型必须存在于前端注册表，且 col/rowSpan 落在该组件的
  *      min/max 区间内（此处内联一份注册表单，前端改名时这里会红，提醒同步）；
- *   7. 组合包：成员 slug 必须在种子内存在、已上架、且 kind 与真实清单一致。
+ *   7. 组合包：成员 slug 必须在种子内存在、已上架、且 kind 与真实清单一致；
+ *   8. 组合包描述与实际成员一致（2026-11-16 Q-1～Q-15）：描述不得再宣称
+ *      2026-11-15 已卸载的 34 个网址包成员，描述里的成员数 / !前缀总数 /
+ *      主题套数必须与 seed 实际成员实算一致；
+ *   9. 搜索引擎收录 URL（2026-11-16 Q-16～Q-19）：已证实失效的旧检索 URL
+ *      不得回流，全部收录 URL 为 https 且含 {q} 占位。
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -344,5 +349,148 @@ describe("市场规模：卸载后精选种子的宽度", () => {
       slugs.add(item.slug)
     }
     expect(slugs.size).toBe(items.length)
+  })
+})
+
+describe("组合包描述与实际成员一致（2026-11-16 Q-1～Q-15）", () => {
+  // 2026-11-15 卸载 34 个网址包后，15 个组合包的描述仍宣称已被卸载的
+  // 网址包成员（“前端武器库”“设计师灵感导航”“AI 与大模型工具包”等），
+  // 描述承诺数百站点、成员清单里却是 0 个站点。以下两条是描述守卫：
+  // 描述只许写真实成员（搜索包 + 主题），数字全部按实际成员实算。
+  // 注意：断言按新行为改写（2026-11-16 Q 线重写 15 条描述时立），
+  // 旧描述里“约 400 个专业站点与 50 个 !前缀”等数字已证伪，不得恢复。
+  const RETIRED_SITE_PACK_PHRASES = [
+    "网址包",
+    "站点",
+    "前端武器库",
+    "设计师灵感导航",
+    "AI 与大模型工具包",
+    "法律合规全场景包",
+    "宠物与育儿",
+    "医疗健康",
+    "购物电商",
+    "旅行出行",
+    "政务民生",
+    "金融理财",
+    "影音娱乐",
+    "游戏与电竞",
+    "求职招聘",
+    "软件效率工具包",
+    "开发者效率精选",
+    "自媒体运营增长包",
+    "运营营销增长包",
+    "后端与云原生",
+    "学习与自我提升",
+    "办公协作",
+    "新闻资讯",
+    "中文生活综合导航",
+    "AI Agentic 编码包",
+    "MCP 协议与工具库生态包",
+    "开源大模型与本地推理包",
+    "经典 AI 工具库",
+    "130+",
+    "120 个",
+    "400 个",
+  ]
+
+  it("描述不再宣称已被卸载的网址包成员", () => {
+    const { items } = collectValidated()
+    for (const item of items.filter((i) => i.manifest.kind === "bundle")) {
+      for (const phrase of RETIRED_SITE_PACK_PHRASES) {
+        expect(
+          item.manifest.description.includes(phrase),
+          `${item.slug} 描述仍宣称已卸载的网址包成员「${phrase}」：${item.manifest.description}`,
+        ).toBe(false)
+      }
+    }
+  })
+
+  it("描述里的成员数 / !前缀总数 / 主题套数与 seed 实际成员一致", () => {
+    // 数字全部从 seed 实算：成员数 = payload.items 长度；
+    // !前缀总数 = 成员搜索包的引擎数之和；主题套数 = 成员里 kind=theme 的个数。
+    // 描述必须用「共 N 个成员」「M 个 !前缀」「T 套」三处写明实算数字。
+    const { items } = collectValidated()
+    const bySlug = new Map(items.map((i) => [i.slug, i]))
+    for (const item of items.filter((i) => i.manifest.kind === "bundle")) {
+      const payload = item.manifest.payload as BundlePayload
+      const members = payload.items ?? []
+      let totalPrefixes = 0
+      let themeCount = 0
+      for (const member of members) {
+        const target = bySlug.get(member.slug)
+        if (member.kind === "theme") themeCount++
+        if (member.kind === "search-pack" && target) {
+          totalPrefixes += ((target.manifest.payload as SearchPackPayload).engines ?? []).length
+        }
+      }
+      const desc = item.manifest.description
+      expect(desc.includes(`共 ${members.length} 个成员`), `${item.slug} 描述未写明实算成员数（应为 ${members.length} 个）：${desc}`).toBe(true)
+      expect(desc.includes(`${totalPrefixes} 个 !前缀`), `${item.slug} 描述未写明实算 !前缀总数（应为 ${totalPrefixes} 个）：${desc}`).toBe(true)
+      expect(desc.includes(`${themeCount} 套`), `${item.slug} 描述未写明实算主题套数（应为 ${themeCount} 套）：${desc}`).toBe(true)
+    }
+  })
+})
+
+describe("搜索引擎收录 URL：死链不得回流（2026-11-16 Q-16～Q-19）", () => {
+  // 2026-11-16 逐个实测结论（curl + 目标站自身证据）：
+  // - crates.io !crates：旧 URL https://crates.io/search?q={q} 经复核有效，不替换。
+  //   站方 OpenSearch（https://crates.io/opensearch.xml，200）声明的模板就是
+  //   https://crates.io/search?q={searchTerms}；curl 默认 Accept: */* 时站方回 404，
+  //   浏览器 Accept: text/html 时回 200——审计的两次 404 是探测头伪影。
+  // - Smithery !smithery：旧 https://smithery.ai/search?q={q} 两次 curl 404 且
+  //   浏览器取回亦 404（/search 路由已随 2026-10-31 关停托管服务一并下线）；
+  //   新路径 https://smithery.ai/servers?q={q}：curl -L 200，且站方自身 JS
+  //   以 URLSearchParams 读 q 入参过滤目录、输入时写回 q，属真实检索深链。
+  // - 美团 !meituan：旧 https://www.meituan.com/s/{q} 两次 curl 404 且重定向到
+  //   /error/404；新路径 https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}：
+  //   curl -L 200（55KB 美团外卖搜索页应用壳，与美团 98,799 字节 404 页不同）。
+  //   keyword 参数未在静态壳里直接观测到（客户端渲染），属残留不确定性，见报告。
+  // - 携程 !ctrip：旧 https://you.ctrip.com/searchsite/all?keyword={q} 未找到可用替代。
+  //   /searchsite/all、/searchsite/、/search/ 三路经浏览器取回均为上游 404
+  //   （取回器可正常打开 you.ctrip.com/ 与 www.ctrip.com/，故为路径级失效），
+  //   站内首页亦无 searchsite 链接；curl 一律被 verify.ctrip.com 验证码墙拦截。
+  //   按任务要求如实登记未达标、不编 URL，旧 URL 暂留、引擎不下掉。
+  const RETIRED_SEARCH_URLS = [
+    "https://smithery.ai/search?q={q}",
+    "https://www.meituan.com/s/{q}",
+  ]
+  const REPLACEMENT_SEARCH_URLS = [
+    "https://smithery.ai/servers?q={q}",
+    "https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}",
+  ]
+
+  it("已证实失效的旧检索 URL 不再出现", () => {
+    const { items } = collectValidated()
+    for (const item of items.filter((i) => i.manifest.kind === "search-pack")) {
+      const payload = item.manifest.payload as SearchPackPayload
+      for (const engine of payload.engines ?? []) {
+        for (const dead of RETIRED_SEARCH_URLS) {
+          expect(engine.searchUrl, `${item.slug} 引擎「${engine.name}」仍用已失效的旧检索 URL：${dead}`).not.toBe(dead)
+        }
+      }
+    }
+  })
+
+  it("替换后的新检索 URL 已收录（防回退）", () => {
+    const { items } = collectValidated()
+    const allUrls = new Set<string>()
+    for (const item of items.filter((i) => i.manifest.kind === "search-pack")) {
+      const payload = item.manifest.payload as SearchPackPayload
+      for (const engine of payload.engines ?? []) allUrls.add(engine.searchUrl)
+    }
+    for (const url of REPLACEMENT_SEARCH_URLS) {
+      expect(allUrls.has(url), `替换后的新检索 URL 未收录：${url}`).toBe(true)
+    }
+  })
+
+  it("全部收录 URL 为 https 且含 {q} 占位", () => {
+    const { items } = collectValidated()
+    for (const item of items.filter((i) => i.manifest.kind === "search-pack")) {
+      const payload = item.manifest.payload as SearchPackPayload
+      for (const engine of payload.engines ?? []) {
+        expect(engine.searchUrl.startsWith("https://"), `${item.slug} 引擎「${engine.name}」收录 URL 非 https：${engine.searchUrl}`).toBe(true)
+        expect(engine.searchUrl.includes("{q}"), `${item.slug} 引擎「${engine.name}」收录 URL 缺少 {q} 占位：${engine.searchUrl}`).toBe(true)
+      }
+    }
   })
 })

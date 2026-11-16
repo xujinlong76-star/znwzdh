@@ -8,7 +8,7 @@
  * 4. 协作式限时退出（run.shouldStop()）与顺延。
  */
 
-import { auditPageHealth } from "@navhub/core";
+import { auditPageHealth, classifyProbeStatus } from "@navhub/core";
 import type { AppContext } from "../../context.ts";
 import {
   HEALTH_FAIL_THRESHOLD,
@@ -18,6 +18,53 @@ import {
 } from "../../jobs.ts";
 
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
+
+/**
+ * 第二层重试用的桌面浏览器请求头（U-13 分层探活）。
+ *
+ * 第一层用 NavHubBot UA 被 WAF/风控拦截（403/429/503）时，再发一次桌面 Chrome
+ * 口径的请求：很多站只拦机器人 UA、不拦浏览器。本层只换请求头、不伪装其它
+ * 身份（不带 Cookie、不登录、不绕过认证），且只对 blocked/server-error 状态
+ * 重试一次；两层都被拒时记 bot-blocked verdict、不判死链（见下）。
+ */
+export const DESKTOP_RETRY_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+export const DESKTOP_RETRY_HEADERS: Record<string, string> = {
+  "User-Agent": DESKTOP_RETRY_USER_AGENT,
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+};
+
+/**
+ * health_checks.error 里 bot-blocked 行的前缀：shouldBreak 靠它识别“未测准”行。
+ * 前缀是写库口径的一部分，改动它要同步改 isBotBlockedHealthRecord 与测试。
+ */
+export const BOT_BLOCKED_ERROR_PREFIX = "BOT_BLOCKED:";
+
+/** 该健康行是不是“站点拒绝巡检抓取”（在线但拒绝我们，不等于死链）。 */
+export function isBotBlockedHealthRecord(error: string | null | undefined): boolean {
+  return typeof error === "string" && error.startsWith(BOT_BLOCKED_ERROR_PREFIX);
+}
+
+/**
+ * 第一层状态码是否值得发第二层（桌面 UA）重试。
+ *
+ * 判定复用 probe-policy 的唯一事实源，不自造第二套分类：只有 blocked
+ * （401/403/405/412/418/429，WAF/风控）与 server-error（5xx，常是
+ * Cloudflare 的 503 挑战页）才重试——这两类都是“服务端活着、但这一层
+ * 不让过”。dead（404/410/451）与其它 4xx 不重试：页面确定不存在或请求
+ * 本身被拒，换 UA 也不会变。
+ */
+export function needsDesktopRetry(status: number): boolean {
+  const outcome = classifyProbeStatus(status);
+  return outcome?.kind === "blocked" || outcome?.kind === "server-error";
+}
 
 /**
  * 本次失败是否足以把站点标为 broken。
@@ -31,6 +78,10 @@ export async function shouldBreak(ctx: AppContext, siteId: string): Promise<bool
     let consecutive = 0;
     for (const r of recent) {
       if (r.ok) break;
+      // bot-blocked 行是“未测准”不是失败：站点当时在线但拒绝巡检抓取。
+      // 它打断连续失败链（与 ok 同级）——否则永久 WAF 站迟早被误标 broken，
+      // 这正是 2026-10-18 事故（kubernetes.io / figma.com / npmjs.com）的根因。
+      if (isBotBlockedHealthRecord(r.error)) break;
       consecutive++;
     }
     return shouldMarkBroken(false, consecutive, threshold);
@@ -64,6 +115,9 @@ export async function handleHealthCheck(
   const targets = selection.targets.filter((s): s is SiteRow => Boolean(s));
   let ok = 0;
   let checked = 0;
+  // U-13 可观测：两层都被拦截的站数 / 第二层救回来的站数（进 job 事件 meta）。
+  let botBlocked = 0;
+  let desktopRescued = 0;
 
   /**
    * 抓取并发度（窗口大小）。
@@ -88,10 +142,45 @@ export async function handleHealthCheck(
       window.map(async (site) => {
         const startedAt = Date.now();
         try {
-          const res = await guardedFetch(site!.url, { ...ctx.config.fetch });
-          return { site: site!, res, error: null as unknown, elapsedMs: Date.now() - startedAt };
+          let res = await guardedFetch(site!.url, { ...ctx.config.fetch });
+          let layer1Status: number | null = null;
+          let retried = false;
+          let layer2Error: unknown = null;
+          if (needsDesktopRetry(res.status)) {
+            // 分层探活第 2 层：第一层被 WAF/风控拦下时，换桌面浏览器口径再试一次。
+            // 只重试一次；第二层发不出去（超时/断连）时保留第一层结果，不把
+            // “第二层没发出去”写成站点的错。
+            layer1Status = res.status;
+            retried = true;
+            try {
+              res = await guardedFetch(
+                site!.url,
+                { ...ctx.config.fetch },
+                { headers: DESKTOP_RETRY_HEADERS },
+              );
+            } catch (err2) {
+              layer2Error = err2;
+            }
+          }
+          return {
+            site: site!,
+            res,
+            error: null as unknown,
+            elapsedMs: Date.now() - startedAt,
+            layer1Status,
+            retried,
+            layer2Error,
+          };
         } catch (err) {
-          return { site: site!, res: null, error: err, elapsedMs: Date.now() - startedAt };
+          return {
+            site: site!,
+            res: null,
+            error: err,
+            elapsedMs: Date.now() - startedAt,
+            layer1Status: null as number | null,
+            retried: false,
+            layer2Error: null as unknown,
+          };
         }
       }),
     );
@@ -112,8 +201,38 @@ export async function handleHealthCheck(
           }
         }
 
-        if (healthy) ok++;
+        if (healthy) {
+          ok++;
+          if (item.retried) desktopRescued++;
+        }
         const nextStatus = healthy && site.status === "broken" ? "active" : site.status;
+        const outcome = healthy ? null : classifyProbeStatus(res.status);
+        if (!healthy && outcome?.kind === "blocked") {
+          // 两层都被 WAF/风控拦截：站点在线但拒绝巡检抓取 —— 记 verdict，不判死链。
+          // ok=false 照实记（本次确实没取到内容），但 markBroken 恒为 false，且该行
+          // 不计入连续失败链（shouldBreak 见到 BOT_BLOCKED 前缀即打断），永久 WAF
+          // 站因此永远到不了 broken 阈值；error 带层数+状态码+复核指向，供 U-10 复核。
+          botBlocked++;
+          const layer2Note =
+            item.layer2Error != null
+              ? `第 2 层桌面 UA 未能发出请求（${item.layer2Error instanceof Error ? item.layer2Error.message : String(item.layer2Error)}）`
+              : `第 2 层桌面 UA 仍 HTTP ${res.status}`;
+          await ctx.repo.updateSiteHealth(site.id, {
+            httpStatus: res.status,
+            ok: false,
+            latencyMs: item.elapsedMs,
+            redirectTo: res.redirects?.at(-1) ?? null,
+            error: `${BOT_BLOCKED_ERROR_PREFIX} 第 1 层 HTTP ${item.layer1Status ?? res.status}，${layer2Note}；站点在线但拒绝巡检抓取，不等于已死，需浏览器层复核`,
+            currentStatus: site.status,
+            markBroken: false,
+          });
+          continue;
+        }
+        if (!healthy && outcome?.kind === "server-error" && item.retried) {
+          // 第二层也 5xx：服务器对桌面 UA 也在报错，与“拒绝我们”有本质区别，
+          // 仍按现有口径计入连续失败；但 error 写明两层都试过，避免复核时重走一遍。
+          reason = `HTTP ${res.status}：服务端暂时不可用（第 1 层 ${item.layer1Status}，第 2 层桌面 UA 仍 ${res.status}），未能确认可用性（不等于站点已死）`;
+        }
         await ctx.repo.updateSiteHealth(site.id, {
           httpStatus: res.status,
           ok: healthy,
@@ -160,6 +279,9 @@ export async function handleHealthCheck(
         checked,
         ok,
         deferred,
+        // U-13 分层探活计数：两层都被拦截的站数 / 第二层救回来的站数。
+        botBlocked,
+        desktopRescued,
         // 名额怎么分的：quota 是计划，picked 是实际选中（队列不足时两者不同）
         quota: selection.quota,
         picked: selection.picked,

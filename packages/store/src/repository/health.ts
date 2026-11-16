@@ -50,19 +50,24 @@ export async function healthCheckSeries(repo: Repository, since: number, limit =
  * 实测背景：50 个站点里 15 个被标 broken，其中 kubernetes.io / figma.com /
  * npmjs.com 全部可正常访问 —— 单次探测遇到 403/429/超时就会把健康站点打进
  * 冷宫，前台还可能显示「已失效」。连续失败阈值能过滤掉绝大多数抖动。
+ *
+ * 同时返回 error：shouldBreak 靠它识别 bot-blocked 行（见
+ * health-check.task.ts 的 isBotBlockedHealthRecord）——“站点拒绝巡检抓取”
+ * 是未测准、不是失败，不能算进连续失败，否则永久 WAF 站迟早被误标 broken。
  */
 export async function recentHealthChecks(
   repo: Repository,
   siteId: string,
   limit = 5,
-): Promise<Array<{ ok: boolean; checkedAt: number }>> {
+): Promise<Array<{ ok: boolean; checkedAt: number; error: string | null }>> {
   const rows = await repo.raw(
-    "SELECT ok, checked_at FROM health_checks WHERE site_id = ? ORDER BY checked_at DESC LIMIT ?",
+    "SELECT ok, checked_at, error FROM health_checks WHERE site_id = ? ORDER BY checked_at DESC LIMIT ?",
     [siteId, limit],
   );
   return rows.map((r) => ({
     ok: r.ok === null || r.ok === undefined ? false : Boolean(r.ok),
     checkedAt: Number(r.checked_at ?? 0),
+    error: r.error === null || r.error === undefined ? null : String(r.error),
   }));
 }
 

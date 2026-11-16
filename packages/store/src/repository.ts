@@ -810,7 +810,7 @@ async savedPluginEmbeddings(filter?: {
   }
 
   /** 某站点最近 N 次巡检（新→旧），供「连续失败才判 broken」使用 */
-  async recentHealthChecks(siteId: string, limit = 5): Promise<Array<{ ok: boolean; checkedAt: number }>> {
+  async recentHealthChecks(siteId: string, limit = 5): Promise<Array<{ ok: boolean; checkedAt: number; error: string | null }>> {
     return healthRepo.recentHealthChecks(this, siteId, limit);
   }
 

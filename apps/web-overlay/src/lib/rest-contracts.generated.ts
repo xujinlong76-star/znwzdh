@@ -702,9 +702,28 @@ export interface InstalledPluginsResponse {
     installedVersion: string;
     installedAt: number;
     source: string;
+    disabled: boolean;
+    disabledAt: number | null;
     [key: string]: unknown;
   })[];
   total: number;
+}
+
+/**
+ * GET /api/plugins/{slug}/trend
+ */
+export interface PluginInstallTrendResponse {
+  ok: true;
+  pluginId: string;
+  slug: string;
+  days: number;
+  total: number;
+  series: {
+    date: string;
+    installs: number;
+    [key: string]: unknown;
+  }[];
+  [key: string]: unknown;
 }
 
 /**
@@ -2081,6 +2100,132 @@ export interface PluginStarResponse {
 }
 
 /**
+ * POST /api/plugins/{slug}/disable
+ * POST /api/plugins/{slug}/enable
+ */
+export interface PluginDisableResponse {
+  success: true;
+  slug: string;
+  version: string;
+  disabled: boolean;
+  disabledAt: number | null;
+  changed: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/plugins/{slug}/rollback
+ */
+export interface PluginRollbackResponse {
+  success: true;
+  plugin: {
+    id: string;
+    slug: string;
+    kind: "site-pack" | "workspace-preset" | "theme" | "search-pack" | "bundle";
+    name: string;
+    description: string;
+    icon: string | null;
+    tags: string[];
+    author: string | null;
+    authorKind: string | null;
+    version: string;
+    status: string;
+    source: string;
+    installCount: number;
+    starCount: number;
+    ratingAvg: number;
+    reviewCount: number;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  install: {
+    pluginId: string;
+    version: string;
+    installedAt: number;
+    removedAt: number | null;
+    [key: string]: unknown;
+  };
+  alreadyInstalled: boolean;
+  applied: {
+    sitesAdded: number;
+    sitesSkipped: number;
+    categoriesCreated: number;
+    createdSiteIds: string[];
+    enginesAdded?: number;
+    categoryGaps?: string[];
+    categoryParentMismatches?: string[];
+    bundleItems?: ({
+      slug: string;
+      kind: "site-pack" | "workspace-preset" | "theme" | "search-pack" | "bundle";
+      name: string;
+      alreadyInstalled: boolean;
+      sitesAdded: number;
+      sitesSkipped: number;
+      enginesAdded: number;
+      [key: string]: unknown;
+    })[];
+    [key: string]: unknown;
+  };
+  rolledBackFrom: string;
+  rolledBackTo: string;
+  sitesRemoved: number;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/plugins/author/profile
+ */
+export interface PluginAuthorProfileResponse {
+  ok: true;
+  profile: {
+    ownerKey: string;
+    displayName: string | null;
+    bio: string | null;
+    avatar: string | null;
+    links: {
+      homepage?: string;
+      github?: string;
+      x?: string;
+      [key: string]: unknown;
+    };
+    donateUrl: string | null;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/plugins/{slug}/reviews/{id}
+ */
+export interface PluginReviewDeleteResponse {
+  success: true;
+  deleted: true;
+  review: {
+    id: string;
+    pluginId: string;
+    identity: string;
+    rating: number;
+    title: string | null;
+    content: string | null;
+    installedVersion: string;
+    status: string;
+    reportCount: number;
+    moderationNote: string | null;
+    moderatedAt: number | null;
+    moderatedBy: string | null;
+    authorReply?: string | null;
+    authorRepliedAt?: number | null;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
  * POST /api/favorites
  */
 export interface FavoriteCreateResponse {
@@ -3338,6 +3483,7 @@ export interface RestContractRoutes {
   "DELETE /api/me/tokens/{id}": OkResponse;
   "DELETE /api/me/wanted/{id}": MeWantedSearchDeleteResponse;
   "DELETE /api/plugins/{slug}/install": PluginUninstallResponse;
+  "DELETE /api/plugins/{slug}/reviews/{id}": PluginReviewDeleteResponse;
   "DELETE /api/plugins/{slug}/star": PluginStarResponse;
   "DELETE /api/profile": ProfileResetResponse;
   "DELETE /api/profile/signals/{kind}": ProfileSignalClearResponse;
@@ -3388,6 +3534,7 @@ export interface RestContractRoutes {
   "GET /api/plugins/taps": PluginTapsResponse;
   "GET /api/plugins/taps/public": PublicPluginTapsResponse;
   "GET /api/plugins/{slug}": PluginDetailResponse;
+  "GET /api/plugins/{slug}/trend": PluginInstallTrendResponse;
   "GET /api/rank/new": RankNewResponse;
   "GET /api/rank/trending": RankTrendingResponse;
   "GET /api/scenes": SceneListResponse;
@@ -3464,7 +3611,11 @@ export interface RestContractRoutes {
   "POST /api/me/tokens": MeTokenCreateResponse;
   "POST /api/me/wanted": MeWantedSearchItemResponse;
   "POST /api/me/watchlist/sync": MeWatchlistSyncResponse;
+  "POST /api/plugins/author/profile": PluginAuthorProfileResponse;
+  "POST /api/plugins/{slug}/disable": PluginDisableResponse;
+  "POST /api/plugins/{slug}/enable": PluginDisableResponse;
   "POST /api/plugins/{slug}/install": PluginInstallResponse;
+  "POST /api/plugins/{slug}/rollback": PluginRollbackResponse;
   "POST /api/plugins/{slug}/star": PluginStarResponse;
   "POST /api/plugins/{slug}/uninstall": PluginUninstallResponse;
   "POST /api/search": SearchResponse;

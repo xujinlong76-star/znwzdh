@@ -23,6 +23,7 @@ import {
   fetchPluginGovernance,
   fetchAdminPluginReviews,
   moderatePluginReview,
+  deletePluginReview,
   setPluginFeatured,
   diffPluginManifestsApi,
   fetchPluginVersions,
@@ -499,6 +500,31 @@ export default function AdminPluginsPage() {
       void loadList()
     } catch (err) {
       toast.error('评价处置失败', {
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  /**
+   * 管理员删除评价（B-3）：与「隐藏」不同，删除是彻底的、不可恢复的——
+   * 违规/垃圾评价走隐藏即可，只有确认无保留价值的才点删除。
+   * 服务端 DELETE /api/plugins/:slug/reviews/:id 按 identity + actorKind 判定，
+   * 管理员可删任意评价，普通用户只能删自己的。
+   */
+  const handleDeleteReview = async (review: HubAdminPluginReview) => {
+    if (!confirm(`确定要彻底删除「${review.pluginName}」的这条评价吗？删除后无法恢复（只是违规/垃圾评价建议改用「隐藏评价」，可随时恢复）。`)) {
+      return
+    }
+    setActionLoading(true)
+    try {
+      await deletePluginReview(review.pluginSlug, review.id)
+      toast.success('评价已删除')
+      void loadReviews()
+      void loadList()
+    } catch (err) {
+      toast.error('删除评价失败', {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
@@ -1220,6 +1246,15 @@ export default function AdminPluginsPage() {
                         )}
                       >
                         {review.status === 'hidden' ? '恢复公开' : '隐藏评价'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteReview(review)}
+                        disabled={actionLoading}
+                        title="彻底删除这条评价（不可恢复；只是违规内容建议改用隐藏）"
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-md border border-destructive/30 text-destructive-text hover:bg-destructive/15 transition-colors"
+                      >
+                        删除评价
                       </button>
                     </div>
                   </li>

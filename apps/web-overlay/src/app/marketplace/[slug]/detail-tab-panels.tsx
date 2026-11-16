@@ -14,6 +14,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
+import { PluginInstallTrendChart } from '@/components/plugins/plugin-install-trend'
 import { PluginReviewSection } from '@/components/plugins/plugin-review-section'
 import { PluginVersionTimeline } from '@/components/plugins/plugin-version-timeline'
 import type { HubPluginItem } from '@/lib/navhub-api'
@@ -69,6 +70,38 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
               aria-labelledby="plugin-tab-preview"
               className="space-y-6"
             >
+              {/* 截图/画廊（D 批）：作者在清单里填了真实截图才显示，未填不显示、
+                  不造假图、不显示占位假图；点击在新标签页看原图 */}
+              {Array.isArray(plugin.manifest?.screenshots) &&
+                plugin.manifest.screenshots.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <LayoutGrid className="w-4 h-4 text-primary" />
+                      <span>截图预览 ({plugin.manifest.screenshots.length})</span>
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {plugin.manifest.screenshots.map((src: string, idx: number) => (
+                        <a
+                          key={`${src}-${idx}`}
+                          href={safeHref(src)}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="block rounded-xl border border-border/70 bg-card/60 overflow-hidden hover:border-primary/40 transition-colors"
+                        >
+                          <img
+                            src={src}
+                            alt={`${plugin.name} 截图 ${idx + 1}`}
+                            loading="lazy"
+                            className="w-full h-auto object-contain bg-muted/30"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      截图由作者提供，点击放大查看原图。
+                    </p>
+                  </div>
+                )}
               {/* site-pack 网址包明细展示 */}
               {plugin.kind === 'site-pack' && payload?.sites && (
                 <div className="space-y-4">
@@ -539,6 +572,9 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                   </div>
                 </div>
               )}
+
+              {/* 单插件安装趋势（D 批）：真实安装记录按天聚合 */}
+              <PluginInstallTrendChart slug={plugin.slug} />
             </div>
           )}
 

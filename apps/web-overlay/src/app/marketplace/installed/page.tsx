@@ -19,6 +19,8 @@ import {
   fetchInstalledPlugins,
   uninstallPlugin,
   installPlugin,
+  disablePlugin,
+  enablePlugin,
   fetchPluginDetail,
   type HubPluginInstalledItem,
 } from '@/lib/navhub-api'
@@ -49,6 +51,8 @@ import {
   Loader2,
   PackageCheck,
   Palette,
+  Pause,
+  Play,
   RefreshCw,
   Search,
   Store,
@@ -66,6 +70,7 @@ export default function InstalledPluginsPage() {
   const [searchEngines, setSearchEngines] = useState<InstalledSearchEngine[]>([])
   const [upgradingSlug, setUpgradingSlug] = useState<string | null>(null)
   const [uninstallingSlug, setUninstallingSlug] = useState<string | null>(null)
+  const [togglingSlug, setTogglingSlug] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   // 加载失败 ≠ 没装插件：fetchInstalledPlugins 失败时回落空列表，旧代码只有
   // try/finally、无 catch、无 onDegraded，故障会被渲染成「你尚未安装任何插件」。
@@ -146,6 +151,14 @@ export default function InstalledPluginsPage() {
       const wasActiveTheme = item.kind === 'theme' && activeThemeState?.slug === item.slug
       await installPlugin(item.slug)
 
+      // 已停用的插件只升版本、不恢复运行效果：升级不能悄悄替用户重新启用。
+      if (item.disabled) {
+        setActionMessage(`插件已升级至最新版本（仍处于停用状态）`)
+        await loadData()
+        setTimeout(() => setActionMessage(null), 3000)
+        return
+      }
+
       // 正在生效的主题升级后要立即把新 token 应用到运行时，
       // 否则服务端已是新版本、页面仍停留在旧配色，形成「升级了但没生效」。
       if (wasActiveTheme) {
@@ -202,6 +215,57 @@ export default function InstalledPluginsPage() {
       setActionMessage(`卸载失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setUninstallingSlug(null)
+    }
+  }
+
+  /**
+   * 禁用开关（D 批）：只停运行效果，不删数据、不降版本、不必卸载。
+   * 按 kind 如实区分：主题回落默认、搜索引擎注销注册（与卸载同机制）；
+   * 网址包/工作台已导入的站点与看板保留原处（已是公共收录或用户数据，
+   * 单用户禁用不能替别人删数据），禁用只停后续效果。
+   */
+  const handleDisable = async (item: HubPluginInstalledItem) => {
+    setTogglingSlug(item.slug)
+    try {
+      await disablePlugin(item.slug)
+      if (item.kind === 'theme' && activeThemeState?.slug === item.slug) {
+        resetTheme()
+      }
+      if (item.kind === 'search-pack') {
+        unregisterSearchPackEngines(item.slug)
+      }
+      setActionMessage(
+        item.kind === 'site-pack' || item.kind === 'workspace-preset'
+          ? `已停用「${item.name}」，已导入的内容保留原处，随时可再启用`
+          : `已停用「${item.name}」，运行效果已停止，数据与版本保留，随时可再启用`,
+      )
+      await loadData()
+      setTimeout(() => setActionMessage(null), 3000)
+    } catch (err) {
+      setActionMessage(`停用失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setTogglingSlug(null)
+    }
+  }
+
+  /** 启用已停用的插件（D 批）：与禁用对称；主题激活仍是显式动作（调色板里点启用）。 */
+  const handleEnable = async (item: HubPluginInstalledItem) => {
+    setTogglingSlug(item.slug)
+    try {
+      await enablePlugin(item.slug)
+      // 搜索引擎包重新启用：按当前清单重新注册运行时直达
+      if (item.kind === 'search-pack') {
+        const detail = await fetchPluginDetail(item.slug)
+        const engines = detail?.plugin?.manifest?.payload?.engines
+        if (engines) registerSearchPackEngines(item.slug, engines)
+      }
+      setActionMessage(`已重新启用「${item.name}」`)
+      await loadData()
+      setTimeout(() => setActionMessage(null), 3000)
+    } catch (err) {
+      setActionMessage(`启用失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setTogglingSlug(null)
     }
   }
 
@@ -339,6 +403,16 @@ export default function InstalledPluginsPage() {
                       <span className="shrink-0 text-primary p-1">
                         <Check className="w-4 h-4" />
                       </span>
+                    ) : theme.disabled ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleEnable(theme)}
+                        className="h-7 text-xs shrink-0"
+                        title="插件已停用，先恢复启用再切换主题"
+                      >
+                        重新启用
+                      </Button>
                     ) : (
                       <Button
                         size="sm"
@@ -451,6 +525,7 @@ export default function InstalledPluginsPage() {
               const itemHasUpdate = hasUpdate(item)
               const isUpgrading = upgradingSlug === item.slug
               const isUninstalling = uninstallingSlug === item.slug
+              const isToggling = togglingSlug === item.slug
 
               return (
                 <div
@@ -488,6 +563,14 @@ export default function InstalledPluginsPage() {
                         {item.kind}
                       </span>
                     </div>
+                    {item.disabled && (
+                      <p className="text-[11px] text-muted-foreground">
+                        <span className="px-1.5 py-0.5 rounded bg-muted font-medium">
+                          已停用
+                        </span>
+                        <span className="ml-1.5">运行效果已停止，数据与版本保留</span>
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
                       {item.description}
                     </p>
@@ -513,6 +596,25 @@ export default function InstalledPluginsPage() {
                         </Link>
                       </Button>
                     </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={isToggling}
+                      onClick={() =>
+                        void (item.disabled ? handleEnable(item) : handleDisable(item))
+                      }
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted"
+                      title={item.disabled ? '重新启用此插件' : '停用此插件（不卸载）'}
+                      aria-label={`${item.disabled ? '重新启用插件' : '停用插件'} ${item.name}`}
+                    >
+                      {isToggling ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : item.disabled ? (
+                        <Play className="w-3.5 h-3.5" />
+                      ) : (
+                        <Pause className="w-3.5 h-3.5" />
+                      )}
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"

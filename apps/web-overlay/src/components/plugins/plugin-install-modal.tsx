@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   type HubPluginItem,
+  type PluginInstallConflict,
   installPlugin,
   uninstallPlugin,
   fetchPluginDetail,
@@ -62,7 +63,14 @@ export function PluginInstallModal({
   const pluginSlug = plugin?.slug
   useEffect(() => {
     setSelectedUrls(null)
+    setConflicts(null)
   }, [pluginSlug, open])
+  /**
+   * 安装冲突（D 批）：服务端 409 返回的冲突清单。非空时弹窗内展示清单，
+   * 由用户决定「仍要安装」（带 acknowledgeConflicts 重试）还是返回；
+   * 绝不静默覆盖。
+   */
+  const [conflicts, setConflicts] = useState<PluginInstallConflict[] | null>(null)
   /**
    * 网址包 0 选拦截（A-2）：selectedUrls 为 null 表示未自定义（默认全选），
    * 非 null 空集才是用户「全不选」。空集时确认按钮禁用、handleConfirm 拦截，
@@ -170,7 +178,7 @@ export function PluginInstallModal({
     theme: '主题',
   }
 
-  const handleConfirm = async () => {
+  const handleConfirm = async (acknowledgeConflicts = false) => {
     if (emptySiteSelection) {
       toast.error('请至少选择一个站点', {
         description: "当前未勾选任何站点，全不选不会安装任何内容。",
@@ -187,7 +195,13 @@ export function PluginInstallModal({
       if (mode !== 'uninstall') {
         // 1. 服务端状态登记与 site-pack 增量写库
         //    bundle 由服务端逐个成员复用同一条安装管道（预检失败即拒绝，无半安装）
-        const installOpts = selectedUrls ? { selectedSites: Array.from(selectedUrls) } : undefined
+        const installOpts =
+          selectedUrls || acknowledgeConflicts
+            ? {
+                ...(selectedUrls ? { selectedSites: Array.from(selectedUrls) } : {}),
+                ...(acknowledgeConflicts ? { acknowledgeConflicts: true } : {}),
+              }
+            : undefined
         const res = await installPlugin(plugin.slug, effectiveIdentity, installOpts)
 
         // 2. 客户端工作台预设消费（组合包不含 workspace-preset，此分支不会被 bundle 命中）
@@ -319,6 +333,19 @@ export function PluginInstallModal({
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
+      // 安装冲突（D 批）：服务端 409 + conflicts 清单时不关弹窗、不报通用失败，
+      // 在弹窗内展示清单、由用户决定是否「仍要安装」。
+      const status = (err as { status?: number })?.status
+      const payload = (err as { payload?: { conflicts?: unknown } })?.payload
+      if (
+        mode !== 'uninstall' &&
+        status === 409 &&
+        Array.isArray(payload?.conflicts) &&
+        payload.conflicts.length > 0
+      ) {
+        setConflicts(payload.conflicts as PluginInstallConflict[])
+        return
+      }
       toast.error(mode === 'uninstall' ? '卸载失败' : isUpdate ? '升级失败' : '安装失败', {
         description: err instanceof Error ? err.message : String(err),
       })
@@ -630,6 +657,45 @@ export function PluginInstallModal({
           </div>
         )}
 
+        {/* 安装冲突确认（D 批）：服务端 409 返回的冲突清单，绝不静默覆盖 */}
+        {conflicts && mode !== 'uninstall' && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-2">
+            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium text-xs">
+              <AlertTriangle className="w-4 h-4" />
+              <span>检测到与已安装插件的冲突，请确认后再安装</span>
+            </div>
+            <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+              {conflicts.map((c, i) => (
+                <li key={i}>{c.message}</li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              继续安装会按新插件的声明生效（例如搜索引擎前缀会被顶掉）。你也可以先去「已安装」页卸载对方插件，再回来安装。
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setConflicts(null)
+                  void handleConfirm(true)
+                }}
+                className="px-4 py-2 text-xs font-medium rounded-lg bg-amber-600 text-white hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                仍要安装
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setConflicts(null)}
+                className="px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/60 hover:bg-muted/60 transition-colors"
+              >
+                返回修改
+              </button>
+            </div>
+          </div>
+        )}
+
         <DialogFooter className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2">
           {mode === 'uninstall' ? (
             <Link
@@ -651,8 +717,8 @@ export function PluginInstallModal({
             </button>
           <button
             type="button"
-            onClick={handleConfirm}
-            disabled={loading || emptySiteSelection || (mode !== 'uninstall' && bundleBlocked)}
+            onClick={() => void handleConfirm()}
+            disabled={loading || emptySiteSelection || conflicts !== null || (mode !== 'uninstall' && bundleBlocked)}
             className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               mode === 'uninstall'
                 ? 'bg-destructive text-destructive-foreground hover:opacity-90'

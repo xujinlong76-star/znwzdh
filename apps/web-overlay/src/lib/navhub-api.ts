@@ -2171,15 +2171,75 @@ export async function fetchMyPlugins(
   )
 }
 
+export interface PluginAuthorProfile {
+  ownerKey: string
+  displayName: string | null
+  bio: string | null
+  avatar: string | null
+  links: { homepage?: string; github?: string; x?: string }
+  donateUrl: string | null
+  createdAt: number
+  updatedAt: number
+}
+
 export interface HubPluginAuthorResponse {
   ownerKey: string
   author: string
   authorKind?: string | null
+  /** 作者档案（D 批）：未填过为 null，调用方只渲染真实填过的内容 */
+  profile?: PluginAuthorProfile | null
+  /** 调用方身份与作者 key 一致时为 true，前端才展示「编辑我的档案」入口 */
+  isOwner?: boolean
   stats: { plugins: number; installs: number; stars: number }
   items: HubPluginItem[]
   total: number
   limit: number
   offset: number
+}
+
+/** 作者本人维护档案（D 批）：ownerKey 由调用方身份派生，写不了别人的 */
+export async function saveAuthorProfile(input: {
+  displayName?: string | null
+  bio?: string | null
+  avatar?: string | null
+  links?: { homepage?: string; github?: string; x?: string }
+  donateUrl?: string | null
+}): Promise<{ ok: boolean; profile: PluginAuthorProfile }> {
+  const effectiveIdentity = typeof window !== 'undefined' ? getIdentity() : ''
+  return sendJson<{ ok: boolean; profile: PluginAuthorProfile }>(
+    '/api/plugins/author/profile',
+    'POST',
+    input,
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/** 单插件安装趋势（D 批）：按天聚合真实安装事件，零安装的日子补 0 */
+export interface PluginInstallTrendDay {
+  date: string
+  installs: number
+}
+export interface PluginInstallTrend {
+  pluginId: string
+  slug: string
+  days: number
+  total: number
+  series: PluginInstallTrendDay[]
+}
+export async function fetchPluginInstallTrend(
+  slug: string,
+  days = 30,
+  onDegraded?: DegradedHandler,
+): Promise<PluginInstallTrend | null> {
+  try {
+    return await getJson<PluginInstallTrend>(
+      `/api/plugins/${encodeURIComponent(slug)}/trend?days=${days}`,
+    )
+  } catch (error) {
+    notifyDegraded(onDegraded, error)
+    return null
+  }
 }
 
 /** 公开作者页 */
@@ -2194,8 +2254,15 @@ export async function fetchAuthorPlugins(
   const qs = sp.toString() ? `?${sp.toString()}` : ''
   // 404 不触发 onDegraded（与 fetchPluginDetail 同口径）：作者 key 查无此人是
   // 真不存在，调用方仍显示「作者不存在」；其它失败才渲染失败态（带重试）。
+  // 带身份头：服务端据此算 isOwner，作者本人才能看到「编辑我的档案」入口
+  // （SSR 下 getIdentity() 返回空串，不带头、不读 window）。
+  const effectiveIdentity = typeof window !== 'undefined' ? getIdentity() : ''
   try {
-    return await getJson<HubPluginAuthorResponse>(`/api/plugins/author/${encodeURIComponent(ownerKey)}${qs}`)
+    return await getJson<HubPluginAuthorResponse>(
+      `/api/plugins/author/${encodeURIComponent(ownerKey)}${qs}`,
+      undefined,
+      effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+    )
   } catch (error) {
     if (!isNotFound(error)) notifyDegraded(onDegraded, error)
     return null
@@ -2290,20 +2357,34 @@ export async function reviewPlugin(
   return sendJson(`/api/plugins/${encodeURIComponent(slug)}/review`, 'POST', { action, note })
 }
 
+/** 安装时冲突（D 批）：服务端 detectInstallConflicts 的返回形状 */
+export interface PluginInstallConflict {
+  type: 'search-prefix' | 'site-url' | 'bundle-member'
+  severity: 'warn' | 'info'
+  message: string
+  otherSlug?: string
+  otherName?: string
+  detail?: Record<string, unknown>
+}
+
 export async function installPlugin(
   slug: string,
   identity?: string,
-  options?: { version?: string; selectedSites?: string[] },
+  options?: { version?: string; selectedSites?: string[]; acknowledgeConflicts?: boolean },
 ): Promise<PluginInstallResponse> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   trackPluginEvent('plugin_install_click', slug, effectiveIdentity)
   const qs = new URLSearchParams()
   if (options?.version) qs.set('version', options.version)
   const qsStr = qs.toString() ? `?${qs.toString()}` : ''
+  const body: Record<string, unknown> = {}
+  if (options?.selectedSites) body.selectedSites = options.selectedSites
+  // 冲突确认（D 批）：用户在 409 冲突清单上点了「仍要安装」后才带上，服务端才继续安装
+  if (options?.acknowledgeConflicts === true) body.acknowledgeConflicts = true
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/install${qsStr}`,
     'POST',
-    options?.selectedSites ? { selectedSites: options.selectedSites } : {},
+    body,
     undefined,
     effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
@@ -2347,6 +2428,40 @@ export async function uninstallPlugin(
     `/api/plugins/${encodeURIComponent(slug)}/uninstall${qsStr}`,
     'POST',
     { removeSites },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/**
+ * 禁用 / 启用已安装插件（D 批）：只停运行效果，不删数据、不降版本。
+ * 返回体含 disabled（当前状态）与 changed（本次是否真的改了状态，幂等时为 false）。
+ * 运行效果的同步停用/恢复由调用方按 kind 执行（见 installed 页：主题回落默认、
+ * 搜索引擎注销注册，与卸载同机制；site-pack/preset 已导入内容保留原处）。
+ */
+export async function disablePlugin(
+  slug: string,
+  identity?: string,
+): Promise<{ success: boolean; slug: string; version: string; disabled: boolean; disabledAt: number | null; changed: boolean }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/disable`,
+    'POST',
+    {},
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+export async function enablePlugin(
+  slug: string,
+  identity?: string,
+): Promise<{ success: boolean; slug: string; version: string; disabled: boolean; disabledAt: number | null; changed: boolean }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/enable`,
+    'POST',
+    {},
     undefined,
     effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )

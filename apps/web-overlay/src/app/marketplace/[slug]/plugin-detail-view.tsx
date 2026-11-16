@@ -24,7 +24,7 @@ import {
   type HubPluginItem,
   type HubPluginAuditReport
 } from '@/lib/navhub-api'
-import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX } from '@/lib/plugins/plugin-manifest'
+import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX, checkPluginCompat, NAVHUB_APP_VERSION } from '@/lib/plugins/plugin-manifest'
 import { auditLevelToneClasses } from '@/lib/plugins/audit-report-view'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import type { DetailTab } from './detail-shared'
@@ -45,6 +45,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   ArrowLeft,
   GitFork,
+  Heart,
   Palette,
   Star,
   Download,
@@ -63,6 +64,7 @@ import {
   AlertTriangle,
   Upload
 } from 'lucide-react'
+import { safeHref } from '@/lib/safe-url'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -446,6 +448,10 @@ export default function PluginDetailView({
 
   const manifest = plugin.manifest
   const payload = manifest.payload
+  // 兼容性声明（D 批）：与服务端安装闸共用同一判定，不许两边各写一套。
+  // compatIssue 非空 = 声明的最低版本高于当前应用版本，安装按钮禁用、服务端同样拒绝。
+  const compatIssue = checkPluginCompat(manifest)
+  const compatMin = manifest.compat?.minAppVersion ?? null
 
   return (
     <Container as="main" id="main-content">
@@ -750,6 +756,13 @@ export default function PluginDetailView({
                     <span>组合包成员已失效，安装已暂停；可查看下方「影响评估」中的成员明细。</span>
                   </div>
                 )}
+                {/* 兼容性声明（D 批）：声明版本高于当前应用版本时安装禁用，服务端同样拒绝 */}
+                {compatIssue && (
+                  <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 flex items-start gap-1.5 max-w-xs">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>{compatIssue}</span>
+                  </div>
+                )}
                 {plugin.installed ? (
                   installAction === 'update' ? (
                     <>
@@ -759,7 +772,7 @@ export default function PluginDetailView({
                           setModalMode('upgrade')
                           setInstallModalOpen(true)
                         }}
-                        disabled={bundleBlocked}
+                        disabled={bundleBlocked || compatIssue !== null}
                         className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Sparkles className="w-4 h-4 text-amber-300" />
@@ -798,11 +811,11 @@ export default function PluginDetailView({
                       setModalMode('install')
                       setInstallModalOpen(true)
                     }}
-                    disabled={bundleBlocked}
+                    disabled={bundleBlocked || compatIssue !== null}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Download className="w-4 h-4" />
-                    <span>{bundleBlocked ? '组合包暂不可安装' : '立即安装该插件'}</span>
+                    <span>{compatIssue ? '当前版本暂无法安装' : bundleBlocked ? '组合包暂不可安装' : '立即安装该插件'}</span>
                   </button>
                 )}
               </div>
@@ -878,18 +891,44 @@ export default function PluginDetailView({
                 <Download className="w-3.5 h-3.5 text-muted-foreground" />
                 <span>已累计被安装 {plugin.installCount || 0} 次</span>
               </span>
+              {/* 兼容性声明（D 批）：作者声明的最低应用版本，未声明不显示 */}
+              {compatMin && (
+                <span
+                  className="flex items-center gap-1.5"
+                  title={compatIssue ?? `兼容 NavHub ${compatMin} 及以上版本`}
+                >
+                  <Info className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>
+                    需要 NavHub ≥ {compatMin}（当前 {NAVHUB_APP_VERSION}）
+                  </span>
+                </span>
+              )}
             </div>
-            {plugin.homepage && (
-              <a
-                href={plugin.homepage}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-1 text-primary hover:underline"
-              >
-                <span>项目主页 / 源码</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            )}
+            <div className="flex items-center gap-4">
+              {/* 捐赠链接（D 批）：作者填了真实链接才展示，未填不显示、不造假链接 */}
+              {manifest.donateUrl && (
+                <a
+                  href={safeHref(manifest.donateUrl)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                >
+                  <Heart className="w-3 h-3" />
+                  <span>支持作者</span>
+                </a>
+              )}
+              {plugin.homepage && (
+                <a
+                  href={plugin.homepage}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                >
+                  <span>项目主页 / 源码</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
           </div>
         </div>
 

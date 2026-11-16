@@ -64,6 +64,11 @@ const maxAgeMin = flag("--max-age") === undefined ? null : Number(flag("--max-ag
 if (!existsSync(SUMMARY_FILE)) {
   console.error(`[coverage] 找不到覆盖率产物：${SUMMARY_FILE}`);
   console.error("[coverage] 先跑：node node_modules/vitest/vitest.mjs run --coverage");
+  // 诊断提示（纯日志，不影响退出码仍为 2）：无产物最常见的原因是测试步先失败
+  // ——vitest 默认 reportOnFailure:false 时失败即不写产物。本仓库 vitest.config.ts
+  // 已设 reportOnFailure:true，若仍无产物，请先看测试步日志（被整体中断/超时
+  // 也会无产物），而不是只看本脚本的 exit 2。
+  console.error("[coverage] 提示：若 CI 里测试步先失败，请先修测试失败本身；无产物时阈值无法判定（见 vitest.config.ts coverage.reportOnFailure 注释）。");
   process.exit(2);
 }
 

@@ -41,6 +41,7 @@ const AiPluginStudioModal = dynamic(
   { ssr: false }
 )
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
+import { rankingMetric } from '@/lib/plugins/marketplace-rankings'
 import {
   DEFAULT_MARKETPLACE_SORT,
   buildMarketplaceQuery,
@@ -136,6 +137,9 @@ export function PluginMarketBoard({
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [kind, setKind] = useState('')
   const [sort, setSort] = useState<MarketplaceSort>(DEFAULT_MARKETPLACE_SORT)
+  // 星标筛选（F-2）：只看调用方已星标的插件，走 /api/plugins?starred=true，
+  // 与地址栏 ?starred=1 双向同步；无身份时服务端返回空页，不退回全量。
+  const [starredOnly, setStarredOnly] = useState(false)
   const [qInput, setQInput] = useState('')
   // 两份查询串：qInput 跟着输入法即时走，q 是 150ms 防抖后的生效值。
   // 声明顺序很关键——activeTopicId 会立刻读 q，把 q 放到后面就是 TDZ
@@ -149,7 +153,10 @@ export function PluginMarketBoard({
     return () => clearTimeout(timer)
   }, [qInput])
 
-  const activeTopicId = useMemo(() => resolveActiveTopicId(kind, q, sort), [kind, q, sort])
+  const activeTopicId = useMemo(
+    () => (starredOnly ? '' : resolveActiveTopicId(kind, q, sort)),
+    [kind, q, sort, starredOnly],
+  )
 
   const [filtersReady, setFiltersReady] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
@@ -181,6 +188,7 @@ export function PluginMarketBoard({
       setQ(parsed.q)
       setQInput(parsed.q)
       setSort(parsed.sort)
+      setStarredOnly(parsed.starred)
     }
     syncFromUrl()
     setFiltersReady(true)
@@ -194,13 +202,13 @@ export function PluginMarketBoard({
     if (!filtersReady) return
     const next =
       window.location.pathname +
-      buildMarketplaceQuery({ kind, q, sort }) +
+      buildMarketplaceQuery({ kind, q, sort, starred: starredOnly }) +
       window.location.hash
     const current = window.location.pathname + window.location.search + window.location.hash
     if (next !== current) {
       window.history.replaceState(window.history.state, '', next)
     }
-  }, [filtersReady, kind, q, sort])
+  }, [filtersReady, kind, q, sort, starredOnly])
 
   const load = useCallback(
     async (offset: number, append: boolean, silent = false) => {
@@ -215,7 +223,7 @@ export function PluginMarketBoard({
         if (!silent) setNotice(describeDegrade(error, '插件市场'))
       }
       const res = await fetchPlugins(
-        { kind: kind || undefined, q: q || undefined, sort, limit: PAGE_SIZE, offset },
+        { kind: kind || undefined, q: q || undefined, sort, starred: starredOnly || undefined, limit: PAGE_SIZE, offset },
         onDegraded,
       )
       // 追加页失败时 res 是降级兜底（items 空、total 0），不能拿它覆盖现有状态：
@@ -231,7 +239,7 @@ export function PluginMarketBoard({
         else setLoading(false)
       }
     },
-    [kind, q, sort],
+    [kind, q, sort, starredOnly],
   )
 
   // 首帧用服务端数据，但 SSR 拿不到浏览器的匿名身份：挂载后静默重取一次
@@ -257,6 +265,7 @@ export function PluginMarketBoard({
     setQ('')
     setQInput('')
     setSort(DEFAULT_MARKETPLACE_SORT)
+    setStarredOnly(false)
   }, [])
 
   const clearSearch = useCallback(() => {
@@ -269,7 +278,7 @@ export function PluginMarketBoard({
     setFeatured((prev) => prev.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)))
   }, [])
 
-  const hasFilter = Boolean(q || kind)
+  const hasFilter = Boolean(q || kind || starredOnly)
 
   // 精选与三榜只在“无筛选”时加载：避免与主列表抢请求，也避免筛选后仍显示无关推荐
   // 首帧同样要静默同步一次（SSR 数据没有身份，精选卡片的已装态同理会丢）；
@@ -305,35 +314,25 @@ export function PluginMarketBoard({
       key: 'popular' as const,
       title: '安装榜',
       icon: TrendingUp,
-      metric: (p: HubPluginItem) => {
-        if (p.installCount > 0) return `${p.installCount} 次安装`
-        const s = p.summary
-        if (s?.siteCount) return `${s.siteCount} 站点 · 精选`
-        if (s?.widgetCount) return `${s.widgetCount} 组件 · 精选`
-        if (s?.engineCount) return `${s.engineCount} 引擎 · 精选`
-        return '官方精选'
-      },
+      metric: (p: HubPluginItem) => rankingMetric('popular', p),
     },
     {
       key: 'rating' as const,
       title: '口碑榜',
       icon: Star,
-      metric: (p: HubPluginItem) => {
-        if ((p.reviewCount ?? 0) > 0) {
-          return `${(p.ratingAvg ?? 0).toFixed(1)} ★ · ${p.reviewCount} 评`
-        }
-        return `v${p.version} · 审计通过`
-      },
+      metric: (p: HubPluginItem) => rankingMetric('rating', p),
     },
     {
       key: 'fresh' as const,
       title: '新作榜',
       icon: Sparkles,
-      metric: (p: HubPluginItem) => (p.publishedAt ? new Date(p.publishedAt).toLocaleDateString('zh-CN') : '刚刚上架'),
+      metric: (p: HubPluginItem) => rankingMetric('fresh', p),
     },
   ]
 
   const handleTopicClick = (topic: typeof TOPIC_COLLECTIONS[number]) => {
+    // 专题是通用视图：切专题即退出星标筛选
+    setStarredOnly(false)
     if (topic.id === 'all') {
       setKind('')
       setQ('')
@@ -491,6 +490,21 @@ export function PluginMarketBoard({
             <option value="rating">评分最高</option>
             <option value="updated">最近更新</option>
           </select>
+          <button
+            type="button"
+            aria-pressed={starredOnly}
+            aria-label="只看已星标插件"
+            title="只看已星标插件"
+            onClick={() => setStarredOnly((v) => !v)}
+            className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-md border px-2.5 text-xs font-medium transition-all ${
+              starredOnly
+                ? 'border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                : 'border-border-strong bg-background text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Star className="w-3.5 h-3.5" />
+            已星标
+          </button>
           <div className="relative flex-1 min-w-[200px]">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -566,9 +580,20 @@ export function PluginMarketBoard({
         </div>
 
         {/* 当前筛选条件：与地址栏同步，便于一键清除和分享 */}
-        {(q || kind) && (
+        {(q || kind || starredOnly) && (
           <div className="flex flex-wrap items-center gap-2 text-xs -mt-2">
             <span className="text-muted-foreground">当前筛选：</span>
+            {starredOnly && (
+              <button
+                type="button"
+                onClick={() => setStarredOnly(false)}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
+                aria-label="移除星标筛选"
+              >
+                只看已星标
+                <X className="w-3 h-3" />
+              </button>
+            )}
             {q && (
               <button
                 type="button"
@@ -690,9 +715,11 @@ export function PluginMarketBoard({
               <Store className="w-7 h-7 text-muted-foreground" />
             </div>
             <p className="text-sm text-muted-foreground">
-              {hasFilter
-                ? '没有匹配的插件，换个筛选条件试试'
-                : '市场还空着——发布第一个插件，分享你的网址收藏或工作台布局'}
+              {starredOnly && items.length === 0
+                ? '你还没有星标任何插件'
+                : hasFilter
+                  ? '没有匹配的插件，换个筛选条件试试'
+                  : '市场还空着——发布第一个插件，分享你的网址收藏或工作台布局'}
             </p>
             <div className="flex items-center justify-center gap-2">
               <Button asChild size="sm" variant="outline" className="gap-1.5">

@@ -1979,7 +1979,7 @@ export interface HubPluginsResponse {
 export type HubPluginInstalledItem = InstalledPluginsResponse['items'][number]
 
 export async function fetchPlugins(
-  params: { kind?: string; q?: string; sort?: string; featured?: boolean; ownerKey?: string; limit?: number; offset?: number } = {},
+  params: { kind?: string; q?: string; sort?: string; featured?: boolean; ownerKey?: string; starred?: boolean; limit?: number; offset?: number } = {},
   onDegraded?: DegradedHandler,
 ): Promise<HubPluginsResponse> {
   const sp = new URLSearchParams()
@@ -1987,6 +1987,7 @@ export async function fetchPlugins(
   if (params.q) sp.set('q', params.q)
   if (params.sort) sp.set('sort', params.sort)
   if (params.featured !== undefined) sp.set('featured', String(params.featured))
+  if (params.starred) sp.set('starred', 'true')
   if (params.ownerKey) sp.set('ownerKey', params.ownerKey)
   if (params.limit) sp.set('limit', String(params.limit))
   if (params.offset) sp.set('offset', String(params.offset))

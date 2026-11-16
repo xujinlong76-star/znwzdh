@@ -48,9 +48,9 @@ export function MePluginsView() {
       chip: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
     },
     {
-      href: '/marketplace',
+      href: '/marketplace?starred=1',
       title: '星标插件',
-      hint: '在插件市场里查看已星标内容',
+      hint: '只看你已星标的插件',
       icon: Star,
       count: counts?.pluginStars,
       chip: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',

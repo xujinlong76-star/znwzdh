@@ -34,6 +34,8 @@ export interface MarketplaceFilterState {
   kind: string
   sort: MarketplaceSort
   q: string
+  /** 只看已星标（per-identity 视图；无身份时为空） */
+  starred: boolean
 }
 
 function includes<T extends string>(values: readonly T[], value: string): value is T {
@@ -45,10 +47,12 @@ export function parseMarketplaceFilters(search: string): MarketplaceFilterState 
   const params = new URLSearchParams(search)
   const rawKind = params.get('kind')?.trim() ?? ''
   const rawSort = params.get('sort')?.trim() ?? ''
+  const rawStarred = params.get('starred')?.trim() ?? ''
   return {
     kind: includes(MARKETPLACE_KINDS, rawKind) ? rawKind : '',
     q: params.get('q')?.trim() ?? '',
     sort: includes(MARKETPLACE_SORTS, rawSort) ? rawSort : DEFAULT_MARKETPLACE_SORT,
+    starred: rawStarred === '1' || rawStarred === 'true',
   }
 }
 
@@ -61,6 +65,7 @@ export function buildMarketplaceQuery(state: MarketplaceFilterState): string {
   if (state.kind) params.set('kind', state.kind)
   if (state.q) params.set('q', state.q)
   if (state.sort !== DEFAULT_MARKETPLACE_SORT) params.set('sort', state.sort)
+  if (state.starred) params.set('starred', '1')
   const qs = params.toString()
   return qs ? `?${qs}` : ''
 }

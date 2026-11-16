@@ -96,6 +96,8 @@ export interface PluginListFilter {
   hasPendingVersion?: boolean;
   /** 标签过滤 */
   tag?: string;
+  /** 只查这些 id（星标筛选：调用方星标 id 集合；空数组 = 不查） */
+  ids?: string[];
 }
 
 /** 作者公开页 key：身份不可逆哈希，避免把匿名 id / userId 暴露在 URL 里 */
@@ -486,6 +488,15 @@ export async function listPlugins(
   }
   if (filter.hasPendingVersion) {
     wheres.push("p.pending_version IS NOT NULL");
+  }
+  if (filter.ids !== undefined) {
+    // 星标筛选：空集合直接判 0 条，避免拼出非法的 `IN ()`
+    if (filter.ids.length === 0) {
+      return { items: [], total: 0 };
+    }
+    const placeholders = filter.ids.map(() => "?").join(", ");
+    wheres.push(`p.id IN (${placeholders})`);
+    params.push(...filter.ids);
   }
   const whereClause = wheres.length > 0 ? " WHERE " + wheres.join(" AND ") : "";
   const countRow = (await repo.raw(`SELECT COUNT(*) AS cnt FROM plugins p${whereClause}`, params))[0];

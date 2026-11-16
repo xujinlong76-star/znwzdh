@@ -59,6 +59,19 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
       const featured = q.featured === "true" ? true : q.featured === "false" ? false : undefined;
       const ownerKey = (q.ownerKey ?? q.author)?.trim() || undefined;
+      // 星标筛选（F-2）：只返回调用方已星标的插件。星标是 per-identity 数据，
+      // 无身份时没有“别人的星标”可读，诚实返回空页而不是退回全量
+      // （退回全量等于“星标视图”只是通用市场的换皮）。
+      const starredOnly = q.starred === "true" || q.starred === "1";
+
+      const identity = pluginIdentity(ctx, req);
+      let starredIds = new Set<string>();
+      if (identity) {
+        starredIds = new Set(await ctx.repo.listStarredPluginIdsByIdentity(identity));
+      }
+      if (starredOnly && starredIds.size === 0) {
+        return { items: [], total: 0, limit, offset };
+      }
 
       const res = await ctx.repo.listPlugins({
         status: "published",
@@ -66,14 +79,13 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
         q: search || undefined,
         featured,
         ownerKey,
+        ids: starredOnly ? [...starredIds] : undefined,
         sort,
         limit,
         offset,
       });
 
-      const identity = pluginIdentity(ctx, req);
       const installedById = new Map<string, { version: string; installedAt: number }>();
-      let starredIds = new Set<string>();
       if (identity) {
         for (const item of await ctx.repo.listPluginInstallsByIdentity(identity)) {
           installedById.set(item.plugin.id, {
@@ -81,7 +93,6 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
             installedAt: item.install.installedAt,
           });
         }
-        starredIds = new Set(await ctx.repo.listStarredPluginIdsByIdentity(identity));
       }
 
       /**

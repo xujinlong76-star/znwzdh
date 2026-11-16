@@ -107,10 +107,11 @@ export async function generateMetadata({
   const state = parseMarketplaceFilters(searchToString(sp))
   const shortlinkInvalid = isShortlinkInvalidNotice(sp)
   const filtered =
-    Boolean(state.kind || state.q) ||
+    Boolean(state.kind || state.q || state.starred) ||
     state.sort !== DEFAULT_MARKETPLACE_SORT ||
     shortlinkInvalid
-  const canonical = `/marketplace${buildMarketplaceQuery(state)}`
+  // 星标是 per-identity 视图：不进 canonical（也不被索引），只保留通用筛选
+  const canonical = `/marketplace${buildMarketplaceQuery({ ...state, starred: false })}`
   const title = state.q
     ? `插件市场 · 搜索「${state.q}」`
     : state.kind
@@ -134,8 +135,8 @@ export default async function MarketplacePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const sp = await searchParams
-  const { kind, q, sort } = parseMarketplaceFilters(searchToString(sp))
-  const hasFilter = Boolean(q || kind) || sort !== DEFAULT_MARKETPLACE_SORT
+  const { kind, q, sort, starred } = parseMarketplaceFilters(searchToString(sp))
+  const hasFilter = Boolean(q || kind || starred) || sort !== DEFAULT_MARKETPLACE_SORT
   // 短链打不开时 /s 处理器 302 到这里（?shortlink=invalid）：以前参数没人读，
   // 用户被悄悄扔到通用页、没有任何解释。只认处理器实际发出的那一个值。
   const showShortlinkInvalid = isShortlinkInvalidNotice(sp)
@@ -151,7 +152,9 @@ export default async function MarketplacePage({
   listQuery.set('limit', String(MARKET_LIST_PAGE_SIZE))
 
   const [list, featuredRes, popularRes, ratingRes, freshRes] = await Promise.all([
-    loadMarketPluginList(listQuery),
+    // 星标是 per-identity 数据：服务端没有浏览器身份，SSR 不取列表，
+    // 交给岛挂载后带身份客户端取（initialItems=null 时走骨架 + 正常加载）。
+    starred ? Promise.resolve(null) : loadMarketPluginList(listQuery),
     ...(hasFilter
       ? [null, null, null, null]
       : [

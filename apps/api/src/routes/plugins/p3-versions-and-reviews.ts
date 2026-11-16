@@ -50,6 +50,17 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
 
+      // 状态门禁（A-1）：非 published 仅作者/管理员可见，普通访客直接 404；
+      // 与详情页（p2-detail-and-tools.ts）同一口径。
+      const identity = pluginIdentity(ctx, req);
+      const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
+      if (plugin.status !== "published") {
+        const isAdmin = isAdminScope(ctx, req as never);
+        if (!isAdmin && !isOwner) {
+          return notFound(reply, `插件未上架或不存在: ${slug}`);
+        }
+      }
+
       const versions = await ctx.repo.listPluginVersions(plugin.id);
       return {
         slug: plugin.slug,
@@ -77,6 +88,17 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const { slug, version } = req.params as { slug: string; version: string };
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+
+      // 状态门禁（A-1）：非 published 仅作者/管理员可见，普通访客直接 404；
+      // 与详情页（p2-detail-and-tools.ts）同一口径。
+      const identity = pluginIdentity(ctx, req);
+      const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
+      if (plugin.status !== "published") {
+        const isAdmin = isAdminScope(ctx, req as never);
+        if (!isAdmin && !isOwner) {
+          return notFound(reply, `插件未上架或不存在: ${slug}`);
+        }
+      }
 
       const vRecord = await ctx.repo.getPluginVersion(plugin.id, version);
       if (!vRecord) return notFound(reply, `未找到该版本历史: v${version}`);
@@ -107,6 +129,17 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
 
+      // 状态门禁（A-1）：非 published 仅作者/管理员可见，普通访客直接 404；
+      // 与详情页（p2-detail-and-tools.ts）同一口径。
+      const identity = pluginIdentity(ctx, req);
+      const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
+      if (plugin.status !== "published") {
+        const isAdmin = isAdminScope(ctx, req as never);
+        if (!isAdmin && !isOwner) {
+          return notFound(reply, `插件未上架或不存在: ${slug}`);
+        }
+      }
+
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 20)) : 20;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
       // Keyset 游标（M12）：`?cursor=` 走 WHERE (updated_at,id) 谓词，不再 OFFSET；
@@ -118,8 +151,7 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       // myReview 属私有视图：统一走身份闸门 + identityOf 口径（64 字符），
       // 不再单独放宽到 120——写入侧（安装/星标/评价）一直按 identityOf 取值，
       // 这里读更长的串只会查不到自己的评价，或与签名校验的取值错位。
-      const identity = pluginIdentity(ctx, req);
-
+      // （identity 已在上方状态门禁处取过，此处复用，不重复声明。）
       const [reviewsResult, stats, myReview] = await Promise.all([
         ctx.repo.listPluginReviews(plugin.id, { limit, offset, cursor }),
         ctx.repo.getPluginReviewStats(plugin.id),

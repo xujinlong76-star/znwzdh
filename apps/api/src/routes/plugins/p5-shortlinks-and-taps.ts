@@ -21,6 +21,7 @@ import {
 } from "@navhub/core";
 import { badRequest,
   conflict,
+  isAdminScope,
   notFound,
   } from "../shared.ts";
 import {
@@ -393,6 +394,18 @@ export const pluginRoutesPart5: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const slug = (req.params as { slug: string }).slug;
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, "插件不存在");
+
+      // 状态门禁（A-1）：非 published 仅作者/管理员可见，普通访客直接 404；
+      // 与详情页（p2-detail-and-tools.ts）同一口径。未审插件的静态评分
+      // 不得对外亮出（此前待审包直接返回 score/level）。
+      const identity = pluginIdentity(ctx, req);
+      const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
+      if (plugin.status !== "published") {
+        const isAdmin = isAdminScope(ctx, req as never);
+        if (!isAdmin && !isOwner) {
+          return notFound(reply, `插件未上架或不存在: ${slug}`);
+        }
+      }
 
       const manifest = plugin.manifest as PluginManifest;
       const checks: Array<{ name: string; passed: boolean; detail: string }> = [];

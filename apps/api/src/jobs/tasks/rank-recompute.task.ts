@@ -50,7 +50,14 @@ export async function handleRecomputeRank(ctx: AppContext): Promise<void> {
     };
   });
   await ctx.repo.setTrendScores(scores);
-  await ctx.repo.recordEvent("recompute_rank", { meta: { sites: scores.length } }).catch(() => {
-    // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+  await ctx.repo.recordEvent("recompute_rank", { meta: { sites: scores.length } }).catch((err) => {
+    // 审计/遥测类写库是尽力而为：失败不阻断主操作，但必须留一条失败日志。
+    // 时间戳口径 = 上次审计写库成功时刻，重算成功不等于时间戳更新：
+    // 写失败时 trend_score 已是新的，而 /hot 显示的「热度分 X 前重算」会停在
+    // 上次成功写入——无日志就没人知道显示值已滞后。
+    console.warn("[navhub-job] recompute_rank 审计写库失败（trend_score 已更新，recomputedAt 停在上次成功时刻）", {
+      sites: scores.length,
+      error: err instanceof Error ? err.message : String(err),
+    });
   });
 }

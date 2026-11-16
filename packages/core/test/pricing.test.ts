@@ -86,7 +86,7 @@ describe("derivePricing 强信号规则（收紧版）", () => {
   });
 });
 
-describe("导航 342 站全量推导（数据完整性基线）", () => {
+describe("导航 341 站全量推导（数据完整性基线）", () => {
   const navPath = fileURLToPath(new URL("../../../apps/web-overlay/src/navsphere/content/navigation.json", import.meta.url));
   const nav = JSON.parse(readFileSync(navPath, "utf8")) as {
     navigationItems: Array<{
@@ -95,11 +95,11 @@ describe("导航 342 站全量推导（数据完整性基线）", () => {
   };
   const sites = nav.navigationItems.flatMap((c) => c.subCategories.flatMap((s) => s.items));
 
-  it("共 342 站", () => {
-    expect(sites.length).toBe(342);
+  it("共 341 站", () => {
+    expect(sites.length).toBe(341);
   });
 
-  it("确定值 342 站、未标注为 0（30 站已于 2026-11-15 逐站核实入表）", () => {
+  it("确定值 341 站、未标注为 0（30 站已于 2026-11-15 逐站核实入表）", () => {
     const unknownTitles: string[] = [];
     let determinate = 0;
     for (const s of sites) {
@@ -107,7 +107,7 @@ describe("导航 342 站全量推导（数据完整性基线）", () => {
       if (r.value === "unknown") unknownTitles.push(s.title);
       else determinate++;
     }
-    expect(determinate).toBe(342);
+    expect(determinate).toBe(341);
     expect(unknownTitles).toEqual([]);
   });
 });

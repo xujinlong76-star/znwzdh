@@ -42,7 +42,7 @@ export const AUDIT_LEVEL_TONE_CLASSES: Record<
   good: {
     chip: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
     icon: 'text-emerald-500',
-    score: 'text-emerald-600 dark:text-emerald-400',
+    score: 'text-emerald-700 dark:text-emerald-400',
   },
   ok: {
     chip: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
@@ -52,7 +52,7 @@ export const AUDIT_LEVEL_TONE_CLASSES: Record<
   warn: {
     chip: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
     icon: 'text-amber-500',
-    score: 'text-amber-600 dark:text-amber-400',
+    score: 'text-amber-700 dark:text-amber-400',
   },
   bad: {
     chip: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',

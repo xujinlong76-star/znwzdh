@@ -83,7 +83,10 @@ export async function initSchemaMigrationsTable(db: Db): Promise<void> {
       const exists = await db.pg.query(
         "SELECT to_regclass('public._schema_migrations') AS t",
       );
-      if (!exists.rows[0]?.t) throw err;
+      // to_regclass 未找到时返回 NULL；rows 为 unknown[]，显式标注行类型
+      //（PgRunner.query 不带泛型，直接读 .t 会在 TS 7 下报 TS2339）。
+      const row = exists.rows[0] as { t: string | null } | undefined;
+      if (!row?.t) throw err;
     }
   } else if (db.sqlite) {
     db.sqlite.exec(ddlSqlite);

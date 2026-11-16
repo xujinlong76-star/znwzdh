@@ -214,7 +214,7 @@ export interface SeedResult {
   siteConfigSeeded: boolean;
   /** 平替雷达（ECOSYSTEM_MAP）的落地账 */
   ecosystem: EcosystemSeedResult;
-  /** 冷启动基线导入（仓库内容文件 342 站 + 视频库）的结论账（A1） */
+  /** 冷启动基线导入（仓库内容文件 341 站 + 视频库）的结论账（A1） */
   baseline: BaselineImportResult;
 }
 
@@ -399,12 +399,12 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
 
   /**
    * 冷启动基线（A1）：在写入任何站点之前先检查——库里一个站点都没有时，
-   * 把仓库内容文件的导航（342 站）与视频库整包导入（走 /api/storage 同一条
+   * 把仓库内容文件的导航（341 站）与视频库整包导入（走 /api/storage 同一条
    * 写回通道）；已有数据则整段跳过。基线结论决定下面 seed-data 站点循环
    * 还跑不跑：
    *  - imported / skipped_existing：部署带了内容文件且库已与之对齐——文件
    *    就是事实源，143 站兜底循环必须跳过。否则每次重启都会把 49 个只在
-   *    seed-data 里有的站重新塞回库（总数涨到 391 与文件对不上），还会用
+   *    seed-data 里有的站重新塞回库（总数涨到 390 与文件对不上），还会用
    *    种子里的长描述覆盖运营在后台改过的短描述；
    *  - missing_file / failed / disabled：没有可用的基线（独立跑中枢包、
    *    导入出错、显式关闭），落回 143 站兜底，保证站点不至于空着。

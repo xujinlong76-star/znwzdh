@@ -209,18 +209,6 @@
                 "AI 搜索",
                 "搜索"
               ]
-            },
-            {
-              "id": "nav-e416751abb6c",
-              "title": "Miku 搜索",
-              "href": "https://hellomiku.com/",
-              "description": "AI 驱动的知识探索工具：深度搜索、全网链接聚合，可生成智能报告",
-              "icon": "https://hellomiku.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "AI 搜索",
-                "搜索"
-              ]
             }
           ]
         },

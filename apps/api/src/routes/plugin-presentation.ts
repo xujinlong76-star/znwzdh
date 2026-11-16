@@ -149,12 +149,16 @@ export function isPluginVisibleToCaller(
  * 公共插件序列化：剔除内部归属身份与待审变更说明。
  * ownerKey 可以公开（不可逆哈希），用于作者页 URL。
  * 若 reviewNote 中包含有效的 AI 审核评分，则提取附带 aiAudit 认证标签。
+ *
+ * 待审新版本（C-2）：pendingVersion / pendingManifest 默认剥离——公开接口
+ * 曾把未审核新版的完整清单直接序列化出去，等于未审先发；只有作者本人
+ * 或管理员视图（ownerView）才保留（作者中心 / 管理端要靠它展示待审态）。
  */
 export function publicPlugin(
   plugin: Record<string, any>,
   opts: { ownerView?: boolean } = {},
 ): Record<string, any> {
-  const { ownerIdentity: _ownerIdentity, pendingChangelog, ...rest } = plugin;
+  const { ownerIdentity: _ownerIdentity, pendingChangelog, pendingVersion, pendingManifest, ...rest } = plugin;
   let aiAudit: { score: number; level: string; auditedAt: number } | null = null;
   if (rest.reviewNote && typeof rest.reviewNote === "string") {
     try {
@@ -169,6 +173,8 @@ export function publicPlugin(
     } catch {}
     // 显式降级（非静默）：审核备注不是合法 JSON：按「无审核信息」处理
   }
-  const base = opts.ownerView ? { ...rest, pendingChangelog: pendingChangelog ?? null } : rest;
+  const base = opts.ownerView
+    ? { ...rest, pendingChangelog: pendingChangelog ?? null, pendingVersion: pendingVersion ?? null, pendingManifest: pendingManifest ?? null }
+    : rest;
   return aiAudit ? { ...base, aiAudit } : base;
 }

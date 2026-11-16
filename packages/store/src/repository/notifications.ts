@@ -12,6 +12,8 @@ export interface NotificationRecord {
   kind: string;
   title: string;
   body: string | null;
+  /** 站内相对链接（C-4）：如 /marketplace/<slug>；点开能看到结果的页面 */
+  link: string | null;
   readAt: number | null;
   createdAt: number;
 }
@@ -25,6 +27,8 @@ export interface EmitNotificationInput {
   kind: string;
   title: string;
   body?: string | null;
+  /** 站内相对链接（C-4）：与 body 一起进 outbox，由 relay 原样投进 notifications */
+  link?: string | null;
   channels?: NotificationChannel[];
 }
 
@@ -105,9 +109,9 @@ export async function emitNotification(
       const inapp = channel === "inapp";
       await repo.run(
         "INSERT INTO notification_outbox " +
-          "(id, identity, channel, kind, title, body, status, attempts, next_attempt_at, last_error, created_at, delivered_at) " +
-          "VALUES (?,?,?,?,?,?,?,0,?,?,?,NULL) ON CONFLICT(id) DO NOTHING",
-        [id, input.identity, channel, input.kind, input.title, input.body ?? null,
+          "(id, identity, channel, kind, title, body, link, status, attempts, next_attempt_at, last_error, created_at, delivered_at) " +
+          "VALUES (?,?,?,?,?,?,?,?,0,?,?,?,NULL) ON CONFLICT(id) DO NOTHING",
+        [id, input.identity, channel, input.kind, input.title, input.body ?? null, input.link ?? null,
           inapp ? "pending" : "deferred", inapp ? now : null,
           inapp ? null : CHANNEL_ERRORS[channel], now],
       );
@@ -144,7 +148,7 @@ export async function relayNotifications(
         // SQLite 上报 near "(": syntax error（见 llm-prices.ts 的同类修复）。
         const exclusion = seen.length ? ` AND id NOT IN (${seen.map(() => "?").join(",")})` : "";
         const row = (await repo.raw(
-          "SELECT id, identity, kind, title, body, attempts, next_attempt_at, created_at FROM notification_outbox " +
+          "SELECT id, identity, kind, title, body, link, attempts, next_attempt_at, created_at FROM notification_outbox " +
             "WHERE status = 'pending' AND channel = 'inapp' AND attempts < ? AND next_attempt_at <= ?" +
             exclusion + " ORDER BY next_attempt_at, created_at, id LIMIT 1" + lock,
           [MAX_ATTEMPTS, cutoff, ...seen],
@@ -153,9 +157,9 @@ export async function relayNotifications(
         claimed = { id: String(row.id), attempts: Number(row.attempts), nextAttemptAt: Number(row.next_attempt_at) };
         try {
           await repo.run(
-            "INSERT INTO notifications (id, identity, kind, title, body, read_at, created_at) " +
-              "VALUES (?,?,?,?,?,NULL,?) ON CONFLICT(id) DO NOTHING",
-            [claimed.id, row.identity, row.kind, row.title, row.body, Number(row.created_at)],
+            "INSERT INTO notifications (id, identity, kind, title, body, link, read_at, created_at) " +
+              "VALUES (?,?,?,?,?,?,NULL,?) ON CONFLICT(id) DO NOTHING",
+            [claimed.id, row.identity, row.kind, row.title, row.body, row.link ?? null, Number(row.created_at)],
           );
           await repo.run(
             "UPDATE notification_outbox SET status = 'delivered', delivered_at = ?, next_attempt_at = NULL, " +
@@ -329,15 +333,15 @@ export async function listNotificationDeliveries(
 
 export async function createNotification(
   repo: Repository,
-  input: { identity: string; kind: string; title: string; body?: string | null },
+  input: { identity: string; kind: string; title: string; body?: string | null; link?: string | null },
 ): Promise<NotificationRecord> {
   const id = globalThis.crypto?.randomUUID?.() ?? `ntf-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const now = Date.now();
   await repo.run(
-    "INSERT INTO notifications (id, identity, kind, title, body, read_at, created_at) VALUES (?,?,?,?,?,NULL,?)",
-    [id, input.identity, input.kind, input.title, input.body ?? null, now],
+    "INSERT INTO notifications (id, identity, kind, title, body, link, read_at, created_at) VALUES (?,?,?,?,?,?,NULL,?)",
+    [id, input.identity, input.kind, input.title, input.body ?? null, input.link ?? null, now],
   );
-  return { id, identity: input.identity, kind: input.kind, title: input.title, body: input.body ?? null, readAt: null, createdAt: now };
+  return { id, identity: input.identity, kind: input.kind, title: input.title, body: input.body ?? null, link: input.link ?? null, readAt: null, createdAt: now };
 }
 
 /** 去重窗口：同身份同 kind 在 withinMs 内已有过通知 → true（触发源据此跳过） */
@@ -377,7 +381,7 @@ export async function listNotificationsPage(
   const keysetSql = keyset ? ` AND ${keyset.sql}` : "";
   const fetchLimit = capped + 1;
   const rows = await repo.raw(
-    "SELECT id, identity, kind, title, body, read_at, created_at FROM notifications" +
+    "SELECT id, identity, kind, title, body, link, read_at, created_at FROM notifications" +
       where + keysetSql +
       ` ORDER BY created_at DESC, id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
     keyset ? [identity, ...keyset.params, fetchLimit] : [identity, fetchLimit, Math.max(0, offset)],
@@ -389,6 +393,7 @@ export async function listNotificationsPage(
     kind: String(r.kind),
     title: String(r.title),
     body: r.body == null ? null : String(r.body),
+    link: r.link == null ? null : String(r.link),
     readAt: r.read_at == null ? null : Number(r.read_at),
     createdAt: Number(r.created_at ?? 0),
   }));

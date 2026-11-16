@@ -172,7 +172,7 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
   );
 
   /**
-   * 提交或更新插件评价（仅限活跃安装用户）
+   * 提交或更新插件评价（新评价仅限活跃安装用户；修改自己已有的评价不限安装状态，B-3）
    */
   app.post(
     "/api/plugins/:slug/reviews",
@@ -249,6 +249,44 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
     }
   );
 
+
+  /**
+   * 删除自己的评价（B-3）：本人或管理员可删；硬删除并清理该评价的举报记录。
+   * 匿名/他人调用 401/403（deletePluginReview 内按 identity + actorKind 判定）。
+   */
+  app.delete(
+    "/api/plugins/:slug/reviews/:id",
+    { config: { scope: "public", rateLimit: { max: 15, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const { slug, id } = req.params as { slug: string; id: string };
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer <redacted>");
+      const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
+      const identity = String(requestIdentityOf(req as never) ?? callerAuth?.actor ?? "").trim();
+      if (!identity) {
+        return badRequest(reply, "缺少用户身份标识");
+      }
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+      try {
+        const result = await ctx.repo.deletePluginReview(
+          slug,
+          id,
+          identity,
+          {
+            actor: callerAuth?.actor || identity,
+            actorKind: isAdminScope(ctx, req as never) ? "admin" : callerAuth?.kind ?? "identity",
+            ip: req.ip,
+          },
+        );
+        return { success: true, ...result };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.startsWith("只能删除自己的评价")) return forbidden(reply, message);
+        if (message.startsWith("评价不存在")) return notFound(reply, message);
+        return badRequest(reply, message);
+      }
+    }
+  );
 
   /**
    * 举报评价：只累计计数并进入治理队列，不自动隐藏（防恶意举报）。
@@ -383,12 +421,20 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
             { actor: actorName, actorKind, ip: req.ip },
           );
           for (const recipient of [identity, ADMIN_NOTIFICATION_IDENTITY]) {
+            const isAuthor = recipient === identity;
             await ctx.repo.emitNotification({
               identity: recipient,
               idempotencyKey: `plugin:${created.id}:pending:${created.version}`,
               kind: "plugin_pending",
-              title: recipient === identity ? "插件已提交审核" : "有新插件待审核",
-              body: JSON.stringify({ pluginId: created.id, version: created.version }),
+              title: isAuthor ? "插件已提交审核" : "有新插件待审核",
+              // C-4：通知体写成人话；作者链预览页（待审插件无公开页），
+              // 管理员链管理端待审筛选（一点就到审核队列）。
+              body: isAuthor
+                ? `「${created.name}」v${created.version} 已提交审核，通过后会自动上架。`
+                : `新插件「${created.name}」v${created.version} 待审核，请前往管理端处理。`,
+              link: isAuthor
+                ? `/marketplace/${encodeURIComponent(created.slug)}/preview`
+                : `/admin/plugins?status=pending`,
             });
           }
           return created;

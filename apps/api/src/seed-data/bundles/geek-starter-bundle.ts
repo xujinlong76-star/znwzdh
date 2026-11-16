@@ -9,6 +9,9 @@ import type { SeedPluginDef } from "../types.ts";
 export const geekStarterBundle: SeedPluginDef = {
   slug: "geek-starter-bundle",
   status: "published",
+  // 精选（R2A-2）：市场第一屏精选区第 5 位
+  featured: true,
+  featuredRank: 5,
   manifest: {
     manifestVersion: 1,
     kind: "bundle",

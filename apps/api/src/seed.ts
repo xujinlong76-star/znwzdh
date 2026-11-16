@@ -529,33 +529,46 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
           await indexPluginsBatch(ctx, [indexItemFromManifest(created.slug, created.manifest)]);
         }
         plugins++;
-        continue;
+      } else {
+        // 已存在：只在「种子清单更新了」时才升级，否则保持库内现状（幂等）。
+        // 以前这里是直接 continue，导致升级后的商用级内容永远进不了已播种的库。
+        const validated = validateAndCleanPluginManifest(def.manifest);
+        if (!validated.ok) {
+          console.warn("[seed] 插件清单不合法，跳过升级: " + def.slug + " -> " + validated.errors.join("; "));
+          continue;
+        }
+        const versionBumped = comparePluginVersions(validated.manifest.version, existing.version) > 0;
+        // 与后台「在线同步种子插件」同一口径：键序不同不等于内容变了。
+        const contentChanged =
+          canonicalJsonStringify(existing.manifest) !== canonicalJsonStringify(validated.manifest);
+        if (versionBumped || contentChanged) {
+          await ctx.repo.updatePlugin(def.slug, validated.manifest, { actor: "seed", actorKind: "system" });
+          if (def.status === "published") {
+            // updatePlugin 会让插件回到待审（作者提交新版本的同一条规则）；
+            // 种子数据属于可信系统来源，直接审核上架，让升级内容立刻可用。
+            await ctx.repo.reviewPlugin(def.slug, "approve", "种子数据升级自动上架", {
+              actor: "seed",
+              actorKind: "system",
+            });
+            await indexPluginsBatch(ctx, [indexItemFromManifest(def.slug, validated.manifest)]);
+          }
+          pluginsUpgraded++;
+          console.info(`[seed] 插件升级: ${def.slug} ${existing.version} -> ${validated.manifest.version}`);
+        }
       }
-
-      // 已存在：只在「种子清单更新了」时才升级，否则保持库内现状（幂等）。
-      // 以前这里是直接 continue，导致升级后的商用级内容永远进不了已播种的库。
-      const validated = validateAndCleanPluginManifest(def.manifest);
-      if (!validated.ok) {
-        console.warn("[seed] 插件清单不合法，跳过升级: " + def.slug + " -> " + validated.errors.join("; "));
-        continue;
+      // R2A-2：精选标志幂等同步——内容没变也要跑（已播种的库靠这次补标志），
+      // 只在标志或 rank 与库内不一致时才调 setPluginFeatured，避免每次
+      // 种子运行都写审计噪音。featured 未声明的种子插件不碰库内现状
+      // （人工在管理端标的精选不会被种子洗掉）。
+      if (def.featured !== undefined) {
+        const current = await ctx.repo.getPluginBySlug(def.slug);
+        if (current && (current.featured !== def.featured || current.featuredRank !== (def.featuredRank ?? 0))) {
+          await ctx.repo.setPluginFeatured(def.slug, def.featured, def.featuredRank ?? 0, {
+            actor: "seed",
+            actorKind: "system",
+          });
+        }
       }
-      const versionBumped = comparePluginVersions(validated.manifest.version, existing.version) > 0;
-      // 与后台「在线同步种子插件」同一口径：键序不同不等于内容变了。
-      const contentChanged =
-        canonicalJsonStringify(existing.manifest) !== canonicalJsonStringify(validated.manifest);
-      if (!versionBumped && !contentChanged) continue;
-      await ctx.repo.updatePlugin(def.slug, validated.manifest, { actor: "seed", actorKind: "system" });
-      if (def.status === "published") {
-        // updatePlugin 会让插件回到待审（作者提交新版本的同一条规则）；
-        // 种子数据属于可信系统来源，直接审核上架，让升级内容立刻可用。
-        await ctx.repo.reviewPlugin(def.slug, "approve", "种子数据升级自动上架", {
-          actor: "seed",
-          actorKind: "system",
-        });
-        await indexPluginsBatch(ctx, [indexItemFromManifest(def.slug, validated.manifest)]);
-      }
-      pluginsUpgraded++;
-      console.info(`[seed] 插件升级: ${def.slug} ${existing.version} -> ${validated.manifest.version}`);
       continue;
     } catch (err) {
       console.warn("[seed] 插件导入跳过: " + def.slug, err);

@@ -9,6 +9,9 @@ import type { SeedPluginDef } from "../types.ts";
 export const aiPowerBundle: SeedPluginDef = {
   slug: "ai-power-bundle",
   status: "published",
+  // 精选（R2A-2）：市场第一屏精选区第 6 位
+  featured: true,
+  featuredRank: 6,
   manifest: {
     manifestVersion: 1,
     kind: "bundle",

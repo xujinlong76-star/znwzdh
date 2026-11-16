@@ -207,12 +207,12 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
       // 无票请求降级为 null，插件本体仍按公开可见性返回。
       const identity = pluginIdentity(ctx, req);
       const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
+      // 不能直接读 req.auth.scopes：鉴权模式下的无票调用方带着 ANONYMOUS_IDENTITY
+      // 的全量 scopes（hook 只在有效 token 时覆写），只有 kind 可信。
+      const isAdmin = isAdminScope(ctx, req as never);
 
       // 状态门禁：非 published 仅作者/管理台可见，普通访客直接 404
       if (plugin.status !== "published") {
-        // 不能直接读 req.auth.scopes：鉴权模式下的无票调用方带着 ANONYMOUS_IDENTITY
-        // 的全量 scopes（hook 只在有效 token 时覆写），只有 kind 可信。
-        const isAdmin = isAdminScope(ctx, req as never);
         if (!isAdmin && !isOwner) {
           return notFound(reply, `插件未上架或不存在: ${slug}`);
         }
@@ -251,7 +251,7 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
       return {
         plugin: {
-          ...publicPlugin(plugin, { ownerView: isOwner }),
+          ...publicPlugin(plugin, { ownerView: isOwner || isAdmin }),
           installed: isInstalled,
           starred: isStarred,
           installedVersion: isInstalled ? installRecord?.version : null,

@@ -191,12 +191,16 @@ describe("submission notification transactions", () => {
 
 describe("plugin notification transactions", () => {
   it("pending notifies canonical owner and administrator; manual review notifies only owner", async () => {
-    const created = await publish("Notification pending", signed(ALIAS), { identity: OTHER });
+    const name = "Notification pending";
+    const created = await publish(name, signed(ALIAS), { identity: OTHER });
     expect(created.statusCode).toBe(201);
     const { slug, id } = created.json();
     expect((await ctx.repo.getPluginBySlug(slug))?.ownerIdentity).toBe(AUTHOR);
+    // C-4：通知体已是人话（不再含 pluginId 原始 JSON），按插件名定位通知；
+    // 作者行靠 link 里的 slug 也能定位，管理员行靠体内的插件名。
+    void id;
     for (const identity of [AUTHOR, ADMIN_NOTIFICATION_IDENTITY]) {
-      const pending = (await outbox(identity)).filter((n) => String(n.body).includes(id));
+      const pending = (await outbox(identity)).filter((n) => String(n.body).includes(name));
       expect(pending).toHaveLength(1);
       expect(pending[0].kind).toBe("plugin_pending");
     }
@@ -209,9 +213,10 @@ describe("plugin notification transactions", () => {
     expect(indexed).toHaveBeenCalledTimes(1);
     await ctx.repo.relayNotifications(100);
     const owner = await ctx.repo.listNotificationsPage(AUTHOR, 50, 0, false);
-    expect(owner.items.filter((n) => n.body?.includes(id)).map((n) => n.kind).sort()).toEqual(["plugin_approved", "plugin_pending"]);
-    expect((await outbox(OTHER)).filter((n) => String(n.body).includes(id))).toHaveLength(0);
-    const admin = (await outbox(ADMIN_NOTIFICATION_IDENTITY)).filter((n) => String(n.body).includes(id));
+    // C-4：通知列表按 link 里的 slug 定位（人话体不再含 pluginId）
+    expect(owner.items.filter((n) => n.link?.includes(slug)).map((n) => n.kind).sort()).toEqual(["plugin_approved", "plugin_pending"]);
+    expect((await outbox(OTHER)).filter((n) => String(n.body).includes(name))).toHaveLength(0);
+    const admin = (await outbox(ADMIN_NOTIFICATION_IDENTITY)).filter((n) => String(n.body).includes(name));
     expect(admin).toHaveLength(1);
     expect(JSON.stringify([...admin, ...owner.items])).not.toContain("private-plugin-note");
   });
@@ -237,7 +242,9 @@ describe("plugin notification transactions", () => {
     for (const action of ["reject", "reject", "delist", "delist", "approve", "delist", "approve"] as const) {
       expect((await reviewPlugin(slug, action)).statusCode).toBe(200);
     }
-    const notices = (await outbox(AUTHOR)).filter((n) => String(n.body).includes(id));
+    // C-4：人话体含插件名不含 pluginId，按名定位 6 条审核事件
+    void id;
+    const notices = (await outbox(AUTHOR)).filter((n) => String(n.body).includes("Notification review rollback"));
     expect(notices).toHaveLength(6);
     expect(new Set(notices.map((n) => n.id)).size).toBe(6);
   });
@@ -247,6 +254,7 @@ describe("plugin notification transactions", () => {
     const created = await publish(name);
     expect(created.statusCode).toBe(201);
     const { slug, id } = created.json();
+    void id;
     expect((await reviewPlugin(slug, "approve")).statusCode).toBe(200);
     for (const [version, action] of [["1.1.0", "approve"], ["1.2.0", "reject"]] as const) {
       const submitted = await app.inject({ method: "POST", url: `/api/plugins/${slug}/versions`, headers: signed(AUTHOR), payload: { manifest: theme(name, version) } });
@@ -255,16 +263,20 @@ describe("plugin notification transactions", () => {
       expect((await reviewPlugin(slug, action)).statusCode).toBe(200);
       expect((await ctx.repo.getPluginBySlug(slug))?.status).toBe("published");
     }
-    const notices = (await outbox(AUTHOR)).filter((n) => String(n.body).includes(id) && n.kind !== "plugin_pending");
+    const notices = (await outbox(AUTHOR)).filter((n) => String(n.body).includes(name) && n.kind !== "plugin_pending");
     expect(notices).toHaveLength(3);
-    expect(notices.map((n) => JSON.parse(String(n.body)).version).sort()).toEqual(["1.0.0", "1.1.0", "1.2.0"]);
+    // C-4：版本不再是 body JSON 里的字段，改从人话体「vX.Y.Z」里提取
+    expect(notices.map((n) => String(n.body).match(/v(\d+\.\d+\.\d+)/)?.[1]).sort()).toEqual(["1.0.0", "1.1.0", "1.2.0"]);
     expect(new Set(notices.map((n) => n.id)).size).toBe(3);
   });
 
   it("auto-audit IO starts after pending transaction commit (automatic review producer is separate)", async () => {
     const audit = vi.spyOn(autoAuditor, "executeAutoAuditAndPublish").mockImplementation(async (_ctx, plugin) => {
       expect(ctx.db.sqlite?.inTransaction).toBe(false);
-      const pending = await ctx.repo.raw("SELECT * FROM notification_outbox WHERE kind = 'plugin_pending' AND body LIKE ?", [`%${plugin.id}%`]);
+      // C-4：待审通知体已是人话（不再含 pluginId），按插件名定位两条待审通知
+      // （作者 + 管理员）；此前按 body LIKE %id% 的探针在人话体下会恒为 0、
+      // 且 mock 内抛错会被路由的 audit try/catch 吞掉造成假绿，故必须按新行为写。
+      const pending = await ctx.repo.raw("SELECT * FROM notification_outbox WHERE kind = 'plugin_pending' AND body LIKE ?", [`%${plugin.name}%`]);
       expect(pending).toHaveLength(2);
       return { plugin, audit: {} } as never;
     });

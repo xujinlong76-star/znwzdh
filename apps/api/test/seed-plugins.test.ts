@@ -155,6 +155,29 @@ describe("插件市场种子数据：契约校验与元数据", () => {
       expect(item.manifest.tags?.length ?? 0, `${item.slug} 缺少标签`).toBeGreaterThan(0)
     }
   })
+
+  it("精选种子（R2A-2）：6 个真实已上架插件带 featured 标志，rank 1-6 唯一且有序", () => {
+    // 第一屏精选区与热门标签曾是死入口（featured=true 恒为 0）：精选必须由
+    // 真实已上架的种子插件承担，rank 决定展示顺序，删/改这里会直接红。
+    const expected: [string, number][] = [
+      ["dev-search-arsenal", 1],
+      ["code-and-package-search-pack", 2],
+      ["dracula-dark", 3],
+      ["devops-workbench", 4],
+      ["geek-starter-bundle", 5],
+      ["ai-power-bundle", 6],
+    ]
+    const defs = seedPluginDefs()
+    const featured = defs.filter((d) => d.featured === true)
+    expect(featured.map((d) => d.slug).sort()).toEqual(expected.map(([s]) => s).sort())
+    for (const [slug, rank] of expected) {
+      const def = defs.find((d) => d.slug === slug)!
+      expect(def.status, `${slug} 必须是已上架才能进精选`).toBe("published")
+      expect(def.featuredRank, `${slug} 的精选 rank 应为 ${rank}`).toBe(rank)
+    }
+    const ranks = featured.map((d) => d.featuredRank)
+    expect(new Set(ranks).size, "精选 rank 必须唯一").toBe(featured.length)
+  })
 })
 
 describe("网址包已卸载：注册表不再含 site-pack（2026-11-15 uninstall-4839）", () => {

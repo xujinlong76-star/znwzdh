@@ -96,6 +96,8 @@ export interface PluginListFilter {
   hasPendingVersion?: boolean;
   /** 标签过滤 */
   tag?: string;
+  /** 多标签过滤（R2A-1）：全部命中才算（AND），与 q 里的 #tag 同口径 */
+  tags?: string[];
   /** 只查这些 id（星标筛选：调用方星标 id 集合；空数组 = 不查） */
   ids?: string[];
 }
@@ -488,6 +490,12 @@ export async function listPlugins(
     wheres.push("p.tags LIKE ? ESCAPE '!'");
     params.push(containsLike(`"${filter.tag}"`));
   }
+  // R2A-1：q 里的 #tag 与 ?tag= 汇总到这里，多标签 AND（每个都必须命中）
+  for (const t of filter.tags ?? []) {
+    if (!t) continue;
+    wheres.push("p.tags LIKE ? ESCAPE '!'");
+    params.push(containsLike(`"${t}"`));
+  }
   if (filter.hasPendingVersion) {
     wheres.push("p.pending_version IS NOT NULL");
   }
@@ -819,7 +827,9 @@ export async function setPluginFeatured(
   return updated;
 }
 
-/** 审核动作：approve（pending|delisted → published）/ reject / delist */
+/** 审核动作：approve（pending|delisted|quarantined|rejected → published）/ reject / delist
+ * rejected 允许重新审核上架（C-1）：管理员误驳回后点「重新上架」不应永远失败，
+ * 否则只能等作者重投；与 pending/delisted/quarantined 同一条上架路径。 */
 export async function reviewPlugin(
   repo: Repository,
   slug: string,
@@ -836,7 +846,7 @@ export async function reviewPlugin(
     if (existing.status === "published") {
       // 审核通过已发布插件的待审新版本 (Shadow Release)
       if (!existing.pendingVersion || !existing.pendingManifest) {
-        throw new Error(`插件当前状态为 ${existing.status}，只有 pending/delisted/quarantined 可以通过`);
+        throw new Error(`插件当前状态为 ${existing.status}，只有 pending/delisted/quarantined/rejected 可以通过`);
       }
       const newManifest = existing.pendingManifest;
       await assertBundleManifestReferences(repo, newManifest, slug);
@@ -866,8 +876,8 @@ export async function reviewPlugin(
       );
       await recordPluginVersion(repo, existing.id, newManifest, changelog, now);
     } else {
-      if (existing.status !== "pending" && existing.status !== "delisted" && existing.status !== "quarantined") {
-        throw new Error(`插件当前状态为 ${existing.status}，只有 pending/delisted/quarantined 可以通过`);
+      if (existing.status !== "pending" && existing.status !== "delisted" && existing.status !== "quarantined" && existing.status !== "rejected") {
+        throw new Error(`插件当前状态为 ${existing.status}，只有 pending/delisted/quarantined/rejected 可以通过`);
       }
       status = "published";
       await assertBundleManifestReferences(repo, existing.manifest, slug);
@@ -919,7 +929,7 @@ export async function reviewPlugin(
 /**
  * 写入一次「不改变状态」的审核结论。
  *
- * 用于已上架插件的复审：`reviewPlugin('approve')` 只接受 pending/delisted/quarantined，
+ * 用于已上架插件的复审：`reviewPlugin('approve')` 只接受 pending/delisted/quarantined/rejected，
  * 对 published 会抛错；但复审通过时状态本来就该保持 published，只需要刷新
  * review_note / reviewed_at（详情页徽标与 AI 审核报告都从这里读）。
  */
@@ -1284,6 +1294,115 @@ export async function installPlugin(
   const install = await getPluginInstall(repo, plugin.id, who);
   if (!refreshed || !install) throw new Error("安装后无法读回插件状态");
   return { plugin: refreshed, install, alreadyInstalled: wasActive, applied };
+}
+
+export interface PluginRollbackResult extends PluginInstallResult {
+  /** 回滚前已安装的版本 */
+  rolledBackFrom: string;
+  /** 回滚目标版本（安装记录写回的版本与之一致，不再是“版本号撒谎”） */
+  rolledBackTo: string;
+  /** 本次移除的新版独有站点数（软删除，可恢复） */
+  sitesRemoved: number;
+}
+
+/** 站点 URL 归一键：与 siteUrlExists 同一套规范化（去首尾空白、canonicalize、去尾斜杠）。 */
+function siteUrlKey(url: string): string {
+  const c = canonicalizeUrl(url.trim()) || url.trim();
+  return c.endsWith("/") ? c.slice(0, -1) : c;
+}
+
+/**
+ * 真实回滚到历史版本（B-1）。
+ *
+ * 旧行为（时间轴「安装/回滚此版本」只调 install(version)）是假的：
+ * 服务端只新增不删除——新版独有站点留在库里、安装记录却写成旧版本号，
+ * 数据是新旧并集、版本号撒谎；主题/搜索包的客户端重应用也没做。
+ *
+ * 本函数的回滚语义（写进安装记录的版本号必须与实际内容一致）：
+ *   1. 目标版本必须低于已安装版本（升级走安装，不走回滚）且历史快照存在；
+ *   2. site-pack：先移除「已装版有、目标版没有」的插件来源站点（软删除，
+ *      只动 source=plugin:<slug> 的行，用户自己改过来源的站点不受影响；
+ *      有其他身份仍活跃安装时直接拒绝——删不干净就不能把版本号写成旧版，
+ *      与卸载的共享保护同一条红线），再按目标清单安装（补回旧版独有站点）；
+ *   3. 其余类型服务端本就没有按用户落库的状态可删，直接按目标清单安装，
+ *      客户端重应用（主题 tokens / 搜索包 !前缀）由调用方在成功后做；
+ *   4. 找不到已装版清单快照时直接报错，不猜差集。
+ */
+export async function rollbackPlugin(
+  repo: Repository,
+  slug: string,
+  identity: string,
+  targetVersion: string,
+  actor?: PluginActor,
+): Promise<PluginRollbackResult> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) throw new Error(`插件不存在：${slug}`);
+  if (plugin.status !== "published") {
+    throw new Error(`插件状态为 ${plugin.status}，只有已上架（published）插件可以回滚`);
+  }
+  const who = identity.trim().slice(0, 120) || "anonymous";
+  const install = await getPluginInstall(repo, plugin.id, who);
+  if (!install || install.removedAt !== null) {
+    throw new Error("尚未安装该插件，回滚前请先安装");
+  }
+  const fromVersion = install.version;
+  if (comparePluginVersions(targetVersion, fromVersion) >= 0) {
+    throw new Error(`回滚目标 v${targetVersion} 不低于已安装版本 v${fromVersion}，升级请用安装`);
+  }
+  const targetSnapshot = await getPluginVersion(repo, plugin.id, targetVersion);
+  if (!targetSnapshot) {
+    throw new Error(`找不到版本 ${targetVersion} 的历史快照`);
+  }
+  const targetManifest = targetSnapshot.manifest;
+  let sitesRemoved = 0;
+  if (targetManifest.kind === "site-pack") {
+    // 当前已装版的清单：优先版本历史快照，其次安装记录 meta 里的清单
+    const fromSnapshot = await getPluginVersion(repo, plugin.id, fromVersion);
+    const fromManifest = fromSnapshot?.manifest ?? (await getPluginInstalledManifest(repo, plugin.id, who));
+    if (!fromManifest || fromManifest.kind !== "site-pack") {
+      throw new Error(`找不到已安装版本 v${fromVersion} 的清单快照，无法计算回滚差集`);
+    }
+    const targetUrls = new Set(
+      ((targetManifest.payload as SitePackPayload).sites ?? []).map((s) => siteUrlKey(s.url)),
+    );
+    const removedUrls = ((fromManifest.payload as SitePackPayload).sites ?? [])
+      .map((s) => s.url)
+      .filter((u) => !targetUrls.has(siteUrlKey(u)));
+    if (removedUrls.length > 0) {
+      const otherActiveInstalls = await repo.raw(
+        "SELECT 1 FROM plugin_installs WHERE plugin_id = ? AND identity != ? AND removed_at IS NULL LIMIT 1",
+        [plugin.id, who],
+      );
+      if (otherActiveInstalls.length > 0) {
+        throw new Error("有其他用户仍在使用新版，无法移除新版独有站点，回滚已取消（你的安装未改动）");
+      }
+      const removedKeys = new Set(removedUrls.map((u) => siteUrlKey(u)));
+      const rows = await repo.raw("SELECT id, url FROM sites WHERE source = ? AND deleted_at IS NULL", [
+        `plugin:${slug}`,
+      ]);
+      for (const row of rows) {
+        if (!removedKeys.has(siteUrlKey(String(row.url)))) continue;
+        await repo.deleteSite(String(row.id));
+        sitesRemoved++;
+      }
+    }
+  }
+  const installed = await installPlugin(repo, slug, who, actor, { version: targetVersion });
+  await repo.audit({
+    actor: actor?.actor ?? who,
+    actorKind: actor?.actorKind ?? "identity",
+    action: "plugin.rollback",
+    target: slug,
+    diff: {
+      from: fromVersion,
+      to: targetVersion,
+      sitesRemoved,
+      sitesAdded: installed.applied.sitesAdded,
+      sitesSkipped: installed.applied.sitesSkipped,
+    },
+    ip: actor?.ip,
+  });
+  return { ...installed, rolledBackFrom: fromVersion, rolledBackTo: targetVersion, sitesRemoved };
 }
 
 export async function uninstallPlugin(
@@ -1807,9 +1926,15 @@ export async function createPluginReview(
     throw new Error(`插件未上架（${plugin.status}），暂不接受新评价`);
   }
 
-  // 门禁：用户必须处于活跃安装状态才能打分
+  // 门禁（B-3）：新评价仍需活跃安装；但「修改自己已有的评价」不再要求
+  // 活跃安装——用户卸载后连改错字都被锁死是 bug。先查已有评价，有则放行
+  // 修改（installed_version 沿用评价当时的版本，不再被卸载清空）。
+  const existingRow = (await repo.raw(
+    "SELECT id, installed_version FROM plugin_reviews WHERE plugin_id = ? AND identity = ? LIMIT 1",
+    [plugin.id, who],
+  ))[0];
   const install = await getPluginInstall(repo, plugin.id, who);
-  if (!install || install.removedAt !== null) {
+  if (!existingRow && (!install || install.removedAt !== null)) {
     throw new Error("只有已安装该插件的用户才能发表评价与打分");
   }
 
@@ -1828,12 +1953,9 @@ export async function createPluginReview(
   if (content !== null && content.length > 4000) {
     throw new Error("评价正文不能超过 4000 字");
   }
-  const installedVersion = install.version;
+  const installedVersion = install && install.removedAt === null ? install.version : String(existingRow?.installed_version ?? "");
 
-  const existing = (await repo.raw(
-    "SELECT id FROM plugin_reviews WHERE plugin_id = ? AND identity = ? LIMIT 1",
-    [plugin.id, who],
-  ))[0];
+  const existing = existingRow ? { id: String(existingRow.id) } : null;
 
   let reviewId: string;
   if (existing) {
@@ -1873,11 +1995,18 @@ const PLUGIN_REVIEW_KEYSET_KEYS: KeysetKey[] = [
   { column: "id", direction: "DESC" },
 ];
 
+export interface PluginReviewWithInstallStatus extends PluginReviewRecord {
+  /** 评价作者当前是否仍处于活跃安装状态（B-3）：
+   * true =「已验证真实安装用户」，false =「发表时已验证安装，现已卸载」。
+   * 徽章按此区分，而不是按评价当时的安装快照一刀切。 */
+  installedNow: boolean;
+}
+
 export async function listPluginReviews(
   repo: Repository,
   pluginId: string,
   options: { limit?: number; offset?: number; includeHidden?: boolean; cursor?: string } = {},
-): Promise<{ items: PluginReviewRecord[]; total: number; nextCursor: string | null }> {
+): Promise<{ items: PluginReviewWithInstallStatus[]; total: number; nextCursor: string | null }> {
   const where = options.includeHidden ? "plugin_id = ?" : "plugin_id = ? AND status = 'visible'";
   const countRow = (await repo.raw(`SELECT COUNT(*) AS cnt FROM plugin_reviews WHERE ${where}`, [pluginId]))[0];
   const total = Number(countRow?.cnt ?? 0);
@@ -1898,12 +2027,58 @@ export async function listPluginReviews(
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   const items = page.map(rowToPluginReview);
-  const last = hasMore ? items[items.length - 1] : undefined;
+  // 一次查询取回本插件的全部活跃安装身份，逐条标注「当前是否仍安装」
+  // （B-3：卸载后评价仍在，徽章必须诚实区分现装/已卸）。
+  const activeInstalls = await repo.raw(
+    "SELECT identity FROM plugin_installs WHERE plugin_id = ? AND removed_at IS NULL",
+    [pluginId],
+  );
+  const installedSet = new Set(activeInstalls.map((r) => String(r.identity)));
+  const itemsWithStatus: PluginReviewWithInstallStatus[] = items.map((item) => ({
+    ...item,
+    installedNow: installedSet.has(item.identity),
+  }));
+  const last = hasMore ? itemsWithStatus[itemsWithStatus.length - 1] : undefined;
   return {
-    items,
+    items: itemsWithStatus,
     total,
     nextCursor: last ? encodeKeysetCursor([last.updatedAt, last.id]) : null,
   };
+}
+
+/**
+ * 删除一条评价（B-3）。
+ * 本人或管理员可删；硬删除（连同该评价的举报记录一并清理，审计留痕），
+ * 删后用户可重新发表（createPluginReview 的 upsert 查不到旧行即走新评价分支）。
+ */
+export async function deletePluginReview(
+  repo: Repository,
+  slug: string,
+  reviewId: string,
+  identity: string,
+  actor?: PluginActor,
+): Promise<{ deleted: boolean; review: PluginReviewRecord }> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) throw new Error(`插件不存在：${slug}`);
+  const row = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? AND plugin_id = ? LIMIT 1", [reviewId, plugin.id]))[0];
+  if (!row) throw new Error(`评价不存在：${reviewId}`);
+  const review = rowToPluginReview(row);
+  const who = identity.trim().slice(0, 120);
+  const isAdmin = actor?.actorKind === "admin";
+  if (!isAdmin && review.identity !== who) {
+    throw new Error("只能删除自己的评价");
+  }
+  await repo.run("DELETE FROM plugin_review_reports WHERE review_id = ?", [reviewId]);
+  await repo.run("DELETE FROM plugin_reviews WHERE id = ?", [reviewId]);
+  await repo.audit({
+    actor: actor?.actor ?? who,
+    actorKind: actor?.actorKind ?? "identity",
+    action: "plugin.review.delete",
+    target: slug,
+    diff: { reviewId, rating: review.rating, byAdmin: isAdmin },
+    ip: actor?.ip,
+  });
+  return { deleted: true, review };
 }
 
 export async function getPluginReviewStats(

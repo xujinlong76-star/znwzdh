@@ -9,6 +9,9 @@ import type { SeedPluginDef } from "../types.ts";
 export const draculaDark: SeedPluginDef = {
   slug: "dracula-dark",
   status: "published",
+  // 精选（R2A-2）：市场第一屏精选区第 3 位
+  featured: true,
+  featuredRank: 3,
   manifest: {
     manifestVersion: 1,
     kind: "theme",

@@ -51,6 +51,11 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "sites", column: "metadata", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "email", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "avatar", sqlite: "TEXT", pg: "TEXT" },
+  // 通知链接（C-4）：通知体改成人话后，作者要点开能看到结果——outbox 与
+  // notifications 各补一列 link（站内相对路径，如 /marketplace/<slug>）。
+  // 只改 CREATE TABLE 的话存量库永远缺列，所以 ALTER 必须同步登记。
+  { table: "notifications", column: "link", sqlite: "TEXT", pg: "TEXT" },
+  { table: "notification_outbox", column: "link", sqlite: "TEXT", pg: "TEXT" },
   // 会话治理（T8）：sessions 激活为可吊销设备记录（列补齐走 ALTER，存量库平滑升级）
   { table: "sessions", column: "user_agent", sqlite: "TEXT", pg: "TEXT" },
   { table: "sessions", column: "revoked_at", sqlite: "INTEGER", pg: "BIGINT" },
@@ -467,14 +472,14 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     // 因为 DELETE 必须带「已复制」守卫（见该函数注释）。
     // 站内通知（T13）：轻量用户消息表
     db.dialect === "pg"
-      ? "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, read_at BIGINT, created_at BIGINT NOT NULL)"
-      : "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, read_at INTEGER, created_at INTEGER NOT NULL)",
+      ? "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, link TEXT, read_at BIGINT, created_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, link TEXT, read_at INTEGER, created_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS notifications_identity_created_idx ON notifications(identity, created_at)",
     // Outbox 由幂等启动迁移补齐；BIGINT 在 SQLite 中同样为整数亲和性。
     `CREATE TABLE IF NOT EXISTS notification_outbox (
       id TEXT PRIMARY KEY, identity TEXT NOT NULL,
       channel TEXT NOT NULL CHECK (channel IN ('inapp', 'email', 'push')),
-      kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT,
+      kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, link TEXT,
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'deferred', 'failed')),
       attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 3),
       next_attempt_at BIGINT, last_error TEXT, created_at BIGINT NOT NULL, delivered_at BIGINT

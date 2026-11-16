@@ -30,7 +30,8 @@ describe("notification outbox / SQLite", () => {
     expect((await repo.listNotificationDeliveries()).items).toHaveLength(1);
     const columns = await repo.raw("PRAGMA table_info(notification_outbox)");
     expect(columns.map((row) => row.name)).toEqual([
-      "id", "identity", "channel", "kind", "title", "body", "status", "attempts",
+      // C-4：通知链接列（outbox 与 notifications 各一列 link，站内相对路径）
+      "id", "identity", "channel", "kind", "title", "body", "link", "status", "attempts",
       "next_attempt_at", "last_error", "created_at", "delivered_at",
     ]);
     expect(columns.find((row) => row.name === "id")?.pk).toBe(1);
@@ -339,7 +340,9 @@ describe("notification outbox / PG SQL structure (no live PG)", () => {
     expect(new Set(calls.map((call) => call.client)).size).toBe(1);
     expect(calls[1].sql).toContain("attempts < $1 AND next_attempt_at <= $2");
     expect(calls[2].sql).toContain("ON CONFLICT(id) DO NOTHING");
-    expect(calls[2].params).toEqual(["pg-row", "user-a", "sync", "Safe summary", null, NOW]);
+    // C-4：INSERT INTO notifications 多了一列 link（无链接的旧通知为 NULL），
+    // 参数顺序为 id, identity, kind, title, body, link, created_at。
+    expect(calls[2].params).toEqual(["pg-row", "user-a", "sync", "Safe summary", null, null, NOW]);
   });
 
   it("PG SQL 失败后先 ROLLBACK/释放连接，再新事务 CAS 记录退避，无 aborted 事务 SQL", async () => {
@@ -376,7 +379,10 @@ describe("notification outbox / PG SQL structure (no live PG)", () => {
     const insert = calls.find((call) => call.sql.startsWith("INSERT INTO notification_outbox"))!;
     expect(insert.sql).toContain("ON CONFLICT(id) DO NOTHING");
     expect(insert.sql).not.toContain("?");
-    expect(insert.params.slice(6, 9)).toEqual(["deferred", null, "Email sender is not configured"]);
+    // C-4：outbox INSERT 多了一列 link（本用例未传 link，为 NULL）；
+    // 参数顺序 id, identity, channel, kind, title, body, link, status,
+    // next_attempt_at, last_error, created_at，故 status 起从下标 7 取。
+    expect(insert.params.slice(7, 10)).toEqual(["deferred", null, "Email sender is not configured"]);
   });
 
   it("PG 迁移发出 outbox BIGINT DDL、状态约束与领取索引", async () => {

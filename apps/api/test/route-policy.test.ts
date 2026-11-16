@@ -97,6 +97,9 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   // 只表示「登录前可见入口」，真正的闸在处理器，匿名请求 401（见 wanted-searches.test.ts「匿名 401」）。
   "DELETE /api/me/wanted/:id",
   "DELETE /api/plugins/:slug/install",
+  // 删除评价（B-3）：只删调用者自己的评价（或管理员删任意评价），处理器内
+  // 按 identity + actorKind 判定；匿名请求 401。
+  "DELETE /api/plugins/:slug/reviews/:id",
   "DELETE /api/plugins/:slug/star",
   "DELETE /api/profile",
   "DELETE /api/profile/signals/:kind",
@@ -178,6 +181,10 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/plugins/:slug/reviews",
   "POST /api/plugins/:slug/reviews/:id/reply",
   "POST /api/plugins/:slug/reviews/:id/report",
+  // 回滚（B-1）：与 install 同口径的用户域写面——只改调用者自己的安装记录
+  // 与插件来源站点（identityTrusted + extractPluginIdentity 是处理器的闸）；
+  // 有其他用户仍用新版时服务端直接拒绝删站点。
+  "POST /api/plugins/:slug/rollback",
   "POST /api/plugins/:slug/star",
   "POST /api/plugins/:slug/uninstall",
   "POST /api/plugins/:slug/versions",

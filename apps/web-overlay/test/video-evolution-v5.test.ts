@@ -77,6 +77,63 @@ describe('Proposal [1]: Collaborative Video Telestrator & Canvas Annotation', ()
   })
 })
 
+describe('smoothStrokePoints tension parameter (evo/tension-1422)', () => {
+  const raw = [
+    { x: 10, y: 10 },
+    { x: 50, y: 80 },
+    { x: 100, y: 20 },
+    { x: 150, y: 90 },
+  ]
+
+  // Default output locked to the pre-fix implementation, point by point.
+  // Computed from the baseline formula (tension hard-coded to 0.5); any
+  // change to the default curve must update this list deliberately.
+  const DEFAULT_EXPECTED = [
+    { x: 10, y: 10 },
+    { x: 16.953125, y: 25.625 },
+    { x: 26.875, y: 48.75 },
+    { x: 38.359375, y: 70 },
+    { x: 50, y: 80 },
+    { x: 61.796875, y: 71.09375 },
+    { x: 74.375, y: 50 },
+    { x: 87.265625, y: 28.90625 },
+    { x: 100, y: 20 },
+    { x: 113.671875, y: 30 },
+    { x: 128.125, y: 51.25 },
+    { x: 141.015625, y: 74.375 },
+    { x: 150, y: 90 },
+  ]
+
+  it('default output is unchanged from the pre-fix implementation', () => {
+    expect(smoothStrokePoints(raw)).toEqual(DEFAULT_EXPECTED)
+  })
+
+  it('explicit tension 0.5 matches the default', () => {
+    expect(smoothStrokePoints(raw, 0.5)).toEqual(smoothStrokePoints(raw))
+  })
+
+  it('different tension values produce different curves', () => {
+    expect(smoothStrokePoints(raw, 0.25)).not.toEqual(smoothStrokePoints(raw, 0.75))
+    expect(smoothStrokePoints(raw, 0)).not.toEqual(smoothStrokePoints(raw, 1))
+    expect(smoothStrokePoints(raw, 0.25)).not.toEqual(smoothStrokePoints(raw))
+  })
+
+  it('clamps out-of-range tension and falls back for non-finite input', () => {
+    expect(smoothStrokePoints(raw, 2)).toEqual(smoothStrokePoints(raw, 1))
+    expect(smoothStrokePoints(raw, -1)).toEqual(smoothStrokePoints(raw, 0))
+    expect(smoothStrokePoints(raw, Number.NaN)).toEqual(smoothStrokePoints(raw))
+    expect(smoothStrokePoints(raw, Number.POSITIVE_INFINITY)).toEqual(smoothStrokePoints(raw))
+  })
+
+  it('keeps the stroke endpoints for any tension', () => {
+    for (const tension of [0, 0.25, 0.5, 0.75, 1]) {
+      const smoothed = smoothStrokePoints(raw, tension)
+      expect(smoothed[0]).toEqual({ x: 10, y: 10 })
+      expect(smoothed[smoothed.length - 1]).toEqual({ x: 150, y: 90 })
+    }
+  })
+})
+
 describe('Proposal [2]: Offline PWA Storage & AES-GCM Encrypted Cache', () => {
   it('retrieves storage quota estimation safely', async () => {
     const quota = await getStorageQuotaEstimate()

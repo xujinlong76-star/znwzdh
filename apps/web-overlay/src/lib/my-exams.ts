@@ -13,6 +13,7 @@
 import {
   EXAMS,
   examStatus,
+  firstExamDay,
   isNodeActionable,
   type ExamInfo,
   type ExamNode,
@@ -126,21 +127,26 @@ export function nextUncheckedNode(state: MyExamsState, exam: ExamInfo): ExamNode
 }
 
 /**
- * 已关注考试里首日最早且未结束的一场；没有符合的返回 undefined。
+ * 已关注考试里首考日最早且未结束的一场；没有符合的返回 undefined。
  *
  * 供首页考试季条带挂载后优先显示：关注了考研的用户打开首页应先看到考研，
  * 而不是全局最近的国考。只在「未结束」的集合内重排——已结束的关注场
  * 绝不顶上来（调用方回退全局最近场；四场全过时条带整条不渲染）。
  * 结束与否按 endISO 判（examStatus）：考研 12-19–20 在 12-20 当天仍算有效。
+ * 排序按首考日（firstExamDay），与 nearestExam 同口径（2026-11-16 0922
+ * C 线）：有加试的考试按考生实际最早开考日排；exams 参数只为测试注入
+ * 合成数据，调用方不传。节点排序（nextUncheckedNode / nextTodoNode）
+ * 不动——节点没有首考日，按节点 startISO 排。
  */
 export function nearestFollowedExam(
   state: MyExamsState,
   nowMs: number = Date.now(),
+  exams: ExamInfo[] = EXAMS,
 ): ExamInfo | undefined {
   const followed = new Set(state.followed)
-  return [...EXAMS]
+  return [...exams]
     .filter((exam) => followed.has(exam.id) && examStatus(exam, nowMs) !== 'ended')
-    .sort((a, b) => a.startISO.localeCompare(b.startISO))[0]
+    .sort((a, b) => firstExamDay(a).localeCompare(firstExamDay(b)))[0]
 }
 
 /**

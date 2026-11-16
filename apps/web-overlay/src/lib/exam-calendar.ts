@@ -245,12 +245,19 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
   return 'active'
 }
 
-/** 最近一场：未结束的考试里首日最早的；多日考试末日仍算未结束
+/** 最近一场：未结束的考试里首考日最早的；多日考试末日仍算未结束
  *（考研 12-19–20：12-20 当天条带仍在，与 /exam 倒计时岛「进行中 ·
- * 第 2 天」一致）；四场全结束则返回 undefined（调用方渲染空态条带） */
-export function nearestExam(nowMs: number = Date.now()): ExamInfo | undefined {
-  return [...EXAMS]
-    .sort((a, b) => a.startISO.localeCompare(b.startISO))
+ * 第 2 天」一致）；四场全结束则返回 undefined（调用方渲染空态条带）。
+ * 排序按首考日（firstExamDay），不是公共科目首日 startISO：有加试的
+ * 考试（国考首考日 11-28 < startISO 11-29）应按考生实际最早开考日排。
+ * 现只有国考首考日 ≠ startISO 且仍为最早，真实数据行为不变；exams
+ * 参数只为测试注入合成数据（2026-11-16 0922 C 线），调用方不传。 */
+export function nearestExam(
+  nowMs: number = Date.now(),
+  exams: ExamInfo[] = EXAMS,
+): ExamInfo | undefined {
+  return [...exams]
+    .sort((a, b) => firstExamDay(a).localeCompare(firstExamDay(b)))
     .find((exam) => examStatus(exam, nowMs) !== 'ended')
 }
 

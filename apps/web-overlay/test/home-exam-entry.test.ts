@@ -22,6 +22,7 @@ import {
   EXAMS,
   nearestExam,
   nextExamNode,
+  type ExamInfo,
 } from '../src/lib/exam-calendar'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -56,6 +57,37 @@ describe('nearestExam（最近一场）', () => {
     expect(nearestExam(Date.UTC(2026, 11, 20, 0, 0, 0))?.id).toBe('kaoyan')
     expect(nearestExam(Date.UTC(2026, 11, 20, 15, 59, 59))?.id).toBe('kaoyan')
     expect(nearestExam(Date.UTC(2026, 11, 21, 0, 0, 0))).toBeUndefined()
+  })
+
+  it('排序按首考日：加试考试（首考日早、公共科目首日晚）排在无加试考试之前', () => {
+    // 2026-11-16 0922 C 线：合成数据——A 公共科目首日 12-01 但有加试、
+    // 首考日 11-20；B 无加试、首日 11-25。按 startISO 排会先挑 B，
+    // 按首考日排应先挑 A；两种传入顺序都应挑 A。真实数据里只有国考
+    // 首考日 ≠ startISO 且仍为最早，行为不变；这条断言钉住排序键本身，
+    // 防将来第二场加试考试排错。
+    const examA: ExamInfo = {
+      id: 'exam-a',
+      name: '合成考试 A',
+      shortName: 'A',
+      tagline: '',
+      examDateLabel: '12 月 1 日',
+      startISO: '2026-12-01',
+      endISO: '2026-12-01',
+      firstExamDayISO: '2026-11-20',
+      nodes: [],
+    }
+    const examB: ExamInfo = {
+      id: 'exam-b',
+      name: '合成考试 B',
+      shortName: 'B',
+      tagline: '',
+      examDateLabel: '11 月 25 日',
+      startISO: '2026-11-25',
+      endISO: '2026-11-25',
+      nodes: [],
+    }
+    expect(nearestExam(NOV_13_0800_CST, [examB, examA])?.id).toBe('exam-a')
+    expect(nearestExam(NOV_13_0800_CST, [examA, examB])?.id).toBe('exam-a')
   })
 })
 

@@ -36,6 +36,7 @@ const CONTENT = "src/components/video-content.tsx";
 const POSTER = "src/components/video-share-poster-dialog.tsx";
 const CONTROL_BAR = "src/components/video-player-control-bar.tsx";
 const SIDE_PANEL = "src/components/video-player-side-panel.tsx";
+const OFFLINE_MANAGER = "src/components/video-offline-manager.tsx";
 
 describe("/videos/player ?id=&t= 直达链路", () => {
   it("路由页从 window.location.search 读 id 与 t", () => {
@@ -197,5 +198,44 @@ describe("换片清零 chapterSeekSec（第 83 轮 C 线）", () => {
     // 初次选片带 ?t= 的一次性交接仍在：走 id 不变早退后由 selectedVideo 副作用交接
     expect(src).toContain("setChapterSeekSec(pendingSeekSecRef.current)");
     expect(src).toContain("pendingSeekSecRef.current = null");
+  });
+});
+
+/**
+ * 第 84 轮 D 线：视频页 UX 合并单 F-06（离线入口改名“离线缓存”）。
+ *
+ * 根因：控制条有两个同名按钮——“加入/移出稍后再看”开关是真的稍后再看
+ * （lib/user-playlists），离线入口（openers.offline → VideoOfflineManager，
+ * 只存元数据不下载）却也叫“稍后再看”，title 还自相矛盾；点开的对话框
+ * 标题/保存按钮/列表头也全叫“稍后再看”，与真正的稍后再看列表撞名。
+ * 修法：入口按钮 + 它打开的对话框一并改名“离线缓存”，与卡片上角标
+ * （video-card.tsx title “离线缓存”）一致；真正的稍后再看开关不动，
+ * 仍是全控制条唯一叫“稍后再看”的按钮。
+ */
+describe("F-06：离线入口改名“离线缓存”（第 84 轮 D 线）", () => {
+  it("控制条离线入口叫“离线缓存”，title 不再自称稍后再看", () => {
+    const src = overlaySource(CONTROL_BAR);
+    expect(src).toContain('<span>离线缓存</span>');
+    expect(src).toContain('title="离线缓存（仅保存视频元数据，不下载视频文件）"');
+    expect(src).toContain("onClick={openers.offline}");
+  });
+
+  it("真正的稍后再看开关不动，仍是控制条唯一叫“稍后再看”的按钮", () => {
+    const src = overlaySource(CONTROL_BAR);
+    expect(src).toContain("onClick={onToggleWatchLater}");
+    expect(src).toContain("title=\"加入/移出稍后再看\"");
+    // 开关文案是三元表达式（非字面 <span>稍后再看</span>），断言其原文仍在；
+    // 字面 <span>稍后再看</span> 已为 0——离线入口改名后不再有按钮用这个纯文案
+    expect(src).toContain("{inWatchLater ? '已在稍后再看' : '稍后再看'}");
+    expect(src.match(/<span>稍后再看<\/span>/g)?.length ?? 0).toBe(0);
+    expect(src.match(/<span>离线缓存<\/span>/g)?.length).toBe(1);
+  });
+
+  it("离线对话框一并改名：标题/保存按钮/列表头都不再叫“稍后再看”", () => {
+    const src = overlaySource(OFFLINE_MANAGER);
+    expect(src).toContain('<span>离线缓存</span>');
+    expect(src).toContain("保存到离线缓存");
+    expect(src).toContain("离线缓存列表");
+    expect(src).not.toContain("稍后再看");
   });
 });

@@ -51,13 +51,13 @@ export function VideoOfflineManager({
 
   // 只保存元数据（标题/时间戳），不下载视频字节：浏览器端没有真实的
   // 视频下载管线，此前这里用 20%→100% 的模拟进度 + 写死的 45MB 假装
-  // 下载完成并打上加密徽章。保存后仅用于「稍后再看」列表。
+  // 下载完成并打上加密徽章。保存后仅用于「离线缓存」列表。
   const handleSaveForLater = async () => {
     if (!currentVideoId || isSaving) return
     setIsSaving(true)
     const newPkg: VideoOfflinePackage = {
       videoId: currentVideoId,
-      title: currentVideoTitle || '稍后再看视频',
+      title: currentVideoTitle || '离线缓存视频',
       totalBytes: 0,
       cachedBytes: 0,
       totalChunks: 0,
@@ -90,7 +90,7 @@ export function VideoOfflineManager({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <DownloadCloud className="w-5 h-5 text-primary" />
-            <span>稍后再看</span>
+            <span>离线缓存</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -126,7 +126,7 @@ export function VideoOfflineManager({
               {isCurrentSaved ? (
                 <div className="flex items-center justify-between pt-1">
                   <span className="text-emerald-500 font-medium flex items-center gap-1 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> 已保存到稍后再看
+                    <CheckCircle2 className="w-3.5 h-3.5" /> 已保存到离线缓存
                   </span>
                 </div>
               ) : (
@@ -137,7 +137,7 @@ export function VideoOfflineManager({
                   onClick={handleSaveForLater}
                 >
                   <DownloadCloud className="w-3.5 h-3.5" />
-                  保存到稍后再看
+                  保存到离线缓存
                 </Button>
               )}
             </div>
@@ -145,7 +145,7 @@ export function VideoOfflineManager({
 
           {/* Downloaded Packages List */}
           <div className="space-y-2">
-            <div className="text-[11px] font-semibold text-muted-foreground">稍后再看列表 ({packages.length})</div>
+            <div className="text-[11px] font-semibold text-muted-foreground">离线缓存列表 ({packages.length})</div>
             {packages.length === 0 ? (
               <p className="text-center py-6 text-muted-foreground text-xs">
                 暂无保存的视频。保存后可在这里快速找回（仅保存元数据，不下载视频）。

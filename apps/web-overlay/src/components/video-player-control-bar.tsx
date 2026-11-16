@@ -340,16 +340,16 @@ export function VideoPlayerControlBar({
           <span>{showTelestrator ? '收起涂鸦' : '屏幕涂鸦'}</span>
         </Button>
 
-        {/* 离线下载缓存 */}
+        {/* 离线下载缓存：与卡片上角标同名“离线缓存”，勿再叫“稍后再看”（F-06） */}
         <Button
           variant="outline"
           size="sm"
           className="h-8 gap-1.5 text-xs"
           onClick={openers.offline}
-          title="保存到稍后再看（仅保存视频元数据，不下载视频文件）"
+          title="离线缓存（仅保存视频元数据，不下载视频文件）"
         >
           <DownloadCloud className="w-3.5 h-3.5 text-blue-400" />
-          <span>稍后再看</span>
+          <span>离线缓存</span>
         </Button>
 
         {/* 桌面画中画伴学悬浮窗 */}

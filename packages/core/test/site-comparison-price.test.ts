@@ -104,6 +104,29 @@ describe("formatSitePrice：各货币/周期", () => {
   });
 });
 
+describe("buildSiteComparison 的 maintenance 格", () => {
+  it("BOT_BLOCKED 行不是死链：ok=false 但 error 带前缀 → 未验证，不写“不可达”", () => {
+    const blocked = {
+      ...site(),
+      health: { ok: false, lastCheckedAt: NOW, error: "BOT_BLOCKED: 第 1 层 HTTP 403，第 2 层桌面 UA 仍 HTTP 403" },
+    };
+    const item = buildSiteComparison([{ site: blocked, favorite, price: null }], NOW)[0]!;
+    expect(item.maintenance.value).toBeNull();
+    expect(item.maintenance.verified).toBe(false);
+    expect(item.maintenance.lastCheckedAt).toBe(NOW);
+  });
+
+  it("普通巡检失败仍写已核实的“不可达”", () => {
+    const failed = {
+      ...site(),
+      health: { ok: false, lastCheckedAt: NOW, error: "HTTP 404：页面不存在或已下线" },
+    };
+    const item = buildSiteComparison([{ site: failed, favorite, price: null }], NOW)[0]!;
+    expect(item.maintenance.value).toBe("不可达");
+    expect(item.maintenance.verified).toBe(true);
+  });
+});
+
 describe("buildSiteComparison 的 price 格", () => {
   function build(entry: SitePriceEntry | null | undefined, now: number = NOW) {
     return buildSiteComparison([{ site: site(), favorite, price: entry }], now)[0]!.price;

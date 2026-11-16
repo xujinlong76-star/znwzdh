@@ -27,6 +27,7 @@
  * 不排名、不打分。
  */
 import { getFacetOptionLabel } from "./facets.ts";
+import { isBotBlockedHealthRecord } from "./probe-policy.ts";
 import type { Site } from "./types.ts";
 
 /** 对照表里的一个格子：值 + 来源 + 是否已验证 + 来源数据的核实时间（毫秒戳）。 */
@@ -240,6 +241,13 @@ function maintenanceCell(site: Site): ComparisonCell {
     // 从未巡检过：verified 只能看 lastCheckedAt，ok 此时恒为 false（NULL 折叠），
     // 绝不能据此写成“已停更”或“不可达”。
     return { value: null, source: HEALTH_SOURCE, verified: false, verifiedAt: null, lastCheckedAt: null };
+  }
+  if (isBotBlockedHealthRecord(site.health?.error)) {
+    // WAF/风控拦截（U-13）：站点在线但拒绝巡检抓取，本次没取到内容。
+    // ok=false 在这里是“拒绝我们”，不是“站点已死”——写成已核实的“不可达”
+    // 会把活站判死；按未验证处理（与 verify.ts 手动验证口径一致），
+    // lastCheckedAt 保留，供调用方知道“上次试过是在何时”。
+    return { value: null, source: HEALTH_SOURCE, verified: false, verifiedAt: null, lastCheckedAt };
   }
   return {
     value: site.health?.ok ? "可达" : "不可达",

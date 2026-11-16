@@ -68,6 +68,10 @@
     {
       "name": "health-sentinel",
       "why": "页面健康哨兵（Shannon 熵 + 19 条停放词 + 汉明距离 + Weibull 巡检计划），算法实验室「防虚假 200」面板必须与后端同一份判定，手写版只复刻 6 个关键词"
+    },
+    {
+      "name": "probe-policy",
+      "why": "探活判定唯一事实源（含 BOT_BLOCKED verdict 前缀），纯函数"
     }
   ],
   "adapter": [

@@ -122,6 +122,23 @@ describe("buildStructuredComparisonContext", () => {
     expect(ctx.text).toContain("可达（最后核实于 2026-11-10）");
   });
 
+  it("BOT_BLOCKED 行不是死链：ok=false 但 error 带前缀 → maintenance 为 null（未验证）", () => {
+    const ctx = buildStructuredComparisonContext(
+      hitA,
+      {
+        ...hitB,
+        health: {
+          ok: false,
+          lastCheckedAt: Date.parse("2026-11-09T00:00:00Z"),
+          error: "BOT_BLOCKED: 第 1 层 HTTP 403，第 2 层桌面 UA 仍 HTTP 403",
+        },
+      },
+      LABEL,
+    );
+    expect(ctx.sideB?.maintenance).toBeNull();
+    expect(ctx.text).toContain("是否还在维护：未验证");
+  });
+
   it("未收录侧为 null，文本明示未验证", () => {
     const ctx = buildStructuredComparisonContext(hitA, null, LABEL);
     expect(ctx.sideB).toBeNull();

@@ -8,7 +8,7 @@
  * 4. 协作式限时退出（run.shouldStop()）与顺延。
  */
 
-import { auditPageHealth, classifyProbeStatus } from "@navhub/core";
+import { auditPageHealth, BOT_BLOCKED_ERROR_PREFIX, classifyProbeStatus, isBotBlockedHealthRecord } from "@navhub/core";
 import type { AppContext } from "../../context.ts";
 import {
   HEALTH_FAIL_THRESHOLD,
@@ -42,15 +42,10 @@ export const DESKTOP_RETRY_HEADERS: Record<string, string> = {
 };
 
 /**
- * health_checks.error 里 bot-blocked 行的前缀：shouldBreak 靠它识别“未测准”行。
- * 前缀是写库口径的一部分，改动它要同步改 isBotBlockedHealthRecord 与测试。
+ * BOT_BLOCKED 前缀与识别函数由 @navhub/core 的 probe-policy 导出（探活判定的
+ * 唯一事实源）；这里再导出一次，只为兼容既有测试的导入路径。
  */
-export const BOT_BLOCKED_ERROR_PREFIX = "BOT_BLOCKED:";
-
-/** 该健康行是不是“站点拒绝巡检抓取”（在线但拒绝我们，不等于死链）。 */
-export function isBotBlockedHealthRecord(error: string | null | undefined): boolean {
-  return typeof error === "string" && error.startsWith(BOT_BLOCKED_ERROR_PREFIX);
-}
+export { BOT_BLOCKED_ERROR_PREFIX, isBotBlockedHealthRecord } from "@navhub/core";
 
 /**
  * 第一层状态码是否值得发第二层（桌面 UA）重试。

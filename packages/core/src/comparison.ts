@@ -6,6 +6,8 @@
  * 系统在 0 毫秒内原地解析并合成多维结构化对比看板，消解开发者跨站跳转对比的信息摩擦。
  */
 
+import { isBotBlockedHealthRecord } from "./probe-policy.ts";
+
 /**
  * 逐字段来源三态（Batch 4 Phase 2 P2-5）：
  *   measured        实测——值与站内已核实结构化事实逐字相同；
@@ -284,7 +286,7 @@ export interface StructuredComparisonSiteInput {
   description?: string | null;
   categoryId?: string | null;
   facets?: Record<string, string[]> | null;
-  health?: { ok: boolean; lastCheckedAt?: number | null } | null;
+  health?: { ok: boolean; lastCheckedAt?: number | null; error?: string | null } | null;
   updatedAt?: number | null;
 }
 
@@ -368,7 +370,7 @@ function toStructuredSide(
     platform: facetLabels(hit.facets, "platform", label),
     form: facetLabels(hit.facets, "form", label),
     maintenance:
-      lastCheckedAt == null
+      lastCheckedAt == null || isBotBlockedHealthRecord(hit.health?.error)
         ? null
         : { status: hit.health?.ok ? "可达" : "不可达", lastCheckedAt },
   };

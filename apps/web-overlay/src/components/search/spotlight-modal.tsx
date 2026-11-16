@@ -1446,7 +1446,11 @@ export function SpotlightModal({
                     const isSelected = idx + quicklinkOffset === selectedIndex
                     const site = hit.site
                     if (!site) return null
-                    const isBroken = site.status === 'broken' || (site.health && !site.health.ok)
+                    // “可能死链”只认 status === 'broken'（与 /search 结果页同口径）：
+                    // health.ok=false 不等于死链——WAF/风控拦截站（BOT_BLOCKED）与
+                    // 从未巡检站的 ok 都为 false（NULL 折叠），按 ok 标会把活站与未测站
+                    // 都打成“可能死链”。真死链由批量巡检连续失败后置 status=broken。
+                    const isBroken = site.status === 'broken'
                     const channels = Object.keys(hit.contributions)
 
                     return (

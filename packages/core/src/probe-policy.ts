@@ -49,6 +49,21 @@ export type CandidateGrade = "verified" | "blocked" | "unverified" | "suspicious
  */
 export const BOT_BLOCKED_STATUSES: readonly number[] = [401, 403, 405, 412, 418, 429];
 
+/**
+ * health_checks.error 里 bot-blocked 行的前缀（U-13 分层探活的写库口径）。
+ *
+ * 批量巡检两层都被 WAF/风控拦截时，error 以此前缀开头写 verdict（层数+状态码+
+ * “需浏览器层复核”）。它是写路径与读路径（连续失败链豁免、对照表/详情页显示）
+ * 共用的信号：改动它要同步改所有按此前缀识别的地方。定义放在这里（探活判定的
+ * 唯一事实源），不放在 api 任务文件里——core 的对照组装也要读它。
+ */
+export const BOT_BLOCKED_ERROR_PREFIX = "BOT_BLOCKED:";
+
+/** 该健康行是不是“站点拒绝巡检抓取”（在线但拒绝我们，不等于死链）。 */
+export function isBotBlockedHealthRecord(error: string | null | undefined): boolean {
+  return typeof error === "string" && error.startsWith(BOT_BLOCKED_ERROR_PREFIX);
+}
+
 /** 「页面确定不存在」的状态码。451 = 因法律原因不可用。 */
 export const CONFIRMED_GONE_STATUSES: readonly number[] = [404, 410, 451];
 

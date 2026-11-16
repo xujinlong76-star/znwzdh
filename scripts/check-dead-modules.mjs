@@ -104,7 +104,7 @@ let BASELINE_NOTES = {
   "apps/web-overlay/src/lib/p2p-stream-loader.ts":
     "keep（C 守卫测试 + 功能待接线）：test/video-super-evolution.test.ts 直接 import 并断言 getP2PStreamCoordinator 的行为；模块是 P2P 流加载协调器，播放器尚未接线（src 内无业务 import）；删除会先让测试变红，勿当普通死代码删除（2026-11-12 复核）",
   "apps/web-overlay/src/lib/video-audio-stem-separator.ts":
-    "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import；其唯一 src 引用者 video-audio-stem-mixer-dialog.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import；其唯一 src 引用者 video-audio-stem-mixer-dialog.tsx 于 2026-11-16 死模块清理第 1 批删除（2026-11-13 只删了 4 个 pane，该 dialog 当时未删，见 0722 D 线 §4.1），lib 本身仍有测试覆盖，勿当死代码删除",
   "apps/web-overlay/src/lib/video-breakpoint-debugger.ts":
     "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-debugger-stepper-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
   "apps/web-overlay/src/lib/video-live-test-runner.ts":
@@ -114,7 +114,7 @@ let BASELINE_NOTES = {
   "apps/web-overlay/src/lib/video-code-sandbox-runtime.ts":
     "keep（C 守卫测试）：test/video-evolution-v10.test.ts 直接 import VirtualFileSystem/SandboxRuntime，test/opaque-code-sandbox-guard.test.ts 直接 import 并按源码路径读取断言；其唯一 src 引用者 video-sandbox-runner-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
   "apps/web-overlay/src/lib/video-p2p-danmaku-mesh.ts":
-    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-danmaku-mesh-monitor.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-danmaku-mesh-monitor.tsx 于 2026-11-16 死模块清理第 1 批删除（2026-11-13 只删了 4 个 pane，该 dialog 当时未删，见 0722 D 线 §4.1），lib 本身仍有测试覆盖，勿当死代码删除",
   "apps/web-overlay/src/lib/video-neural-denoiser.ts":
     "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-neural-audio-controls.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
   "apps/web-overlay/src/lib/video-p2p-chunk-swarm.ts":

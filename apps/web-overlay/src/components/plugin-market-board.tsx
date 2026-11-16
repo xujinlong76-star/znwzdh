@@ -583,11 +583,12 @@ export function PluginMarketBoard({
                 </button>
               )}
             </div>
-            {kind ? <input type="hidden" name="kind" value={kind} readOnly /> : null}
+            {/* 隐藏字段只随原生表单提交带参，不可感知：按 search-results.tsx 同款做法标 aria-hidden，免 field-names 守卫误报 */}
+            {kind ? <input type="hidden" name="kind" value={kind} readOnly aria-hidden="true" /> : null}
             {sort !== DEFAULT_MARKETPLACE_SORT ? (
-              <input type="hidden" name="sort" value={sort} readOnly />
+              <input type="hidden" name="sort" value={sort} readOnly aria-hidden="true" />
             ) : null}
-            {starredOnly ? <input type="hidden" name="starred" value="1" readOnly /> : null}
+            {starredOnly ? <input type="hidden" name="starred" value="1" readOnly aria-hidden="true" /> : null}
           </form>
           {total > 0 && !loading && (
             <span className="text-xs text-muted-foreground ml-auto" role="status" aria-live="polite">

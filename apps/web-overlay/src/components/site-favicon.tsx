@@ -109,6 +109,30 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'sspai.com': 'https://sspai.com/apple-touch-icon.png',
   'pinduoduo.com': 'https://www.pinduoduo.com/favicon.png',
   'hongguoduanju.com': '/brand-icons/hongguo.jpg',
+  // 2026-11-17（进化轮第二批 2a）：48 站缺失清单里的 Simple Icons 18 站。
+  // 全部 curl 重新验证（200 + SVG 魔数 + <title> 品牌一致）后本地落盘，
+  // 与第一批同款做法。Ollama / SourceHut 为纯黑标（fill #000000）：
+  // 第一批的 Notion / Radix 同款处理即不做特殊处理（caf73de0 diff 核实：
+  // 仅普通 map 条目，无白底色块、无组件改动），此处照抄；深色模式下
+  // 黑标对比度弱是已知局限，留待深色底块统一处理轮（研究笔记 §3/§5）。
+  'rollupjs.org': '/brand-icons/rollupdotjs.svg',
+  'webpack.js.org': '/brand-icons/webpack.svg',
+  'esbuild.github.io': '/brand-icons/esbuild.svg',
+  'storybook.js.org': '/brand-icons/storybook.svg',
+  'min.io': '/brand-icons/minio.svg',
+  'helm.sh': '/brand-icons/helm.svg',
+  'pulumi.com': '/brand-icons/pulumi.svg',
+  'dribbble.com': '/brand-icons/dribbble.svg',
+  'behance.net': '/brand-icons/behance.svg',
+  'logseq.com': '/brand-icons/logseq.svg',
+  'ollama.com': '/brand-icons/ollama.svg',
+  'shopee.com': '/brand-icons/shopee.svg',
+  'infoq.cn': '/brand-icons/infoq.svg',
+  'qianwen.aliyun.com': '/brand-icons/qwen.svg',
+  'mantine.dev': '/brand-icons/mantine.svg',
+  'sourcehut.org': '/brand-icons/sourcehut.svg',
+  'coze.cn': '/brand-icons/coze.svg',
+  'lintcode.com': '/brand-icons/lintcode.svg',
   'vuejs.org': '/brand-icons/vue.svg',
   'npmjs.com': '/brand-icons/npm.svg',
   'vite.dev': '/brand-icons/vite.svg',

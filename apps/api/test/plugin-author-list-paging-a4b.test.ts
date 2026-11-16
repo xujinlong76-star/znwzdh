@@ -97,6 +97,8 @@ afterAll(async () => {
 });
 
 describe("A-4b：服务端作者分页本身可用（offset + 全量 total）", () => {
+  // 首个 inject 在冷启动 + 并行多线抢 CPU 时曾实测 53s，默认 30s 超时会把
+  // 环境慢误判成行为失败；分页行为本身与超时无关，单测放宽到 120s。
   it("作者页 GET /api/plugins/author/:key?limit=100&offset=100 返回第 101–105 条，total=105", async () => {
     const first = await app.inject({
       method: "GET",
@@ -119,7 +121,7 @@ describe("A-4b：服务端作者分页本身可用（offset + 全量 total）", 
     const merged = [...firstData.items, ...secondData.items];
     expect(merged).toHaveLength(PLUGIN_COUNT);
     expect(new Set(merged.map((item: { id: string }) => item.id)).size).toBe(PLUGIN_COUNT);
-  });
+  }, 120_000);
 
   it("作者中心 GET /api/plugins/mine?limit=100&offset=100 返回第 101–105 条，total=105", async () => {
     const first = await app.inject({
@@ -142,5 +144,5 @@ describe("A-4b：服务端作者分页本身可用（offset + 全量 total）", 
     const merged = [...firstData.items, ...secondData.items];
     expect(merged).toHaveLength(PLUGIN_COUNT);
     expect(new Set(merged.map((item: { id: string }) => item.id)).size).toBe(PLUGIN_COUNT);
-  });
+  }, 120_000);
 });

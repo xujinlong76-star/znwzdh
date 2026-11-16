@@ -33,11 +33,25 @@ test.describe('核心旅程 5：首页 DIY 排版跨组件联动', () => {
 
     await expect(deck).toHaveCount(0);
 
-    // 不只是「看着变了」：确实写进了本地存储
-    const stored = await page.evaluate(() =>
-      JSON.parse(window.localStorage.getItem('navhub_home_diy_config_v3') || '{}'),
-    );
-    expect(stored.viewMode).toBe('classic');
+    // 不只是「看着变了」：确实写进了本地存储。
+    //
+    // 注意：落盘是防抖的（HOME_DIY_DISK_WRITE_DEBOUNCE_MS = 300，见
+    // lib/modular/home-diy-storage.ts，单测已钉死「提交后内存立即变，
+    // 但 300ms 内不写盘」）。展板消失只证明内存态翻了，不能证明盘已落；
+    // 直接读盘会撞竞态窗——快机器上读到的还是旧值（CI #878 的
+    // `expect(stored.viewMode).toBe('classic')` 就是这么红的）。
+    // 用 expect.poll 等它落盘：这条断言真正要钉的是「最终落盘」，不是「立即落盘」。
+    await expect
+      .poll(
+        async () =>
+          (
+            await page.evaluate(() =>
+              JSON.parse(window.localStorage.getItem('navhub_home_diy_config_v3') || '{}'),
+            )
+          ).viewMode,
+        { timeout: 10_000 },
+      )
+      .toBe('classic');
 
     // 刷新后仍然是经典流（切换器自己也要读到共享状态）
     await page.reload();

@@ -7,20 +7,22 @@
  * 全部超过 90 天没有记录到的打开的收藏，按最久没打开排前面，每条都能
  * 一键重开 / 归档 / 删除；归档过的列在下面，可恢复。
  *
- * 口径（与 lib/resurface 一致）：「没打开」= 本机没记录到打开。另一台设备
- * 或另一个浏览器里打开的，本机看不到，所以这里可能比你实际打开的要多——
- * 文案按这个口径写，不把任何一条说成「你肯定没看过」。
+ * 口径（与 lib/resurface 一致）：登录用户按本机 + 云端合并后的记录算「没打开」
+ * （另一台设备上打开的也计入）；匿名用户仍是「没打开」= 本机没记录到打开，
+ * 另一台设备或另一个浏览器里打开的，本机看不到，所以这里可能比你实际打开的
+ * 要多——文案按登录态分流写，不把任何一条说成「你肯定没看过」。
  * 归档只保存在本机；删除是真删（走收藏 remove 的同一条路，云端也会删）。
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { useFavorites } from '@/hooks/useFavorites'
-import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
+import { useMergedVisits } from '@/lib/resurface-visits'
 import { selectStaleFavorites, type ResurfacedFavorite } from '@/lib/resurface'
 import {
   archiveItems,
@@ -35,29 +37,17 @@ import { Archive, History, Undo2 } from 'lucide-react'
 
 export default function StaleFavoritesPage() {
   const favorites = useFavorites()
-  const [visits, setVisits] = useState<RecentVisit[]>([])
-  const [visitsLoaded, setVisitsLoaded] = useState(false)
+  // 登录态（与接力卡云端同步同款判定）：只有登录用户才取云端 visits；
+  // 匿名用户不发任何云端请求，行为与接线前一致。
+  const identityReady = useIdentityReady()
+  const isLoggedIn =
+    identityReady.ready && !identityReady.isAnonymous && !!identityReady.identity
+  // 本机 + 云端合并后的最近访问（云端取不到时回落本机-only，见 lib/resurface-visits）。
+  const { visits, loaded: visitsLoaded } = useMergedVisits(isLoggedIn)
   const [archived, setArchived] = useState<ArchivedFavoriteItem[]>(() =>
     typeof window === 'undefined' ? [] : readArchivedFavorites(),
   )
   const [notice, setNotice] = useState<string | null>(null)
-
-  useEffect(() => {
-    let active = true
-    readOfflineVisits(50)
-      .then((rows) => {
-        if (active && Array.isArray(rows)) setVisits(rows)
-      })
-      .catch(() => {
-        // 最近访问读不到时只按收藏时间算旧，不阻断分拣
-      })
-      .finally(() => {
-        if (active) setVisitsLoaded(true)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
 
   const stale = useMemo(
     () => (favorites.ready && visitsLoaded ? selectStaleFavorites(favorites.items, visits, Date.now()) : []),
@@ -131,9 +121,9 @@ export default function StaleFavoritesPage() {
             好久没打开
           </h1>
           <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            超过 90 天没有在本机打开过的收藏，按最久没打开的排在前面。只按本机记录算——
-            另一台设备上打开的不计入，所以这里可能比你实际打开的要多。点开就能重开，
-            不想要的归档（可恢复）或删除。
+            {isLoggedIn
+              ? '超过 90 天没有在任何设备上打开过的收藏，按最久没打开的排在前面。按你的账号记录算，另一台设备上打开的也计入。点开就能重开，不想要的归档（可恢复）或删除。'
+              : '超过 90 天没有在本机打开过的收藏，按最久没打开的排在前面。只按本机记录算——另一台设备上打开的不计入，所以这里可能比你实际打开的要多。点开就能重开，不想要的归档（可恢复）或删除。'}
           </p>
         </div>
 
@@ -169,6 +159,7 @@ export default function StaleFavoritesPage() {
                     <ResurfaceRow
                       key={item.siteId}
                       item={item}
+                      isLoggedIn={isLoggedIn}
                       onReopen={handleReopen}
                       onArchive={handleArchive}
                       onDelete={handleDelete}

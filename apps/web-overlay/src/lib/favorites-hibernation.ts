@@ -12,13 +12,18 @@
  *
  * 数据现实（与 resurface 同一口径，见 resurface.ts 文件头）：
  *
- *   - 收藏本体只有 createdAt，没有「上次打开」；「打开」信号来自两处本机记录：
+ *   - 收藏本体只有 createdAt，没有「上次打开」；「打开」信号来自三处记录：
  *     ① lastOpenedAt（由 recordOpened 写下，调用点与 resurface 同口径：
  *     /favorites 主列表卡片、重温 / 待读 / ⌘K / 搜索入口；另一台设备上的
  *     打开不记）；② 离线最近访问（lib/offline-recent，
- *     最多 50 条，只在 ⌘K 里记过）。
- *   - 所以「冬眠」永远是「按本机记录算，超过阈值没记录到打开」，不是
- *     「用户真的没看过」。文案必须按这个口径写，绝不能说「你 N 天没看过它」。
+ *     最多 50 条，只在 ⌘K 里记过）；③ 云端 visits（GET /api/me/visits，
+ *     调用方在 lib/resurface-visits 里与本机合并后传入）——**只对登录用户**，
+ *     匿名用户仍只有 ①②。
+ *   - 所以「冬眠」的口径按登录态分流：登录用户是「按本机 + 云端记录算，
+ *     超过阈值没记录到打开」；匿名用户永远是「按本机记录算，超过阈值没记录到
+ *     打开」，不是「用户真的没看过」。文案必须按这个口径写（见
+ *     describeHibernation 的 isLoggedIn 参数），绝不能说「你 N 天没看过它」，
+ *     也绝不能向匿名用户声称跨设备准确。
  *   - 锚点直接复用 resurface 的 resolveLastOpened / daysSinceOpen，不另起一套
  *     算法——两套算法分叉后，同一条收藏会在重温页和冬眠区算出两个天数。
  *
@@ -279,10 +284,12 @@ export function hibernationBadgeLabel(
 }
 
 /**
- * 一条收藏的冬眠说明（诚实口径，与 resurface.describeStale 同款）：
+ * 一条收藏的冬眠说明（诚实口径，与 resurface.describeStale 同款，按登录态分流）：
  * 手动 → 「你手动把它冬眠了，打开一次就能唤醒」；
- * 自动 → 「收藏 N 天了，本机没记录到打开」；没冬眠 → 空串。
- * 都不声称用户真的没看过它。
+ * 自动 → 匿名：「收藏 N 天了，本机没记录到打开」/「上次打开是 N 天前（按本机记录算），已冬眠」；
+ * 登录：「收藏 N 天了，没记录到打开」/「上次打开是 N 天前，已冬眠」（本机 + 云端口径）；
+ * 没冬眠 → 空串。
+ * 都不声称用户真的没看过它。isLoggedIn 默认 false：旧调用方不传即匿名口径，行为不变。
  */
 export function describeHibernation(
   fav: HibernatableFavoriteLike,
@@ -290,14 +297,15 @@ export function describeHibernation(
   settings: HibernationSettings,
   manual: Set<string>,
   now: number,
+  isLoggedIn = false,
 ): string {
   const reason = hibernationReason(fav, visitsById, settings, manual, now)
   if (reason === 'manual') return '你手动把它冬眠了，打开一次就能唤醒'
   if (reason === 'auto') {
     const days = daysSinceOpen(fav, visitsById, now)
     const last = resolveLastOpened(fav, visitsById, now)
-    if (last === null) return `收藏 ${days} 天了，本机没记录到打开`
-    return `上次打开是 ${days} 天前（按本机记录算），已冬眠`
+    if (last === null) return isLoggedIn ? `收藏 ${days} 天了，没记录到打开` : `收藏 ${days} 天了，本机没记录到打开`
+    return isLoggedIn ? `上次打开是 ${days} 天前，已冬眠` : `上次打开是 ${days} 天前（按本机记录算），已冬眠`
   }
   return ''
 }

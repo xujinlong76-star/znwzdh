@@ -91,7 +91,7 @@ import {
   type SaveSearchMode,
   type SemanticSaveStatus,
 } from '@/lib/favorites-semantic-search'
-import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
+import { useMergedVisits } from '@/lib/resurface-visits'
 import { describeResurfaced, daysSinceOpen, latestVisitsById, selectStaleFavorites, staleBadgeLabel } from '@/lib/resurface'
 import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/vault'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
@@ -180,6 +180,10 @@ export default function FavoritesPage() {
   const favorites = useFavorites()
   // 身份就绪（N1）：不再在挂载时读一次 localStorage，登录/合并/退出都会自动重取
   const identityReady = useIdentityReady()
+  // 登录态（与接力卡云端同步同款判定）：只有登录用户才取云端 visits；
+  // 匿名用户不发任何云端请求，行为与接线前一致。
+  const isLoggedIn =
+    identityReady.ready && !identityReady.isAnonymous && !!identityReady.identity
   const [syncNote, setSyncNote] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<'success' | 'error' | 'info'>('info')
   const [showPluginExport, setShowPluginExport] = useState(false)
@@ -267,22 +271,10 @@ export default function FavoritesPage() {
       window.removeEventListener('storage', refresh)
     }
   }, [])
-  // 「好久没打开」的徽标与横幅：只用本机离线最近访问算旧（见 lib/resurface），
-  // 读不到时按收藏时间算，不阻断收藏列表本身。
-  const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
-  useEffect(() => {
-    let active = true
-    readOfflineVisits(50)
-      .then((rows) => {
-        if (active && Array.isArray(rows)) setRecentVisits(rows)
-      })
-      .catch(() => {
-        // 最近访问读不到时徽标只按收藏时间算，列表不受影响
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  // 「好久没打开」的徽标与横幅：本机离线最近访问 + 登录用户的云端 visits
+  // 合并后算旧（见 lib/resurface-visits；云端取不到时回落本机-only）；
+  // 匿名用户只按本机算。读不到时按收藏时间算，不阻断收藏列表本身。
+  const { visits: recentVisits } = useMergedVisits(isLoggedIn)
   const staleById = useMemo(() => {
     if (favorites.items.length === 0) return new Map<string, ReturnType<typeof selectStaleFavorites>[number]>()
     return new Map(selectStaleFavorites(favorites.items, recentVisits, Date.now()).map((s) => [s.siteId, s]))
@@ -304,7 +296,7 @@ export default function FavoritesPage() {
       map.set(f.siteId, {
         reason,
         days: daysSinceOpen(f, visitsById, now),
-        description: describeHibernation(f, visitsById, hibernationSettings, manual, now),
+        description: describeHibernation(f, visitsById, hibernationSettings, manual, now, isLoggedIn),
       })
     }
     return map
@@ -1512,7 +1504,9 @@ export default function FavoritesPage() {
         {staleById.size > 0 && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400 flex flex-wrap items-center gap-2">
             <span className="flex-1 min-w-0">
-              有 {staleById.size} 个收藏超过 90 天没打开了（按本机记录算），今天翻一个？
+              {isLoggedIn
+                ? `有 ${staleById.size} 个收藏超过 90 天没打开了（按你的账号记录算），今天翻一个？`
+                : `有 ${staleById.size} 个收藏超过 90 天没打开了（按本机记录算），今天翻一个？`}
             </span>
             <Link href="/favorites/stale" className="font-medium underline underline-offset-2 hover:text-amber-800 dark:hover:text-amber-300">
               去重温
@@ -2302,7 +2296,7 @@ export default function FavoritesPage() {
                           if (!stale) return null
                           return (
                             <span
-                              title={describeResurfaced(stale)}
+                              title={describeResurfaced(stale, isLoggedIn)}
                               className="ml-2 inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 font-sans text-[11px] font-medium text-amber-700 dark:text-amber-400"
                             >
                               {staleBadgeLabel(stale.daysSinceOpen)}

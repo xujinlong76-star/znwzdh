@@ -2,18 +2,24 @@
  * 「今日重温」——把被遗忘的收藏带回来。
  *
  * 数据现实（2026-11-12 审阅结论，2026-11-15 扩展主列表卡片点击也记打开，
- * 写死在这里免得后人误读）：
+ * 2026-11-16 接云端 visits：登录用户不再是本机-only）：
  *
  *   - 收藏本体（LocalFavorite）只有 `createdAt`（收藏时间），没有「上次打开」；
- *     「打开」信号来自两处本机记录：① `lastOpenedAt`（由 useFavorites.recordOpened
+ *     「打开」信号来自三处记录：① `lastOpenedAt`（由 useFavorites.recordOpened
  *     写下，纯本机、不进云端同步；调用点：/favorites 主列表卡片、⌘K / 搜索、
  *     重温 / 久未打开入口、/brief）；
- *     ② 离线最近访问（lib/offline-recent，最多 50 条，且只在 ⌘K 里记过）。
- *   - 所以「没打开」永远是「本机没记录到打开」，不是「用户真的没打开」——
- *     另一台设备或另一个浏览器里打开的，本机是看不到的。文案必须按这个口径写
- *     （见 describeStale），绝不能把一条收藏说成「你 200 天没看过它」。
+ *     ② 离线最近访问（lib/offline-recent，最多 50 条，且只在 ⌘K 里记过）；
+ *     ③ 云端 visits（GET /api/me/visits，同一身份的 click 事件交还，调用方
+ *     在 lib/resurface-visits 里与本机合并后传入，最多 50 条）——**只对登录
+ *     用户**：匿名用户仍只有 ①②，另一台设备上打开的依然看不到。
+ *   - 所以「没打开」的口径按登录态分流：登录用户是「本机 + 云端都没记录到
+ *     打开」（跨设备真实口径）；匿名用户永远是「本机没记录到打开」，不是
+ *     「用户真的没打开」——文案必须按这个口径写（见 describeStale 的
+ *     isLoggedIn 参数），绝不能向匿名用户声称跨设备准确，也绝不能把一条
+ *     收藏说成「你 200 天没看过它」。
  *   - /brief 是服务端渲染的中枢缓存页，看不到本机收藏：重温只能是客户端岛
- *     （BriefWatch 的同款做法），绝不能把用户收藏塞进 SSR。
+ *     （BriefWatch 的同款做法），绝不能把用户收藏塞进 SSR；云端取数同样
+ *     在岛挂载后现算。
  *
  * 本文件只放纯函数：`now` 一律由调用方传入（可测、不依赖真实时钟）。
  */
@@ -118,14 +124,21 @@ export function staleBadgeLabel(days: number): string {
 }
 
 /**
- * 一条收藏的「旧」说明：诚实口径。
- * 从未记录到打开 → 只说「收藏 N 天了，还没从这里重温过」；
+ * 一条收藏的「旧」说明：诚实口径，按登录态分流。
+ * 从未记录到打开 → 匿名：「收藏 N 天了，还没从这里重温过」（本机口径）；
+ * 登录：「收藏 N 天了，还没重温过」（本机 + 云端都没记录到，跨设备口径）；
  * 打开过 → 「上次打开是 N 天前」。都不声称用户真的没看过。
+ * isLoggedIn 默认 false：旧调用方不传即匿名口径，行为不变。
  */
-export function describeStale(fav: ResurfaceFavoriteLike, visitsById: Map<string, number>, now: number): string {
+export function describeStale(
+  fav: ResurfaceFavoriteLike,
+  visitsById: Map<string, number>,
+  now: number,
+  isLoggedIn = false,
+): string {
   const days = daysSinceOpen(fav, visitsById, now)
   const last = resolveLastOpened(fav, visitsById, now)
-  if (last === null) return `收藏 ${days} 天了，还没从这里重温过`
+  if (last === null) return isLoggedIn ? `收藏 ${days} 天了，还没重温过` : `收藏 ${days} 天了，还没从这里重温过`
   return `上次打开是 ${days} 天前`
 }
 
@@ -133,9 +146,11 @@ export function describeStale(fav: ResurfaceFavoriteLike, visitsById: Map<string
  * 已选出的条目（ResurfacedFavorite 自带解析好的天数与上次打开）直接取文案：
  * 不许在渲染层拿空访问表重算——那会把「靠最近访问才不算太旧」的条目
  * 又算回「按收藏时间算」的错误天数。
+ * isLoggedIn 默认 false（匿名口径）；登录用户用跨设备口径，见 describeStale。
  */
-export function describeResurfaced(item: ResurfacedFavorite): string {
-  if (item.lastOpenedAtResolved === null) return `收藏 ${item.daysSinceOpen} 天了，还没从这里重温过`
+export function describeResurfaced(item: ResurfacedFavorite, isLoggedIn = false): string {
+  if (item.lastOpenedAtResolved === null)
+    return isLoggedIn ? `收藏 ${item.daysSinceOpen} 天了，还没重温过` : `收藏 ${item.daysSinceOpen} 天了，还没从这里重温过`
   return `上次打开是 ${item.daysSinceOpen} 天前`
 }
 

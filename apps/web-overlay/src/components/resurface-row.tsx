@@ -16,6 +16,11 @@ import { SiteFavicon } from '@/components/site-favicon'
 
 export interface ResurfaceRowProps {
   item: ResurfacedFavorite
+  /**
+   * 登录态（文案分流用，默认 false = 匿名口径）：登录用户按本机 + 云端合并
+   * 后的记录算旧，文案用跨设备口径；匿名用户只按本机记录算，绝不声称跨设备准确。
+   */
+  isLoggedIn?: boolean
   /** 点标题重开时触发：调用方记一次打开时间（recordOpened），再放行默认跳转 */
   onReopen: (siteId: string) => void
   /** 归档：调用方把条目移进归档柜并从活跃收藏移除 */
@@ -24,7 +29,7 @@ export interface ResurfaceRowProps {
   onDelete?: (item: ResurfacedFavorite) => void
 }
 
-export function ResurfaceRow({ item, onReopen, onArchive, onDelete }: ResurfaceRowProps) {
+export function ResurfaceRow({ item, isLoggedIn = false, onReopen, onArchive, onDelete }: ResurfaceRowProps) {
   return (
     <li className="flex items-start gap-3 rounded-xl border bg-card p-3">
       <div className="h-10 w-10 shrink-0 rounded-lg border border-border/50 bg-muted/50 p-1.5">
@@ -43,11 +48,11 @@ export function ResurfaceRow({ item, onReopen, onArchive, onDelete }: ResurfaceR
         {item.description ? (
           <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{item.description}</p>
         ) : null}
-        <p className="mt-1 text-xs text-muted-foreground" title={describeResurfaced(item)}>
+        <p className="mt-1 text-xs text-muted-foreground" title={describeResurfaced(item, isLoggedIn)}>
           <span className="mr-1.5 inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
             {staleBadgeLabel(item.daysSinceOpen)}
           </span>
-          {describeResurfaced(item)}
+          {describeResurfaced(item, isLoggedIn)}
         </p>
       </div>
       <div className="flex shrink-0 flex-col gap-1 sm:flex-row">

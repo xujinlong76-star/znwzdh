@@ -98,8 +98,20 @@ describe("PluginMarketBoard：状态声明的顺序", () => {
   })
 
   it("防抖用的 qInput 与生效值 q 都保持独立状态", () => {
-    expect(src).toContain("const [qInput, setQInput] = useState('')")
-    expect(src).toContain("setQ(qInput.trim())")
+    // 2026-11-17 按新行为改写（E2E 2/2 回归）：搜索框改为非受控输入，
+    // qInput 改由服务端传入的 initialQ 初始化；回车读 DOM 实时值而非
+    // state——水合前敲的字还没进 state，读 state 会是空串，地址栏迟迟没有 ?q=。
+    expect(src).toContain("const [qInput, setQInput] = useState(initialQ)")
+    expect(src).toContain("setQ((searchInputRef.current?.value ?? qInput).trim())")
     expect(src).toContain("}, 150)")
+  })
+
+  it("搜索框是非受控输入 + 原生 form 兜底，水合前回车不丢", () => {
+    // 2026-11-17（E2E 2/2 回归）：受控输入在水合时会把水合前敲的字按
+    // state（''）抹掉，回车也因处理器尚未挂载而丢失。非受控输入的 DOM 值
+    // 水合不碰；原生 form 让水合前的回车直接提交到 /marketplace?q=…。
+    expect(src).toContain("defaultValue={initialQ}")
+    expect(src).toContain('action="/marketplace"')
+    expect(src).toContain('method="get"')
   })
 })

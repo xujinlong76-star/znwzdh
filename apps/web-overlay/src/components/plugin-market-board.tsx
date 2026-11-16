@@ -113,6 +113,9 @@ export interface PluginMarketBoardProps {
   /** 服务端取的默认视图主列表；null = 服务端没取到，挂载后由既有 effect 客户端取数 */
   initialItems: HubPluginItem[] | null
   initialTotal: number
+  /** 服务端从地址栏解析出的初始搜索词：SSR 首帧即写进搜索框，禁用 JS
+   * 也能看到当前筛选；同时是非受控输入的 defaultValue，避免水合前后不一致 */
+  initialQ?: string
   /** 无筛选时的精选与三榜（服务端预取；null = 未取） */
   initialFeatured: HubPluginItem[] | null
   initialRankings: {
@@ -127,6 +130,7 @@ export function PluginMarketBoard({
   initialTotal,
   initialFeatured,
   initialRankings,
+  initialQ = '',
 }: PluginMarketBoardProps) {
   const identity = useMemo(() => getIdentity(), [])
   const [items, setItems] = useState<HubPluginItem[]>(initialItems ?? [])
@@ -140,11 +144,20 @@ export function PluginMarketBoard({
   // 星标筛选（F-2）：只看调用方已星标的插件，走 /api/plugins?starred=true，
   // 与地址栏 ?starred=1 双向同步；无身份时服务端返回空页，不退回全量。
   const [starredOnly, setStarredOnly] = useState(false)
-  const [qInput, setQInput] = useState('')
+  const [qInput, setQInput] = useState(initialQ)
+  // 搜索框是非受控输入（defaultValue + ref）：受控输入在水合时会把水合前
+  // 用户已敲进框里的文字按 state（''）抹掉，回车也因处理器尚未挂载而丢失，
+  // 导致「输入了、回车了，地址栏却没有 ?q=」。非受控输入的水合不碰 DOM 值，
+  // 程序化改值（清空/标签/专题/地址栏同步）统一走 setSearchInput 写回 DOM。
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const setSearchInput = useCallback((value: string) => {
+    setQInput(value)
+    if (searchInputRef.current) searchInputRef.current.value = value
+  }, [])
   // 两份查询串：qInput 跟着输入法即时走，q 是 150ms 防抖后的生效值。
   // 声明顺序很关键——activeTopicId 会立刻读 q，把 q 放到后面就是 TDZ
   // （ReferenceError: Cannot access 'q' before initialization，整页被 error boundary 接走）。
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(initialQ)
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -182,19 +195,31 @@ export function PluginMarketBoard({
   // 统一搜索会深链到 /marketplace?q=...，首次进入必须先从地址栏恢复筛选；
   // 监听 popstate 让浏览器前进/后退也能回到同一组条件。
   useEffect(() => {
-    const syncFromUrl = () => {
+    const syncFromUrl = (adoptDomValue: boolean) => {
       const parsed = parseMarketplaceFilters(window.location.search)
+      // 先读 DOM 再覆盖：水合前用户敲的字还留在框里，setSearchInput 会按
+      // 地址栏把它覆盖掉，读晚了就再也拿不回来（实测：读在覆盖后恒为 ''）。
+      const domValue = adoptDomValue ? (searchInputRef.current?.value.trim() ?? '') : ''
       setKind(parsed.kind)
       setQ(parsed.q)
-      setQInput(parsed.q)
+      setSearchInput(parsed.q)
       setSort(parsed.sort)
       setStarredOnly(parsed.starred)
+      // 水合前用户已敲进框里的文字不会进 state（处理器尚未挂载），但非受控
+      // 输入的 DOM 值还留着：首次挂载认领它（用户最新意图优先于地址栏），
+      // 否则水合一完成文字就被地址栏同步抹掉。popstate 不认领——后退/前进
+      // 必须回到地址栏那组条件，框里残留的旧文字不能反客为主。
+      if (domValue && domValue !== parsed.q) {
+        setSearchInput(domValue)
+        setQ(domValue)
+      }
     }
-    syncFromUrl()
+    syncFromUrl(true)
     setFiltersReady(true)
-    window.addEventListener('popstate', syncFromUrl)
-    return () => window.removeEventListener('popstate', syncFromUrl)
-  }, [])
+    const onPopState = () => syncFromUrl(false)
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [setSearchInput])
 
   // 筛选变化只改写地址栏（replaceState），避免每次输入都触发一次服务端导航；
   // 刷新/复制链接后仍能还原条件。默认排序不落参数，保持 /marketplace 干净。
@@ -263,15 +288,15 @@ export function PluginMarketBoard({
   const resetFilters = useCallback(() => {
     setKind('')
     setQ('')
-    setQInput('')
+    setSearchInput('')
     setSort(DEFAULT_MARKETPLACE_SORT)
     setStarredOnly(false)
-  }, [])
+  }, [setSearchInput])
 
   const clearSearch = useCallback(() => {
     setQ('')
-    setQInput('')
-  }, [])
+    setSearchInput('')
+  }, [setSearchInput])
 
   const patchItem = useCallback((updated: HubPluginItem) => {
     setItems((prev) => prev.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)))
@@ -336,22 +361,22 @@ export function PluginMarketBoard({
     if (topic.id === 'all') {
       setKind('')
       setQ('')
-      setQInput('')
+      setSearchInput('')
       setSort('popular')
     } else if (topic.id === 'trending') {
       setKind('')
       setQ('')
-      setQInput('')
+      setSearchInput('')
       setSort('trending')
     } else {
       if ('kind' in topic && topic.kind) setKind(topic.kind)
       else setKind('')
       if ('q' in topic && topic.q) {
         setQ(topic.q)
-        setQInput(topic.q)
+        setSearchInput(topic.q)
       } else {
         setQ('')
-        setQInput('')
+        setSearchInput('')
       }
       setSort('sort' in topic && typeof topic.sort === 'string' ? (topic.sort as MarketplaceSort) : DEFAULT_MARKETPLACE_SORT)
     }
@@ -505,40 +530,61 @@ export function PluginMarketBoard({
             <Star className="w-3.5 h-3.5" />
             已星标
           </button>
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              name="q"
-              aria-label="搜索插件"
-              value={qInput}
-              onChange={(e) => setQInput(e.target.value)}
-              // 去掉显式「搜索」按钮后，回车必须能立刻提交：直接跳过 150ms 防抖，
-              // 与键盘/读屏用户按下「搜索」的语义等价（enterKeyHint 已声明 search）。
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  setQ(qInput.trim())
-                }
-              }}
-              placeholder="搜索名称、描述、!前缀、#标签…"
-              enterKeyHint="search"
-              className="h-8 w-full rounded-md border border-border-strong bg-background pl-8 pr-7 text-base sm:text-sm transition-colors focus:border-primary"
-            />
-            {qInput && (
-              <button
-                type="button"
-                aria-label="清除输入"
-                onClick={() => {
-                  setQInput('')
-                  setQ('')
+          {/* 搜索框包一层原生 form：水合前回车也能原生提交到 /marketplace?q=…
+              （与 /search 的 form 同款渐进增强），水合后 React 接管走客户端
+              筛选。display:contents 让 form 不产生盒子，布局与原来一致。
+              隐藏域把当前 kind/sort/starred 一并带上，原生提交不丢筛选。 */}
+          <form
+            action="/marketplace"
+            method="get"
+            className="contents"
+            onSubmit={(e) => {
+              e.preventDefault()
+              setQ((searchInputRef.current?.value ?? qInput).trim())
+            }}
+          >
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                name="q"
+                aria-label="搜索插件"
+                ref={searchInputRef}
+                defaultValue={initialQ}
+                onChange={(e) => setQInput(e.target.value)}
+                // 去掉显式「搜索」按钮后，回车必须能立刻提交：直接跳过 150ms 防抖，
+                // 与键盘/读屏用户按下「搜索」的语义等价（enterKeyHint 已声明 search）。
+                // 读 DOM 实时值而不是 state：水合前敲的字还没进 state，读 state 会是空串。
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    setQ((searchInputRef.current?.value ?? qInput).trim())
+                  }
                 }}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+                placeholder="搜索名称、描述、!前缀、#标签…"
+                enterKeyHint="search"
+                className="h-8 w-full rounded-md border border-border-strong bg-background pl-8 pr-7 text-base sm:text-sm transition-colors focus:border-primary"
+              />
+              {qInput && (
+                <button
+                  type="button"
+                  aria-label="清除输入"
+                  onClick={() => {
+                    setSearchInput('')
+                    setQ('')
+                  }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {kind ? <input type="hidden" name="kind" value={kind} readOnly /> : null}
+            {sort !== DEFAULT_MARKETPLACE_SORT ? (
+              <input type="hidden" name="sort" value={sort} readOnly />
+            ) : null}
+            {starredOnly ? <input type="hidden" name="starred" value="1" readOnly /> : null}
+          </form>
           {total > 0 && !loading && (
             <span className="text-xs text-muted-foreground ml-auto" role="status" aria-live="polite">
               共 {total} 个插件
@@ -561,10 +607,10 @@ export function PluginMarketBoard({
                 onClick={() => {
                   if (isSelected) {
                     setQ('')
-                    setQInput('')
+                    setSearchInput('')
                   } else {
                     setQ(tag)
-                    setQInput(tag)
+                    setSearchInput(tag)
                   }
                 }}
                 className={`px-2 py-0.5 rounded-md text-[11px] transition-all ${

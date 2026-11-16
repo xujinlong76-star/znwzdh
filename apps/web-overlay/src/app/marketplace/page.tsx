@@ -195,6 +195,7 @@ export default async function MarketplacePage({
           initialTotal={list?.total ?? 0}
           initialFeatured={featuredRes ? featuredRes.items : null}
           initialRankings={rankings}
+          initialQ={q}
         />
       </div>
       <Footer />

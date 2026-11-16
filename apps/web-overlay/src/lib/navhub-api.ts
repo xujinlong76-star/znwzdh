@@ -1952,12 +1952,27 @@ export interface HubPluginItem {
   myReview?: HubPluginReviewItem | null
 }
 
+/** 作者中心全量聚合（/api/plugins/mine 一次 SQL 算全，不限前 100 个） */
+export interface HubMyPluginStats {
+  total: number
+  pending: number
+  published: number
+  rejected: number
+  /** 除 pending/published/rejected 外的全部状态（delisted/quarantined 等） */
+  other: number
+  installs: number
+  stars: number
+  remixes: number
+}
+
 export interface HubPluginsResponse {
   items: HubPluginItem[]
   total: number
   pending?: number
   limit: number
   offset: number
+  /** 仅 /mine 返回：全量聚合；缺失时调用方回落到当页求和 */
+  stats?: HubMyPluginStats
 }
 
 /** 已装插件条目：形状直接取生成契约（GET /api/plugins/installed） */

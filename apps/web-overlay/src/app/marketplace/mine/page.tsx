@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
-import { fetchMyPlugins, type HubPluginItem } from '@/lib/navhub-api'
+import { fetchMyPlugins, type HubMyPluginStats, type HubPluginItem } from '@/lib/navhub-api'
 import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import { getIdentity } from '@/lib/identity'
 import {
@@ -58,6 +58,8 @@ export default function MyPluginsPage() {
   const identity = useMemo(() => getIdentity(), [])
   const [items, setItems] = useState<HubPluginItem[]>([])
   const [total, setTotal] = useState(0)
+  // 服务端全量聚合（/mine 的 stats）：取不到时（降级回落）才按当页 items 求和
+  const [stats, setStats] = useState<HubMyPluginStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
@@ -72,6 +74,7 @@ export default function MyPluginsPage() {
     )
     setItems(res.items)
     setTotal(res.total)
+    setStats(res.stats ?? null)
     setLoading(false)
   }, [identity])
 
@@ -87,8 +90,14 @@ export default function MyPluginsPage() {
       else if (item.status === 'rejected') base.rejected++
       else base.other++
     }
-    return base
-  }, [items])
+    // 服务端 stats 是全量聚合（不限前 100 个）；逐字段回落，当页求和只作降级兜底
+    return {
+      pending: stats?.pending ?? base.pending,
+      published: stats?.published ?? base.published,
+      rejected: stats?.rejected ?? base.rejected,
+      other: stats?.other ?? base.other,
+    }
+  }, [items, stats])
 
   const metrics = useMemo(() => {
     let installs = 0
@@ -99,8 +108,12 @@ export default function MyPluginsPage() {
       stars += item.starCount || 0
       remixes += item.remixCount || 0
     }
-    return { installs, stars, remixes }
-  }, [items])
+    return {
+      installs: stats?.installs ?? installs,
+      stars: stats?.stars ?? stars,
+      remixes: stats?.remixes ?? remixes,
+    }
+  }, [items, stats])
 
   return (
     <Container as="main" id="main-content">
@@ -173,9 +186,9 @@ export default function MyPluginsPage() {
                 <span>上架成功率</span>
               </div>
               <div className="text-2xl font-bold font-mono text-foreground pt-0.5">
-                {items.length > 0 ? `${Math.round((counts.published / items.length) * 100)}%` : '0%'}
+                {total > 0 ? `${Math.round((counts.published / total) * 100)}%` : '0%'}
               </div>
-              <p className="text-[10px] text-muted-foreground">{counts.published} / {items.length} 审核通过</p>
+              <p className="text-[10px] text-muted-foreground">{counts.published} / {total} 审核通过</p>
             </div>
           </div>
         )}

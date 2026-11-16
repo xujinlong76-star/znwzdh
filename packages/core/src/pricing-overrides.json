@@ -674,6 +674,11 @@
   "evidence": "题库免费 + 会员付费档",
   "title": "LeetCode国际版"
  },
+ "liaoxuefeng.com": {
+  "pricing": "free",
+  "evidence": "教程内容免费开放阅读",
+  "title": "廖雪峰教程"
+ },
  "dribbble.com": {
   "pricing": "freemium",
   "evidence": "社区免费 + Pro 付费档",
@@ -858,6 +863,11 @@
   "pricing": "freemium",
   "evidence": "协作平台免费层 + 付费档",
   "title": "飞书"
+ },
+ "freecodecamp.org": {
+  "pricing": "free",
+  "evidence": "官网标语 Learn to Code for Free，免费编程学习平台",
+  "title": "freeCodeCamp"
  },
  "kdocs.cn": {
   "pricing": "freemium",

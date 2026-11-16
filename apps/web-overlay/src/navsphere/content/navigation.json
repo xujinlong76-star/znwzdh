@@ -3144,6 +3144,30 @@
                 "编程",
                 "交互学习"
               ]
+            },
+            {
+              "id": "nav-f2524c211cef",
+              "title": "freeCodeCamp",
+              "href": "https://www.freecodecamp.org",
+              "description": "免费在线编程学习平台，交互式课程与实战项目",
+              "icon": "https://www.freecodecamp.org/icons/icon-96x96.png",
+              "enabled": true,
+              "tags": [
+                "编程",
+                "交互学习"
+              ]
+            },
+            {
+              "id": "nav-1910b08f0746",
+              "title": "廖雪峰教程",
+              "href": "https://www.liaoxuefeng.com",
+              "description": "中文编程入门教程，覆盖 Python、Java、JavaScript 等主流语言",
+              "icon": "https://www.liaoxuefeng.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "入门",
+                "教程"
+              ]
             }
           ]
         },

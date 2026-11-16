@@ -4,12 +4,13 @@
  * 锁住三件事：
  *   1. 灌入判定是纯函数、可枚举：0 = 空、(0, 基线) = 低于基线、≥ 基线 = 已灌入。
  *   2. 基线数字不是拍脑袋的：每次跑测试都重数一遍仓库事实源——
- *      navigation.json（340 站 / 48 二级 / 14 一级）与 videos.json（2265 条）。
+ *      navigation.json（342 站 / 48 二级 / 14 一级）与 videos.json（2265 条）。
  *      仓库扩容时这里会先红，提醒人同步改基线，而不是页面悄悄拿旧数比较。
  *      2026-11-15 T5 元宝收录：新增「AI 搜索」二级与元宝搜索一站。
  *      2026-11-15 卸载合集：补 github.com/trending 一站，基线 334→335。
  *      2026-11-16 进化第 89 轮 B 线：补齐「AI 搜索知识」二级 5 站，基线 335→340。
- *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 340/2265 的
+ *      2026-11-16 进化第 92 轮 D 线：补站「编程学习」二级 2 站，基线 340→342。
+ *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 342/2265 的
  *      字面量（基线只能来自 lib 常量），两个计数端点与三个管理入口必须在位，
  *      冷备导出必须走带 token 的 hubGet（普通 <a href> 带不上 admin token）。
  */
@@ -88,7 +89,7 @@ describe('灌入判定 seedStatus', () => {
 })
 
 describe('基线数字钉住仓库事实源', () => {
-  it('站点基线 = navigation.json 实测（14 一级 / 48 二级 / 340 站）', () => {
+  it('站点基线 = navigation.json 实测（14 一级 / 48 二级 / 342 站）', () => {
     const nav = overlayJson('src/navsphere/content/navigation.json') as {
       navigationItems: Array<{ subCategories?: unknown[] }>
     }
@@ -99,8 +100,8 @@ describe('基线数字钉住仓库事实源', () => {
     )
     expect(nav.navigationItems.length).toBe(14)
     expect(subs).toBe(48)
-    expect(sites).toBe(340)
-    expect(BASELINE_SITES).toBe(340)
+    expect(sites).toBe(342)
+    expect(BASELINE_SITES).toBe(342)
   })
 
   it('视频基线 = videos.json 实测 2265 条', () => {
@@ -135,9 +136,9 @@ describe('数据管理页：结构与端点契约', () => {
   it('两个计数都走 live 端点（总览 + 视频），不是写死数', () => {
     expect(PAGE).toContain("hubGet<DashboardOverview>('/api/admin/dashboard/overview')")
     expect(PAGE).toContain("hubGet<VideosSummary>('/api/videos?limit=1')")
-    // 基线只能来自 lib 常量：页面代码里出现 340/2265 字面量就是在展示假数
+    // 基线只能来自 lib 常量：页面代码里出现 342/2265 字面量就是在展示假数
     // （注释不算：页头注释要写明出处，见 CODE_ONLY 的说明）
-    expect(CODE_ONLY).not.toContain('340')
+    expect(CODE_ONLY).not.toContain('342')
     expect(CODE_ONLY).not.toContain('2265')
     expect(PAGE).toContain('BASELINE_SITES')
     expect(PAGE).toContain('BASELINE_VIDEOS')

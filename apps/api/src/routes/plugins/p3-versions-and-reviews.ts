@@ -192,6 +192,15 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
         return badRequest(reply, "缺少用户身份标识");
       }
 
+      // 写面门禁（A-1b）：与读面门禁同口径，非 published 视作不存在，404 优先于 403。
+      // 放在评分校验之前：资源未上架时不再继续校验请求体。存储层 createPluginReview
+      // 里有同一道门禁作纵深（覆盖 /api/me/import 的评价重放等非路由写入口）。
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+      if (plugin.status !== "published") {
+        return notFound(reply, `插件未上架或不存在: ${slug}`);
+      }
+
       const rating = Number(body.rating);
       if (isNaN(rating) || rating < 1 || rating > 5) {
         return badRequest(reply, "评分必须为 1 到 5 之间的整数");

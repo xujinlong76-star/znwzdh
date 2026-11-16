@@ -1676,6 +1676,16 @@ export async function createPluginReview(
   const who = identity.trim().slice(0, 120);
   if (!who) throw new Error("必须提供有效用户身份才能提交评价");
 
+  // 写面门禁（A-1b）：只有已上架（published）插件接受新评价提交（含更新旧评价，
+  // createPluginReview 是 upsert）。下架/待审/驳回等非 published 状态一律拒绝，
+  // 与读面门禁（详情/相似/徽章：非 published 视作不存在）同口径；与安装门禁
+  // （installPlugin：非 published 拒装）同为无例外口径，作者/管理员也不放宽。
+  // 放在安装门禁之前：未上架插件的未安装用户先吃「未上架」而非「未安装」。
+  // 另一写入口（/api/me/import 的评价重放）同走此处：未上架插件的评价只跳过、不恢复。
+  if (plugin.status !== "published") {
+    throw new Error(`插件未上架（${plugin.status}），暂不接受新评价`);
+  }
+
   // 门禁：用户必须处于活跃安装状态才能打分
   const install = await getPluginInstall(repo, plugin.id, who);
   if (!install || install.removedAt !== null) {

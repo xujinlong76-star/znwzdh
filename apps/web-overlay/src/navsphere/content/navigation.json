@@ -3162,7 +3162,7 @@
               "title": "廖雪峰教程",
               "href": "https://www.liaoxuefeng.com",
               "description": "中文编程入门教程，覆盖 Python、Java、JavaScript 等主流语言",
-              "icon": "https://www.liaoxuefeng.com/favicon.ico",
+              "icon": "https://liaoxuefeng.com/favicon.ico",
               "enabled": true,
               "tags": [
                 "入门",

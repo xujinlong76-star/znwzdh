@@ -131,8 +131,6 @@ export async function runWasmSandbox(
         vfs.writeFile(`db_${tblName}.schema`, stmt)
         outputs.push(`Query OK: Table '${tblName}' created successfully.`)
       } else if (/^INSERT\s+INTO/i.test(stmt)) {
-        const match = stmt.match(/INSERT\s+INTO\s+(\w+)/i)
-        const tblName = match ? match[1] : 'table'
         outputs.push(`Query OK: 1 row affected (0.01 sec).`)
       } else if (/^SELECT/i.test(stmt)) {
         if (/users/i.test(stmt)) {

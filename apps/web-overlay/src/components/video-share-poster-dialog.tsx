@@ -3,7 +3,7 @@
 import React, { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
-import { Share2, Copy, Check, Download} from 'lucide-react'
+import { Share2, Copy, Check, Download } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 import { copyText } from '@/lib/clipboard'
 

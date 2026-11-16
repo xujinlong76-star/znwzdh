@@ -2081,10 +2081,6 @@ export async function publishPlugin(
   // API 合约：默认进入 pending 待审队列，只有显式 autoAudit=true 才自动上架。
   // 手动投稿页/导出弹窗都承诺“已提交审核”，别让这句文案变成已上架。
   const shouldAutoAudit = options?.autoAudit === true
-  const params = new URLSearchParams()
-  if (effectiveIdentity) params.set('anonId', effectiveIdentity)
-  if (shouldAutoAudit) params.set('autoAudit', 'true')
-  const qs = params.toString() ? `?${params.toString()}` : ''
   return sendJson<HubPluginItem & { audit?: HubPluginAuditReport }>(
     `/api/plugins`,
     'POST',
@@ -2170,10 +2166,6 @@ export async function submitPluginVersion(
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   // 同 publishPlugin：版本提交默认也进人工审核队列，AI 工坊显式传 true。
   const shouldAutoAudit = options?.autoAudit === true
-  const params = new URLSearchParams()
-  if (effectiveIdentity) params.set('anonId', effectiveIdentity)
-  if (shouldAutoAudit) params.set('autoAudit', 'true')
-  const qs = params.toString() ? `?${params.toString()}` : ''
   return sendJson<HubPluginItem & { audit?: HubPluginAuditReport }>(
     `/api/plugins/${encodeURIComponent(slug)}/versions`,
     'POST',
@@ -2421,12 +2413,6 @@ export async function fetchPluginReviews(
   params: { limit?: number; offset?: number; identity?: string } = {},
   onDegraded?: DegradedHandler,
 ): Promise<HubPluginReviewsResponse> {
-  const effectiveIdentity = params.identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const sp = new URLSearchParams()
-  if (params.limit) sp.set('limit', String(params.limit))
-  if (params.offset) sp.set('offset', String(params.offset))
-  if (effectiveIdentity) sp.set('identity', effectiveIdentity)
-  const qs = sp.toString() ? `?${sp.toString()}` : ''
   return degrade<HubPluginReviewsResponse>(
     {
       slug,
@@ -2551,11 +2537,6 @@ export async function fetchAdminPluginReviews(
   params: { status?: 'visible' | 'hidden'; limit?: number; offset?: number } = {},
   onDegraded?: DegradedHandler,
 ): Promise<{ items: HubAdminPluginReview[]; total: number; limit: number; offset: number }> {
-  const sp = new URLSearchParams()
-  if (params.status) sp.set('status', params.status)
-  if (params.limit) sp.set('limit', String(params.limit))
-  if (params.offset) sp.set('offset', String(params.offset))
-  const qs = sp.toString() ? `?${sp.toString()}` : ''
   return degrade(
     { items: [] as HubAdminPluginReview[], total: 0, limit: params.limit ?? 30, offset: params.offset ?? 0 },
     () => getJson(`/api/admin/plugin-reviews`),

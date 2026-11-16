@@ -20,7 +20,6 @@ interface VideoFlashcardPanelProps {
 
 export function VideoFlashcardPanel({
   cards: initialCards,
-  videoTitle,
 }: VideoFlashcardPanelProps) {
   const [deck, setDeck] = useState<FlashcardItem[]>(initialCards)
   const [currentIndex, setCurrentIndex] = useState(0)

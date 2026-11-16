@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useMemo} from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { Search, X, ChevronDown, ChevronUp, Folder, ArrowRight} from 'lucide-react'
+import { Search, X, ChevronDown, ChevronUp, Folder, ArrowRight } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'

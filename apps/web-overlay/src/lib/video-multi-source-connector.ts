@@ -32,7 +32,7 @@ import { calculateFreshnessScore } from '@/lib/video-scoring'
 import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
 import { enrichVideoItemSeo } from '@/lib/video-seo'
 import { detectVideoPlatform } from '@/lib/video-multi-platform-harvester'
-import type { NavigationSubItem, VideoPlatformType, VideoStats} from '@/types/navigation'
+import type { NavigationSubItem, VideoPlatformType, VideoStats } from '@/types/navigation'
 
 
 export interface WebhookPayload {
@@ -135,7 +135,7 @@ export class MultiSourceConnector {
       return { ok: false, message: 'Webhook HMAC 签名验证失败，拒绝请求' }
     }
 
-    const { id, title, description, author, durationSec, url, domain } = payload.data
+    const { id, title, description, author, durationSec, url } = payload.data
     const evalResult = evaluateVideoWithAIModel({
       title,
       description,

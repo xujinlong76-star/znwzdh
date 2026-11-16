@@ -42,7 +42,6 @@ export function PluginReviewSection({
   slug,
   isInstalled,
   installedVersion,
-  isOwner = false,
   initialReviews,
 }: PluginReviewSectionProps) {
   const [data, setData] = useState<HubPluginReviewsResponse>(

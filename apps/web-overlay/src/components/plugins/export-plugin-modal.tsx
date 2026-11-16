@@ -17,7 +17,6 @@ import { Badge } from '@/components/ui/badge'
 import {
   validatePlugin,
   publishPlugin,
-  type HubPluginItem,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { pluginDetailHref } from '@/lib/plugins/detail-href'

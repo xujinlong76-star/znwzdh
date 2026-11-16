@@ -26,7 +26,6 @@ import {
   USER_SETTINGS_STORAGE_KEY,
   readLocalUserSettings,
   writeLocalUserSettings,
-  type CardDensityMode,
   type SpotlightShortcutMode,
   type UserSettingsModel,
   type UserSettingsPatch,

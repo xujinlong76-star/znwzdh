@@ -35,8 +35,6 @@ export interface CategoryDensityMenuContentProps {
 }
 
 export default function CategoryDensityMenuContent({
-  categoryId,
-  title,
   colSpan,
   heightPx,
   isCustomSized,

@@ -39,7 +39,6 @@ import {
 } from '@/lib/media-proxy'
 import {
   videoTaskQueue,
-  type VideoHarvestTask
 } from '@/lib/video-task-queue'
 import {
   savePlaybackPosition,

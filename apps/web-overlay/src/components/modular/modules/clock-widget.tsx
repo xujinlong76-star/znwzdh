@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { Play, Pause, RotateCcw, Clock as ClockIcon} from 'lucide-react'
+import { Play, Pause, RotateCcw, Clock as ClockIcon } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { formatLunarDate, formatLunarDateExact } from '@/lib/lunar-date'
 import {
@@ -29,7 +29,7 @@ const COUNTDOWN_LINE_CLASS: Record<ExamUrgencyTier, string> = {
   relaxed: 'text-sky-700 dark:text-sky-400',
 }
 
-export function ClockWidget({ config }: { config?: Record<string, any> }) {
+export function ClockWidget({ config: _config }: { config?: Record<string, any> }) {
   const [time, setTime] = useState<Date | null>(null)
   const [lunarLabel, setLunarLabel] = useState('')
   const [isPomodoro, setIsPomodoro] = useState(false)

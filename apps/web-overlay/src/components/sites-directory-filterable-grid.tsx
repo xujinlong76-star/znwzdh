@@ -47,7 +47,6 @@ interface SitesDirectoryFilterableGridProps {
 export function SitesDirectoryFilterableGrid({
   initialSites,
   searchableSites,
-  totalPages,
   totalSites,
   truncated,
   failed,

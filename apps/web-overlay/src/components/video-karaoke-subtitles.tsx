@@ -1,13 +1,12 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useMemo } from 'react'
 import type { VideoTranscriptItem } from '@/types/navigation'
 import {
   buildAlignedBilingualCues,
   findActiveBilingualCue,
   findActiveKaraokeToken,
   lookupTechnicalTerm,
-  type TechnicalTermDefinition,
 } from '@/lib/video-bilingual-transcriber'
 import { Popover, PopoverContent, PopoverTrigger } from '@/registry/new-york/ui/popover'
 import { BookOpen } from 'lucide-react'
@@ -26,7 +25,6 @@ export function VideoKaraokeSubtitles({
   mode = 'bilingual',
   className,
 }: VideoKaraokeSubtitlesProps) {
-  const [activeGlossaryTerm, setActiveGlossaryTerm] = useState<TechnicalTermDefinition | null>(null)
 
   const cues = useMemo(() => {
     return buildAlignedBilingualCues(transcript)

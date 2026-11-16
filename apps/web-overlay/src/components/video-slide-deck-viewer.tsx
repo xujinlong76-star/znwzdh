@@ -3,10 +3,9 @@
 import React, { useMemo } from 'react'
 import {
   type SlideSnapshot,
-  detectSlideTransitions,
 } from '@/lib/video-slide-detector'
 import { Button } from '@/registry/new-york/ui/button'
-import { Presentation, Download, Clock} from 'lucide-react'
+import { Presentation, Download, Clock } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 import { chapterStartSec, type VideoChapter } from '@/types/navigation'
 

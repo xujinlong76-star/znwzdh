@@ -17,7 +17,7 @@ export function generateVideoMindMap(params: {
   chapters?: VideoChapter[]
   tags?: string[]
 }): MindMapNode {
-  const { videoId, title, chapters = [], tags = [] } = params
+  const { videoId, title, chapters = [] } = params
 
   const root: MindMapNode = {
     id: `root-${videoId}`,

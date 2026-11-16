@@ -251,11 +251,6 @@ kind: Deployment
 
 describe('Proposal [2]: Canvas Danmaku Engine & Pitfall Warnings', () => {
   it('adds and sorts danmaku items and tracks pitfalls', () => {
-    const engine = new DanmakuEngine([
-      { id: 'd1', timeSec: 10, text: '讲得很清晰！' },
-      { id: 'd2', timeSec: 5, text: '注意这里的坑点！', isPitfallWarning: true },
-    ])
-
     // Saved in persistent storage
     const created = saveDanmakuItem('vid-1', {
       timeSec: 25,

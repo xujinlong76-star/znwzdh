@@ -228,9 +228,8 @@ describe("全仓库的表单控件都得有可访问名", () => {
     for (const f of files) {
       const src = readFileSync(f, "utf8");
       const re = new RegExp(CONTROL_RE.source, "g");
-      let m: RegExpExecArray | null;
       let total = 0;
-      while ((m = re.exec(src))) total++;
+      while (re.exec(src)) total++;
       named += total - unnamedControls(src).length;
     }
     expect(named).toBeGreaterThanOrEqual(85);

@@ -20,8 +20,7 @@ export function VideoPipWindowRenderer({
   currentSubtitle,
   lastCodeCommand,
 }: VideoPipWindowRendererProps) {
-  const [isPipOpen, setIsPipOpen] = useState<boolean>(false)
-  const [copied, setCopied] = useState<boolean>(false)
+  const [, setIsPipOpen] = useState<boolean>(false)
 
   const handleLaunchDocumentPip = async () => {
     if (!isDocumentPipSupported()) {

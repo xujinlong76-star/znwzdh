@@ -1,4 +1,4 @@
-import type { NavigationSubItem, VideoChapter, VideoPlatformType} from '@/types/navigation'
+import type { NavigationSubItem, VideoChapter, VideoPlatformType } from '@/types/navigation'
 import { chapterStartSec } from '@/types/navigation'
 
 function resolveChapterSec(ch: VideoChapter & { time?: number }): number {

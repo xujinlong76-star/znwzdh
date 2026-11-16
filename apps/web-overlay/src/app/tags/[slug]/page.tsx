@@ -8,7 +8,7 @@ import { safeDecodeParam } from '@/lib/server/route-params'
 import type { HubSite } from '@/lib/navhub-api'
 import { TagResultsBoard } from '@/components/tag-results-board'
 import { RelatedTags } from '@/components/related-tags'
-import { type RelatedTag} from '@/lib/navhub-api'
+import { type RelatedTag } from '@/lib/navhub-api'
 import { MIN_SITES_FOR_TAG_INDEX } from '@/lib/seo/thresholds'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { ogImageUrl } from '@/lib/seo/og-text'
@@ -98,7 +98,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const safeSlug = safeDecodeParam(slug)
   if (!safeSlug) notFound()
-  const { res, sites, tagRes, related } = await loadTagPage(safeSlug)
+  const { res, sites, tagRes } = await loadTagPage(safeSlug)
   const name = tagRes?.tag?.name ?? safeSlug
   // resolve 返回的是规范 slug：别名/原名 URL（如 /tags/AI 编程）与规范页
   // 内容完全相同，canonical 必须指向规范页，否则同一内容在两个 URL 上竞争。

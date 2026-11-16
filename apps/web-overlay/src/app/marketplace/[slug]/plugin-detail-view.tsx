@@ -24,7 +24,7 @@ import {
   type HubPluginItem,
   type HubPluginAuditReport
 } from '@/lib/navhub-api'
-import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX} from '@/lib/plugins/plugin-manifest'
+import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import type { DetailTab } from './detail-shared'
 
@@ -158,7 +158,7 @@ export default function PluginDetailView({
   // 值由 loadDetail 异步回填；拆分后仅剩写入方（读取方随 hero 区迁出后已无人消费）
   const [, setIsThemeApplied] = useState(false)
   const [studioModalOpen, setStudioModalOpen] = useState(false)
-  const [studioInitialManifest, setStudioInitialManifest] = useState<any>(undefined)
+  const [, setStudioInitialManifest] = useState<any>(undefined)
 
   const handleRemix = () => {
     if (!plugin?.manifest) return

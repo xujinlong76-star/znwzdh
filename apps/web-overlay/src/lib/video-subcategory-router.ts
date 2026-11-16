@@ -3,7 +3,7 @@
  * 智能子分类语义路由、技术栈标签萃取与模糊相似度去重引擎
  */
 
-import type { NavigationSubCategory} from '@/types/navigation'
+import type { NavigationSubCategory } from '@/types/navigation'
 
 export interface SubcategoryMatchResult {
   targetSub: NavigationSubCategory

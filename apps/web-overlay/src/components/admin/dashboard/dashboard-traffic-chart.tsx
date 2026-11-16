@@ -84,7 +84,6 @@ export function DashboardTrafficChart({
   const [activeTab, setActiveTab] = useState<'throughput' | 'latency' | 'errors'>('throughput')
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const gradId1 = useId()
-  const gradId2 = useId()
 
   const points = useMemo(() => {
     if (rawPoints && rawPoints.length > 0) return rawPoints

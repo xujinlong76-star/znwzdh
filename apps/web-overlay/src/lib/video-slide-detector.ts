@@ -117,11 +117,9 @@ export function detectSlideTransitions(
   let currentSlideStartSec = samples[0]!.timeSec
   let currentTitle = samples[0]!.title || '导言与课程大纲'
   let currentOcrWords: string[] = samples[0]!.ocrText ? samples[0]!.ocrText.split(/\s+/).slice(0, 8) : ['架构', '核心原则']
-  let prevSampleTime = samples[0]!.timeSec
 
-  samples.forEach((sample, idx) => {
+  samples.forEach((sample, _idx) => {
     const hash = computeDifferenceHash(sample.grayscaleMatrix, config.sampleWidth, config.sampleHeight)
-    prevSampleTime = sample.timeSec
 
     if (prevHash === null) {
       prevHash = hash

@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { safeWindowOpen } from '@/lib/safe-url'
 import { PlayCircle, Clock, Check, Download, Play, Eye, User } from 'lucide-react'
@@ -11,13 +10,6 @@ import { formatDuration } from '@/lib/video-format'
 import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 import { saveOfflineVideo, isOfflineVideo } from '@/lib/offline-video-cache'
 import { getPlaybackRecord } from '@/lib/video-playback-storage'
-// HD 播放器（775 行）只在点开卡片/弹窗后才出现：动态导入，不占 /videos 首屏包体积
-// （预算实测超限 31KB，主因即它被静态引进网格卡片模块）。
-const VideoBilibiliHdPlayer = dynamic(
-  () => import('@/components/video-bilibili-hd-player').then((m) => m.VideoBilibiliHdPlayer),
-  { ssr: false },
-)
-import { buildVideoEmbedUrlForSeo } from '@/lib/video-embed-url'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
 import Image from 'next/image'
 
@@ -121,44 +113,6 @@ export const VideoCard = React.memo(function VideoCard({ item, priority = false 
         } else if (item.href) {
             safeWindowOpen(item.href)
         }
-    }
-
-    const renderVideoContent = () => {
-        if (!videoConfig) return null
-
-        if (videoConfig.type === 'bilibili') {
-            const { bvid, aid, cid, p = 1 } = videoConfig
-            return (
-                <VideoBilibiliHdPlayer
-                    bvid={bvid}
-                    aid={aid}
-                    cid={cid}
-                    p={p}
-                    title={item.title}
-                    poster={normalizedCoverPath || undefined}
-                    autoPlay={true}
-                    className="rounded-lg"
-                />
-            )
-        }
-
-        const embedUrl = buildVideoEmbedUrlForSeo(videoConfig)
-        if (embedUrl) {
-            return (
-                <div className="w-full aspect-video">
-                    <iframe
-                        className="w-full h-full rounded-lg"
-                        src={embedUrl}
-                        title={item.title}
-                        frameBorder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowFullScreen
-                    ></iframe>
-                </div>
-            )
-        }
-
-        return null
     }
 
     // 获取平台标识

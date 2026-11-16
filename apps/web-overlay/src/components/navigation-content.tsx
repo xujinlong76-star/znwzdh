@@ -188,7 +188,7 @@ const BatchOperationDock = dynamic(
 import { SpeedDialDock } from '@/components/speed-dial-dock'
 import { Button } from '@/registry/new-york/ui/button'
 
-import { Eye, EyeOff, RotateCcw, Trash2} from 'lucide-react'
+import { Eye, EyeOff, RotateCcw, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { type WorkspaceId } from '@/components/workspace-filter'

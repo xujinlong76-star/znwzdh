@@ -5,7 +5,7 @@
  * and provides one-click timecode jump targets for any conceptual node.
  */
 
-import type { NavigationData} from '@/types/navigation'
+import type { NavigationData } from '@/types/navigation'
 import { chapterStartSec } from '@/types/navigation'
 
 export interface ConceptGraphNode {

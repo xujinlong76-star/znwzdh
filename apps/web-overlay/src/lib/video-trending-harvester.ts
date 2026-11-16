@@ -3,7 +3,7 @@
  * Discovers, filters, scores, and injects hot tech tutorials into video catalogs.
  */
 
-import type { VideoChapter, VideoTranscriptItem} from '@/types/navigation'
+import type { VideoChapter, VideoTranscriptItem } from '@/types/navigation'
 import topicsFile from '@/navsphere/content/video-topics.json'
 
 export interface TrendingTechTopic {

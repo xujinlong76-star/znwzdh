@@ -8,22 +8,9 @@
  *   · B1 游标：排序键不是全序时，翻页会在两次请求间重复/漏项；
  */
 import { describe, expect, it } from "vitest";
-import type { NavigationData, NavigationItem, NavigationSubItem } from "@/types/navigation";
+import type { NavigationItem, NavigationSubItem } from "@/types/navigation";
 import { isVersionConflict } from "@/lib/video-write-guard";
 import { decodeVideoCursor, encodeVideoCursor, pageCategoryByCursor } from "@/lib/video-pagination";
-
-/** ProbeResult 必填字段比「只给 state」多，用工厂补齐，避免断言被类型噪声淹没 */
-function probe(state: "healthy" | "dead" | "unverified", reason = "test") {
-  return async (item: NavigationSubItem) => ({
-    videoId: item.id,
-    title: item.title,
-    platform: "bilibili" as const,
-    healthy: state === "healthy",
-    state,
-    reason,
-    latencyMs: 1,
-  });
-}
 
 function item(id: string, harvestedAt: number): NavigationSubItem {
   return {
@@ -37,10 +24,6 @@ function item(id: string, harvestedAt: number): NavigationSubItem {
 
 function category(id: string, items: NavigationSubItem[]): NavigationItem {
   return { id, title: id, description: "", href: "", items } as NavigationItem;
-}
-
-function data(cats: NavigationItem[]): NavigationData {
-  return { navigationItems: cats } as NavigationData;
 }
 
 /** 断言用：取分类下的 id 列表（items 可能 undefined，集中处理一次） */

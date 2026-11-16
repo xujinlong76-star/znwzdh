@@ -23,7 +23,7 @@ import {
 } from '@/lib/video-qoe-telemetry'
 import { GET as getOgVideo } from '@/app/api/og/video/route'
 import { NextRequest } from 'next/server'
-import type { VideoChapter} from '@/types/navigation'
+import type { VideoChapter } from '@/types/navigation'
 
 describe('1. Scrubber Filmstrip & Engagement Heatmap Engine', () => {
   it('calculates correct sprite background coordinates and clamps out-of-range timestamps', () => {

@@ -32,7 +32,7 @@ export function VideoClipMakerDialog({
   const [endSec, setEndSec] = useState<number>(() => Math.min(durationSec, currentSec + 20))
   const [includeSubs, setIncludeSubs] = useState<boolean>(true)
   const [isExporting, setIsExporting] = useState<boolean>(false)
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
+  const [, setDownloadUrl] = useState<string | null>(null)
 
   const validation = validateClipInterval(startSec, endSec)
 

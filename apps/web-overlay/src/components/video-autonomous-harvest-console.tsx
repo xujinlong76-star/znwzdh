@@ -47,7 +47,7 @@ export function VideoAutonomousHarvestPanel({
     avgAiScore: number
     candidatePoolSize: number
   } | null>(null)
-  const [isLoadingStats, setIsLoadingStats] = useState<boolean>(false)
+  const [, setIsLoadingStats] = useState<boolean>(false)
 
   // 面板挂载（切到「AI自主巡航」tab）时拉一次统计；卸载即丢弃，不再常驻轮询
   useEffect(() => {

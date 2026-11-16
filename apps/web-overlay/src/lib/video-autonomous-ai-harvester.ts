@@ -11,7 +11,7 @@ import type {
   VideoTranscriptItem,
   VideoStats,
 } from '@/types/navigation'
-import { CURATED_TRENDING_TOPICS} from '@/lib/video-trending-harvester'
+import { CURATED_TRENDING_TOPICS } from '@/lib/video-trending-harvester'
 import { calculateFreshnessScore } from '@/lib/video-scoring'
 import { syntheticMetadataEnabled } from '@/lib/video-metadata-policy'
 import { videoExternalKey } from '@/lib/video-identity'

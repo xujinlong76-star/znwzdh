@@ -163,7 +163,7 @@ export function generateSyntheticTerminalCast(params: {
     data: `\x1b[36mdevops@cluster\x1b[0m:\x1b[34m~/workspace\x1b[0m$ \x1b[32m# 欢迎进入 ${title} 演练环境\x1b[0m\r\n`,
   })
 
-  commands.forEach((cmd, idx) => {
+  commands.forEach((cmd, _idx) => {
     // Type out command char by char
     const chars = cmd.split('')
     chars.forEach((ch, cIdx) => {

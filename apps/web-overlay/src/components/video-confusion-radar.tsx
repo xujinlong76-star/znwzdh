@@ -4,10 +4,9 @@ import React, { useMemo } from 'react'
 import type { VideoDanmakuItem } from '@/types/navigation'
 import {
   clusterConfusionHotspots,
-  type ConfusionHotspot,
 } from '@/lib/video-danmaku-sentiment'
 import { formatDuration } from '@/lib/video-format'
-import { AlertCircle, Play, Sparkles, CheckCircle2} from 'lucide-react'
+import { AlertCircle, Play, Sparkles, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { cn } from '@/lib/utils'
 

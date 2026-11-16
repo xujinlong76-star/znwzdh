@@ -281,7 +281,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     const [importedCaptionCount, setImportedCaptionCount] = useState<number>(0)
     const [showCaptionImport, setShowCaptionImport] = useState<boolean>(false)
 
-    const { openVideo: openGlobalVideo, minimizeToFloat, requestDocumentPiP } = useVideoPlayer()
+    const { openVideo: openGlobalVideo, requestDocumentPiP } = useVideoPlayer()
 
     // 扁平化所有有效视频列表供上一集/下一集与进度连播
     const allVideos = useMemo(() => {

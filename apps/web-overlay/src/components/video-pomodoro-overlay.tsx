@@ -24,7 +24,6 @@ export function VideoPomodoroDialog({
 }: VideoPomodoroOverlayProps) {
   const managerRef = useRef<PomodoroSessionManager>(new PomodoroSessionManager())
   const [state, setState] = useState<PomodoroState>(() => managerRef.current.getState())
-  const [ambientSound, setAmbientSound] = useState<boolean>(false)
 
   useEffect(() => {
     const unsub = managerRef.current.subscribe((newState) => {

@@ -74,7 +74,7 @@ describe('实机触发采集功能并验证自动化采集管线', () => {
     const controller = getAutonomousHarvesterController()
     const currentData = videosJson as unknown as NavigationData
 
-    const { updatedData, report } = await controller.runCycle(currentData, {
+    const { report } = await controller.runCycle(currentData, {
       dryRun: true,
       includeMultiPlatform: true,
       autoSubmitIndexNow: false,

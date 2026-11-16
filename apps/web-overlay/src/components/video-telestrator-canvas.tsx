@@ -17,7 +17,6 @@ import {
   Redo2,
   Trash2,
   X,
-  Palette,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { cn } from '@/lib/utils'
@@ -47,7 +46,7 @@ export function VideoTelestratorCanvas({
   const managerRef = useRef<TelestratorManager>(new TelestratorManager(videoId))
   const [selectedTool, setSelectedTool] = useState<TelestratorTool>('pen')
   const [currentColor, setCurrentColor] = useState<string>('#38bdf8')
-  const [lineWidth, setLineWidth] = useState<number>(3)
+  const [lineWidth] = useState<number>(3)
   const [isDrawing, setIsDrawing] = useState<boolean>(false)
   const [currentPoints, setCurrentPoints] = useState<Point2D[]>([])
 

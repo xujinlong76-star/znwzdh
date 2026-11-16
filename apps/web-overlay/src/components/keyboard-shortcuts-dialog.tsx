@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/registry/new-york/ui/dialog'
-import { Keyboard, Sparkles} from 'lucide-react'
+import { Keyboard, Sparkles } from 'lucide-react'
 import { useHomeDIY, type CanvasBackground } from '@/lib/modular/use-home-diy'
 import { canonicalDensityLabel, useDensity } from '@/components/density-provider'
 import { useToast } from '@/components/ui/use-toast'
@@ -84,7 +84,6 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
   }, [isControlled, onOpenChange])
 
   const {
-    viewMode,
     setViewMode,
     toggleEditingLayout,
     canvasBackground,

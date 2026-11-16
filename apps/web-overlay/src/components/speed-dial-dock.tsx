@@ -17,7 +17,7 @@ const ModuleResizeHandles = dynamic(
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { type WorkspaceId } from '@/components/workspace-filter'
-import { readOfflineVisits, type RecentVisit} from '@/lib/offline-recent'
+import { readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
 import { useExternalLinkTarget } from '@/lib/user-preferences'

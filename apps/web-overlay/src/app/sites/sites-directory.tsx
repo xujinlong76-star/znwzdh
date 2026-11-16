@@ -8,7 +8,7 @@ import { JsonLd } from '@/components/json-ld'
 import type { HubSite } from '@/lib/navhub-api'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
-import { AlertTriangle, Globe, MonitorPlay, ArrowRight} from 'lucide-react'
+import { AlertTriangle, Globe, MonitorPlay, ArrowRight } from 'lucide-react'
 import { SitesDirectoryFilterableGrid } from '@/components/sites-directory-filterable-grid'
 
 /**

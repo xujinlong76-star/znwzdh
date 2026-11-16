@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react'
 import {
-  type BundledProjectWorkspace,
   buildWorkspaceFromCourse,
   exportToGistPayload,
 } from '@/lib/video-workspace-bundler'

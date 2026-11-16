@@ -31,7 +31,6 @@ interface VideoCodeDiffViewerProps {
 
 export function VideoCodeDiffViewer({
   milestones,
-  currentSec = 0,
   onSeek,
 }: VideoCodeDiffViewerProps) {
   const [selectedIndex, setSelectedIndex] = useState(0)

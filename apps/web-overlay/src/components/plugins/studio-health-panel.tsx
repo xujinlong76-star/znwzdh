@@ -10,7 +10,7 @@ import { Button } from '@/registry/new-york/ui/button'
 import { cn } from '@/lib/utils'
 
 import { AuditDimensionTile } from './audit-dimension-tile'
-import type { HubPluginAuditReport} from '@/lib/navhub-api'
+import type { HubPluginAuditReport } from '@/lib/navhub-api'
 
 export interface UrlCheckResults {
   total: number

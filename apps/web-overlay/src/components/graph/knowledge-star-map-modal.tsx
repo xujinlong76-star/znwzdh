@@ -53,11 +53,11 @@ type ActiveTab = 'star-map' | 'path-finder' | 'dedup-audit'
 
 export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapModalProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('star-map')
-  const [loading, setLoading] = useState(false)
+  const [, setLoading] = useState(false)
   const [mesh, setMesh] = useState<SiteKnowledgeMesh | null>(null)
   const [selectedNode, setSelectedNode] = useState<SiteKnowledgeNode | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [selectedCategory] = useState<string>('all')
 
   // 缩放平移状态
   const [zoom, setZoom] = useState(1)

@@ -10,7 +10,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Flag} from 'lucide-react'
+import { Flag } from 'lucide-react'
 import { toast } from 'sonner'
 
 export interface PluginReportModalProps {

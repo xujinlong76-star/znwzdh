@@ -132,7 +132,7 @@ export function CategoryInSituControls({
     toast({ title: `「${title}」模块宽度已设为 ${label} (${col}/12列)` })
   }
 
-  const handleSelectHeight = (h: number | undefined, label: string) => {
+  const handleSelectHeight = (h: number | undefined, _label: string) => {
     setSize({ heightPx: h })
     toast({
       title: h

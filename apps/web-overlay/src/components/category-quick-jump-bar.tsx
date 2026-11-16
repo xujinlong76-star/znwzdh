@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Star, MonitorPlay, ChevronsUpDown} from 'lucide-react'
+import { ChevronLeft, ChevronRight, Star, MonitorPlay, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { preferredScrollBehavior } from '@/lib/motion'
 

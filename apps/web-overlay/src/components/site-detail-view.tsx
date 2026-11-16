@@ -274,7 +274,7 @@ export function SiteDetailView({
   const reload = () => setReloadToken((n) => n + 1)
 
   const [relatedVideos, setRelatedVideos] = useState<any[]>([])
-  const [loadingVideos, setLoadingVideos] = useState(true)
+  const [, setLoadingVideos] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -505,9 +505,6 @@ export function SiteDetailView({
   const alternatives = relations.filter((r) => r.relationType === 'alternative')
   const ecosystemRelations = relations.filter((r) =>
     ['complementary', 'ecosystem', 'part_of'].includes(r.relationType),
-  )
-  const upstreamAndOthers = relations.filter((r) =>
-    ['upstream', 'mirror', 'related'].includes(r.relationType),
   )
 
   /** 对照上限 4 个：本站已占 1 席，候选最多再选 3 个（见 lib/compare.ts toggleComparePick） */

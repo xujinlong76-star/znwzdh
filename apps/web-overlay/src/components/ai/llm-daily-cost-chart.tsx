@@ -191,8 +191,6 @@ export function LlmDailyCostChart({
   const n = chart.days.length
   const band = n > 0 ? plotW / n : plotW
   const barW = Math.min(30, Math.max(8, band * 0.62))
-  const yCalls = (calls: number) =>
-    padT + plotH - (chart.maxTotalCalls > 0 ? (calls / chart.maxTotalCalls) * plotH : 0)
   const yCost = (c: number) =>
     padT + plotH - (chart.maxCumCostRmb > 0 ? (c / chart.maxCumCostRmb) * plotH : 0)
 

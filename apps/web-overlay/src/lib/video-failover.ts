@@ -98,7 +98,7 @@ export async function probeSourceHealth(
     const timer = setTimeout(() => controller.abort(), timeoutMs)
 
     // Using mode: 'no-cors' in browser to test connectivity without CORS blocking
-    const response = await fetch(probeUrl, {
+    await fetch(probeUrl, {
       method: 'GET',
       mode: 'no-cors',
       signal: controller.signal,

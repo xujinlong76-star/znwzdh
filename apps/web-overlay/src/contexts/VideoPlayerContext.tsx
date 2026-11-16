@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useState, useCallback, useMemo, useRef} from 'react'
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react'
 import { chapterStartSec, type NavigationSubItem, type VideoChapter, type VideoMirrorSource } from '@/types/navigation'
 import { toast } from 'sonner'
 

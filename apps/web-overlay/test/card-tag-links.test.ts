@@ -41,7 +41,6 @@ const slugHelper = overlayFile("src/lib/seo/tag-slug.ts");
 const richStart = src.indexOf("cardDisplayMode === 'rich'");
 const standardStart = src.indexOf("// 3. 标准现代卡片");
 const richSrc = src.slice(richStart, standardStart);
-const standardSrc = src.slice(standardStart);
 
 describe("卡片 #tag 内链化（rich 模式）", () => {
   it("切片定位成功（守卫自身没失效）", () => {

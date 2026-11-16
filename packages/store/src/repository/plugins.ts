@@ -543,6 +543,105 @@ export async function listPluginsByOwnerKey(
   return listPlugins(repo, { ...filter, ownerKey, status: "published" });
 }
 
+export interface AuthorPluginStats {
+  /** 已上架插件数（与 listPluginsByOwnerKey 的 total 同口径） */
+  plugins: number;
+  /** 全部已上架插件的安装量之和（不限前 100 个） */
+  installs: number;
+  /** 全部已上架插件的星标数之和（不限前 100 个） */
+  stars: number;
+  /** 最新上架插件的作者名（与修前全量取首条同口径） */
+  author: string | null;
+  authorKind: string | null;
+}
+
+/**
+ * 公开作者页聚合：单条 SQL 对全部已上架插件求和。
+ *
+ * 修前路由用 listPluginsByOwnerKey(key, { limit: 100 }) 的 items 求和，
+ * 作者插件 >100 时第 101 个起的安装/星标恒不计入，total 却正确——统计偏小。
+ * 这里直接 SUM 全量，不再经分页列表中转。
+ */
+export async function getAuthorPluginStats(
+  repo: Repository,
+  ownerKey: string,
+): Promise<AuthorPluginStats> {
+  const row = (
+    await repo.raw(
+      `SELECT COUNT(*) AS cnt, COALESCE(SUM(install_count), 0) AS installs,
+              COALESCE(SUM(star_count), 0) AS stars
+         FROM plugins WHERE owner_key = ? AND status = 'published'`,
+      [ownerKey],
+    )
+  )[0];
+  const first = (
+    await repo.raw(
+      `SELECT author, author_kind FROM plugins
+        WHERE owner_key = ? AND status = 'published'
+        ORDER BY COALESCE(published_at, created_at) DESC, created_at DESC LIMIT 1`,
+      [ownerKey],
+    )
+  )[0];
+  return {
+    plugins: Number(row?.cnt ?? 0),
+    installs: Number(row?.installs ?? 0),
+    stars: Number(row?.stars ?? 0),
+    author: first?.author == null ? null : String(first.author),
+    authorKind: first?.author_kind == null ? null : String(first.author_kind),
+  };
+}
+
+export interface OwnerPluginStats {
+  total: number;
+  pending: number;
+  published: number;
+  rejected: number;
+  /** 除 pending/published/rejected 外的全部状态（delisted/quarantined 等） */
+  other: number;
+  installs: number;
+  stars: number;
+  remixes: number;
+}
+
+/**
+ * 作者中心聚合：按归属身份对全部状态的插件求和（不限前 100 个）。
+ *
+ * 修前 /mine 只返回分页 items，前端对当页求和：作者插件 >100 时状态计数与
+ * 安装/星标/remix 合计恒偏小。这里一次 SQL 算全，分页列表只负责展示当页。
+ */
+export async function getOwnerPluginStats(
+  repo: Repository,
+  identity: string,
+): Promise<OwnerPluginStats> {
+  const row = (
+    await repo.raw(
+      `SELECT COUNT(*) AS cnt,
+              SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+              SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
+              SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+              COALESCE(SUM(install_count), 0) AS installs,
+              COALESCE(SUM(star_count), 0) AS stars,
+              COALESCE(SUM(remix_count), 0) AS remixes
+         FROM plugins WHERE owner_identity = ?`,
+      [identity],
+    )
+  )[0];
+  const total = Number(row?.cnt ?? 0);
+  const pending = Number(row?.pending ?? 0);
+  const published = Number(row?.published ?? 0);
+  const rejected = Number(row?.rejected ?? 0);
+  return {
+    total,
+    pending,
+    published,
+    rejected,
+    other: total - pending - published - rejected,
+    installs: Number(row?.installs ?? 0),
+    stars: Number(row?.stars ?? 0),
+    remixes: Number(row?.remixes ?? 0),
+  };
+}
+
 /**
  * 更新插件内容（新 manifest 须已通过 core 校验）。
  * 已发布/已驳回/已下架的插件一律回到 pending 重审——更新不允许绕过人工审核。

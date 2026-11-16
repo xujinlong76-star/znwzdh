@@ -132,7 +132,12 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const q = req.query as Record<string, string | undefined>;
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 24)) : 24;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
-      const res = await ctx.repo.listPluginsByOwner(identity, { sort: "updated", limit, offset });
+      // stats 是全量聚合（状态计数与安装/星标/remix 合计一次 SQL 算全）：
+      // 修前前端只能对当页 items 求和，作者插件 >100 时计数恒偏小。
+      const [res, stats] = await Promise.all([
+        ctx.repo.listPluginsByOwner(identity, { sort: "updated", limit, offset }),
+        ctx.repo.getOwnerPluginStats(identity),
+      ]);
       return {
         items: res.items.map((plugin) => ({
           ...publicPlugin(plugin, { ownerView: true }),
@@ -142,6 +147,7 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
         total: res.total,
         limit,
         offset,
+        stats,
       };
     }
   );
@@ -158,20 +164,21 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const q = req.query as Record<string, string | undefined>;
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 24)) : 24;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
-      const [res, all] = await Promise.all([
+      // stats 改走服务端聚合：修前对 listPluginsByOwnerKey(key, { limit: 100 })
+      // 的 items 求和，作者插件 >100 时安装/星标恒偏小（total 本身正确）。
+      const [res, stats] = await Promise.all([
         ctx.repo.listPluginsByOwnerKey(key, { limit, offset }),
-        ctx.repo.listPluginsByOwnerKey(key, { limit: 100 }),
+        ctx.repo.getAuthorPluginStats(key),
       ]);
       if (res.total === 0) return notFound(reply, "作者不存在或暂无已上架插件");
-      const first = all.items[0];
       return {
         ownerKey: key,
-        author: first?.author ?? "匿名作者",
-        authorKind: first?.authorKind ?? null,
+        author: stats.author ?? "匿名作者",
+        authorKind: stats.authorKind ?? null,
         stats: {
-          plugins: res.total,
-          installs: all.items.reduce((sum, p) => sum + p.installCount, 0),
-          stars: all.items.reduce((sum, p) => sum + p.starCount, 0),
+          plugins: stats.plugins,
+          installs: stats.installs,
+          stars: stats.stars,
         },
         items: res.items.map((plugin) => ({
           ...publicPlugin(plugin),

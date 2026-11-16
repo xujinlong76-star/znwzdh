@@ -2050,8 +2050,18 @@ async revokeAllSessions(userId: string): Promise<number> {
     return pluginsRepo.listPluginsByOwner(this, identity, filter);
   }
 
+  /** 作者中心全量聚合：状态计数与安装/星标/remix 合计（不限前 100 个） */
+  async getOwnerPluginStats(identity: string): Promise<pluginsRepo.OwnerPluginStats> {
+    return pluginsRepo.getOwnerPluginStats(this, identity);
+  }
+
   async listPluginsByOwnerKey(ownerKey: string, filter: Omit<pluginsRepo.PluginListFilter, "ownerKey" | "status" | "ownerIdentity"> = {}): Promise<{ items: pluginsRepo.PluginRecord[]; total: number }> {
     return pluginsRepo.listPluginsByOwnerKey(this, ownerKey, filter);
+  }
+
+  /** 公开作者页全量聚合：已上架插件数与安装/星标之和（不限前 100 个） */
+  async getAuthorPluginStats(ownerKey: string): Promise<pluginsRepo.AuthorPluginStats> {
+    return pluginsRepo.getAuthorPluginStats(this, ownerKey);
   }
 
   async updatePlugin(slug: string, manifest: pluginsRepo.PluginManifest, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {

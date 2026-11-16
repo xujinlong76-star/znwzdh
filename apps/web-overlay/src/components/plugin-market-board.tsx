@@ -598,8 +598,10 @@ export function PluginMarketBoard({
             <Sparkles className="w-3 h-3 text-primary" />
             热门标签:
           </span>
-          {['开发工具', 'AI效率', '设计灵感', '自托管', '搜索增强', '极简生活', '精选常用'].map((tag) => {
-            const isSelected = q === tag
+          {/* 热门标签：种子目录真实存在的标签（R2A-2）。旧 7 枚是写死文案，在种子里
+              根本不存在，点开全部返回 0；现每枚都命中真实插件，点击走 q='#tag' 的真实标签查询（R2A-1）。 */}
+          {['主题', '组合包', '深色', '工作台', '搜索', 'AI', '生活'].map((tag) => {
+            const isSelected = q === `#${tag}`
             return (
               <button
                 key={tag}
@@ -609,8 +611,8 @@ export function PluginMarketBoard({
                     setQ('')
                     setSearchInput('')
                   } else {
-                    setQ(tag)
-                    setSearchInput(tag)
+                    setQ(`#${tag}`)
+                    setSearchInput(`#${tag}`)
                   }
                 }}
                 className={`px-2 py-0.5 rounded-md text-[11px] transition-all ${

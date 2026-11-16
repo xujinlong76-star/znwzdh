@@ -28,6 +28,50 @@ export function auditLevelLabel(level: string): { label: string; tone: AuditLeve
   )
 }
 
+/**
+ * 风险等级 → Tailwind 颜色类（R2A-6 共享映射）。
+ *
+ * 卡片徽章、详情 hero 按钮、详情审计弹窗此前各写死一套颜色：高风险插件
+ * 也顶着翠绿徽章写「AI 严审 · 42 分」。三处统一从这里取色，按真实等级渲染；
+ * Tailwind 类名必须写全（拼类名会在构建时被裁剪）。
+ */
+export const AUDIT_LEVEL_TONE_CLASSES: Record<
+  AuditLevelTone,
+  { chip: string; icon: string; score: string }
+> = {
+  good: {
+    chip: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
+    icon: 'text-emerald-500',
+    score: 'text-emerald-600 dark:text-emerald-400',
+  },
+  ok: {
+    chip: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
+    icon: 'text-blue-500',
+    score: 'text-blue-600 dark:text-blue-400',
+  },
+  warn: {
+    chip: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
+    icon: 'text-amber-500',
+    score: 'text-amber-600 dark:text-amber-400',
+  },
+  bad: {
+    chip: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
+    icon: 'text-rose-500',
+    score: 'text-rose-600 dark:text-rose-400',
+  },
+}
+
+export function auditLevelToneClasses(level: string): {
+  label: string
+  tone: AuditLevelTone
+  chip: string
+  icon: string
+  score: string
+} {
+  const { label, tone } = auditLevelLabel(level)
+  return { label, tone, ...AUDIT_LEVEL_TONE_CLASSES[tone] }
+}
+
 export type AuditDimensionKey = 'security' | 'availability' | 'compliance' | 'relevance'
 
 export const AUDIT_DIMENSION_LABELS: Record<AuditDimensionKey, string> = {

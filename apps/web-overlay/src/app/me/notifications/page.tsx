@@ -13,13 +13,15 @@ import { useToast } from '@/components/ui/use-toast'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { SectionState } from '@/components/user-center/section-state'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
-import { Bell, CheckCheck } from 'lucide-react'
+import { Bell, CheckCheck, ExternalLink } from 'lucide-react'
 
 interface NotificationItem {
   id: string
   kind: string
   title: string
   body: string | null
+  // C-4：服务端下发的插件链接（审核通知链详情/预览页），有则渲染「查看插件」
+  link?: string | null
   readAt: number | null
   createdAt: number
 }
@@ -202,6 +204,17 @@ export default function NotificationsPage() {
                   {n.body && <span className="block text-[11px] leading-relaxed text-muted-foreground">{n.body}</span>}
                   <span className="block text-[11px] tabular-nums text-muted-foreground">{formatTime(n.createdAt)}</span>
                 </button>
+                {/* C-4：审核通知带插件链接，点开直达详情/预览页，不再只剩一行人话 */}
+                {n.link && (
+                  <Link
+                    href={n.link}
+                    onClick={(e) => e.stopPropagation()}
+                    className="ml-4 -mt-1 mb-3 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                  >
+                    查看插件
+                    <ExternalLink className="h-3 w-3" aria-hidden />
+                  </Link>
+                )}
               </li>
             ))}
           </ul>

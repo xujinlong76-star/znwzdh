@@ -6,11 +6,14 @@ import {
   replyPluginReview,
   reportPluginReview,
   submitPluginReview,
+  deletePluginReview,
   type HubPluginReviewsResponse,
 } from '@/lib/navhub-api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Star, MessageSquare, CheckCircle2, ShieldCheck, Flag } from 'lucide-react'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
+import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { Star, MessageSquare, CheckCircle2, ShieldCheck, Flag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 
@@ -42,6 +45,7 @@ export function PluginReviewSection({
   slug,
   isInstalled,
   installedVersion,
+  isOwner,
   initialReviews,
 }: PluginReviewSectionProps) {
   const [data, setData] = useState<HubPluginReviewsResponse>(
@@ -71,12 +75,20 @@ export function PluginReviewSection({
   const [replyingId, setReplyingId] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
   const [replySubmitting, setReplySubmitting] = useState(false)
+  // 加载失败 ≠ 暂无评价：旧 loadReviews 的 catch 静默吞错，失败时照常渲染
+  // 「暂无用户评价」。notice 非空时渲染失败态（带重试）。
+  const [notice, setNotice] = useState<DegradeNotice | null>(null)
+  // 删除二次确认：第一次点「删除」只进入待确认态，第二次才真的删
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const handleSendAuthorReply = async (reviewId: string) => {
     if (!replyText.trim()) return
     setReplySubmitting(true)
     try {
-      const res = await replyPluginReview(reviewId, replyText.trim())
+      // B-2：旧客户端调的 /api/plugins/reviews/:id/reply 在服务端不存在，
+      // 永远 404；现按 slug 调真实路由 /api/plugins/:slug/reviews/:id/reply。
+      const res = await replyPluginReview(slug, reviewId, replyText.trim())
       if (res.ok) {
         toast.success('作者回复已发布')
         setReplyingId(null)
@@ -96,8 +108,11 @@ export function PluginReviewSection({
   // 刷新评价列表（首屏 / 提交后回到第一页）
   const loadReviews = useCallback(async () => {
     setLoading(true)
+    setNotice(null)
     try {
-      const res = await fetchPluginReviews(slug)
+      const res = await fetchPluginReviews(slug, undefined, (err) =>
+        setNotice(describeDegrade(err, '用户评价')),
+      )
       setData(res)
       if (res.myReview) {
         setRating(res.myReview.rating)
@@ -105,11 +120,32 @@ export function PluginReviewSection({
         setContent(res.myReview.content ?? '')
       }
     } catch {
-      // 容错降级
+      // 失败事实已由 onDegraded 写入 notice，渲染层据此显示失败态
     } finally {
       setLoading(false)
     }
   }, [slug])
+
+  // 删除自己的评价（B-3）：服务端按身份 + actorKind 判定，本人或管理员可删
+  const handleDeleteReview = async (reviewId: string) => {
+    if (deletingId !== reviewId) {
+      setDeletingId(reviewId)
+      return
+    }
+    setDeleting(true)
+    try {
+      const res = await deletePluginReview(slug, reviewId)
+      if (res.success) {
+        toast.success('评价已删除')
+        setDeletingId(null)
+        await loadReviews()
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : '删除评价失败')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   useEffect(() => {
     void loadReviews()
@@ -247,7 +283,8 @@ export function PluginReviewSection({
 
           {/* 操作入口 */}
           <div className="flex flex-col items-center md:items-end justify-center">
-            {isInstalled ? (
+            {/* B-3：卸载后仍可修改自己已有的评价（服务端已放行），按钮不能只认 isInstalled */}
+            {isInstalled || myReview ? (
               <Button
                 onClick={() => setShowForm(!showForm)}
                 className="w-full md:w-auto text-xs h-9 bg-primary text-primary-foreground shadow-sm"
@@ -271,7 +308,8 @@ export function PluginReviewSection({
       </div>
 
       {/* 撰写/编辑评价表单抽屉（按需加载，见 ReviewForm 定义） */}
-      {showForm && isInstalled && (
+      {/* B-3：卸载后改自己已有的评价同样放行，表单展示条件与按钮一致 */}
+      {showForm && (isInstalled || myReview) && (
         <ReviewForm
           myReview={myReview}
           installedVersion={installedVersion}
@@ -311,13 +349,22 @@ export function PluginReviewSection({
             ))}
           </div>
         ) : !hasReviews ? (
-          <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center bg-card/30">
-            <MessageSquare className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm font-medium text-foreground">暂无用户评价</p>
-            <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-              成为第一位使用并分享体验的用户吧！
-            </p>
-          </div>
+          notice ? (
+            <div className="space-y-3">
+              <HubDegradedNotice notice={notice} onRetry={() => void loadReviews()} />
+              <p className="text-xs text-muted-foreground text-center leading-relaxed">
+                未能加载用户评价，可能是网络或中枢服务问题；重试后仍失败请稍后再来。
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center bg-card/30">
+              <MessageSquare className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm font-medium text-foreground">暂无用户评价</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                成为第一位使用并分享体验的用户吧！
+              </p>
+            </div>
+          )
         ) : (
           <div className="space-y-3">
             {items.map((rev) => (
@@ -365,20 +412,53 @@ export function PluginReviewSection({
                 <div className="flex items-center justify-between gap-2 pt-1">
                   <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                    <span>已验证真实安装用户</span>
+                    {/* B-3：徽章按当前安装状态区分，不再一律写「已验证真实安装用户」 */}
+                    <span>
+                      {rev.installedNow === false
+                        ? '发表时已验证安装，现已卸载'
+                        : '已验证真实安装用户'}
+                    </span>
                   </div>
-                  <button
-                    type="button"
-                    aria-expanded={reportingId === rev.id}
-                    onClick={() => {
-                      setReportingId((prev) => (prev === rev.id ? null : rev.id))
-                      setReportReason('')
-                    }}
-                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-rose-500 transition-colors"
-                  >
-                    <Flag className="h-3 w-3" />
-                    举报
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {/* B-2：作者回复入口——只有作者自己的评价卡片上才出现，点开接通真实接口 */}
+                    {isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReplyingId((prev) => (prev === rev.id ? null : rev.id))
+                          setReplyText('')
+                        }}
+                        className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                      >
+                        <MessageSquare className="h-3 w-3" />
+                        回复
+                      </button>
+                    )}
+                    {/* B-3：删除自己的评价（二次确认） */}
+                    {myReview?.id === rev.id && (
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => void handleDeleteReview(rev.id)}
+                        className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-rose-500 transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        {deletingId === rev.id ? '确认删除？' : '删除'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      aria-expanded={reportingId === rev.id}
+                      onClick={() => {
+                        setReportingId((prev) => (prev === rev.id ? null : rev.id))
+                        setReportReason('')
+                      }}
+                      className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-rose-500 transition-colors"
+                    >
+                      <Flag className="h-3 w-3" />
+                      举报
+                    </button>
+                  </div>
                 </div>
 
                                 {/* 作者官方回复展示 */}

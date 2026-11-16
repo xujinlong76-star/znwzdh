@@ -2413,6 +2413,12 @@ export async function fetchPluginReviews(
   params: { limit?: number; offset?: number; identity?: string } = {},
   onDegraded?: DegradedHandler,
 ): Promise<HubPluginReviewsResponse> {
+  const effectiveIdentity = params.identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const sp = new URLSearchParams()
+  if (params.limit) sp.set('limit', String(params.limit))
+  if (params.offset) sp.set('offset', String(params.offset))
+  if (effectiveIdentity) sp.set('identity', effectiveIdentity)
+  const qs = sp.toString() ? `?${sp.toString()}` : ''
   return degrade<HubPluginReviewsResponse>(
     {
       slug,
@@ -2423,7 +2429,7 @@ export async function fetchPluginReviews(
       limit: params.limit ?? 20,
       offset: params.offset ?? 0,
     },
-    () => getJson(`/api/plugins/${encodeURIComponent(slug)}/reviews`),
+    () => getJson(`/api/plugins/${encodeURIComponent(slug)}/reviews${qs}`),
     onDegraded,
   )
 }
@@ -2537,9 +2543,14 @@ export async function fetchAdminPluginReviews(
   params: { status?: 'visible' | 'hidden'; limit?: number; offset?: number } = {},
   onDegraded?: DegradedHandler,
 ): Promise<{ items: HubAdminPluginReview[]; total: number; limit: number; offset: number }> {
+  const sp = new URLSearchParams()
+  if (params.status) sp.set('status', params.status)
+  if (params.limit) sp.set('limit', String(params.limit))
+  if (params.offset) sp.set('offset', String(params.offset))
+  const qs = sp.toString() ? `?${sp.toString()}` : ''
   return degrade(
     { items: [] as HubAdminPluginReview[], total: 0, limit: params.limit ?? 30, offset: params.offset ?? 0 },
-    () => getJson(`/api/admin/plugin-reviews`),
+    () => getJson(`/api/admin/plugin-reviews${qs}`),
     onDegraded,
   )
 }

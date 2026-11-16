@@ -45,7 +45,8 @@ const SELF_CANONICAL = [
   },
   {
     file: "src/app/marketplace/page.tsx",
-    snippet: "const canonical = `/marketplace${buildMarketplaceQuery(state)}`",
+    // F-2 星标是 per-identity 视图，不进 canonical（也不被索引），只保留通用筛选。
+    snippet: "const canonical = `/marketplace${buildMarketplaceQuery({ ...state, starred: false })}`",
   },
   { file: "src/app/exam/page.tsx", snippet: "canonical: '/exam'" },
 ];

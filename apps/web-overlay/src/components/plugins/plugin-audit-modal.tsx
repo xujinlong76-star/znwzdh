@@ -34,10 +34,11 @@ const TONE_BADGE_CLASS: Record<AuditLevelTone, string> = {
   bad: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30',
 }
 
+// 分维文字用 -700：正文 -600 在白底只有 3.19/3.77:1，不足 AA 4.5:1（a11y #11 扫荡守卫）。
 const TONE_TEXT_CLASS: Record<AuditLevelTone, string> = {
-  good: 'text-emerald-600 dark:text-emerald-400',
+  good: 'text-emerald-700 dark:text-emerald-400',
   ok: 'text-sky-600 dark:text-sky-400',
-  warn: 'text-amber-600 dark:text-amber-400',
+  warn: 'text-amber-700 dark:text-amber-400',
   bad: 'text-red-600 dark:text-red-400',
 }
 
@@ -176,7 +177,7 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
                   {check.skipped ? (
                     <MinusCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground" />
                   ) : check.passed ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-700 dark:text-emerald-400" />
                   ) : (
                     <CircleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
                   )}

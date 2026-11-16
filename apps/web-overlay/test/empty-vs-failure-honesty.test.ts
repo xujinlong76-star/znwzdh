@@ -147,7 +147,10 @@ describe('管理台插件页：预警 / 漏斗 / 评价治理必须真的接上'
   const src = stripComments(raw)
 
   it('三个已导入的管理端 API 不再是死代码（曾被 import 却从未调用）', () => {
-    expect(src).toContain('fetchAdminPluginReviews({')
+    // A-3/A-4 分页后调用改多行并带 offset（仍是同一调用）：fetchAdminPluginReviews(
+    //   { status: reviewStatus, limit: 20, offset },
+    expect(src).toContain('fetchAdminPluginReviews(')
+    expect(src).toContain('{ status: reviewStatus, limit: 20, offset }')
     expect(src).toContain('moderatePluginReview(review.id,')
     expect(src).toContain('setPluginFeatured(plugin.slug, next, rank)')
     expect(src).toContain('<FunnelPanel funnel={funnel} />')

@@ -152,7 +152,10 @@ describe('用户中心与插件市场 V5 回归守卫', () => {
   it('plugin-market-board 专题激活态由纯函数派生', () => {
     const board = read('src/components/plugin-market-board.tsx')
     expect(board).toContain('resolveActiveTopicId')
-    expect(board).toContain('useMemo(() => resolveActiveTopicId(kind, q, sort), [kind, q, sort])')
+    // F-2 星标视图：星标时 activeTopicId 为 ''（不走专题派生），非星标仍由纯函数
+    // resolveActiveTopicId 派生；useMemo 依赖含 starredOnly。
+    expect(board).toContain("() => (starredOnly ? '' : resolveActiveTopicId(kind, q, sort))")
+    expect(board).toContain('[kind, q, sort, starredOnly]')
   })
 })
 

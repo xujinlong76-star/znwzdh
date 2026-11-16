@@ -279,6 +279,12 @@ export default function AdminPluginsPage() {
   const [governanceGeneratedAt, setGovernanceGeneratedAt] = useState(0)
   const [reviewsFailed, setReviewsFailed] = useState(false)
   const [reviewsTotal, setReviewsTotal] = useState(0)
+  // 插件列表总数与追加态：任一状态 Tab 超 100 个时，超出部分靠「加载更多」取回
+  const [listTotal, setListTotal] = useState(0)
+  const [listLoadingMore, setListLoadingMore] = useState(false)
+  const [reviewsLoadingMore, setReviewsLoadingMore] = useState(false)
+  // 评价追加失败只影响追加：已加载的评价仍可用，按钮可重试；不翻整区失败态
+  const [reviewsMoreFailed, setReviewsMoreFailed] = useState(false)
   const [reviewNoteDrafts, setReviewNoteDrafts] = useState<Record<string, string>>({})
 
   const [activeStatus, setActiveStatus] = useState<string>('pending')
@@ -325,10 +331,20 @@ export default function AdminPluginsPage() {
     }
   }
 
-  const loadList = useCallback(async () => {
-    setLoading(true)
+  /**
+   * 插件列表分页：首屏 offset=0 全量替换；「加载更多」按已显示条数取下一页追加。
+   * 状态 Tab / 搜索变化时 loadList 身份变化，useEffect 重跑 offset=0，列表自动回到首屏。
+   * degrade 回落是 { items: [], total: 0 }：追加时 total 只能涨不能跌（Math.max 兜底），
+   * 否则一次取数失败会把总数清零、按钮消失，后面的插件再也到不了。
+   */
+  const loadList = useCallback(async (offset = 0) => {
+    if (offset === 0) {
+      setLoading(true)
+      setListFailed(false)
+    } else {
+      setListLoadingMore(true)
+    }
     setNotice(null)
-    setListFailed(false)
     try {
       const [res, telem, funnelRes, governanceRes, sStatus] = await Promise.all([
         fetchAdminPlugins(
@@ -336,6 +352,7 @@ export default function AdminPluginsPage() {
             status: activeStatus,
             q: search.trim() || undefined,
             limit: 100,
+            offset,
           },
           (err) => setNotice(describeDegrade(err, '管理台插件数据'))
         ),
@@ -355,7 +372,8 @@ export default function AdminPluginsPage() {
           return null
         }),
       ])
-      setPlugins(res.items)
+      setPlugins((prev) => (offset > 0 ? [...prev, ...res.items] : res.items))
+      setListTotal((prev) => (offset === 0 ? res.total : Math.max(prev, res.total)))
       if (telem) setTelemetry(telem)
       if (sStatus) setSeedStatus(sStatus)
       setFunnel(funnelRes)
@@ -365,11 +383,15 @@ export default function AdminPluginsPage() {
         setPendingCount(res.pending)
       }
     } catch {
-      // 主列表请求失败：置空但记下 failed，EmptyState 不能说「所有插件已处理完毕」
-      setPlugins([])
-      setListFailed(true)
+      // 主列表请求失败：首屏置空但记下 failed，EmptyState 不能说「所有插件已处理完毕」；
+      // 追加失败保留已加载列表（顶部降级提示已由 onDegraded 写出），按钮可重试
+      if (offset === 0) {
+        setPlugins([])
+        setListFailed(true)
+      }
     } finally {
       setLoading(false)
+      setListLoadingMore(false)
     }
   }, [activeStatus, search])
 
@@ -384,20 +406,41 @@ export default function AdminPluginsPage() {
    * 没有可处置的入口，只能直接改库。degrade 的回落值 `{items:[],total:0}` 与
    * 「真的没有评价」同形，所以用 onDegraded 单独记 failed，不复用主列表的 notice。
    */
-  const loadReviews = useCallback(async () => {
-    setReviewsLoading(true)
-    setReviewsFailed(false)
+  /**
+   * 评价治理队列分页：首屏 offset=0 全量替换；「加载更多」按已显示条数取下一页追加。
+   * 状态 Tab 切换时 loadReviews 身份变化，useEffect 重跑 offset=0，队列自动回到首屏。
+   * degrade 回落是 { items: [], total: 0 }：追加时 total 只能涨不能跌（Math.max 兜底），
+   * 否则一次取数失败会把总数清零、按钮消失，后面的评价再也到不了。
+   */
+  const loadReviews = useCallback(async (offset = 0) => {
+    if (offset === 0) {
+      setReviewsLoading(true)
+      setReviewsFailed(false)
+    } else {
+      setReviewsLoadingMore(true)
+    }
+    setReviewsMoreFailed(false)
     try {
-      const res = await fetchAdminPluginReviews({ status: reviewStatus, limit: 20 }, () =>
-        setReviewsFailed(true),
+      const res = await fetchAdminPluginReviews(
+        { status: reviewStatus, limit: 20, offset },
+        () => {
+          // 首屏失败整区报错；追加失败只记 moreFailed，已加载的评价仍可用、按钮可重试
+          if (offset === 0) setReviewsFailed(true)
+          else setReviewsMoreFailed(true)
+        },
       )
-      setAdminReviews(res.items)
-      setReviewsTotal(res.total)
+      setAdminReviews((prev) => (offset > 0 ? [...prev, ...res.items] : res.items))
+      setReviewsTotal((prev) => (offset === 0 ? res.total : Math.max(prev, res.total)))
     } catch {
-      setAdminReviews([])
-      setReviewsFailed(true)
+      if (offset === 0) {
+        setAdminReviews([])
+        setReviewsFailed(true)
+      } else {
+        setReviewsMoreFailed(true)
+      }
     } finally {
       setReviewsLoading(false)
+      setReviewsLoadingMore(false)
     }
   }, [reviewStatus])
 
@@ -785,6 +828,9 @@ export default function AdminPluginsPage() {
           </div>
         ) : plugins.length > 0 ? (
           <div className="space-y-3">
+            <p className="text-[11px] font-mono text-muted-foreground">
+              共 {listTotal} 个 · 已显示 {plugins.length} 个
+            </p>
             {plugins.map((item) => (
               <div
                 key={item.slug}
@@ -942,6 +988,18 @@ export default function AdminPluginsPage() {
                 </div>
               </div>
             ))}
+            {plugins.length < listTotal && (
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => void loadList(plugins.length)}
+                  disabled={listLoadingMore}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-border/60 bg-background/60 text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
+                >
+                  {listLoadingMore ? '加载中…' : `加载更多（已显示 ${plugins.length} / ${listTotal}）`}
+                </button>
+              </div>
+            )}
           </div>
         ) : listFailed ? (
           <div
@@ -1025,71 +1083,90 @@ export default function AdminPluginsPage() {
                 : '当前没有被隐藏的评价——社区举报可以在这里处置，也可以直接在下方的插件列表里查看举报数。'}
             </p>
           ) : (
-            <ul className="space-y-2">
-              {adminReviews.map((review) => (
-                <li key={review.id} className="rounded-xl border border-border/60 bg-background/40 p-3 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                    <Link
-                      href={pluginDetailHref(review.pluginSlug)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium text-foreground hover:text-primary hover:underline underline-offset-2"
-                    >
-                      {review.pluginName}
-                    </Link>
-                    <span className="font-mono text-muted-foreground">★ {review.rating}/5</span>
-                    {(review.reportCount ?? 0) > 0 && (
-                      <span className="inline-flex items-center gap-1 font-bold px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/30">
-                        <Flag className="w-3 h-3" aria-hidden />
-                        <span>举报 {review.reportCount}</span>
-                      </span>
-                    )}
-                    <span className="text-muted-foreground">
-                      v{review.installedVersion} · {new Date(review.createdAt).toLocaleString('zh-CN')}
-                    </span>
-                    {review.status === 'hidden' && (
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        处置于 {review.moderatedAt ? new Date(review.moderatedAt).toLocaleString('zh-CN') : '未知时间'}
-                      </span>
-                    )}
-                  </div>
-                  {(review.title || review.content) && (
-                    <p className="text-xs text-foreground leading-relaxed line-clamp-3">
-                      {review.title && <strong className="mr-1">{review.title}</strong>}
-                      <span className="text-muted-foreground">{review.content}</span>
-                    </p>
-                  )}
-                  {review.status === 'hidden' && review.moderationNote && (
-                    <p className="text-[11px] text-muted-foreground">隐藏理由：{review.moderationNote}</p>
-                  )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {review.status !== 'hidden' && (
-                      <input
-                        aria-label={`隐藏「${review.pluginName}」这条评价的理由`}
-                        value={reviewNoteDrafts[review.id] ?? ''}
-                        onChange={(e) => setReviewNoteDrafts((prev) => ({ ...prev, [review.id]: e.target.value }))}
-                        placeholder="隐藏理由（可选，留痕用）"
-                        maxLength={200}
-                        className="flex-1 min-w-[180px] px-2 py-1 text-[11px] rounded-md border border-border/60 bg-background text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                      />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleModerateReview(review, review.status === 'hidden' ? 'restore' : 'hide')}
-                      disabled={actionLoading}
-                      className={cn(
-                        'px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors',
-                        review.status === 'hidden'
-                          ? 'border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10'
-                          : 'border-destructive/30 text-destructive-text hover:bg-destructive/15',
+            <>
+              <ul className="space-y-2">
+                {adminReviews.map((review) => (
+                  <li key={review.id} className="rounded-xl border border-border/60 bg-background/40 p-3 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                      <Link
+                        href={pluginDetailHref(review.pluginSlug)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-foreground hover:text-primary hover:underline underline-offset-2"
+                      >
+                        {review.pluginName}
+                      </Link>
+                      <span className="font-mono text-muted-foreground">★ {review.rating}/5</span>
+                      {(review.reportCount ?? 0) > 0 && (
+                        <span className="inline-flex items-center gap-1 font-bold px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/30">
+                          <Flag className="w-3 h-3" aria-hidden />
+                          <span>举报 {review.reportCount}</span>
+                        </span>
                       )}
-                    >
-                      {review.status === 'hidden' ? '恢复公开' : '隐藏评价'}
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                      <span className="text-muted-foreground">
+                        v{review.installedVersion} · {new Date(review.createdAt).toLocaleString('zh-CN')}
+                      </span>
+                      {review.status === 'hidden' && (
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          处置于 {review.moderatedAt ? new Date(review.moderatedAt).toLocaleString('zh-CN') : '未知时间'}
+                        </span>
+                      )}
+                    </div>
+                    {(review.title || review.content) && (
+                      <p className="text-xs text-foreground leading-relaxed line-clamp-3">
+                        {review.title && <strong className="mr-1">{review.title}</strong>}
+                        <span className="text-muted-foreground">{review.content}</span>
+                      </p>
+                    )}
+                    {review.status === 'hidden' && review.moderationNote && (
+                      <p className="text-[11px] text-muted-foreground">隐藏理由：{review.moderationNote}</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {review.status !== 'hidden' && (
+                        <input
+                          aria-label={`隐藏「${review.pluginName}」这条评价的理由`}
+                          value={reviewNoteDrafts[review.id] ?? ''}
+                          onChange={(e) => setReviewNoteDrafts((prev) => ({ ...prev, [review.id]: e.target.value }))}
+                          placeholder="隐藏理由（可选，留痕用）"
+                          maxLength={200}
+                          className="flex-1 min-w-[180px] px-2 py-1 text-[11px] rounded-md border border-border/60 bg-background text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleModerateReview(review, review.status === 'hidden' ? 'restore' : 'hide')}
+                        disabled={actionLoading}
+                        className={cn(
+                          'px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors',
+                          review.status === 'hidden'
+                            ? 'border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10'
+                            : 'border-destructive/30 text-destructive-text hover:bg-destructive/15',
+                        )}
+                      >
+                        {review.status === 'hidden' ? '恢复公开' : '隐藏评价'}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {reviewsMoreFailed && (
+                <p role="status" className="text-[11px] text-center text-amber-700 dark:text-amber-400">
+                  加载更多失败，已加载的评价仍可用，可重试。
+                </p>
+              )}
+              {adminReviews.length < reviewsTotal && (
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => void loadReviews(adminReviews.length)}
+                    disabled={reviewsLoadingMore}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-border/60 bg-background/60 text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
+                  >
+                    {reviewsLoadingMore ? '加载中…' : `加载更多（已显示 ${adminReviews.length} / ${reviewsTotal}）`}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </section>
 

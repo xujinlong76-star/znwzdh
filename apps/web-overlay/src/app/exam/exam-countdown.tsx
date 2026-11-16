@@ -59,11 +59,16 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
   // 未结束时紧迫度恒有档位（today/ongoing → today）；?? 只是类型兜底。
   const tier = urgencyTier(exam, now) ?? 'relaxed'
   if (status === 'today' || status === 'ongoing') {
-    const dayIndex = 1 - daysUntil(firstExamDay(exam), now)
+    // 第 N 天只在进行中（ongoing，多日考试）时算：单日考试恒走 today
+    // 分支，此前无条件算出的 dayIndex 永不渲染（国考 11-28/11-29 恒为
+    // today；2026-11-16 0922 C 线死值清理）。考研 12-20「进行中 · 第 2 天」
+    // 仍走同一表达式，行为不变。
+    const label =
+      status === 'today'
+        ? '今天考试'
+        : `进行中 · 第 ${1 - daysUntil(firstExamDay(exam), now)} 天`
     return (
-      <p className={`text-lg font-semibold ${URGENCY_DAY_CLASS[tier]}`}>
-        {status === 'today' ? '今天考试' : `进行中 · 第 ${dayIndex} 天`}
-      </p>
+      <p className={`text-lg font-semibold ${URGENCY_DAY_CLASS[tier]}`}>{label}</p>
     )
   }
 

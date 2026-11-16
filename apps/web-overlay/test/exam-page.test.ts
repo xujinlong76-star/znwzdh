@@ -179,4 +179,13 @@ describe('倒计时岛源码守卫', () => {
     expect(island).toContain('Date.now()')
     expect(island).toContain('countdownParts')
   })
+
+  it('第 N 天只在进行中分支算：单日考试恒走 today 分支，不留无条件 dayIndex 死值', () => {
+    // 2026-11-16 0922 C 线：此前 `const dayIndex = 1 - daysUntil(...)` 在
+    // today/ongoing 合并分支内无条件计算，单日考试（国考 11-28/11-29 恒为
+    // today）算出后永不渲染；现只在 ongoing 分支内联计算，考研 12-20
+    // 「进行中 · 第 2 天」仍走同一表达式，行为不变。
+    expect(island).not.toContain('const dayIndex')
+    expect(island).toContain('进行中 · 第 ${1 - daysUntil(firstExamDay(exam), now)} 天')
+  })
 })

@@ -155,3 +155,47 @@ describe("视频页 UX 三高严重度小修（F-01/F-02/F-03）", () => {
     expect(panel).toContain("hidden md:block");
   });
 });
+
+/**
+ * 第 83 轮 C 线：换片清零 chapterSeekSec（第 82 轮 H 线复核非阻塞真问题）。
+ *
+ * 根因：selectedVideo 副作用里 `setChapterSeekSec(pendingSeekSecRef.current)`
+ * 只在 effect 里把 ref（换片时为 null）写回去，首渲染仍带着旧秒数——YouTube
+ * src 已拼上旧 &start=、B站已收旧 seekSec、mp4 effect 已跳旧 currentTime，
+ * 笔记 / 弹幕的 `timeSec: currentTimeSec || chapterSeekSec || 0` 也会取到过期值。
+ * 修法：在 handleSelectVideo 内、与 setSelectedVideo 同一批次清零，渲染时
+ * 新视频即不再带旧秒数。清零语义：换片（id 变化）时清；id 不变时不清（早退
+ * 在清零之前，保留 ?t= 直达）；初次选片带 ?t= 时走 id 不变早退，pendingSeekSecRef
+ * 随后在 selectedVideo 副作用里一次性交接，不受影响。
+ */
+describe("换片清零 chapterSeekSec（第 83 轮 C 线）", () => {
+  function handleSelectVideoBody(src: string): string {
+    const start = src.indexOf("const handleSelectVideo = useCallback((video: NavigationSubItem | null) => {");
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf("}, [])", start);
+    expect(end).toBeGreaterThan(start);
+    return src.slice(start, end);
+  }
+
+  it("换片（id 变化）时 handleSelectVideo 清零 chapterSeekSec，且全文件仅此一处清零", () => {
+    const src = overlaySource(PAGE);
+    const body = handleSelectVideoBody(src);
+    expect(body).toContain("setChapterSeekSec(null)");
+    expect(src.match(/setChapterSeekSec\(null\)/g)?.length).toBe(1);
+  });
+
+  it("id 不变时不清零：同 id 早退在清零之前，?t= 直达交接不受影响", () => {
+    const src = overlaySource(PAGE);
+    const body = handleSelectVideoBody(src);
+    const sameIdReturn = body.indexOf("if (params.get('id') === video.id) return");
+    const clear = body.indexOf("setChapterSeekSec(null)");
+    const writeId = body.indexOf("params.set('id', video.id)");
+    expect(sameIdReturn).toBeGreaterThan(-1);
+    // 顺序：同 id 早退 → 清零 → 写新 id；早退在前保证 id 不变时不清理
+    expect(clear).toBeGreaterThan(sameIdReturn);
+    expect(writeId).toBeGreaterThan(clear);
+    // 初次选片带 ?t= 的一次性交接仍在：走 id 不变早退后由 selectedVideo 副作用交接
+    expect(src).toContain("setChapterSeekSec(pendingSeekSecRef.current)");
+    expect(src).toContain("pendingSeekSecRef.current = null");
+  });
+});

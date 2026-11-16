@@ -308,12 +308,21 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
      * 刷新 / 分享 / 后退回到当前这部，而不是第一部。全部换片入口都走这里，
      * 不再直接 setSelectedVideo。id 不变时不写 URL（保留 ?t= 直达秒数）；
      * 换片时删掉旧视频的 ?t=，避免刷新后把旧时间戳套到新视频上。
+     * 第 83 轮 C 线：换片时同步清零 chapterSeekSec——断点续播 / 章节跳转置
+     * 位后若不清理，下一次渲染仍会把旧秒数带给新视频（B站 seekSec、YouTube
+     * &start=、mp4 currentTime），笔记 / 弹幕的 timeSec 回退值也会取到过期
+     * 值。清零放在 id 变化分支内：id 不变时不清理，保留 ?t= 直达语义；初次
+     * 选片带 ?t= 时走 id 不变早退，pendingSeekSecRef 随后在 selectedVideo
+     * 副作用里一次性交接，不受影响。
      */
     const handleSelectVideo = useCallback((video: NavigationSubItem | null) => {
         setSelectedVideo(video)
         if (!video || typeof window === 'undefined') return
         const params = new URLSearchParams(window.location.search)
         if (params.get('id') === video.id) return
+        // 换片时清零 chapterSeekSec：与 setSelectedVideo 同一批次提交，下一次
+        // 渲染新视频即不再带旧秒数；id 不变时早退，不清理（保留 ?t= 直达）。
+        setChapterSeekSec(null)
         params.set('id', video.id)
         params.delete('t')
         const query = params.toString()

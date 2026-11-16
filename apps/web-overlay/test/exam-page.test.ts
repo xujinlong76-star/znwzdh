@@ -125,6 +125,16 @@ describe('考试清单只含已核实的四场', () => {
     expect(userFacing).not.toContain('联考')
     expect(EXAMS.find((e) => e.id === 'shengkao')?.note).toContain('单独招考')
   })
+
+  it('省考 note 写全六省报名截止日，不只点浙江一名（2026-11-17 R-2）', () => {
+    // 六省报名均已截止（D 线 2026-11-17 核实）；旧文案只写浙江截止，
+    // 用户可能误以为其余五省报名还开着，故六省日期一个不能少
+    const note = EXAMS.find((e) => e.id === 'shengkao')?.note ?? ''
+    expect(note).toContain('六省报名均已截止')
+    for (const part of ['四川 11 月 4 日', '广东 11 月 6 日', '上海 11 月 7 日', '江苏/天津 11 月 9 日', '浙江 11 月 11 日']) {
+      expect(note).toContain(part)
+    }
+  })
 })
 
 describe('考试日历页源码守卫', () => {

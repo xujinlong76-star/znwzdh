@@ -61,7 +61,7 @@ export const codeSearchPack: SeedPluginDef = {
         {
           "name": "Smithery MCP 市场",
           "prefix": "!smithery",
-          "searchUrl": "https://smithery.ai/search?q={q}",
+          "searchUrl": "https://smithery.ai/servers?q={q}",
           "icon": "🔌",
           "description": "全球最大 Model Context Protocol (MCP) 服务端市场"
         },

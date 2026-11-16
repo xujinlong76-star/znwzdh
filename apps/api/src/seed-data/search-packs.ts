@@ -5,7 +5,7 @@
  * 「中文日常检索」与「学术研究检索」两条独立链路。
  *
  * 注意：前缀（!xx）在主搜索框里是全局命名空间，必须与既有包不冲突——
- * 本文件所有前缀均与 seed-plugins.ts 中 dev-search-arsenal 的 30 个前缀错开。
+ * 本文件所有前缀均与 seed-plugins.ts 中 dev-search-arsenal 的 40 个前缀错开。
  */
 import type { SeedPluginDef } from "./types.ts";
 
@@ -34,7 +34,7 @@ export const cnSearchArsenal: SeedPluginDef = {
         { name: "拼多多", prefix: "!pdd", searchUrl: "https://mobile.yangkeduo.com/search_result.html?search_key={q}", icon: "🍀", description: "低价拼团与百亿补贴商品检索" },
         { name: "什么值得买", prefix: "!smzdm", searchUrl: "https://search.smzdm.com/?c=home&s={q}", icon: "💰", description: "消费决策社区，优惠券、历史低价与选购攻略" },
         { name: "大众点评", prefix: "!dianping", searchUrl: "https://www.dianping.com/search/keyword/1/0_{q}", icon: "🍜", description: "本地生活口碑与商户评价检索，找店先看评分" },
-        { name: "美团", prefix: "!meituan", searchUrl: "https://www.meituan.com/s/{q}", icon: "🛵", description: "外卖、团购与本地服务检索" },
+        { name: "美团", prefix: "!meituan", searchUrl: "https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}", icon: "🛵", description: "外卖与本地服务检索" },
         { name: "抖音", prefix: "!dy", searchUrl: "https://www.douyin.com/search/{q}", icon: "🎵", description: "短视频与直播内容检索，教程与实测视频密集" },
         { name: "快手", prefix: "!ks", searchUrl: "https://www.kuaishou.com/search/video?searchKey={q}", icon: "📹", description: "短视频社区内容检索，生活与技能类内容丰富" },
         { name: "哔哩哔哩", prefix: "!bl", searchUrl: "https://search.bilibili.com/all?keyword={q}", icon: "📺", description: "技术、学习与评测类视频检索，长尾教程最全" },

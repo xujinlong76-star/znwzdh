@@ -3,7 +3,7 @@
  *
  * 目录约定（2026-10-20 内容升级批次定型）：
  *   site-packs/  已删除（2026-11-15 卸载 34 个网址包，种子只剩精选站）。
- *   search-packs  3 个搜索引擎包（!前缀全局唯一，可同时安装不互相覆盖）
+ *   search-packs  5 个搜索引擎包（!前缀全局唯一，可同时安装不互相覆盖）
  *   themes        完整主题皮肤（20 项色板变量 + 圆角）
  *   presets       工作台预设（模块 type 必须在 WIDGET_REGISTRY 且跨度合法）
  *   bundles       组合包（单层引用 search-pack / theme）

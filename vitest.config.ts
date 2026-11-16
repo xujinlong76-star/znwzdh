@@ -88,6 +88,12 @@ export default defineConfig({
       // - json-summary  : coverage-summary.json，只有 total + 每文件汇总（脚本读取它）
       // - json          : coverage-final.json，逐行明细，供后续做「零覆盖文件」下钻
       reporter: ["text", "json-summary", "json"],
+      // reportOnFailure:true：vitest 默认 reportOnFailure:false，任一测试失败
+      // 即不写任何覆盖率报告 → CI coverage job 的失败链变成「测试步 exit 1 →
+      // 无产物 → 阈值判定步 exit 2」，阈值脚本连数都读不到（U-15「无产物」红灯）。
+      // 设为 true 后即使测试失败也会写出 coverage-summary.json，阈值判定才能
+      // 给出真实的 exit 1（未达标）而非 exit 2（无产物），失败原因不再被掩盖。
+      reportOnFailure: true,
       // 产物统一落在仓库根 coverage/（已 gitignore）。
       // scripts/check-coverage.mjs 里的 COVERAGE_DIR 常量必须与此保持一致。
       reportsDirectory: "./coverage",

@@ -13,6 +13,11 @@
  *     且只把「指向 overlay 模块」的引用计入引用计数。
  *   - BASELINE 是首次实测登记的历史候选；只有「不在基线里的新候选」才判红。
  *     基线项会如实输出（不隐藏），基线项消失会提示可清理（只降不升）。
+ *     2026-11-16 基线清理：移出 3 项已获真实引用的条目（BASELINE 25→22）——
+ *     AddCategoryForm.tsx（[id]/categories/page.tsx:32 import）、AddItemForm.tsx
+ *     （两处 items 页 import）、toggle.tsx（toggle-group.tsx:8 import toggleVariants）；
+ *     stale ≠ 可删：三文件本身保留，只移出基线。13 个 video-* lib 留在基线内
+ *     （唯一 src 引用者随快照复活文件清理删除后重新变回候选，仍在基线内，不红）。
  *
  * 用法：node scripts/check-dead-modules.mjs [--json] [--update]
  * 退出码：0 通过；1 出现新增 0 引用候选；2 形状错误（目录缺失 / 参数非法）。
@@ -33,8 +38,6 @@ const UNKNOWN = argv.filter((a) => a !== "--json" && a !== "--update");
 
 /** 首次实测（2026-11-06）登记的 0 引用候选；新增项才判红。 */
 let BASELINE = [
-  "apps/web-overlay/src/app/admin/navigation/components/AddCategoryForm.tsx",
-  "apps/web-overlay/src/app/admin/navigation/components/AddItemForm.tsx",
   "apps/web-overlay/src/components/quick-access-tray.tsx",
   "apps/web-overlay/src/components/ui/search-input.tsx",
   "apps/web-overlay/src/lib/lazy-dnd.tsx",
@@ -57,7 +60,6 @@ let BASELINE = [
   "apps/web-overlay/src/lib/video-doc-read.ts",
   "apps/web-overlay/src/registry/new-york/ui/chart.tsx",
   "apps/web-overlay/src/registry/new-york/ui/input-otp.tsx",
-  "apps/web-overlay/src/registry/new-york/ui/toggle.tsx",
 ];
 
 /**
@@ -89,12 +91,6 @@ let BASELINE = [
  *     （最后一个注意与**活跃**的 lib/notification-badge.ts 区分：前者是组件、后者是工具）
  */
 let BASELINE_NOTES = {
-  "apps/web-overlay/src/app/admin/navigation/components/AddCategoryForm.tsx":
-    "keep（C 守卫测试）：test/admin-lazy-guard.test.ts 按源码路径读取包装器并断言其 dynamic 懒加载形态；同目录 .impl 才引表单库，包装器本身无业务引用是该模式的预期形态（2026-11-10 复核）",
-  "apps/web-overlay/src/app/admin/navigation/components/AddItemForm.tsx":
-    "keep（C 守卫测试）：同 AddCategoryForm，admin-lazy-guard.test.ts 按源码路径读取断言（2026-11-10 复核）",
-  "apps/web-overlay/src/registry/new-york/ui/toggle.tsx":
-    "keep（C 守卫测试）：a11y-token-contrast.test.ts 的 CONTROL_FILES 清单按源码路径读取并断言 border-border-strong（2026-11-10 复核）",
   "apps/web-overlay/src/lib/lazy-dnd.tsx":
     "keep（A 别名目标）：package.json 把 @hello-pangea/dnd 指向本文件，构建期解析；另有 types/hello-pangea-dnd-deep.d.ts 与 test/lazy-dnd-guard.test.ts 依赖",
   "apps/web-overlay/src/registry/new-york/ui/chart.tsx":
@@ -106,29 +102,29 @@ let BASELINE_NOTES = {
   "apps/web-overlay/src/lib/video-audio-stem-separator.ts":
     "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import；其唯一 src 引用者 video-audio-stem-mixer-dialog.tsx 于 2026-11-16 死模块清理第 1 批删除（2026-11-13 只删了 4 个 pane，该 dialog 当时未删，见 0722 D 线 §4.1），lib 本身仍有测试覆盖，勿当死代码删除",
   "apps/web-overlay/src/lib/video-breakpoint-debugger.ts":
-    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-debugger-stepper-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：video-code-learning-two.test.ts KEPT_LIBS 断言文件存在；v7 不 import 本文件（2026-11-16 复核）；唯一 src 引用者为 video-debugger-stepper-pane.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-live-test-runner.ts":
-    "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import，test/opaque-code-sandbox-guard.test.ts 直接 import runLiveCodeTest 并断言 D/E 行为；其唯一 src 引用者 video-live-test-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import，test/opaque-code-sandbox-guard.test.ts 直接 import runLiveCodeTest 并断言 D/E 行为；唯一 src 引用者为 video-live-test-pane.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-wasm-runtime.ts":
-    "keep（C 守卫测试）：test/video-evolution-v4.test.ts 直接 import；其唯一 src 引用者 video-wasm-terminal-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v4.test.ts 直接 import；唯一 src 引用者为 video-wasm-terminal-pane.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-code-sandbox-runtime.ts":
-    "keep（C 守卫测试）：test/video-evolution-v10.test.ts 直接 import VirtualFileSystem/SandboxRuntime，test/opaque-code-sandbox-guard.test.ts 直接 import 并按源码路径读取断言；其唯一 src 引用者 video-sandbox-runner-pane.tsx 于 2026-11-13 按 Ryan 批准删除（B 组侧栏玩具 tab），lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v10.test.ts 直接 import VirtualFileSystem/SandboxRuntime，test/opaque-code-sandbox-guard.test.ts 直接 import 并按源码路径读取断言；唯一 src 引用者为 video-sandbox-runner-pane.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-p2p-danmaku-mesh.ts":
-    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-danmaku-mesh-monitor.tsx 于 2026-11-16 死模块清理第 1 批删除（2026-11-13 只删了 4 个 pane，该 dialog 当时未删，见 0722 D 线 §4.1），lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-danmaku-mesh-monitor.tsx 于 2026-11-16 死模块清理第 2 批删除（2026-11-13 只删了 4 个 pane，该 dialog 当时未删，见 0722 D 线 §4.1），lib 本身仍有测试覆盖，勿当死代码删除",
   "apps/web-overlay/src/lib/video-neural-denoiser.ts":
-    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；其唯一 src 引用者 video-neural-audio-controls.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v7.test.ts 直接 import；唯一 src 引用者为 video-neural-audio-controls.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-p2p-chunk-swarm.ts":
-    "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import；其唯一 src 引用者 video-p2p-swarm-hud.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v8.test.ts 直接 import；唯一 src 引用者为 video-p2p-swarm-hud.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-spectrum-visualizer.ts":
-    "keep（C 守卫测试）：test/video-evolution-v6.test.ts 直接 import；其唯一 src 引用者 video-spectrogram-canvas.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v6.test.ts 直接 import；唯一 src 引用者为 video-spectrogram-canvas.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-webgpu-sharpener.ts":
-    "keep（C 守卫测试）：test/video-evolution-v4.test.ts 直接 import；其唯一 src 引用者 video-shader-filter.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v4.test.ts 直接 import；唯一 src 引用者为 video-shader-filter.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-terminal-recorder.ts":
-    "keep（C 守卫测试）：test/video-evolution-v3.test.ts 直接 import；其唯一 src 引用者 video-terminal-player.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v3.test.ts 直接 import；唯一 src 引用者为 video-terminal-player.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-filmstrip-generator.ts":
-    "keep（C 守卫测试）：test/video-evolution-v6.test.ts 直接 import，test/chapter-start-sec.test.ts 的 ALLOWLIST 引用；其 src 引用者 video-scrubber-preview.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v6.test.ts 直接 import，test/chapter-start-sec.test.ts 的 ALLOWLIST 引用；唯一 src 引用者为 video-scrubber-preview.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-scrubber-filmstrip.ts":
-    "keep（C 守卫测试）：test/video-evolution-v3.test.ts 直接 import；其唯一 src 引用者 video-scrubber-preview.tsx 于 2026-11-13 按 Ryan 批准删除，lib 本身仍有测试覆盖，勿当死代码删除",
+    "keep（C 守卫测试）：test/video-evolution-v3.test.ts 直接 import；唯一 src 引用者为 video-scrubber-preview.tsx（2026-11-16 随快照复活文件清理删除，见 delete-48-gate-baseline-2026-11-16.md §8）；lib 本身因测试引用保留",
   "apps/web-overlay/src/lib/video-rescore.ts":
     "keep（C 守卫测试 + 脚本入口）：test/video-rescore.test.ts 直接 import（7 用例）；scripts/video-rescore-backfill.mjs 用 esbuild 把它打包当全量重算回填入口；门禁只扫 src 内 import，看不见 scripts 引用，删除会先让测试与回填脚本变红（2026-11-14 复核）",
   "apps/web-overlay/src/lib/video-doc-read.ts":

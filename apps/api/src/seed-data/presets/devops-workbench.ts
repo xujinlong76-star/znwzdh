@@ -9,6 +9,9 @@ import type { SeedPluginDef } from "../types.ts";
 export const devopsWorkbench: SeedPluginDef = {
   slug: "devops-workbench",
   status: "published",
+  // 精选（R2A-2）：市场第一屏精选区第 4 位
+  featured: true,
+  featuredRank: 4,
   manifest: {
     manifestVersion: 1,
     kind: "workspace-preset",

@@ -258,7 +258,7 @@ CREATE TABLE IF NOT EXISTS revoked_users ( user_id TEXT PRIMARY KEY, revoked_bef
 
 CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
-  body TEXT, read_at INTEGER, created_at INTEGER NOT NULL
+  body TEXT, link TEXT, read_at INTEGER, created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS notifications_identity_created_idx ON notifications(identity, created_at);
 
@@ -1005,7 +1005,7 @@ CREATE TABLE IF NOT EXISTS revoked_users ( user_id TEXT PRIMARY KEY, revoked_bef
 
 CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
-  body TEXT, read_at BIGINT, created_at BIGINT NOT NULL
+  body TEXT, link TEXT, read_at BIGINT, created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS notifications_identity_created_idx ON notifications(identity, created_at);
 

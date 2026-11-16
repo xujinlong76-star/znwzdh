@@ -2089,6 +2089,11 @@ async revokeAllSessions(userId: string): Promise<number> {
     return pluginsRepo.installPlugin(this, slug, identity, actor, options);
   }
 
+  /** 真实回滚到历史版本（B-1）：先移除新版独有站点再按目标清单安装，安装记录版本与实际内容一致 */
+  async rollbackPlugin(slug: string, identity: string, targetVersion: string, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRollbackResult> {
+    return pluginsRepo.rollbackPlugin(this, slug, identity, targetVersion, actor);
+  }
+
   async quarantinePlugin(slug: string, reason: string, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
     return pluginsRepo.quarantinePlugin(this, slug, reason, actor);
   }
@@ -2166,8 +2171,18 @@ async revokeAllSessions(userId: string): Promise<number> {
   async listPluginReviews(
     pluginId: string,
     options?: { limit?: number; offset?: number; includeHidden?: boolean; cursor?: string },
-  ): Promise<{ items: pluginsRepo.PluginReviewRecord[]; total: number; nextCursor: string | null }> {
+  ): Promise<{ items: pluginsRepo.PluginReviewWithInstallStatus[]; total: number; nextCursor: string | null }> {
     return pluginsRepo.listPluginReviews(this, pluginId, options);
+  }
+
+  /** 删除自己的评价（B-3）：本人或管理员（actorKind === "admin"）可删 */
+  async deletePluginReview(
+    slug: string,
+    reviewId: string,
+    identity: string,
+    actor?: pluginsRepo.PluginActor,
+  ): Promise<{ deleted: boolean; review: pluginsRepo.PluginReviewRecord }> {
+    return pluginsRepo.deletePluginReview(this, slug, reviewId, identity, actor);
   }
 
   async getPluginReviewStats(pluginId: string): Promise<pluginsRepo.PluginReviewStats> {

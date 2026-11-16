@@ -319,12 +319,31 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
         if (changed && owner && owner !== ADMIN_NOTIFICATION_IDENTITY) {
           const kind = { approve: "plugin_approved", reject: "plugin_rejected", delist: "plugin_delisted", quarantine: "plugin_quarantined" }[body.data.action];
           const title = { approve: "插件审核已通过", reject: "插件审核未通过", delist: "插件已下架", quarantine: "插件已被隔离" }[body.data.action];
+          // C-4：通知体写成人话（不再是 {"pluginId":…} 原始 JSON），并带插件链接——
+          // 已上架链公开详情页，非已上架链作者预览页（/marketplace/<slug>/preview，
+          // 绝不链向公开 404）。审核备注是管理员写给作者的理由，驳回/下架/隔离时一并带上。
+          const reviewedVersion = existing.pendingVersion ?? existing.version;
+          const note = typeof body.data.note === "string" && body.data.note.trim() ? body.data.note.trim() : null;
+          const pluginName = reviewed.name || reviewed.slug;
+          const bodyText =
+            body.data.action === "approve"
+              ? `「${pluginName}」v${reviewedVersion} 已通过审核并上架，现在可以在市场中找到了。`
+              : body.data.action === "reject"
+                ? `「${pluginName}」v${reviewedVersion} 未通过审核${note ? `，原因：${note}` : ""}。修改后可以重新提交。`
+                : body.data.action === "quarantine"
+                  ? `「${pluginName}」v${reviewedVersion} 已被管理员隔离${note ? `，原因：${note}` : ""}。处理完成后会重新上架。`
+                  : `「${pluginName}」v${reviewedVersion} 已被管理员下架${note ? `，原因：${note}` : ""}。`;
+          const link =
+            body.data.action === "approve"
+              ? `/marketplace/${encodeURIComponent(reviewed.slug)}`
+              : `/marketplace/${encodeURIComponent(reviewed.slug)}/preview`;
           await ctx.repo.emitNotification({
             identity: owner,
             idempotencyKey: `plugin:${reviewed.id}:review:${existing.pendingVersion ?? existing.version}:${transitionId}`,
             kind,
             title,
-            body: JSON.stringify({ pluginId: reviewed.id, version: existing.pendingVersion ?? existing.version }),
+            body: bodyText,
+            link,
           });
         }
         return { status: "reviewed" as const, plugin: reviewed };
@@ -416,6 +435,69 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
             meta: { slug, kind: plugin.kind, version: plugin.version },
           }).catch((err) => console.error("[plugins] install event failed:", err));
         }
+        return {
+          success: true,
+          ...result,
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return badRequest(reply, message);
+      }
+    }
+  );
+
+  /**
+   * 真实回滚到历史版本（B-1）
+   * 时间轴「回滚此版本」不再只调 install(version)——那条路只新增不删除、
+   * 还把版本号写成旧版。rollback 先移除新版独有站点再按目标清单安装，
+   * 安装记录版本与实际内容一致；目标版本必须低于已安装版本。
+   */
+  app.post(
+    "/api/plugins/:slug/rollback",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer <redacted>");
+      const identity = extractPluginIdentity(req);
+      if (!identity) {
+        return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
+      }
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+      if (plugin.status !== "published") {
+        return conflict(reply, `插件当前处于 ${plugin.status} 状态，未上架插件不可回滚`);
+      }
+      const q = (req.query ?? {}) as Record<string, string | undefined>;
+      const body = (req.body ?? {}) as { version?: string };
+      const targetVersion = q.version?.trim() || (typeof body.version === "string" ? body.version.trim() : undefined);
+      if (!targetVersion) {
+        return badRequest(reply, "缺少回滚目标版本 (version)");
+      }
+      const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
+      try {
+        const result = await ctx.repo.rollbackPlugin(
+          slug,
+          identity,
+          targetVersion,
+          {
+            actor: callerAuth?.actor || identity,
+            actorKind: callerAuth?.kind || "identity",
+            ip: req.ip,
+          },
+        );
+        // 回滚补回的站点进检索向量索引（失败不影响回滚结果）
+        if (result.applied.createdSiteIds.length > 0) {
+          const siteMap = await ctx.repo.getSitesByIds(result.applied.createdSiteIds);
+          const sites = result.applied.createdSiteIds
+            .map((id) => siteMap.get(id))
+            .filter((s): s is NonNullable<typeof s> => !!s)
+            .map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
+          await indexSitesBatch(ctx, sites);
+        }
+        void ctx.repo.recordEvent("plugin_rollback", {
+          identity,
+          meta: { slug, from: result.rolledBackFrom, to: result.rolledBackTo, sitesRemoved: result.sitesRemoved },
+        }).catch((err) => console.error("[plugins] rollback event failed:", err));
         return {
           success: true,
           ...result,

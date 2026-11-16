@@ -51,14 +51,21 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
     "/api/plugins",
     { config: { scope: "public", cache: { maxAge: 0, vary: ["x-navhub-anon-id", "x-navhub-user-id", "authorization", "cookie"] } } },
     async (req) => {
-      const q = req.query as Record<string, string | undefined>;
-      const kind = q.kind?.trim();
-      const search = q.q?.trim();
-      const sort = q.sort?.trim() || "new";
-      const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 24)) : 24;
-      const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
+      const q = req.query as Record<string, string | string[] | undefined>;
+      const kind = typeof q.kind === "string" ? q.kind.trim() : undefined;
+      const rawSearch = typeof q.q === "string" ? q.q.trim() : undefined;
+      const sort = (typeof q.sort === "string" ? q.sort.trim() : "") || "new";
+      const limit = q.limit ? Math.min(100, Math.max(1, parseInt(String(q.limit), 10) || 24)) : 24;
+      const offset = q.offset ? Math.max(0, parseInt(String(q.offset), 10) || 0) : 0;
       const featured = q.featured === "true" ? true : q.featured === "false" ? false : undefined;
-      const ownerKey = (q.ownerKey ?? q.author)?.trim() || undefined;
+      const ownerKey = ((typeof q.ownerKey === "string" ? q.ownerKey : typeof q.author === "string" ? q.author : "") ?? "").trim() || undefined;
+      // R2A-1：搜索框占位符教的 #标签 现在是真的——q 里的 #xxx 解析为标签过滤
+      // （多标签 AND），剩余文本仍按名称/描述 LIKE；?tag= 参数同口径。
+      // 只剩 #标签时不带 q，避免 "#深色" 本身去 LIKE 名称/描述返回 0。
+      const hashTags = rawSearch ? [...rawSearch.matchAll(/#([^\s#]+)/g)].map((m) => m[1]!).filter(Boolean) : [];
+      const paramTags = Array.isArray(q.tag) ? q.tag.map(String) : typeof q.tag === "string" ? [q.tag] : [];
+      const tags = [...new Set([...hashTags, ...paramTags.map((t) => t.trim())])].filter(Boolean);
+      const search = rawSearch ? rawSearch.replace(/#[^\s#]+/g, " ").trim() || undefined : undefined;
       // 星标筛选（F-2）：只返回调用方已星标的插件。星标是 per-identity 数据，
       // 无身份时没有“别人的星标”可读，诚实返回空页而不是退回全量
       // （退回全量等于“星标视图”只是通用市场的换皮）。
@@ -77,6 +84,7 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
         status: "published",
         kind: kind || undefined,
         q: search || undefined,
+        tags: tags.length > 0 ? tags : undefined,
         featured,
         ownerKey,
         ids: starredOnly ? [...starredIds] : undefined,
@@ -233,21 +241,27 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 24)) : 24;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
       const featured = q.featured === "true" ? true : q.featured === "false" ? false : undefined;
+      // 待审新版本筛选（C-2）：只看已上架插件里挂了 pendingVersion 的行
+      const hasPendingVersion = q.hasPendingVersion === "true" ? true : undefined;
 
       const res = await ctx.repo.listPlugins({
         status: status || undefined,
         kind: kind || undefined,
         q: search || undefined,
         featured,
+        hasPendingVersion,
         sort,
         limit,
         offset,
       });
 
       const pendingRes = await ctx.repo.listPlugins({ status: "pending", limit: 1 });
+      // 待审新版本计数（C-2）：已上架插件里 pendingVersion 非空的有多少，
+      // 管理端据此显示「待审新版本 N 个」，不再只数全新待审插件。
+      const pendingVersionRes = await ctx.repo.listPlugins({ status: "published", hasPendingVersion: true, limit: 1 });
 
       const items = res.items.map((plugin) => ({
-        ...publicPlugin(plugin),
+        ...publicPlugin(plugin, { ownerView: true }),
         summary: summarizePluginManifest(plugin.manifest),
       }));
 
@@ -255,6 +269,7 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
         items,
         total: res.total,
         pending: pendingRes.total,
+        pendingVersionCount: pendingVersionRes.total,
         limit,
         offset,
       };

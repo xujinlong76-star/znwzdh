@@ -13,4 +13,7 @@ export interface SeedPluginDef {
   status: PluginStatus;
   /** 未校验的声明式清单，由 seed.ts 统一走 validateAndCleanPluginManifest */
   manifest: unknown;
+  /** 精选（R2A-2）：true = 进市场精选区；rank 越小越靠前。缺省 = 不精选 */
+  featured?: boolean;
+  featuredRank?: number;
 }

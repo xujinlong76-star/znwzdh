@@ -59,7 +59,7 @@ describe("A-3：管理端评价治理队列必须能翻到第 21 条之后", () 
   it("评价区有「加载更多」入口，显示已显示/共计", () => {
     const src = read("src/app/admin/plugins/page.tsx");
     expect(src).toContain("加载更多");
-    expect(src).toContain("adminReviews.length} / {reviewsTotal}");
+    expect(src).toContain("adminReviews.length} / ${reviewsTotal}");
   });
 
   it("fetchAdminPluginReviews 本就会拼 offset（页面要用的 API 能力已就绪）", async () => {
@@ -81,7 +81,7 @@ describe("A-3：管理端插件列表必须能翻到第 101 个之后，并展�
 
   it("列表区展示总数与「加载更多」入口", () => {
     const src = read("src/app/admin/plugins/page.tsx");
-    expect(src).toContain("plugins.length} / {listTotal}");
+    expect(src).toContain("plugins.length} / ${listTotal}");
   });
 
   it("fetchAdminPlugins 本就会拼 offset（页面要用的 API 能力已就绪）", async () => {

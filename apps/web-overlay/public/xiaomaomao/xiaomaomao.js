@@ -498,11 +498,18 @@
     /* v6：贴边收缩——transform 只动根节点，拖动坐标（left/top）与面板锚定都不受影响 */
     '#xiaomaomao{transition:transform .45s var(--xm-ease)}' +
     '#xiaomaomao.xm-docked .xm-bubble{display:none}' +
+    /* P1-1：输入聚焦静默态——根节点整体不可见、不可点（只改显隐，不动 left/top） */
+    '#xiaomaomao.xm-quiet{opacity:0;visibility:hidden;pointer-events:none}' +
     /* v6：庆祝视频层（盖在姿势图上方，舞台圆角裁剪；无视频文件时永不出现） */
     '#xiaomaomao .xm-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;display:none;pointer-events:none}' +
     '#xiaomaomao .xm-video.xm-on{display:block;animation:xmVideoIn .38s var(--xm-ease) both}' +
     '@keyframes xmVideoIn{from{opacity:0}to{opacity:1}}' +
     '#xiaomaomao .xm-stage:focus-visible{outline:2px solid var(--xm-accent);outline-offset:3px}' +
+    /* P1-1：猫身常驻收起角标——「收起小猫猫」不再只藏在默认隐藏的坞里，
+       不点猫也看得见、点得到；聊天面板开着时隐藏（面板自有收起钮）。 */
+    '#xiaomaomao .xm-mini-close{position:absolute;top:-7px;right:-7px;width:26px;height:26px;min-width:26px;border-radius:50%;z-index:7;box-shadow:0 2px 8px rgba(43,10,24,.20)}' +
+    '#xiaomaomao .xm-mini-close svg{width:14px;height:14px}' +
+    '#xiaomaomao.xm-open .xm-mini-close{display:none}' +
     /* v6：换形象视图（面板内与消息区互斥显示） */
     '#xiaomaomao .xm-look{display:none;flex:1;flex-direction:column;min-height:0}' +
     '#xiaomaomao .xm-panel.xm-looking .xm-look{display:flex}' +
@@ -523,6 +530,11 @@
     '#xiaomaomao .xm-look-act svg{width:16px;height:16px;vertical-align:-3px;margin-right:5px}' +
     '#xiaomaomao .xm-look-act:active{transform:scale(.97)}' +
     '@media (max-width:640px){#xiaomaomao{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(68px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-dock{gap:5px;padding:5px;bottom:calc(100% + 8px)}#xiaomaomao .xm-dock .xm-btn{width:34px;height:34px}#xiaomaomao .xm-dock .xm-btn svg{width:19px;height:19px}#xiaomaomao .xm-bubble{max-width:min(248px,calc(100vw - 130px));font-size:12.5px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(104px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(508px,62vh)}#xiaomaomao .xm-game{height:min(436px,58vh)}}' +
+    /* P1-1：市场页窄屏自动收起态——根节点整体滑出视口右侧（transform 只写位移，
+       不动 left/top、不覆盖用户拖动位置；圆标本体随根节点一起出视口，点按与包围盒都不再挡页面元素）。
+       Q1 返工：位移量不用固定值——拖动过的猫 left 不同，固定 70px 会留一部分在视口内；
+       收起时按实时矩形算进 --xm-park-x（见 syncMarketPark），未设变量时回落到 calc(100% + 12px）。 */
+    '@media (max-width:640px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100% + 12px)))}}' +
     /* 半屏下沉栏避让（Batch 3 第 12 项 BLOCK 修复）：640–1024px 首页底部有 56px 高的常驻栏
        （HalfScreenDock，z-40），猫默认 bottom:18px 会整只盖住栏右侧、.xm-lean 拦截指针，
        栏的关闭 × 完全点不到。媒体规则只抬未拖动过的默认位置：拖动后行内 left/top +
@@ -549,6 +561,8 @@
         '<div class="xm-stage" role="button" aria-label="小猫猫，点我玩一玩" title="小猫猫"><div class="xm-lean">' +
           '<img class="xm-img-a" alt="小猫猫"><img class="xm-img-b" alt="" aria-hidden="true">' +
         '</div></div>' +
+        /* P1-1：猫身常驻收起角标（S-3），与坞里的关闭钮共用 collapseCat */
+        '<button class="xm-btn xm-mini-close" type="button" title="收起小猫猫" aria-label="收起小猫猫">' + ICONS.close + '</button>' +
       '</div>' +
       /* v7：悬浮坞挂在主列里、舞台之外（猫上方留白处），平时隐藏；DOM 顺序=聊天/摸猫/语音/关闭，
          喂鱼与接星星钮由 JS 插到关闭钮之前；flex row-reverse 让聊天钮始终贴猫那一端 */
@@ -820,6 +834,10 @@
   /* ---------- 气泡（打字机） ---------- */
   var typeTimer = null, bubbleHideTimer = null;
   function showBubble(text, speakIt) {
+    /* P1-1：页内输入聚焦期间不冒新气泡——自动招呼/提示/庆祝一律抑制；
+       用户主动操作（点猫/摸猫/喂食/唤回）发生时焦点不在页内输入框上，
+       userTyping 为 false，不受影响。 */
+    if (userTyping) return;
     hideControls(); /* v7：气泡与悬浮坞互斥——猫说话时坞先退场，不许两样东西一起围着猫 */
     if (root.classList.contains('xm-open')) return;
     window.clearTimeout(bubbleHideTimer);
@@ -837,7 +855,8 @@
       }, 26);
     }
     if (speakIt) speak(text);
-    bubbleHideTimer = window.setTimeout(hideBubble, 6500);
+    /* P1-1：单次气泡 4.5 秒消失（验收 ≤5 秒，计时起点即 showBubble 入口，含打字机动画余量） */
+    bubbleHideTimer = window.setTimeout(hideBubble, 4500);
   }
   function hideBubble() {
     window.clearInterval(typeTimer);
@@ -978,8 +997,23 @@
   document.addEventListener('focusin', function (ev) {
     var t = ev.target;
     userTyping = !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable));
+    /* P1-1：页内输入聚焦时猫整体静默（气泡收掉、根节点不可见不可点），
+       失焦即恢复；猫自家聊天输入框（#xiaomaomao 内）不触发。 */
+    if (userTyping && t && !root.contains(t)) {
+      hideBubble();
+      root.classList.add('xm-quiet');
+    }
   });
-  document.addEventListener('focusout', function () { userTyping = false; });
+  document.addEventListener('focusout', function () {
+    userTyping = false;
+    /* 焦点在输入框之间直跳时 focusout 先于下一个 focusin 到达：150ms 后
+       再看 activeElement，仍在输入框里就保持静默，免得闪烁。 */
+    window.setTimeout(function () {
+      var ae = document.activeElement;
+      var stillTyping = !!(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable) && !root.contains(ae));
+      if (!stillTyping) root.classList.remove('xm-quiet');
+    }, 150);
+  });
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) { hiddenAt = Date.now(); return; }
     var away = hiddenAt ? Date.now() - hiddenAt : 0;
@@ -1137,7 +1171,82 @@
     var down = y > lastScrollY + 4;
     lastScrollY = y;
     if (down && y > 300) doDock();
+    syncMarketPark(); /* P1-1：滚动即重新判断市场页收起/露出 */
   }, { passive: true });
+
+  /* ---------- P1-1：市场页窄屏自动收起（390px 下猫身盖住搜索框右端） ----------
+     /marketplace 窄屏（≤640px，与 CSS 媒体规则同断点）时，猫自动收进圆标并整体
+     滑出视口右侧（.xm-parked，只写 transform 位移、不动 left/top、不覆盖用户
+     已保存的拖动位置）；滚过搜索行（scrollY>60）后露出圆标入口（仍收起态，
+     点圆标唤回），滚回顶部或滚到底（页脚/回到顶部正处猫的高度）时重新收走。
+     离开市场页时自动收起的状态原样恢复；用户亲手唤回/收起后本页不再自动收。
+     面板/游戏/聊天请求开着时不自动收（parkBlocked，复用 dockBlocked 的守门语义）。 */
+  var autoParked = false, autoClosed = false, userUnparked = false, marketPath = '';
+  function isNarrowViewport() {
+    try { return window.matchMedia('(max-width: 640px)').matches; } catch (e) { return window.innerWidth <= 640; }
+  }
+  function nearPageBottom() {
+    try {
+      var de = document.documentElement;
+      return (window.scrollY || 0) + window.innerHeight >= de.scrollHeight - 2;
+    } catch (e) { return false; }
+  }
+  function parkBlocked() {
+    return root.classList.contains('xm-open') ||
+      (typeof gameEl !== 'undefined' && gameEl && gameEl.classList.contains('xm-on')) ||
+      !!busy || !!document.hidden;
+  }
+  /* Q1 返工：清除收起位移变量（解除收起/离开市场页时调用；未设变量时 CSS 回落到 calc(100% + 12px)）。 */
+  function clearParkX() {
+    try { root.style.removeProperty('--xm-park-x'); } catch (e) { /* 忽略 */ }
+  }
+  function syncMarketPark() {
+    var p = '';
+    try { p = window.location.pathname || ''; } catch (e) { /* 忽略 */ }
+    var onMarket = p === '/marketplace' || p.indexOf('/marketplace/') === 0;
+    if (!onMarket || !isNarrowViewport()) {
+      if (autoParked) { autoParked = false; root.classList.remove('xm-parked'); clearParkX(); }
+      if (autoClosed) { autoClosed = false; root.classList.remove('xm-closed'); }
+      marketPath = onMarket ? p : '';
+      return;
+    }
+    if (marketPath !== p) { marketPath = p; userUnparked = false; }
+    if (parkBlocked() || userUnparked) return;
+    var y = window.scrollY || 0;
+    if (y <= 30 || nearPageBottom()) {
+      if (docked) undock(); /* 贴边写的是行内 transform，会压过 .xm-parked 的位移，先清掉 */
+      if (!root.classList.contains('xm-closed')) { root.classList.add('xm-closed'); autoClosed = true; }
+      if (!root.classList.contains('xm-parked')) {
+        hideBubble();
+        hideControls();
+        /* Q1 返工：收起位移按实时矩形算。先加 xm-closed（只剩 58px 圆标）再量 left，
+           getBoundingClientRect 会同步触发布局，量到的是收起态矩形；位移 = 视口右缘 - 左缘 + 12，
+           拖动到任何位置的猫都能整只滑出视口。量取失败时回落到 CSS 默认值。 */
+        try {
+          var parkX = Math.ceil(window.innerWidth - root.getBoundingClientRect().left + 12);
+          root.style.setProperty('--xm-park-x', parkX + 'px');
+        } catch (e) { /* 忽略，回落到 calc(100% + 12px) */ }
+        root.classList.add('xm-parked');
+        autoParked = true;
+      }
+    } else if (y > 60 && autoParked) {
+      root.classList.remove('xm-parked');
+      clearParkX();
+      autoParked = false;
+    }
+  }
+  /* 软路由（Next.js Link）不重载脚本：history 变化与视口变化后重新同步一次。 */
+  window.addEventListener('popstate', syncMarketPark);
+  try {
+    var _xmPushState = history.pushState, _xmReplaceState = history.replaceState;
+    if (_xmPushState) history.pushState = function () { var r = _xmPushState.apply(this, arguments); syncMarketPark(); return r; };
+    if (_xmReplaceState) history.replaceState = function () { var r = _xmReplaceState.apply(this, arguments); syncMarketPark(); return r; };
+  } catch (e) { /* 忽略 */ }
+  var _xmResizeT = 0;
+  window.addEventListener('resize', function () {
+    window.clearTimeout(_xmResizeT);
+    _xmResizeT = window.setTimeout(syncMarketPark, 200);
+  });
   root.addEventListener('pointerenter', function () {
     var wasDocked = docked;
     if (docked) undock();
@@ -1322,14 +1431,28 @@
     });
   }
   syncVoiceBtns();
-  root.querySelector('.xm-close-btn').addEventListener('click', function (ev) {
-    ev.stopPropagation();
+  /* P1-1：收起（坞内关闭钮与猫身常驻角标共用）——游戏开着先关游戏，
+     再收进圆标；注意：亲手收起不锁存 userUnparked，下次滚动到顶部/底部时仍会触发自动收起，
+     滚过搜索行后圆标露出分支也照常生效。 */
+  function collapseCat() {
     hideControls();
+    if (gameEl && gameEl.classList.contains('xm-on')) closeGame();
     root.classList.add('xm-closed');
     root.classList.remove('xm-open');
     hideBubble();
     stopSpeak();
     stopCelebVideo(); /* v8 复审返工：收起即停视频，滞后的探活链凭令牌丢弃 */
+    autoClosed = false;
+    autoParked = false;
+    userUnparked = false;
+  }
+  root.querySelector('.xm-close-btn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    collapseCat();
+  });
+  root.querySelector('.xm-mini-close').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    collapseCat();
   });
   /* v7：坞里的摸猫钮——桌面点猫本体也能摸，这颗给触摸设备和爱用按钮的人 */
   root.querySelector('.xm-pet-btn').addEventListener('click', function (ev) {
@@ -1342,6 +1465,10 @@
   });
   root.querySelector('.xm-tab').addEventListener('click', function () {
     root.classList.remove('xm-closed');
+    root.classList.remove('xm-parked'); /* P1-1：亲手唤回即解除市场页自动收起 */
+    autoParked = false;
+    autoClosed = false;
+    userUnparked = true; /* 本页不再自动收走 */
     markActive();
     wakeUp(false);
     setPose('waking');
@@ -2009,7 +2136,7 @@
 
   /* ---------- v4：分页面小提示（进页 26 秒后、没互动过才冒一次） ---------- */
   window.setTimeout(function () {
-    if (interacted || sleeping) return;
+    if (interacted || sleeping || userTyping) return; /* P1-1：输入聚焦时不冒提示气泡 */
     if (root.classList.contains('xm-open') || root.classList.contains('xm-closed')) return;
     if (document.hidden) return;
     var pt = pageTopic();
@@ -2170,6 +2297,9 @@
   var festToday = festivalToday();
   if (festToday) showDeco(festToday.deco);
   initGrowthWatch();
+  /* P1-1：市场页窄屏进页即自动收起（须在 850ms 招呼前生效，招呼的
+     !xm-closed 守门会顺带跳过它）。 */
+  syncMarketPark();
   window.setTimeout(function () { burst(8); }, 380);
   window.setTimeout(function () {
     greeted = true;

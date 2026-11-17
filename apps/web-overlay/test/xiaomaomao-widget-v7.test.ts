@@ -89,10 +89,13 @@ describe("v7 零遮挡几何", () => {
     const dockAt = sk.indexOf('<div class="xm-dock"');
     expect(wrapAt).toBeGreaterThan(-1);
     expect(dockAt).toBeGreaterThan(wrapAt);
-    // 舞台段内零按钮：wrap 开标签到 panel 之前的按钮只能出现在 dock 段里
+    // 舞台段内只允许 P1-1 的猫身常驻收起角标（.xm-mini-close，猫身上的唯一按钮，
+    // 不扩展猫的包围盒/点按区）；其余按钮一律只能出现在 dock 段里。
+    // 本断言的真实不变量是“坞在主列内、是舞台的兄弟”（下行断言），mini-close 不碰它。
     const panelAt = sk.indexOf('<div class="xm-panel"');
     const stageZone = sk.slice(wrapAt, dockAt);
-    expect(stageZone).not.toContain("<button");
+    expect(stageZone.match(/<button/g) ?? []).toHaveLength(1);
+    expect(stageZone).toContain('aria-label="收起小猫猫"');
     expect(sk.slice(dockAt, panelAt)).toContain('role="toolbar"');
   });
 });
@@ -118,7 +121,9 @@ describe("v7 按需唤出接线", () => {
 
   it("互斥：气泡出现先收坞；面板/游戏打开先收坞", () => {
     const bubbleAt = WIDGET.indexOf("function showBubble(text, speakIt)");
-    expect(WIDGET.slice(bubbleAt, bubbleAt + 200)).toContain("hideControls();");
+    // P1-1 在 showBubble 入口加了 userTyping 守卫注释 + if (userTyping) return;，
+    // hideControls() 被推到函数起首后 188 字符处，200 字符窗口刚好切掉 "();"，放宽到 260。
+    expect(WIDGET.slice(bubbleAt, bubbleAt + 260)).toContain("hideControls();");
     const panelAt = WIDGET.indexOf("function openPanel()");
     expect(WIDGET.slice(panelAt, panelAt + 120)).toContain("hideControls();");
     const gameAt = WIDGET.indexOf("function openGame()");

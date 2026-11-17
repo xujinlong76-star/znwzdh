@@ -5,7 +5,7 @@
  *    不依赖真实今天；
  *  - 源码守卫：倒计时岛与首页条带按档位上色、提醒文案只对已关注考试
  *    显示、未关注只变色不出文案；时钟卡倒计时行只读 nearestExamCountdown、
- *    点按跳 /exam、六场全结束隐藏。
+ *    点按跳 /exam、八场全结束隐藏。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -60,11 +60,15 @@ const DEC_05_0800_CST = Date.UTC(2026, 11, 5, 0, 0, 0)
 const DEC_06_0800_CST = Date.UTC(2026, 11, 6, 0, 0, 0)
 /** 2026-12-07 08:00 北京时间：省考已过，省考两条撞期提醒应下线 */
 const DEC_07_0800_CST = Date.UTC(2026, 11, 7, 0, 0, 0)
+/** 2026-12-12 08:00 北京时间：四六级笔试日（军队文职 12-13 不抢最近场） */
+const DEC_12_0800_CST = Date.UTC(2026, 11, 12, 0, 0, 0)
+/** 2026-12-13 08:00 北京时间：军队文职笔试日 */
+const DEC_13_0800_CST = Date.UTC(2026, 11, 13, 0, 0, 0)
 /** 2026-12-19 08:00 北京时间：考研首日 */
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研末日（进行中） */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：六场全过 */
+/** 2026-12-21 08:00 北京时间：八场全过 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('urgencyTier（倒计时紧迫度分档）', () => {
@@ -198,33 +202,61 @@ describe('nearestExamCountdown（时钟卡倒计时行）', () => {
     expect(jingkao.tagline).toContain('公安专业科目 12 月 5 日')
     expect(jingkao.tagline).toContain('公共科目 12 月 6 日')
     expect(jingkao.firstExamDayISO).toBe('2026-12-05')
+    // 首考日文案仍在数据层（当前被同日首考的教资面试遮蔽，nearest 轮不到
+    // 京考；条目移除后自动恢复，故字段本身不能删）
+    expect(jingkao.firstDayLabel).toBe('今天京考 · 公安专业科目 14:00 开考')
+    expect(jingkao.eveLabel).toBe('明天京考（公安专业科目先考 12 月 5 日）')
   })
 
-  it('国考过后切到京考：11-30 距京考首考日 5 天，soon 档', () => {
-    // 京考首考日 12-05 早于省考 12-06（U-76：公安专业科目先考），国考过后最近场是京考
+  it('国考过后切到教资面试：11-30 距教资面试首考日 5 天，soon 档', () => {
+    // 教资面试首考日 12-05 与京考同日、且在 EXAMS 数组中排在京考之前，
+    // stable sort 平局数组在前者胜出，故国考过后最近场是教资面试而非京考
     expect(nearestExamCountdown(NOV_30_0800_CST)).toMatchObject({
-      exam: expect.objectContaining({ id: 'jingkao' }),
+      exam: expect.objectContaining({ id: 'jiaoshi-mianshi' }),
       days: 5,
       tier: 'soon',
-      label: '距京考 5 天',
+      label: '距教资面试 5 天',
     })
   })
 
-  it('京考首考日前一天 tomorrow、首考日与公共科目日 today', () => {
+  it('教资面试首考日前一天 tomorrow、首考日与次日进行中（多日面试不走单日 today）', () => {
     expect(nearestExamCountdown(DEC_04_0800_CST)).toMatchObject({
       days: 1,
       tier: 'tomorrow',
-      label: '明天京考（公安专业科目先考 12 月 5 日）',
+      label: '明天教资面试',
     })
     expect(nearestExamCountdown(DEC_05_0800_CST)).toMatchObject({
       days: 0,
       tier: 'today',
-      label: '今天京考 · 公安专业科目 14:00 开考',
+      label: '教资面试进行中 · 第 1 天',
     })
     expect(nearestExamCountdown(DEC_06_0800_CST)).toMatchObject({
       days: -1,
       tier: 'today',
-      label: '今天京考',
+      label: '教资面试进行中 · 第 2 天',
+    })
+  })
+
+  it('12-07 起最近场回到四六级，12-13 切到军队文职（此前为考研）', () => {
+    // 12-07–12-12 最近仍是四六级（12-12 首考日早于军队文职 12-13）
+    expect(nearestExamCountdown(DEC_07_0800_CST)).toMatchObject({
+      exam: expect.objectContaining({ id: 'cet' }),
+      days: 5,
+      tier: 'soon',
+      label: '距四六级 5 天',
+    })
+    expect(nearestExamCountdown(DEC_12_0800_CST)).toMatchObject({
+      exam: expect.objectContaining({ id: 'cet' }),
+      days: 0,
+      tier: 'today',
+      label: '今天四六级',
+    })
+    // 12-13 四六级已过，军队文职当天 today；此前同一天最近场是考研
+    expect(nearestExamCountdown(DEC_13_0800_CST)).toMatchObject({
+      exam: expect.objectContaining({ id: 'jundui-wenzhi' }),
+      days: 0,
+      tier: 'today',
+      label: '今天军队文职',
     })
   })
 
@@ -241,7 +273,7 @@ describe('nearestExamCountdown（时钟卡倒计时行）', () => {
     })
   })
 
-  it('六场全结束返回 undefined：12-21 时钟卡该行隐藏，不写未公布日期', () => {
+  it('八场全结束返回 undefined：12-21 时钟卡该行隐藏，不写未公布日期', () => {
     expect(nearestExamCountdown(DEC_21_0800_CST)).toBeUndefined()
   })
 })
@@ -267,7 +299,7 @@ describe('源码守卫：按档位上色、提醒只对已关注显示', () => {
     expect(view).not.toContain('text-sky-600')
   })
 
-  it('时钟卡倒计时行只读 nearestExamCountdown、点按跳 /exam、六场全结束隐藏', () => {
+  it('时钟卡倒计时行只读 nearestExamCountdown、点按跳 /exam、八场全结束隐藏', () => {
     const widget = read('src/components/modular/modules/clock-widget.tsx')
     expect(widget).toContain('nearestExamCountdown(')
     expect(widget).toContain('href="/exam"')

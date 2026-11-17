@@ -5,7 +5,7 @@
  *  - 国考卡片挂准考证打印提醒岛（只在 11-22–11-29 15:00 渲染，官方链接在
  *    exam-calendar 常量里，不在页面写死域名；15:00 准点下线靠客户端岛，
  *    服务端页 revalidate 1 小时会迟到 1 小时）；
- *  - 考试清单只含已核实的六场：国考、四六级、省考、京考、考研、成考，不含已考完的
+ *  - 考试清单只含已核实的八场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试，不含已考完的
  *    经济师（11-07–08）等过期场次；省考文案不写「联考」；
  *    成考是例外：统考 10-17–18 已结束，但成绩节点 11-18 未过，故列入清单。
  *  - 页面外链一律过 safeHref，备考站点从 navigation.json 现读、页面不硬编码
@@ -20,8 +20,11 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   EXAMS,
+  JIAOSHI_MIANSHI_URL,
   JINGKAO_APPLY_URL,
   JINGKAO_NOTICE_URL,
+  JUNDUANWENZHI_ADMISSION_URL,
+  JUNDUANWENZHI_PORTAL_URL,
   countdownParts,
   daysUntil,
   examNodeStatus,
@@ -36,13 +39,16 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
 
 describe('daysUntil（北京时间自然日）', () => {
-  it('六场考试距 11-13 的天数与日历一致', () => {
+  it('八场考试距 11-13 的天数与日历一致', () => {
     expect(daysUntil('2026-11-29', NOV_13_0800_CST)).toBe(16)
     expect(daysUntil('2026-12-06', NOV_13_0800_CST)).toBe(23)
     expect(daysUntil('2026-12-12', NOV_13_0800_CST)).toBe(29)
     expect(daysUntil('2026-12-19', NOV_13_0800_CST)).toBe(36)
-    // 京考按首考日算：公安专业科目 12-05 距 11-13 为 22 天（公共科目 12-06 为 23 天，与省考同值）
+    // 京考按首考日算：公安专业科目 12-05 距 11-13 为 22 天（公共科目 12-06 为 23 天，与省考同值）；
+    // 教资面试首日也是 12-05，距 11-13 同为 22 天
     expect(daysUntil('2026-12-05', NOV_13_0800_CST)).toBe(22)
+    // 军队文职笔试 12-13 距 11-13 为 30 天
+    expect(daysUntil('2026-12-13', NOV_13_0800_CST)).toBe(30)
     // 成考统考 10-17 已过 27 天（负值），成绩节点 11-18 仍在将来
     expect(daysUntil('2026-10-17', NOV_13_0800_CST)).toBe(-27)
   })
@@ -116,13 +122,15 @@ describe('countdownParts', () => {
   })
 })
 
-describe('考试清单只含已核实的六场', () => {
-  it('恰好六场，首日与核实日期一致', () => {
-    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jingkao', 'kaoyan', 'chengkao'])
+describe('考试清单只含已核实的八场', () => {
+  it('恰好八场，首日与核实日期一致', () => {
+    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jiaoshi-mianshi', 'jundui-wenzhi', 'jingkao', 'kaoyan', 'chengkao'])
     expect(EXAMS.map((e) => e.startISO)).toEqual([
       '2026-11-29',
       '2026-12-12',
       '2026-12-06',
+      '2026-12-05',
+      '2026-12-13',
       '2026-12-06',
       '2026-12-19',
       '2026-10-17',
@@ -243,6 +251,123 @@ describe('京考节点（U-76）', () => {
     expect(byLabel.get('公安专业科目笔试')?.detail).toContain('仅公安机关人民警察职位')
     expect(byLabel.get('公共科目笔试')?.detail).toContain('9:00–11:00')
     expect(byLabel.get('公共科目笔试')?.detail).toContain('14:00–16:30')
+  })
+})
+
+describe('教资面试节点（2026-11-18 01:22 轮）', () => {
+  const jiaoshi = EXAMS.find((e) => e.id === 'jiaoshi-mianshi')!
+
+  it('只列已核实的两节点：准考证打印、面试；报名与成绩节点不收', () => {
+    expect(jiaoshi.name).toBe('2026 年下半年中小学教师资格面试')
+    expect(jiaoshi.shortName).toBe('教资面试')
+    expect(jiaoshi.tagline).toBe('面试 12 月 5–6 日')
+    expect(jiaoshi.examDateLabel).toBe('12 月 5–6 日')
+    expect(jiaoshi.startISO).toBe('2026-12-05')
+    expect(jiaoshi.endISO).toBe('2026-12-06')
+    expect(jiaoshi.nodes.map((n) => n.label)).toEqual(['准考证打印', '面试'])
+    expect(jiaoshi.nodes.map((n) => [n.label, n.startISO, n.endISO])).toEqual([
+      ['准考证打印', '2026-11-30', '2026-12-06'],
+      ['面试', '2026-12-05', '2026-12-06'],
+    ])
+    // 准考证挂中小学教师资格考试网统一入口；面试节点本身无单独入口，
+    // 不重复挂同一链接（跟踪岛会把带 url 的节点都渲染成「去官网打印准考证」）。
+    expect(JIAOSHI_MIANSHI_URL).toBe('https://ntce.neea.edu.cn')
+    const byLabel = new Map(jiaoshi.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('准考证打印')?.url).toBe(JIAOSHI_MIANSHI_URL)
+    expect(byLabel.get('面试')?.url).toBeUndefined()
+    // 报名节点不收（已过期、省际截止时刻不一）；成绩节点不收
+    //（2027-01-08，部分省写「预计」，口径有省际差异）。label 里出现即红。
+    expect(jiaoshi.nodes.map((n) => n.label).join('')).not.toContain('报名')
+    expect(jiaoshi.nodes.map((n) => n.label).join('')).not.toContain('成绩')
+  })
+
+  it('考试状态按日期翻转：12-04 未开始、12-05–06 进行中（多日）、12-07 已结束', () => {
+    expect(examStatus(jiaoshi, Date.UTC(2026, 11, 4, 0, 0))).toBe('upcoming')
+    expect(examStatus(jiaoshi, Date.UTC(2026, 11, 5, 0, 0))).toBe('ongoing')
+    expect(examStatus(jiaoshi, Date.UTC(2026, 11, 6, 0, 0))).toBe('ongoing')
+    expect(examStatus(jiaoshi, Date.UTC(2026, 11, 7, 0, 0))).toBe('ended')
+  })
+
+  it('节点状态按日期翻转：准考证 11-30 进行中、12-07 已结束；面试两日均为进行中（多日节点不走单日 today）', () => {
+    const byLabel = new Map(jiaoshi.nodes.map((n) => [n.label, n]))
+    const admit = byLabel.get('准考证打印')!
+    const interview = byLabel.get('面试')!
+    expect(examNodeStatus(admit, Date.UTC(2026, 10, 29, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(admit, Date.UTC(2026, 10, 30, 0, 0))).toBe('active')
+    expect(examNodeStatus(admit, Date.UTC(2026, 11, 6, 0, 0))).toBe('active')
+    expect(examNodeStatus(admit, Date.UTC(2026, 11, 7, 0, 0))).toBe('done')
+    expect(examNodeStatus(interview, Date.UTC(2026, 11, 4, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(interview, Date.UTC(2026, 11, 5, 0, 0))).toBe('active')
+    expect(examNodeStatus(interview, Date.UTC(2026, 11, 6, 0, 0))).toBe('active')
+    expect(examNodeStatus(interview, Date.UTC(2026, 11, 7, 0, 0))).toBe('done')
+  })
+
+  it('detail 写明窗口与渠道：准考证北京时刻、各省以本省公告为准、面试以准考证为准', () => {
+    const byLabel = new Map(jiaoshi.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('准考证打印')?.detail).toContain('11 月 30 日 10:00')
+    expect(byLabel.get('准考证打印')?.detail).toContain('12 月 6 日 16:00')
+    expect(byLabel.get('准考证打印')?.detail).toContain('各省以本省公告为准')
+    expect(byLabel.get('准考证打印')?.detail).toContain('中小学教师资格考试网')
+    expect(byLabel.get('面试')?.detail).toContain('12 月 5–6 日')
+    expect(byLabel.get('面试')?.detail).toContain('以准考证为准')
+  })
+})
+
+describe('军队文职节点（2026-11-18 01:22 轮）', () => {
+  const jundui = EXAMS.find((e) => e.id === 'jundui-wenzhi')!
+
+  it('只列已核实的两节点：准考证打印、全军统一笔试；报名/缴费/成绩节点不收', () => {
+    expect(jundui.name).toBe('2026 年军队文职人员公开招考')
+    expect(jundui.shortName).toBe('军队文职')
+    expect(jundui.tagline).toBe('全军统一笔试 12 月 13 日')
+    expect(jundui.examDateLabel).toBe('12 月 13 日')
+    expect(jundui.startISO).toBe('2026-12-13')
+    expect(jundui.endISO).toBe('2026-12-13')
+    expect(jundui.nodes.map((n) => n.label)).toEqual(['准考证打印', '全军统一笔试'])
+    expect(jundui.nodes.map((n) => [n.label, n.startISO, n.endISO])).toEqual([
+      ['准考证打印', '2026-12-07', '2026-12-13'],
+      ['全军统一笔试', '2026-12-13', '2026-12-13'],
+    ])
+    // 准考证挂报名系统直达（公告原文所载）；笔试节点不挂 url：
+    // 81rc 公告文章直链未核到，不得编造；门户只作引用（与国考门户同款）。
+    expect(JUNDUANWENZHI_ADMISSION_URL).toBe('https://wzryzk.81rc.mil.cn/qjwzwb')
+    expect(JUNDUANWENZHI_PORTAL_URL).toBe('http://www.81rc.mil.cn')
+    const byLabel = new Map(jundui.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('准考证打印')?.url).toBe(JUNDUANWENZHI_ADMISSION_URL)
+    expect(byLabel.get('全军统一笔试')?.url).toBeUndefined()
+    // 报名/缴费/成绩节点不收：报名已过期；缴费仅面向文体岗位先面试人员；
+    // 成绩 2027 年 1 月底左右，无确切日。label 里出现即红。
+    expect(jundui.nodes.map((n) => n.label).join('')).not.toContain('报名')
+    expect(jundui.nodes.map((n) => n.label).join('')).not.toContain('缴费')
+    expect(jundui.nodes.map((n) => n.label).join('')).not.toContain('成绩')
+  })
+
+  it('考试状态按日期翻转：12-12 未开始、12-13 今天、12-14 已结束', () => {
+    expect(examStatus(jundui, Date.UTC(2026, 11, 12, 0, 0))).toBe('upcoming')
+    expect(examStatus(jundui, Date.UTC(2026, 11, 13, 0, 0))).toBe('today')
+    expect(examStatus(jundui, Date.UTC(2026, 11, 14, 0, 0))).toBe('ended')
+  })
+
+  it('节点状态按日期翻转：准考证 12-07 进行中、12-14 已结束；笔试 12-13 当天为今天、次日已结束', () => {
+    const byLabel = new Map(jundui.nodes.map((n) => [n.label, n]))
+    const admit = byLabel.get('准考证打印')!
+    const written = byLabel.get('全军统一笔试')!
+    expect(examNodeStatus(admit, Date.UTC(2026, 11, 6, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(admit, Date.UTC(2026, 11, 7, 0, 0))).toBe('active')
+    expect(examNodeStatus(admit, Date.UTC(2026, 11, 13, 0, 0))).toBe('active')
+    expect(examNodeStatus(admit, Date.UTC(2026, 11, 14, 0, 0))).toBe('done')
+    expect(examNodeStatus(written, Date.UTC(2026, 11, 12, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(written, Date.UTC(2026, 11, 13, 0, 0))).toBe('today')
+    expect(examNodeStatus(written, Date.UTC(2026, 11, 14, 0, 0))).toBe('done')
+  })
+
+  it('detail 写明时刻与渠道：准考证窗口时刻、报名系统、公共/专业科目时刻', () => {
+    const byLabel = new Map(jundui.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('准考证打印')?.detail).toContain('12 月 7 日 9:00')
+    expect(byLabel.get('准考证打印')?.detail).toContain('12 月 13 日 14:00')
+    expect(byLabel.get('准考证打印')?.detail).toContain('军队人才网报名系统')
+    expect(byLabel.get('全军统一笔试')?.detail).toContain('公共科目 9:00–11:00')
+    expect(byLabel.get('全军统一笔试')?.detail).toContain('专业科目 14:00–16:00')
   })
 })
 

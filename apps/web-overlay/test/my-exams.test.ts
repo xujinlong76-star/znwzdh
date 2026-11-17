@@ -2,7 +2,7 @@
  * 「我的考试」关注 + 考前清单（/exam 第二轮）测试：
  *  - 纯规则层 my-exams.ts：解析收敛、关注开关、节点勾选、进度与下一步；
  *  - 共享 hook useMyExams.ts：挂载后才读 localStorage、读写各一处、
- *    六场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
+ *    八场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
  *  - 源码守卫：岛只读事实源（不硬编码日期）、岛内无直接存储调用、
  *    小字与徽章配方合规、按钮 44px、真 checkbox、可勾选只对已关注开放。
  */
@@ -14,8 +14,10 @@ import {
   CET_ADMISSION_URL,
   EXAMS,
   GUOKAO_ADMISSION_URL,
+  JIAOSHI_MIANSHI_URL,
   JINGKAO_APPLY_URL,
   JINGKAO_NOTICE_URL,
+  JUNDUANWENZHI_ADMISSION_URL,
   GUANGDONG_SHENGKAO_ADMISSION_URL,
   JIANGSU_SHENGKAO_ADMISSION_URL,
   SHANDONG_SHENGKAO_ADMISSION_URL,
@@ -83,7 +85,11 @@ const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研末日，仍算未结束 */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：六场全过 */
+/** 2026-12-13 08:00 北京时间：军队文职笔试日 */
+const DEC_13_0800_CST = Date.UTC(2026, 11, 13, 0, 0, 0)
+/** 2026-12-14 08:00 北京时间：军队文职笔试次日 */
+const DEC_14_0800_CST = Date.UTC(2026, 11, 14, 0, 0, 0)
+/** 2026-12-21 08:00 北京时间：八场全过 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('parseMyExams（不可信输入收敛）', () => {
@@ -146,7 +152,7 @@ describe('toggleFollow', () => {
 
   it('已结束的考试不再接受新关注（纵深防御：岛层按钮已禁用，纯函数层也写不进）', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
-    // 国考 11-29 已过（11-30 时），考研六场全过（12-21 时）
+    // 国考 11-29 已过（11-30 时），考研八场全过（12-21 时）
     expect(toggleFollow(empty, 'guokao', NOV_30_0800_CST)).toBe(empty)
     expect(toggleFollow(empty, 'kaoyan', DEC_21_0800_CST)).toBe(empty)
   })
@@ -259,7 +265,7 @@ describe('nearestFollowedExam（已关注优先，首页条带挂载后用）', 
     ).toBe('kaoyan')
   })
 
-  it('六场全过、关注场全部已结束返回 undefined', () => {
+  it('八场全过、关注场全部已结束返回 undefined', () => {
     const state: MyExamsState = { followed: ['guokao', 'cet', 'kaoyan'], checked: {} }
     expect(nearestFollowedExam(state, DEC_21_0800_CST)).toBeUndefined()
   })
@@ -274,7 +280,8 @@ describe('nearestFollowedExam（已关注优先，首页条带挂载后用）', 
     // 2026-11-16 0922 C 线：与 nearestExam 同口径的合成数据——A 公共科目
     // 首日 12-01 但有加试、首考日 11-20；B 无加试、首日 11-25。按 startISO
     // 排会先挑 B，按首考日排应先挑 A。真实数据里国考与京考首考日
-    // ≠ startISO（京考首考日 12-05 早于省考 12-06，11-30 起最近场即为京考）。
+    // ≠ startISO（京考首考日 12-05 早于省考 12-06；11-30 起最近场现为
+    // 教资面试，与京考同日首考、数组在前）。
     const examA: ExamInfo = {
       id: 'exam-a',
       name: '合成考试 A',
@@ -612,6 +619,60 @@ describe('京考节点（U-76）', () => {
     expect(nextTodoNode(state, jingkao, NOV_17_0800_CST)?.label).toBe('报名')
     expect(nextTodoNode(state, jingkao, NOV_19_0800_CST)?.label).toBe('准考证打印')
     expect(nextTodoNode(state, jingkao, DEC_07_0800_CST)).toBeUndefined()
+  })
+})
+
+describe('教资面试节点（2026-11-18 01:22 轮）', () => {
+  const jiaoshi = EXAMS.find((e) => e.id === 'jiaoshi-mianshi')!
+
+  it('只列已核实的两节点，准考证挂统一入口、面试节点不挂链接', () => {
+    expect(jiaoshi.nodes.map((n) => n.label)).toEqual(['准考证打印', '面试'])
+    expect(JIAOSHI_MIANSHI_URL).toBe('https://ntce.neea.edu.cn')
+    const byLabel = new Map(jiaoshi.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('准考证打印')?.url).toBe(JIAOSHI_MIANSHI_URL)
+    expect(byLabel.get('面试')?.url).toBeUndefined()
+  })
+
+  it('下一步待办：11-30 与 12-05 都是准考证打印，12-07 全部节点结束返回 undefined', () => {
+    const state: MyExamsState = { followed: ['jiaoshi-mianshi'], checked: {} }
+    expect(nextTodoNode(state, jiaoshi, NOV_30_0800_CST)?.label).toBe('准考证打印')
+    expect(nextTodoNode(state, jiaoshi, DEC_05_0800_CST)?.label).toBe('准考证打印')
+    expect(nextTodoNode(state, jiaoshi, DEC_07_0800_CST)).toBeUndefined()
+  })
+
+  it('已关注优先：同日首考的教资面试与京考，数组在前的教资面试胜出', () => {
+    const state: MyExamsState = { followed: ['jingkao', 'jiaoshi-mianshi'], checked: {} }
+    expect(nearestFollowedExam(state, NOV_30_0800_CST)?.id).toBe('jiaoshi-mianshi')
+  })
+
+  it('已结束不再接受新关注：12-07 教资面试已过', () => {
+    const empty: MyExamsState = { followed: [], checked: {} }
+    expect(toggleFollow(empty, 'jiaoshi-mianshi', DEC_07_0800_CST)).toBe(empty)
+  })
+})
+
+describe('军队文职节点（2026-11-18 01:22 轮）', () => {
+  const jundui = EXAMS.find((e) => e.id === 'jundui-wenzhi')!
+
+  it('只列已核实的两节点，准考证挂报名系统直达、笔试节点不挂链接', () => {
+    expect(jundui.nodes.map((n) => n.label)).toEqual(['准考证打印', '全军统一笔试'])
+    expect(JUNDUANWENZHI_ADMISSION_URL).toBe('https://wzryzk.81rc.mil.cn/qjwzwb')
+    const byLabel = new Map(jundui.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('准考证打印')?.url).toBe(JUNDUANWENZHI_ADMISSION_URL)
+    expect(byLabel.get('全军统一笔试')?.url).toBeUndefined()
+  })
+
+  it('下一步待办：12-07 指准考证打印，12-13 当天仍是准考证打印（窗口未关），12-14 全部节点结束返回 undefined', () => {
+    const state: MyExamsState = { followed: ['jundui-wenzhi'], checked: {} }
+    expect(nextTodoNode(state, jundui, DEC_07_0800_CST)?.label).toBe('准考证打印')
+    // 准考证窗口 12-07–12-13：12-13 当天窗口仍 active，按开始日排在笔试之前
+    expect(nextTodoNode(state, jundui, DEC_13_0800_CST)?.label).toBe('准考证打印')
+    expect(nextTodoNode(state, jundui, DEC_14_0800_CST)).toBeUndefined()
+  })
+
+  it('已结束不再接受新关注：12-14 军队文职已过', () => {
+    const empty: MyExamsState = { followed: [], checked: {} }
+    expect(toggleFollow(empty, 'jundui-wenzhi', DEC_14_0800_CST)).toBe(empty)
   })
 })
 

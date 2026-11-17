@@ -5,8 +5,9 @@
  *  - 国考卡片挂准考证打印提醒岛（只在 11-22–11-29 15:00 渲染，官方链接在
  *    exam-calendar 常量里，不在页面写死域名；15:00 准点下线靠客户端岛，
  *    服务端页 revalidate 1 小时会迟到 1 小时）；
- *  - 考试清单只含已核实的四场：国考、四六级、省考、考研，不含已考完的
+ *  - 考试清单只含已核实的五场：国考、四六级、省考、考研、成考，不含已考完的
  *    经济师（11-07–08）等过期场次；省考文案不写「联考」；
+ *    成考是例外：统考 10-17–18 已结束，但成绩节点 11-18 未过，故列入清单。
  *  - 页面外链一律过 safeHref，备考站点从 navigation.json 现读、页面不硬编码
  *    12 条站点地址；canonical 自指 /exam；
  *  - 小字链接不用 text-primary（深色/三皮肤下仅 3.33–4.46:1，不达 AA），
@@ -33,11 +34,13 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
 
 describe('daysUntil（北京时间自然日）', () => {
-  it('四场考试距 11-13 的天数与日历一致', () => {
+  it('五场考试距 11-13 的天数与日历一致', () => {
     expect(daysUntil('2026-11-29', NOV_13_0800_CST)).toBe(16)
     expect(daysUntil('2026-12-06', NOV_13_0800_CST)).toBe(23)
     expect(daysUntil('2026-12-12', NOV_13_0800_CST)).toBe(29)
     expect(daysUntil('2026-12-19', NOV_13_0800_CST)).toBe(36)
+    // 成考统考 10-17 已过 27 天（负值），成绩节点 11-18 仍在将来
+    expect(daysUntil('2026-10-17', NOV_13_0800_CST)).toBe(-27)
   })
 
   it('午夜边界：11-28 深夜算 1 天，11-29 零点算 0 天', () => {
@@ -100,15 +103,23 @@ describe('countdownParts', () => {
   })
 })
 
-describe('考试清单只含已核实的四场', () => {
-  it('恰好四场，首日与核实日期一致', () => {
-    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'kaoyan'])
+describe('考试清单只含已核实的五场', () => {
+  it('恰好五场，首日与核实日期一致', () => {
+    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'kaoyan', 'chengkao'])
     expect(EXAMS.map((e) => e.startISO)).toEqual([
       '2026-11-29',
       '2026-12-12',
       '2026-12-06',
       '2026-12-19',
+      '2026-10-17',
     ])
+  })
+
+  it('成考是例外：统考已结束，但成绩节点 11-18 未过，故列入清单', () => {
+    const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
+    expect(examStatus(chengkao, NOV_13_0800_CST)).toBe('ended')
+    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '广东成绩查询'])
+    expect(chengkao.nodes.every((n) => n.startISO === '2026-11-18')).toBe(true)
   })
 
   it('不含已考完的经济师（11-07–08）等过期场次', () => {

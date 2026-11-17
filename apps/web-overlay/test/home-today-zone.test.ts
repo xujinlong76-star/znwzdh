@@ -1,7 +1,9 @@
 /**
  * 首页「今日一件事」区（U-24）测试：
  *  - 今日区只拼四个已有零件（专注 / 考试倒计时 / 短剧榜 / 简报回访），
- *    不写死日期、考试 id、剧名、URL，不新增外链；
+ *    不写死日期、考试 id、剧名、URL；唯一例外是「下一步」节点的外链
+ *    （问题⑪，2026-11-17）：准考证节点挂了已核实官方 url 的，「下一步」
+ *    行渲染为可点链接，走 safeHref + 新窗口，仍不写死 http 字面量；
  *  - 折叠区是客户端开关：默认收起、aria 完备、本机只记开关；
  *  - 行为：今天（2026-11-17）最近一场是国考、距首考日 11 天，
  *    featured 清单首部有剧可取（只断言“有”，不断言具体剧名——
@@ -55,11 +57,16 @@ describe('今日区源码守卫（home-today-zone.tsx）', () => {
     expect(zone).not.toContain('点开即看')
   })
 
-  it('今日区内链只指向站内 /exam 与 /drama（专注与重温是本机岛，无外链）', () => {
+  it('今日区内链只指向站内 /exam 与 /drama，唯一外链是「下一步」准考证直达（问题⑪）', () => {
     expect(zone).toContain('href="/exam"')
     expect(zone).toContain('href="/drama"')
     expect(zone).not.toContain('target="_blank" href="/')
     expect(zone).not.toContain('href="http')
+    // 问题⑪：下一步节点挂了已核实官方 url 才渲染外链，走 safeHref + 新窗口，
+    // 不写死 http 字面量、不写死考试 id 与日期；无 url 的节点仍是纯文本
+    expect(zone).toContain('safeHref(nextNode.url)')
+    expect(zone).toContain('target="_blank"')
+    expect(zone).toContain('nextNode.url')
   })
 
   it('可点目标 44px：考试日历与短剧专区入口 min-h-11', () => {
@@ -70,7 +77,7 @@ describe('今日区源码守卫（home-today-zone.tsx）', () => {
     // 逐个 <a>/<Link> 开标签取 className，逐个断言含 min-h-11；
     // 复审返工：短剧标题链接曾漏 min-h-11，点按高度仅约 20px。
     const linkClasses = [...zone.matchAll(/<(?:a|Link)[\s\S]*?className="([^"]*)"/g)].map((m) => m[1])
-    expect(linkClasses.length).toBe(3)
+    expect(linkClasses.length).toBe(4)
     for (const cls of linkClasses) {
       expect(cls).toContain('min-h-11')
     }

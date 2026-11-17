@@ -2,7 +2,7 @@
  * 「我的考试」关注 + 考前清单（/exam 第二轮）测试：
  *  - 纯规则层 my-exams.ts：解析收敛、关注开关、节点勾选、进度与下一步；
  *  - 共享 hook useMyExams.ts：挂载后才读 localStorage、读写各一处、
- *    四场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
+ *    五场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
  *  - 源码守卫：岛只读事实源（不硬编码日期）、岛内无直接存储调用、
  *    小字与徽章配方合规、按钮 44px、真 checkbox、可勾选只对已关注开放。
  */
@@ -10,7 +10,22 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { CET_ADMISSION_URL, EXAMS, type ExamInfo } from '../src/lib/exam-calendar'
+import {
+  CET_ADMISSION_URL,
+  EXAMS,
+  GUOKAO_ADMISSION_URL,
+  GUANGDONG_SHENGKAO_ADMISSION_URL,
+  JIANGSU_SHENGKAO_ADMISSION_URL,
+  SHANDONG_SHENGKAO_ADMISSION_URL,
+  SHANGHAI_SHENGKAO_ADMISSION_URL,
+  SICHUAN_SHENGKAO_ADMISSION_URL,
+  TIANJIN_SHENGKAO_ADMISSION_URL,
+  ZHEJIANG_SHENGKAO_ADMISSION_URL,
+  examNodeStatus,
+  examStatus,
+  hasActionableNodes,
+  type ExamInfo,
+} from '../src/lib/exam-calendar'
 import {
   MY_EXAMS_STORAGE_KEY,
   checkedCount,
@@ -29,23 +44,35 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 
 const guokao = EXAMS.find((e) => e.id === 'guokao')!
 const cet = EXAMS.find((e) => e.id === 'cet')!
+const shengkao = EXAMS.find((e) => e.id === 'shengkao')!
 const kaoyan = EXAMS.find((e) => e.id === 'kaoyan')!
+const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
 
 /** 2026-11-13 08:00 北京时间（UTC 午夜） */
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
-/** 2026-11-18 08:00 北京时间：口试准考证开放次日（U-19 回归） */
+/** 2026-11-17 08:00 北京时间：成考成绩公布前一日（R1） */
+const NOV_17_0800_CST = Date.UTC(2026, 10, 17, 0, 0, 0)
+/** 2026-11-18 08:00 北京时间：口试准考证开放次日（U-19 回归）；成考成绩公布日 */
 const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)
+/** 2026-11-19 08:00 北京时间：成考成绩公布次日 */
+const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
+/** 2026-11-28 08:00 北京时间：天津省考准考证开放日（U-30） */
+const NOV_28_0800_CST = Date.UTC(2026, 10, 28, 0, 0, 0)
 /** 2026-11-25 08:00 北京时间：四六级口试已过，笔试准考证未开 */
 const NOV_25_0800_CST = Date.UTC(2026, 10, 25, 0, 0, 0)
 /** 2026-12-02 08:00 北京时间：笔试准考证开放次日（U-19 回归） */
 const DEC_02_0800_CST = Date.UTC(2026, 11, 2, 0, 0, 0)
+/** 2026-12-06 08:00 北京时间：省考公共科目笔试日（U-30） */
+const DEC_06_0800_CST = Date.UTC(2026, 11, 6, 0, 0, 0)
+/** 2026-12-07 08:00 北京时间：省考全部结束次日（U-30） */
+const DEC_07_0800_CST = Date.UTC(2026, 11, 7, 0, 0, 0)
 /** 2026-11-30 08:00 北京时间：国考已过 */
 const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
 /** 2026-12-19 08:00 北京时间：考研第一天，已开考 */
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研末日，仍算未结束 */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：四场全过 */
+/** 2026-12-21 08:00 北京时间：五场全过 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('parseMyExams（不可信输入收敛）', () => {
@@ -108,7 +135,7 @@ describe('toggleFollow', () => {
 
   it('已结束的考试不再接受新关注（纵深防御：岛层按钮已禁用，纯函数层也写不进）', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
-    // 国考 11-29 已过（11-30 时），考研四场全过（12-21 时）
+    // 国考 11-29 已过（11-30 时），考研五场全过（12-21 时）
     expect(toggleFollow(empty, 'guokao', NOV_30_0800_CST)).toBe(empty)
     expect(toggleFollow(empty, 'kaoyan', DEC_21_0800_CST)).toBe(empty)
   })
@@ -221,7 +248,7 @@ describe('nearestFollowedExam（已关注优先，首页条带挂载后用）', 
     ).toBe('kaoyan')
   })
 
-  it('四场全过、关注场全部已结束返回 undefined', () => {
+  it('五场全过、关注场全部已结束返回 undefined', () => {
     const state: MyExamsState = { followed: ['guokao', 'cet', 'kaoyan'], checked: {} }
     expect(nearestFollowedExam(state, DEC_21_0800_CST)).toBeUndefined()
   })
@@ -322,20 +349,222 @@ describe('四六级准考证打印直达入口（U-31）', () => {
     expect(CET_ADMISSION_URL).toBe('https://cet-bm.neea.edu.cn')
   })
 
-  it('口试与笔试两个打印节点都挂同一官方入口，余下节点不挂链接', () => {
+  it('准考证打印节点挂的官方入口与核实一致：国考、四六级、省考七省', () => {
     // 口试与笔试准考证共用 CET 报名网打印（首页「快速打印准考证」），
     // 节点 label 本身区分口试/笔试，链接不另写区分文案。
+    expect(guokao.nodes.find((n) => n.label === '准考证打印')?.url).toBe(
+      GUOKAO_ADMISSION_URL,
+    )
     const printNodes = cet.nodes.filter((n) => n.label.endsWith('准考证打印'))
     expect(printNodes.map((n) => n.label)).toEqual(['口试准考证打印', '笔试准考证打印'])
     for (const node of printNodes) {
       expect(node.url).toBe(CET_ADMISSION_URL)
     }
     expect(cet.nodes.filter((n) => n.url !== undefined)).toHaveLength(2)
+    // 省考七省各挂本省官方报名系统（U-30，2026-11-17 按公告原文逐项核实）。
+    const expectedShengkaoUrl: Record<string, string> = {
+      '天津准考证打印': TIANJIN_SHENGKAO_ADMISSION_URL,
+      '山东准考证打印': SHANDONG_SHENGKAO_ADMISSION_URL,
+      '四川准考证打印': SICHUAN_SHENGKAO_ADMISSION_URL,
+      '浙江准考证打印': ZHEJIANG_SHENGKAO_ADMISSION_URL,
+      '江苏准考证打印': JIANGSU_SHENGKAO_ADMISSION_URL,
+      '广东准考证打印': GUANGDONG_SHENGKAO_ADMISSION_URL,
+      '上海准考证打印': SHANGHAI_SHENGKAO_ADMISSION_URL,
+    }
+    const shengkaoPrintNodes = shengkao.nodes.filter((n) => n.label.endsWith('准考证打印'))
+    expect(shengkaoPrintNodes).toHaveLength(7)
+    for (const node of shengkaoPrintNodes) {
+      expect(node.url).toBe(expectedShengkaoUrl[node.label])
+    }
+    expect(shengkao.nodes.filter((n) => n.url !== undefined)).toHaveLength(7)
+    // 考研与成考节点不挂链接：考研准考证官方只说「考前 10 天左右」（无入口可挂），
+    // 成考两省查分走小程序/栏目（无网页 URL 可挂，不编链接）。
     expect(
-      EXAMS.filter((e) => e.id !== 'cet')
+      EXAMS.filter((e) => e.id === 'kaoyan' || e.id === 'chengkao')
         .flatMap((e) => e.nodes)
         .every((n) => n.url === undefined),
     ).toBe(true)
+  })
+})
+
+describe('省考七省准考证节点（U-30）', () => {
+  it('七省分省建节点，按开始日排序，窗口与公告原文一致', () => {
+    const nodes = shengkao.nodes.filter((n) => n.label.endsWith('准考证打印'))
+    expect(nodes.map((n) => n.label)).toEqual([
+      '天津准考证打印',
+      '山东准考证打印',
+      '四川准考证打印',
+      '浙江准考证打印',
+      '江苏准考证打印',
+      '广东准考证打印',
+      '上海准考证打印',
+    ])
+    const byLabel = new Map(nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('天津准考证打印')).toMatchObject({
+      startISO: '2026-11-28',
+      endISO: '2026-12-06',
+      estimated: true,
+    })
+    expect(byLabel.get('山东准考证打印')).toMatchObject({
+      startISO: '2026-12-01',
+      endISO: '2026-12-06',
+    })
+    expect(byLabel.get('四川准考证打印')).toMatchObject({
+      startISO: '2026-12-01',
+      endISO: '2026-12-06',
+      estimated: true,
+    })
+    expect(byLabel.get('浙江准考证打印')).toMatchObject({
+      startISO: '2026-12-01',
+      endISO: '2026-12-06',
+    })
+    expect(byLabel.get('江苏准考证打印')).toMatchObject({
+      startISO: '2026-12-02',
+      endISO: '2026-12-06',
+    })
+    expect(byLabel.get('广东准考证打印')).toMatchObject({
+      startISO: '2026-12-02',
+      endISO: '2026-12-06',
+      estimated: true,
+    })
+    expect(byLabel.get('上海准考证打印')).toMatchObject({
+      startISO: '2026-12-02',
+      endISO: '2026-12-05',
+    })
+    // 窗口明确的四省不挂 estimated；广东/天津/四川挂 estimated。
+    for (const label of ['山东准考证打印', '浙江准考证打印', '江苏准考证打印', '上海准考证打印']) {
+      expect(byLabel.get(label)?.estimated).toBeUndefined()
+    }
+  })
+
+  it('窗口明确的四省按日期翻转，无截止/无时刻的三省恒为 estimated', () => {
+    const byLabel = new Map(
+      shengkao.nodes.map((n) => [n.label, n]),
+    )
+    const jiangsu = byLabel.get('江苏准考证打印')!
+    const shanghai = byLabel.get('上海准考证打印')!
+    const zhejiang = byLabel.get('浙江准考证打印')!
+    // 自然日口径：12-06 当天仍进行中（15:00 截止是时刻，不按自然日翻），12-07 才翻已结束。
+    expect(examNodeStatus(jiangsu, DEC_02_0800_CST)).toBe('active')
+    expect(examNodeStatus(jiangsu, DEC_06_0800_CST)).toBe('active')
+    expect(examNodeStatus(jiangsu, DEC_07_0800_CST)).toBe('done')
+    expect(examNodeStatus(zhejiang, DEC_06_0800_CST)).toBe('active')
+    expect(examNodeStatus(zhejiang, DEC_07_0800_CST)).toBe('done')
+    expect(examNodeStatus(shanghai, DEC_06_0800_CST)).toBe('done')
+    // 广东/天津/四川：12-07 仍为 estimated 而非 done（U-19 教训：不编造截止）。
+    for (const label of ['广东准考证打印', '天津准考证打印', '四川准考证打印']) {
+      const node = byLabel.get(label)!
+      expect(examNodeStatus(node, DEC_02_0800_CST)).toBe('estimated')
+      expect(examNodeStatus(node, DEC_07_0800_CST)).toBe('estimated')
+    }
+    // 天津 11-28 开放当天即为 estimated（不因开放日翻 active）。
+    expect(examNodeStatus(byLabel.get('天津准考证打印')!, NOV_28_0800_CST)).toBe('estimated')
+  })
+
+  it('无截止/无时刻的 detail 如实写明，不编造截止时刻', () => {
+    const byLabel = new Map(shengkao.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('天津准考证打印')?.detail).toContain('公告未写截止')
+    expect(byLabel.get('广东准考证打印')?.detail).toContain('公告未写截止')
+    expect(byLabel.get('四川准考证打印')?.detail).toContain('公告未写时刻')
+    expect(byLabel.get('江苏准考证打印')?.detail).toBe('12 月 2 日 9:00 至 12 月 6 日 15:00')
+    expect(byLabel.get('山东准考证打印')?.detail).toBe('12 月 1 日 9:00 至 12 月 6 日 14:15')
+    expect(byLabel.get('浙江准考证打印')?.detail).toBe('12 月 1 日 9:00 至 12 月 6 日 17:00')
+    expect(byLabel.get('上海准考证打印')?.detail).toBe('12 月 2 日 10:00 至 12 月 5 日 18:00')
+  })
+
+  it('省考 note 补一句七省窗口各异、分省见节点', () => {
+    expect(shengkao.note).toContain('分省见节点')
+  })
+
+  it('下一步待办：11-28 天津最早开放，12-07 全部节点结束返回 undefined', () => {
+    const state: MyExamsState = { followed: ['shengkao'], checked: {} }
+    expect(nextTodoNode(state, shengkao, NOV_28_0800_CST)?.label).toBe('天津准考证打印')
+    expect(nextTodoNode(state, shengkao, DEC_07_0800_CST)).toBeUndefined()
+  })
+})
+
+describe('成考成绩分省节点', () => {
+  it('只列 11-18 当天可查的广东与江西两省，不写全国单节点', () => {
+    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '广东成绩查询'])
+    for (const node of chengkao.nodes) {
+      expect(node.startISO).toBe('2026-11-18')
+      expect(node.endISO).toBe('2026-11-18')
+      // 两省均无网页查分 URL 可挂（广东走小程序；江西查分 URL 未核实），不编链接。
+      expect(node.url).toBeUndefined()
+    }
+  })
+
+  it('11-18 当天两省节点为今天，11-19 公布完成翻已结束（单日公布事件）', () => {
+    const jiangxi = chengkao.nodes[0]!
+    const guangdong = chengkao.nodes[1]!
+    expect(examNodeStatus(jiangxi, NOV_18_0800_CST)).toBe('today')
+    expect(examNodeStatus(guangdong, NOV_18_0800_CST)).toBe('today')
+    expect(examNodeStatus(jiangxi, NOV_19_0800_CST)).toBe('done')
+    expect(examNodeStatus(guangdong, NOV_19_0800_CST)).toBe('done')
+  })
+
+  it('detail 写明各省查询渠道：江西栏目名、广东小程序渠道与时刻', () => {
+    const jiangxi = chengkao.nodes[0]!
+    const guangdong = chengkao.nodes[1]!
+    expect(jiangxi.detail).toContain('9:00')
+    expect(jiangxi.detail).toContain('江西省教育考试院网服务大厅')
+    expect(guangdong.detail).toContain('16:00')
+    expect(guangdong.detail).toContain('16:20')
+    expect(guangdong.detail).toContain('小程序')
+  })
+
+  it('成考统考已结束，但成绩节点 11-18 当天仍算下一步待办', () => {
+    // nextTodoNode 只看节点本身是否可行动，不看考试是否结束——成绩节点
+    // 11-18 当天仍是待办；统考 10-17–18 已过，examStatus 当天已是 ended。
+    const state: MyExamsState = { followed: ['chengkao'], checked: {} }
+    expect(nextTodoNode(state, chengkao, NOV_18_0800_CST)?.label).toBe('江西成绩查询')
+  })
+})
+
+describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结束」', () => {
+  it('成考 11-17/11-18 统考已结束但仍有可办节点，11-19 起无可办节点', () => {
+    // 触发条件：examStatus 已是 ended，但两省成绩节点未过。
+    expect(examStatus(chengkao, NOV_17_0800_CST)).toBe('ended')
+    expect(examStatus(chengkao, NOV_18_0800_CST)).toBe('ended')
+    expect(hasActionableNodes(chengkao, NOV_17_0800_CST)).toBe(true)
+    expect(hasActionableNodes(chengkao, NOV_18_0800_CST)).toBe(true)
+    // 11-19 后行为不变：节点全 done，无可办节点，卡片回到裸「已结束」。
+    expect(hasActionableNodes(chengkao, NOV_19_0800_CST)).toBe(false)
+    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_19_0800_CST)).toBeUndefined()
+  })
+
+  it('其他考试不受影响：11-18 当天四场均未结束；已结束的国考/考研无可办节点', () => {
+    for (const exam of [guokao, cet, shengkao, kaoyan]) {
+      expect(examStatus(exam, NOV_18_0800_CST)).not.toBe('ended')
+    }
+    expect(examStatus(guokao, NOV_30_0800_CST)).toBe('ended')
+    expect(hasActionableNodes(guokao, NOV_30_0800_CST)).toBe(false)
+    expect(examStatus(kaoyan, DEC_21_0800_CST)).toBe('ended')
+    expect(hasActionableNodes(kaoyan, DEC_21_0800_CST)).toBe(false)
+  })
+
+  it('倒计时岛：有可办节点渲染「统考已结束」，否则裸「已结束」，锚点不动', () => {
+    const countdown = read('src/app/exam/exam-countdown.tsx')
+    expect(countdown).toContain('hasActionableNodes(exam, now)')
+    expect(countdown).toContain("? '统考已结束' : '已结束'")
+    // 倒计时锚点仍是首考日，紧迫度逻辑未动；不硬编码成考 id/日期。
+    expect(countdown).toContain('countdownParts(shanghaiMidnightMs(firstExamDay(exam)), now)')
+    expect(countdown).not.toContain("'chengkao'")
+    expect(countdown).not.toContain('2026-11-18')
+  })
+
+  it('跟踪岛：行文与按钮按有无可办节点切换 scoped 文案，禁用逻辑不动', () => {
+    const island = read('src/app/exam/my-exam-tracker.tsx')
+    expect(island).toContain('hasActionableNodes(exam)')
+    expect(island).toContain('统考已结束，下方节点仍可办理')
+    expect(island).toContain('本场考试已结束')
+    expect(island).toContain("hasPendingNodes ? '统考已结束' : '已结束'")
+    expect(island).toContain('hasPendingNodes ? `${exam.shortName}统考已结束` : `${exam.shortName}已结束`')
+    // 只改渲染文案：关注/勾选的禁用逻辑（ended）不动，不硬编码成考 id/日期。
+    expect(island).toContain('disabled={storageBlocked !== null || (ended && !followed)}')
+    expect(island).toContain('disabled={ended}')
+    expect(island).not.toContain("'chengkao'")
+    expect(island).not.toContain('2026-11-18')
   })
 })
 
@@ -361,7 +590,7 @@ describe('我的考试岛源码守卫', () => {
     expect(island).toContain('examStatus(exam)')
     expect(island).toContain("=== 'ended'")
     expect(island).toContain('disabled={storageBlocked !== null || (ended && !followed)}')
-    expect(island).toContain("ended ? '已结束' : '关注这场考试'")
+    expect(island).toContain("ended ? (hasPendingNodes ? '统考已结束' : '已结束') : '关注这场考试'")
     expect(island).toContain('disabled={ended}')
     expect(island).toContain('已结束')
     expect(island).toContain('本场考试已结束')

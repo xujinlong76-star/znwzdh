@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * 「我的考试」共享 hook：/exam 四场卡片与首页条带共用同一份模块级快照。
+ * 「我的考试」共享 hook：/exam 五场卡片与首页条带共用同一份模块级快照。
  *
  * 旧实现每场卡片各持一份 useState 快照、写回时用闭包旧快照整份覆盖——
  * A 卡片关注后，B 卡片再点一次勾选就会把 A 的关注写丢（丢更新竞态）。
@@ -186,7 +186,7 @@ function persist(next: MyExamsState): boolean {
 
 /**
  * 关注 / 取消关注。写前读模块级共享现态（不是调用方闭包里的旧 state），
- * 四场卡片交错点也不会互相覆盖；读坏时拒写返回 false。
+ * 五场卡片交错点也不会互相覆盖；读坏时拒写返回 false。
  */
 export function toggleMyExamsFollow(examId: string): boolean {
   const current = sharedState

@@ -154,7 +154,8 @@ describe('loadMyExamsLocal（运行时）', () => {
 
 describe('共享写操作（运行时，竞态回归）', () => {
   // 写操作走纯函数层的 ended 守卫（默认 Date.now()）：冻结到 2026-11-13，
-  // 四场考试都未结束，否则 11-29 后 guokao 关注期望 true 的用例会变红。
+  // 本文件用例只碰 guokao/kaoyan（均未结束），否则 11-29 后 guokao 关注期望
+  // true 的用例会变红；成考 10-18 已结束，不在本文件用例里。
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(Date.UTC(2026, 10, 13, 0, 0, 0))

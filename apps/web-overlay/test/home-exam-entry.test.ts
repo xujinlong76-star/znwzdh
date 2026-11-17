@@ -2,7 +2,7 @@
  * 首页「考试季」运营条（HomeExamStrip）红线测试：
  *  - 最近一场与「下一步」节点只按 exam-calendar 事实源算，不硬编码日期；
  *  - 多日考试末日仍算最近一场（考研 12-20 当天条带仍在）；
- *  - 四场全结束时渲染静态空态条带（保留考试日历入口），不再整条消失；
+ *  - 五场全结束时渲染静态空态条带（保留考试日历入口），不再整条消失；
  *    空态不挂倒计时岛、不挂客户端视图、不读存储、不含未公布日期；
  *  - 倒计时走 ExamCountdown 客户端岛，服务端 JSX 里不直出天数；
  *  - 条内常驻链接唯一指向 /exam；准考证打印提醒期（11-22–11-29 15:00）
@@ -40,11 +40,11 @@ const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研第二天，仍在进行中 */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：四场全过 */
+/** 2026-12-21 08:00 北京时间：五场全过 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('nearestExam（最近一场）', () => {
-  it('11-13 最近是国考，11-30 最近是省考，12-20 考研末日仍是考研，12-21 四场全过返回 undefined', () => {
+  it('11-13 最近是国考，11-30 最近是省考，12-20 考研末日仍是考研，12-21 五场全过返回 undefined', () => {
     expect(nearestExam(NOV_13_0800_CST)?.id).toBe('guokao')
     expect(nearestExam(NOV_30_0800_CST)?.id).toBe('shengkao')
     expect(nearestExam(DEC_20_0800_CST)?.id).toBe('kaoyan')
@@ -102,9 +102,14 @@ describe('nextExamNode（下一步节点）', () => {
     expect(nextExamNode(guokao, NOV_30_0800_CST)).toBeUndefined()
   })
 
-  it('省考 11-30 下一步是 12-05 专业科目笔试', () => {
+  it('省考 11-30 下一步是天津准考证打印（U-30：七省节点按开始日排，天津 11-28 最早）', () => {
     const shengkao = EXAMS.find((e) => e.id === 'shengkao')!
-    expect(nextExamNode(shengkao, NOV_30_0800_CST)?.label).toBe('专业科目笔试')
+    expect(nextExamNode(shengkao, NOV_30_0800_CST)?.label).toBe('天津准考证打印')
+  })
+
+  it('省考 12-07 下一步返回 undefined：七省节点全过，预计节点开考后不再算待办', () => {
+    const shengkao = EXAMS.find((e) => e.id === 'shengkao')!
+    expect(nextExamNode(shengkao, Date.UTC(2026, 11, 7, 0, 0))).toBeUndefined()
   })
 
   it('考研的预计节点（准考证下载）也算下一步，不因 estimated 被跳过', () => {
@@ -133,7 +138,7 @@ describe('首页考试条源码守卫', () => {
     expect(strip).not.toContain('2026-12-19')
   })
 
-  it('服务端外壳保持服务端组件：四场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
+  it('服务端外壳保持服务端组件：五场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
     expect(strip).not.toContain("'use client'")
     expect(strip).not.toContain('if (!nearest) return null')
     expect(strip).toContain('if (!nearest) return <HomeExamStripEmptyState />')

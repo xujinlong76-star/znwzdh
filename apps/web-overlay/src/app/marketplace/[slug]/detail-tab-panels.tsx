@@ -34,6 +34,38 @@ function isImageIcon(value: string): boolean {
   const v = value.trim()
   return /^(https?:\/\/|\/|data:image\/|blob:)/i.test(v)
 }
+
+/**
+ * P2-6：截图只渲染可信公网 https 地址。清单只校验 http/https 绝对地址，
+ * 渲染层再拦一道：http（明文）、localhost、内网段（10/8、172.16/12、
+ * 192.168/16）、回环（127/8、::1）、链路本地/元数据地址（169.254/16，
+ * 含 169.254.169.254）一律不渲染——否则浏览器会向内网/元数据端点发请求，
+ * 且多数作者截图在媒体代理白名单外会被 403 打破显示。
+ */
+export function isSafeScreenshotUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  let url: URL
+  try {
+    url = new URL(value.trim())
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:') return false
+  const host = url.hostname.toLowerCase()
+  if (host === 'localhost' || host.endsWith('.localhost') || host === 'metadata.google.internal') return false
+  const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (v4) {
+    const a = Number(v4[1])
+    const b = Number(v4[2])
+    if (a === 0 || a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)) return false
+    return true
+  }
+  // 十六进制/八进制写法的 IP（如 0x7f.0.0.1）会绕过上面的十进制段判断，同样禁掉
+  if (host.split('.').some((part) => /^0x/i.test(part) || /^0\d+$/.test(part))) return false
+  const bare = host.replace(/^\[|\]$/g, '')
+  if (bare.includes(':') && (bare === '::1' || bare.startsWith('fe80:') || bare.startsWith('fc') || bare.startsWith('fd'))) return false
+  return true
+}
 import type { useCopyFeedback } from '@/hooks/use-copy-feedback'
 
  
@@ -61,6 +93,8 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
     onChanged,
   } = props
   const [testSearchQuery, setTestSearchQuery] = useState('山羊胡')
+  // P2-6：只渲染白名单通过的公网 https 截图（其余静默丢弃，不占位、不报错）
+  const screenshots = (plugin.manifest?.screenshots ?? []).filter(isSafeScreenshotUrl)
   return (
     <>
           {activeTab === 'preview' && (
@@ -71,28 +105,33 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
               className="space-y-6"
             >
               {/* 截图/画廊（D 批）：作者在清单里填了真实截图才显示，未填不显示、
-                  不造假图、不显示占位假图；点击在新标签页看原图 */}
-              {Array.isArray(plugin.manifest?.screenshots) &&
-                plugin.manifest.screenshots.length > 0 && (
+                  不造假图、不显示占位假图；点击在新标签页看原图。P2-6：只渲染白名单
+                  通过的公网 https 截图，容器 aspect-video 定高 + 1280×720 尺寸属性，
+                  不定比例截图用 object-contain，零 CLS；不走 next/image（优化器会以
+                  本站身份抓取任意第三方地址）。 */}
+              {screenshots.length > 0 && (
                   <div className="space-y-3">
                     <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                       <LayoutGrid className="w-4 h-4 text-primary" />
-                      <span>截图预览 ({plugin.manifest.screenshots.length})</span>
+                      <span>截图预览 ({screenshots.length})</span>
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {plugin.manifest.screenshots.map((src: string, idx: number) => (
+                      {screenshots.map((src: string, idx: number) => (
                         <a
                           key={`${src}-${idx}`}
                           href={safeHref(src)}
                           target="_blank"
                           rel="noreferrer noopener"
-                          className="block rounded-xl border border-border/70 bg-card/60 overflow-hidden hover:border-primary/40 transition-colors"
+                          className="block aspect-video rounded-xl border border-border/70 bg-card/60 overflow-hidden hover:border-primary/40 transition-colors"
                         >
                           <img
                             src={src}
                             alt={`${plugin.name} 截图 ${idx + 1}`}
+                            width={1280}
+                            height={720}
                             loading="lazy"
-                            className="w-full h-auto object-contain bg-muted/30"
+                            referrerPolicy="no-referrer"
+                            className="h-full w-full object-contain bg-muted/30"
                           />
                         </a>
                       ))}

@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
@@ -30,8 +31,13 @@ import { resolveInstallAction } from '@/lib/plugins/install-state'
 import type { DetailTab } from './detail-shared'
 
 const DETAIL_TABS: DetailTab[] = ['preview', 'diff', 'impact', 'raw', 'history', 'reviews']
-import { DetailTabPanels } from './detail-tab-panels'
-import { DetailModals } from './detail-modals'
+// P2-5：tab 面板与弹窗只在客户端按需加载，不进首屏 chunk（占位定高防 CLS）
+const DetailTabPanels = dynamic(() => import('./detail-tab-panels').then((m) => m.DetailTabPanels), {
+  ssr: false, loading: () => <div aria-busy="true" className="h-64 rounded-2xl border border-border/40 bg-muted/20"><span className="sr-only">正在加载详情内容</span></div>,
+})
+const DetailModals = dynamic(() => import('./detail-modals').then((m) => m.DetailModals), {
+  ssr: false, loading: () => <div aria-busy="true" className="h-64 rounded-2xl border border-border/40 bg-muted/20"><span className="sr-only">正在加载弹窗</span></div>,
+})
 import { PluginUrlAuditBadge } from '@/components/plugins/plugin-url-audit-badge'
 import { PluginSimilar } from '@/components/plugins/plugin-similar'
 
@@ -70,8 +76,6 @@ import { safeHref } from '@/lib/safe-url'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
-
-
 export default function PluginDetailView({
   slug,
   initialPlugin = null,
@@ -92,11 +96,9 @@ export default function PluginDetailView({
   const [detailSynced, setDetailSynced] = useState(!initialPlugin)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [identity, setIdentity] = useState<string>('')
-
   useEffect(() => {
     setIdentity(getIdentity())
   }, [])
-
   // 交互弹窗
   const [installModalOpen, setInstallModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState<'install' | 'uninstall' | 'upgrade'>('install')
@@ -538,10 +540,6 @@ export default function PluginDetailView({
                 <span className="text-xs font-mono text-muted-foreground px-2 py-0.5 rounded-md bg-muted/50 border border-border/30">
                   v{plugin.version}
                 </span>
-                {/* 只有网址/组合包有 URL 可体检；无历史记录时组件自己返回 null */}
-                {(plugin.kind === 'site-pack' || plugin.kind === 'bundle') && (
-                  <PluginUrlAuditBadge slug={plugin.slug} />
-                )}
                 {plugin.license && (
                   <span className="text-xs text-muted-foreground font-mono">
                     协议: {plugin.license}
@@ -874,6 +872,12 @@ export default function PluginDetailView({
             </div>
           </div>
 
+        {/* 安全摘要（P2-11）：声明式清单明示 + 审计分 + URL 健康徽章（单实例，无历史记录时徽章自返 null） */}
+        <div data-testid="plugin-safety-summary" className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />声明式清单 · 无可执行代码</span>
+          {auditReport && <span>AI 审计 {auditReport.score} 分</span>}
+          {(plugin.kind === 'site-pack' || plugin.kind === 'bundle') && <PluginUrlAuditBadge slug={plugin.slug} />}
+        </div>
           {/* 新版本可用横幅提示 */}
           {installAction === 'update' && (
             <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">

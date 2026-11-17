@@ -39,12 +39,16 @@ const COUNTDOWN_LABEL_CLASS: Record<ExamUrgencyTier, string> = {
 
 /** 今日日期行：北京时间「11月17日周二」，服务端算、不写死。 */
 function todayLabel(now = new Date()): string {
-  return new Intl.DateTimeFormat('zh-CN', {
+  const parts = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',
     month: 'numeric',
     day: 'numeric',
     weekday: 'short',
-  }).format(now)
+  }).formatToParts(now)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+  // Node 的 zh-CN numeric 月日会拼成「11/17」（CLDR 短格式），这里按站内
+  // 惯用写法拼回「11月17日周二」，不依赖运行时的 Intl 字面形态。
+  return `${get('month')}月${get('day')}日${get('weekday')}`
 }
 
 export function HomeTodayZone() {

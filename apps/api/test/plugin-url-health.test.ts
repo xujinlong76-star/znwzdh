@@ -8,14 +8,34 @@
  *  4. 排期登记：DEFAULT_CRON_SCHEDULES / DEFAULT_SCHEDULES / cron 别名一致；
  *  5. 定时器到点入队：startCronTimer 不依赖 tick 也能把本 kind 排进队列；
  *  6. 手动触发：POST /api/jobs 的入队校验接受本 kind（RunJobInput + validateJobPayload）。
+ *  7. 默认探活登录墙检测（P1-4b）：桩 guardedFetch 返回 status 200 +
+ *     终态 URL 落登录页时判失败，健康终态仍判健康，非 200 判定不动。
  *
  * 真实出网探活不在单测里做（CI 不应依赖外网与对方站点的实时状态）；
  * 真实一轮的验证见任务模块头注释的手动触发方式，用临时库跑一次后查事件流。
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+const stubFetch = vi.hoisted(() => ({ status: 200, finalUrl: "https://example.com/search?q=navhub" }));
+
+vi.mock("@navhub/ai", async (importOriginal) => {
+  const mod = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...mod,
+    guardedFetch: async () => ({
+      status: stubFetch.status,
+      finalUrl: stubFetch.finalUrl,
+      contentType: "text/html",
+      body: "<html></html>",
+      truncated: false,
+      bytes: 13,
+      redirects: [],
+    }),
+  };
+});
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import {
@@ -27,7 +47,9 @@ import {
 } from "../src/jobs.ts";
 import {
   collectSearchPackUrls,
+  defaultProbeUrl,
   handlePluginUrlHealth,
+  isLoginWallFinalUrl,
   PLUGIN_URL_HEALTH_EVENT_KIND,
   type PluginUrlProbeResult,
 } from "../src/jobs/tasks/plugin-url-health.task.ts";
@@ -62,6 +84,12 @@ async function makeCtx(): Promise<AppContext> {
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.close();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+afterAll(() => {
+  // isolate:false 卫生：本文件跨模块 mock 了 @navhub/ai，必须清掉模块缓存，
+  // 否则同 worker 的后续测试文件会拿到假 guardedFetch。
+  vi.resetModules();
 });
 
 const fakeRun = { shouldStop: () => false } as unknown as JobRunHandle;
@@ -190,6 +218,42 @@ describe("handlePluginUrlHealth", () => {
     expect(summary.total).toBeGreaterThan(100);
     expect(summary.okCount).toBe(5);
     expect(summary.failedCount).toBe(0);
+  });
+});
+
+describe("defaultProbeUrl 登录墙检测（P1-4b）", () => {
+  // 每条标记一个代表终态 URL：前两条是 2026-11-17 复审员 curl 实测的真登录墙，
+  // 后三条取自 P1-4a 标记表对应的证实案例（dianping pclogin/mlogin、通用 sign-in）。
+  it.each([
+    ["login", "https://libraries.io/login"],
+    ["signin", "https://you.com/signin?redirectUrl=%2Fsearch%3Fq%3Dreact"],
+    ["sign-in", "https://example.com/sign-in?next=/search"],
+    ["pclogin", "https://account.dianping.com/pclogin"],
+    ["mlogin", "https://m.dianping.com/mlogin"],
+  ])("status 200 但终态 URL 含标记「%s」→ 判失败", async (_marker, finalUrl) => {
+    expect(isLoginWallFinalUrl(finalUrl)).toBe(true);
+    stubFetch.status = 200;
+    stubFetch.finalUrl = finalUrl;
+    const result = await defaultProbeUrl("https://example.com/search?q=navhub");
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(200);
+    expect(result.error).toContain("落登录页");
+    expect(result.error).toContain(finalUrl);
+  });
+
+  it("status 200 且终态 URL 不含登录墙标记 → 判健康（不误伤）", async () => {
+    stubFetch.status = 200;
+    stubFetch.finalUrl = "https://deps.dev/search?q=navhub";
+    const result = await defaultProbeUrl("https://deps.dev/search?q=navhub");
+    expect(result).toEqual({ url: "https://deps.dev/search?q=navhub", ok: true, status: 200, error: undefined });
+  });
+
+  it("非 200 判定不动：404 + 非登录墙终态仍按 HTTP 状态判失败", async () => {
+    stubFetch.status = 404;
+    stubFetch.finalUrl = "https://example.com/search?q=navhub";
+    const result = await defaultProbeUrl("https://example.com/search?q=navhub");
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("HTTP 404");
   });
 });
 

@@ -18,6 +18,12 @@
  * 同款规则替换成固定测试词 `navhub`。路由是「单次最多 30 条」的人工预检入口，
  * 本任务在进程内直接探全部种子 URL，不走 HTTP、不受路由限流约束。
  *
+ * P1-4b（2026-11-17）：只判 status 会漏登录墙 —— 复审员当天 curl 实测
+ * libraries.io/search?q=react 200 落 /login、you.com/search?q=react 200 落
+ * /signin。探活在 status 之外再看 guardedFetch 返回的终态 URL：落登录页
+ * （见 PLUGIN_URL_HEALTH_LOGIN_WALL_MARKERS）即判失败。路由的单次预检
+ * 仍是旧口径（不在本任务改动范围），不要把两处口径混为一谈。
+ *
  * 只标记、不下架：
  *  - 坏链只进事件 meta 的 failed 清单（封顶 30 条）与审计 diff，不改任何插件
  *    状态、不删任何种子条目 —— 下架/换链是人工裁决（见 P1-4 任务规格）；
@@ -57,6 +63,23 @@ export const PLUGIN_URL_HEALTH_MAX_REDIRECTS = 3;
 
 /** 事件 meta / 审计 diff 里坏链清单的封顶条数（191 条全坏时也不把事件写爆）。 */
 export const PLUGIN_URL_HEALTH_FAILED_ITEMS_CAP = 30;
+
+/**
+ * 登录墙终态 URL 标记表（P1-4b）：与 P1-4a 测试
+ * `apps/api/test/search-pack-login-wall.test.ts` 里的 LOGIN_MARKERS 同一份
+ * （2026-11-17 curl 实测证实的登录墙地址特征）。
+ */
+export const PLUGIN_URL_HEALTH_LOGIN_WALL_MARKERS = ["login", "signin", "sign-in", "pclogin", "mlogin"] as const;
+
+/**
+ * 终态 URL 是否落登录页：小写后含任一登录墙标记即判登录墙。
+ * 只看终态 URL（guardedFetch 跟随重定向后的 finalUrl），不看起始 URL：
+ * 起始 URL 是种子收录的检索地址，本身已由 P1-4a 静态测试钉住不含标记。
+ */
+export function isLoginWallFinalUrl(finalUrl: string): boolean {
+  const lower = finalUrl.toLowerCase();
+  return PLUGIN_URL_HEALTH_LOGIN_WALL_MARKERS.some((marker) => lower.includes(marker));
+}
 
 export interface SearchPackProbeTarget {
   packSlug: string;
@@ -138,7 +161,9 @@ export function collectSearchPackUrls(
 }
 
 /**
- * 默认探活：与 POST /api/plugins/check-urls 路由逐字同款的单条判定。
+ * 默认探活：与 POST /api/plugins/check-urls 路由逐字同款的单条判定，
+ * 再加 P1-4b 登录墙检测：status 200–399 但终态 URL 落登录页仍判失败
+ * （登录墙恰恰回 200，不看 finalUrl 就会把坏链记成健康）。
  *
  * 动态 import @navhub/ai（与 health-check.task.ts 同款写法）：任务模块只在
  * Node 侧跑，避免把这条链拉进 Edge 编译。
@@ -163,12 +188,13 @@ export async function defaultProbeUrl(url: string): Promise<PluginUrlProbeResult
       maxBytes: PLUGIN_URL_HEALTH_MAX_BYTES,
       maxRedirects: PLUGIN_URL_HEALTH_MAX_REDIRECTS,
     });
-    const ok = res.status >= 200 && res.status < 400;
+    const loginWall = isLoginWallFinalUrl(res.finalUrl);
+    const ok = res.status >= 200 && res.status < 400 && !loginWall;
     return {
       url: urlStr,
       ok,
       status: res.status,
-      error: ok ? undefined : `HTTP ${res.status}`,
+      error: ok ? undefined : loginWall ? `落登录页：${res.finalUrl}` : `HTTP ${res.status}`,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

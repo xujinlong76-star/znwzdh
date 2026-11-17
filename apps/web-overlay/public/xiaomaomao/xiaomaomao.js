@@ -891,6 +891,28 @@
     bubbleEl.classList.remove('xm-show');
   }
 
+  /* c3001：开场招呼先量一下——气泡会盖住正文卡片/可点元素时跳过本次自动招呼。
+     只拦 850ms 自动招呼：用户主动点猫/摸猫/喂食触发的气泡不受影响；猫还在原地，点猫照常聊天。
+     量法：文案先放进未显示的气泡（透明但仍有布局尺寸），按锚定位置算出显示后的矩形
+     （右缘 = 猫右缘 + 4px，下缘 = 猫顶 - 12px），再与 <main> 内的链接/按钮/文章/卡片求交。 */
+  function autoGreetWouldCoverContent() {
+    var main = document.querySelector('main');
+    if (!bubbleEl || !main) return false;
+    var bw = bubbleEl.offsetWidth, bh = bubbleEl.offsetHeight;
+    if (!bw || !bh) return false;
+    var catRect = root.getBoundingClientRect();
+    var rect = { left: catRect.right + 4 - bw, top: catRect.top - 12 - bh, right: catRect.right + 4, bottom: catRect.top - 12 };
+    var els = main.querySelectorAll('a, button, [role="button"], article, .nav-card-glow');
+    for (var i = 0; i < els.length; i++) {
+      var r = els[i].getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      var ix = Math.min(r.right, rect.right) - Math.max(r.left, rect.left);
+      var iy = Math.min(r.bottom, rect.bottom) - Math.max(r.top, rect.top);
+      if (ix > 4 && iy > 4) return true;
+    }
+    return false;
+  }
+
   /* ---------- 时间与作息 ---------- */
   function hourNow() { return new Date().getHours(); }
   function isNight() { var h = hourNow(); return h >= 23 || h < 6; }
@@ -2453,15 +2475,21 @@
       setPose('waking');
       /* v12：850ms 招呼多半还没手势——先出气泡不读；首次手势后补读一次（且仅当气泡还在时）。 */
       var greetText = composeGreeting();
-      showBubble(greetText, hasUserActivation());
-      if (!hasUserActivation()) {
-        var speakGreet = function () {
-          document.removeEventListener('pointerdown', speakGreet);
-          document.removeEventListener('keydown', speakGreet);
-          if (greetText && root.querySelector('.xm-bubble.xm-show')) speak(greetText);
-        };
-        document.addEventListener('pointerdown', speakGreet, { passive: true });
-        document.addEventListener('keydown', speakGreet);
+      /* c3001：先把文案放进未显示的气泡再量——会盖住正文卡片就跳过本次自动招呼（猫还在，点猫照常聊天）。 */
+      bubbleEl.textContent = greetText;
+      if (autoGreetWouldCoverContent()) {
+        bubbleEl.textContent = '';
+      } else {
+        showBubble(greetText, hasUserActivation());
+        if (!hasUserActivation()) {
+          var speakGreet = function () {
+            document.removeEventListener('pointerdown', speakGreet);
+            document.removeEventListener('keydown', speakGreet);
+            if (greetText && root.querySelector('.xm-bubble.xm-show')) speak(greetText);
+          };
+          document.addEventListener('pointerdown', speakGreet, { passive: true });
+          document.addEventListener('keydown', speakGreet);
+        }
       }
       window.setTimeout(function () { if (currentPose === 'waking' && !sleeping) setPose('main'); }, 3400);
     }

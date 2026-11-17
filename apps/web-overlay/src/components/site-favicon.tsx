@@ -184,11 +184,16 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 2026-11-17（深色底块统一处理轮）：Haiper。站方首页只有内联 SVG
   // wordmark（无可热链 URL、176x72、7 条 path 全跟随文字颜色），本轮
   // 重取首页（200）提取后本地落盘为 haiper.svg：fill 钉死 #ffffff，
-  // 配下方 LOGO_TILE_MAP 的 dark 底块。极客公园同为白字宽版 logo
-  // （1361x261），但 24px 卡片内只剩 3.8px 高、渲染模拟不可读，比渐变
-  // 字母更差，故不进 map、不落资产，继续渐变字母兜底（见轮次笔记
-  // evolution-round-2026-11-17-1122.md §2）。
+  // 配下方 LOGO_TILE_MAP 的 dark 底块。
   'haiper.ai': '/brand-icons/haiper.svg',
+  // 2026-11-17（同轮追加）：极客公园。1361x261 白字宽版 wordmark 仍不
+  // 可用（24px 卡片内只剩 3.8px 高，比渐变字母更差，不进 map）；但并行
+  // 研究线找到站方 /about 页 head 三重官方指定的方形标
+  // imgslim.geekpark.net/geekpark-icon-196-black.png，curl 200、3705B、
+  // 实测 100×100（文件名按实测尺寸，不沿用虚标 196）：黑底白 G、全
+  // 10000 像素不透明，24/36/64 三档 G 高 9.8/15.7/29.4px 均可读。
+  // 黑底方块配下方 LOGO_TILE_MAP 的 light 底块（与 Ollama 黑标同款处理）。
+  'geekpark.net': '/brand-icons/geekpark.png',
   'vuejs.org': '/brand-icons/vue.svg',
   'npmjs.com': '/brand-icons/npm.svg',
   'vite.dev': '/brand-icons/vite.svg',
@@ -294,8 +299,11 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
  * 换成透明黑标）；Radix 为黑方块 + 白字形（tile 让方块在深色下有界）；
  * Haiper 为白字 wordmark（fill 已钉死 #ffffff）。
  * Luma 自带白底（白像素 73%），不在点名清单内，不进 map。
- * 极客公园白字宽版 1361x261 在 24px 卡片内只剩 3.8px、模拟不可读，
- * 不进 map，继续渐变字母（见笔记 §2）。
+ * 极客公园：1361x261 白字宽版仍不可用（24px 卡片内只剩 3.8px），
+ * 但方形标（100×100 黑底白 G）可读——像素实测：10000/10000 不透明，
+ * 中位亮度 9、6818 像素亮度 <20，黑底方块在深色下与底色相融，故给
+ * light 底块（与 Ollama/SourceHut 黑标同款处理）；详情页大尺寸特判
+ * 不做（宽版在 48px 内容盒里总高仅 9.2px 仍不可读，且同一站两种形象）。
  */
 export type LogoTileTone = 'light' | 'dark'
 
@@ -306,6 +314,7 @@ export const LOGO_TILE_MAP: Record<string, LogoTileTone> = {
   'radix-ui.com': 'light',
   'tianyin.163.com': 'light',
   'haiper.ai': 'dark',
+  'geekpark.net': 'light',
 }
 
 /** 底块 class：主题无关固定底色 + 与 Cursor 芯片同款的内边距、描边与圆角。 */

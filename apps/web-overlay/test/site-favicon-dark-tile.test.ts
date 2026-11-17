@@ -34,6 +34,11 @@ const LIGHT_CASES: Array<{ url: string; title: string }> = [
   { url: 'https://www.notion.com', title: 'Notion' },
   { url: 'https://www.radix-ui.com', title: 'Radix UI' },
   { url: 'https://tianyin.163.com/', title: '网易天音' },
+  // 2026-11-17 追加：极客公园方形标（100×100 黑底白 G）给浅色块——
+  // 像素实测 10000/10000 不透明、中位亮度 9，黑底方块在深色下与底色
+  // 相融，白底块是它在深色下可读的唯一保障（与 Ollama 黑标同款处理）。
+  { url: 'https://www.geekpark.net', title: '极客公园' },
+  { url: 'https://geekpark.net', title: '极客公园' },
 ]
 
 const DARK_CASES: Array<{ url: string; title: string }> = [
@@ -77,8 +82,9 @@ describe('resolveLogoTile（深色底块统一处理）', () => {
     expect(LOGO_TILE_CLASSES.dark).toContain('p-0.5')
   })
 
-  it('map 只含点名清单的 6 站：Luma（自带白底）与极客公园（暂缓）均不在内', () => {
+  it('map 只含点名清单的 7 站：Luma（自带白底）不在内；极客公园 2026-11-17 由“暂缓”改为落地（见下）', () => {
     expect(Object.keys(LOGO_TILE_MAP).sort()).toEqual([
+      'geekpark.net',
       'haiper.ai',
       'notion.com',
       'ollama.com',
@@ -95,12 +101,36 @@ describe('resolveSiteIcon（深色底块轮：Haiper 落地、极客公园暂缓
     expect(resolveSiteIcon('https://www.haiper.ai', 'Haiper')).toBe('/brand-icons/haiper.svg')
   })
 
-  it('极客公园暂缓：无 map 条目，继续回落渐变字母（不许硬上比字母更差的效果）', () => {
-    // 1361x261 白字宽版在 24px 卡片内只剩 3.8px 高、渲染模拟不可读
-    // （见轮次笔记 §2）。此断言把“暂缓”钉死：将来有人顺手加了
-    // geekpark.net 的 map 值，测试会立刻提醒他先重做可读性模拟。
-    expect(resolveSiteIcon('https://www.geekpark.net', '极客公园')).toBe('')
-    expect(resolveLogoTile('https://www.geekpark.net')).toBeNull()
+  it('极客公园落地：方形标可读，解析到本地 PNG + 浅色底块（暂缓前提已被推翻）', () => {
+    // 改写原因（R7）：上轮“暂缓”是因只有 1361x261 白字宽版（24px 卡片
+    // 内只剩 3.8px、比渐变字母更差）；并行研究线找到站方 /about 页 head
+    // 三重官方指定的方形标 geekpark-icon-196-black.png（curl 200、3705B、
+    // 实测 100×100 黑底白 G、全像素不透明），24/36/64 三档均可读，暂缓
+    // 前提已不存在。宽版仍不进 map，详情页大尺寸特判也不做。
+    expect(resolveSiteIcon('https://www.geekpark.net', '极客公园')).toBe('/brand-icons/geekpark.png')
+    expect(resolveSiteIcon('https://geekpark.net', '极客公园')).toBe('/brand-icons/geekpark.png')
+    expect(resolveLogoTile('https://www.geekpark.net')).toBe('light')
+    expect(resolveLogoTile('https://geekpark.net')).toBe('light')
+  })
+
+  it('极客公园本地 PNG 落盘：PNG 魔数、100×100、黑底白 G（像素实测）', () => {
+    const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
+    const path = `${dir}geekpark.png`
+    expect(existsSync(path), 'geekpark.png').toBe(true)
+    const buf = readFileSync(path)
+    // PNG 魔数 + 文件体与研究线实测一致（3705B，允许重压后小幅浮动）。
+    // 注意：subarray 返回 Buffer，须与 Buffer.from 比较（Uint8Array 字面
+    // 量在 vitest 的 toEqual 里会被判为不同类型，字节相同也会失败）。
+    expect(buf.subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    )
+    expect(buf.length).toBeGreaterThan(1024)
+    expect(buf.length).toBeLessThan(10 * 1024)
+    // IHDR：宽高 100×100、位深 8、颜色类型 3（colormap，与 file 实测一致）
+    expect(buf.readUInt32BE(16)).toBe(100)
+    expect(buf.readUInt32BE(20)).toBe(100)
+    expect(buf[24]).toBe(8)
+    expect(buf[25]).toBe(3)
   })
 
   it('Haiper 本地 SVG 落盘：白字钉死、无 currentColor 残留、可渲染', () => {

@@ -84,9 +84,11 @@ describe('resolveSiteThumbnail：解析优先级', () => {
     expect(thumb!.kind).toBe('favicon')
   })
 
-  it('既有 favicon 管线的本地品牌图标被复用（chatgpt.com → 本地 webp）', () => {
+  it('既有 favicon 管线的本地品牌图标被复用（chatgpt.com → 本地 svg）', () => {
     const thumb = resolveSiteThumbnail({ href: 'https://chatgpt.com/', title: 'ChatGPT' })
-    expect(thumb).toEqual({ src: '/assets/images/logos/chatgpt.webp', kind: 'favicon' })
+    // A 批本地化把 LOCAL_LOGO_MAP 的 chatgpt.com 由 webp 改为本地 svg（/brand-icons/chatgpt.svg），
+    // 断言仍钉死同一行为：favicon 管线复用本地品牌图标，src 与 kind 不变强度。
+    expect(thumb).toEqual({ src: '/brand-icons/chatgpt.svg', kind: 'favicon' })
   })
 
   it('既有 favicon 管线的 GitHub 组织头像被复用', () => {

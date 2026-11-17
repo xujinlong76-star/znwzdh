@@ -564,7 +564,7 @@
               "title": "Beatoven.ai",
               "href": "https://www.beatoven.ai",
               "description": "AI 背景音乐生成工具，按视频情绪与节奏自动配乐",
-              "icon": "https://cdn.prod.website-files.com/65d772a7cbf713010f7736f6/66634faf309426cbf03b120b_logo%20(1).png",
+              "icon": "",
               "enabled": true,
               "tags": [
                 "AI音乐",
@@ -745,7 +745,7 @@
               "title": "Sudowrite",
               "href": "https://www.sudowrite.com",
               "description": "面向小说作者的 AI 写作伙伴，辅助续写、扩写与情节构思",
-              "icon": "https://framerusercontent.com/images/5P8G75bSTVJjQUUwQiqbW3rrU74.png",
+              "icon": "",
               "enabled": true,
               "tags": [
                 "小说写作",

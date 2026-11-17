@@ -62,16 +62,18 @@ describe('resolveSiteIcon（图标修复 B 类第 1 批 b1b）', () => {
     expect(resolveSiteIcon(url, title)).toBe(expected)
   })
 
-  it('R2 未波及：github.com 主站 / Trending / LangGraph / Qwen 3 不被标题规则截胡', () => {
-    // map 里无 'github.com' 键（见下断言）；以下四站的返回值与改动前一致，
+  it('R2 未波及：github.com 主站 / Trending 不被标题规则截胡；LangGraph / Qwen 3 随 B2a 合入后走本地路径', () => {
+    // map 里无 'github.com' 键（见下断言）；以下两站的返回值与改动前一致，
     // 证明 cline / copilot 标题规则没有误伤同 hostname 的其他站。
     expect(resolveSiteIcon('https://github.com', 'GitHub')).toBe('')
     expect(resolveSiteIcon('https://github.com/trending', 'GitHub Trending')).toBe('')
+    // LangGraph / Qwen 3 的期望值随 B2a 合入后更新（B2a 标题规则，基线 R2
+    // 补充裁决）：B1b 落盘时这两站仍走组织头像，B2 合入后改为本地路径。
     expect(resolveSiteIcon('https://github.com/langchain-ai/langgraph', 'LangGraph')).toBe(
-      'https://github.com/langchain-ai.png?size=64'
+      '/brand-icons/langgraph.svg'
     )
     expect(resolveSiteIcon('https://github.com/QwenLM/Qwen3', 'Qwen 3')).toBe(
-      'https://github.com/QwenLM.png?size=64'
+      '/brand-icons/qwen3.png'
     )
   })
 

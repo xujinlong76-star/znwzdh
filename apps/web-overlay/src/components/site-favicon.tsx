@@ -219,14 +219,14 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'runwayml.com': 'https://runwayml.com/icon.png',
   'deepseek.com': '/brand-icons/deepseek.png',
   'chat.deepseek.com': '/brand-icons/deepseek.png',
-  'klingai.com': 'https://klingai.com/favicon.ico',
+  'klingai.com': '/brand-icons/klingai.png',
   'klingai.kuaishou.com': 'https://klingai.com/favicon.ico',
   // 2026-11-16：旧值 https://lumalabs.ai/favicon.ico 经 curl 验证 404，
   // 改用 Luma 官方备用域名 luma.ai 的同名 favicon（200 image/x-icon 15086B，
   // 内容为 Luma 四角星品牌标）。
   'lumalabs.ai': 'https://luma.ai/favicon.ico',
   'vidu.studio': 'https://www.vidu.studio/favicon.ico',
-  'hailuoai.com': 'https://hailuoai.com/favicon.ico',
+  'hailuoai.com': '/brand-icons/hailuoai.png',
   'chatgpt.com': '/brand-icons/chatgpt.svg',
   'chat.openai.com': '/brand-icons/chatgpt.svg',
   'openai.com': '/brand-icons/openai.png',
@@ -307,6 +307,16 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // Cursor 与 Tongyi Lingma 为旧键原地替换值（热链 → 本地路径）。
   // Cursor 仍走既有 isCursorSite 渲染分支（title/url 判定，与 map 值无关，
   // 落盘后渲染仍带 bg-muted/40 底色处理，复审截图核对）。
+  // 2026-11-17（图标 B 类 B2a）：Beatoven.ai / Sudowrite 新建键。
+  // R1 裁决：这两站 navigation.json 的 icon 为远程热链且不触发拦截，
+  // customIcon 优先于 map，单加 map 键不可达——已同步清空两站 icon 字段。
+  'beatoven.ai': '/brand-icons/beatoven.png',
+  'sudowrite.com': '/brand-icons/sudowrite.png',
+  // 2026-11-17（图标 B 类第 4 批 B2b）
+  // klingai.com / hailuoai.com 为替换旧键（旧值热链 ICO）；runway.com 为
+  // 新建键（旧键 runwayml.com 为死键，全库无站命中，不动；兄弟键
+  // klingai.kuaishou.com 全库无站命中，不动）。
+  'runway.com': '/brand-icons/runway.png',
 }
 
 /**
@@ -492,6 +502,20 @@ export function resolveSiteIcon(
     // #24292E 深色透明底），不是 Copilot 专属标，特此钉死。
     if (lowerTitle.includes('cline')) return '/brand-icons/cline.svg'
     if (lowerTitle.includes('copilot')) return '/brand-icons/copilot.svg'
+    // 2026-11-17（图标 B 类 B2a，基线 R2 补充裁决）：LangGraph / Qwen 3 与
+    // GitHub 主站等 7 站同为 github.com，hostname map 无法区分；切勿加 'github.com' 键。
+    // 仿 A2 复审 Illustrator 先例走标题规则，必须放在 map 精确查找之前、
+    // GitHub 组织头像分支之前。文件名说明：LangGraph 源为 SVG 故落盘
+    // langgraph.svg（原任务单所写 langgraph.png 与规范 §1.1“SVG 原样”冲突，
+    // 以规范 + 研究笔记为准）；qwen.svg 已被通义千问占用，故 Qwen 3 落盘 qwen3.png。
+    if (lowerTitle.includes('langgraph')) return '/brand-icons/langgraph.svg'
+    if (lowerTitle.includes('qwen')) return '/brand-icons/qwen3.png'
+    // 2026-11-17（图标 B 类基线 R2 补充裁决）：vLLM 与 GitHub 主站等 7 站
+    // 同为 github.com，hostname map 无法区分；切勿加 'github.com' 键。
+    // 仿 A2 复审 Illustrator 先例走标题规则，必须放在 map 精确查找之前。
+    // 载体裁决（B2 复审 §5.3）：落盘 vllm.svg（官网 SVG 双声明、透明底，
+    // 规范 §1.1 SVG 优先）；ICO 版为同一标的白底不透明载体，已裁决废弃。
+    if (lowerTitle.includes('vllm')) return '/brand-icons/vllm.svg'
 
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!
@@ -609,7 +633,8 @@ export function SiteFavicon({
   // object-contain 后上下留空已够、左右贴边，img 级统一加 p-1 免得贴边；
   // nmc 自带浅色底，深色卡上会露白矩形是已知特性，只加 p-1、不加深色底块。
   const isWideLogoSite =
-    effectiveIcon === '/brand-icons/nmc.png' || effectiveIcon === '/brand-icons/ncpssd.png'
+    effectiveIcon === '/brand-icons/nmc.png' || effectiveIcon === '/brand-icons/ncpssd.png' ||
+    effectiveIcon === '/brand-icons/langgraph.svg'
 
   const monogram = extractFaviconMonogram(title, url)
   const gradient = getDeterministicGradient(title || url || 'navhub')

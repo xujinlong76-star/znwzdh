@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>新标签页 · 山羊胡导航</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div class="brand">
+        <span aria-hidden="true">🧭</span>
+        <span>山羊胡导航</span>
+      </div>
+      <div class="topbar-right">
+        <span id="today-date" class="date"></span>
+        <span id="status-badge" class="badge" role="status">正在加载…</span>
+      </div>
+    </header>
+
+    <section class="hero" aria-label="搜索">
+      <h1>想找什么站？</h1>
+      <form id="search-form" action="#" method="get" autocomplete="off">
+        <label class="sr-only" for="search-input">搜索山羊胡收录的站点</label>
+        <input id="search-input" name="q" type="text" placeholder="输入站点名、用途或一句话，如：写代码 AI" autofocus>
+        <button type="submit">搜索</button>
+      </form>
+      <p class="hint">回车直达站内搜索 · 地址栏输入 <code>nh + Tab</code> 也能秒搜</p>
+    </section>
+
+    <section class="focus-card" id="focus-card" aria-label="今日一件事">
+      <div class="focus-head">
+        <h2>📌 今日一件事</h2>
+        <span id="focus-state" class="focus-state"></span>
+      </div>
+      <p id="focus-text" class="focus-text"></p>
+      <form id="focus-form" class="focus-form" action="#" method="post" autocomplete="off">
+        <label class="sr-only" for="focus-input">今天只做的一件事</label>
+        <input id="focus-input" type="text" maxlength="80" placeholder="今天只定一件事，写下来…">
+        <button type="submit">定下来</button>
+      </form>
+      <div class="focus-actions">
+        <button id="focus-toggle" type="button" class="btn-ghost" disabled>✓ 完成了</button>
+        <button id="focus-clear" type="button" class="btn-ghost" disabled>换一件</button>
+      </div>
+      <p class="hint">只存本机，不进云端；每天从空白开始，昨天没做完的不带进今天。</p>
+    </section>
+
+    <section aria-label="常用站">
+      <div class="section-head">
+        <h2>常用站</h2>
+        <span id="cache-note" class="cache-note"></span>
+      </div>
+      <div id="quick-grid" class="quick-grid"></div>
+      <p id="quick-empty" class="hint" hidden>联网后打开一次新标签页，常用站会自动出现；离线时显示上次缓存的样子。</p>
+    </section>
+
+    <footer class="footer">
+      <a id="link-home" href="https://www.shanyanghu.com">打开完整网站 →</a>
+      <a id="link-market" href="https://www.shanyanghu.com/marketplace">插件市场</a>
+      <a id="link-guide" href="https://www.shanyanghu.com/extension">扩展安装指南</a>
+    </footer>
+  </main>
+  <script src="newtab.js"></script>
+</body>
+</html>

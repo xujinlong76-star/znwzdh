@@ -4,7 +4,7 @@
  */
 
 const DEFAULT_API_URL = "http://127.0.0.1:8787";
-const DEFAULT_WEB_URL = "http://localhost:3000";
+const DEFAULT_WEB_URL = "https://www.shanyanghu.com";
 
 /**
  * 只允许把 Bearer token 发往可信目标（2026-11-06 深扫 S-5）。
@@ -18,7 +18,7 @@ const DEFAULT_WEB_URL = "http://localhost:3000";
  *   - 带 userinfo 的可疑形态一律拒绝；
  *   - 不合规时回退 DEFAULT_API_URL 并打印警告，绝不静默使用用户填的地址。
  */
-const ALLOWED_API_HOSTS = ["127.0.0.1", "localhost", "::1", "navhub.example.com"];
+const ALLOWED_API_HOSTS = ["127.0.0.1", "localhost", "::1", "www.shanyanghu.com"];
 function isTrustedApiUrl(raw) {
   try {
     const u = new URL(raw);

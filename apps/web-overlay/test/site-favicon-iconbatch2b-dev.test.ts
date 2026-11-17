@@ -21,7 +21,7 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
 
 const CASES: Array<{ url: string; title: string; expected: string }> = [
   { url: 'https://www.codegeex.cn', title: 'CodeGeeX', expected: '/brand-icons/codegeex.png' },
-  { url: 'https://coding.net', title: 'Coding', expected: '/brand-icons/coding.ico' },
+  { url: 'https://coding.net', title: 'Coding', expected: '/brand-icons/coding.png' },
   { url: 'https://element-plus.org', title: 'Element Plus', expected: '/brand-icons/element-plus.svg' },
   { url: 'https://www.naiveui.com', title: 'Naive UI', expected: '/brand-icons/naiveui.svg' },
   { url: 'https://go-zero.dev/', title: 'Go Zero', expected: '/brand-icons/go-zero.svg' },
@@ -34,7 +34,7 @@ const CASES: Array<{ url: string; title: string; expected: string }> = [
 
 const LOCAL_ASSETS = [
   'codegeex.png',
-  'coding.ico',
+  'coding.png',
   'element-plus.svg',
   'naiveui.svg',
   'go-zero.svg',
@@ -57,22 +57,41 @@ describe('resolveSiteIcon（图标修复第二批 2b 之开发设计类）', () 
     }
   })
 
-  it('本地资产魔数钉死：SVG 以 <svg> 开头、PNG 以魔数开头、ICO 以 00 00 01 00 开头', () => {
+  it('本地资产魔数钉死：SVG 以 <svg> 开头、PNG 以魔数开头', () => {
     // 2026-11-17：10 个文件均由 curl 重新验证后落盘（200 + image MIME +
     // 魔数 + 尺寸与研究笔记逐个相符）。此断言把“落盘的是真图片而非
     // HTML 壳页/403 页”钉死——SegmentFault 的 CDN 无 Referer 回 403，
     // 若将来有人误用热链地址重新下载，拿到的就是 HTML 而非 PNG。
+    // 2026-11-17 13:47 实施轮补记：Coding 原为 ICO 原样落盘
+    // （coding.ico），按执行清单 §2 应取最大帧转 128x128 PNG，
+    // 已改为 coding.png；7 个 PNG 全部为 128x128（Gogs 64x64
+    // 原样除外，见尺寸断言），此处只验魔数，尺寸另见下断言。
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     for (const name of ['element-plus.svg', 'naiveui.svg', 'go-zero.svg']) {
       const svg = readFileSync(`${dir}${name}`, 'utf8')
       expect(svg.startsWith('<svg'), name).toBe(true)
     }
     const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-    for (const name of ['codegeex.png', 'coolors.png', 'squoosh.png', 'segmentfault.png', 'gogs.png', 'ietf.png']) {
+    for (const name of ['codegeex.png', 'coding.png', 'coolors.png', 'squoosh.png', 'segmentfault.png', 'gogs.png', 'ietf.png']) {
       const buf = readFileSync(`${dir}${name}`)
       expect(buf.subarray(0, 8).equals(pngMagic), name).toBe(true)
     }
-    const ico = readFileSync(`${dir}coding.ico`)
-    expect(ico.subarray(0, 4).equals(Buffer.from([0x00, 0x00, 0x01, 0x00])), 'coding.ico').toBe(true)
+  })
+
+  it('本地光栅资产尺寸钉死：6 站 128x128、Gogs 64x64 原样', () => {
+    // 执行清单 §2 目标尺寸：codegeex/coding/ietf/segmentfault/
+    // coolors/squoosh 均为 128x128 PNG；Gogs 64x64 原样不放大。
+    // 57e76512 曾把 6 站源文件原尺寸落盘（312/256/180/228/192/
+    // 1024px），本断言防止回退。
+    const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
+    for (const name of ['codegeex.png', 'coding.png', 'ietf.png', 'segmentfault.png', 'coolors.png', 'squoosh.png']) {
+      const buf = readFileSync(`${dir}${name}`)
+      // PNG IHDR：宽（bytes 16-19）高（bytes 20-23），大端。
+      expect(buf.readUInt32BE(16), `${name} width`).toBe(128)
+      expect(buf.readUInt32BE(20), `${name} height`).toBe(128)
+    }
+    const gogs = readFileSync(`${dir}gogs.png`)
+    expect(gogs.readUInt32BE(16), 'gogs.png width').toBe(64)
+    expect(gogs.readUInt32BE(20), 'gogs.png height').toBe(64)
   })
 })

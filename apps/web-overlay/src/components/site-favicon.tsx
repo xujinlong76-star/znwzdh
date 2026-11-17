@@ -143,7 +143,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 对 Ollama / SourceHut 的做法——不做特殊处理，已知局限留待深色底块
   // 统一处理轮（研究笔记 §3/§5）。
   'codegeex.cn': '/brand-icons/codegeex.png',
-  'coding.net': '/brand-icons/coding.ico',
+  'coding.net': '/brand-icons/coding.png',
   'element-plus.org': '/brand-icons/element-plus.svg',
   'naiveui.com': '/brand-icons/naiveui.svg',
   'go-zero.dev': '/brand-icons/go-zero.svg',

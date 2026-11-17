@@ -4,12 +4,14 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowUpRight,
+  BookOpen,
   Briefcase,
   Building2,
   CalendarDays,
   GraduationCap,
   Landmark,
   Languages,
+  Shield,
   type LucideIcon,
 } from 'lucide-react'
 import { Container } from '@/components/ui/container'
@@ -39,11 +41,12 @@ import type { NavigationSubItem } from '@/types/navigation'
 /**
  * 考试日历页（/exam，服务端渲染 + 倒计时客户端岛）。
  *
- * 存在理由：2026 年考试季六场大考（成考 10-17–18、国考 11-29、四六级
- * 12-12、省考 12-06、京考 12-05–06、考研 12-19–20），站内只有分散的报名入口，没有
+ * 存在理由：2026 年考试季八场大考（成考 10-17–18、国考 11-29、四六级
+ * 12-12、省考 12-06、京考 12-05–06、考研 12-19–20、军队文职 12-13、
+ * 教资面试 12-05–06），站内只有分散的报名入口，没有
  * 一处能同时看到倒计时与关键节点；三家大导航同期也没有像样的考试
  * 专题或倒计时（360 只有一个内容过期到 2024/2025 的财会考试日历）。
- * 第一轮只做最小静态页：倒计时卡 + 六场时间轴 + 撞期与双考提醒 +
+ * 第一轮只做最小静态页：倒计时卡 + 八场时间轴 + 撞期与双考提醒 +
  * 备考站点区；第二轮已落地「我的考试」关注 + 考前清单待办（本机
  * localStorage 存放，不登录、不跨设备同步，见 src/lib/my-exams.ts）。
  *
@@ -54,11 +57,11 @@ import type { NavigationSubItem } from '@/types/navigation'
 export const revalidate = 3600
 
 const CANONICAL = '/exam'
-const INDEX_TITLE = '考试日历 - 成考、国考、四六级、省考、京考、考研倒计时'
+const INDEX_TITLE = '考试日历 - 成考、国考、四六级、省考、京考、考研、军队文职、教资面试倒计时'
 const DESCRIPTION =
-  '2026 成考成绩、2027 国考、四六级、省考、京考、考研初试的倒计时与关键节点：准考证打印、笔试时间、成绩查询一次看全，附官方报名与备考入口。'
-const EMPTY_TITLE = '考试日历 - 成考、国考、四六级、省考、京考、考研'
-const EMPTY_DESCRIPTION = '本轮六场考试已结束，时间与关键节点备查；新日程以官方公告为准。'
+  '2026 成考成绩、2027 国考、四六级、省考、京考、考研初试、军队文职笔试、教资面试的倒计时与关键节点：准考证打印、笔试时间、成绩查询一次看全，附官方报名与备考入口。'
+const EMPTY_TITLE = '考试日历 - 成考、国考、四六级、省考、京考、考研、军队文职、教资面试'
+const EMPTY_DESCRIPTION = '本轮八场考试已结束，时间与关键节点备查；新日程以官方公告为准。'
 const NAVIGATION_PATH = 'src/navsphere/content/navigation.json'
 const SITE_PATH = 'src/navsphere/content/site.json'
 
@@ -68,6 +71,8 @@ const EXAM_ICONS: Record<string, LucideIcon> = {
   shengkao: Landmark,
   jingkao: Building2,
   kaoyan: GraduationCap,
+  jiaoshi-mianshi: BookOpen,
+  jundui-wenzhi: Shield,
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -162,15 +167,15 @@ export default async function ExamPage() {
             </h1>
             <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed max-w-2xl">
               {nearest
-                ? '成考、国考、四六级、省考、京考、考研——六场大考的倒计时与关键节点，一个页面看全。'
-                : '成考、国考、四六级、省考、京考、考研——六场大考的时间与关键节点，一个页面看全。'}
+                ? '成考、国考、四六级、省考、京考、考研、军队文职、教资面试——八场大考的倒计时与关键节点，一个页面看全。'
+                : '成考、国考、四六级、省考、京考、考研、军队文职、教资面试——八场大考的时间与关键节点，一个页面看全。'}
             </p>
             <div className="mt-4 pt-3.5 border-t border-border/50 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-sky-500/25 bg-sky-500/5 text-xs text-sky-700 dark:text-sky-400">
                 <CalendarDays className="w-3 h-3" />
                 {nearest
                   ? `最近一场：${nearest.shortName} · ${nearest.examDateLabel}`
-                  : '本轮六场考试均已结束'}
+                  : '本轮八场考试均已结束'}
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
                 {nearest ? '倒计时实时更新 · 日期以官方公告为准' : '日期以官方公告为准'}
@@ -182,7 +187,7 @@ export default async function ExamPage() {
         {/* 倒计时卡 + 时间轴 */}
         <section aria-labelledby="exam-countdown-heading">
           <h2 id="exam-countdown-heading" className="text-lg font-bold text-foreground">
-            {nearest ? '六场大考倒计时' : '六场大考'}
+            {nearest ? '八场大考倒计时' : '八场大考'}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             关注考试后可逐项勾选考前清单；关注与勾选只保存在本机浏览器。

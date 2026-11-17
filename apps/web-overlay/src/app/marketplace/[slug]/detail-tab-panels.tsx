@@ -63,7 +63,10 @@ export function isSafeScreenshotUrl(value: unknown): value is string {
   // 十六进制/八进制写法的 IP（如 0x7f.0.0.1）会绕过上面的十进制段判断，同样禁掉
   if (host.split('.').some((part) => /^0x/i.test(part) || /^0\d+$/.test(part))) return false
   const bare = host.replace(/^\[|\]$/g, '')
-  if (bare.includes(':') && (bare === '::1' || bare.startsWith('fe80:') || bare.startsWith('fc') || bare.startsWith('fd'))) return false
+  // IPv4 映射 IPv6（如 ::ffff:192.168.1.1）：WHATWG URL 会把点分形规范化为
+  // ::ffff:c0a8:101，既不命中十进制 v4 分支也不命中 ::1/fe80:/fc/fd 判断，
+  // 须在 IPv6 分支显式拦下；::ffff: 前缀一次覆盖点分与十六进制两种形态。
+  if (bare.includes(':') && (bare === '::1' || bare.startsWith('::ffff:') || bare.startsWith('fe80:') || bare.startsWith('fc') || bare.startsWith('fd'))) return false
   return true
 }
 import type { useCopyFeedback } from '@/hooks/use-copy-feedback'

@@ -120,6 +120,8 @@ describe('P2-6 截图白名单行为', () => {
     expect(isSafeScreenshotUrl('https://192.168.1.1/shot.png')).toBe(false)
     expect(isSafeScreenshotUrl('https://169.254.169.254/latest/meta-data/')).toBe(false)
     expect(isSafeScreenshotUrl('https://[::1]/shot.png')).toBe(false)
+    expect(isSafeScreenshotUrl('https://[::ffff:192.168.1.1]/shot.png')).toBe(false)
+    expect(isSafeScreenshotUrl('https://[::ffff:169.254.169.254]/latest/meta-data/')).toBe(false)
     expect(isSafeScreenshotUrl('https://0x7f.0.0.1/shot.png')).toBe(false)
   })
 

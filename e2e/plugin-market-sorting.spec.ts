@@ -150,6 +150,33 @@ async function uiSlugs(page: Page, prefix: string): Promise<string[]> {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * 选类型并等地址栏落 kind（水合容错版）。
+ *
+ * 直接 selectOption 有冷启动水合竞态：首选若落在 React 水合前，
+ * 受控 select 会在水合时被 kind state（''）重置、change 事件丢失，
+ * URL 永远不带 kind（run 44125548782 首试即如此，重试才过）。
+ * 因此先等落定信号再判定：URL 已带 kind（生效）或下拉值回到 ''
+ * （水合已重置，可补选）；未生效才补选一次（与 clickInstallAndAwaitToast
+ * 的补击同款）。site-pack 不走这里——下拉里没有该选项（P2-13），
+ * 见 kind 用例内的深链注释。
+ */
+async function selectKind(page: Page, kind: string) {
+  const kindSelect = page.getByLabel('按类型筛选');
+  const pattern = new RegExp(`[?&]kind=${kind}`);
+  await kindSelect.selectOption(kind);
+  await expect
+    .poll(async () => {
+      if (pattern.test(page.url())) return 'applied';
+      return (await kindSelect.inputValue()) === '' ? 'reset' : 'pending';
+    }, { timeout: 15_000 })
+    .not.toBe('pending');
+  if (!pattern.test(page.url())) {
+    await kindSelect.selectOption(kind);
+    await expect(page).toHaveURL(pattern, { timeout: 15_000 });
+  }
+}
+
 test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', () => {
   test.describe.configure({ retries: 1 });
 
@@ -356,8 +383,7 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
 
     const kindSelect = page.getByLabel('按类型筛选');
     // 主题：只剩 theme1。
-    await kindSelect.selectOption('theme');
-    await expect(page).toHaveURL(/[?&]kind=theme/);
+    await selectKind(page, 'theme');
     await expect
       .poll(async () => uiSlugs(page, `e2e-kind-${KIND_STAMP}-`), { timeout: 30_000 })
       .toEqual([slugByKey('theme1')]);
@@ -366,7 +392,14 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
 
     // 网站包：pack1 + pack2（集合相等，顺序不做断言：两者计数全 0，trending
     // 只剩时间项，顺序由导入先后决定，不属于筛选契约）。
-    await kindSelect.selectOption('site-pack');
+    // P2-13 已把 site-pack 移出下拉（种子为 0 时是死入口），下拉里根本
+    // 没有该选项，selectOption('site-pack') 永远找不到（run 44125548782
+    // 重试即烧掉整个 90s 预算死在这里）；但地址栏契约仍支持
+    // ?kind=site-pack（board 注释：仍可解析、可清除），改走深链直达。
+    // 直达后的 toHaveURL 不是空断言：若 board 不认 kind，URL 同步
+    // effect 会把它写掉。
+    await page.goto(`/marketplace?q=${KIND_STAMP}&kind=site-pack`);
+    await expect(page.getByRole('link', { name: kindPlugins[0].name }).first()).toBeVisible({ timeout: 30_000 });
     await expect(page).toHaveURL(/[?&]kind=site-pack/);
     await expect
       .poll(async () => (await uiSlugs(page, `e2e-kind-${KIND_STAMP}-`)).sort(), { timeout: 30_000 })
@@ -375,8 +408,7 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
     await expect(page.getByRole('link', { name: kindPlugins[2].name })).toHaveCount(0);
 
     // 搜索引擎包：只剩 search1。
-    await kindSelect.selectOption('search-pack');
-    await expect(page).toHaveURL(/[?&]kind=search-pack/);
+    await selectKind(page, 'search-pack');
     await expect
       .poll(async () => uiSlugs(page, `e2e-kind-${KIND_STAMP}-`), { timeout: 30_000 })
       .toEqual([slugByKey('search1')]);

@@ -81,6 +81,12 @@ async function installSitePackViaUI(page: Page, name: string, slug: string) {
 
 /** 读已安装页「全部 (N)」标签里的计数。调用前需已在 /marketplace/installed。 */
 async function readInstalledCount(page: Page): Promise<number> {
+  // 首载是异步取数：分类栏在 loading 时就带着初始 items=[] 渲染，
+  // 「全部 (0)」是假零（installed/page.tsx:111 注释自认）——必须等
+  // 「正在加载…」消失（取数落定）后再读数，否则读到首载假零
+  // （run 44125548782 用例 1 首试与重试两次都读到 0；同文件用例 2/3
+  // 先等插件名出现再读数，都过了）。
+  await expect(page.getByText('正在加载已安装插件清单…')).toHaveCount(0, { timeout: 30_000 });
   const allTab = page.getByRole('button', { name: /全部 \(\d+\)/ });
   await expect(allTab).toBeVisible({ timeout: 30_000 });
   const text = (await allTab.textContent()) ?? '';
@@ -131,6 +137,9 @@ test.describe('插件市场：卸载 / 停用 / 回滚端到端', () => {
     // 安装落账：已安装页计数为 1
     await page.goto('/marketplace/installed');
     await expect(page.getByRole('heading', { name: '已安装插件管家' })).toBeVisible({ timeout: 30_000 });
+    // 先等插件名出现（数据到达的信号，与同文件用例 2/3 同款），
+    // 再读计数：只等标题会读到首载假零（见 readInstalledCount 注释）。
+    await expect(page.getByText(name, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     expect(await readInstalledCount(page)).toBe(1);
 
     // 详情页点「已安装 (点击管理/卸载)」打开卸载弹窗

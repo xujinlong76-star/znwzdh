@@ -263,7 +263,10 @@ export default function PluginDetailView({
     setSharingLink(false)
   }, [shareCopy, slug, sharingLink])
 
+  const loadDetailSeq = useRef(0), mountedRef = useRef(true) // 世代守卫：仅最新 loadDetail 响应可写回 starred/starCount
+  useEffect(() => () => { mountedRef.current = false }, [])
   const loadDetail = useCallback(async (opts?: { silent?: boolean }) => {
+    const seq = ++loadDetailSeq.current
     if (!opts?.silent) setLoading(true)
     setNotice(null)
     try {
@@ -271,7 +274,7 @@ export default function PluginDetailView({
       const res = await fetchPluginDetail(slug, activeIdentity, (err) =>
         setNotice(describeDegrade(err, '插件详情'))
       )
-      if (res && res.plugin) {
+      if (res?.plugin && seq === loadDetailSeq.current && mountedRef.current) {
         setPlugin(res.plugin)
         setSummary(res.summary)
         setStarred(Boolean(res.plugin.starred))
@@ -297,12 +300,12 @@ export default function PluginDetailView({
         // 只有真正拿到身份态数据才算同步完成：刷新失败时 installed 仍是 SSR
         // 的「未安装」占位，若此时放行深链会再次误弹安装确认。
         setDetailSynced(true)
-      } else if (!opts?.silent) {
+      } else if (!opts?.silent && seq === loadDetailSeq.current && mountedRef.current) {
         setPlugin(null)
       }
     } catch {
       // 静默刷新失败时保留 SSR 首屏数据，降级提示已由 notice 承担
-      if (!opts?.silent) setPlugin(null)
+      if (!opts?.silent && seq === loadDetailSeq.current && mountedRef.current) setPlugin(null)
     } finally {
       if (!opts?.silent) setLoading(false)
     }
@@ -330,13 +333,10 @@ export default function PluginDetailView({
     setStarCount((prev) => (nextStarred ? prev + 1 : Math.max(0, prev - 1)))
 
     try {
-      if (nextStarred) {
-        const res = await starPlugin(plugin.slug)
-        setStarCount(res.starCount)
-      } else {
-        const res = await unstarPlugin(plugin.slug)
-        setStarCount(res.starCount)
-      }
+      const res = nextStarred ? await starPlugin(plugin.slug) : await unstarPlugin(plugin.slug)
+      setStarred(res.starred)
+      setStarCount(res.starCount)
+      loadDetailSeq.current++ // 使切换前在途的旧快照失效：其响应落地时被世代守卫丢弃
     } catch (err) {
       setStarred(!nextStarred)
       setStarCount((prev) => (nextStarred ? Math.max(0, prev - 1) : prev + 1))

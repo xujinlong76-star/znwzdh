@@ -1738,5 +1738,30 @@
   "pricing": "free",
   "evidence": "教育部主办研招官方平台，网报/准考证下载免费开放",
   "title": "考研网上报名"
+ },
+ "descript.com": {
+  "pricing": "freemium",
+  "evidence": "官网定价页设免费档与 Hobbyist/Creator/Business 付费档",
+  "title": "Descript"
+ },
+ "make.com": {
+  "pricing": "freemium",
+  "evidence": "官网定价页设免费档（每月 1000 credits）与 Core/Pro/Teams 付费档",
+  "title": "Make"
+ },
+ "notebook.google.com": {
+  "pricing": "freemium",
+  "evidence": "免费 Standard 档（Google 账号可用）+ Plus/Pro 经 Google AI 订阅解锁更高用量",
+  "title": "Gemini Notebook"
+ },
+ "opus.pro": {
+  "pricing": "freemium",
+  "evidence": "官网定价页设免费档（每月 60 credits）与 Starter/Pro 付费档",
+  "title": "OpusClip"
+ },
+ "todoist.com": {
+  "pricing": "freemium",
+  "evidence": "官网定价页设免费 Beginner 档与 Pro/Business 付费档",
+  "title": "Todoist"
  }
 }

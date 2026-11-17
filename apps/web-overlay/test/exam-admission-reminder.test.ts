@@ -162,6 +162,23 @@ describe('admissionReminderFor（只对国考）', () => {
     expect(node.url).not.toBe(GUOKAO_PORTAL_URL)
   })
 
+  it('U-98：card/strip 双写两层（专题网站门户 + 打印系统直链），点击目标仍只挂 gwy 直链', () => {
+    for (const t of [NOV_15_NOON_CST, NOV_22_0000_CST, NOV_23_0000_CST, NOV_27_0000_CST]) {
+      const r = admissionReminderFor(guokao, t)!
+      // 两层都写清：门户 bm.scs.gov.cn/kl2027（选「考生考务入口」）与打印系统直达 gwy.cpta.com.cn
+      expect(r.cardLine).toContain('登录专题网站 bm.scs.gov.cn/kl2027')
+      expect(r.cardLine).toContain('选「考生考务入口」进入打印系统')
+      expect(r.cardLine).toContain('直达 gwy.cpta.com.cn')
+      expect(r.stripLine).toContain('登录专题网站 bm.scs.gov.cn/kl2027')
+      expect(r.stripLine).toContain('选「考生考务入口」进入打印系统')
+      expect(r.stripLine).toContain('直达 gwy.cpta.com.cn')
+      // 不再用裸「登录专题网站打印」混淆两层；点击目标仍只挂 gwy 直链
+      expect(r.cardLine).not.toContain('登录专题网站打印')
+      expect(r.url).toBe(GUOKAO_ADMISSION_URL)
+      expect(r.url).toBe('http://gwy.cpta.com.cn')
+    }
+  })
+
   it('其余三场任何时刻都没有提醒', () => {
     for (const exam of EXAMS.filter((e) => e.id !== 'guokao')) {
       expect(admissionReminderFor(exam, NOV_23_0000_CST)).toBeNull()
@@ -172,6 +189,37 @@ describe('admissionReminderFor（只对国考）', () => {
   it('国考在窗口外也没有提醒（11-14 与 11-29 15:00 后）', () => {
     expect(admissionReminderFor(guokao, Date.UTC(2026, 10, 14, 0, 0, 0))).toBeNull()
     expect(admissionReminderFor(guokao, NOV_29_1500_CST)).toBeNull()
+  })
+})
+
+describe('导航站国考专题条目（U-98）', () => {
+  function findById(node: unknown, id: string): Record<string, unknown> | undefined {
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = findById(child, id)
+        if (found) return found
+      }
+      return undefined
+    }
+    if (node && typeof node === 'object') {
+      const obj = node as Record<string, unknown>
+      if (obj.id === id) return obj
+      for (const value of Object.values(obj)) {
+        const found = findById(value, id)
+        if (found) return found
+      }
+    }
+    return undefined
+  }
+
+  it('国考专题条目 description 改门户口径，不写准考证打印入口', () => {
+    const nav = JSON.parse(read('src/navsphere/content/navigation.json'))
+    const entry = findById(nav, 'nav-7465492db41a')!
+    expect(entry.href).toBe('http://bm.scs.gov.cn/kl2027')
+    expect(entry.description).toBe(
+      '中央机关及其直属机构2027年度考试录用公务员专题网站：招考公告、报名入口、笔试安排与成绩查询',
+    )
+    expect(entry.description as string).not.toContain('准考证打印')
   })
 })
 

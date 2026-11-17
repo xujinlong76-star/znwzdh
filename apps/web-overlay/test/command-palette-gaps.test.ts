@@ -112,7 +112,8 @@ describe('命令面板缺口 ②：FloatingQuickNav 全局挂载', () => {
     const src = read('src/components/floating-quick-nav.tsx')
     expect(src).toContain('fixed right-4')
     expect(src).toContain('z-40')
-    expect(src).toContain('bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+3rem)]')
+    // K1 悬浮栈规范（f0283bb8）：移动端胶囊底边 104px→168px，抬到猫顶（68+88=156px）之上留 12px 间隙；旧 calc(3.5rem+…+3rem)=104px 会被猫的白圆盖住
+    expect(src).toContain('bottom-[calc(68px+88px+12px+env(safe-area-inset-bottom,0px))]')
   })
 
   it('搜索键触摸目标仍为 44px（h-11 w-11 三处：回顶/搜索/微工具）', () => {

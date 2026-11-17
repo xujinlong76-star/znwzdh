@@ -545,8 +545,9 @@
        都能整只滑出视口（旧 calc(100% + 12px) 按自身宽度算，只对默认位置成立）。 */
     '@media (max-width:640px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}' +
     /* P2-16：页脚避让放宽到 ≤1023px——页脚 md（≥768px）起改右对齐行布局，版权行贴右缘，
-       猫在 640–1023px 默认 bottom 4.5rem+18px，几乎贴着版权行（只剩约 2px 空隙），拖动过
-       的猫会直接盖住版权行与备案链接；滚到底时沿用 P1-1 的收起位移（--xm-park-x 实时量取），
+       猫在 640–1023px 默认 bottom 112px（K1 悬浮栈规范，与桌面默认同值；原 4.5rem+18px
+       =90px 会蹭胶囊顶部），拖动过的猫会直接盖住版权行与备案链接；滚到底时沿用 P1-1 的收起
+       位移（--xm-park-x 实时量取），
        与 ≤640px 同款滑出视口。顶部收起（y≤30，防盖搜索行）仍只在 ≤640px 生效，见 syncMarketPark。 */
     '@media (min-width:641px) and (max-width:1023px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}' +
     /* 半屏下沉栏避让（Batch 3 第 12 项 BLOCK 修复）：640–1024px 首页底部有 56px 高的常驻栏

@@ -6,16 +6,17 @@ import { test, expect, type Page } from '@playwright/test';
  * 背景：独立评审 BLOCK——640–1024px 区间，栏的关闭 × 默认就被小猫挂件
  * （#xiaomaomao，.xm-lean 满幅拦截指针）盖住、点不到；700px 时热度榜还被
  * DIY 入口 pill 盖住。修复：pill 在 640–1024 抬到 4.5rem；猫在 640–1024
- * 默认抬到 calc(4.5rem + 18px + safe-area)。
+ * 默认抬到 112px（K1 悬浮栈规范 f0283bb8：猫底边 96px→112px，见下）。
  *
  * 本文件把 elementFromPoint 实测固化下来：700/900 下 × 与热度榜的中心点命中
  * 目标必须是其自身（不是 .xm-lean、不是 DIY pill）；639/640/1023/1024 四边界
  * 显隐符合 [640,1024)；猫的拖动、60 秒贴边、面板展开三处无回归。
  *
- * 猫底距现行值（xiaomaomao.js，与四边界期望逐字对齐；2026-11-16 修正，
- * 旧值 639→12px / 1024→18px 是挂件整体抬高前的过期期望）：<640px 为 68px
+ * 猫底距现行值（xiaomaomao.js，与四边界期望逐字对齐；K1 2026-11-17 修正，
+ * f0283bb8：猫底边 96px→112px，640–1023px 档与桌面同值；旧值 640/1023→90px、
+ * 1024→96px 是 K1 前的过期期望）：<640px 为 68px
  *（@media max-width:640px；640px 整点以 640–1023px 规则为准）；
- * ≥1024px 为桌面默认 96px。改挂件 CSS 时须同步改本文件期望值。
+ * 640–1023px 为 112px；≥1024px 为桌面默认 112px。改挂件 CSS 时须同步改本文件期望值。
  *
  * 注意：elementFromPoint 返回的是最上层元素——按钮中心是 lucide <svg>，
  * 所以断言用 target.contains(hit)，而不是 hit === target。
@@ -93,9 +94,9 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
   test('四边界：639/640/1023/1024 栏显隐符合 [640,1024)，猫底距同步切换', async ({ page }) => {
     const cases: Array<{ width: number; dockVisible: boolean; catBottom: string }> = [
       { width: 639, dockVisible: false, catBottom: '68px' },
-      { width: 640, dockVisible: true, catBottom: '90px' },
-      { width: 1023, dockVisible: true, catBottom: '90px' },
-      { width: 1024, dockVisible: false, catBottom: '96px' },
+      { width: 640, dockVisible: true, catBottom: '112px' },
+      { width: 1023, dockVisible: true, catBottom: '112px' },
+      { width: 1024, dockVisible: false, catBottom: '112px' },
     ];
     for (const { width, dockVisible, catBottom } of cases) {
       await gotoHome(page, width);

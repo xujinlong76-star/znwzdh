@@ -294,11 +294,11 @@ describe('BLOCK 修复：640–1024px 两处遮挡源（2026-11-14 独立评审�
 
   it('小猫挂件在 640–1024 抬到栏之上：媒体规则逐字锁定，区间与栏 [640,1024) 对齐', () => {
     const js = read(XIAOMAOMAO)
-    // 栏高 56px（4.5rem 含 safe-area 口径）+ 16px 呼吸 + 原 18px 偏移 = 90px
+    // K1 悬浮栈规范（f0283bb8）：与桌面默认底边同值 112px（96px→112px）；原 4.5rem+18px=90px 会蹭胶囊顶部（见 K1 守卫测试 xiaomaomao-widget-k12345.test.ts）
     expect(js).toContain(
-      "@media (min-width:640px) and (max-width:1023px){#xiaomaomao{bottom:calc(4.5rem + 18px + env(safe-area-inset-bottom,0px))}}",
+      "@media (min-width:640px) and (max-width:1023px){#xiaomaomao{bottom:calc(112px + env(safe-area-inset-bottom,0px))}}",
     )
-    // 640px 整点：新规则必须在 ≤640 规则之后，否则 ≤640 规则把 bottom 写回 12px
+    // 640px 整点：新规则必须在 ≤640 规则之后，否则 ≤640 规则把 bottom 写回 68px
     const smallAt = js.indexOf('@media (max-width:640px)')
     const midAt = js.indexOf('@media (min-width:640px) and (max-width:1023px)')
     expect(smallAt).toBeGreaterThan(-1)

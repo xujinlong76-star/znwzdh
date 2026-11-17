@@ -156,7 +156,7 @@ export function PluginReviewSection({
       } else {
         toast.error('投票失败', failureToastOptions(null, () => void handleToggleHelpful(reviewId)))
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error('投票失败', failureToastOptions(err, () => void handleToggleHelpful(reviewId)))
     } finally {
       setHelpfulPendingId(null)

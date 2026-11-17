@@ -102,6 +102,12 @@ describe('空态文案：What/Why/Next 齐全、有且只有一个主行动', ()
     expect(FAVORITES_EMPTY_COPY.why).toContain('不用登录')
   })
 
+  it('收藏空态不承诺不存在的入口：星标只在主页站点卡片上，搜索结果行没有星标（U-28）', () => {
+    expect(FAVORITES_EMPTY_COPY.why).toContain('主页站点卡片上点一下星标')
+    expect(FAVORITES_EMPTY_COPY.why).not.toContain('搜索结果')
+    expect(FAVORITES_EMPTY_COPY.why).toContain('不用登录')
+  })
+
   it('热榜首访文案讲清 cadence：每小时、第一轮', () => {
     const copy = hotlistAllEmptyCopy('never-fetched')
     expect(copy.why).toContain('每小时')

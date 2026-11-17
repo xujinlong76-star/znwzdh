@@ -45,7 +45,7 @@ export interface EmptyStateCopy {
 /** 收藏真空态：一个收藏都没有（不是筛出来的空，筛空另有分支） */
 export const FAVORITES_EMPTY_COPY: EmptyStateCopy = {
   title: '还没有收藏任何站点',
-  why: '收藏先存在本机，不用登录；在主页站点卡片或搜索结果里点一下星标就能攒下来。',
+  why: '收藏先存在本机，不用登录；在主页站点卡片上点一下星标就能攒下来。',
   next: '去主页星标第一个站点。',
   actionLabel: '去主页探索发现',
   actionHref: '/',

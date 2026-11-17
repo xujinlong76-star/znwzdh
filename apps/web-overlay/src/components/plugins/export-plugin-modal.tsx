@@ -117,8 +117,12 @@ export function ExportPluginModal({
         } else {
           setValidationErrors(res.errors || [res.error || '清单校验未通过'])
         }
-      } catch {
-        // 网络异常容错
+      } catch (err) {
+        // 校验请求抛错（400 清单非法 / 网络异常）不能静默吞掉：sendJson
+        // 对 !res.ok 一律抛错，validatePlugin 不会返回 { ok: false }，
+        // 不回填就会让界面误报「校验 100% 通过」。口径与发布页
+        // handleValidate 的 catch 一致：把服务端原话放进校验错误行。
+        setValidationErrors([err instanceof Error ? err.message : String(err)])
       } finally {
         setValidating(false)
       }

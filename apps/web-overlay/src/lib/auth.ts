@@ -167,7 +167,7 @@ const providers: NextAuthConfig['providers'] = [
             id: 'admin',
             name: '本地管理员',
             email: 'admin@navhub.local',
-            image: '/assets/images/alogo.webp',
+            image: '/icons/icon-192.png',
             role: 'admin',
           }
         }
@@ -185,7 +185,7 @@ const providers: NextAuthConfig['providers'] = [
           id: 'admin',
           name: username,
           email: 'admin@navhub.local',
-          image: '/assets/images/alogo.webp',
+          image: '/icons/icon-192.png',
           role: 'admin',
         }
       }
@@ -203,7 +203,7 @@ const providers: NextAuthConfig['providers'] = [
           id: 'admin',
           name: username || 'Token 管理员',
           email: 'admin@navhub.local',
-          image: '/assets/images/alogo.webp',
+          image: '/icons/icon-192.png',
           role: 'admin',
         }
       }
@@ -253,7 +253,7 @@ const providers: NextAuthConfig['providers'] = [
               id: 'admin',
               name: username || '山羊胡管理员',
               email: 'admin@navhub.local',
-              image: '/assets/images/alogo.webp',
+              image: '/icons/icon-192.png',
               role: 'admin',
             }
           }

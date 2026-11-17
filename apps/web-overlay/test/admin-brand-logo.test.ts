@@ -7,6 +7,10 @@
  *
  * 为什么用源码守卫：vitest 跑在 node 环境，无法渲染需要 next-auth 会话的 RSC 布局；
  * 这里锁「服务端按设置取值 + 客户端只用传入值」的接线形态。
+ *
+ * 回退值改动（Phase 2 批 E，2026-11-17）：旧回退 /assets/images/alogo.webp 从未进
+ * 过仓库（public/assets/ 整个目录都不存在），后台品牌图一直在 404；新回退
+ * /icons/icon-192.png 是站内真实资产（站点标志，与前台 favicon 同源）。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -22,7 +26,7 @@ describe('管理后台品牌 logo 消费', () => {
 
   it('服务端布局从站点设置读 logo，并保留内置图回退', () => {
     expect(layout).toContain('readSiteSettings()')
-    expect(layout).toMatch(/brandLogo=\{settings\.appearance\.logo \|\| '\/assets\/images\/alogo\.webp'\}/)
+    expect(layout).toMatch(/brandLogo=\{settings\.appearance\.logo \|\| '\/icons\/icon-192\.png'\}/)
   })
 
   it('侧栏三处 logo 都用 brandLogo，不再写死上游图', () => {

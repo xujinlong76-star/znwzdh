@@ -18,6 +18,7 @@ import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { getActiveTheme, setActiveTheme } from '@/lib/plugins/theme-runtime'
 import { registerSearchPackEngines } from '@/lib/plugins/search-pack-runtime'
 import { comparePluginVersions, type PluginManifest } from '@/lib/plugins/plugin-manifest'
+import { failureToastOptions } from '@/lib/failure-guidance'
 import { History, GitCommit, ShieldCheck, ChevronRight, FileCode, Check, Copy, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -95,6 +96,40 @@ export function PluginVersionTimeline({ slug, currentVersion, installedVersion, 
     }
   }
 
+  /**
+   * 回滚确认（Phase 2 批 E K4）：点「回滚到此版本」先拉版本快照，从
+   * diffAgainstCurrent 读新版独有站点数——服务端
+   * diffPluginManifests(旧版清单, 当前清单) 的 sitesAddedCount 即当前版本有、
+   * 目标版本没有的站点数，也就是回滚将移除的数；快照拉不到时仍给不带
+   * 站点数的确认，不阻塞回滚本身。
+   */
+  const confirmRollback = async (targetVersion: string): Promise<boolean> => {
+    let removedCount: number | null = null
+    try {
+      const detail = await fetchPluginVersionDetail(slug, targetVersion)
+      const diff = detail?.diffAgainstCurrent as
+        | { sitesAddedCount?: number; siteChanges?: Array<{ status?: string }> }
+        | null
+        | undefined
+      if (typeof diff?.sitesAddedCount === 'number') {
+        removedCount = diff.sitesAddedCount
+      } else if (Array.isArray(diff?.siteChanges)) {
+        removedCount = diff.siteChanges.filter((s) => s.status === 'added').length
+      }
+    } catch {
+      // 快照拉不到不阻塞确认：文案退回不带站点数的版本
+    }
+    const countText =
+      removedCount !== null && removedCount > 0
+        ? `回滚将移除 ${removedCount} 个新版独有站点（仅当前版本有、v${targetVersion} 没有的站点），并恢复 v${targetVersion} 的清单。`
+        : removedCount === 0
+          ? `v${targetVersion} 与当前版本的站点清单一致，回滚只恢复该版本的清单内容。`
+          : `回滚将恢复 v${targetVersion} 的清单，并移除新版独有站点。`
+    return window.confirm(
+      `确定要回滚到 v${targetVersion} 吗？\n\n${countText}\n该操作会立即生效。`,
+    )
+  }
+
   const handleInstallVersion = async (targetVersion: string) => {
     setInstallingVersion(targetVersion)
     try {
@@ -108,20 +143,41 @@ export function PluginVersionTimeline({ slug, currentVersion, installedVersion, 
           await reapplyVersionManifest(targetVersion)
           toast.success(`已回滚到 v${targetVersion}${res.sitesRemoved > 0 ? `，移除了 ${res.sitesRemoved} 个新版独有站点` : ''}`)
           onChanged?.()
+        } else {
+          // P1-5：success===false 且未抛错时不再静默，给失败反馈 + 重试
+          toast.error('回滚失败', failureToastOptions(null, () => void handleInstallVersion(targetVersion)))
         }
       } else {
         const res = await installPlugin(slug, undefined, { version: targetVersion })
         if (res.success) {
           await reapplyVersionManifest(targetVersion)
-          toast.success(`已成功生效/回滚至版本 v${targetVersion}`)
+          toast.success(
+            installedVersion === targetVersion
+              ? `已重新安装版本 v${targetVersion}`
+              : `已成功安装版本 v${targetVersion}`,
+          )
           onChanged?.()
+        } else {
+          // P1-5：success===false 且未抛错时不再静默，给失败反馈 + 重试
+          toast.error('安装版本失败', failureToastOptions(null, () => void handleInstallVersion(targetVersion)))
         }
       }
     } catch (err: any) {
-      toast.error(err?.message || `安装版本 v${targetVersion} 失败`)
+      toast.error(
+        `安装版本 v${targetVersion} 失败`,
+        failureToastOptions(err, () => void handleInstallVersion(targetVersion)),
+      )
     } finally {
       setInstallingVersion(null)
     }
+  }
+
+  /** 版本按钮入口：回滚先确认（K4），安装/重装直通。 */
+  const handleInstallClick = async (targetVersion: string) => {
+    const isRollback =
+      !!installedVersion && comparePluginVersions(targetVersion, installedVersion) < 0
+    if (isRollback && !(await confirmRollback(targetVersion))) return
+    await handleInstallVersion(targetVersion)
   }
 
   const loadVersions = useCallback(async () => {
@@ -155,7 +211,7 @@ export function PluginVersionTimeline({ slug, currentVersion, installedVersion, 
       const detail = await fetchPluginVersionDetail(slug, ver)
       setVersionDetail(detail)
     } catch (err: any) {
-      toast.error(err?.message || '获取版本快照失败')
+      toast.error('获取版本快照失败', failureToastOptions(err, () => void handleInspect(ver)))
     } finally {
       setLoadingDetail(false)
     }
@@ -309,7 +365,7 @@ export function PluginVersionTimeline({ slug, currentVersion, installedVersion, 
                       variant="outline"
                       size="sm"
                       disabled={installingVersion === v.version}
-                      onClick={() => handleInstallVersion(v.version)}
+                      onClick={() => handleInstallClick(v.version)}
                       className="h-7 px-2 text-xs text-primary hover:bg-primary/5 border-primary/30"
                     >
                       <RotateCcw className="h-3 w-3 mr-1" />

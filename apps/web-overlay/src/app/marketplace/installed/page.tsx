@@ -11,6 +11,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import { failureDescription } from '@/lib/failure-guidance'
 import { safeWindowOpen } from '@/lib/safe-url'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
@@ -71,7 +73,22 @@ export default function InstalledPluginsPage() {
   const [upgradingSlug, setUpgradingSlug] = useState<string | null>(null)
   const [uninstallingSlug, setUninstallingSlug] = useState<string | null>(null)
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null)
+  // K2：主题「启用」与升级/停用同款 *Slug 守卫，防重复点击
+  const [activatingThemeSlug, setActivatingThemeSlug] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  // K6：横幅常驻到用户关闭；失败时附带重试回调，横幅内给「重试」按钮
+  const [actionRetry, setActionRetry] = useState<(() => void) | null>(null)
+
+  /** 横幅写入：成功/失败都常驻（不自动消失），失败可附重试回调。 */
+  const showActionMessage = (message: string, retry?: () => void) => {
+    setActionMessage(message)
+    setActionRetry(retry ? () => retry : null)
+  }
+
+  const dismissActionMessage = () => {
+    setActionMessage(null)
+    setActionRetry(null)
+  }
   // 加载失败 ≠ 没装插件：fetchInstalledPlugins 失败时回落空列表，旧代码只有
   // try/finally、无 catch、无 onDegraded，故障会被渲染成「你尚未安装任何插件」。
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
@@ -110,10 +127,15 @@ export default function InstalledPluginsPage() {
   }, [loadData])
 
   const handleActivateTheme = async (item: HubPluginInstalledItem) => {
+    if (activatingThemeSlug === item.slug) return
+    setActivatingThemeSlug(item.slug)
     try {
       const detail = await fetchPluginDetail(item.slug)
       if (!detail?.plugin?.manifest?.payload) {
-        setActionMessage(`无法激活主题：未能加载清单配置`)
+        showActionMessage(
+          '无法激活主题：未能加载清单配置，请稍后重试。',
+          () => void handleActivateTheme(item),
+        )
         return
       }
       const payload = detail.plugin.manifest.payload
@@ -126,14 +148,15 @@ export default function InstalledPluginsPage() {
       setActiveThemeState(getActiveTheme())
       setThemeSuspended(isThemeSuspended())
       // 深色模式下主题只保存不注入：别谎称已启用，明说暂停、回浅色自动恢复
-      setActionMessage(
+      showActionMessage(
         isThemeSuspended()
           ? `已保存主题「${item.name}」，深色模式下暂停，回到浅色自动恢复`
           : `已成功启用主题「${item.name}」`
       )
-      setTimeout(() => setActionMessage(null), 3000)
     } catch (err) {
-      setActionMessage(`主题应用失败：${err instanceof Error ? err.message : String(err)}`)
+      showActionMessage(`主题应用失败：${failureDescription(err)}`, () => void handleActivateTheme(item))
+    } finally {
+      setActivatingThemeSlug(null)
     }
   }
 
@@ -141,8 +164,7 @@ export default function InstalledPluginsPage() {
     resetTheme()
     setActiveThemeState(null)
     setThemeSuspended(false)
-    setActionMessage('已恢复系统默认主题')
-    setTimeout(() => setActionMessage(null), 3000)
+    showActionMessage('已恢复系统默认主题')
   }
 
   const handleUpgrade = async (item: HubPluginInstalledItem) => {
@@ -153,9 +175,8 @@ export default function InstalledPluginsPage() {
 
       // 已停用的插件只升版本、不恢复运行效果：升级不能悄悄替用户重新启用。
       if (item.disabled) {
-        setActionMessage(`插件已升级至最新版本（仍处于停用状态）`)
+        showActionMessage(`插件已升级至最新版本（仍处于停用状态）`)
         await loadData()
-        setTimeout(() => setActionMessage(null), 3000)
         return
       }
 
@@ -183,11 +204,10 @@ export default function InstalledPluginsPage() {
         if (engines) registerSearchPackEngines(item.slug, engines)
       }
 
-      setActionMessage(`插件已成功升级至最新版本`)
+      showActionMessage(`插件已成功升级至最新版本`)
       await loadData()
-      setTimeout(() => setActionMessage(null), 3000)
     } catch (err) {
-      setActionMessage(`升级失败：${err instanceof Error ? err.message : String(err)}`)
+      showActionMessage(`升级失败：${failureDescription(err)}`, () => void handleUpgrade(item))
     } finally {
       setUpgradingSlug(null)
     }
@@ -208,11 +228,10 @@ export default function InstalledPluginsPage() {
       if (item.kind === 'search-pack') {
         unregisterSearchPackEngines(item.slug)
       }
-      setActionMessage(`已成功卸载插件「${item.name}」，关联站点与分类已同步清理`)
+      showActionMessage(`已成功卸载插件「${item.name}」，关联站点与分类已同步清理`)
       await loadData()
-      setTimeout(() => setActionMessage(null), 3000)
     } catch (err) {
-      setActionMessage(`卸载失败：${err instanceof Error ? err.message : String(err)}`)
+      showActionMessage(`卸载失败：${failureDescription(err)}`, () => void handleUninstall(item))
     } finally {
       setUninstallingSlug(null)
     }
@@ -234,15 +253,14 @@ export default function InstalledPluginsPage() {
       if (item.kind === 'search-pack') {
         unregisterSearchPackEngines(item.slug)
       }
-      setActionMessage(
-        item.kind === 'site-pack' || item.kind === 'workspace-preset'
-          ? `已停用「${item.name}」，已导入的内容保留原处，随时可再启用`
-          : `已停用「${item.name}」，运行效果已停止，数据与版本保留，随时可再启用`,
-      )
+      // K15：停用成功走 toast + 5 秒内「撤销」一键重新启用，不再只留横幅
+      toast.success(`已停用「${item.name}」`, {
+        duration: 5000,
+        action: { label: '撤销', onClick: () => void handleEnable(item) },
+      })
       await loadData()
-      setTimeout(() => setActionMessage(null), 3000)
     } catch (err) {
-      setActionMessage(`停用失败：${err instanceof Error ? err.message : String(err)}`)
+      showActionMessage(`停用失败：${failureDescription(err)}`, () => void handleDisable(item))
     } finally {
       setTogglingSlug(null)
     }
@@ -259,11 +277,10 @@ export default function InstalledPluginsPage() {
         const engines = detail?.plugin?.manifest?.payload?.engines
         if (engines) registerSearchPackEngines(item.slug, engines)
       }
-      setActionMessage(`已重新启用「${item.name}」`)
+      showActionMessage(`已重新启用「${item.name}」`)
       await loadData()
-      setTimeout(() => setActionMessage(null), 3000)
     } catch (err) {
-      setActionMessage(`启用失败：${err instanceof Error ? err.message : String(err)}`)
+      showActionMessage(`启用失败：${failureDescription(err)}`, () => void handleEnable(item))
     } finally {
       setTogglingSlug(null)
     }
@@ -330,16 +347,33 @@ export default function InstalledPluginsPage() {
           </div>
         </div>
 
-        {/* 提示消息 */}
+        {/* 提示消息（K6/K9）：常驻到用户关闭；失败时横幅内给「重试」；读屏可收 */}
         {actionMessage && (
-          <div className="p-3 text-sm rounded-lg border border-primary/30 bg-primary/10 text-primary flex items-center justify-between animate-in fade-in">
+          <div
+            role="status"
+            className="p-3 text-sm rounded-lg border border-primary/30 bg-primary/10 text-primary flex items-center justify-between gap-3 animate-in fade-in"
+          >
             <span>{actionMessage}</span>
-            <button
-              onClick={() => setActionMessage(null)}
-              className="text-xs opacity-70 hover:opacity-100"
-            >
-              关闭
-            </button>
+            <span className="flex items-center gap-2 shrink-0">
+              {actionRetry && (
+                <button
+                  onClick={() => {
+                    const retry = actionRetry
+                    dismissActionMessage()
+                    retry()
+                  }}
+                  className="text-xs font-medium underline underline-offset-2 hover:opacity-80"
+                >
+                  重试
+                </button>
+              )}
+              <button
+                onClick={dismissActionMessage}
+                className="text-xs opacity-70 hover:opacity-100"
+              >
+                关闭
+              </button>
+            </span>
           </div>
         )}
 
@@ -407,19 +441,27 @@ export default function InstalledPluginsPage() {
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={togglingSlug === theme.slug}
                         onClick={() => void handleEnable(theme)}
                         className="h-7 text-xs shrink-0"
                         title="插件已停用，先恢复启用再切换主题"
                       >
+                        {togglingSlug === theme.slug && (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                        )}
                         重新启用
                       </Button>
                     ) : (
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={activatingThemeSlug === theme.slug}
                         onClick={() => void handleActivateTheme(theme)}
                         className="h-7 text-xs shrink-0"
                       >
+                        {activatingThemeSlug === theme.slug && (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                        )}
                         启用
                       </Button>
                     )}

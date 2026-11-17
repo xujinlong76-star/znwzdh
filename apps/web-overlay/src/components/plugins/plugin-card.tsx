@@ -41,6 +41,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { failureToastOptions } from '@/lib/failure-guidance'
 import { cn } from '@/lib/utils'
 
 export interface PluginCardProps {
@@ -85,9 +86,8 @@ export function PluginCard({
     upgradedTo !== plugin.version &&
     resolveInstallAction(plugin.installedVersion, plugin.version) === 'update'
 
-  const handleStarToggle = async (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+  /** 星标切换（抽出供失败重试复用；handleStarToggle 只负责卡片点击事件）。 */
+  const toggleStar = async () => {
     if (starLoading) return
     setStarLoading(true)
 
@@ -113,12 +113,16 @@ export function PluginCard({
     } catch (err) {
       setStarred(prevStarred)
       setStarCount(prevCount)
-      toast.error('星标更新失败', {
-        description: err instanceof Error ? err.message : String(err),
-      })
+      toast.error('星标更新失败', failureToastOptions(err, () => void toggleStar()))
     } finally {
       setStarLoading(false)
     }
+  }
+
+  const handleStarToggle = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    await toggleStar()
   }
 
   const targetMode: 'install' | 'uninstall' | 'upgrade' = needsUpdate
@@ -458,7 +462,7 @@ export function PluginCard({
             // 标题在卡片里可能被裁行，全称放 title + aria-label，不因展示收敛而丢信息
             title={plugin.name}
             aria-label={plugin.name}
-            className="group/title inline-flex min-w-0 items-center gap-1.5 font-semibold text-foreground hover:text-primary transition-colors text-base"
+            className="group/title inline-flex min-w-0 items-center gap-1.5 font-semibold text-foreground hover:text-primary active:opacity-70 transition-colors text-base"
           >
             <span className="min-w-0 break-words">{cardTitle(plugin.name)}</span>
             <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-40 sm:opacity-0 -translate-x-1 transition-all group-hover/title:opacity-100 group-hover/title:translate-x-0" />
@@ -505,6 +509,8 @@ export function PluginCard({
             type="button"
             onClick={handleStarToggle}
             disabled={starLoading}
+            aria-label={starred ? '取消星标' : '点亮星标'}
+            aria-pressed={starred}
             className={cn(
               'inline-flex items-center gap-1 px-2 py-1.5 min-h-[32px] rounded-md transition-colors border',
               starred
@@ -513,7 +519,11 @@ export function PluginCard({
             )}
             title={starred ? '取消星标' : '点亮星标'}
           >
-            <Star className={cn('w-3.5 h-3.5', starred && 'fill-current text-amber-500')} />
+            {starLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Star className={cn('w-3.5 h-3.5', starred && 'fill-current text-amber-500')} />
+            )}
             <span className="font-mono text-[11px]">{starCount}</span>
           </button>
 

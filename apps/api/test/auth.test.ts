@@ -794,17 +794,18 @@ describe("identity 路由收紧（鉴权开启后拒绝纯匿名调用）", () =
   });
 
   it("鉴权模式：users/sync 接受站内相对头像，仍拒绝协议相对与伪协议", async () => {
-    // 本地登录会话的 session.image 就是 /assets/images/alogo.webp；
-    // 只认 z.url() 时 BFF 每次 /api/me/sync 都 400，控制台还会持续刷错。
+    // 本地登录会话的 session.image 就是默认头像 /icons/icon-192.png（Phase 2 批 E：
+    // 旧值 /assets/images/alogo.webp 从未进过仓库，文件不存在）；只认 z.url() 时
+    // BFF 每次 /api/me/sync 都 400，控制台还会持续刷错。
     // 实例 read 令牌不能写 users 表（P0-2），这里用 write 令牌
     const raw = await mintToken("头像同步", "write");
     const headers = { authorization: "Bearer " + raw };
     const ok = await authApp.inject({
       method: "POST", url: "/api/users/sync", headers,
-      payload: { provider: "credentials", providerId: "avatar-relative", username: "相对头像", avatar: "/assets/images/alogo.webp" },
+      payload: { provider: "credentials", providerId: "avatar-relative", username: "相对头像", avatar: "/icons/icon-192.png" },
     });
     expect(ok.statusCode).toBe(200);
-    expect(ok.json().avatar).toBe("/assets/images/alogo.webp");
+    expect(ok.json().avatar).toBe("/icons/icon-192.png");
 
     for (const avatar of ["//evil.example.com/a.png", "javascript:alert(1)", "data:image/png;base64,AAAA"]) {
       const bad = await authApp.inject({

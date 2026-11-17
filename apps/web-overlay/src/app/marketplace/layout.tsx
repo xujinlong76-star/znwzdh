@@ -20,5 +20,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function MarketplaceLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+  // K8：市场全域挂点按区作用域，小屏可点元素最小边 ≥44px
+  return <div className="market-touch">{children}</div>
 }

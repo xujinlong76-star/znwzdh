@@ -23,6 +23,7 @@ import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { Globe, LayoutGrid, Palette, Boxes, AlertTriangle, Check, Trash2, Download, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
+import { failureToastOptions } from '@/lib/failure-guidance'
 import { setActiveTheme, resetTheme } from '@/lib/plugins/theme-runtime'
 import {
   registerSearchPackEngines,
@@ -349,9 +350,10 @@ export function PluginInstallModal({
         setConflicts(payload.conflicts as PluginInstallConflict[])
         return
       }
-      toast.error(mode === 'uninstall' ? '卸载失败' : isUpdate ? '升级失败' : '安装失败', {
-        description: err instanceof Error ? err.message : String(err),
-      })
+      toast.error(
+        mode === 'uninstall' ? '卸载失败' : isUpdate ? '升级失败' : '安装失败',
+        failureToastOptions(err, () => void handleConfirm()),
+      )
     } finally {
       if (timerRef.current) {
         clearInterval(timerRef.current)

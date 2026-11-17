@@ -62,16 +62,19 @@ export default async function AdminLayout({
 
   return (
     <>
-      <AdminLayoutClient
-        brandLogo={settings.appearance.logo || '/assets/images/alogo.webp'}
-        user={{
-          name: session.user.name,
-          email: session.user.email,
-          image: session.user.image
-        }}
-      >
-        {children}
-      </AdminLayoutClient>
+      {/* K8：管理台全域挂点按区作用域，小屏可点元素最小边 ≥44px */}
+      <div className="market-touch">
+        <AdminLayoutClient
+          brandLogo={settings.appearance.logo || '/icons/icon-192.png'}
+          user={{
+            name: session.user.name,
+            email: session.user.email,
+            image: session.user.image
+          }}
+        >
+          {children}
+        </AdminLayoutClient>
+      </div>
       <Toaster />
     </>
   )

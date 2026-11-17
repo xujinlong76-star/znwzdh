@@ -151,7 +151,7 @@ function SignInContent() {
           <Link href="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
             <div className="relative w-8 h-8 overflow-hidden rounded-lg border border-white/20 shadow-md">
               <img
-                src="/assets/images/alogo.webp"
+                src="/icons/icon-192.png"
                 alt="山羊胡 Logo"
                 className="object-cover w-full h-full"
               />
@@ -197,7 +197,7 @@ function SignInContent() {
           <div className="flex lg:hidden flex-col items-center gap-2 mb-2 text-center">
             <div className="relative w-10 h-10 overflow-hidden rounded-xl border border-border shadow-md">
               <img
-                src="/assets/images/alogo.webp"
+                src="/icons/icon-192.png"
                 alt="Logo"
                 className="object-cover w-full h-full"
               />

@@ -40,6 +40,7 @@ import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { startThemeTryout, cancelThemeTryout, isThemeInTryout, isThemeSuspended, getActiveTheme } from '@/lib/plugins/theme-runtime'
 import { copyText } from '@/lib/clipboard'
+import { failureToastOptions } from '@/lib/failure-guidance'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -58,6 +59,7 @@ import {
   Info,
   RotateCcw,
   Share2,
+  Loader2,
   History,
   MessageSquare,
   Award,
@@ -110,6 +112,8 @@ export default function PluginDetailView({
   const [starred, setStarred] = useState(false)
   const [starCount, setStarCount] = useState(0)
   const [starLoading, setStarLoading] = useState(false)
+  // K3：短链创建期间给转圈，否则点分享后 1 秒内无任何反馈
+  const [sharingLink, setSharingLink] = useState(false)
 
   // 选项卡切换（支持 ?tab=reviews 等深链，便于分享具体区块）
   const [activeTab, setActiveTab] = useState<DetailTab>('preview')
@@ -234,6 +238,8 @@ export default function PluginDetailView({
   }, [detailSynced, loading, plugin])
 
   const handleShareLink = useCallback(async () => {
+    if (sharingLink) return
+    setSharingLink(true)
     // 优先创建站内短链；失败时退回完整深链，分享不因后端故障而不可用
     let path = `/marketplace/${encodeURIComponent(slug)}?install=1`
     try {
@@ -251,7 +257,8 @@ export default function PluginDetailView({
     } else {
       toast.error('复制失败', { description: result.reason })
     }
-  }, [shareCopy, slug])
+    setSharingLink(false)
+  }, [shareCopy, slug, sharingLink])
 
   const loadDetail = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true)
@@ -330,9 +337,7 @@ export default function PluginDetailView({
     } catch (err) {
       setStarred(!nextStarred)
       setStarCount((prev) => (nextStarred ? Math.max(0, prev - 1) : prev + 1))
-      toast.error('星标更新失败', {
-        description: err instanceof Error ? err.message : String(err),
-      })
+      toast.error('星标更新失败', failureToastOptions(err, () => void handleStarToggle()))
     } finally {
       setStarLoading(false)
     }
@@ -666,7 +671,11 @@ export default function PluginDetailView({
                       : 'border-border/70 bg-background/70 hover:bg-muted text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  <Star className={cn('w-4 h-4', starred && 'fill-current text-amber-500')} />
+                  {starLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Star className={cn('w-4 h-4', starred && 'fill-current text-amber-500')} />
+                  )}
                   <span>{starred ? '已星标' : '星标'}</span>
                   <span className="font-mono ml-0.5 text-[11px]">{starCount}</span>
                 </button>
@@ -694,6 +703,7 @@ export default function PluginDetailView({
                 <button
                   type="button"
                   onClick={handleShareLink}
+                  disabled={sharingLink}
                   aria-label={
                     shareCopy.copyFeedback.state === 'copied'
                       ? '分享链接已复制'
@@ -708,7 +718,11 @@ export default function PluginDetailView({
                   }
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-border/70 bg-background/70 hover:bg-muted text-foreground transition-all"
                 >
-                  <Share2 className="w-4 h-4 text-primary" />
+                  {sharingLink ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  ) : (
+                    <Share2 className="w-4 h-4 text-primary" />
+                  )}
                   <span>
                     {shareCopy.copyFeedback.state === 'copied'
                       ? '已复制'
@@ -921,10 +935,12 @@ export default function PluginDetailView({
                   href={safeHref(manifest.donateUrl)}
                   target="_blank"
                   rel="noreferrer noopener"
+                  aria-label="支持作者（在新标签页打开）"
                   className="inline-flex items-center gap-1 text-primary hover:underline"
                 >
                   <Heart className="w-3 h-3" />
                   <span>支持作者</span>
+                  <span className="sr-only">（在新标签页打开）</span>
                 </a>
               )}
               {plugin.homepage && (
@@ -932,9 +948,11 @@ export default function PluginDetailView({
                   href={plugin.homepage}
                   target="_blank"
                   rel="noreferrer noopener"
+                  aria-label="项目主页 / 源码（在新标签页打开）"
                   className="inline-flex items-center gap-1 text-primary hover:underline"
                 >
                   <span>项目主页 / 源码</span>
+                  <span className="sr-only">（在新标签页打开）</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               )}

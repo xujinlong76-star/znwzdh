@@ -772,8 +772,11 @@ export const DEFAULT_SITE_CONFIG = {
     keywords: "网址导航,导航站,AI 导航,语义检索,书签",
   },
   appearance: {
-    logo: "/assets/images/alogo.webp",
-    favicon: "/assets/images/favicon.webp",
+    // Phase 2 批 E：/assets/images/alogo.webp 与 favicon.webp 从未进过仓库
+    // （public/assets/ 整个目录都不存在），默认品牌图一直 404；改指站内真实
+    // 资产 /icons/icon-192.png（站点标志，与布局回退值同源）。
+    logo: "/icons/icon-192.png",
+    favicon: "/icons/icon-192.png",
     theme: "system",
   },
   navigation: { linkTarget: "_blank" },

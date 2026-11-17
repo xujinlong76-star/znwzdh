@@ -785,3 +785,31 @@ html[data-pruned~="feat:diy-fab"] [data-feature-id="feat:diy-fab"],
 html[data-pruned~="feat:keyboard-hint"] [data-feature-id="feat:keyboard-hint"] {
   display: none !important;
 }
+
+/* Phase 2 批 E K8：小屏点按区下限——市场与管理台（.market-touch 作用域内）
+   所有可点元素在 <640px 时最小边 ≥44px（min-h-11/min-w-11），桌面视觉不变。
+   规则写在非 @layer 的普通 CSS 里，优先级高于 Tailwind 的 height/width 工具类；
+   只设 min-* 不改 width/height，不挤占桌面布局。
+   注意：注释里不许出现星号斜杠（会提前闭合注释、整站 500，2026-11-17 实测）。 */
+@media (max-width: 639px) {
+  .market-touch button,
+  .market-touch a[href],
+  .market-touch input:not([type='checkbox']):not([type='radio']),
+  .market-touch select,
+  .market-touch [role='button'],
+  .market-touch [role='tab'],
+  .market-touch [role='menuitem'] {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+}
+
+/* Phase 2 批 E K5：Radix 弹窗打开时 react-remove-scroll 会给 body 加
+   block-interactivity（pointer-events:none），弹窗外的 Sonner toast 会被
+   连带禁点——安装弹窗里失败 toast 的「重试」按钮看得见、点不着（点按会
+   落到弹窗遮罩上，甚至把弹窗关了）。显式恢复 toast 自身的点按（与 shadcn
+   toast 自带的 pointer-events-auto 同款口径）；容器仍继承 none，空白处点
+   按照常穿透到弹窗，不影响弹窗的模态行为。 */
+[data-sonner-toast] {
+  pointer-events: auto;
+}

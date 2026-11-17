@@ -56,7 +56,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
-import { copyText } from '@/lib/clipboard'
+import { copyText, copyFailureToast } from '@/lib/clipboard'
+import { failureToastOptions } from '@/lib/failure-guidance'
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
+import { toast } from 'sonner'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 import { safeHref } from '@/lib/safe-url'
 
@@ -362,26 +365,36 @@ function appliedUrlsOf(auto: AiHealResult['autoApplied']): string[] {
   return [...(auto.items ?? []).map((it) => it.oldUrl), ...(auto.removedUrls ?? [])]
 }
 
-/** 一键复制按钮组件 */
+/** 一键复制按钮组件（K13：复用 use-copy-feedback；复制失败给行内失败态 + toast，不再静默） */
 function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
+  const { copyFeedback, reportCopy } = useCopyFeedback()
   const copy = (e: React.MouseEvent) => {
     e.stopPropagation()
     void copyText(text).then((result) => {
-      if (!result.ok) return
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1600)
+      reportCopy(result)
+      if (!result.ok) {
+        const { title, description } = copyFailureToast(result)
+        toast.error(title, { description })
+      }
     })
   }
+  const copied = copyFeedback.state === 'copied'
+  const failed = copyFeedback.state === 'failed'
   return (
     <button
       type="button"
       onClick={copy}
       className="inline-flex items-center text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/80 transition-colors shrink-0"
-      title={copied ? '已复制到剪贴板' : '复制网址'}
+      title={copied ? '已复制到剪贴板' : failed ? `复制失败：${copyFeedback.reason ?? ''}` : '复制网址'}
       aria-label="复制网址"
     >
-      {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+      {copied ? (
+        <Check className="h-3 w-3 text-emerald-500" />
+      ) : failed ? (
+        <X className="h-3 w-3 text-destructive" />
+      ) : (
+        <Copy className="h-3 w-3" />
+      )}
     </button>
   )
 }
@@ -1091,6 +1104,13 @@ const PackRowItem = memo(function PackRowItem({
                       disabled={isFixing || isAiLoading}
                       onClick={() => {
                         const urls = auditResult.brokenItems.map((i) => i.url)
+                        // 二次确认（Phase 2 批 E）：剔除即从包中移除死链，与下架/隔离/删除同口径
+                        if (
+                          !window.confirm(
+                            `确定要剔除这 ${urls.length} 条死链吗？\n\n被剔除的站点将从「${pack.name}」中移除，包内只保留健康站点。该操作不可一键撤销。`,
+                          )
+                        )
+                          return
                         void onApplyHealthFix(pack.slug, urls)
                       }}
                     >
@@ -2252,7 +2272,7 @@ export function PluginUrlHealthPanel() {
     [aiHealResults, results, sampleLimit, markPackUrlsHealed],
   )
 
-  // 一键净网修复：直接剔除死链（无二次弹窗）
+  // 一键净网修复：直接剔除死链（二次确认在调用点按钮处，与下架/隔离/删除同口径）
   const applyHealthFix = useCallback(
     async (slug: string, brokenUrls: string[]) => {
       setFixingPacks((prev) => ({ ...prev, [slug]: true }))
@@ -2510,11 +2530,12 @@ export function PluginUrlHealthPanel() {
     return packs.filter((p) => selectedPacks.has(p.slug))
   }, [packs, selectedPacks])
 
-  // 导出体检报告
+  // 导出体检报告（P2-13/14：失败分支 + 成功反馈，不再无声）
   const exportReport = useCallback(
     (format: 'json' | 'md') => {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-      if (format === 'json') {
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+        if (format === 'json') {
         const payload = {
           generatedAt: new Date().toISOString(),
           metrics: globalMetrics,
@@ -2560,6 +2581,10 @@ export function PluginUrlHealthPanel() {
         a.download = `navhub-plugin-health-report-${timestamp}.md`
         a.click()
         URL.revokeObjectURL(url)
+      }
+      toast.success(format === 'json' ? '体检报告（JSON）已导出' : '体检报告（Markdown）已导出')
+      } catch (err) {
+        toast.error('导出体检报告失败', failureToastOptions(err, () => exportReport(format)))
       }
     },
     [globalMetrics, packs, results, history],

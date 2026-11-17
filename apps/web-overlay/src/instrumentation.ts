@@ -11,9 +11,9 @@
  * 由 origin.ts 在生产环境负责。构建阶段（NEXT_PHASE=phase-production-build）
  * 跳过：Docker 构建期刻意不注入该变量（运行时才给），构建日志不该刷假警报。
  */
-import { startVideoHealthScheduler } from './lib/video-health-scheduler'
+export const runtime = 'nodejs'
 
-export function register() {
+export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
   if (process.env.NODE_ENV !== 'production') return
   if (process.env.NEXT_PHASE === 'phase-production-build') return
@@ -21,7 +21,14 @@ export function register() {
   // 视频健康巡检定时调度（默认每 6 小时一轮，按页扫完全库，断点续扫；
   // 环境变量见 lib/video-health-scheduler.ts；VIDEO_HEALTH_SWEEP_ENABLED=false 关闭）。
   // 放在 SEO 自检之后：调度只依赖进程内定时器，与域名配置无关。
+  // Phase 2 批 E 日志噪声：巡检链 scheduler → sweep-service → video-library-store
+  // → github → auth.ts 首行 import 了 node:crypto（Node-only）。顶层静态 import
+  // 会把这条链拉进 Edge Instrumentation 编译，dev 日志每轮刷「Ecmascript file
+  // had an error」（实测：只加 export const runtime = 'nodejs' 不够，Turbopack
+  // 仍编 Edge 版）。register 只在 Node 跑，改函数内动态 import 后 Edge 编译时
+  // 看不到这条链。
   try {
+    const { startVideoHealthScheduler } = await import('./lib/video-health-scheduler')
     startVideoHealthScheduler()
   } catch (error) {
     console.error('[VideoHealthScheduler] 启动失败（巡检不会自动运行，手动入口仍可用）:', error)

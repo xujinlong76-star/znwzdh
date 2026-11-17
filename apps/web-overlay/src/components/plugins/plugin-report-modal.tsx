@@ -13,6 +13,7 @@ import {
 import { Flag } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { failureToastOptions } from '@/lib/failure-guidance'
 
 export interface PluginReportModalProps {
   slug: string
@@ -39,8 +40,8 @@ export function PluginReportModal({
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  /** 举报提交（抽出供重试复用；handleSubmit 只负责表单事件）。 */
+  const submitReport = async () => {
     const trimmed = reason.trim()
     if (!trimmed) {
       toast.error('请填写或选择举报原因')
@@ -55,12 +56,15 @@ export function PluginReportModal({
       setReason('')
       onOpenChange(false)
     } catch (err) {
-      toast.error('举报提交失败', {
-        description: err instanceof Error ? err.message : String(err),
-      })
+      toast.error('举报提交失败', failureToastOptions(err, () => void submitReport()))
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await submitReport()
   }
 
   return (

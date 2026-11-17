@@ -26,6 +26,7 @@ import { getIdentity } from '@/lib/identity'
 import { PluginCard } from '@/components/plugins/plugin-card'
 import { safeHref } from '@/lib/safe-url'
 import { toast } from 'sonner'
+import { failureToastOptions } from '@/lib/failure-guidance'
 import dynamic from 'next/dynamic'
 
 const PluginInstallModal = dynamic(
@@ -162,7 +163,7 @@ export default function AuthorPluginsView({
       setEditingProfile(false)
       toast.success('作者档案已保存')
     } catch (err) {
-      toast.error('保存失败', { description: err instanceof Error ? err.message : String(err) })
+      toast.error('保存失败', failureToastOptions(err, () => void handleSaveProfile()))
     } finally {
       setSavingProfile(false)
     }

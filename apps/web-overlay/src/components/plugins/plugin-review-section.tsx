@@ -13,8 +13,9 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
-import { Star, MessageSquare, CheckCircle2, ShieldCheck, Flag, Trash2 } from 'lucide-react'
+import { Star, MessageSquare, CheckCircle2, ShieldCheck, Flag, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { failureToastOptions } from '@/lib/failure-guidance'
 import dynamic from 'next/dynamic'
 
 /**
@@ -82,7 +83,7 @@ export function PluginReviewSection({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  const handleSendAuthorReply = async (reviewId: string) => {
+  const sendAuthorReply = async (reviewId: string) => {
     if (!replyText.trim()) return
     setReplySubmitting(true)
     try {
@@ -97,12 +98,18 @@ export function PluginReviewSection({
           ...prev,
           items: prev.items.map((it) => (it.id === reviewId ? { ...it, ...res.review } : it)),
         }))
+      } else {
+        toast.error('作者回复发布失败', failureToastOptions(null, () => void sendAuthorReply(reviewId)))
       }
     } catch (err: any) {
-      toast.error(err?.message || '回复发布失败')
+      toast.error('作者回复发布失败', failureToastOptions(err, () => void sendAuthorReply(reviewId)))
     } finally {
       setReplySubmitting(false)
     }
+  }
+
+  const handleSendAuthorReply = async (reviewId: string) => {
+    await sendAuthorReply(reviewId)
   }
 
   // 刷新评价列表（首屏 / 提交后回到第一页）
@@ -139,9 +146,11 @@ export function PluginReviewSection({
         toast.success('评价已删除')
         setDeletingId(null)
         await loadReviews()
+      } else {
+        toast.error('删除评价失败', failureToastOptions(null, () => void handleDeleteReview(reviewId)))
       }
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : '删除评价失败')
+      toast.error('删除评价失败', failureToastOptions(err, () => void handleDeleteReview(reviewId)))
     } finally {
       setDeleting(false)
     }
@@ -161,15 +170,15 @@ export function PluginReviewSection({
         offset: data.items.length,
       })
       setData((prev) => ({ ...res, items: [...prev.items, ...res.items] }))
-    } catch {
-      toast.error('加载更多评价失败，请稍后重试')
+    } catch (err) {
+      toast.error('加载更多评价失败', failureToastOptions(err, () => void loadMore()))
     } finally {
       setLoadingMore(false)
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  /** 提交评价（抽出供重试复用；handleSubmit 只负责表单事件）。 */
+  const submitReview = async () => {
     if (rating < 1 || rating > 5) {
       toast.error('请选择 1 到 5 星评分')
       return
@@ -186,12 +195,19 @@ export function PluginReviewSection({
         toast.success(data.myReview ? '评价已更新' : '评价发布成功，感谢您的反馈！')
         setShowForm(false)
         await loadReviews()
+      } else {
+        toast.error('提交评价失败', failureToastOptions(null, () => void submitReview()))
       }
     } catch (err: any) {
-      toast.error(err?.message || '提交评价失败，请稍后重试')
+      toast.error('提交评价失败', failureToastOptions(err, () => void submitReview()))
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await submitReview()
   }
 
   const handleReport = async (reviewId: string) => {
@@ -208,7 +224,7 @@ export function PluginReviewSection({
       setReportingId(null)
       setReportReason('')
     } catch (err: any) {
-      toast.error(err?.message || '举报失败，请稍后重试')
+      toast.error('举报失败', failureToastOptions(err, () => void handleReport(reviewId)))
     } finally {
       setReportSubmitting(false)
     }
@@ -434,7 +450,7 @@ export function PluginReviewSection({
                         回复
                       </button>
                     )}
-                    {/* B-3：删除自己的评价（二次确认） */}
+                    {/* B-3：删除自己的评价（二次确认）；第二步确认中给转圈，不只 disabled */}
                     {myReview?.id === rev.id && (
                       <button
                         type="button"
@@ -442,8 +458,12 @@ export function PluginReviewSection({
                         onClick={() => void handleDeleteReview(rev.id)}
                         className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-rose-500 transition-colors disabled:opacity-50"
                       >
-                        <Trash2 className="h-3 w-3" />
-                        {deletingId === rev.id ? '确认删除？' : '删除'}
+                        {deleting && deletingId === rev.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3 w-3" />
+                        )}
+                        {deleting && deletingId === rev.id ? '删除中...' : deletingId === rev.id ? '确认删除？' : '删除'}
                       </button>
                     )}
                     <button

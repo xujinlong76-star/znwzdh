@@ -72,7 +72,7 @@ export default function MobileNav() {
   return (
     <nav
       aria-label="移动端主导航"
-      className="fixed bottom-0 left-0 right-0 z-40 sm:hidden h-14 border-t border-border/40 bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom,0px)]"
+      className="market-touch fixed bottom-0 left-0 right-0 z-40 sm:hidden h-14 border-t border-border/40 bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom,0px)]"
     >
       <ul className="flex h-full items-center justify-around">
         {ITEMS.map(({ href, label, Icon }) => {

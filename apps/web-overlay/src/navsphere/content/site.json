@@ -5,8 +5,8 @@
     "keywords": "设计导航,设计资源,设计工具,设计素材,设计教程"
   },
   "appearance": {
-    "logo": "/assets/images/alogo.webp",
-    "favicon": "/assets/images/favicon.webp",
+    "logo": "/icons/icon-192.png",
+    "favicon": "/icons/icon-192.png",
     "theme": "system"
   },
   "navigation": {

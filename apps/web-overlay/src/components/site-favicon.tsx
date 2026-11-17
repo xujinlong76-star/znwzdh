@@ -98,7 +98,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 站方自有 favicon 或官方应用图标本地化文件（public/brand-icons/），
   // 每个远程地址与本地文件均经 curl 逐个验证（200 + image MIME + >32B）。
   'dify.ai': '/brand-icons/dify.svg',
-  'ant.design': '/brand-icons/antdesign.svg',
+  'ant.design': '/brand-icons/antdesign.png',
   'kubernetes.io': '/brand-icons/kubernetes.svg',
   'spring.io': '/brand-icons/springboot.svg',
   'notion.com': 'https://www.notion.so/images/favicon.ico',

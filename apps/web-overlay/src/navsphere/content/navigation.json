@@ -4358,9 +4358,9 @@
             {
               "id": "nav-bf9742bb3a8e",
               "title": "探探",
-              "href": "https://www.tantan.com",
+              "href": "https://tantanapp.com",
               "description": "通过滑动卡片匹配附近异性的约会软件",
-              "icon": "https://www.tantan.com/favicon.ico",
+              "icon": "/brand-icons/tantan.png",
               "enabled": true,
               "tags": [
                 "约会软件",

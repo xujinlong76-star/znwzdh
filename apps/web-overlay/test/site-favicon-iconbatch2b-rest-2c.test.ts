@@ -29,7 +29,7 @@ const CASES: Array<{ url: string; title: string; expected: string }> = [
   { url: 'https://time.geekbang.org/', title: '极客时间', expected: '/brand-icons/geekbang.jpg' },
   { url: 'https://www.zhaopin.com', title: '智联招聘', expected: '/brand-icons/zhaopin.png' },
   { url: 'https://www.fanqienovel.com', title: '番茄小说', expected: '/brand-icons/fanqie.png' },
-  { url: 'https://www.tantan.com', title: '探探', expected: '/brand-icons/tantan.png' },
+  { url: 'https://tantanapp.com', title: '探探', expected: '/brand-icons/tantan.png' },
   { url: 'https://www.reelshort.com', title: 'ReelShort', expected: '/brand-icons/reelshort.png' },
   { url: 'https://www.nmc.cn', title: '中央气象台', expected: '/brand-icons/nmc.png' },
   { url: 'https://www.ncpssd.org', title: '国家哲学社会科学文献中心', expected: '/brand-icons/ncpssd.png' },

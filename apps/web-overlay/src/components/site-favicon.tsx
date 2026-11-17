@@ -171,7 +171,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'time.geekbang.org': '/brand-icons/geekbang.jpg',
   'zhaopin.com': '/brand-icons/zhaopin.png',
   'fanqienovel.com': '/brand-icons/fanqie.png',
-  'tantan.com': '/brand-icons/tantan.png',
+  'tantanapp.com': '/brand-icons/tantan.png',
   'reelshort.com': '/brand-icons/reelshort.png',
   'nmc.cn': '/brand-icons/nmc.png',
   'ncpssd.org': '/brand-icons/ncpssd.png',

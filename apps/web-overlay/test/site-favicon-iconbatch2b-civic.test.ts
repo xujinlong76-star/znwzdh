@@ -25,7 +25,7 @@ const CASES: Array<{ url: string; title: string; expected: string }> = [
   { url: 'https://www.ncpssd.org', title: '国家哲学社会科学文献中心', expected: '/brand-icons/ncpssd.png' },
   { url: 'https://www.mtime.com', title: '时光网', expected: '/brand-icons/mtime.jpg' },
   { url: 'https://www.fanqienovel.com', title: '番茄小说', expected: '/brand-icons/fanqie.png' },
-  { url: 'https://www.tantan.com', title: '探探', expected: '/brand-icons/tantan.png' },
+  { url: 'https://tantanapp.com', title: '探探', expected: '/brand-icons/tantan.png' },
   { url: 'https://www.reelshort.com', title: 'ReelShort', expected: '/brand-icons/reelshort.png' },
 ]
 

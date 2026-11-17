@@ -19,7 +19,6 @@
               "title": "ChatGPT",
               "href": "https://chatgpt.com",
               "description": "OpenAI 的对话式 AI 助手",
-              "icon": "/assets/images/logos/chatgpt.webp",
               "enabled": true,
               "tags": [
                 "对话",
@@ -43,7 +42,6 @@
               "title": "Claude",
               "href": "https://claude.ai",
               "description": "Anthropic 的大语言模型对话助手，擅长长文本与代码理解",
-              "icon": "/assets/images/logos/claude.webp",
               "enabled": true,
               "tags": [
                 "对话",
@@ -1797,7 +1795,6 @@
               "title": "Vercel",
               "href": "https://vercel.com",
               "description": "前端部署平台，推送即上线",
-              "icon": "/assets/images/logos/vercel.webp",
               "enabled": true,
               "tags": [
                 "托管",
@@ -1957,7 +1954,6 @@
               "title": "Cloudflare",
               "href": "https://cloudflare.com",
               "description": "CDN、DNS、Workers 边缘计算与 Pages 部署",
-              "icon": "/assets/images/logos/cloudflar.webp",
               "enabled": true,
               "tags": [
                 "cdn",

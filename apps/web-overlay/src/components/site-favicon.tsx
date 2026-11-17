@@ -227,16 +227,16 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'lumalabs.ai': 'https://luma.ai/favicon.ico',
   'vidu.studio': 'https://www.vidu.studio/favicon.ico',
   'hailuoai.com': 'https://hailuoai.com/favicon.ico',
-  'chatgpt.com': '/assets/images/logos/chatgpt.webp',
-  'chat.openai.com': '/assets/images/logos/chatgpt.webp',
-  'openai.com': '/assets/images/logos/chatgpt.webp',
-  'claude.ai': '/assets/images/logos/claude.webp',
+  'chatgpt.com': '/brand-icons/chatgpt.svg',
+  'chat.openai.com': '/brand-icons/chatgpt.svg',
+  'openai.com': '/brand-icons/openai.png',
+  'claude.ai': '/brand-icons/claude.svg',
   'anthropic.com': '/assets/images/logos/claude.webp',
-  'cloudflare.com': '/assets/images/logos/cloudflar.webp',
+  'cloudflare.com': '/brand-icons/cloudflare.png',
   'figma.com': '/assets/images/logos/figma.webp',
   'tinypng.com': '/assets/images/logos/tinypng.webp',
   'unsplash.com': '/assets/images/logos/unsplash.webp',
-  'vercel.com': '/assets/images/logos/vercel.webp',
+  'vercel.com': '/brand-icons/vercel.png',
   'fonts.google.com': '/assets/images/logos/Materialicons.webp',
   'material.io': '/assets/images/logos/Materialicons.webp',
   'colorhunt.co': '/assets/images/logos/colorhunt.webp',
@@ -245,13 +245,13 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'fontawesome.com': '/assets/images/logos/fontawesomeicon.webp',
   'framer.com': '/assets/images/logos/framer.webp',
   'freepik.com': '/assets/images/logos/freepik.webp',
-  'gemini.google.com': '/assets/images/logos/gemini.svg',
+  'gemini.google.com': '/brand-icons/gemini.svg',
   'iconarchive.com': '/assets/images/logos/iconarchive.webp',
   'iconfinder.com': '/assets/images/logos/Iconfinder.webp',
   'iconfont.cn': '/assets/images/logos/iconfont.webp',
   'iconmonstr.com': '/assets/images/logos/iconmonstr.webp',
   'ionicons.com': '/assets/images/logos/ionicons.webp',
-  'leonardo.ai': '/assets/images/logos/leonardo.webp',
+  'leonardo.ai': '/brand-icons/leonardo.png',
   'poe.com': '/assets/images/logos/poe.svg',
   'producthunt.com': '/assets/images/logos/producthunt.webp',
   'tensor.art': '/assets/images/logos/tensorart.webp',
@@ -269,11 +269,20 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'ads.google.com': '/assets/images/logos/gads.webp',
   'analytics.google.com': '/assets/images/logos/analytics.webp',
   'photoshop.com': '/assets/images/logos/photoshop.webp',
-  'adobe.com': '/assets/images/logos/photoshop.webp',
   'affinity.serif.com': '/assets/images/logos/AffinityDesigner.webp',
   'instantlogosearch.com': '/assets/images/logos/InstantLogoSearch.webp',
   'iconsfeed.com': '/assets/images/logos/iconsfeed.webp',
   'iosicongallery.com': '/assets/images/logos/iosicongallery.webp',
+  // 2026-11-17（图标 A 类第 1 批 a1a + a1b，独立复审 R1–R6 后合批）：
+  // 本批 8 个键均为原地替换旧值（旧值指向不存在的 /assets/images/logos/*，
+  // 不另起重复块）：chatgpt.com → chatgpt.svg；chat.openai.com → chatgpt.svg
+  //（复审 R5 死键，同一产品旧域名）；openai.com → openai.png（DALL-E 3 与
+  // OpenAI 主站共用，复审裁决 (c)）；claude.ai → claude.svg；
+  // gemini.google.com → gemini.svg；leonardo.ai → leonardo.png；
+  // vercel.com → vercel.png；cloudflare.com → cloudflare.png（Cloudflare
+  // Pages 共用此键，复审裁决 (d)；重复文件 cloudflare-pages.png 已删，
+  // 复审 R3）。adobe.com 键整行删除（复审 R2 撞站），Adobe Firefly 改走
+  // map 查找前的标题规则。来源与字节见轮次笔记 icon-a1a / icon-a1b。
 }
 
 /**
@@ -434,6 +443,14 @@ export function resolveSiteIcon(
       hostname = hostname.slice(4)
     }
 
+    // 2026-11-17（图标 A 类第 1 批 a1a，独立复审 R2 裁决）：Adobe Firefly 与
+    // Adobe Illustrator 去 www 后同为 adobe.com，hostname map 无法区分；
+    // adobe.com 键已从 map 整行删除，Firefly 改走标题规则。本规则必须放在
+    // map 精确查找之前——否则 adobe.com 精确查找先命中，规则永不可达。
+    // Illustrator 的同类规则见第 2 批（标题含 illustrator）。
+    const lowerTitle = (title || '').toLowerCase()
+    if (lowerTitle.includes('firefly')) return '/brand-icons/firefly.png'
+
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!
     }
@@ -455,7 +472,7 @@ export function resolveSiteIcon(
       }
     }
 
-    const lowerTitle = (title || '').toLowerCase()
+    // lowerTitle 已在上方主机名规范化后声明（Firefly 标题规则需先于 map 查找）。
     if (lowerTitle.includes('混元')) return 'https://hunyuan.tencent.com/favicon.ico'
     if (lowerTitle.includes('万相') || lowerTitle.includes('wan2')) return 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'
     if (lowerTitle.includes('智文')) return 'https://zhiwen.xfyun.cn/favicon.png'

@@ -169,3 +169,25 @@ describe("合并后旧身份写：落库归属 canonical，不产生孤儿行", 
     expect(Number(rows[0]!.c)).toBe(0);
   });
 });
+
+describe("导入 installNow 分支：旧身份导入并立即安装也跟随 canonical（B-2）", () => {
+  it("POST /api/plugins/import（旧身份头，installNow: true）→ 201 且安装行落在 canonical 身份下", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      headers: H,
+      payload: { manifest: themeManifest("Phase2B 导入包"), slug: "phase2b-import-pack", installNow: true },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as { slug: string; install?: unknown };
+    expect(body.install).not.toBeNull();
+    const rows = await ctx.repo.raw(
+      "SELECT identity FROM plugin_installs WHERE plugin_id = (SELECT id FROM plugins WHERE slug = ?)",
+      [body.slug],
+    );
+    expect(rows).toHaveLength(1);
+    expect(String(rows[0]!.identity)).toBe(NEW);
+    const orphan = await ctx.repo.raw("SELECT COUNT(*) AS c FROM plugin_installs WHERE identity = ?", [OLD]);
+    expect(Number(orphan[0]!.c)).toBe(0);
+  });
+});

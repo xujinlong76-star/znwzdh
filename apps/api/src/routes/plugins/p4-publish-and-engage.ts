@@ -109,7 +109,10 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
         let installResult = null;
         if (body.installNow) {
           const identity = requestIdentityOf(req as never) || "admin";
-          installResult = await ctx.repo.installPlugin(imported.slug, identity, {
+          // 批 B：身份合并后旧 id 仍合法——立即安装落到 canonical 身份上，
+          // 否则旧身份导入会另起孤儿安装行（与 /install 路由同口径）。
+          const who = await ctx.repo.resolveIdentity(identity);
+          installResult = await ctx.repo.installPlugin(imported.slug, who, {
             actor: actorName,
             actorKind,
             ip: req.ip,

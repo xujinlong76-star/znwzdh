@@ -754,6 +754,13 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const queue = await getAuditQueue()
       const job = await queue.get(id)
       if (!job) return reply.code(404).send({ ok: false, error: "not_found", message: "任务不存在" })
+      // 可见性门禁（A-1 口径）：任务记录含完整 URL 清单，所属包未上架时仅作者/
+      // 管理员可读；其余一律按「任务不存在」404，不泄漏 slug 与存在性。
+      // 不用 denyNonPublishedPlugin：它的 404 文案带 slug，调用方只知道任务 id。
+      const plugin = await ctx.repo.getPluginBySlug(job.slug)
+      if (!plugin || !isPluginVisibleToCaller(ctx, request, plugin)) {
+        return reply.code(404).send({ ok: false, error: "not_found", message: "任务不存在" })
+      }
       return { ok: true, job }
     },
   )
@@ -789,13 +796,21 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
   app.get(
     "/api/plugins/url-health/jobs",
     { config: { scope: "read", rateLimit: { max: 60, timeWindow: "1 minute" } } },
-    async () => {
+    async (request) => {
       const queue = await getAuditQueue()
       const jobs = await queue.list()
+      // 可见性过滤（A-1 口径，与 url-health/summary 同口径）：只留调用方可见的
+      // 包的任务；缺失/未上架包的任务按「不存在」处理，不泄漏存在性。
+      // 先过滤再截 20 条，免得不可见任务占掉可见任务的名额。
+      const visible: typeof jobs = []
+      for (const j of jobs) {
+        const plugin = await ctx.repo.getPluginBySlug(j.slug)
+        if (plugin && isPluginVisibleToCaller(ctx, request, plugin)) visible.push(j)
+      }
       // 列表只回摘要：results 可能与 urls 同长（200 条），列出来会把响应撑大
       return {
         ok: true,
-        items: jobs.slice(0, 20).map((j) => ({
+        items: visible.slice(0, 20).map((j) => ({
           id: j.id,
           slug: j.slug,
           state: j.state,

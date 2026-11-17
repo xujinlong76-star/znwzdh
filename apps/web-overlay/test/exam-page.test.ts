@@ -512,3 +512,42 @@ describe('倒计时岛源码守卫', () => {
     expect(island).toContain('进行中 · 第 ${1 - daysUntil(firstExamDay(exam), now)} 天')
   })
 })
+
+describe('备考入口标题（U-108）', () => {
+  const page = read('src/app/exam/page.tsx')
+
+  it('标题去「官方」：备考区标题为「备考入口」，副标题同步去「官方」', () => {
+    // 备考区 12 站含培训组 4 家（粉笔/华图/中公/新东方在线），标题写
+    // 「官方入口」失实；纯文案方案：只改标题与副标题，不做分区渲染。
+    expect(page).toContain('备考入口')
+    expect(page).toContain('来自站内「考试备考」分类的报名与备考平台，按分类原顺序排列。')
+    expect(page).not.toContain('备考官方入口')
+    expect(page).not.toContain('官方报名与备考平台')
+  })
+
+  it('对照：备考区仍现读 navigation.json「考试备考」分类 12 站，不改 navigation.json', () => {
+    // 只作对照：12 站 = 官方组 8 家 + 培训组 4 家；分区渲染留待下轮，
+    // 此处只数总数，页面仍不硬编码站点地址。
+    const nav = JSON.parse(read('src/navsphere/content/navigation.json'))
+    const findById = (node: unknown, id: string): Record<string, unknown> | undefined => {
+      if (Array.isArray(node)) {
+        for (const child of node) {
+          const found = findById(child, id)
+          if (found) return found
+        }
+        return undefined
+      }
+      if (node && typeof node === 'object') {
+        const obj = node as Record<string, unknown>
+        if (obj.id === id) return obj
+        for (const value of Object.values(obj)) {
+          const found = findById(value, id)
+          if (found) return found
+        }
+      }
+      return undefined
+    }
+    const sub = findById(nav, 'reg-exam-prep')!
+    expect((sub.items as unknown[]).length).toBe(12)
+  })
+})

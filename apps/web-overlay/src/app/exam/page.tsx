@@ -261,10 +261,10 @@ export default async function ExamPage() {
         {/* 备考站点区 */}
         <section aria-labelledby="exam-prep-heading">
           <h2 id="exam-prep-heading" className="text-lg font-bold text-foreground">
-            备考官方入口
+            备考入口
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            来自站内「考试备考」分类的官方报名与备考平台，按分类原顺序排列。
+            来自站内「考试备考」分类的报名与备考平台，按分类原顺序排列。
           </p>
           {prepSites.length > 0 ? (
             <ul className="mt-4 grid gap-3 sm:grid-cols-2">

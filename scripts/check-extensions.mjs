@@ -244,7 +244,14 @@ const SEARCH_CREDENTIAL_FILES = [
 
   const templateToRe = (tpl) =>
     new RegExp('^' + tpl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[A-Za-z_]+/g, '[^/]+') + '$')
+  // 例外：走 webBase（Next.js web origin）的端点不是 Fastify 路由，本来就不在后端
+  // 路由表里——不是后端改名/下线。newtab.js 的常用站拉取就是这一类：
+  // fetch(`${webBase}/api/home/navigation`)（见 extensions/chrome-extension/newtab.js，
+  // 该路由是 apps/web-overlay/src/app/api/home/navigation/route.ts）。
+  // 2026-11-18 实测：不加这条例外，门禁在 main 上就对已合入的 newtab.js 判红。
+  const WEB_ORIGIN_ENDPOINTS = new Set(['/api/home/navigation'])
   for (const p of [...used].sort()) {
+    if (WEB_ORIGIN_ENDPOINTS.has(p)) continue
     const ok = p.endsWith('/')
       ? templates.some((t) => t.startsWith(p))
       : templates.some((t) => templateToRe(t).test(p))

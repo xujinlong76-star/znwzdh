@@ -56,6 +56,8 @@ const NOV_17_0800_CST = Date.UTC(2026, 10, 17, 0, 0, 0)
 const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)
 /** 2026-11-19 08:00 北京时间：成考成绩公布次日 */
 const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
+/** 2026-11-20 08:00 北京时间：浙江成考成绩公布日（考试历写「左右」） */
+const NOV_20_0800_CST = Date.UTC(2026, 10, 20, 0, 0, 0)
 /** 2026-11-28 08:00 北京时间：天津省考准考证开放日（U-30） */
 const NOV_28_0800_CST = Date.UTC(2026, 10, 28, 0, 0, 0)
 /** 2026-11-25 08:00 北京时间：四六级口试已过，笔试准考证未开 */
@@ -484,14 +486,38 @@ describe('省考七省准考证节点（U-30）', () => {
 })
 
 describe('成考成绩分省节点', () => {
-  it('只列 11-18 当天可查的广东与江西两省，不写全国单节点', () => {
-    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '广东成绩查询'])
+  it('只列已核实的三省四节点，不写全国单节点', () => {
+    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '广东成绩查询', '浙江成绩查询', '浙江志愿确认'])
+    expect(chengkao.nodes.map((n) => [n.startISO, n.endISO])).toEqual([
+      ['2026-11-18', '2026-11-18'],
+      ['2026-11-18', '2026-11-18'],
+      ['2026-11-20', '2026-11-20'],
+      ['2026-11-25', '2026-11-29'],
+    ])
     for (const node of chengkao.nodes) {
-      expect(node.startISO).toBe('2026-11-18')
-      expect(node.endISO).toBe('2026-11-18')
-      // 两省均无网页查分 URL 可挂（广东走小程序；江西查分 URL 未核实），不编链接。
+      // 三省均无网页查分 URL 可挂（广东走小程序；江西、浙江查分 URL 未核实），不编链接。
       expect(node.url).toBeUndefined()
     }
+  })
+
+  it('浙江节点：成绩 11-20 当天为今天、11-25 已结束；志愿确认 11-25–11-29 窗口内进行中、11-30 已结束', () => {
+    const byLabel = new Map(chengkao.nodes.map((n) => [n.label, n]))
+    const zhejiangScore = byLabel.get('浙江成绩查询')!
+    const zhejiangConfirm = byLabel.get('浙江志愿确认')!
+    expect(examNodeStatus(zhejiangScore, NOV_20_0800_CST)).toBe('today')
+    expect(examNodeStatus(zhejiangScore, NOV_25_0800_CST)).toBe('done')
+    expect(examNodeStatus(zhejiangConfirm, NOV_25_0800_CST)).toBe('active')
+    expect(examNodeStatus(zhejiangConfirm, NOV_30_0800_CST)).toBe('done')
+  })
+
+  it('浙江节点 detail 写明考试历口径与查询渠道：成绩「左右」、志愿确认起止时刻', () => {
+    const byLabel = new Map(chengkao.nodes.map((n) => [n.label, n]))
+    const zhejiangScore = byLabel.get('浙江成绩查询')!
+    const zhejiangConfirm = byLabel.get('浙江志愿确认')!
+    expect(zhejiangScore.detail).toContain('11 月 20 日左右')
+    expect(zhejiangScore.detail).toContain('浙江省教育考试院')
+    expect(zhejiangConfirm.detail).toContain('11 月 25 日 8:30')
+    expect(zhejiangConfirm.detail).toContain('11 月 29 日 17:00')
   })
 
   it('11-18 当天两省节点为今天，11-19 公布完成翻已结束（单日公布事件）', () => {
@@ -522,15 +548,18 @@ describe('成考成绩分省节点', () => {
 })
 
 describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结束」', () => {
-  it('成考 11-17/11-18 统考已结束但仍有可办节点，11-19 起无可办节点', () => {
-    // 触发条件：examStatus 已是 ended，但两省成绩节点未过。
+  it('成考 11-17/11-18 统考已结束但仍有可办节点，11-19 起仍有浙江节点，11-30 起无可办节点', () => {
+    // 触发条件：examStatus 已是 ended，但成绩节点未过。
     expect(examStatus(chengkao, NOV_17_0800_CST)).toBe('ended')
     expect(examStatus(chengkao, NOV_18_0800_CST)).toBe('ended')
     expect(hasActionableNodes(chengkao, NOV_17_0800_CST)).toBe(true)
     expect(hasActionableNodes(chengkao, NOV_18_0800_CST)).toBe(true)
-    // 11-19 后行为不变：节点全 done，无可办节点，卡片回到裸「已结束」。
-    expect(hasActionableNodes(chengkao, NOV_19_0800_CST)).toBe(false)
-    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_19_0800_CST)).toBeUndefined()
+    // 11-19：江西/广东已 done，但浙江成绩（11-20）与志愿确认（11-25–11-29）未过。
+    expect(hasActionableNodes(chengkao, NOV_19_0800_CST)).toBe(true)
+    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_19_0800_CST)?.label).toBe('浙江成绩查询')
+    // 11-30：全部节点已过，无可办节点，卡片回到裸「已结束」。
+    expect(hasActionableNodes(chengkao, NOV_30_0800_CST)).toBe(false)
+    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_30_0800_CST)).toBeUndefined()
   })
 
   it('其他考试不受影响：11-18 当天四场均未结束；已结束的国考/考研无可办节点', () => {

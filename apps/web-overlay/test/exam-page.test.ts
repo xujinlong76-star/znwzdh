@@ -118,8 +118,13 @@ describe('考试清单只含已核实的五场', () => {
   it('成考是例外：统考已结束，但成绩节点 11-18 未过，故列入清单', () => {
     const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
     expect(examStatus(chengkao, NOV_13_0800_CST)).toBe('ended')
-    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '广东成绩查询'])
-    expect(chengkao.nodes.every((n) => n.startISO === '2026-11-18')).toBe(true)
+    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '广东成绩查询', '浙江成绩查询', '浙江志愿确认'])
+    expect(chengkao.nodes.map((n) => [n.label, n.startISO, n.endISO])).toEqual([
+      ['江西成绩查询', '2026-11-18', '2026-11-18'],
+      ['广东成绩查询', '2026-11-18', '2026-11-18'],
+      ['浙江成绩查询', '2026-11-20', '2026-11-20'],
+      ['浙江志愿确认', '2026-11-25', '2026-11-29'],
+    ])
   })
 
   it('不含已考完的经济师（11-07–08）等过期场次', () => {

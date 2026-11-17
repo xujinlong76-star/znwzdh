@@ -45,6 +45,12 @@ export const GROWTH_UPDATED_EVENT = 'navhub:growth-updated'
  * 站内 GrowthTracker 监听后走 recordGrowthEvent('ai_chat') 统一落账。
  */
 export const AI_CHAT_USED_EVENT = 'navhub:ai-chat-used'
+/**
+ * 小猫猫挂件的喂猫事件桥（互动玩法第一批 Top 3：拖链接喂猫收藏）：挂件只 dispatch
+ * 这个事件、不写任何成长数据；站内 GrowthTracker 监听后走
+ * recordGrowthEvent('favorite_add', { siteId }) 统一落账（与坞里收藏同一口径）。
+ */
+export const FAVORITE_ADDED_EVENT = 'navhub:favorite-added'
 export const HOMEPAGE_BANNER_DISMISSED_KEY = 'navhub.growth.homepageBannerDismissed.v1'
 /** 设为首页一次性奖励（自 growth.ts 逐字搬入，rebase 合流时补进门面） */
 export const HOMEPAGE_CLAIM_XP = 100

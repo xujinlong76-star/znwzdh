@@ -18,6 +18,7 @@ import { useEffect, useRef } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import {
   AI_CHAT_USED_EVENT,
+  FAVORITE_ADDED_EVENT,
   claimPwaInstallAction,
   markMemberSeenAction,
   recordDailyVisitOnce,
@@ -98,6 +99,16 @@ export function GrowthTracker() {
     const onWidgetChat = () => recordGrowthEvent('ai_chat')
     window.addEventListener(AI_CHAT_USED_EVENT, onWidgetChat)
     return () => window.removeEventListener(AI_CHAT_USED_EVENT, onWidgetChat)
+  }, [])
+
+  // 小猫猫挂件喂猫桥（互动玩法第一批 Top 3：拖链接喂猫收藏）：挂件只发事件，落账仍走统一规则
+  useEffect(() => {
+    const onWidgetFav = (e: Event) => {
+      const siteId = (e as CustomEvent<{ siteId?: string }>).detail?.siteId
+      recordGrowthEvent('favorite_add', { siteId })
+    }
+    window.addEventListener(FAVORITE_ADDED_EVENT, onWidgetFav)
+    return () => window.removeEventListener(FAVORITE_ADDED_EVENT, onWidgetFav)
   }, [])
 
   useEffect(() => {

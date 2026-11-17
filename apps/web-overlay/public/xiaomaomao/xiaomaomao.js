@@ -144,7 +144,7 @@
 
   /* ---------- 持久化（只存本机：语音开关 + 拖动位置） ----------
      K2：closed/closedAt 记录亲手收起（收起后 7 天内刷新/跳页仍收着，过期自动恢复展开）。 */
-  var store = { voice: true, pos: null, hinted: false, closed: false, closedAt: 0 };
+  var store = { voice: true, pos: null, hinted: false, closed: false, closedAt: 0, play: false };
   try {
     var saved = JSON.parse(window.localStorage.getItem(STORE_KEY) || 'null');
     if (saved && typeof saved === 'object') {
@@ -152,6 +152,7 @@
       if (typeof saved.hinted === 'boolean') store.hinted = saved.hinted;
       if (typeof saved.closed === 'boolean') store.closed = saved.closed;
       if (typeof saved.closedAt === 'number' && saved.closedAt > 0) store.closedAt = saved.closedAt;
+      if (typeof saved.play === 'boolean') store.play = saved.play;
       if (saved.pos && typeof saved.pos.left === 'number' && typeof saved.pos.top === 'number') store.pos = saved.pos;
     }
   } catch (e) { /* 隐私模式等场景下静默退化 */ }
@@ -327,7 +328,9 @@
     /* 卡片箭头：向右 */
     arrow: SVG_OPEN + '<path d="M4.5 12h14M13 6l6 6-6 6"/></svg>',
     /* 归位：逆时针回转箭头（K4 一键回默认位置） */
-    reset: SVG_OPEN + '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>'
+    reset: SVG_OPEN + '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>',
+    /* 游乐场：鼠标指针 + 两道追风线（追鼠标开关，互动玩法第一批 Top 3） */
+    chase: SVG_OPEN + '<path d="M5.5 3.2 19 10.6l-6.3 1.6L9.8 19z" fill="currentColor" stroke="none"/><path d="M3.5 19.8h4M5 15.8h2.5"/></svg>'
   };
 
   /* ---------- DOM 骨架 ---------- */
@@ -507,10 +510,32 @@
     '#xiaomaomao.xm-docked .xm-bubble{display:none}' +
     /* P1-1：输入聚焦静默态——根节点整体不可见、不可点（只改显隐，不动 left/top） */
     '#xiaomaomao.xm-quiet{opacity:0;visibility:hidden;pointer-events:none}' +
-    /* v6：庆祝视频层（盖在姿势图上方，舞台圆角裁剪；无视频文件时永不出现） */
-    '#xiaomaomao .xm-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;display:none;pointer-events:none}' +
+    /* v6：庆祝视频层（盖在姿势图上方，舞台圆角裁剪；无视频文件时永不出现）
+       互动玩法第一批（2026-11-18）：object-fit 改 contain——视频按「整只猫完整入镜、
+       四周留白边」生成，cover 会裁边；舞台是 1:1 方形、视频也是 1:1，contain 与 cover
+       同屏显示，但 contain 保证任何比例的视频都不裁猫。 */
+    '#xiaomaomao .xm-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:2;display:none;pointer-events:none}' +
     '#xiaomaomao .xm-video.xm-on{display:block;animation:xmVideoIn .38s var(--xm-ease) both}' +
     '@keyframes xmVideoIn{from{opacity:0}to{opacity:1}}' +
+    /* 互动玩法第一批 Top 3（2026-11-18）：游乐场模式。舞台在游乐场态下去掉白底/描边/
+       圆角裁剪——视频本身已按「整只猫完整入镜、四周留白边」生成，舞台再裁角会裁到猫；
+       命中区收成猫身椭圆（.xm-hit，透明四角不再挡页面按钮——「猫绝不挡按钮」，见
+       playFindFreeSpot）；视频 object-fit:contain（见 .xm-video），容器按视频比例
+       （舞台是 1:1 方形、视频也是 1:1）。双视频交叉淡化：.xm-clip 常驻显示、靠 opacity
+       淡入淡出；喂猫待命时舞台亮一圈粉色光环。 */
+    '#xiaomaomao.xm-play .xm-stage{background:transparent;border-color:transparent;box-shadow:none;border-radius:0;overflow:visible;animation:none;pointer-events:none}' +
+    '#xiaomaomao .xm-hit{display:none;position:absolute;left:6%;top:6%;width:88%;height:88%;border-radius:50%;pointer-events:auto;z-index:3}' +
+    '#xiaomaomao.xm-play .xm-hit{display:block}' +
+    /* 2026-11-18 审计抓到：只把舞台设 pointer-events:none 不够——.xm-wrap 本身是
+       默认可点的，透明四角照样盖住页面按钮（elementFromPoint 落在 DIV.xm-wrap 上）。
+       游乐场态下整个 wrap 都不接指针，只留命中椭圆与收起角标可点。 */
+    '#xiaomaomao.xm-play .xm-wrap{pointer-events:none}' +
+    '#xiaomaomao.xm-play .xm-mini-close{pointer-events:auto}' +
+    '#xiaomaomao .xm-video.xm-clip{display:block;opacity:0;transition:opacity .28s var(--xm-ease)}' +
+    '#xiaomaomao .xm-video.xm-clip.xm-on{opacity:1}' +
+    '#xiaomaomao .xm-wrap.xm-roll{animation:xmRoll .95s var(--xm-ease)}' +
+    '@keyframes xmRoll{0%{transform:rotate(0deg)}35%{transform:rotate(200deg) translateY(-14px)}70%{transform:rotate(330deg)}100%{transform:rotate(360deg)}}' +
+    '#xiaomaomao.xm-eat-ready .xm-stage{box-shadow:0 0 0 3px var(--xm-accent),var(--xm-shadow-pop)}' +
     '#xiaomaomao .xm-stage:focus-visible{outline:2px solid var(--xm-accent);outline-offset:3px}' +
     /* P1-1：猫身常驻收起角标——「收起小猫猫」不再只藏在默认隐藏的坞里，
        不点猫也看得见、点得到；聊天面板开着时隐藏（面板自有收起钮）。 */
@@ -573,7 +598,7 @@
       '<div class="xm-wrap">' +
         '<div class="xm-fx"></div>' +
         '<div class="xm-zzz"><span>z</span><span>z</span><span>Z</span></div>' +
-        '<div class="xm-stage" role="button" aria-label="小猫猫，点我玩一玩" title="小猫猫"><div class="xm-lean">' +
+        '<div class="xm-stage" role="button" aria-label="小猫猫，点我玩一玩" title="小猫猫"><div class="xm-hit" aria-hidden="true"></div><div class="xm-lean">' +
           '<img class="xm-img-a" alt="小猫猫"><img class="xm-img-b" alt="" aria-hidden="true">' +
         '</div></div>' +
         /* P1-1：猫身常驻收起角标（S-3），与坞里的关闭钮共用 collapseCat */
@@ -847,6 +872,500 @@
     if (withSound && voiceOn) tryCelebVideo(['snd-' + exprKey].concat(silentChain), { sound: true, ms: 10500 });
     else tryCelebVideo(silentChain, { loop: true, ms: 6500 });
   }
+  /* ---------- 互动玩法第一批 Top 3（2026-11-18）：追鼠标+扑光标 / 点猫三级 / 拖链接喂猫 ----------
+     猫的显示全部用生成的视频（William 2026-11-18 01:16 定）：游乐场态常驻主态是透明视频
+     循环，静态姿势图只在视频文件不在时回退。视频是整段渲染的：追鼠标时播走路循环、扑时
+     播扑的一段、静止时播待机循环；表情不叠加在走路视频上（静止态才换表情视频）。
+     取景规矩（2026-11-18 01:37 定）：所有视频整只猫完整入镜、四周留白边、不裁脚不裁尾；
+     显示一律 object-fit:contain、容器按视频比例（见 .xm-video 与 .xm-play 规则），
+     不得裁掉猫的任何部分。
+     文件约定（public/xiaomaomao/media/，二进制媒体包不进仓库、部署时另放）：
+     play-idle.webm（待机透明循环）、play-walk.webm（走路透明循环）、
+     play-pounce.webm（扑透明一段）。window.XIAOMAOMAO_MEDIA.videos 可按名覆盖任意一条
+     （演示页就这么指到同目录的透明 WebM）；被显式覆盖的地址视为可信、跳过 HEAD 探活
+     （file:// 演示页发不出 HEAD，但 <video> 能直接播本地文件）。 */
+  var PLAY_CLIPS = { idle: 'play-idle.webm', walk: 'play-walk.webm', pounce: 'play-pounce.webm' };
+  var FAVORITE_ADDED_EVENT = 'navhub:favorite-added';
+  var FEED_LINK_EVENT = 'navhub:feed-link';
+  function playClipUrl(name) {
+    try {
+      var o = window.XIAOMAOMAO_MEDIA;
+      if (o && o.videos && typeof o.videos['play-' + name] === 'string') {
+        return { url: o.videos['play-' + name], trusted: true };
+      }
+    } catch (e) { /* 忽略 */ }
+    return { url: MEDIA_BASE + PLAY_CLIPS[name], trusted: false };
+  }
+  var clipA = null, clipB = null, clipVisible = null, clipCurrent = '', clipSeq = 0;
+  function ensureClipEls() {
+    if (clipA) return;
+    clipA = document.createElement('video');
+    clipB = document.createElement('video');
+    [clipA, clipB].forEach(function (v) {
+      v.className = 'xm-video xm-clip';
+      v.muted = true;
+      v.loop = true;
+      v.setAttribute('playsinline', '');
+      v.setAttribute('aria-hidden', 'true');
+      v.setAttribute('preload', 'auto');
+      try { v.disablePictureInPicture = true; } catch (e) { /* 忽略 */ }
+      stageEl.appendChild(v);
+    });
+    clipVisible = clipA;
+  }
+  /* 播一段游乐场视频：双视频交叉淡化（A/B 轮换，一段淡入、一段淡出）；loop 默认循环，
+     扑的那一段传 {loop:false} 只播一次。文件不在时安静回退静态姿势，不报错、不留白。 */
+  function playClip(name, opts) {
+    opts = opts || {};
+    if (!PLAY_CLIPS[name]) name = 'idle';
+    if (clipCurrent === name && clipVisible) {
+      try {
+        clipVisible.loop = opts.loop !== false;
+        if (opts.loop === false) {
+          clipVisible.currentTime = 0;
+          var p0 = clipVisible.play();
+          if (p0 && p0.catch) p0.catch(function () { /* 留首帧 */ });
+        }
+      } catch (e) { /* 忽略 */ }
+      return;
+    }
+    ensureClipEls();
+    var seq = ++clipSeq;
+    var next = (clipVisible === clipA) ? clipB : clipA;
+    var cur = clipVisible;
+    var resolved = playClipUrl(name);
+    var show = function () {
+      if (seq !== clipSeq) return;
+      try {
+        next.loop = opts.loop !== false;
+        next.classList.add('xm-on');
+        if (cur) cur.classList.remove('xm-on');
+        clipVisible = next;
+        clipCurrent = name;
+        var p = next.play();
+        if (p && p.catch) p.catch(function () { /* 自动播放被拦时留首帧 */ });
+      } catch (e) { /* 无头/受限环境静默 */ }
+    };
+    if (next.src && resolved.url && next.src.indexOf(resolved.url) !== -1) { show(); return; }
+    if (resolved.trusted) {
+      next.src = resolved.url;
+      next.addEventListener('error', function onErr() {
+        next.removeEventListener('error', onErr);
+        if (seq === clipSeq && name !== 'idle') playClip('idle');
+      });
+      show();
+      return;
+    }
+    probeMedia(resolved.url).then(function (ok) {
+      if (seq !== clipSeq) return;
+      if (!ok) {
+        if (name !== 'idle') { playClip('idle'); return; }
+        stopClips();
+        return;
+      }
+      next.src = resolved.url;
+      show();
+    });
+  }
+  function stopClips() {
+    clipSeq++;
+    [clipA, clipB].forEach(function (v) {
+      if (!v) return;
+      try { v.pause(); } catch (e) { /* 忽略 */ }
+      v.classList.remove('xm-on');
+    });
+    clipCurrent = '';
+  }
+
+  /* ---------- 追鼠标 + 扑光标（Top 1） ----------
+     状态机：idle（待机循环）→ chase（走路循环追光标）→ pounce（扑的一段，限速触发）
+     → catch（挠痒→打哈欠→睡着三段收尾，oneko 同款）→ idle。光标 8 秒不动时猫自己
+     满屏散步（随机挑点走过去）；20 秒没人理就打哈欠睡着（走现有 goSleep）。
+     诚实边界：挠痒/打哈欠/睡着三段收尾当前用待机视频 + 姿势 + 气泡实现，专用视频后补；
+     猫只能在页面视口里走，上不了桌面。 */
+  var play = { on: false, mode: 'idle', tx: 0, ty: 0, raf: 0, lastPtr: 0, px: 0, py: 0, pv: 0, wanderT: 0, sleepT: 0, _lastTick: 0 };
+  var PLAY_CHASE_SPEED = 260; /* px/s */
+  var PLAY_POUNCE_SPEED = 700; /* px/s：扑的那一下冲刺 */
+  var PLAY_CATCH_DIST = 90;
+  var PLAY_POUNCE_DIST = 240;
+  var PLAY_POUNCE_VELOCITY = 900; /* px/s：光标甩得快才扑 */
+  var PLAY_WANDER_AFTER = 8000;
+  var PLAY_SLEEP_AFTER = 20000;
+  function playRootRect() { return root.getBoundingClientRect(); }
+  function playSetPos(left, top) {
+    var r = playRootRect();
+    var maxL = Math.max(4, window.innerWidth - (r.width || 112) - 4);
+    var maxT = Math.max(4, window.innerHeight - (r.height || 112) - 4);
+    root.style.left = Math.max(4, Math.min(maxL, left)) + 'px';
+    root.style.top = Math.max(4, Math.min(maxT, top)) + 'px';
+    root.style.right = 'auto';
+    root.style.bottom = 'auto';
+  }
+  function playCatCenter() {
+    var r = playRootRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width || 112, h: r.height || 112 };
+  }
+  /* 猫绝不挡按钮：落点检查——把猫根节点临时设 pointer-events:none，用
+     elementFromPoint 看落点中心与四角下面是什么；是可点元素（且不在挂件内）
+     就按九宫格找空位；实在没空位就原地不动。 */
+  var PLAY_AVOID_SELECTOR = 'a,button,input,select,textarea,[role="button"],[tabindex]';
+  function playPointBlocked(x, y) {
+    var prev = root.style.pointerEvents;
+    root.style.pointerEvents = 'none';
+    var pts = [[x, y], [x - 40, y - 40], [x + 40, y - 40], [x - 40, y + 40], [x + 40, y + 40]];
+    var blocked = false;
+    try {
+      for (var i = 0; i < pts.length && !blocked; i++) {
+        var el = document.elementFromPoint(pts[i][0], pts[i][1]);
+        if (!el || root.contains(el)) continue;
+        if (el.closest && el.closest(PLAY_AVOID_SELECTOR)) blocked = true;
+      }
+    } catch (e) { /* 忽略 */ }
+    root.style.pointerEvents = prev;
+    return blocked;
+  }
+  function playFindFreeSpot(x, y) {
+    var tries = [[0, 0], [0, -70], [0, 70], [-70, 0], [70, 0], [-70, -70], [70, -70], [-70, 70], [70, 70]];
+    for (var i = 0; i < tries.length; i++) {
+      var nx = x + tries[i][0], ny = y + tries[i][1];
+      if (nx < 60 || ny < 60 || nx > window.innerWidth - 60 || ny > window.innerHeight - 60) continue;
+      if (!playPointBlocked(nx, ny)) return { x: nx, y: ny };
+    }
+    return null;
+  }
+  var playCatchTimers = [];
+  function playCancelCatch() {
+    for (var i = 0; i < playCatchTimers.length; i++) window.clearTimeout(playCatchTimers[i]);
+    playCatchTimers = [];
+  }
+  /* 扑的收尾定时器单独放（不进 playCatchTimers）：playOnPointerMove 每来一次
+     pointermove 就调 playCancelCatch()，放进去会被下一移动清掉，猫就永远卡在扑的姿势。
+     2026-11-18 审计抓到：扑的视频只露 0.25 秒就被 playTick 的到点分支切成抓——
+     猫以 700px/s 扑过去，150px 的距离 0.25 秒就到，1.6 秒的扑定时器根本没机会响。 */
+  function playCancelPounce() {
+    if (play.pounceT) { window.clearTimeout(play.pounceT); play.pounceT = 0; }
+  }
+  /* 抓到光标的三段收尾（oneko 同款）：挠痒 → 打哈欠 → 睡着。专用视频后补，
+     当前用待机视频 + 姿势 + 气泡实现，不编新视频。 */
+  function playCatch() {
+    if (play.mode === 'catch') return;
+    play.mode = 'catch';
+    playCancelCatch();
+    playClip('idle');
+    happyBounce();
+    burst(3);
+    showEmo('♪');
+    setPose('making');
+    showBubble('抓到啦，嘿嘿～', true);
+    playCatchTimers.push(window.setTimeout(function () {
+      if (!play.on || sleeping) return;
+      setPose('idle');
+      showEmo('z');
+      showBubble('哈～有点困了', false);
+    }, 1800));
+    playCatchTimers.push(window.setTimeout(function () {
+      if (!play.on || sleeping) return;
+      goSleep();
+      play.mode = 'idle';
+      playClip('idle');
+    }, 4800));
+  }
+  function playPounce() {
+    if (play.mode === 'pounce') return;
+    play.mode = 'pounce';
+    playCancelCatch();
+    playCancelPounce();
+    playClip('pounce', { loop: false });
+    showEmo('！');
+    showBubble('看我扑！', false);
+    play.pounceT = window.setTimeout(function () {
+      if (!play.on || sleeping || play.mode !== 'pounce') return;
+      play.mode = 'idle';
+      playCatch();
+    }, 1600);
+  }
+  function playScheduleWander() {
+    window.clearTimeout(play.wanderT);
+    window.clearTimeout(play.sleepT);
+    play.wanderT = window.setTimeout(function () {
+      if (!play.on || sleeping || root.classList.contains('xm-open')) return;
+      var x = 80 + Math.random() * Math.max(40, window.innerWidth - 160);
+      var y = 80 + Math.random() * Math.max(40, window.innerHeight - 160);
+      var spot = playFindFreeSpot(x, y);
+      if (!spot) return;
+      play.tx = spot.x;
+      play.ty = spot.y;
+      play.mode = 'wander';
+      playClip('walk');
+    }, PLAY_WANDER_AFTER);
+    play.sleepT = window.setTimeout(function () {
+      if (!play.on || sleeping || root.classList.contains('xm-open')) return;
+      setPose('idle');
+      showBubble('哈～有点困了，我先眯一会儿', false);
+      goSleep();
+      play.mode = 'idle';
+      playClip('idle');
+    }, PLAY_SLEEP_AFTER);
+  }
+  function playTick(now) {
+    if (!play.on || sleeping) { play.raf = 0; return; }
+    play.raf = requestAnimationFrame(playTick);
+    var dt = play._lastTick ? Math.min(100, Math.max(0, now - play._lastTick)) : 16;
+    play._lastTick = now;
+    if (play.mode !== 'chase' && play.mode !== 'wander' && play.mode !== 'pounce') return;
+    var speed = play.mode === 'pounce' ? PLAY_POUNCE_SPEED : PLAY_CHASE_SPEED;
+    var c = playCatCenter();
+    var dx = play.tx - c.x, dy = play.ty - c.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist <= 10) {
+      if (play.mode === 'chase') playCatch();
+      else if (play.mode === 'wander') { play.mode = 'idle'; playClip('idle'); playScheduleWander(); }
+      else if (play.mode === 'pounce') {
+        /* 扑到了：停住，等 1.6 秒的扑定时器收尾再抓——别立刻切抓，
+           否则扑视频只露 0.25 秒（700px/s 扑 150px 只要 0.25 秒），用户根本看不到扑。 */
+        return;
+      }
+      return;
+    }
+    var step = speed * dt / 1000;
+    var nx = c.x + (dx / dist) * Math.min(step, dist);
+    var ny = c.y + (dy / dist) * Math.min(step, dist);
+    playSetPos(nx - c.w / 2, ny - c.h / 2);
+  }
+  function playEnsureLoop() {
+    if (!play.raf) {
+      play._lastTick = 0;
+      play.raf = requestAnimationFrame(playTick);
+    }
+  }
+  function playOnPointerMove(ev) {
+    if (!play.on) return;
+    if (sleeping) wakeUp(false);
+    markActive(); /* 玩猫也是活动：别让 3 分钟全局睡眠半路把猫睡过去 */
+    var now = Date.now();
+    var nx = ev.clientX, ny = ev.clientY;
+    if (play.px || play.py) {
+      var d = Math.sqrt((nx - play.px) * (nx - play.px) + (ny - play.py) * (ny - play.py));
+      var dt = Math.max(1, now - play.lastPtr);
+      play.pv = (d / dt) * 1000;
+    }
+    play.px = nx;
+    play.py = ny;
+    play.lastPtr = now;
+    if (drag && drag.moved) return;
+    if (root.classList.contains('xm-open') || root.classList.contains('xm-closed')) return;
+    playCancelCatch();
+    var c = playCatCenter();
+    var dist = Math.sqrt((nx - c.x) * (nx - c.x) + (ny - c.y) * (ny - c.y));
+    var spot = playFindFreeSpot(nx, ny);
+    play.tx = spot ? spot.x : nx;
+    play.ty = spot ? spot.y : ny;
+    if (play.mode === 'pounce') { playEnsureLoop(); playScheduleWander(); return; }
+    if (dist <= PLAY_CATCH_DIST) {
+      if (play.mode === 'chase') playCatch();
+    } else if (play.pv > PLAY_POUNCE_VELOCITY && dist < PLAY_POUNCE_DIST) {
+      playPounce();
+    } else {
+      if (play.mode !== 'chase') { play.mode = 'chase'; playClip('walk'); }
+    }
+    playEnsureLoop();
+    playScheduleWander();
+  }
+  document.addEventListener('pointermove', playOnPointerMove, { passive: true });
+  /* 游乐场开关：开 = 猫进游乐场态（透明视频常驻、追鼠标），关 = 回角落静态态。
+     减动效用户不开游乐场；开时先弹回贴边/唤回收起态；漫步不写 store.pos（不覆盖
+     用户拖过的位置），关时按 store.pos 或默认右下角归位。 */
+  function setPlayMode(on) {
+    if (reducedMotion) on = false;
+    if (play.on === on) return;
+    play.on = on;
+    store.play = on;
+    persist();
+    var btn = root.querySelector('.xm-play-btn');
+    if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (on) {
+      if (docked) undock();
+      if (root.classList.contains('xm-closed')) root.classList.remove('xm-closed');
+      root.classList.remove('xm-parked');
+      root.classList.add('xm-play');
+      if (sleeping) wakeUp(false);
+      var r = playRootRect();
+      playSetPos(r.left, r.top);
+      play.mode = 'idle';
+      playClip('idle');
+      playEnsureLoop();
+      playScheduleWander();
+      showBubble('好耶，陪我玩吧～我会追着你的鼠标跑！', true);
+    } else {
+      playCancelCatch();
+      playCancelPounce();
+      window.clearTimeout(play.wanderT);
+      window.clearTimeout(play.sleepT);
+      if (play.raf) { try { cancelAnimationFrame(play.raf); } catch (e) { /* 忽略 */ } play.raf = 0; }
+      stopClips();
+      root.classList.remove('xm-play');
+      root.classList.remove('xm-eat-ready');
+      if (store.pos) applySavedPos();
+      else { root.style.left = ''; root.style.top = ''; root.style.right = ''; root.style.bottom = ''; }
+      alignPanel();
+      showBubble('好啦，我回角落待着～', false);
+    }
+  }
+
+  /* ---------- 拖链接喂猫收藏（Top 3，本站独有玩法） ----------
+     把页面上的链接拖到猫身上 = 按真实收藏接口收进导航站。流程：
+     dragstart 记下被拖的 <a href> → 拖到猫身上时亮圈待命 → drop 时先发可取消的
+     navhub:feed-link 事件（页面可接手；没人接手才走默认流程）→ 按 URL 在导航数据里
+     找 siteId（/api/home/navigation 懒加载一次、本会话缓存）→ POST /api/hub/favorites
+     （走 BFF 代理：浏览器侧只带 X-Navhub-Anon-Id，签名由服务端补；中枢回 {favorite,
+     existed}，201 新收藏、200 已存在）。身份沿用站内同一套键（navhub.userId 优先、
+     navhub.anonId 其次）；不自己造身份，没身份就实话实说等页面加载完。链接不在收录
+     里、接口报错、已收藏过，全部如实报，绝不假装收藏成功。收藏成功后发
+     navhub:favorite-added（成长档按统一规则落账，挂件本身不写成长数据）。 */
+  var dragLink = null;
+  var feedBusy = false;
+  var navCache = null;
+  document.addEventListener('dragstart', function (ev) {
+    dragLink = null;
+    try {
+      var t = ev.target;
+      var a = t && t.closest ? t.closest('a[href]') : null;
+      if (a && a.href) dragLink = { url: a.href, title: (a.textContent || a.href).trim().slice(0, 60) || a.href };
+    } catch (e) { dragLink = null; }
+  }, true);
+  document.addEventListener('dragend', function () {
+    dragLink = null;
+    root.classList.remove('xm-eat-ready');
+  });
+  function feedUrlKey(u) {
+    try {
+      var x = new URL(u);
+      return (x.origin + x.pathname.replace(/\/+$/, '')).toLowerCase();
+    } catch (e) {
+      return String(u || '').split(/[?#]/)[0].replace(/\/+$/, '').toLowerCase();
+    }
+  }
+  function feedFindSiteId(url) {
+    if (!navCache) {
+      navCache = window.fetch('/api/home/navigation', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; });
+    }
+    return navCache.then(function (data) {
+      if (!data || !Array.isArray(data.navigationItems)) return { found: false, noData: true };
+      var want = feedUrlKey(url);
+      var queue = data.navigationItems.slice();
+      while (queue.length) {
+        var it = queue.shift();
+        if (!it) continue;
+        if (it.href && feedUrlKey(it.href) === want && it.id) return { found: true, siteId: it.id, title: it.title || '' };
+        if (Array.isArray(it.subCategories)) queue.push.apply(queue, it.subCategories);
+        if (Array.isArray(it.items)) queue.push.apply(queue, it.items);
+        if (Array.isArray(it.children)) queue.push.apply(queue, it.children);
+      }
+      return { found: false, noData: false };
+    });
+  }
+  function feedLink(link) {
+    if (!link || !link.url || feedBusy) return;
+    feedBusy = true;
+    root.classList.remove('xm-eat-ready');
+    var handled = false;
+    try {
+      var ev = new CustomEvent(FEED_LINK_EVENT, { cancelable: true, detail: { url: link.url, title: link.title || link.url } });
+      window.dispatchEvent(ev);
+      handled = ev.defaultPrevented;
+    } catch (e) { handled = false; }
+    if (handled) {
+      feedBusy = false;
+      showBubble('好嘞，这条交给页面处理啦～', false);
+      return;
+    }
+    var identity = null;
+    try {
+      identity = window.localStorage.getItem('navhub.userId') || window.localStorage.getItem('navhub.anonId');
+    } catch (e) { identity = null; }
+    if (!identity) {
+      feedBusy = false;
+      showEmo('？');
+      showBubble('我的身份还没生成，等页面加载完再喂我～', false);
+      return;
+    }
+    playClip('pounce', { loop: false });
+    showBubble('啊呜……让我嚼一嚼这条链接～', false);
+    feedFindSiteId(link.url).then(function (res) {
+      if (!res.found) {
+        feedBusy = false;
+        showEmo('？');
+        showBubble(res.noData ? '演示页没有接导航数据，在网站上喂才作数～' : '这条链接不在收录里，猫吃不到——先用站内搜索把它找出来吧', false);
+        playClip('idle');
+        return;
+      }
+      return window.fetch('/api/hub/favorites', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Navhub-Anon-Id': identity },
+        body: JSON.stringify({ siteId: res.siteId })
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; });
+      }).then(function (out) {
+        feedBusy = false;
+        var ok = (out.status === 200 || out.status === 201) && out.body && out.body.favorite;
+        var already = ok && out.body.existed === true;
+        if (ok) {
+          happyBounce();
+          burst(6);
+          showEmo('♥');
+          setPose('milestone');
+          showBubble(already ? '这条已经在你的收藏里啦，不用再喂一遍～' : '啊呜～「' + (res.title || link.title || link.url) + '」已收进你的收藏！', true);
+          try {
+            window.dispatchEvent(new CustomEvent(FAVORITE_ADDED_EVENT, { detail: { siteId: res.siteId } }));
+          } catch (e) { /* 忽略 */ }
+          window.setTimeout(function () { if (currentPose === 'milestone' && !sleeping) setPose('main'); }, 2600);
+        } else {
+          showEmo('？');
+          showBubble('收藏接口现在不让喂（' + (out.body && (out.body.error || out.body.message) ? String(out.body.error || out.body.message).slice(0, 40) : 'HTTP ' + out.status) + '），再试一次看看', false);
+        }
+        playClip('idle');
+      });
+    }).catch(function () {
+      feedBusy = false;
+      showEmo('？');
+      showBubble('收藏接口现在连不上，再试一次看看', false);
+      playClip('idle');
+    });
+  }
+  stageEl.addEventListener('dragover', function (ev) {
+    if (!dragLink) return;
+    ev.preventDefault();
+    try { ev.dataTransfer.dropEffect = 'copy'; } catch (e) { /* 忽略 */ }
+    root.classList.add('xm-eat-ready');
+  });
+  stageEl.addEventListener('dragleave', function () {
+    root.classList.remove('xm-eat-ready');
+  });
+  stageEl.addEventListener('drop', function (ev) {
+    var link = dragLink;
+    if (!link) {
+      try {
+        var u = (ev.dataTransfer && (ev.dataTransfer.getData('text/uri-list') || ev.dataTransfer.getData('text/plain'))) || '';
+        if (u) link = { url: u.split('\n')[0].trim(), title: u.split('\n')[0].trim() };
+      } catch (e) { /* 忽略 */ }
+    }
+    if (!link || !link.url) return;
+    ev.preventDefault();
+    dragLink = null;
+    markActive();
+    feedLink(link);
+  });
+  /* 演示页/外部集成句柄（只读开关 + 状态，不碰挂件内部状态机之外的东西） */
+  try {
+    window.XIAOMAOMAO = window.XIAOMAOMAO || {};
+    window.XIAOMAOMAO.togglePlay = function (on) { setPlayMode(typeof on === 'boolean' ? on : !play.on); return play.on; };
+    window.XIAOMAOMAO.playing = function () { return play.on; };
+    window.XIAOMAOMAO.feedLink = function (url, title) { feedLink({ url: url, title: title || url }); };
+  } catch (e) { /* 忽略 */ }
+
   /* v8：离屏/切后台停播——猫滚出视口就暂停，切到别的标签页直接收视频（声音版尤其不许在后台响） */
   try {
     if ('IntersectionObserver' in window) {
@@ -1036,6 +1555,7 @@
   function goSleep() {
     if (sleeping || root.classList.contains('xm-open')) return;
     sleeping = true;
+    playCancelPounce();
     hideBubble();
     stopSpeak();
     stopCelebVideo();
@@ -1209,7 +1729,8 @@
   function noteXmAct() { xmLastAct = Date.now(); }
   function dockBlocked() {
     return docked || root.classList.contains('xm-open') || root.classList.contains('xm-closed') ||
-      gameEl.classList.contains('xm-on') || !!busy || !!document.hidden;
+      gameEl.classList.contains('xm-on') || !!busy || !!document.hidden ||
+      (typeof play === 'object' && play !== null && play.on); /* 互动玩法：游乐场模式下不贴边（用户在主动玩猫） */
   }
   function doDock() {
     if (dockBlocked()) return;
@@ -1279,7 +1800,8 @@
   function parkBlocked() {
     return root.classList.contains('xm-open') ||
       (typeof gameEl !== 'undefined' && gameEl && gameEl.classList.contains('xm-on')) ||
-      !!busy || !!document.hidden;
+      !!busy || !!document.hidden ||
+      (typeof play === 'object' && play !== null && play.on); /* 互动玩法：游乐场模式下不自动收起 */
   }
   /* Q1 返工：清除收起位移变量（解除收起/离开市场页时调用；未设变量时 CSS 回落到 calc(100vw + 12px)）。 */
   function clearParkX() {
@@ -1481,18 +2003,36 @@
       }, 2600);
       return;
     }
-    var pose, line;
-    if (petChain >= 3) {
-      pose = 'milestone';
-      burst(11);
-      showEmo('♪');
-      line = pickOne(petChain >= 5 ? PET_MAX : PET_HAPPY);
-    } else {
+    var pose, line, emo;
+    if (petChain === 1) {
+      /* 点猫三级 ladder（互动玩法第一批 Top 3）：第 1 下抬头看你 */
+      pose = 'working';
+      emo = '？';
+      line = '嗯？叫我吗～';
+    } else if (petChain === 2) {
+      /* 第 2 下开心回应 */
       pose = 'making';
       burst(6);
+      emo = '♥';
       line = (currentSat() < 35 && Math.random() < 0.35) ? pickOne(PET_HUNGRY) : pickOne(PET_WARM);
+    } else if (petChain === 3) {
+      /* 第 3 下打滚：打滚视频后补，当前用走路视频 + 原地转圈近似（.xm-roll），不编视频 */
+      pose = 'milestone';
+      emo = '★';
+      line = '看我打滚～呼噜呼噜';
+      playClip('walk');
+      wrapEl.classList.remove('xm-roll');
+      void wrapEl.offsetWidth;
+      wrapEl.classList.add('xm-roll');
+      window.setTimeout(function () { wrapEl.classList.remove('xm-roll'); playClip('idle'); }, 1000);
+    } else {
+      pose = 'milestone';
+      burst(11);
+      emo = '♪';
+      line = pickOne(petChain >= 5 ? PET_MAX : PET_HAPPY);
     }
     setPose(pose);
+    showEmo(emo);
     /* v8：摸猫动画——卖萌播眨眼、撒娇播开心大笑；点猫进来的播带声音版，其余静音 */
     playExprVideo(pose === 'milestone' ? 'happy' : 'wink', withSound);
     happyBounce();
@@ -2055,6 +2595,21 @@
     markActive();
     resetCatPos();
   });
+  /* 互动玩法第一批 Top 3：游乐场开关（与喂鱼/接星星/归位同款插入位置：关闭钮之前）。
+     aria-pressed 反映开关态；点它进/出游乐场（追鼠标 + 扑光标 + 满屏散步）。 */
+  var playBtn = document.createElement('button');
+  playBtn.className = 'xm-btn xm-play-btn';
+  playBtn.type = 'button';
+  playBtn.innerHTML = ICONS.chase;
+  playBtn.title = '跟小猫猫一起玩（追鼠标）';
+  playBtn.setAttribute('aria-label', '跟小猫猫一起玩（追鼠标）');
+  playBtn.setAttribute('aria-pressed', 'false');
+  dockBox.insertBefore(playBtn, closeBtnEl);
+  playBtn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    markActive();
+    setPlayMode(!play.on);
+  });
   function updateFishBtn() {
     rollFishDay();
     var left = Math.max(0, 5 - v4.fishCount);
@@ -2496,4 +3051,9 @@
   }, 850);
   /* 跨会话的升级/新徽章：等招呼说完再庆祝，不抢戏 */
   window.setTimeout(function () { checkGrowth(true); }, 9500);
+  /* 互动玩法第一批：演示页用 window.XIAOMAOMAO_PLAY = true 开局进游乐场；
+     否则按用户上次的选择（store.play）恢复。减动效用户不自动开。 */
+  if (!reducedMotion && (window.XIAOMAOMAO_PLAY === true || store.play)) {
+    window.setTimeout(function () { setPlayMode(true); }, 1200);
+  }
 })();

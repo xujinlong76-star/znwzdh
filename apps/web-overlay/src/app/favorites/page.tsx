@@ -95,6 +95,7 @@ import { useMergedVisits } from '@/lib/resurface-visits'
 import { describeResurfaced, daysSinceOpen, latestVisitsById, selectStaleFavorites, staleBadgeLabel } from '@/lib/resurface'
 import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/vault'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
+import { StarredPluginsSection } from './starred-plugins-section'
 import {
   clearCloudFavorites,
   searchSites,
@@ -1498,6 +1499,11 @@ export default function FavoritesPage() {
             {syncLast.remoteRemoved > 0 ? ` · 另一设备删除 ${syncLast.remoteRemoved} 条` : ''}
           </p>
         )}
+
+        {/* P1-6 星标 ≠ 收藏：星标插件不在收藏模型里，常驻分区直接列出来，
+            0 星标也不藏——空态本身就是「星标在哪」的解释；入口指向
+            /marketplace?starred=1（星标列表）与 /me/plugins（插件中心）。 */}
+        <StarredPluginsSection />
 
         {/* 好久没打开：超过 90 天没有记录到的打开的收藏，给一条回访入口，
             而不是让它们在列表里悄悄变旧（徽标在每张卡的日期旁）。 */}

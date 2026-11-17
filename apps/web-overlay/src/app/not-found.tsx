@@ -4,7 +4,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 import { Button } from "@/registry/new-york/ui/button"
-import { Compass, Home, FolderTree, Flame, Tags, Layers, Share2, Star, type LucideIcon } from 'lucide-react'
+import { Compass, Home, FolderTree, Flame, Tags, Layers, Share2, Star, Puzzle, type LucideIcon } from 'lucide-react'
 import { RECOVERY_LINKS, type RecoveryIcon } from '@/lib/recovery-links'
 
 /**
@@ -46,6 +46,7 @@ const ICONS: Record<RecoveryIcon, LucideIcon> = {
   collections: Layers,
   graph: Share2,
   favorites: Star,
+  marketplace: Puzzle,
 }
 
 export default function NotFound() {

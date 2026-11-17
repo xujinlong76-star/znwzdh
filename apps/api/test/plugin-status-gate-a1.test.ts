@@ -55,6 +55,9 @@ let app: Awaited<ReturnType<typeof buildServer>>;
 let adminToken = "";
 let rwToken = "";
 let publishedReviewId = "";
+let delistedJobId = "";
+let pendingJobId = "";
+let publishedJobId = "";
 
 function sitePackManifest(name: string, urls: string[]) {
   const raw = {
@@ -103,6 +106,9 @@ const rwPost = (url: string, payload: unknown) =>
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-plugin-a1-gate-"));
+  // 体检任务队列落盘位置：默认是仓库 data/audit-jobs.json，本文件改走临时目录，
+  // 避免与其他测试文件共享任务记录（队列按进程缓存，写在建服务之前才生效）。
+  process.env.NAVHUB_AUDIT_QUEUE_PATH = join(dir, "audit-jobs.json");
   const config = loadConfig({
     mode: "lite",
     sqlitePath: join(dir, "a1.db"),
@@ -242,6 +248,22 @@ beforeAll(async () => {
     actorKind: "admin",
   });
   expect(starDelisted.status).toBe("delisted");
+
+  // url-health 任务端点夹具：三包各一个体检任务，URL 即包内清单地址。
+  // 任务经真实 POST 入队；后台 worker 会探活这些 example.com 地址（DNS 即败），
+  // 但 urls 字段自入队起就固定在任务记录里——泄漏与否与探活结果无关。
+  for (const [slug, url] of [
+    ["a1-delisted-pack", SECRET_URL],
+    ["a1-pending-pack", PENDING_URL],
+    ["a1-published-pack", PUBLISHED_URL],
+  ] as const) {
+    const enqueued = await rwPost("/api/plugins/url-health/jobs", { slug, urls: [url] });
+    expect(enqueued.statusCode).toBe(202);
+    const id = enqueued.json().id as string;
+    if (slug === "a1-delisted-pack") delistedJobId = id;
+    if (slug === "a1-pending-pack") pendingJobId = id;
+    if (slug === "a1-published-pack") publishedJobId = id;
+  }
 });
 
 afterAll(async () => {
@@ -642,5 +664,47 @@ describe("A 批 R4-10：评价长度口径收敛", () => {
     const mine = list.json().items.find((i: { identity: string }) => i.identity === INSTALLER);
     expect(mine.title).toBe("标".repeat(200));
     expect(mine.content).toBe("正".repeat(2000));
+  });
+});
+
+describe("A 批遗留：url-health 任务端点可见性门禁（jobs 列表与详情）", () => {
+  it("持票陌生人：jobs 列表不含下架/待审包任务、详情 404；已上架包任务仍 200 且含 URL", async () => {
+    const list = await rwGet("/api/plugins/url-health/jobs");
+    expect(list.statusCode).toBe(200);
+    const slugs = (list.json().items as Array<{ slug: string }>).map((i) => i.slug);
+    expect(slugs).toContain("a1-published-pack");
+    expect(slugs).not.toContain("a1-delisted-pack");
+    expect(slugs).not.toContain("a1-pending-pack");
+    // 列表摘要本身不带 urls，但仍断言整包不含密钥 URL（防将来摘要字段扩出来）。
+    expect(list.body).not.toContain(SECRET_URL);
+    expect(list.body).not.toContain(PENDING_URL);
+
+    for (const id of [delistedJobId, pendingJobId]) {
+      const res = await rwGet(`/api/plugins/url-health/jobs/${id}`);
+      expect(res.statusCode).toBe(404);
+      expect(res.body).not.toContain(SECRET_URL);
+      expect(res.body).not.toContain(PENDING_URL);
+    }
+
+    const published = await rwGet(`/api/plugins/url-health/jobs/${publishedJobId}`);
+    expect(published.statusCode).toBe(200);
+    expect(published.json().job.slug).toBe("a1-published-pack");
+    expect(published.json().job.urls).toContain(PUBLISHED_URL);
+  });
+
+  it("作者与管理员：下架/待审包任务仍可读（不过度拦截）", async () => {
+    const owner = await ownerGet(`/api/plugins/url-health/jobs/${delistedJobId}`);
+    expect(owner.statusCode).toBe(200);
+    expect(owner.json().job.urls).toContain(SECRET_URL);
+    const admin = await adminGet(`/api/plugins/url-health/jobs/${pendingJobId}`);
+    expect(admin.statusCode).toBe(200);
+    expect(admin.json().job.urls).toContain(PENDING_URL);
+  });
+
+  it("匿名（鉴权实例）：jobs 列表与详情均被 hook 以 401 拦下", async () => {
+    const list = await anonGet("/api/plugins/url-health/jobs");
+    expect(list.statusCode).toBe(401);
+    const detail = await anonGet(`/api/plugins/url-health/jobs/${publishedJobId}`);
+    expect(detail.statusCode).toBe(401);
   });
 });

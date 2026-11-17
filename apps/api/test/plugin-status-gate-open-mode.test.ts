@@ -31,6 +31,9 @@ const PUBLISHED_URL = "https://published-open.example.com/only-here";
 let dir: string;
 let ctx: AppContext;
 let app: Awaited<ReturnType<typeof buildServer>>;
+let openDelistedJobId = "";
+let openPendingJobId = "";
+let openPublishedJobId = "";
 
 function sitePackManifest(name: string, urls: string[]) {
   const raw = {
@@ -55,6 +58,8 @@ const anonPost = (url: string, payload: unknown) => app.inject({ method: "POST",
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-plugin-a-gates-open-"));
+  // 体检任务队列落盘位置改走临时目录，避免与其他测试文件共享任务记录。
+  process.env.NAVHUB_AUDIT_QUEUE_PATH = join(dir, "audit-jobs.json");
   const config = loadConfig({
     mode: "lite",
     sqlitePath: join(dir, "open.db"),
@@ -121,6 +126,20 @@ beforeAll(async () => {
     target: "open-published-pack",
     diff: { slug: "open-published-pack", declared: 1, sampled: 1, ok: 1, blocked: 0, suspicious: 0, broken: 0, reachability: 100 },
   });
+
+  // url-health 任务端点夹具（与 A-1 文件同构）：三包各一个体检任务。
+  for (const [slug, url] of [
+    ["open-delisted-pack", SECRET_URL],
+    ["open-pending-pack", PENDING_URL],
+    ["open-published-pack", PUBLISHED_URL],
+  ] as const) {
+    const enqueued = await anonPost("/api/plugins/url-health/jobs", { slug, urls: [url] });
+    expect(enqueued.statusCode).toBe(202);
+    const id = enqueued.json().id as string;
+    if (slug === "open-delisted-pack") openDelistedJobId = id;
+    if (slug === "open-pending-pack") openPendingJobId = id;
+    if (slug === "open-published-pack") openPublishedJobId = id;
+  }
 }, 120_000);
 
 afterAll(async () => {
@@ -180,5 +199,23 @@ describe("A 批开放模式：A-1 与 A 批端点对同一插件返回同一状�
     expect(summary.statusCode).toBe(200);
     expect(summary.json().summaries["open-delisted-pack"]).toBeDefined();
     expect(summary.json().summaries["open-published-pack"]).toBeDefined();
+  });
+
+  it("任务端点：已上架包任务匿名可读；下架包任务与其它 A-1 端点同口径可见", async () => {
+    const list = await anonGet("/api/plugins/url-health/jobs");
+    expect(list.statusCode).toBe(200);
+    const slugs = (list.json().items as Array<{ slug: string }>).map((i) => i.slug);
+    expect(slugs).toContain("open-published-pack");
+    // 开放模式匿名等同运营者（见文件头注释）：下架包任务与 summary/health 同口径可见，
+    // 门禁的真正拦截由鉴权实例证明（见 plugin-status-gate-a1.test.ts）。
+    expect(slugs).toContain("open-delisted-pack");
+    expect(slugs).toContain("open-pending-pack");
+
+    const published = await anonGet(`/api/plugins/url-health/jobs/${openPublishedJobId}`);
+    expect(published.statusCode).toBe(200);
+    expect(published.json().job.urls).toContain(PUBLISHED_URL);
+    const delisted = await anonGet(`/api/plugins/url-health/jobs/${openDelistedJobId}`);
+    expect(delisted.statusCode).toBe(200);
+    expect(delisted.json().job.urls).toContain(SECRET_URL);
   });
 });

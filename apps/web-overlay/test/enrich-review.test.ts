@@ -10,7 +10,7 @@
  * 断言分三组：纯函数行为、契约对齐（读中枢源码取字段清单）、组件接线（源码文本）。
  * 每条都指定了让它变红的消融，见 test 注释。
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -311,5 +311,48 @@ describe('组件接线：审核结果直接建站，不做二次富化', () => {
   it('管理端 AI 页面挂了「富化结果字段级审核」入口', () => {
     expect(page).toContain('EnrichmentReviewPanel')
     expect(page).toContain('富化结果字段级审核')
+  })
+})
+
+describe('P3-10：顶层 iconUrl 死字段已去掉', () => {
+  const api = readFileSync(join(OVERLAY, 'src/lib/navhub-api.ts'), 'utf8')
+  const panel = readFileSync(join(OVERLAY, 'src/components/ai/enrichment-review-panel.tsx'), 'utf8')
+
+  function previewInterface(): string {
+    const start = api.indexOf('export interface HubEnrichPreview')
+    expect(start).toBeGreaterThan(-1)
+    const rest = api.slice(start)
+    const end = rest.indexOf('\n}\n')
+    expect(end).toBeGreaterThan(-1)
+    return rest.slice(0, end)
+  }
+
+  // 消融：把 iconUrl 字段加回 HubEnrichPreview → 本条变红。
+  // 去掉的理由：它与 fields.icon.value 恒等（中枢 enrichUrl 两处 return 都取同一
+  // 个局部变量），UI 从未读过它；再渲染一次只是同一张图的重复。
+  it('HubEnrichPreview 不再声明 iconUrl 字段', () => {
+    expect(previewInterface()).not.toMatch(/^\s*iconUrl\s*:/m)
+    // 图标仍在类型里：fields.icon 是唯一图标来源
+    expect(api).toContain('icon: HubEnrichField<string | null>')
+  })
+
+  // 消融：在 overlay 源码里任一处写 preview.iconUrl / xxx.iconUrl → 本条变红
+  it('overlay 源码没有任何地方读取 .iconUrl', () => {
+    const offenders: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name)
+        if (entry.isDirectory()) walk(p)
+        else if (/\.(ts|tsx)$/.test(entry.name) && /\.iconUrl\b/.test(readFileSync(p, 'utf8'))) offenders.push(p)
+      }
+    }
+    walk(join(OVERLAY, 'src'))
+    expect(offenders).toEqual([])
+  })
+
+  it('图标仍经 fields.icon 渲染（不是靠顶层 iconUrl）', () => {
+    expect(panel).toContain('buildEnrichReviewRows(result.fields)')
+    expect(panel).toMatch(/row\.key === 'icon'/)
+    expect(panel).toContain('<img')
   })
 })

@@ -3172,7 +3172,8 @@ export interface HubEnrichPreview {
   suggestedCategory: string
   suggestedFacets: unknown[]
   suggestedRelations: unknown[]
-  iconUrl: string | null
+  // P3-10：顶层 iconUrl 已去掉——它与 fields.icon.value 恒等（中枢同源），
+  // UI 只读 fields.icon 渲染图标；服务端仍返回该键，客户端忽略，不影响 API 侧 favicon 逻辑。
   imageUrl: string | null
   lang: string | null
   provenance: 'llm' | 'heuristic'

@@ -20,7 +20,7 @@ export function DensityToggle({ className, menuSide = 'bottom' }: { className?: 
     {
       id: 'dense',
       label: canonicalDensityLabel('dense'),
-      desc: '75% · 紧凑高效，单屏展示海量站点',
+      desc: '75% · 紧凑高效，单屏展示更多站点',
       icon: <Rows3 className="w-4 h-4 text-cyan-500" />,
     },
     {

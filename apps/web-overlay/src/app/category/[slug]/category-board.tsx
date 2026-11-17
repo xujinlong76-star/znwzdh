@@ -358,7 +358,7 @@ export async function CategoryBoard({
                 <div className="min-w-0">
                   <span className="font-semibold text-foreground block text-sm">想系统学习「{name}」？</span>
                   <span className="text-muted-foreground text-xs block truncate">
-                    本站技术视频库收录 6,000+ 高质量课程与实战，直达相关教学资源
+                    本站技术视频库收录高质量课程与实战，直达相关教学资源
                   </span>
                 </div>
               </div>

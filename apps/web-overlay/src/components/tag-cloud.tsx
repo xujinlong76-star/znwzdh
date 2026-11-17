@@ -208,7 +208,7 @@ export function TagCloud({ initialTags }: { initialTags: HubTag[] | null }) {
               按技术栈查找精选视频教程
             </div>
             <div className="text-[11px] text-muted-foreground truncate">
-              在视频库中输入任意技术标签（如 React, Docker, Python），直达 6,000+ 部高清课程
+              在视频库中输入任意技术标签（如 React, Docker, Python），直达高清课程
             </div>
           </div>
         </div>

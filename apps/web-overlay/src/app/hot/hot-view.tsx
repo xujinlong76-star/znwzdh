@@ -307,7 +307,7 @@ export default function HotView({
                 热门技术精选视频教程
               </div>
               <div className="text-[11px] text-muted-foreground truncate">
-                探索 6,000+ 部热门前端、后端、AI、云原生等前沿技术实战课程
+                探索热门前端、后端、AI、云原生等前沿技术实战课程
               </div>
             </div>
           </div>

@@ -648,7 +648,7 @@ export function SearchResults({
                     在精选技术视频库中搜索 “{q}”
                   </div>
                   <div className="text-[11px] text-muted-foreground truncate">
-                    收录 6,000+ 部 B站 &amp; YouTube 高保鲜实战课程与优质教程
+                    收录 B站 &amp; YouTube 高保鲜实战课程与优质教程
                   </div>
                 </div>
               </div>

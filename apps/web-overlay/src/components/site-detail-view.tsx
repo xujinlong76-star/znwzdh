@@ -1694,7 +1694,7 @@ export function SiteDetailView({
               <div className="min-w-0">
                 <span className="font-semibold text-foreground block text-sm">想看「{site.title}」的视频教程与实操演练？</span>
                 <span className="text-muted-foreground text-xs block truncate">
-                  本站技术视频库收录 6,000+ 部开发者视频、实操讲解与系统课程
+                  本站技术视频库收录开发者视频、实操讲解与系统课程
                 </span>
               </div>
             </div>

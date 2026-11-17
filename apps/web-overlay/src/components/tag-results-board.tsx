@@ -158,7 +158,7 @@ export function TagResultsBoard({
           <div className="min-w-0">
             <span className="font-semibold text-foreground block text-sm">想看「#{slug}」相关的实战视频教程？</span>
             <span className="text-muted-foreground text-xs block truncate">
-              本站视频中心收录 6,000+ 部开发者视频、课程讲解与项目实操
+              本站视频中心收录开发者视频、课程讲解与项目实操
             </span>
           </div>
         </div>

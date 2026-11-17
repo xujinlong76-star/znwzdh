@@ -571,7 +571,7 @@ ${items}
                     相关技术视频教程：{collection.title}
                   </div>
                   <div className="text-[11px] text-muted-foreground truncate">
-                    在 6,000+ 部精选视频库中查看「{collection.title}」对应的实战教程与深度讲解
+                    在精选视频库中查看「{collection.title}」对应的实战教程与深度讲解
                   </div>
                 </div>
               </div>

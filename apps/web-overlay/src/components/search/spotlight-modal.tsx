@@ -569,7 +569,7 @@ export function SpotlightModal({
     {
       id: 'cmd-videos',
       title: '精选技术视频库 (Video Hub)',
-      description: '全屏技术视频聚合看板与分类索引 (6000+ 精选高保鲜课程)',
+      description: '全屏技术视频聚合看板与分类索引（精选高保鲜课程）',
       icon: Video,
       category: '页面直达',
       handler: () => {

@@ -33,7 +33,7 @@ export function ViewModeToggle({ className, menuSide = 'bottom' }: { className?:
     {
       id: 'classic',
       label: '经典全景流',
-      desc: '纯粹分类目录树，全屏巡航海量站点',
+      desc: '纯粹分类目录树，全屏巡航全部站点',
       icon: <Compass className="w-4 h-4 text-blue-500" />,
     },
     {

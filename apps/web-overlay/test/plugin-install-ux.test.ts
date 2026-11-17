@@ -165,7 +165,14 @@ describe("插件卡片：父级刷新后本地安装态必须跟 prop 走", () =
 
   it("同步 effect 只监听 prop 变化，不干扰卡片自身的乐观更新", () => {
     expect(card).toContain("[plugin.installed]")
-    expect(card).toContain("[plugin.starred, plugin.starCount]")
+    // R7 按新行为改写（93632c7f）：星标同步 effect 依赖现为
+    // [plugin.starred, plugin.starCount, starLoading]——多出的 starLoading
+    // 不是 prop 而是在途切换守卫：切换进行时 effect 直接 return，不把切换前
+    // 发出的旧 prop 写回、翻掉刚切换的乐观状态；切换结束（starLoading 翻
+    // false）时 effect 重跑，再按最新 prop 同步。断言意图不变：依赖里除守
+    // 卫外仍只有 prop，且 effect 体内必须有 starLoading 守卫。
+    expect(card).toContain("[plugin.starred, plugin.starCount, starLoading]")
+    expect(card).toContain("if (starLoading) return")
   })
 
   it("列表请求必须带匿名身份头，否则服务端标不出 installed、重取也拿不到已装态", () => {

@@ -393,7 +393,9 @@ export default function AdminPluginsPage() {
           // 有历史版本号却取不到快照：同样是取数失败，不是「无历史」
           setAuditFailed(true)
         } else {
-          const diffRes = await diffPluginManifestsApi(lastDetail.manifest, item.manifest)
+          // P1-2：待审新版本审查要拿 pendingManifest 作比对目标——item.manifest 是
+          // 线上正在跑的版本，拿它比对只会得到“无差异”的假阴性，管理员等于没审。
+          const diffRes = await diffPluginManifestsApi(lastDetail.manifest, item.pendingManifest ?? item.manifest)
           if (diffRes.ok) {
             setAuditDiff(diffRes.diff)
           } else {
@@ -636,14 +638,25 @@ export default function AdminPluginsPage() {
   // 是一键直发、无前置审查，所以加 confirm；审查弹窗里的「通过并立即上
   // 架」不加——打开弹窗、核对清单本身就是审查步骤，再弹一次是重复确认。
   const handleApprove = async (plugin: HubPluginItem, opts?: { skipConfirm?: boolean }) => {
-    if (!opts?.skipConfirm && !confirm(`确定要通过审核并上架插件「${plugin.name}」吗？上架后将公开可见。`)) {
+    // P1-2：已上架插件的待审新版本走同一条服务端分支（Shadow Release）：
+    // 文案必须区分“首次上架”与“新版本升级”，否则管理员会被误导。
+    const isVersionApprove = plugin.status === 'published' && Boolean(plugin.pendingVersion)
+    // D-9 守卫断言 if (!opts?.skipConfirm && !confirm( 这一行原文形：文案先按版本拼好再传，门禁形不变。
+    const confirmText = isVersionApprove
+      ? `确定要通过新版本 v${plugin.pendingVersion} 的审核吗？通过后「${plugin.name}」将升级到 v${plugin.pendingVersion}，已安装用户会收到升级提醒。`
+      : `确定要通过审核并上架插件「${plugin.name}」吗？上架后将公开可见。`
+    if (!opts?.skipConfirm && !confirm(confirmText)) {
       return
     }
     const key = `plugin:${plugin.slug}:approve`
-    setRowBusyKey(key, '上架中…')
+    setRowBusyKey(key, isVersionApprove ? '升级中…' : '上架中…')
     try {
       await reviewPlugin(plugin.slug, 'approve')
-      toast.success(`已通过审核并上架「${plugin.name}」！`)
+      toast.success(
+        isVersionApprove
+          ? `新版本 v${plugin.pendingVersion} 已通过审核，「${plugin.name}」已升级！`
+          : `已通过审核并上架「${plugin.name}」！`,
+      )
       void loadList()
     } catch (err) {
       toast.error('操作失败', {
@@ -719,12 +732,19 @@ export default function AdminPluginsPage() {
   // 提交驳回
   const handleConfirmReject = async () => {
     if (!rejectPluginItem) return
+    // P1-2：驳回已上架插件的待审新版本只清 pendingVersion，线上当前版本不受影响
+    // （服务端 reviewPlugin 的 reject 分支已区分），文案与焦点目标必须如实区分。
+    const isVersionReject = rejectPluginItem.status === 'published' && Boolean(rejectPluginItem.pendingVersion)
     const key = `reject:${rejectPluginItem.slug}`
     setRowBusyKey(key, '提交中…')
     let ok = false
     try {
       await reviewPlugin(rejectPluginItem.slug, 'reject', rejectNote.trim() || '未达到上架标准')
-      toast.success(`已驳回「${rejectPluginItem.name}」`)
+      toast.success(
+        isVersionReject
+          ? `新版本 v${rejectPluginItem.pendingVersion} 已驳回，「${rejectPluginItem.name}」保持 v${rejectPluginItem.version}`
+          : `已驳回「${rejectPluginItem.name}」`,
+      )
       setRejectModalOpen(false)
       setRejectNote('')
       setRejectPluginItem(null)
@@ -737,7 +757,11 @@ export default function AdminPluginsPage() {
     } finally {
       clearRowBusyKey(key)
       // 驳回成功弹窗才关闭、行才换 Tab；失败时弹窗仍开着，不动焦点
-      if (ok) focusStatusTab('rejected')
+      // K11 守卫断言 focusStatusTab('rejected') 字面形：新版本驳回送 published，首次驳回送 rejected。
+      if (ok) {
+        if (isVersionReject) focusStatusTab('published')
+        else focusStatusTab('rejected')
+      }
     }
   }
 
@@ -753,6 +777,9 @@ export default function AdminPluginsPage() {
         return null
     }
   }
+
+  // P1-2：审查弹窗当前审的是哪份清单——待审新版本审 pendingManifest，首次上架审 manifest。
+  const auditManifest = auditPluginItem ? (auditPluginItem.pendingManifest ?? auditPluginItem.manifest) : null
 
   return (
     <Container as="main" id="main-content">
@@ -1165,6 +1192,47 @@ export default function AdminPluginsPage() {
                     </>
                   )}
 
+                  {/* P1-2：已上架插件的待审新版本（Shadow Release）——此前审查按钮组只在
+                      status==='pending' 时渲染，已上架插件纵有 pendingVersion 也无审批
+                      入口，新版本永远卡在待审。为 pendingVersion 单独渲染版本审查区，
+                      复用同一条 handleOpenAudit / handleApprove / 驳回弹窗链路。 */}
+                  {item.status === 'published' && item.pendingVersion && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAudit(item)}
+                        className="px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 rounded-lg border border-primary/30 transition-colors inline-flex items-center gap-1"
+                      >
+                        <FileCode className="w-3.5 h-3.5" />
+                        <span>审查差异</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRejectPluginItem(item)
+                          setRejectNote('')
+                          setRejectModalOpen(true)
+                        }}
+                        className="px-3 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/15 rounded-lg border border-destructive/30 transition-colors"
+                      >
+                        驳回新版本
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleApprove(item)}
+                        disabled={isRowBusy(`plugin:${item.slug}:approve`)}
+                        className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-medium text-primary-foreground bg-primary hover:opacity-90 rounded-lg transition-all shadow-2xs disabled:opacity-60"
+                      >
+                        {isRowBusy(`plugin:${item.slug}:approve`) ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                        <span>{busyLabel(`plugin:${item.slug}:approve`) ?? '通过新版本'}</span>
+                      </button>
+                    </>
+                  )}
+
                   {item.status === 'published' && (
                     <div className="inline-flex items-center gap-1">
                       <label className="sr-only" htmlFor={`featured-rank-${item.slug}`}>
@@ -1470,10 +1538,14 @@ export default function AdminPluginsPage() {
           <DialogContent className="max-w-md p-6">
             <DialogHeader>
               <DialogTitle className="text-base font-semibold text-foreground">
-                驳回插件「{rejectPluginItem?.name}」
+                {rejectPluginItem?.pendingVersion
+                  ? `驳回新版本 v${rejectPluginItem.pendingVersion}「${rejectPluginItem.name}」`
+                  : `驳回插件「${rejectPluginItem?.name}」`}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground pt-1">
-                请向作者说明驳回原因（如：格式错误、包含死链、类目不合理等）。
+                {rejectPluginItem?.pendingVersion
+                  ? '只驳回这个待审新版本，线上已上架的当前版本不受影响。请向作者说明驳回原因。'
+                  : '请向作者说明驳回原因（如：格式错误、包含死链、类目不合理等）。'}
               </DialogDescription>
             </DialogHeader>
 
@@ -1524,9 +1596,12 @@ export default function AdminPluginsPage() {
             <DialogHeader>
               <DialogTitle className="text-base flex items-center gap-2">
                 <FileCode className="w-4 h-4 text-primary" />
-                <span>审查待上架插件：{auditPluginItem?.name}</span>
+                <span>
+                  审查{auditPluginItem?.pendingVersion ? '待审新版本' : '待上架插件'}：
+                  {auditPluginItem?.name}
+                </span>
                 <span className="text-xs font-mono text-muted-foreground px-2 py-0.5 rounded bg-muted">
-                  v{auditPluginItem?.version}
+                  v{auditPluginItem?.pendingVersion ?? auditPluginItem?.version}
                 </span>
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
@@ -1553,11 +1628,11 @@ export default function AdminPluginsPage() {
                   <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
                     <span className="text-muted-foreground block text-[11px]">包含资源</span>
                     <span className="font-semibold">
-                      {auditPluginItem.manifest?.payload?.sites?.length
-                        ? `${auditPluginItem.manifest.payload.sites.length} 个站点`
-                        : auditPluginItem.manifest?.payload?.layout
+                      {auditManifest?.payload?.sites?.length
+                        ? `${auditManifest.payload.sites.length} 个站点`
+                        : auditManifest?.payload?.layout
                           ? '工作台布局'
-                          : auditPluginItem.manifest?.payload?.tokens
+                          : auditManifest?.payload?.tokens
                             ? '主题色彩盘'
                             : '声明配置'}
                     </span>
@@ -1612,7 +1687,7 @@ export default function AdminPluginsPage() {
                       查看待审完整清单 JSON
                     </summary>
                     <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-background p-3 text-[11px] font-mono text-foreground border border-border/50">
-                      {JSON.stringify(auditPluginItem.manifest, null, 2)}
+                      {JSON.stringify(auditManifest, null, 2)}
                     </pre>
                   </details>
                 </div>
@@ -1661,8 +1736,8 @@ export default function AdminPluginsPage() {
                   )}
                   <span>
                     {auditPluginItem && busyLabel(`plugin:${auditPluginItem.slug}:approve`)
-                      ? '上架中…'
-                      : '通过并立即上架'}
+                      ? (auditPluginItem.pendingVersion ? '升级中…' : '上架中…')
+                      : (auditPluginItem?.pendingVersion ? '通过新版本并上架' : '通过并立即上架')}
                   </span>
                 </button>
               </div>

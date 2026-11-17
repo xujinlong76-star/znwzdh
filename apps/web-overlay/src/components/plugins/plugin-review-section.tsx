@@ -97,7 +97,9 @@ export function PluginReviewSection({
       // B-2：旧客户端调的 /api/plugins/reviews/:id/reply 在服务端不存在，
       // 永远 404；现按 slug 调真实路由 /api/plugins/:slug/reviews/:id/reply。
       const res = await replyPluginReview(slug, reviewId, replyText.trim())
-      if (res.ok) {
+      // P1-1：服务端回的是 {success:true, review}（sendJson 原样返回 JSON 体，
+      // 并无 ok 字段），旧判 res.ok 恒为 undefined，作者回复永远走失败分支。
+      if (res.success) {
         toast.success('作者回复已发布')
         setReplyingId(null)
         setReplyText('')

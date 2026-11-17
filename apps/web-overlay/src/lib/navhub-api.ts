@@ -2666,12 +2666,14 @@ export async function replyPluginReview(
   reviewId: string,
   reply: string,
   identity?: string,
-): Promise<{ ok: boolean; review: HubPluginReviewItem }> {
+): Promise<{ success: boolean; review: HubPluginReviewItem }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   // B-2：旧客户端调的是 /api/plugins/reviews/:id/reply，服务端根本没有这条路由
   // （真实路由是 /api/plugins/:slug/reviews/:id/reply），作者回复永远 404。
   // 改为按 slug 调真实路由。
-  return sendJson<{ ok: boolean; review: HubPluginReviewItem }>(
+  // P1-1：服务端回 {success:true, review}，旧类型 {ok:boolean} 是错的——
+  // sendJson 原样返回 JSON 体，并无 ok 字段，调用方判 res.ok 恒为 undefined。
+  return sendJson<{ success: boolean; review: HubPluginReviewItem }>(
     `/api/plugins/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(reviewId)}/reply`,
     'POST',
     { reply },

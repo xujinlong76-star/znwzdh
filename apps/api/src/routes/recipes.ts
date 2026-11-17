@@ -169,7 +169,7 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /* ----------------- 架构配方 & 竞品对比 & 确定性 Favicon ----------------- */
 
   /**
-   * Graph-RAG 多跳技术栈链路配方查询 + Agnes 3.0 Flash 动态场景配方合成
+   * Graph-RAG 多跳技术栈链路配方查询 + AI 模型动态场景配方合成
    * 解决痛点：用户搜索任意业务/开发/创作场景（如“跨境电商出海”、“短视频创作”、“独立开发变现”）时，
    * 不再受限于 3 条静态预设，而是自动结合站内真实馆藏合成端到端分阶段工具链配方。
    */
@@ -302,7 +302,7 @@ ${candidateContext}
   });
 
   /**
-   * 端侧竞品并排对比矩阵合成 + Agnes 3.0 Flash 动态任意工具 PK 矩阵
+   * 端侧竞品并排对比矩阵合成 + AI 模型动态任意工具 PK 矩阵
    * 解决痛点：用户输入任意两个工具对比（如 "ChatGPT vs Claude", "Notion vs Obsidian", "DeepSeek vs Kimi"）时，
    * 不再受限于 6 条预设，实时生成结构化优劣势、开源/收费协议与多维胜负裁决。
    */

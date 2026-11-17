@@ -624,7 +624,7 @@ export interface AiObservabilityMetrics {
   totalTokens: number;
   promptTokens: number;
   completionTokens: number;
-  estimatedCostRmb: number; // based on Agnes 3.0 Flash pricing
+  estimatedCostRmb: number; // based on configured model pricing
   activeModel: string;
   byScenario: AiScenarioStat[];
   hourlyTrend: AiHourlyTrendPoint[];

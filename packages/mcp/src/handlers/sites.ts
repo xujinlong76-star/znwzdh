@@ -93,7 +93,7 @@ export const siteHandlers = {
 
       if (input.enrich) {
         const cats = await ctx.repo.listCategories();
-        // 与 HTTP 入口共用同一解析链：系统配置 > 环境变量 > 内置默认（Agnes）
+        // 与 HTTP 入口共用同一解析链：系统配置 > 环境变量 > 内置默认（未配置时降级本地）
         const resolved = await ctx.resolveLlm?.();
         const e = await enrichUrl(input.url, {
           llm: resolved ? enrichLlmOf(resolved) as never : undefined, guard: ctx.config.fetch,

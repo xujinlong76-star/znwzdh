@@ -8,7 +8,7 @@
  *   「今日新收录」，没有就标「最近收录」并带每站的收录日期，不冒充今日；
  * - 站内热度**不进简报**：trend_score 是近 7 天点击/收藏重算，没有
  *   「今日」口径，硬塞进来就是编造——简报只用上面两类真实素材；
- * - 小猫猫开场白由 Agnes 生成时必须锚定当天真实条目（校验见
+ * - 小猫猫开场白由 AI 模型生成时必须锚定当天真实条目（校验见
  *   anchoredOpening），不达标就丢弃、用模板句，绝不让模型编条目。
  */
 import type { AppContext } from "../context.ts";
@@ -228,7 +228,7 @@ export function anchoredOpening(raw: string, payload: BriefPayload): string | nu
 
 export type OpeningCaller = (payload: BriefPayload) => Promise<string | null>;
 
-/** 生产开场白：Agnes 生成 → 锚定校验 → 不过就 null（外层用模板） */
+/** 生产开场白：AI 模型生成 → 锚定校验 → 不过就 null（外层用模板） */
 export function makeLlmOpeningCaller(ctx: AppContext): OpeningCaller {
   return async (payload) => {
     const llm = await resolveLlm(ctx, null);
@@ -283,7 +283,7 @@ export interface GeneratedBrief {
   payload: BriefPayload;
 }
 
-/** 组版 + 开场白 + 落库。openingCaller 可注入（测试用），默认走 Agnes */
+/** 组版 + 开场白 + 落库。openingCaller 可注入（测试用），默认走 AI 模型 */
 export async function generateDailyBrief(
   ctx: AppContext,
   opts: { now?: Date; openingCaller?: OpeningCaller } = {},

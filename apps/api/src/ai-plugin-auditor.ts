@@ -493,7 +493,7 @@ export async function evaluatePluginAudit(
         json: true,
         timeoutMs: 15_000,
       });
-      // 报模型名要报真的：以前写 `resolved.provider.model || "agnes-3.0-flash"`，
+      // 报模型名要报真的：以前缺省就硬编码一个模型名，
       // 管理端只填了名字没填 model 时，报告会自称跑过一个并不存在的模型。
       auditModel = chatRes.model || resolved.provider.model || "unknown-model";
 

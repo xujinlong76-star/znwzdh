@@ -6,7 +6,7 @@
  *  1. **诚实降级**：截图依赖 Chromium 二进制。没装浏览器时**明确报
  *     `vision_unavailable` 并给出安装命令**，绝不返回编造的分类/标签
  *     （那会让运营把假数据当真，是本仓库反复治理过的同类问题）。
- *  2. **不落盘**：截图只在内存里以 base64 data URL 传给模型（已实测 Agnes
+ *  2. **不落盘**：截图只在内存里以 base64 data URL 传给模型（已实测多模态模型
  *     接受 data URL 并计入 image_tokens）。避免为一次性分析引入截图存储、
  *     清理任务与隐私面。
  *  3. **SSRF 与抓取同策略**：目标 URL 走 `assertUrlShape` + `resolveAndCheck`，

@@ -16,7 +16,7 @@ import {
   SiteCreateBody,
   UNCATEGORIZED_CATEGORY_ID,
 } from "@navhub/core";
-import { AGNES_IMAGE_MODEL, AGNES_VIDEO_MODEL, createVideoTask, enrichUrl, generateImage } from "@navhub/ai";
+import { enrichUrl } from "@navhub/ai";
 import { indexSite, indexSitesBatch } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { callLlm, createEnrichUsageCallback } from "../llm-usage.ts";
@@ -148,7 +148,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
 
   /**
    * 站点 AI 深度透视雷达 (AI Deep Radar)
-   * 运用 Agnes 3.0 Flash 智能分析站点的核心定位、收费政策排雷、优劣势与精选平替
+   * 运用 AI 模型智能分析站点的核心定位、收费政策排雷、优劣势与精选平替
    */
   app.get("/api/sites/:id/radar", { config: { scope: "public", cache: { maxAge: 3600, etag: true } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -345,7 +345,9 @@ ${peerContext}
 
   /**
    * 站点场景灵感与视觉生成 (AI Visual Generation)
-   * 运用 Agnes Image 2.5 Flash 结合站点定位生成高清场景海报/封面视觉
+   * 2026-11-18 起图像生成功能暂停：内置图像模型已随 Agnes 彻底移除，
+   * 目前没有可配置的图像模型字段；恢复需另行接入支持图像生成的模型。
+   * 此处明确报 400，不许静默返回假图或空图。
    */
   app.post(
     "/api/sites/:id/visual",
@@ -363,46 +365,14 @@ ${peerContext}
         return { error: "站点不存在" };
       }
 
-      const body = (req.body ?? {}) as { prompt?: string };
-      const llm = await resolveLlm(ctx);
-      if (!llm.provider.apiKey) {
-        reply.code(400);
-        return { error: "未配置可用 AI 密钥" };
-      }
-
-      const basePrompt =
-        body.prompt?.trim() ||
-        `Clean technical architecture blueprint and dataflow cheatsheet for "${site.title}" (${site.description || "software tool"}). Minimalist system diagram layout: left input boxes, center core engine labeled "${site.title}", right output artifacts. Dark mode developer theme, crisp typography, clean vector lines, high readability, technical flowchart aesthetic, 16:9 aspect ratio`;
-
-      try {
-        const result = await generateImage({
-          prompt: basePrompt,
-          apiKey: llm.provider.apiKey,
-          baseUrl: llm.provider.baseUrl,
-          model: AGNES_IMAGE_MODEL,
-        });
-
-        return {
-          success: true,
-          imageUrl: result.url,
-          prompt: basePrompt,
-          model: result.model,
-          taskId: result.taskId,
-        };
-      } catch (err) {
-        req.log.warn({ err: String(err) }, "站点场景视觉生成失败");
-        reply.code(502);
-        return {
-          error: "图像生成服务暂时不可用，请稍后重试",
-          detail: err instanceof Error ? err.message : String(err),
-        };
-      }
+      reply.code(400);
+      return { error: "未配置 AI 图像模型，图像生成功能暂不可用" };
     }
   );
 
   /**
    * 全球化多语言本地化透视 (Multilingual AI Localization)
-   * 运用 Agnes 3.0 Flash 将任意中外站点快速翻译并进行本土语境分析，
+   * 运用 AI 模型将任意中外站点快速翻译并进行本土语境分析，
    * 彻底消除语言障碍、并排查境内直连/支付暗坑。
    */
   app.get(
@@ -541,8 +511,9 @@ ${peerContext}
 
   /**
    * 站点 3 秒核心交互微演示 (AI Video Micro-Demo Engine)
-   * 运用 Agnes Video 2.5 Flash 生成 720P 核心操作微演示视频。
-   * 当官方免费算力队列满载或排队时，自动无缝降级为基于架构蓝图的高保真交互微动效模拟。
+   * 2026-11-18 起视频生成功能暂停：内置视频模型已随 Agnes 彻底移除，
+   * 目前没有可配置的视频模型字段；一律返回高保真交互微动效模拟
+   * （既有诚实降级路径，绝不谎称已生成真实视频）。已缓存的真实视频仍照常返回。
    */
   app.post(
     "/api/sites/:id/video-demo",
@@ -570,92 +541,17 @@ ${peerContext}
         // 容错降级：缓存读取异常直接穿透继续执行生成
       }
 
-      const llm = await resolveLlm(ctx);
-      if (!llm.provider.apiKey) {
-        reply.code(400);
-        return { error: "未配置可用 AI 密钥" };
-      }
-
-      const videoPrompt = `Clean minimalist software UI interaction walkthrough animation of "${site.title}" (${(site.description || "").slice(0, 80)}). Modern dark developer dashboard theme, responsive interface, smooth real-time streaming data visual chart animation, high definition 720P, 60fps tech product screencast`;
-
-      try {
-        const taskRes = await createVideoTask({
-          prompt: videoPrompt,
-          apiKey: llm.provider.apiKey,
-          baseUrl: llm.provider.baseUrl,
-          model: AGNES_VIDEO_MODEL,
-          seconds: "5",
-          size: "720P",
-          aspectRatio: "16:9",
-        });
-
-        if (taskRes.ok && taskRes.status === "completed" && taskRes.url) {
-          const payload = {
-            siteId: site.id,
-            status: "completed",
-            videoUrl: taskRes.url,
-            model: taskRes.model,
-          };
-          try {
-            await ctx.repo.setSystemState(cacheKey, payload);
-          } catch {
-            // 容错降级：视频生成结果写缓存失败不阻断接口返回
-          }
-          return { ok: true, cached: false, ...payload };
-        }
-
-        if (taskRes.ok && taskRes.taskId) {
-          return {
-            ok: true,
-            status: "processing",
-            taskId: taskRes.taskId,
-            message: "视频正在云端 Agnes 2.5 集群渲染中...",
-            model: taskRes.model,
-          };
-        }
-
-        // 官方上游免费算力队列满载 (503 queue_full)：无缝降级为高保真架构视觉与交互微动效
-        let fallbackImageUrl = "";
-        try {
-          const imgRes = await generateImage({
-            prompt: `Clean technical architecture dataflow diagram for "${site.title}" (${(site.description || "software tool").slice(0, 60)}). Minimalist dark layout: left input trigger, center engine, right output artifacts. Crisp vector lines, high readability, 16:9`,
-            apiKey: llm.provider.apiKey,
-            baseUrl: llm.provider.baseUrl,
-            model: AGNES_IMAGE_MODEL,
-          });
-          fallbackImageUrl = imgRes.url;
-        } catch {
-          // 容错降级：架构图生成异常采用内置动效
-        }
-
-        return {
-          ok: true,
-          status: "simulated_preview",
-          fallbackType: "interactive_simulation",
-          previewImageUrl: fallbackImageUrl,
-          simulationSteps: [
-            `1. 初始化 ${site.title} 核心控制台与上下文`,
-            `2. 触发主场景流水线执行实时流式交互`,
-            `3. 验证产出物并极速导出成品`,
-          ],
-          message: "官方免费视频集群当前排队高峰，已无缝切换至高保真交互式微动效演示！",
-          model: AGNES_VIDEO_MODEL,
-        };
-      } catch (err) {
-        req.log.warn({ err: String(err) }, "视频微演示任务调度失败");
-        return {
-          ok: true,
-          status: "simulated_preview",
-          fallbackType: "interactive_simulation",
-          simulationSteps: [
-            `1. 打开 ${site.title} 官方在线控制台`,
-            `2. 运行核心实战工作流`,
-            `3. 查看处理结果与指标`,
-          ],
-          message: "已启用本地交互式微动效演示",
-          detail: err instanceof Error ? err.message : String(err),
-        };
-      }
+      return {
+        ok: true,
+        status: "simulated_preview",
+        fallbackType: "interactive_simulation",
+        simulationSteps: [
+          `1. 初始化 ${site.title} 核心控制台与上下文`,
+          `2. 触发主场景流水线执行实时流式交互`,
+          `3. 验证产出物并极速导出成品`,
+        ],
+        message: "未配置 AI 视频模型，已启用本地交互式微动效演示",
+      };
     }
   );
 
@@ -954,7 +850,7 @@ ${peerContext}
   /**
    * 书签批量智能归类与简介补全（AI Batch Bookmark Classifier）
    * 解决痛点：用户导入数百个浏览器书签时，超过半数书签无分类或仅有简短标题，手动逐条分类极其耗时。
-   * 运用 Agnes 3.0 Flash 一次性对齐权威叶子分类并生成简明中文功能简介。
+   * 运用 AI 模型一次性对齐权威叶子分类并生成简明中文功能简介。
    */
   app.post(
     "/api/sites/batch-classify",

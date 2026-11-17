@@ -23,7 +23,7 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
   /**
    * 投稿前 AI 网址智能识别与一键自动填表（解决手动填 5 个字段的繁琐痛点）
-   * 安全抓取网页标题与元信息，并调用 Agnes 3.0 Flash 自动生成中文简介、匹配主/子分类及推荐理由。
+   * 安全抓取网页标题与元信息，并调用 AI 模型自动生成中文简介、匹配主/子分类及推荐理由。
    */
   app.post(
     "/api/submissions/prefill",

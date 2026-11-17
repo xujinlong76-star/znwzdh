@@ -240,6 +240,17 @@
    "why": "分多次提交累积出的缺口（甲加 vi.mock、乙才补 afterAll）只有推送前扫全仓才看得见"
   },
   {
+   "name": "a11y-token-changed",
+   "when": "prepush",
+   "runner": "prepush-gates",
+   "blocks": true,
+   "test": [
+    "scripts/check-a11y-token-changed.test.ts",
+    "scripts/prepush-gates.test.ts"
+   ],
+   "why": "冷区 a11y token 禁令是全树扫描型守卫，pre-commit 选测结构性漏选（U-33 第五次出现）；推送前只扫本次改动文件，<1s"
+  },
+  {
    "name": "test-sqlite",
    "when": "ci",
    "job": "test-sqlite",

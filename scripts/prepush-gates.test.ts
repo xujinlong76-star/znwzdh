@@ -8,13 +8,14 @@ import { hasImpl, pairMirrorDrift, planGates } from "./prepush-gates.mjs";
  * 把跳过做成静默，等于让门禁看起来通过却没跑；把跳过做成失败，
  * 又会用别人的半成品挡住我的推送。
  *
- * 后三枚（客户端模块图、core 镜像、测试镜像配对）是特意做成「不受 dirty 影响」的：它们读 HEAD 的提交内容，
+ * 读 HEAD 的几枚（客户端模块图、core 镜像、测试镜像配对、依赖完整性、mock 卫生、
+ * a11y token）是特意做成「不受 dirty 影响」的：它们读 HEAD 的提交内容，
  * 也就是正要推出去的东西，别人的未提交改动根本进不了它们的视野。
  * core 镜像这枚尤其不能按工作区判——2026-10-28 它就是「工作区绿、HEAD 红」的形态。
  * 测试镜像配对同因：`10e38d3a`（mobile-nav）与 `d7cf72d6`（sync-health-card）两次「只提交 overlay 侧守卫」
  * 都过了工作区口径的闸，HEAD 上留下两份自相矛盾的守卫副本，而 CI 先跑 vendor-web 把它盖掉了。
  */
-const REF_GATES = ["client-node-imports", "core-mirrors", "test-mirror-pairs", "deps-integrity-prepush", "mock-hygiene-prepush"];
+const REF_GATES = ["client-node-imports", "core-mirrors", "test-mirror-pairs", "deps-integrity-prepush", "mock-hygiene-prepush", "a11y-token-changed"];
 
 describe("planGates：干净就查，脏就跳过并说明", () => {
   it("工作区干净时所有闸门都跑", () => {

@@ -772,6 +772,11 @@ export default function PluginDetailView({
                 </button>
               </div>
 
+              {/* P1-6：星标 ≠ 收藏，星标不在 /favorites */}
+              <p data-testid="star-recovery-hint" className="text-[11px] text-muted-foreground sm:text-right">
+                <Link href="/marketplace?starred=1" className="text-primary hover:underline" title="只看你已星标的插件">星标可在插件中心找回</Link>
+              </p>
+
               {/* 安装 / 更新 / 卸载主要按钮 */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                 {bundleBlocked && !plugin.installed && (

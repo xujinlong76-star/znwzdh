@@ -527,6 +527,18 @@ export function PluginCard({
             <span className="font-mono text-[11px]">{starCount}</span>
           </button>
 
+          {/* P1-6：星标 ≠ 收藏——已星标时在按钮旁写明找回入口，星标不在 /favorites */}
+          {starred && (
+            <Link
+              href="/marketplace?starred=1"
+              data-testid="star-recovery-hint"
+              className="text-[11px] text-primary hover:underline whitespace-nowrap"
+              title="只看你已星标的插件"
+            >
+              插件中心可找回
+            </Link>
+          )}
+
           <span className="text-muted-foreground flex items-center gap-1 font-mono text-[11px]">
             <Download className="w-3.5 h-3.5 text-muted-foreground" />
             {plugin.installCount || 0}

@@ -5,7 +5,7 @@ import { ArrowUpRight } from 'lucide-react'
 import {
   admissionReminderFor,
   type ExamInfo,
-  type GuokaoAdmissionReminder,
+  type GuokaoAdmissionReminder as GuokaoAdmissionReminderData,
 } from '@/lib/exam-calendar'
 import { safeHref } from '@/lib/safe-url'
 
@@ -26,7 +26,7 @@ export function GuokaoAdmissionReminder({
   reminder,
   variant,
 }: {
-  reminder: GuokaoAdmissionReminder | null
+  reminder: GuokaoAdmissionReminderData | null
   variant: 'strip' | 'card'
 }) {
   if (!reminder) return null

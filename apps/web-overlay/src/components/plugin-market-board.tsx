@@ -636,7 +636,7 @@ export function PluginMarketBoard({
         {/* 排序退化注明：计数型排序（安装 / 星标 / 评分 / 飙升）在安装量、星标与评价
             全为 0 时与「最新发布」同序，如实注明口径，不编假数据让排序看起来分化。 */}
         {!loading && items.length > 0 && sortDegenerate && (
-          <p className="text-xs text-muted-foreground -mt-2" data-testid="sort-degenerate-note" role="status">
+          <p className="rounded-md border border-amber-500/50 bg-amber-500/15 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300" data-testid="sort-degenerate-note" role="status">
             当前插件安装量、星标与评价均为 0，安装 / 星标 / 评分 / 飙升排序结果与最新发布一致
           </p>
         )}

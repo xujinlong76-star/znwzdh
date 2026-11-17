@@ -151,7 +151,7 @@ describe('toggleFollow', () => {
     expect(off.checked).toEqual({ guokao: ['准考证打印'] })
   })
 
-  it('已结束的考试不再接受新关注（纵深防御：岛层按钮已禁用，纯函数层也写不进）', () => {
+  it('已结束且无可办节点的考试不再接受新关注（纵深防御：岛层按钮已禁用，纯函数层也写不进；U-106：仍有可办节点时放行，见下）', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
     // 国考 11-29 已过（11-30 时），考研八场全过（12-21 时）
     expect(toggleFollow(empty, 'guokao', NOV_30_0800_CST)).toBe(empty)
@@ -191,7 +191,7 @@ describe('toggleNodeCheck', () => {
     expect(toggleNodeCheck(followed, 'guokao', '不存在的节点', NOV_13_0800_CST)).toBe(followed)
   })
 
-  it('已结束的考试勾选与取消勾选都是 no-op（考前清单只在考前有意义）', () => {
+  it('已结束且无可办节点的考试勾选与取消勾选都是 no-op（考前清单只在考前有意义；U-106：仍有可办节点时放行，见下）', () => {
     const ended: MyExamsState = { followed: ['guokao'], checked: {} }
     expect(toggleNodeCheck(ended, 'guokao', '准考证打印', NOV_30_0800_CST)).toBe(ended)
     const checkedEnded: MyExamsState = {
@@ -201,6 +201,44 @@ describe('toggleNodeCheck', () => {
     expect(toggleNodeCheck(checkedEnded, 'guokao', '准考证打印', NOV_30_0800_CST)).toBe(
       checkedEnded,
     )
+  })
+})
+
+describe('U-106：已结束但仍有可办节点时可关注、可勾选', () => {
+  it('11-18 未关注成考可关注：统考已结束但三省查分节点当天仍可办', () => {
+    const empty: MyExamsState = { followed: [], checked: {} }
+    expect(examStatus(chengkao, NOV_18_0800_CST)).toBe('ended')
+    expect(hasActionableNodes(chengkao, NOV_18_0800_CST)).toBe(true)
+    const on = toggleFollow(empty, 'chengkao', NOV_18_0800_CST)
+    expect(on.followed).toEqual(['chengkao'])
+  })
+
+  it('关注后江西/广东查分节点可勾选，取消勾选也放行', () => {
+    const followed: MyExamsState = { followed: ['chengkao'], checked: {} }
+    const jiangxi = toggleNodeCheck(followed, 'chengkao', '江西成绩查询', NOV_18_0800_CST)
+    expect(jiangxi.checked).toEqual({ chengkao: ['江西成绩查询'] })
+    const guangdong = toggleNodeCheck(jiangxi, 'chengkao', '广东成绩查询', NOV_18_0800_CST)
+    expect(guangdong.checked).toEqual({ chengkao: ['江西成绩查询', '广东成绩查询'] })
+    const uncheck = toggleNodeCheck(guangdong, 'chengkao', '江西成绩查询', NOV_18_0800_CST)
+    expect(uncheck.checked).toEqual({ chengkao: ['广东成绩查询'] })
+  })
+
+  it('11-30 恢复禁用：节点全过后新关注与勾选都是 no-op', () => {
+    const empty: MyExamsState = { followed: [], checked: {} }
+    expect(hasActionableNodes(chengkao, NOV_30_0800_CST)).toBe(false)
+    expect(toggleFollow(empty, 'chengkao', NOV_30_0800_CST)).toBe(empty)
+    const followed: MyExamsState = { followed: ['chengkao'], checked: {} }
+    expect(toggleNodeCheck(followed, 'chengkao', '江西成绩查询', NOV_30_0800_CST)).toBe(followed)
+  })
+
+  it('11-30 已关注仍可取消关注（清理出口不受恢复禁用影响），勾选随状态保留', () => {
+    const state: MyExamsState = {
+      followed: ['chengkao'],
+      checked: { chengkao: ['江西成绩查询'] },
+    }
+    const off = toggleFollow(state, 'chengkao', NOV_30_0800_CST)
+    expect(off.followed).toEqual([])
+    expect(off.checked).toEqual({ chengkao: ['江西成绩查询'] })
   })
 })
 

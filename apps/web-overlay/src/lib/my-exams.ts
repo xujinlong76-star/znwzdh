@@ -14,6 +14,7 @@ import {
   EXAMS,
   examStatus,
   firstExamDay,
+  hasActionableNodes,
   isNodeActionable,
   type ExamInfo,
   type ExamNode,
@@ -68,8 +69,10 @@ export function isFollowed(state: MyExamsState, examId: string): boolean {
 
 /**
  * 关注 / 取消关注。未知考试 id 是 no-op；取消关注保留勾选（再关注回来还在）。
- * 已结束的考试不再接受新关注（岛层按钮已禁用，这里是纵深防御：任何未来
- * 调用方都写不进死关注）；已关注的仍可取消关注，保留清理出口，不删用户数据。
+ * 已结束且无可办节点的考试不再接受新关注（岛层按钮已禁用，这里是纵深防御：
+ * 任何未来调用方都写不进死关注）；U-106：统考已过但节点仍可办时（成考 11-18
+ * 的成绩查询/复核窗口）仍接受新关注，口径与岛层按钮一致（ended &&
+ * !hasPendingNodes 才禁用）；已关注的仍可取消关注，保留清理出口，不删用户数据。
  */
 export function toggleFollow(
   state: MyExamsState,
@@ -78,7 +81,12 @@ export function toggleFollow(
 ): MyExamsState {
   const exam = EXAMS.find((e) => e.id === examId)
   if (!exam) return state
-  if (examStatus(exam, nowMs) === 'ended' && !isFollowed(state, examId)) return state
+  if (
+    examStatus(exam, nowMs) === 'ended' &&
+    !hasActionableNodes(exam, nowMs) &&
+    !isFollowed(state, examId)
+  )
+    return state
   return {
     ...state,
     followed: isFollowed(state, examId)
@@ -90,8 +98,9 @@ export function toggleFollow(
 /**
  * 勾选 / 取消勾选一个节点。只对已关注的考试生效，未关注、未知考试、
  * 不属于该考试的节点一律 no-op（调用方不需先判，状态层兜底）。
- * 已结束的考试勾选与取消勾选都是 no-op（岛层复选框已禁用，这里是纵深
- * 防御：考前清单只在考前有意义，考后不再改）。
+ * 已结束且无可办节点的考试勾选与取消勾选都是 no-op（岛层复选框已禁用，
+ * 这里是纵深防御）；U-106：统考已过但节点仍可办时（成考查分/复核窗口）
+ * 勾选放行，口径与岛层复选框一致（ended && !hasPendingNodes 才禁用）。
  */
 export function toggleNodeCheck(
   state: MyExamsState,
@@ -101,7 +110,7 @@ export function toggleNodeCheck(
 ): MyExamsState {
   const exam = EXAMS.find((e) => e.id === examId)
   if (!exam || !isFollowed(state, examId)) return state
-  if (examStatus(exam, nowMs) === 'ended') return state
+  if (examStatus(exam, nowMs) === 'ended' && !hasActionableNodes(exam, nowMs)) return state
   if (!exam.nodes.some((n) => n.label === nodeLabel)) return state
   const current = state.checked[examId] ?? []
   const next = current.includes(nodeLabel)

@@ -183,7 +183,21 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
    */
   app.post(
     "/api/plugins/:slug/reviews",
-    { config: { scope: "public", rateLimit: { max: 15, timeWindow: "1 hour" } } },
+    {
+      config: {
+        scope: "public",
+        rateLimit: {
+          max: 15,
+          timeWindow: "1 hour",
+          // 按调用方身份分桶（E2E 2/2 的 429 根因）：默认 key 是 req.ip，
+          // E2E 分片与生产 NAT 下全部请求同 IP，共用 15 次/小时的桶；
+          // requestIdentityOf 在 onRequest 阶段可读头（X-Navhub-Anon-Id /
+          // x-navhub-user-id）、?anonId= 查询与令牌 owner，body 读不到时
+          // 回退 req.ip（与改造前同口径，不放宽也不收紧）。
+          keyGenerator: (req) => requestIdentityOf(req as never) ?? req.ip,
+        },
+      },
+    },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
       const body = (req.body ?? {}) as { rating?: unknown; title?: unknown; content?: unknown; identity?: unknown };

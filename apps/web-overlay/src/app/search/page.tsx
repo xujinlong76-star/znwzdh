@@ -75,10 +75,10 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const nocorrect = sp.nocorrect === '1' || (Array.isArray(sp.nocorrect) && sp.nocorrect[0] === '1')
   const hasFilter = q || tag || category || Object.keys(facets).length > 0
 
-  const [{ result, failed, unavailable }, facetGroups, trending] = await Promise.all([
+  const [{ result, failed, unavailable, plugins }, facetGroups, trending] = await Promise.all([
     hasFilter
       ? loadSearchPage(q, page, tag, { category, facets, nocorrect })
-      : Promise.resolve({ result: null, failed: false, unavailable: [] }),
+      : Promise.resolve({ result: null, failed: false, unavailable: [], plugins: null }),
     // 分面分布按当前作用域统计：分类内只统计该分类，避免给出「点了一定空」的选项。
     // 取数失败返回 null → 整块不渲染，不阻塞结果。
     hubGet<{ facets?: FacetGroup[] }>(
@@ -109,6 +109,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       result={result}
       failed={failed}
       unavailable={unavailable}
+      plugins={plugins}
       recommended={recommended}
       externalRel={externalRel}
     />

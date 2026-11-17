@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertTriangle, ArrowRight, ExternalLink, Search, Sparkles, MonitorPlay, Globe } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ExternalLink, Search, Sparkles, MonitorPlay, Globe, Store } from 'lucide-react'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -12,7 +12,8 @@ import {
   searchMaxPage,
   searchPageWindow,
 } from '@/lib/search-page'
-import type { HubSearchHit, HubSearchResult, HubSite } from '@/lib/navhub-api'
+import type { HubPluginSearchResponse, HubSearchHit, HubSearchResult, HubSite } from '@/lib/navhub-api'
+import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import { Fragment } from 'react'
 import { highlightParts } from '@/lib/highlight'
 import { SearchFacetBar, type FacetGroup } from '@/components/search-facet-bar'
@@ -40,6 +41,8 @@ interface SearchResultsProps {
   result: HubSearchResult | null
   failed: boolean
   unavailable: HubSearchHit[]
+  /** 与查询词匹配的插件（GET /api/plugins/search，前 5 条）；null = 未取 / 取数失败，分区不渲染 */
+  plugins?: HubPluginSearchResponse | null
   /** 零结果救援的「今日热榜」：今日热榜前 6（/search 页取数，失败为空数组） */
   recommended?: HubSite[]
   /** 收录站点外链 rel（站点级设置，服务端透传）；缺省 nofollow */
@@ -256,6 +259,7 @@ function EmptyResults({
   externalRel = 'nofollow noopener noreferrer',
   correction = null,
   hideGenericRecommendations = false,
+  hasPlugins = false,
 }: {
   q: string
   page: number
@@ -274,6 +278,12 @@ function EmptyResults({
    * 只留 AI 找站 / 投稿收录 / 存为待找 / 新建收藏四个明确出口（协调人决定 1）。
    */
   hideGenericRecommendations?: boolean
+  /**
+   * A3（方案 b）：插件命中时空态仍渲染，但标题必须限定为站点——页面
+   * 上方已有插件分区，再写无限定的「站内暂时没有收录」会自相矛盾，
+   * 且与状态行「站点暂无匹配；插件市场有 N 个相关结果。」口径一致。
+   */
+  hasPlugins?: boolean
 }) {
   return (
     <section className="space-y-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-6">
@@ -284,13 +294,23 @@ function EmptyResults({
       <p className="text-sm font-medium text-foreground">
         {page > 1
           ? `第 ${page} 页没有更多结果。`
-          : tag
-            ? q
-              ? `站内暂时没有收录与“${q}”匹配、且带标签「${tag}」的站点。`
-              : `标签「${tag}」下暂时没有站点。`
-            : correction
-              ? `换了“${correction.corrected}”还是没有——站内暂时没有收录匹配的站点。`
-              : `站内暂时没有收录与“${q}”匹配的站点。`}
+          : hasPlugins
+            ? tag
+              ? q
+                ? `站点暂无与“${q}”匹配、且带标签「${tag}」的收录。`
+                : `标签「${tag}」下站点暂无收录。`
+              : correction
+                ? `换了“${correction.corrected}”还是没有——站点暂无匹配的收录。`
+                : q
+                  ? `站点暂无与“${q}”匹配的收录。`
+                  : `站点暂无匹配的收录。`
+            : tag
+              ? q
+                ? `站内暂时没有收录与“${q}”匹配、且带标签「${tag}」的站点。`
+                : `标签「${tag}」下暂时没有站点。`
+              : correction
+                ? `换了“${correction.corrected}”还是没有——站内暂时没有收录匹配的站点。`
+                : `站内暂时没有收录与“${q}”匹配的站点。`}
       </p>
       {/* A11：零结果不是死胡同——两个真出口放最前（AI 找站带词自动问、
           投稿收录带词预填），再往下才是换词/热门词/全网穿透这些次要出口 */}
@@ -429,6 +449,16 @@ function EmptyResults({
             <span>在视频库中搜索 “{q}”</span>
           </Link>
         ) : null}
+        {/* P1-3：零结果页的插件出口——不依赖插件取数成败，始终可点去市场搜 */}
+        {q ? (
+          <Link
+            className="inline-flex items-center gap-1 text-primary hover:underline font-medium"
+            href={`/marketplace?q=${encodeURIComponent(q)}`}
+          >
+            <Store className="w-3.5 h-3.5" />
+            <span>在插件市场中搜索 “{q}”</span>
+          </Link>
+        ) : null}
       </nav>
     </section>
   )
@@ -457,6 +487,78 @@ function UnavailableSection({ hits, q }: { hits: HubSearchHit[]; q: string }) {
       </div>
       <ul className="space-y-2">
         {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} externalRel={externalRel} /> : null))}
+      </ul>
+    </section>
+  )
+}
+
+/** 插件类型文案与插件市场列表页同一套（plugin-market-board.tsx 的 KIND_LABELS） */
+const PLUGIN_KIND_LABELS: Record<string, string> = {
+  'site-pack': '网站包',
+  'workspace-preset': '工作台预设',
+  theme: '主题',
+  'search-pack': '搜索引擎包',
+  bundle: '组合包',
+}
+
+/**
+ * P1-3：/search 的「插件市场」分区。
+ *
+ * 搜索浮层用同一接口（GET /api/plugins/search）能搜到插件，结果页却只取
+ * 站点——同一查询前后不一致。分区只展示前 5 条，更多走 /marketplace?q=…；
+ * 详情链接经 pluginDetailHref（非 published 记录走 /preview，不直接 404）。
+ * items 为空时返回 null：插件取数失败（plugins=null）与零命中都不留空分区。
+ */
+export function PluginSection({ plugins, q }: { plugins: HubPluginSearchResponse; q: string }) {
+  const items = plugins.items ?? []
+  if (items.length === 0) return null
+  return (
+    <section aria-label="插件市场" className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          <Store className="h-4 w-4 text-primary" aria-hidden />
+          插件市场
+          {plugins.total > items.length ? (
+            <span className="text-xs font-normal text-muted-foreground">共 {plugins.total} 个</span>
+          ) : null}
+          {plugins.degraded ? (
+            <span className="text-[11px] font-normal text-muted-foreground">语义检索未就绪 · 关键词匹配</span>
+          ) : null}
+        </h2>
+        <Link
+          href={`/marketplace?q=${encodeURIComponent(q)}`}
+          className="text-xs text-primary hover:underline"
+        >
+          查看全部插件结果 →
+        </Link>
+      </div>
+      <ul className="space-y-2">
+        {items.map((plugin) => (
+          <li
+            key={plugin.id}
+            className="rounded-xl border border-border/70 bg-card/60 p-3 transition-colors hover:border-border hover:bg-muted/30"
+          >
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <Link
+                href={pluginDetailHref(plugin.slug, plugin.status)}
+                className="max-w-full truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
+              >
+                <Highlight text={plugin.name} query={q} />
+              </Link>
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
+                {PLUGIN_KIND_LABELS[plugin.kind] ?? plugin.kind}
+              </span>
+              {plugin.version ? (
+                <span className="text-[11px] text-muted-foreground">v{plugin.version}</span>
+              ) : null}
+            </div>
+            {plugin.description ? (
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                <Highlight text={plugin.description} query={q} />
+              </p>
+            ) : null}
+          </li>
+        ))}
       </ul>
     </section>
   )
@@ -546,6 +648,7 @@ export function SearchResults({
   result,
   failed,
   unavailable,
+  plugins = null,
   recommended = [],
   externalRel = 'nofollow noopener noreferrer',
 }: SearchResultsProps) {
@@ -561,6 +664,14 @@ export function SearchResults({
   // 「换个词试试 / 大家在搜 / 今日热榜」这类泛推荐（协调人决定 1）。
   // 未纠正的零结果态保持现有 P0 兜底不变。
   const correctedZero = Boolean(correction) && hits.length === 0
+  // A3（方案 b）：站点零命中但插件命中时，EmptyResults 仍渲染——
+  // 插件命中可能是弱匹配，用户要找的站点仍未收录，不能丢掉页内唯一的
+  // 升级路径（AI 找站 / 投稿收录 / 存为待找 / 新建收藏四个出口都挂在
+  // EmptyResults 内，抑制它会比协调人划定的最精简态还少）。只把空态
+  // 标题限定为站点（见 EmptyResults 的 hasPlugins 分支），状态行亦
+  // 已改写为「站点暂无匹配；插件市场有 N 个相关结果。」；PluginSection
+  // 保持在 EmptyResults 之前，视觉优先。
+  const hasPlugins = (plugins?.items.length ?? 0) > 0
   const excluded = result?.excludedTerms ?? []
   const semanticsOff = result !== null && result.semanticAvailable === false
   // 语义 KNN 对任何输入都会返回最近邻，乱码查询也会"有结果"。
@@ -739,7 +850,9 @@ export function SearchResults({
                         ? `没有可直接展示的正常站点；有 ${unavailable.length} 个字面匹配的站点最近巡检打不开（见下方）`
                         : page > 1
                           ? '这一页没有更多结果'
-                          : '站内暂时没有收录匹配的站点'}
+                          : hasPlugins
+                            ? `站点暂无匹配；插件市场有 ${plugins?.total ?? 0} 个相关结果。`
+                            : '站内暂时没有收录匹配的站点'}
                 </p>
                 {semanticsOff && !failed ? (
                   <span className="text-[11px] text-muted-foreground">
@@ -803,8 +916,15 @@ export function SearchResults({
                 </ul>
               ) : null}
 
+              {/* P1-3：插件分区与站点结果并列——插件取数失败（plugins=null）
+                  或零命中时不渲染；放在 EmptyResults 之前，站点零命中但插件
+                  有命中时用户先看到插件，不会只剩「没有收录」。 */}
+              {hasPlugins && plugins ? <PluginSection plugins={plugins} q={q} /> : null}
+
               {/* 有巡检打不开的字面命中时不说「没有找到」：下方分区就是匹配项，
-                  先摆「零结果」再摆匹配行会自相矛盾 */}
+                  先摆「零结果」再摆匹配行会自相矛盾。A3（方案 b）：插件有命中时
+                  EmptyResults 仍渲染（标题经 hasPlugins 限定为站点，四个出口
+                  保留），PluginSection 在它之前，视觉优先。 */}
               {!failed && hits.length === 0 && unavailable.length === 0 ? (
                 <EmptyResults
                   q={q}
@@ -817,6 +937,7 @@ export function SearchResults({
                   externalRel={externalRel}
                   correction={correction}
                   hideGenericRecommendations={correctedZero}
+                  hasPlugins={hasPlugins}
                 />
               ) : null}
 

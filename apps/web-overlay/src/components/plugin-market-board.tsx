@@ -215,7 +215,9 @@ export function PluginMarketBoard({
   // 经卡片 prop 同步 effect 把刚切换的状态翻回去（与详情页 loadDetail
   // 同款竞态）。只覆盖“补丁晚于快照发出”的条目：补丁早于快照发出的，
   // 快照本身已含服务端新值，不覆盖、不挡跨端改动。
-  const patchedItemsRef = useRef(new Map<string, HubPluginItem>())
+  // 每条补丁附带 patchSeq 按 slug 记世代；合并只写回 starred/starCount/
+  // installed/installedVersion/installCount 五个补丁字段，其余字段留快照新值。
+  const patchedItemsRef = useRef(new Map<string, { item: HubPluginItem; seq: number }>())
   const patchSeqRef = useRef(0)
   const overlayPatched = useCallback((items: HubPluginItem[], patchSeqAtIssue: number): HubPluginItem[] => {
     if (patchSeqAtIssue === patchSeqRef.current) return items
@@ -223,12 +225,11 @@ export function PluginMarketBoard({
     if (patched.size === 0) return items
     let changed = false
     const next = items.map((p) => {
-      const updated = patched.get(p.slug)
-      if (updated) {
-        changed = true
-        return updated
-      }
-      return p
+      const entry = patched.get(p.slug)
+      if (!entry || entry.seq <= patchSeqAtIssue) return p
+      changed = true
+      const u = entry.item
+      return { ...p, starred: u.starred, starCount: u.starCount, installed: u.installed, installedVersion: u.installedVersion, installCount: u.installCount }
     })
     return changed ? next : items
   }, [])
@@ -368,13 +369,14 @@ export function PluginMarketBoard({
 
   const patchItem = useCallback((updated: HubPluginItem) => {
     // 记下补丁并递增世代：在途 load() 的旧快照落地时凭此识别、不得覆盖。
-    patchedItemsRef.current.set(updated.slug, updated)
     patchSeqRef.current += 1
+    patchedItemsRef.current.set(updated.slug, { item: updated, seq: patchSeqRef.current })
     setList((prev) => ({
       ...prev,
       items: prev.items.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)),
     }))
     setFeatured((prev) => prev.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)))
+    setRelated((prev) => prev.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)))
   }, [])
 
   const hasFilter = Boolean(q || kind || starredOnly)

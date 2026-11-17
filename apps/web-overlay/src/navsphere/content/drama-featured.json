@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-17",
+  "updatedAt": "2026-11-18",
   "dramas": [
     {
       "title": "十八岁太奶奶驾到，重整家族荣耀 第五部",
@@ -118,17 +118,20 @@
       }
     },
     {
-      "title": "考上清北，却交不起五千学费",
-      "platformSiteId": "nav-536bfabaa406",
-      "platformTitle": "快手",
-      "url": "https://www.zongyimi.com/drama/subject/112041933640/",
+      "title": "少夫人来自东北 3",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://hongguoduanju.com/detail?series_id=7706512650816982040",
       "linkNote": "剧目页",
-      "episodesKnown": 57,
-      "totalEpisodes": null,
+      "episodesKnown": 96,
+      "totalEpisodes": 96,
       "check": {
         "kind": "none",
-        "reason": "已跌出 2026-11-13 快手榜前 100；展示为综艺迷作品资料页，总集数 57 集为该页 2026-11-06 更新值（11-10 榜单同为 57 集）"
-      }
+        "reason": "已完结全 96 集（红果详情页 2026-11-17，选集 1–96 可数）"
+      },
+      "genres": [
+        "家族"
+      ]
     },
     {
       "title": "我隐藏身份，找到一个好儿媳",

@@ -477,13 +477,13 @@ describe("drama-featured.json 检查配置", () => {
  // 第 2 批白月光（作品页已实抓核实：总集数 70 集、资料更新 2026-11-13）同法接入，
  // 第 2 批后 3 部（丑小鸭 S5 260 集 / 聚宝仙盆 S15 300 集 / 漂亮的恶意 32 集，
  // 作品页实抓核实）同法接入；18 部精选剧可查 6 部，仍停查 12 部。
- // 仍停查的 12 部：考上清北（资料更新停在 2026-11-06，暂缓）+ 本批 4 部新剧
+ // 仍停查的 12 部：少夫人来自东北 3（2026-11-18 #9 换剧：已完结全 96 集，check 仍 none）+ 本批 4 部新剧
  //（综艺迷暂无本季作品页）+ 太奶奶/和离/退役/悍妻/仿生迷踪 5 部固有停查 + 本轮新增 2 部
- //（和离 S2、满院 S6，已完结无新集可等）。
- for (const title of ["考上清北，却交不起五千学费"]) {
+ //（和离 S2、满院 S6，已完结无新集可等）。计数仍为 12：新旧 #9 的 check.kind 均为 none，一换一，1+4+5+2 不变。
+ for (const title of ["少夫人来自东北 3"]) {
  const drama = loaded.dramas.find((d) => d.title === title);
  expect(drama?.check.kind).toBe("none");
- expect(drama?.check.reason).toContain("2026-11-06");
+ expect(drama?.check.reason).toContain("已完结全 96 集");
 }
  for (const [title, subjectId] of [
  ["病弱千金往地一躺，全家慌了", "117244640035"],

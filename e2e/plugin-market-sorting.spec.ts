@@ -288,7 +288,7 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
     // 榜单区是无筛选时才渲染的 grid section（精选区是 space-y-3，不会误取）。
     const rankings = page.locator('main section.grid');
     await expect(rankings).toHaveCount(1);
-    const groups = rankings.locator('xpath:./div');
+    const groups = rankings.locator(':scope > div');
     await expect(groups.nth(0)).toContainText('安装榜');
     await expect(groups.nth(1)).toContainText('口碑榜');
     await expect(groups.nth(2)).toContainText('新作榜');

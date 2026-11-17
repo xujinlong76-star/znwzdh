@@ -219,7 +219,9 @@ function main(argv) {
   }
   if (fresh.length > 0) {
     console.error(
-      "[a11y-token-changed] 本次推送新引入冷区 a11y token 违例（与守卫 a11y-token-contrast.test.ts 同款禁令）：" +
+      "[a11y-token-changed] 本次推送新引入冷区 a11y token 违例（与守卫 a11y-token-contrast.test.ts 同款禁令，" +
+        elapsed +
+        "ms）：" +
         fresh.map((v) => `\n  - ${v.rel}（${v.id} ${v.count} 处）：${v.fix}`).join(""),
     );
     console.error("[a11y-token-changed] 修复：按上面提示改类名；豁免只认守卫 WIP_HOT_EXEMPT 显式清单（禁止通配）。");

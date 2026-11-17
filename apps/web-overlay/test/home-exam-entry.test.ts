@@ -25,6 +25,7 @@ import { describe, expect, it } from 'vitest'
 import {
   EXAMS,
   nearestExam,
+  nearestExamCountdown,
   nextExamNode,
   type ExamInfo,
 } from '../src/lib/exam-calendar'
@@ -99,6 +100,19 @@ describe('nearestExam（最近一场）', () => {
     }
     expect(nearestExam(NOV_13_0800_CST, [examB, examA])?.id).toBe('exam-a')
     expect(nearestExam(NOV_13_0800_CST, [examA, examB])?.id).toBe('exam-a')
+  })
+
+  it('U-107：11-28 同一时刻，首页条带与 /exam 国考卡片岛文案一致（都是 firstDayLabel）', () => {
+    // 条带侧：nearestExamCountdown 首考日当天取 firstDayLabel
+    const strip = nearestExamCountdown(Date.UTC(2026, 10, 28, 0, 0, 0))!
+    expect(strip.exam.id).toBe('guokao')
+    expect(strip.label).toBe('今天国考 · 专业科目 14:00 开考')
+    // 卡片岛侧：ExamCountdown 是客户端组件，node 环境不挂载——以源码守卫
+    // 钉住 today 分支取同一 firstDayLabel（表达式见 exam-page.test.ts
+    //「倒计时岛源码守卫」），此处只比对条带文案等于该考试的 firstDayLabel
+    expect(strip.label).toBe(EXAMS.find((e) => e.id === 'guokao')!.firstDayLabel)
+    const island = read('src/app/exam/exam-countdown.tsx')
+    expect(island).toContain('daysUntil(firstExamDay(exam), now) === 0 && exam.firstDayLabel')
   })
 })
 

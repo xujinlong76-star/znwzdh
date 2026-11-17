@@ -94,6 +94,52 @@ describe('examStatus', () => {
   })
 })
 
+describe('U-107 首日文案（firstDayLabel）', () => {
+  /** 2026-11-28 08:00 北京时间：国考首考日（专业科目 14:00 开考） */
+  const NOV_28_0800_CST = Date.UTC(2026, 10, 28, 0, 0, 0)
+  /** 2026-11-29 08:00 北京时间：国考公共科目日 */
+  const NOV_29_0800_CST = Date.UTC(2026, 10, 29, 0, 0, 0)
+  /** 2026-12-05 08:00 北京时间：京考首考日（公安专业科目 14:00 开考） */
+  const DEC_05_0800_CST = Date.UTC(2026, 11, 5, 0, 0, 0)
+  /** 2026-12-06 08:00 北京时间：京考公共科目日 */
+  const DEC_06_0800_CST = Date.UTC(2026, 11, 6, 0, 0, 0)
+  /** 2026-12-13 08:00 北京时间：军队文职笔试日（无 firstDayLabel） */
+  const DEC_13_0800_CST = Date.UTC(2026, 11, 13, 0, 0, 0)
+
+  it('11-28 国考首考日：today 分支取 firstDayLabel，精确文案', () => {
+    const guokao = EXAMS.find((e) => e.id === 'guokao')!
+    expect(examStatus(guokao, NOV_28_0800_CST)).toBe('today')
+    // today 分支取首日文案的门控：距首考日 0 天
+    expect(daysUntil(firstExamDay(guokao), NOV_28_0800_CST)).toBe(0)
+    expect(guokao.firstDayLabel).toBe('今天国考 · 专业科目 14:00 开考')
+  })
+
+  it('12-05 京考首考日：today 分支取 firstDayLabel，精确文案', () => {
+    const jingkao = EXAMS.find((e) => e.id === 'jingkao')!
+    expect(examStatus(jingkao, DEC_05_0800_CST)).toBe('today')
+    expect(daysUntil(firstExamDay(jingkao), DEC_05_0800_CST)).toBe(0)
+    expect(jingkao.firstDayLabel).toBe('今天京考 · 公安专业科目 14:00 开考')
+  })
+
+  it('11-29 国考公共科目日与 12-06 京考公共科目日：首考日已过，today 分支回落「今天考试」', () => {
+    const guokao = EXAMS.find((e) => e.id === 'guokao')!
+    const jingkao = EXAMS.find((e) => e.id === 'jingkao')!
+    // 两日仍是 today（单日 startISO === endISO），但距首考日已 -1 天，
+    // today 分支「距首考日 === 0」的门控不成立，firstDayLabel 不取
+    expect(examStatus(guokao, NOV_29_0800_CST)).toBe('today')
+    expect(daysUntil(firstExamDay(guokao), NOV_29_0800_CST)).toBe(-1)
+    expect(examStatus(jingkao, DEC_06_0800_CST)).toBe('today')
+    expect(daysUntil(firstExamDay(jingkao), DEC_06_0800_CST)).toBe(-1)
+  })
+
+  it('无 firstDayLabel 的考试：首考日当天 today 分支仍是「今天考试」', () => {
+    const jundui = EXAMS.find((e) => e.id === 'jundui-wenzhi')!
+    expect(jundui.firstDayLabel).toBeUndefined()
+    expect(examStatus(jundui, DEC_13_0800_CST)).toBe('today')
+    expect(daysUntil(firstExamDay(jundui), DEC_13_0800_CST)).toBe(0)
+  })
+})
+
 describe('examNodeStatus', () => {
   it('准考证打印窗口内为进行中，窗口前后翻转', () => {
     const guokao = EXAMS.find((e) => e.id === 'guokao')!
@@ -452,6 +498,17 @@ describe('倒计时岛源码守卫', () => {
     // today）算出后永不渲染；现只在 ongoing 分支内联计算，考研 12-20
     // 「进行中 · 第 2 天」仍走同一表达式，行为不变。
     expect(island).not.toContain('const dayIndex')
+    expect(island).toContain('进行中 · 第 ${1 - daysUntil(firstExamDay(exam), now)} 天')
+  })
+
+  it('U-107：today 分支首考日当天用 firstDayLabel、次日回落「今天考试」，ongoing 分支不动', () => {
+    // today 分支：距首考日 === 0 天才取 firstDayLabel，否则回落「今天考试」；
+    // 首日文案只在 today 分支出现两次（门控 + 取值），ongoing 分支不含它
+    expect(island).toContain('daysUntil(firstExamDay(exam), now) === 0 && exam.firstDayLabel')
+    expect(island).toContain('? exam.firstDayLabel')
+    expect(island).toContain(": '今天考试'")
+    expect(island.match(/exam\.firstDayLabel/g)?.length).toBe(2)
+    // ongoing 分支仍是「进行中 · 第 N 天」，不取首日文案
     expect(island).toContain('进行中 · 第 ${1 - daysUntil(firstExamDay(exam), now)} 天')
   })
 })

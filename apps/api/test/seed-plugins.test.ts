@@ -52,7 +52,7 @@ const FREE_LICENSES = new Set(["MIT", "Apache-2.0", "GPL-3.0", "BSD-3-Clause"]);
 // 人口已不存在；卸载守卫见下面的「网址包已卸载」describe。
 /** 商用级搜索引擎包的下限 */
 const PROFESSIONAL_SEARCH_PACK = { minEngines: 36 }
-/** 商用级主题的 token 下限（色板变量可用集合共 19 色 + 圆角 = 20 项，取满才算完整皮肤） */
+/** 商用级主题的 token 下限（色板变量可用集合共 20 色 + 圆角 = 21 项，取满才算完整皮肤） */
 const PROFESSIONAL_THEME = { minTokens: 20 }
 /** 商用级工作台预设的下限（看板数 / 每看板模块数） */
 const PROFESSIONAL_PRESET = { minBoards: 4, minWidgetsPerBoard: 5 }
@@ -539,6 +539,7 @@ describe("搜索引擎收录 URL：死链不得回流（2026-11-16 Q-16～Q-19�
     "https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}",
     "https://you.ctrip.com/searchsite/all?keyword={q}",
     "https://tongyi.aliyun.com/qianwen/?q={q}",
+    "https://openbase.com/search?q={q}",
   ]
   const REPLACEMENT_SEARCH_URLS = [
     "https://smithery.ai/servers?q={q}",

@@ -19,7 +19,8 @@ import { useEffect, useState, useMemo } from 'react'
 import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
-import { fetchNewSites, fetchTrendingMeta, reportClick, type HubSite } from '@/lib/navhub-api'
+import { fetchNewSites, fetchTrendingMeta, fetchPlugins, reportClick, type HubSite, type HubPluginItem } from '@/lib/navhub-api'
+import { rankingMetric, type PluginRankGroups } from '@/lib/plugins/marketplace-rankings'
 import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-relative-time'
 import { useLocalSearchRecorder } from '@/lib/local-search-record'
 import { getIdentity } from '@/lib/identity'
@@ -27,7 +28,7 @@ import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink, Search, X, Video, ArrowRight, Clock } from 'lucide-react'
+import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink, Search, X, Video, ArrowRight, Clock, TrendingUp, Star, Puzzle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
@@ -41,16 +42,23 @@ export default function HotView({
   initialFresh = [],
   recomputedAt: initialRecomputedAt = null,
   degraded = false,
+  initialPluginRankings = { trending: [], popular: [], rating: [], fresh: [] },
+  pluginDegraded = false,
 }: {
   initialTrending?: HubSite[]
   initialFresh?: HubSite[]
   /** 上次热度重算时刻（epoch 毫秒）；null = 尚无重算记录，不显示、不编造 */
   recomputedAt?: number | null
   degraded?: boolean
+  /** 插件排行四组（P2-10）：与市场首页同口径（trending/popular/rating/fresh） */
+  initialPluginRankings?: PluginRankGroups
+  /** 任一组插件排行取数失败时为 true：插件 tab 空态据此区分「没取回」与「市场没数据」 */
+  pluginDegraded?: boolean
 }) {
   const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
   const [trending, setTrending] = useState<HubSite[]>(initialTrending)
   const [fresh, setFresh] = useState<HubSite[]>(initialFresh)
+  const [pluginRankings, setPluginRankings] = useState<PluginRankGroups>(initialPluginRankings)
   const [recomputedAt, setRecomputedAt] = useState<number | null>(initialRecomputedAt ?? null)
   const [loading, setLoading] = useState(false)
   /**
@@ -63,10 +71,10 @@ export default function HotView({
   )
   const [reloadToken, setReloadToken] = useState(0)
   /**
-   * 榜单页签写进 URL（?tab=new）：点开站点再返回、刷新、分享链接都能停在同一榜。
+   * 榜单页签写进 URL（?tab=new / ?tab=plugins）：点开站点再返回、刷新、分享链接都能停在同一榜。
    * 原来 defaultValue 只存在 Radix 内部，返回即回到「访问量榜」。
    */
-  const [tab, setTab] = useState<'trending' | 'new'>('trending')
+  const [tab, setTab] = useState<'trending' | 'new' | 'plugins'>('trending')
   const [filterQuery, setFilterQuery] = useState('')
 
   const filteredTrending = useMemo(() => {
@@ -92,22 +100,57 @@ export default function HotView({
       return titleMatch || descMatch || urlMatch || tagMatch
     })
   }, [fresh, filterQuery])
+  // 插件排行筛选：与站点榜同口径（名称、简介、标签），四组各自过滤
+  const filteredPluginRankings = useMemo(() => {
+    if (!filterQuery.trim()) return pluginRankings
+    const q = filterQuery.trim().toLowerCase()
+    const match = (p: HubPluginItem) =>
+      p.name.toLowerCase().includes(q) ||
+      (p.description ?? '').toLowerCase().includes(q) ||
+      (p.tags ?? []).some((t) => t.toLowerCase().includes(q))
+    return {
+      trending: pluginRankings.trending.filter(match),
+      popular: pluginRankings.popular.filter(match),
+      rating: pluginRankings.rating.filter(match),
+      fresh: pluginRankings.fresh.filter(match),
+    } satisfies PluginRankGroups
+  }, [pluginRankings, filterQuery])
+  const pluginTotal = useMemo(
+    () =>
+      pluginRankings.trending.length +
+      pluginRankings.popular.length +
+      pluginRankings.rating.length +
+      pluginRankings.fresh.length,
+    [pluginRankings],
+  )
+  const filteredPluginTotal = useMemo(
+    () =>
+      filteredPluginRankings.trending.length +
+      filteredPluginRankings.popular.length +
+      filteredPluginRankings.rating.length +
+      filteredPluginRankings.fresh.length,
+    [filteredPluginRankings],
+  )
   // 本机榜单筛选的查询也要进搜索历史（计数取当前 tab 的匹配数）
-  useLocalSearchRecorder(filterQuery, tab === 'trending' ? filteredTrending.length : filteredFresh.length)
+  useLocalSearchRecorder(
+    filterQuery,
+    tab === 'trending' ? filteredTrending.length : tab === 'new' ? filteredFresh.length : filteredPluginTotal,
+  )
   useEffect(() => {
     const syncFromUrl = () => {
       const t = new URLSearchParams(window.location.search).get('tab')
-      setTab(t === 'new' ? 'new' : 'trending')
+      setTab(t === 'new' ? 'new' : t === 'plugins' ? 'plugins' : 'trending')
     }
     syncFromUrl()
     window.addEventListener('popstate', syncFromUrl)
     return () => window.removeEventListener('popstate', syncFromUrl)
   }, [])
   const changeTab = (value: string) => {
-    const nextTab = value === 'new' ? 'new' : 'trending'
+    const nextTab = value === 'new' ? 'new' : value === 'plugins' ? 'plugins' : 'trending'
     setTab(nextTab)
     const params = new URLSearchParams(window.location.search)
     if (nextTab === 'new') params.set('tab', 'new')
+    else if (nextTab === 'plugins') params.set('tab', 'plugins')
     else params.delete('tab')
     const qs = params.toString()
     const next = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
@@ -125,11 +168,25 @@ export default function HotView({
     const onDegraded = (error: unknown) => {
       if (!cancelled) setNotice(describeDegrade(error, '榜单数据'))
     }
-    void Promise.all([fetchTrendingMeta(30, onDegraded), fetchNewSites(30, onDegraded)]).then(([t, f]) => {
+    void Promise.all([
+      fetchTrendingMeta(30, onDegraded),
+      fetchNewSites(30, onDegraded),
+      // 插件排行四组：与服务端 loadHot 同口径（sort + limit=5），失败降级为空数组
+      fetchPlugins({ sort: 'trending', limit: 5 }, onDegraded),
+      fetchPlugins({ sort: 'popular', limit: 5 }, onDegraded),
+      fetchPlugins({ sort: 'rating', limit: 5 }, onDegraded),
+      fetchPlugins({ sort: 'new', limit: 5 }, onDegraded),
+    ]).then(([t, f, pt, pp, pr, pf]) => {
       if (cancelled) return
       setTrending(t.sites)
       setRecomputedAt(t.recomputedAt)
       setFresh(f)
+      setPluginRankings({
+        trending: pt.items,
+        popular: pp.items,
+        rating: pr.items,
+        fresh: pf.items,
+      })
       setLoading(false)
     })
     return () => {
@@ -149,6 +206,91 @@ export default function HotView({
   const handleSiteClick = (site: HubSite, position: number) => {
     reportClick(site.id, getIdentity(), { position })
   }
+
+  /**
+   * 插件排行四组（P2-10）：标题/图标/指标与市场首页三榜 + 默认排序「7 天飙升榜」
+   * 同口径；行内指标走市场共用的 rankingMetric，不编造飙升分。
+   * 行点击进市场详情页 /marketplace/{slug}（站内链，与站点榜标题链同模型）。
+   */
+  const pluginRankingGroups = [
+    {
+      key: 'trending' as const,
+      title: '飙升榜',
+      icon: Flame,
+      metric: (p: HubPluginItem) => rankingMetric('trending', p),
+    },
+    {
+      key: 'popular' as const,
+      title: '安装榜',
+      icon: TrendingUp,
+      metric: (p: HubPluginItem) => rankingMetric('popular', p),
+    },
+    {
+      key: 'rating' as const,
+      title: '口碑榜',
+      icon: Star,
+      metric: (p: HubPluginItem) => rankingMetric('rating', p),
+    },
+    {
+      key: 'fresh' as const,
+      title: '新作榜',
+      icon: Sparkles,
+      metric: (p: HubPluginItem) => rankingMetric('fresh', p),
+    },
+  ]
+
+  const renderPluginRankings = (groups: PluginRankGroups) => (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {pluginRankingGroups.map((group) => {
+          const rows = groups[group.key]
+          const Icon = group.icon
+          return (
+            <div
+              key={group.key}
+              className="rounded-xl border border-border/70 bg-card/60 p-4 space-y-2.5 transition-colors hover:border-border hover:bg-card"
+            >
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                <Icon className="w-3.5 h-3.5 text-primary" />
+                {group.title}
+              </div>
+              {rows.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground py-2">暂无数据</p>
+              ) : (
+                <ol className="space-y-1.5">
+                  {rows.map((p, index) => (
+                    <li key={`${group.key}-${p.id}`}>
+                      <Link
+                        href={`/marketplace/${encodeURIComponent(p.slug)}`}
+                        title={p.name}
+                        className="flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-muted/60 transition-colors"
+                      >
+                        <span
+                          className={`w-4 text-[11px] tabular-nums font-bold ${index === 0 ? 'text-amber-500' : index === 1 ? 'text-slate-400' : index === 2 ? 'text-orange-600/80' : 'text-muted-foreground'}`}
+                        >
+                          {index + 1}
+                        </span>
+                        <span className="text-xs font-medium truncate flex-1">{p.name}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{group.metric(p)}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex justify-center pt-1">
+        <Button asChild size="sm" variant="outline" className="text-xs min-h-11">
+          <Link href="/marketplace">
+            <span>查看全部插件</span>
+            <ArrowRight className="w-3.5 h-3.5 ml-1" />
+          </Link>
+        </Button>
+      </div>
+    </div>
+  )
 
   const renderList = (sites: HubSite[]) => (
     <div
@@ -261,6 +403,7 @@ export default function HotView({
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
                 按站点访问量排序展示已收录资源。当前访问量统计尚未积累，榜单暂不反映真实热度。
+                另附插件市场四组排行（飙升 / 安装 / 口碑 / 新作），点开即进插件市场。
               </p>
             </div>
 
@@ -282,6 +425,10 @@ export default function HotView({
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-700 dark:text-emerald-400">
                 <Sparkles className="w-3 h-3" />
                 新品 {loading ? '—' : fresh.length} 条
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-violet-500/25 bg-violet-500/5 text-xs text-violet-700 dark:text-violet-400">
+                <Puzzle className="w-3 h-3" />
+                插件排行 {loading ? '—' : pluginTotal} 条
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
                 <Trophy className="w-3 h-3 text-border" />
@@ -320,7 +467,7 @@ export default function HotView({
         </div>
 
         {/* 榜单内即时筛选器 */}
-        {!loading && (trending.length > 0 || fresh.length > 0) && (
+        {!loading && (trending.length > 0 || fresh.length > 0 || pluginTotal > 0) && (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-muted/30 border border-border/60 rounded-xl p-2.5">
             <div className="relative flex-1">
               <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -328,8 +475,12 @@ export default function HotView({
                 type="text"
                 value={filterQuery}
                 onChange={(e) => setFilterQuery(e.target.value)}
-                placeholder="在当前榜单中极速筛选站点（名称、简介、域名、标签）..."
-                aria-label="在当前榜单中筛选站点"
+                placeholder={
+                  tab === 'plugins'
+                    ? '在插件排行中极速筛选插件（名称、简介、标签）...'
+                    : '在当前榜单中极速筛选站点（名称、简介、域名、标签）...'
+                }
+                aria-label={tab === 'plugins' ? '在插件排行中筛选插件' : '在当前榜单中筛选站点'}
                 className="w-full min-h-11 text-xs bg-background/80 border border-border/60 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-lg pl-8 pr-8 py-1.5 outline-none transition-colors"
               />
               {/* 清空筛选 ×：18px 的 × 视觉不变，::after 把点击区无形扩到 46px
@@ -348,8 +499,10 @@ export default function HotView({
             <div className="text-[11px] text-muted-foreground shrink-0 px-1">
               {tab === 'trending' ? (
                 <>显示 <span className="font-mono font-semibold text-foreground">{filteredTrending.length}</span> / {trending.length} 个站点</>
-              ) : (
+              ) : tab === 'new' ? (
                 <>显示 <span className="font-mono font-semibold text-foreground">{filteredFresh.length}</span> / {fresh.length} 个站点</>
+              ) : (
+                <>显示 <span className="font-mono font-semibold text-foreground">{filteredPluginTotal}</span> / {pluginTotal} 个插件</>
               )}
             </div>
           </div>
@@ -397,6 +550,10 @@ export default function HotView({
                 <TabsTrigger value="new" className="min-h-11 text-xs sm:text-sm gap-1.5 rounded-lg">
                   <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
                   <span>最新入库榜</span>
+                </TabsTrigger>
+                <TabsTrigger value="plugins" className="min-h-11 text-xs sm:text-sm gap-1.5 rounded-lg">
+                  <Puzzle className="w-3.5 h-3.5 text-violet-500" />
+                  <span>插件排行</span>
                 </TabsTrigger>
               </TabsList>
               <div className="flex items-center gap-1.5">
@@ -471,6 +628,47 @@ export default function HotView({
                 />
               ) : (
                 renderList(filteredFresh)
+              )}
+            </TabsContent>
+            {/*
+              插件排行 tab（P2-10）：复用市场四组排行（飙升 / 安装 / 口碑 / 新作）。
+              forceMount：排行内链（/marketplace/{slug}）与空态的回市场入口要进
+              首屏 HTML——站点榜两 tab 是挂载后切换，插件排行是跨区引流入口，
+              藏到点击后才出现等于白做。
+            */}
+            <TabsContent value="plugins" className="pt-2" forceMount>
+              {pluginTotal === 0 ? (
+                <EmptyState
+                  icon={Puzzle}
+                  iconTone="muted"
+                  title={pluginDegraded ? '本次未能取回插件排行' : '暂无插件排行数据'}
+                  description="插件市场还没有可排行的插件；也可以先去市场看看全部插件。"
+                  action={
+                    <Button asChild size="sm" variant="outline" className="text-xs min-h-11">
+                      <Link href="/marketplace">去插件市场</Link>
+                    </Button>
+                  }
+                />
+              ) : filteredPluginTotal === 0 ? (
+                <EmptyState
+                  icon={Search}
+                  iconTone="muted"
+                  title="未找到匹配的插件"
+                  description={`未搜索到包含 “${filterQuery}” 的插件`}
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="text-xs min-h-11"
+                      onClick={() => setFilterQuery('')}
+                    >
+                      清空筛选条件
+                    </Button>
+                  }
+                />
+              ) : (
+                renderPluginRankings(filteredPluginRankings)
               )}
             </TabsContent>
           </Tabs>

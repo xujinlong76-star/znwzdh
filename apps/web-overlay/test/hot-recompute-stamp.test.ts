@@ -26,7 +26,17 @@ describe('/hot 热度重算时间戳接线', () => {
   it('page.tsx：loadHot 取 trending 响应的 recomputedAt 并透传给 HotView', () => {
     expect(page).toContain("hubGet<{ hits: RankHit[]; recomputedAt?: number | null }>('/api/rank/trending?limit=30', 60)")
     expect(page).toContain('recomputedAt: trendingRes?.recomputedAt ?? null')
-    expect(page).toContain('<HotView initialTrending={trending} initialFresh={fresh} recomputedAt={recomputedAt} degraded={degraded} />')
+    // P2-10 起 HotView 多了插件排行两个 prop，JSX 随之换行；透传本身不变
+    expect(page).toContain(
+      `<HotView
+          initialTrending={trending}
+          initialFresh={fresh}
+          recomputedAt={recomputedAt}
+          degraded={degraded}
+          initialPluginRankings={pluginRankings}
+          pluginDegraded={pluginDegraded}
+        />`,
+    )
   })
 
   it('HotView 声明 recomputedAt 可选 prop，null = 尚无重算记录', () => {

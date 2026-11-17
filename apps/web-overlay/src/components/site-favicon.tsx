@@ -131,7 +131,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'infoq.cn': '/brand-icons/infoq.svg',
   'qianwen.aliyun.com': '/brand-icons/qwen.svg',
   'mantine.dev': '/brand-icons/mantine.svg',
-  'sourcehut.org': '/brand-icons/sourcehut.svg',
+  'sourcehut.org': '/brand-icons/sourcehut.png',
   'coze.cn': '/brand-icons/coze.svg',
   'lintcode.com': '/brand-icons/lintcode.svg',
   // 2026-11-17（进化轮第二批 2b 之开发设计类）：48 站缺失清单里的站方自有

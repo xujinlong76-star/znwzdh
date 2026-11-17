@@ -533,7 +533,14 @@ describe("搜索引擎收录 URL：死链不得回流（2026-11-16 Q-16～Q-19�
   //   跳转链不收敛；新址 https://www.qianwen.com/qianwen/?q={q}：curl 200（39KB，
   //   标题「千问-阿里 AI 助手」），2026-11-17 真机验证已证实生效（q 被接受并自动发出，
   //   AI 回复了）。旧址进 RETIRED 清单防回流。
+  // - P3-1（2026-11-18）：3 条 301 旧址已迁规范地址（curl 核实 200 且 0 跳转）：
+  //   SciSpace typeset.io/search → scispace.com/search；CVE cve.mitre.org/cgi-bin/cvekey.cgi
+  //   （参数 keyword）→ www.cve.org/CVERecord/SearchResults（参数 query，裸域 cve.org 仍 301 到 www）；
+  //   RFC rfc_search_detail.php?title= → rfc-editor.org/search/?q=。旧址进 RETIRED 防回流。
   const RETIRED_SEARCH_URLS = [
+    "https://typeset.io/search?q={q}",
+    "https://cve.mitre.org/cgi-bin/cvekey.cgi?keyword={q}",
+    "https://www.rfc-editor.org/search/rfc_search_detail.php?title={q}",
     "https://smithery.ai/search?q={q}",
     "https://www.meituan.com/s/{q}",
     "https://h5.waimai.meituan.com/waimai/mindex/search?keyword={q}",
@@ -542,6 +549,9 @@ describe("搜索引擎收录 URL：死链不得回流（2026-11-16 Q-16～Q-19�
     "https://openbase.com/search?q={q}",
   ]
   const REPLACEMENT_SEARCH_URLS = [
+    "https://scispace.com/search?q={q}",
+    "https://www.cve.org/CVERecord/SearchResults?query={q}",
+    "https://www.rfc-editor.org/search/?q={q}",
     "https://smithery.ai/servers?q={q}",
     "https://www.qianwen.com/qianwen/?q={q}",
   ]

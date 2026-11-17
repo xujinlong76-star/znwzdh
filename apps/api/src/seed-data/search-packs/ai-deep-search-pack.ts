@@ -53,7 +53,7 @@ export const aiDeepSearchPack: SeedPluginDef = {
         {
           "name": "SciSpace",
           "prefix": "!sci",
-          "searchUrl": "https://typeset.io/search?q={q}",
+          "searchUrl": "https://scispace.com/search?q={q}",
           "icon": "📄",
           "description": "学术论文 AI 深度解读、结论对比与文献查阅台"
         },

@@ -218,7 +218,7 @@ export const codeSearchPack: SeedPluginDef = {
         {
           "name": "CVE Mitre 权威库",
           "prefix": "!cvemitre",
-          "searchUrl": "https://cve.mitre.org/cgi-bin/cvekey.cgi?keyword={q}",
+          "searchUrl": "https://www.cve.org/CVERecord/SearchResults?query={q}",
           "icon": "🔒",
           "description": "通用漏洞披露与暴露 (CVE) 全球官方登记中心"
         },
@@ -274,7 +274,7 @@ export const codeSearchPack: SeedPluginDef = {
         {
           "name": "IETF RFC 标准协议",
           "prefix": "!ietfrfc",
-          "searchUrl": "https://www.rfc-editor.org/search/rfc_search_detail.php?title={q}",
+          "searchUrl": "https://www.rfc-editor.org/search/?q={q}",
           "icon": "📜",
           "description": "互联网工程任务组权威协议标准与 RFC 规范原文"
         },

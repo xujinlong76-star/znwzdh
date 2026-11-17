@@ -186,8 +186,8 @@ describe('首页考试条源码守卫', () => {
 
   it('客户端视图：常驻链接唯一指向 /exam；提醒外链只走 exam-calendar 常量', () => {
     // 行为有意变化（2026-11-15 国考准考证打印提醒）：提醒期条带副行切到
-    // 提醒，内含一条经核实的官方专题站外链（http://bm.scs.gov.cn/kl2027，
-    // 2026-11-14 curl 核实 200，https 不可用）。链接事实源在 exam-calendar
+    // 提醒，内含一条经核实的官方打印系统直达外链（http://gwy.cpta.com.cn，
+    // 官方 2026-10-25 公告所载，写 http）。链接事实源在 exam-calendar
     // 常量里，视图只引提醒组件与门控函数，不写死 http 字面量、不写死
     // 考试 id 与日期；常驻入口仍唯一指向 /exam。
     expect(view.match(/href="\/exam"/g)?.length).toBe(1)

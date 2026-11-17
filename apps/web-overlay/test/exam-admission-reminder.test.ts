@@ -4,8 +4,10 @@
  *    11-27–11-29 15:00 末班，11-15 之前与 11-29 15:00 之后一律不显示；
  *  - 只有国考有提醒，其余三场任何时刻都返回 null（不打扰非考生）；
  *  - 文案全部取自已核实的提醒准备稿 A 版：窗口、报名序号、多打两份备用、
- *    笔试时间一个不少；官方链接是 http://bm.scs.gov.cn/kl2027（2026-11-14
- *    curl 核实 200，https 版为空回复，不许写成 https）；
+ *    笔试时间一个不少；官方链接是报名确认及准考证打印系统直达
+ *    http://gwy.cpta.com.cn（官方 2026-10-25 公告所载，教育在线 2026-10-26
+ *    逐字转载，http，不许写成 https）；专题网站门户 http://bm.scs.gov.cn/kl2027
+ *    见 GUOKAO_PORTAL_URL，不作打印直链；
  *  - 链接唯一事实源在 exam-calendar 常量里，提醒组件与页面不写死域名，
  *    外链一律过 safeHref、target _blank + noopener。
  */
@@ -16,6 +18,7 @@ import { describe, expect, it } from 'vitest'
 import {
   EXAMS,
   GUOKAO_ADMISSION_URL,
+  GUOKAO_PORTAL_URL,
   admissionReminderFor,
   guokaoAdmissionPhase,
 } from '../src/lib/exam-calendar'
@@ -98,7 +101,7 @@ describe('admissionReminderFor（只对国考）', () => {
     expect(early.cardLine).toContain('多打两份备用')
     expect(early.cardLine).toContain('行测 9:00–11:00')
     expect(early.cardLine).toContain('不得提前退场（考场规则）')
-    expect(early.url).toBe('http://bm.scs.gov.cn/kl2027')
+    expect(early.url).toBe('http://gwy.cpta.com.cn')
     const late = admissionReminderFor(guokao, NOV_21_NOON_CST)!
     expect(late.phase).toBe('countdown')
     expect(late.stripLine).toContain('距打印开启 2 天')
@@ -144,11 +147,19 @@ describe('admissionReminderFor（只对国考）', () => {
     expect(last.stripLine).toContain('申论 13:45')
   })
 
-  it('官方链接是 http://bm.scs.gov.cn/kl2027，不许写成 https', () => {
-    expect(GUOKAO_ADMISSION_URL).toBe('http://bm.scs.gov.cn/kl2027')
+  it('准考证直链是报名确认及准考证打印系统 http://gwy.cpta.com.cn，不许写成 https', () => {
+    expect(GUOKAO_ADMISSION_URL).toBe('http://gwy.cpta.com.cn')
     const r = admissionReminderFor(guokao, NOV_23_0000_CST)!
-    expect(r.url).toBe('http://bm.scs.gov.cn/kl2027')
+    expect(r.url).toBe('http://gwy.cpta.com.cn')
     expect(r.url).not.toContain('https://')
+  })
+
+  it('U-59：准考证节点直链为 gwy 打印系统，门户 bm 链另存常量、不作直链', () => {
+    expect(GUOKAO_PORTAL_URL).toBe('http://bm.scs.gov.cn/kl2027')
+    const node = guokao.nodes.find((n) => n.label === '准考证打印')!
+    expect(node.url).toBe(GUOKAO_ADMISSION_URL)
+    expect(node.url).toBe('http://gwy.cpta.com.cn')
+    expect(node.url).not.toBe(GUOKAO_PORTAL_URL)
   })
 
   it('其余三场任何时刻都没有提醒', () => {

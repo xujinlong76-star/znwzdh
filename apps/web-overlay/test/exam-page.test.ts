@@ -261,7 +261,7 @@ describe('考试日历页源码守卫', () => {
   })
 
   it('备考站点从 navigation.json 现读，不硬编码 12 条站点地址', () => {
-    // 注意：国考卡片的准考证打印提醒也链官方专题站，但那是已核实的单条
+    // 注意：国考卡片的准考证打印提醒也链官方打印系统直达，但那是已核实的单条
     // 提醒入口（事实源在 exam-calendar 常量 GUOKAO_ADMISSION_URL 里），
     // 不属于 12 条备考站点，页面仍不许写死它的域名。
     expect(page).toContain("EXAM_PREP_CATEGORY_ID")

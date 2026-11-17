@@ -19,8 +19,9 @@ import { safeHref } from '@/lib/safe-url'
  *    与条带现有的提醒小字同档（白底 ≥4.8:1）；
  *  - 'card'：/exam 国考卡片内的提醒块，A 版全句 + 打印入口。
  * 官方链接只走 exam-calendar 里的 GUOKAO_ADMISSION_URL 常量（唯一事实源，
- * 2026-11-14 curl 核实 200，https 不可用故用 http://），本文件不写死
- * 域名；外链一律过 safeHref，target _blank + noopener noreferrer。
+ * U-59：直链为报名确认及准考证打印系统，写 http；专题网站门户入口另见
+ * 同一文件的 GUOKAO_PORTAL_URL 常量），本文件不写死域名；外链一律过
+ * safeHref，target _blank + noopener noreferrer。
  */
 export function GuokaoAdmissionReminder({
   reminder,
@@ -44,7 +45,7 @@ export function GuokaoAdmissionReminder({
           rel="noopener noreferrer"
           className="font-medium text-sky-700 hover:underline dark:text-sky-400"
         >
-          去专题网站
+          去打印准考证
           <ArrowUpRight className="ml-0.5 inline h-3.5 w-3.5" aria-hidden />
         </a>
       </p>
@@ -61,7 +62,7 @@ export function GuokaoAdmissionReminder({
         rel="noopener noreferrer"
         className="mt-2 inline-flex min-h-11 items-center gap-1 rounded-full border border-sky-500/25 bg-sky-500/5 px-3.5 text-sm font-medium text-sky-700 hover:underline dark:text-sky-400"
       >
-        去专题网站打印准考证
+        去打印准考证
         <ArrowUpRight className="h-4 w-4" aria-hidden />
       </a>
     </div>

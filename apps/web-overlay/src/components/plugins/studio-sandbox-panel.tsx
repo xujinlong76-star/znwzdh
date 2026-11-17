@@ -225,10 +225,12 @@ export function StudioSandboxPanel(props: StudioSandboxPanelProps) {
                           <div className="p-3 rounded-xl border border-border bg-background space-y-2">
                             <span className="text-[11px] font-medium text-muted-foreground">按钮样例</span>
                             <div className="flex gap-2">
-                              <Button size="sm" className="h-7 text-xs">
+                              {/* Phase 2 批 C：定性为装饰性样例（主题预览区，同区输入框已是 readOnly）——
+                                  以前无 onClick 也可点，用户会以为功能坏了；现在禁用，不可点、不可聚焦。 */}
+                              <Button size="sm" className="h-7 text-xs" disabled title="主题按钮样式预览（样例，不可点击）">
                                 主要操作
                               </Button>
-                              <Button size="sm" variant="outline" className="h-7 text-xs">
+                              <Button size="sm" variant="outline" className="h-7 text-xs" disabled title="主题按钮样式预览（样例，不可点击）">
                                 次要按钮
                               </Button>
                             </div>

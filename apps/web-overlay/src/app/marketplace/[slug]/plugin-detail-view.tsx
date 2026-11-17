@@ -161,7 +161,9 @@ export default function PluginDetailView({
   // 值由 loadDetail 异步回填；拆分后仅剩写入方（读取方随 hero 区迁出后已无人消费）
   const [, setIsThemeApplied] = useState(false)
   const [studioModalOpen, setStudioModalOpen] = useState(false)
-  const [, setStudioInitialManifest] = useState<any>(undefined)
+  // Phase 2 批 C（U-23）：「衍生创作」拼出的 remix 清单必须保留并传给工坊弹窗，
+  // 之前这里只留 setter、值被丢弃，导致 remix 与「AI 工坊升级」效果完全相同。
+  const [studioInitialManifest, setStudioInitialManifest] = useState<any>(undefined)
 
   const handleRemix = () => {
     if (!plugin?.manifest) return
@@ -721,7 +723,12 @@ export default function PluginDetailView({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => setStudioModalOpen(true)}
+                      // Phase 2 批 C（U-23）：升级走原清单——先清掉上一次「衍生创作」留下的
+                      // remix 清单，否则关闭 remix 弹窗后点升级会继续看到 remix 内容。
+                      onClick={() => {
+                        setStudioInitialManifest(undefined)
+                        setStudioModalOpen(true)
+                      }}
                       className="h-[34px] gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/5"
                     >
                       <Sparkles className="w-4 h-4" />
@@ -1098,6 +1105,7 @@ export default function PluginDetailView({
           auditReport={auditReport}
           studioModalOpen={studioModalOpen}
           setStudioModalOpen={setStudioModalOpen}
+          studioInitialManifest={studioInitialManifest}
           loadDetail={() => void loadDetail()}
         />
 

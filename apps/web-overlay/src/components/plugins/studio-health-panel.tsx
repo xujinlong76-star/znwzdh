@@ -88,8 +88,17 @@ export function StudioHealthPanel(props: StudioHealthPanelProps) {
                             disabled={autoFixing}
                             className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-200 transition-colors font-medium flex items-center gap-1"
                           >
-                            <Sparkles className="h-2.5 w-2.5" />
-                            <span>点击一键自动修复</span>
+                            {autoFixing ? (
+                              <>
+                                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                <span>智能优化中...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="h-2.5 w-2.5" />
+                                <span>点击一键自动修复</span>
+                              </>
+                            )}
                           </button>
                         </div>
                         <ul className="list-disc list-inside space-y-0.5 text-muted-foreground pl-1">

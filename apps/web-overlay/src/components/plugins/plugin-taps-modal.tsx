@@ -47,6 +47,16 @@ interface PluginTapsModalProps {
   onSynced?: () => void
 }
 
+// Phase 2 批 C：从 200 + ok:false 的响应体里取服务端原因（若有）；无则给通用文案。
+function tapErrorText(res: unknown): string {
+  if (res && typeof res === 'object') {
+    const record = res as Record<string, unknown>
+    const reason = record.error ?? record.message
+    if (typeof reason === 'string' && reason.trim()) return reason.trim()
+  }
+  return '服务端未返回可用结果，请重试'
+}
+
 export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModalProps) {
   // 管理面与公开面的条目形状不同（公开面刻意不带 url）：状态用联合类型，
   // 渲染时按字段存在性取值，而不是假装两条路由同形。
@@ -54,6 +64,11 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
   const [loading, setLoading] = useState(false)
   const [syncingId, setSyncingId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  // Phase 2 批 C：添加失败的持久行内错误（toast 约 4 秒就消失，弹窗内必须留痕）
+  const [addError, setAddError] = useState<string | null>(null)
+  // Phase 2 批 C：移除两步确认 + 删除中禁用（防误删、防重复点）
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [unauthorized, setUnauthorized] = useState(false)
   const [featuredTaps, setFeaturedTaps] = useState<HubFeaturedTapItem[]>([])
   const [subscribingUrl, setSubscribingUrl] = useState<string | null>(null)
@@ -103,6 +118,9 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
 
   useEffect(() => {
     if (open) {
+      // Phase 2 批 C：每次打开清掉上一次的添加错误与删除确认态
+      setAddError(null)
+      setConfirmDeleteId(null)
       loadTaps()
     }
   }, [open])
@@ -115,6 +133,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
     }
 
     setAdding(true)
+    setAddError(null)
     try {
       const res = await addPluginTap({
         name: name.trim(),
@@ -127,23 +146,40 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
         setUrl('')
         setDescription('')
         loadTaps()
+      } else {
+        // Phase 2 批 C：200 + ok:false（现行服务端不产生，防御性处理）——
+        // 原因同时进 toast 与弹窗内行内错误，toast 消失后仍有迹可寻。
+        const reason = tapErrorText(res)
+        setAddError(reason)
+        toast.error(`添加订阅源失败：${reason}`)
       }
     } catch (err) {
-      toast.error((err as Error)?.message || '添加订阅源失败')
+      const reason = (err as Error)?.message || '添加订阅源失败'
+      // Phase 2 批 C：400 等服务端拒因同样进弹窗内行内错误，不再只靠瞬态 toast。
+      setAddError(reason)
+      toast.error(reason)
     } finally {
       setAdding(false)
     }
   }
 
   const handleDelete = async (id: string, tapName: string) => {
+    if (deletingId === id) return
+    setDeletingId(id)
     try {
       const res = await deletePluginTap(id)
       if (res.ok) {
         toast.success(`已移除订阅源：“${tapName}”`)
         setTaps((prev) => prev.filter((t) => t.id !== id))
+        setConfirmDeleteId(null)
+      } else {
+        // Phase 2 批 C：200 + ok:false（现行服务端不产生，防御性处理）——失败不删行。
+        toast.error('移除订阅源失败：服务端未返回可用结果，请重试')
       }
     } catch {
       toast.error('移除订阅源失败')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -285,6 +321,15 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
               <span>添加源</span>
             </Button>
           </div>
+
+          {addError && (
+            <div
+              role="alert"
+              className="text-xs text-destructive-text bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2"
+            >
+              添加失败：{addError}
+            </div>
+          )}
         </form>
 
         {/* 现有源列表 */}
@@ -348,15 +393,44 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
                       <span>同步</span>
                     </Button>
 
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleDelete(tap.id, tap.name)}
-                      className="h-8 text-xs text-destructive-text hover:bg-destructive/15 px-2"
-                      title="移除此订阅源"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
+                    {confirmDeleteId === tap.id ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={deletingId === tap.id}
+                          onClick={() => handleDelete(tap.id, tap.name)}
+                          className="h-8 text-xs px-3 gap-1"
+                          title="再次点击确认移除此订阅源"
+                        >
+                          {deletingId === tap.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                          <span>{deletingId === tap.id ? '移除中...' : '确认移除'}</span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={deletingId === tap.id}
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="h-8 text-xs px-2"
+                        >
+                          取消
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setConfirmDeleteId(tap.id)}
+                        className="h-8 text-xs text-destructive-text hover:bg-destructive/15 px-2"
+                        title="移除此订阅源"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}

@@ -63,6 +63,18 @@ export interface AiPluginStudioModalProps {
   onPublished?: (plugin: HubPluginItem) => void
 }
 
+// Phase 2 批 C：服务端 200 + ok:false 时附带的失败原因（若有）；无则给通用文案。
+// 注意：现行服务端只回 ok:true 或抛错，ok:false 是潜伏分支——防御性处理并钉测试，
+// 绝不伪造服务端行为；拦截复现见批 C 探针（200 + ok:false 拦截 → 修复前零反馈）。
+function failedResultReason(res: unknown): string {
+  if (res && typeof res === 'object') {
+    const record = res as Record<string, unknown>
+    const reason = record.error ?? record.message
+    if (typeof reason === 'string' && reason.trim()) return reason.trim()
+  }
+  return '服务端未返回可用结果，请重试'
+}
+
 const PRESET_IDEAS = [
   { icon: '🌐', label: 'Web3 极客工具箱', kind: 'site-pack' as const, prompt: '整理一个面向 Web3 与区块链开发者的网址包，包含以太坊浏览器、Foundry/Hardhat 开发框架与主流测试网水龙头。' },
   { icon: '🎨', label: '赛博极客深紫主题', kind: 'theme' as const, prompt: '设计一款深色赛博霓虹风格的极客主题包，使用 violet 紫色作为主强调色，圆角为 0.75rem。' },
@@ -318,6 +330,12 @@ export function AiPluginStudioModal({
         } else {
           toast.warning(`AI 预检评分 ${score}分：建议点击「✨ 一键智能修复」优化后提交`)
         }
+      } else {
+        // Phase 2 批 C：200 + ok:false 以前静默吞掉——现在给失败文案 + 重试入口（8 秒 toast）。
+        toast.error(`AI 预检未通过：${failedResultReason(res)}`, {
+          duration: 8000,
+          action: { label: '重试', onClick: () => void handlePreAudit() },
+        })
       }
     } catch (err) {
       console.error('[AI Studio] pre-audit error:', err)
@@ -347,6 +365,12 @@ export function AiPluginStudioModal({
         } else {
           toast.info(`当前插件规范度极高，无需自动修正 (评分: ${res.audit.score}分)`)
         }
+      } else {
+        // Phase 2 批 C：200 + ok:false 以前静默吞掉——现在给失败文案 + 重试入口（8 秒 toast）。
+        toast.error(`自动修复未完成：${failedResultReason(res)}`, {
+          duration: 8000,
+          action: { label: '重试', onClick: () => void handleAutoFix() },
+        })
       }
     } catch (err) {
       console.error('[AI Studio] auto-fix error:', err)

@@ -4,13 +4,15 @@
  */
 'use client'
 
-import { CheckCircle2, Code2, Copy, GitCompare, Minus, Plus } from 'lucide-react'
+import { Check, CheckCircle2, Code2, Copy, GitCompare, Minus, Plus, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
 import { cn } from '@/lib/utils'
 import type { PluginManifest } from '@/lib/plugins/plugin-manifest'
+import { toast } from 'sonner'
 
-import { copyText } from '@/lib/clipboard'
+import { copyFailureToast, copyText } from '@/lib/clipboard'
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import type { ManifestDiff } from '@/lib/plugins/studio-derived'
 
 export interface StudioJsonPanelProps {
@@ -32,6 +34,9 @@ export function StudioJsonPanel(props: StudioJsonPanelProps) {
     generating,
   } = props
   void generating
+  // Phase 2 批 C：复制反馈复用 use-copy-feedback——按钮文案同步变（已复制/复制失败），
+  // 失败原因回到按钮 title 与 sr-only，toast 只作第二通道（不能是唯一通道）。
+  const jsonCopy = useCopyFeedback()
   return (
     <>
               <div className="space-y-4">
@@ -72,11 +77,48 @@ export function StudioJsonPanel(props: StudioJsonPanelProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => copyText(JSON.stringify(manifest, null, 2))}
+                      aria-label={
+                        jsonCopy.copyFeedback.state === 'copied'
+                          ? '清单 JSON 已复制'
+                          : jsonCopy.copyFeedback.state === 'failed'
+                            ? '清单 JSON 复制失败'
+                            : '复制清单 JSON'
+                      }
+                      title={
+                        jsonCopy.copyFeedback.state === 'failed'
+                          ? `复制失败：${jsonCopy.copyFeedback.reason}`
+                          : '复制清单 JSON'
+                      }
+                      onClick={async () => {
+                        const result = await copyText(JSON.stringify(manifest, null, 2))
+                        jsonCopy.reportCopy(result)
+                        if (result.ok) toast.success('已复制清单 JSON')
+                        else {
+                          const failure = copyFailureToast(result)
+                          toast.error(failure.title, { description: failure.description })
+                        }
+                      }}
                       className="h-7 text-xs gap-1"
                     >
-                      <Copy className="h-3 w-3" />
-                      <span>复制 JSON</span>
+                      {jsonCopy.copyFeedback.state === 'copied' ? (
+                        <>
+                          <Check className="h-3 w-3" />
+                          <span>已复制</span>
+                        </>
+                      ) : jsonCopy.copyFeedback.state === 'failed' ? (
+                        <>
+                          <X className="h-3 w-3" />
+                          <span>复制失败</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          <span>复制 JSON</span>
+                        </>
+                      )}
+                      <span role="status" className="sr-only">
+                        {jsonCopy.copyFeedback.reason ?? ''}
+                      </span>
                     </Button>
                   ) : (
                     <div className="text-[11px] text-muted-foreground font-mono">

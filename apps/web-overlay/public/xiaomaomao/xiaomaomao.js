@@ -1556,10 +1556,14 @@
     bubbleEl.classList.remove('xm-show');
   }
 
-  /* c3001：开场招呼先量一下——气泡会盖住正文卡片/可点元素时跳过本次自动招呼。
+  /* c3001：开场招呼先量一下——气泡会大面积盖住正文卡片/可点元素时跳过本次自动招呼。
      只拦 850ms 自动招呼：用户主动点猫/摸猫/喂食触发的气泡不受影响；猫还在原地，点猫照常聊天。
      量法：文案先放进未显示的气泡（透明但仍有布局尺寸），按锚定位置算出显示后的矩形
-     （右缘 = 猫右缘 + 4px，下缘 = 猫顶 - 12px），再与 <main> 内的链接/按钮/文章/卡片求交。 */
+     （右缘 = 猫右缘 + 4px，下缘 = 猫顶 - 12px），再与 <main> 内的链接/按钮/文章/卡片求交。
+     2026-11-18 :123（390px 首页招呼 15 秒未出）：旧阈值“任一方向重叠 >4px 即拦”太严——
+     首页右下角三个 44px 悬浮钮（回到顶部/超级搜索/微工具箱）各占气泡面积仅约 12%，
+     也会把招呼拦死。改判“单个元素重叠面积占气泡面积 >25% 才拦”：小悬浮钮不再拦，
+     整宽卡片/搜索框等大面积遮挡仍拦（c3001 桌面 221×55 气泡盖卡片案仍被拦住）。 */
   function autoGreetWouldCoverContent() {
     var main = document.querySelector('main');
     if (!bubbleEl || !main) return false;
@@ -1567,13 +1571,15 @@
     if (!bw || !bh) return false;
     var catRect = root.getBoundingClientRect();
     var rect = { left: catRect.right + 4 - bw, top: catRect.top - 12 - bh, right: catRect.right + 4, bottom: catRect.top - 12 };
+    var bubbleArea = bw * bh;
     var els = main.querySelectorAll('a, button, [role="button"], article, .nav-card-glow');
     for (var i = 0; i < els.length; i++) {
       var r = els[i].getBoundingClientRect();
       if (!r.width || !r.height) continue;
       var ix = Math.min(r.right, rect.right) - Math.max(r.left, rect.left);
       var iy = Math.min(r.bottom, rect.bottom) - Math.max(r.top, rect.top);
-      if (ix > 4 && iy > 4) return true;
+      if (ix <= 0 || iy <= 0) continue;
+      if (ix * iy > bubbleArea * 0.25) return true;
     }
     return false;
   }

@@ -13,6 +13,8 @@ import { useToast } from '@/components/ui/use-toast'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { SectionState } from '@/components/user-center/section-state'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
+import { fetchInstalledPlugins } from '@/lib/navhub-api'
+import { buildPluginUpdateReminder, type PluginUpdateReminder } from '@/lib/plugins/plugin-updates'
 import { safeHref } from '@/lib/safe-url'
 import { Bell, CheckCheck, ExternalLink } from 'lucide-react'
 
@@ -50,6 +52,11 @@ export default function NotificationsPage() {
   const [nextOffset, setNextOffset] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
   const [busy, setBusy] = useState(false)
+  // P2-4：插件更新提醒（客户端派生，非服务端通知）——打开通知中心时按
+  // 当前身份的已安装清单现算；无可更新项为 null，不渲染。只在当次打开内
+  // 可点「知道了」关掉，不写服务端、不进未读数、不动角标。
+  const [updateReminder, setUpdateReminder] = useState<PluginUpdateReminder | null>(null)
+  const [reminderDismissed, setReminderDismissed] = useState(false)
 
   const load = useCallback(async (offset: number) => {
     if (offset === 0) setState('loading')
@@ -104,6 +111,29 @@ export default function NotificationsPage() {
     void Promise.resolve().then(() => load(0))
   }, [load, identityReady.ready, identityReady.isAnonymous])
 
+  /**
+   * P2-4：插件更新提醒（与服务端通知列表并行、互不干扰）。
+   * 提醒按当前身份的已安装清单现算：fetchInstalledPlugins 失败时内部
+   * 已回落空列表（不触发通知页失败态），这里再兜一层 catch——提醒是
+   * best-effort，取不到只当没有更新，绝不把通知页打成失败态。
+   * 匿名也算：已安装清单本就按身份（含 anon-*）算，提醒与「匿名不调
+   * /api/me/notifications」不冲突，那条请求本 effect 完全没碰。
+   */
+  const loadUpdateReminder = useCallback(async (identity: string | null) => {
+    try {
+      const res = await fetchInstalledPlugins(identity ?? undefined)
+      setUpdateReminder(buildPluginUpdateReminder(res.items ?? []))
+    } catch {
+      setUpdateReminder(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!identityReady.ready) return
+    setReminderDismissed(false)
+    void loadUpdateReminder(identityReady.identity)
+  }, [identityReady.ready, identityReady.identity, loadUpdateReminder])
+
   const markRead = useCallback(
     async (id: string) => {
       // 只有服务端确认「本次确实标了」（marked === true）才更新本地：
@@ -153,7 +183,7 @@ export default function NotificationsPage() {
         title="通知"
         icon={Bell}
         back={{ href: '/me', label: '用户中心' }}
-        description="同步失败、备份提醒等站内消息。通知只发给你自己的身份，不含营销内容。"
+        description="同步失败、备份提醒、插件更新等站内消息。通知只发给你自己的身份，不含营销内容。"
         actions={
           unread > 0 ? (
             <Button variant="outline" size="sm" className="w-full text-xs sm:w-auto" disabled={busy} onClick={() => void markAll()}>
@@ -163,6 +193,37 @@ export default function NotificationsPage() {
           ) : null
         }
       />
+
+      {/* P2-4：插件更新提醒——客户端派生横幅，置于服务端通知列表之上；
+          服务端通知为空时也照常出现（提醒不依赖有没有服务端通知）。
+          不是服务端通知条目：不进未读数、不走标已读，「知道了」只关当次打开。 */}
+      {state === 'ready' && updateReminder && !reminderDismissed && (
+        <div
+          role="status"
+          className="flex flex-col gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              {updateReminder.title}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {updateReminder.body}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button asChild size="sm" className="h-8 text-xs">
+              <Link href={updateReminder.link}>去全部更新</Link>
+            </Button>
+            <button
+              type="button"
+              onClick={() => setReminderDismissed(true)}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              知道了
+            </button>
+          </div>
+        </div>
+      )}
 
       {state === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载通知" />}
 
@@ -180,7 +241,7 @@ export default function NotificationsPage() {
           variant="empty"
           icon={Bell}
           title="还没有通知"
-          description="出现同步失败、备份超期等情况时，这里会收到提醒。"
+          description="出现同步失败、备份超期、插件可更新等情况时，这里会收到提醒。"
         />
       )}
 

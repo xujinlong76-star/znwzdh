@@ -43,7 +43,12 @@ import {
   unregisterSearchPackEngines,
   type InstalledSearchEngine,
 } from '@/lib/plugins/search-pack-runtime'
-import { comparePluginVersions } from '@/lib/plugins/plugin-manifest'
+import {
+  getUpdatablePlugins,
+  hasPluginUpdate,
+  runBatchUpdate,
+  summarizeBatchUpdate,
+} from '@/lib/plugins/plugin-updates'
 import {
   pluginReviewUrl,
   showInstallReviewPrompt,
@@ -76,6 +81,9 @@ export default function InstalledPluginsPage() {
   const [themeSuspended, setThemeSuspended] = useState(false)
   const [searchEngines, setSearchEngines] = useState<InstalledSearchEngine[]>([])
   const [upgradingSlug, setUpgradingSlug] = useState<string | null>(null)
+  // P2-4：批量更新进行态 + 进度（done/total），按钮文案与禁用都看它。
+  const [updatingAll, setUpdatingAll] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
   const [uninstallingSlug, setUninstallingSlug] = useState<string | null>(null)
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null)
   // K2：主题「启用」与升级/停用同款 *Slug 守卫，防重复点击
@@ -183,43 +191,53 @@ export default function InstalledPluginsPage() {
     showActionMessage('已恢复系统默认主题')
   }
 
+  /**
+   * 单插件升级内核（P2-4）：只走升级链路本身，不写横幅、不邀评、不重载。
+   * 单点「升级」与批量「全部更新」共用这一条链路，行为不分叉：
+   * installPlugin（服务端幂等增量 = 重装即升级）→ 已停用只升版本不恢复
+   * 运行效果 → 生效中主题重应用新 token → 搜索包重新注册前缀。
+   */
+  const upgradePluginOnce = async (item: HubPluginInstalledItem) => {
+    const wasActiveTheme = item.kind === 'theme' && activeThemeState?.slug === item.slug
+    await installPlugin(item.slug)
+
+    // 已停用的插件只升版本、不恢复运行效果：升级不能悄悄替用户重新启用。
+    if (item.disabled) return
+
+    // 正在生效的主题升级后要立即把新 token 应用到运行时，
+    // 否则服务端已是新版本、页面仍停留在旧配色，形成「升级了但没生效」。
+    if (wasActiveTheme) {
+      const detail = await fetchPluginDetail(item.slug)
+      const payload = detail?.plugin?.manifest?.payload
+      if (payload) {
+        setActiveTheme({
+          slug: item.slug,
+          name: detail?.plugin?.name || item.name,
+          tokens: payload.tokens,
+          accent: payload.accent,
+        })
+        setActiveThemeState(getActiveTheme())
+        setThemeSuspended(isThemeSuspended())
+      }
+    }
+
+    // 搜索引擎包升级：前缀 / 检索 URL 可能变化，重新注册运行时直达
+    if (item.kind === 'search-pack') {
+      const detail = await fetchPluginDetail(item.slug)
+      const engines = detail?.plugin?.manifest?.payload?.engines
+      if (engines) registerSearchPackEngines(item.slug, engines)
+    }
+  }
+
   const handleUpgrade = async (item: HubPluginInstalledItem) => {
     setUpgradingSlug(item.slug)
     try {
-      const wasActiveTheme = item.kind === 'theme' && activeThemeState?.slug === item.slug
-      await installPlugin(item.slug)
-
-      // 已停用的插件只升版本、不恢复运行效果：升级不能悄悄替用户重新启用。
+      await upgradePluginOnce(item)
       if (item.disabled) {
         showActionMessage(`插件已升级至最新版本（仍处于停用状态）`)
         await loadData()
         return
       }
-
-      // 正在生效的主题升级后要立即把新 token 应用到运行时，
-      // 否则服务端已是新版本、页面仍停留在旧配色，形成「升级了但没生效」。
-      if (wasActiveTheme) {
-        const detail = await fetchPluginDetail(item.slug)
-        const payload = detail?.plugin?.manifest?.payload
-        if (payload) {
-          setActiveTheme({
-            slug: item.slug,
-            name: detail?.plugin?.name || item.name,
-            tokens: payload.tokens,
-            accent: payload.accent,
-          })
-          setActiveThemeState(getActiveTheme())
-          setThemeSuspended(isThemeSuspended())
-        }
-      }
-
-      // 搜索引擎包升级：前缀 / 检索 URL 可能变化，重新注册运行时直达
-      if (item.kind === 'search-pack') {
-        const detail = await fetchPluginDetail(item.slug)
-        const engines = detail?.plugin?.manifest?.payload?.engines
-        if (engines) registerSearchPackEngines(item.slug, engines)
-      }
-
       showActionMessage(`插件已成功升级至最新版本`)
       // P1-5 邀评：升级成功 = 用户已在用，值得请他评价；同一插件只提示一次，
       // 入口指向该插件详情页评价区（?tab=reviews 深链）。
@@ -229,6 +247,43 @@ export default function InstalledPluginsPage() {
       showActionMessage(`升级失败：${failureDescription(err)}`, () => void handleUpgrade(item))
     } finally {
       setUpgradingSlug(null)
+    }
+  }
+
+  /**
+   * 全部更新（P2-4 第一步）：把全部可更新项逐个走 upgradePluginOnce。
+   * 顺序执行（见 runBatchUpdate 注释：主题 token / 搜索前缀共享运行时，
+   * 并行会互相覆盖）；单个失败只记入回执、继续更下一个，绝不掀翻整批；
+   * 结束后只重载一次、只发一条回执横幅；横幅「重试」只重更失败的那几个。
+   * 批量不逐个邀评（N 个弹窗是骚扰），单点升级的邀评不受影响。
+   * 自动更新不在这里做：默认开/关策略待裁决，本批只做手动一键批量。
+   */
+  const handleUpdateAll = async (targets: HubPluginInstalledItem[]) => {
+    if (updatingAll || targets.length === 0) return
+    setUpdatingAll(true)
+    setBatchProgress({ done: 0, total: targets.length })
+    try {
+      const result = await runBatchUpdate(
+        targets,
+        async (item) => {
+          try {
+            await upgradePluginOnce(item)
+          } finally {
+            // 成功失败都计进度：进度 = 已尝试数，不是成功数。
+            setBatchProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev))
+          }
+        },
+        (err) => failureDescription(err),
+      )
+      const receipt = summarizeBatchUpdate(result)
+      showActionMessage(
+        receipt.message,
+        receipt.allSucceeded ? undefined : () => void handleUpdateAll(receipt.failedItems),
+      )
+      await loadData()
+    } finally {
+      setUpdatingAll(false)
+      setBatchProgress(null)
     }
   }
 
@@ -305,14 +360,12 @@ export default function InstalledPluginsPage() {
     }
   }
 
-  const hasUpdate = (item: HubPluginInstalledItem) =>
-    Boolean(
-      item.version &&
-        item.installedVersion &&
-        comparePluginVersions(item.version, item.installedVersion) > 0,
-    )
+  // 与 lib/plugins/plugin-updates 同口径：市场版本严格高于已装版本才算可更新，
+  // 服务端回滚或预发布版本不会被误标（不用字符串不等判断版本）。
+  const hasUpdate = (item: HubPluginInstalledItem) => hasPluginUpdate(item)
 
-  const updateCount = items.filter(hasUpdate).length
+  const updatableItems = getUpdatablePlugins(items)
+  const updateCount = updatableItems.length
 
   // 有更新的插件置顶，其余保持后端顺序；不能用字符串不等判断版本，
   // 否则服务端回滚或预发布版本会被误标为「可升级」。
@@ -351,11 +404,27 @@ export default function InstalledPluginsPage() {
               </p>
               {updateCount > 0 && (
                 <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-2">
-                  有 {updateCount} 个插件可升级，已置顶显示。
+                  有 {updateCount} 个插件可升级，已置顶显示，点右上角「全部更新」可一键升完。
                 </p>
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {/* P2-4：全部更新——逐个走已有升级链路，失败单个不掀翻整批，
+                  结束后横幅给回执（成功/失败数 + 失败名），失败可只重试失败的。
+                  无可更新项时不渲染，避免用户点一个什么都不做的按钮。 */}
+              {updateCount > 0 && (
+                <Button
+                  size="sm"
+                  disabled={updatingAll || loading}
+                  onClick={() => void handleUpdateAll(updatableItems)}
+                  className="h-8 gap-1.5 text-xs"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${updatingAll ? 'animate-spin' : ''}`} />
+                  {updatingAll && batchProgress
+                    ? `正在更新 ${batchProgress.done}/${batchProgress.total}`
+                    : `全部更新 (${updateCount})`}
+                </Button>
+              )}
               <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
                 <Link href="/marketplace">
                   <Store className="w-3.5 h-3.5" />
@@ -645,7 +714,7 @@ export default function InstalledPluginsPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={isUpgrading}
+                          disabled={isUpgrading || updatingAll}
                           onClick={() => void handleUpgrade(item)}
                           className="h-7 text-xs gap-1 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
                         >

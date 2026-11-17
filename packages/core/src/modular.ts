@@ -423,6 +423,35 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
     minRowSpan: 1,
     maxRowSpan: 3,
     badge: '0-Eval 沙箱',
+    configSchema: [
+      {
+        key: 'endpoint',
+        label: '数据源地址 (URL)',
+        type: 'text',
+        defaultValue: '',
+        description: '仅站内相对路径或 http(s) 地址可用，非法地址会被拦截；留空则不取数。',
+      },
+      {
+        key: 'layout',
+        label: '布局',
+        type: 'select',
+        defaultValue: 'kpi-grid',
+        options: [
+          { label: 'KPI 指标网格', value: 'kpi-grid' },
+          { label: '键值对', value: 'key-value' },
+          { label: '进度条', value: 'progress-bar' },
+          { label: '动态列表', value: 'feed-list' },
+          { label: '状态徽章', value: 'status-badge' },
+        ],
+      },
+      {
+        key: 'refreshIntervalSeconds',
+        label: '刷新间隔（秒）',
+        type: 'number',
+        defaultValue: 60,
+        description: '最少 10 秒；仅配置了数据源地址时生效。',
+      },
+    ],
   },
 }
 

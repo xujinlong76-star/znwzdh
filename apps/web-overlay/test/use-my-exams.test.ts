@@ -23,6 +23,9 @@ const KEY = MY_EXAMS_STORAGE_KEY
 const kaoyan = EXAMS.find((e) => e.id === 'kaoyan')!
 const kaoyanFirstNode = kaoyan.nodes[0].label
 
+/** 2026-11-18 08:00 北京时间：成考成绩公布日（U-106 回归：统考已过但节点仍可办） */
+const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)
+
 /** 浏览器存储替身：node 环境里既没有 localStorage 也没有 window */
 function stubBrowser(seed?: Record<string, string>, opts?: { getItemThrows?: boolean }) {
   const map = new Map<string, string>()
@@ -242,5 +245,32 @@ describe('共享写操作（运行时，竞态回归）', () => {
     expect(backupKey).toBeDefined()
     expect(map.get(backupKey!)).toBe(raw)
     expect(mod.getMyExamsSnapshot().state).toEqual({ followed: [], checked: {} })
+  })
+
+  it('U-106 回归：取消关注后已勾选状态不丢失（再关注回来还在，存储往返一致）', async () => {
+    const map = stubBrowser()
+    const mod = await freshHook()
+    mod.refreshMyExamsFromStorage()
+    // 今天注入 11-18：成考统考已过但查分节点当天可办，关注与勾选都放行
+    vi.setSystemTime(NOV_18_0800_CST)
+    expect(mod.toggleMyExamsFollow('chengkao')).toBe(true)
+    expect(mod.toggleMyExamsNodeCheck('chengkao', '江西成绩查询')).toBe(true)
+    expect(mod.getMyExamsSnapshot().state).toEqual({
+      followed: ['chengkao'],
+      checked: { chengkao: ['江西成绩查询'] },
+    })
+    // 取消关注：勾选保留在状态与存储里，不被清空
+    expect(mod.toggleMyExamsFollow('chengkao')).toBe(true)
+    expect(mod.getMyExamsSnapshot().state).toEqual({
+      followed: [],
+      checked: { chengkao: ['江西成绩查询'] },
+    })
+    expect(JSON.parse(map.get(KEY)!).checked).toEqual({ chengkao: ['江西成绩查询'] })
+    // 再关注回来：勾选还在
+    expect(mod.toggleMyExamsFollow('chengkao')).toBe(true)
+    expect(mod.getMyExamsSnapshot().state).toEqual({
+      followed: ['chengkao'],
+      checked: { chengkao: ['江西成绩查询'] },
+    })
   })
 })

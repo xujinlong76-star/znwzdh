@@ -32,7 +32,7 @@ beforeAll(async () => {
       dim: 512,
       enabled: false,
     },
-    llm: { baseUrl: "https://api.agnes-ai.cn/v1", apiKey: null, model: "agnes-3.0-flash", timeoutMs: 5000 },
+    llm: { baseUrl: "https://llm.example.com/v1", apiKey: null, model: "test-model", timeoutMs: 5000 },
     fetch: { timeoutMs: 2000, maxBytes: 262144, maxRedirects: 2, allowPrivateNetworks: false, userAgent: "NavHubTest/0.1" },
     corsOrigins: ["*"],
   });
@@ -49,7 +49,7 @@ describe("llm_usage 表与写入", () => {
     await ctx.repo.recordLlmUsage({
       scenario: "enrich",
       source: "system",
-      model: "agnes-3.0-flash",
+      model: "test-model",
       promptTokens: 120,
       completionTokens: 30,
       latencyMs: 800,
@@ -61,7 +61,7 @@ describe("llm_usage 表与写入", () => {
     expect(rows[0]).toMatchObject({
       scenario: "enrich",
       source: "system",
-      model: "agnes-3.0-flash",
+      model: "test-model",
       prompt_tokens: 120,
       completion_tokens: 30,
     });
@@ -71,7 +71,7 @@ describe("llm_usage 表与写入", () => {
     await ctx.repo.recordLlmUsage({
       scenario: "ai_chat",
       source: "user",
-      model: "agnes-3.0-flash",
+      model: "test-model",
       latencyMs: 5000,
       ok: false,
       errorCode: "timeout",

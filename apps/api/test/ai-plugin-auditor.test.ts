@@ -160,7 +160,7 @@ describe("AI 专业级自动化插件审查与审批引擎 (AI Plugin Auditor)",
     expect(res.checks.length).toBeGreaterThan(0);
   });
 
-  it("报模型名要报真的：不存在硬编码的 agnes-3.0-flash 兜底", async () => {
+  it("报模型名要报真的：不存在硬编码的模型名兜底", async () => {
     const res = await evaluatePluginAudit(ctx, validSitePack);
     expect(res.model).toBe("stub-audit-model");
     const rows = await ctx.repo.raw(

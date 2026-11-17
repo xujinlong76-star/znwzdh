@@ -20,10 +20,10 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
       mode: "lite",
       sqlitePath: join(dir, "api.db"),
       llm: {
-        name: "Agnes 3.0 Flash",
+        name: "测试模型",
         baseUrl: "http://93.184.216.34/v1",
         apiKey: "sk-test-key-12345",
-        model: "agnes-3.0-flash",
+        model: "test-model",
         timeoutMs: 3000,
         allowPrivateNetwork: true,
       },
@@ -74,7 +74,7 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
     globalThis.fetch = (async () => {
       return new Response(
         JSON.stringify({
-          model: "agnes-3.0-flash",
+          model: "test-model",
           choices: [
             {
               message: {
@@ -154,7 +154,7 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
     globalThis.fetch = (async () => {
       return new Response(
         JSON.stringify({
-          model: "agnes-3.0-flash",
+          model: "test-model",
           choices: [
             {
               message: {
@@ -247,7 +247,7 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
     globalThis.fetch = (async () => {
       return new Response(
         JSON.stringify({
-          model: "agnes-3.0-flash",
+          model: "test-model",
           choices: [
             {
               message: {

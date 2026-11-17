@@ -180,7 +180,8 @@ describe("docker compose 安全变量透传契约", () => {
  * 额度项，`.env.example` 也全部写了说明，但 compose 只透传 BASE_URL / API_KEY /
  * （仅 lite）MODEL。后果分两种，都只能改 compose 才能解开：
  *  - `api-standard` 没有 MODEL → 用 `.env` 里的 deepseek 端点配代码默认的
- *    `agnes-3.0-flash` 模型名，请求必然 invalid model；
+ *    模型名，请求必然 invalid model（2026-11-18 起代码已无默认模型名，
+ *    未配置时 model 为空串，不会再配错厂商的模型名）；
  *  - `NAVHUB_LLM_ALLOW_PRIVATE` 进不了容器 → 本地 Ollama/llama.cpp（无 API Key）
  *    在 Docker 部署里永远得到「尚未配置可用的模型密钥」，等于文档承诺的能力做不到。
  */

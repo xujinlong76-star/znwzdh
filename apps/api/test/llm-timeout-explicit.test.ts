@@ -35,10 +35,10 @@ beforeAll(async () => {
     sqlitePath: join(dir, "llm-timeout.db"),
     embedding: { enabled: false, cacheDir: join(dir, "models") },
     llm: {
-      name: "Agnes 3.0 Flash",
+      name: "测试模型",
       baseUrl: PUBLIC_URL,
       apiKey: "sk-env-placeholder-1234",
-      model: "agnes-3.0-flash",
+      model: "test-model",
       timeoutMs: 2000,
       allowPrivateNetwork: true,
     },
@@ -73,7 +73,7 @@ describe("系统级：超时是否「有人真填过」", () => {
   it("显式提交 25000 ⇒ 落库记为显式，视图回显 25000 而不是 60000", async () => {
     const view = await saveSystemLlmConfig(
       ctx,
-      { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", timeoutMs: 25_000, thinking: true },
+      { baseUrl: PUBLIC_URL, model: "test-model", timeoutMs: 25_000, thinking: true },
       ACTOR,
     );
     expect(await rawStored().then((r) => r?.timeoutMsExplicit)).toBe(true);
@@ -86,7 +86,7 @@ describe("系统级：超时是否「有人真填过」", () => {
   });
 
   it("没填超时（值是兜出来的）⇒ 不是显式，回显必须点名思考态被放宽到 60s", async () => {
-    const view = await saveSystemLlmConfig(ctx, { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" }, ACTOR);
+    const view = await saveSystemLlmConfig(ctx, { baseUrl: PUBLIC_URL, model: "test-model" }, ACTOR);
     expect(await rawStored().then((r) => r?.timeoutMsExplicit)).toBe(false);
     // 数字仍是兜底的 2000，但生效值不同 —— 这正是修复前「声明值与执行值不一致」的那处，必须可见
     expect(view.timeoutMs).toBe(2_000);
@@ -96,10 +96,10 @@ describe("系统级：超时是否「有人真填过」", () => {
   });
 
   it("省略 timeoutMs 的二次保存不抹掉既有显式性（与 apiKey 同的「不填不改」语义）", async () => {
-    await saveSystemLlmConfig(ctx, { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", timeoutMs: 45_000 }, ACTOR);
+    await saveSystemLlmConfig(ctx, { baseUrl: PUBLIC_URL, model: "test-model", timeoutMs: 45_000 }, ACTOR);
     const view = await saveSystemLlmConfig(
       ctx,
-      { baseUrl: PUBLIC_URL, model: "agnes-2.5-flash", temperature: 0.5 },
+      { baseUrl: PUBLIC_URL, model: "test-model-2", temperature: 0.5 },
       ACTOR,
     );
     expect(view.timeoutMs).toBe(45_000);
@@ -110,7 +110,7 @@ describe("系统级：超时是否「有人真填过」", () => {
   it("思考关掉时回显等于配置值：放宽只属于真的下发思维链的请求", async () => {
     const view = await saveSystemLlmConfig(
       ctx,
-      { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", timeoutMs: 8_000, thinking: false },
+      { baseUrl: PUBLIC_URL, model: "test-model", timeoutMs: 8_000, thinking: false },
       ACTOR,
     );
     expect(view.thinking).toBe(false);
@@ -125,7 +125,7 @@ describe("解析链：旧记录与环境变量", () => {
       enabled: true,
       name: "旧配置",
       baseUrl: PUBLIC_URL,
-      model: "agnes-3.0-flash",
+      model: "test-model",
       apiKeyEnc: null,
       timeoutMs: 20_000,
       temperature: 0.2,
@@ -151,7 +151,7 @@ describe("解析链：旧记录与环境变量", () => {
       enabled: true,
       name: "已显式",
       baseUrl: PUBLIC_URL,
-      model: "agnes-3.0-flash",
+      model: "test-model",
       apiKeyEnc: null,
       timeoutMs: 30_000,
       timeoutMsExplicit: true,
@@ -238,7 +238,7 @@ describe("备用池：逐条独立判定显式性", () => {
       ctx,
       {
         baseUrl: PUBLIC_URL,
-        model: "agnes-3.0-flash",
+        model: "test-model",
         fallbacks: [
           { id: "fb-tight", baseUrl: PUBLIC_URL, model: "fb-tight", timeoutMs: 12_000, apiKey: "sk-fb-secret-12345678" },
           { baseUrl: PUBLIC_URL, model: "fb-loose" },
@@ -256,7 +256,7 @@ describe("备用池：逐条独立判定显式性", () => {
       ctx,
       {
         baseUrl: PUBLIC_URL,
-        model: "agnes-3.0-flash",
+        model: "test-model",
         fallbacks: first.fallbacks.map((fb) => ({
           id: fb.id,
           baseUrl: PUBLIC_URL,

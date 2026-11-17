@@ -6,7 +6,7 @@ import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 
-describe("Dimension 3: Agnes 3.0 Flash Copilot API", () => {
+describe("Dimension 3: AI Copilot API", () => {
   let dir: string;
   let ctx: AppContext;
   let app: Awaited<ReturnType<typeof buildServer>>;

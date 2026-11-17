@@ -135,7 +135,7 @@ describe('/ask 页面源码守卫', () => {
   })
 
   it('隐私说明文案常驻输入框下方', () => {
-    expect(view).toContain('你的收藏标题、描述与备注会随问题一起发给 AI 服务商（默认 Agnes）生成答案')
+    expect(view).toContain('你的收藏标题、描述与备注会随问题一起发给 AI 服务商（默认 AI 服务商）生成答案')
     expect(view).toContain('问题与答案默认只保存在这台设备上，不会同步到服务器')
   })
 

@@ -24,7 +24,6 @@ vi.mock("node:dns/promises", async (importOriginal) => {
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AGNES_BASE_URL, AGNES_MODEL } from "@navhub/ai";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
@@ -48,10 +47,8 @@ beforeAll(async () => {
       enabled: false,
     },
     llm: {
-      name: "Agnes 3.0 Flash",
-      baseUrl: AGNES_BASE_URL,
-      apiKey: null,
-      model: AGNES_MODEL,
+      // 未配置：name/baseUrl/model 走 loadConfig 的空串默认值（2026-11-18 起
+      // 无内置默认厂商，此前为 Agnes，已按用户决定彻底移除）。
       timeoutMs: 5000,
     },
     fetch: {
@@ -77,7 +74,10 @@ afterAll(async () => {
 });
 
 describe("AI 模型配置管理端接口（/api/admin/ai/config）", () => {
-  it("默认返回内置 Agnes 3.0 Flash 配置，且 source 为 default", async () => {
+  // 2026-11-18 起无内置默认厂商（此前为 Agnes，已按用户决定彻底移除）：
+  // 未配置时返回空 provider（name/baseUrl/model 均为 ""），source 为 default，
+  // AI 功能降级为本地，绝不静默指向某个厂商。
+  it("未配置时返回空 provider，且 source 为 default", async () => {
     const res = await app.inject({
       method: "GET",
       url: "/api/admin/ai/config",
@@ -85,10 +85,14 @@ describe("AI 模型配置管理端接口（/api/admin/ai/config）", () => {
     expect(res.statusCode).toBe(200);
     const data = res.json();
     expect(data.effective.source).toBe("default");
-    expect(data.effective.model).toBe(AGNES_MODEL);
+    expect(data.effective.model).toBe("");
     expect(data.effective.hasApiKey).toBe(false);
-    expect(data.config.model).toBe(AGNES_MODEL);
-    expect(data.config.baseUrl).toBe(AGNES_BASE_URL);
+    // name/baseUrl 不在路由层 effective 里（它只有 source/model/hasApiKey），
+    // 在嵌套的 config.effective 里；两处都钉空。
+    expect(data.config.effective.name).toBe("");
+    expect(data.config.effective.baseUrl).toBe("");
+    expect(data.config.model).toBe("");
+    expect(data.config.baseUrl).toBe("");
   });
 
   it("保存系统级配置并加密落库，返回掩码密钥与 system 来源", async () => {
@@ -96,9 +100,9 @@ describe("AI 模型配置管理端接口（/api/admin/ai/config）", () => {
       method: "PUT",
       url: "/api/admin/ai/config",
       payload: {
-        name: "自定义 Agnes",
-        baseUrl: "https://api.agnes-ai.cn/v1",
-        model: "agnes-3.0-flash",
+        name: "自定义模型",
+        baseUrl: "https://llm.example.com/v1",
+        model: "test-model",
         apiKey: "sk-agnes-secret-1234567890",
         timeoutMs: 8000,
         temperature: 0.1,

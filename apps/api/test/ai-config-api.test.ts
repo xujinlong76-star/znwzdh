@@ -42,10 +42,10 @@ beforeAll(async () => {
     sqlitePath: join(dir, "ai.db"),
     embedding: { enabled: false, cacheDir: join(dir, "models") },
     llm: {
-      name: "Agnes 3.0 Flash",
+      name: "测试模型",
       baseUrl: PUBLIC_URL,
       apiKey: ENV_KEY,
-      model: "agnes-3.0-flash",
+      model: "test-model",
       timeoutMs: 2000,
       allowPrivateNetwork: true,
     },
@@ -86,9 +86,9 @@ describe("系统级配置（管理端）", () => {
       url: ADMIN,
       payload: {
         enabled: true,
-        name: "Agnes 主力",
+        name: "测试主力",
         baseUrl: PUBLIC_URL,
-        model: "agnes-3.0-flash",
+        model: "test-model",
         apiKey: SYSTEM_KEY,
         timeoutMs: 5000,
         temperature: 0.1,
@@ -99,7 +99,7 @@ describe("系统级配置（管理端）", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.config.source).toBe("db");
-    expect(body.config.name).toBe("Agnes 主力");
+    expect(body.config.name).toBe("测试主力");
     expect(body.config.apiKeyMasked).toBe("sk-****9876");
     expect(JSON.stringify(body)).not.toContain(SYSTEM_KEY);
 
@@ -113,7 +113,7 @@ describe("系统级配置（管理端）", () => {
     let res = await app.inject({
       method: "PUT",
       url: ADMIN,
-      payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" },
+      payload: { baseUrl: PUBLIC_URL, model: "test-model" },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().config.apiKeyMasked).toBe("sk-****9876");
@@ -121,7 +121,7 @@ describe("系统级配置（管理端）", () => {
     res = await app.inject({
       method: "PUT",
       url: ADMIN,
-      payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", apiKey: "" },
+      payload: { baseUrl: PUBLIC_URL, model: "test-model", apiKey: "" },
     });
     expect(res.statusCode).toBe(200);
     const raw = await ctx.repo.getSystemState<Record<string, unknown>>(SYSTEM_LLM_CONFIG_KEY);
@@ -142,7 +142,7 @@ describe("系统级配置（管理端）", () => {
     let res = await app.inject({
       method: "PUT",
       url: ADMIN,
-      payload: { enabled: false, baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" },
+      payload: { enabled: false, baseUrl: PUBLIC_URL, model: "test-model" },
     });
     expect(res.statusCode).toBe(200);
     expect(ctx.capabilities.llm).toBe(false);
@@ -167,7 +167,7 @@ describe("系统级配置（管理端）", () => {
     let res = await app.inject({
       method: "PUT",
       url: ADMIN,
-      payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", apiKey: SYSTEM_KEY },
+      payload: { baseUrl: PUBLIC_URL, model: "test-model", apiKey: SYSTEM_KEY },
     });
     expect(res.statusCode).toBe(200);
     res = await app.inject({
@@ -177,7 +177,7 @@ describe("系统级配置（管理端）", () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.config.model).toBe("agnes-3.0-flash");
+    expect(body.config.model).toBe("test-model");
     expect(body.config.apiKeyMasked).toBe("sk-****0001");
     expect(JSON.stringify(body)).not.toContain("sk-rotated-new-key-0001");
     // 轮换立即生效（resolveLlm 缓存已失效），不是等 30s 才换钥
@@ -202,10 +202,10 @@ describe("系统级配置（管理端）", () => {
       url: ADMIN,
       payload: {
         baseUrl: PUBLIC_URL,
-        model: "agnes-3.0-flash",
+        model: "test-model",
         fallbacks: [
-          { id: "fb-test-1", name: "备用 A", baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", apiKey: "sk-fb-secret-1111" },
-          { name: "备用 B", baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" },
+          { id: "fb-test-1", name: "备用 A", baseUrl: PUBLIC_URL, model: "test-model", apiKey: "sk-fb-secret-1111" },
+          { name: "备用 B", baseUrl: PUBLIC_URL, model: "test-model" },
         ],
       },
     });
@@ -229,8 +229,8 @@ describe("系统级配置（管理端）", () => {
       url: ADMIN,
       payload: {
         baseUrl: PUBLIC_URL,
-        model: "agnes-3.0-flash",
-        fallbacks: [{ id: "fb-test-1", baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" }],
+        model: "test-model",
+        fallbacks: [{ id: "fb-test-1", baseUrl: PUBLIC_URL, model: "test-model" }],
       },
     });
     expect(res.json().config.fallbacks[0].apiKeyMasked).toBe("sk-****1111");
@@ -246,7 +246,7 @@ describe("系统级配置（管理端）", () => {
       url: ADMIN,
       payload: {
         baseUrl: PUBLIC_URL,
-        model: "agnes-3.0-flash",
+        model: "test-model",
         fallbacks: [{ baseUrl: "http://127.0.0.1:9/v1", model: "m", allowPrivateNetwork: false }],
       },
     });
@@ -261,7 +261,7 @@ describe("系统级配置（管理端）", () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
-          model: "agnes-3.0-flash",
+          model: "test-model",
           choices: [{ message: { role: "assistant", content: "ok" } }],
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
         }),
@@ -271,13 +271,13 @@ describe("系统级配置（管理端）", () => {
       const res = await app.inject({
         method: "POST",
         url: ADMIN_TEST,
-        payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", apiKey: "sk-test" },
+        payload: { baseUrl: PUBLIC_URL, model: "test-model", apiKey: "sk-test" },
       });
       expect(res.statusCode).toBe(200);
       const result = res.json().result;
       expect(result.ok).toBe(true);
       expect(result.replyPreview).toBe("ok");
-      expect(result.model).toBe("agnes-3.0-flash");
+      expect(result.model).toBe("test-model");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -308,9 +308,9 @@ describe("用户级配置（个人设置）", () => {
       url: USER,
       headers: H_A,
       payload: {
-        name: "我的 Agnes",
+        name: "我的模型",
         baseUrl: PUBLIC_URL,
-        model: "agnes-3.0-flash",
+        model: "test-model",
         apiKey: USER_KEY,
         timeoutMs: 3000,
       },
@@ -327,7 +327,7 @@ describe("用户级配置（个人设置）", () => {
     // 解析链：A 走 user 层
     const resolved = await resolveLlm(ctx, "anon-test-a");
     expect(resolved.source).toBe("user");
-    expect(resolved.provider.model).toBe("agnes-3.0-flash");
+    expect(resolved.provider.model).toBe("test-model");
     expect(resolved.provider.apiKey).toBe(USER_KEY);
 
     // 删除回退
@@ -370,7 +370,7 @@ describe("用户级配置（个人设置）", () => {
         baseUrl: LOOPBACK_URL,
         model: "primary-model",
         allowPrivateNetwork: true,
-        fallbacks: [{ baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", apiKey: "sk-fb-9999" }],
+        fallbacks: [{ baseUrl: PUBLIC_URL, model: "test-model", apiKey: "sk-fb-9999" }],
       },
     });
     expect(res.statusCode).toBe(200);
@@ -381,7 +381,7 @@ describe("用户级配置（个人设置）", () => {
       if (url.includes("127.0.0.1:9")) throw new TypeError("fetch failed");
       return new Response(
         JSON.stringify({
-          model: "agnes-3.0-flash",
+          model: "test-model",
           choices: [{ message: { role: "assistant", content: "你好" } }],
           usage: { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 },
         }),
@@ -400,7 +400,7 @@ describe("用户级配置（个人设置）", () => {
       const body = res.json();
       expect(body.reply).toBe("你好");
       expect(body.source).toBe("system");
-      expect(body.model).toBe("agnes-3.0-flash");
+      expect(body.model).toBe("test-model");
       expect(body.usage.totalTokens).toBe(4);
     } finally {
       globalThis.fetch = originalFetch;
@@ -413,7 +413,7 @@ describe("用户级配置（个人设置）", () => {
       method: "PUT",
       url: USER,
       headers: { "x-navhub-anon-id": "anon-test-c" },
-      payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" },
+      payload: { baseUrl: PUBLIC_URL, model: "test-model" },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe("config");
@@ -434,7 +434,7 @@ describe("用户级配置（个人设置）", () => {
     globalThis.fetch = (async () => {
       return new Response(
         JSON.stringify({
-          model: "agnes-3.0-flash",
+          model: "test-model",
           choices: [
             {
               message: {
@@ -473,7 +473,7 @@ describe("用户级配置（个人设置）", () => {
       expect(data.layout.widgets[0].type).toBe("quick-search");
       expect(data.layout.widgets[0].colSpan).toBe(12);
       expect(data.layout.widgets[1].type).toBe("favorites-dock");
-      expect(data.model).toBe("agnes-3.0-flash");
+      expect(data.model).toBe("test-model");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -488,7 +488,7 @@ describe("用户级配置（个人设置）", () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
-          model: "agnes-3.0-flash",
+          model: "test-model",
           choices: [{ message: { role: "assistant", content: JSON.stringify(content) } }],
           usage: { prompt_tokens: 30, completion_tokens: 60, total_tokens: 90 },
         }),
@@ -600,7 +600,7 @@ describe("用户级配置（个人设置）", () => {
     // 单价没配 = 折算不出来，必须写 null；硬编一个 ¥ 数就是给运维放假账
     expect(body.estimatedCostRmb).toBeNull();
     expect(body.costUnitPriceRmb).toBeNull();
-    expect(body.activeModel).toBe("agnes-3.0-flash");
+    expect(body.activeModel).toBe("test-model");
     expect(Array.isArray(body.byScenario)).toBe(true);
     expect(Array.isArray(body.hourlyTrend)).toBe(true);
     expect(body.hourlyTrend.length).toBe(24);
@@ -628,7 +628,7 @@ describe("用户级配置（个人设置）", () => {
     const save = await app.inject({
       method: "PUT",
       url: ADMIN,
-      payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", costPer1kTokensRmb: 0.01 },
+      payload: { baseUrl: PUBLIC_URL, model: "test-model", costPer1kTokensRmb: 0.01 },
     });
     expect(save.statusCode).toBe(200);
     expect(save.json().config.costPer1kTokensRmb).toBe(0.01);

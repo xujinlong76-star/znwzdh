@@ -4,6 +4,9 @@ import { HomeBriefStrip } from "@/components/home-brief-strip";
 import { HomeExamStrip } from "@/components/home-exam-strip";
 import { HomeTodayZone } from "@/components/home-today-zone";
 import { HomeTodayMore } from "@/components/home-today-more";
+import { HomePluginSpotlight } from "@/components/home-plugin-spotlight";
+import { hubGet } from "@/lib/server/hub";
+import type { HubPluginItem } from "@/lib/navhub-api";
 import { HandoffCardWithCloud } from "@/components/handoff-card-with-cloud";
 import { StreakBar } from "@/components/growth/streak-bar";
 import { Metadata } from "next/types";
@@ -300,10 +303,13 @@ export default async function HomePage() {
   // 导航数据与目录带互不依赖：串行 await 等于在白送一个中枢往返的 TTFB，
   // 而首页是爬虫面第一入口（getData 内部已并行，loadDirectoryLinks 内部也已并行）。
   // 影院首张海报的读取同样独立，并进同一批（升级第 1 条：LCP）。
-  const [{ navigationData, siteData }, directoryLinks, cinemaPoster] = await Promise.all([
+  const [{ navigationData, siteData }, directoryLinks, cinemaPoster, featuredRes] = await Promise.all([
     getData(),
     loadDirectoryLinks(),
     getFirstDramaPoster(),
+    // P2-12：首页插件精选区（与市场页同款取数口径：featured + sort=featured + limit=6）。
+    // 取不到（中枢抖动）返回 null，精选区只留入口、不编假插件名。
+    hubGet<{ items: HubPluginItem[]; total: number }>('/api/plugins?featured=true&sort=featured&limit=6', 60),
   ]);
   // 影院区首屏初始数据（升级第 1 条）：服务端用同一份导航数据算好榜单与横幅
   // 站数，随 RSC 一起下发，影院组件就不再请求 /api/home/navigation；首张海报
@@ -321,6 +327,7 @@ export default async function HomePage() {
   return (
     <>
       <HomeTodayZone />
+      <HomePluginSpotlight items={featuredRes ? featuredRes.items : null} />
       <HomeTodayMore>
         <HomeBriefStrip />
         <HomeExamStrip />

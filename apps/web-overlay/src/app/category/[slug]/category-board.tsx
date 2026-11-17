@@ -23,6 +23,10 @@ import { descendantSiteCounts } from '@/lib/seo/category-totals'
 import { maxReachableCategoryPage } from '@/lib/seo/category-pagination'
 import { categoryHref, categoryUrlKey } from '@/lib/seo/category-url'
 import { tagSlug } from '@/lib/seo/tag-slug'
+import {
+  MARKETPLACE_CATEGORIES_PATH,
+  resolveRelatedPluginLink,
+} from '@/lib/plugins/marketplace-categories'
 import type { HubSite } from '@/lib/navhub-api'
 import {
   categoryAltLabels,
@@ -196,6 +200,10 @@ export async function CategoryBoard({
   // 薄分类页本身 404，链过去是死链）。
   const curatedRelated = resolveRelatedCategories(category, categories, counts)
   const altLabels = categoryAltLabels(category)
+  // P2-12：相关插件入口。只映射已验证有命中的搜索词/kind（见
+  // lib/plugins/marketplace-categories.ts），映射不到时为 null，调用处只给
+  // 通用入口，不把用户送进一个「相关插件 0 个」的搜索页。
+  const relatedPlugin = resolveRelatedPluginLink(name)
 
   // 高频标签：只取本页站点里出现过的标签，链接到已有标签页
   const tagCounts = new Map<string, number>()
@@ -308,6 +316,12 @@ export async function CategoryBoard({
               <Link href="/tags" className="text-primary hover:underline">
                 按标签浏览
               </Link>
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
+              <Link href={MARKETPLACE_CATEGORIES_PATH} className="text-primary hover:underline">
+                插件市场
+              </Link>
             </nav>
           </header>
 
@@ -371,6 +385,43 @@ export async function CategoryBoard({
               </Link>
             </div>
           )}
+
+          {/* P2-12：相关插件入口（在站点列表之上，不用拉到底部才看见）。
+              relatedPlugin 有值时给一条按分类名映射的市场搜索/kind 链接
+              （只映射已验证有命中的词）；无值时只给两个通用入口，不承诺结果数。 */}
+          <section
+            data-testid="category-related-plugins"
+            aria-label="相关插件"
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs text-foreground"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="min-w-0">
+                <span className="font-semibold text-foreground block text-sm">
+                  「{name}」也可以一键安装
+                </span>
+                <span className="text-muted-foreground text-xs block">
+                  插件市场有声明式网址包、工作台预设与主题扩展，无可执行代码
+                </span>
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              {relatedPlugin ? (
+                <Link
+                  href={relatedPlugin.href}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors text-xs shadow-2xs"
+                >
+                  <span>在插件市场搜「{relatedPlugin.queryLabel}」</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              ) : null}
+              <Link
+                href={MARKETPLACE_CATEGORIES_PATH}
+                className="text-primary hover:underline"
+              >
+                按分类浏览插件
+              </Link>
+            </div>
+          </section>
 
           {/* 根分类专属：子分类快捷直达轨 */}
           {isRootPage && related.length > 0 && (

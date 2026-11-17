@@ -20,28 +20,24 @@
  *      否则全局收藏栈 pop → 执行其 undo()；
  *  (6) Ctrl+Shift+Z / Ctrl+Y（非 Mac 的 Y）：只重做 DIY/画布快照栈，
  *      收藏类无 redo；无可重做时放行，不吞按键；
- *  (7) Mac 用 metaKey，其余用 ctrlKey；无可撤销时不 preventDefault。
+ *  (7) Mac 用 metaKey，其余用 ctrlKey；候选键在同步分流后先行认领
+ *      （preventDefault + stopImmediatePropagation），再加载重实现决策——
+ *      非输入场景下 Ctrl+Z 无浏览器默认行为，提前认领不改变可观察行为；
+ *      放行场景（1）-（4）在认领前已返回。
+ *
+ * 首屏网守（U-24）：监听本身只静态依赖 keyboard-guards + undo-stack +
+ * home-diy-claim（均为同步轻量模块）；DIY/画布/掩码三棵重实现
+ * （home-diy-storage、canvas-undo-registry、feature-mask-store）与
+ * useFavorites 链只在第一次按下候选撤销/重做键时才 dynamic import，
+ * 平时不进全路由共享 chunk。
  */
 
 import { useEffect } from 'react'
-import { useFavorites } from '@/hooks/useFavorites'
 import {
   claimHomeDiyHistoryStep,
-  commitHomeDiyConfig,
   didHomeDiyHistoryStepClaimThisTask,
-  getHomeDiySnapshot,
-  redoHomeDiy,
-  undoHomeDiy,
-} from '@/lib/modular/home-diy-storage'
-import {
-  getCanvasUndoHandler,
-} from '@/lib/modular/canvas-undo-registry'
-import {
-  getFeatureMaskSnapshot,
-  stripFeaturePrefix,
-  undoLastFeatureRemove,
-} from '@/lib/modular/feature-mask-store'
-import { peekGlobalUndo } from '@/lib/undo-stack'
+} from '@/lib/modular/home-diy-claim'
+import { peekGlobalUndo, popGlobalUndo } from '@/lib/undo-stack'
 import { isAnyDialogOpen, isEventTargetTyping } from '@/lib/keyboard-guards'
 
 export type GlobalUndoAction =
@@ -133,40 +129,89 @@ export function describeGlobalUndoKeyEvent(e: KeyboardEvent): Omit<GlobalUndoKey
   }
 }
 
-/** feature-mask 恢复的分类双写（navigation-content.tsx:462 的模式） */
-function undoMaskRemove(): boolean {
-  const restored = undoLastFeatureRemove()
-  if (!restored) return false
-  if (restored.level === 'L2_CATEGORY') {
-    // 两份账本（DIY hiddenCategoryIds + 掩码 hiddenCategories）一起清，
-    // 只清掩码会让下一次 syncHiddenCategoriesFromDIY 又把它藏回去
-    commitHomeDiyConfig((prev) => ({
-      ...prev,
-      hiddenCategoryIds: (prev.hiddenCategoryIds ?? []).filter(
-        (id) => id !== stripFeaturePrefix(restored.id),
-      ),
-      updatedAt: Date.now(),
-    }))
+/**
+ * 与 useFavorites().undoLast()（hooks/useFavorites.ts:1172-1180）逐行等价：
+ * 取栈顶并执行其 undo()；空栈 / 抛错时返回 { ok: false, message }。
+ * undoLast 不读任何 hook 本地状态，只依赖 undo-stack 单例——直接走
+ * undo-stack 即可，不必为这一个调用把整条 useFavorites 链
+ * （82,203B 源码 + import-workbench / quicklinks / favorites-triage 等闭包）
+ * 拉进根 layout 的静态 import。
+ */
+async function undoLast(): Promise<{ ok: boolean; message?: string }> {
+  const entry = popGlobalUndo()
+  if (!entry) return { ok: false, message: '没有可撤销的操作' }
+  try {
+    return await entry.undo()
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : '撤销失败' }
   }
-  return true
 }
 
 /**
  * 全局监听（Providers 里只调一次）。返回 true 表示本次按键已被消费。
  * 注意：DIY undo 走 claim 制（按钮入口也认领），其余分支不认领——
  * 认领只拦"同一按键撤两步 DIY"，收藏/mask/画布各只有一条路。
+ *
+ * 两段式：同步轻量分流（只读 keyboard-guards + 认领叶子模块）先筛掉
+ * 非候选键与放行场景；候选键先行认领（preventDefault +
+ * stopImmediatePropagation），再 dynamic import 三棵重实现做完整决策
+ * 与执行。监听只挂一次（deps []），重实现加载后常驻 chunk，后续按键
+ * 不再重复加载。
  */
 export function useGlobalUndo(): void {
-  // 只取稳定的 undoLast（useCallback []），避免 favorites 对象每渲染
-  // 换引用导致监听反复重挂
-  const { undoLast } = useFavorites()
-
   useEffect(() => {
     const onKeyDown = async (e: KeyboardEvent) => {
+      const desc = describeGlobalUndoKeyEvent(e)
+      // 同步分流：不是撤销/重做键，或应放行的场景（IME/输入框/对话框/
+      // 已被认领）——直接返回，不加载重实现。
+      if (!desc.modifier) return
+      if (!desc.isZ && !desc.isY) return
+      if (desc.composing || desc.typing || desc.dialogOpen || desc.diyClaimed) return
+      // 候选撤销/重做键：先同步认领再加载。非输入场景下 Ctrl+Z 无浏览器
+      // 默认行为，等加载回来再拦截会漏掉；放行场景已在上面返回，不会被吞键。
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      const [
+        {
+          commitHomeDiyConfig,
+          getHomeDiySnapshot,
+          redoHomeDiy,
+          undoHomeDiy,
+        },
+        { getCanvasUndoHandler },
+        {
+          getFeatureMaskSnapshot,
+          stripFeaturePrefix,
+          undoLastFeatureRemove,
+        },
+      ] = await Promise.all([
+        import('@/lib/modular/home-diy-storage'),
+        import('@/lib/modular/canvas-undo-registry'),
+        import('@/lib/modular/feature-mask-store'),
+      ])
+
+      /** feature-mask 恢复的分类双写（navigation-content.tsx:462 的模式） */
+      const undoMaskRemove = (): boolean => {
+        const restored = undoLastFeatureRemove()
+        if (!restored) return false
+        if (restored.level === 'L2_CATEGORY') {
+          // 两份账本（DIY hiddenCategoryIds + 掩码 hiddenCategories）一起清，
+          // 只清掩码会让下一次 syncHiddenCategoriesFromDIY 又把它藏回去
+          commitHomeDiyConfig((prev) => ({
+            ...prev,
+            hiddenCategoryIds: (prev.hiddenCategoryIds ?? []).filter(
+              (id) => id !== stripFeaturePrefix(restored.id),
+            ),
+            updatedAt: Date.now(),
+          }))
+        }
+        return true
+      }
+
       const snapshot = getHomeDiySnapshot()
       const canvas = getCanvasUndoHandler()
       const action = decideGlobalUndoKey({
-        ...describeGlobalUndoKeyEvent(e),
+        ...desc,
         diyCanUndo: snapshot.isEditingLayout && snapshot.history.past.length > 0,
         canvasCanUndo: canvas !== null && canvas.canUndo,
         maskHasTrash: getFeatureMaskSnapshot().trashBin.length > 0,
@@ -177,8 +222,6 @@ export function useGlobalUndo(): void {
         canvasCanRedo: canvas !== null && canvas.canRedo,
       })
       if (action === 'ignore') return
-      e.preventDefault()
-      e.stopImmediatePropagation()
       switch (action) {
         case 'undo-diy': {
           // 认领失败说明别的入口已处理了这次按键，直接返回，不再撤第二步
@@ -211,5 +254,5 @@ export function useGlobalUndo(): void {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [undoLast])
+  }, [])
 }

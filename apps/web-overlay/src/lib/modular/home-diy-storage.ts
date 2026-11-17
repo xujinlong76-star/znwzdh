@@ -673,30 +673,10 @@ export function redoHomeDiy(): HomeDiyWriteResult | null {
   return writeHomeDiyState(next.present, next)
 }
 
-/**
- * 同一按键只撤销一步（W2-9）的认领制：Ctrl+Z 有三条 window keydown 监听——
- * 画布撤销（modular-canvas，未编排态也挂着）、排版撤销（use-home-diy，
- * 仅编排态）、回收站恢复（navigation-content）——不拦就会一次按键撤两步。
- * 同一任务（task）里第一个认领者返回 true 并执行，其余返回 false；
- * 认领在微任务末尾自动清零（同一按键的后续监听都在同一任务里跑完）。
- * 注意：这里不拦 undoHomeDiy 本身——旧测试在同一 `it` 里同步连调两次
- * undoHomeDiy()，拦它会把测试也拦了；认领只拦按键入口（use-home-diy
- * 的 undo/redo 回调 + navigation-content 的恢复监听）。
- */
-let homeDiyHistoryStepClaimed = false
-
-export function claimHomeDiyHistoryStep(): boolean {
-  if (homeDiyHistoryStepClaimed) return false
-  homeDiyHistoryStepClaimed = true
-  queueMicrotask(() => {
-    homeDiyHistoryStepClaimed = false
-  })
-  return true
-}
-
-export function didHomeDiyHistoryStepClaimThisTask(): boolean {
-  return homeDiyHistoryStepClaimed
-}
+// 认领制状态源已抽到零 import 叶子模块 home-diy-claim.ts（见该文件注释）：
+// use-global-undo 的轻量网守直接 import 叶子模块，不必静态拉入本文件。
+// 这里继续 re-export，既有导入路径（本文件 / use-home-diy 的 export *）不变。
+export { claimHomeDiyHistoryStep, didHomeDiyHistoryStepClaimThisTask } from './home-diy-claim'
 
 /**
  * 接收其它标签页的改动：按插槽 LWW 合并，绝不整表覆盖。

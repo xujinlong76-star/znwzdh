@@ -156,11 +156,16 @@ test.describe('插件市场：卸载 / 停用 / 回滚端到端', () => {
     await removeSitesBox.check();
     await expect(removeSitesBox).toBeChecked();
 
-    // 确认卸载 → 回执 toast：站点进回收站 + 分类同步删除
+    // 确认卸载 → 回执 toast：站点进回收站。分类是 0 个——新安装路径只把包内分类
+    // 解析到权威树叶子（解析不出的记为缺口），从不建 plugin:* 类目行，卸载也就
+    // 没有可删的插件专属分类（registry 叶子必须存活，见 store plugins.test.ts
+    // 「安装只解析权威树」）。回执按实际计数拼装：1 站点 / 0 分类就是只有站点分句，
+    // 不要再期望「并同步删除 1 个网址分类」（run 44137387080 的失败 1 即此过期期望；
+    // 本地复现：卸载响应 removedSites=1、removedCategories=0）。
     await dialog.getByRole('button', { name: '确认卸载' }).click();
     await expect(page.getByText(`已卸载「${name}」`)).toBeVisible({ timeout: 15_000 });
     await expect(
-      page.getByText('已清理关联站点（1 个站点已移至回收站），并同步删除 1 个网址分类'),
+      page.getByText('已清理关联站点（1 个站点已移至回收站）'),
     ).toBeVisible({ timeout: 15_000 });
 
     // 详情页恢复可安装态

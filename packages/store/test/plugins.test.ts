@@ -362,6 +362,47 @@ describe("安装 / 卸载（site-pack 真实落库）", () => {
     expect(await repo.getCategoryBySlug("ai-tools")).not.toBeNull();
   });
 
+  it("E2E 形态新安装后卸载：1 站点 / 0 分类（run 44137387080 失败 1 的钉子）", async () => {
+    // E2E 包的分类名（「E2E 分类 <stamp>」）在权威树里解析不出：安装记为缺口、
+    // 站点进未分类，不建 plugin:* 类目行。于是卸载只能删掉 1 个站点、0 个分类；
+    // 卸载回执「并同步删除 1 个网址分类」在新安装路径下永远不成立，E2E 期望
+    // 只能是「已清理关联站点（1 个站点已移至回收站）」。removedCategories=1
+    // 只可能来自旧版安装留下的存量 plugin:* 行（见上一条用例），不是新安装。
+    const stamp = Date.now().toString(36);
+    const plugin = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: `E2E 卸载包 ${stamp}`,
+        description: "Playwright 端到端测试自动生成的网址包（可安全清理）",
+        icon: "🧪",
+        version: "1.0.0",
+        tags: ["e2e"],
+        payload: {
+          categories: [{ title: `E2E 分类 ${stamp}` }],
+          sites: [
+            {
+              url: `https://e2e-${stamp}.example.com`,
+              title: `E2E 示例站 ${stamp}`,
+              category: `E2E 分类 ${stamp}`,
+              tags: ["e2e"],
+            },
+          ],
+        },
+      }),
+      status: "published",
+    });
+    const installed = await repo.installPlugin(plugin.slug, "anon-e2e-uninstall");
+    expect(installed.applied.sitesAdded).toBe(1);
+    expect(installed.applied.categoriesCreated).toBe(0);
+    expect(installed.applied.categoryGaps ?? []).toEqual([`E2E 分类 ${stamp}`]);
+    expect(await repo.raw("SELECT id FROM categories WHERE source LIKE 'plugin:%'")).toEqual([]);
+    const uninst = await repo.uninstallPlugin(plugin.slug, "anon-e2e-uninstall", { removeSites: true });
+    expect(uninst.removed).toBe(true);
+    expect(uninst.removedSites).toBe(1);
+    expect(uninst.removedCategories).toBe(0);
+  });
+
   it("垂类标题塌进同一个叶子时，包内分类名降级成标签保住那层细分", async () => {
     // 真实形态：auto-driving 的 18 个包内分类全部解析到「汽车与驾驶」一个叶子。
     // 树只有两层、放不下第三层细分，不接住的话装完就是 200 站平铺、层级全丢。

@@ -49,6 +49,9 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识 (identity/anonId)");
       }
+      // 批 B：身份合并后旧 id 仍合法——已安装清单按 canonical 身份读，
+      // 否则合并前的安装在旧身份视角下「消失」。
+      const who = await ctx.repo.resolveIdentity(identity);
 
       const rows = await ctx.repo.raw(
         `SELECT p.*, i.installed_at, i.version AS installed_version, i.disabled_at
@@ -56,7 +59,7 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
          JOIN plugins p ON p.id = i.plugin_id
          WHERE i.identity = ? AND i.removed_at IS NULL
          ORDER BY i.installed_at DESC`,
-        [identity]
+        [who]
       );
 
       const items = rows.map((r: any) => ({
@@ -236,6 +239,9 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
       // 无票请求降级为 null，插件本体仍按公开可见性返回。
       const identity = pluginIdentity(ctx, req);
       const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
+      // 批 B：isOwner 仍用原始 identity 比较（归属不动）；安装/星标/已装清单/
+      // 我的评价这四处用户态读一律走 canonical 身份。
+      const who = identity ? await ctx.repo.resolveIdentity(identity) : null;
       // 不能直接读 req.auth.scopes：鉴权模式下的无票调用方带着 ANONYMOUS_IDENTITY
       // 的全量 scopes（hook 只在有效 token 时覆写），只有 kind 可信。
       const isAdmin = isAdminScope(ctx, req as never);
@@ -252,16 +258,16 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
       let installRecord = null;
       let upgradeDiff = null;
 
-      if (identity) {
-        installRecord = await ctx.repo.getPluginInstall(plugin.id, identity);
+      if (who) {
+        installRecord = await ctx.repo.getPluginInstall(plugin.id, who);
         isInstalled = Boolean(installRecord && installRecord.removedAt === null);
-        isStarred = await ctx.repo.hasUserStarredPlugin(plugin.id, identity);
+        isStarred = await ctx.repo.hasUserStarredPlugin(plugin.id, who);
         if (
           isInstalled &&
           installRecord?.version &&
           comparePluginVersions(plugin.version, installRecord.version) > 0
         ) {
-          const installedManifest = await ctx.repo.getPluginInstalledManifest(plugin.id, identity);
+          const installedManifest = await ctx.repo.getPluginInstalledManifest(plugin.id, who);
           if (installedManifest) {
             upgradeDiff = diffPluginManifests(installedManifest, plugin.manifest);
           }
@@ -275,7 +281,7 @@ export const pluginRoutesPart2: FastifyPluginAsync<{ ctx: AppContext }> = async 
       );
 
       const reviewStats = await ctx.repo.getPluginReviewStats(plugin.id);
-      const myReview = identity ? await ctx.repo.getUserPluginReview(plugin.id, identity) : null;
+      const myReview = who ? await ctx.repo.getUserPluginReview(plugin.id, who) : null;
       const bundleItems = plugin.kind === "bundle" ? await ctx.repo.getPluginBundleMembers(plugin) : undefined;
 
       return {

@@ -71,16 +71,19 @@ export const pluginRoutesPart5: FastifyPluginAsync<{ ctx: AppContext }> = async 
       }
 
       const identity = pluginIdentity(ctx, req) || undefined;
+      // 批 B：举报归属按 canonical 身份记——合并后旧身份重复举报仍能去重，
+      // 不会在旧 id 下另起一行。
+      const who = identity ? await ctx.repo.resolveIdentity(identity) : undefined;
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
       try {
                 const result = await ctx.repo.reportPlugin(
           slug,
           {
             reason,
-            identity,
+            identity: who,
           },
           {
-            actor: callerAuth?.actor || identity || "anonymous",
+            actor: callerAuth?.actor || who || "anonymous",
             actorKind: callerAuth?.kind,
             ip: req.ip,
           }

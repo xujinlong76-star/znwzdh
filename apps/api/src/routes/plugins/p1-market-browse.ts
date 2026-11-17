@@ -74,9 +74,14 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const starredOnly = q.starred === "true" || q.starred === "1";
 
       const identity = pluginIdentity(ctx, req);
+      // 批 B：身份合并后旧 id 仍是一枚合法身份——用户态读写（星标/安装）
+      // 一律落到 canonical 身份上，否则合并前的星标与安装在旧身份视角下
+      // 「消失」，写入又另起孤儿行。归属比较（isOwner / mine / 发布
+      // ownerIdentity）仍用原始 identity，不在此列。
+      const who = identity ? await ctx.repo.resolveIdentity(identity) : null;
       let starredIds = new Set<string>();
-      if (identity) {
-        starredIds = new Set(await ctx.repo.listStarredPluginIdsByIdentity(identity));
+      if (who) {
+        starredIds = new Set(await ctx.repo.listStarredPluginIdsByIdentity(who));
       }
       if (starredOnly && starredIds.size === 0) {
         return { items: [], total: 0, limit, offset };
@@ -96,8 +101,8 @@ export const pluginRoutesPart1: FastifyPluginAsync<{ ctx: AppContext }> = async 
       });
 
       const installedById = new Map<string, { version: string; installedAt: number }>();
-      if (identity) {
-        for (const item of await ctx.repo.listPluginInstallsByIdentity(identity)) {
+      if (who) {
+        for (const item of await ctx.repo.listPluginInstallsByIdentity(who)) {
           installedById.set(item.plugin.id, {
             version: item.install.version,
             installedAt: item.install.installedAt,

@@ -391,6 +391,9 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
       }
+      // 批 B：身份合并后旧 id 仍合法——安装/冲突检测/事件归属一律落到
+      // canonical 身份上，否则合并后旧身份重装会另起孤儿行、install_count 虚增。
+      const who = await ctx.repo.resolveIdentity(identity);
 
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
@@ -416,7 +419,7 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       if (body.acknowledgeConflicts !== true) {
         let conflicts;
         try {
-          conflicts = await ctx.repo.detectInstallConflicts(slug, identity, {
+          conflicts = await ctx.repo.detectInstallConflicts(slug, who, {
             version: targetVersion,
           });
         } catch (err) {
@@ -432,9 +435,9 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       try {
         const result = await ctx.repo.installPlugin(
           slug,
-          identity,
+          who,
           {
-            actor: callerAuth?.actor || identity,
+            actor: callerAuth?.actor || who,
             actorKind: callerAuth?.kind || "identity",
             ip: req.ip,
           },
@@ -456,7 +459,7 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
         // 服务端漏斗：重复安装/升级不计入“新安装”，避免转化率虚高
         if (!result.alreadyInstalled) {
           void ctx.repo.recordEvent("plugin_install_success", {
-            identity,
+            identity: who,
             meta: { slug, kind: plugin.kind, version: plugin.version },
           }).catch((err) => console.error("[plugins] install event failed:", err));
         }
@@ -487,6 +490,8 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
       }
+      // 批 B：回滚按 canonical 身份找安装记录——合并后旧身份回滚不再 404。
+      const who = await ctx.repo.resolveIdentity(identity);
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
       if (plugin.status !== "published") {
@@ -502,10 +507,10 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       try {
         const result = await ctx.repo.rollbackPlugin(
           slug,
-          identity,
+          who,
           targetVersion,
           {
-            actor: callerAuth?.actor || identity,
+            actor: callerAuth?.actor || who,
             actorKind: callerAuth?.kind || "identity",
             ip: req.ip,
           },
@@ -520,7 +525,7 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
           await indexSitesBatch(ctx, sites);
         }
         void ctx.repo.recordEvent("plugin_rollback", {
-          identity,
+          identity: who,
           meta: { slug, from: result.rolledBackFrom, to: result.rolledBackTo, sitesRemoved: result.sitesRemoved },
         }).catch((err) => console.error("[plugins] rollback event failed:", err));
         return {
@@ -547,6 +552,9 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
     if (!identity) {
       return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
     }
+    // 批 B：卸载按 canonical 身份找安装记录——合并后旧身份卸载不再 404，
+    // 也不把 canonical 名下的站点误删逻辑走错身份。
+    const who = await ctx.repo.resolveIdentity(identity);
 
     const q = (req.query ?? {}) as Record<string, string>;
     const body = (req.body ?? {}) as { removeSites?: boolean };
@@ -556,17 +564,17 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
     try {
       const result = await ctx.repo.uninstallPlugin(
         slug,
-        identity,
+        who,
         { removeSites },
         {
-          actor: callerAuth?.actor || identity,
+          actor: callerAuth?.actor || who,
           actorKind: callerAuth?.kind || "identity",
           ip: req.ip,
         }
       );
       if (result.removed) {
         void ctx.repo.recordEvent("plugin_uninstall", {
-          identity,
+          identity: who,
           meta: { slug, version: result.plugin.version },
         }).catch((err) => console.error("[plugins] uninstall event failed:", err));
       }
@@ -606,18 +614,20 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
     if (!identity) {
       return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
     }
+    // 批 B：禁用/启用按 canonical 身份找安装记录。
+    const who = await ctx.repo.resolveIdentity(identity);
     const plugin = await ctx.repo.getPluginBySlug(slug);
     if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
     const callerAuth = req.auth;
     try {
       const result = enable
-        ? await ctx.repo.enablePluginInstall(slug, identity, {
-            actor: callerAuth?.actor || identity,
+        ? await ctx.repo.enablePluginInstall(slug, who, {
+            actor: callerAuth?.actor || who,
             actorKind: callerAuth?.kind || "identity",
             ip: req.ip,
           })
-        : await ctx.repo.disablePluginInstall(slug, identity, {
-            actor: callerAuth?.actor || identity,
+        : await ctx.repo.disablePluginInstall(slug, who, {
+            actor: callerAuth?.actor || who,
             actorKind: callerAuth?.kind || "identity",
             ip: req.ip,
           });
@@ -665,7 +675,9 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       if (!identity) return badRequest(reply, "缺少用户身份标识");
 
       try {
-        const result = await ctx.repo.starPlugin(slug, identity);
+        // 批 B：星标按 canonical 身份记——合并后旧身份点星不再另起一行。
+        const who = await ctx.repo.resolveIdentity(identity);
+        const result = await ctx.repo.starPlugin(slug, who);
         return { success: true, ...result };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -687,7 +699,9 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       if (!identity) return badRequest(reply, "缺少用户身份标识");
 
       try {
-        const result = await ctx.repo.unstarPlugin(slug, identity);
+        // 批 B：取消星标按 canonical 身份找记录——合并后旧身份取消不再 404。
+        const who = await ctx.repo.resolveIdentity(identity);
+        const result = await ctx.repo.unstarPlugin(slug, who);
         return { success: true, ...result };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

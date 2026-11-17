@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { getIdentity } from '@/lib/identity'
 import { importPlugin, installPlugin } from '@/lib/navhub-api'
+import { formatImportError } from '@/lib/plugin-import-errors'
 import { setActiveTheme } from '@/lib/plugins/theme-runtime'
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
 import { ArrowLeft, FileUp, Loader2, Upload, Globe } from 'lucide-react'
@@ -31,6 +32,8 @@ export default function MarketplaceImportPage() {
   const [installNow, setInstallNow] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 批 B：导入失败是「需要登录」时，失败行旁展示「去登录」入口
+  const [needsLogin, setNeedsLogin] = useState(false)
   const [result, setResult] = useState<{ slug: string; name: string; installed: boolean } | null>(null)
   const [remoteUrl, setRemoteUrl] = useState('')
   const [fetchingUrl, setFetchingUrl] = useState(false)
@@ -62,6 +65,7 @@ export default function MarketplaceImportPage() {
     if (!file) return
     setFileName(file.name)
     setError(null)
+    setNeedsLogin(false)
     try {
       setJsonText(await file.text())
     } catch {
@@ -71,6 +75,7 @@ export default function MarketplaceImportPage() {
 
   const handleImport = async () => {
     setError(null)
+    setNeedsLogin(false)
     setResult(null)
     let manifest: unknown
     try {
@@ -117,7 +122,12 @@ export default function MarketplaceImportPage() {
       setResult({ slug: importedSlug, name: importedName, installed })
       toast({ title: '导入成功', description: `「${importedName}」已直接上架` })
     } catch (err) {
-      setError((err as Error)?.message ?? '导入失败')
+      // 批 B：失败文案按三类指导语模板写（请先登录 / 同名已存在 / 请稍后重试），
+      // 服务端原话只做补充；401/403 不再透传「Unauthorized」技术串，
+      // 而是给出去登录入口。
+      const view = formatImportError(err)
+      setError(view.detail ? `${view.message}（${view.detail}）` : view.message)
+      setNeedsLogin(view.needsLogin)
     } finally {
       setBusy(false)
     }
@@ -229,6 +239,14 @@ export default function MarketplaceImportPage() {
           {error && (
             <p role="alert" className="text-xs text-rose-700 dark:text-rose-400 leading-relaxed">
               导入失败：{error}
+              {needsLogin && (
+                <>
+                  {' '}
+                  <Link href="/auth/signin" className="font-medium underline underline-offset-2">
+                    去登录
+                  </Link>
+                </>
+              )}
             </p>
           )}
 

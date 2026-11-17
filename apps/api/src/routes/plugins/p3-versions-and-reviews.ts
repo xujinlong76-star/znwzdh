@@ -152,10 +152,12 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       // 不再单独放宽到 120——写入侧（安装/星标/评价）一直按 identityOf 取值，
       // 这里读更长的串只会查不到自己的评价，或与签名校验的取值错位。
       // （identity 已在上方状态门禁处取过，此处复用，不重复声明。）
+      // 批 B：myReview 按 canonical 身份读（isOwner 仍用原始 identity 比较）。
+      const who = identity ? await ctx.repo.resolveIdentity(identity) : null;
       const [reviewsResult, stats, myReview] = await Promise.all([
         ctx.repo.listPluginReviews(plugin.id, { limit, offset, cursor }),
         ctx.repo.getPluginReviewStats(plugin.id),
-        identity ? ctx.repo.getUserPluginReview(plugin.id, identity) : null,
+        who ? ctx.repo.getUserPluginReview(plugin.id, who) : null,
       ]);
 
       return {
@@ -219,16 +221,19 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       }
 
       try {
+        // 批 B：评价写入落到 canonical 身份上——合并后旧身份发评价，安装门禁
+        // 与评价归属都按 canonical 身份判定，不再 400、也不另起孤儿行。
+        const who = await ctx.repo.resolveIdentity(identity);
         const review = await ctx.repo.createPluginReview(
           slug,
-          identity,
+          who,
           {
             rating,
             title,
             content,
           },
           {
-            actor: identity,
+            actor: who,
             actorKind: callerAuth?.kind ?? "identity",
             ip: req.ip,
           }
@@ -268,12 +273,14 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
       try {
+        // 批 B：删除按 canonical 身份判定归属——合并后旧身份仍能删自己的评价。
+        const who = await ctx.repo.resolveIdentity(identity);
         const result = await ctx.repo.deletePluginReview(
           slug,
           id,
-          identity,
+          who,
           {
-            actor: callerAuth?.actor || identity,
+            actor: callerAuth?.actor || who,
             actorKind: isAdminScope(ctx, req as never) ? "admin" : callerAuth?.kind ?? "identity",
             ip: req.ip,
           },
@@ -304,9 +311,12 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       // 匿名举报本来就允许（actor 回退 anonymous），但归属字段不能由无票调用方指定，
       // 否则可以把自己对某条评价的举报记到任意用户名下，污染其「我的举报」与治理队列。
       const identity = pluginIdentity(ctx, req);
+      // 批 B：举报归属按 canonical 身份记——合并后旧身份重复举报仍能去重，
+      // 不会在旧 id 下另起一行。
+      const who = identity ? await ctx.repo.resolveIdentity(identity) : null;
       try {
-        const review = await ctx.repo.reportPluginReview(slug, id, reason, identity, {
-          actor: identity ?? "anonymous",
+        const review = await ctx.repo.reportPluginReview(slug, id, reason, who, {
+          actor: who ?? "anonymous",
           actorKind: "identity",
           ip: req.ip,
         });

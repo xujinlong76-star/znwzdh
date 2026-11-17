@@ -289,7 +289,8 @@ describe('P1 #10 触控目标：热榜页', () => {
     expect(src).toContain('w-full min-h-11 text-xs')
     expect(src).toContain("after:absolute after:-inset-3.5 after:content-['']")
     expect(src).toContain('TabsList className="h-[3.25rem]')
-    expect(count(src, 'min-h-11 text-xs sm:text-sm gap-1.5 rounded-lg')).toBe(2)
+    // 三处：访问量榜 / 最新入库榜 / 插件排行三个页签（插件 tab 新增的第三处）。
+    expect(count(src, 'min-h-11 text-xs sm:text-sm gap-1.5 rounded-lg')).toBe(3)
     expect(src).toContain('<DensityToggle className="border border-border/40" />')
     expect(src).not.toContain('h-8.5 w-8.5')
     expect(src).toContain('inline-flex min-h-11 min-w-11 items-center justify-center p-1.5 rounded-md')

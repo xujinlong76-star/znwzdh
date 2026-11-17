@@ -41,7 +41,7 @@ const CALL_SITES: ReadonlyArray<{ file: string; count: string }> = [
   { file: 'src/components/category-site-filter-bar.tsx', count: 'matchedCount' },
   { file: 'src/components/sites-directory-filterable-grid.tsx', count: '(matches ?? []).length' },
   { file: 'src/components/tag-results-board.tsx', count: 'filteredSites.length' },
-  { file: 'src/app/hot/hot-view.tsx', count: "tab === 'trending' ? filteredTrending.length : filteredFresh.length" },
+  { file: 'src/app/hot/hot-view.tsx', count: "tab === 'trending' ? filteredTrending.length : tab === 'new' ? filteredFresh.length : filteredPluginTotal" },
   { file: 'src/app/collections/[slug]/collection-detail-view.tsx', count: 'filteredSites.length' },
 ]
 

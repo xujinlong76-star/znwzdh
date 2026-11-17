@@ -249,7 +249,94 @@ describe("数据主权补齐（M2）：导出覆盖四类、注销不留残渣",
     expect((await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", [user])).length).toBe(0);
     // 内置管理员（id 不含 ':'）不受影响
     expect((await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", [admin])).length).toBe(1);
-});
+  });
+
+  it("注销扣减「有用」票：投票人注销后回执计 1 票、评价 helpful_count 回 0、票行清掉", async () => {
+    const voter = "github:u-helpful-voter";
+    const author = "github:u-helpful-author";
+    const slug = "helpful-delete-pack";
+    await repo.createPlugin(
+      {
+        manifest: {
+          manifestVersion: 1,
+          kind: "theme",
+          name: "有用票注销包",
+          description: "P2-3 deleteUserData 补覆盖夹具",
+          icon: "⭐",
+          author: "P2-3",
+          license: "MIT",
+          version: "1.0.0",
+          tags: ["主题"],
+          payload: { tokens: { background: "#222222", foreground: "#dddddd" } },
+        },
+        author: "P2-3",
+        authorKind: "identity",
+        ownerIdentity: author,
+        source: "user",
+        status: "published",
+        slug,
+      } as never,
+      { actor: author, actorKind: "identity" },
+    );
+    await repo.installPlugin(slug, author, { actor: author, actorKind: "identity" });
+    const review = await repo.createPluginReview(slug, author, { rating: 5, content: "很好" });
+    const voted = await repo.togglePluginReviewHelpful(slug, review.id, voter);
+    expect(voted.helpful).toBe(true);
+    expect(voted.helpfulCount).toBe(1);
+
+    const counts = await repo.deleteUserData(voter);
+    expect(counts.pluginReviewHelpfulVotes).toBe(1);
+
+    const after = await repo.raw("SELECT helpful_count FROM plugin_reviews WHERE id = ?", [review.id]);
+    expect(after).toHaveLength(1);
+    expect(Number(after[0].helpful_count)).toBe(0);
+    expect(await repo.raw("SELECT 1 AS ok FROM plugin_review_helpful_votes WHERE identity = ?", [voter])).toHaveLength(0);
+    // 只扣计数、不删他人评价：作者的评价行仍在
+    expect(await repo.raw("SELECT 1 AS ok FROM plugin_reviews WHERE id = ?", [review.id])).toHaveLength(1);
+  });
+
+  it("注销孤儿票行不报错：评价作者先注销、票成孤儿后投票人注销仍正常", async () => {
+    const voter = "github:u-orphan-voter";
+    const author = "github:u-orphan-author";
+    const slug = "helpful-orphan-pack";
+    await repo.createPlugin(
+      {
+        manifest: {
+          manifestVersion: 1,
+          kind: "theme",
+          name: "孤儿票注销包",
+          description: "P2-3 deleteUserData 孤儿票行夹具",
+          icon: "⭐",
+          author: "P2-3",
+          license: "MIT",
+          version: "1.0.0",
+          tags: ["主题"],
+          payload: { tokens: { background: "#222222", foreground: "#dddddd" } },
+        },
+        author: "P2-3",
+        authorKind: "identity",
+        ownerIdentity: author,
+        source: "user",
+        status: "published",
+        slug,
+      } as never,
+      { actor: author, actorKind: "identity" },
+    );
+    await repo.installPlugin(slug, author, { actor: author, actorKind: "identity" });
+    const review = await repo.createPluginReview(slug, author, { rating: 4, content: "还行" });
+    await repo.togglePluginReviewHelpful(slug, review.id, voter);
+
+    // 作者先注销：自己的评价行被删，投票人的票行成孤儿行
+    const authorCounts = await repo.deleteUserData(author);
+    expect(authorCounts.pluginReviews).toBe(1);
+    expect(await repo.raw("SELECT 1 AS ok FROM plugin_reviews WHERE id = ?", [review.id])).toHaveLength(0);
+    expect(await repo.raw("SELECT 1 AS ok FROM plugin_review_helpful_votes WHERE identity = ?", [voter])).toHaveLength(1);
+
+    // 投票人再注销：递减 UPDATE 命中 0 行也不报错，回执仍计 1 票且票行清掉
+    const voterCounts = await repo.deleteUserData(voter);
+    expect(voterCounts.pluginReviewHelpfulVotes).toBe(1);
+    expect(await repo.raw("SELECT 1 AS ok FROM plugin_review_helpful_votes WHERE identity = ?", [voter])).toHaveLength(0);
+  });
 
   it("注销删除凭据用户裸 UUID 行，墓碑与审计保留，对照账号不受影响", async () => {
     const now = Date.now();

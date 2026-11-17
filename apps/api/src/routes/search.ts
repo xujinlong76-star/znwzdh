@@ -210,7 +210,12 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           .recordEvent("search", { query: q, identity: attributedIdentity ?? undefined })
           .catch(() => recordSearchWriteFailure("event_search"));
       }
-      if (q.length >= 2) {
+      // U-85：单字查询的 relation 补救只对 CJK 单字放行，与
+      // packages/store/src/repository/sites.ts findRelationsByQuery 的同名护栏
+      // 成对出现，两处必须同改，单改一处对单字查询无效。单拉丁字母/数字/符号
+      // （如 q=e）对 target_url 做 LIKE '%e%' 会全表命中、返回无关 alternative，
+      // 比无结果更伤信任，故仍返回空。长度 ≥2 行为不变。
+      if (q.length >= 2 || (q.length === 1 && /[\u4e00-\u9fff]/.test(q))) {
         relationHits = await ctx.repo.findRelationsByQuery(q, 3).catch(() => []);
       }
       // 聚合前序高频命中的标签，为用户提供跨主题快速筛选与相关标签探索

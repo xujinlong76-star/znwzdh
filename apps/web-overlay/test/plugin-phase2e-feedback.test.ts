@@ -299,7 +299,9 @@ describe("K8 手机点按区全局规则", () => {
   });
 
   it("市场 layout、管理台 layout 与移动端底栏都挂了 .market-touch", () => {
-    expect(readOverlay("app/marketplace/layout.tsx")).toContain('className="market-touch"');
+    // P2-16：市场 layout 的 className 在 market-touch 后追加了底部安全区 pb，
+    // 这里只钉作用域类本身存在；完整类名由 plugin-market-touch-footer.test.ts 钉死。
+    expect(readOverlay("app/marketplace/layout.tsx")).toContain("market-touch");
     expect(readOverlay("app/admin/layout.tsx")).toContain('className="market-touch"');
     // 底栏 5 个 tab 原高 36px（<44），挂作用域后 min-height 撑到 44px，仍在 h-14 栏内
     expect(readOverlay("components/mobile-nav.tsx")).toContain("market-touch");

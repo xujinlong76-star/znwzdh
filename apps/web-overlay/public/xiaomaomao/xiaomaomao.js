@@ -544,6 +544,11 @@
        回落值 calc(100vw + 12px)：只有 JS 量取抛错时才走；按视口宽算，从任何 left 出发
        都能整只滑出视口（旧 calc(100% + 12px) 按自身宽度算，只对默认位置成立）。 */
     '@media (max-width:640px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}' +
+    /* P2-16：页脚避让放宽到 ≤1023px——页脚 md（≥768px）起改右对齐行布局，版权行贴右缘，
+       猫在 640–1023px 默认 bottom 4.5rem+18px，几乎贴着版权行（只剩约 2px 空隙），拖动过
+       的猫会直接盖住版权行与备案链接；滚到底时沿用 P1-1 的收起位移（--xm-park-x 实时量取），
+       与 ≤640px 同款滑出视口。顶部收起（y≤30，防盖搜索行）仍只在 ≤640px 生效，见 syncMarketPark。 */
+    '@media (min-width:641px) and (max-width:1023px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}' +
     /* 半屏下沉栏避让（Batch 3 第 12 项 BLOCK 修复）：640–1024px 首页底部有 56px 高的常驻栏
        （HalfScreenDock，z-40），猫默认 bottom:18px 会整只盖住栏右侧、.xm-lean 拦截指针，
        栏的关闭 × 完全点不到。媒体规则只抬未拖动过的默认位置：拖动后行内 left/top +
@@ -1230,10 +1235,17 @@
      已保存的拖动位置）；滚过搜索行（scrollY>60）后露出圆标入口（仍收起态，
      点圆标唤回），滚回顶部或滚到底（页脚/回到顶部正处猫的高度）时重新收走。
      离开市场页时自动收起的状态原样恢复；用户亲手唤回/收起后本页不再自动收。
-     面板/游戏/聊天请求开着时不自动收（parkBlocked，复用 dockBlocked 的守门语义）。 */
+     面板/游戏/聊天请求开着时不自动收（parkBlocked，复用 dockBlocked 的守门语义）。
+     P2-16：滚到底分支放宽到 ≤1023px（页脚避让，见 isFooterParkViewport 与 641–1023px
+     的 .xm-parked 媒体规则）；顶部收起与位移量取逻辑（竞态修复）一字未动。 */
   var autoParked = false, autoClosed = false, userUnparked = false, marketPath = '';
   function isNarrowViewport() {
     try { return window.matchMedia('(max-width: 640px)').matches; } catch (e) { return window.innerWidth <= 640; }
+  }
+  /* P2-16：页脚避让的收起范围放宽到 ≤1023px（页脚 md 起右对齐，猫几乎贴着版权行）。
+     只放宽「滚到底」分支；顶部收起（y≤30，防盖搜索行）仍只在窄屏生效。 */
+  function isFooterParkViewport() {
+    try { return window.matchMedia('(max-width: 1023px)').matches; } catch (e) { return window.innerWidth <= 1023; }
   }
   function nearPageBottom() {
     try {
@@ -1254,7 +1266,7 @@
     var p = '';
     try { p = window.location.pathname || ''; } catch (e) { /* 忽略 */ }
     var onMarket = p === '/marketplace' || p.indexOf('/marketplace/') === 0;
-    if (!onMarket || !isNarrowViewport()) {
+    if (!onMarket || !isFooterParkViewport()) {
       if (autoParked) { autoParked = false; root.classList.remove('xm-parked'); clearParkX(); }
       if (autoClosed) { autoClosed = false; root.classList.remove('xm-closed'); }
       marketPath = onMarket ? p : '';
@@ -1263,7 +1275,9 @@
     if (marketPath !== p) { marketPath = p; userUnparked = false; }
     if (parkBlocked() || userUnparked) return;
     var y = window.scrollY || 0;
-    if (y <= 30 || nearPageBottom()) {
+    /* P2-16：顶部收起（y≤30）仍只在窄屏生效（防盖搜索行是窄屏问题）；滚到底收起放宽到
+       ≤1023px（页脚避让）。窄屏下本条件与 P1-1 原式逐字等价，≤640px 行为零变化。 */
+    if ((y <= 30 && isNarrowViewport()) || nearPageBottom()) {
       if (docked) undock(); /* 贴边写的是行内 transform，会压过 .xm-parked 的位移，先清掉 */
       if (!root.classList.contains('xm-closed')) { root.classList.add('xm-closed'); autoClosed = true; }
       /* 竞态修复（独立复审问题 1）+ 视口变宽重算（问题 2）：每次进入收起区都重算位移。
@@ -1292,6 +1306,12 @@
       if (!root.classList.contains('xm-parked')) root.classList.add('xm-parked');
       autoParked = true;
     } else if (y > 60 && autoParked) {
+      root.classList.remove('xm-parked');
+      clearParkX();
+      autoParked = false;
+    } else if (y <= 30 && !isNarrowViewport() && autoParked) {
+      /* P2-16：平板跳回顶部（回到顶部按钮直达 y=0，不经过 y>60 的露出分支）时放回圆标，
+         否则猫会一直收在视口外。只清位移、不碰 xm-closed（仍是收起态圆标，点圆标唤回）。 */
       root.classList.remove('xm-parked');
       clearParkX();
       autoParked = false;

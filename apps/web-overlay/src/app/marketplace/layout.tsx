@@ -21,5 +21,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function MarketplaceLayout({ children }: { children: React.ReactNode }) {
   // K8：市场全域挂点按区作用域，小屏可点元素最小边 ≥44px
-  return <div className="market-touch">{children}</div>
+  // P2-16：市场页底部安全区——滚到底时页脚内容不再贴着文档底边：
+  //   <640px 时页脚自带 pb 5.5rem 只够让出版权行躲开 56px 底栏，猫（bottom 68px +
+  //   88px 高，顶部在视口底上 156px 处）仍会盖住版权行右半；这里在页脚之下再垫 5rem
+  //   （含安全区），合计 168px > 156px，版权行与备案链接滚到底也完整可见可点。
+  //   ≥640px 页脚三段底垫已够（底栏 56px / 半屏下沉栏 4.5rem），猫侧另有 P2-16
+  //   避让，不再加垫。
+  return <div className="market-touch pb-[calc(5rem+env(safe-area-inset-bottom,0px))] sm:pb-0">{children}</div>
 }

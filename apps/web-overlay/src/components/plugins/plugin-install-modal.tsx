@@ -450,14 +450,14 @@ export function PluginInstallModal({
                             <button
                               type="button"
                               onClick={() => setSelectedUrls(new Set(rawSites.map((s) => s.url)))}
-                              className="hover:text-foreground font-medium"
+                              className="min-h-11 min-w-11 inline-flex items-center px-2 hover:text-foreground font-medium"
                             >
                               全选
                             </button>
                             <button
                               type="button"
                               onClick={() => setSelectedUrls(new Set())}
-                              className="hover:text-foreground font-medium"
+                              className="min-h-11 min-w-11 inline-flex items-center px-2 hover:text-foreground font-medium"
                             >
                               全不选
                             </button>
@@ -707,7 +707,7 @@ export function PluginInstallModal({
                   setConflicts(null)
                   void handleConfirm(true)
                 }}
-                className="px-4 py-2 text-xs font-medium rounded-lg bg-amber-600 text-white hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="min-h-11 px-4 py-2 text-xs font-medium rounded-lg bg-amber-600 text-white hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 仍要安装
               </button>
@@ -715,7 +715,7 @@ export function PluginInstallModal({
                 type="button"
                 disabled={loading}
                 onClick={() => setConflicts(null)}
-                className="px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/60 hover:bg-muted/60 transition-colors"
+                className="min-h-11 px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/60 hover:bg-muted/60 transition-colors"
               >
                 返回修改
               </button>
@@ -738,7 +738,7 @@ export function PluginInstallModal({
               type="button"
               onClick={() => onOpenChange(false)}
               disabled={loading}
-              className="px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/60 hover:bg-muted/60 transition-colors"
+              className="min-h-11 px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/60 hover:bg-muted/60 transition-colors"
             >
               取消
             </button>
@@ -746,7 +746,7 @@ export function PluginInstallModal({
             type="button"
             onClick={() => void handleConfirm()}
             disabled={loading || emptySiteSelection || conflicts !== null || (mode !== 'uninstall' && bundleBlocked)}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`min-h-11 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               mode === 'uninstall'
                 ? 'bg-destructive text-destructive-foreground hover:opacity-90'
                 : 'bg-primary text-primary-foreground hover:opacity-90'

@@ -8,9 +8,12 @@
  * inapp 通知（kind drama_update，幂等键 drama_update:${dramaKey}:${ep}）。
  * 单部失败只记 last_error、保留旧值、不通知、不中断整轮；整轮结果记进事件流。
  *
- * 现状（2026-11-15）：可查的是综艺迷作品资料页（kind
+ * 现状（2026-11-17）：可查的是综艺迷作品资料页（kind
  * "zongyimi-subject"，6 部剧——3 部快手、2 部红果、1 部抖音，作品页 URL
- * 无日期、是稳定地址）；
+ * 无日期、是稳定地址）与搜短剧详情页（kind "soduanju-subject"，解析器
+ * 已建成并以 10 个真实详情页样本验证通过，但当前 0 部剧挂接——18 部
+ * 精选里可查的 4 部均已完结、已在 featured.json 填死总集数，无新集可等；
+ * 解析器供以后轮换的新剧（连载中）挂接用）；
  * 旧快手日榜 URL（kind "ranking"，写死日期）已失效——2026-11-14 实测
  * 当日榜单页 404，数据里不再有 ranking 检查。migu-list 与 wikipedia
  * 仍是占位 kind，无已证实可查的源。
@@ -28,6 +31,7 @@ import { makeGuardedHotlistFetch, type HotlistFetch} from "../../hotlist/refresh
 import { dramaKeyFor, loadDramaFeaturedForCheck, type DramaFeatured} from "../../drama/featured.ts";
 import { parseRankingEpisode} from "../../drama/ranking.ts";
 import { parseZongyimiSubject} from "../../drama/zongyimi.ts";
+import { parseSoduanjuSubject} from "../../drama/soduanju.ts";
 
 export interface DramaCheckDeps {
  fetchImpl?: HotlistFetch;
@@ -118,18 +122,21 @@ export async function handleDramaUpdateCheck(ctx: AppContext, deps: DramaCheckDe
  summary.failed.push({ title: drama.title, dramaKey, reason});
  continue;
 }
- // 按 kind 分派解析器：综艺迷作品页精确提取“总集数”，其余 kind 沿用
- // 旧榜单解析（标题附近找集数）。
+ // 按 kind 分派解析器：综艺迷作品页精确提取“总集数”，搜短剧详情页
+ // 提取“全 N 集 / 更新至第 N 集”，其余 kind 沿用旧榜单解析（标题附近找集数）。
  let latest: number | null;
  if (drama.check.kind === "zongyimi-subject") {
  const parsed = parseZongyimiSubject(body, drama.check.titleMatch?? drama.title);
  latest = parsed.episode;
  if (parsed.sourceUpdatedAt) summary.sourceUpdatedAt[dramaKey] = parsed.sourceUpdatedAt;
+} else if (drama.check.kind === "soduanju-subject") {
+ // 搜短剧详情页的日期是上映日、不是资料更新日，不进 sourceUpdatedAt。
+ latest = parseSoduanjuSubject(body)?.episodes?? null;
 } else {
  latest = parseRankingEpisode(body, drama.check.titleMatch?? drama.title);
 }
  if (latest === null) {
- const reason = drama.check.kind === "zongyimi-subject"? "综艺迷作品页未解析出集数": "榜单页未解析出集数";
+ const reason = drama.check.kind === "zongyimi-subject"? "综艺迷作品页未解析出集数": drama.check.kind === "soduanju-subject"? "搜短剧详情页未解析出集数": "榜单页未解析出集数";
  await recordDramaFailure(ctx, dramaKey, now, reason);
  summary.failed.push({ title: drama.title, dramaKey, reason});
  continue;

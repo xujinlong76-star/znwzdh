@@ -10,6 +10,10 @@
  * 提醒的诚实边界：站内没有平台排播数据，节奏是用户自己标注的。待看区只说
  * 「按你标注的节奏，今天是更新日」；节奏未标注的剧只进「去看看」区，
  * 永远不写「已更新」。本期提醒只在站内（本页待看区），不做站外推送。
+ * 例外（U-D3）：服务端每天为可查的剧查一次最新集数，有基线的行显示
+ * 「已更至第 X 集」；X 大于“看到第几集”时贴「有新集」角标——这两个数
+ * 都是服务端实查的，不是排播推断。无基线时只对 featured 里可查的剧写
+ * 「未查到最新集数」，其余行不写。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -38,6 +42,13 @@ import {
   type WatchlistSyncStatus,
 } from '@/hooks/useWatchlist'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
+import { useDramaCheckStates } from '@/hooks/useDramaCheckStates'
+import { featuredDramaKey, loadDramaFeatured } from '@/lib/drama-featured'
+import {
+  hasNewEpisodes,
+  latestEpisodeText,
+  type DramaCheckState,
+} from '@/lib/drama-watch-stats'
 import { collectDramaSites, type DramaSite } from '@/lib/drama-sites'
 import { safeHref } from '@/lib/safe-url'
 import {
@@ -145,10 +156,18 @@ const WEEKDAY_OPTIONS = [
 function EntryRow({
   entry,
   watchlist,
+  checkState,
+  checkable,
 }: {
   entry: WatchEntry
   watchlist: ReturnType<typeof useWatchlist>
+  /** 服务端新集检查状态（无基线为 undefined）。 */
+  checkState: DramaCheckState | undefined
+  /** 该剧是否在 featured 里且可查（无基线时才写“未查到最新集数”）。 */
+  checkable: boolean
 }) {
+  const latestText = latestEpisodeText(checkState)
+  const showUnknown = latestText === null && checkable
   return (
     <li className="flex flex-col gap-2 rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:gap-3">
       <div className="min-w-0 flex-1">
@@ -159,10 +178,17 @@ function EntryRow({
               想先看
             </span>
           )}
+          {hasNewEpisodes(entry, checkState) && (
+            <span className="ml-2 rounded-full bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-700 dark:text-rose-400">
+              有新集
+            </span>
+          )}
         </p>
         <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
           在{entry.platformTitle}看 · {cadenceLabel(entry.cadence)}
           {!entry.remind && ' · 提醒已关'}
+          {latestText ? ` · ${latestText}` : ''}
+          {showUnknown ? ' · 未查到最新集数' : ''}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -236,6 +262,17 @@ const FALLBACK_NOW = new Date(0)
 export default function WatchlistPage() {
   const watchlist = useWatchlist()
   const identityReady = useIdentityReady()
+  const checkStates = useDramaCheckStates()
+  // featured 里可查的剧（check.kind !== "none"）：无基线时才写“未查到最新集数”。
+  const checkableFeaturedKeys = useMemo(
+    () =>
+      new Set(
+        loadDramaFeatured()
+          .dramas.filter((d) => d.check.kind !== "none")
+          .map((d) => featuredDramaKey(d)),
+      ),
+    [],
+  )
   const [banner, setBanner] = useState<WatchSyncBannerInput | null>(null)
   const [lastSync, setLastSync] = useState<WatchlistSyncStatus | null>(null)
   const [platforms, setPlatforms] = useState<DramaSite[]>([])
@@ -533,7 +570,7 @@ export default function WatchlistPage() {
                         为《{entry.title}》标注更新节奏 ↓
                       </a>
                       <ul className="mt-1 space-y-2">
-                        <EntryRow key={entry.key} entry={entry} watchlist={watchlist} />
+                        <EntryRow key={entry.key} entry={entry} watchlist={watchlist} checkState={checkStates.byKey.get(entry.key)} checkable={checkableFeaturedKeys.has(entry.key)} />
                       </ul>
                     </div>
                   ))}
@@ -595,7 +632,7 @@ export default function WatchlistPage() {
             </p>
             <ul className="mt-3 space-y-2">
               {parts.check.map((entry) => (
-                <EntryRow key={entry.key} entry={entry} watchlist={watchlist} />
+                <EntryRow key={entry.key} entry={entry} watchlist={watchlist} checkState={checkStates.byKey.get(entry.key)} checkable={checkableFeaturedKeys.has(entry.key)} />
               ))}
             </ul>
           </section>
@@ -659,7 +696,7 @@ export default function WatchlistPage() {
             <h2 className="text-base font-bold">在追（{parts.active.length}）</h2>
             <ul className="mt-3 space-y-2">
               {parts.active.map((entry) => (
-                <EntryRow key={entry.key} entry={entry} watchlist={watchlist} />
+                <EntryRow key={entry.key} entry={entry} watchlist={watchlist} checkState={checkStates.byKey.get(entry.key)} checkable={checkableFeaturedKeys.has(entry.key)} />
               ))}
             </ul>
           </section>
@@ -670,7 +707,7 @@ export default function WatchlistPage() {
             <h2 className="text-base font-bold">已完结 · 慢慢补（{parts.finished.length}）</h2>
             <ul className="mt-3 space-y-2">
               {parts.finished.map((entry) => (
-                <EntryRow key={entry.key} entry={entry} watchlist={watchlist} />
+                <EntryRow key={entry.key} entry={entry} watchlist={watchlist} checkState={checkStates.byKey.get(entry.key)} checkable={checkableFeaturedKeys.has(entry.key)} />
               ))}
             </ul>
           </section>

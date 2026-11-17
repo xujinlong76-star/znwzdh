@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-15",
+  "updatedAt": "2026-11-17",
   "dramas": [
     {
       "title": "十八岁太奶奶驾到，重整家族荣耀 第五部",
@@ -8,12 +8,15 @@
       "platformTitle": "红果短剧",
       "url": "https://zh.wikipedia.org/wiki/%E5%8D%81%E5%85%AB%E6%AD%B2%E5%A4%AA%E5%A5%B6%E5%A5%B6%E9%A7%95%E5%88%B0%EF%BC%8C%E9%87%8D%E6%95%B4%E5%AE%B6%E6%97%8F%E6%A6%AE%E8%80%80",
       "linkNote": "百科页",
-      "episodesKnown": null,
-      "totalEpisodes": null,
+      "episodesKnown": 102,
+      "totalEpisodes": 102,
       "check": {
         "kind": "none",
-        "reason": "百科页未列集数"
-      }
+        "reason": "已完结全 102 集（搜短剧 2026-11-17），无新集可等"
+      },
+      "genres": [
+        "家族"
+      ]
     },
     {
       "title": "和离后我带女儿横扫魔域",
@@ -26,7 +29,10 @@
       "check": {
         "kind": "none",
         "reason": "已完结全 1000 集，无新集可等"
-      }
+      },
+      "genres": [
+        "玄幻"
+      ]
     },
     {
       "title": "重生！丑小鸭逆袭成了万人迷 第五季",
@@ -62,11 +68,11 @@
       "platformTitle": "红果短剧",
       "url": "https://www.tahou.com/article/221836171434552325",
       "linkNote": "榜单页",
-      "episodesKnown": null,
-      "totalEpisodes": null,
+      "episodesKnown": 100,
+      "totalEpisodes": 100,
       "check": {
         "kind": "none",
-        "reason": "榜单文章页无集数"
+        "reason": "已完结全 100 集（搜短剧 2026-11-17），无新集可等"
       }
     },
     {
@@ -149,7 +155,10 @@
       "check": {
         "kind": "none",
         "reason": "已完结全 177 集，无新集可等"
-      }
+      },
+      "genres": [
+        "种田"
+      ]
     },
     {
       "title": "仿生迷踪",
@@ -171,11 +180,14 @@
       "url": "https://hongguoduanju.com/detail?series_id=7702763145030290457",
       "linkNote": "剧目页",
       "episodesKnown": 202,
-      "totalEpisodes": null,
+      "totalEpisodes": 202,
       "check": {
         "kind": "none",
-        "reason": "综艺迷暂无本季作品页"
-      }
+        "reason": "已完结全 202 集（搜短剧 2026-11-17），无新集可等"
+      },
+      "genres": [
+        "玄幻"
+      ]
     },
     {
       "title": "魔神人生：弃子问天 第二季",
@@ -184,11 +196,14 @@
       "url": "https://hongguoduanju.com/detail?series_id=7703101760809749528",
       "linkNote": "剧目页",
       "episodesKnown": 586,
-      "totalEpisodes": null,
+      "totalEpisodes": 586,
       "check": {
         "kind": "none",
-        "reason": "综艺迷暂无本季作品页"
-      }
+        "reason": "已完结全 586 集（搜短剧 2026-11-17），无新集可等"
+      },
+      "genres": [
+        "玄幻"
+      ]
     },
     {
       "title": "满院亲戚全是上古大妖 第七季",
@@ -197,11 +212,14 @@
       "url": "https://hongguoduanju.com/detail?series_id=7705413803088825369",
       "linkNote": "剧目页",
       "episodesKnown": 188,
-      "totalEpisodes": null,
+      "totalEpisodes": 188,
       "check": {
         "kind": "none",
-        "reason": "综艺迷暂无本季作品页"
-      }
+        "reason": "已完结全 188 集（搜短剧 2026-11-17），无新集可等"
+      },
+      "genres": [
+        "奇幻"
+      ]
     },
     {
       "title": "装穷提亲，娶到全家嫌弃的她",
@@ -210,11 +228,14 @@
       "url": "https://hongguoduanju.com/detail?series_id=7701328280862854168",
       "linkNote": "剧目页",
       "episodesKnown": 80,
-      "totalEpisodes": null,
+      "totalEpisodes": 80,
       "check": {
         "kind": "none",
-        "reason": "综艺迷暂无本季作品页"
-      }
+        "reason": "已完结全 80 集（搜短剧 2026-11-17），无新集可等"
+      },
+      "genres": [
+        "恋爱"
+      ]
     },
     {
       "title": "和离后我带女儿横扫魔域 第二季",

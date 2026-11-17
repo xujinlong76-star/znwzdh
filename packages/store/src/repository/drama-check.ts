@@ -60,6 +60,15 @@ export async function upsertDramaCheckState(
  );
 }
 
+/** 按用户列全部新集检查状态（GET /api/me/drama-check-states 用；无记录返 []）。 */
+export async function listDramaCheckStates(repo: Repository, userId: string): Promise<DramaCheckState[]> {
+ const rows = await repo.raw(
+ "SELECT user_id, drama_key, latest_episode, last_checked_at, last_error FROM drama_check_states WHERE user_id = ? ORDER BY drama_key ASC",
+ [userId],
+ );
+ return rows.map((row) => rowToDramaCheckState(row));
+}
+
 /** 关注了某部剧（drama_key）的用户 id（去重，不含已删除条目） */
 export async function listDramaFollowers(repo: Repository, dramaKey: string): Promise<string[]> {
  const rows = await repo.raw(

@@ -45,6 +45,7 @@ import {
   handleDailyBrief,
   handleDramaUpdateCheck,
   handleDramaCalendarRefresh,
+  handleDramaRankingsRefresh,
 } from "./jobs/index.ts";
 
 export {
@@ -59,6 +60,7 @@ export {
   handleDailyBrief,
   handleDramaUpdateCheck,
   handleDramaCalendarRefresh,
+  handleDramaRankingsRefresh,
 };
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
@@ -138,9 +140,9 @@ export interface PatrolSelection {
   depth: { unchecked: number; checked: number };
 }
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief" | "drama_update_check" | "drama_calendar_refresh";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief" | "drama_update_check" | "drama_calendar_refresh" | "drama_rankings_refresh";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief", "drama_update_check", "drama_calendar_refresh"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief", "drama_update_check", "drama_calendar_refresh", "drama_rankings_refresh"];
 
 /** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
 export interface DataRetentionPayload {
@@ -211,6 +213,8 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "drama_update_check", intervalMs: 86_400_000 },
   // 短剧开播日历：每天拉一次搜短剧预约榜，解析预计档期存快照（与上条同频）
   { kind: "drama_calendar_refresh", intervalMs: 86_400_000 },
+  // 短剧真榜单：每天拉一次搜短剧热播/热搜/收藏榜，解析存快照（与上条同频）
+  { kind: "drama_rankings_refresh", intervalMs: 86_400_000 },
 ];
 
 /**
@@ -535,6 +539,7 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   daily_brief: { cron: "DAILY5AM", timeoutMs: 300_000, maxConcurrency: 1 },
   drama_update_check: { cron: "DAILY", timeoutMs: 300_000, maxConcurrency: 1 },
   drama_calendar_refresh: { cron: "DAILY", timeoutMs: 300_000, maxConcurrency: 1 },
+  drama_rankings_refresh: { cron: "DAILY", timeoutMs: 300_000, maxConcurrency: 1 },
 };
 
 /**
@@ -799,6 +804,9 @@ export class JobRunner {
     });
     this.taskRegistry.register("drama_calendar_refresh", async () => {
       await this.runDramaCalendarRefresh();
+    });
+    this.taskRegistry.register("drama_rankings_refresh", async () => {
+      await this.runDramaRankingsRefresh();
     });
     this.taskRegistry.register("backup_restore", async ({ payload, run }) => {
       // jobId 由 Runner 通过执行句柄注入而不是放在 payload 里：入队时还拿不到 id
@@ -1599,6 +1607,11 @@ export class JobRunner {
   private async runDramaCalendarRefresh(): Promise<void> {
     // 任务只负责跑一轮并把结果记进事件流；summary 由 handler 内部落库，调用方不消费。
     await handleDramaCalendarRefresh(this.ctx);
+  }
+
+  private async runDramaRankingsRefresh(): Promise<void> {
+    // 与 runDramaCalendarRefresh 同口径：summary 由 handler 内部落库，调用方不消费。
+    await handleDramaRankingsRefresh(this.ctx);
   }
 
   /**

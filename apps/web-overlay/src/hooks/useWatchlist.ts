@@ -21,6 +21,7 @@ import {
 import { describeDegrade } from '@/lib/degrade'
 import { recordGrowthEvent } from '@/lib/growth-lazy'
 import { getIdentity } from '@/lib/identity'
+import { recordWatchProgress } from '@/lib/watch-progress-log'
 import {
   corruptKeyFor,
   parseFavorites,
@@ -262,6 +263,8 @@ export function useWatchlist(): WatchlistApi {
       if (!persist(current.map((e) => (e.key === key ? next : e)))) return false
       // 只有「往前追」才算用了一次追剧功能；往回改是纠错，不给经验也不扣
       if (nextEpisode > target.episode) recordGrowthEvent('watchlist_progress')
+      // 本周看了几集的本地日志：只记正向增量，往回改不记；写不动时静默失败。
+      recordWatchProgress(key, target.episode, nextEpisode, now)
       markDirty([key])
       return true
     },

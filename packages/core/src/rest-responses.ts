@@ -489,6 +489,65 @@ export const DramaCalendarResponse = z.looseObject({
   ),
 });
 
+/**
+ * GET /api/drama/rankings：短剧真榜单（快照只读）。
+ * 三榜（热播 / 热搜 / 收藏）各前 30 部；status 如实区分 ok / stale
+ * （最近一次失败、下发上一日快照）/ empty（还没抓到过）；数字缺失留 null，
+ * 绝不编热度；榜单与数字全部来自搜短剧公开榜单页。
+ */
+export const DramaRankingsResponse = z.looseObject({
+  ok: z.literal(true),
+  status: z.enum(["ok", "stale", "empty"]),
+  fetchedAt: z.number().nullable(),
+  lists: z.array(
+    z.looseObject({
+      kind: z.enum(["rebo", "reso", "shoucang"]),
+      label: z.string(),
+      sourceUrl: z.string(),
+      sourceName: z.string(),
+      fetchedAt: z.number().nullable(),
+      sourceDateModified: z.string().nullable(),
+      status: z.enum(["ok", "stale", "empty"]),
+      lastError: z.string().nullable(),
+      droppedTitles: z.number().int(),
+      entries: z.array(
+        z.looseObject({
+          rank: z.number().int(),
+          title: z.string(),
+          key: z.string(),
+          detailUrl: z.string(),
+          metric: z.number().nullable(),
+          metricLabel: z.string().nullable(),
+          rating: z.number().nullable(),
+          favorites: z.number().nullable(),
+          shares: z.number().nullable(),
+          likes: z.number().nullable(),
+          totalEpisodes: z.number().int().nullable(),
+          genre: z.string().nullable(),
+          actors: z.array(z.string()),
+        }),
+      ),
+    }),
+  ),
+});
+
+/**
+ * GET /api/me/drama-check-states：当前登录用户的短剧新集检查状态。
+ * 只读 drama_check_states（服务端每天为关注者查到的最新集数）；
+ * 匿名身份返空数组；无记录返空数组。
+ */
+export const DramaCheckStatesResponse = z.looseObject({
+  ok: z.literal(true),
+  states: z.array(
+    z.looseObject({
+      dramaKey: z.string(),
+      latestEpisode: z.number().int().nullable(),
+      lastCheckedAt: z.number(),
+      lastError: z.string().nullable(),
+    }),
+  ),
+});
+
 /* ------------------------------------------------------------------ *
  * 场景包（A2 落地页只读接口，与 ai/find 共用 scene-resolve 展开）
  * ------------------------------------------------------------------ */
@@ -2507,6 +2566,8 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/brief/today": { schema: BriefTodayResponse, name: "BriefTodayResponse" },
   // 短剧开播日历：/drama 页“开播日历”区块的数据源（快照只读）
   "GET /api/drama/calendar": { schema: DramaCalendarResponse, name: "DramaCalendarResponse" },
+  // 短剧真榜单：/drama 页“三榜”区块的数据源（快照只读）
+  "GET /api/drama/rankings": { schema: DramaRankingsResponse, name: "DramaRankingsResponse" },
   "GET /api/plugins": { schema: PluginListResponse, name: "PluginListResponse" },
   "GET /api/plugins/installed": { schema: InstalledPluginsResponse, name: "InstalledPluginsResponse" },
   // 单插件安装趋势（D 批）：真实安装记录按天聚合
@@ -2518,6 +2579,7 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/search-history": { schema: SearchHistoryPageResponse, name: "SearchHistoryPageResponse" },
   "GET /api/me": { schema: MeOverviewResponse, name: "MeOverviewResponse" },
   "GET /api/me/safety": { schema: MeSafetyResponse, name: "MeSafetyResponse" },
+  "GET /api/me/drama-check-states": { schema: DramaCheckStatesResponse, name: "DramaCheckStatesResponse" },
   "GET /api/favorites": { schema: FavoritesListResponse, name: "FavoritesListResponse" },
   // 问问我的收藏前置状态：POST /api/ask 是 SSE 流式（见未绑定清单），只绑这个只读端点
   "GET /api/ask/status": { schema: AskStatusResponse, name: "AskStatusResponse" },

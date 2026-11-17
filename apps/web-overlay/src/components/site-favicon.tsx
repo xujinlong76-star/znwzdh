@@ -115,6 +115,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 第一批的 Notion / Radix 同款处理即不做特殊处理（caf73de0 diff 核实：
   // 仅普通 map 条目，无白底色块、无组件改动），此处照抄；深色模式下
   // 黑标对比度弱是已知局限，留待深色底块统一处理轮（研究笔记 §3/§5）。
+  // 2026-11-17 深色底块轮：已处理，见下方 LOGO_TILE_MAP（light）。
   'rollupjs.org': '/brand-icons/rollupdotjs.svg',
   'webpack.js.org': '/brand-icons/webpack.svg',
   'esbuild.github.io': '/brand-icons/esbuild.svg',
@@ -180,6 +181,14 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'nhsa.gov.cn': '/brand-icons/nhsa.jpg',
   '12333.gov.cn': '/brand-icons/12333.jpg',
   'xiaoyunque.com': '/brand-icons/xiaoyunque.jpg',
+  // 2026-11-17（深色底块统一处理轮）：Haiper。站方首页只有内联 SVG
+  // wordmark（无可热链 URL、176x72、7 条 path 全跟随文字颜色），本轮
+  // 重取首页（200）提取后本地落盘为 haiper.svg：fill 钉死 #ffffff，
+  // 配下方 LOGO_TILE_MAP 的 dark 底块。极客公园同为白字宽版 logo
+  // （1361x261），但 24px 卡片内只剩 3.8px 高、渲染模拟不可读，比渐变
+  // 字母更差，故不进 map、不落资产，继续渐变字母兜底（见轮次笔记
+  // evolution-round-2026-11-17-1122.md §2）。
+  'haiper.ai': '/brand-icons/haiper.svg',
   'vuejs.org': '/brand-icons/vue.svg',
   'npmjs.com': '/brand-icons/npm.svg',
   'vite.dev': '/brand-icons/vite.svg',
@@ -257,6 +266,77 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'instantlogosearch.com': '/assets/images/logos/InstantLogoSearch.webp',
   'iconsfeed.com': '/assets/images/logos/iconsfeed.webp',
   'iosicongallery.com': '/assets/images/logos/iosicongallery.webp',
+}
+
+/**
+ * 品牌图标底块（2026-11-17，深色底块统一处理轮）。
+ *
+ * 问题：图标是 `w-full h-full object-contain`、透明底直出，logo 自身的亮暗
+ * 与页面主题是两套独立变量——黑标/黑字标（Ollama、SourceHut、网易天音）
+ * 在深色模式下消失，白字标（Haiper）在浅色模式下消失。之前每轮都是
+ * “落地、不做特殊处理、留待统一轮”，本轮一次性还：按 logo 的亮/暗属性
+ * 给一块固定底色，不许每站打散补丁。
+ *
+ * 先例就是 Cursor 的 `bg-muted/40 dark:bg-muted/20 rounded-xs p-0.5
+ * border border-border/30` 芯片——本轮把它推广为统一机制：map 管“谁要块、
+ * 要哪块”（键与 LOCAL_LOGO_MAP 同款：去 www 后的 hostname），
+ * `resolveLogoTile` 管主机名归一化与后缀匹配，`LOGO_TILE_CLASSES` 管
+ * “块长什么样”（改样式只改一处）。Cursor 本体不动（已有芯片双主题可用）。
+ *
+ * 底块颜色是主题无关的固定色：浅色块永远纯白、深色块永远 neutral-900，
+ * 浅/深模式下同一张图对比度恒定——这正是“同时覆盖浅色与深色模式”的做法。
+ * 不接标题关键词兜底：底块是按 logo 形态定的资产属性，标题兜底的远端
+ * 图标形态未知，不能默认给块。
+ *
+ * 每站形态证据见轮次笔记 evolution-round-2026-11-17-1122.md §1：
+ * Ollama/SourceHut 为 fill #000000 的 SI 黑标；天音不透明像素均值亮度 10
+ * （黑字透明底）；Notion 自带白底圆角方块（tile 为冗余加固，防远端 favicon
+ * 换成透明黑标）；Radix 为黑方块 + 白字形（tile 让方块在深色下有界）；
+ * Haiper 为白字 wordmark（fill 已钉死 #ffffff）。
+ * Luma 自带白底（白像素 73%），不在点名清单内，不进 map。
+ * 极客公园白字宽版 1361x261 在 24px 卡片内只剩 3.8px、模拟不可读，
+ * 不进 map，继续渐变字母（见笔记 §2）。
+ */
+export type LogoTileTone = 'light' | 'dark'
+
+export const LOGO_TILE_MAP: Record<string, LogoTileTone> = {
+  'ollama.com': 'light',
+  'sourcehut.org': 'light',
+  'notion.com': 'light',
+  'radix-ui.com': 'light',
+  'tianyin.163.com': 'light',
+  'haiper.ai': 'dark',
+}
+
+/** 底块 class：主题无关固定底色 + 与 Cursor 芯片同款的内边距、描边与圆角。 */
+export const LOGO_TILE_CLASSES: Record<LogoTileTone, string> = {
+  light: 'bg-white p-0.5 border border-border/30 rounded-xs',
+  dark: 'bg-neutral-900 p-0.5 border border-border/30 rounded-xs',
+}
+
+export function resolveLogoTile(url?: string): LogoTileTone | null {
+  if (!url || typeof url !== 'string') return null
+  try {
+    const parsed = new URL(url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`)
+    let hostname = parsed.hostname.toLowerCase()
+    if (hostname.startsWith('www.')) {
+      hostname = hostname.slice(4)
+    }
+
+    if (LOGO_TILE_MAP[hostname]) {
+      return LOGO_TILE_MAP[hostname]!
+    }
+
+    for (const [domainKey, tone] of Object.entries(LOGO_TILE_MAP)) {
+      if (hostname.endsWith(`.${domainKey}`)) {
+        return tone
+      }
+    }
+
+    return null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -451,6 +531,10 @@ export function SiteFavicon({
     (url && url.toLowerCase().includes('cursor.com'))
   )
 
+  // 深色底块统一处理：黑标/黑字标给浅色块、白字标给深色块（LOGO_TILE_MAP）；
+  // 与 Cursor 芯片互斥——cursor.com 不在 map 里，tile 优先于芯片。
+  const logoTile = resolveLogoTile(url)
+
   const monogram = extractFaviconMonogram(title, url)
   const gradient = getDeterministicGradient(title || url || 'navhub')
   const shouldRenderImg = !useDefaultIcon && !imgError && Boolean(effectiveIcon) && !isKnownBadIcon(effectiveIcon)
@@ -484,7 +568,11 @@ export function SiteFavicon({
           alt={title ? `${title} 图标` : '站点图标'}
           className={cn(
             'relative z-10 w-full h-full object-contain opacity-100 transition-opacity duration-150',
-            isCursorSite && 'bg-muted/40 dark:bg-muted/20 rounded-xs p-0.5 border border-border/30'
+            logoTile
+              ? LOGO_TILE_CLASSES[logoTile]
+              : isCursorSite
+                ? 'bg-muted/40 dark:bg-muted/20 rounded-xs p-0.5 border border-border/30'
+                : undefined
           )}
           loading={eager ? 'eager' : 'lazy'}
           fetchPriority={eager ? 'high' : 'low'}

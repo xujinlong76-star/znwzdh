@@ -533,8 +533,10 @@
     /* P1-1：市场页窄屏自动收起态——根节点整体滑出视口右侧（transform 只写位移，
        不动 left/top、不覆盖用户拖动位置；圆标本体随根节点一起出视口，点按与包围盒都不再挡页面元素）。
        Q1 返工：位移量不用固定值——拖动过的猫 left 不同，固定 70px 会留一部分在视口内；
-       收起时按实时矩形算进 --xm-park-x（见 syncMarketPark），未设变量时回落到 calc(100% + 12px）。 */
-    '@media (max-width:640px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100% + 12px)))}}' +
+       收起时按实时矩形算进 --xm-park-x（见 syncMarketPark）。
+       回落值 calc(100vw + 12px)：只有 JS 量取抛错时才走；按视口宽算，从任何 left 出发
+       都能整只滑出视口（旧 calc(100% + 12px) 按自身宽度算，只对默认位置成立）。 */
+    '@media (max-width:640px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}' +
     /* 半屏下沉栏避让（Batch 3 第 12 项 BLOCK 修复）：640–1024px 首页底部有 56px 高的常驻栏
        （HalfScreenDock，z-40），猫默认 bottom:18px 会整只盖住栏右侧、.xm-lean 拦截指针，
        栏的关闭 × 完全点不到。媒体规则只抬未拖动过的默认位置：拖动后行内 left/top +
@@ -1196,7 +1198,7 @@
       (typeof gameEl !== 'undefined' && gameEl && gameEl.classList.contains('xm-on')) ||
       !!busy || !!document.hidden;
   }
-  /* Q1 返工：清除收起位移变量（解除收起/离开市场页时调用；未设变量时 CSS 回落到 calc(100% + 12px)）。 */
+  /* Q1 返工：清除收起位移变量（解除收起/离开市场页时调用；未设变量时 CSS 回落到 calc(100vw + 12px)）。 */
   function clearParkX() {
     try { root.style.removeProperty('--xm-park-x'); } catch (e) { /* 忽略 */ }
   }
@@ -1216,19 +1218,31 @@
     if (y <= 30 || nearPageBottom()) {
       if (docked) undock(); /* 贴边写的是行内 transform，会压过 .xm-parked 的位移，先清掉 */
       if (!root.classList.contains('xm-closed')) { root.classList.add('xm-closed'); autoClosed = true; }
-      if (!root.classList.contains('xm-parked')) {
-        hideBubble();
-        hideControls();
-        /* Q1 返工：收起位移按实时矩形算。先加 xm-closed（只剩 58px 圆标）再量 left，
-           getBoundingClientRect 会同步触发布局，量到的是收起态矩形；位移 = 视口右缘 - 左缘 + 12，
-           拖动到任何位置的猫都能整只滑出视口。量取失败时回落到 CSS 默认值。 */
-        try {
-          var parkX = Math.ceil(window.innerWidth - root.getBoundingClientRect().left + 12);
-          root.style.setProperty('--xm-park-x', parkX + 'px');
-        } catch (e) { /* 忽略，回落到 calc(100% + 12px) */ }
-        root.classList.add('xm-parked');
-        autoParked = true;
-      }
+      /* 竞态修复（独立复审问题 1）+ 视口变宽重算（问题 2）：每次进入收起区都重算位移。
+         量取前临时关掉过渡并强制回流——#xiaomaomao 有 .45s transform 过渡，快速下滚
+         回顶时量到的是过渡中的 left，位移会算小、猫留一部分在视口内；已收起时先暂时
+         摘掉 xm-parked 再量（否则量到的是已位移后的 left）。关过渡、摘类、量取都在
+         同一任务内同步完成，不会产生中间帧；已收起态重算时先把新位移落到位再恢复过渡，
+         避免猫扫过屏幕；首次收起恢复过渡后再加类，滑出动画仍正常走。
+         视口变宽后旧 parkX 会不够，拖动过的猫会重新进入视口，所以已收起态也要重算。 */
+      var wasParked = root.classList.contains('xm-parked');
+      if (!wasParked) { hideBubble(); hideControls(); }
+      var prevTransition = '';
+      try {
+        prevTransition = root.style.transition;
+        root.style.transition = 'none';
+        if (wasParked) root.classList.remove('xm-parked');
+        void root.offsetWidth; /* 强制回流：渲染位置回到自然锚点 */
+        var parkX = Math.ceil(window.innerWidth - root.getBoundingClientRect().left + 12);
+        root.style.setProperty('--xm-park-x', parkX + 'px');
+        if (wasParked) {
+          root.classList.add('xm-parked');
+          void root.offsetWidth; /* 过渡关闭时把新位移落到位，再恢复过渡 */
+        }
+      } catch (e) { /* 忽略，保留旧值或回落到 CSS 默认值 */ }
+      root.style.transition = prevTransition;
+      if (!root.classList.contains('xm-parked')) root.classList.add('xm-parked');
+      autoParked = true;
     } else if (y > 60 && autoParked) {
       root.classList.remove('xm-parked');
       clearParkX();

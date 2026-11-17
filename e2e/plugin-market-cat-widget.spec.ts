@@ -218,7 +218,8 @@ test('市场页 390px：拖动过的猫收起后整只滑出视口（Q1 返工�
   expect(search0, '市场搜索框应有包围盒').toBeTruthy()
   const searchY = Math.round(search0!.y + search0!.height / 2)
 
-  // 两个拖动位置各一：最左（left:4）与最右（left:274，390 宽下 applySavedPos 的钳制上限）。
+  // 两个拖动位置各一：最左（left:4）与偏右（left:274，在 390 宽下 applySavedPos 的钳制范围内；
+  // 钳制上限为 390 − 88 − 4 = 298，274 只是偏右取值而非上限）。
   // localStorage 的值是整个 store 对象，pos 为 {left, top}（STORE_KEY = 'navhub.xiaomaomao.v1'）；
   // 用 evaluate 写（addInitScript 会在两次循环里累积），写完重载，挂件初始化即读到预置位置。
   for (const left of [4, 274]) {
@@ -244,4 +245,31 @@ test('市场页 390px：拖动过的猫收起后整只滑出视口（Q1 返工�
     const hit = await elAtPoint(page, search!.x + search!.width - 10, search!.y + search!.height / 2)
     expect(hit?.tag, `拖动位置 left=${left} 时搜索框右端应命中 INPUT，实际 ${JSON.stringify(hit)}`).toBe('INPUT')
   }
+})
+
+test('市场页 390px：快速下滚回顶（450ms 内）收起位移不算小，猫整只滑出视口', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/marketplace')
+  await page.waitForLoadState('domcontentloaded')
+  await waitForCat(page)
+
+  // 先滚过搜索行露出圆标（解除收起，transform 由 parkX 向 0 过渡 .45s），
+  // 100ms 后立即回顶——收起位移若按过渡中的矩形算会算小，猫留一部分在视口内。
+  // 旧实现在此处量到过渡中的 left，终态左缘约 362 < 390；修好后应为 402。
+  await page.evaluate(() => window.scrollTo({ top: 200, behavior: 'instant' as ScrollBehavior }))
+  await page.waitForTimeout(100)
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior }))
+  // 等收起滑动走完（.45s + 余量），再断言终态
+  await page.waitForTimeout(1500)
+
+  const cat = await page.locator('#xiaomaomao').boundingBox()
+  expect(cat, '应找到 #xiaomaomao').toBeTruthy()
+  expect(cat!.x, `快滑回顶后猫收起左缘应在视口之外，实际 x=${Math.round(cat!.x)}`).toBeGreaterThanOrEqual(390)
+
+  const input = page.getByLabel('搜索插件')
+  await expect(input).toBeVisible()
+  const search = await input.boundingBox()
+  expect(search, '市场搜索框应有包围盒').toBeTruthy()
+  const hit = await elAtPoint(page, search!.x + search!.width - 10, search!.y + search!.height / 2)
+  expect(hit?.tag, `快滑回顶后搜索框右端应命中 INPUT，实际 ${JSON.stringify(hit)}`).toBe('INPUT')
 })

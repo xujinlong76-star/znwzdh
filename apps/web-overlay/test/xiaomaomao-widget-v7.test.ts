@@ -90,7 +90,7 @@ describe("v7 零遮挡几何", () => {
     expect(wrapAt).toBeGreaterThan(-1);
     expect(dockAt).toBeGreaterThan(wrapAt);
     // 舞台段内只允许 P1-1 的猫身常驻收起角标（.xm-mini-close，猫身上的唯一按钮，
-    // 不扩展猫的包围盒/点按区）；其余按钮一律只能出现在 dock 段里。
+    // 不扩展根节点包围盒、只在猫身角部加一个收起命中区）；其余按钮一律只能出现在 dock 段里。
     // 本断言的真实不变量是“坞在主列内、是舞台的兄弟”（下行断言），mini-close 不碰它。
     const panelAt = sk.indexOf('<div class="xm-panel"');
     const stageZone = sk.slice(wrapAt, dockAt);

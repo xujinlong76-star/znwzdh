@@ -122,7 +122,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'storybook.js.org': '/brand-icons/storybook.svg',
   'min.io': '/brand-icons/minio.svg',
   'helm.sh': '/brand-icons/helm.svg',
-  'pulumi.com': '/brand-icons/pulumi.svg',
+  'pulumi.com': '/brand-icons/pulumi.png',
   'dribbble.com': '/brand-icons/dribbble.svg',
   'behance.net': '/brand-icons/behance.svg',
   'logseq.com': '/brand-icons/logseq.svg',

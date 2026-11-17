@@ -255,7 +255,9 @@ export const DEFUSED_GATES = [
       { id: "e2e", label: "Playwright E2E（分片）" },
       // 隔离用例取证（TESTING-STRATEGY §4.3）：只在分片 1 跑、且永不阻塞合并，
       // 但「skipped 时读数里没有它」正是撤防账要防的静默跳过，因此必须登记。
-      { id: "quarantine-e2e", label: "隔离用例取证（@quarantine，末尾 exit 0 故不阻塞）" },
+      // U-21：这一步的 if: 含 matrix.shard == 1（ci.yml），分片 2 上被条件跳过是设计、
+      // 不是撤防——shard: 1 让 findDefused 在分片 2 上把它按「不适用」处理，不告警。
+      { id: "quarantine-e2e", label: "隔离用例取证（@quarantine，末尾 exit 0 故不阻塞）", shard: 1 },
     ],
   },
   {
@@ -413,23 +415,38 @@ function hasStepId(stepBlock, id) {
 /**
  * 从 `toJSON(steps)` 解出的映射里算出「哪些门禁没跑成 + 是谁挡的」。
  *
- * @param {{entry:object, conclusions:object}} input
+ * @param {{entry:object, conclusions:object, shard?:number|string}} input
  *   conclusions —— GitHub 的 steps 上下文（`{ "<id>": { outcome, conclusion } }`）
- * @returns {{defused:object[], failed:object[], blocker:object|null, ran:string[], tracked:string[]}}
+ *   shard —— 本分片号（工作流传 NAVHUB_MATRIX_SHARD）。登记了 `shard` 的步骤只在
+ *   对应分片跑：分片号对不上时它被矩阵条件跳过是设计、不是撤防 ⇒ 进
+ *   `notApplicable`，不进 defused、不告警、不参与根因兜底。不传分片号时不过滤
+ *   （非矩阵作业与旧调用照旧）。
+ * @returns {{defused:object[], failed:object[], blocker:object|null, ran:string[], tracked:string[], notApplicable:object[]}}
  *   defused[].outcome：'skipped' | 'cancelled' | 'absent'（登记表有、上下文里没有 = id 被改名/删除）
  *   判据一律取 conclusion（没有该字段才回退 outcome）：`continue-on-error` 的步骤
  *   outcome=failure 而 conclusion=success，用 outcome 会把放行的一步点成根因。
  *   failed：跑过并判红的门禁——它不是撤防，它是红（由那一步自己负责，这里只拿来点根因）
  *   blocker.kind：'failure' | 'cancelled' | 'unknown'（挡住它的步骤没有 id，读不出来）
+ *   notApplicable[].outcome：'not-applicable'（本分片不跑，不是不跑成）
  */
-export function findDefused({ entry, conclusions }) {
+export function findDefused({ entry, conclusions, shard }) {
   const map = conclusions && typeof conclusions === "object" ? conclusions : {};
   const tracked = trackedSteps(entry);
   const defused = [];
   const failed = [];
   const ran = [];
+  const notApplicable = [];
+  // 分片号只认数字：空串 / 非数字一律按「没传」处理，不让一次传参笔误把整张表过滤空。
+  const shardNum =
+    shard === undefined || shard === null || String(shard).trim() === "" || Number.isNaN(Number(shard))
+      ? null
+      : Number(shard);
 
   for (const step of tracked) {
+    if (step.shard !== undefined && shardNum !== null && Number(step.shard) !== shardNum) {
+      notApplicable.push({ ...step, outcome: "not-applicable" });
+      continue;
+    }
     const value = map[step.id];
     if (value === undefined) {
       // 登记的 id 在上下文里根本不存在。作业没这步（改名/删除）⇒ 也算撤防：
@@ -470,7 +487,7 @@ export function findDefused({ entry, conclusions }) {
     blocker = { id: null, label: "没有 id 的上游步骤（checkout / setup-node / 作业被取消）", kind: "unknown" };
   }
 
-  return { defused, failed, blocker, ran, tracked: tracked.map((s) => s.id) };
+  return { defused, failed, blocker, ran, tracked: tracked.map((s) => s.id), notApplicable };
 }
 
 /**
@@ -624,6 +641,9 @@ export function defusedCoverageProblems(jobBlock, entry) {
  *   `[撤防账] <job>：N 道门禁里 M 道没跑成`（后面跟逐步骤行 + `根因：…`）
  *   `::notice|::warning title=CI 门禁撤防::<job> …`（单行全量：计数 + id 列表 + 根因）
  * 单行的注解形状信息最全，优先用它；只有 stdout 形状时再从相邻行里补 id 与根因。
+ * 分片备注（U-21）：写侧在计数后追加 `（分片 2 不适用：quarantine-e2e）` 时，
+ * 这里把它读成 `notApplicable`（id 列表）——厚度棘轮拿它扣期望道数，否则分片 2 的
+ * 账会被误判成「比登记表薄 1 道」，误报只是从作业日志挪到了读数侧。
  *
  * 日志里读到的**不是**写出去的原样（run 41010267114 的 test-web 日志逐行直证）：
  *   - 工作流命令 `::warning title=CI 门禁撤防::正文` 被 runner 改写为
@@ -664,6 +684,16 @@ function readIds(text) {
     .filter(Boolean);
 }
 
+/** 写侧追加的 `（分片 N 不适用：id1、id2）`：本分片不跑的门禁，不是不跑成 */
+function readNotApplicable(text) {
+  const hit = /分片\s*\d+\s*不适用：([A-Za-z0-9_-]+(?:、[A-Za-z0-9_-]+)*)/.exec(text);
+  if (!hit) return [];
+  return hit[1]
+    .split("、")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export function parseDefusedTrace(logText) {
   const base = {
     found: false,
@@ -682,6 +712,9 @@ export function parseDefusedTrace(logText) {
     green: false,
     failedGates: 0,
     softTotal: 0,
+    // 本分片不适用的门禁 id（U-21）：写侧按分片过滤后才报的数，读侧不认它就分不清
+    // 「账变薄」与「这道门禁本就不该在本分片跑」。
+    notApplicable: [],
     // 可信度声明读没读回来（false 有两种意思，靠 trustDependsOn 区分不了——所以只在
     // 「这行本来就带声明」时才置 true；没带声明的作业留 false，由 check-ci-gate 的第 8 项判是不是漏登记）
     trustNote: false,
@@ -781,6 +814,7 @@ export function parseDefusedTrace(logText) {
     green: counts.defused === 0,
     failedGates,
     softTotal,
+    notApplicable: readNotApplicable(whole),
     trustNote: Boolean(trustHit),
     trustDependsOn: trustHit ? `${trustHit[1]}/${trustHit[2]}` : "",
     line: whole.slice(0, 240),
@@ -835,10 +869,12 @@ export function renderDefusedTable(rows, authority) {
       const note = r.failedGates > 0 ? `，其中 ${r.failedGates} 道判红` : "";
       const soft = r.softTotal ? `（软门禁 ${r.softTotal} 道：红了不判红、也不挡路）` : "";
       const env = r.envTotal === null ? "" : `（准备步骤 ${r.envTotal} 个在册）`;
+      // U-21：本分片不适用的门禁不计入总数，行里说一声，免得「2 道变 1 道」被当成账变薄
+      const na = r.notApplicable?.length ? `（本分片不适用：${r.notApplicable.join("、")}）` : "";
       // 只在这行自己声明了「我不判整前端类型」时才连带标注：
       // 没声明的作业可能是权威本身（它自己判类型），拿 trustNote 当开关才不会误伤。
       const trust = authorityRed && r.trustNote ? ` ⚠ ${authorityLabel}，本绿灯建立在未做整前端 tsc 的产物上` : "";
-      return `${name} ${r.conclusion || "?"} — ${r.gateTotal} 道门禁全部跑过${note}${soft}${env}${trust}`;
+      return `${name} ${r.conclusion || "?"} — ${r.gateTotal} 道门禁全部跑过${note}${soft}${env}${na}${trust}`;
     }
     const blocker = r.blocker ? `根因 ${r.blocker}` : "根因读不出来";
     const env = r.envIds?.length ? `；准备步骤没跑成：${r.envIds.join("、")}` : "";

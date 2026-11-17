@@ -6,6 +6,7 @@
  * `import "./fs-file-store.ts"`（或经其它模块间接导入）一次即可，无需各处显式
  * 调用 setFileStore。
  */
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setFileStore, type AtomicFileStore } from "@navhub/core";
@@ -18,7 +19,9 @@ export const fsFileStore: AtomicFileStore = {
     await mkdir(dirname(path), { recursive: true });
     // 原子替换：先写同目录临时文件再改名。同目录 rename 不会跨设备，失败只可能是
     // 权限/占用；失败时清理临时文件，避免留下半个 JSON（本机曾因磁盘满写坏源文件）。
-    const tmp = `${path}.${process.pid}.tmp`;
+    // 临时文件名单次调用唯一：同一进程内两次并发写（入队与后台 worker 落盘）
+    // 若共用固定名，后改名的一方会因文件已被移走而 ENOENT（实测 POST /jobs 连点 500）。
+    const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tmp, data, "utf8");
     try {
       await rename(tmp, path);

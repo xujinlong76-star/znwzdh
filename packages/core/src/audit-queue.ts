@@ -162,10 +162,19 @@ export async function openAuditQueue(
     jobs = [];
   }
 
+  // 落盘串行化：快照按调用顺序写，旧快照不许后落盘覆盖新快照。
+  // 不串行化时，两次并发 persist 各自写同一份 jobs 数组的不同时刻快照，
+  // 后改名的一方可能把更旧的快照盖到文件上，重启后丢任务。
+  // 链不断：一次写失败不毒化后续写；调用方仍拿到本次写的真实结果。
+  let persistChain: Promise<void> = Promise.resolve();
+
   async function persist(): Promise<void> {
     const payload: QueueFile = { version: 1, jobs };
     // 目录创建、临时文件 + 改名、失败清理都在注入的实现里（见 file-store.ts）
-    await fileStore().writeAtomic(file, JSON.stringify(payload));
+    const data = JSON.stringify(payload);
+    const run = persistChain.then(() => fileStore().writeAtomic(file, data));
+    persistChain = run.catch(() => {});
+    await run;
   }
 
   function evictIfNeeded(): void {

@@ -298,3 +298,32 @@ describe("重试退避", () => {
     expect((await queue.claim())?.id).toBe(job.id);
   });
 });
+
+describe("并发落盘", () => {
+  it("并发入队与并发保存全部成功，落盘文件含全部任务且可重读", async () => {
+    const file = await tempFile();
+    const queue = await openAuditQueue(file, { newId: seqIds(), now: () => 1_000 });
+    // 入队与保存交错并发：生产上入队（POST /jobs）与后台 worker 的保存
+    // 就是这样并发的；旧实现会因共用临时文件名在 rename 时 ENOENT 而 500。
+    const enqueued = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => queue.enqueue({ slug: `race-${i}`, urls: [`https://race-${i}.example.com/x`] })),
+    );
+    expect(enqueued).toHaveLength(5);
+    await Promise.all(
+      enqueued.map((job) => queue.save({ ...job, state: "running" as const })),
+    );
+    await queue.enqueue({ slug: "race-late", urls: ["https://race-late.example.com/x"] });
+
+    const listed = await queue.list();
+    expect(listed.map((j) => j.slug).sort()).toEqual(
+      ["race-0", "race-1", "race-2", "race-3", "race-4", "race-late"].sort(),
+    );
+
+    // 落盘快照完整：新开实例重读同一文件，任务一个不少（旧快照不许后落盘覆盖）。
+    const reopened = await openAuditQueue(file, { newId: seqIds(), now: () => 1_000 });
+    const reloaded = await reopened.list();
+    expect(reloaded.map((j) => j.slug).sort()).toEqual(listed.map((j) => j.slug).sort());
+    const raw = JSON.parse(await readFile(file, "utf8")) as { jobs: Array<{ slug: string }> };
+    expect(raw.jobs).toHaveLength(6);
+  });
+});

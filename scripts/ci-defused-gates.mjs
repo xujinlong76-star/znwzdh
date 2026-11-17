@@ -81,7 +81,6 @@ function main() {
     console.error(`${label} 作业 ${opts.job} 未登记。登记表里没有它 ⇒ 这道作业的撤防仍然无声。`);
     return 0;
   }
-  const gateTotal = (entry.gates ?? []).length;
   const read = readConclusions();
   if (read.error) {
     // 读不到结论时不许静默通过：那等于账没出、看起来像出了
@@ -90,7 +89,24 @@ function main() {
     return 0;
   }
 
-  const { defused, failed, blocker } = findDefused({ entry, conclusions: read.value });
+  // 分片号（U-21）：工作流在矩阵作业的读数步骤上以 env 传 NAVHUB_MATRIX_SHARD
+  //（与 NAVHUB_STEP_CONCLUSIONS 同一步、同种传参）；非矩阵作业不传 ⇒ 不过滤，
+  // 行为与旧版一致。
+  const shard = process.env.NAVHUB_MATRIX_SHARD;
+  const { defused, failed, blocker, notApplicable } = findDefused({
+    entry,
+    conclusions: read.value,
+    shard,
+  });
+  // 总数只数本分片适用的门禁：分片 2 上 quarantine-e2e 不适用，账是「1 道全部跑过」，
+  // 不是「2 道里 1 道没跑成」——总数不跟着扣，读侧的厚度棘轮会把它误判成账变薄。
+  const notApplicableIds = new Set((notApplicable ?? []).map((d) => d.id));
+  const applicableGates = (entry.gates ?? []).filter((g) => !notApplicableIds.has(g.id));
+  const gateTotal = applicableGates.length;
+  const shardNote =
+    (notApplicable ?? []).length > 0
+      ? `（分片 ${shard} 不适用：${(notApplicable ?? []).map((d) => d.id).join("、")}）`
+      : "";
   const summaryPath = String(process.env.GITHUB_STEP_SUMMARY ?? "").trim();
   const envTotal = (entry.env ?? []).length;
   // 软门禁必须在这行里说破：`全部跑过` 只说明「这一步执行了」，
@@ -109,7 +125,7 @@ function main() {
   if (defused.length === 0) {
     const head = `${gateTotal} 道门禁全部跑过`;
     const redNote = failed.length > 0 ? `（其中 ${failed.length} 道判红，见那一步自己）` : "";
-    console.log(`${label} ${opts.job}：${head}${redNote}${softNote}${trustNote}`);
+    console.log(`${label} ${opts.job}：${head}${shardNote}${redNote}${softNote}${trustNote}`);
     // 全绿也要留痕：没有这一行，「跑过且全绿」和「根本没接线」在跨轮视角是同一种形状
     // （2026-10-30 直证：tip 2ca11031 那一轮 13 个作业的注解池总数为 0）。
     // Step Summary 单独不够：`/actions/jobs/{id}/summary` 实测 404（要 actions:read），
@@ -118,7 +134,7 @@ function main() {
     // ::notice 仍然发：归因层（ci-attribution 的 usableAnnotations）显式排除 notice 级，
     // 它不会冒充判红原因；本仓的先例是 check-isr-live 的「限流豁免四阶段成立」。
     console.log(
-      `::notice title=CI 门禁撤防::${opts.job} ${head}${redNote}${softNote}${trustNote}（在册准备步骤 ${envTotal} 个）`,
+      `::notice title=CI 门禁撤防::${opts.job} ${head}${shardNote}${redNote}${softNote}${trustNote}（在册准备步骤 ${envTotal} 个）`,
     );
     if (summaryPath) {
       appendFileSync(
@@ -126,7 +142,7 @@ function main() {
         [
           `### 撤防账 · ${opts.job}`,
           "",
-          `**${head}**${redNote}${softNote}——跑过的门禁 id：${(entry.gates ?? []).map((g) => `\`${g.id}\``).join("、")}；在册准备步骤 ${envTotal} 个。`,
+          `**${head}**${shardNote}${redNote}${softNote}——跑过的门禁 id：${applicableGates.map((g) => `\`${g.id}\``).join("、")}；在册准备步骤 ${envTotal} 个。`,
           "",
           "作业结论只说明「没新增红」；这一行才说明「门禁真的判过」。",
           ...(trustNote ? ["", `>${trustNote.slice(1)}。同 commit 的类型判定若判红，本页的绿仍不蕴含类型过。`] : []),
@@ -151,14 +167,14 @@ function main() {
       ? `根因：${blocker.label}（id: ${blocker.id}）${blocker.kind === "cancelled" ? "被取消" : "判红"}——默认条件下排在它后面的每一步都会被跳过`
       : `根因读不出来：${blocker.label}`
     : "根因读不出来";
-  console.log(`${label} ${opts.job}：${head}${envNote}${trustNote}`);
+  console.log(`${label} ${opts.job}：${head}${shardNote}${envNote}${trustNote}`);
   for (const d of defused) {
     const note = d.note ? `｜${d.note}` : "";
     console.log(`  · ${d.label}（id: ${d.id}）— ${TOTAL_LABEL[d.outcome] ?? d.outcome}${note}`);
   }
   console.log(`  ${blockerText}`);
   console.log(
-    `::warning title=CI 门禁撤防::${opts.job} ${head}${envNote}；没跑成的步骤 id：${gateNames}；${blockerText}${trustNote}`,
+    `::warning title=CI 门禁撤防::${opts.job} ${head}${shardNote}${envNote}；没跑成的步骤 id：${gateNames}；${blockerText}${trustNote}`,
   );
 
   if (summaryPath) {
@@ -170,7 +186,7 @@ function main() {
       [
         `### 撤防账 · ${opts.job}`,
         "",
-        `**${head}**${envNote}。skipped 不判红，所以作业结论里看不见它们。`,
+        `**${head}**${shardNote}${envNote}。skipped 不判红，所以作业结论里看不见它们。`,
         "",
         "| 门禁 | 步骤 id | 状态 | 备注 |",
         "| --- | --- | --- | --- |",

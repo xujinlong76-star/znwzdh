@@ -8,8 +8,10 @@
  * 为什么是独立 kind、而不是并进 plugin_governance：
  *  - 探活对象不同：plugin_governance 只看库内待审/被举报（repo.getPluginGovernanceAlerts），
  *    不出网；本任务只探种子 searchUrl，出网是主业；
- *  - 节奏不同：治理每 4 小时扫一次库内状态就够了，探活每天一次即可（191 条 URL、
- *    每批 5 并发 × 单条 3.5s 上限，最坏约 2 分钟，预算 300s 绰绰有余）；
+ *  - 节奏不同：治理每 4 小时扫一次库内状态就够了，探活每天一次即可（171 条 URL、
+ *    每批 30 并发 × 单条 3.5s 上限，最坏约 21 秒，预算 300s 绰绰有余；
+ *    并发 5 时 CI 实测单轮 72~73 秒，会拖垮串行 tick 与 jobs.test.ts 里
+ *    enableCron 用例的 60 秒超时，见 PLUGIN_URL_HEALTH_CONCURRENCY）；
  *  - 各自的入队/手动触发/重试/超时预算互不干扰。
  *
  * 探活口径与 POST /api/plugins/check-urls 路由同一份（apps/api/src/routes/plugins/
@@ -53,8 +55,18 @@ export const PLUGIN_URL_HEALTH_EVENT_KIND = "plugin_url_health";
 /** `{q}` 占位符的固定测试词：与 web-overlay `extractManifestUrls` 一致。 */
 export const PLUGIN_URL_HEALTH_PROBE_WORD = "navhub";
 
-/** 探活并发度：与 check-urls 路由的分批并发一致。 */
-export const PLUGIN_URL_HEALTH_CONCURRENCY = 5;
+/**
+ * 探活并发度：批量任务，不与 check-urls 路由的交互式分批并发（5）取同一值。
+ *
+ * 171 条 URL、单条上限 3.5s 时，并发 5 最坏要 35 窗 × 3.5s ≈ 2 分钟，
+ * CI 实测单轮 72~73 秒 —— 而 JobRunner 是串行 tick，enableCron 用例的
+ * 超时只有 60 秒，单这一项就把整轮拖超时，超时后残留的后台 tick 还占着
+ * 单实例锁，连累下一个用例的 tick 被跳过（2026-11-17，175ffe15 的 2 个红点
+ * 同一根因）。并发 30 时最坏 6 窗 × 3.5s ≈ 21 秒，实测量级约 12 秒，
+ * 仍在 300 秒任务预算与 60 秒用例超时内；失败只是记一条事件，不会互相干扰，
+ * 批量提并发不改变单条判定口径（超时/1KB/登录墙检测均与路由同款）。
+ */
+export const PLUGIN_URL_HEALTH_CONCURRENCY = 30;
 
 /** 单条探活上限：与 check-urls 路由一致（guardedFetch 超时、只读 1KB、最多 3 跳）。 */
 export const PLUGIN_URL_HEALTH_TIMEOUT_MS = 3500;

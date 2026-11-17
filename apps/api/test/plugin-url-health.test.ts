@@ -50,6 +50,7 @@ import {
   defaultProbeUrl,
   handlePluginUrlHealth,
   isLoginWallFinalUrl,
+  PLUGIN_URL_HEALTH_CONCURRENCY,
   PLUGIN_URL_HEALTH_EVENT_KIND,
   type PluginUrlProbeResult,
 } from "../src/jobs/tasks/plugin-url-health.task.ts";
@@ -216,7 +217,10 @@ describe("handlePluginUrlHealth", () => {
     };
     const summary = await handlePluginUrlHealth(ctx, stoppingRun, { probeUrl: probe });
     expect(summary.total).toBeGreaterThan(100);
-    expect(summary.okCount).toBe(5);
+    // 停手信号在第 5 次探活后才成立，但探活按整窗并发发起：首窗的
+    // PLUGIN_URL_HEALTH_CONCURRENCY 条已全部发出，循环在下一窗前才看到
+    // shouldStop 而停下，因此恰好探完一个窗口；未探的既不计 ok 也不计 failed。
+    expect(summary.okCount).toBe(PLUGIN_URL_HEALTH_CONCURRENCY);
     expect(summary.failedCount).toBe(0);
   });
 });

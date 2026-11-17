@@ -108,6 +108,18 @@ function renderBoardHtml(): string {
   )
 }
 
+function renderBoardHtmlWith(items: HubPluginItem[], total: number, initialQ = ''): string {
+  return renderToString(
+    createElement(PluginMarketBoard, {
+      initialItems: items,
+      initialTotal: total,
+      initialFeatured: null,
+      initialRankings: null,
+      initialQ,
+    }),
+  )
+}
+
 /** 统计子串出现次数 */
 function countOf(html: string, needle: string): number {
   return html.split(needle).length - 1
@@ -197,5 +209,50 @@ describe('P2-15 移动端 hero：6 按钮与胶囊横滑一行，不再占 610px
   it('hero 移动端内边距收紧（p-4 → p-3），桌面 p-7 不变', () => {
     const html = renderBoardHtml()
     expect(html).toContain('market-hero p-3 sm:p-7')
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * P3-7 — 空态文案不顶虚线边：空态盒子加横向 padding
+ * ------------------------------------------------------------------ */
+describe('P3-7 空态盒子有横向 padding，390px 下文案不贴虚线边', () => {
+  it('空态盒子带 px-6：文案与虚线边框之间有 24px 缓冲', () => {
+    const html = renderBoardHtmlWith([], 0)
+    expect(html).toContain('市场还空着')
+    expect(html).toContain('px-6 py-14 text-center border border-dashed')
+  })
+
+  it('有数据时不渲染空态盒子（padding 只落在空态上）', () => {
+    const html = renderBoardHtml()
+    expect(html).not.toContain('py-14 text-center border border-dashed')
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * P3-9 — 0 插件时排序退化说明也出现（默认 trending 等同最新发布）
+ * ------------------------------------------------------------------ */
+describe('P3-9 排序退化提示：0 插件环境也有说明', () => {
+  it('市场为空（0 插件、无筛选、默认 trending）时退化说明仍渲染', () => {
+    const html = renderBoardHtmlWith([], 0)
+    expect(html).toContain('sort-degenerate-note')
+    expect(html).toContain('排序结果与最新发布一致')
+    expect(html).toContain('市场还空着')
+  })
+
+  it('有结果且计数全 0 时说明照常出现（旧行为不回归）', () => {
+    const html = renderBoardHtml()
+    expect(html).toContain('sort-degenerate-note')
+    expect(html).toContain('排序结果与最新发布一致')
+  })
+
+  it('有筛选的 0 命中不显示退化说明：那是筛选无匹配，不是市场为空', () => {
+    const html = renderBoardHtmlWith([], 0, '不存在的词')
+    expect(html).toContain('没有匹配的插件')
+    expect(html).not.toContain('sort-degenerate-note')
+  })
+
+  it('接线守卫：退化提示不再以 items.length > 0 为渲染前提', () => {
+    const src = overlayFile('src/components/plugin-market-board.tsx')
+    expect(src).not.toContain('list.items.length > 0 && sortDegenerate')
   })
 })

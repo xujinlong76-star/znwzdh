@@ -45,6 +45,7 @@ const AiPluginStudioModal = dynamic(
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
 import { rankingMetric } from '@/lib/plugins/marketplace-rankings'
 import {
+  COUNT_SORTS,
   DEFAULT_MARKETPLACE_SORT,
   buildMarketplaceQuery,
   countSortDegenerateKind,
@@ -345,15 +346,25 @@ export function PluginMarketBoard({
 
   const hasFilter = Boolean(q || kind || starredOnly)
 
-  // 计数型排序退化判定：只在有结果时注明，0 命中走空态、不叠加两条提示。
-  // 文案只说当前列表里该排序自己的键——:3001 实测安装 2 次、星标 2 次、
+  // 计数型排序退化判定：只说当前列表里该排序自己的键——:3001 实测安装 2 次、星标 2 次、
   // 只有评价为 0，旧文案「安装量、星标与评价均为 0」在筛选视图里是假话；
   // 「当前列表」而非「当前插件」，避免把子集结论读成全 catalog 口径
   // （筛选视图出现、清空后消失、全量列表从不出现，皆因各列表的键值本就不同）。
-  const sortDegenerateKind = useMemo(
-    () => countSortDegenerateKind(sort, list.items),
-    [sort, list.items],
-  )
+  // 市场本身为空（0 插件、无筛选）时计数型排序同样无从分化——默认 trending
+  // 实际等同最新发布，也要注明，不让 0 插件环境的排序含义悬空（P3-9）。
+  // 有筛选的 0 命中不注明：那是筛选无匹配，不是市场为空，排序口径与此无关。
+  const sortDegenerateKind = useMemo(() => {
+    const kind = countSortDegenerateKind(sort, list.items)
+    if (kind) return kind
+    if (list.items.length === 0 && list.total === 0 && !hasFilter && COUNT_SORTS.includes(sort)) {
+      // 空市场无已加载项可判定：按排序自己的键注明。
+      if (sort === 'popular') return 'install'
+      if (sort === 'stars') return 'star'
+      if (sort === 'rating') return 'review'
+      return 'trending'
+    }
+    return null
+  }, [sort, list.items, list.total, hasFilter])
 
   // 精选与三榜只在“无筛选”时加载：避免与主列表抢请求，也避免筛选后仍显示无关推荐
   // 首帧同样要静默同步一次（SSR 数据没有身份，精选卡片的已装态同理会丢）；
@@ -680,7 +691,7 @@ export function PluginMarketBoard({
         </div>
 
         {/* 排序退化注明：只说当前列表里该排序自己的键（见 sortDegenerateKind 注释）。 */}
-        {!loading && !list.loadFailed && list.items.length > 0 && sortDegenerateKind && (
+        {!loading && !list.loadFailed && sortDegenerateKind && (
           <p className="rounded-md border border-amber-500/50 bg-amber-500/15 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300" data-testid="sort-degenerate-note" role="status">
             {SORT_DEGENERATE_NOTE[sortDegenerateKind]}
           </p>
@@ -854,7 +865,7 @@ export function PluginMarketBoard({
           <MarketplaceLoadError title="插件市场加载失败" notice={notice} onRetry={reload} />
         ) : list.items.length === 0 ? (
           <>
-            <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
+            <div className="px-6 py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-border/60 bg-muted/50 shadow-xs">
                 <Store className="w-7 h-7 text-muted-foreground" />
               </div>

@@ -1549,7 +1549,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {(() => {
                 const chips = emptyPanelFavorites
                   .map((fav) => quicklinkBySiteId.get(fav.siteId))
-                  .filter((e): e is QuicklinkEntry => e !== null)
+                  // Map.get() 查不到返回 undefined 不是 null：只排 null 会把
+                  // undefined 漏进 chips，随后读 c.quickPrefix 整页崩溃
+                  //（2026-11-17 实况日志两起）。判空与同文件 `if (!ql)` 同口径。
+                  .filter((e): e is QuicklinkEntry => e != null)
                 if (chips.length === 0) return null
                 return (
                   <p className="mt-2 px-1 text-[11px] text-muted-foreground">

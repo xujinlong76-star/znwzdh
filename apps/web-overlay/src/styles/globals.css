@@ -787,18 +787,34 @@ html[data-pruned~="feat:keyboard-hint"] [data-feature-id="feat:keyboard-hint"] {
 }
 
 /* Phase 2 批 E K8：小屏点按区下限——市场与管理台（.market-touch 作用域内）
-   所有可点元素在 <640px 时最小边 ≥44px（min-h-11/min-w-11），桌面视觉不变。
+   所有可点元素在 <640px 时最小边 ≥44px（min-h-11/min-w-11），鼠标桌面视觉不变。
+   P2-9：同一条规则扩展到桌面触屏——(pointer: coarse) 盖主输入是触屏的设备，
+   (any-pointer: coarse) 再盖主输入是鼠标但另有触屏的触屏本（其 pointer 是 fine，
+   只写 pointer: coarse 会漏掉）；鼠标-only 桌面两条都不命中，视觉仍不变。
+   P2-9 弹窗兜底：Radix Dialog 经 Portal 挂到 document.body，在 .market-touch
+   包裹范围之外，弹窗内按钮另用 [role='dialog'] / [role='alertdialog'] 作用域兜底
+   （安装弹窗取消/立即安装、全选/全不选，及各确认弹窗按钮）。
    规则写在非 @layer 的普通 CSS 里，优先级高于 Tailwind 的 height/width 工具类；
    只设 min-* 不改 width/height，不挤占桌面布局。
    注意：注释里不许出现星号斜杠（会提前闭合注释、整站 500，2026-11-17 实测）。 */
-@media (max-width: 639px) {
+@media (max-width: 639px), (pointer: coarse), (any-pointer: coarse) {
   .market-touch button,
   .market-touch a[href],
   .market-touch input:not([type='checkbox']):not([type='radio']),
   .market-touch select,
   .market-touch [role='button'],
   .market-touch [role='tab'],
-  .market-touch [role='menuitem'] {
+  .market-touch [role='menuitem'],
+  [role='dialog'] button,
+  [role='dialog'] a[href],
+  [role='dialog'] input:not([type='checkbox']):not([type='radio']),
+  [role='dialog'] select,
+  [role='dialog'] [role='button'],
+  [role='dialog'] [role='tab'],
+  [role='dialog'] [role='menuitem'],
+  [role='alertdialog'] button,
+  [role='alertdialog'] a[href],
+  [role='alertdialog'] [role='button'] {
     min-height: 2.75rem;
     min-width: 2.75rem;
   }

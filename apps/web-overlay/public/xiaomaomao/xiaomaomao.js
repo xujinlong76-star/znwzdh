@@ -849,11 +849,11 @@
   function isNight() { var h = hourNow(); return h >= 23 || h < 6; }
   function greetingText() {
     var h = hourNow();
-    if (h >= 5 && h < 8) return '早上好呀，我是小猫猫，新的一天想找点什么？';
-    if (h >= 8 && h < 11) return '你好，我是小猫猫，想找什么网站跟我说';
+    if (h >= 5 && h < 8) return '早上好呀，我是小猫猫，点旁边的聊天钮、想找点什么跟我说';
+    if (h >= 8 && h < 11) return '你好，我是小猫猫，点旁边的聊天钮、想找什么网站跟我说';
     if (h >= 11 && h < 14) return '中午好，我是小猫猫，吃饱了来逛逛不？';
-    if (h >= 14 && h < 18) return '下午好，我是小猫猫，找站问我呀';
-    if (h >= 18 && h < 23) return '晚上好，我是小猫猫，今晚想看点什么？';
+    if (h >= 14 && h < 18) return '下午好，我是小猫猫，点旁边的聊天钮、找站问我呀';
+    if (h >= 18 && h < 23) return '晚上好，我是小猫猫，点旁边的聊天钮、今晚想看点什么跟我说';
     return '夜深啦，我是小猫猫，找完早点休息哦';
   }
 
@@ -1127,6 +1127,17 @@
   window.setInterval(function () {
     if (!docked && Date.now() - xmLastAct > DOCK_AFTER) doDock();
   }, 4000);
+  /* v13：向下滚动浏览时贴边收起，免得猫盖住卡片（与 FloatingQuickNav 的
+     下滑淡出同款思路）。只在向下滚动且滚过 300px 时触发；弹回靠悬停/轻点
+     （既有 undock），向上滚动不自动弹回，避免来回跳。doDock 自带
+     dockBlocked 守门（聊天/游戏/收起态不缩），重复调用无害。 */
+  var lastScrollY = window.scrollY || 0;
+  window.addEventListener('scroll', function () {
+    var y = window.scrollY || 0;
+    var down = y > lastScrollY + 4;
+    lastScrollY = y;
+    if (down && y > 300) doDock();
+  }, { passive: true });
   root.addEventListener('pointerenter', function () {
     var wasDocked = docked;
     if (docked) undock();

@@ -33,8 +33,6 @@ function formatDataDate(fetchedAt: number | null): string {
   }).format(new Date(fetchedAt));
 }
 
-const MONTH_DISPLAY_CAP = 12;
-
 export function DramaCalendarSection() {
   const [state, setState] = useState<CalendarState>({ kind: "loading" });
 
@@ -145,12 +143,7 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                       </span>
                     </p>
                     <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                      {group.items
-                        .slice(0, MONTH_DISPLAY_CAP)
-                        .map((i) => i.title)
-                        .join("、")}
-                      {group.items.length > MONTH_DISPLAY_CAP &&
-                        ` 等 ${group.items.length} 部`}
+                      {group.items.map((i) => i.title).join("、")}
                     </p>
                   </li>
                 ))}

@@ -8,7 +8,6 @@
 import { cache } from "react";
 import type { Metadata } from "next";
 import { DramaContentLazy } from "./drama-content-lazy";
-import { ScrollToTop } from "@/components/ScrollToTop";
 import { collectDramaSites, type DramaSite } from "@/lib/drama-sites";
 import { loadDramaFeatured, type DramaFeatured } from "@/lib/drama-featured";
 import { getFileContent } from "@/lib/github";
@@ -54,7 +53,6 @@ export default async function DramaPage() {
   return (
     <main id="main-content">
       <DramaContentLazy sites={sites} dramas={dramas} />
-      <ScrollToTop />
     </main>
   );
 }

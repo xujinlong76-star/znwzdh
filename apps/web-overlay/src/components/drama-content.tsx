@@ -140,7 +140,7 @@ export function DramaContent({
                 key={featuredDramaKey(drama)}
                 className="flex flex-col rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-4 shadow-sm"
               >
-                <h3 className="text-base font-semibold leading-snug">
+                <h3 className="text-balance text-base font-semibold leading-snug">
                   {drama.title}
                 </h3>
                 <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">

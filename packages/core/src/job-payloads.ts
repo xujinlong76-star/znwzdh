@@ -82,6 +82,8 @@ export const JobPayloadSchemas = {
 
   plugin_governance: z.object({}).strict(),
 
+  plugin_url_health: z.object({}).strict(),
+
   user_data_audit: z.object({}).strict(),
 
   backup_restore: z

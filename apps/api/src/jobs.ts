@@ -46,6 +46,7 @@ import {
   handleDramaUpdateCheck,
   handleDramaCalendarRefresh,
   handleDramaRankingsRefresh,
+  handlePluginUrlHealth,
 } from "./jobs/index.ts";
 
 export {
@@ -61,6 +62,7 @@ export {
   handleDramaUpdateCheck,
   handleDramaCalendarRefresh,
   handleDramaRankingsRefresh,
+  handlePluginUrlHealth,
 };
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
@@ -140,9 +142,9 @@ export interface PatrolSelection {
   depth: { unchecked: number; checked: number };
 }
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief" | "drama_update_check" | "drama_calendar_refresh" | "drama_rankings_refresh";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief" | "drama_update_check" | "drama_calendar_refresh" | "drama_rankings_refresh" | "plugin_url_health";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief", "drama_update_check", "drama_calendar_refresh", "drama_rankings_refresh"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief", "drama_update_check", "drama_calendar_refresh", "drama_rankings_refresh", "plugin_url_health"];
 
 /** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
 export interface DataRetentionPayload {
@@ -199,6 +201,9 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "taxonomy_audit", intervalMs: 86_400_000 },
   // 插件治理巡检：只产告警与审计，不自动下架任何插件/评价
   { kind: "plugin_governance", intervalMs: 4 * 3600_000 },
+  // 搜索包 URL 健康探活（P1-4 前缀引擎登录墙化）：每天对 5 个 search-pack 种子的
+  // 全部外部检索 URL 探活一次，只记事件与审计，不自动下架（见 tasks/plugin-url-health.task.ts）。
+  { kind: "plugin_url_health", intervalMs: 86_400_000 },
   // 数据治理默认只做 rollup 的 dry-run：自动化可以先"看见"，不该先"动手"。
   // 确认过输出后再把 payload 改成 { mode: "rollup", apply: true }（或手动触发一次）。
   { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30, telemetryDays: 90 } },
@@ -525,6 +530,7 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   taxonomy_audit: { cron: "DAILY3AM", timeoutMs: 300_000, maxConcurrency: 1 },
   data_retention: { cron: "DAILY4AM", timeoutMs: 600_000, maxConcurrency: 1 },
   plugin_governance: { cron: "X4H", timeoutMs: 120_000, maxConcurrency: 1 },
+  plugin_url_health: { cron: "DAILY", timeoutMs: 300_000, maxConcurrency: 1 },
   user_data_audit: { cron: "DAILY5AM", timeoutMs: 300_000, maxConcurrency: 1 },
   /**
    * 备份恢复：**手动触发，绝不自动调度**。
@@ -789,6 +795,9 @@ export class JobRunner {
     });
     this.taskRegistry.register("plugin_governance", async () => {
       await this.runPluginGovernance();
+    });
+    this.taskRegistry.register("plugin_url_health", async ({ run }) => {
+      await this.runPluginUrlHealth(run);
     });
     this.taskRegistry.register("user_data_audit", async () => {
       await this.runUserDataAudit();
@@ -2215,6 +2224,16 @@ export class JobRunner {
       },
     });
     console.warn(`[jobs] plugin_governance: ${alerts.length} 条告警待处理`);
+  }
+
+  /**
+   * 搜索包 URL 健康探活（P1-4 前缀引擎登录墙化）：每天对 5 个 search-pack 种子的
+   * 全部外部检索 URL 探活一次，只记事件与审计，不自动下架（委派给
+   * tasks/plugin-url-health.task.ts）。手动触发：POST /api/jobs
+   * { "kind": "plugin_url_health", "payload": {} }。
+   */
+  private async runPluginUrlHealth(run: JobRunHandle): Promise<void> {
+    await handlePluginUrlHealth(this.ctx, run);
   }
 
   /**

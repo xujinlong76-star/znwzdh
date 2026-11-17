@@ -12,3 +12,4 @@ export * from "./tasks/daily-brief.task.ts";
 export * from "./tasks/drama-check.task.ts";
 export * from "./tasks/drama-calendar.task.ts";
 export * from "./tasks/drama-rankings.task.ts";
+export * from "./tasks/plugin-url-health.task.ts";

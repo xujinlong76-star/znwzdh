@@ -226,7 +226,7 @@ docker compose -f docker-compose.yml -f docker-compose.standard.yml --profile st
 | `NAVHUB_CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | `*` 只有显式配置时才生效，生产请显式列为前端域名 |
 | `POSTGRES_PASSWORD` | （无默认值） | standard 模式必填强口令，缺失时 compose 直接报错拒绝启动，不再提供默认口令 |
 | `NAVHUB_EMBEDDING_ENDPOINT` | `https://hf-mirror.com` | 本地 Embedding 模型下载镜像源 |
-| `NAVHUB_LLM_BASE_URL` | `https://api.agnes-ai.cn/v1` | LLM 兼容接口（OpenAI 兼容），可换 DeepSeek / Ollama |
+| `NAVHUB_LLM_BASE_URL` | （空，未配置） | LLM 兼容接口（OpenAI 兼容），自行配置，如 DeepSeek / Ollama；未配置时 AI 功能降级为本地 |
 | `NAVHUB_LLM_API_KEY` | （可选） | 未配置时 LLM 富化自动降级为纯规则启发式，并标注来源 `provenance: llm\|heuristic` |
 
 ## MCP 与扩展

@@ -208,17 +208,17 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 2026-11-16：旧值 https://zhiwen.xfyun.cn/favicon.ico 经 curl 验证 404，
   // 改用同站验证过的 favicon.png（200 image/png 14725B）。
   'zhiwen.xfyun.cn': 'https://zhiwen.xfyun.cn/favicon.png',
-  'cursor.com': 'https://www.cursor.com/favicon.ico',
+  'cursor.com': '/brand-icons/cursor.png',
   'bolt.new': 'https://bolt.new/favicon.ico',
   'v0.dev': '/assets/images/logos/vercel.webp',
-  'kimi.moonshot.cn': 'https://kimi.moonshot.cn/pwa-192.png',
+  'kimi.moonshot.cn': '/brand-icons/kimi-search.png',
   'doubao.com': '/brand-icons/doubao.png',
   'www.doubao.com': '/brand-icons/doubao.png',
   'yiyan.baidu.com': 'https://www.baidu.com/favicon.ico',
-  'lingma.aliyun.com': 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
+  'lingma.aliyun.com': '/brand-icons/lingma.png',
   'runwayml.com': 'https://runwayml.com/icon.png',
-  'deepseek.com': 'https://chat.deepseek.com/favicon.ico',
-  'chat.deepseek.com': 'https://chat.deepseek.com/favicon.ico',
+  'deepseek.com': '/brand-icons/deepseek.png',
+  'chat.deepseek.com': '/brand-icons/deepseek.png',
   'klingai.com': 'https://klingai.com/favicon.ico',
   'klingai.kuaishou.com': 'https://klingai.com/favicon.ico',
   // 2026-11-16：旧值 https://lumalabs.ai/favicon.ico 经 curl 验证 404，
@@ -295,6 +295,18 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // map 值、测试用例均未合入，待 429 冷却后重取验过再补（复审裁决 (c)）。
   'fonts.adobe.com': '/brand-icons/adobe-fonts.png',
   'helpx.adobe.com': '/brand-icons/adobe-xd.svg',
+  // 2026-11-17（图标 B 类第 1 批 b1a）：DeepSeek / Kimi / 文心一言 / Kimi 搜索。
+  // 旧键替换（勿重复落键）：'deepseek.com' / 'chat.deepseek.com' /
+  // 'kimi.moonshot.cn' 原为热链值，本批改为本地路径；'kimi.com' /
+  // 'wenxin.baidu.com' 为新键。来源均经 curl 重新验证（见 map-block-b1a.txt）。
+  // chat.deepseek.com/favicon.ico 回的是 SPA HTML 壳页，旧热链值已失效。
+  'kimi.com': '/brand-icons/kimi.png',
+  'wenxin.baidu.com': '/brand-icons/wenxin.png',
+  // 2026-11-17（图标 B 类第 1 批 b1b）：Cline / GitHub Copilot 走 map 前
+  // 标题规则（见上方 cline / copilot 规则），此处不建 github.com 键；
+  // Cursor 与 Tongyi Lingma 为旧键原地替换值（热链 → 本地路径）。
+  // Cursor 仍走既有 isCursorSite 渲染分支（title/url 判定，与 map 值无关，
+  // 落盘后渲染仍带 bg-muted/40 底色处理，复审截图核对）。
 }
 
 /**
@@ -468,6 +480,18 @@ export function resolveSiteIcon(
     // 放在 map 精确查找之前，否则 adobe.com 查不到、标题规则又走不到。
     // 切勿把 adobe.com 改指 Illustrator——那会让 Firefly 错指 Illustrator。
     if (lowerTitle.includes('illustrator')) return '/brand-icons/illustrator.svg'
+    // 2026-11-17（图标 B 类第 1 批 b1b，R2 裁决）：Cline 与 GitHub Copilot
+    // 同为 github.com，hostname map 无法区分（误加 'github.com' 键会波及
+    // GitHub 主站、GitHub Trending、LangGraph、Qwen 3、vLLM 共 7 站）；
+    // 仿 Adobe Firefly / Illustrator 先例（a1a/a2b），用 map 前标题规则。
+    // 全库核对：标题含 'cline' 仅 Cline 一站、含 'copilot' 仅 GitHub Copilot
+    // 一站（navigation.json 与 navigation-default.json 均已核对）。
+    // Cline 标为官网主题 favicon（cline-icon-dark.svg，深色 #1C1C24 透明底，
+    // 深色主题对比度弱属规范 §9 留待统一处理轮，不加白底）。
+    // Copilot 无专属标：落盘的是 GitHub 站方 favicon.svg（Octocat 母品牌标，
+    // #24292E 深色透明底），不是 Copilot 专属标，特此钉死。
+    if (lowerTitle.includes('cline')) return '/brand-icons/cline.svg'
+    if (lowerTitle.includes('copilot')) return '/brand-icons/copilot.svg'
 
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!
@@ -501,7 +525,6 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('通义灵码')) return 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'
     if (lowerTitle.includes('runway')) return 'https://runwayml.com/icon.png'
     if (lowerTitle.includes('deepseek')) return 'https://chat.deepseek.com/favicon.ico'
-    if (lowerTitle.includes('copilot')) return 'https://github.com/github.png?size=64'
     if (lowerTitle.includes('gemini')) return '/assets/images/logos/gemini.svg'
     if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/assets/images/logos/chatgpt.webp'
     if (lowerTitle.includes('claude')) return '/assets/images/logos/claude.webp'

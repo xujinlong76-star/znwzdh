@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { ArrowRight, RefreshCw, Star } from 'lucide-react'
 import { fetchPlugins, type HubPluginItem } from '@/lib/navhub-api'
 import { pluginDetailHref } from '@/lib/plugins/detail-href'
@@ -66,13 +67,13 @@ export function StarredPluginsSectionView({
           插件的星标和网站的收藏是两套东西：星标的插件不在收藏列表里，在这里找。
         </span>
         <span className="ml-auto" />
-        <a
+        <Link
           href={STARRED_PLUGINS_HREF}
           className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline underline-offset-2"
         >
           查看全部星标插件
           <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-        </a>
+        </Link>
       </div>
 
       {snapshot.status === 'loading' && (
@@ -92,21 +93,21 @@ export function StarredPluginsSectionView({
             <RefreshCw className="h-3.5 w-3.5" aria-hidden />
             重试
           </button>
-          <a href={STARRED_PLUGINS_HREF} className="font-medium underline underline-offset-2">
+          <Link href={STARRED_PLUGINS_HREF} className="font-medium underline underline-offset-2">
             直接去星标列表看看
-          </a>
+          </Link>
         </div>
       )}
 
       {snapshot.status === 'ready' && snapshot.items.length === 0 && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>还没有星标任何插件：在插件市场给插件点亮星标后，会出现在这里。</span>
-          <a href="/marketplace" className="font-medium text-amber-700 dark:text-amber-400 hover:underline underline-offset-2">
+          <Link href="/marketplace" className="font-medium text-amber-700 dark:text-amber-400 hover:underline underline-offset-2">
             去插件市场看看
-          </a>
-          <a href="/me/plugins" className="font-medium hover:underline underline-offset-2">
+          </Link>
+          <Link href="/me/plugins" className="font-medium hover:underline underline-offset-2">
             插件中心
-          </a>
+          </Link>
         </div>
       )}
 
@@ -115,7 +116,7 @@ export function StarredPluginsSectionView({
           <ul className="space-y-1.5">
             {snapshot.items.map((plugin) => (
               <li key={plugin.slug}>
-                <a
+                <Link
                   href={pluginDetailHref(plugin.slug, plugin.status)}
                   className="flex items-center gap-2 rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-xs hover:border-amber-500/40 hover:bg-amber-500/5"
                 >
@@ -129,7 +130,7 @@ export function StarredPluginsSectionView({
                   <span className="shrink-0 tabular-nums text-muted-foreground">
                     ★ {plugin.starCount}
                   </span>
-                </a>
+                </Link>
               </li>
             ))}
           </ul>
@@ -137,9 +138,9 @@ export function StarredPluginsSectionView({
             共 {snapshot.total} 个星标插件
             {snapshot.total > snapshot.items.length ? `，这里只列前 ${snapshot.items.length} 个` : ''}
             {' · '}
-            <a href="/me/plugins" className="font-medium hover:underline underline-offset-2">
+            <Link href="/me/plugins" className="font-medium hover:underline underline-offset-2">
               插件中心
-            </a>
+            </Link>
           </p>
         </>
       )}

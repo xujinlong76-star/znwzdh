@@ -1,3 +1,4 @@
+import { safeHref } from '@/lib/safe-url'
 import { toast } from 'sonner'
 
 /**
@@ -58,7 +59,11 @@ export function takeReviewPromptAction(slug: string): {
   return {
     label: REVIEW_PROMPT_ACTION_LABEL,
     onClick: () => {
-      window.location.assign(pluginReviewUrl(slug))
+      // 站内相对路径也要过闸：pluginReviewUrl 只在 `/marketplace/${encodeURIComponent(slug)}?tab=reviews`
+      // 一个构造点生成（slug 已编码），再经 safeHref 校验一次，不安全值落到 '' 直接不导航。
+      const url = safeHref(pluginReviewUrl(slug), '')
+      if (!url) return
+      window.location.assign(url)
     },
   }
 }

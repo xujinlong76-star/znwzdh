@@ -253,6 +253,17 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
     evidence: ["const url = safeHref(site.href, '')", "window.location.href = url"],
   },
   {
+    file: "src/lib/plugins/review-prompt.ts",
+    kind: "location",
+    expr: "url",
+    why:
+      "邀评 toast 的「去评价」只跳站内相对路径：pluginReviewUrl 的唯一构造点是 " +
+      "`/marketplace/${encodeURIComponent(slug)}?tab=reviews`，slug 已编码，拼不出伪协议与站外地址；" +
+      "调用前一句 `const url = safeHref(pluginReviewUrl(slug), '')` 再过一道闸，不安全值落到 '' 直接 return，" +
+      "所以 location.assign 拿到的是已过闸的值。",
+    evidence: ["const url = safeHref(pluginReviewUrl(slug), '')", "window.location.assign(url)"],
+  },
+  {
     file: "src/components/search/wanted-actions.tsx",
     kind: "href",
     expr: "form.href",

@@ -151,6 +151,35 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'segmentfault.com': '/brand-icons/segmentfault.png',
   'gogs.io': '/brand-icons/gogs.png',
   'datatracker.ietf.org': '/brand-icons/ietf.png',
+  // 2026-11-17（进化轮第二批 2b 剩余 + 2c）：48 站缺失清单里站方自有
+  // 图标 12 站（剪映/即梦/天音/中国大学 MOOC/极客时间/智联/番茄小说/
+  // 探探/ReelShort/中央气象台/国家哲学/有戏 AI）+ iTunes 128px 应用
+  // 图标 5 站（时光网/超级简历/国家医保局/12333/小云雀 AI）。全部
+  // curl 重新验证（200 + image MIME + 魔数 + 尺寸与研究笔记逐个相符）
+  // 后本地落盘，与第一批/2a/2b 同款做法。有戏 AI 600x600 422KB 已压
+  // 到 128px（23013B）；天音 .ico 实为 PNG、智联 .png 实为 ICO，文件
+  // 名按魔数定。时光网站方图标仅 16px，改用 iTunes 128px 版。宽版
+  // logo（中央气象台 255x65、国家哲学 385x56）与天音黑字透明底按 2a
+  // 对 Ollama / SourceHut 的做法——不做特殊处理，已知局限留待深色
+  // 底块统一处理轮（研究笔记 §3/§5）。极客公园/海珀/国家公务员局
+  // 不在本批，未动。
+  'capcut.cn': '/brand-icons/capcut.ico',
+  'jimeng.jianying.com': '/brand-icons/jimeng.ico',
+  'tianyin.163.com': '/brand-icons/tianyin.png',
+  'icourse163.org': '/brand-icons/icourse163.png',
+  'time.geekbang.org': '/brand-icons/geekbang.jpg',
+  'zhaopin.com': '/brand-icons/zhaopin.ico',
+  'fanqienovel.com': '/brand-icons/fanqienovel.png',
+  'tantan.com': '/brand-icons/tantan.png',
+  'reelshort.com': '/brand-icons/reelshort.png',
+  'nmc.cn': '/brand-icons/nmc.png',
+  'ncpssd.org': '/brand-icons/ncpssd.png',
+  'youxi.fullpeace.net': '/brand-icons/youxi.png',
+  'mtime.com': '/brand-icons/mtime.jpg',
+  'wondercv.com': '/brand-icons/wondercv.jpg',
+  'nhsa.gov.cn': '/brand-icons/nhsa.jpg',
+  '12333.gov.cn': '/brand-icons/12333.jpg',
+  'xiaoyunque.com': '/brand-icons/xiaoyunque.jpg',
   'vuejs.org': '/brand-icons/vue.svg',
   'npmjs.com': '/brand-icons/npm.svg',
   'vite.dev': '/brand-icons/vite.svg',

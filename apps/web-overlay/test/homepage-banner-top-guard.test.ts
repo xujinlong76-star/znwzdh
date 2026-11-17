@@ -1,12 +1,20 @@
 // 首页横幅必须在顶部：根 layout 里 <HomepageBanner /> 的渲染位置
 // 在 {children} 之前。
 //
-// 背景：横幅组件本身是普通流式 div（无 fixed/sticky），文件头自称
-// 「首页顶部『设为首页』引导条」，但它曾挂在 ThemeProvider 末尾——
-// Providers / children / MobileNav / OfflineBanner / Toaster 之后，
-// 实际渲染在文档底部、页脚之后，用户基本看不到，等于功能缺失
-// （2026-11-15 第 72 轮核实）。改法：移到 <Providers>{children}
+// 背景：横幅组件在 2026-11-18 04:22 轮之前是普通流式 div（无
+// fixed/sticky），文件头自称「首页顶部『设为首页』引导条」，但它曾挂在
+// ThemeProvider 末尾——Providers / children / MobileNav / OfflineBanner /
+// Toaster 之后，实际渲染在文档底部、页脚之后，用户基本看不到，等于功能
+// 缺失（2026-11-15 第 72 轮核实）。改法：移到 <Providers>{children}
 // </Providers> 之前（仍在 ThemeProvider 内，主题上下文不变）。
+//
+// 2026-11-18 04:22 轮方案 A（CLS 修法）：横幅根节点改为 fixed 悬浮条
+// （`fixed inset-x-0 top-0 z-50`），脱离文档流——首帧 SSR 为 null、水合
+// 后才出现时，不再把工具栏与首页内容下推整条横幅高度，位移构造上归零；
+// 展开态容器加 `max-h-[70vh] overflow-y-auto` 封顶，不盖住大半视口。
+// 本文件的 layout 位置守卫不变（渲染点仍一处、仍在 Providers/children
+// 之前）；新增的源码级断言（见文末）锁死 fixed 与展开封顶，防止后人
+// 改回流式 div 让 CLS 静默回归。
 //
 // 锁死点：
 //  - layout 里 <HomepageBanner /> 有且仅有一处渲染点。
@@ -25,6 +33,7 @@ const ROOT = resolve(HERE, '..')
 const read = (rel: string) => readFileSync(resolve(ROOT, rel), 'utf8')
 
 const LAYOUT = 'src/app/layout.tsx'
+const BANNER = 'src/components/growth/homepage-banner.tsx'
 const BANNER_TAG = '<HomepageBanner />'
 
 describe('首页「设为首页」引导条在顶部（layout 位置守卫）', () => {
@@ -66,5 +75,24 @@ describe('首页「设为首页」引导条在顶部（layout 位置守卫）', 
     const banner = src.indexOf(BANNER_TAG)
     expect(banner).toBeGreaterThan(src.indexOf('<ThemeProvider'))
     expect(banner).toBeLessThan(src.indexOf('</ThemeProvider>'))
+  })
+})
+
+describe('首页横幅 fixed 悬浮条（CLS 方案 A，2026-11-18 04:22 轮）', () => {
+  it('横幅根节点 fixed 脱离文档流：水合插入不下推任何内容', () => {
+    const src = read(BANNER)
+    // 根 div 必须同时带 fixed + 全宽 + 顶贴 + 盖过 sticky 工具栏（z-30）：
+    // 缺任何一项都会回到流式下推或被工具栏盖住。
+    expect(src).toContain('fixed inset-x-0 top-0 z-50')
+    expect(src).not.toContain('<div className="border-b border-primary/20 bg-primary/5">')
+  })
+
+  it('展开态容器封顶可滚：引导卡不盖住大半视口', () => {
+    const src = read(BANNER)
+    expect(src).toContain('max-h-[70vh] overflow-y-auto')
+    // 展开容器仍是 HomepageGuideCard 的直接父级。
+    const cap = src.indexOf('max-h-[70vh]')
+    expect(cap).toBeGreaterThan(-1)
+    expect(src.indexOf('<HomepageGuideCard compact />', cap)).toBeGreaterThan(cap)
   })
 })

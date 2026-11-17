@@ -5,6 +5,17 @@
  * localStorage 不再打扰（HOMEPAGE_BANNER_DISMISSED_KEY）。已领取过
  * 首页奖励的用户也不再显示——目的达到就不烦人。点「怎么设置」原地
  * 展开完整引导卡（HomepageGuideCard）。
+ *
+ * CLS（2026-11-18 04:22 轮方案 A：fixed 悬浮条）：横幅首帧 SSR 为
+ * null，水合后才出现；流式 div 会把工具栏与首页内容下推整条横幅高度
+ * （静态验算 53px 桌面 / 61–81px 移动 / 最窄屏约 101px，CLS 估算
+ * 0.06–0.15，非实测）。根节点改为 fixed 脱离文档流后，水合插入与
+ * 关闭全程不推动任何已渲染内容，位移构造上归零。
+ * 接受的两处有条件债务：
+ *  - 公告栏：当前 site.json 无 announcement 键、公告关闭，fixed top-0
+ *    不会盖住公告；公告重开之日须同步复核重叠。
+ *  - sticky 工具栏（z-30）：z-50 横幅下滚时盖住工具栏直至关闭，接受
+ *    一次出现；下滚收起另立项，不在本轮改 navigation-toolbar.tsx。
  */
 
 import { useEffect, useState } from 'react'
@@ -50,8 +61,10 @@ export function HomepageBanner() {
     }
   }
 
+  // fixed 悬浮条（方案 A）：脱离文档流，水合插入不下推任何内容。
+  // 展开态封顶见下方 expanded 容器。
   return (
-    <div className="border-b border-primary/20 bg-primary/5">
+    <div className="fixed inset-x-0 top-0 z-50 border-b border-primary/20 bg-primary/5">
       <div className="mx-auto w-full max-w-6xl px-4 py-2.5">
         <div className="flex items-center gap-3">
           <Home className="h-4 w-4 shrink-0 text-primary" aria-hidden />
@@ -75,7 +88,10 @@ export function HomepageBanner() {
           </button>
         </div>
         {expanded && (
-          <div className="mt-3">
+          // 展开态封顶：引导卡内容约 350–450px 高，不封顶会盖住大半视口；
+          // 70vh 封顶 + 内部滚动，至少留 30vh 页面可见、可点关闭；
+          // overscroll-contain 防滚动链带走背后页面。
+          <div className="mt-3 max-h-[70vh] overflow-y-auto overscroll-contain">
             <HomepageGuideCard compact />
           </div>
         )}

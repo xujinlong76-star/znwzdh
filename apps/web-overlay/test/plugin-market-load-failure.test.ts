@@ -105,6 +105,9 @@ const originalFetch = globalThis.fetch
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  // mock 卫生：本文件 mock 了 next/link、next/dynamic、@/components/plugins/plugin-card
+  // 三个跨模块目标，清理模块缓存，避免驻留同 worker 的后续文件。
+  vi.resetModules()
 })
 
 /** fetch 直接抛错（abort / 断网时浏览器的行为） */

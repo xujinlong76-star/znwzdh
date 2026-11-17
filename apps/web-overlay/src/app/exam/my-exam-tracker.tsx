@@ -100,7 +100,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                   type="checkbox"
                   checked={checked}
                   onChange={() => handleCheck(node.label)}
-                  aria-label={`${node.label}已完成`}
+                  aria-label={checked ? `${node.label}已完成` : `将${node.label}标记为已完成`}
                   disabled={ended && !hasPendingNodes}
                   className="mt-0.5 h-5 w-5 shrink-0"
                 />

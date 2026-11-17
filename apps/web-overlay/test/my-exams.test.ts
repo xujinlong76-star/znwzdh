@@ -853,6 +853,24 @@ describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结�
   })
 })
 
+describe('U-111：复选框 aria-label 按勾选态区分，不把未完成说成已完成', () => {
+  it('未勾选标签不含「已完成」断言：文案是「将××标记为已完成」的动作描述', () => {
+    const island = read('src/app/exam/my-exam-tracker.tsx')
+    // 未勾选分支是动作（将…标记为…），不是状态断言；旧的无条件
+    // aria-label={`${node.label}已完成`} 已删除。
+    expect(island).toContain('`将${node.label}标记为已完成`')
+    expect(island).not.toContain('aria-label={`${node.label}已完成`}')
+  })
+
+  it('已勾选标签与完成态一致：已完成分支与删除线同用 checked 判定', () => {
+    const island = read('src/app/exam/my-exam-tracker.tsx')
+    expect(island).toContain(
+      'aria-label={checked ? `${node.label}已完成` : `将${node.label}标记为已完成`}',
+    )
+    expect(island).toContain("checked ? 'text-muted-foreground line-through' : 'text-foreground'")
+  })
+})
+
 describe('我的考试岛源码守卫', () => {
   const island = read('src/app/exam/my-exam-tracker.tsx')
   const lib = read('src/lib/my-exams.ts')
@@ -891,9 +909,11 @@ describe('我的考试岛源码守卫', () => {
     expect(island).not.toContain("'navhub.my-exams.v1'")
   })
 
-  it('用真 checkbox 勾选，带已完成 aria-label；关注按钮带 aria-pressed', () => {
+  it('用真 checkbox 勾选，aria-label 按勾选态区分（U-111）；关注按钮带 aria-pressed', () => {
     expect(island).toContain('type="checkbox"')
-    expect(island).toContain('aria-label={`${node.label}已完成`}')
+    expect(island).toContain(
+      'aria-label={checked ? `${node.label}已完成` : `将${node.label}标记为已完成`}',
+    )
     expect(island).toContain('aria-pressed={followed}')
   })
 

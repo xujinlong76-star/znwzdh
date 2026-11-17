@@ -1587,7 +1587,25 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     return { ok: true, deleted: counts };
   });
 
-  app.post("/api/me/merge", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post(
+    "/api/me/merge",
+    {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: "1 minute",
+          // 按调用方身份分桶（E2E 2/2 分片里 /api/me/merge 吃 429 的根因）：
+          // 默认 key 是 req.ip，分片与生产 NAT 下全部请求同 IP，共用 5 次/分钟
+          // 的桶；requestIdentityOf 在 onRequest 阶段可读头（X-Navhub-Anon-Id /
+          // x-navhub-user-id）、?anonId= 查询与令牌 owner，body 读不到时回退
+          // req.ip（与改造前同口径，不放宽也不收紧）。
+          // 注意：本修复只认领 merge 429 本身，不认领该分片失败的 2 个 E2E
+          // 用例（它们发生在 17:33:04，晚于全部 429/502，另有原因在查）。
+          keyGenerator: (req) => requestIdentityOf(req as never) ?? req.ip,
+        },
+      },
+    },
+    async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const target = requestIdentityOf(req as never);
     if (!target) {

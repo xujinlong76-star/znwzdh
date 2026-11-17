@@ -2,6 +2,8 @@ import { cache } from "react";
 import { NavigationContent } from "@/components/navigation-content";
 import { HomeBriefStrip } from "@/components/home-brief-strip";
 import { HomeExamStrip } from "@/components/home-exam-strip";
+import { HomeTodayZone } from "@/components/home-today-zone";
+import { HomeTodayMore } from "@/components/home-today-more";
 import { HandoffCardWithCloud } from "@/components/handoff-card-with-cloud";
 import { StreakBar } from "@/components/growth/streak-bar";
 import { Metadata } from "next/types";
@@ -318,10 +320,13 @@ export default async function HomePage() {
 
   return (
     <>
-      <HomeBriefStrip />
-      <HomeExamStrip />
-      <HandoffCardWithCloud />
-      <StreakBar />
+      <HomeTodayZone />
+      <HomeTodayMore>
+        <HomeBriefStrip />
+        <HomeExamStrip />
+        <HandoffCardWithCloud />
+        <StreakBar />
+      </HomeTodayMore>
       <NavigationContent
         navigationData={navigationData}
         siteData={siteData}

@@ -9,7 +9,11 @@
  *    另有一条经核实的官方专题站外链（走 exam-calendar 常量，不在视图写
  *    死 http 字面量、不写死考试 id 与日期）；小字不用 text-primary、不用 11px、
  *    不用锌灰低对比；徽章用 bg-sky-500/5 + text-sky-700 配方；
- *  - 挂载位置：首页简报条之后、连胜条之前（首屏顶部）。
+ *  - 挂载位置（U-24 起）：考试条收进首页「更多今日内容」折叠区，
+ *    位于简报条之后、接力卡之前；折叠区在今日区之后、导航之前。
+ *    旧口径“考试条挂在简报条之后、连胜条之前（首屏顶部）”随 U-24 定义
+ *    作废：今日区已把考试倒计时与下一步节点提上首屏第一位，完整考试条
+ *    折叠收起不等于信息丢失。
  *  - 结构：服务端外壳（home-exam-strip.tsx）只挑全局最近场；
  *    个性化由客户端视图（home-exam-strip-view.tsx）挂载后接手——
  *    挂载前渲染与服务端直出一致，关注了未结束考试才切到已关注场。
@@ -225,16 +229,31 @@ describe('首页考试条源码守卫', () => {
   })
 })
 
-describe('首页挂载位置守卫', () => {
+describe('首页挂载位置守卫（U-24）', () => {
   const home = read('src/app/page.tsx')
 
-  it('考试条挂在简报条之后、连胜条之前（首屏顶部）', () => {
+  it('今日区第一、折叠区第二、导航第三；考试条在折叠区内简报条之后、接力卡之前', () => {
+    expect(home).toContain('import { HomeTodayZone } from "@/components/home-today-zone"')
+    expect(home).toContain('import { HomeTodayMore } from "@/components/home-today-more"')
     expect(home).toContain('import { HomeExamStrip } from "@/components/home-exam-strip"')
+    const zone = home.indexOf('<HomeTodayZone />')
+    const moreOpen = home.indexOf('<HomeTodayMore>')
+    const moreClose = home.indexOf('</HomeTodayMore>')
+    const nav = home.indexOf('<NavigationContent')
     const brief = home.indexOf('<HomeBriefStrip />')
     const exam = home.indexOf('<HomeExamStrip />')
+    const handoff = home.indexOf('<HandoffCardWithCloud />')
     const streak = home.indexOf('<StreakBar />')
-    expect(brief).toBeGreaterThan(-1)
-    expect(exam).toBeGreaterThan(brief)
-    expect(exam).toBeLessThan(streak)
+    expect(zone).toBeGreaterThan(-1)
+    expect(moreOpen).toBeGreaterThan(zone)
+    expect(moreClose).toBeGreaterThan(moreOpen)
+    expect(nav).toBeGreaterThan(moreClose)
+    for (const pos of [brief, exam, handoff, streak]) {
+      expect(pos).toBeGreaterThan(moreOpen)
+      expect(pos).toBeLessThan(moreClose)
+    }
+    expect(brief).toBeLessThan(exam)
+    expect(exam).toBeLessThan(handoff)
+    expect(handoff).toBeLessThan(streak)
   })
 })

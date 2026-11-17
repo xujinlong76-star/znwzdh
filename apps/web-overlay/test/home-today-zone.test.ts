@@ -6,7 +6,7 @@
  *  - 行为：今天（2026-11-17）最近一场是国考、距首考日 11 天，
  *    featured 清单首部有剧可取（只断言“有”，不断言具体剧名——
  *    剧名是数据，数据变了测试不该红）。
- * 首页挂载顺序（今日区 → 折叠区 → 导航）随 page.tsx 改动在下一提交补断言，
+ * 首页挂载顺序（今日区 → 折叠区 → 导航）见本文件末尾 describe，
  * 旧的 home-exam-entry 挂载守卫随 U-24 定义同步更新。
  */
 import { readFileSync } from 'node:fs'
@@ -112,5 +112,33 @@ describe('今日区行为：考试倒计时与短剧榜首（只读事实源）'
     expect(first.title.length).toBeGreaterThan(0)
     expect(first.url).toMatch(/^https?:\/\//)
     expect(first.platformTitle.length).toBeGreaterThan(0)
+  })
+})
+
+describe('首页挂载顺序守卫（U-24）', () => {
+  const home = read('src/app/page.tsx')
+
+  it('今日区第一、折叠区第二、导航第三；四条带顶收进折叠区、相对顺序不变', () => {
+    expect(home).toContain('import { HomeTodayZone } from "@/components/home-today-zone"')
+    expect(home).toContain('import { HomeTodayMore } from "@/components/home-today-more"')
+    const zone = home.indexOf('<HomeTodayZone />')
+    const moreOpen = home.indexOf('<HomeTodayMore>')
+    const moreClose = home.indexOf('</HomeTodayMore>')
+    const nav = home.indexOf('<NavigationContent')
+    expect(zone).toBeGreaterThan(-1)
+    expect(moreOpen).toBeGreaterThan(zone)
+    expect(moreClose).toBeGreaterThan(moreOpen)
+    expect(nav).toBeGreaterThan(moreClose)
+    const brief = home.indexOf('<HomeBriefStrip />')
+    const exam = home.indexOf('<HomeExamStrip />')
+    const handoff = home.indexOf('<HandoffCardWithCloud />')
+    const streak = home.indexOf('<StreakBar />')
+    for (const pos of [brief, exam, handoff, streak]) {
+      expect(pos).toBeGreaterThan(moreOpen)
+      expect(pos).toBeLessThan(moreClose)
+    }
+    expect(brief).toBeLessThan(exam)
+    expect(exam).toBeLessThan(handoff)
+    expect(handoff).toBeLessThan(streak)
   })
 })

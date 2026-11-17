@@ -225,7 +225,12 @@ describe('接线：站内分类页相关插件入口（P2-12）', () => {
     expect(board).toContain('data-testid="category-related-plugins"')
     expect(board).toContain('resolveRelatedPluginLink(name)')
     expect(board).toContain('MARKETPLACE_CATEGORIES_PATH')
-    expect(board).toContain('relatedPlugin.href')
+    // 安全闸跟进（9b3bf8eb）：href 不再直接用 relatedPlugin.href，改经 safeHref
+    // 校验后存入局部 href 再传给 Link；链接仍走 relatedPlugin 的 href，
+    // 相关插件区仍只在 relatedPlugin 有值且 href 可用时渲染映射链接
+    expect(board).toContain("safeHref(relatedPlugin?.href ?? '', '')")
+    expect(board).toContain('relatedPlugin && href')
+    expect(board).toContain('href={href}')
     expect(board).toContain('relatedPlugin.queryLabel')
     // 在站点列表之前（不是拉到底部才看见的入口）
     expect(board.indexOf('category-related-plugins')).toBeLessThan(

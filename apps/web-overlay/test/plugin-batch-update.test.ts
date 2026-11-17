@@ -203,8 +203,12 @@ describe('通知中心更新提醒接线', () => {
     expect(src).toContain('去全部更新')
     expect(src).toContain('知道了')
     expect(src).toContain('role="status"')
+    // link 是经 safeHref 校验的 updateReminder.link：不安全值落到 '' 时横幅不渲染
+    expect(src).toContain("safeHref(updateReminder?.link ?? '', '')")
     // 提醒横幅在服务端通知列表之上、与空态无关：无服务端通知时也出现
-    const bannerAt = src.indexOf('updateReminder && !reminderDismissed')
+    // 安全闸跟进（9b3bf8eb）：横幅条件多了 `&& link`，仍断言横幅只在有提醒、
+    // 链接可用、未关闭当次时渲染
+    const bannerAt = src.indexOf('updateReminder && link && !reminderDismissed')
     const emptyAt = src.indexOf('还没有通知')
     expect(bannerAt).toBeGreaterThan(-1)
     expect(emptyAt).toBeGreaterThan(-1)

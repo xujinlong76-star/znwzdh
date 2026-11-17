@@ -16,7 +16,9 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
+import { MarketplaceLoadError } from '@/components/marketplace-load-error'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { applyMarketplaceListLoad, type MarketplaceListSnapshot } from '@/lib/plugins/marketplace-load-state'
 import { fetchMyPlugins, type HubMyPluginStats, type HubPluginItem } from '@/lib/navhub-api'
 import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import { getIdentity } from '@/lib/identity'
@@ -56,8 +58,14 @@ const STATUS_META: Record<
 
 export default function MyPluginsPage() {
   const identity = useMemo(() => getIdentity(), [])
-  const [items, setItems] = useState<HubPluginItem[]>([])
-  const [total, setTotal] = useState(0)
+  // 列表三态共用一份快照：取数失败时不写空兜底（见 applyMarketplaceListLoad），
+  // 首屏失败改立 loadFailed，由失败态接管列表区；头部徽章与「共 N 个」也随
+  // 之隐藏，不报假零（P1-2）。
+  const [list, setList] = useState<MarketplaceListSnapshot<HubPluginItem>>({
+    items: [],
+    total: 0,
+    loadFailed: false,
+  })
   // 服务端全量聚合（/mine 的 stats）：取不到时（降级回落）才按当页 items 求和
   const [stats, setStats] = useState<HubMyPluginStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -89,11 +97,16 @@ export default function MyPluginsPage() {
     )
     // 两边合一（A-4b 追加失败保护 + A-4 服务端 stats）：追加失败时不覆盖已有
     // items/total/stats；追加成功时 stats 以服务端全量聚合为准（与分页无关）。
-    if (!(append && failed)) {
-      setItems((prev) => (append ? [...prev, ...res.items] : res.items))
-      setTotal((prev) => (append ? Math.max(prev, res.total) : res.total))
-      setStats(res.stats ?? null)
-    }
+    // 首屏失败同理：不写空兜底，改立 loadFailed，由失败态接管列表区（P1-2）。
+    setList((prev) =>
+      applyMarketplaceListLoad(prev, res, {
+        failed,
+        append,
+        silent: false,
+        mergeAppendTotal: (prevTotal, nextTotal) => Math.max(prevTotal, nextTotal),
+      }),
+    )
+    if (!failed) setStats(res.stats ?? null)
     if (append) setLoadingMore(false)
     else setLoading(false)
   }, [identity])
@@ -104,7 +117,7 @@ export default function MyPluginsPage() {
 
   const counts = useMemo(() => {
     const base = { pending: 0, published: 0, rejected: 0, other: 0 }
-    for (const item of items) {
+    for (const item of list.items) {
       if (item.status === 'pending') base.pending++
       else if (item.status === 'published') base.published++
       else if (item.status === 'rejected') base.rejected++
@@ -117,13 +130,13 @@ export default function MyPluginsPage() {
       rejected: stats?.rejected ?? base.rejected,
       other: stats?.other ?? base.other,
     }
-  }, [items, stats])
+  }, [list.items, stats])
 
   const metrics = useMemo(() => {
     let installs = 0
     let stars = 0
     let remixes = 0
-    for (const item of items) {
+    for (const item of list.items) {
       installs += item.installCount || 0
       stars += item.starCount || 0
       remixes += item.remixCount || 0
@@ -133,7 +146,7 @@ export default function MyPluginsPage() {
       stars: stats?.stars ?? stars,
       remixes: stats?.remixes ?? remixes,
     }
-  }, [items, stats])
+  }, [list.items, stats])
 
   return (
     <Container as="main" id="main-content">
@@ -164,17 +177,20 @@ export default function MyPluginsPage() {
             这里可以看到你提交的全部插件与审核状态。待审/驳回的记录不会出现在公开市场；
             修改清单后需重新提交审核。
           </p>
-          <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
-            <Badge variant="outline" className="border-amber-500/30 text-amber-700 dark:text-amber-400">待审核 {counts.pending}</Badge>
-            <Badge variant="outline" className="border-emerald-500/30 text-emerald-700 dark:text-emerald-400">已上架 {counts.published}</Badge>
-            <Badge variant="outline" className="border-rose-500/30 text-rose-700 dark:text-rose-400">已驳回 {counts.rejected}</Badge>
-            {counts.other > 0 && <Badge variant="outline">其他 {counts.other}</Badge>}
-            <span className="text-muted-foreground ml-auto">共 {total} 个</span>
-          </div>
+          {/* 失败时不报假零：徽章与「共 N 个」整行隐藏，失败态在下方接管 */}
+          {!list.loadFailed && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
+              <Badge variant="outline" className="border-amber-500/30 text-amber-700 dark:text-amber-400">待审核 {counts.pending}</Badge>
+              <Badge variant="outline" className="border-emerald-500/30 text-emerald-700 dark:text-emerald-400">已上架 {counts.published}</Badge>
+              <Badge variant="outline" className="border-rose-500/30 text-rose-700 dark:text-rose-400">已驳回 {counts.rejected}</Badge>
+              {counts.other > 0 && <Badge variant="outline">其他 {counts.other}</Badge>}
+              <span className="text-muted-foreground ml-auto">共 {list.total} 个</span>
+            </div>
+          )}
         </div>
 
         {/* 创作者生态漏斗与影响力大盘 (Creator Funnel) */}
-        {items.length > 0 && (
+        {list.items.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="rounded-2xl border border-border/70 bg-card/60 p-4 space-y-1">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -206,14 +222,14 @@ export default function MyPluginsPage() {
                 <span>上架成功率</span>
               </div>
               <div className="text-2xl font-bold font-mono text-foreground pt-0.5">
-                {total > 0 ? `${Math.round((counts.published / total) * 100)}%` : '0%'}
+                {list.total > 0 ? `${Math.round((counts.published / list.total) * 100)}%` : '0%'}
               </div>
-              <p className="text-[10px] text-muted-foreground">{counts.published} / {total} 审核通过</p>
+              <p className="text-[10px] text-muted-foreground">{counts.published} / {list.total} 审核通过</p>
             </div>
           </div>
         )}
 
-        {notice && (
+        {notice && !list.loadFailed && (
           <HubDegradedNotice notice={notice} onRetry={() => setReloadToken((n) => n + 1)} subject="作者中心" />
         )}
 
@@ -222,7 +238,9 @@ export default function MyPluginsPage() {
             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-3" />
             正在加载我的插件…
           </div>
-        ) : items.length === 0 ? (
+        ) : list.loadFailed ? (
+          <MarketplaceLoadError title="我的插件加载失败" notice={notice} onRetry={() => setReloadToken((n) => n + 1)} />
+        ) : list.items.length === 0 ? (
           <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
             <Store className="w-8 h-8 mx-auto text-muted-foreground" />
             <p className="text-sm text-muted-foreground">你还没有提交过插件</p>
@@ -235,7 +253,7 @@ export default function MyPluginsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {items.map((plugin) => {
+            {list.items.map((plugin) => {
               const meta = STATUS_META[plugin.status] ?? STATUS_META.pending
               const StatusIcon = meta.icon
               return (
@@ -314,16 +332,16 @@ export default function MyPluginsPage() {
           </div>
         )}
 
-        {items.length < total && (
+        {!list.loadFailed && list.items.length < list.total && (
           <div className="text-center">
             <Button
               variant="outline"
               disabled={loadingMore}
-              onClick={() => void load(items.length, true)}
+              onClick={() => void load(list.items.length, true)}
               className="gap-1.5"
             >
               {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
-              加载更多（{items.length}/{total}）
+              加载更多（{list.items.length}/{list.total}）
             </Button>
           </div>
         )}

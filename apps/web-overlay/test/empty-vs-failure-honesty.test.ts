@@ -125,14 +125,20 @@ describe('插件市场「加载更多」：失败不许改写总数', () => {
   const src = stripComments(read('src/components/plugin-market-board.tsx'))
 
   it('追加分页失败时保留原有 items 与 total', () => {
-    // 守卫现为组合条件：追加失败与静默失败都不许覆盖（静默分支见
-    // plugin-install-ux.test.ts「SSR 首帧没有身份」一节）；断言只钉
-    // append-failed 这一半，免得下次守卫再扩展时本测试又过期。
-    expect(src).toContain('if (!(append && failed)')
-    const guardAt = src.indexOf('if (!(append && failed)')
-    const totalAt = src.indexOf('setTotal(res.total)', guardAt)
-    expect(guardAt).toBeGreaterThan(-1)
-    expect(totalAt).toBeGreaterThan(guardAt)
+    // 接线变更（P1-2 重构进 helper，行为未变、断言跟随接线）：内联守卫
+    // `if (!(append && failed)` + 其后 `setTotal(res.total)` 已从 board
+    // 消失（setTotal 已不存在），board 改走
+    // setList((prev) => applyMarketplaceListLoad(prev, res, { failed, append, silent }))，
+    // 追加失败时 helper 原样返回旧快照（同一引用），总数不被改写。
+    // 意图不变：追加失败仍不许改写总数。静默分支见
+    // plugin-install-ux.test.ts「SSR 首帧没有身份」一节。
+    expect(src).toContain('applyMarketplaceListLoad(prev, res, { failed, append, silent })')
+    const helper = stripComments(read('src/lib/plugins/marketplace-load-state.ts'))
+    expect(helper).toContain('if (opts.append || opts.silent) return prev')
+    // 追加失败分支在首屏失败分支之前：追加失败不立 loadFailed、不写空兜底。
+    expect(helper.indexOf('if (opts.append || opts.silent) return prev')).toBeLessThan(
+      helper.indexOf('return { ...prev, loadFailed: true }'),
+    )
   })
 
   it('失败通过 onDegraded 记下来，而不是静默返回空块', () => {

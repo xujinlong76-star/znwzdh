@@ -78,7 +78,11 @@ describe("describeDegrade：把失败翻译成可行动的提示", () => {
     expect(errorStatus(err)).toBeNull();
     const notice = describeDegrade(err, "站点数据");
     expect(notice.retryable).toBe(true);
-    expect(notice.message).toBe("Failed to fetch");
+    // P1-2：浏览器英文原文不许原样贴给用户（旧断言曾钉死透传 "Failed to fetch"，
+    // 那正是横幅英文泄露的根因）；网络层英文一律翻成中文，见 describeDegrade
+    // 的 status-null 分支。
+    expect(notice.message).toBe("无法连接 站点数据：服务未启动或网络不可达。");
+    expect(notice.message).not.toMatch(/Failed to fetch|fetch|NetworkError|TypeError/i);
   });
 
   it("没有 message 也没有 status 时给默认文案，并带上出错对象名", () => {

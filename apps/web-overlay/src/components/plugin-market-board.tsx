@@ -26,6 +26,8 @@ import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { fetchPlugins, type HubPluginItem } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { PluginCard } from '@/components/plugins/plugin-card'
+import { MarketplaceLoadError } from '@/components/marketplace-load-error'
+import { applyMarketplaceListLoad, type MarketplaceListSnapshot } from '@/lib/plugins/marketplace-load-state'
 import dynamic from 'next/dynamic'
 
 const PluginInstallModal = dynamic(
@@ -143,8 +145,13 @@ export function PluginMarketBoard({
   initialQ = '',
 }: PluginMarketBoardProps) {
   const identity = useMemo(() => getIdentity(), [])
-  const [items, setItems] = useState<HubPluginItem[]>(initialItems ?? [])
-  const [total, setTotal] = useState(initialTotal)
+  // 列表三态（loading / error / empty）共用一份快照：取数失败时不写空兜底
+  // （见 applyMarketplaceListLoad），首屏失败改立 loadFailed，由失败态接管列表区。
+  const [list, setList] = useState<MarketplaceListSnapshot<HubPluginItem>>({
+    items: initialItems ?? [],
+    total: initialTotal,
+    loadFailed: false,
+  })
   // 服务端给了数据就不进骨架屏（SSR 直出卡片）；没给才 loading
   const [loading, setLoading] = useState(initialItems === null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -269,10 +276,8 @@ export function PluginMarketBoard({
       // 一次瞬间故障会把「共 N 个」改成 0、加载更多按钮随之消失，后面的页再也到不了，
       // 而列表里明明还留着前面那些插件。失败就保持原样，让用户重试。
       // 静默同步失败同理：不能用空兜底把 SSR 首帧抹掉。
-      if (!(append && failed) && !(silent && failed)) {
-        setItems((prev) => (append ? [...prev, ...res.items] : res.items))
-        setTotal(res.total)
-      }
+      // 首屏失败同理：不写空兜底，改立 loadFailed，由失败态接管列表区（P1-2）。
+      setList((prev) => applyMarketplaceListLoad(prev, res, { failed, append, silent }))
       if (!silent) {
         if (append) setLoadingMore(false)
         else setLoading(false)
@@ -313,7 +318,10 @@ export function PluginMarketBoard({
   }, [setSearchInput])
 
   const patchItem = useCallback((updated: HubPluginItem) => {
-    setItems((prev) => prev.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)))
+    setList((prev) => ({
+      ...prev,
+      items: prev.items.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)),
+    }))
     setFeatured((prev) => prev.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)))
   }, [])
 
@@ -321,7 +329,7 @@ export function PluginMarketBoard({
 
   // 计数型排序退化判定（种子 install/star/review 全 0 时与「最新发布」同序）：
   // 只在有结果时注明，0 命中走空态、不叠加两条提示。
-  const sortDegenerate = useMemo(() => isCountSortDegenerate(sort, items), [sort, items])
+  const sortDegenerate = useMemo(() => isCountSortDegenerate(sort, list.items), [sort, list.items])
 
   // 精选与三榜只在“无筛选”时加载：避免与主列表抢请求，也避免筛选后仍显示无关推荐
   // 首帧同样要静默同步一次（SSR 数据没有身份，精选卡片的已装态同理会丢）；
@@ -347,7 +355,7 @@ export function PluginMarketBoard({
   // K18：0 结果空态的相关插件。只在「有筛选、已取完、0 命中、非星标视图」时取，
   // 星标空态（「你还没有星标任何插件」）不需要「相关插件」这条路。
   useEffect(() => {
-    if (!filtersReady || loading || items.length > 0 || !hasFilter || starredOnly) {
+    if (!filtersReady || loading || list.loadFailed || list.items.length > 0 || !hasFilter || starredOnly) {
       setRelated([])
       return
     }
@@ -362,7 +370,7 @@ export function PluginMarketBoard({
     return () => {
       cancelled = true
     }
-  }, [filtersReady, loading, items.length, hasFilter, starredOnly])
+  }, [filtersReady, loading, list.items.length, list.loadFailed, hasFilter, starredOnly])
 
   function cleanLeaderboardTitle(name: string): string {
     const match = name.match(/^([^\(（]+)[\(（]/)
@@ -626,16 +634,16 @@ export function PluginMarketBoard({
             ) : null}
             {starredOnly ? <input type="hidden" name="starred" value="1" readOnly aria-hidden="true" /> : null}
           </form>
-          {total > 0 && !loading && (
+          {list.total > 0 && !loading && !list.loadFailed && (
             <span className="text-xs text-muted-foreground ml-auto" role="status" aria-live="polite">
-              共 {total} 个插件
+              共 {list.total} 个插件
             </span>
           )}
         </div>
 
         {/* 排序退化注明：计数型排序（安装 / 星标 / 评分 / 飙升）在安装量、星标与评价
             全为 0 时与「最新发布」同序，如实注明口径，不编假数据让排序看起来分化。 */}
-        {!loading && items.length > 0 && sortDegenerate && (
+        {!loading && !list.loadFailed && list.items.length > 0 && sortDegenerate && (
           <p className="rounded-md border border-amber-500/50 bg-amber-500/15 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300" data-testid="sort-degenerate-note" role="status">
             当前插件安装量、星标与评价均为 0，安装 / 星标 / 评分 / 飙升排序结果与最新发布一致
           </p>
@@ -722,7 +730,7 @@ export function PluginMarketBoard({
           </div>
         )}
 
-        {notice && <HubDegradedNotice notice={notice} onRetry={reload} subject="插件市场" />}
+        {notice && !list.loadFailed && <HubDegradedNotice notice={notice} onRetry={reload} subject="插件市场" />}
 
         {!hasFilter && featured.length > 0 && (
           <section className="space-y-3">
@@ -805,14 +813,16 @@ export function PluginMarketBoard({
               </div>
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : list.loadFailed ? (
+          <MarketplaceLoadError title="插件市场加载失败" notice={notice} onRetry={reload} />
+        ) : list.items.length === 0 ? (
           <>
             <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-border/60 bg-muted/50 shadow-xs">
                 <Store className="w-7 h-7 text-muted-foreground" />
               </div>
               <p className="text-sm text-muted-foreground">
-                {starredOnly && items.length === 0
+                {starredOnly && list.items.length === 0
                   ? '你还没有星标任何插件'
                   : hasFilter
                     ? '没有匹配的插件，换个筛选条件试试'
@@ -897,7 +907,7 @@ export function PluginMarketBoard({
           </>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1536px]:grid-cols-4! gap-4">
-            {items.map((p) => (
+            {list.items.map((p) => (
               <PluginCard
                 key={p.id}
                 plugin={p}
@@ -909,16 +919,16 @@ export function PluginMarketBoard({
           </div>
         )}
 
-        {items.length < total && (
+        {!list.loadFailed && list.items.length < list.total && (
           <div className="text-center">
             <Button
               variant="outline"
               disabled={loadingMore}
-              onClick={() => void load(items.length, true)}
+              onClick={() => void load(list.items.length, true)}
               className="gap-1.5"
             >
               {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
-              加载更多（{items.length}/{total}）
+              加载更多（{list.items.length}/{list.total}）
             </Button>
           </div>
         )}

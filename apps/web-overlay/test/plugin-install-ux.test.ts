@@ -165,7 +165,13 @@ describe("插件卡片：父级刷新后本地安装态必须跟 prop 走", () =
     expect(board).toContain("void load(0, false, true)")
     expect(board).toContain("async (offset: number, append: boolean, silent = false)")
     // 静默失败不覆盖 SSR 数据、不亮失败提示
-    expect(board).toContain("!(silent && failed)")
+    // 接线变更（P1-2 重构进 helper，行为未变、断言跟随接线）：内联守卫
+    // `!(silent && failed)` 已从 board 消失，board 改走
+    // applyMarketplaceListLoad，静默失败时 helper 原样返回旧快照（同一引
+    // 用），SSR 首帧列表与总数都不被清空、不闪空态。
+    expect(board).toContain("applyMarketplaceListLoad(prev, res, { failed, append, silent })")
+    const helper = overlaySource("src/lib/plugins/marketplace-load-state.ts")
+    expect(helper).toContain("if (opts.append || opts.silent) return prev")
     expect(board).toContain("if (!silent) setNotice(describeDegrade(error, '插件市场'))")
     // 精选区同样挂载同步，且等地址栏解析完再取
     expect(board).toContain("if (!filtersReady || hasFilter) return")

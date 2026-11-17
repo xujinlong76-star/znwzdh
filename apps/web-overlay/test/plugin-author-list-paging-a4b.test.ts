@@ -79,13 +79,16 @@ describe("A-4b：作者中心列表必须能翻到第 101 个插件之后", () =
     const src = read("src/app/marketplace/mine/page.tsx");
     // 修前：load 固定 fetchMyPlugins({ identity, limit: 100 })，无 offset 参数。
     expect(src).toContain("offset");
-    expect(src).toContain("items.length < total");
+    // P1-2 返工：列表状态收进 list 快照（applyMarketplaceListLoad），
+    // 翻页守卫改为 list.items.length < list.total；行为不变（load(list.items.length, true) 仍按已显示条数取下一页）。
+    expect(src).toContain("list.items.length < list.total");
   });
 
   it("列表区有「加载更多」入口，显示已显示/共计", () => {
     const src = read("src/app/marketplace/mine/page.tsx");
     expect(src).toContain("加载更多");
-    expect(src).toContain("items.length}/{total}");
+    // P1-2 返工：同上，计数渲染改为 {list.items.length}/{list.total}（仍显示“已显示/共计”）。
+    expect(src).toContain("{list.items.length}/{list.total}");
   });
 
   it("fetchMyPlugins 本就会拼 offset（页面要用的 API 能力已就绪）", async () => {

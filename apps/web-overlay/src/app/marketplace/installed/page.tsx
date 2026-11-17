@@ -27,6 +27,7 @@ import {
   type HubPluginInstalledItem,
 } from '@/lib/navhub-api'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
+import { MarketplaceLoadError } from '@/components/marketplace-load-error'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { getIdentity } from '@/lib/identity'
 import {
@@ -89,22 +90,33 @@ export default function InstalledPluginsPage() {
     setActionMessage(null)
     setActionRetry(null)
   }
-  // 加载失败 ≠ 没装插件：fetchInstalledPlugins 失败时回落空列表，旧代码只有
-  // try/finally、无 catch、无 onDegraded，故障会被渲染成「你尚未安装任何插件」。
+  // 加载失败 ≠ 没装插件：fetchInstalledPlugins 失败时回落空列表并触发
+  // onDegraded（L93 旧注释的说法已过期）；渲染用 notice && items.length === 0
+  // 走失败态（带重试），不用空态断言。loadData 同理：失败时不拿空兜底覆盖
+  // 已有列表（操作后重载失败也不清空）。
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
+
+  // 整页失败态（首载失败且无列表可保留）：分类栏的「全部 (0)」是假零，随失败态一起隐藏。
+  const loadFailed = notice !== null && items.length === 0
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setNotice(null)
     try {
       const identity = getIdentity()
-      const res = await fetchInstalledPlugins(identity, (err) =>
-        setNotice(describeDegrade(err, '已安装插件')),
-      )
-      setItems(res.items)
-      setActiveThemeState(getActiveTheme())
-      setThemeSuspended(isThemeSuspended())
-      setSearchEngines(getAllSearchEngines())
+      let failed = false
+      const res = await fetchInstalledPlugins(identity, (err) => {
+        failed = true
+        setNotice(describeDegrade(err, '已安装插件'))
+      })
+      // 失败时 res 是空兜底：不写进 state（已有列表保留、只亮横幅；首载失败
+      // 则 items 仍为空、由 loadFailed 失败态接管，绝不渲染成「尚未安装」）。
+      if (!failed) {
+        setItems(res.items)
+        setActiveThemeState(getActiveTheme())
+        setThemeSuspended(isThemeSuspended())
+        setSearchEngines(getAllSearchEngines())
+      }
     } finally {
       setLoading(false)
     }
@@ -506,8 +518,9 @@ export default function InstalledPluginsPage() {
           </div>
         )}
 
-        {/* 分类标签栏 */}
-        <div className="flex items-center gap-1.5 border-b border-border/60 pb-2 overflow-x-auto no-scrollbar touch-pan-x">
+        {/* 分类标签栏：整页失败态时「全部 (0)」是假零，随失败态一起隐藏 */}
+        {!loadFailed && (
+          <div className="flex items-center gap-1.5 border-b border-border/60 pb-2 overflow-x-auto no-scrollbar touch-pan-x">
           {(
             [
               { key: 'all', label: `全部 (${items.length})` },
@@ -534,7 +547,8 @@ export default function InstalledPluginsPage() {
               </button>
             )
           })}
-        </div>
+          </div>
+        )}
 
         {/* 已安装列表渲染 */}
         {loading ? (
@@ -543,12 +557,12 @@ export default function InstalledPluginsPage() {
             正在加载已安装插件清单…
           </div>
         ) : notice && items.length === 0 ? (
-          <div className="py-10 space-y-4 max-w-2xl mx-auto">
-            <HubDegradedNotice notice={notice} onRetry={() => void loadData()} />
-            <p className="text-xs text-muted-foreground text-center leading-relaxed">
-              未能加载已安装插件，可能是网络或中枢服务问题；重试后仍失败请稍后再来。
-            </p>
-          </div>
+          <MarketplaceLoadError
+            title="已安装插件加载失败"
+            notice={notice}
+            detail="未能加载已安装插件，可能是网络或中枢服务问题；重试后仍失败请稍后再来。"
+            onRetry={() => void loadData()}
+          />
         ) : filteredItems.length === 0 ? (
           <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
             <PackageCheck className="w-8 h-8 mx-auto text-muted-foreground" />

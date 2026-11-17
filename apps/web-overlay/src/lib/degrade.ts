@@ -56,6 +56,18 @@ function rawMessage(error: unknown): string {
 }
 
 /**
+ * 浏览器网络层失败的英文原文（fetch 抛 TypeError("Failed to fetch") /
+ * NetworkError / Load failed 等）：与 src/lib/error-report.ts 的网络分类同口径。
+ * describeDegrade 曾经原样透传这类原文，横幅直接贴英文给用户（P1-2）；
+ * status-null 分支里这类原文一律翻成中文，其它可读文案原样透出。
+ */
+const ENGLISH_NETWORK_ERROR = /failed to fetch|fetch failed|networkerror|network request failed|load failed|net::err|err_network/i
+
+function isEnglishNetworkError(message: string): boolean {
+  return ENGLISH_NETWORK_ERROR.test(message.trim())
+}
+
+/**
  * 请求失败 → 降级提示。
  *
  * hubError 生成的 message 本身已经是可读中文（见 navhub-api.ts 的 HUB_STATUS_HINT），
@@ -70,7 +82,15 @@ export function describeDegrade(error: unknown, subject = "山羊胡中枢"): De
   const message = rawMessage(error)
 
   if (status === null) {
-    // fetch 在网络层失败时抛 TypeError（服务未启动 / DNS / 断网 / 中间代理挡了）
+    // fetch 在网络层失败时抛 TypeError（服务未启动 / DNS / 断网 / 中间代理挡了）；
+    // 浏览器原文是英文（Failed to fetch / NetworkError / Load failed），原样
+    // 透传会把英文贴给用户（P1-2）：这类原文翻成中文，其它可读文案原样透出。
+    if (isEnglishNetworkError(message)) {
+      return { message: `无法连接 ${subject}：服务未启动或网络不可达。`, retryable: true }
+    }
+    if (/timed? ?out/i.test(message)) {
+      return { message: '请求超时，请稍后重试。', retryable: true }
+    }
     return {
       message: message || `无法连接 ${subject}：服务未启动或网络不可达。`,
       retryable: true,

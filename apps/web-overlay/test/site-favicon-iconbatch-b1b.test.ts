@@ -7,7 +7,7 @@ import { LOCAL_LOGO_MAP, resolveSiteIcon } from '../src/components/site-favicon'
  * 图标修复 B 类第 1 批 b1b 回归（2026-11-17，进化轮）。
  *
  * 4 站：Cline、GitHub Copilot、Cursor、Tongyi Lingma。
- * 全部 4 站的 href 与标题均按 navigation.json（341 站）逐个核对，不可猜。
+ * 全部 4 站的 href 与标题均按 navigation.json（346 站）逐个核对，不可猜。
  *
  * 关键裁决 R2（基线 icon-b-baseline-2026-11-17.md §R2＋补充裁决）：
  * Cline 与 GitHub Copilot 同为 github.com，hostname map 无法区分；

@@ -220,3 +220,46 @@ describe("纠正后零结果态：只给明确出口，不叠泛推荐（协调�
     expect(palette).toContain("!correction && popular.length > 0");
   });
 });
+
+describe("U-28 零结果定性：标题说清「站内未收录」，三态不混淆", () => {
+  const results = overlaySource("src/app/search/search-results.tsx");
+
+  it("A 态（成功 0 命中）：标题明说「站内暂时没有收录」，不再含糊说「没有找到」", () => {
+    expect(results).toContain("站内暂时没有收录与“${q}”匹配的站点。");
+    expect(results).toContain("站内暂时没有收录与“${q}”匹配、且带标签「${tag}」的站点。");
+    expect(results).not.toContain("没有找到与“${q}”匹配");
+    // 主语永远是「站内」，不写成对全网的断言
+    expect(results).not.toContain("网上没有这个站");
+  });
+
+  it("B 态（纠正后仍 0 命中）：标题点明「换了纠正后的词还是没有」", () => {
+    expect(results).toContain("换了“${correction.corrected}”还是没有——站内暂时没有收录匹配的站点。");
+    // B 分支只在 correction 存在时出现：标题段里 correction 条件在 B 文案之前
+    const titleStart = results.indexOf('<p className="text-sm font-medium text-foreground">');
+    const titleBlock = results.slice(titleStart, results.indexOf("</p>", titleStart));
+    expect(titleBlock.indexOf(": correction")).toBeGreaterThan(-1);
+    expect(titleBlock.indexOf("换了“${correction.corrected}”还是没有")).toBeGreaterThan(
+      titleBlock.indexOf(": correction"),
+    );
+  });
+
+  it("标签-only 与翻页标题不动：本身已诚实，不硬套「未收录」", () => {
+    expect(results).toContain("标签「${tag}」下暂时没有站点。");
+    expect(results).toContain("第 ${page} 页没有更多结果。");
+  });
+
+  it("状态行与标题同一口径：翻页说「这一页没有更多结果」，其余说「站内未收录」", () => {
+    expect(results).toContain("站内暂时没有收录匹配的站点");
+    expect(results).toContain("这一页没有更多结果");
+    expect(results).not.toContain("'没有找到匹配结果'");
+  });
+
+  it("C 态（取数失败）：EmptyResults 根本不渲染，改由 FailedNotice 明示失败", () => {
+    expect(results).toContain("!failed && hits.length === 0 && unavailable.length === 0");
+    expect(results).toContain("<FailedNotice q={q} page={page} tag={tag} />");
+    expect(results).toContain("不是「没有收录这个站点」");
+    const server = overlaySource("src/lib/server/search.ts");
+    // C 必须有真实失败信号：只有中枢取数返回 null 才算失败，0 命中永远走 A
+    expect(server).toContain("const failed = result === null");
+  });
+});

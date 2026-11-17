@@ -264,27 +264,33 @@ function EmptyResults({
   popular: string[]
   /** 中枢从查询里理解到的分类（如 @开发工具 / “开发工具”一词）；没有推断出来时不硬凑 */
   inferredCategory?: string | null
-  /** 零结果救援的「为你推荐」：今日热榜站点；取数失败为空数组，整块不渲染 */
+  /** 零结果救援的「今日热榜」：今日热榜站点；取数失败为空数组，整块不渲染 */
   recommended: HubSite[]
   externalRel?: string
   /** 自动纠正（有值时两出口的「新建收藏」优先用纠正后的词做标题） */
   correction?: { original: string; corrected: string } | null
   /**
-   * 纠正后仍零结果：隐藏「换个词试试 / 大家在搜 / 为你推荐」三块泛推荐，
+   * 纠正后仍零结果：隐藏「换个词试试 / 大家在搜 / 今日热榜」三块泛推荐，
    * 只留 AI 找站 / 投稿收录 / 存为待找 / 新建收藏四个明确出口（协调人决定 1）。
    */
   hideGenericRecommendations?: boolean
 }) {
   return (
     <section className="space-y-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-6">
+      {/* U-28：零结果标题必须定性——三种情况的下一步完全不同，不能只说
+          「没有找到」：A 成功 0 命中 = 站内未收录（投稿/待找/AI 找站）；
+          B 纠正后仍 0 命中 = 已换词还是没有；C 取数失败不在这里——
+          failed 时本组件根本不渲染，改由 FailedNotice 明示「服务没响应」。 */}
       <p className="text-sm font-medium text-foreground">
         {page > 1
           ? `第 ${page} 页没有更多结果。`
           : tag
             ? q
-              ? `没有找到与“${q}”匹配、且带标签「${tag}」的站点。`
+              ? `站内暂时没有收录与“${q}”匹配、且带标签「${tag}」的站点。`
               : `标签「${tag}」下暂时没有站点。`
-            : `没有找到与“${q}”匹配的站点。`}
+            : correction
+              ? `换了“${correction.corrected}”还是没有——站内暂时没有收录匹配的站点。`
+              : `站内暂时没有收录与“${q}”匹配的站点。`}
       </p>
       {/* A11：零结果不是死胡同——两个真出口放最前（AI 找站带词自动问、
           投稿收录带词预填），再往下才是换词/热门词/全网穿透这些次要出口 */}
@@ -730,7 +736,9 @@ export function SearchResults({
                       ? `${resultLabel}：本页 ${hits.length} 条${semanticOnly ? '（均为语义近似，无关键词命中）' : ''}${fuzzy ? '（已放宽匹配范围）' : ''}${hasMore ? '，还有更多' : '，已到最后一页'}。`
                       : unavailable.length > 0
                         ? `没有可直接展示的正常站点；有 ${unavailable.length} 个字面匹配的站点最近巡检打不开（见下方）`
-                        : '没有找到匹配结果'}
+                        : page > 1
+                          ? '这一页没有更多结果'
+                          : '站内暂时没有收录匹配的站点'}
                 </p>
                 {semanticsOff && !failed ? (
                   <span className="text-[11px] text-muted-foreground">

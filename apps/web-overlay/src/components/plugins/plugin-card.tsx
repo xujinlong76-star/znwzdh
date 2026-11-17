@@ -16,7 +16,7 @@ import { pluginKindLabel, resolvePluginDescription } from '@/lib/plugins/plugin-
 import { auditLevelToneClasses } from '@/lib/plugins/audit-report-view'
 import { resolveInstallAction, shouldOpenManageOnInstalledTap } from '@/lib/plugins/install-state'
 import { isTouchDevice } from '@/lib/platform'
-import { formatVerifiedDate } from '@/lib/compare'
+import { formatPackDate } from '@/lib/link-pack'
 import { cardTitle } from '@/lib/plugins/display-title'
 import { Badge } from '@/components/ui/badge'
 import dynamic from 'next/dynamic'
@@ -121,9 +121,12 @@ export function PluginCard({
     upgradedTo !== plugin.version &&
     resolveInstallAction(plugin.installedVersion, plugin.version) === 'update'
 
-  // P3-4：卡片展示更新日期（取运行时 updatedAt，复用仓内已有日期 helper；
-  // 无效 / 缺失时 formatVerifiedDate 返回 null，卡片不渲染、不编造日期）。
-  const updatedAtLabel = formatVerifiedDate(plugin.updatedAt)
+  // P3-4：卡片展示更新日期（取运行时 updatedAt，统一用 formatPackDate 输出 YYYY-MM-DD，与详情头一致；
+  // formatPackDate 本身不判空，卡片先守卫 updatedAt 为有限数，无效 / 缺失时 label 为 null，不渲染、不编造日期）。
+  const updatedAtLabel =
+    typeof plugin.updatedAt === 'number' && Number.isFinite(plugin.updatedAt)
+      ? formatPackDate(plugin.updatedAt)
+      : null
 
   /** 星标切换（抽出供失败重试复用；handleStarToggle 只负责卡片点击事件）。 */
   const toggleStar = async () => {

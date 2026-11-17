@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
  * P3-4（卡片部分）+ P3-6 接线守卫。
  *
  * P3-4：卡片此前不显示更新日期。卡片须展示「更新于某日」（取运行时
- * updatedAt，复用仓内已有日期 helper formatVerifiedDate；无效时不渲染、
+ * updatedAt，复用仓内已有日期 helper formatPackDate（与详情头统一 YYYY-MM-DD）；无效时不渲染、
  * 不编造日期）。详情头由另一 worker 做，本文件只钉卡片。
  *
  * P3-6：hover 时「已安装」→「管理 / 卸载」，触屏无 hover；点按直接以
@@ -44,8 +44,9 @@ function handleActionBody(): string {
 
 describe('P3-4 卡片展示更新日期', () => {
   it('卡片复用仓内已有日期 helper，不内联 toLocaleDateString', () => {
-    expect(CARD).toContain("import { formatVerifiedDate } from '@/lib/compare'")
-    expect(CARD).toContain('formatVerifiedDate(plugin.updatedAt)')
+    expect(CARD).toContain("import { formatPackDate } from '@/lib/link-pack'")
+    expect(CARD).toContain('formatPackDate(plugin.updatedAt)')
+    expect(CARD).not.toContain('formatVerifiedDate')
     expect(CARD).not.toContain('new Date(plugin.updatedAt).toLocaleDateString')
     expect(CARD).not.toContain('plugin.updatedAt).toLocaleDateString')
   })
@@ -56,8 +57,8 @@ describe('P3-4 卡片展示更新日期', () => {
   })
 
   it('更新日期无效 / 缺失时不渲染，不编造日期', () => {
-    // formatVerifiedDate 本身在无效输入时返回 null（compare-logic.test.ts
-    // 已钉）；卡片须以 label 为真才渲染，而不是给默认值。
+    // 卡片先守卫 updatedAt 为有限数再调 formatPackDate（该 helper 本身不判空）；
+    // 无效时 label 为 null，卡片须以 label 为真才渲染，而不是给默认值。
     expect(CARD).toContain('{updatedAtLabel && (')
     expect(CARD).not.toContain('更新于 刚刚')
     expect(CARD).not.toContain("updatedAtLabel ?? '")

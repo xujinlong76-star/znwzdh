@@ -103,7 +103,16 @@ test('市场页 390px：输入聚焦时猫静默，清除 × 可点，失焦后�
   // A1-2（聚焦态）：猫处于静默态，搜索框右端仍命中 input
   await expect(page.locator('#xiaomaomao')).toHaveClass(/xm-quiet/)
   const search = await input.boundingBox()
-  const hit = await elAtPoint(page, search!.x + search!.width - 10, search!.y + search!.height / 2)
+  // 有文本时清除 × 占住输入框右端：按钮 right-1.5（6px）+ p-0.5 与 14px 的 X，
+  // 盒子宽 18px，横向覆盖 [右缘-24, 右缘-6]；固定 width-10 的探查点正落在其内，
+  // 命中的是按钮本身而非猫遮挡（3 次重试同一错误即为证，猫的 xm-quiet 断言已过）。
+  // 所以探查点改锚在清除按钮左缘以左 10px（= 右缘-34，仍在输入框文本区内），
+  // 只验证猫没盖住右端；按钮盒子在断言前重取，免列表重渲染造成布局漂移。
+  const clearBoxNow = await page.getByLabel('清除输入').boundingBox()
+  expect(clearBoxNow, '清除按钮应仍可见').toBeTruthy()
+  const probeX = clearBoxNow!.x - 10
+  expect(probeX, '探查点应在输入框内、清除按钮左侧').toBeGreaterThan(search!.x)
+  const hit = await elAtPoint(page, probeX, search!.y + search!.height / 2)
   expect(hit?.tag, `聚焦时搜索框右端应命中 INPUT，实际 ${JSON.stringify(hit)}`).toBe('INPUT')
 
   // 失焦后静默解除（市场页收起态本身保留，猫不回弹到搜索框上）

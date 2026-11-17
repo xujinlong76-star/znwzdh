@@ -19,7 +19,8 @@ export const aiWorkbench: SeedPluginDef = {
     icon: "🤖",
     author: "山羊胡官方",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
+    compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "AI", "智能体", "模型"],
     payload: {
       boards: [
@@ -31,7 +32,7 @@ export const aiWorkbench: SeedPluginDef = {
             { type: "weather-clock", customTitle: "时区与天气", colSpan: 3, rowSpan: 1 },
             { type: "trending-radar", customTitle: "AI 热榜雷达", colSpan: 8, rowSpan: 2 },
             { type: "system-metrics", customTitle: "调用与配额监控", colSpan: 4, rowSpan: 2 },
-            { type: "rss-feed", customTitle: "模型发布与论文订阅", colSpan: 8, rowSpan: 2 },
+            { type: "rss-feed", customTitle: "模型发布与论文订阅", colSpan: 8, rowSpan: 2, config: { feedUrl: "https://openai.com/blog/rss.xml" } },
             { type: "favorites-dock", customTitle: "常用模型控制台", colSpan: 4, rowSpan: 2 },
           ],
         },
@@ -48,8 +49,8 @@ export const aiWorkbench: SeedPluginDef = {
         {
           name: "智能体与复盘",
           widgets: [
-            { type: "speculative-terminal", customTitle: "Agent 指令试跑", colSpan: 5, rowSpan: 1 },
-            { type: "clock-pomodoro", customTitle: "深度工作钟", colSpan: 3, rowSpan: 1 },
+            { type: "speculative-terminal", customTitle: "Agent 指令试跑", colSpan: 6, rowSpan: 1 },
+            { type: "clock-pomodoro", customTitle: "深度工作钟", colSpan: 6, rowSpan: 1 },
             { type: "markdown-notes", customTitle: "智能体运行复盘", colSpan: 8, rowSpan: 2 },
             { type: "hyperbolic-radar", customTitle: "同类工具平替雷达", colSpan: 7, rowSpan: 2 },
             { type: "github-heatmap", customTitle: "模型生态更新热度", colSpan: 12, rowSpan: 2 },
@@ -63,7 +64,7 @@ export const aiWorkbench: SeedPluginDef = {
             { type: "quick-search", customTitle: "基准与论文速查", colSpan: 6, rowSpan: 1 },
             { type: "quick-tools", customTitle: "上下文与成本换算", colSpan: 6, rowSpan: 1 },
             { type: "custom-category", customTitle: "模型与 API 目录", colSpan: 12, rowSpan: 2 },
-            { type: "rss-feed", customTitle: "评测与榜单订阅", colSpan: 8, rowSpan: 2 },
+            { type: "rss-feed", customTitle: "评测与榜单订阅", colSpan: 8, rowSpan: 2, config: { feedUrl: "https://arxiv.org/rss/cs.AI" } },
             { type: "markdown-notes", customTitle: "跑分与选型记录", colSpan: 4, rowSpan: 2 },
           ],
         },

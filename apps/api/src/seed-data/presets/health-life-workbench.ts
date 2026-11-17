@@ -18,7 +18,8 @@ export const healthLifeWorkbench: SeedPluginDef = {
     icon: "🥗",
     author: "山羊胡官方",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
+    compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "健康", "运动", "饮食", "作息"],
     payload: {
       boards: [
@@ -57,7 +58,7 @@ export const healthLifeWorkbench: SeedPluginDef = {
           widgets: [
             { type: "trending-radar", customTitle: "健康生活热榜", colSpan: 8, rowSpan: 2 },
             { type: "markdown-notes", customTitle: "习惯与心情日记", colSpan: 4, rowSpan: 2 },
-            { type: "rss-feed", customTitle: "健康资讯订阅", colSpan: 8, rowSpan: 2 },
+            { type: "rss-feed", customTitle: "健康资讯订阅", colSpan: 8, rowSpan: 2, config: { feedUrl: "https://www.who.int/rss-feeds/news-english.xml" } },
             { type: "declarative-widget", customTitle: "目标达成卡片", colSpan: 4, rowSpan: 2 },
             { type: "clock-pomodoro", customTitle: "专注冥想钟", colSpan: 6, rowSpan: 1 },
             { type: "favorites-dock", customTitle: "健康应用启动坞", colSpan: 6, rowSpan: 1 },

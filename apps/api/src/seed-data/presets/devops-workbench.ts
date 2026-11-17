@@ -21,7 +21,8 @@ export const devopsWorkbench: SeedPluginDef = {
     icon: "🛠️",
     author: "山羊胡官方",
     license: "MIT",
-    version: "2.0.0",
+    version: "2.0.1",
+    compat: { minAppVersion: "0.1.0" },
     tags: ["运维", "SRE", "监控", "工作台"],
     payload: {
       boards: [
@@ -43,7 +44,7 @@ export const devopsWorkbench: SeedPluginDef = {
             { type: "markdown-notes", customTitle: "SOP 应急手册与速记", colSpan: 6, rowSpan: 2 },
             { type: "quick-search", customTitle: "故障关键词速查", colSpan: 6, rowSpan: 1 },
             { type: "live-api", customTitle: "中枢接口健康探测", colSpan: 6, rowSpan: 1 },
-            { type: "rss-feed", customTitle: "云厂商状态页订阅", colSpan: 8, rowSpan: 2 },
+            { type: "rss-feed", customTitle: "云厂商状态页订阅", colSpan: 8, rowSpan: 2, config: { feedUrl: "https://status.aws.amazon.com/rss/all.rss" } },
             { type: "declarative-widget", customTitle: "值班联系人卡片", colSpan: 4, rowSpan: 2 },
           ],
         },
@@ -54,7 +55,7 @@ export const devopsWorkbench: SeedPluginDef = {
             { type: "custom-category", customTitle: "运维知识库入口", colSpan: 8, rowSpan: 2 },
             { type: "markdown-notes", customTitle: "复盘纪要", colSpan: 5, rowSpan: 2 },
             { type: "hyperbolic-radar", customTitle: "开源平替选型雷达", colSpan: 7, rowSpan: 2 },
-            { type: "iframe-embed", customTitle: "内嵌 Grafana 面板", colSpan: 12, rowSpan: 2 },
+            { type: "iframe-embed", customTitle: "故障架构草图白板", colSpan: 12, rowSpan: 2 },
           ],
         },
         {

@@ -22,7 +22,8 @@ export const contentCreatorWorkbench: SeedPluginDef = {
     icon: "✍️",
     author: "山羊胡官方",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
+    compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "创作者", "内容", "自媒体"],
     payload: {
       boards: [
@@ -32,7 +33,7 @@ export const contentCreatorWorkbench: SeedPluginDef = {
             { type: "quick-search", customTitle: "全网选题速查", colSpan: 6, rowSpan: 1 },
             { type: "quick-tools", customTitle: "标题与标签打磨工具", colSpan: 6, rowSpan: 1 },
             { type: "trending-radar", customTitle: "全网热榜雷达", colSpan: 6, rowSpan: 2 },
-            { type: "rss-feed", customTitle: "行业资讯订阅", colSpan: 6, rowSpan: 2 },
+            { type: "rss-feed", customTitle: "行业资讯订阅", colSpan: 6, rowSpan: 2, config: { feedUrl: "https://www.geekpark.net/rss" } },
             { type: "markdown-notes", customTitle: "选题池与脚本草稿", colSpan: 6, rowSpan: 2 },
             { type: "declarative-widget", customTitle: "选题热度卡片", colSpan: 6, rowSpan: 2 },
           ],
@@ -85,7 +86,8 @@ export const studentStudyWorkbench: SeedPluginDef = {
     icon: "📖",
     author: "山羊胡官方",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
+    compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "学习", "自习", "学生"],
     payload: {
       boards: [
@@ -103,10 +105,10 @@ export const studentStudyWorkbench: SeedPluginDef = {
           name: "课程与资料",
           widgets: [
             { type: "custom-category", customTitle: "课程与题库入口", colSpan: 12, rowSpan: 2 },
-            { type: "rss-feed", customTitle: "学术与课程订阅", colSpan: 6, rowSpan: 2 },
-            { type: "favorites-dock", customTitle: "常用资料夹", colSpan: 4, rowSpan: 1 },
+            { type: "rss-feed", customTitle: "学术与课程订阅", colSpan: 6, rowSpan: 2, config: { feedUrl: "https://arxiv.org/rss/cs" } },
+            { type: "favorites-dock", customTitle: "常用资料夹", colSpan: 6, rowSpan: 1 },
             { type: "declarative-widget", customTitle: "学习进度卡片", colSpan: 6, rowSpan: 2 },
-            { type: "quick-tools", customTitle: "公式与单位换算", colSpan: 4, rowSpan: 1 },
+            { type: "quick-tools", customTitle: "公式与单位换算", colSpan: 6, rowSpan: 1 },
             { type: "weather-clock", customTitle: "自习室天气速览", colSpan: 4, rowSpan: 1 },
           ],
         },
@@ -148,7 +150,8 @@ export const investorWorkbench: SeedPluginDef = {
     icon: "📊",
     author: "山羊胡官方",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
+    compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "投资", "财经", "研究"],
     payload: {
       boards: [
@@ -159,14 +162,14 @@ export const investorWorkbench: SeedPluginDef = {
             { type: "system-metrics", customTitle: "中枢指标", colSpan: 4, rowSpan: 2 },
             { type: "quick-search", customTitle: "公告与新闻速查", colSpan: 8, rowSpan: 1 },
             { type: "weather-clock", customTitle: "时区与天气", colSpan: 4, rowSpan: 1 },
-            { type: "rss-feed", customTitle: "研报与快讯订阅", colSpan: 8, rowSpan: 2 },
+            { type: "rss-feed", customTitle: "研报与快讯订阅", colSpan: 8, rowSpan: 2, config: { feedUrl: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EGSPC&region=US&lang=en-US" } },
             { type: "declarative-widget", customTitle: "自选股提醒卡片", colSpan: 4, rowSpan: 2 },
           ],
         },
         {
           name: "研究与盯盘",
           widgets: [
-            { type: "iframe-embed", customTitle: "行情面板嵌入", colSpan: 8, rowSpan: 2 },
+            { type: "iframe-embed", customTitle: "行情面板嵌入", colSpan: 8, rowSpan: 2, config: { url: "https://www.tradingview.com/widgetembed/?symbol=AMEX:SPY&interval=D&theme=light&locale=zh_CN" } },
             { type: "markdown-notes", customTitle: "持仓与逻辑笔记", colSpan: 4, rowSpan: 2 },
             { type: "live-api", customTitle: "数据接口探测", colSpan: 6, rowSpan: 1 },
             { type: "declarative-widget", customTitle: "关注标的卡片", colSpan: 6, rowSpan: 1 },
@@ -178,7 +181,7 @@ export const investorWorkbench: SeedPluginDef = {
           name: "复盘与资讯",
           widgets: [
             { type: "custom-category", customTitle: "数据源入口", colSpan: 12, rowSpan: 2 },
-            { type: "rss-feed", customTitle: "财经研报订阅", colSpan: 8, rowSpan: 2 },
+            { type: "rss-feed", customTitle: "财经研报订阅", colSpan: 8, rowSpan: 2, config: { feedUrl: "https://www.investing.com/rss/news.rss" } },
             { type: "markdown-notes", customTitle: "交易复盘纪要", colSpan: 4, rowSpan: 2 },
             { type: "clock-pomodoro", customTitle: "复盘专注钟", colSpan: 3, rowSpan: 1 },
             { type: "weather-clock", customTitle: "时区与天气速览", colSpan: 4, rowSpan: 1 },

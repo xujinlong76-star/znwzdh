@@ -18,7 +18,8 @@ export const travelPlannerWorkbench: SeedPluginDef = {
     icon: "🧭",
     author: "山羊胡官方",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
+    compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "旅行", "行程", "天气", "攻略"],
     payload: {
       boards: [
@@ -35,9 +36,9 @@ export const travelPlannerWorkbench: SeedPluginDef = {
         {
           name: "目的地情报",
           widgets: [
-            { type: "rss-feed", customTitle: "旅行攻略订阅", colSpan: 8, rowSpan: 2 },
+            { type: "rss-feed", customTitle: "旅行攻略订阅", colSpan: 8, rowSpan: 2, config: { feedUrl: "https://www.cntraveler.com/feed/rss" } },
             { type: "declarative-widget", customTitle: "目的地评分卡片", colSpan: 4, rowSpan: 2 },
-            { type: "iframe-embed", customTitle: "地图与街景嵌入", colSpan: 8, rowSpan: 2 },
+            { type: "iframe-embed", customTitle: "目的地地图嵌入", colSpan: 8, rowSpan: 2, config: { url: "https://www.openstreetmap.org/export/embed.html?bbox=-180,-85,180,85&layer=mapnik" } },
             { type: "markdown-notes", customTitle: "景点清单与贴士", colSpan: 4, rowSpan: 2 },
             { type: "live-api", customTitle: "航班与汇率接口探测", colSpan: 6, rowSpan: 1 },
             { type: "favorites-dock", customTitle: "旅行工具启动坞", colSpan: 6, rowSpan: 1 },
@@ -59,7 +60,7 @@ export const travelPlannerWorkbench: SeedPluginDef = {
             { type: "clock-pomodoro", customTitle: "旅途节律钟", colSpan: 4, rowSpan: 2 },
             { type: "markdown-notes", customTitle: "旅行日志与花费记录", colSpan: 8, rowSpan: 2 },
             { type: "trending-radar", customTitle: "旅行内容热榜", colSpan: 8, rowSpan: 2 },
-            { type: "rss-feed", customTitle: "旅行灵感订阅", colSpan: 4, rowSpan: 2 },
+            { type: "rss-feed", customTitle: "旅行灵感订阅", colSpan: 4, rowSpan: 2, config: { feedUrl: "https://www.cntraveler.com/feed/rss" } },
             { type: "quick-tools", customTitle: "花费与汇率复盘", colSpan: 6, rowSpan: 1 },
             { type: "favorites-dock", customTitle: "相册与行程回顾坞", colSpan: 6, rowSpan: 1 },
           ],

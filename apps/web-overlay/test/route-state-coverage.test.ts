@@ -148,6 +148,43 @@ const STATE_EXEMPT: Record<string, { loading?: string; error?: string }> = {
     loading:
       "软 404 回归锁 site-detail-404.test.ts 与 site-detail-performance.test.ts（「不得恢复 loading.tsx——骨架屏边界会让 notFound() 变成流式 200」，根因原文「骨架屏边界会先流式刷 200，notFound 就改不了状态码」）：不接 loading，保住 /site/:id 不存在时的 404 状态码",
   },
+  // ── marketplace/*：P2-7 软 404 锁 + 静态客户端页（裁决 2026-11-18，route-state-coverage:252）─────────
+  // 骨架优先的例外：marketplace 与 [slug] 两级 loading.tsx 被
+  // plugin-detail-soft-404.test.ts 与 plugin-phase2e-feedback.test.ts 双锁禁止
+  //（实测：父级骨架先流式刷 200，死链详情再也回不到 404；只删一级不够）；
+  // 其余 6 条要么同属 generateMetadata 里 notFound 的软 404 纪律，要么是
+  // 无服务端取数的静态客户端页（与 auth/* 同款豁免口径）。唯一能安全接骨架的
+  // categories 已补 categories/loading.tsx（RouteSkeleton grid），不在此列。
+  marketplace: {
+    loading:
+      "P2-7 软 404 回归锁 plugin-detail-soft-404.test.ts（「详情段上下两级 loading.tsx 都不存在，只删一级不够，父级边界同样先刷壳」）与 plugin-phase2e-feedback.test.ts 双锁禁止：marketplace/loading.tsx 会包住 [slug] 详情段，死链先刷 200 壳、404 状态码回不来；且本页 ISR revalidate=60，缓存命中后首字节即到",
+  },
+  "marketplace/[slug]": {
+    loading:
+      "P2-7 软 404 回归锁 plugin-detail-soft-404.test.ts（「详情段上下两级 loading.tsx 都不存在」）与 plugin-phase2e-feedback.test.ts 双锁禁止：骨架屏边界会先流式刷 200，页面渲染体的 notFound() 再抛也改不了状态码；加载态由详情岛自带的骨架屏承接（plugin-detail-view.tsx 的 if (loading) + animate-pulse，同锁锁定）",
+  },
+  "marketplace/[slug]/preview": {
+    loading:
+      "预览通道与详情段同一条软 404 纪律：generateMetadata 里对非法 slug 抛 notFound()，骨架屏边界会先流式刷 200，notFound 就改不了状态码；且本路由 force-dynamic、noindex、仅作者/管理员可见，加载态由与详情页共用的详情岛骨架屏承接（plugin-detail-view.tsx 的 if (loading) + animate-pulse）",
+  },
+  "marketplace/author/[key]": {
+    loading:
+      "公开作者页与详情段同一条软 404 纪律：generateMetadata 里对非法 key 与 probe 'miss' 都抛 notFound()，骨架屏边界会先流式刷 200，notFound 就改不了状态码——不接 loading，保住 /marketplace/author/:key 不存在时的 404 状态码",
+  },
+  "marketplace/import": {
+    loading: "静态客户端表单（'use client'，无服务端取数）：SSR 首字节即出完整表单，不存在慢网白屏窗口",
+  },
+  "marketplace/installed": {
+    loading:
+      "静态客户端页（'use client'，无服务端取数）：SSR 首字节即出页面外壳，列表由客户端取数，加载态由页面自带的 loading + Loader2 与 MarketplaceLoadError/HubDegradedNotice 承接，不存在服务端慢网白屏窗口",
+  },
+  "marketplace/mine": {
+    loading:
+      "静态客户端页（'use client'，无服务端取数）：SSR 首字节即出页面外壳，列表由客户端取数，加载态由页面自带的 loading + Loader2 与 MarketplaceLoadError/HubDegradedNotice 承接，不存在服务端慢网白屏窗口",
+  },
+  "marketplace/publish": {
+    loading: "静态客户端表单（'use client' 发布向导，无服务端取数）：SSR 首字节即出完整表单，不存在慢网白屏窗口",
+  },
   // ── 首页 ────────────────────────────────────────────────────────────
   "": {
     loading:

@@ -71,9 +71,15 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
     // 分支，此前无条件算出的 dayIndex 永不渲染（国考 11-28/11-29 恒为
     // today；2026-11-16 0922 C 线死值清理）。考研 12-20「进行中 · 第 2 天」
     // 仍走同一表达式，行为不变。
+    // U-107：首考日当天优先用 firstDayLabel（国考 11-28「今天国考 ·
+    // 专业科目 14:00 开考」），与首页条带 nearestExamCountdown 同口径；
+    // 首考日之后（国考 11-29 / 京考 12-06，daysUntil 首考日为 -1）仍
+    // 回落「今天考试」——首日文案只在首日成立。ongoing 分支不动。
     const label =
       status === 'today'
-        ? '今天考试'
+        ? daysUntil(firstExamDay(exam), now) === 0 && exam.firstDayLabel
+          ? exam.firstDayLabel
+          : '今天考试'
         : `进行中 · 第 ${1 - daysUntil(firstExamDay(exam), now)} 天`
     return (
       <p className={`text-lg font-semibold ${URGENCY_DAY_CLASS[tier]}`}>{label}</p>

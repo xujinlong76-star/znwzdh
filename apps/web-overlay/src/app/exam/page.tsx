@@ -71,8 +71,8 @@ const EXAM_ICONS: Record<string, LucideIcon> = {
   shengkao: Landmark,
   jingkao: Building2,
   kaoyan: GraduationCap,
-  jiaoshi-mianshi: BookOpen,
-  jundui-wenzhi: Shield,
+  'jiaoshi-mianshi': BookOpen,
+  'jundui-wenzhi': Shield,
 }
 
 export async function generateMetadata(): Promise<Metadata> {

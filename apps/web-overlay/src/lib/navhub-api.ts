@@ -2576,11 +2576,25 @@ export interface HubPluginReviewItem {
   /** 作者官方回复（仅插件作者可写；服务端按作者身份校验） */
   authorReply?: string | null
   authorRepliedAt?: number | null
+  /** 被投「有用」的累计次数（P2-3） */
+  helpfulCount: number
+  /** 当前请求身份是否给这条评价投过「有用」（列表带 identity 时回填） */
+  helpfulByMe?: boolean
   /** 评价作者当前是否仍处于活跃安装状态（B-3）：false = 发表时已验证安装，现已卸载 */
   installedNow?: boolean
   createdAt: number
   updatedAt: number
 }
+
+/** 评价列表排序（P2-3）：helpful = 有用票数倒序；newest = 最新；highest/lowest = 评分高/低优先 */
+export type PluginReviewSort = 'helpful' | 'newest' | 'highest' | 'lowest'
+
+export const PLUGIN_REVIEW_SORTS: Array<{ value: PluginReviewSort; label: string }> = [
+  { value: 'helpful', label: '最有帮助' },
+  { value: 'newest', label: '最新' },
+  { value: 'highest', label: '评分最高' },
+  { value: 'lowest', label: '评分最低' },
+]
 
 export interface HubPluginReviewsResponse {
   slug: string
@@ -2594,18 +2608,21 @@ export interface HubPluginReviewsResponse {
   total: number
   limit: number
   offset: number
+  /** 服务端实际采用的排序（非法 sort 回落 newest 后回显，见路由层） */
+  sort?: PluginReviewSort
 }
 
 /** 获取插件评价列表与大盘统计 */
 export async function fetchPluginReviews(
   slug: string,
-  params: { limit?: number; offset?: number; identity?: string } = {},
+  params: { limit?: number; offset?: number; identity?: string; sort?: PluginReviewSort } = {},
   onDegraded?: DegradedHandler,
 ): Promise<HubPluginReviewsResponse> {
   const effectiveIdentity = params.identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   const sp = new URLSearchParams()
   if (params.limit) sp.set('limit', String(params.limit))
   if (params.offset) sp.set('offset', String(params.offset))
+  if (params.sort) sp.set('sort', params.sort)
   if (effectiveIdentity) sp.set('identity', effectiveIdentity)
   const qs = sp.toString() ? `?${sp.toString()}` : ''
   // 404 不触发 onDegraded：插件真不存在时评价区仍显示空态；其它失败才渲染失败态。
@@ -2658,6 +2675,22 @@ export async function replyPluginReview(
     `/api/plugins/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(reviewId)}/reply`,
     'POST',
     { reply },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/** 评价「有用」投票切换（P2-3）：一人一票，再点即撤回；不能投自己的评价 */
+export async function markPluginReviewHelpful(
+  slug: string,
+  reviewId: string,
+  identity?: string,
+): Promise<{ ok: boolean; helpful: boolean; helpfulCount: number; review: HubPluginReviewItem }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  return sendJson<{ ok: boolean; helpful: boolean; helpfulCount: number; review: HubPluginReviewItem }>(
+    `/api/plugins/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(reviewId)}/helpful`,
+    'POST',
+    {},
     undefined,
     effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )

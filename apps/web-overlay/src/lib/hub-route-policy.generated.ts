@@ -210,6 +210,7 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "GET", path: "/api/plugins/:slug/reviews", scope: "public" },
   { method: "POST", path: "/api/plugins/:slug/reviews", scope: "public" },
   { method: "DELETE", path: "/api/plugins/:slug/reviews/:id", scope: "public" },
+  { method: "POST", path: "/api/plugins/:slug/reviews/:id/helpful", scope: "public" },
   { method: "POST", path: "/api/plugins/:slug/reviews/:id/reply", scope: "public" },
   { method: "POST", path: "/api/plugins/:slug/reviews/:id/report", scope: "public" },
   { method: "POST", path: "/api/plugins/:slug/rollback", scope: "public" },

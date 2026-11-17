@@ -13,6 +13,7 @@ import {
   autoRemediatePluginManifest,
 } from "../../ai-plugin-auditor.ts";
 import { ADMIN_NOTIFICATION_IDENTITY } from "../../notifications.ts";
+import { normalizePluginReviewSort } from "@navhub/store";
 import {
   validatePluginManifestWithCatalog,
   summarizePluginManifest,
@@ -142,6 +143,9 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 20)) : 20;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
+      // 排序（P2-3）：helpful/newest/highest/lowest；非法值回落 newest（与 limit/offset 的
+      // 宽容解析同口径，不 400）。非 newest 排序走 offset 翻页，游标不适用（见存储层）。
+      const sort = normalizePluginReviewSort(q.sort);
       // Keyset 游标（M12）：`?cursor=` 走 WHERE (updated_at,id) 谓词，不再 OFFSET；
       // nextCursor 随页返回，无下一页时为 null。无效游标由全局错误处理器映射成
       // 400 INVALID_CURSOR。
@@ -155,7 +159,7 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
       // 批 B：myReview 按 canonical 身份读（isOwner 仍用原始 identity 比较）。
       const who = identity ? await ctx.repo.resolveIdentity(identity) : null;
       const [reviewsResult, stats, myReview] = await Promise.all([
-        ctx.repo.listPluginReviews(plugin.id, { limit, offset, cursor }),
+        ctx.repo.listPluginReviews(plugin.id, { limit, offset, cursor, sort, identity: who ?? undefined }),
         ctx.repo.getPluginReviewStats(plugin.id),
         who ? ctx.repo.getUserPluginReview(plugin.id, who) : null,
       ]);
@@ -168,6 +172,7 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
         total: reviewsResult.total,
         limit,
         offset,
+        sort,
         nextCursor: reviewsResult.nextCursor,
       };
     }
@@ -370,6 +375,51 @@ export const pluginRoutesPart3: FastifyPluginAsync<{ ctx: AppContext }> = async 
         if (message.includes("不存在")) {
           return notFound(reply, message);
         }
+        return badRequest(reply, message);
+      }
+    }
+  );
+
+  /**
+   * 评价「有用」投票切换（P2-3）：一人一票，再点即撤回；不要求投票人安装过插件，
+   * 但不能给自己的评价投票。需要签名身份（与删除/回复同口径，防匿名刷票）。
+   */
+  app.post(
+    "/api/plugins/:slug/reviews/:id/helpful",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const { slug, id } = req.params as { slug: string; id: string };
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+      const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
+      // 只认签名/令牌解析出的身份：不能回退到 callerAuth.actor——无票调用方
+      // 的 actor 是匿名默认 "api"，回退会让匿名票以 api 身份落库（P2-3 复测：
+      // 未签名调用应 401，却返回 200）。签名身份与令牌 owner 都走
+      // requestIdentityOf（owner 优先，其次签名头），已覆盖合法调用方。
+      const identity = String(requestIdentityOf(req as never) ?? "").trim();
+      if (!identity) {
+        return unauthorized(reply, "需要 Bearer token");
+      }
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+      try {
+        // 批 B：投票按 canonical 身份记——合并后旧身份重复投票仍能去重/撤回，
+        // 不会在旧 id 下另起一行。
+        const who = await ctx.repo.resolveIdentity(identity);
+        const result = await ctx.repo.togglePluginReviewHelpful(
+          slug,
+          id,
+          who,
+          {
+            actor: callerAuth?.actor || who,
+            actorKind: callerAuth?.kind ?? "identity",
+            ip: req.ip,
+          },
+        );
+        return { ok: true, ...result };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.startsWith("评价不存在")) return notFound(reply, message);
+        if (message.startsWith("不能给自己的评价")) return forbidden(reply, message);
         return badRequest(reply, message);
       }
     }

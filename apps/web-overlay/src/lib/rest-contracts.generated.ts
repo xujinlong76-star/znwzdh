@@ -2271,6 +2271,39 @@ export interface PluginReviewDeleteResponse {
     moderatedBy: string | null;
     authorReply?: string | null;
     authorRepliedAt?: number | null;
+    helpfulCount: number;
+    helpfulByMe?: boolean;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/plugins/{slug}/reviews/{id}/helpful
+ */
+export interface PluginReviewHelpfulResponse {
+  ok: true;
+  helpful: boolean;
+  helpfulCount: number;
+  review: {
+    id: string;
+    pluginId: string;
+    identity: string;
+    rating: number;
+    title: string | null;
+    content: string | null;
+    installedVersion: string;
+    status: string;
+    reportCount: number;
+    moderationNote: string | null;
+    moderatedAt: number | null;
+    moderatedBy: string | null;
+    authorReply?: string | null;
+    authorRepliedAt?: number | null;
+    helpfulCount: number;
+    helpfulByMe?: boolean;
     createdAt: number;
     updatedAt: number;
     [key: string]: unknown;
@@ -3670,6 +3703,7 @@ export interface RestContractRoutes {
   "POST /api/plugins/{slug}/disable": PluginDisableResponse;
   "POST /api/plugins/{slug}/enable": PluginDisableResponse;
   "POST /api/plugins/{slug}/install": PluginInstallResponse;
+  "POST /api/plugins/{slug}/reviews/{id}/helpful": PluginReviewHelpfulResponse;
   "POST /api/plugins/{slug}/rollback": PluginRollbackResponse;
   "POST /api/plugins/{slug}/star": PluginStarResponse;
   "POST /api/plugins/{slug}/uninstall": PluginUninstallResponse;

@@ -557,7 +557,7 @@ describe('成考成绩分省节点', () => {
 })
 
 describe('京考节点（U-76）', () => {
-  it('只列已核实的四节点，不写全国单节点；报名与准考证挂报名平台、公共科目挂官方公告', () => {
+  it('只列已核实的四节点，不写成绩/缴费节点；报名与准考证挂报名平台、公共科目挂官方公告', () => {
     expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
     expect(jingkao.nodes.map((n) => [n.startISO, n.endISO])).toEqual([
       ['2026-11-12', '2026-11-18'],
@@ -630,7 +630,7 @@ describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结�
     expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_30_0800_CST)).toBeUndefined()
   })
 
-  it('其他考试不受影响：11-18 当天五场均未结束；已结束的国考/考研无可办节点', () => {
+  it('其他考试不受影响：11-18 当天除成考外均未结束；已结束的国考/考研无可办节点', () => {
     for (const exam of [guokao, cet, shengkao, jingkao, kaoyan]) {
       expect(examStatus(exam, NOV_18_0800_CST)).not.toBe('ended')
     }

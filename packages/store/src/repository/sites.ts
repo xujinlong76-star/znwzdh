@@ -1532,7 +1532,12 @@ export async function findRelationsByQuery(
   limit = 5
 ): Promise<MatchedSiteRelation[]> {
   const norm = query.trim().toLowerCase();
-  if (!norm || norm.length < 2) return [];
+  // U-85：长度 1 时仅限 CJK 单字走 relation，与 apps/api/src/routes/search.ts
+  // 的调用侧护栏成对出现，两处必须同改，单改一处对单字查询无效。单拉丁字母 /
+  // 数字 / 符号（如 'e'）对 target_url 做 LIKE '%e%' 会全表命中、返回无关
+  // alternative，比无结果更伤信任。长度 ≥2 行为不变；'%' / '_' 仍经
+  // containsLike 转义，不会命中全表。
+  if (!norm || (norm.length < 2 && !/[\u4e00-\u9fff]/.test(norm))) return [];
   const pattern = containsLike(norm);
 
   const rows = await repo.raw(

@@ -654,11 +654,12 @@ describe('教资面试节点（2026-11-18 01:22 轮）', () => {
 describe('军队文职节点（2026-11-18 01:22 轮）', () => {
   const jundui = EXAMS.find((e) => e.id === 'jundui-wenzhi')!
 
-  it('只列已核实的两节点，准考证挂报名系统直达、笔试节点不挂链接', () => {
-    expect(jundui.nodes.map((n) => n.label)).toEqual(['准考证打印', '全军统一笔试'])
+  it('只列已核实的三节点，准考证挂报名系统直达、缴费与笔试节点不挂链接', () => {
+    expect(jundui.nodes.map((n) => n.label)).toEqual(['准考证打印', '缴费', '全军统一笔试'])
     expect(JUNDUANWENZHI_ADMISSION_URL).toBe('https://wzryzk.81rc.mil.cn/qjwzwb')
     const byLabel = new Map(jundui.nodes.map((n) => [n.label, n]))
     expect(byLabel.get('准考证打印')?.url).toBe(JUNDUANWENZHI_ADMISSION_URL)
+    expect(byLabel.get('缴费')?.url).toBeUndefined()
     expect(byLabel.get('全军统一笔试')?.url).toBeUndefined()
   })
 

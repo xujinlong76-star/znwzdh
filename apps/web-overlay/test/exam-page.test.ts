@@ -316,29 +316,31 @@ describe('教资面试节点（2026-11-18 01:22 轮）', () => {
 describe('军队文职节点（2026-11-18 01:22 轮）', () => {
   const jundui = EXAMS.find((e) => e.id === 'jundui-wenzhi')!
 
-  it('只列已核实的两节点：准考证打印、全军统一笔试；报名/缴费/成绩节点不收', () => {
-    expect(jundui.name).toBe('2026 年军队文职人员公开招考')
+  it('只列已核实的三节点：准考证打印、缴费、全军统一笔试；报名/成绩节点不收', () => {
+    expect(jundui.name).toBe('2027 年军队文职人员公开招考')
     expect(jundui.shortName).toBe('军队文职')
     expect(jundui.tagline).toBe('全军统一笔试 12 月 13 日')
     expect(jundui.examDateLabel).toBe('12 月 13 日')
     expect(jundui.startISO).toBe('2026-12-13')
     expect(jundui.endISO).toBe('2026-12-13')
-    expect(jundui.nodes.map((n) => n.label)).toEqual(['准考证打印', '全军统一笔试'])
+    expect(jundui.nodes.map((n) => n.label)).toEqual(['准考证打印', '缴费', '全军统一笔试'])
     expect(jundui.nodes.map((n) => [n.label, n.startISO, n.endISO])).toEqual([
       ['准考证打印', '2026-12-07', '2026-12-13'],
+      ['缴费', '2026-11-17', '2026-11-18'],
       ['全军统一笔试', '2026-12-13', '2026-12-13'],
     ])
-    // 准考证挂报名系统直达（公告原文所载）；笔试节点不挂 url：
+    // 准考证挂报名系统直达（公告原文所载）；缴费与笔试节点不挂 url：
     // 81rc 公告文章直链未核到，不得编造；门户只作引用（与国考门户同款）。
     expect(JUNDUANWENZHI_ADMISSION_URL).toBe('https://wzryzk.81rc.mil.cn/qjwzwb')
     expect(JUNDUANWENZHI_PORTAL_URL).toBe('http://www.81rc.mil.cn')
     const byLabel = new Map(jundui.nodes.map((n) => [n.label, n]))
     expect(byLabel.get('准考证打印')?.url).toBe(JUNDUANWENZHI_ADMISSION_URL)
+    expect(byLabel.get('缴费')?.url).toBeUndefined()
     expect(byLabel.get('全军统一笔试')?.url).toBeUndefined()
-    // 报名/缴费/成绩节点不收：报名已过期；缴费仅面向文体岗位先面试人员；
-    // 成绩 2027 年 1 月底左右，无确切日。label 里出现即红。
+    // 报名/成绩节点不收：报名已过期；成绩 2027 年 1 月底左右，无确切日。
+    // 缴费节点按公告 §5 通用窗口收（初审通过人员 11-17 8:00–11-18 18:00）。
+    // label 里出现即红。
     expect(jundui.nodes.map((n) => n.label).join('')).not.toContain('报名')
-    expect(jundui.nodes.map((n) => n.label).join('')).not.toContain('缴费')
     expect(jundui.nodes.map((n) => n.label).join('')).not.toContain('成绩')
   })
 
@@ -368,6 +370,23 @@ describe('军队文职节点（2026-11-18 01:22 轮）', () => {
     expect(byLabel.get('准考证打印')?.detail).toContain('军队人才网报名系统')
     expect(byLabel.get('全军统一笔试')?.detail).toContain('公共科目 9:00–11:00')
     expect(byLabel.get('全军统一笔试')?.detail).toContain('专业科目 14:00–16:00')
+  })
+
+  it('缴费节点按公告 §5 通用窗口：初审通过人员 11-17 8:00–11-18 18:00，每门 50 元；文体岗同窗、免笔试岗不缴费', () => {
+    const fee = jundui.nodes.find((n) => n.label === '缴费')!
+    expect(fee.startISO).toBe('2026-11-17')
+    expect(fee.endISO).toBe('2026-11-18')
+    expect(fee.url).toBeUndefined()
+    expect(fee.detail).toContain('2026 年 11 月 17 日 8:00 至 18 日 18:00')
+    expect(fee.detail).toContain('每门考试科目人民币 50 元')
+    expect(fee.detail).toContain('缴费成功并打印报名回执方为有效报名')
+    expect(fee.detail).toContain('文体岗位（艺术、体育、播音）先面试合格人员同一窗口缴费')
+    expect(fee.detail).toContain('免笔试直接面试岗位不需要缴纳报名费')
+    // 窗口状态按日期翻转：11-16 未开始、11-17/11-18 进行中、11-19 已结束
+    expect(examNodeStatus(fee, Date.UTC(2026, 10, 16, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(fee, Date.UTC(2026, 10, 17, 0, 0))).toBe('active')
+    expect(examNodeStatus(fee, Date.UTC(2026, 10, 18, 0, 0))).toBe('active')
+    expect(examNodeStatus(fee, Date.UTC(2026, 10, 19, 0, 0))).toBe('done')
   })
 })
 

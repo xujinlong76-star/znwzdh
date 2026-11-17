@@ -10,6 +10,10 @@
  *
  * 一眼原则：它是简报的第一块内容，上面只有面包屑。没定专注时不拿
  * 「示例目标」占位——示例就是编造的用户数据；空就是空，给输入框。
+ *
+ * 挂载前（U-61）：不 return null，渲染与终态同高的静态骨架——外壳与
+ * 终态共用 DAILY_FOCUS_SECTION_CLASS（含 min-h），首帧即占位，水合后
+ * 高度不变、CLS 归零。骨架只有固定文案标题与灰条占位，不含任何用户数据。
  */
 
 import { useEffect, useState } from 'react'
@@ -27,6 +31,17 @@ import {
   type DailyFocus,
 } from '@/lib/daily-focus'
 
+/**
+ * 外壳类：骨架分支与终态分支共用，改一处即改两处，不会漂移。
+ * min-h 取两种终态的最大值（Playwright 实测，dev 服务 :3101，2026-11-17）：
+ *  - 移动端 390px：未定态 232px（输入行纵排 + 提示文换行）> 已定态 180px；
+ *  - sm+（1280px）：已定态 190.5px > 未定态 188px，向上取整为 192px。
+ * 已定态在移动端会留约 52px 下沿空白（内容顶对齐），是零 CLS 的代价；
+ * 换行/多行专注等极端终态仍可能超高，届时以终态为准、骨架不再追高。
+ */
+const DAILY_FOCUS_SECTION_CLASS =
+  'rounded-2xl border bg-card p-5 sm:p-6 min-h-[232px] sm:min-h-[192px]'
+
 export default function DailyFocus() {
   const [focus, setFocus] = useState<DailyFocus | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -39,8 +54,22 @@ export default function DailyFocus() {
     setLoaded(true)
   }, [])
 
-  // 挂载前不渲染：避免 SSR 壳与本机数据 hydration 对不上（BriefWatch 同款）。
-  if (!loaded) return null
+  // 挂载前渲染静态骨架（U-61）：外壳与终态同高，首帧即占位，水合后不跳动。
+  // 骨架不含任何用户数据——只有固定文案「今日专注」标题与灰条占位，无输入框、无示例目标。
+  if (!loaded) {
+    return (
+      <section aria-label="今日专注" className={DAILY_FOCUS_SECTION_CLASS}>
+        <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
+          <Target className="h-5 w-5 text-primary" aria-hidden /> 今日专注
+        </h2>
+        <div aria-hidden="true" className="animate-pulse">
+          <div className="mt-1 h-5 w-2/3 rounded bg-muted" />
+          <div className="mt-2 h-11 w-full rounded-md bg-muted" />
+          <div className="mt-1.5 h-4 w-1/2 rounded bg-muted" />
+        </div>
+      </section>
+    )
+  }
 
   const saveDraft = () => {
     if (!isValidFocusText(draft)) return
@@ -88,7 +117,7 @@ export default function DailyFocus() {
   }
 
   return (
-    <section aria-label="今日专注" className="rounded-2xl border bg-card p-5 sm:p-6">
+    <section aria-label="今日专注" className={DAILY_FOCUS_SECTION_CLASS}>
       <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
         <Target className="h-5 w-5 text-primary" aria-hidden /> 今日专注
       </h2>

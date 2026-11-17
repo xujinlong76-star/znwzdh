@@ -254,10 +254,10 @@ test('市场页 390px：快速下滚回顶（450ms 内）收起位移不算小�
   await waitForCat(page)
 
   // 先滚过搜索行露出圆标（解除收起，transform 由 parkX 向 0 过渡 .45s），
-  // 100ms 后立即回顶——收起位移若按过渡中的矩形算会算小，猫留一部分在视口内。
+  // 50ms 后立即回顶——收起位移若按过渡中的矩形算会算小，猫留一部分在视口内。
   // 旧实现在此处量到过渡中的 left，终态左缘约 362 < 390；修好后应为 402。
   await page.evaluate(() => window.scrollTo({ top: 200, behavior: 'instant' as ScrollBehavior }))
-  await page.waitForTimeout(100)
+  await page.waitForTimeout(50)
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior }))
   // 等收起滑动走完（.45s + 余量），再断言终态
   await page.waitForTimeout(1500)

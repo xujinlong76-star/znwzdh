@@ -3,9 +3,11 @@
 /**
  * 跨设备接力卡（Batch 3 第 9 项，C 组；客户端岛）。
  *
- * 模式照 HomeBriefStrip / DailyFocus 的「SSR 壳 + 挂载后读数」：服务端只吐
- * 一个空壳（实际是 null），挂载后读本机播放历史，再与 props 传进来的云端
- * 数据合并，挑出最新的一条未完成进度渲染成一卡。
+ * 模式照 HomeBriefStrip / DailyFocus 的「挂载后读数」：服务端不吐用户数据，
+ * 挂载前不渲染（返回 null，不占位、不放假数据），挂载后读本机播放历史，再与
+ * props 传进来的云端数据合并，挑出最新的一条未完成进度渲染成一卡。
+ * （正名，U-61：本站没有真正的 SSR 骨架壳——所谓「壳」就是 null；DailyFocus
+ * 自 U-61 起挂载前改渲染静态骨架，本组件仍是 return null，不照抄骨架模式。）
  *
  * 数据插口（云端接线在 HandoffCardWithCloud 外壳里完成，本组件不自己写 CRDT 同步调用）：
  *  - cloudProgress / visits / watchlist：外壳接线后以 props 传入；

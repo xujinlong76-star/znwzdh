@@ -219,3 +219,35 @@ describe('接线守卫', () => {
     expect(page).not.toMatch(/followed|关注分类/)
   })
 })
+
+describe('挂载前骨架（U-61，第 1 跳）', () => {
+  const island = read('src/components/daily-focus.tsx')
+  // 骨架分支：从 `if (!loaded)` 起到其后第一个真实逻辑（saveDraft）为止。
+  const skeleton = island.slice(island.indexOf('if (!loaded)'), island.indexOf('const saveDraft'))
+
+  it('挂载前不 return null，渲染静态骨架占位', () => {
+    expect(island).not.toContain('if (!loaded) return null')
+    expect(skeleton).toContain('<section aria-label="今日专注"')
+    // 灰条占位：无障碍隐藏、不进读屏
+    expect(skeleton).toContain('aria-hidden')
+    expect(skeleton).toContain('animate-pulse')
+    expect(skeleton).toContain('bg-muted')
+  })
+
+  it('骨架与终态共用同一外壳类：min-h 相同，首帧与水合后高度一致', () => {
+    // 同一个常量在骨架分支与终态分支各用一次，改一处即改两处，不会漂移
+    const uses = island.match(/className=\{DAILY_FOCUS_SECTION_CLASS\}/g) ?? []
+    expect(uses.length).toBe(2)
+    // min-h 取两种终态分档最大值：移动端 232px 来自未定态（输入行纵排 + 提示文换行），sm 192px 来自已定态 190.5px 向上取整
+    expect(island).toContain('min-h-[232px]')
+    expect(island).toContain('sm:min-h-[192px]')
+  })
+
+  it('骨架分支不含用户数据：无输入框、无专注文本、无示例目标', () => {
+    expect(skeleton).not.toContain('daily-focus-input')
+    expect(skeleton).not.toContain('focus.text')
+    expect(skeleton).not.toContain('今日目标')
+    // 标题是固定文案不是用户数据，可 SSR
+    expect(skeleton).toContain('今日专注')
+  })
+})

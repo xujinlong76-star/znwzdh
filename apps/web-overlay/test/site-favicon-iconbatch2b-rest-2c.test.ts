@@ -15,7 +15,7 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  * 这个测试直接执行 resolveSiteIcon：map 键写错一个字符（多一个 www、
  * 少一个字母）都不会报错，只会静默回落渐变——只有跑起来才看得见。
  * 全部 17 站的 href 与标题均按 navigation.json（342 站）逐个核对，
- * 不可猜。有戏 AI 600x600 422KB 已用 PIL 压到 128px（23013B）；
+ * 不可猜。有戏 AI 600x600 422KB 已用 PIL 压到 128px（7,081B）；
  * 天音 .ico 实为 PNG、智联 .png 实为 ICO，文件名按魔数定；时光网
  * 站方图标仅 16px，改用 iTunes 128px 版。极客公园/海珀/国家公务
  * 员局不在本批，未动。
@@ -79,7 +79,7 @@ describe('resolveSiteIcon（图标修复第二批 2b 剩余 + 2c）', () => {
     // 非 HTML 壳页”钉死。B 批合批后剪映/即梦/智联的 .ico 已由设计提交
     // 解码为 .png（ICO 64x64/48x48 取帧），孤儿 .ico 已删，本批不再有
     // .ico 文件；天音 URL 后缀 .ico 实为 PNG，文件名按魔数定。有戏 AI
-    // 原图 422KB 已压到 128px（23013B < 50KB）。
+    // 原图 422KB 已压到 128px（7,081B，≤ 15KB 预算）。
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     for (const name of ['capcut.png', 'jimeng.png', 'tianyin.png', 'icourse163.png', 'zhaopin.png', 'fanqie.png', 'tantan.png', 'reelshort.png', 'nmc.png', 'ncpssd.png', 'youxi.png']) {
@@ -91,8 +91,8 @@ describe('resolveSiteIcon（图标修复第二批 2b 剩余 + 2c）', () => {
       const buf = readFileSync(`${dir}${name}`)
       expect(buf.subarray(0, 3).equals(jpegMagic), name).toBe(true)
     }
-    // 有戏 AI 压图后须 < 50KB（原图 422095B，600x600 → 128x128）。
+    // 有戏 AI 压图后须 ≤ 15KB（原图 422095B，600x600 → 128x128）。
     const youxi = readFileSync(`${dir}youxi.png`)
-    expect(youxi.length).toBeLessThan(50 * 1024)
+    expect(youxi.length).toBeLessThanOrEqual(15 * 1024)
   })
 })

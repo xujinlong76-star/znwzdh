@@ -209,6 +209,19 @@
                 "AI 搜索",
                 "搜索"
               ]
+            },
+            {
+              "id": "nav-9dcbc81296d5",
+              "title": "Gemini Notebook",
+              "href": "https://notebook.google.com",
+              "description": "Google 的 AI 研究笔记本（曾用名 NotebookLM），基于自有资料问答、摘要与生成音频概览",
+              "icon": "https://notebook.google.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI笔记",
+                "研究",
+                "Google"
+              ]
             }
           ]
         },
@@ -645,6 +658,19 @@
                 "短视频",
                 "中文"
               ]
+            },
+            {
+              "id": "nav-a39bc922bb9e",
+              "title": "Descript",
+              "href": "https://www.descript.com",
+              "description": "AI 音视频编辑器，改转录文字即可剪辑音视频，适合播客与视频创作者",
+              "icon": "https://www.descript.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "音视频剪辑",
+                "转录",
+                "AI"
+              ]
             }
           ]
         },
@@ -824,6 +850,19 @@
                 "爬虫",
                 "自动化",
                 "云服务"
+              ]
+            },
+            {
+              "id": "nav-8d8365c62578",
+              "title": "Make",
+              "href": "https://www.make.com",
+              "description": "可视化自动化平台，连接千余款应用，拖拽搭建跨应用工作流",
+              "icon": "https://cdn.prod.website-files.com/6a294495bc84130c6dd0c4fd/6a7b944121e8a94aaf6ca04f_favicon-32x32.png",
+              "enabled": true,
+              "tags": [
+                "自动化",
+                "工作流",
+                "集成"
               ]
             }
           ]
@@ -1107,6 +1146,19 @@
                 "AI视频",
                 "漫剧",
                 "图生视频"
+              ]
+            },
+            {
+              "id": "nav-e810cc001ccf",
+              "title": "OpusClip",
+              "href": "https://www.opus.pro",
+              "description": "AI 长视频一键剪成短视频，自动配字幕与高光片段",
+              "icon": "https://cdn.prod.website-files.com/6388604483b03a9ecb34d695/64351a9e4e9223f5e0f46d64_ico-final.png",
+              "enabled": true,
+              "tags": [
+                "短视频",
+                "AI剪辑",
+                "字幕"
               ]
             }
           ]
@@ -3089,6 +3141,19 @@
                 "笔记",
                 "开源",
                 "双链"
+              ]
+            },
+            {
+              "id": "nav-ea5931e503b0",
+              "title": "Todoist",
+              "href": "https://todoist.com",
+              "description": "跨平台待办清单与任务管理，支持项目分组、提醒与协作",
+              "icon": "https://todoist.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "待办",
+                "任务管理",
+                "协作"
               ]
             }
           ]

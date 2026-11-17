@@ -149,12 +149,14 @@ describe("零结果救援：/search 页", () => {
     expect(results).toContain("浏览「{inferredCategory}」分类的全部站点");
   });
 
-  it("为你推荐：热榜取数与渲染都在，失败时整块不渲染", () => {
+  it("今日热榜：热榜取数与渲染都在，失败时整块不渲染；标题不写「为你推荐」", () => {
     expect(page).toContain("'/api/rank/trending?limit=6'");
     expect(page).toContain("recommended={recommended}");
-    expect(results).toContain("为你推荐");
-    expect(results).toContain("recommended.length > 0");
     expect(results).toContain("今日热榜站点");
+    // 这份榜单与查询词无关，不能冒充个性化推荐（断言只锁可见标题；
+    // 源码注释里解释改名原因时可以提到旧名，不算在内）
+    expect(results).not.toContain("为你推荐：今日热榜站点");
+    expect(results).toContain("recommended.length > 0");
     expect(results).toContain('href="/hot"');
   });
 
@@ -191,7 +193,7 @@ describe("纠正后零结果态：只给明确出口，不叠泛推荐（协调�
     expect(results).toContain("hideGenericRecommendations={correctedZero}");
   });
 
-  it("纠正后零结果隐藏「换个词试试 / 大家在搜 / 为你推荐」三块", () => {
+  it("纠正后零结果隐藏「换个词试试 / 大家在搜 / 今日热榜」三块", () => {
     expect(results).toContain("!hideGenericRecommendations && suggestions.length > 0");
     expect(results).toContain("!hideGenericRecommendations && popular.length > 0");
     expect(results).toContain("!hideGenericRecommendations && recommended.length > 0");

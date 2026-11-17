@@ -85,7 +85,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       '/api/facets' + (category ? '?categoryId=' + encodeURIComponent(category) : ''),
       60,
     ),
-    // 零结果救援的「为你推荐」：与 /hot 页同一榜单（/api/rank/trending，60s 缓存）。
+    // 零结果救援的「今日热榜」：与 /hot 页同一榜单（/api/rank/trending，60s 缓存）。
     // 只在有筛选条件时取——空搜索页不渲染零结果区，取了也是浪费一次中枢往返；
     // 取数失败（null）时推荐区整块不渲染，零结果页退回原有出口。
     hasFilter

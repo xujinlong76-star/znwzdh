@@ -40,7 +40,7 @@ interface SearchResultsProps {
   result: HubSearchResult | null
   failed: boolean
   unavailable: HubSearchHit[]
-  /** 零结果救援的「为你推荐」：今日热榜前 6（/search 页取数，失败为空数组） */
+  /** 零结果救援的「今日热榜」：今日热榜前 6（/search 页取数，失败为空数组） */
   recommended?: HubSite[]
   /** 收录站点外链 rel（站点级设置，服务端透传）；缺省 nofollow */
   externalRel?: string
@@ -357,15 +357,16 @@ function EmptyResults({
           </div>
         </div>
       ) : null}
-      {/* 为你推荐（research #2）：零结果页不能只剩「没有」——热榜站点是现成
+      {/* 今日热榜（research #2）：零结果页不能只剩「没有」——热榜站点是现成
           的兜底内容，复用正常结果行的 ResultRow（命中即 HubSearchHit，
           contributions 为空，不标任何通道）。取数失败时 recommended 为空，
-          整块不渲染，不谎称「没有推荐」。 */}
+          整块不渲染，不谎称「没有推荐」。标题只说「今日热榜」，不写
+          「为你推荐」——这份榜单与查询词无关，不能冒充个性化推荐。 */}
       {!hideGenericRecommendations && recommended.length > 0 ? (
         <div className="space-y-2 border-t border-border/60 pt-3">
           <p className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
             <Sparkles className="h-3.5 w-3.5 text-primary" />
-            为你推荐：今日热榜站点
+            今日热榜站点
           </p>
           <ul className="space-y-2">
             {recommended.map((site) => (
@@ -557,7 +558,7 @@ export function SearchResults({
   const didYouMean = result?.didYouMean
   const correction = result?.correction ?? null
   // 纠正后仍零结果：只给两个明确出口（存为待找 / 新建收藏），不再叠
-  // 「换个词试试 / 大家在搜 / 为你推荐」这类泛推荐（协调人决定 1）。
+  // 「换个词试试 / 大家在搜 / 今日热榜」这类泛推荐（协调人决定 1）。
   // 未纠正的零结果态保持现有 P0 兜底不变。
   const correctedZero = Boolean(correction) && hits.length === 0
   const excluded = result?.excludedTerms ?? []

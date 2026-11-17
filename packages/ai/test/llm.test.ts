@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  AGNES_BASE_URL,
-  AGNES_MODEL,
   LlmError,
   assertLlmEndpoint,
   chatCompletion,
   chatCompletionsUrl,
   chatStream,
+  createVideoTask,
   extractSseDelta,
+  generateImage,
   maskApiKey,
   parseRetryAfterMs,
+  pollVideoTask,
   resetLlmCapabilityCache,
   type LlmProvider,
   type LlmStreamEvent,
@@ -59,10 +60,10 @@ function captureFetch(respond: (call: number, body: Record<string, unknown>) => 
 
 describe("网关：URL 与密钥", () => {
   it("baseUrl 归一化为 /chat/completions（容忍尾斜杠与完整终点）", () => {
-    expect(chatCompletionsUrl("https://api.agnes-ai.cn/v1")).toBe("https://api.agnes-ai.cn/v1/chat/completions");
-    expect(chatCompletionsUrl("https://api.agnes-ai.cn/v1/")).toBe("https://api.agnes-ai.cn/v1/chat/completions");
-    expect(chatCompletionsUrl("https://api.agnes-ai.cn/v1/chat/completions")).toBe(
-      "https://api.agnes-ai.cn/v1/chat/completions",
+    expect(chatCompletionsUrl("https://api.example.com/v1")).toBe("https://api.example.com/v1/chat/completions");
+    expect(chatCompletionsUrl("https://api.example.com/v1/")).toBe("https://api.example.com/v1/chat/completions");
+    expect(chatCompletionsUrl("https://api.example.com/v1/chat/completions")).toBe(
+      "https://api.example.com/v1/chat/completions",
     );
   });
 
@@ -73,9 +74,12 @@ describe("网关：URL 与密钥", () => {
     expect(maskApiKey(null)).toBe("");
   });
 
-  it("Agnes 默认常量与文档一致", () => {
-    expect(AGNES_BASE_URL).toBe("https://api.agnes-ai.cn/v1");
-    expect(AGNES_MODEL).toBe("agnes-3.0-flash");
+  it("无内置默认厂商：媒体调用缺地址/模型时报 config 错，不静默指向某个厂商", async () => {
+    // 2026-11-18 起 Agnes 已彻底移除：网关不再内置任何厂商的默认端点/模型。
+    // 此断言钉死「无默认」这一新行为，替代此前钉死 Agnes 常量的旧断言。
+    await expect(generateImage({ prompt: "x", apiKey: "k1" })).rejects.toMatchObject({ code: "config" });
+    await expect(createVideoTask({ prompt: "x", apiKey: "k1" })).rejects.toMatchObject({ code: "config" });
+    await expect(pollVideoTask({ taskId: "t", apiKey: "k1" })).rejects.toMatchObject({ code: "config" });
   });
 });
 

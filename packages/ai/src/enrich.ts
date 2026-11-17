@@ -14,7 +14,7 @@ import { z } from "zod";
 import { getEnhancedSiteData, type SiteRelation } from "@navhub/core";
 import { guardedFetch, type FetchGuardOptions } from "./ssrf.ts";
 import { extractMetadata } from "./metadata.ts";
-import { AGNES_BASE_URL, AGNES_MODEL, LlmError, chatCompletion, type ChatOptions, type ChatResult, type JsonMode } from "./llm.ts";
+import { LlmError, chatCompletion, type ChatOptions, type ChatResult, type JsonMode } from "./llm.ts";
 import { clampToDeadline } from "./deadline.ts";
 
 export interface LlmConfig {
@@ -28,16 +28,21 @@ export interface LlmConfig {
   jsonMode?: JsonMode;
   /** 允许内网端点（本地 Ollama）；仅系统级配置可开启 */
   allowPrivateNetwork?: boolean;
-  /** 是否开启深度思考（Agnes 3.0 Flash native thinking） */
+  /** 是否开启深度思考（部分模型原生 thinking） */
   thinking?: boolean;
   /** 备选 LLM 轮换池配置（主模型失败或超时后依次尝试） */
   fallbacks?: LlmConfig[];
 }
 
+/**
+ * 未配置时的默认 LLM：空地址 + 空模型 + 无密钥。
+ * 2026-11-18 起不再内置任何厂商默认（此前为 Agnes，已按用户决定移除）；
+ * 调用方据此判定「未配置」并降级为启发式（见本文件头约束 1）。
+ */
 export const DEFAULT_LLM: LlmConfig = {
-  baseUrl: AGNES_BASE_URL,
+  baseUrl: "",
   apiKey: null,
-  model: AGNES_MODEL,
+  model: "",
   timeoutMs: 20_000,
 };
 

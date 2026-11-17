@@ -42,6 +42,12 @@ function sequencedFetch(responses: Array<Response | Error>) {
   return { fetchImpl: fetchImpl as unknown as typeof fetch, calls };
 }
 
+/** 媒体调用的显式端点/模型：2026-11-18 起不再有任何内置厂商默认，调用方必须显式传 */
+const MEDIA_BASE = "https://api.example.com/v1";
+const IMG_MODEL = "img-model";
+const VID_MODEL = "vid-model";
+const POLL_BASE = "https://media.example.com/poll";
+
 describe("generateImage", () => {
   it("未配置密钥时报 config 错，不发起请求", async () => {
     const { fetchImpl } = sequencedFetch([]);
@@ -51,6 +57,21 @@ describe("generateImage", () => {
     await expect(generateImage({ prompt: "a cat", fetchImpl })).rejects.toMatchObject({
       code: "config",
     });
+  });
+
+  it("未配置地址/模型时报 config 错，不发起请求", async () => {
+    // 2026-11-18 起 Agnes 已彻底移除：缺 baseUrl 或 model 必须明说，不许静默指向某个厂商
+    const { fetchImpl } = sequencedFetch([]);
+    await expect(generateImage({ prompt: "a cat", apiKey: "k1", fetchImpl })).rejects.toMatchObject({
+      code: "config",
+    });
+    await expect(
+      generateImage({ prompt: "a cat", apiKey: "k1", baseUrl: MEDIA_BASE, fetchImpl }),
+    ).rejects.toMatchObject({ code: "config" });
+    await expect(
+      generateImage({ prompt: "a cat", apiKey: "k1", model: IMG_MODEL, fetchImpl }),
+    ).rejects.toMatchObject({ code: "config" });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("成功：POST 到 /images/generations，透传模型/尺寸/数量，解析 url/revised_prompt/task_id", async () => {
@@ -87,7 +108,7 @@ describe("generateImage", () => {
     });
   });
 
-  it("baseUrl 已是 /images/generations 时不重复拼接；默认模型/尺寸/数量", async () => {
+  it("baseUrl 已是 /images/generations 时不重复拼接；默认尺寸/数量", async () => {
     const { fetchImpl, calls } = sequencedFetch([
       jsonResponse(200, { data: [{ url: "https://img.example.com/2.png" }] }),
     ]);
@@ -95,9 +116,10 @@ describe("generateImage", () => {
       prompt: "x",
       apiKey: "k1",
       baseUrl: "https://api.example.com/v1/images/generations",
+      model: IMG_MODEL,
       fetchImpl,
     });
-    expect(res.model).toBe("agnes-image-2.5-flash");
+    expect(res.model).toBe(IMG_MODEL);
     expect(res.revisedPrompt).toBeUndefined();
     expect(res.taskId).toBeUndefined();
     expect(calls[0]!.url).toBe("https://api.example.com/v1/images/generations");
@@ -109,11 +131,15 @@ describe("generateImage", () => {
 
   it("未返回有效图片地址时报 invalid_response", async () => {
     const { fetchImpl } = sequencedFetch([jsonResponse(200, { data: [] })]);
-    await expect(generateImage({ prompt: "x", apiKey: "k1", fetchImpl })).rejects.toMatchObject({
+    await expect(
+      generateImage({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: IMG_MODEL, fetchImpl }),
+    ).rejects.toMatchObject({
       code: "invalid_response",
     });
     const { fetchImpl: f2 } = sequencedFetch([jsonResponse(200, { data: [{ url: 123 }] })]);
-    await expect(generateImage({ prompt: "x", apiKey: "k1", fetchImpl: f2 })).rejects.toMatchObject({
+    await expect(
+      generateImage({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: IMG_MODEL, fetchImpl: f2 }),
+    ).rejects.toMatchObject({
       code: "invalid_response",
     });
   });
@@ -128,7 +154,7 @@ describe("generateImage", () => {
     ];
     for (const [status, code] of cases) {
       const { fetchImpl } = sequencedFetch([jsonResponse(status, { error: { message: "boom" } })]);
-      const err = await generateImage({ prompt: "x", apiKey: "k1", fetchImpl }).catch((e) => e);
+      const err = await generateImage({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: IMG_MODEL, fetchImpl }).catch((e) => e);
       expect(err).toBeInstanceOf(LlmError);
       expect(err.code).toBe(code);
       expect(err.status).toBe(status);
@@ -137,12 +163,14 @@ describe("generateImage", () => {
 
   it("网络异常→network；AbortError→timeout", async () => {
     const { fetchImpl } = sequencedFetch([new Error("ECONNRESET")]);
-    await expect(generateImage({ prompt: "x", apiKey: "k1", fetchImpl })).rejects.toMatchObject({
+    await expect(
+      generateImage({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: IMG_MODEL, fetchImpl }),
+    ).rejects.toMatchObject({
       code: "network",
     });
     const { fetchImpl: f2 } = sequencedFetch([abortError()]);
     await expect(
-      generateImage({ prompt: "x", apiKey: "k1", fetchImpl: f2, timeoutMs: 1000 }),
+      generateImage({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: IMG_MODEL, fetchImpl: f2, timeoutMs: 1000 }),
     ).rejects.toMatchObject({ code: "timeout" });
   });
 
@@ -151,7 +179,7 @@ describe("generateImage", () => {
       jsonResponse(429, { error: { message: "slow down" } }),
       jsonResponse(200, { data: [{ url: "https://img.example.com/3.png" }] }),
     ]);
-    const res = await generateImage({ prompt: "x", apiKey: "bad-key,good-key", fetchImpl });
+    const res = await generateImage({ prompt: "x", apiKey: "bad-key,good-key", baseUrl: MEDIA_BASE, model: IMG_MODEL, fetchImpl });
     expect(res.url).toBe("https://img.example.com/3.png");
     expect(calls).toHaveLength(2);
     const auths = calls.map((c) => (c.init?.headers as Record<string, string>)["Authorization"]);
@@ -162,7 +190,7 @@ describe("generateImage", () => {
       jsonResponse(200, { data: [{ url: "https://img.example.com/4.png" }] }),
     ]);
     await expect(
-      generateImage({ prompt: "x", apiKey: "k1,k2", fetchImpl: f2 }),
+      generateImage({ prompt: "x", apiKey: "k1,k2", baseUrl: MEDIA_BASE, model: IMG_MODEL, fetchImpl: f2 }),
     ).rejects.toMatchObject({ code: "invalid_response" });
     expect(calls2).toHaveLength(1);
   });
@@ -173,7 +201,7 @@ describe("generateImage", () => {
       jsonResponse(429, { error: { message: "slow" } }),
     ]);
     await expect(
-      generateImage({ prompt: "x", apiKey: "k1,k2", fetchImpl }),
+      generateImage({ prompt: "x", apiKey: "k1,k2", baseUrl: MEDIA_BASE, model: IMG_MODEL, fetchImpl }),
     ).rejects.toMatchObject({ code: "rate_limit" });
   });
 });
@@ -181,6 +209,21 @@ describe("generateImage", () => {
 describe("createVideoTask", () => {
   it("未配置密钥时报 config 错", async () => {
     await expect(createVideoTask({ prompt: "a video" })).rejects.toMatchObject({ code: "config" });
+  });
+
+  it("未配置地址/模型时报 config 错，不发起请求", async () => {
+    // 2026-11-18 起 Agnes 已彻底移除：缺 baseUrl 或 model 必须明说，不许静默指向某个厂商
+    const { fetchImpl } = sequencedFetch([]);
+    await expect(createVideoTask({ prompt: "x", apiKey: "k1", fetchImpl })).rejects.toMatchObject({
+      code: "config",
+    });
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, fetchImpl }),
+    ).rejects.toMatchObject({ code: "config" });
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "k1", model: VID_MODEL, fetchImpl }),
+    ).rejects.toMatchObject({ code: "config" });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("直接返回 url 时判定 completed，taskId 取 data.task_id", async () => {
@@ -219,34 +262,42 @@ describe("createVideoTask", () => {
     ];
     for (const [body, want] of variants) {
       const { fetchImpl } = sequencedFetch([jsonResponse(200, body)]);
-      const res = await createVideoTask({ prompt: "x", apiKey: "k1", fetchImpl });
-      expect(res).toEqual({ ok: true, taskId: want, status: "processing", model: "agnes-video-2.5-flash" });
+      const res = await createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl });
+      expect(res).toEqual({ ok: true, taskId: want, status: "processing", model: VID_MODEL });
     }
   });
 
   it("嵌套 url 同样判定 completed；既无 url 又无 taskId 时报 invalid_response", async () => {
     const { fetchImpl } = sequencedFetch([jsonResponse(200, { data: { url: "https://v/1.mp4", id: "n1" } })]);
-    await expect(createVideoTask({ prompt: "x", apiKey: "k1", fetchImpl })).resolves.toMatchObject({
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl }),
+    ).resolves.toMatchObject({
       ok: true,
       status: "completed",
       url: "https://v/1.mp4",
     });
     const { fetchImpl: f2 } = sequencedFetch([jsonResponse(200, { data: {} })]);
-    await expect(createVideoTask({ prompt: "x", apiKey: "k1", fetchImpl: f2 })).rejects.toMatchObject({
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl: f2 }),
+    ).rejects.toMatchObject({
       code: "invalid_response",
     });
   });
 
   it("503 队列满：JSON 体里的 message 被采用；非 JSON 体用默认文案", async () => {
     const { fetchImpl } = sequencedFetch([jsonResponse(503, { message: "排队人太多" })]);
-    await expect(createVideoTask({ prompt: "x", apiKey: "k1", fetchImpl })).resolves.toEqual({
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl }),
+    ).resolves.toEqual({
       ok: false,
       status: "queue_full",
       message: "排队人太多",
-      model: "agnes-video-2.5-flash",
+      model: VID_MODEL,
     });
     const { fetchImpl: f2 } = sequencedFetch([textResponse(503, "Service Unavailable")]);
-    await expect(createVideoTask({ prompt: "x", apiKey: "k1", fetchImpl: f2 })).resolves.toMatchObject({
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl: f2 }),
+    ).resolves.toMatchObject({
       status: "queue_full",
       message: "视频队列已满，请稍后重试",
     });
@@ -257,7 +308,9 @@ describe("createVideoTask", () => {
       jsonResponse(503, { message: "满" }),
       jsonResponse(200, { task_id: "t-9" }),
     ]);
-    await expect(createVideoTask({ prompt: "x", apiKey: "k1,k2", fetchImpl })).resolves.toMatchObject({
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "k1,k2", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl }),
+    ).resolves.toMatchObject({
       ok: true,
       status: "processing",
       taskId: "t-9",
@@ -267,54 +320,80 @@ describe("createVideoTask", () => {
       jsonResponse(503, {}),
       jsonResponse(503, {}),
     ]);
-    await expect(createVideoTask({ prompt: "x", apiKey: "k1,k2", fetchImpl: f2 })).resolves.toEqual({
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "k1,k2", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl: f2 }),
+    ).resolves.toEqual({
       ok: false,
       status: "queue_full",
       message: "视频队列已满，请稍后重试",
-      model: "agnes-video-2.5-flash",
+      model: VID_MODEL,
     });
   });
 
   it("HTTP 状态映射与网络/超时失败", async () => {
     const { fetchImpl } = sequencedFetch([jsonResponse(401, { error: { message: "no" } })]);
-    await expect(createVideoTask({ prompt: "x", apiKey: "only-key", fetchImpl })).rejects.toMatchObject({
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "only-key", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl }),
+    ).rejects.toMatchObject({
       code: "auth",
       status: 401,
     });
     const { fetchImpl: f2 } = sequencedFetch([new Error("dns fail")]);
-    await expect(createVideoTask({ prompt: "x", apiKey: "k1", fetchImpl: f2 })).rejects.toMatchObject({
+    await expect(
+      createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl: f2 }),
+    ).rejects.toMatchObject({
       code: "network",
     });
     const { fetchImpl: f3 } = sequencedFetch([abortError()]);
     await expect(
-      createVideoTask({ prompt: "x", apiKey: "k1", fetchImpl: f3, timeoutMs: 1000 }),
+      createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: MEDIA_BASE, model: VID_MODEL, fetchImpl: f3, timeoutMs: 1000 }),
     ).rejects.toMatchObject({ code: "timeout" });
   });
 
   it("baseUrl 已是 /videos 时不重复拼接", async () => {
     const { fetchImpl, calls } = sequencedFetch([jsonResponse(200, { task_id: "t" })]);
-    await createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: "https://api.example.com/v1/videos", fetchImpl });
+    await createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: "https://api.example.com/v1/videos", model: VID_MODEL, fetchImpl });
     expect(calls[0]!.url).toBe("https://api.example.com/v1/videos");
   });
 });
 
 describe("pollVideoTask", () => {
+  it("未配置轮询地址/模型时报 config 错，不发起请求", async () => {
+    // 2026-11-18 起 Agnes 已彻底移除：此前硬编码的厂商轮询端点已删除，缺地址或模型必须明说
+    const { fetchImpl } = sequencedFetch([]);
+    await expect(pollVideoTask({ taskId: "t", apiKey: "k1", fetchImpl })).rejects.toMatchObject({
+      code: "config",
+    });
+    await expect(
+      pollVideoTask({ taskId: "t", apiKey: "k1", baseUrl: POLL_BASE, fetchImpl }),
+    ).rejects.toMatchObject({ code: "config" });
+    await expect(
+      pollVideoTask({ taskId: "t", apiKey: "k1", model: VID_MODEL, fetchImpl }),
+    ).rejects.toMatchObject({ code: "config" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("completed：status 字段或 url 任一命中即完成", async () => {
     const { fetchImpl, calls } = sequencedFetch([
       jsonResponse(200, { status: "completed", url: "https://v/9.mp4" }),
     ]);
-    await expect(pollVideoTask({ taskId: "t-1", apiKey: "k1", fetchImpl })).resolves.toEqual({
+    await expect(
+      pollVideoTask({ taskId: "t-1", apiKey: "k1", baseUrl: POLL_BASE, model: VID_MODEL, fetchImpl }),
+    ).resolves.toEqual({
       ok: true,
       status: "completed",
       url: "https://v/9.mp4",
     });
     expect(calls[0]!.url).toContain("video_id=t-1");
-    expect(calls[0]!.url).toContain("model_name=agnes-video-2.5-flash");
+    expect(calls[0]!.url).toContain(`model_name=${VID_MODEL}`);
+    expect(calls[0]!.url.startsWith(POLL_BASE)).toBe(true);
     expect(calls[0]!.init?.method).toBe("GET");
 
     // 只有 url、没有 status 时同样算完成（嵌套 data.url）
     const { fetchImpl: f2 } = sequencedFetch([jsonResponse(200, { data: { url: "https://v/10.mp4" } })]);
-    await expect(pollVideoTask({ taskId: "t-2", fetchImpl: f2 })).resolves.toEqual({
+    await expect(
+      pollVideoTask({ taskId: "t-2", baseUrl: POLL_BASE, model: VID_MODEL, fetchImpl: f2 }),
+    ).resolves.toEqual({
       ok: true,
       status: "completed",
       url: "https://v/10.mp4",
@@ -323,13 +402,17 @@ describe("pollVideoTask", () => {
 
   it("failed / error 状态返回失败与服务端 message；无 message 时用默认文案", async () => {
     const { fetchImpl } = sequencedFetch([jsonResponse(200, { status: "failed", message: "炸了" })]);
-    await expect(pollVideoTask({ taskId: "t", fetchImpl })).resolves.toEqual({
+    await expect(
+      pollVideoTask({ taskId: "t", baseUrl: POLL_BASE, model: VID_MODEL, fetchImpl }),
+    ).resolves.toEqual({
       ok: false,
       status: "failed",
       message: "炸了",
     });
     const { fetchImpl: f2 } = sequencedFetch([jsonResponse(200, { status: "error" })]);
-    await expect(pollVideoTask({ taskId: "t", fetchImpl: f2 })).resolves.toEqual({
+    await expect(
+      pollVideoTask({ taskId: "t", baseUrl: POLL_BASE, model: VID_MODEL, fetchImpl: f2 }),
+    ).resolves.toEqual({
       ok: false,
       status: "failed",
       message: "生成失败",
@@ -338,18 +421,24 @@ describe("pollVideoTask", () => {
 
   it("其它状态返回 processing；非 2xx 返回 failed；网络异常降级为 processing", async () => {
     const { fetchImpl } = sequencedFetch([jsonResponse(200, { status: "processing" })]);
-    await expect(pollVideoTask({ taskId: "t", fetchImpl })).resolves.toEqual({
+    await expect(
+      pollVideoTask({ taskId: "t", baseUrl: POLL_BASE, model: VID_MODEL, fetchImpl }),
+    ).resolves.toEqual({
       ok: true,
       status: "processing",
     });
     const { fetchImpl: f2 } = sequencedFetch([jsonResponse(500, {})]);
-    await expect(pollVideoTask({ taskId: "t", fetchImpl: f2 })).resolves.toEqual({
+    await expect(
+      pollVideoTask({ taskId: "t", baseUrl: POLL_BASE, model: VID_MODEL, fetchImpl: f2 }),
+    ).resolves.toEqual({
       ok: false,
       status: "failed",
       message: "HTTP 500",
     });
     const { fetchImpl: f3 } = sequencedFetch([new Error("flaky")]);
-    await expect(pollVideoTask({ taskId: "t", fetchImpl: f3 })).resolves.toMatchObject({
+    await expect(
+      pollVideoTask({ taskId: "t", baseUrl: POLL_BASE, model: VID_MODEL, fetchImpl: f3 }),
+    ).resolves.toMatchObject({
       ok: true,
       status: "processing",
       message: "flaky",

@@ -7,7 +7,7 @@
  *     （守卫测试 `apps/api/test/llm-gateway-guard.test.ts` 会扫描源码）。
  *     好处：超时、鉴权、JSON 模式兼容、错误归一化只维护一份。
  *
- *  2. **OpenAI 兼容优先。** Agnes 3.0 Flash、DeepSeek、Ollama、vLLM 都提供
+ *  2. **OpenAI 兼容优先。** DeepSeek、OpenAI、Ollama、vLLM 等都提供
  *     `POST {baseUrl}/chat/completions`；`baseUrl` 允许直接写到 `.../v1`。
  *
  *  3. **不认参数就摘掉再试一次。** `jsonMode: "auto"` 时先带 `response_format`，
@@ -26,12 +26,12 @@
 import { DEFAULT_GUARD, assertUrlShape, resolveAndCheck } from "./ssrf.ts";
 import { clampToDeadline } from "./deadline.ts";
 
-/** Agnes 3.0 Flash 官方参数（文档 2026-10） */
-export const AGNES_NAME = "Agnes 3.0 Flash";
-export const AGNES_BASE_URL = "https://api.agnes-ai.cn/v1";
-export const AGNES_MODEL = "agnes-3.0-flash";
-export const AGNES_IMAGE_MODEL = "agnes-image-2.5-flash";
-export const AGNES_VIDEO_MODEL = "agnes-video-2.5-flash";
+/**
+ * 内置默认：无。2026-11-18 起不再内置任何厂商的默认端点/模型
+ * （此前为 Agnes 3.0 Flash，已按用户决定彻底移除）：
+ * 未配置时调用方必须显式传入 baseUrl/model，或按「未配置」降级为本地。
+ * 图像/视频函数缺 baseUrl/model 时直接报 config 错误，绝不静默指向某个厂商。
+ */
 
 export type JsonMode = "auto" | "response_format" | "prompt";
 
@@ -39,7 +39,7 @@ export type JsonMode = "auto" | "response_format" | "prompt";
 export interface LlmProvider {
   /** 展示名，仅用于 UI，不参与请求 */
   name?: string;
-  /** 形如 https://api.agnes-ai.cn/v1；也接受完整的 .../chat/completions */
+  /** 形如 https://api.deepseek.com/v1；也接受完整的 .../chat/completions */
   baseUrl: string;
   model: string;
   apiKey?: string | null;
@@ -104,7 +104,7 @@ export interface ChatUsage {
 
 export interface ChatResult {
   content: string;
-  /** 深度思考推导过程（Agnes / DeepSeek reasoning_content 或 <think>...</think>） */
+  /** 深度思考推导过程（reasoning_content 或 <think>...</think>） */
   reasoningContent?: string;
   model: string;
   usage: ChatUsage;
@@ -124,7 +124,7 @@ export interface ChatResult {
  *
  * 只产出「模型真正发来的东西」：
  *  - `delta`    正文增量；
- *  - `reasoning` 思维链增量（Agnes/DeepSeek 的 reasoning_content，或内联 <think> 段）；
+ *  - `reasoning` 思维链增量（reasoning_content，或内联 <think> 段）；
  *  - `end`      流结束时的模型名与真实用量（流式响应常把 usage 放在最后一个空 choices
  *               分块里；没给就是 0，绝不按字数估算冒充真实用量）。
  */
@@ -238,7 +238,7 @@ const jsonModeUnsupported = new Set<string>();
 /**
  * 端点不支持思维链参数的进程级记忆。
  *
- * `thinking` / `chat_template_kwargs` 是给 Agnes 与 vLLM 系用的，但严格的
+ * `thinking` / `chat_template_kwargs` 是给部分推理模型与 vLLM 系用的，但严格的
  * OpenAI 兼容网关会把未知字段判成 400。而深度思考是**产品默认开**的：没有这层
  * 记忆，接上这类网关就等于全站 AI 一起挂，且报错只写「模型返回 HTTP 400」。
  */
@@ -499,7 +499,7 @@ function buildBody(
     body.tools = opts.tools;
     if (opts.toolChoice !== undefined) body.tool_choice = opts.toolChoice;
   }
-  // 深度思考：Agnes 官方规范使用 thinking: { type: 'enabled', budget_tokens }，
+  // 深度思考：部分推理网关规范使用 thinking: { type: 'enabled', budget_tokens }，
   // 同时兼容 vLLM 系的 chat_template_kwargs: { enable_thinking: true }
   if (opts.thinking === true && includeThinking) {
     const budgetTokens = 128;
@@ -508,7 +508,7 @@ function buildBody(
       budget_tokens: budgetTokens,
     };
     body.chat_template_kwargs = { enable_thinking: true };
-    // Agnes 等推理网关将 reasoning_tokens 计入 max_tokens 总上限；
+    // 部分推理网关将 reasoning_tokens 计入 max_tokens 总上限；
     // 即使传入较小的 budget_tokens，复杂 JSON 提示词下模型仍可能消耗数百至上千推理 token，
     // 因此总 max_tokens 自动在输出配额之上预留 2048 推理冗余，彻底杜绝 content 截断。
     if (typeof maxTokens === "number" && maxTokens > 0) {
@@ -705,7 +705,7 @@ interface SsePayload {
 /**
  * 解析一行 SSE data。
  *
- * 兼容两种思维链形态：`delta.reasoning_content`（Agnes/DeepSeek）与
+ * 兼容两种思维链形态：`delta.reasoning_content`（部分推理网关）与
  * `delta.reasoning`（部分 vLLM 网关）。返回 null 表示这一行没有可用信息
  * （心跳、[DONE]、坏 JSON、纯 role 分块都在此列）。
  */
@@ -968,10 +968,14 @@ export interface ImageGenerationResult {
 }
 
 async function generateImageSingle(opts: ImageGenerationOptions, key: string): Promise<ImageGenerationResult> {
-  const baseUrl = (opts.baseUrl || AGNES_BASE_URL).replace(/\/+$/, "");
+  // 无内置默认：缺地址或模型必须明说，不许静默指向某个厂商
+  if (!opts.baseUrl?.trim() || !opts.model?.trim()) {
+    throw new LlmError("config", "未配置 AI 图像模型：请填写图像服务的接口地址与模型");
+  }
+  const baseUrl = opts.baseUrl.replace(/\/+$/, "");
   const endpoint = baseUrl.endsWith("/images/generations") ? baseUrl : `${baseUrl}/images/generations`;
   const fetchFn = opts.fetchImpl ?? fetch;
-  const model = opts.model || AGNES_IMAGE_MODEL;
+  const model = opts.model;
   const timeoutMs = opts.timeoutMs ?? 30_000;
 
   const controller = new AbortController();
@@ -1081,10 +1085,14 @@ export interface VideoTaskResult {
 }
 
 async function createVideoTaskSingle(opts: VideoGenerationOptions, key: string): Promise<VideoTaskResult> {
-  const baseUrl = (opts.baseUrl || AGNES_BASE_URL).replace(/\/+$/, "");
+  // 无内置默认：缺地址或模型必须明说，不许静默指向某个厂商
+  if (!opts.baseUrl?.trim() || !opts.model?.trim()) {
+    throw new LlmError("config", "未配置 AI 视频模型：请填写视频服务的接口地址与模型");
+  }
+  const baseUrl = opts.baseUrl.replace(/\/+$/, "");
   const endpoint = baseUrl.endsWith("/videos") ? baseUrl : `${baseUrl}/videos`;
   const fetchFn = opts.fetchImpl ?? fetch;
-  const model = opts.model || AGNES_VIDEO_MODEL;
+  const model = opts.model;
   const timeoutMs = opts.timeoutMs ?? 30_000;
 
   const controller = new AbortController();
@@ -1217,7 +1225,7 @@ export async function createVideoTask(opts: VideoGenerationOptions): Promise<Vid
     ok: false,
     status: "queue_full",
     message: "视频队列已满，请稍后重试",
-    model: opts.model || AGNES_VIDEO_MODEL,
+    model: opts.model ?? "",
   };
 }
 
@@ -1227,13 +1235,19 @@ export async function createVideoTask(opts: VideoGenerationOptions): Promise<Vid
 export async function pollVideoTask(opts: {
   taskId: string;
   apiKey?: string | null;
+  /** 轮询端点基址（形如 https://media.example.com/poll）；不填则报 config 错误 */
+  baseUrl?: string;
   model?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }): Promise<{ ok: boolean; status: "completed" | "processing" | "failed"; url?: string; message?: string }> {
+  // 无内置默认：此前硬编码的厂商轮询端点已随 Agnes 移除；缺地址或模型必须明说
+  if (!opts.baseUrl?.trim() || !opts.model?.trim()) {
+    throw new LlmError("config", "未配置 AI 视频轮询端点：请填写视频服务的轮询地址与模型");
+  }
   const keys = extractApiKeys(opts.apiKey);
   const key = keys[0] || "";
-  const model = opts.model || AGNES_VIDEO_MODEL;
+  const model = opts.model;
   const fetchFn = opts.fetchImpl ?? fetch;
   const timeoutMs = opts.timeoutMs ?? 15_000;
 
@@ -1241,7 +1255,7 @@ export async function pollVideoTask(opts: {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const url = `https://api.agnes-ai.cn/agnesapi?video_id=${encodeURIComponent(opts.taskId)}&model_name=${encodeURIComponent(model)}`;
+    const url = `${opts.baseUrl.replace(/\/+$/, "")}?video_id=${encodeURIComponent(opts.taskId)}&model_name=${encodeURIComponent(model)}`;
     const res = await fetchFn(url, {
       method: "GET",
       headers: {

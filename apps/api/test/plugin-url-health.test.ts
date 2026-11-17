@@ -221,6 +221,9 @@ describe("handlePluginUrlHealth", () => {
     // PLUGIN_URL_HEALTH_CONCURRENCY 条已全部发出，循环在下一窗前才看到
     // shouldStop 而停下，因此恰好探完一个窗口；未探的既不计 ok 也不计 failed。
     expect(summary.okCount).toBe(PLUGIN_URL_HEALTH_CONCURRENCY);
+    // 并发钉死 30：并发 5 时首轮 tick 探活 171 条 URL 在 CI 真网下 72–73 秒，
+    // 超 60 秒超时导致 CI 红；改回 5 也能全绿，全靠本断言守住。
+    expect(PLUGIN_URL_HEALTH_CONCURRENCY).toBe(30);
     expect(summary.failedCount).toBe(0);
   });
 });

@@ -541,7 +541,7 @@ export async function listPlugins(
           : filter.sort === "featured"
             ? "p.featured_rank DESC, COALESCE(p.published_at, p.created_at) DESC"
             : filter.sort === "updated"
-              ? "p.updated_at DESC"
+              ? "p.updated_at DESC, p.created_at DESC"
               : filter.sort === "trending"
                 ? `((p.install_count * 3 + p.star_count * 5 - p.report_count * 10 + 1.0) / ((${Date.now()} - COALESCE(p.published_at, p.created_at)) / 86400000.0 + 2.0)) DESC, COALESCE(p.published_at, p.created_at) DESC`
                 : "COALESCE(p.published_at, p.created_at) DESC, p.created_at DESC";

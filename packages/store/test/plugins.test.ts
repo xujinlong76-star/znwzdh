@@ -147,6 +147,42 @@ describe("插件注册表：发布 / slug / 列表", () => {
   });
 });
 
+describe("updated 排序确定化", () => {
+  it("同 updated_at 时按 created_at 倒序（第二键），不依赖插入序", async () => {
+    // 插入顺序故意反着放：先建 created_at 较小的 B，后建较大的 A。
+    // 无第二键时 SQLite 常按 rowid/插入序返回（B 在前），断言失败；
+    // 有第二键时 A 在前，断言通过。只比较两个 fixture 的相对次序，
+    // 不用 items[0] 全局断言，避免共享库的顺序污染。
+    const b = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("更新排序 B", [{ url: "https://updated-b.example.com", title: "B" }])),
+      slug: "updated-tie-b",
+      status: "published",
+    });
+    const a = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("更新排序 A", [{ url: "https://updated-a.example.com", title: "A" }])),
+      slug: "updated-tie-a",
+      status: "published",
+    });
+    const updatedAt = 1_700_000_000_000;
+    await repo.run("UPDATE plugins SET updated_at = ?, created_at = ? WHERE slug = ?", [
+      updatedAt,
+      1_700_000_000_000,
+      b.slug,
+    ]);
+    await repo.run("UPDATE plugins SET updated_at = ?, created_at = ? WHERE slug = ?", [
+      updatedAt,
+      1_700_000_100_000,
+      a.slug,
+    ]);
+    const list = await repo.listPlugins({ sort: "updated", limit: 100 });
+    const aIdx = list.items.findIndex((item) => item.slug === a.slug);
+    const bIdx = list.items.findIndex((item) => item.slug === b.slug);
+    expect(aIdx).toBeGreaterThanOrEqual(0);
+    expect(bIdx).toBeGreaterThanOrEqual(0);
+    expect(aIdx).toBeLessThan(bIdx);
+  });
+});
+
 describe("插件状态机：审核 / 更新重审", () => {
   it("approve：pending → published 且有 publishedAt；重复 approve 拒绝", async () => {
     const plugin = await repo.createPlugin({ manifest: manifestOf(sitePackRaw("审核演示", [{ url: "https://d.example.com", title: "D" }])) });

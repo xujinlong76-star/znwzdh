@@ -1,7 +1,7 @@
 /**
  * 考试日历数据（/exam）。
  *
- * 日期来源：2026-11-13 按官方公告逐项核实（中国教育考试网、研招网、
+ * 日期来源：2026-11-17 按官方公告逐项核实（中国教育考试网、研招网、
  * 国家公务员局专题、各省人事考试公告）。新增考试只收已核实的官方日期，
  * 不按往年惯例推测、不写死未公布的确切日：
  *  - 考研准考证官方只说「考前 10 天左右」，这里只写预计、不写死；
@@ -65,6 +65,50 @@ export interface ExamInfo {
  */
 export const CET_ADMISSION_URL = 'https://cet-bm.neea.edu.cn'
 
+/**
+ * 省考七省准考证打印官方入口（U-30，2026-11-17 按各省公告原文逐项核实，
+ * 入口 URL 逐个 curl 或按公告原文域名核实，不编造）：
+ *  - 天津：天津市公务员考试录用服务平台 https://gklx.hrss.tj.gov.cn
+ *    （公告 2026-11-02 原文所载；curl 200；窗口 11-28 8:30 起，公告未写截止）；
+ *  - 山东：2027 年度山东省考试录用公务员报名平台
+ *    https://gwy.sdrsks.org.cn/skbm2027.html（公告原文所载；curl 418 反爬
+ *    应答，服务器存在；窗口 12-01 9:00–12-06 14:15）；
+ *  - 四川：2027 年度公开考试录用公务员专题网站
+ *    https://www.scpta.com.cn/front/Special/Info/44ad63b224814ead8b066b95b0aa6aff
+ *    （公告原文所载；本站出口连不上，curl 000——URL 本身是公告原文逐字所载，
+ *    非编造；窗口只写 12 月 1 日至 6 日，公告原文根本没写时刻）；
+ *  - 浙江：浙江省公务员考试录用网 gwy.zjks.gov.cn（公告原文所载域名；
+ *    https 不通、http 200，属 http-only 站，写 http 不“修正”为 https；
+ *    窗口 12-01 9:00–12-06 17:00，深链未核实，只挂域名）；
+ *  - 江苏：江苏人事考试网省级机关报名网址
+ *    https://jshrss.jiangsu.gov.cn/col/col57253（公告原文所载；curl 200；
+ *    窗口 12-02 9:00–12-06 15:00；各设区市网址见公告附件 1，不逐一挂）；
+ *  - 广东：广东省公务员考试录用管理信息系统
+ *    https://ggfw.hrss.gd.gov.cn/gwyks/index.do（公告原文所载；curl 200；
+ *    窗口 12-02 9:00 起，公告未写截止）；
+ *  - 上海：上海市公务员局官网 https://www.shacs.gov.cn/（公告所载专题站
+ *    https://shacs.gov.cn/recruits/440 本机 curl 两次 404、fetch 失败，
+ *    疑似报名结束后路径下线或反爬，暂挂已验证 200 的官网根，待 live 浏览器
+ *    复核深链后再换；窗口 12-02 10:00–12-05 18:00 见市考务问答原文）。
+ */
+export const TIANJIN_SHENGKAO_ADMISSION_URL = 'https://gklx.hrss.tj.gov.cn'
+export const SHANDONG_SHENGKAO_ADMISSION_URL = 'https://gwy.sdrsks.org.cn/skbm2027.html'
+export const SICHUAN_SHENGKAO_ADMISSION_URL =
+  'https://www.scpta.com.cn/front/Special/Info/44ad63b224814ead8b066b95b0aa6aff'
+export const ZHEJIANG_SHENGKAO_ADMISSION_URL = 'http://gwy.zjks.gov.cn'
+export const JIANGSU_SHENGKAO_ADMISSION_URL = 'https://jshrss.jiangsu.gov.cn/col/col57253'
+export const GUANGDONG_SHENGKAO_ADMISSION_URL = 'https://ggfw.hrss.gd.gov.cn/gwyks/index.do'
+export const SHANGHAI_SHENGKAO_ADMISSION_URL = 'https://www.shacs.gov.cn/'
+
+/**
+ * 国考准考证打印官方入口：中央机关及其直属机构 2027 年度考试录用公务员
+ * 专题网站（国家公务员局）。事实来源见文件下方准考证打印提醒的注释
+ * （2026-11-14 核实：http://bm.scs.gov.cn/kl2027 经 curl 返回 200；
+ * https 版为空回复，链接必须写 http）。常量定义在 EXAMS 之前，因
+ * guokao 准考证节点直接引用（模块顶层常量，EXAMS 字面量求值时不得 TDZ）。
+ */
+export const GUOKAO_ADMISSION_URL = 'http://bm.scs.gov.cn/kl2027'
+
 export const EXAMS: ExamInfo[] = [
   {
     id: 'guokao',
@@ -85,6 +129,7 @@ export const EXAMS: ExamInfo[] = [
         detail: '11 月 23 日 0:00 至 11 月 29 日 15:00',
         startISO: '2026-11-23',
         endISO: '2026-11-29',
+        url: GUOKAO_ADMISSION_URL,
       },
       {
         label: '专业科目笔试',
@@ -146,6 +191,62 @@ export const EXAMS: ExamInfo[] = [
     startISO: '2026-12-06',
     endISO: '2026-12-06',
     nodes: [
+      // 七省准考证打印窗口各异，必须分省建节点（U-30，2026-11-17 核实）：
+      // 天津最早 11-28 8:30 开放；广东/天津公告未写截止、四川公告未写时刻，
+      // 三省挂 estimated，状态永不自动翻「已结束」，detail 如实写明，不编时刻；
+      // 无截止两省的 endISO 取笔试日 12-06 作末日占位（estimated 下状态不受影响）。
+      {
+        label: '天津准考证打印',
+        detail: '11 月 28 日 8:30 起，公告未写截止，以报名系统为准',
+        startISO: '2026-11-28',
+        endISO: '2026-12-06',
+        estimated: true,
+        url: TIANJIN_SHENGKAO_ADMISSION_URL,
+      },
+      {
+        label: '山东准考证打印',
+        detail: '12 月 1 日 9:00 至 12 月 6 日 14:15',
+        startISO: '2026-12-01',
+        endISO: '2026-12-06',
+        url: SHANDONG_SHENGKAO_ADMISSION_URL,
+      },
+      {
+        label: '四川准考证打印',
+        detail: '12 月 1 日至 12 月 6 日，公告未写时刻',
+        startISO: '2026-12-01',
+        endISO: '2026-12-06',
+        estimated: true,
+        url: SICHUAN_SHENGKAO_ADMISSION_URL,
+      },
+      {
+        label: '浙江准考证打印',
+        detail: '12 月 1 日 9:00 至 12 月 6 日 17:00',
+        startISO: '2026-12-01',
+        endISO: '2026-12-06',
+        url: ZHEJIANG_SHENGKAO_ADMISSION_URL,
+      },
+      {
+        label: '江苏准考证打印',
+        detail: '12 月 2 日 9:00 至 12 月 6 日 15:00',
+        startISO: '2026-12-02',
+        endISO: '2026-12-06',
+        url: JIANGSU_SHENGKAO_ADMISSION_URL,
+      },
+      {
+        label: '广东准考证打印',
+        detail: '12 月 2 日 9:00 起，公告未写截止，以报名系统为准',
+        startISO: '2026-12-02',
+        endISO: '2026-12-06',
+        estimated: true,
+        url: GUANGDONG_SHENGKAO_ADMISSION_URL,
+      },
+      {
+        label: '上海准考证打印',
+        detail: '12 月 2 日 10:00 至 12 月 5 日 18:00',
+        startISO: '2026-12-02',
+        endISO: '2026-12-05',
+        url: SHANGHAI_SHENGKAO_ADMISSION_URL,
+      },
       {
         label: '专业科目笔试',
         detail: '12 月 5 日（多省）',
@@ -159,7 +260,7 @@ export const EXAMS: ExamInfo[] = [
         endISO: '2026-12-06',
       },
     ],
-    note: '七省均为单独招考，报名均已截止（山东 11 月 6–9 日；四川 11 月 4 日、广东 11 月 6 日、上海 11 月 7 日、江苏/天津 11 月 9 日、浙江 11 月 11 日）。',
+    note: '七省均为单独招考，报名均已截止（山东 11 月 6–9 日；四川 11 月 4 日、广东 11 月 6 日、上海 11 月 7 日、江苏/天津 11 月 9 日、浙江 11 月 11 日）。七省准考证窗口各异，分省见节点。',
   },
   {
     id: 'kaoyan',
@@ -184,6 +285,37 @@ export const EXAMS: ExamInfo[] = [
         endISO: '2026-12-20',
       },
     ],
+  },
+  {
+    id: 'chengkao',
+    name: '2026 年成人高考',
+    shortName: '成考',
+    tagline: '成绩分省公布',
+    examDateLabel: '10 月 17–18 日',
+    startISO: '2026-10-17',
+    endISO: '2026-10-18',
+    // 成考成绩分省公布，无全国统一时间（2026-11-17 核实）：11-18 当天可查的
+    // 只有江西（9:00）与广东（16:00 短信推送 / 16:20 小程序自查）两省，
+    // 故只列这两省，不写全国单节点；其余省份时间各异或未公布，逐省核实后下轮再补。
+    // 统考 10-17–18 已结束，条目存在只为承载成绩节点；成绩节点是单日公布事件
+    // （startISO = endISO = 11-18），公布后状态翻「已结束」，detail 仍写明查询渠道。
+    // 两省均无网页查分 URL 可挂（广东走官微/支付宝/百度三大小程序；江西查分 URL
+    // 未核实到 verbatim），节点不挂 url，不编链接。
+    nodes: [
+      {
+        label: '江西成绩查询',
+        detail: '11 月 18 日 9:00 起可查（江西省教育考试院网服务大厅「成绩查询」栏目）',
+        startISO: '2026-11-18',
+        endISO: '2026-11-18',
+      },
+      {
+        label: '广东成绩查询',
+        detail: '11 月 18 日 16:00 起短信推送，16:20 起官微（gdsksy）/支付宝/百度小程序可查',
+        startISO: '2026-11-18',
+        endISO: '2026-11-18',
+      },
+    ],
+    note: '成绩分省公布，无全国统一时间。广东：复查申请截止 11 月 20 日 15:00，成绩证书 11 月 28 日 16:00 起可下载打印；其余省份时间各异，以各省教育考试院公告为准。',
   },
 ]
 
@@ -235,7 +367,7 @@ export const EXAM_PREP_CATEGORY_ID = 'reg-learning-growth'
 export const EXAM_PREP_SUB_ID = 'reg-exam-prep'
 
 export const EXAM_DATA_NOTE =
-  '考试日期据官方公告核实于 2026 年 11 月 13 日，请以各考试官方最新公告为准。'
+  '考试日期据官方公告核实于 2026 年 11 月 17 日，请以各考试官方最新公告为准。'
 
 export const DAY_MS = 24 * 3600 * 1000
 const SHANGHAI_OFFSET_MS = 8 * 3600 * 1000
@@ -294,7 +426,7 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
 
 /** 最近一场：未结束的考试里首考日最早的；多日考试末日仍算未结束
  *（考研 12-19–20：12-20 当天条带仍在，与 /exam 倒计时岛「进行中 ·
- * 第 2 天」一致）；四场全结束则返回 undefined（调用方渲染空态条带）。
+ * 第 2 天」一致）；五场全结束则返回 undefined（调用方渲染空态条带）。
  * 排序按首考日（firstExamDay），不是公共科目首日 startISO：有加试的
  * 考试（国考首考日 11-28 < startISO 11-29）应按考生实际最早开考日排。
  * 现只有国考首考日 ≠ startISO 且仍为最早，真实数据行为不变；exams
@@ -327,6 +459,15 @@ export function nextExamNode(exam: ExamInfo, nowMs: number = Date.now()): ExamNo
   return [...exam.nodes]
     .sort((a, b) => a.startISO.localeCompare(b.startISO))
     .find((node) => isNodeActionable(node, exam, nowMs))
+}
+
+/**
+ * 该场考试是否仍有可办节点（R1，2026-11-17）：统考已过不等于全办完——
+ * 成考 11-18 当天 examStatus 已是 ended，但两省成绩节点仍是 today；
+ * 卡片级「已结束」须先看这谓词再渲染，节点全过后才算真结束。
+ */
+export function hasActionableNodes(exam: ExamInfo, nowMs: number = Date.now()): boolean {
+  return nextExamNode(exam, nowMs) !== undefined
 }
 
 /** 倒计时拆分：天 / 时 / 分 / 秒（目标时刻已过则全 0） */
@@ -379,7 +520,7 @@ export function urgencyTier(
 
 /**
  * 时钟卡倒计时行（纯派生）：最近一场未结束考试的一行文案 + 紧迫档位。
- * 四场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
+ * 五场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
  * 文案与 /exam 倒计时岛同口径：首考日当天「今天国考 · 专业科目 14:00
  * 开考」（国考首考日 11-28 设了 firstDayLabel）、进行中「考研进行中 ·
  * 第 2 天」、首考日前一天「明天国考（专业科目先考 11 月 28 日）」
@@ -455,8 +596,6 @@ export const EXAM_REMINDER_TIER_LABEL: Record<ExamReminderTier, string> = {
  *  - 11-15 之前与 11-29 15:00 之后一律不显示（null）。
  * 文案取自已核实的提醒准备稿 A 版（条带短句 / 卡片全句）。
  */
-export const GUOKAO_ADMISSION_URL = 'http://bm.scs.gov.cn/kl2027'
-
 export type GuokaoAdmissionPhase = 'countdown' | 'warmup' | 'open' | 'last-call'
 
 export function guokaoAdmissionPhase(nowMs: number = Date.now()): GuokaoAdmissionPhase | null {

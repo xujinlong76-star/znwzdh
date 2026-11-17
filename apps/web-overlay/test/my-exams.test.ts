@@ -397,7 +397,7 @@ describe('四六级准考证打印直达入口（U-31）', () => {
     }
     expect(shengkao.nodes.filter((n) => n.url !== undefined)).toHaveLength(7)
     // 考研与成考查分节点不挂链接：考研准考证官方只说「考前 10 天左右」（无入口可挂），
-    // 成考两省查分走小程序/栏目（无网页 URL 可挂，不编链接）；例外是江西成绩复核，
+    // 成考四省查分走小程序/官网栏目（无网页 URL 可挂，不编链接）；例外是江西成绩复核，
     // 挂江西省成人高考网上报名系统直链（江西省教育考试院 2026-11-13 公告原文，U-87）。
     expect(
       EXAMS.filter((e) => e.id === 'kaoyan')
@@ -514,12 +514,14 @@ describe('省考七省准考证节点（U-30）', () => {
 })
 
 describe('成考成绩分省节点', () => {
-  it('只列已核实的三省五节点，不写全国单节点', () => {
-    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '江西成绩复核', '广东成绩查询', '浙江成绩查询', '浙江志愿确认'])
+  it('只列已核实的四省七节点，不写全国单节点', () => {
+    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '江西成绩复核', '广东成绩查询', '新疆成绩查询', '新疆成绩复核', '浙江成绩查询', '浙江志愿确认'])
     expect(chengkao.nodes.map((n) => [n.startISO, n.endISO])).toEqual([
       ['2026-11-18', '2026-11-18'],
       ['2026-11-19', '2026-11-20'],
       ['2026-11-18', '2026-11-18'],
+      ['2026-11-18', '2026-11-18'],
+      ['2026-11-18', '2026-11-20'],
       ['2026-11-20', '2026-11-20'],
       ['2026-11-25', '2026-11-29'],
     ])
@@ -529,7 +531,7 @@ describe('成考成绩分省节点', () => {
         expect(node.url).toBe(JIANGXI_CHENGKAO_REVIEW_URL)
         continue
       }
-      // 其余节点均无网页查分 URL 可挂（广东走小程序；江西、浙江查分 URL 未核实），不编链接。
+      // 其余节点均无网页查分 URL 可挂（广东走小程序；江西、浙江、新疆查分 URL 未核实），不编链接。
       expect(node.url).toBeUndefined()
     }
   })
@@ -554,14 +556,37 @@ describe('成考成绩分省节点', () => {
     expect(zhejiangConfirm.detail).toContain('11 月 29 日 17:00')
   })
 
-  it('11-18 当天两省节点为今天，11-19 公布完成翻已结束（单日公布事件）', () => {
-    // 按 label 取，不按下标：江西成绩复核插在两省查询之间，下标会错位。
+  it('11-18 当天三省查询节点为今天，11-19 公布完成翻已结束（单日公布事件）', () => {
+    // 按 label 取，不按下标：复核节点插在查询节点之间，下标会错位。
     const jiangxi = chengkao.nodes.find((n) => n.label === '江西成绩查询')!
     const guangdong = chengkao.nodes.find((n) => n.label === '广东成绩查询')!
+    const xinjiang = chengkao.nodes.find((n) => n.label === '新疆成绩查询')!
     expect(examNodeStatus(jiangxi, NOV_18_0800_CST)).toBe('today')
     expect(examNodeStatus(guangdong, NOV_18_0800_CST)).toBe('today')
+    expect(examNodeStatus(xinjiang, NOV_18_0800_CST)).toBe('today')
     expect(examNodeStatus(jiangxi, NOV_19_0800_CST)).toBe('done')
     expect(examNodeStatus(guangdong, NOV_19_0800_CST)).toBe('done')
+    expect(examNodeStatus(xinjiang, NOV_19_0800_CST)).toBe('done')
+  })
+
+  it('新疆成绩查询与复核（U-91）：查询 11-18 12:00 起、复核 11-18 12:00–11-20 12:00 走邮箱', () => {
+    // 新疆教育考试院 2026-11-16 公告原文，2026-11-18 核实（W3 复核：原文未变）。
+    const score = chengkao.nodes.find((n) => n.label === '新疆成绩查询')!
+    const review = chengkao.nodes.find((n) => n.label === '新疆成绩复核')!
+    expect(score.detail).toContain('11 月 18 日 12:00')
+    expect(score.detail).toContain('新疆招生网')
+    expect(score.detail).toContain('短信验证码')
+    expect(review.detail).toContain('11 月 18 日 12:00 至 11 月 20 日 12:00')
+    expect(review.detail).toContain('复核成绩申请表')
+    expect(review.detail).toContain('指定邮箱')
+    expect(review.detail).toContain('逾期不再受理')
+    expect(examNodeStatus(review, NOV_18_0800_CST)).toBe('active')
+    expect(examNodeStatus(review, NOV_20_0800_CST)).toBe('active')
+    expect(examNodeStatus(review, NOV_25_0800_CST)).toBe('done')
+    // 11-19/11-20 下一步先指新疆复核（11-18 开启，早于江西复核 11-19）。
+    const state: MyExamsState = { followed: ['chengkao'], checked: {} }
+    expect(nextTodoNode(state, chengkao, NOV_19_0800_CST)?.label).toBe('新疆成绩复核')
+    expect(nextTodoNode(state, chengkao, NOV_20_0800_CST)?.label).toBe('新疆成绩复核')
   })
 
   it('detail 写明各省查询渠道：江西栏目名、广东小程序渠道与时刻', () => {
@@ -591,11 +616,12 @@ describe('成考成绩分省节点', () => {
     expect(examNodeStatus(review, NOV_19_0800_CST)).toBe('active')
     expect(examNodeStatus(review, NOV_20_0800_CST)).toBe('active')
     expect(examNodeStatus(review, NOV_25_0800_CST)).toBe('done')
-    // 11-18 当天先指江西成绩查询（单日 today），随后才是复核；11-19 起复核为下一步。
+    // 11-18 当天先指江西成绩查询（单日 today），随后才是复核；11-19 起下一步
+    // 是新疆成绩复核（U-91：11-18 开启，早于江西复核，开始日排序在前）。
     const state: MyExamsState = { followed: ['chengkao'], checked: {} }
     expect(nextTodoNode(state, chengkao, NOV_18_0800_CST)?.label).toBe('江西成绩查询')
-    expect(nextTodoNode(state, chengkao, NOV_19_0800_CST)?.label).toBe('江西成绩复核')
-    expect(nextTodoNode(state, chengkao, NOV_20_0800_CST)?.label).toBe('江西成绩复核')
+    expect(nextTodoNode(state, chengkao, NOV_19_0800_CST)?.label).toBe('新疆成绩复核')
+    expect(nextTodoNode(state, chengkao, NOV_20_0800_CST)?.label).toBe('新疆成绩复核')
     // 11-19/11-20 仍有可办节点，成考卡片不渲染裸「已结束」（R1 谓词已覆盖）。
     expect(hasActionableNodes(chengkao, NOV_19_0800_CST)).toBe(true)
     expect(hasActionableNodes(chengkao, NOV_20_0800_CST)).toBe(true)
@@ -723,10 +749,11 @@ describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结�
     expect(examStatus(chengkao, NOV_18_0800_CST)).toBe('ended')
     expect(hasActionableNodes(chengkao, NOV_17_0800_CST)).toBe(true)
     expect(hasActionableNodes(chengkao, NOV_18_0800_CST)).toBe(true)
-    // 11-19：江西/广东已 done，但江西复核（11-19–11-20）、浙江成绩（11-20）
-    // 与志愿确认（11-25–11-29）未过；下一步先指复核（开始日最早）。
+    // 11-19：江西/广东/新疆查询已 done，但新疆复核（11-18–11-20）、江西复核
+    // （11-19–11-20）、浙江成绩（11-20）与志愿确认（11-25–11-29）未过；
+    // 下一步先指新疆复核（开始日最早）。
     expect(hasActionableNodes(chengkao, NOV_19_0800_CST)).toBe(true)
-    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_19_0800_CST)?.label).toBe('江西成绩复核')
+    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_19_0800_CST)?.label).toBe('新疆成绩复核')
     // 11-30：全部节点已过，无可办节点，卡片回到裸「已结束」。
     expect(hasActionableNodes(chengkao, NOV_30_0800_CST)).toBe(false)
     expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_30_0800_CST)).toBeUndefined()

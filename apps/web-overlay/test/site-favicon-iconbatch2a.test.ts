@@ -17,7 +17,7 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  */
 
 const CASES: Array<{ url: string; title: string; expected: string }> = [
-  { url: 'https://rollupjs.org', title: 'Rollup', expected: '/brand-icons/rollupdotjs.svg' },
+  { url: 'https://rollupjs.org', title: 'Rollup', expected: '/brand-icons/rollupdotjs.png' },
   { url: 'https://webpack.js.org', title: 'Webpack', expected: '/brand-icons/webpack.svg' },
   { url: 'https://esbuild.github.io', title: 'esbuild', expected: '/brand-icons/esbuild.svg' },
   { url: 'https://storybook.js.org', title: 'Storybook', expected: '/brand-icons/storybook.svg' },
@@ -38,7 +38,7 @@ const CASES: Array<{ url: string; title: string; expected: string }> = [
 ]
 
 const LOCAL_ASSETS = [
-  'rollupdotjs.svg',
+  'rollupdotjs.png',
   'webpack.svg',
   'esbuild.svg',
   'storybook.svg',

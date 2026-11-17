@@ -143,6 +143,17 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  // 等后台 worker 落盘停稳再删临时目录（与 A-1 文件同理：删早了 save 会抛未处理异常）。
+  const { getAuditQueue } = await import("../src/audit-queue-service.ts");
+  const queue = await getAuditQueue();
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const jobs = await queue.list();
+    if (!jobs.some((j) => j.state === "running")) break;
+    if (Date.now() > deadline) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  await new Promise((r) => setTimeout(r, 500));
   await app?.close();
   await ctx?.close();
   rmSync(dir, { recursive: true, force: true });

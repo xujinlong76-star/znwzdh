@@ -31,6 +31,7 @@ import { validateAndCleanPluginManifest } from "@navhub/core";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
+import { generateToken, hashToken } from "../src/auth.ts";
 import { signIdentity } from "../src/identity-signature.ts";
 
 const SECRET = "a1-status-gate-test-secret";
@@ -54,6 +55,7 @@ let ctx: AppContext;
 let app: Awaited<ReturnType<typeof buildServer>>;
 let adminToken = "";
 let rwToken = "";
+let ownerToken = "";
 let publishedReviewId = "";
 let delistedJobId = "";
 let pendingJobId = "";
@@ -87,6 +89,13 @@ function signedHeaders(identity: string) {
 const anonGet = (url: string) => app.inject({ method: "GET", url });
 const anonPost = (url: string, payload: unknown) => app.inject({ method: "POST", url, payload });
 const ownerGet = (url: string) => app.inject({ method: "GET", url, headers: signedHeaders(OWNER) });
+// 作者持票读 read-scope 端点：Bearer 票过 hook，签名头定身份（见 beforeAll 造票注释）。
+const ownerBearerGet = (url: string) =>
+  app.inject({
+    method: "GET",
+    url,
+    headers: { authorization: `Bearer ${ownerToken}`, ...signedHeaders(OWNER) },
+  });
 const ownerPost = (url: string, payload: unknown) =>
   app.inject({ method: "POST", url, payload, headers: signedHeaders(OWNER) });
 const strangerGet = (url: string) => app.inject({ method: "GET", url, headers: signedHeaders(STRANGER) });
@@ -141,6 +150,17 @@ beforeAll(async () => {
   });
   expect(rwMinted.statusCode).toBe(201);
   rwToken = rwMinted.json().token as string;
+
+  // 作者个人令牌：read-scope 端点在鉴权实例里只认 Bearer 票，
+  // 光带签名身份头会被 hook 以 401 拦下；票上绑 ownerIdentity 才是作者身份。
+  const ownerRaw = generateToken();
+  await ctx.repo.createApiToken({
+    name: "a1-owner-personal",
+    tokenHash: hashToken(ownerRaw),
+    scopes: "read,write",
+    ownerIdentity: OWNER,
+  });
+  ownerToken = ownerRaw;
 
   // 下架包：上架（写版本快照）→ 安装 → 评价 → 下架
   await ctx.repo.createPlugin(
@@ -267,6 +287,19 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // 等后台 worker 落盘停稳再删临时目录：POST /jobs 后 worker 异步探活落盘，
+  // 删早了它的 save 会因目录已无而抛未处理异常（vitest 计 1 error）。
+  // 只等 running 态消失即可——pending 任务无后续触发，不会再被认领。
+  const { getAuditQueue } = await import("../src/audit-queue-service.ts");
+  const queue = await getAuditQueue();
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const jobs = await queue.list();
+    if (!jobs.some((j) => j.state === "running")) break;
+    if (Date.now() > deadline) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  await new Promise((r) => setTimeout(r, 500));
   await app?.close();
   await ctx?.close();
   rmSync(dir, { recursive: true, force: true });
@@ -668,6 +701,22 @@ describe("A 批 R4-10：评价长度口径收敛", () => {
 });
 
 describe("A 批遗留：url-health 任务端点可见性门禁（jobs 列表与详情）", () => {
+  it("并发建任务：5 个并发 POST 全部 202（旧实现会因落盘竞态 500）", async () => {
+    const slugs = ["a1-race-0", "a1-race-1", "a1-race-2", "a1-race-3", "a1-race-4"];
+    const results = await Promise.all(
+      slugs.map((slug) =>
+        rwPost("/api/plugins/url-health/jobs", { slug, urls: [`https://${slug}.example.com/x`] }),
+      ),
+    );
+    const ids = new Set<string>();
+    for (const res of results) {
+      expect(res.statusCode).toBe(202);
+      ids.add(res.json().id as string);
+    }
+    // 不同 slug 不触发幂等去重：5 个任务 id 互不相同。
+    expect(ids.size).toBe(5);
+  });
+
   it("持票陌生人：jobs 列表不含下架/待审包任务、详情 404；已上架包任务仍 200 且含 URL", async () => {
     const list = await rwGet("/api/plugins/url-health/jobs");
     expect(list.statusCode).toBe(200);
@@ -693,7 +742,7 @@ describe("A 批遗留：url-health 任务端点可见性门禁（jobs 列表与�
   });
 
   it("作者与管理员：下架/待审包任务仍可读（不过度拦截）", async () => {
-    const owner = await ownerGet(`/api/plugins/url-health/jobs/${delistedJobId}`);
+    const owner = await ownerBearerGet(`/api/plugins/url-health/jobs/${delistedJobId}`);
     expect(owner.statusCode).toBe(200);
     expect(owner.json().job.urls).toContain(SECRET_URL);
     const admin = await adminGet(`/api/plugins/url-health/jobs/${pendingJobId}`);

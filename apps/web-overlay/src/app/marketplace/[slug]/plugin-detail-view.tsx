@@ -39,6 +39,7 @@ const DetailModals = dynamic(() => import('./detail-modals').then((m) => m.Detai
   ssr: false, loading: () => <div aria-busy="true" className="h-64 rounded-2xl border border-border/40 bg-muted/20"><span className="sr-only">正在加载弹窗</span></div>,
 })
 import { PluginUrlAuditBadge } from '@/components/plugins/plugin-url-audit-badge'
+import { PluginDetailUpdated } from '@/components/plugins/plugin-detail-updated'
 import { PluginSimilar } from '@/components/plugins/plugin-similar'
 
 import { getIdentity } from '@/lib/identity'
@@ -539,7 +540,7 @@ export default function PluginDetailView({
                 </Badge>
                 <span className="text-xs font-mono text-muted-foreground px-2 py-0.5 rounded-md bg-muted/50 border border-border/30">
                   v{plugin.version}
-                </span>
+                </span><PluginDetailUpdated updatedAt={plugin.updatedAt} />
                 {plugin.license && (
                   <span className="text-xs text-muted-foreground font-mono">
                     协议: {plugin.license}

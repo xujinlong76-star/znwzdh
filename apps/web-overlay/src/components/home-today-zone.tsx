@@ -97,7 +97,7 @@ export function HomeTodayZone() {
                     href={safeHref(drama.url)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="min-w-0 max-w-full truncate text-sm font-medium hover:text-primary"
+                    className="inline-flex min-h-11 min-w-0 max-w-full items-center truncate text-sm font-medium hover:text-primary"
                   >
                     {drama.title}
                   </a>

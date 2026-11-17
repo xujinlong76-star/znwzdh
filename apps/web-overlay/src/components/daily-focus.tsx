@@ -98,7 +98,7 @@ export default function DailyFocus() {
           <p className="mt-2 text-lg font-medium leading-relaxed sm:text-xl">
             <span className={focus.done ? 'text-muted-foreground line-through' : undefined}>{focus.text}</span>
             {focus.done ? (
-              <span className="ml-2 inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 align-middle text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+              <span className="ml-2 inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 align-middle text-xs font-medium text-emerald-700 dark:text-emerald-400">
                 已完成
               </span>
             ) : null}
@@ -170,7 +170,7 @@ export default function DailyFocus() {
               </button>
             ) : null}
           </div>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
+          <p className="mt-1.5 text-xs text-muted-foreground">
             只存在你这台浏览器里，不会同步到别处；明天自动清空，重新定。
           </p>
         </form>

@@ -542,6 +542,24 @@ export function defusedWiringProblems(jobBlock, entry) {
     );
   }
 
+  // 分片限定门禁（U-21）：登记表里有 shard 的门禁只在指定分片跑；读数步骤
+  // 必须以 NAVHUB_MATRIX_SHARD 把本分片号传给脚本，否则脚本不知道自己是
+  // 哪片，会把「按设计跳过」算成「没跑成」而误报。无 shard 门禁的作业不要求。
+  const shardGates = [...(entry.gates ?? []), ...(entry.env ?? [])].filter(
+    (s) => s.shard !== undefined && s.shard !== null,
+  );
+  if (
+    shardGates.length > 0 &&
+    !/NAVHUB_MATRIX_SHARD:\s*\$\{\{\s*matrix\.shard\s*\}\}/.test(reporterBlock)
+  ) {
+    problems.push(
+      `${entry.job}: 登记表里有分片限定门禁（${shardGates
+        .map((s) => `${s.id}（分片 ${s.shard}）`)
+        .join('、')}），` +
+        '但读数步骤没有传 NAVHUB_MATRIX_SHARD: ${{ matrix.shard }}——脚本分不清自己是哪片，会把按设计跳过的门禁算成没跑成',
+    );
+  }
+
   for (const id of ids) {
     const at = indexOf(id);
     if (at < 0) {

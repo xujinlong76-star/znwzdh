@@ -347,6 +347,25 @@ describe("撤防账：接线（对真实 ci.yml 的作业片段派生夹具）",
     expect(lib.defusedWiringProblems(weakened, entryOf("test-web")).join("\n")).toContain("--job test-web");
   });
 
+  it("U-21 回归：分片限定门禁的作业漏传 NAVHUB_MATRIX_SHARD ⇒ 红", () => {
+    // quarantine-e2e 只在分片 1 跑（登记表 shard: 1）；读数步骤不传本分片号，
+    // 脚本在分片 2 上会把「按设计跳过」算成「没跑成」而误报。删掉这一行就该红。
+    const weakened = jobBlock("test-e2e").replace(
+      "          NAVHUB_MATRIX_SHARD: ${{ matrix.shard }}\n",
+      "",
+    );
+    expect(weakened).not.toContain("NAVHUB_MATRIX_SHARD");
+    const text = lib.defusedWiringProblems(weakened, entryOf("test-e2e")).join("\n");
+    expect(text).toContain("NAVHUB_MATRIX_SHARD");
+  });
+
+  it("U-21 口径：无分片限定门禁的矩阵作业不要求传 shard", () => {
+    // test-sqlite 也是矩阵作业（/3），但登记表里没有任何门禁带 shard：
+    // 传不传都不影响读数，不逼它接线。反之 test-e2e 有 shard: 1 的门禁才必须传。
+    expect(lib.defusedWiringProblems(jobBlock("test-sqlite"), entryOf("test-sqlite"))).toEqual([]);
+    expect(jobBlock("test-sqlite")).not.toContain("NAVHUB_MATRIX_SHARD");
+  });
+
   it("登记的门禁 id 被改名 ⇒ 红：账上还在等它，YAML 里已经没有这一步", () => {
     const weakened = jobBlock("test-web").replace("        id: web-budget\n", "");
     expect(weakened).not.toContain("id: web-budget");

@@ -855,6 +855,7 @@ jobs:
         if: ${{ always() }}
         env:
           NAVHUB_STEP_CONCLUSIONS: ${{ toJSON(steps) }}
+          NAVHUB_MATRIX_SHARD: ${{ matrix.shard }}
         run: node scripts/ci-defused-gates.mjs --job test-e2e
 
   docker-smoke:

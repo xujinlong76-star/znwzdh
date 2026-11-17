@@ -181,11 +181,11 @@ export const codeSearchPack: SeedPluginDef = {
           "description": "云原生基础设施 Provider 与 Module 模块仓库"
         },
         {
-          "name": "Libraries.io 依赖网络",
-          "prefix": "!librariesio",
-          "searchUrl": "https://libraries.io/search?q={q}",
+          "name": "Deps.dev 依赖洞察",
+          "prefix": "!depsdev",
+          "searchUrl": "https://deps.dev/search?q={q}",
           "icon": "📚",
-          "description": "跨 32 个包管理器的开源软件依赖图谱与依赖健康度"
+          "description": "Google 开源依赖洞察：跨 npm、Maven、PyPI、Go 等生态的依赖图谱与版本信息，免登录直达"
         },
         {
           "name": "LibHunt 开源库发现",

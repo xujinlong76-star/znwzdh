@@ -14,7 +14,7 @@ export const creatorGrowthBundle: SeedPluginDef = {
     kind: "bundle",
     name: "创作者增长组合包",
     description:
-      "自媒体与运营的一体化开局：共 3 个成员——中文生活检索包（37 个 !前缀）1 个搜索引擎包，配暖阳琥珀与纸感拿铁 2 套浅色主题。用 !xhs、!weibo、!dy、!bili、!zh 等前缀直达社交、短视频与问答检索，从选题到分发一次成型。",
+      "自媒体与运营的一体化开局：共 3 个成员——中文生活检索包（36 个 !前缀）1 个搜索引擎包，配暖阳琥珀与纸感拿铁 2 套浅色主题。用 !xhs、!weibo、!dy、!bili、!zh 等前缀直达社交、短视频与问答检索，从选题到分发一次成型。",
     icon: "🚀",
     author: "山羊胡官方",
     license: "MIT",

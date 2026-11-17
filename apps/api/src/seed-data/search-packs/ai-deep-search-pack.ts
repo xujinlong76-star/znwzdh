@@ -156,11 +156,11 @@ export const aiDeepSearchPack: SeedPluginDef = {
           "description": "Anthropic 旗舰逻辑长文本与编程大模型"
         },
         {
-          "name": "Google Gemini",
-          "prefix": "!gemini",
-          "searchUrl": "https://gemini.google.com/app?q={q}",
-          "icon": "💎",
-          "description": "谷歌原生多模态实时全球知识深度搜索模型"
+          "name": "Duck.ai 智能对话",
+          "prefix": "!duckai",
+          "searchUrl": "https://duck.ai/?q={q}",
+          "icon": "🦆",
+          "description": "DuckDuckGo 出品的免费匿名 AI 对话，免登录直达、无需账号"
         },
         {
           "name": "Google AI Studio",
@@ -282,11 +282,11 @@ export const aiDeepSearchPack: SeedPluginDef = {
           "description": "大模型价格、吞吐量与首字延迟真实基准对比"
         },
         {
-          "name": "You.com 深度搜索",
-          "prefix": "!you",
-          "searchUrl": "https://you.com/search?q={q}",
+          "name": "Qwant 搜索",
+          "prefix": "!qwant",
+          "searchUrl": "https://www.qwant.com/?q={q}",
           "icon": "🔍",
-          "description": "融合多来源信源的生成式研究搜索工作台"
+          "description": "欧洲独立搜索引擎，匿名检索、无需登录"
         }
       ]
     }

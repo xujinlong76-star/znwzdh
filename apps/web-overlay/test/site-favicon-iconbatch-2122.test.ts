@@ -19,16 +19,16 @@ const CASES: Array<{ url: string; title: string; expected: string }> = [
   { url: 'https://ant.design', title: 'Ant Design', expected: '/brand-icons/antdesign.svg' },
   { url: 'https://kubernetes.io', title: 'Kubernetes', expected: '/brand-icons/kubernetes.svg' },
   { url: 'https://spring.io/projects/spring-boot', title: 'Spring Boot', expected: '/brand-icons/springboot.svg' },
-  { url: 'https://www.notion.com', title: 'Notion', expected: 'https://www.notion.so/images/favicon.ico' },
-  { url: 'https://www.radix-ui.com', title: 'Radix UI', expected: 'https://github.com/radix-ui.png?size=64' },
+  { url: 'https://www.notion.com', title: 'Notion', expected: '/brand-icons/notion.png' },
+  { url: 'https://www.radix-ui.com', title: 'Radix UI', expected: '/brand-icons/radix-ui.svg' },
   { url: 'https://boardmix.cn/', title: 'Boardmix', expected: '/brand-icons/boardmix.jpg' },
   { url: 'https://docs.qq.com', title: '腾讯文档', expected: '/brand-icons/tencent-docs.jpg' },
   { url: 'https://www.kdocs.cn', title: '金山文档', expected: '/brand-icons/kdocs.jpg' },
-  { url: 'https://sspai.com', title: '少数派', expected: 'https://sspai.com/apple-touch-icon.png' },
-  { url: 'https://www.pinduoduo.com', title: '拼多多', expected: 'https://www.pinduoduo.com/favicon.png' },
+  { url: 'https://sspai.com', title: '少数派', expected: '/brand-icons/sspai.png' },
+  { url: 'https://www.pinduoduo.com', title: '拼多多', expected: '/brand-icons/pinduoduo.png' },
   { url: 'https://hongguoduanju.com/', title: '红果短剧', expected: '/brand-icons/hongguo.jpg' },
   // 烂条目修复：旧值均为 404（curl 验证），新值逐个验证过 200 + image MIME。
-  { url: 'https://lumalabs.ai/app', title: 'Luma AI', expected: 'https://luma.ai/favicon.ico' },
+  { url: 'https://lumalabs.ai/app', title: 'Luma AI', expected: '/brand-icons/luma.png' },
   { url: 'https://zhiwen.xfyun.cn', title: '讯飞智文', expected: 'https://zhiwen.xfyun.cn/favicon.png' },
 ]
 

@@ -101,13 +101,13 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'ant.design': '/brand-icons/antdesign.png',
   'kubernetes.io': '/brand-icons/kubernetes.svg',
   'spring.io': '/brand-icons/springboot.svg',
-  'notion.com': 'https://www.notion.so/images/favicon.ico',
-  'radix-ui.com': 'https://github.com/radix-ui.png?size=64',
+  'notion.com': '/brand-icons/notion.png',
+  'radix-ui.com': '/brand-icons/radix-ui.svg',
   'boardmix.cn': '/brand-icons/boardmix.jpg',
   'docs.qq.com': '/brand-icons/tencent-docs.jpg',
   'kdocs.cn': '/brand-icons/kdocs.jpg',
-  'sspai.com': 'https://sspai.com/apple-touch-icon.png',
-  'pinduoduo.com': 'https://www.pinduoduo.com/favicon.png',
+  'sspai.com': '/brand-icons/sspai.png',
+  'pinduoduo.com': '/brand-icons/pinduoduo.png',
   'hongguoduanju.com': '/brand-icons/hongguo.jpg',
   // 2026-11-17（进化轮第二批 2a）：48 站缺失清单里的 Simple Icons 18 站。
   // 全部 curl 重新验证（200 + SVG 魔数 + <title> 品牌一致）后本地落盘，
@@ -224,7 +224,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 2026-11-16：旧值 https://lumalabs.ai/favicon.ico 经 curl 验证 404，
   // 改用 Luma 官方备用域名 luma.ai 的同名 favicon（200 image/x-icon 15086B，
   // 内容为 Luma 四角星品牌标）。
-  'lumalabs.ai': 'https://luma.ai/favicon.ico',
+  'lumalabs.ai': '/brand-icons/luma.png',
   'vidu.studio': 'https://www.vidu.studio/favicon.ico',
   'hailuoai.com': '/brand-icons/hailuoai.png',
   'chatgpt.com': '/brand-icons/chatgpt.svg',
@@ -317,6 +317,20 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 新建键（旧键 runwayml.com 为死键，全库无站命中，不动；兄弟键
   // klingai.kuaishou.com 全库无站命中，不动）。
   'runway.com': '/brand-icons/runway.png',
+  // 2026-11-17（B 类第 5 批之 B3a：Luma AI / Radix UI / Notion / freeCodeCamp）：
+  // 4 站热链本地化。lumalabs.ai / radix-ui.com / notion.com 为原地替换旧值
+  //（旧值均为远程热链，勿重复建键）；freecodecamp.org 为新键（须与
+  // navigation.json.patch 同提交删 icon 行，否则 customIcon 截胡，见 R1）。
+  // Radix 为近黑标（fill #1C2024，透明底），与 Ollama / SourceHut 同款处理：
+  // 只加普通 map 条目，不做白底色块；深色模式黑标对比度弱是已知局限，
+  // 留待深色底块统一处理轮。
+  'freecodecamp.org': '/brand-icons/freecodecamp.png',
+  // 2026-11-17（图标 B 类第 3 批 b3b）：少数派 / 拼多多 / 微信，本地化。
+  // sspai.com、pinduoduo.com 为旧键原地替换值（上方已改，勿重复建键）；
+  // weixin.qq.com 为新键（微信 icon 已同步清空，见 navigation-icon-clear-b3b.patch，
+  // 仅改这一行）。少数派/拼多多的 customIcon 均为 …/favicon.ico，会被
+  // isRemoteRawFavicon 拦截后回落 map，无需清空。
+  'weixin.qq.com': '/brand-icons/weixin.png',
 }
 
 /**

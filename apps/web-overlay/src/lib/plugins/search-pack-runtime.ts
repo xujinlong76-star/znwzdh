@@ -17,6 +17,13 @@ export interface InstalledSearchEngine {
   description?: string
   icon?: string
   pluginSlug?: string
+  /**
+   * P3-8：内置引擎标识。系统自带的 6 个默认引擎为 true；插件注册的
+   * 引擎（registerSearchPackEngines 写入）与用户 quicklink 转来的引擎
+   * 均为 false/缺省。以前默认引擎挂着 pluginSlug 'dev-search-arsenal'，
+   * 看起来像来自某个插件，与插件引擎无法区分，现已去掉、只认本字段。
+   */
+  builtin?: boolean
 }
 
 export const SEARCH_PACKS_STORAGE_KEY = 'navhub_installed_search_engines_v1'
@@ -29,7 +36,7 @@ export const DEFAULT_SEARCH_ENGINES: InstalledSearchEngine[] = [
     searchUrl: 'https://github.com/search?q={q}',
     description: '检索开源项目、代码与 Issue',
     icon: 'https://github.githubassets.com/favicons/favicon.svg',
-    pluginSlug: 'dev-search-arsenal',
+    builtin: true,
   },
   {
     id: 'npm',
@@ -38,7 +45,7 @@ export const DEFAULT_SEARCH_ENGINES: InstalledSearchEngine[] = [
     searchUrl: 'https://www.npmjs.com/search?q={q}',
     description: 'JavaScript / TypeScript 依赖包检索',
     icon: 'https://static-production.npmjs.com/b0f1a8318363185cc2ea6a400e32622c.png',
-    pluginSlug: 'dev-search-arsenal',
+    builtin: true,
   },
   {
     id: 'mdn',
@@ -47,7 +54,7 @@ export const DEFAULT_SEARCH_ENGINES: InstalledSearchEngine[] = [
     searchUrl: 'https://developer.mozilla.org/zh-CN/search?q={q}',
     description: '权威 Web 技术规范与 API 参考手册',
     icon: 'https://developer.mozilla.org/favicon-48x48.png',
-    pluginSlug: 'dev-search-arsenal',
+    builtin: true,
   },
   {
     id: 'stackoverflow',
@@ -56,7 +63,7 @@ export const DEFAULT_SEARCH_ENGINES: InstalledSearchEngine[] = [
     searchUrl: 'https://stackoverflow.com/search?q={q}',
     description: '程序员技术问答与疑难方案直达',
     icon: 'https://cdn.sstatic.net/Sites/stackoverflow/Img/favicon.ico',
-    pluginSlug: 'dev-search-arsenal',
+    builtin: true,
   },
   {
     id: 'devdocs',
@@ -65,7 +72,7 @@ export const DEFAULT_SEARCH_ENGINES: InstalledSearchEngine[] = [
     searchUrl: 'https://devdocs.io/#q={q}',
     description: '全栈开发文档快速速查',
     icon: 'https://devdocs.io/favicon.ico',
-    pluginSlug: 'dev-search-arsenal',
+    builtin: true,
   },
   {
     id: 'caniuse',
@@ -74,7 +81,7 @@ export const DEFAULT_SEARCH_ENGINES: InstalledSearchEngine[] = [
     searchUrl: 'https://caniuse.com/?search={q}',
     description: '前端现代特性与浏览器兼容性查询',
     icon: 'https://caniuse.com/img/favicon-128.png',
-    pluginSlug: 'dev-search-arsenal',
+    builtin: true,
   },
 ]
 
@@ -100,12 +107,17 @@ export function saveCustomSearchEngines(engines: InstalledSearchEngine[]): void 
   }
 }
 
+/** P3-8：是不是系统自带引擎。只认 builtin 字段，不认 pluginSlug（默认引擎以前挂着假的 pluginSlug）。 */
+export function isBuiltinSearchEngine(engine: InstalledSearchEngine): boolean {
+  return engine.builtin === true
+}
+
 export function getAllSearchEngines(): InstalledSearchEngine[] {
   const custom = getCustomSearchEngines()
   const customPrefixes = new Set(custom.map((e) => e.prefix.toLowerCase()))
   const preservedDefaults = DEFAULT_SEARCH_ENGINES.filter(
     (def) => !customPrefixes.has(def.prefix.toLowerCase())
-  )
+  ).map((def) => ({ ...def, builtin: true }))
   return [...preservedDefaults, ...custom]
 }
 

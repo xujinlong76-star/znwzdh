@@ -41,6 +41,19 @@ export function getIdentity(): string {
   return getAnonId()
 }
 
+/**
+ * P3-8：是否已登录。只看登录用户 id 键在不在 localStorage；
+ * 未登录时身份是本机 anonId，数据仅保存在本机。SSR 阶段返回 false。
+ */
+export function isLoggedIn(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return Boolean(window.localStorage.getItem(USER_ID_STORAGE_KEY))
+  } catch {
+    return false
+  }
+}
+
 export function setIdentity(userId: string): void {
   const value = userId.trim()
   // 匿名 id 绝不能写进 userId 键：那会让 getIdentity() 把匿名身份误当登录身份，

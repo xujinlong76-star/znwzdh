@@ -29,7 +29,7 @@ import {
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { MarketplaceLoadError } from '@/components/marketplace-load-error'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
-import { getIdentity } from '@/lib/identity'
+import { getIdentity, isLoggedIn } from '@/lib/identity'
 import {
   getActiveTheme,
   isThemeSuspended,
@@ -39,6 +39,7 @@ import {
 } from '@/lib/plugins/theme-runtime'
 import {
   getAllSearchEngines,
+  isBuiltinSearchEngine,
   registerSearchPackEngines,
   unregisterSearchPackEngines,
   type InstalledSearchEngine,
@@ -80,6 +81,9 @@ export default function InstalledPluginsPage() {
   const [activeThemeState, setActiveThemeState] = useState<ActiveThemeConfig | null>(null)
   const [themeSuspended, setThemeSuspended] = useState(false)
   const [searchEngines, setSearchEngines] = useState<InstalledSearchEngine[]>([])
+  // P3-8：未登录时身份是本机 anonId（见 lib/identity.ts），已安装记录
+  // 仅保存在本机；null = 首载前尚未判定，不抢先渲染匿名文案。
+  const [isAnonymous, setIsAnonymous] = useState<boolean | null>(null)
   const [upgradingSlug, setUpgradingSlug] = useState<string | null>(null)
   // P2-4：批量更新进行态 + 进度（done/total），按钮文案与禁用都看它。
   const [updatingAll, setUpdatingAll] = useState(false)
@@ -116,6 +120,8 @@ export default function InstalledPluginsPage() {
     setNotice(null)
     try {
       const identity = getIdentity()
+      // P3-8：先定身份再拉数据，匿名与否决定 hero 下是否出现本机保存说明。
+      setIsAnonymous(!isLoggedIn())
       let failed = false
       const res = await fetchInstalledPlugins(identity, (err) => {
         failed = true
@@ -402,6 +408,13 @@ export default function InstalledPluginsPage() {
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed max-w-2xl">
                 管理当前设备与账号已安装的所有扩展。支持多套主题一键切换、快捷前缀直达语法速查、待更新插件平滑升级与彻底清理。
               </p>
+              {/* P3-8：未登录时身份只是本机 localStorage 里的 anonId，
+                  换设备会消失——这句必须写在页面上，不能只藏在代码注释里。 */}
+              {isAnonymous === true && (
+                <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed max-w-2xl">
+                  未登录时仅保存在本机：已安装记录绑定本机匿名身份，换设备或清除浏览器数据后不会同步；登录后可在多设备间同步。
+                </p>
+              )}
               {updateCount > 0 && (
                 <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-2">
                   有 {updateCount} 个插件可升级，已置顶显示，点右上角「全部更新」可一键升完。
@@ -570,14 +583,21 @@ export default function InstalledPluginsPage() {
               </div>
               <span className="text-xs text-muted-foreground">在搜索框输入对应前缀秒级直达</span>
             </div>
+            {/* P3-8：内置与插件引擎必须一眼分清——以前 !gh 等 6 个内置引擎
+                0 插件时也照常列出，且与插件注册的引擎长得一模一样。 */}
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              「内置」为系统自带引擎，不装任何插件也可使用；「插件」来自已安装的搜索引擎包，卸载对应插件后消失。
+            </p>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
-              {searchEngines.map((eng) => (
+              {searchEngines.map((eng) => {
+                const builtin = isBuiltinSearchEngine(eng)
+                return (
                 <button
                   type="button"
                   key={eng.prefix}
                   onClick={() => safeWindowOpen(eng.searchUrl.replace('{q}', ''))}
                   className="p-2.5 rounded-lg border border-border/60 bg-background/60 hover:bg-muted/70 hover:border-primary/40 cursor-pointer transition-all flex flex-col gap-1 group text-left"
-                  title={`${eng.description ?? eng.name} (点击直达)`}
+                  title={`${eng.description ?? eng.name}（${builtin ? '内置引擎' : `插件引擎${eng.pluginSlug ? `：${eng.pluginSlug}` : ''}`}，点击直达）`}
                 >
                   <div className="flex items-center justify-between w-full">
                     <span className="font-mono text-xs font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
@@ -585,11 +605,24 @@ export default function InstalledPluginsPage() {
                     </span>
                     <ExternalLink className="w-3 h-3 text-muted-foreground opacity-40 group-hover:opacity-100" />
                   </div>
-                  <span className="text-xs font-medium text-foreground truncate mt-1">
-                    {eng.name}
+                  <span className="text-xs font-medium text-foreground truncate mt-1 flex items-center gap-1.5">
+                    <span className="truncate">{eng.name}</span>
+                    {builtin ? (
+                      <span className="text-[10px] px-1 py-0.5 rounded font-bold bg-muted text-muted-foreground leading-none shrink-0">
+                        内置
+                      </span>
+                    ) : (
+                      <span
+                        className="text-[10px] px-1 py-0.5 rounded font-bold bg-primary/10 text-primary leading-none shrink-0"
+                        title={eng.pluginSlug ? `来自插件 ${eng.pluginSlug}` : '来自已安装的插件'}
+                      >
+                        插件
+                      </span>
+                    )}
                   </span>
                 </button>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}

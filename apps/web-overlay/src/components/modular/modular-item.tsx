@@ -456,7 +456,7 @@ function ModularItemImpl({
               />
             }
           >
-            <LazyWidget config={widget.config} />
+            <LazyWidget config={widget.config} title={widget.customTitle || def.title} onConfigure={onOpenConfig ? () => onOpenConfig(widget) : undefined} />
           </Suspense>
         </ModuleErrorBoundary>
       </div>

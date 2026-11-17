@@ -62,6 +62,25 @@ export interface DeclarativeWidgetConfig {
 
 interface DeclarativeWidgetProps {
   config?: DeclarativeWidgetConfig
+  /** 外框标题（种子 customTitle 透传）；无则用 config.title，兜底通用名 */
+  title?: string
+  /** 空态「配置数据源」按钮回调；未传入时按钮不渲染（不留点不开的死按钮） */
+  onConfigure?: () => void
+}
+
+/** 无数据空态：只做引导，不显示示例数字、不填假值 */
+function EmptyState({ onConfigure }: { onConfigure?: () => void }) {
+  return (
+    <div className="h-full flex flex-col items-center justify-center gap-2 px-4 text-center">
+      <h5 className="text-sm font-semibold text-foreground">暂无数据</h5>
+      <p className="text-[11px] text-muted-foreground">此卡片尚未连接数据源，不会显示示例数字</p>
+      {onConfigure && (
+        <Button variant="outline" size="sm" onClick={onConfigure}>
+          配置数据源
+        </Button>
+      )}
+    </div>
+  )
 }
 
 /** 校验微组件取数端点或外链是否安全（仅允许站内单斜杠相对路径或 http/https 协议，阻断 javascript:/data: 伪协议） */
@@ -78,8 +97,8 @@ function isSafeWidgetUrl(raw?: string): boolean {
   }
 }
 
-export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
-  const title = config?.title || '声明式微组件'
+export function DeclarativeWidget({ config, title: titleProp, onConfigure }: DeclarativeWidgetProps) {
+  const title = titleProp || config?.title || '声明式微组件'
   const layout = config?.layout || 'kpi-grid'
   const endpoint = config?.endpoint
   const items = config?.items
@@ -89,6 +108,10 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
   const [data, setData] = useState<any>(config?.items || [])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+
+  const dataList = Array.isArray(data) ? data : []
+  // 空态门控：无数据、非加载中、无错误时才显示空态（取数中不闪烁）
+  const isEmpty = !loading && !errorMsg && dataList.length === 0
 
   const abortRef = useRef<AbortController | null>(null)
 
@@ -177,9 +200,11 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
             <AlertCircle className="h-4 w-4" />
             <span>{errorMsg}</span>
           </div>
+        ) : isEmpty ? (
+          <EmptyState onConfigure={onConfigure} />
         ) : layout === 'kpi-grid' ? (
           <div className="grid grid-cols-2 gap-2.5 h-full items-center">
-            {(Array.isArray(data) ? data : []).map((kpi: DeclarativeWidgetKpiItem, idx: number) => (
+            {dataList.map((kpi: DeclarativeWidgetKpiItem, idx: number) => (
               <div
                 key={idx}
                 className="p-2.5 rounded-xl border border-border/60 bg-muted/40 flex flex-col justify-between"
@@ -213,7 +238,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
           </div>
         ) : layout === 'key-value' ? (
           <div className="space-y-2">
-            {(Array.isArray(data) ? data : []).map((kv: DeclarativeWidgetKeyValueItem, idx: number) => (
+            {dataList.map((kv: DeclarativeWidgetKeyValueItem, idx: number) => (
               <div
                 key={idx}
                 className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/40 text-xs"
@@ -231,7 +256,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
           </div>
         ) : layout === 'progress-bar' ? (
           <div className="space-y-3">
-            {(Array.isArray(data) ? data : []).map((prog: DeclarativeWidgetProgressItem, idx: number) => {
+            {dataList.map((prog: DeclarativeWidgetProgressItem, idx: number) => {
               const pct = Math.min(100, Math.round((prog.current / Math.max(1, prog.total)) * 100))
               return (
                 <div key={idx} className="space-y-1">
@@ -253,7 +278,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
           </div>
         ) : layout === 'feed-list' ? (
           <div className="space-y-2">
-            {(Array.isArray(data) ? data : []).map((item: DeclarativeWidgetFeedItem, idx: number) => {
+            {dataList.map((item: DeclarativeWidgetFeedItem, idx: number) => {
               const safeHref = isSafeWidgetUrl(item.url) ? item.url! : '#'
               return (
                 <a
@@ -282,7 +307,9 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
               )
             })}
           </div>
-        ) : (
+        ) : dataList.length > 0 ? (
+          // status-badge：仅在有数据时才渲染状态断言；无数据时上游 isEmpty 已走空态，
+          // 此处双重门控覆盖未知 layout 落点与取数中（loading）的数据为空态
           <div className="h-full flex flex-col items-center justify-center space-y-2">
             <div className="h-10 w-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
               <CheckCircle2 className="h-5 w-5" />
@@ -291,6 +318,11 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
               <h5 className="text-sm font-semibold text-foreground">系统运行正常</h5>
               <p className="text-[11px] text-muted-foreground">所有核心中枢与数据流完全就绪</p>
             </div>
+          </div>
+        ) : (
+          // 取数中且无数据：不断言运行正常，也不闪空态，给中性加载态
+          <div className="h-full flex items-center justify-center">
+            <span className="text-xs text-muted-foreground">正在加载…</span>
           </div>
         )}
       </div>

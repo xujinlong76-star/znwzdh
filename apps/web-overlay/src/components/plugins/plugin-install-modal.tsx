@@ -30,6 +30,10 @@ import {
   unregisterSearchPackEngines,
 } from '@/lib/plugins/search-pack-runtime'
 import { getIdentity } from '@/lib/identity'
+import {
+  REVIEW_PROMPT_DURATION_MS,
+  takeReviewPromptAction,
+} from '@/lib/plugins/review-prompt'
 
 export interface PluginInstallModalProps {
   plugin: HubPluginItem | null
@@ -282,6 +286,28 @@ export function PluginInstallModal({
               ` · 用时 ${elapsedSec}s`
             : undefined
 
+        /**
+         * P1-5 邀评：新装 / 升级成功才提示（alreadyInstalled 什么都没新装，
+         * 不打扰）；同一插件只提示一次（takeReviewPromptAction 内部记
+         * localStorage，提示过返回 null）。入口指向该插件详情页评价区
+         *（?tab=reviews 深链），不编造任何评分 / 安装量 / 评论。
+         */
+        const reviewAction = res.alreadyInstalled
+          ? null
+          : takeReviewPromptAction(plugin.slug)
+        const successOptions = sitePackDescription
+          ? { description: sitePackDescription }
+          : plugin.kind === 'bundle' && !res.alreadyInstalled
+            ? {
+                description:
+                  (installedCount > 0
+                    ? `已安装 ${installedCount} 个新成员；主题类成员可在「已安装」页启用。`
+                    : '所有成员此前均已安装，无需重复引入。') + `用时 ${elapsedSec}s`,
+              }
+            : res.alreadyInstalled
+              ? { description: `未产生重复数据 · 用时 ${elapsedSec}s` }
+              : undefined
+
         toast.success(
           isUpdate
             ? `已更新到 v${plugin.version}！`
@@ -290,18 +316,14 @@ export function PluginInstallModal({
               : plugin.kind === 'bundle'
                 ? `组合包「${plugin.name}」处理完成`
                 : `成功安装「${plugin.name}」！`,
-          sitePackDescription
-            ? { description: sitePackDescription }
-            : plugin.kind === 'bundle' && !res.alreadyInstalled
-              ? {
-                  description:
-                    (installedCount > 0
-                      ? `已安装 ${installedCount} 个新成员；主题类成员可在「已安装」页启用。`
-                      : '所有成员此前均已安装，无需重复引入。') + `用时 ${elapsedSec}s`,
-                }
-              : res.alreadyInstalled
-                ? { description: `未产生重复数据 · 用时 ${elapsedSec}s` }
-                : undefined,
+          reviewAction
+            ? {
+                ...successOptions,
+                duration: REVIEW_PROMPT_DURATION_MS,
+                closeButton: true,
+                action: reviewAction,
+              }
+            : successOptions,
         )
       } else {
         // 卸载

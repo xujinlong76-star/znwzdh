@@ -45,6 +45,10 @@ import {
 } from '@/lib/plugins/search-pack-runtime'
 import { comparePluginVersions } from '@/lib/plugins/plugin-manifest'
 import {
+  pluginReviewUrl,
+  showInstallReviewPrompt,
+} from '@/lib/plugins/review-prompt'
+import {
   ArrowLeft,
   Boxes,
   Check,
@@ -217,6 +221,9 @@ export default function InstalledPluginsPage() {
       }
 
       showActionMessage(`插件已成功升级至最新版本`)
+      // P1-5 邀评：升级成功 = 用户已在用，值得请他评价；同一插件只提示一次，
+      // 入口指向该插件详情页评价区（?tab=reviews 深链）。
+      showInstallReviewPrompt(item.slug, item.name)
       await loadData()
     } catch (err) {
       showActionMessage(`升级失败：${failureDescription(err)}`, () => void handleUpgrade(item))
@@ -649,6 +656,16 @@ export default function InstalledPluginsPage() {
                       <Button asChild size="sm" variant="ghost" className="h-7 text-xs">
                         <Link href={`/marketplace/${encodeURIComponent(item.slug)}`}>
                           查看详情
+                        </Link>
+                      </Button>
+                      {/* P1-5 邀评常驻入口：错过安装成功提示的用户仍可从这里进评价区；
+                          链接直达详情页评价选项卡（?tab=reviews），不展示任何评分数字。 */}
+                      <Button asChild size="sm" variant="ghost" className="h-7 text-xs">
+                        <Link
+                          href={pluginReviewUrl(item.slug)}
+                          title="去评价区写下你的使用体验"
+                        >
+                          去评价
                         </Link>
                       </Button>
                     </div>

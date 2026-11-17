@@ -187,5 +187,56 @@ describe("Taxonomy Phase 3: SKOS Categories & Typed Site Relations", () => {
     expect(penpotAfterPurge.incoming.length).toBe(0);
     expect(penpotAfterPurge.all.length).toBe(0);
   });
+
+  // U-85：findRelationsByQuery 单字查询只对 CJK 单字放行。
+  it("findRelationsByQuery 单字 CJK 有结果，单字非 CJK / 通配符为空", async () => {
+    const cat = await repo.createCategory({ title: "作图工具" });
+    const source = await repo.createSite({
+      url: "https://draw.example.com",
+      title: "在线作图",
+      categoryId: cat.id,
+    });
+    // targetUrl 特意含拉丁字母 'e'：若 '%' 未转义，"e%" 会退化成含 'e' 匹配，
+    // 下面的转义回归用例就能抓到。
+    await repo.setSiteRelations(source.id, [
+      {
+        targetTitle: "图怪兽",
+        targetUrl: "https://tumonster.example.com",
+        relationType: "alternative",
+        isFreeOrOpenSource: false,
+        note: "在线作图工具",
+        confidence: 0.9,
+      },
+    ]);
+
+    // 单字 CJK：有结果，且每条都真实含“图”、源站存在且启用
+    const cjk = await repo.findRelationsByQuery("图", 5);
+    expect(cjk.length).toBeGreaterThanOrEqual(1);
+    expect(cjk.length).toBeLessThanOrEqual(5);
+    expect(cjk.some((r) => r.targetTitle === "图怪兽")).toBe(true);
+    for (const r of cjk) {
+      expect(r.sourceSite).toBeDefined();
+      expect(r.sourceSite.enabled).toBe(true);
+      expect(String(r.targetTitle ?? "").includes("图") || String(r.targetUrl ?? "").includes("图")).toBe(true);
+    }
+
+    // 单拉丁字母 / 数字：仍为空（LIKE '%e%' 全表命中无关 alternative 的反例）
+    expect(await repo.findRelationsByQuery("e", 5)).toEqual([]);
+    expect(await repo.findRelationsByQuery("a", 5)).toEqual([]);
+    expect(await repo.findRelationsByQuery("1", 5)).toEqual([]);
+
+    // 通配符本身：转义后不命中全表
+    expect(await repo.findRelationsByQuery("%", 5)).toEqual([]);
+    expect(await repo.findRelationsByQuery("_", 5)).toEqual([]);
+
+    // 转义回归：含 '%' 的多字查询只按字面匹配，不退化成通配
+    expect(await repo.findRelationsByQuery("e%", 5)).toEqual([]);
+    expect(await repo.findRelationsByQuery("图%", 5)).toEqual([]);
+
+    // 长度 ≥2 行为不变
+    const twoChar = await repo.findRelationsByQuery("图怪", 5);
+    expect(twoChar.length).toBeGreaterThanOrEqual(1);
+    expect(twoChar.some((r) => r.targetTitle === "图怪兽")).toBe(true);
+  });
 });
 

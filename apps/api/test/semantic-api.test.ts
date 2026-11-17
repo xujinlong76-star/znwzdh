@@ -190,5 +190,72 @@ describe("Taxonomy Phase 3: Semantic API & Site Relations", () => {
     expect(body.relationHits[0].sourceSite).toBeDefined();
     expect(body.relationHits[0].sourceSite.title).toBe("Cursor");
   });
+
+  // U-85：单字查询的 relation 补救只对 CJK 单字放行。先给 Cursor 挂一条目标含
+  // “图”的关系（PUT 会替换该站点的全部关系，放在既有 relationHits 用例之后，
+  // 不影响前面的 Continue.dev 断言）。
+  it("GET /api/search?q=图 单字 CJK 返回 relationHits", async () => {
+    const putRes = await app.inject({
+      method: "PUT",
+      url: `/api/sites/${site1Id}/relations`,
+      payload: {
+        relations: [
+          {
+            targetTitle: "图怪兽",
+            targetUrl: "https://tumonster.example.com",
+            relationType: "alternative",
+            isFreeOrOpenSource: false,
+            note: "在线作图工具",
+          },
+        ],
+      },
+    });
+    expect(putRes.statusCode).toBe(200);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/search?q=%E5%9B%BE",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.relationHits).toBeDefined();
+    expect(Array.isArray(body.relationHits)).toBe(true);
+    expect(body.relationHits.length).toBeGreaterThanOrEqual(1);
+    expect(body.relationHits.length).toBeLessThanOrEqual(3);
+    for (const hit of body.relationHits) {
+      expect(hit.sourceSite).toBeDefined();
+      expect(hit.sourceSite.enabled).toBe(true);
+      expect(
+        String(hit.targetTitle ?? "").includes("图") || String(hit.targetUrl ?? "").includes("图")
+      ).toBe(true);
+    }
+    expect(body.relationHits.some((h: any) => h.targetTitle === "图怪兽")).toBe(true);
+  });
+
+  // U-85：单拉丁字母 / 数字仍不走 relation——空结果时 relationHits 字段整个省略
+  // （search.ts :267 的既有语义），比返回无关 alternative 更可信。
+  it.each(["e", "a", "1"])("GET /api/search?q=%s 单字非 CJK 无 relationHits 字段", async (q) => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/search?q=${q}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.relationHits).toBeUndefined();
+  });
+
+  // U-85：'%' / '_' 经 containsLike 转义，不命中全表。
+  it.each(["%25", "_"])("GET /api/search?q=%s 通配符不命中全表", async (q) => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/search?q=${q}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.relationHits).toBeUndefined();
+  });
 });
 

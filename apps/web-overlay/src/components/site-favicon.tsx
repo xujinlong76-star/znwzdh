@@ -133,6 +133,24 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'sourcehut.org': '/brand-icons/sourcehut.svg',
   'coze.cn': '/brand-icons/coze.svg',
   'lintcode.com': '/brand-icons/lintcode.svg',
+  // 2026-11-17（进化轮第二批 2b 之开发设计类）：48 站缺失清单里的站方自有
+  // 图标 10 站。全部 curl 重新验证（200 + image MIME + 魔数 + 尺寸与研究
+  // 笔记逐个相符）后本地落盘，与第一批/2a 同款做法。Naive UI 的远程路径
+  // 含构建 hash、IETF 的路径含版本段 12.83.2，均已本地化钉死，不可热链；
+  // SegmentFault 的 CDN 无 Referer 回 403，下载时带 Referer 且已本地化，
+  // 不可热链。CodeGeeX 自带黑底（312x312 PNG），深色模式可用；其余按 2a
+  // 对 Ollama / SourceHut 的做法——不做特殊处理，已知局限留待深色底块
+  // 统一处理轮（研究笔记 §3/§5）。
+  'codegeex.cn': '/brand-icons/codegeex.png',
+  'coding.net': '/brand-icons/coding.ico',
+  'element-plus.org': '/brand-icons/element-plus.svg',
+  'naiveui.com': '/brand-icons/naiveui.svg',
+  'go-zero.dev': '/brand-icons/go-zero.svg',
+  'coolors.co': '/brand-icons/coolors.png',
+  'squoosh.app': '/brand-icons/squoosh.png',
+  'segmentfault.com': '/brand-icons/segmentfault.png',
+  'gogs.io': '/brand-icons/gogs.png',
+  'datatracker.ietf.org': '/brand-icons/ietf.png',
   'vuejs.org': '/brand-icons/vue.svg',
   'npmjs.com': '/brand-icons/npm.svg',
   'vite.dev': '/brand-icons/vite.svg',

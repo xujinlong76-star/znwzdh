@@ -12,10 +12,12 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  EXAM_NODE_STATUS_LABEL,
   EXAM_REMINDERS,
   EXAM_REMINDER_TIER_LABEL,
   EXAMS,
   activeExamReminders,
+  examNodeStatus,
   nearestExamCountdown,
   reminderTier,
   urgencyTier,
@@ -27,6 +29,7 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const guokao = EXAMS.find((e) => e.id === 'guokao')!
 const jingkao = EXAMS.find((e) => e.id === 'jingkao')!
 const kaoyan = EXAMS.find((e) => e.id === 'kaoyan')!
+const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
 
 /** 2026-11-13 08:00 北京时间（UTC 午夜）：距国考首考日 15 天 */
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
@@ -352,5 +355,25 @@ describe('activeExamReminders（撞期提醒过期哨兵，2026-11-17 R-1）', (
     expect(page).not.toContain('EXAM_REMINDERS.map')
     // 三条全过期时整区隐藏，不留空壳
     expect(page).toContain('reminders.length > 0')
+  })
+})
+
+describe('浙江成绩查询预计节点（U-109）', () => {
+  it('estimated 落库：start/end 仍为 2026-11-20，detail 仍写「左右」', () => {
+    const node = chengkao.nodes.find((n) => n.label === '浙江成绩查询')!
+    expect(node.estimated).toBe(true)
+    expect(node.startISO).toBe('2026-11-20')
+    expect(node.endISO).toBe('2026-11-20')
+    expect(node.detail).toContain('11 月 20 日左右')
+  })
+
+  it('以 2026-11-21 为今天：状态 estimated、显示「预计」非「已结束」', () => {
+    const node = chengkao.nodes.find((n) => n.label === '浙江成绩查询')!
+    expect(examNodeStatus(node, NOV_21_0800_CST)).toBe('estimated')
+    expect(EXAM_NODE_STATUS_LABEL.estimated).toBe('预计')
+    expect(EXAM_NODE_STATUS_LABEL.estimated).not.toBe('已结束')
+    // 预计日当天与预计日之后都不翻：11-20 与 11-25 仍是 estimated
+    expect(examNodeStatus(node, NOV_20_0800_CST)).toBe('estimated')
+    expect(examNodeStatus(node, NOV_25_0800_CST)).toBe('estimated')
   })
 })

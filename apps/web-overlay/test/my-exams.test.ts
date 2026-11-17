@@ -574,12 +574,16 @@ describe('成考成绩分省节点', () => {
     }
   })
 
-  it('浙江节点：成绩 11-20 当天为今天、11-25 已结束；志愿确认 11-25–11-29 窗口内进行中、11-30 已结束', () => {
+  it('浙江节点（U-109）：成绩挂 estimated 恒显示「预计」、不翻已结束；志愿确认 11-25–11-29 窗口内进行中、11-30 已结束', () => {
     const byLabel = new Map(chengkao.nodes.map((n) => [n.label, n]))
     const zhejiangScore = byLabel.get('浙江成绩查询')!
     const zhejiangConfirm = byLabel.get('浙江志愿确认')!
-    expect(examNodeStatus(zhejiangScore, NOV_20_0800_CST)).toBe('today')
-    expect(examNodeStatus(zhejiangScore, NOV_25_0800_CST)).toBe('done')
+    // U-109：11-20 只是「左右」的预计日，状态恒为 estimated（11-20 当天与
+    // 11-25 之后都不翻 today/done）；isNodeActionable 的 estimated 开考后
+    // 排除口径不动，不重构谓词。
+    expect(zhejiangScore.estimated).toBe(true)
+    expect(examNodeStatus(zhejiangScore, NOV_20_0800_CST)).toBe('estimated')
+    expect(examNodeStatus(zhejiangScore, NOV_25_0800_CST)).toBe('estimated')
     expect(examNodeStatus(zhejiangConfirm, NOV_25_0800_CST)).toBe('active')
     expect(examNodeStatus(zhejiangConfirm, NOV_30_0800_CST)).toBe('done')
   })

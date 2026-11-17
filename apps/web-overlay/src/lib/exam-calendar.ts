@@ -12,6 +12,11 @@
 export interface ExamNode {
   label: string
   detail: string
+  /**
+   * 官方直达入口（如准考证打印页）：只挂已核实的官方链接，事实源在
+   * exam-calendar 的 URL 常量里，节点数据不写死域名；无入口的节点留空。
+   */
+  url?: string
   /** 节点开始日（YYYY-MM-DD，北京时间自然日） */
   startISO: string
   /** 节点结束日（单日节点与开始日相同） */
@@ -43,6 +48,22 @@ export interface ExamInfo {
   nodes: ExamNode[]
   note?: string
 }
+
+/**
+ * 四六级准考证打印官方入口：全国大学英语四、六级考试报名网
+ * （CET 全国网上报名系统，教育部教育考试院）。
+ *
+ * 事实来源（2026-11-17 核实）：
+ *  - live 浏览器 15:38 直访成功，标题「全国大学英语四、六级考试报名网」，
+ *    首页左侧即有「快速打印准考证（PRINT TICKET）」入口；未点进打印流程，
+ *    打印页内状态未验证；
+ *  - 同日 curl：服务器可达（TLS + HTTP 均通），但对非浏览器请求返回 412
+ *    反爬挑战页，不是死链证据；
+ *  - 口试准考证 11-17 9:00 起打印、笔试准考证 12-01 9:00 起打印（教育部
+ *    教育考试院 2026-09-02 下半年 CET 公告，多源一致），同一入口覆盖
+ *    口试与笔试打印，故两个打印节点共用此链接。
+ */
+export const CET_ADMISSION_URL = 'https://cet-bm.neea.edu.cn'
 
 export const EXAMS: ExamInfo[] = [
   {
@@ -99,12 +120,14 @@ export const EXAMS: ExamInfo[] = [
         detail: '11 月 17 日 9:00 起',
         startISO: '2026-11-17',
         endISO: '2026-11-22',
+        url: CET_ADMISSION_URL,
       },
       {
         label: '笔试准考证打印',
         detail: '12 月 1 日 9:00 起',
         startISO: '2026-12-01',
         endISO: '2026-12-12',
+        url: CET_ADMISSION_URL,
       },
       {
         label: '笔试',

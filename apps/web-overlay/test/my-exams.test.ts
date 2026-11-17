@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { EXAMS, type ExamInfo } from '../src/lib/exam-calendar'
+import { CET_ADMISSION_URL, EXAMS, type ExamInfo } from '../src/lib/exam-calendar'
 import {
   MY_EXAMS_STORAGE_KEY,
   checkedCount,
@@ -317,6 +317,28 @@ describe('nextTodoNode（下一步待办：未勾选且未结束）', () => {
   })
 })
 
+describe('四六级准考证打印直达入口（U-31）', () => {
+  it('官方报名网地址固定为 cet-bm.neea.edu.cn（live 浏览器 2026-11-17 核实可达）', () => {
+    expect(CET_ADMISSION_URL).toBe('https://cet-bm.neea.edu.cn')
+  })
+
+  it('口试与笔试两个打印节点都挂同一官方入口，余下节点不挂链接', () => {
+    // 口试与笔试准考证共用 CET 报名网打印（首页「快速打印准考证」），
+    // 节点 label 本身区分口试/笔试，链接不另写区分文案。
+    const printNodes = cet.nodes.filter((n) => n.label.endsWith('准考证打印'))
+    expect(printNodes.map((n) => n.label)).toEqual(['口试准考证打印', '笔试准考证打印'])
+    for (const node of printNodes) {
+      expect(node.url).toBe(CET_ADMISSION_URL)
+    }
+    expect(cet.nodes.filter((n) => n.url !== undefined)).toHaveLength(2)
+    expect(
+      EXAMS.filter((e) => e.id !== 'cet')
+        .flatMap((e) => e.nodes)
+        .every((n) => n.url === undefined),
+    ).toBe(true)
+  })
+})
+
 describe('我的考试岛源码守卫', () => {
   const island = read('src/app/exam/my-exam-tracker.tsx')
   const lib = read('src/lib/my-exams.ts')
@@ -369,6 +391,15 @@ describe('我的考试岛源码守卫', () => {
   it('关注按钮 44px 触摸目标，用 sky-700 合规配方', () => {
     expect(island).toContain('min-h-11')
     expect(island).toContain('text-sky-700')
+  })
+
+  it('带官方入口的节点渲染直达链接：过 safeHref、新窗口、官方文案，岛内不写死域名', () => {
+    expect(island).toContain('safeHref(node.url)')
+    expect(island).toContain('去官网打印准考证')
+    expect(island).toContain('target="_blank"')
+    expect(island).toContain('rel="noopener noreferrer"')
+    expect(island).not.toContain('cet-bm.neea.edu.cn')
+    expect(island).not.toContain('cet.neea.edu.cn')
   })
 
   it('写明只保存在本机，不承诺云同步', () => {

@@ -1,5 +1,6 @@
 'use client'
 
+import { ArrowUpRight } from 'lucide-react'
 import { useMyExams } from '@/hooks/useMyExams'
 import {
   EXAM_NODE_STATUS_LABEL,
@@ -11,6 +12,7 @@ import {
   checkedCount,
   isFollowed,
 } from '@/lib/my-exams'
+import { safeHref } from '@/lib/safe-url'
 
 const NODE_DOT_CLASS: Record<string, string> = {
   done: 'bg-muted-foreground/40',
@@ -104,6 +106,23 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                   {node.label}
                 </span>
                 <span className="text-muted-foreground"> · {node.detail}</span>
+                {/* 带官方入口的节点（如四六级准考证打印）挂直达链接：入口
+                    在 exam-calendar 常量里，岛内不写死域名；外链过 safeHref。 */}
+                {node.url ? (
+                  <>
+                    {' '}
+                    <a
+                      href={safeHref(node.url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`${node.label}官方打印入口（新窗口打开）`}
+                      className="inline-flex min-h-11 items-center gap-0.5 whitespace-nowrap text-sm font-medium text-sky-700 underline decoration-sky-700/40 underline-offset-2 hover:decoration-sky-700 dark:text-sky-400"
+                    >
+                      去官网打印准考证
+                      <ArrowUpRight className="h-4 w-4" aria-hidden />
+                    </a>
+                  </>
+                ) : null}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">
                 {EXAM_NODE_STATUS_LABEL[status]}

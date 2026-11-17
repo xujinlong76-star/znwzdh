@@ -122,6 +122,22 @@ describe("安装确认里的预设规模：不能把 4 个看板说成 1 个", (
   })
 })
 
+describe("安装确认里的主题变量数：不能把 21 项说成 0 项", () => {
+  const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
+  const detail = detailFamily()
+
+  it("摘要缺失（详情接口把 summary 放在响应外层）时按清单 tokens 计数", () => {
+    expect(modal).toContain("plugin.manifest?.payload?.tokens")
+    expect(modal).toContain("themeTokenCount")
+    // 旧的 ?? 0 会把任意主题都说成「将应用 0 项 CSS 颜色变量」
+    expect(modal).not.toContain("summary?.themeTokenCount ?? 0")
+  })
+
+  it("详情页的「色彩变量」指标同样按 payload 兜底", () => {
+    expect(detail).toContain("Object.keys(payload?.tokens || {}).length")
+  })
+})
+
 describe("卸载回执不谎报清理范围", () => {
   const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
 

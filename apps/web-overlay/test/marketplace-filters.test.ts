@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_MARKETPLACE_SORT,
+  countSortDegenerateKind,
   isCountSortDegenerate,
 } from '../src/lib/plugins/marketplace-filters'
 
@@ -26,10 +27,29 @@ describe('isCountSortDegenerate（排序退化注明）', () => {
     expect(isCountSortDegenerate('updated', [zero])).toBe(false)
   })
 
-  it('任一计数非 0 即不退化', () => {
+  it('每种排序只看自己的键：别家计数非 0 不影响本排序退化', () => {
+    // :3001 实测（2026-11-17）：安装 2 次、星标 2 次、评价全 0。
+    // 旧断言「任一计数非 0 即不退化」是共享谓词的误判：rating 的键只有评价，
+    // 评价全 0 时 rating 已退化、必须注明；popular/stars 同理只看自己的键。
+    // 旧断言已按新行为改写（守卫断言只可按新行为改写，不删除）。
+    expect(isCountSortDegenerate('popular', [zero, { installCount: 0, starCount: 2, reviewCount: 1 }])).toBe(true)
     expect(isCountSortDegenerate('popular', [zero, { installCount: 1, starCount: 0, reviewCount: 0 }])).toBe(false)
+    expect(isCountSortDegenerate('stars', [zero, { installCount: 1, starCount: 0, reviewCount: 0 }])).toBe(true)
     expect(isCountSortDegenerate('stars', [zero, { installCount: 0, starCount: 2, reviewCount: 0 }])).toBe(false)
+    expect(isCountSortDegenerate('rating', [zero, { installCount: 1, starCount: 2, reviewCount: 0 }])).toBe(true)
     expect(isCountSortDegenerate('rating', [zero, { installCount: 0, starCount: 0, reviewCount: 1 }])).toBe(false)
+    expect(isCountSortDegenerate('trending', [zero, { installCount: 1, starCount: 0, reviewCount: 0 }])).toBe(false)
+    expect(isCountSortDegenerate('trending', [zero, { installCount: 0, starCount: 2, reviewCount: 0 }])).toBe(false)
+    expect(isCountSortDegenerate('trending', [zero, { installCount: 0, starCount: 0, reviewCount: 1 }])).toBe(false)
+  })
+
+  it('退化时报出是哪个键（板面文案只说该键，不再三键并提）', () => {
+    expect(countSortDegenerateKind('popular', [zero])).toBe('install')
+    expect(countSortDegenerateKind('stars', [zero])).toBe('star')
+    expect(countSortDegenerateKind('rating', [zero])).toBe('review')
+    expect(countSortDegenerateKind('trending', [zero])).toBe('trending')
+    expect(countSortDegenerateKind('new', [zero])).toBeNull()
+    expect(countSortDegenerateKind('popular', [{ installCount: 1, starCount: 0, reviewCount: 0 }])).toBeNull()
   })
 
   it('trending 下任一举报非 0 即撤注明（飙升分含 -report_count*10，与 new 分叉）', () => {

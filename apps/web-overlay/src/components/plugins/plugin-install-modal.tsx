@@ -171,6 +171,14 @@ export function PluginInstallModal({
     (presetBoards
       ? presetBoards.reduce((n, board) => n + (Array.isArray(board?.widgets) ? board.widgets.length : 0), 0)
       : 0)
+  // 主题变量数与强调色：详情接口把 summary 放在响应外层，plugin 上没有 summary，
+  // 列表项虽带 summary，但详情页打开的弹窗拿不到——缺失时按清单实际结构计数，
+  // 与详情页「影响评估」Tab 的兜底口径一致（:3001 实测：弹窗「0 项」vs 详情「21 项」）。
+  const themeTokenCount =
+    summary?.themeTokenCount ??
+    (plugin.kind === 'theme' ? Object.keys(plugin.manifest?.payload?.tokens ?? {}).length : 0)
+  const themeAccent =
+    summary?.accent ?? (plugin.kind === 'theme' ? plugin.manifest?.payload?.accent : undefined)
   // D1 更新链路：已安装且市场版本更高时，本弹窗以「更新」语义呈现
   // （执行通道不变——重装即升级，服务端幂等增量，只增不删）
   const isUpdate =
@@ -545,8 +553,8 @@ export function PluginInstallModal({
                     <span>即时主题激活</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    将应用 {summary?.themeTokenCount ?? 0} 项 CSS 颜色变量
-                    {summary?.accent ? `，主强调色设为 ${summary.accent}` : ''}。
+                    将应用 {themeTokenCount} 项 CSS 颜色变量
+                    {themeAccent ? `，主强调色设为 ${themeAccent}` : ''}。
                   </p>
                 </div>
               )}

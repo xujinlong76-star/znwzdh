@@ -30,15 +30,22 @@ export type MarketplaceSort = (typeof MARKETPLACE_SORTS)[number]
 
 export const DEFAULT_MARKETPLACE_SORT: MarketplaceSort = 'trending'
 
-/** 计数型排序（安装 / 星标 / 评分 / 飙升）。种子 install/star/review 全 0 时
- * 这些排序键全部相等、只剩 created_at 倒序兜底，与「最新发布」同序——是现状，
- * 不是数据分化；页面须如实注明，不得编假数据让排序看起来分化。 */
+/** 计数型排序（安装 / 星标 / 评分 / 飙升）。任一排序的键全 0 时只剩 created_at
+ * 倒序兜底，与「最新发布」同序——是现状，不是数据分化；页面须如实注明，
+ * 不得编假数据让排序看起来分化。 */
 export const COUNT_SORTS: readonly MarketplaceSort[] = ['popular', 'stars', 'rating', 'trending']
 
-/**
- * 计数型排序是否退化：已加载项的安装、星标、评价全为 0。
- * 排序把最大值放最前，首屏全 0 即全局全 0（飙升分母的年龄项同样是时间单调），
- * 因此只看已加载项即可判定，不必多取一页。
+/** 计数型排序退化到哪个键（null = 不退化）。每种排序只看自己的键：
+ * popular 看安装量、stars 看星标、rating 看评价、trending 看四项全 0。
+ *
+ * 旧的共享谓词（任一计数非 0 即全不退化）会双向误判：:3001 实测安装 2 次、
+ * 星标 2 次、评价全 0 时，rating 排序实际已退化（与最新发布同序）却无注明；
+ * 而筛选视图里全 0 的子集又冒出「安装量、星标与评价均为 0」的全 catalog 口径，
+ * 全量列表却从不出现——板面文案须只说当前列表里该排序自己的键（见
+ * plugin-market-board.tsx 的 SORT_DEGENERATE_NOTE）。
+ *
+ * 判定只看已加载项：排序把最大值放最前，首屏全 0 即全局全 0（飙升分母的
+ * 年龄项同样是时间单调），因此只看已加载项即可判定，不必多取一页。
  *
  * reportCount 只影响 trending：飙升分含 `- report_count * 10`，任一插件
  * reportCount > 0 且与其它插件不等时 trending 即与 new 分叉，注明失效；
@@ -46,15 +53,36 @@ export const COUNT_SORTS: readonly MarketplaceSort[] = ['popular', 'stars', 'rat
  * 时这三种排序的注明仍为真，不得一并撤掉（共享 every() 里加 reportCount
  * 校验是错的，会过度抑制）。因此按 sort 分支：仅 trending 检查 reportCount。
  */
+export type CountSortDegenerateKind = 'install' | 'star' | 'review' | 'trending'
+
+export function countSortDegenerateKind(
+  sort: MarketplaceSort,
+  items: readonly { installCount: number; starCount: number; reviewCount?: number; reportCount?: number }[],
+): CountSortDegenerateKind | null {
+  if (!COUNT_SORTS.includes(sort)) return null
+  if (items.length === 0) return null
+  switch (sort) {
+    case 'popular':
+      return items.every((p) => p.installCount === 0) ? 'install' : null
+    case 'stars':
+      return items.every((p) => p.starCount === 0) ? 'star' : null
+    case 'rating':
+      return items.every((p) => (p.reviewCount ?? 0) === 0) ? 'review' : null
+    case 'trending':
+      return items.every(
+        (p) =>
+          p.installCount === 0 && p.starCount === 0 && (p.reviewCount ?? 0) === 0 && (p.reportCount ?? 0) === 0,
+      )
+        ? 'trending'
+        : null
+  }
+}
+
 export function isCountSortDegenerate(
   sort: MarketplaceSort,
   items: readonly { installCount: number; starCount: number; reviewCount?: number; reportCount?: number }[],
 ): boolean {
-  if (!COUNT_SORTS.includes(sort)) return false
-  if (items.length === 0) return false
-  if (!items.every((p) => p.installCount === 0 && p.starCount === 0 && (p.reviewCount ?? 0) === 0)) return false
-  if (sort === 'trending') return items.every((p) => (p.reportCount ?? 0) === 0)
-  return true
+  return countSortDegenerateKind(sort, items) !== null
 }
 
 export interface MarketplaceFilterState {

@@ -47,8 +47,9 @@ import { rankingMetric } from '@/lib/plugins/marketplace-rankings'
 import {
   DEFAULT_MARKETPLACE_SORT,
   buildMarketplaceQuery,
-  isCountSortDegenerate,
+  countSortDegenerateKind,
   parseMarketplaceFilters,
+  type CountSortDegenerateKind,
   type MarketplaceSort,
 } from '@/lib/plugins/marketplace-filters'
 import {
@@ -77,6 +78,15 @@ const PAGE_SIZE = 24
 // 基底的 outline-none 从最终 class 里合并掉，不是简单叠加。
 const HERO_BUTTON_FOCUS_VISIBLE =
   'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2'
+
+// 排序退化注明文案：按退化键分四档，只说当前列表里该排序自己的键。
+// install/star/review 各只提一键；trending 的键是四项全 0 才注明，故四项并提。
+const SORT_DEGENERATE_NOTE: Record<CountSortDegenerateKind, string> = {
+  install: '当前列表中安装量均为 0，安装最多排序结果与最新发布一致',
+  star: '当前列表中星标均为 0，星标最多排序结果与最新发布一致',
+  review: '当前列表中评价均为 0，评分排序结果与最新发布一致',
+  trending: '当前列表中安装量、星标、评价与举报均为 0，飙升排序结果与最新发布一致',
+}
 
 // 专题胶囊的 q 必须在种子数据上命中 > 0（listPlugins 按名称 / 简介 / slug / 清单
 // 内容子串匹配；命中数为 0 的胶囊点开即空列表，是死入口）。守卫见 apps/api/test/seed-plugins.test.ts
@@ -335,9 +345,15 @@ export function PluginMarketBoard({
 
   const hasFilter = Boolean(q || kind || starredOnly)
 
-  // 计数型排序退化判定（种子 install/star/review 全 0 时与「最新发布」同序）：
-  // 只在有结果时注明，0 命中走空态、不叠加两条提示。
-  const sortDegenerate = useMemo(() => isCountSortDegenerate(sort, list.items), [sort, list.items])
+  // 计数型排序退化判定：只在有结果时注明，0 命中走空态、不叠加两条提示。
+  // 文案只说当前列表里该排序自己的键——:3001 实测安装 2 次、星标 2 次、
+  // 只有评价为 0，旧文案「安装量、星标与评价均为 0」在筛选视图里是假话；
+  // 「当前列表」而非「当前插件」，避免把子集结论读成全 catalog 口径
+  // （筛选视图出现、清空后消失、全量列表从不出现，皆因各列表的键值本就不同）。
+  const sortDegenerateKind = useMemo(
+    () => countSortDegenerateKind(sort, list.items),
+    [sort, list.items],
+  )
 
   // 精选与三榜只在“无筛选”时加载：避免与主列表抢请求，也避免筛选后仍显示无关推荐
   // 首帧同样要静默同步一次（SSR 数据没有身份，精选卡片的已装态同理会丢）；
@@ -663,11 +679,10 @@ export function PluginMarketBoard({
           )}
         </div>
 
-        {/* 排序退化注明：计数型排序（安装 / 星标 / 评分 / 飙升）在安装量、星标与评价
-            全为 0 时与「最新发布」同序，如实注明口径，不编假数据让排序看起来分化。 */}
-        {!loading && !list.loadFailed && list.items.length > 0 && sortDegenerate && (
+        {/* 排序退化注明：只说当前列表里该排序自己的键（见 sortDegenerateKind 注释）。 */}
+        {!loading && !list.loadFailed && list.items.length > 0 && sortDegenerateKind && (
           <p className="rounded-md border border-amber-500/50 bg-amber-500/15 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300" data-testid="sort-degenerate-note" role="status">
-            当前插件安装量、星标与评价均为 0，安装 / 星标 / 评分 / 飙升排序结果与最新发布一致
+            {SORT_DEGENERATE_NOTE[sortDegenerateKind]}
           </p>
         )}
 

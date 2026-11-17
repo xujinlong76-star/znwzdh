@@ -56,7 +56,7 @@ describe("parseDramaFeatured genres", () => {
     expect(dramas[0]?.genres).toEqual(["玄幻", "穿越"]);
   });
 
-  it("真实 featured.json：7 部剧带已核实的题材，其余留空", () => {
+  it("真实 featured.json：8 部剧带已核实的题材，其余留空", () => {
     const { dramas, skipped } = loadDramaFeatured();
     expect(dramas.length).toBe(18);
     expect(skipped).toBe(0);
@@ -66,6 +66,7 @@ describe("parseDramaFeatured genres", () => {
     expect([...withGenres.entries()]).toEqual([
       ["十八岁太奶奶驾到，重整家族荣耀 第五部", ["家族"]],
       ["和离后我带女儿横扫魔域", ["玄幻"]],
+      ["少夫人来自东北 3", ["家族"]],
       ["悍妻当家，靠美食扶起一家软骨头", ["种田"]],
       ["万妖图录传 第十四季", ["玄幻"]],
       ["魔神人生：弃子问天 第二季", ["玄幻"]],
@@ -74,12 +75,13 @@ describe("parseDramaFeatured genres", () => {
     ]);
   });
 
-  it("真实 featured.json：8 部已完结剧的总集数已按搜短剧 2026-11-17 核实值填好", () => {
+  it("真实 featured.json：9 部已完结剧的总集数已按 2026-11-17 核实值填好", () => {
     const { dramas } = loadDramaFeatured();
     const totals = new Map(
       dramas.map((d) => [d.title, d.totalEpisodes]),
     );
     expect(totals.get("十八岁太奶奶驾到，重整家族荣耀 第五部")).toBe(102);
+    expect(totals.get("少夫人来自东北 3")).toBe(96);
     expect(totals.get("退役归来，这个保镖不好惹")).toBe(100);
     expect(totals.get("万妖图录传 第十四季")).toBe(202);
     expect(totals.get("魔神人生：弃子问天 第二季")).toBe(586);

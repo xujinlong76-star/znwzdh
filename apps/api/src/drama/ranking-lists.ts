@@ -176,7 +176,7 @@ function parseWanNumber(text: string, re: RegExp): number | null {
  */
 export function parseRankingList(
   html: string,
-  kind: RankingListKind,
+  _kind: RankingListKind,
 ): { entries: RankingEntry[]; droppedTitles: number } {
   const entries: RankingEntry[] = [];
   let droppedTitles = 0;

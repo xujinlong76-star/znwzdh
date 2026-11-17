@@ -65,6 +65,15 @@ function starToggleBody(): string {
   return VIEW.slice(start, end)
 }
 
+/** mountedRef 守卫区：从声明起到 loadDetail 定义之前。 */
+function mountedGuardRegion(): string {
+  const start = VIEW.indexOf('const loadDetailSeq = useRef(0), mountedRef = useRef(true)')
+  expect(start).toBeGreaterThan(-1)
+  const end = VIEW.indexOf('const loadDetail = useCallback(async', start)
+  expect(end).toBeGreaterThan(start)
+  return VIEW.slice(start, end)
+}
+
 /** 断言 a、b、c 在 body 内按顺序出现。 */
 function expectOrder(body: string, ...fragments: string[]): void {
   let cursor = -1
@@ -163,6 +172,22 @@ describe('星标切换 vs 旧详情刷新：世代守卫', () => {
     expect(success).not.toContain('setStarCount((prev)')
     // 第二次乐观写回在 catch 回滚里，不在成功分支。
     expect(body.slice(body.indexOf('} catch'))).toContain('setStarCount((prev)')
+  })
+
+  it('挂载守卫重 arm：effect setup 置 true，StrictMode 双挂载的 cleanup 不会永久毒化 mountedRef', () => {
+    // U-103 主根因：旧形态 `useEffect(() => () => { mountedRef.current = false }, [])`
+    // 只有 cleanup 置 false、没有任何地方置回 true；CI 跑 next dev + StrictMode
+    // 双挂载，cleanup 在挂载瞬间把 mountedRef 永久毒化，之后一切 loadDetail
+    // 响应都被 `:277` 的守卫丢弃，plugin 永远停在 SSR 初值（installed/starred/
+    // isOwner 全 false）。修复形态必须在 setup 里重 arm，改回旧形态本用例必红。
+    const region = mountedGuardRegion()
+    // 死钉形态：setup 置 true、cleanup 置 false，同一 effect 内、setup 在前。
+    expect(region).toContain(
+      'useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])',
+    )
+    expectOrder(region, 'mountedRef.current = true', 'mountedRef.current = false')
+    // 初始化仍为 true：首个 loadDetail 响应在 effect 跑起来之前也不被丢弃。
+    expect(region).toContain('mountedRef = useRef(true)')
   })
 
   it('失败仍回滚：重申不破坏 catch 的 starred 回滚与错误提示', () => {

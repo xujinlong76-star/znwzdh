@@ -264,7 +264,7 @@ export default function PluginDetailView({
   }, [shareCopy, slug, sharingLink])
 
   const loadDetailSeq = useRef(0), mountedRef = useRef(true) // 世代守卫：仅最新 loadDetail 响应可写回 starred/starCount
-  useEffect(() => () => { mountedRef.current = false }, [])
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
   const loadDetail = useCallback(async (opts?: { silent?: boolean }) => {
     const seq = ++loadDetailSeq.current
     if (!opts?.silent) setLoading(true)

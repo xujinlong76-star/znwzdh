@@ -20,7 +20,10 @@ import {
   GUOKAO_ADMISSION_URL,
   GUOKAO_PORTAL_URL,
   admissionReminderFor,
+  examNodeStatus,
   guokaoAdmissionPhase,
+  isNodeActionable,
+  nextExamNode,
 } from '../src/lib/exam-calendar'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -250,5 +253,47 @@ describe('准考证提醒源码守卫', () => {
     expect(page).toContain("exam.id === 'guokao' ? <GuokaoAdmissionReminderIsland exam={exam} />")
     expect(page).not.toContain('scs.gov.cn')
     expect(page).not.toContain('bm.scs.gov.cn')
+  })
+})
+
+describe('广东成绩复核节点（U-110）', () => {
+  const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
+  /** 北京时间 2026-11-20 10:00（UTC 11-20 02:00）：复核截止日当天上午 */
+  const NOV_20_1000_CST = Date.UTC(2026, 10, 20, 2, 0, 0)
+
+  it('节点行存在：单日 2026-11-20，不写 11-19；detail 含 15:00 截止与线下书面申请渠道；url 不设', () => {
+    // 广东复查无起始日证实、只知截止 11 月 20 日 15:00，故单日节点 11-20；
+    // 11-19 只属于江西复核窗口，不可写进广东节点。detail 沿用 note 原文口径。
+    const node = chengkao.nodes.find((n) => n.label === '广东成绩复核')!
+    expect(node.startISO).toBe('2026-11-20')
+    expect(node.endISO).toBe('2026-11-20')
+    expect(node.detail).toContain('11 月 20 日 15:00')
+    expect(node.detail).toContain('凭身份证件、准考证到当地县（市、区）招生办书面申请')
+    expect(node.detail).toContain('逾期不予受理')
+    expect(node.url).toBeUndefined()
+  })
+
+  it('以 2026-11-20 10:00 为现在：节点当天可办，nextExamNode 能选中它', () => {
+    const node = chengkao.nodes.find((n) => n.label === '广东成绩复核')!
+    expect(examNodeStatus(node, NOV_20_1000_CST)).toBe('today')
+    expect(isNodeActionable(node, chengkao, NOV_20_1000_CST)).toBe(true)
+    // 真实成考的下一步仍是更早开启的新疆复核（11-18 开启）；广东复核的
+    // 可选中性用仅含广东两节点的合成考试验证，避免被更早节点遮蔽。
+    const guangdongOnly = {
+      ...chengkao,
+      nodes: chengkao.nodes.filter((n) => n.label.startsWith('广东')),
+    }
+    expect(nextExamNode(guangdongOnly, NOV_20_1000_CST)?.label).toBe('广东成绩复核')
+  })
+
+  it('成考现为四省八节点：头注释同步改数；证书下载仍只在 note，不作节点', () => {
+    expect(chengkao.nodes).toHaveLength(8)
+    const calendar = read('src/lib/exam-calendar.ts')
+    expect(calendar).toContain('四省八节点')
+    expect(calendar).not.toContain('四省七节点')
+    expect(chengkao.nodes.some((n) => n.label.includes('证书'))).toBe(false)
+    expect(chengkao.note ?? '').toContain(
+      '成绩证书 11 月 28 日 16:00 起可通过官微/支付宝/百度小程序下载打印',
+    )
   })
 })

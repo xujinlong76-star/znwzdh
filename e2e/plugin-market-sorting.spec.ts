@@ -10,8 +10,11 @@ import { loginViaAdmin } from './helpers';
  *
  * 造数方式（全部走站内已有 API，不依赖线上真实数据，不改业务代码）：
  *   - 导入：管理员通道 POST /api/hub/plugins/import（直接上架，无发布限流）；
- *   - 安装量：匿名身份 POST /api/plugins/:slug/install?anonId=…，每身份 +1；
- *   - 星标：匿名身份 POST /api/plugins/:slug/star?anonId=…，每身份 +1；
+ *   - 安装 / 星标 / 评分：必须走无会话的 Playwright `request` fixture +
+ *     `anon-` 前缀身份（`anon-e2e-sort-…`），每身份 +1。管理员上下文
+ *     （adminRequest）带登录会话，代理会话优先会把 `?anonId=` 覆盖成会话
+ *     身份，7 次造数塌缩成 1 个身份，计数门禁必红；无会话时非 anon- 身份
+ *     又会被代理 403（见 beforeAll 注释）。
  *   - 评分：先以同一身份安装（评价门禁要求活跃安装），再 POST
  *     /api/plugins/:slug/reviews?anonId=… 提交星级。
  *   - 四个排序插件 A/B/C/D 依次导入、间隔 50ms，保证 published_at 严格递增
@@ -27,7 +30,7 @@ import { loginViaAdmin } from './helpers';
  *   - rating（贝叶斯平滑 (avg*n+10.5)/(n+3)，再安装 DESC）：
  *     A(5.0×2→4.10) > B(5.0×1→3.875) > C(4.0×1→3.625) > D(3.0×1→3.375)
  *   - new（published_at DESC）：D > C > B > A（导入顺序的逆序）
- *   - trending（(安装×3+星标×5+1)/(天龄+2) DESC，天龄几乎相等）：
+ *   - trending（(安装×3+星标×5-举报×10+1)/(天龄+2) DESC，天龄几乎相等）：
  *     A(20) > B(12) > C(9) > D(4)
  *
  * 断言策略（只做行为断言，不做源码文本断言）：
@@ -36,8 +39,9 @@ import { loginViaAdmin } from './helpers';
  *   - 榜单：无筛选首页的安装榜 / 口碑榜首行是 A、新作榜首行是 D。
  *   - kind 筛选：同一组 stamp 下 2 个网站包 + 1 个主题 + 1 个搜索引擎包，
  *     逐个 kind 断言真实结果集（集合相等）与「共 N 个插件」计数。
- *   - 分页：默认视图（种子约 42 个插件，总数 > 24）先等「加载更多」出现，
- *     点击后卡片数增多、按钮计数同步变大。
+ *   - 分页：本用例内先导入 25 个同 stamp 插件（总数 > 24），再等「加载更多」
+ *     出现，点击后卡片数增多、按钮计数同步变大。CI E2E 库从空开始、无种子，
+ *     不依赖既有数据量。
  *
  * 并行说明：playwright.config 是 workers:1、fullyParallel:false，全文件
  * 顺序执行；kind 组在 kind 用例内现导入（不在 beforeAll），以免抢占
@@ -151,11 +155,14 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
 
   let adminRequest: APIRequestContext;
   let adminContext: BrowserContext | undefined;
-  test.beforeAll(async ({ browser }, testInfo) => {
+  test.beforeAll(async ({ browser, request }, testInfo) => {
     test.setTimeout(180_000);
     adminContext = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
     await loginViaAdmin(await adminContext.newPage());
     adminRequest = adminContext.request;
+    // 注意：`request` 是无会话的 Playwright fixture（已验证可在 beforeAll
+    // 里实例化，见 Playwright 1.64.1 实测），专供下面的安装 / 星标 / 评分
+    // 造数；导入与列表核对仍走 adminRequest（导入要求管理员会话）。
 
     // 1. 依次导入 A/B/C/D，间隔 50ms 让 published_at 严格递增。
     for (const plugin of SORT_PLUGINS) {
@@ -164,22 +171,34 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
     }
 
     // 2. 造安装 / 星标 / 评分（评价须先以同一身份安装）。
-    const anon = (key: string, n: number) => `e2e-sort-${SORT_STAMP}-${key}${n}`;
+    // 身份隔离是造数成立的前提，两者缺一不可：
+    //   (a) 无会话 request：代理会话优先（route.ts:158-162「有会话 → 用会话
+    //       派生身份，覆盖并剥离客户端自称的一切身份头」），adminRequest 带
+    //       管理员会话时会把 ?anonId= 丢弃，7 次造数全落到同一管理员身份；
+    //   (b) anon- 前缀：无会话时 claimed 非 anon 身份会被代理 403
+    //      （hub-identity-guard.ts:22 ANON_PATTERN ^anon-[A-Za-z0-9_-]{8,64}$）。
+    // 存储层按身份幂等（安装只在 !wasActive 时 +1，星标 ON CONFLICT DO
+    // NOTHING，评价按 (plugin, identity) upsert），塌缩后 A/B/C/D 全是
+    // {安装 1, 星标 1, 评价 1}，门禁与 popular/rating/trending 期望顺序必红。
+    // 同一 request 上下文可复用于多个 anon 身份：匿名绑定 cookie 只在合并
+    // 时校验，安装 / 星标 / 评分不校验 cookie 与 claimed 的一致（先例见
+    // plugin-market.spec.ts:547，同一 request 发 3 个 reporter 身份）。
+    const anon = (key: string, n: number) => `anon-e2e-sort-${SORT_STAMP}-${key}${n}`;
     // A：安装 3 · 星标 2 · 5★×2
-    for (const n of [1, 2, 3]) await installAs(adminRequest, slugOf('a'), anon('a', n));
-    for (const n of [1, 2]) await starAs(adminRequest, slugOf('a'), anon('a', n));
-    for (const n of [1, 2]) await reviewAs(adminRequest, slugOf('a'), anon('a', n), 5);
+    for (const n of [1, 2, 3]) await installAs(request, slugOf('a'), anon('a', n));
+    for (const n of [1, 2]) await starAs(request, slugOf('a'), anon('a', n));
+    for (const n of [1, 2]) await reviewAs(request, slugOf('a'), anon('a', n), 5);
     // B：安装 2 · 星标 1 · 5★×1
-    for (const n of [1, 2]) await installAs(adminRequest, slugOf('b'), anon('b', n));
-    await starAs(adminRequest, slugOf('b'), anon('b', 1));
-    await reviewAs(adminRequest, slugOf('b'), anon('b', 1), 5);
+    for (const n of [1, 2]) await installAs(request, slugOf('b'), anon('b', n));
+    await starAs(request, slugOf('b'), anon('b', 1));
+    await reviewAs(request, slugOf('b'), anon('b', 1), 5);
     // C：安装 1 · 星标 1 · 4★×1
-    await installAs(adminRequest, slugOf('c'), anon('c', 1));
-    await starAs(adminRequest, slugOf('c'), anon('c', 1));
-    await reviewAs(adminRequest, slugOf('c'), anon('c', 1), 4);
+    await installAs(request, slugOf('c'), anon('c', 1));
+    await starAs(request, slugOf('c'), anon('c', 1));
+    await reviewAs(request, slugOf('c'), anon('c', 1), 4);
     // D：安装 1 · 星标 0 · 3★×1
-    await installAs(adminRequest, slugOf('d'), anon('d', 1));
-    await reviewAs(adminRequest, slugOf('d'), anon('d', 1), 3);
+    await installAs(request, slugOf('d'), anon('d', 1));
+    await reviewAs(request, slugOf('d'), anon('d', 1), 3);
 
     // 3. 造数落账门禁：非零计数真的进了库，否则后续顺序断言无意义。
     const qs = new URLSearchParams({ q: SORT_STAMP, sort: 'popular', limit: '100' }).toString();
@@ -372,10 +391,26 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
   });
 
   test('分页：点「加载更多」后条目增多', async ({ page }) => {
-    await page.goto('/marketplace');
+    // 自给自足：CI E2E 库从空开始（e2e-web-server.mjs 只删库重建、dev-all
+    // 不播种，pnpm seed 只在 test-web 作业跑），同分片先行导入 + 本文件
+    // 自身导入合计约 10 个 < 24，「加载更多」根本不会出现。本用例内先
+    // 导入 25 个同 stamp 插件，再按该 stamp 过滤断言，总数只取决于本次
+    // 导入，不依赖既有数据量。stamp 在用例内现取：重试时换新 stamp，避免
+    // 复用已导入的 slug。
+    const pageStamp = Date.now().toString(36);
+    for (let i = 0; i < 25; i++) {
+      await importPlugin(
+        adminRequest,
+        `e2e-page-${pageStamp}-${i}`,
+        sitePackManifest(`E2E 分页 ${pageStamp} ${i}`, `${pageStamp}-${i}`),
+      );
+    }
+
+    await page.goto(`/marketplace?q=${pageStamp}`);
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
     // 按钮只在「已加载 < 总数」时出现：等它出现即等客户端首屏（24 条）落定，
-    // 此时 SSR 全量种子已被 24 条/页的客户端列表取代。
+    // 此时 SSR 全量种子已被 24 条/页的客户端列表取代。过滤视图下精选与三榜
+    // 不渲染（board 只在无筛选时加载），卡片数即列表数。
     const loadMore = page.getByRole('button', { name: /加载更多/ });
     await expect(loadMore).toBeVisible({ timeout: 30_000 });
     const beforeText = (await loadMore.textContent()) ?? '';
@@ -386,7 +421,7 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
     expect(beforeShown, '首屏应只加载一页 24 条').toBe(24);
     expect(beforeTotal, '总数应大于一页').toBeGreaterThan(24);
 
-    // 卡片标题链计数（精选 6 张 + 列表 24 张）：点击后必须增多。
+    // 卡片标题链计数（过滤视图无精选区，卡片数即列表数）：点击后必须增多。
     const cardLinks = page.locator('main a[aria-label][href^="/marketplace/"]');
     const cardsBefore = await cardLinks.count();
     expect(cardsBefore, '首屏卡片数').toBeGreaterThanOrEqual(beforeShown);

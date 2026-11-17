@@ -822,6 +822,18 @@ jobs:
           # "No files were found" 注解，掩盖真正的告警；失败时报告仍会被上传。
           if-no-files-found: ignore
           retention-days: 14
+      # E2E 失败诊断：trace.zip / 截图 / error-context.md 都落在 test-results/
+      # （playwright.config.ts：trace on-first-retry、screenshot only-on-failure，
+      # 默认 outputDir 即 test-results/），而 CI 从未启用 html reporter，
+      # 上面的 playwright-report 上传恒为空（total_count:0），失败用例无法定因。
+      # 只在失败时上传，绿灯不留构件；不改测试命令、不动 html reporter。
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: ${{ failure() }}
+        with:
+          name: test-results-e2e-${{ matrix.shard }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
       # 隔离用例取证（TESTING-STRATEGY §4.3）：主 E2E 已 --grep-invert @quarantine，
       # 带 tag 的用例不进主门禁；但「隔离」不等于「删除」——仍需跑一次并留证据，
       # 否则 14 天 SLA 与「连续 5 次全绿则复活」都无从判定。

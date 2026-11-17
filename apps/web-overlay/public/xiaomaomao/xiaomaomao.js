@@ -142,13 +142,16 @@
     '长按我可以摸摸我'
   ];
 
-  /* ---------- 持久化（只存本机：语音开关 + 拖动位置） ---------- */
-  var store = { voice: true, pos: null, hinted: false };
+  /* ---------- 持久化（只存本机：语音开关 + 拖动位置） ----------
+     K2：closed/closedAt 记录亲手收起（收起后 7 天内刷新/跳页仍收着，过期自动恢复展开）。 */
+  var store = { voice: true, pos: null, hinted: false, closed: false, closedAt: 0 };
   try {
     var saved = JSON.parse(window.localStorage.getItem(STORE_KEY) || 'null');
     if (saved && typeof saved === 'object') {
       if (typeof saved.voice === 'boolean') store.voice = saved.voice;
       if (typeof saved.hinted === 'boolean') store.hinted = saved.hinted;
+      if (typeof saved.closed === 'boolean') store.closed = saved.closed;
+      if (typeof saved.closedAt === 'number' && saved.closedAt > 0) store.closedAt = saved.closedAt;
       if (saved.pos && typeof saved.pos.left === 'number' && typeof saved.pos.top === 'number') store.pos = saved.pos;
     }
   } catch (e) { /* 隐私模式等场景下静默退化 */ }
@@ -322,7 +325,9 @@
     /* 相机：机身 + 镜头（上传图片钮） */
     camera: SVG_OPEN + '<path d="M4 8.2h2.8L8.7 5.6h6.6L17.2 8.2H20a1.2 1.2 0 0 1 1.2 1.2V17a1.8 1.8 0 0 1-1.8 1.8H4.6A1.8 1.8 0 0 1 2.8 17V9.4A1.2 1.2 0 0 1 4 8.2z"/><circle cx="12" cy="13.2" r="3.3"/></svg>',
     /* 卡片箭头：向右 */
-    arrow: SVG_OPEN + '<path d="M4.5 12h14M13 6l6 6-6 6"/></svg>'
+    arrow: SVG_OPEN + '<path d="M4.5 12h14M13 6l6 6-6 6"/></svg>',
+    /* 归位：逆时针回转箭头（K4 一键回默认位置） */
+    reset: SVG_OPEN + '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>'
   };
 
   /* ---------- DOM 骨架 ---------- */
@@ -405,6 +410,8 @@
     '#xiaomaomao .xm-tab-badge svg{width:11px;height:11px;display:block}' +
     '#xiaomaomao.xm-closed .xm-tab{display:block}' +
     '#xiaomaomao.xm-closed .xm-main-col{display:none}' +
+    /* K5：站内弹窗打开时猫暂隐/降层（.xm-behind-modal），免得压住弹窗与发送按钮 */
+    '#xiaomaomao.xm-behind-modal{z-index:30;opacity:0;pointer-events:none;transition:opacity .2s var(--xm-ease)}' +
     /* 聊天面板：锚定主列左侧 14px，玻璃面 + 1px 环 + 中性深影 */
     '#xiaomaomao .xm-panel{position:absolute;bottom:0;right:calc(100% + 14px);width:336px;max-width:calc(100vw - 156px);height:min(508px,66vh);display:none;flex-direction:column;background:var(--xm-surface);-webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5);border:1px solid var(--xm-ring);border-radius:20px;box-shadow:var(--xm-shadow-panel);overflow:hidden;transform-origin:bottom right;z-index:10}' +
     '#xiaomaomao.xm-open .xm-panel{display:flex;animation:xmPanelIn .24s var(--xm-ease) both}' +
@@ -602,6 +609,19 @@
     '</div>' +
     '<button class="xm-tab" type="button" title="叫出小猫猫" aria-label="叫出小猫猫"><img alt="小猫猫"><span class="xm-tab-badge" aria-hidden="true">' + ICONS.chat + '</span></button>';
   document.body.appendChild(root);
+  /* K2：启动时恢复持久收起态——7 天内收起过则仍收着（圆标可唤回）；超过 7 天
+     自动过期恢复展开（关一次不等于永久消失）。自动收起（syncMarketPark 的
+     autoClosed）不走这条：它只在本页滚动时生效，不落盘。 */
+  (function () {
+    var CLOSED_TTL = 7 * 24 * 3600 * 1000;
+    if (!store.closed) return;
+    if (!store.closedAt) { store.closedAt = Date.now(); persist(); }
+    else if (Date.now() - store.closedAt > CLOSED_TTL) {
+      store.closed = false; store.closedAt = 0; persist();
+      return;
+    }
+    root.classList.add('xm-closed');
+  })();
 
   var wrapEl = root.querySelector('.xm-wrap');
   var stageEl = root.querySelector('.xm-stage');
@@ -1113,6 +1133,21 @@
     root.style.right = 'auto';
     root.style.bottom = 'auto';
   }
+  /* K4：一键归位——清掉已存拖动位置并摘掉行内定位，回到样式表的默认右下角。
+     先 undock（贴边写的是行内 transform，会压过定位）；只清位置，不管形象。 */
+  function resetCatPos() {
+    if (docked) undock();
+    store.pos = null;
+    persist();
+    root.style.left = '';
+    root.style.top = '';
+    root.style.right = '';
+    root.style.bottom = '';
+    root.style.transform = '';
+    hideControls();
+    alignPanel();
+    showBubble('好啦，我回右下角待着～', true);
+  }
   function alignPanel() {
     var r = root.getBoundingClientRect();
     var cx = r.left + r.width / 2;
@@ -1136,6 +1171,12 @@
      睡觉与贴边互不干涉：睡着了也可以贴边，Zzz 跟着走；点/悬停先弹回，唤醒仍走原 click 链。
      贴边只写 transform，不动 left/top——拖动保存的位置分毫不变，弹回即原位。 */
   var docked = false, dockSide = 'right', xmLastAct = Date.now();
+  /* K3：两个闲置时钟是分开的——lastActive（markActive，滚动也算，喂睡觉/闲聊气泡）
+     与 xmLastAct（只认与猫的真实交互，喂 60 秒贴边）；滚动从来不重置贴边计时，
+     报告里“K3 前提”经代码+实测证伪，见轮次记录。新增 lastScrollAt/xmHovering，
+     喂下面的“滚动停止 8 秒自动半藏”。 */
+  var lastScrollAt = Date.now(), xmHovering = false;
+  var SCROLL_STOP_DOCK_AFTER = 8000;
   var DOCK_AFTER = 60000;
   function noteXmAct() { xmLastAct = Date.now(); }
   function dockBlocked() {
@@ -1161,7 +1202,13 @@
     noteXmAct();
   }
   window.setInterval(function () {
-    if (!docked && Date.now() - xmLastAct > DOCK_AFTER) doDock();
+    if (!docked && Date.now() - xmLastAct > DOCK_AFTER) { doDock(); return; }
+    /* K3：滚动停止 8 秒后也半藏——读右下角内容时猫别一直挡着。悬停猫时不缩
+       （xmHovering，用户正摸猫/看坞）；面板/游戏/聊天中不缩（doDock 自带
+       dockBlocked 守门）。xmLastAct 也要满 8 秒：刚弹回就缩走是骚扰。 */
+    if (!docked && !xmHovering && (window.scrollY || 0) > 300 &&
+        Date.now() - lastScrollAt > SCROLL_STOP_DOCK_AFTER &&
+        Date.now() - xmLastAct > SCROLL_STOP_DOCK_AFTER) doDock();
   }, 4000);
   /* v13：向下滚动浏览时贴边收起，免得猫盖住卡片（与 FloatingQuickNav 的
      下滑淡出同款思路）。只在向下滚动且滚过 300px 时触发；弹回靠悬停/轻点
@@ -1169,6 +1216,7 @@
      dockBlocked 守门（聊天/游戏/收起态不缩），重复调用无害。 */
   var lastScrollY = window.scrollY || 0;
   window.addEventListener('scroll', function () {
+    lastScrollAt = Date.now(); /* K3：记最后滚动时刻，喂“滚动停止 8 秒自动半藏” */
     var y = window.scrollY || 0;
     var down = y > lastScrollY + 4;
     lastScrollY = y;
@@ -1262,6 +1310,7 @@
     _xmResizeT = window.setTimeout(syncMarketPark, 200);
   });
   root.addEventListener('pointerenter', function () {
+    xmHovering = true; /* K3：悬停猫时“滚动停止 8 秒自动半藏”不触发 */
     var wasDocked = docked;
     if (docked) undock();
     noteXmAct();
@@ -1269,6 +1318,45 @@
     if (!wasDocked) showControls();
   });
   root.addEventListener('pointerdown', function () { noteXmAct(); }, true);
+
+  /* ---------- K5：站内弹窗打开时猫暂隐/降层 ----------
+     信号（站内已有模式，见 ui/overlay.tsx 注释）：浮层根节点挂
+     role="dialog" + aria-modal="true"；Radix Dialog 同款。猫自家面板也在
+     #xiaomaomao 内且无 aria-modal，判定里排除它。
+     超级搜索有两种打开路径：open-spotlight 事件（FloatingQuickNav 的按钮）
+     与键盘直开（gateway 直接挂载）——前者靠事件立即降层，后者靠下面的
+     MutationObserver 捕获挂载；关闭一律靠观察器捕获卸载。 */
+  var spotlightOpen = false;
+  function anySiteModalOpen() {
+    try {
+      var els = document.querySelectorAll('[role="dialog"][aria-modal="true"], [role="alertdialog"]');
+      for (var i = 0; i < els.length; i++) {
+        if (!root.contains(els[i])) return true;
+      }
+    } catch (e) { /* 忽略 */ }
+    return false;
+  }
+  function syncModalDim() {
+    var domOpen = anySiteModalOpen();
+    if (!domOpen) spotlightOpen = false; /* 弹窗都卸了，open-spotlight 的乐观位也清掉 */
+    root.classList.toggle('xm-behind-modal', domOpen || spotlightOpen);
+  }
+  window.addEventListener('open-spotlight', function () {
+    spotlightOpen = true;
+    syncModalDim();
+    /* 兜底：600ms 内没挂上弹窗（网关加载失败），乐观位过期、猫恢复 */
+    window.setTimeout(syncModalDim, 600);
+  });
+  try {
+    var _xmModalObs = new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var m = muts[i];
+        if (m.type === 'childList') { syncModalDim(); return; }
+        if (m.type === 'attributes' && (m.attributeName === 'aria-modal' || m.attributeName === 'data-state')) { syncModalDim(); return; }
+      }
+    });
+    _xmModalObs.observe(document.body, { childList: true, attributes: true, subtree: true, attributeFilter: ['aria-modal', 'data-state'] });
+  } catch (e) { /* 无 MutationObserver 的环境下降级：只靠 open-spotlight 事件 */ }
 
   /* ---------- v7：控件按需唤出（平时零遮挡） ----------
      参考系：Shimeji 角色本体零控件（菜单全在右键）；live2d-widget 工具栏 opacity 0、
@@ -1304,6 +1392,7 @@
     ctlTimer = window.setTimeout(hideControls, CTL_HIDE_AFTER);
   }
   root.addEventListener('pointerleave', function () {
+    xmHovering = false; /* K3：指针离开猫，滚动停止计时恢复生效 */
     if (!ctlShown) return;
     window.clearTimeout(ctlTimer);
     ctlLeaveTimer = window.setTimeout(hideControls, 350);
@@ -1459,6 +1548,10 @@
     autoClosed = false;
     autoParked = false;
     userUnparked = false;
+    /* K2：亲手收起要落盘，否则刷新就回来（旧 bug：collapseCat 不调 persist）。 */
+    store.closed = true;
+    store.closedAt = Date.now();
+    persist();
   }
   root.querySelector('.xm-close-btn').addEventListener('click', function (ev) {
     ev.stopPropagation();
@@ -1483,6 +1576,10 @@
     autoParked = false;
     autoClosed = false;
     userUnparked = true; /* 本页不再自动收走 */
+    /* K2：亲手唤回即清掉持久收起，下次加载正常展开。 */
+    store.closed = false;
+    store.closedAt = 0;
+    persist();
     markActive();
     wakeUp(false);
     setPose('waking');
@@ -1901,6 +1998,20 @@
   gameBtn.title = '和小猫猫玩接星星';
   gameBtn.setAttribute('aria-label', '和小猫猫玩接星星');
   dockBox.insertBefore(gameBtn, closeBtnEl);
+  /* K4：一键归位钮（与喂鱼/接星星同款插入位置：关闭钮之前）。拖乱位置后点它
+     即回默认右下角，并清掉已存拖动位置（见 resetCatPos）。 */
+  var resetBtn = document.createElement('button');
+  resetBtn.className = 'xm-btn xm-reset-btn';
+  resetBtn.type = 'button';
+  resetBtn.innerHTML = ICONS.reset;
+  resetBtn.title = '把小猫放回右下角';
+  resetBtn.setAttribute('aria-label', '把小猫放回右下角');
+  dockBox.insertBefore(resetBtn, closeBtnEl);
+  resetBtn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    markActive();
+    resetCatPos();
+  });
   function updateFishBtn() {
     rollFishDay();
     var left = Math.max(0, 5 - v4.fishCount);

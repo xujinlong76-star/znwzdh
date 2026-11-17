@@ -9,8 +9,8 @@ export const codeSearchPack: SeedPluginDef = {
   "manifest": {
     "manifestVersion": 1,
     "kind": "search-pack",
-    "name": "全栈代码生态与依赖仓库搜索引擎包",
-    "description": "38 个全栈代码与依赖仓库检索源一次装齐：在主搜索框用 !grep、!sourcegraph、!ghcode、!smithery、!jsr、!crates、!nvdcve、!snykvuln 等前缀一键直达全球代码语义搜索、MCP 工具市场、官方依赖库与安全漏洞数据库。",
+    "name": "全栈代码生态、依赖仓库与安全侦察搜索引擎包",
+    "description": "38 个全栈代码、依赖仓库与安全侦察检索源一次装齐：在主搜索框用 !grep、!sourcegraph、!ghcode、!smithery、!jsr、!crates、!nvdcve、!snykvuln 等前缀一键直达全球代码语义搜索、MCP 工具市场、官方依赖库、安全漏洞数据库与安全侦察/资产测绘查询。",
     "icon": "📦",
     "author": "山羊胡官方",
     "license": "MIT",
@@ -22,7 +22,8 @@ export const codeSearchPack: SeedPluginDef = {
       "crates",
       "MCP",
       "CVE",
-      "漏洞安全"
+      "漏洞安全",
+      "安全侦察"
     ],
     "payload": {
       "engines": [

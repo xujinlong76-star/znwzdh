@@ -18,6 +18,7 @@
  *  - GET    /api/me/export               导出全部个人数据（JSON）
  *  - GET    /api/me/export/bookmarks.html 导出浏览器标准 Netscape 书签（HTML）
  *  - GET    /api/me/activity             我的操作记录
+ *  - GET    /api/me/drama-check-states   我的短剧新集检查状态（按 dramaKey 列全部；匿名返 []）
  *  - POST   /api/me/favorites/sync       收藏增量同步
  *  - POST   /api/me/watchlist/sync       追剧清单增量同步（与收藏同一套协议）
  *  - POST   /api/me/merge                匿名数据合并到登录身份（幂等、事务、审计）
@@ -159,6 +160,42 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       reply.header("cache-control", "private, no-store");
       const safety = await ctx.repo.getUserSafetyStatus(canonical);
       return { ok: true, ...safety };
+    },
+  );
+
+  /**
+   * 短剧新集检查状态（U-D3 清单行「已更至第 X 集」+ U-D8「有新集 Z 部」共用）。
+   *
+   * 只读当前登录用户的 drama_check_states：服务端每天为关注者查到的最新集数、
+   * 上次检查时间与最近一次失败原因。匿名身份返 []（匿名用户的检查状态只
+   * 在本地算，不走服务端基线）；无记录返 []。个人数据：no-store。
+   */
+  app.get(
+    "/api/me/drama-check-states",
+    { config: { scope: "public", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer <redacted> 或有效的身份签名" }; }
+      const identity = requestIdentityOf(req as never);
+      if (!identity) {
+        reply.code(401);
+        return { error: "缺少登录身份" };
+      }
+      if (identity.startsWith("anon-")) {
+        reply.header("cache-control", "private, no-store");
+        return { ok: true, states: [] };
+      }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+      reply.header("cache-control", "private, no-store");
+      const states = await ctx.repo.listDramaCheckStates(canonical);
+      return {
+        ok: true,
+        states: states.map((s) => ({
+          dramaKey: s.dramaKey,
+          latestEpisode: s.latestEpisode,
+          lastCheckedAt: s.lastCheckedAt,
+          lastError: s.lastError,
+        })),
+      };
     },
   );
 

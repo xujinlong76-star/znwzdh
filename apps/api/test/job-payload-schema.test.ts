@@ -24,6 +24,7 @@ const MINIMAL_PAYLOADS: Record<(typeof JOB_KINDS)[number], Record<string, unknow
   daily_brief: {},
   drama_update_check: {},
   drama_calendar_refresh: {},
+  drama_rankings_refresh: {},
 };
 
 describe("任务 payload 契约", () => {

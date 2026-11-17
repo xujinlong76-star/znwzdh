@@ -404,6 +404,61 @@ describe("handleDramaUpdateCheck", () => {
  const meta = await latestCheckEvent();
  expect(meta?.guarded).toEqual([]);
 });
+ it("soduanju-subject：已完结剧首轮记基线、不通知；上映日不进 sourceUpdatedAt", async () => {
+ const user = "drama-test-soduanju-first";
+ const d: DramaFeatured = {
+  title: "搜短剧测试剧",
+  platformSiteId: HONGUO,
+  platformTitle: "红果短剧",
+  url: "https://www.soduanju.com/duanju/ceshiju.html",
+  linkNote: "剧目页",
+  episodesKnown: null,
+  totalEpisodes: null,
+  check: { kind: "soduanju-subject", url: "https://www.soduanju.com/duanju/ceshiju.html" },
+ };
+ await followDrama(user, d);
+ // 夹具与真实详情页同结构：meta 行“全 86 集 · 2026-10-09”+ 已完结徽章。
+ const body =
+  `<div class="card mt-4 px-4 py-4 sm:px-5"><h2>搜短剧测试剧</h2>` +
+  `<div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">` +
+  `<span>红果短剧</span><span class="text-slate-300">·</span><span>全 86 集</span>` +
+  `<span class="text-slate-300">·</span><span>2026-10-09</span>` +
+  `<span class="text-slate-300">·</span><span>总时长 2小时46分</span></div></div>` +
+  `<div class="mt-2 flex items-center justify-between text-xs">` +
+  `<span class="font-medium text-primary dark:text-accent-light">已完结</span></div>` +
+  `<div>全 86 集</div>`;
+ const { impl } = fakeFetch(new Map([[d.check.url!, { status: 200, body }]]));
+ await handleDramaUpdateCheck(ctx, { fetchImpl: impl, dramas: [d], now: () => NOW });
+ expect((await ctx.repo.getDramaCheckState(user, dramaKeyFor(d.platformSiteId, d.title)))?.latestEpisode).toBe(86);
+ expect(await outboxFor(user)).toHaveLength(0);
+ const meta = await latestCheckEvent();
+ expect(meta?.checked).toBe(1);
+ expect(meta?.failed).toEqual([]);
+ // 上映日（2026-10-09）不是资料更新日，不进 sourceUpdatedAt。
+ expect(meta?.sourceUpdatedAt).toEqual({});
+});
+
+ it("soduanju-subject：空壳详情页解析不出集数时记 last_error、保留旧值", async () => {
+ const user = "drama-test-soduanju-noparse";
+ const d: DramaFeatured = {
+  title: "搜短剧空壳测试剧",
+  platformSiteId: HONGUO,
+  platformTitle: "红果短剧",
+  url: "https://www.soduanju.com/duanju/kongke.html",
+  linkNote: "剧目页",
+  episodesKnown: null,
+  totalEpisodes: null,
+  check: { kind: "soduanju-subject", url: "https://www.soduanju.com/duanju/kongke.html" },
+ };
+ await followDrama(user, d);
+ await ctx.repo.upsertDramaCheckState(user, dramaKeyFor(d.platformSiteId, d.title), { latestEpisode: 64, lastCheckedAt: NOW - 1000, lastError: null }, NOW - 1000);
+ const { impl } = fakeFetch(new Map([[d.check.url!, { status: 200, body: "<html><head><title>搜短剧空壳测试剧</title></head><body><h2>搜短剧空壳测试剧</h2></body></html>" }]]));
+ await handleDramaUpdateCheck(ctx, { fetchImpl: impl, dramas: [d], now: () => NOW });
+ const state = await ctx.repo.getDramaCheckState(user, dramaKeyFor(d.platformSiteId, d.title));
+ expect(state?.latestEpisode).toBe(64);
+ expect(state?.lastError).toBe("搜短剧详情页未解析出集数");
+ expect(await outboxFor(user)).toHaveLength(0);
+});
 });
 
 describe("drama-featured.json 检查配置", () => {
@@ -445,15 +500,17 @@ describe("drama-featured.json 检查配置", () => {
 }
 });
 
- it("魔神人生 S2：三方证实总集数 586，episodesKnown 锁 586、totalEpisodes 仍 null、check 仍 none", () => {
+ it("魔神人生 S2：三方证实总集数 586，episodesKnown 与 totalEpisodes 均锁 586、check 仍 none", () => {
  const loaded = loadDramaFeaturedForCheck({ repoRoot: REPO_ROOT});
  expect(loaded.error).toBeUndefined();
  const drama = loaded.dramas.find((d) => d.title === "魔神人生：弃子问天 第二季");
  expect(drama).toBeDefined();
  // 2026-11-15 三方证实：红果快照列至 586、Ignite Drama 标 586 集、366.me 写明共 586 集。
- // 综艺迷暂无本季作品页，未接入自动检查，故 totalEpisodes 仍留 null、check 仍为 none。
+ // 2026-11-17 搜短剧详情页实抓核实：全 586 集、已完结（与三方证实一致），
+ // 故 totalEpisodes 由 null 补为 586；已完结无新集可等，check 仍为 none
+ //（soduanju-subject 解析器供连载新剧用，当前 0 部剧挂接）。
  expect(drama?.episodesKnown).toBe(586);
- expect(drama?.totalEpisodes).toBeNull();
+ expect(drama?.totalEpisodes).toBe(586);
  expect(drama?.check.kind).toBe("none");
 });
 

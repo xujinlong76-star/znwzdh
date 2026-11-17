@@ -10,7 +10,7 @@ import { existsSync, readFileSync} from "node:fs";
 import { dirname, join, resolve} from "node:path";
 import { fileURLToPath} from "node:url";
 
-export type DramaCheckKind = "migu-list" | "wikipedia" | "ranking" | "zongyimi-subject" | "none";
+export type DramaCheckKind = "migu-list" | "wikipedia" | "ranking" | "zongyimi-subject" | "soduanju-subject" | "none";
 
 export interface DramaCheck {
  kind: DramaCheckKind;
@@ -29,6 +29,8 @@ export interface DramaFeatured {
  linkNote: DramaLinkNote;
  episodesKnown: number | null;
  totalEpisodes: number | null;
+ /** 题材标签（核实过的才填；详情页首个标签 chip 为主 题材；没核实的留空）。 */
+ genres?: string[];
  check: DramaCheck;
 }
 
@@ -49,6 +51,7 @@ const CHECK_KINDS: ReadonlySet<string> = new Set([
  "wikipedia",
  "ranking",
  "zongyimi-subject",
+ "soduanju-subject",
  "none",
 ]);
 const LINK_NOTES: ReadonlySet<string> = new Set([

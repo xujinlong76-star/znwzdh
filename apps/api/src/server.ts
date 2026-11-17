@@ -99,6 +99,7 @@ import { compareShareRoutes } from "./routes/compare-share.ts";
 import { scenesRoutes } from "./routes/scenes.ts";
 import { hotlistRoutes } from "./routes/hotlist.ts";
 import { dramaCalendarRoutes } from "./routes/drama-calendar.ts";
+import { dramaRankingsRoutes } from "./routes/drama-rankings.ts";
 import { accountRoutes } from "./routes/account.ts";
 import { assetRoutes } from "./routes/assets.ts";
 
@@ -774,6 +775,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(scenesRoutes, { ctx });
   await app.register(hotlistRoutes, { ctx });
   await app.register(dramaCalendarRoutes, { ctx });
+  await app.register(dramaRankingsRoutes, { ctx });
   await app.register(accountRoutes, { ctx });
   await app.register(assetRoutes, { ctx });
 

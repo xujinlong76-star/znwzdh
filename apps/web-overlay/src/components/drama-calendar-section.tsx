@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useDramaCalendar } from "@/hooks/useDramaData";
 import type { DramaCalendarResponse } from "@/lib/rest-contracts.generated";
 
 /**
  * 开播日历区块（/drama 内）。
  *
  * 数据来自 GET /api/drama/calendar（drama_calendar_refresh 任务每日抓
- * 搜短剧预约榜存快照）。客户端取数、失败不挂页：
+ * 搜短剧预约榜存快照），与页内搜索共用 useDramaCalendar（同一页只拉一次）。
+ * 客户端取数、失败不挂页：
  * - 抓取失败时后端下发上一日快照并标 stale，这里如实写“展示上一日快照”；
  * - 从未抓到过时 status empty，这里只留一行说明，不编日期。
  *
@@ -16,12 +17,9 @@ import type { DramaCalendarResponse } from "@/lib/rest-contracts.generated";
  * - 只放榜单抓到的真实数据：精确到日的进按日分组，仅到月的进“月份待定”，
  *   无日期的不展示；过期未兑现的单列，不静默删除；
  * - 日历不给单剧外链：榜单没给剧在哪个平台播，乱指一个平台入口是误导。
+ * - “刚开播”区是推断：离开预约榜 ≠ 确认开播，文案写清这一点；
+ *   日历剧没有平台信息，不挂追剧按钮（没法预填平台），只链到清单添加表单。
  */
-
-type CalendarState =
-  | { kind: "loading" }
-  | { kind: "failed" }
-  | { kind: "ready"; data: DramaCalendarResponse };
 
 function formatDataDate(fetchedAt: number | null): string {
   if (!fetchedAt) return "暂无";
@@ -34,25 +32,7 @@ function formatDataDate(fetchedAt: number | null): string {
 }
 
 export function DramaCalendarSection() {
-  const [state, setState] = useState<CalendarState>({ kind: "loading" });
-
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/hub/drama/calendar", { headers: { Accept: "application/json" } })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json() as Promise<DramaCalendarResponse>;
-      })
-      .then((data) => {
-        if (alive) setState({ kind: "ready", data });
-      })
-      .catch(() => {
-        if (alive) setState({ kind: "failed" });
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const state = useDramaCalendar();
 
   return (
     <section aria-label="开播日历" className="mt-10">
@@ -158,6 +138,33 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                 {data.recentChanges.slice(0, 3).map((c) => (
                   <li key={`${c.title}-${c.at}`}>
                     《{c.title}》原定 {c.from ?? "未定"} → 改至 {c.to ?? "未定"}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {data.recentlyDropped.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-base font-semibold">刚开播</h3>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                近 7 天离开预约榜的剧——可能是已开播，也可能是下架或改档，
+                榜单没给确认信息，以平台为准。想追的剧去
+                <a href="/me/watchlist" className="underline">
+                  我的追剧
+                </a>
+                里手动加上（这里不知道它在哪个平台播，没法一键加）。
+              </p>
+              <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {data.recentlyDropped.map((item) => (
+                  <li
+                    key={item.title}
+                    className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-3 shadow-sm"
+                  >
+                    <span className="block text-sm font-medium">{item.title}</span>
+                    <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                      {item.lastLabel ?? "离开预约榜"}
+                    </span>
                   </li>
                 ))}
               </ul>

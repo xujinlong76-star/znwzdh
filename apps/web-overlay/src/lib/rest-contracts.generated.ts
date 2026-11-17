@@ -627,6 +627,44 @@ export interface DramaCalendarResponse {
 }
 
 /**
+ * GET /api/drama/rankings
+ */
+export interface DramaRankingsResponse {
+  ok: true;
+  status: "ok" | "stale" | "empty";
+  fetchedAt: number | null;
+  lists: ({
+    kind: "rebo" | "reso" | "shoucang";
+    label: string;
+    sourceUrl: string;
+    sourceName: string;
+    fetchedAt: number | null;
+    sourceDateModified: string | null;
+    status: "ok" | "stale" | "empty";
+    lastError: string | null;
+    droppedTitles: number;
+    entries: ({
+      rank: number;
+      title: string;
+      key: string;
+      detailUrl: string;
+      metric: number | null;
+      metricLabel: string | null;
+      rating: number | null;
+      favorites: number | null;
+      shares: number | null;
+      likes: number | null;
+      totalEpisodes: number | null;
+      genre: string | null;
+      actors: string[];
+      [key: string]: unknown;
+    })[];
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
  * GET /api/plugins
  */
 export interface PluginListResponse {
@@ -952,6 +990,21 @@ export interface MeSafetyResponse {
     label: string;
     status: "ok" | "warning" | "critical" | "unknown";
     detail: string;
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/me/drama-check-states
+ */
+export interface DramaCheckStatesResponse {
+  ok: true;
+  states: ({
+    dramaKey: string;
+    latestEpisode: number | null;
+    lastCheckedAt: number;
+    lastError: string | null;
     [key: string]: unknown;
   })[];
   [key: string]: unknown;
@@ -3518,12 +3571,14 @@ export interface RestContractRoutes {
   "GET /api/compare/snapshots": ComparisonSnapshotListResponse;
   "GET /api/compare/snapshots/{id}/diff": ComparisonSnapshotDiffResponse;
   "GET /api/drama/calendar": DramaCalendarResponse;
+  "GET /api/drama/rankings": DramaRankingsResponse;
   "GET /api/facets": FacetsResponse;
   "GET /api/favorites": FavoritesListResponse;
   "GET /api/health": HealthResponse;
   "GET /api/hotlist": HotlistResponse;
   "GET /api/me": MeOverviewResponse;
   "GET /api/me/custom-sites": MeCustomSitesListResponse;
+  "GET /api/me/drama-check-states": DramaCheckStatesResponse;
   "GET /api/me/favorites/trash": MeFavoriteTrashListResponse;
   "GET /api/me/notifications": NotificationListResponse;
   "GET /api/me/notifications/unread-count": NotificationUnreadCountResponse;

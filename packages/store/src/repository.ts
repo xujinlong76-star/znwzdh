@@ -1091,6 +1091,10 @@ async savedPluginEmbeddings(filter?: {
     return dramaCheckRepo.listDramaFollowers(this, dramaKey);
   }
 
+  async listDramaCheckStates(userId: string): Promise<dramaCheckRepo.DramaCheckState[]> {
+    return dramaCheckRepo.listDramaCheckStates(this, userId);
+  }
+
   async listDramaFollowersWithRemind(dramaKey: string): Promise<dramaCheckRepo.DramaFollowerWithRemind[]> {
     return dramaCheckRepo.listDramaFollowersWithRemind(this, dramaKey);
   }

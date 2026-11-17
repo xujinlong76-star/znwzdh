@@ -13,7 +13,7 @@
 import featuredRaw from "../navsphere/content/drama-featured.json";
 import { dramaKeyFor } from "./watchlist";
 
-export type DramaCheckKind = "migu-list" | "wikipedia" | "ranking" | "zongyimi-subject" | "none";
+export type DramaCheckKind = "migu-list" | "wikipedia" | "ranking" | "zongyimi-subject" | "soduanju-subject" | "none";
 
 export interface DramaCheck {
   kind: DramaCheckKind;
@@ -36,6 +36,8 @@ export interface DramaFeatured {
   episodesKnown: number | null;
   /** 总集数（核实过的才填；连载中、未核实的留 null） */
   totalEpisodes: number | null;
+  /** 题材标签（核实过的才填；详情页首个标签 chip 为主 题材；没核实的留空） */
+  genres?: string[];
   check: DramaCheck;
 }
 export interface DramaFeaturedFile {
@@ -51,6 +53,7 @@ const CHECK_KINDS: ReadonlySet<string> = new Set([
   "wikipedia",
   "ranking",
   "zongyimi-subject",
+  "soduanju-subject",
   "none",
 ]);
 const LINK_NOTES: ReadonlySet<string> = new Set([
@@ -99,6 +102,14 @@ function parseDramaEntry(raw: unknown): DramaFeatured | null {
   const episodesKnown = asEpisodeCount(raw.episodesKnown);
   const totalEpisodes = asEpisodeCount(raw.totalEpisodes);
   if (episodesKnown === undefined || totalEpisodes === undefined) return null;
+  // 题材：可选字段；数组里每项须为非空短串，否则整字段丢弃（不因此跳过整行）。
+  let genres: string[] | undefined;
+  if (Array.isArray(raw.genres)) {
+    const list = raw.genres
+      .map((g) => (typeof g === "string" ? g.trim() : ""))
+      .filter((g) => g.length > 0 && g.length <= 8);
+    if (list.length > 0 && list.length <= 4) genres = [...new Set(list)];
+  }
   if (
     episodesKnown !== null &&
     totalEpisodes !== null &&
@@ -129,6 +140,7 @@ function parseDramaEntry(raw: unknown): DramaFeatured | null {
     linkNote: linkNote as DramaFeatured["linkNote"],
     episodesKnown,
     totalEpisodes,
+    ...(genres !== undefined ? { genres } : {}),
     check,
   };
 }

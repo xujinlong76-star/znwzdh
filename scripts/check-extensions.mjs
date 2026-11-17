@@ -189,7 +189,8 @@ const SEARCH_CREDENTIAL_FILES = [
 // ---- 4. API 契约：扩展调用的每个 /api/* 都必须在后端有路由声明 ----
 // 扩展是**直连** Fastify 的（默认 http://127.0.0.1:8787）。后端把某条路由改名/下线时，
 // 扩展里手写的 URL 不会红——只会在用户点击时静默失效（这类回归没有编译期信号）。
-// 这里把「扩展用到的端点」纳入门禁：在 apps/api/src/routes/**.ts 里找不到对应模板即判红
+// 这里把「扩展用到的端点」纳入门禁：在 apps/api/src/routes/**.ts 或
+// apps/web-overlay/src/app/api/**/route.ts（Next 路由 handler）里找不到对应模板即判红
 // （含拆分后的 routes/plugins/p1..p5.ts）。动态段取前缀匹配：`/api/plugins/` 可匹配
 // `/api/plugins/:slug/install`。
 {
@@ -213,6 +214,21 @@ const SEARCH_CREDENTIAL_FILES = [
     const src = readFileSync(f, 'utf-8')
     for (const m of src.matchAll(/app\.(?:get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]/g)) {
       if (m[1].startsWith('/api/')) templates.push(m[1])
+    }
+  }
+  // Next 路由 handler 同样是后端声明：apps/web-overlay/src/app/api/**/route.ts
+  // 就是 /api/** 端点（如 /api/home/navigation），Fastify 路由目录扫不到它们。
+  // 目录名即路径段：路由组 (group) 不进 URL，[param] / [...param] 折成 :param，
+  // 与 Fastify 的 :param 模板走同一条前缀/模板匹配。
+  {
+    const nextApiDir = join(ROOT, 'apps/web-overlay/src/app/api')
+    for (const f of collect(nextApiDir, /^route\.ts$/)) {
+      const rel = f.slice(nextApiDir.length + 1, -'/route.ts'.length)
+      const segments = rel
+        .split('/')
+        .filter((seg) => seg.length > 0 && !/^\(.*\)$/.test(seg))
+        .map((seg) => seg.replace(/^\[\.\.\.(.+)\]$/, ':$1').replace(/^\[(.+)\]$/, ':$1'))
+      templates.push('/api/' + segments.join('/'))
     }
   }
   if (templates.length === 0) logError('后端路由里没扫到任何 /api/* 声明（路由目录结构变了？）')

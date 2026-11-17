@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, CalendarDays, Clapperboard } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CalendarDays, Clapperboard } from 'lucide-react'
 import DailyFocus from '@/components/daily-focus'
 import BriefResurface from '@/app/brief/brief-resurface'
 import { safeHref } from '@/lib/safe-url'
@@ -17,7 +17,7 @@ import {
  *   - 今日专注（DailyFocus 岛，本机 localStorage，明天自动清空）；
  *   - 考试倒计时（exam-calendar 的 nearestExamCountdown / nextExamNode，
  *     服务端纯函数直出，不挂每秒 tick 的倒计时岛——tick 岛仍只在折叠区
- *     的完整考试条里；四场全结束时整行不渲染，不挂空态占位）；
+ *     的完整考试条里；五场全结束时整行不渲染，不挂空态占位）；
  *   - 今日短剧（drama-featured 清单首部 1 部，标题旁如实标 linkNote，
  *     榜单页 / 报道页 / 百科页不是正片，不写成直达正片）；
  *   - 今日重温（BriefResurface 岛，无可重温收藏时它自己返回 null）。
@@ -75,9 +75,24 @@ export function HomeTodayZone() {
                     </span>
                   </span>
                   {nextNode ? (
-                    <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-                      下一步：{nextNode.label} · {nextNode.detail}
-                    </p>
+                    nextNode.url ? (
+                      // 问题⑪：下一步节点挂了已核实官方 url 的，渲染为可点直达
+                      //（U-31 行内直达配方：safeHref + 新窗口 + min-h-11 + sky-700）；
+                      // 无 url 的节点（成考成绩）仍是纯文本，不编链接。
+                      <a
+                        href={safeHref(nextNode.url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-h-11 min-w-0 flex-1 items-center gap-1 text-sm font-medium text-sky-700 hover:underline dark:text-sky-400"
+                      >
+                        下一步：{nextNode.label} · {nextNode.detail}
+                        <ArrowUpRight className="h-4 w-4 shrink-0" aria-hidden />
+                      </a>
+                    ) : (
+                      <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+                        下一步：{nextNode.label} · {nextNode.detail}
+                      </p>
+                    )
                   ) : null}
                   <Link
                     href="/exam"

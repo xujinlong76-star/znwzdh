@@ -23,7 +23,7 @@ import {
   type PluginAuthorProfile,
 } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
-import { PluginCard } from '@/components/plugins/plugin-card'
+import { PluginCard, AuthorVerifiedBadge } from '@/components/plugins/plugin-card'
 import { safeHref } from '@/lib/safe-url'
 import { toast } from 'sonner'
 import { failureToastOptions } from '@/lib/failure-guidance'
@@ -177,6 +177,16 @@ export default function AuthorPluginsView({
     )
   }, [])
 
+  // P2-1：作者页响应体（HubPluginAuthorResponse）没有 authorVerified 字段，
+  // 中枢只在插件条目（HubPluginItem.authorVerified）上返回；authorVerified
+  // 语义上是作者级字段（同作者的作品共用同一作者身份），因此以本页作品列表
+  // 为准：任一作品已认证即视为作者已认证。作者尚无已上架作品时无法判定，
+  // 不展示徽章（不猜、不补默认值）。
+  const authorVerified = useMemo(
+    () => data?.items.some((item) => item.authorVerified === true) ?? false,
+    [data],
+  )
+
   return (
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
@@ -240,6 +250,8 @@ export default function AuthorPluginsView({
                           {data.authorKind === 'import' ? '导入作者' : '社区作者'}
                         </Badge>
                       )}
+                      {/* P2-1：已认证才显徽章，未认证不占位 */}
+                      {authorVerified && <AuthorVerifiedBadge />}
                       {data.isOwner && (
                         <Badge variant="outline" className="text-[10px] text-primary border-primary/30 bg-primary/5">
                           这是你

@@ -51,6 +51,37 @@ export interface PluginCardProps {
   onOpenInstallModal?: (plugin: HubPluginItem, mode: 'install' | 'uninstall' | 'upgrade') => void
 }
 
+/**
+ * P2-1 开发者认证徽章，对标 Chrome Web Store「Established Publisher」。
+ *
+ * 认证规则（产品口径，写死在这里、只展示不推断）：
+ * 1. 身份验证通过——作者身份已由中枢核实；
+ * 2. 无违规记录——作者名下插件无违规/下架类不良记录。
+ * 两条同时满足才算认证，缺一不可。
+ *
+ * 字段来源与诚实边界：`authorVerified` 由中枢/人工认证流程写入，随插件条目
+ * 下发；站内没有自助认证入口，前端只按字段展示，绝不自行推断、绝不自授。
+ * 字段缺失（undefined）与 false 一律按「未认证」处理，不显示徽章。
+ * 文案沿用详情页既有说法「认证作者」（plugin-detail-view.tsx 的
+ * auditReport.verifiedAuthor 处），不另造新词。
+ */
+export function AuthorVerifiedBadge({ className }: { className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      data-testid="author-verified-badge"
+      title="已认证开发者：身份已验证，且无违规记录。认证由中枢/人工认证流程写入 authorVerified 字段，站内无自助认证入口。"
+      className={cn(
+        'inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+        className
+      )}
+    >
+      <ShieldCheck className="w-3 h-3" />
+      认证作者
+    </Badge>
+  )
+}
+
 export function PluginCard({
   plugin,
   identity,
@@ -472,6 +503,26 @@ export function PluginCard({
             {resolvePluginDescription(plugin.description || '', summary) || '暂无描述'}
           </p>
         </div>
+
+        {/* P2-1：作者行——卡片此前不展示作者，认证徽章无处可挂；作者名链向
+            作者页（有 ownerKey 才链，无则纯文本）。徽章只在 authorVerified
+            严格为 true 时出现，未认证/字段缺失不占位、不留「未认证」文案。 */}
+        {plugin.author && (
+          <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <span>作者：</span>
+            {plugin.ownerKey ? (
+              <Link
+                href={`/marketplace/author/${encodeURIComponent(plugin.ownerKey)}`}
+                className="font-medium text-foreground hover:text-primary hover:underline"
+              >
+                {plugin.author}
+              </Link>
+            ) : (
+              <span className="font-medium text-foreground">{plugin.author}</span>
+            )}
+            {plugin.authorVerified === true && <AuthorVerifiedBadge />}
+          </p>
+        )}
 
         {/* 指标摘要 */}
         <div className="pt-1">

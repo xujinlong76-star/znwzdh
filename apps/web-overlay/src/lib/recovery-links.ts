@@ -19,6 +19,7 @@ export type RecoveryIcon =
   | 'collections'
   | 'graph'
   | 'favorites'
+  | 'marketplace'
 
 export interface RecoveryLink {
   /** 站内绝对路径 */
@@ -36,6 +37,10 @@ export const RECOVERY_LINKS: readonly RecoveryLink[] = [
   // 本来就想按分类浏览，分类总览是最近的一个有效入口，必须排在前面。
   { href: '/category', label: '分类总览', description: '按主题从大类逐层下钻（只列已达标的分类）', icon: 'categories' },
   { href: '/hot', label: '热度榜', description: '看看最近全网在用什么', icon: 'trending' },
+  // P2-7：死链详情页（/marketplace/<不存在的 slug>）的 404 必须有回市场出口。
+  // 详情页自己的「插件未上架或不存在」态到不了——服务端 notFound() 先接走，
+  // 用户只能从这里回市场；放进全局恢复路径，404 页按数据渲染即带上它。
+  { href: '/marketplace', label: '返回插件市场', description: '回到插件市场，浏览全部插件或直接搜索', icon: 'marketplace' },
   { href: '/tags', label: '标签云', description: '按技术标签下钻，适合描述不了需求的时候', icon: 'tags' },
   { href: '/collections', label: '精选专题', description: '按主题成组浏览（地域 / 路线图 / 技术栈）', icon: 'collections' },
   { href: '/graph', label: '技术生态图谱', description: '看技术之间的关联与替代关系', icon: 'graph' },

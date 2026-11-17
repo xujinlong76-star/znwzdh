@@ -220,9 +220,19 @@ describe("K10/K17 卡片反馈", () => {
     expect(src).toContain("active:opacity-70");
   });
 
-  it("详情页有独立 loading.tsx 骨架屏（detail 形态）", () => {
-    const loading = readOverlay("app/marketplace/[slug]/loading.tsx");
-    expect(loading).toContain('variant="detail"');
+  it("详情页不得有 loading.tsx（软 404 根因），加载态由详情岛自带骨架屏承接", () => {
+    // P2-7：loading.tsx 边界会让 Next 先流式刷出 HTTP 200 壳，之后
+    // notFound() 再抛也改不了状态码（与 /site/[id]、/collections/[slug]
+    // 同一根因，见 site/[id]/page.tsx 头部实测铁律）。父级
+    // /marketplace/loading.tsx 同样包住详情段，必须一起去掉；
+    // 详情岛 loading=true 时自带 animate-pulse 骨架屏，加载体验不受影响。
+    expect(
+      existsSync(join(overlayRoot(), "src", "app", "marketplace", "[slug]", "loading.tsx")),
+    ).toBe(false);
+    expect(existsSync(join(overlayRoot(), "src", "app", "marketplace", "loading.tsx"))).toBe(false);
+    const detail = readOverlay("app/marketplace/[slug]/plugin-detail-view.tsx");
+    expect(detail).toContain("if (loading)");
+    expect(detail).toContain("animate-pulse");
   });
 });
 

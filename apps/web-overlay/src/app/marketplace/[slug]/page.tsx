@@ -42,10 +42,14 @@ export async function generateMetadata({
   if (!safeSlug) notFound()
 
   const probe = await loadPluginDetail(safeSlug)
-  if (probe.status === 'miss') notFound()
-
-  const canonical = `/marketplace/${encodeURIComponent(safeSlug)}`
-  if (probe.status === 'failed') {
+  // P2-7：这里不得 notFound()。generateMetadata 里抛 notFound 会把整个
+  // 文档渲染一起 abort——实测 curl 只拿到 dev 错误模板
+  //（<template data-next-error-message="NEXT_HTTP_ERROR_FALLBACK;404">），
+  // 404 文案进不了 SSR HTML。状态码由页面渲染体的 notFound() 负责
+  //（'miss' 时抛，见下），这里只给一份通用元信息兜底：404 响应本身
+  // 不会被收录，标题无所谓；'failed' 同款兜底，不编造插件名。
+  if (probe.status !== 'ok') {
+    const canonical = `/marketplace/${encodeURIComponent(safeSlug)}`
     return {
       title: '插件详情与安装',
       description: '查看插件声明式清单明细、实时预览与一键安装',
@@ -58,6 +62,7 @@ export async function generateMetadata({
     }
   }
 
+  const canonical = `/marketplace/${encodeURIComponent(safeSlug)}`
   const plugin = probe.data.plugin
   const title = `「${plugin.name}」· 插件市场`
   const description = (plugin.description || '查看插件声明式清单明细、实时预览与一键安装').slice(0, 160)

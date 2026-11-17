@@ -233,16 +233,16 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'claude.ai': '/brand-icons/claude.svg',
   'anthropic.com': '/assets/images/logos/claude.webp',
   'cloudflare.com': '/brand-icons/cloudflare.png',
-  'figma.com': '/assets/images/logos/figma.webp',
-  'tinypng.com': '/assets/images/logos/tinypng.webp',
-  'unsplash.com': '/assets/images/logos/unsplash.webp',
+  'figma.com': '/brand-icons/figma.svg',
+  'tinypng.com': '/brand-icons/tinypng.png',
+  'unsplash.com': '/brand-icons/unsplash.png',
   'vercel.com': '/brand-icons/vercel.png',
-  'fonts.google.com': '/assets/images/logos/Materialicons.webp',
+  'fonts.google.com': '/brand-icons/google-fonts.svg',
   'material.io': '/assets/images/logos/Materialicons.webp',
   'colorhunt.co': '/assets/images/logos/colorhunt.webp',
   'flinto.com': '/assets/images/logos/flinto.webp',
-  'flaticon.com': '/assets/images/logos/flaticon.webp',
-  'fontawesome.com': '/assets/images/logos/fontawesomeicon.webp',
+  'flaticon.com': '/brand-icons/flaticon.png',
+  'fontawesome.com': '/brand-icons/font-awesome.svg',
   'framer.com': '/assets/images/logos/framer.webp',
   'freepik.com': '/assets/images/logos/freepik.webp',
   'gemini.google.com': '/brand-icons/gemini.svg',
@@ -283,6 +283,18 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // Pages 共用此键，复审裁决 (d)；重复文件 cloudflare-pages.png 已删，
   // 复审 R3）。adobe.com 键整行删除（复审 R2 撞站），Adobe Firefly 改走
   // map 查找前的标题规则。来源与字节见轮次笔记 icon-a1a / icon-a1b。
+  // 2026-11-17（图标 A 类第 2 批 a2a + a2b，独立复审打回 2 项后合批）：
+  // 本批 6 个键原地替换旧值（旧值指向不存在的 /assets/images/logos/*，
+  // 不另起重复块）：tinypng.com → tinypng.png；fonts.google.com →
+  // google-fonts.svg；fontawesome.com → font-awesome.svg；flaticon.com →
+  // flaticon.png（128×114 等比，非方形源不硬压，复审裁决 (d)）；unsplash.com
+  // → unsplash.png；figma.com → figma.svg。以下 2 个为新键，另起本块追加：
+  // fonts.adobe.com → adobe-fonts.png；helpx.adobe.com → adobe-xd.svg
+  //（精确键优先于 adobe.com 后缀匹配）。Illustrator 无 hostname 键，改走
+  // map 查找前的标题规则（复审裁决 (a)）。Adobe Color 阻塞未落盘：资产、
+  // map 值、测试用例均未合入，待 429 冷却后重取验过再补（复审裁决 (c)）。
+  'fonts.adobe.com': '/brand-icons/adobe-fonts.png',
+  'helpx.adobe.com': '/brand-icons/adobe-xd.svg',
 }
 
 /**
@@ -450,6 +462,12 @@ export function resolveSiteIcon(
     // Illustrator 的同类规则见第 2 批（标题含 illustrator）。
     const lowerTitle = (title || '').toLowerCase()
     if (lowerTitle.includes('firefly')) return '/brand-icons/firefly.png'
+    // 2026-11-17（图标 A 类第 2 批 a2b，独立复审裁决 (a)）：Adobe Illustrator
+    // 与 Firefly 去 www 后同为 adobe.com，hostname map 无法区分；且 map 里
+    // 已无 adobe.com 键（第 1 批整行删除）。本规则与 Firefly 规则一样必须
+    // 放在 map 精确查找之前，否则 adobe.com 查不到、标题规则又走不到。
+    // 切勿把 adobe.com 改指 Illustrator——那会让 Firefly 错指 Illustrator。
+    if (lowerTitle.includes('illustrator')) return '/brand-icons/illustrator.svg'
 
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!

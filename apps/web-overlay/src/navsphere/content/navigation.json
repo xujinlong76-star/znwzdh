@@ -2524,7 +2524,6 @@
               "title": "TinyPNG",
               "href": "https://tinypng.com",
               "description": "在线图片压缩，显著减小体积且保持画质",
-              "icon": "/assets/images/logos/tinypng.webp",
               "enabled": true,
               "tags": [
                 "压缩",
@@ -2594,7 +2593,6 @@
               "title": "Google Fonts",
               "href": "https://fonts.google.com",
               "description": "免费开源字体库，中英文字体齐全",
-              "icon": "/assets/images/logos/Materialicons.webp",
               "enabled": true,
               "tags": [
                 "免费",
@@ -2709,7 +2707,6 @@
               "title": "Unsplash",
               "href": "https://unsplash.com",
               "description": "免费高清图片素材库，可商用",
-              "icon": "/assets/images/logos/unsplash.webp",
               "enabled": true,
               "tags": [
                 "图片素材",
@@ -2790,7 +2787,6 @@
               "title": "Figma",
               "href": "https://figma.com",
               "description": "在线 UI 设计与原型协作工具，多人实时编辑",
-              "icon": "/assets/images/logos/figma.webp",
               "enabled": true,
               "tags": [
                 "协作",

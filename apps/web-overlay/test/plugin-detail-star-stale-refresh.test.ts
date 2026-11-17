@@ -188,6 +188,14 @@ describe('星标切换 vs 旧详情刷新：世代守卫', () => {
     expectOrder(region, 'mountedRef.current = true', 'mountedRef.current = false')
     // 初始化仍为 true：首个 loadDetail 响应在 effect 跑起来之前也不被丢弃。
     expect(region).toContain('mountedRef = useRef(true)')
+    // C2-3：全仓计数——setup 置 true 与 cleanup 置 false 各恰一次，杜绝
+    // 别处再 arm/disarm（例如 loadDetail / starToggle 里误写重 arm）。
+    expect(VIEW.match(/mountedRef\.current = true/g)?.length).toBe(1)
+    expect(VIEW.match(/mountedRef\.current = false/g)?.length).toBe(1)
+    // C2-4：重 arm 只属于挂载 effect——loadDetail 与 starToggle 各自切片内
+    // 不得出现 setup 式 `mountedRef.current = true`，出现即为误写。
+    expect(loadDetailBody()).not.toContain('mountedRef.current = true')
+    expect(starToggleBody()).not.toContain('mountedRef.current = true')
   })
 
   it('失败仍回滚：重申不破坏 catch 的 starred 回滚与错误提示', () => {

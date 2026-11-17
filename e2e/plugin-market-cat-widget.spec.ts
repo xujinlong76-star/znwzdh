@@ -137,10 +137,24 @@ test('首页 390px：开场招呼气泡被门控跳过，不出现且文本为�
   await expect(bubble).not.toHaveClass(/xm-show/)
   await expect(bubble).toHaveText('')
 
-  // A2-2：跳过后 8 秒内不得重出（闲时 tip / 26 秒提示都被聚焦与计时门控）
+  // A2-2：跳过后 8 秒内不得重出。本轮接受“气泡出现后 4.5 秒自动消失”全路径
+  // 暂无 E2E 覆盖：4500ms 定时器目前仅由 xiaomaomao.js:1406 源码定义
+  // （showBubble 入口 `setTimeout(hideBubble, 4500)`），全仓无任何自动化测试
+  // 钉死它；本用例只断言门控终态（不出气泡），不覆盖“出现后消失”。
+  // 时序算术（T = 挂件初始化时刻；本窗口约 T+2s 至 T+10s，waitForCat 已等
+  // 2 秒、此处再等 8 秒）：三条可能重出气泡的路径都落不到窗内——分页面
+  // 提示在 T+26s（xiaomaomao.js:2870）、闲时 tip 需 idle > 50s（:1607）、
+  // 切走回访招呼需切走 ≥90s 后切回（:1591）；故 8 秒窗口内“不重出”只能
+  // 证明门控终态稳定，不能证明 4500ms 定时器存在。
   await page.waitForTimeout(8000)
   await expect(bubble).not.toHaveClass(/xm-show/)
   await expect(bubble).toHaveText('')
+
+  // B2-3：门控只跳过招呼气泡，不应把整只猫卸掉——8 秒后挂件本身仍可见。
+  // 更强断言（点猫后气泡出现）未加：粗指针下点猫本体只开关控制坞，气泡要
+  // 走坞内摸猫钮（.xm-pet-btn → petCat → showBubble），两步路径本机无
+  // Chrome 可验，不加未经验证的断言。
+  await expect(page.locator('#xiaomaomao')).toBeVisible()
 })
 
 test('市场页 390px：滚到底后页脚链接与回到顶部可点', async ({ page }) => {

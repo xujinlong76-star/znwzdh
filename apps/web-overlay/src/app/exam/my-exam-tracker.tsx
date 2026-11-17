@@ -43,7 +43,10 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   // R1（2026-11-17）：统考已过但节点仍可办时（成考 11-18 的成绩查询），
   // 卡片行文不写裸「已结束」，改按统考 scoped 文案并指向下方节点；
   // 节点全过后（成考 11-19 起）仍是「本场考试已结束」，行为不变。
-  // 只改渲染文案：关注/勾选的禁用逻辑（ended）不动，见片段。
+  // U-106：禁用口径与纯规则层一致——统考已过但节点仍可办
+  // 时未关注用户仍可关注、已关注可继续勾选：按钮 disabled 是 ended &&
+  // !hasPendingNodes && !followed（已关注者恒可取消关注），复选框是
+  // ended && !hasPendingNodes；节点全过后恢复禁用。
   const hasPendingNodes = ended && hasActionableNodes(exam)
   const done = state === null ? 0 : checkedCount(state, exam)
   const checkedLabels = state === null ? [] : (state.checked[exam.id] ?? [])
@@ -73,12 +76,12 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
         <button
           type="button"
           onClick={handleFollow}
-          disabled={storageBlocked !== null || (ended && !followed)}
+          disabled={storageBlocked !== null || (ended && !hasPendingNodes && !followed)}
           aria-pressed={followed}
-          aria-label={followed ? `取消关注${exam.shortName}` : ended ? (hasPendingNodes ? `${exam.shortName}统考已结束` : `${exam.shortName}已结束`) : `关注${exam.shortName}`}
+          aria-label={followed ? `取消关注${exam.shortName}` : ended && !hasPendingNodes ? `${exam.shortName}已结束` : `关注${exam.shortName}`}
           className="inline-flex min-h-11 items-center rounded-full border border-sky-500/25 bg-sky-500/5 px-3 py-1 text-sm font-medium text-sky-700 dark:text-sky-400"
         >
-          {followed ? '已关注' : ended ? (hasPendingNodes ? '统考已结束' : '已结束') : '关注这场考试'}
+          {followed ? '已关注' : ended && !hasPendingNodes ? '已结束' : '关注这场考试'}
         </button>
       </div>
       {storageBlocked ? (
@@ -98,7 +101,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                   checked={checked}
                   onChange={() => handleCheck(node.label)}
                   aria-label={`${node.label}已完成`}
-                  disabled={ended}
+                  disabled={ended && !hasPendingNodes}
                   className="mt-0.5 h-5 w-5 shrink-0"
                 />
               ) : (

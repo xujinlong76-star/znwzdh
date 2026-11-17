@@ -825,18 +825,31 @@ describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结�
     expect(countdown).not.toContain('2026-11-18')
   })
 
-  it('跟踪岛：行文与按钮按有无可办节点切换 scoped 文案，禁用逻辑不动', () => {
+  it('跟踪岛：行文与按钮按有无可办节点切换 scoped 文案，禁用口径与纯规则层一致（U-106）', () => {
     const island = read('src/app/exam/my-exam-tracker.tsx')
     expect(island).toContain('hasActionableNodes(exam)')
     expect(island).toContain('统考已结束，下方节点仍可办理')
     expect(island).toContain('本场考试已结束')
-    expect(island).toContain("hasPendingNodes ? '统考已结束' : '已结束'")
-    expect(island).toContain('hasPendingNodes ? `${exam.shortName}统考已结束` : `${exam.shortName}已结束`')
-    // 只改渲染文案：关注/勾选的禁用逻辑（ended）不动，不硬编码成考 id/日期。
-    expect(island).toContain('disabled={storageBlocked !== null || (ended && !followed)}')
-    expect(island).toContain('disabled={ended}')
+    // U-106（R1「禁用逻辑不动」已推翻）：统考已过但节点仍可办时按钮
+    // 与复选框都不禁用；启用态文案必须是「关注…」口径，不可出现可点
+    // 却写着「统考已结束」；不硬编码成考 id/日期。
+    expect(island).toContain(
+      'disabled={storageBlocked !== null || (ended && !hasPendingNodes && !followed)}',
+    )
+    expect(island).toContain('disabled={ended && !hasPendingNodes}')
+    expect(island).toContain("ended && !hasPendingNodes ? '已结束' : '关注这场考试'")
+    expect(island).toContain(
+      "ended && !hasPendingNodes ? `${exam.shortName}已结束` : `关注${exam.shortName}`",
+    )
+    expect(island).not.toContain("hasPendingNodes ? '统考已结束' : '已结束'")
     expect(island).not.toContain("'chengkao'")
     expect(island).not.toContain('2026-11-18')
+  })
+
+  it('U-106：存储不可用时关注按钮仍禁用（storageBlocked 优先于可办节点）', () => {
+    const island = read('src/app/exam/my-exam-tracker.tsx')
+    expect(island).toContain('storageBlocked !== null || (ended && !hasPendingNodes && !followed)')
+    expect(island).toContain('role="alert"')
   })
 })
 
@@ -858,12 +871,14 @@ describe('我的考试岛源码守卫', () => {
     expect(island).not.toContain("'kaoyan'")
   })
 
-  it('已结束场次的关注按钮禁用、复选框禁用，状态由 examStatus 派生', () => {
+  it('已结束场次的关注按钮禁用、复选框禁用，状态由 examStatus 派生（U-106：仍有可办节点时不禁用）', () => {
     expect(island).toContain('examStatus(exam)')
     expect(island).toContain("=== 'ended'")
-    expect(island).toContain('disabled={storageBlocked !== null || (ended && !followed)}')
-    expect(island).toContain("ended ? (hasPendingNodes ? '统考已结束' : '已结束') : '关注这场考试'")
-    expect(island).toContain('disabled={ended}')
+    expect(island).toContain(
+      'disabled={storageBlocked !== null || (ended && !hasPendingNodes && !followed)}',
+    )
+    expect(island).toContain("ended && !hasPendingNodes ? '已结束' : '关注这场考试'")
+    expect(island).toContain('disabled={ended && !hasPendingNodes}')
     expect(island).toContain('已结束')
     expect(island).toContain('本场考试已结束')
   })

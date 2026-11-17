@@ -36,6 +36,8 @@
 @source '../app/me/data/**/*.{js,ts,jsx,tsx,mdx}';
 /* indexnow-key.txt 路由目录同为被忽略子树，父级花括号枚举够不到，单独指到目录内部 */
 @source '../app/indexnow-key.txt/**/*.{js,ts,jsx,tsx,mdx}';
+/* extension（浏览器扩展引导页）同为被忽略子树，父级花括号枚举够不到，单独指到目录内部 */
+@source '../app/extension/**/*.{js,ts,jsx,tsx,mdx}';
 
 /* components 子树（被 apps/web/src/components/* 忽略）。 */
 @source '../components/{admin,ai,algorithm-lab,crdt,diy,graph,modular,p2p,reader,search,theme,tools,ui,user-center,workspace}/**/*.{js,ts,jsx,tsx,mdx}';

@@ -22,12 +22,12 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  */
 
 const CASES: Array<{ url: string; title: string; expected: string }> = [
-  { url: 'https://www.capcut.cn/', title: '剪映专业版', expected: '/brand-icons/capcut.ico' },
-  { url: 'https://jimeng.jianying.com', title: '即梦AI', expected: '/brand-icons/jimeng.ico' },
+  { url: 'https://www.capcut.cn/', title: '剪映专业版', expected: '/brand-icons/capcut.png' },
+  { url: 'https://jimeng.jianying.com', title: '即梦AI', expected: '/brand-icons/jimeng.png' },
   { url: 'https://tianyin.163.com/', title: '网易天音', expected: '/brand-icons/tianyin.png' },
   { url: 'https://www.icourse163.org', title: '中国大学MOOC', expected: '/brand-icons/icourse163.png' },
   { url: 'https://time.geekbang.org/', title: '极客时间', expected: '/brand-icons/geekbang.jpg' },
-  { url: 'https://www.zhaopin.com', title: '智联招聘', expected: '/brand-icons/zhaopin.ico' },
+  { url: 'https://www.zhaopin.com', title: '智联招聘', expected: '/brand-icons/zhaopin.png' },
   { url: 'https://www.fanqienovel.com', title: '番茄小说', expected: '/brand-icons/fanqienovel.png' },
   { url: 'https://www.tantan.com', title: '探探', expected: '/brand-icons/tantan.png' },
   { url: 'https://www.reelshort.com', title: 'ReelShort', expected: '/brand-icons/reelshort.png' },
@@ -42,12 +42,12 @@ const CASES: Array<{ url: string; title: string; expected: string }> = [
 ]
 
 const LOCAL_ASSETS = [
-  'capcut.ico',
-  'jimeng.ico',
+  'capcut.png',
+  'jimeng.png',
   'tianyin.png',
   'icourse163.png',
   'geekbang.jpg',
-  'zhaopin.ico',
+  'zhaopin.png',
   'fanqienovel.png',
   'tantan.png',
   'reelshort.png',
@@ -73,22 +73,18 @@ describe('resolveSiteIcon（图标修复第二批 2b 剩余 + 2c）', () => {
     }
   })
 
-  it('本地资产魔数钉死：PNG 以魔数开头、ICO 以 00 00 01 00 开头、JPEG 以 FF D8 FF 开头', () => {
+  it('本地资产魔数钉死：PNG 以魔数开头、JPEG 以 FF D8 FF 开头', () => {
     // 2026-11-17：17 个文件均由 curl 重新验证后落盘（200 + image MIME +
     // 魔数 + 尺寸/字节数与研究笔记逐个相符）。此断言把“落盘的是真图片而
-    // 非 HTML 壳页”钉死——天音 URL 后缀 .ico 实为 PNG、智联 URL 后缀
-    // .png 实为 ICO，若将来有人按 URL 后缀重新下载，会拿到错扩展名
-    // 的文件；有戏 AI 原图 422KB 已压到 128px（23013B < 50KB）。
+    // 非 HTML 壳页”钉死。B 批合批后剪映/即梦/智联的 .ico 已由设计提交
+    // 解码为 .png（ICO 64x64/48x48 取帧），孤儿 .ico 已删，本批不再有
+    // .ico 文件；天音 URL 后缀 .ico 实为 PNG，文件名按魔数定。有戏 AI
+    // 原图 422KB 已压到 128px（23013B < 50KB）。
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-    for (const name of ['tianyin.png', 'icourse163.png', 'fanqienovel.png', 'tantan.png', 'reelshort.png', 'nmc.png', 'ncpssd.png', 'youxi.png']) {
+    for (const name of ['capcut.png', 'jimeng.png', 'tianyin.png', 'icourse163.png', 'zhaopin.png', 'fanqienovel.png', 'tantan.png', 'reelshort.png', 'nmc.png', 'ncpssd.png', 'youxi.png']) {
       const buf = readFileSync(`${dir}${name}`)
       expect(buf.subarray(0, 8).equals(pngMagic), name).toBe(true)
-    }
-    const icoMagic = Buffer.from([0x00, 0x00, 0x01, 0x00])
-    for (const name of ['capcut.ico', 'jimeng.ico', 'zhaopin.ico']) {
-      const buf = readFileSync(`${dir}${name}`)
-      expect(buf.subarray(0, 4).equals(icoMagic), name).toBe(true)
     }
     const jpegMagic = Buffer.from([0xff, 0xd8, 0xff])
     for (const name of ['geekbang.jpg', 'mtime.jpg', 'wondercv.jpg', 'nhsa.jpg', '12333.jpg', 'xiaoyunque.jpg']) {

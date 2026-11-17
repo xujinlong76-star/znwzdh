@@ -162,20 +162,23 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 名按魔数定。时光网站方图标仅 16px，改用 iTunes 128px 版。宽版
   // logo（中央气象台 255x65、国家哲学 385x56）与天音黑字透明底按 2a
   // 对 Ollama / SourceHut 的做法——不做特殊处理，已知局限留待深色
-  // 底块统一处理轮（研究笔记 §3/§5）。极客公园/海珀/国家公务员局
-  // 不在本批，未动。
-  'capcut.cn': '/brand-icons/capcut.ico',
-  'jimeng.jianying.com': '/brand-icons/jimeng.ico',
+  // 底块统一处理轮（研究笔记 §3/§5）。海珀/国家公务员局不在本批，
+  // 未动；极客公园由 B 批合批新入 map（见下方 geekpark.net）。
+  'capcut.cn': '/brand-icons/capcut.png',
+  'jimeng.jianying.com': '/brand-icons/jimeng.png',
   'tianyin.163.com': '/brand-icons/tianyin.png',
   'icourse163.org': '/brand-icons/icourse163.png',
   'time.geekbang.org': '/brand-icons/geekbang.jpg',
-  'zhaopin.com': '/brand-icons/zhaopin.ico',
+  'zhaopin.com': '/brand-icons/zhaopin.png',
   'fanqienovel.com': '/brand-icons/fanqienovel.png',
   'tantan.com': '/brand-icons/tantan.png',
   'reelshort.com': '/brand-icons/reelshort.png',
   'nmc.cn': '/brand-icons/nmc.png',
   'ncpssd.org': '/brand-icons/ncpssd.png',
   'youxi.fullpeace.net': '/brand-icons/youxi.png',
+  // 2026-11-17（B 批合批）：极客公园入 map；远端已换方形标，底块走
+  // LOGO_TILE_MAP 统一处理（见下方 logoTile），不再单独立分支。
+  'geekpark.net': '/brand-icons/geekpark.png',
   'mtime.com': '/brand-icons/mtime.jpg',
   'wondercv.com': '/brand-icons/wondercv.jpg',
   'nhsa.gov.cn': '/brand-icons/nhsa.jpg',

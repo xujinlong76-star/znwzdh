@@ -13,6 +13,7 @@ export const macSonomaGlass: SeedPluginDef = {
     description: "向 Apple macOS 现代桌面美学致敬的深色主题（21 项变量全覆盖）：超大圆角、深海军蓝底与活力系统天蓝强调色，卡片层次干净、聚焦环清晰，完美契合 Mac 桌面审美。",
     icon: "🪟",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "1.0.1",
     tags: ["主题","深色","macOS","现代"],

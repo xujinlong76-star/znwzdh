@@ -17,6 +17,7 @@ export const fullstackProBundle: SeedPluginDef = {
       "全栈开发者的完整配置：共 4 个成员——极客开发者检索（40 个 !前缀）与学术文献检索（38 个 !前缀）2 个搜索引擎包，合计 78 个 !前缀；配德古拉与暮色罗盘 2 套深色主题。用 !gh、!npm、!k8s、!arxiv 等前缀直达代码托管、包仓库、云原生文档与论文检索，一次安装成型。",
     icon: "🚀",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "2.0.0",
     tags: ["全栈", "组合包", "效率", "开发"],

@@ -20,6 +20,7 @@ export const aiPowerBundle: SeedPluginDef = {
       "AI 工作流一体化开局：共 4 个成员——极客开发者检索（40 个 !前缀）与学术文献检索（38 个 !前缀）2 个搜索引擎包，合计 78 个 !前缀；配极光青与德古拉 2 套深色主题。用 !gh、!npm、!arxiv、!gs 等前缀查文档、论文与代码。",
     icon: "🧠",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "1.0.0",
     tags: ["AI", "效率", "组合包"],

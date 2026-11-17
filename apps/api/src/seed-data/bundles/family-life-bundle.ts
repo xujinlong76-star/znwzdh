@@ -19,6 +19,7 @@ export const familyLifeBundle: SeedPluginDef = {
       "以一个家庭为单位的一次性配置：共 4 个成员——中文生活检索包（36 个 !前缀）1 个搜索引擎包，配樱花薄雾、暖阳琥珀与纸感拿铁 3 套柔和主题。用 !xhs、!jd、!mafengwo 等前缀查口碑、比价、订票与出行。装完即可当家庭共用首页。",
     icon: "👨‍👩‍👧",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "1.0.0",
     tags: ["家庭", "亲子", "宠物", "生活", "组合包"],

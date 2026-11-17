@@ -17,6 +17,7 @@ export const auroraEmerald: SeedPluginDef = {
       "以极光青绿为主色的深色皮肤（21 项变量）：低饱和墨绿底衬托高亮青绿强调色，长文阅读与技术看板场景下对比柔和不疲劳，圆角收紧到 0.5rem 更显硬朗。",
     icon: "🌌",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "1.0.1",
     tags: ["主题", "深色", "极光", "青绿"],

@@ -17,6 +17,7 @@ export const cnLifeBundle: SeedPluginDef = {
       "把导航站变成中文家庭门户：共 4 个成员——中文生活检索（36 个 !前缀）与极客开发者检索（40 个 !前缀）2 个搜索引擎包，合计 76 个 !前缀；配暖阳琥珀与纸感拿铁 2 套浅色主题。用 !xhs、!weibo、!gh 等前缀查口碑、比价、找攻略、订票与查文档，适合家庭或办公共用首页。",
     icon: "🏠",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "1.1.0",
     tags: ["中文", "生活", "学习", "组合包"],

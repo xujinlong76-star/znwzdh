@@ -18,6 +18,7 @@ export const aiWorkbench: SeedPluginDef = {
       "面向 AI 应用开发者与重度用户的 4 看板布局（共 24 个组件）：模型与情报、提示词与交付、智能体与复盘、学习与评测。把模型速查、热榜、接口探测、提示词库与同类工具雷达收进一屏，装完即用。",
     icon: "🤖",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "1.0.1",
     compat: { minAppVersion: "0.1.0" },

@@ -17,6 +17,7 @@ export const seedDuskCompass: SeedPluginDef = {
       "紫罗兰暮色完整皮肤（21 项变量）：夜蓝底 + 紫罗兰主色 + 淡紫次色，更大的圆角与统一聚焦环，长时间浏览与写作时层次清晰不刺目。",
     icon: "🌆",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "2.0.1",
     tags: ["主题", "深色", "紫罗兰"],

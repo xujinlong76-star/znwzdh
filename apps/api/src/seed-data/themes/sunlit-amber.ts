@@ -17,6 +17,7 @@ export const sunlitAmber: SeedPluginDef = {
       "暖阳琥珀浅色皮肤（21 项变量）：米白底 + 琥珀橙强调色 + 深棕前景，白天办公与演示投屏时清晰通透，是深色之外的高可读性选择。",
     icon: "🌤️",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "1.0.1",
     tags: ["主题", "浅色", "琥珀", "护眼"],

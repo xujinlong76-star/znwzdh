@@ -20,6 +20,7 @@ export const geekStarterBundle: SeedPluginDef = {
       "极客一站到底的开局包：共 4 个成员——极客开发者检索（40 个 !前缀）与学术文献检索（38 个 !前缀）2 个搜索引擎包，合计 78 个 !前缀；配德古拉与极光青 2 套深色主题。用 !gh、!npm、!mdn、!arxiv、!gs 等前缀直达代码托管、包仓库、文档与论文检索，主题可在「已安装」页切换启用。单层组合、不含可执行代码，卸载不级联。",
     icon: "🧩",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "2.0.0",
     tags: ["起步包", "组合", "极客", "开发"],

@@ -20,6 +20,7 @@ export const devopsWorkbench: SeedPluginDef = {
       "面向运维架构师与 SRE 的 4 看板布局（共 23 个组件）：集群全景监控、故障应急响应、值班与复盘、容量与变更巡检。全部组件取自前端注册表，安装即可用，覆盖指标监控、热榜情报、诊断工具、应急终端与复盘速记。",
     icon: "🛠️",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "2.0.1",
     compat: { minAppVersion: "0.1.0" },

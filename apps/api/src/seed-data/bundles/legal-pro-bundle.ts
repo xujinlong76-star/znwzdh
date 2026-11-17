@@ -19,6 +19,7 @@ export const legalProBundle: SeedPluginDef = {
       "面向法务、律师与创业者的专业配置：共 5 个成员——学术文献检索（38 个 !前缀）与极客开发者检索（40 个 !前缀）2 个搜索引擎包，合计 78 个 !前缀；配北欧冰霜、深海蓝与复古暖棕 3 套深色主题。用 !gs、!patents、!cnki、!gh 等前缀查论文、专利与代码。查证、起草、合规三条线一次到位。",
     icon: "⚖️",
     author: "山羊胡官方",
+    homepage: "https://www.shanyanghu.com/",
     license: "MIT",
     version: "1.0.0",
     tags: ["法律", "合规", "法务", "专业", "组合包"],

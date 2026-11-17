@@ -412,7 +412,7 @@ export default function InstalledPluginsPage() {
                   换设备会消失——这句必须写在页面上，不能只藏在代码注释里。 */}
               {isAnonymous === true && (
                 <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed max-w-2xl">
-                  未登录时仅保存在本机：已安装记录绑定本机匿名身份，换设备或清除浏览器数据后不会同步；登录后可在多设备间同步。
+                  未登录时仅保存在本机：已安装记录绑定本机匿名身份，换设备或清除浏览器数据后不会同步；登录后新安装的插件可在多设备间同步，本机匿名记录不会自动合并，需重新安装或导入。
                 </p>
               )}
               {updateCount > 0 && (

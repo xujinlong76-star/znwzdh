@@ -105,7 +105,8 @@ describe('P3-8：已安装页文案与标识接线（源码守卫）', () => {
   it('未登录文案写明仅保存在本机 + 换设备不会同步', () => {
     expect(installedSrc).toContain('未登录时仅保存在本机')
     expect(installedSrc).toMatch(/换设备.*不会同步/)
-    expect(installedSrc).toContain('登录后可在多设备间同步')
+    expect(installedSrc).toContain('登录后新安装的插件可在多设备间同步，本机匿名记录不会自动合并')
+    expect(installedSrc).not.toContain('登录后可在多设备间同步')
   })
 
   it('匿名文案只在判定为匿名时渲染，不抢先于首载前出现', () => {

@@ -17,7 +17,8 @@ export function readableDefusedRows(rows) {
 }
 
 /**
- * @param {object[]} rows parseDefusedTrace 的行（逐作业实例，矩阵分片各算一条）
+ * @param {object[]} rows parseDefusedTrace 的行（逐作业实例，矩阵分片各算一条；
+ *   U-21：带 `notApplicable`（本分片不适用的门禁 id）时，期望道数扣掉那几道）
  * @param {{registry?: object[], comparable?: boolean}} input
  *   registry：登记表条目（`{ job, gates: [] }`），CLI 传 DEFUSED_GATES
  *   comparable：这一轮的 ci.yml 是否就是本地这份登记表对应的那一版。
@@ -35,7 +36,12 @@ export function thicknessFindings(rows, input = {}) {
   for (const row of readableDefusedRows(rows)) {
     const job = row.job;
     if (!expected.has(job)) continue;
-    const want = expected.get(job);
+    // U-21：分片限定的门禁（test-e2e 的 quarantine-e2e 只在分片 1 跑）在不适用的分片上
+    // 不计入期望——写侧报 1 道、登记表认 2 道时，差的那 1 道是「本分片不跑」不是账变薄。
+    // notApplicable 由 parseDefusedTrace 从账行的分片备注里读回；旧快照没有这个字段时
+    // 扣 0，行为与旧版一致。
+    const notApplicableCount = Array.isArray(row.notApplicable) ? row.notApplicable.length : 0;
+    const want = expected.get(job) - notApplicableCount;
     const reported = Number(row.gateTotal ?? 0);
     const ran = Number(row.ran ?? 0);
     const defused = Number(row.defused ?? 0);

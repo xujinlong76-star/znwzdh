@@ -391,7 +391,7 @@ function CopyButton({ text }: { text: string }) {
       {copied ? (
         <Check className="h-3 w-3 text-emerald-500" />
       ) : failed ? (
-        <X className="h-3 w-3 text-destructive" />
+        <X className="h-3 w-3 text-destructive-text" />
       ) : (
         <Copy className="h-3 w-3" />
       )}

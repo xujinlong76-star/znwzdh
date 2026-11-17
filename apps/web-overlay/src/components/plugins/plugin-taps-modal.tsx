@@ -325,7 +325,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
           {addError && (
             <div
               role="alert"
-              className="text-xs text-destructive-text bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2"
+              className="text-xs text-destructive-text bg-destructive/15 border border-destructive/20 rounded-lg px-3 py-2"
             >
               添加失败：{addError}
             </div>

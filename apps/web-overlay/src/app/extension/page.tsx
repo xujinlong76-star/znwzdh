@@ -4,7 +4,7 @@ import { ArrowLeft, Chrome, Compass, Download, MousePointerClick, Search, Star }
 
 export const metadata: Metadata = {
   title: "浏览器扩展",
-  description: "安装山羊胡浏览器扩展：每次打开新标签页就是本站轻量首页，地址栏 nh 秒搜，一键收录当前网页。",
+  description: "安装浏览器扩展：每次打开新标签页就是本站轻量首页，地址栏 nh 秒搜，一键收录当前网页。",
 }
 
 export default function ExtensionGuidePage() {

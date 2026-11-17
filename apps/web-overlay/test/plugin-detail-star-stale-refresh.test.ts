@@ -78,51 +78,61 @@ function expectOrder(body: string, ...fragments: string[]): void {
 describe('星标切换 vs 旧详情刷新：世代守卫', () => {
   it('loadDetail 先取号、await 后先验号再写回：旧快照到不了 setStarred/setStarCount', () => {
     const body = loadDetailBody()
-    // 序号在 await 之前取，过期判定在写回之前。
+    // 序号在 await 之前取；提交版无提前 return，过期判定是写回分支的行内守卫
+    // `if (res?.plugin && seq === loadDetailSeq.current && mountedRef.current)`。
+    const GUARD = 'if (res?.plugin && seq === loadDetailSeq.current && mountedRef.current) {'
     expectOrder(
       body,
       'const seq = ++loadDetailSeq.current',
       'await fetchPluginDetail(',
-      'if (seq !== loadDetailSeq.current || !mountedRef.current) return',
+      GUARD,
       'setStarred(Boolean(res.plugin.starred))',
     )
-    expectOrder(
-      body,
-      'if (seq !== loadDetailSeq.current || !mountedRef.current) return',
-      'setStarCount(res.plugin.starCount || 0)',
-    )
-    expectOrder(
-      body,
-      'if (seq !== loadDetailSeq.current || !mountedRef.current) return',
-      'setPlugin(res.plugin)',
-    )
+    expectOrder(body, GUARD, 'setStarCount(res.plugin.starCount || 0)')
+    expectOrder(body, GUARD, 'setPlugin(res.plugin)')
   })
 
-  it('旧快照的 catch/finally 也不得写回：setPlugin(null)/setLoading(false) 同样验号', () => {
+  it('旧快照的 catch 也不得写回：setPlugin(null) 同样验号；finally 只关 loading、不写回任何状态', () => {
     const body = loadDetailBody()
+    // catch 分支：行内守卫 + 同行 setPlugin(null)。
     expect(body).toContain('if (!opts?.silent && seq === loadDetailSeq.current && mountedRef.current) setPlugin(null)')
-    expect(body).toContain('if (!opts?.silent && seq === latestNonSilentLoadSeq.current && mountedRef.current) setLoading(false)')
+    // else-if 分支：同样行内守卫，setPlugin(null) 在其后的块内。
+    expectOrder(
+      body,
+      '} else if (!opts?.silent && seq === loadDetailSeq.current && mountedRef.current) {',
+      'setPlugin(null)',
+    )
+    // finally：提交版只有 `if (!opts?.silent) setLoading(false)`，不写回
+    // plugin/starred/starCount；草稿里的 latestNonSilentLoadSeq 守卫不存在。
+    expect(body).not.toContain('latestNonSilentLoadSeq')
+    const finallyBlock = body.slice(body.indexOf('} finally'))
+    expect(finallyBlock).toContain('setLoading(false)')
+    expect(finallyBlock).not.toContain('setPlugin')
+    expect(finallyBlock).not.toContain('setStarred')
+    expect(finallyBlock).not.toContain('setStarCount')
   })
 
   it('取消星标：unstar 成功后重申 starred、starCount 取自回包（旧刷新 starred=true 也盖不掉）', () => {
     const body = starToggleBody()
-    // 成功分支：await unstar → setStarred(res.starred) → setStarCount(res.starCount)。
+    // 成功分支：提交版是 star/unstar 共用的三元式，
+    // `const res = nextStarred ? await starPlugin(...) : await unstarPlugin(...)`，
+    // 其后单次 setStarred(res.starred) / setStarCount(res.starCount)。
     // 回包 starred=false 时重申即 false；starCount 为服务端值（取消后为 0 时回包即 0）。
     expectOrder(
       body,
-      'const res = await unstarPlugin(plugin.slug)',
+      'const res = nextStarred ? await starPlugin(plugin.slug) : await unstarPlugin(plugin.slug)',
       'setStarred(res.starred)',
       'setStarCount(res.starCount)',
     )
-    // 两个成功分支都重申 starred，不许只剩乐观更新那一次。
-    expect(body.match(/setStarred\(res\.starred\)/g)?.length).toBe(2)
+    // 共用成功分支：重申恰一次，两个方向都走它，不许只剩乐观更新那一次。
+    expect(body.match(/setStarred\(res\.starred\)/g)?.length).toBe(1)
   })
 
   it('点亮星标：star 成功后重申 starred、starCount 取自回包（旧刷新 starred=false 也盖不掉）', () => {
     const body = starToggleBody()
     expectOrder(
       body,
-      'const res = await starPlugin(plugin.slug)',
+      'const res = nextStarred ? await starPlugin(plugin.slug) : await unstarPlugin(plugin.slug)',
       'setStarred(res.starred)',
       'setStarCount(res.starCount)',
     )
@@ -135,6 +145,7 @@ describe('星标切换 vs 旧详情刷新：世代守卫', () => {
       body,
       'await starPlugin(plugin.slug)',
       'await unstarPlugin(plugin.slug)',
+      'setStarCount(res.starCount)',
       'loadDetailSeq.current++',
       '} catch',
     )
@@ -142,8 +153,8 @@ describe('星标切换 vs 旧详情刷新：世代守卫', () => {
 
   it('starCount 成功值只取回包：乐观增量只在 await 之前，成功分支内无乐观写法', () => {
     const body = starToggleBody()
-    // 回包写回恰两次（star / unstar 各一）。
-    expect(body.match(/setStarCount\(res\.starCount\)/g)?.length).toBe(2)
+    // 回包写回恰一次：star / unstar 共用三元成功分支。
+    expect(body.match(/setStarCount\(res\.starCount\)/g)?.length).toBe(1)
     // 乐观增量恰两次：try 前的乐观更新与 catch 里的回滚；成功分支内无乐观写法。
     expect(body.match(/setStarCount\(\(prev\)/g)?.length).toBe(2)
     expectOrder(body, 'setStarCount((prev)', 'try {', 'await starPlugin(plugin.slug)')

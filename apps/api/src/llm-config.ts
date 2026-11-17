@@ -5,7 +5,9 @@
  *   ① 用户级配置（user_llm_configs.identity）
  *   ② 系统级配置（system_states: ai.llm.config.v1，密钥加密）
  *   ③ 环境变量（NAVHUB_LLM_*）
- *   ④ 内置默认（Agnes 3.0 Flash，无密钥）
+ *   ④ 无内置默认：未配置时返回空 provider（name/baseUrl/model 为空串、无密钥），
+ *      调用方据 llmProviderReady 降级为本地。2026-11-18 起不再内置任何厂商默认
+ *      （此前为 Agnes，已按用户决定彻底移除）。
  *
  * 安全约定：
  *   - 密钥只以加密信封落库（AES-256-GCM，口令 = NAVHUB_SECRETS_KEY || SESSION_SECRET）；
@@ -14,9 +16,6 @@
  */
 import { randomBytes } from "node:crypto";
 import {
-  AGNES_BASE_URL,
-  AGNES_MODEL,
-  AGNES_NAME,
   LlmError,
   assertLlmEndpoint,
   chatCompletion,
@@ -145,9 +144,10 @@ const StoredLlmFallbackSchema = z.object({
 
 const StoredLlmProviderSchema = z.object({
   enabled: z.boolean().default(true),
-  name: z.string().default(AGNES_NAME),
-  baseUrl: z.string().default(AGNES_BASE_URL),
-  model: z.string().default(AGNES_MODEL),
+  // 无内置默认：旧记录缺字段时补空串（=未配置），不许再补任何厂商默认值
+  name: z.string().default(""),
+  baseUrl: z.string().default(""),
+  model: z.string().default(""),
   apiKeyEnc: z.unknown().nullable().optional(),
   timeoutMs: z.number().default(20_000),
   // 同 thinking：读侧不声明就等于「管理端填过但永远读不出来」。
@@ -193,9 +193,9 @@ function envLlmTimeoutConfigured(config: AppConfig): boolean {
 function envDefaults(config: AppConfig): Omit<StoredLlmProvider, "apiKeyEnc" | "updatedAt" | "updatedBy"> {
   return {
     enabled: true,
-    name: config.llm.name || AGNES_NAME,
-    baseUrl: config.llm.baseUrl || AGNES_BASE_URL,
-    model: config.llm.model || AGNES_MODEL,
+    name: config.llm.name || "",
+    baseUrl: config.llm.baseUrl || "",
+    model: config.llm.model || "",
     timeoutMs: config.llm.timeoutMs,
     timeoutMsExplicit: envLlmTimeoutConfigured(config),
     temperature: config.llm.temperature,
@@ -630,7 +630,7 @@ export async function getSystemLlmConfigView(ctx: AppContext): Promise<LlmConfig
   const resolved = await resolveLlm(ctx);
   const effective: LlmConfigView["effective"] = {
     source: resolved.source === "user" ? "system" : (resolved.source as "system" | "env" | "default"),
-    name: resolved.provider.name || AGNES_NAME,
+    name: resolved.provider.name || "",
     model: resolved.provider.model,
     baseUrl: resolved.provider.baseUrl,
   };
@@ -892,7 +892,7 @@ export async function getUserLlmConfigView(ctx: AppContext, identity: string): P
   const resolved = await resolveLlm(ctx, identity);
   const effective: UserLlmConfigView["effective"] = {
     source: resolved.source,
-    name: resolved.provider.name || AGNES_NAME,
+    name: resolved.provider.name || "",
     model: resolved.provider.model,
     baseUrl: resolved.provider.baseUrl,
   };

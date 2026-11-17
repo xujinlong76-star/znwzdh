@@ -70,7 +70,7 @@ export interface AppConfig {
     /** 允许模型端点指向内网（本地 Ollama）；仅系统级配置可开启 */
     allowPrivateNetwork: boolean;
     /**
-     * 深度思考（Agnes 的 chat_template_kwargs.enable_thinking）。
+     * 深度思考（部分 OpenAI 兼容端点的 chat_template_kwargs.enable_thinking）。
      * 产品决策（2026-10-19）：全站默认开启 —— 复杂任务质量优先；
      * 富化类批量场景可在系统级配置里关掉以省 token。
      */
@@ -637,12 +637,14 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     },
 
     llm: {
-      // 默认模型：Agnes 3.0 Flash（OpenAI 兼容 /v1/chat/completions）。
+      // 无内置默认模型（2026-11-18 起 Agnes 已彻底移除）：
+      // 未配置时 name/baseUrl/model 为空串，AI 功能降级为本地（启发式/模板），
+      // 管理员可通过环境变量或管理端配置任意 OpenAI 兼容接口（如 DeepSeek / Ollama）。
       // 密钥只从环境变量或管理端加密配置读取，代码里不留任何密钥。
-      name: env("NAVHUB_LLM_NAME", "Agnes 3.0 Flash"),
-      baseUrl: env("NAVHUB_LLM_BASE_URL", "https://api.agnes-ai.cn/v1"),
+      name: env("NAVHUB_LLM_NAME", ""),
+      baseUrl: env("NAVHUB_LLM_BASE_URL", ""),
       apiKey: process.env.NAVHUB_LLM_API_KEY || null,
-      model: env("NAVHUB_LLM_MODEL", "agnes-3.0-flash"),
+      model: env("NAVHUB_LLM_MODEL", ""),
       timeoutMs: num("NAVHUB_LLM_TIMEOUT_MS", 20_000),
       temperature: num("NAVHUB_LLM_TEMPERATURE", 0.2),
       maxTokens: num("NAVHUB_LLM_MAX_TOKENS", 1024),

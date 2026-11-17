@@ -76,6 +76,9 @@ export function countSortDegenerateKind(
         ? 'trending'
         : null
   }
+  // 到不了：入口已把非 COUNT_SORTS 的排序拦回 null，switch 穷尽四种计数排序；
+  // 只是 `COUNT_SORTS.includes` 不收窄联合类型，TS 要求函数一定有兜底返回。
+  return null
 }
 
 export function isCountSortDegenerate(

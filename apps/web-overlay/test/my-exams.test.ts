@@ -33,8 +33,12 @@ const kaoyan = EXAMS.find((e) => e.id === 'kaoyan')!
 
 /** 2026-11-13 08:00 北京时间（UTC 午夜） */
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
+/** 2026-11-18 08:00 北京时间：口试准考证开放次日（U-19 回归） */
+const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)
 /** 2026-11-25 08:00 北京时间：四六级口试已过，笔试准考证未开 */
 const NOV_25_0800_CST = Date.UTC(2026, 10, 25, 0, 0, 0)
+/** 2026-12-02 08:00 北京时间：笔试准考证开放次日（U-19 回归） */
+const DEC_02_0800_CST = Date.UTC(2026, 11, 2, 0, 0, 0)
 /** 2026-11-30 08:00 北京时间：国考已过 */
 const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
 /** 2026-12-19 08:00 北京时间：考研第一天，已开考 */
@@ -287,9 +291,18 @@ describe('nextTodoNode（下一步待办：未勾选且未结束）', () => {
     // 11-30 时国考三节点已全部结束，哪怕一个没勾也不再是下一步
     const state: MyExamsState = { followed: ['guokao'], checked: {} }
     expect(nextTodoNode(state, guokao, NOV_30_0800_CST)).toBeUndefined()
-    // 11-25 时四六级：口试（11-21–22）与口试准考证（11-17）已过未勾，跳到 12-01 笔试准考证
+    // 11-25 时四六级：口试（11-21–22）与口试准考证（11-17–22）已过未勾，跳到 12-01 笔试准考证
     const cetState: MyExamsState = { followed: ['cet'], checked: {} }
     expect(nextTodoNode(cetState, cet, NOV_25_0800_CST)?.label).toBe('笔试准考证打印')
+  })
+
+  it('U-19 回归：准考证节点 endISO 为考试日而非开放日，开放次日仍是待办', () => {
+    // 曾误写 endISO = 开放日：口试准考证 11-18、笔试准考证 12-02 即误标「已结束」。
+    // 修后口试准考证 11-17–22、笔试准考证 12-01–12，开放次日仍 active；
+    // 开放日当天节点由单日「今天」变为多日「进行中」，文案可接受。
+    const cetState: MyExamsState = { followed: ['cet'], checked: {} }
+    expect(nextTodoNode(cetState, cet, NOV_18_0800_CST)?.label).toBe('口试准考证打印')
+    expect(nextTodoNode(cetState, cet, DEC_02_0800_CST)?.label).toBe('笔试准考证打印')
   })
 
   it('预计节点也算待办，不因 estimated 被跳过', () => {

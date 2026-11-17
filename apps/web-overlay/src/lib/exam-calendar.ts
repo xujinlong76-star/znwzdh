@@ -98,13 +98,13 @@ export const EXAMS: ExamInfo[] = [
         label: '口试准考证打印',
         detail: '11 月 17 日 9:00 起',
         startISO: '2026-11-17',
-        endISO: '2026-11-17',
+        endISO: '2026-11-22',
       },
       {
         label: '笔试准考证打印',
         detail: '12 月 1 日 9:00 起',
         startISO: '2026-12-01',
-        endISO: '2026-12-01',
+        endISO: '2026-12-12',
       },
       {
         label: '笔试',

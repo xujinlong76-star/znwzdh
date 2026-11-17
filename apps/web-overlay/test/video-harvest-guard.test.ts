@@ -351,6 +351,26 @@ describe('D：死字段与假默认值源码守卫', () => {
     expect(auto).not.toMatch(/favorites:\s*1000/)
   })
 
+  it('用户可见文案不得含「6,000+ / 6000+ 部」夸大视频量（U-32，实测库 2,275 条）', () => {
+    // 2026-11-17：9 处写死「6,000+ 部视频」已删数字，不写死新数字、不接动态数源。
+    // 排除项不在此列：管理台内部注释（VideoTelemetryDashboard 6000+ 条目）与
+    // 第三方视频标题（videos.json「4天6000+」），故只扫这 9 个用户可见文件。
+    for (const rel of [
+      'app/category/[slug]/category-board.tsx',
+      'app/collections/[slug]/collection-detail-view.tsx',
+      'app/hot/hot-view.tsx',
+      'app/search/search-results.tsx',
+      'app/sites/sites-directory.tsx',
+      'components/search/spotlight-modal.tsx',
+      'components/site-detail-view.tsx',
+      'components/tag-cloud.tsx',
+      'components/tag-results-board.tsx',
+    ]) {
+      const code = stripComments(src(rel))
+      expect(code).not.toMatch(/6,?000\+/)
+    }
+  })
+
   it('严标准阈值只在守卫模块的 HARVEST_GATE 写死一处，采集器不许各写一份播放量比较', () => {
     for (const rel of [
       'lib/video-harvester.ts',

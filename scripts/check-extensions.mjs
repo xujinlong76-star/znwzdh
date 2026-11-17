@@ -218,7 +218,7 @@ const SEARCH_CREDENTIAL_FILES = [
   }
   // Next 路由 handler 同样是后端声明：apps/web-overlay/src/app/api/**/route.ts
   // 就是 /api/** 端点（如 /api/home/navigation），Fastify 路由目录扫不到它们。
-  // 目录名即路径段：路由组 (group) 不进 URL，[param] / [...param] 折成 :param，
+  // 目录名即路径段：路由组 (group) 不进 URL，[param] / [...param] / [[...param]] 折成 :param，
   // 与 Fastify 的 :param 模板走同一条前缀/模板匹配。
   {
     const nextApiDir = join(ROOT, 'apps/web-overlay/src/app/api')
@@ -227,7 +227,7 @@ const SEARCH_CREDENTIAL_FILES = [
       const segments = rel
         .split('/')
         .filter((seg) => seg.length > 0 && !/^\(.*\)$/.test(seg))
-        .map((seg) => seg.replace(/^\[\.\.\.(.+)\]$/, ':$1').replace(/^\[(.+)\]$/, ':$1'))
+        .map((seg) => seg.replace(/^\[\[\.\.\.(.+)\]\]$/, ':$1').replace(/^\[\.\.\.(.+)\]$/, ':$1').replace(/^\[(.+)\]$/, ':$1'))
       templates.push('/api/' + segments.join('/'))
     }
   }

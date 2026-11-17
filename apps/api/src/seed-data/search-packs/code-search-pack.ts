@@ -13,6 +13,7 @@ export const codeSearchPack: SeedPluginDef = {
     "description": "38 个全栈代码、依赖仓库与安全侦察检索源一次装齐：在主搜索框用 !grep、!sourcegraph、!ghcode、!smithery、!jsr、!crates、!nvdcve、!snykvuln 等前缀一键直达全球代码语义搜索、MCP 工具市场、官方依赖库、安全漏洞数据库与安全侦察/资产测绘查询。",
     "icon": "📦",
     "author": "山羊胡官方",
+    "homepage": "https://www.shanyanghu.com/",
     "license": "MIT",
     "version": "1.0.0",
     "tags": [

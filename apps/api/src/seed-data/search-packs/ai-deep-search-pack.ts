@@ -10,6 +10,7 @@ export const aiDeepSearchPack: SeedPluginDef = {
     "description": "38 个前沿 AI 模型、深度研究引擎、模型目录与实测榜单一次装齐：在主搜索框用 !ppx、!felo、!gsp、!phind、!sci、!kimi、!deepseek、!qwen 等前缀直接向对话模型、学术引用网络、前沿预印本、模型/数据集目录、云端推理平台与实测榜单发起定向检索。",
     "icon": "🔬",
     "author": "山羊胡官方",
+    "homepage": "https://www.shanyanghu.com/",
     "license": "MIT",
     "version": "1.0.0",
     "tags": [

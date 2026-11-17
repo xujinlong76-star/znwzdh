@@ -7,10 +7,10 @@
  * 补了作者官网 https://www.shanyanghu.com/（2026-11-18 curl 实测 200，
  * 返回山羊胡网真实首页），覆盖率 4/42 → 37/42。
  *
- * 未补的 5 条是搜索包（cn / academic / dev / ai-deep / code-search）：
- * 其种子文件与 P3-1/P3-2 同批 worker 共用，本轮刻意不碰，待其提交
- * 落地后由后续轮次补同一地址；下面用豁免清单钉死这个口子——豁免
- * 之外的 theme / workspace-preset / bundle 缺 homepage 即红灯。
+ * 尾巴（2026-11-18）：剩余 5 条搜索包（cn / academic / dev / ai-deep /
+ * code-search）已补同一作者官网（P3-1/P3-2 提交落地后补，curl 复核
+ * https://www.shanyanghu.com/ 200、0 跳转），覆盖率 37/42 → 42/42，
+ * 豁免清单随之撤掉——此后任一 42 条种子缺 homepage 即红灯。
  *
  * 截图与捐赠链接本轮 0 条：站内无真实官方截图文件、作者无公开捐赠
  * 链接，图标铁律同样适用——没有真实图/真实链接就不硬补，不编造。
@@ -27,18 +27,6 @@ import { seedPluginDefs } from "../src/seed-plugins.ts";
 /** 作者官网：唯一真实、可达的站内原创插件主页（curl 200 已验证） */
 const SITE_HOMEPAGE = "https://www.shanyanghu.com/";
 
-/**
- * 豁免：5 条搜索包种子文件与 P3-1/P3-2 同批共用，本轮未填 homepage；
- * 待其提交落地后补同一地址并从豁免中移除。豁免只认 slug，不认 kind。
- */
-const HOMEPAGE_EXEMPT_SLUGS = new Set([
-  "cn-search-arsenal",
-  "academic-search-arsenal",
-  "dev-search-arsenal",
-  "ai-deep-search-pack",
-  "code-and-package-search-pack",
-]);
-
 function collectValidated(): { slug: string; manifest: PluginManifest }[] {
   const items: { slug: string; manifest: PluginManifest }[] = [];
   for (const def of seedPluginDefs()) {
@@ -53,13 +41,12 @@ function collectValidated(): { slug: string; manifest: PluginManifest }[] {
 }
 
 describe("P3-3：种子插件官网覆盖率", () => {
-  it("theme / preset / bundle 全部有 homepage（搜索包 5 条豁免待后续补）", () => {
+  it("全部 42 条种子有 homepage（无豁免）", () => {
     const missing: string[] = [];
     for (const { slug, manifest } of collectValidated()) {
-      if (HOMEPAGE_EXEMPT_SLUGS.has(slug)) continue;
       if (!manifest.homepage) missing.push(slug);
     }
-    expect(missing, `以下非搜索包种子缺 homepage：${missing.join(", ")}`).toEqual([]);
+    expect(missing, `以下种子缺 homepage：${missing.join(", ")}`).toEqual([]);
   });
 
   it("全部已填 homepage 均为 https 绝对地址，且站内原创插件指向作者官网", () => {
@@ -82,10 +69,10 @@ describe("P3-3：种子插件官网覆盖率", () => {
     expect(bad, `homepage 不合规：\n${bad.join("\n")}`).toEqual([]);
   });
 
-  it("homepage 覆盖率不低于 37/42（只许升不许降）", () => {
+  it("homepage 覆盖率 42/42（只许升不许降）", () => {
     const items = collectValidated();
     const covered = items.filter((i) => Boolean(i.manifest.homepage)).length;
-    expect(covered).toBeGreaterThanOrEqual(37);
+    expect(covered).toBe(42);
     expect(items.length).toBe(42);
   });
 });

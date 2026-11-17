@@ -44,6 +44,29 @@ describe("撤防账厚度棘轮：写侧报的道数必须等于登记表期望"
     expect(out.findings[0].message).toContain("node scripts/check-ci-gate.mjs");
   });
 
+  it("分片 2 上不适用的门禁不计入期望：写侧报 1 道、登记表认 2 道不是账变薄（U-21）", () => {
+    // test-e2e 登记 2 道；分片 2 上 quarantine-e2e 不适用，写侧只报 1 道——
+    // 差的那 1 道是「本分片不跑」，不是账变薄，棘轮不许为此造红。
+    const rows = [
+      row({
+        job: "test-e2e",
+        name: "浏览器 E2E 自动化测试（Playwright，分片 2/2）",
+        gateTotal: 1,
+        ran: 1,
+        notApplicable: ["quarantine-e2e"],
+      }),
+    ];
+    expect(thicknessFindings(rows, REG).findings).toEqual([]);
+    // 对照：同一行去掉 notApplicable ⇒ 差的那 1 道就是账变薄，必须点名
+    const thin = thicknessFindings(
+      [row({ job: "test-e2e", name: "浏览器 E2E 自动化测试（Playwright，分片 2/2）", gateTotal: 1, ran: 1 })],
+      REG,
+    );
+    expect(thin.findings).toHaveLength(1);
+    expect(thin.findings[0]).toMatchObject({ kind: "thin", expected: 2, reported: 1, delta: 1 });
+    expect(thin.findings[0].message).toContain("比登记表薄 1 道");
+  });
+
   it("厚账 ⇒ 说「新门禁进了 ci.yml 没进登记表」，不许反写成薄账", () => {
     const out = thicknessFindings([row({ job: "test-web", gateTotal: 7, ran: 7 })], REG);
     expect(out.findings[0].kind).toBe("fat");

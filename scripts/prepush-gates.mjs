@@ -29,6 +29,12 @@
  *     受害的是「不 vendor 直接 pnpm test」的口径（新克隆、IDE）。同 core 镜像那枚的道理：
  *     只有读提交内容能在这个窗口里说真话，所以 baseline 语义也照搬。
  *
+ *   - 冷区 a11y token 禁令（scripts/check-a11y-token-changed.mjs）：
+ *     a11y-token-contrast 是「全树扫描型」守卫，pre-commit 选测结构性漏选它
+ *     （模块图无边、词根够不着——2026-11-17 批 C 3c200978 带着 bg-destructive/10
+ *     上 main 是第五次出现）。这枚闸门只扫本次推送改动的 overlay 源码文件，
+ *     与守卫的 5 条冷区禁令同款正则，<1s；基线语义与 core 镜像那枚同款。
+ *
  * 为什么不无条件跑前两枚：本仓库长期多会话并行，工作区里常有别人未提交的半成品。
  * 这两枚检查的是**工作区**，而推送出去的是**提交**。两者不一致时跑出来的红
  * 与本次推送无关，只会冤枉人。所以每枚闸门只看自己相关的路径：
@@ -107,6 +113,12 @@ export function planGates({ contractDirty = false, scopeDirty = false } = {}) {
     {
       id: "mock-hygiene-prepush",
       title: "跨模块 mock 都带 vi.resetModules() 兜底",
+      run: true,
+      skipReason: "",
+    },
+    {
+      id: "a11y-token-changed",
+      title: "本次改动未引入冷区 a11y token 违例",
       run: true,
       skipReason: "",
     },
@@ -190,6 +202,22 @@ function runDepsIntegrityGate() {
  */
 function runMockHygieneGate() {
   runNode(["scripts/fix-mock-hygiene.mjs", "--head"]);
+}
+
+/**
+ * 冷区 a11y token：只扫本次推送改动的 overlay 源码文件（与守卫同款 5 条禁令，
+ * <1s）。读 HEAD 提交内容，基线语义与 core 镜像那枚同款：基线上已有的违例
+ * 只警告放行，新引入的照拦。
+ */
+function runA11yTokenGate() {
+  const baseline = upstreamBaseline();
+  const args = ["scripts/check-a11y-token-changed.mjs"];
+  if (baseline !== null) args.push("--baseline", baseline);
+  console.log(
+    "[pre-push-gates] a11y token 基线 = " +
+      (baseline === null ? "（拿不到上游 merge-base，按空树严格判红）" : baseline.slice(0, 10)),
+  );
+  runNode(args);
 }
 
 /**
@@ -281,6 +309,7 @@ const RUNNERS = {
   "test-mirror-pairs": runTestMirrorPairGate,
   "deps-integrity-prepush": runDepsIntegrityGate,
   "mock-hygiene-prepush": runMockHygieneGate,
+  "a11y-token-changed": runA11yTokenGate,
 };
 
 const FIX_HINTS = {
@@ -296,6 +325,8 @@ const FIX_HINTS = {
     "修复：这是安装被中断留下的、与代码无关。先看有没有进程占着这些目录，然后 npm pack <name>@<version> 解压补缺失文件（别覆盖占用中的 .node），或确认无安装进程后 pnpm install --frozen-lockfile",
   "mock-hygiene-prepush":
     "修复：node scripts/fix-mock-hygiene.mjs --apply 自动补 afterAll(() => vi.resetModules())",
+  "a11y-token-changed":
+    "修复：按闸门输出把违例类名改掉（border-input→border-border-strong；text-destructive→text-destructive-text；bg-destructive/10→bg-destructive/15；text-muted-foreground/N 去掉透明度变体；徽章旧配方 text-*-600→text-*-700）；豁免只认守卫 WIP_HOT_EXEMPT 显式清单",
 };
 
 /**

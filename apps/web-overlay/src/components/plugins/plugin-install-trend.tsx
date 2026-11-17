@@ -8,11 +8,14 @@
  * 曲线；total 为 0 时如实显示「近 30 天安装 0 次」与全零柱形。
  */
 import { useEffect, useState } from 'react'
+import { RotateCcw } from 'lucide-react'
 import { fetchPluginInstallTrend, type PluginInstallTrend } from '@/lib/navhub-api'
 
 export function PluginInstallTrendChart({ slug }: { slug: string }) {
   const [trend, setTrend] = useState<PluginInstallTrend | null>(null)
   const [failed, setFailed] = useState(false)
+  // 重试计数：失败后点「重试」+1，effect 重跑再拉一次（不编造、不静默）。
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -26,10 +29,23 @@ export function PluginInstallTrendChart({ slug }: { slug: string }) {
     return () => {
       cancelled = true
     }
-  }, [slug])
+  }, [slug, attempt])
 
   if (failed) {
-    return <p className="text-[11px] text-muted-foreground">安装趋势暂不可用，请稍后刷新重试。</p>
+    return (
+      <div className="space-y-1.5">
+        <p className="text-[11px] text-muted-foreground">安装趋势暂不可用，请稍后刷新重试。</p>
+        <button
+          type="button"
+          aria-label="重新加载安装趋势"
+          onClick={() => setAttempt((n) => n + 1)}
+          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+        >
+          <RotateCcw className="w-3 h-3" aria-hidden />
+          <span>重试</span>
+        </button>
+      </div>
+    )
   }
   if (!trend) {
     return <p className="text-[11px] text-muted-foreground">正在加载安装趋势…</p>

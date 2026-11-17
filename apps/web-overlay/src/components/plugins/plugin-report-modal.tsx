@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Flag } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 export interface PluginReportModalProps {
   slug: string
@@ -82,16 +83,27 @@ export function PluginReportModal({
             <div className="space-y-1.5">
               <div className="text-xs font-medium text-foreground">快速选择常见原因：</div>
               <div className="flex flex-wrap gap-1.5">
-                {COMMON_REASONS.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setReason(item)}
-                    className="text-[11px] px-2 py-1 rounded-md border border-border/60 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground text-left transition-colors"
-                  >
-                    {item}
-                  </button>
-                ))}
+                {COMMON_REASONS.map((item) => {
+                  // 选中态高亮：选中的原因 chip 与未选中的在视觉上必须分得开，
+                  // 再点一次取消选择；同时给读屏用户 aria-pressed。
+                  const selected = reason === item
+                  return (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setReason(selected ? '' : item)}
+                      className={cn(
+                        'text-[11px] px-2 py-1 rounded-md border text-left transition-colors',
+                        selected
+                          ? 'border-primary bg-primary/10 text-primary font-medium'
+                          : 'border-border/60 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      {item}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 

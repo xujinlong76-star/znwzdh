@@ -77,6 +77,8 @@ import {
   Download,
   Gauge,
   MessageSquareWarning,
+  Search,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -295,12 +297,70 @@ export default function AdminPluginsPage() {
 
   const [activeStatus, setActiveStatus] = useState<string>('pending')
   const [search, setSearch] = useState('')
+  // 搜索框是手动输入：300ms 防抖后再发查询，避免每敲一个字就拉一次列表。
+  // 预警定位 onFocus 直接写 search，输入框会同步显示，防抖后同样生效。
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  // K1：行级 loading——全局 actionLoading 会把同页所有行的按钮一起锁死；
+  // key 形如 `plugin:<slug>:approve` / `review:<id>:hide` / `reject:<slug>`，
+  // 值是进行中文案（按钮文案变 + 转圈）；只有命中 key 的那一行那一个操作
+  // 才禁用，同页其他行仍可点。
+  const [rowBusy, setRowBusy] = useState<Record<string, string>>({})
+  const isRowBusy = (key: string) => key in rowBusy
+  const busyLabel = (key: string) => rowBusy[key]
+  const setRowBusyKey = (key: string, label: string) => {
+    setRowBusy((prev) => ({ ...prev, [key]: label }))
+  }
+  const clearRowBusyKey = (key: string) => {
+    setRowBusy((prev) => {
+      if (!(key in prev)) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+  // K11：焦点归还——操作按钮在进行中被禁用会丢焦点（落到 body）；操作结束
+  // 后把焦点还给同一元素（还在文档里且未被禁用时），键盘可连续操作同一行。
+  // 返回是否成功归还：行已不在列表里时调用方改把焦点送到目标 Tab。
+  const refocusIfAlive = (el: Element | null): boolean => {
+    if (el && document.contains(el) && el instanceof HTMLElement && !el.hasAttribute('disabled')) {
+      el.focus()
+      return true
+    }
+    return false
+  }
+  // 延迟归还 + 重试：clearRowBusyKey / setReviewsLoading(false) 只是 setState，
+  // React 重渲染摘掉 disabled 在下一个任务才发生；重载机器上一次渲染可能
+  // 拖到 1 秒以上（真机采样：请求 2.5s 回来后按钮又过了约 1s 才变可用，
+  // 单次 60ms 与 5×100ms 的窗口都落空）。2 秒内每 200ms 试一次，直到成功。
+  const refocusSoon = (el: Element | null, fallback?: () => void) => {
+    let tries = 0
+    const tick = () => {
+      if (refocusIfAlive(el)) return
+      if (++tries < 10) {
+        setTimeout(tick, 200)
+      } else if (fallback) {
+        fallback()
+      }
+    }
+    setTimeout(tick, 60)
+  }
+  const focusStatusTab = (key: string) => {
+    document.querySelector<HTMLButtonElement>(`[data-status-tab="${key}"]`)?.focus()
+  }
+  const focusReviewTab = (tab: 'visible' | 'hidden') => {
+    document.querySelector<HTMLButtonElement>(`[data-review-tab="${tab}"]`)?.focus()
+  }
 
   // 驳回弹窗
   const [rejectModalOpen, setRejectModalOpen] = useState(false)
   const [rejectPluginItem, setRejectPluginItem] = useState<HubPluginItem | null>(null)
   const [rejectNote, setRejectNote] = useState('')
-  const [actionLoading, setActionLoading] = useState(false)
   const [tapsModalOpen, setTapsModalOpen] = useState(false)
   const [seedStatus, setSeedStatus] = useState<HubSeedCatalogStatus | null>(null)
   const [syncingSeed, setSyncingSeed] = useState(false)
@@ -312,26 +372,38 @@ export default function AdminPluginsPage() {
   const [auditPluginItem, setAuditPluginItem] = useState<HubPluginItem | null>(null)
   const [auditDiff, setAuditDiff] = useState<any>(null)
   const [auditLoading, setAuditLoading] = useState(false)
+  // 审查差异失败态：取数失败（500/断网）与「首发真无历史」必须分开渲染——
+  // 旧代码空 catch 把失败也渲染成「暂无已发布的历史版本」，等于谎报无历史。
+  const [auditFailed, setAuditFailed] = useState(false)
 
   const handleOpenAudit = async (item: HubPluginItem) => {
     setAuditPluginItem(item)
     setAuditModalOpen(true)
     setAuditLoading(true)
     setAuditDiff(null)
+    setAuditFailed(false)
     try {
-      const history = await fetchPluginVersions(item.slug)
+      // 404 不进 onDegraded（fetchPluginVersions 的约定：插件真无版本时仍显
+      // 示空态）；只有 500/断网等真失败才记 failed。
+      const history = await fetchPluginVersions(item.slug, () => setAuditFailed(true))
       if (history.versions && history.versions.length > 0) {
         const lastVer = history.versions[0]
         const lastDetail = await fetchPluginVersionDetail(item.slug, lastVer.version)
-        if (lastDetail && lastDetail.manifest) {
+        if (!lastDetail || !lastDetail.manifest) {
+          // 有历史版本号却取不到快照：同样是取数失败，不是「无历史」
+          setAuditFailed(true)
+        } else {
           const diffRes = await diffPluginManifestsApi(lastDetail.manifest, item.manifest)
           if (diffRes.ok) {
             setAuditDiff(diffRes.diff)
+          } else {
+            setAuditFailed(true)
           }
         }
       }
     } catch {
-      // 容错降级
+      // 取数失败记 failed：弹窗必须说「没取到」，不许再谎报「无历史版本」
+      setAuditFailed(true)
     } finally {
       setAuditLoading(false)
     }
@@ -358,7 +430,7 @@ export default function AdminPluginsPage() {
             // C-2：待审新版本筛选只对已上架插件有意义（新版投稿挂在已上架插件上）
             status: pendingVersionOnly ? 'published' : activeStatus,
             hasPendingVersion: pendingVersionOnly || undefined,
-            q: search.trim() || undefined,
+            q: debouncedSearch || undefined,
             limit: 100,
             offset,
           },
@@ -404,7 +476,7 @@ export default function AdminPluginsPage() {
       setLoading(false)
       setListLoadingMore(false)
     }
-  }, [activeStatus, search, pendingVersionOnly])
+  }, [activeStatus, debouncedSearch, pendingVersionOnly])
 
   useEffect(() => {
     void loadList()
@@ -459,23 +531,38 @@ export default function AdminPluginsPage() {
     void loadReviews()
   }, [loadReviews])
 
-  /** 编辑精选开关 + 位次（市场首页「编辑精选」栏的唯一数据源） */
+  /** 编辑精选开关 + 位次（市场首页「编辑精选」栏的唯一数据源）
+   *
+   * K12 乐观更新（照抄详情页星标模式）：先本地翻转选中态、失败再回滚；
+   * K1：进行中只禁用当前行（转圈 + 文案变），同页其他行仍可点；
+   * K11：结束后焦点回到同一按钮，键盘可连续操作同一行。 */
   const handleToggleFeatured = async (plugin: HubPluginItem) => {
     const next = !plugin.featured
     const rank = Number.isFinite(rankDrafts[plugin.slug]) ? rankDrafts[plugin.slug] : plugin.featuredRank ?? 0
-    setActionLoading(true)
+    const key = `plugin:${plugin.slug}:featured`
+    const el = document.activeElement
+    // 乐观更新：点下立即翻转选中态，不等请求回来
+    const prevFeatured = plugin.featured
+    const prevRank = plugin.featuredRank ?? 0
+    setPlugins((prevList) =>
+      prevList.map((p) => (p.slug === plugin.slug ? { ...p, featured: next, featuredRank: rank } : p)),
+    )
+    setRowBusyKey(key, next ? '加入精选…' : '移出精选…')
     try {
       await setPluginFeatured(plugin.slug, next, rank)
-      setPlugins((prev) =>
-        prev.map((p) => (p.slug === plugin.slug ? { ...p, featured: next, featuredRank: rank } : p)),
-      )
       toast.success(next ? `已把「${plugin.name}」加入编辑精选` : `已把「${plugin.name}」移出编辑精选`)
     } catch (err) {
+      // 失败回滚到操作前状态，不留假的选中态
+      setPlugins((prevList) =>
+        prevList.map((p) => (p.slug === plugin.slug ? { ...p, featured: prevFeatured, featuredRank: prevRank } : p)),
+      )
       toast.error('精选设置失败', {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      setActionLoading(false)
+      clearRowBusyKey(key)
+      // 延迟归还 + 重试（见 refocusSoon）：React 重渲染摘 disabled 可能很慢
+      refocusSoon(el)
     }
   }
 
@@ -485,7 +572,8 @@ export default function AdminPluginsPage() {
       return
     }
     const note = reviewNoteDrafts[review.id]?.trim()
-    setActionLoading(true)
+    const key = `review:${review.id}:${action}`
+    setRowBusyKey(key, action === 'hide' ? '隐藏中…' : '恢复中…')
     try {
       await moderatePluginReview(review.id, action, note || undefined)
       toast.success(action === 'hide' ? '评价已隐藏' : '评价已恢复公开')
@@ -503,7 +591,9 @@ export default function AdminPluginsPage() {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      setActionLoading(false)
+      clearRowBusyKey(key)
+      // 处置后评价换 Tab：行必定离开本 Tab，焦点直接送到目标 Tab（K11）
+      focusReviewTab(action === 'hide' ? 'hidden' : 'visible')
     }
   }
 
@@ -517,7 +607,9 @@ export default function AdminPluginsPage() {
     if (!confirm(`确定要彻底删除「${review.pluginName}」的这条评价吗？删除后无法恢复（只是违规/垃圾评价建议改用「隐藏评价」，可随时恢复）。`)) {
       return
     }
-    setActionLoading(true)
+    const key = `review:${review.id}:delete`
+    const el = document.activeElement
+    setRowBusyKey(key, '删除中…')
     try {
       await deletePluginReview(review.pluginSlug, review.id)
       toast.success('评价已删除')
@@ -528,13 +620,27 @@ export default function AdminPluginsPage() {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      setActionLoading(false)
+      clearRowBusyKey(key)
+      // 行已删：焦点回不到原按钮，送到评价治理的刷新按钮（K11）；
+      // 同样延迟归还 + 重试，等 React 把按钮的 disabled 摘掉再 focus。
+      refocusSoon(el, () => {
+        document.querySelector<HTMLButtonElement>('#admin-reviews-refresh')?.focus()
+      })
     }
   }
 
   // 通过审核 (上架)
-  const handleApprove = async (plugin: HubPluginItem) => {
-    setActionLoading(true)
+  //
+  // 确认评估（批 D，先评估再定）：上架是单向公开动作——误点会把未审清单
+  // 直接公开，唯一的纠正路径是再点「下架」（且中间有公开窗口）。行内按钮
+  // 是一键直发、无前置审查，所以加 confirm；审查弹窗里的「通过并立即上
+  // 架」不加——打开弹窗、核对清单本身就是审查步骤，再弹一次是重复确认。
+  const handleApprove = async (plugin: HubPluginItem, opts?: { skipConfirm?: boolean }) => {
+    if (!opts?.skipConfirm && !confirm(`确定要通过审核并上架插件「${plugin.name}」吗？上架后将公开可见。`)) {
+      return
+    }
+    const key = `plugin:${plugin.slug}:approve`
+    setRowBusyKey(key, '上架中…')
     try {
       await reviewPlugin(plugin.slug, 'approve')
       toast.success(`已通过审核并上架「${plugin.name}」！`)
@@ -544,7 +650,9 @@ export default function AdminPluginsPage() {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      setActionLoading(false)
+      clearRowBusyKey(key)
+      // 上架后行换 Tab：焦点直接送到「已上架」Tab（K11）
+      focusStatusTab('published')
     }
   }
 
@@ -568,7 +676,8 @@ export default function AdminPluginsPage() {
     if (!confirm(`确定要下架插件「${plugin.name}」吗？下架后市场公开列表将不再展示。`)) {
       return
     }
-    setActionLoading(true)
+    const key = `plugin:${plugin.slug}:delist`
+    setRowBusyKey(key, '下架中…')
     try {
       await reviewPlugin(plugin.slug, 'delist')
       toast.success(`已下架「${plugin.name}」`)
@@ -578,7 +687,9 @@ export default function AdminPluginsPage() {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      setActionLoading(false)
+      clearRowBusyKey(key)
+      // 下架后行换 Tab：焦点直接送到「已下架」Tab（K11）
+      focusStatusTab('delisted')
     }
   }
 
@@ -588,7 +699,8 @@ export default function AdminPluginsPage() {
     if (!confirm(`确定要隔离插件「${plugin.name}」吗？隔离后普通访客无法安装，须管理员审核解封才能恢复上架。`)) {
       return
     }
-    setActionLoading(true)
+    const key = `plugin:${plugin.slug}:quarantine`
+    setRowBusyKey(key, '隔离中…')
     try {
       await reviewPlugin(plugin.slug, 'quarantine', '累计举报，管理员人工隔离')
       toast.success(`已隔离「${plugin.name}」`)
@@ -598,14 +710,18 @@ export default function AdminPluginsPage() {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      setActionLoading(false)
+      clearRowBusyKey(key)
+      // 隔离后行换 Tab：焦点直接送到「已隔离」Tab（K11）
+      focusStatusTab('quarantined')
     }
   }
 
   // 提交驳回
   const handleConfirmReject = async () => {
     if (!rejectPluginItem) return
-    setActionLoading(true)
+    const key = `reject:${rejectPluginItem.slug}`
+    setRowBusyKey(key, '提交中…')
+    let ok = false
     try {
       await reviewPlugin(rejectPluginItem.slug, 'reject', rejectNote.trim() || '未达到上架标准')
       toast.success(`已驳回「${rejectPluginItem.name}」`)
@@ -613,12 +729,15 @@ export default function AdminPluginsPage() {
       setRejectNote('')
       setRejectPluginItem(null)
       void loadList()
+      ok = true
     } catch (err) {
       toast.error('驳回失败', {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      setActionLoading(false)
+      clearRowBusyKey(key)
+      // 驳回成功弹窗才关闭、行才换 Tab；失败时弹窗仍开着，不动焦点
+      if (ok) focusStatusTab('rejected')
     }
   }
 
@@ -743,6 +862,7 @@ export default function AdminPluginsPage() {
                 <button
                   key={tab.key}
                   type="button"
+                  data-status-tab={tab.key}
                   onClick={() => {
                     setPendingVersionOnly(false)
                     setActiveStatus(tab.key)
@@ -784,6 +904,30 @@ export default function AdminPluginsPage() {
                 </span>
               )}
             </button>
+            {/* 搜索框：管理台一直有 search state（接 q 参数）却没有输入框，
+                只能靠预警定位写值；补一个带 300ms 防抖的手动搜索输入框 */}
+            <label className="relative ml-auto">
+              <span className="sr-only">搜索插件</span>
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden />
+              <input
+                type="search"
+                aria-label="搜索插件"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜索插件名称 / 标识…"
+                className="w-56 max-w-full pl-8 pr-7 py-1.5 rounded-xl text-xs bg-muted/50 text-foreground placeholder:text-muted-foreground border border-border/40 focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+              />
+              {search && (
+                <button
+                  type="button"
+                  aria-label="清除搜索"
+                  onClick={() => setSearch('')}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" aria-hidden />
+                </button>
+              )}
+            </label>
           </div>
         </div>
 
@@ -1001,7 +1145,6 @@ export default function AdminPluginsPage() {
                           setRejectNote('')
                           setRejectModalOpen(true)
                         }}
-                        disabled={actionLoading}
                         className="px-3 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/15 rounded-lg border border-destructive/30 transition-colors"
                       >
                         驳回
@@ -1009,11 +1152,15 @@ export default function AdminPluginsPage() {
                       <button
                         type="button"
                         onClick={() => handleApprove(item)}
-                        disabled={actionLoading}
-                        className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-medium text-primary-foreground bg-primary hover:opacity-90 rounded-lg transition-all shadow-2xs"
+                        disabled={isRowBusy(`plugin:${item.slug}:approve`)}
+                        className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs font-medium text-primary-foreground bg-primary hover:opacity-90 rounded-lg transition-all shadow-2xs disabled:opacity-60"
                       >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>通过并上架</span>
+                        {isRowBusy(`plugin:${item.slug}:approve`) ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                        <span>{busyLabel(`plugin:${item.slug}:approve`) ?? '通过并上架'}</span>
                       </button>
                     </>
                   )}
@@ -1033,22 +1180,26 @@ export default function AdminPluginsPage() {
                           const v = Number(e.target.value)
                           setRankDrafts((prev) => ({ ...prev, [item.slug]: Number.isFinite(v) ? v : 0 }))
                         }}
-                        disabled={!item.featured || actionLoading}
+                        disabled={!item.featured || isRowBusy(`plugin:${item.slug}:featured`)}
                         title={item.featured ? '位次越大越靠前（同分按发布时间）' : '设为精选后可编辑位次'}
                         className="w-16 px-1.5 py-1 text-[11px] font-mono rounded-lg border border-border/60 bg-background text-foreground disabled:opacity-50 focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       />
                       <button
                         type="button"
                         onClick={() => handleToggleFeatured(item)}
-                        disabled={actionLoading}
+                        disabled={isRowBusy(`plugin:${item.slug}:featured`)}
                         className={cn(
-                          'inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors',
+                          'inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-60',
                           item.featured
                             ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20'
                             : 'border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60',
                         )}
                       >
-                        <Crown className="w-3.5 h-3.5" aria-hidden />
+                        {isRowBusy(`plugin:${item.slug}:featured`) ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                        ) : (
+                          <Crown className="w-3.5 h-3.5" aria-hidden />
+                        )}
                         <span>{item.featured ? '取消精选' : '设为精选'}</span>
                       </button>
                     </div>
@@ -1058,10 +1209,13 @@ export default function AdminPluginsPage() {
                     <button
                       type="button"
                       onClick={() => handleDelist(item)}
-                      disabled={actionLoading}
-                      className="px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 rounded-lg border border-amber-500/30 transition-colors"
+                      disabled={isRowBusy(`plugin:${item.slug}:delist`)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 rounded-lg border border-amber-500/30 transition-colors disabled:opacity-60"
                     >
-                      下架
+                      {isRowBusy(`plugin:${item.slug}:delist`) && (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                      )}
+                      <span>{busyLabel(`plugin:${item.slug}:delist`) ?? '下架'}</span>
                     </button>
                   )}
 
@@ -1069,10 +1223,13 @@ export default function AdminPluginsPage() {
                     <button
                       type="button"
                       onClick={() => handleQuarantine(item)}
-                      disabled={actionLoading}
-                      className="px-3 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/15 rounded-lg border border-destructive/30 transition-colors"
+                      disabled={isRowBusy(`plugin:${item.slug}:quarantine`)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/15 rounded-lg border border-destructive/30 transition-colors disabled:opacity-60"
                     >
-                      隔离
+                      {isRowBusy(`plugin:${item.slug}:quarantine`) && (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                      )}
+                      <span>{busyLabel(`plugin:${item.slug}:quarantine`) ?? '隔离'}</span>
                     </button>
                   )}
 
@@ -1080,11 +1237,15 @@ export default function AdminPluginsPage() {
                     <button
                       type="button"
                       onClick={() => handleApprove(item)}
-                      disabled={actionLoading}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-lg border border-emerald-500/30 transition-colors"
+                      disabled={isRowBusy(`plugin:${item.slug}:approve`)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-lg border border-emerald-500/30 transition-colors disabled:opacity-60"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>{item.status === 'quarantined' ? '审核解封并上架' : '重新上架'}</span>
+                      {isRowBusy(`plugin:${item.slug}:approve`) ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      )}
+                      <span>{busyLabel(`plugin:${item.slug}:approve`) ?? (item.status === 'quarantined' ? '审核解封并上架' : '重新上架')}</span>
                     </button>
                   )}
                 </div>
@@ -1142,6 +1303,7 @@ export default function AdminPluginsPage() {
                   <button
                     key={tab}
                     type="button"
+                    data-review-tab={tab}
                     onClick={() => setReviewStatus(tab)}
                     aria-pressed={reviewStatus === tab}
                     className={cn(
@@ -1159,12 +1321,25 @@ export default function AdminPluginsPage() {
             </div>
             <button
               type="button"
-              onClick={() => void loadReviews()}
+              id="admin-reviews-refresh"
+              onClick={async () => {
+                // K1：刷新进行中不再只有 disabled——转圈 + 文案变「刷新中…」；
+                // K11：刷新结束把焦点还给这个按钮，键盘可连续刷新。
+                const el = document.activeElement
+                await loadReviews()
+                // 延迟归还 + 重试（见 refocusSoon）：loadReviews 的
+                // setReviewsLoading(false) 同样要等 React 重渲染。
+                refocusSoon(el)
+              }}
               disabled={reviewsLoading}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-60"
             >
-              <RotateCcw className="w-3 h-3" aria-hidden />
-              <span>刷新</span>
+              {reviewsLoading ? (
+                <Loader2 className="w-3 h-3 animate-spin" aria-hidden />
+              ) : (
+                <RotateCcw className="w-3 h-3" aria-hidden />
+              )}
+              <span>{reviewsLoading ? '刷新中…' : '刷新'}</span>
             </button>
           </div>
 
@@ -1237,24 +1412,33 @@ export default function AdminPluginsPage() {
                       <button
                         type="button"
                         onClick={() => handleModerateReview(review, review.status === 'hidden' ? 'restore' : 'hide')}
-                        disabled={actionLoading}
+                        disabled={isRowBusy(`review:${review.id}:${review.status === 'hidden' ? 'restore' : 'hide'}`)}
                         className={cn(
-                          'px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors',
+                          'inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors disabled:opacity-60',
                           review.status === 'hidden'
                             ? 'border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10'
                             : 'border-destructive/30 text-destructive-text hover:bg-destructive/15',
                         )}
                       >
-                        {review.status === 'hidden' ? '恢复公开' : '隐藏评价'}
+                        {isRowBusy(`review:${review.id}:${review.status === 'hidden' ? 'restore' : 'hide'}`) && (
+                          <Loader2 className="w-3 h-3 animate-spin" aria-hidden />
+                        )}
+                        <span>
+                          {busyLabel(`review:${review.id}:${review.status === 'hidden' ? 'restore' : 'hide'}`) ??
+                            (review.status === 'hidden' ? '恢复公开' : '隐藏评价')}
+                        </span>
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleDeleteReview(review)}
-                        disabled={actionLoading}
+                        disabled={isRowBusy(`review:${review.id}:delete`)}
                         title="彻底删除这条评价（不可恢复；只是违规内容建议改用隐藏）"
-                        className="px-2.5 py-1 text-[11px] font-medium rounded-md border border-destructive/30 text-destructive-text hover:bg-destructive/15 transition-colors"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md border border-destructive/30 text-destructive-text hover:bg-destructive/15 transition-colors disabled:opacity-60"
                       >
-                        删除评价
+                        {isRowBusy(`review:${review.id}:delete`) && (
+                          <Loader2 className="w-3 h-3 animate-spin" aria-hidden />
+                        )}
+                        <span>{busyLabel(`review:${review.id}:delete`) ?? '删除评价'}</span>
                       </button>
                     </div>
                   </li>
@@ -1313,7 +1497,6 @@ export default function AdminPluginsPage() {
               <button
                 type="button"
                 onClick={() => setRejectModalOpen(false)}
-                disabled={actionLoading}
                 className="px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/60 hover:bg-muted/60 transition-colors"
               >
                 取消
@@ -1321,10 +1504,15 @@ export default function AdminPluginsPage() {
               <button
                 type="button"
                 onClick={handleConfirmReject}
-                disabled={actionLoading}
-                className="px-4 py-2 text-xs font-medium rounded-lg bg-destructive text-destructive-foreground hover:opacity-90 transition-all"
+                disabled={rejectPluginItem ? isRowBusy(`reject:${rejectPluginItem.slug}`) : false}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-destructive text-destructive-foreground hover:opacity-90 transition-all disabled:opacity-60"
               >
-                {actionLoading ? '提交中…' : '确认驳回'}
+                {rejectPluginItem && isRowBusy(`reject:${rejectPluginItem.slug}`) && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                )}
+                <span>
+                  {rejectPluginItem && isRowBusy(`reject:${rejectPluginItem.slug}`) ? '提交中…' : '确认驳回'}
+                </span>
               </button>
             </DialogFooter>
           </DialogContent>
@@ -1386,6 +1574,26 @@ export default function AdminPluginsPage() {
                     <div className="rounded-xl border border-dashed border-border/70 p-4 text-center text-xs text-muted-foreground">
                       正在比对历史版本快照...
                     </div>
+                  ) : auditFailed ? (
+                    <div
+                      role="status"
+                      className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-xs text-amber-700 dark:text-amber-400 space-y-2"
+                    >
+                      <p className="font-medium">
+                        历史版本这次没能取回（连接失败或返回异常），无法确认是否存在已发布版本。
+                      </p>
+                      <p>不要按「无历史版本」放行：先重试，取回失败时请改走人工核对。</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (auditPluginItem) void handleOpenAudit(auditPluginItem)
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-background/70 hover:bg-background font-medium text-foreground transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" aria-hidden />
+                        <span>重新取回历史版本</span>
+                      </button>
+                    </div>
                   ) : auditDiff ? (
                     <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
                       <PluginDiffView diff={auditDiff} />
@@ -1430,7 +1638,6 @@ export default function AdminPluginsPage() {
                       setRejectModalOpen(true)
                     }
                   }}
-                  disabled={actionLoading}
                   className="px-3.5 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/15 rounded-lg border border-destructive/30 transition-colors"
                 >
                   驳回
@@ -1440,14 +1647,23 @@ export default function AdminPluginsPage() {
                   onClick={() => {
                     if (auditPluginItem) {
                       setAuditModalOpen(false)
-                      handleApprove(auditPluginItem)
+                      // 审查弹窗本身就是审查步骤：直接上架，不再重复弹确认
+                      handleApprove(auditPluginItem, { skipConfirm: true })
                     }
                   }}
-                  disabled={actionLoading}
-                  className="inline-flex items-center gap-1 px-4 py-1.5 text-xs font-medium text-primary-foreground bg-primary hover:opacity-90 rounded-lg transition-all shadow-2xs"
+                  disabled={auditPluginItem ? isRowBusy(`plugin:${auditPluginItem.slug}:approve`) : false}
+                  className="inline-flex items-center gap-1 px-4 py-1.5 text-xs font-medium text-primary-foreground bg-primary hover:opacity-90 rounded-lg transition-all shadow-2xs disabled:opacity-60"
                 >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>通过并立即上架</span>
+                  {auditPluginItem && isRowBusy(`plugin:${auditPluginItem.slug}:approve`) ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {auditPluginItem && busyLabel(`plugin:${auditPluginItem.slug}:approve`)
+                      ? '上架中…'
+                      : '通过并立即上架'}
+                  </span>
                 </button>
               </div>
             </DialogFooter>

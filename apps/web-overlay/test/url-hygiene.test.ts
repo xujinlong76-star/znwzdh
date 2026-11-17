@@ -432,6 +432,50 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
     why: "横幅链接来自同文件 BANNER_LINKS 常量表，href 取值全是写死的 /category/* 站内路径，不是外部数据（同文件的 s.href 是接口返回的目录数据，不在此列，须过 safeHref）",
     evidence: ["const link = BANNER_LINKS[b.key]", "href: '/category/ai-tools'"],
   },
+  // ---- 第 2 批（P2-2 / P2-4）：市场分类与更新提醒入口，href/link 变量在渲染前已过 safeHref 闸 ----
+  {
+    file: "src/app/category/[slug]/category-board.tsx",
+    kind: "href",
+    expr: "href",
+    why:
+      "相关插件入口的 href 只由 marketplace-categories.ts 的 marketplaceSearchHref / " +
+      "marketplaceKindHref 构造（`/marketplace` + URLSearchParams 编码后的 q/kind 参数），" +
+      "拼不出伪协议与站外地址；渲染前一句 `const href = safeHref(relatedPlugin?.href ?? '', '')` " +
+      "再过一道闸，不安全值落到 '' 时整个相关插件区不渲染，所以 href 位置不存在未过闸的外部数据。",
+    evidence: ["const href = safeHref(relatedPlugin?.href ?? '', '')"],
+  },
+  {
+    file: "src/app/marketplace/categories/page.tsx",
+    kind: "href",
+    expr: "href",
+    why:
+      "kind 卡片的两处链接共用同一个 href：group.href 只由 marketplaceKindHref 构造 " +
+      "（`/marketplace?kind=<kind 联合类型>`，无外部输入）；渲染前一句 " +
+      "`const href = safeHref(group.href, '')` 已过闸，过不了（''）时整张卡不渲染，" +
+      "所以 href 位置不存在未过闸的外部数据。",
+    evidence: ["const href = safeHref(group.href, '')"],
+  },
+  {
+    file: "src/app/marketplace/categories/page.tsx",
+    kind: "href",
+    expr: "link",
+    why:
+      "主题/标签入口的 topic.href 只由 marketplaceSearchHref 构造（`/marketplace?q=<写死词>`，" +
+      "q 经 URLSearchParams 编码）；渲染前一句 `const link = safeHref(topic.href, '')` 已过闸，" +
+      "过不了（''）时该标签不渲染，所以 link 位置不存在未过闸的外部数据。",
+    evidence: ["const link = safeHref(topic.href, '')"],
+  },
+  {
+    file: "src/app/me/notifications/page.tsx",
+    kind: "href",
+    expr: "link",
+    why:
+      "更新提醒的 link 在类型上就是字面量 '/marketplace/installed' " +
+      "（plugin-updates.ts 的 buildPluginUpdateReminder 写死）；渲染前一句 " +
+      "`const link = safeHref(updateReminder?.link ?? '', '')` 再过一道闸，不安全值落到 '' " +
+      "时提醒横幅不渲染，所以 link 位置不存在未过闸的外部数据。",
+    evidence: ["const link = safeHref(updateReminder?.link ?? '', '')"],
+  },
 ];
 
 describe("渲染期 URL 卫生：外部可控地址一律过安全闸", () => {

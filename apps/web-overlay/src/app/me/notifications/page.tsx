@@ -177,6 +177,11 @@ export default function NotificationsPage() {
     }
   }, [toast])
 
+  // P2-4 更新提醒入口先过安全闸：link 在类型上就是字面量 '/marketplace/installed'
+  //（lib/plugins/plugin-updates.ts 的 buildPluginUpdateReminder 写死），这里再过
+  // 一道 safeHref；不安全值落到 '' 时提醒横幅不渲染（下面的 updateReminder && link 条件）。
+  const link = safeHref(updateReminder?.link ?? '', '')
+
   return (
     <Container as="main" id="main-content" className="space-y-5 pb-8 pt-3 sm:space-y-6 sm:pb-10 sm:pt-4">
       <CenterPageHeader
@@ -197,7 +202,7 @@ export default function NotificationsPage() {
       {/* P2-4：插件更新提醒——客户端派生横幅，置于服务端通知列表之上；
           服务端通知为空时也照常出现（提醒不依赖有没有服务端通知）。
           不是服务端通知条目：不进未读数、不走标已读，「知道了」只关当次打开。 */}
-      {state === 'ready' && updateReminder && !reminderDismissed && (
+      {state === 'ready' && updateReminder && link && !reminderDismissed && (
         <div
           role="status"
           className="flex flex-col gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -212,7 +217,7 @@ export default function NotificationsPage() {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button asChild size="sm" className="h-8 text-xs">
-              <Link href={updateReminder.link}>去全部更新</Link>
+              <Link href={link}>去全部更新</Link>
             </Button>
             <button
               type="button"

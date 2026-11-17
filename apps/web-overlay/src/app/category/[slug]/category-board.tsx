@@ -204,6 +204,12 @@ export async function CategoryBoard({
   // lib/plugins/marketplace-categories.ts），映射不到时为 null，调用处只给
   // 通用入口，不把用户送进一个「相关插件 0 个」的搜索页。
   const relatedPlugin = resolveRelatedPluginLink(name)
+  // 相关插件入口先过安全闸：href 的唯一构造点是
+  // lib/plugins/marketplace-categories.ts 的 marketplaceSearchHref /
+  // marketplaceKindHref（`/marketplace` + URLSearchParams 编码后的 q/kind 参数），
+  // 拼不出伪协议与站外地址；这里再过一道 safeHref，不安全值落到 '' 时
+  // 整个相关插件区不渲染（下面的 relatedPlugin && href 条件）。
+  const href = safeHref(relatedPlugin?.href ?? '', '')
 
   // 高频标签：只取本页站点里出现过的标签，链接到已有标签页
   const tagCounts = new Map<string, number>()
@@ -405,9 +411,9 @@ export async function CategoryBoard({
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-3 shrink-0">
-              {relatedPlugin ? (
+              {relatedPlugin && href ? (
                 <Link
-                  href={relatedPlugin.href}
+                  href={href}
                   className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors text-xs shadow-2xs"
                 >
                   <span>在插件市场搜「{relatedPlugin.queryLabel}」</span>

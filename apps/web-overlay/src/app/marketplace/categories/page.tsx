@@ -11,6 +11,7 @@ import {
   MARKETPLACE_CATEGORY_GROUPS,
   MARKETPLACE_TOPIC_GROUPS,
 } from '@/lib/plugins/marketplace-categories'
+import { safeHref } from '@/lib/safe-url'
 
 /**
  * 插件分类浏览页（P2-2，2026-11-17）。
@@ -105,6 +106,11 @@ export default async function MarketplaceCategoriesPage() {
             {MARKETPLACE_CATEGORY_GROUPS.map((group) => {
               const total = totals?.get(group.kind)
               const empty = total === 0
+              // kind 卡片链接先过安全闸：group.href 只由 marketplaceKindHref 构造
+              //（`/marketplace?kind=<kind 联合类型>`，无外部输入）；过不了（''）
+              // 时整张卡不渲染。
+              const href = safeHref(group.href, '')
+              if (!href) return null
               return (
                 <li
                   key={group.id}
@@ -116,7 +122,7 @@ export default async function MarketplaceCategoriesPage() {
                       <span className="text-base font-semibold text-foreground">{group.title}</span>
                     ) : (
                       <Link
-                        href={group.href}
+                        href={href}
                         className="text-base font-semibold text-foreground hover:text-primary transition-colors"
                       >
                         {group.title}
@@ -134,7 +140,7 @@ export default async function MarketplaceCategoriesPage() {
                       <span className="text-muted-foreground">该类型暂无已发布插件</span>
                     ) : (
                       <>
-                        <Link href={group.href} className="text-primary hover:underline">
+                        <Link href={href} className="text-primary hover:underline">
                           浏览全部 →
                         </Link>
                         <Link href={group.rankingHref} className="text-primary hover:underline">
@@ -155,17 +161,24 @@ export default async function MarketplaceCategoriesPage() {
             专题与标签复用市场已有的搜索词，点开即对应搜索视图。
           </p>
           <ul className="flex flex-wrap gap-2">
-            {MARKETPLACE_TOPIC_GROUPS.map((topic) => (
-              <li key={topic.id}>
-                <Link
-                  href={topic.href}
-                  title={topic.description}
-                  className="inline-flex px-3 py-1.5 rounded-full border border-border/70 text-xs text-foreground hover:text-primary hover:border-primary/40 transition-colors"
-                >
-                  {topic.title}
-                </Link>
-              </li>
-            ))}
+            {MARKETPLACE_TOPIC_GROUPS.map((topic) => {
+              // 主题/标签入口先过安全闸：topic.href 只由 marketplaceSearchHref 构造
+              //（`/marketplace?q=<写死词>`，q 经 URLSearchParams 编码）；过不了（''）
+              // 时该标签不渲染。
+              const link = safeHref(topic.href, '')
+              if (!link) return null
+              return (
+                <li key={topic.id}>
+                  <Link
+                    href={link}
+                    title={topic.description}
+                    className="inline-flex px-3 py-1.5 rounded-full border border-border/70 text-xs text-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                  >
+                    {topic.title}
+                  </Link>
+                </li>
+              )
+            })}
           </ul>
         </section>
       </div>

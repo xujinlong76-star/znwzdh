@@ -4317,6 +4317,19 @@
               ]
             },
             {
+              "id": "nav-66b7052d8910",
+              "title": "微博",
+              "href": "https://www.weibo.com",
+              "description": "国内主流社交媒体平台，热点资讯与名人动态",
+              "icon": "https://www.weibo.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "社交媒体",
+                "热点",
+                "资讯"
+              ]
+            },
+            {
               "id": "nav-10fac05d53d0",
               "title": "Soul",
               "href": "https://www.soulapp.cn",

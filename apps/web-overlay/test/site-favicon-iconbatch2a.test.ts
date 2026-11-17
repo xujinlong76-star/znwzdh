@@ -12,7 +12,7 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  *
  * 这个测试直接执行 resolveSiteIcon：map 键写错一个字符（多一个 www、
  * 少一个字母）都不会报错，只会静默回落渐变——只有跑起来才看得见。
- * 全部 18 站的 href 与标题均按 navigation.json（346 站）逐个核对，
+ * 全部 18 站的 href 与标题均按 navigation.json（347 站）逐个核对，
  * 不可猜；文件名取 Simple Icons slug（通义千问的 slug 是 qwen）。
  */
 

@@ -1763,5 +1763,10 @@
   "pricing": "freemium",
   "evidence": "官网定价页设免费 Beginner 档与 Pro/Business 付费档",
   "title": "Todoist"
+ },
+ "weibo.com": {
+  "pricing": "freemium",
+  "evidence": "基础功能免费使用，微博会员/SVIP 为付费增值服务",
+  "title": "微博"
  }
 }

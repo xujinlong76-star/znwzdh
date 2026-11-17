@@ -585,8 +585,9 @@ describe("搜索引擎收录 URL：死链不得回流（2026-11-16 Q-16～Q-19�
 describe("专题胶囊：带 q 的胶囊必须在种子数据上命中（死入口不得回流）", () => {
   // TOPIC_COLLECTIONS 的内联快照（apps/web-overlay/src/components/plugin-market-board.tsx）。
   // 前端改胶囊时这里同步改，否则测试会红，提醒同步——与本文件顶部的 WIDGET_REGISTRY
-  // 内联快照同一做法。q 的命中口径与 listPlugins 一致：名称 / 简介 / slug 子串匹配
-  // （packages/store/src/repository/plugins.ts），不区分大小写。
+  // 内联快照同一做法。q 的命中口径与 listPlugins 一致：名称 / 简介 / slug / 清单内容
+  // 子串匹配（packages/store/src/repository/plugins.ts），不区分大小写。
+  // （Phase 2 批 A：manifest 也进 LIKE，包内站点名 / 引擎名可搜。）
   // 2026-11-17 B 批复核：geek 胶囊 q '武器库' 在 42 个种子上实测 0 命中（只剩 2026-11-15
   // 已卸载网址包「前端武器库」的名字残留），点开必空，是死入口；已改为 '极客'（实测 13 命中）。
   const TOPIC_COLLECTIONS_SNAPSHOT = [
@@ -606,7 +607,8 @@ describe("专题胶囊：带 q 的胶囊必须在种子数据上命中（死入�
       (i) =>
         i.manifest.name.toLowerCase().includes(lower) ||
         i.manifest.description.toLowerCase().includes(lower) ||
-        i.slug.toLowerCase().includes(lower),
+        i.slug.toLowerCase().includes(lower) ||
+        JSON.stringify(i.manifest).toLowerCase().includes(lower),
     )
     return { hits: hits.length, slugs: hits.map((h) => h.slug) }
   }

@@ -24,7 +24,7 @@ import {
   type HubPluginItem,
   type HubPluginAuditReport
 } from '@/lib/navhub-api'
-import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX, checkPluginCompat, NAVHUB_APP_VERSION } from '@/lib/plugins/plugin-manifest'
+import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX, checkPluginCompat, NAVHUB_APP_VERSION, resolvePluginDescription } from '@/lib/plugins/plugin-manifest'
 import { auditLevelToneClasses } from '@/lib/plugins/audit-report-view'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import type { DetailTab } from './detail-shared'
@@ -629,7 +629,10 @@ export default function PluginDetailView({
               </h1>
 
               <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-                {plugin.description || '暂无描述'}
+                {/* 描述数字与卡片同源：resolvePluginDescription 用摘要派生值覆盖简介里的
+                    陈旧统计（与 plugin-card.tsx 同款调用）；旧写法直接渲染原始描述，
+                    简介「约 209 个站点」与正文「包含站点列表 (213)」可自相矛盾。 */}
+                {resolvePluginDescription(plugin.description || '', summary) || '暂无描述'}
               </p>
 
               {/* 标签 */}

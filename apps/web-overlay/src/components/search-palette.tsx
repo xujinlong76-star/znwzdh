@@ -146,7 +146,9 @@ export const OMNI_ENGINES: Record<string, { name: string; url: (q: string) => st
 
 export function parseOmniCommand(raw: string): { engine: string; engineName: string; term: string; url: string } | null {
   const trimmed = raw.trim()
-  const match = trimmed.match(/^@?([a-zA-Z]+)\s+(.+)$/)
+  // 前缀接受 ! 与 @ 两种写法：导航搜索条（search-bar）与快捷链接都认 !gh，
+  // 旧正则只认 @/无前缀，首页面板输「!gh react」恒为 null、建议行永远不出。
+  const match = trimmed.match(/^[!@]?([a-zA-Z]+)\s+(.+)$/)
   if (!match) return null
   const prefix = match[1]!.toLowerCase()
   const term = match[2]!.trim()

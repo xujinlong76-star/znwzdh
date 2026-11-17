@@ -1069,3 +1069,51 @@ describe("畸形 URL 编码不得变成 500", () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+describe("搜索范围：q 匹配包内清单内容（Phase 2 批 A）", () => {
+  // 复现：旧 listPlugins 的 q 只匹配名称 / 简介 / slug，搜只在清单里出现过的
+  // 引擎名 / 站点名恒为 0（实测：q=DuckDuckGo 在 42 种子上 0 命中，清单里明明有
+  // DuckDuckGo 引擎）。修后 manifest（TEXT 列，sqlite 与 pg 同型）也进 LIKE。
+  it("引擎名只在清单里：q=引擎名命中该搜索包", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: {
+        manifestVersion: 1,
+        kind: "search-pack",
+        name: "搜索范围测试包",
+        description: "仅用于搜索范围测试",
+        version: "1.0.0",
+        payload: {
+          engines: [{ name: "ZebraEngine", prefix: "!zebra", searchUrl: "https://zebra.example.com/search?q={q}" }],
+        },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const slug = res.json().slug as string;
+
+    const hit = await app.inject({ method: "GET", url: "/api/plugins?q=ZebraEngine" });
+    expect(hit.statusCode).toBe(200);
+    expect(hit.json().items.some((p: { slug: string }) => p.slug === slug)).toBe(true);
+  });
+
+  it("站点名只在清单里：q=站点标题命中该网址包", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("站点名测试包", [{ url: "https://only-in-payload.example.com", title: "OnlyInPayloadSite" }]),
+    });
+    expect(res.statusCode).toBe(201);
+    const slug = res.json().slug as string;
+
+    const hit = await app.inject({ method: "GET", url: "/api/plugins?q=OnlyInPayloadSite" });
+    expect(hit.statusCode).toBe(200);
+    expect(hit.json().items.some((p: { slug: string }) => p.slug === slug)).toBe(true);
+  });
+
+  it("对照：不存在的词仍为 0（不靠放宽口径造假命中）", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins?q=不存在的词-xyz-123" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().total).toBe(0);
+  });
+});

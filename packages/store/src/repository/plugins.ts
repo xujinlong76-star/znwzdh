@@ -478,11 +478,13 @@ export async function listPlugins(
     params.push(filter.kind);
   }
   if (filter.q) {
-    // q 匹配名称 / 简介 / slug：管理台「在队列中定位」按 alert.slug 搜索，
+    // q 匹配名称 / 简介 / slug / 清单内容：包内站点名与引擎名只存在于 manifest
+    // JSON（TEXT 列，sqlite 与 pg 同型），不加这一路，搜「DuckDuckGo」「GitHub」
+    // 这类只在清单里出现过的词恒为 0。管理台「在队列中定位」按 alert.slug 搜索，
     // 旧口径只匹配名称与简介，slug 永远搜不到，定位按钮点后列表恒为空。
-    wheres.push("(p.name LIKE ? ESCAPE '!' OR p.description LIKE ? ESCAPE '!' OR p.slug LIKE ? ESCAPE '!')");
+    wheres.push("(p.name LIKE ? ESCAPE '!' OR p.description LIKE ? ESCAPE '!' OR p.slug LIKE ? ESCAPE '!' OR p.manifest LIKE ? ESCAPE '!')");
     const like = containsLike(filter.q);
-    params.push(like, like, like);
+    params.push(like, like, like, like);
   }
   if (filter.featured !== undefined) {
     const truthy = repo.db.dialect === "pg" ? "TRUE" : "1";

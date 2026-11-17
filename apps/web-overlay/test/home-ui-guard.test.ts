@@ -35,12 +35,14 @@ describe('首页顶栏：搜索框与快捷键徽章', () => {
   })
 
   it('Omni 命令前缀四件套齐全（@g / @gh / @npm / @mdn）', () => {
-    // 键名不带 @，解析器允许 `@` 前缀；这里锁「四个引擎都真实存在」
+    // 键名不带 @，解析器允许 `@` 与 `!` 两种前缀；这里锁「四个引擎都真实存在」。
+    // Phase 2 批 A：导航搜索条与快捷链接都认 !gh，首页面板旧正则只认 @/无前缀，
+    // 输「!gh react」恒为 null、建议行永远不出；正则须同时接受 !，断言按新行为改写。
     for (const key of ['g:', 'gh:', 'npm:', 'mdn:']) {
       expect(src, `缺少 ${key} 引擎`).toContain(key)
     }
     expect(src).toContain('parseOmniCommand')
-    expect(src).toContain('/^@?([a-zA-Z]+)')
+    expect(src).toContain('/^[!@]?([a-zA-Z]+)')
   })
 })
 

@@ -45,6 +45,7 @@ import { rankingMetric } from '@/lib/plugins/marketplace-rankings'
 import {
   DEFAULT_MARKETPLACE_SORT,
   buildMarketplaceQuery,
+  isCountSortDegenerate,
   parseMarketplaceFilters,
   type MarketplaceSort,
 } from '@/lib/plugins/marketplace-filters'
@@ -67,8 +68,8 @@ import {
 
 const PAGE_SIZE = 24
 
-// 专题胶囊的 q 必须在种子数据上命中 > 0（listPlugins 按名称 / 简介 / slug 子串匹配；
-// 命中数为 0 的胶囊点开即空列表，是死入口）。守卫见 apps/api/test/seed-plugins.test.ts
+// 专题胶囊的 q 必须在种子数据上命中 > 0（listPlugins 按名称 / 简介 / slug / 清单
+// 内容子串匹配；命中数为 0 的胶囊点开即空列表，是死入口）。守卫见 apps/api/test/seed-plugins.test.ts
 // 「专题胶囊」describe；改 q 前先实测命中数。2026-11-17 B 批复核：q '武器库' 实测 0 命中
 // （只剩 2026-11-15 已卸载网址包「前端武器库」的名字残留），改为 '极客'（实测 13 命中）。
 const TOPIC_COLLECTIONS = [
@@ -112,6 +113,11 @@ const KIND_LABELS: Record<string, string> = {
   'search-pack': '搜索引擎包',
   bundle: '组合包',
 }
+
+// 热门标签：种子目录真实存在的标签（R2A-2）。旧 7 枚是写死文案，在种子里
+// 根本不存在，点开全部返回 0；现每枚都命中真实插件，点击走 q='#tag' 的真实标签查询（R2A-1）。
+// 标签云与 0 结果空态共用同一份，避免两处各写一套 drift。
+const HOT_TAGS = ['主题', '组合包', '深色', '工作台', '搜索', 'AI', '生活'] as const
 
 export interface PluginMarketBoardProps {
   /** 服务端取的默认视图主列表；null = 服务端没取到，挂载后由既有 effect 客户端取数 */
@@ -195,6 +201,10 @@ export function PluginMarketBoard({
     rating: HubPluginItem[]
     fresh: HubPluginItem[]
   }>(initialRankings ?? { popular: [], rating: [], fresh: [] })
+
+  // 0 结果空态的相关插件（K18）：有筛选且 0 命中时取 3 个热门插件作下一步；
+  // 取数失败静默为空，不挡主空态。
+  const [related, setRelated] = useState<HubPluginItem[]>([])
 
   // 统一搜索会深链到 /marketplace?q=...，首次进入必须先从地址栏恢复筛选；
   // 监听 popstate 让浏览器前进/后退也能回到同一组条件。
@@ -309,6 +319,10 @@ export function PluginMarketBoard({
 
   const hasFilter = Boolean(q || kind || starredOnly)
 
+  // 计数型排序退化判定（种子 install/star/review 全 0 时与「最新发布」同序）：
+  // 只在有结果时注明，0 命中走空态、不叠加两条提示。
+  const sortDegenerate = useMemo(() => isCountSortDegenerate(sort, items), [sort, items])
+
   // 精选与三榜只在“无筛选”时加载：避免与主列表抢请求，也避免筛选后仍显示无关推荐
   // 首帧同样要静默同步一次（SSR 数据没有身份，精选卡片的已装态同理会丢）；
   // 等地址栏筛选解析完（filtersReady）再取，避免带错筛选条件白跑一趟。
@@ -329,6 +343,26 @@ export function PluginMarketBoard({
       cancelled = true
     }
   }, [filtersReady, hasFilter, reloadToken])
+
+  // K18：0 结果空态的相关插件。只在「有筛选、已取完、0 命中、非星标视图」时取，
+  // 星标空态（「你还没有星标任何插件」）不需要「相关插件」这条路。
+  useEffect(() => {
+    if (!filtersReady || loading || items.length > 0 || !hasFilter || starredOnly) {
+      setRelated([])
+      return
+    }
+    let cancelled = false
+    void fetchPlugins({ sort: 'popular', limit: 3 })
+      .then((res) => {
+        if (!cancelled) setRelated(res.items.slice(0, 3))
+      })
+      .catch(() => {
+        // 建议位取数失败静默为空，不挡主空态
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [filtersReady, loading, items.length, hasFilter, starredOnly])
 
   function cleanLeaderboardTitle(name: string): string {
     const match = name.match(/^([^\(（]+)[\(（]/)
@@ -565,7 +599,9 @@ export function PluginMarketBoard({
                     setQ((searchInputRef.current?.value ?? qInput).trim())
                   }
                 }}
-                placeholder="搜索名称、描述、!前缀、#标签…"
+                // 市场搜索框是插件搜索，不是首页搜索面板：!gh 这类 bang 在这里不执行，
+                // 旧占位「!前缀」是虚假宣传。搜索范围是名称 / 描述 / 包内站点与引擎名 / #标签。
+                placeholder="搜索名称、描述、包内站点、#标签…"
                 enterKeyHint="search"
                 className="h-8 w-full rounded-md border border-border-strong bg-background pl-8 pr-7 text-base sm:text-sm transition-colors focus:border-primary"
               />
@@ -597,15 +633,22 @@ export function PluginMarketBoard({
           )}
         </div>
 
+        {/* 排序退化注明：计数型排序（安装 / 星标 / 评分 / 飙升）在安装量、星标与评价
+            全为 0 时与「最新发布」同序，如实注明口径，不编假数据让排序看起来分化。 */}
+        {!loading && items.length > 0 && sortDegenerate && (
+          <p className="text-xs text-muted-foreground -mt-2" data-testid="sort-degenerate-note" role="status">
+            当前插件安装量、星标与评价均为 0，安装 / 星标 / 评分 / 飙升排序结果与最新发布一致
+          </p>
+        )}
+
         {/* 热门标签筛选云 (Tag Facets) */}
         <div className="flex flex-wrap items-center gap-1.5 text-xs -mt-2">
           <span className="text-[11px] text-muted-foreground flex items-center gap-1 mr-1">
             <Sparkles className="w-3 h-3 text-primary" />
             热门标签:
           </span>
-          {/* 热门标签：种子目录真实存在的标签（R2A-2）。旧 7 枚是写死文案，在种子里
-              根本不存在，点开全部返回 0；现每枚都命中真实插件，点击走 q='#tag' 的真实标签查询（R2A-1）。 */}
-          {['主题', '组合包', '深色', '工作台', '搜索', 'AI', '生活'].map((tag) => {
+          {/* 热门标签：与空态推荐词共用 HOT_TAGS（种子真实标签，见模块顶注释）。 */}
+          {HOT_TAGS.map((tag) => {
             const isSelected = q === `#${tag}`
             return (
               <button
@@ -763,29 +806,95 @@ export function PluginMarketBoard({
             ))}
           </div>
         ) : items.length === 0 ? (
-          <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-border/60 bg-muted/50 shadow-xs">
-              <Store className="w-7 h-7 text-muted-foreground" />
+          <>
+            <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-border/60 bg-muted/50 shadow-xs">
+                <Store className="w-7 h-7 text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {starredOnly && items.length === 0
+                  ? '你还没有星标任何插件'
+                  : hasFilter
+                    ? '没有匹配的插件，换个筛选条件试试'
+                    : '市场还空着——发布第一个插件，分享你的网址收藏或工作台布局'}
+              </p>
+              {/* K18：0 结果时给下一步——范围说明 + 推荐词 + 一键清除（只在有筛选、
+                  非星标视图时出现；星标空态与市场全空态不需要这组入口）。 */}
+              {hasFilter && !starredOnly && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    搜索范围：插件名称、描述、包内站点与引擎名、标签（#开头）。
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-1.5 text-xs">
+                    <span className="text-[11px] text-muted-foreground">换个词试试：</span>
+                    {HOT_TAGS.map((tag) => {
+                      const isSelected = q === `#${tag}`
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setQ('')
+                              setSearchInput('')
+                            } else {
+                              setQ(`#${tag}`)
+                              setSearchInput(`#${tag}`)
+                            }
+                          }}
+                          className={`px-2 py-0.5 rounded-md text-[11px] transition-all ${
+                            isSelected
+                              ? 'bg-primary/20 text-primary font-semibold border border-primary/40'
+                              : 'bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40'
+                          }`}
+                        >
+                          #{tag}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+              <div className="flex items-center justify-center gap-2">
+                {hasFilter && !starredOnly && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={resetFilters}
+                    data-testid="empty-clear-filters"
+                  >
+                    清除搜索与筛选
+                  </Button>
+                )}
+                <Button asChild size="sm" variant="outline" className="gap-1.5">
+                  <Link href="/marketplace/import">
+                    <Upload className="w-3.5 h-3.5" />
+                    导入文件
+                  </Link>
+                </Button>
+                <Button asChild size="sm" className="gap-1.5">
+                  <Link href="/marketplace/publish">发布插件</Link>
+                </Button>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground">
-              {starredOnly && items.length === 0
-                ? '你还没有星标任何插件'
-                : hasFilter
-                  ? '没有匹配的插件，换个筛选条件试试'
-                  : '市场还空着——发布第一个插件，分享你的网址收藏或工作台布局'}
-            </p>
-            <div className="flex items-center justify-center gap-2">
-              <Button asChild size="sm" variant="outline" className="gap-1.5">
-                <Link href="/marketplace/import">
-                  <Upload className="w-3.5 h-3.5" />
-                  导入文件
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="gap-1.5">
-                <Link href="/marketplace/publish">发布插件</Link>
-              </Button>
-            </div>
-          </div>
+            {related.length > 0 && (
+              <section className="space-y-3" data-testid="empty-related">
+                <h2 className="text-sm font-semibold">相关插件</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {related.map((p) => (
+                    <PluginCard
+                      key={`related-${p.id}`}
+                      plugin={p}
+                      identity={identity}
+                      onStatusChange={patchItem}
+                      onOpenInstallModal={handleOpenInstallModal}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1536px]:grid-cols-4! gap-4">
             {items.map((p) => (

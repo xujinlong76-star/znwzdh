@@ -30,6 +30,25 @@ export type MarketplaceSort = (typeof MARKETPLACE_SORTS)[number]
 
 export const DEFAULT_MARKETPLACE_SORT: MarketplaceSort = 'trending'
 
+/** 计数型排序（安装 / 星标 / 评分 / 飙升）。种子 install/star/review 全 0 时
+ * 这些排序键全部相等、只剩 created_at 倒序兜底，与「最新发布」同序——是现状，
+ * 不是数据分化；页面须如实注明，不得编假数据让排序看起来分化。 */
+export const COUNT_SORTS: readonly MarketplaceSort[] = ['popular', 'stars', 'rating', 'trending']
+
+/**
+ * 计数型排序是否退化：已加载项的安装、星标、评价全为 0。
+ * 排序把最大值放最前，首屏全 0 即全局全 0（飙升分母的年龄项同样是时间单调），
+ * 因此只看已加载项即可判定，不必多取一页。
+ */
+export function isCountSortDegenerate(
+  sort: MarketplaceSort,
+  items: readonly { installCount: number; starCount: number; reviewCount?: number }[],
+): boolean {
+  if (!COUNT_SORTS.includes(sort)) return false
+  if (items.length === 0) return false
+  return items.every((p) => p.installCount === 0 && p.starCount === 0 && (p.reviewCount ?? 0) === 0)
+}
+
 export interface MarketplaceFilterState {
   kind: string
   sort: MarketplaceSort

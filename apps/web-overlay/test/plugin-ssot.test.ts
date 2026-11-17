@@ -86,6 +86,15 @@ describe('resolvePluginDescription（描述 SSOT 收敛）', () => {
     expect(resolvePluginDescription('9 个成员的组合包', summary({ bundleItemCount: 12 }))).toBe('12 个成员的组合包')
   })
 
+  it('详情页 hero 与卡片同源：简介里的陈旧站点数也被摘要覆盖（Phase 2 批 A）', () => {
+    // 机制复现：hero 曾直接渲染原始描述，卡片走 resolvePluginDescription；
+    // 简介写「约 209 个站点」而摘要 siteCount=213 时，两处数字自相矛盾。
+    // 修后 hero 与卡片同款调用，下面的断言即 hero 应呈现的文案。
+    expect(
+      resolvePluginDescription('精选导航（约 209 个站点）：开箱即用', summary({ siteCount: 213 })),
+    ).toBe('精选导航（约 213 个站点）：开箱即用')
+  })
+
   it('中文数字片段也覆盖（四看板 / 十二看板）', () => {
     expect(
       resolvePluginDescription('四看板布局（共 21 个模块）', summary({ boardCount: 4, widgetCount: 21 })),
@@ -195,5 +204,23 @@ describe('卡片标题：括号截断收敛', () => {
   it('空值与空白安全', () => {
     expect(cardTitle('')).toBe('')
     expect(cardTitle('   ')).toBe('')
+  })
+})
+
+describe('详情页 hero 与卡片同源（Phase 2 批 A，接线护栏）', () => {
+  // hero 曾直接渲染 plugin.description 原文，卡片走 resolvePluginDescription；
+  // 简介里的陈旧数字与正文统计可自相矛盾。锁住 hero 的调用点，防回流。
+  const heroSrc = readFileSync(
+    fileURLToPath(new URL('../src/app/marketplace/[slug]/plugin-detail-view.tsx', import.meta.url)),
+    'utf-8',
+  )
+  const cardSrc = readFileSync(
+    fileURLToPath(new URL('../src/components/plugins/plugin-card.tsx', import.meta.url)),
+    'utf-8',
+  )
+
+  it('hero 与卡片都走 resolvePluginDescription（同一口径，不各写一套）', () => {
+    expect(heroSrc).toContain('resolvePluginDescription(plugin.description')
+    expect(cardSrc).toContain('resolvePluginDescription(')
   })
 })

@@ -117,7 +117,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 黑标对比度弱是已知局限，留待深色底块统一处理轮（研究笔记 §3/§5）。
   // 2026-11-17 深色底块轮：已处理，见下方 LOGO_TILE_MAP（light）。
   'rollupjs.org': '/brand-icons/rollupdotjs.png',
-  'webpack.js.org': '/brand-icons/webpack.svg',
+  'webpack.js.org': '/brand-icons/webpack.png',
   'esbuild.github.io': '/brand-icons/esbuild.svg',
   'storybook.js.org': '/brand-icons/storybook.svg',
   'min.io': '/brand-icons/minio.svg',

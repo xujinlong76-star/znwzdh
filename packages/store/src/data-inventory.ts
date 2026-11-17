@@ -163,6 +163,13 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     note: "评价正文属于用户内容，注销后不得继续公开可见",
   },
   {
+    id: "pluginReviewHelpfulVotes",
+    table: "plugin_review_helpful_votes",
+    ownerColumns: ["identity"],
+    disposition: "custom",
+    note: "评价「有用」投票（P2-3）：票行是去重计数来源，删除前要扣减 plugin_reviews.helpful_count，见 deleteUserData；不导出（非用户内容）",
+  },
+  {
     id: "sessions",
     table: "sessions",
     ownerColumns: ["user_id"],

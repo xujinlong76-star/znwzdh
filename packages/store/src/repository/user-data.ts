@@ -267,6 +267,8 @@ export interface UserDataDeletionCounts {
   pluginInstalls: number;
   pluginStars: number;
   pluginReviews: number;
+  /** 「有用」投票票数（P2-3）：custom 域，删除前先扣减各评价 helpful_count */
+  pluginReviewHelpfulVotes: number;
   /** 对照快照（Batch 4 Phase 2 P2-3）：通用删除循环按 owner_identity 精确删除 */
   comparisonSnapshots: number;
   /** 对照分享（Batch 4 Phase 2 P2-4）：通用删除循环按 owner_identity 精确删除 */
@@ -321,6 +323,10 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
       pluginInstalls: await count("SELECT COUNT(*) AS c FROM plugin_installs WHERE identity = ?", [identity]),
       pluginStars: await count("SELECT COUNT(*) AS c FROM plugin_stars WHERE identity = ?", [identity]),
       pluginReviews: await count("SELECT COUNT(*) AS c FROM plugin_reviews WHERE identity = ?", [identity]),
+      pluginReviewHelpfulVotes: await count(
+        "SELECT COUNT(*) AS c FROM plugin_review_helpful_votes WHERE identity = ?",
+        [identity],
+      ),
       comparisonSnapshots: await count("SELECT COUNT(*) AS c FROM comparison_snapshots WHERE owner_identity = ?", [identity]),
       comparisonSnapshotShares: await count("SELECT COUNT(*) AS c FROM comparison_snapshot_shares WHERE owner_identity = ?", [identity]),
       sitePrices: await count("SELECT COUNT(*) AS c FROM site_prices WHERE owner_identity = ?", [identity]),
@@ -383,9 +389,22 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
         [row.plugin_id],
       );
     }
+    // 「有用」投票（P2-3）：删票前按 review_id 扣减各评价的 helpful_count，
+    // 票行是 custom 域、通用循环跳过，下面的显式 DELETE 才清票。
+    const helpfulVoteRows = await repo.raw(
+      "SELECT review_id FROM plugin_review_helpful_votes WHERE identity = ?",
+      [identity],
+    );
+    for (const row of helpfulVoteRows) {
+      await repo.run(
+        "UPDATE plugin_reviews SET helpful_count = CASE WHEN helpful_count > 0 THEN helpful_count - 1 ELSE 0 END WHERE id = ?",
+        [row.review_id],
+      );
+    }
 
     await repo.run("DELETE FROM plugin_installs WHERE identity = ?", [identity]);
     await repo.run("DELETE FROM plugin_stars WHERE identity = ?", [identity]);
+    await repo.run("DELETE FROM plugin_review_helpful_votes WHERE identity = ?", [identity]);
     // 评价/会话/通知/个人令牌已由上面的通用循环删除（见 data-inventory.ts）。
     // 用量保留聚合价值但抹掉身份（可逆性为零，等同匿名化）。
     await repo.run("UPDATE llm_usage SET identity = NULL WHERE identity = ?", [identity]);

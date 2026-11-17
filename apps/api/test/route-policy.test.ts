@@ -184,6 +184,7 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/plugins/:slug/install",
   "POST /api/plugins/:slug/report",
   "POST /api/plugins/:slug/reviews",
+  "POST /api/plugins/:slug/reviews/:id/helpful",
   "POST /api/plugins/:slug/reviews/:id/reply",
   "POST /api/plugins/:slug/reviews/:id/report",
   // 回滚（B-1）：与 install 同口径的用户域写面——只改调用者自己的安装记录

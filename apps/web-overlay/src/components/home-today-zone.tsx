@@ -17,7 +17,7 @@ import {
  *   - 今日专注（DailyFocus 岛，本机 localStorage，明天自动清空）；
  *   - 考试倒计时（exam-calendar 的 nearestExamCountdown / nextExamNode，
  *     服务端纯函数直出，不挂每秒 tick 的倒计时岛——tick 岛仍只在折叠区
- *     的完整考试条里；五场全结束时整行不渲染，不挂空态占位）；
+ *     的完整考试条里；六场全结束时整行不渲染，不挂空态占位）；
  *   - 今日短剧（drama-featured 清单首部 1 部，标题旁如实标 linkNote，
  *     榜单页 / 报道页 / 百科页不是正片，不写成直达正片）；
  *   - 今日重温（BriefResurface 岛，无可重温收藏时它自己返回 null）。

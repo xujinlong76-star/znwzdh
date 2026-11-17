@@ -2,7 +2,7 @@
  * 首页「考试季」运营条（HomeExamStrip）红线测试：
  *  - 最近一场与「下一步」节点只按 exam-calendar 事实源算，不硬编码日期；
  *  - 多日考试末日仍算最近一场（考研 12-20 当天条带仍在）；
- *  - 五场全结束时渲染静态空态条带（保留考试日历入口），不再整条消失；
+ *  - 六场全结束时渲染静态空态条带（保留考试日历入口），不再整条消失；
  *    空态不挂倒计时岛、不挂客户端视图、不读存储、不含未公布日期；
  *  - 倒计时走 ExamCountdown 客户端岛，服务端 JSX 里不直出天数；
  *  - 条内常驻链接唯一指向 /exam；准考证打印提醒期（11-22–11-29 15:00）
@@ -34,26 +34,27 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 
 /** 2026-11-13 08:00 北京时间（UTC 午夜） */
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
-/** 2026-11-30 08:00 北京时间：国考已过，省考最近 */
+/** 2026-11-30 08:00 北京时间：国考已过，京考最近（首考日 12-05 早于省考 12-06） */
 const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
 /** 2026-12-19 08:00 北京时间：考研第一天，已开考 */
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研第二天，仍在进行中 */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：五场全过 */
+/** 2026-12-21 08:00 北京时间：六场全过 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('nearestExam（最近一场）', () => {
-  it('11-13 最近是国考，11-30 最近是省考，12-20 考研末日仍是考研，12-21 五场全过返回 undefined', () => {
+  it('11-13 最近是国考，11-30 最近是京考，12-20 考研末日仍是考研，12-21 六场全过返回 undefined', () => {
     expect(nearestExam(NOV_13_0800_CST)?.id).toBe('guokao')
-    expect(nearestExam(NOV_30_0800_CST)?.id).toBe('shengkao')
+    // 京考首考日 12-05 早于省考 12-06（U-76：公安专业科目先考），国考过后最近场是京考而非省考
+    expect(nearestExam(NOV_30_0800_CST)?.id).toBe('jingkao')
     expect(nearestExam(DEC_20_0800_CST)?.id).toBe('kaoyan')
     expect(nearestExam(DEC_21_0800_CST)).toBeUndefined()
   })
 
   it('考试当天仍算最近一场（daysUntil 为 0），考后才切下一场', () => {
     expect(nearestExam(Date.UTC(2026, 10, 29, 2, 0))?.id).toBe('guokao')
-    expect(nearestExam(Date.UTC(2026, 10, 30, 0, 0))?.id).toBe('shengkao')
+    expect(nearestExam(Date.UTC(2026, 10, 30, 0, 0))?.id).toBe('jingkao')
   })
 
   it('多日考试末日仍算最近一场（12-19 首日与 12-20 末日都是考研），12-21 才返回 undefined', () => {
@@ -66,9 +67,9 @@ describe('nearestExam（最近一场）', () => {
   it('排序按首考日：加试考试（首考日早、公共科目首日晚）排在无加试考试之前', () => {
     // 2026-11-16 0922 C 线：合成数据——A 公共科目首日 12-01 但有加试、
     // 首考日 11-20；B 无加试、首日 11-25。按 startISO 排会先挑 B，
-    // 按首考日排应先挑 A；两种传入顺序都应挑 A。真实数据里只有国考
-    // 首考日 ≠ startISO 且仍为最早，行为不变；这条断言钉住排序键本身，
-    // 防将来第二场加试考试排错。
+    // 按首考日排应先挑 A；两种传入顺序都应挑 A。真实数据里国考与京考
+    // 首考日 ≠ startISO（京考首考日 12-05 早于省考 12-06，11-30 起
+    // 最近场即为京考）；这条断言钉住排序键本身，防将来第三场加试考试排错。
     const examA: ExamInfo = {
       id: 'exam-a',
       name: '合成考试 A',
@@ -138,7 +139,7 @@ describe('首页考试条源码守卫', () => {
     expect(strip).not.toContain('2026-12-19')
   })
 
-  it('服务端外壳保持服务端组件：五场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
+  it('服务端外壳保持服务端组件：六场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
     expect(strip).not.toContain("'use client'")
     expect(strip).not.toContain('if (!nearest) return null')
     expect(strip).toContain('if (!nearest) return <HomeExamStripEmptyState />')

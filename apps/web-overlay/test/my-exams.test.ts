@@ -2,7 +2,7 @@
  * 「我的考试」关注 + 考前清单（/exam 第二轮）测试：
  *  - 纯规则层 my-exams.ts：解析收敛、关注开关、节点勾选、进度与下一步；
  *  - 共享 hook useMyExams.ts：挂载后才读 localStorage、读写各一处、
- *    五场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
+ *    六场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
  *  - 源码守卫：岛只读事实源（不硬编码日期）、岛内无直接存储调用、
  *    小字与徽章配方合规、按钮 44px、真 checkbox、可勾选只对已关注开放。
  */
@@ -14,6 +14,8 @@ import {
   CET_ADMISSION_URL,
   EXAMS,
   GUOKAO_ADMISSION_URL,
+  JINGKAO_APPLY_URL,
+  JINGKAO_NOTICE_URL,
   GUANGDONG_SHENGKAO_ADMISSION_URL,
   JIANGSU_SHENGKAO_ADMISSION_URL,
   SHANDONG_SHENGKAO_ADMISSION_URL,
@@ -45,11 +47,14 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const guokao = EXAMS.find((e) => e.id === 'guokao')!
 const cet = EXAMS.find((e) => e.id === 'cet')!
 const shengkao = EXAMS.find((e) => e.id === 'shengkao')!
+const jingkao = EXAMS.find((e) => e.id === 'jingkao')!
 const kaoyan = EXAMS.find((e) => e.id === 'kaoyan')!
 const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
 
 /** 2026-11-13 08:00 北京时间（UTC 午夜） */
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
+/** 2026-11-12 08:00 北京时间：京考报名开始日 */
+const NOV_12_0800_CST = Date.UTC(2026, 10, 12, 0, 0, 0)
 /** 2026-11-17 08:00 北京时间：成考成绩公布前一日（R1） */
 const NOV_17_0800_CST = Date.UTC(2026, 10, 17, 0, 0, 0)
 /** 2026-11-18 08:00 北京时间：口试准考证开放次日（U-19 回归）；成考成绩公布日 */
@@ -64,6 +69,10 @@ const NOV_28_0800_CST = Date.UTC(2026, 10, 28, 0, 0, 0)
 const NOV_25_0800_CST = Date.UTC(2026, 10, 25, 0, 0, 0)
 /** 2026-12-02 08:00 北京时间：笔试准考证开放次日（U-19 回归） */
 const DEC_02_0800_CST = Date.UTC(2026, 11, 2, 0, 0, 0)
+/** 2026-12-01 08:00 北京时间：京考准考证打印开始日 */
+const DEC_01_0800_CST = Date.UTC(2026, 11, 1, 0, 0, 0)
+/** 2026-12-05 08:00 北京时间：京考公安专业科目笔试日（首考日） */
+const DEC_05_0800_CST = Date.UTC(2026, 11, 5, 0, 0, 0)
 /** 2026-12-06 08:00 北京时间：省考公共科目笔试日（U-30） */
 const DEC_06_0800_CST = Date.UTC(2026, 11, 6, 0, 0, 0)
 /** 2026-12-07 08:00 北京时间：省考全部结束次日（U-30） */
@@ -74,7 +83,7 @@ const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研末日，仍算未结束 */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：五场全过 */
+/** 2026-12-21 08:00 北京时间：六场全过 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('parseMyExams（不可信输入收敛）', () => {
@@ -137,7 +146,7 @@ describe('toggleFollow', () => {
 
   it('已结束的考试不再接受新关注（纵深防御：岛层按钮已禁用，纯函数层也写不进）', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
-    // 国考 11-29 已过（11-30 时），考研五场全过（12-21 时）
+    // 国考 11-29 已过（11-30 时），考研六场全过（12-21 时）
     expect(toggleFollow(empty, 'guokao', NOV_30_0800_CST)).toBe(empty)
     expect(toggleFollow(empty, 'kaoyan', DEC_21_0800_CST)).toBe(empty)
   })
@@ -250,7 +259,7 @@ describe('nearestFollowedExam（已关注优先，首页条带挂载后用）', 
     ).toBe('kaoyan')
   })
 
-  it('五场全过、关注场全部已结束返回 undefined', () => {
+  it('六场全过、关注场全部已结束返回 undefined', () => {
     const state: MyExamsState = { followed: ['guokao', 'cet', 'kaoyan'], checked: {} }
     expect(nearestFollowedExam(state, DEC_21_0800_CST)).toBeUndefined()
   })
@@ -264,8 +273,8 @@ describe('nearestFollowedExam（已关注优先，首页条带挂载后用）', 
   it('排序按首考日：加试考试（首考日早、公共科目首日晚）排在无加试考试之前', () => {
     // 2026-11-16 0922 C 线：与 nearestExam 同口径的合成数据——A 公共科目
     // 首日 12-01 但有加试、首考日 11-20；B 无加试、首日 11-25。按 startISO
-    // 排会先挑 B，按首考日排应先挑 A。真实数据行为不变（只有国考首考日
-    // ≠ startISO 且仍为最早）。
+    // 排会先挑 B，按首考日排应先挑 A。真实数据里国考与京考首考日
+    // ≠ startISO（京考首考日 12-05 早于省考 12-06，11-30 起最近场即为京考）。
     const examA: ExamInfo = {
       id: 'exam-a',
       name: '合成考试 A',
@@ -547,6 +556,65 @@ describe('成考成绩分省节点', () => {
   })
 })
 
+describe('京考节点（U-76）', () => {
+  it('只列已核实的四节点，不写全国单节点；报名与准考证挂报名平台、公共科目挂官方公告', () => {
+    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
+    expect(jingkao.nodes.map((n) => [n.startISO, n.endISO])).toEqual([
+      ['2026-11-12', '2026-11-18'],
+      ['2026-12-01', '2026-12-06'],
+      ['2026-12-05', '2026-12-05'],
+      ['2026-12-06', '2026-12-06'],
+    ])
+    // 官方入口常量本身即 verbatim（首都之窗公告原文，2026-11-17 核实）。
+    expect(JINGKAO_APPLY_URL).toBe('http://rsj.beijing.gov.cn/bm/ztzl/gwy/')
+    expect(JINGKAO_NOTICE_URL).toBe(
+      'https://www.beijing.gov.cn/gongkai/rsxx/gwyzk/202611/t20261109_4938196.html',
+    )
+    const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('报名')?.url).toBe(JINGKAO_APPLY_URL)
+    expect(byLabel.get('准考证打印')?.url).toBe(JINGKAO_APPLY_URL)
+    expect(byLabel.get('公安专业科目笔试')?.url).toBeUndefined()
+    expect(byLabel.get('公共科目笔试')?.url).toBe(JINGKAO_NOTICE_URL)
+  })
+
+  it('报名窗口内进行中、11-19 已结束；准考证 12-01 进行中、12-07 已结束；公安 12-05 当天为今天、公共 12-06 当天为今天', () => {
+    const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
+    const apply = byLabel.get('报名')!
+    const admit = byLabel.get('准考证打印')!
+    const police = byLabel.get('公安专业科目笔试')!
+    const pub = byLabel.get('公共科目笔试')!
+    expect(examNodeStatus(apply, NOV_12_0800_CST)).toBe('active')
+    expect(examNodeStatus(apply, NOV_17_0800_CST)).toBe('active')
+    expect(examNodeStatus(apply, NOV_19_0800_CST)).toBe('done')
+    expect(examNodeStatus(admit, DEC_01_0800_CST)).toBe('active')
+    expect(examNodeStatus(admit, DEC_06_0800_CST)).toBe('active')
+    expect(examNodeStatus(admit, DEC_07_0800_CST)).toBe('done')
+    expect(examNodeStatus(police, DEC_05_0800_CST)).toBe('today')
+    expect(examNodeStatus(police, DEC_06_0800_CST)).toBe('done')
+    expect(examNodeStatus(pub, DEC_06_0800_CST)).toBe('today')
+    expect(examNodeStatus(pub, DEC_07_0800_CST)).toBe('done')
+  })
+
+  it('detail 写明时刻与渠道：报名 18:00 截止、准考证窗口时刻、公安科目时刻与面向人群、公共科目行测/申论时刻', () => {
+    const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('报名')?.detail).toContain('11 月 18 日 18:00')
+    expect(byLabel.get('报名')?.detail).toContain('北京市人事考试通用平台')
+    expect(byLabel.get('准考证打印')?.detail).toContain('12 月 1 日 9:00')
+    expect(byLabel.get('准考证打印')?.detail).toContain('12 月 6 日 16:30')
+    expect(byLabel.get('公安专业科目笔试')?.detail).toContain('14:00–16:00')
+    expect(byLabel.get('公安专业科目笔试')?.detail).toContain('仅公安机关人民警察职位')
+    expect(byLabel.get('公共科目笔试')?.detail).toContain('9:00–11:00')
+    expect(byLabel.get('公共科目笔试')?.detail).toContain('14:00–16:30')
+  })
+
+  it('下一步待办：11-17 指报名，11-19 指准考证打印，12-07 全部节点结束返回 undefined', () => {
+    const state: MyExamsState = { followed: ['jingkao'], checked: {} }
+    expect(nextTodoNode(state, jingkao, NOV_17_0800_CST)?.label).toBe('报名')
+    expect(nextTodoNode(state, jingkao, NOV_19_0800_CST)?.label).toBe('准考证打印')
+    expect(nextTodoNode(state, jingkao, DEC_07_0800_CST)).toBeUndefined()
+  })
+})
+
 describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结束」', () => {
   it('成考 11-17/11-18 统考已结束但仍有可办节点，11-19 起仍有浙江节点，11-30 起无可办节点', () => {
     // 触发条件：examStatus 已是 ended，但成绩节点未过。
@@ -562,8 +630,8 @@ describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结�
     expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_30_0800_CST)).toBeUndefined()
   })
 
-  it('其他考试不受影响：11-18 当天四场均未结束；已结束的国考/考研无可办节点', () => {
-    for (const exam of [guokao, cet, shengkao, kaoyan]) {
+  it('其他考试不受影响：11-18 当天五场均未结束；已结束的国考/考研无可办节点', () => {
+    for (const exam of [guokao, cet, shengkao, jingkao, kaoyan]) {
       expect(examStatus(exam, NOV_18_0800_CST)).not.toBe('ended')
     }
     expect(examStatus(guokao, NOV_30_0800_CST)).toBe('ended')

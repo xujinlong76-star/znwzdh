@@ -5,7 +5,7 @@
  *  - 国考卡片挂准考证打印提醒岛（只在 11-22–11-29 15:00 渲染，官方链接在
  *    exam-calendar 常量里，不在页面写死域名；15:00 准点下线靠客户端岛，
  *    服务端页 revalidate 1 小时会迟到 1 小时）；
- *  - 考试清单只含已核实的五场：国考、四六级、省考、考研、成考，不含已考完的
+ *  - 考试清单只含已核实的六场：国考、四六级、省考、京考、考研、成考，不含已考完的
  *    经济师（11-07–08）等过期场次；省考文案不写「联考」；
  *    成考是例外：统考 10-17–18 已结束，但成绩节点 11-18 未过，故列入清单。
  *  - 页面外链一律过 safeHref，备考站点从 navigation.json 现读、页面不硬编码
@@ -20,6 +20,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   EXAMS,
+  JINGKAO_APPLY_URL,
+  JINGKAO_NOTICE_URL,
   countdownParts,
   daysUntil,
   examNodeStatus,
@@ -34,11 +36,13 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
 
 describe('daysUntil（北京时间自然日）', () => {
-  it('五场考试距 11-13 的天数与日历一致', () => {
+  it('六场考试距 11-13 的天数与日历一致', () => {
     expect(daysUntil('2026-11-29', NOV_13_0800_CST)).toBe(16)
     expect(daysUntil('2026-12-06', NOV_13_0800_CST)).toBe(23)
     expect(daysUntil('2026-12-12', NOV_13_0800_CST)).toBe(29)
     expect(daysUntil('2026-12-19', NOV_13_0800_CST)).toBe(36)
+    // 京考按首考日算：公安专业科目 12-05 距 11-13 为 22 天（公共科目 12-06 为 23 天，与省考同值）
+    expect(daysUntil('2026-12-05', NOV_13_0800_CST)).toBe(22)
     // 成考统考 10-17 已过 27 天（负值），成绩节点 11-18 仍在将来
     expect(daysUntil('2026-10-17', NOV_13_0800_CST)).toBe(-27)
   })
@@ -66,6 +70,15 @@ describe('examStatus', () => {
     expect(firstExamDay(guokao)).toBe('2026-11-28')
     expect(examStatus(guokao, Date.UTC(2026, 10, 28, 0, 0))).toBe('today')
     expect(examStatus(guokao, Date.UTC(2026, 10, 27, 0, 0))).toBe('upcoming')
+  })
+
+  it('京考首考日 12-05 已是 today（公安专业科目先考），不是 upcoming', () => {
+    const jingkao = EXAMS.find((e) => e.id === 'jingkao')!
+    expect(firstExamDay(jingkao)).toBe('2026-12-05')
+    expect(examStatus(jingkao, Date.UTC(2026, 11, 4, 0, 0))).toBe('upcoming')
+    expect(examStatus(jingkao, Date.UTC(2026, 11, 5, 0, 0))).toBe('today')
+    expect(examStatus(jingkao, Date.UTC(2026, 11, 6, 0, 0))).toBe('today')
+    expect(examStatus(jingkao, Date.UTC(2026, 11, 7, 0, 0))).toBe('ended')
   })
 
   it('多日考试中间天为 ongoing', () => {
@@ -103,12 +116,13 @@ describe('countdownParts', () => {
   })
 })
 
-describe('考试清单只含已核实的五场', () => {
-  it('恰好五场，首日与核实日期一致', () => {
-    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'kaoyan', 'chengkao'])
+describe('考试清单只含已核实的六场', () => {
+  it('恰好六场，首日与核实日期一致', () => {
+    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jingkao', 'kaoyan', 'chengkao'])
     expect(EXAMS.map((e) => e.startISO)).toEqual([
       '2026-11-29',
       '2026-12-12',
+      '2026-12-06',
       '2026-12-06',
       '2026-12-19',
       '2026-10-17',
@@ -161,6 +175,74 @@ describe('考试清单只含已核实的五场', () => {
     const pub = shengkao.nodes.find((n) => n.label === '公共科目笔试')!
     expect(pub.detail).toContain('山东')
     expect(pub.detail).toBe('12 月 6 日：四川、江苏、广东、上海、天津、浙江、山东')
+  })
+})
+
+describe('京考节点（U-76）', () => {
+  const jingkao = EXAMS.find((e) => e.id === 'jingkao')!
+
+  it('只列已核实的四节点：报名、准考证打印、公安专业科目、公共科目；成绩与缴费节点不收', () => {
+    expect(jingkao.name).toBe('2027 年度北京市公务员考试')
+    expect(jingkao.shortName).toBe('京考')
+    expect(jingkao.tagline).toBe('公安专业科目 12 月 5 日 · 公共科目 12 月 6 日')
+    expect(jingkao.examDateLabel).toBe('12 月 5–6 日')
+    expect(jingkao.firstExamDayISO).toBe('2026-12-05')
+    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
+    expect(jingkao.nodes.map((n) => [n.label, n.startISO, n.endISO])).toEqual([
+      ['报名', '2026-11-12', '2026-11-18'],
+      ['准考证打印', '2026-12-01', '2026-12-06'],
+      ['公安专业科目笔试', '2026-12-05', '2026-12-05'],
+      ['公共科目笔试', '2026-12-06', '2026-12-06'],
+    ])
+    // 报名与准考证打印挂北京市人事考试通用平台（公告原文内嵌 URL，http 原文）；
+    // 公共科目挂首都之窗官方公告；公安专业科目无入口不挂。
+    expect(JINGKAO_APPLY_URL).toBe('http://rsj.beijing.gov.cn/bm/ztzl/gwy/')
+    expect(JINGKAO_NOTICE_URL).toBe(
+      'https://www.beijing.gov.cn/gongkai/rsxx/gwyzk/202611/t20261109_4938196.html',
+    )
+    const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('报名')?.url).toBe(JINGKAO_APPLY_URL)
+    expect(byLabel.get('准考证打印')?.url).toBe(JINGKAO_APPLY_URL)
+    expect(byLabel.get('公安专业科目笔试')?.url).toBeUndefined()
+    expect(byLabel.get('公共科目笔试')?.url).toBe(JINGKAO_NOTICE_URL)
+    // 成绩节点不收（官方只写「2027 年 1 月」，无确切日）；缴费节点不收
+    // （文件无缴费类节点先例）。label 里出现即红。
+    expect(jingkao.nodes.map((n) => n.label).join('')).not.toContain('成绩')
+    expect(jingkao.nodes.map((n) => n.label).join('')).not.toContain('缴费')
+  })
+
+  it('节点状态按日期翻转：报名窗口内进行中、11-19 已结束；准考证窗口内进行中、12-07 已结束；两科笔试当天为今天、次日已结束', () => {
+    const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
+    const apply = byLabel.get('报名')!
+    const admit = byLabel.get('准考证打印')!
+    const police = byLabel.get('公安专业科目笔试')!
+    const pub = byLabel.get('公共科目笔试')!
+    // 报名是 11-12–11-18 多日窗口：11-12 开放当天即进行中（不是单日「今天」）
+    expect(examNodeStatus(apply, Date.UTC(2026, 10, 11, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(apply, Date.UTC(2026, 10, 12, 0, 0))).toBe('active')
+    expect(examNodeStatus(apply, Date.UTC(2026, 10, 17, 0, 0))).toBe('active')
+    expect(examNodeStatus(apply, Date.UTC(2026, 10, 18, 0, 0))).toBe('active')
+    expect(examNodeStatus(apply, Date.UTC(2026, 10, 19, 0, 0))).toBe('done')
+    expect(examNodeStatus(admit, Date.UTC(2026, 10, 30, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(admit, Date.UTC(2026, 11, 1, 0, 0))).toBe('active')
+    expect(examNodeStatus(admit, Date.UTC(2026, 11, 6, 0, 0))).toBe('active')
+    expect(examNodeStatus(admit, Date.UTC(2026, 11, 7, 0, 0))).toBe('done')
+    expect(examNodeStatus(police, Date.UTC(2026, 11, 5, 0, 0))).toBe('today')
+    expect(examNodeStatus(police, Date.UTC(2026, 11, 6, 0, 0))).toBe('done')
+    expect(examNodeStatus(pub, Date.UTC(2026, 11, 6, 0, 0))).toBe('today')
+    expect(examNodeStatus(pub, Date.UTC(2026, 11, 7, 0, 0))).toBe('done')
+  })
+
+  it('detail 写明时刻与渠道：报名 18:00 截止、准考证窗口时刻、公安仅面向公安职位、公共科目行测/申论时刻', () => {
+    const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('报名')?.detail).toContain('11 月 18 日 18:00')
+    expect(byLabel.get('报名')?.detail).toContain('北京市人事考试通用平台')
+    expect(byLabel.get('准考证打印')?.detail).toContain('12 月 1 日 9:00')
+    expect(byLabel.get('准考证打印')?.detail).toContain('12 月 6 日 16:30')
+    expect(byLabel.get('公安专业科目笔试')?.detail).toContain('14:00–16:00')
+    expect(byLabel.get('公安专业科目笔试')?.detail).toContain('仅公安机关人民警察职位')
+    expect(byLabel.get('公共科目笔试')?.detail).toContain('9:00–11:00')
+    expect(byLabel.get('公共科目笔试')?.detail).toContain('14:00–16:30')
   })
 })
 

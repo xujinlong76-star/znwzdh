@@ -32,6 +32,19 @@ describe('isCountSortDegenerate（排序退化注明）', () => {
     expect(isCountSortDegenerate('rating', [zero, { installCount: 0, starCount: 0, reviewCount: 1 }])).toBe(false)
   })
 
+  it('trending 下任一举报非 0 即撤注明（飙升分含 -report_count*10，与 new 分叉）', () => {
+    const reported = { installCount: 0, starCount: 0, reviewCount: 0, reportCount: 1 }
+    expect(isCountSortDegenerate('trending', [zero, reported])).toBe(false)
+    expect(isCountSortDegenerate('trending', [reported])).toBe(false)
+  })
+
+  it('popular / stars / rating 下举报非 0 仍注明（排序键不含 report_count）', () => {
+    const reported = { installCount: 0, starCount: 0, reviewCount: 0, reportCount: 3 }
+    for (const sort of ['popular', 'stars', 'rating'] as const) {
+      expect(isCountSortDegenerate(sort, [zero, reported])).toBe(true)
+    }
+  })
+
   it('空列表不注明（0 命中走空态，不叠加两条提示）', () => {
     expect(isCountSortDegenerate('popular', [])).toBe(false)
     expect(isCountSortDegenerate('trending', [])).toBe(false)

@@ -39,14 +39,22 @@ export const COUNT_SORTS: readonly MarketplaceSort[] = ['popular', 'stars', 'rat
  * 计数型排序是否退化：已加载项的安装、星标、评价全为 0。
  * 排序把最大值放最前，首屏全 0 即全局全 0（飙升分母的年龄项同样是时间单调），
  * 因此只看已加载项即可判定，不必多取一页。
+ *
+ * reportCount 只影响 trending：飙升分含 `- report_count * 10`，任一插件
+ * reportCount > 0 且与其它插件不等时 trending 即与 new 分叉，注明失效；
+ * popular / stars / rating 的排序键完全不含 report_count，reportCount > 0
+ * 时这三种排序的注明仍为真，不得一并撤掉（共享 every() 里加 reportCount
+ * 校验是错的，会过度抑制）。因此按 sort 分支：仅 trending 检查 reportCount。
  */
 export function isCountSortDegenerate(
   sort: MarketplaceSort,
-  items: readonly { installCount: number; starCount: number; reviewCount?: number }[],
+  items: readonly { installCount: number; starCount: number; reviewCount?: number; reportCount?: number }[],
 ): boolean {
   if (!COUNT_SORTS.includes(sort)) return false
   if (items.length === 0) return false
-  return items.every((p) => p.installCount === 0 && p.starCount === 0 && (p.reviewCount ?? 0) === 0)
+  if (!items.every((p) => p.installCount === 0 && p.starCount === 0 && (p.reviewCount ?? 0) === 0)) return false
+  if (sort === 'trending') return items.every((p) => (p.reportCount ?? 0) === 0)
+  return true
 }
 
 export interface MarketplaceFilterState {

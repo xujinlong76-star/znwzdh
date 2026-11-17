@@ -23,3 +23,20 @@ export function resolveInstallAction(
   }
   return 'installed'
 }
+
+/**
+ * P3-6：已安装卡片在触屏上的点按去向。
+ *
+ * 桌面 hover 时「已安装」会变成「管理 / 卸载」，用户点按前已看到去向；
+ * 触屏无 hover，点按直接以 uninstall 模式打开卸载确认弹窗，预期是
+ * 「查看 / 管理」的用户先看到卸载确认、容易误点。因此触屏上已安装态
+ * 的点按先进已安装管家（`/marketplace/installed`，复用现有管理页：
+ * 升级 / 卸载 / 主题切换都在那里），不在卡片上直接弹卸载确认。
+ * 鼠标点按保持原样（开卸载确认弹窗）；安装 / 更新动作不受影响。
+ */
+export function shouldOpenManageOnInstalledTap(
+  targetMode: 'install' | 'uninstall' | 'upgrade',
+  isTouch: boolean,
+): boolean {
+  return targetMode === 'uninstall' && isTouch
+}

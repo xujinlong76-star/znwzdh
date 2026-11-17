@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   type HubPluginItem,
   starPlugin,
@@ -13,7 +14,9 @@ import {
 } from '@/lib/navhub-api'
 import { pluginKindLabel, resolvePluginDescription } from '@/lib/plugins/plugin-manifest'
 import { auditLevelToneClasses } from '@/lib/plugins/audit-report-view'
-import { resolveInstallAction } from '@/lib/plugins/install-state'
+import { resolveInstallAction, shouldOpenManageOnInstalledTap } from '@/lib/plugins/install-state'
+import { isTouchDevice } from '@/lib/platform'
+import { formatVerifiedDate } from '@/lib/compare'
 import { cardTitle } from '@/lib/plugins/display-title'
 import { Badge } from '@/components/ui/badge'
 import dynamic from 'next/dynamic'
@@ -88,6 +91,7 @@ export function PluginCard({
   onStatusChange,
   onOpenInstallModal,
 }: PluginCardProps) {
+  const router = useRouter()
   const [starred, setStarred] = useState(Boolean(plugin.starred))
   const [starCount, setStarCount] = useState(plugin.starCount || 0)
   const [starLoading, setStarLoading] = useState(false)
@@ -116,6 +120,10 @@ export function PluginCard({
     installed &&
     upgradedTo !== plugin.version &&
     resolveInstallAction(plugin.installedVersion, plugin.version) === 'update'
+
+  // P3-4：卡片展示更新日期（取运行时 updatedAt，复用仓内已有日期 helper；
+  // 无效 / 缺失时 formatVerifiedDate 返回 null，卡片不渲染、不编造日期）。
+  const updatedAtLabel = formatVerifiedDate(plugin.updatedAt)
 
   /** 星标切换（抽出供失败重试复用；handleStarToggle 只负责卡片点击事件）。 */
   const toggleStar = async () => {
@@ -165,6 +173,14 @@ export function PluginCard({
   const handleAction = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+
+    // P3-6：触屏无 hover，「已安装」点按不直接弹卸载确认——先进已安装管家
+    // （/marketplace/installed，复用现有管理页），在那里再选卸载。
+    // 鼠标点按保持原样（走下方卸载确认弹窗）；安装 / 更新动作不受影响。
+    if (shouldOpenManageOnInstalledTap(targetMode, isTouchDevice())) {
+      router.push('/marketplace/installed')
+      return
+    }
 
     // 有确认弹窗时统一走弹窗，并精确传递当前动作语义（升级 / 卸载 / 安装），
     // 彻底解决已安装状态下重复弹出安装确认框的交互 BUG
@@ -594,6 +610,16 @@ export function PluginCard({
             <Download className="w-3.5 h-3.5 text-muted-foreground" />
             {plugin.installCount || 0}
           </span>
+          {/* P3-4：卡片展示更新日期（运行时 updatedAt；无效时不渲染） */}
+          {updatedAtLabel && (
+            <span
+              data-testid="plugin-updated-at"
+              title={`更新于 ${updatedAtLabel}`}
+              className="text-muted-foreground font-mono text-[11px] whitespace-nowrap"
+            >
+              更新于 {updatedAtLabel}
+            </span>
+          )}
           {(plugin.reviewCount ?? 0) > 0 && (
             <span className="text-muted-foreground flex items-center gap-1 font-mono text-[11px]" title={`${plugin.reviewCount} 条评价`}>
               <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />

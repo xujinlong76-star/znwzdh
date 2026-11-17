@@ -790,12 +790,24 @@ export const pluginReviews = sqliteTable("plugin_reviews", {
   moderatedBy: text("moderated_by"),
   authorReply: text("author_reply"),
   authorRepliedAt: integer("author_replied_at"),
+  /** 被投「有用」的累计次数：与 plugin_review_helpful_votes 的行数同步维护（投票/撤回时 ±1） */
+  helpfulCount: integer("helpful_count").notNull().default(0),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 }, (t) => [
   uniqueIndex("plugin_reviews_plugin_identity_idx").on(t.pluginId, t.identity),
   index("plugin_reviews_plugin_idx").on(t.pluginId),
   index("plugin_reviews_status_idx").on(t.status),
+]);
+
+/** 评价「有用」投票（P2-3）：一人一票，可撤回；主键去重，计数落在 plugin_reviews.helpful_count */
+export const pluginReviewHelpfulVotes = sqliteTable("plugin_review_helpful_votes", {
+  reviewId: text("review_id").notNull(),
+  identity: text("identity").notNull(),
+  createdAt: integer("created_at").notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.reviewId, t.identity] }),
+  index("plugin_review_helpful_votes_review_idx").on(t.reviewId),
 ]);
 
 /** 分享短链（只允许内部 /marketplace/ 目标，防开放重定向） */

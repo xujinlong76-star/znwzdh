@@ -619,6 +619,14 @@ CREATE TABLE IF NOT EXISTS plugin_review_reports (
 );
 CREATE INDEX IF NOT EXISTS plugin_review_reports_review_idx ON plugin_review_reports(review_id);
 
+CREATE TABLE IF NOT EXISTS plugin_review_helpful_votes (
+  review_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (review_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_review_helpful_votes_review_idx ON plugin_review_helpful_votes(review_id);
+
 CREATE TABLE IF NOT EXISTS plugin_versions (
   id TEXT PRIMARY KEY,
   plugin_id TEXT NOT NULL,
@@ -647,6 +655,7 @@ CREATE TABLE IF NOT EXISTS plugin_reviews (
   moderated_by TEXT,
   author_reply TEXT,
   author_replied_at INTEGER,
+  helpful_count INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE(plugin_id, identity)
@@ -1372,6 +1381,14 @@ CREATE TABLE IF NOT EXISTS plugin_review_reports (
 );
 CREATE INDEX IF NOT EXISTS plugin_review_reports_review_idx ON plugin_review_reports(review_id);
 
+CREATE TABLE IF NOT EXISTS plugin_review_helpful_votes (
+  review_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (review_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_review_helpful_votes_review_idx ON plugin_review_helpful_votes(review_id);
+
 CREATE TABLE IF NOT EXISTS plugin_versions (
   id TEXT PRIMARY KEY,
   plugin_id TEXT NOT NULL,
@@ -1400,6 +1417,7 @@ CREATE TABLE IF NOT EXISTS plugin_reviews (
   moderated_by TEXT,
   author_reply TEXT,
   author_replied_at INTEGER,
+  helpful_count INTEGER NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   UNIQUE(plugin_id, identity)

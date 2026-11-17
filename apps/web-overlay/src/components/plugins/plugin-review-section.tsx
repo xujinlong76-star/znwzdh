@@ -3,17 +3,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   fetchPluginReviews,
+  markPluginReviewHelpful,
   replyPluginReview,
   reportPluginReview,
   submitPluginReview,
   deletePluginReview,
+  PLUGIN_REVIEW_SORTS,
   type HubPluginReviewsResponse,
+  type PluginReviewSort,
 } from '@/lib/navhub-api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
-import { Star, MessageSquare, CheckCircle2, ShieldCheck, Flag, Trash2, Loader2 } from 'lucide-react'
+import { Star, MessageSquare, CheckCircle2, ShieldCheck, Flag, Trash2, Loader2, ThumbsUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { failureToastOptions } from '@/lib/failure-guidance'
 import dynamic from 'next/dynamic'
@@ -82,6 +85,10 @@ export function PluginReviewSection({
   // 删除二次确认：第一次点「删除」只进入待确认态，第二次才真的删
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  // 评价排序（P2-3）：默认最新，与旧版列表顺序一致；切排序后回到第一页重拉
+  const [sort, setSort] = useState<PluginReviewSort>('newest')
+  // 「有用」投票进行中：同一时间只许一票在途，避免连点把计数打乱
+  const [helpfulPendingId, setHelpfulPendingId] = useState<string | null>(null)
 
   const sendAuthorReply = async (reviewId: string) => {
     if (!replyText.trim()) return
@@ -112,12 +119,12 @@ export function PluginReviewSection({
     await sendAuthorReply(reviewId)
   }
 
-  // 刷新评价列表（首屏 / 提交后回到第一页）
+  // 刷新评价列表（首屏 / 提交后回到第一页 / 切排序后回到第一页）
   const loadReviews = useCallback(async () => {
     setLoading(true)
     setNotice(null)
     try {
-      const res = await fetchPluginReviews(slug, undefined, (err) =>
+      const res = await fetchPluginReviews(slug, { sort }, (err) =>
         setNotice(describeDegrade(err, '用户评价')),
       )
       setData(res)
@@ -131,7 +138,30 @@ export function PluginReviewSection({
     } finally {
       setLoading(false)
     }
-  }, [slug])
+  }, [slug, sort])
+
+  /** 「有用」投票切换（P2-3）：一人一票，再点撤回；服务端返回最新计数为准 */
+  const handleToggleHelpful = async (reviewId: string) => {
+    if (helpfulPendingId) return
+    setHelpfulPendingId(reviewId)
+    try {
+      const res = await markPluginReviewHelpful(slug, reviewId)
+      if (res.ok) {
+        setData((prev) => ({
+          ...prev,
+          items: prev.items.map((it) =>
+            it.id === reviewId ? { ...it, helpfulCount: res.helpfulCount, helpfulByMe: res.helpful } : it,
+          ),
+        }))
+      } else {
+        toast.error('投票失败', failureToastOptions(null, () => void handleToggleHelpful(reviewId)))
+      }
+    } catch (err: any) {
+      toast.error('投票失败', failureToastOptions(err, () => void handleToggleHelpful(reviewId)))
+    } finally {
+      setHelpfulPendingId(null)
+    }
+  }
 
   // 删除自己的评价（B-3）：服务端按身份 + actorKind 判定，本人或管理员可删
   const handleDeleteReview = async (reviewId: string) => {
@@ -168,6 +198,7 @@ export function PluginReviewSection({
       const res = await fetchPluginReviews(slug, {
         limit: data.limit || 20,
         offset: data.items.length,
+        sort,
       })
       setData((prev) => ({ ...res, items: [...prev.items, ...res.items] }))
     } catch (err) {
@@ -351,7 +382,25 @@ export function PluginReviewSection({
           aria-live="polite"
         >
           <span>全部评价 ({total})</span>
-          {loading && <span className="text-[11px] font-normal">加载中...</span>}
+          <span className="flex items-center gap-2 normal-case tracking-normal">
+            {loading && <span className="text-[11px] font-normal">加载中...</span>}
+            {/* 评价排序（P2-3）：切排序后回到第一页重拉（见 loadReviews 的 sort 依赖） */}
+            <label className="flex items-center gap-1.5 text-[11px] font-normal">
+              <span className="text-muted-foreground">排序</span>
+              <select
+                aria-label="评价排序"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as PluginReviewSort)}
+                className="h-7 rounded-md border border-border/70 bg-background px-1.5 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {PLUGIN_REVIEW_SORTS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </span>
         </h4>
 
         {initialLoading ? (
@@ -436,6 +485,31 @@ export function PluginReviewSection({
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
+                    {/* 「有用」投票（P2-3）：一人一票，再点撤回；自己的评价不给投，只显示计数 */}
+                    {myReview?.id === rev.id ? (
+                      (rev.helpfulCount ?? 0) > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <ThumbsUp className="h-3 w-3" />
+                          {rev.helpfulCount} 人觉得有用
+                        </span>
+                      )
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={helpfulPendingId === rev.id}
+                        aria-pressed={rev.helpfulByMe === true}
+                        aria-label={`觉得这条评价有用（已有 ${rev.helpfulCount ?? 0} 人投票）`}
+                        onClick={() => void handleToggleHelpful(rev.id)}
+                        className={`inline-flex items-center gap-1 text-[10px] transition-colors disabled:opacity-50 ${
+                          rev.helpfulByMe
+                            ? 'text-primary font-medium'
+                            : 'text-muted-foreground hover:text-primary'
+                        }`}
+                      >
+                        <ThumbsUp className={`h-3 w-3 ${rev.helpfulByMe ? 'fill-primary/20' : ''}`} />
+                        有用{(rev.helpfulCount ?? 0) > 0 ? ` (${rev.helpfulCount})` : ''}
+                      </button>
+                    )}
                     {/* B-2：作者回复入口——只有作者自己的评价卡片上才出现，点开接通真实接口 */}
                     {isOwner && (
                       <button

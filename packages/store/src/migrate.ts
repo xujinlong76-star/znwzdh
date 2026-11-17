@@ -113,6 +113,8 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "plugin_reviews", column: "moderated_by", sqlite: "TEXT", pg: "TEXT" },
   { table: "plugin_reviews", column: "author_reply", sqlite: "TEXT", pg: "TEXT" },
   { table: "plugin_reviews", column: "author_replied_at", sqlite: "INTEGER", pg: "BIGINT" },
+  // 评价「有用」投票计数（P2-3）：与 plugin_review_helpful_votes 行数同步维护
+  { table: "plugin_reviews", column: "helpful_count", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   // 禁用开关（D 批）：安装记录禁用时刻；NULL = 启用中（旧库启动时补列）
   { table: "plugin_installs", column: "disabled_at", sqlite: "INTEGER", pg: "BIGINT" },
   // 收藏同步换代（M1）：软删墓碑。硬删会让「删除」事件在增量同步里
@@ -575,6 +577,10 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
       ? "CREATE TABLE IF NOT EXISTS plugin_review_reports (review_id TEXT NOT NULL, identity TEXT NOT NULL, ip TEXT, reason TEXT NOT NULL DEFAULT '', created_at BIGINT NOT NULL, PRIMARY KEY (review_id, identity))"
       : "CREATE TABLE IF NOT EXISTS plugin_review_reports (review_id TEXT NOT NULL, identity TEXT NOT NULL, ip TEXT, reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, PRIMARY KEY (review_id, identity))",
     "CREATE INDEX IF NOT EXISTS plugin_review_reports_review_idx ON plugin_review_reports(review_id)",
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS plugin_review_helpful_votes (review_id TEXT NOT NULL, identity TEXT NOT NULL, created_at BIGINT NOT NULL, PRIMARY KEY (review_id, identity))"
+      : "CREATE TABLE IF NOT EXISTS plugin_review_helpful_votes (review_id TEXT NOT NULL, identity TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (review_id, identity))",
+    "CREATE INDEX IF NOT EXISTS plugin_review_helpful_votes_review_idx ON plugin_review_helpful_votes(review_id)",
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS plugin_versions (id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, version TEXT NOT NULL, manifest TEXT NOT NULL, changelog TEXT, checksum TEXT NOT NULL, published_at BIGINT NOT NULL, created_at BIGINT NOT NULL, UNIQUE(plugin_id, version))"
       : "CREATE TABLE IF NOT EXISTS plugin_versions (id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, version TEXT NOT NULL, manifest TEXT NOT NULL, changelog TEXT, checksum TEXT NOT NULL, published_at INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(plugin_id, version))",

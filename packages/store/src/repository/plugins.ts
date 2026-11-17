@@ -21,6 +21,7 @@ import { emitNotification } from "./notifications.ts";
 import { slugify } from "./dialect.ts";
 import { containsLike } from "../sql-like.ts";
 import { buildKeysetPredicate, encodeKeysetCursor, parseKeysetCursor, type KeysetKey } from "../keyset.ts";
+import { inPredicate } from "../sql-in.ts";
 import type {
   PluginActor,
   PluginAuthorProfile,
@@ -2250,6 +2251,7 @@ function rowToPluginReview(row: Record<string, any>): PluginReviewRecord {
     moderatedBy: row.moderated_by == null ? null : String(row.moderated_by),
     authorReply: row.author_reply == null ? null : String(row.author_reply),
     authorRepliedAt: row.author_replied_at == null ? null : Number(row.author_replied_at),
+    helpfulCount: Number(row.helpful_count ?? 0),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
   };
@@ -2351,27 +2353,47 @@ export interface PluginReviewWithInstallStatus extends PluginReviewRecord {
    * true =「已验证真实安装用户」，false =「发表时已验证安装，现已卸载」。
    * 徽章按此区分，而不是按评价当时的安装快照一刀切。 */
   installedNow: boolean;
+  /** 当前请求身份是否给这条评价投过「有用」（listPluginReviews 传 identity 时才回填） */
+  helpfulByMe?: boolean;
 }
+
+/** 评价列表排序（P2-3）：helpful = 有用票数倒序；newest = 更新时间倒序（默认）；highest/lowest = 评分倒序/正序 */
+export type PluginReviewSort = "helpful" | "newest" | "highest" | "lowest";
+
+export function normalizePluginReviewSort(value: unknown): PluginReviewSort {
+  return value === "helpful" || value === "highest" || value === "lowest" ? value : "newest";
+}
+
+const PLUGIN_REVIEW_SORT_ORDER: Record<PluginReviewSort, string> = {
+  newest: "updated_at DESC, id DESC",
+  helpful: "helpful_count DESC, updated_at DESC, id DESC",
+  highest: "rating DESC, updated_at DESC, id DESC",
+  lowest: "rating ASC, updated_at DESC, id DESC",
+};
 
 export async function listPluginReviews(
   repo: Repository,
   pluginId: string,
-  options: { limit?: number; offset?: number; includeHidden?: boolean; cursor?: string } = {},
+  options: { limit?: number; offset?: number; includeHidden?: boolean; cursor?: string; sort?: PluginReviewSort | string; identity?: string } = {},
 ): Promise<{ items: PluginReviewWithInstallStatus[]; total: number; nextCursor: string | null }> {
   const where = options.includeHidden ? "plugin_id = ?" : "plugin_id = ? AND status = 'visible'";
   const countRow = (await repo.raw(`SELECT COUNT(*) AS cnt FROM plugin_reviews WHERE ${where}`, [pluginId]))[0];
   const total = Number(countRow?.cnt ?? 0);
   const limit = Math.min(100, Math.max(1, options.limit ?? 20));
   const offset = Math.max(0, options.offset ?? 0);
-  // Keyset 游标（M12）：传了就走 WHERE (updated_at,id) > (?,?)，不再 OFFSET；
-  // 无效游标抛 InvalidKeysetCursorError，由路由层映射成 400。
-  const keysetValues = parseKeysetCursor(options.cursor, PLUGIN_REVIEW_KEYSET_KEYS.length);
+  const sort = normalizePluginReviewSort(options.sort);
+  const orderBy = PLUGIN_REVIEW_SORT_ORDER[sort];
+  // Keyset 游标（M12）只对默认 newest 排序有效：它的谓词是 (updated_at, id)，
+  // 与 helpful/highest/lowest 的 ORDER BY 逐项不一致，混用会丢行/重行。
+  // 非默认排序一律走 offset 翻页，nextCursor 置 null（前端 loadMore 本来就用 offset）。
+  const keysetValues =
+    sort === "newest" ? parseKeysetCursor(options.cursor, PLUGIN_REVIEW_KEYSET_KEYS.length) : null;
   const keyset = keysetValues ? buildKeysetPredicate(PLUGIN_REVIEW_KEYSET_KEYS, keysetValues) : null;
   // 不论 offset 还是游标，都多取一行判定 hasMore：有余行就给 nextCursor，
   // 否则 null（已到末页）。offset 页也给游标——客户端可以从第 1 页（offset）
   // 直接切到游标翻页，不用先算 offset。
   const rows = await repo.raw(
-    `SELECT * FROM plugin_reviews WHERE ${where}${keyset ? ` AND ${keyset.sql}` : ""} ORDER BY updated_at DESC, id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    `SELECT * FROM plugin_reviews WHERE ${where}${keyset ? ` AND ${keyset.sql}` : ""} ORDER BY ${orderBy} LIMIT ?${keyset ? "" : " OFFSET ?"}`,
     keyset ? [pluginId, ...keyset.params, limit + 1] : [pluginId, limit + 1, offset],
   );
 
@@ -2385,15 +2407,28 @@ export async function listPluginReviews(
     [pluginId],
   );
   const installedSet = new Set(activeInstalls.map((r) => String(r.identity)));
+  // 当前身份的「有用」投票回填（P2-3）：只在调用方传 identity 时查一次，
+  // 不传则 helpfulByMe 留空，前端按未投票渲染。
+  const whoForHelpful = options.identity?.trim().slice(0, 120) || "";
+  const helpfulSet = new Set<string>();
+  if (whoForHelpful && items.length > 0) {
+    const pred = inPredicate("review_id", items.map((item) => item.id));
+    const votes = await repo.raw(
+      `SELECT review_id FROM plugin_review_helpful_votes WHERE identity = ? AND ${pred.sql}`,
+      [whoForHelpful, ...pred.params],
+    );
+    for (const v of votes) helpfulSet.add(String(v.review_id));
+  }
   const itemsWithStatus: PluginReviewWithInstallStatus[] = items.map((item) => ({
     ...item,
     installedNow: installedSet.has(item.identity),
+    helpfulByMe: whoForHelpful ? helpfulSet.has(item.id) : undefined,
   }));
   const last = hasMore ? itemsWithStatus[itemsWithStatus.length - 1] : undefined;
   return {
     items: itemsWithStatus,
     total,
-    nextCursor: last ? encodeKeysetCursor([last.updatedAt, last.id]) : null,
+    nextCursor: sort === "newest" && last ? encodeKeysetCursor([last.updatedAt, last.id]) : null,
   };
 }
 
@@ -2853,4 +2888,57 @@ export async function replyPluginReview(
   const updatedRow = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? LIMIT 1", [reviewId]))[0];
   if (!updatedRow) throw new Error("无法读回回复后的评价记录");
   return rowToPluginReview(updatedRow);
+}
+
+/**
+ * 评价「有用」投票切换（P2-3）：一人一票，再点即撤回。
+ * 投票去重靠 plugin_review_helpful_votes 的 (review_id, identity) 主键 +
+ * INSERT ... ON CONFLICT DO NOTHING（与举报的 R4-7 同款写法）；计数
+ * helpful_count 在同一事务里 ±1，与票表行数同步，不用时再 COUNT(*)。
+ * 不要求投票人安装过插件（轻量信号，与星标同口径）；但不能给自己的评价投票。
+ */
+export async function togglePluginReviewHelpful(
+  repo: Repository,
+  slug: string,
+  reviewId: string,
+  identity: string,
+  actor?: PluginActor,
+): Promise<{ helpful: boolean; helpfulCount: number; review: PluginReviewRecord }> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) throw new Error(`插件不存在：${slug}`);
+  const row = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? AND plugin_id = ? LIMIT 1", [reviewId, plugin.id]))[0];
+  if (!row) throw new Error(`评价不存在：${reviewId}`);
+  const review = rowToPluginReview(row);
+  const who = identity.trim().slice(0, 120);
+  if (!who) throw new Error("必须提供有效用户身份才能投票");
+  if (review.identity === who) throw new Error("不能给自己的评价投「有用」");
+
+  const now = Date.now();
+  let helpful = false;
+  await repo.withTransaction(async () => {
+    const inserted = await repo.runCount(
+      "INSERT INTO plugin_review_helpful_votes (review_id, identity, created_at) VALUES (?, ?, ?) ON CONFLICT (review_id, identity) DO NOTHING",
+      [reviewId, who, now],
+    );
+    if (inserted > 0) {
+      helpful = true;
+      await repo.run("UPDATE plugin_reviews SET helpful_count = helpful_count + 1 WHERE id = ?", [reviewId]);
+    } else {
+      helpful = false;
+      await repo.run("DELETE FROM plugin_review_helpful_votes WHERE review_id = ? AND identity = ?", [reviewId, who]);
+      await repo.run("UPDATE plugin_reviews SET helpful_count = CASE WHEN helpful_count > 0 THEN helpful_count - 1 ELSE 0 END WHERE id = ?", [reviewId]);
+    }
+  });
+  await repo.audit({
+    actor: actor?.actor ?? who,
+    actorKind: actor?.actorKind ?? "identity",
+    action: helpful ? "plugin.review.helpful" : "plugin.review.unhelpful",
+    target: `${slug}:${reviewId}`,
+    diff: { helpful },
+    ip: actor?.ip,
+  });
+  const updated = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? LIMIT 1", [reviewId]))[0];
+  if (!updated) throw new Error("投票后无法读回评价");
+  const updatedReview = rowToPluginReview(updated);
+  return { helpful, helpfulCount: updatedReview.helpfulCount, review: updatedReview };
 }

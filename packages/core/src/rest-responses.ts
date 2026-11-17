@@ -1833,6 +1833,8 @@ export const PluginReviewPayload = z.looseObject({
   moderatedBy: z.string().nullable(),
   authorReply: z.string().nullable().optional(),
   authorRepliedAt: z.number().nullable().optional(),
+  helpfulCount: z.number().int(),
+  helpfulByMe: z.boolean().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -1856,6 +1858,14 @@ export const PluginInstallTrendResponse = z.looseObject({
 export const PluginReviewDeleteResponse = z.looseObject({
   success: z.literal(true),
   deleted: z.literal(true),
+  review: PluginReviewPayload,
+});
+
+/** 评价「有用」投票切换回执（P2-3）：helpful=true 为投上，false 为撤回 */
+export const PluginReviewHelpfulResponse = z.looseObject({
+  ok: z.literal(true),
+  helpful: z.boolean(),
+  helpfulCount: z.number().int(),
   review: PluginReviewPayload,
 });
 
@@ -2671,6 +2681,8 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "POST /api/plugins/author/profile": { schema: PluginAuthorProfileResponse, name: "PluginAuthorProfileResponse" },
   // 管理员删评价（B-3）：硬删除，review 是删除前的快照
   "DELETE /api/plugins/{slug}/reviews/{id}": { schema: PluginReviewDeleteResponse, name: "PluginReviewDeleteResponse" },
+  // 评价「有用」投票切换（P2-3）：一人一票，再点撤回
+  "POST /api/plugins/{slug}/reviews/{id}/helpful": { schema: PluginReviewHelpfulResponse, name: "PluginReviewHelpfulResponse" },
   "POST /api/favorites": { schema: FavoriteCreateResponse, name: "FavoriteCreateResponse", status: ["200", "201"] },
   "PATCH /api/favorites/{siteId}": { schema: FavoriteUpdateResponse, name: "FavoriteUpdateResponse" },
   "DELETE /api/favorites/{siteId}": { schema: FavoriteSiteRemovalResponse, name: "FavoriteSiteRemovalResponse" },

@@ -2197,9 +2197,19 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   async listPluginReviews(
     pluginId: string,
-    options?: { limit?: number; offset?: number; includeHidden?: boolean; cursor?: string },
+    options?: { limit?: number; offset?: number; includeHidden?: boolean; cursor?: string; sort?: pluginsRepo.PluginReviewSort | string; identity?: string },
   ): Promise<{ items: pluginsRepo.PluginReviewWithInstallStatus[]; total: number; nextCursor: string | null }> {
     return pluginsRepo.listPluginReviews(this, pluginId, options);
+  }
+
+  /** 评价「有用」投票切换（P2-3）：一人一票，再点即撤回；不能投自己的评价 */
+  async togglePluginReviewHelpful(
+    slug: string,
+    reviewId: string,
+    identity: string,
+    actor?: pluginsRepo.PluginActor,
+  ): Promise<{ helpful: boolean; helpfulCount: number; review: pluginsRepo.PluginReviewRecord }> {
+    return pluginsRepo.togglePluginReviewHelpful(this, slug, reviewId, identity, actor);
   }
 
   /** 删除自己的评价（B-3）：本人或管理员（actorKind === "admin"）可删 */

@@ -550,6 +550,8 @@ export interface PluginReviewRecord {
   moderatedBy: string | null;
   authorReply?: string | null;
   authorRepliedAt?: number | null;
+  /** 被投「有用」的累计次数（plugin_review_helpful_votes 去重计数，见 togglePluginReviewHelpful） */
+  helpfulCount: number;
   createdAt: number;
   updatedAt: number;
 }

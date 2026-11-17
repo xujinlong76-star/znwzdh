@@ -113,9 +113,13 @@ export function PluginCard({
     setInstalled(Boolean(plugin.installed))
   }, [plugin.installed])
   useEffect(() => {
+    // 在途切换时不同步 prop：切换前发出的 board load() 若在切换后 resolve，
+    // 旧 starred 经这里写回会把刚切换的状态翻回去；切换结束（starLoading
+    // 翻 false）时 effect 重跑，再按最新 prop 同步，不丢跨端改动。
+    if (starLoading) return
     setStarred(Boolean(plugin.starred))
     setStarCount(plugin.starCount || 0)
-  }, [plugin.starred, plugin.starCount])
+  }, [plugin.starred, plugin.starCount, starLoading])
   const needsUpdate =
     installed &&
     upgradedTo !== plugin.version &&
@@ -140,17 +144,18 @@ export function PluginCard({
     setStarCount(nextStarred ? prevCount + 1 : Math.max(0, prevCount - 1))
 
     try {
-      if (nextStarred) {
-        const res = await starPlugin(plugin.slug, identity)
-        setStarCount(res.starCount)
-      } else {
-        const res = await unstarPlugin(plugin.slug, identity)
-        setStarCount(res.starCount)
-      }
+      // 成功路径以回包为准重申 starred/starCount：只补 starCount、不重申
+      // starred，会让详情页同款竞态在卡片复现；onStatusChange 同样传回包值，
+      // 不用本地推算的 nextStarred/prevCount±1。
+      const res = nextStarred
+        ? await starPlugin(plugin.slug, identity)
+        : await unstarPlugin(plugin.slug, identity)
+      setStarred(res.starred)
+      setStarCount(res.starCount)
       onStatusChange?.({
         ...plugin,
-        starred: nextStarred,
-        starCount: nextStarred ? prevCount + 1 : Math.max(0, prevCount - 1),
+        starred: res.starred,
+        starCount: res.starCount,
       })
     } catch (err) {
       setStarred(prevStarred)

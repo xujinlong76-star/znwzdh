@@ -209,6 +209,29 @@ export function PluginMarketBoard({
 
   const [filtersReady, setFiltersReady] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
+
+  // 星标/安装补丁世代守卫：patchItem 只在卡片切换成功后触发，比任何在途
+  // load() 的快照都新；旧快照落地时须把已补丁条目写回新值，否则旧 starred
+  // 经卡片 prop 同步 effect 把刚切换的状态翻回去（与详情页 loadDetail
+  // 同款竞态）。只覆盖“补丁晚于快照发出”的条目：补丁早于快照发出的，
+  // 快照本身已含服务端新值，不覆盖、不挡跨端改动。
+  const patchedItemsRef = useRef(new Map<string, HubPluginItem>())
+  const patchSeqRef = useRef(0)
+  const overlayPatched = useCallback((items: HubPluginItem[], patchSeqAtIssue: number): HubPluginItem[] => {
+    if (patchSeqAtIssue === patchSeqRef.current) return items
+    const patched = patchedItemsRef.current
+    if (patched.size === 0) return items
+    let changed = false
+    const next = items.map((p) => {
+      const updated = patched.get(p.slug)
+      if (updated) {
+        changed = true
+        return updated
+      }
+      return p
+    })
+    return changed ? next : items
+  }, [])
   const [installTarget, setInstallTarget] = useState<HubPluginItem | null>(null)
   const [installMode, setInstallMode] = useState<'install' | 'uninstall' | 'upgrade'>('install')
 
@@ -277,6 +300,9 @@ export function PluginMarketBoard({
 
   const load = useCallback(
     async (offset: number, append: boolean, silent = false) => {
+      // 记下发出时的补丁世代：resolve 时若有卡片补丁晚于此次发出，旧快照
+      // 不得覆盖已补丁条目（见 overlayPatched）。
+      const patchSeqAtIssue = patchSeqRef.current
       if (!silent) {
         if (append) setLoadingMore(true)
         else setLoading(true)
@@ -296,13 +322,17 @@ export function PluginMarketBoard({
       // 而列表里明明还留着前面那些插件。失败就保持原样，让用户重试。
       // 静默同步失败同理：不能用空兜底把 SSR 首帧抹掉。
       // 首屏失败同理：不写空兜底，改立 loadFailed，由失败态接管列表区（P1-2）。
-      setList((prev) => applyMarketplaceListLoad(prev, res, { failed, append, silent }))
+      setList((prev) => {
+        const next = applyMarketplaceListLoad(prev, res, { failed, append, silent })
+        const items = overlayPatched(next.items, patchSeqAtIssue)
+        return items === next.items ? next : { ...next, items }
+      })
       if (!silent) {
         if (append) setLoadingMore(false)
         else setLoading(false)
       }
     },
-    [kind, q, sort, starredOnly],
+    [kind, q, sort, starredOnly, overlayPatched],
   )
 
   // 首帧用服务端数据，但 SSR 拿不到浏览器的匿名身份：挂载后静默重取一次
@@ -337,6 +367,9 @@ export function PluginMarketBoard({
   }, [setSearchInput])
 
   const patchItem = useCallback((updated: HubPluginItem) => {
+    // 记下补丁并递增世代：在途 load() 的旧快照落地时凭此识别、不得覆盖。
+    patchedItemsRef.current.set(updated.slug, updated)
+    patchSeqRef.current += 1
     setList((prev) => ({
       ...prev,
       items: prev.items.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)),
@@ -372,6 +405,7 @@ export function PluginMarketBoard({
   useEffect(() => {
     if (!filtersReady || hasFilter) return
     let cancelled = false
+    const patchSeqAtIssue = patchSeqRef.current
     void Promise.all([
       fetchPlugins({ featured: true, sort: 'featured', limit: 6 }),
       fetchPlugins({ sort: 'popular', limit: 5 }),
@@ -379,13 +413,14 @@ export function PluginMarketBoard({
       fetchPlugins({ sort: 'new', limit: 5 }),
     ]).then(([f, popular, rating, fresh]) => {
       if (cancelled) return
-      setFeatured(f.items)
+      // 精选卡片同样走 patchItem：切换后落地的旧快照不得覆盖已补丁条目。
+      setFeatured(overlayPatched(f.items, patchSeqAtIssue))
       setRankings({ popular: popular.items, rating: rating.items, fresh: fresh.items })
     })
     return () => {
       cancelled = true
     }
-  }, [filtersReady, hasFilter, reloadToken])
+  }, [filtersReady, hasFilter, reloadToken, overlayPatched])
 
   // K18：0 结果空态的相关插件。只在「有筛选、已取完、0 命中、非星标视图」时取，
   // 星标空态（「你还没有星标任何插件」）不需要「相关插件」这条路。
@@ -395,9 +430,11 @@ export function PluginMarketBoard({
       return
     }
     let cancelled = false
+    const patchSeqAtIssue = patchSeqRef.current
     void fetchPlugins({ sort: 'popular', limit: 3 })
       .then((res) => {
-        if (!cancelled) setRelated(res.items.slice(0, 3))
+        // 相关卡片同样走 patchItem：切换后落地的旧快照不得覆盖已补丁条目。
+        if (!cancelled) setRelated(overlayPatched(res.items.slice(0, 3), patchSeqAtIssue))
       })
       .catch(() => {
         // 建议位取数失败静默为空，不挡主空态
@@ -405,7 +442,7 @@ export function PluginMarketBoard({
     return () => {
       cancelled = true
     }
-  }, [filtersReady, loading, list.items.length, list.loadFailed, hasFilter, starredOnly])
+  }, [filtersReady, loading, list.items.length, list.loadFailed, hasFilter, starredOnly, overlayPatched])
 
   function cleanLeaderboardTitle(name: string): string {
     const match = name.match(/^([^\(（]+)[\(（]/)

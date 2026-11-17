@@ -36,7 +36,7 @@ export const codeSearchPack: SeedPluginDef = {
         {
           "name": "Sourcegraph 全球代码",
           "prefix": "!sourcegraph",
-          "searchUrl": "https://sourcegraph.com/search?q=context%3Aglobal+{q}",
+          "searchUrl": "https://sourcegraph.com/search?q=context%3Aglobal+{q}&patternType=standard",
           "icon": "🔎",
           "description": "全球公开开源代码语义化上下文精准检索"
         },
@@ -188,11 +188,11 @@ export const codeSearchPack: SeedPluginDef = {
           "description": "跨 32 个包管理器的开源软件依赖图谱与依赖健康度"
         },
         {
-          "name": "Openbase 用户评价",
-          "prefix": "!openbase",
-          "searchUrl": "https://openbase.com/search?q={q}",
-          "icon": "⭐",
-          "description": "开源类库真实开发者打分、优缺点分析与对比"
+          "name": "LibHunt 开源库发现",
+          "prefix": "!libhunt",
+          "searchUrl": "https://www.libhunt.com/search?query={q}",
+          "icon": "🔭",
+          "description": "追踪全网热门开源库趋势与口碑，找库选型前的发现与对比"
         },
         {
           "name": "Best of JS 前端精选",
@@ -253,7 +253,7 @@ export const codeSearchPack: SeedPluginDef = {
         {
           "name": "GreyNoise 互联网噪声",
           "prefix": "!greynoise",
-          "searchUrl": "https://viz.greynoise.io/cheat-sheet?q={q}",
+          "searchUrl": "https://viz.greynoise.io/ips/{q}",
           "icon": "📻",
           "description": "过滤良性网络扫描、定位真实恶意定向攻击的分析库"
         },

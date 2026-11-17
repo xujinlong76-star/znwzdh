@@ -63,7 +63,7 @@ export const devSearchArsenal: SeedPluginDef = {
         { name: "Google Cloud 文档", prefix: "!gcp", searchUrl: "https://cloud.google.com/s/results?q={q}", icon: "☁️", description: "GCP 产品、服务与 API 官方文档检索" },
         { name: "Azure 文档", prefix: "!azure", searchUrl: "https://learn.microsoft.com/en-us/search/?terms={q}", icon: "🟦", description: "微软 Azure 与 .NET 官方技术文档检索" },
         { name: "OSV 漏洞库", prefix: "!osv", searchUrl: "https://osv.dev/list?q={q}", icon: "🛡️", description: "开源软件漏洞数据库，依赖安全风险检索" },
-        { name: "NVD CVE 数据库", prefix: "!cve", searchUrl: "https://nvd.nist.gov/vuln/search/results?query={q}", icon: "🚨", description: "美国国家漏洞库，CVE 编号与漏洞详情检索" },
+        { name: "NVD CVE 数据库", prefix: "!cve", searchUrl: "https://nvd.nist.gov/vuln/search/results?form_type=Basic&results_type=overview&query={q}&search_type=all", icon: "🚨", description: "美国国家漏洞库，CVE 编号与漏洞详情检索" },
         { name: "Hacker News", prefix: "!hn", searchUrl: "https://hn.algolia.com/?q={q}", icon: "📰", description: "Hacker News 技术讨论与链接全文检索" },
       ],
     },

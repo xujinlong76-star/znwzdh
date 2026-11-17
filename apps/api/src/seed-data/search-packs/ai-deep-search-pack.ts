@@ -25,7 +25,7 @@ export const aiDeepSearchPack: SeedPluginDef = {
         {
           "name": "Perplexity",
           "prefix": "!ppx",
-          "searchUrl": "https://www.perplexity.ai/search?q={q}",
+          "searchUrl": "https://www.perplexity.ai/search/new?q={q}",
           "icon": "🔮",
           "description": "具备深度可信信源引用的 AI 智能搜索引擎"
         },
@@ -123,7 +123,7 @@ export const aiDeepSearchPack: SeedPluginDef = {
         {
           "name": "智谱清言",
           "prefix": "!glm",
-          "searchUrl": "https://chatglm.cn/main/alltoolsdetail?q={q}",
+          "searchUrl": "https://chatglm.cn/chat?q={q}",
           "icon": "📘",
           "description": "清华智谱 GLM 旗舰大语言模型与智能体检索"
         },
@@ -165,16 +165,16 @@ export const aiDeepSearchPack: SeedPluginDef = {
         {
           "name": "Google AI Studio",
           "prefix": "!aistudio",
-          "searchUrl": "https://aistudio.google.com/live?q={q}",
+          "searchUrl": "https://aistudio.google.com/?q={q}",
           "icon": "🛠️",
           "description": "谷歌开发者原型平台最新模型直接调用测试"
         },
         {
           "name": "Groq",
           "prefix": "!groq",
-          "searchUrl": "https://groq.com/?q={q}",
+          "searchUrl": "https://console.groq.com/playground?q={q}",
           "icon": "⚡",
-          "description": "LPU 架构驱动的每秒数百 Token 极限极速推理体验"
+          "description": "GroqCloud 在线推理 Playground，LPU 架构每秒数百 Token 极速体验"
         },
         {
           "name": "Mistral Le Chat",
@@ -261,11 +261,11 @@ export const aiDeepSearchPack: SeedPluginDef = {
           "description": "生产级高质量开源模型极速推理托管目录"
         },
         {
-          "name": "LMSYS Arena 榜单",
+          "name": "Arena 榜单",
           "prefix": "!arena",
-          "searchUrl": "https://chat.lmsys.org/?leaderboard={q}",
+          "searchUrl": "https://arena.ai/leaderboard?search={q}",
           "icon": "🏆",
-          "description": "全网人类双盲实测大模型胜率天梯榜查询"
+          "description": "Arena（原 LMSYS Chatbot Arena）人类双盲实测大模型胜率天梯榜查询"
         },
         {
           "name": "SWE-bench 任务",

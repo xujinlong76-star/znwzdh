@@ -170,7 +170,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'icourse163.org': '/brand-icons/icourse163.png',
   'time.geekbang.org': '/brand-icons/geekbang.jpg',
   'zhaopin.com': '/brand-icons/zhaopin.png',
-  'fanqienovel.com': '/brand-icons/fanqienovel.png',
+  'fanqienovel.com': '/brand-icons/fanqie.png',
   'tantan.com': '/brand-icons/tantan.png',
   'reelshort.com': '/brand-icons/reelshort.png',
   'nmc.cn': '/brand-icons/nmc.png',
@@ -547,6 +547,12 @@ export function SiteFavicon({
   // 与 Cursor 芯片互斥——cursor.com 不在 map 里，tile 优先于芯片。
   const logoTile = resolveLogoTile(url)
 
+  // 宽版 logo（中央气象台 255x65、国家哲学 385x56）：横长条在方形卡片里
+  // object-contain 后上下留空已够、左右贴边，img 级统一加 p-1 免得贴边；
+  // nmc 自带浅色底，深色卡上会露白矩形是已知特性，只加 p-1、不加深色底块。
+  const isWideLogoSite =
+    effectiveIcon === '/brand-icons/nmc.png' || effectiveIcon === '/brand-icons/ncpssd.png'
+
   const monogram = extractFaviconMonogram(title, url)
   const gradient = getDeterministicGradient(title || url || 'navhub')
   const shouldRenderImg = !useDefaultIcon && !imgError && Boolean(effectiveIcon) && !isKnownBadIcon(effectiveIcon)
@@ -584,7 +590,8 @@ export function SiteFavicon({
               ? LOGO_TILE_CLASSES[logoTile]
               : isCursorSite
                 ? 'bg-muted/40 dark:bg-muted/20 rounded-xs p-0.5 border border-border/30'
-                : undefined
+                : undefined,
+            isWideLogoSite && 'p-1'
           )}
           loading={eager ? 'eager' : 'lazy'}
           fetchPriority={eager ? 'high' : 'low'}

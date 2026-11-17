@@ -28,7 +28,7 @@ const CASES: Array<{ url: string; title: string; expected: string }> = [
   { url: 'https://www.icourse163.org', title: '中国大学MOOC', expected: '/brand-icons/icourse163.png' },
   { url: 'https://time.geekbang.org/', title: '极客时间', expected: '/brand-icons/geekbang.jpg' },
   { url: 'https://www.zhaopin.com', title: '智联招聘', expected: '/brand-icons/zhaopin.png' },
-  { url: 'https://www.fanqienovel.com', title: '番茄小说', expected: '/brand-icons/fanqienovel.png' },
+  { url: 'https://www.fanqienovel.com', title: '番茄小说', expected: '/brand-icons/fanqie.png' },
   { url: 'https://www.tantan.com', title: '探探', expected: '/brand-icons/tantan.png' },
   { url: 'https://www.reelshort.com', title: 'ReelShort', expected: '/brand-icons/reelshort.png' },
   { url: 'https://www.nmc.cn', title: '中央气象台', expected: '/brand-icons/nmc.png' },
@@ -48,7 +48,7 @@ const LOCAL_ASSETS = [
   'icourse163.png',
   'geekbang.jpg',
   'zhaopin.png',
-  'fanqienovel.png',
+  'fanqie.png',
   'tantan.png',
   'reelshort.png',
   'nmc.png',
@@ -82,7 +82,7 @@ describe('resolveSiteIcon（图标修复第二批 2b 剩余 + 2c）', () => {
     // 原图 422KB 已压到 128px（23013B < 50KB）。
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-    for (const name of ['capcut.png', 'jimeng.png', 'tianyin.png', 'icourse163.png', 'zhaopin.png', 'fanqienovel.png', 'tantan.png', 'reelshort.png', 'nmc.png', 'ncpssd.png', 'youxi.png']) {
+    for (const name of ['capcut.png', 'jimeng.png', 'tianyin.png', 'icourse163.png', 'zhaopin.png', 'fanqie.png', 'tantan.png', 'reelshort.png', 'nmc.png', 'ncpssd.png', 'youxi.png']) {
       const buf = readFileSync(`${dir}${name}`)
       expect(buf.subarray(0, 8).equals(pngMagic), name).toBe(true)
     }

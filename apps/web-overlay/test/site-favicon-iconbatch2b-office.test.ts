@@ -75,7 +75,7 @@ describe('resolveSiteIcon（图标修复第二批 2b 之办公学习类 B 批）
     }
   })
 
-  it('本地资产尺寸钉死：128 / 64 / 48 方标与极客公园 1361x261 宽版', () => {
+  it('本地资产尺寸钉死：128 / 64 / 48 方标与极客公园 100x100 方标', () => {
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     // 128 方标：天音 / 有戏（PNG 读 IHDR）、极客时间（JPEG 读 SOF）。
     for (const name of ['tianyin.png', 'youxi.png']) {
@@ -96,10 +96,10 @@ describe('resolveSiteIcon（图标修复第二批 2b 之办公学习类 B 批）
       width: 48,
       height: 48,
     })
-    // 宽版：极客公园 1361x261 原样，宽高比约 5.21:1（1361/261）。
+    // 方标：极客公园 100x100 远端方形标，宽高比 1。
     const geekpark = readPngSize(readFileSync(`${dir}geekpark.png`))
-    expect(geekpark, 'geekpark.png').toEqual({ width: 1361, height: 261 })
-    expect(geekpark.width / geekpark.height).toBeCloseTo(1361 / 261, 5)
+    expect(geekpark, 'geekpark.png').toEqual({ width: 100, height: 100 })
+    expect(geekpark.width / geekpark.height).toBeCloseTo(1, 5)
   })
 
   it('本地资产魔数与体积钉死：PNG/JPEG 魔数、有戏 ≤ ~15KB', () => {

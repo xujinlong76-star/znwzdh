@@ -70,11 +70,11 @@ describe('resolveSiteIcon（图标修复第二批 2a）', () => {
     }
   })
 
-  it('黑标事实钉死：Ollama / SourceHut 的 SVG 确为纯黑 fill', () => {
-    // 2026-11-17：两站是 fill #000000 的透明底黑标；第一批处理 Notion /
+  it('黑标事实钉死：Ollama 的 SVG 确为纯黑 fill', () => {
+    // 2026-11-17：该站是 fill #000000 的透明底黑标；第一批处理 Notion /
     // Radix 的同款办法即不做特殊处理（caf73de0 diff 核实），深色模式下
     // 对比度弱是已知局限，留待深色底块统一处理轮。此断言把“黑标”钉死，
-    // 免得将来有人误以为这两站已是彩色标而漏掉统一处理。
+    // 免得将来有人误以为这站已是彩色标而漏掉统一处理。
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     for (const name of ['ollama.svg']) {
       const svg = readFileSync(`${dir}${name}`, 'utf8')

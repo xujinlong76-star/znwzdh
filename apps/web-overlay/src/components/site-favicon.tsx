@@ -176,9 +176,6 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'nmc.cn': '/brand-icons/nmc.png',
   'ncpssd.org': '/brand-icons/ncpssd.png',
   'youxi.fullpeace.net': '/brand-icons/youxi.png',
-  // 2026-11-17（B 批合批）：极客公园入 map；远端已换方形标，底块走
-  // LOGO_TILE_MAP 统一处理（见下方 logoTile），不再单独立分支。
-  'geekpark.net': '/brand-icons/geekpark.png',
   'mtime.com': '/brand-icons/mtime.jpg',
   'wondercv.com': '/brand-icons/wondercv.jpg',
   'nhsa.gov.cn': '/brand-icons/nhsa.jpg',
@@ -647,8 +644,7 @@ export function SiteFavicon({
   // object-contain 后上下留空已够、左右贴边，img 级统一加 p-1 免得贴边；
   // nmc 自带浅色底，深色卡上会露白矩形是已知特性，只加 p-1、不加深色底块。
   const isWideLogoSite =
-    effectiveIcon === '/brand-icons/nmc.png' || effectiveIcon === '/brand-icons/ncpssd.png' ||
-    effectiveIcon === '/brand-icons/langgraph.svg'
+    effectiveIcon === '/brand-icons/nmc.png' || effectiveIcon === '/brand-icons/ncpssd.png'
 
   const monogram = extractFaviconMonogram(title, url)
   const gradient = getDeterministicGradient(title || url || 'navhub')

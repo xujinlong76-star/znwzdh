@@ -70,6 +70,14 @@ import {
 
 const PAGE_SIZE = 24
 
+// P2-8：hero 6 按钮是 shadcn Button，基底自带 focus-visible:outline-none，
+// 会盖掉 globals.css 里 :focus-visible 的 2px solid 焦点框（WCAG 2.4.7，
+// Tab 到这 6 个最显眼的入口时键盘用户看不见焦点）。这里显式补回与跳链 /
+// 胶囊一致的 solid 2px 焦点框；经 twMerge（cn）实测，outline-solid 会把
+// 基底的 outline-none 从最终 class 里合并掉，不是简单叠加。
+const HERO_BUTTON_FOCUS_VISIBLE =
+  'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2'
+
 // 专题胶囊的 q 必须在种子数据上命中 > 0（listPlugins 按名称 / 简介 / slug / 清单
 // 内容子串匹配；命中数为 0 的胶囊点开即空列表，是死入口）。守卫见 apps/api/test/seed-plugins.test.ts
 // 「专题胶囊」describe；改 q 前先实测命中数。2026-11-17 B 批复核：q '武器库' 实测 0 命中
@@ -408,7 +416,10 @@ export function PluginMarketBoard({
       setKind('')
       setQ('')
       setSearchInput('')
-      setSort('popular')
+      // P2-14：「全部插件」承诺无筛选，应回真正的默认视图（trending，
+      // DEFAULT_MARKETPLACE_SORT）；旧代码切到 popular 后 URL 带 ?sort=popular，
+      // 且胶囊再也回不到默认视图。默认排序不落参数，地址栏保持干净。
+      setSort(DEFAULT_MARKETPLACE_SORT)
     } else if (topic.id === 'trending') {
       setKind('')
       setQ('')
@@ -433,7 +444,11 @@ export function PluginMarketBoard({
       {/* 外层 Container/div/Breadcrumbs/Footer 由服务端壳提供（page.tsx）；
           本岛只产出内容流（hero/筛选/网格/弹窗），保持 space-y 兄弟节奏 */}
         {/* 顶部展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero p-4 sm:p-7 shadow-xs">
+        {/* P2-15：移动端 hero 折叠/精简。390×844 实测 hero 底部 y=610，搜索框被挤到
+            y=695（首屏外）。6 按钮在移动端改横滑一行（3 行 → 1 行）、胶囊改横滑
+            一行（约 3 行 → 1 行）、内边距收紧，约省 130px，搜索框回到首屏内；
+            ≥sm 恢复原 3 列网格与换行胶囊，桌面布局不动。 */}
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero p-3 sm:p-7 shadow-xs">
           {/* 装饰层：纯视觉，不拦截交互 */}
           <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
           <div aria-hidden className="pointer-events-none absolute -left-24 top-24 h-48 w-48 rounded-full bg-sky-400/10 blur-3xl" />
@@ -462,8 +477,12 @@ export function PluginMarketBoard({
                 不含任何可执行代码；安装前可先看清单预览。
               </p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 shrink-0">
-              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs justify-center">
+            <div
+              role="group"
+              aria-label="市场操作"
+              className="flex gap-2 overflow-x-auto pb-1 shrink-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0"
+            >
+              <Button asChild size="sm" variant="outline" className={`h-8 gap-1.5 text-xs justify-center shrink-0 ${HERO_BUTTON_FOCUS_VISIBLE}`}>
                 <Link href="/marketplace/installed">
                   <PackageCheck className="w-3.5 h-3.5 text-primary" />
                   <span>已安装管家</span>
@@ -473,18 +492,18 @@ export function PluginMarketBoard({
                 size="sm"
                 variant="outline"
                 onClick={() => setTapsModalOpen(true)}
-                className="h-8 gap-1.5 text-xs justify-center border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10"
+                className={`h-8 gap-1.5 text-xs justify-center shrink-0 border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10 ${HERO_BUTTON_FOCUS_VISIBLE}`}
               >
                 <Radio className="w-3.5 h-3.5" />
                 <span>Taps 订阅源</span>
               </Button>
-              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs justify-center">
+              <Button asChild size="sm" variant="outline" className={`h-8 gap-1.5 text-xs justify-center shrink-0 ${HERO_BUTTON_FOCUS_VISIBLE}`}>
                 <Link href="/marketplace/import">
                   <Upload className="w-3.5 h-3.5" />
                   <span>导入插件文件</span>
                 </Link>
               </Button>
-              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs justify-center">
+              <Button asChild size="sm" variant="outline" className={`h-8 gap-1.5 text-xs justify-center shrink-0 ${HERO_BUTTON_FOCUS_VISIBLE}`}>
                 <Link href="/marketplace/mine">
                   <UserRound className="w-3.5 h-3.5" />
                   <span>作者中心</span>
@@ -493,12 +512,12 @@ export function PluginMarketBoard({
               <Button
                 size="sm"
                 onClick={() => setStudioOpen(true)}
-                className="h-8 gap-1.5 text-xs justify-center bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-700 text-primary-foreground font-medium shadow-xs"
+                className={`h-8 gap-1.5 text-xs justify-center shrink-0 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-700 text-primary-foreground font-medium shadow-xs ${HERO_BUTTON_FOCUS_VISIBLE}`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>✨ AI 生成插件</span>
               </Button>
-              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs justify-center border-primary/40 hover:bg-primary/5 text-primary font-medium">
+              <Button asChild size="sm" variant="outline" className={`h-8 gap-1.5 text-xs justify-center shrink-0 border-primary/40 hover:bg-primary/5 text-primary font-medium ${HERO_BUTTON_FOCUS_VISIBLE}`}>
                 <Link href="/marketplace/publish">
                   <span>发布插件</span>
                 </Link>
@@ -506,9 +525,9 @@ export function PluginMarketBoard({
             </div>
           </div>
 
-          {/* 精选专题集胶囊 */}
-          <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <span className="text-xs text-muted-foreground flex items-center gap-1 mr-1">
+          {/* 精选专题集胶囊：移动端横滑一行（P2-15 的一部分），≥sm 恢复换行 */}
+          <div className="mt-5 pt-4 border-t border-border/50 flex flex-nowrap overflow-x-auto items-center gap-1.5 sm:flex-wrap sm:gap-2 sm:overflow-visible">
+            <span className="text-xs text-muted-foreground flex items-center gap-1 mr-1 shrink-0">
               <Flame className="w-3 h-3 text-amber-500" />
               精选专题：
             </span>
@@ -520,7 +539,7 @@ export function PluginMarketBoard({
                   type="button"
                   aria-pressed={isTopicActive}
                   onClick={() => handleTopicClick(topic)}
-                  className={`px-2.5 py-1 rounded-full text-xs transition-all ${
+                  className={`px-2.5 py-1 rounded-full text-xs transition-all shrink-0 ${
                     isTopicActive
                       ? 'bg-primary text-primary-foreground font-semibold shadow-xs ring-2 ring-primary/20'
                       : 'bg-background/70 hover:bg-background text-muted-foreground hover:text-foreground border border-border/60 hover:border-border hover:-translate-y-px'
@@ -542,7 +561,10 @@ export function PluginMarketBoard({
             onChange={(e) => setKind(e.target.value)}
           >
             <option value="">全部类型</option>
-            <option value="site-pack">网站包</option>
+            {/* P2-13：site-pack 不进筛选器——种子为 0（2026-11-15 已卸载 34 个），
+                选「网站包」永远是空列表，是死入口。类型本身保留在契约与
+                KIND_LABELS 里（地址栏 ?kind=site-pack 仍可解析、可清除），
+                本批只做隐藏，不补内容。 */}
             <option value="workspace-preset">工作台预设</option>
             <option value="theme">主题</option>
             <option value="search-pack">搜索引擎包</option>

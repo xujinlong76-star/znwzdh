@@ -6,6 +6,7 @@ import {
   EXAM_NODE_STATUS_LABEL,
   examNodeStatus,
   examStatus,
+  hasActionableNodes,
   type ExamInfo,
 } from '@/lib/exam-calendar'
 import {
@@ -39,6 +40,11 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
 
   const followed = state !== null && isFollowed(state, exam.id)
   const ended = examStatus(exam) === 'ended'
+  // R1（2026-11-17）：统考已过但节点仍可办时（成考 11-18 的成绩查询），
+  // 卡片行文不写裸「已结束」，改按统考 scoped 文案并指向下方节点；
+  // 节点全过后（成考 11-19 起）仍是「本场考试已结束」，行为不变。
+  // 只改渲染文案：关注/勾选的禁用逻辑（ended）不动，见片段。
+  const hasPendingNodes = ended && hasActionableNodes(exam)
   const done = state === null ? 0 : checkedCount(state, exam)
   const checkedLabels = state === null ? [] : (state.checked[exam.id] ?? [])
 
@@ -59,7 +65,9 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
           {followed
             ? `我的考试 · 已完成 ${done} / ${exam.nodes.length}`
             : ended
-              ? '本场考试已结束'
+              ? hasPendingNodes
+                ? '统考已结束，下方节点仍可办理'
+                : '本场考试已结束'
               : '关注后可逐项勾选考前清单'}
         </p>
         <button
@@ -67,10 +75,10 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
           onClick={handleFollow}
           disabled={storageBlocked !== null || (ended && !followed)}
           aria-pressed={followed}
-          aria-label={followed ? `取消关注${exam.shortName}` : ended ? `${exam.shortName}已结束` : `关注${exam.shortName}`}
+          aria-label={followed ? `取消关注${exam.shortName}` : ended ? (hasPendingNodes ? `${exam.shortName}统考已结束` : `${exam.shortName}已结束`) : `关注${exam.shortName}`}
           className="inline-flex min-h-11 items-center rounded-full border border-sky-500/25 bg-sky-500/5 px-3 py-1 text-sm font-medium text-sky-700 dark:text-sky-400"
         >
-          {followed ? '已关注' : ended ? '已结束' : '关注这场考试'}
+          {followed ? '已关注' : ended ? (hasPendingNodes ? '统考已结束' : '已结束') : '关注这场考试'}
         </button>
       </div>
       {storageBlocked ? (

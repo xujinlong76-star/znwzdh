@@ -82,4 +82,18 @@ describe('resolveSiteIcon（图标修复第二批 2a）', () => {
       expect(svg.includes('#000000'), name).toBe(true)
     }
   })
+
+  it('esbuild 事实钉死：官网现用黄底黑箭头版，非 Simple Icons 白箭头版', () => {
+    // 2026-11-17 重做：旧图为 Simple Icons 版（328 B，24×24 viewBox，
+    // 黄底 #FFCF00 + 白色镂空双箭头），白箭头在亮黄底上对比度极低，
+    // 小尺寸下几乎只剩一个黄圆。官网现用为首页声明的 favicon
+    // https://esbuild.github.io/favicon.svg（实测 200、image/svg+xml、
+    // 241 B、md5 e4739833637c2861ac3e5f5054f81b1c），黄圆 + 黑色双箭头
+    //（stroke #191919）。本断言钉死新图事实，防回退到白箭头版。
+    const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
+    const svg = readFileSync(`${dir}esbuild.svg`, 'utf8')
+    expect(svg.includes('fill="#FFCF00"')).toBe(true)
+    expect(svg.includes('stroke="#191919"')).toBe(true)
+    expect(svg.includes('viewBox="0 0 24 24"')).toBe(false)
+  })
 })

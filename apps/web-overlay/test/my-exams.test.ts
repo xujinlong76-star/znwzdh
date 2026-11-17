@@ -589,6 +589,14 @@ describe('成考成绩分省节点', () => {
     expect(nextTodoNode(state, chengkao, NOV_20_0800_CST)?.label).toBe('新疆成绩复核')
   })
 
+  it('广东 note 写明复查与证书渠道（U-99）：书面申请地点/证件、证书下载渠道', () => {
+    // 四项时间与官网原文一致无漂移，时间值不动；只补 note 的渠道说明。
+    const note = chengkao.note ?? ''
+    expect(note).toContain('复查须在 11 月 20 日 15:00 前凭身份证件、准考证到当地县（市、区）招生办书面申请')
+    expect(note).toContain('逾期不予受理')
+    expect(note).toContain('成绩证书 11 月 28 日 16:00 起可通过官微/支付宝/百度小程序下载打印')
+  })
+
   it('detail 写明各省查询渠道：江西栏目名、广东小程序渠道与时刻', () => {
     const jiangxi = chengkao.nodes.find((n) => n.label === '江西成绩查询')!
     const guangdong = chengkao.nodes.find((n) => n.label === '广东成绩查询')!

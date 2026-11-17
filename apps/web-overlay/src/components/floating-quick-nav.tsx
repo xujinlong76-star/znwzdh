@@ -84,7 +84,10 @@ export function FloatingQuickNav({ onOpenTools, className, global = false, thres
       id="navhub-floating-quick-nav"
       aria-label="快速操作与回到顶部"
       className={cn(
-        'fixed right-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+3rem)] sm:right-4 sm:bottom-12 z-40 flex flex-row items-center gap-1 p-0.5 rounded-full border border-border/70 bg-background/80 dark:bg-card/75 backdrop-blur-md shadow-xs transition-all duration-200',
+        /* K1：移动端胶囊改到猫顶之上——猫占 bottom 68–156px（88 高），胶囊底边
+           抬到 168px（68+88+12 间隙），不再被猫的白圆盖住；sm 起仍为 bottom-12，
+           与抬到 112px 的猫留 16px 间隙。 */
+        'fixed right-4 bottom-[calc(68px+88px+12px+env(safe-area-inset-bottom,0px))] sm:right-4 sm:bottom-12 z-40 flex flex-row items-center gap-1 p-0.5 rounded-full border border-border/70 bg-background/80 dark:bg-card/75 backdrop-blur-md shadow-xs transition-all duration-200',
         visible && !isEditingLayout && !isScrollingDown ? 'opacity-90 hover:opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-2 pointer-events-none',
         className,
       )}

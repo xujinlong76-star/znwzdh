@@ -333,7 +333,7 @@
   /* ---------- DOM 骨架 ---------- */
   var css =
     /* v5 设计令牌：颜色/阴影/缓动收敛成变量，深色只换令牌值（站点 .dark 挂在 html 上） */
-    '#xiaomaomao{--xm-accent:#f4507e;--xm-accent-deep:#d6336c;--xm-ink:#77243f;--xm-ink-soft:#b06a84;--xm-surface:rgba(255,255,255,.94);--xm-solid:#fffafc;--xm-chip:rgba(255,240,245,.92);--xm-ring:rgba(214,51,108,.16);--xm-stage-ring:#ffd9e7;--xm-shadow-panel:0 24px 48px -12px rgba(43,10,24,.25),0 4px 12px rgba(43,10,24,.08);--xm-shadow-pop:0 8px 20px -6px rgba(43,10,24,.22);--xm-ease:cubic-bezier(.16,1,.3,1);--xm-spring:cubic-bezier(.34,1.56,.64,1);position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:99990;font-family:inherit;color:var(--xm-ink);-webkit-tap-highlight-color:transparent}' +
+    '#xiaomaomao{--xm-accent:#f4507e;--xm-accent-deep:#d6336c;--xm-ink:#77243f;--xm-ink-soft:#b06a84;--xm-surface:rgba(255,255,255,.94);--xm-solid:#fffafc;--xm-chip:rgba(255,240,245,.92);--xm-ring:rgba(214,51,108,.16);--xm-stage-ring:#ffd9e7;--xm-shadow-panel:0 24px 48px -12px rgba(43,10,24,.25),0 4px 12px rgba(43,10,24,.08);--xm-shadow-pop:0 8px 20px -6px rgba(43,10,24,.22);--xm-ease:cubic-bezier(.16,1,.3,1);--xm-spring:cubic-bezier(.34,1.56,.64,1);position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(112px + env(safe-area-inset-bottom,0px));z-index:60;font-family:inherit;color:var(--xm-ink);-webkit-tap-highlight-color:transparent}' +
     'html.dark #xiaomaomao{--xm-accent:#ff7096;--xm-accent-deep:#ff8fab;--xm-ink:#f7e3ea;--xm-ink-soft:#d8a7ba;--xm-surface:rgba(30,27,38,.93);--xm-solid:#1e1b26;--xm-chip:rgba(255,112,150,.13);--xm-ring:rgba(255,255,255,.10);--xm-stage-ring:rgba(255,255,255,.14);--xm-shadow-panel:0 24px 48px -12px rgba(0,0,0,.7),0 4px 12px rgba(0,0,0,.4);--xm-shadow-pop:0 8px 20px -6px rgba(0,0,0,.55)}' +
     '#xiaomaomao.xm-enter{animation:xmPop .32s var(--xm-spring)}' +
     '@keyframes xmPop{0%{transform:scale(.9) translateY(10px);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}' +
@@ -553,7 +553,7 @@
        定位（bottom:0 / bottom:100%+10px），随猫一起抬高、仍在视口内。
        区间与栏的显隐区间 [640,1024) 逐字对齐（max-width:1023px）；放在 ≤640 规则之后，
        640px 整点处以本规则为准（≤640 规则会把 bottom 写回 68px）。 */
-    '@media (min-width:640px) and (max-width:1023px){#xiaomaomao{bottom:calc(4.5rem + 18px + env(safe-area-inset-bottom,0px))}}' +
+    '@media (min-width:640px) and (max-width:1023px){#xiaomaomao{bottom:calc(112px + env(safe-area-inset-bottom,0px))}}' +
     '@media (prefers-reduced-motion: reduce){#xiaomaomao *,#xiaomaomao{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important}}';
   var style = document.createElement('style');
   style.textContent = css;

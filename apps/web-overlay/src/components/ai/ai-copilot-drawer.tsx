@@ -449,7 +449,7 @@ export function AiCopilotDrawer() {
 
   if (!isOpen) return null
 
-    // 抽屉（模态框）层级须高于小猫猫挂件根容器（z-index 99990），否则它会压住发送按钮致点击超时。
+    // 抽屉（模态框）层级须高于小猫猫挂件根容器（K1 后 z-index 60），否则它会压住发送按钮致点击超时。
   return (
     <div className="fixed inset-0 z-[100000] overflow-hidden" role="dialog" aria-modal="true" aria-label="智能导航伴侣">
       {/* 遮罩背景 */}

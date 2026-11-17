@@ -120,22 +120,27 @@ test('市场页 390px：输入聚焦时猫静默，清除 × 可点，失焦后�
   await expect(page.locator('#xiaomaomao')).not.toHaveClass(/xm-quiet/, { timeout: 5000 })
 })
 
-test('首页 390px：入场招呼气泡 5 秒内消失，之后不重出', async ({ page }) => {
+test('首页 390px：开场招呼气泡被门控跳过，不出现且文本为空，之后不重出', async ({ page }) => {
   test.setTimeout(120_000)
   await page.goto('/')
   await page.waitForLoadState('domcontentloaded')
   await waitForCat(page)
 
-  // A2-1：等招呼气泡出现后计时，5 秒内必须消失（实现是 4.5 秒定时器）
+  // A2-1（c3001 门控，fbbb0684）：850ms 自动招呼先把文案放进气泡再量——
+  // 气泡矩形与 <main> 内卡片/可点元素相交就跳过本次招呼（文本清空、不出气泡）。
+  // 390px 首页卡片满屏，气泡带正落在卡片上，门控必触发；旧断言“等气泡出现”
+  // 与新行为冲突，改为断言门控终态。实测依据：真浏览器 390×844 探针（真实
+  // xiaomaomao.js）：首页形貌下门控命中 .nav-card-glow（ix=22 iy=55），
+  // 气泡无 xm-show 且文本为空；对照页（气泡带下方无正文）则正常出现气泡。
+  // waitForCat 已等 2 秒，850ms 招呼定时器早已跑完，此处直接断言终态。
   const bubble = page.locator('#xiaomaomao .xm-bubble')
-  await expect(bubble).toHaveClass(/xm-show/, { timeout: 15_000 })
-  const seenAt = Date.now()
-  await expect(bubble).not.toHaveClass(/xm-show/, { timeout: 6000 })
-  expect(Date.now() - seenAt, '单次气泡应自出现起 5 秒内消失').toBeLessThan(5000)
+  await expect(bubble).not.toHaveClass(/xm-show/)
+  await expect(bubble).toHaveText('')
 
-  // A2-2：消失后 8 秒内不得重出（闲时 tip / 26 秒提示都被聚焦与计时门控）
+  // A2-2：跳过后 8 秒内不得重出（闲时 tip / 26 秒提示都被聚焦与计时门控）
   await page.waitForTimeout(8000)
   await expect(bubble).not.toHaveClass(/xm-show/)
+  await expect(bubble).toHaveText('')
 })
 
 test('市场页 390px：滚到底后页脚链接与回到顶部可点', async ({ page }) => {

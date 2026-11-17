@@ -168,7 +168,7 @@ export function AiPriceBookPanel() {
               <Input
                 aria-label={`第 ${index + 1} 行模型 ID`}
                 value={row.model}
-                placeholder="例如 agnes-3.0-flash"
+                placeholder="例如 deepseek-chat"
                 onChange={(e) => patchRow(index, { ...row, model: e.target.value })}
               />
               <Input

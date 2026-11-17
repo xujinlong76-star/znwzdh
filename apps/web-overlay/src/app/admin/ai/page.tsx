@@ -46,8 +46,8 @@ function emptyFallback(): FallbackForm {
   return {
     enabled: true,
     name: '备用模型',
-    baseUrl: 'https://api.agnes-ai.cn/v1',
-    model: 'agnes-3.0-flash',
+    baseUrl: '',
+    model: '',
     apiKey: '',
     timeoutMs: 20000,
     temperature: 0.2,
@@ -61,9 +61,9 @@ function emptyFallback(): FallbackForm {
 function emptyForm(): LlmFormValue {
   return {
     enabled: true,
-    name: 'Agnes 3.0 Flash',
-    baseUrl: 'https://api.agnes-ai.cn/v1',
-    model: 'agnes-3.0-flash',
+    name: '',
+    baseUrl: '',
+    model: '',
     apiKey: '',
     timeoutMs: 20000,
     temperature: 0.2,
@@ -280,7 +280,7 @@ export default function AdminAiPage() {
             AI 模型中枢与效能管理
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            统一调度 Agnes 3.0 Flash 默认模型及备用池，提供全站模型配置与实时 Token 效能遥测大盘。
+            统一调度已配置模型及备用池，提供全站模型配置与实时 Token 效能遥测大盘。
           </p>
         </div>
       </div>
@@ -312,9 +312,6 @@ export default function AdminAiPage() {
         >
           <Cpu className="h-4 w-4 text-indigo-500" />
           效能与 Token 遥测大盘
-          <Badge variant="outline" className="text-[10px] bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20">
-            Agnes 3.0 Flash
-          </Badge>
         </button>
         <button
           type="button"
@@ -556,7 +553,7 @@ export default function AdminAiPage() {
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            解析优先级：个人配置 → 系统配置 → 环境变量 → 内置默认（Agnes 3.0 Flash）。
+            解析优先级：个人配置 → 系统配置 → 环境变量 → 内置默认（未配置时降级本地）。
             关闭「启用」会让系统层显式停用（不会被环境变量复活）。
           </span>
         </div>

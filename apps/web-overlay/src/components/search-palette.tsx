@@ -2154,7 +2154,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {aiComparisonLoading && !comparisonMatrix && !aiComparisonMatrix && (
                 <div className="px-3 py-2.5 border-b bg-primary/5 flex items-center gap-2 text-xs text-primary">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>正在调取 Agnes AI 实时生成并排选型对比矩阵...</span>
+                  <span>正在调取 AI 实时生成并排选型对比矩阵...</span>
                 </div>
               )}
               {(architectureRecipe || aiRecipe) && (

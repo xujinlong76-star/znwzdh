@@ -476,7 +476,7 @@ export function SitePeekDialog({
           </div>
         )}
 
-        {/* AI 全景深度透视与收费排雷 (AI Deep Radar - Powered by Agnes 3.0 Flash) */}
+        {/* AI 全景深度透视与收费排雷 (AI Deep Radar) */}
         <div className="mt-4 p-4 rounded-xl border border-primary/25 bg-gradient-to-br from-primary/5 via-card to-background space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -485,7 +485,6 @@ export function SitePeekDialog({
               </span>
               <div>
                 <span className="text-xs font-bold text-foreground">AI 全景透视与收费排雷</span>
-                <span className="ml-2 text-[10px] text-muted-foreground font-mono">Agnes 3.0 Flash</span>
               </div>
             </div>
             {!radarLoaded && (
@@ -514,7 +513,7 @@ export function SitePeekDialog({
           {radarLoading && (
             <div className="py-3 flex items-center justify-center gap-2 text-xs text-muted-foreground animate-pulse">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              <span>正在调取 Agnes AI 深度分析站点定位与真实收费门槛...</span>
+              <span>正在调取 AI 深度分析站点定位与真实收费门槛...</span>
             </div>
           )}
 

@@ -581,7 +581,7 @@ export function AiPluginStudioModal({
                   <span>多轮对话历史 ({history.length} 轮)</span>
                   {reasoningContent && (
                     <details className="text-[10px] text-emerald-700 dark:text-emerald-400 cursor-pointer">
-                      <summary>查看 Agnes 深度思考链</summary>
+                      <summary>查看 AI 深度思考链</summary>
                       <div className="p-2 mt-1 rounded bg-muted/60 border border-border text-foreground/80 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
                         {reasoningContent}
                       </div>

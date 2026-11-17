@@ -142,7 +142,7 @@ export function LlmConfigFields({
             id="llm-name"
             value={value.name}
             disabled={disabled}
-            placeholder="Agnes 3.0 Flash"
+            placeholder="例如：DeepSeek Chat"
             onChange={(e) => set('name', e.target.value)}
           />
         </div>
@@ -152,7 +152,7 @@ export function LlmConfigFields({
             id="llm-model"
             value={value.model}
             disabled={disabled}
-            placeholder="agnes-3.0-flash"
+            placeholder="deepseek-chat"
             onChange={(e) => set('model', e.target.value)}
           />
         </div>
@@ -164,7 +164,7 @@ export function LlmConfigFields({
           id="llm-base"
           value={value.baseUrl}
           disabled={disabled}
-          placeholder="https://api.agnes-ai.cn/v1"
+          placeholder="https://api.deepseek.com/v1"
           onChange={(e) => set('baseUrl', e.target.value)}
         />
         <p className="text-xs text-muted-foreground">
@@ -270,7 +270,7 @@ export function LlmConfigFields({
         </div>
       )}
 
-      {/* 深度思考：Agnes 3.0 Flash 的 chat_template_kwargs.enable_thinking。
+      {/* 深度思考：部分 OpenAI 兼容端点的 chat_template_kwargs.enable_thinking。
           默认开（复杂任务质量优先），关掉可显著省 token 与延迟。 */}
       <label className="flex items-start gap-2 text-sm">
         <input

@@ -490,7 +490,7 @@ export default function PluginPublishPage() {
                     </div>
                     <div>
                       <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                        <span>没有现成的 JSON 清单？让 Agnes 帮你一句话生成</span>
+                        <span>没有现成的 JSON 清单？让 AI 帮你一句话生成</span>
                         <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">AI 赋能</Badge>
                       </h3>
                       <p className="text-[11px] text-muted-foreground mt-0.5">

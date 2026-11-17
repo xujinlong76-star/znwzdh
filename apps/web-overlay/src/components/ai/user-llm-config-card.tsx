@@ -37,9 +37,9 @@ const SOURCE_LABEL: Record<string, string> = {
 function defaultForm(system?: HubUserLlmConfigView['system']): LlmFormValue {
   return {
     enabled: true,
-    name: system?.name ?? 'Agnes 3.0 Flash',
-    baseUrl: 'https://api.agnes-ai.cn/v1',
-    model: system?.model ?? 'agnes-3.0-flash',
+    name: system?.name ?? '',
+    baseUrl: '',
+    model: system?.model ?? '',
     apiKey: '',
     timeoutMs: 20000,
     temperature: 0.2,

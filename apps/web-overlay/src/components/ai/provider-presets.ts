@@ -18,17 +18,6 @@ export interface ProviderPreset {
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
-    id: 'agnes-30-flash',
-    name: 'Agnes 3.0 Flash',
-    label: 'Agnes 3.0 Flash (系统推荐 / 深度思考)',
-    model: 'agnes-3.0-flash',
-    baseUrl: 'https://api.agnes-ai.cn/v1',
-    apiKeyPlaceholder: 'sk-***',
-    description: '官方推荐旗舰模型，高性价比，极速响应，支持 native 原生深度思考',
-    supportsThinking: true,
-    jsonMode: 'auto',
-  },
-  {
     id: 'deepseek-chat',
     name: 'DeepSeek Chat',
     label: 'DeepSeek (deepseek-chat / deepseek-reasoner)',

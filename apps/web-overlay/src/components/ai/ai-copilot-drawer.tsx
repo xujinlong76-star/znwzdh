@@ -314,7 +314,7 @@ export function AiCopilotDrawer() {
           // 模型编造的链接已被降级成纯文本，两者可能不同。
           content: res.reply,
           reasoningContent: res.reasoningContent,
-          // 只写中枢真正回报的模型名：以前缺省就硬编码 'agnes-3.0-flash'，
+          // 只写中枢真正回报的模型名：以前缺省就硬编码一个模型名，
           // 管理员换成别的模型后界面仍在替厂商说谎。
           model: res.model?.trim() || undefined,
           degraded: res.degraded,

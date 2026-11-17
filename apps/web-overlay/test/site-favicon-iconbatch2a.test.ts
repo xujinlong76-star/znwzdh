@@ -32,7 +32,7 @@ const CASES: Array<{ url: string; title: string; expected: string }> = [
   { url: 'https://www.infoq.cn', title: 'InfoQ', expected: '/brand-icons/infoq.svg' },
   { url: 'https://qianwen.aliyun.com', title: '通义千问', expected: '/brand-icons/qwen.svg' },
   { url: 'https://mantine.dev', title: 'Mantine', expected: '/brand-icons/mantine.svg' },
-  { url: 'https://sourcehut.org', title: 'SourceHut', expected: '/brand-icons/sourcehut.svg' },
+  { url: 'https://sourcehut.org', title: 'SourceHut', expected: '/brand-icons/sourcehut.png' },
   { url: 'https://www.coze.cn', title: 'Coze', expected: '/brand-icons/coze.svg' },
   { url: 'https://www.lintcode.com', title: 'LintCode', expected: '/brand-icons/lintcode.svg' },
 ]
@@ -53,7 +53,7 @@ const LOCAL_ASSETS = [
   'infoq.svg',
   'qwen.svg',
   'mantine.svg',
-  'sourcehut.svg',
+  'sourcehut.png',
   'coze.svg',
   'lintcode.svg',
 ]
@@ -76,7 +76,7 @@ describe('resolveSiteIcon（图标修复第二批 2a）', () => {
     // 对比度弱是已知局限，留待深色底块统一处理轮。此断言把“黑标”钉死，
     // 免得将来有人误以为这两站已是彩色标而漏掉统一处理。
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
-    for (const name of ['ollama.svg', 'sourcehut.svg']) {
+    for (const name of ['ollama.svg']) {
       const svg = readFileSync(`${dir}${name}`, 'utf8')
       expect(svg.startsWith('<svg'), name).toBe(true)
       expect(svg.includes('#000000'), name).toBe(true)

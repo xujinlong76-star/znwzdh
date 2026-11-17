@@ -16,7 +16,7 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
 
 const CASES: Array<{ url: string; title: string; expected: string }> = [
   { url: 'https://dify.ai', title: 'Dify', expected: '/brand-icons/dify.svg' },
-  { url: 'https://ant.design', title: 'Ant Design', expected: '/brand-icons/antdesign.svg' },
+  { url: 'https://ant.design', title: 'Ant Design', expected: '/brand-icons/antdesign.png' },
   { url: 'https://kubernetes.io', title: 'Kubernetes', expected: '/brand-icons/kubernetes.svg' },
   { url: 'https://spring.io/projects/spring-boot', title: 'Spring Boot', expected: '/brand-icons/springboot.svg' },
   { url: 'https://www.notion.com', title: 'Notion', expected: '/brand-icons/notion.png' },
@@ -34,7 +34,7 @@ const CASES: Array<{ url: string; title: string; expected: string }> = [
 
 const LOCAL_ASSETS = [
   'dify.svg',
-  'antdesign.svg',
+  'antdesign.png',
   'kubernetes.svg',
   'springboot.svg',
   'boardmix.jpg',

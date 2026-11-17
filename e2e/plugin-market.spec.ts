@@ -251,6 +251,9 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(page.getByRole('heading', { name: '插件市场审核管理' })).toBeVisible({ timeout: 45_000 });
     const card = page.locator('div.rounded-2xl').filter({ hasText: name }).first();
     await expect(card).toBeVisible({ timeout: 30_000 });
+    // 行内上架带原生 confirm（批 D，handleApprove）：Playwright 默认自动拒绝
+    // confirm，点了等于没点——先接管再点（与 :448 隔离步骤同 pattern）。
+    page.once('dialog', (dialog) => dialog.accept());
     await card.getByRole('button', { name: '通过并上架' }).click();
     // 瞬态 toast 在重载机器上可能晚于断言窗口出现/消失：改等持久效果——
     // 审核成功后 SWR 刷新，插件离开待审列表（冷启动慢响应同理不误判）
@@ -306,6 +309,9 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(page.getByRole('heading', { name: '插件市场审核管理' })).toBeVisible({ timeout: 45_000 });
     const pendingCard = page.locator('div.rounded-2xl').filter({ hasText: themeName }).first();
     await expect(pendingCard).toBeVisible({ timeout: 30_000 });
+    // 行内上架带原生 confirm（批 D，handleApprove）：Playwright 默认自动拒绝
+    // confirm，点了等于没点——先接管再点（与 :448 隔离步骤同 pattern）。
+    page.once('dialog', (dialog) => dialog.accept());
     await pendingCard.getByRole('button', { name: '通过并上架' }).click();
     // 瞬态 toast 在重载机器上可能晚于断言窗口出现/消失：改等持久效果——
     // 审核成功后 SWR 刷新，插件离开待审列表
@@ -600,6 +606,9 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
       await expect(quarantinedCard).toBeVisible({ timeout: 15_000 });
     });
     await expect(quarantinedCard.getByText('已隔离熔断')).toBeVisible();
+    // 「审核解封并上架」走同一 handleApprove（行内，无 skipConfirm），同样带
+    // 原生 confirm：先接管再点，否则 Playwright 自动拒绝、卡片不离队。
+    page.once('dialog', (dialog) => dialog.accept());
     await quarantinedCard.getByRole('button', { name: '审核解封并上架' }).click();
     // 瞬态 toast 同前：改等持久效果——解封后插件离开「已隔离」列表
     await expect(quarantinedCard).not.toBeVisible({ timeout: 30_000 });

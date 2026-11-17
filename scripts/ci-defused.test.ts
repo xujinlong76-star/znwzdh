@@ -175,6 +175,35 @@ describe("撤防账：读数（findDefused）", () => {
     expect(res.blocker?.label).toContain("Playwright");
   });
 
+  it("分片 2 上 quarantine-e2e 被矩阵条件跳过 ⇒ 不算撤防、不告警（U-21）", () => {
+    // ci.yml 里 quarantine-e2e 的 if: 含 matrix.shard == 1，分片 2 上它 skipped 是设计；
+    // 登记表给它标了 shard: 1，读数必须按「不适用」处理，否则每轮固定误报一条 warning。
+    const entry = entryOf("test-e2e");
+    const res = lib.findDefused({
+      entry,
+      conclusions: conclusionsOf(entry, { skip: ["quarantine-e2e"] }),
+      shard: 2,
+    });
+    expect(res.defused).toEqual([]);
+    expect(res.notApplicable.map((d) => d.id)).toEqual(["quarantine-e2e"]);
+    expect(res.blocker).toBeNull();
+    expect(res.ran).toContain("e2e");
+  });
+
+  it("分片 1 上 quarantine-e2e 被跳过 ⇒ 仍算撤防（防修过头，U-21）", () => {
+    // 分片 1 是它该跑的分片：skipped 说明上游把它挡住了，必须照旧点名。
+    // 同一份读数在分片 2 上是不适用、在分片 1 上是撤防——分片号是唯一的区分。
+    const entry = entryOf("test-e2e");
+    const res = lib.findDefused({
+      entry,
+      conclusions: conclusionsOf(entry, { skip: ["quarantine-e2e"] }),
+      shard: 1,
+    });
+    expect(res.defused.map((d) => d.id)).toEqual(["quarantine-e2e"]);
+    expect(res.notApplicable).toEqual([]);
+    expect(res.blocker?.kind).toBe("unknown");
+  });
+
   it("作业被取消 ⇒ 撤防与取消都看得见，措辞不能写成「判红」", () => {
     const entry = entryOf("test-web");
     const res = lib.findDefused({
@@ -955,6 +984,35 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
       .renderDefusedTable([{ name: "测试（SQLite 分片 1/3）", conclusion: "success", ...t }])
       .join("\n");
     expect(line).toContain("3 道门禁全部跑过（软门禁 1 道：红了不判红、也不挡路）（准备步骤 2 个在册）");
+  });
+
+  it("分片备注读得回来：分片 2 的绿账带「不适用」⇒ 厚度棘轮扣期望的那道有出处（U-21）", () => {
+    // 写侧在分片 2 上报的是「1 道门禁全部跑过（分片 2 不适用：quarantine-e2e）」——
+    // 夹具是 CLI 在 NAVHUB_MATRIX_SHARD=2 下的逐字输出形状（stdout 头行 + runner 改写后的
+    // ##[notice] 注解行），读侧丢掉括号里那句，厚度棘轮就会把分片 2 的账误判成薄 1 道。
+    const log = [
+      "2026-11-17T07:22:00.1110000Z [撤防账] test-e2e：1 道门禁全部跑过（分片 2 不适用：quarantine-e2e）｜可信度：本作业不判整前端类型——它只重建/运行前端产物、不做整前端 tsc，全量判定只在 test-web 的 web-typecheck",
+      "2026-11-17T07:22:00.1120000Z ##[notice]test-e2e 1 道门禁全部跑过（分片 2 不适用：quarantine-e2e）｜可信度：本作业不判整前端类型——它只重建/运行前端产物、不做整前端 tsc，全量判定只在 test-web 的 web-typecheck（在册准备步骤 3 个）",
+    ].join("\n");
+    const t = lib.parseDefusedTrace(log);
+    expect(t.found).toBe(true);
+    expect(t.job).toBe("test-e2e");
+    expect(t.green).toBe(true);
+    expect(t.gateTotal).toBe(1);
+    expect(t.ran).toBe(1);
+    expect(t.defused).toBe(0);
+    expect(t.envTotal).toBe(3);
+    expect(t.notApplicable).toEqual(["quarantine-e2e"]);
+    // 对照：同一形状、不带分片备注的绿账 ⇒ notApplicable 为空，旧快照行为不变
+    const plain = lib.parseDefusedTrace(
+      [
+        "2026-11-17T07:22:00.1110000Z [撤防账] test-e2e：2 道门禁全部跑过｜可信度：本作业不判整前端类型——它只重建/运行前端产物、不做整前端 tsc，全量判定只在 test-web 的 web-typecheck",
+        "2026-11-17T07:22:00.1120000Z ##[notice]test-e2e 2 道门禁全部跑过｜可信度：本作业不判整前端类型——它只重建/运行前端产物、不做整前端 tsc，全量判定只在 test-web 的 web-typecheck（在册准备步骤 3 个）",
+      ].join("\n"),
+    );
+    expect(plain.found).toBe(true);
+    expect(plain.gateTotal).toBe(2);
+    expect(plain.notApplicable).toEqual([]);
   });
 
   it("拆掉「读回软门禁数目」⇒ 绿色那行把软门禁吞掉（就是补这一条之前的形状）", async () => {

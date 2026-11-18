@@ -86,6 +86,8 @@ export default function SearchHistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  /** U-145：当前处于「已武装、待第二击确认」的那条搜索记录 id；null = 无武装 */
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
 
   // 检索过滤与零结果批量清理状态
   const [keyword, setKeyword] = useState('')
@@ -161,16 +163,28 @@ export default function SearchHistoryPage() {
   }, [identity, loadingMore, nextOffset])
 
   const removeItem = useCallback(async (id: number) => {
+    // U-145：离线快照守卫前置到武装之前——快照态点删除不武装、不静默吞第二击。
     if (!identity || offlineSnapshotAt) return
-    setDeletingId(id)
-    const ok = await deleteSearchHistoryItem(identity, id)
-    setDeletingId(null)
-    if (!ok) {
-      toast({ title: '删除失败', description: '云端暂不可用，请稍后重试', variant: 'destructive' })
+    // 第一击只武装、不调接口；第二击才执行删除（与「清空全部」confirmClear 同款两步确认）。
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id)
       return
     }
-    setItems((prev) => prev.filter((i) => i.id !== id))
-  }, [identity, offlineSnapshotAt, toast])
+    setDeletingId(id)
+    try {
+      const ok = await deleteSearchHistoryItem(identity, id)
+      if (!ok) {
+        toast({ title: '删除失败', description: '云端暂不可用，请稍后重试', variant: 'destructive' })
+        return
+      }
+      setItems((prev) => prev.filter((i) => i.id !== id))
+    } finally {
+      // 成功与失败两路都清零：失败后用户可重新两击重试；不清零则武装残留，
+      // 下一次点击会直接删除、两步确认被绕过。
+      setDeletingId(null)
+      setConfirmDeleteId(null)
+    }
+  }, [confirmDeleteId, identity, offlineSnapshotAt, toast])
 
   const clearAll = useCallback(async () => {
     if (!identity) return
@@ -350,7 +364,11 @@ export default function SearchHistoryPage() {
             key={key}
             role="tab"
             aria-selected={tab === key}
-            onClick={() => setTab(key)}
+            onClick={() => {
+              // U-145：切 tab 清武装，避免武装态跨 tab 残留。
+              setConfirmDeleteId(null)
+              setTab(key)
+            }}
             className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
               tab === key
                 ? 'border-primary/40 bg-primary/10 text-primary'
@@ -580,16 +598,31 @@ export default function SearchHistoryPage() {
                     >
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
+                    {/* U-145：两步确认。未武装是 ghost 图标按钮；已武装变 destructive + 文案「确认删除」
+                        （文案变化本身就是确认信号，不只靠颜色，与「确认清空全部」同口径）；删除进行中保持 disabled + spinner。 */}
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:bg-destructive/15 hover:text-destructive-text"
+                      variant={confirmDeleteId === item.id ? 'destructive' : 'ghost'}
+                      size={confirmDeleteId === item.id ? 'sm' : 'icon'}
+                      className={
+                        confirmDeleteId === item.id
+                          ? 'h-8 shrink-0 px-2 text-xs'
+                          : 'h-8 w-8 text-muted-foreground hover:bg-destructive/15 hover:text-destructive-text'
+                      }
                       disabled={deletingId === item.id}
                       onClick={() => void removeItem(item.id)}
-                      aria-label={`删除历史 ${item.query}`}
+                      aria-label={
+                        confirmDeleteId === item.id ? `确认删除历史 ${item.query}` : `删除历史 ${item.query}`
+                      }
+                      aria-pressed={confirmDeleteId === item.id}
+                      title={confirmDeleteId === item.id ? '确认删除' : undefined}
                     >
                       {deletingId === item.id ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : confirmDeleteId === item.id ? (
+                        <>
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                          确认删除
+                        </>
                       ) : (
                         <Trash2 className="h-3.5 w-3.5" />
                       )}

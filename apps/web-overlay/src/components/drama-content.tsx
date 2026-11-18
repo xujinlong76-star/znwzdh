@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { DramaSite } from "@/lib/drama-sites";
 import {
@@ -309,17 +310,30 @@ export function DramaContent({
         </p>
 
         <div className="mt-4 flex flex-col gap-3">
-          <label className="sr-only" htmlFor="drama-search">
-            搜剧名
-          </label>
-          <input
-            id="drama-search"
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜剧名，如「红果」「万妖图录」…"
-            className="h-11 w-full max-w-md rounded-full border border-zinc-300 bg-white px-4 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-400"
-          />
+          <div className="relative w-full max-w-md">
+            <label className="sr-only" htmlFor="drama-search">
+              搜剧名
+            </label>
+            <input
+              id="drama-search"
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜剧名，如「红果」「万妖图录」…"
+              className="h-11 w-full rounded-full border border-zinc-300 bg-white px-4 pr-11 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-400"
+            />
+            {query !== "" && (
+              <button
+                type="button"
+                aria-label="清除搜索"
+                title="清除搜索"
+                onClick={() => setQuery("")}
+                className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
           {genreOptions.length > 0 && (
             <div className="flex flex-wrap gap-2" role="group" aria-label="按题材筛选">
               <button

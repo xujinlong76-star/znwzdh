@@ -270,7 +270,7 @@ export function DramaContent({
                       target="_blank"
                       rel="noopener noreferrer"
                       className="min-w-0 truncate text-base font-semibold text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
-                      title={`${entry.title} · 在${entry.platformTitle}站内打开`}
+                      title={`去${entry.platformTitle}首页搜《${entry.title}》`}
                     >
                       {entry.title}
                     </a>

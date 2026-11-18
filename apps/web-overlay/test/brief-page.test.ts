@@ -132,10 +132,13 @@ describe('首页简报条守卫', () => {
     expect(strip).toContain('safeHref(pick.url)')
   })
 
-  it('首页在导航内容之前挂简报条', () => {
+  it('首页简报条经 todaySlots 注入导航中心（首屏不挡在导航正文上方）', () => {
     const home = read('src/app/page.tsx')
-    expect(home.indexOf('<HomeBriefStrip />')).toBeGreaterThan(-1)
-    expect(home.indexOf('<HomeBriefStrip />')).toBeLessThan(home.indexOf('<NavigationContent'))
+    const nav = home.indexOf('<NavigationContent')
+    const brief = home.indexOf('<HomeBriefStrip />')
+    expect(nav).toBeGreaterThan(-1)
+    expect(brief).toBeGreaterThan(nav)
+    expect(home.indexOf('brief: <HomeBriefStrip />')).toBeGreaterThan(-1)
   })
 })
 

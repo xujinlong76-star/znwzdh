@@ -3,8 +3,7 @@ import { NavigationContent } from "@/components/navigation-content";
 import { HomeBriefStrip } from "@/components/home-brief-strip";
 import { HomeExamStrip } from "@/components/home-exam-strip";
 import { HomeTodayZone } from "@/components/home-today-zone";
-import { HomeTodayMore } from "@/components/home-today-more";
-import { HomePluginSpotlight } from "@/components/home-plugin-spotlight";
+import { computeHomeTodayBadge } from "@/lib/home-today-summary";
 import { hubGet } from "@/lib/server/hub";
 import type { HubPluginItem } from "@/lib/navhub-api";
 import { HandoffCardWithCloud } from "@/components/handoff-card-with-cloud";
@@ -324,24 +323,31 @@ export default async function HomePage() {
     navStatus: Array.isArray(navigationItems) ? "done" : "failed",
   };
 
+  const todayBadge = computeHomeTodayBadge();
+
   return (
     <>
-      <HomeTodayZone />
-      <HomePluginSpotlight items={featuredRes ? featuredRes.items : null} />
-      <HomeTodayMore>
-        <HomeBriefStrip />
-        <HomeExamStrip />
-        <HandoffCardWithCloud />
-        <StreakBar />
-      </HomeTodayMore>
       <NavigationContent
-        navigationData={navigationData}
-        siteData={siteData}
-        directoryLinks={directoryLinks}
-        cardsPerGroup={homeCardsPerGroup()}
-        initialCategoryLimit={homeInitialSsrCategories()}
-        cinemaInitial={cinemaInitial}
-      />
+      navigationData={navigationData}
+      siteData={siteData}
+      directoryLinks={directoryLinks}
+      cardsPerGroup={homeCardsPerGroup()}
+      initialCategoryLimit={homeInitialSsrCategories()}
+      cinemaInitial={cinemaInitial}
+      pluginItems={featuredRes ? featuredRes.items : null}
+      todayBadge={todayBadge}
+      todaySlots={{
+        today: <HomeTodayZone />,
+        brief: <HomeBriefStrip />,
+        exam: <HomeExamStrip />,
+        handoff: (
+          <>
+            <HandoffCardWithCloud />
+            <StreakBar />
+          </>
+        ),
+      }}
+    />
       {origin ? (
         <>
           <JsonLd

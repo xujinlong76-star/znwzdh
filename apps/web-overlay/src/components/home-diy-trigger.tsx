@@ -54,7 +54,7 @@ function warmToolbarChunk() {
   void import('@/components/home-diy-toolbar')
 }
 
-export function HomeDIYTrigger() {
+export function HomeDIYTrigger({ hideStaticButton = false }: { hideStaticButton?: boolean } = {}) {
   const { isEditingLayout, toggleEditingLayout, storageWarning, dismissStorageWarning } = useHomeDIY()
   const [isScrollingDown, setIsScrollingDown] = useState(false)
   const lastScrollYRef = useRef(0)
@@ -121,7 +121,7 @@ export function HomeDIYTrigger() {
         </div>
       )}
 
-      {!isEditingLayout && (
+      {!isEditingLayout && !hideStaticButton && (
         // 底距三段表（与 footer / UndoBar / OfflineBanner 同款，不用 sm:）：
         // <640 抬到 MobileNav 之上；640–1024 抬到半屏下沉栏（56px）之上——此前
         // 旧的 sm: 底距（14px）让 pill 整只压在栏上，700px 时盖住栏内热度榜；
@@ -141,7 +141,7 @@ export function HomeDIYTrigger() {
             size="sm"
             onClick={toggleEditingLayout}
             className="min-h-11 px-2.5 rounded-full text-xs font-semibold gap-1.5 shadow-sm hover:shadow-md bg-background/85 dark:bg-card/85 backdrop-blur-md border border-border/80 text-foreground hover:text-primary transition-all duration-200 opacity-90 hover:opacity-100"
-            title="开启 DIY 排版与智能编排工坊 (快捷键: Ctrl/Cmd+E)"
+              title="开启 DIY 排版与智能编排工坊 (快捷键: Ctrl/Cmd+E)"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-primary" />
             <span>DIY 排版工坊</span>

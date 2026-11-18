@@ -23,7 +23,6 @@ import { GrowthTracker } from '@/components/growth/growth-tracker'
 // Component，next/dynamic 不能直接写在这里（不切 chunk；ssr: false
 // 更是构建错误），故 import 指向 'use client' 包装 homepage-banner-lazy；
 // 渲染点与位置不变，见 homepage-banner-top-guard。
-import { HomepageBanner } from '@/components/growth/homepage-banner-lazy'
 import { DENSITY_PREPAINT_SCRIPT } from '@/lib/density-bootstrap'
 import { FONT_SIZE_PREPAINT_SCRIPT } from '@/lib/font-size'
 import { ELDER_MODE_PREPAINT_SCRIPT } from '@/lib/elder-mode'
@@ -270,7 +269,6 @@ export default async function RootLayout({
               基本看不到（2026-11-15 第 72 轮核实）。组件自身只在 `/`
               且未关闭、未领取时渲染，非首页恒为 null，放这里不影响
               其他路由；它不依赖 Providers 上下文，移动无依赖风险。 */}
-          <HomepageBanner />
           <Providers site={siteView}>
             {children}
           </Providers>

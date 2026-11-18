@@ -39,16 +39,14 @@ import {
   Clapperboard,
   Newspaper,
   GraduationCap,
+  CalendarDays,
+  Puzzle,
+  SlidersHorizontal,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
-import { DensityToggle } from '@/components/density-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
-import { ElderModeToggle } from '@/components/elder-mode-toggle'
-import { SkinPicker } from '@/components/skin-picker'
-import { SceneSwitcher } from '@/components/scene-switcher'
-import { ViewModeToggle } from '@/components/view-mode-toggle'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
 import { cn } from '@/lib/utils'
 import { summarizeSelection } from '@/lib/selection'
@@ -84,6 +82,16 @@ export interface NavigationToolbarProps {
   visibleSiteCount: number
   onToggleSelectMode: () => void
   onSelectAllVisible: () => void
+  todayBadge?: {
+    todayCount: number
+    urgentCount: number
+    countdownLabel: string | null
+  }
+  pinnedWidgetCount?: number
+  onOpenTodayCenter?: () => void
+  onOpenWidgetBox?: () => void
+  onOpenAppearanceGuide?: () => void
+  onOpenAiFinder?: () => void
 }
 
 export function NavigationToolbar({
@@ -98,15 +106,82 @@ export function NavigationToolbar({
   visibleSiteCount,
   onToggleSelectMode,
   onSelectAllVisible,
+  todayBadge,
+  pinnedWidgetCount = 0,
+  onOpenTodayCenter,
+  onOpenWidgetBox,
+  onOpenAppearanceGuide,
+  onOpenAiFinder,
 }: NavigationToolbarProps) {
+  const hasTodayAlert = Boolean(todayBadge && (todayBadge.urgentCount > 0 || todayBadge.todayCount > 0))
   return (
         <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
           <div className="flex min-h-14 flex-wrap items-center justify-between gap-1.5 sm:gap-3 md:h-14 md:flex-nowrap">
-            <div className="flex-1 min-w-0 max-w-sm sm:max-w-md focus-within:max-w-2xl transition-all duration-300 ease-out">
-              {/* 山羊胡混合检索引擎 */}
-              <SearchPalette siteConfig={siteConfig} placeholder="搜索站点、标签或拼音…（按 / 快速搜索）" />
+            <div className="flex flex-1 min-w-0 max-w-md sm:max-w-xl items-center gap-1.5 transition-all duration-300 ease-out">
+              <div className="flex-1 min-w-0">
+                {/* 山羊胡混合检索引擎 */}
+                <SearchPalette siteConfig={siteConfig} placeholder="搜索站点、标签或拼音…（按 / 快速搜索）" />
+              </div>
+              {onOpenAiFinder ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onOpenAiFinder}
+                  className="hidden sm:inline-flex h-10 shrink-0 items-center gap-1 rounded-lg border-primary/30 bg-primary/8 px-2.5 text-xs font-medium text-primary hover:bg-primary/15"
+                  title="打开 AI 智能找站小窗"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>AI 找站</span>
+                </Button>
+              ) : null}
             </div>
             <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 basis-full max-w-none md:basis-auto overflow-hidden">
+              {/* 📅 今日中心小窗入口（A2：专注、考试提醒、简报、接力连胜统一收纳） */}
+              {onOpenTodayCenter ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={onOpenTodayCenter}
+                  className="relative h-11 w-11 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                  title={todayBadge?.countdownLabel ? `今日中心（${todayBadge.countdownLabel}）` : '今日中心：专注、考试提醒、简报与连胜'}
+                  aria-label="打开今日中心小窗"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  {hasTodayAlert ? (
+                    <span
+                      aria-hidden="true"
+                      className={
+                        todayBadge && todayBadge.urgentCount > 0
+                          ? 'absolute right-2 top-2 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background'
+                          : 'absolute right-2 top-2 h-2 w-2 rounded-full bg-primary ring-2 ring-background'
+                      }
+                    />
+                  ) : null}
+                </Button>
+              ) : null}
+
+              {/* 🧩 桌面小组件盒小窗入口（A3：按需小窗与角落固定微件） */}
+              {onOpenWidgetBox ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={onOpenWidgetBox}
+                  className="relative h-11 w-11 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                  title="打开桌面小组件盒（支持钉到桌面角落）"
+                  aria-label="打开桌面小组件盒"
+                >
+                  <Puzzle className="h-4 w-4" />
+                  {pinnedWidgetCount > 0 ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background"
+                    />
+                  ) : null}
+                </Button>
+              ) : null}
               {/* 发现与热度 */}
               <Button
                 asChild
@@ -366,17 +441,22 @@ export function NavigationToolbar({
               )}
 
               <div className="h-4 w-px bg-border/60 mx-1 hidden lg:block" />
-              <div className="hidden lg:inline-flex"><ViewModeToggle /></div>
-              <div className="hidden lg:inline-flex"><DensityToggle /></div>
-              {/* 字号切换全尺寸可见（A13）：目标人群（年长/视力弱）主力设备是手机，
-                  此前 hidden lg: 让移动端根本没有入口；与主题切换同排，不新增浮层不遮挡内容 */}
+              {/* 字号切换全尺寸可见（A13）：保留手机 1 键放大，不把长辈高频需求埋深 */}
               <div className="inline-flex"><FontSizeToggle /></div>
-              {/* 长辈模式与皮肤选择：与字号、明暗切换同排，都是「一眼能换」的外观入口 */}
-              <div className="inline-flex"><ElderModeToggle /></div>
-              {/* 我的场景：与皮肤/明暗同一排，工具栏不折叠它（移动端同样可达） */}
-              <div className="inline-flex"><SceneSwitcher activeWorkspace={activeWorkspace} /></div>
-              <div className="inline-flex"><SkinPicker /></div>
               <ModeToggle />
+              {onOpenAppearanceGuide ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={onOpenAppearanceGuide}
+                  className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                  title="外观排版、皮肤、DIY 与新手向导"
+                  aria-label="打开外观排版与新手向导小窗"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                </Button>
+              ) : null}
               <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />
               <Button
                 asChild

@@ -1293,9 +1293,9 @@ describe('W2：触发器在编辑态也得让存储告警露出来', () => {
     expect(trigger).toContain('if (isEditingLayout && !storageWarning) return null')
     expect(trigger).not.toContain('if (isEditingLayout) return null')
     expect(trigger).toContain('{storageWarning && (')
-    // FAB 被包进 !isEditingLayout：编辑态不渲染 FAB，但告警横幅不在这个条件里
+    // FAB 被包进 !isEditingLayout（且首页默认隐藏静息态 FAB 避免与回顶胶囊重叠，但告警横幅不在这个条件里）
     const fabIndex = trigger.indexOf('DIY 排版工坊</span>')
-    const guardIndex = trigger.lastIndexOf('{!isEditingLayout && (', fabIndex)
+    const guardIndex = trigger.lastIndexOf('{!isEditingLayout && !hideStaticButton && (', fabIndex)
     expect(guardIndex).toBeGreaterThan(-1)
   })
 })

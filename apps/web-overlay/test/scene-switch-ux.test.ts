@@ -52,16 +52,15 @@ describe('⌘K 场景匹配', () => {
 })
 
 describe('工具栏下拉接线', () => {
-  it('SceneSwitcher 挂在 SkinPicker 左侧、工具栏不折叠（移动端可达）', () => {
-    const toolbar = src('../src/components/navigation-toolbar.tsx')
-    const switcherAt = toolbar.indexOf('<SceneSwitcher')
-    const skinAt = toolbar.indexOf('<SkinPicker')
+  it('SceneSwitcher 与 SkinPicker 收拢进外观小窗，相邻并保留清晰控制布局', () => {
+    const dialog = src('../src/components/home-windows/appearance-guide-dialog.tsx')
+    const switcherAt = dialog.indexOf('<SceneSwitcher')
+    const skinAt = dialog.indexOf('<SkinPicker')
     expect(switcherAt).toBeGreaterThan(-1)
     expect(skinAt).toBeGreaterThan(-1)
     expect(switcherAt).toBeLessThan(skinAt)
-    // 包裹 SceneSwitcher 的 div 不能带 hidden（移动端入口不可达是红线）
-    const before = toolbar.slice(Math.max(0, switcherAt - 120), switcherAt)
-    expect(before).not.toMatch(/hidden\s/)
+    const toolbar = src('../src/components/navigation-toolbar.tsx')
+    expect(toolbar).toContain('onOpenAppearanceGuide')
   })
 
   it('下拉列出场景、打勾当前（aria-selected）、点一切换、三件套 toast 点名', () => {

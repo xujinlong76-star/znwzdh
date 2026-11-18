@@ -193,16 +193,14 @@ describe('接线：首页插件精选区（P2-12）', () => {
   const home = overlayFile('src/app/page.tsx')
   const spotlight = overlayFile('src/components/home-plugin-spotlight.tsx')
 
-  it('首页挂精选区：取 featured、放在 HomeTodayZone 之后、导航内容之前', () => {
-    expect(home).toContain('HomePluginSpotlight')
+  it('首页挂精选微胶囊与小窗：取 featured 后传给 NavigationContent -> HomeMicroStrip / PluginSpotlightDialog', () => {
+    const strip = overlayFile('src/components/home-micro-strip.tsx')
+    const dialog = overlayFile('src/components/home-windows/plugin-spotlight-dialog.tsx')
     expect(home).toContain("hubGet<{ items: HubPluginItem[]; total: number }>('/api/plugins?featured=true&sort=featured&limit=6', 60)")
-    expect(home).toContain('<HomePluginSpotlight items={featuredRes ? featuredRes.items : null} />')
-    const zoneAt = home.indexOf('<HomeTodayZone />')
-    const spotAt = home.indexOf('<HomePluginSpotlight')
-    const navAt = home.indexOf('<NavigationContent')
-    expect(zoneAt).toBeGreaterThan(-1)
-    expect(spotAt).toBeGreaterThan(zoneAt)
-    expect(navAt).toBeGreaterThan(spotAt)
+    expect(home).toContain('pluginItems={featuredRes ? featuredRes.items : null}')
+    expect(strip).toContain('href="/marketplace"')
+    expect(strip).toContain('MARKETPLACE_CATEGORIES_PATH')
+    expect(dialog).toContain('href="/marketplace"')
   })
 
   it('精选区有两条常驻入口：进入市场 + 按分类浏览', () => {

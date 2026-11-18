@@ -13,8 +13,11 @@ import { HalfScreenDock } from '@/components/half-screen-dock'
 import { NavigationCategorySection } from '@/components/navigation-category-section'
 import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
-import { HomeRecentVisits } from '@/components/home-recent-visits'
-import { HomeFrequentVisits } from '@/components/home-frequent-visits'
+import { HomeMicroStrip } from '@/components/home-micro-strip'
+import { HomeQuickDock } from '@/components/home-quick-dock'
+import type { HomeTodayBadgeSummary } from '@/lib/home-today-summary'
+import type { HubPluginItem } from '@/lib/navhub-api'
+import { usePinnedCornerWidgets } from '@/lib/modular/pinned-widgets-store'
 import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { buildSceneSiteIndex, registerSceneSiteIndex } from '@/lib/modular/scene-apply'
@@ -27,8 +30,26 @@ import {
   syncHiddenCategoriesFromDIY,
 } from '@/lib/modular/feature-mask-store'
 import { Footer } from '@/components/footer'
-import { OnboardingCard } from '@/components/onboarding-card'
-import { AiFinderPanel } from '@/components/ai/ai-finder-panel'
+const TodayCenterDialog = dynamic(
+  () => import('@/components/home-windows/today-center-dialog').then((m) => m.TodayCenterDialog),
+  { ssr: false, loading: () => null },
+)
+const WidgetBoxDialog = dynamic(
+  () => import('@/components/home-windows/widget-box-dialog').then((m) => m.WidgetBoxDialog),
+  { ssr: false, loading: () => null },
+)
+const PinnedCornerWidgets = dynamic(
+  () => import('@/components/home-windows/pinned-corner-widgets').then((m) => m.PinnedCornerWidgets),
+  { ssr: false, loading: () => null },
+)
+const AppearanceGuideDialog = dynamic(
+  () => import('@/components/home-windows/appearance-guide-dialog').then((m) => m.AppearanceGuideDialog),
+  { ssr: false, loading: () => null },
+)
+const AiFinderDialog = dynamic(
+  () => import('@/components/home-windows/ai-finder-dialog').then((m) => m.AiFinderDialog),
+  { ssr: false, loading: () => null },
+)
 // 拖拽 provider 边界（DRAG-2 接线）：dnd-kit 约 133KB，绝不能静态进首屏。
 // kit 在挂载后后台 import，到达前直接渲染 children；到达后包上
 // DiyDragProvider。注意：切换瞬间 grid 子树会 remount 一次——只发生
@@ -49,76 +70,6 @@ function DiyGridDragBoundary({
   return <DiyDragProvider onDragEnd={onDragEnd}>{children}</DiyDragProvider>
 }
 
-// 沉浸影院带在首屏下方且自带懒挂载：动态导入，不占首页首屏包体积（预算紧）。
-// 升级第 1 条（LCP）：原来这里是 ssr: false，首张海报要等客户端 chunk + IO +
-// JSON 三道关才出现，LCP 约 10 秒。去掉 ssr: false（默认即 SSR），配合
-// page.tsx 传下的 cinemaInitial，首张海报直接进 SSR HTML；dynamic 的代码
-// 分割照常保留，骨架 loading 留给客户端路由切换时占位。
-const HomeDramaCinema = dynamic(
-  () => import('@/components/home-drama-cinema').then((m) => m.HomeDramaCinema),
-  {
-    /**
-     * 等高骨架（Lighthouse Wave 1 CLS 修复）：影院区 chunk 晚到时先占满真实高度，
-     * 落进再换真内容，整页不上下跳（旧版无 loading 占位，733px 级下推落在另一
-     * 个 CLS 窗口）。骨架与真实结构逐项对齐——Playwright 实测生产构建：
-     * 标题行 28px、aside 371px、总高移动 936px / 桌面 619px，海报用同款
-     * aspect-[440/784]，横幅用同款 aspect-[1000/561]。
-     * 2026-11-13 加「继续追」行：骨架同结构加一行占位（卡片 h-20 与真卡同高，
-     * 真卡 p-3 + h-8 行 + mt-2 + text-xs 行 = 80px），总高数字是加行前的，
-     * 待 Playwright 重测后更新——不要凭估算改写实测数。
-     * 改 home-drama-cinema.tsx 的结构时必须同步改这里，否则骨架与真身不等高。
-     */
-    loading: () => (
-      <section aria-hidden className="mt-8 overflow-hidden rounded-3xl bg-zinc-950 text-zinc-100 shadow-xl">
-        <div className="flex items-center justify-between px-4 pt-4 sm:px-6">
-          <div className="h-7 w-44 rounded-md bg-white/10 animate-pulse" />
-          <div className="hidden items-center gap-4 sm:flex">
-            <div className="h-5 w-16 rounded-md bg-white/10 animate-pulse" />
-            <div className="h-5 w-24 rounded-md bg-white/10 animate-pulse" />
-          </div>
-        </div>
-        <div className="px-4 pt-3 sm:px-6">
-          <div className="flex items-center gap-3 overflow-x-auto pb-1">
-            <div className="h-5 w-14 shrink-0 rounded bg-white/10 animate-pulse" />
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-20 w-56 shrink-0 rounded-2xl bg-white/10 animate-pulse" />
-            ))}
-            <div className="h-20 w-24 shrink-0 rounded-2xl bg-white/10 animate-pulse" />
-          </div>
-        </div>
-        <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_300px]">
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="aspect-[440/784] w-36 shrink-0 rounded-2xl bg-white/10 animate-pulse sm:w-44"
-              />
-            ))}
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="h-5 w-28 rounded bg-white/10 animate-pulse" />
-            <div className="mt-3 space-y-2">
-              {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-                <div key={i} className="h-6 w-full rounded bg-white/10 animate-pulse" />
-              ))}
-            </div>
-            <div className="mt-3 border-t border-white/10 pt-2">
-              <div className="h-10 w-full rounded bg-white/10 animate-pulse" />
-            </div>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3 px-4 pb-4 sm:px-6 sm:pb-6 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="aspect-[1000/561] w-full rounded-2xl bg-white/10 animate-pulse"
-            />
-          ))}
-        </div>
-      </section>
-    ),
-  },
-)
 import { useOverlayBehavior } from '@/components/ui/overlay'
 import {
   normalizeSettings,
@@ -133,30 +84,6 @@ import { FloatingQuickNav } from '@/components/floating-quick-nav'
 const ModularCanvas = dynamic(
   () => import('@/components/modular/modular-canvas').then((m) => m.ModularCanvas),
   { ssr: false }
-)
-const HomeHeroDeck = dynamic(
-  () => import('@/components/home-hero-deck').then((m) => m.HomeHeroDeck),
-  {
-    ssr: false,
-    /**
-     * 同高骨架。展板默认展开（4 张 min-h-[160px] 卡片 + 标题条），
-     * 没有占位时首帧分类区贴顶、水合后整页下移约 200px——用户点到的
-     * 可能是「刚被推下去」的另一张卡。骨架尺寸与真实展板对齐，不产生 CLS。
-     */
-    loading: () => (
-      <div className="mb-6 sm:mb-8 space-y-3" aria-hidden>
-        <div className="h-5 w-40 rounded-md bg-muted/60 animate-pulse" />
-        <div className="grid grid-cols-12 gap-3">
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="col-span-12 sm:col-span-6 lg:col-span-3 min-h-[160px] rounded-2xl border border-border/60 bg-muted/30 animate-pulse"
-            />
-          ))}
-        </div>
-      </div>
-    ),
-  }
 )
 const KeyboardShortcutsDialog = dynamic(
   () => import('@/components/keyboard-shortcuts-dialog').then((m) => m.KeyboardShortcutsDialog),
@@ -185,7 +112,6 @@ const BatchOperationDock = dynamic(
   () => import('@/components/batch-operation-dock').then((m) => m.BatchOperationDock),
   { ssr: false }
 )
-import { SpeedDialDock } from '@/components/speed-dial-dock'
 import { Button } from '@/registry/new-york/ui/button'
 
 import { Eye, EyeOff, RotateCcw, Trash2 } from 'lucide-react'
@@ -249,11 +175,20 @@ interface NavigationContentProps {
    */
   initialCategoryLimit?: number
   /**
-   * 影院区首屏初始数据（升级第 1 条：LCP）——服务端在 page.tsx 算好：首张海报
-   * （drama-media.json 的 posters[0]）+ 短剧榜单 + AI 工具站数 + 导航状态。
-   * 缺席时影院组件走老路（客户端 IO 触发后自行 fetch），不强制依赖服务端。
+   * 影院区首屏初始数据（page.tsx 传给短剧微胶囊 + 迷你剧场小窗）
    */
   cinemaInitial?: CinemaInitialData
+  /** 插件精选微胶囊与小窗数据 */
+  pluginItems?: HubPluginItem[] | null
+  /** 顶栏「📅 今日」角标摘要 */
+  todayBadge?: HomeTodayBadgeSummary
+  /** 今日中心小窗 4 个服务端渲染内容槽位 */
+  todaySlots?: {
+    today: ReactNode
+    brief: ReactNode
+    exam: ReactNode
+    handoff: ReactNode
+  }
 }
 
 /**
@@ -301,9 +236,29 @@ export function NavigationContent({
   cardsPerGroup = 0,
   initialCategoryLimit = 0,
   cinemaInitial,
+  pluginItems = null,
+  todayBadge,
+  todaySlots,
 }: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [todayOpen, setTodayOpen] = useState(false)
+  const [widgetBoxOpen, setWidgetBoxOpen] = useState(false)
+  const [appearanceOpen, setAppearanceOpen] = useState(false)
+  const [appearanceTab, setAppearanceTab] = useState<'appearance' | 'guide'>('appearance')
+  const [toolbarAiOpen, setToolbarAiOpen] = useState(false)
+  const [sceneParam, setSceneParam] = useState<string | null>(null)
+  const { mounted: pinnedMounted, pinned: pinnedCornerWidgets } = usePinnedCornerWidgets()
+
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search)
+      const sc = sp.get('scene')
+      if (sc) setSceneParam(sc)
+    } catch {
+      // 忽略异常 URL 查询参数解析
+    }
+  }, [])
   // 抽屉的公共行为：Esc 关、点遮罩关、锁背景滚动、焦点圈养与还原、role=dialog
   const { containerProps, scrimProps } = useOverlayBehavior({
     open: isSidebarOpen,
@@ -1128,6 +1083,15 @@ export function NavigationContent({
           visibleSiteCount={visibleSites.length}
           onToggleSelectMode={toggleSelectMode}
           onSelectAllVisible={selectAllVisible}
+          todayBadge={todayBadge}
+          pinnedWidgetCount={pinnedMounted ? pinnedCornerWidgets.length : 0}
+          onOpenTodayCenter={() => setTodayOpen(true)}
+          onOpenWidgetBox={() => setWidgetBoxOpen(true)}
+          onOpenAppearanceGuide={() => {
+            setAppearanceTab('appearance')
+            setAppearanceOpen(true)
+          }}
+          onOpenAiFinder={() => setToolbarAiOpen(true)}
         />
 
         {/* 半屏下沉栏（Batch 3 第 12 项）：挂在这里而非工具栏内——工具栏没有
@@ -1254,7 +1218,7 @@ export function NavigationContent({
           <header
             data-feature-id="mod:hero-header"
             className={cn(
-              "mb-4 sm:mb-6 relative",
+              "mb-2 flex flex-wrap items-baseline justify-between gap-2 relative",
               isModuleHidden('mod:hero-header') && "hidden",
               isEditingLayout && "p-3 rounded-xl border border-dashed border-primary/40 bg-primary/5"
             )}
@@ -1280,55 +1244,32 @@ export function NavigationContent({
                 <span>－ 移除横幅</span>
               </button>
             )}
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
-              {siteData.basic.title}
-            </h1>
-            <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
-              {homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
-            </p>
-          </header>
-          {/* 可编排板块（后台「站点设置 → 公告与功能」控制开关与顺序；
-              个人隐藏再叠加一层）：按 home.order 渲染，全站关或个人隐藏的直接跳过 */}
-          {viewMode !== 'workbench' &&
-            homeControl.home.order.map((sectionKey) => {
-              if (!sectionOn(sectionKey)) return null
-              if (sectionKey === 'aiFinder') {
-                /* AI 智能找站：首屏显眼入口，一句话直达站内站点卡片（服务端保证只出站内收录） */
-                return <AiFinderPanel key={sectionKey} />
-              }
-              if (sectionKey === 'dramaCinema') {
-                /* 沉浸影院（设计稿 E 落地）：短剧海报横滑 + 热播榜 + 分类横幅，懒挂载取数 */
-                return <HomeDramaCinema key={sectionKey} initial={cinemaInitial} />
-              }
-              /* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */
-              if (isModuleHidden('mod:onboarding-card')) return null
-              return (
-            <div key={sectionKey} data-feature-id="mod:onboarding-card" className="relative">
-              {isEditingLayout && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    removeFeature({
-                      id: 'mod:onboarding-card',
-                      level: 'L1_MODULE',
-                      title: '首屏快捷键与定制引导横幅',
-                      parentTitle: 'L1 全局功能组件',
-                    })
-                    toast({
-                      title: '已移除「首屏快捷键与定制引导横幅」',
-                      description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
-                    })
-                  }}
-                  className="mb-1 ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
-                >
-                  <EyeOff className="w-3 h-3" />
-                  <span>－ 移除引导条</span>
-                </button>
-              )}
-              <OnboardingCard />
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground">
+                {siteData.basic.title}
+              </h1>
+              <p className="hidden sm:inline text-xs text-muted-foreground">
+                {homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
+              </p>
             </div>
-              )
-            })}
+          </header>
+
+          {/* 首页功能微胶囊行（A1 + A4）：单行保留短剧 / AI 找站 / 插件精选 / 新手向导小窗入口 */}
+          {viewMode !== 'workbench' ? (
+            <HomeMicroStrip
+              cinemaInitial={cinemaInitial}
+              pluginItems={pluginItems}
+              showDramaCapsule={sectionOn('dramaCinema')}
+              showAiCapsule={sectionOn('aiFinder')}
+              showGuideBadge={!isModuleHidden('mod:onboarding-card')}
+              initialSceneParam={sceneParam}
+              onOpenGuideTab={() => {
+                setAppearanceTab('guide')
+                setAppearanceOpen(true)
+              }}
+            />
+          ) : null}
+
           {viewMode === 'workbench' ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-1">
@@ -1346,91 +1287,16 @@ export function NavigationContent({
             </div>
           ) : (
             <>
-              {/* 首屏极速启动 Bento 展板（多引擎聚合搜索 + 星标/收藏坞 + 时钟 + 快捷工具） */}
-              {viewMode === 'hybrid' ? (
-                <>
-                  {!isModuleHidden('mod:hero-deck') && sectionOn('heroDeck') && (
-                    <div data-feature-id="mod:hero-deck" className="relative">
-                      {isEditingLayout && (
-                        <div className="mb-1.5 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              removeFeature({
-                                id: 'mod:hero-deck',
-                                level: 'L1_MODULE',
-                                title: '极速启动展板（多引擎聚合搜索 / 时钟 / 收藏足迹）',
-                                parentTitle: 'L1 全局功能组件',
-                              })
-                              toast({
-                                title: '已移除「极速启动展板」',
-                                description: '首屏已直接吸附至下方模块；按 Ctrl/Cmd+Z 可立即撤销。',
-                              })
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
-                          >
-                            <EyeOff className="w-3 h-3" />
-                            <span>－ 移除极速启动展板</span>
-                          </button>
-                        </div>
-                      )}
-                      <HomeHeroDeck />
-                    </div>
-                  )}
-                  {!isModuleHidden('mod:speed-dial') && (
-                    <div data-feature-id="mod:speed-dial" className="relative">
-                      {isEditingLayout && (
-                        <div className="mb-1.5 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              removeFeature({
-                                id: 'mod:speed-dial',
-                                level: 'L1_MODULE',
-                                title: '⚡ 高频极速直达坞 Top 9',
-                                parentTitle: 'L1 全局功能组件',
-                              })
-                              toast({
-                                title: '已移除「⚡ 高频极速直达坞 Top 9」',
-                                description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
-                              })
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
-                          >
-                            <EyeOff className="w-3 h-3" />
-                            <span>－ 移除高频直达坞</span>
-                          </button>
-                        </div>
-                      )}
-                      <SpeedDialDock
-                        allSites={visibleSites}
-                        activeWorkspace={activeWorkspace}
-                        onPeek={openPeek}
-                        dialDigitById={mounted ? dialMap.digitById : undefined}
-                      />
-                    </div>
-                  )}
-                </>
-              ) : (
-                !isModuleHidden('mod:speed-dial') && (
-                  <div data-feature-id="mod:speed-dial" className="relative">
-                    <SpeedDialDock
-                      allSites={visibleSites}
-                      activeWorkspace={activeWorkspace}
-                      onPeek={openPeek}
-                      dialDigitById={mounted ? dialMap.digitById : undefined}
-                    />
-                  </div>
-                )
+              {/* 三合一单行高频直达坞（A4：合并 SpeedDialDock / 常用 / 最近访问） */}
+              {!isModuleHidden('mod:speed-dial') && (
+                <div data-feature-id="mod:speed-dial" className="relative">
+                  <HomeQuickDock
+                    allSites={visibleSites}
+                    activeWorkspace={activeWorkspace}
+                    dialDigitById={mounted ? dialMap.digitById : undefined}
+                  />
+                </div>
               )}
-
-              {/* 最近访问行（升级第 5 条）：hero 与第一个分类区之间；组件挂载后
-                  才读本机快照，SSR 首帧不渲染，空清单时整行不存在。 */}
-              <HomeRecentVisits />
-
-              {/* 我的常用行（纯频次展示）：最近访问行之后、分类网格之前；
-                  与最近访问行同一模式：挂载后读本机快照，空清单整行不渲染。 */}
-              <HomeFrequentVisits />
 
               <DiyGridDragBoundary kit={dragKit} onDragEnd={handleCategoryDragEnd}>
               <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">
@@ -1616,7 +1482,7 @@ export function NavigationContent({
         */}
         {!isFeatureHidden('feat:diy-fab') && (
           <div data-feature-id="feat:diy-fab">
-            <HomeDIYTrigger />
+            <HomeDIYTrigger hideStaticButton />
           </div>
         )}
         {isEditingLayout && (
@@ -1711,6 +1577,46 @@ export function NavigationContent({
             onBatchDeleteFromCustomCategories={handleBatchRemoveFromCustomCategories}
           />
         )}
+
+        {/* 按需小窗口弹出层：全部动态懒加载，零首屏占高与体积膨胀 */}
+        {todayOpen && todaySlots ? (
+          <TodayCenterDialog
+            open={todayOpen}
+            onOpenChange={setTodayOpen}
+            todayContent={todaySlots.today}
+            briefContent={todaySlots.brief}
+            examContent={todaySlots.exam}
+            handoffContent={todaySlots.handoff}
+            countdownLabel={todayBadge?.countdownLabel}
+            todayCount={todayBadge?.todayCount}
+          />
+        ) : null}
+
+        {widgetBoxOpen ? (
+          <WidgetBoxDialog
+            open={widgetBoxOpen}
+            onOpenChange={setWidgetBoxOpen}
+          />
+        ) : null}
+
+        {appearanceOpen ? (
+          <AppearanceGuideDialog
+            open={appearanceOpen}
+            onOpenChange={setAppearanceOpen}
+            defaultTab={appearanceTab}
+          />
+        ) : null}
+
+        {toolbarAiOpen ? (
+          <AiFinderDialog
+            open={toolbarAiOpen}
+            onOpenChange={setToolbarAiOpen}
+          />
+        ) : null}
+
+        {pinnedMounted && pinnedCornerWidgets.length > 0 ? (
+          <PinnedCornerWidgets />
+        ) : null}
 
         {/* 自定义站点录入弹窗（懒加载：Radix Dialog 约 144 KB 不再进首屏） */}
         <AddSiteDialog

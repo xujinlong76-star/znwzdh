@@ -20,3 +20,14 @@
 # 或本仓不再有并行会话，再考虑一次性 renormalize。
 *.mjs text eol=lf
 *.mts text eol=lf
+
+# 2026-11-18 治本补充：git 存储已全部为 LF（实测 0 个 CRLF blob，上文「89 个 CRLF
+# 存储」的前提已失效）。对全部文本文件强制 eol=lf，让 checkout / reset / cherry-pick
+# 都不再把工作树污染成 CRLF——此前每次 git 操作后源码守卫测试（用 \n 字面量匹配
+# 源码）与 SVG 字节钉死测试（md5+字节数）集体变红，根因即 core.autocrlf=true 在
+# Windows 上把 LF 转 CRLF。Windows 批处理/PowerShell 脚本保留 CRLF（LF 会让
+# cmd.exe 解析异常），显式例外。
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

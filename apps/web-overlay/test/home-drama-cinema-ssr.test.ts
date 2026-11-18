@@ -175,17 +175,18 @@ describe('服务端读取：getFirstDramaPoster 真读到 public/drama-media.jso
 })
 
 describe('接线守卫：SSR 开关与服务端传参真的在代码里', () => {
-  it('navigation-content 不再对影院区用 ssr: false，且把 initial 传下去', () => {
-    const src = readSrc('src/components/navigation-content.tsx')
-    expect(src, 'navigation-content.tsx 读不到').not.toBeNull()
-    // 只看影院区自己的 dynamic 块（文件里其它懒加载组件仍可合法地用 ssr: false，
-    // 全文件断言会误杀；块首到 loading 之间就是该 dynamic 的选项对象）。
-    const start = src!.indexOf('const HomeDramaCinema = dynamic(')
-    expect(start).toBeGreaterThan(-1)
-    const block = src!.slice(start, src!.indexOf('loading: () =>', start))
-    expect(block).not.toContain('ssr: false')
-    expect(src).toContain('initial={cinemaInitial}')
-    expect(src).toContain('cinemaInitial?: CinemaInitialData')
+  it('首页极简胶囊与迷你剧场小窗保留 cinemaInitial 服务端直传，避免首帧闪空', () => {
+    const navSrc = readSrc('src/components/navigation-content.tsx')
+    const stripSrc = readSrc('src/components/home-micro-strip.tsx')
+    const dialogSrc = readSrc('src/components/home-windows/drama-mini-dialog.tsx')
+    expect(navSrc).not.toBeNull()
+    expect(stripSrc).not.toBeNull()
+    expect(dialogSrc).not.toBeNull()
+    expect(navSrc).toContain('cinemaInitial?: CinemaInitialData')
+    expect(navSrc).toContain('cinemaInitial={cinemaInitial}')
+    expect(stripSrc).toContain('cinemaInitial?: CinemaInitialData')
+    expect(stripSrc).toContain('initial={cinemaInitial}')
+    expect(dialogSrc).toContain('<HomeDramaCinema initial={initial} />')
   })
 
   it('page.tsx 在服务端算 cinemaInitial（读首张海报 + 算榜单），并传给 NavigationContent', () => {

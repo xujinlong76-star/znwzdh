@@ -56,13 +56,13 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     // P1 #10（2026-11-13）：36px 标准升级为 44px，h-9 w-9 亦属回退
     expect(src, "仍有 h-9 w-9（36px < 44px）").not.toContain("h-9 w-9");
     const h11 = src.split("h-11 w-11").length - 1;
-    expect(h11, "8 个 icon 按钮应全部是 h-11 w-11").toBe(8);
+    expect(h11, "11 个 icon 按钮应全部是 h-11 w-11").toBe(11);
   });
 
   it("每个 size=\"icon\" 按钮块内都有 aria-label（asChild 挂内层 Link 也算）", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
     const parts = src.split('size="icon"');
-    expect(parts.length - 1, "应有 8 个 icon 按钮").toBe(8);
+    expect(parts.length - 1, "应有 11 个 icon 按钮").toBe(11);
     for (let i = 1; i < parts.length; i++) {
       // 从 size="icon" 起，到对应 </Button> 为止的块（JSX 块最大 ~40 行）
       const block = parts[i].slice(0, 2000);

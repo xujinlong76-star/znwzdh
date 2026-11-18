@@ -46,15 +46,15 @@ function hasImport(src: string, path: string): boolean {
 }
 
 describe('接线：首页与 /me/history 复用同一云端外壳', () => {
-  it('首页在 <HomeBriefStrip /> 下、<NavigationContent /> 上挂 <HandoffCardWithCloud />', () => {
+  it('首页经 todaySlots 将 <HandoffCardWithCloud /> 挂载于今日中心小窗（紧接简报条）', () => {
     expect(hasImport(homePage, '@/components/handoff-card-with-cloud')).toBe(true)
     expect(homePage).toContain('<HandoffCardWithCloud />')
     const briefAt = homePage.indexOf('<HomeBriefStrip />')
     const cardAt = homePage.indexOf('<HandoffCardWithCloud />')
     const navAt = homePage.indexOf('<NavigationContent')
-    expect(briefAt).toBeGreaterThan(-1)
+    expect(navAt).toBeGreaterThan(-1)
+    expect(briefAt).toBeGreaterThan(navAt)
     expect(cardAt).toBeGreaterThan(briefAt)
-    expect(navAt).toBeGreaterThan(cardAt)
   })
 
   it('/me/history 页顶部复用同一外壳，且不展示「还有 N 条」回链', () => {

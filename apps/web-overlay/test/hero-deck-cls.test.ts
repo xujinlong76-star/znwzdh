@@ -19,29 +19,21 @@ function overlaySource(rel: string): string {
   return readFileSync(hit, "utf8");
 }
 
-describe("首屏展板必须有同高骨架", () => {
-  it("HomeHeroDeck 的 dynamic 配置带 loading 占位", () => {
+describe("首屏展板已小窗化：必须按需懒加载，零首屏水合跳动", () => {
+  it("WidgetBoxDialog 与 PinnedCornerWidgets 均为 ssr: false 按需懒加载", () => {
     const src = overlaySource("src/components/navigation-content.tsx");
-    const start = src.indexOf("const HomeHeroDeck = dynamic(");
-    expect(start).toBeGreaterThan(-1);
-    const block = src.slice(start, src.indexOf("\n)", start) + 2);
-    expect(block).toContain("loading: () =>");
-    // 骨架高度要与真实卡片对齐，否则「有骨架也照样跳」
-    expect(block).toContain("min-h-[160px]");
+    expect(src).not.toContain("<HomeHeroDeck />");
+    for (const sym of ["const WidgetBoxDialog = dynamic(", "const PinnedCornerWidgets = dynamic("]) {
+      const start = src.indexOf(sym);
+      expect(start, `缺少 ${sym}`).toBeGreaterThan(-1);
+      const block = src.slice(start, src.indexOf("\n)", start) + 2);
+      expect(block).toContain("ssr: false");
+    }
   });
 
-  /**
-   * 位置不变量（2026-11-08 Task 1 架构级调整）：展板提至首屏顶部（分类正文之前）。
-   *
-   * 极速启动展板（多引擎聚合搜索 + 星标/收藏坞 + 时钟 + 快捷工具）是首屏即插即用的
-   * Bento 英雄坞，挂载于首屏顶部，分类正文之前。
-   */
-  it("展板挂载点位于首屏顶部（分类正文之前）", () => {
+  it("桌面角落浮窗仅在用户主动固定后按需挂载（避免零缓存首屏堆叠与 CLS）", () => {
     const src = overlaySource("src/components/navigation-content.tsx");
-    const sections = src.indexOf("<NavigationCategorySection");
-    const deck = src.indexOf("<HomeHeroDeck />");
-    expect(sections).toBeGreaterThan(-1);
-    expect(deck).toBeGreaterThan(-1);
-    expect(deck).toBeLessThan(sections);
+    expect(src).toContain("pinnedMounted && pinnedCornerWidgets.length > 0");
+    expect(src).toContain("<PinnedCornerWidgets />");
   });
 });

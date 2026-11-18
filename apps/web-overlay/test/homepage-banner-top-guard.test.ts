@@ -35,46 +35,38 @@ const read = (rel: string) => readFileSync(resolve(ROOT, rel), 'utf8')
 const LAYOUT = 'src/app/layout.tsx'
 const BANNER = 'src/components/growth/homepage-banner.tsx'
 const BANNER_TAG = '<HomepageBanner />'
+const GUIDE_DIALOG = 'src/components/home-windows/appearance-guide-dialog.tsx'
+const MICRO_STRIP = 'src/components/home-micro-strip.tsx'
 
-describe('首页「设为首页」引导条在顶部（layout 位置守卫）', () => {
-  it('layout 里横幅有且仅有一处渲染点', () => {
+describe('首页「设为首页」引导已收拢进向导小窗（不再 fixed top-0 遮挡正文）', () => {
+  it('layout 不再顶部固定渲染遮挡正文的 <HomepageBanner />', () => {
     const src = read(LAYOUT)
-    // 注意（第 75 轮改写原因）：横幅改走客户端动态边界，layout 的 import
-    // 目标从 '@/components/growth/homepage-banner' 换成
-    // '@/components/growth/homepage-banner-lazy'；渲染点 <HomepageBanner />
-    // 与位置断言不变，锁死点仍是“一处渲染点”。
-    expect(src).toContain("import { HomepageBanner } from '@/components/growth/homepage-banner-lazy'")
+    expect(src).not.toContain(BANNER_TAG)
+    expect(src).not.toContain("from '@/components/growth/homepage-banner-lazy'")
     expect(src).not.toContain("from '@/components/growth/homepage-banner'")
-    const hits = src.split(BANNER_TAG).length - 1
-    expect(hits).toBe(1)
   })
 
-  it('横幅渲染在 skip-link 与公告栏之后', () => {
-    const src = read(LAYOUT)
-    const banner = src.indexOf(BANNER_TAG)
-    expect(banner).toBeGreaterThan(src.indexOf('skip-to-content'))
-    expect(banner).toBeGreaterThan(src.indexOf('<AnnouncementBar'))
+  it('AppearanceGuideDialog 懒加载小窗承接设为首页引导与 +100 经验奖励，走 growth-lazy 门面', () => {
+    const src = read(GUIDE_DIALOG)
+    expect(src).toContain('HOMEPAGE_BANNER_DISMISSED_KEY')
+    expect(src).toContain('HOMEPAGE_CLAIM_XP')
+    expect(src).toContain('claimHomepageAction')
+    expect(src).toContain("from '@/lib/growth-lazy'")
+    expect(src).not.toContain("from '@/lib/growth'")
   })
 
-  it('横幅渲染在 <Providers> 与 {children} 之前，即主内容与页脚之前', () => {
-    const src = read(LAYOUT)
-    const banner = src.indexOf(BANNER_TAG)
-    expect(banner).toBeGreaterThan(-1)
-    expect(banner).toBeLessThan(src.indexOf('<Providers'))
-    // 注意：`{children}` 也出现在函数签名解构处（`RootLayout({ children })`），
-    // 须从 <Providers> 之后找 JSX 里的 {children} 才有意义。
-    expect(banner).toBeLessThan(src.indexOf('{children}', src.indexOf('<Providers')))
-    // 顺带锁住：横幅不在底部导航 / 离线提示 / Toaster 之后。
-    expect(banner).toBeLessThan(src.indexOf('<MobileNav />'))
-    expect(banner).toBeLessThan(src.indexOf('<OfflineBanner />'))
-    expect(banner).toBeLessThan(src.indexOf('<Toaster />'))
+  it('HomeMicroStrip 保留轻量非阻断徽章直达向导小窗，且已领取后自动退场', () => {
+    const src = read(MICRO_STRIP)
+    expect(src).toContain('HOMEPAGE_BANNER_DISMISSED_KEY')
+    expect(src).toContain('向导与设首页')
   })
 
-  it('横幅仍在 ThemeProvider 内，主题上下文不变', () => {
+  it('layout 主题与 Providers 结构仍保持完整', () => {
     const src = read(LAYOUT)
-    const banner = src.indexOf(BANNER_TAG)
-    expect(banner).toBeGreaterThan(src.indexOf('<ThemeProvider'))
-    expect(banner).toBeLessThan(src.indexOf('</ThemeProvider>'))
+    expect(src).toContain('skip-to-content')
+    expect(src).toContain('<AnnouncementBar')
+    expect(src).toContain('<Providers')
+    expect(src).toContain('<ThemeProvider')
   })
 })
 

@@ -193,11 +193,11 @@ describe('A7 源码守卫：不新增第三条带，page.tsx 挂载不动', () =
     expect(page).not.toContain('HomeTodayBanner')
   })
 
-  it('page.tsx 今日区到折叠区收尾之间仍是原有四条内容，不新增组件', () => {
-    const zone = page.indexOf('<HomeTodayZone />')
-    const moreClose = page.indexOf('</HomeTodayMore>')
-    const block = page.slice(zone, moreClose)
-    expect(block).toContain('<HomePluginSpotlight')
+  it('page.tsx todaySlots 收纳原有四条内容，不额外在正文上方堆叠条带', () => {
+    const slots = page.indexOf('todaySlots={{')
+    const endSlots = page.indexOf('}}', slots)
+    const block = page.slice(slots, endSlots)
+    expect(block).toContain('<HomeTodayZone />')
     expect(block).toContain('<HomeBriefStrip />')
     expect(block).toContain('<HomeExamStrip />')
     expect(block).toContain('<HandoffCardWithCloud />')

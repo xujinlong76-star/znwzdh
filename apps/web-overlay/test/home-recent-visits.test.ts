@@ -154,21 +154,23 @@ describe('SSR 半：容器首帧不渲染该行（无 hydration 风险）', () =
 })
 
 describe('接线守卫：首页真的在 hero 与分类网格之间挂了该行', () => {
-  it('navigation-content 在速览坞之后、分类网格之前渲染 <HomeRecentVisits />', () => {
+  it('navigation-content 通过三合一 HomeQuickDock 在工作台之后、分类网格之前呈现最近访问', () => {
     const src = readSrc('src/components/navigation-content.tsx')
+    const dockSrc = readSrc('src/components/home-quick-dock.tsx')
     expect(src, 'navigation-content.tsx 读不到').not.toBeNull()
+    expect(dockSrc, 'home-quick-dock.tsx 读不到').not.toBeNull()
     expect(src).toContain(
-      "import { HomeRecentVisits } from '@/components/home-recent-visits'",
+      "import { HomeQuickDock } from '@/components/home-quick-dock'",
     )
-    expect(src).toContain('<HomeRecentVisits />')
-    const rowAt = src!.indexOf('<HomeRecentVisits />')
-    const dockAt = src!.indexOf("mod:speed-dial")
+    expect(src).toContain('<HomeQuickDock')
+    const rowAt = src!.indexOf('<HomeQuickDock')
+    const dockAt = src!.indexOf('mod:speed-dial')
     const gridAt = src!.indexOf('<DiyGridDragBoundary')
     expect(rowAt).toBeGreaterThan(dockAt)
     expect(rowAt).toBeLessThan(gridAt)
-    // 不在工作台分支里：工作台只渲染 ModularCanvas
     const workbenchAt = src!.indexOf("viewMode === 'workbench'")
     expect(rowAt).toBeGreaterThan(workbenchAt)
+    expect(dockSrc).toContain('readOfflineVisits(OFFLINE_RECENT_LIMIT)')
   })
 
   it('容器在 useEffect 里读 readOfflineVisits(6)，取数后才 setState', () => {

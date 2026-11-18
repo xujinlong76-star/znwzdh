@@ -312,6 +312,12 @@ export function claimPwaInstallAction(): void {
   })
 }
 
+export function claimHomepageAction(): void {
+  withGrowth((m) => {
+    m.claimHomepage()
+  })
+}
+
 export function markMemberSeenAction(seen: boolean): void {
   withGrowth((m) => {
     m.markMemberSeenAction(seen)

@@ -125,21 +125,21 @@ describe('SSR 半：容器首帧不渲染该行（无 hydration 风险）', () =
 })
 
 describe('接线守卫：首页在最近访问行之后、分类网格之前挂了该行', () => {
-  it('navigation-content 在 <HomeRecentVisits /> 之后、分类网格之前渲染 <HomeFrequentVisits />', () => {
+  it('navigation-content 通过三合一 HomeQuickDock（含 topFrequentVisits）在分类网格之前呈现常用直达', () => {
     const src = readSrc('src/components/navigation-content.tsx')
+    const dockSrc = readSrc('src/components/home-quick-dock.tsx')
     expect(src, 'navigation-content.tsx 读不到').not.toBeNull()
+    expect(dockSrc, 'home-quick-dock.tsx 读不到').not.toBeNull()
     expect(src).toContain(
-      "import { HomeFrequentVisits } from '@/components/home-frequent-visits'",
+      "import { HomeQuickDock } from '@/components/home-quick-dock'",
     )
-    expect(src).toContain('<HomeFrequentVisits />')
-    const rowAt = src!.indexOf('<HomeFrequentVisits />')
-    const recentAt = src!.indexOf('<HomeRecentVisits />')
+    expect(src).toContain('<HomeQuickDock')
+    const rowAt = src!.indexOf('<HomeQuickDock')
     const dockAt = src!.indexOf('mod:speed-dial')
     const gridAt = src!.indexOf('<DiyGridDragBoundary')
-    expect(recentAt).toBeGreaterThan(-1)
-    expect(rowAt).toBeGreaterThan(recentAt)
     expect(rowAt).toBeGreaterThan(dockAt)
     expect(rowAt).toBeLessThan(gridAt)
+    expect(dockSrc).toContain('topFrequentVisits(recentVisits')
   })
 
   it('容器读全量快照再按频次取前 6：不只读最近 6 条', () => {

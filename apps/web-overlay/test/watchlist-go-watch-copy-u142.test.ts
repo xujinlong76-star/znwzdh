@@ -17,9 +17,9 @@
  * 断言范围（coordinator 裁决，HEAD 603bbec2 实测行号；M10 按当前源码复核）：
  *   page.tsx 文案行 :239 EntryRow、:486 日更区、:537 周排播区、
  *   :619 待看区（原文案「去看新一集」）；链行 :234/:481/:531/:614；
- *   drama-content.tsx:273 title。
- * 不断言（只扫不碰，记残留）：home-drama-cinema.tsx:238 同款
- * 「在{平台}站内打开」title，本轮守范围不改，留下一轮候选。
+ *   drama-content.tsx:273 title；home-drama-cinema.tsx:238 title（T6）。
+ * 收口（16:22 轮）：home-drama-cinema.tsx:238 同款「在{平台}站内打开」
+ * title 已按同一口径改为「去{平台}首页搜《{剧名}》」，见 T6 正向断言。
  *
  * 范式：源码文本断言（对照 exam-node-link-label-u124.test.ts T8 /
  * me-watchlist-entry.test.ts 源码守卫），不渲染、不跑 effect——
@@ -35,6 +35,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const page = () => read('src/app/me/watchlist/page.tsx')
 const drama = () => read('src/components/drama-content.tsx')
+const cinema = () => read('src/components/home-drama-cinema.tsx')
 const hook = () => read('src/hooks/useWatchlist.ts')
 
 /** 4 个 playUrl 锚点块：<a href={safeHref(entry.playUrl)} …>…</a>。 */
@@ -122,5 +123,13 @@ describe('T5：诚实的「去看看」区不动（防多改）', () => {
     expect(src).toContain('顺手去看看')
     expect(src).toContain('去看看有没有更新')
     expect(src).toContain('aria-label="去看看有没有更新"')
+  })
+})
+
+describe('T6：cinema「继续追」title 同款诚实式（U-142 收口，16:22 轮）', () => {
+  it('「站内打开」0 次，title 为「去${platformTitle}首页搜《${title}》」完整式', () => {
+    const src = cinema()
+    expect(src).not.toContain('站内打开')
+    expect(src).toMatch(/title=\{`去\$\{[^}]*platformTitle\}首页搜《\$\{[^}]*title\}》`\}/)
   })
 })

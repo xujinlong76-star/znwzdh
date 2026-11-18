@@ -235,7 +235,7 @@ export function HomeDramaCinema({ initial }: { initial?: CinemaInitialData }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex w-56 shrink-0 flex-col rounded-2xl border border-white/10 bg-white/5 p-3 transition-colors hover:bg-white/10"
-                title={`${e.title} · 在${e.platformTitle}站内打开`}
+                title={`去${e.platformTitle}首页搜《${e.title}》`}
               >
                 <span className="flex items-center gap-2">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-500/20 text-sm font-bold text-rose-300" aria-hidden>

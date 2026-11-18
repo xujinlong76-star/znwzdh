@@ -524,6 +524,10 @@ describe('备考入口标题（U-108）', () => {
     expect(page).toContain('来自站内「考试备考」分类的报名与备考平台，按分类原顺序排列。')
     expect(page).not.toContain('备考官方入口')
     expect(page).not.toContain('官方报名与备考平台')
+    // W12 必改项 1：DESCRIPTION「附官方报名与备考入口」与空态
+    // 「官方入口清单没能取到」同步去「官方」（12 站含培训组 4 家）。
+    expect(page).not.toContain('官方报名与备考入口')
+    expect(page).not.toContain('官方入口清单没能取到')
   })
 
   it('对照：备考区仍现读 navigation.json「考试备考」分类 12 站，不改 navigation.json', () => {

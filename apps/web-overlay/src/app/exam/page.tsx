@@ -59,7 +59,7 @@ export const revalidate = 3600
 const CANONICAL = '/exam'
 const INDEX_TITLE = '考试日历 - 成考、国考、四六级、省考、京考、考研、军队文职、教资面试倒计时'
 const DESCRIPTION =
-  '2026 成考成绩、2027 国考、四六级、省考、京考、考研初试、军队文职笔试、教资面试的倒计时与关键节点：准考证打印、笔试时间、成绩查询一次看全，附官方报名与备考入口。'
+  '2026 成考成绩、2027 国考、四六级、省考、京考、考研初试、军队文职笔试、教资面试的倒计时与关键节点：准考证打印、笔试时间、成绩查询一次看全，附报名与备考入口。'
 const EMPTY_TITLE = '考试日历 - 成考、国考、四六级、省考、京考、考研、军队文职、教资面试'
 const EMPTY_DESCRIPTION = '本轮八场考试已结束，时间与关键节点备查；新日程以官方公告为准。'
 const NAVIGATION_PATH = 'src/navsphere/content/navigation.json'
@@ -296,7 +296,7 @@ export default async function ExamPage() {
             <div className="mt-4 rounded-2xl border border-border bg-card p-5">
               <p className="text-base font-medium text-foreground">备考站点暂时加载不出来</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                站内数据服务暂时不可用，官方入口清单没能取到。考试时间与关键节点不受影响。
+                站内数据服务暂时不可用，备考入口清单没能取到。考试时间与关键节点不受影响。
               </p>
             </div>
           )}

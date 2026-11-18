@@ -239,7 +239,7 @@ test.describe('P3-11：短链 / 预览路由 / Taps / 防抖 / AI 生成', () =>
     // 2) 旧 ?preview=1 链：服务端 302 到 /preview（匿名仍看 404，只验路由去向）；
     // 终态带 ?preview=1 是 redirect 透传原 query 的正确行为（next.config.js 未声明剥离），不断言裸 URL
     await page.goto(`/marketplace/${slug}?preview=1`);
-    await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}/preview(\\?preview=1)?$`));
+    await expect(page).toHaveURL(new RegExp(`/marketplace/${encodeURIComponent(slug)}/preview(\\?preview=1)?$`));
     await expect(page.getByText('插件未上架或不存在')).toBeVisible();
 
     // 3) 作者（localStorage  anonId 与投稿身份一致）：/preview 看到刚提交的版本，

@@ -382,7 +382,7 @@
        展开时悬在猫上方留白处：bottom:calc(100% + 10px) 与舞台纵向零重叠，默认右对齐向左长，
        猫靠左时由 alignPanel 加 .xm-fan-r 翻向右。按钮入场走 xmDockIn（fill backwards + 逐个延迟，
        像从猫身上荡开），退场随坞整体淡出；聊天钮只用渐变主色区分主次，不再骑角放大。 */
-    '#xiaomaomao .xm-dock{position:absolute;right:-4px;bottom:calc(100% + 10px);display:flex;flex-direction:row-reverse;gap:6px;padding:6px;border-radius:999px;background:var(--xm-surface);-webkit-backdrop-filter:blur(14px) saturate(1.5);backdrop-filter:blur(14px) saturate(1.5);border:1px solid var(--xm-ring);box-shadow:var(--xm-shadow-pop);z-index:11;opacity:0;visibility:hidden;transform:translateY(8px) scale(.96);transform-origin:bottom right;transition:opacity .22s var(--xm-ease),transform .22s var(--xm-ease),visibility 0s linear .22s;pointer-events:none}' +
+    '#xiaomaomao .xm-dock{position:absolute;right:-4px;bottom:calc(100% + 10px);display:flex;width:max-content;max-width:calc(100vw - 24px);flex-direction:row-reverse;gap:6px;padding:6px;border-radius:999px;background:var(--xm-surface);-webkit-backdrop-filter:blur(14px) saturate(1.5);backdrop-filter:blur(14px) saturate(1.5);border:1px solid var(--xm-ring);box-shadow:var(--xm-shadow-pop);z-index:11;opacity:0;visibility:hidden;transform:translateY(8px) scale(.96);transform-origin:bottom right;transition:opacity .22s var(--xm-ease),transform .22s var(--xm-ease),visibility 0s linear .22s;pointer-events:none}' +
     '#xiaomaomao .xm-dock.xm-fan-r{right:auto;left:-4px;transform-origin:bottom left}' +
     '#xiaomaomao .xm-dock{flex-wrap:wrap}' +
     '#xiaomaomao .xm-growth-chip{flex:0 0 100%;display:none;align-items:center;justify-content:center;gap:4px;padding:2px 6px 0;font-size:11px;line-height:1.35;color:var(--xm-ink-soft);white-space:nowrap;letter-spacing:.02em}' +
@@ -400,8 +400,8 @@
     '#xiaomaomao .xm-btn:hover{transform:translateY(-1px);background:var(--xm-solid);box-shadow:0 5px 12px rgba(43,10,24,.18)}' +
     '#xiaomaomao .xm-btn:active{transform:scale(.93)}' +
     '#xiaomaomao .xm-btn svg{width:20px;height:20px;flex:none;display:block}' +
-    '#xiaomaomao .xm-chat-btn{background:linear-gradient(135deg,var(--xm-accent),#ff8fab);color:#fff;border-color:transparent;box-shadow:0 6px 14px -4px rgba(244,80,126,.5)}' +
-    '#xiaomaomao .xm-chat-btn:hover{background:linear-gradient(135deg,var(--xm-accent),#ff8fab);filter:brightness(1.07)}' +
+    '#xiaomaomao .xm-chat-btn{background:linear-gradient(135deg,#c2185b,#d81b60);color:#fff;border-color:transparent;box-shadow:0 6px 14px -4px rgba(244,80,126,.5)}' +
+    '#xiaomaomao .xm-chat-btn:hover{background:linear-gradient(135deg,#c2185b,#d81b60);filter:brightness(1.07)}' +
     /* 收起小圆标：加深度投影，浅底上不再隐形 */
     '#xiaomaomao .xm-tab{display:none;width:58px;height:58px;border-radius:50%;overflow:visible;border:2px solid var(--xm-stage-ring);background:#fff;cursor:pointer;padding:0;box-shadow:var(--xm-shadow-pop);position:relative;transition:transform .12s var(--xm-ease)}' +
     '#xiaomaomao .xm-tab:hover{transform:scale(1.06)}' +
@@ -409,6 +409,7 @@
     /* v7：收起角标由「聊」字改成 SVG 气泡角标（与全套图标同风格） */
     '#xiaomaomao .xm-tab-badge{position:absolute;right:-2px;bottom:-2px;width:20px;height:20px;border-radius:50%;background:var(--xm-accent);border:2px solid var(--xm-solid);display:flex;align-items:center;justify-content:center;color:#fff;pointer-events:none}' +
     '#xiaomaomao .xm-tab-badge svg{width:11px;height:11px;display:block}' +
+    'html.dark #xiaomaomao .xm-tab-badge{background:#d6336c}' +
     '#xiaomaomao.xm-closed .xm-tab{display:block}' +
     '#xiaomaomao.xm-closed .xm-main-col{display:none}' +
     /* K5：站内弹窗打开时猫暂隐/降层（.xm-behind-modal），免得压住弹窗与发送按钮 */
@@ -455,7 +456,7 @@
     '#xiaomaomao .xm-input{flex:1;min-width:0;height:40px;border-radius:999px;border:1px solid var(--xm-ring);padding:0 15px;font-size:14px;color:var(--xm-ink);outline:none;background:var(--xm-chip)}' +
     '#xiaomaomao .xm-input:focus{border-color:var(--xm-accent);box-shadow:0 0 0 3px rgba(244,80,126,.18)}' +
     '#xiaomaomao .xm-input::placeholder{color:var(--xm-ink-soft)}' +
-    '#xiaomaomao .xm-send{flex:none;height:40px;padding:0 17px;border:none;border-radius:999px;background:linear-gradient(135deg,var(--xm-accent),#ff8fab);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 16px -4px rgba(244,80,126,.45);transition:transform .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-send{flex:none;height:40px;padding:0 17px;border:none;border-radius:999px;background:linear-gradient(135deg,#c2185b,#d81b60);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 16px -4px rgba(244,80,126,.45);transition:transform .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
     '#xiaomaomao .xm-send:hover{filter:brightness(1.05)}' +
     '#xiaomaomao .xm-send:active{transform:scale(.96)}' +
     '#xiaomaomao .xm-send:disabled{opacity:.55;cursor:default;box-shadow:none;filter:saturate(.4)}' +
@@ -534,6 +535,8 @@
        与视频态同款透明舞台；兜底图 object-fit:contain，整只猫完整入镜不裁边。 */
     '#xiaomaomao .xm-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:2;display:none;pointer-events:none}' +
     '#xiaomaomao .xm-fallback.xm-on{display:block}' +
+    '#xiaomaomao .xm-still{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:2;display:none;pointer-events:none}' +
+    '#xiaomaomao .xm-still.xm-on{display:block}' +
     '#xiaomaomao.xm-has-fallback .xm-stage{background:transparent;border-color:transparent;box-shadow:none;border-radius:0;overflow:visible}' +
     'html.dark #xiaomaomao.xm-has-fallback .xm-stage{background:transparent;border-color:transparent;box-shadow:none}' +
     '#xiaomaomao.xm-has-fallback .xm-lean{opacity:0;transition:opacity .28s var(--xm-ease)}' +
@@ -574,7 +577,7 @@
     '#xiaomaomao .xm-look-act:hover{background:var(--xm-solid)}' +
     '#xiaomaomao .xm-look-act svg{width:16px;height:16px;vertical-align:-3px;margin-right:5px}' +
     '#xiaomaomao .xm-look-act:active{transform:scale(.97)}' +
-    '@media (max-width:640px){#xiaomaomao{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(68px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-dock{gap:5px;padding:5px;bottom:calc(100% + 8px)}#xiaomaomao .xm-dock .xm-btn{width:34px;height:34px}#xiaomaomao .xm-dock .xm-btn svg{width:19px;height:19px}#xiaomaomao .xm-bubble{max-width:min(248px,calc(100vw - 130px));font-size:12.5px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(104px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(508px,62vh)}#xiaomaomao .xm-game{height:min(436px,58vh)}}' +
+    '@media (max-width:640px){#xiaomaomao{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(68px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-dock{gap:5px;padding:5px;bottom:calc(100% + 8px);width:auto}#xiaomaomao .xm-dock .xm-btn{width:34px;height:34px}#xiaomaomao .xm-dock .xm-btn svg{width:19px;height:19px}#xiaomaomao .xm-bubble{max-width:min(248px,calc(100vw - 130px));font-size:12.5px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(104px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(508px,62vh)}#xiaomaomao .xm-game{height:min(436px,58vh)}}' +
     /* P1-1：市场页窄屏自动收起态——根节点整体滑出视口右侧（transform 只写位移，
        不动 left/top、不覆盖用户拖动位置；圆标本体随根节点一起出视口，点按与包围盒都不再挡页面元素）。
        Q1 返工：位移量不用固定值——拖动过的猫 left 不同，固定 70px 会留一部分在视口内；
@@ -625,7 +628,7 @@
         '<button class="xm-btn xm-voice-btn" type="button" title="开关小猫语音" aria-label="开关小猫语音">' + ICONS.volOn + '</button>' +
         '<button class="xm-btn xm-close-btn" type="button" title="先把小猫收起来" aria-label="收起小猫猫">' + ICONS.close + '</button>' +
       '</div>' +
-      '<div class="xm-panel" role="dialog" aria-label="小猫猫聊天">' +
+      '<div class="xm-panel" role="dialog" aria-modal="true" aria-label="小猫猫聊天">' +
         '<div class="xm-p-head"><img alt=""><div><div class="xm-p-title">小猫猫</div><div class="xm-p-sub">AI 找站小助手 · 只推站内收录</div></div>' +
         '<button class="xm-hbtn xm-look-btn" type="button" title="换个伙伴形象" aria-label="换个伙伴形象">' + ICONS.image + '</button>' +
         '<button class="xm-hbtn xm-voice-btn" type="button" title="开关小猫语音" aria-label="开关小猫语音">' + ICONS.volOn + '</button>' +
@@ -665,6 +668,7 @@
       return;
     }
     root.classList.add('xm-closed');
+    setIconImg(root.querySelector('.xm-tab img')); /* B-04：启动恢复收起态时才给圆标设 src */
   })();
 
   var wrapEl = root.querySelector('.xm-wrap');
@@ -678,8 +682,8 @@
   var sendBtn = root.querySelector('.xm-send');
   var imgA = root.querySelector('.xm-img-a');
   var imgB = root.querySelector('.xm-img-b');
-  setIconImg(root.querySelector('.xm-p-head img'));
-  setIconImg(root.querySelector('.xm-tab img'));
+  /* B-04：启动时不给面板头像与收起圆标设 WebP src（首屏不拉 3.7MB 兜底图）；
+     面板头像在打开面板时、收起圆标在收起与启动恢复收起态时才懒加载。 */
 
   /* ---------- 姿势状态机（双层交叉淡入淡出） ----------
      2026-11-18 删静态图：默认姿势图已删；这条换图路径只服务用户上传的自改形象
@@ -721,8 +725,11 @@
   var lastDark = isDarkTheme();
   function refreshAvatarImages() {
     lastDark = isDarkTheme();
-    setIconImg(root.querySelector('.xm-p-head img'));
-    setIconImg(root.querySelector('.xm-tab img'));
+    /* B-04：只动已加载过的图标——没设过 src 的不提前拉取 WebP 兜底。 */
+    var headImg = root.querySelector('.xm-p-head img');
+    if (headImg && headImg.hasAttribute('src')) setIconImg(headImg);
+    var tabImg = root.querySelector('.xm-tab img');
+    if (tabImg && tabImg.hasAttribute('src')) setIconImg(tabImg);
     var cu = customImageUrl();
     if (cu) frontImg.src = cu;
     else frontImg.removeAttribute('src');
@@ -972,6 +979,7 @@
     } catch (e) { /* 忽略 */ }
     return { url: MEDIA_BASE + PLAY_CLIPS[name], trusted: false };
   }
+  var WALK_SEAM_LEAD = 0.35; /* B-03：走路循环近尾 0.35 秒时换路重播，交叉淡化盖住首尾跳变 */
   var clipA = null, clipB = null, clipVisible = null, clipCurrent = '', clipSeq = 0;
   var VIDEO_LOAD_TIMEOUT_MS = 8000; /* 视频首帧加载超时：8 秒不到首帧即判加载失败（C-03） */
   var videoLoadT = 0; /* 首帧看门狗定时器（C-03） */
@@ -995,6 +1003,16 @@
         if (clipCurrent === 'idle') { markVideoDead('network'); showFallback('idle'); }
         else playClip('idle');
       });
+      /* B-03：走路循环接缝——首帧侧脸闭眼、尾帧正脸睁眼张口，帧间差大，
+         快播完时换路重播，用另一路从 0 交叉淡化盖住跳变；只管走路循环，不管待机/扑。 */
+      v.addEventListener('timeupdate', function () {
+        try {
+          if (clipVisible !== v || !v.loop) return;
+          if (clipCurrent === 'walk' && v.duration && v.duration - v.currentTime < WALK_SEAM_LEAD) {
+            playClip('walk', { forceSwap: true });
+          }
+        } catch (e) { /* 忽略 */ }
+      });
     });
     clipVisible = clipA;
   }
@@ -1009,7 +1027,7 @@
       if (videoDeadReason === 'network' && videoDeadAt && Date.now() - videoDeadAt > VIDEO_DEAD_RETRY_MS) clearVideoDead();
       else { showFallback(name); return; }
     }
-    if (clipCurrent === name && clipVisible) {
+    if (clipCurrent === name && clipVisible && !opts.forceSwap) {
       try {
         clipVisible.loop = opts.loop !== false;
         if (opts.loop === false) {
@@ -1032,6 +1050,8 @@
     var seq = ++clipSeq;
     var next = (clipVisible === clipA) ? clipB : clipA;
     var cur = clipVisible;
+    /* B-03：接缝换路时旧路从上次暂停处（~2.45s）续播会跳变，先归零再 show。 */
+    if (opts.forceSwap) { try { next.currentTime = 0; } catch (e) { /* 忽略 */ } }
     var resolved = playClipUrl(name);
     var show = function () {
       if (seq !== clipSeq) return;
@@ -1096,6 +1116,7 @@
     clearTimeout(videoLoadT); /* 停播也清看门狗（C-03） */
     root.classList.remove('xm-loading'); /* 加载态摘掉（C-03） */
     hideFallback(); /* 兜底图也一起藏（自改形象/收起/换态时不留 WebP/GIF） */
+    if (stillImg) stillImg.classList.remove('xm-on'); /* B-01：静态首帧也一起藏 */
     root.classList.remove('xm-has-video'); /* 视频停了，透明舞台摘掉（静态姿势图已删，不回静态） */
     [clipA, clipB].forEach(function (v) {
       if (!v) return;
@@ -1125,7 +1146,8 @@
       !root.classList.contains('xm-closed');
   }
   function startAmbientVideo() {
-    if (reducedMotion || avatarPick || root.classList.contains('xm-closed')) return false;
+    if (avatarPick || root.classList.contains('xm-closed')) return false;
+    if (reducedMotion) { ambientVideo = true; showStillFrame('idle'); return true; }
     if (!supportsVp9Alpha()) {
       /* Safari 不认 VP9：视频路直接判死，走动画 WebP 兜底 */
       markVideoDead('capability');
@@ -1316,6 +1338,41 @@
     root.classList.remove('xm-has-fallback');
     fallbackCurrent = '';
   }
+  /* B-01：减动效静态首帧——prefers-reduced-motion 时不播视频，离屏加载 WebP
+     兜底图的第 0 帧画到 canvas 再以 PNG 显示（真冻结，不推进动画时间线、
+     不建 video 元素、不耗解码）；WebP 冻不住 → 同款冻结 GIF → 再不行藏猫。 */
+  var stillImg = null;
+  function showStillFrame(name, tier) {
+    tier = tier || 'webp';
+    var probe = new Image();
+    probe.onload = function () {
+      try {
+        var c = document.createElement('canvas');
+        c.width = probe.naturalWidth || probe.width || 1;
+        c.height = probe.naturalHeight || probe.height || 1;
+        var ctx = c.getContext('2d');
+        if (!ctx) { hideCat(); return; }
+        ctx.drawImage(probe, 0, 0);
+        var url = c.toDataURL('image/png');
+        if (!stillImg) {
+          stillImg = document.createElement('img');
+          stillImg.className = 'xm-still';
+          stillImg.setAttribute('aria-hidden', 'true');
+          stillImg.alt = '';
+          stageEl.appendChild(stillImg);
+        }
+        stillImg.src = url;
+        stillImg.classList.add('xm-on');
+        root.classList.add('xm-has-video'); /* 静态首帧也是真猫，舞台透明、不留白圆 */
+      } catch (e) { hideCat(); }
+    };
+    probe.onerror = function () {
+      if (tier === 'webp') showStillFrame(name, 'gif');
+      else hideCat();
+    };
+    probe.src = fallbackUrl(name, tier);
+    return true;
+  }
 
   /* ---------- 追鼠标 + 扑光标（Top 1） ----------
      状态机：idle（待机循环）→ chase（走路循环追光标）→ pounce（扑的一段，限速触发）
@@ -1329,6 +1386,7 @@
   var PLAY_CATCH_DIST = 90;
   var PLAY_POUNCE_DIST = 240;
   var PLAY_POUNCE_VELOCITY = 900; /* px/s：光标甩得快才扑 */
+  var PLAY_POUNCE_MS = 5000; /* B-02：扑收尾等 5 秒——扑视频抽帧时序：1s 下蹲、4s 扑跃姿势、5s 坐回；旧 1600ms 只播到 0.81s 就切走 */
   var PLAY_WANDER_AFTER = 8000;
   var PLAY_SLEEP_AFTER = 20000;
   function playRootRect() { return root.getBoundingClientRect(); }
@@ -1381,9 +1439,14 @@
   /* 扑的收尾定时器单独放（不进 playCatchTimers）：playOnPointerMove 每来一次
      pointermove 就调 playCancelCatch()，放进去会被下一移动清掉，猫就永远卡在扑的姿势。
      2026-11-18 审计抓到：扑的视频只露 0.25 秒就被 playTick 的到点分支切成抓——
-     猫以 700px/s 扑过去，150px 的距离 0.25 秒就到，1.6 秒的扑定时器根本没机会响。 */
+     猫以 700px/s 扑过去，150px 的距离 0.25 秒就到；收尾定时器按扑视频弧线取 5 秒。 */
+  var pouncePlayingFn = null; /* B-02：等扑视频真正开播才起算收尾定时器的监听 */
   function playCancelPounce() {
     if (play.pounceT) { window.clearTimeout(play.pounceT); play.pounceT = 0; }
+    if (pouncePlayingFn) {
+      [clipA, clipB].forEach(function (v) { try { if (v) v.removeEventListener('playing', pouncePlayingFn); } catch (e) { /* 忽略 */ } });
+      pouncePlayingFn = null;
+    }
   }
   /* 抓到光标的三段收尾（oneko 同款）：挠痒 → 打哈欠 → 睡着。专用视频后补，
      当前用待机视频 + 姿势 + 气泡实现，不编新视频。 */
@@ -1418,11 +1481,26 @@
     playClip('pounce', { loop: false });
     showEmo('！');
     showBubble('看我扑！', false);
+    /* B-02：收尾定时器从扑视频真正开播才起算——playClip 要先探活再加载，
+       从调 playPounce 起算会把 1–2 秒加载时间也算进去，视频只播到 3.4 秒
+       就被切走，到不了 4 秒的扑跃姿势。playing 事件只认扑的那一路。
+       兜底：视频若加载失败、playing 一直不响，8 秒后仍收尾，不卡在扑态。 */
+    pouncePlayingFn = function (ev) {
+      var v = ev.target;
+      if (!v || (v.currentSrc || v.src || '').indexOf('play-pounce') === -1) return;
+      playCancelPounce(); /* 先摘监听并清兜底定时器，再起真正的收尾定时器 */
+      play.pounceT = window.setTimeout(function () {
+        if (!play.on || sleeping || play.mode !== 'pounce') return;
+        play.mode = 'idle';
+        playCatch();
+      }, PLAY_POUNCE_MS);
+    };
+    [clipA, clipB].forEach(function (v) { if (v) v.addEventListener('playing', pouncePlayingFn); });
     play.pounceT = window.setTimeout(function () {
       if (!play.on || sleeping || play.mode !== 'pounce') return;
       play.mode = 'idle';
       playCatch();
-    }, 1600);
+    }, PLAY_POUNCE_MS + 3000);
   }
   function playScheduleWander() {
     window.clearTimeout(play.wanderT);
@@ -1464,7 +1542,7 @@
       if (play.mode === 'chase') playCatch();
       else if (play.mode === 'wander') { play.mode = 'idle'; playClip('idle'); playScheduleWander(); }
       else if (play.mode === 'pounce') {
-        /* 扑到了：停住，等 1.6 秒的扑定时器收尾再抓——别立刻切抓，
+        /* 扑到了：停住，等 5 秒的扑定时器收尾再抓——别立刻切抓，
            否则扑视频只露 0.25 秒（700px/s 扑 150px 只要 0.25 秒），用户根本看不到扑。 */
         return;
       }
@@ -2357,8 +2435,37 @@
   document.addEventListener('pointerdown', function (ev) {
     if (ctlShown && !root.contains(ev.target)) hideControls();
   }, true);
+  /* B-08：焦点陷阱——Tab 在模态容器内首尾循环，不漏到页面背后；焦点若在容器外，
+     拉回首项。换形象页（display:none）的元素用 getClientRects() 过滤掉。 */
+  var lastFocusBeforeModal = null; /* B-08：打开模态前记触发焦点，关闭时还回去 */
+  function trapTabIn(container, ev) {
+    if (!container) return;
+    var items = container.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])');
+    var focusable = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].getClientRects().length) focusable.push(items[i]);
+    }
+    if (!focusable.length) { ev.preventDefault(); return; }
+    var first = focusable[0], last = focusable[focusable.length - 1];
+    var active = document.activeElement;
+    if (ev.shiftKey && active === first) { last.focus(); ev.preventDefault(); }
+    else if (!ev.shiftKey && active === last) { first.focus(); ev.preventDefault(); }
+    else if (container.contains(active)) { /* 容器内正常 Tab，不干预 */ }
+    else { first.focus(); ev.preventDefault(); }
+  }
   document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape') hideControls();
+    if (ev.key === 'Escape') {
+      /* B-08：Esc 按游戏 > 面板 > 坞的优先级关闭，不再只收坞。 */
+      if (gameEl && gameEl.classList.contains('xm-on')) { closeGame(); return; }
+      if (root.classList.contains('xm-open')) { closePanel(); return; }
+      hideControls();
+      return;
+    }
+    if (ev.key === 'Tab') {
+      /* B-08：面板/游戏开着时 Tab 困在模态里，不漏到页面背后。 */
+      if (gameEl && gameEl.classList.contains('xm-on')) { trapTabIn(gameEl, ev); return; }
+      if (root.classList.contains('xm-open')) { trapTabIn(panelEl, ev); }
+    }
   });
   /* 坞内有动静（点按/聚焦）就续命 3 秒，不会在手边自己消失 */
   dockEl.addEventListener('pointerdown', function () { if (ctlShown) scheduleCtlHide(); });
@@ -2519,6 +2626,7 @@
        否则游乐场在圆标后面继续跑、刷新又自启，收起粘不住。 */
     if (play.on) setPlayMode(false);
     root.classList.add('xm-closed');
+    setIconImg(root.querySelector('.xm-tab img')); /* B-04：收起成圆标时才给圆标设 src */
     root.classList.remove('xm-open');
     hideBubble();
     stopSpeak();
@@ -2581,8 +2689,10 @@
   function openPanel() {
     undock();
     hideControls();
+    lastFocusBeforeModal = document.activeElement; /* B-08：记触发焦点，关闭时还回去（收坞不挪焦点，放其后仍是开面板前的焦点） */
     closeLook();
     root.classList.add('xm-open');
+    setIconImg(root.querySelector('.xm-p-head img')); /* B-04：面板头像懒加载，打开面板时才设 src */
     root.classList.remove('xm-closed');
     hideBubble();
     markActive();
@@ -2606,6 +2716,18 @@
     closeLook();
     setPose('main');
     markActive();
+    /* B-08：焦点还给打开面板前的位置。触发钮在坞里、坞收起时 visibility:hidden、
+       直接 focus() 会静默失败——先唤出坞再聚焦；唤不出时退回猫舞台（tabindex=0）。
+       合入注：showControls 已改 showControls(fromUser)（状态线），无参是自动提示
+       会直接 return，这里须传 true 才是亲手唤坞。 */
+    if (lastFocusBeforeModal && lastFocusBeforeModal.focus) {
+      try {
+        if (dockEl && dockEl.contains(lastFocusBeforeModal)) showControls(true);
+        lastFocusBeforeModal.focus();
+        if (document.activeElement !== lastFocusBeforeModal) stageEl.focus();
+      } catch (e) { try { stageEl.focus(); } catch (e2) { /* 忽略 */ } }
+    }
+    lastFocusBeforeModal = null;
     /* C-11：关面板按游乐场模式续播——追/漫步续走路视频，扑态按待机续
        （扑自身的定时器会收尾，不抢它的收尾）。 */
     if (play.on) { if (play.mode === 'chase' || play.mode === 'wander') playClip('walk'); else playClip('idle'); }
@@ -3127,6 +3249,7 @@
   var gameEl = document.createElement('div');
   gameEl.className = 'xm-game';
   gameEl.setAttribute('role', 'dialog');
+  gameEl.setAttribute('aria-modal', 'true');
   gameEl.setAttribute('aria-label', '接星星小游戏');
   gameEl.innerHTML =
     '<div class="xm-g-head"><span class="xm-g-title">' + ICONS.star + '接星星</span><button class="xm-hbtn xm-g-close" type="button" title="关掉游戏" aria-label="关掉游戏">' + ICONS.close + '</button></div>' +
@@ -3257,12 +3380,25 @@
       gStartBtn.textContent = '开始游戏';
       gCenter.style.display = 'flex';
     }
+    lastFocusBeforeModal = document.activeElement; /* B-08：记触发焦点，关闭时还回去 */
     gameEl.classList.add('xm-on');
     gHud();
+    /* B-08：开局前聚焦开始按钮，进行中聚焦关闭钮。 */
+    try { if (game.on) gameEl.querySelector('.xm-g-close').focus(); else gStartBtn.focus(); } catch (e) { /* 忽略 */ }
   }
   function closeGame() {
     endGame(false);
     gameEl.classList.remove('xm-on');
+    /* B-08：焦点还给打开游戏前的位置（同 closePanel：触发钮在坞里，先唤出坞再聚焦）。
+       合入注：showControls 已改 showControls(fromUser)（状态线），这里须传 true。 */
+    if (lastFocusBeforeModal && lastFocusBeforeModal.focus) {
+      try {
+        if (dockEl && dockEl.contains(lastFocusBeforeModal)) showControls(true);
+        lastFocusBeforeModal.focus();
+        if (document.activeElement !== lastFocusBeforeModal) stageEl.focus();
+      } catch (e) { try { stageEl.focus(); } catch (e2) { /* 忽略 */ } }
+    }
+    lastFocusBeforeModal = null;
   }
   gStartBtn.addEventListener('click', startGame);
   gameEl.querySelector('.xm-g-close').addEventListener('click', function (ev) {

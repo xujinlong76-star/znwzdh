@@ -276,9 +276,10 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
 
     // 1) 手动发版本：进投稿页 ?from=<slug>，插件名已按原清单预填
     // from 是 encodeURIComponent(plugin.slug)：中文 slug 在地址栏里是 % 编码形态
+    // 带 ?from= 且为作者本人时投稿页进编辑态、标题为“发布新版本”，不要期望新建态标题
     await page.getByRole('link', { name: '手动发版本' }).click();
     await expect(page).toHaveURL(new RegExp(`/marketplace/publish\\?from=${encodeURIComponent(slug)}$`));
-    await expect(page.getByRole('heading', { name: '投稿发布新插件' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: '发布新版本' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByLabel('插件名称')).toHaveValue(name, { timeout: 30_000 });
 
     // 2) AI 工坊升级：行内打开工坊弹窗，再 Esc 关闭回列表

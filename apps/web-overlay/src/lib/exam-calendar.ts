@@ -982,7 +982,7 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
 /**
  * 11-18 峰值日时刻截止表（渲染层专用，考试峰值日包 W9，U-144 推广）。
  *
- * 覆盖 12 个已核实目标时刻（北京时间，表项为目标日期 + 距当日 0 点的分钟数；
+ * 覆盖 11 个已核实目标时刻（北京时间，表项为目标日期 + 距当日 0 点的分钟数；
  * 毫秒值按 shanghaiMidnightMs(目标日期) + 分钟数算，与 guokaoAdmissionPhase
  * 的 15:00 截止同款算法）：
  *  - 成考江西成绩查询 11-18 09:00、成考新疆成绩查询 11-18 12:00、成考广东
@@ -995,10 +995,10 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
  *    会错成 11-18 17:00，故表项必须带目标日期，不许只存分钟数）；
  *  - 广东自考成绩查询 11-18 15:00（查分行；自考 15:00，绝不是成考广东
  *    16:20、不是江苏 10:00）。
- *  - 上海自考成绩查询 11-19 10:00（U-163，查分行；多日窗口 11-19–12-18
- *    首日开通时刻，kind startsToday——与单日 today 查分行不同，10:00 过后
- *    chip 显示「已截止」而不消失，hideWhenPassed 只用于 kind today；
- *    复核 11-20–22 只有日期区间、无截止时刻，不入表，不得编造时刻）。
+ *  - 上海自考成绩查询不入表（U-163 复审必改 1）：11-19 10:00 是开通时刻、
+ *    不是截止时刻，且该行 kind startsToday、无 hideWhenPassed 保护，入表
+ *    会在 10:00 后谎报「已截止」，与同行「可查至 12-18 16:00」自相矛盾；
+ *    复核 11-20–22 只有日期区间、无截止时刻，同样不入表，不得编造时刻。
  *  - 成考三省成绩复核 11-20 截止（U-158）：广东 15:00（单日节点，kind today，
  *    过期 chip 消失）、新疆 12:00、江西 17:00（两多日窗口末日，kind endsToday，
  *    过期显示「已截止」）；三者 detail 原文所载公告时刻，与江苏复核 11-20
@@ -1027,7 +1027,6 @@ const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, { date: string; minutes
   'jiangsu-zikao:成绩查询': { date: '2026-11-18', minutes: 10 * 60 },
   'jiangsu-zikao:成绩复核': { date: '2026-11-20', minutes: 17 * 60 },
   'guangdong-zikao:成绩查询': { date: '2026-11-18', minutes: 15 * 60 },
-  'shanghai-zikao:成绩查询': { date: '2026-11-19', minutes: 10 * 60 },
 }
 
 /** 表内节点的目标时刻（UTC 毫秒数）；表外或节点日期不覆盖目标日期的返回 undefined */

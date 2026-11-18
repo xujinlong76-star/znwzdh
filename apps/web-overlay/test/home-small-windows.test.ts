@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { computeHomeTodayBadge } from '../src/lib/home-today-summary'
+import { todayNodes } from '../src/lib/exam-calendar'
 import {
   applyPinCornerWidget,
   applyTogglePinnedCollapse,
@@ -34,11 +35,20 @@ function createMemoryStorage(): KeyValueStorageLike {
 }
 
 describe('computeHomeTodayBadge', () => {
-  it('2026-11-18 返回 5 项今日节点与紧急计数，并带最近考试倒计时文案', () => {
+  it('2026-11-18 返回与今日节点数据源一致的计数，并带最近考试倒计时文案', () => {
     const nov18 = Date.UTC(2026, 10, 18, 0, 0, 0)
     const summary = computeHomeTodayBadge(nov18)
-    expect(summary.todayCount).toBe(5)
-    expect(summary.urgentCount).toBe(5)
+    // 期望从同一数据源 todayNodes() 动态派生（U-98）：考试数据增长时
+    // 硬编码计数会滞后——U-144 新增江苏/广东自考后 11-18 今日节点
+    // 已从 5 增至 7；徽标是 todayNodes 的投影，计数必须与数据源一致。
+    const nodes = todayNodes(nov18)
+    const expectedToday = nodes.length
+    const expectedUrgent = nodes.filter(
+      (item) => item.kind === 'today' || item.kind === 'endsToday',
+    ).length
+    expect(expectedToday).toBeGreaterThan(0)
+    expect(summary.todayCount).toBe(expectedToday)
+    expect(summary.urgentCount).toBe(expectedUrgent)
     expect(summary.countdownLabel).toBeTruthy()
   })
 })

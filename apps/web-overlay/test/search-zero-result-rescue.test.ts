@@ -258,7 +258,7 @@ describe("U-28 零结果定性：标题说清「站内未收录」，三态不�
 
   it("C 态（取数失败）：EmptyResults 根本不渲染，改由 FailedNotice 明示失败", () => {
     expect(results).toContain("!failed && hits.length === 0 && unavailable.length === 0");
-    expect(results).toContain("<FailedNotice q={q} page={page} tag={tag} />");
+    expect(results).toContain("<FailedNotice q={q} page={page} tag={tag} category={category} facets={facets} />");
     expect(results).toContain("不是「没有收录这个站点」");
     const server = overlaySource("src/lib/server/search.ts");
     // C 必须有真实失败信号：只有中枢取数返回 null 才算失败，0 命中永远走 A

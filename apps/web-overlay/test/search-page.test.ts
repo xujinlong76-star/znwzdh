@@ -185,9 +185,9 @@ describe('/search 页面契约', () => {
     expect(view).toContain('去掉筛选')
     // 隐藏域不进无障碍树，标成装饰性控件（field-names 门禁同口径）
     expect(view).toContain('<input type="hidden" name="tag" value={tag} aria-hidden="true" />')
-    // 分页与重试不得丢标签
-    expect(view).toContain('searchHref({ q, page: page - 1, tag })')
-    expect(view).toContain('searchHref({ q, page, tag })')
+    // 分页与重试不得丢标签（U-112：同时不得丢分类与分面）
+    expect(view).toContain('searchHref({ q, page: page - 1, tag, category, facets })')
+    expect(view).toContain('searchHref({ q, page, tag, category, facets })')
   })
 
   it('中枢放宽筛选时必须如实说明：全站结果不能冒充「在标签下」', () => {

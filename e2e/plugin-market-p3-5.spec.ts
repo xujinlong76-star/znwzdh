@@ -247,7 +247,6 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
   test('作者中心 /mine：待审行内操作（手动发版本 / AI 工坊升级 / 预览）', async ({ page }) => {
     const stamp = Date.now().toString(36);
     const name = `E2E 我的插件包 ${stamp}`;
-    const slug = `e2e-mine-${stamp}`;
     // 浏览器身份与投稿身份必须是同一个 anonId，否则 /mine 看不到这条投稿：
     // 先把 anonId 写进 localStorage（每次导航都注入，保证投稿前后一致），
     // 再用同一个 anonId 走 API 投稿。
@@ -261,6 +260,11 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
       data: { manifest: sitePackManifest(name, stamp) },
     });
     expect(published.ok(), `投稿失败 ${published.status()}: ${await published.text()}`).toBeTruthy();
+    // 真实 slug 由服务端从清单名派生（slugify 保留中文）：名 `E2E 我的插件包 <stamp>`
+    // 的 slug 是 `e2e-我的插件包-<stamp>`；硬编码 `e2e-mine-<stamp>` 是凭空编的，
+    // 与实现（mine/page.tsx:323 用 plugin.slug）不符；从投稿回包取（同 P3-11 做法）。
+    const slug = (await published.json()).slug as string;
+    expect(slug, '投稿回包无 slug').toBeTruthy();
 
     // 作者中心：待审徽章计数 1、插件行可见且标「待审核」
     await page.goto('/marketplace/mine');
@@ -271,8 +275,9 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
     await expect(page.getByText('待审核', { exact: true }).first()).toBeVisible();
 
     // 1) 手动发版本：进投稿页 ?from=<slug>，插件名已按原清单预填
+    // from 是 encodeURIComponent(plugin.slug)：中文 slug 在地址栏里是 % 编码形态
     await page.getByRole('link', { name: '手动发版本' }).click();
-    await expect(page).toHaveURL(new RegExp(`/marketplace/publish\\?from=${slug}$`));
+    await expect(page).toHaveURL(new RegExp(`/marketplace/publish\\?from=${encodeURIComponent(slug)}$`));
     await expect(page.getByRole('heading', { name: '投稿发布新插件' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByLabel('插件名称')).toHaveValue(name, { timeout: 30_000 });
 
@@ -286,8 +291,9 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
     await expect(studioDialog).not.toBeVisible({ timeout: 15_000 });
 
     // 3) 预览：待审记录走预览通道（/marketplace/<slug>/preview），详情可读
+    // 预览链接同样是 encodeURIComponent(slug)（detail-href.ts）
     await page.getByRole('link', { name: '预览', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}/preview$`));
+    await expect(page).toHaveURL(new RegExp(`/marketplace/${encodeURIComponent(slug)}/preview$`));
     await expect(page.getByRole('heading', { level: 1 }).first()).toContainText(name);
   });
 
@@ -399,6 +405,8 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
     const slug = `e2e-tabs-${stamp}`;
     const v2SiteTitle = `E2E Tab v2 站 ${stamp}`;
     const v2SiteUrl = `https://e2e-tab2-${stamp}.example.com`;
+    // impact 面板只渲染裸域名 chips（new URL(site.url).host），不渲染完整 URL
+    const v2SiteHost = `e2e-tab2-${stamp}.example.com`;
 
     // v1：1 个站点；v2：保留 v1 站点、新增 1 个 v2 独有站点
     const v1 = sitePackManifest(name, stamp);
@@ -440,7 +448,9 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
     const impactPanel = page.locator('#plugin-tabpanel-impact');
     await expect(impactPanel.getByText('安装影响评估')).toBeVisible({ timeout: 15_000 });
     await expect(impactPanel.getByText('新增站点')).toBeVisible();
-    await expect(impactPanel.getByText(v2SiteUrl)).toBeVisible();
+    // impact 面板只渲染「主要站点域名」裸域名 chips；含 scheme 的完整 URL 在
+    // diff/raw tab 里，不在此断言
+    await expect(impactPanel.getByText(v2SiteHost)).toBeVisible();
 
     // 3) raw tab：清单源码（v2 清单 JSON + 复制按钮点按变「已复制」）
     await page.getByRole('tab', { name: '清单源码 (JSON)' }).click();

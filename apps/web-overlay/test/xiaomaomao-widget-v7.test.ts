@@ -108,7 +108,12 @@ describe("v7 按需唤出接线", () => {
     expect(WIDGET).toContain("function hideControls()");
     expect(WIDGET).toContain("var CTL_HIDE_AFTER = 3000;");
     expect(WIDGET).toContain("root.addEventListener('pointerleave'");
-    expect(WIDGET).toContain("if (ev.key === 'Escape') hideControls();");
+    // 2026-11-18 视觉线 B-08 改写：Esc 不再只收坞，改按游戏 > 面板 > 坞的优先级
+    // 关闭；坞仍是最后一级（无游戏/面板开着时才 hideControls）。旧断言
+    // "if (ev.key === 'Escape') hideControls();" 钉的是旧行为，按新行为改写。
+    expect(WIDGET).toContain("if (ev.key === 'Escape') {");
+    expect(WIDGET).toContain("if (gameEl && gameEl.classList.contains('xm-on')) { closeGame(); return; }");
+    expect(WIDGET).toContain("if (root.classList.contains('xm-open')) { closePanel(); return; }");
     expect(WIDGET).toContain("if (ctlShown && !root.contains(ev.target)) hideControls();");
     expect(WIDGET).toContain("if (!wasDocked) showControls(true);");
   });

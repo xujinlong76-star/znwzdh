@@ -250,6 +250,8 @@ function EmptyResults({
   q,
   page,
   tag,
+  category = null,
+  facets = {},
   suggestions,
   popular,
   inferredCategory,
@@ -262,6 +264,10 @@ function EmptyResults({
   q: string
   page: number
   tag: string | null
+  /** 当前分类（U-143）：「回到第 1 页」保留它，翻页不丢筛选 */
+  category?: string | null
+  /** 当前分面筛选（U-143）：同上 */
+  facets?: Record<string, string[]>
   suggestions: string[]
   popular: string[]
   /** 中枢从查询里理解到的分类（如 @开发工具 / “开发工具”一词）；没有推断出来时不硬凑 */
@@ -333,7 +339,7 @@ function EmptyResults({
       ) : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {page > 1 ? (
-          <Link href={searchHref({ q, tag })} className="text-xs text-primary hover:underline">
+          <Link href={searchHref({ q, tag, category, facets })} className="text-xs text-primary hover:underline">
             回到第 1 页
           </Link>
         ) : null}
@@ -928,6 +934,8 @@ export function SearchResults({
                   q={q}
                   page={page}
                   tag={tagApplied ? tag : null}
+                  category={category}
+                  facets={facets}
                   suggestions={suggestions}
                   popular={popular}
                   inferredCategory={result?.inferredCategory ?? null}

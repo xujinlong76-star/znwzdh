@@ -1292,7 +1292,7 @@ export function SpotlightModal({
                           onClick={() => void handleClearRecent()}
                           className={
                             confirmClearRecent
-                              ? 'ml-auto text-[11px] font-medium text-destructive hover:underline'
+                              ? 'ml-auto text-[11px] font-medium text-destructive-text hover:underline'
                               : 'ml-auto text-[11px] font-normal text-muted-foreground hover:text-foreground hover:underline'
                           }
                         >

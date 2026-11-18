@@ -150,11 +150,13 @@ describe("pre-commit 选测：改动 → 测试文件", { timeout: 120_000 }, ()
     // （precommit-select 就是用 execFileSync 跑生成物来断言的）。
     const files = select(["scripts/install-git-hooks.mjs"]);
     expect(files).toContain("scripts/precommit-select.test.ts");
-    // 2026-10-29 起也是 9，后续随门禁扩展（ci-gate 与 overlay-drift 引入）自然演进为 10：
-    // check-hooks-fresh.test.ts 用真实 install-git-hooks.mjs 验
-    // 「镜像 prepare 的 import 闭包 ⊆ Dockerfile COPY」，是图上的真依赖，不是噪声。
+    // 2026-10-29 起也是 9，后续随门禁扩展（ci-gate 与 overlay-drift 引入）自然演进为 10；
+    // 2026-11-18 再 +1 为 11：新增的 pre-push-check（scripts/pre-push-check.mjs 的
+    // CI_GATE_FILES 列有 install-git-hooks.mjs）是图上的真消费者，与
+    // check-hooks-fresh.test.ts 同理，不是噪声。11 个全是门禁相关测试，无整棵泄漏。
     expect(files).toContain("scripts/check-hooks-fresh.test.ts");
-    expect(files.length).toBeLessThanOrEqual(10);
+    expect(files).toContain("scripts/pre-push-check.test.ts");
+    expect(files.length).toBeLessThanOrEqual(11);
   });
 
   it("目录名当词根时的噪声（词根臂）：不回整棵，内容相关测试仍在", () => {

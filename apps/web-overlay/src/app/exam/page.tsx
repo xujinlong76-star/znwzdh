@@ -42,11 +42,11 @@ import type { NavigationSubItem } from '@/types/navigation'
 /**
  * 考试日历页（/exam，服务端渲染 + 倒计时客户端岛）。
  *
- * 存在理由：2026 年考试季十场大考（见 EXAMS，不再此处枚举场次与日期，
+ * 存在理由：2026 年考试季十一场大考（见 EXAMS，不再此处枚举场次与日期，
  * 注释枚举与数据不同步正是本次漂移的根因），站内只有分散的报名入口，没有
  * 一处能同时看到倒计时与关键节点；三家大导航同期也没有像样的考试
  * 专题或倒计时（360 只有一个内容过期到 2024/2025 的财会考试日历）。
- * 第一轮只做最小静态页：倒计时卡 + 十场时间轴 + 撞期与双考提醒 +
+ * 第一轮只做最小静态页：倒计时卡 + 十一场时间轴 + 撞期与双考提醒 +
  * 备考站点区；第二轮已落地「我的考试」关注 + 考前清单待办（本机
  * localStorage 存放，不登录、不跨设备同步，见 src/lib/my-exams.ts）。
  *
@@ -58,8 +58,7 @@ export const revalidate = 3600
 
 const CANONICAL = '/exam'
 const INDEX_TITLE = `考试日历 - ${EXAMS.map((e) => e.shortName).join('、')}倒计时`
-const DESCRIPTION =
-  '2026 成考成绩、2027 国考、四六级、省考、京考、考研初试、军队文职笔试、教资面试的倒计时与关键节点：准考证打印、笔试时间、成绩查询一次看全，附报名与备考入口。'
+const DESCRIPTION = `${EXAMS.map((e) => e.shortName).join('、')}的倒计时与关键节点：准考证打印、笔试时间、成绩查询一次看全，附报名与备考入口。`
 const EMPTY_TITLE = `考试日历 - ${EXAMS.map((e) => e.shortName).join('、')}`
 const EMPTY_DESCRIPTION = `本轮${EXAMS.length}场考试已结束，时间与关键节点备查；新日程以官方公告为准。`
 const SITE_PATH = 'src/navsphere/content/site.json'

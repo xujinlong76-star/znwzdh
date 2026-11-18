@@ -54,13 +54,13 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
-# 最小权限 + 同分支新 push 自动取消旧运行
+# 最小权限 + 非 main/master 分支新 push 自动取消旧运行（main/master 不取消）
 permissions:
   contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
 env:
   # 覆盖仓库本地 .npmrc 的国内镜像源，在 GitHub CI 环境直连官方源以保证网络高可靠

@@ -102,13 +102,15 @@ describe("v7 零遮挡几何", () => {
 
 describe("v7 按需唤出接线", () => {
   it("状态机齐全：show/hide + 3 秒闲置收起 + 移开/点别处/Esc", () => {
-    expect(WIDGET).toContain("function showControls()");
+    // C-14（2026-11-18）：showControls 改为 showControls(fromUser)，悬停唤出传 true；
+    // 断言按新签名改写，未删断言。
+    expect(WIDGET).toContain("function showControls(fromUser)");
     expect(WIDGET).toContain("function hideControls()");
     expect(WIDGET).toContain("var CTL_HIDE_AFTER = 3000;");
     expect(WIDGET).toContain("root.addEventListener('pointerleave'");
     expect(WIDGET).toContain("if (ev.key === 'Escape') hideControls();");
     expect(WIDGET).toContain("if (ctlShown && !root.contains(ev.target)) hideControls();");
-    expect(WIDGET).toContain("if (!wasDocked) showControls();");
+    expect(WIDGET).toContain("if (!wasDocked) showControls(true);");
   });
 
   it("移动端轻点猫只唤坞不摸猫：coarse 分支在 petCat 之前", () => {

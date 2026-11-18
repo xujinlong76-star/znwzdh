@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 
 /**
  * 核心旅程 5：首页 DIY 的**跨组件状态共享**（真实缺陷的端到端验收）。
@@ -18,26 +18,71 @@ import { test, expect } from '@playwright/test';
  *
  * 三条用例都不依赖后端种子数据（CI 的 E2E 库是空库），
  * 需要数据的地方一律通过界面自己造。
+ *
+ * 2026-11-18 改写（44394500 首页极简首屏 + 五大功能小窗化）：
+ *   - 旧首屏展板已无挂载点（HomeHeroDeck 只剩组件定义），展板断言作废；
+ *     跨组件联动的判据改为 viewMode→工作台：外观向导小窗里的 ViewModeToggle
+ *     切「沉浸工作台」，navigation-content 当场渲染「模块化工作台主页」。
+ *   - hybrid 与 classic 在新首屏渲染完全一致，不再断言 classic。
+ *   - DIY 静态入口 pill 已撤，编排态入口改为外观向导小窗内「开启 DIY」。
  */
+
+/** 打开外观向导小窗（工具栏常驻图标钮 → appearance 页签默认打开）。 */
+async function openAppearanceDialog(page: Page) {
+  await page.getByRole('button', { name: '打开外观排版与新手向导小窗' }).click();
+  const dialog = page.getByRole('dialog', { name: '外观排版与新手向导' });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+async function closeAppearanceDialog(page: Page) {
+  const dialog = page.getByRole('dialog', { name: '外观排版与新手向导' });
+  // Escape 可能被刚关闭的下拉菜单吃掉（Radix 菜单的 Escape 会 stopPropagation），
+  // 导致小窗没关上——而小窗开着时 Radix 会把背后内容 aria-hidden，
+  // getByRole 找不到工作台标题。没关上时改点右上角 ×（同一 onOpenChange）。
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+  if (await dialog.count()) {
+    await dialog.getByRole('button', { name: 'Close' }).click();
+  }
+  await expect(dialog).toHaveCount(0, { timeout: 10_000 });
+}
+
+/**
+ * 在外观小窗内切视图形态。
+ *
+ * 注意 strict-mode：640–1024px 下 HalfScreenDock 里还有一个 ViewModeToggle
+ * （CSS 隐藏但仍在 DOM），1280px 下 dock 的也在 DOM。切换器按钮必须取 dialog
+ * 作用域内的那个；下拉菜单是 portal、同一时刻只开一个，全页取 menuitem。
+ */
+async function setViewModeFromDialog(page: Page, dialog: Locator, modeLabel: string) {
+  await dialog.getByRole('button', { name: /首页视图形态/ }).click();
+  await page.getByRole('menuitem', { name: modeLabel }).click();
+}
+
 test.describe('核心旅程 5：首页 DIY 排版跨组件联动', () => {
-  test('切换视图形态：首屏展板当场消失，不必刷新，且真的落盘', async ({ page }) => {
+  test('切换视图形态：工作台当场出现，不必刷新，且真的落盘', async ({ page }) => {
     await page.goto('/');
 
-    // 默认是「极客混合流」：首屏展板（由 navigation-content 渲染）应在
-    const deck = page.getByRole('heading', { name: /极速启动展板/ });
-    await expect(deck).toBeVisible();
+    // 默认是「极客混合流」：小窗里的切换器应读到共享状态的当前值
+    const dialog = await openAppearanceDialog(page);
+    await expect(
+      dialog.getByRole('button', { name: '首页视图形态：当前为混合模式' }),
+    ).toBeVisible();
 
-    // 切换发生在另一个组件里（ViewModeToggle），修复前两边状态是断开的
-    await page.getByRole('button', { name: /首页视图形态/ }).click();
-    await page.getByRole('menuitem', { name: '经典全景流' }).click();
+    // 切换发生在另一个组件里（外观小窗内的 ViewModeToggle），修复前两边状态是断开的
+    await setViewModeFromDialog(page, dialog, '沉浸工作台');
+    await closeAppearanceDialog(page);
 
-    await expect(deck).toHaveCount(0);
+    // 跨组件联动的判据：小窗里的切换器改了 navigation-content 的渲染
+    const workbenchHeading = page.getByRole('heading', { name: '模块化工作台主页' });
+    await expect(workbenchHeading).toBeVisible();
 
     // 不只是「看着变了」：确实写进了本地存储。
     //
     // 注意：落盘是防抖的（HOME_DIY_DISK_WRITE_DEBOUNCE_MS = 300，见
     // lib/modular/home-diy-storage.ts，单测已钉死「提交后内存立即变，
-    // 但 300ms 内不写盘」）。展板消失只证明内存态翻了，不能证明盘已落；
+    // 但 300ms 内不写盘」）。工作台出现只证明内存态翻了，不能证明盘已落；
     // 直接读盘会撞竞态窗——快机器上读到的还是旧值（CI #878 的
     // `expect(stored.viewMode).toBe('classic')` 就是这么红的）。
     // 用 expect.poll 等它落盘：这条断言真正要钉的是「最终落盘」，不是「立即落盘」。
@@ -51,12 +96,21 @@ test.describe('核心旅程 5：首页 DIY 排版跨组件联动', () => {
           ).viewMode,
         { timeout: 10_000 },
       )
-      .toBe('classic');
+      .toBe('workbench');
 
-    // 刷新后仍然是经典流（切换器自己也要读到共享状态）
+    // 刷新后仍然是工作台（切换器自己也要读到共享状态）
     await page.reload();
-    await expect(page.getByRole('heading', { name: /极速启动展板/ })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /首页视图形态：当前为经典模式/ })).toBeVisible();
+    await expect(workbenchHeading).toBeVisible();
+    const dialog2 = await openAppearanceDialog(page);
+    await expect(
+      dialog2.getByRole('button', { name: '首页视图形态：当前为工作台' }),
+    ).toBeVisible();
+
+    // 往返联动：切回混合流，工作台当场收起（每个用例是全新 context，
+    // 切回只是证明往返成立，不是为清 localStorage）
+    await setViewModeFromDialog(page, dialog2, '极客混合流 (推荐)');
+    await closeAppearanceDialog(page);
+    await expect(workbenchHeading).toHaveCount(0);
   });
 
   /**
@@ -68,6 +122,9 @@ test.describe('核心旅程 5：首页 DIY 排版跨组件联动', () => {
    * 已排除本会话改动引入回归：临时还原 isFreshCustom 后重跑仍失败。
    * 因此不继续用「改断言」掩盖环境差异，而是标记 fixme 并保留原断言，
    * 等 E2E 栈补齐「自定义分类进主内容区」的种子数据后再恢复。
+   *
+   * 2026-11-18：入口一步已随 44394500 迁移——旧静态 pill 已撤，改为
+   * 外观向导小窗内「开启 DIY」；其余断言与 fixme 原因不动。
    */
   test.fixme('编排模式新建专属分类：导航区当场出现该分类与就地排版控件', async ({ page }) => {
     await page.goto('/');
@@ -77,7 +134,8 @@ test.describe('核心旅程 5：首页 DIY 排版跨组件联动', () => {
     const dragHandle = page.getByTitle('按住拖拽调整此分类在页面上的排列位置');
     await expect(dragHandle).toHaveCount(0);
 
-    await page.getByRole('button', { name: /DIY 排版工坊/ }).click();
+    const dialog = await openAppearanceDialog(page);
+    await dialog.getByRole('button', { name: '开启 DIY' }).click();
     await expect(page.getByRole('button', { name: /完成/ })).toBeVisible();
 
     /**
@@ -85,7 +143,7 @@ test.describe('核心旅程 5：首页 DIY 排版跨组件联动', () => {
      * 视口外的分类用占位块承载（占位块同样带就地操控条），因此拖拽手柄
      * 的「总数」会随滚动位置与列表重排变化，不能再写死 baseline + 1。
      *
-     * 这条用例真正要证明的是**跨组件联动**：工具栏里新建的专属分类，
+     * 这条用例真正要证明的是**跨组件联动**：工具栏里新建的分类，
      * 必须当场出现在导航区且自带就地排版控件。改为断言新分类本身：
      *   - 它渲染成可编排区块（有拖拽手柄）；
      *   - 撤销后它消失；
@@ -123,18 +181,21 @@ test.describe('核心旅程 5：首页 DIY 排版跨组件联动', () => {
     });
 
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: /极速启动展板/ })).toBeVisible();
-
-    await page.getByRole('button', { name: /首页视图形态/ }).click();
-    await page.getByRole('menuitem', { name: '经典全景流' }).click();
+    const dialog = await openAppearanceDialog(page);
+    await setViewModeFromDialog(page, dialog, '沉浸工作台');
+    await closeAppearanceDialog(page);
 
     // 改动在内存里照旧生效（不能因为存不下就假装没点）
-    await expect(page.getByRole('heading', { name: /极速启动展板/ })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: '模块化工作台主页' })).toBeVisible();
     // 但「没保存上」必须说出来，否则用户以为已经存好了
     await expect(page.getByRole('alert').filter({ hasText: '没能写入浏览器本地存储' })).toBeVisible();
 
     // 而且真没存下：刷新回到默认（这句同时证明上面那条提示不是摆设）
     await page.reload();
-    await expect(page.getByRole('heading', { name: /极速启动展板/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '模块化工作台主页' })).toHaveCount(0);
+    const dialog2 = await openAppearanceDialog(page);
+    await expect(
+      dialog2.getByRole('button', { name: '首页视图形态：当前为混合模式' }),
+    ).toBeVisible();
   });
 });

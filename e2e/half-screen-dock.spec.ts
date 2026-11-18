@@ -9,8 +9,14 @@ import { test, expect, type Page } from '@playwright/test';
  * 默认抬到 112px（K1 悬浮栈规范 f0283bb8：猫底边 96px→112px，见下）。
  *
  * 本文件把 elementFromPoint 实测固化下来：700/900 下 × 与热度榜的中心点命中
- * 目标必须是其自身（不是 .xm-lean、不是 DIY pill）；639/640/1023/1024 四边界
+ * 目标必须是其自身（不是 .xm-lean、不是 HomeQuickDock）；639/640/1023/1024 四边界
  * 显隐符合 [640,1024)；猫的拖动、60 秒贴边、面板展开三处无回归。
+ *
+ * 2026-11-18 改写（44394500 首页极简首屏 + 五大功能小窗化）：
+ * 旧门条件「等 DIY 入口 pill 可见」已作废——pill 随 44394500 有意撤掉
+ * （hideStaticButton，全树只剩死代码文案）；门条件改为 dock 自身可见 +
+ * 工具栏外观按钮可见。旧遮挡源 pill 已消失；hitTest 增加 inQuickDock 断言，
+ * 直接回答新加的 HomeQuickDock（页内流式 section）是否遮挡 × 或热度榜。
  *
  * 猫底距现行值（xiaomaomao.js，与四边界期望逐字对齐；K1 2026-11-17 修正，
  * f0283bb8：猫底边 96px→112px，640–1023px 档与桌面同值；旧值 640/1023→90px、
@@ -26,7 +32,7 @@ const DOCK = 'nav[aria-label="半屏快捷操作"]';
 const CLOSE_BTN = 'button[aria-label="关闭半屏下沉栏"]';
 const HOT_LINK = 'a[aria-label="热度趋势榜"]';
 const CAT = '#xiaomaomao';
-const DIY_PILL = 'text=DIY 排版工坊';
+const APPEARANCE_BTN = '打开外观排版与新手向导小窗';
 
 async function gotoHome(page: Page, width: number, height = 900): Promise<void> {
   await page.setViewportSize({ width, height });
@@ -38,12 +44,14 @@ async function gotoHome(page: Page, width: number, height = 900): Promise<void> 
 
 async function expectDockVisible(page: Page): Promise<void> {
   await expect(page.locator(DOCK)).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator(DIY_PILL).first()).toBeVisible({ timeout: 30_000 });
+  // 首页已加载且工具栏已挂载的证明（工具栏外观按钮在 700/900px 下是常驻图标钮）；
+  // 旧门条件「等 DIY 入口 pill」已随 44394500 撤掉，不再等待。
+  await expect(page.getByRole('button', { name: APPEARANCE_BTN })).toBeVisible({ timeout: 30_000 });
   // 入场动画（xm-enter .32s）落定，避免量到动画中途的几何
   await page.waitForTimeout(600);
 }
 
-/** 中心点命中判定：返回命中元素描述 + 是否落在目标内 / 猫内 / DIY pill 内 */
+/** 中心点命中判定：返回命中元素描述 + 是否落在目标内 / 猫内 / 快捷坞内 */
 async function hitTest(page: Page, selector: string) {
   const box = await page.locator(selector).first().boundingBox();
   expect(box, `${selector} 应有几何`).not.toBeNull();
@@ -53,20 +61,19 @@ async function hitTest(page: Page, selector: string) {
     ({ cx, cy, selector }) => {
       const target = document.querySelector(selector);
       const el = document.elementFromPoint(cx, cy) as Element | null;
-      if (!target || !el) return { ok: false, hit: null, inCat: false, inDiy: false };
-      const btn = el.closest('button');
+      if (!target || !el) return { ok: false, hit: null, inCat: false, inQuickDock: false };
       return {
         ok: target.contains(el),
         hit: el.outerHTML.slice(0, 160),
         inCat: !!el.closest('#xiaomaomao'),
-        inDiy: !!btn && (btn.textContent || '').includes('DIY 排版工坊'),
+        inQuickDock: !!el.closest('#quick-access-tray'),
       };
     },
     { cx, cy, selector },
   );
   expect(res.ok, `${selector} 中心点 (${Math.round(cx)},${Math.round(cy)}) 命中了 ${res.hit}，不是目标本身`).toBe(true);
   expect(res.inCat, `${selector} 中心点被小猫挂件盖住：${res.hit}`).toBe(false);
-  expect(res.inDiy, `${selector} 中心点被 DIY 入口 pill 盖住：${res.hit}`).toBe(false);
+  expect(res.inQuickDock, `${selector} 中心点被 HomeQuickDock 盖住：${res.hit}`).toBe(false);
   return { cx, cy };
 }
 

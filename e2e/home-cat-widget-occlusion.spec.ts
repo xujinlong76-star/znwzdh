@@ -3,8 +3,14 @@ import { expect, test, type Page } from '@playwright/test'
 
 // 第 1 件（只验只报，不动 xiaomaomao.js）：
 // 桌面 1920x1080 实查右下角小猫挂件是否盖住底部栏 DIY 入口、回到顶部、
-// 页脚版权行与影院区「进入短剧专区」，以及闲置 60 秒后是否贴边半藏。
+// 页脚版权行与短剧小窗内「进入短剧专区」，以及闲置 60 秒后是否贴边半藏。
 // 挂件瘦身与遮挡修复由 Lighthouse 优化 Wave 1 统一做，本规格只做现状测量。
+//
+// 2026-11-18 改写（44394500 首页极简首屏 + 五大功能小窗化）：
+//   - DIY 静态 pill 已撤（hideStaticButton），首页底部不再有 DIY 入口可量，记 null；
+//     新入口在顶部工具栏的外观向导小窗内，不在底部固定区，无遮挡面。
+//   - 影院链接不在首屏流中：改为点微胶囊开短剧小窗，在小窗内取链接量重叠。
+//   - 回到顶部改为先滚到底（按钮真实出现条件）再量几何。
 
 test.use({ viewport: { width: 1920, height: 1080 } })
 
@@ -71,20 +77,34 @@ test('小猫挂件遮挡与闲置贴边现状测量（桌面 1920x1080）', asyn
   expect(cat, '右下角应存在小猫挂件 fixed 元素（排除 toast 容器后）').toBeTruthy()
   const catRect = cat!.rect
 
-  let diyBox = await page.getByRole('button', { name: /DIY 排版工坊/ }).boundingBox().catch(() => null)
-  if (!diyBox) diyBox = await page.getByText('DIY 排版工坊').first().boundingBox().catch(() => null)
-  const topBox = await page.getByRole('button', { name: '回到顶部' }).boundingBox()
+  // DIY 静态 pill 已随 44394500 撤掉，首页底部不再有 DIY 入口可量，记 null。
+  // 不要为凑数去量小窗内的「开启 DIY」按钮（小窗打开时猫在遮罩之下，量了也没意义）。
+  const diyBox: Rect | null = null
 
+  // 先滚到底：回到顶部按钮只在滚动后才进入真实出现条件，几何与未滚动时一致，
+  // 但更符合按钮真实出现条件。首页只有一个「回到顶部」按钮（FloatingQuickNav，
+  // ScrollToTop 只挂在 /videos），全页取不会撞 strict-mode。
   await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' as ScrollBehavior }))
   await page.waitForTimeout(1200)
+  const topBox = await page.getByRole('button', { name: '回到顶部' }).boundingBox().catch(() => null)
   const footerBox = await page.locator('footer').first().boundingBox()
   const copyrightBox = await page.getByText('©').first().boundingBox().catch(() => null)
   await page.screenshot({ path: 'test-results/home-bottom-initial.png' })
 
-  await page.evaluate(() => document.querySelector('[aria-label="短剧影院"]')?.scrollIntoView({ block: 'end', behavior: 'instant' as ScrollBehavior }))
-  await page.waitForTimeout(1200)
-  const cinemaBox = await page.getByRole('link', { name: /进入短剧专区/ }).boundingBox()
+  // 影院链接已不在首屏流中：点微胶囊开短剧小窗，在小窗内取链接（E2E 空库无追剧
+  // 记录时胶囊文案为「今日短剧热榜」；有记录时为「继续追《…》」）。
+  await page.getByRole('button', { name: /今日短剧热榜|继续追/ }).click()
+  const cinemaDialog = page.getByRole('dialog', { name: '短剧速览剧场' })
+  await expect(cinemaDialog).toBeVisible()
+  const cinemaBox = await cinemaDialog.getByRole('link', { name: /进入短剧专区/ }).boundingBox()
   await page.screenshot({ path: 'test-results/home-cinema.png' })
+  // Escape 没关上时改点右上角 ×（小窗开着时背后内容 aria-hidden，须确保关窗后再量闲置）
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+  if (await cinemaDialog.count()) {
+    await cinemaDialog.getByRole('button', { name: 'Close' }).click()
+  }
+  await expect(cinemaDialog).toHaveCount(0, { timeout: 10_000 })
 
   const overlapPx2: Record<string, number> = {
     diyTrigger: diyBox ? overlap(catRect, diyBox) : -1,
@@ -102,6 +122,10 @@ test('小猫挂件遮挡与闲置贴边现状测量（桌面 1920x1080）', asyn
 
   const report = {
     viewport: { width: 1920, height: 1080 },
+    notes: [
+      'DIY 静态 pill 已随 44394500 撤掉（hideStaticButton），DIY 入口现为外观向导小窗内按钮，不在底部固定区，无遮挡面',
+      '影院链接取自短剧小窗（微胶囊「今日短剧热榜」→ 短剧速览剧场 → 进入短剧专区），不在首屏流中',
+    ],
     fixedElements: fixed,
     catInitial: cat,
     catAfterIdle: catAfter,

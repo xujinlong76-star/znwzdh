@@ -1,8 +1,12 @@
 import { writeFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 
-// 第 1 件补充核查：页脚版权行与影院区「进入短剧专区」在被滚到视口右下角
+// 第 1 件补充核查：页脚版权行与短剧小窗内「进入短剧专区」在被滚到视口右下角
 // （小猫挂件固定区）时是否被盖。只验只报，不动 xiaomaomao.js。
+//
+// 2026-11-18 改写（44394500 首页极简首屏 + 五大功能小窗化）：影院区入口已不在
+// 首屏流中，改为点微胶囊「今日短剧热榜」打开短剧小窗，在小窗内取链接量重叠；
+// 页脚用例不动（复现 run4 已通过）。
 
 test.use({ viewport: { width: 1920, height: 1080 } })
 
@@ -62,7 +66,7 @@ test('页脚版权行滚到底后是否被小猫盖住', async ({ page }) => {
   console.log('FOOTER-REPORT ' + JSON.stringify(report))
 })
 
-test('影院区入口滚到右下角时是否被小猫盖住', async ({ page }) => {
+test('短剧小窗内「进入短剧专区」与小猫的重叠测量', async ({ page }) => {
   test.setTimeout(180_000)
   await page.addInitScript(() => { document.documentElement.style.scrollBehavior = 'auto' })
   await page.goto('/')
@@ -70,16 +74,15 @@ test('影院区入口滚到右下角时是否被小猫盖住', async ({ page }) 
   await page.waitForTimeout(5000)
 
   const cat = await catRect(page)
-  const linkDocY = await page.getByRole('link', { name: /进入短剧专区/ }).evaluate((el) => {
-    const r = el.getBoundingClientRect()
-    return r.top + window.scrollY
-  })
-  // 把入口滚到视口底部（挂件纵向带 y≈950..1062）
-  await page.evaluate((y) => window.scrollTo({ top: y - 990, behavior: 'instant' as ScrollBehavior }), linkDocY)
-  await page.waitForTimeout(1200)
-  const linkBox = await page.getByRole('link', { name: /进入短剧专区/ }).boundingBox()
+  // 44394500 后影院区入口不在首屏流中：点微胶囊开短剧小窗，链接在小窗内
+  // （E2E 空库无追剧记录时胶囊文案为「今日短剧热榜」；有记录时为「继续追《…》」）。
+  // 链接在 fixed 小窗里，滚页面移不动它，故不再做 linkDocY + 页面滚动。
+  await page.getByRole('button', { name: /今日短剧热榜|继续追/ }).click()
+  const dialog = page.getByRole('dialog', { name: '短剧速览剧场' })
+  await expect(dialog).toBeVisible()
+  const linkBox = await dialog.getByRole('link', { name: /进入短剧专区/ }).boundingBox()
   await page.screenshot({ path: 'test-results/home-cinema-bottom-right.png' })
-  const report = { cat, linkDocY, linkBox, overlapCinemaLink: linkBox ? overlap(cat, linkBox) : -1 }
+  const report = { via: 'drama-mini-dialog', cat, linkBox, overlapCinemaLink: linkBox ? overlap(cat, linkBox) : -1 }
   writeFileSync('test-results/home-cinema-occlusion.json', JSON.stringify(report, null, 2))
   console.log('CINEMA-REPORT ' + JSON.stringify(report))
 })

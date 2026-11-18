@@ -59,7 +59,7 @@ const CASES: Array<{ url: string; title: string; customIcon?: string; expected: 
   { url: 'https://www.taobao.com', title: '淘宝', customIcon: 'https://taobao.com/favicon.ico', expected: '/brand-icons/taobao.png' },
   { url: 'https://www.jd.com', title: '京东', customIcon: 'https://jd.com/favicon.ico', expected: '/brand-icons/jd.png' },
   { url: 'https://www.douyin.com', title: '抖音', customIcon: 'https://www.douyin.com/favicon.ico', expected: '/brand-icons/douyin.png' },
-  { url: 'https://www.kuaishou.com', title: '快手', customIcon: 'https://kuaishou.com/favicon.ico', expected: '/brand-icons/kuaishou.png' },
+  { url: 'https://www.kuaishou.com', title: '快手', customIcon: 'https://www.kuaishou.com/favicon.ico', expected: '/brand-icons/kuaishou.png' },
   { url: 'https://www.bilibili.com', title: '哔哩哔哩', customIcon: 'https://bilibili.com/favicon.ico', expected: '/brand-icons/bilibili.png' },
   // G4：域名映射
   { url: 'https://www.feishu.cn', title: '飞书', customIcon: 'https://www.feishu.cn/favicon.ico', expected: '/brand-icons/feishu.png' },

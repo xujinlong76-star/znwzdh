@@ -483,7 +483,7 @@ export default function WatchlistPage() {
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
                           >
-                            去看 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                            去{entry.platformTitle}首页搜 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                           </a>
                         </li>
                       ))}

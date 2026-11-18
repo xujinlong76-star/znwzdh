@@ -253,6 +253,7 @@ function EmptyResults({
   page,
   tag,
   category = null,
+  categoryName: categoryNameProp = null,
   facets = {},
   suggestions,
   popular,
@@ -268,6 +269,8 @@ function EmptyResults({
   tag: string | null
   /** 当前分类（U-143）：「回到第 1 页」保留它，翻页不丢筛选 */
   category?: string | null
+  /** 分类中文展示名（SearchResults 透传；取不到时退回 slug） */
+  categoryName?: string | null
   /** 当前分面筛选（U-143）：同上 */
   facets?: Record<string, string[]>
   suggestions: string[]
@@ -291,6 +294,8 @@ function EmptyResults({
    */
   hasPlugins?: boolean
 }) {
+  // 分类中文名：取不到时退回 slug（与 SearchResults 同口径）。
+  const categoryName = categoryNameProp ?? category ?? ''
   return (
     <section className="space-y-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-6">
       {/* U-28：零结果标题必须定性——三种情况的下一步完全不同，不能只说
@@ -305,18 +310,28 @@ function EmptyResults({
               ? q
                 ? `站点暂无与“${q}”匹配、且带标签「${tag}」的收录。`
                 : `标签「${tag}」下站点暂无收录。`
-              : correction
-                ? `换了“${correction.corrected}”还是没有——站点暂无匹配的收录。`
-                : q
-                  ? `站点暂无与“${q}”匹配的收录。`
-                  : `站点暂无匹配的收录。`
+              : category
+                ? q
+                  ? `站点暂无与“${q}”匹配、且在分类「${categoryName}」下的收录。`
+                  : `分类「${categoryName}」下站点暂无收录。`
+                : correction
+                  ? `换了“${correction.corrected}”还是没有——站点暂无匹配的收录。`
+                  : q
+                    ? `站点暂无与“${q}”匹配的收录。`
+                    : `站点暂无匹配的收录。`
             : tag
               ? q
                 ? `站内暂时没有收录与“${q}”匹配、且带标签「${tag}」的站点。`
                 : `标签「${tag}」下暂时没有站点。`
-              : correction
-                ? `换了“${correction.corrected}”还是没有——站内暂时没有收录匹配的站点。`
-                : `站内暂时没有收录与“${q}”匹配的站点。`}
+              : category
+                ? q
+                  ? `站内暂时没有收录与“${q}”匹配、且在分类「${categoryName}」下的站点。`
+                  : `分类「${categoryName}」下暂时没有站点。`
+                : correction
+                  ? `换了“${correction.corrected}”还是没有——站内暂时没有收录匹配的站点。`
+                  : Object.keys(facets).length > 0
+                    ? `按当前分面筛选暂时没有站点。`
+                    : `站内暂时没有收录与“${q}”匹配的站点。`}
       </p>
       {/* A11：零结果不是死胡同——两个真出口放最前（AI 找站带词自动问、
           投稿收录带词预填），再往下才是换词/热门词/全网穿透这些次要出口 */}
@@ -732,7 +747,9 @@ export function SearchResults({
           <header className="space-y-3">
             <h1 className="text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">搜索站点</h1>
             <p className="text-sm text-muted-foreground">
-              从站内全部收录站点中检索，支持中文、拼音与语义匹配；结果是可分享、可回退的固定链接。
+              {category
+                ? `在分类「${categoryName}」中检索，支持中文、拼音与语义匹配；结果是可分享、可回退的固定链接。`
+                : '从站内全部收录站点中检索，支持中文、拼音与语义匹配；结果是可分享、可回退的固定链接。'}
             </p>
             <form action="/search" method="get" role="search" className="flex items-center gap-2">
               <label htmlFor="site-search-q" className="sr-only">
@@ -988,6 +1005,7 @@ export function SearchResults({
                   page={page}
                   tag={tagApplied ? tag : null}
                   category={category}
+                  categoryName={categoryName}
                   facets={facets}
                   suggestions={suggestions}
                   popular={popular}

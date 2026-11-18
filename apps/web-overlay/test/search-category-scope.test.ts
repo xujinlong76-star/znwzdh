@@ -132,3 +132,29 @@ describe('U-183：分类芯片可见且可清除，标签清除只清自己', ()
     // 按任务书留给 U-112 追补轮，本轮不动，故这里不断言全文件清零。
   })
 })
+
+describe('U-183：零结果标题与页头文案看得见分类/分面作用域', () => {
+  const src = overlaySource('src/app/search/search-results.tsx')
+
+  it('零结果标题：纯分类与带词分类分支（两路：插件命中限定版与通用版）', () => {
+    expect(src).toContain('分类「${categoryName}」下暂时没有站点。')
+    expect(src).toContain('站内暂时没有收录与“${q}”匹配、且在分类「${categoryName}」下的站点。')
+    expect(src).toContain('分类「${categoryName}」下站点暂无收录。')
+    expect(src).toContain('站点暂无与“${q}”匹配、且在分类「${categoryName}」下的收录。')
+  })
+
+  it('零结果标题：纯分面分支；末端两处原文一字不改（防回归）', () => {
+    expect(src).toContain('按当前分面筛选暂时没有站点。')
+    expect(src).toContain('站内暂时没有收录与“${q}”匹配的站点。')
+    expect(src).toContain('站点暂无匹配的收录。')
+  })
+
+  it('EmptyResults 收到 categoryName prop', () => {
+    expect(src).toContain('categoryName={categoryName}')
+  })
+
+  it('页头文案：分类作用域生效时不再说「全部收录站点」', () => {
+    expect(src).toContain('在分类「${categoryName}」中检索，支持中文、拼音与语义匹配')
+    expect(src).toContain('从站内全部收录站点中检索，支持中文、拼音与语义匹配')
+  })
+})

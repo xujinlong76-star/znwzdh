@@ -27,12 +27,14 @@ const NOV_17_0800_CST = Date.UTC(2026, 10, 17, 0, 0, 0)
 describe('今日区源码守卫（home-today-zone.tsx）', () => {
   const zone = read('src/components/home-today-zone.tsx')
 
-  it('四个零件都是复用已有实现，不自造数据', () => {
+  it('已有零件都是复用已有实现，不自造数据', () => {
     expect(zone).toContain("from '@/components/daily-focus'")
     expect(zone).toContain("from '@/app/brief/brief-resurface'")
     expect(zone).toContain("from '@/lib/exam-calendar'")
-    expect(zone).toContain('nearestExamCountdown()')
+    expect(zone).toContain('nearestExamCountdown(nowMs)')
     expect(zone).toContain('nextExamNode(')
+    expect(zone).toContain('todayNodes(nowMs)')
+    expect(zone).toContain('todayFollowUpNodes(nowMs)')
     expect(zone).toContain("from '@/lib/drama-featured'")
     expect(zone).toContain('loadDramaFeatured()')
   })
@@ -77,7 +79,7 @@ describe('今日区源码守卫（home-today-zone.tsx）', () => {
     // 逐个 <a>/<Link> 开标签取 className，逐个断言含 min-h-11；
     // 复审返工：短剧标题链接曾漏 min-h-11，点按高度仅约 20px。
     const linkClasses = [...zone.matchAll(/<(?:a|Link)[\s\S]*?className="([^"]*)"/g)].map((m) => m[1])
-    expect(linkClasses.length).toBe(4)
+    expect(linkClasses.length).toBe(5)
     for (const cls of linkClasses) {
       expect(cls).toContain('min-h-11')
     }

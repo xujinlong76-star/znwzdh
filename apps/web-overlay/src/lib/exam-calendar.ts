@@ -952,7 +952,7 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
 /**
  * 11-18 峰值日时刻截止表（渲染层专用，考试峰值日包 W9，U-144 推广）。
  *
- * 覆盖 8 个已核实目标时刻（北京时间，表项为目标日期 + 距当日 0 点的分钟数；
+ * 覆盖 11 个已核实目标时刻（北京时间，表项为目标日期 + 距当日 0 点的分钟数；
  * 毫秒值按 shanghaiMidnightMs(目标日期) + 分钟数算，与 guokaoAdmissionPhase
  * 的 15:00 截止同款算法）：
  *  - 成考江西成绩查询 11-18 09:00、成考新疆成绩查询 11-18 12:00、成考广东
@@ -965,6 +965,15 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
  *    会错成 11-18 17:00，故表项必须带目标日期，不许只存分钟数）；
  *  - 广东自考成绩查询 11-18 15:00（查分行；自考 15:00，绝不是成考广东
  *    16:20、不是江苏 10:00）。
+ *  - 成考三省成绩复核 11-20 截止（U-158）：广东 15:00（单日节点，kind today，
+ *    过期 chip 消失）、新疆 12:00、江西 17:00（两多日窗口末日，kind endsToday，
+ *    过期显示「已截止」）；三者 detail 原文所载公告时刻，与江苏复核 11-20
+ *    17:00 同机制。广东 15:00 取教育在线转载的省考试院 2026-11-09 通知逐字
+ *    （“11 月 20 日 15:00 前”书面申请）；新疆 12:00 与江西 17:00 取省考试院
+ *    公告原文直读（xjzk.gov.cn 2026-11-16、jxeea.cn 2026-11-13，W9 本轮直读逐字）。
+ *  - 陷阱：广东成考复核 15:00 绝不是广东自考 11-18 15:00（键不同）；新疆复核
+ *    12:00 绝不是新疆查分 11-18 12:00（date 不同）；江西复核 17:00 绝不是
+ *    11-18 17:00。
  *
  * 不给 ExamNode 加时刻字段、不改 examNodeStatus / todayNodes：节点状态机
  * 与今日行仍是纯日期口径（todayNodes 的注释仍成立）；时刻判定只发生在
@@ -976,6 +985,9 @@ const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, { date: string; minutes
   'chengkao:江西成绩查询': { date: '2026-11-18', minutes: 9 * 60 },
   'chengkao:新疆成绩查询': { date: '2026-11-18', minutes: 12 * 60 },
   'chengkao:广东成绩查询': { date: '2026-11-18', minutes: 16 * 60 + 20 },
+  'chengkao:广东成绩复核': { date: '2026-11-20', minutes: 15 * 60 },
+  'chengkao:新疆成绩复核': { date: '2026-11-20', minutes: 12 * 60 },
+  'chengkao:江西成绩复核': { date: '2026-11-20', minutes: 17 * 60 },
   'jingkao:报名': { date: '2026-11-18', minutes: 18 * 60 },
   'jundui-wenzhi:缴费': { date: '2026-11-18', minutes: 18 * 60 },
   'jiangsu-zikao:成绩查询': { date: '2026-11-18', minutes: 10 * 60 },

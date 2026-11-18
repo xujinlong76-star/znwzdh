@@ -10,7 +10,9 @@ test.describe('核心旅程 3：管理端 API Token 签发与生命周期管理'
   });
 
   test('管理端凭据页面正常加载并展示标题与新建按钮', async ({ page }) => {
-    await expect(page.locator('text=API Token 访问凭据管理')).toBeVisible();
+    // 标题断言限定到 heading：页面标题在 <h1> 内，text= 会同时命中 Next.js 路由播报器
+    // #__next-route-announcer__（role=alert，回显标题文本）而 strict mode 报错
+    await expect(page.getByRole('heading', { name: 'API Token 访问凭据管理' })).toBeVisible();
     const createBtn = page.getByRole('button', { name: /创建新 Token/ });
     await expect(createBtn).toBeVisible();
   });

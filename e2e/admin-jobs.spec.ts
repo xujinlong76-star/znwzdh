@@ -9,7 +9,9 @@ test.describe('核心旅程 5：管理端任务调度与 SSE 实时推流', () =
   });
 
   test('管理端任务页面正常装载且展示 SSE 状态徽章与统计卡片', async ({ page }) => {
-    await expect(page.locator('text=任务调度与自动化中心')).toBeVisible();
+    // 标题断言限定到 heading：页面标题是 <h1>，text= 会同时命中 Next.js 路由播报器
+    // #__next-route-announcer__（role=alert，回显标题文本）而 strict mode 报错
+    await expect(page.getByRole('heading', { name: '任务调度与自动化中心' })).toBeVisible();
     // 验证 SSE 状态徽章存在（实时推流或轮询检测）
     await expect(page.locator('text=推流已就绪').or(page.locator('text=轮询监测中'))).toBeVisible();
     // 验证统计卡片

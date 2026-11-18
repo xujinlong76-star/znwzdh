@@ -960,6 +960,16 @@
         var p = next.play();
         if (p && p.catch) p.catch(function () { /* 自动播放被拦时留首帧 */ });
         markVideoReady(next, seq);
+        /* 淡化结束后停掉旧一路：只留可见的一路解码，省电。300ms 略长于 .xm-clip
+           的 .28s 透明度过渡，淡化期间两路短暂同播是刻意的；seq 守卫防后一次
+           切换把刚换回来的路误停（A→B→A 时旧定时器不再碰已可见的路）。 */
+        if (cur && cur !== next) {
+          window.setTimeout(function () {
+            try {
+              if (seq === clipSeq && clipVisible !== cur && !cur.paused) cur.pause();
+            } catch (e) { /* 忽略 */ }
+          }, 300);
+        }
       } catch (e) { /* 无头/受限环境静默 */ }
     };
     if (next.src && resolved.url && next.src.indexOf(resolved.url) !== -1) { show(); return; }

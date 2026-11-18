@@ -757,6 +757,14 @@ jobs:
         id: e2e-install
       - run: node scripts/vendor-web.mjs
         id: e2e-vendor
+      # U-141（2026-11-18）：猫挂件 E2E 前置放媒体。0675e2b 起默认猫只播透明视频，
+      # 播不了走 WebP → GIF → 藏猫；但真实媒体二进制不进仓库，CI 全新 checkout 下
+      # 三者全部 404，hideCat() 把猫 display:none，6 个猫用例 9/9 全败。
+      # 这里放的是 e2e/fixtures/cat-media/ 里的合成夹具（最小可用媒体，非真实
+      # 猫形象），只让 E2E 里猫有东西可播；生产行为不动，生产缺媒体仍藏猫。
+      - name: 放置猫挂件 E2E 夹具媒体
+        id: e2e-cat-media
+        run: node scripts/ensure-cat-media.mjs
       - name: 安装 Playwright Chromium
         id: e2e-playwright
         run: pnpm exec playwright install --with-deps chromium

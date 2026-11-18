@@ -67,6 +67,19 @@ export function normalizeSearchPage(raw: string | string[] | undefined): number 
   return Math.min(n, searchMaxPage())
 }
 
+/**
+ * 超限页码 → 应 redirect 的规范页码；未超限返回 null。
+ * 只认「解析为有限整数且 > searchMaxPage()」：非数字/0/负数已归一为 1，
+ * 不在此处理（见 U-189 深研：扩大范围收益低且多一次 307）。
+ * 返回值恒为 searchMaxPage()，而 searchHref 会把它写成 page=51——
+ * 该 URL 自身的归一化结果仍是 51，是 redirect 条件的不动点，故最多一跳。
+ */
+export function overLimitSearchPage(raw: string | string[] | undefined): number | null {
+  const n = Number.parseInt(first(raw), 10)
+  if (!Number.isFinite(n) || n <= searchMaxPage()) return null
+  return searchMaxPage()
+}
+
 
 /**
  * 分类归一：与中枢 /api/search 的 categoryId 同形（slug 或 id，最长 64）。

@@ -19,6 +19,7 @@ import {
   normalizeSearchPage,
   normalizeSearchQuery,
   normalizeSearchTag,
+  overLimitSearchPage,
   searchApiPath,
   searchHref,
   searchMaxPage,
@@ -313,5 +314,47 @@ describe('正交分面与分类作用域（URL 即状态）', () => {
     expect(path).toContain('facets=')
     const params = new URLSearchParams(path.split('?')[1])
     expect(JSON.parse(params.get('facets')!)).toEqual({ pricing: ['open_source'] })
+  })
+})
+
+describe('U-189：超限页码服务端 redirect 到归一化 URL', () => {
+  const searchPage = overlaySource('src/app/search/page.tsx')
+
+  it('超限页码返回最后一页（51）', () => {
+    expect(overLimitSearchPage('99')).toBe(searchMaxPage())
+    expect(overLimitSearchPage('9999')).toBe(searchMaxPage())
+  })
+
+  it('边界 51 不跳', () => {
+    expect(overLimitSearchPage('51')).toBeNull()
+  })
+
+  it('52 刚超限即跳', () => {
+    expect(overLimitSearchPage('52')).toBe(searchMaxPage())
+  })
+
+  it('非数字/0/负数/缺失不在超限分支处理', () => {
+    expect(overLimitSearchPage('abc')).toBeNull()
+    expect(overLimitSearchPage('0')).toBeNull()
+    expect(overLimitSearchPage('-3')).toBeNull()
+    expect(overLimitSearchPage(undefined)).toBeNull()
+  })
+
+  it('数组形态取首个，与 normalizeSearchPage 同语义', () => {
+    expect(overLimitSearchPage(['99', '2'])).toBe(searchMaxPage())
+    expect(overLimitSearchPage(['2', '99'])).toBeNull()
+  })
+
+  it('page.tsx 接线：redirect 导入且判断调 overLimitSearchPage(sp.page)', () => {
+    expect(searchPage).toContain("import { redirect } from 'next/navigation'")
+    expect(searchPage).toContain('overLimitSearchPage(sp.page)')
+  })
+
+  it('redirect 目标由 searchHref 生成且透传 nocorrect', () => {
+    expect(searchPage).toContain('searchHref({ q, page: overLimit, tag, category, facets, nocorrect })')
+  })
+
+  it('redirect 判断在取数之前，不浪费一次中枢往返', () => {
+    expect(searchPage.indexOf('redirect(searchHref')).toBeLessThan(searchPage.indexOf('Promise.all'))
   })
 })

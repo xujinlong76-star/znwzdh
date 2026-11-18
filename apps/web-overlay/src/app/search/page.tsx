@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
 import { loadSearchPage } from '@/lib/server/search'
 import {
   normalizeSearchCategory,
@@ -6,6 +7,8 @@ import {
   normalizeSearchPage,
   normalizeSearchQuery,
   normalizeSearchTag,
+  overLimitSearchPage,
+  searchHref,
 } from '@/lib/search-page'
 import { hubGet } from '@/lib/server/hub'
 import { categoryDisplayName, loadCategories, type HubCategory } from '@/lib/server/categories'
@@ -94,6 +97,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   // nocorrect=1：纠正横幅「不是这个？搜原来的」回退——原样透传给中枢，
   // 关掉自动纠正，只走 didYouMean 建议。
   const nocorrect = sp.nocorrect === '1' || (Array.isArray(sp.nocorrect) && sp.nocorrect[0] === '1')
+  // U-189：超限页码服务端 redirect 到归一化 URL，地址栏与内容不再脱节。
+  // 目标页码恒为 searchMaxPage()，是不动点，最多一跳（见 lib/search-page.ts 的 overLimitSearchPage 注释）。
+  const overLimit = overLimitSearchPage(sp.page)
+  if (overLimit !== null) {
+    redirect(searchHref({ q, page: overLimit, tag, category, facets, nocorrect }))
+  }
   const hasFilter = q || tag || category || Object.keys(facets).length > 0
 
   const [{ result, failed, unavailable, plugins }, facetGroups, trending, categories] = await Promise.all([

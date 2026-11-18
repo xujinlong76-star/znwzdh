@@ -531,9 +531,10 @@ export default function WatchlistPage() {
                                   href={safeHref(entry.playUrl)}
                                   target="_blank"
                                   rel="noopener noreferrer"
+                                  title={`去${entry.platformTitle}首页搜《${entry.title}》`}
                                   className="inline-flex shrink-0 items-center gap-1 rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
                                 >
-                                  去{entry.platformTitle}首页搜 <ExternalLink className="h-3 w-3" aria-hidden />
+                                  去{entry.platformTitle}搜 <ExternalLink className="h-3 w-3" aria-hidden />
                                 </a>
                               </span>
                             </li>

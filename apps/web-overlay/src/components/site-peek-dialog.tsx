@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { NavigationSubItem, SiteAction } from '@/types/navigation'
+import type { NavigationSubItem, SiteAction, SiteLiveMetrics, SiteRelation } from '@/types/navigation'
 import {
   Dialog,
   DialogContent,
@@ -82,6 +82,18 @@ export function SitePeekDialog({
   const [radarLoaded, setRadarLoaded] = useState(false)
   const [visualUrl, setVisualUrl] = useState<string | null>(null)
   const [visualLoading, setVisualLoading] = useState(false)
+  /**
+   * U-36 瘦身投影 C：分片里的站点只带渲染字段，重字段（actions/relations/
+   * liveMetrics/workspaces）不在分片里；弹窗打开时按站懒取单站详情补齐。
+   * 取不到（中枢不可达/站点无此数据）时回落到 item 自带值——与改造前一致
+   * （processNavigationSubItem 本就把这些字段裁掉，取不到即不显示，不报错）。
+   */
+  const [siteDetail, setSiteDetail] = useState<{
+    actions?: SiteAction[]
+    relations?: SiteRelation[]
+    liveMetrics?: SiteLiveMetrics
+    workspaces?: string[]
+  } | null>(null)
 
   const fetchVisual = async () => {
     if (!item?.id || visualLoading) return
@@ -131,8 +143,25 @@ export function SitePeekDialog({
       setRadarLoaded(false)
       setVisualUrl(null)
       setVisualLoading(false)
+      setSiteDetail(null)
       return
     }    let cancelled = false
+    // U-36：按站懒取重字段（actions/relations/liveMetrics/workspaces）
+    fetch(`/api/hub/sites/${encodeURIComponent(item.id)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data && typeof data === 'object') {
+          setSiteDetail({
+            actions: Array.isArray(data.actions) ? data.actions : undefined,
+            relations: Array.isArray(data.relations) ? data.relations : undefined,
+            liveMetrics: (data.liveMetrics ?? undefined) as SiteLiveMetrics | undefined,
+            workspaces: Array.isArray(data.workspaces) ? data.workspaces : undefined,
+          })
+        }
+      })
+      .catch(() => {
+        // 取不到就按 item 自带值渲染（与改造前一致），不报错
+      })
     fetch(`/api/hub/rank/alternatives/${encodeURIComponent(item.id)}?limit=4`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -166,6 +195,11 @@ export function SitePeekDialog({
   }, [open, showIframe, item?.id, item?.href])
 
   if (!item) return null
+
+  // U-36：重字段优先用懒取的单站详情，取不到时回落 item 自带值（改造前即 undefined）
+  const liveMetrics = siteDetail?.liveMetrics ?? item.liveMetrics
+  const actions = siteDetail?.actions ?? item.actions
+  const relations = siteDetail?.relations ?? item.relations
 
   const handleLivePing = async () => {
     if (!item?.href || isPinging) return
@@ -243,15 +277,15 @@ export function SitePeekDialog({
               <div className="min-w-0">
                 <DialogTitle className="text-lg sm:text-xl font-bold flex flex-wrap items-center gap-2 break-words">
                   <span>{item.title}</span>
-                  {item.liveMetrics?.openSource && (
+                  {liveMetrics?.openSource && (
                     <Badge variant="secondary" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 font-medium">
                       开源
                     </Badge>
                   )}
-                  {item.liveMetrics?.githubStars && (
+                  {liveMetrics?.githubStars && (
                     <Badge variant="outline" className="text-xs flex items-center gap-1 font-mono border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400">
                       <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-                      {(item.liveMetrics.githubStars / 1000).toFixed(1)}k
+                      {(liveMetrics.githubStars / 1000).toFixed(1)}k
                     </Badge>
                   )}
                 </DialogTitle>
@@ -350,14 +384,14 @@ export function SitePeekDialog({
         )}
 
         {/* 核心行动区：深链微动作 (Deep Actions) */}
-        {item.actions && item.actions.length > 0 && (
+        {actions && actions.length > 0 && (
           <div className="mt-4 p-4 rounded-xl border border-primary/20 bg-primary/5 space-y-3 shadow-2xs">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
               <Zap className="w-4 h-4 text-amber-500" />
               <span>直达微动作 (Deep-Launch)</span>
             </div>
             <div className="space-y-2.5">
-              {item.actions.map((act) => {
+              {actions.map((act) => {
                 const hasParam = act.urlTemplate.includes('{q}')
                 return (
                   <div key={act.id} className="flex items-center gap-2">
@@ -399,17 +433,17 @@ export function SitePeekDialog({
         )}
 
         {/* 平替雷达与技术栈生态 (AlternativeTo & Ecosystem) */}
-        {item.relations && item.relations.length > 0 && (
+        {relations && relations.length > 0 && (
           <div className="mt-4 space-y-2.5">
             <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-indigo-500" />
                 <span>平替雷达与生态推荐 (AlternativeTo)</span>
               </span>
-              <span className="text-xs font-mono text-muted-foreground">{item.relations.length} 个候选</span>
+              <span className="text-xs font-mono text-muted-foreground">{relations.length} 个候选</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {item.relations.map((rel, idx) => (
+              {relations.map((rel, idx) => (
                 <div
                   key={idx}
                   className="flex items-start justify-between p-3 rounded-xl border border-border/60 bg-card hover:border-primary/40 transition-all shadow-2xs group"

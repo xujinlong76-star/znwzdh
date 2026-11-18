@@ -84,6 +84,7 @@ import {
   guokaoAdmissionPhase,
   isNodeActionable,
   nextExamNode,
+  todayFollowUpNodes,
   todayNodeDeadlineMs,
   todayNodes,
 } from '../src/lib/exam-calendar'
@@ -625,6 +626,82 @@ describe('U-164 海南成考成绩查询时刻门控（todayNodeDeadlineMs / exa
     expect(query?.node.label).toBe('海南成绩查询')
     expect(query?.kind).toBe('today')
     expect(query?.node.url).toBeUndefined()
+  })
+})
+
+describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () => {
+  // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
+  // 各 it 内调用，失败只落本 it。
+  const shanxiNode = () => chengkao.nodes.find((n) => n.label === '山西成绩复核')!
+  /** 2026-11-19 08:00 北京时间（复核窗口首日） */
+  const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
+  /** 2026-11-20 08:00 北京时间（复核窗口末日） */
+  const NOV_20_0800_CST = Date.UTC(2026, 10, 20, 0, 0, 0)
+  /** 2026-11-21 08:00 北京时间（复核窗口已过） */
+  const NOV_21_0800_CST = Date.UTC(2026, 10, 21, 0, 0, 0)
+
+  it('节点落库：11-19→11-20 多日窗口，无 url；detail 逐字口径 + 转载级标注', () => {
+    const node = shanxiNode()
+    expect(node.startISO).toBe('2026-11-19')
+    expect(node.endISO).toBe('2026-11-20')
+    expect(node.url).toBeUndefined()
+    expect(node.detail).toContain('成绩已于 11 月 18 日公布')
+    expect(node.detail).toContain('11 月 19 日、20 日的工作时间内')
+    expect(node.detail).toContain('到考试所在市的招生考试机构办理成绩复核手续，逾期不予受理')
+    expect(node.detail).toContain('11 月 27 日前，各市招生考试机构通知考生成绩复核结果')
+    // 转载级如实标注：写明来源通知与两路转载一致，并写明未在官方站直读到原文
+    expect(node.detail).toContain('转载级')
+    expect(node.detail).toContain('山西省招生考试管理中心 2026-11-16 通知')
+    expect(node.detail).toContain('凤凰网与新浪财经转载一致')
+    expect(node.detail).toContain('本站未在山西招生考试网直读到官方原文')
+  })
+
+  it('底线守卫：不写「据官网公告」、不写「现场办理」、不写 sxkszx.cn、不补时刻与分数线', () => {
+    const node = shanxiNode()
+    expect(node.detail).not.toContain('官网公告')
+    expect(node.detail).not.toContain('现场办理')
+    expect(node.detail).not.toContain('sxkszx.cn')
+    expect(node.detail).not.toContain('分数线')
+    expect(node.detail).not.toContain('录取时间')
+    expect(node.detail).not.toMatch(/9:00|17:00/)
+  })
+
+  it('山西不入 PEAK 表：todayNodeDeadlineMs 为 undefined（复核窗口只写「工作时间内」、无截止时刻；11 月 27 日是结果通知日、不是节点截止时刻）', () => {
+    expect(
+      todayNodeDeadlineMs({ exam: chengkao, node: shanxiNode(), kind: 'startsToday' }),
+    ).toBeUndefined()
+    expect(
+      todayNodeDeadlineMs({ exam: chengkao, node: shanxiNode(), kind: 'endsToday' }),
+    ).toBeUndefined()
+  })
+
+  it('表外守卫：examNodeDeadlineLabel 在窗口首日 / 末日 / 窗口后恒为 null，永不显示「已截止」', () => {
+    expect(examNodeDeadlineLabel(chengkao, shanxiNode(), NOV_19_0800_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, shanxiNode(), NOV_20_0800_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, shanxiNode(), NOV_21_0800_CST)).toBeNull()
+  })
+
+  it('时刻门控只在渲染层：examNodeStatus 按日期口径（11-19 / 11-20 active、11-21 done）', () => {
+    expect(examNodeStatus(shanxiNode(), NOV_19_0800_CST)).toBe('active')
+    expect(examNodeStatus(shanxiNode(), NOV_20_0800_CST)).toBe('active')
+    expect(examNodeStatus(shanxiNode(), NOV_21_0800_CST)).toBe('done')
+  })
+
+  it('11-19 今日行仍 2 项（山西首日 startsToday 被海南直接节点抑制、退接续区）；11-20 山西以 endsToday 进今日行（第一遍不抑制），无 PEAK 表项故全天「进行中」', () => {
+    const items19 = todayNodes(NOV_19_0800_CST)
+    expect(items19).toHaveLength(2)
+    expect(items19.map((t) => t.node.label)).not.toContain('山西成绩复核')
+    expect(todayFollowUpNodes(NOV_19_0800_CST).map((t) => t.node.label)).toContain('山西成绩复核')
+    // 11-20：山西末日 endsToday 进今日行，不再进接续区；今日行 6 项（广东 today +
+    // 江西/新疆/山西/江苏 endsToday + 上海 startsToday）
+    const items20 = todayNodes(NOV_20_0800_CST)
+    expect(items20).toHaveLength(6)
+    const shanxi20 = items20.find((t) => t.exam.id === 'chengkao' && t.node.label === '山西成绩复核')
+    expect(shanxi20?.kind).toBe('endsToday')
+    expect(todayFollowUpNodes(NOV_20_0800_CST).map((t) => t.node.label)).not.toContain('山西成绩复核')
+    // 无表项：末日全天 examNodeDeadlineLabel 为 null，组合文案恒为状态文案「进行中」
+    expect(examNodeDeadlineLabel(chengkao, shanxiNode(), NOV_20_0800_CST)).toBeNull()
+    expect(todayNodeDeadlineMs(shanxi20!)).toBeUndefined()
   })
 })
 

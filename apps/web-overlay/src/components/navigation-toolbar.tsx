@@ -142,13 +142,18 @@ export function NavigationToolbar({
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon"
                   onClick={onOpenTodayCenter}
-                  className="relative h-11 w-11 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                  className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5"
                   title={todayBadge?.countdownLabel ? `今日中心（${todayBadge.countdownLabel}）` : '今日中心：专注、考试提醒、简报与连胜'}
                   aria-label="打开今日中心小窗"
                 >
-                  <CalendarDays className="h-4 w-4" />
+                  <CalendarDays className="h-4 w-4 shrink-0" />
+                  {/* 可见文字标签（复用已 SSR 的 todayBadge.todayCount，0 新增请求/JS）：
+                      移动端（<sm）图标上、文字下叠排，按钮仍占 44px 宽，工具栏不溢出；
+                      ≥sm 横排，与「AI 找站」按钮同式。todayCount 为 0 时只写「今日」，不谎报计数。 */}
+                  <span className="whitespace-nowrap text-[10px] leading-none sm:text-xs">
+                    {todayBadge && todayBadge.todayCount > 0 ? `今日 ${todayBadge.todayCount} 项` : '今日'}
+                  </span>
                   {hasTodayAlert ? (
                     <span
                       aria-hidden="true"

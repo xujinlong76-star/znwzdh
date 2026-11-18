@@ -39,6 +39,30 @@ import { safeHref } from '../apps/web-overlay/src/lib/safe-url'
  * 留痕，不会伪装成通过。2026-11-19 实测：今日 2 项（江西成绩复核
  * 带链、上海自考成绩查询纯文本）+ 接续 4 项（均纯文本），两分支都行使。
  */
+test.describe('U-155 今日中心入口可见文字标签（2026-11-19 01:22 轮新增）', () => {
+  // 本轮改动：工具栏今日中心按钮加可见文字标签（navigation-toolbar.tsx），
+  // 文案复用已 SSR 的 todayBadge.todayCount：有今日节点时「今日 N 项」，
+  // 无节点时只写「今日」。aria-label 不动，本用例仍用它定位按钮。
+  // 与服务端同源：todayCount = todayNodes(nowMs).length。
+  test('首屏按钮含可见「今日 N 项」标签（桌面与 390px 移动端）', async ({
+    page,
+  }) => {
+    const nowMs = Date.now()
+    const todayCount = todayNodes(nowMs).length
+    const expected = todayCount > 0 ? `今日 ${todayCount} 项` : '今日'
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 800 })
+      await page.goto('/')
+      const btn = page.getByRole('button', { name: '打开今日中心小窗', exact: true })
+      await expect(btn).toBeVisible({ timeout: 60_000 })
+      // 标签是按钮内真实可见的 span 文本，不是仅 title 悬停提示。
+      const label = btn.locator('span:not([aria-hidden])')
+      await expect(label).toBeVisible({ timeout: 10_000 })
+      await expect(label).toHaveText(expected)
+    }
+  })
+})
+
 test.describe('U-155 首页今日行行内直达链接', () => {
   // 与服务端同源的期望数据：一次 nowMs 派生今日行与接续区。
   let nowMs = 0

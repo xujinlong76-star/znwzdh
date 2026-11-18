@@ -63,6 +63,15 @@
  * （查分行，hideWhenPassed=是）；复核无全省统一窗口，不设节点、不进表。
  * 目标时刻：11-18 15:00 = Date.UTC(2026, 10, 18, 7, 0, 0)。15:00 绝不是
  * 成考广东 16:20，也不是江苏 10:00。
+ *
+ * U-158 追加（成考三省复核，2026-11-18）：查表加三行——广东成绩复核
+ * 11-20 15:00（单日节点，kind today，过期 chip 消失）、新疆成绩复核
+ * 11-20 12:00、江西成绩复核 11-20 17:00（两多日窗口末日，kind endsToday，
+ * 过期显示「已截止」）。三目标时刻：广东 Date.UTC(2026, 10, 20, 7, 0, 0)、
+ * 新疆 Date.UTC(2026, 10, 20, 4, 0, 0)、江西 Date.UTC(2026, 10, 20, 9, 0, 0)。
+ * 陷阱：广东成考复核 15:00 绝不是广东自考 11-18 15:00（键不同）；新疆复核
+ * 12:00 绝不是新疆查分 11-18 12:00（date 不同）；江西复核 17:00 绝不是
+ * 11-18 17:00。
  */
 import { describe, expect, it } from 'vitest'
 import type { ExamInfo, ExamNode } from '../src/lib/exam-calendar'
@@ -488,5 +497,116 @@ describe('U-144 广东自考成绩查询时刻门控（todayNodeDeadlineMs / exa
     const query = items18.find((t) => t.exam.id === 'guangdong-zikao')
     expect(query?.node.label).toBe('成绩查询')
     expect(query?.kind).toBe('today')
+  })
+})
+
+describe('U-158 成考三省复核 11-20 时刻门控（todayNodeDeadlineMs / examNodeDeadlineLabel）', () => {
+  // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
+  // 各 it 内调用，失败只落本 it。
+  const gdReview = () => chengkao.nodes.find((n) => n.label === '广东成绩复核')!
+  const xjReview = () => chengkao.nodes.find((n) => n.label === '新疆成绩复核')!
+  const jxReview = () => chengkao.nodes.find((n) => n.label === '江西成绩复核')!
+  /** 2026-11-19 08:00 北京时间（复核窗口未到末日：三行 helper 均为 null） */
+  const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
+  /** 2026-11-20 08:00 北京时间（复核末日白天） */
+  const NOV_20_0800_CST = Date.UTC(2026, 10, 20, 0, 0, 0)
+  /** 2026-11-20 11:59:59 北京时间 = UTC 03:59:59（新疆复核边界前 1 秒） */
+  const NOV_20_115959_CST = Date.UTC(2026, 10, 20, 3, 59, 59)
+  /** 2026-11-20 12:00:00 北京时间 = UTC 04:00:00（新疆复核目标时刻） */
+  const NOV_20_120000_CST = Date.UTC(2026, 10, 20, 4, 0, 0)
+  /** 2026-11-20 12:00:01 北京时间 = UTC 04:00:01（新疆复核边界后 1 秒） */
+  const NOV_20_120001_CST = Date.UTC(2026, 10, 20, 4, 0, 1)
+  /** 2026-11-20 14:59:59 北京时间 = UTC 06:59:59（广东复核边界前 1 秒） */
+  const NOV_20_145959_CST = Date.UTC(2026, 10, 20, 6, 59, 59)
+  /** 2026-11-20 15:00:00 北京时间 = UTC 07:00:00（广东复核目标时刻） */
+  const NOV_20_150000_CST = Date.UTC(2026, 10, 20, 7, 0, 0)
+  /** 2026-11-20 15:00:01 北京时间 = UTC 07:00:01（广东复核边界后 1 秒） */
+  const NOV_20_150001_CST = Date.UTC(2026, 10, 20, 7, 0, 1)
+  /** 2026-11-20 16:59:59 北京时间 = UTC 08:59:59（江西复核边界前 1 秒） */
+  const NOV_20_165959_CST = Date.UTC(2026, 10, 20, 8, 59, 59)
+  /** 2026-11-20 17:00:00 北京时间 = UTC 09:00:00（江西复核目标时刻） */
+  const NOV_20_170000_CST = Date.UTC(2026, 10, 20, 9, 0, 0)
+  /** 2026-11-20 17:00:01 北京时间 = UTC 09:00:01（江西复核边界后 1 秒） */
+  const NOV_20_170001_CST = Date.UTC(2026, 10, 20, 9, 0, 1)
+  /** 2026-11-20 17:30 北京时间 = UTC 09:30:00（三省截止后半小时：门控取舍回归时刻） */
+  const NOV_20_173000_CST = Date.UTC(2026, 10, 20, 9, 30, 0)
+
+  it('三目标时刻毫秒值：广东复核 11-20 15:00、新疆复核 11-20 12:00、江西复核 11-20 17:00', () => {
+    const byKey20 = new Map(
+      todayNodes(NOV_20_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey20.get('chengkao:广东成绩复核')!)).toBe(
+      Date.UTC(2026, 10, 20, 7, 0, 0),
+    )
+    expect(todayNodeDeadlineMs(byKey20.get('chengkao:新疆成绩复核')!)).toBe(
+      Date.UTC(2026, 10, 20, 4, 0, 0),
+    )
+    expect(todayNodeDeadlineMs(byKey20.get('chengkao:江西成绩复核')!)).toBe(
+      Date.UTC(2026, 10, 20, 9, 0, 0),
+    )
+  })
+
+  it('陷阱守卫三则：广东复核 ≠ 广东自考 11-18 15:00、≠ 成考广东查分 16:20；新疆复核 ≠ 新疆查分 11-18 12:00；江西复核 ≠ 11-18 17:00', () => {
+    const byKey20 = new Map(
+      todayNodes(NOV_20_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    const gd = todayNodeDeadlineMs(byKey20.get('chengkao:广东成绩复核')!)
+    expect(gd).toBe(Date.UTC(2026, 10, 20, 7, 0, 0))
+    expect(gd).not.toBe(Date.UTC(2026, 10, 18, 7, 0, 0))
+    expect(gd).not.toBe(Date.UTC(2026, 10, 18, 8, 20, 0))
+    const xj = todayNodeDeadlineMs(byKey20.get('chengkao:新疆成绩复核')!)
+    expect(xj).toBe(Date.UTC(2026, 10, 20, 4, 0, 0))
+    expect(xj).not.toBe(Date.UTC(2026, 10, 18, 4, 0, 0))
+    const jx = todayNodeDeadlineMs(byKey20.get('chengkao:江西成绩复核')!)
+    expect(jx).toBe(Date.UTC(2026, 10, 20, 9, 0, 0))
+    expect(jx).not.toBe(Date.UTC(2026, 10, 18, 9, 0, 0))
+  })
+
+  it('边界三则：新疆 11:59:59 null → 12:00:00「已截止」→ 12:00:01「已截止」；广东 14:59:59 null → 15:00:00「已截止」→ 15:00:01「已截止」；江西 16:59:59 null → 17:00:00「已截止」→ 17:00:01「已截止」', () => {
+    expect(examNodeDeadlineLabel(chengkao, xjReview(), NOV_20_115959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, xjReview(), NOV_20_120000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, xjReview(), NOV_20_120001_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, gdReview(), NOV_20_145959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, gdReview(), NOV_20_150000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, gdReview(), NOV_20_150001_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, jxReview(), NOV_20_165959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, jxReview(), NOV_20_170000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, jxReview(), NOV_20_170001_CST)).toBe('已截止')
+    // 组合文案：新疆/江西末日 active →「进行中」/「已截止」；广东单日 today →「今天」/「已截止」
+    expect(nodeDeadlineDisplayLabel(chengkao, xjReview(), NOV_20_115959_CST)).toBe('进行中')
+    expect(nodeDeadlineDisplayLabel(chengkao, xjReview(), NOV_20_120000_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(chengkao, gdReview(), NOV_20_145959_CST)).toBe('今天')
+    expect(nodeDeadlineDisplayLabel(chengkao, gdReview(), NOV_20_150000_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(chengkao, jxReview(), NOV_20_165959_CST)).toBe('进行中')
+    expect(nodeDeadlineDisplayLabel(chengkao, jxReview(), NOV_20_170000_CST)).toBe('已截止')
+  })
+
+  it('时刻门控只在渲染层：目标时刻 examNodeStatus 仍按日期口径（广东 today、新疆/江西 active）；11-19 全天三行 helper 均为 null', () => {
+    expect(examNodeStatus(gdReview(), NOV_20_150000_CST)).toBe('today')
+    expect(examNodeStatus(xjReview(), NOV_20_120000_CST)).toBe('active')
+    expect(examNodeStatus(jxReview(), NOV_20_170000_CST)).toBe('active')
+    expect(examNodeDeadlineLabel(chengkao, gdReview(), NOV_19_0800_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, xjReview(), NOV_19_0800_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, jxReview(), NOV_19_0800_CST)).toBeNull()
+  })
+
+  it('11-20 今日行 kind 分流：广东 today、新疆/江西 endsToday（与江苏复核 endsToday 同表）；今日行仍 4 项（成员不变）', () => {
+    const items20 = todayNodes(NOV_20_0800_CST)
+    expect(items20).toHaveLength(4)
+    const byKey = new Map(
+      items20.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(byKey.get('chengkao:广东成绩复核')?.kind).toBe('today')
+    expect(byKey.get('chengkao:新疆成绩复核')?.kind).toBe('endsToday')
+    expect(byKey.get('chengkao:江西成绩复核')?.kind).toBe('endsToday')
+    expect(byKey.get('jiangsu-zikao:成绩复核')?.kind).toBe('endsToday')
+  })
+
+  it('门控取舍回归：11-20 17:30 三节点仍可办（isNodeActionable true）、下一步仍是本场节点（午夜才翻）', () => {
+    expect(isNodeActionable(gdReview(), chengkao, NOV_20_173000_CST)).toBe(true)
+    expect(isNodeActionable(xjReview(), chengkao, NOV_20_173000_CST)).toBe(true)
+    expect(isNodeActionable(jxReview(), chengkao, NOV_20_173000_CST)).toBe(true)
+    // 按 startISO 排序，首个可办的是新疆复核（11-18 起始的三省查分行均已 done）
+    expect(nextExamNode(chengkao, NOV_20_173000_CST)?.label).toBe('新疆成绩复核')
   })
 })

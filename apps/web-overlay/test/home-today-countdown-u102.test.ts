@@ -38,6 +38,8 @@
  *  - U-144 江苏成绩复核（11-20 17:00 截止，endsToday 行）：目标时刻进表，
  *    不挂 hideWhenPassed，17:00 后 chip 显示「已截止」；江苏成绩查询
  *    （11-18 10:00，today 行）：挂 hideWhenPassed，10:00 后 chip 直接消失。
+ *  - U-158 成考三省复核 11-20 截止：广东 15:00（today 行，过期 chip 消失）、
+ *    新疆 12:00、江西 17:00（endsToday 行，过期显示「已截止」）。
  *  - SSR 首屏不水合错位：W7 组件挂载前只渲染固定文案「倒计时」，服务端
  *    输出与客户端首帧逐字一致，tick 只在客户端 effect 里发生。本文件
  *    覆盖：同一 nowMs 两次渲染字节一致；SSR 输出不含随分钟跳动的活值
@@ -156,6 +158,14 @@ const NOV_20_165959_CST = Date.UTC(2026, 10, 20, 8, 59, 59)
 const NOV_20_1700_CST = Date.UTC(2026, 10, 20, 9, 0, 0)
 /** 2026-11-20 17:30 北京时间：江苏复核截止后半小时 */
 const NOV_20_1730_CST = Date.UTC(2026, 10, 20, 9, 30, 0)
+/** 2026-11-20 11:59:59 北京时间：距新疆复核 12:00 剩 1 秒 */
+const NOV_20_115959_CST = Date.UTC(2026, 10, 20, 3, 59, 59)
+/** 2026-11-20 12:00 北京时间：新疆复核目标时刻（边界：恰到即截止） */
+const NOV_20_1200_CST = Date.UTC(2026, 10, 20, 4, 0, 0)
+/** 2026-11-20 14:59:59 北京时间：距广东复核 15:00 剩 1 秒 */
+const NOV_20_145959_CST = Date.UTC(2026, 10, 20, 6, 59, 59)
+/** 2026-11-20 15:00 北京时间：广东复核目标时刻（边界：恰到即截止） */
+const NOV_20_1500_CST = Date.UTC(2026, 10, 20, 7, 0, 0)
 
 /** 七项节点的倒计时目标时刻（北京时间，毫秒）：取节点自身的截止/公告时刻；
  * 键为 `${exam.id}:${node.label}`——江苏与广东自考同名「成绩查询」，label 键容不下两个 */
@@ -171,6 +181,17 @@ const DEADLINE_MS = {
 
 /** 江苏成绩复核目标时刻（北京时间，毫秒）：11-20 17:00（U-144，endsToday 行） */
 const JIANGSU_REVIEW_DEADLINE_MS = Date.UTC(2026, 10, 20, 9, 0, 0)
+
+/**
+ * 成考三省复核目标时刻（北京时间，毫秒）：11-20 截止（U-158）。
+ * 不进 DEADLINE_MS：C3 在 11-18 遍历 DEADLINE_MS 断言每行挂徽章，11-20
+ * 行不在 11-18 今日行内；与 JIANGSU_REVIEW_DEADLINE_MS 同款独立常量。
+ */
+const CHENGKAO_REVIEW_DEADLINE_MS = {
+  'chengkao:广东成绩复核': Date.UTC(2026, 10, 20, 7, 0, 0), // 15:00
+  'chengkao:新疆成绩复核': Date.UTC(2026, 10, 20, 4, 0, 0), // 12:00
+  'chengkao:江西成绩复核': Date.UTC(2026, 10, 20, 9, 0, 0), // 17:00
+} as const
 
 /**
  * liFor 按 label 子串取行：行内写「${shortName} · ${label}」，故用该全串定位；
@@ -473,13 +494,19 @@ describe('C6 U-144 江苏自考两节点 chip 行为：查分行过期消失、�
     expect(examNodeDeadlineLabel(jiangsu, review.node, NOV_20_1700_CST)).toBe('已截止')
   })
 
-  it('11-20 SSR：今日行 4 项里只有江苏复核行挂倒计时徽章（其余三省复核无目标时刻，不渲染）', () => {
+  it('11-20 SSR：今日行 4 项全部挂倒计时徽章（三省复核 + 江苏复核）', () => {
     const items = todayNodes(NOV_20_0800_CST)
     expect(items).toHaveLength(4)
     const html = unesc(renderZone(NOV_20_0800_CST))
-    expect(timerBadgeCount(html)).toBe(1)
+    expect(timerBadgeCount(html)).toBe(4)
     expect(liFor(html, '江苏自考 · 成绩复核')).toContain('role="timer"')
     expect(liFor(html, '江苏自考 · 成绩复核')).toContain('倒计时')
+    expect(liFor(html, '成考 · 广东成绩复核')).toContain('role="timer"')
+    expect(liFor(html, '成考 · 广东成绩复核')).toContain('倒计时')
+    expect(liFor(html, '成考 · 新疆成绩复核')).toContain('role="timer"')
+    expect(liFor(html, '成考 · 新疆成绩复核')).toContain('倒计时')
+    expect(liFor(html, '成考 · 江西成绩复核')).toContain('role="timer"')
+    expect(liFor(html, '成考 · 江西成绩复核')).toContain('倒计时')
   })
 })
 
@@ -516,5 +543,76 @@ describe('C7 U-144 广东自考成绩查询 chip 行为：查分行过期消失�
     const guangdong = EXAMS.find((e) => e.id === 'guangdong-zikao')!
     expect(examNodeDeadlineLabel(guangdong, query.node, NOV_18_145959_CST)).toBeNull()
     expect(examNodeDeadlineLabel(guangdong, query.node, NOV_18_1500_CST)).toBe('已截止')
+  })
+})
+
+describe('C8 U-158 成考三省复核 chip 行为：广东 today 行过期消失、新疆/江西 endsToday 行过期显示「已截止」', () => {
+  it('新疆复核行 11-20 12:00 边界：08:00 剩4小时0分、11:59:59 剩不到 1 分、12:00 恰到即「已截止」', () => {
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:新疆成绩复核'], NOV_20_0800_CST)).toBe('剩4小时0分')
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:新疆成绩复核'], NOV_20_115959_CST)).toBe('剩不到 1 分')
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:新疆成绩复核'], NOV_20_1200_CST)).toBe('已截止')
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:新疆成绩复核'], NOV_20_1730_CST)).toBe('已截止')
+  })
+
+  it('广东复核行 11-20 15:00 边界：08:00 剩7小时0分、14:59:59 剩不到 1 分、15:00 恰到即「已截止」', () => {
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:广东成绩复核'], NOV_20_0800_CST)).toBe('剩7小时0分')
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:广东成绩复核'], NOV_20_145959_CST)).toBe('剩不到 1 分')
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:广东成绩复核'], NOV_20_1500_CST)).toBe('已截止')
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:广东成绩复核'], NOV_20_1730_CST)).toBe('已截止')
+  })
+
+  it('江西复核行 11-20 17:00 边界：08:00 剩9小时0分、16:59:59 剩不到 1 分、17:00 恰到即「已截止」、17:30 仍「已截止」', () => {
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:江西成绩复核'], NOV_20_0800_CST)).toBe('剩9小时0分')
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:江西成绩复核'], NOV_20_165959_CST)).toBe('剩不到 1 分')
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:江西成绩复核'], NOV_20_1700_CST)).toBe('已截止')
+    expect(formatRemaining(CHENGKAO_REVIEW_DEADLINE_MS['chengkao:江西成绩复核'], NOV_20_1730_CST)).toBe('已截止')
+  })
+
+  it('chip 目标时刻取自 todayNodeDeadlineMs（不是手写毫秒）：广东 15:00、新疆 12:00、江西 17:00', () => {
+    const byKey20 = new Map(
+      todayNodes(NOV_20_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey20.get('chengkao:广东成绩复核')!)).toBe(
+      CHENGKAO_REVIEW_DEADLINE_MS['chengkao:广东成绩复核'],
+    )
+    expect(todayNodeDeadlineMs(byKey20.get('chengkao:新疆成绩复核')!)).toBe(
+      CHENGKAO_REVIEW_DEADLINE_MS['chengkao:新疆成绩复核'],
+    )
+    expect(todayNodeDeadlineMs(byKey20.get('chengkao:江西成绩复核')!)).toBe(
+      CHENGKAO_REVIEW_DEADLINE_MS['chengkao:江西成绩复核'],
+    )
+    // 陷阱守卫：广东成考复核 15:00 绝不是广东自考 11-18 15:00，也不是成考广东查分 16:20
+    expect(todayNodeDeadlineMs(byKey20.get('chengkao:广东成绩复核')!)).not.toBe(
+      Date.UTC(2026, 10, 18, 7, 0, 0),
+    )
+    expect(todayNodeDeadlineMs(byKey20.get('chengkao:广东成绩复核')!)).not.toBe(
+      Date.UTC(2026, 10, 18, 8, 20, 0),
+    )
+  })
+
+  it('hideWhenPassed 分流：广东复核行 kind today（过期 chip 消失）、新疆/江西复核行 kind endsToday（过期显示「已截止」）', () => {
+    const gd = todayNodes(NOV_20_0800_CST).find(
+      (t) => t.exam.id === 'chengkao' && t.node.label === '广东成绩复核',
+    )!
+    expect(gd.kind).toBe('today')
+    const xj = todayNodes(NOV_20_0800_CST).find(
+      (t) => t.exam.id === 'chengkao' && t.node.label === '新疆成绩复核',
+    )!
+    expect(xj.kind).toBe('endsToday')
+    const jx = todayNodes(NOV_20_0800_CST).find(
+      (t) => t.exam.id === 'chengkao' && t.node.label === '江西成绩复核',
+    )!
+    expect(jx.kind).toBe('endsToday')
+    // 接线与组件语义由 C3/C6 锁定：kind today 才传 hideWhenPassed，
+    // 组件内 hideWhenPassed 且目标已过直接 return null（不渲染 endedLabel）。
+    // 渲染层文案：广东 14:59:59 为 null、15:00 起「已截止」（chip 挂载后按 hideWhenPassed 消失，不显示该「已截止」）；
+    // 新疆 11:59:59 为 null、12:00 起「已截止」；江西 16:59:59 为 null、17:00 起「已截止」。
+    const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
+    expect(examNodeDeadlineLabel(chengkao, gd.node, NOV_20_145959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, gd.node, NOV_20_1500_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, xj.node, NOV_20_115959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, xj.node, NOV_20_1200_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, jx.node, NOV_20_165959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, jx.node, NOV_20_1700_CST)).toBe('已截止')
   })
 })

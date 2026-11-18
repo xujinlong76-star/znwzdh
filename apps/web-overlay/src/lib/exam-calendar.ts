@@ -202,6 +202,16 @@ export const JIAOSHI_MIANSHI_URL = 'https://ntce.neea.edu.cn'
  */
 export const JIANGXI_CHENGKAO_REVIEW_URL = 'https://jdyw.jxeea.cn/'
 
+/**
+ * 广东自考成绩查询官方入口（U-144，2026-11-18 按广东省教育考试院
+ * 2026-11-10 省自考委办公告原文核实）：成绩定于 11 月 18 日 15 时公布，
+ * 查询入口为官微小程序（gdsksy）、支付宝小程序、百度智能小程序与
+ * 广东省自学考试管理系统 https://www.eeagd.edu.cn/selfec/（查合格成绩
+ * 与当次违规处理情况）。域名只认 eea.gd.gov.cn 体系下的 eeagd.edu.cn，
+ * ee.gd.gov.cn 不得出现（雷达第 30 轮定论）。常量定义在 EXAMS 之前（防 TDZ）。
+ */
+export const GUANGDONG_ZIKAO_SCORE_URL = 'https://www.eeagd.edu.cn/selfec/'
+
 export const EXAMS: ExamInfo[] = [
   {
     id: 'guokao',
@@ -638,6 +648,35 @@ export const EXAMS: ExamInfo[] = [
     ],
     note: '统考 10 月 24–25 日已结束，条目存在只为承载成绩节点；成绩复核为线下登记，无线上入口。',
   },
+  {
+    id: 'guangdong-zikao',
+    name: '2026 年 10 月广东省高等教育自学考试',
+    shortName: '广东自考',
+    tagline: '成绩 11 月 18 日公布',
+    examDateLabel: '10 月 24–25 日',
+    startISO: '2026-10-24',
+    endISO: '2026-10-25',
+    // 广东自考成绩查询（U-144，2026-11-18 核实）：成绩 11-18 15:00 公布
+    // （广东省教育考试院 2026-11-10 省自考委办公告原文「定于 11 月 18 日
+    // 15 时公布考试成绩」）；入口 4 种：官微小程序（gdsksy）、支付宝小
+    // 程序、百度智能小程序、广东省自学考试管理系统（查合格成绩与当次违
+    // 规处理情况）。复核无全省统一窗口，各市自考办在公布后 10 个工作日
+    // 内安排，不设日期节点、不进查表、不挂 url 以外入口。考期 10-24–25。
+    // 统考 10 月 24–25 日已结束，条目存在只为承载成绩节点；成绩查询挂
+    // 线上系统直链（U-87 规则：公告原文给出可直接登录办理的线上系统
+    // URL 才挂链），不设 estimated（日期与时刻均已核实）；label 不带省
+    // 前缀（短名已含「广东」）。
+    nodes: [
+      {
+        label: '成绩查询',
+        detail: '11 月 18 日 15:00 起可查：官微小程序（gdsksy）、支付宝小程序、百度智能小程序、广东省自学考试管理系统（查合格成绩与当次违规处理情况）',
+        startISO: '2026-11-18',
+        endISO: '2026-11-18',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+    ],
+    note: '统考 10 月 24–25 日已结束，条目存在只为承载成绩节点；成绩复核无全省统一窗口，各市自考办在成绩公布后 10 个工作日内安排具体受理时间与地点，以所在市公布为准，须本人持身份证、准考证到参加考试所在市自考办申请，逾期不予受理，仅限漏评、漏记分、错记分、加错分四种情形。',
+  },
 ]
 
 /**
@@ -762,7 +801,7 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
  *    如浙江成绩查询 11-20 当天也不出现）。
  * 顺序：直接节点（today / endsToday）按 EXAMS 数组序、考试内节点数组序；
  * startsToday 为第二遍追加，排在全部直接节点之后；两遍内部均不另排序。
- * exams 参数只为测试注入合成数据，调用方不传。11-18 恰好 6 项，11-19 只剩江西成绩复核。
+ * exams 参数只为测试注入合成数据，调用方不传。11-18 恰好 7 项，11-19 只剩江西成绩复核。
  */
 export interface TodayNodeItem {
   exam: ExamInfo
@@ -837,7 +876,7 @@ export function todayFollowUpNodes(
 
 /** 最近一场：未结束的考试里首考日最早的；多日考试末日仍算未结束
  *（考研 12-19–20：12-20 当天条带仍在，与 /exam 倒计时岛「进行中 ·
- * 第 2 天」一致）；九场全结束则返回 undefined（调用方渲染空态条带）。
+ * 第 2 天」一致）；十场全结束则返回 undefined（调用方渲染空态条带）。
  * 排序按首考日（firstExamDay），不是公共科目首日 startISO：有加试的
  * 考试（国考首考日 11-28 < startISO 11-29；京考首考日 12-05 < startISO
  * 12-06）应按考生实际最早开考日排。同日首考平局时数组在前者胜出
@@ -913,7 +952,7 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
 /**
  * 11-18 峰值日时刻截止表（渲染层专用，考试峰值日包 W9，U-144 推广）。
  *
- * 覆盖 7 个已核实目标时刻（北京时间，表项为目标日期 + 距当日 0 点的分钟数；
+ * 覆盖 8 个已核实目标时刻（北京时间，表项为目标日期 + 距当日 0 点的分钟数；
  * 毫秒值按 shanghaiMidnightMs(目标日期) + 分钟数算，与 guokaoAdmissionPhase
  * 的 15:00 截止同款算法）：
  *  - 成考江西成绩查询 11-18 09:00、成考新疆成绩查询 11-18 12:00、成考广东
@@ -923,7 +962,9 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
  *  - 京考报名 11-18 18:00、军队文职缴费 11-18 18:00（两节点 detail 原文所载截止时刻）；
  *  - 江苏自考成绩查询 11-18 10:00（查分行）、江苏自考成绩复核 11-20 17:00
  *    （截止行；复核目标日期是 11-20，绝不是 11-18——1020 分钟若配 11-18
- *    会错成 11-18 17:00，故表项必须带目标日期，不许只存分钟数）。
+ *    会错成 11-18 17:00，故表项必须带目标日期，不许只存分钟数）；
+ *  - 广东自考成绩查询 11-18 15:00（查分行；自考 15:00，绝不是成考广东
+ *    16:20、不是江苏 10:00）。
  *
  * 不给 ExamNode 加时刻字段、不改 examNodeStatus / todayNodes：节点状态机
  * 与今日行仍是纯日期口径（todayNodes 的注释仍成立）；时刻判定只发生在
@@ -939,6 +980,7 @@ const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, { date: string; minutes
   'jundui-wenzhi:缴费': { date: '2026-11-18', minutes: 18 * 60 },
   'jiangsu-zikao:成绩查询': { date: '2026-11-18', minutes: 10 * 60 },
   'jiangsu-zikao:成绩复核': { date: '2026-11-20', minutes: 17 * 60 },
+  'guangdong-zikao:成绩查询': { date: '2026-11-18', minutes: 15 * 60 },
 }
 
 /** 表内节点的目标时刻（UTC 毫秒数）；表外或节点日期不覆盖目标日期的返回 undefined */
@@ -994,7 +1036,7 @@ export function urgencyTier(
 
 /**
  * 时钟卡倒计时行（纯派生）：最近一场未结束考试的一行文案 + 紧迫档位。
- * 九场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
+ * 十场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
  * 文案与 /exam 倒计时岛同口径：首考日当天「今天国考 · 专业科目 14:00
  * 开考」（国考首考日 11-28 设了 firstDayLabel）、进行中「考研进行中 ·
  * 第 2 天」、首考日前一天「明天国考（专业科目先考 11 月 28 日）」

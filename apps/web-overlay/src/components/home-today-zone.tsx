@@ -97,7 +97,7 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                   </div>
                   <ul className="space-y-1.5">
                     {todayItems.map(({ exam, node, kind }) => {
-                      // 峰值日包 W10：有已核实目标时刻的节点（11-18 五项）在
+                      // 峰值日包 W10：有已核实目标时刻的节点（11-18 七项）在
                       // 徽章与 detail 之间挂倒计时 chip；表外节点（undefined）
                       // 不渲染。target 是 todayNodeDeadlineMs 的毫秒值转 ISO，
                       // 绝不拿 endISO 当天 00:00 冒充。kind === 'today' 的行

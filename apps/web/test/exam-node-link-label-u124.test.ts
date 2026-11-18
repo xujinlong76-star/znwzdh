@@ -207,7 +207,7 @@ describe('T5：全量计数（防漏网/防多改）', () => {
 })
 
 describe('T6：无数据改动（数据层守卫）', () => {
-  it('八场 id、节点总数、16 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
+  it('九场 id、节点总数、16 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
     expect(EXAMS.map((e) => e.id)).toEqual([
       'guokao',
       'cet',
@@ -217,16 +217,20 @@ describe('T6：无数据改动（数据层守卫）', () => {
       'jingkao',
       'kaoyan',
       'chengkao',
+      'jiangsu-zikao',
     ])
-    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(35)
+    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(37)
     const byKey = new Map(
       EXAMS.flatMap((e) => e.nodes.map((n) => [`${e.id}:${n.label}`, n] as const)),
     )
-    expect(byKey.size).toBe(35)
+    expect(byKey.size).toBe(37)
     for (const [examId, label, url] of EXPECTED_URLS) {
       expect(byKey.get(`${examId}:${label}`)?.url).toBe(url)
     }
     expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.url)).toHaveLength(16)
+    // U-144：江苏两节点不挂 url，url 总数仍是 16，不因新增节点多出链接。
+    expect(byKey.get('jiangsu-zikao:成绩查询')?.url).toBeUndefined()
+    expect(byKey.get('jiangsu-zikao:成绩复核')?.url).toBeUndefined()
     for (const node of EXAMS.flatMap((e) => e.nodes)) {
       for (const key of Object.keys(node)) {
         expect(['label', 'detail', 'url', 'startISO', 'endISO', 'estimated']).toContain(key)

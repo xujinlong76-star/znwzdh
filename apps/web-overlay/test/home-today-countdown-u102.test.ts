@@ -21,17 +21,21 @@
  *    「距国考 N 天」天级文案；favorites-triage 用「还剩 X 小时/天」），
  *    故以 W7 已落盘的 formatRemaining 为准。
  *
- * 行为契约（以 2026-11-18 今日行 5 项为准）：
+ * 行为契约（以 2026-11-18 今日行 6 项为准）：
  *  - 倒计时目标时刻取节点自身的截止时刻（北京时间）：
  *      江西成绩查询 09:00、广东成绩查询 16:20、新疆成绩查询 12:00、
- *      京考报名 18:00、军队文职缴费 18:00（均为 11-18 当日）。
+ *      京考报名 18:00、军队文职缴费 18:00、江苏成绩查询 10:00
+ *      （均为 11-18 当日）。
  *    广东取 16:20（小程序自查开通时刻；16:00 仅短信推送，不是自查开通时刻）。
  *  - 截止前：行内倒计时文案为 formatRemaining 的值；截止后：文案翻
  *    「已截止」；永不写「已开通」「已可查」（江西 09:00、新疆 12:00
  *    开通均未核实，只写公告时刻）。
  *  - todayNodes 仍是日期口径（A1 守卫：不给 ExamNode 加时刻字段、不新造
  *    时刻门控函数），倒计时只是在渲染层按节点算目标时刻；18:00 过后
- *    5 项仍在今日行内（日期未过），只是文案翻为「已截止」。
+ *    6 项仍在今日行内（日期未过），只是文案翻为「已截止」。
+ *  - U-144 江苏成绩复核（11-20 17:00 截止，endsToday 行）：目标时刻进表，
+ *    不挂 hideWhenPassed，17:00 后 chip 显示「已截止」；江苏成绩查询
+ *    （11-18 10:00，today 行）：挂 hideWhenPassed，10:00 后 chip 直接消失。
  *  - SSR 首屏不水合错位：W7 组件挂载前只渲染固定文案「倒计时」，服务端
  *    输出与客户端首帧逐字一致，tick 只在客户端 effect 里发生。本文件
  *    覆盖：同一 nowMs 两次渲染字节一致；SSR 输出不含随分钟跳动的活值
@@ -60,7 +64,9 @@
  *  未决问题（见报告，由 coordinator 定）：①「今日截止」徽章在截止后
  *  是否保留；②查分节点「已截止」的语义（指公告时刻已过，不代表查分
  *  通道关闭）；③是否把倒计时推广到 startsToday / 其他 endsToday 节点
- *  （如 11-19 江西成绩复核，窗口末日 11-20 17:00）；④ SSR 是否要直出
+ *  （如 11-19 江西成绩复核，窗口末日 11-20 17:00）——U-144 已定其一：
+ *  江苏成绩复核 11-20 17:00 进表（endsToday 行，显示「已截止」），
+ *  其余推广仍未决；④ SSR 是否要直出
  *  真实值 / 截止后直出「已截止」（见上）。
  *
  * 环境：与 home-today-zone-u102.test.ts 相同——node 环境、无 jsdom，
@@ -74,7 +80,7 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
-import { countdownParts, todayNodes } from '../src/lib/exam-calendar'
+import { EXAMS, countdownParts, examNodeDeadlineLabel, todayNodeDeadlineMs, todayNodes } from '../src/lib/exam-calendar'
 import {
   HomeTodayCountdown,
   formatRemaining,
@@ -124,17 +130,45 @@ const NOV_18_1759_CST = Date.UTC(2026, 10, 18, 9, 59, 0)
 const NOV_18_1759_30_CST = Date.UTC(2026, 10, 18, 9, 59, 30)
 /** 2026-11-18 18:00 北京时间：五项目标时刻全部到达（边界：恰到即截止） */
 const NOV_18_1800_CST = Date.UTC(2026, 10, 18, 10, 0, 0)
-/** 2026-11-18 18:30 北京时间：五项全部截止后，今日行仍在（日期未过） */
+/** 2026-11-18 18:30 北京时间：六项全部截止后，今日行仍在（日期未过） */
 const NOV_18_1830_CST = Date.UTC(2026, 10, 18, 10, 30, 0)
+/** 2026-11-18 09:59 北京时间：距江苏查分 10:00 剩 1 分钟 */
+const NOV_18_0959_CST = Date.UTC(2026, 10, 18, 1, 59, 0)
+/** 2026-11-18 09:59:59 北京时间：距江苏查分 10:00 剩 1 秒 */
+const NOV_18_095959_CST = Date.UTC(2026, 10, 18, 1, 59, 59)
+/** 2026-11-18 10:00 北京时间：江苏查分目标时刻（边界：恰到即截止） */
+const NOV_18_1000_CST = Date.UTC(2026, 10, 18, 2, 0, 0)
+/** 2026-11-20 08:00 北京时间：江苏复核末日白天 */
+const NOV_20_0800_CST = Date.UTC(2026, 10, 20, 0, 0, 0)
+/** 2026-11-20 16:59 北京时间：距江苏复核 17:00 剩 1 分钟 */
+const NOV_20_1659_CST = Date.UTC(2026, 10, 20, 8, 59, 0)
+/** 2026-11-20 16:59:59 北京时间：距江苏复核 17:00 剩 1 秒 */
+const NOV_20_165959_CST = Date.UTC(2026, 10, 20, 8, 59, 59)
+/** 2026-11-20 17:00 北京时间：江苏复核目标时刻（边界：恰到即截止） */
+const NOV_20_1700_CST = Date.UTC(2026, 10, 20, 9, 0, 0)
+/** 2026-11-20 17:30 北京时间：江苏复核截止后半小时 */
+const NOV_20_1730_CST = Date.UTC(2026, 10, 20, 9, 30, 0)
 
-/** 五项节点的倒计时目标时刻（北京时间，毫秒）：取节点自身的截止/公告时刻 */
+/** 六项节点的倒计时目标时刻（北京时间，毫秒）：取节点自身的截止/公告时刻 */
 const DEADLINE_MS = {
   江西成绩查询: Date.UTC(2026, 10, 18, 1, 0, 0), // 09:00
   新疆成绩查询: Date.UTC(2026, 10, 18, 4, 0, 0), // 12:00
   广东成绩查询: Date.UTC(2026, 10, 18, 8, 20, 0), // 16:20（小程序自查开通时刻）
   报名: Date.UTC(2026, 10, 18, 10, 0, 0), // 京考报名 18:00
   缴费: Date.UTC(2026, 10, 18, 10, 0, 0), // 文职缴费 18:00
+  成绩查询: Date.UTC(2026, 10, 18, 2, 0, 0), // 江苏成绩查询 10:00（U-144）
 } as const
+
+/** 江苏成绩复核目标时刻（北京时间，毫秒）：11-20 17:00（U-144，endsToday 行） */
+const JIANGSU_REVIEW_DEADLINE_MS = Date.UTC(2026, 10, 20, 9, 0, 0)
+
+/**
+ * liFor 按 label 子串取行：裸 label「成绩查询」会先命中「江西成绩查询」行，
+ * 江苏行须用「江苏自考 · 成绩查询」全串定位；其余 label 无此歧义。
+ */
+const SEARCH_KEY: Record<string, string> = {
+  成绩查询: '江苏自考 · 成绩查询',
+}
 
 const renderZone = (nowMs: number) =>
   renderToString(createElement(HomeTodayZone, { nowMs }))
@@ -154,47 +188,52 @@ const liFor = (html: string, label: string): string => {
 /** 全文倒计时徽章个数（role="timer"，每行一个）。 */
 const timerBadgeCount = (html: string) => html.match(/role="timer"/g)?.length ?? 0
 
-describe('C1 纯函数层：formatRemaining（已存在）锁定五项目标时刻的值级契约', () => {
-  it('11-18 08:00：江西剩1小时0分、新疆剩4小时0分、广东剩8小时20分、京考/文职剩10小时0分', () => {
+describe('C1 纯函数层：formatRemaining（已存在）锁定六项目标时刻的值级契约', () => {
+  it('11-18 08:00：江西剩1小时0分、新疆剩4小时0分、广东剩8小时20分、京考/文职剩10小时0分、江苏剩2小时0分', () => {
     expect(formatRemaining(DEADLINE_MS['江西成绩查询'], NOV_18_0800_CST)).toBe('剩1小时0分')
     expect(formatRemaining(DEADLINE_MS['新疆成绩查询'], NOV_18_0800_CST)).toBe('剩4小时0分')
     expect(formatRemaining(DEADLINE_MS['广东成绩查询'], NOV_18_0800_CST)).toBe('剩8小时20分')
     expect(formatRemaining(DEADLINE_MS['报名'], NOV_18_0800_CST)).toBe('剩10小时0分')
     expect(formatRemaining(DEADLINE_MS['缴费'], NOV_18_0800_CST)).toBe('剩10小时0分')
+    expect(formatRemaining(DEADLINE_MS['成绩查询'], NOV_18_0800_CST)).toBe('剩2小时0分')
   })
 
-  it('09:30：江西已截止，新疆剩2小时30分、广东剩6小时50分、京考/文职剩8小时30分', () => {
+  it('09:30：江西已截止，江苏剩30分、新疆剩2小时30分、广东剩6小时50分、京考/文职剩8小时30分', () => {
     expect(formatRemaining(DEADLINE_MS['江西成绩查询'], NOV_18_0930_CST)).toBe('已截止')
+    expect(formatRemaining(DEADLINE_MS['成绩查询'], NOV_18_0930_CST)).toBe('剩30分')
     expect(formatRemaining(DEADLINE_MS['新疆成绩查询'], NOV_18_0930_CST)).toBe('剩2小时30分')
     expect(formatRemaining(DEADLINE_MS['广东成绩查询'], NOV_18_0930_CST)).toBe('剩6小时50分')
     expect(formatRemaining(DEADLINE_MS['报名'], NOV_18_0930_CST)).toBe('剩8小时30分')
     expect(formatRemaining(DEADLINE_MS['缴费'], NOV_18_0930_CST)).toBe('剩8小时30分')
   })
 
-  it('12:30：江西/新疆已截止，广东剩3小时50分、京考/文职剩5小时30分', () => {
+  it('12:30：江西/新疆/江苏已截止，广东剩3小时50分、京考/文职剩5小时30分', () => {
     expect(formatRemaining(DEADLINE_MS['江西成绩查询'], NOV_18_1230_CST)).toBe('已截止')
     expect(formatRemaining(DEADLINE_MS['新疆成绩查询'], NOV_18_1230_CST)).toBe('已截止')
+    expect(formatRemaining(DEADLINE_MS['成绩查询'], NOV_18_1230_CST)).toBe('已截止')
     expect(formatRemaining(DEADLINE_MS['广东成绩查询'], NOV_18_1230_CST)).toBe('剩3小时50分')
     expect(formatRemaining(DEADLINE_MS['报名'], NOV_18_1230_CST)).toBe('剩5小时30分')
     expect(formatRemaining(DEADLINE_MS['缴费'], NOV_18_1230_CST)).toBe('剩5小时30分')
   })
 
-  it('16:30：三省已截止，京考/文职剩1小时30分', () => {
-    for (const label of ['江西成绩查询', '新疆成绩查询', '广东成绩查询'] as const) {
+  it('16:30：四省已截止，京考/文职剩1小时30分', () => {
+    for (const label of ['江西成绩查询', '新疆成绩查询', '广东成绩查询', '成绩查询'] as const) {
       expect(formatRemaining(DEADLINE_MS[label], NOV_18_1630_CST)).toBe('已截止')
     }
     expect(formatRemaining(DEADLINE_MS['报名'], NOV_18_1630_CST)).toBe('剩1小时30分')
     expect(formatRemaining(DEADLINE_MS['缴费'], NOV_18_1630_CST)).toBe('剩1小时30分')
   })
 
-  it('17:59 写「剩1分」（分钟级形式，不写「剩0小时」）；17:59:30 剩 30 秒写「剩不到 1 分」', () => {
+  it('17:59 写「剩1分」（分钟级形式，不写「剩0小时」）；17:59:30 剩 30 秒写「剩不到 1 分」；江苏查分此时已截止', () => {
     expect(formatRemaining(DEADLINE_MS['报名'], NOV_18_1759_CST)).toBe('剩1分')
     expect(formatRemaining(DEADLINE_MS['缴费'], NOV_18_1759_CST)).toBe('剩1分')
     expect(formatRemaining(DEADLINE_MS['报名'], NOV_18_1759_30_CST)).toBe('剩不到 1 分')
     expect(formatRemaining(DEADLINE_MS['缴费'], NOV_18_1759_30_CST)).toBe('剩不到 1 分')
+    expect(formatRemaining(DEADLINE_MS['成绩查询'], NOV_18_1759_CST)).toBe('已截止')
+    expect(formatRemaining(DEADLINE_MS['成绩查询'], NOV_18_1759_30_CST)).toBe('已截止')
   })
 
-  it('18:00 恰到即截止（diff = 0 → 已截止），18:30 五项全部已截止', () => {
+  it('18:00 恰到即截止（diff = 0 → 已截止），18:30 六项全部已截止', () => {
     for (const target of Object.values(DEADLINE_MS)) {
       expect(formatRemaining(target, NOV_18_1800_CST)).toBe('已截止')
       expect(formatRemaining(target, NOV_18_1830_CST)).toBe('已截止')
@@ -212,12 +251,12 @@ describe('C1 纯函数层：formatRemaining（已存在）锁定五项目标时�
     }
   })
 
-  it('五项目标时刻与 todayNodes(11-18 08:00) 的 5 项一一对应（无多无少）', () => {
+  it('六项目标时刻与 todayNodes(11-18 08:00) 的 6 项一一对应（无多无少）', () => {
     const labels = todayNodes(NOV_18_0800_CST).map((i) => i.node.label)
     expect([...labels].sort()).toEqual(Object.keys(DEADLINE_MS).sort())
   })
 
-  it('countdownParts 拆分与上表一致（08:00 距目标 江西1小时/新疆4小时/广东8小时20分/京考·文职10小时；已过全 0）', () => {
+  it('countdownParts 拆分与上表一致（08:00 距目标 江西1小时/新疆4小时/广东8小时20分/京考·文职10小时/江苏2小时；已过全 0）', () => {
     expect(countdownParts(DEADLINE_MS['江西成绩查询'], NOV_18_0800_CST)).toEqual({
       days: 0, hours: 1, minutes: 0, seconds: 0,
     })
@@ -229,6 +268,9 @@ describe('C1 纯函数层：formatRemaining（已存在）锁定五项目标时�
     })
     expect(countdownParts(DEADLINE_MS['报名'], NOV_18_0800_CST)).toEqual({
       days: 0, hours: 10, minutes: 0, seconds: 0,
+    })
+    expect(countdownParts(DEADLINE_MS['成绩查询'], NOV_18_0800_CST)).toEqual({
+      days: 0, hours: 2, minutes: 0, seconds: 0,
     })
     for (const target of Object.values(DEADLINE_MS)) {
       expect(countdownParts(target, target)).toEqual({
@@ -267,21 +309,21 @@ describe('C2 组件层：HomeTodayCountdown（已存在）挂载前只渲染固�
 })
 
 describe('C3 行级接线：HomeTodayZone 每行挂一个倒计时徽章', () => {
-  it('11-18 08:00：5 个节点行内各一个 role="timer" 徽章，全文恰好 5 个', () => {
+  it('11-18 08:00：6 个节点行内各一个 role="timer" 徽章，全文恰好 6 个', () => {
     const html = unesc(renderZone(NOV_18_0800_CST))
-    expect(timerBadgeCount(html)).toBe(5)
+    expect(timerBadgeCount(html)).toBe(6)
     for (const label of Object.keys(DEADLINE_MS)) {
-      expect(liFor(html, label)).toContain('role="timer"')
-      expect(liFor(html, label)).toContain('倒计时')
+      expect(liFor(html, SEARCH_KEY[label] ?? label)).toContain('role="timer"')
+      expect(liFor(html, SEARCH_KEY[label] ?? label)).toContain('倒计时')
     }
   })
 
-  it('18:30 五项全部截止后：今日行仍在，5 个徽章仍在（SSR 占位不随截止翻文案，真实值只在挂载后翻）', () => {
+  it('18:30 六项全部截止后：今日行仍在，6 个徽章仍在（SSR 占位不随截止翻文案，真实值只在挂载后翻）', () => {
     const html = unesc(renderZone(NOV_18_1830_CST))
     expect(html).toContain('aria-label="今日节点"')
-    expect(timerBadgeCount(html)).toBe(5)
+    expect(timerBadgeCount(html)).toBe(6)
     for (const label of Object.keys(DEADLINE_MS)) {
-      expect(liFor(html, label)).toContain('role="timer"')
+      expect(liFor(html, SEARCH_KEY[label] ?? label)).toContain('role="timer"')
     }
   })
 
@@ -346,5 +388,72 @@ describe('C5 SSR 首屏不水合错位：同一输入同一输出，SSR 不含�
     expect(zone).not.toContain('useEffect')
     expect(zone.match(/Date\.now\(\)/g)?.length).toBe(1)
     expect(zone).toContain('nowMs = Date.now()')
+  })
+})
+
+describe('C6 U-144 江苏自考两节点 chip 行为：查分行过期消失、复核行过期显示「已截止」', () => {
+  it('查分行 10:00 边界：09:59 剩1分、09:59:59 剩不到 1 分、10:00 恰到即「已截止」', () => {
+    expect(formatRemaining(DEADLINE_MS['成绩查询'], NOV_18_0959_CST)).toBe('剩1分')
+    expect(formatRemaining(DEADLINE_MS['成绩查询'], NOV_18_095959_CST)).toBe('剩不到 1 分')
+    expect(formatRemaining(DEADLINE_MS['成绩查询'], NOV_18_1000_CST)).toBe('已截止')
+    expect(formatRemaining(DEADLINE_MS['成绩查询'], NOV_18_1830_CST)).toBe('已截止')
+  })
+
+  it('复核行 11-20 17:00 边界：08:00 剩9小时0分、16:59 剩1分、16:59:59 剩不到 1 分、17:00 恰到即「已截止」、17:30 仍「已截止」', () => {
+    expect(formatRemaining(JIANGSU_REVIEW_DEADLINE_MS, NOV_20_0800_CST)).toBe('剩9小时0分')
+    expect(formatRemaining(JIANGSU_REVIEW_DEADLINE_MS, NOV_20_1659_CST)).toBe('剩1分')
+    expect(formatRemaining(JIANGSU_REVIEW_DEADLINE_MS, NOV_20_165959_CST)).toBe('剩不到 1 分')
+    expect(formatRemaining(JIANGSU_REVIEW_DEADLINE_MS, NOV_20_1700_CST)).toBe('已截止')
+    expect(formatRemaining(JIANGSU_REVIEW_DEADLINE_MS, NOV_20_1730_CST)).toBe('已截止')
+  })
+
+  it('chip 目标时刻取自 todayNodeDeadlineMs（不是手写毫秒）：查分 11-18 10:00、复核 11-20 17:00', () => {
+    const byKey18 = new Map(
+      todayNodes(NOV_18_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey18.get('jiangsu-zikao:成绩查询')!)).toBe(
+      Date.UTC(2026, 10, 18, 2, 0, 0),
+    )
+    const byKey20 = new Map(
+      todayNodes(NOV_20_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey20.get('jiangsu-zikao:成绩复核')!)).toBe(
+      Date.UTC(2026, 10, 20, 9, 0, 0),
+    )
+    // 复核目标绝不是 11-18 17:00（1020 分钟错值）
+    expect(todayNodeDeadlineMs(byKey20.get('jiangsu-zikao:成绩复核')!)).not.toBe(
+      Date.UTC(2026, 10, 18, 9, 0, 0),
+    )
+  })
+
+  it('hideWhenPassed 分流：查分行 kind today（过期 chip 消失）、复核行 kind endsToday（过期显示「已截止」）', () => {
+    const query = todayNodes(NOV_18_0800_CST).find((t) => t.exam.id === 'jiangsu-zikao')!
+    expect(query.node.label).toBe('成绩查询')
+    expect(query.kind).toBe('today')
+    const review = todayNodes(NOV_20_0800_CST).find((t) => t.exam.id === 'jiangsu-zikao')!
+    expect(review.node.label).toBe('成绩复核')
+    expect(review.kind).toBe('endsToday')
+    // 接线与组件语义仍由 C3 锁定：kind today 才传 hideWhenPassed，
+    // 组件内 hideWhenPassed 且目标已过直接 return null（不渲染 endedLabel）。
+    const zone = read('src/components/home-today-zone.tsx')
+    expect(zone).toContain("kind === 'today' ? { hideWhenPassed: true }")
+    const src = read('src/components/home-today-countdown.tsx')
+    expect(src).toContain('if (hideWhenPassed && targetMs <= nowMs) return null')
+    // 渲染层文案：复核 16:59:59 为 null、17:00 起「已截止」；查分 09:59:59 为 null、10:00 起「已截止」
+    // （查分行挂载后按 hideWhenPassed 消失，不显示该「已截止」，见接线）。
+    const jiangsu = EXAMS.find((e) => e.id === 'jiangsu-zikao')!
+    expect(examNodeDeadlineLabel(jiangsu, query.node, NOV_18_095959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(jiangsu, query.node, NOV_18_1000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(jiangsu, review.node, NOV_20_165959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(jiangsu, review.node, NOV_20_1700_CST)).toBe('已截止')
+  })
+
+  it('11-20 SSR：今日行 4 项里只有江苏复核行挂倒计时徽章（其余三省复核无目标时刻，不渲染）', () => {
+    const items = todayNodes(NOV_20_0800_CST)
+    expect(items).toHaveLength(4)
+    const html = unesc(renderZone(NOV_20_0800_CST))
+    expect(timerBadgeCount(html)).toBe(1)
+    expect(liFor(html, '江苏自考 · 成绩复核')).toContain('role="timer"')
+    expect(liFor(html, '江苏自考 · 成绩复核')).toContain('倒计时')
   })
 })

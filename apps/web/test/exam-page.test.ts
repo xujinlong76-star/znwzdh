@@ -5,9 +5,10 @@
  *  - 国考卡片挂准考证打印提醒岛（只在 11-22–11-29 15:00 渲染，官方链接在
  *    exam-calendar 常量里，不在页面写死域名；15:00 准点下线靠客户端岛，
  *    服务端页 revalidate 1 小时会迟到 1 小时）；
- *  - 考试清单只含已核实的八场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试，不含已考完的
+ *  - 考试清单只含已核实的九场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试、江苏自考，不含已考完的
  *    经济师（11-07–08）等过期场次；省考文案不写「联考」；
  *    成考是例外：统考 10-17–18 已结束，但成绩节点 11-18 未过，故列入清单。
+ *    江苏自考是第二个例外：考期 10-24–25 已结束，但成绩节点 11-18 未过，故列入清单。
  *  - 页面外链一律过 safeHref，备考站点从 navigation.json 现读、页面不硬编码
  *    12 条站点地址；canonical 自指 /exam；
  *  - 小字链接不用 text-primary（深色/三皮肤下仅 3.33–4.46:1，不达 AA），
@@ -39,7 +40,7 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
 
 describe('daysUntil（北京时间自然日）', () => {
-  it('八场考试距 11-13 的天数与日历一致', () => {
+  it('九场考试距 11-13 的天数与日历一致', () => {
     expect(daysUntil('2026-11-29', NOV_13_0800_CST)).toBe(16)
     expect(daysUntil('2026-12-06', NOV_13_0800_CST)).toBe(23)
     expect(daysUntil('2026-12-12', NOV_13_0800_CST)).toBe(29)
@@ -51,6 +52,8 @@ describe('daysUntil（北京时间自然日）', () => {
     expect(daysUntil('2026-12-13', NOV_13_0800_CST)).toBe(30)
     // 成考统考 10-17 已过 27 天（负值），成绩节点 11-18 仍在将来
     expect(daysUntil('2026-10-17', NOV_13_0800_CST)).toBe(-27)
+    // 江苏自考考期 10-24 已过 20 天（负值），成绩节点 11-18 仍在将来
+    expect(daysUntil('2026-10-24', NOV_13_0800_CST)).toBe(-20)
   })
 
   it('午夜边界：11-28 深夜算 1 天，11-29 零点算 0 天', () => {
@@ -168,9 +171,9 @@ describe('countdownParts', () => {
   })
 })
 
-describe('考试清单只含已核实的八场', () => {
-  it('恰好八场，首日与核实日期一致', () => {
-    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jiaoshi-mianshi', 'jundui-wenzhi', 'jingkao', 'kaoyan', 'chengkao'])
+describe('考试清单只含已核实的九场', () => {
+  it('恰好九场，首日与核实日期一致', () => {
+    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jiaoshi-mianshi', 'jundui-wenzhi', 'jingkao', 'kaoyan', 'chengkao', 'jiangsu-zikao'])
     expect(EXAMS.map((e) => e.startISO)).toEqual([
       '2026-11-29',
       '2026-12-12',
@@ -180,6 +183,7 @@ describe('考试清单只含已核实的八场', () => {
       '2026-12-06',
       '2026-12-19',
       '2026-10-17',
+      '2026-10-24',
     ])
   })
 
@@ -233,6 +237,62 @@ describe('考试清单只含已核实的八场', () => {
     const pub = shengkao.nodes.find((n) => n.label === '公共科目笔试')!
     expect(pub.detail).toContain('山东')
     expect(pub.detail).toBe('12 月 6 日：四川、江苏、广东、上海、天津、浙江、山东')
+  })
+})
+
+describe('江苏自考节点（U-144）', () => {
+  // 查找包成函数：实现未落盘时 describe 体内直接 find 会在收集期抛错、
+  // 整文件 0 跑；各 it 内调用，失败只落本 it。
+  const jiangsu = () => EXAMS.find((e) => e.id === 'jiangsu-zikao')!
+
+  it('只列已核实的两节点：成绩查询、成绩复核；报名与准考证节点不收', () => {
+    const exam = jiangsu()
+    expect(exam.name).toBe('2026 年 10 月江苏省高等教育自学考试')
+    expect(exam.shortName).toBe('江苏自考')
+    expect(exam.tagline).toBe('成绩 11 月 18 日公布')
+    expect(exam.examDateLabel).toBe('10 月 24–25 日')
+    expect(exam.startISO).toBe('2026-10-24')
+    expect(exam.endISO).toBe('2026-10-25')
+    expect(exam.nodes.map((n) => n.label)).toEqual(['成绩查询', '成绩复核'])
+    expect(exam.nodes.map((n) => [n.label, n.startISO, n.endISO])).toEqual([
+      ['成绩查询', '2026-11-18', '2026-11-18'],
+      ['成绩复核', '2026-11-18', '2026-11-20'],
+    ])
+    // 两节点不挂 url、不设 estimated：查分走官网栏目、无网页查分直链可挂；
+    // 复核是线下登记、无 URL 可挂；两节点日期均已核实，非预计。
+    const byLabel = new Map(exam.nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('成绩查询')?.url).toBeUndefined()
+    expect(byLabel.get('成绩复核')?.url).toBeUndefined()
+    expect(byLabel.get('成绩查询')?.estimated).toBeUndefined()
+    expect(byLabel.get('成绩复核')?.estimated).toBeUndefined()
+    // 报名/准考证节点不收（考期已过）；label 里出现即红。
+    expect(exam.nodes.map((n) => n.label).join('')).not.toContain('报名')
+    expect(exam.nodes.map((n) => n.label).join('')).not.toContain('准考证')
+  })
+
+  it('detail 逐字：查分 11-18 10:00 起 + 官网栏目路径；复核三日 17:00 截止 + 身份证/准考证 + 区县考办登记 + 逾期不予受理', () => {
+    const byLabel = new Map(jiangsu().nodes.map((n) => [n.label, n]))
+    expect(byLabel.get('成绩查询')?.detail).toBe(
+      '11 月 18 日 10:00 起可查（江苏省教育考试院门户网站 www.jseea.cn「招考业务」栏目「自学考试」页面）',
+    )
+    expect(byLabel.get('成绩复核')?.detail).toBe(
+      '11 月 18 日、19 日、20 日（17:00 截止）持本人身份证、准考证到所属区县考办登记并提交复核申请，逾期不予受理',
+    )
+  })
+
+  it('考期已过但成绩节点未过（与成考同款例外）：11-13 时考试状态已结束，节点仍按日期翻转', () => {
+    const exam = jiangsu()
+    expect(examStatus(exam, NOV_13_0800_CST)).toBe('ended')
+    const byLabel = new Map(exam.nodes.map((n) => [n.label, n]))
+    const query = byLabel.get('成绩查询')!
+    const review = byLabel.get('成绩复核')!
+    expect(examNodeStatus(query, Date.UTC(2026, 10, 17, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(query, Date.UTC(2026, 10, 18, 0, 0))).toBe('today')
+    expect(examNodeStatus(query, Date.UTC(2026, 10, 19, 0, 0))).toBe('done')
+    expect(examNodeStatus(review, Date.UTC(2026, 10, 17, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(review, Date.UTC(2026, 10, 18, 0, 0))).toBe('active')
+    expect(examNodeStatus(review, Date.UTC(2026, 10, 20, 0, 0))).toBe('active')
+    expect(examNodeStatus(review, Date.UTC(2026, 10, 21, 0, 0))).toBe('done')
   })
 })
 

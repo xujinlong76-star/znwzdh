@@ -51,7 +51,7 @@ afterAll(() => {
 const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)
 /** 2026-11-24 08:00 北京时间：无今日节点（复核窗口进行中，但既非单日也非起止日） */
 const NOV_24_0800_CST = Date.UTC(2026, 10, 24, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：八场全过，无今日节点、无倒计时 */
+/** 2026-12-21 08:00 北京时间：九场全过，无今日节点、无倒计时 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 const renderZone = (nowMs: number) =>
@@ -61,20 +61,20 @@ const renderZone = (nowMs: number) =>
 const unesc = (html: string) =>
   html.replaceAll('&quot;', '"').replaceAll('&#x27;', "'").replaceAll('&amp;', '&')
 
-describe('A3：有今日节点时渲染今日行，5 项 label 与 detail 原文逐字出现', () => {
-  it('11-18 今日行渲染：行标记与 5 项 label / detail 逐字在 SSR HTML 里', () => {
+describe('A3：有今日节点时渲染今日行，6 项 label 与 detail 原文逐字出现', () => {
+  it('11-18 今日行渲染：行标记与 6 项 label / detail 逐字在 SSR HTML 里', () => {
     const html = unesc(renderZone(NOV_18_0800_CST))
     expect(html).toContain('aria-label="今日节点"')
     expect(html).toContain('今日提醒')
     const items = todayNodes(NOV_18_0800_CST)
-    expect(items).toHaveLength(5)
+    expect(items).toHaveLength(6)
     for (const { node } of items) {
       expect(html).toContain(node.label)
       expect(html).toContain(node.detail)
     }
   })
 
-  it('11-18 五项 label 即验收清单所列（江西/广东/新疆成绩查询 + 京考报名 + 文职缴费）', () => {
+  it('11-18 六项 label 即验收清单所列（江西/广东/新疆成绩查询 + 京考报名 + 文职缴费 + 江苏成绩查询）', () => {
     const html = unesc(renderZone(NOV_18_0800_CST))
     for (const label of ['江西成绩查询', '广东成绩查询', '新疆成绩查询']) {
       expect(html).toContain(label)
@@ -83,6 +83,9 @@ describe('A3：有今日节点时渲染今日行，5 项 label 与 detail 原文
     expect(html).toContain('报名')
     expect(html).toContain('军队文职')
     expect(html).toContain('缴费')
+    expect(html).toContain('江苏自考')
+    expect(html).toContain('成绩查询')
+    expect(html).toContain('11 月 18 日 10:00 起可查')
   })
 
   it('无今日节点的日子整行不渲染、不挂空态占位（11-24 倒计时行仍在，12-21 整卡消失）', () => {

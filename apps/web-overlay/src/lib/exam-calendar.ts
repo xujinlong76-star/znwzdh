@@ -606,6 +606,38 @@ export const EXAMS: ExamInfo[] = [
     ],
     note: '成绩分省公布，无全国统一时间。广东成绩证书 11 月 28 日 16:00 起可通过官微/支付宝/百度小程序下载打印；其余省份时间各异，以各省教育考试院公告为准。',
   },
+  {
+    id: 'jiangsu-zikao',
+    name: '2026 年 10 月江苏省高等教育自学考试',
+    shortName: '江苏自考',
+    tagline: '成绩 11 月 18 日公布',
+    examDateLabel: '10 月 24–25 日',
+    startISO: '2026-10-24',
+    endISO: '2026-10-25',
+    // 江苏自考成绩与复核（U-144，2026-11-18 核实）：成绩 11-18 10:00 发布，
+    // 入口 www.jseea.cn「招考业务」-「自学考试」；复核登记 11-18、19、20 日
+    // （17:00 截止），持本人身份证、准考证到所属区县考办登记，逾期不予受理
+    // （常州发布转载江苏省教育考试院通告）。考期 10-24–25：eol.cn 两篇 +
+    // 江苏省教育考试院 10-14 特别提醒转载一致，无矛盾。
+    // 统考 10 月 24–25 日已结束，条目存在只为承载成绩节点；成绩复核为线下
+    // 登记，无线上入口。两节点不挂 url（无网页深链可挂，不编链接）、不设
+    // estimated（日期均已核实）；label 不带省前缀（短名已含「江苏」）。
+    nodes: [
+      {
+        label: '成绩查询',
+        detail: '11 月 18 日 10:00 起可查（江苏省教育考试院门户网站 www.jseea.cn「招考业务」栏目「自学考试」页面）',
+        startISO: '2026-11-18',
+        endISO: '2026-11-18',
+      },
+      {
+        label: '成绩复核',
+        detail: '11 月 18 日、19 日、20 日（17:00 截止）持本人身份证、准考证到所属区县考办登记并提交复核申请，逾期不予受理',
+        startISO: '2026-11-18',
+        endISO: '2026-11-20',
+      },
+    ],
+    note: '统考 10 月 24–25 日已结束，条目存在只为承载成绩节点；成绩复核为线下登记，无线上入口。',
+  },
 ]
 
 /**
@@ -730,7 +762,7 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
  *    如浙江成绩查询 11-20 当天也不出现）。
  * 顺序：直接节点（today / endsToday）按 EXAMS 数组序、考试内节点数组序；
  * startsToday 为第二遍追加，排在全部直接节点之后；两遍内部均不另排序。
- * exams 参数只为测试注入合成数据，调用方不传。11-18 恰好 5 项，11-19 只剩江西成绩复核。
+ * exams 参数只为测试注入合成数据，调用方不传。11-18 恰好 6 项，11-19 只剩江西成绩复核。
  */
 export interface TodayNodeItem {
   exam: ExamInfo
@@ -805,7 +837,7 @@ export function todayFollowUpNodes(
 
 /** 最近一场：未结束的考试里首考日最早的；多日考试末日仍算未结束
  *（考研 12-19–20：12-20 当天条带仍在，与 /exam 倒计时岛「进行中 ·
- * 第 2 天」一致）；八场全结束则返回 undefined（调用方渲染空态条带）。
+ * 第 2 天」一致）；九场全结束则返回 undefined（调用方渲染空态条带）。
  * 排序按首考日（firstExamDay），不是公共科目首日 startISO：有加试的
  * 考试（国考首考日 11-28 < startISO 11-29；京考首考日 12-05 < startISO
  * 12-06）应按考生实际最早开考日排。同日首考平局时数组在前者胜出
@@ -879,37 +911,42 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
 }
 
 /**
- * 11-18 峰值日时刻截止表（渲染层专用，考试峰值日包 W9）。
+ * 11-18 峰值日时刻截止表（渲染层专用，考试峰值日包 W9，U-144 推广）。
  *
- * 只覆盖 11-18 当天 5 个已核实目标时刻（北京时间，距当日 0 点的分钟数；
- * 毫秒值按 shanghaiMidnightMs('2026-11-18') + 分钟数算，与 guokaoAdmissionPhase
+ * 覆盖 7 个已核实目标时刻（北京时间，表项为目标日期 + 距当日 0 点的分钟数；
+ * 毫秒值按 shanghaiMidnightMs(目标日期) + 分钟数算，与 guokaoAdmissionPhase
  * 的 15:00 截止同款算法）：
- *  - 成考江西成绩查询 09:00、成考新疆成绩查询 12:00、成考广东成绩查询 16:20
- *    （三省 detail 原文所载公告时刻；广东取 16:20 小程序自查开通时刻，
- *    16:00 仅短信推送；「已截止」只指公告时刻已过，不代表查分通道关闭，
- *    永不写「已开通」「已可查」）；
- *  - 京考报名 18:00、军队文职缴费 18:00（两节点 detail 原文所载截止时刻）。
+ *  - 成考江西成绩查询 11-18 09:00、成考新疆成绩查询 11-18 12:00、成考广东
+ *    成绩查询 11-18 16:20（三省 detail 原文所载公告时刻；广东取 16:20
+ *    小程序自查开通时刻，16:00 仅短信推送；「已截止」只指公告时刻已过，
+ *    不代表查分通道关闭，永不写「已开通」「已可查」）；
+ *  - 京考报名 11-18 18:00、军队文职缴费 11-18 18:00（两节点 detail 原文所载截止时刻）；
+ *  - 江苏自考成绩查询 11-18 10:00（查分行）、江苏自考成绩复核 11-20 17:00
+ *    （截止行；复核目标日期是 11-20，绝不是 11-18——1020 分钟若配 11-18
+ *    会错成 11-18 17:00，故表项必须带目标日期，不许只存分钟数）。
  *
  * 不给 ExamNode 加时刻字段、不改 examNodeStatus / todayNodes：节点状态机
  * 与今日行仍是纯日期口径（todayNodes 的注释仍成立）；时刻判定只发生在
  * 渲染层，调用方用 `deadlineLabel ?? EXAM_NODE_STATUS_LABEL[status]` 取文案。
- * 守卫：只按 `${exam.id}:${node.label}` 查表，且节点日期须覆盖 2026-11-18
+ * 守卫：只按 `${exam.id}:${node.label}` 查表，且节点日期须覆盖目标日期
  * （查 node.startISO / endISO），不以 label 裸匹配；其他节点一律 undefined / null。
  */
-const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, number>> = {
-  'chengkao:江西成绩查询': 9 * 60,
-  'chengkao:新疆成绩查询': 12 * 60,
-  'chengkao:广东成绩查询': 16 * 60 + 20,
-  'jingkao:报名': 18 * 60,
-  'jundui-wenzhi:缴费': 18 * 60,
+const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, { date: string; minutes: number }>> = {
+  'chengkao:江西成绩查询': { date: '2026-11-18', minutes: 9 * 60 },
+  'chengkao:新疆成绩查询': { date: '2026-11-18', minutes: 12 * 60 },
+  'chengkao:广东成绩查询': { date: '2026-11-18', minutes: 16 * 60 + 20 },
+  'jingkao:报名': { date: '2026-11-18', minutes: 18 * 60 },
+  'jundui-wenzhi:缴费': { date: '2026-11-18', minutes: 18 * 60 },
+  'jiangsu-zikao:成绩查询': { date: '2026-11-18', minutes: 10 * 60 },
+  'jiangsu-zikao:成绩复核': { date: '2026-11-20', minutes: 17 * 60 },
 }
 
-/** 表内节点的 2026-11-18 目标时刻（UTC 毫秒数）；表外或日期不覆盖 11-18 的节点返回 undefined */
+/** 表内节点的目标时刻（UTC 毫秒数）；表外或节点日期不覆盖目标日期的返回 undefined */
 function peakDayDeadlineMs(exam: ExamInfo, node: ExamNode): number | undefined {
-  const minutes = PEAK_DAY_DEADLINE_MINUTES[`${exam.id}:${node.label}`]
-  if (minutes === undefined) return undefined
-  if (node.startISO > '2026-11-18' || node.endISO < '2026-11-18') return undefined
-  return shanghaiMidnightMs('2026-11-18') + minutes * 60 * 1000
+  const target = PEAK_DAY_DEADLINE_MINUTES[`${exam.id}:${node.label}`]
+  if (target === undefined) return undefined
+  if (node.startISO > target.date || node.endISO < target.date) return undefined
+  return shanghaiMidnightMs(target.date) + target.minutes * 60 * 1000
 }
 
 /** 今日行条目的目标时刻（UTC 毫秒数）：表外节点返回 undefined，供倒计时组件传 target 用 */
@@ -957,7 +994,7 @@ export function urgencyTier(
 
 /**
  * 时钟卡倒计时行（纯派生）：最近一场未结束考试的一行文案 + 紧迫档位。
- * 八场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
+ * 九场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
  * 文案与 /exam 倒计时岛同口径：首考日当天「今天国考 · 专业科目 14:00
  * 开考」（国考首考日 11-28 设了 firstDayLabel）、进行中「考研进行中 ·
  * 第 2 天」、首考日前一天「明天国考（专业科目先考 11 月 28 日）」

@@ -111,7 +111,7 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                           className="flex flex-wrap items-baseline gap-x-2 text-sm"
                         >
                           <span className="font-medium">
-                            {exam.shortName} · {node.label}
+                            {`${exam.shortName} · ${node.label}`}
                           </span>
                           {kind === 'endsToday' ? (
                             <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
@@ -141,7 +141,7 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                             className="flex flex-wrap items-baseline gap-x-2"
                           >
                             <span className="font-medium">
-                              {exam.shortName} · {node.label}
+                              {`${exam.shortName} · ${node.label}`}
                             </span>
                             <span className="min-w-0 flex-1 text-muted-foreground">
                               {node.detail}

@@ -164,7 +164,9 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
     await page.getByText('或者直接粘贴 JSON 内容').click();
     await page.getByLabel('插件清单 JSON').fill('{不是合法 JSON');
     await page.getByRole('button', { name: '导入并上架' }).click();
-    await expect(page.getByRole('alert')).toContainText('JSON 无法解析');
+    // 页面错误是 <p role="alert">；Next.js 的 #__next-route-announcer__ 也是 role="alert" 的 <div>，
+    // 裸 getByRole('alert') 会同时命中两者触发 strict mode 冲突，故限定到 p。
+    await expect(page.locator('p[role="alert"]')).toContainText('JSON 无法解析');
     // 报错后无成功态、不跳详情：仍在导入页
     await expect(page).toHaveURL(/\/marketplace\/import$/);
     await expect(page.getByText('已导入并上架')).not.toBeVisible();
@@ -178,7 +180,7 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
     // 匿名调导入接口会被网关 401（scope=admin）：页面应给「请先登录」+ 去登录入口，
     // 而不是把 Unauthorized 技术串甩给用户
     await importViaUI(page, sitePackManifest(name, stamp), slug);
-    const alert = page.getByRole('alert');
+    const alert = page.locator('p[role="alert"]');
     await expect(alert).toContainText('请先登录', { timeout: 30_000 });
     await expect(alert.getByRole('link', { name: '去登录' })).toBeVisible();
     await alert.getByRole('link', { name: '去登录' }).click();
@@ -223,7 +225,7 @@ test.describe('插件市场 P3-5：import / mine / 作者页 / 详情 tab 切换
     // 再从导入页导入同名清单（换一个 slug）：应 409 拒绝，绝不静默覆盖
     await loginViaAdmin(page);
     await importViaUI(page, manifest, `e2e-import-dup-second-${stamp}`);
-    await expect(page.getByRole('alert')).toContainText('同名插件已存在', { timeout: 30_000 });
+    await expect(page.locator('p[role="alert"]')).toContainText('同名插件已存在', { timeout: 30_000 });
     await expect(page.getByText('已导入并上架')).not.toBeVisible();
     await expect(page).toHaveURL(/\/marketplace\/import$/);
   });

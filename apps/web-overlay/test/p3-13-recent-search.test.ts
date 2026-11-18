@@ -197,3 +197,20 @@ describe('接线：SpotlightModal 最近搜索可单条删除 + 一键清空', (
     expect(spotlight).toContain('e.stopPropagation()')
   })
 })
+
+describe('R4：/me/history 清空成功后删快照键，不让已清空的历史「复活」', () => {
+  const historyPage = overlaySource('src/app/me/history/page.tsx')
+
+  it('clearAll 成功后调 clearSearchHistorySnapshot()，失败时不删', () => {
+    const block = historyPage.slice(historyPage.indexOf('const clearAll'), historyPage.indexOf('const zeroResultItems'))
+    expect(block).toContain('clearSearchHistorySnapshot()')
+    expect(block.indexOf('if (!ok)')).toBeLessThan(block.indexOf('clearSearchHistorySnapshot()'))
+    expect(block.indexOf('setItems([])')).toBeLessThan(block.indexOf('clearSearchHistorySnapshot()'))
+  })
+
+  it('快照键不再本地重复定义，唯一事实源在 lib/recent-search.ts', () => {
+    expect(historyPage).not.toContain('const HISTORY_SNAPSHOT_KEY')
+    expect(historyPage).toContain("from '@/lib/recent-search'")
+    expect(historyPage).toContain('SEARCH_HISTORY_SNAPSHOT_KEY')
+  })
+})

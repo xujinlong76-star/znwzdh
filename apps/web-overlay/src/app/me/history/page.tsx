@@ -27,6 +27,10 @@ import {
   fetchSearchHistoryPage,
   type HubSearchHistoryItem,
 } from '@/lib/navhub-api'
+import {
+  clearSearchHistorySnapshot,
+  SEARCH_HISTORY_SNAPSHOT_KEY,
+} from '@/lib/recent-search'
 import { ArrowUpRight, Copy, Filter, History, Loader2, Search, Sparkles, Trash2 } from 'lucide-react'
 
 type ViewState = 'loading' | 'ready' | 'error' | 'no-identity'
@@ -34,14 +38,14 @@ type ResultFilterMode = 'all' | 'with-results' | 'zero-results'
 
 const PAGE_SIZE = 20
 
-/** 离线快照键（T24）：只存最近一页（≤20 条）+ 时间戳，会话级过期不设、随新数据覆盖 */
-const HISTORY_SNAPSHOT_KEY = 'navhub.search_history.cache.v1'
+/** 离线快照（T24）：只存最近一页（≤20 条）+ 时间戳，会话级过期不设、随新数据覆盖；
+    键名唯一事实源在 lib/recent-search.ts（清空路径共用，R4） */
 const HISTORY_SNAPSHOT_MAX = 20
 
 function writeHistorySnapshot(items: HubSearchHistoryItem[]): void {
   try {
     window.localStorage.setItem(
-      HISTORY_SNAPSHOT_KEY,
+      SEARCH_HISTORY_SNAPSHOT_KEY,
       JSON.stringify({ at: Date.now(), items: items.slice(0, HISTORY_SNAPSHOT_MAX) }),
     )
   } catch {
@@ -51,7 +55,7 @@ function writeHistorySnapshot(items: HubSearchHistoryItem[]): void {
 
 function readHistorySnapshot(): { at: number; items: HubSearchHistoryItem[] } | null {
   try {
-    const raw = window.localStorage.getItem(HISTORY_SNAPSHOT_KEY)
+    const raw = window.localStorage.getItem(SEARCH_HISTORY_SNAPSHOT_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as { at?: number; items?: HubSearchHistoryItem[] }
     if (!Array.isArray(parsed.items) || typeof parsed.at !== 'number') return null
@@ -183,6 +187,8 @@ export default function SearchHistoryPage() {
     setItems([])
     setHasMore(false)
     setNextOffset(0)
+    // R4：只清云端不删快照键，下次降级加载会把已清空的历史当快照「复活」
+    clearSearchHistorySnapshot()
     toast({ title: '搜索历史已清空' })
   }, [confirmClear, identity, toast])
 

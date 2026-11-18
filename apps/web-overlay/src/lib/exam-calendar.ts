@@ -724,8 +724,9 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
  *    三省查询三个今日节点，复核进接续区，不抢今日行。
  *  - estimated 节点永不进今日集合（examNodeStatus 恒返回 'estimated'，
  *    如浙江成绩查询 11-20 当天也不出现）。
- * 顺序即 EXAMS 数组序、考试内节点数组序，不另排序；exams 参数只为测试
- * 注入合成数据，调用方不传。11-18 恰好 5 项，11-19 只剩江西成绩复核。
+ * 顺序：直接节点（today / endsToday）按 EXAMS 数组序、考试内节点数组序；
+ * startsToday 为第二遍追加，排在全部直接节点之后；两遍内部均不另排序。
+ * exams 参数只为测试注入合成数据，调用方不传。11-18 恰好 5 项，11-19 只剩江西成绩复核。
  */
 export interface TodayNodeItem {
   exam: ExamInfo

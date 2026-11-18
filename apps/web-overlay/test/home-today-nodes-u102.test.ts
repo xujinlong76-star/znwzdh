@@ -1,15 +1,18 @@
 /**
  * U-102 今日提醒横幅（裁剪版）：纯函数层测试（A1 / A2 / A5 纯函数部分 / A6）。
  *
- * todayNodes 的判定口径（与 W2 验收 A1 逐字对齐）：
- *  - 单日节点当天：examNodeStatus === 'today'；
- *  - 多日窗口末日当天：status 为 active 且 endISO 就是今天（「今日截止」，
+ * todayNodes 的判定口径（实际三段口径：单日 `today` + 窗口末日 `endsToday`
+ * + 窗口首日 `startsToday`，仅当本场当天无更直接今日节点时）：
+ *  - 单日节点当天（kind `today`）：examNodeStatus === 'today'；
+ *  - 多日窗口末日当天（kind `endsToday`）：status 为 active 且 endISO 就是今天（「今日截止」，
  *    如京考报名、文职缴费在 11-18）——只按自然日判，不新造时刻门控；
- *  - 多日窗口首日当天：status 为 active 且 startISO 就是今天，但只在
+ *  - 多日窗口首日当天（kind `startsToday`）：status 为 active 且 startISO 就是今天，但只在
  *    本场考试当天没有更直接的今日节点（today / endsToday）时才收录
  *    （如江西成绩复核在 11-19；新疆成绩复核在 11-18 不收——成考当天
  *    已有三省查询三个今日节点，复核进接续区，不抢今日行）；
  *  - estimated 节点永不进今日集合（A2）。
+ * 抑制规则（startsToday 仅当本场无 today / endsToday 时收录）是 11-18「恰好 5 项」的
+ * 承重条件：若无该抑制，新疆成绩复核会在 11-18 多收 1 项，变成 6 项。
  * 11-18 恰好 5 项，11-19 只剩江西成绩复核 1 项，11-20 不含浙江成绩查询。
  * 接续节点（A5）与今日节点都取自节点数据，不写死日期、不新造节点。
  */

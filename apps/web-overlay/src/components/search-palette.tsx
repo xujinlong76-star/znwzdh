@@ -1675,7 +1675,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   onClick={() => void handleClearRecent()}
                   className={
                     confirmClearRecent
-                      ? 'rounded px-1.5 py-0.5 text-xs font-medium text-destructive hover:bg-destructive/10'
+                      ? 'rounded px-1.5 py-0.5 text-xs font-medium text-destructive-text hover:bg-destructive/15'
                       : 'rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground'
                   }
                 >
@@ -1703,7 +1703,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         e.stopPropagation()
                         void handleDeleteRecent(item)
                       }}
-                      className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground/70 hover:bg-muted hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11"
+                      className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11"
                     >
                       <X className="h-3.5 w-3.5" aria-hidden />
                     </button>

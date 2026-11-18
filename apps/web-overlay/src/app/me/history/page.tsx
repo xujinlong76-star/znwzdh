@@ -201,8 +201,10 @@ export default function SearchHistoryPage() {
     setItems([])
     setHasMore(false)
     setNextOffset(0)
-    // R4：只清云端不删快照键，下次降级加载会把已清空的历史当快照「复活」
+    // R4：清空成功后同步删快照键，否则下次降级加载会把已清空的历史当快照「复活」
     clearSearchHistorySnapshot()
+    // 快照态清空成功后页面不再是快照态：同步清掉时间戳，否则「正在展示本机离线快照」横幅会残留在空列表上方
+    setOfflineSnapshotAt(null)
     toast({ title: '搜索历史已清空' })
   }, [confirmClear, identity, toast])
 

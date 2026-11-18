@@ -208,6 +208,16 @@ describe('R4：/me/history 清空成功后删快照键，不让已清空的历�
     expect(block.indexOf('setItems([])')).toBeLessThan(block.indexOf('clearSearchHistorySnapshot()'))
   })
 
+  it('clearAll 成功后同步清掉快照时间戳，横幅不残留', () => {
+    const block = historyPage.slice(historyPage.indexOf('const clearAll'), historyPage.indexOf('const zeroResultItems'))
+    expect(block).toContain('setOfflineSnapshotAt(null)')
+    expect(block.indexOf('clearSearchHistorySnapshot()')).toBeLessThan(block.indexOf('setOfflineSnapshotAt(null)'))
+    // 只在成功分支清时间戳：失败提前 return 在清零之前，快照态与横幅原样保留
+    expect(block.indexOf('if (!ok)')).toBeLessThan(block.indexOf('setOfflineSnapshotAt(null)'))
+    // 注释不再陈述已修复的旧 bug 行为（回归锚点：防 R4 修复时「修代码忘修注释」重演）
+    expect(block).not.toContain('只清云端不删快照键')
+  })
+
   it('快照键不再本地重复定义，唯一事实源在 lib/recent-search.ts', () => {
     expect(historyPage).not.toContain('const HISTORY_SNAPSHOT_KEY')
     expect(historyPage).toContain("from '@/lib/recent-search'")

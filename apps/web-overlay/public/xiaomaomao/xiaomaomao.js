@@ -330,6 +330,10 @@
     'html.dark #xiaomaomao .xm-wrap:after{background:radial-gradient(ellipse at center,rgba(0,0,0,.55),rgba(0,0,0,0) 70%)}' +
     '@keyframes xmShadow{0%,100%{transform:scaleX(1);opacity:.75}50%{transform:scaleX(.9);opacity:.55}}' +
     '#xiaomaomao .xm-stage{position:absolute;inset:0;z-index:1;border-radius:30%;overflow:hidden;background:#fff;border:1px solid var(--xm-stage-ring);box-shadow:var(--xm-shadow-pop);cursor:pointer;animation:xmFloat 5.2s ease-in-out infinite}' +
+    /* C-03：视频首帧加载态——脉冲 + 「加载中…」文案，首帧就绪/兜底/停播时摘掉 */
+    '#xiaomaomao.xm-loading .xm-stage{animation:xmLoading 1.1s ease-in-out infinite}' +
+    '#xiaomaomao.xm-loading .xm-stage::after{content:"加载中…";position:absolute;left:50%;bottom:6px;transform:translateX(-50%);font-size:11px;color:var(--xm-muted);white-space:nowrap;z-index:3}' +
+    '@keyframes xmLoading{0%,100%{opacity:1}50%{opacity:.55}}' +
     /* v8：皇冠图是白底、没有深色变体——深色模式给舞台换柔和奶油底衬 + 暖金光晕影，
        让白底猫像一张暖色贴纸落在深色页上，而不是一块生硬的白方块；收起圆标同理。 */
     'html.dark #xiaomaomao .xm-stage{background:linear-gradient(155deg,#fff9ec 0%,#ffeef2 100%);border-color:rgba(255,196,120,.55);box-shadow:0 16px 34px -12px rgba(255,176,102,.45),var(--xm-shadow-pop)}' +
@@ -766,12 +770,64 @@
     if (name.indexOf('snd-') === 0) return MEDIA_BASE_CROWN + name + '.mp4';
     return MEDIA_BASE + name + '.mp4';
   }
+  var PROBE_TIMEOUT_MS = 5000; /* 探活 HEAD 超时：5 秒不回即判失败（C-01 / A P1-5） */
+  var PROBE_NEGATIVE_TTL_MS = 30000; /* 探活阴性结果只缓存 30 秒，过期重探（C-01 / A P1-5） */
+  var mediaProbeFailedAt = {}; /* url -> 上次探活阴性结果的时间戳（毫秒） */
+  function fetchWithTimeout(url, opts) {
+    /* fetch + 超时竞速：超时返回 null（不等底层请求，只是不再等它）。
+       全文件无 AbortController——不用它，省得老环境再分支。 */
+    opts = opts || {};
+    try {
+      return Promise.race([
+        window.fetch(url, opts.fetchOpts || {}),
+        new Promise(function (resolve) { window.setTimeout(function () { resolve(null); }, opts.ms || PROBE_TIMEOUT_MS); })
+      ]).catch(function () { return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+  var MEDIA_MANIFEST_VERSION = 1; /* 媒体清单版本：清单 version 与它不符即部署不同步（C-02） */
+  var mediaManifestExtras = null; /* 清单 extras 的文件名列表（未就绪时为 null，供 C-08 门控用） */
+  var mediaManifestStatus = null; /* 清单核对结果（诊断用，见 window.XIAOMAOMAO_MEDIA_STATUS） */
+  function checkMediaManifest() {
+    /* 启动时核对媒体清单：版本不符/文件缺失只写 console.warn + 暴露诊断状态，不拦猫；
+       清单缺失（老部署）记 manifest: false，照常走探活链。 */
+    var status = { manifest: false, version: 0, expected: 0, missing: [], checkedAt: Date.now() };
+    mediaManifestStatus = status;
+    try { window.XIAOMAOMAO_MEDIA_STATUS = { mediaManifestStatus: status }; } catch (e) { /* 忽略 */ }
+    fetchWithTimeout(base + 'media-manifest.json', { ms: PROBE_TIMEOUT_MS }).then(function (r) {
+      if (!r || !r.ok) { status.manifest = false; return; }
+      return r.json().then(function (m) {
+        status.manifest = true;
+        status.version = (m && m.version) || 0;
+        var files = (m && m.files) || {};
+        var names = Object.keys(files);
+        status.expected = names.length;
+        if (status.version !== MEDIA_MANIFEST_VERSION) {
+          console.warn('[xiaomaomao] media manifest version mismatch: got ' + status.version + ', expected ' + MEDIA_MANIFEST_VERSION);
+        }
+        mediaManifestExtras = Array.isArray(m.extras) ? m.extras.slice() : [];
+        names.forEach(function (name) {
+          probeMedia(MEDIA_BASE + name).then(function (ok) {
+            if (!ok) {
+              status.missing.push(name);
+              console.warn('[xiaomaomao] media missing (manifest): ' + name);
+            }
+          });
+        });
+      });
+    }).catch(function () { status.manifest = false; });
+  }
   function probeMedia(url) {
+    var failedAt = mediaProbeFailedAt[url];
+    if (failedAt && Date.now() - failedAt < PROBE_NEGATIVE_TTL_MS) return Promise.resolve(false);
+    if (failedAt) { delete mediaProbeFailedAt[url]; delete mediaProbe[url]; }
     if (!mediaProbe[url]) {
       try {
-        mediaProbe[url] = window.fetch(url, { method: 'HEAD' })
-          .then(function (r) { return !!(r && r.ok); })
-          .catch(function () { return false; });
+        mediaProbe[url] = fetchWithTimeout(url, { fetchOpts: { method: 'HEAD' }, ms: PROBE_TIMEOUT_MS })
+          .then(function (r) {
+            var ok = !!(r && r.ok);
+            if (!ok) { mediaProbeFailedAt[url] = Date.now(); delete mediaProbe[url]; }
+            return ok;
+          });
       } catch (e) { mediaProbe[url] = Promise.resolve(false); }
     }
     return mediaProbe[url];
@@ -822,7 +878,21 @@
       videoHideT = window.setTimeout(function () { if (videoEl === el) stopCelebVideo(); }, opts.ms || 9000);
     } catch (e) { stopCelebVideo(); }
   }
+  function celebFileShipped(name) {
+    /* 庆祝/表情视频只播确实发版的文件：显式覆盖（XIAOMAOMAO_MEDIA）放行；
+       否则查清单 extras（mediaManifestExtras 未就绪时为 null，一律不放行——不发 HEAD）。 */
+    try {
+      var o = window.XIAOMAOMAO_MEDIA;
+      if (o && o.videos && typeof o.videos[name] === 'string') return true;
+      if (o && o.celebrate && typeof o.celebrate[name] === 'string') return true;
+      if (o && o.dances && typeof o.dances[name] === 'string') return true;
+    } catch (e) { /* 忽略 */ }
+    if (!mediaManifestExtras) return false;
+    var tail = mediaUrl(name).split('/').pop();
+    return mediaManifestExtras.indexOf(tail) !== -1;
+  }
   function tryCelebVideo(names, opts, seq) {
+    names = (names || []).filter(celebFileShipped);
     if (!names.length) return;
     if (typeof seq !== 'number') seq = videoSeq;
     var url = mediaUrl(names[0]);
@@ -886,6 +956,8 @@
     return { url: MEDIA_BASE + PLAY_CLIPS[name], trusted: false };
   }
   var clipA = null, clipB = null, clipVisible = null, clipCurrent = '', clipSeq = 0;
+  var VIDEO_LOAD_TIMEOUT_MS = 8000; /* 视频首帧加载超时：8 秒不到首帧即判加载失败（C-03） */
+  var videoLoadT = 0; /* 首帧看门狗定时器（C-03） */
   function ensureClipEls() {
     if (clipA) return;
     clipA = document.createElement('video');
@@ -903,7 +975,7 @@
          （探活只验文件在不在，解码失败要靠 error 事件兜底；静态图已删，不回静态）。 */
       v.addEventListener('error', function () {
         if (clipVisible !== v || !clipCurrent) return;
-        if (clipCurrent === 'idle') { videoDead = true; showFallback('idle'); }
+        if (clipCurrent === 'idle') { markVideoDead('network'); showFallback('idle'); }
         else playClip('idle');
       });
     });
@@ -915,7 +987,11 @@
   function playClip(name, opts) {
     opts = opts || {};
     if (!PLAY_CLIPS[name]) name = 'idle';
-    if (videoDead) { showFallback(name); return; }
+    if (videoDead) {
+      /* 判死可恢复：网络原因且超过重试窗口时清掉重探；能力原因永不自动重试 */
+      if (videoDeadReason === 'network' && videoDeadAt && Date.now() - videoDeadAt > VIDEO_DEAD_RETRY_MS) clearVideoDead();
+      else { showFallback(name); return; }
+    }
     if (clipCurrent === name && clipVisible) {
       try {
         clipVisible.loop = opts.loop !== false;
@@ -923,8 +999,16 @@
           clipVisible.currentTime = 0;
           var p0 = clipVisible.play();
           if (p0 && p0.catch) p0.catch(function () { /* 留首帧 */ });
+        } else if (clipVisible.paused) {
+          /* C-07：同名快路径——收起→唤回后视频已暂停，loop 循环段直接续播 */
+          var p1 = clipVisible.play();
+          if (p1 && p1.catch) p1.catch(function () { /* 留首帧 */ });
         }
       } catch (e) { /* 忽略 */ }
+      /* C-03 补修（2026-11-18 接续）：快路径是同一路已加载的视频，首帧已在就不用挂
+         加载态——否则收起→唤回后 xm-loading 永久残留（“加载中…”一直显示在播着的视频底下，
+         p6 探针实测）；首帧未到（readyState < 2）时不动，等 markVideoReady/看门狗处理。 */
+      if (clipVisible.readyState >= 2) { clearTimeout(videoLoadT); root.classList.remove('xm-loading'); }
       return;
     }
     ensureClipEls();
@@ -943,6 +1027,17 @@
         var p = next.play();
         if (p && p.catch) p.catch(function () { /* 自动播放被拦时留首帧 */ });
         markVideoReady(next, seq);
+        /* C-03 看门狗：首帧 8 秒不到即判加载失败。readyState >= 2 时首帧已在，
+           直接放过；超时时 idle 判死走兜底，非 idle 回 idle。 */
+        clearTimeout(videoLoadT);
+        if (next.readyState >= 2) { /* 首帧已在，不布看门狗 */ }
+        else {
+          videoLoadT = window.setTimeout(function () {
+            if (seq !== clipSeq || next.readyState >= 2) return;
+            if (name === 'idle') { markVideoDead('network'); showFallback('idle'); }
+            else playClip('idle');
+          }, VIDEO_LOAD_TIMEOUT_MS);
+        }
         /* 淡化结束后停掉旧一路：只留可见的一路解码，省电。300ms 略长于 .xm-clip
            的 .28s 透明度过渡，淡化期间两路短暂同播是刻意的；seq 守卫防后一次
            切换把刚换回来的路误停（A→B→A 时旧定时器不再碰已可见的路）。 */
@@ -961,7 +1056,7 @@
       next.addEventListener('error', function onErr() {
         next.removeEventListener('error', onErr);
         if (seq !== clipSeq) return;
-        if (name === 'idle') { videoDead = true; showFallback('idle'); }
+        if (name === 'idle') { markVideoDead('network'); showFallback('idle'); }
         else playClip('idle');
       });
       show();
@@ -971,7 +1066,7 @@
       if (seq !== clipSeq) return;
       if (!ok) {
         if (name !== 'idle') { playClip('idle'); return; }
-        videoDead = true;
+        markVideoDead('network');
         showFallback('idle');
         return;
       }
@@ -981,6 +1076,8 @@
   }
   function stopClips() {
     clipSeq++;
+    clearTimeout(videoLoadT); /* 停播也清看门狗（C-03） */
+    root.classList.remove('xm-loading'); /* 加载态摘掉（C-03） */
     hideFallback(); /* 兜底图也一起藏（自改形象/收起/换态时不留 WebP/GIF） */
     root.classList.remove('xm-has-video'); /* 视频停了，透明舞台摘掉（静态姿势图已删，不回静态） */
     [clipA, clipB].forEach(function (v) {
@@ -1014,12 +1111,13 @@
     if (reducedMotion || avatarPick || root.classList.contains('xm-closed')) return false;
     if (!supportsVp9Alpha()) {
       /* Safari 不认 VP9：视频路直接判死，走动画 WebP 兜底 */
-      videoDead = true;
+      markVideoDead('capability');
       ambientVideo = true;
       showFallback('idle');
       return true;
     }
     ambientVideo = true;
+    root.classList.add('xm-loading'); /* C-03：视频路起播即挂加载态，首帧就绪/兜底时摘 */
     playClip('idle');
     return true;
   }
@@ -1047,9 +1145,56 @@
   }
   /* 视频有首帧才算真在播：透明类（舞台透明+藏兜底图）只在首帧就绪后挂，
      之前是默认白圆舞台，不闪破图；error/停播时由 stopClips 摘掉。 */
+  function videoAlphaLooksBad(v) {
+    /* C-05：首帧四角 alpha 采样——96×96 canvas 上画一帧，四角 alpha 都 > 16
+       说明底色不透明（丢了透明底）；取不到上下文/跨域受限时返回 false（不误杀）。 */
+    try {
+      var c = document.createElement('canvas');
+      c.width = 96; c.height = 96;
+      var ctx = c.getContext('2d');
+      if (!ctx) return false;
+      ctx.drawImage(v, 0, 0, 96, 96);
+      var corners = [[2, 2], [93, 2], [2, 93], [93, 93]];
+      for (var i = 0; i < corners.length; i++) {
+        var a = ctx.getImageData(corners[i][0], corners[i][1], 1, 1).data[3];
+        if (a <= 16) return false; /* 有一个角透明即底还在 */
+      }
+      return true;
+    } catch (e) { return false; }
+  }
   function markVideoReady(v, seq) {
     var on = function () {
-      if (seq === clipSeq && clipVisible === v) { hideFallback(); root.classList.add('xm-has-video'); }
+      clearTimeout(videoLoadT); /* 首帧到了，看门狗撤下（C-03） */
+      root.classList.remove('xm-loading'); /* 加载态摘掉（C-03） */
+      if (seq === clipSeq && clipVisible === v) {
+        /* C-03 补修（2026-11-18 接续）：看门狗已判死时迟到的首帧不再把兜底换回视频——
+           否则“判死却在播”，videoDead 仍 true 而视频已上台；判死后恢复走既有路径
+           （60 秒网络重试/唤回 revive/hideCat 30 秒定时器），不另开新路。 */
+        if (videoDead) return;
+        /* C-05 补修（2026-11-18 接续）：readyState >= 2 / loadeddata 时 drawImage
+           仍可能抓到未解出的空帧（角全透明），不透明视频会漏网（p5 探针三轮 2 过 1 败）。
+           有 requestVideoFrameCallback 时在首个呈现帧上采样（1 帧内），1 秒未呈现
+           则直接采样兜底（自动播放被拦时不至于永远不上台）；无 rVFC 时直接采样（旧行为）。 */
+        if (v.requestVideoFrameCallback) {
+          var done = false;
+          try {
+            v.requestVideoFrameCallback(function () { if (!done) { done = true; sample(); } });
+          } catch (e) { sample(); return; }
+          window.setTimeout(function () { if (!done) { done = true; sample(); } }, 1000);
+          return;
+        }
+        sample();
+      }
+    };
+    /* 首帧采样（C-05）：四个角都不透明说明丢了透明底，判死走 WebP；否则挂透明类上台。
+       sampled 保证只采一次（rVFC 回调与 1 秒兜底定时器至多一个生效）。 */
+    var sampled = false;
+    var sample = function () {
+      if (sampled || seq !== clipSeq || clipVisible !== v) return;
+      sampled = true;
+      if (videoDead) return;
+      if (videoAlphaLooksBad(v)) { markVideoDead('alpha'); showFallback(clipCurrent || 'idle'); return; }
+      hideFallback(); root.classList.add('xm-has-video');
     };
     try {
       if (v.readyState >= 2) on();
@@ -1068,6 +1213,27 @@
   var PLAY_FALLBACKS = { idle: 'play-idle.webp', walk: 'play-walk.webp', pounce: 'play-pounce.webp' };
   var PLAY_FALLBACK_GIFS = { idle: 'play-idle.gif', walk: 'play-walk.gif', pounce: 'play-pounce.gif' };
   var videoDead = false; /* 视频路已死：VP9 不支持或 idle 探活/解码失败，此后 playClip 直接走兜底 */
+  var VIDEO_DEAD_RETRY_MS = 60000; /* 视频路判死后 60 秒才允许自动重试（C-01） */
+  var videoDeadAt = 0; /* 判死的时间戳（毫秒） */
+  var videoDeadReason = ''; /* 判死原因：'capability'（VP9 不支持，永不重试）|'network'（探活/加载/解码失败，可重试）|'alpha'（四角采样判死，不自动重试） */
+  function markVideoDead(reason) {
+    videoDead = true;
+    videoDeadAt = Date.now();
+    videoDeadReason = reason || 'network';
+  }
+  function clearVideoDead() {
+    videoDead = false;
+    videoDeadAt = 0;
+    videoDeadReason = '';
+    /* 判死期间记下的阴性探活一并清掉，下次重试真实探活 */
+    mediaProbeFailedAt = {};
+  }
+  function reviveVideoOnWake() {
+    /* 用户亲手唤回/点猫：网络原因判死的视频路立即重试一次（不等 60 秒窗口） */
+    if (!videoDead || videoDeadReason !== 'network') return false;
+    clearVideoDead();
+    return true;
+  }
   var fallbackImg = null, fallbackCurrent = '', fallbackTier = '', fallbackDead = false;
   function fallbackUrl(name, tier) {
     try {
@@ -1095,10 +1261,26 @@
     });
     stageEl.appendChild(fallbackImg);
   }
+  var HIDE_CAT_RETRY_MS = 30000; /* 兜底全灭后 30 秒自动重试一次视频路（C-06） */
   function hideCat() {
-    /* 兜底全灭：猫直接藏起来（display:none 级别），绝不回静态图、不留破图。
-       自改形象的用户不受影响——hideCat 只在兜底链里调，avatarPick 时不进兜底。 */
-    try { root.style.display = 'none'; } catch (e) { /* 忽略 */ }
+    /* 兜底全灭：不再直接藏猫——收成圆标（用户可点圆标唤回），控制台留可定位的错误，
+       30 秒后在圆标态自动重试一次视频路；自改形象用户不受影响（只在兜底链里调）。 */
+    console.warn('[xiaomaomao] all media fallbacks failed, collapsing to tab and retrying in 30s');
+    root.classList.remove('xm-loading');
+    stopClips();
+    collapseCat();
+    window.setTimeout(function () {
+      if (!root.classList.contains('xm-closed')) return; /* 已展开就不打扰 */
+      /* C-06 补修（2026-11-18 接续）：圆标态下 startAmbientVideo 会因 xm-closed
+         直接返回，旧写法只清判死、从不真正重探——重试是空操作（p3 探针两轮实测：
+         35 秒内日志里只有初始探活那 1 个 HEAD）。改为先真实探活一次：通了才清判死
+         （下次唤回即可播视频），不通则保持判死；能力/alpha 原因不自动重试。 */
+      if (videoDeadReason !== 'network') return;
+      probeMedia(MEDIA_BASE + PLAY_CLIPS.idle).then(function (ok) {
+        if (!root.classList.contains('xm-closed')) return;
+        if (ok) { clearVideoDead(); fallbackDead = false; }
+      });
+    }, HIDE_CAT_RETRY_MS);
   }
   function showFallback(name) {
     if (avatarPick || fallbackDead) return false;
@@ -2327,7 +2509,7 @@
     markActive();
     wakeUp(false);
     /* 唤回：游乐场开着续播游乐场那一路，否则默认视频续上（已在播时是空操作） */
-    if (play.on) resumeClips(); else startAmbientVideo();
+    if (play.on) resumeClips(); else { reviveVideoOnWake(); startAmbientVideo(); }
     setPose('waking');
     happyBounce();
     burst(7);
@@ -3155,6 +3337,7 @@
 
   /* ---------- 入场 ---------- */
   root.classList.add('xm-enter');
+  checkMediaManifest(); /* C-02：启动时核对媒体清单，缺失只告警、不拦猫 */
   /* v7：控件平时藏起来，新访客可能不知道猫能点——首次访问时坞自动展示一次当自我介绍
      （1.5 秒后淡入、按 3 秒规则自己收起），store.hinted 落盘，之后永不自动出 */
   if (!store.hinted) {

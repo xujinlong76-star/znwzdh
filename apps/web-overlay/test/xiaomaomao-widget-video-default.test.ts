@@ -115,8 +115,10 @@ describe("视频播不了时走 WebP→GIF→藏猫兜底链", () => {
   it("idle 探活失败即视频路判死、走 WebP 兜底（不留白、不报错）", () => {
     // 2026-11-18 删静态图：旧行为是 stopClips() 回静态，现改走 showFallback('idle')；
     // 旧断言按新行为改写（见本 it 注释），断言本身未删
+    // 2026-11-18 C-01 改写：判死点改走 markVideoDead('network')（带原因，可 60 秒后重试）；
+    // 原“videoDead = true”断言按新行为改写，未删除。
     const play = WIDGET.slice(WIDGET.indexOf("probeMedia(resolved.url).then"), WIDGET.indexOf("probeMedia(resolved.url).then") + 600);
-    expect(play).toContain("videoDead = true");
+    expect(play).toContain("markVideoDead('network')");
     expect(play).toContain("showFallback('idle')");
     expect(play).not.toContain("stopClips();");
   });
@@ -130,7 +132,9 @@ describe("视频播不了时走 WebP→GIF→藏猫兜底链", () => {
 
   it("视频解码出错也走兜底：idle 出错判死走 WebP，非 idle 出错回 idle", () => {
     // 2026-11-18 删静态图：旧断言 "clipCurrent === 'idle') stopClips();" 已按新行为改写
-    expect(WIDGET).toContain("if (clipCurrent === 'idle') { videoDead = true; showFallback('idle'); }");
+    // 2026-11-18 C-01 改写：判死点改走 markVideoDead('network')（带原因，可 60 秒后重试）；
+    // 原“videoDead = true”断言按新行为改写，未删除。
+    expect(WIDGET).toContain("if (clipCurrent === 'idle') { markVideoDead('network'); showFallback('idle'); }");
     expect(WIDGET).toContain("playClip('idle')");
   });
 

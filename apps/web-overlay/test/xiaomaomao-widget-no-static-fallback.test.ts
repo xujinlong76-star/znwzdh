@@ -85,9 +85,14 @@ describe("兜底链：视频 → WebP → GIF → 藏猫", () => {
     expect(ensure).toContain("hideCat()");
   });
 
-  it("hideCat 是 display:none 级别的隐藏", () => {
+  // 2026-11-18 C-06 改写：hideCat 不再是 display:none 死刑，改为收成圆标 +
+  // 控制台报错 + 30 秒后重试视频路；原“display:none 级别隐藏”断言按新行为改写，未删除。
+  it("hideCat 不再是 display:none 死刑（收成圆标 + 30 秒后重试）", () => {
     const hide = fnBody("hideCat");
-    expect(hide).toContain("root.style.display = 'none'");
+    expect(hide, "hideCat 还在写 display:none").not.toContain("style.display");
+    expect(hide).toContain("collapseCat()");
+    expect(hide).toContain("HIDE_CAT_RETRY_MS");
+    expect(hide).toContain("clearVideoDead()");
   });
 
   it("stopClips 藏兜底图、摘透明类", () => {
@@ -102,9 +107,11 @@ describe("兜底链：视频 → WebP → GIF → 藏猫", () => {
     expect(mark).toContain("root.classList.add('xm-has-video')");
   });
 
+  // 2026-11-18 C-01 改写：VP9 不支持的判死点改走 markVideoDead('capability')（带原因，
+  // 能力原因永不自动重试）；原“videoDead = true”断言按新行为改写，未删除。
   it("VP9 不支持时直接判死走 WebP（Safari 路）", () => {
     const start = fnBody("startAmbientVideo");
-    expect(start).toContain("videoDead = true");
+    expect(start).toContain("markVideoDead('capability')");
     expect(start).toContain("showFallback('idle')");
     expect(start).toContain("playClip('idle')");
   });

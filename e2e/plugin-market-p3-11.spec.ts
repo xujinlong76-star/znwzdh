@@ -187,18 +187,54 @@ test.describe('P3-11：短链 / 预览路由 / Taps / 防抖 / AI 生成', () =>
     const slug = `e2e-card-shortlink-${stamp}`;
     await importPublished(sitePackManifest(name, stamp), slug);
 
+    // 列表取数是看板挂载后客户端 effect 发的：它返回即证明 React 已水合、
+    // 卡片分享按钮的 onClick 已挂载。先注册再进页，避免取数发生在注册前。
+    const listLoaded = page
+      .waitForResponse((res) => res.url().includes('/api/hub/plugins'), { timeout: 20_000 })
+      .catch(() => null);
     // q 深链只留这一张卡片，卡片分享按钮不再需要按卡片定位
     await page.goto(`/marketplace?q=${encodeURIComponent(name)}`);
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
-    await page.getByRole('button', { name: '复制安装分享链接' }).first().click();
+    // 水合门控：只等取数回包，不等它就点——SSR 按钮可见时处理器可能还没挂载，
+    // 点了等于没点（run 44225474139 retry1 的 trace 实证：点击已执行，
+    // 但其后 10s 内全程无 POST /api/shortlinks、无 toast、剪贴板一直是空串；
+    // 客户端取数在点击约 0.8s 后才发出）。超时则放行，靠下面的重点击兜底。
+    await listLoaded;
+    const shareButton = page.getByRole('button', { name: '复制安装分享链接' }).first();
+
     // 卡片按钮无复制态切换（只有 toast 反馈），剪贴板读回才是 ground truth。
     // 注意：不以 toast 作门控——sonner 成功 toast 仅显示约 4s（瞬态），且无头
     // CI 下 navigator.clipboard.writeText 挂起/被拒、兜底也失败时代码发的是
     // toast.error('复制失败')，成功 toast 根本不会出现，放宽超时也救不了。
-    // 以下 expect.poll(readClipboard) 读回才是 ground truth。
-    await expect.poll(() => readClipboard(page), { timeout: 10_000 }).toContain('/s/');
-    const copied = await readClipboard(page);
-    expect(copied).toMatch(/\/s\/[A-Za-z0-9]+$/);
+    // 以下剪贴板读回才是 ground truth；且必须与点击前的值比对——同一浏览器里
+    // 剪贴板跨用例共享，短链① 留下的 /s/ 旧值会让只断言「含 /s/」的 poll
+    // 在点击前就瞬间通过，随后 goto 别人家的短链（run 44225474139 首跑实证：
+    // 复制到的是短链① 的 slug e2e-shortlink-mwlj1n3w）。
+    const before = await readClipboard(page);
+    let copied = '';
+    for (let attempt = 0; attempt < 3 && !copied; attempt++) {
+      // sharing=true 时按钮 disabled，click 会等到 30s 动作超时：先判 enabled，
+      // 若上一击仍在途（POST + 复制），直接等本轮 poll 收它的结果。
+      if (await shareButton.isEnabled().catch(() => false)) {
+        await shareButton.click({ timeout: 10_000 }).catch(() => {});
+      }
+      const changed = await expect
+        .poll(
+          async () => {
+            const v = await readClipboard(page);
+            return v !== before && v.includes('/s/');
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(true)
+        .then(() => true)
+        .catch(() => false);
+      if (changed) copied = await readClipboard(page);
+    }
+    expect(
+      copied,
+      `三次点击后剪贴板仍未出现本用例短链（点击前剪贴板为 ${before ? before : '(空)'}）`,
+    ).toMatch(/\/s\/[A-Za-z0-9]+$/);
 
     await page.goto(copied);
     await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}`));
@@ -350,13 +386,39 @@ test.describe('P3-11：短链 / 预览路由 / Taps / 防抖 / AI 生成', () =>
       }
     });
 
+    // 水合门控（与短链②同款）：看板挂载后 effect 会静默重取一次列表，
+    // 回包即证明 React 已水合、搜索框 onChange 已挂载；否则同任务 dispatch
+    // 的 input 事件可能在处理器挂载前丢失。超时放行（取数本身不是断言对象）。
+    const listLoaded = page
+      .waitForResponse((res) => res.url().includes('/api/hub/plugins'), { timeout: 15_000 })
+      .catch(() => null);
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible({ timeout: 60_000 });
+    await listLoaded;
     const search = page.getByLabel('搜索插件');
 
-    // 只输不按回车：先敲中间态、紧接着填满全名（两次输入间隔 < 150ms 防抖窗）
-    await search.fill('E2E 防抖');
-    await search.fill(themeName);
+    // 只输不按回车：中间态与全名两次 input 事件必须落在同一次 JS 任务里。
+    // 150ms 防抖按「最后一次输入」计时，两次 fill 之间隔着 await，CI 主线程
+    // 一卡就超过 150ms，中间态 q 会先行提交（run 44225474139 retry 实测
+    // seenQ 含 'E2E 防抖'）；且 fill 的全选-替换在非受控输入上还会拼串
+    // （同 run 首跑实测 q='E2E 防抖E2E 防抖主题 mwlj2uem'）。
+    // 同任务内连续 dispatch 两个 input 事件：两次 onChange 走同一批
+    // setQInput，防抖 effect 只对最终值起一次 150ms 计时，中间态永不提交。
+    // 用原生 value setter 绕过 React 的 value tracker——直接改 .value 再
+    // dispatch，React 会判定值未变而丢弃事件。断言本身不改：仍验不按回车
+    // 也过滤、只提交最后一次。
+    await search.evaluate(
+      (input, values: [string, string]) => {
+        const el = input as HTMLInputElement;
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        if (!setter) throw new Error('no native value setter');
+        for (const v of values) {
+          setter.call(el, v);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      },
+      ['E2E 防抖', themeName] as [string, string],
+    );
     // 150ms 防抖后：地址栏写回最终 q、列表按最终 q 过滤
     await expect
       .poll(() => new URL(page.url()).searchParams.get('q'), { timeout: 15_000 })

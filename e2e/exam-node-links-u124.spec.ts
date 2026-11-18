@@ -21,6 +21,11 @@ const SHANDONG_SHENGKAO_ADMISSION_URL = 'https://gwy.sdrsks.org.cn/skbm2027.html
 const JIAOSHI_MIANSHI_URL = 'https://ntce.neea.edu.cn'
 const JUNDUANWENZHI_ADMISSION_URL = 'https://wzryzk.81rc.mil.cn/qjwzwb'
 
+// U-141：E1 每组 case 独立的导航请求等待预算。站外站点建连可能挂起
+//（CI 上 jdyw.jxeea.cn 曾 77 秒零字节返回），三组 × 20 秒 = 60 秒，
+// 仍在 90 秒测试预算内；一组挂起最多只吃掉自己的 20 秒，不拖垮全用例。
+const CASE_NAVIGATION_TIMEOUT_MS = 20_000
+
 test.describe('U-124 /exam 节点外链点按回归', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/exam')
@@ -30,9 +35,13 @@ test.describe('U-124 /exam 节点外链点按回归', () => {
   })
 
   test('E1：三处修正链接点按后到达原 URL', async ({ page }) => {
-    // 沙箱浏览器打不开站外站点（popup 会落到 chrome-error 页），故不断言
-    // popup 最终 URL：改为断言点击实际发出的导航请求 URL 与修前原值一致
-    //（href 断言仍在；不做站外表单操作）。
+    // U-141：不再等 popup。站外站点是否建连成功与本站链接目标无关：
+    // CI 上 jdyw.jxeea.cn 的导航请求发出后 77 秒零字节返回，popup 事件
+    // 始终不到，旧写法把三组 case 塞进同一个 90 秒预算、用
+    // waitForEvent('popup') 当断言前置条件，请求明明已发出却到不了断言。
+    // 现在只断言点击实际发出的导航请求 URL 与修前原值一致（href 断言
+    // 仍在；不做站外表单操作）。每组 case 有独立 20 秒预算；popup 若
+    // 出现只顺手关闭，不等它、不依赖它。
     const context = page.context()
     const cases = [
       { name: '报名官方报名入口（新窗口打开）', url: JINGKAO_APPLY_URL, text: '去官网报名' },
@@ -49,12 +58,24 @@ test.describe('U-124 /exam 节点外链点按回归', () => {
       }
       context.on('request', onRequest)
       try {
-        const [popup] = await Promise.all([page.waitForEvent('popup'), link.click()])
-        await popup.waitForLoadState('domcontentloaded').catch(() => {})
+        // 先注册请求等待再点击，避免请求在监听就位前发出而漏记；
+        // predicate 精确匹配本组 URL，不受其它 case 残留请求干扰。
+        const navigationRequest = context.waitForEvent('request', {
+          predicate: (req) => req.url() === url,
+          timeout: CASE_NAVIGATION_TIMEOUT_MS,
+        })
+        // 点击若抛错，等待 promise 超时后拒绝也不得变成未处理拒绝。
+        navigationRequest.catch(() => {})
+        await link.click()
+        await navigationRequest
         expect(seen).toContain(url)
-        await popup.close()
       } finally {
         context.off('request', onRequest)
+        // popup 是否出现取决于站外站点可达性：可达时顺手关闭残留页面，
+        // 不可达时不等待、不阻塞下一组 case。
+        for (const other of context.pages()) {
+          if (other !== page) await other.close().catch(() => {})
+        }
       }
     }
   })

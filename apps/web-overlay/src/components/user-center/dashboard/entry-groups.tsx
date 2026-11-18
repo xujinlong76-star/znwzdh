@@ -5,7 +5,8 @@
  * 与顶部子导航互补——这里按「内容 / 扩展 / 偏好 / 数据」说明每组能做什么。
  *
  * 栅格重构（V5）：
- * 1. 严格 4 组 × 3 项 = 12 张卡片对称 Bento 矩阵，消除原先「左二右三」造成的底部留白凹陷；
+ * 1. 4 组 13 张卡片：U-62a 起内容组 4 项（含追剧清单），其余三组各 3 项，
+ *    接受不对称，不再强求 12 张对称矩阵；
  * 2. 补齐「智能书签导入 (/import)」与「快捷键与命令面板 (/me/settings#shortcuts)」；
  * 3. 注入实时遥测胶囊徽章（Live Telemetry Badges），直观展示当前状态与容量。
  */
@@ -14,6 +15,7 @@ import { useEffect, useState } from 'react'
 import {
   ArrowRight,
   Bot,
+  Clapperboard,
   Command,
   Download,
   FileUp,
@@ -28,6 +30,7 @@ import {
 } from 'lucide-react'
 import { CARD_DENSITY_OPTIONS, readLocalUserSettings, type UserSettingsModel } from '@/lib/user-settings'
 import { FAVORITES_STORAGE_KEY, parseFavorites } from '@/lib/favorites-storage'
+import { WATCHLIST_STORAGE_KEY, sanitizeWatchEntry } from '@/lib/watchlist'
 import { fetchPlugins } from '@/lib/navhub-api'
 
 /** U-92：插件徽章中性文案。失败 / total<=0 / 未取到数时都落这里，永不回落硬编码总数。 */
@@ -46,7 +49,28 @@ export function resolvePluginBadge(
   return PLUGIN_CATALOG_NEUTRAL_BADGE
 }
 
-/** U-92：取目录总数算徽章的 fetcher 形态（只取 limit:1，total 即全量）。 */
+/** U-62a：追剧清单默认徽章（空清单/损坏存储时落这里，链接仍在）。 */
+export const WATCHLIST_DEFAULT_BADGE = '进度账本'
+
+/**
+ * U-62a：追剧清单条数（与 useWatchlist.loadLocal 同口径）。
+ * parseFavorites 整份读不出来算 0；逐条过 sanitizeWatchEntry，坏一条丢一条。
+ * 只读、不写、不隔离损坏数据——损坏时界面只显示默认徽章，绝不覆盖原数据。
+ */
+export function countWatchlistEntries(raw: string | null | undefined): number {
+  const { items, corrupt } = parseFavorites<unknown>(raw)
+  if (corrupt) return 0
+  let count = 0
+  for (const item of items) {
+    if (sanitizeWatchEntry(item)) count += 1
+  }
+  return count
+}
+
+/** U-62a：追剧清单徽章。>0 显示「N 部在追」，否则默认徽章。 */
+export function resolveWatchlistBadge(count: number): string {
+  return count > 0 ? `${count} 部在追` : WATCHLIST_DEFAULT_BADGE
+}
 export type PluginCatalogFetcher = (params: { limit: number }) => Promise<{ total: number }>
 
 /**
@@ -110,6 +134,14 @@ const GROUPS: readonly GroupDefinition[] = [
         icon: FileUp,
         badgeKey: 'import',
         defaultBadge: '0-RTT 解析',
+      },
+      {
+        href: '/me/watchlist',
+        label: '追剧清单',
+        hint: '在追进度 · 更新提醒',
+        icon: Clapperboard,
+        badgeKey: 'watchlist',
+        defaultBadge: WATCHLIST_DEFAULT_BADGE,
       },
     ],
   },
@@ -259,8 +291,17 @@ export function EntryGroups({
       }
     }
 
+    // U-62a：追剧清单条数（本地读，坏数据算 0、不覆盖；localStorage 不可用也算 0）。
+    let watchlistCount = 0
+    try {
+      watchlistCount = countWatchlistEntries(window.localStorage.getItem(WATCHLIST_STORAGE_KEY))
+    } catch {
+      watchlistCount = 0
+    }
+
     setTelemetry({
       favorites: typeof favCount === 'number' && favCount > 0 ? `${favCount} 个站点` : 'E2EE 加密',
+      watchlist: resolveWatchlistBadge(watchlistCount),
       settings: `${densityLabel}密度`,
       history: typeof searchesCount === 'number' && searchesCount > 0
         ? `${searchesCount} 条记录`
@@ -280,7 +321,7 @@ export function EntryGroups({
     <section aria-label="分组入口" className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold tracking-tight">全部入口</h2>
-        <span className="text-[11px] text-muted-foreground">4 组 12 个功能域</span>
+        <span className="text-[11px] text-muted-foreground">4 组 13 个功能域</span>
       </div>
 
       <div className="mt-3.5 grid gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -27,6 +27,10 @@ import { loginViaAdmin } from './helpers';
  *   - 作者页认证徽章「已认证时显示」：authorVerified 全仓只有读引用，
  *     无任何 API 写入口（中枢/人工认证流程写入），E2E 无法把作者置为
  *     已认证；只测反面——未认证作者不显示徽章。
+ *   - workspace-preset 导入暂存：import/page.tsx:109-110 对 workspace-preset
+ *     会调 stageWorkspacePreset，但本文件只测 site-pack 与 theme，无任何用例
+ *     导入 workspace-preset 或断言暂存；preset 暂存需到 /custom 消费才可观察，
+ *     本轮未断言。
  *
  * 只做行为断言（点按、可见文本、地址栏、按钮态），不用源码文本断言。
  * 每轮 E2E 从空库开始：全部数据由本文件自造（站内 API + anon- 前缀身份），

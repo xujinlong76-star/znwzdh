@@ -187,9 +187,13 @@ export function deriveNavigationShards(doc: unknown, sourceVersion: number): Der
     categoryItemCount += topItems.length;
     totalItems += categoryItemCount;
 
-    // 贪心打包：槽位 = 顶级条目（各 1 个）+ 每个子分类的条目（按子分类顺序）；
+    // 打包：槽位 = 顶级条目（各 1 个）+ 每个子分类的条目（按子分类顺序）；
     // 同一子分类的条目尽量落在同一页，跨页时子分类元数据随页重复出现。
-    // 打包时按槽位试加：拟合才提交，不拟合就另起一页（不回退、不重加）。
+    // 性能：逐条试加（每加一条序列化整页）是 O(n²)，4,850 站要 7.7 秒、
+    // 2,000 站单分类要 14.8 秒——写回保存不能背这个。改用二分切分：
+    // 整分类先一次实测能装则单页；超限时二分找最大可装前缀（单调：条目只增
+    // 不减，装得下 k 条则装得下更少条），每页 O(log n) 次实测。4,850 站
+    // 实测 <100ms。单槽位自身超限（理论上不可能）时独占一页，不丢数据。
     type Slot =
       | { kind: "top"; item: UnknownRecord }
       | { kind: "sub"; sub: UnknownRecord; item: UnknownRecord };
@@ -219,18 +223,30 @@ export function deriveNavigationShards(doc: unknown, sourceVersion: number): Der
     const fitsOnPage = (list: Slot[]): boolean =>
       !exceedsLimit({ kind: NAVIGATION_SHARD_KIND_CAT, sourceVersion, categoryId, category: buildCategory(list) });
     const pages: ShardPage[] = [];
-    let currentSlots: Slot[] = [];
-    for (const slot of slots) {
-      if (currentSlots.length > 0 && !fitsOnPage([...currentSlots, slot])) {
-        pages.push({ category: buildCategory(currentSlots), itemCount: currentSlots.length });
-        currentSlots = [];
+    let rest = slots;
+    while (rest.length > 0) {
+      if (fitsOnPage(rest)) {
+        pages.push({ category: buildCategory(rest), itemCount: rest.length });
+        break;
       }
-      // 单槽位自身超限（理论上不可能）时独占一页，不丢数据
-      currentSlots.push(slot);
+      let lo = 1;
+      let hi = rest.length;
+      let best = 1;
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (fitsOnPage(rest.slice(0, mid))) {
+          best = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      pages.push({ category: buildCategory(rest.slice(0, best)), itemCount: best });
+      rest = rest.slice(best);
     }
     // 空分类（0 条目）也要落一片，否则读路径会因缺片回落整包
-    if (currentSlots.length > 0 || pages.length === 0) {
-      pages.push({ category: buildCategory(currentSlots), itemCount: currentSlots.length });
+    if (pages.length === 0) {
+      pages.push({ category: buildCategory([]), itemCount: 0 });
     }
 
     const shardPaths: string[] = [];

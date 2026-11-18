@@ -261,7 +261,7 @@ export function AiPluginStudioModal({
         setGenerationError('模型规划响应超时。已自动放宽时限，建议重试；亦可关闭“深度思考”以获得秒级极速响应！')
         toast.error('模型规划响应超时。已自动放宽时限，建议重试；亦可关闭“深度思考”以获得秒级极速响应！')
       } else {
-        setGenerationError(`请求失败：${msg || '请检查模型配置或重试'}`)
+        setGenerationError(msg || '请检查模型配置或重试')
         toast.error(`请求失败：${msg || '请检查模型配置或重试'}`)
       }
     } finally {

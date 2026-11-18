@@ -69,8 +69,21 @@ describe('U-61：生成失败有持久错误状态（不只靠 toast）', () => 
     expect(modal).toContain("setGenerationError('模型规划响应超时")
   })
 
-  it('抛错分支把真实错误信息写进持久错误（与 toast 同文）', () => {
-    expect(modal).toContain('setGenerationError(`请求失败：')
+  it('抛错分支把真实错误信息写进持久错误（不带“请求失败：”前缀）', () => {
+    // 2026-11-18 双前缀修复：错误行本身已渲染「生成失败：」前缀，持久错误
+    // 再带「请求失败：」会读成「生成失败：请求失败：尚未配置可用的模型密钥」
+    // （U-61 探针实测文案）；toast 独立出现，仍保留自己的「请求失败：」前缀。
+    expect(modal).toContain("setGenerationError(msg || '请检查模型配置或重试')")
+    expect(modal).not.toContain('setGenerationError(`请求失败：')
+  })
+
+  it('没有任何 setGenerationError 调用带“请求失败”前缀（防双前缀复发）', () => {
+    // 逐个检查全部 setGenerationError 调用参数；toast 的「请求失败：」不受影响，
+    // toast 独立出现、需要自己的主语（见「失败 toast 原文案保留」）。
+    const calls = [...modal.matchAll(/setGenerationError\(([\s\S]*?)\)/g)].map((m) => m[1])
+    expect(calls.length).toBeGreaterThanOrEqual(4)
+    expect(calls.some((arg) => arg.includes('请求失败'))).toBe(false)
+    expect(modal).toContain('toast.error(`请求失败：')
   })
 
   it('三个失败分支都写持久错误（1 次清理 + 3 次写入 = 至少 4 处调用）', () => {

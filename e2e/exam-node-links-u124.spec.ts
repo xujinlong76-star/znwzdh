@@ -25,23 +25,37 @@ test.describe('U-124 /exam 节点外链点按回归', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/exam')
     await expect(
-      page.getByRole('link', { name: '报名官方报名入口（新窗口打开）' }),
+      page.getByRole('link', { name: '报名官方报名入口（新窗口打开）', exact: true }),
     ).toBeVisible()
   })
 
   test('E1：三处修正链接点按后到达原 URL', async ({ page }) => {
+    // 沙箱浏览器打不开站外站点（popup 会落到 chrome-error 页），故不断言
+    // popup 最终 URL：改为断言点击实际发出的导航请求 URL 与修前原值一致
+    //（href 断言仍在；不做站外表单操作）。
+    const context = page.context()
     const cases = [
       { name: '报名官方报名入口（新窗口打开）', url: JINGKAO_APPLY_URL, text: '去官网报名' },
       { name: '公共科目笔试官方公告入口（新窗口打开）', url: JINGKAO_NOTICE_URL, text: '查看官方公告' },
       { name: '江西成绩复核报名系统申请复核入口（新窗口打开）', url: JIANGXI_CHENGKAO_REVIEW_URL, text: '去报名系统申请复核' },
     ]
     for (const { name, url, text } of cases) {
-      const link = page.getByRole('link', { name })
+      const link = page.getByRole('link', { name, exact: true })
       await expect(link).toHaveAttribute('href', url)
       await expect(link).toHaveText(text)
-      const [popup] = await Promise.all([page.waitForEvent('popup'), link.click()])
-      await expect(popup).toHaveURL(url)
-      await popup.close()
+      const seen: string[] = []
+      const onRequest = (req: { url: () => string }) => {
+        seen.push(req.url())
+      }
+      context.on('request', onRequest)
+      try {
+        const [popup] = await Promise.all([page.waitForEvent('popup'), link.click()])
+        await popup.waitForLoadState('domcontentloaded').catch(() => {})
+        expect(seen).toContain(url)
+        await popup.close()
+      } finally {
+        context.off('request', onRequest)
+      }
     }
   })
 
@@ -49,10 +63,11 @@ test.describe('U-124 /exam 节点外链点按回归', () => {
     page,
   }) => {
     await expect(
-      page.getByRole('link', { name: '山东准考证打印官方打印入口（新窗口打开）' }),
+      page.getByRole('link', { name: '山东准考证打印官方打印入口（新窗口打开）', exact: true }),
     ).toHaveAttribute('href', SHANDONG_SHENGKAO_ADMISSION_URL)
+    // name 默认是子串匹配：不用 exact 会把「口试/笔试/天津…准考证打印」全算进来。
     const hrefs = await page
-      .getByRole('link', { name: '准考证打印官方打印入口（新窗口打开）' })
+      .getByRole('link', { name: '准考证打印官方打印入口（新窗口打开）', exact: true })
       .evaluateAll((els) => els.map((el) => el.getAttribute('href')))
     expect([...hrefs].sort()).toEqual(
       [

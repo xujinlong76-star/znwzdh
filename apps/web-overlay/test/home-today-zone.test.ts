@@ -78,8 +78,9 @@ describe('今日区源码守卫（home-today-zone.tsx）', () => {
   it('区内全部链接都达到 44px 点按高度（min-h-11，防再漏）', () => {
     // 逐个 <a>/<Link> 开标签取 className，逐个断言含 min-h-11；
     // 复审返工：短剧标题链接曾漏 min-h-11，点按高度仅约 20px。
+    // U-155：节点 label 链接（TodayNodeLabel）是第 6 个，同样 min-h-11。
     const linkClasses = [...zone.matchAll(/<(?:a|Link)[\s\S]*?className="([^"]*)"/g)].map((m) => m[1])
-    expect(linkClasses.length).toBe(5)
+    expect(linkClasses.length).toBe(6)
     for (const cls of linkClasses) {
       expect(cls).toContain('min-h-11')
     }

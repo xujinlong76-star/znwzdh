@@ -103,11 +103,23 @@ describe('A3：有今日节点时渲染今日行，7 项 label 与 detail 原文
   })
 })
 
-describe('A4：横幅 CTA 唯一目标是 /exam，三省查分行无外链', () => {
-  it('渲染出的全部 href 只有 /exam 与国考准考证已核实直链（倒计时行下一步）', () => {
+describe('A4：站内 CTA 只指 /exam，三省查分行无外链（U-155：有已核实 URL 的行挂直链）', () => {
+  it('U-155：有已核实 URL 的今日行/接续行挂行内直链，href 集合即数据派生值', () => {
     const html = renderZone(NOV_18_0800_CST)
     const hrefs = [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1])
-    expect([...new Set(hrefs)].sort()).toEqual(['/exam', GUOKAO_ADMISSION_URL].sort())
+    // 期望集合从数据派生，不手写 URL：站内 CTA /exam、国考准考证直链
+    // （倒计时行下一步），以及当日今日行/接续行里带 url 的节点。
+    const expected = [
+      '/exam',
+      GUOKAO_ADMISSION_URL,
+      ...todayNodes(NOV_18_0800_CST)
+        .filter((t) => t.node.url)
+        .map((t) => t.node.url!),
+      ...todayFollowUpNodes(NOV_18_0800_CST)
+        .filter((t) => t.node.url)
+        .map((t) => t.node.url!),
+    ]
+    expect([...new Set(hrefs)].sort()).toEqual([...new Set(expected)].sort())
     expect(hrefs.filter((h) => h === '/exam')).toHaveLength(2)
   })
 

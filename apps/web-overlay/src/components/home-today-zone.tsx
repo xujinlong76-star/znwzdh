@@ -10,6 +10,8 @@ import {
   todayNodeDeadlineMs,
   todayFollowUpNodes,
   todayNodes,
+  type ExamInfo,
+  type ExamNode,
   type ExamUrgencyTier,
 } from '@/lib/exam-calendar'
 import { HomeTodayCountdown } from '@/components/home-today-countdown'
@@ -24,9 +26,10 @@ import { HomeTodayCountdown } from '@/components/home-today-countdown'
  *     的完整考试条里；十场全结束时整行不渲染，不挂空态占位）；
  *   - 今日提醒（U-102：exam-calendar 的 todayNodes / todayFollowUpNodes，
  *     服务端纯函数直出；有今日节点时才渲染今日行，无节点时整行不渲染、
- *     不挂空态占位；节点行是纯文本，不挂查分外链，唯一 CTA 只指 /exam；
+ *     不挂空态占位；节点行有已核实官方 URL 的挂行内直达链接（U-31 配方），
+ *     无 URL 的行仍是纯文本；唯一站内 CTA 只指 /exam；
  *     窗口末日节点只写「今日截止」，时点只以节点 detail 原文呈现；
- *     接续节点收进展开区，同样取自节点数据）；
+ *     接续节点收进展开区，同样取自节点数据、同规则挂链）；
  *   - 今日短剧（drama-featured 清单首部 1 部，标题旁如实标 linkNote，
  *     榜单页 / 报道页 / 百科页不是正片，不写成直达正片）；
  *   - 今日重温（BriefResurface 岛，无可重温收藏时它自己返回 null）。
@@ -44,6 +47,34 @@ const COUNTDOWN_LABEL_CLASS: Record<ExamUrgencyTier, string> = {
   urgent: 'text-red-600 dark:text-red-400',
   soon: 'text-amber-700 dark:text-amber-400',
   relaxed: 'text-foreground',
+}
+
+/**
+ * 今日行节点 label（U-155）：有已核实官方 URL 的节点行挂行内直达链接
+ * （U-31 配方：safeHref + 新窗口 + min-h-11 + sky-700 + ArrowUpRight）；
+ * 无 URL 的行仍是纯文本，不编链接。今日行与接续区共用同一规则。
+ * aria-label 用「官方入口」兜底文案（研究 §1.5 允许的分支：nodeLinkCopy
+ * 在 'use client' 的岛文件里，U-124 守卫又把它钉在岛内，不宜抽离；
+ * 11-19 行读作「江西成绩复核官方入口（新窗口打开）」）。行内 label
+ * 不占 flex-1（detail 保留 flex-1），class 其余照抄配方。
+ */
+function TodayNodeLabel({ exam, node }: { exam: ExamInfo; node: ExamNode }) {
+  const label = `${exam.shortName} · ${node.label}`
+  if (!node.url) {
+    return <span className="font-medium">{label}</span>
+  }
+  return (
+    <a
+      href={safeHref(node.url)}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${node.label}官方入口（新窗口打开）`}
+      className="inline-flex min-h-11 items-center gap-1 font-medium text-sky-700 hover:underline dark:text-sky-400"
+    >
+      {label}
+      <ArrowUpRight className="h-4 w-4 shrink-0" aria-hidden />
+    </a>
+  )
 }
 
 /** 今日日期行：北京时间「11月17日周二」，服务端算、不写死。 */
@@ -110,9 +141,7 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                           key={`${exam.id}:${node.label}`}
                           className="flex flex-wrap items-baseline gap-x-2 text-sm"
                         >
-                          <span className="font-medium">
-                            {`${exam.shortName} · ${node.label}`}
-                          </span>
+                          <TodayNodeLabel exam={exam} node={node} />
                           {kind === 'endsToday' ? (
                             <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
                               今日截止
@@ -140,9 +169,7 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                             key={`${exam.id}:${node.label}`}
                             className="flex flex-wrap items-baseline gap-x-2"
                           >
-                            <span className="font-medium">
-                              {`${exam.shortName} · ${node.label}`}
-                            </span>
+                            <TodayNodeLabel exam={exam} node={node} />
                             <span className="min-w-0 flex-1 text-muted-foreground">
                               {node.detail}
                             </span>

@@ -191,8 +191,11 @@ test.describe('P3-11：短链 / 预览路由 / Taps / 防抖 / AI 生成', () =>
     await page.goto(`/marketplace?q=${encodeURIComponent(name)}`);
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
     await page.getByRole('button', { name: '复制安装分享链接' }).first().click();
-    // 卡片按钮无复制态切换（只有 toast 反馈），剪贴板读回才是 ground truth
-    await expect(page.getByText('分享链接已复制')).toBeVisible({ timeout: 15_000 });
+    // 卡片按钮无复制态切换（只有 toast 反馈），剪贴板读回才是 ground truth。
+    // 注意：不以 toast 作门控——sonner 成功 toast 仅显示约 4s（瞬态），且无头
+    // CI 下 navigator.clipboard.writeText 挂起/被拒、兜底也失败时代码发的是
+    // toast.error('复制失败')，成功 toast 根本不会出现，放宽超时也救不了。
+    // 以下 expect.poll(readClipboard) 读回才是 ground truth。
     await expect.poll(() => readClipboard(page), { timeout: 10_000 }).toContain('/s/');
     const copied = await readClipboard(page);
     expect(copied).toMatch(/\/s\/[A-Za-z0-9]+$/);

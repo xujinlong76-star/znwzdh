@@ -15,6 +15,13 @@ import type { Locator } from '@playwright/test';
  * 修法见 apps/web-overlay/src/styles/globals.css 的 `@source '../registry/...'`。
  * 字符串守则（test/tailwind-source.test.ts）只能钉住那行声明，
  * 「类真的生成了、弹窗真的在视口里、真的点得动」只有浏览器里量一遍才算数。
+ *
+ * 入口变更（44394500，U-153）：首页 DIY 静息入口已撤掉收进外观向导小窗，
+ * `<HomeDIYTrigger hideStaticButton />`，悬浮「DIY 排版工坊」按钮已不存在。
+ * 新入口链：工具栏按钮 `aria-label="打开外观排版与新手向导小窗"`
+ * → 外观向导小窗（默认 appearance 页签）→ 「DIY 自由排版工坊」区块点「开启 DIY」
+ * → isEditingLayout=true，HomeDIYToolbar 挂载；后续步骤与此前相同。
+ * 对话框组件本身未被 44394500 动过，本文件只改入口步骤，几何与交互断言一字不动。
  */
 
 /** 等弹窗入场动画收尾再量几何：zoom/slide 过渡帧里量到的 y 可以是负的（不是真实落位） */
@@ -28,7 +35,10 @@ test.describe('核心旅程 6：对话框出现在视口内且可交互', () => 
   test('虚拟弹窗：新建专属分类的对话框在视口里，确认按钮真的点得动', async ({ page }) => {
     await page.goto('/');
 
-    await page.getByRole('button', { name: /DIY 排版工坊/ }).click();
+    // 新入口（U-153）：工具栏外观按钮 → 外观向导小窗 → 「DIY 自由排版工坊」区块点「开启 DIY」。
+    await page.getByRole('button', { name: '打开外观排版与新手向导小窗' }).click();
+    await expect(page.getByText('DIY 自由排版工坊')).toBeVisible();
+    await page.getByRole('button', { name: '开启 DIY', exact: true }).click();
     await expect(page.getByRole('button', { name: /完成/ })).toBeVisible();
     await page.getByTitle('新建专属分类').click();
 
@@ -63,7 +73,10 @@ test.describe('核心旅程 6：对话框出现在视口内且可交互', () => 
   test('备份弹窗：同样在视口里，Esc 能关掉', async ({ page }) => {
     await page.goto('/');
 
-    await page.getByRole('button', { name: /DIY 排版工坊/ }).click();
+    // 新入口（U-153）：工具栏外观按钮 → 外观向导小窗 → 「DIY 自由排版工坊」区块点「开启 DIY」。
+    await page.getByRole('button', { name: '打开外观排版与新手向导小窗' }).click();
+    await expect(page.getByText('DIY 自由排版工坊')).toBeVisible();
+    await page.getByRole('button', { name: '开启 DIY', exact: true }).click();
     await expect(page.getByRole('button', { name: /完成/ })).toBeVisible();
     await page.getByTitle('排版蓝图 JSON 导入与导出').click();
 

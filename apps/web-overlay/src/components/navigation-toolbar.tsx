@@ -455,7 +455,15 @@ export function NavigationToolbar({
                   variant="ghost"
                   size="icon"
                   onClick={onOpenAppearanceGuide}
-                  className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                  // 360px 溢出修复（2026-11-19 02:22 轮，方案 a：隐藏次要入口）：
+                  // <md 时按钮行 8×44px + 间隙 = 366px > 360−24px 可用宽，菜单按钮挤出 18px。
+                  // 外观是 8 个入口中唯一有替代入口的次要项：同一小窗仍可由首页微胶囊行
+                  // 「向导与设首页」打开（tab 可切到外观，皮肤/DIY 不丢）。
+                  // 阈值取 390：366+24=390 是行恰好占满的边界，<390 隐藏全覆盖 360–389；
+                  // ≥390 与桌面布局逐像素不变。隐藏后行宽 366→320，360px 余 16px。
+                  // 不动其他入口：字号（A13 长辈高频）、主题、今日（A1）、菜单（侧栏唯一入口）、
+                  // 探索矩阵（主导航 hub）、小组件盒（无任何替代入口）全部保留 44px 触摸目标。
+                  className="hidden h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-[390px]:inline-flex"
                   title="外观排版、皮肤、DIY 与新手向导"
                   aria-label="打开外观排版与新手向导小窗"
                 >

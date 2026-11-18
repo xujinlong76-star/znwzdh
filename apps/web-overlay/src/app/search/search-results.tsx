@@ -812,18 +812,41 @@ export function SearchResults({
             </div>
           )}
 
-          {tagApplied ? (
+          {/* U-183：生效中的筛选放一组——标签芯片与分类芯片同容器。
+              分类芯片只要 category 非空就渲染（不用 tagApplied 口径：
+              category 无「被放宽」的单独信号，hidden input 无论如何都
+              保留它；放宽态隐藏芯片会让用户失去唯一清除入口）。 */}
+          {tagApplied || category ? (
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 font-medium text-primary">
-                标签：{tag}
-              </span>
-              <Link
-                href={searchHref({ q })}
-                className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground hover:underline"
-              >
-                去掉筛选
-                <span aria-hidden>×</span>
-              </Link>
+              {tagApplied ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 font-medium text-primary">
+                    标签：{tag}
+                  </span>
+                  <Link
+                    href={searchHref({ q, category, facets })}
+                    className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    去掉筛选
+                    <span aria-hidden>×</span>
+                  </Link>
+                </>
+              ) : null}
+              {category ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 font-medium text-primary">
+                    分类：{categoryName}
+                  </span>
+                  <Link
+                    href={searchHref({ q, tag, facets })}
+                    aria-label={`去掉分类「${categoryName}」筛选`}
+                    className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    去掉筛选
+                    <span aria-hidden>×</span>
+                  </Link>
+                </>
+              ) : null}
             </div>
           ) : null}
 
@@ -843,7 +866,7 @@ export function SearchResults({
               </span>
               {tag ? (
                 <Link
-                  href={searchHref({ q })}
+                  href={searchHref({ q, category, facets })}
                   className="font-medium underline underline-offset-2 hover:no-underline"
                 >
                   去掉筛选

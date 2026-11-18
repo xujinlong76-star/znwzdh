@@ -109,3 +109,26 @@ describe('U-183/U-184：categoryName 线程（page.tsx 解析中文名并透传�
     expect(src).toContain('categoryNameProp ?? category')
   })
 })
+
+describe('U-183：分类芯片可见且可清除，标签清除只清自己', () => {
+  const src = overlaySource('src/app/search/search-results.tsx')
+
+  it('分类芯片与标签芯片同容器，复用标签芯片样式', () => {
+    expect(src).toContain('分类：{categoryName}')
+    expect(src).toContain('{tagApplied || category ? (')
+  })
+
+  it('分类清除链接只去 category、保留 q/tag/facets，且带 aria-label 区分读屏', () => {
+    expect(src).toContain('searchHref({ q, tag, facets })')
+    expect(src).toContain('aria-label={`去掉分类「${categoryName}」筛选`}')
+  })
+
+  it('标签清除链接与放宽横幅清除链接只去 tag、保留 category/facets', () => {
+    expect(src).toContain('searchHref({ q, category, facets })')
+    // 两处（标签芯片、放宽横幅）都只清 tag，不再顺带清分类/分面
+    const count = src.split('searchHref({ q, category, facets })').length - 1
+    expect(count).toBe(2)
+    // 注意：EmptyResults :349「去掉标签筛选」仍用 searchHref({ q })，
+    // 按任务书留给 U-112 追补轮，本轮不动，故这里不断言全文件清零。
+  })
+})

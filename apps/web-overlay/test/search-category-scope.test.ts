@@ -158,3 +158,26 @@ describe('U-183：零结果标题与页头文案看得见分类/分面作用域'
     expect(src).toContain('从站内全部收录站点中检索，支持中文、拼音与语义匹配')
   })
 })
+
+describe('U-187：翻页空页「回到第 1 页」在空态标题正下方', () => {
+  const src = overlaySource('src/app/search/search-results.tsx')
+  // 链接文本锚点：区别于 :270 prop 注释与 :780 重搜注释里的同词
+  const LINK = '回到第 1 页\n          </Link>'
+
+  it('「回到第 1 页」链接只出现一次，且排在 AI 找站/待找/相关分类之前', () => {
+    const count = src.split(LINK).length - 1
+    expect(count).toBe(1)
+    const backPos = src.indexOf(LINK)
+    expect(backPos).toBeLessThan(src.indexOf('{q ? <ZeroResultActions'))
+    expect(backPos).toBeLessThan(src.indexOf('{q ? <WantedActions'))
+    // 相关分类渲染块（锚定 JSX，不用裸词「相关分类」——U-187 注释本身就含该词）
+    expect(backPos).toBeLessThan(src.indexOf('{inferredCategory ? ('))
+  })
+
+  it('链接仍保留 category/facets（U-143 不回归），且只在 page > 1 时渲染', () => {
+    expect(src).toContain('searchHref({ q, tag, category, facets })')
+    // 「回到第 1 页」所在的 JSX 块由 page > 1 守卫
+    const block = src.slice(src.indexOf('U-187'), src.indexOf(LINK))
+    expect(block).toContain('{page > 1 ? (')
+  })
+})

@@ -333,6 +333,15 @@ function EmptyResults({
                     ? `按当前分面筛选暂时没有站点。`
                     : `站内暂时没有收录与“${q}”匹配的站点。`}
       </p>
+      {/* U-187：翻页越界（page > 1）时首要恢复动作放最前——空态标题正下方，
+          不用翻过 AI 找站 / 待找收藏 / 相关分类四组出口；第 1 页零结果顺序不变。 */}
+      {page > 1 ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Link href={searchHref({ q, tag, category, facets })} className="text-xs text-primary hover:underline">
+            回到第 1 页
+          </Link>
+        </div>
+      ) : null}
       {/* A11：零结果不是死胡同——两个真出口放最前（AI 找站带词自动问、
           投稿收录带词预填），再往下才是换词/热门词/全网穿透这些次要出口 */}
       {q ? <ZeroResultActions query={q} /> : null}
@@ -355,11 +364,6 @@ function EmptyResults({
         </div>
       ) : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {page > 1 ? (
-          <Link href={searchHref({ q, tag, category, facets })} className="text-xs text-primary hover:underline">
-            回到第 1 页
-          </Link>
-        ) : null}
         {tag ? (
           <Link href={searchHref({ q })} className="text-xs text-primary hover:underline">
             去掉标签筛选

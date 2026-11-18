@@ -159,19 +159,24 @@ test.describe('P3-11：短链 / 预览路由 / Taps / 防抖 / AI 生成', () =>
     const code = copied.match(/\/s\/([A-Za-z0-9]+)/)?.[1];
     expect(code, `剪贴板未含短链码：${copied}`).toBeTruthy();
 
-    // 创建时点击数为 0（解析才累计）；访问一次短链后 +1
-    const before = await request.get(`/api/shortlinks/${code}`);
+    // 每次解析都先累计点击再返回（resolveShortLink 先 UPDATE clicks+1 再 SELECT）：
+    // 创建时 clicks 为 0，首次解析即返回 1。
+    const before = await request.get(`/api/hub/shortlinks/${code}`);
     expect(before.ok(), `短链解析失败 ${before.status()}`).toBeTruthy();
-    expect((await before.json()).clicks).toBe(0);
+    const beforeClicks = (await before.json()).clicks;
+    expect(beforeClicks).toBe(1);
 
     // 302 跳转：落到带 install=1 的详情页并自动弹出安装确认
     await page.goto(copied);
     await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}\\?install=1`));
     await expectInstallDialog(page, name);
 
-    const after = await request.get(`/api/shortlinks/${code}`);
+    const after = await request.get(`/api/hub/shortlinks/${code}`);
     expect(after.ok()).toBeTruthy();
-    expect((await after.json()).clicks).toBeGreaterThanOrEqual(1);
+    const afterClicks = (await after.json()).clicks;
+    // +2：一次 /s/ 跳转解析 + 一次本次 after-GET；详情页不另发 shortlink GET。
+    expect(afterClicks).toBe(beforeClicks + 2);
+    expect(afterClicks).toBeGreaterThanOrEqual(1);
   });
 
   test('短链②：列表卡片复制短链 → /s/<code> 落详情', async ({ page, context }) => {

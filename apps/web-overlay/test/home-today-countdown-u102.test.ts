@@ -619,3 +619,17 @@ describe('C8 U-158 成考三省复核 chip 行为：广东 today 行过期消失
     expect(examNodeDeadlineLabel(chengkao, jx.node, NOV_20_1700_CST)).toBe('已截止')
   })
 })
+
+describe('C9 U-164 海南成考成绩查询 11-19 SSR：两行均无倒计时徽章', () => {
+  /** 2026-11-19 08:00 北京时间：海南查分公布日 */
+  const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
+
+  it('11-19 SSR：今日行 2 项，两行均无倒计时徽章（海南不入表、上海不入表）', () => {
+    const items = todayNodes(NOV_19_0800_CST)
+    expect(items).toHaveLength(2)
+    const html = unesc(renderZone(NOV_19_0800_CST))
+    expect(timerBadgeCount(html)).toBe(0)
+    expect(liFor(html, '成考 · 海南成绩查询')).not.toContain('role="timer"')
+    expect(liFor(html, '上海自考 · 成绩查询')).not.toContain('role="timer"')
+  })
+})

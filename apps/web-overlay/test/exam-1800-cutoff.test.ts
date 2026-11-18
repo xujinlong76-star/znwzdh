@@ -582,6 +582,52 @@ describe('U-163 上海自考成绩查询时刻门控（todayNodeDeadlineMs / exa
   })
 })
 
+describe('U-164 海南成考成绩查询时刻门控（todayNodeDeadlineMs / examNodeDeadlineLabel）', () => {
+  // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
+  // 各 it 内调用，失败只落本 it。
+  const hainanNode = () => chengkao.nodes.find((n) => n.label === '海南成绩查询')!
+  /** 2026-11-19 16:59:59 北京时间 = UTC 08:59:59（公布时刻前 1 秒） */
+  const NOV_19_165959_CST = Date.UTC(2026, 10, 19, 8, 59, 59)
+  /** 2026-11-19 17:00:00 北京时间 = UTC 09:00:00（公布时刻） */
+  const NOV_19_170000_CST = Date.UTC(2026, 10, 19, 9, 0, 0)
+  /** 2026-11-19 17:00:01 北京时间 = UTC 09:00:01（公布时刻后 1 秒） */
+  const NOV_19_170001_CST = Date.UTC(2026, 10, 19, 9, 0, 1)
+  /** 2026-11-20 08:00 北京时间（公布次日） */
+  const NOV_20_0800_CST = Date.UTC(2026, 10, 20, 0, 0, 0)
+
+  it('海南不入 PEAK 表：todayNodeDeadlineMs 为 undefined（11-19 17:00 是开通时刻、不是截止时刻）', () => {
+    const byKey19 = new Map(
+      todayNodes(NOV_19_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey19.get('chengkao:海南成绩查询')!)).toBeUndefined()
+  })
+
+  it('表外守卫：examNodeDeadlineLabel 在 16:59:59 / 17:00 / 17:00:01 三点恒为 null，永不显示「已截止」', () => {
+    expect(examNodeDeadlineLabel(chengkao, hainanNode(), NOV_19_165959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, hainanNode(), NOV_19_170000_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, hainanNode(), NOV_19_170001_CST)).toBeNull()
+  })
+
+  it('无时刻门控：三时刻组合文案恒为「今天」（单日节点 today，与上海行的「进行中」不同）', () => {
+    expect(nodeDeadlineDisplayLabel(chengkao, hainanNode(), NOV_19_165959_CST)).toBe('今天')
+    expect(nodeDeadlineDisplayLabel(chengkao, hainanNode(), NOV_19_170000_CST)).toBe('今天')
+    expect(nodeDeadlineDisplayLabel(chengkao, hainanNode(), NOV_19_170001_CST)).toBe('今天')
+  })
+
+  it('时刻门控只在渲染层：17:00 时 examNodeStatus 仍按日期口径（11-19 当天 today、11-20 已 done）', () => {
+    expect(examNodeStatus(hainanNode(), NOV_19_170000_CST)).toBe('today')
+    expect(examNodeStatus(hainanNode(), NOV_20_0800_CST)).toBe('done')
+  })
+
+  it('11-19 今日行含海南成绩查询（today，无 url）', () => {
+    const items19 = todayNodes(NOV_19_0800_CST)
+    const query = items19.find((t) => t.exam.id === 'chengkao' && t.node.label === '海南成绩查询')
+    expect(query?.node.label).toBe('海南成绩查询')
+    expect(query?.kind).toBe('today')
+    expect(query?.node.url).toBeUndefined()
+  })
+})
+
 describe('U-158 成考三省复核 11-20 时刻门控（todayNodeDeadlineMs / examNodeDeadlineLabel）', () => {
   // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
   // 各 it 内调用，失败只落本 it。

@@ -1,7 +1,7 @@
 'use client'
 
 import { signIn } from 'next-auth/react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -22,6 +22,7 @@ import { NETWORK_FAILURE_STATUS, describeSignInFailure, isSignInSuccess } from '
 import { normalizeCallbackUrl } from '@/lib/safe-callback'
 
 function SignInContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = normalizeCallbackUrl(
     searchParams?.get('callbackUrl'),
@@ -82,7 +83,10 @@ function SignInContent() {
       })
 
       if (isSignInSuccess(res)) {
-        window.location.href = callbackUrl
+        // 软导航：留在当前文档内切到 /admin，admin layout 的 loading.tsx
+        // 骨架随即接管等待态；硬导航会整文档卸载、白屏等 layout 的两次 await。
+        router.push(callbackUrl)
+        router.refresh()
         return
       }
       // 失败（含「什么都没返回」）一律给出一句可行动的说明 —— 绝不静默收场：
@@ -110,7 +114,9 @@ function SignInContent() {
       })
 
       if (isSignInSuccess(res)) {
-        window.location.href = callbackUrl
+        // 同上：软导航 + 刷新 RSC，避免硬导航白屏
+        router.push(callbackUrl)
+        router.refresh()
       } else {
         setIsBypassLoading(false)
         const notice = describeSignInFailure(res)

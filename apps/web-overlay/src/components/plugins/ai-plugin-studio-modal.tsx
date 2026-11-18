@@ -99,6 +99,11 @@ export function AiPluginStudioModal({
   const [kind, setKind] = useState<PluginKind | 'auto'>(initialKind)
   const [enableThinking, setEnableThinking] = useState(true)
   const [generating, setGenerating] = useState(false)
+  // U-61：生成失败的持久行内错误（toast 约 4 秒就消失，弹窗内必须留痕；
+  // 范式照搬 plugin-taps-modal.tsx 的 addError）
+  const [generationError, setGenerationError] = useState<string | null>(null)
+  // U-61：上次尝试的提示词——重试复用它，即使用户已清空输入框也能重试
+  const [lastAttemptedPrompt, setLastAttemptedPrompt] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'sandbox' | 'json' | 'health'>('sandbox')
 
   // 生成产物与思维链状态
@@ -206,6 +211,8 @@ export function AiPluginStudioModal({
     if (!text || generating) return
 
     setGenerating(true)
+    setGenerationError(null)
+    setLastAttemptedPrompt(text)
     setUrlCheckResults(null)
     setPublishedPlugin(null)
 
@@ -227,6 +234,7 @@ export function AiPluginStudioModal({
 
       if (res.success && res.manifest) {
         setManifest(res.manifest)
+        setGenerationError(null)
         setRationale(res.rationale || '已根据您的需求规划完成')
         setReasoningContent(res.reasoningContent)
         setGenerationModel(res.model?.trim() || null)
@@ -243,14 +251,17 @@ export function AiPluginStudioModal({
         toast.success(isIncremental ? '插件清单增量修改完成！' : 'AI 插件清单规划生成完成！')
       } else {
         const errMsg = res.error || (res.errors ? res.errors.join('；') : '生成失败')
+        setGenerationError(errMsg)
         toast.error(`生成失败: ${errMsg}`)
       }
     } catch (err) {
       console.error('[AI Studio] generate error:', err)
       const msg = err instanceof Error ? err.message : String(err)
       if (msg.includes('超时') || msg.includes('timeout') || msg.includes('504')) {
+        setGenerationError('模型规划响应超时。已自动放宽时限，建议重试；亦可关闭“深度思考”以获得秒级极速响应！')
         toast.error('模型规划响应超时。已自动放宽时限，建议重试；亦可关闭“深度思考”以获得秒级极速响应！')
       } else {
+        setGenerationError(`请求失败：${msg || '请检查模型配置或重试'}`)
         toast.error(`请求失败：${msg || '请检查模型配置或重试'}`)
       }
     } finally {
@@ -561,6 +572,27 @@ export function AiPluginStudioModal({
                   )}
                 </Button>
               </div>
+
+              {/* U-61：生成失败的持久错误行（toast 约 4 秒就消失，弹窗内必须留痕）；
+                  文案为真实错误，行内重试复用上次提示词。范式照搬 plugin-taps-modal.tsx */}
+              {generationError && (
+                <div
+                  role="alert"
+                  className="text-xs text-destructive-text bg-destructive/15 border border-destructive/20 rounded-lg px-3 py-2 flex items-center justify-between gap-2"
+                >
+                  <span className="min-w-0">生成失败：{generationError}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={generating}
+                    onClick={() => lastAttemptedPrompt && handleGenerate(lastAttemptedPrompt)}
+                    className="h-6 px-2 text-xs shrink-0"
+                  >
+                    重试
+                  </Button>
+                </div>
+              )}
 
               {generating && (
                 <div className="text-[10px] text-muted-foreground flex items-center justify-center gap-1.5 pt-0.5 animate-pulse">

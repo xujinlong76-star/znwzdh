@@ -113,7 +113,7 @@ export function SearchFacetBar({ groups, q, tag, category, selected }: SearchFac
                     <Link
                       key={opt.value}
                       href={toggleHref(base, group.key, opt.value, multiselect)}
-                      aria-pressed={active}
+                      aria-current={active ? true : undefined}
                       title={opt.labelEn ? opt.label + ' · ' + opt.labelEn : opt.label}
                       className={
                         active

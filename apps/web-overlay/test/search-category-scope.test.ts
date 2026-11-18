@@ -245,3 +245,12 @@ describe('U-191：结果行截断有全文出口（真渲染）', () => {
     expect(html).toContain('title="一个非常长的插件描述用于验证悬停全文出口，超过两行会被截断。"')
   })
 })
+
+describe('U-190：分面 Link 不再误挂 aria-pressed（链接不是开关）', () => {
+  const src = overlaySource('src/components/search-facet-bar.tsx')
+
+  it('分面选项 Link 无 aria-pressed，选中态改用 aria-current', () => {
+    expect(src).not.toContain('aria-pressed')
+    expect(src).toContain('aria-current={active ? true : undefined}')
+  })
+})

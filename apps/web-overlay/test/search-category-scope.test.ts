@@ -181,3 +181,67 @@ describe('U-187：翻页空页「回到第 1 页」在空态标题正下方', ()
     expect(block).toContain('{page > 1 ? (')
   })
 })
+
+describe('U-191：结果行截断有全文出口（真渲染）', () => {
+  /** 查询词用不命中的词：标题/描述不被 <mark> 切断，纯文本可直接断言。 */
+  function rowHit(tags: string[]): HubSearchHit {
+    return {
+      siteId: 'site-long',
+      score: 1,
+      contributions: {},
+      site: {
+        id: 'site-long',
+        title: '一个非常长的站点标题用于验证悬停全文出口',
+        url: 'https://long.example.com',
+        description: '一个非常长的站点描述用于验证悬停全文出口，超过两行会被截断。',
+        tags,
+        status: 'active',
+      } as unknown as HubSite,
+    }
+  }
+
+  it('长标题/长描述悬停可见全文（title 属性）', () => {
+    const html = renderToStaticMarkup(createElement(ResultRow, { hit: rowHit([]), q: 'zzz' }))
+    expect(html).toContain('title="一个非常长的站点标题用于验证悬停全文出口"')
+    expect(html).toContain('title="一个非常长的站点描述用于验证悬停全文出口，超过两行会被截断。"')
+  })
+
+  it('标签超 4 个时补 +N 余数标记，只渲染前 4 个标签', () => {
+    const html = renderToStaticMarkup(
+      createElement(ResultRow, { hit: rowHit(['t1', 't2', 't3', 't4', 't5', 't6']), q: 'zzz' }),
+    )
+    expect(html).toContain('>+2</span>')
+    expect(html).toContain('>t4</a>')
+    expect(html).not.toContain('>t5</a>')
+    expect(html).not.toContain('>t6</a>')
+  })
+
+  it('标签恰好 4 个时无余数标记', () => {
+    const html = renderToStaticMarkup(
+      createElement(ResultRow, { hit: rowHit(['t1', 't2', 't3', 't4']), q: 'zzz' }),
+    )
+    expect(html).not.toContain('>+')
+  })
+
+  it('插件分区：长插件名/长描述悬停可见全文（title 属性）', () => {
+    const plugins = {
+      items: [
+        {
+          id: 'p1',
+          slug: 'long-plugin',
+          kind: 'theme',
+          name: '一个非常长的插件名称用于验证悬停全文出口',
+          description: '一个非常长的插件描述用于验证悬停全文出口，超过两行会被截断。',
+          version: '1.0.0',
+          manifest: {},
+        },
+      ],
+      total: 1,
+      mode: 'keyword',
+      degraded: false,
+    } as unknown as HubPluginSearchResponse
+    const html = renderToStaticMarkup(createElement(PluginSection, { plugins, q: 'zzz' }))
+    expect(html).toContain('title="一个非常长的插件名称用于验证悬停全文出口"')
+    expect(html).toContain('title="一个非常长的插件描述用于验证悬停全文出口，超过两行会被截断。"')
+  })
+})

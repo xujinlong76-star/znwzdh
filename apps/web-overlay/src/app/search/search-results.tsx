@@ -193,6 +193,7 @@ export function ResultRow({
                 站外直达降为次级链接。原来标题本身是外链、详情反是 26px 小按钮。 */}
             <Link
               href={`/site/${encodeURIComponent(site.id)}`}
+              title={site.title}
               className="max-w-full truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
             >
               <Highlight text={site.title} query={q} />
@@ -208,7 +209,7 @@ export function ResultRow({
             ) : null}
           </div>
           {site.description ? (
-            <p className="line-clamp-2 text-xs text-muted-foreground">
+            <p className="line-clamp-2 text-xs text-muted-foreground" title={site.description}>
               <Highlight text={site.description} query={q} />
             </p>
           ) : null}
@@ -224,6 +225,12 @@ export function ResultRow({
                 {tag}
               </Link>
             ))}
+            {/* U-191：标签超 4 个时静默丢弃无提示，补 +N 余数标记（仅计数，不跳转）。 */}
+            {site.tags && site.tags.length > 4 ? (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                +{site.tags.length - 4}
+              </span>
+            ) : null}
             {channels.map((channel) => (
               <span key={channel} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
                 {CHANNEL_LABELS[channel]}命中
@@ -566,6 +573,7 @@ export function PluginSection({ plugins, q }: { plugins: HubPluginSearchResponse
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <Link
                 href={pluginDetailHref(plugin.slug, plugin.status)}
+                title={plugin.name}
                 className="max-w-full truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
               >
                 <Highlight text={plugin.name} query={q} />
@@ -578,7 +586,7 @@ export function PluginSection({ plugins, q }: { plugins: HubPluginSearchResponse
               ) : null}
             </div>
             {plugin.description ? (
-              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground" title={plugin.description}>
                 <Highlight text={plugin.description} query={q} />
               </p>
             ) : null}

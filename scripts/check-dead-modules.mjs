@@ -39,6 +39,7 @@ const UNKNOWN = argv.filter((a) => a !== "--json" && a !== "--update");
 /** 首次实测（2026-11-06）登记的 0 引用候选；新增项才判红。 */
 let BASELINE = [
   "apps/web-overlay/src/components/quick-access-tray.tsx",
+  "apps/web-overlay/src/components/theme-toggle.tsx",
   "apps/web-overlay/src/components/ui/search-input.tsx",
   "apps/web-overlay/src/lib/lazy-dnd.tsx",
   "apps/web-overlay/src/lib/session.ts",
@@ -91,6 +92,8 @@ let BASELINE = [
  *     （最后一个注意与**活跃**的 lib/notification-badge.ts 区分：前者是组件、后者是工具）
  */
 let BASELINE_NOTES = {
+  "apps/web-overlay/src/components/theme-toggle.tsx":
+    "keep（D vendored 覆盖）：与 apps/web 镜像一致的组件，17c5d34e 为修 tsc 恢复",
   "apps/web-overlay/src/lib/lazy-dnd.tsx":
     "keep（A 别名目标）：package.json 把 @hello-pangea/dnd 指向本文件，构建期解析；另有 types/hello-pangea-dnd-deep.d.ts 与 test/lazy-dnd-guard.test.ts 依赖",
   "apps/web-overlay/src/registry/new-york/ui/chart.tsx":

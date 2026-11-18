@@ -697,8 +697,9 @@ export function SitePeekDialog({
                       window.open(alt.site.url, '_blank', 'noopener,noreferrer')
                     }}
                     title="访问双曲平替站点"
+                    aria-label={alt.site.title ? `访问 ${alt.site.title}` : '访问双曲平替站点'}
                   >
-                    <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
+                    <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" aria-hidden />
                   </Button>
                 </div>
               ))}

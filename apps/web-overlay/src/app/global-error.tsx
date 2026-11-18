@@ -104,7 +104,13 @@ export default function GlobalError({
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
             {crash.retryable && (
               <button
-                onClick={() => reset()}
+                onClick={() => {
+                  if (crash.kind === 'chunk') {
+                    window.location.reload()
+                  } else {
+                    reset()
+                  }
+                }}
                 style={{
                   cursor: 'pointer',
                   borderRadius: '12px',

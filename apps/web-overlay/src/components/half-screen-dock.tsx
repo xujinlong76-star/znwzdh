@@ -85,7 +85,7 @@ export function HalfScreenDock({
     <nav
       role="toolbar"
       aria-label="半屏快捷操作"
-      className="fixed bottom-0 left-0 right-0 z-40 hidden min-[640px]:max-[1024px]:flex h-14 items-center justify-around border-t border-border/40 bg-background/95 backdrop-blur px-2 pb-[env(safe-area-inset-bottom,0px)]"
+      className="fixed bottom-0 left-0 right-0 z-40 hidden min-[640px]:max-[1024px]:flex h-[calc(3.5rem+env(safe-area-inset-bottom,0px))] items-center justify-around border-t border-border/40 bg-background/95 backdrop-blur px-2 pb-[env(safe-area-inset-bottom,0px)]"
     >
       {/* 场景：复用工具栏同款 SceneSwitcher，下拉菜单向上开 */}
       <SceneSwitcher activeWorkspace={activeWorkspace} menuSide="top" />

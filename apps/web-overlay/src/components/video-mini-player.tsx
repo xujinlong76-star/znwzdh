@@ -64,7 +64,7 @@ export function VideoMiniPlayer() {
 
   return (
     <div
-      className="fixed bottom-6 right-6 z-50 w-80 sm:w-96 rounded-xl border border-border/70 bg-card/95 shadow-2xl backdrop-blur-md overflow-hidden transition-all duration-300 animate-in fade-in slide-in-from-bottom-5"
+      className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] right-4 sm:bottom-6 sm:right-6 z-50 w-80 sm:w-96 rounded-xl border border-border/70 bg-card/95 shadow-2xl backdrop-blur-md overflow-hidden transition-all duration-300 animate-in fade-in slide-in-from-bottom-5"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -85,8 +85,9 @@ export function VideoMiniPlayer() {
                   type="button"
                   className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                   title="切换镜像源"
+                  aria-label="切换镜像源"
                 >
-                  <Layers className="w-3.5 h-3.5" />
+                  <Layers className="w-3.5 h-3.5" aria-hidden />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48 text-xs">
@@ -110,8 +111,9 @@ export function VideoMiniPlayer() {
             onClick={requestDocumentPiP}
             className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
             title="画中画模式"
+            aria-label="画中画模式"
           >
-            <PictureInPicture className="w-3.5 h-3.5" />
+            <PictureInPicture className="w-3.5 h-3.5" aria-hidden />
           </button>
 
           {/* Maximize / Restore */}
@@ -120,8 +122,9 @@ export function VideoMiniPlayer() {
             onClick={restorePlayer}
             className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
             title="还原播放器"
+            aria-label="还原播放器"
           >
-            <Maximize2 className="w-3.5 h-3.5" />
+            <Maximize2 className="w-3.5 h-3.5" aria-hidden />
           </button>
 
           {/* Close */}
@@ -130,8 +133,9 @@ export function VideoMiniPlayer() {
             onClick={closePlayer}
             className="p-1 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive-text transition-colors"
             title="关闭"
+            aria-label="关闭迷你播放器"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-3.5 h-3.5" aria-hidden />
           </button>
         </div>
       </div>
@@ -178,8 +182,9 @@ export function VideoMiniPlayer() {
               type="button"
               onClick={togglePlayPause}
               className="p-1 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
+              aria-label={isPlaying ? '暂停' : '播放'}
             >
-              {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+              {isPlaying ? <Pause className="w-3 h-3" aria-hidden /> : <Play className="w-3 h-3" aria-hidden />}
             </button>
             <span className="font-mono">
               {formatDuration(playheadSec)} / {formatDuration(duration)}

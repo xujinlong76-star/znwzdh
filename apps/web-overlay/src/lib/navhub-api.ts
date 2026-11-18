@@ -322,6 +322,10 @@ async function hubServerMessage(res: Response): Promise<HubServerErrorDetail> {
     if (typeof parsed.message === 'string' && parsed.message.trim()) {
       return { message: parsed.message.trim(), payload }
     }
+    if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
+      const errPrefix = typeof parsed.error === 'string' && parsed.error.trim() ? `${parsed.error.trim()}：` : ''
+      return { message: `${errPrefix}${parsed.detail.trim()}`, payload }
+    }
     if (typeof parsed.error === 'string' && parsed.error.trim()) {
       return { message: parsed.error, payload }
     }

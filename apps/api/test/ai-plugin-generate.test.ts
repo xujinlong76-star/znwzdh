@@ -301,4 +301,31 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("上游模型调用失败时返回 502 及结构化错误细节", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("connect ECONNREFUSED 93.184.216.34:443");
+    }) as typeof fetch;
+
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: URL_ENDPOINT,
+        headers: H_USER,
+        payload: {
+          prompt: "测试网络故障生成",
+        },
+      });
+
+      expect(res.statusCode).toBe(502);
+      const data = res.json();
+      expect(data.error).toBe("AI 生成插件失败");
+      expect(data.message).toContain("AI 生成插件失败：");
+      expect(data.code).toBe("network");
+      expect(data.detail).toContain("ECONNREFUSED");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

@@ -20,8 +20,10 @@ export async function GET(request: NextRequest) {
 
   const safeTitle = escapeXml(title.slice(0, 50))
   const safeAuthor = escapeXml(author.slice(0, 30))
-  const safeTime = escapeXml(time)
-  const safeTag = escapeXml(tag)
+  // time/tag 同样限长：虽已 escapeXml 不构成 XSS，但 query 无上限可拼出超大 SVG，
+  // 与 title/author 的截断口径保持一致。
+  const safeTime = escapeXml(time.slice(0, 24))
+  const safeTag = escapeXml(tag.slice(0, 24))
 
   const svg = `
 <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">

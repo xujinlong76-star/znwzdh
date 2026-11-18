@@ -85,7 +85,10 @@ describe('mobile-nav 组件本体', () => {
     const src = read(COMPONENT)
     expect(src).toContain('fixed bottom-0 left-0 right-0')
     expect(src).toContain('sm:hidden')
-    expect(src).toContain('h-14')
+    // 3.5rem = 56px 基准 + safe-area 增高容器（P3-8），与半屏 dock 同口径
+    expect(
+      src.includes('h-[calc(3.5rem+env(safe-area-inset-bottom,0px))]') || src.includes('h-14')
+    ).toBe(true)
     // 安全区由组件自负；footer 的 5.5rem 预留即为其让位
     expect(src).toContain('pb-[env(safe-area-inset-bottom,0px)]')
   })

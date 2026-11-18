@@ -48,7 +48,7 @@ async function readFirstPoster(): Promise<DramaPoster | null> {
   for (const rel of CANDIDATES) {
     let raw: string
     try {
-      raw = await readFile(join(process.cwd(), rel), 'utf8')
+      raw = await readFile(join(/*turbopackIgnore: true*/ process.cwd(), rel), 'utf8')
     } catch {
       continue
     }

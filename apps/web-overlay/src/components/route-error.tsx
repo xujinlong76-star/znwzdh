@@ -33,9 +33,11 @@ export function RouteError({
   useEffect(() => {
     // 保留控制台现场：生产环境没有 source map 时，digest 是唯一能对上服务端日志的线索
     console.error('[route-error]', scope ?? '', error)
-  }, [error, scope])
-    // 上报到中枢（脱敏：只发分类 + 指纹 + pathname + digest；开关默认关闭）
+    // 上报到中枢（脱敏：只发分类 + 指纹 + pathname + digest；开关默认关闭）。
+    // 必须留在 effect 内：与 app/error.tsx 的 F-5 同类——放在 render 期会在错误边界
+    // 每次重渲染时重复发上报，且 render 期副作用在并发渲染下会被丢弃/重放。
     reportClientError({ message: error?.message ?? String(error), digest: error?.digest })
+  }, [error, scope])
 
   return (
     // 页面自己的 <main id="main-content"> 会被这段兜底整体替换：

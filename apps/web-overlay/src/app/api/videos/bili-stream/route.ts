@@ -52,6 +52,18 @@ const GLOBAL_STREAM_BUDGET = new StreamBudget({
   windowMs: 60_000,
 })
 
+function budgetDenied(denial: 'rate_limited' | 'saturated'): NextResponse {
+  return NextResponse.json(
+    {
+      error:
+        denial === 'rate_limited'
+          ? '请求过于频繁，请稍后重试或改用直链'
+          : '视频流代理并发已满，请稍后重试或改用直链',
+    },
+    { status: denial === 'rate_limited' ? 429 : 503, headers: { 'Retry-After': '5' } }
+  )
+}
+
 /**
  * DNS/IP 级 SSRF 校验开关（升级方案 P1-2）。
  *
@@ -122,17 +134,17 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
   // GET 的槽位交给流自身在结束/断开时归还，其余出口统一在 finally 里归还
   // （漏还等于把并发额度永久吃掉）。
   const callerBudgetKey = resolveRateLimitKey(request.headers)
-  const denial = STREAM_BUDGET.tryAcquire(callerBudgetKey) ?? GLOBAL_STREAM_BUDGET.tryAcquire(GLOBAL_BUDGET_KEY)
-  if (denial) {
-    return NextResponse.json(
-      {
-        error:
-          denial === 'rate_limited'
-            ? '请求过于频繁，请稍后重试或改用直链'
-            : '视频流代理并发已满，请稍后重试或改用直链',
-      },
-      { status: denial === 'rate_limited' ? 429 : 503, headers: { 'Retry-After': '5' } }
-    )
+  // 两步获取，不能在 global 拒绝时泄漏 caller 槽（与 bili-parse 的 acquireParseBudget 同口径）：
+  // 旧写法 `caller ?? global` 在 caller 成功占槽、global 饱和时提前 return，而该 return 位于
+  // 下方 try/finally 之前，finally 的 release 不执行 —— 每遇一次全局饱和就永久吃掉一个 caller
+  // 并发槽，累积到 maxConcurrent 后该调用方所有流请求恒被拒，只能重启进程恢复。
+  const callerDenial = STREAM_BUDGET.tryAcquire(callerBudgetKey)
+  if (callerDenial) return budgetDenied(callerDenial)
+  const globalDenial = GLOBAL_STREAM_BUDGET.tryAcquire(GLOBAL_BUDGET_KEY)
+  if (globalDenial) {
+    // global 拒绝：归还刚占到的 caller 槽再返回，绝不带着泄漏退出。
+    STREAM_BUDGET.release()
+    return budgetDenied(globalDenial)
   }
 
   let handedOff = false

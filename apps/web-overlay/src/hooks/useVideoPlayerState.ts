@@ -8,6 +8,7 @@ import {
   getPlaybackHistory,
   type PlaybackHistoryItem
 } from '@/lib/video-playback-storage'
+import { isEventTargetTyping } from '@/lib/keyboard-guards'
 
 interface UseVideoPlayerStateOptions {
   video: NavigationSubItem | null
@@ -108,16 +109,12 @@ export function useVideoPlayerState({
   // 3. 全局播放器快捷键调度
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 避免在输入框中打字时误触快捷键
-      const target = e.target as HTMLElement
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      ) {
-        return
-      }
+      // 避免在输入框 / 中文输入法组字时误触快捷键，口径与全站 keyboard-guards 统一
+      if (e.isComposing || isEventTargetTyping(e)) return
+      // 带任意修饰键的组合键（Ctrl/Cmd/Alt）一律让位给浏览器与全局快捷键：
+      // 尤其是 '?'（Shift+/）——全局快捷键指南在首页也有 '?' 入口，不加修饰守卫会
+      // 与浏览器保留键冲突；修饰键按下时不处理任何播放器快捷键。
+      if (e.ctrlKey || e.metaKey || e.altKey) return
 
       switch (e.key) {
         case '?':

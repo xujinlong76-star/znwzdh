@@ -872,7 +872,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           temperature: 0.3,
           json: true,
           thinking: body.data.thinking,
-          timeoutMs: 60_000,
+          timeoutMs: body.data.thinking ? 90_000 : 45_000,
         });
 
         const rawJson = extractJson(result.content);
@@ -956,11 +956,13 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         };
       } catch (err) {
         const lastError = err instanceof LlmError ? err : null;
+        const detailMsg = lastError?.message || (err instanceof Error ? err.message : "未知错误");
         reply.code(502);
         return {
           error: "AI 生成插件失败",
+          message: `AI 生成插件失败：${detailMsg}`,
           code: lastError?.code ?? "network",
-          detail: err instanceof Error ? err.message : "未知错误",
+          detail: detailMsg,
         };
       } finally {
         await settleLlmQuota(ctx, quota.hold);

@@ -46,6 +46,20 @@ export default function Error({
     // 网络上报，错误边界经常重渲染（reset/状态变化），等于把一个错误放大成 N 个请求，
     // 且 render 期副作用在并发渲染下会被丢弃/重放。挪进 effect 并依赖 error。
     reportClientError({ message: error?.message ?? String(error), digest: error?.digest })
+
+    // 资源版本更迭（ChunkLoadError / 页面资源已更新）：自动尝试刷新一次拉取最新 bundle
+    if (crash.kind === 'chunk' && typeof window !== 'undefined') {
+      try {
+        const key = '__navhub_chunk_reload__'
+        const val = error?.message || 'chunk_error'
+        if (sessionStorage.getItem(key) !== val) {
+          sessionStorage.setItem(key, val)
+          window.location.reload()
+        }
+      } catch {
+        // sessionStorage 不可用时静默降级
+      }
+    }
   }, [error])
 
   const copyDiagnostics = async () => {
@@ -93,7 +107,13 @@ export default function Error({
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           {crash.retryable && (
             <Button
-              onClick={() => reset()}
+              onClick={() => {
+                if (crash.kind === 'chunk') {
+                  window.location.reload()
+                } else {
+                  reset()
+                }
+              }}
               size="sm"
               className="w-full sm:w-auto text-xs rounded-xl gap-1.5 shadow-xs"
             >

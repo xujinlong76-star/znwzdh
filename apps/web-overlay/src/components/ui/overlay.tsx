@@ -162,7 +162,9 @@ export function useOverlayBehavior({
         // 焦点圈养：Tab / Shift+Tab 都在浮层内循环
         const focusable = Array.from(
           containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-        ).filter((el) => el.offsetParent !== null || el === document.activeElement)
+        // 用 getClientRects 判可见：position:fixed 的子元素 offsetParent 恒为 null，
+        // 用旧判断会把它们错误排除出 Tab 循环，键盘用户无法聚焦。
+        ).filter((el) => el.getClientRects().length > 0 || el === document.activeElement)
         if (focusable.length === 0) {
           e.preventDefault()
           containerRef.current.focus({ preventScroll: true })

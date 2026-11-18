@@ -189,4 +189,10 @@ describe("源码守卫：两个崩溃页面共享同一套口径", () => {
     expect(src).toContain("window.location.assign('/')");
     expect(src).not.toContain("next/link");
   });
+
+  it("error.tsx 在 chunk 资源过期时通过 window.location.reload() 刷新拉取新 bundle", () => {
+    const src = overlaySource("src/app/error.tsx");
+    expect(src).toContain("window.location.reload()");
+    expect(src).toContain("crash.kind === 'chunk'");
+  });
 });

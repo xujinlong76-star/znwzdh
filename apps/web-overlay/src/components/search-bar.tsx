@@ -46,13 +46,38 @@ function itemHref(item: NavigationItem | NavigationSubItem): string | undefined 
 
 export function SearchBar({ navigationData, onSearch, searchResults, searchQuery, siteConfig }: SearchBarProps) {
   const [isFocused, setIsFocused] = useState(false)
+  // combobox 键盘导航：焦点留在 Input，用 activeIndex + aria-activedescendant 告知读屏，
+  // 与 search-palette 的处理同源。cmdk 自己的方向键导航在焦点位于兄弟节点 Input 时不生效，
+  // 因此这里手动维护高亮。
+  const [activeIndex, setActiveIndex] = useState(-1)
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const resultsPanelRef = useRef<HTMLDivElement>(null)
   // 站点配置只是默认值：用户中心的「新标签页打开站点」开关决定最终打开方式
   const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)
   const favorites = useFavorites()
   const { toast } = useToast()
   const identity = useMemo(() => getIdentity(), [])
+
+  /** 与渲染顺序一致的扁平结果列表（先普通项，再各子分类项），供方向键线性导航 */
+  const { flatItems, indexById } = useMemo(() => {
+    const flat: Array<NavigationItem | NavigationSubItem> = []
+    const map = new Map<string, number>()
+    for (const result of searchResults) {
+      for (const item of result.items) { map.set(item.id, flat.length); flat.push(item) }
+      for (const sub of result.subCategories) {
+        for (const item of sub.items) { map.set(item.id, flat.length); flat.push(item) }
+      }
+    }
+    return { flatItems: flat, indexById: map }
+  }, [searchResults])
+
+  useEffect(() => { setActiveIndex(-1) }, [searchQuery])
+
+  useEffect(() => {
+    if (activeIndex < 0) return
+    resultsPanelRef.current?.querySelector<HTMLElement>(`[data-nav-index="${activeIndex}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -259,11 +284,31 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
           aria-expanded={showResults}
           aria-autocomplete="list"
           aria-controls={showResults ? 'navhub-search-bar-results' : undefined}
+          aria-activedescendant={
+            showResults && activeIndex >= 0 && flatItems[activeIndex]
+              ? `navhub-search-bar-opt-${activeIndex}` : undefined
+          }
           placeholder="搜索导航 (支持 !gh, !npm, !mdn 直达)..."
           value={searchQuery}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={() => setIsFocused(true)}
           onKeyDown={(e) => {
+            // 方向键在扁平结果中线性移动高亮；焦点始终在 Input，靠 aria-activedescendant 同步读屏。
+            if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && showResults && flatItems.length > 0) {
+              e.preventDefault()
+              setActiveIndex((prev) => {
+                if (e.key === 'ArrowDown') return prev < 0 ? 0 : (prev + 1) % flatItems.length
+                return prev <= 0 ? flatItems.length - 1 : prev - 1
+              })
+              return
+            }
+            // 有高亮项时回车打开它（优先于 quicklink 直达，符合 combobox 惯例）
+            if (e.key === 'Enter' && activeIndex >= 0 && flatItems[activeIndex]) {
+              e.preventDefault()
+              handleItemSelect(flatItems[activeIndex])
+              setActiveIndex(-1)
+              return
+            }
             if (e.key === 'Enter' && quicklinkBlocked) {
               e.preventDefault()
               toastQuicklinkBlocked()
@@ -305,7 +350,7 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
       </div>
 
       {showResults && (
-        <div id="navhub-search-bar-results" className="absolute top-full left-0 right-0 mt-2 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden">
+        <div ref={resultsPanelRef} id="navhub-search-bar-results" role="listbox" className="absolute top-full left-0 right-0 mt-2 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden">
           {displayShortcut && (
             <div className="p-2 border-b border-border/70 bg-primary/5">
               <button
@@ -386,12 +431,19 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
               ) : (
                 searchResults.map((result) => (
                   <CommandGroup key={result.category.id} heading={result.category.title}>
-                    {result.items.map((item) => (
+                    {result.items.map((item) => {
+                      const idx = indexById.get(item.id) ?? -1
+                      const active = idx === activeIndex
+                      return (
                       <CommandItem
                         key={item.id}
+                        id={`navhub-search-bar-opt-${idx}`}
+                        data-nav-index={idx}
+                        role="option"
+                        aria-selected={active}
                         value={item.title}
                         onSelect={() => handleItemSelect(item)}
-                        className="flex items-center gap-3 py-3 px-3 cursor-pointer hover:bg-accent/50"
+                        className={`flex items-center gap-3 py-3 px-3 cursor-pointer hover:bg-accent/50 ${active ? 'bg-accent text-accent-foreground' : ''}`}
                       >
                         <div className="flex-shrink-0 w-8 h-8">
                           {item.icon && !isRemoteRawFavicon(item.icon) ? (
@@ -426,18 +478,26 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
                           )}
                         </div>
                       </CommandItem>
-                    ))}
+                      )
+                    })}
                     {result.subCategories.map((sub) => (
                       <div key={sub.title}>
                         <div className="px-3 py-2 text-xs font-medium text-muted-foreground bg-muted/30 border-b">
                           {result.category.title} / {sub.title}
                         </div>
-                        {sub.items.map((item) => (
+                        {sub.items.map((item) => {
+                          const idx = indexById.get(item.id) ?? -1
+                          const active = idx === activeIndex
+                          return (
                           <CommandItem
                             key={item.id}
+                            id={`navhub-search-bar-opt-${idx}`}
+                            data-nav-index={idx}
+                            role="option"
+                            aria-selected={active}
                             value={item.title}
                             onSelect={() => handleItemSelect(item)}
-                            className="flex items-center gap-3 py-3 px-3 cursor-pointer hover:bg-accent/50"
+                            className={`flex items-center gap-3 py-3 px-3 cursor-pointer hover:bg-accent/50 ${active ? 'bg-accent text-accent-foreground' : ''}`}
                           >
                             <div className="flex-shrink-0 w-8 h-8">
                               {item.icon && !isRemoteRawFavicon(item.icon) ? (
@@ -472,7 +532,8 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
                               )}
                             </div>
                           </CommandItem>
-                        ))}
+                          )
+                        })}
                       </div>
                     ))}
                   </CommandGroup>

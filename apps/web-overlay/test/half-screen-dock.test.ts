@@ -103,7 +103,11 @@ describe('half-screen-dock 组件本体', () => {
     const src = read(COMPONENT)
     expect(src).toContain('fixed bottom-0')
     expect(src).toContain('z-40')
-    expect(src).toContain('h-14')
+    // 3.5rem = 56px 的基准高度 + safe-area：用 calc 增高容器而非把 padding 塞进固定 h-14，
+    // 避免全面屏 iPhone 上安全区内边距压缩图标/文字（P3-8）。
+    expect(
+      src.includes('h-[calc(3.5rem+env(safe-area-inset-bottom,0px))]') || src.includes('h-14')
+    ).toBe(true)
     expect(src).toContain('pb-[env(safe-area-inset-bottom,0px)]')
     expect(src).toContain('role="toolbar"')
     expect(src).toContain('aria-label="半屏快捷操作"')

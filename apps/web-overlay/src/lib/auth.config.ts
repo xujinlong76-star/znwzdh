@@ -101,9 +101,10 @@ export const authConfig = {
       return true
     },
     async jwt({ token, user, account }) {
-      if (account?.access_token) {
-        token.accessToken = account.access_token
-      }
+      // 不把 OAuth access_token 写进 JWT：token 只留服务端（见 lib/auth.ts 的
+      // EncryptedServerTokenStore）。本 callbacks 被 proxy.ts 的 NextAuth 实例复用，
+      // 若在此写入会随会话 cookie 下发到浏览器，扩大 XSS/失陷面；且与 auth.ts 的
+      // jwt 回调口径分叉。session 回调也不消费该字段（github.ts 走 GITHUB_PAT 回退）。
       if (account?.provider) token.provider = account.provider
       if (user) {
         // 与 lib/auth.ts 保持一致：不把 role 默认成 'admin'（否则等于绕过白名单）。

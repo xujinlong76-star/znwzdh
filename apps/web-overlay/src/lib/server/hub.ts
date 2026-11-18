@@ -113,8 +113,48 @@ export async function hubGetProbe<T>(
   }
 }
 
+/**
+ * 已确认吊销的 sid 短 TTL 本地缓存（P2-4：吊销核对 fail-open 的安全缺口）。
+ *
+ * 背景：中枢 sessions/check 不可用时核对返回 null，三处调用方（admin 会话、hub 代理、
+ * 登录登记）一致 fail-open 放行——这是避免中枢抖动导致全员登出的知情权衡。但代价是
+ * 「刚被踢出/改密的会话，恰逢中枢短暂不可达」窗口内仍能访问高权限接口。
+ *
+ * 这里用有界 TTL 缓存记住「中枢曾明确判为已吊销」的 sid：一旦确认吊销，即便随后中枢
+ * 不可达，也在 TTL 内继续返回 true（fail-closed 只针对已确认吊销的会话，不误伤普通
+ * 管理员，不引入全员锁死的新故障面）。TTL 到期后重新核对；sid 本身随机且带 issuedAt，
+ * 缓存上限有界，不会随请求无界增长。
+ */
+const REVOKED_SID_TTL_MS = 15 * 60_000
+const revokedSidCache = new Map<string, number>()
+
+function isKnownRevoked(sid: string): boolean {
+  const expiresAt = revokedSidCache.get(sid)
+  if (expiresAt === undefined) return false
+  if (expiresAt < Date.now()) {
+    revokedSidCache.delete(sid)
+    return false
+  }
+  return true
+}
+
+function rememberRevoked(sid: string): void {
+  if (revokedSidCache.size >= 2000) {
+    // 有界：淘汰最早到期的一条，避免长期运行下无界增长
+    let oldest: string | null = null
+    let min = Infinity
+    for (const [key, exp] of revokedSidCache) {
+      if (exp < min) { min = exp; oldest = key }
+    }
+    if (oldest) revokedSidCache.delete(oldest)
+  }
+  revokedSidCache.set(sid, Date.now() + REVOKED_SID_TTL_MS)
+}
+
 /** 会话吊销核对（P0-2）：调中枢 sessions/check。true=已吊销，false=未吊销，null=核对不可用。 */
 export async function hubSessionRevoked(sid: string, identity: string, issuedAt?: number): Promise<boolean | null> {
+  // 命中「已确认吊销」缓存：即便此刻中枢不可达也要 fail-closed 拦住。
+  if (isKnownRevoked(sid)) return true
   const secret = hubIdentitySecret()
   const headers: Record<string, string> = {
     accept: "application/json",
@@ -138,7 +178,11 @@ export async function hubSessionRevoked(sid: string, identity: string, issuedAt?
     });
     if (res.ok) {
       const data = (await res.json()) as { ok?: boolean; revoked?: boolean }
-      if (data.ok) return data.revoked === true
+      if (data.ok) {
+        const revoked = data.revoked === true
+        if (revoked) rememberRevoked(sid)
+        return revoked
+      }
     }
     return null
   } catch {

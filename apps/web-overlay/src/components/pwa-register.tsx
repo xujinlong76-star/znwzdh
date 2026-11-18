@@ -41,37 +41,42 @@ export function PwaRegister() {
     }
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
 
+    let disposed = false
+    let registration: ServiceWorkerRegistration | null = null
+
     const markUpdate = () => {
       updatePromptedRef.current = true
       setUpdateReady(true)
+    }
+
+    // 具名 handler：updatefound 挂在长生命周期的 ServiceWorkerRegistration 上，
+    // 必须在 cleanup 中解绑，否则 StrictMode 双挂载 / HMR 下重复绑定。
+    const onUpdateFound = () => {
+      const reg = registration
+      const sw = reg?.installing
+      if (!sw) return
+      const onStateChange = () => {
+        if (sw.state === 'installed' && navigator.serviceWorker.controller) markUpdate()
+        if (sw.state === 'installed' || sw.state === 'activated' || sw.state === 'redundant') {
+          sw.removeEventListener('statechange', onStateChange)
+        }
+      }
+      sw.addEventListener('statechange', onStateChange)
     }
 
     // 直接注册；不等 load 事件（见上方 BUG 教训）
     navigator.serviceWorker
       .register('/sw.js', { scope: '/' })
       .then((reg) => {
-        // 已有新 SW 在等着（注册时浏览器可能已发现更新）
+        registration = reg
+        if (disposed) {
+          reg.removeEventListener('updatefound', onUpdateFound)
+          return
+        }
         if (reg.waiting && navigator.serviceWorker.controller) markUpdate()
-
-        reg.addEventListener('updatefound', () => {
-          const sw = reg.installing
-          if (!sw) return
-          const onStateChange = () => {
-            // installed 且当前页已被旧 SW 控制 = 这是一次真正的「更新」，
-            // 而非首次安装；首次安装时 controller 为 null，不提示刷新。
-            if (sw.state === 'installed' && navigator.serviceWorker.controller) markUpdate()
-            // SW 生命周期会多次触发 statechange（installing → installed → activating → activated），
-            // 终态后摘掉监听，避免注册对象长期持有闭包。
-            if (sw.state === 'installed' || sw.state === 'activated' || sw.state === 'redundant') {
-              sw.removeEventListener('statechange', onStateChange)
-            }
-          }
-          sw.addEventListener('statechange', onStateChange)
-        })
+        reg.addEventListener('updatefound', onUpdateFound)
       })
       .catch((err) => {
-        // 注册失败（非 HTTPS / 浏览器限制）只告警不阻断：PWA 是增强，不是依赖。
-        // 注意：不要静默吞掉——静默失败曾让"PWA 已接入"的验收结论失真。
         console.warn('[pwa] service worker 注册失败：', err)
       })
 
@@ -85,7 +90,9 @@ export function PwaRegister() {
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
 
     return () => {
+      disposed = true
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
+      registration?.removeEventListener('updatefound', onUpdateFound)
     }
   }, [])
 

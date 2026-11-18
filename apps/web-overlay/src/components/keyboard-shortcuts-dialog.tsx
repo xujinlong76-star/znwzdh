@@ -118,6 +118,12 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
       // 快捷键是全局的，得能感知别的组件打开的浮层。
       if (isAnyDialogOpen() && e.key !== '?') return
 
+      // 裸键守卫：T/D/B 只在没有任何修饰键时生效。此前漏判导致 Ctrl+D（浏览器收藏）、
+      // Alt+D（聚焦地址栏）、Ctrl+B / Alt+T 等系统组合键被本站接管并 preventDefault：
+      // 既误改本地视图设置又破坏浏览器保留键。与 WCAG 2.1.4「不劫持保留键」一致。
+      // 注意 shift 不在此列：'?' 本身就是 Shift+/，需照常放行。
+      const bare = !e.ctrlKey && !e.metaKey && !e.altKey
+
       // 按 ? 或 Shift + / 呼出快捷键帮助
       if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
         e.preventDefault()
@@ -142,6 +148,9 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
           setViewMode('workbench')
           toast({ title: '已切换为沉浸工作台 (Workbench)' })
         }
+        // Alt+其它键（如 Alt+D / Alt+B）在此分支无匹配，必须立即返回，
+        // 否则会 fall-through 到下方的裸键 D/B 分支再次触发（按键劫持）。
+        return
       }
 
       // 按 Ctrl/Cmd+E 开关 DIY 编排工坊（WCAG 2.1.4：单字符快捷键会与
@@ -155,13 +164,13 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
 
       // 按 T 打开开发者微工具箱。指南里一直宣传这个键，但处理分支此前从未实现，
       // 按 T 永远没反应 —— 广告了不存在的功能比没有这个功能更糟。
-      if (e.key === 't' || e.key === 'T') {
+      if (bare && (e.key === 't' || e.key === 'T')) {
         e.preventDefault()
         onOpenTools?.()
       }
 
       // 按 D 循环切换密度
-      if (e.key === 'd' || e.key === 'D') {
+      if (bare && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault()
         const order = ['dense', 'comfortable', 'spacious'] as const
         const nextIndex = (order.indexOf(density as any) + 1) % order.length
@@ -174,7 +183,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
       }
 
       // 按 B 循环切换背景画布
-      if (e.key === 'b' || e.key === 'B') {
+      if (bare && (e.key === 'b' || e.key === 'B')) {
         e.preventDefault()
         const bgs: CanvasBackground[] = ['mesh', 'dots', 'grid', 'aurora', 'clean']
         const nextIndex = (bgs.indexOf(canvasBackground) + 1) % bgs.length

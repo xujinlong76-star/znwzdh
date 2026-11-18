@@ -84,8 +84,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.close();
-  rmSync(dir, { recursive: true, force: true });
+  if (app) await app.close();
+  if (ctx) await ctx.close();
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {}
 });
 
 describe("POST /api/public-pages", () => {

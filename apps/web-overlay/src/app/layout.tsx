@@ -214,13 +214,15 @@ export default async function RootLayout({
             `,
           }}
         />
-        <link rel="preconnect" href="https://www.googletagmanager.com" />
         {/* iOS 桌面图标（apple-touch-icon）：用显式 link 而不是 metadata.icons.apple——
             实测 Next 15.5 只渲染 appleWebApp 的 meta 而不渲染该 link */}
         <link rel="apple-touch-icon" href={settings.appearance.appleTouchIcon || '/icons/apple-touch-icon.png'} />
         {/* Google Analytics */}
         {gaId && (
           <>
+            {/* preconnect 只在 GA 真正启用时建立：未配置 GA_ID 的部署不该为每个访客
+                多开一条到 googletagmanager.com 的 DNS/TLS 连接（隐私 + 首屏开销）。 */}
+            <link rel="preconnect" href="https://www.googletagmanager.com" />
             <Script
               strategy="afterInteractive"
               src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}

@@ -29,6 +29,9 @@
  *
  * 扫描用的 `>>` 判定是**按花括号配平**找标签结尾的：`onClick={() => …}` 里那个 `>`
  * 属于箭头函数，简单正则会在那里截断，把「有 title」的按钮误判成没名字。
+ * 同理，标签内的 `//` 行注释与花括号星号块注释里的 `>` 也不能当标签结尾
+ * （U-167：6df10ec6 的注释句“366px > 360−24px”曾把外观按钮截断误判），
+ * 字符串里的 `>` 与 `//`（如 href="https://…"）也不能当注释或结尾。
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -63,12 +66,38 @@ function listSources(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** 从 from 开始找到花括号配平后的标签结尾 `>` */
+/** 从 from 开始找到花括号配平后的标签结尾 `>`。
+ * 须跳过两样东西，否则会把标签提前截断、把“有名字”的按钮误判成没名字：
+ *  - 字符串字面量里的 `>`（如 title="a > b"）与 `//`（如 href="https://…"）；
+ *  - 标签内的注释里的 `>`——2026-11-19 6df10ec6 在外观按钮标签内写了一段
+ *    `//` 注释，其中一句“366px > 360−24px”含 `>`，旧扫描器在此截断，
+ *    把 title/aria-label 齐全的按钮误判为无名，致分片 1/3 红（U-167）。
+ *    模板字面量里插值后的 `>` 仍是已知局限（与旧版相同，未扩大）。
+ */
 function endOfTag(src: string, from: number): number {
   let depth = 0;
+  let quote: string | null = null;
   for (let i = from; i < src.length; i++) {
     const c = src[i];
-    if (c === "{") depth++;
+    if (quote) {
+      if (c === "\\") i++;
+      else if (c === quote) quote = null;
+      continue;
+    }
+    // 标签内 // 行注释：跳到行尾（注释里可能含 >、{、}、引号）
+    if (c === "/" && src[i + 1] === "/") {
+      const nl = src.indexOf("\n", i);
+      i = nl === -1 ? src.length - 1 : nl;
+      continue;
+    }
+    // 标签内 {/* … */} 块注释：跳到 */（注释里可能含 > 与不成对的花括号）
+    if (c === "{" && src[i + 1] === "/" && src[i + 2] === "*") {
+      const end = src.indexOf("*/", i + 3);
+      i = end === -1 ? src.length - 1 : end + 1;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") quote = c;
+    else if (c === "{") depth++;
     else if (c === "}") depth--;
     else if (c === ">" && depth === 0) return i;
   }

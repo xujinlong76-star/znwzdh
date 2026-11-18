@@ -105,7 +105,7 @@ const ROUTES = [
   ["apps/api/", "apps/api/test"],
   ["scripts/", "scripts"],
 ];
-const GLOBAL_FILES = ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "vitest.config.ts", "tsconfig.base.json"];
+const GLOBAL_FILES = ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "vitest.config.ts", "tsconfig.base.json", "scripts/worker-budget.ts"];
 const GLOBAL_DIRS = ["types/"];
 const GLOBAL_GATE_TESTS = ["apps/web/test/field-names.test.ts", "apps/web/test/keyboard-activation.test.ts"];
 const GENERIC_STEMS = new Set([

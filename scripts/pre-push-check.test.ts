@@ -342,6 +342,13 @@ describe("端到端映射（--dry-run，含模块图）", { timeout: 180_000 }, 
     expect(tests.length).toBeGreaterThan(500);
   });
 
+  it("scripts/worker-budget.ts：升全量（vitest.config.ts:4 import 它，同档全局档）", () => {
+    const { code, tests, out } = dryRun(["scripts/worker-budget.ts"]);
+    expect(code).toBe(0);
+    expect(out).toMatch("全量");
+    expect(tests.length).toBeGreaterThan(500);
+  });
+
   it("只改 e2e spec：vitest 不跑，e2e 列为 CI-only", () => {
     const { code, tests, out } = dryRun(["e2e/plugin-market-star.spec.ts"]);
     expect(code).toBe(0);

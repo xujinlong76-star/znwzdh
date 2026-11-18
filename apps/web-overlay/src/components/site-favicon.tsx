@@ -363,6 +363,36 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // navigation.json 不动。源为 docs.trae.ai 首页声明的 shortcut icon
   //（trae.cn 地域墙 403，见批次笔记）；trae.ai 不在站内，不加键。
   'trae.cn': '/brand-icons/trae.png',
+  // 2026-11-18（C 类第 2 批 c2g1–c2g7）：元宝搜索 / 秘塔搜索 / 天工AI搜索 /
+  // Pika / Viggle AI / Genmo / Vidu / Krea / Deep Dream Generator /
+  // Remove.bg / 魔搭 ModelScope / 百度飞桨 / Stability AI / Mistral AI /
+  // Meta AI Developers / Gitee AI / Flowise / Apify / Devin Desktop / Topview。
+  // 20 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
+  // navigation.json 不动。Devin 的 icon 字段写的是 windsurf.ai 的 favicon
+  //（错域，与本站无关），同样以 /favicon.ico 结尾被拦截；只建 'devin.ai' 键，
+  // 绝不建 windsurf 键。Meta AI 只建完整子域 'dev.meta.ai'，禁写 'meta.ai'。
+  // vidu.studio 旧键（指远程 favicon，不在 navigation.json 中）不动，与
+  // 'vidu.cn' 互不干扰。Meta AI 源为 Wayback 存档（官网直连 403，见 C2 测试注释）。
+  'so.qq.com': '/brand-icons/yuanbao.png',
+  'metaso.cn': '/brand-icons/metaso.png',
+  'tiangong.cn': '/brand-icons/tiangong.png',
+  'pika.art': '/brand-icons/pika.svg',
+  'viggle.ai': '/brand-icons/viggle.svg',
+  'genmo.ai': '/brand-icons/genmo.png',
+  'vidu.cn': '/brand-icons/vidu.svg',
+  'krea.ai': '/brand-icons/krea.png',
+  'deepdreamgenerator.com': '/brand-icons/deepdreamgenerator.png',
+  'remove.bg': '/brand-icons/removebg.png',
+  'modelscope.cn': '/brand-icons/modelscope.png',
+  'paddlepaddle.org.cn': '/brand-icons/paddlepaddle.png',
+  'stability.ai': '/brand-icons/stability.png',
+  'mistral.ai': '/brand-icons/mistral.svg',
+  'dev.meta.ai': '/brand-icons/meta-ai.png',
+  'moark.com': '/brand-icons/moark.png',
+  'flowiseai.com': '/brand-icons/flowise.png',
+  'apify.com': '/brand-icons/apify.svg',
+  'devin.ai': '/brand-icons/devin.svg',
+  'topview.ai': '/brand-icons/topview.png',
 }
 
 /**

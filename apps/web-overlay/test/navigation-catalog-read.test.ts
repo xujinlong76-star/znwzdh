@@ -136,7 +136,9 @@ function seedShards(version = VERSION) {
 function seedWholeDoc() {
   store.set(NAVIGATION_DOC_PATH, {
     navigationItems: [wholeCatA(), wholeCatB()],
-    replacementHistory: [],
+    // 与 index 登记的 replacementHistory 一致（派生时原样随 index 走）：
+    // 等值断言比较的就是「拼装树 vs 整包树」，两者必须同源
+    replacementHistory: [{ note: "hist" }],
   });
 }
 

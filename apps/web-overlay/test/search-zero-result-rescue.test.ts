@@ -265,3 +265,22 @@ describe("U-28 零结果定性：标题说清「站内未收录」，三态不�
     expect(server).toContain("const failed = result === null");
   });
 });
+
+describe("U-143：零结果「回到第 1 页」不丢分类/分面", () => {
+  const results = overlaySource("src/app/search/search-results.tsx");
+
+  it("EmptyResults 调用处传入当前分类与分面", () => {
+    const start = results.indexOf("<EmptyResults");
+    expect(start, "search-results.tsx 缺少 <EmptyResults 调用").toBeGreaterThan(-1);
+    const call = results.slice(start, results.indexOf("/>", start));
+    expect(call).toContain("category={category}");
+    expect(call).toContain("facets={facets}");
+  });
+
+  it("「回到第 1 页」链接的 searchHref 带分类与分面（第 1 页省略 page）", () => {
+    const label = results.indexOf("回到第 1 页");
+    expect(label, "search-results.tsx 缺少「回到第 1 页」").toBeGreaterThan(-1);
+    const link = results.slice(Math.max(0, label - 300), label);
+    expect(link).toContain("searchHref({ q, tag, category, facets })");
+  });
+});

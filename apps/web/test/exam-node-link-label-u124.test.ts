@@ -224,7 +224,7 @@ describe('T5：全量计数（防漏网/防多改）', () => {
 })
 
 describe('T6：无数据改动（数据层守卫）', () => {
-  it('十场 id、节点总数、17 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
+  it('十一场 id、节点总数 40、17 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
     expect(EXAMS.map((e) => e.id)).toEqual([
       'guokao',
       'cet',
@@ -236,21 +236,24 @@ describe('T6：无数据改动（数据层守卫）', () => {
       'chengkao',
       'jiangsu-zikao',
       'guangdong-zikao',
+      'shanghai-zikao',
     ])
-    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(38)
+    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(40)
     const byKey = new Map(
       EXAMS.flatMap((e) => e.nodes.map((n) => [`${e.id}:${n.label}`, n] as const)),
     )
-    expect(byKey.size).toBe(38)
+    expect(byKey.size).toBe(40)
     for (const [examId, label, url] of EXPECTED_URLS) {
       expect(byKey.get(`${examId}:${label}`)?.url).toBe(url)
     }
     expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.url)).toHaveLength(17)
     // U-144：江苏两节点不挂 url；广东自考查询节点挂线上系统直链（U-87），
-    // url 总数 16→17。
+    // url 总数 16→17。U-163：上海两节点不挂 url（无网页深链可挂），url 总数仍 17。
     expect(byKey.get('jiangsu-zikao:成绩查询')?.url).toBeUndefined()
     expect(byKey.get('jiangsu-zikao:成绩复核')?.url).toBeUndefined()
     expect(byKey.get('guangdong-zikao:成绩查询')?.url).toBe(GUANGDONG_ZIKAO_SCORE_URL)
+    expect(byKey.get('shanghai-zikao:成绩查询')?.url).toBeUndefined()
+    expect(byKey.get('shanghai-zikao:成绩复核')?.url).toBeUndefined()
     for (const node of EXAMS.flatMap((e) => e.nodes)) {
       for (const key of Object.keys(node)) {
         expect(['label', 'detail', 'url', 'startISO', 'endISO', 'estimated']).toContain(key)

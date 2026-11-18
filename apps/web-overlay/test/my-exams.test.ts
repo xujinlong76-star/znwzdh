@@ -2,7 +2,7 @@
  * 「我的考试」关注 + 考前清单（/exam 第二轮）测试：
  *  - 纯规则层 my-exams.ts：解析收敛、关注开关、节点勾选、进度与下一步；
  *  - 共享 hook useMyExams.ts：挂载后才读 localStorage、读写各一处、
- *    十场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
+ *    十一场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
  *  - 源码守卫：岛只读事实源（不硬编码日期）、岛内无直接存储调用、
  *    小字与徽章配方合规、按钮 44px、真 checkbox、可勾选只对已关注开放。
  */
@@ -90,7 +90,7 @@ const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
 const DEC_13_0800_CST = Date.UTC(2026, 11, 13, 0, 0, 0)
 /** 2026-12-14 08:00 北京时间：军队文职笔试次日 */
 const DEC_14_0800_CST = Date.UTC(2026, 11, 14, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：十场全过 */
+/** 2026-12-21 08:00 北京时间：十一场全过 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('parseMyExams（不可信输入收敛）', () => {
@@ -153,7 +153,7 @@ describe('toggleFollow', () => {
 
   it('已结束且无可办节点的考试不再接受新关注（纵深防御：岛层按钮已禁用，纯函数层也写不进；U-106：仍有可办节点时放行，见下）', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
-    // 国考 11-29 已过（11-30 时），考研十场全过（12-21 时）
+    // 国考 11-29 已过（11-30 时），考研十一场全过（12-21 时）
     expect(toggleFollow(empty, 'guokao', NOV_30_0800_CST)).toBe(empty)
     expect(toggleFollow(empty, 'kaoyan', DEC_21_0800_CST)).toBe(empty)
   })
@@ -304,7 +304,7 @@ describe('nearestFollowedExam（已关注优先，首页条带挂载后用）', 
     ).toBe('kaoyan')
   })
 
-  it('十场全过、关注场全部已结束返回 undefined', () => {
+  it('十一场全过、关注场全部已结束返回 undefined', () => {
     const state: MyExamsState = { followed: ['guokao', 'cet', 'kaoyan'], checked: {} }
     expect(nearestFollowedExam(state, DEC_21_0800_CST)).toBeUndefined()
   })

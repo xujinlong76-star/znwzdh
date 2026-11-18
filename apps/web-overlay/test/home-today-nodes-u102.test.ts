@@ -13,7 +13,7 @@
  *  - estimated 节点永不进今日集合（A2）。
  * 抑制规则（startsToday 仅当本场无 today / endsToday 时收录）是 11-18「恰好 7 项」的
  * 承重条件：若无该抑制，新疆成绩复核与江苏成绩复核会在 11-18 各多收 1 项，变成 9 项。
- * 11-18 恰好 7 项，11-19 只剩江西成绩复核 1 项，11-20 不含浙江成绩查询。
+ * 11-18 恰好 7 项，11-19 江西成绩复核 + 上海自考成绩查询 2 项，11-20 不含浙江成绩查询。
  * 接续节点（A5）与今日节点都取自节点数据，不写死日期、不新造节点。
  */
 import { readFileSync } from 'node:fs'
@@ -46,7 +46,7 @@ const NOV_25_0800_CST = Date.UTC(2026, 10, 25, 0, 0, 0)
 
 const labels = (items: { node: { label: string } }[]) => items.map((i) => i.node.label)
 
-describe('A1：todayNodes（11-18 恰好 7 项，11-19 只剩江西成绩复核）', () => {
+describe('A1：todayNodes（11-18 恰好 7 项，11-19 江西成绩复核 + 上海自考成绩查询 2 项）', () => {
   it('11-18 返回恰好 7 项：三省成绩查询 + 京考报名 + 文职缴费 + 江苏成绩查询 + 广东成绩查询（自考）', () => {
     const items = todayNodes(NOV_18_0800_CST)
     expect(items).toHaveLength(7)
@@ -82,14 +82,17 @@ describe('A1：todayNodes（11-18 恰好 7 项，11-19 只剩江西成绩复核�
     expect(labels(todayNodes(NOV_18_0800_CST))).not.toContain('成绩复核')
   })
 
-  it('11-19 不再含 11-18 的 7 项，但含江西成绩复核（窗口首日 startsToday）', () => {
+  it('11-19 不再含 11-18 的 7 项，含江西成绩复核（窗口首日 startsToday）与上海自考成绩查询（多日窗口首日 startsToday）', () => {
     const items = todayNodes(NOV_19_0800_CST)
-    expect(items).toHaveLength(1)
-    expect(labels(items)).toEqual(['江西成绩复核'])
-    expect(items[0]?.exam.id).toBe('chengkao')
-    expect(items[0]?.kind).toBe('startsToday')
-    // '成绩查询' label 口径一次覆盖江苏与广东自考两行
-    for (const gone of ['江西成绩查询', '广东成绩查询', '新疆成绩查询', '报名', '缴费', '成绩查询']) {
+    expect(items).toHaveLength(2)
+    const byKey = new Map(items.map((i) => [`${i.exam.id}:${i.node.label}`, i]))
+    expect(byKey.get('chengkao:江西成绩复核')?.exam.id).toBe('chengkao')
+    expect(byKey.get('chengkao:江西成绩复核')?.kind).toBe('startsToday')
+    expect(byKey.get('shanghai-zikao:成绩查询')?.exam.id).toBe('shanghai-zikao')
+    expect(byKey.get('shanghai-zikao:成绩查询')?.kind).toBe('startsToday')
+    // 上海查分是多日窗口（11-19–12-18），不是单日 today；'成绩查询' label 口径
+    // 一次覆盖江苏与广东自考两行，上海行也叫「成绩查询」，须按 exam.id 建键区分
+    for (const gone of ['江西成绩查询', '广东成绩查询', '新疆成绩查询', '报名', '缴费']) {
       expect(labels(items)).not.toContain(gone)
     }
   })
@@ -123,15 +126,19 @@ describe('A2：estimated 节点永不进今日集合', () => {
     expect(zhejiang.estimated).toBe(true)
   })
 
-  it('11-20 今日集合只有广东复核（单日）与三省复核（窗口末日），仍无浙江查询', () => {
+  it('11-20 今日集合只有广东复核（单日）与三省复核（窗口末日）+ 上海自考成绩复核（窗口首日 startsToday），仍无浙江查询', () => {
     const items = todayNodes(NOV_20_0800_CST)
-    expect([...labels(items)].sort()).toEqual(['广东成绩复核', '江西成绩复核', '新疆成绩复核', '成绩复核'].sort())
-    const byLabel = new Map(items.map((i) => [i.node.label, i]))
-    expect(byLabel.get('成绩复核')?.exam.id).toBe('jiangsu-zikao')
-    expect(byLabel.get('成绩复核')?.kind).toBe('endsToday')
-    expect(byLabel.get('广东成绩复核')?.kind).toBe('today')
-    expect(byLabel.get('江西成绩复核')?.kind).toBe('endsToday')
-    expect(byLabel.get('新疆成绩复核')?.kind).toBe('endsToday')
+    expect([...labels(items)].sort()).toEqual(
+      ['广东成绩复核', '江西成绩复核', '新疆成绩复核', '成绩复核', '成绩复核'].sort(),
+    )
+    // 两行同名「成绩复核」（江苏 endsToday、上海 startsToday）：须按 exam.id 建键，
+    // 裸 label 键会撞上（后插入的上海行覆盖江苏行）
+    const byKey = new Map(items.map((i) => [`${i.exam.id}:${i.node.label}`, i]))
+    expect(byKey.get('jiangsu-zikao:成绩复核')?.kind).toBe('endsToday')
+    expect(byKey.get('shanghai-zikao:成绩复核')?.kind).toBe('startsToday')
+    expect(byKey.get('chengkao:广东成绩复核')?.kind).toBe('today')
+    expect(byKey.get('chengkao:江西成绩复核')?.kind).toBe('endsToday')
+    expect(byKey.get('chengkao:新疆成绩复核')?.kind).toBe('endsToday')
   })
 })
 

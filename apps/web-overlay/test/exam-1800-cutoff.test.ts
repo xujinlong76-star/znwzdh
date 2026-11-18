@@ -6,10 +6,11 @@
  * 保持日期口径，18:30 仍 7 项）。时刻判定只在渲染层按表查：
  *  - 新增纯函数 todayNodeDeadlineMs(item: TodayNodeItem): number | undefined
  *    （放 src/lib/exam-calendar.ts），查表 key 为 `${exam.id}:${node.label}`，
- *    只覆盖 11-18 的 7 个已核实目标时刻：成考江西成绩查询 09:00、成考新疆
+ *    只覆盖 8 个已核实目标时刻：11-18 的 7 个——成考江西成绩查询 09:00、成考新疆
  *    成绩查询 12:00、成考广东成绩查询 16:20、江苏自考成绩查询 10:00、广东自考成绩查询 15:00、京考报名 18:00、军队文职缴费
  *    18:00（均为北京时间 2026-11-18；shanghaiMidnightMs('2026-11-18') +
- *    小时数算毫秒）。守卫：节点日期须覆盖 2026-11-18（查 node.startISO /
+ *    小时数算毫秒），另加上海自考成绩查询 11-19 10:00（U-163，北京时间
+ *    2026-11-19；shanghaiMidnightMs('2026-11-19') + 600 分钟）。守卫：节点日期须覆盖目标日期（查 node.startISO /
  *    endISO），不以 label 裸匹配；其他节点一律 undefined。
  *  - 新增纯函数 examNodeDeadlineLabel(exam, node, nowMs = Date.now()):
  *    '已截止' | null，用同一张表取目标时刻，nowMs >= 目标时刻返回
@@ -37,7 +38,7 @@
  *    仍 true、nextExamNode 仍返回报名/缴费；注释写明关注/勾选门控仍按
  *    日期口径、午夜才翻，18:00–24:00 可关注是已接受的设计取舍（与既往
  *    所有当日截止节点一致），不在本轮改；
- *  - 新增一节断言 todayNodeDeadlineMs 的七项目标时刻毫秒值、成考三省
+ *  - 新增一节断言 todayNodeDeadlineMs 的八项目标时刻毫秒值、成考三省
  *    边界与日期守卫（表外 / 同 label 不同日期返回 undefined / null）。
  *  - 旧版文件头「ExamNode 新增截止时刻字段」「examNodeStatus 末日按时刻
  *    翻 done」的接口说明已被最终设计推翻，不再保留。
@@ -300,8 +301,8 @@ describe('门控不泄漏：没有 18:00 截止的节点不受影响', () => {
   })
 })
 
-describe('todayNodeDeadlineMs：七项目标时刻与日期守卫', () => {
-  it('七项目标时刻毫秒值：江西 09:00 / 新疆 12:00 / 广东 16:20 / 江苏自考 10:00 / 广东自考 15:00 / 京考报名与文职缴费 18:00（均为北京时间 11-18）', () => {
+describe('todayNodeDeadlineMs：八项目标时刻与日期守卫', () => {
+  it('八项目标时刻毫秒值：江西 09:00 / 新疆 12:00 / 广东 16:20 / 江苏自考 10:00 / 广东自考 15:00 / 京考报名与文职缴费 18:00（均为北京时间 11-18）+ 上海自考 11-19 10:00', () => {
     const byKey = new Map(
       todayNodes(NOV_18_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
@@ -312,6 +313,14 @@ describe('todayNodeDeadlineMs：七项目标时刻与日期守卫', () => {
     expect(todayNodeDeadlineMs(byKey.get('guangdong-zikao:成绩查询')!)).toBe(Date.UTC(2026, 10, 18, 7, 0, 0))
     expect(todayNodeDeadlineMs(byKey.get('jingkao:报名')!)).toBe(Date.UTC(2026, 10, 18, 10, 0, 0))
     expect(todayNodeDeadlineMs(byKey.get('jundui-wenzhi:缴费')!)).toBe(Date.UTC(2026, 10, 18, 10, 0, 0))
+    const byKey19 = new Map(
+      todayNodes(Date.UTC(2026, 10, 19, 0, 0, 0)).map(
+        (t) => [`${t.exam.id}:${t.node.label}`, t] as const,
+      ),
+    )
+    expect(todayNodeDeadlineMs(byKey19.get('shanghai-zikao:成绩查询')!)).toBe(
+      Date.UTC(2026, 10, 19, 2, 0, 0),
+    )
   })
 
   it('成考三省边界：前 1 秒 null、目标时刻「已截止」', () => {
@@ -502,6 +511,73 @@ describe('U-144 广东自考成绩查询时刻门控（todayNodeDeadlineMs / exa
   })
 })
 
+describe('U-163 上海自考成绩查询时刻门控（todayNodeDeadlineMs / examNodeDeadlineLabel）', () => {
+  // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
+  // 各 it 内调用，失败只落本 it。
+  const shanghai = () => EXAMS.find((e) => e.id === 'shanghai-zikao')!
+  const queryNode = () => shanghai().nodes.find((n) => n.label === '成绩查询')!
+  const reviewNode = () => shanghai().nodes.find((n) => n.label === '成绩复核')!
+  /** 2026-11-19 08:00 北京时间（查分首日白天） */
+  const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
+  /** 2026-11-19 09:59:59 北京时间 = UTC 01:59:59（查分边界前 1 秒） */
+  const NOV_19_095959_CST = Date.UTC(2026, 10, 19, 1, 59, 59)
+  /** 2026-11-19 10:00:00 北京时间 = UTC 02:00:00（查分目标时刻） */
+  const NOV_19_100000_CST = Date.UTC(2026, 10, 19, 2, 0, 0)
+  /** 2026-11-19 10:00:01 北京时间 = UTC 02:00:01（查分边界后 1 秒） */
+  const NOV_19_100001_CST = Date.UTC(2026, 10, 19, 2, 0, 1)
+  /** 2026-11-20 08:00 北京时间（复核首日白天） */
+  const NOV_20_0800_CST = Date.UTC(2026, 10, 20, 0, 0, 0)
+
+  it('目标时刻毫秒值：成绩查询 11-19 10:00', () => {
+    const byKey19 = new Map(
+      todayNodes(NOV_19_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey19.get('shanghai-zikao:成绩查询')!)).toBe(
+      Date.UTC(2026, 10, 19, 2, 0, 0),
+    )
+  })
+
+  it('陷阱守卫：目标是上海自考 11-19 10:00，绝不是江苏自考 11-18 10:00（同分钟数、不同日期）；复核无截止时刻、不入表', () => {
+    const byKey19 = new Map(
+      todayNodes(NOV_19_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    const ms = todayNodeDeadlineMs(byKey19.get('shanghai-zikao:成绩查询')!)
+    expect(ms).toBe(Date.UTC(2026, 10, 19, 2, 0, 0))
+    expect(ms).not.toBe(Date.UTC(2026, 10, 18, 2, 0, 0))
+    // 复核 11-20–22 只有日期区间、无截止时刻：表外节点 helper 恒为 null，
+    // 不得编造 17:00 之类时刻
+    expect(examNodeDeadlineLabel(shanghai(), reviewNode(), NOV_20_0800_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(shanghai(), reviewNode(), Date.UTC(2026, 10, 22, 9, 0, 0))).toBeNull()
+  })
+
+  it('查分边界：09:59:59 为 null、10:00:00 整点「已截止」、10:00:01 仍「已截止」', () => {
+    expect(examNodeDeadlineLabel(shanghai(), queryNode(), NOV_19_095959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(shanghai(), queryNode(), NOV_19_100000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(shanghai(), queryNode(), NOV_19_100001_CST)).toBe('已截止')
+    // 查分是多日窗口首日 startsToday：09:59:59 组合文案走状态文案「进行中」，
+    // 不是单日 today 行的「今天」
+    expect(nodeDeadlineDisplayLabel(shanghai(), queryNode(), NOV_19_095959_CST)).toBe('进行中')
+    expect(nodeDeadlineDisplayLabel(shanghai(), queryNode(), NOV_19_100000_CST)).toBe('已截止')
+  })
+
+  it('时刻门控只在渲染层：10:00 时 examNodeStatus 仍按日期口径（查分 11-19 当天 active、复核 11-20 当天 active）', () => {
+    expect(examNodeStatus(queryNode(), NOV_19_100000_CST)).toBe('active')
+    expect(examNodeStatus(queryNode(), NOV_19_100001_CST)).toBe('active')
+    expect(examNodeStatus(reviewNode(), NOV_20_0800_CST)).toBe('active')
+  })
+
+  it('11-19 今日行含上海自考成绩查询（startsToday），11-20 今日行含上海自考成绩复核（startsToday）', () => {
+    const items19 = todayNodes(NOV_19_0800_CST)
+    const query = items19.find((t) => t.exam.id === 'shanghai-zikao')
+    expect(query?.node.label).toBe('成绩查询')
+    expect(query?.kind).toBe('startsToday')
+    const items20 = todayNodes(NOV_20_0800_CST)
+    const review = items20.find((t) => t.exam.id === 'shanghai-zikao')
+    expect(review?.node.label).toBe('成绩复核')
+    expect(review?.kind).toBe('startsToday')
+  })
+})
+
 describe('U-158 成考三省复核 11-20 时刻门控（todayNodeDeadlineMs / examNodeDeadlineLabel）', () => {
   // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
   // 各 it 内调用，失败只落本 it。
@@ -592,9 +668,9 @@ describe('U-158 成考三省复核 11-20 时刻门控（todayNodeDeadlineMs / ex
     expect(examNodeDeadlineLabel(chengkao, jxReview(), NOV_19_0800_CST)).toBeNull()
   })
 
-  it('11-20 今日行 kind 分流：广东 today、新疆/江西 endsToday（与江苏复核 endsToday 同表）；今日行仍 4 项（成员不变）', () => {
+  it('11-20 今日行 kind 分流：广东 today、新疆/江西 endsToday（与江苏复核 endsToday 同表）、上海自考成绩复核 startsToday；今日行 5 项', () => {
     const items20 = todayNodes(NOV_20_0800_CST)
-    expect(items20).toHaveLength(4)
+    expect(items20).toHaveLength(5)
     const byKey = new Map(
       items20.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
@@ -602,6 +678,7 @@ describe('U-158 成考三省复核 11-20 时刻门控（todayNodeDeadlineMs / ex
     expect(byKey.get('chengkao:新疆成绩复核')?.kind).toBe('endsToday')
     expect(byKey.get('chengkao:江西成绩复核')?.kind).toBe('endsToday')
     expect(byKey.get('jiangsu-zikao:成绩复核')?.kind).toBe('endsToday')
+    expect(byKey.get('shanghai-zikao:成绩复核')?.kind).toBe('startsToday')
   })
 
   it('门控取舍回归：11-20 17:30 三节点仍可办（isNodeActionable true）、下一步仍是本场节点（午夜才翻）', () => {

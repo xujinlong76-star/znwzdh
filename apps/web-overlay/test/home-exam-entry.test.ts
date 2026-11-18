@@ -2,7 +2,7 @@
  * 首页「考试季」运营条（HomeExamStrip）红线测试：
  *  - 最近一场与「下一步」节点只按 exam-calendar 事实源算，不硬编码日期；
  *  - 多日考试末日仍算最近一场（考研 12-20 当天条带仍在）；
- *  - 十场全结束时渲染静态空态条带（保留考试日历入口），不再整条消失；
+ *  - 十一场全结束时渲染静态空态条带（保留考试日历入口），不再整条消失；
  *    空态不挂倒计时岛、不挂客户端视图、不读存储、不含未公布日期；
  *  - 倒计时走 ExamCountdown 客户端岛，服务端 JSX 里不直出天数；
  *  - 条内常驻链接唯一指向 /exam；准考证打印提醒期（11-22–11-29 15:00）
@@ -43,11 +43,11 @@ const DEC_13_0800_CST = Date.UTC(2026, 11, 13, 0, 0, 0)
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研第二天，仍在进行中 */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：十场全过 */
+/** 2026-12-21 08:00 北京时间：十一场全过 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('nearestExam（最近一场）', () => {
-  it('11-13 最近是国考，11-30 最近是教资面试，12-13 最近是军队文职，12-20 考研末日仍是考研，12-21 十场全过返回 undefined', () => {
+  it('11-13 最近是国考，11-30 最近是教资面试，12-13 最近是军队文职，12-20 考研末日仍是考研，12-21 十一场全过返回 undefined', () => {
     expect(nearestExam(NOV_13_0800_CST)?.id).toBe('guokao')
     // 教资面试首考日 12-05 与京考同日、且在 EXAMS 数组中排在京考之前，
     // stable sort 平局数组在前者胜出，故国考过后最近场是教资面试而非京考
@@ -159,7 +159,7 @@ describe('首页考试条源码守卫', () => {
     expect(strip).not.toContain('2026-12-19')
   })
 
-  it('服务端外壳保持服务端组件：十场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
+  it('服务端外壳保持服务端组件：十一场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
     expect(strip).not.toContain("'use client'")
     expect(strip).not.toContain('if (!nearest) return null')
     expect(strip).toContain('if (!nearest) return <HomeExamStripEmptyState />')

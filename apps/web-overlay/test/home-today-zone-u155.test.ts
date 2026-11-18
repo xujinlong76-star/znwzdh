@@ -46,7 +46,7 @@ afterAll(() => {
 
 /** 2026-11-18 08:00 北京时间：今日行 7 项，其中 2 项带 url（京考报名、广东自考成绩查询） */
 const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)
-/** 2026-11-19 08:00 北京时间：今日行只剩江西成绩复核 1 项 */
+/** 2026-11-19 08:00 北京时间：今日行江西成绩复核 + 上海自考成绩查询 2 项 */
 const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
 /** 2026-11-19 09:30 北京时间：江西复核开窗后半小时 */
 const NOV_19_0930_CST = Date.UTC(2026, 10, 19, 1, 30, 0)
@@ -65,17 +65,20 @@ const expectPlainTextRow = (html: string, displayLabel: string) => {
   expect(html).not.toMatch(new RegExp(`<a[^>]*>[^<]*${displayLabel}`))
 }
 
-describe('U-155：11-19 今日行只有江西成绩复核 1 项，带已核实官方 URL', () => {
-  it('todayNodes(11-19 08:00) 长度 1：成考·江西成绩复核，kind startsToday，url 为公告原文所载', () => {
+describe('U-155：11-19 今日行 2 项（江西成绩复核带已核实官方 URL + 上海自考成绩查询纯文本）', () => {
+  it('todayNodes(11-19 08:00) 长度 2：成考·江西成绩复核（startsToday，带 url）+ 上海自考·成绩查询（startsToday，无 url）', () => {
     const items = todayNodes(NOV_19_0800_CST)
-    expect(items).toHaveLength(1)
-    const [item] = items
-    expect(item.exam.id).toBe('chengkao')
-    expect(item.exam.shortName).toBe('成考')
-    expect(item.node.label).toBe('江西成绩复核')
-    expect(item.kind).toBe('startsToday')
-    expect(item.node.url).toBe('https://jdyw.jxeea.cn/')
-    expect(item.node.url).toBe(JIANGXI_CHENGKAO_REVIEW_URL)
+    expect(items).toHaveLength(2)
+    const byKey = new Map(items.map((i) => [`${i.exam.id}:${i.node.label}`, i]))
+    const jiangxi = byKey.get('chengkao:江西成绩复核')!
+    expect(jiangxi.exam.shortName).toBe('成考')
+    expect(jiangxi.kind).toBe('startsToday')
+    expect(jiangxi.node.url).toBe('https://jdyw.jxeea.cn/')
+    expect(jiangxi.node.url).toBe(JIANGXI_CHENGKAO_REVIEW_URL)
+    const shanghai = byKey.get('shanghai-zikao:成绩查询')!
+    expect(shanghai.exam.shortName).toBe('上海自考')
+    expect(shanghai.kind).toBe('startsToday')
+    expect(shanghai.node.url).toBeUndefined()
   })
 
   it('11-19 09:30 渲染：复核行是直达链接（href 含末尾斜杠），aria-label 用官方入口兜底文案', () => {
@@ -95,9 +98,9 @@ describe('U-155：11-19 今日行只有江西成绩复核 1 项，带已核实�
     expect(hrefs.filter((h) => h === '/exam')).toHaveLength(2)
   })
 
-  it('11-19 接续区 3 项均无 URL：接续行无链接', () => {
+  it('11-19 接续区 4 项均无 URL：接续行无链接', () => {
     const ups = todayFollowUpNodes(NOV_19_0800_CST)
-    expect(ups).toHaveLength(3)
+    expect(ups).toHaveLength(4)
     for (const { node } of ups) {
       expect(node.url).toBeUndefined()
     }

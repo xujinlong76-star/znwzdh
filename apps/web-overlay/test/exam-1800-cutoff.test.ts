@@ -530,6 +530,19 @@ describe('U-163 上海自考成绩查询时刻门控（todayNodeDeadlineMs / exa
     expect(todayNodeDeadlineMs(byKey19.get('shanghai-zikao:成绩查询')!)).toBeUndefined()
   })
 
+  it('U-136 守卫：徽章改动不得误伤 PEAK 表——上海查分仍不入表、江西复核目标仍为 11-20 17:00', () => {
+    const byKey19 = new Map(
+      todayNodes(NOV_19_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey19.get('shanghai-zikao:成绩查询')!)).toBeUndefined()
+    const byKey20 = new Map(
+      todayNodes(NOV_20_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey20.get('chengkao:江西成绩复核')!)).toBe(
+      Date.UTC(2026, 10, 20, 9, 0, 0),
+    )
+  })
+
   it('表外守卫：查分与复核均不入表，helper 恒为 null（复核无截止时刻，不得编造）', () => {
     expect(examNodeDeadlineLabel(shanghai(), queryNode(), NOV_19_0800_CST)).toBeNull()
     expect(examNodeDeadlineLabel(shanghai(), queryNode(), NOV_19_100000_CST)).toBeNull()

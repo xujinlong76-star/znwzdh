@@ -29,6 +29,8 @@ import { HomeTodayCountdown } from '@/components/home-today-countdown'
  *     不挂空态占位；节点行有已核实官方 URL 的挂行内直达链接（U-31 配方），
  *     无 URL 的行仍是纯文本；唯一站内 CTA 只指 /exam；
  *     窗口末日节点只写「今日截止」，时点只以节点 detail 原文呈现；
+ *     窗口首日节点写「今日开始」（emerald），与末日对称；chip 语义仍是
+ *     距窗口关闭时刻（见 chip 注释）；
  *     接续节点收进展开区，同样取自节点数据、同规则挂链）；
  *   - 今日短剧（drama-featured 清单首部 1 部，标题旁如实标 linkNote，
  *     榜单页 / 报道页 / 百科页不是正片，不写成直达正片）；
@@ -135,6 +137,8 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                       // （查分节点，「距开通」语义）过期后 chip 直接消失
                       // （hideWhenPassed），不显示 endedLabel 缺省文案；
                       // endsToday 的行过期仍显示 endedLabel 缺省文案。
+                      // startsToday 行的 chip（如江西复核）目标同样是窗口关闭时刻，
+                      // 不是开始时刻。
                       const deadlineMs = todayNodeDeadlineMs({ exam, node, kind })
                       return (
                         <li
@@ -145,6 +149,10 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                           {kind === 'endsToday' ? (
                             <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
                               今日截止
+                            </span>
+                          ) : kind === 'startsToday' ? (
+                            <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                              今日开始
                             </span>
                           ) : null}
                           {deadlineMs !== undefined ? (

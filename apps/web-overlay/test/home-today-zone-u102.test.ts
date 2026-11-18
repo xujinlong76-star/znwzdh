@@ -14,10 +14,14 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import {
+  examNodeDeadlineLabel,
   GUOKAO_ADMISSION_URL,
   todayFollowUpNodes,
+  todayNodeDeadlineMs,
   todayNodes,
 } from '../src/lib/exam-calendar'
+import { formatRemaining } from '../src/components/home-today-countdown'
+import { computeHomeTodayBadge } from '../src/lib/home-today-summary'
 import { HomeTodayZone } from '../src/components/home-today-zone'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -175,6 +179,120 @@ describe('A9：文案无时刻级状态断言，末日节点只写「今日截�
     for (const banned of ['已可查', '未开始', '已截止', '已结束']) {
       expect(zone).not.toContain(banned)
     }
+  })
+})
+
+describe('U-136：startsToday 行补「今日开始」徽章（徽章 only，不补 chip）', () => {
+  /** 2026-11-19 08:00 北京时间：两窗口均未开 */
+  const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
+  /** 2026-11-19 10:30 北京时间：两窗口均已开 */
+  const NOV_19_1030_CST = Date.UTC(2026, 10, 19, 2, 30, 0)
+  /** 2026-11-19 18:30 北京时间：18:00 门控已过 */
+  const NOV_19_1830_CST = Date.UTC(2026, 10, 19, 10, 30, 0)
+  /** 2026-11-20 08:00 北京时间：江西复核末日、上海复核首日 */
+  const NOV_20_0800_CST = Date.UTC(2026, 10, 20, 0, 0, 0)
+  /** 2026-11-20 17:30 北京时间：江西复核 17:00 截止后半小时 */
+  const NOV_20_1730_CST = Date.UTC(2026, 10, 20, 9, 30, 0)
+
+  /** 取含指定 label 的 <li> 块（今日节点行内无嵌套 <li>，非贪婪匹配即整行）。 */
+  const liFor = (html: string, label: string): string => {
+    const blocks = [...html.matchAll(/<li[\s\S]*?<\/li>/g)].map((m) => m[0])
+    const hit = blocks.find((b) => b.includes(label))
+    expect(hit).toBeDefined()
+    return hit!
+  }
+
+  /** 江西复核行在某时刻的 chip 目标毫秒值（PEAK 表 11-20 17:00）。 */
+  const jxReviewDeadlineMs = (nowMs: number) => {
+    const item = todayNodes(nowMs).find(
+      (t) => t.exam.id === 'chengkao' && t.node.label === '江西成绩复核',
+    )!
+    return todayNodeDeadlineMs(item)!
+  }
+
+  it('11-19 08:00：两行均有 emerald「今日开始」徽章，全页无「今日截止」；江西行有 chip、上海行无 chip', () => {
+    const items = todayNodes(NOV_19_0800_CST)
+    expect(items).toHaveLength(2)
+    const html = unesc(renderZone(NOV_19_0800_CST))
+    expect(html.match(/今日开始/g)?.length).toBe(2)
+    expect(html).not.toContain('今日截止')
+    const jx = liFor(html, '成考 · 江西成绩复核')
+    expect(jx).toContain('今日开始')
+    expect(jx).toContain('bg-emerald-500/10')
+    expect(jx).toContain('text-emerald-700')
+    expect(jx).toContain('role="timer"')
+    const sh = liFor(html, '上海自考 · 成绩查询')
+    expect(sh).toContain('今日开始')
+    expect(sh).toContain('bg-emerald-500/10')
+    expect(sh).not.toContain('role="timer"')
+    // chip 读数（值级契约，SSR 只出「倒计时」占位，故用 formatRemaining 锁定）：
+    // 08:00 距 11-20 17:00 剩 33 小时 0 分
+    expect(formatRemaining(jxReviewDeadlineMs(NOV_19_0800_CST), NOV_19_0800_CST)).toBe(
+      '剩33小时0分',
+    )
+  })
+
+  it('11-19 10:30（两窗口均已开）：徽章不变，无 chip 变化、无「已截止」', () => {
+    const html = unesc(renderZone(NOV_19_1030_CST))
+    expect(html.match(/今日开始/g)?.length).toBe(2)
+    expect(html).not.toContain('今日截止')
+    expect(html).not.toContain('已截止')
+    expect(liFor(html, '成考 · 江西成绩复核')).toContain('今日开始')
+    expect(liFor(html, '上海自考 · 成绩查询')).toContain('今日开始')
+    expect(formatRemaining(jxReviewDeadlineMs(NOV_19_1030_CST), NOV_19_1030_CST)).toBe(
+      '剩30小时30分',
+    )
+  })
+
+  it('11-19 18:30（18:00 门控已过）：两行仍为「今日开始」，全页不含「已截止」；urgentCount 仍为 0', () => {
+    const html = unesc(renderZone(NOV_19_1830_CST))
+    expect(html.match(/今日开始/g)?.length).toBe(2)
+    expect(html).not.toContain('今日截止')
+    expect(html).not.toContain('已截止')
+    expect(liFor(html, '成考 · 江西成绩复核')).toContain('今日开始')
+    expect(liFor(html, '上海自考 · 成绩查询')).toContain('今日开始')
+    expect(formatRemaining(jxReviewDeadlineMs(NOV_19_1830_CST), NOV_19_1830_CST)).toBe(
+      '剩22小时30分',
+    )
+    // startsToday 不计紧急数（home-today-summary.ts 不动）
+    const badge = computeHomeTodayBadge(NOV_19_1830_CST)
+    expect(badge.todayCount).toBe(2)
+    expect(badge.urgentCount).toBe(0)
+  })
+
+  it('11-20 回归：江西行变 amber「今日截止」+ chip，上海复核行新入今日行带「今日开始」无 chip', () => {
+    const items = todayNodes(NOV_20_0800_CST)
+    expect(items).toHaveLength(5)
+    const html = unesc(renderZone(NOV_20_0800_CST))
+    const jx = liFor(html, '成考 · 江西成绩复核')
+    expect(jx).toContain('今日截止')
+    expect(jx).toContain('bg-amber-500/10')
+    expect(jx).toContain('role="timer"')
+    const shReview = liFor(html, '上海自考 · 成绩复核')
+    expect(shReview).toContain('今日开始')
+    expect(shReview).toContain('bg-emerald-500/10')
+    expect(shReview).not.toContain('role="timer"')
+  })
+
+  it('11-20 17:30：江西 chip 读「已截止」（helper 层；SSR 只出「倒计时」占位，不直接断言 SSR 文案）', () => {
+    const chengkao = todayNodes(NOV_20_1730_CST).find((t) => t.exam.id === 'chengkao')!.exam
+    const jxReview = chengkao.nodes.find((n) => n.label === '江西成绩复核')!
+    expect(todayNodeDeadlineMs({ exam: chengkao, node: jxReview, kind: 'endsToday' })).toBe(
+      Date.UTC(2026, 10, 20, 9, 0, 0),
+    )
+    expect(formatRemaining(Date.UTC(2026, 10, 20, 9, 0, 0), NOV_20_1730_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, jxReview, NOV_20_1730_CST)).toBe('已截止')
+  })
+
+  it('390px 不溢出（类守卫，SSR + 源码双重）：徽章 shrink-0、chip whitespace-nowrap、li flex-wrap、detail basis-full', () => {
+    const zone = read('src/components/home-today-zone.tsx')
+    expect(zone).toContain('shrink-0 rounded-full bg-emerald-500/10')
+    expect(zone).toContain('className="flex flex-wrap items-baseline gap-x-2 text-sm"')
+    expect(zone).toContain('min-w-0 flex-1 basis-full text-muted-foreground')
+    const countdown = read('src/components/home-today-countdown.tsx')
+    expect(countdown).toContain('whitespace-nowrap')
+    const html = unesc(renderZone(NOV_19_0800_CST))
+    expect(html).toContain('bg-emerald-500/10')
   })
 })
 

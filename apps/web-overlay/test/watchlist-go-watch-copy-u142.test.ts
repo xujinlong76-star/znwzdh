@@ -6,13 +6,17 @@
  * 「去看新一集」，谎报能直达正片。修法（既定）：文案先行，不改链目标——
  * 4 处一律改为「去{平台}首页搜」诚实表述；drama-content.tsx:273 的
  * title「在{平台}站内打开」同样是事实错误，顺带改掉。
- * 例外（M4 溢出修复，768px 周排播窄格按钮超宽）：page.tsx:536 周排播区
+ * 例外（M4 溢出修复，768px 周排播窄格按钮超宽）：page.tsx:537 周排播区
  * 可见文案缩为「去{平台}搜」，title 属性补全完整式
  * 「去${平台}首页搜《${剧名}》」；其余 3 处仍为长式可见文案。
+ * M10 截断形态修复：:537 可见文案包一层
+ * `<span className="min-w-0 truncate">`，truncate 从锚点移到该 span 上
+ * （truncate 落在 inline-flex 锚点自身上不产生省略号、末字拦腰切断；
+ * 文本匿名 flex 子项 min-width:auto 把外链图标顶出可视盒）。
  *
- * 断言范围（coordinator 裁决，HEAD 603bbec2 实测行号）：
- *   page.tsx 文案行 :239 EntryRow、:486 日更区、:536 周排播区、
- *   :618 待看区（原文案「去看新一集」）；链行 :234/:481/:531/:613；
+ * 断言范围（coordinator 裁决，HEAD 603bbec2 实测行号；M10 按当前源码复核）：
+ *   page.tsx 文案行 :239 EntryRow、:486 日更区、:537 周排播区、
+ *   :619 待看区（原文案「去看新一集」）；链行 :234/:481/:531/:614；
  *   drama-content.tsx:273 title。
  * 不断言（只扫不碰，记残留）：home-drama-cinema.tsx:238 同款
  * 「在{平台}站内打开」title，本轮守范围不改，留下一轮候选。
@@ -39,11 +43,11 @@ function playAnchors(src: string): string[] {
   return [...src.matchAll(re)].map((m) => m[0])
 }
 
-describe('T1：3 处可见文案为「去{平台}首页搜」，:536 周排播区可见短式 + title 完整式', () => {
-  it('3 个锚点可见文案为长式；:536 锚点可见文案为短式、title 含完整式；无裸「去看」', () => {
+describe('T1：3 处可见文案为「去{平台}首页搜」，:537 周排播区可见短式 + title 完整式', () => {
+  it('3 个锚点可见文案为长式；:537 锚点可见文案为短式、title 含完整式；无裸「去看」', () => {
     const anchors = playAnchors(page())
     expect(anchors).toHaveLength(4)
-    // :536 周排播区锚点唯一特征：图标 h-3 w-3，其余 3 处为 h-3.5 w-3.5。
+    // :537 周排播区锚点唯一特征：图标 h-3 w-3，其余 3 处为 h-3.5 w-3.5。
     const weekly = anchors.filter((a) => a.includes('h-3 w-3'))
     expect(weekly).toHaveLength(1)
     for (const a of anchors.filter((x) => !x.includes('h-3 w-3'))) {
@@ -54,8 +58,11 @@ describe('T1：3 处可见文案为「去{平台}首页搜」，:536 周排播�
       expect(a).not.toMatch(/去看(?!看)/)
       expect(a).not.toContain('去看新一集')
     }
-    // :536：可见文案缩为短式（溢出修复），title 补全完整式。
-    expect(weekly[0]).toMatch(/去\{[^}]*platformTitle\}搜 <ExternalLink/)
+    // :537：可见文案缩为短式（溢出修复），title 补全完整式。
+    // M10：短式文案包在 <span className="min-w-0 truncate"> 内，truncate 不在锚点上；
+    // 「去{…}搜 <ExternalLink」字面相邻已不存在，改断言 span 结构而非改回源码。
+    expect(weekly[0]).toMatch(/<span className="min-w-0 truncate">去\{[^}]*platformTitle\}搜<\/span> <ExternalLink/)
+    expect(weekly[0]).not.toMatch(/className="inline-flex min-w-0 items-center gap-1 truncate/)
     expect(weekly[0]).not.toMatch(/去\{[^}]*platformTitle\}首页搜/)
     expect(weekly[0]).toMatch(/title=\{`去\$\{[^}]*platformTitle\}首页搜《\$\{[^}]*title\}》`\}/)
     expect(weekly[0]).not.toMatch(/去看(?!看)/)
@@ -64,16 +71,19 @@ describe('T1：3 处可见文案为「去{平台}首页搜」，:536 周排播�
 })
 
 describe('T2：全量计数（防漏网/防多改）', () => {
-  it('「首页搜」恰好 4 次（3 处可见文案 + 1 处 :536 title）、短式恰好 1 次、裸「去看」0 次', () => {
+  it('「首页搜」恰好 4 次（3 处可见文案 + 1 处 :537 title）、短式恰好 1 次、裸「去看」0 次', () => {
     const src = page()
     // 计数口径：/首页搜/ 按源码全文数，title 属性文本本身也含「首页搜」，
-    // 故 4 = 3 处可见长式文案（:239/:486/:618）+ 1 处 :536 title 完整式；
+    // 故 4 = 3 处可见长式文案（:239/:486/:619）+ 1 处 :537 title 完整式；
     // 可见文案口径（JSX 插值去{…}首页搜）只数 3 处，title 口径（模板字面量
     // 去${…}首页搜《${…}》）只数 1 处。
+    // M10：:537 短式文案包在 span 内，计数口径改为
+    // 「去{…}搜</span> <ExternalLink」，仍恰好 1 次；其余计数不受影响。
     expect(src.match(/首页搜/g)?.length).toBe(4)
     expect(src.match(/去\{[^}]*platformTitle\}首页搜/g)?.length).toBe(3)
     expect(src.match(/去\$\{[^}]*platformTitle\}首页搜《\$\{[^}]*title\}》/g)?.length).toBe(1)
-    expect(src.match(/去\{[^}]*platformTitle\}搜 <ExternalLink/g)?.length).toBe(1)
+    expect(src.match(/去\{[^}]*platformTitle\}搜<\/span> <ExternalLink/g)?.length).toBe(1)
+    expect(src.match(/去\{[^}]*platformTitle\}搜 <ExternalLink/g)?.length ?? 0).toBe(0)
     expect(src.match(/去看 <ExternalLink/g)?.length ?? 0).toBe(0)
     expect(src).not.toContain('去看新一集')
   })

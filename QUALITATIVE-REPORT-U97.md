@@ -88,7 +88,16 @@
   但失败用例集合与分片红完全一致，无其他新增失败用例指向本项之外）。
 - ai-chat 超时在 2f1dbfc1 上未再现，疑为 flake，不归本项，不修。
 
-## 9. 本地复现与验证（待补：node_modules 拷贝完成后）
+## 9. 本地复现与验证
 
-- 复现：`pnpm exec vitest run apps/web-overlay/test/site-favicon-iconbatch-b2a.test.ts apps/web-overlay/test/site-favicon-iconbatch-b1b.test.ts apps/web-overlay/test/site-favicon-iconbatch-b2b.test.ts apps/web-overlay/test/site-favicon-iconbatch-c1.test.ts`
-- 修复后：同命令全绿 + `node scripts/check-frontend-typecheck.mjs` 0 错。
+- 复现（修前）：`./node_modules/.bin/vitest run apps/web/test/site-favicon-iconbatch-{b2a,b1b,b2b,c1}.test.ts`
+  → 3 文件失败、**5 failed / 70 passed（75）**，失败用例与 CI annotations 的 5 处逐字一致，
+  c1 全绿；日志 `/tmp/u97-repro.log`。复现前须 `node scripts/generate-web-mirror.mjs`
+  把 overlay 测试同步进 `apps/web/test`（根 vitest include 不含 `apps/web-overlay/test`），
+  并补拷 `apps/web/node_modules`（否则 `react/jsx-dev-runtime` 找不到）。
+- 修复后：同命令 **75/75 全绿**（日志 `/tmp/u97-fixed.log`）；全部 24 个
+  `site-favicon-iconbatch*.test.ts` **247/247 全绿**（日志 `/tmp/u97-all-iconbatch.log`）。
+- 前端 typecheck：`node scripts/check-frontend-typecheck.mjs` **0 错**（日志
+  `/tmp/u97-typecheck2.log`）。首跑 2 错（`@navhub/core` / `pinyin-pro` 找不到）
+  为包级 `node_modules` 缺失的环境假报，与本次改动无关；补拷 `packages/*` 与
+  `apps/{api,mcp}` 的 `node_modules` 后 0 错。

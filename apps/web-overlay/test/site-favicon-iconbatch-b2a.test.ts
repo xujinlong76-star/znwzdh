@@ -40,10 +40,12 @@ const CASES: Case[] = [
   { url: 'https://github.com/langchain-ai/langgraph', title: 'LangGraph', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/langgraph.svg' },
   { url: 'https://github.com/QwenLM/Qwen3', title: 'Qwen 3', expected: '/brand-icons/qwen3.png' },
   { url: 'https://github.com/QwenLM/Qwen3', title: 'Qwen 3', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/qwen3.png' },
-  // R2 不受影响断言：GitHub 主站与 Trending 的标题不含 langgraph / qwen，
-  // 改动前返回值为空串（Python 复现 resolveSiteIcon，HEAD 803efd91 实测），改动后仍为空串。
-  { url: 'https://github.com', title: 'GitHub', customIcon: 'https://github.com/favicon.ico', expected: '' },
-  { url: 'https://github.com/trending', title: 'GitHub Trending', customIcon: 'https://github.com/favicon.ico', expected: '' },
+  // R2 不受影响断言（C1 更新）：GitHub 主站与 Trending 的标题不含 langgraph / qwen，
+  // B2a 批时返回值为空串（Python 复现 resolveSiteIcon，HEAD 803efd91 实测）；
+  // C1 合入后两站走 github 标题规则，期望改为本地路径（C4 为 Trending 加
+  // 'trending' 规则时再同步改期望）。
+  { url: 'https://github.com', title: 'GitHub', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/github.svg' },
+  { url: 'https://github.com/trending', title: 'GitHub Trending', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/github.svg' },
 ]
 
 const LOCAL_ASSETS = ['beatoven.png', 'sudowrite.png', 'qwen3.png', 'langgraph.svg']

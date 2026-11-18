@@ -18,7 +18,9 @@ import { LOCAL_LOGO_MAP, resolveSiteIcon } from '../src/components/site-favicon'
  * 含 'copilot' 仅 GitHub Copilot 一站（navigation.json 与
  * navigation-default.json 均已核对）。本测试用“未波及”断言把 7 站中的
  * GitHub 主站、Trending、LangGraph、Qwen 3 钉死（vLLM 同理走组织头像分支，
- * 不在本批断言内，见基线 R2 波及面表）。
+ * 不在本批断言内，见基线 R2 波及面表）。C1 更新（2026-11-18）：GitHub /
+ * GitHub Trending 随 C1 合入后由 github 标题规则命中、期望改为本地路径，
+ * “未波及”自此仅指 cline / copilot 规则未误伤（见 R2 未波及 it）。
  *
  * 来源（全部 curl 重新验证，200 ＋ image MIME ＋ 魔数 ＋ 字节与研究笔记逐个相符，
  * 偏差 >0 即停；研究笔记：icon-b-github-sources-2026-11-17.md）：
@@ -62,11 +64,13 @@ describe('resolveSiteIcon（图标修复 B 类第 1 批 b1b）', () => {
     expect(resolveSiteIcon(url, title)).toBe(expected)
   })
 
-  it('R2 未波及：github.com 主站 / Trending 不被标题规则截胡；LangGraph / Qwen 3 随 B2a 合入后走本地路径', () => {
-    // map 里无 'github.com' 键（见下断言）；以下两站的返回值与改动前一致，
-    // 证明 cline / copilot 标题规则没有误伤同 hostname 的其他站。
-    expect(resolveSiteIcon('https://github.com', 'GitHub')).toBe('')
-    expect(resolveSiteIcon('https://github.com/trending', 'GitHub Trending')).toBe('')
+  it('R2 未波及（C1 更新）：GitHub / Trending 随 C1 走 github 标题规则；LangGraph / Qwen 3 仍走各自本地路径', () => {
+    // map 里无 'github.com' 键（见下断言）；cline / copilot 标题规则没有误伤
+    // 同 hostname 的其他站。GitHub / GitHub Trending 在 B1b 落盘时返回空串，
+    // C1 合入后由 github 标题规则命中，期望改为本地路径（C4 为 Trending 加
+    // 'trending' 规则时再同步改期望）。
+    expect(resolveSiteIcon('https://github.com', 'GitHub')).toBe('/brand-icons/github.svg')
+    expect(resolveSiteIcon('https://github.com/trending', 'GitHub Trending')).toBe('/brand-icons/github.svg')
     // LangGraph / Qwen 3 的期望值随 B2a 合入后更新（B2a 标题规则，基线 R2
     // 补充裁决）：B1b 落盘时这两站仍走组织头像，B2 合入后改为本地路径。
     expect(resolveSiteIcon('https://github.com/langchain-ai/langgraph', 'LangGraph')).toBe(

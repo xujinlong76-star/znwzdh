@@ -320,7 +320,7 @@ describe('教资面试节点（2026-11-18 01:22 轮）', () => {
       ['面试', '2026-12-05', '2026-12-06'],
     ])
     // 准考证挂中小学教师资格考试网统一入口；面试节点本身无单独入口，
-    // 不重复挂同一链接（跟踪岛会把带 url 的节点都渲染成「去官网打印准考证」）。
+    // 不重复挂同一链接（跟踪岛按节点类型映射链接文案：准考证类节点渲染「去官网打印准考证」，报名/笔试公告/成绩复核三类另有文案，见 U-124）。
     expect(JIAOSHI_MIANSHI_URL).toBe('https://ntce.neea.edu.cn')
     const byLabel = new Map(jiaoshi.nodes.map((n) => [n.label, n]))
     expect(byLabel.get('准考证打印')?.url).toBe(JIAOSHI_MIANSHI_URL)

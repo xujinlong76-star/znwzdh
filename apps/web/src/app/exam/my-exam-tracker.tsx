@@ -1,0 +1,164 @@
+'use client'
+
+import { ArrowUpRight } from 'lucide-react'
+import { useMyExams } from '@/hooks/useMyExams'
+import {
+  EXAM_NODE_STATUS_LABEL,
+  examNodeStatus,
+  examStatus,
+  hasActionableNodes,
+  type ExamInfo,
+} from '@/lib/exam-calendar'
+import {
+  checkedCount,
+  isFollowed,
+} from '@/lib/my-exams'
+import { safeHref } from '@/lib/safe-url'
+
+const NODE_DOT_CLASS: Record<string, string> = {
+  done: 'bg-muted-foreground/40',
+  today: 'bg-emerald-500',
+  active: 'bg-emerald-500',
+  upcoming: 'bg-sky-500/60',
+  estimated: 'bg-amber-500/70',
+}
+
+/**
+ * 「我的考试」关注 + 考前清单客户端岛（/exam 每场卡片内）。
+ *
+ * 模式照抄 ExamCountdown：挂载前渲染与服务端一致的未关注视图（只读
+ * 时间轴 + 「关注」按钮），挂载后才读 localStorage——关注与勾选只存在
+ * 本机，SSR 与水合结果不会打架；存储不可用（满了或被禁）时静默放弃，
+ * 不阻塞用户看时间轴。
+ *
+ * 状态走共享 hook useMyExams：八场卡片与首页条带共用同一份模块级快照，
+ * 写操作读共享现态、不读本实例闭包里的旧快照——交错点关注/勾选不再
+ * 互相覆盖；存储读坏时 hook 拒写并把原因交回界面。
+ */
+/**
+ * U-124：带 url 节点的链接文案按节点类型映射（只改文案，不改数据/URL）。
+ *
+ * 默认是准考证打印类（13 处）；3 处例外按 node.label 映射：京考「报名」
+ * 是报名系统入口、京考「公共科目笔试」挂的是首都之窗公告页（非办事入口）、
+ * 「江西成绩复核」走报名系统申请。ExamNode 无类型字段，映射键只能是 label；
+ * 映射只在 node.url 分支内调用，国考/省考同名「公共科目笔试」节点无 url、
+ * 不渲染链接，误伤不到。可见文案与 aria-label 同构，只换中间的动作词。
+ */
+function nodeLinkCopy(label: string): { text: string; ariaAction: string } {
+  if (label === '报名') return { text: '去官网报名', ariaAction: '官方报名' }
+  if (label === '公共科目笔试') return { text: '查看官方公告', ariaAction: '官方公告' }
+  if (label === '江西成绩复核') return { text: '去报名系统申请复核', ariaAction: '报名系统申请复核' }
+  return { text: '去官网打印准考证', ariaAction: '官方打印' }
+}
+
+export function MyExamTracker({ exam }: { exam: ExamInfo }) {
+  const { state, storageBlocked, toggleFollow, toggleNodeCheck } = useMyExams()
+
+  const followed = state !== null && isFollowed(state, exam.id)
+  const ended = examStatus(exam) === 'ended'
+  // R1（2026-11-17）：统考已过但节点仍可办时（成考 11-18 的成绩查询），
+  // 卡片行文不写裸「已结束」，改按统考 scoped 文案并指向下方节点；
+  // 节点全过后（11-30 起）仍是「本场考试已结束」，行为不变。
+  // U-106：禁用口径与纯规则层一致——统考已过但节点仍可办
+  // 时未关注用户仍可关注、已关注可继续勾选：按钮 disabled 是 ended &&
+  // !hasPendingNodes && !followed（已关注者恒可取消关注），复选框是
+  // ended && !hasPendingNodes；节点全过后恢复禁用。
+  const hasPendingNodes = ended && hasActionableNodes(exam)
+  const done = state === null ? 0 : checkedCount(state, exam)
+  const checkedLabels = state === null ? [] : (state.checked[exam.id] ?? [])
+
+  function handleFollow() {
+    if (state === null) return
+    toggleFollow(exam.id)
+  }
+
+  function handleCheck(nodeLabel: string) {
+    if (state === null) return
+    toggleNodeCheck(exam.id, nodeLabel)
+  }
+
+  return (
+    <div className="mt-4 border-t border-border/60 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          {followed
+            ? `我的考试 · 已完成 ${done} / ${exam.nodes.length}`
+            : ended
+              ? hasPendingNodes
+                ? '统考已结束，下方节点仍可办理'
+                : '本场考试已结束'
+              : '关注后可逐项勾选考前清单'}
+        </p>
+        <button
+          type="button"
+          onClick={handleFollow}
+          disabled={storageBlocked !== null || (ended && !hasPendingNodes && !followed)}
+          aria-pressed={followed}
+          aria-label={followed ? `取消关注${exam.shortName}` : ended && !hasPendingNodes ? `${exam.shortName}已结束` : `关注${exam.shortName}`}
+          className="inline-flex min-h-11 items-center rounded-full border border-sky-500/25 bg-sky-500/5 px-3 py-1 text-sm font-medium text-sky-700 dark:text-sky-400"
+        >
+          {followed ? '已关注' : ended && !hasPendingNodes ? '已结束' : '关注这场考试'}
+        </button>
+      </div>
+      {storageBlocked ? (
+        <p role="alert" className="mt-2 text-sm leading-relaxed text-amber-700 dark:text-amber-400">
+          {storageBlocked}
+        </p>
+      ) : null}
+      <ol className="mt-3 space-y-2.5">
+        {exam.nodes.map((node) => {
+          const status = examNodeStatus(node)
+          const checked = followed && checkedLabels.includes(node.label)
+          const linkCopy = nodeLinkCopy(node.label)
+          return (
+            <li key={node.label} className="flex items-start gap-2.5 text-sm">
+              {followed ? (
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => handleCheck(node.label)}
+                  aria-label={checked ? `${node.label}已完成` : `将${node.label}标记为已完成`}
+                  disabled={ended && !hasPendingNodes}
+                  className="mt-0.5 h-5 w-5 shrink-0"
+                />
+              ) : (
+                <span
+                  aria-hidden
+                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${NODE_DOT_CLASS[status]}`}
+                />
+              )}
+              <span className="min-w-0 flex-1">
+                <span
+                  className={`font-medium ${checked ? 'text-muted-foreground line-through' : 'text-foreground'}`}
+                >
+                  {node.label}
+                </span>
+                <span className="text-muted-foreground"> · {node.detail}</span>
+                {/* 带官方入口的节点（如四六级准考证打印）挂直达链接：入口
+                    在 exam-calendar 常量里，岛内不写死域名；外链过 safeHref。 */}
+                {node.url ? (
+                  <>
+                    {' '}
+                    <a
+                      href={safeHref(node.url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`${node.label}${linkCopy.ariaAction}入口（新窗口打开）`}
+                      className="inline-flex min-h-11 items-center gap-0.5 whitespace-nowrap text-sm font-medium text-sky-700 underline decoration-sky-700/40 underline-offset-2 hover:decoration-sky-700 dark:text-sky-400"
+                    >
+                      {linkCopy.text}
+                      <ArrowUpRight className="h-4 w-4" aria-hidden />
+                    </a>
+                  </>
+                ) : null}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {EXAM_NODE_STATUS_LABEL[status]}
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}

@@ -35,6 +35,22 @@ const NODE_DOT_CLASS: Record<string, string> = {
  * 写操作读共享现态、不读本实例闭包里的旧快照——交错点关注/勾选不再
  * 互相覆盖；存储读坏时 hook 拒写并把原因交回界面。
  */
+/**
+ * U-124：带 url 节点的链接文案按节点类型映射（只改文案，不改数据/URL）。
+ *
+ * 默认是准考证打印类（13 处）；3 处例外按 node.label 映射：京考「报名」
+ * 是报名系统入口、京考「公共科目笔试」挂的是首都之窗公告页（非办事入口）、
+ * 「江西成绩复核」走报名系统申请。ExamNode 无类型字段，映射键只能是 label；
+ * 映射只在 node.url 分支内调用，国考/省考同名「公共科目笔试」节点无 url、
+ * 不渲染链接，误伤不到。可见文案与 aria-label 同构，只换中间的动作词。
+ */
+function nodeLinkCopy(label: string): { text: string; ariaAction: string } {
+  if (label === '报名') return { text: '去官网报名', ariaAction: '官方报名' }
+  if (label === '公共科目笔试') return { text: '查看官方公告', ariaAction: '官方公告' }
+  if (label === '江西成绩复核') return { text: '去报名系统申请复核', ariaAction: '报名系统申请复核' }
+  return { text: '去官网打印准考证', ariaAction: '官方打印' }
+}
+
 export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   const { state, storageBlocked, toggleFollow, toggleNodeCheck } = useMyExams()
 
@@ -93,6 +109,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
         {exam.nodes.map((node) => {
           const status = examNodeStatus(node)
           const checked = followed && checkedLabels.includes(node.label)
+          const linkCopy = nodeLinkCopy(node.label)
           return (
             <li key={node.label} className="flex items-start gap-2.5 text-sm">
               {followed ? (
@@ -126,10 +143,10 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                       href={safeHref(node.url)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      aria-label={`${node.label}官方打印入口（新窗口打开）`}
+                      aria-label={`${node.label}${linkCopy.ariaAction}入口（新窗口打开）`}
                       className="inline-flex min-h-11 items-center gap-0.5 whitespace-nowrap text-sm font-medium text-sky-700 underline decoration-sky-700/40 underline-offset-2 hover:decoration-sky-700 dark:text-sky-400"
                     >
-                      去官网打印准考证
+                      {linkCopy.text}
                       <ArrowUpRight className="h-4 w-4" aria-hidden />
                     </a>
                   </>

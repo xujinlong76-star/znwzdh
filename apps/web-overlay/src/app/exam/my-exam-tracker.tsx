@@ -4,6 +4,7 @@ import { ArrowUpRight } from 'lucide-react'
 import { useMyExams } from '@/hooks/useMyExams'
 import {
   EXAM_NODE_STATUS_LABEL,
+  examNodeDeadlineLabel,
   examNodeStatus,
   examStatus,
   hasActionableNodes,
@@ -153,7 +154,11 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                 ) : null}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {EXAM_NODE_STATUS_LABEL[status]}
+                {/* 峰值日包 W10：11-18 五项目标时刻已过时文案读「已截止」
+                    （examNodeDeadlineLabel，渲染层时刻口径）；其余节点
+                    沿用日期口径的状态文案。只改文案，不改状态、圆点、
+                    关注/勾选禁用逻辑（门控仍按日期口径，午夜才翻）。 */}
+                {examNodeDeadlineLabel(exam, node) ?? EXAM_NODE_STATUS_LABEL[status]}
               </span>
             </li>
           )

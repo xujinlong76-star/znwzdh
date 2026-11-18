@@ -7,10 +7,12 @@ import { loadDramaFeatured } from '@/lib/drama-featured'
 import {
   nearestExamCountdown,
   nextExamNode,
+  todayNodeDeadlineMs,
   todayFollowUpNodes,
   todayNodes,
   type ExamUrgencyTier,
 } from '@/lib/exam-calendar'
+import { HomeTodayCountdown } from '@/components/home-today-countdown'
 
 /**
  * 首页「今日一件事」区（U-24，首屏第一位）。
@@ -94,22 +96,38 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                     </Link>
                   </div>
                   <ul className="space-y-1.5">
-                    {todayItems.map(({ exam, node, kind }) => (
-                      <li
-                        key={`${exam.id}:${node.label}`}
-                        className="flex flex-wrap items-baseline gap-x-2 text-sm"
-                      >
-                        <span className="font-medium">
-                          {exam.shortName} · {node.label}
-                        </span>
-                        {kind === 'endsToday' ? (
-                          <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                            今日截止
+                    {todayItems.map(({ exam, node, kind }) => {
+                      // 峰值日包 W10：有已核实目标时刻的节点（11-18 五项）在
+                      // 徽章与 detail 之间挂倒计时 chip；表外节点（undefined）
+                      // 不渲染。target 是 todayNodeDeadlineMs 的毫秒值转 ISO，
+                      // 绝不拿 endISO 当天 00:00 冒充。kind === 'today' 的行
+                      // （查分节点，「距开通」语义）过期后 chip 直接消失
+                      // （hideWhenPassed），不显示 endedLabel 缺省文案；
+                      // endsToday 的行过期仍显示 endedLabel 缺省文案。
+                      const deadlineMs = todayNodeDeadlineMs({ exam, node, kind })
+                      return (
+                        <li
+                          key={`${exam.id}:${node.label}`}
+                          className="flex flex-wrap items-baseline gap-x-2 text-sm"
+                        >
+                          <span className="font-medium">
+                            {exam.shortName} · {node.label}
                           </span>
-                        ) : null}
-                        <span className="min-w-0 flex-1 text-muted-foreground">{node.detail}</span>
-                      </li>
-                    ))}
+                          {kind === 'endsToday' ? (
+                            <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                              今日截止
+                            </span>
+                          ) : null}
+                          {deadlineMs !== undefined ? (
+                            <HomeTodayCountdown
+                              target={new Date(deadlineMs).toISOString()}
+                              {...(kind === 'today' ? { hideWhenPassed: true } : {})}
+                            />
+                          ) : null}
+                          <span className="min-w-0 flex-1 text-muted-foreground">{node.detail}</span>
+                        </li>
+                      )
+                    })}
                   </ul>
                   {followUps.length > 0 ? (
                     <details className="text-sm">

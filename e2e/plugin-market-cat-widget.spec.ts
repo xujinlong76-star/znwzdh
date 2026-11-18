@@ -120,37 +120,32 @@ test('市场页 390px：输入聚焦时猫静默，清除 × 可点，失焦后�
   await expect(page.locator('#xiaomaomao')).not.toHaveClass(/xm-quiet/, { timeout: 5000 })
 })
 
-test('首页 390px：开场招呼气泡被门控跳过，不出现且文本为空，之后不重出', async ({ page }) => {
+test('首页 390px：入场招呼气泡 5 秒内消失，之后不重出', async ({ page }) => {
   test.setTimeout(120_000)
   await page.goto('/')
   await page.waitForLoadState('domcontentloaded')
   await waitForCat(page)
 
-  // A2-1（c3001 门控，fbbb0684）：850ms 自动招呼先把文案放进气泡再量——
-  // 气泡矩形与 <main> 内卡片/可点元素相交就跳过本次招呼（文本清空、不出气泡）。
-  // 390px 首页卡片满屏，气泡带正落在卡片上，门控必触发；旧断言“等气泡出现”
-  // 与新行为冲突，改为断言门控终态。实测依据：真浏览器 390×844 探针（真实
-  // xiaomaomao.js）：首页形貌下门控命中 .nav-card-glow（ix=22 iy=55），
-  // 气泡无 xm-show 且文本为空；对照页（气泡带下方无正文）则正常出现气泡。
-  // waitForCat 已等 2 秒，850ms 招呼定时器早已跑完，此处直接断言终态。
+  // A2-1：等招呼气泡出现后计时，5 秒内必须消失（实现是 4.5 秒定时器，
+  // xiaomaomao.js:1552 `setTimeout(hideBubble, 4500)`）。
+  // （2026-11-18 :123 选 b：c3001 门控阈值改按单个元素重叠面积占气泡面积
+  // >25% 判定——390px 首页三个 44px 悬浮钮各占气泡仅约 12%，不再拦住招呼；
+  // 整宽卡片/搜索框等大面积遮挡仍拦。3fc08466 的“永不出现”断言方向已弃，
+  // 本用例改回原断言；4.5 秒自动消失全路径自此由本用例覆盖。）
   const bubble = page.locator('#xiaomaomao .xm-bubble')
-  await expect(bubble).not.toHaveClass(/xm-show/)
-  await expect(bubble).toHaveText('')
+  await expect(bubble).toHaveClass(/xm-show/, { timeout: 15_000 })
+  const seenAt = Date.now()
+  await expect(bubble).not.toHaveClass(/xm-show/, { timeout: 6000 })
+  expect(Date.now() - seenAt, '单次气泡应自出现起 5 秒内消失').toBeLessThan(5000)
 
-  // A2-2：跳过后 8 秒内不得重出。本轮接受“气泡出现后 4.5 秒自动消失”全路径
-  // 暂无 E2E 覆盖：4500ms 定时器目前仅由 xiaomaomao.js:1406 源码定义
-  // （showBubble 入口 `setTimeout(hideBubble, 4500)`），全仓无任何自动化测试
-  // 钉死它；本用例只断言门控终态（不出气泡），不覆盖“出现后消失”。
-  // 时序算术（T = 挂件初始化时刻；本窗口约 T+2s 至 T+10s，waitForCat 已等
-  // 2 秒、此处再等 8 秒）：三条可能重出气泡的路径都落不到窗内——分页面
-  // 提示在 T+26s（xiaomaomao.js:2870）、闲时 tip 需 idle > 50s（:1607）、
-  // 切走回访招呼需切走 ≥90s 后切回（:1591）；故 8 秒窗口内“不重出”只能
-  // 证明门控终态稳定，不能证明 4500ms 定时器存在。
+  // A2-2：消失后 8 秒内不得重出。时序算术（T = 挂件初始化时刻；本窗口约
+  // T+2s 至 T+10s，waitForCat 已等 2 秒、此处再等 8 秒）：三条可能重出气泡的
+  // 路径都落不到窗内——分页面提示在 T+26s（xiaomaomao.js:3027）、闲时 tip
+  // 需 idle > 50s（:1759）、切走回访招呼需切走 ≥90s 后切回（:1743）。
   await page.waitForTimeout(8000)
   await expect(bubble).not.toHaveClass(/xm-show/)
-  await expect(bubble).toHaveText('')
 
-  // B2-3：门控只跳过招呼气泡，不应把整只猫卸掉——8 秒后挂件本身仍可见。
+  // B2-3（366fd5a3）：招呼气泡消失后，不应把整只猫卸掉——8 秒后挂件本身仍可见。
   // 更强断言（点猫后气泡出现）未加：粗指针下点猫本体只开关控制坞，气泡要
   // 走坞内摸猫钮（.xm-pet-btn → petCat → showBubble），两步路径本机无
   // Chrome 可验，不加未经验证的断言。

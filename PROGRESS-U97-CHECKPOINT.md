@@ -19,7 +19,7 @@
 
 ## 状态
 - [x] 2026-11-18 17:59 检查点 0：克隆状态核实（分支 fix/u97-icon-c1-expectations，head 9dcef7f7，工作区干净，0 提交）；PROGRESS.md 落盘并提交（本 commit）。
-- [ ] 定性完成（待写定性报告）
+- [x] 2026-11-18 18:2x 定性完成：定性 (a) 行为改进未同步期望，定性报告见 QUALITATIVE-REPORT.md（证据：C1 提交信息与注释明写标题规则；github.svg md5 6d802f68… 与官方 favicon.svg 及 copilot.svg 一致；全库标题含 github 恰 3 站、Copilot 先行命中；5 处 '' 期望均立论于 C1 之前；无其他图标断言红）。本地复现待 node_modules 拷贝完成（源 znwzdh-iconbatch-2122，cp -r --no-preserve=ownership，不带 xattr）。
 - [ ] 修复提交
 - [ ] 定向测试 + typecheck 全绿
 - [ ] 推送并回读确认

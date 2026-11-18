@@ -42,7 +42,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   const ended = examStatus(exam) === 'ended'
   // R1（2026-11-17）：统考已过但节点仍可办时（成考 11-18 的成绩查询），
   // 卡片行文不写裸「已结束」，改按统考 scoped 文案并指向下方节点；
-  // 节点全过后（成考 11-19 起）仍是「本场考试已结束」，行为不变。
+  // 节点全过后（11-30 起）仍是「本场考试已结束」，行为不变。
   // U-106：禁用口径与纯规则层一致——统考已过但节点仍可办
   // 时未关注用户仍可关注、已关注可继续勾选：按钮 disabled 是 ended &&
   // !hasPendingNodes && !followed（已关注者恒可取消关注），复选框是

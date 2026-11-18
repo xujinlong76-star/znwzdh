@@ -57,7 +57,7 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
   if (status === 'ended') {
     // R1（2026-11-17）：统考已过但成绩等节点仍可办时（成考 11-18），裸
     // 「已结束」会与下方「今天」节点自相矛盾，改按统考 scoped 文案；
-    // 节点全过后（成考 11-19 起）仍渲染裸「已结束」，行为不变。
+    // 节点全过后（11-30 起）仍渲染裸「已结束」，行为不变。
     return (
       <p className="text-lg font-semibold text-muted-foreground">
         {hasActionableNodes(exam, now) ? '统考已结束' : '已结束'}

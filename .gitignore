@@ -117,3 +117,6 @@ storage-state.json
 # 冷启动基线内容（A1）：只在 Docker 构建时由 Dockerfile.api 从 web-overlay
 # 内容目录拷入镜像，仓库里不留副本，防止与事实源分叉
 apps/api/seed-content/
+
+# 小猫猫挂件媒体包（二进制，不进仓库、部署时另放）：透明视频与 WebP/GIF 兜底
+apps/web-overlay/public/xiaomaomao/media/

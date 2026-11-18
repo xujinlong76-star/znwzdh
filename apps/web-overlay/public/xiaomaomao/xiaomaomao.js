@@ -1,18 +1,21 @@
-// 小猫猫网站 AI 助手挂件 v11（合并版）：右下角悬浮的粉色小猫（Muse 当前头像真图 + 同套姿势图），
+// 小猫猫网站 AI 助手挂件 v11（合并版）：右下角悬浮的粉色小猫（Muse 当前头像真图），
 // 能聊天找站、会说话、会卖萌、会睡觉，还能摸、能喂、能一起玩接星星。
 // 默认显示走透明视频（2026-11-18，William 点选）：待机播透明 idle 循环、行走播透明
-// walk 循环，视频在播时舞台透明；文件不在/播不了/浏览器不支持 VP9 透明时回退静态姿势。
+// walk 循环，视频在播时舞台透明；视频播不了走动画 WebP 兜底（再不行 GIF，最后藏起来），
+// 不再回静态图。2026-11-18 删静态图（William 令）：静态姿势图 25 张全部删除，
+// 默认猫只播视频；用户上传的自改形象保留（data URL，不依赖静态图文件）。
 // v8（2026-11-12，William 指示换皇冠全套新版）：
 //   ①默认形象整套换皇冠版——13 张皇冠表情进 POSES（状态映射见 POSES 上方注释），
 //   旧形象不删：整套保留为图库「经典 / 经典深色」选项（POSES_CLASSIC / POSES_DARK），
 //   老用户的经典存档选择原样有效；默认不再跟随深浅主题换图。
+//   （2026-11-18 删静态图：三套静态图已随静态图目录一并删除，旧内置选择静默退化为默认视频。）
 //   ②皇冠动画接入——互动时播静音短循环（media/crown-animations/expr-*.webm，探活回退、懒加载、
-//   离屏暂停、减动效不播；常驻主态 2026-11-18 起改走透明视频循环，播不了回静态图）；带声音版（media/crown-animations/snd-*.mp4）只在
+//   离屏暂停、减动效不播；常驻主态 2026-11-18 起改走透明视频循环，播不了走 WebP 兜底）；带声音版（media/crown-animations/snd-*.mp4）只在
 //   用户主动点猫时才播、默认静音，绝不自动外放（petSoundArmed 一次性授权位）。
 //   ③深色模式如实登记缺口：皇冠套没有深色变体，不拿浅色图冒充——深色下舞台改走
 //   柔和奶油底衬 + 暖金光晕影（CSS html.dark .xm-stage），图本身与浅色模式同一套。
 //   ④v7 铁律不回退：控件零遮挡猫本体、悬浮坞按需唤出、图标全套手工 SVG。
-// v12（2026-11-13，Lighthouse Wave 1）：姿势图外置 poses/*.webp（JS 3.55MB→约 130KB 代码；
+// v12（2026-11-13，Lighthouse Wave 1）：静态图曾外置（JS 3.55MB→约 130KB 代码；
 //   经典套 1600px 统一缩到 512px，working 单张 1.08MB→约 20KB）；Script 改 lazyOnload；
 //   850ms 自动招呼只顺带朗读在用户手势之后（无手势先出气泡、首次 pointerdown/keydown 后补读）；
 //   桌面默认 bottom 18px→96px，不再盖住底部栏/回到顶部/页脚版权；移动端 bottom 12px→
@@ -39,7 +42,7 @@
 //   喂食/接星星/台词/语音输入/聊天面板/成长桥 A12 一个不少；真图 base64 零改动。
 // v6 四件规格：①整套形象补齐——深色模式整套深色图（POSES_DARK，512px 编码）自动切换；
 //   庆祝视频钩子：public/xiaomaomao/media/ 下放 celebrate.mp4 / dance-1..5.mp4 即自动生效
-//   （或用 window.XIAOMAOMAO_MEDIA 指向 CDN），文件不在时回退既有图片庆祝，绝不摆假视频；
+//   （或用 window.XIAOMAOMAO_MEDIA 指向 CDN），文件不在时跳过视频庆祝（只留气泡/台词），绝不摆假视频；
 //   ②可拖动补强——触摸拖动（touch-action:none）、钳制改按根节点真实尺寸、pointercancel 兜底；
 //   ③闲时贴边收缩——60 秒不理小猫自动滑到最近的窗口左右边缘半藏（露约半张脸），
 //   悬停/点按弹回；聊天面板/游戏开着、拖动中、收起态不缩；
@@ -49,8 +52,8 @@
 // v5 为美工升级：设计令牌化（粉色成体系、深浅双主题跟随站点 html.dark）、舞台去扫光去辉光加地面影、
 // 操作钮改 2×2 玻璃格内嵌舞台角（不再溢出视口）、聊天钮独立成舞台角徽、面板锚定主列且移动端改贴底 sheet、
 // 气泡绝对定位不再撑宽根节点；功能与 v4 完全一致，真图 base64 零改动。设计稿见 znwzdh-bigtech-audit/WIDGET_V5_DESIGN.md。
-// 用法：把本文件与 poses/ 目录一起放进 Next.js 的 public/xiaomaomao/ 目录（25 张姿势图为
-// poses/*.webp 文件，首屏只拉 main 图，其余空闲时预载；经典套已统一缩到 512px），
+// 用法：把本文件与 media/ 目录一起放进 Next.js 的 public/xiaomaomao/ 目录（透明视频
+// play-*.webm 与兜底 play-*.webp/.gif 在 media/ 下，二进制不进仓库、部署时另放），
 // 在根 layout 的 </body> 前加 <Script src="/xiaomaomao/xiaomaomao.js" strategy="lazyOnload" />
 //
 // 能力（对齐 Muse 本人的用法，做进这只小猫）：
@@ -68,61 +71,25 @@
 //  - 时间与节日：早中晚/深夜不同问候；春节/中秋/国庆/圣诞等节日当天有专属台词与头顶小装饰（CSS/emoji 层，不动真图）。
 //  - 表情符号层：思考「？」、开心「♪」、惊讶「！」、得意「★」用 CSS 动画浮在头顶，配合姿势切换。
 //  - 懂时间会过日子：闲置久了冒俏皮话，深夜或长闲置会打瞌睡冒 Zzz。
-//  - 多姿势状态动画：待机/招呼/思考（working）/庆祝（milestone）/卖萌（making）姿势图
-//    交叉淡入淡出，叠加呼吸浮动、入场弹跳、爱心星星粒子、鼠标靠近探头跟随；
+//  - 多状态动画：待机/招呼/思考（working）/庆祝（milestone）/卖萌（making）等表情状态切换
+//    （有上传形象时交叉淡入淡出；默认走视频/兜底），叠加呼吸浮动、入场弹跳、爱心星星粒子、鼠标靠近探头跟随；
 //    动画只用 transform/opacity，prefers-reduced-motion 时自动降级。
 //  - 礼仪：可拖动（位置记住）、可收起成小圆标再唤回、移动端缩小不挡内容。
 (function () {
   if (document.getElementById('xiaomaomao')) return;
   var base = (document.currentScript && document.currentScript.src || '/xiaomaomao/xiaomaomao.js').replace(/[^/]*$/, '');
-  var ASSETS = base; // v12：姿势图已外置到 poses/ 目录，拼脚本所在目录前缀（CDN 部署也能跟走）
+  var ASSETS = base; // 拼脚本所在目录前缀（CDN 部署也能跟走）；媒体在 media/ 下
   var CHAT_URL = '/api/hub/ai/chat';
   var FIND_URL = '/api/hub/ai/find';
   var STORE_KEY = 'navhub.xiaomaomao.v1';
   var reducedMotion = false;
   try { reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* 忽略 */ }
 
-  /* ---------- v8：皇冠全套（默认形象，William 2026-11-11 确认启用为 Muse 当前形象） ----------
-     状态映射（源文件 xiaomaomao-expressions/crown/singles，512px 编码）：
-     main=00 皇冠主图 / milestone=01 开心大笑（庆祝·升级） / making=02 眨眼卖萌（打招呼·摸猫回应） /
-     surprised=03 惊喜（摸猫躲开） / shy=04 害羞脸红（喂小鱼干·被夸） / heart=05 爱心眼（收藏成功） /
-     waking=06 困困打哈欠（打招呼·刚醒） / grumpy=07 鼓脸小生气（失败提示） / teary=08 委屈泪汪汪（没找到结果） /
-     working=09 好奇张望（思考·找站中） / clever=10 机灵侧目（游戏纪录） / pleading=11 委屈垂耳（求再试） /
-     idle=12 困困垂耳（待机·瞌睡）。皇冠版没有深色变体：深色模式共用本套，舞台改走柔和奶油底衬
-     （见 CSS 的 html.dark .xm-stage 规则），不拿别的图冒充深色版。 */
-  var POSES = {
-    main: 'poses/crown-main.webp',
-    milestone: 'poses/crown-milestone.webp',
-    making: 'poses/crown-making.webp',
-    surprised: 'poses/crown-surprised.webp',
-    shy: 'poses/crown-shy.webp',
-    heart: 'poses/crown-heart.webp',
-    waking: 'poses/crown-waking.webp',
-    grumpy: 'poses/crown-grumpy.webp',
-    teary: 'poses/crown-teary.webp',
-    working: 'poses/crown-working.webp',
-    clever: 'poses/crown-clever.webp',
-    pleading: 'poses/crown-pleading.webp',
-    idle: 'poses/crown-idle.webp',
-  };
-
-  /* ---------- v6 经典套（旧形象，保留作图库可选项：浅色 POSES_CLASSIC / 深色 POSES_DARK） ---------- */
-  var POSES_CLASSIC = {
-    main: 'poses/classic-main.webp',
-    idle: 'poses/classic-idle.webp',
-    waking: 'poses/classic-waking.webp',
-    working: 'poses/classic-working.webp',
-    making: 'poses/classic-making.webp',
-    milestone: 'poses/classic-milestone.webp',
-  };
-  var POSES_DARK = {
-    main: 'poses/dark-main.webp',
-    idle: 'poses/dark-idle.webp',
-    waking: 'poses/dark-waking.webp',
-    working: 'poses/dark-working.webp',
-    making: 'poses/dark-making.webp',
-    milestone: 'poses/dark-milestone.webp',
-  };
+  /* ---------- 删静态图（2026-11-18，William 令） ----------
+     皇冠/经典/深色三套静态姿势图已随静态图目录一并删除；默认猫只播视频
+     （播不了走 WebP→GIF→藏猫兜底链），不再用静态图。
+     表情名（main/milestone/making/…）仍作 setPose 的状态名保留——没有自改形象时
+     setPose 是空操作，显示由视频/兜底链负责；有上传形象时换图仍走同一张定格图。 */
   function isDarkTheme() {
     try { return document.documentElement.classList.contains('dark'); } catch (e) { return false; }
   }
@@ -209,37 +176,45 @@
     if (v4.fishDay !== t) { v4.fishDay = t; v4.fishCount = 0; persistV4(); }
   }
 
-  /* ---------- v6：用户自改形象（只存本机；builtin=站内在用图单张，upload=用户上传图的 data URL） ---------- */
+  /* ---------- v6：用户自改形象（只存本机；2026-11-18 删静态图后只剩 upload=用户上传图的 data URL；
+     旧的 builtin 内置选择（皇冠/经典/深色）已随静态图目录删除，旧存档里的内置选择静默退化为默认视频猫） ---------- */
   var avatarPick = null;
   try {
     var savA = (saved && typeof saved === 'object') ? saved.avatar : null;
     if (savA && typeof savA === 'object') {
-      if (savA.kind === 'builtin' && POSES[savA.pose]) {
-        avatarPick = { kind: 'builtin', set: savA.set === 'dark' ? 'dark' : (savA.set === 'crown' ? 'crown' : 'light'), pose: savA.pose };
-      } else if (savA.kind === 'builtin' && savA.set !== 'crown' && (POSES_CLASSIC[savA.pose] || POSES_DARK[savA.pose])) {
-        /* v8 前的存档只有经典 6 键（都在皇冠键名里同名存在，上面已收）；此处兜底防键名漂移 */
-        avatarPick = { kind: 'builtin', set: savA.set === 'dark' ? 'dark' : 'light', pose: savA.pose };
-      } else if (savA.kind === 'upload' && typeof savA.data === 'string' && savA.data.indexOf('data:image/') === 0 && savA.data.length <= 450000) {
+      if (savA.kind === 'upload' && typeof savA.data === 'string' && savA.data.indexOf('data:image/') === 0 && savA.data.length <= 450000) {
         avatarPick = { kind: 'upload', data: savA.data };
       }
     }
-  } catch (e) { /* 脏数据静默退化为默认全套姿势 */ }
+  } catch (e) { /* 脏数据静默退化为默认视频 */ }
   function persistAvatar() { store.avatar = avatarPick; persist(); }
-  /* 取图唯一出口：自改形象（单张定格）> 默认皇冠全套。
-     v8 起默认不再按深浅主题换图：皇冠套没有深色变体，深色靠舞台奶油底衬（CSS）；
-     经典浅/深两套只在用户从图库主动选了经典图时才用（set=light/dark）。 */
-  function poseSetOf(setName) {
-    if (setName === 'dark') return POSES_DARK;
-    if (setName === 'light') return POSES_CLASSIC;
-    return POSES;
+  /* 取图唯一出口：只有用户上传的自改形象（单张定格图 data URL），没有默认静态图。
+     小图标（面板头/收起圆标）默认用待机 WebP（动图）；上传用户优先用自己的图。 */
+  function customImageUrl() {
+    return (avatarPick && avatarPick.kind === 'upload') ? avatarPick.data : null;
   }
-  function poseUrl(name) {
-    if (avatarPick) {
-      if (avatarPick.kind === 'upload') return avatarPick.data;
-      var set = poseSetOf(avatarPick.set);
-      return ASSETS + (set[avatarPick.pose] || POSES[name] || POSES.main);
-    }
-    return ASSETS + (POSES[name] || POSES.main);
+  function iconUrl() {
+    var c = customImageUrl();
+    return c || ASSETS + 'media/play-idle.webp';
+  }
+  /* 小图标加载链：WebP → GIF → 清空（不留破图）。img 没 src 时什么都不显示。 */
+  function setIconImg(img) {
+    if (!img) return;
+    try {
+      img.onerror = function () {
+        try {
+          if (img.getAttribute('data-tier') !== 'gif') {
+            img.setAttribute('data-tier', 'gif');
+            img.src = ASSETS + 'media/play-idle.gif';
+          } else {
+            img.onerror = null;
+            img.removeAttribute('src');
+          }
+        } catch (e) { /* 忽略 */ }
+      };
+      img.setAttribute('data-tier', 'webp');
+      img.src = iconUrl();
+    } catch (e) { /* 忽略 */ }
   }
 
   /* ---------- 语音 ---------- */
@@ -512,7 +487,7 @@
     '#xiaomaomao.xm-docked .xm-bubble{display:none}' +
     /* P1-1：输入聚焦静默态——根节点整体不可见、不可点（只改显隐，不动 left/top） */
     '#xiaomaomao.xm-quiet{opacity:0;visibility:hidden;pointer-events:none}' +
-    /* v6：庆祝视频层（盖在姿势图上方，舞台圆角裁剪；无视频文件时永不出现）
+    /* v6：庆祝视频层（盖在猫本体上方，舞台圆角裁剪；无视频文件时永不出现）
        互动玩法第一批（2026-11-18）：object-fit 改 contain——视频按「整只猫完整入镜、
        四周留白边」生成，cover 会裁边；舞台是 1:1 方形、视频也是 1:1，contain 与 cover
        同屏显示，但 contain 保证任何比例的视频都不裁猫。 */
@@ -527,11 +502,20 @@
        淡入淡出；喂猫待命时舞台亮一圈粉色光环。 */
     '#xiaomaomao.xm-play .xm-stage{background:transparent;border-color:transparent;box-shadow:none;border-radius:0;overflow:visible;animation:none;pointer-events:none}' +
     /* 默认显示走透明视频（2026-11-18）：视频在播时舞台去白底/描边/圆角裁剪、
-       姿势图藏进视频后面（透明区不露白底图）；视频不在/播不了时类名摘掉，
-       静态白圆原样回来。深色奶油底衬不能压过视频态，另写一条深色覆盖。 */
+       自改形象层藏进视频后面；视频不在/播不了时类名摘掉，兜底态（xm-has-fallback）
+       接管舞台；两者都没有时猫直接藏起来（见 hideCat），不回静态白圆。
+       深色奶油底衬不能压过视频态，另写一条深色覆盖。 */
     '#xiaomaomao.xm-has-video .xm-stage{background:transparent;border-color:transparent;box-shadow:none;border-radius:0;overflow:visible}' +
     'html.dark #xiaomaomao.xm-has-video .xm-stage{background:transparent;border-color:transparent;box-shadow:none}' +
     '#xiaomaomao.xm-has-video .xm-lean{opacity:0;transition:opacity .28s var(--xm-ease)}' +
+    /* 删静态图 + WebP 兜底（2026-11-18，William 点选 WebP）：视频播不了时舞台改播
+       动画 WebP（再不行 GIF），兜底态舞台同样去白底/描边/圆角、藏起自改形象层，
+       与视频态同款透明舞台；兜底图 object-fit:contain，整只猫完整入镜不裁边。 */
+    '#xiaomaomao .xm-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:2;display:none;pointer-events:none}' +
+    '#xiaomaomao .xm-fallback.xm-on{display:block}' +
+    '#xiaomaomao.xm-has-fallback .xm-stage{background:transparent;border-color:transparent;box-shadow:none;border-radius:0;overflow:visible}' +
+    'html.dark #xiaomaomao.xm-has-fallback .xm-stage{background:transparent;border-color:transparent;box-shadow:none}' +
+    '#xiaomaomao.xm-has-fallback .xm-lean{opacity:0;transition:opacity .28s var(--xm-ease)}' +
     '#xiaomaomao .xm-hit{display:none;position:absolute;left:6%;top:6%;width:88%;height:88%;border-radius:50%;pointer-events:auto;z-index:3}' +
     '#xiaomaomao.xm-play .xm-hit{display:block}' +
     /* 2026-11-18 审计抓到：只把舞台设 pointer-events:none 不够——.xm-wrap 本身是
@@ -673,18 +657,23 @@
   var sendBtn = root.querySelector('.xm-send');
   var imgA = root.querySelector('.xm-img-a');
   var imgB = root.querySelector('.xm-img-b');
-  root.querySelector('.xm-p-head img').src = poseUrl('main');
-  root.querySelector('.xm-tab img').src = poseUrl('main');
+  setIconImg(root.querySelector('.xm-p-head img'));
+  setIconImg(root.querySelector('.xm-tab img'));
 
-  /* ---------- 姿势状态机（双层交叉淡入淡出） ---------- */
+  /* ---------- 姿势状态机（双层交叉淡入淡出） ----------
+     2026-11-18 删静态图：默认姿势图已删；这条换图路径只服务用户上传的自改形象
+     （单张定格图，叫什么名字都显示同一张，与旧行为一致）。没有自改形象时 setPose
+     是空操作，显示由视频/WebP/GIF 兜底链负责。 */
   var currentPose = 'main';
   var frontImg = imgA, backImg = imgB;
-  imgA.src = poseUrl('main');
-  imgA.classList.add('xm-on');
+  (function () {
+    var cu = customImageUrl();
+    if (cu) { imgA.src = cu; imgA.classList.add('xm-on'); }
+  })();
   function setPose(name) {
-    if (!POSES[name] || name === currentPose) return;
+    if (!avatarPick || avatarPick.kind !== 'upload' || name === currentPose) return;
     currentPose = name;
-    var url = poseUrl(name);
+    var url = avatarPick.data;
     var done = false;
     var swap = function () {
       if (done) return;
@@ -703,27 +692,19 @@
     };
     var probe = new Image();
     probe.onload = swap;
-    probe.onerror = function () { /* 姿势图缺失时保持当前姿势，不露破图 */ };
+    probe.onerror = function () { /* 图缺失时保持当前显示，不露破图 */ };
     probe.src = url;
     if (probe.complete && probe.naturalWidth > 0) swap();
   }
-  function preloadPoses() {
-    if (avatarPick) return; // 单图模式无需预载全套
-    ['idle', 'waking', 'making', 'milestone', 'working', 'surprised'].forEach(function (k) {
-      var im = new Image(); im.src = poseUrl(k);
-    });
-  }
-  if ('requestIdleCallback' in window) window.requestIdleCallback(preloadPoses, { timeout: 4000 });
-  else window.setTimeout(preloadPoses, 2500);
-
   /* ---------- v6：形象刷新（换形象/站点深浅主题切换时统一重绘三处用图） ---------- */
   var lastDark = isDarkTheme();
   function refreshAvatarImages() {
     lastDark = isDarkTheme();
-    var mainU = poseUrl('main');
-    root.querySelector('.xm-p-head img').src = mainU;
-    root.querySelector('.xm-tab img').src = mainU;
-    frontImg.src = poseUrl(currentPose);
+    setIconImg(root.querySelector('.xm-p-head img'));
+    setIconImg(root.querySelector('.xm-tab img'));
+    var cu = customImageUrl();
+    if (cu) frontImg.src = cu;
+    else frontImg.removeAttribute('src');
   }
   try {
     new MutationObserver(function () {
@@ -767,7 +748,7 @@
      防串台、语音总开关管有声版、有声开播先停 TTS 防叠音。XIAOMAOMAO_MEDIA.videos 可按名覆盖任意一条的地址。
      媒体包路线：动画是二进制文件，走不了 GitHub 文本快照推送，不进仓库；部署时把媒体包
      media/crown-animations/ 整个放到 public/xiaomaomao/media/ 下（见媒体包 README），
-     文件不在时探活失败自动回落静态表情，绝不报错、不留白。 */
+     文件不在时探活失败自动跳过（只留气泡/台词），绝不报错、不留白。 */
   var MEDIA_BASE = base + 'media/';
   var MEDIA_BASE_CROWN = base + 'media/crown-animations/';
   var mediaProbe = {};
@@ -882,7 +863,7 @@
   }
   /* ---------- 互动玩法第一批 Top 3（2026-11-18）：追鼠标+扑光标 / 点猫三级 / 拖链接喂猫 ----------
      猫的显示全部用生成的视频（William 2026-11-18 01:16 定）：游乐场态常驻主态是透明视频
-     循环，静态姿势图只在视频文件不在时回退。视频是整段渲染的：追鼠标时播走路循环、扑时
+     循环，视频文件不在时走 WebP 兜底。视频是整段渲染的：追鼠标时播走路循环、扑时
      播扑的一段、静止时播待机循环；表情不叠加在走路视频上（静止态才换表情视频）。
      取景规矩（2026-11-18 01:37 定）：所有视频整只猫完整入镜、四周留白边、不裁脚不裁尾；
      显示一律 object-fit:contain、容器按视频比例（见 .xm-video 与 .xm-play 规则），
@@ -918,21 +899,23 @@
       v.setAttribute('preload', 'auto');
       try { v.disablePictureInPicture = true; } catch (e) { /* 忽略 */ }
       stageEl.appendChild(v);
-      /* 默认视频回退：解码出错即回退——idle 出错停视频回静态，非 idle 出错回 idle
-         （探活只验文件在不在，解码失败要靠 error 事件兜底）。 */
+      /* 默认视频回退：解码出错即走兜底——idle 出错判死走 WebP，非 idle 出错回 idle
+         （探活只验文件在不在，解码失败要靠 error 事件兜底；静态图已删，不回静态）。 */
       v.addEventListener('error', function () {
         if (clipVisible !== v || !clipCurrent) return;
-        if (clipCurrent === 'idle') stopClips();
+        if (clipCurrent === 'idle') { videoDead = true; showFallback('idle'); }
         else playClip('idle');
       });
     });
     clipVisible = clipA;
   }
   /* 播一段游乐场视频：双视频交叉淡化（A/B 轮换，一段淡入、一段淡出）；loop 默认循环，
-     扑的那一段传 {loop:false} 只播一次。文件不在时安静回退静态姿势，不报错、不留白。 */
+     扑的那一段传 {loop:false} 只播一次。视频路已死时直接走 WebP 兜底；文件不在时走
+     WebP 兜底，不报错、不留白。 */
   function playClip(name, opts) {
     opts = opts || {};
     if (!PLAY_CLIPS[name]) name = 'idle';
+    if (videoDead) { showFallback(name); return; }
     if (clipCurrent === name && clipVisible) {
       try {
         clipVisible.loop = opts.loop !== false;
@@ -977,7 +960,9 @@
       next.src = resolved.url;
       next.addEventListener('error', function onErr() {
         next.removeEventListener('error', onErr);
-        if (seq === clipSeq && name !== 'idle') playClip('idle');
+        if (seq !== clipSeq) return;
+        if (name === 'idle') { videoDead = true; showFallback('idle'); }
+        else playClip('idle');
       });
       show();
       return;
@@ -986,7 +971,8 @@
       if (seq !== clipSeq) return;
       if (!ok) {
         if (name !== 'idle') { playClip('idle'); return; }
-        stopClips();
+        videoDead = true;
+        showFallback('idle');
         return;
       }
       next.src = resolved.url;
@@ -995,7 +981,8 @@
   }
   function stopClips() {
     clipSeq++;
-    root.classList.remove('xm-has-video'); /* 视频停了，透明舞台与姿势图一起回静态 */
+    hideFallback(); /* 兜底图也一起藏（自改形象/收起/换态时不留 WebP/GIF） */
+    root.classList.remove('xm-has-video'); /* 视频停了，透明舞台摘掉（静态姿势图已删，不回静态） */
     [clipA, clipB].forEach(function (v) {
       if (!v) return;
       try { v.pause(); } catch (e) { /* 忽略 */ }
@@ -1008,9 +995,10 @@
   /* ---------- 默认显示走透明视频（2026-11-18） ----------
      待机播 idle 透明循环；行走/散步沿用游乐场 walk 循环（追/漫步已调 playClip('walk')）。
      检测办法：canPlayType('video/webm; codecs="vp9"')——能解 VP9 WebM 的浏览器都解得动
-     它的 alpha 面（Chrome/Edge/Firefox）；Safari 不认 VP9（返回空串）→ 直接静态。
+     它的 alpha 面（Chrome/Edge/Firefox）；Safari 不认 VP9（返回空串）→ 视频路判死，
+     走动画 WebP 兜底（2026-11-18 删静态图，不再回静态）。
      这是编解码支持检测，不是逐像素 alpha 探针；真机 Safari 未覆盖。
-     文件不在/加载失败/解码出错 → playClip 探活失败或 error 事件 → stopClips → 静态。 */
+     文件不在/加载失败/解码出错 → playClip 探活失败或 error 事件 → 视频路判死 → WebP 兜底。 */
   function supportsVp9Alpha() {
     try {
       var v = document.createElement('video');
@@ -1023,7 +1011,14 @@
       !root.classList.contains('xm-closed');
   }
   function startAmbientVideo() {
-    if (!ambientEligible()) return false;
+    if (reducedMotion || avatarPick || root.classList.contains('xm-closed')) return false;
+    if (!supportsVp9Alpha()) {
+      /* Safari 不认 VP9：视频路直接判死，走动画 WebP 兜底 */
+      videoDead = true;
+      ambientVideo = true;
+      showFallback('idle');
+      return true;
+    }
     ambientVideo = true;
     playClip('idle');
     return true;
@@ -1033,9 +1028,11 @@
     if (!play.on) stopClips();
   }
   /* 视频暂停/续播（贴边/离屏/切后台/收起时省电）：只动当前可见的那一路；
-     续播只在游乐场或默认视频在播时才续，静态态不无故开播。 */
+     兜底图是 <img> 动图，display:none 即暂停；续播只在游乐场或默认视频在播时才续，
+     兜底态不无故开播。 */
   function pauseClips() {
     try { if (clipVisible && !clipVisible.paused) clipVisible.pause(); } catch (e) { /* 忽略 */ }
+    try { if (fallbackImg) fallbackImg.classList.remove('xm-on'); } catch (e) { /* 忽略 */ }
   }
   function resumeClips() {
     try {
@@ -1044,12 +1041,15 @@
         if (p && p.catch) p.catch(function () { /* 留首帧 */ });
       }
     } catch (e) { /* 忽略 */ }
+    try {
+      if (fallbackCurrent && !fallbackDead && (play.on || ambientVideo) && !document.hidden && fallbackImg) fallbackImg.classList.add('xm-on');
+    } catch (e) { /* 忽略 */ }
   }
-  /* 视频有首帧才算真在播：透明类（舞台透明+藏姿势图）只在首帧就绪后挂，
-     之前姿势图仍顶着，不闪空舞台；error/停播时由 stopClips 摘掉。 */
+  /* 视频有首帧才算真在播：透明类（舞台透明+藏兜底图）只在首帧就绪后挂，
+     之前是默认白圆舞台，不闪破图；error/停播时由 stopClips 摘掉。 */
   function markVideoReady(v, seq) {
     var on = function () {
-      if (seq === clipSeq && clipVisible === v) root.classList.add('xm-has-video');
+      if (seq === clipSeq && clipVisible === v) { hideFallback(); root.classList.add('xm-has-video'); }
     };
     try {
       if (v.readyState >= 2) on();
@@ -1057,11 +1057,72 @@
     } catch (e) { /* 忽略 */ }
   }
 
+  /* ---------- 删静态图后的兜底链（2026-11-18，William 点选 WebP） ----------
+     视频播不了（Safari 不认 VP9 / 文件缺失 / 解码失败）→ 动画 WebP；
+     WebP 也失败 → GIF；GIF 也失败 → 猫直接藏起来（hideCat），绝不回静态图。
+     三段状态（idle/walk/pounce）共用这条链：playClip 在视频路已死时直接改走这里。
+     兜底文件约定（public/xiaomaomao/media/，二进制不进仓库、部署时另放）：
+     play-{idle,walk,pounce}.webp（动画 WebP，v2 已验透明）/
+     play-{idle,walk,pounce}.gif（更老 Safari 的第二兜底）。
+     window.XIAOMAOMAO_MEDIA.fallbacks 可按名覆盖任意一条的地址（与 videos 同款信任规则）。 */
+  var PLAY_FALLBACKS = { idle: 'play-idle.webp', walk: 'play-walk.webp', pounce: 'play-pounce.webp' };
+  var PLAY_FALLBACK_GIFS = { idle: 'play-idle.gif', walk: 'play-walk.gif', pounce: 'play-pounce.gif' };
+  var videoDead = false; /* 视频路已死：VP9 不支持或 idle 探活/解码失败，此后 playClip 直接走兜底 */
+  var fallbackImg = null, fallbackCurrent = '', fallbackTier = '', fallbackDead = false;
+  function fallbackUrl(name, tier) {
+    try {
+      var o = window.XIAOMAOMAO_MEDIA;
+      if (o && o.fallbacks && typeof o.fallbacks['play-' + name] === 'string') return o.fallbacks['play-' + name];
+    } catch (e) { /* 忽略 */ }
+    return MEDIA_BASE + (tier === 'gif' ? PLAY_FALLBACK_GIFS[name] : PLAY_FALLBACKS[name]);
+  }
+  function ensureFallbackImg() {
+    if (fallbackImg) return;
+    fallbackImg = document.createElement('img');
+    fallbackImg.className = 'xm-fallback';
+    fallbackImg.setAttribute('aria-hidden', 'true');
+    fallbackImg.alt = '';
+    fallbackImg.addEventListener('error', function () {
+      /* WebP 失败 → GIF；GIF 也失败 → 藏猫。只对当前在播的兜底生效。 */
+      if (!fallbackCurrent || fallbackDead) return;
+      if (fallbackTier === 'webp') {
+        fallbackTier = 'gif';
+        fallbackImg.src = fallbackUrl(fallbackCurrent, 'gif');
+      } else {
+        fallbackDead = true;
+        hideCat();
+      }
+    });
+    stageEl.appendChild(fallbackImg);
+  }
+  function hideCat() {
+    /* 兜底全灭：猫直接藏起来（display:none 级别），绝不回静态图、不留破图。
+       自改形象的用户不受影响——hideCat 只在兜底链里调，avatarPick 时不进兜底。 */
+    try { root.style.display = 'none'; } catch (e) { /* 忽略 */ }
+  }
+  function showFallback(name) {
+    if (avatarPick || fallbackDead) return false;
+    if (!PLAY_FALLBACKS[name]) name = 'idle';
+    stopClips();
+    ensureFallbackImg();
+    fallbackCurrent = name;
+    fallbackTier = 'webp';
+    fallbackImg.src = fallbackUrl(name, 'webp');
+    fallbackImg.classList.add('xm-on');
+    root.classList.add('xm-has-fallback');
+    return true;
+  }
+  function hideFallback() {
+    if (fallbackImg) fallbackImg.classList.remove('xm-on');
+    root.classList.remove('xm-has-fallback');
+    fallbackCurrent = '';
+  }
+
   /* ---------- 追鼠标 + 扑光标（Top 1） ----------
      状态机：idle（待机循环）→ chase（走路循环追光标）→ pounce（扑的一段，限速触发）
      → catch（挠痒→打哈欠→睡着三段收尾，oneko 同款）→ idle。光标 8 秒不动时猫自己
      满屏散步（随机挑点走过去）；20 秒没人理就打哈欠睡着（走现有 goSleep）。
-     诚实边界：挠痒/打哈欠/睡着三段收尾当前用待机视频 + 姿势 + 气泡实现，专用视频后补；
+     诚实边界：挠痒/打哈欠/睡着三段收尾当前用待机视频 + 气泡实现（静态姿势已删），专用视频后补；
      猫只能在页面视口里走，上不了桌面。 */
   var play = { on: false, mode: 'idle', tx: 0, ty: 0, raf: 0, lastPtr: 0, px: 0, py: 0, pv: 0, wanderT: 0, sleepT: 0, _lastTick: 0 };
   var PLAY_CHASE_SPEED = 260; /* px/s */
@@ -1454,7 +1515,7 @@
       new IntersectionObserver(function (entries) {
         for (var i = 0; i < entries.length; i++) {
           if (!entries[i].isIntersecting) {
-            if (videoEl) stopCelebVideo(); /* v8 复审返工：离屏直接移除，别让暂停定格盖住后面的静态姿势 */
+            if (videoEl) stopCelebVideo(); /* v8 复审返工：离屏直接移除，别让暂停定格盖住后面的兜底图 */
             pauseClips();
           } else resumeClips();
         }
@@ -2964,28 +3025,16 @@
   var lookGrid = root.querySelector('.xm-look-grid');
   var lookFile = root.querySelector('.xm-look-file');
   var lookNote = root.querySelector('.xm-look-note');
-  /* v8 图库三套：C=皇冠全套（默认，13 张）/ L=经典浅色（旧形象 6 张）/ D=经典深色（旧形象 6 张）。
-     旧版存档的 set 只有 light/dark，键位与语义原样保留，老用户选过的经典图不丢。 */
-  var POSE_LABELS = { main: '皇冠主形象', milestone: '开心大笑', making: '眨眼卖萌', surprised: '惊喜', shy: '害羞脸红', heart: '爱心眼', waking: '困困打哈欠', grumpy: '鼓脸小生气', teary: '委屈泪汪汪', working: '好奇张望', clever: '机灵侧目', pleading: '委屈垂耳', idle: '困困垂耳' };
-  var POSE_KEYS = ['main', 'milestone', 'making', 'surprised', 'shy', 'heart', 'waking', 'grumpy', 'teary', 'working', 'clever', 'pleading', 'idle'];
-  var CLASSIC_LABELS = { main: '主形象', idle: '待机', waking: '醒来', working: '工作', making: '卖萌', milestone: '庆祝' };
-  var CLASSIC_KEYS = ['main', 'idle', 'waking', 'working', 'making', 'milestone'];
+  /* 2026-11-18 删静态图：内置图库（皇冠/经典/深色）已随静态图删除；图库只剩
+     「默认视频」与用户上传。旧存档里的内置选择静默退化为默认视频猫。 */
   function showLookNote(t) { if (lookNote) lookNote.textContent = t; }
   function selLookKey() {
     if (!avatarPick) return 'def';
-    if (avatarPick.kind === 'upload') return 'U';
-    return (avatarPick.set === 'dark' ? 'D:' : avatarPick.set === 'crown' ? 'C:' : 'L:') + avatarPick.pose;
+    return 'U';
   }
   function renderLook() {
     lookGrid.innerHTML = '';
-    var items = [{ key: 'def', label: '默认皇冠全套', thumb: ASSETS + POSES.main }];
-    POSE_KEYS.forEach(function (k) {
-      items.push({ key: 'C:' + k, label: '皇冠·' + POSE_LABELS[k], thumb: ASSETS + POSES[k] });
-    });
-    CLASSIC_KEYS.forEach(function (k) {
-      items.push({ key: 'L:' + k, label: '经典·' + CLASSIC_LABELS[k], thumb: ASSETS + POSES_CLASSIC[k] });
-      items.push({ key: 'D:' + k, label: '经典深色·' + CLASSIC_LABELS[k], thumb: ASSETS + POSES_DARK[k] });
-    });
+    var items = [{ key: 'def', label: '默认视频', thumb: ASSETS + 'media/play-idle.webp' }];
     if (avatarPick && avatarPick.kind === 'upload') items.push({ key: 'U', label: '我的上传', thumb: avatarPick.data });
     var sk = selLookKey();
     items.forEach(function (it) {
@@ -3009,21 +3058,14 @@
     try {
       var back = JSON.parse(window.localStorage.getItem(STORE_KEY) || 'null');
       if (!avatarPick) return !!(back && !back.avatar);
-      return !!(back && back.avatar && back.avatar.kind === avatarPick.kind &&
-        (avatarPick.kind !== 'upload' || back.avatar.data === avatarPick.data) &&
-        (avatarPick.kind !== 'builtin' || back.avatar.pose === avatarPick.pose));
+      return !!(back && back.avatar && back.avatar.kind === 'upload' && back.avatar.data === avatarPick.data);
     } catch (e) { return false; }
   }
   function pickLook(key) {
     var prev = avatarPick;
     if (key === 'def') avatarPick = null;
     else if (key === 'U') { if (!prev || prev.kind !== 'upload') return; }
-    else {
-      var pose = key.slice(2);
-      var setName = key.charAt(0) === 'D' ? 'dark' : key.charAt(0) === 'C' ? 'crown' : 'light';
-      if (!poseSetOf(setName)[pose]) return;
-      avatarPick = { kind: 'builtin', set: setName, pose: pose };
-    }
+    else return; /* 2026-11-18 删静态图：内置图库选择已取消，未知键直接忽略 */
     if (!persistAvatarChecked()) {
       avatarPick = prev;
       persistAvatar();
@@ -3033,7 +3075,7 @@
     stopCelebVideo(); /* v8 复审返工：换形象即停视频，滞后的探活链凭令牌丢弃 */
     refreshAvatarImages();
     renderLook();
-    showLookNote(avatarPick ? '好啦，以后就用这个形象陪你～' : '恢复默认啦，整套姿势都回来咯');
+    showLookNote(avatarPick ? '好啦，以后就用这个形象陪你～' : '恢复默认啦，视频猫回来咯');
     /* 默认视频：用户选了单张形象就停默认视频，恢复默认再播 */
     if (avatarPick) stopAmbientVideo(); else startAmbientVideo();
   }
@@ -3150,6 +3192,6 @@
     window.setTimeout(function () { setPlayMode(true); }, 1200);
   }
   /* 默认显示走透明视频（2026-11-18）：游乐场没开时也播 idle 透明循环；减动效/
-     自改形象/收起态/不支持 VP9 透明/文件不在时安静回退静态姿势，不报错、不留白。 */
+     自改形象/收起态时不播；不支持 VP9 透明/文件不在时走 WebP 兜底，不报错、不留白。 */
   window.setTimeout(function () { if (!play.on) startAmbientVideo(); }, 600);
 })();

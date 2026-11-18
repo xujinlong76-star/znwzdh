@@ -196,7 +196,9 @@ describe("v7 全套 SVG 图标", () => {
 describe("v7 不回归 v6 功能锚点", () => {
   it("核心功能接点都在", () => {
     for (const anchor of [
-      "var POSES_DARK", // 深色整套图
+      // 2026-11-18 删静态图：POSES_DARK 已随 poses/ 删除（William 令），深色静态套不再存在；
+      // 兜底改走 WebP（PLAY_FALLBACKS），自改形象只剩上传
+      "var PLAY_FALLBACKS", // WebP 兜底三段
       "function doDock()", // 贴边半藏
       "var DOCK_AFTER = 60000",
       "function openLook()", // 自改形象

@@ -28,6 +28,46 @@ import {
 } from 'lucide-react'
 import { CARD_DENSITY_OPTIONS, readLocalUserSettings, type UserSettingsModel } from '@/lib/user-settings'
 import { FAVORITES_STORAGE_KEY, parseFavorites } from '@/lib/favorites-storage'
+import { fetchPlugins } from '@/lib/navhub-api'
+
+/** U-92：插件徽章中性文案。失败 / total<=0 / 未取到数时都落这里，永不回落硬编码总数。 */
+export const PLUGIN_CATALOG_NEUTRAL_BADGE = '插件生态'
+
+/**
+ * U-92：插件徽章纯解析。已装优先于目录总数；total<=0/缺失都落中性文案。
+ * 首漆（telemetry 未就绪）与取数失败都走同一条中性分支，不写 0、不写死总数。
+ */
+export function resolvePluginBadge(
+  installedCount: number | undefined,
+  catalogTotal: number | null | undefined,
+): string {
+  if (typeof installedCount === 'number' && installedCount > 0) return `${installedCount} 已安装`
+  if (typeof catalogTotal === 'number' && catalogTotal > 0) return `${catalogTotal} 款生态`
+  return PLUGIN_CATALOG_NEUTRAL_BADGE
+}
+
+/** U-92：取目录总数算徽章的 fetcher 形态（只取 limit:1，total 即全量）。 */
+export type PluginCatalogFetcher = (params: { limit: number }) => Promise<{ total: number }>
+
+/**
+ * U-92：插件徽章取数（effect 侧调这里，首漆不阻塞）。
+ * 已装>0 直接回「N 已安装」，不发请求；否则 fetchPlugins({ limit: 1 }) 取 total；
+ * 失败或 total<=0 回中性文案。fetchPlugins 内部 degrade 失败时已回 total:0
+ * 兜底，这里的 try/catch 只防非预期抛错。
+ */
+export async function loadPluginCatalogBadge(
+  fetchCatalog: PluginCatalogFetcher,
+  installedCount: number | undefined,
+): Promise<string> {
+  if (typeof installedCount === 'number' && installedCount > 0) return `${installedCount} 已安装`
+  try {
+    const res = await fetchCatalog({ limit: 1 })
+    const total = typeof res?.total === 'number' ? res.total : 0
+    return total > 0 ? `${total} 款生态` : PLUGIN_CATALOG_NEUTRAL_BADGE
+  } catch {
+    return PLUGIN_CATALOG_NEUTRAL_BADGE
+  }
+}
 
 interface EntryItem {
   href: string
@@ -82,7 +122,7 @@ const GROUPS: readonly GroupDefinition[] = [
         hint: '已安装 / 我发布 / 投稿',
         icon: Package,
         badgeKey: 'plugins',
-        defaultBadge: '77 款生态',
+        defaultBadge: PLUGIN_CATALOG_NEUTRAL_BADGE,
       },
       {
         href: '/me/workspaces',
@@ -182,6 +222,21 @@ export function EntryGroups({
   settings,
 }: EntryGroupsProps) {
   const [telemetry, setTelemetry] = useState<Record<string, string>>({})
+  // U-92：插件徽章由独立 effect 拥有（不进 telemetry，避免主 effect
+  // 重跑时把已取到的「N 款生态」盖回中性）。null = 未取到，渲染落默认徽章。
+  const [pluginBadge, setPluginBadge] = useState<string | null>(null)
+
+  // U-92：插件徽章取数——已装>0 不发请求（loader 内直接回「N 已安装」），
+  // 否则 hydration 后取目录总数；失败/total<=0 都落中性文案。
+  useEffect(() => {
+    let cancelled = false
+    void loadPluginCatalogBadge(fetchPlugins, installedPluginsCount).then((badge) => {
+      if (!cancelled) setPluginBadge(badge)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [installedPluginsCount])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -206,7 +261,6 @@ export function EntryGroups({
 
     setTelemetry({
       favorites: typeof favCount === 'number' && favCount > 0 ? `${favCount} 个站点` : 'E2EE 加密',
-      plugins: typeof installedPluginsCount === 'number' && installedPluginsCount > 0 ? `${installedPluginsCount} 已安装` : '77 款生态',
       settings: `${densityLabel}密度`,
       history: typeof searchesCount === 'number' && searchesCount > 0
         ? `${searchesCount} 条记录`
@@ -238,7 +292,8 @@ export function EntryGroups({
             </p>
             <ul className="mt-2 space-y-1.5">
               {group.items.map(({ href, label, hint, icon: Icon, badgeKey, defaultBadge }) => {
-                const liveBadge = telemetry[badgeKey] || defaultBadge
+                // U-92：插件徽章走独立 state（首漆 null → 默认中性文案），其余仍走 telemetry。
+                const liveBadge = badgeKey === 'plugins' ? (pluginBadge ?? defaultBadge) : (telemetry[badgeKey] || defaultBadge)
                 return (
                   <li key={href}>
                     <Link

@@ -74,12 +74,20 @@ import {
   searchSites,
   searchPlugins,
   reportClick,
-  fetchSearchHistory,
+  fetchSearchHistoryPage,
+  deleteSearchHistoryItem,
+  clearCloudSearchHistory,
   healSiteWayback,
   type HubSearchHit,
   type HubSearchResult,
   type HubPluginSearchResponse,
 } from '@/lib/navhub-api'
+import {
+  clearSearchHistorySnapshot,
+  removeRecentSearchItem,
+  toRecentSearchItems,
+  type RecentSearchItem,
+} from '@/lib/recent-search'
 import { getIdentity } from '@/lib/identity'
 import { openCopilot } from '@/lib/ai-entry'
 import { submitPrefillHref } from '@/lib/submit-prefill'
@@ -161,8 +169,10 @@ export function SpotlightModal({
   const [pluginHits, setPluginHits] = useState<HubPluginSearchResponse | null>(null)
   const [videoHits, setVideoHits] = useState<NavigationSubItem[]>([])
   const [totalVideoCount, setTotalVideoCount] = useState<number>(0)
-  const [recentQueries, setRecentQueries] = useState<string[]>([])
+  const [recentQueries, setRecentQueries] = useState<RecentSearchItem[]>([])
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
+  /** 清空最近搜索的两步确认是否已 armed（同 /me/history「清空全部」→「确认清空全部」） */
+  const [confirmClearRecent, setConfirmClearRecent] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [healingId, setHealingId] = useState<string | null>(null)
@@ -278,9 +288,43 @@ export function SpotlightModal({
     }
   }, [shortcutMode])
 
+  /* P3-13：最近搜索单条删除 + 一键清空（U-37②，与 SearchPalette 同款接线）。
+     删除按服务端 id，不按查询词过滤；失败时列表不动 + toast。
+     清空是显式两步确认，成功后删本机快照键，否则下次降级加载会把
+     已清空的历史「复活」（R4）。 */
+  const handleDeleteRecent = useCallback(
+    async (item: RecentSearchItem) => {
+      const ok = await deleteSearchHistoryItem(identity, item.id)
+      if (!ok) {
+        toast.error('删除失败', { description: '云端暂不可用，请稍后重试' })
+        return
+      }
+      setRecentQueries((prev) => removeRecentSearchItem(prev, item.id))
+    },
+    [identity],
+  )
+
+  const handleClearRecent = useCallback(async () => {
+    if (recentQueries.length === 0) return
+    if (!confirmClearRecent) {
+      setConfirmClearRecent(true)
+      return
+    }
+    setConfirmClearRecent(false)
+    const ok = await clearCloudSearchHistory(identity)
+    if (!ok) {
+      toast.error('清空失败', { description: '云端暂不可用，请稍后重试' })
+      return
+    }
+    setRecentQueries([])
+    clearSearchHistorySnapshot()
+    toast.success('搜索历史已清空')
+  }, [identity, recentQueries.length, confirmClearRecent])
+
   // 2. 加载历史记录与最近常去站点（初始焦点由 useOverlayBehavior 的 initialFocusRef 交接）
   useEffect(() => {
     if (open) {
+      setConfirmClearRecent(false)
       readOfflineVisits(6)
         .then((visits) => {
           if (Array.isArray(visits)) setRecentVisits(visits)
@@ -289,9 +333,9 @@ export function SpotlightModal({
           // 容错降级：本地最近访问读取失败保持空数组
         })
 
-      fetchSearchHistory(identity)
-        .then((items) => {
-          if (Array.isArray(items)) setRecentQueries(items.slice(0, 8))
+      fetchSearchHistoryPage(identity, { limit: 8 })
+        .then((page) => {
+          if (Array.isArray(page.items)) setRecentQueries(toRecentSearchItems(page.items))
         })
         .catch(() => {
           // 最近搜索只是锦上添花：拉取失败当作没有历史，不打断搜索主流程
@@ -1235,17 +1279,54 @@ export function SpotlightModal({
                       <div className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5" />
                         <span>最近搜索</span>
+                        {/* P3-13：一键清空，两步确认（同 /me/history）；确认文案按
+                            /me/history:6 的身份口径：当前身份是登录身份或本机匿名 id */}
+                        <button
+                          type="button"
+                          aria-label={confirmClearRecent ? '确认清空最近搜索' : '清空最近搜索'}
+                          title={
+                            confirmClearRecent
+                              ? '将删除当前身份（登录身份或本机匿名 id）下的全部最近搜索'
+                              : '清空最近搜索'
+                          }
+                          onClick={() => void handleClearRecent()}
+                          className={
+                            confirmClearRecent
+                              ? 'ml-auto text-[11px] font-medium text-destructive hover:underline'
+                              : 'ml-auto text-[11px] font-normal text-muted-foreground hover:text-foreground hover:underline'
+                          }
+                        >
+                          {confirmClearRecent ? '确认清空' : '清空'}
+                        </button>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {recentQueries.map((item, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => setQuery(item)}
-                            className="text-xs px-2.5 py-1 rounded-md bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                        {/* R3：chip 是 span 容器，回填区与 × 并列——<button> 里
+                            不能再嵌 <button>；× 命中区 32px，触屏 44px */}
+                        {recentQueries.map((item) => (
+                          <span
+                            key={item.id}
+                            className="inline-flex items-center rounded-md bg-muted/60 hover:bg-muted transition-colors"
                           >
-                            {item}
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => setQuery(item.query)}
+                              className="text-xs px-2.5 py-1 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {item.query}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`删除最近搜索“${item.query}”`}
+                              title="删除这条最近搜索"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void handleDeleteRecent(item)
+                              }}
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-muted hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11"
+                            >
+                              <X className="h-3.5 w-3.5" aria-hidden />
+                            </button>
+                          </span>
                         ))}
                       </div>
                     </div>

@@ -164,3 +164,36 @@ describe('接线：SearchPalette 最近搜索可单条删除 + 一键清空', ()
     expect(palette).toContain('history: recent.map((item) => item.query)')
   })
 })
+
+describe('接线：SpotlightModal 最近搜索可单条删除 + 一键清空', () => {
+  const spotlight = overlaySource('src/components/search/spotlight-modal.tsx')
+
+  it('取数走 fetchSearchHistoryPage（limit 8，带 id），不再用只回词的 fetchSearchHistory', () => {
+    expect(spotlight).toContain('fetchSearchHistoryPage')
+    expect(spotlight).toContain('toRecentSearchItems')
+    expect(spotlight).not.toContain('fetchSearchHistory(')
+  })
+
+  it('单条删除按 id 走 deleteSearchHistoryItem，失败时列表不动 + toast', () => {
+    expect(spotlight).toContain('deleteSearchHistoryItem(identity, item.id)')
+    expect(spotlight).toContain("toast.error('删除失败'")
+    const handler = spotlight.slice(spotlight.indexOf('handleDeleteRecent'), spotlight.indexOf('handleClearRecent'))
+    expect(handler).toContain('const ok = await deleteSearchHistoryItem')
+    expect(handler.indexOf('if (!ok)')).toBeLessThan(handler.indexOf('setRecentQueries('))
+  })
+
+  it('一键清空两步确认（清空→确认清空），成功后删快照键；失败列表不动 + toast', () => {
+    expect(spotlight).toContain('clearCloudSearchHistory(identity)')
+    expect(spotlight).toContain('clearSearchHistorySnapshot()')
+    expect(spotlight).toContain("'确认清空'")
+    expect(spotlight).toContain("toast.error('清空失败'")
+    expect(spotlight).toContain('将删除当前身份（登录身份或本机匿名 id）下的全部最近搜索')
+  })
+
+  it('chip 是 span 容器、回填区与 × 并列（R3：不嵌套 button）；× 32px、触屏 44px、stopPropagation', () => {
+    expect(spotlight).toContain('删除最近搜索')
+    expect(spotlight).toContain('h-8 w-8')
+    expect(spotlight).toContain('pointer-coarse:h-11 pointer-coarse:w-11')
+    expect(spotlight).toContain('e.stopPropagation()')
+  })
+})

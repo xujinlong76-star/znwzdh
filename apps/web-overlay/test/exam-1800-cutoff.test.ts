@@ -6,8 +6,8 @@
  * 保持日期口径，18:30 仍 7 项）。时刻判定只在渲染层按表查：
  *  - 新增纯函数 todayNodeDeadlineMs(item: TodayNodeItem): number | undefined
  *    （放 src/lib/exam-calendar.ts），查表 key 为 `${exam.id}:${node.label}`，
- *    只覆盖 11-18 的 5 个已核实目标时刻：成考江西成绩查询 09:00、成考新疆
- *    成绩查询 12:00、成考广东成绩查询 16:20、京考报名 18:00、军队文职缴费
+ *    只覆盖 11-18 的 7 个已核实目标时刻：成考江西成绩查询 09:00、成考新疆
+ *    成绩查询 12:00、成考广东成绩查询 16:20、江苏自考成绩查询 10:00、广东自考成绩查询 15:00、京考报名 18:00、军队文职缴费
  *    18:00（均为北京时间 2026-11-18；shanghaiMidnightMs('2026-11-18') +
  *    小时数算毫秒）。守卫：节点日期须覆盖 2026-11-18（查 node.startISO /
  *    endISO），不以 label 裸匹配；其他节点一律 undefined。
@@ -37,7 +37,7 @@
  *    仍 true、nextExamNode 仍返回报名/缴费；注释写明关注/勾选门控仍按
  *    日期口径、午夜才翻，18:00–24:00 可关注是已接受的设计取舍（与既往
  *    所有当日截止节点一致），不在本轮改；
- *  - 新增一节断言 todayNodeDeadlineMs 的五项目标时刻毫秒值、成考三省
+ *  - 新增一节断言 todayNodeDeadlineMs 的七项目标时刻毫秒值、成考三省
  *    边界与日期守卫（表外 / 同 label 不同日期返回 undefined / null）。
  *  - 旧版文件头「ExamNode 新增截止时刻字段」「examNodeStatus 末日按时刻
  *    翻 done」的接口说明已被最终设计推翻，不再保留。
@@ -300,14 +300,16 @@ describe('门控不泄漏：没有 18:00 截止的节点不受影响', () => {
   })
 })
 
-describe('todayNodeDeadlineMs：五项目标时刻与日期守卫', () => {
-  it('五项目标时刻毫秒值：江西 09:00 / 新疆 12:00 / 广东 16:20 / 京考报名与文职缴费 18:00（均为北京时间 11-18）', () => {
+describe('todayNodeDeadlineMs：七项目标时刻与日期守卫', () => {
+  it('七项目标时刻毫秒值：江西 09:00 / 新疆 12:00 / 广东 16:20 / 江苏自考 10:00 / 广东自考 15:00 / 京考报名与文职缴费 18:00（均为北京时间 11-18）', () => {
     const byKey = new Map(
       todayNodes(NOV_18_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
     expect(todayNodeDeadlineMs(byKey.get('chengkao:江西成绩查询')!)).toBe(Date.UTC(2026, 10, 18, 1, 0, 0))
     expect(todayNodeDeadlineMs(byKey.get('chengkao:新疆成绩查询')!)).toBe(Date.UTC(2026, 10, 18, 4, 0, 0))
     expect(todayNodeDeadlineMs(byKey.get('chengkao:广东成绩查询')!)).toBe(Date.UTC(2026, 10, 18, 8, 20, 0))
+    expect(todayNodeDeadlineMs(byKey.get('jiangsu-zikao:成绩查询')!)).toBe(Date.UTC(2026, 10, 18, 2, 0, 0))
+    expect(todayNodeDeadlineMs(byKey.get('guangdong-zikao:成绩查询')!)).toBe(Date.UTC(2026, 10, 18, 7, 0, 0))
     expect(todayNodeDeadlineMs(byKey.get('jingkao:报名')!)).toBe(Date.UTC(2026, 10, 18, 10, 0, 0))
     expect(todayNodeDeadlineMs(byKey.get('jundui-wenzhi:缴费')!)).toBe(Date.UTC(2026, 10, 18, 10, 0, 0))
   })

@@ -63,7 +63,12 @@ test('小猫挂件遮挡与闲置贴边现状测量（桌面 1920x1080）', asyn
   const pageErrors: string[] = []
   const failedRequests: string[] = []
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 300)) })
-  page.on('pageerror', (e) => pageErrors.push(String(e).slice(0, 300)))
+  page.on('pageerror', (e) => {
+    pageErrors.push(String(e).slice(0, 300))
+    // U-162 取证：只记 message 无法定位 `TypeError: Cannot read properties of null
+    // (reading 'style')` 的文件:行号，另记 e.stack 前 500 字供下一 head CI 读栈定位。
+    if (e.stack) pageErrors.push(`stack: ${e.stack.slice(0, 500)}`)
+  })
   page.on('requestfailed', (r) => failedRequests.push(`${r.method()} ${r.url()} :: ${r.failure()?.errorText ?? ''}`.slice(0, 300)))
   page.on('response', (r) => { if (r.status() >= 400) failedRequests.push(`${r.status()} ${r.url()}`.slice(0, 300)) })
 

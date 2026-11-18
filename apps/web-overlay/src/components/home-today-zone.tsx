@@ -153,7 +153,7 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                               {...(kind === 'today' ? { hideWhenPassed: true } : {})}
                             />
                           ) : null}
-                          <span className="min-w-0 flex-1 text-muted-foreground">{node.detail}</span>
+                          <span className="min-w-0 flex-1 basis-full text-muted-foreground">{node.detail}</span>
                         </li>
                       )
                     })}
@@ -170,7 +170,7 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                             className="flex flex-wrap items-baseline gap-x-2"
                           >
                             <TodayNodeLabel exam={exam} node={node} />
-                            <span className="min-w-0 flex-1 text-muted-foreground">
+                            <span className="min-w-0 flex-1 basis-full text-muted-foreground">
                               {node.detail}
                             </span>
                           </li>

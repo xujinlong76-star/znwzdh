@@ -936,7 +936,14 @@ describe('我的考试岛源码守卫', () => {
 
   it('带官方入口的节点渲染直达链接：过 safeHref、新窗口、官方文案，岛内不写死域名', () => {
     expect(island).toContain('safeHref(node.url)')
+    // U-124：「去官网打印准考证」只是默认分支（13 处准考证类节点保留），
+    // 报名/笔试公告/成绩复核三类按节点类型映射（渲染级断言见
+    // exam-node-link-label-u124.test.ts T1–T5）。
     expect(island).toContain('去官网打印准考证')
+    expect(island).toContain('function nodeLinkCopy')
+    expect(island).toContain('去官网报名')
+    expect(island).toContain('查看官方公告')
+    expect(island).toContain('去报名系统申请复核')
     expect(island).toContain('target="_blank"')
     expect(island).toContain('rel="noopener noreferrer"')
     expect(island).not.toContain('cet-bm.neea.edu.cn')

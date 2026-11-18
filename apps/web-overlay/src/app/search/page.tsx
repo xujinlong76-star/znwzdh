@@ -8,6 +8,7 @@ import {
   normalizeSearchTag,
 } from '@/lib/search-page'
 import { hubGet } from '@/lib/server/hub'
+import { categoryDisplayName, loadCategories, type HubCategory } from '@/lib/server/categories'
 import type { FacetGroup } from '@/components/search-facet-bar'
 import { readSiteSettings } from '@/lib/site-config-source'
 import { externalLinkRelAttr } from '@/lib/site-settings'
@@ -15,6 +16,16 @@ import type { HubSite } from '@/lib/navhub-api'
 import { SearchResults } from './search-results'
 
 type RankHit = { site: HubSite }
+
+/**
+ * U-183：分类 slug/id → 中文展示名。按 id 或 slug 在类目表里匹配，命中则
+ * 用 categoryDisplayName（同名标题带「父 · 子」消歧）；未命中或取数失败
+ * （categories 为 null）退回 slug 原样，不阻塞渲染。
+ */
+function resolveCategoryName(category: string, categories: HubCategory[] | null): string {
+  const hit = categories?.find((c) => c.id === category || c.slug === category)
+  return hit && categories ? categoryDisplayName(hit, categories) : category
+}
 
 /**
  * 全站搜索结果页（可分享 / 可回退的 URL 状态）。
@@ -39,17 +50,27 @@ export async function generateMetadata({ searchParams }: SearchPageProps): Promi
   const sp = await searchParams
   const q = normalizeSearchQuery(sp.q)
   const tag = normalizeSearchTag(sp.tag)
+  const category = normalizeSearchCategory(sp.category)
+  // U-183：纯分类页的标题/描述也要看得见作用域（否则退回通用「搜索站点」）。
+  // loadCategories 带 3600s 服务端缓存，与分类页/站点页同口径；仅 category 非空时调用。
+  const categoryName = category
+    ? resolveCategoryName(category, await loadCategories(3600))
+    : null
   // 查询词进标题前先截断：不把用户输入的长串原样铺到浏览器标签/分享卡里
   const title = q
     ? `搜索：${q.slice(0, 40)}`
     : tag
       ? `标签：${tag.slice(0, 40)}`
-      : '搜索站点'
+      : category
+        ? `分类：${(categoryName ?? category).slice(0, 40)}`
+        : '搜索站点'
   const description = q
     ? `站内检索“${q.slice(0, 60)}”的匹配站点${tag ? `，限标签「${tag.slice(0, 40)}」` : ''}，支持中文、拼音与语义检索。`
     : tag
       ? `浏览标签「${tag.slice(0, 40)}」下的全部收录站点。`
-      : '按关键词检索站内收录的全部站点，支持中文、拼音与语义检索。'
+      : category
+        ? `浏览分类「${(categoryName ?? category).slice(0, 40)}」下的全部收录站点。`
+        : '按关键词检索站内收录的全部站点，支持中文、拼音与语义检索。'
 
   // 显式写 `title:` / `description:`（不用对象简写）：
   // test/route-titles.test.ts 靠正则识别标题来源，简写会被判定成「这个路由没有标题」。
@@ -75,7 +96,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const nocorrect = sp.nocorrect === '1' || (Array.isArray(sp.nocorrect) && sp.nocorrect[0] === '1')
   const hasFilter = q || tag || category || Object.keys(facets).length > 0
 
-  const [{ result, failed, unavailable, plugins }, facetGroups, trending] = await Promise.all([
+  const [{ result, failed, unavailable, plugins }, facetGroups, trending, categories] = await Promise.all([
     hasFilter
       ? loadSearchPage(q, page, tag, { category, facets, nocorrect })
       : Promise.resolve({ result: null, failed: false, unavailable: [], plugins: null }),
@@ -91,7 +112,10 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     hasFilter
       ? hubGet<{ hits: RankHit[] }>('/api/rank/trending?limit=6', 60)
       : Promise.resolve(null),
+    // U-183：分类中文名与上面三路并行取（仅 category 非空时调用，3600s 缓存）。
+    category ? loadCategories(3600) : Promise.resolve(null),
   ])
+  const categoryName = category ? resolveCategoryName(category, categories) : null
   const recommended = (trending?.hits ?? [])
     .map((h) => h.site)
     .filter((s): s is HubSite => Boolean(s))
@@ -104,6 +128,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       page={page}
       tag={tag}
       category={category}
+      categoryName={categoryName}
       facets={facets}
       facetGroups={facetGroups?.facets ?? null}
       result={result}

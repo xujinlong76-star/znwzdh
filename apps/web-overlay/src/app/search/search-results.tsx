@@ -34,6 +34,8 @@ interface SearchResultsProps {
   tag: string | null
   /** 分类作用域（slug 或 id）：分类页「全局搜索本分类」入口透传 */
   category?: string | null
+  /** 分类中文展示名（page.tsx 用类目表解析；取不到时退回 slug，见下） */
+  categoryName?: string | null
   /** 已生效的正交分面筛选 */
   facets?: Record<string, string[]>
   /** 分面分布（中枢 /api/facets）；null = 取数失败或未启用，整块不渲染 */
@@ -651,6 +653,7 @@ export function SearchResults({
   page,
   tag,
   category = null,
+  categoryName: categoryNameProp = null,
   facets = {},
   facetGroups = null,
   result,
@@ -661,6 +664,9 @@ export function SearchResults({
   externalRel = 'nofollow noopener noreferrer',
 }: SearchResultsProps) {
   const hits = result?.hits ?? []
+  // 分类中文名：page.tsx 已用类目表解析；未解析/取数失败时退回 slug 原样
+  //（站内已有「显示原始标识」的容忍口径，见 :332 相关分类链接）。
+  const categoryName = categoryNameProp ?? category ?? ''
   const hasMore = result?.hasMore === true
   const relations = (result?.relationHits ?? []).filter((rel) => rel.sourceSite).slice(0, 3)
   const relatedTags = result?.relatedTags ?? []
@@ -699,15 +705,25 @@ export function SearchResults({
   const filterRelaxed = result?.fallback === 'filter'
   const tagApplied = tag !== null && !filterRelaxed
   const fuzzy = result?.fallback === 'fuzzy'
+  // U-184：resultLabel 必须覆盖全部四类筛选态（q/tag/category/facets）——
+  // 空态门（:839）开门后纯分类/纯分面态进入结果分支，若这里仍为空串，
+  // 状态行模板 `${resultLabel}：本页 N 条` 会渲染首字孤冒号。门条件保证
+  // 结果分支内至少其一非空，模板本身保持无条件拼接（不掩盖下一次枚举遗漏）。
   const resultLabel = q
     ? filterRelaxed
       ? `“${q}” 的结果（已放宽筛选）`
       : tag
         ? `“${q}” 在标签「${tag}」下`
-        : `“${q}” 的结果`
+        : category
+          ? `“${q}” 在分类「${categoryName}」下`
+          : `“${q}” 的结果`
     : tag
       ? `标签「${tag}」下的站点`
-      : ''
+      : category
+        ? `分类「${categoryName}」下的站点`
+        : Object.keys(facets).length > 0
+          ? `分面筛选下的站点`
+          : ''
 
   return (
     <>
@@ -836,7 +852,9 @@ export function SearchResults({
             </div>
           ) : null}
 
-          {q === '' && !tag ? (
+          {/* U-184：空态门条件须与 page.tsx 的 hasFilter 一致（q/tag/category/facets
+              四类），否则纯分类/纯分面态取回的结果会被静默丢弃、只显示「输入关键词」。 */}
+          {q === '' && !tag && !category && Object.keys(facets).length === 0 ? (
             <section className="space-y-3 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
               <p className="text-sm text-muted-foreground">输入关键词开始搜索；也可以先按分类或标签浏览。</p>
               <nav aria-label="浏览入口" className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs">

@@ -187,20 +187,14 @@ export function ResultRow({
         />
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            {linkable ? (
-              <a
-                href={safeHref(site.url)}
-                target="_blank"
-                rel={externalRel}
-                className="max-w-full truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
-              >
-                <Highlight text={site.title} query={q} />
-              </a>
-            ) : (
-              <span className="max-w-full truncate text-sm font-semibold text-foreground">
-                <Highlight text={site.title} query={q} />
-              </span>
-            )}
+            {/* P3-13：主次倒置修正——标题是站内详情（最显眼的主操作），
+                站外直达降为次级链接。原来标题本身是外链、详情反是 26px 小按钮。 */}
+            <Link
+              href={`/site/${encodeURIComponent(site.id)}`}
+              className="max-w-full truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
+            >
+              <Highlight text={site.title} query={q} />
+            </Link>
             {host ? <span className="text-[11px] text-muted-foreground">{host}</span> : null}
             {site.status === 'broken' ? (
               <span
@@ -236,13 +230,17 @@ export function ResultRow({
             <AlgorithmHudBadge contributions={hit.contributions} />
           </div>
         </div>
-        <Link
-          href={`/site/${encodeURIComponent(site.id)}`}
-          className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border/70 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          详情
-          <ArrowRight className="h-3 w-3" aria-hidden />
-        </Link>
+        {linkable ? (
+          <a
+            href={safeHref(site.url)}
+            target="_blank"
+            rel={externalRel}
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border/70 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            直达
+            <ExternalLink className="h-3 w-3" aria-hidden />
+          </a>
+        ) : null}
       </div>
     </li>
   )

@@ -22,8 +22,9 @@
 - [x] 2026-11-18 18:2x 定性完成：定性 (a) 行为改进未同步期望，定性报告见 QUALITATIVE-REPORT.md（证据：C1 提交信息与注释明写标题规则；github.svg md5 6d802f68… 与官方 favicon.svg 及 copilot.svg 一致；全库标题含 github 恰 3 站、Copilot 先行命中；5 处 '' 期望均立论于 C1 之前；无其他图标断言红）。本地复现待 node_modules 拷贝完成（源 znwzdh-iconbatch-2122，cp -r --no-preserve=ownership，不带 xattr）。
 - [x] 2026-11-18 18:28 本地复现：修前 4 文件 5 failed / 70 passed（b2a 2 + b1b 1 + b2b 2，断言与 CI annotations 逐字一致），c1 全绿；复现日志 /tmp/u97-repro.log。
 - [x] 2026-11-18 18:29 修复：只改三测试文件 5 处期望 '' → '/brand-icons/github.svg' + 过期注释同步（b2a :43-46、b1b :65-69 与文件头、b2b :40-50）；不动产品代码、不删结构断言。修后 4 文件 75/75 全绿，全部 24 个 iconbatch 文件 247/247 全绿；前端 typecheck 0 错（首跑 2 错为包级 node_modules 缺失的环境假报，补拷 packages/*/node_modules 后 0 错）。
-- [ ] 修复提交
-- [ ] 推送并回读确认
+- [x] 2026-11-18 18:3x 修复提交 1d6355e0，推送完成：`git ls-remote` 回读远端 fix/u97-icon-c1-expectations = 1d6355e0480ed6e44f601677affb8d35f64745c8，与本地 HEAD 一致。只推分支，未推 main。
+- [x] 定向测试 + typecheck 全绿
+- [x] 推送并回读确认
 
 ## 初步发现（待复现验证）
 - `site-favicon.tsx:569`：`if (lowerTitle.includes('github')) return '/brand-icons/github.svg'`，C1 提交信息明写“GitHub（标题规则，严禁 github.com 键）”；规则顺序 cline → copilot → langgraph → qwen → vllm → github，更具体的规则在前，未截胡。

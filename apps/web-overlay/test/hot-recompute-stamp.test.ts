@@ -55,7 +55,8 @@ describe('/hot 热度重算时间戳接线', () => {
   })
 
   it('客户端重试刷新走 fetchTrendingMeta，时间戳随之更新', () => {
-    expect(view).toContain('fetchTrendingMeta(30, onDegraded)')
+    // U-197 起重试走逐路失败标记回调（markFailed），不再共用 onDegraded
+    expect(view).toContain("fetchTrendingMeta(30, markFailed('trending'))")
     expect(view).toContain('setRecomputedAt(t.recomputedAt)')
     expect(view).toContain('setTrending(t.sites)')
   })

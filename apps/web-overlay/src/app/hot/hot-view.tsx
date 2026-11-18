@@ -168,25 +168,38 @@ export default function HotView({
     const onDegraded = (error: unknown) => {
       if (!cancelled) setNotice(describeDegrade(error, '榜单数据'))
     }
+    // 失败标记：degrade() 把失败吞成空兜底，.then 收到空数组时分不清
+    // 「真取回 0 条」还是「失败兜底」；每路独立回调记一笔才分得清。
+    const failed = { trending: false, fresh: false, pt: false, pp: false, pr: false, pf: false }
+    const markFailed =
+      (key: keyof typeof failed) =>
+      (error: unknown): void => {
+        failed[key] = true
+        onDegraded(error)
+      }
     void Promise.all([
-      fetchTrendingMeta(30, onDegraded),
-      fetchNewSites(30, onDegraded),
+      fetchTrendingMeta(30, markFailed('trending')),
+      fetchNewSites(30, markFailed('fresh')),
       // 插件排行四组：与服务端 loadHot 同口径（sort + limit=5），失败降级为空数组
-      fetchPlugins({ sort: 'trending', limit: 5 }, onDegraded),
-      fetchPlugins({ sort: 'popular', limit: 5 }, onDegraded),
-      fetchPlugins({ sort: 'rating', limit: 5 }, onDegraded),
-      fetchPlugins({ sort: 'new', limit: 5 }, onDegraded),
+      fetchPlugins({ sort: 'trending', limit: 5 }, markFailed('pt')),
+      fetchPlugins({ sort: 'popular', limit: 5 }, markFailed('pp')),
+      fetchPlugins({ sort: 'rating', limit: 5 }, markFailed('pr')),
+      fetchPlugins({ sort: 'new', limit: 5 }, markFailed('pf')),
     ]).then(([t, f, pt, pp, pr, pf]) => {
       if (cancelled) return
-      setTrending(t.sites)
-      setRecomputedAt(t.recomputedAt)
-      setFresh(f)
-      setPluginRankings({
-        trending: pt.items,
-        popular: pp.items,
-        rating: pr.items,
-        fresh: pf.items,
-      })
+      // 失败一路不覆盖旧榜（只亮 notice）；成功一路正常覆盖，哪怕取回 0 条
+      // ——真空与故障空靠失败标记区分，不靠「空不空」猜。
+      if (!failed.trending) {
+        setTrending(t.sites)
+        if (t.recomputedAt != null) setRecomputedAt(t.recomputedAt)
+      }
+      if (!failed.fresh) setFresh(f)
+      setPluginRankings((prev) => ({
+        trending: failed.pt ? prev.trending : pt.items,
+        popular: failed.pp ? prev.popular : pp.items,
+        rating: failed.pr ? prev.rating : pr.items,
+        fresh: failed.pf ? prev.fresh : pf.items,
+      }))
       setLoading(false)
     })
     return () => {

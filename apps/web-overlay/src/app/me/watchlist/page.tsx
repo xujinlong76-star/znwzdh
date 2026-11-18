@@ -532,9 +532,9 @@ export default function WatchlistPage() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   title={`去${entry.platformTitle}首页搜《${entry.title}》`}
-                                  className="inline-flex min-w-0 items-center gap-1 truncate rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                                  className="inline-flex min-w-0 items-center gap-1 rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
                                 >
-                                  去{entry.platformTitle}搜 <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+                                  <span className="min-w-0 truncate">去{entry.platformTitle}搜</span> <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
                                 </a>
                               </span>
                             </li>

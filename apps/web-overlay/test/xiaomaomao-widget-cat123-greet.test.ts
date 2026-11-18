@@ -115,4 +115,18 @@ describe("c3001 判定阈值：:123 390px 首页招呼", () => {
   it("无重叠 → 放行", () => {
     expect(runGate([rect(8, 100, 374, 160)])).toBe(false);
   });
+
+  it("气泡量不到尺寸（猫被藏/收起态，offsetWidth/Height 为 0）→ 跳过招呼，不放行（U-141）", () => {
+    // 零尺寸 ≠ 不遮挡：hideCat() 后 root display:none、.xm-docked 下气泡
+    // display:none 时气泡无布局尺寸；旧行为 return false 会放行招呼、把文案
+    // 留在看不见的气泡里（:123 旧断言 toHaveText('') 的失败模式）。
+    // 改判 true：判定不了就跳过本次自动招呼。正常可见的猫气泡有
+    // min-height:55px，走不到这支。
+    expect(WIDGET).toContain("if (!bw || !bh) return true;");
+    expect(runGate([], 0, 0)).toBe(true);
+    expect(runGate([], 0, 56)).toBe(true);
+    expect(runGate([], 248, 0)).toBe(true);
+    // :123 几何 + 猫被藏：即使三个悬浮钮本可放行，量不到尺寸也必须跳过
+    expect(runGate(fabButtons(), 0, 0)).toBe(true);
+  });
 });

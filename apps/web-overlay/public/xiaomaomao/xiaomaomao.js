@@ -1568,7 +1568,13 @@
     var main = document.querySelector('main');
     if (!bubbleEl || !main) return false;
     var bw = bubbleEl.offsetWidth, bh = bubbleEl.offsetHeight;
-    if (!bw || !bh) return false;
+    /* U-141（2026-11-18）：量不到尺寸 ≠ 不遮挡。气泡零尺寸只发生在猫被藏
+       （hideCat 后 root display:none，气泡无布局尺寸）、收起态
+       （.xm-docked .xm-bubble{display:none}）或样式未就绪时——此时无法
+       证明“不盖正文”，放行招呼只会把文案留在看不见的气泡里（:123 旧断言
+       toHaveText('') 就是这么失败的）。零尺寸按“判定不了”处理：跳过
+       本次自动招呼，不放行。正常可见的猫气泡有 min-height:55px，走不到这支。 */
+    if (!bw || !bh) return true;
     var catRect = root.getBoundingClientRect();
     var rect = { left: catRect.right + 4 - bw, top: catRect.top - 12 - bh, right: catRect.right + 4, bottom: catRect.top - 12 };
     var bubbleArea = bw * bh;

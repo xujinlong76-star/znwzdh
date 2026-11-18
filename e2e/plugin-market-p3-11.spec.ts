@@ -23,8 +23,9 @@ import { loginViaAdmin } from './helpers';
  * 未覆盖（写明原因）：
  *   - Taps 同步成功进目录：同步要服务端 guardedFetch 拉取远端清单，SSRF 守卫拦 127.0.0.1/
  *     内网（tap-sync-import.test.ts:13），E2E 里没有可达的公开清单宿主；导入逻辑本身由
- *     API 层单测 tap-sync-import.test.ts 覆盖。本文件只覆盖同步失败分支（example.com 回
- *     HTML → JSON 解析失败 → toast 报「获取订阅源失败」；无外网时 DNS 失败同样走该分支）。
+ *     API 层单测 tap-sync-import.test.ts 覆盖。本文件只覆盖同步失败分支（example.com 对
+ *     不存在的路径回 404 → 服务端报「订阅源响应异常 (HTTP 404)」；无外网时 DNS 失败才走
+ *     fetch 抛错分支、toast 报「获取订阅源失败」）。
  *   - 精选推荐源（Featured Taps）：2026-11-10 审计实测三条外链全 404 后已摘除，
  *     FEATURED_TAPS 现为空数组，UI 上无该区块可点。
  *   - 真 LLM 生成：见⑤，不确定 + 耗 quota，E2E 不做。
@@ -235,9 +236,10 @@ test.describe('P3-11：短链 / 预览路由 / Taps / 防抖 / AI 生成', () =>
     await page.goto(`/marketplace/${slug}/preview`);
     await expect(page.getByText('插件未上架或不存在')).toBeVisible({ timeout: 30_000 });
 
-    // 2) 旧 ?preview=1 链：服务端 302 到 /preview（匿名仍看 404，只验路由去向）
+    // 2) 旧 ?preview=1 链：服务端 302 到 /preview（匿名仍看 404，只验路由去向）；
+    // 终态带 ?preview=1 是 redirect 透传原 query 的正确行为（next.config.js 未声明剥离），不断言裸 URL
     await page.goto(`/marketplace/${slug}?preview=1`);
-    await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}/preview$`));
+    await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}/preview(\\?preview=1)?$`));
     await expect(page.getByText('插件未上架或不存在')).toBeVisible();
 
     // 3) 作者（localStorage  anonId 与投稿身份一致）：/preview 看到刚提交的版本，
@@ -302,18 +304,25 @@ test.describe('P3-11：短链 / 预览路由 / Taps / 防抖 / AI 生成', () =>
     await dialog.getByRole('button', { name: '添加源' }).click();
     await expect(page.getByText(/成功添加订阅源/).first()).toBeVisible({ timeout: 15_000 });
     await expect(dialog.getByText(tapName, { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(dialog.getByText('市场内 0 个插件')).toBeVisible();
+    // Taps 列表是服务端全局 state：重试会留下首跑的旧行，每行都有一枚同文案 badge 与
+    // 同名「同步」/删除按钮；行内操作必须限定在自家 tap 行内，否则 strict mode violation。
+    const tapRow = dialog
+      .getByText(tapName, { exact: true })
+      .locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " rounded-xl ")][1]');
+    await expect(tapRow.getByText('市场内 0 个插件')).toBeVisible();
 
-    // 同步：example.com 回 200 HTML，服务端 JSON 解析失败 → toast 如实报失败；
-    // 无外网时 DNS 失败同样走「获取订阅源失败」分支（见文件头未覆盖说明）
-    await dialog.getByRole('button', { name: '同步' }).click();
-    await expect(page.getByText(/获取订阅源失败/).first()).toBeVisible({ timeout: 30_000 });
+    // 同步：example.com 对不存在的路径回 404，服务端非 200 直接报
+    // 「订阅源响应异常 (HTTP 404)」并原样进 toast；只有 fetch 本身抛错才走
+    // 「获取订阅源失败」分支（无外网 DNS 失败时，见文件头未覆盖说明）
+    await tapRow.getByRole('button', { name: '同步' }).click();
+    await expect(page.getByText(/订阅源响应异常 \(HTTP 404\)/).first()).toBeVisible({ timeout: 30_000 });
     // 失败不同步出插件：源仍在、计数仍为 0
     await expect(dialog.getByText(tapName, { exact: true })).toBeVisible();
-    await expect(dialog.getByText('市场内 0 个插件')).toBeVisible();
+    await expect(tapRow.getByText('市场内 0 个插件')).toBeVisible();
 
-    // 两步删除：先点垃圾桶出「确认移除」，再点才真删（防误删）
-    await dialog.locator('button[title="移除此订阅源"]').click();
+    // 两步删除：先点垃圾桶出「确认移除」，再点才真删（防误删）；
+    // 同样限定在自家行内——重试残留的旧行也有同名删除按钮
+    await tapRow.locator('button[title="移除此订阅源"]').click();
     await dialog.getByRole('button', { name: '确认移除' }).click();
     await expect(page.getByText(/已移除订阅源/).first()).toBeVisible({ timeout: 15_000 });
     await expect(dialog.getByText(tapName, { exact: true })).not.toBeVisible({ timeout: 15_000 });

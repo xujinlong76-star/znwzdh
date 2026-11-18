@@ -615,7 +615,7 @@ export default function WatchlistPage() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-rose-700"
                   >
-                    去看新一集 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                    去{entry.platformTitle}首页搜 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                   </a>
                 </li>
               ))}

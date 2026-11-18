@@ -83,7 +83,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   )
 }
 
-function FailedNotice({ q, page, tag }: { q: string; page: number; tag: string | null }) {
+function FailedNotice({ q, page, tag, category, facets }: { q: string; page: number; tag: string | null; category?: string | null; facets?: Record<string, string[]> }) {
   return (
     <div
       role="status"
@@ -92,7 +92,7 @@ function FailedNotice({ q, page, tag }: { q: string; page: number; tag: string |
       <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
       <span>检索服务本次没有响应（不是「没有收录这个站点」）。稍后重试，或先按分类 / 标签浏览。</span>
       <Link
-        href={searchHref({ q, page, tag })}
+        href={searchHref({ q, page, tag, category, facets })}
         className="font-medium underline underline-offset-2 hover:no-underline"
       >
         重试
@@ -572,11 +572,15 @@ function Pagination({
   q,
   page,
   tag,
+  category,
+  facets,
   hasMore,
 }: {
   q: string
   page: number
   tag: string | null
+  category?: string | null
+  facets?: Record<string, string[]>
   hasMore: boolean
 }) {
   const pages = searchPageWindow(page, hasMore)
@@ -584,14 +588,14 @@ function Pagination({
   return (
     <nav aria-label="搜索结果分页" className="flex flex-wrap items-center gap-2 pt-2">
       {page > 1 ? (
-        <Link href={searchHref({ q, page: page - 1, tag })} className={linkClass}>
+        <Link href={searchHref({ q, page: page - 1, tag, category, facets })} className={linkClass}>
           上一页
         </Link>
       ) : null}
       {pages.map((n) => (
         <Link
           key={n}
-          href={searchHref({ q, page: n, tag })}
+          href={searchHref({ q, page: n, tag, category, facets })}
           aria-current={n === page ? 'page' : undefined}
           className={
             n === page
@@ -603,7 +607,7 @@ function Pagination({
         </Link>
       ))}
       {hasMore && page < searchMaxPage() ? (
-        <Link href={searchHref({ q, page: page + 1, tag })} className={linkClass}>
+        <Link href={searchHref({ q, page: page + 1, tag, category, facets })} className={linkClass}>
           下一页
         </Link>
       ) : null}
@@ -736,6 +740,14 @@ export function SearchResults({
               {/* 提交关键词时保留进行中的标签筛选；要去掉标签用输入框上方的筛选条。
                   type=hidden 不进无障碍树，按装饰性控件标注，field-names 门禁同口径。 */}
               {tagApplied ? <input type="hidden" name="tag" value={tag} aria-hidden="true" /> : null}
+              {/* 重搜改词时保留分类与分面筛选；不保留 page，重搜回到第 1 页。
+                  分面逐值一个 hidden input（name="f_<key>"），与 normalizeSearchFacets 口径一致。 */}
+              {category ? <input type="hidden" name="category" value={category} aria-hidden="true" /> : null}
+              {Object.entries(facets).flatMap(([key, values]) =>
+                values.map((value) => (
+                  <input key={`f_${key}-${value}`} type="hidden" name={`f_${key}`} value={value} aria-hidden="true" />
+                )),
+              )}
               <button
                 type="submit"
                 className="h-10 shrink-0 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -865,7 +877,7 @@ export function SearchResults({
                 ) : null}
               </div>
 
-              {failed ? <FailedNotice q={q} page={page} tag={tag} /> : null}
+              {failed ? <FailedNotice q={q} page={page} tag={tag} category={category} facets={facets} /> : null}
 
               {!failed && !filterRelaxed && inferred.length > 0 ? (
                 <p className="text-[11px] text-muted-foreground">
@@ -952,7 +964,7 @@ export function SearchResults({
               ) : null}
 
               {!failed && hits.length > 0 && (page > 1 || hasMore) ? (
-                <Pagination q={q} page={page} tag={tagApplied ? tag : null} hasMore={hasMore} />
+                <Pagination q={q} page={page} tag={tagApplied ? tag : null} category={category} facets={facets} hasMore={hasMore} />
               ) : null}
             </>
           )}

@@ -81,6 +81,10 @@
   var ASSETS = base; // 拼脚本所在目录前缀（CDN 部署也能跟走）；媒体在 media/ 下
   var CHAT_URL = '/api/hub/ai/chat';
   var FIND_URL = '/api/hub/ai/find';
+  /* 请求超时线（2026-11-18，A P1-1/C-04）：对外请求统一 15 秒超时，挂起不再永久卡死。 */
+  var REQUEST_TIMEOUT_MS = 15000;
+  /* navCache 阴性结果过期时间（2026-11-18，C-09）：导航接口失败一次后 60 秒可重试。 */
+  var NAV_CACHE_NEGATIVE_TTL_MS = 60000;
   var STORE_KEY = 'navhub.xiaomaomao.v1';
   var reducedMotion = false;
   try { reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* 忽略 */ }
@@ -124,9 +128,22 @@
       if (typeof saved.play === 'boolean') store.play = saved.play;
       if (saved.pos && typeof saved.pos.left === 'number' && typeof saved.pos.top === 'number') store.pos = saved.pos;
     }
-  } catch (e) { /* 隐私模式等场景下静默退化 */ }
+  } catch (e) { reportStorageFailure(e); /* 读不到已存状态时退化为默认（失败已上报，见 reportStorageFailure） */ }
+  /* C-13（2026-11-18）：本地存储失败不再静默——每次失败写 console.warn，用户可见提示每会话只写一次。 */
+  var storageWarned = false;
+  function reportStorageFailure(e) {
+    try { if (typeof console !== 'undefined' && console.warn) console.warn('[xiaomaomao] storage failed', e); } catch (err) { /* 忽略 */ }
+    if (storageWarned) return;
+    try {
+      /* msgsEl 在挂件 DOM 建好后才有值；加载期（DOM 未建好）调到这里时先跳过提示，留待下一次失败再提示。 */
+      if (typeof msgsEl !== 'undefined' && msgsEl && typeof addNote === 'function') {
+        addNote('小提示：本地保存失败了（浏览器存储不可用），收起状态和喂鱼次数这次记不住，刷新后会恢复默认');
+        storageWarned = true;
+      }
+    } catch (err) { /* 忽略 */ }
+  }
   function persist() {
-    try { window.localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* 忽略 */ }
+    try { window.localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { reportStorageFailure(e); }
   }
 
   /* ---------- v4 玩法状态（摸猫/喂食/游戏/成长见证，全存本机同一个键，向后兼容 v3） ---------- */
@@ -1548,7 +1565,14 @@
      navhub:favorite-added（成长档按统一规则落账，挂件本身不写成长数据）。 */
   var dragLink = null;
   var feedBusy = false;
-  var navCache = null;
+  /* C-09（2026-11-18）：navCache 阴性结果 60 秒过期——导航接口抖动一次不再禁用整会话喂猫；
+     阳性结果仍整会话缓存；拉取进行中不重复发请求。 */
+  var navCache = null;       // Promise<导航数据|null>
+  var navCacheAt = 0;        // 上次拉取开始时间（Date.now）
+  var navCacheEmpty = false; // 上次拉取结果是否为空
+  function navCacheIsStale() {
+    return !!navCache && navCacheEmpty && (Date.now() - navCacheAt > NAV_CACHE_NEGATIVE_TTL_MS);
+  }
   document.addEventListener('dragstart', function (ev) {
     dragLink = null;
     try {
@@ -1570,10 +1594,14 @@
     }
   }
   function feedFindSiteId(url) {
-    if (!navCache) {
-      navCache = window.fetch('/api/home/navigation', { credentials: 'same-origin' })
+    if (!navCache || navCacheIsStale()) {
+      navCacheAt = Date.now();
+      navCacheEmpty = false;
+      /* 导航拉取同样 15 秒超时：否则挂起时 promise 永不落定，60 秒过期逻辑等不到阴性结果。 */
+      navCache = fetchWithTimeoutAbort('/api/home/navigation', { credentials: 'same-origin' }, REQUEST_TIMEOUT_MS)
         .then(function (r) { return r.ok ? r.json() : null; })
-        .catch(function () { return null; });
+        .catch(function () { return null; })
+        .then(function (data) { navCacheEmpty = !data; return data; });
     }
     return navCache.then(function (data) {
       if (!data || !Array.isArray(data.navigationItems)) return { found: false, noData: true };
@@ -1621,7 +1649,7 @@
       if (!res.found) {
         feedBusy = false;
         showEmo('？');
-        showBubble(res.noData ? '演示页没有接导航数据，在网站上喂才作数～' : '这条链接不在收录里，猫吃不到——先用站内搜索把它找出来吧', false);
+        showBubble(res.noData ? '导航数据刚才没接通，稍后再喂我一次试试～' : '这条链接不在收录里，猫吃不到——先用站内搜索把它找出来吧', false);
         playClip('idle');
         return;
       }
@@ -2630,12 +2658,34 @@
     return d;
   }
 
+  /* A P1-1 / C-04（2026-11-18）：带超时的 fetch——AbortController 到时 abort，并用 Promise.race
+     再兜一层，保证即使底层 fetch 不响应 abort 信号，调用方仍在 ms 内拿到拒绝，不永久挂起。
+     合入注（2026-11-18）：与视频线的 fetchWithTimeout（超时返回 null、供探活/清单用）
+     同名但语义相反（这里超时是拒绝 + abort），故改名 fetchWithTimeoutAbort，免得后定义
+     覆盖前定义、把探活的超时语义改掉。 */
+  function fetchWithTimeoutAbort(url, options, ms) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var opts = {};
+    if (options) { for (var k in options) { if (Object.prototype.hasOwnProperty.call(options, k)) opts[k] = options[k]; } }
+    if (ctrl) opts.signal = ctrl.signal;
+    var timer = null;
+    var timeoutP = new Promise(function (_, reject) {
+      timer = window.setTimeout(function () {
+        if (ctrl) ctrl.abort();
+        reject(new Error('fetch timeout after ' + ms + 'ms'));
+      }, ms);
+    });
+    return Promise.race([window.fetch(url, opts), timeoutP]).then(
+      function (res) { window.clearTimeout(timer); return res; },
+      function (err) { window.clearTimeout(timer); if (ctrl) ctrl.abort(); throw err; }
+    );
+  }
   function postJson(url, body) {
-    return window.fetch(url, {
+    return fetchWithTimeoutAbort(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
-    }).then(function (res) {
+    }, REQUEST_TIMEOUT_MS).then(function (res) {
       if (!res.ok) throw new Error('http ' + res.status);
       return res.json();
     });

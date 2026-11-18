@@ -65,14 +65,22 @@ afterAll(async () => {
 
 describe("建议榜与运维热榜解耦（HTTP 面）", () => {
   it("单人重复刷量的词不进 suggestions/popular，两人各搜一次的词居首", async () => {
-    for (let i = 0; i < 6; i++) await search(SPAM, "only-one");
-    await search(ORGANIC, "person-a");
-    await search(ORGANIC, "person-b");
+    // setup 走直接写入 + 回溯 60 秒：HTTP 搜索的写后读隔离（读榜单带请求开头
+    // 的 before）会把“本次写入”排除在本次榜单外，时序一抖就 flake；直接写入
+    // 且 created_at 早于任何探针请求的 before，榜单稳定可见。探针仍走 HTTP。
+    for (let i = 0; i < 6; i++) await ctx.repo.recordEvent("search", { query: SPAM, identity: "only-one", clientCreatedAt: Date.now() - 60_000 });
+    await ctx.repo.recordEvent("search", { query: ORGANIC, identity: "person-a", clientCreatedAt: Date.now() - 60_000 });
+    await ctx.repo.recordEvent("search", { query: ORGANIC, identity: "person-b", clientCreatedAt: Date.now() - 60_000 });
+    // 诊断断言：setup 写入本身已进榜（无 before 上界）；若 ORGANIC 不在列，
+    // 说明写入侧丢了事件，与读侧 before 竞态无关。
+    const board = await ctx.repo.suggestableTopQueries(180, 30);
+    expect(board.map((r) => r.query)).toContain(ORGANIC);
 
     const res = await search(PROBE, "person-c");
     expect(res.statusCode).toBe(200);
     const body = res.json() as SuggestBody;
     expect(body.hits).toEqual([]);
+    expect(body.suggestionsDegraded).toBeUndefined();
     expect(body.suggestions).toContain(ORGANIC);
     expect(body.suggestions).not.toContain(SPAM);
     expect(body.popular).toContain(ORGANIC);

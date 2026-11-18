@@ -251,11 +251,13 @@ export function deriveNavigationShards(doc: unknown, sourceVersion: number): Der
 
     const shardPaths: string[] = [];
     if (pages.length === 1) {
+      const only = pages[0];
+      if (!only) throw new Error("deriveNavigationShards: 内部错误，分片页为空");
       const path = navigationShardPath(categoryId);
       shardPaths.push(path);
       writes.push({
         path,
-        data: { kind: NAVIGATION_SHARD_KIND_CAT, sourceVersion, categoryId, page: 1, pageCount: 1, category: pages[0].category },
+        data: { kind: NAVIGATION_SHARD_KIND_CAT, sourceVersion, categoryId, page: 1, pageCount: 1, category: only.category },
       });
     } else {
       pages.forEach((p, i) => {

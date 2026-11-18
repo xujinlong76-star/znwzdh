@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import {
@@ -41,6 +41,11 @@ vi.mock('@/components/daily-focus', () => ({ default: () => null }))
 vi.mock('@/app/brief/brief-resurface', () => ({ default: () => null }))
 // 短剧榜首固定为空：卡片是否渲染只取决于倒计时与今日节点，不依赖榜单数据。
 vi.mock('@/lib/drama-featured', () => ({ loadDramaFeatured: () => ({ dramas: [] }) }))
+
+// mock-hygiene 守卫：跨模块 vi.mock 须带 vi.resetModules() 清理（isolate:false 下模块缓存会跨文件驻留）。
+afterAll(() => {
+  vi.resetModules()
+})
 
 /** 2026-11-18 08:00 北京时间（UTC 午夜）：成考三省查分日、京考报名与文职缴费末日 */
 const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)

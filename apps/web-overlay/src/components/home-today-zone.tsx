@@ -83,7 +83,7 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                 <div aria-label="今日节点" className="space-y-2">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
-                      <BellRing className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden />
+                      <BellRing className="h-4 w-4 text-amber-700 dark:text-amber-400" aria-hidden />
                       今日提醒
                     </span>
                     <Link

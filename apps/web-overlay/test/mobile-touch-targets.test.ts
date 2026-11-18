@@ -152,7 +152,7 @@ describe('P1 #10 触控目标：首页常驻控件', () => {
 })
 
 describe('P1 #10 触控目标：顶部工具栏与开关', () => {
-  it('navigation-toolbar：11 个图标钮统一 44×44（含今日中心/小组件盒/外观向导小窗入口），单行菜单项 44px', () => {
+  it('navigation-toolbar：11 处 44×44（含今日中心文字按钮/小组件盒/外观向导小窗入口），单行菜单项 44px', () => {
     const src = read('src/components/navigation-toolbar.tsx')
     expect(count(src, 'h-11 w-11')).toBe(11)
     expect(src).not.toContain('h-9 w-9')

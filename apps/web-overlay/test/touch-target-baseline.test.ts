@@ -56,13 +56,15 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     // P1 #10（2026-11-13）：36px 标准升级为 44px，h-9 w-9 亦属回退
     expect(src, "仍有 h-9 w-9（36px < 44px）").not.toContain("h-9 w-9");
     const h11 = src.split("h-11 w-11").length - 1;
-    expect(h11, "11 个 icon 按钮应全部是 h-11 w-11").toBe(11);
+    expect(h11, "11 处 h-11 w-11（10 个 icon 按钮 + 今日中心文字按钮，见 98635cb2）").toBe(11);
   });
 
   it("每个 size=\"icon\" 按钮块内都有 aria-label（asChild 挂内层 Link 也算）", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
     const parts = src.split('size="icon"');
-    expect(parts.length - 1, "应有 11 个 icon 按钮").toBe(11);
+    // 98635cb2 有意把今日中心按钮从纯图标按钮改成带可见文字标签「今日 N 项」的按钮
+    // （删 size="icon"，className 保留 h-11 w-11），故 size="icon" 基线 11 → 10；源码不动。
+    expect(parts.length - 1, "应有 10 个 icon 按钮（今日中心已改为文字按钮，见 98635cb2）").toBe(10);
     for (let i = 1; i < parts.length; i++) {
       // 从 size="icon" 起，到对应 </Button> 为止的块（JSX 块最大 ~40 行）
       const block = parts[i].slice(0, 2000);
@@ -70,6 +72,20 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
       const chunk = end >= 0 ? block.slice(0, end) : block;
       expect(chunk, `第 ${i} 个 icon 按钮缺少 aria-label`).toContain("aria-label=");
     }
+  });
+
+  it("今日中心按钮是带文字标签的按钮（98635cb2），仍保持 h-11 w-11 = 44px 触达", () => {
+    const src = overlayFile("src/components/navigation-toolbar.tsx");
+    const labelIdx = src.indexOf('aria-label="打开今日中心小窗"');
+    expect(labelIdx, "今日中心按钮应保留 aria-label").toBeGreaterThan(-1);
+    const start = src.lastIndexOf("<Button", labelIdx);
+    const end = src.indexOf("</Button>", labelIdx);
+    expect(start, "应能定位今日中心按钮起始").toBeGreaterThan(-1);
+    expect(end, "应能定位今日中心按钮结束").toBeGreaterThan(-1);
+    const block = src.slice(start, end);
+    expect(block, "今日中心按钮不再是纯图标按钮，不应再用 size=\"icon\"").not.toContain('size="icon"');
+    expect(block, "今日中心按钮仍应是 h-11 w-11（44px 触达）").toContain("h-11 w-11");
+    expect(block, "今日中心按钮应有可见文字标签「今日 N 项」/「今日」").toContain("今日");
   });
 
   it("「全选」文本按钮（size=\"sm\"）也是 36px 高（h-9 w-auto，F3 尾项裁决）", () => {

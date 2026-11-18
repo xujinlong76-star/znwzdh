@@ -494,9 +494,9 @@ describe('C6 U-144 江苏自考两节点 chip 行为：查分行过期消失、�
     expect(examNodeDeadlineLabel(jiangsu, review.node, NOV_20_1700_CST)).toBe('已截止')
   })
 
-  it('11-20 SSR：今日行 5 项，其中 4 项挂倒计时徽章（三省复核 + 江苏复核）；上海自考成绩复核无徽章', () => {
+  it('11-20 SSR：今日行 6 项，其中 4 项挂倒计时徽章（三省复核 + 江苏复核）；上海自考成绩复核与山西成绩复核无徽章', () => {
     const items = todayNodes(NOV_20_0800_CST)
-    expect(items).toHaveLength(5)
+    expect(items).toHaveLength(6)
     const html = unesc(renderZone(NOV_20_0800_CST))
     expect(timerBadgeCount(html)).toBe(4)
     expect(liFor(html, '江苏自考 · 成绩复核')).toContain('role="timer"')
@@ -510,6 +510,11 @@ describe('C6 U-144 江苏自考两节点 chip 行为：查分行过期消失、�
     // 上海自考成绩复核 11-20 首日 startsToday 加入今日行，但不入 PEAK 表、
     // 无倒计时徽章（U-163 复审必改 1：复核无截止时刻）
     expect(liFor(html, '上海自考 · 成绩复核')).not.toContain('role="timer"')
+    // U-160：山西成绩复核 11-20 末日 endsToday 加入今日行，同样不入 PEAK 表、
+    // 无倒计时徽章（复核窗口只写「工作时间内」、无截止时刻）；amber「今日截止」
+    // 徽章由 kind 驱动、与 chip 无关，仍显示
+    expect(liFor(html, '成考 · 山西成绩复核')).not.toContain('role="timer"')
+    expect(liFor(html, '成考 · 山西成绩复核')).toContain('今日截止')
   })
 })
 

@@ -109,9 +109,9 @@ describe('U-155：11-19 今日行 2 项（海南成绩查询纯文本 + 上海�
     expect(hrefs.filter((h) => h === '/exam')).toHaveLength(2)
   })
 
-  it('11-19 接续区 5 项：除江西成绩复核（带官方 URL）外其余 4 项均无 URL', () => {
+  it('11-19 接续区 6 项：除江西成绩复核（带官方 URL）外其余 5 项均无 URL', () => {
     const ups = todayFollowUpNodes(NOV_19_0800_CST)
-    expect(ups).toHaveLength(5)
+    expect(ups).toHaveLength(6)
     for (const { node } of ups.filter((u) => u.node.label !== '江西成绩复核')) {
       expect(node.url).toBeUndefined()
     }

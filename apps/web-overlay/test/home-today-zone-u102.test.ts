@@ -250,9 +250,9 @@ describe('U-136：startsToday 行补「今日开始」徽章（徽章 only，不
     expect(badge.urgentCount).toBe(1)
   })
 
-  it('11-20 回归：江西行变 amber「今日截止」+ chip，上海复核行新入今日行带「今日开始」无 chip', () => {
+  it('11-20 回归：江西行变 amber「今日截止」+ chip，上海复核行新入今日行带「今日开始」无 chip，山西复核行末日入今日行带「今日截止」无 chip', () => {
     const items = todayNodes(NOV_20_0800_CST)
-    expect(items).toHaveLength(5)
+    expect(items).toHaveLength(6)
     const html = unesc(renderZone(NOV_20_0800_CST))
     const jx = liFor(html, '成考 · 江西成绩复核')
     expect(jx).toContain('今日截止')
@@ -262,6 +262,12 @@ describe('U-136：startsToday 行补「今日开始」徽章（徽章 only，不
     expect(shReview).toContain('今日开始')
     expect(shReview).toContain('bg-emerald-500/10')
     expect(shReview).not.toContain('role="timer"')
+    // U-160：山西复核末日 endsToday 入今日行，amber「今日截止」徽章由 kind 驱动仍显示，
+    // 无 PEAK 表项故无倒计时 chip
+    const sxReview = liFor(html, '成考 · 山西成绩复核')
+    expect(sxReview).toContain('今日截止')
+    expect(sxReview).toContain('bg-amber-500/10')
+    expect(sxReview).not.toContain('role="timer"')
   })
 
   it('11-20 17:30：江西 chip 读「已截止」（helper 层；SSR 只出「倒计时」占位，不直接断言 SSR 文案）', () => {

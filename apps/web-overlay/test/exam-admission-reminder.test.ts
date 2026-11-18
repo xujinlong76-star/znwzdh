@@ -286,11 +286,11 @@ describe('广东成绩复核节点（U-110）', () => {
     expect(nextExamNode(guangdongOnly, NOV_20_1000_CST)?.label).toBe('广东成绩复核')
   })
 
-  it('成考现为五省九节点：头注释同步改数；证书下载仍只在 note，不作节点', () => {
-    expect(chengkao.nodes).toHaveLength(9)
+  it('成考现为六省十节点：头注释同步改数；证书下载仍只在 note，不作节点', () => {
+    expect(chengkao.nodes).toHaveLength(10)
     const calendar = read('src/lib/exam-calendar.ts')
-    expect(calendar).toContain('五省九节点')
-    expect(calendar).not.toContain('五省八节点')
+    expect(calendar).toContain('六省十节点')
+    expect(calendar).not.toContain('六省九节点')
     expect(chengkao.nodes.some((n) => n.label.includes('证书'))).toBe(false)
     expect(chengkao.note ?? '').toContain(
       '成绩证书 11 月 28 日 16:00 起可通过官微/支付宝/百度小程序下载打印',

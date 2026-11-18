@@ -718,15 +718,18 @@ describe('U-158 成考三省复核 11-20 时刻门控（todayNodeDeadlineMs / ex
     expect(examNodeDeadlineLabel(chengkao, jxReview(), NOV_19_0800_CST)).toBeNull()
   })
 
-  it('11-20 今日行 kind 分流：广东 today、新疆/江西 endsToday（与江苏复核 endsToday 同表）、上海自考成绩复核 startsToday；今日行 5 项', () => {
+  it('11-20 今日行 kind 分流：广东 today、新疆/江西/山西 endsToday（与江苏复核 endsToday 同表）、上海自考成绩复核 startsToday；今日行 6 项', () => {
     const items20 = todayNodes(NOV_20_0800_CST)
-    expect(items20).toHaveLength(5)
+    expect(items20).toHaveLength(6)
     const byKey = new Map(
       items20.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
     expect(byKey.get('chengkao:广东成绩复核')?.kind).toBe('today')
     expect(byKey.get('chengkao:新疆成绩复核')?.kind).toBe('endsToday')
     expect(byKey.get('chengkao:江西成绩复核')?.kind).toBe('endsToday')
+    // U-160：山西复核 11-19→11-20 多日窗口，末日 endsToday 第一遍不抑制，进今日行；
+    // 无 PEAK 表项，全天「进行中」、不翻「已截止」（见 U-160 describe）
+    expect(byKey.get('chengkao:山西成绩复核')?.kind).toBe('endsToday')
     expect(byKey.get('jiangsu-zikao:成绩复核')?.kind).toBe('endsToday')
     expect(byKey.get('shanghai-zikao:成绩复核')?.kind).toBe('startsToday')
   })
